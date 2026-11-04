@@ -1,0 +1,85 @@
+{
+  "sample_note": "[일반지식] 기반 샘플 고정 응답(테스트·QA용). 실제 AI 출력이 아니며 내용은 검증되지 않음",
+  "region_id": "region-SNP-M-102-pzr",
+  "bundle_sha256": "daa8fcba5f68230b0e9353665a136013ae2952d4c194398eeb545b8a07d41b3c",
+  "stop_reason": "end_turn",
+  "output": {
+    "candidate_id": "deviation-p86-d12",
+    "facts": [
+      {
+        "statement": "RC-TE110은 써지 배관의 분기점 RC-L010-T3에 계측 연결되어 있고, RC-TT110으로 신호가 이어진다.",
+        "evidence_ids": [
+          "ev-node-entity-node-004",
+          "ev-path-entity-node-004",
+          "ev-path-entity-node-005"
+        ],
+        "node_ids": [
+          "entity-node-003",
+          "entity-node-004",
+          "entity-node-005"
+        ],
+        "relation_ids": [
+          "relation-005",
+          "relation-006"
+        ]
+      }
+    ],
+    "scenarios": [
+      {
+        "basis": "pattern",
+        "pattern_match_id": "m-pat-pzr-d12-overheat-entity-node-001",
+        "cause": "RC-PZ01 압력 상승에 따른 포화온도 상승",
+        "consequence": "RC-PZ01 및 써지 배관 온도 증가, 배관 열응력 증가 가능",
+        "interpretation": "가압기는 포화 상태로 운전되므로 압력 상승과 온도 상승이 함께 나타난다는 [일반지식] 기반 패턴 해석이다. 정상 운전온도 자료가 없어 이탈 폭을 판단하지 못했다.",
+        "node_ids": [
+          "entity-node-001",
+          "entity-node-003",
+          "entity-node-004"
+        ],
+        "relation_ids": [
+          "relation-003",
+          "relation-004",
+          "relation-005"
+        ],
+        "evidence_ids": [
+          "ev-node-entity-node-001",
+          "ev-path-entity-node-004"
+        ],
+        "safeguards": [
+          {
+            "node_id": "entity-node-004",
+            "description": "RC-TE110 써지 배관 온도 감지(경보 연결 미확인)"
+          }
+        ],
+        "risk": {
+          "severity": 2,
+          "severity_basis": "온도 증가 자체는 단기 정지 이하 수준으로 가정 [추론]",
+          "frequency_without_safeguards": 2,
+          "frequency_with_safeguards": 1,
+          "credited_safeguard_node_ids": [
+            "entity-node-004"
+          ],
+          "frequency_basis": "압력 제어 이상은 설비 수명 중 발생 가능성 있음(중) [일반지식]. 온도 감지로 조기 대응하면 낮아진다고 제안",
+          "assumptions": [
+            "RC-TE110 지시가 운전원에게 전달된다고 가정"
+          ],
+          "uncertainty": "정상 운전온도·설계온도·경보 설정치 자료 없음"
+        },
+        "cause_entity_ids": [
+          "entity-node-001"
+        ],
+        "assumed_equipment": [
+          "entity-node-001"
+        ],
+        "outside_graph_equipment": []
+      }
+    ],
+    "missing_information": [
+      {
+        "item": "가압기 정상 운전온도·설계온도",
+        "reason": "온도 이탈 폭 판단 불가",
+        "request": "운전조건·설계 사양 자료"
+      }
+    ]
+  }
+}

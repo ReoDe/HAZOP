@@ -1,0 +1,365 @@
+{
+  "applicability_id": "applicability-region-SNP-M-102-pzr",
+  "applicability_version": 1,
+  "region_id": "region-SNP-M-102-pzr",
+  "operating_mode": "normal",
+  "catalog_ref": {
+    "catalog_id": "kosha-p86-2017-deviation-chart",
+    "catalog_version": 1
+  },
+  "source": "기획서/HAZOP기법지침.md §5.3 applicability·판단 근거 열 (사용자 결정 2026-11-04)",
+  "items": [
+    {
+      "item_id": "p86-d01",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "연속식 기본 변수(§4.3)",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d02",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d03",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d04",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d05",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3). 연속 공정의 '부분'은 조성 이상으로 해석 [추론]",
+      "applicability_reason_as_written": "같음. 연속 공정의 '부분'은 조성 이상으로 해석 [추론]",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d06",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d07",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d08",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "회분식 고유. 운전단계 구분과 비검토(×) 구간을 전제로 하나, 연속 정상 운전에는 단계 개념이 없음 [추론]",
+      "applicability_reason_as_written": "회분식 고유. 운전단계 구분과 비검토(×) 구간을 전제로 하나, 연속 정상 운전에는 단계 개념이 없음 [추론]",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d09",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "연속식 기본 변수(§4.3)",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d10",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d11",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d12",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d13",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d14",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d15",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d16",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "연속식 기본 변수(§4.3)",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d17",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "가압기 구간에 화학 반응 없음(사용자 결정, 2026-11-04). 회분식 고유는 아님",
+      "applicability_reason_as_written": "가압기 구간에 화학 반응 없음(사용자 결정, 2026-11-04). 회분식 고유는 아님",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d18",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "가압기 구간에 화학 반응 없음(사용자 결정, 2026-11-04). 회분식 고유는 아님",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d19",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "가압기 구간에 화학 반응 없음(사용자 결정, 2026-11-04). 회분식 고유는 아님",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d20",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "가압기 구간에 화학 반응 없음(사용자 결정, 2026-11-04). 회분식 고유는 아님",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d21",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "가압기 구간에 화학 반응 없음(사용자 결정, 2026-11-04). 회분식 고유는 아님",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d22",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "가압기 구간에 화학 반응 없음(사용자 결정, 2026-11-04). 회분식 고유는 아님",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d23",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "가압기 구간에 화학 반응 없음(사용자 결정, 2026-11-04). 회분식 고유는 아님",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d24",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "회분식 고유. 연속 공정의 시간 지연은 압력·온도·유량 이탈의 원인으로 흡수 [추론]. 절차 기반 모드에서는 재검토",
+      "applicability_reason_as_written": "회분식 고유. 연속 공정의 시간 지연은 압력·온도·유량 이탈의 원인으로 흡수 [추론]. 절차 기반 모드에서는 재검토",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d25",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "회분식 고유. 연속 공정의 시간 지연은 압력·온도·유량 이탈의 원인으로 흡수 [추론]. 절차 기반 모드에서는 재검토",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d26",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "회분식 고유. 연속 공정의 시간 지연은 압력·온도·유량 이탈의 원인으로 흡수 [추론]. 절차 기반 모드에서는 재검토",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d27",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "회분식 고유. 단계 사이 순서를 다루는 이탈(§6.5(2))이며, 정상 운전에는 단계 전환이 없음 [추론]",
+      "applicability_reason_as_written": "회분식 고유. 단계 사이 순서를 다루는 이탈(§6.5(2))이며, 정상 운전에는 단계 전환이 없음 [추론]",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d28",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "회분식 고유. 단계 사이 순서를 다루는 이탈(§6.5(2))이며, 정상 운전에는 단계 전환이 없음 [추론]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d29",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "회분식 고유. 단계 사이 순서를 다루는 이탈(§6.5(2))이며, 정상 운전에는 단계 전환이 없음 [추론]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d30",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "회분식 고유. 단계 사이 순서를 다루는 이탈(§6.5(2))이며, 정상 운전에는 단계 전환이 없음 [추론]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d31",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "회분식 고유. 단계 사이 순서를 다루는 이탈(§6.5(2))이며, 정상 운전에는 단계 전환이 없음 [추론]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d32",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "회분식 고유. 단계 사이 순서를 다루는 이탈(§6.5(2))이며, 정상 운전에는 단계 전환이 없음 [추론]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d33",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "회분식 고유. 단계 사이 순서를 다루는 이탈(§6.5(2))이며, 정상 운전에는 단계 전환이 없음 [추론]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d34",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "회분식 고유 규정 없음. 원전 냉각재 붕소 농도 등에 해당 가능 [일반지식]",
+      "applicability_reason_as_written": "회분식 고유 규정 없음. 원전 냉각재 붕소 농도 등에 해당 가능 [일반지식]",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d35",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "회분식 고유 규정 없음. 원전 냉각재 붕소 농도 등에 해당 가능 [일반지식]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d36",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "회분식 고유 규정 없음. 원전 냉각재 붕소 농도 등에 해당 가능 [일반지식]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d37",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "회분식 고유 규정 없음. 원전 냉각재 붕소 농도 등에 해당 가능 [일반지식]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d38",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "회분식 고유 규정 없음. 가압기는 증기·물 2상 운전 [일반지식]",
+      "applicability_reason_as_written": "회분식 고유 규정 없음. 가압기는 증기·물 2상 운전 [일반지식]",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d39",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "회분식 고유 규정 없음. 가압기는 증기·물 2상 운전 [일반지식]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d40",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "회분식 고유 규정 없음. 가압기는 증기·물 2상 운전 [일반지식]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d41",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "회분식 고유 규정 없음. 가압기는 증기·물 2상 운전 [일반지식]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d42",
+      "applicability": "not_applicable",
+      "applicability_basis": "사용자 결정 2026-11-04",
+      "applicability_reason": "가압기 구간에 에멀젼 없음(사용자 결정, 2026-11-04)",
+      "applicability_reason_as_written": "가압기 구간에 에멀젼 없음(사용자 결정, 2026-11-04)",
+      "applicability_knowledge_status": "confirmed"
+    },
+    {
+      "item_id": "p86-d43",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "후보로 유지(사용자 결정, 2026-11-04). 살수에 의한 붕소 농도 균일화와 관련될 수 있음 [일반지식]",
+      "applicability_reason_as_written": "후보로 유지(사용자 결정, 2026-11-04). 살수에 의한 붕소 농도 균일화와 관련될 수 있음 [일반지식]",
+      "applicability_knowledge_status": "hypothesis"
+    },
+    {
+      "item_id": "p86-d44",
+      "applicability": "applicable",
+      "applicability_basis": "HAZOP기법지침 §5.3 판단 열",
+      "applicability_reason": "후보로 유지(사용자 결정, 2026-11-04). 살수에 의한 붕소 농도 균일화와 관련될 수 있음 [일반지식]",
+      "applicability_reason_as_written": "같음",
+      "applicability_knowledge_status": "hypothesis"
+    }
+  ]
+}
