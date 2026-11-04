@@ -1,4 +1,4 @@
-"""출력/추출/<도면번호>/extraction.json -> 출력/그래프/<도면번호>/graph.json + structure_report.md
+"""출력/추출/<도면번호>/extraction.json -> 출력/그래프/<도면번호>/graph.json + structure_report.md + entity_mapping.json
 
 추출 결과가 없으면 먼저: python scripts/extract_drawio.py --samples
 """
@@ -10,6 +10,8 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
+
+from hazop.console import safe_console  # noqa: E402
 
 from hazop import paths  # noqa: E402
 from hazop.graph import build  # noqa: E402
@@ -24,7 +26,8 @@ def build_one(extraction_path, out_root):
         extraction = json.load(fh)
     rel = os.path.relpath(extraction_path, REPO_ROOT).replace("\\", "/")
     graph = build.build_graph(extraction, extraction_file=rel)
-    name = paths.safe_name(graph["source"]["drawing_number"] or os.path.basename(os.path.dirname(extraction_path)))
+    # 추출 결과 폴더 이름을 그대로 쓴다(--samples: 도면번호, 등록 경로: <자료 ID>-r<버전>). 뷰어도 같은 이름으로 그래프를 찾는다.
+    name = paths.safe_name(os.path.basename(os.path.dirname(extraction_path)))
     out_dir = paths.safe_join(out_root, name)
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "graph.json"), "w", encoding="utf-8", newline="\n") as fh:
@@ -32,6 +35,10 @@ def build_one(extraction_path, out_root):
         fh.write("\n")
     with open(os.path.join(out_dir, "structure_report.md"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(build.render_report(graph))
+    # 그래프 버전별 대상 매핑 (③ -> ④ entity_mapping + 원본 객체·자료·등록 버전)
+    with open(os.path.join(out_dir, "entity_mapping.json"), "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(build.entity_mapping_document(graph, extraction), fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
     # 뷰어 JS 경로 함수 대조용 기대값 (scripts/check_viewer_paths.js)
     with open(os.path.join(out_dir, "path_expectations.json"), "w", encoding="utf-8", newline="\n") as fh:
         json.dump(GraphQuery(graph).path_expectations(), fh, ensure_ascii=False, separators=(",", ":"))
@@ -39,6 +46,7 @@ def build_one(extraction_path, out_root):
 
 
 def main(argv=None):
+    safe_console()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--extract-root", default=DEFAULT_EXTRACT)
     ap.add_argument("--out-root", default=DEFAULT_OUT)
@@ -51,7 +59,7 @@ def main(argv=None):
         graph, out_dir = build_one(path, args.out_root)
         s = graph["structure"]
         print("%s: %s nodes=%d edges=%d components_physical=%d unknowns=%d -> %s" % (
-            graph["source"]["drawing_number"], graph["validation"]["status"], s["node_count"],
+            graph["source"]["drawing_number"] or os.path.basename(out_dir), graph["validation"]["status"], s["node_count"],
             s["edge_count"], s["components_physical"], len(graph["validation"]["unknowns"]),
             os.path.relpath(out_dir, REPO_ROOT)))
         built += 1

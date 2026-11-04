@@ -1,0 +1,61 @@
+{
+  "sample_note": "테스트용 '나쁜 응답' 샘플: 존재하지 않는 노드·관계·근거·패턴 적용 ID와, 그래프에는 있으나 근거 묶음 밖인 노드를 일부러 인용함. 실제 AI 출력 아님",
+  "region_id": "region-SNP-M-102-pzr",
+  "bundle_sha256": "e42123dd72a3a505f0cfc1fe0627bcd179bba2e7f8a674d315a12dbab1717ed1",
+  "stop_reason": "end_turn",
+  "output": {
+    "candidate_id": "deviation-p86-d09",
+    "facts": [
+      {
+        "statement": "RC-PV999 밸브가 살수 배관에 있다.",
+        "evidence_ids": [
+          "ev-node-entity-node-099"
+        ],
+        "node_ids": [
+          "entity-node-099"
+        ],
+        "relation_ids": [
+          "relation-999"
+        ]
+      }
+    ],
+    "scenarios": [
+      {
+        "basis": "pattern",
+        "pattern_match_id": "m-pat-does-not-exist-entity-node-099",
+        "cause": "존재하지 않는 밸브 고장",
+        "consequence": "압력 상승",
+        "interpretation": "그래프에 없는 대상을 인용한 잘못된 해석",
+        "node_ids": [
+          "entity-node-099",
+          "entity-node-018"
+        ],
+        "relation_ids": [
+          "relation-999"
+        ],
+        "evidence_ids": [
+          "ev-path-entity-node-099"
+        ],
+        "safeguards": [],
+        "risk": {
+          "severity": 3,
+          "severity_basis": "근거 없음",
+          "frequency_without_safeguards": 2,
+          "frequency_with_safeguards": null,
+          "credited_safeguard_node_ids": [],
+          "frequency_basis": "근거 없음",
+          "assumptions": [],
+          "uncertainty": "근거 없음"
+        },
+        "cause_entity_ids": [
+          "entity-node-099"
+        ],
+        "assumed_equipment": [
+          "entity-node-099"
+        ],
+        "outside_graph_equipment": []
+      }
+    ],
+    "missing_information": []
+  }
+}

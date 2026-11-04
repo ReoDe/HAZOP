@@ -200,6 +200,23 @@ def build_graph(extraction, extraction_file=None):
     return graph
 
 
+def entity_mapping_document(graph, extraction):
+    """그래프 버전의 대상 매핑: entity_id <-> (추출 실행, local_id, 원본 객체 ID, 자료 ID, 등록 버전).
+    ③ -> ④ 규격의 entity_mapping 항목(extraction_run_id·local_id·entity_id)에 원본 근거를 더한다."""
+    src = extraction["source"]
+    obj_of = {x["local_id"]: x["source_object_id"] for x in extraction["nodes"] + extraction["relations"]}
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "project_id": graph["project_id"],
+        "graph_id": graph["graph_id"],
+        "graph_version": graph["graph_version"],
+        "input_runs": list(graph["input_runs"]),
+        "entity_mapping": [dict(m, source_object_id=obj_of.get(m["local_id"]), material_id=src["material_id"],
+                                registration_version=src["registration_version"])
+                           for m in graph["entity_mapping"]],
+    }
+
+
 def to_networkx(graph, kinds=None):
     """graph dict -> nx.MultiGraph (무방향, 엣지 순서는 방향 아님). kinds로 엣지 종류를 제한."""
     g = nx.MultiGraph()

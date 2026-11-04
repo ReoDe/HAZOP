@@ -1,0 +1,116 @@
+{
+  "sample_note": "[일반지식] 기반 샘플 고정 응답(테스트·QA용). 실제 AI 출력이 아니며 내용은 검증되지 않음. 두 번째 시나리오(도면에 없는 연속 살수 설비 가정)는 거부되어야 하는 '나쁜 예'로 남김",
+  "region_id": "region-SNP-M-102-pzr",
+  "bundle_sha256": "74fa35d7ad5d18493517e1723fddacf3c0b1946a528e3da595eee1307284ac5d",
+  "stop_reason": "end_turn",
+  "output": {
+    "candidate_id": "deviation-p86-d44",
+    "facts": [
+      {
+        "statement": "RC-V111은 정상 열림(NO) 수동밸브이며, 살수 배관에서 정상 닫힘(NC) 제어밸브 RC-PV101 상류에 있다(탐색 경로의 밸브 상태 기준).",
+        "evidence_ids": [
+          "ev-node-entity-node-007",
+          "ev-path-entity-node-007"
+        ],
+        "node_ids": [
+          "entity-node-007",
+          "entity-node-008"
+        ],
+        "relation_ids": [
+          "relation-009",
+          "relation-010"
+        ]
+      }
+    ],
+    "scenarios": [
+      {
+        "basis": "pattern",
+        "pattern_match_id": "m-pat-mv-no-d09-closed-entity-node-007",
+        "cause": "RC-V111 오닫힘으로 살수 유로 차단",
+        "consequence": "RC-PV101이 열려도 살수가 이루어지지 않아 가압기 냉각재 혼합 저하",
+        "interpretation": "살수가 가압기 냉각재 혼합에 관여한다는 [일반지식]에 기반한 패턴 해석이다. 혼합 저하의 영향 범위는 자료가 없어 판단하지 못했다.",
+        "cause_entity_ids": [
+          "entity-node-007"
+        ],
+        "assumed_equipment": [
+          "entity-node-007",
+          "entity-node-008",
+          "entity-node-001"
+        ],
+        "outside_graph_equipment": [],
+        "node_ids": [
+          "entity-node-007",
+          "entity-node-008",
+          "entity-node-001"
+        ],
+        "relation_ids": [
+          "relation-009",
+          "relation-010",
+          "relation-011",
+          "relation-012"
+        ],
+        "evidence_ids": [
+          "ev-node-entity-node-007",
+          "ev-path-entity-node-007"
+        ],
+        "safeguards": [],
+        "risk": {
+          "severity": null,
+          "severity_basis": "혼합 저하의 영향 범위 자료가 없어 강도를 제안하지 않음",
+          "frequency_without_safeguards": null,
+          "frequency_with_safeguards": null,
+          "credited_safeguard_node_ids": [],
+          "frequency_basis": "근거 없음",
+          "assumptions": [],
+          "uncertainty": "붕소 농도 관리 절차 자료 없음"
+        }
+      },
+      {
+        "basis": "additional_hypothesis",
+        "pattern_match_id": null,
+        "cause": "연속 살수(우회) 소량 유량 설비가 막힘",
+        "consequence": "가압기 내 냉각재 혼합 저하",
+        "interpretation": "연속 살수 설비는 그래프에 없으므로 도면 밖 설비를 전제한 가설이다.",
+        "cause_entity_ids": [
+          "entity-node-008"
+        ],
+        "assumed_equipment": [
+          "entity-node-008"
+        ],
+        "outside_graph_equipment": [
+          "연속 살수(우회) 설비"
+        ],
+        "node_ids": [
+          "entity-node-008"
+        ],
+        "relation_ids": [],
+        "evidence_ids": [
+          "ev-node-entity-node-008"
+        ],
+        "safeguards": [],
+        "risk": {
+          "severity": null,
+          "severity_basis": "근거 없음",
+          "frequency_without_safeguards": null,
+          "frequency_with_safeguards": null,
+          "credited_safeguard_node_ids": [],
+          "frequency_basis": "근거 없음",
+          "assumptions": [],
+          "uncertainty": "설비 존재 여부 미확인"
+        }
+      }
+    ],
+    "missing_information": [
+      {
+        "item": "연속 살수(우회) 설계 여부",
+        "reason": "도면에 표시되지 않음",
+        "request": "살수 계통 상세 P&ID"
+      },
+      {
+        "item": "붕소 농도 관리 절차",
+        "reason": "혼합 저하 영향 판단 불가",
+        "request": "화학·체적 제어 운전 절차"
+      }
+    ]
+  }
+}

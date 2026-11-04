@@ -23,3 +23,12 @@ def safe_join(root, name):
     if path == root_abs or os.path.commonpath([root_abs, path]) != root_abs:
         raise ValueError("출력 경로가 출력 루트 밖임: %r" % name)
     return path
+
+
+def rel_or_abs(path, root):
+    """root 기준 상대 경로('/' 구분). 다른 드라이브 등으로 상대 경로를 만들 수 없으면 절대 경로."""
+    try:
+        rel = os.path.relpath(path, root)
+    except ValueError:
+        rel = os.path.abspath(path)
+    return rel.replace("\\", "/")

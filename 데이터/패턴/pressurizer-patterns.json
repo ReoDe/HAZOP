@@ -1,0 +1,261 @@
+{
+  "library_id": "hazop-cause-consequence-patterns",
+  "library_version": 4,
+  "source": "[일반지식], 미검증",
+  "note": "MVP 가압기 구간(SNP-M-102) 기기에 필요한 소수 패턴. 사용자 평가 기준·문헌으로 확인되지 않은 일반지식 기반 초안이며, 적용 결과는 모두 가설(hypothesis)로 취급한다. 태그 문자로 기기 종류·측정 변수를 추정하지 않는다. 도면에 있는 설비만 원인·결과·보호수단으로 쓴다(도면에 없는 설비를 암시하는 문구 금지, 사용자 결정 2026-11-04).",
+  "fields": {
+    "role": "cause = 원인·결과 후보",
+    "scope": "focus = 구간의 중심 대상 자체 / reached = 중심 대상에서 탐색으로 도달한 대상",
+    "conditions.attributes": "그래프 노드 속성 값이 목록 중 하나여야 함. 속성이 없으면 condition_unknown(미적용·보류)",
+    "conditions.signal_chain": "signal_connection으로 이어진 기기 종류 순서(방향 무시). 구조 조건이며 태그를 보지 않음",
+    "templates": "{tag}, {attr_<속성>}, {chain_tags} 치환",
+    "deviation_safeguards": "편차(후보)별 확인할 보호수단. kind + 선택 조건(signal_chain·attributes). 패턴이 아니라 편차에 묶는다. 원인과 같은 신호 연결(제어루프)에 속한 보호수단은 독립성 미확인이며 '보호수단 찾음'으로 세지 않음. protective_action: self_acting(자력식, 묶인 편차에서만 인정) / detection(감지기, 경보·트립 등 보호 동작이 그래프 속성으로 확인될 때만 '찾음')"
+  },
+  "patterns": [
+    {
+      "pattern_id": "pat-pzr-d09-insurge",
+      "pattern_version": 3,
+      "source": "[일반지식], 미검증",
+      "equipment_kind": "pressurizer",
+      "role": "cause",
+      "scope": "focus",
+      "candidate_items": [
+        "p86-d09"
+      ],
+      "conditions": {},
+      "cause_template": "{tag}로 써지 배관을 통해 유입되는 냉각재 증가(인서지)로 증기 공간 압축",
+      "consequence_template": "{tag} 압력 상승"
+    },
+    {
+      "pattern_id": "pat-pzr-d10-outsurge",
+      "pattern_version": 3,
+      "source": "[일반지식], 미검증",
+      "equipment_kind": "pressurizer",
+      "role": "cause",
+      "scope": "focus",
+      "candidate_items": [
+        "p86-d10"
+      ],
+      "conditions": {},
+      "cause_template": "{tag}에서 써지 배관을 통해 유출되는 냉각재 증가(아웃서지)로 증기 공간 팽창",
+      "consequence_template": "{tag} 압력 감소"
+    },
+    {
+      "pattern_id": "pat-pzr-d12-overheat",
+      "pattern_version": 3,
+      "source": "[일반지식], 미검증",
+      "equipment_kind": "pressurizer",
+      "role": "cause",
+      "scope": "focus",
+      "candidate_items": [
+        "p86-d12"
+      ],
+      "conditions": {},
+      "cause_template": "{tag} 압력 상승에 따른 포화온도 상승",
+      "consequence_template": "{tag} 및 연결 배관 온도 증가"
+    },
+    {
+      "pattern_id": "pat-cv-ncfc-d09-fail-closed",
+      "pattern_version": 3,
+      "source": "[일반지식], 미검증",
+      "equipment_kind": "control_valve",
+      "role": "cause",
+      "scope": "reached",
+      "candidate_items": [
+        "p86-d09"
+      ],
+      "conditions": {
+        "attributes": {
+          "normal_position": [
+            "NC"
+          ],
+          "fail_position": [
+            "FC"
+          ]
+        }
+      },
+      "cause_template": "{tag} 개방 실패(정상 닫힘, 구동 상실 시 닫힘 실패 위치)로 압력 상승 시 유량 공급 불가",
+      "consequence_template": "{tag}를 통한 압력 상승 억제 기능 상실"
+    },
+    {
+      "pattern_id": "pat-cv-nc-d10-spurious-open",
+      "pattern_version": 3,
+      "source": "[일반지식], 미검증",
+      "equipment_kind": "control_valve",
+      "role": "cause",
+      "scope": "reached",
+      "candidate_items": [
+        "p86-d10",
+        "p86-d43"
+      ],
+      "conditions": {
+        "attributes": {
+          "normal_position": [
+            "NC"
+          ]
+        }
+      },
+      "cause_template": "{tag} 오개방 또는 열림 고착(정상 닫힘 밸브)",
+      "consequence_template": "{tag}를 통한 과도 유입으로 연결 용기 압력 감소·혼합 증가"
+    },
+    {
+      "pattern_id": "pat-mv-no-d09-closed",
+      "pattern_version": 3,
+      "source": "[일반지식], 미검증",
+      "equipment_kind": "manual_valve",
+      "role": "cause",
+      "scope": "reached",
+      "candidate_items": [
+        "p86-d09",
+        "p86-d44"
+      ],
+      "conditions": {
+        "attributes": {
+          "normal_position": [
+            "NO"
+          ]
+        }
+      },
+      "cause_template": "{tag} 오닫힘(정상 열림 수동밸브)으로 해당 배관 유로 차단",
+      "consequence_template": "해당 배관을 통한 압력 제어·혼합 기능 상실"
+    },
+    {
+      "pattern_id": "pat-psv-nc-d10-open-stuck",
+      "pattern_version": 3,
+      "source": "[일반지식], 미검증",
+      "equipment_kind": "psv",
+      "role": "cause",
+      "scope": "reached",
+      "candidate_items": [
+        "p86-d10"
+      ],
+      "conditions": {
+        "attributes": {
+          "normal_position": [
+            "NC"
+          ]
+        }
+      },
+      "cause_template": "{tag} 오개방·개방 고착 또는 시트 누설(정상 닫힘 안전밸브)",
+      "consequence_template": "보호 대상 압력 감소, 방출 배관 하류로 유체 방출"
+    },
+    {
+      "pattern_id": "pat-pic-d09d10-output-fault",
+      "pattern_version": 3,
+      "source": "[일반지식], 미검증",
+      "equipment_kind": "controller",
+      "role": "cause",
+      "scope": "reached",
+      "candidate_items": [
+        "p86-d09",
+        "p86-d10"
+      ],
+      "conditions": {
+        "signal_chain": [
+          "control_valve"
+        ]
+      },
+      "cause_template": "{tag} 제어기 출력 오류로 {chain_tags} 오동작(열림 부족 또는 과다)",
+      "consequence_template": "{chain_tags}가 조절하는 유입량 이상으로 연결 용기 압력 이탈"
+    },
+    {
+      "pattern_id": "pat-tx-d09d10-loop-signal-fault",
+      "pattern_version": 3,
+      "source": "[일반지식], 미검증",
+      "equipment_kind": "transmitter",
+      "role": "cause",
+      "scope": "reached",
+      "candidate_items": [
+        "p86-d09",
+        "p86-d10"
+      ],
+      "conditions": {
+        "signal_chain": [
+          "controller",
+          "control_valve"
+        ]
+      },
+      "cause_template": "{tag} 측정 신호 오류로 제어루프({chain_tags}) 오동작",
+      "consequence_template": "제어루프가 조절하는 유입량 이상으로 연결 용기 압력 이탈"
+    }
+  ],
+  "changes": [
+    {
+      "library_version": 2,
+      "date": "2026-11-04",
+      "change": "pat-cv-nc-d44-no-flow 삭제(정상 상태 NC를 원인으로 쓰지 않음). 압력 편차의 계기 보호수단을 제어루프 구조 조건으로 제한(액위 계기 제외)"
+    },
+    {
+      "library_version": 3,
+      "date": "2026-11-04",
+      "change": "가열 과다·부족 문구 삭제(도면에 없는 전열기 암시). 보호수단을 패턴별에서 편차별(deviation_safeguards)로 분리: PSV는 압력 증가에만. safeguard 역할 패턴은 deviation_safeguards로 이동"
+    },
+    {
+      "library_version": 4,
+      "date": "2026-11-04",
+      "change": "deviation_safeguards에 protective_action 추가. 감지기는 보호 동작 확인 전에는 '보호수단 찾음'으로 세지 않음"
+    }
+  ],
+  "deviation_safeguards": [
+    {
+      "safeguard_id": "sg-d09-psv",
+      "version": 2,
+      "source": "[일반지식], 미검증",
+      "candidate_items": [
+        "p86-d09"
+      ],
+      "kind": "psv",
+      "attributes": {
+        "normal_position": [
+          "NC"
+        ]
+      },
+      "description_template": "{tag} 설정압력({attr_set_pressure}) 도달 시 개방하여 과압 방출 — 용량·설정 적정성 미확인",
+      "protective_action": "self_acting"
+    },
+    {
+      "safeguard_id": "sg-d10-pressure-loop-tx",
+      "version": 2,
+      "source": "[일반지식], 미검증",
+      "candidate_items": [
+        "p86-d10"
+      ],
+      "kind": "transmitter",
+      "signal_chain": [
+        "controller",
+        "control_valve"
+      ],
+      "description_template": "{tag} 압력 제어루프 측정(경보 연결 미확인)",
+      "protective_action": "detection"
+    },
+    {
+      "safeguard_id": "sg-d12d13-te",
+      "version": 2,
+      "source": "[일반지식], 미검증",
+      "candidate_items": [
+        "p86-d12",
+        "p86-d13"
+      ],
+      "kind": "temperature_element",
+      "description_template": "{tag} 온도 감지 — 경보·자동 동작 연결은 그래프에서 미확인",
+      "protective_action": "detection"
+    },
+    {
+      "safeguard_id": "sg-d14d15-level-indicator",
+      "version": 2,
+      "source": "[일반지식], 미검증",
+      "candidate_items": [
+        "p86-d14",
+        "p86-d15"
+      ],
+      "kind": "indicator",
+      "attributes": {
+        "measured_variable": [
+          "level"
+        ]
+      },
+      "description_template": "{tag} 액위 지시로 운전원 감시 — 경보 설정값 미확인",
+      "protective_action": "detection"
+    }
+  ]
+}

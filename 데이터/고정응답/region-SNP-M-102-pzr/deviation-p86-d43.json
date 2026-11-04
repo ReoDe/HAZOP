@@ -1,0 +1,73 @@
+{
+  "sample_note": "[일반지식] 기반 샘플 고정 응답(테스트·QA용). 실제 AI 출력이 아니며 내용은 검증되지 않음",
+  "region_id": "region-SNP-M-102-pzr",
+  "bundle_sha256": "1fdab58f3a17e2555692a862fbab5adcfa9dc6ad169318fcb0962cc7c9ec6dcb",
+  "stop_reason": "end_turn",
+  "output": {
+    "candidate_id": "deviation-p86-d43",
+    "facts": [
+      {
+        "statement": "RC-PV101은 정상 닫힘(NC) 제어밸브이며 살수 배관으로 RC-PZ01에 연결된다.",
+        "evidence_ids": [
+          "ev-node-entity-node-008",
+          "ev-path-entity-node-008"
+        ],
+        "node_ids": [
+          "entity-node-008",
+          "entity-node-001"
+        ],
+        "relation_ids": [
+          "relation-011",
+          "relation-012"
+        ]
+      }
+    ],
+    "scenarios": [
+      {
+        "basis": "pattern",
+        "pattern_match_id": "m-pat-cv-nc-d10-spurious-open-entity-node-008",
+        "cause": "RC-PV101 오개방으로 과도 살수",
+        "consequence": "가압기 내 혼합 증가. 혼합 증가 자체의 안전 영향은 작고, 동반되는 압력 감소가 주된 결과",
+        "interpretation": "살수가 가압기 냉각재 혼합(붕소 농도 균일화)에 관여한다는 [일반지식]에 기반한 패턴 해석이다. 압력 감소 영향은 압력 감소 후보에서 따로 다룬다.",
+        "node_ids": [
+          "entity-node-008",
+          "entity-node-001"
+        ],
+        "relation_ids": [
+          "relation-011",
+          "relation-012"
+        ],
+        "evidence_ids": [
+          "ev-node-entity-node-008",
+          "ev-path-entity-node-008"
+        ],
+        "safeguards": [],
+        "risk": {
+          "severity": 1,
+          "severity_basis": "혼합 증가 자체는 손실 없음 수준으로 가정 [추론]",
+          "frequency_without_safeguards": 2,
+          "frequency_with_safeguards": null,
+          "credited_safeguard_node_ids": [],
+          "frequency_basis": "제어밸브 오개방은 설비 수명 중 발생 가능성 있음(중) [일반지식]",
+          "assumptions": [],
+          "uncertainty": "살수 유량 설계값 자료 없음"
+        },
+        "cause_entity_ids": [
+          "entity-node-008"
+        ],
+        "assumed_equipment": [
+          "entity-node-008",
+          "entity-node-001"
+        ],
+        "outside_graph_equipment": []
+      }
+    ],
+    "missing_information": [
+      {
+        "item": "살수 유량 설계값",
+        "reason": "혼합 영향 판단 불가",
+        "request": "살수 계통 설계 자료"
+      }
+    ]
+  }
+}
