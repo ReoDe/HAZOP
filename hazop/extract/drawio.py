@@ -292,8 +292,12 @@ def _title_block(ignored_cells, boxes):
     return block
 
 
-def extract(path, page=0, repo_root=None):
-    """drawio 파일 하나(페이지 하나)를 추출 결과 dict로 만든다."""
+def extract(path, page=0, repo_root=None, registration=None):
+    """drawio 파일 하나(페이지 하나)를 추출 결과 dict로 만든다.
+
+    registration: ① 등록정보(dict). 주면 project_id·material_id·registration_version·document_id를 채우고
+    등록 단계의 미확인 항목을 그대로 전달한다. 없으면 등록 미연동(not_registered)으로 미확인 기록.
+    """
     with open(path, "rb") as fh:
         raw = fh.read()
     pages = load_pages(raw)
@@ -656,24 +660,41 @@ def extract(path, page=0, repo_root=None):
          "bbox": _bbox(*boxes[c.cell_id]["bbox"]) if c.cell_id in boxes else None}
         for c in ignored]
 
-    # 등록 단계가 아직 없어 식별 정보가 비어 있음을 미확인으로 남긴다.
-    for field in ("project_id", "material_id", "registration_version"):
-        _issue(unknowns, "not_registered", "자료 등록 단계 미연동으로 %s 없음" % field, field=field)
-
     sha = hashlib.sha256(raw).hexdigest()
+    reg = registration or {}
+    if registration is None:
+        # 등록정보 없이 실행하면 식별 정보가 비어 있음을 미확인으로 남긴다.
+        for field in ("project_id", "material_id", "registration_version"):
+            _issue(unknowns, "not_registered", "자료 등록 단계 미연동으로 %s 없음" % field, field=field)
+    else:
+        if reg.get("sha256") != sha:
+            _issue(blockers, "registration_hash_mismatch", "입력 파일 해시가 등록정보의 sha256과 다름",
+                   field="sha256")
+        # 추출한 페이지가 등록정보의 문서·페이지 목록에 있어야 한다(id 없는 페이지는 등록 규칙과 같이 page-<번호>).
+        registered_pages = [pid for d in reg.get("documents") or [] for pid in d.get("page_ids") or []]
+        if (page_id or "page-%d" % (page + 1)) not in registered_pages:
+            _issue(blockers, "registration_page_mismatch", "추출한 페이지 %r 가 등록정보 page_ids %r 에 없음"
+                   % (page_id, registered_pages), field="page_id")
+        for u in reg.get("validation", {}).get("unknowns", []):
+            _issue(unknowns, "registration_unknown", "등록 단계 미확인: %s" % u["reason"], field=u["field"])
+    run_id = "extract-%s-p%d-%s-%s" % (drawing["drawing_number"] or page_name or "page", page,
+                                       rules.RULES_VERSION, sha[:12])
+    if registration is not None:
+        run_id += "-%s-r%s" % (reg.get("material_id"), reg.get("registration_version"))
     rel_path = os.path.relpath(path, repo_root).replace("\\", "/") if repo_root else path
     result = {
         "schema_version": SCHEMA_VERSION,
-        "project_id": None,
-        "extraction_run_id": "extract-%s-p%d-%s-%s" % (
-            drawing["drawing_number"] or page_name or "page", page, rules.RULES_VERSION, sha[:12]),
+        "project_id": reg.get("project_id"),
+        "extraction_run_id": run_id,
         "run": {"script": SCRIPT_NAME, "script_version": SCRIPT_VERSION,
                 "rules_version": rules.RULES_VERSION, "scope": "full",
                 "settings": {"page_index": page}},
-        "source": {"material_id": None, "registration_version": None, "format": "drawio",
+        "source": {"material_id": reg.get("material_id"), "registration_version": reg.get("registration_version"),
+                   "format": "drawio",
                    "file": rel_path, "sha256": sha, "compressed": compressed,
                    "page_count": len(pages)},
-        "source_context": {"document_id": None, "page_id": page_id, "page_name": page_name},
+        "source_context": {"document_id": (reg.get("documents") or [{}])[0].get("document_id"),
+                           "page_id": page_id, "page_name": page_name},
         "review_status": "not_reviewed",
         "drawing": drawing,
         "coordinate_system": {"coordinate_space": COORDINATE_SPACE, "unit": UNIT,

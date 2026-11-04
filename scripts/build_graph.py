@@ -1,4 +1,4 @@
-"""출력/추출/<도면번호>/extraction.json -> 출력/그래프/<도면번호>/graph.json + structure_report.md
+"""출력/추출/<도면번호>/extraction.json -> 출력/그래프/<도면번호>/graph.json + structure_report.md + entity_mapping.json
 
 추출 결과가 없으면 먼저: python scripts/extract_drawio.py --samples
 """
@@ -10,6 +10,8 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
+
+from hazop.console import safe_console  # noqa: E402
 
 from hazop import paths  # noqa: E402
 from hazop.graph import build  # noqa: E402
@@ -32,6 +34,10 @@ def build_one(extraction_path, out_root):
         fh.write("\n")
     with open(os.path.join(out_dir, "structure_report.md"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(build.render_report(graph))
+    # 그래프 버전별 대상 매핑 (③ -> ④ entity_mapping + 원본 객체·자료·등록 버전)
+    with open(os.path.join(out_dir, "entity_mapping.json"), "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(build.entity_mapping_document(graph, extraction), fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
     # 뷰어 JS 경로 함수 대조용 기대값 (scripts/check_viewer_paths.js)
     with open(os.path.join(out_dir, "path_expectations.json"), "w", encoding="utf-8", newline="\n") as fh:
         json.dump(GraphQuery(graph).path_expectations(), fh, ensure_ascii=False, separators=(",", ":"))
@@ -39,6 +45,7 @@ def build_one(extraction_path, out_root):
 
 
 def main(argv=None):
+    safe_console()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--extract-root", default=DEFAULT_EXTRACT)
     ap.add_argument("--out-root", default=DEFAULT_OUT)

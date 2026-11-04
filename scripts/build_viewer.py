@@ -10,6 +10,8 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+from hazop.console import safe_console  # noqa: E402
+
 from hazop.viewer import build  # noqa: E402
 
 DEFAULT_EXTRACT = os.path.join(REPO_ROOT, "출력", "추출")
@@ -18,6 +20,7 @@ DEFAULT_GRAPH = os.path.join(REPO_ROOT, "출력", "그래프")
 
 
 def main(argv=None):
+    safe_console()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--extract-root", default=DEFAULT_EXTRACT)
     ap.add_argument("--out-root", default=DEFAULT_OUT)

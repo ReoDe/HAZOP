@@ -13,6 +13,9 @@ import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+sys.path.insert(0, REPO_ROOT)
+
+from hazop.console import safe_console  # noqa: E402
 
 import extract_drawio  # noqa: E402
 
@@ -23,6 +26,7 @@ EXPECTED_SAMPLES = 6
 
 
 def main():
+    safe_console()
     failures = []
     print("== 1. 샘플 추출")
     rc = extract_drawio.main(["--samples"])

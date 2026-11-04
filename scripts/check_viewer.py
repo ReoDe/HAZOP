@@ -13,6 +13,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
+from hazop.console import safe_console  # noqa: E402
+
 import build_graph  # noqa: E402
 import build_viewer  # noqa: E402
 import extract_drawio  # noqa: E402
@@ -20,6 +22,7 @@ from hazop.viewer import check  # noqa: E402
 
 
 def main():
+    safe_console()
     failures = []
     print("== 1. 샘플 추출")
     if extract_drawio.main(["--samples"]) != 0:

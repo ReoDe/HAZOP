@@ -2,7 +2,7 @@
 
 1) 샘플 추출 -> 그래프 빌드(출력/그래프/<도면번호>/)
 2) 그래프 파일 검사: 구조 검증 통과, 노드·엣지 수 = 추출 결과에서 독립 계산한 값,
-   구간 끝점 2개, 대상 매핑 완전, 확인 안 된 흐름 방향 생성 없음, 재빌드 결과 동일
+   구간 끝점 2개, 대상 매핑 완전(entity_mapping.json 포함), 확인 안 된 흐름 방향 생성 없음, 재빌드 결과 동일
 3) 기본 질의 정답 사례(SNP-M-101)
 4) tests/ 아래 unittest 전체
 종료 코드 0 = 전부 통과.
@@ -16,6 +16,8 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+
+from hazop.console import safe_console  # noqa: E402
 
 import build_graph  # noqa: E402
 import extract_drawio  # noqa: E402
@@ -74,6 +76,13 @@ def check_one(name, failures):
         with open(exp_path, encoding="utf-8") as fh:
             if json.load(fh)["graph_version"] != g["graph_version"]:
                 f.append("path_expectations.json의 graph_version이 graph.json과 다름")
+    mpath = os.path.join(build_graph.DEFAULT_OUT, name, "entity_mapping.json")
+    if not os.path.isfile(mpath):
+        f.append("entity_mapping.json 없음")
+    else:
+        with open(mpath, encoding="utf-8") as fh:
+            if json.load(fh) != build.entity_mapping_document(g, ex):
+                f.append("entity_mapping.json이 graph.json·추출 결과와 다름")
     if g["input_runs"] != [ex["extraction_run_id"]]:
         f.append("input_runs 불일치")
     rebuilt = build.build_graph(ex, extraction_file=g["source"]["extraction_file"])
@@ -102,6 +111,7 @@ def check_queries(failures):
 
 
 def main():
+    safe_console()
     failures = []
     print("== 1. 샘플 추출·그래프 빌드")
     if extract_drawio.main(["--samples"]) != 0:
