@@ -4,7 +4,7 @@
 
 이 프로젝트의 결론은 **HAZOP 결과(워크시트와 구조화 기록)를 만드는 것**입니다. 그 결과를 PSA 초기사건 도출 등에 활용하는 작업은 다른 곳에서 수행하며 이 프로젝트의 범위가 아닙니다.
 
-현재는 기획 단계입니다. 모든 기획서는 초안이며 구현 완료를 의미하지 않습니다. 결정 사항과 남은 작업은 [메모리](메모리/README.md)에서 관리합니다.
+현재는 기획 단계이며, ②정보 추출과 ③정보 통합·관리의 1차 구현이 있습니다. 모든 기획서는 초안이며 구현 완료를 의미하지 않습니다. 결정 사항과 남은 작업은 [메모리](메모리/README.md)에서 관리합니다.
 
 ## 전체 기획과 워크플로우
 
@@ -70,5 +70,22 @@
 | `기획서/` | 전체 및 단계별 기획서: 목적·요구사항·판단 기준·사례·미결정 사항 |
 | `디자인/` | 실제 사용 시 화면·구성·사용 흐름의 뼈대 설계. 참고: ['출력화면 AX' 데모 분석](디자인/출력화면AX-데모분석.md) |
 | `메모리/` | 결정 로그와 미구현 작업 목록 |
+| `hazop/` | Python 패키지: 추출·그래프·뷰어 |
+| `scripts/` | 실행·검사 스크립트 |
+| `tests/` | unittest 테스트 |
+| `참고자료/` | 샘플 P&ID·기호 카탈로그. `참고 사진/`은 로컬 전용이며 저장소에 포함하지 않음 |
+| `출력/` | 생성 결과물. 저장소에 포함하지 않으며 아래 명령으로 재생성 |
 
 플로우차트와 해당 기획서는 서로 링크합니다. 전체 흐름이 바뀌면 최상위 플로우차트에도 반영합니다.
+
+## 실행 방법
+
+저장소 루트에서 실행합니다. `PYTHONIOENCODING=utf-8` 설정을 권장하며, 필요 패키지는 `networkx`, 검사용으로 `node`가 필요합니다.
+
+1. `python scripts/extract_drawio.py --samples`
+2. `python scripts/build_graph.py`
+3. `python scripts/build_viewer.py` 후 `출력/뷰어/index.html`을 브라우저로 엽니다.
+4. `python -m unittest discover -s tests -t .`
+5. `python scripts/check_extract.py`, `python scripts/check_graph.py`, `python scripts/check_viewer.py`
+6. `node scripts/check_viewer_paths.js`
+7. 질의 예: `python scripts/query_graph.py SNP-M-101 path RC-RV01 RC-PP01 --mode physical`
