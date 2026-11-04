@@ -4,7 +4,7 @@
 
 이 프로젝트의 결론은 **HAZOP 결과(워크시트와 구조화 기록)를 만드는 것**입니다. 그 결과를 PSA 초기사건 도출 등에 활용하는 작업은 다른 곳에서 수행하며 이 프로젝트의 범위가 아닙니다.
 
-현재는 기획 단계이며, ②정보 추출과 ③정보 통합·관리의 1차 구현이 있습니다. 모든 기획서는 초안이며 구현 완료를 의미하지 않습니다. 결정 사항과 남은 작업은 [메모리](메모리/README.md)에서 관리합니다.
+현재는 기획 단계이며, ①등록·②추출·③그래프·④HAZOP 분석(MVP, 고정 응답 기준)의 1차 구현이 있습니다. 모든 기획서는 초안이며 구현 완료를 의미하지 않습니다. 결정 사항과 남은 작업은 [메모리](메모리/README.md)에서 관리합니다.
 
 ## 전체 기획과 워크플로우
 
@@ -17,6 +17,7 @@
 - ② [정보 추출 흐름](<flow chart/02-extraction.md>) · [기획](기획서/정보추출.md): draw.io 원본 읽기, 샘플 작성 규칙, 기호·연결 규칙
 - ③ [정보 통합·관리 흐름](<flow chart/03-integration.md>) · [기획](기획서/정보통합관리.md): 그래프 노드·관계·속성 정의
 - ④ [HAZOP 분석 흐름](<flow chart/04-hazop-analysis.md>) · [기획](기획서/HAZOP분석.md): 편차 후보, 원인·결과 패턴, 그래프 탐색, AI 추론
+  - [HAZOP 기법 지침](기획서/HAZOP기법지침.md): KOSHA P-86-2017(회분식 HAZOP 기술지침) 요약
 - ⑤ [검토·결과 관리 흐름](<flow chart/05-review-results.md>) · [기획](기획서/검토결과관리.md): 편차별 확정, 재검토, Excel 출력
 - [메모리](메모리/README.md): 결정 로그와 남은 작업
 
@@ -69,18 +70,20 @@
 | `flow chart/` | 전체 및 단계별 플로우차트: 순서·분기·입출력 |
 | `기획서/` | 전체 및 단계별 기획서: 목적·요구사항·판단 기준·사례·미결정 사항 |
 | `디자인/` | 실제 사용 시 화면·구성·사용 흐름의 뼈대 설계. 참고: ['출력화면 AX' 데모 분석](디자인/출력화면AX-데모분석.md) |
+| `데이터/` | ④ 입력 데이터: 검토 구간 정의, 이탈 후보 카탈로그·적용 판단, 원인·결과 패턴, 위험도 임시 기준표, 고정 AI 응답 |
+| `자료저장소/` | ① 등록 원본 저장 위치. 저장소에 포함하지 않음 |
 | `메모리/` | 결정 로그와 미구현 작업 목록 |
 | `hazop/` | Python 패키지: 추출·그래프·뷰어 |
 | `scripts/` | 실행·검사 스크립트 |
 | `tests/` | unittest 테스트 |
-| `참고자료/` | 샘플 P&ID·기호 카탈로그. `참고 사진/`은 로컬 전용이며 저장소에 포함하지 않음 |
+| `참고자료/` | 샘플 P&ID·기호 카탈로그. `참고 사진/`은 로컬 전용이며 저장소에 포함하지 않음. `HAZOP 기법/` PDF는 로컬 전용 |
 | `출력/` | 생성 결과물. 저장소에 포함하지 않으며 아래 명령으로 재생성 |
 
 플로우차트와 해당 기획서는 서로 링크합니다. 전체 흐름이 바뀌면 최상위 플로우차트에도 반영합니다.
 
 ## 실행 방법
 
-저장소 루트에서 실행합니다. `PYTHONIOENCODING=utf-8` 설정을 권장하며, 필요 패키지는 `networkx`, 검사용으로 `node`가 필요합니다.
+저장소 루트에서 실행합니다. `PYTHONIOENCODING=utf-8` 설정은 권장하나 없어도 동작하며, 필요 패키지는 `networkx`, 검사용으로 `node`가 필요합니다.
 
 1. `python scripts/extract_drawio.py --samples`
 2. `python scripts/build_graph.py`
@@ -89,3 +92,9 @@
 5. `python scripts/check_extract.py`, `python scripts/check_graph.py`, `python scripts/check_viewer.py`
 6. `node scripts/check_viewer_paths.js`
 7. 질의 예: `python scripts/query_graph.py SNP-M-101 path RC-RV01 RC-PP01 --mode physical`
+8. 등록: `python scripts/register.py --project <ID> <파일.drawio> [--drawing-number X --revision 0 --title T --by 이름 --reason 사유]`
+9. 등록 자료 추출: `python scripts/extract_drawio.py --registration 자료저장소/<ID>/registrations/<material_id>/<버전>.json`
+10. 일괄(등록→추출→그래프→뷰어): `python scripts/run_samples.py` (출력/을 덮어씀)
+11. HAZOP 분석(고정 응답): `python scripts/analyze.py` → 출력/분석/region-SNP-M-102-pzr/<실행ID>/analysis.json
+12. 실제 API: `ANTHROPIC_API_KEY` 설정 후 `python scripts/analyze.py --live [--only p86-d09]`, 재시도 `--resume <실행 폴더>`, 그래프 버전 재연결 `--rebind-graph --confirm --by 이름 --reason 사유`
+13. 검사 추가: `python scripts/check_register.py`, `python scripts/check_analysis.py`, `python scripts/refresh_fixture_hashes.py --check`
