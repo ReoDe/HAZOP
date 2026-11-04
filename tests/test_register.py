@@ -17,8 +17,10 @@ sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
 import build_graph  # noqa: E402
+import build_viewer  # noqa: E402
 import extract_drawio  # noqa: E402
 import register as register_cli  # noqa: E402
+from hazop import paths  # noqa: E402
 from hazop.extract import drawio  # noqa: E402
 from hazop.graph import build  # noqa: E402
 from hazop.register import registry  # noqa: E402
@@ -347,7 +349,7 @@ class ExtractionLinkTest(RegisterBase):
                                 if u["check"] == "registration_unknown"),
                          ["design_revision", "drawing_number", "title"])
         self.assertEqual(ex["validation"]["status"], "passed")
-        self.assertIn(record["material_id"] + "-r1", ex["extraction_run_id"])
+        self.assertIn("-proj-1-%s-r1" % record["material_id"], ex["extraction_run_id"])
         # 등록 없는 기존 경로는 그대로
         plain = drawio.extract(SAMPLE_101)
         self.assertEqual(plain["nodes"], ex["nodes"])
@@ -370,12 +372,13 @@ class ExtractionLinkTest(RegisterBase):
         r = self.reg(SAMPLE_101)
         out_ex, out_g = os.path.join(self.tmp, "ex"), os.path.join(self.tmp, "g")
         self.assertEqual(extract_drawio.main(["--registration", r["registration_file"], "--out-root", out_ex]), 0)
-        with open(os.path.join(out_ex, "SNP-M-101", "extraction.json"), encoding="utf-8") as fh:
+        name = "proj-1__%s-r1-p0" % r["record"]["material_id"]
+        with open(os.path.join(out_ex, name, "extraction.json"), encoding="utf-8") as fh:
             ex = json.load(fh)
         self.assertEqual(ex["source"]["material_id"], r["record"]["material_id"])
         al = ex["coordinate_system"]["svg_alignment"]
         self.assertEqual((al["status"], al["source"]), ("verified", "input_path_sibling, unregistered"))
-        graph, out_dir = build_graph.build_one(os.path.join(out_ex, "SNP-M-101", "extraction.json"), out_g)
+        graph, out_dir = build_graph.build_one(os.path.join(out_ex, name, "extraction.json"), out_g)
         with open(os.path.join(out_dir, "entity_mapping.json"), encoding="utf-8") as fh:
             m = json.load(fh)
         self.assertEqual((m["project_id"], m["graph_id"], m["graph_version"], m["input_runs"]),
@@ -394,6 +397,270 @@ class ExtractionLinkTest(RegisterBase):
             r = self.reg(SAMPLE_101)
         with self.assertRaises(SystemExit):
             extract_drawio.main(["--registration", r["registration_file"], "--out-root", self.tmp])
+
+
+class ReviewFixTest(RegisterBase):
+    """Codex 적대적 검토 A 지적 사항 재현 테스트."""
+
+    def test_p1_index_save_failure_after_draft_then_retry(self):
+        real = registry.Store.save_index
+        calls = []
+
+        def fail_first(store, index):
+            calls.append(1)
+            if len(calls) == 1:
+                raise OSError("색인 저장 실패(모의)")
+            real(store, index)
+        with mock.patch.object(registry.Store, "save_index", fail_first):
+            with self.assertRaises(OSError):
+                self.reg(SAMPLE_101)
+        self.assertFalse(os.path.isfile(os.path.join(self.store, "proj-1", "registry.json")))
+        retry = self.reg(SAMPLE_101)
+        self.assertEqual((retry["outcome"], retry["record"]["status"]), ("registered", "registered"))
+        self.assertEqual(retry["record"]["material_id"], "material-" + registry.sha256_of(read_bytes(SAMPLE_101))[:12])
+        self.assertEqual([(m["status"], m["versions"]) for m in self.index()["materials"]], [("registered", [1])])
+        registry.load_for_extraction(retry["registration_file"])
+
+    def test_p1_index_save_failure_after_metadata_version_then_retry(self):
+        self.reg(SAMPLE_101)
+        meta = {"drawing_number": "SNP-M-101", "by": "검토자"}
+        with mock.patch.object(registry.Store, "save_index", mock.Mock(side_effect=OSError("모의"))):
+            with self.assertRaises(OSError):
+                self.reg(SAMPLE_101, metadata=meta)
+        self.assertEqual(self.index()["materials"][0]["versions"], [1])  # 2.json만 남은 상태
+        other = self.reg(SAMPLE_101, metadata={"drawing_number": "DIFFERENT", "by": "검토자"})
+        self.assertEqual((other["outcome"], other["record"]["status"]), ("failed", "failed"))
+        self.assertEqual(other["record"]["validation"]["blockers"][0]["check"], "version_conflict")
+        retry = self.reg(SAMPLE_101, metadata=meta, now=lambda: "2026-11-05T00:00:00+00:00")
+        self.assertEqual((retry["outcome"], retry["record"]["registration_version"]), ("new_version", 2))
+        self.assertEqual(retry["record"]["drawing_number"], "SNP-M-101")
+        self.assertEqual(self.index()["materials"][0]["versions"], [1, 2])
+
+    def test_p1_registered_outputs_kept_per_version(self):
+        v1 = self.reg(SAMPLE_101)
+        v2 = self.reg(SAMPLE_101, metadata={"drawing_number": "SNP-M-101", "by": "검토자"})
+        out_ex, out_g, out_v = (os.path.join(self.tmp, x) for x in ("ex", "g", "v"))
+        args = ["--registration", v1["registration_file"], "--registration", v2["registration_file"]]
+        self.assertEqual(extract_drawio.main(args + ["--out-root", out_ex]), 0)
+        mid = "proj-1__" + v1["record"]["material_id"]
+        self.assertEqual(sorted(os.listdir(out_ex)), [mid + "-r1-p0", mid + "-r2-p0"])
+        self.assertEqual(build_graph.main(["--extract-root", out_ex, "--out-root", out_g]), 0)
+        self.assertEqual(sorted(os.listdir(out_g)), [mid + "-r1-p0", mid + "-r2-p0"])
+        entries = build_viewer.build.build_all(out_ex, out_v, REPO_ROOT, out_g)
+        self.assertEqual([e["file"] for e in entries], [mid + "-r1-p0.html", mid + "-r2-p0.html"])
+        self.assertTrue(all(e["graph"] for e in entries))  # 뷰어가 같은 이름으로 그래프를 찾음
+        for ver in (1, 2):
+            with open(os.path.join(out_g, "%s-r%d-p0" % (mid, ver), "entity_mapping.json"), encoding="utf-8") as fh:
+                self.assertEqual(json.load(fh)["entity_mapping"][0]["registration_version"], ver)
+
+    def test_p1_drawing_identification_from_registration_only(self):
+        v1 = self.reg(SAMPLE_101)
+        record, original = registry.load_for_extraction(v1["registration_file"])
+        d = drawio.extract(original, registration=record)["drawing"]
+        self.assertEqual((d["drawing_number"], d["revision"], d["title"]), (None, None, None))  # 미확정
+        self.assertEqual(d["identification_basis"], "registration_confirmed")
+        self.assertEqual(d["title_block_candidates"]["drawing_number"], "SNP-M-101")  # 후보로만
+        v2 = self.reg(SAMPLE_101, metadata={"drawing_number": "DWG-CONFIRMED", "design_revision": "A",
+                                            "by": "검토자"})
+        record, original = registry.load_for_extraction(v2["registration_file"])
+        ex = drawio.extract(original, registration=record)
+        self.assertEqual((ex["drawing"]["drawing_number"], ex["drawing"]["revision"], ex["drawing"]["title"]),
+                         ("DWG-CONFIRMED", "A", None))
+        self.assertEqual(ex["drawing"]["title_block_candidates"]["drawing_number"], "SNP-M-101")
+        self.assertNotIn("missing_drawing_number", [u["check"] for u in ex["validation"]["unknowns"]])
+        self.assertEqual(drawio.extract(SAMPLE_101)["drawing"]["drawing_number"], "SNP-M-101")  # 등록 없는 경로 유지
+
+    def test_p1_cleanup_only_own_files(self):
+        data = read_bytes(SAMPLE_101)
+        dest = os.path.join(self.store, "proj-1", "originals", "material-" + registry.sha256_of(data)[:12], "1",
+                            os.path.basename(SAMPLE_101))
+
+        def race(path, payload):  # 존재 확인 직후 다른 주체가 같은 이름 파일을 만든 상황
+            with open(path, "wb") as fh:
+                fh.write(b"someone else")
+            raise FileExistsError(path)
+        with mock.patch.object(registry, "_write_new", race):
+            r = self.reg(SAMPLE_101)
+        self.assertEqual(r["record"]["status"], "failed")
+        self.assertEqual(read_bytes(dest), b"someone else")  # 남의 파일을 지우지 않음
+        with self.assertRaises(FileExistsError):  # 실제 _write_new도 기존 파일을 건드리지 않음
+            registry._write_new(dest, b"x")
+        self.assertEqual(read_bytes(dest), b"someone else")
+
+    def test_p2_extract_checks_registration_status(self):
+        with mock.patch.object(registry, "_write_new", mock.Mock(side_effect=OSError("모의"))):
+            r = self.reg(SAMPLE_101)
+        ex = drawio.extract(SAMPLE_101, registration=r["record"])
+        self.assertEqual(ex["validation"]["status"], "blocked")
+        self.assertIn("registration_not_completed", [b["check"] for b in ex["validation"]["blockers"]])
+
+    def test_p2_fallback_page_id_in_source_context(self):
+        text = read_bytes(SAMPLE_101).decode("utf-8")
+        model = re.search(r"<mxGraphModel\b.*</mxGraphModel>", text, re.S).group(0)
+        r = self.reg(self.put(model, "model_root.drawio"))
+        self.assertEqual(r["record"]["documents"][0]["page_ids"], ["page-1"])
+        record, original = registry.load_for_extraction(r["registration_file"])
+        ex = drawio.extract(original, registration=record)
+        self.assertEqual(ex["source_context"]["page_id"], "page-1")
+        self.assertNotIn("registration_page_mismatch", [b["check"] for b in ex["validation"]["blockers"]])
+
+    def test_p2_other_drive_source_path(self):
+        with mock.patch("os.path.relpath", side_effect=ValueError("path is on mount 'D:'")):
+            ex = drawio.extract(SAMPLE_101, repo_root=REPO_ROOT)
+        self.assertEqual(ex["source"]["file"], os.path.abspath(SAMPLE_101).replace("\\", "/"))
+
+    def test_p2_nan_infinity_title_block_coordinate_fails(self):
+        text = read_bytes(SAMPLE_101).decode("utf-8")
+        for bad in ("NaN", "Infinity", "-inf"):
+            broken = re.sub(r'(<mxCell id="tb10"[^>]*><mxGeometry x=")[^"]*', lambda m: m.group(1) + bad, text,
+                            count=1)
+            self.assertNotEqual(broken, text)
+            r = self.reg(self.put(broken, "nan_%s.drawio" % bad.strip("-")))
+            self.assertEqual((r["outcome"], r["record"]["status"]), ("failed", "failed"), bad)
+            self.assertEqual(r["record"]["validation"]["blockers"][0]["check"], "invalid_number")
+
+    def test_p2_utf16_bom_drawio_is_readable(self):
+        text = read_bytes(SAMPLE_101).decode("utf-8")
+        for name, data in (("le", text.encode("utf-16")), ("be", b"\xfe\xff" + text.encode("utf-16-be"))):
+            r = self.reg(self.put(data, "u16_%s.drawio" % name))
+            self.assertEqual((r["record"]["status"], r["record"]["format"]), ("registered", "drawio"), name)
+            self.assertEqual(r["record"]["auto_candidates"]["drawing_number"]["value"], "SNP-M-101")
+        r = self.reg(self.put(text[: len(text) // 2].encode("utf-16"), "u16_broken.drawio"))
+        self.assertEqual(r["record"]["validation"]["blockers"][0]["check"], "unreadable")
+
+
+class ReviewFix2Test(RegisterBase):
+    """Codex 재검토(A) 2회차 지적 재현 테스트."""
+
+    def two_page_file(self):
+        text = read_bytes(SAMPLE_101).decode("utf-8")
+        diagram = re.search(r"<diagram\b.*</diagram>", text, re.S).group(0)
+        second = diagram.replace('id="p1"', 'id="p2"', 1).replace('name="SNP-M-101"', 'name="PAGE-2"', 1)
+        return self.put(text.replace(diagram, diagram + second), "two_pages.drawio")
+
+    def test_p1_outputs_separate_by_project_and_page(self):
+        path = self.two_page_file()
+        a = self.reg(path)
+        b = registry.register(path, "proj-2", store_root=self.store, actor="t", now=NOW)
+        self.assertEqual(a["record"]["material_id"], b["record"]["material_id"])  # 같은 원본, 다른 프로젝트
+        out_ex, out_g = os.path.join(self.tmp, "ex"), os.path.join(self.tmp, "g")
+        for page in ("0", "1"):
+            extract_drawio.main(["--registration", a["registration_file"], "--registration", b["registration_file"],
+                                 "--page", page, "--svg", "none", "--out-root", out_ex])
+        mid = a["record"]["material_id"]
+        want = sorted("%s__%s-r1-p%d" % (proj, mid, p) for proj in ("proj-1", "proj-2") for p in (0, 1))
+        self.assertEqual(sorted(os.listdir(out_ex)), want)
+        runs = set()
+        for name in want:
+            with open(os.path.join(out_ex, name, "extraction.json"), encoding="utf-8") as fh:
+                ex = json.load(fh)
+            runs.add(ex["extraction_run_id"])
+            self.assertTrue(name.startswith(ex["project_id"] + "__"))
+            self.assertEqual(ex["run"]["settings"]["page_index"], int(name[-1]))
+        self.assertEqual(len(runs), 4)  # 실행 ID도 프로젝트·페이지별로 다름
+        build_graph.main(["--extract-root", out_ex, "--out-root", out_g])
+        self.assertEqual(sorted(os.listdir(out_g)), want)
+
+    def test_p1_unfinished_first_snapshot_trace_then_retry(self):
+        mid = "material-" + registry.sha256_of(read_bytes(SAMPLE_101))[:12]
+        real = os.replace
+
+        def fail_replace(src, dst):
+            if dst.endswith(os.path.join("registrations", mid, "1.json")):
+                raise OSError("교체 전 중단(모의)")
+            return real(src, dst)
+        with mock.patch("os.replace", fail_replace):
+            with self.assertRaises(OSError):
+                self.reg(SAMPLE_101)
+        rel = os.path.join("proj-1", "registrations", mid)
+        folder = os.path.join(self.store, rel)
+        self.assertEqual(os.listdir(folder), ["1.json.tmp"])
+        retry = self.reg(SAMPLE_101)
+        self.assertEqual((retry["outcome"], retry["record"]["status"]), ("registered", "registered"))
+        self.assertEqual(sorted(os.listdir(folder)), ["1.json"])
+        # 쓰다 만 .tmp, 빈 폴더도 이어서 완료
+        for i, content in enumerate((b'{"sha256": "trunc', None)):
+            store = os.path.join(self.tmp, "s%d" % i)
+            os.makedirs(os.path.join(store, rel))
+            if content is not None:
+                with open(os.path.join(store, rel, "1.json.tmp"), "wb") as fh:
+                    fh.write(content)
+            self.assertEqual(self.reg(SAMPLE_101, store_root=store)["outcome"], "registered")
+        # 다른 해시의 .tmp가 남은 경우는 충돌로 보류
+        store = os.path.join(self.tmp, "s-other")
+        os.makedirs(os.path.join(store, rel))
+        with open(os.path.join(store, rel, "1.json.tmp"), "w", encoding="utf-8") as fh:
+            json.dump({"sha256": "f" * 64}, fh)
+        r = self.reg(SAMPLE_101, store_root=store)
+        self.assertEqual(r["record"]["validation"]["blockers"][0]["check"], "id_collision")
+
+    def test_p2_registration_blockers_block_extraction(self):
+        record = self.reg(SAMPLE_101)["record"]
+        bad = json.loads(json.dumps(record))
+        bad["validation"]["blockers"] = [{"check": "x", "field": None, "reason": "남은 차단"}]
+        ex = drawio.extract(SAMPLE_101, registration=bad)
+        self.assertIn("registration_not_completed", [b["check"] for b in ex["validation"]["blockers"]])
+
+    def test_p2_out_root_and_svg_on_other_drive(self):
+        r = self.reg(SAMPLE_101)
+
+        def other_drive(path, start=os.curdir):
+            raise ValueError("path is on mount D:, start on mount C:")
+        out_ex = os.path.join(self.tmp, "ex")
+        with mock.patch("os.path.relpath", other_drive):
+            self.assertEqual(extract_drawio.main(["--registration", r["registration_file"], "--out-root", out_ex]), 0)
+        name = "proj-1__%s-r1-p0" % r["record"]["material_id"]
+        with open(os.path.join(out_ex, name, "extraction.json"), encoding="utf-8") as fh:
+            ex = json.load(fh)
+        self.assertTrue(os.path.isabs(ex["coordinate_system"]["svg_alignment"]["svg_file"]))
+
+    def test_p2_unknown_xml_encoding_is_failure(self):
+        r = self.reg(self.put(b'<?xml version="1.0" encoding="x-bogus"?><mxfile/>', "enc.drawio"))
+        self.assertEqual((r["outcome"], r["record"]["status"]), ("failed", "failed"))
+        self.assertEqual(r["record"]["validation"]["blockers"][0]["check"], "unreadable")
+
+    def test_p2_fallback_page_id_collision_blocks(self):
+        model = '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel>'
+        text = '<mxfile><diagram name="a" id="page-2">%s</diagram><diagram name="b">%s</diagram></mxfile>' % (
+            model, model)
+        r = self.reg(self.put(text, "dup_page.drawio"))
+        self.assertEqual(r["record"]["status"], "failed")
+        self.assertEqual(r["record"]["validation"]["blockers"][0]["check"], "duplicate_page_id")
+
+
+class ReviewFix3Test(RegisterBase):
+    """3회차 지적 재현 테스트."""
+
+    def test_long_project_id_keeps_identifiers_and_uniqueness(self):
+        names = set()
+        for pid in ("a" * 120, "a" * 119 + "b"):
+            r = registry.register(SAMPLE_101, pid, store_root=self.store, actor="t", now=NOW)
+            self.assertEqual(r["outcome"], "registered")
+            for page in (0, 1):
+                for ver in (1, 2):
+                    rec = dict(r["record"], registration_version=ver)
+                    name = extract_drawio.registered_out_name(rec, page)
+                    self.assertLessEqual(len(name), 120)
+                    self.assertEqual(name, paths.safe_name(name))  # safe_name이 더 자르지 않음
+                    self.assertTrue(name.endswith("__%s-r%d-p%d" % (rec["material_id"], ver, page)))
+                    names.add(name)
+        self.assertEqual(len(names), 8)  # 프로젝트 2 x 버전 2 x 페이지 2 모두 다름
+        short = extract_drawio.registered_out_name(dict(r["record"], project_id="proj-1"), 0)
+        self.assertEqual(short, "proj-1__%s-r1-p0" % r["record"]["material_id"])  # 짧으면 그대로
+        out_ex = os.path.join(self.tmp, "ex")
+        self.assertEqual(extract_drawio.main(["--registration", r["registration_file"], "--svg", "none",
+                                              "--out-root", out_ex]), 0)
+        self.assertEqual(os.listdir(out_ex), [extract_drawio.registered_out_name(r["record"], 0)])
+
+    def test_project_id_case_conflict(self):
+        self.assertEqual(registry.register(SAMPLE_101, "alpha", store_root=self.store, actor="t")["outcome"],
+                         "registered")
+        r = registry.register(SAMPLE_101, "Alpha", store_root=self.store, actor="t")
+        self.assertEqual((r["outcome"], r["record"]["status"]), ("on_hold", "on_hold"))
+        self.assertEqual(r["record"]["validation"]["blockers"][0]["check"], "project_id_case_conflict")
+        self.assertEqual(os.listdir(self.store), ["alpha"])  # 새 폴더를 만들거나 섞지 않음
+        with open(os.path.join(self.store, "alpha", "registry.json"), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["project_id"], "alpha")
 
 
 if __name__ == "__main__":

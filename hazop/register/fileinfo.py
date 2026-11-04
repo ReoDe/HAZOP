@@ -28,14 +28,14 @@ def detect_format(data):
     for magic, name in MAGIC:
         if data.startswith(magic):
             return name
-    head = data.lstrip(b"\xef\xbb\xbf \t\r\n")
-    if head.startswith(b"<"):
-        try:
-            root = ET.fromstring(data)
-        except ET.ParseError:
-            return "broken_xml"
-        return "drawio" if root.tag in ("mxfile", "mxGraphModel") else "xml"
-    return "unknown"
+    # XML 여부는 파서로 판정한다(UTF-8·UTF-16 BOM 등 인코딩 감지는 파서에 맡김).
+    try:
+        root = ET.fromstring(data)
+    except Exception:  # ParseError, 알 수 없는 인코딩(LookupError) 등 파서 예외는 모두 읽기 실패로 판정
+        head = data.lstrip(b"\xef\xbb\xbf \t\r\n")
+        looks_xml = head.startswith(b"<") or data.startswith((b"\xff\xfe", b"\xfe\xff"))
+        return "broken_xml" if looks_xml else "unknown"
+    return "drawio" if root.tag in ("mxfile", "mxGraphModel") else "xml"
 
 
 def _title_block_candidates(pages):
@@ -63,10 +63,10 @@ def _title_block_candidates(pages):
                 continue
             label = el.get("value") if el.tag == "mxCell" else el.get("label")
             text = drawio.label_to_text(label or "", style)
-            try:
-                x, y = float(geo.get("x", 0)), float(geo.get("y", 0))
-            except ValueError:
-                continue
+            x, y = drawio._to_float(geo.get("x", 0)), drawio._to_float(geo.get("y", 0))
+            if x is None or y is None:  # 숫자가 아니거나 NaN·Infinity
+                raise ValueError("표제란 셀 %r 좌표를 읽을 수 없음: x=%r y=%r"
+                                 % (el.get("id"), geo.get("x"), geo.get("y")))
             if text:
                 rows.setdefault(round(y), []).append((x, el.get("id"), text))
         for _, items in sorted(rows.items()):
@@ -117,6 +117,15 @@ def inspect(path, data):
         if model.find("root") is None:
             blockers.append(_problem("unreadable", "페이지 %r 에 root가 없음" % (page_id or i)))
         info["pages"].append({"page_id": page_id or "page-%d" % i, "page_name": name, "compressed": compressed})
+    ids = [p["page_id"] for p in info["pages"]]
+    dup = sorted({i for i in ids if ids.count(i) > 1})
+    if dup:
+        # 실제 ID끼리 또는 대체 ID(page-<번호>)와 실제 ID가 겹치면 페이지를 하나로 지목할 수 없다.
+        blockers.append(_problem("duplicate_page_id", "페이지 ID 중복(대체 ID page-<번호> 포함): %s" % dup,
+                                 "page_ids"))
     info["compressed"] = any(p["compressed"] for p in info["pages"])
-    info["auto_candidates"] = _title_block_candidates(pages)
+    try:
+        info["auto_candidates"] = _title_block_candidates(pages)
+    except ValueError as exc:
+        blockers.append(_problem("invalid_number", str(exc)))
     return info

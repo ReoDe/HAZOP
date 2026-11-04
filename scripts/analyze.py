@@ -75,7 +75,8 @@ def main(argv=None):
     ap.add_argument("--graph", help="그래프 JSON (기본: 구간 JSON의 graph_ref.graph_file)")
     ap.add_argument("--fixed-dir", default=DEFAULT_FIXED, help="고정 응답 폴더(<candidate_id>.json)")
     ap.add_argument("--live", action="store_true", help="실제 Claude API 호출(자격 증명 필요)")
-    ap.add_argument("--model", default=ai.DEFAULT_MODEL, help="--live 모델 (기본 %(default)s)")
+    ap.add_argument("--model", default=ai.DEFAULT_MODEL, choices=ai.ALLOWED_MODELS,
+                    help="--live 모델 (허용 목록만, 기본 %(default)s)")
     ap.add_argument("--only", action="append", default=[], help="AI 대상 후보 ID 또는 item_id(여러 번 지정)")
     ap.add_argument("--run-id", help="실행 ID (기본: 시각+입력 해시)")
     ap.add_argument("--out-root", default=DEFAULT_OUT)

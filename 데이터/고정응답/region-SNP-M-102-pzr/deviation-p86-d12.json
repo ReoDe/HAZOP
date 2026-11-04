@@ -1,7 +1,7 @@
 {
   "sample_note": "[일반지식] 기반 샘플 고정 응답(테스트·QA용). 실제 AI 출력이 아니며 내용은 검증되지 않음",
   "region_id": "region-SNP-M-102-pzr",
-  "bundle_sha256": "daa8fcba5f68230b0e9353665a136013ae2952d4c194398eeb545b8a07d41b3c",
+  "bundle_sha256": "3b50bb02e187381fff78d9475733d626cd7218256fbb8c3ab52f3c0be6510ff4",
   "stop_reason": "end_turn",
   "output": {
     "candidate_id": "deviation-p86-d12",

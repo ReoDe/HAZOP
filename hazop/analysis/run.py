@@ -15,7 +15,7 @@ import os
 from hazop import paths
 from hazop.graph.query import GraphQuery
 
-from . import ai, candidates as cand_mod, equipment, explore as ex_mod, patterns as pat_mod, risk as risk_mod, validate
+from . import ai, candidates as cand_mod, equipment, integrity, explore as ex_mod, patterns as pat_mod, risk as risk_mod, validate
 
 SCHEMA_VERSION = "0.1"
 ANALYZER = "hazop.analysis"
@@ -119,6 +119,12 @@ def prepare(region, graph, catalog, applicability, patterns, criteria, files=Non
         blockers.append("project_id 불일치: 구간 %r, 그래프 %r" % (region.get("project_id"), graph.get("project_id")))
     if catalog is None or patterns is None:
         blockers.append("이탈 후보 카탈로그와 패턴 라이브러리는 필수")
+    if patterns is not None:
+        blockers += equipment.validate_library(patterns)
+    if catalog is not None:
+        blockers += integrity.check_catalog(catalog, applicability)
+    if criteria is not None:
+        blockers += integrity.check_criteria(criteria)
     if applicability is not None and catalog is not None:
         cref = applicability.get("catalog_ref") or {}
         if (cref.get("catalog_id"), cref.get("catalog_version")) != (catalog["catalog_id"], catalog["catalog_version"]):
@@ -251,13 +257,21 @@ def _independence(nid, loop):
 
 
 def scenario_safeguards(candidate_safeguards, cause_node_ids, q):
-    """후보(편차)별 보호수단 후보에 시나리오 기준 독립성을 붙인다. 원인과 같은 제어루프 요소는 counts_as_found=False."""
+    """후보(편차)별 보호수단 후보에 시나리오 기준 독립성을 붙인다.
+    counts_as_found(설계보완 판정의 '보호수단 찾음')는 보수적으로 정한다:
+    - 원인과 같은 제어루프 요소면 False
+    - 감지기(detection)는 경보·트립 등 보호 동작이 그래프 속성으로 확인될 때만 True
+    - 자력식(self_acting, 안전밸브 등)은 이 편차에 묶인 경우에만 후보가 되므로 True"""
     loop = signal_loop(q, cause_node_ids)
     out = []
     for g in candidate_safeguards:
         ind, note = _independence(g["node_id"], loop)
+        confirmed = bool(g.get("action_confirmed"))
+        counts = ind != "same_control_loop_as_cause" and confirmed
+        if not confirmed:
+            note += "; 보호 동작(경보·트립 등) 그래프에서 미확인 — 보호수단 찾음으로 세지 않음"
         out.append(dict(g, existence="confirmed_in_graph", adequacy="unknown", independence=ind,
-                        counts_as_found=ind != "same_control_loop_as_cause", knowledge_status="unknown",
+                        counts_as_found=counts, knowledge_status="unknown",
                         evidence_id="ev-path-%s" % g["node_id"], note="%s; %s" % (SAFEGUARD_NOTE, note)))
     return out
 
@@ -551,20 +565,24 @@ def run_ai_step(doc, graph, criteria, client, now=utc_now, only=None, progress=N
         record["requested_model"], record["response_model"] = requested, resp_model
         record["model_mismatch"] = bool(requested and resp_model and resp_model != requested)
         c["analysis"].setdefault("warnings", [])
-        if record["model_mismatch"]:
-            c["analysis"]["warnings"].append({
-                "type": "model_mismatch", "ai_run_id": record["ai_run_id"], "requested_model": requested,
-                "response_model": resp_model, "detail": "요청 모델과 다름(서버측 fallback 등) — 결과 해석 시 확인 필요"})
+        record["warnings"] = []
+        if record["model_mismatch"]:  # 사용자 결정(2026-11-04): fallback 응답은 채택하되 응답 모델을 기록·표시
+            w = {"type": "response_model_differs", "ai_run_id": record["ai_run_id"], "requested_model": requested,
+                 "response_model": resp_model, "detail": "요청 모델과 다름(서버측 fallback 등) — 결과 해석 시 확인 필요"}
+            record["warnings"].append(w)
+            c["analysis"]["warnings"].append(w)
         if status == AI_DONE:
             snapshot = copy.deepcopy({"scenarios": doc["scenarios"], "holds": doc["holds"], "analysis": c["analysis"]})
             try:
                 _merge_ai(doc, c, res["output"], bundle, criteria, record, holds, finished, q,
                           {r["index"] for r in rejected})
                 c["analysis"]["rejected_ai_scenarios"] = [dict(r, ai_run_id=record["ai_run_id"]) for r in rejected]
-            except Exception as exc:  # 병합 실패: 병합 전 상태로 되돌리고 검증 통과로 기록하지 않음
+            except BaseException as exc:  # 병합 실패·중단: 병합 전 상태로 되돌리고 검증 통과로 기록하지 않음
                 doc["scenarios"][:] = snapshot["scenarios"]
                 doc["holds"][:] = snapshot["holds"]
                 c["analysis"] = snapshot["analysis"]
+                if not isinstance(exc, Exception):  # KeyboardInterrupt 등은 되돌린 뒤 그대로 전달
+                    raise
                 status = "merge_error"
                 record["merge_error"] = "%s: %s" % (type(exc).__name__, exc)
         record["status"] = status
@@ -625,14 +643,22 @@ def _merge_ai(doc, c, out, bundle, criteria, record, holds, now, q, rejected_idx
                   "ai_run_id": ai_run_id, "response_model": record.get("response_model"),
                   "statement_type": "interpretation" if s["basis"] == "pattern" else "additional_hypothesis",
                   "references_verified": True, "narrative_check": NARRATIVE_CHECK}
-        proposal = risk_mod.evaluate(criteria, s["risk"], safeguard_status)
+        proposal = risk_mod.evaluate(criteria, s["risk"], safeguard_status, s["evidence_ids"])
         if s["basis"] == "pattern":
             sc = by_match[s["pattern_match_id"]]
             sc["ai_interpretation"] = interp
             interpreted.add(s["pattern_match_id"])
         else:
-            seq = len(c["analysis"]["scenario_ids"]) + 1
-            sc = {"scenario_id": "scenario-%s-%02d" % (c["item_id"] or c["candidate_id"], seq),
+            # 내용 기반 ID(전체 내용): 완전히 같은 가설만 하나로 합치고, 원인은 같아도 결과·위험도가 다르면 둘 다 남긴다.
+            # 같은 원인 묶음(cause_group)은 표시만 하므로 응답 순서와 무관하게 같은 결과가 된다.
+            core = [s["cause"], s["consequence"], sorted(s["cause_entity_ids"]), sorted(s["assumed_equipment"]), s["risk"]]
+            sg = sorted((g["node_id"], g["description"]) for g in s["safeguards"])
+            sid = "scenario-%s-h-%s" % (c["item_id"] or c["candidate_id"], _sha_obj(core + [sg])[:10])
+            if any(x["scenario_id"] == sid for x in doc["scenarios"]):
+                continue
+            sc = {"scenario_id": sid,
+                  "cause_group": _sha_obj([s["cause"], sorted(s["cause_entity_ids"])])[:10],
+                  "variant_group": _sha_obj(core)[:10],  # 보호수단만 다른 같은 가설 묶음
                   "candidate_id": c["candidate_id"], "origin": "ai_additional_hypothesis",
                   "statement_type": "additional_hypothesis", "scenario_status": "draft", "status_reason": None,
                   "knowledge_status": "hypothesis", "pattern_ref": None,
@@ -649,6 +675,13 @@ def _merge_ai(doc, c, out, bundle, criteria, record, holds, now, q, rejected_idx
         if proposal["status"] == "deferred":
             holds.add(c["candidate_id"], sc["scenario_id"], "위험도 제안 보류", proposal["reason"],
                       "강도·빈도 판단 근거(운전조건·결과 범위·기준표) 확인", "risk", now)
+    groups = {}
+    for x in doc["scenarios"]:
+        if x["candidate_id"] == c["candidate_id"] and x.get("cause_group"):
+            groups.setdefault(x["cause_group"], []).append(x)
+    for xs in groups.values():
+        for x in xs:
+            x["same_cause_hypotheses"] = len(xs)  # 2 이상이면 같은 원인의 다른 결과·위험도 가설이 함께 있음
     for match_id, sc in sorted(by_match.items()):
         if match_id not in interpreted:
             holds.add(c["candidate_id"], sc["scenario_id"], "위험도 제안 보류", "AI가 이 패턴 시나리오를 해석하지 않음",
@@ -662,16 +695,39 @@ def doc_graph_nodes(bundle):
 
 
 # ---------------------------------------------------------------- 설계보완 후보
-def design_improvement_candidates(doc, criteria, holds, now):
-    """도면 설비 기반 시나리오(scenario_status=draft)에서 (1) 제안 위험도가 표9 조건부 수용 이상이거나
-    (2) 그래프에서 (원인과 독립일 수 있는) 보호수단을 하나도 찾지 못한 경우 후보로 만든다.
-    원인과 같은 제어루프 요소는 '찾음'으로 세지 않는다. 상태는 candidate(⑤에서 사람이 확정).
-    (2)는 보호수단이 '없다'고 단정하지 않으며 같은 시나리오에 보호수단 존재 확인 자료 요청을 남긴다.
+def _safeguard_verdict(s, q):
+    """시나리오의 보호수단별 '찾음' 판정(보수적). (찾음 목록, 세지 않은 목록, 전제와 겹침·같은 루프 목록)
+    - counts_as_found가 하나라도 False면 '찾음' 아님(패턴·AI 판정 중 보수적인 쪽)
+    - 원인·전제 설비(패턴·AI 모두) 자체와, 그 설비와 같은 신호 연결(제어루프)에 속한 보호수단은 세지 않음"""
+    interp = s.get("ai_interpretation") or {}
+    allg = s["safeguards"] + (interp.get("safeguards") or [])
+    premise = set(s.get("cause_equipment") or []) | set(s.get("assumed_equipment") or []) | \
+        set(interp.get("cause_entity_ids") or []) | set(interp.get("assumed_equipment") or [])
+    loop = signal_loop(q, sorted(premise)) if q is not None else set(premise)
+    verdict = {}
+    for g in allg:
+        ok = bool(g.get("counts_as_found", False)) and g["node_id"] not in loop
+        verdict[g["node_id"]] = verdict.get(g["node_id"], True) and ok
+    return (sorted(n for n, v in verdict.items() if v), sorted(n for n, v in verdict.items() if not v),
+            sorted(loop & set(verdict)))
+
+
+def design_improvement_candidates(doc, criteria, holds, now, q=None):
+    """도면 설비 기반 시나리오에서 (1) 제안 위험도가 표9 조건부 수용 이상이거나
+    (2) 그래프에서 (원인과 독립일 수 있는) 보호수단을 하나도 찾지 못한 경우 후보로 만든다. 상태는 candidate(⑤에서 확정).
+    - (1)은 시나리오가 보류(deferred, 예: 밸브 정상 위치 미확인)여도 적용하고 보류 사유를 함께 기록한다.
+    - (2)는 판단이 가능한 초안(draft) 시나리오에만 적용한다. 보호수단이 '없다'고 단정하지 않으며 같은 시나리오에
+      보호수단 존재 확인 자료 요청을 남긴다.
+    - 보호수단만 다른 같은 내용의 AI 가설(variant_group)은 하나라도 보호수단 미발견이면 모두 미발견으로 본다(보수적).
     ID는 시나리오 ID 기반(dic-<scenario_id>)이라 재실행·resume에도 같다."""
+    verdicts = {s["scenario_id"]: _safeguard_verdict(s, q) for s in doc["scenarios"]}
+    group_none = {}
+    for s in doc["scenarios"]:
+        if s.get("variant_group"):
+            key = (s["candidate_id"], s["variant_group"])
+            group_none[key] = group_none.get(key, False) or not verdicts[s["scenario_id"]][0]
     out = []
     for s in doc["scenarios"]:
-        if s["scenario_status"] != "draft":
-            continue
         triggers, basis = [], {}
         rp = s["risk_proposal"]
         if rp["status"] == "proposed" and criteria:
@@ -681,13 +737,18 @@ def design_improvement_candidates(doc, criteria, holds, now):
                 basis.update(risk=rp["risk"], risk_name=level["name"], acceptance=level["acceptance"],
                              criteria_id=criteria["criteria_id"], criteria_version=criteria["criteria_version"],
                              calculation=rp["calculation"])
-        allg = s["safeguards"] + ((s.get("ai_interpretation") or {}).get("safeguards") or [])
-        found = sorted({g["node_id"] for g in allg if g.get("counts_as_found", True)})
-        same_loop = sorted({g["node_id"] for g in allg if not g.get("counts_as_found", True)})
+        if s["scenario_status"] != "draft":
+            basis.update(scenario_status=s["scenario_status"], scenario_status_reason=s.get("status_reason"))
+        found, not_counted, loop_overlap = verdicts[s["scenario_id"]]
+        group = (s["candidate_id"], s.get("variant_group"))
+        none_found = not found or (s.get("variant_group") and group_none.get(group))
         hold_ids = []
-        if not found:
+        if s["scenario_status"] == "draft" and none_found:
             triggers.append("no_safeguard_found_in_graph")
-            basis.update(safeguards_found_in_graph=0, same_control_loop_not_counted=same_loop,
+            basis.update(safeguards_found_in_graph=0 if not found else len(found), not_counted_safeguards=not_counted,
+                         premise_or_same_loop_overlap=loop_overlap,
+                         group_rule="보호수단만 다른 같은 가설 중 보호수단 미발견이 있어 보수적으로 적용"
+                         if found else None,
                          safeguard_note="그래프(도면)에서 원인과 독립일 수 있는 보호수단을 찾지 못함 — "
                                         "보호수단이 없다고 단정하지 않음(미확인)")
             existing = [h["hold_id"] for h in holds.items if h["source"] == "design_improvement"
@@ -726,7 +787,8 @@ def finalize(doc, graph, criteria, now=utc_now):
         doc["analysis_run"]["steps"]["ai"] = "interrupted"
     doc["analysis_run"]["steps"]["risk"] = "completed" if criteria else "deferred_no_criteria"
     doc["analysis_run"]["drawing_only_check"] = NARRATIVE_CHECK
-    doc["design_improvement_candidates"] = design_improvement_candidates(doc, criteria, Holds(doc["holds"]), t)
+    doc["design_improvement_candidates"] = design_improvement_candidates(doc, criteria, Holds(doc["holds"]), t,
+                                                                         GraphQuery(graph))
     _close_resolved_holds(doc, t)
     doc["validation"] = check_result(doc, graph, criteria)
 
@@ -756,7 +818,8 @@ def check_result(doc, graph, criteria):
             errors.append("시나리오 근거 ID 오류: %s" % s["scenario_id"])
         rp = s["risk_proposal"]
         if rp["status"] == "proposed":
-            if not criteria or rp["risk"] != risk_mod.lookup(criteria, rp["severity"], rp["frequency_used"]):
+            # 기준표 파일이 아니라 코드에 고정한 〈표5〉(risk.MATRIX_P86)와 독립 대조
+            if not criteria or rp["risk"] != risk_mod.MATRIX_P86.get(rp["severity"], {}).get(rp["frequency_used"]):
                 errors.append("위험도 계산 불일치: %s" % s["scenario_id"])
             if rp["safeguard_credit_applied"]:
                 errors.append("확인되지 않은 보호수단으로 빈도 감소 반영: %s" % s["scenario_id"])
@@ -820,6 +883,79 @@ def check_same_mode(recorded, current):
         raise InputError("원래 실행과 AI 모드가 다름 — 재시도 거부: " + "; ".join(diff))
 
 
+PATTERN_SCENARIO_KEYS = ("scenario_id", "candidate_id", "origin", "scenario_status", "pattern_ref", "cause", "consequence",
+                         "cause_equipment", "assumed_equipment", "graph_evidence", "path_context", "source_locations",
+                         "safeguards")
+
+
+def _strip_analysis(cands):
+    return [{k: v for k, v in c.items() if k != "analysis"} for c in cands]
+
+
+def _check_derived(doc, docs, client):
+    """저장된 파생 결과(후보 판단·탐색·근거 묶음·패턴 시나리오·보호수단)를 입력 사본으로 다시 계산해 대조한다.
+    다르면 변조 또는 다른 코드 버전으로 보고 재시도를 차단한다."""
+    inputs = prepare(docs["region"], docs["graph"], docs.get("candidate_catalog"), docs.get("applicability"),
+                     docs.get("patterns"), docs.get("risk_criteria"), files=doc["analysis_run"]["input_files"])
+    if inputs["blockers"]:
+        raise InputError("입력 사본 검사 실패 — 재시도 불가: " + " / ".join(inputs["blockers"]))
+    created = doc["analysis_run"]["created_at"]
+    fresh = prepare_doc(inputs, client, doc["analysis_run_id"], lambda: created)
+    diffs = []
+    if _strip_analysis(fresh["candidates"]) != _strip_analysis(doc["candidates"]):
+        diffs.append("후보 판단")
+    if fresh["explorations"] != doc["explorations"]:
+        diffs.append("탐색 결과")
+    if fresh["evidence_bundles"] != doc["evidence_bundles"]:
+        diffs.append("근거 묶음")
+    saved = {s["scenario_id"]: s for s in doc["scenarios"] if s["origin"] == "pattern"}
+    for s in fresh["scenarios"]:
+        old = saved.pop(s["scenario_id"], None)
+        if old is None or any(old.get(k) != s.get(k) for k in PATTERN_SCENARIO_KEYS):
+            diffs.append("패턴 시나리오 %s" % s["scenario_id"])
+    diffs += ["저장에만 있는 패턴 시나리오 %s" % k for k in saved]
+    if not diffs:
+        diffs += _replay_ai(doc, fresh, docs)
+    if diffs:
+        raise InputError("저장된 파생 결과가 입력 사본으로 다시 계산한 값과 다름(%s) — 재시도 차단" % ", ".join(diffs[:5]))
+
+
+def _replay_ai(doc, fresh, docs):
+    """검증 통과(validated)로 저장된 후보마다 실행 기록의 AI 응답 원문을 다시 검증·병합·위험도 계산해 저장 결과와 대조한다."""
+    graph, criteria = docs["graph"], docs.get("risk_criteria")
+    q = GraphQuery(graph)
+    holds = Holds(fresh["holds"])
+    runs = {r["ai_run_id"]: r for r in doc["ai_runs"]}
+    fresh_c = {c["candidate_id"]: c for c in fresh["candidates"]}
+    diffs = []
+    for c in doc["candidates"]:
+        if c["analysis"]["ai_status"] != AI_DONE:
+            continue
+        rec = runs.get((c["analysis"]["ai_run_ids"] or [None])[-1])
+        if rec is None or rec.get("status") != AI_DONE or rec.get("response") is None:
+            diffs.append("AI 실행 기록 없음·불일치 %s" % c["candidate_id"])
+            continue
+        bundle = fresh["evidence_bundles"][c["candidate_id"]]
+        errors, _, rejected = validate.validate_response(rec["response"], bundle, graph, ai.RESPONSE_SCHEMA)
+        if errors or rejected != (rec.get("validation") or {}).get("rejected_scenarios"):
+            diffs.append("AI 응답 재검증 결과 다름 %s" % c["candidate_id"])
+            continue
+        fc = fresh_c[c["candidate_id"]]
+        _merge_ai(fresh, fc, rec["response"], bundle, criteria, rec, holds, rec["finished_at"], q,
+                  {r["index"] for r in rejected})
+        if fc["analysis"]["ai_facts"] != c["analysis"]["ai_facts"]:
+            diffs.append("AI 사실 %s" % c["candidate_id"])
+    saved = {x["scenario_id"]: x for x in doc["scenarios"]}
+    again = {x["scenario_id"]: x for x in fresh["scenarios"]}
+    for sid in sorted(set(saved) | set(again)):
+        if sid not in saved or sid not in again:
+            diffs.append("시나리오 목록 %s" % sid)
+        elif any(saved[sid].get(k) != again[sid].get(k) for k in ("ai_interpretation", "risk_proposal", "cause",
+                                                                   "consequence", "safeguards", "cause_equipment")):
+            diffs.append("AI 해석·위험도 %s" % sid)
+    return diffs
+
+
 def resume(run_dir, client, now=utc_now, only=None):
     """저장된 실행의 AI 단계부터 다시 실행한다. 입력 사본 해시와 AI 모드가 기록과 같아야 한다.
     이전 analysis.json은 history/에 보관하고, 후보마다 이어 저장한다."""
@@ -837,6 +973,7 @@ def resume(run_dir, client, now=utc_now, only=None):
         if _sha_text(text) != f["sha256"]:
             raise InputError("입력 사본 해시 불일치(%s) — 재시도 불가" % f["role"])
         docs[f["role"]] = json.loads(text)
+    _check_derived(doc, docs, client)
     hist = os.path.join(run_dir, "history")
     os.makedirs(hist, exist_ok=True)
     n = len([x for x in os.listdir(hist) if x.endswith(".json")]) + 1

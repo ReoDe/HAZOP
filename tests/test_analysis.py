@@ -6,6 +6,7 @@
 
 import copy
 import glob
+import io
 import json
 import os
 import shutil
@@ -32,6 +33,7 @@ GUIDE = os.path.join(REPO_ROOT, "기획서", "HAZOP기법지침.md")
 NOW = "2026-11-04T00:00:00Z"
 # 지침서 §6 〈표5〉를 코드와 독립적으로 옮김 (행: 강도, 열: 발생빈도)
 TABLE5 = {4: {3: 5, 2: 5, 1: 3}, 3: {3: 4, 2: 4, 1: 2}, 2: {3: 3, 2: 2, 1: 1}, 1: {3: 2, 2: 1, 1: 1}}
+BASIS = {"severity_basis": "근거", "frequency_basis": "근거"}
 
 PZR, PV101, V111, PSV101, T31, TE120, T37 = ("entity-node-001", "entity-node-008", "entity-node-007",
                                              "entity-node-014", "entity-node-016", "entity-node-018",
@@ -311,7 +313,7 @@ class PatternTest(unittest.TestCase):
             self.assertEqual(s["knowledge_status"], "hypothesis")
         b = DOC["evidence_bundles"]["deviation-p86-d09"]
         self.assertEqual(b["kinds_without_patterns"], ["continuation", "indicator", "tee", "temperature_element"])
-        self.assertEqual(DOC["analysis_run"]["versions"]["patterns"]["version"], 3)
+        self.assertEqual(DOC["analysis_run"]["versions"]["patterns"]["version"], 4)
 
     def test_normal_state_not_used_as_cause(self):
         lib = _load(os.path.join(DATA, "패턴", "pressurizer-patterns.json"))
@@ -462,10 +464,13 @@ class DesignImprovementTest(unittest.TestCase):
         self.assertIn("risk_conditional_or_worse", d["triggers"])
         self.assertEqual((d["basis"]["risk"], d["basis"]["acceptance"]), (4, "조건부 위험작업 수용"))
         self.assertEqual(d["basis"]["criteria_version"], "KOSHA P-86-2017 예시(MVP 임시 기준표)")
-        low = [s["scenario_id"] for s in DOC["scenarios"] if s["risk_proposal"].get("risk") in (1, 2)
-               and any(g["counts_as_found"] for g in s["safeguards"])]
-        self.assertTrue(low)
-        self.assertFalse({x["scenario_id"] for x in dics} & set(low))
+        for d in dics:
+            if "risk_conditional_or_worse" in d["triggers"]:
+                self.assertGreaterEqual(d["basis"]["risk"], 3)
+        # 위험도 2 이하이고 독립 보호수단(PSV)이 있는 시나리오는 후보가 아님 (d09 패턴 해석 중 위험도 미제안이 아닌 것)
+        quiet = [s["scenario_id"] for s in DOC["scenarios"] if s["risk_proposal"].get("risk") in (1, 2)
+                 and any(g["counts_as_found"] for g in s["safeguards"])]
+        self.assertFalse({x["scenario_id"] for x in dics} & set(quiet))
 
     def test_no_safeguard_found_adds_data_request(self):
         doc = copy.deepcopy(DOC)
@@ -495,7 +500,7 @@ class RiskTest(unittest.TestCase):
         for sev, row in TABLE5.items():
             for freq, want in row.items():
                 self.assertEqual(risk.lookup(CRIT, sev, freq), want)
-        p = risk.evaluate(CRIT, {"severity": 4, "frequency_without_safeguards": 1}, {})
+        p = risk.evaluate(CRIT, dict(BASIS, severity=4, frequency_without_safeguards=1), {}, ["ev"])
         self.assertEqual((p["risk"], p["risk_name"], p["status"], p["confirmed"]), (3, "상당한 위험", "proposed", False))
 
     def test_criteria_match_guide_tables(self):
@@ -507,15 +512,15 @@ class RiskTest(unittest.TestCase):
     def test_invalid_values_deferred(self):
         for bad in ({"severity": 5, "frequency_without_safeguards": 1}, {"severity": 2, "frequency_without_safeguards": 0},
                     {"severity": True, "frequency_without_safeguards": 1}):
-            self.assertEqual(risk.evaluate(CRIT, bad, {})["status"], "deferred")
+            self.assertEqual(risk.evaluate(CRIT, dict(BASIS, **bad), {}, ["ev"])["status"], "deferred")
 
     def test_unconfirmed_safeguard_no_frequency_reduction(self):
-        ai_risk = {"severity": 3, "frequency_without_safeguards": 2, "frequency_with_safeguards": 1,
-                   "credited_safeguard_node_ids": ["n1"]}
-        p = risk.evaluate(CRIT, ai_risk, {"n1": {"adequacy": "unknown"}})
+        ai_risk = dict(BASIS, severity=3, frequency_without_safeguards=2, frequency_with_safeguards=1,
+                       credited_safeguard_node_ids=["n1"])
+        p = risk.evaluate(CRIT, ai_risk, {"n1": {"adequacy": "unknown"}}, ["ev"])
         self.assertEqual((p["frequency_used"], p["safeguard_credit_applied"], p["risk"]), (2, False, 4))
         self.assertIn("미반영", p["safeguard_credit_reason"])
-        p = risk.evaluate(CRIT, ai_risk, {"n1": {"adequacy": "confirmed"}})
+        p = risk.evaluate(CRIT, ai_risk, {"n1": {"adequacy": "confirmed"}}, ["ev"])
         self.assertEqual((p["frequency_used"], p["safeguard_credit_applied"], p["risk"]), (1, True, 2))
         sc = pat_scen(DOC, "p86-d09", "pat-cv-ncfc-d09-fail-closed")
         rp = sc["risk_proposal"]
@@ -815,7 +820,7 @@ class DeviationSafeguardTest(unittest.TestCase):
         self.assertTrue({s["scenario_id"] for s in scen(DOC, "p86-d44")} <= no_safe)
         pic = pat_scen(DOC, "p86-d10", "pat-pic-d09d10-output-fault")
         self.assertIn(pic["scenario_id"], no_safe)
-        self.assertEqual(dics[pic["scenario_id"]]["basis"]["same_control_loop_not_counted"], ["entity-node-009"])
+        self.assertEqual(dics[pic["scenario_id"]]["basis"]["not_counted_safeguards"], ["entity-node-009"])
         for k in no_safe:
             hold = next(h for h in DOC["holds"] if h["hold_id"] == dics[k]["hold_ids"][0])
             self.assertEqual((hold["item"], hold["status"]), ("보호수단 존재 확인", "open"))
@@ -823,7 +828,7 @@ class DeviationSafeguardTest(unittest.TestCase):
     def test_ids_stable_and_resolved_holds_closed(self):
         self.assertTrue(all(d["dic_id"] == "dic-" + d["scenario_id"] for d in DOC["design_improvement_candidates"]))
         doc = copy.deepcopy(DOC)
-        sc = pat_scen(doc, "p86-d12", "pat-pzr-d12-overheat")
+        sc = pat_scen(doc, "p86-d09", "pat-cv-ncfc-d09-fail-closed")
         keep = sc["safeguards"], sc["ai_interpretation"]["safeguards"]
         sc["safeguards"], sc["ai_interpretation"]["safeguards"] = [], []
         run.finalize(doc, GRAPH, CRIT, now)
@@ -874,32 +879,405 @@ class MergeAndModelTest(unittest.TestCase):
                                     content=[types.SimpleNamespace(type="text", text=text)])
         return types.SimpleNamespace(messages=types.SimpleNamespace(create=lambda **kw: msg))
 
-    def test_response_model_recorded_and_mismatch_warned(self):
+    def test_response_model_mismatch_allowed_by_user_decision_with_warning(self):
+        """사용자 결정(2026-11-04, '서버측 fallback은 켜되 응답 모델을 기록·표시')에 따른 허용:
+        다른 모델이 응답해도 결과를 채택하되, 결과 JSON의 후보와 AI 실행 기록 양쪽에 response_model_differs 경고를 남긴다."""
         doc = analyze(client=ai.AnthropicClient(client=self.fake("claude-other-model")), only={"p86-d09"})
         c = cand(doc, "p86-d09")
         rec = next(r for r in doc["ai_runs"] if r["candidate_id"] == c["candidate_id"])
         self.assertEqual((rec["requested_model"], rec["response_model"], rec["model_mismatch"]),
                          ("claude-opus-5-5", "claude-other-model", True))
-        self.assertEqual(c["analysis"]["warnings"][0]["type"], "model_mismatch")
+        self.assertEqual(c["analysis"]["warnings"][0]["type"], "response_model_differs")
+        self.assertEqual(rec["warnings"][0]["type"], "response_model_differs")
+        self.assertEqual(c["analysis"]["ai_status"], "validated")  # 채택됨
         self.assertEqual(pat_scen(doc, "p86-d09", "pat-cv-ncfc-d09-fail-closed")["ai_interpretation"]["response_model"],
                          "claude-other-model")
         same = analyze(client=ai.AnthropicClient(client=self.fake("claude-opus-5-5")), only={"p86-d09"})
         self.assertEqual(cand(same, "p86-d09")["analysis"]["warnings"], [])
 
-    def test_model_option_recorded(self):
-        doc = analyze(client=ai.AnthropicClient(model="claude-x-test", client=self.fake("claude-x-test")), only={"p86-d09"})
-        rec = doc["ai_runs"][0]
-        self.assertEqual((rec["client"]["model"], rec["request"]["params"]["model"], rec["model_mismatch"]),
-                         ("claude-x-test", "claude-x-test", False))
+    def test_model_allow_list(self):
+        with self.assertRaises(ValueError):
+            ai.AnthropicClient(model="claude-x-test")
         import analyze as script
-        args = script.argparse.Namespace(live=True, model="claude-x-test", fixed_dir=FIXED_DIR)
+        with mock.patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
+            script.main(["--live", "--model", "claude-x-test"])
+        doc = analyze(client=ai.AnthropicClient(client=self.fake("claude-opus-5-5")), only={"p86-d09"})
+        rec = doc["ai_runs"][0]
+        self.assertEqual((rec["client"]["model"], rec["request"]["params"]["model"]), ("claude-opus-5-5", "claude-opus-5-5"))
+        args = script.argparse.Namespace(live=True, model="claude-opus-5-5", fixed_dir=FIXED_DIR)
         with mock.patch.object(ai.AnthropicClient, "credentials_available", staticmethod(lambda: True)):
-            self.assertEqual(script.make_client(args).model, "claude-x-test")
+            self.assertEqual(script.make_client(args).model, "claude-opus-5-5")
 
     def test_rel_or_abs_other_drive(self):
         from hazop import paths
         with mock.patch.object(paths.os.path, "relpath", side_effect=ValueError("path is on mount 'D:'")):
             self.assertEqual(paths.rel_or_abs(FIXED_DIR, REPO_ROOT), os.path.abspath(FIXED_DIR).replace("\\", "/"))
+
+
+class ReviewB12Test(unittest.TestCase):
+    """Codex 적대적 검토 B1·B2 채택 항목 재현 테스트."""
+
+    def test_1_detector_counts_only_with_confirmed_action(self):
+        sc = pat_scen(DOC, "p86-d12", "pat-pzr-d12-overheat")
+        te = next(g for g in sc["safeguards"] if g["tag"] == "RC-TE110")
+        self.assertEqual((te["protective_action"], te["action_confirmed"], te["counts_as_found"]), ("detection", False, False))
+        d = next(x for x in DOC["design_improvement_candidates"] if x["scenario_id"] == sc["scenario_id"])
+        self.assertIn("no_safeguard_found_in_graph", d["triggers"])
+        self.assertTrue(d["hold_ids"])
+        psv = pat_scen(DOC, "p86-d09", "pat-cv-ncfc-d09-fail-closed")["safeguards"]
+        self.assertTrue(all(g["protective_action"] == "self_acting" and g["counts_as_found"] for g in psv))
+        g = copy.deepcopy(GRAPH)
+        next(n for n in g["nodes"] if n["entity_id"] == "entity-node-004")["attributes"]["alarm_setpoint"] = "350 C"
+        doc = analyze(data_inputs(graph=g), client=ai.FixedResponseClient(FIXED_DIR, verify_bundle=False))
+        te2 = next(x for x in pat_scen(doc, "p86-d12", "pat-pzr-d12-overheat")["safeguards"] if x["tag"] == "RC-TE110")
+        self.assertTrue(te2["counts_as_found"])
+
+    def test_2_conservative_merge_of_ai_and_pattern_verdicts(self):
+        doc = copy.deepcopy(DOC)
+        sc = pat_scen(doc, "p86-d09", "pat-cv-ncfc-d09-fail-closed")
+        for g in sc["ai_interpretation"]["safeguards"]:
+            g["counts_as_found"] = False  # AI 쪽 판정이 부정
+        self.assertTrue(all(g["counts_as_found"] for g in sc["safeguards"]))
+        run.finalize(doc, GRAPH, CRIT, now)
+        d = next(x for x in doc["design_improvement_candidates"] if x["scenario_id"] == sc["scenario_id"])
+        self.assertIn("no_safeguard_found_in_graph", d["triggers"])
+
+    def test_3_library_non_equipment_kind_blocks(self):
+        inputs = data_inputs()
+        lib = copy.deepcopy(inputs["patterns"])
+        lib["patterns"][0]["equipment_kind"] = "tee"
+        lib["deviation_safeguards"][0]["kind"] = "pipe_segment"
+        bl = run.prepare(inputs["region"], GRAPH, inputs["catalog"], inputs["applicability"], lib, CRIT)["blockers"]
+        self.assertTrue(any("'tee'는 실제 기기가 아님" in b for b in bl))
+        self.assertTrue(any("'pipe_segment'는 실제 기기가 아님" in b for b in bl))
+        out = copy.deepcopy(_load(os.path.join(FIXED_DIR, "deviation-p86-d09.json"))["output"])
+        out["scenarios"][0]["safeguards"] = [{"node_id": "entity-node-003", "description": "tee"}]
+        out["scenarios"][0]["risk"]["credited_safeguard_node_ids"] = []
+        _, _, rej = validate.validate_response(out, DOC["evidence_bundles"]["deviation-p86-d09"], GRAPH, ai.RESPONSE_SCHEMA)
+        self.assertTrue(any(r["index"] == 0 and "보호수단 entity-node-003" in r["reason"] for r in rej))
+
+    def test_4_catalog_truncated_or_tampered_blocks(self):
+        inputs = data_inputs()
+        short = copy.deepcopy(inputs["catalog"])
+        short["items"] = short["items"][:43]
+        bl = run.prepare(inputs["region"], GRAPH, short, inputs["applicability"], inputs["patterns"], CRIT)["blockers"]
+        self.assertTrue(any("44행" in b for b in bl))
+        bad = copy.deepcopy(inputs["catalog"])
+        bad["items"][8]["deviation_ko"] = "압력 변조"
+        bl = run.prepare(inputs["region"], GRAPH, bad, inputs["applicability"], inputs["patterns"], CRIT)["blockers"]
+        self.assertTrue(any("고정값과 다름" in b for b in bl) and any("지침서 §5.3" in b for b in bl))
+        app = copy.deepcopy(inputs["applicability"])
+        app["items"][16]["applicability"] = "applicable"
+        bl = run.prepare(inputs["region"], GRAPH, inputs["catalog"], app, inputs["patterns"], CRIT)["blockers"]
+        self.assertTrue(any("적용 판단 파일" in b for b in bl))
+
+    def test_5_risk_criteria_tamper_blocks_and_independent_check(self):
+        inputs = data_inputs()
+        bad = copy.deepcopy(CRIT)
+        bad["matrix"]["3"]["2"] = 2
+        bl = run.prepare(inputs["region"], GRAPH, inputs["catalog"], inputs["applicability"], inputs["patterns"], bad)["blockers"]
+        self.assertTrue(any("고정값과 다름" in b for b in bl))
+        self.assertTrue(any("risk.MATRIX_P86" in b for b in bl))
+        self.assertTrue(any("지침서 §6" in b for b in bl))
+        self.assertEqual(risk.MATRIX_P86, TABLE5)
+        doc = copy.deepcopy(DOC)
+        s = next(x for x in doc["scenarios"] if x["risk_proposal"]["status"] == "proposed" and x["risk_proposal"]["risk"] == 4)
+        s["risk_proposal"]["risk"] = 2  # 변조된 표대로 계산된 값
+        self.assertEqual(run.check_result(doc, GRAPH, bad)["status"], "blocked")  # 기준표 파일이 아니라 코드 상수와 대조
+
+    def test_6_pattern_and_cause_mismatch_rejected(self):
+        out = copy.deepcopy(_load(os.path.join(FIXED_DIR, "deviation-p86-d09.json"))["output"])
+        out["scenarios"][0]["cause_entity_ids"] = [PZR]  # 패턴 대상은 RC-PV101
+        _, _, rej = validate.validate_response(out, DOC["evidence_bundles"]["deviation-p86-d09"], GRAPH, ai.RESPONSE_SCHEMA)
+        self.assertTrue(any(r["index"] == 0 and "패턴과 원인 불일치" in r["reason"] for r in rej))
+
+    def test_7_empty_evidence_or_basis_defers_risk(self):
+        r = dict(BASIS, severity=3, frequency_without_safeguards=2)
+        self.assertEqual(risk.evaluate(CRIT, r, {}, [])["status"], "deferred")
+        self.assertEqual(risk.evaluate(CRIT, dict(r, severity_basis=" "), {}, ["ev"])["status"], "deferred")
+        self.assertEqual(risk.evaluate(CRIT, dict(r, frequency_basis=""), {}, ["ev"])["status"], "deferred")
+        self.assertEqual(risk.evaluate(CRIT, r, {}, ["ev"])["status"], "proposed")
+
+    def test_8_resume_blocks_tampered_derived_results(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            _, run_dir = run.execute(raw_inputs(), ai.FixedResponseClient(FIXED_DIR), tmp, run_id="analysis-tamper",
+                                     now=now, only={"p86-d10"})
+            path = os.path.join(run_dir, "analysis.json")
+            doc = _load(path)
+            sc = next(x for x in doc["scenarios"] if x["origin"] == "pattern" and x["safeguards"]
+                      and not x["safeguards"][0]["counts_as_found"])
+            sc["safeguards"][0]["counts_as_found"] = True
+            sc["safeguards"][0]["action_confirmed"] = True
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh, ensure_ascii=False)
+            with self.assertRaises(run.InputError) as cm:
+                run.resume(run_dir, ai.FixedResponseClient(FIXED_DIR), now=now)
+            self.assertIn("패턴 시나리오", str(cm.exception))
+            doc["candidates"][16]["selection_status"] = "selected"
+            sc["safeguards"][0]["counts_as_found"] = False
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh, ensure_ascii=False)
+            with self.assertRaises(run.InputError):
+                run.resume(run_dir, ai.FixedResponseClient(FIXED_DIR), now=now)
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_9_interrupt_during_merge_rolls_back_and_hypothesis_ids_dedupe(self):
+        doc = run.prepare_doc(data_inputs(), ai.FixedResponseClient(FIXED_DIR), "analysis-merge", now)
+        before = copy.deepcopy((doc["scenarios"], [h for h in doc["holds"] if h["candidate_id"] == "deviation-p86-d09"]))
+        with mock.patch.object(run, "_merge_ai", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                run.run_ai_step(doc, GRAPH, CRIT, ai.FixedResponseClient(FIXED_DIR), now=now, only={"p86-d09"})
+        self.assertEqual((doc["scenarios"], [h for h in doc["holds"] if h["candidate_id"] == "deviation-p86-d09"]), before)
+        self.assertEqual(cand(doc, "p86-d09")["analysis"]["ai_status"], "not_requested")
+        tmp = tempfile.mkdtemp()
+        try:
+            d = _load(os.path.join(FIXED_DIR, "deviation-p86-d09.json"))
+            h = d["output"]["scenarios"][3]
+            h.update(cause="RC-PZ01 압력 제어 이상", interpretation="도면 설비 기반", outside_graph_equipment=[])
+            d["output"]["scenarios"].append(copy.deepcopy(h))  # 같은 가설 두 번
+            with open(os.path.join(tmp, "deviation-p86-d09.json"), "w", encoding="utf-8") as fh:
+                json.dump(d, fh, ensure_ascii=False)
+            doc = analyze(client=ai.FixedResponseClient(tmp), only={"p86-d09"})
+        finally:
+            shutil.rmtree(tmp)
+        hyp = [x["scenario_id"] for x in scen(doc, "p86-d09") if x["origin"] == "ai_additional_hypothesis"]
+        self.assertEqual(len(hyp), 1)
+        self.assertRegex(hyp[0], r"^scenario-p86-d09-h-[0-9a-f]{10}$")
+
+    def test_10_depth_by_shortest_kind_start_valve_and_chain_scope(self):
+        g = synthetic_graph([("a", "vessel", "equipment", {}), ("b", "tank", "equipment", {}),
+                             ("c", "transmitter", "instrument", {}), ("z", "controller", "instrument", {})],
+                            [("s1", "a", "b", True), ("s2", "b", "c", True)], signals=[("a", "c"), ("c", "z")])
+        r = ex_mod.explore(GraphQuery(g), "a", ex_mod.region_members(g, ["a", "b", "c", "z"]),
+                           ["has_endpoint", "signal_connection"], 4, 100)
+        got = {x["entity_id"]: x for x in r["reached"]}
+        self.assertIn("z", got)  # 물리 4홉 경로에 깊이를 고정했다면 누락됨
+        self.assertEqual(got["c"]["shortest_depth"], 1)
+        self.assertEqual(got["c"]["path_basis"], "physical_preferred")
+        self.assertEqual(got["c"]["depth"], len(got["c"]["path_edges"]))
+        v = synthetic_graph([("v", "manual_valve", "valve", {}), ("t", "tank", "equipment", {})], [("s", "v", "t", True)])
+        t = next(x for x in ex_mod.explore(GraphQuery(v), "v", {"v", "t", "s"}, ["has_endpoint"], 4, 10)["reached"]
+                 if x["entity_id"] == "t")
+        self.assertEqual((t["valve_state"], t["normal_operation_flow"]), ("position_unknown_on_path", None))
+        from hazop.analysis import patterns as pat
+        inputs = data_inputs()
+        region = copy.deepcopy(inputs["region"])
+        region["exploration"]["relation_kinds"] = ["has_endpoint", "measurement_connection"]
+        doc = run.prepare_doc(run.prepare(region, GRAPH, inputs["catalog"], inputs["applicability"], inputs["patterns"],
+                                          CRIT), None, "x", now)
+        ids = {m["pattern_id"] for m in doc["evidence_bundles"]["deviation-p86-d09"]["pattern_matches"]["applied"]}
+        self.assertFalse({"pat-tx-d09d10-loop-signal-fault", "pat-pic-d09d10-output-fault"} & ids)
+        self.assertIsNone(pat.chain_scope(doc["explorations"][0]))
+
+    def test_11_unknown_knowledge_status_defers(self):
+        inputs = data_inputs()
+        inputs["applicability"]["items"][16]["applicability_knowledge_status"] = "unknown"
+        d17 = cand(analyze(inputs), "p86-d17")
+        self.assertEqual((d17["selection_status"], d17["judgments"][0]["decided_by"]), ("deferred", "rule:R5"))
+
+
+class ReviewB12Round2Test(unittest.TestCase):
+    """Codex 재검토(B1·B2) 2회차 채택 항목 재현 테스트."""
+
+    def tmp_response(self, item, mutate):
+        tmp = tempfile.mkdtemp()
+        d = _load(os.path.join(FIXED_DIR, "deviation-%s.json" % item))
+        mutate(d["output"])
+        with open(os.path.join(tmp, "deviation-%s.json" % item), "w", encoding="utf-8") as fh:
+            json.dump(d, fh, ensure_ascii=False)
+        try:
+            return analyze(client=ai.FixedResponseClient(tmp), only={item})
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_1_premise_equipment_not_counted_as_safeguard(self):
+        def m(out):
+            s = out["scenarios"][0]  # RC-PV101 개방 실패, 패턴 보호수단 = PSV
+            s["safeguards"] = []
+            s["assumed_equipment"] = s["assumed_equipment"] + ["entity-node-014", "entity-node-015"]
+            s["risk"]["credited_safeguard_node_ids"] = []
+        doc = self.tmp_response("p86-d09", m)
+        sc = pat_scen(doc, "p86-d09", "pat-cv-ncfc-d09-fail-closed")
+        self.assertTrue(all(g["counts_as_found"] for g in sc["safeguards"]))  # 패턴 쪽 인정은 남아 있음
+        d = next(x for x in doc["design_improvement_candidates"] if x["scenario_id"] == sc["scenario_id"])
+        self.assertIn("no_safeguard_found_in_graph", d["triggers"])
+        self.assertEqual(d["basis"]["premise_or_same_loop_overlap"], ["entity-node-014", "entity-node-015"])
+
+    def test_2_resume_rechecks_ai_interpretation_and_risk(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            _, run_dir = run.execute(raw_inputs(), ai.FixedResponseClient(FIXED_DIR), tmp, run_id="analysis-ai-tamper",
+                                     now=now, only={"p86-d09"})
+            path = os.path.join(run_dir, "analysis.json")
+            doc = _load(path)
+            sc = next(x for x in doc["scenarios"] if x["risk_proposal"]["status"] == "proposed")
+            sc["risk_proposal"]["risk"] = 1  # 저장 결과 변조(위험도 낮춤)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh, ensure_ascii=False)
+            with self.assertRaises(run.InputError) as cm:
+                run.resume(run_dir, ai.FixedResponseClient(FIXED_DIR), now=now)
+            self.assertIn("AI 해석·위험도", str(cm.exception))
+            doc = _load(path)
+            rec = next(r for r in doc["ai_runs"] if r["status"] == "validated")
+            rec["response"]["scenarios"][0]["risk"]["severity"] = 1  # 실행 기록 원문 변조
+            sc = next(x for x in doc["scenarios"] if x["risk_proposal"]["status"] == "proposed")
+            sc["risk_proposal"]["risk"] = 4
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh, ensure_ascii=False)
+            with self.assertRaises(run.InputError):
+                run.resume(run_dir, ai.FixedResponseClient(FIXED_DIR), now=now)
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_2b_untampered_resume_passes_replay(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            _, run_dir = run.execute(raw_inputs(), ai.FixedResponseClient(FIXED_DIR), tmp, run_id="analysis-replay",
+                                     now=now, only={"p86-d09", "p86-d44"})
+            doc = run.resume(run_dir, ai.FixedResponseClient(FIXED_DIR), now=now)
+            self.assertEqual(sum(c["analysis"]["ai_status"] == "validated" for c in doc["candidates"]), 5)
+            run.resume(run_dir, ai.FixedResponseClient(FIXED_DIR), now=now)  # 두 번째 재시도도 재검증 통과
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_3_self_acting_only_for_self_acting_kinds(self):
+        inputs = data_inputs()
+        lib = copy.deepcopy(inputs["patterns"])
+        te = next(g for g in lib["deviation_safeguards"] if g["kind"] == "temperature_element")
+        te["protective_action"] = "self_acting"
+        bl = run.prepare(inputs["region"], GRAPH, inputs["catalog"], inputs["applicability"], lib, CRIT)["blockers"]
+        self.assertTrue(any("자력식 기기가 아님" in b for b in bl))
+        from hazop.analysis import equipment
+        node = next(n for n in GRAPH["nodes"] if n["entity_id"] == "entity-node-004")
+        self.assertFalse(equipment.protective_action_confirmed(node, "self_acting"))
+        psv = next(n for n in GRAPH["nodes"] if n["entity_id"] == PSV101)
+        self.assertTrue(equipment.protective_action_confirmed(psv, "self_acting"))
+
+    def test_4_same_cause_hypotheses_kept_order_independent(self):
+        def make(order):
+            def m(out):
+                h = out["scenarios"][3]
+                h.update(cause="RC-PZ01 압력 제어 이상", interpretation="도면 설비 기반", outside_graph_equipment=[])
+                low = copy.deepcopy(h)
+                low["risk"].update(severity=1, frequency_without_safeguards=1, frequency_with_safeguards=None)
+                high = copy.deepcopy(h)
+                high["risk"].update(severity=4, frequency_without_safeguards=3, frequency_with_safeguards=None)
+                out["scenarios"][3:] = [low, high] if order else [high, low]
+            return m
+        results = []
+        for order in (True, False):
+            doc = self.tmp_response("p86-d09", make(order))
+            hyp = [x for x in scen(doc, "p86-d09") if x["origin"] == "ai_additional_hypothesis"]
+            results.append(sorted((x["scenario_id"], x["risk_proposal"]["risk"], x["same_cause_hypotheses"]) for x in hyp))
+        self.assertEqual(results[0], results[1])
+        self.assertEqual(sorted(r[1] for r in results[0]), [1, 5])  # 위험도 높은 가설도 남음
+        self.assertTrue(all(r[2] == 2 for r in results[0]))
+
+    def test_5_boundary_extension_revisits_with_better_state(self):
+        g = synthetic_graph([(n, "transmitter", "instrument", {}) for n in ("a", "b", "c", "y", "z")], [],
+                            signals=[("a", "b"), ("b", "c"), ("c", "z"), ("a", "y"), ("y", "c")])
+        r = ex_mod.explore(GraphQuery(g), "a", {"a", "y"}, ["signal_connection"], 4, 100, boundary_extension_depth=2)
+        got = {x["entity_id"]: x for x in r["reached"]}
+        self.assertIn("z", got)  # 최초 방문(a-b-c, 경계 밖 2)에 고정했다면 누락
+        self.assertTrue(got["z"]["outside_region"])
+        self.assertEqual(got["z"]["path_nodes"], ["a", "y", "c", "z"])
+
+
+class ReviewRound3Test(unittest.TestCase):
+    """3회차: 정직한 입력에서도 결과가 틀리는 논리 결함 재현."""
+
+    def tmp_response(self, item, mutate, graph=None):
+        tmp = tempfile.mkdtemp()
+        d = _load(os.path.join(FIXED_DIR, "deviation-%s.json" % item))
+        mutate(d["output"])
+        with open(os.path.join(tmp, "deviation-%s.json" % item), "w", encoding="utf-8") as fh:
+            json.dump(d, fh, ensure_ascii=False)
+        try:
+            inputs = data_inputs(graph=graph) if graph else None
+            return analyze(inputs, client=ai.FixedResponseClient(tmp, verify_bundle=graph is None), only={item})
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_1_safeguard_only_variants_kept_and_conservative(self):
+        def make(order):
+            def m(out):
+                h = out["scenarios"][3]
+                h.update(cause="RC-PZ01 압력 제어 이상", interpretation="도면 설비 기반", outside_graph_equipment=[])
+                with_sg = copy.deepcopy(h)
+                with_sg["safeguards"] = [{"node_id": "entity-node-014", "description": "RC-PSV101"}]
+                without = copy.deepcopy(h)
+                without["safeguards"] = []
+                out["scenarios"][3:] = [with_sg, without] if order else [without, with_sg]
+            return m
+        res = []
+        for order in (True, False):
+            doc = self.tmp_response("p86-d09", make(order))
+            hyp = [x for x in scen(doc, "p86-d09") if x["origin"] == "ai_additional_hypothesis"]
+            dics = {d["scenario_id"]: d for d in doc["design_improvement_candidates"]}
+            res.append(sorted((x["scenario_id"], len(x["safeguards"]),
+                               "no_safeguard_found_in_graph" in dics.get(x["scenario_id"], {}).get("triggers", []))
+                              for x in hyp))
+        self.assertEqual(res[0], res[1])
+        self.assertEqual(len(res[0]), 2)  # 보호수단만 달라도 둘 다 남김
+        self.assertTrue(all(r[2] for r in res[0]))  # 보수적으로 둘 다 보호수단 미발견
+
+    def test_2_deferred_scenario_with_high_risk_is_candidate(self):
+        g = copy.deepcopy(GRAPH)
+        next(n for n in g["nodes"] if n["entity_id"] == PV101)["attributes"].pop("normal_position")
+
+        def m(out):  # RC-V111(정상 위치 미확인 경로 뒤) 패턴을 위험도 4로 해석
+            s = copy.deepcopy(out["scenarios"][0])
+            s.update(pattern_match_id="m-pat-mv-no-d09-closed-entity-node-007", cause_entity_ids=["entity-node-007"],
+                     assumed_equipment=["entity-node-007"], node_ids=["entity-node-007"], relation_ids=[],
+                     evidence_ids=["ev-node-entity-node-007"], safeguards=[])
+            s["risk"].update(credited_safeguard_node_ids=[], frequency_with_safeguards=None)
+            out["scenarios"] = [s]
+        doc = self.tmp_response("p86-d09", m, graph=g)
+        sc = pat_scen(doc, "p86-d09", "pat-mv-no-d09-closed")
+        self.assertEqual((sc["scenario_status"], sc["risk_proposal"]["risk"]), ("deferred", 4))
+        d = next(x for x in doc["design_improvement_candidates"] if x["scenario_id"] == sc["scenario_id"])
+        self.assertEqual(d["triggers"], ["risk_conditional_or_worse"])
+        self.assertEqual(d["basis"]["scenario_status"], "deferred")
+        self.assertIn("밸브 정상 위치 미확인", d["basis"]["scenario_status_reason"])
+
+    def test_3_only_positive_action_evidence(self):
+        from hazop.analysis import equipment
+        node = lambda a: {"kind": "temperature_element", "attributes": a}  # noqa: E731
+        for a in ({"interlock": False}, {"interlock": ""}, {"alarm_setpoint": 0}, {"alarm_setpoint": "0"},
+                  {"alarm_setpoint": " "}, {"alarm_setpoint": None}, {"alarm_setpoint": True}, {"trip_setpoint": "none"},
+                  {"alarm_setpoint": "없음"}):
+            self.assertFalse(equipment.protective_action_confirmed(node(a), "detection"), a)
+        for a in ({"interlock": True}, {"interlock": "yes"}, {"alarm_setpoint": "350 C"}, {"trip_setpoint": 16.5}):
+            self.assertTrue(equipment.protective_action_confirmed(node(a), "detection"), a)
+
+    def test_4_same_loop_as_ai_premise_not_counted(self):
+        g = copy.deepcopy(GRAPH)
+        next(n for n in g["nodes"] if n["entity_id"] == "entity-node-009")["attributes"]["alarm_setpoint"] = "16.0 MPa"
+
+        def m(out):  # 압력 감소: PSV 개방 고착 시나리오의 전제에 PIC110 추가, 보호수단 비움
+            s = out["scenarios"][1]
+            s["assumed_equipment"] = s["assumed_equipment"] + ["entity-node-010"]
+            s["safeguards"] = []
+        doc = self.tmp_response("p86-d10", m, graph=g)
+        sc = pat_scen(doc, "p86-d10", "pat-psv-nc-d10-open-stuck")
+        pt = next(x for x in sc["safeguards"] if x["tag"] == "RC-PT110")
+        self.assertTrue(pt["counts_as_found"])  # 패턴만 보면 '찾음'
+        d = next(x for x in doc["design_improvement_candidates"] if x["scenario_id"] == sc["scenario_id"])
+        self.assertIn("no_safeguard_found_in_graph", d["triggers"])
+        self.assertIn("entity-node-009", d["basis"]["premise_or_same_loop_overlap"])
+
+    def test_5_depth_matches_recorded_path_after_revisit(self):
+        g = synthetic_graph([(n, "transmitter", "instrument", {}) for n in ("a", "b", "c", "x", "y", "z")], [],
+                            signals=[("a", "b"), ("b", "c"), ("c", "z"), ("a", "x"), ("x", "y"), ("y", "c")])
+        r = ex_mod.explore(GraphQuery(g), "a", {"a", "y"}, ["signal_connection"], 3, 100, boundary_extension_depth=3)
+        got = {x["entity_id"]: x for x in r["reached"]}
+        for x in got.values():
+            self.assertEqual(x["depth"], len(x["path_edges"]))
+            self.assertEqual(x["shortest_depth"], x["depth"])
+        self.assertEqual((got["c"]["depth"], got["c"]["path_nodes"]), (2, ["a", "b", "c"]))
+        self.assertEqual((got["z"]["depth"], got["z"]["path_nodes"]), (3, ["a", "b", "c", "z"]))
 
 
 class ResultCheckTest(unittest.TestCase):

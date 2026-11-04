@@ -10,6 +10,9 @@ AI는 강도(severity)·발생빈도(frequency)를 제안만 하고, Python이 �
 
 SEVERITIES = (1, 2, 3, 4)
 FREQUENCIES = (1, 2, 3)
+# 〈표5〉 위험도 대조표(KOSHA P-86-2017 예시)를 기준표 파일과 독립적으로 코드에 고정한 값. 행: 강도, 열: 발생빈도.
+# 기준표 파일의 무결성 검사(integrity.check_criteria)와 결과 검증(run.check_result)이 이 값과 대조한다.
+MATRIX_P86 = {4: {3: 5, 2: 5, 1: 3}, 3: {3: 4, 2: 4, 1: 2}, 2: {3: 3, 2: 2, 1: 1}, 1: {3: 2, 2: 1, 1: 1}}
 
 
 def lookup(criteria, severity, frequency):
@@ -24,12 +27,17 @@ def deferred(reason, criteria=None):
             "severity": None, "frequency_used": None, "risk": None, "confirmed": False}
 
 
-def evaluate(criteria, ai_risk, safeguard_status):
-    """ai_risk: AI 응답의 risk 객체. safeguard_status: 노드 ID -> {'adequacy': 'confirmed'|'unknown', ...}."""
+def evaluate(criteria, ai_risk, safeguard_status, evidence_ids=None):
+    """ai_risk: AI 응답의 risk 객체. safeguard_status: 노드 ID -> {'adequacy': 'confirmed'|'unknown', ...}.
+    evidence_ids: 시나리오가 인용한 근거 ID. 비었거나 강도·빈도 근거 문장이 비었으면 제안하지 않고 보류."""
     if not criteria:
         return deferred("위험도 기준표 없음 — 임의 등급을 만들지 않음")
     if not ai_risk:
         return deferred("AI 강도·빈도 제안 없음", criteria)
+    if not evidence_ids:
+        return deferred("시나리오 근거 ID(evidence_ids) 없음 — 위험도 제안하지 않음", criteria)
+    if not str(ai_risk.get("severity_basis") or "").strip() or not str(ai_risk.get("frequency_basis") or "").strip():
+        return deferred("강도 또는 빈도 판단 근거 문장 없음 — 위험도 제안하지 않음", criteria)
     sev = ai_risk.get("severity")
     f0 = ai_risk.get("frequency_without_safeguards")
     f1 = ai_risk.get("frequency_with_safeguards")

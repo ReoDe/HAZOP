@@ -20,6 +20,8 @@ def rule_judgment(item, app, mode):
         return "R5", "deferred", "적용 판단 근거 없음 — 제외하지 않고 보류", "HAZOP기법지침 §8.2 R5"
     a = app["applicability"]
     if a == "not_applicable":
+        if app.get("applicability_knowledge_status") not in ("confirmed", "hypothesis"):
+            return "R5", "deferred", "적용 불가 판단의 확인 상태가 미확인(%r) — 사유가 있어도 제외하지 않고 보류"                 % app.get("applicability_knowledge_status"), "HAZOP기법지침 §8.2 R5"
         if mode != "normal" or not app.get("applicability_reason") or not app.get("applicability_basis"):
             return "R5", "deferred", "적용 불가 사유·근거 또는 운전모드 조건 불충분 — 보류", "HAZOP기법지침 §8.2 R5"
         return "R1", "excluded", app["applicability_reason"], app["applicability_basis"]

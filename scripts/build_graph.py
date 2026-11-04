@@ -26,7 +26,8 @@ def build_one(extraction_path, out_root):
         extraction = json.load(fh)
     rel = os.path.relpath(extraction_path, REPO_ROOT).replace("\\", "/")
     graph = build.build_graph(extraction, extraction_file=rel)
-    name = paths.safe_name(graph["source"]["drawing_number"] or os.path.basename(os.path.dirname(extraction_path)))
+    # 추출 결과 폴더 이름을 그대로 쓴다(--samples: 도면번호, 등록 경로: <자료 ID>-r<버전>). 뷰어도 같은 이름으로 그래프를 찾는다.
+    name = paths.safe_name(os.path.basename(os.path.dirname(extraction_path)))
     out_dir = paths.safe_join(out_root, name)
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "graph.json"), "w", encoding="utf-8", newline="\n") as fh:
@@ -58,7 +59,7 @@ def main(argv=None):
         graph, out_dir = build_one(path, args.out_root)
         s = graph["structure"]
         print("%s: %s nodes=%d edges=%d components_physical=%d unknowns=%d -> %s" % (
-            graph["source"]["drawing_number"], graph["validation"]["status"], s["node_count"],
+            graph["source"]["drawing_number"] or os.path.basename(out_dir), graph["validation"]["status"], s["node_count"],
             s["edge_count"], s["components_physical"], len(graph["validation"]["unknowns"]),
             os.path.relpath(out_dir, REPO_ROOT)))
         built += 1

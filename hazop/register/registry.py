@@ -71,8 +71,13 @@ def _read_json(path):
 
 def _write_new(path, data):
     """새 파일로만 쓴다('xb': 같은 이름 파일이 있으면 실패, 덮어쓰지 않음). 테스트에서 저장 실패를 흉내 낼 때 교체한다."""
-    with open(path, "xb") as fh:
-        fh.write(data)
+    fh = open(path, "xb")  # 여기서 실패하면 아무 파일도 만들지 않은 것(기존 파일은 남의 것이므로 건드리지 않음)
+    try:
+        with fh:
+            fh.write(data)
+    except BaseException:
+        os.remove(path)  # 이 함수가 생성에 성공한 파일만 정리한다
+        raise
 
 
 def _write_snapshot(store, record):
@@ -179,14 +184,12 @@ def _store_original(store, record, data):
                          % record["storage_ref"], "storage_ref")]
     try:
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        _write_new(dest, data)
+        _write_new(dest, data)  # 실패 시 정리는 _write_new가 자기가 만든 파일에 한해 한다
     except OSError as exc:
-        if os.path.isfile(dest):
-            os.remove(dest)  # 쓰다 만 사본 제거(원본이 아니라 이번에 만든 사본)
         return [_problem("storage_failed", "원본 저장 실패: %s" % exc, "storage_ref")]
     stored = _file_sha(dest)
     if stored != record["sha256"]:
-        os.remove(dest)  # 이번에 만든 잘못된 사본을 지워 재시도가 가능하게 한다
+        os.remove(dest)  # 방금 이 호출이 새로 만든(_write_new 성공) 잘못된 사본만 지워 재시도가 가능하게 한다
         return [_problem("stored_hash_mismatch", "저장 후 해시 불일치(입력 %s, 저장본 %s)"
                          % (record["sha256"][:12], stored[:12]), "sha256")]
     return []
@@ -205,6 +208,53 @@ def _finalize(store, index, record, problems, at, actor):
     entry["status"] = record["status"]
     store.save_index(index)
     return path
+
+
+def _without_times(record):
+    rec = json.loads(json.dumps(record))
+    for h in rec.get("history", []):
+        h.pop("at", None)
+    return rec
+
+
+def _orphan_entry(store, material_id, sha):
+    """색인에 없지만 registrations/<material_id>/에 같은 해시의 버전 파일이 있으면 색인 항목을 재구성한다."""
+    folder = os.path.join(store.root, "registrations", material_id)
+    if not os.path.isdir(folder):
+        return None
+    versions = {}
+    for fname in os.listdir(folder):
+        stem = fname[:-5] if fname.endswith(".json") else ""
+        if stem.isdigit():
+            versions[int(stem)] = _read_json(os.path.join(folder, fname))
+    if not versions or any(r.get("sha256") != sha for r in versions.values()) or 1 not in versions:
+        return None
+    nums = sorted(versions)
+    if nums != list(range(1, len(nums) + 1)):
+        return None
+    last = versions[nums[-1]]
+    return {"material_id": material_id, "sha256": sha, "original_name": versions[1]["original_name"],
+            "status": last["status"], "versions": nums}
+
+
+def _unfinished_trace_only(store, material_id, sha):
+    """registrations/<material_id>/가 없거나, 첫 스냅샷 교체(os.replace) 전에 중단된 이 원본의 흔적
+    (빈 폴더 또는 *.json.tmp만 있고, 읽히는 .tmp는 같은 해시)만 있으면 True. 이어서 등록해도 된다
+    (.tmp는 다음 _write_json이 같은 이름으로 다시 쓴다). 다른 해시의 흔적이나 버전 파일이 있으면 False."""
+    folder = os.path.join(store.root, "registrations", material_id)
+    if not os.path.exists(folder):
+        return True
+    if not os.path.isdir(folder):
+        return False
+    for fname in os.listdir(folder):
+        if not fname.endswith(".json.tmp"):
+            return False
+        try:
+            if _read_json(os.path.join(folder, fname)).get("sha256") != sha:
+                return False
+        except (OSError, ValueError):
+            pass  # 쓰다 만(읽을 수 없는) 임시 파일: _write_json만 만드는 이름이므로 이 등록의 미완료 흔적으로 본다
+    return True
 
 
 def register(source_path, project_id, material_type="P&ID", store_root=None, metadata=None, actor=None,
@@ -249,8 +299,15 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
                     "sha256": sha})
         return _result(rec, "failed")
 
+    # 대소문자를 구분하지 않는 파일시스템(Windows 등)에서 'Alpha'와 'alpha'가 같은 폴더로 섞이지 않게 막는다.
+    others = sorted(d for d in (os.listdir(store_root) if os.path.isdir(store_root) else [])
+                    if d.lower() == project_id.lower() and d != project_id)
     store = Store(store_root, project_id)
     index = store.load_index(project_id)
+    if others or index["project_id"] != project_id:
+        return _on_hold(project_id, material_type, source_path, [_problem(
+            "project_id_case_conflict", "대소문자만 다른 기존 프로젝트가 있음(%s). 같은 폴더로 섞이지 않게 보류"
+            % ", ".join(others or [index["project_id"]]), "project_id")])
     entry = next((m for m in index["materials"] if m["sha256"] == sha), None)
 
     if entry is not None:
@@ -297,14 +354,36 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
         # 식별정보가 바뀌면 새 등록 버전(같은 원본·해시 사용). 이전 버전 파일은 그대로 둔다.
         new["registration_version"] = latest + 1
         new["validation"]["unknowns"] = _unknowns(new)
-        path = _write_snapshot(store, new)
+        path = store.snapshot_path(new["material_id"], new["registration_version"])
+        if os.path.isfile(path):
+            # 이전 실행이 버전 파일을 쓴 뒤 색인 갱신 전에 중단된 경우: 같은 내용이면 그 파일로 이어서 완료,
+            # 다르면 덮어쓰지 않고 차단한다(시각만 다른 것은 같은 내용으로 본다).
+            existing = _read_json(path)
+            if _without_times(existing) != _without_times(new):
+                failed = json.loads(json.dumps(new))
+                failed["status"] = "failed"
+                failed["validation"]["status"] = "blocked"
+                failed["validation"]["blockers"] = [_problem(
+                    "version_conflict", "색인에 없는 버전 파일 %d.json 이 다른 내용으로 이미 있음. 덮어쓰지 않음"
+                    % new["registration_version"], "registration_version")]
+                return _result(failed, "failed", path, notes)
+            new = existing
+            notes.append("중단된 버전 %d 저장을 이어서 완료" % new["registration_version"])
+        else:
+            path = _write_snapshot(store, new)
         entry["versions"].append(new["registration_version"])
         store.save_index(index)
         return _result(new, "new_version", path, notes)
 
     material_id = "material-" + sha[:12]
+    orphan = _orphan_entry(store, material_id, sha)
+    if orphan is not None and not any(m["material_id"] == material_id for m in index["materials"]):
+        # 초안(등록정보 파일)은 썼지만 색인 저장 전에 중단된 같은 원본: 색인을 되살리고 이어서 처리한다.
+        index["materials"].append(orphan)
+        store.save_index(index)
+        return register(source_path, project_id, material_type, store_root, metadata, actor, lambda: at)
     if (any(m["material_id"] == material_id for m in index["materials"])
-            or os.path.exists(os.path.join(store.root, "registrations", material_id))):
+            or not _unfinished_trace_only(store, material_id, sha)):
         # 다른 원본이 같은 자료 ID(해시 앞 12자리)를 이미 쓰고 있음: 덮어쓰지 않고 보류
         return _on_hold(project_id, material_type, source_path, [_problem(
             "id_collision", "자료 ID %s 가 다른 원본(해시 다름)에 이미 발급됨. 덮어쓰지 않고 보류" % material_id,

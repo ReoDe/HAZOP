@@ -20,43 +20,158 @@
     "basis": "[추론] 샘플 도면의 기기 배치와 [일반지식]으로 작성한 초안. 사용자 확인 필요"
   },
   "members": [
-    {"entity_id": "entity-node-001", "tag": "RC-PZ01"},
-    {"entity_id": "entity-node-002", "tag": null},
-    {"entity_id": "entity-node-003", "tag": "RC-L010-T3"},
-    {"entity_id": "entity-node-004", "tag": "RC-TE110"},
-    {"entity_id": "entity-node-005", "tag": "RC-TT110"},
-    {"entity_id": "entity-node-006", "tag": null},
-    {"entity_id": "entity-node-007", "tag": "RC-V111"},
-    {"entity_id": "entity-node-008", "tag": "RC-PV101"},
-    {"entity_id": "entity-node-009", "tag": "RC-PT110"},
-    {"entity_id": "entity-node-010", "tag": "RC-PIC110"},
-    {"entity_id": "entity-node-011", "tag": "RC-LT110"},
-    {"entity_id": "entity-node-012", "tag": "RC-LI110"},
-    {"entity_id": "entity-node-013", "tag": "RC-L030-T25"},
-    {"entity_id": "entity-node-014", "tag": "RC-PSV101"},
-    {"entity_id": "entity-node-015", "tag": "RC-PSV102"},
-    {"entity_id": "entity-node-016", "tag": "RC-L031-T31"},
-    {"entity_id": "entity-node-017", "tag": null},
-    {"entity_id": "entity-node-018", "tag": "RC-TE120"},
-    {"entity_id": "entity-node-019", "tag": "RC-L031-T37"}
+    {
+      "entity_id": "entity-node-001",
+      "tag": "RC-PZ01"
+    },
+    {
+      "entity_id": "entity-node-002",
+      "tag": null
+    },
+    {
+      "entity_id": "entity-node-003",
+      "tag": "RC-L010-T3"
+    },
+    {
+      "entity_id": "entity-node-004",
+      "tag": "RC-TE110"
+    },
+    {
+      "entity_id": "entity-node-005",
+      "tag": "RC-TT110"
+    },
+    {
+      "entity_id": "entity-node-006",
+      "tag": null
+    },
+    {
+      "entity_id": "entity-node-007",
+      "tag": "RC-V111"
+    },
+    {
+      "entity_id": "entity-node-008",
+      "tag": "RC-PV101"
+    },
+    {
+      "entity_id": "entity-node-009",
+      "tag": "RC-PT110"
+    },
+    {
+      "entity_id": "entity-node-010",
+      "tag": "RC-PIC110"
+    },
+    {
+      "entity_id": "entity-node-011",
+      "tag": "RC-LT110"
+    },
+    {
+      "entity_id": "entity-node-012",
+      "tag": "RC-LI110"
+    },
+    {
+      "entity_id": "entity-node-013",
+      "tag": "RC-L030-T25"
+    },
+    {
+      "entity_id": "entity-node-014",
+      "tag": "RC-PSV101"
+    },
+    {
+      "entity_id": "entity-node-015",
+      "tag": "RC-PSV102"
+    },
+    {
+      "entity_id": "entity-node-016",
+      "tag": "RC-L031-T31"
+    },
+    {
+      "entity_id": "entity-node-017",
+      "tag": null
+    },
+    {
+      "entity_id": "entity-node-018",
+      "tag": "RC-TE120"
+    },
+    {
+      "entity_id": "entity-node-019",
+      "tag": "RC-L031-T37"
+    }
   ],
   "members_note": "배관 구간 노드는 양 끝 대상이 모두 구간에 포함되면 자동으로 포함",
-  "focus_entities": ["entity-node-001"],
+  "focus_entities": [
+    "entity-node-001"
+  ],
   "boundaries": [
-    {"entity_id": "entity-node-002", "description": "써지 배관 RC-L010이 SNP-M-101(RC-L001)로 이어지는 도면 연결점", "knowledge_status": "confirmed"},
-    {"entity_id": "entity-node-006", "description": "살수 배관 RC-L011이 SNP-M-101(RC-L003)로 이어지는 도면 연결점", "knowledge_status": "confirmed"},
-    {"entity_id": "entity-node-017", "description": "방출 배관 RC-L031이 SNP-M-301(SI-TK01, IRWST)로 이어지는 도면 연결점", "knowledge_status": "confirmed"}
+    {
+      "entity_id": "entity-node-002",
+      "description": "써지 배관 RC-L010이 SNP-M-101(RC-L001)로 이어지는 도면 연결점",
+      "knowledge_status": "confirmed"
+    },
+    {
+      "entity_id": "entity-node-006",
+      "description": "살수 배관 RC-L011이 SNP-M-101(RC-L003)로 이어지는 도면 연결점",
+      "knowledge_status": "confirmed"
+    },
+    {
+      "entity_id": "entity-node-017",
+      "description": "방출 배관 RC-L031이 SNP-M-301(SI-TK01, IRWST)로 이어지는 도면 연결점",
+      "knowledge_status": "confirmed"
+    }
   ],
   "normal_operating_conditions": [
-    {"item": "가압기 정상 운전압력", "value": null, "unit": null, "knowledge_status": "unknown", "reason": "샘플 자료에 운전조건 문서 없음"},
-    {"item": "가압기 정상 운전온도", "value": null, "unit": null, "knowledge_status": "unknown", "reason": "샘플 자료에 운전조건 문서 없음"},
-    {"item": "가압기 정상 액위", "value": null, "unit": null, "knowledge_status": "unknown", "reason": "샘플 자료에 운전조건 문서 없음"},
-    {"item": "가압기 설계압력", "value": null, "unit": null, "knowledge_status": "unknown", "reason": "샘플 자료에 설계 사양 없음"},
-    {"item": "RC-PSV101 설정압력", "value": "17.2 MPa", "unit": "MPa", "entity_id": "entity-node-014", "attribute": "set_pressure", "knowledge_status": "confirmed", "reason": "그래프 속성(도면 원문). 게이지/절대 기준 미확인"},
-    {"item": "RC-PSV102 설정압력", "value": "17.2 MPa", "unit": "MPa", "entity_id": "entity-node-015", "attribute": "set_pressure", "knowledge_status": "confirmed", "reason": "그래프 속성(도면 원문). 게이지/절대 기준 미확인"}
+    {
+      "item": "가압기 정상 운전압력",
+      "value": null,
+      "unit": null,
+      "knowledge_status": "unknown",
+      "reason": "샘플 자료에 운전조건 문서 없음"
+    },
+    {
+      "item": "가압기 정상 운전온도",
+      "value": null,
+      "unit": null,
+      "knowledge_status": "unknown",
+      "reason": "샘플 자료에 운전조건 문서 없음"
+    },
+    {
+      "item": "가압기 정상 액위",
+      "value": null,
+      "unit": null,
+      "knowledge_status": "unknown",
+      "reason": "샘플 자료에 운전조건 문서 없음"
+    },
+    {
+      "item": "가압기 설계압력",
+      "value": null,
+      "unit": null,
+      "knowledge_status": "unknown",
+      "reason": "샘플 자료에 설계 사양 없음"
+    },
+    {
+      "item": "RC-PSV101 설정압력",
+      "value": "17.2 MPa",
+      "unit": "MPa",
+      "entity_id": "entity-node-014",
+      "attribute": "set_pressure",
+      "knowledge_status": "confirmed",
+      "reason": "그래프 속성(도면 원문). 게이지/절대 기준 미확인"
+    },
+    {
+      "item": "RC-PSV102 설정압력",
+      "value": "17.2 MPa",
+      "unit": "MPa",
+      "entity_id": "entity-node-015",
+      "attribute": "set_pressure",
+      "knowledge_status": "confirmed",
+      "reason": "그래프 속성(도면 원문). 게이지/절대 기준 미확인"
+    }
   ],
   "exploration": {
-    "relation_kinds": ["has_endpoint", "measurement_connection", "signal_connection"],
+    "relation_kinds": [
+      "has_endpoint",
+      "measurement_connection",
+      "signal_connection"
+    ],
     "max_depth": 12,
     "max_reached": 200,
     "boundary_extension_depth": 0,

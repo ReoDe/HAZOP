@@ -14,6 +14,7 @@ import os
 from hazop import paths
 
 DEFAULT_MODEL = "claude-opus-5-5"
+ALLOWED_MODELS = ("claude-opus-5-5",)  # MVP 단일 모델(사용자 결정 2026-11-04). 다른 값은 거부
 DEFAULT_MAX_TOKENS = 16000
 DEFAULT_EFFORT = "high"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -166,6 +167,8 @@ class AnthropicClient:
 
     def __init__(self, model=DEFAULT_MODEL, max_tokens=DEFAULT_MAX_TOKENS, effort=DEFAULT_EFFORT,
                  server_fallback=True, client=None):
+        if model not in ALLOWED_MODELS:
+            raise ValueError("허용되지 않은 모델 %r — 허용: %s" % (model, ", ".join(ALLOWED_MODELS)))
         self.model = model
         self.max_tokens = max_tokens
         self.effort = effort

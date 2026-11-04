@@ -10,7 +10,10 @@
    - AI가 서술 속 그래프 밖 설비명을 자기 신고(outside_graph_equipment)하면 거부
    한계: 문장 속 설비명을 자동 대조하지는 않는다. 구조 검증(ID·종류)과 AI 자기 신고의 2중 확인이며,
    AI가 신고하지 않은 서술 속 설비는 사람이 검토해야 한다(결과의 narrative_check에 표시).
-6) 보호수단: 후보의 보호수단 후보 목록(allowed_ids.safeguard_node_ids) 밖이면 인정하지 않고 경고로 남긴다.
+6) 보호수단: 실제 기기가 아니면 그 시나리오 거부. 기기여도 후보의 보호수단 후보 목록(allowed_ids.safeguard_node_ids)
+   밖이면 인정하지 않고 경고로 남긴다.
+7) 패턴 해석(basis=pattern): 패턴 적용 대상이 cause_entity_ids에 있어야 하고, 그 밖의 원인 설비는 패턴 사슬 대상이거나
+   같은 기기 종류여야 한다. 어긋나면 그 시나리오 거부.
 """
 
 from . import equipment
@@ -84,6 +87,7 @@ def validate_response(output, bundle, graph, schema):
         errors += _ref_errors(f["evidence_ids"], a_ev, a_ev, "근거", p + ".evidence_ids")
         errors += _ref_errors(f["node_ids"], a_nodes, g_nodes, "노드", p + ".node_ids")
         errors += _ref_errors(f["relation_ids"], a_rels, g_rels, "관계", p + ".relation_ids")
+    matches = {m["match_id"]: m for m in bundle["pattern_matches"]["applied"]}
     used_matches = set()
     for i, s in enumerate(output["scenarios"]):
         p = "$.scenarios[%d]" % i
@@ -119,6 +123,18 @@ def validate_response(output, bundle, graph, schema):
                 why = equipment.why_not_equipment(g_nodes[x])
                 if why:
                     reasons.append("%s: %s" % (x, why))
+        for x in safe_ids:  # 보호수단도 실제 기기만
+            if x in g_nodes:
+                why = equipment.why_not_equipment(g_nodes[x])
+                if why:
+                    reasons.append("보호수단 %s: %s" % (x, why))
+        m = matches.get(s["pattern_match_id"]) if s["basis"] == "pattern" else None
+        if m is not None and m["target"] not in s["cause_entity_ids"]:
+            reasons.append("패턴 적용 대상 %s(%s)이 원인 설비(cause_entity_ids)에 없음 — 패턴과 원인 불일치"
+                           % (m["target"], m["kind"]))
+        if m is not None and any(g_nodes.get(x, {}).get("kind") != m["kind"] for x in s["cause_entity_ids"]
+                                 if x not in m["node_ids"]):
+            reasons.append("원인 설비 종류가 패턴 기기 종류(%s)·적용 대상과 다름" % m["kind"])
         if reasons:
             rejected.append({"index": i, "cause": s["cause"],
                              "reason": "도면에 없는 설비 전제 또는 도면 설비 확인 불가 — " + "; ".join(reasons)

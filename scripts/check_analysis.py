@@ -27,7 +27,7 @@ from hazop.console import safe_console  # noqa: E402
 import analyze  # noqa: E402
 import build_graph  # noqa: E402
 import extract_drawio  # noqa: E402
-from hazop.analysis import ai, catalog_md, equipment, risk, run  # noqa: E402
+from hazop.analysis import ai, catalog_md, equipment, integrity, risk, run  # noqa: E402
 
 BAD_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "analysis", "bad")
 GUIDE = os.path.join(REPO_ROOT, "기획서", "HAZOP기법지침.md")
@@ -72,17 +72,24 @@ def check_doc(doc, graph, criteria, failures):
         "가열" in s["cause"] + s["consequence"] for s in doc["scenarios"] if s["origin"] == "pattern"), failures)
     proposed = [s["risk_proposal"] for s in doc["scenarios"] if s["risk_proposal"]["status"] == "proposed"]
     ok("위험도 제안 = 표5 조회값 (%d건)" % len(proposed), proposed and all(
-        p["risk"] == risk.lookup(criteria, p["severity"], p["frequency_used"]) for p in proposed), failures)
+        p["risk"] == risk.MATRIX_P86[p["severity"]][p["frequency_used"]] for p in proposed), failures)
+    ok("감지기 보호수단은 보호 동작 미확인이면 '찾음' 아님", all(
+        not g["counts_as_found"] for s in doc["scenarios"] for g in s["safeguards"]
+        if g["protective_action"] == "detection" and not g["action_confirmed"]), failures)
     ok("보호수단 미확인 -> 빈도 감소 미반영", all(
         not p["safeguard_credit_applied"] and p["frequency_used"] == p["frequency_without_safeguards"] for p in proposed)
         and any((p["frequency_with_safeguards_ai"] or 9) < p["frequency_without_safeguards"] for p in proposed), failures)
     ok("위험도는 제안(확정 아님)", all(not p["confirmed"] for p in proposed), failures)
     dics = doc["design_improvement_candidates"]
-    def found(s):
-        gs = s["safeguards"] + ((s.get("ai_interpretation") or {}).get("safeguards") or [])
-        return any(g.get("counts_as_found", True) for g in gs)
-    want = {s["scenario_id"] for s in doc["scenarios"] if s["scenario_status"] == "draft" and (
-        (s["risk_proposal"]["status"] == "proposed" and s["risk_proposal"]["risk"] >= 3) or not found(s))}
+    from hazop.graph.query import GraphQuery
+    q = GraphQuery(graph)
+    want = set()
+    for s in doc["scenarios"]:
+        rp = s["risk_proposal"]
+        if rp["status"] == "proposed" and rp["risk"] >= 3:  # 보류 시나리오도 포함
+            want.add(s["scenario_id"])
+        if s["scenario_status"] == "draft" and not run._safeguard_verdict(s, q)[0]:
+            want.add(s["scenario_id"])
     ok("PSV 보호수단은 압력 증가 후보에만", all(g["kind"] != "psv" for cid, b in doc["evidence_bundles"].items()
                                      if cid != "deviation-p86-d09" for g in b["candidate_safeguards"]), failures)
     ok("설계보완 후보 %d건 = 위험도 3 이상·독립 보호수단 미발견 시나리오, 미확정" % len(dics),
@@ -116,6 +123,8 @@ def main():
         crit = _load(os.path.join(REPO_ROOT, region["inputs"]["risk_criteria"]))
         tables = catalog_md.parse_risk_tables(GUIDE)
         ok("위험도 기준표가 지침서 표5~표9와 같음", all(tables[k] == crit[k] for k in tables), failures)
+        integ = integrity.check_catalog(on_disk[0], on_disk[1]) + integrity.check_criteria(crit)
+        ok("기준 데이터 고정 해시·지침서·코드 상수 대조 %s" % integ, not integ, failures)
         print("== 3. 고정 응답으로 분석·저장")
         inputs = run.load_inputs(analyze.DEFAULT_REGION, REPO_ROOT, graph_path=os.path.join(gr, "SNP-M-102", "graph.json"))
         ok("입력 차단 오류 없음 %s" % inputs["blockers"], not inputs["blockers"], failures)

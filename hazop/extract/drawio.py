@@ -14,6 +14,8 @@ import xml.etree.ElementTree as ET
 import zlib
 from html.parser import HTMLParser
 
+from hazop import paths
+
 from . import rules
 
 SCHEMA_VERSION = "0.1"
@@ -649,9 +651,20 @@ def extract(path, page=0, repo_root=None, registration=None):
     drawing = {"page_width": None, "page_height": None, "title_block": title_block}
     for key, field in rules.TITLE_BLOCK_FIELDS.items():
         drawing[field] = title_block[key]["value"] if key in title_block else None
-    if drawing["drawing_number"] is None:
-        _issue(unknowns, "missing_drawing_number", "표제란에서 DWG NO.를 찾지 못함",
-               field="drawing_number")
+    reg = registration or {}
+    if registration is None:
+        # 등록 없는 경로는 기존 출력과 같게 둔다(표제란 값 사용, graph_version 불변).
+        if drawing["drawing_number"] is None:
+            _issue(unknowns, "missing_drawing_number", "표제란에서 DWG NO.를 찾지 못함",
+                   field="drawing_number")
+    else:
+        # 등록 경로: 식별 값은 ①에서 사람이 확정한 값만 쓴다. 표제란 값은 후보로만 따로 남기고,
+        # 확정되지 않은 항목은 None(미확인; registration_unknown으로 전달)으로 둔다.
+        drawing["identification_basis"] = "registration_confirmed"
+        drawing["title_block_candidates"] = {f: drawing[f] for f in ("drawing_number", "revision", "title")}
+        for field, reg_field in (("drawing_number", "drawing_number"), ("revision", "design_revision"),
+                                 ("title", "title")):
+            drawing[field] = reg.get(reg_field)
     for key, field in (("pageWidth", "page_width"), ("pageHeight", "page_height")):
         v = _to_float(model.get(key))
         drawing[field] = _clean_number(v) if v is not None else None
@@ -661,18 +674,23 @@ def extract(path, page=0, repo_root=None, registration=None):
         for c in ignored]
 
     sha = hashlib.sha256(raw).hexdigest()
-    reg = registration or {}
+    reg_page_id = page_id
     if registration is None:
         # 등록정보 없이 실행하면 식별 정보가 비어 있음을 미확인으로 남긴다.
         for field in ("project_id", "material_id", "registration_version"):
             _issue(unknowns, "not_registered", "자료 등록 단계 미연동으로 %s 없음" % field, field=field)
     else:
+        reg_val = reg.get("validation") or {}
+        if reg.get("status") != "registered" or reg_val.get("status") != "passed" or reg_val.get("blockers"):
+            _issue(blockers, "registration_not_completed", "등록 완료(registered·passed)가 아닌 등록정보: status=%r"
+                   % reg.get("status"), field="status")
         if reg.get("sha256") != sha:
             _issue(blockers, "registration_hash_mismatch", "입력 파일 해시가 등록정보의 sha256과 다름",
                    field="sha256")
         # 추출한 페이지가 등록정보의 문서·페이지 목록에 있어야 한다(id 없는 페이지는 등록 규칙과 같이 page-<번호>).
         registered_pages = [pid for d in reg.get("documents") or [] for pid in d.get("page_ids") or []]
-        if (page_id or "page-%d" % (page + 1)) not in registered_pages:
+        reg_page_id = page_id or "page-%d" % (page + 1)  # 등록이 발급한 대체 페이지 ID
+        if reg_page_id not in registered_pages:
             _issue(blockers, "registration_page_mismatch", "추출한 페이지 %r 가 등록정보 page_ids %r 에 없음"
                    % (page_id, registered_pages), field="page_id")
         for u in reg.get("validation", {}).get("unknowns", []):
@@ -680,8 +698,8 @@ def extract(path, page=0, repo_root=None, registration=None):
     run_id = "extract-%s-p%d-%s-%s" % (drawing["drawing_number"] or page_name or "page", page,
                                        rules.RULES_VERSION, sha[:12])
     if registration is not None:
-        run_id += "-%s-r%s" % (reg.get("material_id"), reg.get("registration_version"))
-    rel_path = os.path.relpath(path, repo_root).replace("\\", "/") if repo_root else path
+        run_id += "-%s-%s-r%s" % (reg.get("project_id"), reg.get("material_id"), reg.get("registration_version"))
+    rel_path = paths.rel_or_abs(path, repo_root) if repo_root else path
     result = {
         "schema_version": SCHEMA_VERSION,
         "project_id": reg.get("project_id"),
@@ -694,7 +712,7 @@ def extract(path, page=0, repo_root=None, registration=None):
                    "file": rel_path, "sha256": sha, "compressed": compressed,
                    "page_count": len(pages)},
         "source_context": {"document_id": (reg.get("documents") or [{}])[0].get("document_id"),
-                           "page_id": page_id, "page_name": page_name},
+                           "page_id": reg_page_id, "page_name": page_name},
         "review_status": "not_reviewed",
         "drawing": drawing,
         "coordinate_system": {"coordinate_space": COORDINATE_SPACE, "unit": UNIT,

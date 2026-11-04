@@ -5,11 +5,12 @@
   python scripts/extract_drawio.py --samples          # 샘플 6개 전체
   python scripts/extract_drawio.py --registration 자료저장소/<프로젝트>/registrations/<자료 ID>/<버전>.json
 옵션 --svg를 생략하면 같은 폴더의 *.drawio.svg가 하나일 때 그것을 좌표 대응 측정에 쓴다.
---registration(① 등록 완료 자료)이면 보관 원본을 읽고, SVG는 등록 당시 입력 경로(input_path) 옆에서 찾는다.
+--registration(① 등록 완료 자료)이면 보관 원본을 읽어 출력/추출/<자료 ID>-r<등록 버전>/에 쓰고, SVG는 등록 당시 입력 경로(input_path) 옆에서 찾는다.
 """
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 import sys
@@ -32,6 +33,20 @@ def find_svg(drawio_path):
     return found[0] if len(found) == 1 else None
 
 
+def registered_out_name(registration, page_index, limit=120):
+    """등록 경로 출력 폴더 이름 <프로젝트>__<자료>-r<버전>-p<페이지>.
+    safe_name의 길이 제한(120자)에 걸리면 뒤쪽 식별자(자료·버전·페이지)는 그대로 두고 프로젝트 부분만 줄인 뒤
+    원래 프로젝트 ID의 해시 12자리를 붙여 서로 다른 프로젝트가 같은 이름이 되지 않게 한다."""
+    tail = paths.safe_name("%s-r%s-p%d" % (registration["material_id"], registration["registration_version"],
+                                            page_index))
+    project = paths.safe_name(registration["project_id"])
+    room = limit - len(tail) - 2  # '__'
+    if len(project) > room:
+        digest = hashlib.sha256(str(registration["project_id"]).encode("utf-8")).hexdigest()[:12]
+        project = project[:room - 13].rstrip("._") + "-" + digest
+    return project + "__" + tail
+
+
 def run_one(path, out_root, svg="auto", page=0, registration=None):
     result = drawio.extract(path, page=page, repo_root=REPO_ROOT, registration=registration)
     svg_path = svg
@@ -46,11 +61,16 @@ def run_one(path, out_root, svg="auto", page=0, registration=None):
         svg_path = find_svg(near)
     if svg_path:
         al = svg_align.align(svg_path, result)
-        al["svg_file"] = os.path.relpath(svg_path, REPO_ROOT).replace("\\", "/")
+        al["svg_file"] = paths.rel_or_abs(svg_path, REPO_ROOT)
         if svg_source:
             al["source"] = svg_source
         result["coordinate_system"]["svg_alignment"] = al
-    name = paths.safe_name(result["drawing"]["drawing_number"] or os.path.splitext(os.path.basename(path))[0])
+    if registration is not None:
+        # 등록 경로: 프로젝트·자료 ID·등록 버전·페이지별 폴더에 저장해 다른 프로젝트·버전·페이지 결과를 덮어쓰지 않는다.
+        # 그래프·뷰어가 추출 폴더를 한 단계만 읽으므로 계층 대신 한 폴더 이름(<프로젝트>__<자료>-r<버전>-p<페이지>)으로 둔다.
+        name = registered_out_name(registration, result["run"]["settings"]["page_index"])
+    else:
+        name = paths.safe_name(result["drawing"]["drawing_number"] or os.path.splitext(os.path.basename(path))[0])
     out_dir = paths.safe_join(out_root, name)
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "extraction.json"), "w", encoding="utf-8", newline="\n") as fh:
@@ -72,31 +92,31 @@ def main(argv=None):
     ap.add_argument("--page", default="0", help="페이지 번호(0부터) 또는 이름")
     ap.add_argument("--out-root", default=DEFAULT_OUT)
     args = ap.parse_args(argv)
-    paths = [(p, None) for p in args.drawio]
+    jobs = [(p, None) for p in args.drawio]
     if args.samples:
-        paths += [(p, None) for p in sorted(glob.glob(SAMPLE_GLOB))]
+        jobs += [(p, None) for p in sorted(glob.glob(SAMPLE_GLOB))]
     for reg_path in args.registration:
         try:
             record, original = registry.load_for_extraction(reg_path)
         except (OSError, ValueError) as exc:
             ap.error("%s: %s" % (reg_path, exc))
-        paths.append((original, record))
-    if not paths:
+        jobs.append((original, record))
+    if not jobs:
         ap.error("drawio 파일, --samples 또는 --registration 필요")
-    if len(paths) > 1 and args.svg not in ("auto", "none"):
+    if len(jobs) > 1 and args.svg not in ("auto", "none"):
         ap.error("--svg 경로는 파일 하나일 때만 지정")
     page = int(args.page) if args.page.isdigit() else args.page
     svg = None if args.svg == "none" else args.svg
     blocked = 0
-    for path, record in paths:
+    for path, record in jobs:
         result, out_dir = run_one(path, args.out_root, svg=svg, page=page, registration=record)
         s = result["summary"]
         al = result["coordinate_system"]["svg_alignment"]
         print("%s: %s nodes=%d relations=%d unresolved=%d texts=%d unknowns=%d blockers=%d svg=%s %s -> %s"
-              % (result["drawing"]["drawing_number"], result["validation"]["status"], s["nodes"],
+              % (result["drawing"]["drawing_number"] or os.path.basename(out_dir), result["validation"]["status"], s["nodes"],
                  s["relations"], s["unresolved_connectors"], s["texts"], s["unknowns"],
                  s["blockers"], al["status"] if al else None, al["offset"] if al else None,
-                 os.path.relpath(out_dir, REPO_ROOT)))
+                 paths.rel_or_abs(out_dir, REPO_ROOT)))
         blocked += result["validation"]["status"] == "blocked"
     return 1 if blocked else 0
 

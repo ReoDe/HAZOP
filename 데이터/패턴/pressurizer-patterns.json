@@ -1,6 +1,6 @@
 {
   "library_id": "hazop-cause-consequence-patterns",
-  "library_version": 3,
+  "library_version": 4,
   "source": "[일반지식], 미검증",
   "note": "MVP 가압기 구간(SNP-M-102) 기기에 필요한 소수 패턴. 사용자 평가 기준·문헌으로 확인되지 않은 일반지식 기반 초안이며, 적용 결과는 모두 가설(hypothesis)로 취급한다. 태그 문자로 기기 종류·측정 변수를 추정하지 않는다. 도면에 있는 설비만 원인·결과·보호수단으로 쓴다(도면에 없는 설비를 암시하는 문구 금지, 사용자 결정 2026-11-04).",
   "fields": {
@@ -9,7 +9,7 @@
     "conditions.attributes": "그래프 노드 속성 값이 목록 중 하나여야 함. 속성이 없으면 condition_unknown(미적용·보류)",
     "conditions.signal_chain": "signal_connection으로 이어진 기기 종류 순서(방향 무시). 구조 조건이며 태그를 보지 않음",
     "templates": "{tag}, {attr_<속성>}, {chain_tags} 치환",
-    "deviation_safeguards": "편차(후보)별 확인할 보호수단. kind + 선택 조건(signal_chain·attributes). 패턴이 아니라 편차에 묶는다. 원인과 같은 신호 연결(제어루프)에 속한 보호수단은 독립성 미확인이며 '보호수단 찾음'으로 세지 않음"
+    "deviation_safeguards": "편차(후보)별 확인할 보호수단. kind + 선택 조건(signal_chain·attributes). 패턴이 아니라 편차에 묶는다. 원인과 같은 신호 연결(제어루프)에 속한 보호수단은 독립성 미확인이며 '보호수단 찾음'으로 세지 않음. protective_action: self_acting(자력식, 묶인 편차에서만 인정) / detection(감지기, 경보·트립 등 보호 동작이 그래프 속성으로 확인될 때만 '찾음')"
   },
   "patterns": [
     {
@@ -189,12 +189,17 @@
       "library_version": 3,
       "date": "2026-11-04",
       "change": "가열 과다·부족 문구 삭제(도면에 없는 전열기 암시). 보호수단을 패턴별에서 편차별(deviation_safeguards)로 분리: PSV는 압력 증가에만. safeguard 역할 패턴은 deviation_safeguards로 이동"
+    },
+    {
+      "library_version": 4,
+      "date": "2026-11-04",
+      "change": "deviation_safeguards에 protective_action 추가. 감지기는 보호 동작 확인 전에는 '보호수단 찾음'으로 세지 않음"
     }
   ],
   "deviation_safeguards": [
     {
       "safeguard_id": "sg-d09-psv",
-      "version": 1,
+      "version": 2,
       "source": "[일반지식], 미검증",
       "candidate_items": [
         "p86-d09"
@@ -205,11 +210,12 @@
           "NC"
         ]
       },
-      "description_template": "{tag} 설정압력({attr_set_pressure}) 도달 시 개방하여 과압 방출 — 용량·설정 적정성 미확인"
+      "description_template": "{tag} 설정압력({attr_set_pressure}) 도달 시 개방하여 과압 방출 — 용량·설정 적정성 미확인",
+      "protective_action": "self_acting"
     },
     {
       "safeguard_id": "sg-d10-pressure-loop-tx",
-      "version": 1,
+      "version": 2,
       "source": "[일반지식], 미검증",
       "candidate_items": [
         "p86-d10"
@@ -219,22 +225,24 @@
         "controller",
         "control_valve"
       ],
-      "description_template": "{tag} 압력 제어루프 측정(경보 연결 미확인)"
+      "description_template": "{tag} 압력 제어루프 측정(경보 연결 미확인)",
+      "protective_action": "detection"
     },
     {
       "safeguard_id": "sg-d12d13-te",
-      "version": 1,
+      "version": 2,
       "source": "[일반지식], 미검증",
       "candidate_items": [
         "p86-d12",
         "p86-d13"
       ],
       "kind": "temperature_element",
-      "description_template": "{tag} 온도 감지 — 경보·자동 동작 연결은 그래프에서 미확인"
+      "description_template": "{tag} 온도 감지 — 경보·자동 동작 연결은 그래프에서 미확인",
+      "protective_action": "detection"
     },
     {
       "safeguard_id": "sg-d14d15-level-indicator",
-      "version": 1,
+      "version": 2,
       "source": "[일반지식], 미검증",
       "candidate_items": [
         "p86-d14",
@@ -246,7 +254,8 @@
           "level"
         ]
       },
-      "description_template": "{tag} 액위 지시로 운전원 감시 — 경보 설정값 미확인"
+      "description_template": "{tag} 액위 지시로 운전원 감시 — 경보 설정값 미확인",
+      "protective_action": "detection"
     }
   ]
 }
