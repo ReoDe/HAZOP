@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>__TITLE__</title>
+<style>
+:root {
+  --ui: #2563eb; --bg: #f4f5f7; --card: #ffffff; --line: #e3e5e9; --muted: #6b7280; --ink: #111827;
+  --equipment: #1d4ed8; --valve: #2563eb; --instrument: #0ea5e9; --piping_element: #6366f1; --unclassified: #9ca3af;
+  --physical_connection: #16a34a; --signal_connection: #7c3aed; --measurement_connection: #d97706; --unresolved: #dc2626;
+  --tag: #111827; --selected: #dc2626;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; color: var(--ink); background: var(--bg); }
+header { height: 56px; display: flex; align-items: center; gap: 14px; padding: 0 20px; background: var(--card); border-bottom: 1px solid var(--line); }
+header .logo { width: 28px; height: 28px; border-radius: 50%; background: var(--ui); }
+header .app { font-weight: 700; }
+header .sep { width: 1px; height: 20px; background: var(--line); }
+header .where b { font-weight: 700; }
+header .where span { color: var(--muted); }
+header .spacer { flex: 1; }
+.chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--bg); color: var(--muted); }
+.chip.passed::before { content: "\25CF  "; color: #16a34a; }
+.chip.blocked::before { content: "\25CF  "; color: var(--unresolved); }
+a.back { font-size: 13px; color: var(--ui); text-decoration: none; }
+main { position: absolute; top: 56px; left: 0; right: 0; bottom: 0; display: flex; }
+#viewport { position: relative; flex: 1; overflow: hidden; cursor: grab; background: var(--bg); }
+#viewport.dragging { cursor: grabbing; }
+#stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+#stage > svg { display: block; }
+#overlay { position: absolute; left: 0; top: 0; }
+.float { position: absolute; background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+#layers { top: 16px; right: 16px; padding: 12px 16px; font-size: 13px; }
+#layers label { display: flex; align-items: center; gap: 8px; margin: 4px 0; cursor: pointer; }
+#layers .note { margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.sw { display: inline-block; width: 18px; height: 0; border-top: 3px solid; vertical-align: middle; }
+.sw.dash { border-top-style: dashed; }
+#search { top: 16px; left: 16px; width: 280px; padding: 10px; }
+#search input { width: 100%; border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 13px; outline: none; }
+#search input:focus { border-color: var(--ui); }
+#results { max-height: 260px; overflow: auto; margin-top: 6px; font-size: 13px; }
+#results div { padding: 5px 8px; border-radius: 8px; cursor: pointer; }
+#results div:hover { background: var(--bg); }
+#results small { color: var(--muted); }
+#zoom { left: 16px; bottom: 16px; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 999px; font-size: 13px; }
+#zoom button { border: 0; background: none; font: inherit; font-size: 16px; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; }
+#zoom button:hover { background: var(--bg); }
+#zoom .pct { min-width: 52px; text-align: center; color: var(--muted); }
+#zoom button.fit { font-size: 12px; width: auto; padding: 0 10px; border-radius: 999px; }
+aside { width: 360px; background: var(--card); border-left: 1px solid var(--line); overflow: auto; padding: 20px; font-size: 13px; }
+aside .cat { color: var(--muted); font-size: 12px; }
+aside h2 { margin: 2px 0 2px; font-size: 22px; }
+aside .sub { color: var(--muted); margin-bottom: 14px; }
+aside h3 { font-size: 13px; margin: 18px 0 6px; }
+aside table { width: 100%; border-collapse: collapse; }
+aside td { border-top: 1px solid var(--line); padding: 5px 4px; vertical-align: top; word-break: break-all; }
+aside td:first-child { color: var(--muted); width: 42%; }
+aside .empty { color: var(--muted); }
+aside .link { color: var(--ui); cursor: pointer; }
+aside .link:hover { text-decoration: underline; }
+aside .warn { color: #b45309; }
+#tooltip { position: fixed; pointer-events: none; display: none; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.12); max-width: 280px; z-index: 10; }
+#tooltip b { font-size: 13px; }
+#tooltip .k { color: var(--muted); }
+/* 오버레이 */
+.sym { fill: rgba(37,99,235,.06); stroke-width: 1.5; cursor: pointer; }
+.sym:hover { fill: rgba(37,99,235,.18); }
+.pipe-line { fill: none; stroke-width: 2.5; stroke-opacity: .75; pointer-events: none; stroke-linejoin: round; }
+.pipe-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
+.pipe-hit:hover + .pipe-line, .pipe-line.hover { stroke-opacity: 1; stroke-width: 4; }
+.tagbox { fill: rgba(17,24,39,.06); stroke: var(--tag); stroke-width: .8; cursor: pointer; }
+.tagbox:hover { fill: rgba(17,24,39,.16); }
+.unknown { stroke-dasharray: 5 3; }
+.selected.sym, .selected.tagbox { stroke: var(--selected) !important; stroke-width: 3; fill: rgba(220,38,38,.12); }
+.selected.pipe-line { stroke: var(--selected) !important; stroke-width: 4.5; stroke-opacity: 1; }
+.flash { animation: flash 0.6s ease-in-out 3; }
+@keyframes flash { 50% { stroke-width: 8; } }
+.hidden { display: none; }
+.chip.alignwarn { background: #fef3c7; color: #92400e; }
+.chip.alignwarn:empty { display: none; }
+aside .dir { color: var(--muted); }
+/* 탭 */
+.tabs { display: flex; gap: 2px; background: var(--bg); border-radius: 999px; padding: 3px; }
+.tabs button { border: 0; background: none; font: inherit; font-size: 13px; padding: 5px 14px; border-radius: 999px; cursor: pointer; color: var(--muted); }
+.tabs button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.tabs button:disabled { opacity: .4; cursor: default; }
+#stage > #graphsvg, body.tab-drawing #stage > #graphsvg { display: none; }
+body.tab-graph #stage > svg { display: none; }
+body.tab-graph #stage > #graphsvg { display: block; }
+body.tab-graph #layers, body.tab-drawing #glegend { display: none; }
+/* 그래프 */
+#glegend { top: 16px; right: 16px; width: 250px; padding: 12px 14px; font-size: 12px; max-height: 40%; overflow: auto; }
+#glegend .stat { color: var(--muted); margin-bottom: 8px; }
+#glegend label { display: flex; align-items: center; gap: 6px; margin: 3px 0; cursor: pointer; }
+#glegend label .cnt { margin-left: auto; color: var(--muted); }
+#glegend .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+#glegend h4 { margin: 10px 0 4px; font-size: 12px; }
+#glegend .btns button, #pathq button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer; }
+#glegend .btns button:hover, #pathq button:hover { border-color: var(--ui); }
+.gnode { stroke: #fff; stroke-width: 1.5; cursor: pointer; }
+.gnode.unknown { stroke: var(--muted); stroke-dasharray: 2 2; }
+.gedge { stroke-width: 1.4; stroke-opacity: .55; fill: none; pointer-events: none; }
+.gedge-hit { stroke: transparent; stroke-width: 8; pointer-events: stroke; cursor: pointer; }
+.glabel { font-size: 9px; fill: #374151; pointer-events: none; }
+.selected.gnode { stroke: var(--selected); stroke-width: 3; }
+.selected.gedge { stroke: var(--selected) !important; stroke-opacity: 1; stroke-width: 3; }
+.ghide { display: none; }
+/* 경로 질의 */
+#pathq { right: 16px; bottom: 16px; width: 310px; padding: 12px 14px; font-size: 12px; max-height: 55%; overflow: auto; }
+#pathq .row { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+#pathq input, #pathq select { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; }
+#pathq .res { margin-top: 8px; line-height: 1.6; }
+#pathq .res .link { color: var(--ui); cursor: pointer; }
+#pathq .res .bad { color: #b45309; }
+#pathq h4 { margin: 8px 0 2px; font-size: 12px; }
+.onpath.sym, .onpath.gnode { stroke: #ea580c !important; stroke-width: 3.5; }
+.onpath.sym { fill: rgba(234,88,12,.15); }
+.onpath.pipe-line, .onpath.gedge { stroke: #ea580c !important; stroke-width: 5; stroke-opacity: 1; }
+.onpath.dirunknown { stroke-dasharray: 3 4 !important; }
+/* 좁은 창: 패널을 도면 아래로 내리고 떠 있는 카드를 줄인다 */
+@media (max-width: 760px) {
+  header { height: auto; min-height: 56px; flex-wrap: wrap; gap: 6px 10px; padding: 8px 12px; }
+  header .app, header .sep, header .spacer { display: none; }
+  header .where { flex: 1 1 100%; font-size: 13px; }
+  main { position: static; flex-direction: column; height: calc(100vh - 92px); }
+  #viewport { flex: 1 1 55%; min-height: 240px; }
+  aside { width: auto; flex: 1 1 45%; border-left: 0; border-top: 1px solid var(--line); padding: 14px; }
+  #search { left: 8px; right: 8px; top: 8px; width: auto; padding: 6px; }
+  #layers { top: 64px; right: 8px; padding: 8px 10px; font-size: 12px; }
+  #layers .note { display: none; }
+  #zoom { left: 8px; bottom: 8px; }
+  #glegend { top: 64px; right: 8px; width: 190px; max-height: calc(100% - 130px); }
+  #pathq { right: 8px; bottom: 56px; width: calc(100% - 16px); max-height: 45%; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"></div>
+  <div class="app">HAZOP 추출 뷰어</div>
+  <div class="sep"></div>
+  <div class="where">도면 <b id="dwg"></b> · <span id="dwgtitle"></span></div>
+  <div class="spacer"></div>
+  <div class="tabs"><button id="tab-drawing" class="on">도면</button><button id="tab-graph">그래프</button></div>
+  <span class="chip alignwarn" id="alignwarn">__ALIGN_WARNING__</span>
+  <span class="chip" id="status"></span>
+  <a class="back" href="index.html">도면 목록</a>
+</header>
+<main>
+  <div id="viewport">
+    <div id="stage">
+__SVG__
+      <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      <svg id="graphsvg" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <div class="float" id="glegend"></div>
+    <div class="float" id="pathq">
+      <b>경로 질의</b> <small style="color:var(--muted)">(그래프 검증용)</small>
+      <div class="row"><input id="pq-a" list="pq-list" placeholder="시작: 태그 또는 ID"><button id="pq-a-sel" title="현재 선택을 시작으로">선택</button></div>
+      <div class="row"><input id="pq-b" list="pq-list" placeholder="끝: 태그 또는 ID"><button id="pq-b-sel" title="현재 선택을 끝으로">선택</button></div>
+      <div class="row"><select id="pq-mode"><option value="physical">물리 배관만 (계측·신호 제외)</option><option value="all">모든 연결</option></select>
+        <button id="pq-go">찾기</button><button id="pq-clear">지우기</button></div>
+      <datalist id="pq-list"></datalist>
+      <div class="res" id="pq-res"></div>
+    </div>
+    <div class="float" id="search">
+      <input id="q" type="search" placeholder="태그·이름으로 찾기" autocomplete="off">
+      <div id="results"></div>
+    </div>
+    <div class="float" id="layers">
+      <label><input type="checkbox" data-layer="symbol" checked><span class="sw" style="border-color:var(--equipment)"></span>심볼 <small id="n-symbol"></small></label>
+      <label><input type="checkbox" data-layer="pipe" checked><span class="sw" style="border-color:var(--physical_connection)"></span>배관·연결 <small id="n-pipe"></small></label>
+      <label><input type="checkbox" data-layer="tag" checked><span class="sw" style="border-color:var(--tag)"></span>태그 <small id="n-tag"></small></label>
+      <div class="note">
+        <span class="sw" style="border-color:var(--physical_connection)"></span> 공정 배관<br>
+        <span class="sw" style="border-color:var(--signal_connection)"></span> 계장 신호<br>
+        <span class="sw" style="border-color:var(--measurement_connection)"></span> 계측 연결<br>
+        <span class="sw dash" style="border-color:var(--unresolved)"></span> 미해결 커넥터<br>
+        <span class="sw dash" style="border-color:var(--muted)"></span> 점선 = 미확인 항목 있음<br>
+        태그 위치는 근사값
+      </div>
+    </div>
+    <div class="float" id="zoom">
+      <button id="zout" title="축소">&minus;</button><span class="pct" id="pct"></span><button id="zin" title="확대">+</button>
+      <button class="fit" id="zfit" title="도면 전체 보기">맞춤</button>
+    </div>
+  </div>
+  <aside id="panel"><div class="empty">도면에서 심볼·배관·태그를 클릭하면 속성이 여기에 표시됩니다.</div></aside>
+</main>
+<div id="tooltip"></div>
+<script type="application/json" id="graph">__GRAPH__</script>
+<script type="application/json" id="extraction">__DATA__</script>
+<script>
+/* PATH-ENGINE-BEGIN : DOM을 쓰지 않는 경로 질의. hazop/graph/query.py와 같은 규칙이며 scripts/check_viewer_paths.js가 대조한다.
+   - 결정적 BFS: 이웃을 (이웃 entity_id, 엣지 entity_id) 오름차순으로 방문, 처음 발견 시 이전 노드·엣지 기록
+   - 방향 무시 경로: mode=physical이면 has_endpoint만, all이면 모든 엣지
+   - 확인된 흐름 방향 경로: 모드와 무관하게 has_endpoint만. 구간 flow_direction의 from_end 쪽 엣지는 노드->구간, to_end 쪽은 구간->노드
+   - 흐름 판정은 노드가 아니라 구간에 들어온·나간 has_endpoint 엣지의 end 기준 */
+function hazopPathEngine(G) {
+  "use strict";
+  var VALVE_POSITION_NOTE = "밸브 정상 위치(NC·LC 등)와 실패 위치는 반영하지 않음(모든 밸브를 열린 유로로 간주)";
+  var nodes = {}, edges = {}, cache = {};
+  G.nodes.forEach(function (n) { nodes[n.entity_id] = n; });
+  G.edges.forEach(function (e) { edges[e.entity_id] = e; });
+  function cmp(a, b) { return a < b ? -1 : (a > b ? 1 : 0); }
+  function adjacency(kind) {
+    if (cache[kind]) return cache[kind];
+    var adj = {};
+    Object.keys(nodes).forEach(function (id) { adj[id] = []; });
+    G.edges.forEach(function (e) {
+      if (kind !== "all" && e.kind !== "has_endpoint") return;
+      if (kind === "directed") {
+        var f = nodes[e.segment].flow_direction;
+        if (!f) return;
+        if (e.end === f.from_end) adj[e.node].push([e.segment, e.entity_id]);
+        else if (e.end === f.to_end) adj[e.segment].push([e.node, e.entity_id]);
+        return;
+      }
+      var a = e.nodes[0], b = e.nodes[1];
+      adj[a].push([b, e.entity_id]);
+      if (a !== b) adj[b].push([a, e.entity_id]);
+    });
+    Object.keys(adj).forEach(function (id) { adj[id].sort(function (x, y) { return cmp(x[0], y[0]) || cmp(x[1], y[1]); }); });
+    cache[kind] = adj;
+    return adj;
+  }
+  function bfs(adj, start, goal) {
+    var prev = {}, queue = [start], head = 0;
+    prev[start] = null;
+    while (head < queue.length) {
+      var cur = queue[head++];
+      if (cur === goal) break;
+      (adj[cur] || []).forEach(function (s) {
+        if (!Object.prototype.hasOwnProperty.call(prev, s[0])) { prev[s[0]] = [cur, s[1]]; queue.push(s[0]); }
+      });
+    }
+    if (!Object.prototype.hasOwnProperty.call(prev, goal)) return null;
+    var ns = [goal], es = [];
+    for (var c = goal; prev[c] !== null; c = prev[c][0]) { ns.unshift(prev[c][0]); es.unshift(prev[c][1]); }
+    return { nodes: ns, edges: es };
+  }
+  function flowRelation(seg, edgeIn, edgeOut) {
+    var f = nodes[seg].flow_direction;
+    if (!f) return "unknown";
+    var ein = edges[edgeIn].end, eout = edges[edgeOut].end;
+    if (ein === f.from_end && eout === f.to_end) return "with_flow";
+    if (ein === f.to_end && eout === f.from_end) return "against_flow";
+    return "unknown";
+  }
+  function resolveRef(ref) {
+    ref = String(ref == null ? "" : ref).trim();
+    if (!ref) return { error: "비어 있음" };
+    if (Object.prototype.hasOwnProperty.call(nodes, ref)) return { id: ref };
+    var low = ref.toLowerCase();
+    var hits = G.nodes.filter(function (n) { return n.local_id === ref || n.source_object_id === ref; });
+    if (!hits.length) hits = G.nodes.filter(function (n) { return n.tag && n.tag.toLowerCase() === low && n.node_type !== "pipe_segment"; });
+    if (!hits.length) hits = G.nodes.filter(function (n) { return n.tag && n.tag.toLowerCase() === low; });
+    if (!hits.length) return { error: "찾을 수 없음: " + ref };
+    if (hits.length > 1) return { error: "여러 개 일치(" + ref + "): " + hits.map(function (n) { return n.entity_id; }).join(", ") };
+    return { id: hits[0].entity_id };
+  }
+  function queryPath(a, b, mode) {
+    if (mode !== "physical" && mode !== "all") return { error: "mode는 physical 또는 all" };
+    var ra = resolveRef(a), rb = resolveRef(b);
+    if (ra.error || rb.error) return { error: ra.error || rb.error };
+    var res = { from: ra.id, to: rb.id, mode: mode, note: VALVE_POSITION_NOTE };
+    var p = bfs(adjacency(mode), ra.id, rb.id);
+    if (p) {
+      var unk = [], against = [], flows = [];
+      p.nodes.forEach(function (id, i) {
+        var fr = null;
+        if (nodes[id].node_type === "pipe_segment" && i > 0 && i < p.nodes.length - 1) {
+          fr = flowRelation(id, p.edges[i - 1], p.edges[i]);
+          if (fr === "unknown") unk.push(id); else if (fr === "against_flow") against.push(id);
+        }
+        flows.push(fr);
+      });
+      res.ignoring_direction = { found: true, length: p.nodes.length - 1, nodes: p.nodes, edges: p.edges,
+        edge_kinds: p.edges.map(function (e) { return edges[e].kind; }), flows: flows,
+        segments_direction_unknown: unk, segments_against_flow: against };
+    } else res.ignoring_direction = { found: false };
+    var d = bfs(adjacency("directed"), ra.id, rb.id);
+    res.confirmed_flow_direction = d ? { found: true, length: d.nodes.length - 1, nodes: d.nodes, edges: d.edges } : { found: false };
+    return res;
+  }
+  function signature(a, b, mode) {
+    var r = queryPath(a, b, mode), u = r.ignoring_direction, c = r.confirmed_flow_direction;
+    return [u.found ? u.nodes.join(" ") : null, c.found ? c.nodes.join(" ") : null,
+            u.found ? u.segments_direction_unknown.join(" ") : "", u.found ? u.segments_against_flow.join(" ") : ""];
+  }
+  return { queryPath: queryPath, resolveRef: resolveRef, signature: signature, flowRelation: flowRelation,
+           VALVE_POSITION_NOTE: VALVE_POSITION_NOTE };
+}
+/* PATH-ENGINE-END */
+(function () {
+  "use strict";
+  var D = JSON.parse(document.getElementById("extraction").textContent);
+  var NS = "http://www.w3.org/2000/svg";
+  var al = D.coordinate_system.svg_alignment;
+  var off = al.offset;
+  var bg = document.querySelector("#stage > svg:not(#overlay)");
+  var ov = document.getElementById("overlay");
+  var vb = bg.getAttribute("viewBox");
+  var vbn = vb.split(/[ ,]+/).map(Number);
+  ov.setAttribute("viewBox", vb);
+  ov.setAttribute("width", bg.getAttribute("width"));
+  ov.setAttribute("height", bg.getAttribute("height"));
+  var W = vbn[2], H = vbn[3];
+
+  document.getElementById("dwg").textContent = D.drawing.drawing_number || "";
+  document.getElementById("dwgtitle").textContent = D.drawing.title || "";
+  var st = document.getElementById("status");
+  st.textContent = "구조 검증 " + D.validation.status + " · 미확인 " + D.validation.unknowns.length +
+    " · 차단 " + D.validation.blockers.length;
+  st.className = "chip " + D.validation.status;
+
+  // ---------- 색인
+  var byLocal = {}, unknownsOf = {}, relsOfNode = {};
+  D.validation.unknowns.concat(D.validation.blockers).forEach(function (u) {
+    if (u.target) (unknownsOf[u.target] = unknownsOf[u.target] || []).push(u);
+  });
+  D.nodes.forEach(function (n) { byLocal[n.local_id] = { type: "node", d: n, els: [] }; });
+  var conns = D.relations.map(function (r) { return { r: r, unresolved: false }; })
+    .concat(D.unresolved_connectors.map(function (r) { return { r: r, unresolved: true }; }));
+  conns.forEach(function (c) {
+    byLocal[c.r.local_id] = { type: "relation", d: c.r, unresolved: c.unresolved, els: [] };
+    c.r.endpoints.forEach(function (ep) {
+      if (ep.node_local_id) (relsOfNode[ep.node_local_id] = relsOfNode[ep.node_local_id] || []).push(c.r.local_id);
+    });
+  });
+  var locOf = {};
+  D.source_locations.forEach(function (l) { locOf[l.local_id] = l; });
+
+  function el(tag, attrs, parent) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function hasUnknown(id) {
+    var it = byLocal[id];
+    return !!unknownsOf[id] || (it.type === "node" && it.d.classification !== "classified");
+  }
+
+  // ---------- 오버레이
+  // 층 순서: 배관(아래) -> 심볼 -> 태그(위). 심볼·태그는 drawio 좌표로 그리고 offset만큼 옮긴다.
+  // 배관은 배경 SVG의 실제 경로(SVG 좌표)를 그대로 쓰고, 없을 때만 drawio 좌표 근사 폴리라인을 쓴다.
+  var pipeLayer = el("g", { id: "layer-pipe" }, ov);
+  var drawioTf = "translate(" + (-off[0]) + "," + (-off[1]) + ")";
+  var pipeApprox = el("g", { transform: drawioTf }, pipeLayer);
+  var root = el("g", { transform: drawioTf }, ov);
+  var layers = { pipe: pipeLayer, symbol: el("g", { id: "layer-symbol" }, root),
+                 tag: el("g", { id: "layer-tag" }, root) };
+  var MIN = 8, nSym = 0, nPipe = 0, nTag = 0, nPipeApprox = 0;
+  function cellGroup(cellId) {
+    var all = bg.querySelectorAll("[data-cell-id]");
+    for (var i = 0; i < all.length; i++) if (all[i].getAttribute("data-cell-id") === cellId) return all[i];
+    return null;
+  }
+  // 커넥터 셀 그룹 안의 선 경로(fill=none)와, 배경 SVG 루트까지의 transform 사슬
+  function svgLinePaths(cellId) {
+    var g = cellGroup(cellId), out = [];
+    if (!g) return out;
+    Array.prototype.forEach.call(g.querySelectorAll("path"), function (p) {
+      if (p.closest("[data-cell-id]") !== g || p.getAttribute("fill") !== "none" || !p.getAttribute("d")) return;
+      var tf = [], e = p;
+      while (e && e !== bg) {
+        if (e.getAttribute && e.getAttribute("transform")) tf.unshift(e.getAttribute("transform"));
+        e = e.parentNode;
+      }
+      out.push({ d: p.getAttribute("d"), tf: tf.join(" ") });
+    });
+    return out;
+  }
+  D.nodes.forEach(function (n) {
+    var loc = locOf[n.local_id];
+    if (!loc) return;
+    var b = loc.bbox, w = Math.max(b[2], MIN), h = Math.max(b[3], MIN);
+    var x = b[0] + b[2] / 2 - w / 2, y = b[1] + b[3] / 2 - h / 2;
+    var color = "var(--" + (n.category || "unclassified") + ")";
+    var rot = (n.style.match(/(?:^|;)rotation=(-?[\d.]+)/g) || []).pop();
+    var attrs = { x: x, y: y, width: w, height: h, rx: 2, style: "stroke:" + color,
+      "class": "sym" + (hasUnknown(n.local_id) || loc.approximate ? " unknown" : ""), "data-local-id": n.local_id,
+      "data-cell-id": n.source_object_id };
+    if (rot) attrs.transform = "rotate(" + parseFloat(rot.split("=")[1]) + "," + (b[0] + b[2] / 2) + "," + (b[1] + b[3] / 2) + ")";
+    var r = el("rect", attrs, layers.symbol);
+    byLocal[n.local_id].els.push(r); nSym++;
+    if (n.label_location) {
+      var t = n.label_location.bbox;
+      var tr = el("rect", { x: t[0], y: t[1], width: t[2], height: t[3], rx: 2,
+        "class": "tagbox" + ((unknownsOf[n.local_id] || []).some(function (u) { return u.field === "tag"; }) ? " unknown" : ""), "data-local-id": n.local_id,
+        "data-cell-id": n.source_object_id }, layers.tag);
+      byLocal[n.local_id].els.push(tr); nTag++;
+    }
+  });
+  conns.forEach(function (c) {
+    var color = c.unresolved ? "var(--unresolved)" : "var(--" + (c.r.kind || "unresolved") + ")";
+    var cls = "pipe-line" + (c.unresolved || hasUnknown(c.r.local_id) ? " unknown" : "");
+    var paths = svgLinePaths(c.r.source_object_id);
+    var it = byLocal[c.r.local_id];
+    if (paths.length) {
+      paths.forEach(function (p) {
+        var g = el("g", p.tf ? { transform: p.tf } : {}, pipeLayer);
+        el("path", { d: p.d, "class": "pipe-hit", "data-local-id": c.r.local_id, "data-cell-id": c.r.source_object_id }, g);
+        it.els.push(el("path", { d: p.d, style: "stroke:" + color, "class": cls }, g));
+      });
+      it.pathSource = "svg";
+    } else {
+      var pts = [], eps = c.r.endpoints;
+      if (eps[0].point) pts.push(eps[0].point);
+      c.r.waypoints.forEach(function (p) { pts.push(p); });
+      if (eps[1].point) pts.push(eps[1].point);
+      if (pts.length < 2) return;
+      var ps = pts.map(function (p) { return p[0] + "," + p[1]; }).join(" ");
+      var g = el("g", {}, pipeApprox);
+      el("polyline", { points: ps, "class": "pipe-hit", "data-local-id": c.r.local_id, "data-cell-id": c.r.source_object_id }, g);
+      it.els.push(el("polyline", { points: ps, style: "stroke:" + color, "class": cls + " unknown" }, g));
+      it.pathSource = "approx";
+      nPipeApprox++;
+    }
+    nPipe++;
+  });
+  document.getElementById("n-symbol").textContent = nSym;
+  document.getElementById("n-pipe").textContent = nPipe + (nPipeApprox ? " (근사 " + nPipeApprox + ")" : "");
+  ov.setAttribute("data-pipe-svg", nPipe - nPipeApprox);
+  ov.setAttribute("data-pipe-approx", nPipeApprox);
+  document.getElementById("n-tag").textContent = nTag;
+  Array.prototype.forEach.call(document.querySelectorAll("#layers input"), function (cb) {
+    cb.addEventListener("change", function () { layers[cb.dataset.layer].classList.toggle("hidden", !cb.checked); });
+  });
+
+  // ---------- 확대·축소·이동
+  var vp = document.getElementById("viewport"), stage = document.getElementById("stage");
+  var view = { s: 1, x: 0, y: 0 };
+  function apply() {
+    stage.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.s + ")";
+    document.getElementById("pct").textContent = Math.round(view.s * 100) + "%";
+  }
+  function fit() {
+    var r = vp.getBoundingClientRect();
+    view.s = Math.min(r.width / W, r.height / H) * 0.95;
+    view.x = (r.width - W * view.s) / 2; view.y = (r.height - H * view.s) / 2; apply();
+  }
+  function zoomAt(f, cx, cy) {
+    var ns = Math.min(Math.max(view.s * f, 0.1), 12);
+    view.x = cx - (cx - view.x) * ns / view.s; view.y = cy - (cy - view.y) * ns / view.s; view.s = ns; apply();
+  }
+  vp.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    var r = vp.getBoundingClientRect();
+    zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
+  }, { passive: false });
+  function centerZoom(f) { var r = vp.getBoundingClientRect(); zoomAt(f, r.width / 2, r.height / 2); }
+  document.getElementById("zin").onclick = function () { centerZoom(1.25); };
+  document.getElementById("zout").onclick = function () { centerZoom(1 / 1.25); };
+  document.getElementById("zfit").onclick = fit;
+  var drag = null, moved = false;
+  vp.addEventListener("mousedown", function (e) {
+    if (e.button !== 0 || e.target.closest(".float")) return;
+    drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y }; moved = false;
+  });
+  window.addEventListener("mousemove", function (e) {
+    if (!drag) return;
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) { moved = true; vp.classList.add("dragging"); }
+    view.x = drag.vx + dx; view.y = drag.vy + dy; apply();
+  });
+  window.addEventListener("mouseup", function () { drag = null; vp.classList.remove("dragging"); });
+  window.addEventListener("resize", fit);
+
+  // 도면 좌표 상자를 화면 가운데로
+  function focusOn(id) {
+    var loc = locOf[id], r = vp.getBoundingClientRect(), cx, cy;
+    if (document.body.classList.contains("tab-graph") && gpos[id]) {
+      cx = gpos[id][0] - off[0]; cy = gpos[id][1] - off[1];
+    } else if (loc) {
+      var b = loc.bbox;
+      cx = b[0] - off[0] + b[2] / 2; cy = b[1] - off[1] + b[3] / 2;
+    } else return;
+    view.s = Math.max(view.s, 1.5);
+    view.x = r.width / 2 - cx * view.s; view.y = r.height / 2 - cy * view.s; apply();
+    var it = byLocal[id];
+    it.els.forEach(function (e) { e.classList.remove("flash"); void e.getBBox(); e.classList.add("flash"); });
+  }
+
+  // ---------- 선택·속성 패널
+  var selected = null;
+  function label(id) {
+    var it = byLocal[id];
+    if (!it) return id;
+    if (it.type === "node") return (it.d.tag || it.d.kind || "(태그 없음)") + " · " + id;
+    return (it.d.line_no || it.d.kind || "커넥터") + " · " + id;
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function val(v) { return v === null || v === undefined || v === "" ? "—" : esc(typeof v === "object" ? JSON.stringify(v) : v); }
+  function rows(obj) {
+    return "<table>" + Object.keys(obj).map(function (k) { return "<tr><td>" + esc(k) + "</td><td>" + val(obj[k]) + "</td></tr>"; }).join("") + "</table>";
+  }
+  function linkTo(id) { return '<span class="link" data-goto="' + esc(id) + '">' + esc(label(id)) + "</span>"; }
+  var CAT = { equipment: "설비", valve: "밸브", instrument: "계기", piping_element: "배관 요소" };
+  var REL = { physical_connection: "공정 배관", signal_connection: "계장 신호", measurement_connection: "계측 연결" };
+
+  function select(id, focus) {
+    if (selected) byLocal[selected].els.forEach(function (e) { e.classList.remove("selected"); });
+    selected = id;
+    var it = byLocal[id];
+    it.els.forEach(function (e) { e.classList.add("selected"); });
+    var d = it.d, h = "";
+    if (it.type === "node") {
+      h += '<div class="cat">' + esc(CAT[d.category] || "미분류") + "</div><h2>" + esc(d.tag || "(태그 없음)") + "</h2>";
+      h += '<div class="sub">' + esc(d.label_text.replace(/\n/g, " ")) + "</div>";
+      h += rows({ local_id: d.local_id, source_object_id: d.source_object_id, kind: d.kind, tag: d.tag,
+                  category: d.category, classification: d.classification });
+      h += "<h3>원본 속성 (attributes)</h3>" + rows(d.attributes);
+      var rs = relsOfNode[id] || [];
+      h += "<h3>연결된 관계 (" + esc(rs.length) + ")</h3>";
+      h += rs.length ? rs.map(function (rid) {
+        var r = byLocal[rid].d, other = r.endpoints.filter(function (ep) { return ep.node_local_id && ep.node_local_id !== id; })[0];
+        // 흐름 방향이 원본에 있을 때만 화살표, 없으면 '—'(방향 아님)
+        var mark = "—";
+        if (r.flow_direction) mark = r.flow_direction.from === id ? "→" : (r.flow_direction.to === id ? "←" : "—");
+        return "<div>" + linkTo(rid) + " <small>" + esc(REL[r.kind] || "미확인") + "</small>" +
+          (other ? ' <span class="dir">' + mark + "</span> " + linkTo(other.node_local_id) : "") + "</div>";
+      }).join("") : '<div class="empty">없음</div>';
+    } else {
+      h += '<div class="cat">' + esc(it.unresolved ? "미해결 커넥터" : (REL[d.kind] || "관계 종류 미확인")) + "</div><h2>" + esc(d.line_no || d.local_id) + "</h2>";
+      h += '<div class="sub">' + esc(d.label_text || "") + "</div>";
+      h += rows({ local_id: d.local_id, source_object_id: d.source_object_id, kind: d.kind, line_type: d.line_type,
+                  line_no: d.line_no,
+                  flow_direction: d.flow_direction ? (label(d.flow_direction.from) + " → " + label(d.flow_direction.to)) : "— (원본에 방향 없음)",
+                  path_source: it.pathSource === "svg" ? "SVG 실제 경로" : "근사 폴리라인" });
+      if (d.label_cells && d.label_cells.length) h += "<h3>커넥터 라벨</h3>" + d.label_cells.map(function (lc) {
+        return "<div>" + esc(lc.text || "(빈 라벨)") + " <small>" + esc(lc.source_object_id) + "</small></div>";
+      }).join("");
+      h += "<h3>원본 속성 (attributes)</h3>" + rows(d.attributes);
+      h += "<h3>양 끝</h3>" + d.endpoints.map(function (ep) {
+        return "<div>" + esc(ep.end) + ": " + (ep.node_local_id ? linkTo(ep.node_local_id) : '<span class="warn">' + esc(ep.status) + " (" + val(ep.source_object_id) + ")</span>") + "</div>";
+      }).join("");
+    }
+    if (entityOfLocal[id]) {
+      var ge = entityOfLocal[id], gn = gNodes[ge];
+      h += "<h3>그래프</h3>" + rows({ entity_id: ge, node_type: gn ? gn.node_type : "edge",
+        flow_direction: gn && gn.node_type === "pipe_segment" ? (gn.flow_direction ? "확인됨" : "미확인") : null });
+    }
+    var us = unknownsOf[id] || [];
+    h += "<h3>미확인·오류 (" + esc(us.length) + ")</h3>" + (us.length ? us.map(function (u) {
+      return '<div class="warn">' + esc(u.check) + (u.field ? " [" + esc(u.field) + "]" : "") + ": " + esc(u.reason) + "</div>";
+    }).join("") : '<div class="empty">없음</div>');
+    var panel = document.getElementById("panel");
+    panel.innerHTML = h;
+    Array.prototype.forEach.call(panel.querySelectorAll("[data-goto]"), function (a) {
+      a.onclick = function () { select(a.dataset.goto, true); };
+    });
+    if (focus) focusOn(id);
+  }
+  ov.addEventListener("click", function (e) {
+    if (moved) { moved = false; return; }
+    var t = e.target.closest("[data-local-id]");
+    if (t) select(t.getAttribute("data-local-id"), false);
+  });
+
+  // ---------- 툴팁
+  var tip = document.getElementById("tooltip");
+  ov.addEventListener("mousemove", showTip);
+  function showTip(e) {
+    var t = e.target.closest("[data-local-id]");
+    if (!t || drag) { tip.style.display = "none"; return; }
+    var it = byLocal[t.getAttribute("data-local-id")], d = it.d;
+    tip.innerHTML = it.type === "node"
+      ? "<b>" + val(d.tag) + "</b><br><span class='k'>" + esc(CAT[d.category] || "미분류") + " · " + val(d.kind) + "</span>"
+      : "<b>" + val(d.line_no) + "</b><br><span class='k'>" + esc(it.unresolved ? "미해결 커넥터" : (REL[d.kind] || "미확인")) + " · " + val(d.line_type) + "</span>";
+    if (unknownsOf[d.local_id]) tip.innerHTML += "<br><span class='k'>미확인 " + esc(unknownsOf[d.local_id].length) + "건</span>";
+    tip.style.display = "block"; tip.style.left = (e.clientX + 14) + "px"; tip.style.top = (e.clientY + 14) + "px";
+  }
+  ov.addEventListener("mouseleave", function () { tip.style.display = "none"; });
+
+  // ---------- 검색
+  var SEARCH_LIMIT = 50;
+  var q = document.getElementById("q"), res = document.getElementById("results");
+  q.addEventListener("input", function () {
+    var s = q.value.trim().toLowerCase();
+    res.innerHTML = "";
+    if (!s) return;
+    var hits = Object.keys(byLocal).filter(function (id) {
+      var d = byLocal[id].d;
+      return [d.tag, d.line_no, d.kind, d.label_text, d.local_id, d.source_object_id].join(" ").toLowerCase().indexOf(s) >= 0;
+    });
+    hits.slice(0, SEARCH_LIMIT).forEach(function (id) {
+      var d = byLocal[id].d;
+      var div = document.createElement("div");
+      div.innerHTML = esc(label(id)) + " <small>" + esc(d.kind || "") + "</small>";
+      div.onclick = function () { select(id, true); };
+      res.appendChild(div);
+    });
+    if (!hits.length) res.innerHTML = "<small>결과 없음</small>";
+    else if (hits.length > SEARCH_LIMIT) {
+      var more = document.createElement("small");
+      more.textContent = "외 " + (hits.length - SEARCH_LIMIT) + "건 — 검색어를 더 구체적으로 입력하세요";
+      res.appendChild(more);
+    }
+  });
+
+  // ================================================================ 그래프(③)
+  var G = JSON.parse(document.getElementById("graph").textContent);
+  var gsvg = document.getElementById("graphsvg");
+  var gpos = {};               // 추출 local_id -> 그래프 위치(drawio 좌표)
+  var entityOfLocal = {}, gNodes = {}, gEdgeEls = [];
+  var NODE_R = { equipment: 7, valve: 6, instrument: 5, piping_element: 4, pipe_segment: 3.5 };
+  var EDGE_COLOR = { has_endpoint: "var(--physical_connection)", signal_connection: "var(--signal_connection)",
+                     measurement_connection: "var(--measurement_connection)" };
+  var GKIND = { pipe_segment: "배관 구간" };
+  var tabGraph = document.getElementById("tab-graph"), tabDrawing = document.getElementById("tab-drawing");
+  document.body.classList.add("tab-drawing");
+
+  function setTab(name) {
+    document.body.classList.toggle("tab-graph", name === "graph");
+    document.body.classList.toggle("tab-drawing", name === "drawing");
+    tabGraph.classList.toggle("on", name === "graph");
+    tabDrawing.classList.toggle("on", name === "drawing");
+    if (selected) focusOn(selected);
+  }
+  tabDrawing.onclick = function () { setTab("drawing"); };
+
+  if (!G) {
+    tabGraph.disabled = true;
+    tabGraph.title = "그래프 결과 없음 (scripts/build_graph.py 실행 후 다시 빌드)";
+    document.getElementById("pathq").innerHTML = "<b>경로 질의</b><div class='res'>그래프 결과가 없어 사용할 수 없습니다.</div>";
+  } else {
+    tabGraph.onclick = function () { setTab("graph"); };
+    gsvg.setAttribute("viewBox", vb);
+    gsvg.setAttribute("width", bg.getAttribute("width"));
+    gsvg.setAttribute("height", bg.getAttribute("height"));
+    var groot = el("g", { transform: drawioTf }, gsvg);
+    var gEdgeLayer = el("g", {}, groot), gNodeLayer = el("g", {}, groot), gLabelLayer = el("g", {}, groot);
+    var posDrawing = {};
+    G.nodes.forEach(function (n) {
+      gNodes[n.entity_id] = n;
+      entityOfLocal[n.local_id] = n.entity_id;
+      if (n.position) { posDrawing[n.entity_id] = n.position.slice(); gpos[n.local_id] = n.position.slice(); }
+    });
+    G.edges.forEach(function (e) { if (e.kind !== "has_endpoint") entityOfLocal[e.local_id] = e.entity_id; });
+    var gUnknown = {};
+    G.validation.unknowns.forEach(function (u) { if (u.target) gUnknown[u.target] = true; });
+
+    // 엣지: has_endpoint는 구간 노드의 local_id(=원본 커넥터)로 선택된다
+    G.edges.forEach(function (e) {
+      var a = posDrawing[e.nodes[0]], b = posDrawing[e.nodes[1]];
+      if (!a || !b) return;
+      var lid = e.local_id;
+      var g = el("g", { "data-kind": e.kind, "data-nodes": e.nodes.join(" ") }, gEdgeLayer);
+      var hit = el("line", { x1: a[0], y1: a[1], x2: b[0], y2: b[1], "class": "gedge-hit", "data-local-id": lid }, g);
+      var line = el("line", { x1: a[0], y1: a[1], x2: b[0], y2: b[1], style: "stroke:" + EDGE_COLOR[e.kind],
+        "class": "gedge" + (e.kind === "has_endpoint" && !gNodes[e.segment].flow_direction ? " unknown" : "") }, g);
+      gEdgeEls.push({ e: e, g: g, hit: hit, line: line });
+      if (byLocal[lid]) byLocal[lid].els.push(line);
+    });
+    // 노드
+    G.nodes.forEach(function (n) {
+      var p = posDrawing[n.entity_id];
+      if (!p) return;
+      var r = NODE_R[n.category] || 5, color = "var(--" + (n.category === "pipe_segment" ? "physical_connection" : (n.category || "unclassified")) + ")";
+      var shape = n.node_type === "pipe_segment"
+        ? el("rect", { x: p[0] - r, y: p[1] - r, width: 2 * r, height: 2 * r, transform: "rotate(45," + p[0] + "," + p[1] + ")" }, gNodeLayer)
+        : el("circle", { cx: p[0], cy: p[1], r: r }, gNodeLayer);
+      shape.setAttribute("style", "fill:" + color);
+      shape.setAttribute("class", "gnode" + (gUnknown[n.entity_id] || n.classification !== "classified" ? " unknown" : ""));
+      shape.setAttribute("data-local-id", n.local_id);
+      shape.setAttribute("data-entity-id", n.entity_id);
+      shape.setAttribute("data-kind", n.kind || "unclassified");
+      if (byLocal[n.local_id]) byLocal[n.local_id].els.push(shape);
+      var lab = null;
+      if (n.node_type !== "pipe_segment" && n.tag) {
+        lab = el("text", { x: p[0] + r + 2, y: p[1] + 3, "class": "glabel", "data-kind": n.kind || "unclassified" }, gLabelLayer);
+        lab.textContent = n.tag;
+      }
+      gNodes[n.entity_id]._el = shape; gNodes[n.entity_id]._lab = lab;
+    });
+
+    function placeAll(pos) {
+      G.nodes.forEach(function (n) {
+        var p = pos[n.entity_id], s = n._el;
+        if (!p || !s) return;
+        gpos[n.local_id] = p;
+        if (s.tagName === "circle") { s.setAttribute("cx", p[0]); s.setAttribute("cy", p[1]); }
+        else {
+          var r = NODE_R.pipe_segment;
+          s.setAttribute("x", p[0] - r); s.setAttribute("y", p[1] - r);
+          s.setAttribute("transform", "rotate(45," + p[0] + "," + p[1] + ")");
+        }
+        if (n._lab) { n._lab.setAttribute("x", p[0] + (NODE_R[n.category] || 5) + 2); n._lab.setAttribute("y", p[1] + 3); }
+      });
+      gEdgeEls.forEach(function (x) {
+        var a = pos[x.e.nodes[0]], b = pos[x.e.nodes[1]];
+        [x.hit, x.line].forEach(function (l) {
+          l.setAttribute("x1", a[0]); l.setAttribute("y1", a[1]); l.setAttribute("x2", b[0]); l.setAttribute("y2", b[1]);
+        });
+      });
+    }
+
+    // 간단한 힘 기반 배치(Fruchterman-Reingold). 도면 좌표에서 시작하므로 결과가 매번 같다.
+    var posForce = null;
+    function forceLayout() {
+      var ids = Object.keys(posDrawing), n = ids.length;
+      var x0 = off[0], y0 = off[1], w = W, h = H;
+      var k = Math.sqrt(w * h / Math.max(n, 1)) * 0.6, t = w / 10;
+      var p = {}; ids.forEach(function (id) { p[id] = posDrawing[id].slice(); });
+      var adj = G.edges.map(function (e) { return e.nodes; });
+      for (var it = 0; it < 300; it++) {
+        var disp = {}; ids.forEach(function (id) { disp[id] = [0, 0]; });
+        for (var i = 0; i < n; i++) for (var j = i + 1; j < n; j++) {
+          var a = ids[i], b = ids[j], dx = p[a][0] - p[b][0], dy = p[a][1] - p[b][1];
+          var d = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01), f = k * k / d;
+          disp[a][0] += dx / d * f; disp[a][1] += dy / d * f; disp[b][0] -= dx / d * f; disp[b][1] -= dy / d * f;
+        }
+        adj.forEach(function (pr) {
+          var a = pr[0], b = pr[1];
+          if (!p[a] || !p[b]) return;
+          var dx = p[a][0] - p[b][0], dy = p[a][1] - p[b][1], d = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01), f = d * d / k;
+          disp[a][0] -= dx / d * f; disp[a][1] -= dy / d * f; disp[b][0] += dx / d * f; disp[b][1] += dy / d * f;
+        });
+        ids.forEach(function (id) {
+          var dx = disp[id][0], dy = disp[id][1], d = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01), m = Math.min(d, t);
+          p[id][0] = Math.min(x0 + w - 20, Math.max(x0 + 20, p[id][0] + dx / d * m));
+          p[id][1] = Math.min(y0 + h - 20, Math.max(y0 + 20, p[id][1] + dy / d * m));
+        });
+        t *= 0.985;
+      }
+      return p;
+    }
+
+    // 범례: 노드 종류별·관계 종류별 개수와 필터
+    var nodeKindCount = {}, edgeKindCount = {}, kindCat = {};
+    G.nodes.forEach(function (n) {
+      var k = n.kind || "unclassified";
+      nodeKindCount[k] = (nodeKindCount[k] || 0) + 1; kindCat[k] = n.category;
+    });
+    G.edges.forEach(function (e) { edgeKindCount[e.kind] = (edgeKindCount[e.kind] || 0) + 1; });
+    var REL_LABEL = { has_endpoint: "has_endpoint (구간-끝 대상)", signal_connection: "signal_connection (계장 신호)",
+                      measurement_connection: "measurement_connection (계측 연결)" };
+    var gl = document.getElementById("glegend");
+    var h = '<div class="stat"><b>' + esc(G.nodes.length) + "</b> 노드 · <b>" + esc(G.edges.length) + "</b> 관계 · 미해결 " +
+      esc(G.unresolved.length) + " (제외) · 검토 항목 " + esc((G.review_items || []).length) +
+      " · 그래프 검증 " + esc(G.validation.status) + "</div>";
+    h += '<div class="btns"><button id="g-all">모두</button> <button id="g-none">모두 끄기</button> <button id="g-layout">배치: 도면 좌표</button></div>';
+    h += "<h4>노드 종류</h4>";
+    Object.keys(nodeKindCount).sort(function (a, b) { return nodeKindCount[b] - nodeKindCount[a] || (a < b ? -1 : 1); }).forEach(function (k) {
+      var c = kindCat[k] === "pipe_segment" ? "physical_connection" : (kindCat[k] || "unclassified");
+      h += '<label><input type="checkbox" data-gnode="' + esc(k) + '" checked><span class="dot" style="background:var(--' + esc(c) + ')"></span>' +
+        esc(GKIND[k] || k) + '<span class="cnt">' + nodeKindCount[k] + "</span></label>";
+    });
+    h += "<h4>관계 종류</h4>";
+    Object.keys(edgeKindCount).sort().forEach(function (k) {
+      h += '<label><input type="checkbox" data-gedge="' + esc(k) + '" checked><span class="sw" style="border-color:' + esc(EDGE_COLOR[k] || "var(--muted)") + '"></span>' +
+        esc(REL_LABEL[k] || k) + '<span class="cnt">' + edgeKindCount[k] + "</span></label>";
+    });
+    h += '<div class="stat" style="margin-top:8px">점선 = 미확인 항목 있음(구간은 흐름 방향 미확인)</div>';
+    gl.innerHTML = h;
+    function applyFilter() {
+      var offNode = {}, offEdge = {};
+      Array.prototype.forEach.call(gl.querySelectorAll("[data-gnode]"), function (cb) { if (!cb.checked) offNode[cb.getAttribute("data-gnode")] = true; });
+      Array.prototype.forEach.call(gl.querySelectorAll("[data-gedge]"), function (cb) { if (!cb.checked) offEdge[cb.getAttribute("data-gedge")] = true; });
+      var hiddenNode = {};
+      G.nodes.forEach(function (n) {
+        var hide = !!offNode[n.kind || "unclassified"];
+        hiddenNode[n.entity_id] = hide;
+        if (n._el) n._el.classList.toggle("ghide", hide);
+        if (n._lab) n._lab.classList.toggle("ghide", hide);
+      });
+      gEdgeEls.forEach(function (x) {
+        x.g.classList.toggle("ghide", !!offEdge[x.e.kind] || hiddenNode[x.e.nodes[0]] || hiddenNode[x.e.nodes[1]]);
+      });
+    }
+    gl.addEventListener("change", applyFilter);
+    function setAll(v) { Array.prototype.forEach.call(gl.querySelectorAll("input[type=checkbox]"), function (cb) { cb.checked = v; }); applyFilter(); }
+    document.getElementById("g-all").onclick = function () { setAll(true); };
+    document.getElementById("g-none").onclick = function () { setAll(false); };
+    var forceOn = false;
+    document.getElementById("g-layout").onclick = function () {
+      forceOn = !forceOn;
+      if (forceOn && !posForce) posForce = forceLayout();
+      placeAll(forceOn ? posForce : posDrawing);
+      this.textContent = "배치: " + (forceOn ? "힘 기반" : "도면 좌표");
+    };
+
+    // 그래프 클릭·툴팁은 도면 오버레이와 같은 선택·패널을 쓴다
+    gsvg.addEventListener("click", function (e) {
+      if (moved) { moved = false; return; }
+      var t = e.target.closest("[data-local-id]");
+      if (t) select(t.getAttribute("data-local-id"), false);
+    });
+    gsvg.addEventListener("mousemove", showTip);
+    gsvg.addEventListener("mouseleave", function () { tip.style.display = "none"; });
+
+    // ------------------------------------------------------------ 경로 질의 (규칙은 hazopPathEngine 참고)
+    var PE = hazopPathEngine(G);
+    var queryPath = PE.queryPath;
+    window.hazopQueryPath = queryPath;  // 브라우저 콘솔·자동 검사용
+
+    var dl = document.getElementById("pq-list");
+    G.nodes.forEach(function (n) {
+      if (n.tag && n.node_type !== "pipe_segment") { var o = document.createElement("option"); o.value = n.tag; dl.appendChild(o); }
+    });
+    function fillFromSelection(inputId) {
+      if (!selected) return;
+      var eid = entityOfLocal[selected];
+      if (!eid || !gNodes[eid]) { document.getElementById("pq-res").innerHTML = "<span class='bad'>선택한 항목은 그래프 노드가 아님(신호·계측 연결)</span>"; return; }
+      document.getElementById(inputId).value = gNodes[eid].tag && gNodes[eid].node_type !== "pipe_segment" ? gNodes[eid].tag : eid;
+    }
+    document.getElementById("pq-a-sel").onclick = function () { fillFromSelection("pq-a"); };
+    document.getElementById("pq-b-sel").onclick = function () { fillFromSelection("pq-b"); };
+    var onPath = [];
+    function clearPath() {
+      onPath.forEach(function (e) { e.classList.remove("onpath", "dirunknown"); });
+      onPath = [];
+    }
+    function mark(localId, dirUnknown) {
+      var it = byLocal[localId];
+      if (!it) return;
+      it.els.forEach(function (e) { e.classList.add("onpath"); if (dirUnknown) e.classList.add("dirunknown"); onPath.push(e); });
+    }
+    function nodeLink(eid) {
+      var n = gNodes[eid];
+      return '<span class="link" data-goto="' + esc(n.local_id) + '">' + esc((n.node_type === "pipe_segment" ? "구간 " : "") + (n.tag || n.kind || eid)) + "</span>";
+    }
+    var FLOWMARK = { with_flow: "→ 흐름 방향", against_flow: "← 흐름 반대", unknown: "? 방향 미확인" };
+    document.getElementById("pq-clear").onclick = function () { clearPath(); document.getElementById("pq-res").innerHTML = ""; };
+    document.getElementById("pq-go").onclick = function () {
+      clearPath();
+      var out = document.getElementById("pq-res");
+      var r = queryPath(document.getElementById("pq-a").value, document.getElementById("pq-b").value, document.getElementById("pq-mode").value);
+      if (r.error) { out.innerHTML = "<span class='bad'>" + esc(r.error) + "</span>"; return; }
+      var u = r.ignoring_direction, c = r.confirmed_flow_direction, h = "";
+      h += "<small class='bad'>" + esc(PE.VALVE_POSITION_NOTE) + "</small>";
+      h += "<h4>방향 무시 경로</h4>";
+      if (!u.found) h += "<span class='bad'>경로 없음</span>";
+      else {
+        h += "길이 " + esc(u.length) + " · 방향 미확인 구간 " + esc(u.segments_direction_unknown.length) +
+          " · 흐름 반대 구간 " + esc(u.segments_against_flow.length) + "<br>";
+        h += u.nodes.map(function (id, i) {
+          var s = (i > 0 && u.edge_kinds[i - 1] !== "has_endpoint") ? "<small>[" + esc(u.edge_kinds[i - 1]) + "]</small> " : "";
+          s += nodeLink(id);
+          var fr = u.flows[i];
+          if (fr) s += " <small" + (fr === "with_flow" ? "" : " class='bad'") + ">" + esc(FLOWMARK[fr]) + "</small>";
+          return s;
+        }).join("<br>");
+        u.nodes.forEach(function (id) { mark(gNodes[id].local_id, u.segments_direction_unknown.indexOf(id) >= 0); });
+        u.edges.forEach(function (eid) {
+          var x = gEdgeEls.filter(function (g) { return g.e.entity_id === eid; })[0];
+          if (x) { x.line.classList.add("onpath"); onPath.push(x.line); if (x.e.kind !== "has_endpoint") mark(x.e.local_id, false); }
+        });
+      }
+      h += "<h4>확인된 흐름 방향만 따르는 경로 <small>(물리 배관만, 모드 무관)</small></h4>";
+      h += c.found ? "있음 (길이 " + esc(c.length) + ")" : "<span class='bad'>없음 — 방향 미확인 구간·흐름 반대 구간 또는 계측·신호로만 이어진 경우</span>";
+      if (r.mode === "all") h += "<br><small>모든 연결 모드의 방향 무시 경로는 계장 신호·계측 연결을 포함하며 물질 흐름 경로가 아님</small>";
+      out.innerHTML = h;
+      Array.prototype.forEach.call(out.querySelectorAll("[data-goto]"), function (a) { a.onclick = function () { select(a.dataset.goto, true); }; });
+    };
+  }
+
+  apply(); fit();
+})();
+</script>
+</body>
+</html>
