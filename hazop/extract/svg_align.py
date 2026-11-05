@@ -10,6 +10,8 @@ SVG 좌표 = drawio 좌표 - offset 이다. 각 셀 그룹(data-cell-id)의 첫 
 """
 
 import collections
+import glob
+import os
 import re
 import xml.etree.ElementTree as ET
 
@@ -43,6 +45,43 @@ def _first_shape(el):
         for child in reversed(list(node)):
             stack.append((child, chain + [child.get("transform")]))
     return None, None
+
+
+def _safe_page_name(name):
+    """페이지 이름(도면 파일 안의 외부 입력)을 파일 이름에 붙여도 되는지. 경로 구분자·'..'·드라이브 문자(':')·제어문자가
+    있으면 False(그 규칙을 건너뜀)."""
+    if not isinstance(name, str) or not name:
+        return False
+    if any(c in name for c in ("/", "\\", ":")) or ".." in name:
+        return False
+    return not any(ord(c) < 32 or ord(c) == 127 for c in name)
+
+
+def _inside(folder, path):
+    """path가 folder 바로 아래 파일인지(심볼릭 링크 등을 풀어 확인)."""
+    return os.path.dirname(os.path.realpath(path)) == os.path.realpath(folder)
+
+
+def find_svg(drawio_path, page_index=0, page_name=None, page_count=1):
+    """draw.io 원본 옆에서 이 페이지의 SVG를 찾는다. 추출(scripts/extract_drawio.py)과 등록(hazop/register)이 같이 쓴다.
+    한 페이지 문서: (1) 원본과 같은 이름 <파일명>.svg(예: X.drawio.svg), <stem>.svg(예: X.svg)
+                    (2) <NN>_<페이지 이름>.drawio.svg (예: 01_SNP-M-102.drawio.svg)
+                    (3) 폴더에 *.drawio.svg가 하나뿐이면 그것(기존 규칙)
+    여러 페이지 문서: (2)만. 하나뿐인 SVG를 여러 페이지에 붙이지 않는다.
+    페이지 이름이 경로로 해석될 수 있으면(_safe_page_name) (2)를 건너뛴다. 결과는 원본 폴더 안 파일만. 없으면 None."""
+    folder = os.path.dirname(drawio_path)
+    names = []
+    if page_count == 1:
+        names += [drawio_path + ".svg", os.path.splitext(drawio_path)[0] + ".svg"]
+    if _safe_page_name(page_name):
+        names.append(os.path.join(folder, "%02d_%s.drawio.svg" % (page_index + 1, page_name)))
+    for path in names:
+        if os.path.isfile(path) and _inside(folder, path):
+            return path
+    if page_count != 1:
+        return None
+    found = glob.glob(os.path.join(glob.escape(folder), "*.drawio.svg"))
+    return found[0] if len(found) == 1 and _inside(folder, found[0]) else None
 
 
 def align(svg_path, result):

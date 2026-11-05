@@ -13,6 +13,8 @@
   등록 경로: python scripts/run_samples.py  (graph_version·project_id가 달라지므로 --rebind-graph로 다시 고정)
 --live 없이 실행하면 실제 API를 호출하지 않는다(고정 응답만). --resume는 원래 실행의 AI 모드를 그대로 쓰며,
 실제 API 실행을 재시도할 때도 --live를 명시해야 한다.
+경로: 구간·그래프·고정 응답·출력은 작업 루트(HAZOP_WORK_ROOT), 카탈로그·적용 판단·패턴·기준표는 자원 루트
+(HAZOP_RESOURCE_ROOT) 기준. 둘 다 기본은 저장소 루트(hazop/paths.py). 화면은 hazop.analysis.api의 같은 함수를 쓴다.
 """
 
 import argparse
@@ -25,11 +27,11 @@ sys.path.insert(0, REPO_ROOT)
 from hazop.console import safe_console  # noqa: E402
 
 from hazop import paths  # noqa: E402
-from hazop.analysis import ai, run  # noqa: E402
+from hazop.analysis import ai, api, run  # noqa: E402
 
-DEFAULT_REGION = os.path.join(REPO_ROOT, "데이터", "구간", "region-SNP-M-102-pzr.json")
-DEFAULT_FIXED = os.path.join(REPO_ROOT, "데이터", "고정응답", "region-SNP-M-102-pzr")
-DEFAULT_OUT = os.path.join(REPO_ROOT, "출력", "분석")
+DEFAULT_REGION = paths.work_path("데이터", "구간", "region-SNP-M-102-pzr.json")
+DEFAULT_FIXED = paths.work_path("데이터", "고정응답", "region-SNP-M-102-pzr")
+DEFAULT_OUT = paths.output_root("분석")
 
 
 def make_client(args):
@@ -38,7 +40,7 @@ def make_client(args):
             print("실제 호출 불가: ANTHROPIC_API_KEY(또는 SDK가 찾는 자격 증명)가 없음. 고정 응답으로 바꾸지 않고 중단함")
             return None
         return ai.AnthropicClient(model=args.model)
-    return ai.FixedResponseClient(args.fixed_dir, repo_root=REPO_ROOT)
+    return api.make_client("fixed_response", args.fixed_dir)
 
 
 def resume_client(args):
@@ -52,7 +54,7 @@ def resume_client(args):
         return ai.AnthropicClient(model=rec.get("model") or args.model)
     if args.live:
         raise run.InputError("원래 실행은 고정 응답 — --live로 재시도할 수 없음")
-    return ai.FixedResponseClient(os.path.join(REPO_ROOT, rec["response_dir"]), repo_root=REPO_ROOT,
+    return ai.FixedResponseClient(os.path.join(paths.work_root(), rec["response_dir"]), repo_root=paths.work_root(),
                                   verify_bundle=rec.get("verify_bundle", True))
 
 
@@ -63,7 +65,7 @@ def summary(doc, where):
           "AI 검증 통과 %d·미완료 %d·거부 시나리오 %d 보류 %d -> %s" % (
               doc["analysis_run_id"], v["status"], c["candidates"], c["selected"], c["excluded"], c["deferred"],
               c["scenarios"], c["risk_proposed"], c["design_improvement_candidates"], c["ai_validated"], c["ai_failed"],
-              c["ai_rejected_scenarios"], c["holds_open"], paths.rel_or_abs(where, REPO_ROOT)))
+              c["ai_rejected_scenarios"], c["holds_open"], paths.rel_or_abs(where, paths.work_root())))
     for e in v["errors"]:
         print("  오류:", e)
 
@@ -88,7 +90,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     only = set(args.only) or None
     if args.rebind_graph:
-        lines, changed = run.rebind_graph(args.region, args.graph, REPO_ROOT, args.by, args.reason, args.confirm)
+        lines, changed = run.rebind_graph(args.region, args.graph, paths.work_root(), args.by, args.reason, args.confirm)
         for line in lines:
             print(line)
         return 0 if changed or not args.confirm else 1
@@ -105,22 +107,18 @@ def main(argv=None):
     if client is None:
         return 2
     try:
-        inputs = run.load_inputs(args.region, REPO_ROOT, graph_path=args.graph)
+        res = api.run_analysis(args.region, client=client, out_root=args.out_root, graph_path=args.graph,
+                               run_id=args.run_id, only=only)
     except (run.InputError, ValueError) as exc:
         print("입력 오류:", exc)
         return 1
-    if inputs["blockers"]:
+    if res["blockers"]:
         print("입력 차단 오류 — 분석하지 않음:")
-        for b in inputs["blockers"]:
+        for b in res["blockers"]:
             print("  -", b)
         return 1
-    try:
-        doc, run_dir = run.execute(inputs, client, args.out_root, run_id=args.run_id, only=only)
-    except run.InputError as exc:
-        print("입력 오류:", exc)
-        return 1
-    summary(doc, run_dir)
-    return 0 if doc["validation"]["status"] == "passed" else 1
+    summary(res["doc"], res["run_dir"])
+    return 0 if res["status"] == "passed" else 1
 
 
 if __name__ == "__main__":

@@ -49,21 +49,24 @@ def _resolve(path, repo_root):
     return path if os.path.isabs(path) else os.path.join(repo_root, path)
 
 
-def load_inputs(region_path, repo_root, graph_path=None):
-    """구간 JSON과 그것이 가리키는 파일을 읽어 prepare()로 검사한다."""
+def load_inputs(region_path, repo_root, graph_path=None, resource_root=None):
+    """구간 JSON과 그것이 가리키는 파일을 읽어 prepare()로 검사한다.
+    repo_root: 작업 루트(구간·그래프 상대 경로 기준). resource_root: 자원 루트(카탈로그·적용 판단·패턴·기준표 상대 경로
+    기준, 기본 repo_root). 기록하는 경로는 각 파일을 찾은 루트 기준 상대 경로(paths.rel_or_abs)."""
     raw, docs, files = {}, {}, []
 
     def read(role, path):
         if path is None:
             docs[role] = None
             return
-        full = _resolve(path, repo_root)
+        root = (resource_root or repo_root) if role in paths.RESOURCE_INPUT_ROLES else repo_root
+        full = _resolve(path, root)
         if not os.path.isfile(full):
             raise InputError("%s 파일 없음: %s" % (role, path))
         with open(full, encoding="utf-8") as fh:
             raw[role] = fh.read()
         docs[role] = json.loads(raw[role])
-        files.append({"role": role, "path": paths.rel_or_abs(full, repo_root),
+        files.append({"role": role, "path": paths.rel_or_abs(full, root),
                       "sha256": _sha_text(raw[role])})
 
     read("region", region_path)
@@ -190,10 +193,13 @@ def rebind_graph(region_path, graph_path, repo_root, by, reason, confirm, now=ut
                graph_file=paths.rel_or_abs(gpath, repo_root))
     region["project_id"] = graph.get("project_id")
     region["region_version"] += 1
-    with open(region_path, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(region, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
+    write_region(region_path, region)
     return lines + ["갱신함: region_version %d, 이력 기록" % region["region_version"]], True
+
+
+def write_region(region_path, region):
+    """구간 JSON 전체를 UTF-8로 다시 쓴다(임시 파일에 쓴 뒤 교체). rebind_graph·후보 판단 변경이 함께 쓴다."""
+    _write(region_path, region)
 
 
 # ---------------------------------------------------------------- 보류·자료 요청

@@ -17,14 +17,14 @@ from hazop import paths  # noqa: E402
 from hazop.graph import build  # noqa: E402
 from hazop.graph.query import GraphQuery  # noqa: E402
 
-DEFAULT_EXTRACT = os.path.join(REPO_ROOT, "출력", "추출")
-DEFAULT_OUT = os.path.join(REPO_ROOT, "출력", "그래프")
+DEFAULT_EXTRACT = paths.output_root("추출")  # <작업 루트>/출력 (hazop/paths.py)
+DEFAULT_OUT = paths.output_root("그래프")
 
 
 def build_one(extraction_path, out_root):
     with open(extraction_path, encoding="utf-8") as fh:
         extraction = json.load(fh)
-    rel = os.path.relpath(extraction_path, REPO_ROOT).replace("\\", "/")
+    rel = os.path.relpath(extraction_path, paths.work_root()).replace("\\", "/")
     graph = build.build_graph(extraction, extraction_file=rel)
     # 추출 결과 폴더 이름을 그대로 쓴다(--samples: 도면번호, 등록 경로: <자료 ID>-r<버전>). 뷰어도 같은 이름으로 그래프를 찾는다.
     name = paths.safe_name(os.path.basename(os.path.dirname(extraction_path)))
@@ -61,7 +61,7 @@ def main(argv=None):
         print("%s: %s nodes=%d edges=%d components_physical=%d unknowns=%d -> %s" % (
             graph["source"]["drawing_number"] or os.path.basename(out_dir), graph["validation"]["status"], s["node_count"],
             s["edge_count"], s["components_physical"], len(graph["validation"]["unknowns"]),
-            os.path.relpath(out_dir, REPO_ROOT)))
+            os.path.relpath(out_dir, paths.work_root())))
         built += 1
         blocked += graph["validation"]["status"] != "passed"
     return 1 if blocked or not built else 0

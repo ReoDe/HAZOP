@@ -75,10 +75,13 @@ def main():
                 failures.append("%s: 재등록이 재사용되지 않음(%s)" % (os.path.basename(p), r["outcome"]))
         with open(os.path.join(store, PROJECT, "registry.json"), encoding="utf-8") as fh:
             n_materials = len(json.load(fh)["materials"])
-        n_files = sum(len(fs) for _, _, fs in os.walk(os.path.join(store, PROJECT, "originals")))
-        if (n_materials, n_files) != (len(samples), len(samples)):
-            failures.append("자료 %d개·보관 파일 %d개 (기대 %d)" % (n_materials, n_files, len(samples)))
-        print("  자료 %d개, 보관 파일 %d개" % (n_materials, n_files))
+        walk = list(os.walk(os.path.join(store, PROJECT, "originals")))
+        n_files = sum(len(fs) for d, _, fs in walk if os.path.basename(d) != "derived")
+        n_derived = sum(len(fs) for d, _, fs in walk if os.path.basename(d) == "derived")  # 원본 옆 SVG(파생 자료)
+        if (n_materials, n_files, n_derived) != (len(samples), len(samples), len(samples)):
+            failures.append("자료 %d개·보관 원본 %d개·파생 SVG %d개 (기대 %d)"
+                            % (n_materials, n_files, n_derived, len(samples)))
+        print("  자료 %d개, 보관 원본 %d개, 파생 SVG %d개" % (n_materials, n_files, n_derived))
         print("== 3. 등록 -> 추출 -> 그래프 매핑")
         args = sum([["--registration", f] for f in reg_files.values()], [])
         if extract_drawio.main(args + ["--out-root", out_ex]) != 0:

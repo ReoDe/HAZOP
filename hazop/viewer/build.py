@@ -104,9 +104,22 @@ def load_graph(graph_root, name):
         return json.load(fh)
 
 
-def build_all(extract_root, out_root, repo_root, graph_root=None):
+def _svg_path(svg_rel, roots):
+    """svg_file(첫 루트 기준 상대 경로 또는 절대 경로)이 허용 루트 중 하나의 안에 있을 때만 경로를 돌려준다.
+    어느 루트 안에도 없으면 ValueError(기존 safe_join 오류)."""
+    target = os.path.join(roots[0], svg_rel)
+    for root in roots[1:]:
+        try:
+            return paths.safe_join(root, target)
+        except ValueError:
+            continue
+    return paths.safe_join(roots[0], svg_rel)
+
+
+def build_all(extract_root, out_root, repo_root, graph_root=None, svg_roots=()):
     """extract_root/<도면번호>/extraction.json 마다 out_root/<도면번호>.html, 그리고 index.html.
-    graph_root/<도면번호>/graph.json이 있으면 함께 넣는다."""
+    graph_root/<도면번호>/graph.json이 있으면 함께 넣는다.
+    SVG는 repo_root(작업 루트) 안 또는 svg_roots(예: 등록 저장 루트, 파생 SVG 보관 위치) 안에 있어야 한다."""
     os.makedirs(out_root, exist_ok=True)
     entries = []
     for name in sorted(os.listdir(extract_root)):
@@ -118,7 +131,7 @@ def build_all(extract_root, out_root, repo_root, graph_root=None):
         svg_rel = (extraction["coordinate_system"].get("svg_alignment") or {}).get("svg_file")
         if not svg_rel:
             raise ValueError("%s: SVG 파일 정보 없음" % name)
-        with open(paths.safe_join(repo_root, svg_rel), encoding="utf-8") as fh:
+        with open(_svg_path(svg_rel, [repo_root] + list(svg_roots)), encoding="utf-8") as fh:
             svg_text = fh.read()
         al = extraction["coordinate_system"].get("svg_alignment") or {}
         fname = "%s.html" % paths.safe_name(name)

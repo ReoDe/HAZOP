@@ -11,10 +11,12 @@ import hashlib
 import json
 import os
 
+from hazop import paths
+
 from . import catalog_md, risk
 
-GUIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                     "기획서", "HAZOP기법지침.md")
+GUIDE_PARTS = ("기획서", "HAZOP기법지침.md")  # 자원 루트 기준(hazop/paths.py)
+GUIDE = paths.resource_path(*GUIDE_PARTS)  # 가져올 때의 값(참고용). 검사는 호출 시점의 자원 루트를 쓴다
 EXPECTED_IDS = ["p86-d%02d" % i for i in range(1, 45)]
 PINNED_SHA256 = {
     "kosha-p86-2017-deviation-chart": "9fe31d10bc1663e8deea1402452d3d02db4494e4c20550517b579481947a368b",
@@ -37,7 +39,8 @@ def _pin(doc_id, doc, what):
     return []
 
 
-def check_catalog(catalog, applicability, guide=GUIDE):
+def check_catalog(catalog, applicability, guide=None):
+    guide = guide or paths.resource_path(*GUIDE_PARTS)
     errs = []
     ids = [i.get("item_id") for i in catalog.get("items") or []]
     if ids != EXPECTED_IDS:
@@ -60,7 +63,8 @@ def check_catalog(catalog, applicability, guide=GUIDE):
     return errs
 
 
-def check_criteria(criteria, guide=GUIDE):
+def check_criteria(criteria, guide=None):
+    guide = guide or paths.resource_path(*GUIDE_PARTS)
     errs = _pin(criteria.get("criteria_id"), criteria, "위험도 기준표")
     try:
         matrix = {int(s): {int(f): v for f, v in row.items()} for s, row in criteria["matrix"].items()}
