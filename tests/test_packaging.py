@@ -7,6 +7,8 @@
 3) HAZOP_RESOURCE_ROOT·HAZOP_WORK_ROOT를 서로 다른 임시 폴더로 바꿔 ①~⑤ 흐름(등록·추출·그래프 → 뷰어 → 지식그래프 →
    분석 → 검토 저장·Excel 출력)을 화면이 쓰는 함수로 실행한다. 자원 루트와 저장소의 출력/·자료저장소/는 바뀌지 않는다.
 4) W4: scripts/build_package.py의 datas 목록·spec 원문을 빌드 없이 검사한다(코드의 경로 상수와 대조).
+5) W6: licenses/가 datas에 들어가고, licenses/README.md 고지 목록이 기준 목록(원문 경로·라이선스 식별자)과 맞고,
+   원문 파일의 SHA-256·버전이 목록과 같다. verify_bundle의 묶음 licenses/ 대조 함수도 빌드 없이 검사한다.
 실행: python -m unittest discover -s tests. 임시 폴더만 쓴다. 네트워크·AI 호출 없음(고정 응답).
 """
 
@@ -454,6 +456,153 @@ class BuildSpecTest(unittest.TestCase):
         self.assertTrue(any("HAZOP-check" in p for p in self.bp.check_dist(tmp, True)))
         touch("dist", "HAZOP-verify", "HAZOP-check.exe")
         self.assertEqual(self.bp.check_dist(tmp, True), [])
+
+
+# ---------------------------------------------------------------- W6 제3자 고지(licenses/, D9)
+LICENSES_DIR = os.path.join(REPO_ROOT, "licenses")
+# 기준 목록: 반드시 있어야 하는 원문 파일(licenses/ 상대 경로) → 라이선스 식별자. README 표의 행과 파일을 함께 지워도
+# 이 기준과 대조해 실패한다. force-graph 의존성은 W1 §2 목록(하위 의존성 포함) 전부.
+_FG_MIT = ("accessor-fn", "bezier-js", "canvas-color-tracker", "d3-binarytree", "d3-force-3d", "d3-octree",
+           "float-tooltip", "force-graph", "index-array-by", "kapsule", "lodash-es", "preact", "tinycolor2",
+           "tweenjs-tween.js")
+_FG_ISC = ("d3-array", "d3-color", "d3-dispatch", "d3-drag", "d3-format", "d3-interpolate", "d3-quadtree", "d3-scale",
+           "d3-selection", "d3-time", "d3-time-format", "d3-timer", "d3-transition", "d3-zoom", "internmap")
+REQUIRED_NOTICES = dict(
+    [("force-graph/%s-%s" % (n, "LICENSE.md" if n == "bezier-js" else "LICENSE"), "MIT") for n in _FG_MIT]
+    + [("force-graph/%s-LICENSE" % n, "ISC") for n in _FG_ISC]
+    + [("force-graph/d3-ease-LICENSE", "BSD-3-Clause"),
+       ("force-graph/d3-scale-chromatic-LICENSE", "ISC AND Apache-2.0"),
+       ("force-graph/Apache-2.0.txt", "Apache-2.0"),
+       ("qt/LGPL-3.0.txt", "LGPL-3.0-only"),
+       ("qt/GPL-3.0.txt", "GPL-3.0-only"),
+       ("qt/LicenseRef-Qt-Commercial.txt", "LicenseRef-Qt-Commercial"),
+       ("python/CPython-LICENSE.txt", "PSF-2.0"),
+       ("python/CPython-license-acknowledgements.rst.txt", "구성요소별(파일 안)"),
+       ("pyinstaller/COPYING.txt", "GPL-2.0-or-later WITH Bootloader-exception"),
+       ("python/networkx-LICENSE.txt", "BSD-3-Clause"),
+       ("python/openpyxl-LICENCE.rst", "MIT"),
+       ("python/et_xmlfile-LICENCE.rst", "MIT"),
+       ("python/et_xmlfile-LICENCE.python", "PSF-2.0")])
+REQUIRED_DOCS = ("qt/QT-SOURCE.md", "qt/QTWEBENGINE-THIRD-PARTY.md")  # Qt 소스 위치·WebEngine 제3자 목록 위치
+
+
+def _notice_rows(path=None):
+    """licenses/README.md 고지 목록 표 → [(구성요소, 버전, 라이선스, 원문 파일, sha256)]."""
+    rows = []
+    with open(path or os.path.join(LICENSES_DIR, "README.md"), encoding="utf-8") as fh:
+        for ln in fh:
+            cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+            if len(cells) == 7 and cells[4].startswith("`") and cells[6].startswith("`"):
+                rows.append((cells[0], cells[1], cells[2], cells[4].strip("`"), cells[6].strip("`")))
+    return rows
+
+
+def _notice_problems(rows, licenses_dir=LICENSES_DIR):
+    """고지 목록을 기준 목록·폴더와 대조. 문제 목록(빈 목록 = 통과)."""
+    probs = []
+    listed = {r[3]: r for r in rows}
+    for rel, lic in sorted(REQUIRED_NOTICES.items()):
+        if rel not in listed:
+            probs.append("기준 원문이 목록에 없음: %s" % rel)
+        elif listed[rel][2] != lic:
+            probs.append("라이선스 식별자 다름: %s %r != %r" % (rel, listed[rel][2], lic))
+    probs += ["기준 안내문이 목록에 없음: %s" % rel for rel in REQUIRED_DOCS if rel not in listed]
+    for _, _, _, rel, sha in rows:
+        p = os.path.join(licenses_dir, *rel.split("/"))
+        if not os.path.isfile(p):
+            probs.append("원문 파일 없음: %s" % rel)
+            continue
+        with open(p, "rb") as fh:
+            if hashlib.sha256(fh.read()).hexdigest() != sha:
+                probs.append("SHA-256 불일치: %s" % rel)
+    on_disk = {os.path.relpath(os.path.join(d, f), licenses_dir).replace("\\", "/")
+               for d, _, files in os.walk(licenses_dir) for f in files}
+    probs += ["목록 밖 파일: %s" % x for x in sorted(on_disk - set(listed) - {"README.md", ".gitattributes"})]
+    return probs
+
+
+class LicenseNoticeTest(unittest.TestCase):
+    """licenses/가 묶음 datas에 들어가고, 고지 목록이 기준 목록(원문 경로·라이선스 식별자)과 맞으며, 원문 파일이 있고
+    SHA-256이 목록과 같다(W6 완료 기준)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.bp = _build_package()
+        cls.rows = _notice_rows()
+
+    def test_spec_includes_licenses(self):
+        self.assertIn("licenses", self.bp.DATA_DIRS)
+        listed = {"licenses/" + r[3] for r in self.rows} | {"licenses/README.md"}
+        for with_check in (False, True):
+            text = self.bp.spec_text(with_check=with_check)
+            ns = {}
+            exec(text.split("from PyInstaller")[0] + "\n".join(
+                ln for ln in text.splitlines() if ln.startswith(("REPO =", "DATAS ="))), ns)
+            got = {os.path.relpath(s, REPO_ROOT).replace("\\", "/"): d for s, d in ns["DATAS"]}
+            self.assertEqual(listed - set(got), set())
+            for src in listed:  # 묶음 안에서도 licenses/ 아래 같은 상대 위치
+                self.assertEqual(got[src].replace(os.sep, "/"), os.path.dirname(src))
+
+    def test_notices_match_baseline_and_sha256(self):
+        self.assertEqual(_notice_problems(self.rows), [])
+
+    def test_removed_row_and_file_detected(self):
+        """목록 행과 원문 파일을 함께 지워도(사본에서) 기준 목록 대조로 실패한다. 식별자·해시 변경도 잡는다."""
+        tmp = tempfile.mkdtemp(prefix="hazop-lic-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        lic = os.path.join(tmp, "licenses")
+        shutil.copytree(LICENSES_DIR, lic)
+        self.assertEqual(_notice_problems(_notice_rows(os.path.join(lic, "README.md")), lic), [])
+        rows = [r for r in self.rows if r[3] != "force-graph/d3-ease-LICENSE"]
+        os.remove(os.path.join(lic, "force-graph", "d3-ease-LICENSE"))
+        self.assertEqual(_notice_problems(rows, lic), ["기준 원문이 목록에 없음: force-graph/d3-ease-LICENSE"])
+        rows = [r if r[3] != "qt/LGPL-3.0.txt" else r[:2] + ("MIT",) + r[3:] for r in self.rows]
+        self.assertTrue(any("식별자 다름: qt/LGPL-3.0.txt" in p for p in _notice_problems(rows)))
+        with open(os.path.join(lic, "force-graph", "preact-LICENSE"), "ab") as fh:
+            fh.write(b" ")
+        self.assertIn("SHA-256 불일치: force-graph/preact-LICENSE", _notice_problems(self.rows, lic))
+
+    def test_notice_versions_match_pins(self):
+        """목록의 버전이 전용 venv 고정(packaging/requirements*.txt)·vendor 폴더 이름과 같고, 간접 의존성은 추정 표시."""
+        pins = {}
+        for name in ("requirements.txt", "requirements-build.txt"):
+            with open(os.path.join(REPO_ROOT, "packaging", name), encoding="utf-8") as fh:
+                for ln in fh:
+                    if "==" in ln:
+                        k, v = ln.strip().split("==")
+                        pins[k.lower()] = v
+        by_file = {r[3]: r[1] for r in self.rows}
+        self.assertTrue(by_file["qt/LGPL-3.0.txt"].startswith(pins["pyside6"] + " "))
+        self.assertEqual(by_file["python/networkx-LICENSE.txt"], pins["networkx"])
+        self.assertEqual(by_file["python/openpyxl-LICENCE.rst"], pins["openpyxl"])
+        self.assertEqual(by_file["pyinstaller/COPYING.txt"], pins["pyinstaller"])
+        vendor = [d for d in os.listdir(os.path.dirname(kg_screen.VENDOR_DIR)) if d.startswith("force-graph-")]
+        self.assertEqual(by_file["force-graph/force-graph-LICENSE"], vendor[0].split("-")[-1] + "(vendor)")
+        for rel in REQUIRED_NOTICES:
+            if rel.startswith("force-graph/") and rel not in ("force-graph/force-graph-LICENSE",
+                                                              "force-graph/Apache-2.0.txt"):
+                self.assertIn("(추정)", by_file[rel], rel)
+
+
+class BundleLicensesTest(unittest.TestCase):
+    """packaging/verify_bundle.licenses_problems: 묶음 _internal/licenses/가 저장소 licenses/와 같은지(빌드 없이)."""
+
+    def test_licenses_problems(self):
+        vb = _load("packaging/verify_bundle.py", "hazop_verify_bundle_lic")
+        tmp = tempfile.mkdtemp(prefix="hazop-bundle-lic-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        dest = os.path.join(tmp, "_internal", "licenses")
+        self.assertTrue(vb.licenses_problems(tmp))  # 묶음에 licenses 없음
+        shutil.copytree(LICENSES_DIR, dest)
+        self.assertEqual(vb.licenses_problems(tmp), [])
+        with open(os.path.join(dest, "qt", "GPL-3.0.txt"), "ab") as fh:
+            fh.write(b"x")
+        os.remove(os.path.join(dest, "force-graph", "d3-ease-LICENSE"))
+        open(os.path.join(dest, "extra.txt"), "w").close()
+        probs = vb.licenses_problems(tmp)
+        self.assertIn("해시 다름: %s" % os.path.join("qt", "GPL-3.0.txt"), probs)
+        self.assertIn("묶음에 없음: %s" % os.path.join("force-graph", "d3-ease-LICENSE"), probs)
+        self.assertIn("저장소에 없는 파일: extra.txt", probs)
 
 
 def _load(rel, name):

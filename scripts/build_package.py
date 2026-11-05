@@ -6,7 +6,8 @@
 - 입구: scripts/run_app.py → 실행 파일 HAZOP.exe(창 프로그램, 콘솔 없음). 결과는 <out>/dist/HAZOP/(one-folder, 배포용).
   런타임 훅 packaging/rthook_applog.py: <작업 루트>/logs/app.log에 logging·stdout·stderr·미처리 예외를 남긴다(HAZOP.exe만).
 - datas: 템플릿 2개, hazop/kg/vendor, 기획서/HAZOP기법지침.md, 데이터/이탈후보·기준표·패턴, scripts/extract_drawio.py·
-  build_graph.py(화면이 importlib로 읽는 파일, hazop/app/data.py SCRIPT_NAMES). 참고자료/ 샘플은 넣지 않는다(D5안).
+  build_graph.py(화면이 importlib로 읽는 파일, hazop/app/data.py SCRIPT_NAMES), licenses/(제3자 고지, D9).
+  참고자료/ 샘플은 넣지 않는다(D5안).
 - hiddenimports: collect_submodules("hazop") + 두 스크립트 모듈(스크립트가 가져오는 표준 라이브러리까지 묶이게).
 - excludes: anthropic·httpx(D1, 배포본 제외), pdfplumber(전용 venv에 없음, PDF 어댑터는 묶음 범위 밖).
 - --with-check: 검증 전용 실행 파일 HAZOP-check.exe(입구 packaging/check_entry.py)를 함께 만들고, 결과 폴더 이름을
@@ -47,6 +48,7 @@ DATA_DIRS = (
     "데이터/이탈후보",
     "데이터/기준표",
     "데이터/패턴",
+    "licenses",  # 제3자 라이선스 고지(W6, D9)
 )
 EXCLUDED_DIRS = ("참고자료",)  # D5안: 샘플 도면(28 MB)은 넣지 않는다
 EXCLUDES = ("anthropic", "httpx", "pdfplumber")

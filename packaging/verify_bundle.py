@@ -18,6 +18,7 @@
     끝나지 않으므로 60초 뒤 강제 종료). 잘못된 옵션(--w4-unknown-option)은 종료 코드 2와 사용법 오류(표준 출력 사본)만
     본다: 하위 프로세스로 띄우면 표준 출력 핸들이 있어 로그 파일 연결(핸들이 없을 때만)이 일어나지 않는다
  5) 저장소 출력/·자료저장소/ 파일 해시가 전후 같은지, 3)이 입력 사본을 바꾸지 않았는지, PNG가 이번 실행에서 생겼는지
+ 6) 제3자 고지(W6, D9): 묶음 _internal/licenses/의 파일 목록·바이트 해시가 저장소 licenses/와 같은지(빠짐·추가·변경 없음)
 자식 프로세스 환경: PYTHONPATH·PYTHONHOME·HAZOP_* 제거, HAZOP_WORK_ROOT·APPDATA·TEMP = 임시, 작업 폴더 = 임시(저장소 아님).
 새 폴더를 만든 뒤의 모든 단계는 try 안에서 하고, 끝나면(실패해도, finally) 이번 실행에서 만든 verify-… 폴더만 지운다.
 지우지 못하면 errors.cleanup에 남기고 실패 처리한다. 단계별 예외는 summary.json errors에 남긴다. 종료 코드 0 = 전부 통과.
@@ -103,6 +104,18 @@ def new_run_root(base, name=None):
     path = os.path.join(base, name)
     os.mkdir(path)  # 있으면 FileExistsError
     return path
+
+
+def licenses_problems(bundle_dir, repo=REPO_ROOT):
+    """묶음(one-folder) _internal/licenses/가 저장소 licenses/와 파일 목록·SHA-256까지 같은지. 문제 목록."""
+    want = tree_hashes(os.path.join(repo, "licenses"))
+    got = tree_hashes(os.path.join(bundle_dir, "_internal", "licenses"))
+    if not want:
+        return ["저장소 licenses/ 없음"]
+    probs = ["묶음에 없음: %s" % k for k in sorted(set(want) - set(got))]
+    probs += ["저장소에 없는 파일: %s" % k for k in sorted(set(got) - set(want))]
+    probs += ["해시 다름: %s" % k for k in sorted(set(want) & set(got)) if want[k] != got[k]]
+    return probs
 
 
 def fresh_problems(png_dir, since, want):
@@ -198,6 +211,7 @@ def steps(args, summary, run_root, out, repo_dirs):
     summary.update(bundle_bytes=size, bundle_files=count,
                    has_reference_samples=os.path.isdir(os.path.join(target, "_internal", "참고자료")),
                    has_check_exe=os.path.isfile(os.path.join(target, "HAZOP-check.exe")))
+    summary["checks"]["licenses_problems"] = licenses_problems(target)
     env = child_env(tmp)
     start = time.time()
     run_dir = None
@@ -313,6 +327,7 @@ def main(argv=None):
     summary["passed"] = bool(
         rc_ok and not summary["errors"] and summary["run_root_removed"]
         and not checks.get("png_fresh_problems", ["미실행"])
+        and not checks.get("licenses_problems", ["미실행"])
         and checks.get("repo_unchanged") and checks.get("app_log_started") and checks.get("app_bad_option_rc2")
         and checks.get("app_log_unhandled")
         and (args.app_only or checks.get("inputs_unchanged_by_kg_check"))
