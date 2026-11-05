@@ -15,6 +15,10 @@ import tempfile
 import types
 import unittest
 from unittest import mock
+import importlib.util
+
+# anthropic SDK가 없는 환경(배포용 전용 venv, T2 D1)에서는 SDK를 import하는 경로의 테스트를 건너뛴다.
+HAS_ANTHROPIC = importlib.util.find_spec("anthropic") is not None
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -609,6 +613,7 @@ class AnthropicClientTest(unittest.TestCase):
     def request(self):
         return ai.build_request(DOC["evidence_bundles"]["deviation-p86-d09"])
 
+    @unittest.skipUnless(HAS_ANTHROPIC, "anthropic SDK 미설치(배포용 venv)")
     def test_request_shape(self):
         c, calls = self.client(self.msg())
         self.assertEqual(c.infer(self.request())["status"], "completed")
@@ -624,6 +629,7 @@ class AnthropicClientTest(unittest.TestCase):
         self.assertEqual(kw["extra_body"], {"fallbacks": "default"})
         self.assertEqual(kw["extra_headers"], {"anthropic-beta": "server-side-fallback-2026-07-01"})
 
+    @unittest.skipUnless(HAS_ANTHROPIC, "anthropic SDK 미설치(배포용 venv)")
     def test_stop_reasons_and_parse(self):
         c, _ = self.client(self.msg(stop="refusal", details={"type": "refusal", "category": "x", "explanation": "y"}))
         r = c.infer(self.request())
@@ -633,6 +639,7 @@ class AnthropicClientTest(unittest.TestCase):
         c, _ = self.client(self.msg(text="not json"))
         self.assertEqual(c.infer(self.request())["status"], "parse_error")
 
+    @unittest.skipUnless(HAS_ANTHROPIC, "anthropic SDK 미설치(배포용 venv)")
     def test_sdk_errors(self):
         import anthropic
         import httpx
@@ -647,6 +654,7 @@ class AnthropicClientTest(unittest.TestCase):
             r = c.infer(self.request())
             self.assertEqual((r["status"], r["error_type"]), ("api_error", kind))
 
+    @unittest.skipUnless(HAS_ANTHROPIC, "anthropic SDK 미설치(배포용 venv)")
     def test_refusal_keeps_candidates_and_exploration(self):
         c, _ = self.client(self.msg(stop="refusal", details={"type": "refusal", "category": None, "explanation": None}))
         doc = analyze(client=c, only={"p86-d09"})
@@ -879,6 +887,7 @@ class MergeAndModelTest(unittest.TestCase):
                                     content=[types.SimpleNamespace(type="text", text=text)])
         return types.SimpleNamespace(messages=types.SimpleNamespace(create=lambda **kw: msg))
 
+    @unittest.skipUnless(HAS_ANTHROPIC, "anthropic SDK 미설치(배포용 venv)")
     def test_response_model_mismatch_allowed_by_user_decision_with_warning(self):
         """사용자 결정(2026-11-04, '서버측 fallback은 켜되 응답 모델을 기록·표시')에 따른 허용:
         다른 모델이 응답해도 결과를 채택하되, 결과 JSON의 후보와 AI 실행 기록 양쪽에 response_model_differs 경고를 남긴다."""

@@ -14,3 +14,4 @@
 | 일시 | 증거 | 확인한 사실 | 상태 영향 |
 |---|---|---|---|
 | 2026-11-05 | [w1-조사.md](w1-조사.md) (기준 `d540288`) | §9 미결 2건 선택지·권고, force-graph 번들 의존성(MIT·ISC, ColorBrewer Apache-2.0 포함), PyInstaller·대안 비교와 막힐 지점, `os.link`는 NTFS 전용(MS 문서), 전용 venv 패키지 목록 | W1 조사 결과. 사용자 결정 9건 대기 |
+| 2026-11-05 | [w2-venv.md](w2-venv.md) (기준 `b29e5f7`) | CPython 3.12.10(3.12 마지막 Windows 바이너리, SHA-256 대조 일치)을 install manager `--target`으로 설치(MSI 설치는 MSIX 리디렉션 추정 원인으로 실패), venv `%LOCALAPPDATA%\HAZOP\venv-py312`에 PySide6 6.12.0·networkx 3.7·openpyxl 3.1.5·pyinstaller 6.22.3. unittest 465건 중 실패 2·오류 3(모두 anthropic 미설치), check_app·check_kg_screen 통과 | W2 1차 실행 기록. 총괄이 (나) 건너뛰기로 처리(D3) 후 venv 전체 테스트 478건 OK·건너뜀 5 → `W2` 완료 |
