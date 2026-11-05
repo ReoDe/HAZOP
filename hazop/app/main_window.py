@@ -1,4 +1,7 @@
-"""주 창 (기획서/인터페이스.md §2.1): 헤더(현재 위치·단계 탭·검토자), 화면 4개, 상태줄, 메뉴. 웹뷰는 하나를 공유한다."""
+"""주 창 (기획서/인터페이스.md §2.1): 헤더(현재 위치·단계 탭·검토자), 화면 5개, 상태줄, 메뉴. 웹뷰는 하나를 공유한다.
+
+화면 번호(self.screens·go()의 index)는 추가 순서를 유지한다: 0 ①, 1 ②, 2 ④, 3 ⑤, 4 ③(T1 W6에서 추가).
+단계 탭과 보기 메뉴는 STEP_ORDER 순서(① ② ③ ④ ⑤)로 보인다."""
 
 import os
 
@@ -9,6 +12,7 @@ from PySide6.QtWidgets import (QButtonGroup, QFileDialog, QHBoxLayout, QInputDia
 from hazop import paths
 from hazop.app import tokens
 from hazop.app.screens.analysis import AnalysisScreen
+from hazop.app.screens.knowledge import KnowledgeScreen
 from hazop.app.screens.register import RegisterScreen
 from hazop.app.screens.review import ReviewScreen
 from hazop.app.screens.viewer import ViewerScreen
@@ -17,8 +21,27 @@ from hazop.app.widgets import Chip, TaskRunner, esc, kst_text, write_log
 
 APP_NAME = "HAZOP 분석 도구"
 APP_VERSION = "0.1.0"
-STEPS = ("① 자료 등록", "② 도면·그래프", "④ HAZOP 분석", "⑤ 설계보완·확정")
+STEPS = ("① 자료 등록", "② 도면·그래프", "④ HAZOP 분석", "⑤ 설계보완·확정", "③ 지식그래프")  # 화면 index 순
+STEP_ORDER = (0, 1, 4, 2, 3)  # 화면에 보이는 단계 탭 순서(①②③④⑤)
 VALIDATION_LABELS = {"passed": "통과", "blocked": "차단"}
+
+
+class WhereLabel(QLabel):
+    """헤더 현재 위치 라벨: 폭이 모자라 잘리면 전체 문장을 툴팁으로 보여 준다."""
+
+    full_text = ""
+
+    def set_where(self, rich, plain):
+        self.full_text = plain
+        self.setText(rich)
+        self._tip()
+
+    def _tip(self):
+        self.setToolTip(self.full_text if self.sizeHint().width() > self.width() else "")
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self._tip()
 
 
 class MainWindow(QMainWindow):
@@ -37,6 +60,8 @@ class MainWindow(QMainWindow):
         self.webview = HazopWebView()
         self.webview.bridge.nodeSelected.connect(self._node_selected)
         self.webview.bridge.highlightResultFor.connect(self._highlight_result)
+        self.webview.bridge.linkSelected.connect(self._link_selected)
+        self.webview.bridge.algorithmRequested.connect(self._algorithm_requested)
 
         central = QWidget()
         cl = QVBoxLayout(central)
@@ -46,7 +71,8 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         cl.addWidget(self.stack, 1)
         self.setCentralWidget(central)
-        self.screens = [RegisterScreen(self), ViewerScreen(self), AnalysisScreen(self), ReviewScreen(self)]
+        self.screens = [RegisterScreen(self), ViewerScreen(self), AnalysisScreen(self), ReviewScreen(self),
+                        KnowledgeScreen(self)]
         for s in self.screens:
             self.stack.addWidget(s)
         self.screens[2].review_requested.connect(self.review_candidate)
@@ -72,9 +98,10 @@ class MainWindow(QMainWindow):
         name = QLabel(APP_NAME)
         name.setObjectName("appname")
         lay.addWidget(name)
-        self.where_label = QLabel("")
+        self.where_label = WhereLabel("")
         self.where_label.setObjectName("where")
         self.where_label.setTextFormat(Qt.RichText)
+        self.where_label.setMinimumWidth(120)  # 단계 탭 5개(③ 추가) + 긴 위치 글자에도 1366 폭 유지: 넘치면 잘림
         lay.addWidget(self.where_label)
         lay.addStretch(1)
         self.step_group = QButtonGroup(self)
@@ -86,7 +113,8 @@ class MainWindow(QMainWindow):
             b.clicked.connect(lambda _=False, k=i: self.go(k))
             self.step_group.addButton(b)
             self.step_buttons.append(b)
-            lay.addWidget(b)
+        for i in STEP_ORDER:
+            lay.addWidget(self.step_buttons[i])
         lay.addStretch(1)
         self.reviewer_label = QLabel("")
         lay.addWidget(self.reviewer_label)
@@ -116,8 +144,8 @@ class MainWindow(QMainWindow):
         f.addSeparator()
         f.addAction("끝내기", self.close)
         v = m.addMenu("보기")
-        for i, label in enumerate(STEPS):
-            v.addAction(label, lambda k=i: self.go(k))
+        for i in STEP_ORDER:
+            v.addAction(STEPS[i], lambda k=i: self.go(k))
         v.addSeparator()
         v.addAction("도면 보기", lambda: self.webview.set_view("drawing"))
         v.addAction("그래프 보기", lambda: self.webview.set_view("graph"))
@@ -167,22 +195,35 @@ class MainWindow(QMainWindow):
     def update_header(self):
         w = self.current_screen().where() or (self.screens[2].where() if self.run_ctx else None)
         if not w:
-            self.where_label.setText("<span style='color:%s'>열린 구간 없음</span>" % tokens.c("muted"))
+            self.where_label.set_where("<span style='color:%s'>열린 구간 없음</span>" % tokens.c("muted"), "열린 구간 없음")
             return
-        parts = []
+        parts, plain = [], []
         if w.get("region"):
             parts.append("<b>%s</b>" % esc(w["region"]))
+            plain.append(str(w["region"]))
         if w.get("drawing"):
             parts.append("도면 <b>%s</b>" % esc(w["drawing"]))
+            plain.append("도면 %s" % w["drawing"])
         if w.get("run"):
             parts.append("<span style='color:%s'>%s</span>" % (tokens.c("muted"), esc(w["run"])))
-        self.where_label.setText(" · ".join(parts))
+            plain.append(str(w["run"]))
+        self.where_label.set_where(" · ".join(parts), " · ".join(plain))
 
     # ------------------------------------------------------------ 브리지
     def _node_selected(self, sel):
         h = getattr(self.current_screen(), "on_node", None)
         if h:
             h(sel)
+
+    def _link_selected(self, link_id):
+        h = getattr(self.current_screen(), "on_link", None)
+        if h:
+            h(link_id)
+
+    def _algorithm_requested(self, req):
+        h = getattr(self.current_screen(), "on_algorithm", None)
+        if h:
+            h(req)
 
     def _highlight_result(self, request_id, missing):
         h = getattr(self.current_screen(), "on_highlight_result", None)

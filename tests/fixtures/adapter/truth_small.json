@@ -1,0 +1,288 @@
+{
+  "schema_version": "fixture",
+  "extraction_run_id": "fixture-adapter-truth-small",
+  "source": {
+    "format": "drawio",
+    "file": "tests/fixtures/adapter/truth_small.json (가상 도면)"
+  },
+  "coordinate_system": {
+    "coordinate_space": "page_local_2d",
+    "unit": "canvas_unit"
+  },
+  "nodes": [
+    {
+      "local_id": "local-node-001",
+      "source_object_id": "n1",
+      "classification": "classified",
+      "category": "equipment",
+      "kind": "pump",
+      "tag": "XX-P01",
+      "label_text": "XX-P01",
+      "attributes": {
+        "kind": "pump",
+        "tag": "XX-P01",
+        "symbol_id": "S9001"
+      },
+      "geometry": {
+        "x": 100,
+        "y": 100,
+        "width": 60,
+        "height": 40
+      }
+    },
+    {
+      "local_id": "local-node-002",
+      "source_object_id": "n2",
+      "classification": "classified",
+      "category": "valve",
+      "kind": "manual_valve",
+      "tag": "XX-V01",
+      "label_text": "XX-V01",
+      "attributes": {
+        "kind": "manual_valve",
+        "tag": "XX-V01",
+        "normal_position": "open"
+      },
+      "geometry": {
+        "x": 250,
+        "y": 105,
+        "width": 40,
+        "height": 30
+      }
+    },
+    {
+      "local_id": "local-node-003",
+      "source_object_id": "j3",
+      "classification": "classified",
+      "category": "piping_element",
+      "kind": "tee",
+      "tag": "XX-L01-T3",
+      "label_text": "",
+      "attributes": {
+        "kind": "tee",
+        "tag": "XX-L01-T3",
+        "line_no": "XX-L01"
+      },
+      "geometry": {
+        "x": 399,
+        "y": 119,
+        "width": 2,
+        "height": 2
+      }
+    },
+    {
+      "local_id": "local-node-004",
+      "source_object_id": "n4",
+      "classification": "classified",
+      "category": "instrument",
+      "kind": "transmitter",
+      "tag": "XX-PT101",
+      "label_text": "PT\n101",
+      "attributes": {
+        "kind": "transmitter",
+        "tag": "XX-PT101"
+      },
+      "geometry": {
+        "x": 380,
+        "y": 40,
+        "width": 40,
+        "height": 40
+      }
+    },
+    {
+      "local_id": "local-node-005",
+      "source_object_id": "n5",
+      "classification": "classified",
+      "category": "equipment",
+      "kind": "tank",
+      "tag": "XX-T01",
+      "label_text": "XX-T01\nTANK",
+      "attributes": {
+        "kind": "tank",
+        "tag": "XX-T01"
+      },
+      "geometry": {
+        "x": 500,
+        "y": 80,
+        "width": 80,
+        "height": 100
+      }
+    },
+    {
+      "local_id": "local-node-006",
+      "source_object_id": "n6",
+      "classification": "classified",
+      "category": "valve",
+      "kind": "check_valve",
+      "tag": "XX-V02",
+      "label_text": "XX-V02",
+      "attributes": {
+        "kind": "check_valve",
+        "tag": "XX-V02"
+      },
+      "geometry": {
+        "x": 650,
+        "y": 115,
+        "width": 40,
+        "height": 30
+      }
+    }
+  ],
+  "relations": [
+    {
+      "local_id": "local-edge-001",
+      "source_object_id": "e1",
+      "kind": "physical_connection",
+      "endpoints": [
+        {
+          "end": "source",
+          "node_local_id": "local-node-001"
+        },
+        {
+          "end": "target",
+          "node_local_id": "local-node-002"
+        }
+      ]
+    },
+    {
+      "local_id": "local-edge-002",
+      "source_object_id": "e2",
+      "kind": "physical_connection",
+      "endpoints": [
+        {
+          "end": "source",
+          "node_local_id": "local-node-002"
+        },
+        {
+          "end": "target",
+          "node_local_id": "local-node-003"
+        }
+      ]
+    },
+    {
+      "local_id": "local-edge-003",
+      "source_object_id": "e3",
+      "kind": "physical_connection",
+      "endpoints": [
+        {
+          "end": "source",
+          "node_local_id": "local-node-003"
+        },
+        {
+          "end": "target",
+          "node_local_id": "local-node-005"
+        }
+      ]
+    },
+    {
+      "local_id": "local-edge-004",
+      "source_object_id": "e4",
+      "kind": "measurement_connection",
+      "endpoints": [
+        {
+          "end": "source",
+          "node_local_id": "local-node-003"
+        },
+        {
+          "end": "target",
+          "node_local_id": "local-node-004"
+        }
+      ]
+    },
+    {
+      "local_id": "local-edge-005",
+      "source_object_id": "e5",
+      "kind": "physical_connection",
+      "endpoints": [
+        {
+          "end": "source",
+          "node_local_id": "local-node-005"
+        },
+        {
+          "end": "target",
+          "node_local_id": "local-node-006"
+        }
+      ]
+    }
+  ],
+  "source_locations": [
+    {
+      "object_id": "n1",
+      "local_id": "local-node-001",
+      "coordinate_space": "page_local_2d",
+      "unit": "canvas_unit",
+      "bbox": [
+        100,
+        100,
+        60,
+        40
+      ],
+      "approximate": false
+    },
+    {
+      "object_id": "n2",
+      "local_id": "local-node-002",
+      "coordinate_space": "page_local_2d",
+      "unit": "canvas_unit",
+      "bbox": [
+        250,
+        105,
+        40,
+        30
+      ],
+      "approximate": false
+    },
+    {
+      "object_id": "j3",
+      "local_id": "local-node-003",
+      "coordinate_space": "page_local_2d",
+      "unit": "canvas_unit",
+      "bbox": [
+        399,
+        119,
+        2,
+        2
+      ],
+      "approximate": false
+    },
+    {
+      "object_id": "n4",
+      "local_id": "local-node-004",
+      "coordinate_space": "page_local_2d",
+      "unit": "canvas_unit",
+      "bbox": [
+        380,
+        40,
+        40,
+        40
+      ],
+      "approximate": false
+    },
+    {
+      "object_id": "n5",
+      "local_id": "local-node-005",
+      "coordinate_space": "page_local_2d",
+      "unit": "canvas_unit",
+      "bbox": [
+        500,
+        80,
+        80,
+        100
+      ],
+      "approximate": false
+    },
+    {
+      "object_id": "n6",
+      "local_id": "local-node-006",
+      "coordinate_space": "page_local_2d",
+      "unit": "canvas_unit",
+      "bbox": [
+        650,
+        115,
+        40,
+        30
+      ],
+      "approximate": false
+    }
+  ]
+}

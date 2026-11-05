@@ -1,0 +1,1038 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>③ 지식그래프 화면 시안 — HAZOP 검토</title>
+<!-- 단일 HTML 시안. 외부 네트워크·CDN·웹 글꼴 없음. 렌더러는 force-graph 대신 SVG + 간이 힘 계산(시안 전용).
+     규칙 문서: 디자인/지식그래프화면.md. 데이터: 출력/지식그래프/kg-SNP-SAMPLE(v-43034b88b9c9)·algo_result.json·데이터/지식/SNP-SAMPLE/link_candidates.csv 발췌(가상 샘플). -->
+<style>
+:root {
+  /* ---- 공통 토큰: interface-mockup.html·hazop/app/tokens.py와 같은 값 (바꾸지 않음) */
+  --ui: #2563eb; --ui-weak: #eff6ff; --ui-ink: #1e40af;
+  --bg: #f4f5f7; --card: #ffffff; --line: #e3e5e9; --line-strong: #cfd3da; --muted: #6b7280; --ink: #111827; --ink-2: #374151;
+  --equipment: #1d4ed8; --valve: #0f766e; --instrument: #0ea5e9; --piping_element: #6366f1; --unclassified: #9ca3af;
+  --physical_connection: #16a34a; --signal_connection: #7c3aed; --measurement_connection: #d97706; --unresolved: #dc2626;
+  --hl-dim: .16;
+  --ok: #15803d; --warn-bg: #fef3c7; --warn-ink: #92400e; --warn-line: #f59e0b;
+  --err-bg: #fef2f2; --err-ink: #b91c1c; --err-line: #fca5a5;
+  --ai-hatch: repeating-linear-gradient(135deg, #f1f2f4 0 5px, #e8eaee 5px 10px); --ai-ink: #4b5563; --human-line: #111827;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px;
+  --r-panel: 16px; --r-card: 12px; --r-input: 8px; --r-pill: 999px;
+  --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-lg: 15px; --fs-xl: 20px;
+  --font: "Pretendard", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --mono: "Cascadia Mono", "Consolas", "D2Coding", monospace;
+  --shadow: 0 2px 10px rgba(0,0,0,.06);
+
+  /* ---- ③ 신규 토큰 (디자인/지식그래프화면.md §1·§2·§3) */
+  /* 지식 층 노드 색: 기존 노드·관계 색과 다른 색상 영역(슬레이트·황토·분홍·연두·적갈) */
+  --kg-document: #475569; --kg-doc_chunk: #64748b; --kg-requirement: #a16207;
+  --kg-setpoint: #be185d; --kg-condition: #4d7c0f; --kg-analysis_case: #9a3412;
+  --kg-pipe_segment: var(--physical_connection);
+  /* 지식 관계 선 */
+  --kg-rel-mentions: #64748b; --kg-rel-docpos: #cbd5e1; --kg-rel-depends: #334155;
+  /* 상태 */
+  --kg-flag: var(--warn-line); --kg-flag-ink: var(--warn-ink); --kg-conflict: #b91c1c; --kg-nosrc: var(--err-ink);
+  --kg-excl-opacity: .5; --kg-dash: 5 4;
+  /* A1 방향 (Okabe–Ito 색각 이상 배려 팔레트에서 고름) */
+  --a1-start: var(--ink); --a1-down: #0072b2; --a1-up: #d55e00; --a1-mixed: #cc79a7; --a1-unknown: #9ca3af;
+  --a1-adj: #009e73; --a1-na: #6b7280; --a1-off: #d1d5db;
+  /* A5 성분 */
+  --comp-1: #0072b2; --comp-2: #e69f00; --comp-3: #009e73; --comp-4: #cc79a7; --comp-5: #56b4e9; --comp-6: #d55e00; --comp-other: #9ca3af;
+  /* 배치 */
+  --kg-canvas: #fcfcfd;
+  --kg-left: clamp(232px, 18vw, 300px); --kg-right: clamp(320px, 24vw, 420px);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font-family: var(--font); font-size: var(--fs-md); color: var(--ink); background: #c9ccd2; }
+button, input, select { font: inherit; color: inherit; }
+.mono { font-family: var(--mono); font-size: 11.5px; }
+.muted { color: var(--muted); }
+.sp { flex: 1; }
+.app { height: 100vh; min-width: 1366px; min-height: 720px; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
+
+/* 창 틀·메뉴·헤더: interface-mockup.html과 같은 구성 */
+.titlebar { height: 32px; flex: none; display: flex; align-items: center; gap: var(--sp-2); padding-left: var(--sp-3); background: #fff; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); }
+.titlebar .ico { width: 14px; height: 14px; border-radius: 50%; background: var(--ui); }
+.titlebar .wb { width: 46px; height: 32px; display: grid; place-items: center; color: var(--ink-2); font-size: 12px; }
+.menubar { height: 28px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 6px; background: #fff; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); position: relative; z-index: 40; }
+.menubar .m { padding: 4px 10px; border-radius: 4px; cursor: default; position: relative; user-select: none; }
+.menubar .m:hover, .menubar .m.open { background: #eef0f3; }
+.menubar .m.mock { color: #7c2d12; border: 1px solid #fed7aa; background: #fff7ed; margin-left: 8px; }
+.dropdown { position: absolute; top: 25px; left: 0; min-width: 300px; background: #fff; border: 1px solid var(--line-strong); border-radius: var(--r-input); box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 4px; display: none; color: var(--ink); }
+.m.open .dropdown { display: block; }
+.dropdown div[data-act] { padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.dropdown div[data-act]:hover { background: var(--ui-weak); }
+.dropdown .sepl { height: 1px; background: var(--line); margin: 4px 0; }
+header { height: 56px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 var(--sp-5); background: var(--card); border-bottom: 1px solid var(--line); }
+header .logo { width: 28px; height: 28px; border-radius: 50%; background: var(--ui); flex: none; }
+header .app-n { font-weight: 700; white-space: nowrap; }
+header .vsep { width: 1px; height: 20px; background: var(--line); }
+header .where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+header .where span { color: var(--muted); }
+.steps { display: flex; gap: 2px; background: var(--bg); border-radius: var(--r-pill); padding: 3px; flex: none; }
+.steps button { border: 0; background: none; padding: 6px 14px; border-radius: var(--r-pill); cursor: pointer; color: var(--muted); white-space: nowrap; }
+.steps button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.1); font-weight: 600; }
+.who { font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; }
+
+/* 도구줄·칩·띠 (② 도구줄과 같은 모양) */
+.toolbar { flex: none; display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; padding: var(--sp-2) var(--sp-4); background: var(--card); border-bottom: 1px solid var(--line); min-height: 48px; }
+.fld { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--muted); }
+.fld select { border: 1px solid var(--line-strong); border-radius: var(--r-input); padding: 4px 8px; background: #fff; color: var(--ink); }
+.vchip { font-size: var(--fs-sm); padding: 3px 10px; border-radius: var(--r-pill); background: var(--bg); color: var(--ink-2); white-space: nowrap; }
+.vchip::before { content: "\25CF  "; color: var(--muted); }
+.vchip.passed::before { color: var(--ok); }
+.vchip.blocked { background: var(--err-bg); color: var(--err-ink); } .vchip.blocked::before { color: var(--err-ink); }
+.vchip.warnc { background: var(--warn-bg); color: var(--warn-ink); } .vchip.warnc::before { color: var(--warn-line); }
+.vchip.ver::before { content: ""; }
+.vchip b { font-weight: 600; }
+.band { flex: none; display: flex; gap: var(--sp-3); align-items: flex-start; padding: 8px var(--sp-4); font-size: var(--fs-sm); line-height: 1.5; border-bottom: 1px solid; }
+.band.err { background: var(--err-bg); color: var(--err-ink); border-color: var(--err-line); }
+.band.warn { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-line); }
+.band.info { background: var(--ui-weak); color: var(--ui-ink); border-color: #bfdbfe; }
+.band .btn { margin-left: auto; }
+.btn { border: 1px solid var(--line-strong); background: #fff; border-radius: var(--r-pill); padding: 5px 14px; cursor: pointer; white-space: nowrap; font-size: var(--fs-md); }
+.btn:hover:not(:disabled) { border-color: var(--ui); color: var(--ui-ink); }
+.btn.primary { background: var(--ui); border-color: var(--ui); color: #fff; }
+.btn.primary:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
+.btn.sm { padding: 2px 10px; font-size: var(--fs-sm); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* 배지: interface-mockup.html .b 규칙 + ③ 추가분 */
+.b { display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-xs); line-height: 1.5; padding: 0 7px; border-radius: var(--r-pill); border: 1px solid var(--line-strong); color: var(--ink-2); background: #fff; white-space: nowrap; }
+.b.human { background: var(--human-line); color: #fff; border-color: var(--human-line); }
+.b.hyp { background: #f3f4f6; }
+.b.unk { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-line); }
+.b.err { background: var(--err-bg); color: var(--err-ink); border-color: var(--err-line); }
+.b.okc { color: var(--ok); border-color: #86efac; background: #f0fdf4; }
+.b.excl { border-style: dashed; color: var(--muted); background: #fff; }
+.b.cand { border-style: dashed; color: var(--ink-2); background: var(--ai-hatch); }
+.b.flag { background: #fff; color: var(--kg-flag-ink); border: 2px solid var(--kg-flag); }
+.b.conf { background: #fff; color: var(--kg-conflict); border: 2px solid var(--kg-conflict); }
+
+/* 본문 3단 */
+main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.kg { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--kg-left) minmax(0, 1fr) var(--kg-right); }
+.kg.lcol { grid-template-columns: 30px minmax(0, 1fr) var(--kg-right); }
+.kg.rcol { grid-template-columns: var(--kg-left) minmax(0, 1fr) 30px; }
+.kg.lcol.rcol { grid-template-columns: 30px minmax(0, 1fr) 30px; }
+.pane { background: var(--card); display: flex; flex-direction: column; min-height: 0; min-width: 0; position: relative; }
+.pane.left { border-right: 1px solid var(--line); }
+.pane.right { border-left: 1px solid var(--line); }
+.pane-h { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: var(--sp-2); flex: none; }
+.pane-b { flex: 1; overflow: auto; min-height: 0; }
+.colbtn { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 14px; padding: 0 4px; }
+.kg.lcol .pane.left > :not(.pane-h), .kg.rcol .pane.right > :not(.pane-h) { display: none; }
+.kg.lcol .pane.left .pane-h > :not(.colbtn), .kg.rcol .pane.right .pane-h > :not(.colbtn) { display: none; }
+.lbl { font-size: var(--fs-xs); color: var(--muted); }
+.ttl { font-size: var(--fs-lg); font-weight: 700; margin-top: 1px; word-break: break-all; }
+
+/* 좌측 필터 */
+.sec { padding: var(--sp-2) var(--sp-3) var(--sp-3); border-bottom: 1px solid var(--line); }
+.sec-h { font-size: var(--fs-xs); color: var(--muted); font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 4px; }
+.layer-h { font-size: var(--fs-xs); color: var(--ink-2); margin: 6px 0 2px; }
+.tr, .tg { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); padding: 2px 0; cursor: pointer; line-height: 1.35; }
+.tr input, .tg input { margin: 0; }
+.cnt { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.hint { font-size: var(--fs-xs); color: var(--muted); line-height: 1.45; margin-top: 4px; }
+.sec input[type=text] { width: 100%; border: 1px solid var(--line-strong); border-radius: var(--r-input); padding: 4px 8px; }
+.qres div { padding: 3px 6px; border-radius: 6px; cursor: pointer; font-size: var(--fs-sm); }
+.qres div:hover { background: var(--ui-weak); }
+.rng { display: grid; grid-template-columns: 62px 1fr 34px; align-items: center; gap: 6px; font-size: var(--fs-sm); }
+.rng input { width: 100%; }
+.rng .v { font-size: var(--fs-xs); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.disabled { opacity: .45; pointer-events: none; }
+
+/* 캔버스 */
+.cv { position: relative; background: var(--kg-canvas); min-width: 0; min-height: 0; overflow: hidden; }
+#svg { width: 100%; height: 100%; display: block; cursor: grab; user-select: none; }
+#svg.panning { cursor: grabbing; }
+.cv-top { position: absolute; left: 12px; top: 10px; right: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; pointer-events: none; }
+.cv-top > * { pointer-events: auto; }
+.seg { display: flex; gap: 2px; background: #fff; border: 1px solid var(--line); border-radius: var(--r-pill); padding: 2px; box-shadow: var(--shadow); }
+.seg button { border: 0; background: none; padding: 3px 11px; border-radius: var(--r-pill); cursor: pointer; color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; }
+.seg button.on { background: var(--ink); color: #fff; }
+.seg button:disabled { opacity: .4; cursor: not-allowed; }
+.cv-info { font-size: var(--fs-xs); color: var(--ink-2); background: rgba(255,255,255,.9); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 3px 10px; white-space: nowrap; }
+.cv-zoom { position: absolute; right: 12px; top: 48px; display: flex; flex-direction: column; gap: 4px; }
+.cv-zoom button { width: 30px; height: 28px; border: 1px solid var(--line); background: #fff; border-radius: 8px; cursor: pointer; box-shadow: var(--shadow); font-size: 13px; }
+.cv-zoom button.w { font-size: 10.5px; }
+.legend { position: absolute; left: 12px; bottom: 12px; max-width: min(560px, 74%); background: rgba(255,255,255,.96); border: 1px solid var(--line); border-radius: var(--r-panel); box-shadow: var(--shadow); padding: 8px 12px; font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.5; }
+.legend .lg-h { font-weight: 700; color: var(--ink); margin-bottom: 2px; display: flex; gap: 6px; align-items: center; }
+.legend .row { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.legend .it { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.legend .note { color: var(--muted); margin-top: 3px; }
+.legend.min .body { display: none; }
+.cv-note { position: absolute; right: 12px; bottom: 10px; font-size: var(--fs-xs); color: var(--muted); background: rgba(255,255,255,.85); padding: 2px 8px; border-radius: var(--r-pill); }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: #fff; font-size: var(--fs-xs); padding: 4px 8px; border-radius: 8px; display: none; max-width: 280px; line-height: 1.45; z-index: 5; }
+.cv-empty { position: absolute; inset: 0; display: none; place-items: center; text-align: center; color: var(--muted); }
+.cv-empty .box { background: #fff; border: 1px dashed var(--line-strong); border-radius: var(--r-card); padding: 20px 28px; max-width: 460px; line-height: 1.6; }
+
+/* SVG 요소 */
+.eg .hit { stroke: transparent; stroke-width: 10; fill: none; }
+.eg .ln { fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.eg.k-phys .ln { stroke-width: 2.4; }
+.eg.k-app .ln { stroke-width: 1.8; }
+.eg.k-pos .ln { stroke-width: 1; }
+.eg.k-dep .ln { stroke-width: 1.6; }
+.eg.s-candidate .ln, .eg.s-excluded .ln, .eg.s-recheck .ln { stroke-dasharray: var(--kg-dash); }
+.eg.s-candidate, .eg.s-excluded { opacity: var(--kg-excl-opacity); }
+.eg.s-recheck .ln { stroke: var(--kg-flag) !important; stroke-width: 2.2; }
+.eg.nnf .ln.out { stroke-width: 6; }
+.eg.nnf .ln.in { stroke: #fff !important; stroke-width: 2.2; stroke-dasharray: none; }
+.eg.sel .ln:not(.in) { stroke: var(--ui) !important; stroke-width: 3.2; }
+.eg.faint { opacity: .3; }
+.eg { cursor: pointer; }
+.eg .mid { font-size: 9.5px; fill: var(--ink-2); paint-order: stroke; stroke: #fff; stroke-width: 3px; text-anchor: middle; pointer-events: none; }
+.eg.s-recheck .mid { fill: var(--kg-flag-ink); font-weight: 700; }
+.nd { cursor: pointer; }
+.nd .sh { stroke: #fff; stroke-width: 1.5; }
+.nd.hollow .sh { fill: #fff !important; stroke-width: 2; }
+.nd.excl { opacity: var(--kg-excl-opacity); }
+.nd.excl .sh { fill: #fff !important; stroke-width: 2; stroke-dasharray: 3 2; }
+.nd.faint { opacity: .35; }
+.nd .lb { font-size: 10.5px; fill: var(--ink-2); text-anchor: middle; paint-order: stroke; stroke: var(--kg-canvas); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.nd .gl { font-size: 9px; fill: #fff; font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.ring { fill: none; pointer-events: none; }
+.ring.sel { stroke: var(--ui); stroke-width: 3; }
+.ring.flag { stroke: var(--kg-flag); stroke-width: 3; }
+.ring.conf { stroke: var(--kg-conflict); stroke-width: 2; }
+.ring.start { stroke: var(--ink); stroke-width: 1.6; }
+.tagt { font-size: 9.5px; font-weight: 700; pointer-events: none; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+.tagt.flag { fill: var(--kg-flag-ink); } .tagt.conf { fill: var(--kg-conflict); } .tagt.nosrc { fill: var(--kg-nosrc); }
+.tagt.excl { fill: var(--muted); font-weight: 400; } .tagt.a1 { fill: var(--ink); } .tagt.off { fill: var(--muted); font-weight: 400; }
+.dim { opacity: var(--hl-dim) !important; }
+
+/* 우측 상세 */
+.dh { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); }
+.dh .badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.dsec { padding: var(--sp-2) var(--sp-4) var(--sp-3); border-bottom: 1px solid var(--line); }
+.dsec h4 { margin: 2px 0 6px; font-size: var(--fs-xs); color: var(--muted); font-weight: 700; display: flex; gap: 6px; align-items: center; }
+.kv { display: grid; grid-template-columns: 92px 1fr; gap: 3px 8px; font-size: var(--fs-sm); line-height: 1.45; }
+.kv > div:nth-child(odd) { color: var(--muted); }
+.kv > div { word-break: break-all; }
+.unkv { color: var(--warn-ink); }
+.box { border: 1px solid var(--line); border-radius: var(--r-card); padding: 8px 10px; font-size: var(--fs-sm); line-height: 1.5; margin-top: 6px; }
+.box.warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
+.box.err { background: var(--err-bg); border-color: var(--err-line); color: var(--err-ink); }
+.box.conf { border: 2px solid var(--kg-conflict); }
+.box.quote { background: #f8fafc; }
+.mk-ok { text-decoration: underline 2px var(--ink); text-underline-offset: 3px; font-weight: 600; }
+.mk-cand { text-decoration: underline dashed 2px var(--muted); text-underline-offset: 3px; }
+.mk-none { text-decoration: underline wavy 1.5px var(--warn-line); text-underline-offset: 3px; }
+.cr { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 6px; cursor: pointer; font-size: var(--fs-sm); }
+.cr:hover { background: var(--ui-weak); }
+.cr .k { color: var(--muted); font-size: var(--fs-xs); min-width: 86px; }
+.cr .o { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty { padding: 24px 16px; color: var(--muted); text-align: center; line-height: 1.6; }
+.dfoot { padding: var(--sp-3) var(--sp-4); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* 상태줄 */
+.statusbar { height: 28px; flex: none; display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-3); background: #fff; border-top: 1px solid var(--line); font-size: var(--fs-xs); color: var(--muted); }
+.statusbar .bridge { font-family: var(--mono); color: var(--ink-2); max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.statusbar label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.toast { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 8px 16px; border-radius: var(--r-pill); font-size: var(--fs-sm); display: none; z-index: 60; max-width: 80vw; }
+
+/* 영역 경계(시안 전용) */
+.bounds [data-area] { outline: 1px dashed rgba(107,114,128,.7); outline-offset: -2px; position: relative; }
+.bounds [data-area^="웹뷰"] { outline: 2px solid #0f172a; }
+.bounds [data-area]::after { content: attr(data-area); position: absolute; right: 4px; top: 4px; font-size: 10px; background: #fff; border: 1px solid var(--line-strong); padding: 0 4px; border-radius: 4px; color: var(--ink-2); z-index: 20; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="titlebar"><span class="ico"></span><span>HAZOP 검토 — 지식그래프 kg-SNP-SAMPLE</span><span class="sp"></span><span class="wb">&#8212;</span><span class="wb">&#9744;</span><span class="wb">&#10005;</span></div>
+  <div class="menubar" id="menubar" data-area="Qt · 메뉴">
+    <div class="m">파일<div class="dropdown"><div data-act="toast:지식그래프 열기 (시안: 동작 없음)">지식그래프 열기…</div><div data-act="toast:알고리즘 결과 열기 (시안: 동작 없음)">알고리즘 결과 열기…</div></div></div>
+    <div class="m">보기<div class="dropdown"><div data-act="tog-left">좌측 패널 접기/펴기</div><div data-act="tog-right">우측 패널 접기/펴기</div><div data-act="fit">화면에 맞춤</div></div></div>
+    <div class="m">도움말<div class="dropdown"><div data-act="toast:규칙 문서: 디자인/지식그래프화면.md">이 화면의 시각 규칙</div></div></div>
+    <div class="m mock">시안 상태 예시 &#9662;<div class="dropdown" style="min-width:380px">
+      <div data-act="st:default"><b>기본</b> — passed, 샘플 그대로</div>
+      <div data-act="st:v3">전역 노드 수 상한 초과 (V3) — 6,240개 가상</div>
+      <div data-act="st:blocked">검증 blocked — 이전 passed 버전 표시 (가상)</div>
+      <div data-act="st:recheck">재확인 필요 1건 (가상: 대상 도면 버전 변경)</div>
+      <div data-act="st:empty">빈 화면 — 지식 입력 없음</div>
+      <div class="sepl"></div>
+      <div data-act="toast:1366×768 확인: 브라우저 창을 1366×768로 맞추거나 개발자 도구의 기기 크기를 쓰세요">1366×768에서 보는 방법</div>
+    </div></div>
+  </div>
+  <header data-area="Qt · 헤더">
+    <div class="logo"></div><div class="app-n">HAZOP 검토</div><div class="vsep"></div>
+    <div class="where"><b>kg-SNP-SAMPLE</b> · 도면 SNP-M-102 · <span>가상 샘플 데이터(실제 설계값 아님)</span></div>
+    <div class="sp"></div>
+    <nav class="steps" id="steps">
+      <button data-go="①">① 자료 등록</button><button data-go="②">② 도면·그래프</button><button class="on">③ 지식그래프</button><button data-go="④">④ HAZOP 분석</button><button data-go="⑤">⑤ 설계보완·확정</button>
+    </nav>
+    <div class="who">검토자 <b>(시안)</b></div>
+  </header>
+  <main>
+    <div class="toolbar" id="toolbar" data-area="Qt · 도구줄"></div>
+    <div id="bands"></div>
+    <div class="kg" id="kg">
+      <!-- 좌측: 필터·색 그룹·깊이·힘 -->
+      <aside class="pane left" data-area="웹뷰 · 필터 패널">
+        <div class="pane-h"><span class="lbl">보기 설정</span><span class="sp"></span><button class="colbtn" data-act="tog-left" title="접기">&#9664;</button></div>
+        <div class="pane-b" id="left">
+          <div class="sec"><div class="sec-h">검색</div><input type="text" id="q" placeholder="태그·이름·ID (예: RC-PV101)"><div class="qres" id="qres"></div></div>
+          <div class="sec"><div class="sec-h">노드 종류 · 색 그룹 <span style="font-weight:400">(범례 겸용)</span></div>
+            <div class="layer-h">P&amp;ID 층 — 원</div><div id="t-pid"></div>
+            <div class="layer-h">지식 층 — 각진 도형</div><div id="t-kn"></div></div>
+          <div class="sec"><div class="sec-h">관계 종류</div><div id="g-list"></div></div>
+          <div class="sec"><div class="sec-h">계산 제외 항목 표시</div>
+            <label class="tg"><input type="checkbox" id="o-cand"> 후보 링크 <span class="cnt" id="c-cand"></span></label>
+            <label class="tg"><input type="checkbox" id="o-excl"> 미확인·가설 항목 <span class="cnt" id="c-excl"></span></label>
+            <label class="tg"><input type="checkbox" id="o-rechk"> 재확인 필요 <span class="cnt" id="c-rechk"></span></label>
+            <div class="hint">켜도 계산 뷰(V4·V5)와 알고리즘 결과에 들어가지 않습니다. 흐린 파선과 "계산 제외" 표시로 구분합니다.</div></div>
+          <div class="sec" id="sec-a2"><div class="sec-h">A2 고아 · 근거 공백</div>
+            <label class="tg"><input type="checkbox" id="o-orphan"> 고아 강조 <span class="cnt">3</span></label>
+            <label class="tg"><input type="checkbox" id="o-gap"> 근거 공백 강조 <span class="cnt">1</span></label>
+            <div class="hint">연결 없음은 "해당 없음"이 아니라 "지식 입력 미확인"입니다. 근거 공백은 자료 요청 메모 <b>후보</b>입니다.</div></div>
+          <div class="sec"><div class="sec-h">표시</div>
+            <label class="tg"><input type="checkbox" id="o-fold"> 배관 구간 접기 (화면 전용)</label>
+            <label class="tg"><input type="checkbox" id="o-arrows" checked> 흐름 화살표 (방향 확인 구간만)</label>
+            <label class="tg"><input type="checkbox" id="o-labels" checked> 라벨</label></div>
+          <div class="sec" id="sec-depth"><div class="sec-h">로컬 깊이 <b id="d-val" style="color:var(--ink)">2</b></div>
+            <input type="range" id="depth" min="1" max="3" value="2" style="width:100%"><div class="hint" id="d-note"></div></div>
+          <div class="sec"><div class="sec-h">힘 (배치 전용, 근거 아님)</div>
+            <div class="rng"><span>중심</span><input type="range" id="f-c" min="0" max="1" step="0.05" value="0.3"><span class="v" id="v-c"></span></div>
+            <div class="rng"><span>반발</span><input type="range" id="f-r" min="0" max="600" step="10" value="220"><span class="v" id="v-r"></span></div>
+            <div class="rng"><span>링크 당김</span><input type="range" id="f-s" min="0" max="1" step="0.05" value="0.7"><span class="v" id="v-s"></span></div>
+            <div class="rng"><span>링크 길이</span><input type="range" id="f-d" min="20" max="160" step="5" value="60"><span class="v" id="v-d"></span></div>
+            <div style="margin-top:6px"><button class="btn sm" id="relayout">다시 배치</button></div>
+            <div class="hint">d3 forceCenter · forceManyBody · forceLink.strength · forceLink.distance에 대응. 시안 기본값은 샘플을 보고 정한 값(추정)입니다.</div></div>
+        </div>
+      </aside>
+      <!-- 중앙: 그래프 캔버스 -->
+      <section class="cv" id="cv" data-area="웹뷰 · 그래프 캔버스">
+        <svg id="svg"><g id="g-e"></g><g id="g-n"></g></svg>
+        <div class="cv-top">
+          <div class="seg" id="vmode"><button data-v="global">전역</button><button data-v="local">로컬</button></div>
+          <div class="seg" id="cmode"><button data-c="type">종류</button><button data-c="a1">A1 상·하류</button><button data-c="a5">A5 연결 성분</button></div>
+          <span class="cv-info" id="cv-info"></span>
+        </div>
+        <div class="cv-zoom"><button id="z-in" title="확대">+</button><button id="z-out" title="축소">&#8722;</button><button id="z-fit" class="w" title="화면에 맞춤">맞춤</button></div>
+        <div class="legend" id="legend"></div>
+        <div class="cv-note">배치는 근거가 아님 · 계산 결과는 Python</div>
+        <div class="tip" id="tip"></div>
+        <div class="cv-empty" id="cv-empty"><div class="box"><b style="color:var(--ink)">지식그래프가 없습니다</b><br>지식 입력 CSV(<span class="mono">데이터/지식/&lt;project_id&gt;/</span>)를 작성하고 지식 빌드를 실행하면 여기에 나옵니다.<br>P&amp;ID 구조만 보려면 ② 도면·그래프의 'P&amp;ID 구조' 탭을 쓰세요.</div></div>
+      </section>
+      <!-- 우측: 상세 -->
+      <aside class="pane right" data-area="Qt · 상세 패널 [제안]">
+        <div class="pane-h"><button class="colbtn" data-act="tog-right" title="접기">&#9654;</button><span class="lbl">상세</span><span class="sp"></span></div>
+        <div class="pane-b" id="detail"></div>
+      </aside>
+    </div>
+  </main>
+  <div class="statusbar" data-area="Qt · 상태줄">
+    <span class="vchip passed" id="s-chip">지식그래프 검증 passed</span>
+    <span>표시·배치는 근거가 아님. 근거는 상세 패널의 출처</span>
+    <span>|</span><span class="bridge" id="bridge">Python↔웹: 대기</span>
+    <span class="sp"></span>
+    <label><input type="checkbox" id="bounds"> 영역 경계 표시 (시안 전용)</label>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = v => String(v ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const f1 = v => Math.round(v * 10) / 10;
+
+/* ============ 데이터 (발췌, 가상 샘플) ============ */
+const META = { kg_id: "kg-SNP-SAMPLE", kg_version: "v-43034b88b9c9", prev_version: "v-a1c9ef7b16c3", graph_id: "graph-SNP-M-102", graph_version: "v-7ed95b0c74f1", algo_kg_version: "v-43034b88b9c9", region: "region-SNP-M-102-pzr v1" };
+const NODE_LIMIT = 5000;  // 그래프활용 §7.3, 검사 V3 (decisions D8)
+
+const TYPE = {
+  equipment: { layer: "pid", name: "설비", color: "var(--equipment)", shape: "circle" },
+  valve: { layer: "pid", name: "밸브", color: "var(--valve)", shape: "circle" },
+  instrument: { layer: "pid", name: "계장", color: "var(--instrument)", shape: "circle" },
+  piping_element: { layer: "pid", name: "배관 요소(티·도면 연결점)", color: "var(--piping_element)", shape: "circle" },
+  pipe_segment: { layer: "pid", name: "배관 구간", color: "var(--kg-pipe_segment)", shape: "circle" },
+  document: { layer: "kn", name: "문서", color: "var(--kg-document)", shape: "page" },
+  doc_chunk: { layer: "kn", name: "문서 조각", color: "var(--kg-doc_chunk)", shape: "square" },
+  requirement: { layer: "kn", name: "요건", color: "var(--kg-requirement)", shape: "hex" },
+  setpoint: { layer: "kn", name: "설정치", color: "var(--kg-setpoint)", shape: "diamond" },
+  condition: { layer: "kn", name: "운전조건·설계값", color: "var(--kg-condition)", shape: "capsule" },
+  analysis_case: { layer: "kn", name: "해석 사례", color: "var(--kg-analysis_case)", shape: "tri" },
+};
+const KIND = {
+  has_endpoint: { grp: "phys", name: "물리 연결" }, measurement_connection: { grp: "meas", name: "계측 연결" }, signal_connection: { grp: "sig", name: "신호 연결" },
+  mentions: { grp: "men", name: "언급" }, governed_by: { grp: "app", name: "적용 요건" }, has_setpoint: { grp: "app", name: "설정치" },
+  has_condition: { grp: "app", name: "운전조건" }, analyzed_in: { grp: "app", name: "해석 사례" },
+  part_of: { grp: "pos", name: "문서 소속" }, specified_in: { grp: "pos", name: "원문 위치" }, depends_on: { grp: "dep", name: "문서 근거 의존" },
+};
+const GRP = {
+  phys: { name: "물리 연결 (has_endpoint)", col: "var(--physical_connection)", w: 2.4 },
+  meas: { name: "계측 연결", col: "var(--measurement_connection)", w: 1.4 },
+  sig: { name: "신호 연결", col: "var(--signal_connection)", w: 1.4 },
+  men: { name: "언급 (mentions)", col: "var(--kg-rel-mentions)", w: 1.4 },
+  app: { name: "설비 적용 (governed_by·has_setpoint·has_condition·analyzed_in)", col: "var(--kg-requirement)", w: 1.8 },
+  pos: { name: "문서 안 위치 (part_of·specified_in)", col: "var(--kg-rel-docpos)", w: 1 },
+  dep: { name: "문서 근거 의존 (depends_on)", col: "var(--kg-rel-depends)", w: 1.6 },
+};
+
+// P&ID 노드: id, tag, category, kind, source_object_id, 초기 x, 초기 y, 추가 (출력/그래프/SNP-M-102/graph.json 발췌)
+const PID = [
+  ["entity-node-001", "RC-PZ01", "equipment", "pressurizer", "n1", 430, 330],
+  ["entity-node-002", null, "piping_element", "continuation", null, 70, 120, { to: "SNP-M-101 · RC-L001" }],
+  ["entity-node-003", "RC-L010-T3", "piping_element", "tee", null, 240, 200],
+  ["entity-node-004", "RC-TE110", "instrument", "temperature_element", "n6", 200, 90],
+  ["entity-node-005", "RC-TT110", "instrument", "transmitter", "n7", 110, 40],
+  ["entity-node-006", null, "piping_element", "continuation", null, 70, 560, { to: "SNP-M-101 · RC-L003" }],
+  ["entity-node-007", "RC-V111", "valve", "manual_valve", "n11", 200, 500, { np: "NO" }],
+  ["entity-node-008", "RC-PV101", "valve", "control_valve", "n12", 320, 430, { np: "NC", fp: "FC" }],
+  ["entity-node-009", "RC-PT110", "instrument", "transmitter", "n16", 560, 190],
+  ["entity-node-010", "RC-PIC110", "instrument", "controller", "n17", 440, 160],
+  ["entity-node-011", "RC-LT110", "instrument", "transmitter", "n21", 540, 430],
+  ["entity-node-012", "RC-LI110", "instrument", "indicator", "n22", 620, 500],
+  ["entity-node-013", "RC-L030-T25", "piping_element", "tee", null, 640, 320],
+  ["entity-node-014", "RC-PSV101", "valve", "psv", "n27", 740, 230, { np: "NC" }],
+  ["entity-node-015", "RC-PSV102", "valve", "psv", "n28", 750, 410, { np: "NC" }],
+  ["entity-node-016", "RC-L031-T31", "piping_element", "tee", null, 870, 320],
+  ["entity-node-017", null, "piping_element", "continuation", null, 970, 330, { to: "SNP-M-301 · SI-TK01" }],
+  ["entity-node-018", "RC-TE120", "instrument", "temperature_element", "n36", 900, 580],
+  ["entity-node-019", "RC-L031-T37", "piping_element", "tee", null, 980, 620],
+];
+// 배관 구간: id, 라인 번호, source_object_id, flow_direction.from, flow_direction.to
+const SEG = [
+  ["entity-seg-001", "RC-L010", "e4", "entity-node-002", "entity-node-003"],
+  ["entity-seg-002", "RC-L010", "e5", "entity-node-003", "entity-node-001"],
+  ["entity-seg-003", "RC-L011", "e13", "entity-node-006", "entity-node-007"],
+  ["entity-seg-004", "RC-L011", "e14", "entity-node-007", "entity-node-008"],
+  ["entity-seg-005", "RC-L011", "e15", "entity-node-008", "entity-node-001"],
+  ["entity-seg-006", "RC-L030", "e26", "entity-node-001", "entity-node-013"],
+  ["entity-seg-007", "RC-L030", "e29", "entity-node-013", "entity-node-014"],
+  ["entity-seg-008", "RC-L030", "e30", "entity-node-013", "entity-node-015"],
+  ["entity-seg-009", "RC-L031", "e32", "entity-node-014", "entity-node-016"],
+  ["entity-seg-010", "RC-L031", "e33", "entity-node-015", "entity-node-016"],
+  ["entity-seg-011", "RC-L031", "e35", "entity-node-016", "entity-node-017"],
+];
+// P&ID 관계: id, kind, a, b
+const REL = [
+  ["relation-001", "has_endpoint", "entity-seg-001", "entity-node-002"], ["relation-002", "has_endpoint", "entity-seg-001", "entity-node-003"],
+  ["relation-003", "has_endpoint", "entity-seg-002", "entity-node-003"], ["relation-004", "has_endpoint", "entity-seg-002", "entity-node-001"],
+  ["relation-005", "measurement_connection", "entity-node-003", "entity-node-004"], ["relation-006", "signal_connection", "entity-node-004", "entity-node-005"],
+  ["relation-007", "has_endpoint", "entity-seg-003", "entity-node-006"], ["relation-008", "has_endpoint", "entity-seg-003", "entity-node-007"],
+  ["relation-009", "has_endpoint", "entity-seg-004", "entity-node-007"], ["relation-010", "has_endpoint", "entity-seg-004", "entity-node-008"],
+  ["relation-011", "has_endpoint", "entity-seg-005", "entity-node-008"], ["relation-012", "has_endpoint", "entity-seg-005", "entity-node-001"],
+  ["relation-013", "measurement_connection", "entity-node-001", "entity-node-009"], ["relation-014", "signal_connection", "entity-node-009", "entity-node-010"],
+  ["relation-015", "signal_connection", "entity-node-010", "entity-node-008"], ["relation-016", "measurement_connection", "entity-node-001", "entity-node-011"],
+  ["relation-017", "signal_connection", "entity-node-011", "entity-node-012"], ["relation-018", "has_endpoint", "entity-seg-006", "entity-node-001"],
+  ["relation-019", "has_endpoint", "entity-seg-006", "entity-node-013"], ["relation-020", "has_endpoint", "entity-seg-007", "entity-node-013"],
+  ["relation-021", "has_endpoint", "entity-seg-007", "entity-node-014"], ["relation-022", "has_endpoint", "entity-seg-008", "entity-node-013"],
+  ["relation-023", "has_endpoint", "entity-seg-008", "entity-node-015"], ["relation-024", "has_endpoint", "entity-seg-009", "entity-node-014"],
+  ["relation-025", "has_endpoint", "entity-seg-009", "entity-node-016"], ["relation-026", "has_endpoint", "entity-seg-010", "entity-node-015"],
+  ["relation-027", "has_endpoint", "entity-seg-010", "entity-node-016"], ["relation-028", "has_endpoint", "entity-seg-011", "entity-node-016"],
+  ["relation-029", "has_endpoint", "entity-seg-011", "entity-node-017"], ["relation-030", "measurement_connection", "entity-node-019", "entity-node-018"],
+];
+// 지식 노드 (출력/지식그래프/kg-SNP-SAMPLE/v-43034b88b9c9/knowledge_graph.json 발췌)
+const SRC = (page, loc) => ({ mat: "MAT-KG-001", rv: "1", doc: "DOC-KG-001", page, loc });
+const KN = [
+  { id: "doc-001", t: "document", name: "가압기 압력제어 운전 설명서(가상)", src: SRC(null, null), x: 600, y: 650 },
+  { id: "chunk-001", t: "doc_chunk", text: "3.1절(가상). 가압기 압력이 높아지면 압력제어기 RC-PIC110이 압력제어밸브 RC-PV101을 연다.", src: SRC("3", "3.1절"), x: 430, y: 590 },
+  { id: "chunk-002", t: "doc_chunk", text: "3.2절(가상). 가압기 RC-PZ1의 압력은 압력전송기 RC-PT110으로 측정한다.", src: SRC("3", "3.2절"), x: 660, y: 120 },
+  { id: "chunk-003", t: "doc_chunk", text: "4.1절(가상). 배수 라인의 RC-V999 밸브는 정비 시에만 연다.", src: SRC("4", "4.1절"), notInDrawing: ["RC-V999"], x: 720, y: 680 },
+  { id: "chunk-004", t: "doc_chunk", text: "5.2절(가상). RC-L011 배관의 보온 상태를 정기 점검한다.", src: SRC("5", "5.2절"), x: 240, y: 660 },
+  { id: "req-001", t: "requirement", text: "가압기 압력이 고압 경보치 이상이면 운전원에게 경보를 준다(가상).", src: SRC("3", "3.1절 표 3-1 1행"), x: 340, y: 280 },
+  { id: "req-002", t: "requirement", text: "안전밸브 RC-PSV101은 설계압력 이하에서 열려야 한다(가상).", src: SRC("3", "3.2절 표 3-2 1행"), x: 820, y: 150 },
+  { id: "req-003", t: "requirement", text: "압력제어밸브는 제어기 신호 상실 시 닫힘 위치로 간다(가상).", reason: "적용 설비 미지정(고아 사례)", src: SRC("3", "3.1절 표 3-1 2행"), x: 520, y: 700 },
+  { id: "setpt-001", t: "setpoint", item: "고압 트립", value: "8", unit: "bar", pb: "gauge", om: null, conflict: ["setpt-002"], src: SRC("3", "3.2절 표 3-3 1행"), x: 640, y: 50 },
+  { id: "setpt-002", t: "setpoint", item: "고압 트립", value: "8.5", unit: "bar", pb: "gauge", om: null, conflict: ["setpt-001"], reason: "3.2절 값과 다름(충돌 사례)", src: SRC("6", "부록 A 표 A-1"), x: 520, y: 80 },
+  { id: "setpt-003", t: "setpoint", item: "설정압력", value: "9", unit: null, pb: null, om: null, ks: "unknown", v4: 0, ex: ["knowledge_status=unknown"], reason: "단위·압력 기준 원문 판독 불가(미확인 사례)", src: SRC("3", "3.2절 표 3-3 2행"), x: 840, y: 70 },
+  { id: "cond-001", t: "condition", item: "운전압력", value: "7", unit: "bar", pb: "gauge", om: "정상 운전", src: SRC("2", "2.1절"), x: 470, y: 250 },
+  { id: "cond-002", t: "condition", item: "설계압력", value: "10", unit: "bar", pb: "gauge", om: null, src: SRC("2", "2.1절"), x: 380, y: 230 },
+  { id: "case-001", t: "analysis_case", name: "가압기 압력 상승 과거 검토 사례(가상)", ks: "hypothesis", v4: 0, ex: ["knowledge_status=hypothesis"], nosrc: true, unreg: "자료 등록 정보 없음(material_id 빈 칸)", reason: "출처 미확인 가설(근거 없음 사례)", src: null, x: 520, y: 400 },
+];
+// 지식 관계
+const KL = [
+  { id: "krel-001", k: "part_of", f: "chunk-001", t: "doc-001", inh: "chunk-001", src: SRC("3", "3.1절"), reason: "근거 열 비움(조각 근거 상속)" },
+  { id: "krel-002", k: "part_of", f: "chunk-002", t: "doc-001", inh: "chunk-002", src: SRC("3", "3.2절") },
+  { id: "krel-003", k: "part_of", f: "chunk-003", t: "doc-001", inh: "chunk-003", src: SRC("4", "4.1절") },
+  { id: "krel-004", k: "part_of", f: "chunk-004", t: "doc-001", inh: "chunk-004", src: SRC("5", "5.2절") },
+  { id: "krel-005", k: "specified_in", f: "req-001", t: "chunk-001", src: SRC("3", "3.1절 표 3-1 1행") },
+  { id: "krel-006", k: "specified_in", f: "req-002", t: "chunk-002", src: SRC("3", "3.2절 표 3-2 1행") },
+  { id: "krel-007", k: "specified_in", f: "req-003", t: "chunk-001", src: SRC("3", "3.1절 표 3-1 2행") },
+  { id: "krel-008", k: "governed_by", f: "entity-node-001", t: "req-001", inh: "req-001", src: SRC("3", "3.1절 표 3-1 1행"), reason: "근거 열 비움(요건 근거 상속)" },
+  { id: "krel-009", k: "governed_by", f: "entity-node-014", t: "req-002", src: SRC("3", "3.2절 표 3-2 1행") },
+  { id: "krel-010", k: "has_setpoint", f: "entity-node-009", t: "setpt-001", src: SRC("3", "3.2절 표 3-3 1행") },
+  { id: "krel-011", k: "has_setpoint", f: "entity-node-009", t: "setpt-002", src: SRC("6", "부록 A 표 A-1") },
+  { id: "krel-012", k: "has_setpoint", f: "entity-node-014", t: "setpt-003", inh: "setpt-003", src: SRC("3", "3.2절 표 3-3 2행"), v4: 0, ex: ["to 끝 지식 노드가 V4 밖"] },
+  { id: "krel-013", k: "has_condition", f: "entity-node-001", t: "cond-001", inh: "cond-001", src: SRC("2", "2.1절") },
+  { id: "krel-014", k: "has_condition", f: "entity-node-001", t: "cond-002", inh: "cond-002", src: SRC("2", "2.1절") },
+  { id: "krel-015", k: "analyzed_in", f: "entity-node-001", t: "case-001", ks: "hypothesis", v4: 0, ex: ["knowledge_status=hypothesis", "to 끝 지식 노드가 V4 밖"], src: null, nosrc: true, unreg: "자료 등록 정보 없음(material_id 빈 칸)", reason: "가설 관계(계산 제외 사례)" },
+  { id: "krel-m-8d0c926c", k: "mentions", f: "chunk-001", t: "entity-node-008", method: "exact_norm", match: "RC-PV101", pos: "47–55", sha: "7996e491ee23…", src: { mat: "MAT-KG-001", rv: "1", doc: null, page: null, loc: null }, reason: "정확 일치 확인(샘플)" },
+  { id: "krel-m-7c52c0fd", k: "mentions", f: "chunk-002", t: "entity-node-009", method: "exact_norm", match: "RC-PT110", pos: "32–40", sha: "04444eab7bc9…", src: { mat: "MAT-KG-001", rv: "1", doc: null, page: null, loc: null }, reason: "정확 일치 확인(샘플)" },
+];
+// 연결 후보 (데이터/지식/SNP-SAMPLE/link_candidates.csv 중 link_status=candidate 5행)
+const CAND = [
+  { id: "cand:chunk-001→RC-PIC110", f: "chunk-001", t: "entity-node-010", method: "exact_norm", conf: "1.000", amb: false, match: "RC-PIC110", pos: "29–38", ref: "graph-SNP-M-102:RC-PIC110" },
+  { id: "cand:chunk-002→RC-PZ01", f: "chunk-002", t: "entity-node-001", method: "fuzzy", conf: "0.923", amb: false, match: "RC-PZ1", pos: "14–20", ref: "graph-SNP-M-102:RC-PZ01" },
+  { id: "cand:chunk-004→e13", f: "chunk-004", t: "entity-seg-003", method: "exact_norm", conf: "1.000", amb: true, match: "RC-L011", pos: "10–17", ref: "graph-SNP-M-102#e13" },
+  { id: "cand:chunk-004→e14", f: "chunk-004", t: "entity-seg-004", method: "exact_norm", conf: "1.000", amb: true, match: "RC-L011", pos: "10–17", ref: "graph-SNP-M-102#e14" },
+  { id: "cand:chunk-004→e15", f: "chunk-004", t: "entity-seg-005", method: "exact_norm", conf: "1.000", amb: true, match: "RC-L011", pos: "10–17", ref: "graph-SNP-M-102#e15" },
+];
+// A1 (algo_result.json, 시작 entity-node-001): id → [방향, 깊이, 마지막 경로 관계, 정상 유로 아님(1), 경유 밸브]
+const A1_START = "entity-node-001";
+const A1R = {
+  "entity-node-009": ["na", 1, "relation-013", 0], "entity-node-011": ["na", 1, "relation-016", 0],
+  "entity-seg-002": ["adj", 1, "relation-004", 0], "entity-seg-005": ["adj", 1, "relation-012", 0], "entity-seg-006": ["adj", 1, "relation-018", 0],
+  "entity-node-010": ["na", 2, "relation-014", 0], "entity-node-012": ["na", 2, "relation-017", 0],
+  "entity-node-003": ["up", 2, "relation-003", 0], "entity-node-008": ["up", 2, "relation-011", 0], "entity-node-013": ["down", 2, "relation-019", 0],
+  "entity-node-004": ["na", 3, "relation-005", 0], "entity-seg-001": ["up", 3, "relation-002", 0],
+  "entity-seg-004": ["up", 3, "relation-010", 1, "RC-PV101 NC(닫힘)"], "entity-seg-007": ["down", 3, "relation-020", 0], "entity-seg-008": ["down", 3, "relation-022", 0],
+  "entity-node-005": ["na", 4, "relation-006", 0], "entity-node-002": ["up", 4, "relation-001", 0],
+  "entity-node-007": ["up", 4, "relation-009", 1, "RC-PV101 NC(닫힘)"], "entity-node-014": ["down", 4, "relation-021", 0], "entity-node-015": ["down", 4, "relation-023", 0],
+  "entity-seg-003": ["up", 5, "relation-008", 1, "RC-PV101 NC(닫힘), RC-V111 NO(열림)"], "entity-seg-009": ["down", 5, "relation-024", 1, "RC-PSV101 NC(닫힘)"],
+  "entity-seg-010": ["down", 5, "relation-026", 1, "RC-PSV102 NC(닫힘)"],
+  "entity-node-006": ["up", 6, "relation-007", 1, "RC-PV101 NC(닫힘), RC-V111 NO(열림)"], "entity-node-016": ["down", 6, "relation-025", 1, "RC-PSV101 NC(닫힘)"],
+  "entity-seg-011": ["down", 7, "relation-028", 1, "RC-PSV101 NC(닫힘)"], "entity-node-017": ["down", 8, "relation-029", 1, "RC-PSV101 NC(닫힘)"],
+};
+const A1_TRUNC = { "entity-node-002": "SNP-M-101 · RC-L001", "entity-node-006": "SNP-M-101 · RC-L003", "entity-node-017": "SNP-M-301 · SI-TK01" };
+const A1_UNREACHED = ["entity-node-018", "entity-node-019"];
+const A1_DIR = { down: "하류", up: "상류", mixed: "혼합", unknown: "미확인", adj: "인접 구간", na: "방향 해당 없음(물질 흐름 경로 아님)" };
+const A1_GLYPH = { down: "↓하", up: "↑상", mixed: "↕혼", unknown: "?", adj: "접", na: "—" };
+// A2
+const A2 = {
+  orphans: { "chunk-003": "확인된 mentions 없음", "chunk-004": "확인된 mentions 없음", "req-003": "governed_by 없음" },
+  hints: { "req-003": "같은 조각 chunk-001이 언급한 설비: RC-PV101" },
+  gaps: { "entity-node-008": ["chunk-001"] },
+  noInput: ["entity-node-003", "entity-node-004", "entity-node-005", "entity-node-007", "entity-node-010", "entity-node-011", "entity-node-012", "entity-node-013", "entity-node-015", "entity-node-016", "entity-node-018", "entity-node-019"],
+  noInputCont: ["entity-node-002", "entity-node-006", "entity-node-017"],
+};
+// A4 (중심 entity-node-001, 반경 2) — 웹 BFS와 비교(검사 V1)
+const A4_PZ_R2 = ["chunk-001", "chunk-002", "cond-001", "cond-002", "entity-node-001", "entity-node-003", "entity-node-008", "entity-node-009", "entity-node-010", "entity-node-011", "entity-node-012", "entity-node-013", "entity-seg-002", "entity-seg-005", "entity-seg-006", "req-001", "setpt-001", "setpt-002"];
+const A5_V1 = { count: 9, singletons: 8 };
+
+/* ============ 모델 구성 ============ */
+const N = {};
+PID.forEach(([id, tag, cat, kind, sid, x, y, ex]) => { N[id] = Object.assign({ id, layer: "pid", t: cat, tag, kind, sid, x0: x, y0: y }, ex || {}); });
+SEG.forEach(([id, tag, sid, from, to]) => { const a = N[from], b = N[to]; N[id] = { id, layer: "pid", t: "pipe_segment", tag, kind: "pipe_segment", sid, flow: { from, to }, x0: (a.x0 + b.x0) / 2, y0: (a.y0 + b.y0) / 2 }; });
+KN.forEach(k => { N[k.id] = Object.assign({ layer: "kn", ks: "confirmed", v4: 1, x0: k.x, y0: k.y }, k); });
+Object.values(N).forEach(n => { n.x = n.x0; n.y = n.y0; });
+const REL_BY_ID = {}; REL.forEach(r => REL_BY_ID[r[0]] = r);
+let E = [];
+function buildEdges() {
+  E = [];
+  REL.forEach(([id, kind, a, b]) => E.push({ id, kind, a, b, layer: "pid", st: "confirmed" }));
+  KL.forEach(l => E.push(Object.assign({ kind: l.k, a: l.f, b: l.t, layer: "kn", ks: l.ks || "confirmed", ls: "confirmed", method: l.method || "manual" }, l, { st: (S.demo === "recheck" && l.id === "krel-m-8d0c926c") ? "recheck" : ((l.v4 ?? 1) ? "confirmed" : "excluded") })));
+  CAND.forEach(c => E.push(Object.assign({ kind: "mentions", a: c.f, b: c.t, layer: "kn", ks: "confirmed", ls: "candidate" }, c, { st: "candidate" })));
+}
+const E_BY = () => Object.fromEntries(E.map(e => [e.id, e]));
+const SEG_ENDS = Object.fromEntries(SEG.map(s => [s[0], [s[3], s[4]]]));
+const A1_TREE = {}; Object.entries(A1R).forEach(([id, r]) => A1_TREE[r[2]] = id);
+const nodeComputed = n => n.layer === "pid" || !!n.v4;
+
+/* ============ 상태 ============ */
+const S = {
+  mode: "global", color: "type", sel: { k: "n", id: "entity-node-001" }, hover: null, depth: 2,
+  fold: false, labels: true, arrows: true, showCand: false, showExcl: false, showRechk: false, orphan: false, gap: false,
+  types: new Set(Object.keys(TYPE)), grps: new Set(Object.keys(GRP)), demo: "default", vb: { x: 0, y: 0, w: 1000, h: 700 }, center: A1_START,
+};
+let FOLDABLE = new Set(), COMP = {}, COMP_LIST = [], DEG = {};
+function recompute() {
+  buildEdges();
+  FOLDABLE = new Set(SEG.map(s => s[0]).filter(id => { const es = E.filter(e => e.st === "confirmed" && (e.a === id || e.b === id)); return es.length === 2 && es.every(e => e.kind === "has_endpoint"); }));
+  DEG = {}; E.forEach(e => { if (e.st !== "confirmed") return; DEG[e.a] = (DEG[e.a] || 0) + 1; DEG[e.b] = (DEG[e.b] || 0) + 1; });
+  // A5 (V5): 계산 포함 노드·관계만, 무방향
+  const par = {}; const find = x => par[x] === x ? x : (par[x] = find(par[x]));
+  Object.values(N).filter(nodeComputed).forEach(n => par[n.id] = n.id);
+  E.forEach(e => { if (e.st === "confirmed" && par[e.a] && par[e.b]) par[find(e.a)] = find(e.b); });
+  const groups = {}; Object.keys(par).forEach(id => (groups[find(id)] ||= []).push(id));
+  COMP_LIST = Object.values(groups).map(g => g.sort()).sort((a, b) => b.length - a.length || (a[0] < b[0] ? -1 : 1));
+  COMP = {}; COMP_LIST.forEach((g, i) => g.forEach(id => COMP[id] = i));
+}
+
+/* ============ 계산: 표시 집합 ============ */
+function statusOn(e) { return e.st === "confirmed" ? true : e.st === "candidate" ? S.showCand : e.st === "recheck" ? S.showRechk : S.showExcl; }
+function adjComputed() {
+  const adj = {}; const add = (a, b) => { (adj[a] ||= new Set()).add(b); (adj[b] ||= new Set()).add(a); };
+  E.forEach(e => { if (e.st === "confirmed") add(e.a, e.b); });
+  if (S.fold) FOLDABLE.forEach(id => { const [p, q] = SEG_ENDS[id]; (adj[id] || []).forEach(x => adj[x] && adj[x].delete(id)); delete adj[id]; add(p, q); });
+  return adj;
+}
+function bfs(center, depth) {
+  const adj = adjComputed(); const hop = { [center]: 0 }; let fr = [center];
+  for (let d = 1; d <= depth; d++) { const nx = []; fr.forEach(u => (adj[u] || []).forEach(v => { if (!(v in hop)) { hop[v] = d; nx.push(v); } })); fr = nx; }
+  return hop;
+}
+function computeVisible() {
+  let base;
+  if (S.mode === "local") {
+    const c = (S.sel && S.sel.k === "n" && N[S.sel.id]) ? S.sel.id : (S.center || A1_START);
+    S.center = c; S.hop = bfs(c, S.depth); base = new Set(Object.keys(S.hop));
+    E.forEach(e => { if (e.st === "confirmed" || !statusOn(e)) return;
+      if (base.has(e.a) && !nodeComputed(N[e.b])) base.add(e.b);
+      if (base.has(e.b) && !nodeComputed(N[e.a])) base.add(e.a); });
+  } else { base = new Set(Object.keys(N)); S.hop = null; }
+  const isFold = id => S.fold && FOLDABLE.has(id);
+  const nodes = new Set([...base].filter(id => { const n = N[id]; return !isFold(id) && (nodeComputed(n) || S.showExcl) && S.types.has(n.t); }));
+  const folded = (S.fold && S.grps.has("phys")) ? [...FOLDABLE].filter(id => nodes.has(SEG_ENDS[id][0]) && nodes.has(SEG_ENDS[id][1])) : [];
+  const fset = new Set(folded); const endOK = id => nodes.has(id) || fset.has(id);
+  const edges = E.filter(e => statusOn(e) && S.grps.has(KIND[e.kind].grp)
+    && !(S.fold && e.kind === "has_endpoint" && (FOLDABLE.has(e.a) || FOLDABLE.has(e.b))) && endOK(e.a) && endOK(e.b));
+  return { nodes, edges, folded };
+}
+function neighborhood(id, V) {
+  const s = new Set([id]);
+  V.edges.forEach(e => { if (e.a === id) s.add(e.b); if (e.b === id) s.add(e.a); });
+  V.folded.forEach(sid => { const [p, q] = SEG_ENDS[sid]; if (p === id) s.add(q); if (q === id) s.add(p); });
+  return s;
+}
+
+/* ============ 그리기 ============ */
+function radius(n) {
+  if (n.t === "pipe_segment") return 3.5;
+  if (n.kind === "continuation") return 6;
+  if (!nodeComputed(n)) return 6.5;
+  return Math.min(15, 4.5 + 2.3 * Math.sqrt(DEG[n.id] || 0));  // A3: 연결 수
+}
+function shapeSVG(shape, x, y, r, style, cls = "sh") {
+  const P = pts => `<polygon class="${cls}" points="${pts.map(p => f1(p[0]) + "," + f1(p[1])).join(" ")}" style="${style}"/>`;
+  switch (shape) {
+    case "square": { const s = r * .9; return `<rect class="${cls}" x="${f1(x - s)}" y="${f1(y - s)}" width="${f1(2 * s)}" height="${f1(2 * s)}" rx="1.5" style="${style}"/>`; }
+    case "page": { const s = r; return P([[x - s, y - s], [x + s * .35, y - s], [x + s, y - s * .35], [x + s, y + s], [x - s, y + s]]); }
+    case "hex": return P([0, 1, 2, 3, 4, 5].map(i => [x + r * 1.1 * Math.cos(Math.PI / 3 * i), y + r * 1.1 * Math.sin(Math.PI / 3 * i)]));
+    case "diamond": { const s = r * 1.25; return P([[x, y - s], [x + s, y], [x, y + s], [x - s, y]]); }
+    case "capsule": return `<rect class="${cls}" x="${f1(x - r * 1.3)}" y="${f1(y - r * .75)}" width="${f1(r * 2.6)}" height="${f1(r * 1.5)}" rx="${f1(r * .75)}" style="${style}"/>`;
+    case "tri": return P([[x, y - r * 1.2], [x + r * 1.15, y + r * .8], [x - r * 1.15, y + r * .8]]);
+    default: return `<circle class="${cls}" cx="${f1(x)}" cy="${f1(y)}" r="${f1(r)}" style="${style}"/>`;
+  }
+}
+function nodeFill(n) {
+  if (S.color === "a1") { if (n.id === A1_START) return "var(--a1-start)"; const r = A1R[n.id]; return r ? `var(--a1-${r[0]})` : "var(--a1-off)"; }
+  if (S.color === "a5") { const c = COMP[n.id]; return c == null ? "var(--comp-other)" : (c < 6 ? `var(--comp-${c + 1})` : "var(--comp-other)"); }
+  return TYPE[n.t].color;
+}
+function label(n) {
+  if (n.layer === "pid") return n.tag || (n.kind === "continuation" ? "↗ " + n.to : n.id);
+  const tr = (s, k) => s && s.length > k ? s.slice(0, k) + "…" : s;
+  switch (n.t) {
+    case "document": return tr(n.name, 14);
+    case "doc_chunk": return n.id + " · " + (n.src && n.src.loc ? n.src.loc : "위치 미확인");
+    case "requirement": return n.id;
+    case "setpoint": case "condition": return `${n.item} ${n.value ?? "값 미확인"} ${n.unit ?? "단위 미확인"}${n.pb === "gauge" ? "(g)" : n.pb === "absolute" ? "(a)" : n.unit ? " 기준 미확인" : ""}`;
+    case "analysis_case": return tr(n.name, 14);
+  }
+  return n.id;
+}
+function nodeSVG(n, nb) {
+  const T = TYPE[n.t], r = radius(n), fill = nodeFill(n), excl = !nodeComputed(n), hollow = n.kind === "continuation";
+  let cls = "nd" + (excl ? " excl" : "") + (hollow ? " hollow" : "");
+  if (nb && !nb.has(n.id)) cls += " dim";
+  if (S.color === "a1" && n.layer === "kn") cls += " faint";
+  const style = `fill:${fill}` + (excl || hollow ? `;stroke:${fill}` : "");
+  const R = r * (T.shape === "diamond" ? 1.25 : T.shape === "capsule" ? 1.3 : T.shape === "circle" ? 1 : 1.12);
+  let pre = "", h = shapeSVG(T.shape, n.x, n.y, r, style);
+  const tags = [];
+  const isSel = S.sel && S.sel.k === "n" && S.sel.id === n.id;
+  if (isSel) pre += `<circle class="ring sel" cx="${f1(n.x)}" cy="${f1(n.y)}" r="${f1(R + 5)}"/>`;
+  if (S.color === "a1" && S.demo !== "blocked") {
+    if (n.id === A1_START) { pre += `<circle class="ring start" cx="${f1(n.x)}" cy="${f1(n.y)}" r="${f1(R + 3)}"/><circle class="ring start" cx="${f1(n.x)}" cy="${f1(n.y)}" r="${f1(R + 8)}"/>`; tags.push(["시작", "a1"]); }
+    const a = A1R[n.id];
+    if (a) tags.push([A1_GLYPH[a[0]] + (a[3] ? " ⊘" : ""), "a1"]);
+    if (n.np) tags.push([n.np, "a1"]); else if (n.t === "valve") tags.push(["위치 미확인", "flag"]);
+    if (A1_TRUNC[n.id]) tags.push(["도면 경계에서 멈춤", "off"]);
+    if (A1_UNREACHED.includes(n.id)) tags.push(["미도달", "off"]);
+  } else {
+    if (n.conflict && n.conflict.length) { pre += `<circle class="ring conf" cx="${f1(n.x)}" cy="${f1(n.y)}" r="${f1(R + 4)}"/>`; tags.push(["≠ 충돌", "conf"]); }
+    if (S.orphan && A2.orphans[n.id]) { pre += `<circle class="ring flag" cx="${f1(n.x)}" cy="${f1(n.y)}" r="${f1(R + 8)}"/>`; tags.push(["고아", "flag"]); }
+    if (S.gap && A2.gaps[n.id]) { pre += `<circle class="ring flag" cx="${f1(n.x)}" cy="${f1(n.y)}" r="${f1(R + 8)}"/>`; tags.push(["근거 공백", "flag"]); }
+  }
+  if (n.nosrc) tags.push(["∅ 근거 없음", "nosrc"]);
+  if (excl) tags.push([(n.ks === "hypothesis" ? "가설" : "미확인") + " · 계산 제외", "excl"]);
+  const showLabel = S.labels && (n.t !== "pipe_segment" || S.hover === n.id || isSel);
+  if (showLabel) h += `<text class="lb" x="${f1(n.x)}" y="${f1(n.y + R + 12)}">${esc(label(n))}</text>`;
+  tags.forEach(([t, c], i) => { h += `<text class="tagt ${c}" x="${f1(n.x + R + 4)}" y="${f1(n.y - R + 6 + i * 11)}">${esc(t)}</text>`; });
+  return `<g class="${cls}" data-n="${esc(n.id)}">${pre}${h}</g>`;
+}
+function edgeColor(e) {
+  if (e.st === "recheck") return "var(--kg-flag)";
+  if (S.color === "a1") { const id = e.layer === "pid" ? A1_TREE[e.id] : null; return id ? `var(--a1-${A1R[id][0]})` : "var(--a1-off)"; }
+  const g = KIND[e.kind].grp;
+  if (g === "app") return TYPE[N[e.b].t].color;
+  return GRP[g].col;
+}
+function arrowAt(p, q, col) {
+  let ux = q.x - p.x, uy = q.y - p.y; const l = Math.hypot(ux, uy) || 1; ux /= l; uy /= l;
+  const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2, px = -uy, py = ux;
+  const pts = [[mx + ux * 5, my + uy * 5], [mx - ux * 4 + px * 4, my - uy * 4 + py * 4], [mx - ux * 4 - px * 4, my - uy * 4 - py * 4]];
+  return `<polygon class="arr" points="${pts.map(v => f1(v[0]) + "," + f1(v[1])).join(" ")}" style="fill:${col}"/>`;
+}
+function midText(a, b, t) { return `<text class="mid" x="${f1((a.x + b.x) / 2)}" y="${f1((a.y + b.y) / 2 - 4)}">${esc(t)}</text>`; }
+function edgeSVG(e, nb) {
+  const a = N[e.a], b = N[e.b], grp = KIND[e.kind].grp, col = edgeColor(e);
+  let cls = `eg k-${grp} s-${e.st}`;
+  if (nb && !(e.a === S.hover || e.b === S.hover)) cls += " dim";
+  if (S.color === "a1" && e.layer === "kn") cls += " faint";
+  if (S.sel && S.sel.k === "e" && S.sel.id === e.id) cls += " sel";
+  const tid = S.color === "a1" && e.layer === "pid" ? A1_TREE[e.id] : null, nnf = tid && A1R[tid][3];
+  if (nnf) cls += " nnf";
+  const d = `M${f1(a.x)},${f1(a.y)}L${f1(b.x)},${f1(b.y)}`;
+  let h = `<path class="hit" d="${d}"/>` + (nnf ? `<path class="ln out" d="${d}" style="stroke:${col}"/><path class="ln in" d="${d}"/>` : `<path class="ln" d="${d}" style="stroke:${col}"/>`);
+  if (e.kind === "has_endpoint" && S.arrows) {
+    const seg = a.t === "pipe_segment" ? a : b, nd = seg === a ? b : a;
+    if (seg.flow && seg.flow.from === nd.id) h += arrowAt(nd, seg, col);
+    else if (seg.flow && seg.flow.to === nd.id) h += arrowAt(seg, nd, col);
+  }
+  if (e.st !== "confirmed" && S.labels) h += midText(a, b, e.st === "candidate" ? "후보" : e.st === "recheck" ? "⟳ 재확인 필요" : "계산 제외");
+  return `<g class="${cls}" data-e="${esc(e.id)}">${h}</g>`;
+}
+function foldSVG(sid, nb) {
+  const [p, q] = SEG_ENDS[sid], a = N[p], s = N[sid], b = N[q];
+  const ar = S.color === "a1" ? A1R[sid] : null;
+  const col = S.color === "a1" ? (ar ? `var(--a1-${ar[0]})` : "var(--a1-off)") : "var(--physical_connection)";
+  let cls = "eg k-phys s-confirmed" + (ar && ar[3] ? " nnf" : "");
+  if (nb && !(p === S.hover || q === S.hover)) cls += " dim";
+  if (S.sel && S.sel.k === "n" && S.sel.id === sid) cls += " sel";
+  const d = `M${f1(a.x)},${f1(a.y)}L${f1(s.x)},${f1(s.y)}L${f1(b.x)},${f1(b.y)}`;
+  let h = `<path class="hit" d="${d}"/>` + (ar && ar[3] ? `<path class="ln out" d="${d}" style="stroke:${col}"/><path class="ln in" d="${d}"/>` : `<path class="ln" d="${d}" style="stroke:${col}"/>`);
+  if (S.arrows) { const k = .04; h += arrowAt({ x: s.x - (b.x - a.x) * k, y: s.y - (b.y - a.y) * k }, { x: s.x + (b.x - a.x) * k, y: s.y + (b.y - a.y) * k }, col); }
+  return `<g class="${cls}" data-e="fold:${esc(sid)}">${h}</g>`;
+}
+function draw() {
+  const empty = S.demo === "empty";
+  $("#cv-empty").style.display = empty ? "grid" : "none";
+  if (empty) { $("#g-e").innerHTML = ""; $("#g-n").innerHTML = ""; $("#cv-info").textContent = "표시 노드 0"; renderLegend(); return; }
+  const V = computeVisible(); S.V = V;
+  const nb = S.hover && V.nodes.has(S.hover) ? neighborhood(S.hover, V) : null;
+  $("#g-e").innerHTML = V.folded.map(sid => foldSVG(sid, nb)).join("") + V.edges.map(e => edgeSVG(e, nb)).join("");
+  const order = [...V.nodes].sort((x, y) => (N[x].t === "pipe_segment") - (N[y].t === "pipe_segment") || 0).reverse();
+  $("#g-n").innerHTML = order.map(id => nodeSVG(N[id], nb)).join("");
+  const total = S.demo === "v3" ? "전역 6,240개(가상)" : `전체 ${Object.keys(N).length}`;
+  $("#cv-info").textContent = `표시 노드 ${V.nodes.size} · 관계 ${V.edges.length + V.folded.length} · ${total}` + (S.mode === "local" ? ` · 중심 ${N[S.center].tag || S.center} · 깊이 ${S.depth}` : "");
+  renderLegend(); updateDepthNote();
+}
+
+/* ============ 범례 ============ */
+function sw(t, col) { const T = TYPE[t]; const r = t === "pipe_segment" ? 3 : 5; return `<svg width="16" height="16" style="flex:none">${shapeSVG(T.shape, 8, 8, r, `fill:${col || T.color};stroke:#fff;stroke-width:1`, "")}</svg>`; }
+function lineSw(col, w, dash, extra = "") { return `<svg width="24" height="10" style="flex:none"><line x1="1" y1="5" x2="23" y2="5" style="stroke:${col};stroke-width:${w};${dash ? "stroke-dasharray:" + dash + ";" : ""}${extra}"/></svg>`; }
+function ringSw(cls) { return `<svg width="18" height="18" style="flex:none"><circle cx="9" cy="9" r="4" fill="#9ca3af"/><circle class="ring ${cls}" cx="9" cy="9" r="7"/></svg>`; }
+function renderLegend() {
+  const el = $("#legend"); let h = "";
+  const min = el.classList.contains("min");
+  if (S.color === "type") {
+    h = `<div class="lg-h">범례 · 노드 종류 <span class="sp"></span><button class="btn sm" data-act="lg-min">${min ? "펴기" : "접기"}</button></div><div class="body">
+    <div class="row">${["equipment", "valve", "instrument", "piping_element", "pipe_segment"].map(t => `<span class="it">${sw(t)}${TYPE[t].name}</span>`).join("")}</div>
+    <div class="row">${["document", "doc_chunk", "requirement", "setpoint", "condition", "analysis_case"].map(t => `<span class="it">${sw(t)}${TYPE[t].name}</span>`).join("")}</div>
+    <div class="row" style="margin-top:3px">${["phys", "meas", "sig", "men", "pos"].map(g => `<span class="it">${lineSw(GRP[g].col, GRP[g].w)}${GRP[g].name.split(" (")[0]}</span>`).join("")}<span class="it">${lineSw("var(--kg-requirement)", 1.8)}설비 적용(끝 노드 색)</span></div>
+    <div class="row" style="margin-top:3px"><span class="it">${lineSw("var(--kg-rel-mentions)", 1.4, "5 4", "opacity:.5")}후보·미확인·가설 = 흐린 파선(계산 제외)</span><span class="it">${lineSw("var(--kg-flag)", 2.2, "5 4")}재확인 필요</span>
+    <span class="it">${ringSw("conf")}충돌</span><span class="it">${ringSw("flag")}고아·근거 공백</span><span class="it">${ringSw("sel")}선택</span><span class="it"><b style="color:var(--kg-nosrc)">∅</b> 근거 없음</span></div>
+    <div class="note">크기 = 연결 수(A3, V5). 원 = P&amp;ID 층, 각진 도형 = 지식 층. 화살표는 흐름 방향이 확인된 배관만.</div></div>`;
+  } else if (S.color === "a1") {
+    const dis = S.demo === "blocked";
+    h = `<div class="lg-h">A1 상·하류 · 시작 RC-PZ01 (미리 계산된 결과) <span class="sp"></span><button class="btn sm" data-act="lg-min">${min ? "펴기" : "접기"}</button></div><div class="body">${dis ? `<div class="note">이 버전의 알고리즘 결과가 없어 A1을 표시하지 않습니다.</div>` : `
+    <div class="row"><span class="it">${sw("equipment", "var(--a1-start)")}시작</span><span class="it">${sw("valve", "var(--a1-down)")}↓하 하류</span><span class="it">${sw("valve", "var(--a1-up)")}↑상 상류</span><span class="it">${sw("valve", "var(--a1-mixed)")}↕혼 혼합</span><span class="it">${sw("valve", "var(--a1-unknown)")}? 방향 미확인</span><span class="it">${sw("pipe_segment", "var(--a1-adj)")}접 인접 구간</span><span class="it">${sw("instrument", "var(--a1-na)")}— 계장(방향 해당 없음)</span><span class="it">${sw("instrument", "var(--a1-off)")}미도달·대상 아님</span></div>
+    <div class="row" style="margin-top:3px"><span class="it"><svg width="24" height="10" style="flex:none"><line x1="1" y1="5" x2="23" y2="5" style="stroke:var(--a1-up);stroke-width:6"/><line x1="1" y1="5" x2="23" y2="5" style="stroke:#fff;stroke-width:2.2"/></svg>속 빈 이중선 ⊘ = NC·LC 밸브 경유, 정상 운전 유로 아님</span><span class="it"><b>NC/NO</b> = 밸브 정상 위치, 값 없으면 "위치 미확인"</span></div>
+    <div class="note">방향은 표시만 하며 경로를 버리지 않습니다. 정상 유로 아님도 역류·과압 전파를 배제하지 않습니다. 도달은 인과관계를 입증하지 않습니다. 도면 경계 3곳에서 멈춤, 구간 멤버 2개 미도달. 선택 노드로 재실행: 단독 모드에서 비활성.</div>`}</div>`;
+  } else {
+    const dis = S.demo === "blocked";
+    h = `<div class="lg-h">A5 연결 성분 · V5 <span class="sp"></span><button class="btn sm" data-act="lg-min">${min ? "펴기" : "접기"}</button></div><div class="body">${dis ? `<div class="note">이 버전의 알고리즘 결과가 없어 A5를 표시하지 않습니다.</div>` : `
+    <div class="row">${COMP_LIST.map((g, i) => `<span class="it">${sw("equipment", i < 6 ? `var(--comp-${i + 1})` : "var(--comp-other)")}성분 ${i + 1} · ${g.length}개${g.length <= 3 ? " (" + g.map(id => N[id].tag || id).join(", ") + ")" : ""}</span>`).join("")}<span class="it"><svg width="16" height="16" style="flex:none"><circle cx="8" cy="8" r="5" style="fill:#fff;stroke:var(--comp-other);stroke-width:1.5;stroke-dasharray:3 2"/></svg>계산 제외(성분 없음)</span></div>
+    <div class="note">V5 성분 ${COMP_LIST.length}개. 물리 연결만(V1) 보면 ${A5_V1.count}개(단일 노드 ${A5_V1.singletons}). 도면 1장 단위라 도면 연결점 너머는 끊긴 것으로 보입니다.</div>`}</div>`;
+  }
+  el.innerHTML = h;
+}
+
+/* ============ 상세 패널 ============ */
+const B = {
+  ks: ks => ks === "confirmed" ? `<span class="b human">확인됨 confirmed</span>` : ks === "unknown" ? `<span class="b unk">미확인 unknown</span>` : `<span class="b hyp">가설 hypothesis</span>`,
+  ls: ls => ls === "confirmed" ? `<span class="b human">연결 확인 confirmed</span>` : ls === "candidate" ? `<span class="b cand">후보 candidate</span>` : `<span class="b">기각 rejected</span>`,
+};
+const unk = r => `<span class="unkv">미확인 — ${esc(r || "입력 빈 칸")}</span>`;
+const nm = id => { const n = N[id]; return n ? (n.layer === "pid" ? (n.tag || label(n)) : label(n)) : id; };
+function kv(rows) { return `<div class="kv">${rows.map(([k, v]) => `<div>${esc(k)}</div><div>${v}</div>`).join("")}</div>`; }
+function srcRows(src, nosrc, unreg, inh) {
+  if (nosrc || !src) return `<div class="box err"><b>∅ 근거 없음</b> — ${esc(unreg || "출처 없음")}. confirmed로 둘 수 없고 계산에서 빠집니다.</div>`;
+  return kv([["자료", src.mat ? `<span class="mono">${esc(src.mat)}</span> · 등록 버전 ${esc(src.rv)}` : unk("자료 미등록")],
+    ["문서", src.doc ? `<span class="mono">${esc(src.doc)}</span>` : `<span class="muted">조각 근거로 대신함</span>`],
+    ["쪽 · 위치", (src.page ? "p." + esc(src.page) : unk("쪽")) + " · " + (src.loc ? esc(src.loc) : unk("위치"))]].concat(inh ? [["근거 상속", `<span class="mono">${esc(inh)}</span>에서 상속`]] : []));
+}
+function connList(id) {
+  const es = E.filter(e => e.a === id || e.b === id);
+  if (!es.length) return `<div class="muted" style="font-size:12px">연결 없음 — "해당 없음"이 아니라 지식 입력 미확인</div>`;
+  const order = { confirmed: 0, recheck: 1, excluded: 2, candidate: 3 };
+  return es.sort((x, y) => order[x.st] - order[y.st]).map(e => {
+    const o = e.a === id ? e.b : e.a;
+    const badge = e.st === "confirmed" ? "" : e.st === "candidate" ? `<span class="b cand">후보</span>` : e.st === "recheck" ? `<span class="b flag">재확인</span>` : `<span class="b excl">계산 제외</span>`;
+    return `<div class="cr" data-sel-e="${esc(e.id)}"><span class="k">${esc(KIND[e.kind].name)}</span><span class="o">${esc(nm(o))}</span>${badge}</div>`;
+  }).join("");
+}
+function chunkText(n) {
+  let t = esc(n.text);
+  E.filter(e => e.kind === "mentions" && e.a === n.id).forEach(e => {
+    const cls = e.st === "confirmed" ? "mk-ok" : "mk-cand"; const m = esc(e.match);
+    if (!t.includes(`>${m}<`)) t = t.replace(m, `<span class="${cls}" title="${e.st === "confirmed" ? "확인된 언급" : "후보"} [${esc(e.pos)})">${m}</span>`);
+  });
+  (n.notInDrawing || []).forEach(m => { t = t.replace(esc(m), `<span class="mk-none" title="도면에 없는 언급">${esc(m)}</span>`); });
+  return t;
+}
+function detailNode(n) {
+  const T = TYPE[n.t];
+  const excl = !nodeComputed(n);
+  let badges = n.layer === "pid" ? `<span class="b okc">도면 추출 · 계산 포함</span>` : B.ks(n.ks) + (excl ? `<span class="b excl">계산 제외</span>` : `<span class="b okc">계산 포함 V4</span>`);
+  if (n.nosrc) badges += `<span class="b err">∅ 근거 없음</span>`;
+  if (n.conflict && n.conflict.length) badges += `<span class="b conf">≠ 충돌</span>`;
+  if (A2.orphans[n.id]) badges += `<span class="b flag">고아</span>`;
+  if (A2.gaps[n.id]) badges += `<span class="b flag">근거 공백</span>`;
+  let h = `<div class="dh"><div class="lbl" style="display:flex;align-items:center;gap:4px">${sw(n.t)}${n.layer === "pid" ? "P&amp;ID 층" : "지식 층"} · ${esc(T.name)}</div>
+    <div class="ttl">${esc(n.layer === "pid" ? (n.tag || "도면 연결점") : label(n))}</div><div class="mono muted">${esc(n.id)}</div><div class="badges">${badges}</div></div>`;
+  if (n.layer === "pid") {
+    const rows = [["종류", `<span class="mono">${esc(n.kind)}</span>`], ["도면", `<span class="mono">${esc(META.graph_id)}@${esc(META.graph_version)}</span>`],
+      ["객체 ID", n.sid ? `<span class="mono">${esc(n.sid)}</span>` : `<span class="muted">시안 미발췌</span>`]];
+    if (n.t === "valve") rows.push(["정상 위치", n.np ? esc(n.np) : unk("normal_position 없음")], ["고장 시 위치", n.fp ? esc(n.fp) : unk("fail_position 없음")]);
+    if (n.flow) rows.push(["흐름 방향", `${esc(nm(n.flow.from))} → ${esc(nm(n.flow.to))} <span class="muted">(도면 표시)</span>`]);
+    if (n.to) rows.push(["이어지는 곳", esc(n.to)]);
+    h += `<div class="dsec"><h4>속성</h4>${kv(rows)}</div>`;
+    // A1
+    const a = A1R[n.id];
+    if (S.demo !== "blocked" && (a || n.id === A1_START)) {
+      const path = []; let cur = n.id, g = 0; path.unshift(cur);
+      while (cur !== A1_START && A1R[cur] && g++ < 20) { const r = REL_BY_ID[A1R[cur][2]]; cur = r[2] === cur ? r[3] : r[2]; path.unshift(cur); }
+      h += `<div class="dsec"><h4>A1 상·하류 <span class="b">시작 RC-PZ01 · ${esc(META.region)}</span></h4>` + (n.id === A1_START ? `<div style="font-size:12px">탐색 시작점. 도달 27 · 도면 경계 멈춤 3 · 구간 멤버 미도달 2(RC-TE120, RC-L031-T37).</div>` :
+        kv([["방향", esc(A1_DIR[a[0]])], ["깊이", String(a[1])], ["경로", path.map(id => esc(nm(id))).join(" → ")], ["경유 밸브", a[4] ? esc(a[4]) : "없음"],
+          ["정상 유로", a[3] ? `<b>아님 ⊘</b> (NC·LC 경유) — 역류·과압 전파를 배제하지 않음` : (a[0] === "na" ? "물질 흐름 경로 아님(계장)" : "예")]])
+        + `<div class="hint">연결 사실(도달 가능)이며 인과관계를 입증하지 않습니다.</div>`) + `</div>`;
+    } else if (A1_UNREACHED.includes(n.id)) h += `<div class="dsec"><h4>A1 상·하류</h4><div style="font-size:12px">검토 구간 멤버지만 RC-PZ01에서 도달하지 않음(미도달).</div></div>`;
+    // A2·A3
+    let a2 = A2.gaps[n.id] ? `<div class="box warn"><b>근거 공백</b> — ${A2.gaps[n.id].map(esc).join(", ")}이(가) 언급했으나 적용된 요건·설정치·운전조건 없음. 자료 요청 메모 <b>후보</b>(메모는 사람이 만듦).</div>`
+      : A2.noInputCont.includes(n.id) ? `<div class="muted" style="font-size:12px">도면 연결점 — 지식 입력 판정에서 따로 셈</div>`
+      : A2.noInput.includes(n.id) ? `<div style="font-size:12px"><span class="unkv">지식 입력 없음</span> — 언급·적용 관계 모두 없음. "해당 없음"이 아님.</div>`
+      : n.t === "pipe_segment" ? `<div class="muted" style="font-size:12px">배관 구간은 A2 판정 대상 아님</div>` : `<div style="font-size:12px">지식 입력 있음</div>`;
+    h += `<div class="dsec"><h4>A2 근거 공백 · A3 연결 수</h4>${a2}<div style="font-size:12px;margin-top:6px">연결 수(V5) <b>${DEG[n.id] || 0}</b></div></div>`;
+  } else {
+    const rows = [];
+    if (n.name) rows.push(["이름", esc(n.name)]);
+    if (n.t === "setpoint" || n.t === "condition") rows.push(["항목", esc(n.item)], ["값", n.value != null ? `<b>${esc(n.value)}</b>` : unk()], ["단위", n.unit ? esc(n.unit) : unk("단위 빈 칸, 추정하지 않음")],
+      ["압력 기준", n.pb ? (n.pb === "gauge" ? "게이지(gauge)" : esc(n.pb)) : unk("기준 빈 칸, 추정하지 않음")], ["운전모드", n.om ? esc(n.om) : unk()]);
+    if (n.reason) rows.push(["사유", esc(n.reason)]);
+    rows.push(["작성", "샘플작성자 · manual"]);
+    let body = "";
+    if (n.t === "doc_chunk") body += `<div class="box quote">${chunkText(n)}</div><div class="hint">굵은 밑줄 = 확인된 언급 · 파선 밑줄 = 후보 · 물결 = 도면에 없는 언급(연결 만들지 않음)</div>`;
+    else if (n.text) body += `<div class="box quote">${esc(n.text)}</div>`;
+    h += `<div class="dsec"><h4>내용</h4>${body}${rows.length ? `<div style="margin-top:6px">${kv(rows)}</div>` : ""}</div>`;
+    if (n.conflict && n.conflict.length) {
+      const mem = [n.id].concat(n.conflict).map(id => N[id]);
+      h += `<div class="dsec"><h4>충돌 — 같은 대상·항목, 다른 값 (둘 다 보존)</h4><div class="box conf">${mem.map(m => `<div class="cr" data-sel-n="${esc(m.id)}"><span class="k mono">${esc(m.id)}</span><span class="o"><b>${esc(m.value)} ${esc(m.unit)}</b> · p.${esc(m.src.page)} ${esc(m.src.loc)}</span></div>`).join("")}<div class="hint">대상 RC-PT110 · 항목 "${esc(n.item)}". 어느 값이 맞는지 화면이 고르지 않습니다.</div></div></div>`;
+    }
+    h += `<div class="dsec"><h4>근거 (출처)</h4>${srcRows(n.src, n.nosrc, n.unreg)}<div class="hint">원문 열람 기능은 없습니다. 근거 문서·쪽만 표시합니다.</div></div>`;
+    h += `<div class="dsec"><h4>계산 포함 · A2 · A3</h4>` + (excl ? `<div class="box">계산 제외 — ${(n.ex || []).map(esc).join(", ")}. 토글로 보일 뿐 V4·V5·알고리즘에 들어가지 않습니다.</div>` : `<div style="font-size:12px">V4 포함 · 연결 수(V5) <b>${DEG[n.id] || 0}</b></div>`)
+      + (A2.orphans[n.id] ? `<div class="box warn"><b>고아</b> — ${esc(A2.orphans[n.id])}. 연결 없음은 "지식 입력 미확인"입니다.${A2.hints[n.id] ? `<br>연결 힌트: ${esc(A2.hints[n.id])}` : ""}</div>` : "") + `</div>`;
+  }
+  h += `<div class="dsec"><h4>연결 목록</h4>${connList(n.id)}</div>`;
+  h += n.layer === "pid" ? `<div class="dfoot"><button class="btn primary" data-act="focus" data-id="${esc(n.id)}">도면에서 보기</button><span class="muted" style="font-size:11px">② 도면으로 전환 후 이 객체에 focus</span></div>`
+    : `<div class="dfoot"><button class="btn" disabled title="원문 열람 기능 없음">원문 열기</button><span class="muted" style="font-size:11px">${n.src ? `근거: ${esc(n.src.doc || n.src.mat)} ${n.src.page ? "p." + esc(n.src.page) : ""} ${esc(n.src.loc || "")}` : "근거 없음"}</span></div>`;
+  return h;
+}
+function detailEdge(e) {
+  if (!e) return `<div class="empty">선택한 관계가 현재 상태에 없습니다.</div>`;
+  let badges = e.layer === "pid" ? `<span class="b okc">도면 추출 · 계산 포함</span>` : B.ls(e.ls) + (e.st === "candidate" ? "" : B.ks(e.ks));
+  badges += e.st === "confirmed" ? (e.layer === "kn" ? `<span class="b okc">계산 포함 V4</span>` : "") : e.st === "recheck" ? `<span class="b flag">⟳ 재확인 필요 · 계산 제외</span>` : `<span class="b excl">계산 제외</span>`;
+  if (e.nosrc) badges += `<span class="b err">∅ 근거 없음</span>`;
+  let h = `<div class="dh"><div class="lbl">${e.layer === "pid" ? "P&amp;ID 관계" : "지식 관계"} · ${esc(KIND[e.kind].name)}</div><div class="ttl mono" style="font-size:14px">${esc(e.kind)}</div><div class="mono muted">${esc(e.id)}</div><div class="badges">${badges}</div></div>`;
+  h += `<div class="dsec"><h4>양 끝</h4><div class="cr" data-sel-n="${esc(e.a)}"><span class="k">시작</span><span class="o">${esc(nm(e.a))}</span></div><div class="cr" data-sel-n="${esc(e.b)}"><span class="k">끝</span><span class="o">${esc(nm(e.b))}</span></div></div>`;
+  if (e.layer === "pid") {
+    h += `<div class="dsec">${kv([["뷰", e.kind === "has_endpoint" ? "V1 물리" : "V3 계장"], ["방향", e.kind === "has_endpoint" ? "배관 구간의 flow_direction으로 표시" : "화살표 없음(시안: 방향 의미 미확인)"]])}</div>`;
+  } else {
+    const rows = [["방법", `<span class="mono">${esc(e.method)}</span>`]];
+    if (e.conf) rows.push(["점수", esc(e.conf) + ` <span class="muted">(정렬용, 확인을 대신하지 않음)</span>`]);
+    if (e.amb) rows.push(["모호", `예 — 같은 태그 대상이 여러 개(${esc(e.match)}). 대상마다 따로 판단`]);
+    if (e.match) rows.push(["일치 원문", `<span class="mono">${esc(e.match)}</span> [${esc(e.pos)})`]);
+    if (e.ref) rows.push(["대상 참조", `<span class="mono">${esc(e.ref)}</span>`]);
+    if (e.sha) rows.push(["원문 해시", `<span class="mono">${esc(e.sha)}</span>`]);
+    if (e.reason) rows.push(["사유", esc(e.reason)]);
+    if (e.ls === "confirmed") rows.push(["확인", "샘플검토자 · 2026-11-05"]);
+    h += `<div class="dsec"><h4>판단</h4>${kv(rows)}</div>`;
+    h += `<div class="dsec"><h4>근거 (출처)</h4>${e.kind === "mentions" && !e.nosrc ? `<div style="font-size:12px;margin-bottom:4px">언급 관계의 근거 = 조각 <span class="mono">${esc(e.a)}</span> 원문과 일치 위치</div>` : ""}${srcRows(e.src || (e.st === "candidate" ? { mat: "MAT-KG-001", rv: "1" } : null), e.nosrc, e.unreg, e.inh)}</div>`;
+    if (e.st === "candidate") h += `<div class="dsec"><div class="box">후보는 화면에서 확인하지 않습니다. <span class="mono">link_candidates.csv</span>의 판단 열(link_status·reviewed_by·reason)을 고친 뒤 다시 빌드하면 새 kg_version에 반영됩니다.</div></div>`;
+    if (e.st === "recheck") h += `<div class="dsec"><div class="box warn"><b>재확인 필요</b> — 대상 도면 graph_version이 바뀜(가상 예시). 계산에서 빠졌고 행은 지우지 않았습니다. 후보로 다시 올라온 행을 판단하세요.</div></div>`;
+    if (e.st === "excluded") h += `<div class="dsec"><div class="box">계산 제외 — ${(e.ex || []).map(esc).join(", ")}</div></div>`;
+  }
+  return h;
+}
+function renderDetail() {
+  const el = $("#detail");
+  if (S.demo === "empty") { el.innerHTML = `<div class="empty">표시할 지식그래프가 없습니다.</div>`; return; }
+  if (!S.sel) { el.innerHTML = `<div class="empty">노드나 관계를 클릭하면 속성·근거·연결 목록이 나옵니다.</div>`; return; }
+  el.innerHTML = S.sel.k === "n" ? detailNode(N[S.sel.id]) : detailEdge(E_BY()[S.sel.id]);
+}
+
+/* ============ 도구줄·띠·좌측 ============ */
+function renderToolbar() {
+  const d = S.demo; let h = `<label class="fld">지식그래프 <select><option>kg-SNP-SAMPLE</option><option disabled>다른 프로젝트 (시안 미포함)</option></select></label>`;
+  if (d === "empty") { $("#toolbar").innerHTML = h + `<span class="vchip">지식그래프 없음</span>`; return; }
+  const exclN = KN.filter(k => !(k.v4 ?? 1)).length, exclL = E.filter(e => e.st === "excluded").length, rech = E.filter(e => e.st === "recheck").length;
+  if (d === "blocked") h += `<span class="vchip ver">kg_version <b class="mono">v-9f3e2a7c4d10</b> (가상)</span><span class="vchip blocked">검증 blocked · 차단 1</span><span class="vchip ver">표시 중: 이전 버전 <b class="mono">${META.prev_version}</b> · passed</span>`;
+  else h += `<span class="vchip ver">kg_version <b class="mono">${META.kg_version}</b></span><span class="vchip passed">검증 passed · 차단 0 · 미확인 5</span>`;
+  h += `<span class="vchip ver">graph_version SNP-M-102 <b class="mono">${META.graph_version}</b></span>`;
+  h += `<span class="vchip warnc">충돌 1</span>`;
+  if (rech) h += `<span class="vchip warnc">재확인 필요 ${rech}</span>`;
+  h += `<span class="vchip">계산 제외 노드 ${exclN} · 관계 ${exclL} · 후보 ${CAND.length}</span>`;
+  h += d === "blocked" ? `<span class="vchip warnc">알고리즘 결과 없음</span>` : `<span class="vchip passed" title="algo_result.json의 kg_version이 표시 중인 kg_version과 같음">알고리즘 결과 버전 일치</span>`;
+  $("#toolbar").innerHTML = h;
+}
+function renderBands() {
+  const d = S.demo; let h = "";
+  if (d === "v3") h = `<div class="band warn"><div><b>전역 보기 노드 수 상한 초과</b> — 이 지식그래프는 노드 6,240개(가상)로 상한 ${NODE_LIMIT.toLocaleString()}개(그래프활용 §7.3)를 넘습니다. 전역 보기를 막고 로컬 보기만 엽니다. 노드를 골라 깊이를 조절하세요.</div></div>`;
+  if (d === "blocked") h = `<div class="band err"><div><b>지식그래프 검증 blocked</b> (가상 예시) — 차단 1: <span class="mono">K6</span> 출처 없이 confirmed로 적은 노드 <span class="mono">req-009</span>. <span class="mono">knowledge_nodes.csv</span>에 출처를 채우거나 상태를 unknown·hypothesis로 바꾼 뒤 다시 빌드하세요.<br>아래는 직전 passed 버전 <span class="mono">${META.prev_version}</span>입니다. 이 버전의 알고리즘 결과가 없어 A1·A2·A5 표시는 꺼집니다.</div></div>`;
+  if (d === "recheck") h = `<div class="band warn"><div><b>재확인 필요 1</b> (가상 예시) — <span class="mono">chunk-001 → RC-PV101</span> 언급: 대상 도면 graph_version이 바뀌어 이전 판단을 재사용하지 않습니다. 계산에서 빠졌고 행은 보존합니다. <span class="mono">link_candidates.csv</span>에서 다시 판단하세요. (A2·A3 값은 이 예시에서 다시 계산하지 않음)</div></div>`;
+  $("#bands").innerHTML = h;
+  $("#s-chip").className = "vchip " + (d === "blocked" ? "blocked" : d === "empty" ? "" : "passed");
+  $("#s-chip").textContent = d === "blocked" ? "지식그래프 검증 blocked" : d === "empty" ? "지식그래프 없음" : "지식그래프 검증 passed";
+}
+function renderLeft() {
+  const cnt = {}; Object.values(N).forEach(n => cnt[n.t] = (cnt[n.t] || 0) + 1);
+  const row = t => `<label class="tr"><input type="checkbox" data-t="${t}" ${S.types.has(t) ? "checked" : ""}>${sw(t)}${esc(TYPE[t].name)}<span class="cnt">${cnt[t] || 0}</span></label>`;
+  $("#t-pid").innerHTML = ["equipment", "valve", "instrument", "piping_element", "pipe_segment"].map(row).join("");
+  $("#t-kn").innerHTML = ["document", "doc_chunk", "requirement", "setpoint", "condition", "analysis_case"].map(row).join("");
+  const gc = {}; E.filter(e => e.st === "confirmed").forEach(e => { const g = KIND[e.kind].grp; gc[g] = (gc[g] || 0) + 1; });
+  $("#g-list").innerHTML = Object.entries(GRP).map(([g, v]) => `<label class="tr"><input type="checkbox" data-g="${g}" ${S.grps.has(g) ? "checked" : ""}>${lineSw(v.col, v.w)}<span>${esc(v.name)}</span><span class="cnt">${gc[g] || 0}</span></label>`).join("");
+  $("#c-cand").textContent = CAND.length; $("#c-excl").textContent = `노드 ${KN.filter(k => !(k.v4 ?? 1)).length} · 관계 ${E.filter(e => e.st === "excluded").length}`; $("#c-rechk").textContent = E.filter(e => e.st === "recheck").length;
+  const blocked = S.demo === "blocked";
+  $("#sec-a2").classList.toggle("disabled", blocked);
+  $("#left").classList.toggle("disabled", S.demo === "empty");
+  ["f-c", "f-r", "f-s", "f-d"].forEach(id => $("#v-" + id.slice(2)).textContent = (id === "f-r" ? "−" : "") + $("#" + id).value);
+}
+function updateModeButtons() {
+  $$("#vmode button").forEach(b => { b.classList.toggle("on", b.dataset.v === S.mode); b.disabled = b.dataset.v === "global" && S.demo === "v3"; });
+  $$("#cmode button").forEach(b => { b.classList.toggle("on", b.dataset.c === S.color); b.disabled = b.dataset.c !== "type" && S.demo === "blocked"; });
+  $("#sec-depth").classList.toggle("disabled", S.mode !== "local");
+}
+function updateDepthNote() {
+  const el = $("#d-note");
+  if (S.mode !== "local") { el.textContent = "로컬 보기에서 씁니다. 선택한 노드가 중심입니다."; return; }
+  let t = (S.fold ? "구간 접기 기준 홉(설비 사이 1홉)" : "실제 홉(배관 구간 노드 포함, 설비 사이 2홉)") + ". 표시 전용이며 근거가 아닙니다.";
+  if (S.center === A1_START && S.depth === 2 && !S.fold && !S.showCand && !S.showExcl && !S.showRechk && S.demo === "default") {
+    const mine = Object.keys(S.hop).sort(), py = A4_PZ_R2.slice().sort();
+    const same = mine.length === py.length && mine.every((v, i) => v === py[i]);
+    t += same ? ` 검사 V1: Python A4 ego_graph(반경 2) ${py.length}개와 같음.` : ` 검사 V1: Python A4와 다름(${mine.length} ≠ ${py.length}).`;
+  }
+  el.textContent = t;
+}
+
+/* ============ 힘 배치 (시안 전용 간이 계산, 결정적) ============ */
+function layout(iter = 320) {
+  const P = { c: +$("#f-c").value, r: +$("#f-r").value, s: +$("#f-s").value, d: +$("#f-d").value };
+  const ns = Object.values(N); ns.forEach(n => { n.x = n.x0; n.y = n.y0; n.vx = 0; n.vy = 0; });
+  const ls = E.filter(e => e.st !== "candidate").map(e => [N[e.a], N[e.b]]);
+  const cnt = {}; ls.forEach(([a, b]) => { cnt[a.id] = (cnt[a.id] || 0) + 1; cnt[b.id] = (cnt[b.id] || 0) + 1; });
+  const CX = 520, CY = 360;
+  for (let i = 0; i < iter; i++) {
+    const al = Math.pow(0.001, i / iter);
+    for (let p = 0; p < ns.length; p++) for (let q = p + 1; q < ns.length; q++) {
+      const a = ns[p], b = ns[q]; let dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy;
+      if (l < 1) { dx = 1; dy = 0; l = 1; }
+      if (l > 250000) continue;
+      const w = P.r * al / l; a.vx -= dx * w; a.vy -= dy * w; b.vx += dx * w; b.vy += dy * w;
+    }
+    ls.forEach(([a, b]) => {
+      let dx = b.x + b.vx - a.x - a.vx, dy = b.y + b.vy - a.y - a.vy; const l = Math.hypot(dx, dy) || 1;
+      const k = (l - P.d) / l * al * P.s / Math.min(cnt[a.id], cnt[b.id]); dx *= k; dy *= k;
+      b.vx -= dx * .5; b.vy -= dy * .5; a.vx += dx * .5; a.vy += dy * .5;
+    });
+    ns.forEach(n => { n.vx += (CX - n.x) * P.c * .02 * al; n.vy += (CY - n.y) * P.c * .02 * al; n.vx *= .6; n.vy *= .6; n.x += n.vx; n.y += n.vy; });
+  }
+}
+
+/* ============ 보기 (확대·이동) ============ */
+const svg = $("#svg");
+function applyVB() { const v = S.vb; svg.setAttribute("viewBox", `${f1(v.x)} ${f1(v.y)} ${f1(v.w)} ${f1(v.h)}`); }
+function fit() {
+  const ids = S.V ? [...S.V.nodes] : Object.keys(N); if (!ids.length) return;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  ids.forEach(id => { const n = N[id]; x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y); });
+  const pad = 70; S.vb = { x: x0 - pad, y: y0 - pad - 30, w: Math.max(240, x1 - x0 + pad * 2 + 60), h: Math.max(200, y1 - y0 + pad * 2 + 60) }; applyVB();
+}
+function zoom(k, cx, cy) { const v = S.vb; cx ??= v.x + v.w / 2; cy ??= v.y + v.h / 2; S.vb = { x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k, w: v.w * k, h: v.h * k }; applyVB(); }
+function toSvg(e) { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
+svg.addEventListener("wheel", e => { e.preventDefault(); const p = toSvg(e); zoom(e.deltaY > 0 ? 1.15 : 1 / 1.15, p.x, p.y); }, { passive: false });
+let pan = null, wasDrag = false;
+svg.addEventListener("mousedown", e => { if (e.target.closest("[data-n],[data-e]")) return; pan = { x: e.clientX, y: e.clientY, vb: Object.assign({}, S.vb), k: 1 / svg.getScreenCTM().a, moved: false }; svg.classList.add("panning"); });
+window.addEventListener("mousemove", e => {
+  if (!pan) return; const dx = (e.clientX - pan.x) * pan.k, dy = (e.clientY - pan.y) * pan.k;
+  if (Math.abs(e.clientX - pan.x) + Math.abs(e.clientY - pan.y) > 3) pan.moved = true;
+  S.vb = Object.assign({}, pan.vb, { x: pan.vb.x - dx, y: pan.vb.y - dy }); applyVB();
+});
+window.addEventListener("mouseup", () => { wasDrag = !!(pan && pan.moved); pan = null; svg.classList.remove("panning"); });
+
+/* ============ 상호작용 ============ */
+const tip = $("#tip");
+function tipText(id) {
+  const n = N[id]; const st = n.layer === "pid" ? "P&ID" : (nodeComputed(n) ? "확인됨" : (n.ks === "hypothesis" ? "가설" : "미확인") + " · 계산 제외");
+  return `<b>${esc(n.layer === "pid" ? (n.tag || label(n)) : label(n))}</b><br>${esc(TYPE[n.t].name)} · ${esc(st)} · 연결 ${DEG[id] || 0}`;
+}
+svg.addEventListener("mouseover", e => {
+  if (pan) return; const g = e.target.closest("[data-n]"); const id = g ? g.dataset.n : null;
+  if (id !== S.hover) { S.hover = id; draw(); }
+  if (id) { tip.innerHTML = tipText(id); tip.style.display = "block"; } else tip.style.display = "none";
+});
+svg.addEventListener("mousemove", e => { if (tip.style.display === "block") { const r = $("#cv").getBoundingClientRect(); tip.style.left = (e.clientX - r.left + 14) + "px"; tip.style.top = (e.clientY - r.top + 14) + "px"; } });
+svg.addEventListener("mouseleave", () => { tip.style.display = "none"; if (S.hover) { S.hover = null; draw(); } });
+svg.addEventListener("click", e => {
+  if (wasDrag) { wasDrag = false; return; }
+  const n = e.target.closest("[data-n]"), ed = e.target.closest("[data-e]");
+  if (n) select("n", n.dataset.n); else if (ed) { const id = ed.dataset.e; id.startsWith("fold:") ? select("n", id.slice(5)) : select("e", id); }
+});
+function bridge(msg) { $("#bridge").textContent = msg; }
+function select(k, id) {
+  S.sel = { k, id };
+  bridge(k === "n" ? `웹 → Python: nodeSelected {"entity_id":"${id}"}` : `웹 → Python: relationSelected {"id":"${id}"}`);
+  draw(); if (S.mode === "local" && k === "n") fit(); renderDetail();
+}
+function toast(m) { const t = $("#toast"); t.textContent = m; t.style.display = "block"; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = "none", 2600); }
+function setDemo(d) {
+  S.demo = d; S.hover = null;
+  if (d === "v3") S.mode = "local";
+  if (d === "blocked") { S.color = "type"; S.orphan = S.gap = false; $("#o-orphan").checked = $("#o-gap").checked = false; }
+  if (d === "recheck") { S.showRechk = true; $("#o-rechk").checked = true; }
+  if (d === "default") { S.mode = "global"; S.showRechk = false; $("#o-rechk").checked = false; }
+  recompute(); renderToolbar(); renderBands(); renderLeft(); updateModeButtons(); draw(); fit(); renderDetail();
+}
+function doAct(a, el) {
+  if (a.startsWith("toast:")) return toast(a.slice(6));
+  if (a.startsWith("st:")) return setDemo(a.slice(3));
+  if (a === "tog-left") { $("#kg").classList.toggle("lcol"); return; }
+  if (a === "tog-right") { $("#kg").classList.toggle("rcol"); return; }
+  if (a === "fit") return fit();
+  if (a === "lg-min") { $("#legend").classList.toggle("min"); renderLegend(); return; }
+  if (a === "focus") { const id = el.dataset.id; bridge(`Python → 웹: focus {"entity_id":"${id}"} (② 도면·그래프로 전환)`); toast(`② 도면·그래프로 전환하고 ${nm(id)}에 focus (시안: 화면 전환 없음)`); }
+}
+document.addEventListener("click", e => {
+  const m = e.target.closest("#menubar .m"), act = e.target.closest("[data-act]");
+  if (act) { $$("#menubar .m").forEach(x => x.classList.remove("open")); doAct(act.dataset.act, act); return; }
+  if (m) { const was = m.classList.contains("open"); $$("#menubar .m").forEach(x => x.classList.remove("open")); if (!was) m.classList.add("open"); return; }
+  $$("#menubar .m").forEach(x => x.classList.remove("open"));
+  const sn = e.target.closest("[data-sel-n]"), se = e.target.closest("[data-sel-e]");
+  if (sn) select("n", sn.dataset.selN); else if (se) select("e", se.dataset.selE);
+  const st = e.target.closest("#steps button[data-go]"); if (st) toast(`${st.dataset.go} 화면은 interface-mockup.html에서 봅니다`);
+});
+$("#vmode").addEventListener("click", e => { const b = e.target.closest("button"); if (!b || b.disabled) return; S.mode = b.dataset.v; updateModeButtons(); draw(); fit(); });
+$("#cmode").addEventListener("click", e => { const b = e.target.closest("button"); if (!b || b.disabled) return; S.color = b.dataset.c; updateModeButtons(); draw(); });
+$("#left").addEventListener("change", e => {
+  const t = e.target;
+  if (t.dataset.t) { t.checked ? S.types.add(t.dataset.t) : S.types.delete(t.dataset.t); }
+  else if (t.dataset.g) { t.checked ? S.grps.add(t.dataset.g) : S.grps.delete(t.dataset.g); }
+  else if (t.id === "o-cand") S.showCand = t.checked; else if (t.id === "o-excl") S.showExcl = t.checked; else if (t.id === "o-rechk") S.showRechk = t.checked;
+  else if (t.id === "o-orphan") S.orphan = t.checked; else if (t.id === "o-gap") S.gap = t.checked;
+  else if (t.id === "o-fold") S.fold = t.checked; else if (t.id === "o-arrows") S.arrows = t.checked; else if (t.id === "o-labels") S.labels = t.checked;
+  else if (t.id && t.id.startsWith("f-")) { renderLeft(); layout(); draw(); fit(); return; }
+  draw();
+});
+$("#depth").addEventListener("input", e => { S.depth = +e.target.value; $("#d-val").textContent = S.depth; draw(); fit(); });
+["f-c", "f-r", "f-s", "f-d"].forEach(id => $("#" + id).addEventListener("input", () => renderLeft()));
+$("#relayout").addEventListener("click", () => { layout(); draw(); fit(); });
+$("#z-in").addEventListener("click", () => zoom(1 / 1.25)); $("#z-out").addEventListener("click", () => zoom(1.25)); $("#z-fit").addEventListener("click", fit);
+$("#bounds").addEventListener("change", e => $("#app").classList.toggle("bounds", e.target.checked));
+$("#q").addEventListener("input", e => {
+  const q = e.target.value.trim().toLowerCase(); const el = $("#qres");
+  if (!q) { el.innerHTML = ""; return; }
+  const hits = Object.values(N).filter(n => [n.id, n.tag, n.name, n.text, n.item].some(v => v && String(v).toLowerCase().includes(q))).slice(0, 8);
+  el.innerHTML = hits.length ? hits.map(n => `<div data-sel-n="${esc(n.id)}">${esc(nm(n.id))} <span class="muted mono">${esc(n.id)}</span></div>`).join("") : `<div class="muted">결과 없음</div>`;
+});
+
+/* ============ 시작 ============ */
+recompute(); renderToolbar(); renderBands(); renderLeft(); updateModeButtons(); layout(); draw(); fit(); renderDetail();
+</script>
+</body>
+</html>

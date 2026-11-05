@@ -526,10 +526,25 @@ def write_outputs(kg_root, knowledge, kg):
     return ver_dir
 
 
+VERSION_RE = re.compile(r"^v-[0-9a-f]{12}$")  # kg_version 형식(kg_version()과 같은 꼴)
+
+
+def _pointer_dir(kg_root, version):
+    """포인터의 kg_version을 열기 전에 검사한다(T1 D10): 형식이 v-+16진 12자리가 아니거나, 버전 폴더의 realpath가
+    kg 폴더(realpath) 바로 아래가 아니면 ValueError. 반환은 os.path.join(kg_root, version)."""
+    if not isinstance(version, str) or not VERSION_RE.match(version):
+        raise ValueError("%s: current.json의 kg_version 형식이 아님: %r" % (kg_root, version))
+    path = os.path.join(kg_root, version)
+    root_real, real = os.path.realpath(kg_root), os.path.realpath(path)
+    if os.path.dirname(real) != root_real:
+        raise ValueError("%s: 버전 폴더가 kg 폴더 밖으로 풀림: %s -> %s" % (kg_root, version, real))
+    return path
+
+
 def current_dir(kg_root):
-    """포인터가 가리키는 버전 폴더."""
+    """포인터가 가리키는 버전 폴더(_pointer_dir로 형식·위치 검사)."""
     with open(os.path.join(kg_root, POINTER_FILE), encoding="utf-8") as fh:
-        return os.path.join(kg_root, json.load(fh)["kg_version"])
+        return _pointer_dir(kg_root, json.load(fh).get("kg_version"))
 
 
 def load_outputs(kg_root):
@@ -537,7 +552,7 @@ def load_outputs(kg_root):
     파일 sha256이 포인터 기록과 다르거나, kg의 knowledge_sha256·kg_version이 맞지 않으면 ValueError."""
     with open(os.path.join(kg_root, POINTER_FILE), encoding="utf-8") as fh:
         ptr = json.load(fh)
-    ver_dir = os.path.join(kg_root, ptr["kg_version"])
+    ver_dir = _pointer_dir(kg_root, ptr.get("kg_version"))
     with open(os.path.join(ver_dir, KNOWLEDGE_FILE), "rb") as fh:
         kbytes = fh.read()
     with open(os.path.join(ver_dir, KG_FILE), "rb") as fh:
