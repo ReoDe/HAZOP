@@ -2,7 +2,7 @@
 
 > **용도**: “지금 어디까지 왔고, 무엇을 어떤 순서로 진행하며, 나는 무엇을 하면 되는가”를 한 장으로 보여주는 브리핑.
 > 상세 상태·완료 기준·증거는 [`PROGRESS.md`](PROGRESS.md)가 관리한다. 내용이 충돌하면 `PROGRESS.md`와 실제 저장소 상태를 우선한다.
-> PROGRESS 기준일: 2026-11-05 17:30
+> PROGRESS 기준일: 2026-11-05 22:10
 
 ## 1. 문제와 목표 — 30초
 
@@ -12,22 +12,25 @@
 
 | 구분 | 요약 |
 |---|---|
-| 완료 | `W1` 조사([evidence/w1-조사.md](evidence/w1-조사.md)) |
-| 현재 단계 | `W1` 초기 조사와 실행 계획 구체화 |
+| 완료 | `W1` 조사([evidence/w1-조사.md](evidence/w1-조사.md)), `W2` 전용 venv([evidence/w2-venv.md](evidence/w2-venv.md)) |
+| 현재 단계 | `W3` 완료. 다음은 `W4` 첫 PyInstaller one-folder 빌드 |
 | 막힌 것 | 없음 |
-| 다음 게이트 | 후속 작업 단위와 완료 기준 확정 |
+| 다음 게이트 | `W4`: 실번들(저장소 없는 환경)에서 ①~⑤·③ V1·V2·S1 통과 |
 
 ## 3. 무엇을 어떤 순서로 진행하나
 
 | 순서 | 단계 | 왜 이 순서인가 | 게이트 | 상태 |
 |---|---|---|---|---|
-| `W1` | 초기 조사와 실행 계획 구체화 | 범위와 근거를 먼저 고정해야 후속 작업을 안전하게 나눌 수 있다. | [`README.md`](README.md)의 범위 확인과 조사 증거 기록 | 진행 중 |
+| `W1` | 초기 조사와 실행 계획 구체화 | 범위와 근거를 먼저 고정해야 후속 작업을 안전하게 나눌 수 있다. | [`README.md`](README.md)의 범위 확인과 조사 증거 기록 | 완료 |
+| `W2` | 전용 venv | 빌드할 인터프리터·패키지를 먼저 고정한다. | venv 전체 테스트 통과 | 완료 |
+| `W3` | 경로·importlib 로딩 정리 | 빌드 전에 묶음 폴더에서 스크립트·자원을 찾는 경로를 맞춘다. | 모의 frozen·분리 루트 ①~⑤ 테스트 통과(경로 선택 검증), 검토 | 완료 |
+| `W4` | 첫 PyInstaller one-folder 빌드 | W3 경로 위에서 실제 묶음을 만든다. | 저장소 없는 환경에서 실제 번들 ①~⑤, ASCII·한글 경로 스크린샷, ③ V1·V2·S1 | 대기 |
 
 > 실행 구조에 **분기**, **병렬** 실행, GO/HOLD **게이트** 또는 **원복** 경로가 생기면 이 표 아래에 같은 작업 ID를 사용하는 Mermaid `flowchart`를 추가한다. 단순 선형 흐름이면 표만 유지한다.
 
 ## 4. 나는 지금 무엇을 하면 되나
 
-- 지금 할 일: 인터페이스 §7·§9 미결 2건(신뢰 경계·Pretendard)과 force-graph UMD 번들 의존성 라이선스를 조사하고, PyInstaller one-folder 시험 빌드 가능성을 `evidence/`에 기록한다(담당: hazop-developer 조사 → hazop-planner 계획)
+- 지금 할 일: `W4` 착수(PyInstaller는 전용 venv에 이미 설치됨, spec에 datas·`collect_submodules("hazop")` 포함). 인터페이스 §7.1 program_root 문구를 함께 넣는다.
 - 확인할 범위: [`README.md`](README.md)
 - 결과를 남길 곳: [`evidence/`](evidence/README.md)
 - 상세 상태를 갱신할 곳: [`PROGRESS.md`](PROGRESS.md)

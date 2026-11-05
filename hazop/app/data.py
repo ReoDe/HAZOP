@@ -15,18 +15,30 @@ from hazop.kg.context import omission_texts
 from hazop.register import registry
 from hazop.viewer import build as viewer_build
 
-SCRIPTS_DIR = os.path.join(paths.REPO_ROOT, "scripts")
-_script_cache = {}
+# 참고값(이름만 남김): 가져올 때의 scripts/ 위치. 로딩에는 쓰지 않으며 script_module은 호출 시점 경로를 쓴다
+SCRIPTS_DIR = paths.program_path("scripts")
+SCRIPT_NAMES = ("extract_drawio", "build_graph")  # 화면이 읽는 스크립트(허용 목록, 묶음 datas 대상)
+_script_cache = {}  # 키: 정규화한 파일 경로(루트가 바뀌면 새로 읽음)
 
 
 def script_module(name):
-    """scripts/<name>.py의 함수를 화면에서 그대로 쓰기 위해 모듈로 읽는다(화면 전용 처리 경로를 만들지 않음, §2.4)."""
-    if name not in _script_cache:
-        spec = importlib.util.spec_from_file_location("hazop_script_" + name, os.path.join(SCRIPTS_DIR, name + ".py"))
+    """scripts/<name>.py의 함수를 화면에서 그대로 쓰기 위해 모듈로 읽는다(화면 전용 처리 경로를 만들지 않음, §2.4).
+    위치는 paths.program_path("scripts"): 개발 실행은 저장소, 묶인 실행(PyInstaller)은 묶음 폴더의 scripts/.
+    name은 SCRIPT_NAMES 중 하나. 경로 구분자·절대 경로·목록 밖 이름은 ValueError."""
+    if not isinstance(name, str) or os.path.isabs(name) or any(c in name for c in "/\\:") or ".." in name:
+        raise ValueError("스크립트 이름이 아님: %r" % (name,))
+    if name not in SCRIPT_NAMES:
+        raise ValueError("허용하지 않은 스크립트: %r (허용: %s)" % (name, ", ".join(SCRIPT_NAMES)))
+    path = paths.program_path("scripts", name + ".py")
+    key = os.path.normcase(os.path.realpath(path))
+    if key not in _script_cache:
+        if not os.path.isfile(path):
+            raise FileNotFoundError("스크립트 파일 없음(묶음에 scripts/가 들어갔는지 확인): %s" % path)
+        spec = importlib.util.spec_from_file_location("hazop_script_" + name, path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        _script_cache[name] = mod
-    return _script_cache[name]
+        _script_cache[key] = mod
+    return _script_cache[key]
 
 
 def read_json(path):
