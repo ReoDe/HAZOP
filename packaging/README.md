@@ -16,13 +16,13 @@ anthropic·httpx는 넣지 않는다(D1: 배포본에서 제외). SDK가 필요�
 | 항목 | 경로 |
 |---|---|
 | 기반 인터프리터 | `%LOCALAPPDATA%\Programs\Python\Python312\python.exe` (python.org CPython 3.12.10, 등록·PATH 변경 없음) |
-| venv | `%LOCALAPPDATA%\HAZOP\venv-py312` (저장소 밖) |
+| venv | `%USERPROFILE%\.hazop\venv-py312` (저장소 밖, Claude 앱 가상화 경로 밖 — T2 D4) |
 
 ## venv 만들기 (PowerShell)
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" -m venv "$env:LOCALAPPDATA\HAZOP\venv-py312"
-$py = "$env:LOCALAPPDATA\HAZOP\venv-py312\Scripts\python.exe"
+& "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" -m venv "$env:USERPROFILE\.hazop\venv-py312"
+$py = "$env:USERPROFILE\.hazop\venv-py312\Scripts\python.exe"
 & $py -m pip install -r packaging\requirements-build.txt   # 런타임만이면 requirements.txt
 & $py -m unittest discover -s tests                         # 저장소 루트에서
 ```
@@ -32,5 +32,5 @@ $py = "$env:LOCALAPPDATA\HAZOP\venv-py312\Scripts\python.exe"
 - 저장소 루트에서 `python`은 LibreOffice 내장 Python 3.12.14다. venv의 `python.exe`를 경로로 직접 지정한다.
 - python.org는 3.12.11부터 Windows 설치 파일을 내지 않는다. 그래서 Windows 바이너리가 있는 마지막 판인 3.12.10을 쓴다(LibreOffice는 3.12.14).
 - 기반 인터프리터는 Python install manager로 `py install --target=<위 경로> 3.12` 방식으로 풀었다. `py -0p` 목록과 `python3.12` 별칭에는 나타나지 않는다.
-- Claude 데스크톱 앱(MSIX) 안에서 만든 venv는 `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\HAZOP\venv-py312`로 리디렉션된다. 일반 터미널에서 쓰려면 위 명령으로 다시 만든다.
+- Claude 데스크톱 앱(MSIX) 안에서 만든 venv는 `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\HAZOP\venv-py312`로 리디렉션된다. 그래서 venv는 `%USERPROFILE%\.hazop\venv-py312`에 둔다(2026-11-05 재생성, 전체 테스트 489 OK·건너뜀 5). 앱 안에서 처음 만든 리디렉션 위치의 venv는 쓰지 않는다.
 - `PYTHONIOENCODING`은 설정하지 않는다.
