@@ -1,7 +1,8 @@
 """디자인 토큰 한 곳 정의 (기획서/인터페이스.md §4.1·§4.2, 디자인/시안/README.md §3·§4.1).
 
-Qt 스타일시트(qss)와 내장 웹뷰 CSS(web_css)가 모두 이 값을 읽는다. 웹뷰에는 실행 시점에 CSS 변수로 주입하므로
-hazop/viewer/template.html은 바꾸지 않는다(단독 뷰어는 기존 색 그대로).
+Qt 스타일시트(qss)와 내장 웹뷰 CSS(web_css)가 모두 이 값을 읽는다. ② 뷰어에는 실행 시점에 CSS 변수로 주입하므로
+hazop/viewer/template.html의 색은 바꾸지 않는다(단독 뷰어는 기존 색 그대로, 템플릿은 탭 이름만 'P&ID 구조'로 바뀜).
+③ 지식그래프 HTML(hazop/kg/screen_template.html)은 생성할 때 kg_css_vars()로 같은 값을 넣는다.
 글꼴: Pretendard 배포는 미결정(§9)이므로 포함하지 않고 맑은 고딕을 기본으로 쓴다.
 """
 
@@ -30,8 +31,29 @@ COLORS = {
     # 출처: AI·자동 판독 = 빗금(Qt는 옅은 회색 + 점선 테두리로 대신), 사람 확정 = 흰 바탕 진한 실선
     "ai-hatch-a": "#f1f2f4", "ai-hatch-b": "#e8eaee", "ai-ink": "#4b5563", "human-line": "#111827",
     "tag": "#111827",
+    # ③ 지식그래프 (디자인/지식그래프화면.md §7). 별칭 토큰(=)은 같은 값을 풀어 적는다
+    "kg-document": "#475569", "kg-doc_chunk": "#64748b", "kg-requirement": "#a16207", "kg-setpoint": "#be185d",
+    "kg-condition": "#4d7c0f", "kg-analysis_case": "#9a3412", "kg-pipe_segment": "#16a34a",
+    "kg-rel-mentions": "#64748b", "kg-rel-docpos": "#cbd5e1", "kg-rel-depends": "#334155",
+    "kg-flag": "#f59e0b", "kg-flag-ink": "#92400e", "kg-conflict": "#b91c1c", "kg-nosrc": "#b91c1c",
+    "a1-start": "#111827", "a1-down": "#0072b2", "a1-up": "#d55e00", "a1-mixed": "#cc79a7", "a1-unknown": "#9ca3af",
+    "a1-adj": "#009e73", "a1-na": "#6b7280", "a1-off": "#d1d5db",
+    "comp-1": "#0072b2", "comp-2": "#e69f00", "comp-3": "#009e73", "comp-4": "#cc79a7", "comp-5": "#56b4e9",
+    "comp-6": "#d55e00", "comp-other": "#9ca3af",
+    "kg-canvas": "#fcfcfd",
 }
 HL_DIM = 0.16  # 강조 중 나머지 오버레이 불투명도
+# ③ 지식그래프 색 외 값(디자인/지식그래프화면.md §2·§5·§7)
+KG_STYLE = {"kg-excl-opacity": "0.5", "kg-dash": "5 4", "kg-left": "clamp(232px, 18vw, 300px)"}
+KG_RIGHT_MIN, KG_RIGHT_MAX, KG_RIGHT_VW = 320, 420, 0.24  # 우측 상세(Qt) clamp(320px, 24vw, 420px)
+
+
+def kg_css_vars():
+    """③ 지식그래프 HTML(hazop/kg/screen_template.html)의 :root 변수. 색은 COLORS 한 곳에서 읽는다."""
+    items = ["--%s: %s" % (k, v) for k, v in COLORS.items()]
+    items += ["--%s: %s" % (k, v) for k, v in KG_STYLE.items()]
+    items.append("--hl-dim: %s" % HL_DIM)
+    return ":root { %s; }" % "; ".join(items)
 
 FONT_SIZE = {"xs": 11, "sm": 12, "md": 13, "lg": 15, "xl": 20}
 

@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<title>③ 지식그래프</title>
+<!-- 생성: hazop/kg/screen.py. 시각 규칙: 디자인/지식그래프화면.md. force-graph는 아래에 인라인(외부 요청 없음). -->
+<style>
+/*@CSS_VARS@*/
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; font-family: "Malgun Gothic", sans-serif; font-size: 13px; color: var(--ink); background: var(--card); }
+button, input { font: inherit; color: inherit; }
+#kg-app { position: absolute; inset: 0; display: grid; grid-template-columns: var(--kg-left) minmax(0, 1fr); }
+#kg-app.lcol { grid-template-columns: 28px minmax(0, 1fr); }
+#left { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--card); }
+#left .ph { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 11px; color: var(--muted); flex: none; }
+#left .ph .sp { flex: 1; }
+#kg-app.lcol #left .pb, #kg-app.lcol #left .ph .t { display: none; }
+#left .pb { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
+.colbtn { border: 0; background: none; cursor: pointer; color: var(--muted); padding: 0 4px; }
+.sec { padding: 8px 12px 10px; border-bottom: 1px solid var(--line); }
+.sec-h { font-size: 11px; color: var(--muted); font-weight: 700; margin-bottom: 5px; }
+.layer-h { font-size: 11px; color: var(--ink-2); margin: 5px 0 2px; display: flex; align-items: center; gap: 6px; }
+.tg { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 0; cursor: pointer; line-height: 1.35; }
+.tg input { margin: 0; }
+.tg.off { opacity: .45; pointer-events: none; }
+.sw { width: 10px; height: 10px; flex: none; border-radius: 50%; }
+.sw.sq { border-radius: 2px; }
+.ln { width: 16px; height: 0; border-top: 2px solid; flex: none; }
+.cnt { margin-left: auto; font-size: 11px; color: var(--muted); }
+.hint { font-size: 11px; color: var(--muted); line-height: 1.45; margin-top: 4px; }
+#q { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 4px 8px; }
+#qres div { padding: 3px 6px; border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#qres div:hover { background: var(--ui-weak); }
+.rng { display: grid; grid-template-columns: 58px 1fr 34px; align-items: center; gap: 6px; font-size: 12px; }
+.rng input { width: 100%; }
+.rng .v { font-size: 11px; color: var(--muted); text-align: right; }
+.btn { border: 1px solid var(--line-strong); background: #fff; border-radius: 999px; padding: 2px 10px; cursor: pointer; font-size: 12px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.dis { opacity: .45; pointer-events: none; }
+#cv { position: relative; background: var(--kg-canvas); min-width: 0; min-height: 0; overflow: hidden; }
+#graph { position: absolute; inset: 0; }
+.cv-top { position: absolute; left: 10px; top: 8px; right: 50px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; pointer-events: none; z-index: 2; }
+.cv-top > * { pointer-events: auto; }
+.seg { display: flex; gap: 2px; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+.seg button { border: 0; background: none; padding: 3px 10px; border-radius: 999px; cursor: pointer; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.seg button.on { background: var(--ink); color: #fff; }
+.seg button:disabled { opacity: .4; cursor: not-allowed; }
+.chip { font-size: 11px; color: var(--ink-2); background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.chip.warn { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-line); white-space: normal; }
+.cv-zoom { position: absolute; right: 10px; top: 8px; display: flex; flex-direction: column; gap: 4px; z-index: 2; }
+.cv-zoom button { width: 30px; height: 26px; border: 1px solid var(--line); background: #fff; border-radius: 8px; cursor: pointer; font-size: 12px; }
+.cv-zoom button.w { font-size: 10px; }
+#legend { position: absolute; left: 10px; bottom: 10px; max-width: min(540px, 72%); background: rgba(255,255,255,.96); border: 1px solid var(--line); border-radius: 14px; padding: 6px 10px; font-size: 11px; color: var(--ink-2); line-height: 1.5; z-index: 2; }
+#legend .lg-h { font-weight: 700; color: var(--ink); display: flex; gap: 6px; align-items: center; }
+#legend .row { display: flex; flex-wrap: wrap; gap: 1px 10px; }
+#legend .it { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+#legend .note { color: var(--muted); }
+#legend.min .body { display: none; }
+.cv-note { position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: var(--muted); background: rgba(255,255,255,.85); padding: 2px 8px; border-radius: 999px; z-index: 2; }
+#empty { position: absolute; inset: 0; display: none; place-items: center; text-align: center; color: var(--muted); z-index: 3; }
+#empty .box { background: #fff; border: 1px dashed var(--line-strong); border-radius: 12px; padding: 18px 26px; max-width: 460px; line-height: 1.6; }
+.scene-tooltip { font-size: 11px !important; }
+</style>
+<script>/*@VENDOR@*/</script>
+</head><body>
+<div id="kg-app">
+  <aside id="left">
+    <div class="ph"><span class="t">보기 설정</span><span class="sp"></span><button class="colbtn" id="lcol" title="접기/펴기">&#9664;</button></div>
+    <div class="pb">
+      <div class="sec"><div class="sec-h">검색</div><input type="text" id="q" placeholder="태그·이름·ID"><div id="qres"></div></div>
+      <div class="sec"><div class="sec-h">노드 종류 · 색 그룹 (범례 겸용)</div>
+        <label class="layer-h"><input type="checkbox" id="ly-pid" checked> P&amp;ID 층 — 원</label><div id="t-pid"></div>
+        <label class="layer-h"><input type="checkbox" id="ly-kn" checked> 지식 층 — 각진 도형</label><div id="t-kn"></div></div>
+      <div class="sec"><div class="sec-h">관계 종류</div><div id="g-list"></div></div>
+      <div class="sec"><div class="sec-h">계산 제외 항목 표시</div>
+        <label class="tg"><input type="checkbox" id="o-cand"> 후보 링크 <span class="cnt" id="c-cand"></span></label>
+        <label class="tg"><input type="checkbox" id="o-excl"> 미확인·가설 항목 <span class="cnt" id="c-excl"></span></label>
+        <label class="tg"><input type="checkbox" id="o-rechk"> 재확인 필요 <span class="cnt" id="c-rechk"></span></label>
+        <div class="hint">켜도 계산 뷰(V4·V5)와 알고리즘 결과에 들어가지 않습니다. 흐린 파선과 "계산 제외" 표시로 구분합니다.</div></div>
+      <div class="sec" id="sec-a2"><div class="sec-h">A2 고아 · 근거 공백</div>
+        <label class="tg"><input type="checkbox" id="o-orphan"> 고아 강조 <span class="cnt" id="c-orphan"></span></label>
+        <label class="tg"><input type="checkbox" id="o-gap"> 근거 공백 강조 <span class="cnt" id="c-gap"></span></label>
+        <label class="tg"><input type="checkbox" id="o-noinput"> 지식 입력 없음 표시 <span class="cnt" id="c-noinput"></span></label>
+        <div class="hint">연결 없음은 "해당 없음"이 아니라 "지식 입력 미확인"입니다. 근거 공백은 자료 요청 메모 후보입니다.</div></div>
+      <div class="sec"><div class="sec-h">표시</div>
+        <label class="tg"><input type="checkbox" id="o-fold"> 배관 구간 접기 (화면 전용)</label>
+        <label class="tg"><input type="checkbox" id="o-arrows" checked> 흐름 화살표 (방향 확인 구간만)</label>
+        <label class="tg"><input type="checkbox" id="o-labels" checked> 라벨</label></div>
+      <div class="sec" id="sec-depth"><div class="sec-h">로컬 깊이 <b id="d-val" style="color:var(--ink)">2</b></div>
+        <input type="range" id="depth" min="1" max="3" value="2" style="width:100%"><div class="hint" id="d-note"></div></div>
+      <div class="sec" id="sec-a1"><div class="sec-h">A1 상·하류 시작점</div>
+        <div class="hint" id="a1-info"></div>
+        <div style="margin-top:4px"><button class="btn" id="a1-run" disabled>선택 노드로 A1 계산</button></div></div>
+      <div class="sec"><div class="sec-h">힘 (배치 전용, 근거 아님)</div>
+        <div class="rng"><span>중심</span><input type="range" id="f-c" min="0" max="1" step="0.05" value="0.1"><span class="v" id="v-c"></span></div>
+        <div class="rng"><span>반발</span><input type="range" id="f-r" min="0" max="400" step="5" value="120"><span class="v" id="v-r"></span></div>
+        <div class="rng"><span>링크 당김</span><input type="range" id="f-s" min="0" max="1" step="0.05" value="0.5"><span class="v" id="v-s"></span></div>
+        <div class="rng"><span>링크 길이</span><input type="range" id="f-d" min="10" max="150" step="5" value="45"><span class="v" id="v-d"></span></div>
+        <div style="margin-top:6px"><button class="btn" id="relayout">다시 배치</button></div>
+        <div class="hint">d3 forceCenter · forceManyBody · forceLink.strength · forceLink.distance. 시작값은 샘플을 보고 정한 값(근거 아님)입니다.</div></div>
+    </div>
+  </aside>
+  <section id="cv">
+    <div id="graph"></div>
+    <div class="cv-top">
+      <div class="seg" id="vmode"><button data-v="global" class="on">전역</button><button data-v="local">로컬</button></div>
+      <div class="seg" id="cmode"><button data-c="type" class="on">종류</button><button data-c="a1">A1 상·하류</button><button data-c="a5">A5 연결 성분</button></div>
+      <span class="chip" id="cv-info"></span>
+      <span class="chip warn" id="s1" style="display:none"></span>
+      <span class="chip" id="mode-chip"></span>
+    </div>
+    <div class="cv-zoom"><button id="z-in" title="확대">+</button><button id="z-out" title="축소">&#8722;</button><button id="z-fit" class="w" title="화면에 맞춤">맞춤</button></div>
+    <div id="legend"></div>
+    <div class="cv-note">배치는 근거가 아님 · 계산 결과는 Python</div>
+    <div id="empty"><div class="box" id="empty-box"></div></div>
+  </section>
+</div>
+<script>window.__KG_DATA__ = /*@DATA@*/;</script>
+<script>
+(function () {
+  "use strict";
+  var KG = window.hzKG = { errors: [], ready: false, app: false, rendered: 0 };
+  window.addEventListener("error", function (e) { KG.errors.push("error: " + (e.message || e.type)); }, true);
+  window.addEventListener("unhandledrejection", function (e) { KG.errors.push("rejection: " + String(e.reason)); });
+
+  function $(id) { return document.getElementById(id); }
+  function esc(v) { return String(v === null || v === undefined ? "" : v).replace(/[&<>"]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]; }); }
+  var ROOT = getComputedStyle(document.documentElement);
+  function cv(name) { return (ROOT.getPropertyValue("--" + name) || "").trim() || "#9ca3af"; }
+  var DIM = parseFloat(cv("hl-dim")) || 0.16, EXCL = parseFloat(cv("kg-excl-opacity")) || 0.5;
+  var DASH = cv("kg-dash").split(/\s+/).map(Number);
+
+  var TYPE = {
+    equipment: { layer: "pid", name: "설비", col: "equipment", shape: "circle" },
+    valve: { layer: "pid", name: "밸브", col: "valve", shape: "circle" },
+    instrument: { layer: "pid", name: "계장", col: "instrument", shape: "circle" },
+    piping_element: { layer: "pid", name: "배관 요소(티·도면 연결점)", col: "piping_element", shape: "circle" },
+    pipe_segment: { layer: "pid", name: "배관 구간", col: "kg-pipe_segment", shape: "circle" },
+    unclassified: { layer: "pid", name: "미분류", col: "unclassified", shape: "circle" },
+    document: { layer: "kn", name: "문서", col: "kg-document", shape: "page" },
+    doc_chunk: { layer: "kn", name: "문서 조각", col: "kg-doc_chunk", shape: "square" },
+    requirement: { layer: "kn", name: "요건", col: "kg-requirement", shape: "hex" },
+    setpoint: { layer: "kn", name: "설정치", col: "kg-setpoint", shape: "diamond" },
+    condition: { layer: "kn", name: "운전조건·설계값", col: "kg-condition", shape: "capsule" },
+    analysis_case: { layer: "kn", name: "해석 사례", col: "kg-analysis_case", shape: "tri" }
+  };
+  var GRP_OF = { has_endpoint: "phys", measurement_connection: "meas", signal_connection: "sig", mentions: "men",
+    governed_by: "app", has_setpoint: "app", has_condition: "app", analyzed_in: "app", part_of: "pos", specified_in: "pos",
+    depends_on: "dep" };
+  var GRP = {
+    phys: { name: "물리 연결 (has_endpoint)", col: "physical_connection", w: 2.4 },
+    meas: { name: "계측 연결", col: "measurement_connection", w: 1.4 },
+    sig: { name: "신호 연결", col: "signal_connection", w: 1.4 },
+    men: { name: "언급 (mentions)", col: "kg-rel-mentions", w: 1.4 },
+    app: { name: "설비 적용 (governed_by·has_setpoint·has_condition·analyzed_in)", col: "kg-requirement", w: 1.8 },
+    pos: { name: "문서 안 위치 (part_of·specified_in)", col: "kg-rel-docpos", w: 1 },
+    dep: { name: "문서 근거 의존 (depends_on)", col: "kg-rel-depends", w: 1.6 }
+  };
+  var A1_DIR = { start: ["a1-start", "시작"], downstream: ["a1-down", "↓하"], upstream: ["a1-up", "↑상"],
+    mixed: ["a1-mixed", "↕혼"], unknown: ["a1-unknown", "?"], adjacent: ["a1-adj", "접"], not_applicable: ["a1-na", "—"] };
+  var A1_NAME = { downstream: "하류", upstream: "상류", mixed: "혼합", unknown: "방향 미확인", adjacent: "인접 구간",
+    not_applicable: "방향 해당 없음(물질 흐름 경로 아님)" };
+
+  /* ID를 키로 쓰는 표는 프로토타입 없는 객체로 만든다(constructor·__proto__·toString 같은 ID가 빠지지 않게). */
+  function nul() { return Object.create(null); }
+  function dict(o) { var r = nul(); if (o) Object.keys(o).forEach(function (k) { r[k] = o[k]; }); return r; }
+  function setOf(list) { var r = nul(); (list || []).forEach(function (k) { r[k] = 1; }); return r; }
+  function own(o, k) { return o && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined; }
+  function typeOf(t) { return own(TYPE, t) || TYPE.unclassified; }
+  function grpOf(kind) { return own(GRP_OF, kind) || "dep"; }
+  function dirOf(d) { return own(A1_DIR, d) || ["a1-unknown", "?"]; }
+  function normA1(a) { if (a && a.active) { a.reached = dict(a.reached); a.truncated = dict(a.truncated); } return a; }
+  function normAlgo(a) {
+    if (a.A3) a.A3 = dict(a.A3);
+    if (a.A2) { a.A2.orphans = dict(a.A2.orphans); a.A2.gaps = dict(a.A2.gaps); a.A2.noInput = setOf(a.A2.no_input);
+      a.A2.noInputCont = setOf(a.A2.no_input_cont); }
+    if (a.A5) a.A5.comp = dict(a.A5.comp);
+    normA1(a.A1);
+  }
+  var KN_LABEL_SCALE = 2.2;  /* 지식 노드 라벨은 호버·선택 때 또는 이 배율 이상에서만 */
+  var D = null, G = null, NB = nul(), LB = nul(), ADJ = nul(), VIS = nul(), VISL = nul(), HOVER = null, send = null, fitted = false;
+  var S = { mode: "global", color: "type", sel: null, center: null, depth: 2, fold: false, labels: true, arrows: true,
+    showCand: false, showExcl: false, showRechk: false, orphan: false, gap: false, noInput: false, types: {}, grps: {} };
+
+  /* ---------------- 표시 집합 (계산 아님: 넘겨받은 V5 표시값으로만 고름) ---------------- */
+  function nodeStatusOn(n) { return n.v5 || S.showExcl; }
+  function linkStatusOn(l) {
+    return l.st === "confirmed" ? true : l.st === "candidate" ? S.showCand : l.st === "recheck" ? S.showRechk : S.showExcl;
+  }
+  function adjacency() {
+    var adj = nul();
+    function add(a, b) { (adj[a] = adj[a] || nul())[b] = 1; (adj[b] = adj[b] || nul())[a] = 1; }
+    D.links.forEach(function (l) { if (l.v5) add(l.s, l.t); });
+    if (S.fold) {
+      D.nodes.forEach(function (n) {
+        if (!n.fold) return;
+        var ends = Object.keys(adj[n.id] || {});
+        ends.forEach(function (x) { delete adj[x][n.id]; });
+        delete adj[n.id];
+        if (ends.length === 2) add(ends[0], ends[1]);
+      });
+    }
+    return adj;
+  }
+  /* 로컬 깊이: V5 관계만 따라가는 BFS(표시 전용). 검사 V1이 Python ego_graph와 같은지 확인한다. */
+  function bfs(center, depth) {
+    var hop = nul(), fr = [center], d, i;
+    hop[center] = 0;
+    for (d = 1; d <= depth; d++) {
+      var nx = [];
+      for (i = 0; i < fr.length; i++) {
+        Object.keys(ADJ[fr[i]] || {}).forEach(function (v) { if (!(v in hop)) { hop[v] = d; nx.push(v); } });
+      }
+      fr = nx;
+    }
+    return hop;
+  }
+  function computeVisible() {
+    var vis = nul();
+    if (S.mode === "local" && S.center && NB[S.center]) {
+      var hop = bfs(S.center, S.depth);
+      Object.keys(hop).forEach(function (id) { vis[id] = 1; });
+      if (S.fold) D.nodes.forEach(function (n) {
+        if (n.fold && !vis[n.id]) {
+          var ends = D.links.filter(function (l) { return l.v5 && (l.s === n.id || l.t === n.id); });
+          if (ends.length && ends.every(function (l) { return vis[l.s === n.id ? l.t : l.s]; })) vis[n.id] = 1;
+        }
+      });
+      D.links.forEach(function (l) {
+        if (l.st === "confirmed" || !linkStatusOn(l)) return;
+        if (vis[l.s] && !vis[l.t] && nodeStatusOn(NB[l.t])) vis[l.t] = 1;
+        else if (vis[l.t] && !vis[l.s] && nodeStatusOn(NB[l.s])) vis[l.s] = 1;
+      });
+    } else {
+      D.nodes.forEach(function (n) { if (nodeStatusOn(n)) vis[n.id] = 1; });
+    }
+    D.nodes.forEach(function (n) { if (vis[n.id] && S.types[n.type] === false) delete vis[n.id]; });
+    var visl = nul();
+    D.links.forEach(function (l) {
+      if (vis[l.s] && vis[l.t] && linkStatusOn(l) && S.grps[grpOf(l.kind)] !== false) visl[l.id] = 1;
+    });
+    VIS = vis; VISL = visl;
+  }
+  KG.bfs = function (center, depth) { return Object.keys(bfs(center, depth)).sort(); };
+  KG.visibleIds = function () { return Object.keys(VIS).sort(); };
+  KG.visibleLinkIds = function () { return Object.keys(VISL).sort(); };
+  KG.state = function () {
+    return { mode: S.mode, center: S.center, depth: S.depth, color: S.color, sel: S.sel, s1: !!(D && D.meta.s1),
+      nodes: D ? D.nodes.length : 0, links: D ? D.links.length : 0, visible: Object.keys(VIS).length,
+      visibleLinks: Object.keys(VISL).length, app: KG.app, a1start: D && D.algo.A1 ? D.algo.A1.start : null,
+      kg_version: D ? D.meta.kg_version : null, errors: KG.errors.slice() };
+  };
+  KG.setLocal = function (center, depth) { S.center = center; S.depth = depth; $("depth").value = depth; setMode("local"); };
+  KG.setGlobal = function () { setMode("global"); };
+  KG.setToggles = function (o) {
+    ["showCand", "showExcl", "showRechk", "fold", "noInput"].forEach(function (k) { if (k in o) S[k] = !!o[k]; });
+    ADJ = adjacency(); syncInputs(); refresh();
+  };
+  KG.painted = function () {
+    var c = document.querySelector("#graph canvas"), n = 0, i;
+    if (!c) return -1;
+    var px = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    for (i = 3; i < px.length; i += 4) if (px[i] > 0) n += 1;
+    return n;
+  };
+
+  /* ---------------- 그리기 ---------------- */
+  function radius(n) {
+    if (n.type === "pipe_segment") return 3.5;
+    if (n.cont) return 6;
+    if (!n.v5) return 6.5;
+    var deg = D.algo.A3 ? D.algo.A3[n.id] : null;
+    return deg === null || deg === undefined ? 6 : Math.min(15, 4.5 + 2.3 * Math.sqrt(deg));
+  }
+  function a1Of(id) {
+    var a = D.algo.A1;
+    if (!a || !a.active) return null;
+    if (id === a.start) return "start";
+    var r = a.reached[id];
+    return r ? r.dir : null;
+  }
+  function fillOf(n) {
+    if (S.color === "a1") {
+      var d = a1Of(n.id);
+      return d ? cv(dirOf(d)[0]) : cv("a1-off");
+    }
+    if (S.color === "a5" && D.algo.A5) {
+      var c = own(D.algo.A5.comp, n.id);
+      return c === undefined ? cv("comp-other") : c < 6 ? cv("comp-" + (c + 1)) : cv("comp-other");
+    }
+    return cv(typeOf(n.type).col);
+  }
+  function shapePath(ctx, shape, x, y, r) {
+    ctx.beginPath();
+    var i, a;
+    if (shape === "circle") { ctx.arc(x, y, r, 0, 2 * Math.PI); return; }
+    if (shape === "square") { ctx.rect(x - r * 0.85, y - r * 0.85, r * 1.7, r * 1.7); return; }
+    if (shape === "page") {
+      var w = r * 0.85, f = r * 0.6;
+      ctx.moveTo(x - w, y - w); ctx.lineTo(x + w - f, y - w); ctx.lineTo(x + w, y - w + f); ctx.lineTo(x + w, y + w);
+      ctx.lineTo(x - w, y + w); ctx.closePath(); return;
+    }
+    if (shape === "hex") {
+      for (i = 0; i < 6; i++) { a = Math.PI / 3 * i; ctx[i ? "lineTo" : "moveTo"](x + r * Math.cos(a), y + r * Math.sin(a)); }
+      ctx.closePath(); return;
+    }
+    if (shape === "diamond") { ctx.moveTo(x, y - r * 1.1); ctx.lineTo(x + r * 1.1, y); ctx.lineTo(x, y + r * 1.1); ctx.lineTo(x - r * 1.1, y); ctx.closePath(); return; }
+    if (shape === "capsule") {
+      var hw = r * 1.3, hh = r * 0.7;
+      ctx.moveTo(x - hw + hh, y - hh); ctx.lineTo(x + hw - hh, y - hh); ctx.arc(x + hw - hh, y, hh, -Math.PI / 2, Math.PI / 2);
+      ctx.lineTo(x - hw + hh, y + hh); ctx.arc(x - hw + hh, y, hh, Math.PI / 2, 3 * Math.PI / 2); ctx.closePath(); return;
+    }
+    if (shape === "tri") { ctx.moveTo(x, y - r * 1.1); ctx.lineTo(x + r, y + r * 0.8); ctx.lineTo(x - r, y + r * 0.8); ctx.closePath(); return; }
+    ctx.arc(x, y, r, 0, 2 * Math.PI);
+  }
+  function hoverSet() {
+    if (!HOVER) return null;
+    var s = nul(); s[HOVER] = 1;
+    D.links.forEach(function (l) { if (VISL[l.id]) { if (l.s === HOVER) s[l.t] = 1; else if (l.t === HOVER) s[l.s] = 1; } });
+    return s;
+  }
+  var HS = null;
+  function badges(n) {
+    var out = [];
+    if (n.conflict) out.push(["≠ 충돌", cv("kg-conflict")]);
+    if (n.nosrc) out.push(["∅ 근거 없음", cv("kg-nosrc")]);
+    if (!n.v5) out.push([(n.ks === "hypothesis" ? "가설" : n.ks === "unknown" ? "미확인" : "제외") + " · 계산 제외", cv("muted")]);
+    if (S.orphan && D.algo.A2 && D.algo.A2.orphans[n.id]) out.push(["고아", cv("kg-flag-ink")]);
+    if (S.gap && D.algo.A2 && D.algo.A2.gaps[n.id]) out.push(["근거 공백", cv("kg-flag-ink")]);
+    if (n.unit_unknown) out.push(["단위 미확인", cv("kg-flag-ink")]);
+    if (S.noInput && noInputOf(n.id)) out.push([noInputOf(n.id), cv("kg-flag-ink")]);
+    if (S.color === "a1" && D.algo.A1 && D.algo.A1.active && own(D.algo.A1.truncated, n.id))
+      out.push([own(D.algo.A1.truncated, n.id), cv("kg-flag-ink")]);
+    if (S.color === "a1") {
+      var d = a1Of(n.id);
+      if (d) {
+        var r = D.algo.A1.reached[n.id];
+        out.push([dirOf(d)[1] + (r && r.nnf ? " ⊘" : ""), cv("ink")]);
+      } else if (D.algo.A1 && D.algo.A1.active && D.algo.A1.members.indexOf(n.id) >= 0) out.push(["미도달", cv("muted")]);
+    }
+    return out;
+  }
+  function noInputOf(id) {
+    var a2 = D.algo.A2;
+    if (!a2) return null;
+    return a2.noInput[id] ? "지식 입력 없음" : a2.noInputCont[id] ? "지식 입력 없음(도면 연결점)" : null;
+  }
+  function drawNode(n, ctx, scale) {
+    if (S.fold && n.fold) return;
+    var t = typeOf(n.type), r = radius(n), x = n.x, y = n.y;
+    var alpha = 1;
+    if (HS && !HS[n.id]) alpha = DIM;
+    if (!n.v5) alpha *= EXCL;
+    if (S.color === "a1" && n.layer === "kn") alpha *= 0.35;
+    ctx.globalAlpha = alpha;
+    shapePath(ctx, t.shape, x, y, r);
+    var col = fillOf(n);
+    if (!n.v5 || n.cont) {
+      ctx.fillStyle = "#fff"; ctx.fill();
+      ctx.lineWidth = 2 / Math.max(scale, 0.5) * 0.8; ctx.strokeStyle = col;
+      if (!n.v5) ctx.setLineDash([3, 2]);
+      ctx.stroke(); ctx.setLineDash([]);
+    } else {
+      ctx.fillStyle = col; ctx.fill();
+      ctx.lineWidth = 1.5 / Math.max(scale, 0.5) * 0.7; ctx.strokeStyle = "#fff"; ctx.stroke();
+    }
+    function ring(color, w, pad) { ctx.beginPath(); ctx.arc(x, y, r + pad, 0, 2 * Math.PI); ctx.lineWidth = w; ctx.strokeStyle = color; ctx.stroke(); }
+    if (n.conflict) ring(cv("kg-conflict"), 1.6, 2.5);
+    if ((S.orphan && D.algo.A2 && D.algo.A2.orphans[n.id]) || (S.gap && D.algo.A2 && D.algo.A2.gaps[n.id])) ring(cv("kg-flag"), 2.4, 4);
+    if (S.noInput && noInputOf(n.id)) {
+      ctx.setLineDash([3 / scale, 2 / scale]); ring(cv("muted"), 1.4, 3.5); ctx.setLineDash([]);
+    }
+    if (S.color === "a1" && a1Of(n.id) === "start") ring(cv("a1-start"), 1.4, 3);
+    if (S.sel && S.sel.k === "n" && S.sel.id === n.id) ring(cv("ui"), 2.6, 5.5);
+    var focused = HOVER === n.id || (S.sel && S.sel.id === n.id);
+    var showLabel = S.labels && (focused || (n.layer === "kn" ? scale >= KN_LABEL_SCALE : n.type !== "pipe_segment"));
+    if (showLabel && (focused || scale > 0.7 || D.nodes.length < 300)) {
+      var fs = Math.max(10 / scale, 2.5);
+      ctx.font = fs + "px Malgun Gothic, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+      ctx.lineWidth = 3 / scale; ctx.strokeStyle = cv("kg-canvas"); ctx.fillStyle = cv("ink-2");
+      ctx.strokeText(n.label, x, y + r + 2); ctx.fillText(n.label, x, y + r + 2);
+      if (n.type === "valve") {  /* 밸브 정상 위치(NC·NO·LC·LO), 값이 없으면 "위치 미확인" */
+        var vp = n.np || "위치 미확인";
+        ctx.font = "bold " + Math.max(9 / scale, 2.2) + "px Malgun Gothic, sans-serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        ctx.strokeStyle = "#fff"; ctx.strokeText(vp, x - r - 2, y);
+        ctx.fillStyle = n.np ? cv("ink") : cv("kg-flag-ink"); ctx.fillText(vp, x - r - 2, y);
+      }
+      var bs = badges(n), by = y - r - 2;
+      if (bs.length && scale > 0.9) {
+        ctx.font = "bold " + Math.max(9 / scale, 2.2) + "px Malgun Gothic, sans-serif"; ctx.textBaseline = "bottom"; ctx.textAlign = "left";
+        bs.forEach(function (b) {
+          ctx.strokeStyle = "#fff"; ctx.strokeText(b[0], x + r + 1, by); ctx.fillStyle = b[1]; ctx.fillText(b[0], x + r + 1, by);
+          by -= Math.max(10 / scale, 2.5);
+        });
+      }
+    }
+    ctx.globalAlpha = 1;
+    KG.rendered += 1;
+  }
+  function a1Edge(id) {
+    var a = D.algo.A1;
+    if (!a || !a.active) return null;
+    var hit = null;
+    Object.keys(a.reached).forEach(function (k) { if (a.reached[k].edge === id) hit = a.reached[k]; });
+    return hit;
+  }
+  function drawLink(l, ctx, scale) {
+    var s = l.source, t = l.target;
+    if (!s || !t || s.x === undefined) return;
+    var g = GRP[grpOf(l.kind)], col = cv(g.col), w = g.w, alpha = 1, dash = null;
+    if (grpOf(l.kind) === "app") { var kn = s.layer === "kn" ? s : t; col = cv(typeOf(kn.type).col); }
+    if (l.st === "candidate" || l.st === "excluded") { dash = DASH; alpha = EXCL; }
+    if (l.st === "recheck") { dash = DASH; col = cv("kg-flag"); w = 2.2; }
+    var nnf = false;
+    if (S.color === "a1") {
+      var r = a1Edge(l.id);
+      if (r) { col = cv(dirOf(r.dir)[0]); w = Math.max(w, 2.4); nnf = r.nnf; }
+      else { col = cv("a1-off"); if (l.layer === "kn") alpha *= 0.35; }
+    }
+    if (S.sel && S.sel.k === "l" && S.sel.id === l.id) { col = cv("ui"); w = 3.2; }
+    if (HS && !(HS[s.id] && HS[t.id] && (s.id === HOVER || t.id === HOVER))) alpha *= DIM;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = (nnf ? 6 : w) / Math.max(scale, 0.6) * 0.8;
+    ctx.strokeStyle = col;
+    ctx.setLineDash(dash ? dash.map(function (v) { return v / scale; }) : []);
+    ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+    if (nnf) {
+      ctx.lineWidth = 2.2 / Math.max(scale, 0.6) * 0.8; ctx.strokeStyle = "#fff";
+      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    if (S.arrows && l.a) {
+      var fx = l.a > 0 ? s : t, tx = l.a > 0 ? t : s, mx = (fx.x + tx.x) / 2, my = (fx.y + tx.y) / 2;
+      var ang = Math.atan2(tx.y - fx.y, tx.x - fx.x), L = 5 / Math.max(scale, 0.6) + 2;
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(mx + L * Math.cos(ang), my + L * Math.sin(ang));
+      ctx.lineTo(mx + L * Math.cos(ang + 2.5), my + L * Math.sin(ang + 2.5));
+      ctx.lineTo(mx + L * Math.cos(ang - 2.5), my + L * Math.sin(ang - 2.5)); ctx.closePath(); ctx.fill();
+    }
+    if ((l.st === "candidate" || l.st === "recheck") && scale > 1.1) {
+      var txt = l.st === "candidate" ? "후보" : "⟳ 재확인 필요";
+      ctx.font = Math.max(9 / scale, 2) + "px Malgun Gothic, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.lineWidth = 3 / scale; ctx.strokeStyle = "#fff"; ctx.strokeText(txt, (s.x + t.x) / 2, (s.y + t.y) / 2);
+      ctx.fillStyle = l.st === "recheck" ? cv("kg-flag-ink") : cv("ink-2"); ctx.fillText(txt, (s.x + t.x) / 2, (s.y + t.y) / 2);
+    }
+    ctx.globalAlpha = 1;
+  }
+  function tip(n) {
+    var t = typeOf(n.type);
+    var s = "<b>" + esc(n.label) + "</b><br>" + esc(t.name) + " · " + esc(n.id);
+    if (!n.v5) s += "<br>계산 제외(" + esc(n.ks) + ")";
+    if (n.nosrc) s += "<br>근거 없음";
+    if (D.algo.A3 && D.algo.A3[n.id] !== undefined) s += "<br>연결 수(A3) " + D.algo.A3[n.id];
+    return s;
+  }
+
+  /* ---------------- 상태 반영 ---------------- */
+  function refresh() {
+    if (!D || !G) return;
+    computeVisible();
+    G.nodeVisibility(function (n) { return !!VIS[n.id]; });
+    G.linkVisibility(function (l) { return !!VISL[l.id]; });
+    $("cv-info").textContent = "표시 " + Object.keys(VIS).filter(function (id) { return !(S.fold && NB[id].fold); }).length +
+      " · 관계 " + Object.keys(VISL).length;
+    $("sec-depth").classList.toggle("dis", S.mode !== "local");
+    $("d-val").textContent = S.depth;
+    $("d-note").textContent = S.mode !== "local" ? "로컬 보기에서만 씁니다." :
+      (S.fold ? "구간 접기 기준 홉(배관 구간을 건너뜀). " : "실제 홉(배관 구간 노드 포함). ") +
+      "중심: " + (NB[S.center] ? NB[S.center].label : "미선택") + ". 표시 전용(BFS), 계산 근거 아님.";
+    legend();
+    a1Info();
+  }
+  function setMode(m) {
+    S.mode = m;
+    if (m === "local" && !S.center) S.center = S.sel && S.sel.k === "n" ? S.sel.id : (D.algo.A1 && D.algo.A1.start) || (D.nodes[0] && D.nodes[0].id);
+    Array.prototype.forEach.call(document.querySelectorAll("#vmode button"), function (b) { b.classList.toggle("on", b.getAttribute("data-v") === m); });
+    refresh();
+    fit();
+  }
+  function setColor(c) {
+    S.color = c;
+    Array.prototype.forEach.call(document.querySelectorAll("#cmode button"), function (b) { b.classList.toggle("on", b.getAttribute("data-c") === c); });
+    refresh();
+  }
+  function fit() {
+    if (!G) return;
+    setTimeout(function () { G.zoomToFit(300, 40, function (n) { return !!VIS[n.id]; }); }, 50);
+  }
+  function select(id, notify) {
+    if (!NB[id]) return;
+    S.sel = { k: "n", id: id };
+    if (S.mode === "local") { S.center = id; refresh(); fit(); } else refresh();
+    if (notify && send) send({ type: "nodeSelected", local_id: NB[id].local_id || null, entity_id: id });
+  }
+  function selectLink(l) {
+    S.sel = { k: "l", id: l.id };
+    refresh();
+    if (send) send({ type: "linkSelected", id: l.id });
+  }
+  function a1Info() {
+    var a = D.algo.A1, el = $("a1-info"), btn = $("a1-run");
+    if (!D.algo.enabled) { el.textContent = "알고리즘 비활성: " + (D.algo.reason || ""); btn.disabled = true; return; }
+    el.textContent = a && a.active ? "시작 " + (NB[a.start] ? NB[a.start].label : a.start) + " · 구간 " + a.region_id +
+      " · 도달 " + Object.keys(a.reached).length + (Object.keys(a.truncated || {}).length ? " · 도면 경계 등에서 멈춤 " +
+      Object.keys(a.truncated).length : "") + (a.limits_hit && a.limits_hit.length ? " · 한계 도달: " + a.limits_hit.join(", ") : "") : "A1 비활성: " + ((a && a.reason) || "시작 노드 미선택") + (a && a.start ? " (" + a.start + ")" : "");
+    if (!KG.app) el.textContent += " · 단독 모드: 미리 계산한 시작점만(재계산 없음)";
+    var sel = S.sel && S.sel.k === "n" ? NB[S.sel.id] : null;
+    btn.disabled = !(KG.app && sel && sel.layer === "pid");
+  }
+  function sw(colName, shape) {
+    return '<span class="sw' + (shape && shape !== "circle" ? " sq" : "") + '" style="background:' + cv(colName) + '"></span>';
+  }
+  function legend() {
+    var h = '<div class="lg-h">범례 <button class="colbtn" id="lg-tog">' + ($("legend").classList.contains("min") ? "펴기" : "접기") + '</button></div><div class="body">';
+    if (S.color === "type") {
+      h += '<div class="row">';
+      Object.keys(GRP).forEach(function (k) { h += '<span class="it"><span class="ln" style="border-color:' + cv(GRP[k].col) + '"></span>' + esc(GRP[k].name.split(" (")[0]) + "</span>"; });
+      h += '</div><div class="note">파선·흐림 = 계산 제외(후보·미확인·가설), 호박 파선 = 재확인 필요, 빨간 고리 = 충돌, 파란 고리 = 선택. 화살표는 흐름 방향이 확인된 배관만. 크기 = 연결 수(A3).</div>';
+    } else if (S.color === "a1") {
+      h += '<div class="row">';
+      Object.keys(A1_NAME).forEach(function (k) { h += '<span class="it">' + sw(A1_DIR[k][0]) + esc(A1_DIR[k][1] + " " + A1_NAME[k]) + "</span>"; });
+      h += '<span class="it">' + sw("a1-off") + "미도달·대상 아님</span></div>";
+      h += '<div class="note">⊘ = 정상 유로 아님(NC·LC 경유, 속 빈 이중선). 역류·과압 전파를 배제하지 않으며, 도달은 인과관계를 입증하지 않습니다. A1은 P&amp;ID 레이어만 계산합니다. 노드 옆 "도면 경계에서 멈춤"은 탐색이 그 도면 연결점에서 멈췄다는 표시입니다.' +
+        (KG.app ? "" : " 단독 모드에서는 미리 계산된 시작점만 보여 줍니다.") + "</div>";
+    } else {
+      var a5 = D.algo.A5;
+      h += '<div class="row">';
+      (a5 ? a5.sizes : []).slice(0, 6).forEach(function (n, i) { h += '<span class="it">' + sw("comp-" + (i + 1)) + "성분 " + (i + 1) + " · " + n + "</span>"; });
+      h += '<span class="it">' + sw("comp-other") + "그 밖</span></div>";
+      if (a5) h += '<div class="note">V5 성분 ' + a5.V5_count + "개 · V1(물리) 성분 " + a5.V1_count + "개. 도면 1장 단위라 도면 연결점 너머는 끊긴 것으로 보입니다.</div>";
+    }
+    $("legend").innerHTML = h + "</div>";
+    $("lg-tog").onclick = function () { $("legend").classList.toggle("min"); legend(); };
+  }
+  function syncInputs() {
+    $("o-cand").checked = S.showCand; $("o-excl").checked = S.showExcl; $("o-rechk").checked = S.showRechk; $("o-fold").checked = S.fold; $("o-noinput").checked = S.noInput;
+  }
+
+  /* ---------------- 좌측 패널 ---------------- */
+  function buildFilters() {
+    var cnt = nul();
+    D.nodes.forEach(function (n) { cnt[n.type] = (cnt[n.type] || 0) + 1; });
+    ["pid", "kn"].forEach(function (layer) {
+      var h = "";
+      Object.keys(TYPE).forEach(function (k) {
+        if (TYPE[k].layer !== layer || (!cnt[k] && k === "unclassified")) return;
+        S.types[k] = S.types[k] !== false;
+        h += '<label class="tg"><input type="checkbox" data-t="' + k + '"' + (S.types[k] ? " checked" : "") + "> " +
+          sw(TYPE[k].col, TYPE[k].shape) + esc(TYPE[k].name) + '<span class="cnt">' + (cnt[k] || 0) + "</span></label>";
+      });
+      $("t-" + layer).innerHTML = h;
+    });
+    var gc = nul(), h = "";
+    D.links.forEach(function (l) { var g = grpOf(l.kind); gc[g] = (gc[g] || 0) + 1; });
+    Object.keys(GRP).forEach(function (k) {
+      S.grps[k] = S.grps[k] !== false;
+      h += '<label class="tg"><input type="checkbox" data-g="' + k + '"' + (S.grps[k] ? " checked" : "") + '> <span class="ln" style="border-color:' +
+        cv(GRP[k].col) + '"></span>' + esc(GRP[k].name) + '<span class="cnt">' + (gc[k] || 0) + "</span></label>";
+    });
+    $("g-list").innerHTML = h;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-t]"), function (el) {
+      el.onchange = function () { S.types[el.getAttribute("data-t")] = el.checked; refresh(); };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-g]"), function (el) {
+      el.onchange = function () { S.grps[el.getAttribute("data-g")] = el.checked; refresh(); };
+    });
+    ["pid", "kn"].forEach(function (layer) {
+      $("ly-" + layer).onchange = function () {
+        var on = $("ly-" + layer).checked;
+        Object.keys(TYPE).forEach(function (k) { if (TYPE[k].layer === layer) S.types[k] = on; });
+        Array.prototype.forEach.call(document.querySelectorAll("#t-" + layer + " [data-t]"), function (el) { el.checked = on; });
+        refresh();
+      };
+    });
+    var st = { candidate: 0, excluded: 0, recheck: 0 };
+    D.links.forEach(function (l) { if (st[l.st] !== undefined) st[l.st] += 1; });
+    $("c-cand").textContent = st.candidate;
+    $("c-excl").textContent = D.nodes.filter(function (n) { return !n.v5; }).length + " · 관계 " + st.excluded;
+    $("c-rechk").textContent = st.recheck;
+    var a2 = D.algo.A2;
+    $("c-orphan").textContent = a2 ? Object.keys(a2.orphans).length : "—";
+    $("c-gap").textContent = a2 ? Object.keys(a2.gaps).length : "—";
+    $("c-noinput").textContent = a2 ? "설비 " + Object.keys(a2.noInput).length + " · 연결점 " + Object.keys(a2.noInputCont).length : "—";
+    $("sec-a2").classList.toggle("dis", !a2);
+    Array.prototype.forEach.call(document.querySelectorAll("#cmode button"), function (b) {
+      var c = b.getAttribute("data-c");
+      b.disabled = (c === "a1" && !(D.algo.A1)) || (c === "a5" && !D.algo.A5);
+    });
+  }
+  function bindControls() {
+    function tog(id, key) { $(id).onchange = function () { S[key] = $(id).checked; if (key === "fold") ADJ = adjacency(); refresh(); }; }
+    tog("o-cand", "showCand"); tog("o-excl", "showExcl"); tog("o-rechk", "showRechk"); tog("o-orphan", "orphan");
+    tog("o-gap", "gap"); tog("o-noinput", "noInput"); tog("o-fold", "fold"); tog("o-arrows", "arrows"); tog("o-labels", "labels");
+    $("depth").oninput = function () { S.depth = parseInt($("depth").value, 10); refresh(); fit(); };
+    Array.prototype.forEach.call(document.querySelectorAll("#vmode button"), function (b) { b.onclick = function () { setMode(b.getAttribute("data-v")); }; });
+    Array.prototype.forEach.call(document.querySelectorAll("#cmode button"), function (b) { b.onclick = function () { setColor(b.getAttribute("data-c")); }; });
+    $("z-in").onclick = function () { if (G) G.zoom(G.zoom() * 1.3, 200); };
+    $("z-out").onclick = function () { if (G) G.zoom(G.zoom() / 1.3, 200); };
+    $("z-fit").onclick = fit;
+    $("lcol").onclick = function () { $("kg-app").classList.toggle("lcol"); setTimeout(resize, 30); };
+    $("q").oninput = function () {
+      var q = $("q").value.trim().toLowerCase(), out = "";
+      if (q && D) D.nodes.filter(function (n) { return (n.id + " " + (n.label || "") + " " + (n.tag || "")).toLowerCase().indexOf(q) >= 0; })
+        .slice(0, 12).forEach(function (n) { out += '<div data-id="' + esc(n.id) + '">' + esc(n.label) + ' <span style="color:var(--muted)">' + esc(n.id) + "</span></div>"; });
+      $("qres").innerHTML = out;
+      Array.prototype.forEach.call(document.querySelectorAll("#qres [data-id]"), function (el) {
+        el.onclick = function () { var id = el.getAttribute("data-id"); select(id, true); focusNode(id); };
+      });
+    };
+    function force(id, vid, fn) {
+      var el = $(id);
+      function apply() { $(vid).textContent = el.value; if (G) fn(parseFloat(el.value)); }
+      el.oninput = function () { apply(); if (G) G.d3ReheatSimulation(); };
+      apply();
+    }
+    force("f-c", "v-c", function (v) { var c = G.d3Force("center"); if (c && c.strength) c.strength(v); });
+    force("f-r", "v-r", function (v) { var c = G.d3Force("charge"); if (c) c.strength(-v); });
+    force("f-s", "v-s", function (v) { var c = G.d3Force("link"); if (c) c.strength(v); });
+    force("f-d", "v-d", function (v) { var c = G.d3Force("link"); if (c) c.distance(v); });
+    $("relayout").onclick = function () { if (G) { D.nodes.forEach(function (n) { n.fx = undefined; n.fy = undefined; }); G.d3ReheatSimulation(); } };
+    $("a1-run").onclick = function () {
+      if (send && S.sel && S.sel.k === "n") send({ type: "runAlgorithm", algorithm: "A1", start: S.sel.id });
+    };
+  }
+  function focusNode(id) {
+    var n = NB[id];
+    if (G && n && n.x !== undefined) { G.centerAt(n.x, n.y, 300); }
+  }
+  function resize() {
+    if (!G) return;
+    var el = $("graph");
+    G.width(el.clientWidth).height(el.clientHeight);
+  }
+
+  /* ---------------- 초기화 ---------------- */
+  function initialPositions() {
+    var pts = D.nodes.filter(function (n) { return n.pos; });
+    var cx = 0, cy = 0, span = 1;
+    if (pts.length) {
+      var xs = pts.map(function (n) { return n.pos[0]; }), ys = pts.map(function (n) { return n.pos[1]; });
+      cx = (Math.min.apply(null, xs) + Math.max.apply(null, xs)) / 2; cy = (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2;
+      span = Math.max(Math.max.apply(null, xs) - Math.min.apply(null, xs), Math.max.apply(null, ys) - Math.min.apply(null, ys), 1);
+    }
+    var k = 400 / span;
+    D.nodes.forEach(function (n) { if (n.pos) { n.x = (n.pos[0] - cx) * k; n.y = (n.pos[1] - cy) * k; } });
+    /* 지식 노드: 붙어 있는 노드(P&ID 우선) 둘레에 반경을 두고 각도별로 펼친다. 이웃이 아직 없으면 다음 차례에 둔다. */
+    var nbr = nul();
+    D.links.forEach(function (l) {
+      (nbr[l.s] = nbr[l.s] || []).push(l.t); (nbr[l.t] = nbr[l.t] || []).push(l.s);
+    });
+    var pass = 0, progress = true;
+    while (progress) {
+      progress = false;
+      var groups = nul(), order = [];
+      D.nodes.forEach(function (n) {
+        if (n.x !== undefined) return;
+        var placed = (nbr[n.id] || []).map(function (id) { return NB[id]; }).filter(function (m) { return m && m.x !== undefined; });
+        if (!placed.length) return;
+        placed.sort(function (p, q) { return (p.layer === "pid" ? 0 : 1) - (q.layer === "pid" ? 0 : 1); });
+        var anc = placed[0].id;
+        if (!groups[anc]) { groups[anc] = []; order.push(anc); }
+        groups[anc].push(n);
+      });
+      order.forEach(function (anc, gi) {
+        var a = NB[anc], kids = groups[anc], R = (a.layer === "pid" ? 55 : 38) + 4 * Math.max(0, kids.length - 6);
+        var off = (gi * 0.9 + pass * 0.5) % (2 * Math.PI);
+        kids.forEach(function (n, j) {
+          var ang = off + 2 * Math.PI * j / kids.length;
+          n.x = a.x + R * Math.cos(ang); n.y = a.y + R * Math.sin(ang);
+        });
+        progress = true;
+      });
+      pass += 1;
+    }
+    var i = 0;
+    D.nodes.forEach(function (n) {
+      if (n.x !== undefined) return;
+      var a = i * 2.399963, rr = 30 + 8 * Math.sqrt(i);
+      i += 1;
+      n.x = rr * Math.cos(a); n.y = rr * Math.sin(a);
+    });
+  }
+  function init(data) {
+    D = data; NB = nul(); LB = nul();
+    if (!D || !D.nodes) { showEmpty(KG.app ? "지식그래프 데이터를 받지 못했습니다." : "데이터가 없습니다."); return; }
+    $("empty").style.display = "none";
+    normAlgo(D.algo);
+    D.nodes.forEach(function (n) { NB[n.id] = n; });
+    D.links = D.links.filter(function (l) { return NB[l.s] && NB[l.t]; });
+    D.links.forEach(function (l) { LB[l.id] = l; l.source = l.s; l.target = l.t; });
+    S.depth = D.meta.default_radius || 2; $("depth").value = S.depth;
+    S.center = null; S.sel = null; fitted = false;
+    ADJ = adjacency();
+    initialPositions();
+    buildFilters();
+    var s1 = $("s1");
+    if (D.meta.s1) {
+      s1.style.display = ""; s1.textContent = "전역 노드 " + D.meta.global_count.toLocaleString() + "개 > " + D.meta.node_limit.toLocaleString() + " — 로컬 보기 권장";
+    } else s1.style.display = "none";
+    var big = D.nodes.length > 2000;
+    if (!G) {
+      G = ForceGraph()($("graph"))
+        .nodeId("id").backgroundColor(cv("kg-canvas"))
+        .nodeCanvasObject(drawNode).nodeCanvasObjectMode(function () { return "replace"; })
+        .nodePointerAreaPaint(function (n, color, ctx) {
+          if (S.fold && n.fold) return;
+          ctx.fillStyle = color; ctx.beginPath(); ctx.arc(n.x, n.y, radius(n) + 2, 0, 2 * Math.PI); ctx.fill();
+        })
+        .linkCanvasObject(drawLink).linkCanvasObjectMode(function () { return "replace"; }).linkWidth(3)
+        .nodeLabel(tip).linkLabel(function (l) { return esc(l.kind + " · " + l.id + (l.st !== "confirmed" ? " · " + l.st : "")); })
+        .onNodeHover(function (n) { HOVER = n ? n.id : null; HS = hoverSet(); })
+        .onNodeClick(function (n) { select(n.id, true); })
+        .onLinkClick(function (l) { selectLink(l); })
+        .onBackgroundClick(function () { S.sel = null; refresh(); })
+        .onEngineStop(function () { if (!fitted) { fitted = true; fit(); } });
+      bindControls();
+      window.addEventListener("resize", resize);
+    }
+    G.cooldownTicks(big ? 40 : 200).d3AlphaDecay(big ? 0.06 : 0.0228);
+    ["f-c", "f-r", "f-s", "f-d"].forEach(function (id) { $(id).oninput(); });
+    resize();
+    G.graphData({ nodes: D.nodes, links: D.links });
+    $("mode-chip").textContent = KG.app ? "앱 · Python 계산 결과" : "단독 모드 · 미리 계산된 결과만";
+    if (D.meta.note) $("mode-chip").textContent += " · " + D.meta.note;
+    refresh();
+    KG.ready = true;
+  }
+  function showEmpty(msg) {
+    $("empty").style.display = "grid";
+    $("empty-box").innerHTML = "<b style='color:var(--ink)'>" + esc(msg) + "</b><br>지식 입력 CSV(데이터\\지식\\&lt;project_id&gt;\\)를 작성하고 지식 빌드를 실행하면 여기에 나옵니다.<br>P&amp;ID 구조만 보려면 ② 도면·그래프의 'P&amp;ID 구조' 탭을 쓰세요.";
+  }
+
+  /* ---------------- 브리지 (앱 모드) ---------------- */
+  KG.attach = function (fn) { send = fn; KG.app = true; if (D) refresh(); $("mode-chip").textContent = "앱 · Python 계산 결과"; };
+  KG.handle = function (m) {
+    if (!m || typeof m !== "object") return;
+    if (m.type === "loadKnowledge") { KG.ready = false; init(m.data); }
+    else if (m.type === "selectNode") { select(m.id, false); focusNode(m.id); }
+    else if (m.type === "algorithmResult" && D && m.algorithm === "A1" && m.kg_version === D.meta.kg_version) {
+      D.algo.A1 = normA1(m.result); buildFilters(); if (S.color !== "a1") setColor("a1"); else refresh();
+    }
+  };
+  if (window.__KG_DATA__) init(window.__KG_DATA__);
+  else { $("empty").style.display = "grid"; $("empty-box").textContent = "지식그래프를 불러오는 중…"; }
+})();
+</script>
+</body></html>

@@ -109,6 +109,7 @@ P&ID 그래프에 비P&ID 성분(문서·요건·설정치 등)을 통합하고,
 | D7 | `W3` 마무리 방식, `W4`·`W5` 병행 범위 | [decisions.md](decisions.md) | — |
 | D8 | `W6` 편집 범위, 화면 노드 수 상한 검사 S1, 브랜치 | [decisions.md](decisions.md) | — |
 | D9 | `W6` 디자인 미결 판정(후보 표시·토큰·S1) | [decisions.md](decisions.md) | — |
+| D10 | `W6` 재작업 범위(build.py 경로 검증)와 구현 차이 수용 | [decisions.md](decisions.md) | — |
 
 ## 7. 계약·승계 불변 규칙
 
