@@ -14,8 +14,16 @@
 | `verify_bundle.py` | 묶음을 저장소 밖 경로에 복사해 ①~⑤·③ V1·V2·S1·스크린샷·앱 로그 확인. 배포용은 `--app-only` |
 | `make_snapshot.py` | 저장소 밖 빌드용 스냅숏(다른 트랙 진행 중 파일은 HEAD로), `SNAPSHOT.json` 해시 목록 |
 | `netwatch.ps1` | 빌드 중 네트워크 연결 표본 조사(관찰만) |
+| `tls_probe.py` | D10 측정(검증 전용): 검증용 묶음의 `HAZOP-check.exe`로 Qt TLS 백엔드와 로드된 모듈 목록을 기록(`--path-mode user|system`). 네트워크 접속 없음 |
 
 빌드: `<venv python> scripts/build_package.py --out <저장소 밖 폴더> [--with-check] --build` → 배포용 `<out>/dist/HAZOP/`(검증 exe 없음을 빌드 뒤 검사), 검증용 `<out>/dist/HAZOP-verify/`. 출력 폴더가 저장소 안이면 거부한다. 절차·결과는 [W4 빌드](../docs/2026-11-05-packaging/evidence/w4-빌드.md).
+D10([W8 경로 통제](../docs/2026-11-05-packaging/evidence/w8-경로통제.md)) 기준은 다음과 같다.
+
+- `--build`는 전용 venv에서만 한다. 다른 인터프리터면 rc=2로 중단하며 `--allow-other-python`으로만 우회한다. 기반 CPython 판(3.12.10)은 `scripts/build_package.py`의 `PYTHON_VERSION`에 고정되어 있으니, 패치 판을 올릴 때 함께 바꾼다.
+- PyInstaller는 PATH를 venv `Scripts`·기반 CPython·`DLLs`·`System32`로만 두고 실행한다.
+- Qt TLS 플러그인은 허용 목록(`qschannelbackend`·`qcertonlybackend`)만 묶는다. OpenSSL 백엔드(`qopensslbackend.dll`)는 묶음 안 이름과 출처 실경로의 긴 파일명 양쪽으로 걸러 빼고, Schannel을 쓴다.
+- 빌드 뒤 묶음 바이너리 출처가 venv·기반 CPython 밖이거나, 이름 거부 목록(`ucrtbase`·`api-ms-win-*`·`lib(ssl|crypto)-3-x64`)에 걸리면 rc=3으로 실패한다.
+- **지원 OS: Windows 10 이상(64비트).** UCRT를 묶지 않고 시스템 구성요소를 쓰므로 Windows 8.1 이하는 지원하지 않는다.
 
 anthropic·httpx는 넣지 않는다(D1: 배포본에서 제외). SDK가 필요한 테스트 5건(`tests/test_analysis.py`)은 anthropic이 없으면 건너뛴다(T2 decisions D3). venv 전체 테스트: 478건 OK, 건너뜀 5.
 

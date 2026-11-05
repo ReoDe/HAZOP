@@ -2,7 +2,7 @@
 
 > **용도**: “지금 어디까지 왔고, 무엇을 어떤 순서로 진행하며, 나는 무엇을 하면 되는가”를 한 장으로 보여주는 브리핑.
 > 상세 상태·완료 기준·증거는 [`PROGRESS.md`](PROGRESS.md)가 관리한다. 내용이 충돌하면 `PROGRESS.md`와 실제 저장소 상태를 우선한다.
-> PROGRESS 기준일: 2026-11-06 01:30
+> PROGRESS 기준일: 2026-11-06 02:40
 
 ## 1. 문제와 목표 — 30초
 
@@ -13,7 +13,7 @@
 | 구분 | 요약 |
 |---|---|
 | 완료 | `W1` 조사([evidence/w1-조사.md](evidence/w1-조사.md)), `W2` 전용 venv([evidence/w2-venv.md](evidence/w2-venv.md)) |
-| 현재 단계 | `W4` 완료(D8). `W6`(제3자 고지) 고지 초안 완료, 사용자 확인·추가 원문 대기. `W8`(빌드 수집 범위 정리) 후보. 남은 `W5`(신뢰 경계 해시 고정)·`W7`(os.link 실측) — 서로 독립 |
+| 현재 단계 | `W4`·`W6`(초안)·`W8-A` 완료. 남은 것: `W5`(신뢰 경계 해시), `W7`(os.link 실측), `W8-B`(GPL 전용 Qt 모듈 제외, 사용자 결정), W6 사용자 확인 항목 |
 | 막힌 것 | 없음. D7안(앱 로그) 승인 대기 |
 | 다음 게이트 | `W5`·`W6`·`W7` 각 완료 기준 |
 
@@ -30,7 +30,7 @@
 
 ## 4. 나는 지금 무엇을 하면 되나
 
-- 지금 할 일: `W6` 재검토와 사용자 확인 항목([evidence/w6-라이선스.md](evidence/w6-라이선스.md) §9) 판단(추가 원문 다운로드 승인, GPL 전용 모듈 (가)/(나), LGPL 요건), `W5` 착수. 재현 절차: `packaging/make_snapshot.py` → 스냅숏에서 `scripts/build_package.py`([evidence/w4-빌드.md](evidence/w4-빌드.md) §1).
+- 지금 할 일: `W8-A` 재검토([evidence/w8-경로통제.md](evidence/w8-경로통제.md)), `W6` 재검토와 사용자 확인 항목([evidence/w6-라이선스.md](evidence/w6-라이선스.md) §9) 판단(추가 원문 다운로드 승인, GPL 전용 모듈 (가)/(나), LGPL 요건), `W5` 착수. 재현 절차: `packaging/make_snapshot.py` → 스냅숏에서 `scripts/build_package.py`([evidence/w4-빌드.md](evidence/w4-빌드.md) §1).
 - 확인할 범위: [`README.md`](README.md)
 - 결과를 남길 곳: [`evidence/`](evidence/README.md)
 - 상세 상태를 갱신할 곳: [`PROGRESS.md`](PROGRESS.md)

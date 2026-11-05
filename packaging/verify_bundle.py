@@ -20,6 +20,8 @@
  5) 저장소 출력/·자료저장소/ 파일 해시가 전후 같은지, 3)이 입력 사본을 바꾸지 않았는지, PNG가 이번 실행에서 생겼는지
  6) 제3자 고지(W6, D9): 묶음 _internal/licenses/의 파일 목록·바이트 해시가 저장소 licenses/와 같은지(빠짐·추가·변경 없음)
 자식 프로세스 환경: PYTHONPATH·PYTHONHOME·HAZOP_* 제거, HAZOP_WORK_ROOT·APPDATA·TEMP = 임시, 작업 폴더 = 임시(저장소 아님).
+PATH = Windows System32·Windows 폴더만, QT_*·OPENSSL_*·SSL_CERT_* 제거(D10): 사용자 PATH 경유 탐색을 제한한다
+(JDK·Git 등 PATH에 있는 UCRT·OpenSSL DLL을 찾지 못함). 다른 PC와 같은 조건이라는 보장은 아니다.
 새 폴더를 만든 뒤의 모든 단계는 try 안에서 하고, 끝나면(실패해도, finally) 이번 실행에서 만든 verify-… 폴더만 지운다.
 지우지 못하면 errors.cleanup에 남기고 실패 처리한다. 단계별 예외는 summary.json errors에 남긴다. 종료 코드 0 = 전부 통과.
 네트워크·AI 호출 없음.
@@ -154,9 +156,20 @@ def expected_datas(repo=REPO_ROOT):
     return out
 
 
+def runtime_path(windir=None):
+    """묶인 실행 PATH(D10): Windows System32·Windows 폴더만."""
+    windir = windir or bp.windows_dir()
+    return os.pathsep.join([os.path.join(windir, "System32"), windir])
+
+
+CHILD_DROP_PREFIXES = ("QT_", "OPENSSL_", "SSL_CERT_", "HAZOP_")  # 대문자로 비교
+
+
 def child_env(tmp):
     env = {k: v for k, v in os.environ.items()
-           if k not in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP") and not k.startswith("HAZOP_")}
+           if k not in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP") and k.upper() != "PATH"
+           and not k.upper().startswith(CHILD_DROP_PREFIXES)}
+    env["PATH"] = runtime_path()
     env["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")
     env["APPDATA"] = os.path.join(tmp, "appdata")
     env["TEMP"] = env["TMP"] = os.path.join(tmp, "t")
@@ -213,6 +226,7 @@ def steps(args, summary, run_root, out, repo_dirs):
                    has_check_exe=os.path.isfile(os.path.join(target, "HAZOP-check.exe")))
     summary["checks"]["licenses_problems"] = licenses_problems(target)
     env = child_env(tmp)
+    summary["child_path"] = env["PATH"]
     start = time.time()
     run_dir = None
     if not args.app_only:

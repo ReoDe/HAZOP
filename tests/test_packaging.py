@@ -18,6 +18,7 @@ import inspect
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -34,6 +35,7 @@ from hazop.kg import build as kg_build, inputs as kg_inputs, screen as kg_screen
 from hazop.register import registry  # noqa: E402
 from tests.test_analysis import GRAPH  # noqa: E402
 
+TLS_OK = ("qschannelbackend.dll", "qcertonlybackend.dll")
 ENV_KEYS = (paths.ENV_RESOURCE_ROOT, paths.ENV_WORK_ROOT, paths.ENV_STORE_ROOT)
 SAMPLE_DIR = os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플")
 KG_SAMPLE = os.path.join(REPO_ROOT, "데이터", "지식", "SNP-SAMPLE")
@@ -457,6 +459,273 @@ class BuildSpecTest(unittest.TestCase):
         touch("dist", "HAZOP-verify", "HAZOP-check.exe")
         self.assertEqual(self.bp.check_dist(tmp, True), [])
 
+    # ---- D10: PATH 통제, Qt OpenSSL 플러그인 제외, 바이너리 검사, 인터프리터 확인(빌드 없이)
+    VENV, BASE, WIN = r"C:\v\venv", r"C:\py\Python312", r"C:\Windows"
+    JDK, GIT = r"C:\Users\u\Java\jdk\bin", r"C:\Program Files\Git\mingw64\bin"
+
+    def _tmp(self):
+        tmp = tempfile.mkdtemp(prefix="hazop-d10-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        return tmp
+
+    def test_build_path_dirs_and_roots(self):
+        dirs = self.bp.build_path_dirs(exe=self.VENV + r"\Scripts\python.exe", base=self.BASE, windir=self.WIN)
+        self.assertEqual([os.path.normcase(d) for d in dirs],
+                         [os.path.normcase(d) for d in (self.VENV + r"\Scripts", self.BASE, self.BASE + r"\DLLs",
+                                                        self.WIN + r"\System32")])
+        # 기본값은 실행 중인 인터프리터(sys.executable·sys.base_prefix·sys.prefix)에서 고른다
+        dflt = self.bp.build_path_dirs()
+        self.assertEqual(dflt[:3], [os.path.dirname(os.path.abspath(sys.executable)), sys.base_prefix,
+                                    os.path.join(sys.base_prefix, "DLLs")])
+        self.assertEqual(os.path.normcase(dflt[3]), os.path.normcase(os.path.join(self.bp.windows_dir(), "System32")))
+        # 허용 루트는 venv·기반 CPython 둘뿐(Windows 폴더 제외)
+        self.assertEqual(self.bp.allowed_roots(self.VENV, self.BASE), [self.VENV, self.BASE])
+        self.assertEqual(self.bp.allowed_roots(), [sys.prefix, sys.base_prefix])
+
+    def test_build_replaces_path(self):
+        """PyInstaller 자식 프로세스의 PATH는 통제 목록뿐이다. Windows의 os.environ은 키를 대문자로 바꾸므로, 일반
+        dict로 바꿔 끼워 'Path'·'PATH'·'path' 표기가 모두 지워지는지 본다. 다른 환경변수는 그대로다."""
+        tmp = self._tmp()
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            seen.update(kw["env"])
+            return mock.Mock(returncode=0)
+        dirs = self.bp.build_path_dirs(base=self.BASE, windir=self.WIN)
+        fake_env = {"Path": self.JDK, "PATH": self.GIT, "path": self.JDK, "HAZOP_TEST_MARKER": "1"}
+        with mock.patch.object(self.bp.os, "environ", fake_env), \
+                mock.patch.object(self.bp.subprocess, "run", side_effect=fake_run):
+            self.assertEqual(self.bp.build(os.path.join(tmp, "HAZOP.spec"), tmp, dirs), 0)
+        self.assertEqual([k for k in seen if k.upper() == "PATH"], ["PATH"])
+        self.assertEqual(seen["PATH"].split(os.pathsep), dirs)
+        self.assertNotIn("jdk", seen["PATH"].lower())
+        self.assertNotIn("git", seen["PATH"].lower())
+        self.assertEqual(seen.get("HAZOP_TEST_MARKER"), "1")
+        with open(os.path.join(tmp, "build.log"), encoding="utf-8") as fh:
+            self.assertIn("PATH: " + seen["PATH"], fh.read())
+
+    def test_spec_drops_openssl_tls_plugin(self):
+        """spec이 Analysis마다 build_package.drop_binaries(사후 검사와 같은 TLS 규칙)를 binaries·datas에 적용하고,
+        이 함수는 Qt OpenSSL TLS 플러그인을 빼고 Schannel·cert-only 플러그인은 남긴다."""
+        import ast
+        for with_check in (False, True):
+            text = self.bp.spec_text(with_check=with_check)
+            ast.parse(text)
+            self.assertIn("from build_package import drop_binaries", text)
+            self.assertIn("a.binaries = drop_binaries(a.binaries)", text)
+            self.assertIn("a.datas = drop_binaries(a.datas)", text)
+            self.assertEqual("c.binaries = drop_binaries(c.binaries)" in text, with_check)
+            self.assertEqual("c.datas = drop_binaries(c.datas)" in text, with_check)
+        kept = self.bp.drop_binaries([(r"PySide6\plugins\tls\qopensslbackend.dll", "x", "BINARY"),
+                                      ("PySide6/plugins/tls/QOpenSSLBackend.DLL", "x", "BINARY"),
+                                      (r"PySide6\plugins\tls\qschannelbackend.dll", "x", "BINARY"),
+                                      (r"PySide6\plugins\tls\qcertonlybackend.dll", "x", "BINARY")])
+        self.assertEqual([k[0] for k in kept], [r"PySide6\plugins\tls\qschannelbackend.dll",
+                                                r"PySide6\plugins\tls\qcertonlybackend.dll"])
+
+    def test_tls_plugin_renamed_rejected(self):
+        """TLS 플러그인을 다른 이름으로 수집해도 걸린다: plugins/tls/ 아래 허용 목록 밖 이름, 출처가 plugins/tls/의 허용 목록
+        밖 파일, 출처 이름이 qopensslbackend.dll인 경우. spec 필터(drop_binaries)와 사후 검사(forbidden_entries·files) 모두."""
+        tls = self.VENV + r"\Lib\site-packages\PySide6\plugins\tls"
+        bad = [("PySide6/plugins/tls/renamed.dll", tls + r"\qopensslbackend.dll", "BINARY"),
+               ("PySide6/plugins/tls/renamed.dll", self.VENV + r"\other\foo.dll", "BINARY"),
+               ("PySide6/x.dll", tls + r"\qopensslbackend.dll", "BINARY"),
+               ("PySide6/y.dll", tls + r"\renamed.dll", "BINARY"),
+               ("PySide6/z.bin", self.VENV + r"\elsewhere\qopensslbackend.dll", "DATA")]
+        good = [("PySide6/x.dll", tls + r"\qschannelbackend.dll", "BINARY"),
+                (r"PySide6\plugins\tls\qcertonlybackend.dll", tls + r"\qcertonlybackend.dll", "BINARY")]
+        self.assertEqual(self.bp.drop_binaries(bad + good), good)
+        self.assertEqual(self.bp.forbidden_entries(bad + good), bad)
+        dist = os.path.join(self._tmp(), "HAZOP")
+        d = os.path.join(dist, "_internal", "PySide6", "plugins", "tls")
+        os.makedirs(d)
+        for f in TLS_OK + ("renamed.dll",):
+            open(os.path.join(d, f), "wb").close()
+        self.assertEqual(self.bp.forbidden_files(dist), ["_internal/PySide6/plugins/tls/renamed.dll"])
+
+    def test_alias_short_name(self):
+        """출처가 8.3 단축명이어도 긴 파일명으로 이름 거부 목록·TLS 규칙을 적용한다(볼륨에 8.3 이름이 없으면 건너뜀)."""
+        import ctypes
+        d = os.path.join(self._tmp(), "longfolder-name-for-alias")
+        os.makedirs(d)
+        out = {}
+        for f in ("libssl-3-x64.dll", "qopensslbackend.dll"):
+            full = os.path.join(d, f)
+            open(full, "wb").close()
+            buf = ctypes.create_unicode_buffer(32768)
+            n = ctypes.windll.kernel32.GetShortPathNameW(full, buf, 32768)
+            if not n or os.path.basename(buf.value).lower() == f:
+                self.skipTest("8.3 단축명을 만들 수 없는 볼륨")
+            out[f] = buf.value
+        self.assertTrue(self.bp.FORBIDDEN_NAME.match(os.path.basename(self.bp.long_real(out["libssl-3-x64.dll"]))))
+        toc = [("x.dll", out["libssl-3-x64.dll"], "BINARY"), ("y.dll", out["qopensslbackend.dll"], "BINARY")]
+        self.assertEqual(self.bp.forbidden_entries(toc), toc)
+        self.assertEqual(self.bp.drop_binaries(toc), toc[:1])  # spec 필터는 TLS 규칙만
+
+    def _junction(self, link, target):
+        r = subprocess.run(["cmd", "/c", "mklink", "/J", link, target], capture_output=True)
+        if r.returncode != 0 or not os.path.isdir(link):
+            self.skipTest("junction을 만들 수 없음")
+
+    def test_alias_junction(self):
+        """junction 별칭: venv 별칭 경로의 출처·sys.prefix는 허용하고, 별칭 너머 plugins/tls/의 다른 이름 파일은 걸린다."""
+        tmp = self._tmp()
+        real_venv = os.path.join(tmp, "real-venv")
+        tls = os.path.join(real_venv, "Lib", "site-packages", "PySide6", "plugins", "tls")
+        os.makedirs(tls)
+        open(os.path.join(tls, "renamed.dll"), "wb").close()
+        open(os.path.join(real_venv, "a.dll"), "wb").close()
+        alias = os.path.join(tmp, "alias-venv")
+        self._junction(alias, real_venv)
+        work = os.path.join(tmp, "build")
+        self.assertEqual(self.bp.foreign_binaries([("a.dll", os.path.join(alias, "a.dll"), "BINARY")],
+                                                  [real_venv], work), [])
+        self.assertEqual(self.bp.foreign_binaries([("a.dll", os.path.join(real_venv, "a.dll"), "BINARY")],
+                                                  [alias], work), [])
+        ok = dict(base=self.BASE, version=(3, 12, 10), impl="CPython")
+        self.assertEqual(self.bp.python_problems(prefix=alias, venv_dir=real_venv, **ok), [])
+        self.assertEqual(self.bp.python_problems(prefix=real_venv, venv_dir=alias, **ok), [])
+        tls_alias = os.path.join(tmp, "plain-folder")
+        self._junction(tls_alias, tls)
+        entry = ("PySide6/foo.dll", os.path.join(tls_alias, "renamed.dll"), "BINARY")
+        self.assertTrue(self.bp.tls_rejected(entry[0], entry[1]))
+        self.assertEqual(self.bp.drop_binaries([entry]), [])
+
+    def _toc(self, tmp):
+        """(작업 폴더, 통과 항목, 실패 항목)."""
+        work = os.path.join(tmp, "build")
+        good = [
+            ("HAZOP.exe", os.path.join(work, "HAZOP", "HAZOP.exe"), "EXECUTABLE"),
+            ("PySide6\\Qt6Core.dll", self.VENV + r"\Lib\site-packages\PySide6\Qt6Core.dll", "BINARY"),
+            ("PySide6\\Qt6Gui.dll", self.VENV.upper() + r"\LIB\site-packages\PySide6\Qt6Gui.dll", "BINARY"),  # 대소문자
+            ("libssl-3.dll", self.BASE + r"\DLLs\libssl-3.dll", "BINARY"),
+            ("_ssl.pyd", self.BASE + r"\DLLs\_ssl.pyd", "EXTENSION"),
+            ("PySide6\\plugins\\tls\\qschannelbackend.dll",
+             self.VENV + r"\Lib\site-packages\PySide6\plugins\tls\qschannelbackend.dll", "BINARY"),
+            ("licenses\\README.md", r"D:\snap\licenses\README.md", "DATA"),
+            ("PySide6\\lib\\a.so", "a.so.1", "SYMLINK"),  # 묶음 안 링크
+        ]
+        bad = [
+            ("x.dll", self.WIN + r"\System32\x.dll", "BINARY"),  # Windows 폴더는 허용 루트가 아니다
+            ("ucrtbase.dll", self.JDK + r"\ucrtbase.dll", "BINARY"),
+            ("libssl-3-x64.dll", self.GIT + r"\libssl-3-x64.dll", "BINARY"),
+            ("y.pyd", r"D:\elsewhere\y.pyd", "EXTENSION"),
+            ("z.dll", r"D:\elsewhere\z.dll", "DATA"),  # 종류가 DATA여도 이름이 바이너리
+            ("payload.bin", r"D:\outside\evil.dll", "DATA"),  # 이름을 바꾼 DATA: 출처 확장자로 검사
+            ("rel.dll", r"Lib\site-packages\rel.dll", "BINARY"),  # 상대 경로 출처는 거부
+            ("other.exe", r"D:\elsewhere\other.exe", "EXECUTABLE"),  # 만든 exe는 build 안이어야 한다
+            ("a.dll", self.VENV + r"-other\a.dll", "BINARY"),  # 접두어만 같은 형제 폴더
+            ("PySide6\\b.so", r"..\..\outside.so", "SYMLINK"),  # 묶음 밖을 가리키는 링크
+        ]
+        return work, good, bad
+
+    def test_foreign_binaries(self):
+        work, good, bad = self._toc(self._tmp())
+        roots = [self.VENV, self.BASE]
+        self.assertEqual(self.bp.foreign_binaries(good, roots, work), [])
+        self.assertEqual([b[0] for b in self.bp.foreign_binaries(good + bad, roots, work)], [b[0] for b in bad])
+
+    def test_forbidden_names(self):
+        """출처가 허용 루트 안이어도 이름 거부 목록·제외 플러그인이면 걸린다(묶음 안 이름 또는 출처 파일 이름)."""
+        toc = [("ucrtbase.dll", self.VENV + r"\ucrtbase.dll", "BINARY"),
+               ("API-MS-WIN-CRT-runtime-l1-1-0.dll", self.BASE + r"\api-ms-win-crt-runtime-l1-1-0.dll", "BINARY"),
+               ("libcrypto-3-x64.dll", self.BASE + r"\libcrypto-3-x64.dll", "BINARY"),
+               ("renamed.dll", self.BASE + r"\libssl-3-x64.dll", "BINARY"),
+               ("PySide6\\plugins\\tls\\qopensslbackend.dll",
+                self.VENV + r"\Lib\site-packages\PySide6\plugins\tls\qopensslbackend.dll", "BINARY"),
+               ("libssl-3.dll", self.BASE + r"\DLLs\libssl-3.dll", "BINARY"),
+               ("PySide6\\plugins\\tls\\qschannelbackend.dll", self.VENV + r"\q.dll", "BINARY")]
+        self.assertEqual([t[0] for t in self.bp.forbidden_entries(toc)], [t[0] for t in toc[:5]])
+        dist = os.path.join(self._tmp(), "HAZOP")
+        for rel in ("HAZOP.exe", "_internal/libssl-3.dll", "_internal/PySide6/plugins/tls/qschannelbackend.dll"):
+            os.makedirs(os.path.dirname(os.path.join(dist, rel)), exist_ok=True)
+            open(os.path.join(dist, rel), "wb").close()
+        self.assertEqual(self.bp.forbidden_files(dist), [])
+        for rel in ("_internal/ucrtbase.dll", "_internal/PySide6/plugins/tls/qopensslbackend.dll"):
+            os.makedirs(os.path.dirname(os.path.join(dist, rel)), exist_ok=True)
+            open(os.path.join(dist, rel), "wb").close()
+        self.assertEqual(self.bp.forbidden_files(dist),
+                         ["_internal/PySide6/plugins/tls/qopensslbackend.dll", "_internal/ucrtbase.dll"])
+
+    def _write_toc(self, out, text):
+        path = self.bp.collect_toc_path(out)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.makedirs(self.bp.dist_dir(out), exist_ok=True)
+        return path
+
+    def test_read_toc_rejects_malformed(self):
+        """빈 TOC·형식이 틀린 TOC는 ValueError, check_sources는 형식 오류를 문제로 돌려준다."""
+        out = self._tmp()
+        exe = ("HAZOP.exe", r"C:\b\HAZOP.exe", "EXECUTABLE")
+        for text in ("", "(((", "[]", "([],)", repr([exe]), repr(([exe], [])), repr(([exe, ("a", "b")],)),
+                     repr(([exe, ("a", 1, "BINARY")],)), repr(([("x.dll", r"C:\v\x.dll", "BINARY")],)),
+                     repr(([("HAZOP.exe", r"C:\b\HAZOP.exe", "BINARY")],))):
+            path = self._write_toc(out, text)
+            with self.assertRaises(ValueError, msg=text):
+                self.bp.read_toc(path)
+            self.assertTrue(any("형식 오류" in p for p in self.bp.check_sources(out, roots=[self.VENV])), text)
+        path = self._write_toc(out, repr(([exe],)))
+        self.assertEqual(self.bp.read_toc(path), [exe])
+
+    def test_check_sources(self):
+        out = self._tmp()
+        roots = [self.VENV, self.BASE]
+        self.assertTrue(any("TOC 없음" in p for p in self.bp.check_sources(out, roots=roots)))
+        _, good, bad = self._toc(out)
+        self._write_toc(out, repr((good,)))
+        self.assertEqual(self.bp.check_sources(out, roots=roots), [])
+        self._write_toc(out, repr((good + bad,)))
+        probs = self.bp.check_sources(out, roots=roots)
+        self.assertEqual(sum("허용 루트 밖" in p for p in probs), len(bad))
+        self.assertTrue(any("거부 목록" in p and "ucrtbase.dll" in p for p in probs))
+        # TOC가 깨끗해도 결과 폴더에 제외 플러그인이 있으면 실패
+        self._write_toc(out, repr((good,)))
+        p = os.path.join(self.bp.dist_dir(out), "_internal", "PySide6", "plugins", "tls", "qopensslbackend.dll")
+        os.makedirs(os.path.dirname(p))
+        open(p, "wb").close()
+        self.assertTrue(any("결과 폴더" in x for x in self.bp.check_sources(out, roots=roots)))
+        self.assertEqual(self.bp.check_sources(out, with_check=True, roots=roots), [])  # 검증용 폴더는 따로
+
+    def test_python_problems(self):
+        venv = r"C:\Users\u\.hazop\venv-py312"
+        ok = dict(prefix=venv, base=self.BASE, version=(3, 12, 10), impl="CPython", venv_dir=venv)
+        self.assertEqual(self.bp.python_problems(**ok), [])
+        self.assertEqual(self.bp.python_problems(**dict(ok, prefix=venv.upper())), [])  # 대소문자 무시
+        self.assertTrue(self.bp.python_problems(**dict(ok, prefix=r"C:\other\venv")))
+        self.assertTrue(self.bp.python_problems(**dict(ok, base=venv)))  # venv가 아님
+        self.assertTrue(self.bp.python_problems(**dict(ok, version=(3, 12, 14))))
+        self.assertTrue(self.bp.python_problems(**dict(ok, impl="PyPy")))
+
+    def test_main_exit_codes(self):
+        """출처 위반·거부 목록·TOC 형식 오류는 rc=3, 전용 venv가 아니면 빌드 전에 rc=2(--allow-other-python으로 우회)."""
+        out = self._tmp()
+        _, good, bad = self._toc(out)
+        toc_text = {}
+
+        def fake_build(spec, o):
+            self._write_toc(o, toc_text["v"])
+            return 0
+        built = mock.Mock(side_effect=fake_build)
+        common = [mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock()}),
+                  mock.patch.object(self.bp, "build", built),
+                  mock.patch.object(self.bp, "check_dist", return_value=[]),
+                  mock.patch.object(self.bp, "allowed_roots", return_value=[self.VENV, self.BASE])]
+        with common[0], common[1], common[2], common[3], \
+                mock.patch.object(self.bp, "python_problems", return_value=[]):
+            for text, rc in ((repr((good + bad,)), 3), (repr((good,)), 0), ("([],)", 3), ("", 3)):
+                toc_text["v"] = text
+                self.assertEqual(self.bp.main(["--out", out, "--build"]), rc, text)
+        built.reset_mock()
+        toc_text["v"] = repr((good,))
+        with common[0], common[1], common[2], common[3], \
+                mock.patch.object(self.bp, "python_problems", return_value=["전용 venv가 아님"]):
+            self.assertEqual(self.bp.main(["--out", out, "--build"]), 2)
+            built.assert_not_called()
+            self.assertEqual(self.bp.main(["--out", out, "--build", "--allow-other-python"]), 0)
+            built.assert_called_once()
+
 
 # ---------------------------------------------------------------- W6 제3자 고지(licenses/, D9)
 LICENSES_DIR = os.path.join(REPO_ROOT, "licenses")
@@ -648,6 +917,21 @@ class VerifierTest(unittest.TestCase):
         for bad in ("..", "a/b", r"a\b", ""):
             with self.assertRaises(ValueError):
                 self.vb.new_run_root(base, bad) if bad else self.vb.new_run_root(base, ".")
+
+    def test_child_env_path_is_system_only(self):
+        """묶인 실행 PATH는 Windows System32·Windows 폴더뿐이고 Qt·OpenSSL 설정 변수는 지운다(D10, 사용자 PATH 의존 제거)."""
+        extra = {"PATH": r"C:\jdk\bin;C:\Program Files\Git\mingw64\bin", "QT_PLUGIN_PATH": r"C:\x",
+                 "QT_OPENSSL": "1", "OPENSSL_CONF": r"C:\x\o.cnf", "OPENSSL_MODULES": r"C:\x",
+                 "SSL_CERT_FILE": r"C:\x\c.pem", "SSL_CERT_DIR": r"C:\x", "HAZOP_STORE_ROOT": r"C:\x",
+                 "W8_KEEP_MARKER": "1"}
+        with mock.patch.dict(os.environ, extra):
+            env = self.vb.child_env(self.tmp)
+        self.assertEqual([k for k in env if k.upper() == "PATH"], ["PATH"])
+        self.assertFalse([k for k in env if k.upper().startswith(("QT_", "OPENSSL_", "SSL_CERT_", "HAZOP_STORE"))])
+        self.assertEqual(env.get("W8_KEEP_MARKER"), "1")
+        win = self.vb.bp.windows_dir()
+        self.assertEqual(env["PATH"].split(os.pathsep), [os.path.join(win, "System32"), win])
+        self.assertEqual(self.vb.runtime_path(r"C:\W"), os.pathsep.join([r"C:\W\System32", r"C:\W"]))
 
     def test_tree_hashes_detect_content_change(self):
         p = os.path.join(self.tmp, "a", "f.txt")
