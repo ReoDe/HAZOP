@@ -9,3 +9,4 @@
 
 | ID | 일자 | 결정 | 근거 | 상태 |
 |---|---|---|---|---|
+| D1 | 2026-11-05 | W1 조사 권고안 채택(사용자 위임): 평가 기준 — 보이는 글자 기준 태그 비교, 화면 근거 없는 속성은 분모 제외, 객체 대응 글자→IoU≥0.5→kind 1:1, 주 지표 관계 F1(GED는 시간 제한 보조). PDF는 pdfplumber(MIT) 채택, PyMuPDF(AGPL)는 평가 전용. 래스터는 numpy·Pillow로 시작, 딥러닝 후속. 출력은 기존 extraction.json 계약 유지. 블라인드 시험에서 `.drawio.png`·`.drawio.svg` 제외. 설치(OpenCV·Tesseract·draw.io 데스크톱), 샘플 PDF·PNG 판 일치 확인, PDF·PNG 등록 허용(hazop/register 소유 범위)은 사용자 승인·결정 대기 | [W1 조사](evidence/w1-조사.md) §9 | 확정(설치·등록 범위는 대기) |
