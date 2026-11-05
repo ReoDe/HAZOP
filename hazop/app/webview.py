@@ -7,10 +7,15 @@
   LocalContentCanAccessRemoteUrls 끔, 디스크 캐시·쿠키 저장 없음(off-the-record 프로필).
 - 메시지는 JSON 문자열 하나: Python→웹 load/setView/highlight/clearHighlight/focus/setMode,
   웹→Python ready/nodeSelected/highlightResult.
+- ③ 지식그래프 페이지(hazop/kg/screen_template.html, window.hzKG)는 같은 주입 스크립트가 연결만 해 주고 메시지 처리는
+  페이지가 한다: Python→웹 loadKnowledge/selectNode/algorithmResult, 웹→Python ready/nodeSelected/linkSelected/
+  runAlgorithm(기획서/그래프활용.md §5.2, 인터페이스.md §2.3).
 """
 
 import json
+import logging
 import os
+import re
 
 from PySide6.QtCore import QFile, QIODevice, QObject, QUrl, Signal, Slot
 from PySide6.QtWebChannel import QWebChannel
@@ -21,6 +26,15 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from hazop.app import tokens
 
 ALLOWED_SCHEMES = frozenset({"file", "qrc", "data", "blob", "about"})
+MAX_MESSAGE_CHARS = 64 * 1024   # 웹 → Python 메시지 길이 상한(웹 내용은 신뢰하지 않음)
+MAX_ID_CHARS = 200              # 노드·관계·로컬 ID 길이 상한
+ID_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,%d}$" % MAX_ID_CHARS)  # 제어 문자 없는 1~200자
+LOG = logging.getLogger("hazop.app.webview")
+
+
+def clean_id(v):
+    """웹에서 온 ID: 문자열이고 길이·형식이 맞으면 그대로, 아니면 None. 있는 ID인지는 받는 화면이 확인한다."""
+    return v if isinstance(v, str) and ID_RE.fullmatch(v) else None
 
 
 def url_allowed(url):
@@ -79,6 +93,8 @@ class Bridge(QObject):
     nodeSelected = Signal(dict)    # {"local_id", "entity_id"}
     highlightResult = Signal(list)  # 그리지 못한 local_id 목록
     highlightResultFor = Signal(str, list)  # (request_id, 그리지 못한 local_id 목록) — 이전 요청 응답 구분용
+    linkSelected = Signal(str)     # ③ 지식그래프: 클릭한 관계 ID
+    algorithmRequested = Signal(dict)  # ③ 지식그래프 runAlgorithm: {"algorithm", "start"}
     ready = Signal()
 
     def __init__(self, parent=None):
@@ -100,10 +116,15 @@ class Bridge(QObject):
 
     @Slot(str)
     def fromWeb(self, text):  # noqa: N802 (웹에서 부르는 이름)
-        """웹 → Python. 형식이 맞지 않는 메시지는 버린다(웹 내용은 신뢰하지 않음)."""
+        """웹 → Python. 형식이 맞지 않는 메시지는 버린다(웹 내용은 신뢰하지 않음).
+        길이 상한(MAX_MESSAGE_CHARS) 초과·파싱 실패·너무 깊은 중첩(RecursionError)은 로그만 남기고 무시한다."""
+        if not isinstance(text, str) or len(text) > MAX_MESSAGE_CHARS:
+            LOG.warning("웹 메시지 무시: 문자열이 아니거나 길이 상한 %d자 초과", MAX_MESSAGE_CHARS)
+            return
         try:
             msg = json.loads(text)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError) as exc:
+            LOG.warning("웹 메시지 무시: JSON 파싱 실패(%s)", type(exc).__name__)
             return
         if not isinstance(msg, dict):
             return
@@ -115,15 +136,22 @@ class Bridge(QObject):
                 self.toWeb.emit(p)
             self.ready.emit()
         elif kind == "nodeSelected":
-            lid, eid = msg.get("local_id"), msg.get("entity_id")
-            self.nodeSelected.emit({"local_id": lid if isinstance(lid, str) else None,
-                                    "entity_id": eid if isinstance(eid, str) else None})
+            self.nodeSelected.emit({"local_id": clean_id(msg.get("local_id")),
+                                    "entity_id": clean_id(msg.get("entity_id"))})
         elif kind == "highlightResult":
             missing = msg.get("missing")
             missing = [m for m in missing if isinstance(m, str)] if isinstance(missing, list) else []
             rid = msg.get("request_id")
             self.highlightResult.emit(missing)
             self.highlightResultFor.emit(rid if isinstance(rid, str) else "", missing)
+        elif kind == "linkSelected":
+            lid = clean_id(msg.get("id"))
+            if lid:
+                self.linkSelected.emit(lid)
+        elif kind == "runAlgorithm":
+            alg, start = msg.get("algorithm"), clean_id(msg.get("start"))
+            if alg in ("A1",) and start:
+                self.algorithmRequested.emit({"algorithm": alg, "start": start})
 
 
 def _qwebchannel_js():
@@ -145,6 +173,12 @@ BRIDGE_JS = r"""
   new QWebChannel(qt.webChannelTransport, function (ch) {
     var b = ch.objects.bridge;
     function send(o) { b.fromWeb(JSON.stringify(o)); }
+    if (window.hzKG && window.hzKG.attach) {  /* ③ 지식그래프 페이지: 연결만 하고 처리는 페이지(hzKG)가 함 */
+      window.hzKG.attach(send);
+      b.toWeb.connect(function (text) { try { window.hzKG.handle(JSON.parse(text)); } catch (x) { /* 형식 오류 무시 */ } });
+      send({ type: "ready" });
+      return;
+    }
     var st = document.createElement("style"); st.textContent = CSS; document.head.appendChild(st);
     document.body.classList.add("hz-embedded");
     var vp = document.getElementById("viewport");
