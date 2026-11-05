@@ -179,7 +179,9 @@ class AnalysisScreen(QWidget):
         bar.addWidget(self.btn_analyze)
         self.chip_valid = Chip()
         bar.addWidget(self.chip_valid)
-        bar.addStretch(1)
+        # 결과 검증 통과의 단서는 줄이지 않고 칩 옆 라벨에서 줄바꿈해 늘 보인다(W3)
+        self.valid_note = plain_label("", "muted")
+        bar.addWidget(self.valid_note, 1)
         lay.addLayout(bar)
         self.counts = plain_label("", "muted")
         lay.addWidget(self.counts)
@@ -343,6 +345,7 @@ class AnalysisScreen(QWidget):
         self.empty.setText(note)
         self.body.setCurrentIndex(0)
         self.chip_valid.set_state("")
+        self.valid_note.setText("")
         self.counts.setText("")
         self.progress.setText("")
         for b in (self.banner_blocked, self.banner_mismatch):
@@ -415,8 +418,8 @@ class AnalysisScreen(QWidget):
         doc = ctx.doc
         v = doc["validation"]
         st = v.get("status")
-        self.chip_valid.set_state("결과 검증 %s%s" % (VALIDATION_LABELS.get(st, st), " — 형식·참조 검증 통과(보류 항목이 없다는 뜻이 아님)"
-                                                    if st == "passed" else ""), "passed" if st == "passed" else "blocked")
+        self.chip_valid.set_state("결과 검증 %s" % VALIDATION_LABELS.get(st, st), "passed" if st == "passed" else "blocked")
+        self.valid_note.setText("형식·참조 검증 통과(보류 항목이 없다는 뜻이 아님)" if st == "passed" else "")
         self.banner_blocked.set_messages(
             "결과 검증 차단 — 열람만 가능. ⑤ 확정 저장과 Excel 출력이 막힘" if st != "passed" else None, v.get("errors") or [])
         n = v.get("counts") or {}

@@ -1,24 +1,29 @@
-"""1366×768 배치 검사 (docs/2026-11-05-design-system 결정 D1, 작업 W2). 네트워크·AI 호출 없음.
+"""지원 화면 배치 검사 (docs/2026-11-05-design-system 결정 D1·D3·D4, 작업 W2·W3). 네트워크·AI 호출 없음.
 
 메인 창을 화면에 띄우지 않고(WA_DontShowOnScreen) 상태별·화면별로 창 minimumSizeHint 폭·높이를 잰다.
-- 상태: A 데이터 없음 → B 샘플 분석 실행 열림(tests/run_fixture 고정 응답) → C 검토 기록 있음(⑤ d12 저장 뒤 다시 열기).
+- 상태: A 데이터 없음 → B 샘플 분석 실행 열림(tests/run_fixture 고정 응답) → C 검토 기록 있음(⑤ d12 저장 뒤 다시 열기)
+  → D 지식그래프 실행·E 지식그래프 생략 실행(scripts/check_kg_context의 샘플 지식그래프·고정 응답, ⑤ d09 관련 지식 펼침).
   각 상태에서 화면 ①~⑤를 한 번씩 먼저 방문하고(⑤는 후보 선택) 다시 화면별로 잰다. 쌓인 화면(QStackedWidget)의
   최소 폭은 모든 화면의 최대값이고 ⑤는 첫 방문 때 문구를 채우므로, 이렇게 해야 최악값이 나온다.
 - 화면마다 최소 폭에 기여하는 가장 넓은 말단 위젯 상위 N개(클래스·objectName·문구 앞부분·폭)를 함께 기록한다.
+- 줄임표 라벨(widgets.ElidedLabel)은 1366×768로 맞춘 창에서 줄여 그려졌는지와 툴팁 = 전체 문구인지 기록한다.
 - 작업·저장 루트(HAZOP_WORK_ROOT·HAZOP_STORE_ROOT)와 설정 파일은 임시 폴더. 실제 자료저장소·출력/ 실행은 쓰지 않는다.
 
-판정(D1):
-- --platform windows, 배율 100%(DPR 1.0·96 DPI): 모든 측정에서 창 최소 폭 ≤ 1366, 높이 ≤ 768이면 통과(종료 코드 0),
-  넘으면 1. 화면 배율이 100%가 아니면 기준 환경이 아니므로 2.
-- --scale 1.25 등(QT_SCALE_FACTOR): 참고치. 물리 폭(논리 폭 × DPR)을 1366과 비교해 보여주기만 하고 종료 코드는 0.
+판정(D1·D3·D4안): 지원 화면 두 가지의 작업 영역(작업 표시줄·제목 표시줄 제외)과 창 최소 크기(논리 px)를 비교한다.
+- 100%: 1366×768 → 작업 영역 1366×689. 125%: 논리 1536×864 → 1536×785. (작업 표시줄 48, 제목 표시줄 31, 논리 px)
+- 창 최소 크기는 1366×768로 맞춘 창에서 재고, 폼 적합성·줄임표 라벨·가로 스크롤바는 창을 그 배율의 작업 영역 크기로
+  다시 맞춘 뒤에도 잰다(at_area).
+- --platform windows(배율 100%, DPR 1.0·96 DPI): 100% 기준으로 판정한 뒤 새 프로세스로 --scale 1.25 판정을 이어서 하고
+  나쁜 쪽 종료 코드를 돌려준다(--no-125로 생략). 통과 0. 실패 1 = 창 최소 크기 > 작업 영역, ⑤ 폼 내용 최소 폭 >
+  보이는 폭, 줄임표 툴팁 규칙 위반. 실제 DPR이 요청 배율과 다르거나 96 DPI가 아니면 판정하지 않고 2.
+- --scale 1.25(QT_SCALE_FACTOR로 125% 흉내): 125% 작업 영역으로 판정(0/1/2). 그 밖의 배율은 참고치(종료 코드 0).
 - --platform offscreen: 글꼴 대체로 폭이 과대하므로 판정하지 않는다. --baseline <이전 결과 JSON>을 주면 늘어난 값만
-  경고로 알린다(종료 코드 0). 기준 수치는 docs/2026-11-05-design-system/evidence/w2-1366기준.md에 기록한다.
+  경고로 알린다(종료 코드 0). 기준 수치는 docs/2026-11-05-design-system/evidence/w3-작업영역125.md에 기록한다.
 결과 JSON: 출력/디자인검사/design-<platform>[-s<배율>].json (출력/는 git 제외). --out으로 바꿀 수 있다.
 """
 
 import argparse
 import json
-import math
 import os
 import shutil
 import sys
@@ -30,11 +35,14 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-LIMIT_W, LIMIT_H = 1366, 768
+LIMIT_W, LIMIT_H = 1366, 768  # 측정 때 창을 맞추는 크기(100% 화면)
+TASKBAR_H, TITLEBAR_H = 48, 31  # 논리 px. Windows 11 기본 작업 표시줄, 제목 표시줄(SM_CYCAPTION 23 + 크기 틀 4 + 여백 4, 96 DPI)
+SCREENS = {1.0: (1366, 768), 1.25: (1536, 864)}  # 지원 화면(D3): 배율 → 논리 화면 크기
 REGION = "region-SNP-M-102-pzr"
 SCREEN_ORDER = ((0, "①"), (1, "②"), (4, "③"), (2, "④"), (3, "⑤"))  # main_window.screens 인덱스 → 화면 번호
 VISIT_CANDIDATES = ("deviation-p86-d09", "deviation-p86-d12")
 REVIEW_CANDIDATE = "deviation-p86-d12"
+REVIEW_KG_CANDIDATE = "deviation-p86-d09"
 TEXT_HEAD = 40
 OUT_DIR = os.path.join(REPO_ROOT, "출력", "디자인검사")
 
@@ -95,8 +103,9 @@ def widest_widgets(root, top=5):
     return rows[:top]
 
 
-def measure(win, label, top=5):
-    """현재 화면에서 창·화면·헤더·상태줄 최소 크기와 가장 넓은 위젯."""
+def measure(win, label, top=5, area=None):
+    """현재 화면에서 창·화면·헤더·상태줄 최소 크기와 가장 넓은 위젯(창 1366×768), 그리고 창을 작업 영역 area
+    (기본 100% 작업 영역)로 맞춘 뒤의 폼 적합성·줄임표 라벨·가로 스크롤바(at_area)."""
     from PySide6.QtWidgets import QWidget
     win.resize(LIMIT_W, LIMIT_H)
     pump(win, 0.1)
@@ -109,7 +118,42 @@ def measure(win, label, top=5):
             "screen_min_w": scr.minimumSizeHint().width(), "screen_min_h": scr.minimumSizeHint().height(),
             "header_min_w": header.minimumSizeHint().width() if header is not None else None,
             "status_min_w": win.statusBar().minimumSizeHint().width(),
-            "screen_widest": widest_widgets(scr, top), "window_widest": widest_widgets(win, top)}
+            "screen_widest": widest_widgets(scr, top), "window_widest": widest_widgets(win, top),
+            "elided": elided_labels(scr), "form": form_fit(scr), "at_area": measure_at(win, scr, area)}
+
+
+def measure_at(win, scr, area=None):
+    """창을 작업 영역(논리 px)으로 맞춘 뒤 실제 창 크기, ⑤ 폼 적합성, 줄임표 라벨, 보이는 가로 스크롤바."""
+    from PySide6.QtWidgets import QAbstractScrollArea
+    area = area or work_area(1.0)
+    win.resize(*area)
+    pump(win, 0.1)
+    hs = [{"class": type(a).__name__, "objectName": a.objectName()} for a in scr.findChildren(QAbstractScrollArea)
+          if a.isVisibleTo(scr) and a.horizontalScrollBar().isVisible()]
+    return {"area": list(area), "win_size": [win.width(), win.height()], "form": form_fit(scr),
+            "elided": elided_labels(scr), "hscroll": hs}
+
+
+def elided_labels(root):
+    """root 안의 보이는 줄임표 라벨 [{objectName, text, elided, tooltip_ok, min_w, full_w}].
+    tooltip_ok: 줄여 그렸으면 툴팁 = 전체 문구, 아니면 툴팁 없음(widgets.ElidedLabel 규칙)."""
+    from hazop.app.widgets import ElidedLabel
+    rows = []
+    for w in root.findChildren(ElidedLabel):
+        if w.elide is None or not w.isVisibleTo(root) or not w.text():
+            continue
+        rows.append({"objectName": w.objectName(), "text": widget_text(w), "elided": w.is_elided(),
+                     "tooltip_ok": w.toolTip() == (w.text() if w.is_elided() else ""), "min_w": w.minimumSizeHint().width(), "full_w": w.sizeHint().width()})
+    return rows
+
+
+def form_fit(scr):
+    """⑤ 결정 폼(스크롤 영역)의 내용 최소 폭과 보이는 폭. 폼이 없으면 None."""
+    from PySide6.QtWidgets import QScrollArea
+    sa = getattr(scr, "scroll", None)  # QWidget.scroll은 메서드라 형식으로 가린다
+    if not isinstance(sa, QScrollArea) or sa.widget() is None:
+        return None
+    return {"need": sa.widget().minimumSizeHint().width(), "have": sa.viewport().width()}
 
 
 # ---------------------------------------------------------------- 창과 상태 만들기
@@ -194,12 +238,12 @@ def visit_all(win, candidate=None):
                 pump(win, 0.1)
 
 
-def measure_all(win, state, top):
+def measure_all(win, state, top, area=None):
     rows = []
     for idx, label in SCREEN_ORDER:
         win.go(idx)
         pump(win, 0.1)
-        r = measure(win, label, top)
+        r = measure(win, label, top, area)
         r["state"] = state
         rows.append(r)
     return rows
@@ -229,13 +273,54 @@ def save_sample_review(win):
     return path
 
 
-def run_states(roots, top=5):
-    """상태 A·B·C 측정 결과 목록."""
+def install_kg_runs(roots):
+    """지식그래프 실행 2개(일반·항목 상한 4로 생략)를 임시 작업 루트에 만든다. {"kg"|"trunc": 실행 폴더}.
+    tests/test_kg_review.py와 같은 방법(scripts/check_kg_context의 샘플 그래프·지식·고정 응답)."""
+    from unittest import mock
+    sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+    import check_kg_context as kgc
+    from hazop.analysis import ai, run
+    from hazop.kg import build, context
+    graph = kgc.sample_graph()
+    gdir = os.path.join(roots.work, "출력", "그래프", "SNP-M-102")
+    os.makedirs(gdir, exist_ok=True)
+    graph_path = os.path.join(gdir, "graph.json")
+    with open(graph_path, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(graph, fh, ensure_ascii=False)
+    knowledge = kgc.sample_knowledge()
+    knowledge["kg_id"] = kgc.KG_ID
+    build.write_outputs(os.path.join(roots.work, "출력", "지식그래프", kgc.KG_ID), knowledge,
+                        build.build_kg(knowledge, [graph]))
+    region = kgc.load(kgc.REGION_FILE)
+    region["inputs"]["knowledge_graph"] = kgc.KG_REF
+    rp = os.path.join(roots.tmp, "region-kg.json")
+    with open(rp, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(region, fh, ensure_ascii=False)
+    out = {}
+    for name, limits in (("kg", {}), ("trunc", {"max_items": 4})):
+        with mock.patch.dict(context.LIMITS, limits):
+            ins = run.load_inputs(rp, roots.work, graph_path=graph_path, resource_root=REPO_ROOT)
+            _, out[name] = run.execute(ins, ai.FixedResponseClient(kgc.KG_RESPONSES),
+                                       os.path.join(roots.work, "출력", "분석"), run_id="analysis-kg-%s" % name,
+                                       now=kgc.now)
+    return out
+
+
+def expand_knowledge(win):
+    """⑤ 결정 폼의 '관련 지식 (참고)' 묶음을 모두 펼친다(가장 넓은 상태)."""
+    for f in win.screens[3].sforms.values():
+        if f.knowledge.toggle is not None and not f.knowledge.toggle.isChecked():
+            f.knowledge.toggle.click()
+    pump(win, 0.1)
+
+
+def run_states(roots, top=5, area=None):
+    """상태 A~E 측정 결과 목록."""
     rows = []
     win = new_window(roots)
     try:
         visit_all(win)
-        rows += measure_all(win, "A 데이터 없음", top)
+        rows += measure_all(win, "A 데이터 없음", top, area)
     finally:
         close_window(win)
     run_dir = roots.install_sample_run()
@@ -245,7 +330,7 @@ def run_states(roots, top=5):
         win.open_run(run_dir)
         pump(win, 0.3)
         visit_all(win)
-        rows += measure_all(win, "B 샘플 분석 실행 열림", top)
+        rows += measure_all(win, "B 샘플 분석 실행 열림", top, area)
         save_sample_review(win)
     finally:
         close_window(win)
@@ -254,9 +339,22 @@ def run_states(roots, top=5):
         win.open_run(run_dir)
         pump(win, 0.3)
         visit_all(win, REVIEW_CANDIDATE)
-        rows += measure_all(win, "C 검토 기록 있음", top)
+        rows += measure_all(win, "C 검토 기록 있음", top, area)
     finally:
         close_window(win)
+    kg_runs = install_kg_runs(roots)
+    for state, name in (("D 지식그래프 실행", "kg"), ("E 지식그래프 생략 실행", "trunc")):
+        win = new_window(roots)
+        try:
+            win.set_reviewer_name("검토자A")
+            win.open_run(kg_runs[name])
+            pump(win, 0.3)
+            visit_all(win, REVIEW_KG_CANDIDATE)
+            win.go(3)
+            expand_knowledge(win)
+            rows += measure_all(win, state, top, area)
+        finally:
+            close_window(win)
     return rows
 
 
@@ -271,13 +369,34 @@ def environment():
             "malgun_resolved": QFontInfo(f).family()}
 
 
-def over_limit(rows, dpr=1.0):
-    """기준(물리 폭 1366·높이 768)을 넘는 측정 [(state, screen, w, h)]. 물리 = ceil(논리 × DPR)."""
+def work_area(scale=1.0):
+    """지원 화면(D3)의 작업 영역(논리 px): 화면 높이에서 작업 표시줄·제목 표시줄을 뺀다. 지원 배율이 아니면 None."""
+    if scale not in SCREENS:
+        return None
+    w, h = SCREENS[scale]
+    return w, h - TASKBAR_H - TITLEBAR_H
+
+
+def over_limit(rows, limit):
+    """창 최소 크기(논리 px)가 limit(폭, 높이)를 넘는 측정 [(state, screen, w, h)]."""
+    return [(r["state"], r["screen"], r["win_min_w"], r["win_min_h"]) for r in rows
+            if r["win_min_w"] > limit[0] or r["win_min_h"] > limit[1]]
+
+
+def elide_problems(rows):
+    """줄임표 라벨 툴팁 규칙(줄였으면 전체 문구, 아니면 없음)을 어긴 측정 [(state, screen, objectName)]."""
+    return [(r["state"], r["screen"], e["objectName"]) for r in rows
+            for e in list(r.get("elided") or ()) + list((r.get("at_area") or {}).get("elided") or ())
+            if not e["tooltip_ok"]]
+
+
+def form_problems(rows):
+    """⑤ 폼 내용 최소 폭이 보이는 폭보다 큰 측정(가로 잘림) [(state, screen, 창 크기, need, have)]."""
     bad = []
     for r in rows:
-        w, h = math.ceil(r["win_min_w"] * dpr), math.ceil(r["win_min_h"] * dpr)
-        if w > LIMIT_W or h > LIMIT_H:
-            bad.append((r["state"], r["screen"], w, h))
+        for where, f in (("1366x768", r.get("form")), ("작업 영역", (r.get("at_area") or {}).get("form"))):
+            if f and f["need"] > f["have"]:
+                bad.append((r["state"], r["screen"], where, f["need"], f["have"]))
     return bad
 
 
@@ -296,11 +415,13 @@ def baseline_increases(rows, baseline_rows):
 
 
 def print_table(rows):
-    print("%-22s %-3s %6s %6s %6s %6s  %s" % ("상태", "화면", "창폭", "창높이", "화면폭", "헤더", "화면 안 가장 넓은 위젯"))
+    print("%-22s %-3s %6s %6s %6s %6s %4s  %s" % ("상태", "화면", "창폭", "창높이", "화면폭", "헤더", "줄임",
+                                                 "화면 안 가장 넓은 위젯"))
     for r in rows:
         w = r["screen_widest"][0] if r["screen_widest"] else None
-        print("%-22s %-3s %6d %6d %6d %6s  %s" % (
+        print("%-22s %-3s %6d %6d %6d %6s %4d  %s" % (
             r["state"], r["screen"], r["win_min_w"], r["win_min_h"], r["screen_min_w"], r["header_min_w"],
+            sum(e["elided"] for e in (r.get("at_area") or {}).get("elided") or ()),
             "%s#%s %d '%s'" % (w["class"], w["objectName"], w["width"], w["text"]) if w else "-"))
 
 
@@ -309,7 +430,8 @@ def main(argv=None):
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--platform", choices=("windows", "offscreen"), default="windows")
-    ap.add_argument("--scale", type=float, default=1.0, help="QT_SCALE_FACTOR(참고치, 1이 아니면 판정하지 않음)")
+    ap.add_argument("--scale", type=float, default=1.0, help="QT_SCALE_FACTOR(1.25는 125%% 판정, 그 밖은 참고치)")
+    ap.add_argument("--no-125", action="store_true", help="windows 100%% 판정 뒤 125%% 판정을 이어서 하지 않음")
     ap.add_argument("--top", type=int, default=5, help="가장 넓은 위젯 보고 개수")
     ap.add_argument("--baseline", help="offscreen 회귀 감시용 이전 결과 JSON(늘어나면 경고)")
     ap.add_argument("--out", help="결과 JSON 경로(기본 출력/디자인검사/design-<platform>[-s<배율>].json)")
@@ -326,19 +448,24 @@ def main(argv=None):
     env = environment()
     print("환경: %s" % env)
     with TempRoots() as roots:
-        rows = run_states(roots, args.top)
+        rows = run_states(roots, args.top, work_area(args.scale) or work_area(1.0))
     print_table(rows)
 
     rc, verdict = 0, ""
+    limit = work_area(args.scale)
     if args.platform == "windows":
-        bad = over_limit(rows, env["dpr"])
-        if args.scale != 1.0:
-            verdict = "참고치(배율 %s): 물리 기준 초과 %d건 %s" % (args.scale, len(bad), bad)
-        elif env["dpr"] != 1.0 or env["logical_dpi"] != 96:
-            rc, verdict = 2, "판정 불가: 기준 환경(100%·96 DPI)이 아님(DPR %s, DPI %s)" % (env["dpr"], env["logical_dpi"])
+        if env["logical_dpi"] != 96 or abs(env["dpr"] - args.scale) > 1e-3:
+            rc, verdict = 2, "판정 불가: 기준 환경(배율 %s·96 DPI)이 아님(DPR %s, DPI %s)" % (
+                args.scale, env["dpr"], env["logical_dpi"])
+        elif limit is None:
+            verdict = "참고치(배율 %s, 지원 배율 아님): 100%% 작업 영역 %s 초과 %d건" % (
+                args.scale, work_area(1.0), len(over_limit(rows, work_area(1.0))))
         else:
+            bad = over_limit(rows, limit) + elide_problems(rows) + form_problems(rows)
             rc = 1 if bad else 0
-            verdict = "통과(모든 측정 ≤ %d×%d)" % (LIMIT_W, LIMIT_H) if not bad else "실패 %d건: %s" % (len(bad), bad)
+            verdict = ("배율 %d%%: " % round(args.scale * 100)) + (
+                "통과(모든 측정 ≤ 작업 영역 %d×%d, ⑤ 폼 가로 잘림 없음, 줄임표 툴팁 규칙 지킴)" % limit
+                if not bad else "실패 %d건: %s" % (len(bad), bad))
     else:
         verdict = "offscreen: 판정 없음(회귀 감시용)"
         if args.baseline:
@@ -349,10 +476,19 @@ def main(argv=None):
         args.platform, "" if args.scale == 1.0 else "-s%d" % round(args.scale * 100)))
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump({"environment": env, "limit": [LIMIT_W, LIMIT_H], "verdict": verdict, "rc": rc, "rows": rows},
-                  fh, ensure_ascii=False, indent=2)
+        json.dump({"environment": env, "limit": list(limit) if limit else None, "verdict": verdict, "rc": rc,
+                   "rows": rows}, fh, ensure_ascii=False, indent=2)
     print("결과 JSON: %s" % out)
     print("결과: %s" % verdict)
+    if args.platform == "windows" and args.scale == 1.0 and not args.no_125 and rc != 2:
+        import subprocess
+        print("--- 125% 판정(새 프로세스, --scale 1.25) ---")
+        sys.stdout.flush()
+        cmd = [sys.executable, os.path.abspath(__file__), "--platform", "windows", "--scale", "1.25", "--top", str(args.top)]
+        if args.out:
+            cmd += ["--out", os.path.splitext(args.out)[0] + "-s125.json"]
+        rc = max(rc, subprocess.call(cmd))
+        print("종합 종료 코드: %d" % rc)
     return rc
 
 

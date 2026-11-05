@@ -305,6 +305,7 @@ class ScenarioForm(QGroupBox):
             desc.setPlaceholderText("확인 근거: 설명(독립성·용량·작동)")
             why = QLabel("적정성·독립성 미확인 — 근거 입력 전 선택 불가")
             why.setObjectName("muted")
+            why.setWordWrap(True)  # 좁은 폼에서 줄바꿈(가로 잘림 방지, W3)
             row = {"node_id": g.get("node_id"), "check": cb, "ref": ref, "desc": desc, "why": why}
             for w in (ref, desc):
                 w.textChanged.connect(lambda _=None, rr=row: self._credit_enable(rr))
@@ -728,12 +729,11 @@ class ReviewScreen(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(12, 8, 12, 8)
         bar = QHBoxLayout()
-        self.run_label = plain_label("", "muted")
-        self.run_label.setWordWrap(False)
+        self.run_label = plain_label("", "muted", elide=Qt.ElideMiddle, min_chars=20)  # 좁으면 가운데 줄임, 전체는 툴팁(W3)
         bar.addWidget(self.run_label)
-        self.chip_progress = Chip()
+        self.chip_progress = Chip(elide=Qt.ElideRight, min_chars=14)
         bar.addWidget(self.chip_progress)
-        self.chip_kg = Chip()  # 지식그래프 버전이 분석 당시와 같을 때 "지식 v-xxxx"(그래프활용 §6.4.3)
+        self.chip_kg = Chip(elide=Qt.ElideMiddle, min_chars=10)  # 지식그래프 버전이 분석 당시와 같을 때 "지식 v-xxxx"(그래프활용 §6.4.3)
         self.chip_kg.hide()
         bar.addWidget(self.chip_kg)
         bar.addStretch(1)
