@@ -25,6 +25,9 @@ const pages = fs.readdirSync(VIEWER).filter((f) => f.endsWith(".html") && f !== 
 for (const page of pages) {
   const name = page.slice(0, -5);
   const html = fs.readFileSync(path.join(VIEWER, page), "utf8");
+  // 도면 뷰어가 아닌 페이지(예: ③ kg-screen.html)는 건너뛴다. 도면 뷰어 표지(PATH-ENGINE 블록)가 있는데
+  // 내장 그래프가 없으면 아래 extract가 그대로 오류를 낸다.
+  if (!html.includes("PATH-ENGINE-BEGIN") && !/<script type="application\/json" id="graph">/.test(html)) continue;
   const graphJson = extract(html, /<script type="application\/json" id="graph">([\s\S]*?)<\/script>/, "내장 그래프");
   const G = JSON.parse(graphJson);
   if (!G) { problems.push(name + ": 내장 그래프가 null"); continue; }
