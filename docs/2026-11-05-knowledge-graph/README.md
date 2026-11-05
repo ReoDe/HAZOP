@@ -103,6 +103,8 @@ P&ID 그래프에 비P&ID 성분(문서·요건·설정치 등)을 통합하고,
 | D1 | ③ 지식그래프 탭 신설(2026-11-05 사용자 확정) | [decisions.md](decisions.md) | 기존 '화면 ①②④⑤' 결정 개정 |
 | D2 | 편집 허용 범위에 인터페이스·전체기획 추가(③ 화면 반영 한정) | [decisions.md](decisions.md) | D1 후속 |
 | D3 | `W3` 편집 범위에 `데이터/지식/`·`tests/fixtures/kg/` 추가 | [decisions.md](decisions.md) | — |
+| D4 | `W2` force-graph 반입·검사 파일 범위 | [decisions.md](decisions.md) | — |
+| D5 | `W2` 기준을 force-graph 단독으로 조정, 렌더러 force-graph 확정, V2 해석 | [decisions.md](decisions.md) | 그래프활용 D8 확정 |
 
 ## 7. 계약·승계 불변 규칙
 
@@ -118,7 +120,7 @@ P&ID 그래프에 비P&ID 성분(문서·요건·설정치 등)을 통합하고,
 ### 편집 허용 범위
 
 - 작업 폴더: `docs/2026-11-05-knowledge-graph/`
-- 추가 편집 허용 범위: `hazop/kg/`, `scripts/check_kg.py`, `tests/test_kg.py`, `기획서/그래프활용.md`, `기획서/인터페이스.md`·`기획서/전체기획.md`(D1에 따른 ③ 화면 반영만, `W6`, 결정 D2), `데이터/지식/`·`tests/fixtures/kg/`(`W3`, 결정 D3)
+- 추가 편집 허용 범위: `hazop/kg/`, `scripts/check_kg.py`, `tests/test_kg.py`, `기획서/그래프활용.md`, `기획서/인터페이스.md`·`기획서/전체기획.md`(D1에 따른 ③ 화면 반영만, `W6`, 결정 D2), `데이터/지식/`·`tests/fixtures/kg/`(`W3`, 결정 D3), `scripts/check_kg_renderer.py`·`tests/test_kg_renderer.py`(`W2`, 결정 D4)
 - 위 편집 허용 범위 밖의 경로는 참조 대상을 포함해 읽기 전용이다.
 - 문서를 추가하면 해당 폴더 README 인덱스와 이 문서의 문서 지도를 필요한 수준으로 갱신한다.
 
