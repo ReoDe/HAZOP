@@ -13,12 +13,12 @@ effort: low
 2. 저장소 루트에서 읽기 전용으로 실행한다:
 
 ```bash
-codex exec -m gpt-6.1-sol -s read-only --ephemeral -o "$TEMP/codex_review_<묶음>.txt" "$(cat "$TEMP/codex_prompt_<묶음>.txt")" > "$TEMP/codex_run_<묶음>.log" 2>&1
+codex exec -m gpt-6.1-sol -c model_reasoning_effort=medium -s read-only --ephemeral -o "$TEMP/codex_review_<묶음>.txt" "$(cat "$TEMP/codex_prompt_<묶음>.txt")" < /dev/null > "$TEMP/codex_run_<묶음>.log" 2>&1
 ```
 
-   - 모델은 `gpt-6.1-sol`(sol 6.1)을 쓴다.
-   - 한 번의 요청은 **최장 30분 안에 끝나는 범위**로 만든다. 대상이 크면 파일 묶음으로 나눠 여러 번 요청하고, 묶음마다 출력·로그 파일 이름을 다르게 한다. 프롬프트는 파일로 넘겨 셸 해석 문제를 피한다.
-   - 명령이 셸 제한 시간보다 오래 걸릴 수 있으므로 백그라운드로 실행하고, 30분이 지나도 결과 파일이 없으면 중단 사실과 로그 마지막 10줄을 보고한다.
+   - 모델은 `gpt-6.1-sol`(sol 6.1), 추론 강도는 중간(`model_reasoning_effort=medium`)으로 요청한다.
+   - 대상이 크면 파일 묶음으로 나눠 여러 번 요청하고, 묶음마다 출력·로그 파일 이름을 다르게 한다. 프롬프트는 파일로 넘겨 셸 해석 문제를 피한다.
+   - 명령이 셸 제한 시간보다 오래 걸릴 수 있으므로 백그라운드로 실행한다. 결과는 시간 제한 없이 충분히 기다리고, 임의로 중단하지 않는다. 실행이 오류로 끝나면 종료 코드와 로그 마지막 10줄을 보고한다.
 
 3. 결과 파일을 읽어 내용을 요약하지 말고 그대로 반환한다. 결과 파일의 수정 시각이 이번 실행 이후인지 확인한다. 실행이 실패하면 종료 코드와 오류 마지막 10줄을 반환한다.
 

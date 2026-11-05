@@ -7,6 +7,7 @@ flow chart/01-registration.md. 사용자 결정(2026-11-04): 저장 위치는 �
 저장 구조 (<저장 루트>/<project_id>/):
   registry.json                               자료 목록(자료 ID·해시·버전·상태)
   originals/<material_id>/<버전>/<원래 파일명>   보관 원본 (storage_ref는 이 프로젝트 폴더 기준 상대 경로)
+  originals/<material_id>/<버전>/derived/<SVG 파일명>   파생 자료(원본 옆 도면 SVG, 페이지별, 기획서/인터페이스.md §3.1)
   registrations/<material_id>/<버전>.json       등록 버전별 등록정보(① -> ② 전달 문서)
 
 발급 규칙(결정적):
@@ -23,6 +24,8 @@ import json
 import os
 
 from hazop import paths
+from hazop.extract import svg_align
+
 from . import fileinfo
 
 SCHEMA_VERSION = "0.1"
@@ -32,8 +35,10 @@ MATERIAL_TYPES = ("P&ID",)
 META_FIELDS = ("drawing_number", "design_revision", "title")
 META_INPUT_KEYS = set(META_FIELDS) | {"by", "reason"}
 DOCUMENT_ID = "document-001"  # drawio 파일 1개 = 문서 1개
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DEFAULT_STORE = os.environ.get("HAZOP_STORE_ROOT") or os.path.join(REPO_ROOT, "자료저장소")
+REPO_ROOT = paths.REPO_ROOT
+DEFAULT_STORE = paths.store_root()  # HAZOP_STORE_ROOT 또는 <작업 루트>/자료저장소 (가져올 때 결정)
+SVG_ROLE = "svg"
+NO_SVG_FIELD = "derived_files"
 
 
 def _now():
@@ -92,10 +97,12 @@ def _write_snapshot(store, record):
 
 
 def _display_path(path):
+    """작업 루트(기본 저장소 루트) 안이면 상대 경로, 밖이면 절대 경로."""
     absp = os.path.abspath(path)
+    root = paths.work_root()
     try:
-        if os.path.commonpath([REPO_ROOT, absp]) == REPO_ROOT:
-            return os.path.relpath(absp, REPO_ROOT).replace("\\", "/")
+        if os.path.commonpath([root, absp]) == root:
+            return os.path.relpath(absp, root).replace("\\", "/")
     except ValueError:  # 다른 드라이브
         pass
     return absp.replace("\\", "/")
@@ -142,7 +149,58 @@ def _unknowns(record):
             reason = ("사람 확정 전. 표제란 자동 후보 %r" % cand["value"] if cand
                       else "미확인(표제란 자동 후보 없음, 사람 입력 없음)")
             out.append({"field": field, "reason": reason})
+    pages = [pid for d in record.get("documents") or [] for pid in d.get("page_ids") or []]
+    covered = {pid for e in _svg_entries(record) for pid in e.get("page_ids") or []}
+    missing = [pid for pid in pages if pid not in covered]
+    if missing:
+        out.append({"field": NO_SVG_FIELD,
+                    "reason": "SVG 없음(페이지 %s): 원본 옆에서 이 페이지의 SVG를 찾지 못해 파생 자료로 등록하지 않음 — "
+                              "도면 오버레이를 만들 수 없음(그래프 보기만 가능)" % ", ".join(missing)})
     return out
+
+
+# ---------------------------------------------------------------- 파생 자료(SVG)
+def _read_svgs(source_path, pages):
+    """페이지마다 svg_align.find_svg(추출과 같은 함수)로 원본 옆 SVG를 찾아 읽는다.
+    반환: [{"path", "data", "page_ids"}] (같은 파일을 여러 페이지가 쓰면 한 항목). 읽기 실패는 OSError 그대로."""
+    found = {}
+    for i, p in enumerate(pages):
+        path = svg_align.find_svg(source_path, i, p.get("page_name"), len(pages))
+        if path is not None:
+            found.setdefault(path, []).append(p["page_id"])
+    out = []
+    for path, page_ids in found.items():
+        with open(path, "rb") as fh:
+            out.append({"path": path, "data": fh.read(), "page_ids": page_ids})
+    return out
+
+
+def _svg_entries(record):
+    return [d for d in record.get("derived_files") or [] if d.get("role") == SVG_ROLE]
+
+
+def _derived_entries(record, svgs):
+    out = []
+    for f in svgs:
+        name = os.path.basename(f["path"])
+        out.append({"role": SVG_ROLE, "page_ids": f["page_ids"],
+                    "storage_ref": "originals/%s/%d/derived/%s" % (record["material_id"],
+                                                                   record["registration_version"], name),
+                    "original_name": name, "sha256": sha256_of(f["data"]), "size_bytes": len(f["data"])})
+    return out
+
+
+def _svg_signature(entries):
+    return sorted((e["sha256"], tuple(e.get("page_ids") or [])) for e in entries)
+
+
+def _store_derived(store, record, svgs):
+    """파생 SVG를 저장하고 저장 후 해시를 확인한다. 문제 목록을 돌려준다."""
+    data = {os.path.basename(f["path"]): f["data"] for f in svgs}
+    problems = []
+    for e in _svg_entries(record):
+        problems += _store_bytes(store, e["storage_ref"], e["sha256"], data[e["original_name"]], NO_SVG_FIELD)
+    return problems
 
 
 def _apply_meta(record, meta, actor, at):
@@ -175,23 +233,29 @@ def _on_hold(project_id, material_type, source_path, problems):
 
 def _store_original(store, record, data):
     """원본 바이트를 storage_ref 위치에 새 파일로 저장하고 해시를 다시 확인한다. 문제 목록을 돌려준다."""
-    dest = store.abs_ref(record["storage_ref"])
+    return _store_bytes(store, record["storage_ref"], record["sha256"], data, None)
+
+
+def _store_bytes(store, ref, sha, data, field):
+    """바이트를 ref 위치에 새 파일로 저장하고 해시를 다시 확인한다. field가 None이면 원본(기존 문구·필드 그대로)."""
+    what = "원본" if field is None else "파생 자료"
+    dest = store.abs_ref(ref)
     if os.path.exists(dest):
         # 재시도: 이미 같은 내용이 있으면 그대로 쓰고, 다르면 덮어쓰지 않는다.
-        if _file_sha(dest) == record["sha256"]:
+        if _file_sha(dest) == sha:
             return []
         return [_problem("storage_conflict", "저장 위치에 다른 내용의 파일이 있어 덮어쓰지 않음: %s"
-                         % record["storage_ref"], "storage_ref")]
+                         % ref, field or "storage_ref")]
     try:
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         _write_new(dest, data)  # 실패 시 정리는 _write_new가 자기가 만든 파일에 한해 한다
     except OSError as exc:
-        return [_problem("storage_failed", "원본 저장 실패: %s" % exc, "storage_ref")]
+        return [_problem("storage_failed", "%s 저장 실패: %s" % (what, exc), field or "storage_ref")]
     stored = _file_sha(dest)
-    if stored != record["sha256"]:
+    if stored != sha:
         os.remove(dest)  # 방금 이 호출이 새로 만든(_write_new 성공) 잘못된 사본만 지워 재시도가 가능하게 한다
-        return [_problem("stored_hash_mismatch", "저장 후 해시 불일치(입력 %s, 저장본 %s)"
-                         % (record["sha256"][:12], stored[:12]), "sha256")]
+        return [_problem("stored_hash_mismatch", "%s저장 후 해시 불일치(입력 %s, 저장본 %s)"
+                         % ("" if field is None else what + " ", sha[:12], stored[:12]), field or "sha256")]
     return []
 
 
@@ -298,6 +362,13 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
         rec.update({"status": "failed", "format": info["format"], "size_bytes": info["size_bytes"],
                     "sha256": sha})
         return _result(rec, "failed")
+    try:
+        svgs = _read_svgs(source_path, info["pages"])
+    except OSError as exc:
+        rec = _on_hold(project_id, material_type, source_path,
+                       [_problem("unreadable", "원본 옆 SVG를 읽을 수 없음: %s" % exc, NO_SVG_FIELD)])["record"]
+        rec["status"] = "failed"
+        return _result(rec, "failed")
 
     # 대소문자를 구분하지 않는 파일시스템(Windows 등)에서 'Alpha'와 'alpha'가 같은 폴더로 섞이지 않게 막는다.
     others = sorted(d for d in (os.listdir(store_root) if os.path.isdir(store_root) else [])
@@ -318,7 +389,10 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
             # 저장 실패·중단 후 재시도: 같은 자료 ID·버전으로 다시 저장한다(중복 등록 없음).
             _apply_meta(record, metadata, actor, at)
             record["history"].append({"at": at, "by": actor, "action": "retry", "reason": None})
-            path = _finalize(store, index, record, _store_original(store, record, data), at, actor)
+            # 등록 완료 전 버전이므로 파생 SVG는 지금 원본 옆에 있는 것으로 다시 정한다.
+            record["derived_files"] = _derived_entries(record, svgs)
+            problems = _store_original(store, record, data) + _store_derived(store, record, svgs)
+            path = _finalize(store, index, record, problems, at, actor)
             return _result(record, record["status"], path, ["재시도: 기존 %s 버전 %d 사용"
                                                              % (record["material_id"], latest)])
         # 기존 등록 재사용: 보관 원본의 존재와 해시를 먼저 확인한다.
@@ -349,10 +423,26 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
             store.save_index(index)
             notes.append("보관 원본 무결성 재확인: 색인 상태를 registered로 복원")
         new = json.loads(json.dumps(record))
-        if not _apply_meta(new, metadata, actor, at):
+        old_svg = _svg_entries(record)
+        cur_svg = _derived_entries(record, svgs)
+        svg_changed = bool(cur_svg) and _svg_signature(cur_svg) != _svg_signature(old_svg)
+        if not cur_svg and old_svg:
+            notes.append("원본 옆에 SVG가 없음: 기존 등록 버전의 SVG(%s)를 그대로 씀"
+                         % ", ".join(e["storage_ref"] for e in old_svg))
+        if not _apply_meta(new, metadata, actor, at) and not svg_changed:
             return _result(record, "reused", path, notes)
-        # 식별정보가 바뀌면 새 등록 버전(같은 원본·해시 사용). 이전 버전 파일은 그대로 둔다.
+        # 식별정보나 원본 옆 SVG가 바뀌면 새 등록 버전(같은 원본·해시 사용). 이전 버전 파일은 그대로 둔다.
         new["registration_version"] = latest + 1
+        new.setdefault("derived_files", [])
+        if svg_changed:
+            svg_new = _derived_entries(new, svgs)
+            new["derived_files"] = [d for d in new["derived_files"] if d.get("role") != SVG_ROLE] + svg_new
+            new["history"].append({"at": at, "by": actor, "action": "register_derived", "field": NO_SVG_FIELD,
+                                   "before": [e["sha256"] for e in old_svg], "after": [e["sha256"] for e in svg_new],
+                                   "reason": "원본 옆 SVG가 %s — 새 등록 버전으로 기록"
+                                             % ("바뀜" if old_svg else "새로 생김")})
+            notes.append("원본 옆 SVG가 %s: 새 등록 버전 %d" % ("바뀜" if old_svg else "새로 생김",
+                                                               new["registration_version"]))
         new["validation"]["unknowns"] = _unknowns(new)
         path = store.snapshot_path(new["material_id"], new["registration_version"])
         if os.path.isfile(path):
@@ -369,7 +459,14 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
                 return _result(failed, "failed", path, notes)
             new = existing
             notes.append("중단된 버전 %d 저장을 이어서 완료" % new["registration_version"])
-        else:
+        derived_problems = _store_derived(store, new, svgs) if svg_changed else []
+        if derived_problems:
+            failed = json.loads(json.dumps(new))
+            failed["status"] = "failed"
+            failed["validation"]["status"] = "blocked"
+            failed["validation"]["blockers"] = derived_problems
+            return _result(failed, "failed", None, notes + [p["reason"] for p in derived_problems])
+        if not os.path.isfile(path):
             path = _write_snapshot(store, new)
         entry["versions"].append(new["registration_version"])
         store.save_index(index)
@@ -412,6 +509,7 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
         "history": [{"at": at, "by": actor, "action": "register", "reason": None}],
         "validation": {"status": "passed", "blockers": [], "unknowns": []},
     }
+    record["derived_files"] = _derived_entries(record, svgs)
     _apply_meta(record, metadata, actor, at)
     record["validation"]["unknowns"] = _unknowns(record)
     # 저장 전에 초안을 먼저 기록해 두면, 저장 중 중단되어도 재시도 시 같은 ID·버전을 찾는다.
@@ -419,7 +517,8 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
                                "status": "draft", "versions": [1]})
     _write_snapshot(store, record)
     store.save_index(index)
-    path = _finalize(store, index, record, _store_original(store, record, data), at, actor)
+    problems = _store_original(store, record, data) + _store_derived(store, record, svgs)
+    path = _finalize(store, index, record, problems, at, actor)
     return _result(record, record["status"], path)
 
 
@@ -436,3 +535,20 @@ def load_for_extraction(registration_path):
     if _file_sha(original) != record["sha256"]:
         raise ValueError("보관 원본 해시가 등록정보와 다름: %s" % record["storage_ref"])
     return record, original
+
+
+def registered_svgs(registration_path, record=None):
+    """등록정보의 파생 SVG(role svg) -> {페이지 ID: 절대 경로}. 없으면 빈 dict.
+    보관본이 없거나 해시가 다르면 ValueError(모든 항목을 확인)."""
+    record = record or _read_json(registration_path)
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(registration_path))))
+    out = {}
+    for entry in _svg_entries(record):
+        path = paths.safe_join(project_root, entry["storage_ref"])
+        if not os.path.isfile(path):
+            raise ValueError("등록된 파생 SVG 없음: %s" % entry["storage_ref"])
+        if _file_sha(path) != entry["sha256"]:
+            raise ValueError("등록된 파생 SVG 해시가 등록정보와 다름: %s" % entry["storage_ref"])
+        for pid in entry.get("page_ids") or []:
+            out[pid] = path
+    return out

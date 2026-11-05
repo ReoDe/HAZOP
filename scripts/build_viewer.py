@@ -12,11 +12,12 @@ sys.path.insert(0, REPO_ROOT)
 
 from hazop.console import safe_console  # noqa: E402
 
+from hazop import paths  # noqa: E402
 from hazop.viewer import build  # noqa: E402
 
-DEFAULT_EXTRACT = os.path.join(REPO_ROOT, "출력", "추출")
-DEFAULT_OUT = os.path.join(REPO_ROOT, "출력", "뷰어")
-DEFAULT_GRAPH = os.path.join(REPO_ROOT, "출력", "그래프")
+DEFAULT_EXTRACT = paths.output_root("추출")  # <작업 루트>/출력 (hazop/paths.py)
+DEFAULT_OUT = paths.output_root("뷰어")
+DEFAULT_GRAPH = paths.output_root("그래프")
 
 
 def main(argv=None):
@@ -27,11 +28,14 @@ def main(argv=None):
     ap.add_argument("--graph-root", default=DEFAULT_GRAPH, help="그래프 결과 루트('none'이면 그래프 없이 빌드)")
     args = ap.parse_args(argv)
     graph_root = None if args.graph_root == "none" else args.graph_root
-    entries = build.build_all(args.extract_root, args.out_root, REPO_ROOT, graph_root)
+    root = paths.work_root()
+    # SVG 허용 루트: 작업 루트(첫 번째, 상대 경로 기준), 자원 루트(샘플 원본), 저장 루트(등록 파생 SVG). 그 밖은 거부
+    entries = build.build_all(args.extract_root, args.out_root, root, graph_root,
+                              svg_roots=[paths.resource_root(), paths.store_root()])
     for e in entries:
-        print("%s -> %s (graph: %s)" % (e["drawing_number"], os.path.relpath(os.path.join(args.out_root, e["file"]), REPO_ROOT),
+        print("%s -> %s (graph: %s)" % (e["drawing_number"], paths.rel_or_abs(os.path.join(args.out_root, e["file"]), root),
                                         "있음" if e["graph"] else "없음"))
-    print("index -> %s" % os.path.relpath(os.path.join(args.out_root, "index.html"), REPO_ROOT))
+    print("index -> %s" % paths.rel_or_abs(os.path.join(args.out_root, "index.html"), root))
     return 0 if entries else 1
 
 

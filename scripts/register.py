@@ -4,7 +4,15 @@
   python scripts/register.py --project sample-project "참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio"
   python scripts/register.py --project sample-project 파일.drawio --drawing-number SNP-M-101 --revision 0 --by 홍길동 --reason "표제란 대조"
   python scripts/register.py --project sample-project 파일.drawio --metadata 식별정보.json
-저장 루트 기본값: 환경변수 HAZOP_STORE_ROOT 또는 저장소 안 '자료저장소/'. --store-root로 바꿀 수 있다.
+저장 루트 기본값: 환경변수 HAZOP_STORE_ROOT 또는 <작업 루트>/자료저장소/(작업 루트 기본은 저장소 루트, HAZOP_WORK_ROOT로
+변경). --store-root로 바꿀 수 있다.
+원본 옆 도면 SVG는 페이지마다 찾아 파생 자료로 originals/<자료 ID>/<버전>/derived/에 함께 보관하고 등록정보
+derived_files(page_ids·해시)에 기록한다. 찾는 규칙은 추출과 같은 함수(hazop.extract.svg_align.find_svg):
+  한 페이지 문서: 원본과 같은 이름 <파일명>.svg·<stem>.svg -> <NN>_<페이지 이름>.drawio.svg
+                  -> 폴더에 *.drawio.svg가 하나뿐이면 그것
+  여러 페이지 문서: <NN>_<페이지 이름>.drawio.svg만(하나뿐인 SVG를 여러 페이지에 붙이지 않음)
+  페이지 이름에 경로 구분자·'..'·드라이브 문자·제어문자가 있으면 그 규칙을 건너뛰고, 원본 폴더 밖 파일은 쓰지 않는다.
+SVG를 찾지 못한 페이지는 validation.unknowns에 'SVG 없음'을 남긴다.
 표제란 값은 자동 후보(auto_candidates)로만 기록한다. 도면 번호·개정번호·제목의 확정값은 사람이 인자나
 메타데이터 JSON({"drawing_number", "design_revision", "title", "by", "reason"})으로 입력해야 생긴다.
 종료 코드 0 = 등록 완료(재사용 포함), 1 = 실패·보류.

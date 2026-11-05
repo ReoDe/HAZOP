@@ -1,0 +1,341 @@
+"""내장 웹뷰 (기획서/인터페이스.md §2.2·§2.3).
+
+- 기존 뷰어 HTML(hazop/viewer/build.py 결과)을 파일 경로로 로드한다(setHtml 크기 제한 회피).
+- qwebchannel.js와 앱 연결 스크립트는 템플릿에 넣지 않고 QWebEngineScript로 실행 시점에 주입한다
+  (hazop/viewer/check.py의 TEMPLATE_SCRIPT_COUNT = 3 유지). bridge가 없으면 뷰어는 단독 모드로 동작한다.
+- 네트워크 차단: 요청 가로채기(file:·qrc:·data:·blob:·about: 외 차단), 탐색 제한(로드한 파일만),
+  LocalContentCanAccessRemoteUrls 끔, 디스크 캐시·쿠키 저장 없음(off-the-record 프로필).
+- 메시지는 JSON 문자열 하나: Python→웹 load/setView/highlight/clearHighlight/focus/setMode,
+  웹→Python ready/nodeSelected/highlightResult.
+"""
+
+import json
+import os
+
+from PySide6.QtCore import QFile, QIODevice, QObject, QUrl, Signal, Slot
+from PySide6.QtWebChannel import QWebChannel
+from PySide6.QtWebEngineCore import (QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings,
+                                     QWebEngineUrlRequestInterceptor)
+from PySide6.QtWebEngineWidgets import QWebEngineView
+
+from hazop.app import tokens
+
+ALLOWED_SCHEMES = frozenset({"file", "qrc", "data", "blob", "about"})
+
+
+def url_allowed(url):
+    """웹뷰 요청 허용 여부. 로컬 파일·내장 자원만 허용하고 http·https·ws·ftp 등 원격 요청은 막는다."""
+    return QUrl(url).scheme().lower() in ALLOWED_SCHEMES
+
+
+class LocalOnlyInterceptor(QWebEngineUrlRequestInterceptor):
+    """원격 URL 요청 차단. blocked에 막은 URL을 남긴다(검사용)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.blocked = []
+
+    def interceptRequest(self, info):  # noqa: N802 (Qt 이름)
+        url = info.requestUrl()
+        if not url_allowed(url):
+            self.blocked.append(url.toString())
+            info.block(True)
+
+
+_INTERCEPTOR = []
+
+
+def _shared_interceptor(profile):
+    if not _INTERCEPTOR:
+        _INTERCEPTOR.append(LocalOnlyInterceptor(profile))
+        profile.setUrlRequestInterceptor(_INTERCEPTOR[0])
+    return _INTERCEPTOR[0]
+
+
+class LocalPage(QWebEnginePage):
+    """탐색 제한: 앱이 로드한 파일 외의 이동(링크 클릭 등)을 막는다."""
+
+    def __init__(self, profile, parent=None):
+        super().__init__(profile, parent)
+        self.allowed_file = None
+        self.blocked_navigation = []
+
+    def acceptNavigationRequest(self, url, nav_type, is_main_frame):  # noqa: N802
+        """주 프레임은 앱이 로드한 파일(allowed_file)로만 이동할 수 있다(data:·blob:·다른 파일·원격 주소 금지).
+        하위 프레임은 로컬 스킴만 허용한다(뷰어는 하위 프레임을 쓰지 않음)."""
+        ok = url_allowed(url)
+        if is_main_frame:
+            ok = (url.scheme() == "file" and self.allowed_file is not None and
+                  os.path.normcase(os.path.abspath(url.toLocalFile())) == os.path.normcase(self.allowed_file))
+        if not ok:
+            self.blocked_navigation.append(url.toString())
+        return ok
+
+
+class Bridge(QObject):
+    """QWebChannel로 웹에 노출하는 객체(bridge). 메시지는 JSON 문자열 하나."""
+
+    toWeb = Signal(str)            # Python → 웹
+    nodeSelected = Signal(dict)    # {"local_id", "entity_id"}
+    highlightResult = Signal(list)  # 그리지 못한 local_id 목록
+    highlightResultFor = Signal(str, list)  # (request_id, 그리지 못한 local_id 목록) — 이전 요청 응답 구분용
+    ready = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.is_ready = False
+        self._pending = []
+
+    def send(self, msg_type, **payload):
+        payload["type"] = msg_type
+        text = json.dumps(payload, ensure_ascii=False)
+        if self.is_ready:
+            self.toWeb.emit(text)
+        else:
+            self._pending.append(text)
+
+    def reset(self):
+        self.is_ready = False
+        self._pending = []
+
+    @Slot(str)
+    def fromWeb(self, text):  # noqa: N802 (웹에서 부르는 이름)
+        """웹 → Python. 형식이 맞지 않는 메시지는 버린다(웹 내용은 신뢰하지 않음)."""
+        try:
+            msg = json.loads(text)
+        except (TypeError, ValueError):
+            return
+        if not isinstance(msg, dict):
+            return
+        kind = msg.get("type")
+        if kind == "ready":
+            self.is_ready = True
+            pending, self._pending = self._pending, []
+            for p in pending:
+                self.toWeb.emit(p)
+            self.ready.emit()
+        elif kind == "nodeSelected":
+            lid, eid = msg.get("local_id"), msg.get("entity_id")
+            self.nodeSelected.emit({"local_id": lid if isinstance(lid, str) else None,
+                                    "entity_id": eid if isinstance(eid, str) else None})
+        elif kind == "highlightResult":
+            missing = msg.get("missing")
+            missing = [m for m in missing if isinstance(m, str)] if isinstance(missing, list) else []
+            rid = msg.get("request_id")
+            self.highlightResult.emit(missing)
+            self.highlightResultFor.emit(rid if isinstance(rid, str) else "", missing)
+
+
+def _qwebchannel_js():
+    f = QFile(":/qtwebchannel/qwebchannel.js")
+    if not f.open(QIODevice.ReadOnly):
+        raise RuntimeError("qwebchannel.js 자원을 열 수 없음")
+    try:
+        return bytes(f.readAll()).decode("utf-8")
+    finally:
+        f.close()
+
+
+# 앱 연결 스크립트(템플릿 밖, 실행 시점 주입). DOM의 data-local-id만 쓰고 템플릿 내부 함수에 기대지 않는다.
+BRIDGE_JS = r"""
+(function () {
+  "use strict";
+  if (!window.qt || !window.qt.webChannelTransport || !window.QWebChannel) return;  // 단독 모드
+  var CSS = %(css)s;
+  new QWebChannel(qt.webChannelTransport, function (ch) {
+    var b = ch.objects.bridge;
+    function send(o) { b.fromWeb(JSON.stringify(o)); }
+    var st = document.createElement("style"); st.textContent = CSS; document.head.appendChild(st);
+    document.body.classList.add("hz-embedded");
+    var vp = document.getElementById("viewport");
+    var legend = document.createElement("div"); legend.className = "hz-legend";
+    legend.innerHTML = '<i style="border-color:var(--hl-cause)"></i>원인 설비(채움)<i style="border-color:var(--hl-path)"></i>경로(굵은 선)' +
+      '<i style="border-color:var(--hl-path);border-top-style:dashed"></i>추정 경로(실제 흐름 경로 아님)<i style="border-color:var(--hl-safeguard)"></i>보호수단(이중 테두리)';
+    if (vp) vp.appendChild(legend);
+    function onClick(e) {
+      var t = e.target.closest ? e.target.closest("[data-local-id]") : null;
+      if (t) send({ type: "nodeSelected", local_id: t.getAttribute("data-local-id"), entity_id: t.getAttribute("data-entity-id") });
+    }
+    ["overlay", "graphsvg"].forEach(function (id) { var s = document.getElementById(id); if (s) s.addEventListener("click", onClick, true); });
+    function els(lid) {
+      var out = [];
+      ["overlay", "graphsvg"].forEach(function (id) {
+        var s = document.getElementById(id); if (!s) return;
+        Array.prototype.forEach.call(s.querySelectorAll('[data-local-id="' + String(lid).replace(/["\\]/g, "") + '"]'), function (e) {
+          if (e.classList.contains("pipe-hit") || e.classList.contains("gedge-hit")) {
+            if (e.nextElementSibling) out.push(e.nextElementSibling);
+          } else out.push(e);
+        });
+      });
+      return out;
+    }
+    var marks = [];
+    function clear() {
+      Array.prototype.forEach.call(document.querySelectorAll(".hz-on"), function (e) {
+        e.classList.remove("hz-on", "hz-cause", "hz-path", "hz-sg", "hz-est");
+      });
+      marks.forEach(function (m) { if (m.parentNode) m.parentNode.removeChild(m); });
+      marks = [];
+      document.body.classList.remove("hz-dim");
+    }
+    var NS = "http://www.w3.org/2000/svg";
+    function ring(e, counted) {
+      var bb; try { bb = e.getBBox(); } catch (x) { return; }
+      var p = e.parentNode, pad = [6, 10], i;
+      for (i = 0; i < (counted ? 2 : 1); i++) {
+        var r = document.createElementNS(NS, "rect");
+        r.setAttribute("x", bb.x - pad[i]); r.setAttribute("y", bb.y - pad[i]);
+        r.setAttribute("width", bb.width + 2 * pad[i]); r.setAttribute("height", bb.height + 2 * pad[i]);
+        r.setAttribute("rx", 6); r.setAttribute("class", "hz-ring"); p.appendChild(r); marks.push(r);
+      }
+      var label = counted ? "보호수단" : "보호수단 · 미계수", w = label.length * 11 + 10;
+      var g = document.createElementNS(NS, "g"); g.setAttribute("class", "hz-badge" + (counted ? "" : " weak"));
+      var br = document.createElementNS(NS, "rect");
+      br.setAttribute("x", bb.x - 10); br.setAttribute("y", bb.y - 30); br.setAttribute("width", w); br.setAttribute("height", 16); br.setAttribute("rx", 8);
+      var tx = document.createElementNS(NS, "text"); tx.setAttribute("x", bb.x - 5); tx.setAttribute("y", bb.y - 18); tx.textContent = label;
+      g.appendChild(br); g.appendChild(tx); p.appendChild(g); marks.push(g);
+    }
+    function mark(ids, cls, extra) {
+      var missing = [];
+      (ids || []).forEach(function (lid) {
+        var found = els(lid);
+        if (!found.length) { missing.push(lid); return; }
+        found.forEach(function (e) { e.classList.add("hz-on", cls); if (extra) e.classList.add(extra); });
+      });
+      return missing;
+    }
+    function setView(name) {
+      var btn = document.getElementById(name === "graph" ? "tab-graph" : "tab-drawing");
+      if (btn && !btn.disabled) btn.click();
+    }
+    function focus(lid) {
+      var e = els(lid)[0];
+      if (e && e.scrollIntoView) e.scrollIntoView({ block: "center", inline: "center" });
+    }
+    function handle(m) {
+      if (!m || typeof m !== "object") return;
+      if (m.type === "setView") setView(m.view);
+      else if (m.type === "setDrawingEnabled") {
+        var dt = document.getElementById("tab-drawing");
+        if (dt) dt.disabled = !m.enabled;
+        if (!m.enabled) { var gt = document.getElementById("tab-graph"); if (gt && !gt.disabled) gt.click(); }
+      } else if (m.type === "setMode") {
+        document.body.classList.toggle("hz-hide-panel", !!m.hide_panel);
+        window.dispatchEvent(new Event("resize"));
+      } else if (m.type === "clearHighlight") clear();
+      else if (m.type === "focus") focus(m.local_id);
+      else if (m.type === "highlight") {
+        clear();
+        var missing = [];
+        document.body.classList.add("hz-dim");
+        missing = missing.concat(mark(m.path, "hz-path"));
+        missing = missing.concat(mark(m.estimated, "hz-path", "hz-est"));
+        missing = missing.concat(mark(m.cause, "hz-cause"));
+        (m.safeguards || []).forEach(function (s) {
+          var f = els(s.local_id);
+          if (!f.length) { missing.push(s.local_id); return; }
+          f.forEach(function (e) { e.classList.add("hz-on", "hz-sg"); if (e.closest && e.closest("#overlay") && e.classList.contains("sym")) ring(e, !!s.counted); });
+        });
+        send({ type: "highlightResult", request_id: m.request_id || null, missing: missing });
+      }
+    }
+    b.toWeb.connect(function (text) { try { handle(JSON.parse(text)); } catch (x) { /* 형식 오류 무시 */ } });
+    send({ type: "ready" });
+  });
+})();
+"""
+
+
+def bridge_js():
+    return BRIDGE_JS % {"css": json.dumps(tokens.web_css(), ensure_ascii=False)}
+
+
+class HazopWebView(QWebEngineView):
+    """②④⑤가 공유하는 웹뷰 하나. 화면을 바꿀 때 해당 화면의 캔버스 자리로 옮긴다."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Qt 6의 기본 프로필은 off-the-record(디스크 캐시·쿠키 저장 없음). 프로필을 직접 만들면 종료 시 페이지보다 먼저
+        # 지워져 프로세스가 비정상 종료되므로 기본 프로필을 쓰고, 요청 가로채기는 프로필에 한 번만 붙인다.
+        self.profile = QWebEngineProfile.defaultProfile()
+        self.profile.setHttpCacheType(QWebEngineProfile.MemoryHttpCache)
+        self.profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
+        self.interceptor = _shared_interceptor(self.profile)
+        page = LocalPage(self.profile, self)
+        self.setPage(page)
+        s = page.settings()
+        s.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, False)
+        s.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, False)  # 로드한 HTML은 다른 파일을 읽지 않음
+        s.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+        s.setAttribute(QWebEngineSettings.JavascriptCanOpenWindows, False)
+        s.setAttribute(QWebEngineSettings.PluginsEnabled, False)
+        s.setAttribute(QWebEngineSettings.DnsPrefetchEnabled, False)
+        s.setAttribute(QWebEngineSettings.AutoLoadIconsForPage, False)
+        self.bridge = Bridge(self)
+        self.channel = QWebChannel(self)
+        self.channel.registerObject("bridge", self.bridge)
+        page.setWebChannel(self.channel)
+        for name, source, point in (("hazop-qwebchannel", _qwebchannel_js(), QWebEngineScript.DocumentCreation),
+                                    ("hazop-bridge", bridge_js(), QWebEngineScript.DocumentReady)):
+            sc = QWebEngineScript()
+            sc.setName(name)
+            sc.setSourceCode(source)
+            sc.setInjectionPoint(point)
+            sc.setWorldId(QWebEngineScript.MainWorld)
+            sc.setRunsOnSubFrames(False)
+            page.scripts().insert(sc)
+        self.current_file = None
+        self.current_stamp = None
+        self.hide_panel = False
+        self.drawing_enabled = True
+
+    def dispose(self):
+        """종료 전에 페이지를 먼저 지운다(웹 렌더 프로세스가 남은 채 인터프리터가 끝나면 비정상 종료될 수 있음)."""
+        import shiboken6
+        page = self.page()
+        if page is not None and shiboken6.isValid(page):
+            page.setWebChannel(None)
+            shiboken6.delete(page)
+
+    @staticmethod
+    def _stamp(path):
+        st = os.stat(path)
+        return (st.st_mtime_ns, st.st_size)
+
+    def load_file(self, path):
+        """뷰어 HTML 파일 로드(Python → 웹 'load'). 같은 경로라도 파일이 다시 만들어졌으면(mtime·크기 변경) 다시 읽는다."""
+        path = os.path.abspath(path)
+        stamp = self._stamp(path)
+        if self.current_file == path and self.current_stamp == stamp:
+            return False
+        self.current_file = path
+        self.current_stamp = stamp
+        self.page().allowed_file = path
+        self.bridge.reset()
+        self.bridge.send("setMode", hide_panel=self.hide_panel)
+        # 도면 탭 잠금은 페이지를 새로 읽을 때마다(loadFinished 후 브리지 ready 시점) 다시 적용한다
+        self.bridge.send("setDrawingEnabled", enabled=self.drawing_enabled)
+        self.load(QUrl.fromLocalFile(path))
+        return True
+
+    def set_drawing_enabled(self, enabled):
+        """그래프 버전 불일치 등: 도면 탭을 끄고 그래프 탭만 쓰게 한다. 상태를 기억해 다시 읽을 때도 적용한다."""
+        self.drawing_enabled = bool(enabled)
+        self.bridge.send("setDrawingEnabled", enabled=self.drawing_enabled)
+
+    def set_mode(self, hide_panel):
+        """②: 웹 속성 패널 사용, ④⑤: 웹 패널 숨기고 Qt 상세 패널 사용(§2.2)."""
+        self.hide_panel = bool(hide_panel)
+        self.bridge.send("setMode", hide_panel=self.hide_panel)
+
+    def set_view(self, view):
+        self.bridge.send("setView", view=view)
+
+    def highlight(self, spec):
+        self.bridge.send("highlight", **spec)
+
+    def clear_highlight(self):
+        self.bridge.send("clearHighlight")
+
+    def focus(self, local_id):
+        self.bridge.send("focus", local_id=local_id)

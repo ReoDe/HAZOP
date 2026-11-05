@@ -63,9 +63,10 @@ class RegisterBase(unittest.TestCase):
             return json.load(fh)
 
     def stored_files(self):
+        """보관 원본 목록(파생 SVG derived/는 제외)."""
         root = os.path.join(self.store, "proj-1", "originals")
         return sorted(os.path.relpath(os.path.join(d, f), root).replace("\\", "/")
-                      for d, _, fs in os.walk(root) for f in fs)
+                      for d, _, fs in os.walk(root) for f in fs if os.path.basename(d) != "derived")
 
     def assert_failed_not_stored(self, result, check):
         rec = result["record"]
@@ -239,9 +240,10 @@ class MvpCaseTest(RegisterBase):
         self.assertEqual(rec["status"], "registered")
         self.assertEqual(rec["auto_candidates"], {})
         self.assertEqual((rec["drawing_number"], rec["design_revision"], rec["title"]), (None, None, None))
-        self.assertEqual(sorted(u["field"] for u in rec["validation"]["unknowns"]),
-                         ["design_revision", "drawing_number", "title"])
-        self.assertTrue(all("후보 없음" in u["reason"] for u in rec["validation"]["unknowns"]))
+        # 임시 폴더에 SVG 없이 둔 도면이므로 'SVG 없음'(derived_files)도 함께 남는다
+        meta_unknowns = [u for u in rec["validation"]["unknowns"] if u["field"] != registry.NO_SVG_FIELD]
+        self.assertEqual(sorted(u["field"] for u in meta_unknowns), ["design_revision", "drawing_number", "title"])
+        self.assertTrue(all("후보 없음" in u["reason"] for u in meta_unknowns))
         # 표제란이 있으면 자동 후보로만 기록, 확정값은 미확인
         rec = self.reg(SAMPLE_101)["record"]
         self.assertIsNone(rec["drawing_number"])
@@ -377,7 +379,7 @@ class ExtractionLinkTest(RegisterBase):
             ex = json.load(fh)
         self.assertEqual(ex["source"]["material_id"], r["record"]["material_id"])
         al = ex["coordinate_system"]["svg_alignment"]
-        self.assertEqual((al["status"], al["source"]), ("verified", "input_path_sibling, unregistered"))
+        self.assertEqual((al["status"], al["source"]), ("verified", "registered_derived"))  # 등록된 파생 SVG 우선
         graph, out_dir = build_graph.build_one(os.path.join(out_ex, name, "extraction.json"), out_g)
         with open(os.path.join(out_dir, "entity_mapping.json"), encoding="utf-8") as fh:
             m = json.load(fh)
@@ -446,7 +448,7 @@ class ReviewFixTest(RegisterBase):
         self.assertEqual(sorted(os.listdir(out_ex)), [mid + "-r1-p0", mid + "-r2-p0"])
         self.assertEqual(build_graph.main(["--extract-root", out_ex, "--out-root", out_g]), 0)
         self.assertEqual(sorted(os.listdir(out_g)), [mid + "-r1-p0", mid + "-r2-p0"])
-        entries = build_viewer.build.build_all(out_ex, out_v, REPO_ROOT, out_g)
+        entries = build_viewer.build.build_all(out_ex, out_v, REPO_ROOT, out_g, svg_roots=[self.store])
         self.assertEqual([e["file"] for e in entries], [mid + "-r1-p0.html", mid + "-r2-p0.html"])
         self.assertTrue(all(e["graph"] for e in entries))  # 뷰어가 같은 이름으로 그래프를 찾음
         for ver in (1, 2):
