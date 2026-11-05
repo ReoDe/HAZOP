@@ -4,7 +4,7 @@
 > 무엇이 어디 있고, 무엇이 기준이며, 어느 저장소·브랜치에서 작업하는지를 안내한다.
 > 지금 상태와 다음 행동은 [PROGRESS.md](PROGRESS.md)·[ROADMAP.md](ROADMAP.md)에서 확인한다.
 >
-> 문서 기준일: 2026-11-05 17:15
+> 문서 기준일: 2026-11-06 (D8 편집 범위 반영)
 
 ## 1. 30초 요약
 
@@ -112,7 +112,8 @@
 ### 편집 허용 범위
 
 - 작업 폴더: `docs/2026-11-05-design-system/`
-- 추가 편집 허용 범위: `디자인/`, `hazop/app/tokens.py`, `hazop/app/widgets.py`, `hazop/viewer/template.html`(색·CSS만), `hazop/app/screens/analysis.py`·`review.py`(배치·폭만, T1 W7과 순차), `기획서/인터페이스.md`(§4만), `scripts/check_design.py`, `tests/test_design.py`
+- 추가 편집 허용 범위: `디자인/`, `hazop/app/tokens.py`, `hazop/app/widgets.py`, `hazop/viewer/template.html`(색·CSS만), `hazop/app/screens/analysis.py`·`review.py`(배치·폭만, T1 W7과 순차. D8: 색 리터럴 치환 추가), `기획서/인터페이스.md`(§4만), `scripts/check_design.py`, `tests/test_design.py`
+- D8(`W6`): `hazop/app/render.py`·`hazop/app/data.py`·`hazop/app/screens/register.py`·`hazop/viewer/build.py`는 색 리터럴을 토큰 참조로 바꾸는 변경만 허용(로직 변경 금지)
 - 위 편집 허용 범위 밖의 경로는 참조 대상을 포함해 읽기 전용이다.
 - 문서를 추가하면 해당 폴더 README 인덱스와 이 문서의 문서 지도를 필요한 수준으로 갱신한다.
 

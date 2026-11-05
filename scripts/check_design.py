@@ -25,6 +25,8 @@
 어긋나면 플랫폼과 관계없이 종료 코드 1(판정 불가 2는 유지). --colors-only는 색 검사만 한다(Qt 불필요).
 명암비(W5, D7): 이어서 CONTRAST_PAIRS의 토큰 쌍을 WCAG 2.1 공식으로 계산해 글자 4.5:1·그래픽 3:1 미달이면 종료 코드 1.
 판정은 불투명 토큰 값 기준이다. 반투명 선·채움을 흰 도면에 합성한 대비는 보고만 한다(종료 코드 미반영).
+앱 코드 색 리터럴(W6, D8): hazop/app/**/*.py(tokens.py는 COLORS 블록만 제외, T1 파일 제외)·hazop/viewer/build.py에
+색 리터럴이 있으면(APP_COLOR_ALLOW 밖) 종료 코드 1. --colors-only에도 포함한다.
 """
 
 import argparse
@@ -665,7 +667,7 @@ def color_check():
 
 # ---------------------------------------------------------------- 명암비(W5, D7). WCAG 2.1 상대 휘도·대비 공식.
 # 기준: 글자 4.5:1(SC 1.4.3, 앱 글자는 11~15px라 모두 일반 글자), UI 구성요소·그래픽 3:1(SC 1.4.11).
-# (글자·그래픽 색, 바탕, 기준, 쓰는 곳). 이름은 tokens.COLORS 키, "#"로 시작하면 토큰 밖 리터럴(qss·widgets·템플릿 허용 목록).
+# (글자·그래픽 색, 바탕, 기준, 쓰는 곳). 이름은 tokens.COLORS 키, "#"로 시작하면 토큰 밖 리터럴(템플릿 허용 목록).
 TEXT, GRAPHIC = 4.5, 3.0
 _DATA = ("equipment", "valve", "instrument", "piping_element", "unclassified", "physical_connection",
          "signal_connection", "measurement_connection", "unresolved")
@@ -683,29 +685,31 @@ CONTRAST_PAIRS = [
     ("muted", "bg", TEXT, "표 머리·QLabel#muted·뷰어 .chip"),
     ("muted", "ui-weak", TEXT, "선택된 표 행의 제외 후보 회색 글자"),
     ("ui", "card", TEXT, "링크(뷰어 a.back·aside .link). 클릭 선택 테두리·입력 포커스·버튼 hover 테두리(3:1)도 이 쌍으로 충족"),
-    ("#ffffff", "ui", TEXT, "선택된 단계 탭·주 버튼 글자"),
+    ("on-fill", "ui", TEXT, "선택된 단계 탭·주 버튼 글자"),
     ("ui-ink", "ui-weak", TEXT, "ui 배지"),
-    ("ok", "#dcfce7", TEXT, "통과 칩"),
+    ("ok", "ok-bg", TEXT, "통과 칩"),
     ("err-ink", "err-bg", TEXT, "막힘 칩·오류 띠"),
     ("warn-ink", "warn-bg", TEXT, "경고 칩·경고 띠·뷰어 정렬 경고"),
     ("warn-ink", "card", TEXT, "③ 오른쪽 상세의 경고 글자"),
     ("err-ink", "card", TEXT, "③ 오른쪽 상세의 '근거 없음' 글자"),
     ("ai-ink", "ai-hatch-a", TEXT, "AI 배지"),
-    ("#ffffff", "human-line", TEXT, "사람 확정 배지"),
+    ("on-fill", "human-line", TEXT, "사람 확정 배지"),
     ("risk-ok-ink", "risk-ok-bg", TEXT, "위험도 확정 칩 1·2"),
     ("risk-cond-ink", "risk-cond-bg", TEXT, "위험도 확정 칩 3·4"),
     ("risk-deny-ink", "risk-deny-bg", TEXT, "위험도 확정 칩 5"),
-    ("risk-ok-ink", "#ffffff", TEXT, "위험도 제안 칩 1·2 글자(속 빈 칩)"),
-    ("risk-cond-line", "#ffffff", TEXT, "위험도 제안 칩 3·4 글자(속 빈 칩)"),
-    ("risk-deny-line", "#ffffff", TEXT, "위험도 제안 칩 5 글자(속 빈 칩)"),
-    ("#ffffff", "hl-safeguard", TEXT, "보호수단 배지"),
-    ("hl-safeguard", "#ffffff", TEXT, "보호수단 약한 배지 글자"),
+    ("risk-ok-ink", "card", TEXT, "위험도 제안 칩 1·2 글자(속 빈 칩)"),
+    ("risk-cond-line", "card", TEXT, "위험도 제안 칩 3·4 글자(속 빈 칩)"),
+    ("risk-deny-line", "card", TEXT, "위험도 제안 칩 5 글자(속 빈 칩)"),
+    ("on-fill", "hl-safeguard", TEXT, "보호수단 배지"),
+    ("hl-safeguard", "card", TEXT, "보호수단 약한 배지 글자"),
     ("#b45309", "card", TEXT, "뷰어 경고 글자(aside .warn·경로 질의 .bad, 허용 목록)"),
 ]
 # 도면·그래프 기호 색: 실제로 그리는 바탕은 ②·독립 뷰어·graph_only_html의 흰 도면(--card·#fff)과 ③ 캔버스(--kg-canvas).
 # --bg 쌍은 그리는 바탕이 아니라 D1이 계측 연결 조정을 확정한 근거(W1 §3.1)를 지키는 회귀 방지 쌍이다.
 CONTRAST_PAIRS += [(k, b, GRAPHIC, "노드·관계 색") for k in _DATA for b in ("card", "bg", "kg-canvas")]
-CONTRAST_PAIRS += [(k, b, GRAPHIC, "시나리오 강조") for k in ("hl-cause", "hl-path", "hl-safeguard") for b in ("card", "bg")]
+# hl-safeguard/card는 글자 쌍(보호수단 약한 배지 글자, 4.5:1)이 더 엄격해 그래픽 쌍을 따로 두지 않는다(W6에서 #ffffff → card)
+CONTRAST_PAIRS += [(k, b, GRAPHIC, "시나리오 강조") for k in ("hl-cause", "hl-path", "hl-safeguard") for b in ("card", "bg")
+                   if (k, b) != ("hl-safeguard", "card")]
 CONTRAST_PAIRS += [
     ("ui", "bg", GRAPHIC, "화면 바탕 위 버튼 hover·입력 포커스 테두리"),
     ("tag", "card", GRAPHIC, "태그 상자 테두리"),
@@ -815,11 +819,219 @@ def translucent_check():
     return rows
 
 
+# ---------------------------------------------------------------- 앱 코드 색 리터럴(W6, D8).
+# 앱 Python 코드는 색을 tokens.COLORS(정의 파일 hazop/app/tokens.py)에서 읽는다. 대상은 hazop/app/**/*.py(T1 파일 제외)와
+# hazop/viewer/build.py. 주석은 보지 않고(tokenize) 문자열 리터럴(문서 문자열·f-string 포함, 이어 붙인 문자열은 한 덩어리)만 본다.
+# QColor(...)·Qt 전역 색은 ast로 본다. 보고 행 번호는 원본 행이다. 회귀 방지용 휴리스틱이다(한계: evidence/w6-앱색.md §4).
+APP_COLOR_EXCLUDE_BLOCKS = {"hazop/app/tokens.py": ("COLORS",)}  # 토큰 정의 대입문(AST 노드의 시작·끝 위치만 뺀다)
+APP_COLOR_T1 = ("hazop/app/screens/knowledge.py", "hazop/app/webview.py")  # T1 소유(README §8) — 검사 대상에서 뺌
+# 판정할 수 없어 남기는 리터럴: (저장소 기준 경로, 리터럴, 최상위 문장 이름, CSS 선택자 또는 None) → 사유.
+# 최상위 문장 이름은 리터럴을 감싼 최상위 def·class 이름이나 대입 대상 이름이다. 같은 리터럴도 다른 자리면 실패한다.
+APP_COLOR_ALLOW = {
+    ("hazop/app/tokens.py", "rgba(37,99,235,.12)", "web_css", ".selected.sym, .selected.tagbox"):
+        "클릭 선택 채움(반투명 ui). 독립 뷰어와 같은 값이어야 한다(D5 ⑤)",
+    ("hazop/app/tokens.py", "rgba(220,38,38,.30)", "web_css", ".hz-cause.sym, .hz-cause.gnode, .hz-cause.tagbox"):
+        "원인 설비 강조 채움(반투명 hl-cause). 반투명 채움은 토큰 밖(D7)",
+    ("hazop/app/tokens.py", "rgba(0,0,0,.06)", "CARD_SHADOW", None): "CARD_SHADOW 정의(장식 그림자, 반투명 검정)",
+}
+_QT_GLOBAL_COLORS = frozenset("white black red darkRed green darkGreen blue darkBlue cyan darkCyan magenta darkMagenta "
+                              "yellow darkYellow gray darkGray lightGray".split())
+
+
+def app_color_files():
+    """검사 대상 파일(저장소 기준 '/' 경로) 목록. T1 소유 파일(APP_COLOR_T1)은 뺀다."""
+    out = []
+    for base, dirs, names in os.walk(os.path.join(REPO_ROOT, "hazop", "app")):
+        dirs[:] = sorted(d for d in dirs if d != "__pycache__")
+        for n in sorted(names):
+            if n.endswith(".py"):
+                rel = os.path.relpath(os.path.join(base, n), REPO_ROOT).replace(os.sep, "/")
+                if rel not in APP_COLOR_T1:
+                    out.append(rel)
+    return out + ["hazop/viewer/build.py"]
+
+
+def _string_groups(text, starts):
+    """문자열 리터럴 덩어리 [(원문, 글자별 원본 위치, 내용 시작 위치 집합)]. 주석은 빠진다. 줄바꿈·주석만 사이에 둔
+    이어 붙인 문자열은 한 덩어리로 합친다. f-string은 바깥 범위 전체를 한 문자열로 본다. starts: 행 시작 위치."""
+    import io
+    import re
+    import tokenize
+
+    def off(rc):
+        return starts[rc[0] - 1] + rc[1]
+    fs, fe = getattr(tokenize, "FSTRING_START", -1), getattr(tokenize, "FSTRING_END", -1)
+    groups, cur, depth, fstart = [], None, 0, 0
+    for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+        span = None
+        if tok.type == fs:
+            fstart = off(tok.start) if depth == 0 else fstart
+            depth += 1
+        elif tok.type == fe:
+            depth -= 1
+            span = (fstart, off(tok.end)) if depth == 0 else None
+        elif depth:
+            continue
+        elif tok.type == tokenize.STRING:
+            span = (off(tok.start), off(tok.end))
+        elif tok.type not in (tokenize.NL, tokenize.COMMENT):
+            cur = None
+        if span:
+            if cur is None:
+                cur = []
+                groups.append(cur)
+            cur.append(span)
+    out = []
+    for spans in groups:
+        g, offs, content = "", [], set()
+        for a, b in spans:
+            m = re.match(r"[A-Za-z]*(?:'''|\"\"\"|'|\")", text[a:b])
+            content.add(len(g) + (m.end() if m else 0))
+            g += text[a:b]
+            offs += list(range(a, b))
+        # CSS 주석(/* … */)은 같은 길이 공백으로 지운다(위치 유지)
+        g = re.sub(r"/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), g, flags=re.S)
+        out.append((g, offs, content))
+    return out
+
+
+def _hex_is_color(g, i, j):
+    """g[i:j]의 hex는 기본적으로 색이다. 예외: href=·src=·url( 뒤(참조), 앞 글자가 이름 글자(QFrame#이름 등 객체 이름
+    선택자), CSS 선택자 문맥(뒤에 ';'·'}' 없이 '{'가 옴 — `#abc {`, `#abc:not(.on) {`, `:not(#abc) {`)."""
+    import re
+    if i and (g[i - 1].isalnum() or g[i - 1] in "_-"):
+        return False
+    if re.search(r"(?i)(?:(?:href|src)\s*=\s*|url\(\s*)\\?[\"']?$", g[max(0, i - 40):i]):
+        return False
+    # '{' 앞에 따옴표가 있으면 선택자가 아니다(f-string·format 자리표시자 `'#fff'>{msg}` 등, 최종 재검토 총괄 수정).
+    # '>'는 CSS 자식 결합자(`#a > p {`)에도 쓰이므로 막지 않는다.
+    if re.search(r"(?i)url\(\s*[^)]*$", g[max(0, i - 200):i]):
+        return False  # url(…) 안의 '#'·이름은 파일 경로다(Codex 최종 재검토, 총괄 수정)
+    return not re.match(r"[^;{}'\"]*\{", g[j:])
+
+
+def _named_in(value, base):
+    """선언·속성 값 전체에서 CSS 이름 색 [(값 안 위치, 이름)]. --변수·%(이름)s 자리표시자·url(…)은 뺀다."""
+    import re
+    v = re.sub(r"--[\w-]+|%\([^)]*\)[a-z]?|(?i:url)\([^)]*\)", lambda m: " " * len(m.group(0)), value)
+    return [(base + m.start(), m.group(0)) for m in re.finditer(r"[A-Za-z]+", v)
+            if m.group(0).lower() in CSS_NAMED_COLORS]
+
+
+def _selector_at(g, i, content):
+    """g[i]를 감싼 CSS 규칙의 선택자(공백 정리). 규칙 밖이면 None."""
+    o, c = g.rfind("{", 0, i), g.rfind("}", 0, i)
+    if o < 0 or c > o:
+        return None
+    start = max([c] + [k - 1 for k in content if k <= o])
+    return " ".join(g[start + 1:o].split()) or None
+
+
+def app_color_findings(text, exclude_blocks=()):
+    """Python 소스의 색 리터럴 [(원본 행, 리터럴, 최상위 문장 이름, CSS 선택자)]. 리터럴은 따옴표·공백을 정리한 값.
+    - 문자열 안: hex 3·4·6·8자리(_hex_is_color 예외 밖), rgb/rgba/hsl/hsla()(여러 줄·이어 붙인 문자열 포함),
+      CSS 선언 값 전체(`border: 1px solid red`)와 색 속성 따옴표 값(`fill="white"`, JS `x.color = "red"`)의 CSS 이름 색.
+      CSS 주석 안과 url(…) 안은 보지 않는다.
+    - 코드: QColor("red")·QColor(1, 2, 3)(인자가 다음 줄이면 인자 행), Qt.white·Qt.GlobalColor.darkRed.
+    exclude_blocks: 이 이름에 대입하는 최상위 문장(AST 노드의 시작·끝 위치, 열 포함)은 뺀다(tokens.py의 COLORS)."""
+    import ast
+    import bisect
+    import re
+    starts = [0]
+    for ln in text.splitlines(keepends=True):
+        starts.append(starts[-1] + len(ln))
+    src_lines = text.splitlines(keepends=True)
+
+    def pos(lineno, col_bytes):  # ast 열은 UTF-8 바이트 기준
+        return starts[lineno - 1] + len(src_lines[lineno - 1].encode("utf-8")[:col_bytes].decode("utf-8", "ignore"))
+
+    def span(node):
+        return pos(node.lineno, node.col_offset), pos(node.end_lineno, node.end_col_offset)
+
+    tree = ast.parse(text)
+    skip, scopes = [], []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            name = node.name
+        else:
+            targets = node.targets if isinstance(node, ast.Assign) else [getattr(node, "target", None)]
+            names = [t.id for t in targets if isinstance(t, ast.Name)]
+            name = names[0] if names else None
+            if any(n in exclude_blocks for n in names):
+                skip.append(span(node))
+        scopes.append(span(node) + (name,))
+
+    def where(o):
+        return next((s[2] for s in scopes if s[0] <= o < s[1]), None)
+
+    found = []  # (원본 위치, 리터럴, 선택자)
+    decl = r"(?i)(?<![\w-])%s\s*:\s*([^;{}\"'<>\n]*)" % _COLOR_PROP
+    attr = r"(?i)(?<![\w-])%s\s*=\s*([\"'])([^\"'\n]*)\1" % _COLOR_PROP
+    url_re = r"(?i)url\((?:[^()]|\([^()]*\))*\)"  # url(…) 전체(괄호 한 단계 포함)를 같은 길이 공백으로 가린다
+    for g, offs, content in _string_groups(text, starts):
+        gm = re.sub(url_re, lambda m: re.sub(r"[^\n]", " ", m.group(0)), g)  # 위치·줄바꿈 보존
+        hits = [(m.start(), m.group(0)) for m in re.finditer(_HEX_RE, gm) if _hex_is_color(gm, m.start(), m.end())]
+        hits += [(m.start(), " ".join(re.sub(r"[\"']", "", m.group(0)).split()))
+                 for m in re.finditer(_FUNC_RE, gm, re.I)]
+        for m in re.finditer(decl, g):
+            hits += _named_in(m.group(1), m.start(1))
+        for m in re.finditer(attr, g):
+            hits += _named_in(m.group(2), m.start(2))
+        found += [(offs[i], lit, _selector_at(g, i, content)) for i, lit in hits]
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant) and (
+                getattr(node.func, "id", None) == "QColor" or getattr(node.func, "attr", None) == "QColor"):
+            a = node.args[0].value
+            if (isinstance(a, (int, float)) and not isinstance(a, bool)) or (
+                    isinstance(a, str) and a.lower() in CSS_NAMED_COLORS):
+                found.append((span(node.args[0])[0], "QColor(%r" % (a,), None))
+        elif isinstance(node, ast.Attribute) and node.attr in _QT_GLOBAL_COLORS:
+            v = node.value
+            if getattr(v, "id", None) == "Qt":
+                found.append((span(node)[0], "Qt." + node.attr, None))
+            elif getattr(v, "attr", None) == "GlobalColor" and getattr(v.value, "id", None) == "Qt":
+                found.append((span(node)[0], "Qt.GlobalColor." + node.attr, None))
+    return sorted((bisect.bisect_right(starts, o), lit, where(o), sel) for o, lit, sel in found
+                  if not any(a <= o < b for a, b in skip))
+
+
+def app_color_literals(text, exclude_blocks=()):
+    """app_color_findings의 [(원본 행, 리터럴)]."""
+    return [(n, lit) for n, lit, _w, _s in app_color_findings(text, exclude_blocks)]
+
+
+def app_color_problems(sources=None):
+    """앱 코드 색 리터럴 [문구]. sources = {경로: 소스 문자열}(기본은 app_color_files()를 읽음). 빈 목록이면 통과.
+    허용 목록은 (경로, 리터럴, 최상위 문장 이름, 선택자)가 모두 맞을 때만 적용한다."""
+    if sources is None:
+        sources = {}
+        for rel in app_color_files():
+            with open(os.path.join(REPO_ROOT, rel), encoding="utf-8") as fh:
+                sources[rel] = fh.read()
+    bad = []
+    for rel, text in sources.items():
+        for no, lit, scope, sel in app_color_findings(text, APP_COLOR_EXCLUDE_BLOCKS.get(rel, ())):
+            if (rel, lit, scope, sel) not in APP_COLOR_ALLOW:
+                bad.append("앱 코드 색 리터럴 %s:%d %s (hazop.app.tokens 참조로 바꿀 것)" % (rel, no, lit))
+    return bad
+
+
+def app_color_check():
+    """실제 앱 코드의 색 리터럴을 출력하고 문제 목록을 돌려준다."""
+    files = app_color_files()
+    bad = app_color_problems()
+    print("앱 코드 색 리터럴(%d개 파일, tokens.py는 COLORS 블록만 제외, T1 파일 %d개 제외): %s" % (
+        len(files), len(APP_COLOR_T1), ("없음(허용 목록 %d곳)" % len(APP_COLOR_ALLOW)) if not bad else "실패 %d건" % len(bad)))
+    for b in bad:
+        print("  - %s" % b)
+    return bad
+
+
 def merge_color_result(rc, verdict, color_bad):
-    """배치 판정(rc, verdict)에 색 검사(뷰어·앱 색 비교, 명암비) 결과를 합친다. 판정 불가(2)는 그대로 둔다."""
+    """배치 판정(rc, verdict)에 색 검사(뷰어·앱 색 비교, 명암비, 앱 코드 색 리터럴) 결과를 합친다. 판정 불가(2)는 그대로 둔다."""
     if color_bad:
         rc = rc if rc == 2 else 1
-        verdict += "; 색 검사 실패 %d건(뷰어·앱 색 비교·명암비): %s" % (len(color_bad), color_bad)
+        verdict += "; 색 검사 실패 %d건(뷰어·앱 색 비교·명암비·앱 코드 색 리터럴): %s" % (len(color_bad), color_bad)
     return rc, verdict
 
 
@@ -856,9 +1068,9 @@ def main(argv=None):
     ap.add_argument("--top", type=int, default=5, help="가장 넓은 위젯 보고 개수")
     ap.add_argument("--baseline", help="offscreen 회귀 감시용 이전 결과 JSON(늘어나면 경고)")
     ap.add_argument("--out", help="결과 JSON 경로(기본 출력/디자인검사/design-<platform>[-s<배율>].json)")
-    ap.add_argument("--colors-only", action="store_true", help="색 검사(뷰어·앱 색 비교·명암비)만 하고 배치 측정은 하지 않음")
+    ap.add_argument("--colors-only", action="store_true", help="색 검사(뷰어·앱 색 비교·명암비·앱 코드 색 리터럴)만 하고 배치 측정은 하지 않음")
     args = ap.parse_args(argv)
-    color_bad = color_check() + contrast_check()
+    color_bad = color_check() + contrast_check() + app_color_check()
     translucent_check()
     if args.colors_only:
         return 1 if color_bad else 0

@@ -175,9 +175,9 @@ def graph_only_html(graph, title, warning):
             continue
         seg = n.get("node_type") == "pipe_segment"
         fill = col["physical_connection"] if seg else col.get(n.get("category") or "unclassified", col["unclassified"])
-        parts.append('<circle class="gnode" cx="%g" cy="%g" r="%d" fill="%s" stroke="#fff" stroke-width="1.5" '
+        parts.append('<circle class="gnode" cx="%g" cy="%g" r="%d" fill="%s" stroke="%s" stroke-width="1.5" '
                      'data-local-id="%s" data-entity-id="%s"><title>%s</title></circle>'
-                     % (p[0], p[1], 4 if seg else 7, fill, _h.escape(str(n.get("local_id") or ""), True),
+                     % (p[0], p[1], 4 if seg else 7, fill, col["card"], _h.escape(str(n.get("local_id") or ""), True),
                         _h.escape(n["entity_id"], True), _h.escape("%s %s" % (n.get("tag") or "", n["entity_id"]))))
         if n.get("tag") and not seg:
             parts.append('<text x="%g" y="%g" font-size="10" fill="%s">%s</text>'
@@ -185,15 +185,15 @@ def graph_only_html(graph, title, warning):
     return """<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8"><title>%(title)s - 그래프 보기</title>
 <style>html,body{margin:0;height:100%%;font-family:"%(font)s",sans-serif;background:%(bg)s;color:%(ink)s}
-header{padding:8px 16px;background:#fff;border-bottom:1px solid %(line)s;font-size:13px}
+header{padding:8px 16px;background:%(card)s;border-bottom:1px solid %(line)s;font-size:13px}
 .warn{display:inline-block;margin-left:10px;padding:2px 10px;border-radius:999px;background:%(wbg)s;color:%(wink)s}
-#viewport{position:absolute;top:40px;left:0;right:0;bottom:0}#graphsvg{width:100%%;height:100%%;background:#fff}
+#viewport{position:absolute;top:40px;left:0;right:0;bottom:0}#graphsvg{width:100%%;height:100%%;background:%(card)s}
 .gnode{cursor:pointer}</style></head><body>
 <header>도면 <b>%(title)s</b> · 그래프 보기 <span class="warn">%(warning)s</span></header>
 <div id="viewport"><svg id="graphsvg" xmlns="http://www.w3.org/2000/svg" viewBox="%(vb)s" preserveAspectRatio="xMidYMid meet">
 %(body)s</svg></div></body></html>
 """ % {"title": _h.escape(str(title)), "warning": _h.escape(warning), "vb": vb, "body": "\n".join(parts),
-       "font": tokens.FONT_FAMILY, "bg": col["bg"], "ink": col["ink"], "line": col["line"], "wbg": col["warn-bg"],
+       "font": tokens.FONT_FAMILY, "bg": col["bg"], "card": col["card"], "ink": col["ink"], "line": col["line"], "wbg": col["warn-bg"],
        "wink": col["warn-ink"]}
 
 

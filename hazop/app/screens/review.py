@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComb
 from hazop import paths
 from hazop import review as rv
 from hazop.analysis.risk import FREQUENCIES, SEVERITIES
-from hazop.app import data, render, runctx
+from hazop.app import data, render, runctx, tokens
 from hazop.app.screens.analysis import fill_candidate_table, make_candidate_table
 from hazop.app.widgets import Banner, Chip, badge, empty_label, esc, kst_text, plain_label, risk_chip
 from hazop.export import SCOPES, ExportError, export_worksheet
@@ -418,7 +418,7 @@ class ScenarioForm(QGroupBox):
         try:
             calc = rv.compute_risk(self.screen.ctx.run["criteria"], sev, f)
         except rv.ReviewError as exc:
-            self.risk_out.setText("<span style='color:#b91c1c'>%s</span>" % esc(exc))
+            self.risk_out.setText("<span style='color:%s'>%s</span>" % (tokens.c("err-ink"), esc(exc)))
             return
         self.risk_out.setText("위험도 %s (잠김 — 〈표5〉 계산값, 직접 입력 불가) <small>%s · 출처 %s</small>" % (
             risk_chip(calc["risk"], calc["risk_name"], proposal=False), esc(calc["calculation"]),
@@ -805,7 +805,7 @@ class ReviewScreen(QWidget):
         rl.addWidget(self.scroll, 1)
         self.errors = QListWidget()
         self.errors.setMaximumHeight(110)
-        self.errors.setStyleSheet("QListWidget { color: #b91c1c; border-color: #fca5a5; }")
+        self.errors.setStyleSheet("QListWidget { color: %s; border-color: %s; }" % (tokens.c("err-ink"), tokens.c("err-line")))
         self.errors.hide()
         rl.addWidget(self.errors)
         srow = QHBoxLayout()

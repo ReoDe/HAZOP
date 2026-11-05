@@ -10,6 +10,7 @@ import os
 import re
 
 from hazop import paths
+from hazop.app import tokens
 from hazop.viewer import sanitize
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "template.html")
@@ -31,7 +32,7 @@ def prepare_svg(svg_text):
     - 루트는 width·height·viewBox·version만 남기고(내장 drawio 모델 content 속성 제거) 흰 배경을 지정한다.
     - XML로 읽을 수 없는 SVG는 거부한다(ValueError).
     """
-    return sanitize.sanitize_svg(svg_text, {"style": "background: #ffffff;"})
+    return sanitize.sanitize_svg(svg_text, {"style": "background: %s;" % tokens.c("card")})
 
 
 def _json_for_script(data):
@@ -79,18 +80,18 @@ def build_index(entries):
     return """<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8"><title>HAZOP 추출 뷰어 - 도면 목록</title>
 <style>
-body { margin: 0; padding: 32px; font-family: "Pretendard", "Malgun Gothic", sans-serif; background: #f4f5f7; color: #111827; }
-h1 { font-size: 22px; } p { color: #6b7280; font-size: 13px; }
-table { border-collapse: collapse; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
-th, td { padding: 10px 16px; text-align: left; font-size: 14px; border-bottom: 1px solid #e3e5e9; }
-th { color: #6b7280; font-weight: 600; font-size: 12px; } a { color: #2563eb; font-weight: 700; text-decoration: none; }
+body { margin: 0; padding: 32px; font-family: "Pretendard", "Malgun Gothic", sans-serif; background: %(bg)s; color: %(ink)s; }
+h1 { font-size: 22px; } p { color: %(muted)s; font-size: 13px; }
+table { border-collapse: collapse; background: %(card)s; border-radius: 16px; overflow: hidden; box-shadow: %(shadow)s; }
+th, td { padding: 10px 16px; text-align: left; font-size: 14px; border-bottom: 1px solid %(line)s; }
+th { color: %(muted)s; font-weight: 600; font-size: 12px; } a { color: %(ui)s; font-weight: 700; text-decoration: none; }
 </style></head><body>
 <h1>HAZOP 추출 뷰어 · 도면 목록</h1>
 <p>로컬 정적 파일입니다. 외부로 자료를 보내지 않습니다.</p>
 <table><tr><th>도면 번호</th><th>제목</th><th>노드</th><th>관계</th><th>미해결 커넥터</th><th>미확인</th><th>구조 검증</th><th>SVG 정렬</th><th>그래프 노드 / 엣지</th></tr>
-%s
+%(rows)s
 </table></body></html>
-""" % "\n".join(rows)
+""" % dict(tokens.COLORS, shadow=tokens.CARD_SHADOW, rows="\n".join(rows))
 
 
 def load_graph(graph_root, name):

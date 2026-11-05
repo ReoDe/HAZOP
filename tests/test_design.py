@@ -411,6 +411,191 @@ class ViewerColorTest(unittest.TestCase):
         self.assertIsNone(cd._translucent_rgb("rgb(37, 99, 235)"))
 
 
+class AppColorTest(unittest.TestCase):
+    """앱 코드 색 리터럴 0개 검사(W6, D8). 대상은 hazop/app/**/*.py(T1 파일 제외, tokens.py는 COLORS 블록만 제외)와
+    hazop/viewer/build.py. 주석은 보지 않고 문자열 리터럴과 QColor·Qt 전역 색만 본다."""
+
+    def lits(self, *lines, exclude=()):
+        return cd.app_color_literals("\n".join(lines) + "\n", exclude)
+
+    def test_files(self):
+        files = cd.app_color_files()
+        for f in ("hazop/viewer/build.py", "hazop/app/tokens.py", "hazop/app/widgets.py", "hazop/app/render.py",
+                  "hazop/app/data.py", "hazop/app/screens/register.py", "hazop/app/screens/analysis.py",
+                  "hazop/app/screens/review.py"):
+            self.assertIn(f, files)
+        for f in cd.APP_COLOR_T1:
+            self.assertNotIn(f, files)
+        self.assertEqual(set(cd.APP_COLOR_T1), {"hazop/app/screens/knowledge.py", "hazop/app/webview.py"})
+        self.assertFalse(any("__pycache__" in f or not f.endswith(".py") for f in files), files)
+
+    def test_real_code_has_none(self):
+        self.assertEqual(cd.app_color_problems(), [])
+
+    def test_allow_list_used_and_reasoned(self):
+        """허용 목록은 tokens.py 반투명 rgba 3개뿐이고, 모두 사유가 있으며 실제로 쓰인다."""
+        self.assertEqual({k[0] for k in cd.APP_COLOR_ALLOW}, {"hazop/app/tokens.py"})
+        self.assertTrue(all(v for v in cd.APP_COLOR_ALLOW.values()))
+        from hazop.app import tokens
+        with open(tokens.__file__, encoding="utf-8") as fh:
+            found = {lit for _n, lit in cd.app_color_literals(fh.read(), ("COLORS",))}
+        self.assertEqual(found, {k[1] for k in cd.APP_COLOR_ALLOW})
+
+    def test_tokens_colors_block_only_excluded(self):
+        src = ("COLORS = {\n    'card': '#ffffff',\n    'ui': '#2563eb',\n}\n"
+               "def qss():\n    return 'QFrame { background: #ffffff; }'\n")
+        self.assertEqual(cd.app_color_literals(src, ("COLORS",)), [(6, "#ffffff")])
+        self.assertEqual(len(cd.app_color_literals(src)), 3)
+        # 같은 행에 이어 쓴 다른 대입은 제외 범위 밖(AST 노드 위치·열 기준)
+        self.assertEqual(cd.app_color_literals("COLORS = {'a': '#fff'}; OTHER = '#000'\n", ("COLORS",)), [(1, "#000")])
+        self.assertEqual(len(cd.app_color_problems({"hazop/app/tokens.py": "COLORS = {'a': '#fff'}; OTHER = '#000'\n"})), 1)
+
+    def test_literals_found(self):
+        got = self.lits(
+            "a = \"<span style='color:#92400e'>x</span>\"",  # 1 hex 6
+            "b = 'background:#fff; border: 1px solid #ABCDEF80'",  # 2 hex 3·8
+            "c = 'box-shadow: 0 2px 10px rgba(0,0,0,.06)'",  # 3 rgba
+            "d = 'color: HSL(0 0% 50%)'",  # 4 대문자 함수
+            "e = '<circle fill=\"white\" stroke=\"transparent\"/>'",  # 5 속성 값 이름 색(transparent는 아님)
+            "f = 'QListWidget { color: red; border-color: none; }'",  # 6
+            "g = QColor('navy'), QColor(1, 2, 3), QColor(tokens.c('muted'))",  # 7 두 개
+            "h = Qt.white if x else Qt.GlobalColor.darkRed",  # 8 두 개
+            "i = ('#15803d' if ok else '#b91c1c')",  # 9 문자열 전체가 색
+            "j = 'el.style.color = \"red\";'",  # 10 JS 대입(따옴표 값)
+        )
+        self.assertEqual(got, [(1, "#92400e"), (2, "#ABCDEF80"), (2, "#fff"), (3, "rgba(0,0,0,.06)"),
+                               (4, "HSL(0 0% 50%)"), (5, "white"), (6, "red"), (7, "QColor('navy'"), (7, "QColor(1"),
+                               (8, "Qt.GlobalColor.darkRed"), (8, "Qt.white"), (9, "#15803d"), (9, "#b91c1c"),
+                               (10, "red")])
+
+    def test_whole_declaration_value(self):
+        """선언 값의 첫 단어만이 아니라 값 전체에서 이름 색을 찾는다."""
+        self.assertEqual(self.lits("a = 'border: 1px solid red; outline: 2px dashed Navy'",
+                                   "b = 'th { border-bottom: 1px solid %(line)s; color: var(--red, %(ink)s) }'"),
+                         [(1, "Navy"), (1, "red")])
+
+    def test_multiline(self):
+        """여러 줄 문자열·이어 붙인 문자열·여러 줄 호출도 통째로 보고, 원본 행을 보고한다."""
+        got = self.lits(
+            "a = '''x {",  # 1
+            "  fill: rgba(1,",  # 2
+            "    2, 3, .5);",  # 3
+            "  color: #abcdef; }'''",  # 4
+            "b = QColor(",  # 5
+            "    \"red\")",  # 6
+            "c = ('box-shadow: 0 0 1px rgb(1, '",  # 7
+            "     '2, 3)')",  # 8
+            "d = f'<p style=\"color:{c}\">#123456</p>'",  # 9 f-string 안 hex(기본은 색)
+        )
+        self.assertEqual(got, [(2, "rgba(1, 2, 3, .5)"), (4, "#abcdef"), (6, "QColor('red'"),
+                               (7, "rgb(1, 2, 3)"), (9, "#123456")])
+
+    def test_not_colors(self):
+        """주석, 코드의 식별자 대입, CSS 선택자, href·id 참조, 위젯 이름, 문자 참조, 자리표시자는 색이 아니다."""
+        self.assertEqual(self.lits(
+            "# color: red  #fff  rgb(1,2,3)",
+            "x = 1  # border: 1px solid #abc",
+            "color = red",
+            "fill = col['physical_connection'] if seg else col.get(n.get('category'))",
+            "a = \"<p style='color:%s'>x</p>\" % tokens.c(\"muted\")",
+            "b = 'fill=\"%s\" stroke=\"%s\"' % (fill, col[\"card\"])",
+            "c = 'QFrame#banner_err QLabel { color: %(err-ink)s; }'",
+            "d = '#abc { margin: 0 }'",
+            "e = '''",  # 다음 줄 맨 앞 선택자
+            "#abc .x, #def > p {}'''",
+            "f = \"<a href='#abc'>x</a><use href=\\\"#fed\\\"/>\"",
+            "g = '&#160; #fade-in #viewport'",
+            "h = 'background: transparent; color: currentcolor'",
+            "i = 'JS: color = red; var red = 1'",
+        ), [])
+
+    def test_hex_default_is_color(self):
+        """hex는 기본이 색이다(재작업 2회차): 1차 때 잡던 세 경우와 공백·괄호 뒤."""
+        self.assertEqual(self.lits(
+            "a = 'el.setAttribute(\"fill\", \"#fff\");'",
+            "b = \"var c = '#fff'\"",
+            "c = '<rect fill=#ffffff>'",
+            "d = setAttribute('fill', '#abc')",
+        ), [(1, "#fff"), (2, "#fff"), (3, "#ffffff"), (4, "#abc")])
+
+    def test_hex_before_format_placeholder(self):
+        """f-string·format 자리표시자 '{' 앞의 hex도 색이다(최종 재검토, 총괄 수정)."""
+        self.assertEqual(self.lits(
+            "a = f\"<span style='color:#b91c1c'>{msg}</span>\"",
+            "b = f\"<circle fill='#fff' r='{r}'/>\"",
+            "c = \"<span style='color:#b91c1c'>{}</span>\".format(m)",
+        ), [(1, "#b91c1c"), (2, "#fff"), (3, "#b91c1c")])
+        # url(…) 안의 '#'·rgb(…)는 파일 경로다(Codex 최종 재검토, 총괄 수정). url 밖 색은 그대로 잡는다
+        self.assertEqual(self.lits(
+            "a = 'background: url(images/#fff.svg)'",
+            "b = 'background: url(rgb(1,2,3).png) #123'",
+        ), [(2, "#123")])
+
+    def test_hex_exceptions(self):
+        """예외만 색이 아니다: href=·src=·url( 뒤, 객체 이름 선택자, CSS 선택자 문맥(:not( 포함)."""
+        self.assertEqual(self.lits(
+            "a = '#abc:not(.active) { color: %s }'",
+            "b = 'p:not(#abc) > span, a#def { margin: 0 }'",
+            "c = 'background: url(#abc); mask: url(\"#fed\")'",
+            "d = '<img src=\"#abc\"><a href=#abc>'",
+            "e = 'QFrame#bad { border: 0 }'",
+        ), [])
+
+    def test_css_comment_and_url(self):
+        """CSS 주석 안과 url(파일명)은 이름 색으로 보지 않는다. 주석 밖은 잡는다."""
+        self.assertEqual(self.lits(
+            "a = 'p { /* color: red; #fff */ color: %s; background: url(red.png) }'",
+            "b = '''/* fill: navy",
+            "   still comment */ q { color: blue }'''",
+        ), [(3, "blue")])
+
+    def test_allow_list_context(self):
+        """허용 목록은 (경로, 리터럴, 최상위 문장, 선택자)가 모두 맞아야 한다. 같은 rgba도 다른 함수·규칙이면 실패."""
+        ok = {"hazop/app/tokens.py": ("CARD_SHADOW = '0 2px 10px rgba(0,0,0,.06)'\n"
+                                      "def web_css():\n    return '.selected.sym, .selected.tagbox { fill: rgba(37,99,235,.12); }'\n")}
+        self.assertEqual(cd.app_color_problems(ok), [])
+        bad = {"hazop/app/tokens.py": ("def qss():\n    return 'QFrame { background: rgba(0,0,0,.06); }'\n"
+                                       "def web_css():\n    return '.other { fill: rgba(37,99,235,.12); }'\n"
+                                       "OTHER = 'rgba(0,0,0,.06)'\n")}
+        self.assertEqual(len(cd.app_color_problems(bad)), 3)
+        self.assertEqual(len(cd.app_color_problems({"hazop/app/widgets.py": ok["hazop/app/tokens.py"]})), 2)
+
+    def test_allow_list_and_message(self):
+        src = {"hazop/app/x.py": "a = '#fff'\nb = '#000'\n"}
+        bad = cd.app_color_problems(src)
+        self.assertEqual(len(bad), 2)
+        self.assertIn("hazop/app/x.py:1 #fff", bad[0])
+        allow = dict(cd.APP_COLOR_ALLOW)
+        try:
+            cd.APP_COLOR_ALLOW[("hazop/app/x.py", "#fff", "a", None)] = "테스트"
+            self.assertEqual(len(cd.app_color_problems(src)), 1)
+            self.assertEqual(len(cd.app_color_problems({"hazop/app/y.py": "a = '#fff'\n"})), 1)  # 경로에 묶임
+        finally:
+            cd.APP_COLOR_ALLOW.clear()
+            cd.APP_COLOR_ALLOW.update(allow)
+
+    def test_pre_w6_code_fails(self):
+        """W6 이전 코드(2727e56)는 50건 실패한다(tokens.py qss·web_css 9건 포함, 허용 2건 제외). git이나 커밋이 없으면 건너뛰고,
+        그 뒤 새로 생긴 파일은 빈 문자열로 본다."""
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        try:
+            subprocess.run(["git", "cat-file", "-e", "2727e56^{commit}"], cwd=root, capture_output=True, check=True)
+        except (OSError, subprocess.CalledProcessError):
+            self.skipTest("git 또는 커밋 2727e56 없음")
+        src = {}
+        for rel in cd.app_color_files():
+            r = subprocess.run(["git", "show", "2727e56:" + rel], cwd=root, capture_output=True)
+            src[rel] = r.stdout.decode("utf-8") if r.returncode == 0 else ""
+        bad = cd.app_color_problems(src)
+        self.assertEqual(len(bad), 50, bad)
+        for k in ("hazop/app/widgets.py:116 #ffffff", "hazop/app/render.py:146 #9ca3af",
+                  "hazop/viewer/build.py:84 rgba(0,0,0,.06)", "hazop/app/screens/review.py:808 #fca5a5",
+                  "hazop/app/tokens.py:131 #dcfce7", "hazop/app/tokens.py:100 #fff",
+                  "hazop/app/tokens.py:105 rgba(0,0,0,.06)"):
+            self.assertTrue(any(k in b for b in bad), (k, bad))
+
+
 class ContrastTest(unittest.TestCase):
     """명암비 검사(W5, D7). WCAG 2.1 상대 휘도 공식과 지정 쌍 통과."""
 
@@ -434,17 +619,18 @@ class ContrastTest(unittest.TestCase):
     REQUIRED_TEXT = [
         ("ink", "card"), ("ink", "bg"), ("ink", "ui-weak"), ("ink", "ai-hatch-a"), ("ink-2", "bg"), ("ink-2", "card"),
         ("ink", "kg-canvas"), ("ink-2", "kg-canvas"), ("muted", "kg-canvas"),
-        ("muted", "card"), ("muted", "bg"), ("muted", "ui-weak"), ("ui", "card"), ("#ffffff", "ui"),
-        ("ui-ink", "ui-weak"), ("ok", "#dcfce7"), ("err-ink", "err-bg"), ("warn-ink", "warn-bg"),
-        ("warn-ink", "card"), ("err-ink", "card"), ("ai-ink", "ai-hatch-a"), ("#ffffff", "human-line"),
+        ("muted", "card"), ("muted", "bg"), ("muted", "ui-weak"), ("ui", "card"), ("on-fill", "ui"),
+        ("ui-ink", "ui-weak"), ("ok", "ok-bg"), ("err-ink", "err-bg"), ("warn-ink", "warn-bg"),
+        ("warn-ink", "card"), ("err-ink", "card"), ("ai-ink", "ai-hatch-a"), ("on-fill", "human-line"),
         ("risk-ok-ink", "risk-ok-bg"), ("risk-cond-ink", "risk-cond-bg"), ("risk-deny-ink", "risk-deny-bg"),
-        ("risk-ok-ink", "#ffffff"), ("risk-cond-line", "#ffffff"), ("risk-deny-line", "#ffffff"),
-        ("#ffffff", "hl-safeguard"), ("hl-safeguard", "#ffffff"), ("#b45309", "card")]
+        ("risk-ok-ink", "card"), ("risk-cond-line", "card"), ("risk-deny-line", "card"),
+        ("on-fill", "hl-safeguard"), ("hl-safeguard", "card"), ("#b45309", "card")]
     REQUIRED_GRAPHIC = (
         [(k, b) for k in ("equipment", "valve", "instrument", "piping_element", "unclassified", "physical_connection",
                           "signal_connection", "measurement_connection", "unresolved")
          for b in ("card", "bg", "kg-canvas")]
-        + [(k, b) for k in ("hl-cause", "hl-path", "hl-safeguard") for b in ("card", "bg")]
+        + [(k, b) for k in ("hl-cause", "hl-path", "hl-safeguard") for b in ("card", "bg")
+           if (k, b) != ("hl-safeguard", "card")]  # hl-safeguard/card는 REQUIRED_TEXT 4.5:1이 대신함
         + [("ui", "bg"), ("tag", "card"), ("#16a34a", "bg")])
 
     def test_required_pairs_and_thresholds(self):
@@ -481,7 +667,7 @@ class ContrastTest(unittest.TestCase):
                     "measurement_connection": "#d97706", "risk-cond-line": "#d97706"})
         failed = {(fg, bg, need) for fg, bg, _f, _b, r, need, _u in cd.contrast_rows(old) if r < need}
         self.assertEqual(failed, {
-            ("muted", "bg", 4.5), ("muted", "ui-weak", 4.5), ("risk-cond-line", "#ffffff", 4.5),
+            ("muted", "bg", 4.5), ("muted", "ui-weak", 4.5), ("risk-cond-line", "card", 4.5),
             ("instrument", "card", 3.0), ("instrument", "bg", 3.0), ("instrument", "kg-canvas", 3.0),
             ("unclassified", "card", 3.0), ("unclassified", "bg", 3.0), ("unclassified", "kg-canvas", 3.0),
             ("measurement_connection", "bg", 3.0)})

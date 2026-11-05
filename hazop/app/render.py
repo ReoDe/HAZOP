@@ -1,6 +1,6 @@
 """④⑤ 상세 패널 HTML(QTextBrowser). AI 산출은 점선·회색 상자와 '제안' 칩, 사람 확정은 흰 바탕 실선 상자."""
 
-from hazop.app import data
+from hazop.app import data, tokens
 from hazop.app.widgets import badge, box, esc, risk_chip
 
 SCENARIO_STATUS = {"draft": "초안", "on_hold": "보류"}
@@ -12,12 +12,12 @@ def tags_of(graph):
 
 
 def tag_list(ids, tags):
-    return ", ".join("%s" % esc(tags.get(i) or i) for i in ids or []) or "<span style='color:#92400e'>미확인</span>"
+    return ", ".join("%s" % esc(tags.get(i) or i) for i in ids or []) or "<span style='color:%s'>미확인</span>" % tokens.c("warn-ink")
 
 
 def safeguard_rows(items, tags):
     if not items:
-        return "<span style='color:#92400e'>그래프에서 찾지 못함(없음이 아니라 미확인)</span>"
+        return "<span style='color:%s'>그래프에서 찾지 못함(없음이 아니라 미확인)</span>" % tokens.c("warn-ink")
     rows = []
     for g in items:
         adequacy = "적정성 미확인" if g.get("adequacy") in (None, "unknown") else "적정성 %s" % g.get("adequacy")
@@ -30,7 +30,7 @@ def safeguard_rows(items, tags):
 
 def risk_proposal_html(rp):
     if not rp:
-        return "<span style='color:#92400e'>위험도 제안 없음(미확인)</span>"
+        return "<span style='color:%s'>위험도 제안 없음(미확인)</span>" % tokens.c("warn-ink")
     if rp.get("status") != "proposed":
         return "%s 상태 %s — 사유: %s · 등급 <b>보류</b>" % (badge("[AI] 제안", "ai"), esc(rp.get("status")),
                                                          esc(rp.get("reason") or rp.get("hold_reason") or rp.get("note")))
@@ -99,7 +99,7 @@ def dic_html(d, holds_by_id):
 
 def holds_html(holds):
     if not holds:
-        return "<p style='color:#6b7280'>열린 자료 요청 없음</p>"
+        return "<p style='color:%s'>열린 자료 요청 없음</p>" % tokens.c("muted")
     return "".join("<p><b>%s</b> %s · %s<br>사유: %s<br>요청 자료: %s<br><small>출처 %s · 범위 %s</small></p>" % (
         esc(h["hold_id"]), esc(h.get("item")), badge("열림" if h.get("status") == "open" else "닫힘",
                                                       "warn" if h.get("status") == "open" else "plain"),
@@ -130,7 +130,7 @@ def related_knowledge_html(rk, tags, can_open=True):
     if rk.get("truncated_text"):
         h.append("<p>%s</p>" % badge(rk["truncated_text"], "warn"))
     if not rk["items"]:
-        h.append("<p style='color:#6b7280'>이 시나리오에 걸린 관련 지식 항목 없음('해당 없음' 아님)</p>")
+        h.append("<p style='color:%s'>이 시나리오에 걸린 관련 지식 항목 없음('해당 없음' 아님)</p>" % tokens.c("muted"))
     for r in rk["items"]:
         it = r["item"]
         chips = " ".join(badge(t, k) for t, k in r["badges"])
@@ -143,7 +143,7 @@ def related_knowledge_html(rk, tags, can_open=True):
         ents = []
         for e in r["entities"] or [a["entity_id"] for a in it.get("applies_to") or []]:
             link = ("<a href='kg:%s'>③에서 보기</a>" % esc(e)) if can_open else \
-                "<span style='color:#9ca3af'>③에서 보기(현재 지식그래프 읽기 불가)</span>"
+                "<span style='color:%s'>③에서 보기(현재 지식그래프 읽기 불가)</span>" % tokens.c("muted")
             ents.append("%s %s" % (esc(tags.get(e) or e), link))
         src = it.get("source") or {}
         h.append("<p>%s <small>%s</small><br>%s%s<br><small>적용 설비: %s<br>출처: %s · 쪽 %s · %s</small></p>" % (

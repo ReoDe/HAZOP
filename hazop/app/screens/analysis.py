@@ -508,15 +508,15 @@ class AnalysisScreen(QWidget):
             it.setData(Qt.UserRole, s["scenario_id"])
             self.scenario_list.addItem(it)
         if not scen:
-            self.scenario_view.setHtml("<p style='color:#6b7280'>시나리오 없음 — %s</p>" % esc(
+            self.scenario_view.setHtml("<p style='color:%s'>시나리오 없음 — %s</p>" % (tokens.c("muted"), esc(
                 "제외·보류 후보는 시나리오를 만들지 않음" if c["selection_status"] != "selected" else
-                "AI 상태: %s" % data.AI_STATUS_LABELS.get((c.get("analysis") or {}).get("ai_status"), "미확인")))
+                "AI 상태: %s" % data.AI_STATUS_LABELS.get((c.get("analysis") or {}).get("ai_status"), "미확인"))))
             self.app.webview.clear_highlight()
             self.evidence.setText("시나리오 없음")
         holds_by_id = {h["hold_id"]: h for h in ctx.doc["holds"]}
         dics = ctx.dics_of(cid)
         self.dic_view.setHtml("".join(render.dic_html(d, holds_by_id) for d in dics) or
-                              "<p style='color:#6b7280'>설계보완 후보 없음</p>")
+                              "<p style='color:%s'>설계보완 후보 없음</p>" % tokens.c("muted"))
         self.hold_view.setHtml(render.holds_html(ctx.holds_of(cid)))
         self.ai_view.setHtml(render.ai_runs_html(ctx.doc, c))
         if scen:

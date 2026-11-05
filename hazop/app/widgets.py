@@ -113,7 +113,7 @@ def badge(text, kind="plain"):
     c = tokens.COLORS
     style = {
         "ai": "border:1px dashed %s; color:%s; background:%s;" % (c["ai-ink"], c["ai-ink"], c["ai-hatch-a"]),
-        "human": "background:%s; color:#ffffff;" % c["human-line"],
+        "human": "background:%s; color:%s;" % (c["human-line"], c["on-fill"]),
         "warn": "background:%s; color:%s;" % (c["warn-bg"], c["warn-ink"]),
         "err": "background:%s; color:%s;" % (c["err-bg"], c["err-ink"]),
         "ui": "background:%s; color:%s;" % (c["ui-weak"], c["ui-ink"]),
@@ -129,7 +129,8 @@ def risk_chip(risk, name=None, proposal=True):
     bg, ink, line = tokens.risk_colors(risk)
     label = "%s %d%s" % ("제안" if proposal else "확정", risk, " %s" % name if name else "")
     if proposal:
-        style = "border:1px dashed %s; color:%s; background:#ffffff;" % (line, line if line != tokens.COLORS["risk-ok-line"] else ink)
+        style = "border:1px dashed %s; color:%s; background:%s;" % (line, line if line != tokens.COLORS["risk-ok-line"] else ink,
+                                                                     tokens.COLORS["card"])
     else:
         style = "background:%s; color:%s; border:1px solid %s;" % (bg, ink, line)
     return '<span style="%s font-size:11px; padding:1px 6px; border-radius:8px;">&nbsp;%s&nbsp;</span>' % (style, esc(label))
@@ -141,7 +142,7 @@ def box(inner, kind="ai"):
     if kind == "ai":
         st = "background-color:%s; border:1px dashed %s;" % (c["ai-hatch-a"], c["ai-ink"])
     else:
-        st = "background-color:#ffffff; border:2px solid %s;" % c["human-line"]
+        st = "background-color:%s; border:2px solid %s;" % (c["card"], c["human-line"])
     return '<table width="100%%" cellpadding="8" style="%s margin:4px 0;"><tr><td>%s</td></tr></table>' % (st, inner)
 
 
