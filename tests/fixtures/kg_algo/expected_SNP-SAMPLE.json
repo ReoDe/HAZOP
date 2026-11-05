@@ -1,0 +1,277 @@
+{
+  "A1": {
+    "active": true,
+    "by_direction": {
+      "adjacent": [
+        "entity-seg-002",
+        "entity-seg-005",
+        "entity-seg-006"
+      ],
+      "downstream": [
+        "entity-node-013",
+        "entity-node-014",
+        "entity-node-015",
+        "entity-node-016",
+        "entity-node-017",
+        "entity-seg-007",
+        "entity-seg-008",
+        "entity-seg-009",
+        "entity-seg-010",
+        "entity-seg-011"
+      ],
+      "not_applicable": [
+        "entity-node-004",
+        "entity-node-005",
+        "entity-node-009",
+        "entity-node-010",
+        "entity-node-011",
+        "entity-node-012"
+      ],
+      "upstream": [
+        "entity-node-002",
+        "entity-node-003",
+        "entity-node-006",
+        "entity-node-007",
+        "entity-node-008",
+        "entity-seg-001",
+        "entity-seg-003",
+        "entity-seg-004"
+      ]
+    },
+    "cycle_or_merge_edges": [
+      "relation-015",
+      "relation-027"
+    ],
+    "limits_hit": [],
+    "not_normal_flow_path": [
+      "entity-node-006",
+      "entity-node-007",
+      "entity-node-016",
+      "entity-node-017",
+      "entity-seg-003",
+      "entity-seg-004",
+      "entity-seg-009",
+      "entity-seg-010",
+      "entity-seg-011"
+    ],
+    "reached": 27,
+    "region_id": "region-SNP-M-102-pzr",
+    "truncation_reasons_at": [
+      [
+        "external_drawing",
+        "entity-node-002"
+      ],
+      [
+        "external_drawing",
+        "entity-node-006"
+      ],
+      [
+        "external_drawing",
+        "entity-node-017"
+      ]
+    ],
+    "unreached_region_members": [
+      "entity-node-018",
+      "entity-node-019"
+    ],
+    "valve_position_unknown_path": []
+  },
+  "A2": {
+    "evidence_gaps": [
+      "entity-node-008"
+    ],
+    "no_knowledge_input": [
+      "entity-node-003",
+      "entity-node-004",
+      "entity-node-005",
+      "entity-node-007",
+      "entity-node-010",
+      "entity-node-011",
+      "entity-node-012",
+      "entity-node-013",
+      "entity-node-015",
+      "entity-node-016",
+      "entity-node-018",
+      "entity-node-019"
+    ],
+    "no_knowledge_input_continuations": [
+      "entity-node-002",
+      "entity-node-006",
+      "entity-node-017"
+    ],
+    "not_orphan_not_gap": [
+      "entity-node-009"
+    ],
+    "orphan_link_hints": {
+      "req-003": [
+        [
+          "chunk-001",
+          "entity-node-008"
+        ]
+      ]
+    },
+    "orphans": [
+      "chunk-003",
+      "chunk-004",
+      "req-003"
+    ]
+  },
+  "A3": {
+    "degree": {
+      "chunk-001": 4,
+      "chunk-002": 3,
+      "chunk-003": 1,
+      "chunk-004": 1,
+      "cond-001": 1,
+      "cond-002": 1,
+      "doc-001": 4,
+      "entity-node-001": 8,
+      "entity-node-002": 1,
+      "entity-node-003": 3,
+      "entity-node-004": 2,
+      "entity-node-005": 1,
+      "entity-node-006": 1,
+      "entity-node-007": 2,
+      "entity-node-008": 4,
+      "entity-node-009": 5,
+      "entity-node-010": 2,
+      "entity-node-011": 2,
+      "entity-node-012": 1,
+      "entity-node-013": 3,
+      "entity-node-014": 3,
+      "entity-node-015": 2,
+      "entity-node-016": 3,
+      "entity-node-017": 1,
+      "entity-node-018": 1,
+      "entity-node-019": 1,
+      "entity-seg-001": 2,
+      "entity-seg-002": 2,
+      "entity-seg-003": 2,
+      "entity-seg-004": 2,
+      "entity-seg-005": 2,
+      "entity-seg-006": 2,
+      "entity-seg-007": 2,
+      "entity-seg-008": 2,
+      "entity-seg-009": 2,
+      "entity-seg-010": 2,
+      "entity-seg-011": 2,
+      "req-001": 2,
+      "req-002": 2,
+      "req-003": 1,
+      "setpt-001": 1,
+      "setpt-002": 1
+    },
+    "degree_segments_folded": {
+      "chunk-001": 4,
+      "chunk-002": 3,
+      "chunk-003": 1,
+      "chunk-004": 1,
+      "cond-001": 1,
+      "cond-002": 1,
+      "doc-001": 4,
+      "entity-node-001": 8,
+      "entity-node-002": 1,
+      "entity-node-003": 3,
+      "entity-node-004": 2,
+      "entity-node-005": 1,
+      "entity-node-006": 1,
+      "entity-node-007": 2,
+      "entity-node-008": 4,
+      "entity-node-009": 5,
+      "entity-node-010": 2,
+      "entity-node-011": 2,
+      "entity-node-012": 1,
+      "entity-node-013": 3,
+      "entity-node-014": 3,
+      "entity-node-015": 2,
+      "entity-node-016": 3,
+      "entity-node-017": 1,
+      "entity-node-018": 1,
+      "entity-node-019": 1,
+      "req-001": 2,
+      "req-002": 2,
+      "req-003": 1,
+      "setpt-001": 1,
+      "setpt-002": 1
+    }
+  },
+  "A4": [
+    {
+      "active": true,
+      "center": "entity-node-001",
+      "nodes": [
+        "chunk-001",
+        "chunk-002",
+        "cond-001",
+        "cond-002",
+        "entity-node-001",
+        "entity-node-003",
+        "entity-node-008",
+        "entity-node-009",
+        "entity-node-010",
+        "entity-node-011",
+        "entity-node-012",
+        "entity-node-013",
+        "entity-seg-002",
+        "entity-seg-005",
+        "entity-seg-006",
+        "req-001",
+        "setpt-001",
+        "setpt-002"
+      ],
+      "radius": 2
+    },
+    {
+      "active": true,
+      "center": "req-003",
+      "nodes": [
+        "chunk-001",
+        "req-003"
+      ],
+      "radius": 1
+    },
+    {
+      "active": false,
+      "center": "setpt-003",
+      "radius": 1
+    }
+  ],
+  "A5": {
+    "V1": {
+      "count": 9,
+      "sizes": [
+        22,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    "V5": {
+      "components": [
+        [
+          "entity-node-018",
+          "entity-node-019"
+        ]
+      ],
+      "count": 2,
+      "sizes": [
+        40,
+        2
+      ]
+    }
+  },
+  "_note": "A1~A5 정답 파일(기획서/그래프활용.md §7.1·§7.2). 가상 샘플 데이터/지식/SNP-SAMPLE + 샘플 도면 SNP-M-102 + 데이터/구간/region-SNP-M-102-pzr.json. 값은 구현 결과를 손으로 대조해 고정함(A2는 §7.1 기대값 표와 대조). 샘플 입력이 바뀌면 이 파일을 다시 검토해야 함",
+  "graph": {
+    "graph_id": "graph-SNP-M-102",
+    "graph_version": "v-7ed95b0c74f1"
+  },
+  "kg_version_at_creation": "v-43034b88b9c9",
+  "project_id": "SNP-SAMPLE",
+  "radius": 2,
+  "start": "entity-node-001"
+}

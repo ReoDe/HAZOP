@@ -1,0 +1,11 @@
+{
+  "description": "정상 샘플의 confirmed mentions(RC-PT110)에서 candidate_key(일치 위치)를 지움",
+  "status": "blocked",
+  "blockers": [
+    {
+      "rule": "K6",
+      "check": "confirmed_without_source",
+      "target": "krel-m-7c52c0fd"
+    }
+  ]
+}

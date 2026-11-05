@@ -21,6 +21,8 @@
 - ⑤ [검토·결과 관리 흐름](<flow chart/05-review-results.md>) · [기획](기획서/검토결과관리.md): 편차별 확정, 재검토, Excel 출력
 - [데스크톱 인터페이스](기획서/인터페이스.md): ①②④⑤ 화면, 검토 확정 규격, Excel 출력, 패키징 대비
 - [메모리](메모리/README.md): 결정 로그와 남은 작업
+- [그래프조사](기획서/그래프조사.md) · [그래프활용](기획서/그래프활용.md): 지식그래프·알고리즘·그래프 화면 조사와 구현 구상
+- [지식그래프 작업 공간](docs/2026-11-05-knowledge-graph/README.md): 지식그래프 활용 구현의 문서·결정·진행 현황
 
 전체 흐름은 **자료 등록 → 정보 추출 → 정보 통합·관리 → HAZOP 분석 → 검토·결과 관리**입니다.
 
@@ -102,3 +104,7 @@
 14. 데스크톱 앱(PySide6 필요): `python scripts/run_app.py [--run <분석 실행 폴더>] [--debug] [--screenshots <폴더>]`. `--screenshots`는 화면별 스크린샷을 저장한 뒤 종료
 15. 워크시트 내보내기(openpyxl 필요): `python scripts/export_worksheet.py --run <분석 실행 폴더> [--scope all|accepted_modified] [--store-root <저장 루트>] [--out-root <출력 루트>]`
 16. 근거 묶음 내보내기: `python scripts/export_bundles.py [--region <구간 JSON>] [--graph <그래프 JSON>] [--out-root <출력 루트>]`
+17. 지식 빌드: `python scripts/build_kg.py <프로젝트 ID>` → `출력/지식그래프/<kg_id>/current.json` 포인터(입력 `데이터/지식/<프로젝트 ID>/`)
+18. 엔티티 연결(`--graph-id` 필수, 반복 지정 가능): `python scripts/link_kg.py candidates|confirm-exact|apply <프로젝트 ID> --graph-id <그래프 ID>` (`confirm-exact`는 `--reviewer`·`--reason` 포함)
+19. 그래프 알고리즘 A1~A5: `python scripts/analyze_kg.py <프로젝트 ID> --start <노드 ID> [--radius 2] [--region <구간 JSON>] [--graph-id <그래프 ID>]`
+20. 지식그래프 검사: `python scripts/check_kg_renderer.py`, `python scripts/check_kg.py`, `python scripts/check_kg_link.py`, `python scripts/check_kg_algo.py`

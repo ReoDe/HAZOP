@@ -1,0 +1,17 @@
+﻿# 가상(fictitious) 샘플: 문서·요건·설정치·운전조건의 값과 문장은 모두 가상이며 실제 발전소 설계값이 아님.
+# 근거: 기획서/그래프활용.md §7.1. 대상 도면은 샘플 도면 SNP-M-102. 빈 칸은 미확인(null).
+id,node_type,name,text,item,value,unit,pressure_basis,operating_mode,material_id,registration_version,document_id,page,locator,knowledge_status,author,reason
+doc-001,document,가압기 압력제어 운전 설명서(가상),,,,,,,MAT-KG-001,1,DOC-KG-001,,,confirmed,샘플작성자,
+chunk-001,doc_chunk,,3.1절(가상). 가압기 압력이 높아지면 압력제어기 RC-PIC110이 압력제어밸브 RC-PV101을 연다.,,,,,,MAT-KG-001,1,DOC-KG-001,3,3.1절,confirmed,샘플작성자,
+chunk-002,doc_chunk,,3.2절(가상). 가압기 RC-PZ1의 압력은 압력전송기 RC-PT110으로 측정한다.,,,,,,MAT-KG-001,1,DOC-KG-001,3,3.2절,confirmed,샘플작성자,
+chunk-003,doc_chunk,,4.1절(가상). 배수 라인의 RC-V999 밸브는 정비 시에만 연다.,,,,,,MAT-KG-001,1,DOC-KG-001,4,4.1절,confirmed,샘플작성자,
+chunk-004,doc_chunk,,5.2절(가상). RC-L011 배관의 보온 상태를 정기 점검한다.,,,,,,MAT-KG-001,1,DOC-KG-001,5,5.2절,confirmed,샘플작성자,
+req-001,requirement,,가압기 압력이 고압 경보치 이상이면 운전원에게 경보를 준다(가상).,,,,,,MAT-KG-001,1,DOC-KG-001,3,3.1절 표 3-1 1행,confirmed,샘플작성자,
+req-002,requirement,,안전밸브 RC-PSV101은 설계압력 이하에서 열려야 한다(가상).,,,,,,MAT-KG-001,1,DOC-KG-001,3,3.2절 표 3-2 1행,confirmed,샘플작성자,
+req-003,requirement,,압력제어밸브는 제어기 신호 상실 시 닫힘 위치로 간다(가상).,,,,,,MAT-KG-001,1,DOC-KG-001,3,3.1절 표 3-1 2행,confirmed,샘플작성자,적용 설비 미지정(고아 사례)
+setpt-001,setpoint,,,고압 트립,8,bar,gauge,,MAT-KG-001,1,DOC-KG-001,3,3.2절 표 3-3 1행,confirmed,샘플작성자,
+setpt-002,setpoint,,,고압 트립,8.5,bar,gauge,,MAT-KG-001,1,DOC-KG-001,6,부록 A 표 A-1,confirmed,샘플작성자,3.2절 값과 다름(충돌 사례)
+setpt-003,setpoint,,,설정압력,9,,,,MAT-KG-001,1,DOC-KG-001,3,3.2절 표 3-3 2행,unknown,샘플작성자,단위·압력 기준 원문 판독 불가(미확인 사례)
+cond-001,condition,,,운전압력,7,bar,gauge,정상 운전,MAT-KG-001,1,DOC-KG-001,2,2.1절,confirmed,샘플작성자,
+cond-002,condition,,,설계압력,10,bar,gauge,,MAT-KG-001,1,DOC-KG-001,2,2.1절,confirmed,샘플작성자,
+case-001,analysis_case,가압기 압력 상승 과거 검토 사례(가상),,,,,,,,,,,,hypothesis,샘플작성자,출처 미확인 가설(근거 없음 사례)

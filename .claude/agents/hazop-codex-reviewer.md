@@ -13,7 +13,7 @@ effort: low
 2. 저장소 루트에서 읽기 전용으로 실행한다:
 
 ```bash
-codex exec -m gpt-6.1-sol -c model_reasoning_effort=medium -s read-only --ephemeral -o "$TEMP/codex_review_<묶음>.txt" "$(cat "$TEMP/codex_prompt_<묶음>.txt")" < /dev/null > "$TEMP/codex_run_<묶음>.log" 2>&1
+PYTHONUTF8=1 PYTHONIOENCODING=utf-8 codex exec -m gpt-6.1-sol -c model_reasoning_effort=medium -s read-only --ephemeral -o "$TEMP/codex_review_<묶음>.txt" "$(cat "$TEMP/codex_prompt_<묶음>.txt")" < /dev/null > "$TEMP/codex_run_<묶음>.log" 2>&1
 ```
 
    - 모델은 `gpt-6.1-sol`(sol 6.1), 추론 강도는 중간(`model_reasoning_effort=medium`)으로 요청한다.

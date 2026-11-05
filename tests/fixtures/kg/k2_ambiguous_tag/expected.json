@@ -1,0 +1,11 @@
+{
+  "description": "정상 샘플에 동명 태그(RC-L011, 구간 3개)를 graph_id:tag로 참조하는 관계 추가",
+  "status": "blocked",
+  "blockers": [
+    {
+      "rule": "K2",
+      "check": "ambiguous_tag",
+      "target": "krel-020"
+    }
+  ]
+}

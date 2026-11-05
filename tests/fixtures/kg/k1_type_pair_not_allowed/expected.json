@@ -1,0 +1,11 @@
+{
+  "description": "정상 샘플에 목록 밖 타입 쌍(governed_by: P&ID -> setpoint) 추가",
+  "status": "blocked",
+  "blockers": [
+    {
+      "rule": "K1",
+      "check": "type_pair_not_allowed",
+      "target": "krel-020"
+    }
+  ]
+}
