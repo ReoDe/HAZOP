@@ -8,6 +8,14 @@
 |---|---|
 | `requirements.txt` | 배포 런타임 3종(버전 고정): PySide6 6.12.0, networkx 3.7, openpyxl 3.1.5 |
 | `requirements-build.txt` | 런타임 + pyinstaller 6.22.3 |
+| `rthook_applog.py` | `HAZOP.exe` 런타임 훅: 묶인 실행 로그를 `<작업 루트>/logs/app.log`에 남김(D7안) |
+| `check_entry.py` | 검증 전용 `HAZOP-check.exe` 입구(`scripts/build_package.py --with-check`). 배포본에 넣지 않는다 |
+| `w4_flow.py` | 묶인 실행에서 ①~⑤ 함수 흐름·자원 읽기 위치·음성 검사(`HAZOP-check.exe`로 실행) |
+| `verify_bundle.py` | 묶음을 저장소 밖 경로에 복사해 ①~⑤·③ V1·V2·S1·스크린샷·앱 로그 확인. 배포용은 `--app-only` |
+| `make_snapshot.py` | 저장소 밖 빌드용 스냅숏(다른 트랙 진행 중 파일은 HEAD로), `SNAPSHOT.json` 해시 목록 |
+| `netwatch.ps1` | 빌드 중 네트워크 연결 표본 조사(관찰만) |
+
+빌드: `<venv python> scripts/build_package.py --out <저장소 밖 폴더> [--with-check] --build` → 배포용 `<out>/dist/HAZOP/`(검증 exe 없음을 빌드 뒤 검사), 검증용 `<out>/dist/HAZOP-verify/`. 출력 폴더가 저장소 안이면 거부한다. 절차·결과는 [W4 빌드](../docs/2026-11-05-packaging/evidence/w4-빌드.md).
 
 anthropic·httpx는 넣지 않는다(D1: 배포본에서 제외). SDK가 필요한 테스트 5건(`tests/test_analysis.py`)은 anthropic이 없으면 건너뛴다(T2 decisions D3). venv 전체 테스트: 478건 OK, 건너뜀 5.
 
