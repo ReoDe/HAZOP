@@ -19,6 +19,7 @@
 - ④ [HAZOP 분석 흐름](<flow chart/04-hazop-analysis.md>) · [기획](기획서/HAZOP분석.md): 편차 후보, 원인·결과 패턴, 그래프 탐색, AI 추론
   - [HAZOP 기법 지침](기획서/HAZOP기법지침.md): KOSHA P-86-2017(회분식 HAZOP 기술지침) 요약
 - ⑤ [검토·결과 관리 흐름](<flow chart/05-review-results.md>) · [기획](기획서/검토결과관리.md): 편차별 확정, 재검토, Excel 출력
+- [데스크톱 인터페이스](기획서/인터페이스.md): ①②④⑤ 화면, 검토 확정 규격, Excel 출력, 패키징 대비
 - [메모리](메모리/README.md): 결정 로그와 남은 작업
 
 전체 흐름은 **자료 등록 → 정보 추출 → 정보 통합·관리 → HAZOP 분석 → 검토·결과 관리**입니다.
@@ -56,7 +57,7 @@
 
 **draw.io 샘플 → 등록정보 JSON → 추출 결과 JSON → 그래프·구조 검증 → 편차·탐색·패턴·AI 해석 → Excel 워크시트**
 
-- 등록은 웹 화면 대신 폴더와 Python 스크립트로 시작합니다. 웹 등록 화면은 후속입니다.
+- 등록은 폴더와 Python 스크립트로 시작했습니다. 등록 화면은 [데스크톱 인터페이스](기획서/인터페이스.md)에서 구현할 예정입니다.
 - 실제 도면의 자료형(PDF·DWG 등)은 실험 성공 후 형식별 읽기 어댑터를 모듈로 추가합니다.
 - 결과는 사용자가 제공할 평가 기준과 비교합니다.
 
@@ -98,3 +99,6 @@
 11. HAZOP 분석(고정 응답): `python scripts/analyze.py` → 출력/분석/region-SNP-M-102-pzr/<실행ID>/analysis.json
 12. 실제 API: `ANTHROPIC_API_KEY` 설정 후 `python scripts/analyze.py --live [--only p86-d09]`, 재시도 `--resume <실행 폴더>`, 그래프 버전 재연결 `--rebind-graph --confirm --by 이름 --reason 사유`
 13. 검사 추가: `python scripts/check_register.py`, `python scripts/check_analysis.py`, `python scripts/refresh_fixture_hashes.py --check`
+14. 데스크톱 앱(PySide6 필요): `python scripts/run_app.py [--run <분석 실행 폴더>] [--debug] [--screenshots <폴더>]`. `--screenshots`는 화면별 스크린샷을 저장한 뒤 종료
+15. 워크시트 내보내기(openpyxl 필요): `python scripts/export_worksheet.py --run <분석 실행 폴더> [--scope all|accepted_modified] [--store-root <저장 루트>] [--out-root <출력 루트>]`
+16. 근거 묶음 내보내기: `python scripts/export_bundles.py [--region <구간 JSON>] [--graph <그래프 JSON>] [--out-root <출력 루트>]`

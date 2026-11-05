@@ -1,0 +1,1938 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>HAZOP 데스크톱 인터페이스 시안 — SNP-M-102 가압기 구간</title>
+<!--
+  클릭 가능한 디자인 시안. 외부 네트워크 의존 없음(CDN·웹 글꼴 없음).
+  기준 문서: 기획서/인터페이스.md(초안). 데이터: 출력/분석/region-SNP-M-102-pzr/analysis-20261104T065638Z-2e14dd/analysis.json 발췌.
+  저장·출력·등록·분석은 모두 흉내(토스트)이며 파일을 쓰지 않는다.
+-->
+<style>
+:root {
+  /* UI: 강조색은 파랑 하나 */
+  --ui: #2563eb; --ui-weak: #eff6ff; --ui-ink: #1e40af;
+  --bg: #f4f5f7; --card: #ffffff; --line: #e3e5e9; --line-strong: #cfd3da; --muted: #6b7280; --ink: #111827; --ink-2: #374151;
+  /* 데이터: 노드 종류 (밸브는 UI 파랑과 분리한 권고값) */
+  --equipment: #1d4ed8; --valve: #0f766e; --instrument: #0ea5e9; --piping_element: #6366f1; --unclassified: #9ca3af;
+  --physical_connection: #16a34a; --signal_connection: #7c3aed; --measurement_connection: #d97706; --unresolved: #dc2626;
+  --tag: #111827;
+  /* 데이터: 시나리오 강조 3종 */
+  --hl-cause: #dc2626; --hl-path: #ea580c; --hl-safeguard: #c026d3; --hl-dim: .16;
+  /* 상태 */
+  --ok: #15803d; --warn-bg: #fef3c7; --warn-ink: #92400e; --warn-line: #f59e0b;
+  --err-bg: #fef2f2; --err-ink: #b91c1c; --err-line: #fca5a5;
+  /* 위험도: 〈표9〉 허용 구분 3단 */
+  --risk-ok-bg: #eef0f3; --risk-ok-ink: #374151; --risk-ok-line: #9ca3af;
+  --risk-cond-bg: #fde68a; --risk-cond-ink: #78350f; --risk-cond-line: #d97706;
+  --risk-deny-bg: #991b1b; --risk-deny-ink: #ffffff; --risk-deny-line: #991b1b;
+  /* 출처: AI·자동 판독(기계 산출) = 빗금, 사람 확정 = 흰 바탕 진한 실선 */
+  --ai-hatch: repeating-linear-gradient(135deg, #f1f2f4 0 5px, #e8eaee 5px 10px);
+  --ai-ink: #4b5563; --human-line: #111827;
+  /* 영역 경계 표시(시안 전용) */
+  --qt-line: rgba(107,114,128,.55); --qt-tag: #6b7280; --web-line: #0f172a; --web-tag: #0f172a;
+  /* 간격·모서리·글자 */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px;
+  --r-panel: 16px; --r-card: 12px; --r-input: 8px; --r-pill: 999px;
+  --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-lg: 15px; --fs-xl: 20px;
+  --font: "Pretendard", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --mono: "Cascadia Mono", "Consolas", "D2Coding", monospace;
+  --shadow: 0 2px 10px rgba(0,0,0,.06);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font-family: var(--font); font-size: var(--fs-md); color: var(--ink); background: #c9ccd2; }
+button, input, select, textarea { font: inherit; color: inherit; }
+.mono { font-family: var(--mono); font-size: 11.5px; }
+.muted { color: var(--muted); }
+.sp { flex: 1; }
+.app { height: 100vh; min-width: 1366px; min-height: 720px; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
+
+/* ---------- 창 틀 (Windows) */
+.titlebar { height: 32px; flex: none; display: flex; align-items: center; gap: var(--sp-2); padding-left: var(--sp-3); background: #fff; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); }
+.titlebar .ico { width: 14px; height: 14px; border-radius: 50%; background: var(--ui); }
+.titlebar .wb { width: 46px; height: 32px; display: grid; place-items: center; color: var(--ink-2); font-size: 12px; }
+.titlebar .wb.x:hover { background: #e81123; color: #fff; }
+.menubar { height: 28px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 6px; background: #fff; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); position: relative; z-index: 40; }
+.menubar .m { padding: 4px 10px; border-radius: 4px; cursor: default; position: relative; user-select: none; }
+.menubar .m:hover, .menubar .m.open { background: #eef0f3; }
+.menubar .m.mock { color: #7c2d12; border: 1px solid #fed7aa; background: #fff7ed; margin-left: 8px; }
+.dropdown { position: absolute; top: 25px; left: 0; min-width: 260px; background: #fff; border: 1px solid var(--line-strong); border-radius: var(--r-input); box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 4px; display: none; color: var(--ink); }
+.m.open .dropdown { display: block; }
+.dropdown div[data-act] { padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.dropdown div[data-act]:hover { background: var(--ui-weak); }
+.dropdown .dis { padding: 6px 10px; color: var(--muted); }
+.dropdown .sepl { height: 1px; background: var(--line); margin: 4px 0; }
+.dropdown .grp { font-size: var(--fs-xs); color: var(--muted); padding: 6px 10px 2px; }
+
+/* ---------- 헤더 */
+header { height: 56px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 var(--sp-5); background: var(--card); border-bottom: 1px solid var(--line); }
+header .logo { width: 28px; height: 28px; border-radius: 50%; background: var(--ui); flex: none; }
+header .app-n { font-weight: 700; white-space: nowrap; }
+header .vsep { width: 1px; height: 20px; background: var(--line); }
+header .where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+header .where b { font-weight: 700; }
+header .where span { color: var(--muted); }
+.steps { display: flex; gap: 2px; background: var(--bg); border-radius: var(--r-pill); padding: 3px; flex: none; }
+.steps button { border: 0; background: none; padding: 6px 16px; border-radius: var(--r-pill); cursor: pointer; color: var(--muted); white-space: nowrap; }
+.steps button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.1); font-weight: 600; }
+.steps button:hover:not(.on) { color: var(--ink); }
+.who { font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; }
+.who b { color: var(--ink); }
+
+/* ---------- 본문·상태줄 */
+main { flex: 1; min-height: 0; position: relative; }
+.screen { position: absolute; inset: 0; display: none; flex-direction: column; }
+.screen.on { display: flex; }
+.statusbar { height: 28px; flex: none; display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-3); background: #fff; border-top: 1px solid var(--line); font-size: var(--fs-xs); color: var(--muted); }
+.statusbar .bridge { font-family: var(--mono); color: var(--ink-2); }
+.statusbar label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+
+/* ---------- 영역 경계(시안 전용 표시) */
+[data-qt], [data-web] { position: relative; }
+.app.bounds [data-qt] { box-shadow: inset 0 0 0 1px var(--qt-line); }
+.app.bounds [data-qt]::after { content: "Qt · " attr(data-qt); position: absolute; top: 0; right: 0; z-index: 6; pointer-events: none; font: 600 10px/1.6 var(--font); color: #fff; background: var(--qt-tag); padding: 0 6px; border-bottom-left-radius: 6px; opacity: .9; }
+.app.bounds [data-web] { box-shadow: inset 0 0 0 2px var(--web-line); }
+.app.bounds [data-web]::after { content: "웹뷰 · " attr(data-web); position: absolute; bottom: 0; right: 0; z-index: 6; pointer-events: none; font: 600 10px/1.6 var(--font); color: #fff; background: var(--web-tag); padding: 0 6px; border-top-left-radius: 6px; }
+
+/* ---------- 공통 부품 */
+.pane { background: var(--card); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.pane-h { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); display: flex; align-items: flex-start; gap: var(--sp-2); flex: none; }
+.pane-b { flex: 1; overflow: auto; min-height: 0; }
+.pane-f { flex: none; border-top: 1px solid var(--line); padding: var(--sp-3) var(--sp-4); display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+.lbl { font-size: var(--fs-xs); color: var(--muted); }
+.ttl { font-size: var(--fs-lg); font-weight: 700; margin-top: 1px; }
+.ttl .en { font-size: var(--fs-sm); font-weight: 400; color: var(--muted); margin-left: 4px; }
+.meta { font-size: var(--fs-sm); color: var(--ink-2); margin-top: 3px; line-height: 1.55; }
+.btn { border: 1px solid var(--line-strong); background: #fff; border-radius: var(--r-pill); padding: 5px 14px; cursor: pointer; white-space: nowrap; font-size: var(--fs-md); }
+.btn:hover:not(:disabled) { border-color: var(--ui); color: var(--ui-ink); }
+.btn.primary { background: var(--ui); border-color: var(--ui); color: #fff; }
+.btn.primary:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
+.btn.sm { padding: 2px 10px; font-size: var(--fs-sm); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.link { color: var(--ui); cursor: pointer; background: none; border: 0; padding: 0; text-decoration: none; font-size: inherit; }
+.link:hover { text-decoration: underline; }
+.toolbar { flex: none; display: flex; align-items: center; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; padding: var(--sp-2) var(--sp-4); background: var(--card); border-bottom: 1px solid var(--line); min-height: 48px; }
+.fld { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--muted); }
+.fld select, .fld input { border: 1px solid var(--line-strong); border-radius: var(--r-input); padding: 4px 8px; background: #fff; color: var(--ink); max-width: 330px; }
+.agg { font-size: var(--fs-sm); color: var(--ink-2); white-space: nowrap; }
+.agg b { font-weight: 700; color: var(--ink); }
+.vchip { font-size: var(--fs-sm); padding: 3px 10px; border-radius: var(--r-pill); background: var(--bg); color: var(--ink-2); white-space: nowrap; }
+.vchip::before { content: "\25CF  "; }
+.vchip.passed::before { color: var(--ok); }
+.vchip.blocked { background: var(--err-bg); color: var(--err-ink); }
+.vchip.blocked::before { color: var(--err-ink); }
+.vnote { font-size: var(--fs-xs); color: var(--muted); max-width: 240px; line-height: 1.35; }
+
+/* 배지: 출처·상태 */
+.b { display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-xs); line-height: 1.5; padding: 0 7px; border-radius: var(--r-pill); border: 1px solid var(--line-strong); color: var(--ink-2); background: #fff; white-space: nowrap; vertical-align: 1px; }
+.b.ai, .b.auto { background: var(--ai-hatch); border-color: #b8bdc6; color: var(--ai-ink); }
+.b.ai::before { content: "AI"; font-weight: 700; font-size: 9.5px; border: 1px solid #9ca3af; border-radius: 3px; padding: 0 2px; background: #fff; }
+.b.human { background: var(--human-line); color: #fff; border-color: var(--human-line); }
+.b.hyp { background: #f3f4f6; }
+.b.unk { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-line); }
+.b.err { background: var(--err-bg); color: var(--err-ink); border-color: var(--err-line); }
+.b.okc { color: var(--ok); border-color: #86efac; background: #f0fdf4; }
+.b.sel-S { color: var(--ink); }
+.b.sel-X { color: var(--muted); background: #f3f4f6; }
+.b.pend { background: var(--ui-weak); color: var(--ui-ink); border-color: #bfdbfe; }
+.unk-t { color: var(--warn-ink); }
+.unk-t::before { content: "미확인 "; font-weight: 700; }
+
+/* 위험도 칩: 제안(속 빈 테두리) vs 확정(채움) */
+.risk { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-sm); border-radius: var(--r-pill); padding: 1px 9px 1px 3px; white-space: nowrap; border: 1.5px solid; }
+.risk .n { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-weight: 700; font-size: 11px; }
+.risk.prop { background: #fff; font-style: normal; }
+.risk.prop .w { font-size: 10px; font-weight: 700; letter-spacing: .02em; }
+.risk.prop .n { border: 1.5px solid; background: #fff; }
+.risk.conf { font-weight: 700; }
+.risk.conf .n { background: #fff; color: var(--ink); }
+.risk.t1.prop, .risk.t2.prop { border-color: var(--risk-ok-line); color: var(--risk-ok-ink); }
+.risk.t3.prop, .risk.t4.prop { border-color: var(--risk-cond-line); color: var(--risk-cond-ink); }
+.risk.t5.prop { border-color: var(--risk-deny-line); color: var(--risk-deny-line); }
+.risk.t1.conf, .risk.t2.conf { background: var(--risk-ok-bg); border-color: var(--risk-ok-ink); color: var(--risk-ok-ink); }
+.risk.t3.conf, .risk.t4.conf { background: var(--risk-cond-bg); border-color: var(--risk-cond-ink); color: var(--risk-cond-ink); }
+.risk.t5.conf { background: var(--risk-deny-bg); border-color: var(--risk-deny-bg); color: var(--risk-deny-ink); }
+.risk.none { border: 1px dotted var(--line-strong); color: var(--muted); padding: 1px 9px; }
+.risk.draft { border-style: solid; outline: 2px dashed var(--ui); outline-offset: 1px; }
+
+/* 출처 상자 */
+.ai-box { background: var(--ai-hatch); border: 1px solid #c9cdd4; border-radius: var(--r-card); padding: var(--sp-3); color: var(--ai-ink); }
+.ai-box .hd, .hu-box .hd { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: 700; margin-bottom: 6px; color: var(--ink-2); }
+.hu-box { background: #fff; border: 1.5px solid var(--human-line); border-radius: var(--r-card); padding: var(--sp-3); }
+.kv { display: grid; grid-template-columns: 92px 1fr; gap: 3px 10px; font-size: var(--fs-sm); line-height: 1.5; }
+.kv > .k { color: var(--muted); }
+.note { font-size: var(--fs-xs); color: var(--muted); line-height: 1.5; margin-top: 6px; }
+
+/* 표 (QTableView 흉내) */
+.tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.tbl th { position: sticky; top: 0; z-index: 2; background: #fafafa; text-align: left; font-weight: 600; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; font-size: var(--fs-xs); }
+.tbl td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tbl td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tbl tr[data-c], .tbl tr[data-pick] { cursor: pointer; }
+.tbl tr[data-c]:hover td, .tbl tr[data-pick]:hover td { background: #f7f8fa; }
+.tbl tr.sel td { background: var(--ui-weak) !important; }
+.tbl tr.sel td:first-child { box-shadow: inset 3px 0 var(--ui); }
+.tbl tr.ex td { color: var(--muted); }
+.tbl .sub { font-size: var(--fs-xs); color: var(--muted); margin-top: 1px; }
+.tbl .why { font-size: var(--fs-xs); color: var(--muted); margin-top: 2px; line-height: 1.4; }
+.tbl.clamp .why { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.filters { display: flex; gap: 4px; flex-wrap: wrap; padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--line); align-items: center; flex: none; }
+.pill { border: 1px solid var(--line-strong); background: #fff; border-radius: var(--r-pill); padding: 2px 10px; cursor: pointer; font-size: var(--fs-sm); color: var(--ink-2); }
+.pill.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.ftog { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); display: flex; gap: 4px; align-items: center; }
+
+/* 우측 탭(Qt QTabWidget) */
+.qtabs { display: flex; gap: 2px; padding: 0 var(--sp-3); border-bottom: 1px solid var(--line); flex: none; }
+.qtabs button { border: 0; background: none; padding: 8px 10px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; font-size: var(--fs-md); white-space: nowrap; }
+.qtabs button.on { color: var(--ink); border-bottom-color: var(--ui); font-weight: 600; }
+.qtabs .c { font-size: var(--fs-xs); color: var(--muted); margin-left: 2px; }
+
+/* 카드 */
+.cards { padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
+.card { border: 1px solid var(--line); border-radius: var(--r-card); padding: 10px 12px; background: #fff; }
+.card.click { cursor: pointer; }
+.card.click:hover { border-color: #b8c4d6; }
+.card.on { border-color: var(--ui); box-shadow: 0 0 0 1px var(--ui); }
+.card .r1 { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.card .cc { font-size: var(--fs-sm); line-height: 1.5; margin-top: 5px; display: grid; grid-template-columns: 34px 1fr; gap: 6px; }
+.card .cc .k { color: var(--muted); }
+.sec { margin-top: var(--sp-3); }
+.sec > .h { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-2); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); border: 1px solid var(--line-strong); border-radius: var(--r-pill); padding: 0 7px; margin: 1px 2px 1px 0; background: #fff; white-space: nowrap; }
+.chip.id { font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.sw.cause { background: rgba(220,38,38,.35); border: 2px solid var(--hl-cause); }
+.sw.path { height: 0; width: 16px; border-top: 4px solid var(--hl-path); border-radius: 0; }
+.sw.guess { height: 0; width: 16px; border-top: 4px dashed var(--hl-path); border-radius: 0; }
+.sw.sg { border: 2px solid var(--hl-safeguard); box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--hl-safeguard); width: 10px; height: 10px; }
+.sgrow { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font-size: var(--fs-sm); padding: 6px 0; border-top: 1px solid var(--line); }
+.sgrow:first-child { border-top: 0; }
+
+/* 띠(경고·차단) */
+.band { flex: none; display: flex; gap: var(--sp-3); align-items: flex-start; padding: 8px var(--sp-4); font-size: var(--fs-sm); line-height: 1.5; border-bottom: 1px solid; }
+.band.err { background: var(--err-bg); color: var(--err-ink); border-color: var(--err-line); }
+.band.warn { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-line); }
+.band.info { background: var(--ui-weak); color: var(--ui-ink); border-color: #bfdbfe; }
+.band b { font-weight: 700; }
+.band ul { margin: 2px 0 0; padding-left: 18px; }
+.band .btn { margin-left: auto; }
+
+/* 빈 화면·로딩·오류 */
+.empty { flex: 1; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 40px; }
+.empty .big { font-size: var(--fs-xl); color: var(--ink); font-weight: 700; margin-bottom: 6px; }
+.steplist { list-style: none; padding: 0; margin: 10px 0 0; text-align: left; display: inline-block; }
+.steplist li { padding: 3px 0; display: flex; gap: 8px; align-items: center; font-size: var(--fs-md); color: var(--muted); }
+.steplist li .dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line-strong); display: inline-grid; place-items: center; font-size: 10px; }
+.steplist li.done { color: var(--ink); }
+.steplist li.done .dot { background: var(--ok); border-color: var(--ok); color: #fff; }
+.steplist li.run { color: var(--ink); font-weight: 600; }
+.steplist li.run .dot { border-color: var(--ui); border-top-color: transparent; animation: spin .8s linear infinite; }
+.steplist li.fail { color: var(--err-ink); font-weight: 600; }
+.steplist li.fail .dot { background: var(--err-ink); border-color: var(--err-ink); color: #fff; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- ① 등록 */
+.reg-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) clamp(460px, 34vw, 600px); }
+.reg-grid > .pane + .pane { border-left: 1px solid var(--line); }
+.form { padding: var(--sp-4) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-3); }
+.frow { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center; font-size: var(--fs-md); }
+.frow > .k { color: var(--muted); font-size: var(--fs-sm); }
+.frow input[type=text], .frow textarea { width: 100%; border: 1px solid var(--line-strong); border-radius: var(--r-input); padding: 6px 10px; background: #fff; }
+.frow input:focus, textarea:focus, select:focus { outline: 2px solid var(--ui); outline-offset: -1px; }
+.drop { border: 2px dashed var(--line-strong); border-radius: var(--r-panel); padding: 22px; text-align: center; color: var(--muted); cursor: pointer; background: #fafbfc; }
+.drop:hover { border-color: var(--ui); color: var(--ui-ink); background: var(--ui-weak); }
+.drop b { color: var(--ink); }
+.filecard { border: 1px solid var(--line); border-radius: var(--r-card); padding: 10px 12px; display: grid; gap: 4px; font-size: var(--fs-sm); }
+.meta-cand { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.meta-cand .v { font-weight: 600; }
+.resbox { border: 1px solid var(--line); border-radius: var(--r-card); padding: 12px 14px; font-size: var(--fs-sm); }
+.resbox.ok { border-color: #86efac; background: #f0fdf4; }
+.resbox.err { border-color: var(--err-line); background: var(--err-bg); color: var(--err-ink); }
+.resbox.warn { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
+
+/* ---------- ④⑤ 3단 배치 */
+.tri { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(380px, 25vw, 500px) minmax(0,1fr) clamp(390px, 27vw, 530px); }
+.tri.lcol { grid-template-columns: 34px minmax(0,1fr) clamp(390px, 27vw, 530px); }
+.tri.rcol { grid-template-columns: clamp(380px, 25vw, 500px) minmax(0,1fr) 34px; }
+.tri.lcol.rcol { grid-template-columns: 34px minmax(0,1fr) 34px; }
+.tri > .pane:first-child { border-right: 1px solid var(--line); }
+.tri > .pane:last-child { border-left: 1px solid var(--line); }
+.tri.lcol > .pane:first-child > :not(.colbar), .tri.rcol > .pane:last-child > :not(.colbar) { display: none; }
+.colbar { display: none; writing-mode: vertical-rl; padding: 10px 6px; font-size: var(--fs-sm); color: var(--muted); cursor: pointer; }
+.tri.lcol > .pane:first-child > .colbar, .tri.rcol > .pane:last-child > .colbar { display: block; }
+.slot { min-width: 0; min-height: 0; display: flex; }
+#slot-view { flex: 1; }
+.fold { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 2px; }
+.split-v { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.split-v > .top { flex: 1 1 58%; min-height: 0; display: flex; flex-direction: column; }
+.split-v > .bot { flex: 1 1 42%; min-height: 0; border-top: 4px solid var(--bg); display: flex; flex-direction: column; }
+
+/* ---------- 웹뷰 */
+#webview { flex: 1; min-width: 0; min-height: 0; display: flex; background: var(--bg); }
+#webview .wmain { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+#vp { position: absolute; inset: 0; cursor: grab; }
+#vp.drag { cursor: grabbing; }
+#cv { width: 100%; height: 100%; display: block; }
+.float { position: absolute; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-panel); box-shadow: var(--shadow); font-size: var(--fs-sm); z-index: 3; }
+#f-tabs { top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); }
+#f-tabs button { border: 0; background: none; padding: 5px 14px; border-radius: var(--r-pill); cursor: pointer; color: var(--muted); }
+#f-tabs button.on { background: var(--bg); color: var(--ink); font-weight: 600; }
+#f-tabs button:disabled { opacity: .35; cursor: not-allowed; }
+#f-search { top: 12px; left: 12px; width: 250px; padding: 8px; }
+#f-search input { width: 100%; border: 1px solid var(--line); border-radius: var(--r-pill); padding: 6px 12px; }
+#f-search .res div { padding: 4px 8px; border-radius: 8px; cursor: pointer; }
+#f-search .res div:hover { background: var(--bg); }
+#f-ev { top: 56px; left: 12px; max-width: min(560px, calc(100% - 270px)); padding: 8px 14px; }
+#f-ev .line { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+#f-ev .line b { font-size: var(--fs-md); }
+#f-ev .lst { margin-top: 6px; max-height: 220px; overflow: auto; border-top: 1px solid var(--line); padding-top: 6px; }
+#f-ev .lst div { display: grid; grid-template-columns: 74px 1fr; gap: 6px; padding: 1px 0; }
+#f-layers { top: 12px; right: 12px; padding: 10px 14px; width: 232px; }
+#f-layers label { display: flex; align-items: center; gap: 8px; margin: 3px 0; cursor: pointer; }
+#f-layers label small { margin-left: auto; color: var(--muted); }
+#f-layers .note { margin-top: 6px; }
+.lsw { display: inline-block; width: 18px; height: 0; border-top: 3px solid; }
+.lsw.dash { border-top-style: dashed; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+#f-zoom { left: 12px; bottom: 12px; display: flex; align-items: center; gap: 2px; padding: 3px 6px; border-radius: var(--r-pill); }
+#f-zoom button { border: 0; background: none; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 15px; }
+#f-zoom button:hover { background: var(--bg); }
+#f-zoom .pct { min-width: 46px; text-align: center; color: var(--muted); }
+#f-zoom button.fit { width: auto; padding: 0 10px; font-size: var(--fs-sm); border-radius: var(--r-pill); }
+#f-legend { right: 12px; bottom: 12px; padding: 8px 12px; display: grid; gap: 3px; }
+#f-legend div { display: flex; align-items: center; gap: 8px; }
+#f-banner { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); z-index: 4; display: none; max-width: 70%; padding: 6px 14px; border-radius: var(--r-pill); font-size: var(--fs-sm); background: var(--warn-bg); color: var(--warn-ink); border: 1px solid var(--warn-line); text-align: center; }
+#f-pick { position: absolute; left: 50%; top: 100px; transform: translateX(-50%); z-index: 4; display: none; padding: 6px 14px; border-radius: var(--r-pill); background: var(--ink); color: #fff; font-size: var(--fs-sm); }
+#f-props { width: 320px; flex: none; background: var(--card); border-left: 1px solid var(--line); overflow: auto; padding: var(--sp-4) var(--sp-5); font-size: var(--fs-md); }
+#f-props h2 { margin: 2px 0; font-size: 22px; }
+#f-props table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+#f-props td { border-top: 1px solid var(--line); padding: 4px; vertical-align: top; word-break: break-all; }
+#f-props td:first-child { color: var(--muted); width: 42%; }
+#f-props h3 { font-size: var(--fs-md); margin: 16px 0 4px; }
+#webview.m-hazop #f-search, #webview.m-hazop #f-props { display: none; }
+#webview.m-view #f-ev, #webview.m-view #f-legend { display: none; }
+#tip { position: fixed; z-index: 60; pointer-events: none; display: none; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font-size: var(--fs-sm); box-shadow: 0 2px 10px rgba(0,0,0,.12); max-width: 260px; }
+
+/* SVG: 도면·오버레이·그래프 */
+#cv text { font-family: Arial, "Malgun Gothic", sans-serif; }
+.bgd .ln { fill: none; stroke: #111; }
+.ovl.sym { fill: rgba(37,99,235,.05); stroke-width: 1.5; cursor: pointer; }
+.ovl.sym:hover { fill: rgba(37,99,235,.16); }
+.ovl.line { fill: none; stroke-width: 2.5; stroke-opacity: .75; pointer-events: none; stroke-linejoin: round; }
+.hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
+.ovl.tagb { fill: rgba(17,24,39,.05); stroke: var(--tag); stroke-width: .7; pointer-events: none; }
+.ovl.dash { stroke-dasharray: 5 3; }
+.hidden { display: none; }
+#cv.dimmed .ovl:not(.hl-on) { opacity: var(--hl-dim); }
+#cv.dimmed .bgd { opacity: .45; }
+#cv.dimmed .gn:not(.hl-on), #cv.dimmed .ge:not(.hl-on), #cv.dimmed .gl { opacity: var(--hl-dim); }
+#cv.hl-off .hl-layer { display: none; }
+#cv.hl-off.dimmed .ovl, #cv.hl-off.dimmed .bgd, #cv.hl-off.dimmed .gn, #cv.hl-off.dimmed .ge, #cv.hl-off.dimmed .gl { opacity: 1; }
+#cv:not(.hl-off) .ovl.sym.hl-path { stroke: var(--hl-path) !important; stroke-width: 3; fill: rgba(234,88,12,.12); }
+#cv:not(.hl-off) .ovl.line.hl-path { stroke: var(--hl-path) !important; stroke-width: 5; stroke-opacity: 1; }
+#cv:not(.hl-off) .ovl.sym.hl-cause { stroke: var(--hl-cause) !important; stroke-width: 3.5; fill: rgba(220,38,38,.30); }
+#cv:not(.hl-off) .ge.hl-path { stroke: var(--hl-path) !important; stroke-width: 4; stroke-opacity: 1; }
+#cv:not(.hl-off) .gn.hl-path { stroke: var(--hl-path); stroke-width: 3; }
+#cv:not(.hl-off) .gn.hl-cause { fill: var(--hl-cause) !important; stroke: #7f1d1d; stroke-width: 2.5; }
+#cv:not(.hl-off) .hl-guess { stroke-dasharray: 9 6; }
+.sg-ring { fill: none; stroke: var(--hl-safeguard); stroke-width: 2.6; }
+.sg-ring2 { fill: none; stroke: var(--hl-safeguard); stroke-width: 1.2; }
+.sg-ring.weak { stroke-width: 1.4; }
+.sg-badge rect { fill: var(--hl-safeguard); }
+.sg-badge text { fill: #fff; font-size: 10px; font-weight: 700; }
+.sg-badge.weak rect { fill: #fff; stroke: var(--hl-safeguard); stroke-width: 1.2; }
+.sg-badge.weak text { fill: var(--hl-safeguard); }
+.pick-ring { fill: none; stroke: var(--ui); stroke-width: 2; }
+.ge { stroke-width: 1.4; stroke-opacity: .6; fill: none; }
+.gn { stroke: #fff; stroke-width: 1.5; cursor: pointer; }
+.gl { font-size: 10px; fill: #374151; pointer-events: none; }
+.ghit { stroke: transparent; stroke-width: 9; cursor: pointer; }
+
+/* ---------- ⑤ 검토 폼 */
+.form5 { padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
+.flbl { font-size: var(--fs-sm); font-weight: 700; margin-bottom: 5px; display: flex; gap: 6px; align-items: center; }
+.flbl i { font-style: normal; font-weight: 400; color: var(--err-ink); font-size: var(--fs-xs); }
+.seg4 { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line-strong); border-radius: var(--r-pill); overflow: hidden; }
+.seg4 button { border: 0; background: #fff; padding: 6px 0; cursor: pointer; border-left: 1px solid var(--line-strong); }
+.seg4 button:first-child { border-left: 0; }
+.seg4 button.on { background: var(--ink); color: #fff; font-weight: 700; }
+.seg4 button:disabled { opacity: .5; cursor: not-allowed; }
+textarea.ta { width: 100%; min-height: 54px; resize: vertical; border: 1px solid var(--line-strong); border-radius: var(--r-input); padding: 6px 10px; background: #fff; font-size: var(--fs-md); }
+textarea.ta:disabled, input:disabled, select:disabled { background: #f3f4f6; color: var(--muted); }
+.ferr { color: var(--err-ink); font-size: var(--fs-xs); margin-top: 3px; }
+.invalid { border-color: var(--err-ink) !important; background: var(--err-bg) !important; }
+.cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cmp .rowk { grid-column: 1 / -1; font-size: var(--fs-xs); font-weight: 700; color: var(--ink-2); margin: 4px 0 -4px; display: flex; gap: 6px; align-items: center; }
+.cmp .ai-box, .cmp .hu-box { padding: 8px 10px; font-size: var(--fs-sm); line-height: 1.5; }
+.hu-box.off { border-style: solid; border-color: var(--line-strong); background: #fafafa; color: var(--muted); }
+.hu-box textarea { width: 100%; border: 0; resize: vertical; min-height: 44px; padding: 0; background: transparent; font-size: var(--fs-sm); line-height: 1.5; }
+.hu-box textarea:focus { outline: none; }
+.riskgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.riskgrid select { width: 100%; border: 1px solid var(--line-strong); border-radius: var(--r-input); padding: 4px 6px; background: #fff; }
+.riskgrid textarea { width: 100%; min-height: 36px; margin-top: 4px; border: 1px solid var(--line-strong); border-radius: var(--r-input); padding: 4px 8px; font-size: var(--fs-sm); resize: vertical; }
+.calc { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-sm); }
+.calc .lock { font-size: var(--fs-xs); color: var(--muted); }
+.prev { border: 1px solid #c7d2fe; background: #f5f7ff; border-radius: var(--r-card); padding: 8px 12px; font-size: var(--fs-sm); }
+.prev .hd { font-size: var(--fs-xs); font-weight: 700; color: #3730a3; display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+.itemlist .it { display: grid; grid-template-columns: 1fr auto; gap: 4px; padding: 7px 12px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: var(--fs-sm); }
+.itemlist .it:hover { background: #f7f8fa; }
+.itemlist .it.sel { background: var(--ui-weak); box-shadow: inset 3px 0 var(--ui); }
+.itemlist .gh { padding: 6px 12px; font-size: var(--fs-xs); font-weight: 700; color: var(--muted); background: #fafafa; border-bottom: 1px solid var(--line); position: sticky; top: 0; }
+.dec { font-size: var(--fs-xs); border-radius: var(--r-pill); padding: 0 8px; border: 1px solid var(--line-strong); white-space: nowrap; }
+.dec.accept, .dec.modify { background: var(--human-line); color: #fff; border-color: var(--human-line); }
+.dec.reject { background: #fff; color: var(--ink); border-color: var(--ink); text-decoration: line-through; }
+.dec.defer { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-line); }
+.dec.none { color: var(--muted); }
+.dec.not_applicable { background: #f3f4f6; color: var(--ink-2); border-color: #9ca3af; }
+.dec.nsc { background: var(--human-line); color: #fff; border-color: var(--human-line); }
+.dec.draft { outline: 2px dashed var(--ui); outline-offset: 1px; }
+
+/* ---------- 대화상자·토스트 */
+.overlay { position: fixed; inset: 0; background: rgba(17,24,39,.35); display: none; place-items: center; z-index: 80; }
+.overlay.on { display: grid; }
+.dlg::after { content: "Qt · QDialog"; position: absolute; top: 0; right: 0; font: 600 10px/1.6 var(--font); color: #fff; background: var(--qt-tag); padding: 0 6px; border-radius: 0 12px 0 6px; opacity: .85; }
+.dlg { width: min(640px, 92vw); max-height: 86vh; display: flex; flex-direction: column; background: #fff; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+.dlg .dh { padding: 12px 18px; border-bottom: 1px solid var(--line); font-weight: 700; display: flex; align-items: center; }
+.dlg .db { padding: 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 12px; font-size: var(--fs-md); }
+.dlg .df { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+.opt { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-input); cursor: pointer; }
+.opt.dis { opacity: .5; cursor: not-allowed; }
+.opt input { margin-top: 3px; }
+.opt .s { font-size: var(--fs-xs); color: var(--muted); margin-top: 2px; }
+.path { font-family: var(--mono); font-size: 11.5px; background: #f3f4f6; border-radius: 6px; padding: 6px 8px; word-break: break-all; }
+#toasts { position: fixed; right: 18px; bottom: 40px; z-index: 90; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.toast { background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 10px; font-size: var(--fs-sm); max-width: 440px; box-shadow: 0 6px 20px rgba(0,0,0,.2); line-height: 1.5; }
+.toast.err { background: var(--err-ink); }
+.toast small { display: block; opacity: .75; }
+</style>
+</head>
+<body>
+<div class="app bounds" id="app">
+  <div class="titlebar"><span class="ico"></span><span>HAZOP 검토 — SNP-M-102 가압기 구간</span><span class="sp"></span><span class="wb">&#8212;</span><span class="wb">&#9744;</span><span class="wb x">&#10005;</span></div>
+  <div class="menubar" data-qt="메뉴" id="menubar">
+    <div class="m">파일<div class="dropdown">
+      <div data-act="go-ana">구간 열기…</div><div data-act="go-ana">실행 열기…</div><div data-act="excel">Excel 내보내기…</div><div class="sepl"></div><div data-act="settings">설정…</div></div></div>
+    <div class="m">보기<div class="dropdown">
+      <div data-act="tog-left">좌측 패널 접기/펴기</div><div data-act="tog-right">우측 패널 접기/펴기</div><div data-act="tog-hl">근거 강조 켜기/끄기</div><div class="sepl"></div><div data-act="tog-bounds">영역 경계 표시 (시안 전용)</div></div></div>
+    <div class="m">도움말<div class="dropdown"><div data-act="about">버전·데이터 위치</div></div></div>
+    <div class="m mock">시안 상태 예시 &#9662;<div class="dropdown" style="min-width:330px">
+      <div class="grp">① 자료 등록</div>
+      <div data-act="st:reg:empty">빈 화면 — 등록된 자료 없음</div>
+      <div data-act="st:reg:loading">로딩 — 등록 단계 진행</div>
+      <div data-act="st:reg:hasherr">오류 — 저장 후 해시 불일치</div>
+      <div data-act="st:reg:multi">오류 — 여러 파일 놓기</div>
+      <div data-act="st:reg:nosvg">경고 — 같은 이름의 SVG 없음</div>
+      <div class="grp">② 도면·그래프</div>
+      <div data-act="st:view:empty">빈 화면 — 추출 결과 없음</div>
+      <div data-act="st:view:nosvg">SVG 없음 — 그래프 보기만</div>
+      <div class="grp">④ HAZOP 분석</div>
+      <div data-act="st:ana:empty">빈 화면 — 구간·실행 없음</div>
+      <div data-act="st:ana:loading">로딩 — 분석 단계 진행</div>
+      <div data-act="st:ana:blocked">결과 blocked (예시 오류)</div>
+      <div data-act="st:ana:mismatch">그래프 버전 불일치</div>
+      <div data-act="st:ana:guess">추정 경로 가상 예시 (RC-L011 흐름 방향 미확인으로 가정)</div>
+      <div class="grp">⑤ 설계보완·확정</div>
+      <div data-act="st:rev:empty">빈 화면 — 실행을 열지 않음</div>
+      <div data-act="st:rev:savefail">저장 실패</div>
+      <div data-act="st:rev:hashchg">분석 결과 변경(해시 불일치)</div>
+      <div data-act="st:rev:noreviewer">검토자 이름 미설정</div>
+      <div class="sepl"></div>
+      <div data-act="st:reset"><b>모든 예시 상태 초기화</b></div>
+    </div></div>
+  </div>
+  <header data-qt="헤더">
+    <div class="logo"></div><div class="app-n">HAZOP 검토</div><div class="vsep"></div>
+    <div class="where" id="where"></div>
+    <div class="sp"></div>
+    <nav class="steps" id="steps">
+      <button data-go="reg">① 자료 등록</button><button data-go="view">② 도면·그래프</button><button data-go="ana">④ HAZOP 분석</button><button data-go="rev">⑤ 설계보완·확정</button>
+    </nav>
+    <div class="who" id="who"></div>
+  </header>
+  <main>
+    <!-- ① 자료 등록 -->
+    <section class="screen" id="sc-reg">
+      <div class="reg-grid">
+        <div class="pane" data-qt="QTableView 등록 자료 목록">
+          <div class="pane-h"><div><div class="lbl">① 자료 등록</div><div class="ttl">등록 자료</div><div class="meta">draw.io P&amp;ID 원본 1개씩 등록 · 같은 이름의 SVG는 파생 자료로 함께 등록</div></div><span class="sp"></span><span class="b unk">목록 행은 시안용 가상 값</span></div>
+          <div class="pane-b" id="reg-list"></div>
+        </div>
+        <div class="pane" data-qt="등록 폼·결과">
+          <div class="pane-h"><div><div class="lbl">새 등록</div><div class="ttl">원본 파일 등록</div></div></div>
+          <div class="pane-b" id="reg-form"></div>
+        </div>
+      </div>
+    </section>
+    <!-- ② 도면·그래프 -->
+    <section class="screen" id="sc-view">
+      <div class="toolbar" data-qt="도구줄">
+        <label class="fld">도면 <select id="v-dwg"><option>SNP-M-102 · REACTOR COOLANT SYSTEM - PRESSURIZER AND POSRV</option><option disabled>SNP-M-101 (시안 미포함)</option><option disabled>SNP-M-201 (시안 미포함)</option><option disabled>SNP-M-301 (시안 미포함)</option></select></label>
+        <span class="vchip passed" id="v-chip">구조 검증 passed · 차단 0</span>
+        <span class="vchip">노드 30 · 관계 30 · 미확인 3</span>
+        <span class="vnote">미확인 3 = project_id·material_id·registration_version (자료 등록 미연동)</span>
+        <span class="sp"></span>
+        <span class="vnote">도면/그래프 전환·레이어·검색·속성 패널은 기존 뷰어(웹뷰) 그대로</span>
+      </div>
+      <div class="band warn" id="v-band" style="display:none"></div>
+      <div class="slot" id="slot-view"></div>
+    </section>
+    <!-- ④ HAZOP 분석 -->
+    <section class="screen" id="sc-ana">
+      <div class="toolbar" data-qt="도구줄" id="a-toolbar"></div>
+      <div id="a-bands"></div>
+      <div class="tri" id="a-tri">
+        <div class="pane" data-qt="QTableView 편차 목록" id="a-left"></div>
+        <div class="slot" id="slot-ana"></div>
+        <div class="pane" data-qt="상세 패널(QTabWidget)" id="a-right"></div>
+      </div>
+    </section>
+    <!-- ⑤ 설계보완·확정 -->
+    <section class="screen" id="sc-rev">
+      <div class="toolbar" data-qt="도구줄" id="r-toolbar"></div>
+      <div id="r-bands"></div>
+      <div class="tri" id="r-tri">
+        <div class="pane" data-qt="편차·검토 항목 목록" id="r-left"></div>
+        <div class="slot" id="slot-rev"></div>
+        <div class="pane" data-qt="검토 편집 폼" id="r-right"></div>
+      </div>
+    </section>
+  </main>
+  <div class="statusbar" data-qt="상태줄" id="statusbar">
+    <span class="vchip passed" id="s-chip">결과 검증 passed</span>
+    <span id="s-note">형식·참조 검증 통과(보류 항목이 없다는 뜻이 아님)</span>
+    <span>|</span><span id="s-job">대기 중</span>
+    <span>|</span><span id="s-saved">최근 저장: 없음</span>
+    <span class="sp"></span>
+    <span class="bridge" id="s-bridge"></span>
+    <label><input type="checkbox" id="s-bounds" checked> 영역 경계 표시(시안)</label>
+    <span>1920×1080 최적 · 최소 1366×768</span>
+  </div>
+</div>
+
+<!-- 웹뷰: 인스턴스 하나를 ②④⑤가 공유(화면 전환 시 이동) -->
+<div id="webview" data-web="QtWebEngine 1개 · 화면 전환 시 이동">
+  <div class="wmain">
+    <div id="vp"><svg id="cv" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <div class="float" id="f-tabs"><button data-tab="drawing" class="on">도면</button><button data-tab="graph">그래프</button></div>
+    <div class="float" id="f-search"><input id="q" type="search" placeholder="태그·이름으로 찾기" autocomplete="off"><div class="res" id="q-res"></div></div>
+    <div class="float" id="f-ev"></div>
+    <div class="float" id="f-layers"></div>
+    <div class="float" id="f-zoom"><button data-z="out" title="축소">&minus;</button><span class="pct" id="pct">100%</span><button data-z="in" title="확대">+</button><button class="fit" data-z="fit">맞춤</button></div>
+    <div class="float" id="f-legend">
+      <div><span class="sw cause"></span>원인 설비 (채움)</div>
+      <div><span class="sw path"></span>경로 (굵은 선)</div>
+      <div><span class="sw sg"></span>보호수단 (이중 테두리·배지)</div>
+      <div><span class="sw guess"></span>추정 경로 (파선 — 실제 흐름 경로 아님)</div>
+      <div class="note" style="margin:0">선택 노드 = 파란 테두리(UI 선택)</div>
+    </div>
+    <div id="f-banner"></div>
+    <div id="f-pick">보호수단으로 추가할 노드를 도면에서 클릭하세요 · Esc 취소</div>
+  </div>
+  <aside id="f-props"><div class="muted">도면에서 심볼·배관·태그를 클릭하면 속성이 여기에 표시됩니다.</div></aside>
+</div>
+<div id="park" style="display:none"></div>
+<div id="tip"></div>
+<div class="overlay" id="overlay"><div class="dlg" data-qt="QDialog" id="dlg"></div></div>
+<div id="toasts"></div>
+
+<script type="application/json" id="data">
+{
+"run": {"id": "analysis-20261104T065638Z-2e14dd", "created": "2026-11-04 15:56:38 (UTC 06:56:38)", "region": "region-SNP-M-102-pzr", "region_v": 1, "region_name": "SNP-M-102 가압기 구간", "graph_v": "v-7ed95b0c74f1", "dwg": "SNP-M-102", "mode": "normal",
+  "ai_client": "고정 응답 폴더 데이터/고정응답/region-SNP-M-102-pzr (고정 응답(테스트·QA용). 실제 AI 호출 아님)",
+  "intent": "가압기 RC-PZ01은 정상 운전 중 증기·물 2상을 유지하여 원자로냉각재계통 압력을 유지·제어한다. 압력 상승 시 RC-PIC110이 RC-PV101(정상 닫힘)을 열어 살수(RC-L011)로 압력을 낮추고, 과압 시 POSRV RC-PSV101·RC-PSV102가 RC-L031을 통해 IRWST로 방출한다. 써지 배관(RC-L010)은 SNP-M-101 주 배관과 연결된다.",
+  "counts": {"candidates": 44, "selected": 25, "excluded": 19, "deferred": 0, "scenarios": 14, "risk_proposed": 6, "dic": 11, "holds_open": 62, "ai_validated": 5, "ai_failed": 20},
+  "note": "passed는 형식·참조 검증 통과이며 보류 항목이 없다는 뜻이 아님"},
+"crit": {"id": "kosha-p86-2017-risk-example", "ver": "KOSHA P-86-2017 예시(MVP 임시 기준표)",
+  "sev": {"4": "치명적: 사망, 부상 2명 이상, 재산손실 10억원 이상, 설비 운전정지기간 10일 이상", "3": "중대함: 부상 1명, 재산손실 1억원 이상 10억원 미만, 설비 운전정지기간 1일 이상 10일 미만", "2": "보통: 부상자 없음, 재산손실 1억원 미만, 설비 운전정지기간 1일 미만", "1": "경미: 안전설계, 운전성 향상을 위한 개선 필요, 손실일수 없음"},
+  "freq": {"3": "상: 설비 수명기간에 공정사고가 1회 이상 발생", "2": "중: 설비 수명기간에 공정사고가 발생할 가능성이 있음", "1": "하: 설비 수명기간에 공정사고가 발생할 가능성이 희박함"},
+  "matrix": {"4": {"3": 5, "2": 5, "1": 3}, "3": {"3": 4, "2": 4, "1": 2}, "2": {"3": 3, "2": 2, "1": 1}, "1": {"3": 2, "2": 1, "1": 1}},
+  "levels": {"5": ["허용불가 위험", "즉시 작업중단(작업을 지속하려면 즉시 개선을 실행해야 하는 위험)", "위험작업 불허"], "4": ["중대한 위험", "긴급 임시안전대책을 세운 후 작업을 하되 계획된 정비·보수기간에 안전대책을 세워야 하는 위험", "조건부 위험작업 수용"], "3": ["상당한 위험", "계획된 정비·보수 기간에 안전대책을 세워야 하는 위험", "조건부 위험작업 수용"], "2": ["경미한 위험", "안전정보 및 주기적 표준작업안전 교육의 제공이 필요한 위험", "위험작업 수용"], "1": ["무시할 수 있는 위험", "현재의 안전대책 유지", "위험작업 수용"]}},
+"dw": {
+  "page": [1654, 1169],
+  "tb": [["TITLE", "REACTOR COOLANT SYSTEM - PRESSURIZER AND POSRV", 1059, 22], ["DWG NO.", "SNP-M-102", 1082, 22], ["REV.", "0", 1104, 22], ["NOTE", "SAMPLE FOR TEST - NOT FOR DESIGN USE", 1126, 22]],
+  "notes": ["NOTES", "1. SIMPLIFIED, FICTITIOUS PLANT FOR TESTING. NOT A REAL DESIGN.", "2. INSTRUMENT BUBBLES USE THE ISA STYLE OF THE DRAW.IO LIBRARY."],
+  "nodes": [
+    {"id": "entity-node-001", "tag": "RC-PZ01", "k": "pressurizer", "c": "equipment", "b": [500,250,120,300], "lab": ["RC-PZ01","PRESSURIZER"], "lp": [625,397,"start"], "src": "n1", "at": {"symbol_id": "S0537"}},
+    {"id": "entity-node-002", "tag": null, "k": "continuation", "c": "piping_element", "b": [40,783,120,34], "lab": ["FROM SNP-M-101","RC-L010 SURGE LINE"], "src": "c2", "at": {"to_drawing": "SNP-M-101", "to_object": "RC-L001", "line_no": "RC-L010"}},
+    {"id": "entity-node-003", "tag": "RC-L010-T3", "k": "tee", "c": "piping_element", "b": [299,799,2,2], "lab": [], "src": "j3", "at": {"line_no": "RC-L010"}},
+    {"id": "entity-node-004", "tag": "RC-TE110", "k": "temperature_element", "c": "instrument", "b": [280,700,40,40], "lab": ["TE","110"], "src": "n6", "at": {"symbol_id": "S0002"}},
+    {"id": "entity-node-005", "tag": "RC-TT110", "k": "transmitter", "c": "instrument", "b": [200,700,40,40], "lab": ["TT","110"], "src": "n7", "at": {"symbol_id": "S0002"}},
+    {"id": "entity-node-006", "tag": null, "k": "continuation", "c": "piping_element", "b": [40,183,120,34], "lab": ["FROM SNP-M-101","RC-L011 SPRAY LINE"], "src": "c10", "at": {"to_drawing": "SNP-M-101", "to_object": "RC-L003", "line_no": "RC-L011"}},
+    {"id": "entity-node-007", "tag": "RC-V111", "k": "manual_valve", "c": "valve", "b": [210,185,50,30], "lab": ["RC-V111"], "lp": [235,229,"middle"], "src": "n11", "at": {"normal_position": "NO", "symbol_id": "S0025"}},
+    {"id": "entity-node-008", "tag": "RC-PV101", "k": "control_valve", "c": "valve", "b": [330,153,50,62], "lab": ["RC-PV101"], "lp": [384,190,"start"], "src": "n12", "at": {"normal_position": "NC", "fail_position": "FC"}},
+    {"id": "entity-node-009", "tag": "RC-PT110", "k": "transmitter", "c": "instrument", "b": [420,275,40,40], "lab": ["PT","110"], "src": "n16", "at": {"symbol_id": "S0002"}},
+    {"id": "entity-node-010", "tag": "RC-PIC110", "k": "controller", "c": "instrument", "b": [335,60,40,40], "lab": ["PIC","110"], "room": true, "src": "n17", "at": {"symbol_id": "S0001"}},
+    {"id": "entity-node-011", "tag": "RC-LT110", "k": "transmitter", "c": "instrument", "b": [420,410,40,40], "lab": ["LT","110"], "src": "n21", "at": {"symbol_id": "S0002"}},
+    {"id": "entity-node-012", "tag": "RC-LI110", "k": "indicator", "c": "instrument", "b": [340,410,40,40], "lab": ["LI","110"], "room": true, "src": "n22", "at": {"symbol_id": "S0001"}},
+    {"id": "entity-node-013", "tag": "RC-L030-T25", "k": "tee", "c": "piping_element", "b": [719,199,2,2], "lab": [], "src": "j25", "at": {"line_no": "RC-L030"}},
+    {"id": "entity-node-014", "tag": "RC-PSV101", "k": "psv", "c": "valve", "b": [692,90,56,94], "lab": ["RC-PSV101","POSRV"], "lp": [686,128,"end"], "src": "n27", "at": {"normal_position": "NC", "set_pressure": "17.2 MPa", "symbol_id": "S0480"}},
+    {"id": "entity-node-015", "tag": "RC-PSV102", "k": "psv", "c": "valve", "b": [852,90,56,94], "lab": ["RC-PSV102 POSRV"], "lp": [880,82,"middle"], "src": "n28", "at": {"normal_position": "NC", "set_pressure": "17.2 MPa", "symbol_id": "S0480"}},
+    {"id": "entity-node-016", "tag": "RC-L031-T31", "k": "tee", "c": "piping_element", "b": [939,59,2,2], "lab": [], "src": "j31", "at": {"line_no": "RC-L031"}},
+    {"id": "entity-node-017", "tag": null, "k": "continuation", "c": "piping_element", "b": [1100,43,120,34], "lab": ["TO SNP-M-301","RC-L031 TO IRWST"], "src": "c34", "at": {"to_drawing": "SNP-M-301", "to_object": "SI-TK01", "line_no": "RC-L031"}},
+    {"id": "entity-node-018", "tag": "RC-TE120", "k": "temperature_element", "c": "instrument", "b": [1000,140,40,40], "lab": ["TE","120"], "src": "n36", "at": {"symbol_id": "S0002"}},
+    {"id": "entity-node-019", "tag": "RC-L031-T37", "k": "tee", "c": "piping_element", "b": [1019,59,2,2], "lab": [], "src": "j37", "at": {"line_no": "RC-L031"}}
+  ],
+  "segs": [
+    {"id": "entity-seg-001", "tag": "RC-L010", "lt": "process", "p": [[160,800],[300,800]], "r": ["relation-001","relation-002"], "a": "entity-node-002", "z": "entity-node-003", "src": "e4", "arr": false, "flow": true, "lbl": [230,794]},
+    {"id": "entity-seg-002", "tag": "RC-L010", "lt": "process", "p": [[300,800],[560,800],[560,550]], "r": ["relation-003","relation-004"], "a": "entity-node-003", "z": "entity-node-001", "src": "e5", "arr": true, "flow": true},
+    {"id": "entity-seg-003", "tag": "RC-L011", "lt": "process_secondary", "p": [[160,200],[210,200]], "r": ["relation-007","relation-008"], "a": "entity-node-006", "z": "entity-node-007", "src": "e13", "arr": true, "flow": true},
+    {"id": "entity-seg-004", "tag": "RC-L011", "lt": "process_secondary", "p": [[260,200],[330,200]], "r": ["relation-009","relation-010"], "a": "entity-node-007", "z": "entity-node-008", "src": "e14", "arr": true, "flow": true},
+    {"id": "entity-seg-005", "tag": "RC-L011", "lt": "process_secondary", "p": [[380,200],[560,200],[560,250]], "r": ["relation-011","relation-012"], "a": "entity-node-008", "z": "entity-node-001", "src": "e15", "arr": true, "flow": true, "lbl": [470,194]},
+    {"id": "entity-seg-006", "tag": "RC-L030", "lt": "process", "p": [[596,250],[596,200],[720,200]], "r": ["relation-018","relation-019"], "a": "entity-node-001", "z": "entity-node-013", "src": "e26", "arr": false, "flow": true},
+    {"id": "entity-seg-007", "tag": "RC-L030", "lt": "process", "p": [[720,200],[720,184]], "r": ["relation-020","relation-021"], "a": "entity-node-013", "z": "entity-node-014", "src": "e29", "arr": true, "flow": true},
+    {"id": "entity-seg-008", "tag": "RC-L030", "lt": "process", "p": [[720,200],[880,200],[880,184]], "r": ["relation-022","relation-023"], "a": "entity-node-013", "z": "entity-node-015", "src": "e30", "arr": true, "flow": true},
+    {"id": "entity-seg-009", "tag": "RC-L031", "lt": "process", "p": [[748,146],[780,146],[780,60],[940,60]], "r": ["relation-024","relation-025"], "a": "entity-node-014", "z": "entity-node-016", "src": "e32", "arr": false, "flow": true},
+    {"id": "entity-seg-010", "tag": "RC-L031", "lt": "process", "p": [[908,146],[940,146],[940,60]], "r": ["relation-026","relation-027"], "a": "entity-node-015", "z": "entity-node-016", "src": "e33", "arr": false, "flow": true},
+    {"id": "entity-seg-011", "tag": "RC-L031", "lt": "process", "p": [[940,60],[1100,60]], "r": ["relation-028","relation-029"], "a": "entity-node-016", "z": "entity-node-017", "src": "e35", "arr": true, "flow": true, "lbl": [1060,54]}
+  ],
+  "links": [
+    {"id": "relation-005", "k": "measurement_connection", "p": [[300,800],[300,740]], "a": "entity-node-003", "z": "entity-node-004", "src": "e8"},
+    {"id": "relation-006", "k": "signal_connection", "p": [[280,720],[240,720]], "a": "entity-node-004", "z": "entity-node-005", "src": "e9"},
+    {"id": "relation-013", "k": "measurement_connection", "p": [[500,295],[460,295]], "a": "entity-node-001", "z": "entity-node-009", "src": "e18"},
+    {"id": "relation-014", "k": "signal_connection", "p": [[440,275],[440,80],[375,80]], "a": "entity-node-009", "z": "entity-node-010", "src": "e19"},
+    {"id": "relation-015", "k": "signal_connection", "p": [[355,100],[355,153]], "a": "entity-node-010", "z": "entity-node-008", "src": "e20"},
+    {"id": "relation-016", "k": "measurement_connection", "p": [[500,430],[460,430]], "a": "entity-node-001", "z": "entity-node-011", "src": "e23"},
+    {"id": "relation-017", "k": "signal_connection", "p": [[420,430],[380,430]], "a": "entity-node-011", "z": "entity-node-012", "src": "e24"},
+    {"id": "relation-030", "k": "measurement_connection", "p": [[1020,60],[1020,140]], "a": "entity-node-019", "z": "entity-node-018", "src": "e38"}
+  ]
+},
+"reasons": {
+  "": "적용 후보(기본 선택)",
+  "X1": "회분식 고유. 운전단계 구분과 비검토(×) 구간을 전제로 하나, 연속 정상 운전에는 단계 개념이 없음 [추론]",
+  "X2": "가압기 구간에 화학 반응 없음(사용자 결정, 2026-11-04). 회분식 고유는 아님",
+  "X3": "회분식 고유. 연속 공정의 시간 지연은 압력·온도·유량 이탈의 원인으로 흡수 [추론]. 절차 기반 모드에서는 재검토",
+  "X4": "회분식 고유. 단계 사이 순서를 다루는 이탈(§6.5(2))이며, 정상 운전에는 단계 전환이 없음 [추론]",
+  "X5": "가압기 구간에 에멀젼 없음(사용자 결정, 2026-11-04)"},
+"cands": [
+  ["01","유량","증가","More","유량 증가","S","","no_response",0,null,0,1],
+  ["02","유량","감소","Less","유량 감소","S","","no_response",0,null,0,1],
+  ["03","유량","없음","No, Not, or None","유량 없음","S","","no_response",0,null,0,1],
+  ["04","유량","반대","Reverse","유체 역류","S","","no_response",0,null,0,1],
+  ["05","유량","부분","Parts of","부분 유량","S","","no_response",0,null,0,1],
+  ["06","유량","부가","As well as","유체 부가","S","","no_response",0,null,0,1],
+  ["07","유량","대체","Other than","틀린 유체","S","","no_response",0,null,0,1],
+  ["08","유량","회분식 기타",null,"회분식 기타","X","X1","not_requested",0,null,0,0],
+  ["09","압력","증가","More","압력 증가","S","","validated",5,4,2,7],
+  ["10","압력","감소","Less","압력 감소","S","","validated",6,3,6,15],
+  ["11","압력","없음","No, Not, or None","진공","S","","no_response",0,null,0,1],
+  ["12","온도","증가","More","온도 증가","S","","validated",1,2,1,2],
+  ["13","온도","감소","Less","온도 감소","S","","no_response",0,null,0,1],
+  ["14","액면","증가","More","액면 증가","S","","no_response",0,null,0,2],
+  ["15","액면","감소","Less","액면 감소","S","","no_response",0,null,0,2],
+  ["16","액면","없음","No, Not, or None","액면 없음","S","","no_response",0,null,0,1],
+  ["17","반응","증가","More","고속 반응","X","X2","not_requested",0,null,0,0],
+  ["18","반응","감소","Less","저속 반응","X","X2","not_requested",0,null,0,0],
+  ["19","반응","없음","No, Not, or None","반응 없음","X","X2","not_requested",0,null,0,0],
+  ["20","반응","반대","Reverse","분해 반응","X","X2","not_requested",0,null,0,0],
+  ["21","반응","부분","Parts of","미반응","X","X2","not_requested",0,null,0,0],
+  ["22","반응","부가","As well as","부반응","X","X2","not_requested",0,null,0,0],
+  ["23","반응","대체","Other than","틀린 반응","X","X2","not_requested",0,null,0,0],
+  ["24","시간","증가","More","시간 지연","X","X3","not_requested",0,null,0,0],
+  ["25","시간","감소","Less","시간 단축","X","X3","not_requested",0,null,0,0],
+  ["26","시간","없음","No, Not, or None","시간 생략","X","X3","not_requested",0,null,0,0],
+  ["27","시퀀스","증가","More","조작 지연","X","X4","not_requested",0,null,0,0],
+  ["28","시퀀스","감소","Less","조기 조작","X","X4","not_requested",0,null,0,0],
+  ["29","시퀀스","없음","No, Not, or None","조작 생략","X","X4","not_requested",0,null,0,0],
+  ["30","시퀀스","반대","Reverse","역행 조작","X","X4","not_requested",0,null,0,0],
+  ["31","시퀀스","부분","Parts of","부분 조작","X","X4","not_requested",0,null,0,0],
+  ["32","시퀀스","부가","As well as","부가 조작","X","X4","not_requested",0,null,0,0],
+  ["33","시퀀스","대체","Other than","틀린 조작","X","X4","not_requested",0,null,0,0],
+  ["34","조성","증가","More","과농도","S","","no_response",0,null,0,1],
+  ["35","조성","감소","Less","저농도","S","","no_response",0,null,0,1],
+  ["36","조성","부가","As well as","별도 조성","S","","no_response",0,null,0,1],
+  ["37","조성","대체","Other than","틀린 조성","S","","no_response",0,null,0,1],
+  ["38","상","증가","More","많은 상","S","","no_response",0,null,0,1],
+  ["39","상","감소","Less","적은 상","S","","no_response",0,null,0,1],
+  ["40","상","없음","No, Not, or None","단상","S","","no_response",0,null,0,1],
+  ["41","상","반대","Reverse","상 전환","S","","no_response",0,null,0,1],
+  ["42","상","부분","Parts of","에멀젼","X","X5","not_requested",0,null,0,0],
+  ["43","혼합","증가","More","과혼합","S","","validated",1,1,1,2],
+  ["44","혼합","감소","Less","저혼합","S","","validated",1,"D",1,4]
+],
+"bundles": {"01": "087d84b96d1b", "02": "37895f934cbf", "09": "e42123dd72a3", "10": "e2da6e2b42ef", "44": "74fa35d7ad5d"},
+"sgs": {
+  "P1": {"id": "entity-node-014", "tag": "RC-PSV101", "d": "RC-PSV101 설정압력(17.2 MPa) 도달 시 개방하여 과압 방출 — 용량·설정 적정성 미확인", "cnt": true, "note": "그래프에 존재만 확인. 독립성·용량·작동 적정성 미확인"},
+  "P2": {"id": "entity-node-015", "tag": "RC-PSV102", "d": "RC-PSV102 설정압력(17.2 MPa) 도달 시 개방하여 과압 방출 — 용량·설정 적정성 미확인", "cnt": true, "note": "그래프에 존재만 확인. 독립성·용량·작동 적정성 미확인"},
+  "PT": {"id": "entity-node-009", "tag": "RC-PT110", "d": "RC-PT110 압력 제어루프 측정(경보 연결 미확인)", "cnt": false, "note": "보호 동작(경보·트립 등) 그래프에서 미확인 — 보호수단 찾음으로 세지 않음"},
+  "TE": {"id": "entity-node-004", "tag": "RC-TE110", "d": "RC-TE110 온도 감지 — 경보·자동 동작 연결은 그래프에서 미확인", "cnt": false, "note": "보호수단 찾음으로 세지 않음"}},
+"scen": [
+  {"id": "scenario-p86-d09-01", "c": "deviation-p86-d09", "pat": "pat-pzr-d09-insurge", "match": "m-pat-pzr-d09-insurge-entity-node-001",
+   "cause": "RC-PZ01로 써지 배관을 통해 유입되는 냉각재 증가(인서지)로 증기 공간 압축", "cons": "RC-PZ01 압력 상승",
+   "ce": ["entity-node-001"], "ae": ["entity-node-001"], "ev": {"n": ["entity-node-001"], "r": [], "e": ["ev-node-entity-node-001"]}, "pc": null, "sg": ["P1","P2"],
+   "ai": {"cause": "RC-L010 써지 배관을 통한 냉각재 유입(인서지) 증가", "cons": "증기 공간 압축으로 RC-PZ01 압력 상승", "txt": "써지 배관이 SNP-M-101 주 배관과 이어지므로 주 계통 온도 상승에 따른 인서지가 원인이 될 수 있다는 패턴 해석이다. 주 계통 측 원인은 이 그래프 밖(다른 도면)이라 탐색하지 않았다.", "n": ["entity-node-001","entity-seg-002","entity-node-003"], "r": ["relation-003","relation-004"], "e": ["ev-node-entity-node-001","ev-path-entity-node-003"], "sg": ["P1","P2"]},
+   "risk": {"st": "deferred", "reason": "판단 근거 부족으로 AI가 강도 또는 빈도를 제안하지 않음", "sb": "인서지 규모와 설계압력 자료가 없어 강도를 제안하지 않음", "fb": "주 계통 측 원인이 그래프 밖이라 빈도 근거 없음", "unc": "SNP-M-101 측 탐색 필요"},
+   "holds": ["hold-029"]},
+  {"id": "scenario-p86-d09-02", "c": "deviation-p86-d09", "pat": "pat-tx-d09d10-loop-signal-fault", "match": "m-pat-tx-d09d10-loop-signal-fault-entity-node-009",
+   "cause": "RC-PT110 측정 신호 오류로 제어루프(RC-PIC110, RC-PV101) 오동작", "cons": "제어루프가 조절하는 유입량 이상으로 연결 용기 압력 이탈",
+   "ce": ["entity-node-009"], "ae": ["entity-node-009","entity-node-010","entity-node-008"], "ev": {"n": ["entity-node-001","entity-node-008","entity-node-009","entity-node-010"], "r": ["relation-013","relation-014","relation-015"], "e": ["ev-node-entity-node-009","ev-node-entity-node-010","ev-node-entity-node-008","ev-path-entity-node-009"]},
+   "pc": {"dir": "not_applicable", "valve": "no_valves", "flow": "not_material_path", "mat": false}, "sg": ["P1","P2"], "ai": null,
+   "risk": {"st": "deferred", "reason": "AI 강도·빈도 제안 없음"}, "holds": ["hold-031"]},
+  {"id": "scenario-p86-d09-03", "c": "deviation-p86-d09", "pat": "pat-pic-d09d10-output-fault", "match": "m-pat-pic-d09d10-output-fault-entity-node-010",
+   "cause": "RC-PIC110 제어기 출력 오류로 RC-PV101 오동작(열림 부족 또는 과다)", "cons": "RC-PV101가 조절하는 유입량 이상으로 연결 용기 압력 이탈",
+   "ce": ["entity-node-010"], "ae": ["entity-node-010","entity-node-008"], "ev": {"n": ["entity-node-001","entity-node-008","entity-node-009","entity-node-010"], "r": ["relation-013","relation-014","relation-015"], "e": ["ev-node-entity-node-010","ev-node-entity-node-008","ev-path-entity-node-010"]},
+   "pc": {"dir": "not_applicable", "valve": "no_valves", "flow": "not_material_path", "mat": false}, "sg": ["P1","P2"],
+   "ai": {"cause": "RC-PIC110 출력이 낮게 고착되어 RC-PV101 열림 지령이 부족함", "cons": "압력 상승 시 살수가 부족하여 RC-PZ01 압력 상승 억제 실패", "txt": "제어기에서 제어밸브로 이어지는 신호 연결이 그래프에 있으므로 제어기 출력 오류가 밸브 동작에 영향을 줄 수 있다는 패턴 해석이다. 제어기 이중화 여부는 확인하지 못했다.", "n": ["entity-node-010","entity-node-008"], "r": ["relation-015"], "e": ["ev-node-entity-node-010","ev-path-entity-node-010"], "sg": ["P1"]},
+   "risk": {"st": "proposed", "sev": 3, "fq": 2, "fqAI": 1, "risk": 4, "credit": false, "creditR": "보호수단 미확인(entity-node-014: 그래프에 존재만 확인, 독립성·용량·작동 적정성 미확인) — 빈도 감소 미반영(사용자 결정 2026-11-04)", "sb": "위 시나리오와 같은 결과 범위로 가정 [추론]", "fb": "제어기 출력 고장은 설비 수명 중 발생 가능성 있음(중) [일반지식]", "as": ["제어기 단일 채널로 가정"], "unc": "제어기 구성·이중화 자료 없음", "calc": "표5 조회: matrix[severity=3][frequency=2] = 4"},
+   "holds": []},
+  {"id": "scenario-p86-d09-04", "c": "deviation-p86-d09", "pat": "pat-cv-ncfc-d09-fail-closed", "match": "m-pat-cv-ncfc-d09-fail-closed-entity-node-008",
+   "cause": "RC-PV101 개방 실패(정상 닫힘, 구동 상실 시 닫힘 실패 위치)로 압력 상승 시 유량 공급 불가", "cons": "RC-PV101를 통한 압력 상승 억제 기능 상실",
+   "ce": ["entity-node-008"], "ae": ["entity-node-008"], "ev": {"n": ["entity-node-001","entity-node-008","entity-seg-005"], "r": ["relation-011","relation-012"], "e": ["ev-node-entity-node-008","ev-path-entity-node-008"]},
+   "pc": {"dir": "upstream", "valve": "no_valves", "flow": true, "mat": true}, "sg": ["P1","P2"],
+   "ai": {"cause": "RC-PV101이 압력 상승 시 열리지 않음(구동 신호·구동원 상실 시 FC로 닫힘 유지)", "cons": "살수에 의한 압력 억제가 이루어지지 않아 RC-PZ01 압력이 계속 상승하고, 설정압력 도달 시 POSRV가 개방되어 RC-L031을 거쳐 방출될 수 있음", "txt": "제어밸브의 정상 위치와 실패 위치가 모두 닫힘이므로 밸브 고장은 살수 불가로 이어진다는 패턴 해석이다. 살수 유량과 압력 제어 응답 특성은 자료가 없어 확인하지 못했다.", "n": ["entity-node-008","entity-seg-005","entity-node-001"], "r": ["relation-011","relation-012"], "e": ["ev-node-entity-node-008","ev-path-entity-node-008"], "sg": ["P1","P2"]},
+   "risk": {"st": "proposed", "sev": 3, "fq": 2, "fqAI": 1, "risk": 4, "credit": false, "creditR": "보호수단 미확인(entity-node-014, entity-node-015: 그래프에 존재만 확인, 독립성·용량·작동 적정성 미확인) — 빈도 감소 미반영(사용자 결정 2026-11-04)", "sb": "표8 기준 설비 운전정지 1일 이상 10일 미만 수준으로 가정 [추론]. 방사선 영향 등 원전 결과 범주는 기준표에 없음", "fb": "살수 제어밸브 개방 실패는 설비 수명 중 발생 가능성 있음(중) [일반지식]. POSRV가 정상 작동하면 사고로 진전될 가능성은 희박(하)하다고 제안", "as": ["POSRV 용량이 살수 불가 시 압력 상승을 감당한다고 가정", "정상 운전압력이 POSRV 설정압력보다 충분히 낮다고 가정"], "unc": "정상 운전압력·설계압력·POSRV 용량 자료 없음", "calc": "표5 조회: matrix[severity=3][frequency=2] = 4"},
+   "holds": []},
+  {"id": "scenario-p86-d09-05", "c": "deviation-p86-d09", "pat": "pat-mv-no-d09-closed", "match": "m-pat-mv-no-d09-closed-entity-node-007",
+   "cause": "RC-V111 오닫힘(정상 열림 수동밸브)으로 해당 배관 유로 차단", "cons": "해당 배관을 통한 압력 제어·혼합 기능 상실",
+   "ce": ["entity-node-007"], "ae": ["entity-node-007"], "ev": {"n": ["entity-node-001","entity-node-007","entity-node-008","entity-seg-004","entity-seg-005"], "r": ["relation-009","relation-010","relation-011","relation-012"], "e": ["ev-node-entity-node-007","ev-path-entity-node-007"]},
+   "pc": {"dir": "upstream", "valve": "closed_valve_on_path", "valves": [{"tag": "RC-PV101", "np": "NC", "fp": "FC"}], "flow": false, "mat": true}, "sg": ["P1","P2"], "ai": null,
+   "risk": {"st": "deferred", "reason": "AI 강도·빈도 제안 없음"}, "holds": ["hold-030"]},
+  {"id": "scenario-p86-d10-01", "c": "deviation-p86-d10", "pat": null, "match": null,
+   "cause": "RC-PZ01에서 써지 배관을 통해 유출되는 냉각재 증가(아웃서지)로 증기 공간 팽창", "cons": "RC-PZ01 압력 감소",
+   "ce": ["entity-node-001"], "ae": ["entity-node-001"], "ev": {"n": ["entity-node-001"], "r": [], "e": ["ev-node-entity-node-001"]}, "pc": null, "sg": ["PT"], "ai": null,
+   "risk": {"st": "deferred", "reason": "AI 강도·빈도 제안 없음"}, "holds": ["hold-013","hold-038"]},
+  {"id": "scenario-p86-d10-02", "c": "deviation-p86-d10", "pat": null, "match": null,
+   "cause": "RC-PT110 측정 신호 오류로 제어루프(RC-PIC110, RC-PV101) 오동작", "cons": "제어루프가 조절하는 유입량 이상으로 연결 용기 압력 이탈",
+   "ce": ["entity-node-009"], "ae": ["entity-node-009","entity-node-010","entity-node-008"], "ev": {"n": ["entity-node-001","entity-node-008","entity-node-009","entity-node-010"], "r": ["relation-013","relation-014","relation-015"], "e": ["ev-node-entity-node-009","ev-node-entity-node-010","ev-node-entity-node-008","ev-path-entity-node-009"]},
+   "pc": {"dir": "not_applicable", "valve": "no_valves", "flow": "not_material_path", "mat": false}, "sg": ["PT"], "ai": null,
+   "risk": {"st": "deferred", "reason": "AI 강도·빈도 제안 없음"}, "holds": ["hold-014","hold-039"]},
+  {"id": "scenario-p86-d10-03", "c": "deviation-p86-d10", "pat": null, "match": null,
+   "cause": "RC-PIC110 제어기 출력 오류로 RC-PV101 오동작(열림 부족 또는 과다)", "cons": "RC-PV101가 조절하는 유입량 이상으로 연결 용기 압력 이탈",
+   "ce": ["entity-node-010"], "ae": ["entity-node-010","entity-node-008"], "ev": {"n": ["entity-node-001","entity-node-008","entity-node-009","entity-node-010"], "r": ["relation-013","relation-014","relation-015"], "e": ["ev-node-entity-node-010","ev-node-entity-node-008","ev-path-entity-node-010"]},
+   "pc": {"dir": "not_applicable", "valve": "no_valves", "flow": "not_material_path", "mat": false}, "sg": ["PT"], "ai": null,
+   "risk": {"st": "deferred", "reason": "AI 강도·빈도 제안 없음"}, "holds": ["hold-015","hold-036"]},
+  {"id": "scenario-p86-d10-04", "c": "deviation-p86-d10", "pat": null, "match": null,
+   "cause": "RC-PV101 오개방 또는 열림 고착(정상 닫힘 밸브)", "cons": "RC-PV101를 통한 과도 유입으로 연결 용기 압력 감소·혼합 증가",
+   "ce": ["entity-node-008"], "ae": ["entity-node-008"], "ev": {"n": ["entity-node-001","entity-node-008","entity-seg-005"], "r": ["relation-011","relation-012"], "e": ["ev-node-entity-node-008","ev-path-entity-node-008"]},
+   "pc": {"dir": "upstream", "valve": "no_valves", "flow": true, "mat": true}, "sg": ["PT"],
+   "ai": {"cause": "RC-PV101 오개방 또는 열림 고착으로 과도 살수", "cons": "증기 공간 응축으로 RC-PZ01 압력 감소", "txt": null, "n": [], "r": [], "e": [], "sg": []},
+   "risk": {"st": "proposed", "sev": 2, "fq": 2, "fqAI": null, "risk": 2, "credit": false, "creditR": "보호수단에 의한 빈도 감소 제안 없음", "calc": "표5 조회: matrix[severity=2][frequency=2] = 2"},
+   "holds": ["hold-016"]},
+  {"id": "scenario-p86-d10-05", "c": "deviation-p86-d10", "pat": null, "match": null,
+   "cause": "RC-PSV101 오개방·개방 고착 또는 시트 누설(정상 닫힘 안전밸브)", "cons": "보호 대상 압력 감소, 방출 배관 하류로 유체 방출",
+   "ce": ["entity-node-014"], "ae": ["entity-node-014","entity-node-001"], "ev": {"n": ["entity-node-001","entity-node-013","entity-node-014","entity-seg-006","entity-seg-007"], "r": ["relation-018","relation-019","relation-020","relation-021"], "e": ["ev-node-entity-node-014","ev-path-entity-node-014"]},
+   "pc": {"dir": "downstream", "valve": "no_valves", "flow": true, "mat": true}, "sg": ["PT"],
+   "ai": {"cause": "RC-PSV101 개방 후 재닫힘 실패(개방 고착)", "cons": "냉각재가 RC-L031을 통해 계속 방출되어 RC-PZ01 압력 감소, 냉각재 재고 감소", "txt": "정상 닫힘 안전밸브의 개방 고착은 압력 감소와 냉각재 방출로 이어진다는 패턴 해석이다. 방출관 하류는 다른 도면이라 탐색하지 않았다. 방출 배관의 RC-TE120은 이 탐색에서 도달하지 않아 감시 수단으로 인용하지 않았다.", "n": ["entity-node-014","entity-seg-009","entity-node-016"], "r": ["relation-024","relation-025"], "e": ["ev-node-entity-node-014","ev-path-entity-node-016"], "sg": []},
+   "risk": {"st": "proposed", "sev": 4, "fq": 1, "fqAI": null, "risk": 3, "credit": false, "creditR": "보호수단에 의한 빈도 감소 제안 없음", "sb": "냉각재 상실로 장기 정지(10일 이상) 가능성 [일반지식·추론]", "fb": "안전밸브 개방 고착은 설비 수명 중 가능성 희박(하) [일반지식]", "as": ["POSRV 개방 고착 시 운전원 격리 수단이 없다고 보수적으로 가정"], "unc": "격리 밸브·방출 감시 설비 자료 없음", "calc": "표5 조회: matrix[severity=4][frequency=1] = 3"},
+   "holds": ["hold-017"]},
+  {"id": "scenario-p86-d10-06", "c": "deviation-p86-d10", "pat": null, "match": null,
+   "cause": "RC-PSV102 오개방·개방 고착 또는 시트 누설(정상 닫힘 안전밸브)", "cons": "보호 대상 압력 감소, 방출 배관 하류로 유체 방출",
+   "ce": ["entity-node-015"], "ae": ["entity-node-015"], "ev": {"n": ["entity-node-001","entity-node-013","entity-node-015","entity-seg-006","entity-seg-008"], "r": ["relation-018","relation-019","relation-022","relation-023"], "e": ["ev-node-entity-node-015"]},
+   "pc": {"dir": "downstream", "valve": "no_valves", "flow": true, "mat": true}, "sg": ["PT"], "ai": null,
+   "risk": {"st": "deferred", "reason": "AI 강도·빈도 제안 없음"}, "holds": ["hold-018","hold-037"]},
+  {"id": "scenario-p86-d12-01", "c": "deviation-p86-d12", "pat": null, "match": null,
+   "cause": "RC-PZ01 압력 상승에 따른 포화온도 상승", "cons": "RC-PZ01 및 연결 배관 온도 증가",
+   "ce": ["entity-node-001"], "ae": ["entity-node-001"], "ev": {"n": ["entity-node-001"], "r": [], "e": ["ev-node-entity-node-001"]}, "pc": null, "sg": ["TE"],
+   "ai": {"cause": "RC-PZ01 압력 상승에 따른 포화온도 상승", "cons": "RC-PZ01 및 써지 배관 온도 증가, 배관 열응력 증가 가능", "txt": null, "n": [], "r": [], "e": [], "sg": []},
+   "risk": {"st": "proposed", "sev": 2, "fq": 2, "fqAI": null, "risk": 2, "credit": false, "creditR": "보호수단 미확인(entity-node-004: 그래프에 존재만 확인, 독립성·용량·작동 적정성 미확인) — 빈도 감소 미반영(사용자 결정 2026-11-04)", "calc": "표5 조회: matrix[severity=2][frequency=2] = 2"},
+   "holds": ["hold-019"]},
+  {"id": "scenario-p86-d43-01", "c": "deviation-p86-d43", "pat": null, "match": null,
+   "cause": "RC-PV101 오개방 또는 열림 고착(정상 닫힘 밸브)", "cons": "RC-PV101를 통한 과도 유입으로 연결 용기 압력 감소·혼합 증가",
+   "ce": ["entity-node-008"], "ae": ["entity-node-008"], "ev": {"n": ["entity-node-001","entity-node-008","entity-seg-005"], "r": ["relation-011","relation-012"], "e": ["ev-node-entity-node-008","ev-path-entity-node-008"]},
+   "pc": {"dir": "upstream", "valve": "no_valves", "flow": true, "mat": true}, "sg": [],
+   "ai": {"cause": "RC-PV101 오개방으로 과도 살수", "cons": "가압기 내 혼합 증가. 혼합 증가 자체의 안전 영향은 작고, 동반되는 압력 감소가 주된 결과", "txt": null, "n": [], "r": [], "e": [], "sg": []},
+   "risk": {"st": "proposed", "sev": 1, "fq": 2, "fqAI": null, "risk": 1, "credit": false, "creditR": "보호수단에 의한 빈도 감소 제안 없음", "calc": "표5 조회: matrix[severity=1][frequency=2] = 1"},
+   "holds": ["hold-020"]},
+  {"id": "scenario-p86-d44-01", "c": "deviation-p86-d44", "pat": null, "match": null,
+   "cause": "RC-V111 오닫힘(정상 열림 수동밸브)으로 해당 배관 유로 차단", "cons": "해당 배관을 통한 압력 제어·혼합 기능 상실",
+   "ce": ["entity-node-007"], "ae": ["entity-node-007"], "ev": {"n": ["entity-node-001","entity-node-007","entity-node-008","entity-seg-004","entity-seg-005"], "r": ["relation-009","relation-010","relation-011","relation-012"], "e": ["ev-node-entity-node-007","ev-path-entity-node-007"]},
+   "pc": {"dir": "upstream", "valve": "closed_valve_on_path", "valves": [{"tag": "RC-PV101", "np": "NC", "fp": "FC"}], "flow": false, "mat": true}, "sg": [],
+   "ai": {"cause": "RC-V111 오닫힘으로 살수 유로 차단", "cons": "RC-PV101이 열려도 살수가 이루어지지 않아 가압기 냉각재 혼합 저하", "txt": null, "n": [], "r": [], "e": [], "sg": []},
+   "risk": {"st": "deferred", "reason": "판단 근거 부족으로 AI가 강도 또는 빈도를 제안하지 않음"}, "holds": ["hold-021","hold-060"]}
+],
+"dic": [
+  {"id": "dic-scenario-p86-d09-03", "s": "scenario-p86-d09-03", "tr": ["risk"], "eq": ["entity-node-010"], "holds": []},
+  {"id": "dic-scenario-p86-d09-04", "s": "scenario-p86-d09-04", "tr": ["risk"], "eq": ["entity-node-008"], "holds": []},
+  {"id": "dic-scenario-p86-d10-01", "s": "scenario-p86-d10-01", "tr": ["nosg"], "nc": ["entity-node-009"], "ov": [], "eq": ["entity-node-001"], "holds": ["hold-013"]},
+  {"id": "dic-scenario-p86-d10-02", "s": "scenario-p86-d10-02", "tr": ["nosg"], "nc": ["entity-node-009"], "ov": ["entity-node-009"], "eq": ["entity-node-009"], "holds": ["hold-014"]},
+  {"id": "dic-scenario-p86-d10-03", "s": "scenario-p86-d10-03", "tr": ["nosg"], "nc": ["entity-node-009"], "ov": ["entity-node-009"], "eq": ["entity-node-010"], "holds": ["hold-015"]},
+  {"id": "dic-scenario-p86-d10-04", "s": "scenario-p86-d10-04", "tr": ["nosg"], "eq": ["entity-node-008"], "holds": ["hold-016"]},
+  {"id": "dic-scenario-p86-d10-05", "s": "scenario-p86-d10-05", "tr": ["risk","nosg"], "nc": ["entity-node-009"], "ov": [], "eq": ["entity-node-014"], "holds": ["hold-017"]},
+  {"id": "dic-scenario-p86-d10-06", "s": "scenario-p86-d10-06", "tr": ["nosg"], "eq": ["entity-node-015"], "holds": ["hold-018"]},
+  {"id": "dic-scenario-p86-d12-01", "s": "scenario-p86-d12-01", "tr": ["nosg"], "eq": ["entity-node-001"], "holds": ["hold-019"]},
+  {"id": "dic-scenario-p86-d43-01", "s": "scenario-p86-d43-01", "tr": ["nosg"], "eq": ["entity-node-008"], "holds": ["hold-020"]},
+  {"id": "dic-scenario-p86-d44-01", "s": "scenario-p86-d44-01", "tr": ["nosg"], "eq": ["entity-node-007"], "holds": ["hold-021"]}
+],
+"holds": [
+  ["hold-001", null, "구간 설계 의도", "설계 의도 미확정", "[추론] 샘플 도면의 기기 배치와 [일반지식]으로 작성한 초안. 사용자 확인 필요", "사용자가 설계 의도를 확인·확정", "input"],
+  ["hold-002", null, "운전조건", "가압기 정상 운전압력", "샘플 자료에 운전조건 문서 없음", "운전조건·설계 사양 자료 등록", "input"],
+  ["hold-003", null, "운전조건", "가압기 정상 운전온도", "샘플 자료에 운전조건 문서 없음", "운전조건·설계 사양 자료 등록", "input"],
+  ["hold-004", null, "운전조건", "가압기 정상 액위", "샘플 자료에 운전조건 문서 없음", "운전조건·설계 사양 자료 등록", "input"],
+  ["hold-005", null, "운전조건", "가압기 설계압력", "샘플 자료에 설계 사양 없음", "운전조건·설계 사양 자료 등록", "input"],
+  ["hold-006", null, "그래프 전체", "project_id 미확인", "자료 등록 단계 미연동으로 project_id 없음", "① 자료 등록 연동 후 추출·그래프 재생성", "graph"],
+  ["hold-007", null, "그래프 전체", "material_id 미확인", "자료 등록 단계 미연동으로 material_id 없음", "① 자료 등록 연동 후 추출·그래프 재생성", "graph"],
+  ["hold-008", null, "그래프 전체", "registration_version 미확인", "자료 등록 단계 미연동으로 registration_version 없음", "① 자료 등록 연동 후 추출·그래프 재생성", "graph"],
+  ["hold-009", null, "entity-node-018", "RC-TE120 탐색 미도달", "구간에 포함되지만 중심 대상에서 지정 관계로 연결되지 않음", "도면 연결·추출 결과 확인(물리 연결 누락 여부)", "exploration"],
+  ["hold-010", null, "entity-node-019", "RC-L031-T37 탐색 미도달", "구간에 포함되지만 중심 대상에서 지정 관계로 연결되지 않음", "도면 연결·추출 결과 확인(물리 연결 누락 여부)", "exploration"],
+  ["hold-011", "14", "패턴 sg-d14d15-level-indicator @ RC-LI110", "원인 패턴 적용 보류", "보호수단 조건 속성 measured_variable 미확인(그래프에 값 없음) — 값을 임의로 가정하지 않음", "해당 속성(정상 위치·측정 변수 등)을 도면·자료에서 확인", "pattern"],
+  ["hold-012", "15", "패턴 sg-d14d15-level-indicator @ RC-LI110", "원인 패턴 적용 보류", "보호수단 조건 속성 measured_variable 미확인(그래프에 값 없음) — 값을 임의로 가정하지 않음", "해당 속성(정상 위치·측정 변수 등)을 도면·자료에서 확인", "pattern"],
+  ["hold-013", "10", "scenario-p86-d10-01", "보호수단 존재 확인", "DI", "DI", "design_improvement"],
+  ["hold-014", "10", "scenario-p86-d10-02", "보호수단 존재 확인", "DI", "DI", "design_improvement"],
+  ["hold-015", "10", "scenario-p86-d10-03", "보호수단 존재 확인", "DI", "DI", "design_improvement"],
+  ["hold-016", "10", "scenario-p86-d10-04", "보호수단 존재 확인", "DI", "DI", "design_improvement"],
+  ["hold-017", "10", "scenario-p86-d10-05", "보호수단 존재 확인", "DI", "DI", "design_improvement"],
+  ["hold-018", "10", "scenario-p86-d10-06", "보호수단 존재 확인", "DI", "DI", "design_improvement"],
+  ["hold-019", "12", "scenario-p86-d12-01", "보호수단 존재 확인", "DI", "DI", "design_improvement"],
+  ["hold-020", "43", "scenario-p86-d43-01", "보호수단 존재 확인", "DI", "DI", "design_improvement"],
+  ["hold-021", "44", "scenario-p86-d44-01", "보호수단 존재 확인", "DI", "DI", "design_improvement"],
+  ["hold-029", "09", "scenario-p86-d09-01", "위험도 제안 보류", "판단 근거 부족으로 AI가 강도 또는 빈도를 제안하지 않음", "강도·빈도 판단 근거(운전조건·결과 범위·기준표) 확인", "risk"],
+  ["hold-030", "09", "scenario-p86-d09-05", "위험도 제안 보류", "AI가 이 패턴 시나리오를 해석하지 않음", "AI 재해석 또는 사람 검토", "risk"],
+  ["hold-031", "09", "scenario-p86-d09-02", "위험도 제안 보류", "AI가 이 패턴 시나리오를 해석하지 않음", "AI 재해석 또는 사람 검토", "risk"],
+  ["hold-032", "09", "가압기 정상 운전압력·설계압력", "AI 자료 요청: 가압기 정상 운전압력·설계압력", "강도와 압력 여유를 판단할 수 없음", "운전조건·설계 사양 자료", "ai_request"],
+  ["hold-033", "09", "POSRV 방출 용량", "AI 자료 요청: POSRV 방출 용량", "보호수단 적정성 미확인", "안전밸브 용량 계산서", "ai_request"],
+  ["hold-034", "09", "가압기 전열기", "AI 자료 요청: 가압기 전열기", "도면에 표시되지 않음", "전열기 구성·제어 자료", "ai_request"],
+  ["hold-035", "09", "가압기 고압 경보·원자로 정지 신호", "AI 자료 요청: 가압기 고압 경보·원자로 정지 신호", "도면(그래프)에 없는 보호수단 — 존재 미확인", "보호수단 자료·도면 확인", "ai_request"],
+  ["hold-036", "10", "scenario-p86-d10-03", "위험도 제안 보류", "AI가 이 패턴 시나리오를 해석하지 않음", "AI 재해석 또는 사람 검토", "risk"],
+  ["hold-037", "10", "scenario-p86-d10-06", "위험도 제안 보류", "AI가 이 패턴 시나리오를 해석하지 않음", "AI 재해석 또는 사람 검토", "risk"],
+  ["hold-038", "10", "scenario-p86-d10-01", "위험도 제안 보류", "AI가 이 패턴 시나리오를 해석하지 않음", "AI 재해석 또는 사람 검토", "risk"],
+  ["hold-039", "10", "scenario-p86-d10-02", "위험도 제안 보류", "AI가 이 패턴 시나리오를 해석하지 않음", "AI 재해석 또는 사람 검토", "risk"],
+  ["hold-040", "10", "저압 경보·정지 설정치", "AI 자료 요청: 저압 경보·정지 설정치", "압력 감소 시 보호수단 확인 불가", "경보·자동정지 설정치 목록", "ai_request"],
+  ["hold-041", "10", "POSRV 격리 수단", "AI 자료 요청: POSRV 격리 수단", "개방 고착 시 대응 수단 확인 불가", "POSRV 계통 P&ID(상류 차단밸브 포함)", "ai_request"],
+  ["hold-042", "10", "가압기 저압 경보·저압 정지 신호", "AI 자료 요청: 가압기 저압 경보·저압 정지 신호", "도면(그래프)에 없는 보호수단 — 존재 미확인", "보호수단 자료·도면 확인", "ai_request"],
+  ["hold-043", "10", "방출 배관 온도 감시(RC-TE120)", "AI 자료 요청: 방출 배관 온도 감시(RC-TE120)", "도면(그래프)에 없는 보호수단 — 존재 미확인", "보호수단 자료·도면 확인", "ai_request"],
+  ["hold-044", "10", "POSRV 상류 차단밸브", "AI 자료 요청: POSRV 상류 차단밸브", "도면(그래프)에 없는 보호수단 — 존재 미확인", "보호수단 자료·도면 확인", "ai_request"],
+  ["hold-046", "12", "가압기 정상 운전온도·설계온도", "AI 자료 요청: 가압기 정상 운전온도·설계온도", "온도 이탈 폭 판단 불가", "운전조건·설계 사양 자료", "ai_request"],
+  ["hold-059", "43", "살수 유량 설계값", "AI 자료 요청: 살수 유량 설계값", "혼합 영향 판단 불가", "살수 계통 설계 자료", "ai_request"],
+  ["hold-060", "44", "scenario-p86-d44-01", "위험도 제안 보류", "판단 근거 부족으로 AI가 강도 또는 빈도를 제안하지 않음", "강도·빈도 판단 근거(운전조건·결과 범위·기준표) 확인", "risk"],
+  ["hold-061", "44", "연속 살수(우회) 설계 여부", "AI 자료 요청: 연속 살수(우회) 설계 여부", "도면에 표시되지 않음", "살수 계통 상세 P&ID", "ai_request"],
+  ["hold-062", "44", "붕소 농도 관리 절차", "AI 자료 요청: 붕소 농도 관리 절차", "혼합 저하 영향 판단 불가", "화학·체적 제어 운전 절차", "ai_request"]
+],
+"nrHolds": {"01": 22, "02": 23, "03": 24, "04": 25, "05": 26, "06": 27, "07": 28, "11": 45, "13": 47, "14": 48, "15": 49, "16": 50, "34": 51, "35": 52, "36": 53, "37": 54, "38": 55, "39": 56, "40": 57, "41": 58},
+"runs": {
+  "09": {"rej": [{"cause": "가압기 전열기 제어 고장으로 과가열(전열기는 이 도면에 표시되지 않음)", "reason": "도면에 없는 설비 전제 또는 도면 설비 확인 불가 — 서술에 도면에 없는 설비(AI 자기 신고: 가압기 전열기) (사용자 결정 2026-11-04)"}], "resp_sha": "76d6e8180aa9"},
+  "10": {"rej": []}, "12": {"rej": []}, "43": {"rej": []},
+  "44": {"rej": [{"cause": "연속 살수(우회) 소량 유량 설비가 막힘", "reason": "도면에 없는 설비 전제 또는 도면 설비 확인 불가 — 서술에 도면에 없는 설비(AI 자기 신고: 연속 살수(우회) 설비) (사용자 결정 2026-11-04)"}]}},
+"prev": {"runs": [
+  {"run": "analysis-20261103T020000Z-9f31aa", "v": 2, "by": "이검토 (가상)", "at": "2026-11-03 11:20",
+   "items": [
+    {"match": "m-pat-cv-ncfc-d09-fail-closed-entity-node-008", "sid": "scenario-p86-d09-04", "dec": "modify", "reason": "결과 서술을 도면 기준(살수 배관 RC-L011)으로 정정", "rev": {"cons": "살수(RC-L011) 불가로 RC-PZ01 압력 상승 억제 기능 상실, 설정압력 도달 시 POSRV 개방"}, "risk": {"sev": 3, "fq": 1}},
+    {"match": "m-pat-pic-d09d10-output-fault-entity-node-010", "sid": "scenario-p86-d09-03", "dec": "defer", "reason": "제어기 이중화 자료 확인 후 결정"},
+    {"match": "m-pat-mv-no-d09-closed-entity-node-007", "sid": "scenario-p86-d09-05", "dec": "accept", "reason": "RC-V111 오닫힘 시 살수 불가 확인", "risk": {"sev": 2, "fq": 1}},
+    {"match": "m-pat-mv-no-d09-closed-entity-node-007", "sid": "scenario-p86-d09-06", "dec": "reject", "reason": "같은 원인 중복 시나리오"}]},
+  {"run": "analysis-20261101T080000Z-41b7c2", "v": 1, "by": "이검토 (가상)", "at": "2026-11-01 17:05", "items": []}]}
+}
+</script>
+<script>
+"use strict";
+/* ================================================================ 데이터·색인 */
+const D = JSON.parse(document.getElementById("data").textContent);
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const NODES = {}, SEGS = {}, LINKS = {}, REL2SEG = {};
+D.dw.nodes.forEach(n => NODES[n.id] = n);
+D.dw.segs.forEach(s => { SEGS[s.id] = s; s.r.forEach(r => REL2SEG[r] = s.id); });
+D.dw.links.forEach(l => LINKS[l.id] = l);
+const CANDS = D.cands.map(a => ({ id: "deviation-p86-d" + a[0], item: "p86-d" + a[0], n: a[0], param: a[1], gw: a[2], gwEn: a[3], dev: a[4], sel: a[5], rk: a[6], ai: a[7], nsc: a[8], maxRisk: a[9], ndic: a[10], nhold: a[11] }));
+const CAND = {}; CANDS.forEach(c => CAND[c.id] = c);
+const SCEN = {}; D.scen.forEach(s => { SCEN[s.id] = s; s.sgo = s.sg.map(k => D.sgs[k]); if (s.ai) s.ai.sgo = (s.ai.sg || []).map(k => D.sgs[k]); });
+const DIC = {}; D.dic.forEach(d => { DIC[d.id] = d; d.sc = SCEN[d.s]; d.c = d.sc.c; });
+const DI_REASON = "그래프에서 이 시나리오의 보호수단을 찾지 못함(없음인지 미확인인지 판단 불가)";
+const DI_REQ = "경보·인터록·안전밸브 등 보호수단 자료와 도면 확인";
+const HOLDS = D.holds.map(h => ({ id: h[0], c: h[1] ? "deviation-p86-d" + h[1] : null, scope: h[2], item: h[3], reason: h[4] === "DI" ? DI_REASON : h[4], req: h[5] === "DI" ? DI_REQ : h[5], src: h[6] }));
+Object.keys(D.nrHolds).forEach(n => HOLDS.push({ id: "hold-0" + D.nrHolds[n], c: "deviation-p86-d" + n, scope: "AI 해석", item: "AI 해석 없음(no_response)",
+  reason: "고정 응답 파일 없음: deviation-p86-d" + n + ".json — 패턴 기반 초안·탐색 결과는 보존, 위험도 미제안", req: "AI 단계 재시도(resume) 또는 고정 응답 보완", src: "ai" }));
+HOLDS.sort((a, b) => a.id < b.id ? -1 : 1);
+const HOLD = {}; HOLDS.forEach(h => HOLD[h.id] = h);
+const scensOf = cid => D.scen.filter(s => s.c === cid);
+const dicsOf = cid => D.dic.filter(d => d.c === cid);
+const holdsOf = cid => HOLDS.filter(h => h.c === cid);
+
+const KIND_KO = { pressurizer: "가압기", continuation: "도면 연결점", tee: "분기점", temperature_element: "온도 검출기", transmitter: "전송기", manual_valve: "수동밸브",
+  control_valve: "제어밸브", controller: "제어기", indicator: "지시계", psv: "안전밸브(POSRV)", pipe_segment: "배관 구간",
+  measurement_connection: "계측 연결", signal_connection: "계장 신호", has_endpoint: "배관 끝점" };
+const CAT_KO = { equipment: "설비", valve: "밸브", instrument: "계기", piping_element: "배관 요소" };
+const AI_KO = { validated: "완료", no_response: "응답 없음", not_requested: "미요청", input_mismatch: "입력 불일치" };
+const SEL_KO = { S: "선택", X: "제외", H: "보류" };
+const SRC_KO = { input: "입력", graph: "그래프", exploration: "탐색", pattern: "패턴", design_improvement: "설계보완", risk: "위험도", ai_request: "AI 요청", ai: "AI" };
+const DEC_KO = { accept: "수용", modify: "수정", reject: "기각", defer: "보류", not_applicable: "해당 없음", nsc: "시나리오 없음 확인" };
+const RS_KO = { excluded: "판정 제외(제외 후보)", held: "판정 제외(판단 보류)", not_reviewed: "미검토", reviewing: "검토 중", deferred: "보류", confirmed: "확정" };
+const TR_KO = { risk: "제안 위험도가 〈표9〉 조건부 수용 이상", nosg: "그래프에서 원인과 독립인 보호수단을 찾지 못함(없음이 아니라 미확인)" };
+const TR_SHORT = { risk: "제안 위험도 조건부 수용 이상", nosg: "독립 보호수단 미발견(미확인)" };
+const DEMO_SEG = "entity-seg-005";
+
+function tagOf(id) {
+  if (NODES[id]) return NODES[id].tag || (NODES[id].lab[0] + " 연결점");
+  if (SEGS[id]) return SEGS[id].tag + " 구간";
+  if (REL2SEG[id]) return SEGS[REL2SEG[id]].tag + " 끝점";
+  if (LINKS[id]) return KIND_KO[LINKS[id].k];
+  return id;
+}
+const shortS = id => id.replace("scenario-p86-", "");
+const now = () => { const d = new Date(); const p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+const riskOf = (sev, fq) => (sev && fq) ? D.crit.matrix[sev][fq] : null;
+const tier = r => r >= 5 ? 5 : r;
+function riskChip(r, mode, extra) {
+  if (r === "D") return '<span class="risk none" title="모든 시나리오의 위험도 제안이 보류">보류</span>';
+  if (r == null) return '<span class="risk none">' + (extra || "미제안") + "</span>";
+  const L = D.crit.levels[r];
+  if (mode === "prop") return `<span class="risk prop t${tier(r)}" title="AI 제안 + Python 〈표5〉 조회. 확정값 아님"><span class="n">${r}</span><span class="w">제안</span>${extra === "short" ? "" : esc(L[0])}</span>`;
+  return `<span class="risk conf t${tier(r)} ${mode === "draft" ? "draft" : ""}" title="사람 확정값(Python 〈표5〉 계산)"><span class="n">${r}</span>${mode === "draft" ? "저장 전 " : "확정 "}${esc(L[0])}</span>`;
+}
+
+/* ================================================================ 상태 */
+const S = {
+  screen: "ana", cand: "deviation-p86-d09", scen: "scenario-p86-d09-04", item: { t: "sc", id: "scenario-p86-d09-04" },
+  filterA: "all", filterR: "S", prevRun: 0, pvPick: null, clampA: true, rtab: "sc", tab: "drawing", layers: { symbol: true, pipe: true, tag: true, hl: true },
+  st: { reg: "normal", view: "normal", ana: "normal", rev: "normal" }, blocked: false, mismatch: false, guessDemo: false,
+  reviewer: "이검토 (가상)", reviews: {}, drafts: {}, pending: {}, savedAt: null, pick: false, selNode: null,
+  reg: { phase: "idle", svg: true, meta: { dwg: null, rev: null, title: null } }, nodeCard: null, regHolds: false
+};
+
+/* ================================================================ 웹뷰: 도면·그래프 캔버스 */
+const NS = "http://www.w3.org/2000/svg";
+function sv(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+const EL = {};
+function regEl(id, el, kind) { (EL[id] = EL[id] || { dw: [], gr: [] })[kind].push(el); }
+const cv = $("#cv"), vp = $("#vp");
+const POS = {};
+let gDw, gGr, hlDw, hlGr, ovSym, ovPipe, ovTag;
+const pts = p => p.map(q => q.join(",")).join(" ");
+function midOf(p) {
+  let L = 0; const seg = [];
+  for (let i = 1; i < p.length; i++) { const l = Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]); seg.push(l); L += l; }
+  let h = L / 2;
+  for (let i = 1; i < p.length; i++) { if (h <= seg[i - 1]) { const t = h / seg[i - 1]; return [p[i - 1][0] + (p[i][0] - p[i - 1][0]) * t, p[i - 1][1] + (p[i][1] - p[i - 1][1]) * t]; } h -= seg[i - 1]; }
+  return p[0];
+}
+function txt(g, x, y, s, attrs) { const t = sv("text", Object.assign({ x, y, "font-size": 10, fill: "#111" }, attrs || {}), g); t.textContent = s; return t; }
+function drawSymbol(g, n) {
+  const [x, y, w, h] = n.b, cx = x + w / 2, cy = y + h / 2, st = { fill: "#fff", stroke: "#111", "stroke-width": 1.4 };
+  if (n.k === "pressurizer") {
+    sv("rect", Object.assign({ x, y, width: w, height: h, rx: 60, ry: 34 }, st), g);
+    sv("polyline", { points: `${x + 22},${y + h - 46} ${x + 34},${y + h - 56} ${x + 46},${y + h - 46} ${x + 58},${y + h - 56} ${x + 70},${y + h - 46} ${x + 82},${y + h - 56} ${x + 94},${y + h - 46}`, fill: "none", stroke: "#111", "stroke-width": 1 }, g);
+  } else if (n.k === "continuation") {
+    sv("polygon", Object.assign({ points: `${x},${y} ${x + w - 14},${y} ${x + w},${cy} ${x + w - 14},${y + h} ${x},${y + h}` }, st), g);
+    txt(g, x + (w - 14) / 2, cy - 2, n.lab[0], { "text-anchor": "middle", "font-size": 8.5 });
+    txt(g, x + (w - 14) / 2, cy + 9, n.lab[1], { "text-anchor": "middle", "font-size": 8.5 });
+  } else if (n.k === "tee") {
+    sv("circle", { cx, cy, r: 2.4, fill: "#111" }, g);
+  } else if (n.c === "instrument") {
+    sv("circle", Object.assign({ cx, cy, r: w / 2 }, st), g);
+    if (n.room) sv("line", { x1: x, y1: cy, x2: x + w, y2: cy, stroke: "#111", "stroke-width": 1 }, g);
+    txt(g, cx, cy - 4, n.lab[0], { "text-anchor": "middle", "font-size": 9.5 });
+    txt(g, cx, cy + 11, n.lab[1], { "text-anchor": "middle", "font-size": 9.5 });
+  } else if (n.k === "manual_valve") {
+    sv("path", Object.assign({ d: `M${x},${y} L${cx},${cy} L${x},${y + h} Z M${x + w},${y} L${cx},${cy} L${x + w},${y + h} Z` }, st), g);
+  } else if (n.k === "control_valve") {
+    const by = y + h - 30, bc = by + 15;
+    sv("path", Object.assign({ d: `M${x},${by} L${cx},${bc} L${x},${by + 30} Z M${x + w},${by} L${cx},${bc} L${x + w},${by + 30} Z` }, st), g);
+    sv("line", { x1: cx, y1: bc, x2: cx, y2: y + 18, stroke: "#111", "stroke-width": 1.2 }, g);
+    sv("path", Object.assign({ d: `M${x + 10},${y + 18} A15,15 0 0 1 ${x + w - 10},${y + 18} Z` }, st), g);
+  } else if (n.k === "psv") {
+    const by = y + h - 26, oy = y + 0.6 * h;
+    sv("path", Object.assign({ d: `M${cx - 12},${y + h} L${cx + 12},${y + h} L${cx},${by} Z M${cx},${by} L${x + w},${oy - 10} L${x + w},${oy + 10} Z` }, st), g);
+    let zz = `${cx},${by}`; for (let i = 0; i < 7; i++) zz += ` ${cx + (i % 2 ? 6 : -6)},${by - 8 - i * 8}`;
+    sv("polyline", { points: zz + ` ${cx},${y + 14}`, fill: "none", stroke: "#111", "stroke-width": 1 }, g);
+    sv("rect", Object.assign({ x: cx - 8, y: y + 4, width: 16, height: 10 }, st), g);
+  }
+  if (n.lp) n.lab.forEach((s, i) => txt(g, n.lp[0], n.lp[1] + i * 12, s, { "text-anchor": n.lp[2] }));
+}
+function tagBox(n) {
+  if (!n.tag || n.k === "tee") return null;
+  const [x, y, w, h] = n.b;
+  if (n.c === "instrument") return [x + 7, y + 6, w - 14, h - 12];
+  if (!n.lp) return null;
+  const wmax = Math.max(...n.lab.map(s => s.length)) * 6.1 + 4, hh = n.lab.length * 12 + 2;
+  const x0 = n.lp[2] === "start" ? n.lp[0] - 2 : n.lp[2] === "end" ? n.lp[0] - wmax + 2 : n.lp[0] - wmax / 2;
+  return [x0, n.lp[1] - 10, wmax, hh];
+}
+function buildCanvas() {
+  const [PW, PH] = D.dw.page;
+  const defs = sv("defs", {}, cv);
+  const mk = sv("marker", { id: "arr", viewBox: "0 0 10 10", refX: 10, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, defs);
+  sv("path", { d: "M0,0 L10,5 L0,10 z", fill: "#111" }, mk);
+  gDw = sv("g", { id: "g-dw" }, cv);
+  const bg = sv("g", { class: "bgd" }, gDw);
+  sv("rect", { x: 0, y: 0, width: PW, height: PH, fill: "#fff" }, bg);
+  sv("rect", { x: 20, y: 20, width: 1614, height: 1129, fill: "none", stroke: "#111", "stroke-width": 2 }, bg);
+  D.dw.tb.forEach(r => {
+    sv("rect", { x: 1214, y: r[2], width: 90, height: r[3], fill: "#fff", stroke: "#111" }, bg);
+    sv("rect", { x: 1304, y: r[2], width: 330, height: r[3], fill: "#fff", stroke: "#111" }, bg);
+    txt(bg, 1218, r[2] + 15, r[0], { "font-size": 9 }); txt(bg, 1308, r[2] + 15, r[1], { "font-size": 11 });
+  });
+  D.dw.notes.forEach((s, i) => txt(bg, 1214, 972 + i * 13, s, { "font-size": 9 }));
+  D.dw.segs.forEach(s => {
+    sv("polyline", Object.assign({ points: pts(s.p), class: "ln", "stroke-width": s.lt === "process" ? 2 : 1.2 }, s.arr ? { "marker-end": "url(#arr)" } : {}), bg);
+    if (s.lbl) txt(bg, s.lbl[0], s.lbl[1], s.tag, { "text-anchor": "middle", "font-size": 9 });
+  });
+  D.dw.links.forEach(l => sv("polyline", Object.assign({ points: pts(l.p), class: "ln", "stroke-width": 1 }, l.k === "signal_connection" ? { "stroke-dasharray": "6 3" } : {}), bg));
+  D.dw.nodes.forEach(n => drawSymbol(bg, n));
+  // 오버레이 (뷰어 template.html과 같은 층 순서: 배관 → 심볼 → 태그)
+  ovPipe = sv("g", {}, gDw); ovSym = sv("g", {}, gDw); ovTag = sv("g", {}, gDw);
+  D.dw.segs.forEach(s => {
+    sv("polyline", { points: pts(s.p), class: "hit", "data-id": s.id }, ovPipe);
+    const ln = sv("polyline", { points: pts(s.p), class: "ovl line", style: "stroke:var(--physical_connection)", "data-seg": s.id }, ovPipe);
+    regEl(s.id, ln, "dw"); s.r.forEach(r => regEl(r, ln, "dw"));
+  });
+  D.dw.links.forEach(l => {
+    sv("polyline", { points: pts(l.p), class: "hit", "data-id": l.id }, ovPipe);
+    regEl(l.id, sv("polyline", { points: pts(l.p), class: "ovl line", style: `stroke:var(--${l.k})` }, ovPipe), "dw");
+  });
+  D.dw.nodes.forEach(n => {
+    const [x, y, w, h] = n.b, W = Math.max(w, 9), H = Math.max(h, 9);
+    regEl(n.id, sv("rect", { x: x + w / 2 - W / 2, y: y + h / 2 - H / 2, width: W, height: H, rx: 2, class: "ovl sym", style: `stroke:var(--${n.c})`, "data-id": n.id }, ovSym), "dw");
+    const tb = tagBox(n);
+    if (tb) sv("rect", { x: tb[0], y: tb[1], width: tb[2], height: tb[3], rx: 2, class: "ovl tagb" }, ovTag);
+  });
+  hlDw = sv("g", { class: "hl-layer" }, gDw);
+  // 그래프 (노드 위치 = 도면 좌표: 기물 bbox 중심, 배관 구간 = 경로 길이 중점)
+  gGr = sv("g", { id: "g-gr", style: "display:none" }, cv);
+  sv("rect", { x: 0, y: 0, width: PW, height: PH, fill: "#fbfbfc" }, gGr);
+  D.dw.nodes.forEach(n => POS[n.id] = [n.b[0] + n.b[2] / 2, n.b[1] + n.b[3] / 2]);
+  D.dw.segs.forEach(s => POS[s.id] = midOf(s.p));
+  const ge = sv("g", {}, gGr), gn = sv("g", {}, gGr), gl = sv("g", {}, gGr);
+  D.dw.segs.forEach(s => [[s.r[0], s.a], [s.r[1], s.z]].forEach(([rid, nid]) => {
+    const a = POS[s.id], b = POS[nid];
+    sv("line", { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: "ghit", "data-id": s.id }, ge);
+    regEl(rid, sv("line", { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: "ge", style: "stroke:var(--physical_connection)" }, ge), "gr");
+  }));
+  D.dw.links.forEach(l => {
+    const a = POS[l.a], b = POS[l.z];
+    sv("line", { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: "ghit", "data-id": l.id }, ge);
+    regEl(l.id, sv("line", { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: "ge", style: `stroke:var(--${l.k})` }, ge), "gr");
+  });
+  const R = { equipment: 11, valve: 8, instrument: 7, piping_element: 5 };
+  D.dw.segs.forEach(s => { const p = POS[s.id]; regEl(s.id, sv("rect", { x: p[0] - 4.5, y: p[1] - 4.5, width: 9, height: 9, transform: `rotate(45,${p[0]},${p[1]})`, class: "gn", style: "fill:var(--physical_connection)", "data-id": s.id }, gn), "gr"); });
+  D.dw.nodes.forEach(n => {
+    const p = POS[n.id], r = R[n.c];
+    regEl(n.id, sv("circle", { cx: p[0], cy: p[1], r, class: "gn", style: `fill:var(--${n.c})`, "data-id": n.id }, gn), "gr");
+    if (n.tag && n.k !== "tee") txt(gl, p[0] + r + 3, p[1] + 3, n.tag, { class: "gl" });
+  });
+  hlGr = sv("g", { class: "hl-layer" }, gGr);
+}
+
+/* 확대·이동 (viewBox) */
+const VB = { x: 0, y: 0, w: 1654, h: 1169 };
+function applyVB() { cv.setAttribute("viewBox", `${VB.x} ${VB.y} ${VB.w} ${VB.h}`); const m = cv.getScreenCTM(); if (m) $("#pct").textContent = Math.round(m.a * 100) + "%"; }
+function fitRect(r) {
+  const b = vp.getBoundingClientRect(); if (!b.width) return;
+  const ar = b.width / b.height; let [x, y, w, h] = r;
+  if (w / h > ar) { const nh = w / ar; y -= (nh - h) / 2; h = nh; } else { const nw = h * ar; x -= (nw - w) / 2; w = nw; }
+  Object.assign(VB, { x, y, w, h }); applyVB();
+}
+const FIT_PAGE = [0, 0, 1654, 1169], FIT_REGION = [20, 20, 1240, 860];
+function fitDefault() { fitRect(S.screen === "view" ? FIT_PAGE : FIT_REGION); }
+function toSvg(cx, cy) { const p = cv.createSVGPoint(); p.x = cx; p.y = cy; return p.matrixTransform(cv.getScreenCTM().inverse()); }
+function zoomAt(f, cx, cy) { const p = toSvg(cx, cy); VB.x = p.x - (p.x - VB.x) * f; VB.y = p.y - (p.y - VB.y) * f; VB.w *= f; VB.h *= f; applyVB(); }
+vp.addEventListener("wheel", e => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1 / 1.15 : 1.15, e.clientX, e.clientY); }, { passive: false });
+let drag = null, moved = false;
+vp.addEventListener("mousedown", e => { if (e.button !== 0) return; drag = { x: e.clientX, y: e.clientY, vx: VB.x, vy: VB.y, s: cv.getScreenCTM().a }; moved = false; });
+window.addEventListener("mousemove", e => {
+  if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) { moved = true; vp.classList.add("drag"); }
+  VB.x = drag.vx - dx / drag.s; VB.y = drag.vy - dy / drag.s; applyVB();
+});
+window.addEventListener("mouseup", () => { drag = null; vp.classList.remove("drag"); });
+$("#f-zoom").addEventListener("click", e => {
+  const z = e.target.dataset.z; if (!z) return; const b = vp.getBoundingClientRect();
+  if (z === "fit") fitDefault(); else zoomAt(z === "in" ? 1 / 1.25 : 1.25, b.left + b.width / 2, b.top + b.height / 2);
+});
+window.addEventListener("resize", () => fitDefault());
+function focusOn(id) {
+  const p = POS[id] || (REL2SEG[id] && POS[REL2SEG[id]]); if (!p) return;
+  const w = Math.min(VB.w, 700), h = VB.h * w / VB.w; Object.assign(VB, { x: p[0] - w / 2, y: p[1] - h / 2, w, h }); applyVB();
+}
+
+/* 클릭·툴팁 → Python(bridge) 전달 흉내 */
+const tip = $("#tip");
+cv.addEventListener("mousemove", e => {
+  const t = e.target.closest("[data-id]"); if (!t || drag) { tip.style.display = "none"; return; }
+  const id = t.dataset.id, n = NODES[id], s = SEGS[id], l = LINKS[id];
+  tip.innerHTML = n ? `<b>${esc(n.tag || n.lab.join(" "))}</b><br><span class="muted">${esc(CAT_KO[n.c])} · ${esc(n.k)}</span>`
+    : s ? `<b>${esc(s.tag)}</b><br><span class="muted">배관 구간 · 흐름 방향 ${segFlow(s) ? "확인됨" : "미확인"}</span>` : `<b>${esc(KIND_KO[l.k])}</b><br><span class="muted">${esc(tagOf(l.a))} — ${esc(tagOf(l.z))}</span>`;
+  tip.style.display = "block"; tip.style.left = (e.clientX + 14) + "px"; tip.style.top = (e.clientY + 14) + "px";
+});
+cv.addEventListener("mouseleave", () => tip.style.display = "none");
+cv.addEventListener("click", e => {
+  if (moved) { moved = false; return; }
+  const t = e.target.closest("[data-id]"); if (!t) return;
+  onNodeSelected(t.dataset.id);
+});
+
+/* 레이어·탭 */
+function renderLayers() {
+  const el = $("#f-layers");
+  if (S.tab === "graph") {
+    el.innerHTML = `<b>그래프</b> <span class="muted">노드 30 · 관계 30</span>
+      <div class="note" style="margin-top:6px;line-height:1.8">
+      <span class="dot" style="background:var(--equipment)"></span> 설비 1 &nbsp; <span class="dot" style="background:var(--valve)"></span> 밸브 4<br>
+      <span class="dot" style="background:var(--instrument)"></span> 계기 7 &nbsp; <span class="dot" style="background:var(--piping_element)"></span> 배관 요소 7<br>
+      ◆ 배관 구간 11 (has_endpoint 22)<br>
+      <span class="lsw" style="border-color:var(--signal_connection)"></span> 계장 신호 4 &nbsp; <span class="lsw" style="border-color:var(--measurement_connection)"></span> 계측 연결 4<br>
+      위치 = 도면 좌표(force 배치는 기존 뷰어 기능)</div>` + (S.screen !== "view" ? `<label style="margin-top:6px"><input type="checkbox" data-l="hl" ${S.layers.hl ? "checked" : ""}>근거 강조</label>` : "");
+  } else {
+    el.innerHTML = `
+      <label><input type="checkbox" data-l="symbol" ${S.layers.symbol ? "checked" : ""}><span class="lsw" style="border-color:var(--equipment)"></span>심볼<small>19</small></label>
+      <label><input type="checkbox" data-l="pipe" ${S.layers.pipe ? "checked" : ""}><span class="lsw" style="border-color:var(--physical_connection)"></span>배관·연결<small>19</small></label>
+      <label><input type="checkbox" data-l="tag" ${S.layers.tag ? "checked" : ""}><span class="lsw" style="border-color:var(--tag)"></span>태그<small>12</small></label>
+      ${S.screen !== "view" ? `<label><input type="checkbox" data-l="hl" ${S.layers.hl ? "checked" : ""}><span class="lsw" style="border-color:var(--hl-path)"></span>근거 강조</label>` : ""}
+      <div class="note" style="line-height:1.7">
+        <span class="dot" style="background:var(--equipment)"></span> 설비 <span class="dot" style="background:var(--valve)"></span> 밸브 <span class="dot" style="background:var(--instrument)"></span> 계기 <span class="dot" style="background:var(--piping_element)"></span> 배관 요소<br>
+        <span class="lsw" style="border-color:var(--physical_connection)"></span> 공정 배관 <span class="lsw" style="border-color:var(--signal_connection)"></span> 계장 신호<br>
+        <span class="lsw" style="border-color:var(--measurement_connection)"></span> 계측 연결 <span class="lsw dash" style="border-color:var(--unresolved)"></span> 미해결<br>
+        태그 위치는 근사값 · 시안 도면은 draw.io 좌표로 단순화해 다시 그린 것(실제 SVG 아님)</div>`;
+  }
+}
+$("#f-layers").addEventListener("change", e => {
+  const k = e.target.dataset.l; if (!k) return; S.layers[k] = e.target.checked; applyLayers();
+});
+function applyLayers() {
+  ovSym.classList.toggle("hidden", !S.layers.symbol); ovPipe.classList.toggle("hidden", !S.layers.pipe); ovTag.classList.toggle("hidden", !S.layers.tag);
+  cv.classList.toggle("hl-off", !S.layers.hl);
+}
+$("#f-tabs").addEventListener("click", e => { const t = e.target.dataset.tab; if (t && !e.target.disabled) setTab(t); });
+function setTab(t) {
+  S.tab = t; $$("#f-tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  gDw.style.display = t === "drawing" ? "" : "none"; gGr.style.display = t === "graph" ? "" : "none";
+  renderLayers(); bridge(`Python→웹 setView("${t}")`);
+}
+
+/* 강조·근거 집계 */
+function segFlow(s) { return s.flow && !(S.guessDemo && s.id === DEMO_SEG); }
+function isGuess(id) { const s = SEGS[id] || SEGS[REL2SEG[id]]; return !!s && !segFlow(s); }
+function drawable(id) { return !!(EL[id] && EL[id].dw.length); }
+function evidenceOf(sc) {
+  const seen = new Set(), items = [];
+  const add = (id, role) => {
+    if (!id || seen.has(id)) return; seen.add(id);
+    const cls = S.mismatch ? "none" : !drawable(id) ? "none" : isGuess(id) ? "guess" : "shown";
+    items.push({ id, role, cls, why: S.mismatch ? "그래프 버전 불일치로 그리지 않음" : !drawable(id) ? "도면 대응 요소 없음" : "" });
+  };
+  sc.ce.forEach(id => add(id, "원인 설비"));
+  sc.sgo.forEach(g => add(g.id, "보호수단"));
+  sc.ev.n.concat(sc.ev.r).forEach(id => add(id, "경로"));
+  if (sc.ai) sc.ai.n.concat(sc.ai.r).forEach(id => add(id, "경로(AI 인용)"));
+  sc.ev.e.concat(sc.ai ? sc.ai.e : []).forEach(e => { if (!/^ev-(node|path)-/.test(e) && !seen.has(e)) { seen.add(e); items.push({ id: e, role: "근거 문서", cls: "none", why: "도면 객체 없음" }); } });
+  sc.holds.forEach(h => items.push({ id: h, role: "자료 요청", cls: "none", why: "도면 객체 없음(" + HOLD[h].item + ")" }));
+  return items;
+}
+function clearHL() {
+  $$(".hl-on", cv).forEach(e => e.classList.remove("hl-on", "hl-path", "hl-cause", "hl-sgt", "hl-guess"));
+  hlDw.innerHTML = ""; hlGr.innerHTML = ""; cv.classList.remove("dimmed");
+}
+function sgRing(g) {
+  const n = NODES[g.id]; if (!n) return;
+  const [x, y, w, h] = n.b, weak = !g.cnt;
+  sv("rect", { x: x - 6, y: y - 6, width: w + 12, height: h + 12, rx: 7, class: "sg-ring" + (weak ? " weak" : "") }, hlDw);
+  if (!weak) sv("rect", { x: x - 10, y: y - 10, width: w + 20, height: h + 20, rx: 9, class: "sg-ring2" }, hlDw);
+  const label = weak ? "보호수단 · 미계수" : "보호수단", bw = label.length * 10 + 10;
+  const b1 = sv("g", { class: "sg-badge" + (weak ? " weak" : "") }, hlDw);
+  sv("rect", { x: x - 10, y: y - 26, width: bw, height: 15, rx: 7.5 }, b1); txt(b1, x - 5, y - 15, label, {});
+  const p = POS[g.id], r = n.c === "valve" ? 8 : 7;
+  sv("circle", { cx: p[0], cy: p[1], r: r + 5, class: "sg-ring" + (weak ? " weak" : "") }, hlGr);
+  if (!weak) sv("circle", { cx: p[0], cy: p[1], r: r + 9, class: "sg-ring2" }, hlGr);
+  const b2 = sv("g", { class: "sg-badge" + (weak ? " weak" : "") }, hlGr);
+  sv("rect", { x: p[0] - bw / 2, y: p[1] - r - 30, width: bw, height: 15, rx: 7.5 }, b2); txt(b2, p[0] - bw / 2 + 5, p[1] - r - 19, label, {});
+}
+function pickRing(id) {
+  $$(".pick-ring", cv).forEach(e => e.remove());
+  if (!id) return; const n = NODES[id];
+  if (n) { const [x, y, w, h] = n.b; sv("rect", { x: x - 3, y: y - 3, width: Math.max(w, 9) + 6, height: Math.max(h, 9) + 6, rx: 4, class: "pick-ring" }, gDw); const p = POS[id]; sv("circle", { cx: p[0], cy: p[1], r: 15, class: "pick-ring" }, gGr); }
+}
+let curEv = null;
+function highlight(sc) {
+  clearHL(); curEv = sc ? evidenceOf(sc) : null; renderEvidence(sc);
+  if (!sc) return;
+  bridge(`Python→웹 highlight(원인 ${sc.ce.length} · 경로 ${sc.ev.n.length + sc.ev.r.length} · 보호수단 ${sc.sg.length})`);
+  if (S.mismatch) return;
+  cv.classList.add("dimmed");
+  curEv.forEach(it => {
+    if (it.cls === "none") return;
+    const els = EL[it.id].dw.concat(EL[it.id].gr), cls = it.role === "원인 설비" ? "hl-cause" : it.role === "보호수단" ? "hl-sgt" : "hl-path";
+    els.forEach(e => { e.classList.add("hl-on", cls); if (cls === "hl-path" && it.cls === "guess") e.classList.add("hl-guess"); });
+  });
+  sc.sgo.forEach(sgRing);
+}
+let evOpen = false;
+function renderEvidence(sc) {
+  const el = $("#f-ev");
+  if (!sc) { el.innerHTML = '<span class="muted">시나리오를 고르면 원인·경로·보호수단을 도면에 강조합니다</span>'; return; }
+  const ev = curEv, n = ev.length, a = ev.filter(i => i.cls === "shown").length, b = ev.filter(i => i.cls === "guess").length, c = ev.filter(i => i.cls === "none").length;
+  const CL = { shown: "도면 표시", guess: "추정 경로", none: "미표시" };
+  el.innerHTML = `<div class="line"><span class="b">${esc(shortS(sc.id))}</span><span>근거 <b>${n}</b> 중 도면 표시 <b>${a}</b> · 추정 경로 <b>${b}</b>${b ? " (파선 — 실제 흐름 경로 아님)" : ""} · 미표시 <b>${c}</b></span>
+    <button class="link" id="ev-tog">${evOpen ? "접기" : "목록"}</button></div>` +
+    (S.mismatch ? '<div class="note" style="color:var(--warn-ink)">그래프 버전 불일치 — 도면 강조를 끄고 모두 미표시로 셉니다</div>' : "") +
+    (evOpen ? `<div class="lst">${ev.map(i => `<div><span style="${i.cls === "none" ? "color:var(--muted)" : i.cls === "guess" ? "color:var(--hl-path)" : ""}">${CL[i.cls]}</span><span><span class="chip id">${esc(i.id)}</span> ${esc(i.role)} · ${esc(tagOf(i.id))} <span class="muted">${esc(i.why)}</span></span></div>`).join("")}
+      <div class="note">ID 단위로 한 번씩 셉니다. 분류 기준은 디자인/시안/README.md §5.2 권고안.</div></div>` : "");
+}
+$("#f-ev").addEventListener("click", e => { if (e.target.id === "ev-tog") { evOpen = !evOpen; renderEvidence(curScen()); } });
+
+/* 웹뷰 이동·모드 */
+function mountWeb(slotId, mode) {
+  const wv = $("#webview"); $("#" + slotId).appendChild(wv);
+  wv.className = mode === "view" ? "m-view" : "m-hazop";
+  $("#f-tabs button[data-tab=drawing]").disabled = (mode !== "view" && S.mismatch) || (mode === "view" && S.st.view === "nosvg");
+  if ($("#f-tabs button[data-tab=drawing]").disabled && S.tab === "drawing") setTab("graph");
+  const ban = $("#f-banner");
+  if (mode !== "view" && S.mismatch) { ban.style.display = "block"; ban.textContent = "분석 당시 그래프 v-7ed95b0c74f1 ≠ 현재 그래프(예시 v-3c1f09a2d811) — 도면 강조 꺼짐, 그래프 보기만 제공"; }
+  else if (mode !== "view" && S.guessDemo) { ban.style.display = "block"; ban.textContent = "가상 예시: RC-L011(entity-seg-005) 흐름 방향을 '미확인'으로 바꿔 표시 — 실제 데이터 아님"; }
+  else if (mode === "view" && S.st.view === "nosvg") { ban.style.display = "block"; ban.textContent = "같은 이름의 SVG가 없어 도면 오버레이를 만들 수 없습니다 — 그래프 보기만 가능"; }
+  else ban.style.display = "none";
+  renderLayers(); applyLayers();
+  requestAnimationFrame(() => fitDefault());
+}
+
+/* ================================================================ 공통: 헤더·상태줄·메뉴·대화상자 */
+let bridgeT = null;
+function bridge(msg) { const el = $("#s-bridge"); el.textContent = msg; clearTimeout(bridgeT); bridgeT = setTimeout(() => el.textContent = "", 4000); }
+function toast(msg, kind, sub) {
+  const t = document.createElement("div"); t.className = "toast" + (kind === "err" ? " err" : "");
+  t.innerHTML = esc(msg) + `<small>${esc(sub || "시안: 흉내만 냄 — 파일을 쓰지 않음")}</small>`;
+  $("#toasts").appendChild(t); setTimeout(() => t.remove(), 4200);
+}
+function openDlg(html) { $("#dlg").innerHTML = html; $("#overlay").classList.add("on"); }
+function closeDlg() { $("#overlay").classList.remove("on"); }
+$("#overlay").addEventListener("click", e => { if (e.target.id === "overlay" || e.target.dataset.close != null) closeDlg(); });
+function renderHeader() {
+  $("#where").innerHTML = `구간 <b>${esc(D.run.region_name)}</b> · 도면 <b>${esc(D.run.dwg)}</b> · <span>${esc(D.run.id)}</span>`;
+  $("#who").innerHTML = S.reviewer ? `검토자 <b>${esc(S.reviewer)}</b> <button class="link" data-act="reviewer">변경</button>` : `<span class="b err">검토자 이름 없음</span> <button class="link" data-act="reviewer">입력</button>`;
+  $$("#steps button").forEach(b => b.classList.toggle("on", b.dataset.go === S.screen));
+  const blocked = S.blocked;
+  $("#s-chip").className = "vchip " + (blocked ? "blocked" : "passed");
+  $("#s-chip").textContent = "결과 검증 " + (blocked ? "blocked" : "passed");
+  $("#s-note").textContent = blocked ? "확정 저장·Excel 출력 막힘(열람만 가능)" : "형식·참조 검증 통과(보류 항목이 없다는 뜻이 아님)";
+  $("#s-saved").textContent = "최근 저장: " + (S.savedAt || "없음");
+}
+$("#steps").addEventListener("click", e => { const g = e.target.dataset.go; if (g) go(g); });
+$("#s-bounds").addEventListener("change", e => $("#app").classList.toggle("bounds", e.target.checked));
+$("#menubar").addEventListener("click", e => {
+  const m = e.target.closest(".m"), act = e.target.closest("[data-act]");
+  if (act) { $$(".m", $("#menubar")).forEach(x => x.classList.remove("open")); doAct(act.dataset.act); return; }
+  if (m) { const was = m.classList.contains("open"); $$(".m", $("#menubar")).forEach(x => x.classList.remove("open")); if (!was) m.classList.add("open"); }
+});
+document.addEventListener("click", e => { if (!e.target.closest("#menubar")) $$(".m", $("#menubar")).forEach(x => x.classList.remove("open")); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { if (S.pick) { S.pick = false; $("#f-pick").style.display = "none"; } closeDlg(); } });
+document.body.addEventListener("click", e => { const a = e.target.closest("[data-act]"); if (a && !a.closest("#menubar") && !a.closest(".dropdown")) doAct(a.dataset.act, a); });
+
+function doAct(act, el) {
+  if (act.startsWith("st:")) return setExample(act.slice(3));
+  switch (act) {
+    case "go-ana": go("ana"); break;
+    case "excel": excelDlg(); break;
+    case "settings": reviewerDlg(); break;
+    case "reviewer": reviewerDlg(); break;
+    case "about": openDlg(`<div class="dh">버전·데이터 위치</div><div class="db"><div class="kv">
+      <span class="k">프로그램</span><span>HAZOP 검토 (시안)</span><span class="k">분석기</span><span>hazop.analysis 0.2.0</span>
+      <span class="k">저장 루트</span><span class="path">자료저장소/ (HAZOP_STORE_ROOT 우선)</span><span class="k">출력</span><span class="path">출력/</span>
+      <span class="k">설정</span><span class="path">%APPDATA%\\HAZOP\\settings.json</span></div></div><div class="df"><button class="btn" data-close>닫기</button></div>`); break;
+    case "tog-left": $("#a-tri").classList.toggle("lcol"); $("#r-tri").classList.toggle("lcol"); setTimeout(fitDefault, 30); break;
+    case "tog-right": $("#a-tri").classList.toggle("rcol"); $("#r-tri").classList.toggle("rcol"); setTimeout(fitDefault, 30); break;
+    case "tog-hl": S.layers.hl = !S.layers.hl; renderLayers(); applyLayers(); break;
+    case "tog-bounds": $("#s-bounds").checked = !$("#s-bounds").checked; $("#app").classList.toggle("bounds", $("#s-bounds").checked); break;
+    case "fold-l": $("#" + (S.screen === "ana" ? "a" : "r") + "-tri").classList.toggle("lcol"); setTimeout(fitDefault, 30); break;
+    case "fold-r": $("#" + (S.screen === "ana" ? "a" : "r") + "-tri").classList.toggle("rcol"); setTimeout(fitDefault, 30); break;
+  }
+}
+function reviewerDlg() {
+  openDlg(`<div class="dh">검토자 이름</div><div class="db"><div class="frow"><span class="k">이름</span><input type="text" id="rv-name" value="${esc(S.reviewer || "")}" placeholder="예: 홍길동"></div>
+    <div class="note">설정(%APPDATA%\\HAZOP\\settings.json)에 한 번 저장하고, 저장할 때마다 검토 기록에 자동으로 남습니다.</div></div>
+    <div class="df"><button class="btn" data-close>취소</button><button class="btn primary" id="rv-ok">저장</button></div>`);
+  $("#rv-ok").onclick = () => { const v = $("#rv-name").value.trim(); if (!v) { $("#rv-name").classList.add("invalid"); return; } S.reviewer = v; closeDlg(); renderAll(); toast("검토자 이름을 설정에 저장했습니다"); };
+}
+
+/* ================================================================ 화면 전환 */
+function go(scr) {
+  S.screen = scr; $$(".screen").forEach(s => s.classList.toggle("on", s.id === "sc-" + scr));
+  S.pick = false; $("#f-pick").style.display = "none";
+  renderAll();
+}
+function renderAll() {
+  renderHeader();
+  if (S.screen === "reg") renderReg();
+  if (S.screen === "view") renderView();
+  if (S.screen === "ana") renderAna();
+  if (S.screen === "rev") renderRev();
+}
+const curScen = () => (S.screen === "rev" && S.item.t === "dic") ? DIC[S.item.id].sc : SCEN[S.scen] || null;
+
+/* ================================================================ ① 자료 등록 */
+const REG_ROWS = [
+  ["mat-0001", 1, "SNP-M-101_RCS-main.drawio", "SNP-M-101 / 0", "2026-11-04 14:02", "ok", "추출 ✓ · 그래프 ✓"],
+  ["mat-0002", 1, "SNP-M-102_RCS-pressurizer.drawio", "SNP-M-102 / 0", "2026-11-04 14:05", "ok", "추출 ✓ · 그래프 ✓"],
+  ["mat-0003", 1, "SNP-M-301_SI-irwst.drawio", "SNP-M-301 / 미확인", "2026-11-04 14:09", "ok", "미실행"],
+  ["mat-0004", 1, "SNP-M-401_CVCS.drawio", "미확인", "2026-11-04 14:11", "fail", "—"]
+];
+function renderReg() {
+  const st = S.st.reg;
+  $("#reg-list").innerHTML = st === "empty"
+    ? `<div class="empty"><div><div class="big">등록된 자료가 없습니다</div><div>오른쪽에서 draw.io 원본 파일 1개를 고르거나 끌어 놓으세요.</div></div></div>`
+    : `<table class="tbl"><thead><tr><th>자료 ID</th><th>버전</th><th>원본 파일명</th><th>도면번호 / 개정</th><th>등록 시각</th><th>상태</th><th>추출·그래프</th></tr></thead><tbody>` +
+      REG_ROWS.map(r => `<tr class="${r[0] === "mat-0002" ? "sel" : ""}"><td class="mono">${r[0]}</td><td class="num">v${r[1]}</td><td>${esc(r[2])}</td>
+        <td>${r[3].includes("미확인") ? r[3].replace("미확인", '<span class="unk-t" title="표제란 판독 실패 또는 미입력"></span>') : esc(r[3])}</td><td>${r[4]}</td>
+        <td>${r[5] === "ok" ? '<span class="b okc">등록 완료</span>' : '<span class="b err" title="저장 후 해시 불일치">실패</span>'}</td><td>${r[6]}</td></tr>`).join("") +
+      `</tbody></table><div class="note" style="padding:8px 12px">현재 분석에 쓰인 샘플 그래프는 등록 경로를 거치지 않았습니다(hold-006~008: project_id·material_id·registration_version 미확인). 위 목록은 시안용 가상 값입니다.</div>`;
+  const R = S.reg, M = R.meta;
+  const metaRow = (key, label, auto) => {
+    const v = M[key];
+    return `<div class="frow"><span class="k">${label}</span><div class="meta-cand">${v
+      ? `<span class="v">${esc(v.v)}</span>${v.by === "auto" ? '<span class="b human">확정</span><span class="muted" style="font-size:11px">표제란 자동 후보에서 확정</span>' : '<span class="b human">직접 입력</span>'} <button class="link" data-reg="unset:${key}">되돌리기</button>`
+      : (R.phase !== "idle" && st !== "multi" ? `<span class="b auto" title="표제란 자동 판독값 — 확정 전">자동 후보</span><span class="v">${esc(auto)}</span><button class="btn sm" data-reg="ok:${key}">확정</button><button class="link" data-reg="edit:${key}">직접 입력</button>` : '<span class="unk-t">— 비워 두면 미확인으로 저장</span>')}</div></div>`;
+  };
+  let res = "";
+  if (st === "loading" || R.phase === "registering") res = stepBox(["형식 확인", "해시 계산", "저장", "저장 후 해시 확인"], 2);
+  else if (st === "hasherr") res = `<div class="resbox err"><b>등록 실패 — 저장 후 해시 불일치</b><div style="margin:6px 0">${stepList(["형식 확인", "해시 계산", "저장", "저장 후 해시 확인"], 3, true)}</div>
+      저장한 파일의 SHA-256이 원본과 다릅니다. 등록을 완료로 표시하지 않았습니다.<br><b>다음 조치</b>: 저장 위치(자료저장소/)의 디스크 상태를 확인한 뒤 다시 등록하세요.</div>`;
+  else if (st === "multi") res = `<div class="resbox err"><b>파일 3개를 놓았습니다</b><br>한 번에 한 개씩 등록하세요. 아무것도 등록하지 않았습니다.</div>`;
+  else if (R.phase === "done" || R.phase === "extracting" || R.phase === "built") {
+    res = `<div class="resbox ok"><b>등록 완료 — mat-0005 v1</b> <span class="muted">(시안 가상 ID)</span>${stepList(["형식 확인", "해시 계산", "저장", "저장 후 해시 확인"], 4)}
+      <div class="note">원본 sha256 9f2c41…(가상) · SVG 파생 자료 ${R.svg ? "함께 등록" : "없음"}</div></div>
+      <div class="resbox" style="margin-top:8px"><b>미확인 (validation.unknowns)</b><ul style="margin:4px 0 0;padding-left:18px">
+      ${M.dwg ? "" : "<li>도면번호 — 비워 둠</li>"}${M.rev ? "" : "<li>개정번호 — 비워 둠</li>"}${M.title ? "" : "<li>제목 — 비워 둠</li>"}<li>프로젝트 ID — 비워 둠</li></ul></div>`;
+    if (R.phase === "extracting") res += `<div class="resbox" style="margin-top:8px">${stepList(["추출(--registration)", "그래프 생성"], 1)}</div>`;
+    if (R.phase === "built") res += `<div class="resbox ok" style="margin-top:8px"><b>추출·그래프 완료</b> — 노드 19 · 관계 19 · 미해결 0 · 그래프 구조 검증 passed <button class="link" data-reg="toview">② 도면·그래프에서 보기 →</button></div>`;
+  }
+  const nosvg = st === "nosvg" || !R.svg;
+  $("#reg-form").innerHTML = `<div class="form">
+    <div class="frow"><span class="k">프로젝트 ID</span><input type="text" placeholder="비우면 미확인"></div>
+    <div class="drop" data-reg="pick">${R.phase === "idle" && st !== "multi" ? "<b>draw.io 원본 1개</b>를 끌어 놓거나 클릭해 고르세요<br><span style='font-size:12px'>.drawio · 같은 폴더에 같은 이름의 .svg가 있으면 파생 자료로 함께 등록</span>"
+      : st === "multi" ? "<b>3개 파일</b>을 놓았습니다 — 다시 1개만 놓으세요" : "다른 파일로 바꾸려면 클릭"}</div>
+    ${R.phase !== "idle" && st !== "multi" ? `<div class="filecard"><div><b>SNP-M-102_RCS-pressurizer.drawio</b> <span class="b">원본</span></div>
+      ${nosvg ? `<div class="resbox warn" style="padding:6px 10px">같은 이름의 SVG가 없습니다 — 도면 오버레이를 만들 수 없음(그래프 보기만 가능)</div>`
+        : `<div>SNP-M-102_RCS-pressurizer.svg <span class="b">파생 자료 · 함께 등록</span> <span class="muted" style="font-size:11px">원본을 대체하지 않음 (시안 예시 파일명)</span></div>`}</div>` : ""}
+    <div class="sec"><div class="h">표제란 자동 후보 <span class="b auto">자동 후보</span> = 확정 전 기계 판독값 · <span class="b human">확정</span> = 사람이 확정</div></div>
+    ${metaRow("dwg", "도면번호", "SNP-M-102")}${metaRow("rev", "개정번호", "0")}${metaRow("title", "제목", "REACTOR COOLANT SYSTEM - PRESSURIZER AND POSRV")}
+    <div class="frow"><span class="k">등록자</span><input type="text" value="${esc(S.reviewer || "")}"></div>
+    <div class="frow"><span class="k">사유</span><input type="text" placeholder="예: 가압기 구간 HAZOP 검토용 최초 등록"></div>
+    <div style="display:flex;gap:8px"><button class="btn primary" data-reg="register" ${R.phase === "idle" || st === "multi" ? "disabled" : ""}>등록</button>
+      <button class="btn" data-reg="build" ${R.phase === "done" ? "" : "disabled"}>추출·그래프 만들기</button></div>
+    ${res}</div>`;
+}
+function stepList(names, upto, fail) { return `<ul class="steplist">${names.map((n, i) => `<li class="${i < upto ? "done" : i === upto ? (fail ? "fail" : "run") : ""}"><span class="dot">${i < upto ? "✓" : i === upto && fail ? "!" : ""}</span>${n}</li>`).join("")}</ul>`; }
+function stepBox(names, upto) { return `<div class="resbox"><b>진행 중</b>${stepList(names, upto)}</div>`; }
+$("#reg-form").addEventListener("click", e => {
+  const a = e.target.closest("[data-reg]"); if (!a) return; const [k, f] = a.dataset.reg.split(":"); const R = S.reg;
+  if (k === "pick") { if (S.st.reg !== "nosvg") S.st.reg = "normal"; R.phase = "picked"; R.svg = S.st.reg !== "nosvg"; R.meta = { dwg: null, rev: null, title: null }; }
+  if (k === "ok") R.meta[f] = { v: { dwg: "SNP-M-102", rev: "0", title: "REACTOR COOLANT SYSTEM - PRESSURIZER AND POSRV" }[f], by: "auto" };
+  if (k === "edit") { const v = prompt("직접 입력"); if (v) R.meta[f] = { v, by: "user" }; }
+  if (k === "unset") R.meta[f] = null;
+  if (k === "register") { R.phase = "registering"; bridge("Qt 작업 스레드: register.py 호출"); setTimeout(() => { R.phase = "done"; renderReg(); toast("등록 완료(흉내)"); }, 1200); }
+  if (k === "build") { R.phase = "extracting"; setTimeout(() => { R.phase = "built"; renderReg(); }, 1200); }
+  if (k === "toview") return go("view");
+  renderReg();
+});
+
+/* ================================================================ ② 도면·그래프 */
+function renderView() {
+  const band = $("#v-band");
+  if (S.st.view === "empty") {
+    band.style.display = "none";
+    $("#park").appendChild($("#webview"));
+    $("#slot-view").innerHTML = `<div class="empty" data-qt="빈 화면 안내"><div><div class="big">추출 결과가 없습니다</div><div>① 자료 등록에서 원본을 등록하고 "추출·그래프 만들기"를 실행하세요.</div><div style="margin-top:12px"><button class="btn primary" onclick="go('reg')">① 자료 등록으로</button></div></div></div>`;
+    return;
+  }
+  band.style.display = S.st.view === "nosvg" ? "flex" : "none";
+  band.innerHTML = "<b>SVG 없음</b> 같은 이름의 SVG가 등록되지 않아 도면 오버레이를 만들 수 없습니다. 그래프 보기만 활성화했습니다.";
+  if (!$("#slot-view #webview")) $("#slot-view").innerHTML = "";
+  mountWeb("slot-view", "view");
+  clearHL(); pickRing(S.selNode); renderProps(S.selNode);
+}
+function renderProps(id) {
+  const el = $("#f-props");
+  if (!id) { el.innerHTML = '<div class="muted">도면에서 심볼·배관·태그를 클릭하면 속성이 여기에 표시됩니다.</div>'; return; }
+  const row = o => "<table>" + Object.keys(o).map(k => `<tr><td>${esc(k)}</td><td>${o[k] == null ? "—" : esc(o[k])}</td></tr>`).join("") + "</table>";
+  const n = NODES[id], s = SEGS[id], l = LINKS[id];
+  let h = "";
+  if (n) {
+    h += `<div class="lbl">${esc(CAT_KO[n.c])}</div><h2>${esc(n.tag || "(태그 없음)")}</h2><div class="muted">${esc(n.lab.join(" "))}</div>`;
+    h += row({ entity_id: n.id, source_object_id: n.src, kind: n.k, category: n.c, classification: "classified" });
+    h += "<h3>원본 속성 (attributes)</h3>" + row(n.at);
+    const rel = D.dw.segs.filter(x => x.a === id || x.z === id).map(x => `<div><span class="link" data-goto="${x.id}">${esc(x.tag)}</span> <small class="muted">공정 배관</small> ${x.a === id ? "→" : "←"} ${esc(tagOf(x.a === id ? x.z : x.a))}</div>`)
+      .concat(D.dw.links.filter(x => x.a === id || x.z === id).map(x => `<div><span class="link" data-goto="${x.id}">${esc(KIND_KO[x.k])}</span> — ${esc(tagOf(x.a === id ? x.z : x.a))}</div>`));
+    h += `<h3>연결된 관계 (${rel.length})</h3>` + (rel.join("") || '<div class="muted">없음</div>');
+    const hd = HOLDS.filter(x => x.scope === id);
+    h += `<h3>미확인·보류 (${hd.length})</h3>` + (hd.map(x => `<div class="unk-t">${esc(x.item)} — ${esc(x.reason)}</div>`).join("") || '<div class="muted">없음</div>');
+  } else if (s) {
+    h += `<div class="lbl">공정 배관</div><h2>${esc(s.tag)}</h2>` + row({ entity_id: s.id, source_object_id: s.src, line_type: s.lt, relations: s.r.join(", "),
+      flow_direction: segFlow(s) ? tagOf(s.a) + " → " + tagOf(s.z) : "미확인 (원본에 방향 없음)" });
+  } else if (l) {
+    h += `<div class="lbl">${esc(KIND_KO[l.k])}</div><h2>${esc(l.id)}</h2>` + row({ source_object_id: l.src, kind: l.k, from: tagOf(l.a), to: tagOf(l.z), flow_direction: "— (방향 아님)" });
+  }
+  el.innerHTML = h;
+}
+$("#f-props").addEventListener("click", e => { const g = e.target.dataset.goto; if (g) { onNodeSelected(g); focusOn(g); } });
+$("#q").addEventListener("input", () => {
+  const s = $("#q").value.trim().toLowerCase(), out = $("#q-res"); out.innerHTML = ""; if (!s) return;
+  const hits = D.dw.nodes.filter(n => [n.tag, n.k, n.lab.join(" "), n.id].join(" ").toLowerCase().includes(s)).concat(D.dw.segs.filter(x => (x.tag + x.id).toLowerCase().includes(s)));
+  out.innerHTML = hits.slice(0, 12).map(n => `<div data-q="${n.id}">${esc(n.tag || n.lab.join(" "))} <small class="muted">${esc(n.k || "배관 구간")}</small></div>`).join("") || '<small class="muted">결과 없음</small>';
+});
+$("#q-res").addEventListener("click", e => { const t = e.target.closest("[data-q]"); if (t) { onNodeSelected(t.dataset.q); focusOn(t.dataset.q); } });
+
+function onNodeSelected(id) {
+  bridge(`웹→Python nodeSelected("${id}")`);
+  if (S.pick && S.screen === "rev") { addSafeguardFromPick(id); return; }
+  S.selNode = id; pickRing(id);
+  if (S.screen === "view") renderProps(id);
+  else { S.nodeCard = id; if (S.screen === "ana") renderAnaRight(); else renderRevRight(); }
+}
+
+/* ================================================================ ④ HAZOP 분석 */
+function renderAna() {
+  const st = S.st.ana;
+  $("#a-toolbar").innerHTML = `
+    <label class="fld">구간 <select><option>${esc(D.run.region_name)} (${esc(D.run.region)} v${D.run.region_v})</option></select></label>
+    <label class="fld">실행 <select ${st === "empty" ? "disabled" : ""}>${st === "empty" ? "<option>실행 없음</option>" : `<option>${esc(D.run.id)} · ${esc(D.run.created)}</option>`}</select></label>
+    <button class="btn" data-a="bundle">근거 묶음 내보내기…</button>
+    <button class="btn primary" data-a="newrun">새 분석 실행…</button>
+    ${st === "empty" || st === "loading" ? "" : `<span class="vchip ${S.blocked ? "blocked" : "passed"}">결과 검증 ${S.blocked ? "blocked" : "passed"}</span><span class="vnote">${S.blocked ? "열람만 가능 — ⑤ 확정 저장과 Excel 출력이 막혀 있음" : "형식·참조 검증 통과(보류 항목이 없다는 뜻이 아님)"}</span>`}
+    <span class="sp"></span>
+    ${st === "empty" || st === "loading" ? "" : `<span class="agg">후보 <b>44</b> (선택 25 · 제외 19 · 보류 0) · 시나리오 <b>14</b> · 위험도 제안 <b>6</b> · 설계보완 후보 <b>11</b> · 열린 보류 <b>62</b></span>`}`;
+  $("#a-bands").innerHTML = bandsHtml("ana");
+  const tri = $("#a-tri");
+  if (st === "empty" || st === "loading") {
+    tri.style.display = "none";
+    let host = $("#a-empty"); if (!host) { host = document.createElement("div"); host.id = "a-empty"; host.className = "empty"; host.dataset.qt = "빈 화면·진행 표시"; $("#sc-ana").appendChild(host); }
+    host.style.display = "grid";
+    host.innerHTML = st === "empty" ? `<div><div class="big">구간을 선택하거나 새 분석을 실행하세요</div><div>기존 실행은 위 '실행' 목록에서 열 수 있습니다. 프로그램은 AI를 호출하지 않으며, 고정 응답 폴더를 불러와 분석합니다.</div></div>`
+      : `<div><div class="big">분석 실행 중</div><div class="muted">analysis_run.steps · 작업 스레드에서 실행(창은 멈추지 않음)</div>${stepList(["입력 확인", "후보", "탐색", "패턴", "AI(고정 응답 불러오기)", "위험도"], 4)}<div style="margin-top:10px"><button class="btn">취소</button></div></div>`;
+    $("#s-job").textContent = st === "loading" ? "분석 실행 중 — AI 단계(고정 응답) 5/6 · 취소 가능" : "대기 중";
+    return;
+  }
+  const h = $("#a-empty"); if (h) h.style.display = "none";
+  tri.style.display = "grid"; $("#s-job").textContent = "대기 중";
+  renderDevTable("a-left", S.filterA, false);
+  mountWeb("slot-ana", "hazop");
+  renderAnaRight();
+  pickRing(S.selNode);
+  highlight(curScen());
+}
+function bandsHtml(scr) {
+  let h = "";
+  if (S.blocked) h += `<div class="band err" data-qt="차단 띠(상단 고정)"><div><b>결과 검증 blocked</b> — validation.errors 2건 <span class="b">시안 예시 데이터 — 실제 실행은 passed</span>
+    <ul><li>scenario-p86-d09-03: graph_evidence.relation_ids의 relation-099가 분석 당시 그래프에 없음</li><li>deviation-p86-d10: ai_runs 응답의 candidate_id가 요청과 다름</li></ul>
+    열람만 허용합니다. ⑤ 확정 저장과 Excel 출력은 막았습니다.</div><button class="btn sm" data-a="newrun">새 분석 실행…</button></div>`;
+  if (S.mismatch) h += `<div class="band warn" data-qt="경고 띠"><div><b>그래프 버전 불일치</b> — 구간 JSON의 graph_ref.graph_version(v-7ed95b0c74f1)과 현재 그래프(예시 v-3c1f09a2d811)가 다릅니다. 도면 강조를 끄고 그래프 보기만 제공합니다. 다른 버전의 도면을 원래 근거처럼 보여 주지 않습니다.</div><button class="btn sm" data-a="rebind">그래프 다시 연결…</button></div>`;
+  const pend = Object.keys(S.pending);
+  if (scr === "ana" && pend.length) h += `<div class="band info" data-qt="안내 띠"><div><b>후보 판단 변경 ${pend.length}건 저장됨</b> — 구간 JSON candidate_decisions에 이력으로 기록했고 구간 버전이 올라갔습니다(region_version 1 → 2). 열려 있는 분석 결과는 바뀌지 않았습니다. 변경을 반영하려면 재분석이 필요합니다.</div><button class="btn sm primary" data-a="newrun">새 분석 실행…</button></div>`;
+  if (scr === "rev" && S.st.rev === "hashchg") h += `<div class="band err" data-qt="오류 띠"><div><b>분석 결과 변경 감지</b> — 저장된 검토 기록의 analysis_sha256이 현재 analysis.json과 다릅니다(예시). 편집을 막았습니다. 기록은 열람만 가능합니다.</div></div>`;
+  if (scr === "rev" && S.st.rev === "savefail") h += `<div class="band err" data-qt="오류 띠"><div><b>저장 실패(예시)</b> — 자료저장소/reviews/… 쓰기 권한 오류. 입력 내용은 폼에 그대로 남아 있습니다. 성공으로 표시하지 않았습니다.</div></div>`;
+  return h;
+}
+
+function maxRiskTxt(c) { return c.sel === "X" ? '<span class="muted" style="font-size:11px">해당 없음</span>' : c.ai === "no_response" ? riskChip(null, "prop", "미제안") : riskChip(c.maxRisk, "prop", "short"); }
+function renderDevTable(hostId, filter, review) {
+  const host = $("#" + hostId), fs = review ? [["S", "선택(판정 대상)", 25], ["withsc", "시나리오 있음", 5], ["X", "제외(판정 제외)", 19], ["all", "전체", 44]] : [["all", "전체", 44], ["S", "선택", 25], ["X", "제외", 19], ["H", "보류", 0]];
+  const list = CANDS.filter(c => filter === "all" || (filter === "withsc" ? c.nsc > 0 : c.sel === filter));
+  const tbl = `<table class="tbl ${S.clampA ? "clamp" : ""}"><thead><tr><th>ID</th><th>편차</th><th>판단</th><th>AI</th><th title="시나리오 수">시나리오</th><th>최고 위험도</th>${review ? "<th>검토</th>" : '<th title="설계보완 후보 · 열린 보류">보완 · 보류</th>'}</tr></thead><tbody>` +
+    list.map(c => { const pend = S.pending[c.id];
+      return `<tr data-c="${c.id}" class="${c.id === S.cand ? "sel" : ""} ${c.sel === "X" ? "ex" : ""}"><td class="mono">d${c.n}</td>
+      <td><b>${esc(c.dev)}</b><div class="sub">${esc(c.param)} · ${esc(c.gw)}${c.gwEn ? " (" + esc(c.gwEn) + ")" : ""}</div>${c.sel === "X" ? `<div class="why">${esc(D.reasons[c.rk])}</div>` : ""}</td>
+      <td><span class="b sel-${c.sel}">${SEL_KO[c.sel]}</span>${pend ? `<div style="margin-top:2px"><span class="b pend" title="구간 JSON에 저장됨, 재분석 전">→ ${SEL_KO[pend.to]} 대기</span></div>` : ""}</td>
+      <td style="font-size:11px">${AI_KO[c.ai]}</td><td class="num">${c.sel === "X" ? "—" : c.nsc}</td><td>${maxRiskTxt(c)}</td>
+      ${review ? `<td>${revChip(c.id)}</td>` : `<td class="num">${c.sel === "X" ? "—" : c.ndic + " · " + c.nhold}</td>`}</tr>`; }).join("") + "</tbody></table>";
+  const top = `<div class="pane-h"><div><div class="lbl">${review ? "⑤ 검토 대상" : "④ 편차 후보 (candidates[])"}</div><div class="ttl">편차 목록</div></div><span class="sp"></span><button class="fold" data-act="fold-l" title="패널 접기">‹</button></div>
+    <div class="filters">${fs.map(f => `<button class="pill ${filter === f[0] ? "on" : ""}" data-f="${f[0]}">${f[1]} ${f[2]}</button>`).join("")}
+      <label class="ftog"><input type="checkbox" id="${hostId}-clamp" ${S.clampA ? "" : "checked"}>제외 사유 펼치기</label></div>`;
+  if (review) {
+    host.innerHTML = `<div class="colbar" data-act="fold-l">편차·검토 항목 ›</div><div class="split-v"><div class="top">${top}<div class="pane-b">${tbl}</div></div><div class="bot"><div class="pane-b itemlist" id="r-items"></div></div></div>`;
+    renderItemList();
+  } else host.innerHTML = `<div class="colbar" data-act="fold-l">편차 목록 ›</div>${top}<div class="pane-b">${tbl}</div><div class="pane-f" style="font-size:11px;color:var(--muted)">제외 후보도 숨기지 않습니다 · 위험도 칩: <span class="risk prop t4" style="margin:0 2px"><span class="n">4</span><span class="w">제안</span></span> = AI 제안(확정 아님)</div>`;
+  host.onclick = e => {
+    const f = e.target.closest("[data-f]"); if (f) { if (review) S.filterR = f.dataset.f; else S.filterA = f.dataset.f; renderDevTable(hostId, review ? S.filterR : S.filterA, review); return; }
+    if (e.target.id === hostId + "-clamp") { S.clampA = !e.target.checked; renderDevTable(hostId, filter, review); return; }
+    const r = e.target.closest("tr[data-c]"); if (r) selectCand(r.dataset.c);
+  };
+}
+function selectCand(cid) {
+  S.cand = cid; const sc = scensOf(cid); S.scen = sc.length ? sc[0].id : null; S.item = sc.length ? { t: "sc", id: sc[0].id } : { t: null, id: null };
+  S.nodeCard = null; S.rtab = "sc"; S.formErr = null; S.pvPick = null; renderAll();
+}
+function selectScen(sid) { S.scen = sid; S.item = { t: "sc", id: sid }; if (S.screen === "ana") { renderAnaRight(); highlight(SCEN[sid]); } else renderRev(); }
+
+function candHeader(c, review) {
+  const run = D.runs[c.n], b = D.bundles[c.n];
+  return `<div class="pane-h"><div style="min-width:0;flex:1"><div class="lbl">편차 ${esc(c.item)} · ${esc(c.id)}</div>
+    <div class="ttl">${esc(c.dev)}<span class="en">${esc(c.param)} × ${esc(c.gw)}${c.gwEn ? " (" + esc(c.gwEn) + ")" : ""}</span></div>
+    <div class="meta">판단 <b>${SEL_KO[c.sel]}</b> — ${esc(D.reasons[c.rk])}${c.sel === "X" ? " · 〈별표3〉 판단 근거" : " · rule:R4"} ${review ? "" : `<button class="link" data-a="judge">판단 변경…</button>`}</div>
+    <div class="meta">AI 상태 <b>${AI_KO[c.ai]}</b>${c.ai === "validated" ? " (검증 통과)" : ""}${c.sel === "S" ? ` · 근거 묶음 bundle-${esc(c.id)}${b ? ` <span class="mono">sha256 ${b}…</span>` : ""}` : ""}${run && run.rej.length ? ` · <span class="b err">거부된 AI 가설 ${run.rej.length}</span>` : ""}</div></div>
+    <button class="fold" data-act="fold-r" title="패널 접기">›</button></div>`;
+}
+function nodeCardHtml() {
+  const id = S.nodeCard; if (!id) return "";
+  const using = scensOf(S.cand).filter(s => s.ce.concat(s.ev.n, s.ev.r, s.sgo.map(g => g.id)).includes(id) || (s.ai && s.ai.n.concat(s.ai.r).includes(id)));
+  const n = NODES[id];
+  return `<div class="card" style="margin:12px 12px 0;border-color:var(--ui)"><div class="r1"><span class="lbl">도면에서 선택 (nodeSelected)</span><span class="sp"></span><button class="link" data-a="closecard">닫기</button></div>
+    <div><b>${esc(tagOf(id))}</b> <span class="muted">${n ? esc(CAT_KO[n.c] + " · " + n.k) : esc(id)}</span>${n && n.at.normal_position ? ` <span class="chip">정상 ${esc(n.at.normal_position)}${n.at.fail_position ? " · 실패 " + esc(n.at.fail_position) : ""}</span>` : ""}${n && n.at.set_pressure ? ` <span class="chip">설정압력 ${esc(n.at.set_pressure)}</span>` : ""}</div>
+    <div class="meta">이 편차에서 이 노드를 근거로 쓰는 시나리오 ${using.length}건 ${using.map(s => `<button class="link" data-s="${s.id}">${shortS(s.id)}</button>`).join(" ")}</div></div>`;
+}
+function renderAnaRight() {
+  const c = CAND[S.cand], host = $("#a-right"), scs = scensOf(c.id), dics = dicsOf(c.id), hs = holdsOf(c.id);
+  const tabs = [["sc", "시나리오", scs.length], ["dic", "설계보완 후보", dics.length], ["hold", "자료 요청", hs.length], ["ai", "AI 실행 기록", c.sel === "X" ? 0 : 1]];
+  let body = "";
+  if (S.rtab === "sc") body = scenTab(c, scs);
+  if (S.rtab === "dic") body = `<div class="cards">${dics.length ? dics.map(dicCard).join("") : '<div class="muted">설계보완 후보 없음</div>'}</div>`;
+  if (S.rtab === "hold") body = holdTab(c, hs);
+  if (S.rtab === "ai") body = aiTab(c);
+  const keep = host.querySelector(".pane-b") ? host.querySelector(".pane-b").scrollTop : 0;
+  host.innerHTML = `<div class="colbar" data-act="fold-r">‹ 상세</div>${candHeader(c, false)}${nodeCardHtml()}
+    <div class="qtabs">${tabs.map(t => `<button class="${S.rtab === t[0] ? "on" : ""}" data-t="${t[0]}">${t[1]}<span class="c">${t[2]}</span></button>`).join("")}</div>
+    <div class="pane-b">${body}</div>
+    <div class="pane-f">${S.scen ? `<span class="muted" style="font-size:12px">선택: ${shortS(S.scen)}</span><span class="sp"></span><button class="btn primary" data-a="toreview">검토하기 → ⑤</button>` : '<span class="muted" style="font-size:12px">검토할 시나리오가 없습니다</span>'}</div>`;
+  if (keep) host.querySelector(".pane-b").scrollTop = keep;
+}
+function pcText(pc) {
+  if (!pc) return '<span class="muted">경로 문맥 없음(원인 설비 단독)</span>';
+  if (!pc.mat) return "신호·계측 연결 — 물질 흐름 경로 아님";
+  const dir = { upstream: "상류 방향", downstream: "하류 방향", adjacent: "인접" }[pc.dir] || pc.dir;
+  let s = `${dir} · 물질 흐름 경로 · `;
+  if (pc.valve === "closed_valve_on_path") s += `경로상 닫힌 밸브 ${pc.valves.map(v => `${esc(v.tag)}(정상 ${v.np} · 실패 ${v.fp})`).join(", ")} — 정상 운전 시 흐름 없음`;
+  else s += "정상 운전 시 흐름 있음 · 경로상 밸브 없음";
+  return s;
+}
+function sgList(list) {
+  if (!list.length) return '<div class="unk-t">그래프에서 보호수단을 찾지 못함 — 없음인지 미확인인지 판단 불가</div>';
+  return list.map(g => `<div class="sgrow"><span class="sw sg" style="margin-top:3px;${g.cnt ? "" : "box-shadow:none"}"></span><div><b>${esc(g.tag)}</b> ${esc(g.d)}<div>
+    <span class="b okc">그래프에 존재 확인</span> <span class="b unk">적정성 미확인</span> <span class="b unk">독립성 미확인</span> ${g.cnt ? "" : '<span class="b err">보호수단으로 세지 않음</span>'}</div><div class="note" style="margin-top:2px">${esc(g.note)}</div></div></div>`).join("");
+}
+function riskBlock(r) {
+  if (r.st === "deferred") return `<div class="ai-box"><div class="hd"><span class="b ai">위험도 제안</span> 보류 <span class="sp"></span>${riskChip(null, "prop", "보류")}</div>
+    <div class="kv"><span class="k">사유</span><span>${esc(r.reason)}</span>${r.sb ? `<span class="k">강도 근거</span><span>${esc(r.sb)}</span>` : ""}${r.fb ? `<span class="k">빈도 근거</span><span>${esc(r.fb)}</span>` : ""}${r.unc ? `<span class="k">불확실성</span><span>${esc(r.unc)}</span>` : ""}</div>
+    <div class="note">등급 칸은 "보류". 확정은 ⑤에서 사람이 강도·빈도를 정해 계산합니다.</div></div>`;
+  const L = D.crit.levels[r.risk], ex = v => v ? esc(v) : '<span class="muted">발췌 생략(analysis.json 참조)</span>';
+  return `<div class="ai-box"><div class="hd"><span class="b ai">위험도 제안</span> 확정값 아님 <span class="sp"></span>${riskChip(r.risk, "prop")}</div>
+    <div class="kv"><span class="k">강도</span><span><b>${r.sev}</b> (${esc(D.crit.sev[r.sev].split(":")[0])}) — ${ex(r.sb)}</span>
+    <span class="k">빈도(사용)</span><span><b>${r.fq}</b> (${esc(D.crit.freq[r.fq].split(":")[0])}) — ${ex(r.fb)}</span>
+    <span class="k">보호수단 반영</span><span>${r.fqAI ? `AI 제시 빈도 ${r.fqAI} → ` : ""}<b>미반영</b> — ${esc(r.creditR)}</span>
+    <span class="k">계산</span><span class="mono">${esc(r.calc)}</span>
+    <span class="k">등급·관리</span><span>${esc(L[0])} — ${esc(L[1])}</span>
+    <span class="k">허용 여부</span><span>${esc(L[2])} <span class="muted">(표9 비고 해석은 [추론])</span></span>
+    ${r.as ? `<span class="k">가정</span><span>${r.as.map(esc).join("<br>")}</span>` : ""}${r.unc ? `<span class="k">불확실성</span><span>${esc(r.unc)}</span>` : ""}</div>
+    <div class="note">AI 제안 + Python 기준표 조회(${esc(D.crit.ver)}). 확정값 아님 — ⑤에서 사람이 확정</div></div>`;
+}
+function scenCard(s, on) {
+  const r = s.risk, rc = r.st === "proposed" ? riskChip(r.risk, "prop") : riskChip(null, "prop", "보류");
+  let h = `<div class="card click ${on ? "on" : ""}" data-s="${s.id}"><div class="r1"><span class="mono" style="font-weight:700">${shortS(s.id)}</span>
+    <span class="b">패턴</span><span class="b hyp" title="knowledge_status: hypothesis">가설</span><span class="b">초안</span><span class="b">${revLabel(s.id)}</span><span class="sp"></span>${rc}</div>
+    <div class="cc"><span class="k">원인</span><span>${esc(s.cause)}</span></div><div class="cc"><span class="k">결과</span><span>${esc(s.cons)}</span></div>`;
+  if (on) {
+    h += `<div class="sec"><div class="h"><span class="sw cause"></span>원인 설비</div>${s.ce.map(id => `<span class="chip">${esc(tagOf(id))}</span>`).join("")}
+      <span class="muted" style="font-size:11px;margin-left:6px">전제 설비</span> ${s.ae.map(id => `<span class="chip">${esc(tagOf(id))}</span>`).join("")}</div>
+      <div class="sec"><div class="h"><span class="sw path"></span>경로 문맥</div><div style="font-size:12px">${pcText(s.pc)}</div></div>
+      <div class="sec"><div class="h"><span class="sw sg"></span>보호수단 (safeguards)</div>${sgList(s.sgo)}</div>
+      <div class="sec">${s.ai ? `<div class="ai-box"><div class="hd"><span class="b ai">해석</span> ai_interpretation · 고정 응답</div>
+        <div class="kv"><span class="k">원인</span><span>${esc(s.ai.cause)}</span><span class="k">결과</span><span>${esc(s.ai.cons)}</span>
+        <span class="k">해석</span><span>${s.ai.txt ? esc(s.ai.txt) : '<span class="muted">발췌 생략(analysis.json 참조)</span>'}</span>
+        ${s.ai.sgo.length ? `<span class="k">AI 인용 보호수단</span><span>${s.ai.sgo.map(g => esc(g.tag)).join(", ")}</span>` : ""}</div>
+        <div class="note">서술 검사 한계: 서술 문장 속 설비명은 자동 대조하지 않음 — AI가 신고하지 않은 도면 밖 설비 서술은 사람이 검토</div></div>`
+        : `<div class="ai-box"><div class="hd"><span class="b ai">해석</span> 없음</div><div style="font-size:12px">AI가 이 패턴 시나리오를 해석하지 않았습니다.</div></div>`}</div>
+      <div class="sec">${riskBlock(r)}</div>
+      <div class="sec"><div class="h">근거 ID (graph_evidence)</div>${s.ev.n.concat(s.ev.r, s.ev.e).map(i => `<span class="chip id">${esc(i)}</span>`).join("")}</div>
+      ${s.holds.length ? `<div class="sec"><div class="h">연결된 자료 요청</div>${s.holds.map(hid => `<div style="font-size:12px"><span class="chip id">${hid}</span> ${esc(HOLD[hid].item)} — <span class="muted">${esc(HOLD[hid].req)}</span></div>`).join("")}</div>` : ""}`;
+  }
+  return h + "</div>";
+}
+function scenTab(c, scs) {
+  if (c.sel === "X") return `<div class="cards"><div class="card"><div class="r1"><span class="b sel-X">제외</span> <b>적용 불가</b></div><div class="meta">${esc(D.reasons[c.rk])}</div>
+    <div class="kv" style="margin-top:8px"><span class="k">AI 상태</span><span>미요청(not_requested)</span><span class="k">위험도</span><span>해당 없음(not_applicable) — 확정을 위해 위험도를 만들지 않음</span></div></div></div>`;
+  if (!scs.length) return `<div class="cards"><div class="card"><b>시나리오 없음</b><div class="meta">AI 상태 응답 없음 — 고정 응답 파일 없음: ${esc(c.id)}.json — 패턴 기반 초안·탐색 결과는 보존, 위험도 미제안</div>
+    <div class="note">Excel 워크시트에는 "시나리오 없음"과 이 사유로 한 행을 남깁니다.</div></div></div>`;
+  const run = D.runs[c.n];
+  return `<div class="cards">${scs.map(s => scenCard(s, s.id === S.scen)).join("")}
+    ${run && run.rej.length ? `<div class="card" style="background:#fafafa"><div class="r1"><span class="b err">거부된 AI 가설 ${run.rej.length}</span> <span class="muted" style="font-size:11px">결과에 쓰이지 않음</span></div>${run.rej.map(x => `<div class="meta"><b>${esc(x.cause)}</b><br><span class="muted">${esc(x.reason)}</span></div>`).join("")}</div>` : ""}</div>`;
+}
+function dicCard(d) {
+  const s = d.sc, r = s.risk;
+  return `<div class="card"><div class="r1"><span class="mono" style="font-weight:700">${esc(d.id.replace("dic-scenario-p86-", "dic-"))}</span><span class="b unk">미확정</span>${S.screen === "rev" ? decChip(itemDec("dic", d.id)) : ""}<span class="sp"></span>${r.st === "proposed" ? riskChip(r.risk, "prop") : ""}</div>
+    <div style="margin-top:4px">${d.tr.map(t => `<span class="chip">${TR_KO[t]}</span>`).join("")}</div>
+    <div class="cc"><span class="k">원인</span><span>${esc(s.cause)}</span></div><div class="cc"><span class="k">결과</span><span>${esc(s.cons)}</span></div>
+    <div class="kv" style="margin-top:6px">${d.tr.includes("risk") ? `<span class="k">근거</span><span>제안 위험도 ${r.risk} ${esc(D.crit.levels[r.risk][0])} · ${esc(D.crit.levels[r.risk][2])} · <span class="mono">${esc(r.calc)}</span></span>` : ""}
+    ${d.tr.includes("nosg") ? `<span class="k">보호수단</span><span>그래프에서 찾은 보호수단 0 ${d.nc ? `· 세지 않은 후보 ${d.nc.map(tagOf).join(", ")}` : ""}${d.ov && d.ov.length ? ` · 전제·같은 루프 겹침 ${d.ov.map(tagOf).join(", ")}` : ""}<br><span class="muted">보호수단이 없다고 단정하지 않음(미확인)</span></span>` : ""}
+    <span class="k">연결 시나리오</span><span><button class="link" data-s="${s.id}">${shortS(s.id)}</button></span>
+    <span class="k">자료 요청</span><span>${d.holds.length ? d.holds.map(h => `<span class="chip id">${h}</span>`).join("") : '<span class="muted">없음</span>'}</span></div>
+    <div class="note">설계보완 후보(미확정). ⑤에서 사람이 확정하며 자동 확정하지 않음</div></div>`;
+}
+function holdTab(c, hs) {
+  const all = S.regHolds ? HOLDS.filter(h => !h.c).concat(hs) : hs;
+  return `<div class="filters"><span class="muted" style="font-size:12px">열린 보류 ${hs.length}건 (이 편차)</span><label class="ftog"><input type="checkbox" data-a="regholds" ${S.regHolds ? "checked" : ""}>구간 공통 보류 10건 포함</label></div>
+    <table class="tbl"><thead><tr><th>ID</th><th>항목 · 사유</th><th>요청 자료</th><th>출처</th><th>상태</th></tr></thead><tbody>${all.map(h => `<tr><td class="mono">${h.id.replace("hold-", "")}</td>
+    <td><b>${esc(h.item)}</b><div class="sub">${esc(h.scope)}</div><div class="why">${esc(h.reason)}</div></td><td>${esc(h.req)}</td><td>${SRC_KO[h.src] || h.src}</td><td><span class="b unk">열림</span></td></tr>`).join("") || '<tr><td colspan="5" class="muted">없음</td></tr>'}</tbody></table>`;
+}
+function aiTab(c) {
+  if (c.sel === "X") return '<div class="cards"><div class="muted">제외 후보 — AI 요청 없음(not_requested)</div></div>';
+  const run = D.runs[c.n], ok = c.ai === "validated";
+  return `<div class="cards"><div class="card"><div class="r1"><span class="mono" style="font-weight:700">airun-${esc(c.id)}-01</span><span class="sp"></span><span class="b ${ok ? "okc" : "unk"}">${ok ? "validated" : "no_response"}</span></div>
+    <div class="kv" style="margin-top:6px"><span class="k">시도</span><span>1회</span><span class="k">응답 출처</span><span>고정 응답 폴더 <span class="path" style="padding:1px 6px">데이터/고정응답/region-SNP-M-102-pzr</span></span>
+    <span class="k">응답 파일</span><span>${ok ? esc(c.id) + ".json" + (run && run.resp_sha ? ` <span class="mono">sha256 ${run.resp_sha}…</span>` : "") : `<span class="b unk">없음</span> 고정 응답 파일 없음: ${esc(c.id)}.json`}</span>
+    <span class="k">검증</span><span>${ok ? "passed · 오류 0 · 경고 0" : "—"}</span><span class="k">모델</span><span>없음(고정 응답 — 실제 AI 호출 아님)</span>
+    <span class="k">묶음 대조</span><span>verify_bundle: true · region_id·bundle_sha256 일치${ok ? "" : "(응답 없음)"}</span></div>
+    ${run && run.rej.length ? `<div class="sec"><div class="h">도면 밖 설비로 거부된 시나리오</div>${run.rej.map(x => `<div style="font-size:12px;margin-bottom:4px"><b>${esc(x.cause)}</b><br><span class="muted">${esc(x.reason)}</span></div>`).join("")}</div>` : ""}</div>
+    <div class="note" style="padding:0 4px">input_mismatch(묶음 해시 다름)인 응답은 결과에 쓰지 않고 이 탭과 편차 목록 AI 열에 표시합니다.</div></div>`;
+}
+$("#a-right").addEventListener("click", e => {
+  const t = e.target.closest("[data-t]"); if (t) { S.rtab = t.dataset.t; renderAnaRight(); return; }
+  const sb = e.target.closest("[data-s]"); if (sb) { if (sb.dataset.s === S.scen && S.rtab === "sc" && sb.classList.contains("card")) return; S.rtab = "sc"; selectScen(sb.dataset.s); return; }
+  if (e.target.dataset.a === "regholds") { S.regHolds = e.target.checked; renderAnaRight(); }
+});
+document.addEventListener("click", e => {
+  const a = e.target.closest("[data-a]"); if (!a || a.tagName === "INPUT") return;
+  const k = a.dataset.a;
+  if (k === "bundle") bundleDlg(); if (k === "newrun") newRunDlg(); if (k === "judge") judgeDlg(); if (k === "rebind") rebindDlg();
+  if (k === "closecard") { S.nodeCard = null; S.selNode = null; pickRing(null); S.screen === "ana" ? renderAnaRight() : renderRevRight(); }
+  if (k === "toreview") { S.item = { t: "sc", id: S.scen }; go("rev"); }
+  if (k === "excel") excelDlg();
+});
+
+function bundleDlg() {
+  openDlg(`<div class="dh">근거 묶음 내보내기</div><div class="db">
+    <div class="kv"><span class="k">구간</span><span>${esc(D.run.region)} v1 · 그래프 ${esc(D.run.graph_v)}</span><span class="k">대상</span><span>선택 후보 25개 (제외 19개는 내보내지 않음)</span></div>
+    <div><div class="flbl">내보낼 폴더</div><div style="display:flex;gap:6px"><div class="path" style="flex:1">출력/근거묶음/region-SNP-M-102-pzr/20261104T1600/ (예시 경로)</div><button class="btn sm">찾아보기…</button></div></div>
+    <div class="note" style="font-size:12px">폴더 안: 편차별 근거 묶음(region_id·bundle_sha256 포함)과 요청 프롬프트. Claude Code 구독제 세션에서 이 폴더로 응답(<span class="mono">&lt;candidate_id&gt;.json</span>)을 만든 뒤, '새 분석 실행'에서 응답 폴더를 고르세요. <b>프로그램은 AI를 호출하지 않습니다.</b></div></div>
+    <div class="df"><button class="btn" data-close>취소</button><button class="btn primary" id="bd-ok">내보내기</button></div>`);
+  $("#bd-ok").onclick = () => { closeDlg(); toast("근거 묶음 25개와 프롬프트를 내보냈습니다(흉내)"); };
+}
+function newRunDlg() {
+  openDlg(`<div class="dh">새 분석 실행</div><div class="db">
+    <div class="flbl">AI 응답 출처</div>
+    <label class="opt"><input type="radio" name="src" checked><div><b>고정 응답 폴더</b><div class="s">근거 묶음 내보내기로 만든 폴더에 대해 Claude Code 세션에서 만든 응답을 불러옵니다(ai.FixedResponseClient)</div></div></label>
+    <label class="opt dis"><input type="radio" name="src" disabled><div><b>Claude API</b> <span class="b">후속</span><div class="s">확장 지점만 있음 — 이번 구현에서 동작하지 않음</div></div></label>
+    <div><div class="flbl">응답 폴더</div><div style="display:flex;gap:6px"><div class="path" style="flex:1">데이터/고정응답/region-SNP-M-102-pzr</div><button class="btn sm">찾아보기…</button></div></div>
+    <div class="note" style="font-size:12px">region_id·bundle_sha256이 요청 근거 묶음과 다르면 그 후보는 input_mismatch로 표시되고 결과에 쓰이지 않습니다. 새 실행은 새 analysis_run_id를 만들며 기존 검토 기록은 넘어가지 않습니다.</div></div>
+    <div class="df"><button class="btn" data-close>취소</button><button class="btn primary" id="nr-ok">실행</button></div>`);
+  $("#nr-ok").onclick = () => { closeDlg(); S.st.ana = "loading"; go("ana"); setTimeout(() => { S.st.ana = "normal"; S.pending = {}; if (S.screen === "ana") renderAna(); toast("분석 실행 완료(흉내) — 같은 실행 결과를 다시 표시"); }, 2200); };
+}
+function judgeDlg() {
+  const c = CAND[S.cand];
+  openDlg(`<div class="dh">후보 판단 변경 — ${esc(c.item)} ${esc(c.dev)}</div><div class="db">
+    <div class="kv"><span class="k">현재 판단</span><span><b>${SEL_KO[c.sel]}</b> — ${esc(D.reasons[c.rk])}</span></div>
+    <div><div class="flbl">새 판단 <i>필수</i></div><div class="seg4" style="grid-template-columns:repeat(3,1fr)" id="jd-seg">${["S", "X", "H"].map(k => `<button data-k="${k}" ${k === c.sel ? "disabled" : ""}>${SEL_KO[k]}</button>`).join("")}</div></div>
+    <div><div class="flbl">사유 <i>필수</i></div><textarea class="ta" id="jd-r" placeholder="예: 정상 운전 중 화학 첨가 운전이 있어 반응 이탈을 다시 검토"></textarea><div class="ferr" id="jd-e" hidden></div></div>
+    <div class="kv"><span class="k">변경자</span><span>${esc(S.reviewer || "미설정")} · 시각은 저장 시 자동 기록</span></div>
+    <div class="note" style="font-size:12px">구간 JSON(데이터/구간/region-SNP-M-102-pzr.json)의 candidate_decisions에 이력으로 기록하고 <b>구간 버전이 올라갑니다</b>(region_version 1 → 2). <b>열려 있는 분석 결과는 바뀌지 않으며</b>, 반영하려면 재분석이 필요합니다.</div></div>
+    <div class="df"><button class="btn" data-close>취소</button><button class="btn primary" id="jd-ok">저장</button></div>`);
+  let pick = null;
+  $("#jd-seg").onclick = e => { const b = e.target.closest("button"); if (!b || b.disabled) return; pick = b.dataset.k; $$("#jd-seg button").forEach(x => x.classList.toggle("on", x === b)); };
+  $("#jd-ok").onclick = () => {
+    const r = $("#jd-r").value.trim(), er = $("#jd-e");
+    if (!pick || !r) { er.hidden = false; er.textContent = !pick ? "새 판단을 고르세요" : "사유를 입력해야 저장할 수 있습니다"; $("#jd-r").classList.toggle("invalid", !r); return; }
+    S.pending[c.id] = { to: pick, reason: r }; closeDlg(); renderAna(); toast("판단 변경을 구간 JSON에 이력으로 저장했습니다(흉내)", "", "구간 버전 1 → 2 · 열린 분석 결과는 그대로 · 재분석 필요");
+  };
+}
+function rebindDlg() {
+  openDlg(`<div class="dh">그래프 다시 연결 (--rebind-graph)</div><div class="db">
+    <div class="kv"><span class="k">구간 고정 버전</span><span class="mono">v-7ed95b0c74f1</span><span class="k">현재 그래프</span><span class="mono">v-3c1f09a2d811 (예시)</span></div>
+    <div class="resbox"><b>차이 (예시)</b><ul style="margin:4px 0 0;padding-left:18px"><li>노드 추가 1: RC-HV112 (수동밸브)</li><li>관계 변경 2: RC-L011 구간 분할</li><li>구간 구성원 영향: entity-seg-005 → 2개 구간</li></ul></div>
+    <div class="frow"><span class="k">변경자</span><input type="text" value="${esc(S.reviewer || "")}"></div>
+    <div><div class="flbl">사유 <i>필수</i></div><textarea class="ta" placeholder="예: 도면 개정 1 반영"></textarea></div>
+    <div class="note">확인하면 구간 JSON에 이력이 덧붙고, 기존 실행은 바뀌지 않습니다. 새 그래프로 분석하려면 재분석이 필요합니다.</div></div>
+    <div class="df"><button class="btn" data-close>취소</button><button class="btn primary" data-close>확인</button></div>`);
+}
+
+/* ================================================================ ⑤ 설계보완·확정 */
+function draft(cid) {
+  if (!S.drafts[cid]) S.drafts[cid] = S.reviews[cid] ? JSON.parse(JSON.stringify(S.reviews[cid].data)) : { sc: {}, dic: {}, memos: [], nsc: { on: false, reason: "" } };
+  if (!S.drafts[cid].nsc) S.drafts[cid].nsc = { on: false, reason: "" };
+  return S.drafts[cid];
+}
+const cidOf = (t, id) => t === "sc" ? SCEN[id].c : t === "dic" ? DIC[id].c : id;
+function itemDraft(t, id) {
+  const d = draft(cidOf(t, id));
+  if (t === "nsc") return d.nsc;
+  if (!d[t][id]) d[t][id] = t === "sc" ? { dec: null, reason: "", rev: {}, risk: { sev: null, sb: "", fq: null, fb: "", src: null }, imp: null } : { dec: null, reason: "", rec: "", cond: "", inh: null };
+  return d[t][id];
+}
+function savedItem(t, id) { const r = S.reviews[cidOf(t, id)]; if (!r) return null; return t === "nsc" ? r.data.nsc : (r.data[t][id] || null); }
+const decOf = (x, t) => !x ? null : t === "nsc" ? (x.on ? "nsc" : null) : x.dec;
+function savedDec(t, id) { return decOf(savedItem(t, id), t); }
+function itemDec(t, id) {
+  const dd = S.drafts[cidOf(t, id)], x = dd ? (t === "nsc" ? dd.nsc : dd[t][id]) : null, s = savedDec(t, id), v = x ? decOf(x, t) : s;
+  return { dec: v, draft: !!x && v !== s };
+}
+function decChip(o) { return o.dec ? `<span class="dec ${o.dec} ${o.draft ? "draft" : ""}" title="${o.draft ? "저장 전" : "저장됨"}">${DEC_KO[o.dec]}${o.draft ? " · 저장 전" : ""}</span>` : `<span class="dec none">미결정</span>`; }
+/* 판정 대상 = 판단 '선택' 편차. 항목 = 시나리오 + 설계보완 후보, 시나리오 0개면 '시나리오 없음 확인' 하나 (인터페이스.md §5.2) */
+function itemsOf(cid) {
+  if (CAND[cid].sel !== "S") return [];
+  const sc = scensOf(cid);
+  return sc.length ? sc.map(s => ["sc", s.id]).concat(dicsOf(cid).map(d => ["dic", d.id])) : [["nsc", cid]];
+}
+function revStatus(cid) {
+  const c = CAND[cid]; if (c.sel === "X") return "excluded"; if (c.sel === "H") return "held";
+  if (!S.reviews[cid]) return "not_reviewed";
+  const decs = itemsOf(cid).map(([t, id]) => savedDec(t, id));
+  if (decs.some(x => !x)) return "reviewing";
+  return decs.includes("defer") ? "deferred" : "confirmed";
+}
+/* 시나리오 기각 → 연결 설계보완 후보 '해당 없음' + 사유 상속 (§3.4) */
+function syncDic(cid) {
+  const d = draft(cid);
+  dicsOf(cid).forEach(x => {
+    const sd = d.sc[x.s] || savedItem("sc", x.s), it = itemDraft("dic", x.id);
+    if (sd && sd.dec === "reject") { it.dec = "not_applicable"; it.inh = x.s; it.reason = sd.reason; it.rec = ""; it.cond = ""; }
+    else if (it.dec === "not_applicable") { it.dec = null; it.inh = null; it.reason = ""; }
+  });
+}
+function revLabel(sid) { const d = savedDec("sc", sid); return d ? "검토: " + DEC_KO[d] : "미검토"; }
+function revChip(cid) { const s = revStatus(cid); return (s === "excluded" || s === "held") ? `<span class="muted" style="font-size:11px">${RS_KO[s]}</span>` : `<span class="dec ${s === "confirmed" ? "accept" : s === "deferred" ? "defer" : "none"}">${RS_KO[s]}</span>`; }
+function renderRev() {
+  const st = S.st.rev;
+  const cnt = { not_reviewed: 0, reviewing: 0, deferred: 0, confirmed: 0 };
+  CANDS.filter(c => c.sel === "S").forEach(c => cnt[revStatus(c.id)]++);
+  const nS = CANDS.filter(c => c.sel === "S").length, nX = CANDS.filter(c => c.sel === "X").length, nH = CANDS.filter(c => c.sel === "H").length;
+  let nsc = 0, ndic = 0; D.scen.forEach(s => { if (savedDec("sc", s.id)) nsc++; }); D.dic.forEach(d => { if (savedDec("dic", d.id)) ndic++; });
+  const xlOff = S.blocked ? "결과 검증 blocked — Excel 출력 막힘" : st === "hashchg" ? "분석 결과 변경 — Excel 출력 막힘" : st === "empty" ? "열린 실행 없음" : "";
+  $("#r-toolbar").innerHTML = `<label class="fld">현재 실행 <select disabled><option>${esc(D.run.id)}</option></select></label>
+    <span class="agg">검토 진행(선택 편차 ${nS}) — 미검토 <b>${cnt.not_reviewed}</b> · 검토 중 <b>${cnt.reviewing}</b> · 보류 <b>${cnt.deferred}</b> · 확정 <b>${cnt.confirmed}</b></span>
+    <span class="agg muted" title="확정 판정에 넣지 않음">· 판정 제외: 제외 후보 ${nX} · 판단 보류 후보 ${nH}</span>
+    <span class="agg muted">· 시나리오 결정 ${nsc}/14 · 설계보완 결정 ${ndic}/11</span><span class="sp"></span>
+    <span class="vchip ${S.blocked ? "blocked" : "passed"}">결과 검증 ${S.blocked ? "blocked" : "passed"}</span>
+    <button class="btn primary" data-a="excel" ${xlOff ? `disabled title="${xlOff}"` : ""}>Excel 내보내기…</button>`;
+  $("#r-bands").innerHTML = bandsHtml("rev");
+  const tri = $("#r-tri");
+  if (st === "empty") {
+    tri.style.display = "none";
+    let host = $("#r-empty"); if (!host) { host = document.createElement("div"); host.id = "r-empty"; host.className = "empty"; host.dataset.qt = "빈 화면 안내"; $("#sc-rev").appendChild(host); }
+    host.style.display = "grid"; host.innerHTML = `<div><div class="big">열린 분석 실행이 없습니다</div><div>④ HAZOP 분석에서 구간과 실행을 연 뒤 "검토하기"를 누르세요.</div><div style="margin-top:12px"><button class="btn primary" onclick="S.st.rev='normal';go('ana')">④ HAZOP 분석으로</button></div></div>`;
+    return;
+  }
+  const h = $("#r-empty"); if (h) h.style.display = "none"; tri.style.display = "grid";
+  if (!S.item.id) { const s = scensOf(S.cand)[0]; if (s) S.item = { t: "sc", id: s.id }; else if (CAND[S.cand].sel === "S") S.item = { t: "nsc", id: S.cand }; }
+  if (S.item.t === "sc") S.scen = S.item.id;
+  if (S.item.t === "nsc") S.scen = null;
+  renderDevTable("r-left", S.filterR, true);
+  mountWeb("slot-rev", "hazop");
+  renderRevRight(); pickRing(S.selNode); highlight(curScen());
+}
+function renderItemList() {
+  const c = CAND[S.cand], scs = scensOf(c.id), dics = dicsOf(c.id), host = $("#r-items"); if (!host) return;
+  if (dics.length) syncDic(c.id);
+  host.innerHTML = `<div class="gh">${esc(c.item)} ${esc(c.dev)} — 시나리오 ${scs.length}</div>` +
+    (scs.map(s => `<div class="it ${S.item.id === s.id ? "sel" : ""}" data-it="sc:${s.id}"><span><b class="mono">${shortS(s.id)}</b> ${esc(s.cause.slice(0, 38))}…</span>${decChip(itemDec("sc", s.id))}</div>`).join("")
+      || (c.sel === "S" ? `<div class="it ${S.item.t === "nsc" ? "sel" : ""}" data-it="nsc:${c.id}"><span>시나리오 없음 확인 <span class="muted">(사유 필수)</span></span>${decChip(itemDec("nsc", c.id))}</div>` : `<div class="it muted">${RS_KO[revStatus(c.id)]} — 검토 항목 없음</div>`)) +
+    `<div class="gh">설계보완 후보 ${dics.length}</div>` + (dics.map(d => `<div class="it ${S.item.id === d.id ? "sel" : ""}" data-it="dic:${d.id}"><span><b class="mono">${d.id.replace("dic-scenario-p86-", "dic-")}</b> ${d.tr.map(t => TR_SHORT[t]).join(" · ")}</span>${decChip(itemDec("dic", d.id))}</div>`).join("") || '<div class="it muted">없음</div>');
+  host.onclick = e => { const it = e.target.closest("[data-it]"); if (!it) return; const [t, id] = it.dataset.it.split(":"); S.item = { t, id }; S.formErr = null; S.pvPick = null; if (t === "sc") S.scen = id; renderRev(); };
+}
+const locked = () => S.blocked || S.st.rev === "hashchg";
+function renderRevRight() {
+  const host = $("#r-right"), c = CAND[S.cand];
+  if (!S.item.id) { host.innerHTML = `<div class="colbar" data-act="fold-r">‹ 검토</div>${candHeader(c, true)}<div class="empty"><div>${c.sel === "X" ? "제외 후보 — 검토 항목 없음. 검토 집계에서 따로 표시하고 확정 판정에 넣지 않습니다." : "판단 보류 후보 — 시나리오가 만들어지지 않아 확정 판정에 넣지 않습니다."}</div></div>`; return; }
+  const body = S.item.t === "sc" ? scForm(SCEN[S.item.id]) : S.item.t === "dic" ? dicForm(DIC[S.item.id]) : nscForm(c);
+  const rv = S.reviews[c.id], keep = host.querySelector(".pane-b") ? host.querySelector(".pane-b").scrollTop : 0;
+  setTimeout(() => { const pb = host.querySelector(".pane-b"); if (pb && keep) pb.scrollTop = keep; }, 0);
+  host.innerHTML = `<div class="colbar" data-act="fold-r">‹ 검토</div>${candHeader(c, true)}${nodeCardHtml()}<div class="pane-b">${body}</div>
+    <div class="pane-f"><div style="font-size:12px">${S.reviewer ? `검토자 <b>${esc(S.reviewer)}</b> <button class="link" data-act="reviewer">변경</button>` : '<span class="b err">검토자 이름 없음</span> <button class="link" data-act="reviewer">입력</button>'}
+      <div class="muted" style="font-size:11px">${rv ? `저장본 v${rv.v} · ${esc(rv.by)} · ${esc(rv.at)}` : "저장본 없음"} · 저장 시각은 자동 기록(UTC 저장, 현지 시각 표시)</div></div>
+      <span class="sp"></span><button class="btn" data-r="revert">되돌리기</button>
+      <button class="btn primary" data-r="save" ${locked() ? "disabled" : ""} title="${locked() ? (S.blocked ? "결과 검증 blocked — 확정 저장 막힘" : "분석 결과 변경 — 편집 막힘") : "편차 단위로 새 버전 파일 저장"}">저장 (v${rv ? rv.v + 1 : 1})</button></div>`;
+}
+const prevRun = () => D.prev.runs[S.prevRun || 0];
+const prevMatches = s => s.match ? prevRun().items.filter(x => x.match === s.match) : [];
+function prevLine(x) { return `<div><span class="mono">${esc(x.sid)}</span> · 결정 <span class="dec ${x.dec}">${DEC_KO[x.dec]}</span> — ${esc(x.reason)}${x.risk ? ` · 위험도 확정 ${riskChip(riskOf(x.risk.sev, x.risk.fq), "conf")}` : ""}</div>`; }
+function prevBox(s, dis) {
+  const m = prevMatches(s);
+  const sel = `<select data-f="prevrun" style="border:1px solid var(--line-strong);border-radius:6px;padding:2px 4px;font-size:12px">${D.prev.runs.map((x, i) => `<option value="${i}" ${i === (S.prevRun || 0) ? "selected" : ""}>${esc(x.run)} · 검토 v${x.v} · ${esc(x.at)}${i === 0 ? " (가장 최근)" : ""}</option>`).join("")}</select>`;
+  let body;
+  if (!m.length) body = `<div>대응 없음 — 이 실행의 검토 기록에서 같은 대응 키(${s.match ? "pattern_ref.match_id" : "match_id 없음"})를 찾지 못함</div>`;
+  else if (m.length === 1) body = `${prevLine(m[0])}<div style="margin-top:6px"><button class="btn sm" data-r="import:0" ${dis}>가져오기</button> <span class="muted" style="font-size:11px">자동 승계 아님 — 사유를 새로 입력하고 저장해야 기록됩니다</span></div>`;
+  else body = `<div><span class="b unk">대응 ${m.length}개</span> 자동으로 가져오지 않습니다. 가져올 대상을 고르세요.</div>` +
+    m.map((x, i) => `<label class="opt" style="margin-top:4px;background:#fff"><input type="radio" name="pv" value="${i}" ${S.pvPick === i ? "checked" : ""} ${dis}><div>${prevLine(x)}</div></label>`).join("") +
+    `<div style="margin-top:6px"><button class="btn sm" data-r="import:pick" ${dis} ${S.pvPick == null ? "disabled" : ""}>선택한 대상 가져오기</button></div>`;
+  return `<div class="prev"><div class="hd">이전 검토(참고 · 읽기 전용) <span class="b">시안용 가상 데이터</span></div>
+    <div style="margin-bottom:4px;font-size:12px">이전 실행 ${sel}</div>${body}</div>`;
+}
+const SRC_TXT = { human: "사람(직접 선택)", ai_proposal_adopted: "사람(AI 제안 채택)" };
+function credList(s, it) {
+  const ids = it.rev.sg || s.sgo.map(g => g.id);
+  if (!ids.length) return '<div class="muted" style="font-size:12px">그래프에서 확인된 보호수단 없음 — 빈도에 보호수단 효과를 넣을 수 없음</div>';
+  return ids.map(id => {
+    const g = s.sgo.find(x => x.id === id);
+    const why = !g ? "검토자가 추가 — 확인 근거 없음" : !g.cnt ? "설계보완 판정에서 세지 않은 보호수단" : "확인 근거 없음(적정성·독립성 미확인)";
+    return `<label style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);cursor:not-allowed"><input type="checkbox" disabled> <b style="color:var(--ink-2)">${esc(tagOf(id))}</b> 인정 불가 — ${why}</label>`;
+  }).join("") + '<div class="note">확인 근거(용량 계산서·독립성 자료 등)가 있는 보호수단만 고를 수 있습니다. 인정한 보호수단이 없으면 빈도에 보호수단 효과를 넣지 않습니다(사용자 결정 2026-11-04).</div>';
+}
+function scForm(s) {
+  const it = itemDraft("sc", s.id), dis = locked() ? "disabled" : "", ed = it.dec === "modify" && !locked();
+  const r = s.risk, err = S.formErr || {};
+  const cmpRow = (label, patVal, aiVal, key) => {
+    const hv = it.rev[key], changed = it.dec === "modify" && hv != null && hv !== patVal;
+    return `<div class="rowk">${label}${changed ? ' <span class="b human">수정됨</span>' : ""}</div>
+      <div class="ai-box"><div><span class="b">패턴 원안</span> ${esc(patVal)}</div>${aiVal ? `<div style="margin-top:4px"><span class="b ai">해석</span> ${esc(aiVal)}</div>` : '<div class="note" style="margin-top:2px">AI 해석 없음</div>'}</div>
+      <div class="hu-box ${ed ? "" : "off"}">${ed ? `<textarea data-f="rev.${key}">${esc(hv != null ? hv : patVal)}</textarea>`
+        : it.dec === "accept" ? '<span style="font-size:12px">원안 그대로 수용</span>' : it.dec === "reject" ? '<span style="font-size:12px">기각 — 워크시트 결정 열 "기각"</span>' : it.dec === "defer" ? '<span style="font-size:12px">보류 — 미확정</span>' : '<span style="font-size:12px">"수정"을 고르면 편집할 수 있습니다</span>'}</div>`;
+  };
+  const sgs = it.rev.sg || s.sgo.map(g => g.id);
+  const sgHuman = ed ? `<div class="hu-box">${sgs.map(id => `<span class="chip">${esc(tagOf(id))} <button class="link" data-r="sgdel:${id}" title="빼기">×</button></span>`).join("") || '<span class="muted" style="font-size:12px">없음</span>'}
+      <div style="margin-top:6px"><button class="btn sm" data-r="pick">+ 도면에서 노드 고르기</button> <button class="link" data-r="memo" style="font-size:12px">도면에 없는 보호수단 → 자료 요청 메모</button></div></div>`
+    : `<div class="hu-box off"><span style="font-size:12px">${it.dec === "accept" ? "원안 그대로" : "—"}</span></div>`;
+  const aiRisk = r.st === "proposed" ? `${riskChip(r.risk, "prop")}<div class="note">강도 ${r.sev} · 빈도 ${r.fq} · ${esc(r.calc)}</div>` : `${riskChip(null, "prop", "보류")}<div class="note">${esc(r.reason)}</div>`;
+  const hr = it.risk, hrv = riskOf(hr.sev, hr.fq), riskOn = (it.dec === "accept" || it.dec === "modify") && !locked();
+  const sv0 = savedItem("sc", s.id), savedSame = !!sv0 && sv0.dec === it.dec && sv0.risk.sev === hr.sev && sv0.risk.fq === hr.fq;
+  const diff = hrv && r.st === "proposed" && hrv !== r.risk ? `<span class="b unk">AI 제안 ${r.risk} → 검토 ${hrv}</span>` : "";
+  const aiSg = s.ai && s.ai.sgo.length ? s.ai.sgo : [];
+  return `<div class="form5">
+    <div><div class="lbl">시나리오 검토</div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b class="mono" style="font-size:14px">${esc(s.id)}</b><span class="b">패턴</span><span class="b hyp">가설</span>${decChip(itemDec("sc", s.id))}</div>
+      <div class="note" style="margin-top:2px">원안 = analysis.json의 원래 값. 패턴 원안과 AI 해석을 나눠 보여 주며, 결정 당시 사본과 해시로 함께 보관하고 사람이 고치지 않습니다.</div></div>
+    ${prevBox(s, dis)}
+    ${it.imp ? `<div class="band info" style="border-radius:8px;border:1px solid #bfdbfe">이전 검토에서 가져옴 (imported_from ${esc(it.imp)}) — 사유와 위험도 근거를 새로 입력하세요</div>` : ""}
+    <div><div class="flbl">결정 <i>필수</i></div><div class="seg4" data-r="dec">${["accept", "modify", "reject", "defer"].map(k => `<button data-k="${k}" class="${it.dec === k ? "on" : ""}" ${dis}>${DEC_KO[k]}</button>`).join("")}</div>
+      ${err.dec ? '<div class="ferr">결정을 하나 고르세요</div>' : ""}
+      ${it.dec === "reject" && dicsOf(s.c).some(x => x.s === s.id) ? '<div class="note">기각하면 연결된 설계보완 후보가 자동으로 "해당 없음"이 되고 이 사유를 이어받습니다.</div>' : ""}</div>
+    <div><div class="flbl">사유 <i>필수</i></div><textarea class="ta ${err.reason ? "invalid" : ""}" data-f="reason" ${dis} placeholder="예: 결과 서술을 도면 기준으로 정정">${esc(it.reason)}</textarea>${err.reason ? '<div class="ferr">사유를 입력해야 저장할 수 있습니다</div>' : ""}</div>
+    <div class="cmp"><div class="ai-box hd" style="padding:6px 10px;margin:0"><span class="b auto">원안</span> 읽기 전용</div><div class="hu-box hd" style="padding:6px 10px;margin:0"><span class="b human">검토값</span> 사람</div>
+      ${cmpRow("원인", s.cause, s.ai && s.ai.cause, "cause")}${cmpRow("결과", s.cons, s.ai && s.ai.cons, "cons")}
+      <div class="rowk">보호수단 ${it.rev.sg ? '<span class="b human">수정됨</span>' : ""}</div>
+      <div class="ai-box"><div><span class="b">그래프 확인</span></div>${s.sgo.map(g => `${esc(g.tag)} <span class="unk-t" style="font-size:11px">적정성</span>${g.cnt ? "" : ' <span style="font-size:11px">(미계수)</span>'}`).join("<br>") || '<span class="unk-t">그래프에서 찾지 못함</span>'}
+        <div style="margin-top:4px"><span class="b ai">제시</span> ${aiSg.length ? aiSg.map(g => esc(g.tag)).join(", ") : '<span class="muted">없음</span>'}</div></div>${sgHuman}</div>
+    <div><div class="flbl">위험도 확정 <span class="muted" style="font-weight:400;font-size:11px">강도·빈도를 고르면 Python이 〈표5〉로 계산 · 등급 직접 입력 불가</span></div>
+      <div class="cmp"><div class="ai-box"><div class="hd"><span class="b ai">제안</span> 참고 · 자동 복사 안 함</div>${aiRisk}</div>
+      <div class="hu-box ${riskOn ? "" : "off"}"><div class="hd"><span class="b human">확정</span> 사람 ${riskOn ? "<i style='font-style:normal;color:var(--err-ink);font-weight:400'>강도·빈도·근거 필수</i>" : ""}</div>
+      ${riskOn ? `<div class="riskgrid"><div><select data-f="risk.sev" class="${err.risk && !hr.sev ? "invalid" : ""}"><option value="">강도 선택</option>${[4, 3, 2, 1].map(v => `<option value="${v}" ${hr.sev == v ? "selected" : ""}>${v} — ${esc(D.crit.sev[v].split(":")[0])}</option>`).join("")}</select>
+        <div class="note" style="margin-top:2px">보호수단 효과를 반영하지 않음 (결과 크기만)</div>
+        <textarea data-f="risk.sb" class="${err.risk && !hr.sb.trim() ? "invalid" : ""}" placeholder="강도 근거">${esc(hr.sb)}</textarea></div>
+        <div><select data-f="risk.fq" class="${err.risk && !hr.fq ? "invalid" : ""}"><option value="">빈도 선택</option>${[3, 2, 1].map(v => `<option value="${v}" ${hr.fq == v ? "selected" : ""}>${v} — ${esc(D.crit.freq[v].split(":")[0])}</option>`).join("")}</select>
+        <div class="note" style="margin-top:2px">현재 안전조치는 아래에서 인정한 보호수단만 반영</div>
+        <textarea data-f="risk.fb" class="${err.risk && !hr.fb.trim() ? "invalid" : ""}" placeholder="빈도 근거">${esc(hr.fb)}</textarea></div></div>
+        <div class="sec"><div class="h">빈도를 낮출 때 인정한 보호수단</div>${credList(s, it)}</div>
+        <div class="calc">${hrv ? riskChip(hrv, savedSame ? "conf" : "draft") : '<span class="risk none">미확정 — 저장 불가</span>'} ${diff} <span class="lock">🔒 계산값 · matrix[${hr.sev || "?"}][${hr.fq || "?"}]</span></div>
+        <div class="calc">출처 <b>${hr.src ? SRC_TXT[hr.src] : "—"}</b>
+          ${r.st === "proposed" ? `<button class="btn sm" data-r="fromai">AI 제안 가져오기</button>` : '<span class="muted" style="font-size:11px">AI 제안 없음(보류) — 직접 고르세요</span>'}
+          ${hr.src === "ai_proposal_adopted" ? '<span class="b unk">AI 값에서 가져옴 — 근거 확인 필요</span>' : ""}</div>
+        ${err.risk ? '<div class="ferr">수용·수정은 강도·빈도와 각 근거가 있어야 저장할 수 있습니다</div>' : ""}`
+        : `<span style="font-size:12px">${it.dec === "reject" ? "기각 — 위험도 확정 없음(null)" : it.dec === "defer" ? "보류 — 미확정(null). AI 제안은 참고로만 표시" : "수용·수정을 고르면 입력할 수 있습니다"}</span>`}</div></div></div>
+    ${memoSec(s.c)}</div>`;
+}
+function dicForm(d) {
+  syncDic(d.c);
+  const it = itemDraft("dic", d.id), na = it.dec === "not_applicable", dis = (locked() || na) ? "disabled" : "", recOn = (it.dec === "accept" || it.dec === "modify") && !locked(), err = S.formErr || {};
+  return `<div class="form5"><div><div class="lbl">설계보완 후보 검토</div><div style="display:flex;gap:6px;align-items:center"><b class="mono" style="font-size:14px">${esc(d.id)}</b><span class="b unk">미확정</span>${decChip(itemDec("dic", d.id))}</div></div>
+    <div class="ai-box"><div class="hd"><span class="b auto">원안</span> 규칙 산출(AI 제안 위험도·그래프 탐색 기반) · 읽기 전용</div><div class="kv"><span class="k">발생 조건</span><span>${d.tr.map(t => TR_KO[t]).join("<br>")}</span>
+      ${d.tr.includes("risk") ? `<span class="k">제안 위험도</span><span>${riskChip(d.sc.risk.risk, "prop")}</span>` : ""}
+      <span class="k">원인</span><span>${esc(d.sc.cause)}</span><span class="k">결과</span><span>${esc(d.sc.cons)}</span><span class="k">설비</span><span>${d.eq.map(tagOf).join(", ")}</span>
+      <span class="k">연결 시나리오</span><span><button class="link" data-s="${d.s}">${shortS(d.s)}</button> ${decChip(itemDec("sc", d.s))}</span></div></div>
+    ${na ? `<div class="band info" style="border-radius:8px;border:1px solid #bfdbfe"><div><b>해당 없음</b> — 연결 시나리오 ${shortS(it.inh)} 기각에서 자동 지정(inherited_from). 사유 상속: ${it.reason ? esc(it.reason) : "(시나리오 기각 사유 입력 대기)"}<br>시나리오 결정을 바꾸면 이 결정도 풀립니다. 시나리오 기각과 이 후보의 수용·수정은 함께 저장할 수 없습니다.</div></div>` : ""}
+    <div><div class="flbl">결정 <i>필수</i></div><div class="seg4" data-r="dec">${["accept", "modify", "reject", "defer"].map(k => `<button data-k="${k}" class="${it.dec === k ? "on" : ""}" ${dis}>${DEC_KO[k]}</button>`).join("")}</div>${err.dec ? '<div class="ferr">결정을 하나 고르세요</div>' : ""}</div>
+    <div><div class="flbl">사유 <i>필수</i>${na ? " <span class='muted' style='font-weight:400'>(상속)</span>" : ""}</div><textarea class="ta ${err.reason ? "invalid" : ""}" data-f="reason" ${dis}>${esc(it.reason)}</textarea>${err.reason ? '<div class="ferr">사유를 입력해야 저장할 수 있습니다</div>' : ""}</div>
+    <div><div class="flbl">개선 권고 문안 ${recOn ? "<i>필수</i>" : ""}</div><div class="hu-box ${recOn ? "" : "off"}">${recOn ? `<textarea data-f="rec" class="${err.rec ? "invalid" : ""}" placeholder="무엇을·어디에·왜 조치해야 하는지">${esc(it.rec)}</textarea>` : '<span style="font-size:12px">수용·수정일 때 입력 — 확정한 것만 개선 권고(〈별표9〉)가 됩니다</span>'}</div>${err.rec ? '<div class="ferr">수용·수정이면 권고 문안이 필요합니다</div>' : ""}</div>
+    ${it.dec === "modify" && !locked() ? `<div><div class="flbl">발생 조건 설명 <span class="muted" style="font-weight:400;font-size:11px">수정 시에만 · 원안 조건 코드는 바꾸지 않음</span></div><div class="hu-box"><textarea data-f="cond" placeholder="예: 보호수단 미확인이 아니라 POSRV 용량 부족 우려">${esc(it.cond)}</textarea></div></div>` : ""}
+    <div class="note">수용 = 원안을 그대로 받아들이고 권고 문안 입력. 수정 = 권고 문안과 발생 조건 설명을 고침. 개선 권고 이후의 책임부서·조치일정·진행결과·완료확인은 후속(Excel에는 "관리 안 함").</div>${memoSec(d.c)}</div>`;
+}
+function nscForm(c) {
+  const it = itemDraft("nsc", c.id), dis = locked() ? "disabled" : "", err = S.formErr || {};
+  return `<div class="form5"><div><div class="lbl">시나리오 없음 확인</div><div style="display:flex;gap:6px;align-items:center"><b>${esc(c.item)} ${esc(c.dev)}</b>${decChip(itemDec("nsc", c.id))}</div></div>
+    <div class="ai-box"><div class="hd"><span class="b auto">분석 결과</span> 읽기 전용</div><div class="kv"><span class="k">시나리오</span><span>0개</span>
+      <span class="k">AI 상태</span><span>${AI_KO[c.ai]}${c.ai === "no_response" ? ` — 고정 응답 파일 없음: ${esc(c.id)}.json — 패턴 기반 초안·탐색 결과는 보존, 위험도 미제안` : ""}</span></div></div>
+    <div><div class="flbl">결정 <i>필수</i></div><div class="seg4" style="grid-template-columns:1fr" data-r="nsc"><button class="${it.on ? "on" : ""}" ${dis}>시나리오 없음 확인</button></div>${err.dec ? '<div class="ferr">확인을 누르세요</div>' : ""}</div>
+    <div><div class="flbl">사유 <i>필수</i></div><textarea class="ta ${err.reason ? "invalid" : ""}" data-f="reason" ${dis} placeholder="예: 고정 응답이 없어 시나리오가 만들어지지 않음 — 응답 보완 후 재분석 예정">${esc(it.reason)}</textarea>${err.reason ? '<div class="ferr">사유를 입력해야 저장할 수 있습니다</div>' : ""}</div>
+    <div class="note">확인하지 않으면 이 편차는 '확정'이 되지 않습니다. Excel 워크시트에는 "시나리오 없음"과 사유로 한 행이 남습니다.</div>${memoSec(c.id)}</div>`;
+}
+function memoSec(cid) {
+  const d = draft(cid), hs = holdsOf(cid);
+  return `<div><div class="flbl">자료 요청 메모 <span class="muted" style="font-weight:400;font-size:11px">조치로 자동 전환하지 않음</span></div>
+    ${d.memos.map(m => `<div class="card" style="padding:6px 10px;font-size:12px"><span class="chip id">${m.h || "—"}</span> ${esc(m.t)}</div>`).join("")}
+    <div style="display:flex;gap:6px;align-items:flex-start;margin-top:4px"><select id="memo-h" style="max-width:160px;border:1px solid var(--line-strong);border-radius:8px;padding:4px"><option value="">관련 보류 없음</option>${hs.map(h => `<option value="${h.id}">${h.id} ${esc(h.item.slice(0, 18))}</option>`).join("")}</select>
+    <textarea class="ta" id="memo-t" style="min-height:34px" placeholder="요청 내용" ${locked() ? "disabled" : ""}></textarea><button class="btn sm" data-r="memoadd" ${locked() ? "disabled" : ""}>추가</button></div></div>`;
+}
+function addSafeguardFromPick(id) {
+  S.pick = false; $("#f-pick").style.display = "none";
+  const it = itemDraft("sc", S.item.id), s = SCEN[S.item.id];
+  if (!NODES[id]) { toast("배관·관계는 보호수단으로 고를 수 없습니다", "err", "도면 기물(노드)을 고르세요"); return; }
+  const cur = it.rev.sg || s.sgo.map(g => g.id); if (!cur.includes(id)) it.rev.sg = cur.concat(id);
+  renderRevRight(); toast(`보호수단 추가(검토값): ${tagOf(id)}`, "", "그래프 노드에서 고름 · 적정성은 여전히 미확인");
+}
+$("#r-right").addEventListener("click", e => {
+  const sb = e.target.closest("[data-s]"); if (sb) { S.item = { t: "sc", id: sb.dataset.s }; S.scen = sb.dataset.s; S.pvPick = null; S.formErr = null; renderRev(); return; }
+  const a = e.target.closest("[data-r]"); if (!a) return;
+  const k = a.dataset.r, t = S.item.t, id = S.item.id, it = id ? itemDraft(t, id) : null;
+  if (k === "nsc") { if (e.target.disabled) return; it.on = !it.on; S.formErr = null; renderRevRight(); renderItemList(); return; }
+  if (k === "dec") { const b = e.target.closest("button"); if (!b || b.disabled) return; it.dec = b.dataset.k; if (it.dec !== "modify" && t === "sc") it.rev = {}; if (t === "sc") syncDic(SCEN[id].c); S.formErr = null; renderRevRight(); renderItemList(); return; }
+  if (k.startsWith("import:")) {
+    const idx = k === "import:pick" ? S.pvPick : 0, pv = prevMatches(SCEN[id])[idx]; if (!pv) return;
+    it.dec = pv.dec; it.rev = pv.rev ? Object.assign({}, pv.rev) : {};
+    it.risk = pv.risk ? { sev: pv.risk.sev, fq: pv.risk.fq, sb: "", fb: "", src: "human" } : { sev: null, sb: "", fq: null, fb: "", src: null };
+    it.reason = ""; it.imp = `${prevRun().run} 검토 v${prevRun().v} · ${pv.sid}`; syncDic(SCEN[id].c); renderRevRight(); renderItemList(); return;
+  }
+  if (k === "fromai") { const r = SCEN[id].risk; it.risk.sev = r.sev; it.risk.fq = r.fq; it.risk.src = "ai_proposal_adopted"; S.formErr = null; renderRevRight(); return; }
+  if (k === "pick") { S.pick = true; $("#f-pick").style.display = "block"; return; }
+  if (k.startsWith("sgdel:")) { const cur = it.rev.sg || SCEN[id].sgo.map(g => g.id); it.rev.sg = cur.filter(x => x !== k.slice(6)); renderRevRight(); return; }
+  if (k === "memo") { $("#memo-t") && $("#memo-t").focus(); return; }
+  if (k === "memoadd") { const tx = $("#memo-t").value.trim(); if (!tx) { $("#memo-t").classList.add("invalid"); return; } draft(S.cand).memos.push({ h: $("#memo-h").value, t: tx }); renderRevRight(); return; }
+  if (k === "revert") { delete S.drafts[S.cand]; S.formErr = null; renderRev(); return; }
+  if (k === "save") saveReview();
+});
+$("#r-right").addEventListener("input", e => {
+  const f = e.target.dataset.f; if (!f || !S.item.id) return; const it = itemDraft(S.item.t, S.item.id);
+  if (f === "reason") { it.reason = e.target.value; if (S.item.t === "sc") syncDic(SCEN[S.item.id].c); }
+  else if (f === "rec") it.rec = e.target.value; else if (f === "cond") it.cond = e.target.value;
+  else if (f.startsWith("rev.")) it.rev[f.slice(4)] = e.target.value;
+  else if (f === "risk.sb" || f === "risk.fb") it.risk[f.slice(5)] = e.target.value;
+});
+$("#r-right").addEventListener("change", e => {
+  if (e.target.name === "pv") { S.pvPick = +e.target.value; renderRevRight(); return; }
+  const f = e.target.dataset.f; if (!f || !S.item.id) return;
+  if (f === "prevrun") { S.prevRun = +e.target.value; S.pvPick = null; renderRevRight(); return; }
+  const it = itemDraft(S.item.t, S.item.id);
+  if (f === "risk.sev" || f === "risk.fq") { it.risk[f.slice(5)] = e.target.value ? +e.target.value : null; it.risk.src = "human"; renderRevRight(); }
+});
+function saveReview() {
+  if (locked()) return;
+  if (!S.reviewer) { reviewerDlg(); toast("검토자 이름을 먼저 입력하세요", "err", "설정에 이름이 없으면 저장 전에 입력을 요구합니다"); return; }
+  const cid = S.cand, d = draft(cid), probs = [];
+  syncDic(cid);
+  Object.keys(d.sc).forEach(id => {
+    const x = d.sc[id]; if (!x.dec) return;
+    if (!x.reason.trim()) probs.push(["sc", id, "reason"]);
+    if ((x.dec === "accept" || x.dec === "modify") && (!x.risk.sev || !x.risk.fq || !x.risk.sb.trim() || !x.risk.fb.trim())) probs.push(["sc", id, "risk"]);
+  });
+  Object.keys(d.dic).forEach(id => {
+    const x = d.dic[id]; if (!x.dec || x.dec === "not_applicable") return;
+    if (!x.reason.trim()) probs.push(["dic", id, "reason"]);
+    if ((x.dec === "accept" || x.dec === "modify") && !x.rec.trim()) probs.push(["dic", id, "rec"]);
+  });
+  if (d.nsc && d.nsc.on && !d.nsc.reason.trim()) probs.push(["nsc", cid, "reason"]);
+  const cur = S.item.t === "nsc" ? d.nsc : S.item.id && (S.item.t === "sc" ? d.sc : d.dic)[S.item.id];
+  if (cur && !decOf(cur, S.item.t) && (cur.reason || "").trim()) probs.push([S.item.t, S.item.id, "dec"]);
+  if (probs.length) {
+    const mine = probs.filter(p => p[1] === S.item.id); S.formErr = {}; mine.forEach(p => S.formErr[p[2]] = true);
+    const nm = p => p[0] === "sc" ? shortS(p[1]) : p[0] === "dic" ? p[1].replace("dic-scenario-p86-", "dic-") : "시나리오 없음 확인";
+    renderRevRight(); toast("저장하지 않았습니다 — 필수 항목 누락 " + probs.length + "건", "err", probs.map(p => nm(p) + ": " + { reason: "사유", rec: "권고 문안", dec: "결정", risk: "위험도 강도·빈도·근거" }[p[2]]).join(" · "));
+    return;
+  }
+  S.formErr = null;
+  if (S.st.rev === "savefail") { renderRev(); toast("저장 실패 — 입력 내용을 폼에 유지했습니다", "err", "자료저장소/reviews/… 쓰기 오류(예시)"); return; }
+  const prev = S.reviews[cid], v = prev ? prev.v + 1 : 1;
+  S.reviews[cid] = { v, at: now(), by: S.reviewer, data: JSON.parse(JSON.stringify(d)) };
+  delete S.drafts[cid]; S.savedAt = now() + " · " + CAND[cid].item + " v" + v;
+  renderAll();
+  toast(`검토 기록 v${v} 저장(흉내) — ${S.reviewer}`, "", `자료저장소/reviews/${D.run.region}/${D.run.id}/${cid}/v${v}.json · 이전 버전 파일은 고치지 않음`);
+}
+function excelDlg() {
+  if (S.blocked || S.st.rev === "hashchg") { openDlg(`<div class="dh">Excel 워크시트 내보내기</div><div class="db"><div class="resbox err"><b>출력할 수 없습니다</b><br>${S.blocked ? "결과 검증이 blocked입니다. 확정 저장과 Excel 출력을 막았습니다(사용자 결정 2026-11-04)." : "분석 결과가 바뀌어(analysis_sha256 불일치) 검토 기록은 열람만 가능합니다. 편집과 Excel 출력을 막았습니다."}</div></div><div class="df"><button class="btn" data-close>닫기</button></div>`); return; }
+  let conf = 0; D.scen.forEach(s => { const x = savedDec("sc", s.id); if (x === "accept" || x === "modify") conf++; });
+  const rec = D.dic.filter(d => { const x = savedDec("dic", d.id); return x === "accept" || x === "modify"; }).length;
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+  openDlg(`<div class="dh">Excel 워크시트 내보내기 <span class="sp"></span><span class="b">KOSHA P-86 〈별표7〉·〈별표9〉</span></div><div class="db">
+    <div class="flbl">출력 범위</div>
+    <label class="opt"><input type="radio" name="xr" value="all" checked><div><b>전체 (기본)</b> — 워크시트 ${14 + 20}행<div class="s">모든 시나리오 14행 + 시나리오 없는 선택 편차 20행("시나리오 없음"과 사유). 미검토·기각·보류는 결정 열에 그대로 표시</div></div></label>
+    <label class="opt"><input type="radio" name="xr" value="conf"><div><b>수용·수정 행만</b> — 워크시트 ${conf}행<div class="s">수용·수정한 시나리오만${conf ? "" : " (현재 0행 — 먼저 검토를 저장하세요)"}</div></div></label>
+    <div class="kv"><span class="k">시트</span><span>분석 정보 · 전체 편차 후보(44) · HAZOP 워크시트(〈별표7〉) · 설계보완 후보(11) · 개선 권고(〈별표9〉, ${rec}건) · 자료 요청 메모</span>
+    <span class="k">위험도 열</span><span>빈도·강도·위험도(5–7열)는 <b>사람 확정값만</b>. 없으면 "미확정". AI 제안은 추가 열에만</span>
+    <span class="k">기준표</span><span>${esc(D.crit.ver)} — 분석 정보 시트에 표시</span><span class="k">검토자</span><span>${esc(S.reviewer || "미설정")}</span></div>
+    <div><div class="flbl">저장 위치 (새 파일 · 덮어쓰지 않음)</div><div class="path">출력/워크시트/${esc(D.run.region)}/${esc(D.run.id)}/worksheet-${stamp}.xlsx</div></div>
+    <div class="note">출력 기록(시각·대상 버전·범위·행 식별자)은 자료저장소/reviews/…/exports/에 남깁니다. 셀 값이 =, +, -, @로 시작해도 문자열로 씁니다.</div></div>
+    <div class="df"><button class="btn" data-close>취소</button><button class="btn primary" id="xl-ok">내보내기</button></div>`);
+  $("#xl-ok").onclick = () => { const v = ($("input[name=xr]:checked") || {}).value; closeDlg(); toast(`Excel 출력 완료(흉내) — ${v === "conf" ? "수용·수정 행만 " + conf : "전체 34"}행`, "", "worksheet-" + stamp + ".xlsx"); };
+}
+
+/* ================================================================ 상태 예시 */
+function setExample(k) {
+  if (k === "reset") {
+    S.st = { reg: "normal", view: "normal", ana: "normal", rev: "normal" }; S.blocked = false; S.mismatch = false; S.guessDemo = false;
+    if (!S.reviewer) S.reviewer = "이검토 (가상)";
+    S.reg = { phase: "idle", svg: true, meta: { dwg: null, rev: null, title: null } };
+    S.pending = {};
+    if (S.tab === "graph") setTab("drawing");
+    renderAll(); toast("예시 상태를 모두 초기화했습니다", "", " "); return;
+  }
+  const [scr, v] = k.split(":");
+  if (scr === "ana" && v === "blocked") { S.blocked = true; go("ana"); return; }
+  if (scr === "ana" && v === "mismatch") { S.mismatch = true; go("ana"); return; }
+  if (scr === "ana" && v === "guess") { S.guessDemo = true; S.cand = "deviation-p86-d09"; S.scen = "scenario-p86-d09-04"; S.item = { t: "sc", id: S.scen }; if (S.tab === "graph") setTab("drawing"); go("ana"); return; }
+  if (scr === "rev" && v === "noreviewer") { S.reviewer = null; go("rev"); return; }
+  if (scr === "reg") { S.st.reg = v; S.reg.phase = (v === "nosvg") ? "picked" : (v === "hasherr" || v === "loading") ? "picked" : "idle"; S.reg.svg = v !== "nosvg"; }
+  else S.st[scr] = v;
+  go(scr);
+}
+
+/* ================================================================ 시작 */
+buildCanvas();
+go("ana");
+</script>
+</body>
+</html>
