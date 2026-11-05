@@ -54,11 +54,11 @@
 | 분류 | 토큰 | 값 | 비고 |
 | --- | --- | --- | --- |
 | UI | `--ui` | `#2563eb` | 유일한 UI 강조색(선택 탭, 포커스, 주요 버튼, 선택 노드 테두리) |
-| 바탕 | `--bg` `--card` `--line` `--muted` `--ink` | `#f4f5f7` `#ffffff` `#e3e5e9` `#6b7280` `#111827` | 현재 값 유지 |
-| 노드 | `--equipment` `--valve` `--instrument` `--piping_element` `--unclassified` | `#1d4ed8` **`#0f766e`** `#0ea5e9` `#6366f1` `#9ca3af` | 밸브만 변경(§4.1) |
-| 관계 | `--physical_connection` `--signal_connection` `--measurement_connection` `--unresolved` | `#16a34a` `#7c3aed` `#d97706` `#dc2626` | 현재 값 유지 |
+| 바탕 | `--bg` `--card` `--line` `--muted` `--ink` | `#f4f5f7` `#ffffff` `#e3e5e9` `#6a717e` `#111827` | 현재 값 유지. `--muted`는 W5에서 조정됨(D7, 옛 값 `#6b7280`) |
+| 노드 | `--equipment` `--valve` `--instrument` `--piping_element` `--unclassified` | `#1d4ed8` **`#0f766e`** `#0d97d6` `#6366f1` `#868e9d` | 밸브만 변경(§4.1). `--instrument`·`--unclassified`는 W5에서 조정됨(D7, 옛 값 `#0ea5e9`·`#9ca3af`) |
+| 관계 | `--physical_connection` `--signal_connection` `--measurement_connection` `--unresolved` | `#16a34a` `#7c3aed` `#d67506` `#dc2626` | 현재 값 유지. `--measurement_connection`은 W5에서 조정됨(D7, 옛 값 `#d97706`) |
 | 강조 | **`--hl-cause` `--hl-path` `--hl-safeguard` `--hl-dim`** | `#dc2626` `#ea580c` **`#c026d3`** `.16` | §4.1 |
-| 위험도 | **`--risk-ok-*` `--risk-cond-*` `--risk-deny-*`** | 회색 `#eef0f3` / 호박 `#fde68a`·`#d97706` / 짙은 빨강 `#991b1b` | §4.1 |
+| 위험도 | **`--risk-ok-*` `--risk-cond-*` `--risk-deny-*`** | 회색 `#eef0f3` / 호박 `#fde68a`·`#b36205` / 짙은 빨강 `#991b1b` | §4.1. `--risk-cond-line`은 W5에서 조정됨(D7, 옛 값 `#d97706`) |
 | 출처 | **`--ai-hatch` `--human-line`** | 135° 빗금(`#f1f2f4`/`#e8eaee`) / `#111827` | §2 |
 | 서체 | `--font` `--mono` | Pretendard, 맑은 고딕… / Cascadia Mono, Consolas | ID는 고정폭 |
 | 글자 크기 | `--fs-xs`~`--fs-xl` | 11 · 12 · 13 · 15 · 20px | 본문 13px. 위계는 크기·굵기로 표현 |
@@ -92,7 +92,7 @@
 4. 클릭 선택을 빨강으로 두면 원인 설비 강조와 겹칩니다. 선택은 UI 상태이므로 UI 강조색(파랑) 하나로 표현하는 원칙과도 맞습니다. 이 변경은 ②의 기존 뷰어 선택색(빨강)도 바꾸는 것이므로 구현 시 `template.html` 수정이 필요합니다.
 5. 위험도 5단계에 모두 다른 색을 주면 색이 너무 많아지고 "UI 강조는 파랑 하나" 원칙과 충돌합니다. 설계보완 후보 발생 조건(`risk_conditional_or_worse`)이 바로 "조건부 수용 이상"이므로, 같은 경계로 색을 나누면 목록에서 설계보완 대상이 한눈에 보입니다. 다만 〈표9〉 비고 칸을 허용 여부로 해석한 것 자체가 [추론](HAZOP기법지침 §6)입니다.
 
-**남는 약점**: 장비 색 `#1d4ed8`도 UI 파랑과 가깝습니다(이번 결정 범위 밖). 경로 주황과 계측 연결 호박(`#d97706`)이 비슷하지만, 강조 중에는 나머지를 흐리게 하므로 실제로 함께 보이는 일은 적습니다 [추론].
+**남는 약점**: 장비 색 `#1d4ed8`도 UI 파랑과 가깝습니다(이번 결정 범위 밖). 경로 주황과 계측 연결 호박(`#d67506`, W5에서 조정됨(D7))이 비슷하지만, 강조 중에는 나머지를 흐리게 하므로 실제로 함께 보이는 일은 적습니다 [추론].
 
 ### 4.2 근거 집계의 '추정 경로' 분류 기준
 

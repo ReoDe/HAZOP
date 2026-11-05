@@ -10,15 +10,16 @@ Qt 스타일시트(qss)와 내장 웹뷰 CSS(web_css)가 모두 이 값을 읽�
 FONT_FAMILY = "Malgun Gothic"
 
 COLORS = {
+    # 명암비(WCAG 2.1 4.5:1·3:1)는 scripts/check_design.py CONTRAST_PAIRS로 검사한다(design-system D7)
     # UI: 강조색은 파랑 하나
     "ui": "#2563eb", "ui-weak": "#eff6ff", "ui-ink": "#1e40af",
     "bg": "#f4f5f7", "card": "#ffffff", "line": "#e3e5e9", "line-strong": "#cfd3da",
-    "muted": "#6b7280", "ink": "#111827", "ink-2": "#374151",
+    "muted": "#6a717e", "ink": "#111827", "ink-2": "#374151",
     # 데이터: 노드 종류(밸브는 UI 파랑과 분리)
-    "equipment": "#1d4ed8", "valve": "#0f766e", "instrument": "#0ea5e9", "piping_element": "#6366f1",
-    "unclassified": "#9ca3af",
+    "equipment": "#1d4ed8", "valve": "#0f766e", "instrument": "#0d97d6", "piping_element": "#6366f1",
+    "unclassified": "#868e9d",
     # 데이터: 관계 종류
-    "physical_connection": "#16a34a", "signal_connection": "#7c3aed", "measurement_connection": "#d97706",
+    "physical_connection": "#16a34a", "signal_connection": "#7c3aed", "measurement_connection": "#d67506",
     "unresolved": "#dc2626",
     # 시나리오 강조(§3.3 강조 규칙)
     "hl-cause": "#dc2626", "hl-path": "#ea580c", "hl-safeguard": "#c026d3",
@@ -27,7 +28,7 @@ COLORS = {
     "err-bg": "#fef2f2", "err-ink": "#b91c1c", "err-line": "#fca5a5",
     # 위험도 〈표9〉 허용 구분 3단
     "risk-ok-bg": "#eef0f3", "risk-ok-ink": "#374151", "risk-ok-line": "#9ca3af",
-    "risk-cond-bg": "#fde68a", "risk-cond-ink": "#78350f", "risk-cond-line": "#d97706",
+    "risk-cond-bg": "#fde68a", "risk-cond-ink": "#78350f", "risk-cond-line": "#b36205",
     "risk-deny-bg": "#991b1b", "risk-deny-ink": "#ffffff", "risk-deny-line": "#991b1b",
     # 출처: AI·자동 판독 = 빗금(Qt는 옅은 회색 + 점선 테두리로 대신), 사람 확정 = 흰 바탕 진한 실선
     "ai-hatch-a": "#f1f2f4", "ai-hatch-b": "#e8eaee", "ai-ink": "#4b5563", "human-line": "#111827",

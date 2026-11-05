@@ -22,7 +22,9 @@
 결과 JSON: 출력/디자인검사/design-<platform>[-s<배율>].json (출력/는 git 제외). --out으로 바꿀 수 있다.
 
 뷰어·앱 색 비교(W4, D5): 배치 측정 전에 독립 뷰어 템플릿 :root·하드코딩 색을 앱 tokens.web_css()와 비교한다.
-어긋나면 플랫폼과 관계없이 종료 코드 1(판정 불가 2는 유지). --colors-only는 색 비교만 한다(Qt 불필요).
+어긋나면 플랫폼과 관계없이 종료 코드 1(판정 불가 2는 유지). --colors-only는 색 검사만 한다(Qt 불필요).
+명암비(W5, D7): 이어서 CONTRAST_PAIRS의 토큰 쌍을 WCAG 2.1 공식으로 계산해 글자 4.5:1·그래픽 3:1 미달이면 종료 코드 1.
+판정은 불투명 토큰 값 기준이다. 반투명 선·채움을 흰 도면에 합성한 대비는 보고만 한다(종료 코드 미반영).
 """
 
 import argparse
@@ -497,8 +499,8 @@ def color_literals(value, named=True):
     return lits
 
 
-def _translucent_rgb(lit):
-    """rgba(r,g,b,a) 또는 rgb(r g b / a)에서 a < 1이면 (r,g,b), 아니면 None."""
+def _rgba_alpha(lit):
+    """rgba(r,g,b,a) 또는 rgb(r g b / a)에서 a < 1이면 ((r,g,b), a), 아니면 None."""
     import re
     m = re.fullmatch(r"rgba?\((.*)\)", _norm_color(lit))
     if not m:
@@ -510,7 +512,13 @@ def _translucent_rgb(lit):
         a = float(parts[3].rstrip("%")) / (100 if parts[3].endswith("%") else 1)
     except ValueError:
         return None
-    return tuple(int(p) for p in parts[:3]) if a < 1 else None
+    return (tuple(int(p) for p in parts[:3]), a) if a < 1 else None
+
+
+def _translucent_rgb(lit):
+    """rgba(r,g,b,a) 또는 rgb(r g b / a)에서 a < 1이면 (r,g,b), 아니면 None."""
+    ra = _rgba_alpha(lit)
+    return ra[0] if ra else None
 
 
 def viewer_color_problems(template, app_css):
@@ -520,7 +528,8 @@ def viewer_color_problems(template, app_css):
     3) 템플릿 전체(CSS·HTML·JS)의 var( --x )(공백·대체값·중첩 포함)와 데이터 종류 변수(VIEWER_DATA_VARS)는
        템플릿 :root에 정의돼 있다(단독으로 열 때 빈 색 방지). 형식이 틀린 var()도 실패.
     4) :root 밖 색 리터럴(hex 3·4·6·8자리, rgb/rgba/hsl/hsla, 색 속성 값의 CSS 이름 색)은 템플릿 전체에서 실패.
-       예외: <style> 규칙의 (선택자, 속성, 값)이 VIEWER_COLOR_ALLOW에 있거나, 반투명 rgba의 rgb가 앱 토큰 색·검정.
+       예외: <style> 규칙의 (선택자, 속성, 값)이 VIEWER_COLOR_ALLOW에 있거나, 반투명 rgba의 rgb가 앱 토큰 색·검정
+       (채움·그림자 등. 글자색 color 속성의 반투명은 대비가 토큰 값보다 낮아지므로 실패, W5 D7).
     5) 클릭 선택 채움(SELECTED_RULE fill)은 앱 web_css와 같다."""
     import re
     bad = []
@@ -585,7 +594,12 @@ def viewer_color_problems(template, app_css):
             continue
         for k, v in decls:
             for lit in color_literals(v, named=bool(re.fullmatch(_COLOR_PROP, k, re.I))):
-                if (sel, k, _norm_color(lit)) in VIEWER_COLOR_ALLOW or _translucent_rgb(lit) in rgb_ok:
+                if (sel, k, _norm_color(lit)) in VIEWER_COLOR_ALLOW:
+                    continue
+                if _translucent_rgb(lit) in rgb_ok:
+                    if k != "color":
+                        continue
+                    bad.append("반투명 글자색 %s ('%s' color): 글자는 불투명 토큰 var(--토큰)만(명암비 D7)" % (lit, sel))
                     continue
                 bad.append("색 리터럴 %s ('%s' %s): var(--토큰)으로 바꿀 것" % (lit, sel, k))
     for i, line in enumerate(rest.split("\n")):
@@ -649,11 +663,163 @@ def color_check():
     return bad
 
 
+# ---------------------------------------------------------------- 명암비(W5, D7). WCAG 2.1 상대 휘도·대비 공식.
+# 기준: 글자 4.5:1(SC 1.4.3, 앱 글자는 11~15px라 모두 일반 글자), UI 구성요소·그래픽 3:1(SC 1.4.11).
+# (글자·그래픽 색, 바탕, 기준, 쓰는 곳). 이름은 tokens.COLORS 키, "#"로 시작하면 토큰 밖 리터럴(qss·widgets·템플릿 허용 목록).
+TEXT, GRAPHIC = 4.5, 3.0
+_DATA = ("equipment", "valve", "instrument", "piping_element", "unclassified", "physical_connection",
+         "signal_connection", "measurement_connection", "unresolved")
+CONTRAST_PAIRS = [
+    ("ink", "card", TEXT, "본문 글자(카드·패널)"),
+    ("ink", "bg", TEXT, "본문 글자(화면 바탕)"),
+    ("ink", "ui-weak", TEXT, "선택된 표 행 글자"),
+    ("ink", "ai-hatch-a", TEXT, "AI 산출 상자 글자"),
+    ("ink-2", "bg", TEXT, "기본 칩·plain 배지"),
+    ("ink-2", "card", TEXT, "범례·그래프 라벨"),
+    ("ink", "kg-canvas", TEXT, "③ 캔버스 노드 값 글자·범례 제목"),
+    ("ink-2", "kg-canvas", TEXT, "③ 캔버스 관계 라벨·칩"),
+    ("muted", "kg-canvas", TEXT, "③ 범례 메모·캔버스 안내"),
+    ("muted", "card", TEXT, "단계 탭·섹션 제목·상태줄·뷰어 패널 보조 글자"),
+    ("muted", "bg", TEXT, "표 머리·QLabel#muted·뷰어 .chip"),
+    ("muted", "ui-weak", TEXT, "선택된 표 행의 제외 후보 회색 글자"),
+    ("ui", "card", TEXT, "링크(뷰어 a.back·aside .link). 클릭 선택 테두리·입력 포커스·버튼 hover 테두리(3:1)도 이 쌍으로 충족"),
+    ("#ffffff", "ui", TEXT, "선택된 단계 탭·주 버튼 글자"),
+    ("ui-ink", "ui-weak", TEXT, "ui 배지"),
+    ("ok", "#dcfce7", TEXT, "통과 칩"),
+    ("err-ink", "err-bg", TEXT, "막힘 칩·오류 띠"),
+    ("warn-ink", "warn-bg", TEXT, "경고 칩·경고 띠·뷰어 정렬 경고"),
+    ("warn-ink", "card", TEXT, "③ 오른쪽 상세의 경고 글자"),
+    ("err-ink", "card", TEXT, "③ 오른쪽 상세의 '근거 없음' 글자"),
+    ("ai-ink", "ai-hatch-a", TEXT, "AI 배지"),
+    ("#ffffff", "human-line", TEXT, "사람 확정 배지"),
+    ("risk-ok-ink", "risk-ok-bg", TEXT, "위험도 확정 칩 1·2"),
+    ("risk-cond-ink", "risk-cond-bg", TEXT, "위험도 확정 칩 3·4"),
+    ("risk-deny-ink", "risk-deny-bg", TEXT, "위험도 확정 칩 5"),
+    ("risk-ok-ink", "#ffffff", TEXT, "위험도 제안 칩 1·2 글자(속 빈 칩)"),
+    ("risk-cond-line", "#ffffff", TEXT, "위험도 제안 칩 3·4 글자(속 빈 칩)"),
+    ("risk-deny-line", "#ffffff", TEXT, "위험도 제안 칩 5 글자(속 빈 칩)"),
+    ("#ffffff", "hl-safeguard", TEXT, "보호수단 배지"),
+    ("hl-safeguard", "#ffffff", TEXT, "보호수단 약한 배지 글자"),
+    ("#b45309", "card", TEXT, "뷰어 경고 글자(aside .warn·경로 질의 .bad, 허용 목록)"),
+]
+# 도면·그래프 기호 색: 실제로 그리는 바탕은 ②·독립 뷰어·graph_only_html의 흰 도면(--card·#fff)과 ③ 캔버스(--kg-canvas).
+# --bg 쌍은 그리는 바탕이 아니라 D1이 계측 연결 조정을 확정한 근거(W1 §3.1)를 지키는 회귀 방지 쌍이다.
+CONTRAST_PAIRS += [(k, b, GRAPHIC, "노드·관계 색") for k in _DATA for b in ("card", "bg", "kg-canvas")]
+CONTRAST_PAIRS += [(k, b, GRAPHIC, "시나리오 강조") for k in ("hl-cause", "hl-path", "hl-safeguard") for b in ("card", "bg")]
+CONTRAST_PAIRS += [
+    ("ui", "bg", GRAPHIC, "화면 바탕 위 버튼 hover·입력 포커스 테두리"),
+    ("tag", "card", GRAPHIC, "태그 상자 테두리"),
+    ("#16a34a", "bg", GRAPHIC, "뷰어 통과 점(.chip.passed::before, 허용 목록)"),
+]
+
+
+def relative_luminance(color):
+    """WCAG 2.1 상대 휘도(sRGB). '#rgb' 또는 '#rrggbb'."""
+    v = _norm_color(color).lstrip("#")
+    if len(v) != 6:
+        raise ValueError("불투명 #rrggbb 색이 아님: %s" % color)
+    lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+           for c in (int(v[i:i + 2], 16) / 255 for i in (0, 2, 4))]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def contrast_ratio(a, b):
+    """WCAG 2.1 대비 (L1 + 0.05) / (L2 + 0.05), L1은 밝은 쪽. 1~21."""
+    la, lb = sorted((relative_luminance(a), relative_luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def contrast_rows(colors, pairs=None):
+    """쌍별 (글자·그래픽, 바탕, 값들, 비율, 기준, 쓰는 곳)."""
+    def val(name):
+        return name if name.startswith("#") else colors[name]
+    rows = []
+    for fg, bg, need, use in (CONTRAST_PAIRS if pairs is None else pairs):
+        rows.append((fg, bg, val(fg), val(bg), contrast_ratio(val(fg), val(bg)), need, use))
+    return rows
+
+
+def contrast_problems(colors, pairs=None):
+    return ["명암비 %s %s / %s %s = %.4f:1 < %.1f:1 (%s)" % (fg, fv, bg, bv, r, need, use)
+            for fg, bg, fv, bv, r, need, use in contrast_rows(colors, pairs) if r < need]
+
+
+def contrast_check():
+    """tokens.COLORS로 지정 쌍의 명암비를 계산해 출력하고 문제 목록을 돌려준다."""
+    from hazop.app import tokens
+    bad = contrast_problems(tokens.COLORS)
+    print("명암비(WCAG 2.1, 글자 4.5:1·그래픽 3:1): %s" % (
+        "통과(지정 %d쌍)" % len(CONTRAST_PAIRS) if not bad else "실패 %d건 / %d쌍" % (len(bad), len(CONTRAST_PAIRS))))
+    for b in bad:
+        print("  - %s" % b)
+    return bad
+
+
+# 반투명 선·채움을 실제 바탕에 합성한 대비(보고 전용, rc 미반영, D7). 판정은 불투명 토큰 값 기준이고,
+# 반투명 관계선의 실제 대비는 열린 항목이다(PROGRESS §5). 선 색은 템플릿 JS가 종류별 var(--종류)로 넣는다.
+TRANSLUCENT_STROKES = {
+    ".pipe-line": ("physical_connection", "signal_connection", "measurement_connection", "unresolved"),  # 종류 없으면 unresolved
+    ".gedge": ("physical_connection", "signal_connection", "measurement_connection"),  # 그래프 관계 EDGE_COLOR
+}
+
+
+def _over(rgb, a, bg):
+    """rgb(0~255)를 불투명도 a로 바탕 bg(#rrggbb)에 합성한 #rrggbb."""
+    b = _norm_color(bg)
+    base = [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    a = min(1.0, max(0.0, a))  # CSS처럼 알파를 [0,1]로 제한(음수·1 초과 입력으로 채널이 범위를 넘지 않게)
+    return "#%02x%02x%02x" % tuple(round(c * a + d * (1 - a)) for c, d in zip(rgb, base))
+
+
+def translucent_rows(template, colors):
+    """[(선택자, 속성, 원래 색, 불투명도, 합성 색, 바탕, 대비)]. 바탕은 도면 --card."""
+    import re
+    style = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", template, re.S | re.I))
+    bg = colors["card"]
+    rows = []
+    for sel, decls in css_rules(style):
+        if ":root" in sel:
+            continue
+        for k, v in decls:
+            if k == "stroke-opacity" and sel in TRANSLUCENT_STROKES:
+                raw = v.replace("!important", "").strip()
+                try:
+                    a = float(raw[:-1]) / 100 if raw.endswith("%") else float(raw)  # 50%도 유효한 CSS 값
+                except ValueError:
+                    continue
+                a = min(1.0, max(0.0, a))
+                if a < 1:
+                    for kind in TRANSLUCENT_STROKES[sel]:
+                        c = _norm_color(colors[kind])
+                        mix = _over([int(c[i:i + 2], 16) for i in (1, 3, 5)], a, bg)
+                        rows.append((sel, "stroke(--%s)" % kind, c, a, mix, bg, contrast_ratio(mix, bg)))
+                continue
+            for lit in color_literals(v, named=False):
+                ra = _rgba_alpha(lit)
+                if ra:
+                    mix = _over(ra[0], ra[1], bg)
+                    rows.append((sel, k, lit, ra[1], mix, bg, contrast_ratio(mix, bg)))
+    return rows
+
+
+def translucent_check():
+    """실제 템플릿의 반투명 선·채움 합성 대비를 출력만 한다(rc 미반영)."""
+    from hazop.app import tokens
+    from hazop.viewer import build
+    with open(build.TEMPLATE, encoding="utf-8") as fh:
+        rows = translucent_rows(fh.read(), tokens.COLORS)
+    print("반투명 합성 대비(보고 전용, 종료 코드 미반영, 바탕 --card): %d건" % len(rows))
+    for sel, k, c, a, mix, bg, r in rows:
+        print("  - '%s' %s %s × %g → %s / %s = %.4f:1%s" % (sel, k, c, a, mix, bg, r,
+                                                          " (선 3:1 미만)" if k.startswith("stroke") and r < GRAPHIC else ""))
+    return rows
+
+
 def merge_color_result(rc, verdict, color_bad):
-    """배치 판정(rc, verdict)에 색 비교 결과를 합친다. 판정 불가(2)는 그대로 둔다."""
+    """배치 판정(rc, verdict)에 색 검사(뷰어·앱 색 비교, 명암비) 결과를 합친다. 판정 불가(2)는 그대로 둔다."""
     if color_bad:
         rc = rc if rc == 2 else 1
-        verdict += "; 뷰어·앱 색 비교 실패 %d건: %s" % (len(color_bad), color_bad)
+        verdict += "; 색 검사 실패 %d건(뷰어·앱 색 비교·명암비): %s" % (len(color_bad), color_bad)
     return rc, verdict
 
 
@@ -690,9 +856,10 @@ def main(argv=None):
     ap.add_argument("--top", type=int, default=5, help="가장 넓은 위젯 보고 개수")
     ap.add_argument("--baseline", help="offscreen 회귀 감시용 이전 결과 JSON(늘어나면 경고)")
     ap.add_argument("--out", help="결과 JSON 경로(기본 출력/디자인검사/design-<platform>[-s<배율>].json)")
-    ap.add_argument("--colors-only", action="store_true", help="뷰어·앱 색 비교만 하고 배치 측정은 하지 않음")
+    ap.add_argument("--colors-only", action="store_true", help="색 검사(뷰어·앱 색 비교·명암비)만 하고 배치 측정은 하지 않음")
     args = ap.parse_args(argv)
-    color_bad = color_check()
+    color_bad = color_check() + contrast_check()
+    translucent_check()
     if args.colors_only:
         return 1 if color_bad else 0
     if "PySide6.QtGui" in sys.modules:

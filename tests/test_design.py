@@ -251,7 +251,9 @@ class ViewerColorTest(unittest.TestCase):
         except (OSError, subprocess.CalledProcessError):
             self.skipTest("git 또는 커밋 2178ddf 없음")
         bad = cd.viewer_color_problems(old, tokens.web_css())
-        self.assertEqual(len(bad), 10, bad)
+        w5 = ("--muted:", "--instrument:", "--unclassified:", "--measurement_connection:")  # W5 명암비 조정(D7)분
+        self.assertEqual(sum(b.startswith(w5) for b in bad), 4, bad)
+        self.assertEqual(len([b for b in bad if not b.startswith(w5)]), 10, bad)
         for k in ("--valve:", "--selected:", "클릭 선택 채움"):
             self.assertTrue(any(b.startswith(k) for b in bad), (k, bad))
 
@@ -399,7 +401,7 @@ class ViewerColorTest(unittest.TestCase):
                     self.assertEqual((rc, data["rc"]), (want, want))
                     self.assertEqual(data["verdict"], verdict)
                     self.assertEqual(data["color_problems"], color_bad)
-                    self.assertEqual("색 비교 실패" in verdict, bool(color_bad))
+                    self.assertEqual("색 검사 실패" in verdict, bool(color_bad))
 
     def test_color_literals(self):
         self.assertEqual(cd.color_literals("0 1px 2px rgba(0, 0, 0, .1), #abc red --red solid", named=True),
@@ -407,6 +409,112 @@ class ViewerColorTest(unittest.TestCase):
         self.assertEqual(cd.color_literals("1px solid red", named=False), [])
         self.assertEqual(cd._translucent_rgb("rgba(37 99 235 / 12%)"), (37, 99, 235))
         self.assertIsNone(cd._translucent_rgb("rgb(37, 99, 235)"))
+
+
+class ContrastTest(unittest.TestCase):
+    """명암비 검사(W5, D7). WCAG 2.1 상대 휘도 공식과 지정 쌍 통과."""
+
+    def test_known_values(self):
+        self.assertAlmostEqual(cd.contrast_ratio("#000000", "#ffffff"), 21.0, places=6)
+        self.assertAlmostEqual(cd.contrast_ratio("#ffffff", "#000"), 21.0, places=6)  # 순서·3자리 무관
+        self.assertAlmostEqual(cd.contrast_ratio("#777777", "#ffffff"), 4.48, places=2)
+        self.assertAlmostEqual(cd.contrast_ratio("#123456", "#123456"), 1.0, places=6)
+        self.assertAlmostEqual(cd.relative_luminance("#ffffff"), 1.0, places=6)
+        self.assertAlmostEqual(cd.relative_luminance("#000000"), 0.0, places=6)
+        with self.assertRaises(ValueError):
+            cd.relative_luminance("#ffffff80")
+
+    def test_threshold_and_problems(self):
+        colors = {"a": "#777777", "w": "#ffffff"}
+        self.assertEqual(len(cd.contrast_problems(colors, [("a", "w", cd.TEXT, "글자")])), 1)  # 4.48 < 4.5
+        self.assertEqual(cd.contrast_problems(colors, [("a", "w", cd.GRAPHIC, "그래픽")]), [])
+        self.assertEqual(cd.contrast_problems(colors, [("#767676", "#ffffff", cd.TEXT, "리터럴")]), [])  # 4.54
+
+    # D7 필수 쌍과 기준(숫자로 고정: 기준을 낮추거나 쌍을 빼면 실패)
+    REQUIRED_TEXT = [
+        ("ink", "card"), ("ink", "bg"), ("ink", "ui-weak"), ("ink", "ai-hatch-a"), ("ink-2", "bg"), ("ink-2", "card"),
+        ("ink", "kg-canvas"), ("ink-2", "kg-canvas"), ("muted", "kg-canvas"),
+        ("muted", "card"), ("muted", "bg"), ("muted", "ui-weak"), ("ui", "card"), ("#ffffff", "ui"),
+        ("ui-ink", "ui-weak"), ("ok", "#dcfce7"), ("err-ink", "err-bg"), ("warn-ink", "warn-bg"),
+        ("warn-ink", "card"), ("err-ink", "card"), ("ai-ink", "ai-hatch-a"), ("#ffffff", "human-line"),
+        ("risk-ok-ink", "risk-ok-bg"), ("risk-cond-ink", "risk-cond-bg"), ("risk-deny-ink", "risk-deny-bg"),
+        ("risk-ok-ink", "#ffffff"), ("risk-cond-line", "#ffffff"), ("risk-deny-line", "#ffffff"),
+        ("#ffffff", "hl-safeguard"), ("hl-safeguard", "#ffffff"), ("#b45309", "card")]
+    REQUIRED_GRAPHIC = (
+        [(k, b) for k in ("equipment", "valve", "instrument", "piping_element", "unclassified", "physical_connection",
+                          "signal_connection", "measurement_connection", "unresolved")
+         for b in ("card", "bg", "kg-canvas")]
+        + [(k, b) for k in ("hl-cause", "hl-path", "hl-safeguard") for b in ("card", "bg")]
+        + [("ui", "bg"), ("tag", "card"), ("#16a34a", "bg")])
+
+    def test_required_pairs_and_thresholds(self):
+        self.assertEqual((cd.TEXT, cd.GRAPHIC), (4.5, 3.0))
+        have = {}
+        for fg, bg, need, _u in cd.CONTRAST_PAIRS:
+            self.assertNotIn((fg, bg), have, "쌍 중복")
+            have[(fg, bg)] = need
+        for pairs, need in ((self.REQUIRED_TEXT, 4.5), (self.REQUIRED_GRAPHIC, 3.0)):
+            for pair in pairs:
+                self.assertEqual(have.get(pair), need, pair)
+
+    def test_boundary(self):
+        """판정은 정확값 ≥ 기준. 계산값을 고정해 4.5·3.0은 통과, 4.4999·2.9999는 실패."""
+        from unittest import mock
+        colors = {"a": "#000000", "b": "#ffffff"}
+        for ratio, need, ok in ((4.5, cd.TEXT, True), (4.4999, cd.TEXT, False),
+                                (3.0, cd.GRAPHIC, True), (2.9999, cd.GRAPHIC, False)):
+            with self.subTest(ratio=ratio, need=need), mock.patch.object(cd, "contrast_ratio", return_value=ratio):
+                bad = cd.contrast_problems(colors, [("a", "b", need, "경계")])
+                self.assertEqual(bad == [], ok, bad)
+                if not ok:
+                    self.assertIn("%.4f:1" % ratio, bad[0])
+
+    def test_designated_pairs_pass(self):
+        from hazop.app import tokens
+        self.assertEqual(cd.contrast_problems(tokens.COLORS), [])
+
+    def test_pre_w5_tokens_fail(self):
+        """W5 이전 값(dbcc855)에서 미달하는 쌍과 기준."""
+        from hazop.app import tokens
+        old = dict(tokens.COLORS)
+        old.update({"muted": "#6b7280", "instrument": "#0ea5e9", "unclassified": "#9ca3af",
+                    "measurement_connection": "#d97706", "risk-cond-line": "#d97706"})
+        failed = {(fg, bg, need) for fg, bg, _f, _b, r, need, _u in cd.contrast_rows(old) if r < need}
+        self.assertEqual(failed, {
+            ("muted", "bg", 4.5), ("muted", "ui-weak", 4.5), ("risk-cond-line", "#ffffff", 4.5),
+            ("instrument", "card", 3.0), ("instrument", "bg", 3.0), ("instrument", "kg-canvas", 3.0),
+            ("unclassified", "card", 3.0), ("unclassified", "bg", 3.0), ("unclassified", "kg-canvas", 3.0),
+            ("measurement_connection", "bg", 3.0)})
+
+    def test_translucent_text_color_fails(self):
+        """반투명 rgba는 채움·그림자에만 허용하고, 글자색(color)에 쓰면 실패한다."""
+        vt = ViewerColorTest()
+        self.assertEqual(vt.bad(body=".x { fill: rgba(37,99,235,.2); box-shadow: 0 1px 2px rgba(0,0,0,.1); }"), [])
+        bad = vt.bad(body=".x { color: rgba(37,99,235,.5); }")
+        self.assertEqual(len(bad), 1, bad)
+        self.assertTrue(bad[0].startswith("반투명 글자색"), bad)
+
+    def test_translucent_report(self):
+        """반투명 선·채움 합성 대비는 보고 전용(값 계산만). 실제 템플릿의 관계선은 3:1 미만이 있다(열린 항목)."""
+        from hazop.app import tokens
+        from hazop.viewer import build
+        self.assertEqual(cd._over((0, 0, 0), 0.5, "#ffffff"), "#808080")
+        with open(build.TEMPLATE, encoding="utf-8") as fh:
+            rows = cd.translucent_rows(fh.read(), tokens.COLORS)
+        gedge = [r for sel, _k, _c, _a, _m, _b, r in rows if sel == ".gedge"]
+        pipe = [r for sel, _k, _c, _a, _m, _b, r in rows if sel == ".pipe-line"]
+        self.assertEqual((len(gedge), len(pipe)), (3, 4))
+        self.assertLess(min(gedge), 3.0)
+        self.assertTrue(any(sel == ".selected.sym, .selected.tagbox" and k == "fill" for sel, k, *_ in rows))
+        tpl = "<style>.gedge { stroke-opacity: 1; }</style>"
+        self.assertEqual(cd.translucent_rows(tpl, tokens.COLORS), [])
+        # Codex 재검토(총괄 수정): 백분율 불투명도도 해석하고, 알파는 [0,1]로 제한한다
+        pct = cd.translucent_rows("<style>.gedge { stroke-opacity: 50%; }</style>", tokens.COLORS)
+        self.assertEqual({a for _s, _k, _c, a, *_ in pct}, {0.5})
+        self.assertEqual(cd._over((0, 0, 0), -0.1, "#ffffff"), "#ffffff")
+        self.assertEqual(cd._over((0, 0, 0), 1.5, "#ffffff"), "#000000")
+        neg = cd.translucent_rows("<style>.gedge { stroke-opacity: -0.1; }</style>", tokens.COLORS)
+        self.assertTrue(all(a == 0.0 for _s, _k, _c, a, *_ in neg))
 
 
 def bar_min_width(label):
