@@ -512,8 +512,8 @@ def output_dir(out_root, doc):
     cand = doc["limits"]["excluded_from_computation"]["candidate_csv"]
     parts = [paths.safe_name(i["kg_id"]), "algo", paths.safe_name(i["kg_version"]),
              paths.safe_name(g["graph_id"]) + "@" + paths.safe_name(g["graph_version"]), paths.safe_name(i["region_key"]),
-             paths.safe_name("%s-r%d-c%s-h%s" % (i["start"], i["radius"], cand["sha256"][:12] if cand else "-none",
-                                                  _content_id(doc)))]
+             paths.safe_name("%s-r%d-c%s" % (i["start"], i["radius"], cand["sha256"][:12] if cand else "-none"))[:100]
+             + "-h" + _content_id(doc)]  # 해시 접미사는 safe_name 길이 자르기 뒤에 붙여 항상 남김(Codex 5차)
     return _inside(out_root, os.path.join(os.path.realpath(out_root), *parts))
 
 
