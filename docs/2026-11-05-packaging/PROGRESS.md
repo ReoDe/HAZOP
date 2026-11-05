@@ -10,11 +10,11 @@
 | ID | 상태 | 작업 단위 | 완료 기준 | 의존성 |
 |---|---|---|---|---|
 | `W1` | 완료 | 초기 조사와 실행 계획 구체화 | 참조 대상 또는 업무 범위를 조사하고 후속 작업 단위와 완료 기준을 등록한다. | 없음 |
-| `W2` | 대기(승인 필요) | 전용 venv(python.org CPython 3.12, PySide6 6.12.0·networkx 3.7·openpyxl 3.1.5 고정) | venv에서 전체 테스트 통과 | 사용자 설치 승인 |
+| `W2` | 대기(착수 가능, D2 승인) | 전용 venv(python.org CPython 3.12, PySide6 6.12.0·networkx 3.7·openpyxl 3.1.5 고정) | venv에서 전체 테스트 통과 | 사용자 설치 승인 |
 | `W3` | 대기(의존성) | 경로·importlib 로딩 정리, `tests/test_packaging.py` | 소스·빌드 경로 양쪽에서 자원 로딩 테스트 통과 | `W2` |
 | `W4` | 대기(의존성) | 첫 PyInstaller one-folder 빌드 | ASCII·한글 경로에서 화면 ①~⑤ 스크린샷, ③ V1·V2·S1 통과 | `W3` |
 | `W5` | 대기(의존성) | 신뢰 경계 해시 고정 확대 | 패턴 라이브러리·지침서 변조 시 차단 테스트 | `W3` |
-| `W6` | 대기(승인 필요) | `licenses/` 제3자 고지(force-graph 번들·ColorBrewer Apache-2.0·Qt LGPL) | 고지 파일과 원문 대조 | 라이선스 원문 다운로드 승인 |
+| `W6` | 대기(착수 가능, D2 승인) | `licenses/` 제3자 고지(force-graph 번들·ColorBrewer Apache-2.0·Qt LGPL) | 고지 파일과 원문 대조 | 라이선스 원문 다운로드 승인 |
 | `W7` | 대기(의존성) | `os.link` 비NTFS 실측과 대응(`store.py` 범위 확대 결정 필요) | FAT32/exFAT 시험 결과와 대응 테스트 | `W2` |
 
 작업 추가·분할은 [`README.md`](README.md)의 확장 규칙을 따른다. 기존 ID·완료 이력·증거는 보존하고 새 작업에는 관련 결정 ID를 연결한다.
