@@ -4,7 +4,7 @@
 > 무엇이 어디 있고, 무엇이 기준이며, 어느 저장소·브랜치에서 작업하는지를 안내한다.
 > 지금 상태와 다음 행동은 [PROGRESS.md](PROGRESS.md)·[ROADMAP.md](ROADMAP.md)에서 확인한다.
 >
-> 문서 기준일: 2026-11-05 10:28
+> 문서 기준일: 2026-11-05 19:40
 
 ## 1. 30초 요약
 
@@ -110,6 +110,7 @@ P&ID 그래프에 비P&ID 성분(문서·요건·설정치 등)을 통합하고,
 | D8 | `W6` 편집 범위, 화면 노드 수 상한 검사 S1, 브랜치 | [decisions.md](decisions.md) | — |
 | D9 | `W6` 디자인 미결 판정(후보 표시·토큰·S1) | [decisions.md](decisions.md) | — |
 | D10 | `W6` 재작업 범위(build.py 경로 검증)와 구현 차이 수용 | [decisions.md](decisions.md) | — |
+| D11 | `W7` 편집 범위(build.py 최소 변경 포함)·T6 W3 순차 의존 | [decisions.md](decisions.md) | — |
 
 ## 7. 계약·승계 불변 규칙
 
@@ -125,7 +126,7 @@ P&ID 그래프에 비P&ID 성분(문서·요건·설정치 등)을 통합하고,
 ### 편집 허용 범위
 
 - 작업 폴더: `docs/2026-11-05-knowledge-graph/`
-- 추가 편집 허용 범위: `hazop/kg/`, `scripts/check_kg.py`, `scripts/build_kg.py`(결정 D6), `tests/test_kg.py`, `기획서/그래프활용.md`, `기획서/인터페이스.md`·`기획서/전체기획.md`(D1에 따른 ③ 화면 반영만, `W6`, 결정 D2), `데이터/지식/`·`tests/fixtures/kg/`(`W3`, 결정 D3), `scripts/check_kg_renderer.py`·`tests/test_kg_renderer.py`(`W2`, 결정 D4), `W4`·`W5` 파일(결정 D7), `W6` 파일(결정 D8)
+- 추가 편집 허용 범위: `hazop/kg/`, `scripts/check_kg.py`, `scripts/build_kg.py`(결정 D6), `tests/test_kg.py`, `기획서/그래프활용.md`, `기획서/인터페이스.md`·`기획서/전체기획.md`(D1에 따른 ③ 화면 반영만, `W6`, 결정 D2), `데이터/지식/`·`tests/fixtures/kg/`(`W3`, 결정 D3), `scripts/check_kg_renderer.py`·`tests/test_kg_renderer.py`(`W2`, 결정 D4), `W4`·`W5` 파일(결정 D7), `W6` 파일(결정 D8), `W7` 파일(결정 D11)
 - 위 편집 허용 범위 밖의 경로는 참조 대상을 포함해 읽기 전용이다.
 - 문서를 추가하면 해당 폴더 README 인덱스와 이 문서의 문서 지도를 필요한 수준으로 갱신한다.
 

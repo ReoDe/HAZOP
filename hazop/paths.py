@@ -42,6 +42,7 @@ def rel_or_abs(path, root):
 # 작업 루트(쓰기): 저장 루트(자료저장소/), 출력/, 구간 JSON(데이터/구간), 고정 응답(데이터/고정응답).
 # 기본값은 둘 다 저장소 루트(지금까지와 같은 경로). 환경변수로 바꿀 수 있고 HAZOP_STORE_ROOT는 계속 우선한다.
 # PyInstaller 실행(sys._MEIPASS)은 감지만 한다: 자원 루트 = 묶음 폴더, 작업 루트 = %LOCALAPPDATA%\HAZOP [제안, §7.1].
+# 프로그램 루트(program_root): 화면이 importlib로 읽는 scripts/*.py 위치. 묶음 폴더 또는 저장소 루트(자원 루트 환경변수와 무관).
 # 값은 호출할 때마다 환경변수를 다시 읽는다. 다만 스크립트의 기본 인자(DEFAULT_*)는 가져올 때 한 번 정해진다.
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -53,8 +54,19 @@ RESOURCE_INPUT_ROLES = ("candidate_catalog", "applicability", "patterns", "risk_
 
 
 def frozen_bundle_dir():
-    """PyInstaller로 묶어 실행 중이면 묶음 폴더(sys._MEIPASS), 아니면 None. 감지만 한다(빌드하지 않음)."""
+    """PyInstaller로 묶어 실행 중이면 묶음 폴더(sys._MEIPASS), 아니면 None. 감지만 한다(빌드하지 않음).
+    frozen 판단은 sys._MEIPASS만 본다: sys.frozen만 있고 _MEIPASS가 없는 다른 묶음 도구는 개발 실행으로 취급한다."""
     return getattr(sys, "_MEIPASS", None)
+
+
+def program_root():
+    """프로그램 코드(scripts/*.py)가 있는 폴더: 묶인 실행이면 묶음 폴더(sys._MEIPASS), 아니면 저장소 루트.
+    코드는 기준 자료가 아니므로 HAZOP_RESOURCE_ROOT를 따르지 않는다. 추가 API(패키징 W3)."""
+    return frozen_bundle_dir() or REPO_ROOT
+
+
+def program_path(*parts):
+    return os.path.join(program_root(), *parts)
 
 
 def resource_root():

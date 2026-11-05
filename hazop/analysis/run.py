@@ -14,6 +14,7 @@ import os
 
 from hazop import paths
 from hazop.graph.query import GraphQuery
+from hazop.kg import build as kg_build, context as kg_context
 
 from . import ai, candidates as cand_mod, equipment, integrity, explore as ex_mod, patterns as pat_mod, risk as risk_mod, validate
 
@@ -74,10 +75,32 @@ def load_inputs(region_path, repo_root, graph_path=None, resource_root=None):
     read("graph", graph_path or region["graph_ref"]["graph_file"])
     for role in INPUT_ROLES[2:]:
         read(role, (region.get("inputs") or {}).get(role))
+    kg = _read_knowledge_graph(region, repo_root, raw, files)
     inputs = prepare(region, docs["graph"], docs["candidate_catalog"], docs["applicability"], docs["patterns"],
-                     docs["risk_criteria"], files=files)
+                     docs["risk_criteria"], files=files, knowledge_graph=kg)
     inputs["raw"] = raw
     return inputs
+
+
+def _read_knowledge_graph(region, repo_root, raw, files):
+    """구간 JSON inputs.knowledge_graph(지식그래프 폴더, W7-1). 포인터를 한 번만 읽고 그 버전의 knowledge_graph.json
+    바이트 하나로 해시·분석·사본을 모두 만든다(그래프활용 §6.4.1). 없거나 null이면 None. 읽기 실패는 InputError."""
+    ref = (region.get("inputs") or {}).get("knowledge_graph")
+    if ref is None:
+        return None
+    if not isinstance(ref, str) or not ref:
+        raise InputError("knowledge_graph 값이 지식그래프 폴더 경로가 아님: %r" % (ref,))
+    kg_root = _resolve(ref, repo_root)
+    if not os.path.isdir(kg_root):
+        raise InputError("knowledge_graph 폴더 없음: %s" % ref)
+    try:
+        _, kg, gbytes, ver_dir, _ = kg_build.load_outputs_raw(kg_root)
+        raw["knowledge_graph"] = gbytes.decode("utf-8")
+    except (OSError, ValueError) as exc:
+        raise InputError("knowledge_graph 읽기 실패(%s): %s" % (ref, exc))
+    files.append({"role": "knowledge_graph", "path": paths.rel_or_abs(os.path.join(ver_dir, kg_build.KG_FILE), repo_root),
+                  "sha256": _sha_text(raw["knowledge_graph"])})
+    return kg
 
 
 def _member_mismatches(region, graph):
@@ -92,8 +115,9 @@ def _member_mismatches(region, graph):
     return out
 
 
-def prepare(region, graph, catalog, applicability, patterns, criteria, files=None):
-    """입력 검사. 차단 오류(blockers)가 있으면 분석하지 않는다."""
+def prepare(region, graph, catalog, applicability, patterns, criteria, files=None, knowledge_graph=None):
+    """입력 검사. 차단 오류(blockers)가 있으면 분석하지 않는다.
+    knowledge_graph(지식그래프 dict, 선택)는 내용 검사(그래프활용 §6.4.1 W7-2)와 지식 맥락 크기 검사를 거친다."""
     blockers = []
     ref = region["graph_ref"]
     if graph["validation"]["status"] != "passed":
@@ -124,6 +148,7 @@ def prepare(region, graph, catalog, applicability, patterns, criteria, files=Non
         blockers.append("이탈 후보 카탈로그와 패턴 라이브러리는 필수")
     if patterns is not None:
         blockers += equipment.validate_library(patterns)
+        blockers += integrity.check_patterns(patterns)
     if catalog is not None:
         blockers += integrity.check_catalog(catalog, applicability)
     if criteria is not None:
@@ -134,11 +159,41 @@ def prepare(region, graph, catalog, applicability, patterns, criteria, files=Non
             blockers.append("적용 판단 파일의 카탈로그 참조가 카탈로그와 다름")
         if applicability.get("region_id") != region["region_id"]:
             blockers.append("적용 판단 파일의 구간이 다름: %r" % applicability.get("region_id"))
+    if knowledge_graph is not None:
+        blockers += kg_context.content_blockers(knowledge_graph, graph)
+        if not blockers:
+            _, exploration = _explore(region, graph, GraphQuery(graph))
+            try:
+                too_large = kg_context.build_context(knowledge_graph, graph, _bundle_node_ids(exploration))[1]
+            except (KeyError, TypeError, AttributeError) as exc:  # 구조 검사가 놓친 형식 오류도 입력 차단으로
+                blockers.append("지식그래프 구조 오류: 지식 맥락을 만들 수 없음(%s: %s)" % (type(exc).__name__, exc))
+                too_large = False
+            if too_large:
+                blockers.append("%s: 지식 맥락 항목을 모두 빼도 목록 상한을 적용한 메타데이터만으로 크기 상한(%d바이트)을 넘음 "
+                                "— 지식 입력을 줄이거나 상한을 고쳐야 함" % (kg_context.TOO_LARGE,
+                                                                   kg_context.LIMITS["max_bytes"]))
     if files is None:
         files = [{"role": r, "path": None, "sha256": _sha_obj(d)} for r, d in
                  zip(INPUT_ROLES, (region, graph, catalog, applicability, patterns, criteria)) if d is not None]
+        if knowledge_graph is not None:
+            files.append({"role": "knowledge_graph", "path": None, "sha256": _sha_obj(knowledge_graph)})
     return {"region": region, "graph": graph, "catalog": catalog, "applicability": applicability,
-            "patterns": patterns, "criteria": criteria, "files": files, "blockers": blockers}
+            "patterns": patterns, "criteria": criteria, "files": files, "blockers": blockers,
+            "knowledge_graph": knowledge_graph}
+
+
+def _explore(region, graph, q):
+    """구간 탐색(prepare_doc과 prepare의 지식 맥락 크기 검사가 같은 인자로 쓴다). (region_members, exploration)"""
+    members = ex_mod.region_members(graph, [m["entity_id"] for m in region["members"]])
+    xs = region["exploration"]
+    exploration = ex_mod.explore(q, region["focus_entities"][0], members, xs["relation_kinds"], xs["max_depth"],
+                                 xs["max_reached"], xs.get("boundary_extension_depth", 0))
+    return members, exploration
+
+
+def _bundle_node_ids(exploration):
+    """근거 묶음 allowed_ids.node_ids(탐색 시작 + 도달 노드, 순서 = 지식 맥락 순위)."""
+    return [exploration["start"]] + [r["entity_id"] for r in exploration["reached"]]
 
 
 # ---------------------------------------------------------------- 구간 그래프 버전 재고정
@@ -282,10 +337,11 @@ def scenario_safeguards(candidate_safeguards, cause_node_ids, q):
     return out
 
 
-def build_bundle(cand, region, graph, exploration, matches, criteria, missing, q):
+def build_bundle(cand, region, graph, exploration, matches, criteria, missing, q, knowledge_context=None):
+    """knowledge_context는 지식그래프를 지정한 실행에서만 넣는다(없으면 키 자체가 없음, 그래프활용 §6.4.4 A)."""
     query_nodes = {n["entity_id"]: n for n in graph["nodes"]}
     edges = {e["entity_id"]: e for e in graph["edges"]}
-    node_ids = [exploration["start"]] + [r["entity_id"] for r in exploration["reached"]]
+    node_ids = _bundle_node_ids(exploration)
     rel_ids = set(exploration["cycle_or_merge_edges"])
     for r in exploration["reached"]:
         rel_ids.update(r["path_edges"])
@@ -310,7 +366,7 @@ def build_bundle(cand, region, graph, exploration, matches, criteria, missing, q
         evidence.append(dict(c, evidence_id="ev-cond-%02d" % i, type="operating_condition"))
     cause_matches = [m for m in matches["applied"] if m["role"] == "cause"]
     equip = [n for n in node_ids if equipment.is_equipment(query_nodes[n])]
-    return {
+    bundle = {
         "bundle_id": "bundle-%s" % cand["candidate_id"],
         "candidate": {k: cand.get(k) for k in ("candidate_id", "item_id", "parameter_ko", "guide_word_ko",
                                                 "guide_word_en", "deviation", "deviation_en", "origin")},
@@ -336,6 +392,10 @@ def build_bundle(cand, region, graph, exploration, matches, criteria, missing, q
                         "safeguard_node_ids": sorted(g["node_id"] for g in matches["safeguards"]),
                         "equipment_node_ids": equip},
     }
+    if knowledge_context is not None:
+        bundle["knowledge_context"] = copy.deepcopy(knowledge_context)
+        bundle["allowed_ids"]["evidence_ids"] += kg_context.evidence_ids(knowledge_context)
+    return bundle
 
 
 # ---------------------------------------------------------------- 실행
@@ -348,18 +408,24 @@ def prepare_doc(inputs, client, run_id=None, now=utc_now):
     files_sha = _sha_text("|".join(f["sha256"] for f in inputs["files"]))
     run_id = run_id or "analysis-%s-%s" % (t0.replace("-", "").replace(":", ""), files_sha[:6])
     q = GraphQuery(graph)
-    members = ex_mod.region_members(graph, [m["entity_id"] for m in region["members"]])
     run_ref = {"analysis_run_id": run_id,
                "graph_ref": {"graph_id": graph["graph_id"], "graph_version": graph["graph_version"]},
                "region_ref": {"region_id": region["region_id"], "region_version": region["region_version"]},
                "operating_mode": region["operating_mode"]}
     cands = cand_mod.build_candidates(inputs["catalog"], inputs["applicability"], region, run_ref, t0)
     focus = region["focus_entities"][0]
-    xs = region["exploration"]
-    exploration = ex_mod.explore(q, focus, members, xs["relation_kinds"], xs["max_depth"], xs["max_reached"],
-                                 xs.get("boundary_extension_depth", 0))
+    members, exploration = _explore(region, graph, q)
     holds = Holds()
     run_missing = _run_level_holds(holds, region, graph, q, members, exploration, t0)
+    kg = inputs.get("knowledge_graph")
+    kctx = None
+    if kg is not None:
+        kctx = kg_context.build_context(kg, graph, _bundle_node_ids(exploration))[0]
+        miss = kg_context.omission_missing(kctx)
+        if miss:  # 생략은 missing_information과 실행 보류에 같은 사유로 남긴다(§6.4.2)
+            holds.add(None, miss["target"], miss["item"], miss["reason"],
+                      "지식 맥락 상한 검토 또는 지식 입력 범위 조정 후 재분석", "knowledge", t0)
+            run_missing.append(miss)
     empty_lib = {"library_id": inputs["patterns"]["library_id"], "library_version": inputs["patterns"]["library_version"],
                  "patterns": []}
 
@@ -381,7 +447,7 @@ def prepare_doc(inputs, client, run_id=None, now=utc_now):
                 holds.add(c["candidate_id"], "패턴 %s @ %s" % (na["pattern_id"], na["tag"] or na["target"]),
                           "원인 패턴 적용 보류", na["detail"] + " — 값을 임의로 가정하지 않음",
                           "해당 속성(정상 위치·측정 변수 등)을 도면·자료에서 확인", "pattern", t0)
-        bundle = build_bundle(c, region, graph, exploration, matches, criteria, missing, q)
+        bundle = build_bundle(c, region, graph, exploration, matches, criteria, missing, q, kctx)
         bundles[c["candidate_id"]] = bundle
         c["analysis"].update(exploration_id=exploration["exploration_id"], bundle_id=bundle["bundle_id"],
                              bundle_sha256=ai.bundle_sha256(bundle),
@@ -420,6 +486,11 @@ def prepare_doc(inputs, client, run_id=None, now=utc_now):
                                            "(사용자 결정 2026-11-04)",
                 "prompt_template": ai.template_info(),
                 "graph_source": graph.get("source"), "graph_builder": graph.get("builder"),
+                "knowledge_graph": None if kg is None else {
+                    "id": kg.get("kg_id"), "version": kg.get("kg_version"),
+                    "knowledge_graph_sha256": next((f["sha256"] for f in inputs["files"]
+                                                    if f["role"] == "knowledge_graph"), None),
+                    "graph_refs": kg.get("graph_refs")},
             },
             "input_files": inputs["files"],
             "exploration_settings": exploration["settings"],
@@ -902,7 +973,8 @@ def _check_derived(doc, docs, client):
     """저장된 파생 결과(후보 판단·탐색·근거 묶음·패턴 시나리오·보호수단)를 입력 사본으로 다시 계산해 대조한다.
     다르면 변조 또는 다른 코드 버전으로 보고 재시도를 차단한다."""
     inputs = prepare(docs["region"], docs["graph"], docs.get("candidate_catalog"), docs.get("applicability"),
-                     docs.get("patterns"), docs.get("risk_criteria"), files=doc["analysis_run"]["input_files"])
+                     docs.get("patterns"), docs.get("risk_criteria"), files=doc["analysis_run"]["input_files"],
+                     knowledge_graph=docs.get("knowledge_graph"))  # 사본만 씀(현재 포인터는 보지 않음)
     if inputs["blockers"]:
         raise InputError("입력 사본 검사 실패 — 재시도 불가: " + " / ".join(inputs["blockers"]))
     created = doc["analysis_run"]["created_at"]
@@ -974,11 +1046,14 @@ def resume(run_dir, client, now=utc_now, only=None):
         p = os.path.join(run_dir, "inputs", f["role"] + ".json")
         if not os.path.isfile(p):
             raise InputError("입력 사본 없음(%s) — 재시도 불가" % f["role"])
-        with open(p, encoding="utf-8") as fh:
-            text = fh.read()
-        if _sha_text(text) != f["sha256"]:
+        with open(p, "rb") as fh:  # 바이트 그대로 해시(줄바꿈 변환 없음, 예: CRLF가 든 지식그래프 사본)
+            data = fh.read()
+        if hashlib.sha256(data).hexdigest() != f["sha256"]:
             raise InputError("입력 사본 해시 불일치(%s) — 재시도 불가" % f["role"])
-        docs[f["role"]] = json.loads(text)
+        try:
+            docs[f["role"]] = json.loads(data.decode("utf-8"))
+        except ValueError as exc:
+            raise InputError("입력 사본 읽기 실패(%s): %s — 재시도 불가" % (f["role"], exc))
     _check_derived(doc, docs, client)
     hist = os.path.join(run_dir, "history")
     os.makedirs(hist, exist_ok=True)

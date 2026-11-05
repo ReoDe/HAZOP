@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QFormLayout, QFra
                                QTextBrowser, QVBoxLayout, QWidget)
 
 from hazop import paths
-from hazop.app import data
+from hazop.app import data, tokens
 from hazop.app.widgets import badge, esc, empty_label
 from hazop.extract import svg_align
 from hazop.register import fileinfo, registry
@@ -207,8 +207,8 @@ class RegisterScreen(QWidget):
             self.meta_auto[k].setText("")
             self.meta_btns[k].setEnabled(False)
         if len(files) != 1:
-            self.file_info.setText("<span style='color:#b91c1c'><b>한 개씩 등록하세요.</b> 놓은 파일 %d개 — 아무것도 등록하지 않음</span>"
-                                   % len(files))
+            self.file_info.setText("<span style='color:%s'><b>한 개씩 등록하세요.</b> 놓은 파일 %d개 — 아무것도 등록하지 않음</span>"
+                                   % (tokens.c("err-ink"), len(files)))
             return False
         path = files[0]
         try:
@@ -216,13 +216,13 @@ class RegisterScreen(QWidget):
                 raw = fh.read()
             info = fileinfo.inspect(path, raw)
         except (OSError, ValueError) as exc:
-            self.file_info.setText("<span style='color:#b91c1c'>파일을 읽을 수 없음: %s</span>" % esc(exc))
+            self.file_info.setText("<span style='color:%s'>파일을 읽을 수 없음: %s</span>" % (tokens.c("err-ink"), esc(exc)))
             return False
         self.source_path, self.preview = path, info
         parts = ["<b>%s</b> · 형식 %s · %d바이트" % (esc(os.path.basename(path)), esc(info.get("format")),
                                                  info.get("size_bytes") or 0)]
         for b in info.get("blockers") or []:
-            parts.append("<span style='color:#b91c1c'>문제: %s %s</span>" % (esc(b.get("check")), esc(b.get("reason"))))
+            parts.append("<span style='color:%s'>문제: %s %s</span>" % (tokens.c("err-ink"), esc(b.get("check")), esc(b.get("reason"))))
         pages = info.get("pages") or []
         svg = None
         if pages:
@@ -230,7 +230,7 @@ class RegisterScreen(QWidget):
         if svg:
             parts.append("SVG 함께 등록(파생 자료): %s" % esc(os.path.basename(svg)))
         else:
-            parts.append("<span style='color:#92400e'>경고: 같은 이름의 SVG 없음 — 도면 오버레이를 만들 수 없음(그래프 보기만 가능)</span>")
+            parts.append("<span style='color:%s'>경고: 같은 이름의 SVG 없음 — 도면 오버레이를 만들 수 없음(그래프 보기만 가능)</span>" % tokens.c("warn-ink"))
         self.file_info.setText("<br>".join(parts))
         for key, _ in META_FIELDS:
             cand = (info.get("auto_candidates") or {}).get(key)
@@ -238,7 +238,7 @@ class RegisterScreen(QWidget):
                 self.meta_auto[key].setText("%s %s" % (badge("자동 후보", "ai"), esc(cand.get("value"))))
                 self.meta_btns[key].setEnabled(True)
             else:
-                self.meta_auto[key].setText("<span style='color:#6b7280'>자동 후보 없음</span>")
+                self.meta_auto[key].setText("<span style='color:%s'>자동 후보 없음</span>" % tokens.c("muted"))
         self.btn_register.setEnabled(True)
         return True
 
@@ -280,13 +280,13 @@ class RegisterScreen(QWidget):
     def _failed(self, err):
         self.btn_register.setEnabled(bool(self.source_path))
         self.btn_extract.setEnabled(self.selected_registration() is not None)
-        self.result.setHtml("<p style='color:#b91c1c'><b>실패 — 완료로 표시하지 않음</b></p><p>%s</p>" % esc(err))
+        self.result.setHtml("<p style='color:%s'><b>실패 — 완료로 표시하지 않음</b></p><p>%s</p>" % (tokens.c("err-ink"), esc(err)))
 
     def show_record(self, rec, result, path):
         h = []
         if result is not None:
             ok = rec.get("status") == "registered" and result["outcome"] not in ("failed", "on_hold")
-            h.append("<p style='color:%s'><b>%s</b></p>" % ("#15803d" if ok else "#b91c1c",
+            h.append("<p style='color:%s'><b>%s</b></p>" % (tokens.c("ok") if ok else tokens.c("err-ink"),
                                                              esc(OUTCOME_LABELS.get(result["outcome"], result["outcome"]))))
             h += ["<p>안내: %s</p>" % esc(n) for n in result.get("notes") or []]
             if ok:
@@ -298,17 +298,17 @@ class RegisterScreen(QWidget):
         for key, label in META_FIELDS:
             v = rec.get(key)
             cand = (rec.get("auto_candidates") or {}).get(key)
-            val = ("%s %s" % (badge("확정", "human"), esc(v))) if v else "<span style='color:#92400e'>미확인</span>"
+            val = ("%s %s" % (badge("확정", "human"), esc(v))) if v else "<span style='color:%s'>미확인</span>" % tokens.c("warn-ink")
             if cand:
                 val += " &nbsp; %s %s" % (badge("자동 후보", "ai"), esc(cand.get("value")))
-            rows.append("<tr><td style='color:#6b7280'>%s</td><td>%s</td></tr>" % (label, val))
+            rows.append("<tr><td style='color:%s'>%s</td><td>%s</td></tr>" % (tokens.c("muted"), label, val))
         h.append("<table cellpadding='3'>%s</table>" % "".join(rows))
         derived = rec.get("derived_files") or []
         for d in derived:
             h.append("<p>SVG 파생 등록: %s (sha256 %s…)</p>" % (esc(d.get("storage_ref")), esc((d.get("sha256") or "")[:12])))
         val = rec.get("validation") or {}
         for b in val.get("blockers") or []:
-            h.append("<p style='color:#b91c1c'>문제: %s — %s</p>" % (esc(b.get("check")), esc(b.get("reason"))))
+            h.append("<p style='color:%s'>문제: %s — %s</p>" % (tokens.c("err-ink"), esc(b.get("check")), esc(b.get("reason"))))
         unk = val.get("unknowns") or []
         if unk:
             h.append("<p><b>미확인 (validation.unknowns)</b></p><ul>%s</ul>" % "".join(
@@ -329,7 +329,7 @@ class RegisterScreen(QWidget):
         s = ex["summary"]
         al = ex["coordinate_system"].get("svg_alignment") or {}
         st = g["validation"]["status"]
-        h = ["<p style='color:%s'><b>추출·그래프 생성 %s</b></p>" % ("#15803d" if st == "passed" else "#b91c1c",
+        h = ["<p style='color:%s'><b>추출·그래프 생성 %s</b></p>" % (tokens.c("ok") if st == "passed" else tokens.c("err-ink"),
                                                               "완료" if st == "passed" else "— 구조 검증 차단(%s)" % esc(st)),
              "<p>추출 검증: %s · 노드 %d · 관계 %d · 미해결 %d · 미확인 %d<br>%s</p>" % (
                  esc({"passed": "통과", "blocked": "차단"}.get(ex["validation"]["status"], ex["validation"]["status"])), s["nodes"], s["relations"], s["unresolved_connectors"], s["unknowns"],
@@ -339,8 +339,8 @@ class RegisterScreen(QWidget):
                  esc(g["graph_id"]), esc(g["graph_version"]), g["structure"]["node_count"], g["structure"]["edge_count"],
                  esc(paths.rel_or_abs(out["graph_dir"], paths.work_root())))]
         for b in g["validation"].get("blockers") or []:
-            h.append("<p style='color:#b91c1c'>차단: %s %s</p>" % (esc(b.get("check")), esc(b.get("target"))))
+            h.append("<p style='color:%s'>차단: %s %s</p>" % (tokens.c("err-ink"), esc(b.get("check")), esc(b.get("target"))))
         if not al:
-            h.append("<p style='color:#92400e'>경고: SVG 없음 — 도면 오버레이를 만들 수 없음(그래프 보기만 가능)</p>")
+            h.append("<p style='color:%s'>경고: SVG 없음 — 도면 오버레이를 만들 수 없음(그래프 보기만 가능)</p>" % tokens.c("warn-ink"))
         self.result.setHtml("".join(h))
         self.refresh()

@@ -1,19 +1,25 @@
-"""T3 W2 평가 하네스 검사 (QA용). 종료 코드 0 = 전부 통과.
+"""T3 W2 평가 하네스·W3 PDF 어댑터 검사 (QA용). 종료 코드 0 = 전부 통과.
 
 인자 없이 실행: 가상 소형 픽스처와 샘플 6세트(drawio 추출 결과, 메모리에서만 사용)로
   1) 정답지끼리 비교 시 객체·관계·태그 F1=1, GED=0
   2) 의도적 오류 주입(태그 오타, 객체 누락, 연결 뒤바꿈, 객체 이동, 좌표 이동)별 기대 감점
   3) 좌표 정규화(이동·배율 transform), 좌표계 불일치 시 blocked
   4) 결정성(두 번 실행·입력 순서 뒤집기 시 JSON 동일)
-을 확인한다.
+을 확인한다. 이어서 W3(pdfplumber가 있을 때만, 없으면 건너뜀을 출력): 샘플 6세트 PDF를 어댑터로 읽어
+  5) 구조 검증 blocker 0, drawio 추출 결과와 같은 스키마 키, 두 번 실행 결과 동일
+  6) 기준점 좌표 정렬(align.py) status ok와 잔차, 정답 대비 평가 status ok
+를 확인하고 지표 표를 출력한다. 지표 목표치는 정하지 않았다(측정값만 기록).
 
 평가 실행: python scripts/check_adapter.py --truth 정답.json --candidate 후보.json
            [--transform 변환.json] [--out 폴더]   → 폴더에 evaluation.json·evaluation.md
+W3 결과 저장: python scripts/check_adapter.py --pdf-out 폴더
+           → 폴더/<도면>/{extraction,alignment,evaluation}.json·evaluation.md, 폴더/summary.md
 """
 
 import argparse
 import copy
 import glob
+import importlib.util
 import json
 import os
 import sys
@@ -23,7 +29,10 @@ sys.path.insert(0, REPO_ROOT)
 
 from hazop.console import safe_console  # noqa: E402
 from hazop.extract import drawio  # noqa: E402
+from hazop.extract.adapters import align  # noqa: E402
 from hazop.extract.adapters import evaluation as ev  # noqa: E402
+from hazop.extract.adapters import pdf_vector  # noqa: E402
+from hazop.graph import build as graph_build  # noqa: E402
 
 FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "adapter", "truth_small.json")
 SAMPLE_GLOB = os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio")
@@ -240,7 +249,173 @@ def run_suite(label, truth):
     return errs
 
 
-def run_checks():
+# ---------- W3: 벡터 PDF 어댑터 ----------
+
+# 샘플별 품질 하한(회귀 방지 바닥값). 2026-11-05 W3 재작업 1회차 측정값 그대로이며 목표치가 아니다
+# (evidence/w3-pdf.md §4). kind는 평가 하네스에 F1이 없어 대응 쌍 kind 정확도를 쓴다.
+QUALITY_FLOORS = {
+    "SNP-M-101_RCS-main-loop": {"relations_f1": 1.0, "objects_f1": 1.0, "kind_accuracy": 1.0},
+    "SNP-M-102_RCS-pressurizer": {"relations_f1": 0.923077, "objects_f1": 1.0, "kind_accuracy": 1.0},
+    "SNP-M-201_CVCS": {"relations_f1": 1.0, "objects_f1": 1.0, "kind_accuracy": 1.0},
+    "SNP-M-301_SIS": {"relations_f1": 1.0, "objects_f1": 1.0, "kind_accuracy": 1.0},
+    "SNP-M-401_CCW": {"relations_f1": 0.869565, "objects_f1": 0.956522, "kind_accuracy": 0.909091},
+    "SNP-M-501_MS-FW": {"relations_f1": 1.0, "objects_f1": 1.0, "kind_accuracy": 0.95},
+}
+
+
+def quality_problems(row):
+    """표 행이 샘플별 하한 아래로 내려간 항목 목록. 하한이 없는 샘플은 그 사실을 문제로 낸다."""
+    floor = QUALITY_FLOORS.get(row["name"])
+    if floor is None:
+        return ["%s: 품질 하한 미등록" % row["name"]]
+    got = {"relations_f1": row["relations"]["f1"], "objects_f1": row["objects"]["f1"],
+           "kind_accuracy": row["objects"]["kind_accuracy"]}
+    return ["%s: %s %s < 하한 %s" % (row["name"], k, got[k], v) for k, v in sorted(floor.items())
+            if got[k] is None or got[k] < v - 1e-9]
+
+
+def graph_problems(name, extraction):
+    """그래프 단계(③) 호환: build_graph·render_report·entity_mapping_document가 돌고 검증 passed인지."""
+    try:
+        graph = graph_build.build_graph(extraction)
+        graph_build.render_report(graph)
+        graph_build.entity_mapping_document(graph, extraction)
+    except Exception as exc:  # 호환 실패를 검사 결과로 남긴다
+        return ["%s: 그래프 단계 오류 %s: %s" % (name, type(exc).__name__, exc)]
+    status = graph["validation"]["status"]
+    return [] if status == "passed" else ["%s: 그래프 검증 %s" % (name, status)]
+
+def pdf_samples():
+    """[(도면 폴더 이름, drawio 경로, pdf 경로)] — 같은 폴더·같은 이름의 drawio와 pdf 쌍."""
+    out = []
+    for path in sorted(glob.glob(SAMPLE_GLOB)):
+        pdf = os.path.splitext(path)[0] + ".pdf"
+        if os.path.isfile(pdf):
+            out.append((os.path.basename(os.path.dirname(path)), path, pdf))
+    return out
+
+
+def schema_problems(candidate, reference):
+    """reference(drawio 추출 결과)의 필수 키가 candidate에 없으면 그 목록. 최상위 키는 같아야 한다.
+    목록 항목은 reference의 모든 항목에 있는 키만 필수로 본다(근사 좌표일 때만 있는 method 등은 선택)."""
+    probs = []
+    if set(candidate) != set(reference):
+        probs.append("최상위 키 다름: 없음 %s, 추가 %s" % (sorted(set(reference) - set(candidate)),
+                                                    sorted(set(candidate) - set(reference))))
+
+    def need(label, ref_items, cand_items):
+        ref_keys = set.intersection(*[set(x) for x in ref_items]) if ref_items else set()
+        for i, item in enumerate(cand_items):
+            missing = ref_keys - set(item)
+            if missing:
+                probs.append("%s[%d] 키 없음: %s" % (label, i, sorted(missing)))
+                break
+    for key in ("nodes", "relations", "texts", "source_locations"):
+        need(key, reference.get(key) or [], candidate.get(key) or [])
+    need("unresolved_connectors", reference.get("relations") or [], candidate.get("unresolved_connectors") or [])
+    cand_rel = (candidate.get("relations") or []) + (candidate.get("unresolved_connectors") or [])
+    need("endpoints", [e for r in reference.get("relations") or [] for e in r["endpoints"]],
+         [e for r in cand_rel for e in r["endpoints"]])
+    for key in ("run", "source", "source_context", "drawing", "coordinate_system", "validation", "summary"):
+        missing = set(reference.get(key) or {}) - set(candidate.get(key) or {})
+        if missing:
+            probs.append("%s 키 없음: %s" % (key, sorted(missing)))
+    return probs
+
+
+def evaluate_pdf(name, drawio_path, pdf_path, mutate=None):
+    """(문제 목록, 표 행 dict 또는 None, 산출물 dict) — 한 샘플의 W3 검사.
+    mutate: 후보 extraction을 바꾸는 함수(검사가 감점을 잡는지 확인하는 시험용)."""
+    errs = []
+    truth = drawio.extract(drawio_path, repo_root=REPO_ROOT)
+    cand = pdf_vector.extract(pdf_path, repo_root=REPO_ROOT)
+    again = pdf_vector.extract(pdf_path, repo_root=REPO_ROOT)
+    if ev.dumps(cand) != ev.dumps(again):
+        errs.append("%s: 두 번 실행 결과 다름" % name)
+    if cand["validation"]["blockers"]:
+        errs.append("%s: 구조 검증 blocker %d건" % (name, len(cand["validation"]["blockers"])))
+    errs += ["%s: 스키마 %s" % (name, p) for p in schema_problems(cand, truth)]
+    if mutate is not None:
+        cand = mutate(copy.deepcopy(cand))
+    errs += graph_problems(name, cand)
+    al = align.estimate_transform(truth, cand)
+    if al["status"] != "ok":
+        errs.append("%s: 좌표 정렬 %s (%s)" % (name, al["status"], al["reason"]))
+        return errs, None, {"extraction": cand, "alignment": al}
+    result = ev.evaluate(truth, cand, al["transform"])
+    if result["status"] != "ok":
+        errs.append("%s: 평가 %s %s" % (name, result["status"], result["reasons"]))
+        return errs, None, {"extraction": cand, "alignment": al, "evaluation": result}
+    row = {"name": name, "truth_nodes": len(truth["nodes"]), "cand_nodes": len(cand["nodes"]),
+           "truth_relations": len(truth["relations"]), "cand_relations": len(cand["relations"]),
+           "unresolved": len(cand["unresolved_connectors"]), "blockers": len(cand["validation"]["blockers"]),
+           "objects": result["objects"], "relations": result["relations"], "tags": result["tags"],
+           "anchors": "%d/%d" % (al["anchors_used"], al["anchors_total"]), "outliers": al["outliers"],
+           "rms": al["residual_rms"], "max": al["residual_max"], "rms_all": al["residual_rms_all"]}
+    errs += quality_problems(row)
+    return errs, row, {"extraction": cand, "alignment": al, "evaluation": result}
+
+
+def _m(m):
+    return "%s (%d/%d/%d)" % (ev._fmt(m["f1"]), m["tp"], m["fp"], m["fn"])
+
+
+def summary_table(rows):
+    """W3 지표 표(Markdown). 잔차 단위는 정답 좌표(canvas_unit)."""
+    lines = ["| 도면 | 노드 정답/후보 | 관계 정답/후보 | 미해결 | blocker | 관계 F1 (TP/FP/FN) | 객체 F1 (TP/FP/FN) "
+             "| 태그 F1 (TP/FP/FN) | kind 정확도 | category 정확도 | 기준점 사용/전체 | 잔차 RMS / 최대 | 제외 전 RMS |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for w in rows:
+        lines.append("| %s | %d/%d | %d/%d | %d | %d | %s | %s | %s | %s | %s | %s | %s / %s | %s |" % (
+            w["name"], w["truth_nodes"], w["cand_nodes"], w["truth_relations"], w["cand_relations"], w["unresolved"],
+            w["blockers"], _m(w["relations"]), _m(w["objects"]), _m(w["tags"]),
+            ev._fmt(w["objects"]["kind_accuracy"]), ev._fmt(w["objects"]["category_accuracy"]), w["anchors"],
+            ev._fmt(w["rms"]), ev._fmt(w["max"]), ev._fmt(w["rms_all"])))
+    return "\n".join(lines) + "\n"
+
+
+def _write(path, text):
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+
+def run_pdf_checks(out=None):
+    """(실패 목록, 건너뜀 여부)."""
+    print("== 3. W3 벡터 PDF 어댑터(샘플 PDF)")
+    if importlib.util.find_spec("pdfplumber") is None:
+        print("[건너뜀] pdfplumber 없음(결정 D1). pdfplumber가 있는 Python으로 다시 실행할 것")
+        return [], True
+    failures, rows = [], []
+    samples = pdf_samples()
+    if not samples:
+        failures.append("PDF 샘플 없음")
+    for name, drawio_path, pdf_path in samples:
+        errs, row, outputs = evaluate_pdf(name, drawio_path, pdf_path)
+        failures += errs
+        if row:
+            rows.append(row)
+            print("  %-28s rel F1 %-8s obj F1 %-8s tag F1 %-8s 정렬 RMS %s (기준점 %s)"
+                  % (name, row["relations"]["f1"], row["objects"]["f1"], row["tags"]["f1"], row["rms"],
+                     row["anchors"]))
+        for e in errs:
+            print("    - " + e)
+        if out:
+            d = os.path.join(out, name)
+            os.makedirs(d, exist_ok=True)
+            for key, value in sorted(outputs.items()):
+                _write(os.path.join(d, key + ".json"), ev.dumps(value))
+            if "evaluation" in outputs:
+                _write(os.path.join(d, "evaluation.md"), ev.render_report(outputs["evaluation"]))
+    table = summary_table(rows)
+    print(table)
+    if out:
+        _write(os.path.join(out, "summary.md"), table)
+        print("저장: %s" % out)
+    print("[%s] W3 PDF" % ("통과" if not failures else "실패 %d건" % len(failures)))
+    return failures, False
+
+
+def run_checks(pdf_out=None):
     failures = []
     print("== 1. 가상 소형 픽스처")
     failures += run_suite("fixture truth_small", load_json(FIXTURE))
@@ -252,7 +427,9 @@ def run_checks():
         name = os.path.basename(os.path.dirname(path))
         print("-- " + name)
         failures += run_suite(name, drawio.extract(path))
-    print("== 결과: %s" % ("전부 통과" if not failures else "실패 %d건" % len(failures)))
+    pdf_failures, skipped = run_pdf_checks(pdf_out)
+    failures += pdf_failures
+    print("== 결과: %s%s" % ("전부 통과" if not failures else "실패 %d건" % len(failures), " (W3 건너뜀)" if skipped else ""))
     return 0 if not failures else 1
 
 
@@ -289,12 +466,13 @@ def main(argv=None):
     ap.add_argument("--candidate")
     ap.add_argument("--transform", help="후보 → 정답 좌표 변환 JSON 파일 {scale, offset}")
     ap.add_argument("--out")
+    ap.add_argument("--pdf-out", help="W3 샘플 결과(추출·정렬·평가·요약 표)를 저장할 폴더")
     args = ap.parse_args(argv)
     if args.truth or args.candidate:
         if not (args.truth and args.candidate):
             ap.error("--truth와 --candidate를 함께 지정해야 함")
         return run_eval(args)
-    return run_checks()
+    return run_checks(args.pdf_out)
 
 
 if __name__ == "__main__":

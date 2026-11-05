@@ -12,10 +12,11 @@
 :root {
   /* UI: 강조색은 파랑 하나 */
   --ui: #2563eb; --ui-weak: #eff6ff; --ui-ink: #1e40af;
-  --bg: #f4f5f7; --card: #ffffff; --line: #e3e5e9; --line-strong: #cfd3da; --muted: #6b7280; --ink: #111827; --ink-2: #374151;
+  /* W5(D7): --muted·--instrument·--unclassified·--measurement_connection·--risk-cond-line을 tokens.py 값으로 갱신 */
+  --bg: #f4f5f7; --card: #ffffff; --line: #e3e5e9; --line-strong: #cfd3da; --muted: #6a717e; --ink: #111827; --ink-2: #374151;
   /* 데이터: 노드 종류 (밸브는 UI 파랑과 분리한 권고값) */
-  --equipment: #1d4ed8; --valve: #0f766e; --instrument: #0ea5e9; --piping_element: #6366f1; --unclassified: #9ca3af;
-  --physical_connection: #16a34a; --signal_connection: #7c3aed; --measurement_connection: #d97706; --unresolved: #dc2626;
+  --equipment: #1d4ed8; --valve: #0f766e; --instrument: #0d97d6; --piping_element: #6366f1; --unclassified: #868e9d;
+  --physical_connection: #16a34a; --signal_connection: #7c3aed; --measurement_connection: #d67506; --unresolved: #dc2626;
   --tag: #111827;
   /* 데이터: 시나리오 강조 3종 */
   --hl-cause: #dc2626; --hl-path: #ea580c; --hl-safeguard: #c026d3; --hl-dim: .16;
@@ -24,7 +25,7 @@
   --err-bg: #fef2f2; --err-ink: #b91c1c; --err-line: #fca5a5;
   /* 위험도: 〈표9〉 허용 구분 3단 */
   --risk-ok-bg: #eef0f3; --risk-ok-ink: #374151; --risk-ok-line: #9ca3af;
-  --risk-cond-bg: #fde68a; --risk-cond-ink: #78350f; --risk-cond-line: #d97706;
+  --risk-cond-bg: #fde68a; --risk-cond-ink: #78350f; --risk-cond-line: #b36205;
   --risk-deny-bg: #991b1b; --risk-deny-ink: #ffffff; --risk-deny-line: #991b1b;
   /* 출처: AI·자동 판독(기계 산출) = 빗금, 사람 확정 = 흰 바탕 진한 실선 */
   --ai-hatch: repeating-linear-gradient(135deg, #f1f2f4 0 5px, #e8eaee 5px 10px);

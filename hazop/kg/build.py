@@ -547,11 +547,28 @@ def current_dir(kg_root):
         return _pointer_dir(kg_root, json.load(fh).get("kg_version"))
 
 
-def load_outputs(kg_root):
-    """포인터(current.json)를 따라 두 파일을 읽어 (knowledge, kg)를 돌려준다.
-    파일 sha256이 포인터 기록과 다르거나, kg의 knowledge_sha256·kg_version이 맞지 않으면 ValueError."""
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _check_pointer(kg_root, ptr):
+    """current.json 필수 키·자료형 검사(그래프활용 §6.4.1). 틀리면 KeyError가 아니라 ValueError."""
+    if not isinstance(ptr, dict):
+        raise ValueError("%s: current.json이 JSON 객체가 아님" % kg_root)
+    if not isinstance(ptr.get("kg_id"), str) or not ptr["kg_id"]:
+        raise ValueError("%s: current.json의 kg_id가 없거나 문자열이 아님" % kg_root)
+    for k in ("knowledge_sha256", "knowledge_graph_sha256"):
+        if not isinstance(ptr.get(k), str) or not SHA256_RE.match(ptr[k]):
+            raise ValueError("%s: current.json의 %s가 없거나 16진 64자리 문자열이 아님" % (kg_root, k))
+
+
+def load_outputs_raw(kg_root):
+    """포인터(current.json)를 한 번만 읽고 그 버전 폴더의 두 파일을 읽어
+    (knowledge, kg, knowledge_graph.json 바이트, 버전 폴더, 포인터)를 돌려준다(그래프활용 §6.4.1).
+    포인터 필수 키·자료형이 틀리거나, 파일 sha256이 포인터 기록과 다르거나, kg의 knowledge_sha256·kg_version이
+    맞지 않으면 ValueError."""
     with open(os.path.join(kg_root, POINTER_FILE), encoding="utf-8") as fh:
         ptr = json.load(fh)
+    _check_pointer(kg_root, ptr)
     ver_dir = _pointer_dir(kg_root, ptr.get("kg_version"))
     with open(os.path.join(ver_dir, KNOWLEDGE_FILE), "rb") as fh:
         kbytes = fh.read()
@@ -561,6 +578,14 @@ def load_outputs(kg_root):
             hashlib.sha256(gbytes).hexdigest() != ptr["knowledge_graph_sha256"]:
         raise ValueError("%s: 결과 파일 sha256이 current.json 기록과 다름 - 다시 빌드 필요" % ver_dir)
     kg = json.loads(gbytes.decode("utf-8"))
+    if not isinstance(kg, dict):
+        raise ValueError("%s: knowledge_graph.json이 JSON 객체가 아님" % ver_dir)
     if kg.get("knowledge_sha256") != ptr["knowledge_sha256"] or kg.get("kg_version") != ptr["kg_version"]:
         raise ValueError("%s: knowledge_graph.json과 knowledge.json·포인터가 서로 맞지 않음" % ver_dir)
-    return json.loads(kbytes.decode("utf-8")), kg
+    return json.loads(kbytes.decode("utf-8")), kg, gbytes, ver_dir, ptr
+
+
+def load_outputs(kg_root):
+    """포인터(current.json)를 따라 두 파일을 읽어 (knowledge, kg)를 돌려준다(load_outputs_raw와 같은 검사)."""
+    knowledge, kg = load_outputs_raw(kg_root)[:2]
+    return knowledge, kg

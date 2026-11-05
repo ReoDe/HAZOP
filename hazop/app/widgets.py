@@ -5,7 +5,7 @@ import html
 import os
 import traceback
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
+from PySide6.QtCore import QEvent, QObject, QRunnable, Qt, QThreadPool, Signal
 from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout
 
 from hazop import paths
@@ -32,11 +32,73 @@ def kst_text(utc_iso):
     return t.astimezone(datetime.timezone(datetime.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M KST")
 
 
-def plain_label(text="", name=None, wrap=True):
-    """사람 입력·외부 문자열을 쓰는 라벨: 서식 해석 없이 글자 그대로(Qt.PlainText)."""
-    lab = QLabel(text)
+class ElidedLabel(QLabel):
+    """한 줄 라벨. elide(Qt.ElideRight·ElideMiddle)를 주면 자리가 모자랄 때 줄임표로 줄여 그린다. text()와 접근성
+    이름은 늘 전체 문구이고, 줄여 그렸을 때만 툴팁에 전체 문구를 띄운다(헤더 WhereLabel과 같은 동작).
+    최소 폭은 앞 min_chars글자 + '…' 폭이다(docs/2026-11-05-design-system W3). elide가 None이면 QLabel과 같다."""
+
+    def __init__(self, text="", parent=None, elide=None, min_chars=8):
+        super().__init__(text, parent)
+        self.elide, self.min_chars = elide, min_chars
+        if elide is not None:
+            self.setWordWrap(False)
+            self._tip()
+
+    def setText(self, text):
+        super().setText(text)
+        if self.elide is not None:
+            self._tip()
+
+    def _tip(self):
+        self.setToolTip(self.text() if self.is_elided() else "")
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        if self.elide is not None:
+            self._tip()
+
+    def changeEvent(self, event):  # noqa: N802  글꼴·스타일이 바뀌면 줄임 여부도 바뀐다
+        super().changeEvent(event)
+        if self.elide is not None and event.type() in (QEvent.FontChange, QEvent.StyleChange):
+            self._tip()
+
+    def _text_rect(self):
+        m = self.margin()
+        return self.contentsRect().adjusted(m, m, -m, -m)
+
+    def is_elided(self):
+        return self.elide is not None and self.fontMetrics().horizontalAdvance(self.text()) > self._text_rect().width()
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        if self.elide is None or not self.text():
+            return hint
+        cm = self.contentsMargins()
+        frame = cm.left() + cm.right() + 2 * self.margin()
+        need = self.fontMetrics().horizontalAdvance(self.text()[:self.min_chars] + "…") + frame
+        hint.setWidth(min(hint.width(), need))
+        return hint
+
+    def paintEvent(self, event):
+        if not self.is_elided():
+            super().paintEvent(event)
+            return
+        from PySide6.QtGui import QPainter
+        from PySide6.QtWidgets import QStyle
+        p = QPainter(self)
+        self.drawFrame(p)
+        r = self._text_rect()
+        shown = self.fontMetrics().elidedText(self.text(), self.elide, r.width())
+        align = QStyle.visualAlignment(self.layoutDirection(), self.alignment())
+        self.style().drawItemText(p, r, int(align), self.palette(), self.isEnabled(), shown, self.foregroundRole())
+        p.end()
+
+
+def plain_label(text="", name=None, wrap=True, elide=None, min_chars=8):
+    """사람 입력·외부 문자열을 쓰는 라벨: 서식 해석 없이 글자 그대로(Qt.PlainText). elide는 ElidedLabel 참고."""
+    lab = ElidedLabel(text, elide=elide, min_chars=min_chars)
     lab.setTextFormat(Qt.PlainText)
-    lab.setWordWrap(wrap)
+    lab.setWordWrap(wrap if elide is None else False)
     if name:
         lab.setObjectName(name)
     return lab
@@ -51,7 +113,7 @@ def badge(text, kind="plain"):
     c = tokens.COLORS
     style = {
         "ai": "border:1px dashed %s; color:%s; background:%s;" % (c["ai-ink"], c["ai-ink"], c["ai-hatch-a"]),
-        "human": "background:%s; color:#ffffff;" % c["human-line"],
+        "human": "background:%s; color:%s;" % (c["human-line"], c["on-fill"]),
         "warn": "background:%s; color:%s;" % (c["warn-bg"], c["warn-ink"]),
         "err": "background:%s; color:%s;" % (c["err-bg"], c["err-ink"]),
         "ui": "background:%s; color:%s;" % (c["ui-weak"], c["ui-ink"]),
@@ -67,7 +129,8 @@ def risk_chip(risk, name=None, proposal=True):
     bg, ink, line = tokens.risk_colors(risk)
     label = "%s %d%s" % ("제안" if proposal else "확정", risk, " %s" % name if name else "")
     if proposal:
-        style = "border:1px dashed %s; color:%s; background:#ffffff;" % (line, line if line != "#9ca3af" else ink)
+        style = "border:1px dashed %s; color:%s; background:%s;" % (line, line if line != tokens.COLORS["risk-ok-line"] else ink,
+                                                                     tokens.COLORS["card"])
     else:
         style = "background:%s; color:%s; border:1px solid %s;" % (bg, ink, line)
     return '<span style="%s font-size:11px; padding:1px 6px; border-radius:8px;">&nbsp;%s&nbsp;</span>' % (style, esc(label))
@@ -79,13 +142,13 @@ def box(inner, kind="ai"):
     if kind == "ai":
         st = "background-color:%s; border:1px dashed %s;" % (c["ai-hatch-a"], c["ai-ink"])
     else:
-        st = "background-color:#ffffff; border:2px solid %s;" % c["human-line"]
+        st = "background-color:%s; border:2px solid %s;" % (c["card"], c["human-line"])
     return '<table width="100%%" cellpadding="8" style="%s margin:4px 0;"><tr><td>%s</td></tr></table>' % (st, inner)
 
 
-class Chip(QLabel):
-    def __init__(self, text="", parent=None):
-        super().__init__(text, parent)
+class Chip(ElidedLabel):
+    def __init__(self, text="", parent=None, elide=None, min_chars=8):
+        super().__init__(text, parent, elide, min_chars)
         self.setObjectName("chip")
 
     def set_state(self, text, state=""):

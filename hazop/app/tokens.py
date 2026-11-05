@@ -1,7 +1,8 @@
 """디자인 토큰 한 곳 정의 (기획서/인터페이스.md §4.1·§4.2, 디자인/시안/README.md §3·§4.1).
 
-Qt 스타일시트(qss)와 내장 웹뷰 CSS(web_css)가 모두 이 값을 읽는다. ② 뷰어에는 실행 시점에 CSS 변수로 주입하므로
-hazop/viewer/template.html의 색은 바꾸지 않는다(단독 뷰어는 기존 색 그대로, 템플릿은 탭 이름만 'P&ID 구조'로 바뀜).
+Qt 스타일시트(qss)와 내장 웹뷰 CSS(web_css)가 모두 이 값을 읽는다. ② 뷰어에는 실행 시점에 CSS 변수로 주입한다.
+독립 뷰어(hazop/viewer/template.html)의 :root는 같은 값을 직접 적고, scripts/check_design.py 색 비교가 web_css()의
+:root와 같은지 검사한다(docs/2026-11-05-design-system D5). 여기 값을 바꾸면 템플릿 :root도 함께 바꾼다.
 ③ 지식그래프 HTML(hazop/kg/screen_template.html)은 생성할 때 kg_css_vars()로 같은 값을 넣는다.
 글꼴: Pretendard 배포는 미결정(§9)이므로 포함하지 않고 맑은 고딕을 기본으로 쓴다.
 """
@@ -9,24 +10,26 @@ hazop/viewer/template.html의 색은 바꾸지 않는다(단독 뷰어는 기존
 FONT_FAMILY = "Malgun Gothic"
 
 COLORS = {
+    # 명암비(WCAG 2.1 4.5:1·3:1)는 scripts/check_design.py CONTRAST_PAIRS로 검사한다(design-system D7)
     # UI: 강조색은 파랑 하나
     "ui": "#2563eb", "ui-weak": "#eff6ff", "ui-ink": "#1e40af",
+    "on-fill": "#ffffff",  # 파랑·진한 채움 위 흰 글자(주 버튼·선택 탭·사람 확정 배지·보호수단 배지)
     "bg": "#f4f5f7", "card": "#ffffff", "line": "#e3e5e9", "line-strong": "#cfd3da",
-    "muted": "#6b7280", "ink": "#111827", "ink-2": "#374151",
+    "muted": "#6a717e", "ink": "#111827", "ink-2": "#374151",
     # 데이터: 노드 종류(밸브는 UI 파랑과 분리)
-    "equipment": "#1d4ed8", "valve": "#0f766e", "instrument": "#0ea5e9", "piping_element": "#6366f1",
-    "unclassified": "#9ca3af",
+    "equipment": "#1d4ed8", "valve": "#0f766e", "instrument": "#0d97d6", "piping_element": "#6366f1",
+    "unclassified": "#868e9d",
     # 데이터: 관계 종류
-    "physical_connection": "#16a34a", "signal_connection": "#7c3aed", "measurement_connection": "#d97706",
+    "physical_connection": "#16a34a", "signal_connection": "#7c3aed", "measurement_connection": "#d67506",
     "unresolved": "#dc2626",
     # 시나리오 강조(§3.3 강조 규칙)
     "hl-cause": "#dc2626", "hl-path": "#ea580c", "hl-safeguard": "#c026d3",
     # 상태
-    "ok": "#15803d", "warn-bg": "#fef3c7", "warn-ink": "#92400e", "warn-line": "#f59e0b",
+    "ok": "#15803d", "ok-bg": "#dcfce7", "warn-bg": "#fef3c7", "warn-ink": "#92400e", "warn-line": "#f59e0b",
     "err-bg": "#fef2f2", "err-ink": "#b91c1c", "err-line": "#fca5a5",
     # 위험도 〈표9〉 허용 구분 3단
     "risk-ok-bg": "#eef0f3", "risk-ok-ink": "#374151", "risk-ok-line": "#9ca3af",
-    "risk-cond-bg": "#fde68a", "risk-cond-ink": "#78350f", "risk-cond-line": "#d97706",
+    "risk-cond-bg": "#fde68a", "risk-cond-ink": "#78350f", "risk-cond-line": "#b36205",
     "risk-deny-bg": "#991b1b", "risk-deny-ink": "#ffffff", "risk-deny-line": "#991b1b",
     # 출처: AI·자동 판독 = 빗금(Qt는 옅은 회색 + 점선 테두리로 대신), 사람 확정 = 흰 바탕 진한 실선
     "ai-hatch-a": "#f1f2f4", "ai-hatch-b": "#e8eaee", "ai-ink": "#4b5563", "human-line": "#111827",
@@ -43,6 +46,7 @@ COLORS = {
     "kg-canvas": "#fcfcfd",
 }
 HL_DIM = 0.16  # 강조 중 나머지 오버레이 불투명도
+CARD_SHADOW = "0 2px 10px rgba(0,0,0,.06)"  # 카드 그림자(장식). web_css() 범례·독립 뷰어 목록 페이지(hazop/viewer/build.py)
 # ③ 지식그래프 색 외 값(디자인/지식그래프화면.md §2·§5·§7)
 KG_STYLE = {"kg-excl-opacity": "0.5", "kg-dash": "5 4", "kg-left": "clamp(232px, 18vw, 300px)"}
 KG_RIGHT_MIN, KG_RIGHT_MAX, KG_RIGHT_VW = 320, 420, 0.24  # 우측 상세(Qt) clamp(320px, 24vw, 420px)
@@ -82,7 +86,7 @@ def web_css():
 :root { %(root)s; --selected: %(ui)s; --hl-dim: %(dim)s; }
 html, body { font-family: "%(font)s", sans-serif; }
 .selected.sym, .selected.tagbox { stroke: var(--ui) !important; fill: rgba(37,99,235,.12); }
-.selected.pipe-line, .selected.gnode, .selected.gedge { stroke: var(--ui) !important; }
+.selected.pipe-line, .selected.gedge { stroke: var(--ui) !important; }
 body.hz-embedded a.back, body.hz-embedded header .logo, body.hz-embedded header .app, body.hz-embedded header .sep { display: none; }
 body.hz-hide-panel aside#panel, body.hz-hide-panel #pathq { display: none; }
 body.hz-dim #overlay .sym:not(.hz-on), body.hz-dim #overlay .tagbox:not(.hz-on),
@@ -95,15 +99,16 @@ body.hz-dim #graphsvg .gedge:not(.hz-on), body.hz-dim #graphsvg .glabel { opacit
 .hz-sg.sym, .hz-sg.gnode, .hz-sg.tagbox { stroke: var(--hl-safeguard) !important; stroke-width: 2.5; }
 .hz-ring { fill: none; stroke: var(--hl-safeguard); stroke-width: 2; pointer-events: none; }
 .hz-badge rect { fill: var(--hl-safeguard); }
-.hz-badge text { fill: #fff; font-size: 11px; font-family: "%(font)s", sans-serif; }
-.hz-badge.weak rect { fill: #fff; stroke: var(--hl-safeguard); }
+.hz-badge text { fill: %(onfill)s; font-size: 11px; font-family: "%(font)s", sans-serif; }
+.hz-badge.weak rect { fill: %(card)s; stroke: var(--hl-safeguard); }
 .hz-badge.weak text { fill: var(--hl-safeguard); }
 .hz-legend { position: absolute; left: 50%%; bottom: 16px; transform: translateX(-50%%); background: var(--card);
   border: 1px solid var(--line); border-radius: 999px; padding: 4px 14px; font-size: 12px; color: var(--ink-2);
-  box-shadow: 0 2px 10px rgba(0,0,0,.06); display: none; white-space: normal; max-width: 92%%; text-align: center; }
+  box-shadow: %(shadow)s; display: none; white-space: normal; max-width: 92%%; text-align: center; }
 body.hz-dim .hz-legend { display: block; }
 .hz-legend i { display: inline-block; width: 16px; height: 0; border-top: 3px solid; vertical-align: middle; margin: 0 4px 0 10px; }
-""" % {"root": root, "ui": COLORS["ui"], "dim": HL_DIM, "font": FONT_FAMILY}
+""" % {"root": root, "ui": COLORS["ui"], "dim": HL_DIM, "font": FONT_FAMILY, "onfill": COLORS["on-fill"],
+       "card": COLORS["card"], "shadow": CARD_SHADOW}
 
 
 def qss():
@@ -118,15 +123,15 @@ QLabel#appname { font-weight: 700; font-size: %(lg)spx; }
 QLabel#where { color: %(ink)s; }
 QLabel#logo { background: %(ui)s; border-radius: 12px; min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; }
 QPushButton#step { border: 0; border-radius: 14px; padding: 5px 14px; background: transparent; color: %(muted)s; }
-QPushButton#step:checked { background: %(ui)s; color: #ffffff; font-weight: 700; }
+QPushButton#step:checked { background: %(ui)s; color: %(on-fill)s; font-weight: 700; }
 QPushButton#step:hover:!checked { background: %(bg)s; }
 QPushButton { border: 1px solid %(line-strong)s; border-radius: 14px; padding: 5px 14px; background: %(card)s; }
 QPushButton:hover { border-color: %(ui)s; }
 QPushButton:disabled { color: %(muted)s; background: %(bg)s; }
-QPushButton#primary { background: %(ui)s; color: #ffffff; border-color: %(ui)s; font-weight: 700; }
+QPushButton#primary { background: %(ui)s; color: %(on-fill)s; border-color: %(ui)s; font-weight: 700; }
 QPushButton#primary:disabled { background: %(line-strong)s; border-color: %(line-strong)s; }
 QLabel#chip { border-radius: 10px; padding: 3px 10px; background: %(bg)s; color: %(ink-2)s; font-size: %(sm)spx; }
-QLabel#chip[state="passed"] { background: #dcfce7; color: %(ok)s; }
+QLabel#chip[state="passed"] { background: %(ok-bg)s; color: %(ok)s; }
 QLabel#chip[state="blocked"] { background: %(err-bg)s; color: %(err-ink)s; }
 QLabel#chip[state="warn"] { background: %(warn-bg)s; color: %(warn-ink)s; }
 QLabel#muted { color: %(muted)s; }
@@ -138,13 +143,13 @@ QFrame#banner_err { background: %(err-bg)s; border: 1px solid %(err-line)s; bord
 QFrame#banner_warn QLabel { color: %(warn-ink)s; }
 QFrame#banner_err QLabel { color: %(err-ink)s; }
 QFrame#ai_box { background: %(ai-hatch-a)s; border: 1px dashed %(ai-ink)s; border-radius: 12px; }
-QFrame#human_box { background: #ffffff; border: 2px solid %(human-line)s; border-radius: 12px; }
+QFrame#human_box { background: %(card)s; border: 2px solid %(human-line)s; border-radius: 12px; }
 QFrame#dropzone { background: %(card)s; border: 2px dashed %(line-strong)s; border-radius: 12px; }
 QFrame#dropzone[hover="true"] { border-color: %(ui)s; background: %(ui-weak)s; }
-QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox { border: 1px solid %(line-strong)s; border-radius: 8px; padding: 4px 8px; background: #ffffff; }
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox { border: 1px solid %(line-strong)s; border-radius: 8px; padding: 4px 8px; background: %(card)s; }
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus { border-color: %(ui)s; }
 QLineEdit:read-only { background: %(bg)s; }
-QTableWidget, QTableView, QListWidget, QTreeWidget, QTextBrowser { background: #ffffff; border: 1px solid %(line)s; border-radius: 8px; gridline-color: %(line)s; }
+QTableWidget, QTableView, QListWidget, QTreeWidget, QTextBrowser { background: %(card)s; border: 1px solid %(line)s; border-radius: 8px; gridline-color: %(line)s; }
 QTableWidget::item, QListWidget::item { padding: 3px 6px; }
 QTableWidget::item:selected, QListWidget::item:selected { background: %(ui-weak)s; color: %(ink)s; }
 QHeaderView::section { background: %(bg)s; color: %(muted)s; border: 0; border-bottom: 1px solid %(line)s; padding: 4px 6px; font-size: %(sm)spx; font-weight: 700; }

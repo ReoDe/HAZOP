@@ -11,21 +11,34 @@ import json
 import os
 
 from hazop import paths
+from hazop.kg.context import omission_texts
 from hazop.register import registry
 from hazop.viewer import build as viewer_build
 
-SCRIPTS_DIR = os.path.join(paths.REPO_ROOT, "scripts")
-_script_cache = {}
+# 참고값(이름만 남김): 가져올 때의 scripts/ 위치. 로딩에는 쓰지 않으며 script_module은 호출 시점 경로를 쓴다
+SCRIPTS_DIR = paths.program_path("scripts")
+SCRIPT_NAMES = ("extract_drawio", "build_graph")  # 화면이 읽는 스크립트(허용 목록, 묶음 datas 대상)
+_script_cache = {}  # 키: 정규화한 파일 경로(루트가 바뀌면 새로 읽음)
 
 
 def script_module(name):
-    """scripts/<name>.py의 함수를 화면에서 그대로 쓰기 위해 모듈로 읽는다(화면 전용 처리 경로를 만들지 않음, §2.4)."""
-    if name not in _script_cache:
-        spec = importlib.util.spec_from_file_location("hazop_script_" + name, os.path.join(SCRIPTS_DIR, name + ".py"))
+    """scripts/<name>.py의 함수를 화면에서 그대로 쓰기 위해 모듈로 읽는다(화면 전용 처리 경로를 만들지 않음, §2.4).
+    위치는 paths.program_path("scripts"): 개발 실행은 저장소, 묶인 실행(PyInstaller)은 묶음 폴더의 scripts/.
+    name은 SCRIPT_NAMES 중 하나. 경로 구분자·절대 경로·목록 밖 이름은 ValueError."""
+    if not isinstance(name, str) or os.path.isabs(name) or any(c in name for c in "/\\:") or ".." in name:
+        raise ValueError("스크립트 이름이 아님: %r" % (name,))
+    if name not in SCRIPT_NAMES:
+        raise ValueError("허용하지 않은 스크립트: %r (허용: %s)" % (name, ", ".join(SCRIPT_NAMES)))
+    path = paths.program_path("scripts", name + ".py")
+    key = os.path.normcase(os.path.realpath(path))
+    if key not in _script_cache:
+        if not os.path.isfile(path):
+            raise FileNotFoundError("스크립트 파일 없음(묶음에 scripts/가 들어갔는지 확인): %s" % path)
+        spec = importlib.util.spec_from_file_location("hazop_script_" + name, path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        _script_cache[name] = mod
-    return _script_cache[name]
+        _script_cache[key] = mod
+    return _script_cache[key]
 
 
 def read_json(path):
@@ -162,9 +175,9 @@ def graph_only_html(graph, title, warning):
             continue
         seg = n.get("node_type") == "pipe_segment"
         fill = col["physical_connection"] if seg else col.get(n.get("category") or "unclassified", col["unclassified"])
-        parts.append('<circle class="gnode" cx="%g" cy="%g" r="%d" fill="%s" stroke="#fff" stroke-width="1.5" '
+        parts.append('<circle class="gnode" cx="%g" cy="%g" r="%d" fill="%s" stroke="%s" stroke-width="1.5" '
                      'data-local-id="%s" data-entity-id="%s"><title>%s</title></circle>'
-                     % (p[0], p[1], 4 if seg else 7, fill, _h.escape(str(n.get("local_id") or ""), True),
+                     % (p[0], p[1], 4 if seg else 7, fill, col["card"], _h.escape(str(n.get("local_id") or ""), True),
                         _h.escape(n["entity_id"], True), _h.escape("%s %s" % (n.get("tag") or "", n["entity_id"]))))
         if n.get("tag") and not seg:
             parts.append('<text x="%g" y="%g" font-size="10" fill="%s">%s</text>'
@@ -172,15 +185,15 @@ def graph_only_html(graph, title, warning):
     return """<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8"><title>%(title)s - 그래프 보기</title>
 <style>html,body{margin:0;height:100%%;font-family:"%(font)s",sans-serif;background:%(bg)s;color:%(ink)s}
-header{padding:8px 16px;background:#fff;border-bottom:1px solid %(line)s;font-size:13px}
+header{padding:8px 16px;background:%(card)s;border-bottom:1px solid %(line)s;font-size:13px}
 .warn{display:inline-block;margin-left:10px;padding:2px 10px;border-radius:999px;background:%(wbg)s;color:%(wink)s}
-#viewport{position:absolute;top:40px;left:0;right:0;bottom:0}#graphsvg{width:100%%;height:100%%;background:#fff}
+#viewport{position:absolute;top:40px;left:0;right:0;bottom:0}#graphsvg{width:100%%;height:100%%;background:%(card)s}
 .gnode{cursor:pointer}</style></head><body>
 <header>도면 <b>%(title)s</b> · 그래프 보기 <span class="warn">%(warning)s</span></header>
 <div id="viewport"><svg id="graphsvg" xmlns="http://www.w3.org/2000/svg" viewBox="%(vb)s" preserveAspectRatio="xMidYMid meet">
 %(body)s</svg></div></body></html>
 """ % {"title": _h.escape(str(title)), "warning": _h.escape(warning), "vb": vb, "body": "\n".join(parts),
-       "font": tokens.FONT_FAMILY, "bg": col["bg"], "ink": col["ink"], "line": col["line"], "wbg": col["warn-bg"],
+       "font": tokens.FONT_FAMILY, "bg": col["bg"], "card": col["card"], "ink": col["ink"], "line": col["line"], "wbg": col["warn-bg"],
        "wink": col["warn-ink"]}
 
 
@@ -350,6 +363,73 @@ def highlight_spec(scenario, local_map, run_graph):
             "safeguards": [{"local_id": local_map[g["node_id"]], "counted": bool(g.get("counts_as_found"))}
                            for g in sgs],
             "request_id": scenario["scenario_id"]}
+
+
+KG_TYPE_LABELS = {"requirement": "요건", "setpoint": "설정치", "condition": "운전조건"}
+KG_CONFLICT_REASONS = {"truncated": "상한", "not_in_v4": "분석 범위 제외", "out_of_scope": "범위 밖"}
+KG_TRUNC_REASONS = {"max_items": "항목 수 상한", "max_bytes": "크기 상한", "per_item_limits": "항목별 연결 상한",
+                    "max_list": "목록 상한"}
+
+
+def related_knowledge(doc, scenario):
+    """⑤ 시나리오별 관련 지식(그래프활용 §6.4.5). 실행의 근거 묶음 knowledge_context에서만 읽는다(현재 지식그래프 아님).
+    지식그래프 없이 분석한 실행이면 None.
+    대상 항목: applies_to.entity_id가 시나리오 관련 노드(원인·전제 설비, graph_evidence·ai_interpretation 노드, 보호수단)인 항목과
+    인용 배지가 붙는 항목. 배지: 시나리오 인용(ai_interpretation·graph_evidence의 evidence_ids), 사실 인용(후보 ai_facts)."""
+    kc = ((doc.get("evidence_bundles") or {}).get(scenario["candidate_id"]) or {}).get("knowledge_context")
+    if kc is None:
+        return None
+    ge, ai = scenario.get("graph_evidence") or {}, scenario.get("ai_interpretation") or {}
+    sgs = (scenario.get("safeguards") or []) + (ai.get("safeguards") or [])
+    nodes = list(dict.fromkeys((scenario.get("cause_equipment") or []) + (scenario.get("assumed_equipment") or [])
+                               + (ge.get("node_ids") or []) + (ai.get("node_ids") or [])
+                               + [g.get("node_id") for g in sgs if g.get("node_id")]))
+    scen_cited = set((ai.get("evidence_ids") or []) + (ge.get("evidence_ids") or []))
+    cand = next((c for c in doc.get("candidates") or [] if c["candidate_id"] == scenario["candidate_id"]), {})
+    fact_cited = {e for f in (cand.get("analysis") or {}).get("ai_facts") or [] for e in f.get("evidence_ids") or []}
+    items = []
+    for it in kc.get("items") or []:
+        hit = [a["entity_id"] for a in it.get("applies_to") or [] if a["entity_id"] in nodes]
+        sc, fc = it["evidence_id"] in scen_cited, it["evidence_id"] in fact_cited
+        if not (hit or sc or fc):
+            continue
+        badges = [(KG_TYPE_LABELS.get(it.get("node_type"), it.get("node_type")), "plain")]
+        if it.get("unknown_fields"):
+            badges.append(("미확인", "warn"))
+        if it.get("conflict_with"):
+            badges.append(("충돌", "err"))
+        elif it.get("conflict_outside"):
+            reasons = sorted({KG_CONFLICT_REASONS.get(c["reason"], c["reason"]) for c in it["conflict_outside"]})
+            badges += [("충돌(상대 미포함: %s)" % r, "err") for r in reasons]
+        if sc:
+            badges.append(("시나리오 인용", "ui"))
+        if fc:
+            badges.append(("사실 인용", "ui"))
+        items.append({"item": it, "entities": hit, "badges": badges, "scenario_cited": sc, "fact_cited": fc,
+                      "conflict": bool(it.get("conflict_with") or it.get("conflict_outside"))})
+    trunc = kc.get("truncated") or {}
+    affected = set(trunc.get("affected_entity_ids") or [])
+    excluded = {}
+    for x in (kc.get("excluded") or {}).get("not_in_v4") or []:
+        excluded[x["entity_id"]] = excluded.get(x["entity_id"], 0) + 1
+    classes = []
+    for n in nodes:
+        labels = []
+        if n in (kc.get("nodes_without_knowledge") or []):
+            labels.append("지식 입력 없음")
+        if n in (kc.get("nodes_with_gap") or []):
+            labels.append("적용 근거 공백 — 문서 언급만 있음")
+        if excluded.get(n):
+            labels.append("분석 범위 제외 %d건(가설·미확인 등)" % excluded[n])
+        if n in affected:
+            labels.append("상한으로 생략")
+        if labels:
+            classes.append({"entity_id": n, "labels": labels})
+    trunc_text = None
+    if trunc:  # 생략 사유마다 다른 문구(항목 생략 / 연결만 생략 / 분류 목록만 생략)
+        trunc_text = "지식 맥락: " + "; ".join(t.replace("포함(", "분석에 사용(", 1) if t.startswith("항목 %d개 중" % trunc["total"])
+                                             else t for t in omission_texts(trunc, KG_TRUNC_REASONS))
+    return {"kg_id": kc.get("kg_id"), "items": items, "nodes": classes, "truncated_text": trunc_text}
 
 
 def unknown_text(value, reason=None):
