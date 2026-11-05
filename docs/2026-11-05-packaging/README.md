@@ -4,7 +4,7 @@
 > 무엇이 어디 있고, 무엇이 기준이며, 어느 저장소·브랜치에서 작업하는지를 안내한다.
 > 지금 상태와 다음 행동은 [PROGRESS.md](PROGRESS.md)·[ROADMAP.md](ROADMAP.md)에서 확인한다.
 >
-> 문서 기준일: 2026-11-06 00:50
+> 문서 기준일: 2026-11-06 03:30
 
 ## 1. 30초 요약
 
@@ -112,7 +112,7 @@
 ### 편집 허용 범위
 
 - 작업 폴더: `docs/2026-11-05-packaging/`
-- 추가 편집 허용 범위: `packaging/`(신규), `licenses/`(신규, D9), `scripts/build_package.py`, `tests/test_packaging.py`, `hazop/paths.py`, `hazop/app/data.py`(importlib 로딩만), `기획서/인터페이스.md`(§7·§9만)
+- 추가 편집 허용 범위: `packaging/`(신규), `licenses/`(신규, D9), `scripts/build_package.py`, `tests/test_packaging.py`, `hazop/paths.py`, `hazop/app/data.py`(importlib 로딩만), `기획서/인터페이스.md`(§7·§9만), W5(D12): `hazop/analysis/integrity.py`(해시 고정 확대)·`hazop/analysis/run.py`(integrity 호출 연결만)·관련 tests·`기획서/전체기획.md`(신뢰 경계 표·문구만)
 - 위 편집 허용 범위 밖의 경로는 참조 대상을 포함해 읽기 전용이다.
 - 문서를 추가하면 해당 폴더 README 인덱스와 이 문서의 문서 지도를 필요한 수준으로 갱신한다.
 

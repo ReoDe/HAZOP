@@ -148,6 +148,7 @@ def prepare(region, graph, catalog, applicability, patterns, criteria, files=Non
         blockers.append("이탈 후보 카탈로그와 패턴 라이브러리는 필수")
     if patterns is not None:
         blockers += equipment.validate_library(patterns)
+        blockers += integrity.check_patterns(patterns)
     if catalog is not None:
         blockers += integrity.check_catalog(catalog, applicability)
     if criteria is not None:
