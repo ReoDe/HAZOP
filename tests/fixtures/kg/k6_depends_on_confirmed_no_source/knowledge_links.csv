@@ -1,0 +1,21 @@
+﻿# 가상(fictitious) 샘플: 문서·요건·설정치·운전조건의 값과 문장은 모두 가상이며 실제 발전소 설계값이 아님.
+# 근거: 기획서/그래프활용.md §7.1. 대상 도면은 샘플 도면 SNP-M-102. 빈 칸은 미확인(null).
+id,kind,from,to,method,knowledge_status,link_status,material_id,registration_version,document_id,page,locator,author,reviewed_by,reviewed_at,reason,candidate_key,chunk_id,text_sha256,graph_version,target_source_object_id
+krel-001,part_of,chunk-001,doc-001,manual,confirmed,confirmed,,,,,,샘플작성자,샘플검토자,2026-11-05,근거 열 비움(조각 근거 상속),,,,,
+krel-002,part_of,chunk-002,doc-001,manual,confirmed,confirmed,,,,,,샘플작성자,샘플검토자,2026-11-05,,,,,,
+krel-003,part_of,chunk-003,doc-001,manual,confirmed,confirmed,,,,,,샘플작성자,샘플검토자,2026-11-05,,,,,,
+krel-004,part_of,chunk-004,doc-001,manual,confirmed,confirmed,,,,,,샘플작성자,샘플검토자,2026-11-05,,,,,,
+krel-005,specified_in,req-001,chunk-001,manual,confirmed,confirmed,MAT-KG-001,1,DOC-KG-001,3,3.1절 표 3-1 1행,샘플작성자,샘플검토자,2026-11-05,,,,,,
+krel-006,specified_in,req-002,chunk-002,manual,confirmed,confirmed,MAT-KG-001,1,DOC-KG-001,3,3.2절 표 3-2 1행,샘플작성자,샘플검토자,2026-11-05,,,,,,
+krel-007,specified_in,req-003,chunk-001,manual,confirmed,confirmed,MAT-KG-001,1,DOC-KG-001,3,3.1절 표 3-1 2행,샘플작성자,샘플검토자,2026-11-05,,,,,,
+krel-008,governed_by,graph-SNP-M-102:RC-PZ01,req-001,manual,confirmed,confirmed,,,,,,샘플작성자,샘플검토자,2026-11-05,근거 열 비움(요건 근거 상속),,,,,
+krel-009,governed_by,graph-SNP-M-102:RC-PSV101,req-002,manual,confirmed,confirmed,MAT-KG-001,1,DOC-KG-001,3,3.2절 표 3-2 1행,샘플작성자,샘플검토자,2026-11-05,,,,,,
+krel-010,has_setpoint,graph-SNP-M-102:RC-PT110,setpt-001,manual,confirmed,confirmed,MAT-KG-001,1,DOC-KG-001,3,3.2절 표 3-3 1행,샘플작성자,샘플검토자,2026-11-05,,,,,,
+krel-011,has_setpoint,graph-SNP-M-102:RC-PT110,setpt-002,manual,confirmed,confirmed,MAT-KG-001,1,DOC-KG-001,6,부록 A 표 A-1,샘플작성자,샘플검토자,2026-11-05,,,,,,
+krel-012,has_setpoint,graph-SNP-M-102:RC-PSV101,setpt-003,manual,confirmed,confirmed,,,,,,샘플작성자,샘플검토자,2026-11-05,,,,,,
+krel-013,has_condition,graph-SNP-M-102:RC-PZ01,cond-001,manual,confirmed,confirmed,,,,,,샘플작성자,샘플검토자,2026-11-05,,,,,,
+krel-014,has_condition,graph-SNP-M-102:RC-PZ01,cond-002,manual,confirmed,confirmed,,,,,,샘플작성자,샘플검토자,2026-11-05,,,,,,
+krel-015,analyzed_in,graph-SNP-M-102:RC-PZ01,case-001,manual,hypothesis,confirmed,,,,,,샘플작성자,샘플검토자,2026-11-05,가설 관계(계산 제외 사례),,,,,
+krel-m-8d0c926c,mentions,chunk-001,graph-SNP-M-102:RC-PV101,exact_norm,confirmed,confirmed,MAT-KG-001,1,,,,샘플작성자,샘플검토자,2026-11-05,정확 일치 확인(샘플),chunk-001|7996e491ee23f59528088f85cd5fd545ac3c976c6a2fa10a36aeb0a5c79f4bba|MAT-KG-001|1|47|55|graph-SNP-M-102|v-7ed95b0c74f1|graph-SNP-M-102:RC-PV101|n12,chunk-001,7996e491ee23f59528088f85cd5fd545ac3c976c6a2fa10a36aeb0a5c79f4bba,v-7ed95b0c74f1,n12
+krel-m-7c52c0fd,mentions,chunk-002,graph-SNP-M-102:RC-PT110,exact_norm,confirmed,confirmed,MAT-KG-001,1,,,,샘플작성자,샘플검토자,2026-11-05,정확 일치 확인(샘플),chunk-002|04444eab7bc91ef261f59020b3cc50d3faa747e6f46bbb72af90114603ddd72e|MAT-KG-001|1|32|40|graph-SNP-M-102|v-7ed95b0c74f1|graph-SNP-M-102:RC-PT110|n16,chunk-002,04444eab7bc91ef261f59020b3cc50d3faa747e6f46bbb72af90114603ddd72e,v-7ed95b0c74f1,n16
+krel-020,depends_on,graph-SNP-M-102:RC-PV101,graph-SNP-M-102:RC-PIC110,manual,confirmed,confirmed,,,,,,샘플작성자,샘플검토자,2026-11-05,근거 열 빈 의존(차단 사례),,,,,

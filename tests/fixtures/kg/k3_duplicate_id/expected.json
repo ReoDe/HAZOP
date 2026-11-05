@@ -1,0 +1,11 @@
+{
+  "description": "정상 샘플에 같은 ID(req-001) 노드를 한 번 더 추가",
+  "status": "blocked",
+  "blockers": [
+    {
+      "rule": "K3",
+      "check": "duplicate_id",
+      "target": "req-001"
+    }
+  ]
+}

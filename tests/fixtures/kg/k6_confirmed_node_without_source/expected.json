@@ -1,0 +1,11 @@
+{
+  "description": "정상 샘플에서 출처 없는 case-001을 confirmed로 바꿈",
+  "status": "blocked",
+  "blockers": [
+    {
+      "rule": "K6",
+      "check": "confirmed_without_source",
+      "target": "case-001"
+    }
+  ]
+}
