@@ -3,3 +3,4 @@ hazop/kg/vendor/** -text
 # Knowledge CSV inputs are hashed into kg_version; keep bytes identical across checkouts.
 데이터/지식/** -text
 tests/fixtures/kg/** -text
+tests/fixtures/kg_algo/** -text
