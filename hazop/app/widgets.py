@@ -1,0 +1,182 @@
+"""공통 위젯: 상태 칩, 경고·오류 띠, 빈 화면 안내, 작업 스레드 실행기, HTML 표시 도우미."""
+
+import datetime
+import html
+import os
+import traceback
+
+from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
+from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout
+
+from hazop import paths
+from hazop.app import tokens
+
+
+def log_path():
+    """개발자용 오류 기록(traceback) 위치: <작업 루트>/출력/로그/app.log. 화면에는 요약만 보여 준다."""
+    return paths.output_root("로그", "app.log")
+
+
+def write_log(title, detail):
+    try:
+        os.makedirs(os.path.dirname(log_path()), exist_ok=True)
+        with open(log_path(), "a", encoding="utf-8") as fh:
+            fh.write("[%s] %s\n%s\n" % (datetime.datetime.now().isoformat(timespec="seconds"), title, detail))
+    except OSError:  # 기록 실패는 화면 동작을 막지 않는다
+        pass
+
+
+def kst_text(utc_iso):
+    """UTC ISO 8601('...Z') → 한국 표준시 표시."""
+    t = datetime.datetime.strptime(utc_iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+    return t.astimezone(datetime.timezone(datetime.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M KST")
+
+
+def plain_label(text="", name=None, wrap=True):
+    """사람 입력·외부 문자열을 쓰는 라벨: 서식 해석 없이 글자 그대로(Qt.PlainText)."""
+    lab = QLabel(text)
+    lab.setTextFormat(Qt.PlainText)
+    lab.setWordWrap(wrap)
+    if name:
+        lab.setObjectName(name)
+    return lab
+
+
+def esc(v):
+    return html.escape("" if v is None else str(v))
+
+
+def badge(text, kind="plain"):
+    """QTextBrowser용 배지. ai: 점선 테두리(속 빈 칩, '제안'), human: 채운 칩(확정), warn: 호박, err: 빨강."""
+    c = tokens.COLORS
+    style = {
+        "ai": "border:1px dashed %s; color:%s; background:%s;" % (c["ai-ink"], c["ai-ink"], c["ai-hatch-a"]),
+        "human": "background:%s; color:#ffffff;" % c["human-line"],
+        "warn": "background:%s; color:%s;" % (c["warn-bg"], c["warn-ink"]),
+        "err": "background:%s; color:%s;" % (c["err-bg"], c["err-ink"]),
+        "ui": "background:%s; color:%s;" % (c["ui-weak"], c["ui-ink"]),
+        "plain": "background:%s; color:%s;" % (c["bg"], c["ink-2"]),
+    }[kind]
+    return '<span style="%s font-size:11px; padding:1px 6px; border-radius:8px;">&nbsp;%s&nbsp;</span>' % (style, esc(text))
+
+
+def risk_chip(risk, name=None, proposal=True):
+    """위험도 칩: 숫자와 등급명을 함께. 제안(AI)은 속 빈 칩, 확정은 채운 칩. 색은 〈표9〉 3단만."""
+    if not isinstance(risk, int):
+        return badge("미확정", "warn")
+    bg, ink, line = tokens.risk_colors(risk)
+    label = "%s %d%s" % ("제안" if proposal else "확정", risk, " %s" % name if name else "")
+    if proposal:
+        style = "border:1px dashed %s; color:%s; background:#ffffff;" % (line, line if line != "#9ca3af" else ink)
+    else:
+        style = "background:%s; color:%s; border:1px solid %s;" % (bg, ink, line)
+    return '<span style="%s font-size:11px; padding:1px 6px; border-radius:8px;">&nbsp;%s&nbsp;</span>' % (style, esc(label))
+
+
+def box(inner, kind="ai"):
+    """AI 산출 = 옅은 회색 바탕 + 점선(빗금 대체), 사람 확정 = 흰 바탕 + 진한 실선."""
+    c = tokens.COLORS
+    if kind == "ai":
+        st = "background-color:%s; border:1px dashed %s;" % (c["ai-hatch-a"], c["ai-ink"])
+    else:
+        st = "background-color:#ffffff; border:2px solid %s;" % c["human-line"]
+    return '<table width="100%%" cellpadding="8" style="%s margin:4px 0;"><tr><td>%s</td></tr></table>' % (st, inner)
+
+
+class Chip(QLabel):
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.setObjectName("chip")
+
+    def set_state(self, text, state=""):
+        self.setText(text)
+        self.setProperty("state", state)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+
+class Banner(QFrame):
+    """경고(warn)·오류(err) 띠. 메시지가 없으면 숨는다."""
+
+    def __init__(self, kind="warn", parent=None):
+        super().__init__(parent)
+        self.setObjectName("banner_" + kind)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(10, 6, 10, 6)
+        self.label = QLabel()
+        self.label.setWordWrap(True)
+        self.label.setTextFormat(Qt.RichText)
+        lay.addWidget(self.label)
+        self.messages = []
+        self.hide()
+
+    def set_messages(self, title, messages=()):
+        self.messages = list(messages)
+        if not title and not self.messages:
+            self.hide()
+            return
+        body = "<b>%s</b>" % esc(title) if title else ""
+        if self.messages:
+            body += "<ul style='margin:2px 0 0 -20px'>%s</ul>" % "".join("<li>%s</li>" % esc(m) for m in self.messages)
+        self.label.setText(body)
+        self.show()
+
+
+def empty_label(text):
+    lab = QLabel(text)
+    lab.setObjectName("muted")
+    lab.setWordWrap(True)
+    lab.setAlignment(Qt.AlignCenter)
+    return lab
+
+
+class _TaskSignals(QObject):
+    done = Signal(object)
+    failed = Signal(str)
+
+
+class _Task(QRunnable):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+        self.signals = _TaskSignals()
+
+    def run(self):
+        try:
+            result = self.fn()
+        except Exception as exc:  # 작업 실패는 화면에 사유로 보여 준다(성공으로 표시하지 않음)
+            write_log("작업 실패", traceback.format_exc())  # traceback은 로그 파일에만
+            self.signals.failed.emit("%s (자세한 내용: %s)" % (exc, log_path()))
+        else:
+            self.signals.done.emit(result)
+
+
+class TaskRunner(QObject):
+    """긴 작업을 QThreadPool에서 실행해 창이 멈추지 않게 한다. started/finished로 상태줄에 진행을 표시한다."""
+
+    started = Signal(str)
+    finished = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.pool = QThreadPool(self)
+        self.pool.setMaxThreadCount(1)  # 단일 사용자·순차 처리
+        self._live = set()
+
+    def run(self, label, fn, on_done, on_error):
+        task = _Task(fn)
+        self._live.add(task)
+
+        def finish(handler, value):
+            self._live.discard(task)
+            self.finished.emit(label)
+            handler(value)
+
+        task.signals.done.connect(lambda r: finish(on_done, r))
+        task.signals.failed.connect(lambda e: finish(on_error, e))
+        task.setAutoDelete(False)
+        self.started.emit(label)
+        self.pool.start(task)
+
+    def wait(self, msecs=-1):
+        return self.pool.waitForDone(msecs)
