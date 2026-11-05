@@ -122,3 +122,36 @@ def ai_runs_html(doc, cand):
         h.append(box("%s 거부된 AI 가설: %s<br>사유: %s" % (badge("[AI] 거부", "err"), esc(rej.get("cause") or rej.get("scenario")),
                                                        esc(rej.get("reason") or rej.get("rejected_reason"))), "ai"))
     return "".join(h)
+
+
+def related_knowledge_html(rk, tags, can_open=True):
+    """⑤ '관련 지식 (참고)' 목록(그래프활용 §6.4.5). 분석 당시 근거 묶음 기준. can_open이 False면 '③에서 보기'를 끈다."""
+    h = []
+    if rk.get("truncated_text"):
+        h.append("<p>%s</p>" % badge(rk["truncated_text"], "warn"))
+    if not rk["items"]:
+        h.append("<p style='color:#6b7280'>이 시나리오에 걸린 관련 지식 항목 없음('해당 없음' 아님)</p>")
+    for r in rk["items"]:
+        it = r["item"]
+        chips = " ".join(badge(t, k) for t, k in r["badges"])
+        if it.get("node_type") == "requirement":
+            body = esc(it.get("text") or it.get("name") or data.unknown_text(None))
+        else:
+            body = " · ".join("%s %s" % (lbl, esc(data.unknown_text(it.get(f)))) for f, lbl in (
+                ("item", "항목"), ("value", "값"), ("unit", "단위"), ("pressure_basis", "압력 기준"),
+                ("operating_mode", "운전 모드")))
+        ents = []
+        for e in r["entities"] or [a["entity_id"] for a in it.get("applies_to") or []]:
+            link = ("<a href='kg:%s'>③에서 보기</a>" % esc(e)) if can_open else \
+                "<span style='color:#9ca3af'>③에서 보기(현재 지식그래프 읽기 불가)</span>"
+            ents.append("%s %s" % (esc(tags.get(e) or e), link))
+        src = it.get("source") or {}
+        h.append("<p>%s <small>%s</small><br>%s%s<br><small>적용 설비: %s<br>출처: %s · 쪽 %s · %s</small></p>" % (
+            chips, esc(it.get("evidence_id")), body, " <b>(값 선택 유보)</b>" if r["conflict"] else "",
+            ", ".join(ents) or "미확인", esc(src.get("document_id") or "미확인"), esc(src.get("page") or "미확인"),
+            esc(src.get("locator") or "미확인")))
+    if rk["nodes"]:
+        h.append("<p><b>관련 설비 지식 상태</b> <small>(자료 요청 메모 후보 — 메모는 사람이 만듦)</small><br>%s</p>" % "<br>".join(
+            "%s: %s" % (esc(tags.get(n["entity_id"]) or n["entity_id"]), ", ".join(esc(x) for x in n["labels"]))
+            for n in rk["nodes"]))
+    return "".join(h)

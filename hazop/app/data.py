@@ -11,6 +11,7 @@ import json
 import os
 
 from hazop import paths
+from hazop.kg.context import omission_texts
 from hazop.register import registry
 from hazop.viewer import build as viewer_build
 
@@ -350,6 +351,73 @@ def highlight_spec(scenario, local_map, run_graph):
             "safeguards": [{"local_id": local_map[g["node_id"]], "counted": bool(g.get("counts_as_found"))}
                            for g in sgs],
             "request_id": scenario["scenario_id"]}
+
+
+KG_TYPE_LABELS = {"requirement": "요건", "setpoint": "설정치", "condition": "운전조건"}
+KG_CONFLICT_REASONS = {"truncated": "상한", "not_in_v4": "분석 범위 제외", "out_of_scope": "범위 밖"}
+KG_TRUNC_REASONS = {"max_items": "항목 수 상한", "max_bytes": "크기 상한", "per_item_limits": "항목별 연결 상한",
+                    "max_list": "목록 상한"}
+
+
+def related_knowledge(doc, scenario):
+    """⑤ 시나리오별 관련 지식(그래프활용 §6.4.5). 실행의 근거 묶음 knowledge_context에서만 읽는다(현재 지식그래프 아님).
+    지식그래프 없이 분석한 실행이면 None.
+    대상 항목: applies_to.entity_id가 시나리오 관련 노드(원인·전제 설비, graph_evidence·ai_interpretation 노드, 보호수단)인 항목과
+    인용 배지가 붙는 항목. 배지: 시나리오 인용(ai_interpretation·graph_evidence의 evidence_ids), 사실 인용(후보 ai_facts)."""
+    kc = ((doc.get("evidence_bundles") or {}).get(scenario["candidate_id"]) or {}).get("knowledge_context")
+    if kc is None:
+        return None
+    ge, ai = scenario.get("graph_evidence") or {}, scenario.get("ai_interpretation") or {}
+    sgs = (scenario.get("safeguards") or []) + (ai.get("safeguards") or [])
+    nodes = list(dict.fromkeys((scenario.get("cause_equipment") or []) + (scenario.get("assumed_equipment") or [])
+                               + (ge.get("node_ids") or []) + (ai.get("node_ids") or [])
+                               + [g.get("node_id") for g in sgs if g.get("node_id")]))
+    scen_cited = set((ai.get("evidence_ids") or []) + (ge.get("evidence_ids") or []))
+    cand = next((c for c in doc.get("candidates") or [] if c["candidate_id"] == scenario["candidate_id"]), {})
+    fact_cited = {e for f in (cand.get("analysis") or {}).get("ai_facts") or [] for e in f.get("evidence_ids") or []}
+    items = []
+    for it in kc.get("items") or []:
+        hit = [a["entity_id"] for a in it.get("applies_to") or [] if a["entity_id"] in nodes]
+        sc, fc = it["evidence_id"] in scen_cited, it["evidence_id"] in fact_cited
+        if not (hit or sc or fc):
+            continue
+        badges = [(KG_TYPE_LABELS.get(it.get("node_type"), it.get("node_type")), "plain")]
+        if it.get("unknown_fields"):
+            badges.append(("미확인", "warn"))
+        if it.get("conflict_with"):
+            badges.append(("충돌", "err"))
+        elif it.get("conflict_outside"):
+            reasons = sorted({KG_CONFLICT_REASONS.get(c["reason"], c["reason"]) for c in it["conflict_outside"]})
+            badges += [("충돌(상대 미포함: %s)" % r, "err") for r in reasons]
+        if sc:
+            badges.append(("시나리오 인용", "ui"))
+        if fc:
+            badges.append(("사실 인용", "ui"))
+        items.append({"item": it, "entities": hit, "badges": badges, "scenario_cited": sc, "fact_cited": fc,
+                      "conflict": bool(it.get("conflict_with") or it.get("conflict_outside"))})
+    trunc = kc.get("truncated") or {}
+    affected = set(trunc.get("affected_entity_ids") or [])
+    excluded = {}
+    for x in (kc.get("excluded") or {}).get("not_in_v4") or []:
+        excluded[x["entity_id"]] = excluded.get(x["entity_id"], 0) + 1
+    classes = []
+    for n in nodes:
+        labels = []
+        if n in (kc.get("nodes_without_knowledge") or []):
+            labels.append("지식 입력 없음")
+        if n in (kc.get("nodes_with_gap") or []):
+            labels.append("적용 근거 공백 — 문서 언급만 있음")
+        if excluded.get(n):
+            labels.append("분석 범위 제외 %d건(가설·미확인 등)" % excluded[n])
+        if n in affected:
+            labels.append("상한으로 생략")
+        if labels:
+            classes.append({"entity_id": n, "labels": labels})
+    trunc_text = None
+    if trunc:  # 생략 사유마다 다른 문구(항목 생략 / 연결만 생략 / 분류 목록만 생략)
+        trunc_text = "지식 맥락: " + "; ".join(t.replace("포함(", "분석에 사용(", 1) if t.startswith("항목 %d개 중" % trunc["total"])
+                                             else t for t in omission_texts(trunc, KG_TRUNC_REASONS))
+    return {"kg_id": kc.get("kg_id"), "items": items, "nodes": classes, "truncated_text": trunc_text}
 
 
 def unknown_text(value, reason=None):

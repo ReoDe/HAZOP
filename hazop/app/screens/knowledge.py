@@ -330,6 +330,33 @@ class KnowledgeScreen(QWidget):
         self.recheck_band.set_messages("재확인 필요 %d건 — 계산에서 빠짐. 후보 CSV에서 다시 판단한 뒤 반영하세요" % len(rk)
                                        if rk else None, ["%s: %s" % (l["id"], l.get("recheck")) for l in rk])
 
+    def open_node(self, kg_id, graph_id, entity_id, kg_version):
+        """⑤ '③에서 보기' 진입(그래프활용 §6.4.5). kg_id 지식그래프와 실행 도면을 고른 뒤, ③이 연 버전(현재 또는
+        이전 버전)이 분석 당시 kg_version과 같을 때만 기존 selectNode를 보낸다(loadKnowledge 뒤, 브리지 전송 순서).
+        다르면 이동만 하고 상태줄에 안내한다(W7-9). 반환: 노드를 자동 선택했으면 True."""
+        i = self.kg_combo.findText(kg_id)
+        if i < 0:
+            self._status("지식그래프 %s 없음 — 노드를 자동 선택하지 않음" % kg_id)
+            return False
+        if i != self.kg_combo.currentIndex():
+            self.kg_combo.setCurrentIndex(i)  # _load
+        j = self.graph_combo.findData(graph_id)
+        if j >= 0 and j != self.graph_combo.currentIndex():
+            self.graph_combo.setCurrentIndex(j)  # _load(keep_kg)
+        if self.kg and self.kg.get("kg_version") != kg_version and self.prev and self.prev[0] == kg_version \
+                and not self.showing_prev:
+            self._toggle_prev()
+        if not self.kg or self.kg.get("kg_version") != kg_version:
+            self._status("분석 당시와 다른 버전 — 노드를 자동 선택하지 않음(자세한 내용은 툴팁)",
+                         "분석 당시 지식그래프 %s, ③ 표시 %s" % (kg_version, (self.kg or {}).get("kg_version")))
+            return False
+        if self.graph_combo.currentData() != graph_id or entity_id not in self._nodes():
+            self._status("이 도면에서 노드를 찾을 수 없음: %s" % entity_id)
+            return False
+        self.app.webview.bridge.send("selectNode", id=entity_id)
+        self.render_node(entity_id)
+        return True
+
     def _toggle_prev(self):
         self.showing_prev = not self.showing_prev
         self.kg = None

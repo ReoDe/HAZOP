@@ -5,6 +5,32 @@ import os
 from hazop import paths
 from hazop import review as rv
 from hazop.app import data
+from hazop.kg import build as kg_build
+
+KG_UNUSED = "이 실행은 지식그래프 없이 분석됨"
+KG_CHANGED = "분석 당시 지식그래프 %s, 현재 %s. 관련 지식은 분석 당시 기준. 현재 내용을 반영하려면 재분석 필요"
+KG_UNREADABLE = "현재 지식그래프를 읽을 수 없음. 분석 당시 기준만 표시"
+
+
+def kg_state(doc, region):
+    """⑤ 지식그래프 버전 상태(그래프활용 §6.4.3): unused / same / changed / unreadable.
+    기록 값은 analysis_run.versions.knowledge_graph, 현재 값은 실행 사본 구간 JSON의 inputs.knowledge_graph 폴더의
+    current.json(build.load_outputs_raw와 같은 검사). 관련 지식 내용은 항상 실행의 근거 묶음에서만 읽는다."""
+    rec = ((doc.get("analysis_run") or {}).get("versions") or {}).get("knowledge_graph")
+    if not rec:
+        return {"state": "unused", "text": KG_UNUSED, "kg_id": None, "recorded": None, "current": None}
+    out = {"kg_id": rec.get("id"), "recorded": rec.get("version"), "current": None}
+    ref = ((region or {}).get("inputs") or {}).get("knowledge_graph")
+    try:
+        if not isinstance(ref, str) or not ref:
+            raise ValueError("실행 구간 사본에 knowledge_graph 경로 없음")
+        root = ref if os.path.isabs(ref) else paths.work_path(ref)
+        out["current"] = kg_build.load_outputs_raw(root)[4]["kg_version"]
+    except (OSError, ValueError) as exc:
+        return dict(out, state="unreadable", text=KG_UNREADABLE, error=str(exc))
+    if out["current"] == out["recorded"]:
+        return dict(out, state="same", text="지식 %s" % out["recorded"])
+    return dict(out, state="changed", text=KG_CHANGED % (out["recorded"], out["current"]))
 
 
 class RunContext:
@@ -22,6 +48,7 @@ class RunContext:
         region = data.read_json(run_region) if os.path.isfile(run_region) else (
             data.read_json(self.region_path) if self.region_path else {})
         self.drawing_name = data.extraction_name_for_graph_file((region.get("graph_ref") or {}).get("graph_file"))
+        self.kg = kg_state(self.doc, region)
         self.viewer = None
         self.viewer_error = None
         if self.drawing_name and os.path.isfile(os.path.join(paths.output_root("추출"), self.drawing_name,

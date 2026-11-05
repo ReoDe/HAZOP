@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComb
 from hazop import paths
 from hazop import review as rv
 from hazop.analysis.risk import FREQUENCIES, SEVERITIES
-from hazop.app import data, render
+from hazop.app import data, render, runctx
 from hazop.app.screens.analysis import fill_candidate_table, make_candidate_table
 from hazop.app.widgets import Banner, Chip, badge, empty_label, esc, kst_text, plain_label, risk_chip
 from hazop.export import SCOPES, ExportError, export_worksheet
@@ -152,6 +152,39 @@ class PriorImport(QWidget):
             self.btn.setEnabled(True)
 
 
+class RelatedKnowledge(QWidget):
+    """'관련 지식 (참고)' 묶음(그래프활용 §6.4.5): 기본 접힘. 실행의 근거 묶음 knowledge_context만 보여 준다.
+    '③에서 보기'(kg:<entity_id> 링크)는 ReviewScreen.open_in_knowledge로 간다."""
+
+    def __init__(self, screen, scenario):
+        super().__init__()
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        ctx = screen.ctx
+        self.rk = data.related_knowledge(ctx.doc, scenario)
+        self.toggle = self.view = None
+        if self.rk is None:
+            lay.addWidget(plain_label(runctx.KG_UNUSED, "muted"))
+            return
+        self.toggle = QPushButton()
+        self.toggle.setCheckable(True)
+        self.toggle.toggled.connect(self._toggled)
+        lay.addWidget(self.toggle, 0, Qt.AlignLeft)
+        self.view = QTextBrowser()
+        self.view.setOpenLinks(False)
+        self.view.setHtml(render.related_knowledge_html(self.rk, ctx.tags, ctx.kg["state"] != "unreadable"))
+        self.view.setMinimumHeight(120)
+        self.view.setMaximumHeight(240)
+        self.view.anchorClicked.connect(lambda url: screen.open_in_knowledge(url.toString()[len("kg:"):])
+                                        if url.toString().startswith("kg:") else None)
+        lay.addWidget(self.view)
+        self._toggled(False)
+
+    def _toggled(self, on):
+        self.view.setVisible(on)
+        self.toggle.setText("관련 지식 (참고) %d건 %s" % (len(self.rk["items"]), "▾ 접기" if on else "▸ 펼치기"))
+
+
 class ScenarioForm(QGroupBox):
     """시나리오 하나의 결정 폼: 원안 ↔ 검토값, 결정·사유, 수정값, 위험도 확정."""
 
@@ -179,6 +212,8 @@ class ScenarioForm(QGroupBox):
         lt.setObjectName("section")
         left.addWidget(lt)
         left.addWidget(orig)
+        self.knowledge = RelatedKnowledge(screen, scenario)
+        left.addWidget(self.knowledge)
         cols.addLayout(left)
         right = QVBoxLayout()
         rt = QLabel("검토값")
@@ -304,6 +339,13 @@ class ScenarioForm(QGroupBox):
         self._decision_changed()
         self._update_sources()
 
+    def set_editable(self, on):
+        """검토 입력(결정·사유·수정·위험도·이전 검토 가져오기)만 켜고 끈다. 원안·관련 지식은 항상 열람 가능."""
+        self.editable = on
+        for w in (self.radios, self.reason, self.prior):
+            w.setEnabled(on)
+        self._decision_changed()  # 수정·위험도 상자는 결정 값과 편집 가능 여부를 함께 따름
+
     def _sg_ids(self):
         return [self.sg_list.item(i).data(Qt.UserRole).get("node_id") for i in range(self.sg_list.count())]
 
@@ -346,8 +388,9 @@ class ScenarioForm(QGroupBox):
 
     def _decision_changed(self):
         d = self.radios.value()
-        self.rev_box.setEnabled(d == "modify")
-        self.risk_box.setEnabled(d in ("accept", "modify"))
+        on = getattr(self, "editable", True)
+        self.rev_box.setEnabled(on and d == "modify")
+        self.risk_box.setEnabled(on and d in ("accept", "modify"))
         if d == "defer":
             self.risk_box.setTitle("위험도 — 보류: 미확정(AI 제안은 참고만)")
         else:
@@ -690,6 +733,9 @@ class ReviewScreen(QWidget):
         bar.addWidget(self.run_label)
         self.chip_progress = Chip()
         bar.addWidget(self.chip_progress)
+        self.chip_kg = Chip()  # 지식그래프 버전이 분석 당시와 같을 때 "지식 v-xxxx"(그래프활용 §6.4.3)
+        self.chip_kg.hide()
+        bar.addWidget(self.chip_kg)
         bar.addStretch(1)
         bar.addWidget(QLabel("검토자"))
         self.reviewer_edit = QLineEdit()
@@ -705,8 +751,10 @@ class ReviewScreen(QWidget):
         lay.addLayout(bar)
         self.banner_lock = Banner("err")
         self.banner_info = Banner("warn")
+        self.banner_kg = Banner("warn")  # 지식그래프 바뀜·읽기 불가(그래프활용 §6.4.3)
         lay.addWidget(self.banner_lock)
         lay.addWidget(self.banner_info)
+        lay.addWidget(self.banner_kg)
 
         self.body = QStackedWidget()
         self.empty = empty_label("④에서 분석 실행을 열면 검토할 수 있습니다.")
@@ -805,6 +853,9 @@ class ReviewScreen(QWidget):
             return
         self.body.setCurrentIndex(1)
         self.run_label.setText("실행 %s (읽기 전용)" % ctx.doc["analysis_run_id"])
+        self.chip_kg.set_state(ctx.kg["text"] if ctx.kg["state"] == "same" else "")
+        self.chip_kg.setVisible(ctx.kg["state"] == "same")
+        self.banner_kg.set_messages(ctx.kg["text"] if ctx.kg["state"] in ("changed", "unreadable") else None)
         if ctx.html():
             self.canvas_stack.setCurrentIndex(1)
             self.app.attach_webview(self.canvas_host)
@@ -814,6 +865,16 @@ class ReviewScreen(QWidget):
             self.canvas_stack.setCurrentIndex(0)
             self.canvas_note.setText(ctx.viewer_error or "")
         self.refresh_table()
+
+    def open_in_knowledge(self, entity_id):
+        """'③에서 보기': ③으로 가서 실행의 kg_id·도면을 고르고 기존 selectNode로 노드를 고른다(새 브리지 메시지 없음).
+        ③이 연 버전이 기록 kg_version과 다르면 이동만 하고 자동 선택하지 않는다(W7-9). 반환: 자동 선택 여부."""
+        st = self.ctx.kg if self.ctx else {"state": "unused"}
+        if st["state"] in ("unused", "unreadable"):
+            return False
+        self.app.go(4)
+        return self.app.screens[4].open_node(st["kg_id"], self.ctx.doc["graph_ref"]["graph_id"], entity_id,
+                                             st["recorded"])
 
     def excel_block_reasons(self):
         """Excel 출력을 막는 사유: blocked 결과, analysis.json 삭제·변경, 검토 기록의 analysis_sha256 불일치."""
@@ -932,7 +993,13 @@ class ReviewScreen(QWidget):
         vl.addStretch(1)
         self.summary_reason.setText((rec or {}).get("reason") or "")
         self._prior_changed()
-        holder.setEnabled(ed["editable"])
+        # 잠긴 실행: 편집 입력만 끈다. 원안·관련 지식(펼치기·③에서 보기)은 열람용이라 켜 둔다
+        for i in range(vl.count()):
+            w = vl.itemAt(i).widget()
+            if isinstance(w, ScenarioForm):
+                w.set_editable(ed["editable"])
+            elif w is not None:
+                w.setEnabled(ed["editable"])
         self.btn_save.setEnabled(ed["editable"])
         if self.items.count():
             self.items.setCurrentRow(0)
