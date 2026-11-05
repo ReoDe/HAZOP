@@ -215,6 +215,200 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual(cd.form_problems(rows), [("B", "⑤", "작업 영역", 700, 606)])
 
 
+class ViewerColorTest(unittest.TestCase):
+    """독립 뷰어 템플릿과 앱 토큰(web_css)의 색 비교(W4, D5). Qt 없이 문자열만 본다."""
+    APP = (":root { --ui: #2563eb; --card: #ffffff; --valve: #0f766e; --selected: #2563eb; --hl-dim: 0.16; }\n"
+           ".selected.sym, .selected.tagbox { stroke: var(--ui) !important; fill: rgba(37,99,235,.12); }")
+
+    def tpl(self, root="--ui: #2563eb; --card: #fff; --valve: #0f766e; --selected: #2563eb;", body="", html=""):
+        data = " ".join("--%s: #000000;" % k for k in cd.VIEWER_DATA_VARS if k != "valve")
+        app = self.APP.replace(":root { ", ":root { %s " % data)
+        return ("<style>:root { %s %s }\n.selected.sym, .selected.tagbox { stroke: var(--selected) !important; "
+                "fill: rgba(37,99,235,.12); }\n%s</style><b style=\"color:var(--ui)\"></b>%s" % (root, data, body, html)), app
+
+    def bad(self, **kw):
+        tpl, app = self.tpl(**kw)
+        return cd.viewer_color_problems(tpl, app)
+
+    def test_real_template_matches_app_tokens(self):
+        from hazop.app import tokens
+        from hazop.viewer import build
+        with open(build.TEMPLATE, encoding="utf-8") as fh:
+            tpl = fh.read()
+        self.assertEqual(cd.viewer_color_problems(tpl, tokens.web_css()), [])
+        root = cd.css_root_vars(tpl.split("<style>", 1)[1].split("</style>", 1)[0])
+        self.assertEqual(root["valve"], tokens.COLORS["valve"])
+        self.assertEqual(root["selected"], tokens.COLORS["ui"])
+
+    def test_pre_w4_template_fails(self):
+        """W4 이전 템플릿(2178ddf, a0df5ef와 같음)은 실패한다. git이 없으면 건너뛴다."""
+        import subprocess
+        from hazop.app import tokens
+        try:
+            old = subprocess.run(["git", "show", "2178ddf:hazop/viewer/template.html"],
+                                 cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                 capture_output=True, check=True).stdout.decode("utf-8")
+        except (OSError, subprocess.CalledProcessError):
+            self.skipTest("git 또는 커밋 2178ddf 없음")
+        bad = cd.viewer_color_problems(old, tokens.web_css())
+        self.assertEqual(len(bad), 10, bad)
+        for k in ("--valve:", "--selected:", "클릭 선택 채움"):
+            self.assertTrue(any(b.startswith(k) for b in bad), (k, bad))
+
+    def test_clean_names_in_html_js_pass(self):
+        html = ('<script>if (p.getAttribute("fill") !== "none") {} var color = "var(--" + k + ")";'
+                ' el("path", { fill: "none", style: "stroke:" + color });</script><rect fill="transparent"></rect>')
+        self.assertEqual(self.bad(html=html), [])
+
+    def test_clean_synthetic_passes(self):
+        self.assertEqual(self.bad(body=".a { color: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,.1); }"), [])
+
+    def test_comments_and_whitespace_syntax_pass(self):
+        body = ("/* :root { --valve: red; } #123456 rgb(1,2,3) */\n"
+                ".a { color: var( --card ); border-color: var( --undefined-primary , var( --ui ) ); }\n"
+                ".b { fill: rgba( 37 99 235 / .12 ); stroke: var(--ui,var(--card)); }")
+        bad = self.bad(body=body)
+        self.assertEqual(bad, ["var(--undefined-primary): 템플릿 :root에 정의 없음"])  # 앞 변수는 정의돼야 함
+        self.assertEqual(self.bad(body=body.replace("--undefined-primary", "--card")), [])
+
+    def test_value_mismatch_and_unknown_var(self):
+        bad = self.bad(root="--ui: #2563eb; --card: #fff; --valve: #2563eb; --selected: #dc2626; --extra: #123456;")
+        for k in ("--valve:", "--selected:", "--extra:"):
+            self.assertTrue(any(b.startswith(k) for b in bad), (k, bad))
+
+    def test_reproductions_fail(self):
+        """재검토에서 지적한 재현 입력이 모두 실패한다."""
+        cases = {
+            "뒤쪽 :root 재선언": dict(body=":root { --valve: #2563eb; }"),
+            "다른 규칙의 변수 재선언": dict(body="html { --valve: #2563eb; }"),
+            "인라인 변수 재선언": dict(html='<i style="--valve:#2563eb"></i>'),
+            "정의 없는 var(공백)": dict(body=".a { color: var( --does-not-exist ); }"),
+            "정의 없는 var(대체값 안)": dict(body=".a { color: var(--card, var(--does-not-exist)); }"),
+            "8자리 hex": dict(body=".a { color: #123456ff; }"),
+            "4자리 hex": dict(body=".a { color: #fffa; }"),
+            "허용 목록 밖 위치의 #b45309": dict(body=".a { color: #b45309; }"),
+            "허용 규칙의 다른 속성": dict(body="aside .warn { color: #b45309; background: #b45309; }"),
+            "인라인 style hex": dict(html='<i style="color:#ff0000"></i>'),
+            "JS 문자열 hex": dict(html='<script>el.setAttribute("style", "fill:#00ff00");</script>'),
+            "이름 색 red": dict(body=".a { color: red; }"),
+            "인라인 이름 색": dict(html='<i style="background: white"></i>'),
+            "var 대체값의 이름 색": dict(body=".a { stroke: var(--card, red); }"),
+            "rgb()": dict(body=".a { color: rgb(1, 2, 3); }"),
+            "rgb() 공백 없음": dict(body=".a { color: rgb(1,2,3); }"),
+            "SVG 속성 이름 색": dict(html='<rect fill="red"></rect>'),
+            "JS 대입 이름 색": dict(html='<script>el.style.stroke = "red";</script>'),
+            "JS 객체 이름 색": dict(html='<script>el("rect", { fill: "red" });</script>'),
+            "JS setAttribute 이름 색": dict(html='<script>el.setAttribute("stroke", "red");</script>'),
+            "토큰 색이라도 불투명 rgb()": dict(body=".a { color: rgb(37, 99, 235); }"),
+            "공백형 rgba": dict(body=".a { fill: rgba(1 2 3 / .5); }"),
+            "hsl()": dict(body=".a { color: hsl(0 0% 50%); }"),
+        }
+        for name, kw in cases.items():
+            with self.subTest(name):
+                self.assertNotEqual(self.bad(**kw), [], name)
+        self.assertTrue(any(b.startswith(":root 규칙 2개") for b in self.bad(**cases["뒤쪽 :root 재선언"])))
+
+    def test_allow_list_is_rule_bound(self):
+        self.assertEqual(self.bad(body="aside .warn { color: #b45309; } #pathq .res .bad { color: #B45309; }"), [])
+        self.assertEqual(self.bad(body=".chip.passed::before { content: 'x'; color: #16a34a; }"), [])
+        self.assertTrue(all(len(k) == 3 for k in cd.VIEWER_COLOR_ALLOW))
+
+    def test_selected_fill_and_missing_data_var(self):
+        tpl, app = self.tpl()
+        bad = cd.viewer_color_problems(tpl.replace("fill: rgba(37,99,235,.12)", "fill: rgba(220,38,38,.12)"), app)
+        self.assertTrue(any(b.startswith("클릭 선택 채움") for b in bad), bad)
+        self.assertIn("var(--instrument): 템플릿 :root에 정의 없음",
+                      cd.viewer_color_problems(tpl.replace("--instrument: #000000;", ""), app))
+
+    def test_selected_fill_redeclared_fails(self):
+        """재작업 2회차: 선택 채움을 뒤 규칙·같은 규칙 중복·더 구체적인 선택자로 덮으면 실패한다."""
+        cases = {
+            "뒤 규칙 재선언": ".selected.sym, .selected.tagbox { fill: rgba(220,38,38,.12); }",
+            "일부 선택자 재선언": ".selected.sym { fill: rgba(0,0,0,.2); }",
+            "더 구체적인 선택자": "svg .selected.tagbox:hover { fill: rgba(0,0,0,.2); }",
+            # Codex 최종 재검토(총괄 수정): 클래스 순서를 바꾼 선택자, 같은 선택자의 !important 선언 뒤 정상 값
+            "클래스 순서 바꿈": ".sym.selected { fill: rgba(0,0,0,.2) !important; }",
+            "추가 클래스": ".tagbox.big.selected { fill: rgba(0,0,0,.2); }",
+            "같은 선택자 두 번(정상 값)": ".selected.sym, .selected.tagbox { fill: rgba(37,99,235,.12); }",
+        }
+        for name, body in cases.items():
+            with self.subTest(name):
+                self.assertTrue(any(b.startswith("클릭 선택 채움") for b in self.bad(body=body)), name)
+        tpl, app = self.tpl()
+        # 앞 선언을 잘못된 값 + !important로 두고 뒤에 정상 값을 다시 선언해도 실패해야 한다
+        imp = tpl.replace("fill: rgba(37,99,235,.12); }", "fill: rgba(220,38,38,.12) !important; }", 1) \
+            .replace("</style>", ".selected.sym, .selected.tagbox { fill: rgba(37,99,235,.12); }</style>", 1)
+        self.assertTrue(any("fill이 2번 선언됨" in b for b in cd.viewer_color_problems(imp, app)))
+        # fill 없는 같은 선택자 재선언은 허용
+        ok = tpl.replace("</style>", ".selected.sym, .selected.tagbox { stroke-width: 2; }</style>", 1)
+        self.assertEqual(cd.viewer_color_problems(ok, app), [])
+        dup = tpl.replace("fill: rgba(37,99,235,.12); }", "fill: rgba(37,99,235,.12); fill: rgba(220,38,38,.12); }", 1)
+        bad = cd.viewer_color_problems(dup, app)
+        self.assertIn("'.selected.sym, .selected.tagbox' fill: 한 규칙 안에서 중복 선언", bad)
+        self.assertTrue(any(b.startswith("클릭 선택 채움: 템플릿 rgba(220,38,38,.12)") for b in bad), bad)  # 마지막 값 비교
+
+    def test_var_case(self):
+        """--변수 이름은 대소문자를 구분하고, var 함수명은 대소문자를 무시한다."""
+        bad = self.bad(root="--ui: #2563eb; --card: #fff; --valve: #0f766e; --selected: #2563eb; --UI: #2563eb;")
+        self.assertIn("--UI: 앱 토큰에 없음(템플릿 #2563eb)", bad)
+        self.assertIn("var(--Card): 템플릿 :root에 정의 없음", self.bad(body=".a { color: var(--Card); }"))
+        self.assertIn("var(--nope): 템플릿 :root에 정의 없음", self.bad(body=".a { color: VAR( --nope ); }"))
+        self.assertIn("var(--nope): 템플릿 :root에 정의 없음", self.bad(html='<i style="color:Var(--nope)"></i>'))
+        self.assertEqual(self.bad(body=".a { color: VAR(--card); }"), [])
+
+    def test_more_color_props(self):
+        """box-shadow·text-shadow·stop-color·flood-color, JS camelCase 속성의 이름 색도 잡는다."""
+        cases = {
+            "box-shadow": dict(body=".a { box-shadow: 0 1px 2px red; }"),
+            "text-shadow": dict(body=".a { text-shadow: 0 0 1px white; }"),
+            "stop-color": dict(body=".a { stop-color: red; }"),
+            "flood-color": dict(body=".a { flood-color: red; }"),
+            "SVG stop-color 속성": dict(html='<stop stop-color="red"/>'),
+            "JS backgroundColor": dict(html='<script>el.style.backgroundColor = "red";</script>'),
+            "JS borderTopColor": dict(html='<script>el.style.borderTopColor = "red";</script>'),
+            "JS stopColor 객체": dict(html='<script>el("stop", { stopColor: "red" });</script>'),
+            "JS boxShadow": dict(html='<script>el.style.boxShadow = "0 0 2px red";</script>'),
+        }
+        for name, kw in cases.items():
+            with self.subTest(name):
+                self.assertNotEqual(self.bad(**kw), [], name)
+        self.assertEqual(self.bad(body=".a { box-shadow: inset 0 1px 2px rgba(0,0,0,.1); }",
+                                  html='<script>el.style.borderRadius = "4px"; el.style.strokeWidth = "2";</script>'), [])
+
+    def test_html_js_line_numbers_match_source(self):
+        tpl, app = self.tpl(body=".a { color: var(--card); }\n\n\n")
+        tpl += '\n<p>x</p>\n<i style="color:#ff0000"></i>'
+        line = tpl.split("\n").index('<i style="color:#ff0000"></i>') + 1
+        bad = cd.viewer_color_problems(tpl, app)
+        self.assertEqual(bad, ["색 리터럴 #ff0000 (HTML·JS, 스타일 밖 %d번째 줄): var(--토큰)으로 바꿀 것" % line])
+
+    def test_result_json_matches_exit_code(self):
+        """색 비교 실패는 결과 JSON의 rc·verdict에도 들어가고, JSON rc = 돌려준 종료 코드."""
+        import contextlib
+        import io
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            for rc0, color_bad, want in ((0, [], 0), (0, ["x"], 1), (1, ["x"], 1), (2, ["x"], 2), (1, [], 1)):
+                with self.subTest(rc0=rc0, color_bad=color_bad):
+                    out = os.path.join(tmp, "r.json")
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        rc, verdict = cd.write_result(out, {}, (1366, 689), [], rc0, "배치", color_bad)
+                    with open(out, encoding="utf-8") as fh:
+                        data = json.load(fh)
+                    self.assertEqual((rc, data["rc"]), (want, want))
+                    self.assertEqual(data["verdict"], verdict)
+                    self.assertEqual(data["color_problems"], color_bad)
+                    self.assertEqual("색 비교 실패" in verdict, bool(color_bad))
+
+    def test_color_literals(self):
+        self.assertEqual(cd.color_literals("0 1px 2px rgba(0, 0, 0, .1), #abc red --red solid", named=True),
+                         ["#abc", "rgba(0, 0, 0, .1)", "red"])
+        self.assertEqual(cd.color_literals("1px solid red", named=False), [])
+        self.assertEqual(cd._translucent_rgb("rgba(37 99 235 / 12%)"), (37, 99, 235))
+        self.assertIsNone(cd._translucent_rgb("rgb(37, 99, 235)"))
+
+
 def bar_min_width(label):
     """label이 든 도구줄(가로 레이아웃)의 최소 폭."""
     from PySide6.QtWidgets import QHBoxLayout

@@ -129,7 +129,7 @@ def risk_chip(risk, name=None, proposal=True):
     bg, ink, line = tokens.risk_colors(risk)
     label = "%s %d%s" % ("제안" if proposal else "확정", risk, " %s" % name if name else "")
     if proposal:
-        style = "border:1px dashed %s; color:%s; background:#ffffff;" % (line, line if line != "#9ca3af" else ink)
+        style = "border:1px dashed %s; color:%s; background:#ffffff;" % (line, line if line != tokens.COLORS["risk-ok-line"] else ink)
     else:
         style = "background:%s; color:%s; border:1px solid %s;" % (bg, ink, line)
     return '<span style="%s font-size:11px; padding:1px 6px; border-radius:8px;">&nbsp;%s&nbsp;</span>' % (style, esc(label))

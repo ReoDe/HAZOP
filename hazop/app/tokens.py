@@ -1,7 +1,8 @@
 """디자인 토큰 한 곳 정의 (기획서/인터페이스.md §4.1·§4.2, 디자인/시안/README.md §3·§4.1).
 
-Qt 스타일시트(qss)와 내장 웹뷰 CSS(web_css)가 모두 이 값을 읽는다. ② 뷰어에는 실행 시점에 CSS 변수로 주입하므로
-hazop/viewer/template.html의 색은 바꾸지 않는다(단독 뷰어는 기존 색 그대로, 템플릿은 탭 이름만 'P&ID 구조'로 바뀜).
+Qt 스타일시트(qss)와 내장 웹뷰 CSS(web_css)가 모두 이 값을 읽는다. ② 뷰어에는 실행 시점에 CSS 변수로 주입한다.
+독립 뷰어(hazop/viewer/template.html)의 :root는 같은 값을 직접 적고, scripts/check_design.py 색 비교가 web_css()의
+:root와 같은지 검사한다(docs/2026-11-05-design-system D5). 여기 값을 바꾸면 템플릿 :root도 함께 바꾼다.
 ③ 지식그래프 HTML(hazop/kg/screen_template.html)은 생성할 때 kg_css_vars()로 같은 값을 넣는다.
 글꼴: Pretendard 배포는 미결정(§9)이므로 포함하지 않고 맑은 고딕을 기본으로 쓴다.
 """

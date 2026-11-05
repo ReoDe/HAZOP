@@ -5,10 +5,11 @@
 <title>__TITLE__</title>
 <style>
 :root {
-  --ui: #2563eb; --bg: #f4f5f7; --card: #ffffff; --line: #e3e5e9; --muted: #6b7280; --ink: #111827;
-  --equipment: #1d4ed8; --valve: #2563eb; --instrument: #0ea5e9; --piping_element: #6366f1; --unclassified: #9ca3af;
+  --ui: #2563eb; --bg: #f4f5f7; --card: #ffffff; --line: #e3e5e9; --muted: #6b7280; --ink: #111827; --ink-2: #374151;
+  --equipment: #1d4ed8; --valve: #0f766e; --instrument: #0ea5e9; --piping_element: #6366f1; --unclassified: #9ca3af;
   --physical_connection: #16a34a; --signal_connection: #7c3aed; --measurement_connection: #d97706; --unresolved: #dc2626;
-  --tag: #111827; --selected: #dc2626;
+  --hl-path: #ea580c; --warn-bg: #fef3c7; --warn-ink: #92400e;
+  --tag: #111827; --selected: #2563eb;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; color: var(--ink); background: var(--bg); }
@@ -26,7 +27,7 @@ a.back { font-size: 13px; color: var(--ui); text-decoration: none; }
 main { position: absolute; top: 56px; left: 0; right: 0; bottom: 0; display: flex; }
 #viewport { position: relative; flex: 1; overflow: hidden; cursor: grab; background: var(--bg); }
 #viewport.dragging { cursor: grabbing; }
-#stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+#stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: var(--card); box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 #stage > svg { display: block; }
 #overlay { position: absolute; left: 0; top: 0; }
 .float { position: absolute; background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
@@ -71,12 +72,12 @@ aside .warn { color: #b45309; }
 .tagbox { fill: rgba(17,24,39,.06); stroke: var(--tag); stroke-width: .8; cursor: pointer; }
 .tagbox:hover { fill: rgba(17,24,39,.16); }
 .unknown { stroke-dasharray: 5 3; }
-.selected.sym, .selected.tagbox { stroke: var(--selected) !important; stroke-width: 3; fill: rgba(220,38,38,.12); }
+.selected.sym, .selected.tagbox { stroke: var(--selected) !important; stroke-width: 3; fill: rgba(37,99,235,.12); }
 .selected.pipe-line { stroke: var(--selected) !important; stroke-width: 4.5; stroke-opacity: 1; }
 .flash { animation: flash 0.6s ease-in-out 3; }
 @keyframes flash { 50% { stroke-width: 8; } }
 .hidden { display: none; }
-.chip.alignwarn { background: #fef3c7; color: #92400e; }
+.chip.alignwarn { background: var(--warn-bg); color: var(--warn-ink); }
 .chip.alignwarn:empty { display: none; }
 aside .dir { color: var(--muted); }
 /* 탭 */
@@ -97,11 +98,11 @@ body.tab-graph #layers, body.tab-drawing #glegend { display: none; }
 #glegend h4 { margin: 10px 0 4px; font-size: 12px; }
 #glegend .btns button, #pathq button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer; }
 #glegend .btns button:hover, #pathq button:hover { border-color: var(--ui); }
-.gnode { stroke: #fff; stroke-width: 1.5; cursor: pointer; }
+.gnode { stroke: var(--card); stroke-width: 1.5; cursor: pointer; }
 .gnode.unknown { stroke: var(--muted); stroke-dasharray: 2 2; }
 .gedge { stroke-width: 1.4; stroke-opacity: .55; fill: none; pointer-events: none; }
 .gedge-hit { stroke: transparent; stroke-width: 8; pointer-events: stroke; cursor: pointer; }
-.glabel { font-size: 9px; fill: #374151; pointer-events: none; }
+.glabel { font-size: 9px; fill: var(--ink-2); pointer-events: none; }
 .selected.gnode { stroke: var(--selected); stroke-width: 3; }
 .selected.gedge { stroke: var(--selected) !important; stroke-opacity: 1; stroke-width: 3; }
 .ghide { display: none; }
@@ -113,9 +114,9 @@ body.tab-graph #layers, body.tab-drawing #glegend { display: none; }
 #pathq .res .link { color: var(--ui); cursor: pointer; }
 #pathq .res .bad { color: #b45309; }
 #pathq h4 { margin: 8px 0 2px; font-size: 12px; }
-.onpath.sym, .onpath.gnode { stroke: #ea580c !important; stroke-width: 3.5; }
+.onpath.sym, .onpath.gnode { stroke: var(--hl-path) !important; stroke-width: 3.5; }
 .onpath.sym { fill: rgba(234,88,12,.15); }
-.onpath.pipe-line, .onpath.gedge { stroke: #ea580c !important; stroke-width: 5; stroke-opacity: 1; }
+.onpath.pipe-line, .onpath.gedge { stroke: var(--hl-path) !important; stroke-width: 5; stroke-opacity: 1; }
 .onpath.dirunknown { stroke-dasharray: 3 4 !important; }
 /* 좁은 창: 패널을 도면 아래로 내리고 떠 있는 카드를 줄인다 */
 @media (max-width: 760px) {

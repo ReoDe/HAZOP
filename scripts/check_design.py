@@ -20,6 +20,9 @@
 - --platform offscreen: 글꼴 대체로 폭이 과대하므로 판정하지 않는다. --baseline <이전 결과 JSON>을 주면 늘어난 값만
   경고로 알린다(종료 코드 0). 기준 수치는 docs/2026-11-05-design-system/evidence/w3-작업영역125.md에 기록한다.
 결과 JSON: 출력/디자인검사/design-<platform>[-s<배율>].json (출력/는 git 제외). --out으로 바꿀 수 있다.
+
+뷰어·앱 색 비교(W4, D5): 배치 측정 전에 독립 뷰어 템플릿 :root·하드코딩 색을 앱 tokens.web_css()와 비교한다.
+어긋나면 플랫폼과 관계없이 종료 코드 1(판정 불가 2는 유지). --colors-only는 색 비교만 한다(Qt 불필요).
 """
 
 import argparse
@@ -414,6 +417,258 @@ def baseline_increases(rows, baseline_rows):
     return inc
 
 
+# ---------------------------------------------------------------- 뷰어·앱 색 비교(W4, D5). Qt 없이 문자열만 본다.
+# 독립 뷰어(hazop/viewer/template.html)의 색은 앱 토큰(hazop/app/tokens.py)을 따른다. 앱 안에서는 web_css()가
+# :root를 덮어쓰므로, 비교 기준은 web_css()의 :root(= COLORS + --selected + --hl-dim)다.
+VIEWER_DATA_VARS = ("equipment", "valve", "instrument", "piping_element", "unclassified", "physical_connection",
+                    "signal_connection", "measurement_connection", "unresolved")  # 템플릿 JS가 "var(--" + 종류 로 만듦
+# 토큰과 값이 달라 남겨 둔 색 리터럴. (선택자, 속성, 값) 조합에서만 허용한다(값 통일은 결정 대상, evidence/w4-토큰.md §5).
+# 템플릿 HTML 속성·JS에는 색 리터럴이 없다(EDGE_COLOR에 없는 관계 종류는 undefined, 범례 대체는 var(--muted)).
+VIEWER_COLOR_ALLOW = {
+    (".chip.passed::before", "color", "#16a34a"): "구조 검증 통과 점(앱 --ok #15803d와 다름)",
+    ("aside .warn", "color", "#b45309"): "속성 패널 경고 글자(토큰 없음)",
+    ("#pathq .res .bad", "color", "#b45309"): "경로 질의 경고 글자(토큰 없음)",
+}
+SELECTED_RULE = ".selected.sym, .selected.tagbox"
+# CSS 이름 색(CSS Color Module Level 4). transparent·currentcolor·none은 색 값이 아니라 뺀다.
+CSS_NAMED_COLORS = frozenset("""
+aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood
+cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray
+darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen
+darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue
+firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew
+hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan
+lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray
+lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue
+mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred
+midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid
+palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple
+rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue
+slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white
+whitesmoke yellow yellowgreen
+""".split())
+# 색 값을 받는 속성. "-?"는 JS camelCase(backgroundColor·borderTopColor·stopColor 등, 대소문자 무시로 찾음)도 잡는다.
+_COLOR_PROP = (r"(?:color|background(?:-?color)?|border(?:-?(?:top|right|bottom|left))?(?:-?color)?|outline(?:-?color)?"
+               r"|fill|stroke|box-?shadow|text-?shadow|stop-?color|flood-?color)")
+_HEX_RE = r"(?<![&\w])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![\w-])"
+_FUNC_RE = r"\b(?:rgba?|hsla?)\(\s*[^()]*\)"
+
+
+def _norm_color(v):
+    v = " ".join(v.strip().lower().split())
+    if len(v) == 4 and v.startswith("#"):
+        v = "#" + "".join(ch * 2 for ch in v[1:])
+    return v
+
+
+def css_rules(css):
+    """CSS → [(선택자, [(속성, 값)])]. 주석을 먼저 지우고, @media 등 안쪽 규칙도 펼친다(가장 안쪽 블록 기준)."""
+    import re
+    css = re.sub(r"/\*.*?\*/", " ", css, flags=re.S)
+    out = []
+    for m in re.finditer(r"([^{};]*)\{([^{}]*)\}", css):
+        decls = []
+        for d in m.group(2).split(";"):
+            if ":" in d:
+                k, v = d.split(":", 1)
+                k = k.strip()
+                decls.append((k if k.startswith("--") else k.lower(), " ".join(v.split())))  # --변수는 대소문자 구분
+        out.append((" ".join(m.group(1).split()), decls))
+    return out
+
+
+def css_root_vars(css):
+    """CSS의 :root 규칙 → {이름(-- 뺀 것): 값}. :root가 여러 개면 뒤 값이 이긴다(검사는 viewer_color_problems)."""
+    out = {}
+    for sel, decls in css_rules(css):
+        if sel == ":root":
+            out.update((k[2:], v) for k, v in decls if k.startswith("--"))
+    return out
+
+
+def color_literals(value, named=True):
+    """값 문자열 안의 색 리터럴: 3·4·6·8자리 hex, rgb()/rgba()/hsl()/hsla()(쉼표형·공백형), named=True면 CSS 이름 색."""
+    import re
+    v = re.sub(r"--[\w-]+", " ", value)  # 변수 이름(--red 등)은 색이 아님
+    lits = re.findall(_HEX_RE, v) + re.findall(_FUNC_RE, v, re.I)
+    if named:
+        rest = re.sub(_FUNC_RE, " ", re.sub(_HEX_RE, " ", v), flags=re.I)
+        lits += [w for w in re.findall(r"[A-Za-z]+", rest) if w.lower() in CSS_NAMED_COLORS]
+    return lits
+
+
+def _translucent_rgb(lit):
+    """rgba(r,g,b,a) 또는 rgb(r g b / a)에서 a < 1이면 (r,g,b), 아니면 None."""
+    import re
+    m = re.fullmatch(r"rgba?\((.*)\)", _norm_color(lit))
+    if not m:
+        return None
+    parts = [p for p in re.split(r"[\s,/]+", m.group(1).strip()) if p]
+    if len(parts) != 4 or not all(re.fullmatch(r"\d+", p) for p in parts[:3]):
+        return None
+    try:
+        a = float(parts[3].rstrip("%")) / (100 if parts[3].endswith("%") else 1)
+    except ValueError:
+        return None
+    return tuple(int(p) for p in parts[:3]) if a < 1 else None
+
+
+def viewer_color_problems(template, app_css):
+    """독립 뷰어 템플릿과 앱 web_css()의 색이 어긋난 곳 [문구]. 빈 목록이면 통과. CSS 주석은 지우고 본다.
+    1) 템플릿 :root 규칙은 정확히 하나다. 그 안 변수 중복, 다른 규칙·인라인 style에서 --변수 재선언은 실패.
+    2) 템플릿 :root의 각 변수가 앱 :root에 있고 값이 같다.
+    3) 템플릿 전체(CSS·HTML·JS)의 var( --x )(공백·대체값·중첩 포함)와 데이터 종류 변수(VIEWER_DATA_VARS)는
+       템플릿 :root에 정의돼 있다(단독으로 열 때 빈 색 방지). 형식이 틀린 var()도 실패.
+    4) :root 밖 색 리터럴(hex 3·4·6·8자리, rgb/rgba/hsl/hsla, 색 속성 값의 CSS 이름 색)은 템플릿 전체에서 실패.
+       예외: <style> 규칙의 (선택자, 속성, 값)이 VIEWER_COLOR_ALLOW에 있거나, 반투명 rgba의 rgb가 앱 토큰 색·검정.
+    5) 클릭 선택 채움(SELECTED_RULE fill)은 앱 web_css와 같다."""
+    import re
+    bad = []
+    app_rules = css_rules(app_css)
+    app = {k: _norm_color(v) for k, v in css_root_vars(app_css).items()}
+    styles = re.findall(r"<style[^>]*>(.*?)</style>", template, re.S | re.I)
+    style = "\n".join(styles)
+    # <style> 블록은 같은 수의 줄바꿈으로 바꿔 HTML·JS 실패 문구의 줄 번호가 원본 행과 같게 한다
+    rest = re.sub(r"<style[^>]*>.*?</style>", lambda m: "\n" * m.group(0).count("\n"), template, flags=re.S | re.I)
+    rules = css_rules(style)
+
+    # 1) :root
+    roots = [(s, d) for s, d in rules if ":root" in s]
+    if len(roots) != 1:
+        bad.append(":root 규칙 %d개: 정확히 하나여야 함(뒤쪽 재선언 금지)" % len(roots))
+    tpl = {}
+    for sel, decls in roots:
+        if sel != ":root":
+            bad.append(":root 선택자 '%s': 단독 :root만 허용" % sel)
+        for k, v in decls:
+            if k.startswith("--"):
+                if k[2:] in tpl:
+                    bad.append("%s: :root 안에서 중복 선언" % k)
+                tpl[k[2:]] = v
+    for sel, decls in rules:
+        if ":root" not in sel:
+            bad += ["%s: '%s'에서 재선언(:root에만 둘 것)" % (k, sel) for k, _ in decls if k.startswith("--")]
+    bad += ["%s: HTML·JS에서 재선언(:root에만 둘 것)" % m.group(1)
+            for m in re.finditer(r"(?<![\w-])(--[\w-]+)\s*:", rest)]
+    if not roots:
+        bad.append("템플릿 <style>에 :root 없음")
+    # 한 규칙 안 같은 속성 중복 금지(뒤 선언이 이기는데 검사가 앞 값만 보는 일을 막음)
+    for sel, decls in rules:
+        keys = [k for k, _ in decls]
+        bad += ["'%s' %s: 한 규칙 안에서 중복 선언" % (sel, k) for k in sorted(set(keys)) if keys.count(k) > 1]
+
+    # 2) 템플릿 :root = 앱 :root
+    for k, v in tpl.items():
+        if k not in app:
+            bad.append("--%s: 앱 토큰에 없음(템플릿 %s)" % (k, v))
+        elif _norm_color(v) != app[k]:
+            bad.append("--%s: 템플릿 %s ≠ 앱 %s" % (k, v, app[k]))
+
+    # 3) var() 참조
+    used = set(VIEWER_DATA_VARS)
+    for text in (re.sub(r"/\*.*?\*/", " ", style, flags=re.S), rest):
+        for m in re.finditer(r"(?i:var)\(\s*(--[\w-]+)?", text):  # 함수명은 대소문자 무시, 변수명은 그대로
+            if m.group(1):
+                used.add(m.group(1)[2:])
+            elif not re.match(r"(?i:var)\(\s*--[\"']", text[m.start():]):  # JS "var(--" + 종류 는 VIEWER_DATA_VARS로 확인
+                bad.append("var() 형식 오류: %s" % text[m.start():m.start() + 30].split("\n")[0])
+    for k in sorted(used - set(tpl)):
+        bad.append("var(--%s): 템플릿 :root에 정의 없음" % k)
+
+    # 4) 색 리터럴
+    rgb_ok = {(0, 0, 0)}
+    for v in app.values():
+        if re.fullmatch(r"#[0-9a-f]{6}", v):
+            rgb_ok.add(tuple(int(v[i:i + 2], 16) for i in (1, 3, 5)))
+    for sel, decls in rules:
+        if ":root" in sel:
+            continue
+        for k, v in decls:
+            for lit in color_literals(v, named=bool(re.fullmatch(_COLOR_PROP, k, re.I))):
+                if (sel, k, _norm_color(lit)) in VIEWER_COLOR_ALLOW or _translucent_rgb(lit) in rgb_ok:
+                    continue
+                bad.append("색 리터럴 %s ('%s' %s): var(--토큰)으로 바꿀 것" % (lit, sel, k))
+    for i, line in enumerate(rest.split("\n")):
+        lits = color_literals(line, named=False)
+        # 이름 색은 색 속성 값 위치만: style "fill:red", 속성 fill="red", JS .fill = "red"·{ fill: "red" },
+        # setAttribute("fill", "red")
+        pos = (r"(?<![\w-])" + _COLOR_PROP + r"[\"']?\s*[:=]\s*[\"']?([^;\"'}<>]*)",
+               r"setAttribute\(\s*[\"']" + _COLOR_PROP + r"[\"']\s*,\s*[\"']([^\"']*)")
+        for p in pos:
+            for m in re.finditer(p, line, re.I):
+                lits += [w for w in color_literals(m.group(1)) if w.lower() in CSS_NAMED_COLORS]
+        bad += ["색 리터럴 %s (HTML·JS, 스타일 밖 %d번째 줄): var(--토큰)으로 바꿀 것" % (lit, i + 1) for lit in lits]
+
+    # 5) 클릭 선택 채움. 기준 규칙 밖에서 .selected.sym·.selected.tagbox의 fill을 다시 선언하면 실패(뒤 선언이나 더
+    #    구체적인 선택자가 이겨 비교가 무의미해짐). 같은 규칙 안 중복은 위에서 거부한다. 값은 마지막 선언을 쓴다.
+    #    선택자는 쉼표로 나눈 각 복합 선택자의 클래스 집합으로 판정한다(클래스 순서·추가 클래스와 무관, 총괄 수정).
+    #    기준 규칙과 같은 선택자를 여러 번 써서 fill을 겹쳐 선언하는 것도 거부한다(!important 우회 방지).
+    targets = [{"selected", "sym"}, {"selected", "tagbox"}]
+
+    def hits_selected(sel):
+        for part in sel.split(","):
+            classes = set(re.findall(r"\.([A-Za-z0-9_-]+)", part))
+            if any(t <= classes for t in targets):
+                return True
+        return False
+
+    base_fills = 0
+    for sel, decls in rules:
+        has_fill = any(k == "fill" for k, _ in decls)
+        if sel == SELECTED_RULE:
+            base_fills += sum(1 for k, _ in decls if k == "fill")
+        elif has_fill and hits_selected(sel):
+            bad.append("클릭 선택 채움: '%s'에서 재선언('%s'에만 둘 것)" % (sel, SELECTED_RULE))
+    if base_fills > 1:
+        bad.append("클릭 선택 채움: '%s'의 fill이 %d번 선언됨(한 번만 둘 것)" % (SELECTED_RULE, base_fills))
+
+    def fill(rs):
+        have = None
+        for sel, decls in rs:
+            if sel == SELECTED_RULE:
+                for k, v in decls:
+                    if k == "fill":
+                        have = re.sub(r"\s+", "", v).replace("!important", "").lower()
+        return have
+    want, have = fill(app_rules), fill(rules)
+    if want != have:
+        bad.append("클릭 선택 채움: 템플릿 %s ≠ 앱 %s" % (have, want))
+    return bad
+
+
+def color_check():
+    """실제 템플릿과 tokens.web_css()를 비교해 출력하고 문제 목록을 돌려준다."""
+    from hazop.app import tokens
+    from hazop.viewer import build
+    with open(build.TEMPLATE, encoding="utf-8") as fh:
+        bad = viewer_color_problems(fh.read(), tokens.web_css())
+    print("뷰어·앱 색 비교: %s" % ("통과(템플릿 :root = 앱 토큰, 색 리터럴은 허용 목록 %d곳뿐)" % len(VIEWER_COLOR_ALLOW)
+                                 if not bad else "실패 %d건" % len(bad)))
+    for b in bad:
+        print("  - %s" % b)
+    return bad
+
+
+def merge_color_result(rc, verdict, color_bad):
+    """배치 판정(rc, verdict)에 색 비교 결과를 합친다. 판정 불가(2)는 그대로 둔다."""
+    if color_bad:
+        rc = rc if rc == 2 else 1
+        verdict += "; 뷰어·앱 색 비교 실패 %d건: %s" % (len(color_bad), color_bad)
+    return rc, verdict
+
+
+def write_result(out, env, limit, rows, rc, verdict, color_bad):
+    """색 비교를 합친 rc·verdict로 결과 JSON을 쓰고 (rc, verdict)를 돌려준다. JSON의 rc = 종료 코드."""
+    rc, verdict = merge_color_result(rc, verdict, color_bad)
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    with open(out, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump({"environment": env, "limit": list(limit) if limit else None, "verdict": verdict, "rc": rc,
+                   "color_problems": list(color_bad), "rows": rows}, fh, ensure_ascii=False, indent=2)
+    print("결과 JSON: %s" % out)
+    print("결과: %s" % verdict)
+    return rc, verdict
+
+
 def print_table(rows):
     print("%-22s %-3s %6s %6s %6s %6s %4s  %s" % ("상태", "화면", "창폭", "창높이", "화면폭", "헤더", "줄임",
                                                  "화면 안 가장 넓은 위젯"))
@@ -435,7 +690,11 @@ def main(argv=None):
     ap.add_argument("--top", type=int, default=5, help="가장 넓은 위젯 보고 개수")
     ap.add_argument("--baseline", help="offscreen 회귀 감시용 이전 결과 JSON(늘어나면 경고)")
     ap.add_argument("--out", help="결과 JSON 경로(기본 출력/디자인검사/design-<platform>[-s<배율>].json)")
+    ap.add_argument("--colors-only", action="store_true", help="뷰어·앱 색 비교만 하고 배치 측정은 하지 않음")
     args = ap.parse_args(argv)
+    color_bad = color_check()
+    if args.colors_only:
+        return 1 if color_bad else 0
     if "PySide6.QtGui" in sys.modules:
         print("PySide6를 이미 가져온 프로세스에서는 플랫폼을 바꿀 수 없습니다. 새 프로세스로 실행하세요.")
         return 2
@@ -474,12 +733,7 @@ def main(argv=None):
             verdict += "; 기준선 대비 증가 %d건%s" % (len(inc), (" [경고] %s" % inc) if inc else "")
     out = args.out or os.path.join(OUT_DIR, "design-%s%s.json" % (
         args.platform, "" if args.scale == 1.0 else "-s%d" % round(args.scale * 100)))
-    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
-    with open(out, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump({"environment": env, "limit": list(limit) if limit else None, "verdict": verdict, "rc": rc,
-                   "rows": rows}, fh, ensure_ascii=False, indent=2)
-    print("결과 JSON: %s" % out)
-    print("결과: %s" % verdict)
+    rc, verdict = write_result(out, env, limit, rows, rc, verdict, color_bad)
     if args.platform == "windows" and args.scale == 1.0 and not args.no_125 and rc != 2:
         import subprocess
         print("--- 125% 판정(새 프로세스, --scale 1.25) ---")
