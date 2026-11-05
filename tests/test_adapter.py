@@ -1,15 +1,19 @@
-"""T3 W2 평가 하네스 테스트. 실행: python -m unittest tests.test_adapter"""
+"""T3 W2 평가 하네스·W3 벡터 PDF 어댑터 테스트. 실행: python -m unittest tests.test_adapter
+
+W3 샘플 시험은 pdfplumber가 있을 때만 돈다(결정 D1). 합성 원시 요소 시험은 pdfplumber 없이 돈다."""
 
 import contextlib
 import copy
 import io
 import glob
+import importlib.util
 import json
 import os
 import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -17,7 +21,9 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
 import check_adapter  # noqa: E402
 from hazop.extract import drawio  # noqa: E402
+from hazop.extract.adapters import align  # noqa: E402
 from hazop.extract.adapters import evaluation as ev  # noqa: E402
+from hazop.extract.adapters import pdf_vector  # noqa: E402
 
 TRUTH = check_adapter.load_json(check_adapter.FIXTURE)
 
@@ -287,6 +293,354 @@ class SampleTest(unittest.TestCase):
         self.assertEqual(len(paths), 1)
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(check_adapter.run_suite("SNP-M-102", drawio.extract(paths[0])), [])
+
+
+# ---------------- T3 W3: 벡터 PDF 어댑터 ----------------
+# 합성 원시 요소(pdf_vector.load_page와 같은 형식)로 규칙을 시험한다. pdfplumber 없이 돈다.
+
+HAS_PDFPLUMBER = importlib.util.find_spec("pdfplumber") is not None
+
+
+def prim(pts, closed=False, fill=False, white=False, curved=False, ext=None):
+    return {"fill": fill, "stroke": not fill, "fill_white": fill and white, "stroke_white": False,
+            "subpaths": [(list(pts), closed, list(ext or pts), curved)]}
+
+
+def rect(x0, y0, x1, y1, **kw):
+    return prim([(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)], closed=True, **kw)
+
+
+def circle(cx, cy, r):
+    pts = [(cx + r, cy), (cx, cy + r), (cx - r, cy), (cx, cy - r), (cx + r, cy)]
+    ext = pts + [(cx + r, cy + r), (cx - r, cy + r), (cx - r, cy - r), (cx + r, cy - r)]
+    return prim(pts, closed=True, curved=True, ext=ext)
+
+
+def line(*pts):
+    return prim(pts)
+
+
+def word(text, x0, top, size=6.0):
+    return {"text": text, "x0": x0, "x1": x0 + 0.6 * size * len(text), "top": top, "bottom": top + size,
+            "size": size}
+
+
+def make_pdf(content, width=400, height=300):
+    """내용 스트림 하나짜리 1쪽 PDF 바이트(메모리 시험용, 외부 라이브러리 없음)."""
+    objs = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] /Contents 4 0 R >>" % (width, height),
+            b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream"]
+    out, offsets = bytearray(b"%PDF-1.4\n"), []
+    for i, obj in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % i + obj + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    out += b"".join(b"%010d 00000 n \n" % off for off in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
+    return bytes(out)
+
+
+def pdf_run(prims, words=(), width=600.0, height=400.0):
+    analysis = pdf_vector.analyze(width, height, list(words), list(prims))
+    return pdf_vector.build_extraction(analysis, width, height, 1, 0, "synthetic.pdf", "0" * 64)
+
+
+class PdfVectorRuleTest(unittest.TestCase):
+    def test_negative_or_nonfinite_dash_is_solid(self):
+        # 음수·비유한 dash 값은 규격 밖이므로 실선 취급(0 나눔·무한 반복 방지, 검토 B1)
+        for value in (([5, -5], 0), ([5, -6], 0), ([float("inf"), 2], 0), ([4, 2], float("nan"))):
+            self.assertIsNone(pdf_vector._dash(value), value)
+        self.assertEqual(pdf_vector._dash(([4, 2], 1)), [[4.0, 2.0], 1.0])
+
+    def test_pipe_between_two_bodies(self):
+        ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (300, 130))])
+        self.assertEqual(ext["validation"]["blockers"], [])
+        self.assertEqual(len(ext["nodes"]), 2)
+        self.assertEqual([r["kind"] for r in ext["relations"]], ["physical_connection"])
+        self.assertEqual(ext["source"]["format"], "pdf_vector")
+        self.assertEqual(ext["coordinate_system"]["coordinate_space"], "pdf_page_pt")
+        self.assertEqual(ext["nodes"][0]["source_object_id"], "pdf-p0-sym-0001")
+        self.assertEqual(ext["nodes"][0]["geometry"], {"x": 100, "y": 100, "width": 40, "height": 60})
+
+    def test_three_line_junction_is_tee_and_crossing_is_not(self):
+        tee = pdf_run([rect(100, 100, 140, 160), rect(300, 40, 340, 80), rect(300, 180, 340, 220),
+                       line((140, 130), (200, 130)), line((200, 130), (200, 60), (300, 60)),
+                       line((200, 130), (200, 200), (300, 200))])
+        kinds = sorted(n["kind"] or "-" for n in tee["nodes"])
+        self.assertEqual(kinds.count("tee"), 1)
+        self.assertEqual(len(tee["relations"]), 3)
+        tee_node = [n for n in tee["nodes"] if n["kind"] == "tee"][0]
+        self.assertEqual(tee_node["geometry"], {"x": 199, "y": 129, "width": 2, "height": 2})
+        cross = pdf_run([rect(100, 200, 120, 220), rect(300, 200, 320, 220), rect(200, 100, 220, 120),
+                         rect(200, 300, 220, 320), line((120, 210), (300, 210)), line((210, 120), (210, 300))])
+        self.assertNotIn("tee", [n["kind"] for n in cross["nodes"]])
+        self.assertEqual(len(cross["relations"]), 2)
+
+    def test_line_end_on_other_line_middle_is_tee(self):
+        ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), rect(200, 250, 240, 290),
+                       line((140, 130), (300, 130)), line((220, 130), (220, 250))])
+        self.assertEqual([n["kind"] for n in ext["nodes"]].count("tee"), 1)
+        self.assertEqual(len(ext["relations"]), 3)
+
+    def test_dashed_signal_measurement_and_isa_letters(self):
+        dashes = [rect(x, 99.65, x + 4, 100.35, fill=True) for x in range(116, 184, 6)]
+        ext = pdf_run([circle(100, 100, 14), circle(200, 100, 14), rect(80, 200, 120, 260),
+                       line((100, 114), (100, 200))] + dashes,
+                      [word("PT", 95, 92), word("101", 95, 99), word("FIC", 194, 92), word("102", 194, 99)])
+        kinds = {n["label_text"]: n["kind"] for n in ext["nodes"]}
+        self.assertEqual(kinds["PT\n101"], "transmitter")
+        self.assertEqual(kinds["FIC\n102"], "controller")
+        by_kind = sorted(r["kind"] for r in ext["relations"])
+        self.assertEqual(by_kind, ["measurement_connection", "signal_connection"])
+        self.assertEqual(ext["unresolved_connectors"], [])
+
+    def test_labels_line_label_and_title_block(self):
+        ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (300, 130)),
+                       rect(400, 300, 450, 315), rect(450, 300, 550, 315)],
+                      [word("TK-01", 145, 112), word("TANK", 145, 119), word("L-001", 200, 127),
+                       word("DWG", 402, 304), word("NO.", 418, 304), word("X-100", 452, 304)])
+        labels = {n["label_text"]: n["kind"] for n in ext["nodes"]}
+        self.assertEqual(labels.get("TK-01\nTANK"), "tank")
+        self.assertEqual([t["text"] for t in ext["texts"]], ["L-001"])  # 선 위 글자는 선 라벨(노드 아님)
+        self.assertEqual(ext["drawing"]["drawing_number"], "X-100")
+        self.assertEqual(len(ext["nodes"]), 2)  # 표 칸은 기호가 아니다
+        sample = [p for p in glob.glob(check_adapter.SAMPLE_GLOB) if "SNP-M-102" in p][0]
+        self.assertEqual(check_adapter.schema_problems(ext, drawio.extract(sample)), [])
+
+    def test_valve_shapes_and_actuator_mark(self):
+        def bowtie(x, y):  # 두 삼각형이 가운데 꼭짓점을 맞댄 밸브 몸통 (폭 36, 높이 22)
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        dome = prim([(109, 80), (118, 75), (127, 80), (109, 80)], closed=True, curved=True)
+        ext = pdf_run(bowtie(0, 100) + bowtie(100, 100) + [dome, line((118, 80), (118, 111))]
+                      + bowtie(200, 100) + [rect(212, 70, 224, 82), line((218, 82), (218, 111))]
+                      + [line((36, 111), (100, 111)), line((136, 111), (200, 111))],
+                      [word("V-1", 5, 125), word("CV-1", 105, 125), word("MV-1", 205, 125), word("M", 216, 73)])
+        kinds = {n["label_text"]: n["kind"] for n in ext["nodes"]}
+        self.assertEqual(kinds, {"V-1": "manual_valve", "CV-1": "control_valve", "MV-1": "motor_operated_valve"})
+        mv = [n for n in ext["nodes"] if n["label_text"] == "MV-1"][0]
+        self.assertEqual(mv["evidence"]["symbol_marks"], ["M"])
+        self.assertEqual(len(ext["relations"]), 2)
+
+    def test_no_content_is_blocked(self):
+        ext = pdf_run([])
+        self.assertEqual(ext["validation"]["status"], "blocked")
+        self.assertEqual([b["check"] for b in ext["validation"]["blockers"]], ["no_vector_content"])
+
+    def test_deterministic_and_no_agpl_import(self):
+        prims = [rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (300, 130))]
+        self.assertEqual(ev.dumps(pdf_run(prims)), ev.dumps(pdf_run(copy.deepcopy(prims))))
+        for mod in (pdf_vector, align):
+            with open(mod.__file__, encoding="utf-8") as fh:
+                src = fh.read()
+            self.assertNotRegex(src, r"(?im)^\s*(import|from)\s+(fitz|pymupdf)\b")  # AGPL 금지(결정 D1)
+            self.assertNotRegex(src, r"(?m)^(import|from) pdfplumber")  # 모듈 수준 import 금지(지연 import)
+
+    def test_instrument_notations(self):
+        for text in ("PT\n101", "PT\n101\nA1", "PT-101", "PT 101"):
+            with self.subTest(text=text):
+                self.assertEqual(pdf_vector._instrument_kind(text), ("transmitter", "isa_letters:PT"))
+                ext = pdf_run([circle(100, 100, 14)], [word(t, 95, 92 + 7 * i) for i, t in enumerate(text.split("\n"))])
+                self.assertEqual([n["kind"] for n in ext["nodes"]], ["transmitter"])
+        self.assertEqual(pdf_vector._instrument_kind("PUMP"), (None, None))
+
+    def test_circle_with_equipment_word_is_not_instrument(self):
+        ext = pdf_run([circle(100, 100, 20), rect(200, 80, 240, 120), line((120, 100), (200, 100))],
+                      [word("P-01", 90, 124), word("PUMP", 90, 131)])
+        kinds = {n["label_text"]: n["kind"] for n in ext["nodes"]}
+        self.assertEqual(kinds["P-01\nPUMP"], "pump")
+        self.assertEqual([r["kind"] for r in ext["relations"]], ["physical_connection"])  # 계기 아님 → 측정 아님
+
+    def test_graph_stage_accepts_pdf_extraction(self):
+        ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (300, 130))])
+        self.assertEqual(check_adapter.graph_problems("synthetic", ext), [])
+
+
+class AlignTest(unittest.TestCase):
+    def nodes(self, scale, offset, moved=None):
+        out = []
+        for i, (x, y) in enumerate([(100, 100), (500, 120), (300, 400), (700, 600), (150, 650)]):
+            dx = 40 if moved == i else 0
+            out.append(("n%d" % i, "pump", "TAG-%d" % i,
+                        ((x + dx) * scale + offset[0], y * scale + offset[1], 40 * scale, 40 * scale)))
+        return out
+
+    def test_recovers_transform_and_drops_outlier(self):
+        truth = mini(self.nodes(1.0, (0, 0)))
+        cand = mini(self.nodes(0.72, (3, -2)), cs=("pdf_page_pt", "pt"))
+        al = align.estimate_transform(truth, cand)
+        self.assertEqual(al["status"], "ok")
+        self.assertAlmostEqual(al["transform"]["scale"][0], 1 / 0.72, places=5)
+        self.assertAlmostEqual(al["transform"]["offset"][1], 2 / 0.72, places=4)
+        self.assertLess(al["residual_rms"], 1e-6)
+        moved = mini(self.nodes(0.72, (3, -2), moved=2), cs=("pdf_page_pt", "pt"))
+        al2 = align.estimate_transform(truth, moved)
+        self.assertEqual((al2["status"], al2["outliers"], al2["anchors_used"]), ("ok", ["TAG-2"], 4))
+        self.assertGreater(al2["residual_rms_all"], 1.0)
+        r = ev.evaluate(truth, cand, al["transform"])
+        self.assertEqual(r["objects"]["f1"], 1.0)
+
+    def test_blocked_when_anchors_missing(self):
+        truth = mini(self.nodes(1.0, (0, 0))[:2])
+        al = align.estimate_transform(truth, copy.deepcopy(truth))
+        self.assertEqual((al["status"], al["transform"]), ("blocked", None))
+
+    def test_blocked_when_truth_centers_identical(self):
+        cand = mini(self.nodes(1.0, (0, 0)), cs=("pdf_page_pt", "pt"))
+        truth = mini([(i, k, t, (500, 500, 40, 40)) for i, k, t, _ in self.nodes(1.0, (0, 0))])
+        al = align.estimate_transform(truth, cand)
+        self.assertEqual((al["status"], al["transform"]), ("blocked", None))
+        self.assertIn("scale 0", al["reason"])
+
+    def test_high_leverage_outlier(self):
+        pts = [(0, 0), (100, 100), (200, 200), (300, 300), (400, 400)]
+        truth = mini([("n%d" % i, "pump", "TAG-%d" % i, (x, y, 40, 40)) for i, (x, y) in enumerate(pts)])
+        cand_pts = pts[:-1] + [(10000, 10000)]
+        cand = mini([("n%d" % i, "pump", "TAG-%d" % i, (x, y, 40, 40)) for i, (x, y) in enumerate(cand_pts)],
+                    cs=("pdf_page_pt", "pt"))
+        al = align.estimate_transform(truth, cand)
+        self.assertEqual((al["status"], al["outliers"], al["anchors_used"]), ("ok", ["TAG-4"], 4))
+        self.assertEqual(al["transform"], {"scale": [1.0, 1.0], "offset": [0.0, 0.0]})
+        self.assertEqual(ev.dumps(al), ev.dumps(align.estimate_transform(truth, cand)))  # 결정적
+
+    def test_first_of_many_anchors_is_outlier(self):
+        # 기준점 502개(쌍 125,751개 > 상한 500)에서 첫 기준점만 이상치여도 앞쪽 쌍에 치우치지 않아야 한다
+        pts = [(i * 2.0, i * 3.0) for i in range(502)]
+        truth = mini([("n%03d" % i, "pump", "TAG-%03d" % i, (x, y, 4, 4)) for i, (x, y) in enumerate(pts)])
+        cand_pts = [(10000.0, 10000.0)] + pts[1:]
+        cand = mini([("n%03d" % i, "pump", "TAG-%03d" % i, (x, y, 4, 4)) for i, (x, y) in enumerate(cand_pts)],
+                    cs=("pdf_page_pt", "pt"))
+        al = align.estimate_transform(truth, cand)
+        self.assertEqual((al["status"], al["outliers"], al["anchors_used"]), ("ok", ["TAG-000"], 501))
+        self.assertEqual(al["transform"], {"scale": [1.0, 1.0], "offset": [0.0, 0.0]})
+        self.assertEqual(len(align._candidate_pairs(502, 500)), 500)
+        self.assertEqual(len(align._candidate_pairs(5, 500)), 10)  # 적으면 전수
+
+
+class SkipReportTest(unittest.TestCase):
+    def test_skipped_w3_is_reported_in_last_line(self):
+        real = check_adapter.importlib.util.find_spec
+
+        def no_pdfplumber(name, *args, **kwargs):  # pdfplumber만 없는 환경을 흉내 낸다
+            return None if name == "pdfplumber" else real(name, *args, **kwargs)
+        buf = io.StringIO()
+        with mock.patch.object(check_adapter.importlib.util, "find_spec", no_pdfplumber):
+            with contextlib.redirect_stdout(buf):
+                rc = check_adapter.run_checks()
+        self.assertEqual(rc, 0)
+        lines = buf.getvalue().strip().splitlines()
+        self.assertEqual(lines[-1], "== 결과: 전부 통과 (W3 건너뜀)")
+        self.assertIn("[건너뜀] pdfplumber 없음", buf.getvalue())
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1: PATH python에서 실행)")
+class PdfVectorSampleTest(unittest.TestCase):
+    def test_samples_contract_alignment_and_evaluation(self):
+        samples = check_adapter.pdf_samples()
+        self.assertEqual(len(samples), 6)
+        for name, drawio_path, pdf_path in samples:
+            with self.subTest(name=name):
+                errs, row, outputs = check_adapter.evaluate_pdf(name, drawio_path, pdf_path)
+                self.assertEqual(errs, [])
+                self.assertEqual(row["blockers"], 0)
+                self.assertEqual(outputs["evaluation"]["status"], "ok")
+                self.assertFalse(os.path.isabs(outputs["extraction"]["source"]["file"]))
+
+    def test_quality_floor_catches_relation_drop(self):
+        name, drawio_path, pdf_path = check_adapter.pdf_samples()[0]
+
+        def drop(ext):
+            ext["relations"] = ext["relations"][1:]
+            return ext
+        errs, row, _ = check_adapter.evaluate_pdf(name, drawio_path, pdf_path, mutate=drop)
+        self.assertTrue(any("relations_f1" in e for e in errs), errs)
+        self.assertLess(row["relations"]["f1"], 1.0)
+
+    def mem_extract(self, content):
+        page_count, w, h, words, prims = pdf_vector.load_page(io.BytesIO(make_pdf(content)))
+        ext = pdf_vector.build_extraction(pdf_vector.analyze(w, h, words, prims), w, h, page_count, 0,
+                                          "memory.pdf", "0" * 64)
+        self.assertEqual(ext["validation"]["blockers"], [])
+        return prims, ext
+
+    def test_memory_pdf_filled_and_stroked_dashes(self):
+        dashes = b"".join(b"%d 219.65 4 0.7 re f\n" % x for x in range(82, 198, 6))
+        content = (b"40 200 40 40 re S\n200 200 40 40 re S\n" + dashes +
+                   b"40 60 40 40 re S\n200 60 40 40 re S\n[4 2] 0 d 80 80 m 200 80 l S\n[] 0 d\n")
+        prims, ext = self.mem_extract(content)
+        self.assertEqual([p["dash"] for p in prims if p["dash"]], [[[4.0, 2.0], 0.0]])
+        self.assertEqual(len(ext["nodes"]), 4)
+        self.assertEqual(sorted(r["kind"] for r in ext["relations"]), ["signal_connection"] * 2)
+        self.assertEqual(ext["unresolved_connectors"], [])
+
+    def test_memory_pdf_dash_phase_and_invisible(self):
+        # 위상이 0이 아닌 점선: 보이는 조각이 있으므로 신호 관계 1개
+        prims, ext = self.mem_extract(b"40 60 40 40 re S\n200 60 40 40 re S\n[4 2] 3 d 80 80 m 200 80 l S\n")
+        self.assertEqual([p["dash"] for p in prims if p["dash"]], [[[4.0, 2.0], 3.0]])
+        self.assertEqual([r["kind"] for r in ext["relations"]], ["signal_connection"])
+        # 길이 120에 [1 200] 20: 위상 때문에 그려지는 구간이 없다 → 선 없음(관계·미해결 모두 0)
+        prims, ext = self.mem_extract(b"40 60 40 40 re S\n200 60 40 40 re S\n[1 200] 20 d 80 80 m 200 80 l S\n")
+        self.assertEqual((len(ext["nodes"]), ext["relations"], ext["unresolved_connectors"]), (2, [], []))
+        self.assertIn("dashed_path_no_visible_piece", [u["check"] for u in ext["validation"]["unknowns"]])
+
+    def ends_of(self, ext):
+        label = {n["local_id"]: tuple(n["geometry"].values()) for n in ext["nodes"]}
+        return sorted(tuple(sorted(label[e["node_local_id"]] for e in r["endpoints"])) for r in ext["relations"])
+
+    def test_memory_pdf_dashed_through_symbol_is_cut(self):
+        # 점선 경로 하나가 A–B–C를 관통: B 안 조각이 빠진 자리에서 끊어 A–B, B–C 두 관계(A–C 아님)
+        _, ext = self.mem_extract(b"20 140 20 20 re S\n110 140 20 20 re S\n200 140 20 20 re S\n"
+                                  b"[4 2] 0 d 40 150 m 200 150 l S\n")
+        boxes = {n["geometry"]["x"]: tuple(n["geometry"].values()) for n in ext["nodes"]}
+        a, b, c = boxes[20], boxes[110], boxes[200]
+        self.assertEqual(self.ends_of(ext), sorted([tuple(sorted((a, b))), tuple(sorted((b, c)))]))
+        self.assertEqual(ext["unresolved_connectors"], [])
+
+    def test_memory_pdf_dashed_paths_joined_only_end_to_end(self):
+        # 서로 다른 스트로크 점선 경로 두 개가 끝점끼리 만나는 꺾임 → 한 사슬(A–D 관계 1개)
+        _, ext = self.mem_extract(b"20 140 20 20 re S\n110 50 20 20 re S\n"
+                                  b"[4 2] 0 d 40 150 m 120 150 l S\n120 150 m 120 70 l S\n")
+        self.assertEqual([r["kind"] for r in ext["relations"]], ["signal_connection"])
+        self.assertEqual(ext["unresolved_connectors"], [])
+
+    def test_memory_pdf_filled_dashes_crossing(self):
+        # 독립된 채운 사각형 점선 두 개가 교차해도 각각 관계 하나
+        horiz = b"".join(b"%d 149.65 4 0.7 re f\n" % x for x in range(42, 198, 6))
+        vert = b"".join(b"119.65 %d 0.7 4 re f\n" % y for y in range(72, 228, 6))
+        _, ext = self.mem_extract(b"20 140 20 20 re S\n200 140 20 20 re S\n110 230 20 20 re S\n110 50 20 20 re S\n"
+                                  + horiz + vert)
+        self.assertEqual([r["kind"] for r in ext["relations"]], ["signal_connection"] * 2)
+        self.assertEqual(ext["unresolved_connectors"], [])
+        boxes = {(n["geometry"]["x"], n["geometry"]["y"]): tuple(n["geometry"].values()) for n in ext["nodes"]}
+        self.assertEqual(len(boxes), 4)
+
+    def test_memory_pdf_crossing_and_short_dashed(self):
+        # 서로 교차하는 독립 점선 두 개는 각각 관계 하나
+        _, ext = self.mem_extract(b"20 140 20 20 re S\n200 140 20 20 re S\n110 230 20 20 re S\n110 50 20 20 re S\n"
+                                  b"[4 2] 0 d 40 150 m 200 150 l S\n120 230 m 120 70 l S\n")
+        self.assertEqual([r["kind"] for r in ext["relations"]], ["signal_connection"] * 2)
+        self.assertEqual(ext["unresolved_connectors"], [])
+        # 길이 8.5pt·9pt 점선도 양 끝 기호를 잇는다
+        _, ext = self.mem_extract(b"20 20 20 20 re S\n48.5 20 20 20 re S\n20 200 20 20 re S\n49 200 20 20 re S\n"
+                                  b"[4 2] 0 d 40 30 m 48.5 30 l S\n40 210 m 49 210 l S\n")
+        self.assertEqual([r["kind"] for r in ext["relations"]], ["signal_connection"] * 2)
+        self.assertEqual(ext["unresolved_connectors"], [])
+
+    def test_extract_pdf_cli_writes_outputs(self):
+        import extract_pdf
+        sample = [s for s in check_adapter.pdf_samples() if "SNP-M-102" in s[0]][0][2]
+        tmp = tempfile.mkdtemp()
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = extract_pdf.main([sample, "--out-root", tmp])
+            self.assertEqual(rc, 0)
+            with open(os.path.join(tmp, "SNP-M-102", "extraction.json"), encoding="utf-8") as fh:
+                data = json.load(fh)
+            self.assertEqual(data["validation"]["blockers"], [])
+            self.assertTrue(os.path.isfile(os.path.join(tmp, "SNP-M-102", "validation_report.md")))
+        finally:
+            shutil.rmtree(tmp)
 
 
 if __name__ == "__main__":
