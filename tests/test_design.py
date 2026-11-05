@@ -631,7 +631,8 @@ class ContrastTest(unittest.TestCase):
          for b in ("card", "bg", "kg-canvas")]
         + [(k, b) for k in ("hl-cause", "hl-path", "hl-safeguard") for b in ("card", "bg")
            if (k, b) != ("hl-safeguard", "card")]  # hl-safeguard/card는 REQUIRED_TEXT 4.5:1이 대신함
-        + [("ui", "bg"), ("tag", "card"), ("#16a34a", "bg")])
+        + [("ui", "bg"), ("tag", "card"), ("#16a34a", "bg")]
+        + [("card", "equipment")])  # W7 그래프 선택 노드 흰 띠/설비 채움(고리는 ui/card·ui/bg)
 
     def test_required_pairs_and_thresholds(self):
         self.assertEqual((cd.TEXT, cd.GRAPHIC), (4.5, 3.0))

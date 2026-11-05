@@ -712,6 +712,9 @@ CONTRAST_PAIRS += [(k, b, GRAPHIC, "시나리오 강조") for k in ("hl-cause", 
                    if (k, b) != ("hl-safeguard", "card")]
 CONTRAST_PAIRS += [
     ("ui", "bg", GRAPHIC, "화면 바탕 위 버튼 hover·입력 포커스 테두리"),
+    # 그래프 노드 선택(W7, D10): 바깥 고리 --ui는 흰 그래프 바탕과 ui/card(위 TEXT 쌍), 화면 바탕과 ui/bg로 검사한다.
+    # 고리와 설비 채움(ui/equipment 1.30:1)은 흰 띠가 떼어 놓으므로 흰 띠/설비 채움을 검사한다.
+    ("card", "equipment", GRAPHIC, "그래프 선택 노드의 흰 띠 / 설비 채움(선택 고리와 채움을 떼어 놓음)"),
     ("tag", "card", GRAPHIC, "태그 상자 테두리"),
     ("#16a34a", "bg", GRAPHIC, "뷰어 통과 점(.chip.passed::before, 허용 목록)"),
 ]

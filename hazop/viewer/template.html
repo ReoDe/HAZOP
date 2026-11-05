@@ -103,7 +103,8 @@ body.tab-graph #layers, body.tab-drawing #glegend { display: none; }
 .gedge { stroke-width: 1.4; stroke-opacity: .55; fill: none; pointer-events: none; }
 .gedge-hit { stroke: transparent; stroke-width: 8; pointer-events: stroke; cursor: pointer; }
 .glabel { font-size: 9px; fill: var(--ink-2); pointer-events: none; }
-.selected.gnode { stroke: var(--selected); stroke-width: 3; }
+/* 그래프 노드 선택(design-system W7, D10): 노드 흰 테두리는 그대로 두고 바깥 고리(반지름 +4, 선 2.5)를 노드 층 위·라벨 층 아래에 그린다 */
+.gsel-ring { fill: none; stroke: var(--selected); stroke-width: 2.5; pointer-events: none; }
 .selected.gedge { stroke: var(--selected) !important; stroke-opacity: 1; stroke-width: 3; }
 .ghide { display: none; }
 /* 경로 질의 */
@@ -316,7 +317,8 @@ function hazopPathEngine(G) {
   st.className = "chip " + D.validation.status;
 
   // ---------- 색인
-  var byLocal = {}, unknownsOf = {}, relsOfNode = {};
+  // 프로토타입 없는 사전: 'toString'·'__proto__' 같은 ID가 상속 속성으로 오인되지 않게 한다(T6 W7 최종 재검토)
+  var byLocal = Object.create(null), unknownsOf = Object.create(null), relsOfNode = Object.create(null);
   D.validation.unknowns.concat(D.validation.blockers).forEach(function (u) {
     if (u.target) (unknownsOf[u.target] = unknownsOf[u.target] || []).push(u);
   });
@@ -486,6 +488,8 @@ function hazopPathEngine(G) {
 
   // ---------- 선택·속성 패널
   var selected = null;
+  var selMark = function () {};  // 그래프 선택 고리 갱신(그래프가 있으면 아래 그래프 절에서 정한다)
+  var panelEmpty = document.getElementById("panel").innerHTML;  // 선택 없음 상태의 속성 패널
   function label(id) {
     var it = byLocal[id];
     if (!it) return id;
@@ -502,10 +506,16 @@ function hazopPathEngine(G) {
   var REL = { physical_connection: "공정 배관", signal_connection: "계장 신호", measurement_connection: "계측 연결" };
 
   function select(id, focus) {
-    if (selected) byLocal[selected].els.forEach(function (e) { e.classList.remove("selected"); });
-    selected = id;
+    if (selected && byLocal[selected]) byLocal[selected].els.forEach(function (e) { e.classList.remove("selected"); });
     var it = byLocal[id];
+    selected = it ? id : null;
+    if (!it) {  // 없는 ID(null·색인에 없음): 선택을 해제하고 고리를 숨기고 속성 패널(링크 포함)을 빈 상태로 되돌린다
+      selMark();
+      document.getElementById("panel").innerHTML = panelEmpty;
+      return;
+    }
     it.els.forEach(function (e) { e.classList.add("selected"); });
+    selMark();
     var d = it.d, h = "";
     if (it.type === "node") {
       h += '<div class="cat">' + esc(CAT[d.category] || "미분류") + "</div><h2>" + esc(d.tag || "(태그 없음)") + "</h2>";
@@ -676,6 +686,18 @@ function hazopPathEngine(G) {
       }
       gNodes[n.entity_id]._el = shape; gNodes[n.entity_id]._lab = lab;
     });
+    // 선택 고리: 노드 층 위·라벨 층 아래(라벨을 가리지 않음). 원은 r+4, 배관 구간(45도 사각형)은 꼭짓점 거리 r·√2 + 4
+    var selLayer = el("g", {}, null);
+    groot.insertBefore(selLayer, gLabelLayer);
+    var selRing = el("circle", { "class": "gsel-ring hidden" }, selLayer);
+    selMark = function () {
+      var n = selected && gNodes[entityOfLocal[selected]], p = n && n._el && gpos[n.local_id];
+      if (!p || !n._el.isConnected || n._el.classList.contains("ghide")) { selRing.setAttribute("class", "gsel-ring hidden"); return; }
+      var r = NODE_R[n.category] || 5;
+      if (n._el.tagName !== "circle") r = NODE_R.pipe_segment * Math.SQRT2;
+      selRing.setAttribute("cx", p[0]); selRing.setAttribute("cy", p[1]); selRing.setAttribute("r", r + 4);
+      selRing.setAttribute("class", "gsel-ring");
+    };
 
     function placeAll(pos) {
       G.nodes.forEach(function (n) {
@@ -696,6 +718,7 @@ function hazopPathEngine(G) {
           l.setAttribute("x1", a[0]); l.setAttribute("y1", a[1]); l.setAttribute("x2", b[0]); l.setAttribute("y2", b[1]);
         });
       });
+      selMark();
     }
 
     // 간단한 힘 기반 배치(Fruchterman-Reingold). 도면 좌표에서 시작하므로 결과가 매번 같다.
@@ -770,6 +793,7 @@ function hazopPathEngine(G) {
       gEdgeEls.forEach(function (x) {
         x.g.classList.toggle("ghide", !!offEdge[x.e.kind] || hiddenNode[x.e.nodes[0]] || hiddenNode[x.e.nodes[1]]);
       });
+      selMark();
     }
     gl.addEventListener("change", applyFilter);
     function setAll(v) { Array.prototype.forEach.call(gl.querySelectorAll("input[type=checkbox]"), function (cb) { cb.checked = v; }); applyFilter(); }

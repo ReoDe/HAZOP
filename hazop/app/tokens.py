@@ -86,7 +86,7 @@ def web_css():
 :root { %(root)s; --selected: %(ui)s; --hl-dim: %(dim)s; }
 html, body { font-family: "%(font)s", sans-serif; }
 .selected.sym, .selected.tagbox { stroke: var(--ui) !important; fill: rgba(37,99,235,.12); }
-.selected.pipe-line, .selected.gnode, .selected.gedge { stroke: var(--ui) !important; }
+.selected.pipe-line, .selected.gedge { stroke: var(--ui) !important; }
 body.hz-embedded a.back, body.hz-embedded header .logo, body.hz-embedded header .app, body.hz-embedded header .sep { display: none; }
 body.hz-hide-panel aside#panel, body.hz-hide-panel #pathq { display: none; }
 body.hz-dim #overlay .sym:not(.hz-on), body.hz-dim #overlay .tagbox:not(.hz-on),
