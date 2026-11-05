@@ -1,0 +1,2 @@
+# Vendored third-party files are pinned by SHA-256; keep bytes exact.
+hazop/kg/vendor/** -text
