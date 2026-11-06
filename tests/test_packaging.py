@@ -686,7 +686,284 @@ class BuildSpecTest(unittest.TestCase):
         os.makedirs(os.path.dirname(p))
         open(p, "wb").close()
         self.assertTrue(any("결과 폴더" in x for x in self.bp.check_sources(out, roots=roots)))
+        os.makedirs(self.bp.dist_dir(out, True))
         self.assertEqual(self.bp.check_sources(out, with_check=True, roots=roots), [])  # 검증용 폴더는 따로
+
+    # ---- D13(W8-B): GPL 전용 Qt 모듈 제외(빌드 없이)
+    SP = VENV + r"\Lib\site-packages\PySide6"
+    QT_EXCLUDED = [  # (묶음 안 이름, 기대 모듈) — 대소문자·구분자 섞음
+        (r"PySide6\Qt6Charts.dll", "Charts"), ("PySide6/qt6chartsqml.DLL", "Charts"),
+        (r"PySide6\qml\QtCharts\qmldir", "Charts"), (r"PySide6\QtCharts.pyd", "Charts"),
+        (r"PySide6\Qt6DataVisualizationQml.dll", "DataVisualization"),
+        (r"PySide6\qml\QtDataVisualization\designer\x.qml", "DataVisualization"),
+        (r"PySide6\Qt6Graphs2DImpl.dll", "Graphs"), (r"PySide6\Qt6GraphsWidgets.dll", "Graphs"),
+        (r"PySide6\qml\QtGraphs\qmldir", "Graphs"),
+        (r"PySide6\Qt6Quick3DPhysics.dll", "Quick3D"), (r"PySide6\Qt6Quick3DXr.dll", "Quick3D"),
+        (r"PySide6\Qt6Quick3DSpatialAudio.dll", "Quick3D"), (r"PySide6\qml\QtQuick3D\Physics\qmldir", "Quick3D"),
+        (r"PySide6\Qt6SpatialAudio.dll", "Quick3D"),  # Qt6Quick3DSpatialAudio만 import하던 DLL(총괄 판정)
+        (r"PySide6\plugins\qmltooling\qmldbg_quick3dprofiler.dll", "Quick3D"),
+        (r"PySide6\plugins\assetimporters\assimp.dll", "Quick3D"),
+        (r"PySide6\Qt6VirtualKeyboardSettings.dll", "VirtualKeyboard"),
+        (r"PySide6\qml\QtQuick\VirtualKeyboard\Plugins\Hangul\x.dll", "VirtualKeyboard"),
+        (r"PySide6\plugins\platforminputcontexts\qtvirtualkeyboardplugin.dll", "VirtualKeyboard"),
+        (r"PySide6\Qt6QuickTimelineBlendTrees.dll", "QuickTimeline"), (r"PySide6\qml\QtQuick\Timeline\qmldir", "QuickTimeline"),
+        (r"PySide6\Qt6ShaderTools.dll", "ShaderTools"),
+        (r"PySide6\qml\Qt5Compat\GraphicalEffects\private\qtgraphicaleffectsprivateplugin.dll",
+         "Qt5Compat.GraphicalEffects(ShaderTools 의존)"),
+    ]
+    QT_KEPT = [r"PySide6\Qt6Quick.dll", r"PySide6\Qt6Qml.dll", r"PySide6\Qt6QuickWidgets.dll",
+               r"PySide6\Qt6WebEngineCore.dll", r"PySide6\Qt6WebEngineWidgets.dll", r"PySide6\Qt63DCore.dll",
+               r"PySide6\Qt6QuickControls2.dll", r"PySide6\qml\QtQuick\Controls\qmldir",
+               r"PySide6\qml\QtQuick\Templates\qmldir", r"PySide6\qml\Qt3D\Core\qmldir", r"PySide6\qml\QtWebEngine\qmldir",
+               r"PySide6\plugins\qmltooling\qmldbg_quickprofiler.dll", r"PySide6\plugins\platforms\qwindows.dll",
+               r"PySide6\translations\qtbase_ko.qm", r"licenses\qt\GPL-3.0.txt", "Qt6Charts-notes.txt",
+               r"PySide6\Qt6OpenGLWidgets.dll", r"PySide6\opengl32sw.dll", r"PySide6\Qt6Multimedia.dll",
+               r"PySide6\qml\Qt5Compat\Core5Compat\qmldir"]
+
+    def test_qt_module_exclusion_rules(self):
+        """제외 대상 모듈(D13)은 spec 필터가 빼고 사후 검사(TOC·결과 폴더)가 잡는다. 앱·WebEngine이 링크하는
+        Qt6Quick·Qt6Qml·Qt6QuickWidgets와 Qt3D·Quick Controls 등은 남는다. 이름을 바꿔도 출처로 잡는다."""
+        bad = [(n, self.SP + "\\" + n.replace("/", "\\").split("\\", 1)[1], "BINARY") for n, _ in self.QT_EXCLUDED]
+        good = [(n, self.SP + "\\" + n.split("\\", 1)[1] if n.startswith("PySide6") else r"D:\snap" + "\\" + n, "BINARY")
+                for n in self.QT_KEPT]
+        renamed = [("PySide6/x.dll", self.SP + r"\Qt6Charts.dll", "BINARY"),
+                   ("payload.bin", self.SP + r"\qml\QtQuick3D\Helpers\y.dll", "DATA")]
+        roots = [self.VENV]
+        self.assertEqual([self.bp.qt_module_rejected(n, s, roots) for n, s, _ in bad], [m for _, m in self.QT_EXCLUDED])
+        self.assertEqual(self.bp.drop_binaries(bad + good + renamed, roots), good)
+        self.assertEqual(self.bp.excluded_module_entries(good, roots), [])
+        self.assertEqual([x[0] for x in self.bp.excluded_module_entries(bad + renamed, roots)],
+                         [b[0] for b in bad + renamed])
+        dist = os.path.join(self._tmp(), "HAZOP")
+        for rel in ("HAZOP.exe", "_internal/PySide6/Qt6Quick.dll", "_internal/PySide6/qml/QtQuick/Controls/qmldir"):
+            os.makedirs(os.path.dirname(os.path.join(dist, rel)), exist_ok=True)
+            open(os.path.join(dist, rel), "wb").close()
+        self.assertEqual(self.bp.excluded_module_files(dist), [])
+        for rel in ("_internal/PySide6/qml/QtCharts/qmldir", "_internal/PySide6/Qt6ShaderTools.dll"):
+            os.makedirs(os.path.dirname(os.path.join(dist, rel)), exist_ok=True)
+            open(os.path.join(dist, rel), "wb").close()
+        self.assertEqual(self.bp.excluded_module_files(dist),
+                         [("_internal/PySide6/Qt6ShaderTools.dll", "ShaderTools"),
+                          ("_internal/PySide6/qml/QtCharts/qmldir", "Charts")])
+        # PySide6 폴더 밖·다른 하위 폴더로 옮겨진 DLL은 파일 이름(이름 규칙)으로 잡는다. 이동한 플러그인 DLL 포함
+        moved = ("HAZOP-extra/qt6quicktimeline.DLL", "_internal/Qt6Charts.dll", "_internal/x/Qt6SpatialAudio.dll",
+                 "_internal/y/plugins/platforminputcontexts/qtvirtualkeyboardplugin.dll",
+                 "_internal/moved/qtvirtualkeyboardplugin.dll", "_internal/moved/qmldbg_quick3dprofiler.dll",
+                 "_internal/moved/assimp.dll", "_internal/moved/QTVKBHANGULPLUGIN.dll")
+        # 폴더 규칙은 PySide6 기준 경로에서만, 이름 규칙은 전체 이름만: 아래는 걸리지 않는다
+        unrelated = ("_internal/docs/plugins/assetimporters/readme.txt", "_internal/other/qml/QtCharts/qmldir",
+                     "_internal/Qt6Charts-custom.dll", "_internal/PySide6/Qt6ChartsExtra.dll",
+                     "_internal/PySide6/qml/QtChartsFake/qmldir")
+        for rel in moved + unrelated:
+            os.makedirs(os.path.dirname(os.path.join(dist, rel)), exist_ok=True)
+            open(os.path.join(dist, rel), "wb").close()
+        self.assertEqual(sorted(r for r, _ in self.bp.excluded_module_files(dist)),
+                         sorted(list(moved) + ["_internal/PySide6/Qt6ShaderTools.dll",
+                                               "_internal/PySide6/qml/QtCharts/qmldir"]))
+
+    def test_qt_rules_ignore_absolute_ancestors(self):
+        """절대 경로의 상위 폴더 이름으로 판정하지 않는다: 출처가 '…\\qml\\QtCharts\\project\\venv\\PySide6\\Qt6Core.dll'이거나
+        출력 폴더가 '…\\qml\\QtCharts' 아래여도 정상 파일은 걸리지 않는다. 접두사만 같은 이름·무관한 경로도 걸리지 않는다."""
+        odd_venv = os.path.join(self._tmp(), "qml", "QtCharts", "project", "venv")
+        core = (r"PySide6\Qt6Core.dll", os.path.join(odd_venv, "Lib", "site-packages", "PySide6", "Qt6Core.dll"), "BINARY")
+        qmldir = (r"PySide6\qml\QtQuick\Controls\qmldir",
+                  os.path.join(odd_venv, "Lib", "site-packages", "PySide6", "qml", "QtQuick", "Controls", "qmldir"), "DATA")
+        other = [(r"docs\plugins\assetimporters\readme.txt", r"D:\snap\docs\plugins\assetimporters\readme.txt", "DATA"),
+                 ("Qt6Charts-custom.dll", self.SP + r"\Qt6Charts-custom.dll", "BINARY"),
+                 (r"PySide6\Qt6QuickTimelineX.dll", self.SP + r"\Qt6QuickTimelineX.dll", "BINARY")]
+        for roots in ([odd_venv], [self.VENV]):
+            self.assertEqual(self.bp.drop_binaries([core, qmldir] + other, roots), [core, qmldir] + other)
+            self.assertEqual(self.bp.excluded_module_entries([core, qmldir] + other, roots), [])
+        # 허용 루트 안 출처는 PySide6 기준 경로로 폴더 규칙을 적용한다(묶음 안 이름을 바꿔도)
+        moved = ("payload.bin", os.path.join(odd_venv, "Lib", "site-packages", "PySide6", "qml", "QtCharts", "x.qml"), "DATA")
+        self.assertEqual(self.bp.qt_module_rejected(moved[0], moved[1], [odd_venv]), "Charts")
+        self.assertIsNone(self.bp.qt_module_rejected(moved[0], moved[1], [self.VENV]))  # 허용 루트 밖: 상위 이름 무시
+        # 출력 폴더가 qml/QtCharts 아래: 정상 묶음은 통과
+        out = os.path.join(self._tmp(), "qml", "QtCharts")
+        _, good, _ = self._toc(out)
+        self._write_toc(out, repr((good,)))
+        for rel in ("_internal/PySide6/Qt6Core.dll", "_internal/PySide6/qml/QtQuick/Controls/qmldir"):
+            os.makedirs(os.path.dirname(os.path.join(self.bp.dist_dir(out), rel)), exist_ok=True)
+            open(os.path.join(self.bp.dist_dir(out), rel), "wb").close()
+        self.assertEqual(self.bp.excluded_module_files(self.bp.dist_dir(out)), [])
+        self.assertEqual(self.bp.check_sources(out, roots=[self.VENV, self.BASE]), [])
+
+    def test_spec_applies_filter_to_both_analyses(self):
+        """생성한 spec을 PyInstaller 없이 모의 실행해, 두 Analysis(앱·검증)의 binaries·datas가 drop_binaries를 거친 뒤
+        COLLECT로 간다는 것을 확인한다(spec에서 필터 연결을 지우면 실패)."""
+        bad = [(r"PySide6\Qt6Charts.dll", r"C:\x\Qt6Charts.dll", "BINARY"),
+               (r"PySide6\qml\QtQuick3D\qmldir", r"C:\x\qmldir", "DATA"),
+               (r"PySide6\plugins\tls\qopensslbackend.dll", r"C:\x\qopensslbackend.dll", "BINARY")]
+        keep = [(r"PySide6\Qt6Quick.dll", r"C:\x\Qt6Quick.dll", "BINARY"), ("licenses\\README.md", r"C:\x\README.md", "DATA")]
+        seen = {}
+
+        class FakeAnalysis:
+            def __init__(self, scripts, **kw):
+                self.binaries = list(bad + keep)
+                self.datas = list(bad + keep)
+                self.pure, self.scripts = [], []
+
+        def fake_collect(*parts, **kw):
+            seen["parts"] = parts
+        hooks = mock.Mock()
+        hooks.collect_submodules.return_value = []
+        saved_path = list(sys.path)
+        self.addCleanup(lambda: sys.modules.pop("build_package", None))
+        try:
+            for with_check in (False, True):
+                ns = {"Analysis": FakeAnalysis, "PYZ": mock.Mock(), "EXE": mock.Mock(side_effect=lambda *a, **k: "exe"),
+                      "COLLECT": fake_collect}
+                with mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock(), "PyInstaller.utils": mock.Mock(),
+                                                   "PyInstaller.utils.hooks": hooks}):
+                    exec(compile(self.bp.spec_text(with_check=with_check), "HAZOP.spec", "exec"), ns)
+                lists = [x for x in seen["parts"] if isinstance(x, list)]
+                self.assertEqual(len(lists), 4 if with_check else 2)
+                for lst in lists:
+                    self.assertEqual(lst, keep)
+        finally:
+            sys.path[:] = saved_path
+
+    def test_check_sources_qt_modules(self):
+        """제외 대상 모듈이 TOC나 결과 폴더에 있으면 check_sources가 실패하고 main은 rc=3."""
+        out = self._tmp()
+        roots = [self.VENV, self.BASE]
+        _, good, _ = self._toc(out)
+        bad = (r"PySide6\Qt6VirtualKeyboard.dll", self.SP + r"\Qt6VirtualKeyboard.dll", "BINARY")
+        self._write_toc(out, repr((good + [bad],)))
+        probs = self.bp.check_sources(out, roots=roots)
+        self.assertEqual([p for p in probs if "제외 대상 Qt 모듈" in p],
+                         ["제외 대상 Qt 모듈(VirtualKeyboard)이 TOC에 있음: %s (%s)" % bad[:2]])
+        self._write_toc(out, repr((good,)))
+        p = os.path.join(self.bp.dist_dir(out), "_internal", "PySide6", "qml", "QtQuick3D", "qmldir")
+        os.makedirs(os.path.dirname(p))
+        open(p, "wb").close()
+        self.assertEqual(self.bp.check_sources(out, roots=roots),
+                         ["제외 대상 Qt 모듈(Quick3D)이 결과 폴더에 있음: _internal/PySide6/qml/QtQuick3D/qmldir"])
+
+        # main: 결과 폴더에는 위반 파일이 없고 TOC 위반만 있을 때 rc=3, TOC도 깨끗하면 rc=0(새 출력 폴더)
+        out2 = self._tmp()
+        _, good, _ = self._toc(out2)
+        toc_text = {}
+
+        def fake_build(spec, o):
+            self._write_toc(o, toc_text["v"])
+            return 0
+        with mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock()}), \
+                mock.patch.object(self.bp, "build", side_effect=fake_build), \
+                mock.patch.object(self.bp, "check_dist", return_value=[]), \
+                mock.patch.object(self.bp, "allowed_roots", return_value=roots), \
+                mock.patch.object(self.bp, "python_problems", return_value=[]):
+            toc_text["v"] = repr((good + [bad],))
+            self.assertEqual(self.bp.main(["--out", out2, "--build"]), 3)
+            self.assertEqual(self.bp.dist_files(self.bp.dist_dir(out2)), [])
+            self.assertEqual(self.bp.check_sources(out2, roots=roots),
+                             ["제외 대상 Qt 모듈(VirtualKeyboard)이 TOC에 있음: %s (%s)" % bad[:2]])
+            toc_text["v"] = repr((good,))
+            self.assertEqual(self.bp.main(["--out", out2, "--build"]), 0)
+
+    def test_result_folder_unwalked_dirs(self):
+        """os.walk가 들어가지 않는 폴더는 검사 실패: is_dir() 오류로 파일 목록에 들어온 폴더(모의), junction 폴더(실제)."""
+        dist = os.path.join(self._tmp(), "HAZOP")
+        os.makedirs(os.path.join(dist, "_internal", "sub"))
+        open(os.path.join(dist, "HAZOP.exe"), "wb").close()
+        self.assertEqual([x[2] for x in self.bp.dist_files(dist)], ["HAZOP.exe"])
+        real_walk = os.walk
+
+        def isdir_failed_walk(top, onerror=None, **kw):  # Python 3.12 os.walk: is_dir() OSError면 파일로 분류
+            if os.path.normcase(top) != os.path.normcase(dist):
+                return real_walk(top, onerror=onerror, **kw)
+            return iter([(dist, [], ["HAZOP.exe"]), (os.path.join(dist, "_internal"), [], ["sub"])])
+        with mock.patch.object(self.bp.os, "walk", side_effect=isdir_failed_walk):
+            with self.assertRaises(OSError) as cm:
+                self.bp.dist_files(dist)
+            self.assertIn("폴더를 탐색하지 못함", str(cm.exception))
+        target = os.path.join(self._tmp(), "outside")
+        os.makedirs(target)
+        open(os.path.join(target, "Qt6Charts.dll"), "wb").close()
+        self._junction(os.path.join(dist, "_internal", "linked"), target)
+        with self.assertRaises(OSError) as cm:
+            self.bp.dist_files(dist)
+        self.assertIn("링크 폴더", str(cm.exception))
+
+    def test_result_folder_walk_errors(self):
+        """결과 폴더가 없거나 탐색 중 오류(PermissionError 모의)가 나면 검사 실패, main은 rc=3."""
+        out = self._tmp()
+        roots = [self.VENV, self.BASE]
+        _, good, _ = self._toc(out)
+        self._write_toc(out, repr((good,)))
+        self.assertEqual(self.bp.check_sources(out, roots=roots), [])
+        os.rmdir(self.bp.dist_dir(out))
+        probs = self.bp.check_sources(out, roots=roots)
+        self.assertEqual(len(probs), 1)
+        self.assertIn("결과 폴더 탐색 오류", probs[0])
+        self.assertIn("결과 폴더 없음", probs[0])
+        os.makedirs(self.bp.dist_dir(out))
+
+        real_walk, dist = os.walk, self.bp.dist_dir(out)
+
+        def bad_walk(top, onerror=None, **kw):  # 결과 폴더 탐색만 오류(datas 목록 등 다른 탐색은 그대로)
+            if os.path.normcase(os.path.abspath(top)) != os.path.normcase(os.path.abspath(dist)):
+                return real_walk(top, onerror=onerror, **kw)
+            onerror(PermissionError(13, "액세스 거부(모의)", os.path.join(top, "_internal")))
+            return iter([(top, [], ["HAZOP.exe"])])
+        with mock.patch.object(self.bp.os, "walk", side_effect=bad_walk):
+            with self.assertRaises(PermissionError):
+                self.bp.dist_files(self.bp.dist_dir(out))
+            probs = self.bp.check_sources(out, roots=roots)
+            self.assertEqual(len(probs), 1)
+            self.assertIn("결과 폴더 탐색 오류", probs[0])
+            self.assertIn("액세스 거부(모의)", probs[0])
+            with mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock()}), \
+                    mock.patch.object(self.bp, "build", return_value=0), \
+                    mock.patch.object(self.bp, "check_dist", return_value=[]), \
+                    mock.patch.object(self.bp, "allowed_roots", return_value=roots), \
+                    mock.patch.object(self.bp, "python_problems", return_value=[]):
+                self.assertEqual(self.bp.main(["--out", out, "--build"]), 3)
+
+    def test_qt_exclusion_against_installed_pyside6(self):
+        """설치된 PySide6 기준: 제외 규칙마다 실제 파일이 하나 이상 걸리고(이름이 바뀌면 규칙이 헛돈다), 앱이 import하는
+        모듈의 DLL(QtWebEngineWidgets·QtWebChannel·QtWidgets 등)에서 PE import를 따라간 의존 DLL은 하나도 걸리지 않는다."""
+        try:
+            import PySide6
+            import pefile
+        except ImportError:
+            self.skipTest("PySide6·pefile 없음(전용 venv에서 실행)")
+        root = os.path.dirname(PySide6.__file__)
+        rels = [os.path.relpath(os.path.join(d, f), root).replace("\\", "/")
+                for d, _, files in os.walk(root) for f in files]
+        lower = {r.lower() for r in rels}
+        bases = {}
+        for r in lower:
+            bases.setdefault(os.path.basename(r), []).append(r)
+        excluded_dirs = [x.lower() for _, _, dirs in self.bp.QT_EXCLUDED_MODULES for x in dirs]
+        for mod, files, dirs in self.bp.QT_EXCLUDED_MODULES:
+            for f in files:  # 이름 규칙의 모든 이름이 설치본에 있고, 다른 모듈 파일과 이름이 겹치지 않는다
+                self.assertIn(f.lower(), bases, (mod, f))
+                clash = [r for r in bases[f.lower()] if "/" in r and not any(r.startswith(x) for x in excluded_dirs)
+                         and not r.startswith(("plugins/platforminputcontexts/", "plugins/qmltooling/"))]
+                self.assertEqual(clash, [], (mod, f))
+            for x in dirs:  # 폴더 규칙의 모든 폴더가 설치본에 있다
+                self.assertTrue(any(r.startswith(x.lower()) for r in lower), (mod, x))
+
+        def imports(name):
+            pe = pefile.PE(os.path.join(root, name), fast_load=True)
+            pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_IMPORT"],
+                                                   pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT"]])
+            out = {e.dll.decode("ascii") for a in ("DIRECTORY_ENTRY_IMPORT", "DIRECTORY_ENTRY_DELAY_IMPORT")
+                   for e in getattr(pe, a, [])}
+            pe.close()
+            return {x for x in out if os.path.isfile(os.path.join(root, x))}  # PySide6 폴더 안 DLL만 따라간다
+        todo = ["Qt6WebEngineWidgets.dll", "Qt6WebEngineCore.dll", "Qt6WebChannel.dll", "Qt6Widgets.dll",
+                "Qt6Gui.dll", "Qt6Core.dll", "Qt6Network.dll", "QtWebEngineProcess.exe"]
+        seen = set()
+        while todo:
+            n = todo.pop()
+            if n.lower() in seen:
+                continue
+            seen.add(n.lower())
+            todo += sorted(imports(n))
+        self.assertTrue({"qt6quick.dll", "qt6qml.dll", "qt6quickwidgets.dll"} <= seen)  # WebEngine이 링크(남겨야 함)
+        self.assertEqual(sorted(n for n in seen if self.bp.qt_module_rejected("PySide6/" + n, "x")), [])
 
     def test_python_problems(self):
         venv = r"C:\Users\u\.hazop\venv-py312"

@@ -25,6 +25,11 @@
   출처가 절대 경로이며 venv·기반 CPython 안인지 본다. EXECUTABLE은 <out>/build 안, SYMLINK는 묶음 밖을 가리키면 안 된다.
   출처와 관계없이 이름 거부 목록(ucrtbase, api-ms-win-*, lib(ssl|crypto)-3-x64)과 제외 플러그인이 TOC나 결과 폴더에
   있으면 실패한다. 하나라도 걸리면 rc=3.
+- GPL 전용 Qt 모듈 제외(D13, W8-B): Charts·DataVisualization·Graphs·Quick3D(Physics·Xr 포함)·VirtualKeyboard·
+  QuickTimeline·ShaderTools와 딸린 파일(QT_EXCLUDED_MODULES)을 spec의 drop_binaries로 빼고, 빌드 뒤 검사에서 TOC나 결과
+  폴더에 남아 있으면 rc=3. 의존 관계로 Qt5Compat.GraphicalEffects(ShaderTools 링크)·Qt6SpatialAudio.dll·QtSpatialAudio.pyd도 함께 뺀다.
+  판정은 파일 이름 전체(위치 무관)와 PySide6 기준 상대 경로(폴더 규칙)로 한다. 결과 폴더가 없거나 탐색 오류·확인하지
+  못한 항목·링크 폴더가 있으면 검사 실패(rc=3).
 출력 폴더는 저장소 밖이어야 한다(저장소 안이면 거부). 네트워크를 쓰지 않는다(UPX도 쓰지 않음).
 """
 
@@ -34,6 +39,7 @@ import json
 import os
 import platform
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -72,6 +78,45 @@ SCRIPT_MODULES = ("extract_drawio", "build_graph")
 TLS_PLUGIN_DIR = "pyside6/plugins/tls/"
 TLS_ALLOWED = ("qschannelbackend.dll", "qcertonlybackend.dll")
 TLS_EXCLUDED = ("qopensslbackend.dll",)
+# W8-B(D13): 앱이 쓰지 않는 GPL 전용 Qt 모듈과 딸린 파일(DLL·바인딩·qml 폴더·플러그인)은 묶지 않는다. 앱·WebEngine이
+# 링크하는 Qt6Quick·Qt6Qml·Qt6QuickWidgets는 남긴다. 근거(SPDX·PE import): docs/2026-11-05-packaging/evidence/w8b-모듈제외.md
+# (모듈, 이름 규칙, 폴더 규칙)
+# - 이름 규칙: 파일 이름 전체(대소문자 무시)로 위치와 관계없이 판정한다. 설치본 PySide6 6.12.0에서 뽑은 모듈 DLL·바인딩·
+#   제외 폴더 안 플러그인 DLL 이름이다. 설치본의 다른 파일과 이름이 겹치지 않는다(겹치는 흔한 이름은 넣지 않는다).
+# - 폴더 규칙: PySide6 폴더 기준 상대 경로의 앞부분으로만 판정한다(묶음 안 'PySide6/…', 허용 루트의 site-packages/PySide6
+#   아래 출처, 결과 폴더 '_internal/PySide6/…'). 절대 경로의 상위 폴더 이름으로는 판정하지 않는다.
+QT_EXCLUDED_MODULES = (
+    ("Charts", ("Qt6Charts.dll", "Qt6ChartsQml.dll", "QtCharts.pyd", "qtchartsqml2plugin.dll"), ("qml/QtCharts/",)),
+    ("DataVisualization", ("Qt6DataVisualization.dll", "Qt6DataVisualizationQml.dll", "QtDataVisualization.pyd",
+                           "datavisualizationqmlplugin.dll"), ("qml/QtDataVisualization/",)),
+    ("Graphs", ("Qt6Graphs.dll", "Qt6Graphs2DImpl.dll", "Qt6GraphsWidgets.dll", "QtGraphs.pyd", "QtGraphsWidgets.pyd",
+                "graphsplugin.dll"), ("qml/QtGraphs/",)),
+    # Physics·Xr·SpatialAudio·Helpers 등, Quick3D에 링크하는 qml 디버그 플러그인·자산 가져오기 플러그인,
+    # Qt6Quick3DSpatialAudio만 import하던 Qt6SpatialAudio.dll·바인딩(제외 뒤 묶음 안 importer 0, 총괄 판정)
+    ("Quick3D", ("Qt6Quick3D.dll", "Qt6Quick3DAssetImport.dll", "Qt6Quick3DAssetUtils.dll", "Qt6Quick3DEffects.dll",
+                 "Qt6Quick3DGlslParser.dll", "Qt6Quick3DHelpers.dll", "Qt6Quick3DHelpersImpl.dll",
+                 "Qt6Quick3DIblBaker.dll", "Qt6Quick3DParticleEffects.dll", "Qt6Quick3DParticles.dll",
+                 "Qt6Quick3DPhysics.dll", "Qt6Quick3DPhysicsHelpers.dll", "Qt6Quick3DRuntimeRender.dll",
+                 "Qt6Quick3DSpatialAudio.dll", "Qt6Quick3DUtils.dll", "Qt6Quick3DXr.dll", "QtQuick3D.pyd",
+                 "Qt6SpatialAudio.dll", "QtSpatialAudio.pyd", "qmldbg_quick3dprofiler.dll", "assimp.dll",
+                 "qtquick3dassetutilsplugin.dll", "qtquick3deffectplugin.dll", "qtquick3dhelpersimplplugin.dll",
+                 "qtquick3dhelpersplugin.dll", "qtquick3dparticleeffectsplugin.dll", "qtquick3dparticles3dplugin.dll",
+                 "qtquick3dphysicshelpersplugin.dll", "qquick3dphysicsplugin.dll", "quick3dspatialaudioplugin.dll",
+                 "quick3dxrplugin.dll", "qquick3dplugin.dll"),
+     ("qml/QtQuick3D/", "plugins/assetimporters/")),
+    ("VirtualKeyboard", ("Qt6VirtualKeyboard.dll", "Qt6VirtualKeyboardQml.dll", "Qt6VirtualKeyboardSettings.dll",
+                         "qtvirtualkeyboardplugin.dll", "qtvkbcomponentsplugin.dll", "virtualkeyboardplugin.dll",
+                         "qtvkblayoutsplugin.dll", "qtvkbhangulplugin.dll", "qtvkbopenwnnplugin.dll",
+                         "qtvkbpinyinplugin.dll", "qtvkbtcimeplugin.dll", "qtvkbthaiplugin.dll", "qtvkbpluginsplugin.dll",
+                         "qtvkbsettingsplugin.dll", "qtvkbbuiltinstylesplugin.dll", "qtvkbstylesplugin.dll",
+                         "qtvkbplugin.dll"), ("qml/QtQuick/VirtualKeyboard/",)),
+    ("QuickTimeline", ("Qt6QuickTimeline.dll", "Qt6QuickTimelineBlendTrees.dll", "qtquicktimelineplugin.dll",
+                       "qtquicktimelineblendtreesplugin.dll"), ("qml/QtQuick/Timeline/",)),
+    ("ShaderTools", ("Qt6ShaderTools.dll",), ()),
+    # Qt6ShaderTools.dll에 링크하는 private 플러그인을 쓰는 QML 모듈(남기면 읽을 수 없는 플러그인만 남는다, 총괄 판정)
+    ("Qt5Compat.GraphicalEffects(ShaderTools 의존)", ("qtgraphicaleffectsplugin.dll", "qtgraphicaleffectsprivateplugin.dll"),
+     ("qml/Qt5Compat/GraphicalEffects/",)),
+)
 # D10: 출처와 관계없이 묶음에 있으면 안 되는 이름(UCRT는 Windows 10 이상 시스템 구성요소, OpenSSL -x64는 PATH 경유)
 FORBIDDEN_NAME = re.compile(r"^(ucrtbase\.dll|api-ms-win-.*\.dll|lib(ssl|crypto)-3-x64\.dll)$", re.I)
 VENV_DIR = os.path.join(os.path.expanduser("~"), ".hazop", "venv-py312")  # 전용 venv(T2 D4)
@@ -117,7 +162,7 @@ def spec_text(repo_root=REPO_ROOT, with_check=False):
         "HIDDEN = collect_submodules('hazop') + %r" % list(SCRIPT_MODULES),
         "import shutil",
         "sys.path.insert(0, os.path.join(REPO, 'scripts'))",
-        "from build_package import drop_binaries  # D10: TLS 플러그인 허용 목록(사후 검사와 같은 규칙)",
+        "from build_package import drop_binaries  # D10 TLS 허용 목록·D13 Qt 모듈 제외(사후 검사와 같은 규칙)",
         "def keep_warn(tag):  # 두 Analysis가 같은 경고 파일을 덮어쓰므로 Analysis마다 복사해 둔다",
         "    w = globals().get('WARNFILE')",
         "    if w and os.path.isfile(w):",
@@ -182,9 +227,44 @@ def tls_rejected(dest, src):
     return None
 
 
-def drop_binaries(toc):
-    """spec에서 Analysis binaries·datas에 적용: TLS 플러그인 규칙에 걸리는 항목을 뺀다(D10)."""
-    return [x for x in toc if not tls_rejected(x[0], x[1])]
+def _norm(path):
+    return str(path).replace("\\", "/").lower()
+
+
+def _pyside_rel_src(src, roots):
+    """출처 실경로가 허용 루트의 Lib/site-packages/PySide6 안이면 그 안의 상대 경로(소문자, '/'), 아니면 None."""
+    if not os.path.isabs(src):
+        return None
+    real = long_real(src)
+    for root in roots:
+        pkg = os.path.join(root, "Lib", "site-packages", "PySide6")
+        if inside(real, pkg):
+            return _norm(os.path.relpath(os.path.realpath(real), os.path.realpath(pkg)))
+    return None
+
+
+def qt_module_rejected(dest, src=None, roots=None):
+    """제외 대상 Qt 모듈(D13) 이름, 없으면 None. 이름 규칙은 묶음 안 이름·출처·출처 실경로(긴 파일명)의 파일 이름으로,
+    폴더 규칙은 PySide6 기준 상대 경로(묶음 안 이름 'PySide6/…', 허용 루트 안 출처)로만 본다."""
+    d = _norm(dest)
+    names = {_base(d)}
+    rels = {d[len("pyside6/"):]} if d.startswith("pyside6/") else set()
+    if src:
+        names.add(_base(_norm(src)))
+        if os.path.isabs(src):
+            names.add(_base(_norm(long_real(src))))
+        r = _pyside_rel_src(src, roots or allowed_roots())
+        if r:
+            rels.add(r)
+    for mod, files, dirs in QT_EXCLUDED_MODULES:
+        if names & {f.lower() for f in files} or any(r.startswith(x.lower()) for r in rels for x in dirs):
+            return mod
+    return None
+
+
+def drop_binaries(toc, roots=None):
+    """spec에서 Analysis binaries·datas에 적용: TLS 플러그인 규칙(D10)과 제외 대상 Qt 모듈(D13)에 걸리는 항목을 뺀다."""
+    return [x for x in toc if not tls_rejected(x[0], x[1]) and not qt_module_rejected(x[0], x[1], roots)]
 
 
 def inside(path, root):
@@ -334,22 +414,58 @@ def forbidden_entries(toc):
     return out
 
 
+def _raise(err):
+    raise err
+
+
+def dist_files(dist):
+    """결과 폴더의 파일 [(전체 경로, 파일 이름, dist 상대 경로, _internal 아래 묶음 안 이름)]. 폴더가 없거나 탐색 중
+    오류(권한 등)가 나면 OSError — 검사가 일부 파일을 못 보고 통과하지 않게 한다."""
+    if not os.path.isdir(dist):
+        raise FileNotFoundError("결과 폴더 없음: %s" % dist)
+    out = []
+    for d, dirs, files in os.walk(dist, onerror=_raise):
+        for x in dirs:  # os.walk는 링크·junction 폴더 안으로 들어가지 않으므로 검사 실패로 둔다
+            p = os.path.join(d, x)
+            if os.path.islink(p) or os.path.isjunction(p):
+                raise OSError("링크 폴더(탐색하지 않음): %s" % p)
+        for f in files:
+            full = os.path.join(d, f)
+            if stat.S_ISDIR(os.lstat(full).st_mode):  # is_dir() 오류로 파일 목록에 들어온 폴더(안을 보지 못함)
+                raise OSError("폴더를 탐색하지 못함: %s" % full)
+            rel = os.path.relpath(full, dist).replace("\\", "/")
+            out.append((full, f, rel, rel[len("_internal/"):] if rel.lower().startswith("_internal/") else rel))
+    return out
+
+
 def forbidden_files(dist):
     """결과 폴더에서 이름 거부 목록·TLS 규칙(_internal 아래 묶음 안 이름 기준)에 걸리는 파일(dist 상대 경로)."""
     out = []
-    for d, _, files in os.walk(dist):
-        for f in files:
-            full = os.path.join(d, f)
-            rel = os.path.relpath(full, dist).replace("\\", "/")
-            inner = rel[len("_internal/"):] if rel.lower().startswith("_internal/") else rel
-            if FORBIDDEN_NAME.match(f) or FORBIDDEN_NAME.match(_base(long_real(full))) or tls_rejected(inner, full):
-                out.append(rel)
+    for full, f, rel, inner in dist_files(dist):
+        if FORBIDDEN_NAME.match(f) or FORBIDDEN_NAME.match(_base(long_real(full))) or tls_rejected(inner, full):
+            out.append(rel)
+    return sorted(out)
+
+
+def excluded_module_entries(toc, roots=None):
+    """제외 대상 Qt 모듈(D13)에 걸리는 TOC 항목 [(묶음 안 이름, 출처, 모듈)]."""
+    return [(n, s, m) for n, s, _ in toc for m in [qt_module_rejected(n, s, roots)] if m]
+
+
+def excluded_module_files(dist):
+    """결과 폴더 전체에서 제외 대상 Qt 모듈(D13)에 걸리는 파일 [(dist 상대 경로, 모듈)]. 이름 규칙은 파일 이름(과 실경로의
+    긴 파일명)으로 위치와 관계없이, 폴더 규칙은 '_internal/PySide6/' 아래 상대 경로로만 본다(dist 바깥 경로는 보지 않음)."""
+    out = []
+    for full, f, rel, inner in dist_files(dist):
+        m = qt_module_rejected(inner, None) or qt_module_rejected(_base(_norm(long_real(full))), None)
+        if m:
+            out.append((rel, m))
     return sorted(out)
 
 
 def check_sources(out_dir, with_check=False, roots=None):
-    """빌드 결과 바이너리 검사(D10). 문제 목록(빈 목록 = 통과): TOC 형식, 허용 루트 밖 출처, 이름 거부 목록·제외
-    플러그인(TOC와 결과 폴더 모두)."""
+    """빌드 결과 바이너리 검사(D10·D13). 문제 목록(빈 목록 = 통과): TOC 형식, 허용 루트 밖 출처, 이름 거부 목록·제외
+    플러그인, 제외 대상 Qt 모듈(TOC와 결과 폴더 모두)."""
     toc_path = collect_toc_path(out_dir)
     if not os.path.isfile(toc_path):
         return ["COLLECT TOC 없음: %s" % toc_path]
@@ -360,7 +476,14 @@ def check_sources(out_dir, with_check=False, roots=None):
     probs = ["허용 루트 밖 출처 %s: %s (%s)" % (t, n, s)
              for n, s, t in foreign_binaries(toc, roots or allowed_roots(), os.path.join(out_dir, "build"))]
     probs += ["거부 목록·제외 대상이 TOC에 있음: %s (%s)" % (n, s) for n, s, _ in forbidden_entries(toc)]
-    probs += ["거부 목록·제외 대상이 결과 폴더에 있음: %s" % r for r in forbidden_files(dist_dir(out_dir, with_check))]
+    probs += ["제외 대상 Qt 모듈(%s)이 TOC에 있음: %s (%s)" % (m, n, s)
+              for n, s, m in excluded_module_entries(toc, roots or allowed_roots())]
+    dist = dist_dir(out_dir, with_check)
+    try:
+        probs += ["거부 목록·제외 대상이 결과 폴더에 있음: %s" % r for r in forbidden_files(dist)]
+        probs += ["제외 대상 Qt 모듈(%s)이 결과 폴더에 있음: %s" % (m, r) for r, m in excluded_module_files(dist)]
+    except OSError as e:  # 탐색 오류는 검사 실패(일부 파일을 못 본 채 통과하지 않게)
+        probs.append("결과 폴더 탐색 오류: %s" % e)
     return probs
 
 
