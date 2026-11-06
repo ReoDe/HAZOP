@@ -12,6 +12,7 @@
 - [공통 원칙](기획서/전체기획.md#principles): 모든 단계에 적용하는 근거·미확인·이력·검증·AI 원칙
 - [MVP와 후속 범위](기획서/전체기획.md#mvp): 첫 수직 슬라이스와 단계별 후속 기능
 - [단계 간 데이터 규격 초안](기획서/전체기획.md#data-contract): ID·버전·상태, 전달 JSON과 변경 알림 예시
+  - [단계 연쇄 검사](기획서/단계연쇄검사.md): ①→⑤ 결과의 ID·버전·해시·상태 연속성 검사
 - [최상위 플로우차트](<flow chart/00-overview.md>): 단계 간 데이터 흐름
 - ① [자료 등록 흐름](<flow chart/01-registration.md>) · [기획](기획서/자료등록.md)
 - ② [정보 추출 흐름](<flow chart/02-extraction.md>) · [기획](기획서/정보추출.md): draw.io 원본 읽기, 샘플 작성 규칙, 기호·연결 규칙
@@ -19,6 +20,7 @@
 - ④ [HAZOP 분석 흐름](<flow chart/04-hazop-analysis.md>) · [기획](기획서/HAZOP분석.md): 편차 후보, 원인·결과 패턴, 그래프 탐색, AI 추론
   - [HAZOP 기법 지침](기획서/HAZOP기법지침.md): KOSHA P-86-2017(회분식 HAZOP 기술지침) 요약
 - ⑤ [검토·결과 관리 흐름](<flow chart/05-review-results.md>) · [기획](기획서/검토결과관리.md): 편차별 확정, 재검토, Excel 출력
+  - [평가 기준 비교](기획서/평가기준비교.md): 평가 기준 파일 형식, 대응 규칙, 지표
 - [데스크톱 인터페이스](기획서/인터페이스.md): ①②④⑤ 화면, 검토 확정 규격, Excel 출력, 패키징 대비
 - [메모리](메모리/README.md): 결정 로그와 남은 작업
 - [그래프조사](기획서/그래프조사.md) · [그래프활용](기획서/그래프활용.md): 지식그래프·알고리즘·그래프 화면 조사와 구현 구상
@@ -97,7 +99,7 @@
 7. 질의 예: `python scripts/query_graph.py SNP-M-101 path RC-RV01 RC-PP01 --mode physical`
 8. 등록: `python scripts/register.py --project <ID> <파일.drawio> [--drawing-number X --revision 0 --title T --by 이름 --reason 사유]`
 9. 등록 자료 추출: `python scripts/extract_drawio.py --registration 자료저장소/<ID>/registrations/<material_id>/<버전>.json`
-10. 일괄(등록→추출→그래프→뷰어): `python scripts/run_samples.py` (출력/을 덮어씀)
+10. 일괄(등록→추출→그래프→뷰어): `python scripts/run_samples.py` → `출력/samples/추출·그래프·뷰어/`(1~3번 `--samples` 결과와 분리)
 11. HAZOP 분석(고정 응답): `python scripts/analyze.py` → 출력/분석/region-SNP-M-102-pzr/<실행ID>/analysis.json
 12. 실제 API: `ANTHROPIC_API_KEY` 설정 후 `python scripts/analyze.py --live [--only p86-d09]`, 재시도 `--resume <실행 폴더>`, 그래프 버전 재연결 `--rebind-graph --confirm --by 이름 --reason 사유`
 13. 검사 추가: `python scripts/check_register.py`, `python scripts/check_analysis.py`, `python scripts/refresh_fixture_hashes.py --check`
@@ -108,3 +110,4 @@
 18. 엔티티 연결(`--graph-id` 필수, 반복 지정 가능): `python scripts/link_kg.py candidates|confirm-exact|apply <프로젝트 ID> --graph-id <그래프 ID>` (`confirm-exact`는 `--reviewer`·`--reason` 포함)
 19. 그래프 알고리즘 A1~A5: `python scripts/analyze_kg.py <프로젝트 ID> --start <노드 ID> [--radius 2] [--region <구간 JSON>] [--graph-id <그래프 ID>]`
 20. 지식그래프 검사: `python scripts/check_kg_renderer.py`, `python scripts/check_kg.py`, `python scripts/check_kg_link.py`, `python scripts/check_kg_algo.py`
+21. 출력 정리: `python scripts/clean_outputs.py [--keep 5] [--apply]`. 기본은 후보 목록만 출력(dry-run). `--apply`일 때만 구간별 최근 N개 밖의 분석 실행(검토 기록이 있는 실행은 보존)과 지식그래프 옛 경로 파일·이전 버전 폴더를 `출력/_보관/<시각>/`으로 옮김(삭제 안 함)
