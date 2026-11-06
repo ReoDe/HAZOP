@@ -9,11 +9,14 @@
   5) 구조 검증 blocker 0, drawio 추출 결과와 같은 스키마 키, 두 번 실행 결과 동일
   6) 기준점 좌표 정렬(align.py) status ok와 잔차, 정답 대비 평가 status ok
 를 확인하고 지표 표를 출력한다. 지표 목표치는 정하지 않았다(측정값만 기록).
+이어서 W4(OpenCV·rapidocr가 있을 때만, 없으면 건너뜀을 출력): 샘플 6세트 PNG(`.drawio.png` 제외, 결정 D1)를
+래스터 어댑터로 읽어 5)·6)과 같은 검사와 샘플별 품질 하한(RASTER_QUALITY_FLOORS)을 확인한다.
 
 평가 실행: python scripts/check_adapter.py --truth 정답.json --candidate 후보.json
            [--transform 변환.json] [--out 폴더]   → 폴더에 evaluation.json·evaluation.md
 W3 결과 저장: python scripts/check_adapter.py --pdf-out 폴더
            → 폴더/<도면>/{extraction,alignment,evaluation}.json·evaluation.md, 폴더/summary.md
+W4 결과 저장: python scripts/check_adapter.py --raster-out 폴더 (같은 구성)
 """
 
 import argparse
@@ -32,6 +35,7 @@ from hazop.extract import drawio  # noqa: E402
 from hazop.extract.adapters import align  # noqa: E402
 from hazop.extract.adapters import evaluation as ev  # noqa: E402
 from hazop.extract.adapters import pdf_vector  # noqa: E402
+from hazop.extract.adapters import raster  # noqa: E402  (cv2는 함수 안에서만 읽는다)
 from hazop.graph import build as graph_build  # noqa: E402
 
 FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "adapter", "truth_small.json")
@@ -263,9 +267,9 @@ QUALITY_FLOORS = {
 }
 
 
-def quality_problems(row):
+def quality_problems(row, floors=None):
     """표 행이 샘플별 하한 아래로 내려간 항목 목록. 하한이 없는 샘플은 그 사실을 문제로 낸다."""
-    floor = QUALITY_FLOORS.get(row["name"])
+    floor = (QUALITY_FLOORS if floors is None else floors).get(row["name"])
     if floor is None:
         return ["%s: 품질 하한 미등록" % row["name"]]
     got = {"relations_f1": row["relations"]["f1"], "objects_f1": row["objects"]["f1"],
@@ -415,7 +419,105 @@ def run_pdf_checks(out=None):
     return failures, False
 
 
-def run_checks(pdf_out=None):
+# ---------- W4: 래스터(PNG) 어댑터 ----------
+
+# 샘플별 품질 하한(회귀 방지 바닥값, 목표치 아님). 2026-11-06 W4 측정값을 0.05 단위로 내린 뒤 0.05를 더 뺀 값이다
+# (OCR·영상 처리 결과가 실행 환경에 따라 조금 달라질 여지를 둔 보수적 하한, evidence/w4-래스터.md §5).
+RASTER_QUALITY_FLOORS = {
+    "SNP-M-101_RCS-main-loop": {"relations_f1": 0.85, "objects_f1": 0.9, "kind_accuracy": 0.8},
+    "SNP-M-102_RCS-pressurizer": {"relations_f1": 0.8, "objects_f1": 0.9, "kind_accuracy": 0.85},
+    "SNP-M-201_CVCS": {"relations_f1": 0.65, "objects_f1": 0.8, "kind_accuracy": 0.7},
+    "SNP-M-301_SIS": {"relations_f1": 0.6, "objects_f1": 0.8, "kind_accuracy": 0.6},
+    "SNP-M-401_CCW": {"relations_f1": 0.55, "objects_f1": 0.75, "kind_accuracy": 0.75},
+    "SNP-M-501_MS-FW": {"relations_f1": 0.65, "objects_f1": 0.8, "kind_accuracy": 0.8},
+}
+
+
+def raster_samples():
+    """[(도면 폴더 이름, drawio 경로, png 경로)] — 같은 폴더의 PNG 중 첫 번째. `.drawio.png`는 다이어그램 XML을
+    품고 있어 블라인드 시험에서 뺀다(결정 D1)."""
+    out = []
+    for path in sorted(glob.glob(SAMPLE_GLOB)):
+        folder = os.path.dirname(path)
+        pngs = [p for p in sorted(glob.glob(os.path.join(folder, "*.png"))) if not p.lower().endswith(".drawio.png")]
+        if pngs:
+            out.append((os.path.basename(folder), path, pngs[0]))
+    return out
+
+
+def evaluate_raster(name, drawio_path, png_path, mutate=None):
+    """(문제 목록, 표 행 dict 또는 None, 산출물 dict) — 한 샘플의 W4 검사(evaluate_pdf와 같은 구성)."""
+    if png_path.lower().endswith(".drawio.png"):
+        return ["%s: 블라인드 규칙 위반(.drawio.png 입력)" % name], None, {}
+    errs = []
+    truth = drawio.extract(drawio_path, repo_root=REPO_ROOT)
+    cand = raster.extract(png_path, repo_root=REPO_ROOT)
+    again = raster.extract(png_path, repo_root=REPO_ROOT)
+    if ev.dumps(cand) != ev.dumps(again):
+        errs.append("%s: 두 번 실행 결과 다름" % name)
+    if cand["validation"]["blockers"]:
+        errs.append("%s: 구조 검증 blocker %d건" % (name, len(cand["validation"]["blockers"])))
+    errs += ["%s: 스키마 %s" % (name, p) for p in schema_problems(cand, truth)]
+    if mutate is not None:
+        cand = mutate(copy.deepcopy(cand))
+    errs += graph_problems(name, cand)
+    al = align.estimate_transform(truth, cand)
+    if al["status"] != "ok":
+        errs.append("%s: 좌표 정렬 %s (%s)" % (name, al["status"], al["reason"]))
+        return errs, None, {"extraction": cand, "alignment": al}
+    result = ev.evaluate(truth, cand, al["transform"])
+    if result["status"] != "ok":
+        errs.append("%s: 평가 %s %s" % (name, result["status"], result["reasons"]))
+        return errs, None, {"extraction": cand, "alignment": al, "evaluation": result}
+    row = {"name": name, "truth_nodes": len(truth["nodes"]), "cand_nodes": len(cand["nodes"]),
+           "truth_relations": len(truth["relations"]), "cand_relations": len(cand["relations"]),
+           "unresolved": len(cand["unresolved_connectors"]), "blockers": len(cand["validation"]["blockers"]),
+           "objects": result["objects"], "relations": result["relations"], "tags": result["tags"],
+           "anchors": "%d/%d" % (al["anchors_used"], al["anchors_total"]), "outliers": al["outliers"],
+           "rms": al["residual_rms"], "max": al["residual_max"], "rms_all": al["residual_rms_all"]}
+    errs += quality_problems(row, RASTER_QUALITY_FLOORS)
+    return errs, row, {"extraction": cand, "alignment": al, "evaluation": result}
+
+
+def run_raster_checks(out=None):
+    """(실패 목록, 건너뜀 여부)."""
+    print("== 4. W4 래스터 어댑터(샘플 PNG)")
+    has_cv, has_ocr = raster.available()
+    if not (has_cv and has_ocr):
+        print("[건너뜀] OpenCV 또는 rapidocr 없음(결정 D7). packaging/requirements-raster.txt를 설치한 Python으로 "
+              "다시 실행할 것")
+        return [], True
+    failures, rows = [], []
+    samples = raster_samples()
+    if not samples:
+        failures.append("PNG 샘플 없음")
+    for name, drawio_path, png_path in samples:
+        errs, row, outputs = evaluate_raster(name, drawio_path, png_path)
+        failures += errs
+        if row:
+            rows.append(row)
+            print("  %-28s rel F1 %-8s obj F1 %-8s tag F1 %-8s 정렬 RMS %s (기준점 %s)"
+                  % (name, row["relations"]["f1"], row["objects"]["f1"], row["tags"]["f1"], row["rms"],
+                     row["anchors"]))
+        for e in errs:
+            print("    - " + e)
+        if out:
+            d = os.path.join(out, name)
+            os.makedirs(d, exist_ok=True)
+            for key, value in sorted(outputs.items()):
+                _write(os.path.join(d, key + ".json"), ev.dumps(value))
+            if "evaluation" in outputs:
+                _write(os.path.join(d, "evaluation.md"), ev.render_report(outputs["evaluation"]))
+    table = summary_table(rows)
+    print(table)
+    if out:
+        _write(os.path.join(out, "summary.md"), table)
+        print("저장: %s" % out)
+    print("[%s] W4 래스터" % ("통과" if not failures else "실패 %d건" % len(failures)))
+    return failures, False
+
+
+def run_checks(pdf_out=None, raster_out=None):
     failures = []
     print("== 1. 가상 소형 픽스처")
     failures += run_suite("fixture truth_small", load_json(FIXTURE))
@@ -429,7 +531,10 @@ def run_checks(pdf_out=None):
         failures += run_suite(name, drawio.extract(path))
     pdf_failures, skipped = run_pdf_checks(pdf_out)
     failures += pdf_failures
-    print("== 결과: %s%s" % ("전부 통과" if not failures else "실패 %d건" % len(failures), " (W3 건너뜀)" if skipped else ""))
+    raster_failures, skipped_raster = run_raster_checks(raster_out)
+    failures += raster_failures
+    print("== 결과: %s%s%s" % ("전부 통과" if not failures else "실패 %d건" % len(failures),
+                            " (W3 건너뜀)" if skipped else "", " (W4 건너뜀)" if skipped_raster else ""))
     return 0 if not failures else 1
 
 
@@ -467,12 +572,13 @@ def main(argv=None):
     ap.add_argument("--transform", help="후보 → 정답 좌표 변환 JSON 파일 {scale, offset}")
     ap.add_argument("--out")
     ap.add_argument("--pdf-out", help="W3 샘플 결과(추출·정렬·평가·요약 표)를 저장할 폴더")
+    ap.add_argument("--raster-out", help="W4 샘플 결과(추출·정렬·평가·요약 표)를 저장할 폴더")
     args = ap.parse_args(argv)
     if args.truth or args.candidate:
         if not (args.truth and args.candidate):
             ap.error("--truth와 --candidate를 함께 지정해야 함")
         return run_eval(args)
-    return run_checks(args.pdf_out)
+    return run_checks(args.pdf_out, args.raster_out)
 
 
 if __name__ == "__main__":

@@ -522,16 +522,17 @@ class SkipReportTest(unittest.TestCase):
     def test_skipped_w3_is_reported_in_last_line(self):
         real = check_adapter.importlib.util.find_spec
 
-        def no_pdfplumber(name, *args, **kwargs):  # pdfplumber만 없는 환경을 흉내 낸다
-            return None if name == "pdfplumber" else real(name, *args, **kwargs)
+        def no_pdfplumber(name, *args, **kwargs):  # pdfplumber·OpenCV가 없는 환경을 흉내 낸다(W4 래스터도 건너뜀)
+            return None if name in ("pdfplumber", "cv2") else real(name, *args, **kwargs)
         buf = io.StringIO()
         with mock.patch.object(check_adapter.importlib.util, "find_spec", no_pdfplumber):
             with contextlib.redirect_stdout(buf):
                 rc = check_adapter.run_checks()
         self.assertEqual(rc, 0)
         lines = buf.getvalue().strip().splitlines()
-        self.assertEqual(lines[-1], "== 결과: 전부 통과 (W3 건너뜀)")
+        self.assertEqual(lines[-1], "== 결과: 전부 통과 (W3 건너뜀) (W4 건너뜀)")
         self.assertIn("[건너뜀] pdfplumber 없음", buf.getvalue())
+        self.assertIn("[건너뜀] OpenCV 또는 rapidocr 없음", buf.getvalue())
 
 
 @unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1: PATH python에서 실행)")
