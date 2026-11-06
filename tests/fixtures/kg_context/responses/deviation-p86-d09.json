@@ -1,7 +1,7 @@
 {
   "sample_note": "[일반지식] 기반 손으로 쓴 검사용 고정 응답(T1 W7, 실제 AI 출력 아님, 실제 API 호출 없음). 보호수단 용량·작동 근거가 없어 빈도 감소는 제안하지 않음. 작성 당시 템플릿 v4. 지식그래프 지정 구간(가상 샘플 kg-SNP-SAMPLE)의 deviation-p86-d09 근거 묶음 기준(C8 (a1)(a2)·C10). 사실 1건이 ev-kg-req-001, 패턴 시나리오(인서지)와 AI 추가 가설이 ev-kg-cond-001을 인용",
   "region_id": "region-SNP-M-102-pzr",
-  "bundle_sha256": "928e933bbc571f839308f1029ece55e34f239d7fa4938d3f379f32bcfec0306d",
+  "bundle_sha256": "279608f9b419bce129f97996b82b7ce3baec3886d38b6c526db903b1911f4674",
   "stop_reason": "end_turn",
   "output": {
     "candidate_id": "deviation-p86-d09",

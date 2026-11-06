@@ -1,7 +1,7 @@
 {
   "sample_note": "[일반지식] 기반 샘플 고정 응답(테스트·QA용). 실제 AI 출력이 아니며 내용은 검증되지 않음. 네 번째 시나리오(도면에 없는 전열기를 서술, outside_graph_equipment로 자기 신고)는 도면 설비 한정 규칙(사용자 결정 2026-11-04)에 따라 거부되어야 하는 '나쁜 예'로 남김",
   "region_id": "region-SNP-M-102-pzr",
-  "bundle_sha256": "e42123dd72a3a505f0cfc1fe0627bcd179bba2e7f8a674d315a12dbab1717ed1",
+  "bundle_sha256": "74c95ea078dd74dcc81c52ad9497d159ac4ae6de94510f2c9fa5958006909a80",
   "stop_reason": "end_turn",
   "output": {
     "candidate_id": "deviation-p86-d09",

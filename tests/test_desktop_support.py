@@ -414,7 +414,7 @@ class BundleExportTest(TmpCase):
         with open(os.path.join(d, "system_prompt.txt"), encoding="utf-8", newline="") as fh:
             self.assertEqual(fh.read(), ai.SYSTEM_PROMPT)
         self.assertEqual(m["template"], ai.template_info())
-        self.assertEqual((m["graph"]["graph_version"], m["region"]["region_version"]), (GRAPH["graph_version"], 1))
+        self.assertEqual((m["graph"]["graph_version"], m["region"]["region_version"]), (GRAPH["graph_version"], _load(REGION_FILE)["region_version"]))
         with open(os.path.join(d, "response_guide.txt"), encoding="utf-8") as fh:
             guide = fh.read()
         for field in ("region_id", "bundle_sha256", "stop_reason", "output"):
@@ -570,7 +570,7 @@ class SplitRootsTest(TmpCase):
         c = doc["validation"]["counts"]
         self.assertEqual((c["candidates"], c["scenarios"], c["risk_proposed"], c["design_improvement_candidates"]),
                          (44, 14, 6, 11))
-        self.assertEqual(doc["graph_ref"]["graph_version"], "v-7ed95b0c74f1")
+        self.assertEqual(doc["graph_ref"]["graph_version"], region["graph_ref"]["graph_version"])
         self.assertEqual({f["role"]: f["path"] for f in doc["analysis_run"]["input_files"]},
                          dict(region["inputs"], region="데이터/구간/" + os.path.basename(REGION_FILE),
                               graph=region["graph_ref"]["graph_file"]))

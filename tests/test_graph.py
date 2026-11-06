@@ -4,7 +4,9 @@ import copy
 import glob
 import json
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -163,6 +165,72 @@ class GraphBuildTest(unittest.TestCase):
         self.assertEqual(v1, build.build_graph(copy.deepcopy(ex))["graph_version"])
         ex["nodes"][0]["attributes"]["note"] = "changed"
         self.assertNotEqual(v1, build.build_graph(ex)["graph_version"])
+
+
+class CheckValvePortGraphTest(unittest.TestCase):
+    """기획서/정보추출.md #check-valve-direction·#port-rule의 그래프 전달 사례."""
+
+    def edited(self, key, *edits):
+        with open(SAMPLE[key], encoding="utf-8") as fh:
+            text = fh.read()
+        for old, new in edits:
+            self.assertEqual(text.count(old), 1)
+            text = text.replace(old, new)
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        path = os.path.join(d, "t.drawio")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return drawio.extract(path)
+
+    def test_check_direction_entity_ids(self):  # 그래프 엔터티 변환
+        count = 0
+        for key in SAMPLE:
+            ex = drawio.extract(SAMPLE[key])
+            g = build.build_graph(ex)
+            ent = {n["entity_id"]: n for n in g["nodes"]}
+            for n, src in zip(g["nodes"], ex["nodes"]):
+                if src["kind"] != "check_valve":
+                    self.assertNotIn("check_direction", n)
+                    continue
+                count += 1
+                cd, scd = n["check_direction"], src["check_direction"]
+                self.assertRegex(cd["inlet"], r"^entity-seg-\d{3}$")
+                self.assertRegex(cd["outlet"], r"^entity-seg-\d{3}$")
+                self.assertEqual((ent[cd["inlet"]]["local_id"], ent[cd["outlet"]]["local_id"]),
+                                 (scd["inlet"], scd["outlet"]))
+                self.assertEqual((cd["basis"], cd["status"]), (["attribute"], "declared"))
+        self.assertEqual(count, 8)
+
+    def test_unknown_check_valve_direction_passed_through(self):  # 그래프 전달
+        ex = self.edited("SNP-M-301", ('tag="SI-V003" flow_direction="source_to_target"', 'tag="SI-V003"'))
+        g = build.build_graph(ex)
+        valve = [n for n in g["nodes"] if n["source_object_id"] == "n14"][0]
+        self.assertIsNone(valve["check_direction"])
+        items = [u for u in g["validation"]["unknowns"] if u["check"] == "unknown_check_valve_direction"]
+        self.assertEqual([(u["target"], u["origin"], u["local_id"]) for u in items],
+                         [(valve["entity_id"], "extraction", valve["local_id"])])
+        base = build.build_graph(drawio.extract(SAMPLE["SNP-M-301"]))
+        flows = lambda gr: sorted(u["target"] for u in gr["validation"]["unknowns"]
+                                  if u["check"] == "unknown_flow_direction")
+        self.assertEqual(flows(g), flows(base))
+
+    def test_port_on_has_endpoint(self):  # 그래프 전달(포트 정상)
+        ex = self.edited("SNP-M-401", ('<object id="e20" ', '<object id="e20" target_port="tube_in" '))
+        g = build.build_graph(ex)
+        seg = [n for n in g["nodes"] if n["source_object_id"] == "e20"][0]["entity_id"]
+        ports = {e["end"]: e["port"] for e in g["edges"] if e["kind"] == "has_endpoint" and e["segment"] == seg}
+        self.assertEqual(ports, {"source": None, "target": "tube_in"})
+        mp = [u for u in g["validation"]["unknowns"] if u["check"] == "missing_port"]
+        self.assertEqual(len(mp), 3)
+        self.assertTrue(all(u["target"].startswith("entity-seg-") for u in mp))
+
+    def test_port_on_unresolved_endpoint(self):  # 끝이 붙지 않음 -> unresolved[] 끝점에 port
+        ex = self.edited("SNP-M-401", ('<object id="e22" ', '<object id="e22" source_port="tube_out" '),
+                         ('source="n19" target="j21"', 'target="j21"'))
+        g = build.build_graph(ex)
+        un = [u for u in g["unresolved"] if u["source_object_id"] == "e22"][0]
+        self.assertEqual([ep["port"] for ep in un["endpoints"]], ["tube_out", None])
 
 
 class GraphQueryTest(unittest.TestCase):

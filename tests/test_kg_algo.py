@@ -104,7 +104,7 @@ class SampleExpectedTest(unittest.TestCase):
     def test_a2_candidate_only_mention_is_orphan(self):
         """mentions가 candidate로만 있는 조각은 고아(후보는 세지 않음). 언급 대상도 근거 공백으로 세지 않음."""
         kg, graph, _ = inputs()
-        base = next(l for l in kg["links"] if l["id"] == "krel-m-8d0c926c")
+        base = next(l for l in kg["links"] if l["id"] == "krel-m-114485f2")
         cand = copy.deepcopy(base)
         cand.update(id="krel-m-cand0001", **{"from": "chunk-004"}, link_status="candidate",
                     compute_view={"v4": False, "excluded_reasons": ["link_status=candidate"]})
@@ -128,7 +128,7 @@ class SampleExpectedTest(unittest.TestCase):
         k["links"].append(test_kg.link("krel-x-other", "governed_by", "graph-OTHER:RC-PZ01", "req-003"))
         kg = build.build_kg(k, [graph, other])
         self.assertEqual(kg["validation"]["status"], "passed")
-        base = next(l for l in kg["links"] if l["id"] == "krel-m-8d0c926c")
+        base = next(l for l in kg["links"] if l["id"] == "krel-m-114485f2")
         m = copy.deepcopy(base)
         m.update(id="krel-m-other001", **{"from": "chunk-003"})
         m["ends"]["from"]["ref"] = "chunk-003"

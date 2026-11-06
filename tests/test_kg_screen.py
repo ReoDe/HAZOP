@@ -90,11 +90,11 @@ class ScreenDataTest(unittest.TestCase):
 
     def test_recheck_status(self):
         kg = copy.deepcopy(self.kg)
-        l = next(x for x in kg["links"] if x["id"] == "krel-m-8d0c926c")
+        l = next(x for x in kg["links"] if x["id"] == "krel-m-114485f2")
         l["recheck"] = "graph_version 변경"
         l["compute_view"] = {"v4": False, "excluded_reasons": ["재확인 필요"]}
         d = screen.screen_data(kg, self.graph, self.inp["regions"], None)
-        self.assertEqual({x["id"]: x["st"] for x in d["links"]}["krel-m-8d0c926c"], "recheck")
+        self.assertEqual({x["id"]: x["st"] for x in d["links"]}["krel-m-114485f2"], "recheck")
         self.assertEqual(d["meta"]["recheck"], 1)
 
     def test_algorithm_results_from_algo(self):

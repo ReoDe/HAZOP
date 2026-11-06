@@ -5,7 +5,7 @@
     {
       "rule": "K6",
       "check": "confirmed_without_source",
-      "target": "krel-m-7c52c0fd"
+      "target": "krel-m-fb9bdc75"
     }
   ]
 }

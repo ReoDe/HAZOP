@@ -45,7 +45,7 @@ class SampleChecks(unittest.TestCase):
                   if r["kind"] == "mentions"}
         conf = {link.relation_id(r["candidate_key"]) for r in rows if r["link_status"] == "confirmed"}
         self.assertEqual(conf, linked)
-        self.assertEqual(conf, {"krel-m-8d0c926c", "krel-m-7c52c0fd"})
+        self.assertEqual(conf, {"krel-m-114485f2", "krel-m-fb9bdc75"})
 
 
 class Generate(unittest.TestCase):
@@ -272,13 +272,13 @@ class Cli(unittest.TestCase):
                 rc = link_kg.main(["apply", "P", "--input-root", os.path.join(tmp, "in"),
                                    "--graph-root", os.path.join(tmp, "graphs"), "--graph-id", "graph-SNP-M-102"])
             self.assertEqual(rc, 1)
-            self.assertIn("krel-m-8d0c926c", out.getvalue())
+            self.assertIn("krel-m-114485f2", out.getvalue())
             self.assertIn("rejected로 고칠 것", out.getvalue())
             with open(lpath, "rb") as fh:
                 self.assertEqual(fh.read(), before)
             # 안내대로 knowledge_links.csv의 해당 행 link_status를 rejected로 고치면 조치 대상이 아님(rc=0)
-            fixed = before.replace(b"krel-m-8d0c926c,mentions,chunk-001,graph-SNP-M-102:RC-PV101,exact_norm,confirmed,confirmed,",
-                                   b"krel-m-8d0c926c,mentions,chunk-001,graph-SNP-M-102:RC-PV101,exact_norm,confirmed,rejected,")
+            fixed = before.replace(b"krel-m-114485f2,mentions,chunk-001,graph-SNP-M-102:RC-PV101,exact_norm,confirmed,confirmed,",
+                                   b"krel-m-114485f2,mentions,chunk-001,graph-SNP-M-102:RC-PV101,exact_norm,confirmed,rejected,")
             self.assertNotEqual(fixed, before)
             with open(lpath, "wb") as fh:
                 fh.write(fixed)

@@ -2,12 +2,12 @@
   "schema_version": "0.1",
   "project_id": null,
   "region_id": "region-SNP-M-102-pzr",
-  "region_version": 1,
+  "region_version": 2,
   "name": "SNP-M-102 가압기 구간",
   "note": "MVP 검토 구간(사용자 결정 2026-11-04). 설계 의도·포함 대상·경계 문구는 샘플용 초안 [추론] — 사용자 확인 필요",
   "graph_ref": {
     "graph_id": "graph-SNP-M-102",
-    "graph_version": "v-7ed95b0c74f1",
+    "graph_version": "v-f65e4ec1135d",
     "graph_file": "출력/그래프/SNP-M-102/graph.json",
     "graph_source": "samples",
     "how_to_build": "python scripts/extract_drawio.py --samples && python scripts/build_graph.py",
@@ -184,5 +184,24 @@
     "risk_criteria": "데이터/기준표/kosha-p86-2017-risk-criteria.json"
   },
   "manual_candidates": [],
-  "candidate_decisions": []
+  "candidate_decisions": [],
+  "graph_ref_history": [
+    {
+      "changed_at": "2026-11-06T03:26:58Z",
+      "changed_by": "총괄",
+      "reason": "BUILDER 0.3.0(체크밸브·포트 규칙) 반영, 포함 대상 19개 태그 일치",
+      "from": {
+        "graph_version": "v-7ed95b0c74f1",
+        "graph_source": "samples",
+        "project_id": null,
+        "region_version": 1
+      },
+      "to": {
+        "graph_version": "v-f65e4ec1135d",
+        "graph_source": "samples",
+        "project_id": null,
+        "region_version": 2
+      }
+    }
+  ]
 }

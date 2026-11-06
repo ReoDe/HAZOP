@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 import urllib.parse
+from unittest import mock
 import xml.etree.ElementTree as ET
 import zlib
 
@@ -19,7 +20,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
 import extract_drawio  # noqa: E402
 from hazop import paths  # noqa: E402
-from hazop.extract import drawio, svg_align  # noqa: E402
+from hazop.extract import drawio, rules, svg_align  # noqa: E402
 
 SAMPLES = sorted(glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio")))
 SAMPLE_101 = [p for p in SAMPLES if "SNP-M-101" in p][0]
@@ -240,16 +241,20 @@ class EditedSampleTest(unittest.TestCase):
         self.assertIn("missing_normal_position", all_issue_checks(r))
 
 
-    def test_check_valve_direction_kept_but_unresolved(self):
+    def test_check_valve_direction_declared_from_attribute(self):
+        # 기획서/정보추출.md #check-valve-direction: 기호 미등록 상태에서 ①(도형 속성)로 선언 기반 확정
         r = drawio.extract(SAMPLE_101)
-        cvs = [n for n in r["nodes"] if n["kind"] == "check_valve"]
-        self.assertTrue(cvs)
-        listed = {u["source_object_id"] for u in r["validation"]["unknowns"]
-                  if u["check"] == "check_valve_direction_basis_unresolved"}
-        for n in cvs:
+        src = {x["local_id"]: x["source_object_id"] for x in r["nodes"] + r["relations"]}
+        cvs = {n["source_object_id"]: n for n in r["nodes"] if n["kind"] == "check_valve"}
+        self.assertEqual(set(cvs), {"n38", "n42"})
+        self.assertEqual({k: (src[n["check_direction"]["inlet"]], src[n["check_direction"]["outlet"]])
+                          for k, n in cvs.items()}, {"n38": ("e39", "e40"), "n42": ("e43", "e44")})
+        for n in cvs.values():
             self.assertEqual(n["attributes"]["flow_direction"], "source_to_target")  # 값 보존
-            self.assertNotIn("flow_direction", {k for k in n if k != "attributes"})  # 방향 생성 안 함
-            self.assertIn(n["source_object_id"], listed)
+            self.assertEqual((n["check_direction"]["basis"], n["check_direction"]["status"]),
+                             (["attribute"], "declared"))
+        self.assertFalse({u["check"] for u in r["validation"]["unknowns"]
+                          if u["source_object_id"] in cvs})
 
     def test_registration_meta_and_run_id(self):
         r = drawio.extract(SAMPLE_101)
@@ -361,6 +366,265 @@ class RelationCrossCheckTest(unittest.TestCase):
                                          (src["node_local_id"], tgt["node_local_id"]))
                     else:
                         self.assertIsNone(rel["flow_direction"])
+
+
+SAMPLE_BY_KEY = {os.path.basename(p).split("_")[0]: p for p in SAMPLES}
+SYMBOL_KEY = ("mxgraph.pid2valves.valve", "check")
+CV_CODES = {"invalid_flow_direction", "unknown_check_valve_direction", "check_valve_direction_ambiguous",
+            "check_valve_direction_conflict"}
+# 기획서/정보추출.md 샘플 표 8건: (도면, 밸브) -> (입구, 출구)
+CV_SAMPLE_TABLE = {("SNP-M-301", "n14"): ("e16", "e17"), ("SNP-M-301", "n22"): ("e24", "e25"),
+                   ("SNP-M-101", "n38"): ("e39", "e40"), ("SNP-M-101", "n42"): ("e43", "e44"),
+                   ("SNP-M-201", "n32"): ("e36", "e37"), ("SNP-M-401", "n12"): ("e14", "e17"),
+                   ("SNP-M-401", "n13"): ("e15", "e18"), ("SNP-M-501", "n32"): ("e33", "e35")}
+
+
+def extract_sample(test, key, edits=()):
+    """샘플 key를 (old, new) 치환으로 고쳐 추출한다(각 old는 원본에 정확히 1번 있어야 함)."""
+    text = read_text(SAMPLE_BY_KEY[key])
+    for old, new in edits:
+        test.assertEqual(text.count(old), 1, old)
+        text = text.replace(old, new)
+    return drawio.extract(write_temp(test, text) if edits else SAMPLE_BY_KEY[key])
+
+
+def inject_symbol(d0=(1, 0)):
+    """기호 등록표 주입(등록은 사람 승인 전이라 테스트에서만)."""
+    return mock.patch.dict(rules.CHECK_VALVE_SYMBOL_DIRECTIONS, {SYMBOL_KEY: d0})
+
+
+def node_by_obj(r, obj):
+    return [n for n in r["nodes"] if n["source_object_id"] == obj][0]
+
+
+def cv_view(r, obj):
+    """밸브 obj의 (입구 객체 ID, 출구 객체 ID, basis, status) 또는 None, 그리고 밸브 대상 체크밸브 미확인 코드 목록."""
+    src = {x["local_id"]: x["source_object_id"] for x in r["nodes"] + r["relations"] + r["unresolved_connectors"]}
+    n = node_by_obj(r, obj)
+    cd = n["check_direction"]
+    view = None if cd is None else (src[cd["inlet"]], src[cd["outlet"]], cd["basis"], cd["status"])
+    codes = [u["check"] for u in r["validation"]["unknowns"]
+             if u["target"] == n["local_id"] and u["check"] in CV_CODES]
+    return view, codes
+
+
+N14_FD = 'tag="SI-V003" flow_direction="source_to_target"'
+N14_NO_FD = (N14_FD, 'tag="SI-V003"')
+N14_STYLE = "valveType=check;fontSize=10;verticalLabelPosition=top;verticalAlign=bottom;labelPosition=center;align=center;\" vertex=\"1\" parent=\"1\"><mxGeometry x=\"800\""
+EXTRA_PIPE_N14 = ("</root>", '<object id="x9" label="" line_type="process"><mxCell style="" edge="1" parent="1" '
+                  'source="n14" target="n15"><mxGeometry relative="1" as="geometry"/></mxCell></object></root>')
+
+
+class CheckValveDirectionTest(unittest.TestCase):
+    """기획서/정보추출.md #check-valve-direction 독립 검증 사례."""
+
+    def test_samples_declared_by_attribute(self):  # 정상(①)
+        for (key, obj), (inlet, outlet) in CV_SAMPLE_TABLE.items():
+            with self.subTest(sample=key, valve=obj):
+                r = extract_sample(self, key)
+                self.assertEqual(cv_view(r, obj), ((inlet, outlet, ["attribute"], "declared"), []))
+        for key in SAMPLE_BY_KEY:
+            r = extract_sample(self, key)
+            self.assertFalse([u for u in r["validation"]["unknowns"] if u["check"] in CV_CODES])
+            self.assertEqual(sum(1 for n in r["nodes"] if n["kind"] == "check_valve"),
+                             sum(1 for k, _ in CV_SAMPLE_TABLE if k == key))
+
+    def test_samples_attribute_and_symbol(self):  # 정상(①+②), 실제 모순
+        with inject_symbol():
+            for (key, obj), (inlet, outlet) in CV_SAMPLE_TABLE.items():
+                with self.subTest(sample=key, valve=obj):
+                    r = extract_sample(self, key)
+                    if (key, obj) == ("SNP-M-201", "n32"):
+                        self.assertEqual(cv_view(r, obj), (None, ["check_valve_direction_conflict"]))
+                    else:
+                        self.assertEqual(cv_view(r, obj),
+                                         ((inlet, outlet, ["attribute", "symbol"], "declared"), []))
+
+    def test_synthetic_conflict_flip(self):  # 모순(합성)
+        with inject_symbol():
+            r = extract_sample(self, "SNP-M-301", [(N14_STYLE, N14_STYLE.replace("valveType=check;", "valveType=check;flipH=1;"))])
+        self.assertEqual(cv_view(r, "n14"), (None, ["check_valve_direction_conflict"]))
+
+    def test_symbol_undecidable_keeps_attribute(self):  # ② 판정 불가 시 ① 유지 (rotation=45 -> ② 없음)
+        with inject_symbol():
+            r = extract_sample(self, "SNP-M-301", [(N14_STYLE, N14_STYLE.replace("valveType=check;", "valveType=check;rotation=45;"))])
+        self.assertEqual(cv_view(r, "n14"), (("e16", "e17", ["attribute"], "declared"), []))
+
+    def test_no_basis(self):  # 근거 없음
+        r = extract_sample(self, "SNP-M-301", [N14_NO_FD])
+        n = node_by_obj(r, "n14")
+        self.assertEqual(cv_view(r, "n14"), (None, ["unknown_check_valve_direction"]))
+        u = [u for u in r["validation"]["unknowns"] if u["check"] == "unknown_check_valve_direction"]
+        self.assertEqual([(x["target"], x["source_object_id"], x["field"]) for x in u],
+                         [(n["local_id"], "n14", "flow_direction")])
+        self.assertEqual(r["validation"]["status"], "passed")
+
+    def test_self_loop(self):  # 자기 루프
+        with inject_symbol():
+            r = extract_sample(self, "SNP-M-301", [N14_NO_FD, ('source="n14" target="n15"', 'source="n14" target="n14"')])
+        self.assertEqual(cv_view(r, "n14"), (None, ["check_valve_direction_ambiguous"]))
+
+    def test_valve_inside_parent_shape(self):  # 부모 도형 안 밸브 -> ② 없음
+        grp = '<mxCell id="grp1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="10" height="10" as="geometry"/></mxCell>'
+        with inject_symbol():
+            r = extract_sample(self, "SNP-M-301", [(N14_STYLE, N14_STYLE.replace('parent="1"', 'parent="grp1"')),
+                                                   ("</root>", grp + "</root>")])
+        self.assertEqual(r["source_locations"][[l["object_id"] for l in r["source_locations"]].index("n14")]["bbox"],
+                         [800, 385, 50, 30])  # 좌표는 그대로(부모 원점 0,0)
+        self.assertEqual(cv_view(r, "n14"), (("e16", "e17", ["attribute"], "declared"), []))
+
+    def test_symbol_only(self):  # ② 단독 (flipH=1 기호)
+        with inject_symbol():
+            r = extract_sample(self, "SNP-M-501", [('tag="FW-V502" flow_direction="source_to_target"', 'tag="FW-V502"')])
+        self.assertEqual(cv_view(r, "n32"), (("e33", "e35", ["symbol"], "symbol"), []))
+
+    def test_symmetric_conflict(self):  # 대칭 충돌: 출구 쪽 커넥터가 밸브로 들어오는 확인된 흐름
+        with inject_symbol():
+            r = extract_sample(self, "SNP-M-301", [N14_NO_FD, ('source="n14" target="n15"', 'source="n15" target="n14"')])
+        self.assertEqual(cv_view(r, "n14"), (None, ["check_valve_direction_conflict"]))
+
+    def test_invalid_value(self):  # 잘못된 값
+        bad = (N14_FD, 'tag="SI-V003" flow_direction="target_to_source"')
+        r = extract_sample(self, "SNP-M-301", [bad])
+        self.assertEqual(cv_view(r, "n14"), (None, ["invalid_flow_direction"]))
+        self.assertEqual(node_by_obj(r, "n14")["attributes"]["flow_direction"], "target_to_source")
+        r = extract_sample(self, "SNP-M-301", [bad, EXTRA_PIPE_N14])  # 잘못된 값 + 분기
+        self.assertEqual(cv_view(r, "n14"), (None, ["invalid_flow_direction"]))
+
+    def test_branch(self):  # 분기
+        r = extract_sample(self, "SNP-M-301", [EXTRA_PIPE_N14])
+        self.assertEqual(cv_view(r, "n14"), (None, ["check_valve_direction_ambiguous"]))
+
+    def test_missing_one_connection(self):  # 한쪽 연결 누락
+        text = read_text(SAMPLE_BY_KEY["SNP-M-301"])
+        e17 = re.search(r'<object id="e17".*?</object>', text).group(0)
+        r = extract_sample(self, "SNP-M-301", [(e17, "")])
+        self.assertEqual(cv_view(r, "n14"), (None, ["check_valve_direction_ambiguous"]))
+
+    def test_unresolved_connector(self):  # 미해결 커넥터
+        r = extract_sample(self, "SNP-M-301", [('source="n14" target="n15"', 'source="n14"')])
+        self.assertIn("e17", {x["source_object_id"] for x in r["unresolved_connectors"]})
+        self.assertEqual(cv_view(r, "n14"), (None, ["check_valve_direction_ambiguous"]))
+
+    def test_no_propagation_to_pipe(self):  # 비전파
+        old = '<object id="e16" label="SI-L002" line_type="process" line_no="SI-L002" flow_direction="source_to_target">'
+        r = extract_sample(self, "SNP-M-301", [(old, old.replace(' flow_direction="source_to_target"', ""))])
+        self.assertEqual(cv_view(r, "n14"), (("e16", "e17", ["attribute"], "declared"), []))
+        e16 = [x for x in r["relations"] if x["source_object_id"] == "e16"][0]
+        self.assertIsNone(e16["flow_direction"])
+        self.assertIn(("unknown_flow_direction", e16["local_id"]),
+                      {(u["check"], u["target"]) for u in r["validation"]["unknowns"]})
+
+    def test_registry_empty_by_default(self):
+        self.assertEqual(rules.CHECK_VALVE_SYMBOL_DIRECTIONS, {})
+        self.assertNotIn("check_valve", rules.KINDS_NEED_NORMAL_POSITION)
+
+
+def missing_ports(test, key=None, edits=()):
+    """샘플 6세트 전체의 missing_port 합계와 고친 샘플의 추출 결과."""
+    total, edited = 0, None
+    for k in SAMPLE_BY_KEY:
+        r = extract_sample(test, k, edits if k == key else ())
+        total += sum(1 for u in r["validation"]["unknowns"] if u["check"] == "missing_port")
+        if k == key:
+            edited = r
+    return total, edited
+
+
+def conn(r, obj):
+    return [x for x in r["relations"] + r["unresolved_connectors"] if x["source_object_id"] == obj][0]
+
+
+E20 = '<object id="e20" '
+E22 = '<object id="e22" '
+
+
+class PortRuleTest(unittest.TestCase):
+    """기획서/정보추출.md #port-rule 독립 검증 사례(SNP-M-401)."""
+
+    def test_samples_missing_port_16(self):  # 샘플 원본
+        want = {("SNP-M-101", "e10", "target_port"), ("SNP-M-101", "e12", "source_port"),
+                ("SNP-M-101", "e50", "source_port"), ("SNP-M-101", "e52", "target_port"),
+                ("SNP-M-201", "e9", "target_port"), ("SNP-M-201", "e10", "source_port"),
+                ("SNP-M-201", "e37", "target_port"), ("SNP-M-201", "e39", "source_port"),
+                ("SNP-M-201", "e11", "target_port"), ("SNP-M-201", "e13", "source_port"),
+                ("SNP-M-201", "e43", "target_port"), ("SNP-M-201", "e45", "source_port"),
+                ("SNP-M-401", "e20", "target_port"), ("SNP-M-401", "e22", "source_port"),
+                ("SNP-M-401", "e46", "target_port"), ("SNP-M-401", "e48", "source_port")}
+        got = []
+        for k in SAMPLE_BY_KEY:
+            r = extract_sample(self, k)
+            self.assertEqual(r["validation"]["status"], "passed")
+            for u in r["validation"]["unknowns"]:
+                if u["check"] == "missing_port":
+                    self.assertEqual(u["target"], conn(r, u["source_object_id"])["local_id"])
+                    got.append((k, u["source_object_id"], u["field"]))
+            self.assertNotIn("ambiguous_port", all_issue_checks(r))
+            for x in r["relations"] + r["unresolved_connectors"]:
+                self.assertEqual([ep["port"] for ep in x["endpoints"]], [None, None])
+        self.assertEqual(len(got), 16)
+        self.assertEqual(set(got), want)
+
+    def test_target_port(self):  # 정상
+        total, r = missing_ports(self, "SNP-M-401", [(E20, E20 + 'target_port="tube_in" ')])
+        self.assertEqual(conn(r, "e20")["endpoints"][1]["port"], "tube_in")
+        self.assertEqual(total, 15)
+
+    def test_port_whitespace_trimmed(self):  # 공백
+        total, r = missing_ports(self, "SNP-M-401", [(E20, E20 + 'target_port="  tube_in " ')])
+        self.assertEqual(conn(r, "e20")["endpoints"][1]["port"], "tube_in")
+        self.assertEqual(conn(r, "e20")["attributes"]["target_port"], "  tube_in ")
+        self.assertEqual(total, 15)
+
+    def test_empty_port_is_missing(self):  # 빈 값
+        for value in ("", "   "):
+            with self.subTest(value=value):
+                total, r = missing_ports(self, "SNP-M-401", [(E20, E20 + 'target_port="%s" ' % value)])
+                self.assertIsNone(conn(r, "e20")["endpoints"][1]["port"])
+                self.assertEqual(total, 16)
+
+    def test_source_side_equipment(self):  # source 쪽 기기
+        total, r = missing_ports(self, "SNP-M-401", [(E22, E22 + 'source_port="tube_out" ')])
+        self.assertEqual(conn(r, "e22")["endpoints"][0]["port"], "tube_out")
+        self.assertEqual(total, 15)
+
+    def test_not_port_target(self):  # 대상 아님 (pump -> check_valve)
+        total, r = missing_ports(self, "SNP-M-401")
+        e14 = conn(r, "e14")
+        self.assertEqual([ep["port"] for ep in e14["endpoints"]], [None, None])
+        self.assertFalse([u for u in r["validation"]["unknowns"] if u["target"] == e14["local_id"]])
+        self.assertEqual(total, 16)
+
+    def test_port_without_end_is_ambiguous(self):  # 모호
+        total, r = missing_ports(self, "SNP-M-401", [(E20, E20 + 'port="shell_in" ')])
+        self.assertEqual([u["field"] for u in r["validation"]["unknowns"] if u["check"] == "ambiguous_port"], ["port"])
+        self.assertIn(("missing_port", "e20", "target_port"),
+                      {(u["check"], u["source_object_id"], u["field"]) for u in r["validation"]["unknowns"]})
+        self.assertEqual([ep["port"] for ep in conn(r, "e20")["endpoints"]], [None, None])
+        self.assertEqual(conn(r, "e20")["attributes"]["port"], "shell_in")
+        self.assertEqual(total, 16)
+
+    def test_port_with_end_port(self):  # 병존
+        total, r = missing_ports(self, "SNP-M-401", [(E20, E20 + 'port="shell_in" target_port="tube_in" ')])
+        self.assertEqual(conn(r, "e20")["endpoints"][1]["port"], "tube_in")
+        self.assertEqual(all_issue_checks(r).count("ambiguous_port"), 1)
+        self.assertEqual(total, 15)
+
+    def test_detached_end_keeps_port(self):  # 끝이 붙지 않음
+        total, r = missing_ports(self, "SNP-M-401", [(E22, E22 + 'source_port="tube_out" '),
+                                                     ('source="n19" target="j21"', 'target="j21"')])
+        self.assertIn("e22", {x["source_object_id"] for x in r["unresolved_connectors"]})
+        self.assertEqual(conn(r, "e22")["endpoints"][0]["port"], "tube_out")
+        self.assertEqual([u["source_object_id"] for u in r["validation"]["unknowns"]
+                          if u["check"] == "unconnected_endpoint"], ["e22"])
+        self.assertEqual(total, 15)
+
+    def test_constraint_not_port(self):  # 위치로 추정 금지
+        total, r = missing_ports(self, "SNP-M-401")
+        tgt = conn(r, "e20")["endpoints"][1]
+        self.assertEqual(tgt["constraint"]["x"], 0)
+        self.assertIsNone(tgt["port"])
+        self.assertEqual(total, 16)
 
 
 class OutputPathTest(unittest.TestCase):

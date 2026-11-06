@@ -178,7 +178,7 @@ def check_l3(sample_dir, graphs):
 
 def _recheck_case(sample_dir, graphs, label, edit=None, graph_version=None):
     """한 값을 바꾼 뒤: 재생성하면 RC-PV101 후보가 candidate·previous_status=confirmed로 다시 올라오고,
-    기존 confirmed 행은 이력으로 남으며, 빌드에서 기존 mentions(krel-m-8d0c926c)는 재확인 필요·V4 제외, 반영 시 재사용 안 됨."""
+    기존 confirmed 행은 이력으로 남으며, 빌드에서 기존 mentions(krel-m-114485f2)는 재확인 필요·V4 제외, 반영 시 재사용 안 됨."""
     tmp, d = copy_sample(sample_dir)
     try:
         old = _by(link.read_candidates(os.path.join(d, link.CANDIDATES_CSV)), "RC-PV101")[0]

@@ -6,6 +6,8 @@
 - signal_connection·measurement_connection -> 양 끝 노드를 잇는 엣지 1개
 - unresolved_connectors·unknowns는 정상 연결로 넣지 않고 미확인 목록으로 전달
 - 흐름 방향은 만들지 않는다. 추출에서 확인된 구간만 flow_direction을 가진다(직접 엣지도 같은 이름).
+- 체크밸브 check_direction은 입구·출구 local_id를 구간 엔터티 ID로 바꿔 그대로 전달, 끝점 port는 has_endpoint·unresolved에 전달
+  (기획서/정보추출.md #check-valve-direction, #port-rule)
 - 관계 대상 제약·자기 루프 등 [가정] 기반 점검은 unknowns가 아니라 review_items로 분리한다.
 같은 입력이면 같은 결과(ID·순서)가 나오도록 결정적으로 만든다.
 """
@@ -18,7 +20,7 @@ import networkx as nx
 
 SCHEMA_VERSION = "0.1"
 BUILDER = "hazop.graph.build"
-BUILDER_VERSION = "0.2.0"
+BUILDER_VERSION = "0.3.0"
 
 PHYSICAL = "physical_connection"
 DIRECT_EDGE_KINDS = ("signal_connection", "measurement_connection")
@@ -120,7 +122,7 @@ def build_graph(extraction, extraction_file=None):
                 rel_no += 1
                 edges.append({"entity_id": "relation-%03d" % rel_no, "kind": "has_endpoint",
                               "nodes": [sid, ne], "segment": sid, "node": ne, "end": ep["end"],
-                              "constraint": ep["constraint"], "local_id": r["local_id"],
+                              "constraint": ep["constraint"], "port": ep.get("port"), "local_id": r["local_id"],
                               "source_object_id": r["source_object_id"]})
             if flow is None:
                 unknowns.append({"check": "unknown_flow_direction", "target": sid, "field": "flow_direction",
@@ -137,6 +139,13 @@ def build_graph(extraction, extraction_file=None):
         else:
             unknowns.append({"check": "unknown_relation_kind", "target": r["local_id"], "field": "kind",
                              "reason": "관계 종류 미확인(%r) - 그래프 정상 연결에서 제외" % r["kind"]})
+
+    # 체크밸브 허용 방향: 입구·출구 커넥터 local_id -> 엔터티 ID (basis·status는 그대로)
+    for n, src in zip(nodes, extraction["nodes"]):
+        if "check_direction" in src:
+            cd = src["check_direction"]
+            n["check_direction"] = None if cd is None else dict(
+                cd, inlet=entity_of.get(cd["inlet"]), outlet=entity_of.get(cd["outlet"]), basis=list(cd["basis"]))
 
     # 관계 양 끝 대상 제약 (검토 항목)
     review_items = []
@@ -172,7 +181,8 @@ def build_graph(extraction, extraction_file=None):
                    "line_type": r["line_type"], "line_no": r["line_no"],
                    "endpoints": [{"end": ep["end"], "status": ep["status"],
                                   "node_entity_id": entity_of.get(ep["node_local_id"]),
-                                  "source_object_id": ep["source_object_id"]} for ep in r["endpoints"]],
+                                  "source_object_id": ep["source_object_id"], "port": ep.get("port")}
+                                 for ep in r["endpoints"]],
                    "reason": "양 끝이 확정되지 않아 정상 연결로 넣지 않음"}
                   for r in extraction["unresolved_connectors"]]
 

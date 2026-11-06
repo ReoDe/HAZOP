@@ -154,7 +154,8 @@ class InputAndVersionTest(unittest.TestCase):
     def test_run_records_versions_scope_mode_intent(self):
         r = DOC["analysis_run"]
         self.assertEqual(DOC["graph_ref"], {"graph_id": "graph-SNP-M-102", "graph_version": GRAPH["graph_version"]})
-        self.assertEqual(DOC["region_ref"], {"region_id": "region-SNP-M-102-pzr", "region_version": 1})
+        self.assertEqual(DOC["region_ref"], {"region_id": "region-SNP-M-102-pzr",
+                                             "region_version": _load(REGION_FILE)["region_version"]})
         self.assertEqual(DOC["operating_mode"], "normal")
         self.assertEqual(r["region"]["design_intent"]["knowledge_status"], "hypothesis")
         self.assertIn("사용자 확인 필요", r["region"]["design_intent"]["basis"])
@@ -209,8 +210,8 @@ class RebindGraphTest(unittest.TestCase):
             self.assertTrue(changed)
             r = _load(rpath)
             self.assertEqual((r["graph_ref"]["graph_version"], r["graph_ref"]["graph_source"], r["project_id"],
-                              r["region_version"]), ("v-registered", "registration", "sample-project", 2))
-            hist = r["graph_ref_history"][0]
+                              r["region_version"]), ("v-registered", "registration", "sample-project", _load(REGION_FILE)["region_version"] + 1))
+            hist = r["graph_ref_history"][-1]
             self.assertEqual((hist["from"]["graph_version"], hist["changed_by"]), (GRAPH["graph_version"], "tester"))
             self.assertEqual(data_inputs(graph=g, region=r)["blockers"], [])
             next(n for n in g["nodes"] if n["entity_id"] == PZR)["tag"] = "X"
@@ -220,7 +221,7 @@ class RebindGraphTest(unittest.TestCase):
             lines, changed = run.rebind_graph(rpath, gpath, REPO_ROOT, "tester", "x", True, now=now)
             self.assertFalse(changed)
             self.assertTrue(any("태그 불일치" in x for x in lines))
-            self.assertEqual(_load(rpath)["region_version"], 2)
+            self.assertEqual(_load(rpath)["region_version"], _load(REGION_FILE)["region_version"] + 1)
         finally:
             shutil.rmtree(tmp)
 
