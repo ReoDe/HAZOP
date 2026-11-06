@@ -95,21 +95,24 @@ def tag_links(documents, graphs):
             for tag in m["tags"]:
                 hits = [(gid, idx[inputs.normalize_tag(tag)]) for gid, idx in sorted(index.items())
                         if inputs.normalize_tag(tag) in idx]
-                for gid, nodes in hits:
-                    if len(nodes) > 1:
-                        notes.append("태그 %s가 %s에 %d개 — 자동 연결하지 않음" % (tag, gid, len(nodes)))
-                        continue
+                total = sum(len(nodes) for _, nodes in hits)
+                if total > 1:  # 프로젝트 전체에서 하나뿐일 때만 연결(도면 여러 장·같은 도면 안 중복 모두 모호)
+                    notes.append("태그 %s가 프로젝트 도면에 %d개(%s) — 자동 연결하지 않음"
+                                 % (tag, total, ", ".join(gid for gid, _ in hits)))
+                elif total == 1:
+                    gid, nodes = hits[0]
                     ref = "%s:%s" % (gid, nodes[0]["tag"])
                     lid = "krel-%s-%s" % (m["node_id"], hashlib.sha256(ref.encode("utf-8")).hexdigest()[:8])
                     links.append(docextract.link_record(lid, kind, ref, m["node_id"],
                                                         "자동 연결(문장 속 태그 %s) — 사람 확인 전" % tag))
-                if not hits:
+                else:
                     notes.append("태그 %s가 프로젝트 도면에 없음 — 연결하지 않음" % tag)
     return links, sorted(set(notes))
 
 
-def assemble(project_id, graphs, documents, csv_dir=None):
-    """입력 -> (knowledge dict, notes). knowledge는 hazop.kg.inputs.load_knowledge와 같은 계약에 pid_graphs를 더한 것."""
+def assemble(project_id, graphs, documents, csv_dir=None, graph_notes=()):
+    """입력 -> (knowledge dict, notes). knowledge는 hazop.kg.inputs.load_knowledge와 같은 계약에 pid_graphs를 더한 것.
+    notes(같은 도면 ID 여럿, 연결하지 않은 태그)는 inputs.notes에도 남겨 결과 파일에서 볼 수 있게 한다."""
     nodes, links, ins = [], [], {"assembler": "%s %s" % (ASSEMBLER, ASSEMBLER_VERSION)}
     csv_paths = [os.path.join(csv_dir, f) for f in (NODES_CSV, LINKS_CSV)] if csv_dir else []
     if csv_paths and all(os.path.isfile(p) for p in csv_paths):
@@ -121,7 +124,9 @@ def assemble(project_id, graphs, documents, csv_dir=None):
         nodes += d["nodes"]
         links += d["links"]
     auto_links, notes = tag_links(documents, graphs)
+    notes = sorted(set(graph_notes)) + notes
     links += auto_links
+    ins["notes"] = notes
     ins["documents"] = [{"material_id": d["material_id"], "registration_version": d["registration_version"],
                          "source_sha256": d.get("source_sha256"), "extractor": d["extractor"]} for d in documents]
     knowledge = {"schema_version": inputs.SCHEMA_VERSION, "project_id": project_id, "kg_id": "kg-%s" % project_id,
@@ -135,7 +140,7 @@ def build_project(project_id, graph_root, doc_root, csv_root, out_root):
     documents = project_documents(project_id, doc_root)
     if not graphs and not documents:
         raise ValueError("프로젝트 %s에 추출한 도면도 등록한 문서도 없음" % project_id)
-    knowledge, more = assemble(project_id, graphs, documents, paths.safe_join(csv_root, project_id))
+    knowledge, notes = assemble(project_id, graphs, documents, paths.safe_join(csv_root, project_id), notes)
     kg = build.build_kg(knowledge, graphs)
     out = build.write_outputs(paths.safe_join(out_root, paths.safe_name(knowledge["kg_id"])), knowledge, kg)
-    return {"kg": kg, "dir": out, "notes": notes + more}
+    return {"kg": kg, "dir": out, "notes": notes}

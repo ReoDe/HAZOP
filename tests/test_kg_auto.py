@@ -68,6 +68,30 @@ class DocExtractTest(unittest.TestCase):
         self.assertIn("'3. 설정치'", trip["source"]["locator"])
         self.assertIn("pressure_basis", trip["null_reasons"])
 
+    def test_each_value_uses_only_its_own_clause(self):
+        """리뷰 재현 문장: 앞 값의 낱말·태그를 빌리지 않고, 지원하지 않는 숫자 표기는 값으로 만들지 않는다."""
+        cases = {
+            "경보 설정치는 8 bar(g)이고 운전압력은 5 bar(a)이다.": [("setpoint", "경보 설정치", "8"), ("condition", "운전압력", "5")],
+            "운전압력은 5 bar(g), 배관 직경은 100 mm이다.": [("condition", "운전압력", "5")],
+            "고압 트립 설정치는 16.4 MPa(g)이며 2 MPa 감소하면 복귀한다.": [("setpoint", "고압 트립 설정치", "16.4")],
+            "고압 경보 설정치는 17.0 MPa(g)이며 정상 운전압력 15.5 MPa(g)이다.":
+                [("setpoint", "고압 경보 설정치", "17.0"), ("condition", "운전압력", "15.5")],
+            "운전압력은 1e-3 bar(a)이다.": [],
+            "strip 운전압력 15.5 MPa이다.": [("condition", "운전압력", "15.5")],
+        }
+        for sent, want in cases.items():
+            d = docextract.extract([(1, ["1. 시험", sent])], MATERIAL, 1, "document-001")
+            got = [(n["node_type"], n["item"], n["value"]) for n in d["nodes"] if n["node_type"] in ("setpoint", "condition")]
+            self.assertEqual(got, want, sent)
+        d = docextract.extract([(1, ["1. 시험", "RC-PIC110 설정치는 8 bar(g)이고 RC-PIC120 설정치는 5 bar(g)이다."])],
+                               MATERIAL, 1, "document-001")
+        self.assertEqual([m["tags"] for m in d["tag_mentions"]], [["RC-PIC110"], ["RC-PIC120"]])
+
+    def test_body_line_starting_with_value_is_not_a_heading(self):
+        d = docextract.extract([(1, ["1. 안전밸브", "안전밸브 설정압력은", "17.0 MPa(g)에서 개방하며 방출"])], MATERIAL, 1, "document-001")
+        sp = by_type(d, "setpoint")
+        self.assertEqual([(n["value"], n["source"]["locator"].split(" · ")[1]) for n in sp], [("17.0", "'1. 안전밸브'")])
+
     def test_number_without_keyword_makes_no_value(self):
         d = docextract.extract([(1, ["1. 개요", "이 문서는 2026년에 12 mm 도면을 다룬다."])], MATERIAL, 1, "document-001")
         self.assertEqual(by_type(d, "setpoint") + by_type(d, "condition"), [])
@@ -118,6 +142,15 @@ class DocumentLinkTest(unittest.TestCase):
         self.assertTrue({n["id"] for n in d["nodes"]} <= shown)
         self.assertTrue(any(l["st"] == "candidate" and l["kind"] == "has_setpoint" for l in data["links"]))
         self.assertEqual(data["meta"]["auto_items"], len(d["nodes"]) - 1)  # 문서 노드만 확인됨
+
+    def test_tag_on_two_drawings_is_not_linked(self):
+        g1, d = pid_graph(), document()
+        g2 = copy.deepcopy(g1)
+        g2["graph_id"] = "graph-SNP-M-102-COPY"
+        knowledge, notes = auto.assemble(PROJECT, [g1, g2], [d])
+        self.assertFalse([l for l in knowledge["links"] if l["kind"] in auto.APPLY_KIND.values()])
+        self.assertTrue(any("RC-PIC110" in n and "2개" in n for n in notes))
+        self.assertEqual(knowledge["inputs"]["notes"], notes)
 
     def test_tag_missing_from_drawing_is_noted_not_linked(self):
         g, d = pid_graph(), copy.deepcopy(document())

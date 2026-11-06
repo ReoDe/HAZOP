@@ -43,8 +43,10 @@ def kg_line(out):
         return "<p style='color:%s'>지식그래프를 만들지 못함: %s</p>" % (tokens.c("err-ink"), esc(out["kg_error"]))
     kg = out["kg"]["kg"]
     st = (kg.get("validation") or {}).get("status")
-    return "<p>지식그래프 %s · 버전 %s · 검증 %s — ③ 지식그래프에서 보기</p>" % (
-        esc(kg.get("kg_id")), esc(kg.get("kg_version")), esc(VALIDATION_LABELS.get(st, st)))
+    notes = "".join("<li>%s</li>" % esc(n) for n in out["kg"].get("notes") or [])
+    return "<p>지식그래프 %s · 버전 %s · 검증 %s — ③ 지식그래프에서 보기</p>%s" % (
+        esc(kg.get("kg_id")), esc(kg.get("kg_version")), esc(VALIDATION_LABELS.get(st, st)),
+        "<p>자동 연결·조립 안내</p><ul>%s</ul>" % notes if notes else "")
 
 
 class DropZone(QFrame):

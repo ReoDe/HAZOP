@@ -17,7 +17,7 @@ import io
 import re
 
 EXTRACTOR = "hazop.kg.docextract"
-EXTRACTOR_VERSION = "0.1.0"
+EXTRACTOR_VERSION = "0.1.1"
 SCHEMA_VERSION = "0.1"
 AUTHOR = "자동 추출(%s)" % EXTRACTOR
 AUTO_REASON = "자동 추출 — 사람 확인 전"
@@ -33,13 +33,13 @@ TAG_RE = re.compile(r"(?<![A-Za-z0-9-])[A-Z]{1,5}-[A-Z]{1,6}\d{1,5}[A-Z]?(?:-[A-
 PRESSURE_UNITS = (r"kgf/cm2", r"kgf/cm²", r"kg/cm2", r"kg/cm²", r"MPa", r"kPa", r"bar", r"psi")
 OTHER_UNITS = (r"°C", r"℃", r"°F", r"m3/h", r"m³/h", r"kg/s", r"t/h", r"L/min", r"gpm", r"rpm", r"mm", r"%", r"K")
 VALUE_RE = re.compile(
-    r"(?<![\w.])(?P<value>[-+]?\d+(?:,\d{3})*(?:\.\d+)?)\s*"
+    r"(?<![\w.+\-])(?P<value>[-+]?\d+(?:,\d{3})*(?:\.\d+)?)\s*"
     r"(?:(?P<punit>%s)(?:\s*\(\s*(?P<basis1>[gGaA])\s*\)|(?P<basis2>[gGaA])(?![A-Za-z]))?|(?P<ounit>%s))"
     r"(?![A-Za-z²³/])" % ("|".join(PRESSURE_UNITS), "|".join(re.escape(u) for u in OTHER_UNITS)))
 BASIS = {"g": "gauge", "a": "absolute"}
 # (노드 종류, 낱말 정규식). 항목(item)은 낱말 일치 원문(공백 하나로 정리). 설정치를 먼저 본다('설정압력'의 '압력').
 SETPOINT_WORDS = re.compile(r"(?:(?:고|저)(?:압|수위|온|유량)\s*)?(?:경보|트립)(?:\s*설정(?:치|값))?|설정\s*(?:압력|온도)|"
-                            r"설정(?:치|값)|set\s*point|setpoint|trip|alarm", re.I)
+                            r"설정(?:치|값)|set\s*point|trip|alarm", re.I)
 CONDITION_WORDS = re.compile(r"(?:운전|설계|최대|최소)\s*(?:압력|온도|유량|수위)|"
                              r"(?:operating|design)\s+(?:pressure|temperature|flow)", re.I)
 MODE_WORDS = re.compile(r"정상\s*운전|기동|고온\s*대기|저온\s*정지|normal\s+operation|startup|shutdown", re.I)
@@ -96,7 +96,7 @@ def sections(pages):
             if not ln or PAGE_NO_RE.match(ln):
                 continue
             m = HEADING_RE.match(ln)
-            if m and not ln.endswith(("다.", "다", ".")):
+            if m and not ln.endswith(("다.", "다", ".")) and not VALUE_RE.search(ln):  # 값으로 시작하는 본문 줄은 제목 아님
                 if cur["lines"]:
                     out.append(cur)
                 cur = {"title": _ws(ln), "start": no, "end": no, "lines": [], "cont": False}
@@ -118,27 +118,25 @@ def _locator(page, title, start, end, cont):
 
 
 def _values(sentence):
-    """문장 -> [(종류, 항목, 값, 단위, 압력 기준, 운전 모드, 값 위치)]. 낱말이 앞에 없는 값은 버린다."""
-    out = []
-    mode = MODE_WORDS.search(sentence)
-    for m in VALUE_RE.finditer(sentence):
-        before = sentence[:m.start()]
-        best = None
-        for kind, words in (("setpoint", SETPOINT_WORDS), ("condition", CONDITION_WORDS)):
-            hits = list(words.finditer(before))
-            if hits and (best is None or hits[-1].end() > best[2]):
-                best = (kind, _ws(hits[-1].group(0)), hits[-1].end())
-        if best is None:
+    """문장 -> [(종류, 항목, 값, 단위, 압력 기준, 운전 모드, 태그 목록)]. 값마다 자기 마디(앞 값 뒤부터 이 값 앞까지)의
+    낱말·운전 모드·태그만 본다(다른 값의 낱말·설비를 빌리지 않음). 마디에 낱말이 없는 값은 버린다.
+    태그·운전 모드가 마디에 없고 문장에 값이 하나뿐이면 문장 전체에서 찾는다."""
+    found = list(VALUE_RE.finditer(sentence))
+    out, prev = [], 0
+    for m in found:
+        seg, prev = sentence[prev:m.start()], m.end()
+        sp, cd = list(SETPOINT_WORDS.finditer(seg)), list(CONDITION_WORDS.finditer(seg))
+        if not sp and not cd:
             continue
-        # 설정치 낱말이 조건 낱말보다 앞에 있어도 문장에 설정치 낱말이 있으면 설정치로 본다('설정압력' 등)
-        kind, item = best[0], best[1]
-        if kind == "condition" and SETPOINT_WORDS.search(before):
-            sp = list(SETPOINT_WORDS.finditer(before))[-1]
-            kind, item = "setpoint", _ws(sp.group(0))
+        # 마디 안에서 값에 가장 가까운(가장 늦게 끝나는) 낱말을 쓴다
+        kind, hit = max([("setpoint", h) for h in sp] + [("condition", h) for h in cd], key=lambda kh: kh[1].end())
+        scope = sentence if len(found) == 1 else seg
+        tags = sorted(set(TAG_RE.findall(seg))) or (sorted(set(TAG_RE.findall(sentence))) if len(found) == 1 else [])
+        mode = MODE_WORDS.search(seg) or (MODE_WORDS.search(scope))
         unit = m.group("punit") or m.group("ounit")
         basis = (m.group("basis1") or m.group("basis2") or "").lower() or None
-        out.append((kind, item, m.group("value").replace(",", ""), unit, BASIS.get(basis) if basis else None,
-                    _ws(mode.group(0)) if mode else None, m.start()))
+        out.append((kind, _ws(hit.group(0)), m.group("value").replace(",", ""), unit, BASIS.get(basis) if basis else None,
+                    _ws(mode.group(0)) if mode else None, tags))
     return out
 
 
@@ -186,23 +184,22 @@ def extract(pages, material_id, registration_version, document_id, title=None, s
         for sent in (s.strip() for s in SENT_SPLIT_RE.split(text)):
             if not sent:
                 continue
-            tags = sorted(set(TAG_RE.findall(sent)))
-            made = []
-            for kind, item, value, unit, basis, mode, _ in _values(sent):
+            made = []  # (노드 ID, 그 노드에 걸리는 태그)
+            for kind, item, value, unit, basis, mode, tags in _values(sent):
                 n += 1
                 nid = "%s-%s-p%d-%02d-%02d" % ("setpt" if kind == "setpoint" else "cond", key, page, seq[page], n)
                 nodes.append(_node(nid, kind, src, text=sent, item=item, value=value, unit=unit,
                                    pressure_basis=basis, operating_mode=mode))
-                made.append(nid)
+                made.append((nid, tags))
                 counts[kind] += 1
             if REQUIREMENT_RE.search(sent) or INTENT_RE.search(sent):
                 n += 1
                 nid = "req-%s-p%d-%02d-%02d" % (key, page, seq[page], n)
                 nodes.append(_node(nid, "requirement", src, text=sent,
                                    item="설계 의도" if INTENT_RE.search(sent) else None))
-                made.append(nid)
+                made.append((nid, sorted(set(TAG_RE.findall(sent)))))
                 counts["requirement"] += 1
-            for nid in made:
+            for nid, tags in made:
                 links.append(link_record("krel-%s-spec" % nid, "specified_in", nid, cid))
                 if tags:
                     mentions.append({"node_id": nid, "tags": tags})
