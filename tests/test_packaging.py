@@ -7,13 +7,17 @@
 3) HAZOP_RESOURCE_ROOT·HAZOP_WORK_ROOT를 서로 다른 임시 폴더로 바꿔 ①~⑤ 흐름(등록·추출·그래프 → 뷰어 → 지식그래프 →
    분석 → 검토 저장·Excel 출력)을 화면이 쓰는 함수로 실행한다. 자원 루트와 저장소의 출력/·자료저장소/는 바뀌지 않는다.
 4) W4: scripts/build_package.py의 datas 목록·spec 원문을 빌드 없이 검사한다(코드의 경로 상수와 대조).
-5) W6: licenses/가 datas에 들어가고, licenses/README.md 고지 목록이 기준 목록(원문 경로·라이선스 식별자)과 맞고,
-   원문 파일의 SHA-256·버전이 목록과 같다. verify_bundle의 묶음 licenses/ 대조 함수도 빌드 없이 검사한다.
+5) W6·W9: licenses/README.md 고지 목록이 기준 목록(원문 경로·라이선스 식별자)과 맞고, 원문 파일의 SHA-256·버전이 목록과
+   같다. W9(D15)부터 licenses/는 datas가 아니라 빌드 뒤 실행 파일 옆 licenses/로 복사되며, 그 복사·대조 함수
+   (build_package.copy_licenses·licenses_problems, verify_bundle.licenses_problems)를 빌드 없이 검사한다.
+6) W9(D15): PDF 어댑터(pdfplumber와 의존성)를 묶는다. spec의 hiddenimports·excludes, 빌드 뒤 PDF 검사(pdf_problems),
+   verify의 pdf_probe 판정(pdf_probe_problems), packaging/requirements-pdf.txt의 고정·해시를 빌드 없이 검사한다.
 실행: python -m unittest discover -s tests. 임시 폴더만 쓴다. 네트워크·AI 호출 없음(고정 응답).
 """
 
 import glob
 import hashlib
+import importlib.util
 import inspect
 import json
 import os
@@ -395,12 +399,16 @@ class BuildSpecTest(unittest.TestCase):
             text = self.bp.spec_text(with_check=with_check)
             ast.parse(text)
             self.assertIn("collect_submodules('hazop')", text)
-            self.assertIn("EXCLUDES = ['anthropic', 'httpx', 'pdfplumber']", text)
+            self.assertIn("EXCLUDES = ['anthropic', 'httpx']", text)  # W9(D15): pdfplumber는 묶는다
+            self.assertEqual(text.count("'pdfplumber', 'pypdfium2']"), 2 if with_check else 1)  # 두 Analysis 모두
             self.assertIn("name='HAZOP', console=False, upx=False", text)
             self.assertIn("scripts/run_app.py", text)
             self.assertEqual("HAZOP-check" in text, with_check)
             self.assertIn("COLLECT(*parts, upx=False, name=%r)" % ("HAZOP-verify" if with_check else "HAZOP"), text)
-            self.assertIn("runtime_hooks=[os.path.join(REPO, 'packaging/rthook_applog.py')]", text)
+            # D18: 시험 트리거 표지 훅은 검증용 빌드의 앱 Analysis에만(배포용에는 없음)
+            hooks = ["packaging/rthook_applog.py"] + (["packaging/rthook_verify_build.py"] if with_check else [])
+            self.assertIn("runtime_hooks=[os.path.join(REPO, h) for h in %r]" % hooks, text)
+            self.assertEqual(text.count("rthook_verify_build"), 1 if with_check else 0)
             self.assertEqual(text.count("keep_warn("), 3 if with_check else 2)  # 정의 1 + Analysis별 복사
             ns = {}
             exec(text.split("from PyInstaller")[0] + "\n".join(
@@ -511,7 +519,8 @@ class BuildSpecTest(unittest.TestCase):
         for with_check in (False, True):
             text = self.bp.spec_text(with_check=with_check)
             ast.parse(text)
-            self.assertIn("from build_package import drop_binaries", text)
+            self.assertIn("drop_binaries = build_package.drop_binaries", text)
+            self.assertNotIn("sys.path.insert(0, os.path.join(REPO, 'scripts'))", text)  # D11 후속: 경로 지정 로딩
             self.assertIn("a.binaries = drop_binaries(a.binaries)", text)
             self.assertIn("a.datas = drop_binaries(a.datas)", text)
             self.assertEqual("c.binaries = drop_binaries(c.binaries)" in text, with_check)
@@ -686,7 +695,286 @@ class BuildSpecTest(unittest.TestCase):
         os.makedirs(os.path.dirname(p))
         open(p, "wb").close()
         self.assertTrue(any("결과 폴더" in x for x in self.bp.check_sources(out, roots=roots)))
+        os.makedirs(self.bp.dist_dir(out, True))
         self.assertEqual(self.bp.check_sources(out, with_check=True, roots=roots), [])  # 검증용 폴더는 따로
+
+    # ---- D13(W8-B): GPL 전용 Qt 모듈 제외(빌드 없이)
+    SP = VENV + r"\Lib\site-packages\PySide6"
+    QT_EXCLUDED = [  # (묶음 안 이름, 기대 모듈) — 대소문자·구분자 섞음
+        (r"PySide6\Qt6Charts.dll", "Charts"), ("PySide6/qt6chartsqml.DLL", "Charts"),
+        (r"PySide6\qml\QtCharts\qmldir", "Charts"), (r"PySide6\QtCharts.pyd", "Charts"),
+        (r"PySide6\Qt6DataVisualizationQml.dll", "DataVisualization"),
+        (r"PySide6\qml\QtDataVisualization\designer\x.qml", "DataVisualization"),
+        (r"PySide6\Qt6Graphs2DImpl.dll", "Graphs"), (r"PySide6\Qt6GraphsWidgets.dll", "Graphs"),
+        (r"PySide6\qml\QtGraphs\qmldir", "Graphs"),
+        (r"PySide6\Qt6Quick3DPhysics.dll", "Quick3D"), (r"PySide6\Qt6Quick3DXr.dll", "Quick3D"),
+        (r"PySide6\Qt6Quick3DSpatialAudio.dll", "Quick3D"), (r"PySide6\qml\QtQuick3D\Physics\qmldir", "Quick3D"),
+        (r"PySide6\Qt6SpatialAudio.dll", "Quick3D"),  # Qt6Quick3DSpatialAudio만 import하던 DLL(총괄 판정)
+        (r"PySide6\plugins\qmltooling\qmldbg_quick3dprofiler.dll", "Quick3D"),
+        (r"PySide6\plugins\assetimporters\assimp.dll", "Quick3D"),
+        (r"PySide6\Qt6VirtualKeyboardSettings.dll", "VirtualKeyboard"),
+        (r"PySide6\qml\QtQuick\VirtualKeyboard\Plugins\Hangul\x.dll", "VirtualKeyboard"),
+        (r"PySide6\plugins\platforminputcontexts\qtvirtualkeyboardplugin.dll", "VirtualKeyboard"),
+        (r"PySide6\Qt6QuickTimelineBlendTrees.dll", "QuickTimeline"), (r"PySide6\qml\QtQuick\Timeline\qmldir", "QuickTimeline"),
+        (r"PySide6\Qt6ShaderTools.dll", "ShaderTools"),
+        (r"PySide6\qml\Qt5Compat\GraphicalEffects\private\qtgraphicaleffectsprivateplugin.dll",
+         "Qt5Compat.GraphicalEffects(ShaderTools 의존)"),
+    ]
+    QT_KEPT = [r"PySide6\Qt6Quick.dll", r"PySide6\Qt6Qml.dll", r"PySide6\Qt6QuickWidgets.dll",
+               r"PySide6\Qt6WebEngineCore.dll", r"PySide6\Qt6WebEngineWidgets.dll", r"PySide6\Qt63DCore.dll",
+               r"PySide6\Qt6QuickControls2.dll", r"PySide6\qml\QtQuick\Controls\qmldir",
+               r"PySide6\qml\QtQuick\Templates\qmldir", r"PySide6\qml\Qt3D\Core\qmldir", r"PySide6\qml\QtWebEngine\qmldir",
+               r"PySide6\plugins\qmltooling\qmldbg_quickprofiler.dll", r"PySide6\plugins\platforms\qwindows.dll",
+               r"PySide6\translations\qtbase_ko.qm", r"licenses\qt\GPL-3.0.txt", "Qt6Charts-notes.txt",
+               r"PySide6\Qt6OpenGLWidgets.dll", r"PySide6\opengl32sw.dll", r"PySide6\Qt6Multimedia.dll",
+               r"PySide6\qml\Qt5Compat\Core5Compat\qmldir"]
+
+    def test_qt_module_exclusion_rules(self):
+        """제외 대상 모듈(D13)은 spec 필터가 빼고 사후 검사(TOC·결과 폴더)가 잡는다. 앱·WebEngine이 링크하는
+        Qt6Quick·Qt6Qml·Qt6QuickWidgets와 Qt3D·Quick Controls 등은 남는다. 이름을 바꿔도 출처로 잡는다."""
+        bad = [(n, self.SP + "\\" + n.replace("/", "\\").split("\\", 1)[1], "BINARY") for n, _ in self.QT_EXCLUDED]
+        good = [(n, self.SP + "\\" + n.split("\\", 1)[1] if n.startswith("PySide6") else r"D:\snap" + "\\" + n, "BINARY")
+                for n in self.QT_KEPT]
+        renamed = [("PySide6/x.dll", self.SP + r"\Qt6Charts.dll", "BINARY"),
+                   ("payload.bin", self.SP + r"\qml\QtQuick3D\Helpers\y.dll", "DATA")]
+        roots = [self.VENV]
+        self.assertEqual([self.bp.qt_module_rejected(n, s, roots) for n, s, _ in bad], [m for _, m in self.QT_EXCLUDED])
+        self.assertEqual(self.bp.drop_binaries(bad + good + renamed, roots), good)
+        self.assertEqual(self.bp.excluded_module_entries(good, roots), [])
+        self.assertEqual([x[0] for x in self.bp.excluded_module_entries(bad + renamed, roots)],
+                         [b[0] for b in bad + renamed])
+        dist = os.path.join(self._tmp(), "HAZOP")
+        for rel in ("HAZOP.exe", "_internal/PySide6/Qt6Quick.dll", "_internal/PySide6/qml/QtQuick/Controls/qmldir"):
+            os.makedirs(os.path.dirname(os.path.join(dist, rel)), exist_ok=True)
+            open(os.path.join(dist, rel), "wb").close()
+        self.assertEqual(self.bp.excluded_module_files(dist), [])
+        for rel in ("_internal/PySide6/qml/QtCharts/qmldir", "_internal/PySide6/Qt6ShaderTools.dll"):
+            os.makedirs(os.path.dirname(os.path.join(dist, rel)), exist_ok=True)
+            open(os.path.join(dist, rel), "wb").close()
+        self.assertEqual(self.bp.excluded_module_files(dist),
+                         [("_internal/PySide6/Qt6ShaderTools.dll", "ShaderTools"),
+                          ("_internal/PySide6/qml/QtCharts/qmldir", "Charts")])
+        # PySide6 폴더 밖·다른 하위 폴더로 옮겨진 DLL은 파일 이름(이름 규칙)으로 잡는다. 이동한 플러그인 DLL 포함
+        moved = ("HAZOP-extra/qt6quicktimeline.DLL", "_internal/Qt6Charts.dll", "_internal/x/Qt6SpatialAudio.dll",
+                 "_internal/y/plugins/platforminputcontexts/qtvirtualkeyboardplugin.dll",
+                 "_internal/moved/qtvirtualkeyboardplugin.dll", "_internal/moved/qmldbg_quick3dprofiler.dll",
+                 "_internal/moved/assimp.dll", "_internal/moved/QTVKBHANGULPLUGIN.dll")
+        # 폴더 규칙은 PySide6 기준 경로에서만, 이름 규칙은 전체 이름만: 아래는 걸리지 않는다
+        unrelated = ("_internal/docs/plugins/assetimporters/readme.txt", "_internal/other/qml/QtCharts/qmldir",
+                     "_internal/Qt6Charts-custom.dll", "_internal/PySide6/Qt6ChartsExtra.dll",
+                     "_internal/PySide6/qml/QtChartsFake/qmldir")
+        for rel in moved + unrelated:
+            os.makedirs(os.path.dirname(os.path.join(dist, rel)), exist_ok=True)
+            open(os.path.join(dist, rel), "wb").close()
+        self.assertEqual(sorted(r for r, _ in self.bp.excluded_module_files(dist)),
+                         sorted(list(moved) + ["_internal/PySide6/Qt6ShaderTools.dll",
+                                               "_internal/PySide6/qml/QtCharts/qmldir"]))
+
+    def test_qt_rules_ignore_absolute_ancestors(self):
+        """절대 경로의 상위 폴더 이름으로 판정하지 않는다: 출처가 '…\\qml\\QtCharts\\project\\venv\\PySide6\\Qt6Core.dll'이거나
+        출력 폴더가 '…\\qml\\QtCharts' 아래여도 정상 파일은 걸리지 않는다. 접두사만 같은 이름·무관한 경로도 걸리지 않는다."""
+        odd_venv = os.path.join(self._tmp(), "qml", "QtCharts", "project", "venv")
+        core = (r"PySide6\Qt6Core.dll", os.path.join(odd_venv, "Lib", "site-packages", "PySide6", "Qt6Core.dll"), "BINARY")
+        qmldir = (r"PySide6\qml\QtQuick\Controls\qmldir",
+                  os.path.join(odd_venv, "Lib", "site-packages", "PySide6", "qml", "QtQuick", "Controls", "qmldir"), "DATA")
+        other = [(r"docs\plugins\assetimporters\readme.txt", r"D:\snap\docs\plugins\assetimporters\readme.txt", "DATA"),
+                 ("Qt6Charts-custom.dll", self.SP + r"\Qt6Charts-custom.dll", "BINARY"),
+                 (r"PySide6\Qt6QuickTimelineX.dll", self.SP + r"\Qt6QuickTimelineX.dll", "BINARY")]
+        for roots in ([odd_venv], [self.VENV]):
+            self.assertEqual(self.bp.drop_binaries([core, qmldir] + other, roots), [core, qmldir] + other)
+            self.assertEqual(self.bp.excluded_module_entries([core, qmldir] + other, roots), [])
+        # 허용 루트 안 출처는 PySide6 기준 경로로 폴더 규칙을 적용한다(묶음 안 이름을 바꿔도)
+        moved = ("payload.bin", os.path.join(odd_venv, "Lib", "site-packages", "PySide6", "qml", "QtCharts", "x.qml"), "DATA")
+        self.assertEqual(self.bp.qt_module_rejected(moved[0], moved[1], [odd_venv]), "Charts")
+        self.assertIsNone(self.bp.qt_module_rejected(moved[0], moved[1], [self.VENV]))  # 허용 루트 밖: 상위 이름 무시
+        # 출력 폴더가 qml/QtCharts 아래: 정상 묶음은 통과
+        out = os.path.join(self._tmp(), "qml", "QtCharts")
+        _, good, _ = self._toc(out)
+        self._write_toc(out, repr((good,)))
+        for rel in ("_internal/PySide6/Qt6Core.dll", "_internal/PySide6/qml/QtQuick/Controls/qmldir"):
+            os.makedirs(os.path.dirname(os.path.join(self.bp.dist_dir(out), rel)), exist_ok=True)
+            open(os.path.join(self.bp.dist_dir(out), rel), "wb").close()
+        self.assertEqual(self.bp.excluded_module_files(self.bp.dist_dir(out)), [])
+        self.assertEqual(self.bp.check_sources(out, roots=[self.VENV, self.BASE]), [])
+
+    def test_spec_applies_filter_to_both_analyses(self):
+        """생성한 spec을 PyInstaller 없이 모의 실행해, 두 Analysis(앱·검증)의 binaries·datas가 drop_binaries를 거친 뒤
+        COLLECT로 간다는 것을 확인한다(spec에서 필터 연결을 지우면 실패)."""
+        bad = [(r"PySide6\Qt6Charts.dll", r"C:\x\Qt6Charts.dll", "BINARY"),
+               (r"PySide6\qml\QtQuick3D\qmldir", r"C:\x\qmldir", "DATA"),
+               (r"PySide6\plugins\tls\qopensslbackend.dll", r"C:\x\qopensslbackend.dll", "BINARY")]
+        keep = [(r"PySide6\Qt6Quick.dll", r"C:\x\Qt6Quick.dll", "BINARY"), ("licenses\\README.md", r"C:\x\README.md", "DATA")]
+        seen = {}
+
+        class FakeAnalysis:
+            def __init__(self, scripts, **kw):
+                self.binaries = list(bad + keep)
+                self.datas = list(bad + keep)
+                self.pure, self.scripts = [], []
+
+        def fake_collect(*parts, **kw):
+            seen["parts"] = parts
+        hooks = mock.Mock()
+        hooks.collect_submodules.return_value = []
+        saved_path = list(sys.path)
+        self.addCleanup(lambda: sys.modules.pop("build_package", None))
+        try:
+            for with_check in (False, True):
+                ns = {"Analysis": FakeAnalysis, "PYZ": mock.Mock(), "EXE": mock.Mock(side_effect=lambda *a, **k: "exe"),
+                      "COLLECT": fake_collect}
+                with mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock(), "PyInstaller.utils": mock.Mock(),
+                                                   "PyInstaller.utils.hooks": hooks}):
+                    exec(compile(self.bp.spec_text(with_check=with_check), "HAZOP.spec", "exec"), ns)
+                lists = [x for x in seen["parts"] if isinstance(x, list)]
+                self.assertEqual(len(lists), 4 if with_check else 2)
+                for lst in lists:
+                    self.assertEqual(lst, keep)
+        finally:
+            sys.path[:] = saved_path
+
+    def test_check_sources_qt_modules(self):
+        """제외 대상 모듈이 TOC나 결과 폴더에 있으면 check_sources가 실패하고 main은 rc=3."""
+        out = self._tmp()
+        roots = [self.VENV, self.BASE]
+        _, good, _ = self._toc(out)
+        bad = (r"PySide6\Qt6VirtualKeyboard.dll", self.SP + r"\Qt6VirtualKeyboard.dll", "BINARY")
+        self._write_toc(out, repr((good + [bad],)))
+        probs = self.bp.check_sources(out, roots=roots)
+        self.assertEqual([p for p in probs if "제외 대상 Qt 모듈" in p],
+                         ["제외 대상 Qt 모듈(VirtualKeyboard)이 TOC에 있음: %s (%s)" % bad[:2]])
+        self._write_toc(out, repr((good,)))
+        p = os.path.join(self.bp.dist_dir(out), "_internal", "PySide6", "qml", "QtQuick3D", "qmldir")
+        os.makedirs(os.path.dirname(p))
+        open(p, "wb").close()
+        self.assertEqual(self.bp.check_sources(out, roots=roots),
+                         ["제외 대상 Qt 모듈(Quick3D)이 결과 폴더에 있음: _internal/PySide6/qml/QtQuick3D/qmldir"])
+
+        # main: 결과 폴더에는 위반 파일이 없고 TOC 위반만 있을 때 rc=3, TOC도 깨끗하면 rc=0(새 출력 폴더)
+        out2 = self._tmp()
+        _, good, _ = self._toc(out2)
+        toc_text = {}
+
+        def fake_build(spec, o):
+            self._write_toc(o, toc_text["v"])
+            return 0
+        with mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock()}), \
+                mock.patch.object(self.bp, "build", side_effect=fake_build), \
+                mock.patch.object(self.bp, "check_dist", return_value=[]), \
+                mock.patch.object(self.bp, "finish_bundle", return_value=[]), \
+                mock.patch.object(self.bp, "allowed_roots", return_value=roots), \
+                mock.patch.object(self.bp, "python_problems", return_value=[]):
+            toc_text["v"] = repr((good + [bad],))
+            self.assertEqual(self.bp.main(["--out", out2, "--build"]), 3)
+            self.assertEqual(self.bp.dist_files(self.bp.dist_dir(out2)), [])
+            self.assertEqual(self.bp.check_sources(out2, roots=roots),
+                             ["제외 대상 Qt 모듈(VirtualKeyboard)이 TOC에 있음: %s (%s)" % bad[:2]])
+            toc_text["v"] = repr((good,))
+            self.assertEqual(self.bp.main(["--out", out2, "--build"]), 0)
+
+    def test_result_folder_unwalked_dirs(self):
+        """os.walk가 들어가지 않는 폴더는 검사 실패: is_dir() 오류로 파일 목록에 들어온 폴더(모의), junction 폴더(실제)."""
+        dist = os.path.join(self._tmp(), "HAZOP")
+        os.makedirs(os.path.join(dist, "_internal", "sub"))
+        open(os.path.join(dist, "HAZOP.exe"), "wb").close()
+        self.assertEqual([x[2] for x in self.bp.dist_files(dist)], ["HAZOP.exe"])
+        real_walk = os.walk
+
+        def isdir_failed_walk(top, onerror=None, **kw):  # Python 3.12 os.walk: is_dir() OSError면 파일로 분류
+            if os.path.normcase(top) != os.path.normcase(dist):
+                return real_walk(top, onerror=onerror, **kw)
+            return iter([(dist, [], ["HAZOP.exe"]), (os.path.join(dist, "_internal"), [], ["sub"])])
+        with mock.patch.object(self.bp.os, "walk", side_effect=isdir_failed_walk):
+            with self.assertRaises(OSError) as cm:
+                self.bp.dist_files(dist)
+            self.assertIn("폴더를 탐색하지 못함", str(cm.exception))
+        target = os.path.join(self._tmp(), "outside")
+        os.makedirs(target)
+        open(os.path.join(target, "Qt6Charts.dll"), "wb").close()
+        self._junction(os.path.join(dist, "_internal", "linked"), target)
+        with self.assertRaises(OSError) as cm:
+            self.bp.dist_files(dist)
+        self.assertIn("링크 폴더", str(cm.exception))
+
+    def test_result_folder_walk_errors(self):
+        """결과 폴더가 없거나 탐색 중 오류(PermissionError 모의)가 나면 검사 실패, main은 rc=3."""
+        out = self._tmp()
+        roots = [self.VENV, self.BASE]
+        _, good, _ = self._toc(out)
+        self._write_toc(out, repr((good,)))
+        self.assertEqual(self.bp.check_sources(out, roots=roots), [])
+        os.rmdir(self.bp.dist_dir(out))
+        probs = self.bp.check_sources(out, roots=roots)
+        self.assertEqual(len(probs), 1)
+        self.assertIn("결과 폴더 탐색 오류", probs[0])
+        self.assertIn("결과 폴더 없음", probs[0])
+        os.makedirs(self.bp.dist_dir(out))
+
+        real_walk, dist = os.walk, self.bp.dist_dir(out)
+
+        def bad_walk(top, onerror=None, **kw):  # 결과 폴더 탐색만 오류(datas 목록 등 다른 탐색은 그대로)
+            if os.path.normcase(os.path.abspath(top)) != os.path.normcase(os.path.abspath(dist)):
+                return real_walk(top, onerror=onerror, **kw)
+            onerror(PermissionError(13, "액세스 거부(모의)", os.path.join(top, "_internal")))
+            return iter([(top, [], ["HAZOP.exe"])])
+        with mock.patch.object(self.bp.os, "walk", side_effect=bad_walk):
+            with self.assertRaises(PermissionError):
+                self.bp.dist_files(self.bp.dist_dir(out))
+            probs = self.bp.check_sources(out, roots=roots)
+            self.assertEqual(len(probs), 1)
+            self.assertIn("결과 폴더 탐색 오류", probs[0])
+            self.assertIn("액세스 거부(모의)", probs[0])
+            with mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock()}), \
+                    mock.patch.object(self.bp, "build", return_value=0), \
+                    mock.patch.object(self.bp, "check_dist", return_value=[]), \
+                    mock.patch.object(self.bp, "finish_bundle", return_value=[]), \
+                    mock.patch.object(self.bp, "allowed_roots", return_value=roots), \
+                    mock.patch.object(self.bp, "python_problems", return_value=[]):
+                self.assertEqual(self.bp.main(["--out", out, "--build"]), 3)
+
+    def test_qt_exclusion_against_installed_pyside6(self):
+        """설치된 PySide6 기준: 제외 규칙마다 실제 파일이 하나 이상 걸리고(이름이 바뀌면 규칙이 헛돈다), 앱이 import하는
+        모듈의 DLL(QtWebEngineWidgets·QtWebChannel·QtWidgets 등)에서 PE import를 따라간 의존 DLL은 하나도 걸리지 않는다."""
+        try:
+            import PySide6
+            import pefile
+        except ImportError:
+            self.skipTest("PySide6·pefile 없음(전용 venv에서 실행)")
+        root = os.path.dirname(PySide6.__file__)
+        rels = [os.path.relpath(os.path.join(d, f), root).replace("\\", "/")
+                for d, _, files in os.walk(root) for f in files]
+        lower = {r.lower() for r in rels}
+        bases = {}
+        for r in lower:
+            bases.setdefault(os.path.basename(r), []).append(r)
+        excluded_dirs = [x.lower() for _, _, dirs in self.bp.QT_EXCLUDED_MODULES for x in dirs]
+        for mod, files, dirs in self.bp.QT_EXCLUDED_MODULES:
+            for f in files:  # 이름 규칙의 모든 이름이 설치본에 있고, 다른 모듈 파일과 이름이 겹치지 않는다
+                self.assertIn(f.lower(), bases, (mod, f))
+                clash = [r for r in bases[f.lower()] if "/" in r and not any(r.startswith(x) for x in excluded_dirs)
+                         and not r.startswith(("plugins/platforminputcontexts/", "plugins/qmltooling/"))]
+                self.assertEqual(clash, [], (mod, f))
+            for x in dirs:  # 폴더 규칙의 모든 폴더가 설치본에 있다
+                self.assertTrue(any(r.startswith(x.lower()) for r in lower), (mod, x))
+
+        def imports(name):
+            pe = pefile.PE(os.path.join(root, name), fast_load=True)
+            pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_IMPORT"],
+                                                   pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT"]])
+            out = {e.dll.decode("ascii") for a in ("DIRECTORY_ENTRY_IMPORT", "DIRECTORY_ENTRY_DELAY_IMPORT")
+                   for e in getattr(pe, a, [])}
+            pe.close()
+            return {x for x in out if os.path.isfile(os.path.join(root, x))}  # PySide6 폴더 안 DLL만 따라간다
+        todo = ["Qt6WebEngineWidgets.dll", "Qt6WebEngineCore.dll", "Qt6WebChannel.dll", "Qt6Widgets.dll",
+                "Qt6Gui.dll", "Qt6Core.dll", "Qt6Network.dll", "QtWebEngineProcess.exe"]
+        seen = set()
+        while todo:
+            n = todo.pop()
+            if n.lower() in seen:
+                continue
+            seen.add(n.lower())
+            todo += sorted(imports(n))
+        self.assertTrue({"qt6quick.dll", "qt6qml.dll", "qt6quickwidgets.dll"} <= seen)  # WebEngine이 링크(남겨야 함)
+        self.assertEqual(sorted(n for n in seen if self.bp.qt_module_rejected("PySide6/" + n, "x")), [])
 
     def test_python_problems(self):
         venv = r"C:\Users\u\.hazop\venv-py312"
@@ -711,15 +999,16 @@ class BuildSpecTest(unittest.TestCase):
         common = [mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock()}),
                   mock.patch.object(self.bp, "build", built),
                   mock.patch.object(self.bp, "check_dist", return_value=[]),
-                  mock.patch.object(self.bp, "allowed_roots", return_value=[self.VENV, self.BASE])]
-        with common[0], common[1], common[2], common[3], \
+                  mock.patch.object(self.bp, "allowed_roots", return_value=[self.VENV, self.BASE]),
+                  mock.patch.object(self.bp, "finish_bundle", return_value=[])]
+        with common[0], common[1], common[2], common[3], common[4], \
                 mock.patch.object(self.bp, "python_problems", return_value=[]):
             for text, rc in ((repr((good + bad,)), 3), (repr((good,)), 0), ("([],)", 3), ("", 3)):
                 toc_text["v"] = text
                 self.assertEqual(self.bp.main(["--out", out, "--build"]), rc, text)
         built.reset_mock()
         toc_text["v"] = repr((good,))
-        with common[0], common[1], common[2], common[3], \
+        with common[0], common[1], common[2], common[3], common[4], \
                 mock.patch.object(self.bp, "python_problems", return_value=["전용 venv가 아님"]):
             self.assertEqual(self.bp.main(["--out", out, "--build"]), 2)
             built.assert_not_called()
@@ -736,6 +1025,13 @@ _FG_MIT = ("accessor-fn", "bezier-js", "canvas-color-tracker", "d3-binarytree", 
            "tweenjs-tween.js")
 _FG_ISC = ("d3-array", "d3-color", "d3-dispatch", "d3-drag", "d3-format", "d3-interpolate", "d3-quadtree", "d3-scale",
            "d3-selection", "d3-time", "d3-time-format", "d3-timer", "d3-transition", "d3-zoom", "internmap")
+# W9-B(D17): LICENSE-APACHE·LICENSE-MIT 두 원문을 함께 둔 crates.io 크레이트(cryptography `_rust.pyd`, SBOM 기준)
+_CRATES_MIT_APACHE = (
+    "base64-0.22.1", "bitflags-2.11.1", "cc-1.2.61", "cfg-if-1.0.4", "find-msvc-tools-0.1.9",
+    "foreign-types-shared-0.1.1", "foreign-types-0.3.2", "heck-0.5.0", "itoa-1.0.18", "libc-0.2.186",
+    "once_cell-1.21.4", "openssl-macros-0.1.1", "pkg-config-0.3.33", "portable-atomic-1.13.1", "proc-macro2-1.0.106",
+    "pyo3-build-config-0.28.3", "pyo3-ffi-0.28.3", "pyo3-macros-backend-0.28.3", "pyo3-macros-0.28.3", "pyo3-0.28.3",
+    "quote-1.0.45", "shlex-1.3.0", "syn-2.0.117", "unicode-ident-1.0.24", "vcpkg-0.2.15")
 REQUIRED_NOTICES = dict(
     [("force-graph/%s-%s" % (n, "LICENSE.md" if n == "bezier-js" else "LICENSE"), "MIT") for n in _FG_MIT]
     + [("force-graph/%s-LICENSE" % n, "ISC") for n in _FG_ISC]
@@ -751,7 +1047,81 @@ REQUIRED_NOTICES = dict(
        ("python/networkx-LICENSE.txt", "BSD-3-Clause"),
        ("python/openpyxl-LICENCE.rst", "MIT"),
        ("python/et_xmlfile-LICENCE.rst", "MIT"),
-       ("python/et_xmlfile-LICENCE.python", "PSF-2.0")])
+       ("python/et_xmlfile-LICENCE.python", "PSF-2.0")]
+    # W9(D15): 내려받은 고지 원문(Qt·PDFium·WebEngine·opengl32sw·VC++ 재배포·liblzma)과 PDF 어댑터 휠의 고지
+    + [("qt/GPL-2.0.txt", "GPL-2.0-only"),
+       ("qt/pdfium-LICENSE", "BSD-3-Clause·Apache-2.0(파일 안)"),
+       ("qt/qtwebengine-licensing.html", "구성요소별(파일 안)"),
+       ("qt/opengl32sw/mesa-11.2.2-license.html", "MIT(파일 안, 구성요소별)"),
+       ("qt/opengl32sw/llvm-3.6.0-LICENSE.TXT", "NCSA"),
+       ("msvc/vs2022-redistribution.html", "Microsoft 재배포 조건 안내(라이선스 본문 아님)"),
+       ("python/liblzma-xz-5.2.5-COPYING", "퍼블릭 도메인(liblzma, 파일 안)"),
+       ("qt/third-party/qtimageformats-libtiff-COPYRIGHT", "libtiff"),
+       ("qt/third-party/qtimageformats-libwebp-COPYING", "BSD-3-Clause")]
+    + [("qt/third-party/LICENSES/%s.txt" % n, n) for n in (
+        "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC0-1.0", "FTL", "IJG", "Libpng", "libpng-2.0", "MIT",
+        "MIT-open-group", "MPL-2.0", "Zlib", "LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception",
+        "LicenseRef-ICC-License", "LicenseRef-Lcs-Telegraphics", "LicenseRef-SHA1-Public-Domain")]
+    + [("qt/third-party/attribution/%s.qt_attribution.json" % n, lic) for n, lic in (
+        ("qtbase-D3D12MemoryAllocator", "MIT"), ("qtbase-VulkanMemoryAllocator", "MIT"),
+        ("qtbase-blake2", "CC0-1.0 OR Apache-2.0"), ("qtbase-double-conversion", "BSD-3-Clause"),
+        ("qtbase-easing", "BSD-3-Clause"), ("qtbase-emoji-segmenter", "Apache-2.0"),
+        ("qtbase-freetype", "FTL OR GPL-2.0-only; Zlib; MIT; MIT AND MIT-open-group"), ("qtbase-harfbuzz-ng", "MIT"),
+        ("qtbase-icc", "LicenseRef-ICC-License"), ("qtbase-libjpeg", "IJG AND BSD-3-Clause"),
+        ("qtbase-libpng", "Libpng AND libpng-2.0"), ("qtbase-libpsl", "MPL-2.0; BSD-3-Clause"),
+        ("qtbase-md4", "CC0-1.0"), ("qtbase-md4c", "MIT"), ("qtbase-md5", "CC0-1.0"),
+        ("qtbase-pcre2", "LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception; BSD-2-Clause"),
+        ("qtbase-rfc6234", "BSD-3-Clause"), ("qtbase-sha1", "LicenseRef-SHA1-Public-Domain"),
+        ("qtbase-sha3", "BSD-2-Clause; CC0-1.0"), ("qtbase-siphash", "CC0-1.0"), ("qtbase-tinycbor", "MIT"),
+        ("qtbase-wintab", "LicenseRef-Lcs-Telegraphics"), ("qtbase-zlib", "Zlib"),
+        ("qtimageformats-libtiff", "libtiff"), ("qtimageformats-libwebp", "BSD-3-Clause"))]
+    + [("python/%s" % f, lic) for f, lic in (
+        ("pdfplumber-LICENSE.txt", "MIT"), ("pdfminer.six-LICENSE", "MIT"), ("pillow-LICENSE", "MIT-CMU"),
+        ("charset_normalizer-LICENSE", "MIT"), ("cryptography-LICENSE", "Apache-2.0 OR BSD-3-Clause"),
+        ("cryptography-LICENSE.APACHE", "Apache-2.0"), ("cryptography-LICENSE.BSD", "BSD-3-Clause"),
+        ("cffi-LICENSE", "MIT"), ("cffi-AUTHORS", "MIT(저작자 목록)"), ("pycparser-LICENSE", "BSD-3-Clause"),
+        ("pypdfium2/LICENSES/Apache-2.0.txt", "Apache-2.0"), ("pypdfium2/LICENSES/BSD-3-Clause.txt", "BSD-3-Clause"),
+        ("pypdfium2/LICENSES/CC-BY-4.0.txt", "CC-BY-4.0"))]
+    + [("python/pypdfium2/BUILD_LICENSES/%s" % f, lic) for f, lic in (
+        ("abseil.txt", "Apache-2.0"), ("agg23.txt", "AGG 허가 문구(파일 안)"), ("fast_float.txt", "MIT"),
+        ("freetype.txt", "FTL(파일 안)"), ("icu.txt", "Unicode-3.0(파일 안)"), ("lcms.txt", "MIT"),
+        ("libjpeg_turbo.ijg", "IJG"), ("libjpeg_turbo.md", "IJG·BSD-3-Clause·Zlib(파일 안)"),
+        ("libopenjpeg.txt", "BSD-2-Clause"), ("libpng.txt", "libpng-2.0"), ("libtiff.txt", "libtiff"),
+        ("llvm-libc.txt", "Apache-2.0 WITH LLVM-exception(파일 안)"), ("pdfium-binaries.txt", "MIT"),
+        ("pdfium.txt", "BSD-3-Clause·Apache-2.0(파일 안)"), ("simdutf.txt", "MIT"), ("zlib.txt", "Zlib"))]
+    # W9 재작업 1회차: qt_attribution.json의 LicenseFile·CopyrightFile 원문(qtbase v6.12.0), cryptography 휠 동봉 SBOM
+    + [("qt/third-party/files/%s" % f, lic) for f, lic in (
+        ("D3D12MemoryAllocator/LICENSE.txt", "MIT"), ("VulkanMemoryAllocator/LICENSE.txt", "MIT"),
+        ("blake2/COPYING", "CC0-1.0 OR Apache-2.0"), ("double-conversion/LICENSE", "BSD-3-Clause"),
+        ("easing/LICENSE", "BSD-3-Clause"), ("freetype/BDF-LICENSE.txt", "MIT"),
+        ("freetype/PCF-LICENSE.txt", "MIT AND MIT-open-group"), ("freetype/ZLIB-LICENSE.txt", "Zlib"),
+        ("freetype/LICENSE.txt", "FTL OR GPL-2.0-only"), ("harfbuzz-ng/COPYING", "MIT"),
+        ("icc/LICENSE.txt", "LicenseRef-ICC-License"), ("libjpeg/LICENSE", "IJG AND BSD-3-Clause"),
+        ("libjpeg/ijg-license.txt", "IJG AND BSD-3-Clause"), ("libjpeg/COPYRIGHT.txt", "저작권자 목록"),
+        ("libpng/LICENSE", "Libpng AND libpng-2.0"), ("libpsl/PSL-LICENSE.txt", "MPL-2.0"),
+        ("libpsl/src/LICENSE.chromium", "BSD-3-Clause"), ("md4c/LICENSE.md", "MIT"),
+        ("pcre2/LICENSE-SLJIT", "BSD-2-Clause"),
+        ("pcre2/LICENCE.md", "LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception"),
+        ("rfc6234/LICENSE", "BSD-3-Clause"), ("sha3/CC0_LICENSE", "CC0-1.0"), ("sha3/BRG_ENDIAN_LICENSE", "BSD-2-Clause"),
+        ("tinycbor/LICENSE", "MIT"), ("zlib/LICENSE", "Zlib"))]
+    + [("python/cryptography-sboms/%s" % f, "구성요소별(파일 안)")
+       for f in ("sbom.json", "cryptography-rust.cyclonedx.json")]
+    # W9-B(D17): VS 2022 사용 조건(.docx와 텍스트 사본), cryptography 안 OpenSSL·Rust 크레이트(crates.io .crate) 원문
+    + [("msvc/vs2022-license-terms.docx", "Microsoft 소프트웨어 사용 조건"),
+       ("msvc/vs2022-license-terms.txt", "Microsoft 소프트웨어 사용 조건"),
+       ("python/openssl-4.0.0-LICENSE.txt", "Apache-2.0")]
+    + [("python/cryptography-rust-crates/%s/%s" % (c, f), lic) for c in _CRATES_MIT_APACHE
+       for f, lic in (("LICENSE-APACHE", "Apache-2.0"), ("LICENSE-MIT", "MIT"))]
+    + [("python/cryptography-rust-crates/%s" % f, lic) for f, lic in (
+        ("asn1-0.24.1/LICENSE", "BSD-3-Clause"), ("asn1_derive-0.24.1/LICENSE", "BSD-3-Clause"),
+        ("openssl-sys-0.9.115/LICENSE-MIT", "MIT"), ("openssl-0.10.79/LICENSE", "Apache-2.0"),
+        ("openssl-0.10.79/LICENSE-APACHE", "Apache-2.0"), ("pem-3.0.6/LICENSE.md", "MIT"),
+        ("self_cell-1.2.2/LICENSE-APACHE", "Apache-2.0"), ("self_cell-1.2.2/LICENSE-GPLv2", "GPL-2.0-only"),
+        ("target-lexicon-0.13.5/LICENSE", "Apache-2.0 WITH LLVM-exception"),
+        ("unicode-ident-1.0.24/LICENSE-UNICODE", "Unicode-3.0"))])
+# W9(D15): PDF 어댑터 휠 고정(packaging/requirements-pdf.txt) — 이 8개만, 휠 하나의 sha256씩
+PDF_PINS = {"pdfplumber": "0.11.9", "pdfminer.six": "20251230", "pillow": "12.2.0", "pypdfium2": "5.8.0",
+            "charset-normalizer": "3.4.7", "cryptography": "48.0.0", "cffi": "2.0.0", "pycparser": "3.0"}
 REQUIRED_DOCS = ("qt/QT-SOURCE.md", "qt/QTWEBENGINE-THIRD-PARTY.md")  # Qt 소스 위치·WebEngine 제3자 목록 위치
 
 
@@ -764,6 +1134,33 @@ def _notice_rows(path=None):
             if len(cells) == 7 and cells[4].startswith("`") and cells[6].startswith("`"):
                 rows.append((cells[0], cells[1], cells[2], cells[4].strip("`"), cells[6].strip("`")))
     return rows
+
+
+def _table_problems(text):
+    """Markdown 표 연속성: '|'로 시작하는 줄 묶음마다 첫 줄이 머리행, 둘째 줄이 구분행(|---|)이고, 모든 행의 칸 수가
+    머리행과 같아야 한다. 빈 줄로 끊긴 표(머리행 없이 시작하는 행 묶음)를 잡는다. 문제 목록(빈 목록 = 통과)."""
+    import re
+    probs, block = [], []
+
+    def ncell(ln):
+        return len(ln.strip().strip("|").split("|"))
+
+    def check(block):
+        if not block:
+            return
+        (n0, h), rest = block[0], block[1:]
+        if not rest or not re.match(r"^\|(\s*:?-{3,}:?\s*\|)+$", rest[0][1].strip()):
+            probs.append("%d행: 머리행·구분행 없이 시작하는 표" % n0)
+            return
+        probs.extend("%d행: 칸 수 %d != 머리행 %d" % (n, ncell(ln), ncell(h)) for n, ln in rest if ncell(ln) != ncell(h))
+    for n, ln in enumerate(text.splitlines(), 1):
+        if ln.startswith("|"):
+            block.append((n, ln))
+        else:
+            check(block)
+            block = []
+    check(block)
+    return probs
 
 
 def _notice_problems(rows, licenses_dir=LICENSES_DIR):
@@ -791,29 +1188,61 @@ def _notice_problems(rows, licenses_dir=LICENSES_DIR):
 
 
 class LicenseNoticeTest(unittest.TestCase):
-    """licenses/가 묶음 datas에 들어가고, 고지 목록이 기준 목록(원문 경로·라이선스 식별자)과 맞으며, 원문 파일이 있고
-    SHA-256이 목록과 같다(W6 완료 기준)."""
+    """고지 목록이 기준 목록(원문 경로·라이선스 식별자)과 맞고, 원문 파일이 있고 SHA-256이 목록과 같으며(W6 완료 기준),
+    README 표가 끊기지 않았다. W9(D15)부터 licenses/는 datas가 아니라 빌드 뒤 실행 파일 옆으로 복사된다."""
 
     @classmethod
     def setUpClass(cls):
         cls.bp = _build_package()
         cls.rows = _notice_rows()
 
-    def test_spec_includes_licenses(self):
-        self.assertIn("licenses", self.bp.DATA_DIRS)
-        listed = {"licenses/" + r[3] for r in self.rows} | {"licenses/README.md"}
+    def test_licenses_copied_next_to_exe(self):
+        """W9(D15): licenses/는 datas(_internal/licenses/)에 넣지 않고, 빌드 뒤 결과 폴더의 실행 파일 옆으로 복사한다."""
+        self.assertNotIn("licenses", self.bp.DATA_DIRS)
+        self.assertFalse([s for s, _ in self.bp.datas_list() if s.startswith("licenses/")])
         for with_check in (False, True):
-            text = self.bp.spec_text(with_check=with_check)
-            ns = {}
+            text, ns = self.bp.spec_text(with_check=with_check), {}
             exec(text.split("from PyInstaller")[0] + "\n".join(
                 ln for ln in text.splitlines() if ln.startswith(("REPO =", "DATAS ="))), ns)
-            got = {os.path.relpath(s, REPO_ROOT).replace("\\", "/"): d for s, d in ns["DATAS"]}
-            self.assertEqual(listed - set(got), set())
-            for src in listed:  # 묶음 안에서도 licenses/ 아래 같은 상대 위치
-                self.assertEqual(got[src].replace(os.sep, "/"), os.path.dirname(src))
+            self.assertFalse([s for s, _ in ns["DATAS"] if self.bp.inside(s, LICENSES_DIR)])
+            out = tempfile.mkdtemp(prefix="hazop-lic-copy-")
+            self.addCleanup(shutil.rmtree, out, True)
+            dist = self.bp.dist_dir(out, with_check)
+            os.makedirs(os.path.join(dist, "_internal"))
+            dest = self.bp.copy_licenses(out, with_check)
+            self.assertEqual(dest, os.path.join(dist, "licenses"))
+            listed = {r[3] for r in self.rows} | {"README.md", ".gitattributes"}
+            on_disk = {os.path.relpath(os.path.join(d, f), dest).replace("\\", "/")
+                       for d, _, fs in os.walk(dest) for f in fs}
+            self.assertEqual(on_disk, listed)
+            self.assertEqual(self.bp.licenses_problems(dist), [])
+            os.makedirs(os.path.join(dist, "_internal", "licenses"))  # 이전 위치가 남아 있으면 실패
+            self.assertEqual(self.bp.licenses_problems(dist),
+                             ["이전 위치 _internal/licenses/가 있음(실행 파일 옆으로 옮김, D15)"])
 
     def test_notices_match_baseline_and_sha256(self):
         self.assertEqual(_notice_problems(self.rows), [])
+
+    def test_readme_tables_continuous(self):
+        """licenses/README.md의 표가 빈 줄로 끊기지 않았다(끊기면 뒤 행이 머리행 없는 별도 표가 된다)."""
+        with open(os.path.join(LICENSES_DIR, "README.md"), encoding="utf-8") as fh:
+            self.assertEqual(_table_problems(fh.read()), [])
+        good = "글\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+        self.assertEqual(_table_problems(good), [])
+        self.assertEqual(_table_problems(good + "\n| 3 | 4 |\n"), ["7행: 머리행·구분행 없이 시작하는 표"])
+        self.assertEqual(_table_problems(good + "| 3 | 4 | 5 |\n"), ["6행: 칸 수 3 != 머리행 2"])
+
+    def test_rust_crates_cover_sbom(self):
+        """W9-B(D17): SBOM의 crates.io 크레이트마다 원문 폴더(`<이름>-<버전>/`)가 있고, 그 밖의 폴더는 없다.
+        cryptography 내부 경로 크레이트(download_url=file)는 cryptography 고지로 갈음한다."""
+        import json
+        with open(os.path.join(LICENSES_DIR, "python", "cryptography-sboms", "cryptography-rust.cyclonedx.json"),
+                  encoding="utf-8") as fh:
+            comps = json.load(fh)["components"]
+        want = {"%s-%s" % (c["name"], c["version"]) for c in comps if "download_url=file" not in c["purl"]}
+        self.assertEqual(len(want), 32)
+        have = set(os.listdir(os.path.join(LICENSES_DIR, "python", "cryptography-rust-crates")))
+        self.assertEqual(have, want)
 
     def test_removed_row_and_file_detected(self):
         """목록 행과 원문 파일을 함께 지워도(사본에서) 기준 목록 대조로 실패한다. 식별자·해시 변경도 잡는다."""
@@ -845,6 +1274,14 @@ class LicenseNoticeTest(unittest.TestCase):
         self.assertEqual(by_file["python/networkx-LICENSE.txt"], pins["networkx"])
         self.assertEqual(by_file["python/openpyxl-LICENCE.rst"], pins["openpyxl"])
         self.assertEqual(by_file["pyinstaller/COPYING.txt"], pins["pyinstaller"])
+        pdf_rows = {"pdfplumber": "python/pdfplumber-LICENSE.txt", "pdfminer.six": "python/pdfminer.six-LICENSE",
+                    "pillow": "python/pillow-LICENSE", "charset-normalizer": "python/charset_normalizer-LICENSE",
+                    "cryptography": "python/cryptography-LICENSE", "cffi": "python/cffi-LICENSE",
+                    "pycparser": "python/pycparser-LICENSE", "pypdfium2": "python/pypdfium2/LICENSES/Apache-2.0.txt"}
+        pdf_pins = _pdf_pins()
+        self.assertEqual(set(pdf_rows), set(pdf_pins))
+        for name, rel in pdf_rows.items():  # W9(D15): 고지 목록의 버전 = requirements-pdf.txt 고정 버전
+            self.assertEqual(by_file[rel], pdf_pins[name][0], name)
         vendor = [d for d in os.listdir(os.path.dirname(kg_screen.VENDOR_DIR)) if d.startswith("force-graph-")]
         self.assertEqual(by_file["force-graph/force-graph-LICENSE"], vendor[0].split("-")[-1] + "(vendor)")
         for rel in REQUIRED_NOTICES:
@@ -853,14 +1290,32 @@ class LicenseNoticeTest(unittest.TestCase):
                 self.assertIn("(추정)", by_file[rel], rel)
 
 
+def _pdf_pins(path=None):
+    """packaging/requirements-pdf.txt → {이름: (버전, [sha256, ...])}. 줄 이음(\\)과 --hash 줄을 읽는다."""
+    import re
+    with open(path or os.path.join(REPO_ROOT, "packaging", "requirements-pdf.txt"), encoding="utf-8") as fh:
+        text = re.sub(r"\\\r?\n", " ", fh.read())
+    pins = {}
+    for ln in text.splitlines():
+        ln = ln.strip()
+        if not ln or ln.startswith("#"):
+            continue
+        m = re.match(r"^([A-Za-z0-9_.-]+)==(\S+)((?:\s+--hash=sha256:[0-9a-f]{64})*)\s*$", ln)
+        if not m:
+            raise ValueError("해석할 수 없는 줄: %r" % ln)
+        pins[m.group(1).lower()] = (m.group(2), re.findall(r"[0-9a-f]{64}", m.group(3)))
+    return pins
+
+
 class BundleLicensesTest(unittest.TestCase):
-    """packaging/verify_bundle.licenses_problems: 묶음 _internal/licenses/가 저장소 licenses/와 같은지(빌드 없이)."""
+    """packaging/verify_bundle.licenses_problems: 묶음의 실행 파일 옆 licenses/가 저장소 licenses/와 같고 이전 위치
+    _internal/licenses/가 없는지(빌드 없이, W9 D15)."""
 
     def test_licenses_problems(self):
         vb = _load("packaging/verify_bundle.py", "hazop_verify_bundle_lic")
         tmp = tempfile.mkdtemp(prefix="hazop-bundle-lic-")
         self.addCleanup(shutil.rmtree, tmp, True)
-        dest = os.path.join(tmp, "_internal", "licenses")
+        dest = os.path.join(tmp, "licenses")
         self.assertTrue(vb.licenses_problems(tmp))  # 묶음에 licenses 없음
         shutil.copytree(LICENSES_DIR, dest)
         self.assertEqual(vb.licenses_problems(tmp), [])
@@ -869,9 +1324,148 @@ class BundleLicensesTest(unittest.TestCase):
         os.remove(os.path.join(dest, "force-graph", "d3-ease-LICENSE"))
         open(os.path.join(dest, "extra.txt"), "w").close()
         probs = vb.licenses_problems(tmp)
-        self.assertIn("해시 다름: %s" % os.path.join("qt", "GPL-3.0.txt"), probs)
-        self.assertIn("묶음에 없음: %s" % os.path.join("force-graph", "d3-ease-LICENSE"), probs)
+        self.assertIn("해시 다름: qt/GPL-3.0.txt", probs)
+        self.assertIn("묶음에 없음: force-graph/d3-ease-LICENSE", probs)
         self.assertIn("저장소에 없는 파일: extra.txt", probs)
+        self.assertNotIn("이전 위치 _internal/licenses/가 있음(실행 파일 옆으로 옮김, D15)", probs)
+        shutil.rmtree(dest)  # 이전 위치(_internal/licenses/)에만 있으면 전부 없음 + 이전 위치 문제
+        shutil.copytree(LICENSES_DIR, os.path.join(tmp, "_internal", "licenses"))
+        probs = vb.licenses_problems(tmp)
+        self.assertIn("묶음에 없음: README.md", probs)
+        self.assertEqual(probs[-1], "이전 위치 _internal/licenses/가 있음(실행 파일 옆으로 옮김, D15)")
+
+
+class PdfBundleTest(unittest.TestCase):
+    """W9(D15): PDF 어댑터 묶음 — requirements-pdf.txt 고정, 빌드 뒤 PDF 검사, verify의 pdf_probe 판정(빌드 없이)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.bp = _build_package()
+        cls.vb = _load("packaging/verify_bundle.py", "hazop_verify_bundle_pdf")
+        cls.probe = _load("packaging/pdf_probe.py", "hazop_pdf_probe_t")
+
+    def _tmp(self):
+        d = tempfile.mkdtemp(prefix="hazop-pdf-")
+        self.addCleanup(shutil.rmtree, d, True)
+        return d
+
+    def test_requirements_pdf_pins_and_hashes(self):
+        pins = _pdf_pins()
+        self.assertEqual({k: v[0] for k, v in pins.items()}, PDF_PINS)
+        for name, (_, hashes) in pins.items():
+            self.assertEqual(len(hashes), 1, name)  # 휠 하나만(다른 휠·sdist로 바뀌지 않게)
+        bad = os.path.join(self._tmp(), "r.txt")
+        with open(bad, "w", encoding="utf-8") as fh:
+            fh.write("pdfplumber>=0.11\n")
+        with self.assertRaises(ValueError):
+            _pdf_pins(bad)
+
+    def _fake_build(self, mods, dll=True, with_check=False):
+        out = self._tmp()
+        b = os.path.join(out, "build", "HAZOP")
+        os.makedirs(b)
+        with open(os.path.join(b, "PYZ-00.toc"), "w", encoding="utf-8") as fh:
+            fh.write(repr((os.path.join(b, "PYZ-00.pyz"), [(m, "C:\\x\\%s.py" % m, "PYMODULE") for m in mods])))
+        d = os.path.join(self.bp.dist_dir(out, with_check), "_internal", *self.bp.PDFIUM_DLL)
+        os.makedirs(os.path.dirname(d))
+        if dll:
+            open(d, "wb").close()
+        return out
+
+    def test_pdf_problems(self):
+        mods = list(self.bp.PDF_REQUIRED_MODULES) + ["hazop", "PIL"]
+        for with_check in (False, True):
+            self.assertEqual(self.bp.pdf_problems(self._fake_build(mods, with_check=with_check), with_check), [])
+        out = self._fake_build([m for m in mods if m != "pypdfium2_raw"], dll=False)
+        probs = self.bp.pdf_problems(out)
+        self.assertEqual(probs[0], "앱 PYZ에 PDF 모듈 없음: pypdfium2_raw")
+        self.assertTrue(probs[1].startswith("pdfium.dll 없음: "))
+        self.assertTrue(self.bp.pdf_problems(self._tmp())[0].startswith("앱 PYZ TOC를 읽을 수 없음"))
+
+    def test_finish_bundle(self):
+        """빌드 뒤 마무리: 실행 파일 옆 licenses/ 복사 + 고지 대조 + PDF 검사. 결과 폴더가 없으면 실패."""
+        self.assertTrue(self.bp.finish_bundle(self._tmp())[0].startswith("결과 폴더 없음"))
+        out = self._fake_build(list(self.bp.PDF_REQUIRED_MODULES))
+        self.assertEqual(self.bp.finish_bundle(out), [])
+        self.assertTrue(os.path.isfile(os.path.join(self.bp.dist_dir(out), "licenses", "README.md")))
+        self.assertTrue(self.bp.finish_bundle(out)[0].startswith("제3자 고지 복사 실패"))  # 두 번째 복사(이미 있음)
+
+    def test_license_tree_walk_error_fails(self):
+        """고지 대조의 폴더 탐색 오류(onerror)·파일 읽기 오류는 '같음'이 아니라 실패다."""
+        out = self._fake_build(list(self.bp.PDF_REQUIRED_MODULES))
+        dist = self.bp.dist_dir(out)
+        self.bp.copy_licenses(out)
+        self.assertEqual(self.bp.licenses_problems(dist), [])
+        real_walk = os.walk
+
+        def bad_walk(top, onerror=None, **kw):
+            if onerror is not None and os.path.normcase(top).startswith(os.path.normcase(dist)):
+                onerror(PermissionError(13, "액세스 거부(모의)", os.path.join(top, "qt")))
+            return real_walk(top, onerror=onerror, **kw)
+        with mock.patch.object(self.bp.os, "walk", side_effect=bad_walk):
+            probs = self.bp.licenses_problems(dist)
+        self.assertEqual(len(probs), 1)
+        self.assertTrue(probs[0].startswith("고지 대조 중 탐색 오류:"), probs)
+        with mock.patch("builtins.open", side_effect=PermissionError(13, "읽기 거부(모의)")):
+            self.assertTrue(self.bp.licenses_problems(dist)[0].startswith("고지 대조 중 탐색 오류:"))
+
+    def test_main_rc3_when_finish_bundle_fails(self):
+        """빌드 뒤 마무리(finish_bundle)가 문제를 돌려주면 main은 rc=3이고, 마무리는 결과 폴더 경로로 한 번 불린다."""
+        out = self._tmp()
+        fin = mock.Mock(return_value=["x"])
+        with mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock()}), \
+                mock.patch.object(self.bp, "build", return_value=0), \
+                mock.patch.object(self.bp, "check_dist", return_value=[]), \
+                mock.patch.object(self.bp, "check_sources", return_value=[]), \
+                mock.patch.object(self.bp, "python_problems", return_value=[]), \
+                mock.patch.object(self.bp, "finish_bundle", fin):
+            self.assertEqual(self.bp.main(["--out", out, "--build"]), 3)
+            fin.assert_called_once_with(os.path.abspath(out), False)
+            fin.return_value = []
+            self.assertEqual(self.bp.main(["--out", out, "--build", "--with-check"]), 0)
+            fin.assert_called_with(os.path.abspath(out), True)
+
+    def test_pdf_probe_problems(self):
+        bundle = self._tmp()
+        inner = os.path.join(bundle, "_internal")
+        exp = {"extraction_run_id": "x", "summary": {"nodes": 1}, "counts": {"nodes": 1}}
+        files = {m: os.path.join(inner, m, "__init__.pyc") for m in self.probe.PROBE_MODULES}
+        good = {"frozen": True, "extraction": dict(exp), "render_size": [100, 80], "module_files": files,
+                "pdfium_dll": os.path.join(inner, "pypdfium2_raw", "pdfium.dll"), "pdfium_dll_exists": True}
+        self.assertEqual(self.vb.pdf_probe_problems(good, exp, bundle), [])
+        self.assertEqual(self.vb.PDF_PROBE_MODULES, self.probe.PROBE_MODULES)
+        # 필수 키 누락: 모듈 키가 빠지거나 pdfium_dll 키가 없으면 실패(빈 결과가 통과하지 않게)
+        missing = dict(good, module_files={k: v for k, v in files.items() if k not in ("PIL", "cryptography")})
+        del missing["pdfium_dll"]
+        self.assertEqual(self.vb.pdf_probe_problems(missing, exp, bundle),
+                         ["결과에 없음: PIL", "결과에 없음: cryptography", "결과에 없음: pdfium.dll"])
+        self.assertEqual(self.vb.pdf_probe_problems(dict(good, module_files=None), exp, bundle),
+                         ["결과에 없음: %s" % m for m in self.probe.PROBE_MODULES])
+        self.assertEqual(self.vb.pdf_probe_problems(None, exp, bundle), ["결과 없음"])
+        self.assertEqual(self.vb.pdf_probe_problems({"error": "ImportError: x"}, exp, bundle), ["오류: ImportError: x"])
+        bad = dict(good, frozen=False, extraction=dict(exp, summary={"nodes": 2}), render_size=[0, 5],
+                   pdfium_dll_exists=False,
+                   module_files=dict(files, pdfplumber=r"C:\venv\Lib\site-packages\pdfplumber\__init__.py", PIL=None))
+        self.assertEqual(self.vb.pdf_probe_problems(bad, exp, bundle),
+                         ["묶인 실행이 아님", "추출 요약이 개발 실행과 다름", "pypdfium2 그림 크기 이상: [0, 5]",
+                          "읽히지 않음: PIL", "읽히지 않음: pdfium.dll",
+                          "묶음 밖에서 읽힘: pdfplumber (C:\\venv\\Lib\\site-packages\\pdfplumber\\__init__.py)"])
+
+    @unittest.skipUnless(importlib.util.find_spec("pdfplumber"), "pdfplumber 없음(전용 venv에서 실행)")
+    def test_probe_runs_in_dev_venv(self):
+        """개발 실행(묶지 않음)에서 pdf_probe가 샘플 PDF를 추출·그리고, 요약이 verify의 기대값(pdf_expected)과 같다."""
+        pdf = os.path.join(REPO_ROOT, *self.vb.SAMPLE, self.vb.SAMPLE[-1] + ".pdf")
+        res = os.path.join(self._tmp(), "r.json")
+        self.assertEqual(self.probe.main(["--pdf", pdf, "--result", res]), 0)
+        got = data.read_json(res)
+        self.assertFalse(got["frozen"])
+        self.assertEqual(got["extraction"], self.vb.pdf_expected(pdf))
+        self.assertTrue(got["pdfium_dll_exists"])
+        self.assertTrue(all(got["module_files"].values()))
+        # 묶음 판정으로 보면 개발 실행은 '묶인 실행이 아님'·'묶음 밖에서 읽힘'으로 실패한다
+        probs = self.vb.pdf_probe_problems(got, got["extraction"], self._tmp())
+        self.assertIn("묶인 실행이 아님", probs)
+        self.assertTrue(any(p.startswith("묶음 밖에서 읽힘: pdfplumber") for p in probs))
 
 
 def _load(rel, name):
@@ -917,6 +1511,94 @@ class VerifierTest(unittest.TestCase):
         for bad in ("..", "a/b", r"a\b", ""):
             with self.assertRaises(ValueError):
                 self.vb.new_run_root(base, bad) if bad else self.vb.new_run_root(base, ".")
+
+    def test_app_checks_without_window(self):
+        """W10(D18) 판정 함수: 손상 설정(--screenshots) rc 2·안내·로그·파일 그대로, 시험 트리거는 검증용 rc 70·배포용 rc 2."""
+        ok = ("설정 파일을 읽을 수 없어 종료합니다: x\n원인: JSONDecodeError: ...", "WARNING hazop.settings: 설정 파일을 읽을 수 없음")
+        self.assertTrue(self.vb.bad_settings_ok(2, ok[0], ok[1], True))
+        self.assertFalse(self.vb.bad_settings_ok(1, ok[0], ok[1], True))
+        self.assertFalse(self.vb.bad_settings_ok(2, "", ok[1], True))
+        self.assertFalse(self.vb.bad_settings_ok(2, ok[0], "", True))
+        self.assertFalse(self.vb.bad_settings_ok(2, ok[0], ok[1], False))  # 백업·덮어쓰기·PNG가 생김
+        hooked = "CRITICAL hazop.unhandled: 미처리 예외\nRuntimeError: 시험용 미처리 예외(HAZOP_TEST_EXCEPTHOOK)"
+        self.assertTrue(self.vb.trigger_ok(False, 70, hooked))
+        self.assertFalse(self.vb.trigger_ok(False, 2, ok[1]))       # 검증용인데 트리거가 꺼짐
+        self.assertFalse(self.vb.trigger_ok(False, 70, hooked.split("\n")[0]))
+        self.assertTrue(self.vb.trigger_ok(True, 2, ok[1]))         # 배포용: 트리거 꺼짐
+        self.assertFalse(self.vb.trigger_ok(True, 70, hooked))      # 배포용인데 트리거가 켜짐
+        with open(os.path.join(REPO_ROOT, "packaging", "verify_bundle.py"), encoding="utf-8") as fh:
+            self.assertNotIn("bad-settings.json", fh.read())
+
+    def _fake_app(self, verify_build, calls):
+        """HAZOP.exe 대역: 실제 scripts/run_app.main을 같은 프로세스에서 부른다(스크린샷 정상 실행만 rc 0으로 건너뜀).
+        앱 로그는 런타임 훅처럼 root logging과 sys.excepthook을 <작업 루트>/logs/app.log에 연결한다.
+        모든 실행이 비대화형(--screenshots 또는 잘못된 옵션)인지 확인하고, 대화상자·QApplication이 불리면 실패한다."""
+        import contextlib
+        import io
+        import logging
+        ra = _load("scripts/run_app.py", "hazop_run_app_fake")
+
+        def fake_run(cmd, env, cwd, log, timeout=None):
+            calls.append((cmd, env.get("HAZOP_TEST_EXCEPTHOOK")))
+            self.assertTrue("--screenshots" in cmd or "--w4-unknown-option" in cmd, cmd)  # 대화형 실행 없음
+            args = cmd[1:]
+            log_path = os.path.join(env["HAZOP_WORK_ROOT"], "logs", "app.log")
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            handler = logging.FileHandler(log_path, encoding="utf-8")
+            handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+            root = logging.getLogger()
+            root.addHandler(handler)
+            level, root.level = root.level, logging.INFO
+            out = io.StringIO()
+
+            def hook(*exc):
+                logging.getLogger("hazop.unhandled").critical("미처리 예외", exc_info=exc)
+            try:
+                if args[:1] == ["--screenshots"] and os.path.dirname(args[3]) == cwd:  # 정상 설정의 스크린샷
+                    logging.getLogger("hazop.startup").info("시작 pid=1")
+                    rc = 0
+                else:
+                    with mock.patch.dict(os.environ, {k: v for k, v in env.items() if k == "HAZOP_TEST_EXCEPTHOOK"}), \
+                            mock.patch.object(sys, "_hazop_verify_build", verify_build, create=True), \
+                            mock.patch.object(sys, "excepthook", hook), \
+                            mock.patch("hazop.app.make_application", side_effect=AssertionError("창 생성")), \
+                            mock.patch("hazop.app.startup.ask_dialog", side_effect=AssertionError("대화상자")), \
+                            contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                        try:
+                            rc = ra.main(args)
+                        except SystemExit as e:
+                            rc = e.code
+            finally:
+                root.removeHandler(handler)
+                handler.close()
+                root.level = level
+            with open(log, "w", encoding="utf-8") as fh:
+                fh.write(out.getvalue())
+            return rc, 0.0, out.getvalue()
+        return fake_run
+
+    def test_app_steps_mock_run(self):
+        """W10(D18) verify 단계 4를 대역 HAZOP.exe(실제 run_app.main)로 실행: 검증용은 트리거 rc 70·미처리 예외 기록,
+        배포용은 트리거 꺼짐 rc 2. 두 경우 모두 손상 설정 rc 2·파일 그대로이고, 대화형 실행·창 생성이 없다."""
+        for verify_build in (True, False):
+            for app_only in (False, True):
+                tmp = tempfile.mkdtemp(prefix="hazop-appsteps-", dir=self.tmp)
+                work = os.path.join(tmp, "work")
+                out, png = os.path.join(tmp, "out"), os.path.join(tmp, "png")
+                os.makedirs(out)
+                calls, summary = [], {"steps": {}, "checks": {}}
+                with mock.patch.object(self.vb, "run", self._fake_app(verify_build, calls)):
+                    rc, _, rc2 = self.vb.app_steps("HAZOP.exe", {"HAZOP_WORK_ROOT": work}, tmp, out, png, None,
+                                                   app_only, summary)
+                c, st = summary["checks"], summary["steps"]
+                self.assertEqual((rc, rc2, st["app_bad_settings"]["rc"]), (0, 2, 2))
+                self.assertEqual(st["app_excepthook"]["rc"], 70 if verify_build else 2)
+                self.assertTrue(c["app_bad_settings"] and c["app_log_started"] and c["app_bad_option_rc2"])
+                key = "app_trigger_off" if app_only else "app_log_unhandled"
+                # 빌드 종류와 판정 기준이 맞을 때만(검증용 빌드 + 검증 판정, 배포용 빌드 + --app-only) 통과
+                self.assertEqual(c[key], verify_build is not app_only, (verify_build, app_only))
+                self.assertEqual(len(calls), 4)
+                self.assertEqual([e for _, e in calls], [None, None, None, "1"])
 
     def test_child_env_path_is_system_only(self):
         """묶인 실행 PATH는 Windows System32·Windows 폴더뿐이고 Qt·OpenSSL 설정 변수는 지운다(D10, 사용자 PATH 의존 제거)."""

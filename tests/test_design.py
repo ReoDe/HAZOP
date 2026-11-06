@@ -208,6 +208,25 @@ class JudgeTest(unittest.TestCase):
         rows[1]["at_area"] = {"elided": [{"objectName": "chip", "tooltip_ok": False}]}
         self.assertEqual(cd.elide_problems(rows), [("B", "⑤", "muted"), ("A", "①", "chip")])
 
+    def test_legend_problems(self):
+        """W10(D16): 고치기 전 ⑤ 1366 측정(범례가 #zoom을 가림)은 실패, 고친 뒤 측정은 통과, 강조 없음·캔버스 밖도 실패."""
+        floats = {"search": [8, 128, 346, 181], "layers": [200.4, 184, 346, 275], "zoom": [8, 502, 194, 542]}
+        vp = [0, 120, 354, 550]
+        before = {"legend": [88.5, 444, 265.5, 534], "viewport": vp, "floats": floats, "visible": True}
+        after = {"legend": [8, 430, 346, 494], "viewport": vp, "floats": floats, "visible": True}
+        self.assertEqual(cd.legend_problems([{"width": 1366, "screen": "⑤", "measure": before}]),
+                         [(1366, "⑤", "범례가 #zoom와 겹침(3376px²)")])
+        self.assertEqual(cd.legend_problems([{"width": 1366, "screen": "⑤", "measure": after}]), [])
+        touching = dict(after, legend=[8, 400, 346, 502])               # 맞닿기만 하면 겹침 아님
+        self.assertEqual(cd.legend_problems([{"width": 1440, "screen": "④", "measure": touching}]), [])
+        self.assertEqual(cd.legend_problems([{"width": 1440, "screen": "④", "measure": None}]),
+                         [(1440, "④", "범례 표시 안 됨(강조 없음)")])
+        out = dict(after, legend=[-4, 430, 346, 494])
+        self.assertEqual(len(cd.legend_problems([{"width": 1440, "screen": "④", "measure": out}])), 1)
+        nozoom = dict(after, floats={"search": floats["search"]})
+        self.assertEqual(cd.legend_problems([{"width": 1440, "screen": "④", "measure": nozoom}]),
+                         [(1440, "④", "#zoom 없음")])
+
     def test_form_problems(self):
         rows = [{"state": "B", "screen": "⑤", "form": {"need": 380, "have": 606},
                  "at_area": {"form": {"need": 700, "have": 606}}},
@@ -253,7 +272,9 @@ class ViewerColorTest(unittest.TestCase):
         bad = cd.viewer_color_problems(old, tokens.web_css())
         w5 = ("--muted:", "--instrument:", "--unclassified:", "--measurement_connection:")  # W5 명암비 조정(D7)분
         self.assertEqual(sum(b.startswith(w5) for b in bad), 4, bad)
-        self.assertEqual(len([b for b in bad if not b.startswith(w5)]), 10, bad)
+        # W4 10건 + W9(D15)에서 허용 목록을 비워 실패가 된 3건(#16a34a 통과 점, #b45309 경고 글자 2곳)
+        self.assertEqual(len([b for b in bad if not b.startswith(w5)]), 13, bad)
+        self.assertEqual(sum("#16a34a" in b or "#b45309" in b for b in bad), 3, bad)
         for k in ("--valve:", "--selected:", "클릭 선택 채움"):
             self.assertTrue(any(b.startswith(k) for b in bad), (k, bad))
 
@@ -310,10 +331,21 @@ class ViewerColorTest(unittest.TestCase):
                 self.assertNotEqual(self.bad(**kw), [], name)
         self.assertTrue(any(b.startswith(":root 규칙 2개") for b in self.bad(**cases["뒤쪽 :root 재선언"])))
 
+    def test_allow_list_is_empty(self):
+        """W9(D15): 허용 목록은 비어 있다. 다시 채우면 실패한다 — 새 색은 tokens.py 토큰과 var()로 쓴다."""
+        self.assertEqual(cd.VIEWER_COLOR_ALLOW, {})
+        for body in ("aside .warn { color: #b45309; }", "#pathq .res .bad { color: #B45309; }",
+                     ".chip.passed::before { content: 'x'; color: #16a34a; }"):
+            with self.subTest(body):
+                self.assertNotEqual(self.bad(body=body), [], body)  # W8까지 허용하던 3조합
+
     def test_allow_list_is_rule_bound(self):
-        self.assertEqual(self.bad(body="aside .warn { color: #b45309; } #pathq .res .bad { color: #B45309; }"), [])
-        self.assertEqual(self.bad(body=".chip.passed::before { content: 'x'; color: #16a34a; }"), [])
-        self.assertTrue(all(len(k) == 3 for k in cd.VIEWER_COLOR_ALLOW))
+        """허용 목록 기능 자체는 (선택자, 속성, 값) 단위로 남아 있다(목록을 임시로 채워 확인)."""
+        from unittest import mock
+        with mock.patch.dict(cd.VIEWER_COLOR_ALLOW, {("aside .warn", "color", "#b45309"): "테스트"}):
+            self.assertEqual(self.bad(body="aside .warn { color: #B45309; }"), [])
+            self.assertNotEqual(self.bad(body="#pathq .res .bad { color: #b45309; }"), [])
+        self.assertEqual(cd.VIEWER_COLOR_ALLOW, {})
 
     def test_selected_fill_and_missing_data_var(self):
         tpl, app = self.tpl()
@@ -624,14 +656,14 @@ class ContrastTest(unittest.TestCase):
         ("warn-ink", "card"), ("err-ink", "card"), ("ai-ink", "ai-hatch-a"), ("on-fill", "human-line"),
         ("risk-ok-ink", "risk-ok-bg"), ("risk-cond-ink", "risk-cond-bg"), ("risk-deny-ink", "risk-deny-bg"),
         ("risk-ok-ink", "card"), ("risk-cond-line", "card"), ("risk-deny-line", "card"),
-        ("on-fill", "hl-safeguard"), ("hl-safeguard", "card"), ("#b45309", "card")]
+        ("on-fill", "hl-safeguard"), ("hl-safeguard", "card")]  # 뷰어 경고 글자(W9)는 warn-ink/card
     REQUIRED_GRAPHIC = (
         [(k, b) for k in ("equipment", "valve", "instrument", "piping_element", "unclassified", "physical_connection",
                           "signal_connection", "measurement_connection", "unresolved")
          for b in ("card", "bg", "kg-canvas")]
         + [(k, b) for k in ("hl-cause", "hl-path", "hl-safeguard") for b in ("card", "bg")
            if (k, b) != ("hl-safeguard", "card")]  # hl-safeguard/card는 REQUIRED_TEXT 4.5:1이 대신함
-        + [("ui", "bg"), ("tag", "card"), ("#16a34a", "bg")]
+        + [("ui", "bg"), ("tag", "card"), ("ok", "bg")]  # ok/bg: 뷰어 통과 점(W9, 옛 #16a34a)
         + [("card", "equipment")])  # W7 그래프 선택 노드 흰 띠/설비 채움(고리는 ui/card·ui/bg)
 
     def test_required_pairs_and_thresholds(self):
@@ -682,26 +714,223 @@ class ContrastTest(unittest.TestCase):
         self.assertTrue(bad[0].startswith("반투명 글자색"), bad)
 
     def test_translucent_report(self):
-        """반투명 선·채움 합성 대비는 보고 전용(값 계산만). 실제 템플릿의 관계선은 3:1 미만이 있다(열린 항목)."""
+        """반투명 채움·그림자 합성 대비는 보고 전용(값 계산만). 관계선(stroke-opacity)은 stroke_rows가 판정한다(W8)."""
         from hazop.app import tokens
         from hazop.viewer import build
         self.assertEqual(cd._over((0, 0, 0), 0.5, "#ffffff"), "#808080")
         with open(build.TEMPLATE, encoding="utf-8") as fh:
             rows = cd.translucent_rows(fh.read(), tokens.COLORS)
-        gedge = [r for sel, _k, _c, _a, _m, _b, r in rows if sel == ".gedge"]
-        pipe = [r for sel, _k, _c, _a, _m, _b, r in rows if sel == ".pipe-line"]
-        self.assertEqual((len(gedge), len(pipe)), (3, 4))
-        self.assertLess(min(gedge), 3.0)
         self.assertTrue(any(sel == ".selected.sym, .selected.tagbox" and k == "fill" for sel, k, *_ in rows))
-        tpl = "<style>.gedge { stroke-opacity: 1; }</style>"
-        self.assertEqual(cd.translucent_rows(tpl, tokens.COLORS), [])
-        # Codex 재검토(총괄 수정): 백분율 불투명도도 해석하고, 알파는 [0,1]로 제한한다
-        pct = cd.translucent_rows("<style>.gedge { stroke-opacity: 50%; }</style>", tokens.COLORS)
-        self.assertEqual({a for _s, _k, _c, a, *_ in pct}, {0.5})
+        self.assertFalse(any(k == "stroke-opacity" for _s, k, *_ in rows))
         self.assertEqual(cd._over((0, 0, 0), -0.1, "#ffffff"), "#ffffff")
         self.assertEqual(cd._over((0, 0, 0), 1.5, "#ffffff"), "#000000")
-        neg = cd.translucent_rows("<style>.gedge { stroke-opacity: -0.1; }</style>", tokens.COLORS)
-        self.assertTrue(all(a == 0.0 for _s, _k, _c, a, *_ in neg))
+
+
+class TranslucentStrokeTest(unittest.TestCase):
+    """반투명 관계선 판정(W8, D13): 모든 관계선은 색만으로 구분되므로 흰 도면 합성 3:1 미만이면 실패.
+    판정하지 않는 선택자·위치·방법으로 불투명도를 낮추는 우회도 실패한다."""
+
+    def setUp(self):
+        from hazop.app import tokens
+        from hazop.viewer import build
+        self.colors = tokens.COLORS
+        with open(build.TEMPLATE, encoding="utf-8") as fh:
+            self.tpl = fh.read()
+
+    def rows(self, tpl=None):
+        rows, bad = cd.stroke_rows(self.tpl if tpl is None else tpl, self.colors)
+        return {(sel, kind): (a, r) for sel, kind, _t, _c, a, _m, _b, r in rows}, bad
+
+    def sub(self, old, new, tpl=None):
+        tpl = self.tpl if tpl is None else tpl
+        self.assertEqual(tpl.count(old), 1, old)
+        return tpl.replace(old, new)
+
+    def add_css(self, css):
+        return self.sub("</style>", css + "\n</style>")
+
+    def bad(self, tpl):
+        return cd.stroke_problems(tpl, self.colors)
+
+    BASE_PIPE = ".pipe-line { fill: none; stroke-width: 2.5; stroke-opacity: .93;"
+    BASE_GEDGE = ".gedge { stroke-width: 1.4; stroke-opacity: .92;"
+    SIG = '[data-kind="signal_connection"] > .gedge { stroke-opacity: .66; }'
+    MEAS = '[data-kind="measurement_connection"] > .gedge { stroke-opacity: .93; }'
+
+    def test_real_template_passes(self):
+        self.assertEqual(self.bad(self.tpl), [])
+        rows, bad = self.rows()
+        self.assertEqual(bad, [])
+        self.assertEqual({k: v[0] for k, v in rows.items()}, {
+            (".pipe-line", "physical_connection"): 0.93, (".pipe-line", "signal_connection"): 0.93,
+            (".pipe-line", "measurement_connection"): 0.93, (".pipe-line", "unresolved"): 0.93,
+            (".gedge", "has_endpoint"): 0.92, (".gedge", "signal_connection"): 0.66,
+            (".gedge", "measurement_connection"): 0.93})
+        for key, (_a, r) in rows.items():
+            self.assertGreaterEqual(r, 3.0, key)
+        self.assertFalse(hasattr(cd, "TRANSLUCENT_STROKE_EXCEPTIONS"))  # 총괄 판정: 예외 없음
+
+    def test_minimal_opacity_boundary(self):
+        """고른 불투명도는 3:1을 넘는 가장 작은 두 자리 값: 0.01 낮추면 그 선만 실패한다."""
+        for old, new, key in (
+                (self.BASE_PIPE, self.BASE_PIPE.replace(".93", ".92"), (".pipe-line", "measurement_connection")),
+                (self.BASE_GEDGE, self.BASE_GEDGE.replace(".92", ".91"), (".gedge", "has_endpoint")),
+                (self.SIG, self.SIG.replace(".66", ".65"), (".gedge", "signal_connection")),
+                (self.MEAS, self.MEAS.replace(".93", ".92"), (".gedge", "measurement_connection"))):
+            with self.subTest(key=key):
+                bad = self.bad(self.sub(old, new))
+                self.assertEqual(len(bad), 1, bad)
+                self.assertIn("'%s' %s(" % key, bad[0])
+
+    def test_pre_w8_template_fails(self):
+        """W8 이전 불투명도(.pipe-line .75, .gedge .55 일괄)에서 실패하는 선 5종(has_endpoint 포함)."""
+        tpl = self.sub(self.BASE_PIPE, self.BASE_PIPE.replace(".93", ".75"))
+        tpl = self.sub(self.BASE_GEDGE, self.BASE_GEDGE.replace(".92", ".55"), tpl)
+        tpl = self.sub(self.SIG, "", tpl)
+        tpl = self.sub(self.MEAS, "", tpl)
+        bad = self.bad(tpl)
+        self.assertEqual(len(bad), 5, bad)
+        for key in ("'.pipe-line' physical_connection(", "'.pipe-line' measurement_connection(", "'.gedge' has_endpoint(",
+                    "'.gedge' signal_connection(", "'.gedge' measurement_connection("):
+            self.assertTrue(any(key in b for b in bad), (key, bad))
+
+    def test_state_rules_are_opaque_and_follow_kind_rules(self):
+        """선택·hover·경로 강조 규칙의 stroke-opacity = 1, opacity 없음. 종류별 규칙은 명시도가 같은 강조 규칙보다 앞."""
+        rules = {sel: dict(decls) for sel, decls, ctx in cd.css_rules_ctx(self.tpl[:self.tpl.index("</style>")]) if not ctx}
+        for sel in (".pipe-hit:hover + .pipe-line, .pipe-line.hover", ".selected.pipe-line", ".selected.gedge",
+                    ".onpath.pipe-line, .onpath.gedge"):
+            with self.subTest(sel=sel):
+                self.assertEqual(cd._opacity(rules[sel]["stroke-opacity"]), 1.0)
+                self.assertNotIn("opacity", rules[sel])
+        style = self.tpl[:self.tpl.index("</style>")]
+        last_kind = max(style.index(self.SIG), style.index(self.MEAS))
+        for rule in (".selected.gedge {", ".onpath.pipe-line, .onpath.gedge {"):
+            self.assertGreater(style.index(rule), last_kind, rule)
+
+    def test_bypass_selectors_fail(self):
+        """인식하지 못한 선택자·위치·!important·opacity·JS/HTML 직접 설정은 실패(각 우회마다 1건 이상)."""
+        cases = (
+            ("#graphsvg .gedge { stroke-opacity: .5; }", "#graphsvg .gedge"),
+            ('g[data-kind="signal_connection"] > .gedge { stroke-opacity: .5; }', "g[data-kind"),
+            (".gedge.unknown { stroke-opacity: .5; }", ".gedge.unknown"),
+            (".gedge:not(.selected) { stroke-opacity: .5; }", ":not(.selected)"),
+            (".x, .pipe-line.unknown { opacity: .5; }", ".pipe-line.unknown"),
+            ("#graphsvg { opacity: .5; }", "#graphsvg"),
+            ("line { stroke-opacity: .5; }", "'line'"),
+            ('[data-kind="physical_connection"] > .pipe-line { stroke-opacity: .99; }', "> .pipe-line"),
+            ('[data-kind="nope"] > .gedge { stroke-opacity: .5; }', "nope"),
+            ("@media (max-width: 760px) { .gedge { stroke-opacity: .5; } }", "@media"),
+            (".gedge { stroke-opacity: .99 !important; }", "!important"),
+            (".gedge { stroke-opacity: abc; }", "해석하지 못함"),
+        )
+        for css, needle in cases:
+            with self.subTest(css=css):
+                bad = self.bad(self.add_css(css))
+                self.assertTrue(any(needle in b for b in bad), bad)
+        # 같은 형식이라도 불투명도 1(강조)이나 선과 무관한 opacity는 통과
+        for css in ("#graphsvg .gedge.hz-on { stroke-opacity: 1; }", ".tabs button.x:disabled { opacity: .3; }",
+                    "@media (max-width: 760px) { .gedge { stroke-opacity: 1; } }"):
+            with self.subTest(ok=css):
+                self.assertEqual(self.bad(self.add_css(css)), [])
+
+    def test_opacity_multiplies(self):
+        """기본 규칙의 opacity는 stroke-opacity와 곱한다: .gedge에 opacity .9 → has_endpoint .828 → 실패."""
+        tpl = self.sub(self.BASE_GEDGE, self.BASE_GEDGE + " opacity: .9;")
+        rows, bad = self.rows(tpl)
+        self.assertEqual(bad, [])
+        self.assertAlmostEqual(rows[(".gedge", "has_endpoint")][0], 0.92 * 0.9)
+        self.assertAlmostEqual(rows[(".gedge", "signal_connection")][0], 0.66 * 0.9)
+        self.assertTrue(any("'.gedge' has_endpoint(" in b for b in self.bad(tpl)))
+
+    def test_js_and_html_opacity_fail(self):
+        for old, new in (
+                ('"class": "gedge" + (', '"stroke-opacity": .3, "class": "gedge" + ('),
+                ("gEdgeEls.push({ e: e, g: g, hit: hit, line: line });",
+                 "line.style.strokeOpacity = .3; gEdgeEls.push({ e: e, g: g, hit: hit, line: line });"),
+                ('<div class="float" id="glegend"></div>', '<div class="float" id="glegend" style="opacity:.5"></div>')):
+            with self.subTest(new=new):
+                bad = self.bad(self.sub(old, new))
+                self.assertTrue(any("직접 설정" in b for b in bad), bad)
+        # 주석 안의 언급은 무시
+        ok = self.sub("gEdgeEls.push({ e: e, g: g, hit: hit, line: line });",
+                      "gEdgeEls.push({ e: e, g: g, hit: hit, line: line }); // stroke-opacity는 CSS가 정함")
+        self.assertEqual(self.bad(ok), [])
+
+    def test_no_false_positives(self):
+        """재작업 2회차 오탐 제거: HTML 주석 속 style·script, JS 문자열 내용, 템플릿 리터럴 ${…} 안 주석은 통과."""
+        anchor = '<div class="float" id="glegend"></div>'
+        js_anchor = "gEdgeEls.push({ e: e, g: g, hit: hit, line: line });"
+        for old, new in (
+                (anchor, anchor + "<!-- <style>.gedge { stroke-opacity: .1; filter: opacity(.1); }</style>"
+                                  "<script>line.style.opacity = .1;</script> -->"),
+                (js_anchor, js_anchor + ' var u = "https://example.test/opacity", d = "// stroke-opacity 설명";'),
+                (js_anchor, js_anchor + " var t = `a${ /* stroke-opacity: .1 */ 1 }b${ 2 // opacity\n }c`;"),
+                (js_anchor, js_anchor + " var q = `stroke-opacity 설명 ${ {a: 1}.a }`;")):
+            with self.subTest(new=new):
+                self.assertEqual(self.bad(self.sub(old, new)), [])
+
+    def test_direct_bypasses_rework2(self):
+        """재작업 2회차 차단: 선에 닿는 선택자의 filter: opacity(), 선 규칙의 CSS 중첩, ${…} 안 실제 코드."""
+        for css, needle in ((".gedge { filter: opacity(.5); }", "filter"),
+                            ("#graphsvg .gedge { filter: drop-shadow(0 0 1px #000) opacity(50%); }", "filter"),
+                            ('[data-kind="signal_connection"] > .gedge { filter: opacity(.5); }', "filter"),
+                            (".gedge { stroke-width: 1.4; & .x { fill: none; } }", "CSS 중첩"),
+                            ("#graphsvg { .gedge { stroke-opacity: 1; } }", "CSS 중첩")):
+            with self.subTest(css=css):
+                bad = self.bad(self.add_css(css))
+                self.assertTrue(any(needle in b for b in bad), bad)
+        for css in (".tabs { button { cursor: default; } }", ".gnode { filter: opacity(.5); }"):
+            with self.subTest(ok=css):
+                self.assertEqual(self.bad(self.add_css(css)), [])
+        js_anchor = "gEdgeEls.push({ e: e, g: g, hit: hit, line: line });"
+        bad = self.bad(self.sub(js_anchor, js_anchor + " var t = `${line.style.opacity = .3}`;"))
+        self.assertTrue(any("직접 설정" in b for b in bad), bad)
+        # 총괄 직접 수정(D14): 보간식 뒤 위치 어긋남, script 안 "<!--" 문자열, SVG opacity= 속성, -webkit-filter
+        for code in (" var t = `${1}${2}`; line.style[\"opacity\"] = .1;",
+                     ' var a = "<!--"; line.style.opacity = .1; var b = "-->";',
+                     " g.innerHTML = '<line class=\"gedge\" opacity=\".2\"/>';"):
+            with self.subTest(code=code):
+                bad = self.bad(self.sub(js_anchor, js_anchor + code))
+                self.assertTrue(any("직접 설정" in b for b in bad), bad)
+        bad = self.bad(self.add_css(".gedge { -webkit-filter: opacity(.3); }"))
+        self.assertTrue(any("filter" in b for b in bad), bad)
+        many = "".join("${%d}" % k for k in range(8))
+        self.assertEqual(self.bad(self.sub(js_anchor, js_anchor + ' var t = `%s`, u = "https://example.test/opacity";' % many)), [])
+        # 중첩 머리는 부모 선언 뒤 텍스트만(부모 선언이 머리에 섞이지 않음)
+        rules = cd.css_rules_ctx(".a { color: red; .b { fill: none; } }")
+        self.assertEqual(rules, [(".b", [("fill", "none")], (".a",))])
+
+    def test_kinds_read_from_code_not_comments_or_strings(self):
+        """선 종류는 EDGE_COLOR에서 읽는다: 새 종류는 기본 불투명도로 판정, 주석·문자열 속 정의는 인정하지 않는다."""
+        add = self.sub('measurement_connection: "var(--measurement_connection)" };',
+                       'measurement_connection: "var(--measurement_connection)", flow_link: "var(--signal_connection)" };')
+        self.assertEqual(self.rows(add)[0][(".gedge", "flow_link")][0], 0.92)
+        decoy = 'var EDGE_COLOR = { has_endpoint: "var(--physical_connection)" };'
+        self.assertEqual(self.tpl.count("<script>\n"), 1)  # 아래 미끼 삽입 위치
+        for broken, msg in (
+                (self.tpl.replace("var EDGE_COLOR", "var EDGE_COLOUR"), "EDGE_COLOR를 찾지 못함"),
+                (self.tpl.replace("var EDGE_COLOR", "var EDGE_COLOUR").replace("<script>\n", "<script>\n// " + decoy + "\n", 1),
+                 "EDGE_COLOR를 찾지 못함"),
+                (self.tpl.replace("var EDGE_COLOR", "var EDGE_COLOUR").replace("<script>\n", "<script>\nvar s = '" + decoy + "';\n", 1),
+                 "EDGE_COLOR를 찾지 못함"),
+                (self.sub('signal_connection: "var(--signal_connection)"', 'signal_connection: COL.sig'), "해석하지 못함"),
+                (self.sub('measurement_connection: "var(--measurement_connection)" };',
+                          'measurement_connection: "var(--measurement_connection)", x: "var(--no-such)" };'),
+                 "tokens.COLORS에 없음"),
+                (self.sub('var color = c.unresolved ? "var(--unresolved)"', 'var color = c.bad ? "var(--unresolved)"'),
+                 "도면 연결선 색 식"),
+                (self.sub('el("g", { "data-kind": e.kind', 'el("g", { "data-k": e.kind'), "data-kind")):
+            with self.subTest(msg=msg):
+                self.assertTrue(any(msg in b for b in self.bad(broken)), self.bad(broken))
+        # 정규식 리터럴 속 따옴표가 문자열 판정을 흐트러뜨리지 않는다(esc()의 /[&<>"]/g)
+        code, spans = cd._js_code('var a = s.replace(/[&<>"]/g, f); var EDGE_COLOR = { k: "var(--x)" };')
+        self.assertGreaterEqual(cd._code_find(code, spans, "var EDGE_COLOR"), 0)
+
+    def test_percent_and_clamp(self):
+        tpl = self.sub(self.BASE_PIPE, self.BASE_PIPE.replace(".93", "50%"))
+        self.assertEqual(self.rows(tpl)[0][(".pipe-line", "physical_connection")][0], 0.5)
+        tpl = self.sub(self.BASE_PIPE, self.BASE_PIPE.replace(".93", "1.5"))
+        self.assertEqual(self.rows(tpl)[0][(".pipe-line", "physical_connection")][0], 1.0)
 
 
 def bar_min_width(label):

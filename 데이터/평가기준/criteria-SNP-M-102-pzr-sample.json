@@ -1,0 +1,264 @@
+{
+  "provenance": {
+    "kind": "synthetic",
+    "author": "hazop-planner",
+    "created_at": "2026-11-06T00:00:00Z",
+    "note": "[추론]·가상 샘플. 비교 기능 검증용이며 정답이 아님"
+  },
+  "format": "hazop-criteria",
+  "format_version": "0.1",
+  "criteria_id": "criteria-SNP-M-102-pzr-sample",
+  "criteria_version": 1,
+  "region_id": "region-SNP-M-102-pzr",
+  "operating_mode": "normal",
+  "tag_aliases": {
+    "PZR": "RC-PZ01"
+  },
+  "deviations": [
+    {
+      "deviation_ref": {
+        "item_id": "p86-d03",
+        "parameter": "유량",
+        "guide_word": "없음"
+      },
+      "label": "유량 없음",
+      "rows": [
+        {
+          "row_id": "R06",
+          "cause": {
+            "text": "써지 배관 막힘",
+            "equipment": [
+              "RC-L010"
+            ],
+            "keywords": [
+              [
+                "막힘",
+                "폐색"
+              ]
+            ]
+          },
+          "consequences": [
+            {
+              "text": "가압기 압력 제어 곤란",
+              "keywords": [
+                [
+                  "압력"
+                ]
+              ]
+            }
+          ],
+          "safeguards": null
+        }
+      ]
+    },
+    {
+      "deviation_ref": {
+        "item_id": "p86-d09",
+        "parameter": "압력",
+        "guide_word": "증가"
+      },
+      "label": "압력 증가",
+      "rows": [
+        {
+          "row_id": "R01",
+          "cause": {
+            "text": "인서지로 증기 공간 압축",
+            "equipment": [
+              "PZR"
+            ],
+            "keywords": [
+              [
+                "인서지",
+                "유입"
+              ]
+            ]
+          },
+          "consequences": [
+            {
+              "text": "가압기 압력 상승",
+              "equipment": [
+                "RC-PZ01"
+              ],
+              "keywords": [
+                [
+                  "압력"
+                ],
+                [
+                  "상승",
+                  "증가"
+                ]
+              ]
+            }
+          ],
+          "safeguards": [
+            {
+              "tag": "RC-PSV101"
+            },
+            {
+              "tag": "RC-PSV102"
+            }
+          ]
+        },
+        {
+          "row_id": "R02",
+          "cause": {
+            "text": "살수 밸브 개방 실패",
+            "equipment": [
+              "RC-PV101"
+            ],
+            "keywords": [
+              [
+                "개방실패",
+                "열림실패"
+              ]
+            ]
+          },
+          "consequences": [
+            {
+              "text": "압력 상승 억제 실패",
+              "keywords": [
+                [
+                  "압력"
+                ],
+                [
+                  "상승"
+                ]
+              ]
+            },
+            {
+              "text": "과압으로 POSRV 개방 요구",
+              "keywords": [
+                [
+                  "과압"
+                ]
+              ]
+            }
+          ],
+          "safeguards": [
+            {
+              "tag": "RC-PSV101"
+            },
+            {
+              "tag": "RC-PSV102"
+            }
+          ],
+          "recommendations": [
+            {
+              "text": "살수 개방 실패 경보 검토",
+              "keywords": [
+                [
+                  "살수"
+                ],
+                [
+                  "경보"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "row_id": "R03",
+          "cause": {
+            "text": "가압기 히터 제어 오류로 과열",
+            "keywords": [
+              [
+                "히터"
+              ]
+            ]
+          },
+          "consequences": [
+            {
+              "text": "가압기 압력 상승",
+              "keywords": [
+                [
+                  "압력"
+                ],
+                [
+                  "상승"
+                ]
+              ]
+            }
+          ],
+          "safeguards": null
+        }
+      ]
+    },
+    {
+      "deviation_ref": {
+        "parameter": "압력",
+        "guide_word": "Less"
+      },
+      "label": "압력 감소",
+      "rows": [
+        {
+          "row_id": "R04",
+          "cause": {
+            "text": "살수 밸브 오개방",
+            "equipment": [
+              "RC-PV101"
+            ],
+            "keywords": [
+              [
+                "오개방",
+                "열림고착"
+              ]
+            ]
+          },
+          "consequences": [
+            {
+              "text": "가압기 압력 감소",
+              "keywords": [
+                [
+                  "압력"
+                ],
+                [
+                  "감소",
+                  "저하"
+                ]
+              ]
+            }
+          ],
+          "safeguards": []
+        },
+        {
+          "row_id": "R05",
+          "cause": {
+            "text": "POSRV 시트 누설",
+            "equipment": [
+              "RC-PSV101"
+            ],
+            "keywords": [
+              [
+                "시트누설",
+                "오개방"
+              ]
+            ]
+          },
+          "consequences": [
+            {
+              "text": "RC-L031로 냉각재 방출",
+              "equipment": [
+                "RC-L031"
+              ],
+              "keywords": [
+                [
+                  "방출"
+                ]
+              ]
+            }
+          ],
+          "safeguards": [
+            {
+              "keywords": [
+                [
+                  "경보"
+                ]
+              ],
+              "text": "저압 경보 후 운전원 조치"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

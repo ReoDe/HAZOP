@@ -5,7 +5,8 @@
 
 import os
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QButtonGroup, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow,
                                QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget)
 
@@ -17,13 +18,14 @@ from hazop.app.screens.register import RegisterScreen
 from hazop.app.screens.review import ReviewScreen
 from hazop.app.screens.viewer import ViewerScreen
 from hazop.app.webview import HazopWebView
-from hazop.app.widgets import Chip, TaskRunner, esc, kst_text, write_log
+from hazop.app.widgets import VALIDATION_LABELS, Chip, TaskRunner, esc, kst_text, write_log
 
 APP_NAME = "HAZOP 분석 도구"
 APP_VERSION = "0.1.0"
 STEPS = ("① 자료 등록", "② 도면·그래프", "④ HAZOP 분석", "⑤ 설계보완·확정", "③ 지식그래프")  # 화면 index 순
 STEP_ORDER = (0, 1, 4, 2, 3)  # 화면에 보이는 단계 탭 순서(①②③④⑤)
-VALIDATION_LABELS = {"passed": "통과", "blocked": "차단"}
+# 도움말 > 버전·데이터 위치(패키징 W10, D18): 제3자 고지 위치와 법무 검토 전 안내
+LICENSE_NOTE = "LGPL 등 제3자 라이선스 의무의 법무 검토 전이므로 내부용으로만 사용하십시오."
 
 
 class WhereLabel(QLabel):
@@ -288,8 +290,27 @@ class MainWindow(QMainWindow):
         self.go(2)
         return self.screens[2].open_run(run_dir)
 
+    def about_text(self):
+        return ("%s %s\n자원 루트: %s\n작업 루트: %s\n저장 루트: %s\n설정: %s\n"
+                "AI 호출 없음(고정 응답 폴더만), 웹뷰 외부 네트워크 차단\n\n제3자 라이선스 고지: %s\n%s"
+                % (APP_NAME, APP_VERSION, paths.resource_root(), paths.work_root(), paths.store_root(),
+                   self.settings_path or paths.settings_path(), paths.licenses_dir(), LICENSE_NOTE))
+
     def _about(self):
-        QMessageBox.information(self, "버전·데이터 위치", "%s %s\n자원 루트: %s\n작업 루트: %s\n저장 루트: %s\n설정: %s\n"
-                                "AI 호출 없음(고정 응답 폴더만), 웹뷰 외부 네트워크 차단"
-                                % (APP_NAME, APP_VERSION, paths.resource_root(), paths.work_root(), paths.store_root(),
-                                   self.settings_path or paths.settings_path()))
+        box = QMessageBox(QMessageBox.Information, "버전·데이터 위치", self.about_text(), parent=self)
+        open_btn = box.addButton("라이선스 고지 열기", QMessageBox.ActionRole)
+        box.addButton("닫기", QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() is open_btn:
+            self.open_licenses()
+
+    def open_licenses(self):
+        """고지 폴더(paths.licenses_dir())를 탐색기로 연다. 폴더가 없거나 열지 못하면 경로를 보여 주고 False."""
+        d = paths.licenses_dir()
+        if not os.path.isdir(d):
+            QMessageBox.warning(self, "라이선스 고지", "라이선스 고지 폴더가 없습니다.\n%s" % d)
+            return False
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(d)):
+            QMessageBox.information(self, "라이선스 고지", "탐색기로 폴더를 열지 못했습니다. 아래 폴더를 직접 여십시오.\n%s" % d)
+            return False
+        return True

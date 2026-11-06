@@ -1,7 +1,7 @@
 {
   "sample_note": "[일반지식] 기반 샘플 고정 응답(테스트·QA용). 실제 AI 출력이 아니며 내용은 검증되지 않음. 두 번째 시나리오(도면에 없는 연속 살수 설비 가정)는 거부되어야 하는 '나쁜 예'로 남김",
   "region_id": "region-SNP-M-102-pzr",
-  "bundle_sha256": "74fa35d7ad5d18493517e1723fddacf3c0b1946a528e3da595eee1307284ac5d",
+  "bundle_sha256": "d90453869406496898195e78c130c4fff8265fcd85bb487d5007c5b3da89aafd",
   "stop_reason": "end_turn",
   "output": {
     "candidate_id": "deviation-p86-d44",

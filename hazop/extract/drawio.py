@@ -20,7 +20,7 @@ from . import rules
 
 SCHEMA_VERSION = "0.1"
 SCRIPT_NAME = "hazop.extract.drawio"
-SCRIPT_VERSION = "0.2.0"
+SCRIPT_VERSION = "0.3.0"
 COORDINATE_SPACE = "page_local_2d"
 UNIT = "canvas_unit"
 DEFAULT_FONT_SIZE = 11.0  # draw.io 기본 글자 크기
@@ -294,6 +294,149 @@ def _title_block(ignored_cells, boxes):
     return block
 
 
+def _symbol_direction(c, boxes, layer_ids):
+    """② 기호 방향: 등록된 기호면 도면 좌표의 방향 벡터 d, 근거가 없으면 None (#check-valve-direction 계산 1–4)."""
+    style = c.style_map
+    d0 = rules.CHECK_VALVE_SYMBOL_DIRECTIONS.get((style.get("shape"), style.get("valveType")))
+    if d0 is None:
+        return None
+    if c.parent is not None and c.parent not in layer_ids:
+        return None  # 부모 도형의 회전·뒤집기를 반영할 수 없음
+    direction = style.get("direction", "east")
+    turns = {"east": 0, "south": 1, "west": 2, "north": 3}.get(direction)
+    if turns is None:
+        return None
+    flips = []
+    for key in ("flipH", "flipV"):
+        value = style.get(key, "0")
+        if value not in ("0", "1"):
+            return None
+        flips.append(value == "1")
+    rotation = _style_num(style, "rotation", 0.0)
+    if rotation is None or rotation % 360 not in (0.0, 90.0, 180.0, 270.0):
+        return None
+    if turns and any(flips):
+        return None
+    info = boxes.get(c.cell_id)
+    if info is None or info["approximate"]:
+        return None
+
+    def cw(v, n):  # 시계 방향 90° n번: (x, y) -> (-y, x)
+        for _ in range(n):
+            v = (-v[1], v[0])
+        return v
+
+    d = cw(tuple(float(x) for x in d0), turns)
+    d = (-d[0] if flips[0] else d[0], -d[1] if flips[1] else d[1])
+    return cw(d, int(rotation % 360) // 90)
+
+
+def _cos(a, b):
+    import math
+    na, nb = math.hypot(a[0], a[1]), math.hypot(b[0], b[1])  # hypot은 큰 좌표에서도 넘치지 않음
+    if na == 0 or nb == 0 or not math.isfinite(na) or not math.isfinite(nb):
+        return None
+    ux, uy, vx, vy = a[0] / na, a[1] / na, b[0] / nb, b[1] / nb  # 먼저 정규화해 곱셈 넘침 방지
+    return ux * vx + uy * vy
+
+
+def _reference_point(rec, valve_end, boxes, node_rec):
+    """커넥터 기준점 p (#check-valve-direction 계산 5). 판정 불가면 None."""
+    if rec["_approx_path"]:
+        return None
+    if rec["waypoints"]:
+        return rec["waypoints"][-1] if valve_end == "target" else rec["waypoints"][0]
+    other = rec["endpoints"][0 if valve_end == "target" else 1]
+    if other["point"] is not None:
+        return other["point"]
+    node = node_rec.get(other["node_local_id"])
+    info = boxes.get(node["source_object_id"]) if node else None
+    if info is None or info["approximate"]:
+        return None
+    x, y, w, h = _bbox(*info["bbox"])
+    return [x + w / 2.0, y + h / 2.0]
+
+
+def _judge_check_valve(c, local_id, connector_recs, boxes, layer_ids, node_rec):
+    """체크밸브 1개의 허용 방향 판정 -> (check_direction 또는 None, 미확인 코드 또는 None, 사유).
+
+    판정 우선순위는 기획서/정보추출.md #check-valve-direction 표 1–9를 그대로 따른다."""
+    threshold = rules.CHECK_VALVE_COS_THRESHOLD
+    fd = c.user_attrs.get("flow_direction") or None  # 빈 문자열은 속성 없음
+    if fd is not None and fd not in rules.CHECK_VALVE_FLOW_DIRECTION_VALUES:
+        return None, "invalid_flow_direction", "체크밸브 flow_direction %r 은 허용값이 아님(원값 보존)" % fd
+    d = _symbol_direction(c, boxes, layer_ids)
+    if fd is None and d is None:
+        return None, "unknown_check_valve_direction", "체크밸브 허용 방향 근거 없음(속성·등록 기호 모두 없음)"
+
+    # 입구·출구 커넥터 집합 조건
+    def ambiguous(reason):
+        return None, "check_valve_direction_ambiguous", reason
+
+    attached = [(r, un) for r, un in connector_recs
+                if local_id in (r["endpoints"][0]["node_local_id"], r["endpoints"][1]["node_local_id"])]
+    physical = []
+    for r, un in attached:
+        if r["line_type"] is None or r["kind"] is None:
+            return ambiguous("물리 배관인지 알 수 없는 커넥터(line_type 없음·규칙 밖) %s" % r["local_id"])
+        if r["kind"] == "physical_connection":
+            physical.append((r, un))
+    if len(physical) != 2:
+        return ambiguous("물리 배관 커넥터 %d개(2개가 아님: 분기 또는 연결 누락)" % len(physical))
+    if any(un for _, un in physical):
+        return ambiguous("밸브에 붙은 물리 배관 중 미해결 커넥터가 있음")
+    ends_of = {}
+    for r, _ in physical:
+        ends = [ep["end"] for ep in r["endpoints"] if ep["node_local_id"] == local_id]
+        if len(ends) == 2:
+            return ambiguous("자기 루프 커넥터 %s" % r["local_id"])
+        ends_of[r["local_id"]] = ends[0]
+    recs = [r for r, _ in physical]
+
+    def result(inlet, outlet, basis, status):
+        return {"inlet": inlet["local_id"], "outlet": outlet["local_id"], "basis": basis, "status": status}
+
+    if fd is not None:
+        inlets = [r for r in recs if ends_of[r["local_id"]] == "target"]
+        outlets = [r for r in recs if ends_of[r["local_id"]] == "source"]
+        if len(inlets) != 1 or len(outlets) != 1:
+            return ambiguous("속성 기준 입구(target=밸브)·출구(source=밸브) 커넥터가 1개씩이 아님")
+        inlet, outlet = inlets[0], outlets[0]
+        if d is not None:
+            p_in = _reference_point(inlet, "target", boxes, node_rec)
+            p_out = _reference_point(outlet, "source", boxes, node_rec)
+            cos = (_cos(d, (p_out[0] - p_in[0], p_out[1] - p_in[1]))
+                   if p_in is not None and p_out is not None else None)
+            if cos is not None and cos <= -threshold:
+                return (None, "check_valve_direction_conflict",
+                        "속성(①) 방향과 기호(②) 방향이 반대(cos=%.3f)" % cos)
+            if cos is not None and cos >= threshold:
+                return result(inlet, outlet, ["attribute", "symbol"], "declared"), None, None
+        return result(inlet, outlet, ["attribute"], "declared"), None, None
+
+    # ② 단독
+    c_box = _bbox(*boxes[c.cell_id]["bbox"])
+    center = (c_box[0] + c_box[2] / 2.0, c_box[1] + c_box[3] / 2.0)
+    inlets, outlets, undecided = [], [], []
+    for r in recs:
+        p = _reference_point(r, ends_of[r["local_id"]], boxes, node_rec)
+        s = _cos(d, (p[0] - center[0], p[1] - center[1])) if p is not None else None
+        if s is not None and s <= -threshold:
+            inlets.append(r)
+        elif s is not None and s >= threshold:
+            outlets.append(r)
+        else:
+            undecided.append(r)
+    if undecided or len(inlets) != 1 or len(outlets) != 1:
+        return ambiguous("기호 방향으로 입구·출구를 하나씩 정할 수 없음")
+    inlet, outlet = inlets[0], outlets[0]
+    if ((ends_of[inlet["local_id"]] == "source" and inlet["flow_direction"] is not None)
+            or (ends_of[outlet["local_id"]] == "target" and outlet["flow_direction"] is not None)):
+        return (None, "check_valve_direction_conflict",
+                "기호 방향과 인접 배관의 확인된 흐름 방향이 모순")
+    return result(inlet, outlet, ["symbol"], "symbol"), None, None
+
+
 def extract(path, page=0, repo_root=None, registration=None):
     """drawio 파일 하나(페이지 하나)를 추출 결과 dict로 만든다.
 
@@ -437,6 +580,7 @@ def extract(path, page=0, repo_root=None, registration=None):
 
     local_of = {}
     node_out = []
+    check_valves = []
     for i, c in enumerate(nodes, 1):
         local_id = "local-node-%03d" % i
         local_of[c.cell_id] = local_id
@@ -465,11 +609,12 @@ def extract(path, page=0, repo_root=None, registration=None):
         if kind in rules.KINDS_NEED_FAIL_POSITION and not c.user_attrs.get("fail_position"):
             _issue(unknowns, "missing_fail_position", "제어밸브 실패 위치 미확인",
                    c.cell_id, local_id, "fail_position")
-        if c.user_attrs.get("flow_direction"):
+        if kind == "check_valve":
+            check_valves.append((c, local_id))  # 허용 방향은 커넥터를 모두 읽은 뒤 판정
+        elif c.user_attrs.get("flow_direction"):
             # 도형의 방향 값이 어느 커넥터 기준인지 원본에 근거가 없으므로 방향을 만들지 않는다.
-            check = ("check_valve_direction_basis_unresolved" if kind == "check_valve"
-                     else "node_direction_basis_unresolved")
-            _issue(unknowns, check, "도형의 flow_direction %r 의 기준 커넥터를 판정할 근거 없음(값만 보존)"
+            _issue(unknowns, "node_direction_basis_unresolved",
+                   "도형의 flow_direction %r 의 기준 커넥터를 판정할 근거 없음(값만 보존)"
                    % c.user_attrs["flow_direction"], c.cell_id, local_id, "flow_direction")
         add_location_issue(c, local_id)
         info = boxes.get(c.cell_id)
@@ -514,6 +659,7 @@ def extract(path, page=0, repo_root=None, registration=None):
             "attributes": dict(c.user_attrs), "style": c.style, "geometry": c.raw_geo,
             "location": None, "note": "커넥터 라벨. 위치는 커넥터 경로 기준이라 계산하지 않음"})
 
+    kind_of_local = {n["local_id"]: n["kind"] for n in node_out}
     relations, unresolved = [], []
     for i, c in enumerate(connectors, 1):
         local_id = "local-edge-%03d" % i
@@ -542,9 +688,11 @@ def extract(path, page=0, repo_root=None, registration=None):
                            c.cell_id, local_id, "style")
                 else:
                     constraint = vals
+            # 포트: 끝별 속성(source_port·target_port)만 쓰고 앞뒤 공백을 지운다. 접속 위치 스타일로 추정하지 않음
+            port = (c.user_attrs.get(end + "_port") or "").strip() or None
             ep = {"end": end, "node_local_id": None, "source_object_id": ref,
                   "constraint": constraint, "point": None, "point_basis": None,
-                  "status": "connected"}
+                  "status": "connected", "port": port}
             if ref is None:
                 ep["status"] = "unconnected"
                 resolved = False
@@ -578,7 +726,18 @@ def extract(path, page=0, repo_root=None, registration=None):
                     ep["point_basis"] = "terminal_center_approx"
             endpoints.append(ep)
 
-        waypoints = ([[_clean_number(ox + p[0]), _clean_number(oy + p[1])] for p in geom.get("points", [])]
+        # 포트 구분 대상(물리 배관 끝의 KINDS_NEED_PORT 노드)인데 포트가 없으면 미확인. 노드가 없는 끝은 제외
+        if rel_kind == "physical_connection":
+            for ep in endpoints:
+                if (ep["port"] is None and ep["node_local_id"] is not None
+                        and kind_of_local.get(ep["node_local_id"]) in rules.KINDS_NEED_PORT):
+                    _issue(unknowns, "missing_port", "%s 끝 기기의 포트 미지정(포트 구분 대상)" % ep["end"],
+                           c.cell_id, local_id, ep["end"] + "_port")
+        if (c.user_attrs.get("port") or "").strip():
+            _issue(unknowns, "ambiguous_port", "끝(source·target)을 정하지 않은 port 속성 %r (끝점에 쓰지 않음)"
+                   % c.user_attrs["port"], c.cell_id, local_id, "port")
+
+        waypoints =([[_clean_number(ox + p[0]), _clean_number(oy + p[1])] for p in geom.get("points", [])]
                      if o is not None else [])
         fd_raw = c.user_attrs.get("flow_direction")
         flow = None
@@ -623,6 +782,15 @@ def extract(path, page=0, repo_root=None, registration=None):
                                      "geometry": lab["geometry"]})
             _issue(unknowns, "unclassified_element", "추출 대상이 아닌 커넥터 %r 의 라벨" % parent_id,
                    lab["source_object_id"])
+
+    # 체크밸브 허용 방향 (기획서/정보추출.md #check-valve-direction). 추출 상태를 blocked로 만들지 않는다.
+    node_rec = {n["local_id"]: n for n in node_out}
+    connector_recs = [(r, False) for r in relations] + [(r, True) for r in unresolved]
+    for c, local_id in check_valves:
+        result, check, reason = _judge_check_valve(c, local_id, connector_recs, boxes, layer_ids, node_rec)
+        node_rec[local_id]["check_direction"] = result
+        if check:
+            _issue(unknowns, check, reason, c.cell_id, local_id, "flow_direction")
 
     # 원본 좌표 (단계 간 규격의 source_locations)
     source_locations = []

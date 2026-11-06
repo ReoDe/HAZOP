@@ -8,7 +8,7 @@
   --ui: #2563eb; --bg: #f4f5f7; --card: #ffffff; --line: #e3e5e9; --muted: #6a717e; --ink: #111827; --ink-2: #374151;
   --equipment: #1d4ed8; --valve: #0f766e; --instrument: #0d97d6; --piping_element: #6366f1; --unclassified: #868e9d;
   --physical_connection: #16a34a; --signal_connection: #7c3aed; --measurement_connection: #d67506; --unresolved: #dc2626;
-  --hl-path: #ea580c; --warn-bg: #fef3c7; --warn-ink: #92400e;
+  --hl-path: #ea580c; --ok: #15803d; --warn-bg: #fef3c7; --warn-ink: #92400e;
   --tag: #111827; --selected: #2563eb;
 }
 * { box-sizing: border-box; }
@@ -21,7 +21,7 @@ header .where b { font-weight: 700; }
 header .where span { color: var(--muted); }
 header .spacer { flex: 1; }
 .chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--bg); color: var(--muted); }
-.chip.passed::before { content: "\25CF  "; color: #16a34a; }
+.chip.passed::before { content: "\25CF  "; color: var(--ok); }
 .chip.blocked::before { content: "\25CF  "; color: var(--unresolved); }
 a.back { font-size: 13px; color: var(--ui); text-decoration: none; }
 main { position: absolute; top: 56px; left: 0; right: 0; bottom: 0; display: flex; }
@@ -59,14 +59,15 @@ aside td:first-child { color: var(--muted); width: 42%; }
 aside .empty { color: var(--muted); }
 aside .link { color: var(--ui); cursor: pointer; }
 aside .link:hover { text-decoration: underline; }
-aside .warn { color: #b45309; }
+aside .warn { color: var(--warn-ink); }
 #tooltip { position: fixed; pointer-events: none; display: none; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.12); max-width: 280px; z-index: 10; }
 #tooltip b { font-size: 13px; }
 #tooltip .k { color: var(--muted); }
 /* 오버레이 */
 .sym { fill: rgba(37,99,235,.06); stroke-width: 1.5; cursor: pointer; }
 .sym:hover { fill: rgba(37,99,235,.18); }
-.pipe-line { fill: none; stroke-width: 2.5; stroke-opacity: .75; pointer-events: none; stroke-linejoin: round; }
+/* 도면 연결선은 종류를 색으로만 구분하므로(범례 실선 견본) 흰 도면 합성 대비 3:1 이상이 되는 불투명도(design-system W8, D13) */
+.pipe-line { fill: none; stroke-width: 2.5; stroke-opacity: .93; pointer-events: none; stroke-linejoin: round; }
 .pipe-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
 .pipe-hit:hover + .pipe-line, .pipe-line.hover { stroke-opacity: 1; stroke-width: 4; }
 .tagbox { fill: rgba(17,24,39,.06); stroke: var(--tag); stroke-width: .8; cursor: pointer; }
@@ -100,7 +101,12 @@ body.tab-graph #layers, body.tab-drawing #glegend { display: none; }
 #glegend .btns button:hover, #pathq button:hover { border-color: var(--ui); }
 .gnode { stroke: var(--card); stroke-width: 1.5; cursor: pointer; }
 .gnode.unknown { stroke: var(--muted); stroke-dasharray: 2 2; }
-.gedge { stroke-width: 1.4; stroke-opacity: .55; fill: none; pointer-events: none; }
+/* 그래프 관계선은 종류를 색으로만 구분하므로 종류별로 흰 바탕 합성 3:1 이상이 되는 가장 작은 불투명도(W8, D13).
+   기본값 .92는 has_endpoint(물리), 아래 두 규칙은 신호·계측. 선택·경로 강조(.selected.gedge·.onpath.gedge)가 이기도록
+   종류별 규칙은 그 앞에 둔다(명시도 같음) */
+.gedge { stroke-width: 1.4; stroke-opacity: .92; fill: none; pointer-events: none; }
+[data-kind="signal_connection"] > .gedge { stroke-opacity: .66; }
+[data-kind="measurement_connection"] > .gedge { stroke-opacity: .93; }
 .gedge-hit { stroke: transparent; stroke-width: 8; pointer-events: stroke; cursor: pointer; }
 .glabel { font-size: 9px; fill: var(--ink-2); pointer-events: none; }
 /* 그래프 노드 선택(design-system W7, D10): 노드 흰 테두리는 그대로 두고 바깥 고리(반지름 +4, 선 2.5)를 노드 층 위·라벨 층 아래에 그린다 */
@@ -113,7 +119,7 @@ body.tab-graph #layers, body.tab-drawing #glegend { display: none; }
 #pathq input, #pathq select { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; }
 #pathq .res { margin-top: 8px; line-height: 1.6; }
 #pathq .res .link { color: var(--ui); cursor: pointer; }
-#pathq .res .bad { color: #b45309; }
+#pathq .res .bad { color: var(--warn-ink); }
 #pathq h4 { margin: 8px 0 2px; font-size: 12px; }
 .onpath.sym, .onpath.gnode { stroke: var(--hl-path) !important; stroke-width: 3.5; }
 .onpath.sym { fill: rgba(234,88,12,.15); }
@@ -312,7 +318,9 @@ function hazopPathEngine(G) {
   document.getElementById("dwg").textContent = D.drawing.drawing_number || "";
   document.getElementById("dwgtitle").textContent = D.drawing.title || "";
   var st = document.getElementById("status");
-  st.textContent = "구조 검증 " + D.validation.status + " · 미확인 " + D.validation.unknowns.length +
+  // 칩 값은 한국어로 보인다(앱 Qt 칩과 같은 말, design-system W10, D16). 매핑은 이 한 곳. 모르는 값은 그대로 둔다.
+  var STATUS_LABEL = { passed: "통과", blocked: "차단" };
+  st.textContent = "구조 검증 " + (Object.prototype.hasOwnProperty.call(STATUS_LABEL, D.validation.status) ? STATUS_LABEL[D.validation.status] : D.validation.status) + " · 미확인 " + D.validation.unknowns.length +
     " · 차단 " + D.validation.blockers.length;
   st.className = "chip " + D.validation.status;
 
@@ -504,6 +512,13 @@ function hazopPathEngine(G) {
   function linkTo(id) { return '<span class="link" data-goto="' + esc(id) + '">' + esc(label(id)) + "</span>"; }
   var CAT = { equipment: "설비", valve: "밸브", instrument: "계기", piping_element: "배관 요소" };
   var REL = { physical_connection: "공정 배관", signal_connection: "계장 신호", measurement_connection: "계측 연결" };
+  // 체크밸브 허용 방향 문구(기획서/정보추출.md #rules-code-diff). 확정 방향처럼 보이지 않게 상태를 항상 붙인다.
+  var CHECK_STATUS = { declared: "작성자 선언, 사람 확인 전", symbol: "기호 기반" };
+  function checkDirectionText(cd, nameOf) {
+    if (!cd) return "허용 방향 미확인";
+    var s = Object.prototype.hasOwnProperty.call(CHECK_STATUS, cd.status) ? CHECK_STATUS[cd.status] : "상태 미확인: " + (cd.status || "없음");
+    return "허용 방향: 입구 " + nameOf(cd.inlet) + " → 출구 " + nameOf(cd.outlet) + " (" + s + ")";
+  }
 
   function select(id, focus) {
     if (selected && byLocal[selected]) byLocal[selected].els.forEach(function (e) { e.classList.remove("selected"); });
@@ -522,6 +537,13 @@ function hazopPathEngine(G) {
       h += '<div class="sub">' + esc(d.label_text.replace(/\n/g, " ")) + "</div>";
       h += rows({ local_id: d.local_id, source_object_id: d.source_object_id, kind: d.kind, tag: d.tag,
                   category: d.category, classification: d.classification });
+      // 그래프 노드의 check_direction(입구·출구 = 구간 엔터티 ID)을 우선 쓰고, 그래프가 없으면 추출 노드(커넥터 local_id)를 쓴다.
+      var gcv = gNodes[entityOfLocal[id]], cdText = null;
+      if (gcv && "check_direction" in gcv) cdText = checkDirectionText(gcv.check_direction, function (ent) {
+        return ent ? (gNodes[ent] ? label(gNodes[ent].local_id) : ent) : "(없음)"; });
+      else if ("check_direction" in d || d.kind === "check_valve") cdText = checkDirectionText(d.check_direction, function (lid) {
+        return lid ? label(lid) : "(없음)"; });
+      if (cdText) h += '<h3>허용 방향 (체크밸브)</h3><div' + (cdText.indexOf("허용 방향:") === 0 ? "" : ' class="warn"') + ">" + esc(cdText) + "</div>";
       h += "<h3>원본 속성 (attributes)</h3>" + rows(d.attributes);
       var rs = relsOfNode[id] || [];
       h += "<h3>연결된 관계 (" + esc(rs.length) + ")</h3>";

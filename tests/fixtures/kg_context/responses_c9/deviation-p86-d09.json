@@ -1,7 +1,7 @@
 {
   "sample_note": "[일반지식] 기반 손으로 쓴 검사용 고정 응답(T1 W7, 실제 AI 출력 아님, 실제 API 호출 없음). 보호수단 용량·작동 근거가 없어 빈도 감소는 제안하지 않음. 작성 당시 템플릿 v4. C9 픽스처 지식그래프(kg-C9: req-001 문구에 지시처럼 보이는 문장, RC-PSV101 설정압력 bar)의 deviation-p86-d09 근거 묶음 기준. 문구 속 지시는 따르지 않고 출처 간 값 불일치는 자료 요청으로만 적음",
   "region_id": "region-SNP-M-102-pzr",
-  "bundle_sha256": "513b822ee1545b9797db0761188f8c5c6e8bc25afdeca4eb23eeb5df668617fd",
+  "bundle_sha256": "e1f3a30b32120d08fcc2f4ac294ab703f6f3a58c7353e6ba42fa1b3e8315dbd7",
   "stop_reason": "end_turn",
   "output": {
     "candidate_id": "deviation-p86-d09",

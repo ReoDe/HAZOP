@@ -754,6 +754,19 @@ class WebViewIntegrationTest(AppTestBase):
         self.assertGreater(path, 0)
         self.assertGreater(sg, 0)
         self.assertGreater(ring, 0)                                   # 보호수단 테두리
+        # 강조 범례는 줌·맞춤 버튼 등 떠 있는 카드와 겹치지 않고, 구조 검증 칩은 한국어 값(design-system W10, D16)
+        from scripts import check_design as cd
+        for width in (1366, 900):
+            win.resize(width, 689)
+            wait_for(lambda: False, 0.5)                              # 크기 변경·맞춤이 웹 쪽에 반영되게 이벤트만 돌림
+            got = []
+            self.assertTrue(wait_for(lambda: (win.webview.page().runJavaScript(cd.LEGEND_JS, 0, got.append),
+                                              got and got[-1])[1], 15))
+            self.assertEqual(cd.legend_problems([{"width": width, "screen": "④", "measure": json.loads(got[-1])}]), [])
+        chip = []
+        self.assertTrue(wait_for(lambda: (win.webview.page().runJavaScript(
+            "document.getElementById('status').textContent", 0, chip.append), chip)[1]))
+        self.assertRegex(chip[-1], r"^구조 검증 (통과|차단) · ")
         ev = ctx.evidence(scr.cur_scenario)
         self.assertEqual(ev["n"], len(ev["shown"]) + len(ev["estimated"]) + len(ev["unshown"]))
         self.assertGreater(len(ev["shown"]), 0)
@@ -820,6 +833,31 @@ class WebViewIntegrationTest(AppTestBase):
         win.webview.bridge.fromWeb(json.dumps({"type": "highlightResult", "request_id": "scenario-p86-d09-03",
                                                "missing": ["local-node-001"]}))
         self.assertEqual(scr.ctx.missing_local, {"local-node-001"})
+
+
+class AiRunsTabTest(unittest.TestCase):
+    """AI 실행 기록 탭: 검증 오류(dict 목록)를 문자열로 보여 주고(TypeError 없음), 원문 오류·병합 오류를 표시한다.
+    상태는 한국어 라벨, 영문 코드는 툴팁(title)에만."""
+
+    def test_validation_errors_and_raw_errors_rendered(self):
+        from hazop.analysis import ai
+        from hazop.app import data, render
+        from tests.test_analysis import BAD_DIR, analyze
+        doc = analyze(client=ai.FixedResponseClient(BAD_DIR))
+        c = next(x for x in doc["candidates"] if x["candidate_id"] == "deviation-p86-d09")
+        html_text = render.ai_runs_html(doc, c)  # 수정 전: "; ".join(dict 목록)에서 TypeError
+        self.assertIn("reference_error $.", html_text)
+        self.assertIn("검증 실패", html_text)
+        self.assertIn("title='validation_failed'", html_text)
+        self.assertIs(data.AI_STATUS_LABELS, ai.STATUS_LABELS_KO)
+        self.assertNotIn("(input_mismatch)", data.AI_STATUS_LABELS["input_mismatch"])
+        rec = {"ai_run_id": "airun-x-01", "attempt": 1, "status": "merge_error", "client": {},
+               "result": {"status": "api_error", "error": "Error code: 500 raw"}, "merge_error": "RuntimeError: 병합 실패",
+               "validation": None, "warnings": []}
+        d = {"ai_runs": [dict(rec, candidate_id="c1")]}
+        out = render.ai_runs_html(d, {"candidate_id": "c1", "analysis": {"ai_status": "merge_error"}})
+        self.assertIn("Error code: 500 raw; RuntimeError: 병합 실패", out)
+        self.assertIn("반영 오류", out)
 
 
 if __name__ == "__main__":

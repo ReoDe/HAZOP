@@ -268,7 +268,7 @@
   "_note": "A1~A5 정답 파일(기획서/그래프활용.md §7.1·§7.2). 가상 샘플 데이터/지식/SNP-SAMPLE + 샘플 도면 SNP-M-102 + 데이터/구간/region-SNP-M-102-pzr.json. 값은 구현 결과를 손으로 대조해 고정함(A2는 §7.1 기대값 표와 대조). 샘플 입력이 바뀌면 이 파일을 다시 검토해야 함",
   "graph": {
     "graph_id": "graph-SNP-M-102",
-    "graph_version": "v-7ed95b0c74f1"
+    "graph_version": "v-f65e4ec1135d"
   },
   "kg_version_at_creation": "v-43034b88b9c9",
   "project_id": "SNP-SAMPLE",

@@ -1,0 +1,20 @@
+# PDF 어댑터(pdfplumber)와 의존성 (T2 W9, 사용자 결정 2026-11-06, T3 D1). 버전·휠 고정.
+# 설치: <전용 venv python> -m pip install --require-hashes --no-deps --only-binary=:all: -r packaging/requirements-pdf.txt
+# 해시: PyPI JSON(https://pypi.org/pypi/<이름>/<버전>/json, 2026-11-06 조회)의 Windows x64(CPython 3.12)용 휠 하나의 sha256.
+# cryptography는 cp312 전용 휠이 없어 cp311-abi3-win_amd64, pypdfium2는 py3-none-win_amd64 휠이다.
+pdfplumber==0.11.9 \
+    --hash=sha256:33ec5580959ba524e9100138746e090879504c42955df1b8a997604dd326c443
+pdfminer.six==20251230 \
+    --hash=sha256:9ff2e3466a7dfc6de6fd779478850b6b7c2d9e9405aa2a5869376a822771f485
+pillow==12.2.0 \
+    --hash=sha256:7f84204dee22a783350679a0333981df803dac21a0190d706a50475e361c93f5
+pypdfium2==5.8.0 \
+    --hash=sha256:55592af0bddd2d62bed18e0053c546c9b72041430c5115e54870f7f6163125b0
+charset-normalizer==3.4.7 \
+    --hash=sha256:5ed6ab538499c8644b8a3e18debabcd7ce684f3fa91cf867521a7a0279cab2d6
+cryptography==48.0.0 \
+    --hash=sha256:5b012212e08b8dd5edc78ef54da83dd9892fd9105323b3993eff6bea65dc21d7
+cffi==2.0.0 \
+    --hash=sha256:da68248800ad6320861f129cd9c1bf96ca849a2771a59e0344e88681905916f5
+pycparser==3.0 \
+    --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992

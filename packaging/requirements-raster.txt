@@ -1,0 +1,31 @@
+# 래스터 어댑터(T3 W4, 결정 D7) 개발·평가 전용. 배포본에 넣지 않는다(licenses/ 고지 없음).
+# 설치 위치: 빌드 venv(venv-py312)가 아니라 별도 venv %USERPROFILE%\.hazop\venv-raster-py312 (기반 CPython 3.12.10).
+#   빌드 venv에 numpy를 넣으면 openpyxl(compat/numbers.py의 import numpy)을 따라 PyInstaller가 numpy를 배포본에 묶기 때문이다(D7).
+# 설치: <venv-raster python> -m pip install --require-hashes --no-deps --only-binary=:all: -r packaging/requirements-raster.txt
+# 해시: PyPI JSON(https://pypi.org/pypi/<이름>/<버전>/json, 2026-11-06 조회)의 Windows x64(CPython 3.12)용 휠 하나의 sha256.
+# rapidocr-onnxruntime의 선언 의존성 중 opencv-python(GUI판)은 headless로 대신하고, 코드가 import하지 않는 six·tqdm은 넣지 않는다.
+opencv-python-headless==5.0.0.93 \
+    --hash=sha256:829717b6a95554f273e49e357cee3b3a2a26b6f4842fbc1bed2b45bdd8f87e0e
+numpy==2.5.4 \
+    --hash=sha256:a7b1b6353e36a7e50de2973a38d705c88ee93adcf120673cee7f45a4a3fa223a
+rapidocr-onnxruntime==1.4.4 \
+    --hash=sha256:971d7d5f223a7a808662229df1ef69893809d8457d834e6373d3854bc1782cbf
+onnxruntime==1.31.1 \
+    --hash=sha256:ae8a9a351efda685cc59a66226cdefaa37a126c1d66872ca23a2de9425326130
+flatbuffers==25.12.19 \
+    --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4
+protobuf==7.36.2 \
+    --hash=sha256:a300819d441e078a5608c0d3c709796bb548136058fda017ae51d425b44fd353
+packaging==26.3 \
+    --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+pyclipper==1.4.0 \
+    --hash=sha256:d1e5498d883b706a4ce636247f0d830c6eb34a25b843a1b78e2c969754ca9037
+shapely==2.2.0 \
+    --hash=sha256:90895df6542ae039fc6557dec6194e3509e883fbd6f5788e3c3e7a38fe46b257
+pyyaml==6.0.3 \
+    --hash=sha256:5fcd34e47f6e0b794d17de1b4ff496c00986e1c83f7ab2fb8fcfe9616ff7477b
+pillow==13.0.0 \
+    --hash=sha256:ff3fe9eb621fbb9db4c4be33ab946f6bac5f98ab50ca8d3260503653656c961b
+# 검사 스크립트(check_adapter.py: 그래프 단계 호환·GED)용. 배포 런타임과 같은 판(packaging/requirements.txt)
+networkx==3.7 \
+    --hash=sha256:e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0

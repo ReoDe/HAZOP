@@ -12,13 +12,22 @@
  3) HAZOP-check.exe check_kg_screen.py --skip-tests --screenshots: ③ V2·렌더링·V1·S1·③ 탭과 ③ PNG
     (이 단계만 HAZOP_WORK_ROOT = 입력 사본: 샘플 graph_version이 개발 실행과 같게. QT_QPA_PLATFORM = windows:
     offscreen은 위젯 한글이 빈 상자로 찍힘)
+ 3b) PDF 어댑터(W9, D15): HAZOP-check.exe pdf_probe.py로 샘플 PDF 사본(SNP-M-102, 가상 샘플)을 묶음 안 pdf_vector로
+    추출하고 pypdfium2로 그린다. 추출 요약이 이 검증기(전용 venv)에서 같은 파일을 추출한 결과와 같고, pdfplumber·pdfminer·
+    pypdfium2·pypdfium2_raw·PIL·cryptography·charset_normalizer 모듈(7개 키가 모두 결과에 있어야 함)과 실제로 읽힌 pdfium.dll
+    (읽은 모듈 핸들의 경로)이 묶음 안인지 본다.
+    --app-only(배포용)는 실행 단계 없이 _internal/pypdfium2_raw/pdfium.dll이 있는지만 본다(앱 PYZ의 모듈은 빌드 뒤 검사).
  4) HAZOP.exe --screenshots [--run <④ 실행 폴더>]: ①②④⑤ PNG(앱의 --screenshots는 ③을 찍지 않음).
-    <작업 루트>/logs/app.log에 시작 기록이 있는지. 미처리 예외 기록: JSON 배열인 설정 파일(--settings)을 주면 MainWindow가
-    ValueError를 낸다 → 로그에 "미처리 예외"와 그 메시지가 남아야 한다(창 프로그램은 PyInstaller 오류 대화상자가 떠서
-    끝나지 않으므로 60초 뒤 강제 종료). 잘못된 옵션(--w4-unknown-option)은 종료 코드 2와 사용법 오류(표준 출력 사본)만
-    본다: 하위 프로세스로 띄우면 표준 출력 핸들이 있어 로그 파일 연결(핸들이 없을 때만)이 일어나지 않는다
+    <작업 루트>/logs/app.log에 시작 기록이 있는지. 잘못된 옵션(--w4-unknown-option)은 종료 코드 2와 사용법 오류(표준 출력
+    사본)만 본다: 하위 프로세스로 띄우면 표준 출력 핸들이 있어 로그 파일 연결(핸들이 없을 때만)이 일어나지 않는다.
+    손상 설정(W10, D18): JSON 문법 오류 설정 파일 + --screenshots → 종료 코드 2, 출력에 안내, app.log에 기록, 설정 파일은
+    그대로(백업·PNG 없음). 시험 트리거: HAZOP_TEST_EXCEPTHOOK=1 + --screenshots + 손상 설정(두 빌드 같은 실행). 검증용은
+    표지 훅(packaging/rthook_verify_build.py)이 있어 앱이 시험용 예외를 sys.excepthook에 넘기고 종료 코드 70, app.log에
+    "미처리 예외"와 시험용 메시지(app_log_unhandled). 배포용은 트리거가 꺼져 종료 코드 2, 시험용 메시지 없음
+    (app_trigger_off). 단계 4의 실행은 모두 비대화형이라 모달·오류 창이 뜨지 않는다(스크린샷 단계는 비모달 창이 잠깐 뜸)
  5) 저장소 출력/·자료저장소/ 파일 해시가 전후 같은지, 3)이 입력 사본을 바꾸지 않았는지, PNG가 이번 실행에서 생겼는지
- 6) 제3자 고지(W6, D9): 묶음 _internal/licenses/의 파일 목록·바이트 해시가 저장소 licenses/와 같은지(빠짐·추가·변경 없음)
+ 6) 제3자 고지(W9, D15): 실행 파일 옆 licenses/의 파일 목록·바이트 해시가 저장소 licenses/와 같은지(빠짐·추가·변경
+    없음), 이전 위치 _internal/licenses/가 없는지(scripts/build_package.licenses_problems와 같은 규칙)
 자식 프로세스 환경: PYTHONPATH·PYTHONHOME·HAZOP_* 제거, HAZOP_WORK_ROOT·APPDATA·TEMP = 임시, 작업 폴더 = 임시(저장소 아님).
 PATH = Windows System32·Windows 폴더만, QT_*·OPENSSL_*·SSL_CERT_* 제거(D10): 사용자 PATH 경유 탐색을 제한한다
 (JDK·Git 등 PATH에 있는 UCRT·OpenSSL DLL을 찾지 못함). 다른 PC와 같은 조건이라는 보장은 아니다.
@@ -109,14 +118,55 @@ def new_run_root(base, name=None):
 
 
 def licenses_problems(bundle_dir, repo=REPO_ROOT):
-    """묶음(one-folder) _internal/licenses/가 저장소 licenses/와 파일 목록·SHA-256까지 같은지. 문제 목록."""
-    want = tree_hashes(os.path.join(repo, "licenses"))
-    got = tree_hashes(os.path.join(bundle_dir, "_internal", "licenses"))
-    if not want:
-        return ["저장소 licenses/ 없음"]
-    probs = ["묶음에 없음: %s" % k for k in sorted(set(want) - set(got))]
-    probs += ["저장소에 없는 파일: %s" % k for k in sorted(set(got) - set(want))]
-    probs += ["해시 다름: %s" % k for k in sorted(set(want) & set(got)) if want[k] != got[k]]
+    """묶음(one-folder)의 실행 파일 옆 licenses/가 저장소 licenses/와 같은지(W9, D15, build_package와 같은 규칙). 문제 목록."""
+    return bp.licenses_problems(bundle_dir, repo)
+
+
+def _pdf_probe_module():
+    spec = importlib.util.spec_from_file_location("hazop_pdf_probe_v",
+                                                  os.path.join(REPO_ROOT, "packaging", "pdf_probe.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def pdf_expected(pdf, repo=REPO_ROOT):
+    """이 검증기(전용 venv)에서 저장소 hazop의 pdf_vector로 같은 PDF를 추출한 요약(pdf_probe.digest 형식)."""
+    if repo not in sys.path:
+        sys.path.insert(0, repo)
+    from hazop.extract.adapters import pdf_vector
+    return _pdf_probe_module().digest(pdf_vector.extract(pdf))
+
+
+PDF_PROBE_MODULES = ("pdfplumber", "pdfminer", "pypdfium2", "pypdfium2_raw", "PIL", "cryptography",
+                     "charset_normalizer")  # pdf_probe.PROBE_MODULES와 같아야 한다(테스트로 고정)
+
+
+def pdf_probe_problems(result, expected, bundle_dir):
+    """pdf_probe 결과 판정. 문제 목록(빈 목록 = 통과): 오류 없음, 묶인 실행, 추출 요약이 개발 실행과 같음, 그림 크기,
+    필수 모듈 7개(PDF_PROBE_MODULES)와 pdfium.dll 키가 결과에 있고, 실제로 읽힌 경로가 묶음 안."""
+    if not isinstance(result, dict):
+        return ["결과 없음"]
+    if result.get("error"):
+        return ["오류: %s" % result["error"]]
+    probs = [] if result.get("frozen") else ["묶인 실행이 아님"]
+    if result.get("extraction") != expected:
+        probs.append("추출 요약이 개발 실행과 다름")
+    size = result.get("render_size") or []
+    if not (len(size) == 2 and all(isinstance(v, int) and v > 0 for v in size)):
+        probs.append("pypdfium2 그림 크기 이상: %r" % (size,))
+    got = result.get("module_files") if isinstance(result.get("module_files"), dict) else {}
+    probs += ["결과에 없음: %s" % m for m in PDF_PROBE_MODULES if m not in got]
+    if "pdfium_dll" not in result:
+        probs.append("결과에 없음: pdfium.dll")
+    files = {m: got.get(m) for m in PDF_PROBE_MODULES if m in got}
+    if "pdfium_dll" in result:
+        files["pdfium.dll"] = result.get("pdfium_dll") if result.get("pdfium_dll_exists") else None
+    for name, path in sorted(files.items()):
+        if not path:
+            probs.append("읽히지 않음: %s" % name)
+        elif not inside(path, bundle_dir):
+            probs.append("묶음 밖에서 읽힘: %s (%s)" % (name, path))
     return probs
 
 
@@ -138,10 +188,12 @@ def make_inputs(dest):
     for n in CHECK_SCRIPTS:
         shutil.copy2(os.path.join(REPO_ROOT, "scripts", n + ".py"), os.path.join(dest, "scripts"))
     shutil.copy2(os.path.join(REPO_ROOT, "packaging", "w4_flow.py"), os.path.join(dest, "scripts"))
+    shutil.copy2(os.path.join(REPO_ROOT, "packaging", "pdf_probe.py"), os.path.join(dest, "scripts"))
     sdir = os.path.join(dest, *SAMPLE)
     os.makedirs(sdir)
     for p in glob.glob(os.path.join(REPO_ROOT, *SAMPLE, "*.drawio")) + \
-            glob.glob(os.path.join(REPO_ROOT, *SAMPLE, "*.drawio.svg")):
+            glob.glob(os.path.join(REPO_ROOT, *SAMPLE, "*.drawio.svg")) + \
+            glob.glob(os.path.join(REPO_ROOT, *SAMPLE, "*.pdf")):
         shutil.copy2(p, sdir)
     for rel in (("데이터", "구간"), ("데이터", "고정응답"), ("데이터", "지식", "SNP-SAMPLE")):
         shutil.copytree(os.path.join(REPO_ROOT, *rel), os.path.join(dest, *rel))
@@ -205,6 +257,79 @@ def run(cmd, env, cwd, log, timeout=TIMEOUT):
     return rc, round(time.monotonic() - t0, 1), text
 
 
+BAD_SETTINGS = b"{ not json"  # JSON 문법 오류(W10, D18)
+
+
+def bad_settings_ok(rc, output, log_tail, intact):
+    """손상 설정 + --screenshots: 종료 코드 2, 출력에 안내, 앱 로그에 기록, 설정 파일·폴더 그대로(백업·PNG 없음)."""
+    return (rc == 2 and "설정 파일을 읽을 수 없어 종료" in output and "JSONDecodeError" in output
+            and "설정 파일을 읽을 수 없음" in log_tail and intact)
+
+
+def trigger_ok(app_only, rc, log_tail):
+    """HAZOP_TEST_EXCEPTHOOK=1 + --screenshots + 손상 설정. 검증용: 트리거가 켜져 종료 코드 70, 앱 로그에 '미처리 예외'와
+    시험용 메시지. 배포용: 트리거가 꺼져(표지 훅 없음) 손상 설정 처리로 종료 코드 2, 시험용 메시지 없음."""
+    hooked = "시험용 미처리 예외(HAZOP_TEST_EXCEPTHOOK)" in log_tail
+    if app_only:
+        return rc == 2 and not hooked and "설정 파일을 읽을 수 없음" in log_tail
+    return rc == 70 and hooked and "미처리 예외" in log_tail
+
+
+def _bad_settings(tmp, name):
+    """tmp/<name>/settings.json에 손상 설정을 쓰고 (설정 경로, 그 폴더) 반환."""
+    d = os.path.join(tmp, name)
+    os.mkdir(d)
+    path = os.path.join(d, "settings.json")
+    with open(path, "wb") as fh:
+        fh.write(BAD_SETTINGS)
+    return path, d
+
+
+def _intact(path, folder, png):
+    """손상 설정이 그대로이고(백업·덮어쓰기 없음) PNG가 생기지 않았다."""
+    with open(path, "rb") as fh:
+        return (fh.read() == BAD_SETTINGS and os.listdir(folder) == ["settings.json"]
+                and not glob.glob(os.path.join(png, "*.png")))
+
+
+def app_steps(app_exe, env, tmp, out, png, run_dir, app_only, summary):
+    """단계 4(HAZOP.exe). 모든 실행이 비대화형(--screenshots 또는 잘못된 옵션)이라 모달·오류 창을 띄우지 않는다
+    (--screenshots 스크린샷 단계는 비모달 창이 잠깐 뜬다). (스크린샷 rc, 초, 잘못된 옵션 rc)를 돌려준다."""
+    cmd = [app_exe, "--screenshots", png, "--settings", os.path.join(tmp, "settings.json")]
+    if run_dir:
+        cmd += ["--run", run_dir]
+    rc, sec, _ = run(cmd, env, tmp, os.path.join(out, "app.log"))
+    summary["steps"]["app_screenshots"] = {"rc": rc, "sec": sec}
+    log_path = os.path.join(env["HAZOP_WORK_ROOT"], "logs", "app.log")
+    log1 = read_text(log_path)
+    rc2, sec2, text2 = run([app_exe, "--w4-unknown-option"], env, tmp, os.path.join(out, "app-badarg.log"))
+    log2 = read_text(log_path)
+    # 손상 설정(W10, D18): 비대화형(--screenshots)이면 창 없이 stderr 안내·종료 코드 2, 파일은 그대로
+    bad, bad_dir = _bad_settings(tmp, "bad-settings")
+    bad_png = os.path.join(tmp, "bad-settings-png")
+    rc3, sec3, text3 = run([app_exe, "--screenshots", bad_png, "--settings", bad], env, tmp,
+                           os.path.join(out, "app-bad-settings.log"), timeout=60)
+    log3 = read_text(log_path)
+    summary["steps"]["app_bad_settings"] = {"rc": rc3, "sec": sec3}
+    summary["checks"]["app_bad_settings"] = bad_settings_ok(rc3, text3, log3[len(log2):],
+                                                            _intact(bad, bad_dir, bad_png))
+    # 시험 트리거(D18): 두 빌드 모두 같은 비대화형 실행. 검증용은 미처리 예외 기록(rc 70), 배포용은 트리거 꺼짐(rc 2)
+    trig, trig_dir = _bad_settings(tmp, "trigger-settings")
+    trig_png = os.path.join(tmp, "trigger-png")
+    rc4, sec4, _ = run([app_exe, "--screenshots", trig_png, "--settings", trig], dict(env, HAZOP_TEST_EXCEPTHOOK="1"),
+                       tmp, os.path.join(out, "app-excepthook.log"), timeout=60)
+    summary["steps"]["app_excepthook"] = {"rc": rc4, "sec": sec4}
+    key = "app_trigger_off" if app_only else "app_log_unhandled"
+    summary["checks"][key] = (trigger_ok(app_only, rc4, read_text(log_path)[len(log3):])
+                              and _intact(trig, trig_dir, trig_png))
+    if os.path.isfile(log_path):
+        shutil.copyfile(log_path, os.path.join(out, "work-logs-app.log"))
+    summary["steps"]["app_bad_option"] = {"rc": rc2, "sec": sec2}
+    summary["checks"]["app_log_started"] = "시작 pid=" in log1
+    summary["checks"]["app_bad_option_rc2"] = rc2 == 2 and "unrecognized arguments" in text2
+    return rc, sec, rc2
+
+
 def read_text(path):
     if not os.path.isfile(path):
         return ""
@@ -254,32 +379,25 @@ def steps(args, summary, run_root, out, repo_dirs):
             "rc": rc, "sec": sec,
             "lines": [ln.strip() for ln in text.splitlines() if ln.strip().startswith(("[OK]", "[FAIL]", "결과"))]}
         print("check_kg_screen rc=%s %ss" % (rc, sec))
+
+        pdf = os.path.join(inputs, *SAMPLE, SAMPLE[-1] + ".pdf")
+        pres = os.path.join(out, "pdf_probe.json")
+        rc, sec, _ = run([check_exe, os.path.join(scripts, "pdf_probe.py"), "--pdf", pdf, "--result", pres], env, tmp,
+                         os.path.join(out, "pdf_probe.log"))
+        result = None
+        if os.path.isfile(pres):
+            with open(pres, encoding="utf-8") as fh:
+                result = json.load(fh)
+        summary["steps"]["pdf_probe"] = {"rc": rc, "sec": sec}
+        summary["checks"]["pdf_problems"] = pdf_probe_problems(result, pdf_expected(pdf), target)
+        print("pdf_probe rc=%s %ss" % (rc, sec))
     else:
         summary["steps"]["flow"] = summary["steps"]["check_kg_screen"] = {"rc": "skipped(--app-only)"}
+        summary["steps"]["pdf_probe"] = {"rc": "skipped(--app-only)"}
+        dll = os.path.join(target, "_internal", *bp.PDFIUM_DLL)
+        summary["checks"]["pdf_problems"] = [] if os.path.isfile(dll) else ["pdfium.dll 없음: %s" % dll]
 
-    app_exe = os.path.join(target, "HAZOP.exe")
-    cmd = [app_exe, "--screenshots", png, "--settings", os.path.join(tmp, "settings.json")]
-    if run_dir:
-        cmd += ["--run", run_dir]
-    rc, sec, _ = run(cmd, env, tmp, os.path.join(out, "app.log"))
-    summary["steps"]["app_screenshots"] = {"rc": rc, "sec": sec}
-    log_path = os.path.join(env["HAZOP_WORK_ROOT"], "logs", "app.log")
-    log1 = read_text(log_path)
-    rc2, sec2, text2 = run([app_exe, "--w4-unknown-option"], env, tmp, os.path.join(out, "app-badarg.log"))
-    bad_settings = os.path.join(tmp, "bad-settings.json")
-    with open(bad_settings, "w", encoding="utf-8") as fh:
-        fh.write("[]")
-    rc3, sec3, _ = run([app_exe, "--settings", bad_settings], env, tmp, os.path.join(out, "app-unhandled.log"),
-                       timeout=60)
-    log3 = read_text(log_path)
-    if os.path.isfile(log_path):
-        shutil.copyfile(log_path, os.path.join(out, "work-logs-app.log"))
-    summary["steps"]["app_bad_option"] = {"rc": rc2, "sec": sec2}
-    summary["steps"]["app_unhandled"] = {"rc": rc3, "sec": sec3}
-    summary["checks"]["app_log_started"] = "시작 pid=" in log1
-    summary["checks"]["app_bad_option_rc2"] = rc2 == 2 and "unrecognized arguments" in text2
-    tail = log3[len(log1):]
-    summary["checks"]["app_log_unhandled"] = "미처리 예외" in tail and "설정 파일이 JSON 객체가 아님" in tail
+    rc, sec, rc2 = app_steps(os.path.join(target, "HAZOP.exe"), env, tmp, out, png, run_dir, args.app_only, summary)
     want = APP_PNG if args.app_only else FULL_PNG
     summary["png"] = sorted(os.path.basename(p) for p in glob.glob(os.path.join(png, "*.png")))
     summary["checks"]["png_fresh_problems"] = fresh_problems(png, start, want)
@@ -337,13 +455,15 @@ def main(argv=None):
         summary["run_root_removed"] = not os.path.exists(run_root)
     checks, st = summary["checks"], summary["steps"]
     rc_ok = all(st.get(k, {}).get("rc") in (0, "skipped(--app-only)")
-                for k in ("flow", "check_kg_screen", "app_screenshots"))
+                for k in ("flow", "check_kg_screen", "pdf_probe", "app_screenshots"))
     summary["passed"] = bool(
         rc_ok and not summary["errors"] and summary["run_root_removed"]
         and not checks.get("png_fresh_problems", ["미실행"])
         and not checks.get("licenses_problems", ["미실행"])
+        and not checks.get("pdf_problems", ["미실행"])
         and checks.get("repo_unchanged") and checks.get("app_log_started") and checks.get("app_bad_option_rc2")
-        and checks.get("app_log_unhandled")
+        and checks.get("app_bad_settings")
+        and checks.get("app_trigger_off" if args.app_only else "app_log_unhandled")
         and (args.app_only or checks.get("inputs_unchanged_by_kg_check"))
         and summary.get("has_reference_samples") is False
         and summary.get("has_check_exe") is (not args.app_only))

@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLayout, 
 
 from hazop import paths
 from hazop.app import tokens
-from hazop.app.widgets import Banner, Chip, badge, empty_label, esc
+from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, badge, empty_label, esc
 from hazop.kg import algo, build, screen
 
 APP_SHELL = "kg-screen.html"  # 출력/뷰어/ 아래 앱 셸(데이터 없음, loadKnowledge로 받음)
@@ -300,7 +300,7 @@ class KnowledgeScreen(QWidget):
             c.show()
         ch["ver"].set_state("kg_version %s%s" % (m["kg_version"], " · 이전 버전" if self.showing_prev else ""))
         st = m["status"]
-        ch["valid"].set_state("검증 %s · 차단 %d · 미확인 %d" % ({"passed": "통과", "blocked": "차단"}.get(st, st),
+        ch["valid"].set_state("검증 %s · 차단 %d · 미확인 %d" % (VALIDATION_LABELS.get(st, st),
                                                             m["blockers"], m["unknowns"]),
                               "passed" if st == "passed" else "blocked")
         same = m["graph_ref_version"] == m["graph_version"]

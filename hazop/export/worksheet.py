@@ -23,6 +23,7 @@ from openpyxl.styles import Alignment, Font
 from openpyxl.utils.exceptions import IllegalCharacterError
 
 from hazop import paths
+from hazop.analysis.ai import STATUS_LABELS_KO
 from hazop import review as rv
 from hazop.review import store
 
@@ -104,6 +105,43 @@ def _tags(run):
 def _tagged(nid, tags):
     tag = tags.get(nid)
     return "%s(%s)" % (tag, nid) if tag else nid
+
+
+# 근거 참조 열의 경로 밸브 문구 (머리말, 판정). 문구·제어밸브 주석은 총괄 결정(권고안, 사용자 위임 2026-11-06)
+VALVE_CLOSED = ("정상 닫힘 밸브 경유", "정상 운전 유로 아님")
+VALVE_UNKNOWN = ("정상 위치 미확인 밸브 경유", "정상 운전 유로 여부 판단 보류")
+VALVE_UNKNOWN_NOT_MATERIAL = ("정상 위치 미확인 밸브 경유", "물질 유로 아님")
+CONTROL_VALVE_NOTE = "(제어밸브, 운전 중 개폐 가능 [일반지식])"
+
+
+def ai_status_label(status):
+    """AI 상태 한국어 라벨(정본 hazop.analysis.ai.STATUS_LABELS_KO). 모르는 코드는 그대로, 없으면 '미요청'."""
+    return STATUS_LABELS_KO.get(status, status or "미요청")
+
+
+def _valve_path_text(doc, s):
+    """시나리오가 인용한 탐색 경로(ev-path-*) 위의 닫힌·정상 위치 미확인 밸브(④ explore valves_on_path).
+    닫힌 밸브 경유 경로도 탐색에서 끊지 않으므로(오조작 원인 검토용) 사람이 보도록 근거 열에 적는다. 없으면 None."""
+    cited = set((s.get("graph_evidence") or {}).get("evidence_ids") or [])
+    bundle = (doc.get("evidence_bundles") or {}).get(s.get("candidate_id")) or {}
+    groups = {}  # (머리말, 판정) -> {밸브 이름: 표시}
+    for ev in bundle.get("evidence") or []:
+        if ev.get("type") != "exploration_path" or ev.get("evidence_id") not in cited:
+            continue
+        for v in ev.get("valves_on_path") or []:
+            name = v.get("tag") or v.get("entity_id")
+            if v.get("state") == "closed":
+                label = "%s(%s)" % (name, v.get("normal_position"))
+                if v.get("kind") == "control_valve":
+                    label += CONTROL_VALVE_NOTE
+                groups.setdefault(VALVE_CLOSED, {})[name] = label
+            elif v.get("state") == "unknown":
+                key = (VALVE_UNKNOWN_NOT_MATERIAL if ev.get("normal_operation_flow") == "not_material_path"
+                       else VALVE_UNKNOWN)
+                groups.setdefault(key, {})[name] = name
+    lines = ["%s: %s — %s" % (key[0], ", ".join(groups[key][k] for k in sorted(groups[key])), key[1])
+             for key in (VALVE_CLOSED, VALVE_UNKNOWN, VALVE_UNKNOWN_NOT_MATERIAL) if key in groups]
+    return "\n".join(lines) or None
 
 
 def _safeguards_text(items, source, tags):
@@ -193,7 +231,7 @@ def worksheet_rows(run, records, scope):
                 "decided_by": (nsc or {}).get("decided_by") or "미검토",
                 "decided_at": (nsc or {}).get("decided_at") or "미검토",
                 "dics": "해당 없음(설계보완 후보 없음)", "evidence": "해당 없음",
-                "holds": "\n".join(["AI 상태: %s" % (c.get("analysis") or {}).get("ai_status")] +
+                "holds": "\n".join(["AI 상태: %s" % ai_status_label((c.get("analysis") or {}).get("ai_status"))] +
                                    ["%s %s" % (h["hold_id"], h["item"]) for h in holds]),
                 "_decision": "confirm_no_scenario" if nsc else None})
             continue
@@ -245,9 +283,9 @@ def worksheet_rows(run, records, scope):
                 "decided_by": (sd or {}).get("decided_by") or "미검토",
                 "decided_at": (sd or {}).get("decided_at") or "미검토",
                 "dics": "\n".join(dic_lines) if dic_lines else "해당 없음(설계보완 후보 없음)",
-                "evidence": "원인 설비: %s\n근거 ID: %s" % (
+                "evidence": "\n".join(x for x in ("원인 설비: %s\n근거 ID: %s" % (
                     ", ".join(_tagged(n, tags) for n in s.get("cause_equipment") or []) or "없음",
-                    ", ".join(ev.get("evidence_ids") or []) or "없음"),
+                    ", ".join(ev.get("evidence_ids") or []) or "없음"), _valve_path_text(doc, s)) if x),
                 "holds": "\n".join(hold_lines) if hold_lines else "열린 보류 없음",
                 "_decision": dec}))
     return rows

@@ -4,7 +4,7 @@
 1) 샘플 추출 -> 그래프 (임시 폴더, scripts/extract_drawio.py --samples·build_graph.py와 같은 함수)
 2) 근거 묶음 내보내기: 내보낸 bundle_sha256 = 데이터/고정응답/의 bundle_sha256, 실행 폴더·analysis.json 없음
 3) 자원 루트·작업 루트를 임시 폴더로 바꿔 analyze.py·export_bundles.py·register.py·extract_drawio.py를 새 프로세스로 실행
-   (graph_version v-7ed95b0c74f1, 후보 44·시나리오 14·위험도 제안 6·설계보완 후보 11, 등록 SVG 우선 사용)
+   (graph_version = 구간 파일이 고정한 값, 후보 44·시나리오 14·위험도 제안 6·설계보완 후보 11, 등록 SVG 우선 사용)
 4) 샘플 6개 등록: SVG 6개 파생 등록, 등록 SVG 추출 = 원본 옆 SVG 추출(svg_file·source 제외)
 5) unittest tests.test_desktop_support
 종료 코드 0 = 전부 통과.
@@ -33,7 +33,9 @@ from hazop.analysis import bundle_export  # noqa: E402
 from hazop.graph import build  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
-GRAPH_VERSION = "v-7ed95b0c74f1"
+import json as _json  # noqa: E402
+with open(os.path.join(REPO_ROOT, "데이터", "구간", "region-SNP-M-102-pzr.json"), encoding="utf-8") as _fh:
+    GRAPH_VERSION = _json.load(_fh)["graph_ref"]["graph_version"]  # 구간 파일이 고정한 그래프 버전(재고정 시 따라감)
 COUNTS = {"candidates": 44, "scenarios": 14, "risk_proposed": 6, "design_improvement_candidates": 11}
 PYTHON = sys.executable if os.path.isfile(sys.executable) else (shutil.which("python") or sys.executable)
 

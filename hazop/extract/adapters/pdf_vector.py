@@ -1228,7 +1228,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             r = ref(v)
             ep = {"end": end, "node_local_id": r[0] if r else None, "source_object_id": r[1] if r else None,
                   "constraint": None, "point": [_num(pt[0]), _num(pt[1])], "point_basis": basis,
-                  "status": "connected" if r else "unconnected"}
+                  "status": "connected" if r else "unconnected",
+                  "port": None}  # drawio 추출과 같은 끝점 키(기획서/정보추출.md #port-rule). PDF에는 포트 근거 없음
             if r is None:
                 resolved = False
                 _issue(unknowns, "unconnected_endpoint", "%s 끝이 기호·분기점에 닿지 않음(미확인 끝점)" % end,

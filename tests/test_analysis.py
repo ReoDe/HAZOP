@@ -154,7 +154,8 @@ class InputAndVersionTest(unittest.TestCase):
     def test_run_records_versions_scope_mode_intent(self):
         r = DOC["analysis_run"]
         self.assertEqual(DOC["graph_ref"], {"graph_id": "graph-SNP-M-102", "graph_version": GRAPH["graph_version"]})
-        self.assertEqual(DOC["region_ref"], {"region_id": "region-SNP-M-102-pzr", "region_version": 1})
+        self.assertEqual(DOC["region_ref"], {"region_id": "region-SNP-M-102-pzr",
+                                             "region_version": _load(REGION_FILE)["region_version"]})
         self.assertEqual(DOC["operating_mode"], "normal")
         self.assertEqual(r["region"]["design_intent"]["knowledge_status"], "hypothesis")
         self.assertIn("사용자 확인 필요", r["region"]["design_intent"]["basis"])
@@ -209,8 +210,8 @@ class RebindGraphTest(unittest.TestCase):
             self.assertTrue(changed)
             r = _load(rpath)
             self.assertEqual((r["graph_ref"]["graph_version"], r["graph_ref"]["graph_source"], r["project_id"],
-                              r["region_version"]), ("v-registered", "registration", "sample-project", 2))
-            hist = r["graph_ref_history"][0]
+                              r["region_version"]), ("v-registered", "registration", "sample-project", _load(REGION_FILE)["region_version"] + 1))
+            hist = r["graph_ref_history"][-1]
             self.assertEqual((hist["from"]["graph_version"], hist["changed_by"]), (GRAPH["graph_version"], "tester"))
             self.assertEqual(data_inputs(graph=g, region=r)["blockers"], [])
             next(n for n in g["nodes"] if n["entity_id"] == PZR)["tag"] = "X"
@@ -220,7 +221,7 @@ class RebindGraphTest(unittest.TestCase):
             lines, changed = run.rebind_graph(rpath, gpath, REPO_ROOT, "tester", "x", True, now=now)
             self.assertFalse(changed)
             self.assertTrue(any("태그 불일치" in x for x in lines))
-            self.assertEqual(_load(rpath)["region_version"], 2)
+            self.assertEqual(_load(rpath)["region_version"], _load(REGION_FILE)["region_version"] + 1)
         finally:
             shutil.rmtree(tmp)
 
@@ -1307,6 +1308,95 @@ class ResultCheckTest(unittest.TestCase):
         s = next(x for x in doc["scenarios"] if x["risk_proposal"]["status"] == "proposed")
         s["risk_proposal"]["risk"] = 1 if s["risk_proposal"]["risk"] != 1 else 5
         self.assertEqual(run.check_result(doc, GRAPH, CRIT)["status"], "blocked")
+
+
+class MaxDepthNotExpandedTest(unittest.TestCase):
+    """남은작업 A4: max_depth 기록의 not_expanded가 지정한 모든 관계 종류(계측·신호 포함)의 미탐색 이웃을 담는다."""
+
+    def test_not_expanded_covers_all_relation_kinds(self):
+        q = GraphQuery(GRAPH)
+        members = ex_mod.region_members(GRAPH, [m["entity_id"] for m in _load(REGION_FILE)["members"]])
+        kinds = ["has_endpoint", "measurement_connection", "signal_connection"]
+        adj = q.adjacency("all")
+        non_physical = 0
+        for depth in (1, 2, 3, 4):
+            r = ex_mod.explore(q, PZR, members, kinds, depth, 200)
+            reached = {x["entity_id"] for x in r["reached"]} | {PZR}
+            recs = {t["at"]: t["not_expanded"] for t in r["truncations"] if t["reason"] == "max_depth"}
+            for x in r["reached"]:
+                if x["shortest_depth"] != depth:
+                    continue
+                for nb, eid in adj[x["entity_id"]]:
+                    if q.edges[eid]["kind"] in kinds and nb not in reached:
+                        self.assertIn(nb, recs.get(x["entity_id"], []), (depth, x["entity_id"], eid))
+                        non_physical += q.edges[eid]["kind"] != "has_endpoint"
+        self.assertGreater(non_physical, 0)  # 옛 2단계 방식에서 빠지던 계측·신호 이웃이 기록됨
+
+
+class AIErrorMessageTest(unittest.TestCase):
+    """남은작업 A11: 사용자에게 보이는 보류 문구는 한국어로 감싸고, 원문 예외·필드명은 실행 기록에만 남긴다."""
+
+    RAW = ("Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
+           "'message': 'output_config.format.schema: unsupported'}}")
+
+    def hold(self, doc, cid):
+        return next(h for h in doc["holds"] if h["candidate_id"] == cid and h["source"] == "ai" and h["status"] == "open")
+
+    def test_api_error_hidden_from_hold(self):
+        raw = self.RAW
+
+        class Failing:
+            def describe(self):
+                return {"type": "fake", "model": None}
+
+            def infer(self, request):
+                return {"status": "api_error", "error_type": "api_status", "status_code": 400, "error": raw}
+        doc = analyze(client=Failing(), only={"p86-d09"})
+        h = self.hold(doc, "deviation-p86-d09")
+        text = h["item"] + h["reason"]
+        for leak in ("output_config", "invalid_request_error", "Error code", "api_error", "api_status"):
+            self.assertNotIn(leak, text)
+        self.assertEqual(h["item"], "AI 해석 없음(AI 서비스 오류)")
+        self.assertIn("AI 서비스가 오류 응답을 보냄(HTTP 400)", h["reason"])
+        rec = next(r for r in doc["ai_runs"] if r["candidate_id"] == "deviation-p86-d09")
+        self.assertIn(rec["ai_run_id"], h["reason"])
+        self.assertEqual(rec["result"]["error"], raw)  # 원문은 실행 기록에 보존
+
+    def test_client_exception_hidden_from_hold(self):
+        class Raising:
+            def describe(self):
+                return {"type": "fake", "model": None}
+
+            def infer(self, request):
+                raise KeyError("output_config")
+        doc = analyze(client=Raising(), only={"p86-d09"})
+        h = self.hold(doc, "deviation-p86-d09")
+        self.assertNotIn("output_config", h["reason"])
+        self.assertNotIn("KeyError", h["reason"])
+        rec = next(r for r in doc["ai_runs"] if r["candidate_id"] == "deviation-p86-d09")
+        self.assertEqual((rec["result"]["error_type"], rec["result"]["error"]), ("KeyError", "'output_config'"))
+
+    def test_validation_paths_hidden_from_hold(self):
+        doc = analyze(client=ai.FixedResponseClient(BAD_DIR))
+        h = self.hold(doc, "deviation-p86-d09")
+        self.assertNotIn("$.", h["reason"])
+        self.assertNotIn("reference_error", h["reason"])
+        self.assertIn("참조 오류", h["reason"])
+        rec = next(r for r in doc["ai_runs"] if r["candidate_id"] == "deviation-p86-d09")
+        self.assertTrue(all(e["path"].startswith("$") for e in rec["validation"]["errors"]))
+
+    def test_user_message_never_includes_raw_error(self):
+        for status in ("no_response", "input_mismatch", "refused", "truncated", "parse_error", "client_error",
+                       "merge_error", "api_error"):
+            for et in ("rate_limit", "api_status", "connection", "APIResponseValidationError", None):
+                msg = ai.user_message(status, {"error": self.RAW, "error_type": et, "status_code": 500})
+                self.assertNotIn("output_config", msg)
+                self.assertNotIn(et or "\0", msg)
+                self.assertNotEqual(ai.status_label(status), status)
+
+    def test_status_label_unknown_code_shown_as_is(self):
+        """사전에 없는 상태는 영문 코드 그대로(app/data·render, export/worksheet와 같음)."""
+        self.assertEqual(ai.status_label("some_new_status"), "some_new_status")
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@
 그래프가 없으면 먼저 구간 JSON graph_ref.how_to_build의 명령을 실행한다.
   samples 경로: python scripts/extract_drawio.py --samples && python scripts/build_graph.py
   등록 경로: python scripts/run_samples.py  (graph_version·project_id가 달라지므로 --rebind-graph로 다시 고정)
+    run_samples 그래프로 다시 고정하려면 --rebind-graph --graph 출력/samples/그래프/<이름>/graph.json 을 지정한다.
 --live 없이 실행하면 실제 API를 호출하지 않는다(고정 응답만). --resume는 원래 실행의 AI 모드를 그대로 쓰며,
 실제 API 실행을 재시도할 때도 --live를 명시해야 한다.
 경로: 구간·그래프·고정 응답·출력은 작업 루트(HAZOP_WORK_ROOT), 카탈로그·적용 판단·패턴·기준표는 자원 루트

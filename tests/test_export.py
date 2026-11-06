@@ -18,6 +18,7 @@ import openpyxl
 
 from hazop import review as rv
 from hazop.export import FIRST_DATA_ROW, WORKSHEET_COLUMNS, ExportError, export_worksheet
+from hazop.export import worksheet as ws_mod
 from tests.run_fixture import REPO_ROOT, fresh_run_dir, python_exe
 
 REGION = "region-SNP-M-102-pzr"
@@ -204,6 +205,68 @@ class TestAiHypothesis(ExportTestBase):
         self.assertIn("RC-PSV101", row["ai_safeguards"])
         self.assertIn("현재안전조치=그래프 확인", row["value_source"])
         self.assertEqual((row["origin"], row["cause"]), ("AI 추가 가설", "AI 가설 원인"))
+
+
+class TestValvePathEvidence(ExportTestBase):
+    """남은작업 A3: 닫힌(정상 위치 NC·LC) 밸브를 지나는 경로를 인용한 시나리오는 근거 참조 열에 '정상 닫힘 밸브 경유'를 적는다."""
+
+    def test_closed_valve_on_cited_path_shown(self):
+        _res, wb = self.export()
+        rows = {r["scenario_id"]: r for r in read_rows(wb["HAZOP 워크시트"])}
+        closed = [s for s in self.doc["scenarios"]
+                  if (s.get("path_context") or {}).get("valve_state") == "closed_valve_on_path"]
+        self.assertTrue(closed)
+        for s in closed:  # 샘플: RC-PV101(제어밸브, NC)
+            self.assertIn("정상 닫힘 밸브 경유: RC-PV101(NC)(제어밸브, 운전 중 개폐 가능 [일반지식]) — 정상 운전 유로 아님",
+                          rows[s["scenario_id"]]["evidence"])
+        open_only = [s for s in self.doc["scenarios"] if (s.get("path_context") or {}).get("valve_state") == "no_valves"]
+        for s in open_only:
+            self.assertNotIn("밸브 경유", rows[s["scenario_id"]]["evidence"])
+        self.assertTrue(any(r["holds"].startswith("AI 상태: 완료") or r["holds"].startswith("AI 상태: 응답 없음")
+                            for r in rows.values() if r["cause"] == "시나리오 없음"))
+        self.assertFalse(any("AI 상태: no_response" in (r["holds"] or "") for r in rows.values()))
+
+
+class TestValvePathTextUnit(unittest.TestCase):
+    """_valve_path_text 합성 doc: 미확인 분기·물질 유로 아님·인용하지 않은 경로 제외·tag 없는 밸브·AI 시나리오 인용."""
+
+    @staticmethod
+    def path_ev(target, valves, flow=None):
+        return {"evidence_id": "ev-path-%s" % target, "type": "exploration_path", "valves_on_path": valves,
+                "normal_operation_flow": flow}
+
+    @staticmethod
+    def valve(eid, state, tag=None, pos=None, kind="manual_valve"):
+        return {"entity_id": eid, "tag": tag, "kind": kind, "normal_position": pos, "state": state}
+
+    def text(self, evidence, cited, origin="pattern"):
+        doc = {"evidence_bundles": {"c1": {"evidence": evidence}}}
+        s = {"candidate_id": "c1", "origin": origin, "graph_evidence": {"evidence_ids": cited}}
+        return ws_mod._valve_path_text(doc, s)
+
+    def test_unknown_position_material_and_not_material(self):
+        ev = [self.path_ev("a", [self.valve("v1", "unknown", "V-1")], None),
+              self.path_ev("b", [self.valve("v2", "unknown", "V-2")], "not_material_path")]
+        self.assertEqual(self.text(ev, ["ev-path-a"]), "정상 위치 미확인 밸브 경유: V-1 — 정상 운전 유로 여부 판단 보류")
+        self.assertEqual(self.text(ev, ["ev-path-b"]), "정상 위치 미확인 밸브 경유: V-2 — 물질 유로 아님")
+
+    def test_uncited_path_excluded_and_no_valves_none(self):
+        ev = [self.path_ev("a", [self.valve("v1", "closed", "V-1", "NC")]),
+              self.path_ev("b", [self.valve("v2", "open", "V-2", "NO")])]
+        self.assertIsNone(self.text(ev, ["ev-path-b", "ev-node-v1"]))
+        self.assertIsNone(self.text(ev, []))
+
+    def test_tagless_valve_uses_entity_id_and_control_valve_note(self):
+        ev = [self.path_ev("a", [self.valve("entity-node-050", "closed", None, "LC"),
+                                 self.valve("cv", "closed", "CV-1", "NC", kind="control_valve")])]
+        self.assertEqual(self.text(ev, ["ev-path-a"]),
+                         "정상 닫힘 밸브 경유: CV-1(NC)(제어밸브, 운전 중 개폐 가능 [일반지식]), entity-node-050(LC)"
+                         " — 정상 운전 유로 아님")
+
+    def test_ai_scenario_cited_path(self):
+        ev = [self.path_ev("a", [self.valve("v1", "closed", "V-1", "NC")])]
+        self.assertEqual(self.text(ev, ["ev-design-intent", "ev-path-a"], origin="ai_additional_hypothesis"),
+                         "정상 닫힘 밸브 경유: V-1(NC) — 정상 운전 유로 아님")
 
 
 class TestFormulaInjection(ExportTestBase):

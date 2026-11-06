@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget
 
 from hazop.app import data
-from hazop.app.widgets import Banner, Chip, empty_label
+from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, empty_label
 
 
 class ViewerScreen(QWidget):
@@ -85,7 +85,7 @@ class ViewerScreen(QWidget):
         g, ex = info["graph"], info["extraction"]
         if g:
             st = g["validation"]["status"]
-            self.chip_valid.set_state("구조 검증 %s" % {"passed": "통과", "blocked": "차단"}.get(st, st), "passed" if st == "passed" else "blocked")
+            self.chip_valid.set_state("구조 검증 %s" % VALIDATION_LABELS.get(st, st), "passed" if st == "passed" else "blocked")
             self.chip_stats.set_state("노드 %d · 관계 %d · 미확인 %d" % (
                 g["structure"]["node_count"], g["structure"]["edge_count"], len(g["validation"].get("unknowns") or [])))
             self.blockers.set_messages("그래프 구조 검증 차단 — 도면은 조회만 허용" if st != "passed" else None,

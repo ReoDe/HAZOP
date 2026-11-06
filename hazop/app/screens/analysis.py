@@ -12,14 +12,13 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogBut
 from hazop import paths
 from hazop.analysis import api, bundle_export, candidate_edit, run as run_mod
 from hazop.app import data, render, tokens
-from hazop.app.widgets import Banner, Chip, empty_label, esc, plain_label, risk_chip
+from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, empty_label, esc, plain_label, risk_chip
 
 STEP_LABELS = (("input_check", "입력 확인"), ("candidates", "후보"), ("exploration", "탐색"), ("patterns", "패턴"),
                ("ai", "AI"), ("risk", "위험도"))
 FILTERS = (("all", "전체"), ("selected", "선택"), ("excluded", "제외"), ("deferred", "보류"))
 COLUMNS = ("ID", "편차", "판단", "사유", "AI 상태", "시나리오", "최고 위험도 제안", "설계보완 후보", "열린 보류")
 STEP_STATUS = {"completed": "완료", "partial": "일부", "failed": "실패", "skipped": "건너뜀", "not_run": "안 함"}
-VALIDATION_LABELS = {"passed": "통과", "blocked": "차단"}
 
 
 def ai_status_text(row):
