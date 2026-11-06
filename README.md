@@ -99,7 +99,7 @@
 7. 질의 예: `python scripts/query_graph.py SNP-M-101 path RC-RV01 RC-PP01 --mode physical`
 8. 등록: `python scripts/register.py --project <ID> <파일.drawio> [--drawing-number X --revision 0 --title T --by 이름 --reason 사유]`
 9. 등록 자료 추출: `python scripts/extract_drawio.py --registration 자료저장소/<ID>/registrations/<material_id>/<버전>.json`
-10. 일괄(등록→추출→그래프→뷰어): `python scripts/run_samples.py` → `출력/samples/추출·그래프·뷰어/`(1~3번 `--samples` 결과와 분리)
+10. 일괄(등록→추출→그래프→뷰어): `python scripts/run_samples.py` → `출력/samples/추출·그래프·뷰어/`(1~3번 `--samples` 결과와 분리). 앱 ① 화면은 `출력/추출/`만 보므로 이 결과(기본 프로젝트 sample-project)를 미추출로 표시함(데이터 손실 없음, 필요하면 ①에서 다시 추출)
 11. HAZOP 분석(고정 응답): `python scripts/analyze.py` → 출력/분석/region-SNP-M-102-pzr/<실행ID>/analysis.json
 12. 실제 API: `ANTHROPIC_API_KEY` 설정 후 `python scripts/analyze.py --live [--only p86-d09]`, 재시도 `--resume <실행 폴더>`, 그래프 버전 재연결 `--rebind-graph --confirm --by 이름 --reason 사유`
 13. 검사 추가: `python scripts/check_register.py`, `python scripts/check_analysis.py`, `python scripts/refresh_fixture_hashes.py --check`
@@ -110,4 +110,4 @@
 18. 엔티티 연결(`--graph-id` 필수, 반복 지정 가능): `python scripts/link_kg.py candidates|confirm-exact|apply <프로젝트 ID> --graph-id <그래프 ID>` (`confirm-exact`는 `--reviewer`·`--reason` 포함)
 19. 그래프 알고리즘 A1~A5: `python scripts/analyze_kg.py <프로젝트 ID> --start <노드 ID> [--radius 2] [--region <구간 JSON>] [--graph-id <그래프 ID>]`
 20. 지식그래프 검사: `python scripts/check_kg_renderer.py`, `python scripts/check_kg.py`, `python scripts/check_kg_link.py`, `python scripts/check_kg_algo.py`
-21. 출력 정리: `python scripts/clean_outputs.py [--keep 5] [--apply]`. 기본은 후보 목록만 출력(dry-run). `--apply`일 때만 구간별 최근 N개 밖의 분석 실행(검토 기록이 있는 실행은 보존)과 지식그래프 옛 경로 파일·이전 버전 폴더를 `출력/_보관/<시각>/`으로 옮김(삭제 안 함)
+21. 출력 정리: `python scripts/clean_outputs.py [--keep 5] [--apply] [--out-root <출력 루트> --store-root <저장 루트>] [--no-review-records]`. 기본은 후보 목록만 출력(dry-run). `--apply`일 때만 구간별 최근 N개 밖의 분석 실행(검토 기록·평가 비교 보고서·설정 recent_runs가 참조하는 실행은 보존)과 지식그래프 옛 경로 파일·이전 버전 폴더를 `출력/_보관/<시각>/`으로 옮기고 `manifest.json`에 기록(삭제 안 함). 주의: 앱·`analyze.py`·`build_kg.py`를 끝낸 뒤 `--apply`(이동 직전 재확인은 검토 기록·평가 비교·kg `current.json`만 보며, `recent_runs`와 새 실행의 kg 참조는 이 운영 지침에 의존)
