@@ -253,7 +253,9 @@ class ViewerColorTest(unittest.TestCase):
         bad = cd.viewer_color_problems(old, tokens.web_css())
         w5 = ("--muted:", "--instrument:", "--unclassified:", "--measurement_connection:")  # W5 명암비 조정(D7)분
         self.assertEqual(sum(b.startswith(w5) for b in bad), 4, bad)
-        self.assertEqual(len([b for b in bad if not b.startswith(w5)]), 10, bad)
+        # W4 10건 + W9(D15)에서 허용 목록을 비워 실패가 된 3건(#16a34a 통과 점, #b45309 경고 글자 2곳)
+        self.assertEqual(len([b for b in bad if not b.startswith(w5)]), 13, bad)
+        self.assertEqual(sum("#16a34a" in b or "#b45309" in b for b in bad), 3, bad)
         for k in ("--valve:", "--selected:", "클릭 선택 채움"):
             self.assertTrue(any(b.startswith(k) for b in bad), (k, bad))
 
@@ -310,10 +312,21 @@ class ViewerColorTest(unittest.TestCase):
                 self.assertNotEqual(self.bad(**kw), [], name)
         self.assertTrue(any(b.startswith(":root 규칙 2개") for b in self.bad(**cases["뒤쪽 :root 재선언"])))
 
+    def test_allow_list_is_empty(self):
+        """W9(D15): 허용 목록은 비어 있다. 다시 채우면 실패한다 — 새 색은 tokens.py 토큰과 var()로 쓴다."""
+        self.assertEqual(cd.VIEWER_COLOR_ALLOW, {})
+        for body in ("aside .warn { color: #b45309; }", "#pathq .res .bad { color: #B45309; }",
+                     ".chip.passed::before { content: 'x'; color: #16a34a; }"):
+            with self.subTest(body):
+                self.assertNotEqual(self.bad(body=body), [], body)  # W8까지 허용하던 3조합
+
     def test_allow_list_is_rule_bound(self):
-        self.assertEqual(self.bad(body="aside .warn { color: #b45309; } #pathq .res .bad { color: #B45309; }"), [])
-        self.assertEqual(self.bad(body=".chip.passed::before { content: 'x'; color: #16a34a; }"), [])
-        self.assertTrue(all(len(k) == 3 for k in cd.VIEWER_COLOR_ALLOW))
+        """허용 목록 기능 자체는 (선택자, 속성, 값) 단위로 남아 있다(목록을 임시로 채워 확인)."""
+        from unittest import mock
+        with mock.patch.dict(cd.VIEWER_COLOR_ALLOW, {("aside .warn", "color", "#b45309"): "테스트"}):
+            self.assertEqual(self.bad(body="aside .warn { color: #B45309; }"), [])
+            self.assertNotEqual(self.bad(body="#pathq .res .bad { color: #b45309; }"), [])
+        self.assertEqual(cd.VIEWER_COLOR_ALLOW, {})
 
     def test_selected_fill_and_missing_data_var(self):
         tpl, app = self.tpl()
@@ -624,14 +637,14 @@ class ContrastTest(unittest.TestCase):
         ("warn-ink", "card"), ("err-ink", "card"), ("ai-ink", "ai-hatch-a"), ("on-fill", "human-line"),
         ("risk-ok-ink", "risk-ok-bg"), ("risk-cond-ink", "risk-cond-bg"), ("risk-deny-ink", "risk-deny-bg"),
         ("risk-ok-ink", "card"), ("risk-cond-line", "card"), ("risk-deny-line", "card"),
-        ("on-fill", "hl-safeguard"), ("hl-safeguard", "card"), ("#b45309", "card")]
+        ("on-fill", "hl-safeguard"), ("hl-safeguard", "card")]  # 뷰어 경고 글자(W9)는 warn-ink/card
     REQUIRED_GRAPHIC = (
         [(k, b) for k in ("equipment", "valve", "instrument", "piping_element", "unclassified", "physical_connection",
                           "signal_connection", "measurement_connection", "unresolved")
          for b in ("card", "bg", "kg-canvas")]
         + [(k, b) for k in ("hl-cause", "hl-path", "hl-safeguard") for b in ("card", "bg")
            if (k, b) != ("hl-safeguard", "card")]  # hl-safeguard/card는 REQUIRED_TEXT 4.5:1이 대신함
-        + [("ui", "bg"), ("tag", "card"), ("#16a34a", "bg")]
+        + [("ui", "bg"), ("tag", "card"), ("ok", "bg")]  # ok/bg: 뷰어 통과 점(W9, 옛 #16a34a)
         + [("card", "equipment")])  # W7 그래프 선택 노드 흰 띠/설비 채움(고리는 ui/card·ui/bg)
 
     def test_required_pairs_and_thresholds(self):

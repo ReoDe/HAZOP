@@ -427,13 +427,10 @@ def baseline_increases(rows, baseline_rows):
 # :root를 덮어쓰므로, 비교 기준은 web_css()의 :root(= COLORS + --selected + --hl-dim)다.
 VIEWER_DATA_VARS = ("equipment", "valve", "instrument", "piping_element", "unclassified", "physical_connection",
                     "signal_connection", "measurement_connection", "unresolved")  # 템플릿 JS가 "var(--" + 종류 로 만듦
-# 토큰과 값이 달라 남겨 둔 색 리터럴. (선택자, 속성, 값) 조합에서만 허용한다(값 통일은 결정 대상, evidence/w4-토큰.md §5).
+# 색 리터럴 허용 목록: (선택자, 속성, 값) 조합. W9(D15)에서 남은 3곳(통과 점 #16a34a, 경고 글자 #b45309 2곳)을
+# var(--ok)·var(--warn-ink)로 바꿔 비웠다. 다시 채우면 tests/test_design.py가 실패한다(새 색은 tokens.py 토큰으로).
 # 템플릿 HTML 속성·JS에는 색 리터럴이 없다(EDGE_COLOR에 없는 관계 종류는 undefined, 범례 대체는 var(--muted)).
-VIEWER_COLOR_ALLOW = {
-    (".chip.passed::before", "color", "#16a34a"): "구조 검증 통과 점(앱 --ok #15803d와 다름)",
-    ("aside .warn", "color", "#b45309"): "속성 패널 경고 글자(토큰 없음)",
-    ("#pathq .res .bad", "color", "#b45309"): "경로 질의 경고 글자(토큰 없음)",
-}
+VIEWER_COLOR_ALLOW = {}
 SELECTED_RULE = ".selected.sym, .selected.tagbox"
 # CSS 이름 색(CSS Color Module Level 4). transparent·currentcolor·none은 색 값이 아니라 뺀다.
 CSS_NAMED_COLORS = frozenset("""
@@ -659,7 +656,7 @@ def color_check():
     from hazop.viewer import build
     with open(build.TEMPLATE, encoding="utf-8") as fh:
         bad = viewer_color_problems(fh.read(), tokens.web_css())
-    print("뷰어·앱 색 비교: %s" % ("통과(템플릿 :root = 앱 토큰, 색 리터럴은 허용 목록 %d곳뿐)" % len(VIEWER_COLOR_ALLOW)
+    print("뷰어·앱 색 비교: %s" % ("통과(템플릿 :root = 앱 토큰, 색 리터럴은 허용 목록 %d곳)" % len(VIEWER_COLOR_ALLOW)
                                  if not bad else "실패 %d건" % len(bad)))
     for b in bad:
         print("  - %s" % b)
@@ -668,7 +665,7 @@ def color_check():
 
 # ---------------------------------------------------------------- 명암비(W5, D7). WCAG 2.1 상대 휘도·대비 공식.
 # 기준: 글자 4.5:1(SC 1.4.3, 앱 글자는 11~15px라 모두 일반 글자), UI 구성요소·그래픽 3:1(SC 1.4.11).
-# (글자·그래픽 색, 바탕, 기준, 쓰는 곳). 이름은 tokens.COLORS 키, "#"로 시작하면 토큰 밖 리터럴(템플릿 허용 목록).
+# (글자·그래픽 색, 바탕, 기준, 쓰는 곳). 이름은 tokens.COLORS 키, "#"로 시작하면 토큰 밖 리터럴(W9 이후 쓰는 쌍 없음).
 TEXT, GRAPHIC = 4.5, 3.0
 _DATA = ("equipment", "valve", "instrument", "piping_element", "unclassified", "physical_connection",
          "signal_connection", "measurement_connection", "unresolved")
@@ -691,7 +688,7 @@ CONTRAST_PAIRS = [
     ("ok", "ok-bg", TEXT, "통과 칩"),
     ("err-ink", "err-bg", TEXT, "막힘 칩·오류 띠"),
     ("warn-ink", "warn-bg", TEXT, "경고 칩·경고 띠·뷰어 정렬 경고"),
-    ("warn-ink", "card", TEXT, "③ 오른쪽 상세의 경고 글자"),
+    ("warn-ink", "card", TEXT, "③ 오른쪽 상세의 경고 글자·뷰어 경고 글자(aside .warn·경로 질의 .bad, W9)"),
     ("err-ink", "card", TEXT, "③ 오른쪽 상세의 '근거 없음' 글자"),
     ("ai-ink", "ai-hatch-a", TEXT, "AI 배지"),
     ("on-fill", "human-line", TEXT, "사람 확정 배지"),
@@ -703,7 +700,6 @@ CONTRAST_PAIRS = [
     ("risk-deny-line", "card", TEXT, "위험도 제안 칩 5 글자(속 빈 칩)"),
     ("on-fill", "hl-safeguard", TEXT, "보호수단 배지"),
     ("hl-safeguard", "card", TEXT, "보호수단 약한 배지 글자"),
-    ("#b45309", "card", TEXT, "뷰어 경고 글자(aside .warn·경로 질의 .bad, 허용 목록)"),
 ]
 # 도면·그래프 기호 색: 실제로 그리는 바탕은 ②·독립 뷰어·graph_only_html의 흰 도면(--card·#fff)과 ③ 캔버스(--kg-canvas).
 # --bg 쌍은 그리는 바탕이 아니라 D1이 계측 연결 조정을 확정한 근거(W1 §3.1)를 지키는 회귀 방지 쌍이다.
@@ -717,7 +713,7 @@ CONTRAST_PAIRS += [
     # 고리와 설비 채움(ui/equipment 1.30:1)은 흰 띠가 떼어 놓으므로 흰 띠/설비 채움을 검사한다.
     ("card", "equipment", GRAPHIC, "그래프 선택 노드의 흰 띠 / 설비 채움(선택 고리와 채움을 떼어 놓음)"),
     ("tag", "card", GRAPHIC, "태그 상자 테두리"),
-    ("#16a34a", "bg", GRAPHIC, "뷰어 통과 점(.chip.passed::before, 허용 목록)"),
+    ("ok", "bg", GRAPHIC, "뷰어 통과 점(.chip.passed::before, .chip 바탕 --bg, W9)"),
 ]
 
 
