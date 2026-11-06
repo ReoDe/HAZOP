@@ -106,18 +106,38 @@ def holds_html(holds):
         esc(h.get("reason")), esc(h.get("request")), esc(h.get("source")), esc(h.get("scope"))) for h in holds)
 
 
+def validation_error_text(e):
+    """검증 오류 dict({type, path, detail}) -> 'type path: detail'. 실행 기록 탭(기술 상세) 전용."""
+    if not isinstance(e, dict):
+        return str(e)
+    return "%s %s: %s" % (e.get("type"), e.get("path"), e.get("detail"))
+
+
+def ai_run_error_text(r):
+    """실행 기록의 원문 오류(result.error, merge_error). 실행 기록 탭에서만 보여 준다."""
+    res = r.get("result") or {}
+    parts = [str(x) for x in (res.get("error"), r.get("merge_error")) if x]
+    return "; ".join(parts)
+
+
 def ai_runs_html(doc, cand):
     an = cand.get("analysis") or {}
     runs = [r for r in doc.get("ai_runs") or [] if r.get("candidate_id") == cand["candidate_id"]]
-    h = ["<p>AI 상태: <b>%s</b></p>" % esc(data.AI_STATUS_LABELS.get(an.get("ai_status"), an.get("ai_status") or "미요청"))]
+    st = an.get("ai_status")
+    h = ["<p>AI 상태: <b title='%s'>%s</b></p>" % (esc(st or "not_requested"),
+                                                  esc(data.AI_STATUS_LABELS.get(st, st or "미요청")))]
     for r in runs:
         v = r.get("validation") or {}
         cl = r.get("client") or {}
-        h.append("<p><b>%s</b> 시도 %s · 상태 %s<br>응답 출처: %s (%s)<br>검증: %s<br>오류: %s<br>경고: %s</p>" % (
-            esc(r.get("ai_run_id")), esc(r.get("attempt")), esc(r.get("status")), esc(cl.get("type")),
-            esc(cl.get("response_dir")), esc(v.get("status") if isinstance(v, dict) else v),
-            esc("; ".join((v.get("errors") or []) if isinstance(v, dict) else []) or "없음"),
-            esc("; ".join(str(w) for w in r.get("warnings") or []) or "없음")))
+        h.append("<p><b>%s</b> 시도 %s · 상태 <span title='%s'>%s</span><br>응답 출처: %s (%s)<br>검증: %s<br>"
+                 "오류: %s<br>검증 오류: %s<br>경고: %s</p>" % (
+                     esc(r.get("ai_run_id")), esc(r.get("attempt")), esc(r.get("status")),
+                     esc(data.AI_STATUS_LABELS.get(r.get("status"), r.get("status"))), esc(cl.get("type")),
+                     esc(cl.get("response_dir")), esc(v.get("status") if isinstance(v, dict) else v),
+                     esc(ai_run_error_text(r) or "없음"),
+                     esc("; ".join(validation_error_text(e) for e in
+                                   ((v.get("errors") or []) if isinstance(v, dict) else [])) or "없음"),
+                     esc("; ".join(str(w) for w in r.get("warnings") or []) or "없음")))
     for rej in an.get("rejected_ai_scenarios") or []:
         h.append(box("%s 거부된 AI 가설: %s<br>사유: %s" % (badge("[AI] 거부", "err"), esc(rej.get("cause") or rej.get("scenario")),
                                                        esc(rej.get("reason") or rej.get("rejected_reason"))), "ai"))

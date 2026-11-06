@@ -254,6 +254,50 @@ class AnthropicClient:
         return dict(res, status="completed" if err is None else "parse_error", raw_text=text, output=out, error=err)
 
 
+# 사용자에게 보이는 문구(보류·자료 요청 메모·⑤ 화면·워크시트). 원문 예외·내부 필드명은 실행 기록(ai_runs[].result.error 등)에만 남긴다.
+# AI 상태 한국어 라벨의 정본(hazop/app/data.py AI_STATUS_LABELS, hazop/export/worksheet.py가 이것을 쓴다).
+STATUS_LABELS_KO = {"not_requested": "미요청", "validated": "완료", "failed": "실패", "no_response": "응답 없음", "input_mismatch": "입력 불일치", "refused": "거절", "truncated": "잘림",
+                    "api_error": "AI 서비스 오류", "parse_error": "응답 형식 오류", "client_error": "호출 오류",
+                    "validation_failed": "검증 실패", "merge_error": "반영 오류"}
+_STATUS_MESSAGES = {
+    "no_response": "이 후보의 고정 응답 파일이 없음",
+    "input_mismatch": "고정 응답이 현재 입력(구간 또는 근거 묶음)과 맞지 않아 쓰지 않음",
+    "refused": "AI가 응답을 거절함",
+    "truncated": "AI 응답이 최대 길이에서 잘림",
+    "parse_error": "AI 응답을 읽을 수 없는 형식임",
+    "client_error": "AI 호출 중 예상하지 못한 오류가 발생함",
+    "merge_error": "AI 결과를 분석 결과에 반영하는 중 오류가 발생함",
+}
+_API_ERROR_MESSAGES = {
+    "rate_limit": "AI 서비스 요청 한도를 넘음(잠시 뒤 재시도)",
+    "api_status": "AI 서비스가 오류 응답을 보냄",
+    "connection": "AI 서비스에 연결하지 못함(네트워크 확인)",
+}
+_VALIDATION_TYPES_KO = {"schema_error": "형식", "reference_error": "참조", "value_error": "값",
+                        "risk_without_criteria": "기준표 없는 위험도", "safeguard_not_recognized": "보호수단 미인정"}
+
+
+def status_label(status):
+    return STATUS_LABELS_KO.get(status, "실패")
+
+
+def user_message(status, res=None, validation_errors=None):
+    """실패 상태 -> 한국어 사용자 문구. 원문 예외 문자열·필드 경로는 넣지 않는다."""
+    res = res or {}
+    if status == "validation_failed":
+        counts = {}
+        for e in validation_errors or []:
+            k = _VALIDATION_TYPES_KO.get(e.get("type"), "기타")
+            counts[k] = counts.get(k, 0) + 1
+        return "AI 응답이 검증을 통과하지 못함(%s)" % ", ".join("%s 오류 %d건" % kv for kv in counts.items())
+    if status == "api_error":
+        msg = _API_ERROR_MESSAGES.get(res.get("error_type"), "AI 서비스 응답을 처리하지 못함")
+        if res.get("error_type") == "api_status" and isinstance(res.get("status_code"), int):
+            msg += "(HTTP %d)" % res["status_code"]
+        return msg
+    return _STATUS_MESSAGES.get(status, "AI 해석을 얻지 못함")
+
+
 def _dump(obj):
     if obj is None or isinstance(obj, (dict, str, int, float, bool)):
         return obj

@@ -668,11 +668,11 @@ def run_ai_step(doc, graph, criteria, client, now=utc_now, only=None, progress=N
         c["analysis"]["ai_status"] = status
         holds.close(c["candidate_id"], "ai", record["ai_run_id"], finished)
         if status != AI_DONE:
-            detail = record.get("merge_error") or res.get("error") or ""
-            if record["validation"] and record["validation"]["errors"]:
-                detail = "; ".join("%s %s: %s" % (e["type"], e["path"], e["detail"]) for e in record["validation"]["errors"][:5])
-            holds.add(c["candidate_id"], "AI 해석", "AI 해석 없음(%s)" % status,
-                      "%s — 패턴 기반 초안·탐색 결과는 보존, 위험도 미제안" % detail,
+            # 사용자 문구는 한국어로 감싼다. 원문 예외·필드 경로는 실행 기록(record)에만 있다.
+            detail = ai.user_message(status, res, (record["validation"] or {}).get("errors"))
+            holds.add(c["candidate_id"], "AI 해석", "AI 해석 없음(%s)" % ai.status_label(status),
+                      "%s — 상세는 AI 실행 기록 %s. 패턴 기반 초안·탐색 결과는 보존, 위험도 미제안"
+                      % (detail, record["ai_run_id"]),
                       "AI 단계 재시도(resume) 또는 고정 응답 보완", "ai", finished)
         if progress:
             progress()

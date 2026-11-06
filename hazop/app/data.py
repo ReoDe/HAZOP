@@ -11,6 +11,7 @@ import json
 import os
 
 from hazop import paths
+from hazop.analysis import ai as ai_mod
 from hazop.kg.context import omission_texts
 from hazop.register import registry
 from hazop.viewer import build as viewer_build
@@ -229,8 +230,7 @@ def current_graph(region):
 
 # ---------------------------------------------------------------- 표시 계산
 SELECTION_LABELS = {"selected": "선택", "excluded": "제외", "deferred": "보류"}
-AI_STATUS_LABELS = {"not_requested": "미요청", "validated": "완료", "input_mismatch": "입력 불일치(input_mismatch)",
-                    "no_response": "응답 없음", "failed": "실패", "refused": "거절", "truncated": "잘림"}
+AI_STATUS_LABELS = ai_mod.STATUS_LABELS_KO  # 정본은 hazop/analysis/ai.py(한국어만, 영문 코드는 실행 기록 탭의 툴팁·실행 기록에만)
 STATUS_LABELS = {"not_reviewed": "미검토", "reviewing": "검토 중", "deferred": "보류", "confirmed": "확정"}
 DECISION_LABELS = {"accept": "수용", "modify": "수정", "reject": "기각", "defer": "보류", "not_applicable": "해당 없음",
                    "confirm_no_scenario": "시나리오 없음 확인"}

@@ -822,5 +822,30 @@ class WebViewIntegrationTest(AppTestBase):
         self.assertEqual(scr.ctx.missing_local, {"local-node-001"})
 
 
+class AiRunsTabTest(unittest.TestCase):
+    """AI 실행 기록 탭: 검증 오류(dict 목록)를 문자열로 보여 주고(TypeError 없음), 원문 오류·병합 오류를 표시한다.
+    상태는 한국어 라벨, 영문 코드는 툴팁(title)에만."""
+
+    def test_validation_errors_and_raw_errors_rendered(self):
+        from hazop.analysis import ai
+        from hazop.app import data, render
+        from tests.test_analysis import BAD_DIR, analyze
+        doc = analyze(client=ai.FixedResponseClient(BAD_DIR))
+        c = next(x for x in doc["candidates"] if x["candidate_id"] == "deviation-p86-d09")
+        html_text = render.ai_runs_html(doc, c)  # 수정 전: "; ".join(dict 목록)에서 TypeError
+        self.assertIn("reference_error $.", html_text)
+        self.assertIn("검증 실패", html_text)
+        self.assertIn("title='validation_failed'", html_text)
+        self.assertIs(data.AI_STATUS_LABELS, ai.STATUS_LABELS_KO)
+        self.assertNotIn("(input_mismatch)", data.AI_STATUS_LABELS["input_mismatch"])
+        rec = {"ai_run_id": "airun-x-01", "attempt": 1, "status": "merge_error", "client": {},
+               "result": {"status": "api_error", "error": "Error code: 500 raw"}, "merge_error": "RuntimeError: 병합 실패",
+               "validation": None, "warnings": []}
+        d = {"ai_runs": [dict(rec, candidate_id="c1")]}
+        out = render.ai_runs_html(d, {"candidate_id": "c1", "analysis": {"ai_status": "merge_error"}})
+        self.assertIn("Error code: 500 raw; RuntimeError: 병합 실패", out)
+        self.assertIn("반영 오류", out)
+
+
 if __name__ == "__main__":
     unittest.main()
