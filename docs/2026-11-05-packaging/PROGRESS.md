@@ -3,7 +3,7 @@
 > **역할**: 작업 단위별 상세 상태, 완료 기준, 결과, 증거와 다음 행동을 관리하는 유일한 원장.
 > **투영 규칙**: [`ROADMAP.md`](ROADMAP.md)는 이 문서의 단계·순서·게이트·현재 행동을 한 장으로 요약한다.
 > **갱신 규칙**: 확인 가능한 증거가 있는 변화만 기록하고, 갱신할 때마다 기준 일시와 변경 이력을 함께 바꾼다.
-> **기준일**: 2026-11-06 12:05
+> **기준일**: 2026-11-06 13:25
 
 ## 1. 작업 단위 상태 장부
 
@@ -22,6 +22,7 @@
 | `W9` | 완료(D15·D16) | 라이선스 고지 원문 동봉(VC++ 재배포·liblzma·Qt 내부 제3자·PDFium·WebEngine 목록·Mesa·LLVM, Qt판 LGPL·GPL), pdfplumber와 의존성 묶음 포함, 고지를 실행 파일 옆 `licenses/`로 | 받은 원문마다 출처·날짜·SHA-256·크기 기록, 고지 목록 대조 테스트 통과, 빌드가 실행 파일 옆 고지·PDF 모듈을 검사하고 묶인 실행에서 PDF 어댑터 동작, 재빌드 2종·ASCII·한글 verify 4회 통과 | 사용자 결정(2026-11-06, D15), `W6`·`W8-B` |
 | `W9-B` | 완료(D17·D19) | 남은 고지 원문: VS 2022 사용 조건 .docx(텍스트 사본 포함), cryptography 안 OpenSSL 4.0.0·Rust 크레이트 원문 | 받은 원문마다 URL·SHA-256·크기 기록, 고지 목록 대조 테스트 통과, 재빌드 고지 검사·verify 통과 | 총괄 결정(권고안, 사용자 위임 2026-11-06), `W9` |
 | `W10` | 완료(D18·D19) | 앱 정보 창(고지 위치·열기·법무 검토 전 안내), 설정 파일 손상 시 한국어 대화상자(백업 후 기본값/종료)·비대화형 rc 2, verify 미처리 예외 시험을 창 없는 방식으로 | 테스트(손상 설정·정보 창 경로·verify 변경) 통과, 재빌드 2종·ASCII·한글 verify 4회 통과, verify 중 모달·오류 창 없음(`--screenshots` 스크린샷 단계는 비모달 창이 잠깐 뜸) | 총괄 결정(권고안, 사용자 위임 2026-11-06), `W9-B` |
+| `W11` | 구현 완료(검토 대기, D20) | 배포본 최종 빌드(새 기능 없음, 기준 `ad9175b`) | 스냅숏 재빌드 2종 rc=0, ASCII·한글 verify 4회 통과, 배포용 묶음 zip 크기·SHA-256 기록(저장소 밖) | `W10`, 사용자 목표(2026-11-06 빠른 패키징) |
 
 작업 추가·분할은 [`README.md`](README.md)의 확장 규칙을 따른다. 기존 ID·완료 이력·증거는 보존하고 새 작업에는 관련 결정 ID를 연결한다.
 
@@ -37,6 +38,7 @@
 | `W9` | 완료(D16): 재검토 Claude·Codex 조건부 승인, 문서 4건 총괄 직접 수정. 1회차 내용: Claude·Codex 조건부 승인 반영 — verify PDF 필수 키 검사, 고지 대조 탐색 오류 실패, qtbase LicenseFile·CopyrightFile 원문 25개 추가(libjpeg-turbo `COPYRIGHT.txt` 포함), cryptography SBOM 2개 동봉, README 표 연속성 검사, finish_bundle rc=3 테스트. 재빌드 2종 rc=0, 배포용 2,529개·567.3 MiB, verify 4회 통과, test_packaging 63 OK, venv 689 OK(건너뜀 5). 1차: 원문 52개 받음·1개 받지 못함(VS 2022 사용 조건 본문은 .docx), `licenses/` 원문 79개 추가·2개 교체, pdfplumber 등 8개를 해시 고정 설치(`pip freeze` +8, 그 밖 변화 없음). 스냅숏 `cd3194d` 재빌드 2종 rc=0(D10·D13 검사 통과), 배포용 2,502개·567.1 MiB(+268개·+39.7 MiB), verify 4회 통과(검증용 pdf_probe 통과). test_packaging 60 OK, venv 686 OK(건너뜀 5) | [w9-고지원문.md](evidence/w9-고지원문.md) | 재검토(Claude·Codex) → 사용자 확인: ① VS 2022 사용 조건 본문(.docx) 받기 여부 ② cryptography 안 OpenSSL·Rust 크레이트 원문 내려받기 승인 여부(지금은 휠 동봉 SBOM만, [evidence §10.2](evidence/w9-고지원문.md)). 앱 정보 창 안내는 `W10` |
 | `W9-B` | 재작업 1회차 반영(재검토 대기, D17): OpenSSL·크레이트 행 수정 열을 "휠 파일 미수정(RECORD 대조), 소스 수정 여부 미확인"으로. 1차: 원문 63개 추가(.docx 1·텍스트 사본 1·OpenSSL 1·crates.io 크레이트 32개의 원문 60), 받지 못함 0. `.crate` 32개 SHA-256 = SBOM. 크레이트는 SBOM으로 런타임·빌드를 다 구분하지 못해 32개 전부. test_packaging 65 OK | [w9-고지원문.md](evidence/w9-고지원문.md) §11 | 검토(Claude·Codex) → QA |
 | `W10` | 완료(D19, 재검토 Claude 승인·Codex 조건부 승인 → 권한 오류 경로 총괄 직접 수정). 재작업 1회차: 시험 트리거를 검증용 빌드 표지 훅으로 한정(배포용 verify는 트리거 꺼짐 rc 2 확인), 대화상자 뒤 파일 재확인, 설정 읽기 OSError 안내, WARNING 기록, BOM 허용, 정보 창 "닫기"·열기 실패 안내, verify 단계 4 대역 실행 테스트. HEAD `c155845` 스냅숏 재빌드 2종 rc=0, verify 4회 통과, 스냅숏 전체 708 OK(건너뜀 8), test_packaging 66·test_app_startup 15 OK([evidence §7](evidence/w10-정보창.md)). 1차: `paths.licenses_dir()`, 정보 창 보강(메뉴 이름은 기획서대로 "버전·데이터 위치"), `hazop/app/startup.py`, `run_app` 시작 전 확인·시험 트리거, verify 단계 4 교체. 스냅숏 `3231a54` 재빌드 2종 rc=0, 배포용 2,592개·595,326,751 bytes, verify 4회 통과(손상 설정 0.2초 rc 2, 시험 트리거 0.1초 rc 70), venv 703 OK(건너뜀 5). 기획서 문안은 evidence §5 | [w10-정보창.md](evidence/w10-정보창.md) | 검토(Claude·Codex) → 기획서 문안 반영(planner) → QA |
+| `W11` | 구현 완료(검토 대기, D20). 스냅숏 `ad9175b`(603개, overlay 0) 재빌드 2종 rc=0(검증용 89초·배포용 64초), 배포용 2,592개·595,431,756 bytes, verify 4회 통과, zip `HAZOP-0.1.0-20261106.zip` 230,288,644 bytes·SHA-256 `8be9acf9…cdcd`, 푼 zip verify 통과, 스냅숏 841 OK(건너뜀 9). 새 스크립트 3개는 묶지 않음(현행 유지) | [w11-최종빌드.md](evidence/w11-최종빌드.md) | 검토 → QA |
 | `W6` | 고지 초안 완료, 사용자 확인·추가 원문 대기. 재작업 1회차(Codex 반려·Claude 조건부 승인 반영): `licenses/` 원문 42개·안내문 2개·고지 목록(수정 여부·SHA-256), 기준 목록 대조 테스트, 묶음 대비 누락 목록·수집 목록 첨부, verify_bundle licenses 검사(재빌드로 확인). venv 전체 605 OK(건너뜀 14) | [w6-라이선스.md](evidence/w6-라이선스.md), [첨부](evidence/w6-묶음수집목록.md) | 재검토 → 사용자 확인 항목(evidence §9) 판단: Chromium 등 추가 원문 다운로드 승인, GPL 전용 모듈 (가)/(나), LGPL 요건·소스 제공 방식 |
 
 ## 3. 완료 결과
@@ -87,3 +89,4 @@ D7(묶인 실행 로그를 런타임 훅으로 `<작업 루트>/logs/app.log`에
 | 2026-11-06 11:10 | `W9` 재작업 1회차(Claude·Codex 조건부 승인 반영): verify PDF 필수 키 검사, `_tree_hashes` 탐색 오류 실패, qtbase 원문 25개·cryptography SBOM 2개 추가, README 표 빈 줄 제거·연속성 검사, finish_bundle rc=3 테스트, 문구 정정. 재빌드 2종 rc=0, 배포용 2,529개·567.3 MiB, verify 4회 통과, test_packaging 63 OK, venv 689 OK(건너뜀 5). 사용자 확인 항목에 OpenSSL·Rust 크레이트 원문 승인 여부 추가 |
 | 2026-11-06 11:45 | `W9-B`·`W10` 구현 완료(검토 대기): [W9 고지 원문 §11](evidence/w9-고지원문.md), [W10 정보 창](evidence/w10-정보창.md). D17·D18 등록(총괄 결정, 권고안). 원문 63개 추가, 정보 창 고지 안내, 설정 손상 대화상자·비대화형 rc 2, verify 미처리 예외 시험을 창 없는 방식으로. 재빌드 2종 rc=0, 배포용 2,592개·595,326,751 bytes, verify 4회 통과, test_packaging 65 OK·test_app_startup 11 OK, venv 703 OK(건너뜀 5) |
 | 2026-11-06 12:05 | `W9-B`·`W10` 재작업 1회차(Claude·Codex 조건부 승인, 총괄 판정 반영): 시험 트리거를 검증용 빌드 표지 훅(`packaging/rthook_verify_build.py`)으로 한정하고 배포용 verify에서 꺼짐 확인, 설정 파일 재확인·OSError 안내·WARNING·BOM 허용, 정보 창 "닫기"·열기 실패 안내, OpenSSL·크레이트 수정 열 정정, verify 단계 4 대역 실행 테스트. D18 개정. HEAD `c155845` 스냅숏 재빌드 2종 rc=0, verify 4회 통과, 스냅숏 전체 708 OK(건너뜀 8). 작업 트리 전체는 722건 중 오류 1(`tests.test_export`, 다른 담당 진행 중 변경) |
+| 2026-11-06 13:25 | `W11` 구현 완료(검토 대기): [W11 최종 빌드](evidence/w11-최종빌드.md). D20 등록. HEAD `ad9175b` 스냅숏 재빌드 2종 rc=0, verify 4회 통과, 배포용 zip 230,288,644 bytes·SHA-256 `8be9acf9ccec22235c3a651e02d5388364fb81c5d449929674347e967ebbcdcd`(`%TEMP%\hazop-w11`, 저장소 밖), 스냅숏 841 OK(건너뜀 9). `check_contract`·`compare_criteria`·`clean_outputs`는 묶지 않음(현행 유지) |
