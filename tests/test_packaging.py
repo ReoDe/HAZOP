@@ -405,7 +405,10 @@ class BuildSpecTest(unittest.TestCase):
             self.assertIn("scripts/run_app.py", text)
             self.assertEqual("HAZOP-check" in text, with_check)
             self.assertIn("COLLECT(*parts, upx=False, name=%r)" % ("HAZOP-verify" if with_check else "HAZOP"), text)
-            self.assertIn("runtime_hooks=[os.path.join(REPO, 'packaging/rthook_applog.py')]", text)
+            # D18: 시험 트리거 표지 훅은 검증용 빌드의 앱 Analysis에만(배포용에는 없음)
+            hooks = ["packaging/rthook_applog.py"] + (["packaging/rthook_verify_build.py"] if with_check else [])
+            self.assertIn("runtime_hooks=[os.path.join(REPO, h) for h in %r]" % hooks, text)
+            self.assertEqual(text.count("rthook_verify_build"), 1 if with_check else 0)
             self.assertEqual(text.count("keep_warn("), 3 if with_check else 2)  # 정의 1 + Analysis별 복사
             ns = {}
             exec(text.split("from PyInstaller")[0] + "\n".join(
@@ -1021,6 +1024,13 @@ _FG_MIT = ("accessor-fn", "bezier-js", "canvas-color-tracker", "d3-binarytree", 
            "tweenjs-tween.js")
 _FG_ISC = ("d3-array", "d3-color", "d3-dispatch", "d3-drag", "d3-format", "d3-interpolate", "d3-quadtree", "d3-scale",
            "d3-selection", "d3-time", "d3-time-format", "d3-timer", "d3-transition", "d3-zoom", "internmap")
+# W9-B(D17): LICENSE-APACHE·LICENSE-MIT 두 원문을 함께 둔 crates.io 크레이트(cryptography `_rust.pyd`, SBOM 기준)
+_CRATES_MIT_APACHE = (
+    "base64-0.22.1", "bitflags-2.11.1", "cc-1.2.61", "cfg-if-1.0.4", "find-msvc-tools-0.1.9",
+    "foreign-types-shared-0.1.1", "foreign-types-0.3.2", "heck-0.5.0", "itoa-1.0.18", "libc-0.2.186",
+    "once_cell-1.21.4", "openssl-macros-0.1.1", "pkg-config-0.3.33", "portable-atomic-1.13.1", "proc-macro2-1.0.106",
+    "pyo3-build-config-0.28.3", "pyo3-ffi-0.28.3", "pyo3-macros-backend-0.28.3", "pyo3-macros-0.28.3", "pyo3-0.28.3",
+    "quote-1.0.45", "shlex-1.3.0", "syn-2.0.117", "unicode-ident-1.0.24", "vcpkg-0.2.15")
 REQUIRED_NOTICES = dict(
     [("force-graph/%s-%s" % (n, "LICENSE.md" if n == "bezier-js" else "LICENSE"), "MIT") for n in _FG_MIT]
     + [("force-graph/%s-LICENSE" % n, "ISC") for n in _FG_ISC]
@@ -1094,7 +1104,20 @@ REQUIRED_NOTICES = dict(
         ("rfc6234/LICENSE", "BSD-3-Clause"), ("sha3/CC0_LICENSE", "CC0-1.0"), ("sha3/BRG_ENDIAN_LICENSE", "BSD-2-Clause"),
         ("tinycbor/LICENSE", "MIT"), ("zlib/LICENSE", "Zlib"))]
     + [("python/cryptography-sboms/%s" % f, "구성요소별(파일 안)")
-       for f in ("sbom.json", "cryptography-rust.cyclonedx.json")])
+       for f in ("sbom.json", "cryptography-rust.cyclonedx.json")]
+    # W9-B(D17): VS 2022 사용 조건(.docx와 텍스트 사본), cryptography 안 OpenSSL·Rust 크레이트(crates.io .crate) 원문
+    + [("msvc/vs2022-license-terms.docx", "Microsoft 소프트웨어 사용 조건"),
+       ("msvc/vs2022-license-terms.txt", "Microsoft 소프트웨어 사용 조건"),
+       ("python/openssl-4.0.0-LICENSE.txt", "Apache-2.0")]
+    + [("python/cryptography-rust-crates/%s/%s" % (c, f), lic) for c in _CRATES_MIT_APACHE
+       for f, lic in (("LICENSE-APACHE", "Apache-2.0"), ("LICENSE-MIT", "MIT"))]
+    + [("python/cryptography-rust-crates/%s" % f, lic) for f, lic in (
+        ("asn1-0.24.1/LICENSE", "BSD-3-Clause"), ("asn1_derive-0.24.1/LICENSE", "BSD-3-Clause"),
+        ("openssl-sys-0.9.115/LICENSE-MIT", "MIT"), ("openssl-0.10.79/LICENSE", "Apache-2.0"),
+        ("openssl-0.10.79/LICENSE-APACHE", "Apache-2.0"), ("pem-3.0.6/LICENSE.md", "MIT"),
+        ("self_cell-1.2.2/LICENSE-APACHE", "Apache-2.0"), ("self_cell-1.2.2/LICENSE-GPLv2", "GPL-2.0-only"),
+        ("target-lexicon-0.13.5/LICENSE", "Apache-2.0 WITH LLVM-exception"),
+        ("unicode-ident-1.0.24/LICENSE-UNICODE", "Unicode-3.0"))])
 # W9(D15): PDF 어댑터 휠 고정(packaging/requirements-pdf.txt) — 이 8개만, 휠 하나의 sha256씩
 PDF_PINS = {"pdfplumber": "0.11.9", "pdfminer.six": "20251230", "pillow": "12.2.0", "pypdfium2": "5.8.0",
             "charset-normalizer": "3.4.7", "cryptography": "48.0.0", "cffi": "2.0.0", "pycparser": "3.0"}
@@ -1207,6 +1230,18 @@ class LicenseNoticeTest(unittest.TestCase):
         self.assertEqual(_table_problems(good), [])
         self.assertEqual(_table_problems(good + "\n| 3 | 4 |\n"), ["7행: 머리행·구분행 없이 시작하는 표"])
         self.assertEqual(_table_problems(good + "| 3 | 4 | 5 |\n"), ["6행: 칸 수 3 != 머리행 2"])
+
+    def test_rust_crates_cover_sbom(self):
+        """W9-B(D17): SBOM의 crates.io 크레이트마다 원문 폴더(`<이름>-<버전>/`)가 있고, 그 밖의 폴더는 없다.
+        cryptography 내부 경로 크레이트(download_url=file)는 cryptography 고지로 갈음한다."""
+        import json
+        with open(os.path.join(LICENSES_DIR, "python", "cryptography-sboms", "cryptography-rust.cyclonedx.json"),
+                  encoding="utf-8") as fh:
+            comps = json.load(fh)["components"]
+        want = {"%s-%s" % (c["name"], c["version"]) for c in comps if "download_url=file" not in c["purl"]}
+        self.assertEqual(len(want), 32)
+        have = set(os.listdir(os.path.join(LICENSES_DIR, "python", "cryptography-rust-crates")))
+        self.assertEqual(have, want)
 
     def test_removed_row_and_file_detected(self):
         """목록 행과 원문 파일을 함께 지워도(사본에서) 기준 목록 대조로 실패한다. 식별자·해시 변경도 잡는다."""
@@ -1475,6 +1510,94 @@ class VerifierTest(unittest.TestCase):
         for bad in ("..", "a/b", r"a\b", ""):
             with self.assertRaises(ValueError):
                 self.vb.new_run_root(base, bad) if bad else self.vb.new_run_root(base, ".")
+
+    def test_app_checks_without_window(self):
+        """W10(D18) 판정 함수: 손상 설정(--screenshots) rc 2·안내·로그·파일 그대로, 시험 트리거는 검증용 rc 70·배포용 rc 2."""
+        ok = ("설정 파일을 읽을 수 없어 종료합니다: x\n원인: JSONDecodeError: ...", "WARNING hazop.settings: 설정 파일을 읽을 수 없음")
+        self.assertTrue(self.vb.bad_settings_ok(2, ok[0], ok[1], True))
+        self.assertFalse(self.vb.bad_settings_ok(1, ok[0], ok[1], True))
+        self.assertFalse(self.vb.bad_settings_ok(2, "", ok[1], True))
+        self.assertFalse(self.vb.bad_settings_ok(2, ok[0], "", True))
+        self.assertFalse(self.vb.bad_settings_ok(2, ok[0], ok[1], False))  # 백업·덮어쓰기·PNG가 생김
+        hooked = "CRITICAL hazop.unhandled: 미처리 예외\nRuntimeError: 시험용 미처리 예외(HAZOP_TEST_EXCEPTHOOK)"
+        self.assertTrue(self.vb.trigger_ok(False, 70, hooked))
+        self.assertFalse(self.vb.trigger_ok(False, 2, ok[1]))       # 검증용인데 트리거가 꺼짐
+        self.assertFalse(self.vb.trigger_ok(False, 70, hooked.split("\n")[0]))
+        self.assertTrue(self.vb.trigger_ok(True, 2, ok[1]))         # 배포용: 트리거 꺼짐
+        self.assertFalse(self.vb.trigger_ok(True, 70, hooked))      # 배포용인데 트리거가 켜짐
+        with open(os.path.join(REPO_ROOT, "packaging", "verify_bundle.py"), encoding="utf-8") as fh:
+            self.assertNotIn("bad-settings.json", fh.read())
+
+    def _fake_app(self, verify_build, calls):
+        """HAZOP.exe 대역: 실제 scripts/run_app.main을 같은 프로세스에서 부른다(스크린샷 정상 실행만 rc 0으로 건너뜀).
+        앱 로그는 런타임 훅처럼 root logging과 sys.excepthook을 <작업 루트>/logs/app.log에 연결한다.
+        모든 실행이 비대화형(--screenshots 또는 잘못된 옵션)인지 확인하고, 대화상자·QApplication이 불리면 실패한다."""
+        import contextlib
+        import io
+        import logging
+        ra = _load("scripts/run_app.py", "hazop_run_app_fake")
+
+        def fake_run(cmd, env, cwd, log, timeout=None):
+            calls.append((cmd, env.get("HAZOP_TEST_EXCEPTHOOK")))
+            self.assertTrue("--screenshots" in cmd or "--w4-unknown-option" in cmd, cmd)  # 대화형 실행 없음
+            args = cmd[1:]
+            log_path = os.path.join(env["HAZOP_WORK_ROOT"], "logs", "app.log")
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            handler = logging.FileHandler(log_path, encoding="utf-8")
+            handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+            root = logging.getLogger()
+            root.addHandler(handler)
+            level, root.level = root.level, logging.INFO
+            out = io.StringIO()
+
+            def hook(*exc):
+                logging.getLogger("hazop.unhandled").critical("미처리 예외", exc_info=exc)
+            try:
+                if args[:1] == ["--screenshots"] and os.path.dirname(args[3]) == cwd:  # 정상 설정의 스크린샷
+                    logging.getLogger("hazop.startup").info("시작 pid=1")
+                    rc = 0
+                else:
+                    with mock.patch.dict(os.environ, {k: v for k, v in env.items() if k == "HAZOP_TEST_EXCEPTHOOK"}), \
+                            mock.patch.object(sys, "_hazop_verify_build", verify_build, create=True), \
+                            mock.patch.object(sys, "excepthook", hook), \
+                            mock.patch("hazop.app.make_application", side_effect=AssertionError("창 생성")), \
+                            mock.patch("hazop.app.startup.ask_dialog", side_effect=AssertionError("대화상자")), \
+                            contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                        try:
+                            rc = ra.main(args)
+                        except SystemExit as e:
+                            rc = e.code
+            finally:
+                root.removeHandler(handler)
+                handler.close()
+                root.level = level
+            with open(log, "w", encoding="utf-8") as fh:
+                fh.write(out.getvalue())
+            return rc, 0.0, out.getvalue()
+        return fake_run
+
+    def test_app_steps_mock_run(self):
+        """W10(D18) verify 단계 4를 대역 HAZOP.exe(실제 run_app.main)로 실행: 검증용은 트리거 rc 70·미처리 예외 기록,
+        배포용은 트리거 꺼짐 rc 2. 두 경우 모두 손상 설정 rc 2·파일 그대로이고, 대화형 실행·창 생성이 없다."""
+        for verify_build in (True, False):
+            for app_only in (False, True):
+                tmp = tempfile.mkdtemp(prefix="hazop-appsteps-", dir=self.tmp)
+                work = os.path.join(tmp, "work")
+                out, png = os.path.join(tmp, "out"), os.path.join(tmp, "png")
+                os.makedirs(out)
+                calls, summary = [], {"steps": {}, "checks": {}}
+                with mock.patch.object(self.vb, "run", self._fake_app(verify_build, calls)):
+                    rc, _, rc2 = self.vb.app_steps("HAZOP.exe", {"HAZOP_WORK_ROOT": work}, tmp, out, png, None,
+                                                   app_only, summary)
+                c, st = summary["checks"], summary["steps"]
+                self.assertEqual((rc, rc2, st["app_bad_settings"]["rc"]), (0, 2, 2))
+                self.assertEqual(st["app_excepthook"]["rc"], 70 if verify_build else 2)
+                self.assertTrue(c["app_bad_settings"] and c["app_log_started"] and c["app_bad_option_rc2"])
+                key = "app_trigger_off" if app_only else "app_log_unhandled"
+                # 빌드 종류와 판정 기준이 맞을 때만(검증용 빌드 + 검증 판정, 배포용 빌드 + --app-only) 통과
+                self.assertEqual(c[key], verify_build is not app_only, (verify_build, app_only))
+                self.assertEqual(len(calls), 4)
+                self.assertEqual([e for _, e in calls], [None, None, None, "1"])
 
     def test_child_env_path_is_system_only(self):
         """묶인 실행 PATH는 Windows System32·Windows 폴더뿐이고 Qt·OpenSSL 설정 변수는 지운다(D10, 사용자 PATH 의존 제거)."""

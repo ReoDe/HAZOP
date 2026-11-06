@@ -59,6 +59,7 @@ APP_NAME = "HAZOP"
 CHECK_NAME = "HAZOP-check"
 VERIFY_DIST = "HAZOP-verify"  # --with-check 결과 폴더 이름
 RUNTIME_HOOK = "packaging/rthook_applog.py"
+VERIFY_HOOK = "packaging/rthook_verify_build.py"  # 검증용 HAZOP.exe에만: 시험 트리거 표지(D18)
 ENTRY = "scripts/run_app.py"
 CHECK_ENTRY = "packaging/check_entry.py"
 # 묶음에 넣는 파일·폴더(저장소 기준 상대 경로, 묶음 안에서도 같은 상대 위치)
@@ -180,7 +181,8 @@ def spec_text(repo_root=REPO_ROOT, with_check=False):
         "    if w and os.path.isfile(w):",
         "        shutil.copyfile(w, w[:-4] + '-' + tag + '.txt')",
         "a = Analysis([os.path.join(REPO, %r)], pathex=PATHEX, datas=DATAS, hiddenimports=HIDDEN," % ENTRY,
-        "             runtime_hooks=[os.path.join(REPO, %r)], excludes=EXCLUDES, noarchive=False)" % RUNTIME_HOOK,
+        "             runtime_hooks=[os.path.join(REPO, h) for h in %r], excludes=EXCLUDES, noarchive=False)"
+        % ([RUNTIME_HOOK] + ([VERIFY_HOOK] if with_check else [])),
         "keep_warn('app')",
         "a.binaries = drop_binaries(a.binaries)",
         "a.datas = drop_binaries(a.datas)",

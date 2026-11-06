@@ -69,6 +69,14 @@ def program_path(*parts):
     return os.path.join(program_root(), *parts)
 
 
+def licenses_dir():
+    """제3자 라이선스 고지 폴더: 묶인 실행이면 실행 파일 옆 licenses/(빌드가 복사, 패키징 D15), 아니면 저장소 licenses/.
+    추가 API(패키징 W10). 폴더가 있는지는 보지 않는다."""
+    if frozen_bundle_dir():
+        return os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "licenses")
+    return os.path.join(REPO_ROOT, "licenses")
+
+
 def resource_root():
     env = os.environ.get(ENV_RESOURCE_ROOT)
     if env:
@@ -115,12 +123,17 @@ def settings_path():
 
 def load_settings(path=None):
     """설정을 읽는다. 파일이 없으면 기본값. JSON 객체가 아니면 ValueError(기본값으로 조용히 바꾸지 않음).
-    work_root 값은 기록만 한다: 작업 루트 결정(work_root())은 환경변수만 본다."""
+    work_root 값은 기록만 한다: 작업 루트 결정(work_root())은 환경변수만 본다.
+    읽기는 utf-8-sig(메모장 등이 붙인 UTF-8 BOM 허용, 패키징 W10). 쓰기(save_settings)는 BOM 없는 UTF-8 그대로."""
     path = path or settings_path()
     out = json.loads(json.dumps(DEFAULT_SETTINGS))
-    if not os.path.isfile(path):
+    try:
+        os.stat(path)  # 권한 오류는 '없음'으로 삼키지 않고 OSError로 올린다(isfile은 False로 삼킴)
+    except FileNotFoundError:
         return out
-    with open(path, encoding="utf-8") as fh:
+    if not os.path.isfile(path):
+        raise OSError("설정 경로가 파일이 아님: %s" % path)
+    with open(path, encoding="utf-8-sig") as fh:
         doc = json.load(fh)
     if not isinstance(doc, dict):
         raise ValueError("설정 파일이 JSON 객체가 아님: %s" % path)

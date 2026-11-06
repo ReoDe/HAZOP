@@ -11,6 +11,7 @@
 | `requirements-pdf.txt` | PDF 어댑터 8종(pdfplumber 0.11.9와 의존성, 휠 sha256 고정). `pip install --require-hashes --no-deps --only-binary=:all: -r`(T2 D15) |
 | `pdf_probe.py` | 묶인 실행(`HAZOP-check.exe`)에서 PDF 어댑터 추출·pypdfium2 렌더링 확인(verify 단계 3b, 검증 전용) |
 | `rthook_applog.py` | `HAZOP.exe` 런타임 훅: 묶인 실행 로그를 `<작업 루트>/logs/app.log`에 남김(D7안) |
+| `rthook_verify_build.py` | 검증용 빌드(`--with-check`)의 `HAZOP.exe`에만 넣는 런타임 훅: 시험 트리거 표지(`sys._hazop_verify_build`). 배포용에는 없음(T2 D18) |
 | `check_entry.py` | 검증 전용 `HAZOP-check.exe` 입구(`scripts/build_package.py --with-check`). 배포본에 넣지 않는다 |
 | `w4_flow.py` | 묶인 실행에서 ①~⑤ 함수 흐름·자원 읽기 위치·음성 검사(`HAZOP-check.exe`로 실행) |
 | `verify_bundle.py` | 묶음을 저장소 밖 경로에 복사해 ①~⑤·③ V1·V2·S1·스크린샷·앱 로그 확인. 배포용은 `--app-only` |
