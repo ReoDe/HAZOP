@@ -948,7 +948,32 @@ def _k2(c):
         got = {k: gf.get(k) for k in FLOW_KEYS}
         if got != want:
             c.fail("K2", obj["entity_id"], "흐름 방향이 추출과 다름 (기대 %s, 실제 %s)" % (want, got))
-    return t, "흐름 방향 %d개가 추출과 같음" % n
+    # 체크밸브 허용 방향: 그래프 check_direction이 있으면 추출 판정(local_id -> entity_id)과 같아야 함
+    ext_nodes = {x["local_id"]: x for x in c.extraction["nodes"]}
+    cv = 0
+    for node in c.graph["nodes"]:
+        gcd = node.get("check_direction")
+        if gcd is None:
+            continue
+        cv += 1
+        cd = ext_nodes.get(node.get("local_id"), {}).get("check_direction")
+        if not cd:
+            c.fail("K2", node["entity_id"], "추출에 없는 체크밸브 허용 방향 (local_id %s)" % node.get("local_id"))
+            continue
+        want = {"inlet": ent.get(cd["inlet"]), "outlet": ent.get(cd["outlet"])}
+        got = {k: gcd.get(k) for k in ("inlet", "outlet")}
+        if got != want:
+            c.fail("K2", node["entity_id"], "체크밸브 입구·출구가 추출 판정과 다름 (기대 %s, 실제 %s)" % (want, got))
+        want = {"basis": list(cd["basis"]), "status": cd["status"]}
+        got = {k: gcd.get(k) for k in ("basis", "status")}
+        if got != want:
+            c.fail("K2", node["entity_id"], "체크밸브 근거·상태가 추출 판정과 다름 (기대 %s, 실제 %s)" % (want, got))
+    # 반대 방향: 추출에는 판정이 있는데 그래프 노드에서 빠졌으면 FAIL(빌더 전달 누락)
+    graph_by_local = {x.get("local_id"): x for x in c.graph["nodes"]}
+    for lid, x in ext_nodes.items():
+        if x.get("check_direction") and lid in graph_by_local and graph_by_local[lid].get("check_direction") is None:
+            c.fail("K2", graph_by_local[lid]["entity_id"], "그래프에 없는 체크밸브 허용 방향 (추출 local_id %s)" % lid)
+    return t, "흐름 방향 %d개, 체크밸브 허용 방향 %d개가 추출과 같음" % (n, cv)
 
 
 def _k3(c):

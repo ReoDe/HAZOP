@@ -380,6 +380,31 @@ class SampleChainTest(_Base):
         for cid in ("K2", "K1", "X2"):
             self.assertIn("FAIL", levels(res, cid), cid)
 
+    def test_k2_check_valve_direction(self):
+        """체크밸브 허용 방향(K2 확장): 추출 판정과 같으면 PASS, 그래프에서 입출구를 바꾸면 FAIL."""
+        work, store = self.variant()
+        gpath = os.path.join(work, "출력", "그래프", "SNP-M-102", "graph.json")
+        epath = os.path.join(work, "출력", "추출", "SNP-M-102", "extraction.json")
+        graph = read_json(gpath)
+        segs = [n for n in graph["nodes"] if n.get("node_type") == "pipe_segment"][:2]
+        valve = next(n for n in graph["nodes"] if n.get("category") == "valve")
+        cd = {"inlet": segs[0]["local_id"], "outlet": segs[1]["local_id"], "basis": ["attribute"], "status": "declared"}
+        self.edit_json(epath, lambda d: next(x for x in d["nodes"] if x["local_id"] == valve["local_id"])
+                       .update(check_direction=cd))
+
+        def set_graph(inlet, outlet):
+            def fn(d):
+                node = next(x for x in d["nodes"] if x["entity_id"] == valve["entity_id"])
+                node["check_direction"] = dict(cd, inlet=inlet, outlet=outlet)
+            self.edit_json(gpath, fn)
+
+        set_graph(segs[0]["entity_id"], segs[1]["entity_id"])
+        self.assertEqual(levels(self.check(work, store), "K2"), ["PASS"])
+        set_graph(segs[1]["entity_id"], segs[0]["entity_id"])
+        res = self.check(work, store)
+        self.assertEqual(levels(res, "K2"), ["FAIL"])
+        self.assertTrue(any("K2 %s: 체크밸브 입구·출구가 추출 판정과 다름" % valve["entity_id"] in x for x in fails(res)))
+
     def test_v16_graph_hold_deleted(self):
         work, store = self.variant()
 
