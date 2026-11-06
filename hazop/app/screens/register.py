@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QFormLayout, QFra
 
 from hazop import paths
 from hazop.app import data, tokens
-from hazop.app.widgets import badge, esc, empty_label
+from hazop.app.widgets import VALIDATION_LABELS, badge, esc, empty_label
 from hazop.extract import svg_align
 from hazop.register import fileinfo, registry
 
@@ -332,7 +332,7 @@ class RegisterScreen(QWidget):
         h = ["<p style='color:%s'><b>추출·그래프 생성 %s</b></p>" % (tokens.c("ok") if st == "passed" else tokens.c("err-ink"),
                                                               "완료" if st == "passed" else "— 구조 검증 차단(%s)" % esc(st)),
              "<p>추출 검증: %s · 노드 %d · 관계 %d · 미해결 %d · 미확인 %d<br>%s</p>" % (
-                 esc({"passed": "통과", "blocked": "차단"}.get(ex["validation"]["status"], ex["validation"]["status"])), s["nodes"], s["relations"], s["unresolved_connectors"], s["unknowns"],
+                 esc(VALIDATION_LABELS.get(ex["validation"]["status"], ex["validation"]["status"])), s["nodes"], s["relations"], s["unresolved_connectors"], s["unknowns"],
                  esc(paths.rel_or_abs(out["extract_dir"], paths.work_root()))),
              "<p>SVG 대응: %s (출처: %s)</p>" % (esc({"verified": "확인됨"}.get(al.get("status"), al.get("status") or "SVG 없음")), esc({"registered_derived": "등록된 파생 SVG", "input_path_sibling, unregistered": "원본 옆 SVG(미등록)"}.get(al.get("source"), al.get("source") or "없음"))),
              "<p>그래프 %s · 버전 %s · 노드 %d · 관계 %d<br>%s</p>" % (

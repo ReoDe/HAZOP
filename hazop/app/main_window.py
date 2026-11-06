@@ -18,13 +18,12 @@ from hazop.app.screens.register import RegisterScreen
 from hazop.app.screens.review import ReviewScreen
 from hazop.app.screens.viewer import ViewerScreen
 from hazop.app.webview import HazopWebView
-from hazop.app.widgets import Chip, TaskRunner, esc, kst_text, write_log
+from hazop.app.widgets import VALIDATION_LABELS, Chip, TaskRunner, esc, kst_text, write_log
 
 APP_NAME = "HAZOP 분석 도구"
 APP_VERSION = "0.1.0"
 STEPS = ("① 자료 등록", "② 도면·그래프", "④ HAZOP 분석", "⑤ 설계보완·확정", "③ 지식그래프")  # 화면 index 순
 STEP_ORDER = (0, 1, 4, 2, 3)  # 화면에 보이는 단계 탭 순서(①②③④⑤)
-VALIDATION_LABELS = {"passed": "통과", "blocked": "차단"}
 # 도움말 > 버전·데이터 위치(패키징 W10, D18): 제3자 고지 위치와 법무 검토 전 안내
 LICENSE_NOTE = "LGPL 등 제3자 라이선스 의무의 법무 검토 전이므로 내부용으로만 사용하십시오."
 

@@ -519,7 +519,8 @@ class BuildSpecTest(unittest.TestCase):
         for with_check in (False, True):
             text = self.bp.spec_text(with_check=with_check)
             ast.parse(text)
-            self.assertIn("from build_package import drop_binaries", text)
+            self.assertIn("drop_binaries = build_package.drop_binaries", text)
+            self.assertNotIn("sys.path.insert(0, os.path.join(REPO, 'scripts'))", text)  # D11 후속: 경로 지정 로딩
             self.assertIn("a.binaries = drop_binaries(a.binaries)", text)
             self.assertIn("a.datas = drop_binaries(a.datas)", text)
             self.assertEqual("c.binaries = drop_binaries(c.binaries)" in text, with_check)

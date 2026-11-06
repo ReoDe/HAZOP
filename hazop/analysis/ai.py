@@ -278,7 +278,7 @@ _VALIDATION_TYPES_KO = {"schema_error": "형식", "reference_error": "참조", "
 
 
 def status_label(status):
-    return STATUS_LABELS_KO.get(status, "실패")
+    return STATUS_LABELS_KO.get(status, status)  # 모르는 코드는 영문 그대로(app/data·render, export/worksheet와 같음)
 
 
 def user_message(status, res=None, validation_errors=None):

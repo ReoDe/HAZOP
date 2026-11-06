@@ -6,6 +6,7 @@
 근거: 기획서/단계연쇄검사.md. 읽기 전용(--report로 지정한 보고 파일만 씀, 입력 폴더 안이면 거부). 네트워크·AI 호출 없음.
 작업 루트·저장 루트 기본값은 hazop.paths.work_root()와 HAZOP_STORE_ROOT 또는 <작업 루트>/자료저장소.
 종료 코드: 0 = FAIL 없음, 1 = FAIL 1개 이상, 2 = 실행 오류(입력 폴더 없음, JSON 읽기 실패 등).
+실행 오류가 있으면 FAIL이 있어도 2.
 """
 
 import argparse

@@ -1,4 +1,5 @@
-"""화면별 스크린샷(QWidget.grab()) — scripts/run_app.py --screenshots, scripts/check_app.py가 쓴다."""
+"""화면별 스크린샷(QWidget.grab()) — scripts/run_app.py --screenshots, scripts/check_app.py가 쓴다.
+③ 지식그래프는 작업 루트에 지식그래프가 있을 때만 찍고, 없으면 건너뛰고 표준 출력에 남긴다."""
 
 import os
 import time
@@ -86,4 +87,12 @@ def take_all(app, win, out_dir, run_dir=None, candidate="deviation-p86-d09"):
             scr.scroll.ensureWidgetVisible(sf.risk_box, 0, 0)
             shot("05-review-1366-risk.png")
         win.resize(size)
+    from hazop.app.main_window import STEPS
+    win.go(STEPS.index("③ 지식그래프"))
+    kg_scr = win.screens[STEPS.index("③ 지식그래프")]
+    if kg_scr.stack.currentIndex() == 1:  # 지식그래프를 읽어 캔버스를 띄운 경우만
+        settle(2.0)
+        shot("03-knowledge.png")
+    else:
+        print("[건너뜀] 03-knowledge.png: ③ 지식그래프 없음(%s)" % " ".join(kg_scr.empty.text().split()))
     return files

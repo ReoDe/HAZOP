@@ -423,12 +423,19 @@ def _js_value(win, expr, timeout=10.0):
     return out[0] if out else None
 
 
+def sample_drawing_dir():
+    """샘플 도면(SNP-M-102) 폴더. 없으면 None."""
+    import glob
+    found = [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*")) if "SNP-M-102" in p]
+    return found[0] if found else None
+
+
 def install_drawing(roots, run_dir):
     """샘플 도면(SNP-M-102)을 임시 작업 루트에서 추출·그래프로 만들고(뷰어 SVG는 작업 루트 안만 허용), 실행의 분석 당시
     그래프(inputs/graph.json)를 이 그래프로 맞춘다(검사 전용, tests/test_app.py build_temp_drawing과 같은 방법)."""
     import glob
     from hazop.app import data
-    src = [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*")) if "SNP-M-102" in p][0]
+    src = sample_drawing_dir()
     dst = os.path.join(roots.work, "샘플", os.path.basename(src))
     if not os.path.isdir(dst):
         shutil.copytree(src, dst)
@@ -1493,6 +1500,9 @@ def main(argv=None):
         return 1 if color_bad else 0
     if "PySide6.QtGui" in sys.modules:
         print("PySide6를 이미 가져온 프로세스에서는 플랫폼을 바꿀 수 없습니다. 새 프로세스로 실행하세요.")
+        return 2
+    if sample_drawing_dir() is None:
+        print("판정 불가: 샘플 도면(참고자료/P&ID 도면 샘플/*SNP-M-102*)이 없음")
         return 2
     os.environ["QT_QPA_PLATFORM"] = args.platform
     os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing --log-level=3")

@@ -1394,6 +1394,10 @@ class AIErrorMessageTest(unittest.TestCase):
                 self.assertNotIn(et or "\0", msg)
                 self.assertNotEqual(ai.status_label(status), status)
 
+    def test_status_label_unknown_code_shown_as_is(self):
+        """사전에 없는 상태는 영문 코드 그대로(app/data·render, export/worksheet와 같음)."""
+        self.assertEqual(ai.status_label("some_new_status"), "some_new_status")
+
 
 if __name__ == "__main__":
     unittest.main()
