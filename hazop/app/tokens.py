@@ -89,6 +89,7 @@ html, body { font-family: "%(font)s", sans-serif; }
 .selected.pipe-line, .selected.gedge { stroke: var(--ui) !important; }
 body.hz-embedded a.back, body.hz-embedded header .logo, body.hz-embedded header .app, body.hz-embedded header .sep { display: none; }
 body.hz-hide-panel aside#panel, body.hz-hide-panel #pathq { display: none; }
+body.hz-no-graph header .tabs, body.hz-no-graph #glegend, body.hz-no-graph #stage > #graphsvg { display: none; }
 body.hz-dim #overlay .sym:not(.hz-on), body.hz-dim #overlay .tagbox:not(.hz-on),
 body.hz-dim #overlay .pipe-line:not(.hz-on), body.hz-dim #graphsvg .gnode:not(.hz-on),
 body.hz-dim #graphsvg .gedge:not(.hz-on), body.hz-dim #graphsvg .glabel { opacity: var(--hl-dim); }

@@ -151,7 +151,7 @@ class MainWindow(QMainWindow):
         v.addSeparator()
         v.addAction("도면 보기", lambda: self.webview.set_view("drawing"))
         v.addAction("그래프 보기", lambda: self.webview.set_view("graph"))
-        v.addAction("웹 속성 패널 숨기기/보이기", lambda: self.webview.set_mode(not self.webview.hide_panel))
+        v.addAction("웹 속성 패널 숨기기/보이기", lambda: self.webview.set_mode(not self.webview.hide_panel, self.webview.hide_graph))
         hm = m.addMenu("도움말")
         hm.addAction("버전·데이터 위치", self._about)
 

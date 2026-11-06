@@ -27,7 +27,7 @@ STATUS_NAMES = {"confirmed": "확인", "recheck": "재확인 필요", "excluded"
 A1_NAMES = {"downstream": "하류", "upstream": "상류", "mixed": "혼합", "unknown": "방향 미확인", "adjacent": "인접 구간",
             "not_applicable": "방향 해당 없음"}
 EMPTY_TEXT = ("지식그래프가 없습니다.\n지식 입력 CSV(데이터/지식/<project_id>/)를 작성하고 지식 빌드(scripts/build_kg.py)를 "
-              "실행하면 여기에 나옵니다.\nP&ID 구조만 보려면 ② 도면·그래프의 'P&ID 구조' 탭을 쓰세요.")
+              "실행하면 여기에 나옵니다.\nP&ID 도면 추출 결과는 ② 도면·그래프에서 보세요.")
 
 
 class FlowLayout(QLayout):

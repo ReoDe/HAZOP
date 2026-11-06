@@ -243,6 +243,7 @@ BRIDGE_JS = r"""
       return missing;
     }
     function setView(name) {
+      if (name === "graph" && document.body.classList.contains("hz-no-graph")) return;  // ②에는 그래프 보기 없음
       var btn = document.getElementById(name === "graph" ? "tab-graph" : "tab-drawing");
       if (btn && !btn.disabled) btn.click();
     }
@@ -259,6 +260,9 @@ BRIDGE_JS = r"""
         if (!m.enabled) { var gt = document.getElementById("tab-graph"); if (gt && !gt.disabled) gt.click(); }
       } else if (m.type === "setMode") {
         document.body.classList.toggle("hz-hide-panel", !!m.hide_panel);
+        // ②: 도면 기준 추출만 보인다('P&ID 구조' 그래프 탭 없음, 결정로그 2026-11-06). ④⑤는 그래프 탭을 그대로 쓴다.
+        document.body.classList.toggle("hz-no-graph", !!m.hide_graph);
+        if (m.hide_graph && document.body.classList.contains("tab-graph")) setView("drawing");
         window.dispatchEvent(new Event("resize"));
       } else if (m.type === "clearHighlight") clear();
       else if (m.type === "focus") focus(m.local_id);
@@ -325,6 +329,7 @@ class HazopWebView(QWebEngineView):
         self.current_file = None
         self.current_stamp = None
         self.hide_panel = False
+        self.hide_graph = False
         self.drawing_enabled = True
 
     def dispose(self):
@@ -350,7 +355,7 @@ class HazopWebView(QWebEngineView):
         self.current_stamp = stamp
         self.page().allowed_file = path
         self.bridge.reset()
-        self.bridge.send("setMode", hide_panel=self.hide_panel)
+        self.bridge.send("setMode", hide_panel=self.hide_panel, hide_graph=self.hide_graph)
         # 도면 탭 잠금은 페이지를 새로 읽을 때마다(loadFinished 후 브리지 ready 시점) 다시 적용한다
         self.bridge.send("setDrawingEnabled", enabled=self.drawing_enabled)
         self.load(QUrl.fromLocalFile(path))
@@ -361,10 +366,11 @@ class HazopWebView(QWebEngineView):
         self.drawing_enabled = bool(enabled)
         self.bridge.send("setDrawingEnabled", enabled=self.drawing_enabled)
 
-    def set_mode(self, hide_panel):
-        """②: 웹 속성 패널 사용, ④⑤: 웹 패널 숨기고 Qt 상세 패널 사용(§2.2)."""
+    def set_mode(self, hide_panel, hide_graph=False):
+        """②: 웹 속성 패널 사용·그래프 탭 숨김(hide_graph), ④⑤: 웹 패널 숨기고 Qt 상세 패널 사용(§2.2)."""
         self.hide_panel = bool(hide_panel)
-        self.bridge.send("setMode", hide_panel=self.hide_panel)
+        self.hide_graph = bool(hide_graph)
+        self.bridge.send("setMode", hide_panel=self.hide_panel, hide_graph=self.hide_graph)
 
     def set_view(self, view):
         self.bridge.send("setView", view=view)

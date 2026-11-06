@@ -1,4 +1,5 @@
-"""② 도면·그래프 조회 (기획서/인터페이스.md §3.2). 웹뷰는 기존 뷰어 그대로(도면/그래프 탭은 웹뷰 안, §2.2)."""
+"""② 도면·그래프 조회 (기획서/인터페이스.md §3.2). 웹뷰는 기존 뷰어를 쓰되 'P&ID 구조'(그래프) 탭은 숨긴다
+(결정로그 2026-11-06: '그래프'는 지식그래프만 뜻함. 내부 그래프 데이터는 지식그래프 재료로 계속 만든다)."""
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget
@@ -34,7 +35,7 @@ class ViewerScreen(QWidget):
         lay.addWidget(self.blockers)
         lay.addWidget(self.warn)
         self.stack = QStackedWidget()
-        self.empty = empty_label("추출 결과가 없습니다. ① 자료 등록에서 등록한 뒤 '추출·그래프 만들기'를 실행하세요.")
+        self.empty = empty_label("추출 결과가 없습니다. ① 자료 등록에서 PDF를 등록하거나(자동 추출) draw.io 원본을 등록한 뒤 '추출·그래프 만들기'를 실행하세요.")
         self.canvas_host = QWidget()
         QVBoxLayout(self.canvas_host).setContentsMargins(0, 0, 0, 0)
         self.stack.addWidget(self.empty)
@@ -48,7 +49,7 @@ class ViewerScreen(QWidget):
         return {"drawing": d.get("drawing_number"), "region": None, "run": None}
 
     def on_enter(self):
-        self.app.webview.set_mode(hide_panel=False)
+        self.app.webview.set_mode(hide_panel=False, hide_graph=True)
         self.app.webview.clear_highlight()
         names = [e["name"] for e in data.list_extractions()]
         cur = self.combo.currentText()
