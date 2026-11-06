@@ -389,7 +389,7 @@ function hazopPathEngine(G) {
     var b = loc.bbox, w = Math.max(b[2], MIN), h = Math.max(b[3], MIN);
     var x = b[0] + b[2] / 2 - w / 2, y = b[1] + b[3] / 2 - h / 2;
     var color = "var(--" + (n.category || "unclassified") + ")";
-    var rot = (n.style.match(/(?:^|;)rotation=(-?[\d.]+)/g) || []).pop();
+    var rot = ((n.style || "").match(/(?:^|;)rotation=(-?[\d.]+)/g) || []).pop();
     var attrs = { x: x, y: y, width: w, height: h, rx: 2, style: "stroke:" + color,
       "class": "sym" + (hasUnknown(n.local_id) || loc.approximate ? " unknown" : ""), "data-local-id": n.local_id,
       "data-cell-id": n.source_object_id };

@@ -1341,11 +1341,54 @@ def words_or_paths(analysis):
     return bool(analysis["blocks"] or cls["bodies"] or cls["polys"] or cls["dashes"])
 
 
-def extract(path, page=0, repo_root=None, params=None):
-    """벡터 PDF 한 쪽 → extraction dict. pdfplumber가 없으면 ImportError."""
+def apply_registration(result, registration):
+    """① 등록정보를 추출 결과에 반영한다(drawio.extract의 registration 경로와 같은 규칙).
+    식별 값은 ①에서 사람이 확정한 값만 쓰고 표제란 값은 title_block_candidates로만 남긴다."""
+    reg = registration
+    val = result["validation"]
+    # 등록 경로의 식별 값은 등록정보가 정한다(drawio 등록 경로와 같이 표제란 누락은 미확인으로 남기지 않음)
+    blockers = val["blockers"]
+    unknowns = [u for u in val["unknowns"] if u["check"] not in ("not_registered", "missing_drawing_number")]
+    drawing = result["drawing"]
+    drawing["identification_basis"] = "registration_confirmed"
+    drawing["title_block_candidates"] = {f: drawing.get(f) for f in ("drawing_number", "revision", "title")}
+    for field, reg_field in (("drawing_number", "drawing_number"), ("revision", "design_revision"),
+                             ("title", "title")):
+        drawing[field] = reg.get(reg_field)
+    reg_val = reg.get("validation") or {}
+    if reg.get("status") != "registered" or reg_val.get("status") != "passed" or reg_val.get("blockers"):
+        _issue(blockers, "registration_not_completed", "등록 완료(registered·passed)가 아닌 등록정보: status=%r"
+               % reg.get("status"), field="status")
+    if reg.get("sha256") != result["source"]["sha256"]:
+        _issue(blockers, "registration_hash_mismatch", "입력 파일 해시가 등록정보의 sha256과 다름", field="sha256")
+    page_id = result["source_context"]["page_id"]
+    registered_pages = [pid for d in reg.get("documents") or [] for pid in d.get("page_ids") or []]
+    if page_id not in registered_pages:
+        _issue(blockers, "registration_page_mismatch", "추출한 페이지 %r 가 등록정보 page_ids %r 에 없음"
+               % (page_id, registered_pages), field="page_id")
+    for u in reg_val.get("unknowns", []):
+        _issue(unknowns, "registration_unknown", "등록 단계 미확인: %s" % u["reason"], field=u["field"])
+    val["unknowns"] = unknowns
+    val["status"] = "blocked" if blockers else "passed"
+    result["project_id"] = reg.get("project_id")
+    result["source"]["material_id"] = reg.get("material_id")
+    result["source"]["registration_version"] = reg.get("registration_version")
+    result["source_context"]["document_id"] = (reg.get("documents") or [{}])[0].get("document_id")
+    stem = os.path.splitext(os.path.basename(result["source"]["file"]))[0]
+    result["extraction_run_id"] = "extract-pdf-%s-p%d-%s-%s-%s-%s-r%s" % (
+        drawing["drawing_number"] or stem, result["run"]["settings"]["page_index"], RULES_VERSION,
+        result["source"]["sha256"][:12], reg.get("project_id"), reg.get("material_id"), reg.get("registration_version"))
+    result["summary"] = drawio.summarize(result)
+    return result
+
+
+def extract(path, page=0, repo_root=None, params=None, registration=None):
+    """벡터 PDF 한 쪽 → extraction dict. pdfplumber가 없으면 ImportError.
+    registration: ① 등록정보(dict). 주면 apply_registration으로 식별 정보를 채우고 검사한다."""
     with open(path, "rb") as fh:
         sha = hashlib.sha256(fh.read()).hexdigest()
     page_count, width, height, words, prims = load_page(path, page)
     analysis = analyze(width, height, words, prims, params)
     label = paths.rel_or_abs(path, repo_root) if repo_root else path
-    return build_extraction(analysis, width, height, page_count, page, label, sha)
+    result = build_extraction(analysis, width, height, page_count, page, label, sha)
+    return apply_registration(result, registration) if registration is not None else result

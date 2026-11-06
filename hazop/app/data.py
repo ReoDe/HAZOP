@@ -18,7 +18,7 @@ from hazop.viewer import build as viewer_build
 
 # 참고값(이름만 남김): 가져올 때의 scripts/ 위치. 로딩에는 쓰지 않으며 script_module은 호출 시점 경로를 쓴다
 SCRIPTS_DIR = paths.program_path("scripts")
-SCRIPT_NAMES = ("extract_drawio", "build_graph")  # 화면이 읽는 스크립트(허용 목록, 묶음 datas 대상)
+SCRIPT_NAMES = ("extract_drawio", "extract_pdf", "build_graph")  # 화면이 읽는 스크립트(허용 목록, 묶음 datas 대상)
 _script_cache = {}  # 키: 정규화한 파일 경로(루트가 바뀌면 새로 읽음)
 
 
@@ -83,14 +83,20 @@ def list_registrations(store_root=None):
 
 
 def extract_and_graph(registration_path):
-    """등록정보 → `--registration` 추출 → 그래프 생성 (scripts/extract_drawio.run_one, scripts/build_graph.build_one).
+    """등록정보 → `--registration` 추출 → 그래프 생성 (scripts/extract_drawio.run_one 또는 PDF면
+    scripts/extract_pdf.run_one, 그리고 scripts/build_graph.build_one). 출력 폴더 이름은 두 형식이 같다.
     반환 {"extraction", "extract_dir", "graph", "graph_dir"}. 등록 완료가 아니거나 해시 불일치면 ValueError."""
     ex = script_module("extract_drawio")
     bg = script_module("build_graph")
     record, original = registry.load_for_extraction(registration_path)
-    reg_svg = registry.registered_svgs(registration_path, record)
-    result, out_dir = ex.run_one(original, paths.output_root("추출"), svg="auto", page=0, registration=record,
-                                 registered_svgs=reg_svg)
+    if record.get("format") == "pdf":
+        result, out_dir = script_module("extract_pdf").run_one(
+            original, paths.output_root("추출"), page=0, registration=record,
+            out_name=ex.registered_out_name(record, 0))
+    else:
+        reg_svg = registry.registered_svgs(registration_path, record)
+        result, out_dir = ex.run_one(original, paths.output_root("추출"), svg="auto", page=0, registration=record,
+                                     registered_svgs=reg_svg)
     graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("그래프"))
     return {"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir}
 

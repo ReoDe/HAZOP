@@ -14,6 +14,7 @@ import importlib.util
 import json
 import os
 import sys
+import xml.etree.ElementTree as ET
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -21,17 +22,35 @@ sys.path.insert(0, REPO_ROOT)
 from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 from hazop.extract import report  # noqa: E402
-from hazop.extract.adapters import pdf_vector  # noqa: E402
+from hazop.extract.adapters import pdf_svg, pdf_vector  # noqa: E402
 
 SAMPLE_GLOB = paths.resource_path("참고자료", "P&ID 도면 샘플", "*", "*.pdf")
 DEFAULT_OUT = paths.output_root("어댑터", "pdf_vector")
+SVG_NAME = "page.svg"
+SVG_SOURCE = "rendered_from_pdf"
 
 
-def run_one(path, out_root, page=0):
-    result = pdf_vector.extract(path, page=page, repo_root=paths.work_root())
-    name = paths.safe_name(result["drawing"]["drawing_number"] or os.path.splitext(os.path.basename(path))[0])
+def run_one(path, out_root, page=0, registration=None, out_name=None):
+    """registration(① 등록정보)을 주면 등록 경로: 식별 정보를 채우고(pdf_vector.apply_registration), out_name 폴더에
+    쓰며, PDF에서 그린 도면 SVG(page.svg, pdf_svg)를 함께 저장해 ② 뷰어 정렬(offset 0, 같은 좌표)을 기록한다."""
+    result = pdf_vector.extract(path, page=page, repo_root=paths.work_root(), registration=registration)
+    name = out_name or paths.safe_name(result["drawing"]["drawing_number"] or os.path.splitext(os.path.basename(path))[0])
     out_dir = paths.safe_join(out_root, name)
     os.makedirs(out_dir, exist_ok=True)
+    if registration is not None:
+        svg_path = os.path.join(out_dir, SVG_NAME)
+        svg_text = pdf_svg.render_page_svg(path, page)
+        with open(svg_path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(svg_text)
+        root = ET.fromstring(svg_text)
+        result["coordinate_system"]["svg_alignment"] = {
+            "svg_file": paths.rel_or_abs(svg_path, paths.work_root()), "source": SVG_SOURCE,
+            "viewBox": root.get("viewBox"), "width": root.get("width"), "height": root.get("height"), "status": "verified", "reasons": [],
+            "offset": [0, 0], "transform": "svg_x = pdf_x, svg_y = pdf_y (같은 pdfplumber 좌표로 그림)",
+            "compared_cells": 0, "consistent_cells": 0, "inconsistent_offsets": [], "unsupported_transform_cells": [],
+            "excluded_local_transform_cells": [], "cells_missing_in_svg": [],
+            "note": "PDF 벡터 요소(선·곡선·사각형·글자)를 추출과 같은 좌표로 그린 SVG라 셀 비교 없이 일치. "
+                    "이미지·클리핑은 그리지 않음"}
     with open(os.path.join(out_dir, "extraction.json"), "w", encoding="utf-8", newline="\n") as fh:
         json.dump(result, fh, ensure_ascii=False, indent=2)
         fh.write("\n")

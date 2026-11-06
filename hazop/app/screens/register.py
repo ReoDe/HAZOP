@@ -1,5 +1,6 @@
 """① 자료 등록 (기획서/인터페이스.md §3.1). 등록·추출·그래프는 기존 함수(registry.register,
-scripts/extract_drawio.run_one, scripts/build_graph.build_one)를 그대로 호출한다."""
+scripts/extract_drawio.run_one 또는 scripts/extract_pdf.run_one, scripts/build_graph.build_one)를 그대로 호출한다.
+PDF는 등록이 끝나면 추출까지 자동으로 이어 하고 ② 도면 화면으로 옮긴다(drawio는 '추출·그래프 만들기' 버튼 그대로)."""
 
 import getpass
 import os
@@ -32,7 +33,7 @@ class DropZone(QFrame):
         self.setAcceptDrops(True)
         self.setMinimumHeight(84)
         lay = QVBoxLayout(self)
-        self.label = QLabel("draw.io 원본 파일(.drawio) 1개를 여기에 끌어 놓거나 '파일 선택'을 누르세요")
+        self.label = QLabel("draw.io 원본(.drawio) 또는 벡터 PDF(.pdf) 1개를 여기에 끌어 놓거나 '파일 선택'을 누르세요")
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setWordWrap(True)
         lay.addWidget(self.label)
@@ -88,7 +89,7 @@ class RegisterScreen(QWidget):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_row)
-        self.list_stack.addWidget(empty_label("등록된 자료가 없습니다. 오른쪽에 draw.io 원본을 놓아 등록하세요."))
+        self.list_stack.addWidget(empty_label("등록된 자료가 없습니다. 오른쪽에 draw.io 원본 또는 벡터 PDF를 놓아 등록하세요."))
         self.list_stack.addWidget(self.table)
         ll.addWidget(self.list_stack)
         split.addWidget(left)
@@ -148,7 +149,7 @@ class RegisterScreen(QWidget):
         self.btn_register.clicked.connect(self.do_register)
         self.btn_extract = QPushButton("추출·그래프 만들기")
         self.btn_extract.setEnabled(False)
-        self.btn_extract.clicked.connect(self.do_extract)
+        self.btn_extract.clicked.connect(lambda: self.do_extract())
         btns.addWidget(self.btn_register)
         btns.addWidget(self.btn_extract)
         btns.addStretch(1)
@@ -194,8 +195,9 @@ class RegisterScreen(QWidget):
 
     # ------------------------------------------------------------ 파일 선택·미리보기
     def _pick(self):
-        path, _ = QFileDialog.getOpenFileName(self, "draw.io 원본 선택", paths.resource_root(),
-                                              "draw.io (*.drawio *.xml);;모든 파일 (*)")
+        path, _ = QFileDialog.getOpenFileName(self, "P&ID 원본 선택", paths.resource_root(),
+                                              "P&ID 원본 (*.drawio *.pdf);;draw.io (*.drawio *.xml);;PDF (*.pdf);;"
+                                              "모든 파일 (*)")
         if path:
             self.set_files([path])
 
@@ -225,11 +227,13 @@ class RegisterScreen(QWidget):
             parts.append("<span style='color:%s'>문제: %s %s</span>" % (tokens.c("err-ink"), esc(b.get("check")), esc(b.get("reason"))))
         pages = info.get("pages") or []
         svg = None
-        if pages:
+        if info.get("format") == "pdf":
+            parts.append("PDF %d쪽 · 등록하면 첫 쪽을 자동 추출해 ② 도면에 표시(도면은 PDF에서 그림)" % len(pages))
+        elif pages:
             svg = svg_align.find_svg(path, 0, pages[0].get("page_name"), len(pages))
         if svg:
             parts.append("SVG 함께 등록(파생 자료): %s" % esc(os.path.basename(svg)))
-        else:
+        elif info.get("format") != "pdf":
             parts.append("<span style='color:%s'>경고: 같은 이름의 SVG 없음 — 도면 오버레이를 만들 수 없음(그래프 보기만 가능)</span>" % tokens.c("warn-ink"))
         self.file_info.setText("<br>".join(parts))
         for key, _ in META_FIELDS:
@@ -276,6 +280,9 @@ class RegisterScreen(QWidget):
                     e["record"].get("project_id") == rec.get("project_id"):
                 self.table.selectRow(r)
         self.show_record(rec, result, result.get("registration_file"))
+        if rec.get("format") == "pdf" and rec.get("status") == "registered" and \
+                result["outcome"] not in ("failed", "on_hold") and result.get("registration_file"):
+            self.do_extract(result["registration_file"], auto=True)
 
     def _failed(self, err):
         self.btn_register.setEnabled(bool(self.source_path))
@@ -315,15 +322,19 @@ class RegisterScreen(QWidget):
                 "<li>%s: %s</li>" % (esc(u.get("field")), esc(u.get("reason"))) for u in unk))
         self.result.setHtml("".join(h))
 
-    def do_extract(self):
-        e = self.selected_registration()
-        if not e:
-            return
+    def do_extract(self, registration_path=None, auto=False):
+        """auto: PDF 등록 직후 자동 실행. 끝나면 ② 도면 화면으로 옮겨 이 도면을 연다."""
+        if not registration_path:
+            e = self.selected_registration()
+            if not e:
+                return
+            registration_path = e["path"]
         self.btn_extract.setEnabled(False)
         self.result.setHtml("<p>추출 → 그래프 생성 중…</p>")
-        self.app.tasks.run("추출·그래프", lambda: data.extract_and_graph(e["path"]), self._extracted, self._failed)
+        self.app.tasks.run("추출·그래프", lambda: data.extract_and_graph(registration_path),
+                           lambda out: self._extracted(out, auto), self._failed)
 
-    def _extracted(self, out):
+    def _extracted(self, out, auto=False):
         self.btn_extract.setEnabled(True)
         ex, g = out["extraction"], out["graph"]
         s = ex["summary"]
@@ -334,7 +345,7 @@ class RegisterScreen(QWidget):
              "<p>추출 검증: %s · 노드 %d · 관계 %d · 미해결 %d · 미확인 %d<br>%s</p>" % (
                  esc(VALIDATION_LABELS.get(ex["validation"]["status"], ex["validation"]["status"])), s["nodes"], s["relations"], s["unresolved_connectors"], s["unknowns"],
                  esc(paths.rel_or_abs(out["extract_dir"], paths.work_root()))),
-             "<p>SVG 대응: %s (출처: %s)</p>" % (esc({"verified": "확인됨"}.get(al.get("status"), al.get("status") or "SVG 없음")), esc({"registered_derived": "등록된 파생 SVG", "input_path_sibling, unregistered": "원본 옆 SVG(미등록)"}.get(al.get("source"), al.get("source") or "없음"))),
+             "<p>SVG 대응: %s (출처: %s)</p>" % (esc({"verified": "확인됨"}.get(al.get("status"), al.get("status") or "SVG 없음")), esc({"registered_derived": "등록된 파생 SVG", "input_path_sibling, unregistered": "원본 옆 SVG(미등록)", "rendered_from_pdf": "PDF에서 그린 도면(같은 좌표, 셀 비교 없음)"}.get(al.get("source"), al.get("source") or "없음"))),
              "<p>그래프 %s · 버전 %s · 노드 %d · 관계 %d<br>%s</p>" % (
                  esc(g["graph_id"]), esc(g["graph_version"]), g["structure"]["node_count"], g["structure"]["edge_count"],
                  esc(paths.rel_or_abs(out["graph_dir"], paths.work_root())))]
@@ -344,3 +355,6 @@ class RegisterScreen(QWidget):
             h.append("<p style='color:%s'>경고: SVG 없음 — 도면 오버레이를 만들 수 없음(그래프 보기만 가능)</p>" % tokens.c("warn-ink"))
         self.result.setHtml("".join(h))
         self.refresh()
+        if auto:
+            self.app.go(1)
+            self.app.screens[1].select_drawing(os.path.basename(out["extract_dir"]))

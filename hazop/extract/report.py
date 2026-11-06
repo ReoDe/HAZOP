@@ -49,7 +49,10 @@ def render(result):
     lines += _table_rows(v["unknowns"]) if v["unknowns"] else ["없음"]
     al = result["coordinate_system"].get("svg_alignment")
     lines += ["", "## SVG 좌표 대응", ""]
-    if al:
+    if al and al.get("source") == "rendered_from_pdf":
+        lines += ["- SVG: `%s` (viewBox `%s`)" % (al["svg_file"], al["viewBox"]),
+                  "- offset: %s → %s" % (al["offset"], al["transform"]), "- %s" % al["note"]]
+    elif al:
         lines += [
             "- SVG: `%s` (viewBox `%s`)" % (al["svg_file"], al["viewBox"]),
             "- offset: %s → %s" % (al["offset"], al["transform"]),

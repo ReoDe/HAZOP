@@ -6,10 +6,10 @@
 - 입구: scripts/run_app.py → 실행 파일 HAZOP.exe(창 프로그램, 콘솔 없음). 결과는 <out>/dist/HAZOP/(one-folder, 배포용).
   런타임 훅 packaging/rthook_applog.py: <작업 루트>/logs/app.log에 logging·stdout·stderr·미처리 예외를 남긴다(HAZOP.exe만).
 - datas: 템플릿 2개, hazop/kg/vendor, 기획서/HAZOP기법지침.md, 데이터/이탈후보·기준표·패턴, scripts/extract_drawio.py·
-  build_graph.py(화면이 importlib로 읽는 파일, hazop/app/data.py SCRIPT_NAMES). 참고자료/ 샘플은 넣지 않는다(D5안).
+  extract_pdf.py·build_graph.py(화면이 importlib로 읽는 파일, hazop/app/data.py SCRIPT_NAMES). 참고자료/ 샘플은 넣지 않는다(D5안).
 - 제3자 고지(W9, D15): licenses/는 datas(_internal/licenses/)가 아니라 빌드 뒤 결과 폴더의 실행 파일 옆 licenses/로
   복사한다(copy_licenses). 빌드 뒤 검사가 실행 파일 옆 사본이 저장소와 같고 _internal/licenses/가 없는지 본다.
-- hiddenimports: collect_submodules("hazop") + 두 스크립트 모듈(스크립트가 가져오는 표준 라이브러리까지 묶이게)
+- hiddenimports: collect_submodules("hazop") + 세 스크립트 모듈(스크립트가 가져오는 표준 라이브러리까지 묶이게)
   + PDF 어댑터 모듈 pdfplumber·pypdfium2(W9, D15: pdf_vector가 함수 안에서 지연 import).
 - excludes: anthropic·httpx(D1, 배포본 제외). pdfplumber와 의존성(pdfminer.six·Pillow·pypdfium2·charset-normalizer·
   cryptography·cffi·pycparser, packaging/requirements-pdf.txt)은 묶는다(W9, D15). 빌드 뒤 검사가 앱 PYZ(PYZ-00.toc)에
@@ -68,6 +68,7 @@ DATA_FILES = (
     "hazop/kg/screen_template.html",
     "기획서/HAZOP기법지침.md",
     "scripts/extract_drawio.py",
+    "scripts/extract_pdf.py",
     "scripts/build_graph.py",
 )
 DATA_DIRS = (
@@ -78,7 +79,7 @@ DATA_DIRS = (
 )
 EXCLUDED_DIRS = ("참고자료",)  # D5안: 샘플 도면(28 MB)은 넣지 않는다
 EXCLUDES = ("anthropic", "httpx")
-SCRIPT_MODULES = ("extract_drawio", "build_graph")
+SCRIPT_MODULES = ("extract_drawio", "extract_pdf", "build_graph")
 # W9(D15): 제3자 고지는 실행 파일 옆 licenses/에 둔다(D9의 _internal/licenses/를 대체, 사용자 결정 2026-11-06)
 LICENSES_DIR = "licenses"
 # W9(D15): PDF 어댑터. pdf_vector가 pdfplumber를 함수 안에서 import하므로 명시적으로 묶는다.

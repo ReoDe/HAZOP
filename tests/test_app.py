@@ -668,6 +668,52 @@ class RegisterScreenTest(AppTestBase):
         self.assertEqual(ex["coordinate_system"]["svg_alignment"]["source"], "registered_derived")
         self.assertTrue(os.path.isfile(os.path.join(work, "출력", "그래프", name, "graph.json")))
         self.assertTrue(scr.rows[0]["extracted"] and scr.rows[0]["graphed"])
+        self.assertEqual(win.stack.currentIndex(), 0)                 # drawio는 자동 추출·화면 이동 없음
+
+    def test_drawio_register_does_not_auto_extract(self):
+        win = self.make_window()
+        scr = win.screens[0]
+        self.assertTrue(scr.set_files([sample_file("SNP-M-102", "drawio")]))
+        scr.do_register()
+        pump(win, 0.1)
+        pump(win, 0.1)
+        self.assertEqual(scr.rows[0]["record"]["status"], "registered")
+        self.assertFalse(scr.rows[0]["extracted"])
+        self.assertFalse(os.path.isdir(os.path.join(os.environ["HAZOP_WORK_ROOT"], "출력", "추출", scr.rows[0]["extract_name"])))
+        self.assertEqual(win.stack.currentIndex(), 0)
+
+    def test_pdf_register_auto_extracts_and_opens_viewer_without_graph_tab(self):
+        win = self.make_window()
+        win.show()
+        scr = win.screens[0]
+        self.assertTrue(scr.set_files([sample_file("SNP-M-102", "pdf")]))
+        scr.do_register()
+        self.assertTrue(wait_for(lambda: (win.tasks.wait(1000), win.stack.currentIndex() == 1)[1], 180),
+                        scr.result.toPlainText())
+        row = scr.rows[0]
+        self.assertEqual(row["record"]["format"], "pdf")
+        self.assertTrue(row["extracted"] and row["graphed"])
+        viewer = win.screens[1]
+        self.assertEqual(viewer.combo.currentText(), row["extract_name"])
+        self.assertTrue(viewer.info and viewer.info["html"] and not viewer.info.get("graph_only"), viewer.info)
+        self.assertTrue(wait_for(lambda: win.webview.bridge.is_ready), "② 뷰어 브리지 ready 없음")
+        probe = ("JSON.stringify([document.body.classList.contains('hz-no-graph'),"
+                 " getComputedStyle(document.querySelector('header .tabs')).display])")
+
+        def state():
+            got = []
+            win.webview.page().runJavaScript(probe, 0, got.append)
+            return json.loads(got[-1]) if wait_for(lambda: got, 10) else None
+
+        self.assertTrue(wait_for(lambda: state() == [True, "none"], 15), state())   # ②: 'P&ID 구조' 탭 숨김
+        win.go(2)                                                                    # ④는 그래프 탭을 그대로 씀
+        self.assertTrue(wait_for(lambda: (state() or [True])[0] is False, 15), state())
+        self.assertNotEqual(state()[1], "none")
+
+
+def sample_file(drawing, ext):
+    return [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*." + ext))
+            if drawing in p][0]
 
 
 class BridgeTest(unittest.TestCase):

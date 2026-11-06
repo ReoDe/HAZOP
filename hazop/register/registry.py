@@ -34,7 +34,7 @@ REGISTRAR_VERSION = "0.1.0"
 MATERIAL_TYPES = ("P&ID",)
 META_FIELDS = ("drawing_number", "design_revision", "title")
 META_INPUT_KEYS = set(META_FIELDS) | {"by", "reason"}
-DOCUMENT_ID = "document-001"  # drawio 파일 1개 = 문서 1개
+DOCUMENT_ID = "document-001"  # 원본 파일(drawio·PDF) 1개 = 문서 1개
 REPO_ROOT = paths.REPO_ROOT
 DEFAULT_STORE = paths.store_root()  # HAZOP_STORE_ROOT 또는 <작업 루트>/자료저장소 (가져올 때 결정)
 SVG_ROLE = "svg"
@@ -149,6 +149,8 @@ def _unknowns(record):
             reason = ("사람 확정 전. 표제란 자동 후보 %r" % cand["value"] if cand
                       else "미확인(표제란 자동 후보 없음, 사람 입력 없음)")
             out.append({"field": field, "reason": reason})
+    if record.get("format") == "pdf":
+        return out  # PDF는 원본에서 도면 SVG를 그리므로(추출 단계) 원본 옆 SVG를 찾지 않는다
     pages = [pid for d in record.get("documents") or [] for pid in d.get("page_ids") or []]
     covered = {pid for e in _svg_entries(record) for pid in e.get("page_ids") or []}
     missing = [pid for pid in pages if pid not in covered]
@@ -323,7 +325,7 @@ def _unfinished_trace_only(store, material_id, sha):
 
 def register(source_path, project_id, material_type="P&ID", store_root=None, metadata=None, actor=None,
              now=None):
-    """draw.io 원본 1개를 등록한다. 원본 파일은 읽기만 한다.
+    """draw.io 또는 벡터 PDF 원본 1개를 등록한다. 원본 파일은 읽기만 한다.
 
     metadata: {"drawing_number", "design_revision", "title", "by", "reason"} 중 사람이 확정하는 값(없으면 None).
     반환: {"outcome": registered|reused|new_version|failed|on_hold, "registration_file", "notes", "record"}
@@ -363,7 +365,8 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
                     "sha256": sha})
         return _result(rec, "failed")
     try:
-        svgs = _read_svgs(source_path, info["pages"])
+        # PDF는 원본 옆 SVG를 파생 자료로 등록하지 않는다(같은 폴더의 drawio SVG를 잘못 붙이지 않게)
+        svgs = [] if info["format"] == "pdf" else _read_svgs(source_path, info["pages"])
     except OSError as exc:
         rec = _on_hold(project_id, material_type, source_path,
                        [_problem("unreadable", "원본 옆 SVG를 읽을 수 없음: %s" % exc, NO_SVG_FIELD)])["record"]

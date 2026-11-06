@@ -1,16 +1,23 @@
 """등록 대상 파일의 형식 확인과 표제란 자동 후보 읽기.
 
-근거: 기획서/자료등록.md(MVP 등록 절차 2, 입력과 등록정보, 처리 원칙 1).
-도면 객체는 추출하지 않는다. 표제란(pidIgnore 셀) 값은 '자동 후보'로만 돌려주며 확정값으로 쓰지 않는다
+근거: 기획서/자료등록.md(MVP 등록 절차 2, 입력과 등록정보, 처리 원칙 1). 등록 형식은 draw.io(.drawio)와
+벡터 PDF(.pdf)다(사용자 결정 2026-11-06, 이미지는 제외). PDF는 pdfplumber로 쪽 수를 읽고 표제란 후보를
+PDF 어댑터(hazop/extract/adapters/pdf_vector)의 표제란 판독으로 얻는다.
+draw.io는 도면 객체를 추출하지 않는다. PDF는 표제란 판독을 위해 첫 쪽을 분석하되 결과는 후보로만 쓴다. 표제란(pidIgnore 셀) 값은 '자동 후보'로만 돌려주며 확정값으로 쓰지 않는다
 (사용자 결정 2026-11-04).
 """
 
+import hashlib
+import io
 import os
 import xml.etree.ElementTree as ET
 
 from hazop.extract import drawio, rules
 
 DRAWIO_EXTENSIONS = (".drawio",)
+PDF_EXTENSIONS = (".pdf",)
+# 등록 대상 확장자 -> 기대하는 실제 형식
+EXPECTED_FORMAT = dict([(e, "drawio") for e in DRAWIO_EXTENSIONS] + [(e, "pdf") for e in PDF_EXTENSIONS])
 # 실제 형식 판별용 파일 시작 바이트
 MAGIC = [(b"%PDF", "pdf"), (b"\x89PNG", "png"), (b"\xff\xd8\xff", "jpeg"), (b"PK\x03\x04", "zip")]
 # 표제란 키 -> 등록정보 필드 (추출 규칙의 표제란 키를 그대로 쓴다)
@@ -80,8 +87,36 @@ def _title_block_candidates(pages):
     return found
 
 
+def _inspect_pdf(path, data, info):
+    """PDF: 쪽 목록(page-<번호>)과 첫 쪽 표제란 자동 후보. 추출과 같은 읽기(pdf_vector)를 쓴다."""
+    try:
+        from hazop.extract.adapters import pdf_vector
+        page_count, width, height, words, prims = pdf_vector.load_page(io.BytesIO(data), 0)
+        analysis = pdf_vector.analyze(width, height, words, prims)
+        res = pdf_vector.build_extraction(analysis, width, height, page_count, 0, os.path.basename(path),
+                                          hashlib.sha256(data).hexdigest())
+    except ImportError:
+        info["blockers"].append(_problem("unreadable", "PDF를 읽을 pdfplumber가 없음"))
+        return
+    except Exception as exc:  # 손상·암호화 등 모든 읽기 실패를 사유로 남긴다
+        info["blockers"].append(_problem("unreadable", "PDF를 읽을 수 없음: %s" % exc))
+        return
+    for b in res["validation"]["blockers"]:
+        if b["check"] == "no_vector_content":  # 스캔 PDF 등 이미지만 있는 PDF는 등록하지 않는다(이미지 제외 결정)
+            info["blockers"].append(_problem("no_vector_content", b["reason"]))
+            return
+    info["pages"] = [{"page_id": "page-%d" % i, "page_name": None, "compressed": False}
+                     for i in range(1, page_count + 1)]
+    for key, field in CANDIDATE_FIELDS.items():
+        cell = res["drawing"]["title_block"].get(key)
+        if cell and cell.get("value"):
+            info["auto_candidates"][field] = {"value": cell["value"], "source": "title_block", "page_id": "page-1",
+                                              "key_object_id": cell.get("key_object_id"),
+                                              "value_object_id": cell.get("value_object_id")}
+
+
 def inspect(path, data):
-    """확장자·실제 형식·drawio 읽기·페이지 목록 확인.
+    """확장자·실제 형식·drawio/PDF 읽기·페이지 목록 확인.
 
     반환: {"format", "extension", "size_bytes", "pages", "compressed", "auto_candidates", "blockers"}
     blockers가 비어 있지 않으면 등록 완료 금지.
@@ -95,18 +130,21 @@ def inspect(path, data):
         return info
     actual = detect_format(data)
     info["format"] = actual
-    if ext not in DRAWIO_EXTENSIONS:
-        blockers.append(_problem("unsupported_extension", "확장자 %r 는 MVP 등록 대상(.drawio)이 아님" % ext))
-    if actual != "drawio":
-        if ext in DRAWIO_EXTENSIONS:
-            if actual in ("broken_xml", "unknown"):
-                blockers.append(_problem("unreadable", "draw.io XML로 읽을 수 없음(손상 또는 알 수 없는 형식: %s)"
-                                         % actual))
-            else:
-                blockers.append(_problem("format_mismatch", "확장자는 .drawio인데 실제 형식은 %s" % actual))
+    expected = EXPECTED_FORMAT.get(ext)
+    if expected is None:
+        blockers.append(_problem("unsupported_extension", "확장자 %r 는 등록 대상(.drawio·.pdf)이 아님" % ext))
+    if actual not in ("drawio", "pdf"):
+        if expected == "drawio" and actual in ("broken_xml", "unknown"):
+            blockers.append(_problem("unreadable", "draw.io XML로 읽을 수 없음(손상 또는 알 수 없는 형식: %s)"
+                                     % actual))
+        elif expected is not None:
+            blockers.append(_problem("format_mismatch", "확장자는 %s인데 실제 형식은 %s" % (ext, actual)))
         return info
-    if ext not in DRAWIO_EXTENSIONS:
-        blockers.append(_problem("format_mismatch", "실제 형식은 drawio인데 확장자가 %r" % ext))
+    if expected != actual:
+        blockers.append(_problem("format_mismatch", "실제 형식은 %s인데 확장자가 %r" % (actual, ext)))
+        return info
+    if actual == "pdf":
+        _inspect_pdf(path, data, info)
         return info
     try:
         pages = drawio.load_pages(data)
