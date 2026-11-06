@@ -1,12 +1,14 @@
 """① 자료 등록 (기획서/인터페이스.md §3.1). 등록·추출·그래프는 기존 함수(registry.register,
 scripts/extract_drawio.run_one 또는 scripts/extract_pdf.run_one, scripts/build_graph.build_one)를 그대로 호출한다.
-PDF는 등록이 끝나면 추출까지 자동으로 이어 하고 ② 도면 화면으로 옮긴다(drawio는 '추출·그래프 만들기' 버튼 그대로)."""
+PDF는 등록이 끝나면 추출까지 자동으로 이어 하고 ② 도면 화면으로 옮긴다(drawio는 '추출·그래프 만들기' 버튼 그대로).
+설계 문서(PDF)는 등록이 끝나면 지식 추출(data.extract_document)을 자동으로 하고 ③ 지식그래프로 옮긴다.
+추출이 끝나면 프로젝트 지식그래프를 다시 빌드한다(data.build_project_kg)."""
 
 import getpass
 import os
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel,
                                QLineEdit, QPushButton, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QTextBrowser, QVBoxLayout, QWidget)
 
@@ -20,6 +22,29 @@ META_FIELDS = (("drawing_number", "도면번호"), ("design_revision", "개정�
 OUTCOME_LABELS = {"registered": "등록 완료", "reused": "기존 등록 재사용(같은 해시)", "new_version": "새 등록 버전",
                   "failed": "실패", "on_hold": "보류"}
 STATUS_LABELS = {"registered": "등록 완료", "failed": "실패", "on_hold": "보류", "draft": "저장 진행 중"}
+# (화면 표시, registry 자료 종류, 파일 대화상자 거르개, 추출 버튼 문구)
+MATERIAL_CHOICES = (
+    ("P&ID 도면 (drawio·PDF)", "P&ID", "P&ID 원본 (*.drawio *.pdf);;draw.io (*.drawio *.xml);;PDF (*.pdf)",
+     "추출·그래프 만들기"),
+    ("설계 문서 (PDF)", "design_document", "설계 문서 PDF (*.pdf)", "지식 추출 다시 하기"),
+)
+EXTRACT_LABELS = {t: label for _, t, _, label in MATERIAL_CHOICES}
+DOC_COUNT_LABELS = (("doc_chunk", "문서 조각"), ("setpoint", "설정치"), ("condition", "운전조건"), ("requirement", "요건"))
+KNOWLEDGE_SCREEN = 4  # main_window STEPS 인덱스(③ 지식그래프)
+
+
+def material_type_of(rec):
+    return rec.get("material_type") or "P&ID"
+
+
+def kg_line(out):
+    """추출 결과의 지식그래프 빌드 한 줄(HTML)."""
+    if out.get("kg_error"):
+        return "<p style='color:%s'>지식그래프를 만들지 못함: %s</p>" % (tokens.c("err-ink"), esc(out["kg_error"]))
+    kg = out["kg"]["kg"]
+    st = (kg.get("validation") or {}).get("status")
+    return "<p>지식그래프 %s · 버전 %s · 검증 %s — ③ 지식그래프에서 보기</p>" % (
+        esc(kg.get("kg_id")), esc(kg.get("kg_version")), esc(VALIDATION_LABELS.get(st, st)))
 
 
 class DropZone(QFrame):
@@ -33,7 +58,7 @@ class DropZone(QFrame):
         self.setAcceptDrops(True)
         self.setMinimumHeight(84)
         lay = QVBoxLayout(self)
-        self.label = QLabel("draw.io 원본(.drawio) 또는 벡터 PDF(.pdf) 1개를 여기에 끌어 놓거나 '파일 선택'을 누르세요")
+        self.label = QLabel("P&ID 도면(.drawio·벡터 PDF) 또는 설계 문서 PDF 1개를 여기에 끌어 놓거나 '파일 선택'을 누르세요")
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setWordWrap(True)
         lay.addWidget(self.label)
@@ -89,7 +114,8 @@ class RegisterScreen(QWidget):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_row)
-        self.list_stack.addWidget(empty_label("등록된 자료가 없습니다. 오른쪽에 draw.io 원본 또는 벡터 PDF를 놓아 등록하세요."))
+        self.list_stack.addWidget(empty_label("등록된 자료가 없습니다. 오른쪽에 P&ID 도면(draw.io·벡터 PDF) 또는 "
+                                              "설계 문서 PDF를 놓아 등록하세요."))
         self.list_stack.addWidget(self.table)
         ll.addWidget(self.list_stack)
         split.addWidget(left)
@@ -104,6 +130,11 @@ class RegisterScreen(QWidget):
         form = QFormLayout()
         self.project = QLineEdit("sample-project")
         form.addRow("프로젝트 ID", self.project)
+        self.material = QComboBox()
+        for label, mtype, _, _ in MATERIAL_CHOICES:
+            self.material.addItem(label, mtype)
+        self.material.currentIndexChanged.connect(lambda _: self._repreview())
+        form.addRow("자료 종류", self.material)
         rl.addLayout(form)
         self.drop = DropZone()
         self.drop.files_dropped.connect(self.set_files)
@@ -177,7 +208,8 @@ class RegisterScreen(QWidget):
             vals = [rec.get("material_id"), rec.get("registration_version"), rec.get("original_name"),
                     data.unknown_text(rec.get("drawing_number")), data.unknown_text(rec.get("design_revision")),
                     hist[0].get("at"), STATUS_LABELS.get(rec.get("status"), rec.get("status")),
-                    "있음" if e["extracted"] else "없음", "있음" if e["graphed"] else "없음"]
+                    "있음" if e["extracted"] else "없음",
+                    "해당 없음" if e["graphed"] is None else "있음" if e["graphed"] else "없음"]
             for c, v in enumerate(vals):
                 self.table.setItem(r, c, QTableWidgetItem("" if v is None else str(v)))
         self.table.resizeColumnsToContents()
@@ -190,16 +222,24 @@ class RegisterScreen(QWidget):
     def _on_row(self):
         e = self.selected_registration()
         self.btn_extract.setEnabled(bool(e) and e["record"].get("status") == "registered")
+        self.btn_extract.setText(EXTRACT_LABELS[material_type_of(e["record"]) if e else "P&ID"])
         if e:
             self.show_record(e["record"], None, e["path"])
 
     # ------------------------------------------------------------ 파일 선택·미리보기
+    def material_type(self):
+        return self.material.currentData()
+
     def _pick(self):
-        path, _ = QFileDialog.getOpenFileName(self, "P&ID 원본 선택", paths.resource_root(),
-                                              "P&ID 원본 (*.drawio *.pdf);;draw.io (*.drawio *.xml);;PDF (*.pdf);;"
-                                              "모든 파일 (*)")
+        label, _, filters, _ = MATERIAL_CHOICES[self.material.currentIndex()]
+        path, _ = QFileDialog.getOpenFileName(self, "%s 선택" % label, paths.resource_root(), filters + ";;모든 파일 (*)")
         if path:
             self.set_files([path])
+
+    def _repreview(self):
+        """자료 종류를 바꾸면 고른 파일을 그 종류로 다시 확인한다."""
+        if self.source_path:
+            self.set_files([self.source_path])
 
     def set_files(self, files):
         """여러 개를 놓으면 '한 개씩 등록'을 안내하고 아무것도 등록하지 않는다(§3.1)."""
@@ -216,7 +256,7 @@ class RegisterScreen(QWidget):
         try:
             with open(path, "rb") as fh:
                 raw = fh.read()
-            info = fileinfo.inspect(path, raw)
+            info = fileinfo.inspect(path, raw, self.material_type())
         except (OSError, ValueError) as exc:
             self.file_info.setText("<span style='color:%s'>파일을 읽을 수 없음: %s</span>" % (tokens.c("err-ink"), esc(exc)))
             return False
@@ -227,7 +267,10 @@ class RegisterScreen(QWidget):
             parts.append("<span style='color:%s'>문제: %s %s</span>" % (tokens.c("err-ink"), esc(b.get("check")), esc(b.get("reason"))))
         pages = info.get("pages") or []
         svg = None
-        if info.get("format") == "pdf":
+        if self.material_type() == "design_document":
+            parts.append("설계 문서 PDF %d쪽 · 등록하면 설정치·운전조건·요건을 자동 추출해 ③ 지식그래프에 추가"
+                         "(자동 추출 · 사람 확인 전)" % len(pages))
+        elif info.get("format") == "pdf":
             parts.append("PDF %d쪽 · 등록하면 첫 쪽을 자동 추출해 ② 도면에 표시(도면은 PDF에서 그림)" % len(pages))
         elif pages:
             svg = svg_align.find_svg(path, 0, pages[0].get("page_name"), len(pages))
@@ -266,9 +309,10 @@ class RegisterScreen(QWidget):
             return
         path, project, meta, actor = self.source_path, self.project.text().strip(), self.metadata(), \
             self.actor.text().strip() or None
+        mtype = self.material_type()
         self.result.setHtml("<p>등록 중: 형식 확인 → 해시 → 저장 → 저장 후 해시 확인</p>")
         self.btn_register.setEnabled(False)
-        self.app.tasks.run("등록", lambda: registry.register(path, project, "P&ID", paths.store_root(), meta, actor),
+        self.app.tasks.run("등록", lambda: registry.register(path, project, mtype, paths.store_root(), meta, actor),
                            self._registered, self._failed)
 
     def _registered(self, result):
@@ -282,7 +326,7 @@ class RegisterScreen(QWidget):
         self.show_record(rec, result, result.get("registration_file"))
         if rec.get("format") == "pdf" and rec.get("status") == "registered" and \
                 result["outcome"] not in ("failed", "on_hold") and result.get("registration_file"):
-            self.do_extract(result["registration_file"], auto=True)
+            self.do_extract(result["registration_file"], auto=True, material_type=material_type_of(rec))
 
     def _failed(self, err):
         self.btn_register.setEnabled(bool(self.source_path))
@@ -322,14 +366,19 @@ class RegisterScreen(QWidget):
                 "<li>%s: %s</li>" % (esc(u.get("field")), esc(u.get("reason"))) for u in unk))
         self.result.setHtml("".join(h))
 
-    def do_extract(self, registration_path=None, auto=False):
-        """auto: PDF 등록 직후 자동 실행. 끝나면 ② 도면 화면으로 옮겨 이 도면을 연다."""
+    def do_extract(self, registration_path=None, auto=False, material_type=None):
+        """auto: PDF 등록 직후 자동 실행. 끝나면 P&ID는 ② 도면 화면으로 옮겨 이 도면을 열고, 설계 문서는 ③으로 옮긴다."""
         if not registration_path:
             e = self.selected_registration()
             if not e:
                 return
-            registration_path = e["path"]
+            registration_path, material_type = e["path"], material_type_of(e["record"])
         self.btn_extract.setEnabled(False)
+        if material_type == "design_document":
+            self.result.setHtml("<p>설계 문서 지식 추출 → 지식그래프 빌드 중…</p>")
+            self.app.tasks.run("지식 추출", lambda: data.extract_document(registration_path),
+                               lambda out: self._document_extracted(out, auto), self._failed)
+            return
         self.result.setHtml("<p>추출 → 그래프 생성 중…</p>")
         self.app.tasks.run("추출·그래프", lambda: data.extract_and_graph(registration_path),
                            lambda out: self._extracted(out, auto), self._failed)
@@ -353,8 +402,28 @@ class RegisterScreen(QWidget):
             h.append("<p style='color:%s'>차단: %s %s</p>" % (tokens.c("err-ink"), esc(b.get("check")), esc(b.get("target"))))
         if not al:
             h.append("<p style='color:%s'>경고: SVG 없음 — 도면 오버레이를 만들 수 없음(그래프 보기만 가능)</p>" % tokens.c("warn-ink"))
+        h.append(kg_line(out))
         self.result.setHtml("".join(h))
         self.refresh()
         if auto:
             self.app.go(1)
             self.app.screens[1].select_drawing(os.path.basename(out["extract_dir"]))
+
+    def _document_extracted(self, out, auto=False):
+        self.btn_extract.setEnabled(True)
+        doc = out["document"]
+        s, v = doc["summary"], doc["validation"]
+        ok = v["status"] == "passed"
+        h = ["<p style='color:%s'><b>설계 문서 지식 추출 %s</b></p>" % (tokens.c("ok") if ok else tokens.c("err-ink"),
+                                                                "완료" if ok else "— 차단"),
+             "<p>%s %s · 쪽 %s</p>" % (badge("자동 추출 · 사람 확인 전", "ai"),
+                                      " · ".join("%s %d" % (label, s.get(k, 0)) for k, label in DOC_COUNT_LABELS),
+                                      esc(doc.get("page_count"))),
+             "<p>%s</p>" % esc(paths.rel_or_abs(out["path"], paths.work_root()))]
+        for b in v.get("blockers") or []:
+            h.append("<p style='color:%s'>차단: %s — %s</p>" % (tokens.c("err-ink"), esc(b.get("check")), esc(b.get("reason"))))
+        h.append(kg_line(out))
+        self.result.setHtml("".join(h))
+        self.refresh()
+        if auto:
+            self.app.go(KNOWLEDGE_SCREEN)

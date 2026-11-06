@@ -16,7 +16,7 @@ from hazop.extract import drawio, rules
 
 DRAWIO_EXTENSIONS = (".drawio",)
 PDF_EXTENSIONS = (".pdf",)
-# 등록 대상 확장자 -> 기대하는 실제 형식
+# P&ID 등록 대상 확장자 -> 기대하는 실제 형식(자료 종류별 표는 파일 끝 MATERIAL_FORMATS)
 EXPECTED_FORMAT = dict([(e, "drawio") for e in DRAWIO_EXTENSIONS] + [(e, "pdf") for e in PDF_EXTENSIONS])
 # 실제 형식 판별용 파일 시작 바이트
 MAGIC = [(b"%PDF", "pdf"), (b"\x89PNG", "png"), (b"\xff\xd8\xff", "jpeg"), (b"PK\x03\x04", "zip")]
@@ -115,8 +115,23 @@ def _inspect_pdf(path, data, info):
                                               "value_object_id": cell.get("value_object_id")}
 
 
-def inspect(path, data):
-    """확장자·실제 형식·drawio/PDF 읽기·페이지 목록 확인.
+def _inspect_text_pdf(path, data, info):
+    """설계 문서 PDF: 쪽마다 글자를 읽을 수 있는지(hazop.kg.docextract.read_pages, 추출과 같은 읽기)와 쪽 목록.
+    벡터 도면 분석(pdf_vector)·표제란 후보는 하지 않는다(글 문서에는 도면이 없음)."""
+    from hazop.kg import docextract
+    try:
+        pages = docextract.read_pages(data)
+    except docextract.DocExtractError as exc:
+        info["blockers"].append(_problem("unreadable", str(exc)))
+        return
+    if not any(line.strip() for _, lines in pages for line in lines):
+        info["blockers"].append(_problem("no_text_content", "글자가 없는 PDF(스캔 문서)는 지원하지 않음 — OCR 없음"))
+        return
+    info["pages"] = [{"page_id": "page-%d" % i, "page_name": None, "compressed": False} for i, _ in pages]
+
+
+def inspect(path, data, material_type="P&ID"):
+    """확장자·실제 형식·drawio/PDF 읽기·페이지 목록 확인. 허용 형식과 PDF 읽기는 자료 종류별(MATERIAL_FORMATS).
 
     반환: {"format", "extension", "size_bytes", "pages", "compressed", "auto_candidates", "blockers"}
     blockers가 비어 있지 않으면 등록 완료 금지.
@@ -130,9 +145,11 @@ def inspect(path, data):
         return info
     actual = detect_format(data)
     info["format"] = actual
-    expected = EXPECTED_FORMAT.get(ext)
+    kind = MATERIAL_FORMATS[material_type]
+    expected = kind["formats"].get(ext)
     if expected is None:
-        blockers.append(_problem("unsupported_extension", "확장자 %r 는 등록 대상(.drawio·.pdf)이 아님" % ext))
+        blockers.append(_problem("unsupported_extension", "확장자 %r 는 %s 등록 대상(%s)이 아님"
+                                 % (ext, material_type, "·".join(kind["formats"]))))
     if actual not in ("drawio", "pdf"):
         if expected == "drawio" and actual in ("broken_xml", "unknown"):
             blockers.append(_problem("unreadable", "draw.io XML로 읽을 수 없음(손상 또는 알 수 없는 형식: %s)"
@@ -144,7 +161,7 @@ def inspect(path, data):
         blockers.append(_problem("format_mismatch", "실제 형식은 %s인데 확장자가 %r" % (actual, ext)))
         return info
     if actual == "pdf":
-        _inspect_pdf(path, data, info)
+        kind["pdf"](path, data, info)
         return info
     try:
         pages = drawio.load_pages(data)
@@ -167,3 +184,10 @@ def inspect(path, data):
     except ValueError as exc:
         blockers.append(_problem("invalid_number", str(exc)))
     return info
+
+
+# 자료 종류 -> 허용 확장자(기대 형식)와 PDF 읽기 함수. registry.MATERIAL_TYPES는 이 표의 키다.
+MATERIAL_FORMATS = {
+    "P&ID": {"formats": EXPECTED_FORMAT, "pdf": _inspect_pdf},
+    "design_document": {"formats": {e: "pdf" for e in PDF_EXTENSIONS}, "pdf": _inspect_text_pdf},
+}

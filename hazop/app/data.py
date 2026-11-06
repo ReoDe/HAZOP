@@ -12,6 +12,8 @@ import os
 
 from hazop import paths
 from hazop.analysis import ai as ai_mod
+from hazop.kg import auto, docextract
+from hazop.kg import build as kg_build
 from hazop.kg.context import omission_texts
 from hazop.register import registry
 from hazop.viewer import build as viewer_build
@@ -76,16 +78,22 @@ def list_registrations(store_root=None):
             except (KeyError, TypeError):
                 name = None
         e["extract_name"] = name
-        e["extracted"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("추출"), name, "extraction.json"))
-        e["graphed"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("그래프"), name, "graph.json"))
+        if r.get("material_type") == "design_document":  # 설계 문서: 지식 추출만 있고 도면 그래프는 해당 없음(None)
+            e["extracted"] = bool(name) and os.path.isfile(os.path.join(doc_root(), name, auto.DOC_FILE))
+            e["graphed"] = None
+        else:
+            e["extracted"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("추출"), name, "extraction.json"))
+            e["graphed"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("그래프"), name, "graph.json"))
         rows.append(e)
     return rows
 
 
 def extract_and_graph(registration_path):
     """등록정보 → `--registration` 추출 → 그래프 생성 (scripts/extract_drawio.run_one 또는 PDF면
-    scripts/extract_pdf.run_one, 그리고 scripts/build_graph.build_one). 출력 폴더 이름은 두 형식이 같다.
-    반환 {"extraction", "extract_dir", "graph", "graph_dir"}. 등록 완료가 아니거나 해시 불일치면 ValueError."""
+    scripts/extract_pdf.run_one, 그리고 scripts/build_graph.build_one) → 프로젝트 지식그래프 다시 빌드.
+    출력 폴더 이름은 두 형식이 같다.
+    반환 {"extraction", "extract_dir", "graph", "graph_dir", "kg" 또는 "kg_error"}. 등록 완료가 아니거나
+    해시 불일치면 ValueError. 지식그래프 빌드 실패는 추출을 실패로 만들지 않고 kg_error로 돌려준다."""
     ex = script_module("extract_drawio")
     bg = script_module("build_graph")
     record, original = registry.load_for_extraction(registration_path)
@@ -98,7 +106,41 @@ def extract_and_graph(registration_path):
         result, out_dir = ex.run_one(original, paths.output_root("추출"), svg="auto", page=0, registration=record,
                                      registered_svgs=reg_svg)
     graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("그래프"))
-    return {"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir}
+    return _with_kg({"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir},
+                    record["project_id"])
+
+
+# ---------------------------------------------------------------- ① 설계 문서 → 문서 지식 → ③ 지식그래프
+def doc_root():
+    """문서 지식 출력 루트 출력/문서지식/<등록 출력 이름>/document_knowledge.json."""
+    return paths.output_root("문서지식")
+
+
+def build_project_kg(project_id):
+    """프로젝트 지식그래프를 도면 그래프·문서 지식·지식 CSV(있으면)로 다시 빌드한다(hazop.kg.auto.build_project).
+    반환 {"kg", "dir", "notes"}. 도면도 문서도 없으면 ValueError."""
+    return auto.build_project(project_id, paths.output_root("그래프"), doc_root(), paths.work_path("데이터", "지식"),
+                              paths.output_root("지식그래프"))
+
+
+def _with_kg(out, project_id):
+    try:
+        out["kg"] = build_project_kg(project_id)
+    except (OSError, ValueError, KeyError) as exc:
+        out["kg_error"] = str(exc)
+    return out
+
+
+def extract_document(registration_path):
+    """설계 문서 등록정보 → 규칙 기반 지식 추출(hazop.kg.docextract) → document_knowledge.json → 지식그래프 빌드.
+    반환 {"document", "path", "kg" 또는 "kg_error"}. 등록 완료가 아니거나 해시 불일치면 ValueError."""
+    record, original = registry.load_for_extraction(registration_path)
+    doc = docextract.extract_pdf(original, record["material_id"], record["registration_version"], registry.DOCUMENT_ID,
+                                 title=record.get("title") or record.get("original_name"))
+    doc["project_id"] = record["project_id"]
+    path = os.path.join(doc_root(), script_module("extract_drawio").registered_out_name(record, 0), auto.DOC_FILE)
+    kg_build.write_json_atomic(path, doc)
+    return _with_kg({"document": doc, "path": path}, record["project_id"])
 
 
 # ---------------------------------------------------------------- ② 추출 결과·뷰어

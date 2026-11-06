@@ -292,9 +292,9 @@ class SplitRootsFlowTest(unittest.TestCase):
             kg = kg_build.build_kg(knowledge, [g for _, g in graphs.values()])
             kg_out = paths.output_root("지식그래프")
             kg_build.write_outputs(paths.safe_join(kg_out, paths.safe_name(kg["kg_id"])), knowledge, kg)
-            roots = kg_screen.list_kg_roots(kg_out)
-            self.assertEqual([r[0] for r in roots], [kg["kg_id"]])
-            _, loaded = kg_build.load_outputs(roots[0][1])
+            roots = dict(kg_screen.list_kg_roots(kg_out))
+            self.assertEqual(sorted(roots), sorted([kg["kg_id"], "kg-p"]))  # kg-p: ① 추출 때 자동 생성(도면 기반)
+            _, loaded = kg_build.load_outputs(roots[kg["kg_id"]])
             self.assertEqual(loaded["kg_version"], kg["kg_version"])
             _, graph = next(iter(graphs.values()))
             sdata = kg_screen.screen_data(loaded, graph, kg_screen.load_regions(paths.work_path("데이터", "구간")),

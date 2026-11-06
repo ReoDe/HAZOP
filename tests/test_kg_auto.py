@@ -91,6 +91,7 @@ class DrawingOnlyTest(unittest.TestCase):
         data = screen.screen_data(kg, g)
         self.assertEqual(len(data["nodes"]), len(g["nodes"]))
         self.assertTrue(data["algo"]["enabled"], data["algo"]["reason"])
+        self.assertEqual(data["meta"]["auto_items"], 0)
 
     def test_missing_project_graph_blocks(self):
         g = pid_graph()
@@ -116,6 +117,7 @@ class DocumentLinkTest(unittest.TestCase):
         shown = {n["id"] for n in data["nodes"] if n["layer"] == "kn"}
         self.assertTrue({n["id"] for n in d["nodes"]} <= shown)
         self.assertTrue(any(l["st"] == "candidate" and l["kind"] == "has_setpoint" for l in data["links"]))
+        self.assertEqual(data["meta"]["auto_items"], len(d["nodes"]) - 1)  # 문서 노드만 확인됨
 
     def test_tag_missing_from_drawing_is_noted_not_linked(self):
         g, d = pid_graph(), copy.deepcopy(document())

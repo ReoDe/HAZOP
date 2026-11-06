@@ -14,9 +14,10 @@ from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLayout, 
                                QTextBrowser, QVBoxLayout, QWidget)
 
 from hazop import paths
+from hazop.app import data as app_data
 from hazop.app import tokens
 from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, badge, empty_label, esc
-from hazop.kg import algo, build, screen
+from hazop.kg import algo, auto, build, screen
 
 APP_SHELL = "kg-screen.html"  # 출력/뷰어/ 아래 앱 셸(데이터 없음, loadKnowledge로 받음)
 TYPE_NAMES = {"equipment": "설비", "valve": "밸브", "instrument": "계장", "piping_element": "배관 요소",
@@ -26,8 +27,15 @@ STATUS_ORDER = {"confirmed": 0, "recheck": 1, "excluded": 2, "candidate": 3}
 STATUS_NAMES = {"confirmed": "확인", "recheck": "재확인 필요", "excluded": "계산 제외", "candidate": "후보"}
 A1_NAMES = {"downstream": "하류", "upstream": "상류", "mixed": "혼합", "unknown": "방향 미확인", "adjacent": "인접 구간",
             "not_applicable": "방향 해당 없음"}
-EMPTY_TEXT = ("지식그래프가 없습니다.\n지식 입력 CSV(데이터/지식/<project_id>/)를 작성하고 지식 빌드(scripts/build_kg.py)를 "
-              "실행하면 여기에 나옵니다.\nP&ID 도면 추출 결과는 ② 도면·그래프에서 보세요.")
+EMPTY_TEXT = ("지식그래프가 없습니다.\n① 자료 등록에서 P&ID 도면(drawio·PDF)을 등록하고 추출하면 지식그래프가 자동으로 "
+              "만들어집니다.\n설계 문서 PDF를 등록하면 설정치·운전조건·요건을 자동 추출해 '자동 추출 · 사람 확인 전'으로 "
+              "더합니다.")
+AUTO_BADGE = "자동 추출 · 사람 확인 전"
+
+
+def auto_extracted(rec):
+    """규칙 추출기가 만들고 사람이 아직 확인하지 않은 지식 노드·관계."""
+    return rec.get("method") == "extractor" and rec.get("knowledge_status") != "confirmed"
 
 
 class FlowLayout(QLayout):
@@ -213,8 +221,24 @@ class KnowledgeScreen(QWidget):
         self.detail_toggle.setText("펴기" if self.detail_collapsed else "접기")
         self._size_detail()
 
+    def _build_missing(self):
+        """등록·추출 결과는 있는데 지식그래프가 아직 없는 프로젝트를 빌드한다(실패는 기록만, 화면은 계속)."""
+        try:
+            pids = auto.project_ids(paths.output_root("그래프"), app_data.doc_root())
+        except OSError as exc:
+            self.app.log_error("지식그래프 자동 생성", exc)
+            return
+        for pid in pids:
+            if os.path.isfile(os.path.join(kg_root_dir(), paths.safe_name("kg-%s" % pid), build.POINTER_FILE)):
+                continue
+            try:
+                app_data.build_project_kg(pid)
+            except (OSError, ValueError, KeyError) as exc:
+                self.app.log_error("지식그래프 자동 생성(%s)" % pid, exc)
+
     def on_enter(self):
         self.app.webview.set_mode(hide_panel=False)
+        self._build_missing()
         cur = self.kg_combo.currentData()
         self.kg_combo.blockSignals(True)
         self.kg_combo.clear()
@@ -254,14 +278,23 @@ class KnowledgeScreen(QWidget):
                 self.kg = kg
                 self._fill_graphs()
             kg = self.kg
-            graphs = screen.load_graphs(paths.output_root("그래프"))
-            gid = self.graph_combo.currentData()
-            if gid not in graphs:
-                self._set_empty("지식그래프 %s가 참조한 도면 그래프가 없습니다: %s. ①에서 추출·그래프를 만드세요."
-                                % (kg.get("kg_id"), ", ".join(r["graph_id"] for r in kg.get("graph_refs") or [])))
+            refs = kg.get("graph_refs") or []
+            if not refs:
+                n = sum(1 for k in kg.get("nodes") or [] if k.get("node_type") != "document")
+                self._set_empty("지식그래프 %s에 설계 문서에서 추출한 항목 %d개가 있습니다(%s).\n그래프에서 보려면 ① 자료 "
+                                "등록에서 같은 프로젝트(%s)의 P&ID 도면을 등록하고 추출하세요."
+                                % (kg.get("kg_id"), n, AUTO_BADGE, kg.get("project_id")))
                 self.kg = kg
                 return
-            self.graph_dir, self.graph = graphs[gid]
+            gid = self.graph_combo.currentData()
+            ref_ver = {r["graph_id"]: r["graph_version"] for r in refs}.get(gid)
+            found = screen.graph_for_ref(paths.output_root("그래프"), gid, ref_ver)
+            if found is None:
+                self._set_empty("지식그래프 %s가 참조한 도면 그래프가 없습니다: %s. ①에서 추출·그래프를 만드세요."
+                                % (kg.get("kg_id"), ", ".join(r["graph_id"] for r in refs)))
+                self.kg = kg
+                return
+            self.graph_dir, self.graph = found
             self.regions = screen.load_regions(paths.work_path("데이터", "구간"))
             cands = screen.read_candidates(paths.safe_join(paths.work_path("데이터", "지식"), kg.get("project_id") or ""))
             self.data = screen.screen_data(kg, self.graph, self.regions, cands,
@@ -315,8 +348,9 @@ class KnowledgeScreen(QWidget):
         ch["algo"].set_state("알고리즘: 이 kg_version으로 계산" if a["enabled"] else "알고리즘 비활성",
                              "" if a["enabled"] else "warn")
         if st != "passed":
-            self.blockers.set_messages("지식그래프 검증 차단 — 알고리즘을 실행하지 않음(A1·A2·A3·A5 비활성). 입력 CSV를 고친 뒤 "
-                                       "다시 빌드하세요" + (". 직전 passed 버전 %s가 있음" % self.prev[0] if self.prev else ""),
+            self.blockers.set_messages("지식그래프 검증 차단 — 알고리즘을 실행하지 않음(A1·A2·A3·A5 비활성). 아래 항목의 "
+                                       "입력(도면·설계 문서·지식 입력)을 고친 뒤 ① 자료 등록에서 다시 등록·추출하세요"
+                                       + (". 직전 passed 버전 %s가 있음" % self.prev[0] if self.prev else ""),
                                        ["[%s] %s %s: %s" % (b.get("rule"), b.get("check"), b.get("target") or "",
                                                             b.get("reason")) for b in v.get("blockers") or []])
         else:
@@ -485,6 +519,8 @@ class KnowledgeScreen(QWidget):
                 h += " " + badge("∅ 근거 없음", "err")
             if kn.get("conflict_with"):
                 h += " " + badge("≠ 충돌", "err")
+            if auto_extracted(kn):
+                h += " " + badge(AUTO_BADGE, "ai")
             h += "</p><h4>내용</h4>"
             fields = [("이름", "name"), ("원문", "text"), ("항목", "item"), ("값", "value"), ("단위", "unit"),
                       ("압력 기준", "pressure_basis"), ("운전 모드", "operating_mode")]
@@ -492,6 +528,8 @@ class KnowledgeScreen(QWidget):
             always = ("value", "unit", "pressure_basis", "operating_mode") if n["type"] in ("setpoint", "condition") else ()
             rows = [(k, self._val(kn, f)) for k, f in fields if kn.get(f) not in (None, "") or f in always]
             rows += [("방법", esc(kn.get("method"))), ("작성자", esc(kn.get("author")))]
+            if kn.get("extractor"):
+                rows.append(("추출기", esc(kn["extractor"])))
             if kn.get("reason"):
                 rows.append(("사유", esc(kn["reason"])))
             if kn.get("compute_view", {}).get("excluded_reasons"):
@@ -535,7 +573,7 @@ class KnowledgeScreen(QWidget):
         h += self._kv([("시작", "<a href='node:%s'>%s</a>" % (esc(d["s"]), esc(d["s"]))),
                        ("끝", "<a href='node:%s'>%s</a>" % (esc(d["t"]), esc(d["t"]))),
                        ("표시 상태", esc(STATUS_NAMES.get(d["st"], d["st"])))])
-        if d["st"] == "candidate":
+        if d["st"] == "candidate" and d["id"].startswith("cand:"):  # link_candidates.csv 표시 전용 후보
             h += "<h4>연결 후보</h4>" + self._kv([
                 ("방법", esc(d.get("method"))), ("점수", esc(d.get("conf"))), ("모호", "예" if d.get("amb") else "아니오"),
                 ("일치 원문", esc(d.get("match"))), ("후보 키", esc(d.get("key")))])
@@ -543,9 +581,13 @@ class KnowledgeScreen(QWidget):
                  % tokens.c("warn-ink")
         elif d["layer"] == "kn":
             kl = next(l for l in self.kg["links"] if l["id"] == lid)
+            if auto_extracted(kl):
+                h += "<p>%s</p>" % badge(AUTO_BADGE, "ai")
             rows = [("link_status", esc(kl.get("link_status"))), ("knowledge_status", esc(kl.get("knowledge_status"))),
                     ("방법", esc(kl.get("method"))), ("확인자", esc(kl.get("reviewed_by"))),
                     ("확인일", esc(kl.get("reviewed_at")))]
+            if kl.get("extractor"):
+                rows.append(("추출기", esc(kl["extractor"])))
             if kl.get("reason"):
                 rows.append(("사유", esc(kl["reason"])))
             if kl.get("compute_view", {}).get("excluded_reasons"):

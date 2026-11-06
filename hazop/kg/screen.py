@@ -50,6 +50,24 @@ def load_graphs(graph_root):
     return out
 
 
+def graph_for_ref(graph_root, graph_id, graph_version):
+    """지식그래프 graph_ref에 맞는 (폴더 이름, graph) 또는 None. 같은 graph_id 폴더가 여럿이면(같은 도면을 drawio·PDF로
+    따로 등록한 경우 등) graph_version이 같은 폴더를 먼저, 없으면 load_graphs와 같은 첫 폴더(이름순)를 쓴다."""
+    first = None
+    for name in sorted(os.listdir(graph_root)) if os.path.isdir(graph_root) else []:
+        p = os.path.join(graph_root, name, "graph.json")
+        if not os.path.isfile(p):
+            continue
+        with open(p, encoding="utf-8") as fh:
+            g = json.load(fh)
+        if g.get("graph_id") != graph_id:
+            continue
+        if g.get("graph_version") == graph_version:
+            return name, g
+        first = first or (name, g)
+    return first
+
+
 def load_regions(region_dir):
     """[(라벨, 구간 dict, 파일 sha256)] — A1 인자(algo.a1_propagation)."""
     out = []
@@ -282,6 +300,9 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
         "candidates": cand_info, "skipped_links": skipped,
         "node_limit": NODE_LIMIT, "global_count": global_count, "s1": global_count > NODE_LIMIT,
         "default_radius": DEFAULT_RADIUS, "note": standalone_note,
+        # 자동 추출·사람 확인 전 지식 노드 수. 0보다 크면 화면이 미확인·후보 표시를 켠 채로 연다(§9.3)
+        "auto_items": sum(1 for n in kg["nodes"] if n.get("method") == "extractor"
+                          and n.get("knowledge_status") != "confirmed"),
     }
     return {"meta": meta, "nodes": nodes, "links": links, "algo": alg}
 

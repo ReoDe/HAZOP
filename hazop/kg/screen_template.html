@@ -688,6 +688,7 @@ button, input { font: inherit; color: inherit; }
     D.links.forEach(function (l) { LB[l.id] = l; l.source = l.s; l.target = l.t; });
     S.depth = D.meta.default_radius || 2; $("depth").value = S.depth;
     S.center = null; S.sel = null; fitted = false;
+    if (D.meta.auto_items) { S.showExcl = true; S.showCand = true; syncInputs(); }  /* 자동 추출(사람 확인 전) 항목은 처음부터 보임 */
     ADJ = adjacency();
     initialPositions();
     buildFilters();

@@ -32,6 +32,7 @@ SAMPLES = sorted(glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 
 SAMPLE_101 = [p for p in SAMPLES if "SNP-M-101" in p][0]
 PDF_101 = glob.glob(os.path.join(os.path.dirname(SAMPLE_101), "*.pdf"))[0]
 HAS_PDFPLUMBER = importlib.util.find_spec("pdfplumber") is not None
+DESIGN_DOC = glob.glob(os.path.join(REPO_ROOT, "tests", "fixtures", "docextract", "*.pdf"))[0]  # 가상 설계 문서
 
 
 def minimal_pdf(content, mediabox="0 0 300 300"):
@@ -783,6 +784,59 @@ class ReviewFix3Test(RegisterBase):
         self.assertEqual(os.listdir(self.store), ["alpha"])  # 새 폴더를 만들거나 섞지 않음
         with open(os.path.join(self.store, "alpha", "registry.json"), encoding="utf-8") as fh:
             self.assertEqual(json.load(fh)["project_id"], "alpha")
+
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(전용 venv에서 실행)")
+class DesignDocumentRegisterTest(RegisterBase):
+    """설계 문서(PDF) 등록: 글자를 읽을 수 있는 PDF만, 벡터 도면 분석·표제란 후보 없음."""
+
+    def test_design_document_registers(self):
+        r = self.reg(DESIGN_DOC, material_type="design_document")
+        rec = r["record"]
+        self.assertEqual((r["outcome"], rec["status"], rec["material_type"], rec["format"]),
+                         ("registered", "registered", "design_document", "pdf"))
+        self.assertEqual(rec["documents"][0]["page_ids"][:2], ["page-1", "page-2"])
+        self.assertEqual(rec["auto_candidates"], {})
+        self.assertFalse(rec.get("derived_files"))
+        _, original = registry.load_for_extraction(r["registration_file"])
+        self.assertEqual(read_bytes(original), read_bytes(DESIGN_DOC))
+
+    def test_text_less_pdf_fails(self):
+        r = self.reg(self.put(minimal_pdf(b"0 0 m 100 100 l S"), "scan.pdf"), material_type="design_document")
+        self.assert_failed_not_stored(r, "no_text_content")
+
+    def test_drawio_is_not_a_design_document(self):
+        self.assert_failed_not_stored(self.reg(SAMPLE_101, material_type="design_document"), "unsupported_extension")
+
+    def test_same_file_as_other_type_is_held(self):
+        self.assertEqual(self.reg(DESIGN_DOC, material_type="design_document")["outcome"], "registered")
+        r = self.reg(DESIGN_DOC)
+        self.assertEqual(r["outcome"], "on_hold")
+        self.assertEqual(r["record"]["validation"]["blockers"][0]["check"], "material_type_conflict")
+
+    def test_unknown_material_type_on_hold(self):
+        r = self.reg(DESIGN_DOC, material_type="photo")
+        self.assertEqual(r["outcome"], "on_hold")
+        self.assertEqual(r["record"]["validation"]["blockers"][0]["check"], "unsupported_material_type")
+
+    def test_extract_document_writes_knowledge_and_kg(self):
+        from hazop.app import data
+        work = os.path.join(self.tmp, "work")
+        with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": work, "HAZOP_STORE_ROOT": self.store}):
+            r = self.reg(DESIGN_DOC, material_type="design_document")
+            out = data.extract_document(r["registration_file"])
+            name = extract_drawio.registered_out_name(r["record"], 0)
+            self.assertEqual(out["path"], os.path.join(work, "출력", "문서지식", name, "document_knowledge.json"))
+            with open(out["path"], encoding="utf-8") as fh:
+                doc = json.load(fh)
+            self.assertEqual((doc["project_id"], doc["material_id"]), ("proj-1", r["record"]["material_id"]))
+            self.assertGreater(doc["summary"]["setpoint"], 0)
+            self.assertEqual(out["kg"]["kg"]["kg_id"], "kg-proj-1")             # 도면 없이 문서만으로도 빌드
+            self.assertNotIn("kg_error", out)
+            rows = data.list_registrations()
+            self.assertEqual([(e["extracted"], e["graphed"]) for e in rows], [(True, None)])
+        self.assertFalse(os.path.exists(os.path.join(REPO_ROOT, "출력", "문서지식", name)))
 
 
 if __name__ == "__main__":

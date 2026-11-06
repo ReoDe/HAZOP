@@ -710,6 +710,75 @@ class RegisterScreenTest(AppTestBase):
         self.assertTrue(wait_for(lambda: (state() or [True])[0] is False, 15), state())
         self.assertNotEqual(state()[1], "none")
 
+    def test_drawing_and_design_document_build_knowledge_graph(self):
+        """도면 등록·추출 → kg-<프로젝트> 자동 생성·③ 표시, 설계 문서 등록 → 자동 추출 항목이 ③에 근거와 함께 더해짐."""
+        from hazop.app.screens import knowledge
+        win = self.make_window()
+        scr = win.screens[0]
+        scr.project.setText("X")
+        self.assertTrue(scr.set_files([sample_file("SNP-M-102", "drawio")]))
+        scr.do_register()
+        pump(win, 0.1)
+        scr.table.selectRow(next(r for r, e in enumerate(scr.rows) if e["record"]["project_id"] == "X"))
+        self.assertEqual(scr.btn_extract.text(), "추출·그래프 만들기")
+        scr.do_extract()
+        pump(win, 0.1)
+        self.assertIn("지식그래프 kg-X", scr.result.toPlainText())
+        kg_root = os.path.join(os.environ["HAZOP_WORK_ROOT"], "출력", "지식그래프", "kg-X")
+        self.assertTrue(os.path.isfile(os.path.join(kg_root, "current.json")))
+        win.go(4)
+        kscr = win.screens[4]
+        kscr.kg_combo.setCurrentIndex(kscr.kg_combo.findText("kg-X"))
+        self.assertEqual(kscr.stack.currentIndex(), 1, kscr.empty.text())
+        self.assertTrue(any(n["layer"] == "pid" for n in kscr.data["nodes"]))
+
+        win.go(0)
+        scr.material.setCurrentIndex(scr.material.findData("design_document"))
+        doc_pdf = glob.glob(os.path.join(REPO_ROOT, "tests", "fixtures", "docextract", "*.pdf"))[0]
+        self.assertTrue(scr.set_files([doc_pdf]))
+        self.assertIn("자동 추출", scr.file_info.text())
+        scr.do_register()
+        self.assertTrue(wait_for(lambda: (win.tasks.wait(1000), win.stack.currentIndex() == 4)[1], 120),
+                        scr.result.toPlainText())
+        self.assertIn("설정치", scr.result.toPlainText())
+        self.assertIn(knowledge.AUTO_BADGE, scr.result.toPlainText())
+        row = next(e for e in scr.rows if e["record"].get("material_type") == "design_document")
+        self.assertEqual((row["extracted"], row["graphed"]), (True, None))
+        kscr.kg_combo.setCurrentIndex(kscr.kg_combo.findText("kg-X"))
+        setpoints = [n for n in kscr.kg["nodes"] if n["node_type"] == "setpoint"]
+        self.assertTrue(setpoints)
+        self.assertTrue(all(n["source"]["page"] for n in setpoints))
+        shown = {n["id"] for n in kscr.data["nodes"]}
+        self.assertTrue({n["id"] for n in setpoints} <= shown)
+        kscr.render_node(setpoints[0]["id"])
+        html = kscr.detail.toPlainText()
+        self.assertIn(knowledge.AUTO_BADGE, html)
+        self.assertIn("hazop.kg.docextract", html)
+        auto_link = next(l for l in kscr.data["links"] if l["st"] == "candidate" and l["kind"] == "has_setpoint")
+        kscr.render_link(auto_link["id"])
+        self.assertIn(knowledge.AUTO_BADGE, kscr.detail.toPlainText())
+        self.assertNotIn("link_candidates.csv", kscr.detail.toPlainText())
+
+    def test_document_only_project_and_missing_kg_rebuilt_on_enter(self):
+        """도면 없이 설계 문서만 있는 프로젝트: ③은 개발 명령 없이 항목 수와 도면 등록 안내. 지식그래프가 지워져 있으면 ③ 진입 때 다시 만듦."""
+        from hazop.app import data
+        from hazop.register import registry
+        work = os.environ["HAZOP_WORK_ROOT"]
+        doc_pdf = glob.glob(os.path.join(REPO_ROOT, "tests", "fixtures", "docextract", "*.pdf"))[0]
+        r = registry.register(doc_pdf, "Y", "design_document", os.environ["HAZOP_STORE_ROOT"], None, "tester")
+        data.extract_document(r["registration_file"])
+        shutil.rmtree(os.path.join(work, "출력", "지식그래프", "kg-Y"))
+        win = self.make_window()
+        win.go(4)
+        kscr = win.screens[4]
+        self.assertGreaterEqual(kscr.kg_combo.findText("kg-Y"), 0)
+        kscr.kg_combo.setCurrentIndex(kscr.kg_combo.findText("kg-Y"))
+        self.assertEqual(kscr.stack.currentIndex(), 0)
+        text = kscr.empty.text()
+        self.assertIn("P&ID 도면을 등록", text)
+        self.assertNotIn("build_kg", text)
+        self.assertNotIn("참조한 도면 그래프가 없습니다", text)
+
 
 def sample_file(drawing, ext):
     return [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*." + ext))
