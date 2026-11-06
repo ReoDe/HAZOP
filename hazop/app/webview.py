@@ -183,8 +183,12 @@ BRIDGE_JS = r"""
     document.body.classList.add("hz-embedded");
     var vp = document.getElementById("viewport");
     var legend = document.createElement("div"); legend.className = "hz-legend";
-    legend.innerHTML = '<i style="border-color:var(--hl-cause)"></i>원인 설비(채움)<i style="border-color:var(--hl-path)"></i>경로(굵은 선)' +
-      '<i style="border-color:var(--hl-path);border-top-style:dashed"></i>추정 경로(실제 흐름 경로 아님)<i style="border-color:var(--hl-safeguard)"></i>보호수단(이중 테두리)';
+    // 범례는 줌·맞춤 버튼(#zoom) 바로 위 왼쪽에 둔다(design-system W10, D16). 항목 단위로만 줄을 바꾼다.
+    legend.innerHTML = '<span><i style="border-color:var(--hl-cause)"></i>원인 설비(채움)</span><span><i style="border-color:var(--hl-path)"></i>경로(굵은 선)</span>' +
+      '<span><i style="border-color:var(--hl-path);border-top-style:dashed"></i>추정 경로(실제 흐름 경로 아님)</span><span><i style="border-color:var(--hl-safeguard)"></i>보호수단(이중 테두리)</span>';
+    // 범례 안의 휠·드래그는 도면 확대·이동으로 넘기지 않는다(범례가 넘쳐 스크롤할 때).
+    legend.addEventListener("wheel", function (e) { e.stopPropagation(); });
+    legend.addEventListener("mousedown", function (e) { e.stopPropagation(); });
     if (vp) vp.appendChild(legend);
     function onClick(e) {
       var t = e.target.closest ? e.target.closest("[data-local-id]") : null;

@@ -20,6 +20,9 @@
 - --platform offscreen: 글꼴 대체로 폭이 과대하므로 판정하지 않는다. --baseline <이전 결과 JSON>을 주면 늘어난 값만
   경고로 알린다(종료 코드 0). 기준 수치는 docs/2026-11-05-design-system/evidence/w3-작업영역125.md에 기록한다.
 결과 JSON: 출력/디자인검사/design-<platform>[-s<배율>].json (출력/는 git 제외). --out으로 바꿀 수 있다.
+웹 강조 범례(W10, D16): 샘플 도면·분석 실행으로 ④⑤에 강조를 띄우고 창 LEGEND_WIDTHS(1366·1440) × 그 배율 작업 영역 높이에서
+.hz-legend가 캔버스 안에 있고 보이는 떠 있는 카드(#zoom 줌·맞춤, 검색, 층 등)와 겹치지 않는지 잰다. windows 판정에 포함
+(어기면 종료 코드 1), offscreen은 참고만. 결과 JSON의 legend_rows.
 
 뷰어·앱 색 비교(W4, D5): 배치 측정 전에 독립 뷰어 템플릿 :root·하드코딩 색을 앱 tokens.web_css()와 비교한다.
 어긋나면 플랫폼과 관계없이 종료 코드 1(판정 불가 2는 유지). --colors-only는 색 검사만 한다(Qt 불필요).
@@ -363,6 +366,111 @@ def run_states(roots, top=5, area=None):
             rows += measure_all(win, state, top, area)
         finally:
             close_window(win)
+    return rows
+
+
+# ---------------------------------------------------------------- 웹 강조 범례 겹침(W10, D16)
+# ④⑤ 내장 웹뷰의 강조 범례(.hz-legend, tokens.web_css)가 같은 캔버스의 떠 있는 카드(줌·맞춤 #zoom, 검색, 층 등)를
+# 가리지 않는지 창 폭별로 잰다. 창 높이는 그 배율의 작업 영역 높이.
+LEGEND_WIDTHS = (1366, 1440)
+LEGEND_SCREENS = ((2, "④"), (3, "⑤"))
+LEGEND_JS = r"""(function () {
+  function box(e) { var r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }
+  var l = document.querySelector(".hz-legend"), vp = document.getElementById("viewport");
+  if (!l || !vp || !document.body.classList.contains("hz-dim")) return null;
+  var floats = {};
+  Array.prototype.forEach.call(vp.querySelectorAll(":scope > .float"), function (e) {
+    if (getComputedStyle(e).display !== "none") floats[e.id] = box(e);
+  });
+  return JSON.stringify({legend: box(l), viewport: box(vp), floats: floats,
+                         visible: getComputedStyle(l).display !== "none"});
+})()"""
+
+
+def _intersect(a, b):
+    """두 사각형 [left, top, right, bottom]이 겹치는 넓이(px²). 맞닿기만 하면 0."""
+    w = min(a[2], b[2]) - max(a[0], b[0])
+    h = min(a[3], b[3]) - max(a[1], b[1])
+    return w * h if w > 0 and h > 0 else 0
+
+
+def legend_problems(rows):
+    """범례가 안 보이거나, 캔버스 밖으로 나가거나, 보이는 떠 있는 카드(특히 #zoom)와 겹친 측정
+    [(창 폭, 화면, 사유)]. #zoom이 없으면 판정할 수 없어 문제로 친다."""
+    bad = []
+    for r in rows:
+        m = r.get("measure")
+        if not m or not m.get("visible"):
+            bad.append((r["width"], r["screen"], "범례 표시 안 됨(강조 없음)"))
+            continue
+        lg, vp = m["legend"], m["viewport"]
+        if lg[0] < vp[0] or lg[1] < vp[1] or lg[2] > vp[2] or lg[3] > vp[3]:
+            bad.append((r["width"], r["screen"], "범례가 캔버스 밖으로 나감 %s / %s" % (lg, vp)))
+        if "zoom" not in m["floats"]:
+            bad.append((r["width"], r["screen"], "#zoom 없음"))
+        for fid, fb in sorted(m["floats"].items()):
+            if _intersect(lg, fb):
+                bad.append((r["width"], r["screen"], "범례가 #%s와 겹침(%dpx²)" % (fid, _intersect(lg, fb))))
+    return bad
+
+
+def _js_value(win, expr, timeout=10.0):
+    out = []
+    win.webview.page().runJavaScript(expr, 0, out.append)
+    end = time.monotonic() + timeout
+    while not out and time.monotonic() < end:
+        pump(None, 0.05)
+    return out[0] if out else None
+
+
+def install_drawing(roots, run_dir):
+    """샘플 도면(SNP-M-102)을 임시 작업 루트에서 추출·그래프로 만들고(뷰어 SVG는 작업 루트 안만 허용), 실행의 분석 당시
+    그래프(inputs/graph.json)를 이 그래프로 맞춘다(검사 전용, tests/test_app.py build_temp_drawing과 같은 방법)."""
+    import glob
+    from hazop.app import data
+    src = [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*")) if "SNP-M-102" in p][0]
+    dst = os.path.join(roots.work, "샘플", os.path.basename(src))
+    if not os.path.isdir(dst):
+        shutil.copytree(src, dst)
+    drawio = glob.glob(os.path.join(dst, "*.drawio"))[0]
+    _, out_dir = data.script_module("extract_drawio").run_one(drawio, os.path.join(roots.work, "출력", "추출"))
+    graph, _ = data.script_module("build_graph").build_one(os.path.join(out_dir, "extraction.json"),
+                                                           os.path.join(roots.work, "출력", "그래프"))
+    with open(os.path.join(run_dir, "inputs", "graph.json"), "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(graph, fh, ensure_ascii=False)
+
+
+def legend_rows(roots, height, candidate=REVIEW_KG_CANDIDATE):
+    """샘플 분석 실행을 열고 ④⑤에서 후보를 골라 강조를 띄운 뒤 창 폭 LEGEND_WIDTHS × height에서 범례·카드 위치를 잰다."""
+    run_dir = roots.install_sample_run()
+    install_drawing(roots, run_dir)
+    rows = []
+    win = new_window(roots)
+    try:
+        win.set_reviewer_name("검토자A")
+        win.open_run(run_dir)
+        pump(win, 0.3)
+        for width in LEGEND_WIDTHS:
+            win.resize(width, height)
+            pump(win, 0.2)
+            for idx, label in LEGEND_SCREENS:
+                win.go(idx)
+                win.screens[idx].select_candidate(candidate)
+                m, end = None, time.monotonic() + 20
+                while time.monotonic() < end:
+                    pump(win, 0.3)
+                    if win.webview.bridge.is_ready:
+                        v = _js_value(win, LEGEND_JS)
+                        m = json.loads(v) if v else None
+                        if m:
+                            pump(win, 0.5)  # 맞춤·글꼴 적용이 끝난 뒤 다시 잰다
+                            v = _js_value(win, LEGEND_JS)
+                            m = json.loads(v) if v else m
+                            break
+                rows.append({"width": width, "height": height, "screen": label,
+                             "win_size": [win.width(), win.height()], "measure": m})
+    finally:
+        close_window(win)
     return rows
 
 
@@ -1345,13 +1453,13 @@ def merge_color_result(rc, verdict, color_bad):
     return rc, verdict
 
 
-def write_result(out, env, limit, rows, rc, verdict, color_bad):
+def write_result(out, env, limit, rows, rc, verdict, color_bad, legend=None):
     """색 비교를 합친 rc·verdict로 결과 JSON을 쓰고 (rc, verdict)를 돌려준다. JSON의 rc = 종료 코드."""
     rc, verdict = merge_color_result(rc, verdict, color_bad)
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8", newline="\n") as fh:
         json.dump({"environment": env, "limit": list(limit) if limit else None, "verdict": verdict, "rc": rc,
-                   "color_problems": list(color_bad), "rows": rows}, fh, ensure_ascii=False, indent=2)
+                   "color_problems": list(color_bad), "rows": rows, "legend_rows": legend or []}, fh, ensure_ascii=False, indent=2)
     print("결과 JSON: %s" % out)
     print("결과: %s" % verdict)
     return rc, verdict
@@ -1396,7 +1504,11 @@ def main(argv=None):
     print("환경: %s" % env)
     with TempRoots() as roots:
         rows = run_states(roots, args.top, work_area(args.scale) or work_area(1.0))
+        legend = legend_rows(roots, (work_area(args.scale) or work_area(1.0))[1])
     print_table(rows)
+    legend_bad = legend_problems(legend)
+    print("웹 강조 범례(④⑤, 창 폭 %s): %s" % ("·".join(map(str, LEGEND_WIDTHS)),
+                                         "겹침 0" if not legend_bad else "문제 %d건 %s" % (len(legend_bad), legend_bad)))
 
     rc, verdict = 0, ""
     limit = work_area(args.scale)
@@ -1408,20 +1520,20 @@ def main(argv=None):
             verdict = "참고치(배율 %s, 지원 배율 아님): 100%% 작업 영역 %s 초과 %d건" % (
                 args.scale, work_area(1.0), len(over_limit(rows, work_area(1.0))))
         else:
-            bad = over_limit(rows, limit) + elide_problems(rows) + form_problems(rows)
+            bad = over_limit(rows, limit) + elide_problems(rows) + form_problems(rows) + legend_bad
             rc = 1 if bad else 0
             verdict = ("배율 %d%%: " % round(args.scale * 100)) + (
-                "통과(모든 측정 ≤ 작업 영역 %d×%d, ⑤ 폼 가로 잘림 없음, 줄임표 툴팁 규칙 지킴)" % limit
+                "통과(모든 측정 ≤ 작업 영역 %d×%d, ⑤ 폼 가로 잘림 없음, 줄임표 툴팁 규칙 지킴, ④⑤ 웹 범례 겹침 0)" % limit
                 if not bad else "실패 %d건: %s" % (len(bad), bad))
     else:
-        verdict = "offscreen: 판정 없음(회귀 감시용)"
+        verdict = "offscreen: 판정 없음(회귀 감시용)" + ("; 웹 범례 문제 %d건(참고)" % len(legend_bad) if legend_bad else "")
         if args.baseline:
             with open(args.baseline, encoding="utf-8") as fh:
                 inc = baseline_increases(rows, json.load(fh)["rows"])
             verdict += "; 기준선 대비 증가 %d건%s" % (len(inc), (" [경고] %s" % inc) if inc else "")
     out = args.out or os.path.join(OUT_DIR, "design-%s%s.json" % (
         args.platform, "" if args.scale == 1.0 else "-s%d" % round(args.scale * 100)))
-    rc, verdict = write_result(out, env, limit, rows, rc, verdict, color_bad)
+    rc, verdict = write_result(out, env, limit, rows, rc, verdict, color_bad, legend)
     if args.platform == "windows" and args.scale == 1.0 and not args.no_125 and rc != 2:
         import subprocess
         print("--- 125% 판정(새 프로세스, --scale 1.25) ---")

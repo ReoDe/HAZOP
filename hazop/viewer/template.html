@@ -318,7 +318,9 @@ function hazopPathEngine(G) {
   document.getElementById("dwg").textContent = D.drawing.drawing_number || "";
   document.getElementById("dwgtitle").textContent = D.drawing.title || "";
   var st = document.getElementById("status");
-  st.textContent = "구조 검증 " + D.validation.status + " · 미확인 " + D.validation.unknowns.length +
+  // 칩 값은 한국어로 보인다(앱 Qt 칩과 같은 말, design-system W10, D16). 매핑은 이 한 곳. 모르는 값은 그대로 둔다.
+  var STATUS_LABEL = { passed: "통과", blocked: "차단" };
+  st.textContent = "구조 검증 " + (Object.prototype.hasOwnProperty.call(STATUS_LABEL, D.validation.status) ? STATUS_LABEL[D.validation.status] : D.validation.status) + " · 미확인 " + D.validation.unknowns.length +
     " · 차단 " + D.validation.blockers.length;
   st.className = "chip " + D.validation.status;
 

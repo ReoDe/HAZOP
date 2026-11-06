@@ -754,6 +754,19 @@ class WebViewIntegrationTest(AppTestBase):
         self.assertGreater(path, 0)
         self.assertGreater(sg, 0)
         self.assertGreater(ring, 0)                                   # 보호수단 테두리
+        # 강조 범례는 줌·맞춤 버튼 등 떠 있는 카드와 겹치지 않고, 구조 검증 칩은 한국어 값(design-system W10, D16)
+        from scripts import check_design as cd
+        for width in (1366, 900):
+            win.resize(width, 689)
+            wait_for(lambda: False, 0.5)                              # 크기 변경·맞춤이 웹 쪽에 반영되게 이벤트만 돌림
+            got = []
+            self.assertTrue(wait_for(lambda: (win.webview.page().runJavaScript(cd.LEGEND_JS, 0, got.append),
+                                              got and got[-1])[1], 15))
+            self.assertEqual(cd.legend_problems([{"width": width, "screen": "④", "measure": json.loads(got[-1])}]), [])
+        chip = []
+        self.assertTrue(wait_for(lambda: (win.webview.page().runJavaScript(
+            "document.getElementById('status').textContent", 0, chip.append), chip)[1]))
+        self.assertRegex(chip[-1], r"^구조 검증 (통과|차단) · ")
         ev = ctx.evidence(scr.cur_scenario)
         self.assertEqual(ev["n"], len(ev["shown"]) + len(ev["estimated"]) + len(ev["unshown"]))
         self.assertGreater(len(ev["shown"]), 0)

@@ -102,11 +102,13 @@ body.hz-dim #graphsvg .gedge:not(.hz-on), body.hz-dim #graphsvg .glabel { opacit
 .hz-badge text { fill: %(onfill)s; font-size: 11px; font-family: "%(font)s", sans-serif; }
 .hz-badge.weak rect { fill: %(card)s; stroke: var(--hl-safeguard); }
 .hz-badge.weak text { fill: var(--hl-safeguard); }
-.hz-legend { position: absolute; left: 50%%; bottom: 16px; transform: translateX(-50%%); background: var(--card);
-  border: 1px solid var(--line); border-radius: 999px; padding: 4px 14px; font-size: 12px; color: var(--ink-2);
-  box-shadow: %(shadow)s; display: none; white-space: normal; max-width: 92%%; text-align: center; }
+.hz-legend { position: absolute; left: 16px; bottom: 64px; background: var(--card);
+  border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px; font-size: 12px; line-height: 18px; color: var(--ink-2);
+  box-shadow: %(shadow)s; display: none; max-width: calc(100%% - 32px); max-height: 82px; overflow-y: auto; box-sizing: border-box; }
 body.hz-dim .hz-legend { display: block; }
-.hz-legend i { display: inline-block; width: 16px; height: 0; border-top: 3px solid; vertical-align: middle; margin: 0 4px 0 10px; }
+.hz-legend span { display: inline-block; white-space: nowrap; margin-right: 10px; }
+.hz-legend i { display: inline-block; width: 16px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 4px; }
+@media (max-width: 760px) { .hz-legend { left: 8px; bottom: 56px; max-width: calc(100%% - 16px); } }
 """ % {"root": root, "ui": COLORS["ui"], "dim": HL_DIM, "font": FONT_FAMILY, "onfill": COLORS["on-fill"],
        "card": COLORS["card"], "shadow": CARD_SHADOW}
 

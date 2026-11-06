@@ -208,6 +208,25 @@ class JudgeTest(unittest.TestCase):
         rows[1]["at_area"] = {"elided": [{"objectName": "chip", "tooltip_ok": False}]}
         self.assertEqual(cd.elide_problems(rows), [("B", "⑤", "muted"), ("A", "①", "chip")])
 
+    def test_legend_problems(self):
+        """W10(D16): 고치기 전 ⑤ 1366 측정(범례가 #zoom을 가림)은 실패, 고친 뒤 측정은 통과, 강조 없음·캔버스 밖도 실패."""
+        floats = {"search": [8, 128, 346, 181], "layers": [200.4, 184, 346, 275], "zoom": [8, 502, 194, 542]}
+        vp = [0, 120, 354, 550]
+        before = {"legend": [88.5, 444, 265.5, 534], "viewport": vp, "floats": floats, "visible": True}
+        after = {"legend": [8, 430, 346, 494], "viewport": vp, "floats": floats, "visible": True}
+        self.assertEqual(cd.legend_problems([{"width": 1366, "screen": "⑤", "measure": before}]),
+                         [(1366, "⑤", "범례가 #zoom와 겹침(3376px²)")])
+        self.assertEqual(cd.legend_problems([{"width": 1366, "screen": "⑤", "measure": after}]), [])
+        touching = dict(after, legend=[8, 400, 346, 502])               # 맞닿기만 하면 겹침 아님
+        self.assertEqual(cd.legend_problems([{"width": 1440, "screen": "④", "measure": touching}]), [])
+        self.assertEqual(cd.legend_problems([{"width": 1440, "screen": "④", "measure": None}]),
+                         [(1440, "④", "범례 표시 안 됨(강조 없음)")])
+        out = dict(after, legend=[-4, 430, 346, 494])
+        self.assertEqual(len(cd.legend_problems([{"width": 1440, "screen": "④", "measure": out}])), 1)
+        nozoom = dict(after, floats={"search": floats["search"]})
+        self.assertEqual(cd.legend_problems([{"width": 1440, "screen": "④", "measure": nozoom}]),
+                         [(1440, "④", "#zoom 없음")])
+
     def test_form_problems(self):
         rows = [{"state": "B", "screen": "⑤", "form": {"need": 380, "have": 606},
                  "at_area": {"form": {"need": 700, "have": 606}}},

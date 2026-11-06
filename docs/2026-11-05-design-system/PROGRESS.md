@@ -3,7 +3,7 @@
 > **역할**: 작업 단위별 상세 상태, 완료 기준, 결과, 증거와 다음 행동을 관리하는 유일한 원장.
 > **투영 규칙**: [`ROADMAP.md`](ROADMAP.md)는 이 문서의 단계·순서·게이트·현재 행동을 한 장으로 요약한다.
 > **갱신 규칙**: 확인 가능한 증거가 있는 변화만 기록하고, 갱신할 때마다 기준 일시와 변경 이력을 함께 바꾼다.
-> **기준일**: 2026-11-06 11:25(W9. 앞 W8 기록의 11:40은 실제 시각보다 앞서 적힘)
+> **기준일**: 2026-11-06 12:40(W10)
 
 ## 1. 작업 단위 상태 장부
 
@@ -18,6 +18,7 @@
 | `W7` | 완료(D10·D11) | 그래프 노드 선택 표시(권장안 A: 흰 테두리 유지 + 바깥 `--ui` 고리) | 독립 뷰어·앱 내장 그래프에서 설비 노드 선택 시 고리 자리에 `--ui` 화소(offscreen 화소 판정 테스트), 명암비 쌍 `card`/`equipment` 추가 후 check_design rc 0, 경로 강조·도면 선택 회귀 없음 | `W5`·`W6`, 편집 범위 D10 |
 | `W8` | 완료(D13·D14, 재작업 2회 뒤 총괄 직접 수정) | 반투명 관계선 대비(사용자 결정: 색만으로 구분되는 선만 3:1, 모양·범례로도 구분되는 보조 선은 예외. 총괄 판정: has_endpoint 예외 아님) | 선 종류별 판정 표(근거 파일:행), 관계선 모두 흰 도면 합성 3:1 이상(`check_design` 판정으로 강제. 검사가 막는 범위: 기본·종류별 규칙 밖 선택자의 불투명도 < 1, @media 안, !important, 선에 닿는 filter: opacity(), 선 규칙 CSS 중첩, HTML·JS 직접 설정. 휴리스틱 한계는 [w8 §8](evidence/w8-반투명선.md)), unittest·check_design windows·check_kg_screen·check_viewer_paths 통과, check_viewer(저장소 기본 경로)는 QA 확인 예정 | `W5`(D7), 사용자 결정 2026-11-06 |
 | `W9` | 완료(D15, 검토 승인) | 독립 뷰어 색 허용 목록 비우기(D5 열린 항목, 2색 통일) | 템플릿 하드코딩 3곳을 앱 토큰 `var()`로, `VIEWER_COLOR_ALLOW` 비움·다시 채우면 테스트 실패, 바꾼 값이 바탕 위 W5 기준(글자 4.5:1·그래픽 3:1) 통과·대비 쌍 등록, check_design windows·check_kg_screen·check_viewer·check_viewer_paths·unittest 통과 | `W4`(D5)·`W5`(D7), 총괄 결정(사용자 위임 2026-11-06) |
+| `W10` | 구현 완료(D16, 검토 대기) | ④⑤ 웹 강조 범례 위치·웹 구조 검증 칩 한국어(`디자인/화면명세.md` §9.2 결함 D2·D3) | 범례가 줌·맞춤 버튼(`#zoom`)과 겹치지 않음 — windows 100%·125%, 창 폭 1366·1440에서 ④⑤ 범례·떠 있는 카드 겹침 0을 `check_design` 판정으로 강제, 웹 칩 값 `통과`/`차단`(매핑은 템플릿 한 곳), 색 토큰 값 무변경, unittest·check_design windows·check_viewer·check_kg_screen·check_viewer_paths 통과 | 총괄 결정(권고안, 사용자 위임 2026-11-06). `webview.py`(T1 소유)는 범례 마크업만 |
 
 작업 추가·분할은 [`README.md`](README.md)의 확장 규칙을 따른다. 기존 ID·완료 이력·증거는 보존하고 새 작업에는 관련 결정 ID를 연결한다.
 
@@ -25,6 +26,7 @@
 
 | ID | 현재 상태 | 증거 | 다음 행동 |
 |---|---|---|---|
+| `W10` | 구현 완료(D16, 검토 대기). 범례를 줌 위 왼쪽(`left: 16px; bottom: 64px`, 최대 4줄·넘치면 범례 안 스크롤, 항목 단위 줄바꿈)으로, 웹 칩 `구조 검증 passed` → `통과`. ④⑤ 1366·1440 겹침 전 1864~3376px² → 후 0 | [w10-범례칩.md](evidence/w10-범례칩.md) | Claude 검토 → QA |
 | `W9` | 완료(D15, 검토 승인). 통과 점 `#16a34a` → `var(--ok)`(3.02 → 4.60), 경고 글자 2곳 `#b45309` → `var(--warn-ink)`(5.02 → 7.09), 허용 목록 0곳, 대비 66쌍, 새 토큰 없음 | [w9-허용목록.md](evidence/w9-허용목록.md) | Claude·Codex 검토 → QA |
 | `W8` | 완료(D13·D14, 재작업 2회 뒤 총괄 직접 수정). `.pipe-line` .75 → .93, `.gedge` 기본 .55 → .92(has_endpoint, 총괄 판정으로 예외 없앰)·신호 .66·계측 .93(종류별 규칙). check_design 반투명 관계선 판정(종류는 `EDGE_COLOR`·추출 규칙에서 읽음, 우회 차단) | [w8-반투명선.md](evidence/w8-반투명선.md) | Claude·Codex 재검토 → QA(저장소 기본 경로 check_viewer 포함) |
 | `W7` | 완료. 재작업 2회 뒤 Codex 하 1건 총괄 직접 수정(D11). 그래프 노드 선택 시 바깥 --ui 고리(노드 층 위·라벨 층 아래) | [w7-선택표시.md](evidence/w7-선택표시.md) | Claude·Codex 검토 → QA. windows 플랫폼 렌더는 미확인 |
@@ -57,6 +59,7 @@
 
 | 일시 | 변경 |
 |---|---|
+| 2026-11-06 12:40 | `W10` 등록·구현 완료(검토 대기): D16(총괄 결정, 권고안, 사용자 위임) — `web_css()` `.hz-legend` 줌 위 왼쪽·최대 폭·최대 4줄, `webview.py` 범례 항목 `<span>`, `template.html` 칩 값 `STATUS_LABEL`(통과·차단), `check_design` ④⑤ 범례 겹침 판정(창 폭 1366·1440, windows 100%·125%), `test_design.test_legend_problems`, `test_app` 범례 겹침·칩 한국어 확인. 색 토큰 무변경. [w10](evidence/w10-범례칩.md) |
 | 2026-11-06 11:25 | `W9` 등록·구현 완료(검토 대기): D15(총괄 결정, 권고안, 사용자 위임) — `template.html` 통과 점 `var(--ok)`·경고 글자 2곳 `var(--warn-ink)`, `:root`에 `--ok`, `VIEWER_COLOR_ALLOW` 비움, `CONTRAST_PAIRS` 66쌍(`ok`/`bg`, 경고 글자는 `warn-ink`/`card`), `test_design` 허용 목록 비어 있음·옛 3조합 실패·W4 이전 템플릿 13건 실패. `tokens.py` 무변경. [w9](evidence/w9-허용목록.md) |
 | 2026-11-06 11:40 | `W8` 재작업 2회차(마지막, Claude 조건부 승인·Codex 반려): 오탐 제거(HTML 주석 속 style·script 제외, JS 문자열 내용·템플릿 리터럴 `${…}` 안 주석 제외 — 문자열은 속성 이름 그 자체이거나 `opacity:` 선언일 때만 실패), 차단 2종(선에 닿는 선택자의 `filter: opacity()`, 선 규칙 CSS 중첩), 사례별 테스트(`TranslucentStrokeTest` 11건), 한계 3건 기록(상위 요소 opacity, rgba stroke 색, 정규식 앞 return·typeof), `--colors-only` 도움말, 상태 표기·ROADMAP 기준일 정리. [w8 §8](evidence/w8-반투명선.md) |
 | 2026-11-06 10:30 | `W8` 재작업 1회차(Claude·Codex 조건부 승인): 총괄 판정으로 has_endpoint 예외 삭제(`.gedge` 기본 .92, 예외 목록·관련 테스트 제거, D13 문구 정정), 검사기 우회 차단(인식 못 한 선택자·`opacity` 곱·`!important`·@media·JS/HTML 직접 설정 실패, JS 주석·문자열 밖에서 종류 읽기), 강조 규칙 불투명도 1 테스트·우회 사례별 실패 테스트(`TranslucentStrokeTest` 9건), 안티에일리어싱 한계·디자인 시안 후속 기록, ROADMAP 반영. [w8](evidence/w8-반투명선.md) |
