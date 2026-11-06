@@ -6,10 +6,14 @@
 - 입구: scripts/run_app.py → 실행 파일 HAZOP.exe(창 프로그램, 콘솔 없음). 결과는 <out>/dist/HAZOP/(one-folder, 배포용).
   런타임 훅 packaging/rthook_applog.py: <작업 루트>/logs/app.log에 logging·stdout·stderr·미처리 예외를 남긴다(HAZOP.exe만).
 - datas: 템플릿 2개, hazop/kg/vendor, 기획서/HAZOP기법지침.md, 데이터/이탈후보·기준표·패턴, scripts/extract_drawio.py·
-  build_graph.py(화면이 importlib로 읽는 파일, hazop/app/data.py SCRIPT_NAMES), licenses/(제3자 고지, D9).
-  참고자료/ 샘플은 넣지 않는다(D5안).
-- hiddenimports: collect_submodules("hazop") + 두 스크립트 모듈(스크립트가 가져오는 표준 라이브러리까지 묶이게).
-- excludes: anthropic·httpx(D1, 배포본 제외), pdfplumber(전용 venv에 없음, PDF 어댑터는 묶음 범위 밖).
+  build_graph.py(화면이 importlib로 읽는 파일, hazop/app/data.py SCRIPT_NAMES). 참고자료/ 샘플은 넣지 않는다(D5안).
+- 제3자 고지(W9, D15): licenses/는 datas(_internal/licenses/)가 아니라 빌드 뒤 결과 폴더의 실행 파일 옆 licenses/로
+  복사한다(copy_licenses). 빌드 뒤 검사가 실행 파일 옆 사본이 저장소와 같고 _internal/licenses/가 없는지 본다.
+- hiddenimports: collect_submodules("hazop") + 두 스크립트 모듈(스크립트가 가져오는 표준 라이브러리까지 묶이게)
+  + PDF 어댑터 모듈 pdfplumber·pypdfium2(W9, D15: pdf_vector가 함수 안에서 지연 import).
+- excludes: anthropic·httpx(D1, 배포본 제외). pdfplumber와 의존성(pdfminer.six·Pillow·pypdfium2·charset-normalizer·
+  cryptography·cffi·pycparser, packaging/requirements-pdf.txt)은 묶는다(W9, D15). 빌드 뒤 검사가 앱 PYZ(PYZ-00.toc)에
+  PDF_REQUIRED_MODULES가 있고 결과 폴더에 _internal/pypdfium2_raw/pdfium.dll이 있는지 본다.
 - --with-check: 검증 전용 실행 파일 HAZOP-check.exe(입구 packaging/check_entry.py)를 함께 만들고, 결과 폴더 이름을
   <out>/dist/HAZOP-verify/로 바꾼다(배포용 HAZOP/과 섞이지 않게). 파일 경로로 받은 .py를 실행하는 도구라 배포하지 않는다.
 - 빌드 뒤 검사(check_dist): 배포용 폴더에는 HAZOP.exe만, 검증용 폴더에는 HAZOP.exe·HAZOP-check.exe가 있어야 한다.
@@ -35,10 +39,12 @@
 
 import argparse
 import ast
+import hashlib
 import json
 import os
 import platform
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -68,11 +74,17 @@ DATA_DIRS = (
     "데이터/이탈후보",
     "데이터/기준표",
     "데이터/패턴",
-    "licenses",  # 제3자 라이선스 고지(W6, D9)
 )
 EXCLUDED_DIRS = ("참고자료",)  # D5안: 샘플 도면(28 MB)은 넣지 않는다
-EXCLUDES = ("anthropic", "httpx", "pdfplumber")
+EXCLUDES = ("anthropic", "httpx")
 SCRIPT_MODULES = ("extract_drawio", "build_graph")
+# W9(D15): 제3자 고지는 실행 파일 옆 licenses/에 둔다(D9의 _internal/licenses/를 대체, 사용자 결정 2026-11-06)
+LICENSES_DIR = "licenses"
+# W9(D15): PDF 어댑터. pdf_vector가 pdfplumber를 함수 안에서 import하므로 명시적으로 묶는다.
+PDF_MODULES = ("pdfplumber", "pypdfium2")
+PDF_REQUIRED_MODULES = ("pdfplumber", "pdfminer", "pypdfium2", "pypdfium2_raw", "PIL.Image", "charset_normalizer",
+                        "cryptography")
+PDFIUM_DLL = ("pypdfium2_raw", "pdfium.dll")  # _internal 아래
 # D10: Qt TLS 플러그인은 허용 목록만 묶는다(Schannel·cert-only). OpenSSL 백엔드(qopensslbackend.dll)는 실행 PC PATH의
 # libssl-3-x64.dll을 읽으므로 뺀다. 묶음 안 이름과 출처 실경로의 긴 파일명을 모두 본다(이름 바꾸기·8.3 단축명·링크 별칭).
 TLS_PLUGIN_DIR = "pyside6/plugins/tls/"
@@ -159,7 +171,7 @@ def spec_text(repo_root=REPO_ROOT, with_check=False):
         "PATHEX = [REPO, os.path.join(REPO, 'scripts')]",
         "DATAS = [tuple(x) for x in json.loads(%s)]" % json.dumps(json.dumps(datas)),
         "EXCLUDES = %r" % list(EXCLUDES),
-        "HIDDEN = collect_submodules('hazop') + %r" % list(SCRIPT_MODULES),
+        "HIDDEN = collect_submodules('hazop') + %r" % list(SCRIPT_MODULES + PDF_MODULES),
         "import shutil",
         "sys.path.insert(0, os.path.join(REPO, 'scripts'))",
         "from build_package import drop_binaries  # D10 TLS 허용 목록·D13 Qt 모듈 제외(사후 검사와 같은 규칙)",
@@ -181,7 +193,7 @@ def spec_text(repo_root=REPO_ROOT, with_check=False):
             "# 검증 전용(배포본 제외): 저장소 밖 사본의 검사 스크립트를 묶인 인터프리터·hazop으로 실행",
             "c = Analysis([os.path.join(REPO, %r)], pathex=PATHEX, datas=DATAS," % CHECK_ENTRY,
             "             hiddenimports=collect_submodules('hazop') + %r, excludes=EXCLUDES, noarchive=False)"
-            % list(CHECK_MODULES),
+            % list(CHECK_MODULES + PDF_MODULES),
             "keep_warn('check')",
             "c.binaries = drop_binaries(c.binaries)",
             "c.datas = drop_binaries(c.datas)",
@@ -308,6 +320,81 @@ def check_dist(out_dir, with_check=False):
     if not with_check and os.path.isdir(os.path.join(out_dir, "dist", VERIFY_DIST)):
         probs.append("배포용 출력 폴더에 검증용 결과(%s)가 함께 있음 — 출력 폴더를 나눌 것" % VERIFY_DIST)
     return probs
+
+
+def copy_licenses(out_dir, with_check=False, repo_root=REPO_ROOT):
+    """저장소 licenses/를 결과 폴더의 실행 파일 옆 licenses/로 복사(W9, D15). 반환: 복사한 폴더."""
+    dest = os.path.join(dist_dir(out_dir, with_check), LICENSES_DIR)
+    shutil.copytree(os.path.join(repo_root, LICENSES_DIR), dest, ignore=shutil.ignore_patterns("__pycache__"))
+    return dest
+
+
+def _tree_hashes(root):
+    """{'/' 구분 상대 경로: sha256}. 폴더가 없으면 빈 dict. 탐색 중 오류(권한 등)는 OSError로 올린다(일부를 못 본 채
+    같다고 판정하지 않게)."""
+    out = {}
+    if not os.path.isdir(root):
+        return out
+    for d, dirs, files in os.walk(root, onerror=_raise):
+        dirs[:] = [x for x in dirs if x != "__pycache__"]
+        for f in files:
+            p = os.path.join(d, f)
+            with open(p, "rb") as fh:
+                out[os.path.relpath(p, root).replace("\\", "/")] = hashlib.sha256(fh.read()).hexdigest()
+    return out
+
+
+def licenses_problems(bundle_dir, repo_root=REPO_ROOT):
+    """묶음(one-folder)의 실행 파일 옆 licenses/가 저장소 licenses/와 파일 목록·SHA-256까지 같고, 이전 위치
+    _internal/licenses/가 없는지(W9, D15). 문제 목록(빈 목록 = 통과)."""
+    try:
+        want = _tree_hashes(os.path.join(repo_root, LICENSES_DIR))
+        if not want:
+            return ["저장소 licenses/ 없음"]
+        got = _tree_hashes(os.path.join(bundle_dir, LICENSES_DIR))
+    except OSError as e:  # 탐색·읽기 오류는 대조 실패
+        return ["고지 대조 중 탐색 오류: %s" % e]
+    probs = ["묶음에 없음: %s" % k for k in sorted(set(want) - set(got))]
+    probs += ["저장소에 없는 파일: %s" % k for k in sorted(set(got) - set(want))]
+    probs += ["해시 다름: %s" % k for k in sorted(set(want) & set(got)) if want[k] != got[k]]
+    if os.path.exists(os.path.join(bundle_dir, "_internal", LICENSES_DIR)):
+        probs.append("이전 위치 _internal/%s/가 있음(실행 파일 옆으로 옮김, D15)" % LICENSES_DIR)
+    return probs
+
+
+def pyz_modules(path):
+    """PyInstaller PYZ TOC 파일 → 모듈 이름 집합. 형식: ('<pyz>', [(이름, 출처, 'PYMODULE'), ...])."""
+    with open(path, encoding="utf-8") as fh:
+        data = ast.literal_eval(fh.read())
+    return {x[0] for x in data[1]}
+
+
+def pdf_problems(out_dir, with_check=False):
+    """PDF 어댑터 묶음 검사(W9, D15). 앱 PYZ(PYZ-00.toc, HAZOP.exe의 Analysis)에 PDF_REQUIRED_MODULES가 있고 결과 폴더에
+    _internal/pypdfium2_raw/pdfium.dll이 있는지. 문제 목록(빈 목록 = 통과)."""
+    probs = []
+    toc = os.path.join(out_dir, "build", APP_NAME, "PYZ-00.toc")
+    try:
+        mods = pyz_modules(toc)
+    except (OSError, SyntaxError, ValueError, IndexError, TypeError) as e:
+        return ["앱 PYZ TOC를 읽을 수 없음: %s (%s)" % (toc, e)]
+    probs += ["앱 PYZ에 PDF 모듈 없음: %s" % m for m in PDF_REQUIRED_MODULES if m not in mods]
+    dll = os.path.join(dist_dir(out_dir, with_check), "_internal", *PDFIUM_DLL)
+    if not os.path.isfile(dll):
+        probs.append("pdfium.dll 없음: %s" % dll)
+    return probs
+
+
+def finish_bundle(out_dir, with_check=False):
+    """빌드 뒤 마무리(W9, D15): 실행 파일 옆 licenses/ 복사, 고지 사본 대조, PDF 어댑터 묶음 검사. 문제 목록."""
+    dist = dist_dir(out_dir, with_check)
+    if not os.path.isdir(dist):
+        return ["결과 폴더 없음(고지 복사 못 함): %s" % dist]
+    try:
+        print("제3자 고지 복사: %s" % copy_licenses(out_dir, with_check))
+    except OSError as e:
+        return ["제3자 고지 복사 실패: %s" % e]
+    return licenses_problems(dist) + pdf_problems(out_dir, with_check)
 
 
 def windows_dir():
@@ -537,7 +624,7 @@ def main(argv=None):
     rc = build(spec, out)
     if rc != 0:
         return rc
-    probs = check_dist(out, args.with_check)
+    probs = check_dist(out, args.with_check) + finish_bundle(out, args.with_check)
     print("결과 폴더 검사(%s): %s" % (dist_dir(out, args.with_check), "통과" if not probs else "; ".join(probs)))
     src_probs = check_sources(out, args.with_check)
     print("바이너리 검사(%s): %s" % (collect_toc_path(out), "통과" if not src_probs else "실패 %d건" % len(src_probs)))

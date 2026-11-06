@@ -8,6 +8,8 @@
 |---|---|
 | `requirements.txt` | 배포 런타임 3종(버전 고정): PySide6 6.12.0, networkx 3.7, openpyxl 3.1.5 |
 | `requirements-build.txt` | 런타임 + pyinstaller 6.22.3 |
+| `requirements-pdf.txt` | PDF 어댑터 8종(pdfplumber 0.11.9와 의존성, 휠 sha256 고정). `pip install --require-hashes --no-deps --only-binary=:all: -r`(T2 D15) |
+| `pdf_probe.py` | 묶인 실행(`HAZOP-check.exe`)에서 PDF 어댑터 추출·pypdfium2 렌더링 확인(verify 단계 3b, 검증 전용) |
 | `rthook_applog.py` | `HAZOP.exe` 런타임 훅: 묶인 실행 로그를 `<작업 루트>/logs/app.log`에 남김(D7안) |
 | `check_entry.py` | 검증 전용 `HAZOP-check.exe` 입구(`scripts/build_package.py --with-check`). 배포본에 넣지 않는다 |
 | `w4_flow.py` | 묶인 실행에서 ①~⑤ 함수 흐름·자원 읽기 위치·음성 검사(`HAZOP-check.exe`로 실행) |
@@ -40,6 +42,7 @@ anthropic·httpx는 넣지 않는다(D1: 배포본에서 제외). SDK가 필요�
 & "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" -m venv "$env:USERPROFILE\.hazop\venv-py312"
 $py = "$env:USERPROFILE\.hazop\venv-py312\Scripts\python.exe"
 & $py -m pip install -r packaging\requirements-build.txt   # 런타임만이면 requirements.txt
+& $py -m pip install --require-hashes --no-deps --only-binary=:all: -r packaging\requirements-pdf.txt   # PDF 어댑터(T2 D15)
 & $py -m unittest discover -s tests                         # 저장소 루트에서
 ```
 

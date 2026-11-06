@@ -3,7 +3,7 @@
 > **역할**: 작업 단위별 상세 상태, 완료 기준, 결과, 증거와 다음 행동을 관리하는 유일한 원장.
 > **투영 규칙**: [`ROADMAP.md`](ROADMAP.md)는 이 문서의 단계·순서·게이트·현재 행동을 한 장으로 요약한다.
 > **갱신 규칙**: 확인 가능한 증거가 있는 변화만 기록하고, 갱신할 때마다 기준 일시와 변경 이력을 함께 바꾼다.
-> **기준일**: 2026-11-06 10:10
+> **기준일**: 2026-11-06 11:10
 
 ## 1. 작업 단위 상태 장부
 
@@ -19,6 +19,7 @@
 | `W8` | 분할(`W8-A` 완료(D11), `W8-B` 완료(D13·D14)) | 빌드 수집 범위 정리: `W8-A` PATH 경유 DLL 수집 차단, `W8-B` 앱이 쓰지 않는 Qt 모듈 제외 | 묶음에 제외 대상 모듈(`W8-B`)·PATH 출처 DLL(`W8-A`)이 없고 화면 ①~⑤ 검증 통과 | `W8-A`·`W8-B` |
 | `W8-A` | 완료(D11) | PATH 경유 DLL(JDK UCRT·Git OpenSSL) 수집 차단: 빌드 PATH 통제, Qt TLS 플러그인 허용 목록, 빌드 뒤 바이너리 검사(D10) | 묶음에 venv·기반 CPython 밖 출처 바이너리와 이름 거부 목록·허용 목록 밖 TLS 플러그인이 없고(빌드가 검사), ASCII·한글 경로에서 검증용·배포용 verify 통과 | `W4`, D10 |
 | `W8-B` | 완료(D13·D14) | 앱이 쓰지 않는 Qt 모듈(GPL 전용 Charts·DataVisualization·Graphs·Quick3D·VirtualKeyboard·QuickTimeline·ShaderTools 등) 제외 | 묶음에 제외 대상 모듈이 없고(빌드가 검사) 화면 ①~⑤ 검증 통과 | 사용자 선택(W6 evidence §9-2 (가), D13) |
+| `W9` | 완료(D15·D16) | 라이선스 고지 원문 동봉(VC++ 재배포·liblzma·Qt 내부 제3자·PDFium·WebEngine 목록·Mesa·LLVM, Qt판 LGPL·GPL), pdfplumber와 의존성 묶음 포함, 고지를 실행 파일 옆 `licenses/`로 | 받은 원문마다 출처·날짜·SHA-256·크기 기록, 고지 목록 대조 테스트 통과, 빌드가 실행 파일 옆 고지·PDF 모듈을 검사하고 묶인 실행에서 PDF 어댑터 동작, 재빌드 2종·ASCII·한글 verify 4회 통과 | 사용자 결정(2026-11-06, D15), `W6`·`W8-B` |
 
 작업 추가·분할은 [`README.md`](README.md)의 확장 규칙을 따른다. 기존 ID·완료 이력·증거는 보존하고 새 작업에는 관련 결정 ID를 연결한다.
 
@@ -31,6 +32,7 @@
 | `W8-A` | 완료. 재작업 2회 뒤 Claude 승인·Codex 조건부 승인 → tls_probe 3건 총괄 직접 수정(D11) | [w8-경로통제.md](evidence/w8-경로통제.md) | 재검토 → 완료 판정 |
 | `W8-B` | 완료(D14): 최종 재검토 Codex 승인·Claude 조건부 승인(문서 4건 총괄 직접 수정). 재검토 Codex 반려·Claude 조건부 승인 반영: 이름 규칙(설치본 전체 이름 70개, 위치 무관)·폴더 규칙(PySide6 기준 경로만)으로 판정해 절대 경로 상위 이름·접두사 과매칭 제거, 이동한 플러그인 DLL 검출, `QtSpatialAudio.pyd`, spec 연결 모의 실행 테스트, 링크 폴더·is_dir 오류 폴더 실패 처리. 오탐 0(설치본 3,893개·W8-A 묶음). 배포용 2,234개·527.4 MiB(−885개·−36.9 MiB), 빌드 rc=0 실측, 두 경로 verify 4회 통과, venv 681 OK(건너뜀 14) | [w8b-모듈제외.md](evidence/w8b-모듈제외.md) | 재검토(Claude·Codex) → QA |
 | `W5` | 완료. 재작업 1회 뒤 Claude 승인(문서 2건 총괄 정정)·Codex 승인. 기준 자료 5종 해시 고정, 기획서(전체기획 신뢰 경계·인터페이스 §7.2·§9) 반영 | [w5-신뢰경계.md](evidence/w5-신뢰경계.md) | 재검토(Claude·Codex) → QA |
+| `W9` | 완료(D16): 재검토 Claude·Codex 조건부 승인, 문서 4건 총괄 직접 수정. 1회차 내용: Claude·Codex 조건부 승인 반영 — verify PDF 필수 키 검사, 고지 대조 탐색 오류 실패, qtbase LicenseFile·CopyrightFile 원문 25개 추가(libjpeg-turbo `COPYRIGHT.txt` 포함), cryptography SBOM 2개 동봉, README 표 연속성 검사, finish_bundle rc=3 테스트. 재빌드 2종 rc=0, 배포용 2,529개·567.3 MiB, verify 4회 통과, test_packaging 63 OK, venv 689 OK(건너뜀 5). 1차: 원문 52개 받음·1개 받지 못함(VS 2022 사용 조건 본문은 .docx), `licenses/` 원문 79개 추가·2개 교체, pdfplumber 등 8개를 해시 고정 설치(`pip freeze` +8, 그 밖 변화 없음). 스냅숏 `cd3194d` 재빌드 2종 rc=0(D10·D13 검사 통과), 배포용 2,502개·567.1 MiB(+268개·+39.7 MiB), verify 4회 통과(검증용 pdf_probe 통과). test_packaging 60 OK, venv 686 OK(건너뜀 5) | [w9-고지원문.md](evidence/w9-고지원문.md) | 재검토(Claude·Codex) → 사용자 확인: ① VS 2022 사용 조건 본문(.docx) 받기 여부 ② cryptography 안 OpenSSL·Rust 크레이트 원문 내려받기 승인 여부(지금은 휠 동봉 SBOM만, [evidence §10.2](evidence/w9-고지원문.md)). 앱 정보 창 안내는 `W10` |
 | `W6` | 고지 초안 완료, 사용자 확인·추가 원문 대기. 재작업 1회차(Codex 반려·Claude 조건부 승인 반영): `licenses/` 원문 42개·안내문 2개·고지 목록(수정 여부·SHA-256), 기준 목록 대조 테스트, 묶음 대비 누락 목록·수집 목록 첨부, verify_bundle licenses 검사(재빌드로 확인). venv 전체 605 OK(건너뜀 14) | [w6-라이선스.md](evidence/w6-라이선스.md), [첨부](evidence/w6-묶음수집목록.md) | 재검토 → 사용자 확인 항목(evidence §9) 판단: Chromium 등 추가 원문 다운로드 승인, GPL 전용 모듈 (가)/(나), LGPL 요건·소스 제공 방식 |
 
 ## 3. 완료 결과
@@ -76,3 +78,6 @@ D7(묶인 실행 로그를 런타임 훅으로 `<작업 루트>/logs/app.log`에
 | 2026-11-06 09:45 | `W8-B` 재작업 1회차(Codex 반려·Claude 조건부 승인, 총괄 판정 반영): 결과 폴더 검사를 묶음 전체 이름·상대 경로 꼬리 판정으로(현재·이전 묶음 오탐 0), `os.walk` 탐색 오류·결과 폴더 없음은 검사 실패, main rc=3 테스트를 결과 폴더 위반 없이 분리, 고아 DLL(Qt6SpatialAudio 제외, Qt6OpenGLWidgets·opengl32sw 남김 사유) 기록, D13을 사용자 결정·총괄 판정으로 분리. 스냅숏 `5225cc5` 재빌드 2종 rc=0(실측), 배포용 2,234개·527.4 MiB, verify 4회 통과. test_packaging 52 OK, venv 676 OK(건너뜀 14) |
 | 2026-11-06 10:30 | `W8-B` 완료(D14): Codex 승인, Claude 조건부 승인 → PROGRESS §5 D7 상태, evidence 66행 표현·§7 한계 3건(isjunction 3.12 이상, assimp.dll 이름, tls_rejected 같은 유형), build_package 머리 주석을 총괄이 직접 수정 |
 | 2026-11-06 10:10 | `W8-B` 재작업 2회차(마지막, Codex 반려·Claude 조건부 승인 반영): 판정을 이름 규칙(설치본에서 뽑은 전체 이름)·폴더 규칙(PySide6 기준 상대 경로)으로 바꿔 절대 경로 상위 이름·접두사 과매칭 제거, 이동한 플러그인 DLL 검출, `QtSpatialAudio.pyd` 추가, spec 모의 실행 테스트(필터 연결 4줄 삭제 시 모두 검출), 링크 폴더·`is_dir()` 오류 폴더 검사 실패, w6 §9-2 결정 구분, ROADMAP D7 상태 정정. 오탐 확인(설치본 전체 896/3,893 의도 범위, W8-A 885, 재빌드 0). 스냅숏 `5225cc5` 재빌드 2종 rc=0, 배포용 2,234개·527.4 MiB, verify 4회 통과. test_packaging 55 OK, venv 681 OK(건너뜀 14) |
+| 2026-11-06 10:45 | `W9` 구현 완료(검토 대기): [W9 고지 원문](evidence/w9-고지원문.md). D15 등록(사용자 결정). 원문 52개 내려받기(1개 받지 못함), pdfplumber 등 8개 해시 고정 설치, 고지를 실행 파일 옆 `licenses/`로, 빌드 뒤 고지·PDF 검사와 verify pdf_probe 추가. 재빌드 2종 rc=0, 배포용 2,502개·567.1 MiB, verify 4회 통과, test_packaging 60 OK, venv 686 OK(건너뜀 5) |
+| 2026-11-06 11:30 | `W9` 완료(D16): 재검토 Claude 조건부 승인(문서 4건: PSL 버전 전체 값·근거 문서 지시·w6 PDF 행 상태·w9 절 번호)을 총괄이 직접 수정. Codex 남은 2건(OpenSSL·Rust 크레이트 원문, VS 2022 사용 조건)은 사용자 위임(2026-11-06 목표)에 따라 권고안(받아서 동봉)으로 `W9-B`에서 처리 |
+| 2026-11-06 11:10 | `W9` 재작업 1회차(Claude·Codex 조건부 승인 반영): verify PDF 필수 키 검사, `_tree_hashes` 탐색 오류 실패, qtbase 원문 25개·cryptography SBOM 2개 추가, README 표 빈 줄 제거·연속성 검사, finish_bundle rc=3 테스트, 문구 정정. 재빌드 2종 rc=0, 배포용 2,529개·567.3 MiB, verify 4회 통과, test_packaging 63 OK, venv 689 OK(건너뜀 5). 사용자 확인 항목에 OpenSSL·Rust 크레이트 원문 승인 여부 추가 |

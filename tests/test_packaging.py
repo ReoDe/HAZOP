@@ -7,13 +7,17 @@
 3) HAZOP_RESOURCE_ROOT·HAZOP_WORK_ROOT를 서로 다른 임시 폴더로 바꿔 ①~⑤ 흐름(등록·추출·그래프 → 뷰어 → 지식그래프 →
    분석 → 검토 저장·Excel 출력)을 화면이 쓰는 함수로 실행한다. 자원 루트와 저장소의 출력/·자료저장소/는 바뀌지 않는다.
 4) W4: scripts/build_package.py의 datas 목록·spec 원문을 빌드 없이 검사한다(코드의 경로 상수와 대조).
-5) W6: licenses/가 datas에 들어가고, licenses/README.md 고지 목록이 기준 목록(원문 경로·라이선스 식별자)과 맞고,
-   원문 파일의 SHA-256·버전이 목록과 같다. verify_bundle의 묶음 licenses/ 대조 함수도 빌드 없이 검사한다.
+5) W6·W9: licenses/README.md 고지 목록이 기준 목록(원문 경로·라이선스 식별자)과 맞고, 원문 파일의 SHA-256·버전이 목록과
+   같다. W9(D15)부터 licenses/는 datas가 아니라 빌드 뒤 실행 파일 옆 licenses/로 복사되며, 그 복사·대조 함수
+   (build_package.copy_licenses·licenses_problems, verify_bundle.licenses_problems)를 빌드 없이 검사한다.
+6) W9(D15): PDF 어댑터(pdfplumber와 의존성)를 묶는다. spec의 hiddenimports·excludes, 빌드 뒤 PDF 검사(pdf_problems),
+   verify의 pdf_probe 판정(pdf_probe_problems), packaging/requirements-pdf.txt의 고정·해시를 빌드 없이 검사한다.
 실행: python -m unittest discover -s tests. 임시 폴더만 쓴다. 네트워크·AI 호출 없음(고정 응답).
 """
 
 import glob
 import hashlib
+import importlib.util
 import inspect
 import json
 import os
@@ -395,7 +399,8 @@ class BuildSpecTest(unittest.TestCase):
             text = self.bp.spec_text(with_check=with_check)
             ast.parse(text)
             self.assertIn("collect_submodules('hazop')", text)
-            self.assertIn("EXCLUDES = ['anthropic', 'httpx', 'pdfplumber']", text)
+            self.assertIn("EXCLUDES = ['anthropic', 'httpx']", text)  # W9(D15): pdfplumber는 묶는다
+            self.assertEqual(text.count("'pdfplumber', 'pypdfium2']"), 2 if with_check else 1)  # 두 Analysis 모두
             self.assertIn("name='HAZOP', console=False, upx=False", text)
             self.assertIn("scripts/run_app.py", text)
             self.assertEqual("HAZOP-check" in text, with_check)
@@ -851,6 +856,7 @@ class BuildSpecTest(unittest.TestCase):
         with mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock()}), \
                 mock.patch.object(self.bp, "build", side_effect=fake_build), \
                 mock.patch.object(self.bp, "check_dist", return_value=[]), \
+                mock.patch.object(self.bp, "finish_bundle", return_value=[]), \
                 mock.patch.object(self.bp, "allowed_roots", return_value=roots), \
                 mock.patch.object(self.bp, "python_problems", return_value=[]):
             toc_text["v"] = repr((good + [bad],))
@@ -916,6 +922,7 @@ class BuildSpecTest(unittest.TestCase):
             with mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock()}), \
                     mock.patch.object(self.bp, "build", return_value=0), \
                     mock.patch.object(self.bp, "check_dist", return_value=[]), \
+                    mock.patch.object(self.bp, "finish_bundle", return_value=[]), \
                     mock.patch.object(self.bp, "allowed_roots", return_value=roots), \
                     mock.patch.object(self.bp, "python_problems", return_value=[]):
                 self.assertEqual(self.bp.main(["--out", out, "--build"]), 3)
@@ -988,15 +995,16 @@ class BuildSpecTest(unittest.TestCase):
         common = [mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock()}),
                   mock.patch.object(self.bp, "build", built),
                   mock.patch.object(self.bp, "check_dist", return_value=[]),
-                  mock.patch.object(self.bp, "allowed_roots", return_value=[self.VENV, self.BASE])]
-        with common[0], common[1], common[2], common[3], \
+                  mock.patch.object(self.bp, "allowed_roots", return_value=[self.VENV, self.BASE]),
+                  mock.patch.object(self.bp, "finish_bundle", return_value=[])]
+        with common[0], common[1], common[2], common[3], common[4], \
                 mock.patch.object(self.bp, "python_problems", return_value=[]):
             for text, rc in ((repr((good + bad,)), 3), (repr((good,)), 0), ("([],)", 3), ("", 3)):
                 toc_text["v"] = text
                 self.assertEqual(self.bp.main(["--out", out, "--build"]), rc, text)
         built.reset_mock()
         toc_text["v"] = repr((good,))
-        with common[0], common[1], common[2], common[3], \
+        with common[0], common[1], common[2], common[3], common[4], \
                 mock.patch.object(self.bp, "python_problems", return_value=["전용 venv가 아님"]):
             self.assertEqual(self.bp.main(["--out", out, "--build"]), 2)
             built.assert_not_called()
@@ -1028,7 +1036,68 @@ REQUIRED_NOTICES = dict(
        ("python/networkx-LICENSE.txt", "BSD-3-Clause"),
        ("python/openpyxl-LICENCE.rst", "MIT"),
        ("python/et_xmlfile-LICENCE.rst", "MIT"),
-       ("python/et_xmlfile-LICENCE.python", "PSF-2.0")])
+       ("python/et_xmlfile-LICENCE.python", "PSF-2.0")]
+    # W9(D15): 내려받은 고지 원문(Qt·PDFium·WebEngine·opengl32sw·VC++ 재배포·liblzma)과 PDF 어댑터 휠의 고지
+    + [("qt/GPL-2.0.txt", "GPL-2.0-only"),
+       ("qt/pdfium-LICENSE", "BSD-3-Clause·Apache-2.0(파일 안)"),
+       ("qt/qtwebengine-licensing.html", "구성요소별(파일 안)"),
+       ("qt/opengl32sw/mesa-11.2.2-license.html", "MIT(파일 안, 구성요소별)"),
+       ("qt/opengl32sw/llvm-3.6.0-LICENSE.TXT", "NCSA"),
+       ("msvc/vs2022-redistribution.html", "Microsoft 재배포 조건 안내(라이선스 본문 아님)"),
+       ("python/liblzma-xz-5.2.5-COPYING", "퍼블릭 도메인(liblzma, 파일 안)"),
+       ("qt/third-party/qtimageformats-libtiff-COPYRIGHT", "libtiff"),
+       ("qt/third-party/qtimageformats-libwebp-COPYING", "BSD-3-Clause")]
+    + [("qt/third-party/LICENSES/%s.txt" % n, n) for n in (
+        "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC0-1.0", "FTL", "IJG", "Libpng", "libpng-2.0", "MIT",
+        "MIT-open-group", "MPL-2.0", "Zlib", "LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception",
+        "LicenseRef-ICC-License", "LicenseRef-Lcs-Telegraphics", "LicenseRef-SHA1-Public-Domain")]
+    + [("qt/third-party/attribution/%s.qt_attribution.json" % n, lic) for n, lic in (
+        ("qtbase-D3D12MemoryAllocator", "MIT"), ("qtbase-VulkanMemoryAllocator", "MIT"),
+        ("qtbase-blake2", "CC0-1.0 OR Apache-2.0"), ("qtbase-double-conversion", "BSD-3-Clause"),
+        ("qtbase-easing", "BSD-3-Clause"), ("qtbase-emoji-segmenter", "Apache-2.0"),
+        ("qtbase-freetype", "FTL OR GPL-2.0-only; Zlib; MIT; MIT AND MIT-open-group"), ("qtbase-harfbuzz-ng", "MIT"),
+        ("qtbase-icc", "LicenseRef-ICC-License"), ("qtbase-libjpeg", "IJG AND BSD-3-Clause"),
+        ("qtbase-libpng", "Libpng AND libpng-2.0"), ("qtbase-libpsl", "MPL-2.0; BSD-3-Clause"),
+        ("qtbase-md4", "CC0-1.0"), ("qtbase-md4c", "MIT"), ("qtbase-md5", "CC0-1.0"),
+        ("qtbase-pcre2", "LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception; BSD-2-Clause"),
+        ("qtbase-rfc6234", "BSD-3-Clause"), ("qtbase-sha1", "LicenseRef-SHA1-Public-Domain"),
+        ("qtbase-sha3", "BSD-2-Clause; CC0-1.0"), ("qtbase-siphash", "CC0-1.0"), ("qtbase-tinycbor", "MIT"),
+        ("qtbase-wintab", "LicenseRef-Lcs-Telegraphics"), ("qtbase-zlib", "Zlib"),
+        ("qtimageformats-libtiff", "libtiff"), ("qtimageformats-libwebp", "BSD-3-Clause"))]
+    + [("python/%s" % f, lic) for f, lic in (
+        ("pdfplumber-LICENSE.txt", "MIT"), ("pdfminer.six-LICENSE", "MIT"), ("pillow-LICENSE", "MIT-CMU"),
+        ("charset_normalizer-LICENSE", "MIT"), ("cryptography-LICENSE", "Apache-2.0 OR BSD-3-Clause"),
+        ("cryptography-LICENSE.APACHE", "Apache-2.0"), ("cryptography-LICENSE.BSD", "BSD-3-Clause"),
+        ("cffi-LICENSE", "MIT"), ("cffi-AUTHORS", "MIT(저작자 목록)"), ("pycparser-LICENSE", "BSD-3-Clause"),
+        ("pypdfium2/LICENSES/Apache-2.0.txt", "Apache-2.0"), ("pypdfium2/LICENSES/BSD-3-Clause.txt", "BSD-3-Clause"),
+        ("pypdfium2/LICENSES/CC-BY-4.0.txt", "CC-BY-4.0"))]
+    + [("python/pypdfium2/BUILD_LICENSES/%s" % f, lic) for f, lic in (
+        ("abseil.txt", "Apache-2.0"), ("agg23.txt", "AGG 허가 문구(파일 안)"), ("fast_float.txt", "MIT"),
+        ("freetype.txt", "FTL(파일 안)"), ("icu.txt", "Unicode-3.0(파일 안)"), ("lcms.txt", "MIT"),
+        ("libjpeg_turbo.ijg", "IJG"), ("libjpeg_turbo.md", "IJG·BSD-3-Clause·Zlib(파일 안)"),
+        ("libopenjpeg.txt", "BSD-2-Clause"), ("libpng.txt", "libpng-2.0"), ("libtiff.txt", "libtiff"),
+        ("llvm-libc.txt", "Apache-2.0 WITH LLVM-exception(파일 안)"), ("pdfium-binaries.txt", "MIT"),
+        ("pdfium.txt", "BSD-3-Clause·Apache-2.0(파일 안)"), ("simdutf.txt", "MIT"), ("zlib.txt", "Zlib"))]
+    # W9 재작업 1회차: qt_attribution.json의 LicenseFile·CopyrightFile 원문(qtbase v6.12.0), cryptography 휠 동봉 SBOM
+    + [("qt/third-party/files/%s" % f, lic) for f, lic in (
+        ("D3D12MemoryAllocator/LICENSE.txt", "MIT"), ("VulkanMemoryAllocator/LICENSE.txt", "MIT"),
+        ("blake2/COPYING", "CC0-1.0 OR Apache-2.0"), ("double-conversion/LICENSE", "BSD-3-Clause"),
+        ("easing/LICENSE", "BSD-3-Clause"), ("freetype/BDF-LICENSE.txt", "MIT"),
+        ("freetype/PCF-LICENSE.txt", "MIT AND MIT-open-group"), ("freetype/ZLIB-LICENSE.txt", "Zlib"),
+        ("freetype/LICENSE.txt", "FTL OR GPL-2.0-only"), ("harfbuzz-ng/COPYING", "MIT"),
+        ("icc/LICENSE.txt", "LicenseRef-ICC-License"), ("libjpeg/LICENSE", "IJG AND BSD-3-Clause"),
+        ("libjpeg/ijg-license.txt", "IJG AND BSD-3-Clause"), ("libjpeg/COPYRIGHT.txt", "저작권자 목록"),
+        ("libpng/LICENSE", "Libpng AND libpng-2.0"), ("libpsl/PSL-LICENSE.txt", "MPL-2.0"),
+        ("libpsl/src/LICENSE.chromium", "BSD-3-Clause"), ("md4c/LICENSE.md", "MIT"),
+        ("pcre2/LICENSE-SLJIT", "BSD-2-Clause"),
+        ("pcre2/LICENCE.md", "LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception"),
+        ("rfc6234/LICENSE", "BSD-3-Clause"), ("sha3/CC0_LICENSE", "CC0-1.0"), ("sha3/BRG_ENDIAN_LICENSE", "BSD-2-Clause"),
+        ("tinycbor/LICENSE", "MIT"), ("zlib/LICENSE", "Zlib"))]
+    + [("python/cryptography-sboms/%s" % f, "구성요소별(파일 안)")
+       for f in ("sbom.json", "cryptography-rust.cyclonedx.json")])
+# W9(D15): PDF 어댑터 휠 고정(packaging/requirements-pdf.txt) — 이 8개만, 휠 하나의 sha256씩
+PDF_PINS = {"pdfplumber": "0.11.9", "pdfminer.six": "20251230", "pillow": "12.2.0", "pypdfium2": "5.8.0",
+            "charset-normalizer": "3.4.7", "cryptography": "48.0.0", "cffi": "2.0.0", "pycparser": "3.0"}
 REQUIRED_DOCS = ("qt/QT-SOURCE.md", "qt/QTWEBENGINE-THIRD-PARTY.md")  # Qt 소스 위치·WebEngine 제3자 목록 위치
 
 
@@ -1041,6 +1110,33 @@ def _notice_rows(path=None):
             if len(cells) == 7 and cells[4].startswith("`") and cells[6].startswith("`"):
                 rows.append((cells[0], cells[1], cells[2], cells[4].strip("`"), cells[6].strip("`")))
     return rows
+
+
+def _table_problems(text):
+    """Markdown 표 연속성: '|'로 시작하는 줄 묶음마다 첫 줄이 머리행, 둘째 줄이 구분행(|---|)이고, 모든 행의 칸 수가
+    머리행과 같아야 한다. 빈 줄로 끊긴 표(머리행 없이 시작하는 행 묶음)를 잡는다. 문제 목록(빈 목록 = 통과)."""
+    import re
+    probs, block = [], []
+
+    def ncell(ln):
+        return len(ln.strip().strip("|").split("|"))
+
+    def check(block):
+        if not block:
+            return
+        (n0, h), rest = block[0], block[1:]
+        if not rest or not re.match(r"^\|(\s*:?-{3,}:?\s*\|)+$", rest[0][1].strip()):
+            probs.append("%d행: 머리행·구분행 없이 시작하는 표" % n0)
+            return
+        probs.extend("%d행: 칸 수 %d != 머리행 %d" % (n, ncell(ln), ncell(h)) for n, ln in rest if ncell(ln) != ncell(h))
+    for n, ln in enumerate(text.splitlines(), 1):
+        if ln.startswith("|"):
+            block.append((n, ln))
+        else:
+            check(block)
+            block = []
+    check(block)
+    return probs
 
 
 def _notice_problems(rows, licenses_dir=LICENSES_DIR):
@@ -1068,29 +1164,49 @@ def _notice_problems(rows, licenses_dir=LICENSES_DIR):
 
 
 class LicenseNoticeTest(unittest.TestCase):
-    """licenses/가 묶음 datas에 들어가고, 고지 목록이 기준 목록(원문 경로·라이선스 식별자)과 맞으며, 원문 파일이 있고
-    SHA-256이 목록과 같다(W6 완료 기준)."""
+    """고지 목록이 기준 목록(원문 경로·라이선스 식별자)과 맞고, 원문 파일이 있고 SHA-256이 목록과 같으며(W6 완료 기준),
+    README 표가 끊기지 않았다. W9(D15)부터 licenses/는 datas가 아니라 빌드 뒤 실행 파일 옆으로 복사된다."""
 
     @classmethod
     def setUpClass(cls):
         cls.bp = _build_package()
         cls.rows = _notice_rows()
 
-    def test_spec_includes_licenses(self):
-        self.assertIn("licenses", self.bp.DATA_DIRS)
-        listed = {"licenses/" + r[3] for r in self.rows} | {"licenses/README.md"}
+    def test_licenses_copied_next_to_exe(self):
+        """W9(D15): licenses/는 datas(_internal/licenses/)에 넣지 않고, 빌드 뒤 결과 폴더의 실행 파일 옆으로 복사한다."""
+        self.assertNotIn("licenses", self.bp.DATA_DIRS)
+        self.assertFalse([s for s, _ in self.bp.datas_list() if s.startswith("licenses/")])
         for with_check in (False, True):
-            text = self.bp.spec_text(with_check=with_check)
-            ns = {}
+            text, ns = self.bp.spec_text(with_check=with_check), {}
             exec(text.split("from PyInstaller")[0] + "\n".join(
                 ln for ln in text.splitlines() if ln.startswith(("REPO =", "DATAS ="))), ns)
-            got = {os.path.relpath(s, REPO_ROOT).replace("\\", "/"): d for s, d in ns["DATAS"]}
-            self.assertEqual(listed - set(got), set())
-            for src in listed:  # 묶음 안에서도 licenses/ 아래 같은 상대 위치
-                self.assertEqual(got[src].replace(os.sep, "/"), os.path.dirname(src))
+            self.assertFalse([s for s, _ in ns["DATAS"] if self.bp.inside(s, LICENSES_DIR)])
+            out = tempfile.mkdtemp(prefix="hazop-lic-copy-")
+            self.addCleanup(shutil.rmtree, out, True)
+            dist = self.bp.dist_dir(out, with_check)
+            os.makedirs(os.path.join(dist, "_internal"))
+            dest = self.bp.copy_licenses(out, with_check)
+            self.assertEqual(dest, os.path.join(dist, "licenses"))
+            listed = {r[3] for r in self.rows} | {"README.md", ".gitattributes"}
+            on_disk = {os.path.relpath(os.path.join(d, f), dest).replace("\\", "/")
+                       for d, _, fs in os.walk(dest) for f in fs}
+            self.assertEqual(on_disk, listed)
+            self.assertEqual(self.bp.licenses_problems(dist), [])
+            os.makedirs(os.path.join(dist, "_internal", "licenses"))  # 이전 위치가 남아 있으면 실패
+            self.assertEqual(self.bp.licenses_problems(dist),
+                             ["이전 위치 _internal/licenses/가 있음(실행 파일 옆으로 옮김, D15)"])
 
     def test_notices_match_baseline_and_sha256(self):
         self.assertEqual(_notice_problems(self.rows), [])
+
+    def test_readme_tables_continuous(self):
+        """licenses/README.md의 표가 빈 줄로 끊기지 않았다(끊기면 뒤 행이 머리행 없는 별도 표가 된다)."""
+        with open(os.path.join(LICENSES_DIR, "README.md"), encoding="utf-8") as fh:
+            self.assertEqual(_table_problems(fh.read()), [])
+        good = "글\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+        self.assertEqual(_table_problems(good), [])
+        self.assertEqual(_table_problems(good + "\n| 3 | 4 |\n"), ["7행: 머리행·구분행 없이 시작하는 표"])
+        self.assertEqual(_table_problems(good + "| 3 | 4 | 5 |\n"), ["6행: 칸 수 3 != 머리행 2"])
 
     def test_removed_row_and_file_detected(self):
         """목록 행과 원문 파일을 함께 지워도(사본에서) 기준 목록 대조로 실패한다. 식별자·해시 변경도 잡는다."""
@@ -1122,6 +1238,14 @@ class LicenseNoticeTest(unittest.TestCase):
         self.assertEqual(by_file["python/networkx-LICENSE.txt"], pins["networkx"])
         self.assertEqual(by_file["python/openpyxl-LICENCE.rst"], pins["openpyxl"])
         self.assertEqual(by_file["pyinstaller/COPYING.txt"], pins["pyinstaller"])
+        pdf_rows = {"pdfplumber": "python/pdfplumber-LICENSE.txt", "pdfminer.six": "python/pdfminer.six-LICENSE",
+                    "pillow": "python/pillow-LICENSE", "charset-normalizer": "python/charset_normalizer-LICENSE",
+                    "cryptography": "python/cryptography-LICENSE", "cffi": "python/cffi-LICENSE",
+                    "pycparser": "python/pycparser-LICENSE", "pypdfium2": "python/pypdfium2/LICENSES/Apache-2.0.txt"}
+        pdf_pins = _pdf_pins()
+        self.assertEqual(set(pdf_rows), set(pdf_pins))
+        for name, rel in pdf_rows.items():  # W9(D15): 고지 목록의 버전 = requirements-pdf.txt 고정 버전
+            self.assertEqual(by_file[rel], pdf_pins[name][0], name)
         vendor = [d for d in os.listdir(os.path.dirname(kg_screen.VENDOR_DIR)) if d.startswith("force-graph-")]
         self.assertEqual(by_file["force-graph/force-graph-LICENSE"], vendor[0].split("-")[-1] + "(vendor)")
         for rel in REQUIRED_NOTICES:
@@ -1130,14 +1254,32 @@ class LicenseNoticeTest(unittest.TestCase):
                 self.assertIn("(추정)", by_file[rel], rel)
 
 
+def _pdf_pins(path=None):
+    """packaging/requirements-pdf.txt → {이름: (버전, [sha256, ...])}. 줄 이음(\\)과 --hash 줄을 읽는다."""
+    import re
+    with open(path or os.path.join(REPO_ROOT, "packaging", "requirements-pdf.txt"), encoding="utf-8") as fh:
+        text = re.sub(r"\\\r?\n", " ", fh.read())
+    pins = {}
+    for ln in text.splitlines():
+        ln = ln.strip()
+        if not ln or ln.startswith("#"):
+            continue
+        m = re.match(r"^([A-Za-z0-9_.-]+)==(\S+)((?:\s+--hash=sha256:[0-9a-f]{64})*)\s*$", ln)
+        if not m:
+            raise ValueError("해석할 수 없는 줄: %r" % ln)
+        pins[m.group(1).lower()] = (m.group(2), re.findall(r"[0-9a-f]{64}", m.group(3)))
+    return pins
+
+
 class BundleLicensesTest(unittest.TestCase):
-    """packaging/verify_bundle.licenses_problems: 묶음 _internal/licenses/가 저장소 licenses/와 같은지(빌드 없이)."""
+    """packaging/verify_bundle.licenses_problems: 묶음의 실행 파일 옆 licenses/가 저장소 licenses/와 같고 이전 위치
+    _internal/licenses/가 없는지(빌드 없이, W9 D15)."""
 
     def test_licenses_problems(self):
         vb = _load("packaging/verify_bundle.py", "hazop_verify_bundle_lic")
         tmp = tempfile.mkdtemp(prefix="hazop-bundle-lic-")
         self.addCleanup(shutil.rmtree, tmp, True)
-        dest = os.path.join(tmp, "_internal", "licenses")
+        dest = os.path.join(tmp, "licenses")
         self.assertTrue(vb.licenses_problems(tmp))  # 묶음에 licenses 없음
         shutil.copytree(LICENSES_DIR, dest)
         self.assertEqual(vb.licenses_problems(tmp), [])
@@ -1146,9 +1288,148 @@ class BundleLicensesTest(unittest.TestCase):
         os.remove(os.path.join(dest, "force-graph", "d3-ease-LICENSE"))
         open(os.path.join(dest, "extra.txt"), "w").close()
         probs = vb.licenses_problems(tmp)
-        self.assertIn("해시 다름: %s" % os.path.join("qt", "GPL-3.0.txt"), probs)
-        self.assertIn("묶음에 없음: %s" % os.path.join("force-graph", "d3-ease-LICENSE"), probs)
+        self.assertIn("해시 다름: qt/GPL-3.0.txt", probs)
+        self.assertIn("묶음에 없음: force-graph/d3-ease-LICENSE", probs)
         self.assertIn("저장소에 없는 파일: extra.txt", probs)
+        self.assertNotIn("이전 위치 _internal/licenses/가 있음(실행 파일 옆으로 옮김, D15)", probs)
+        shutil.rmtree(dest)  # 이전 위치(_internal/licenses/)에만 있으면 전부 없음 + 이전 위치 문제
+        shutil.copytree(LICENSES_DIR, os.path.join(tmp, "_internal", "licenses"))
+        probs = vb.licenses_problems(tmp)
+        self.assertIn("묶음에 없음: README.md", probs)
+        self.assertEqual(probs[-1], "이전 위치 _internal/licenses/가 있음(실행 파일 옆으로 옮김, D15)")
+
+
+class PdfBundleTest(unittest.TestCase):
+    """W9(D15): PDF 어댑터 묶음 — requirements-pdf.txt 고정, 빌드 뒤 PDF 검사, verify의 pdf_probe 판정(빌드 없이)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.bp = _build_package()
+        cls.vb = _load("packaging/verify_bundle.py", "hazop_verify_bundle_pdf")
+        cls.probe = _load("packaging/pdf_probe.py", "hazop_pdf_probe_t")
+
+    def _tmp(self):
+        d = tempfile.mkdtemp(prefix="hazop-pdf-")
+        self.addCleanup(shutil.rmtree, d, True)
+        return d
+
+    def test_requirements_pdf_pins_and_hashes(self):
+        pins = _pdf_pins()
+        self.assertEqual({k: v[0] for k, v in pins.items()}, PDF_PINS)
+        for name, (_, hashes) in pins.items():
+            self.assertEqual(len(hashes), 1, name)  # 휠 하나만(다른 휠·sdist로 바뀌지 않게)
+        bad = os.path.join(self._tmp(), "r.txt")
+        with open(bad, "w", encoding="utf-8") as fh:
+            fh.write("pdfplumber>=0.11\n")
+        with self.assertRaises(ValueError):
+            _pdf_pins(bad)
+
+    def _fake_build(self, mods, dll=True, with_check=False):
+        out = self._tmp()
+        b = os.path.join(out, "build", "HAZOP")
+        os.makedirs(b)
+        with open(os.path.join(b, "PYZ-00.toc"), "w", encoding="utf-8") as fh:
+            fh.write(repr((os.path.join(b, "PYZ-00.pyz"), [(m, "C:\\x\\%s.py" % m, "PYMODULE") for m in mods])))
+        d = os.path.join(self.bp.dist_dir(out, with_check), "_internal", *self.bp.PDFIUM_DLL)
+        os.makedirs(os.path.dirname(d))
+        if dll:
+            open(d, "wb").close()
+        return out
+
+    def test_pdf_problems(self):
+        mods = list(self.bp.PDF_REQUIRED_MODULES) + ["hazop", "PIL"]
+        for with_check in (False, True):
+            self.assertEqual(self.bp.pdf_problems(self._fake_build(mods, with_check=with_check), with_check), [])
+        out = self._fake_build([m for m in mods if m != "pypdfium2_raw"], dll=False)
+        probs = self.bp.pdf_problems(out)
+        self.assertEqual(probs[0], "앱 PYZ에 PDF 모듈 없음: pypdfium2_raw")
+        self.assertTrue(probs[1].startswith("pdfium.dll 없음: "))
+        self.assertTrue(self.bp.pdf_problems(self._tmp())[0].startswith("앱 PYZ TOC를 읽을 수 없음"))
+
+    def test_finish_bundle(self):
+        """빌드 뒤 마무리: 실행 파일 옆 licenses/ 복사 + 고지 대조 + PDF 검사. 결과 폴더가 없으면 실패."""
+        self.assertTrue(self.bp.finish_bundle(self._tmp())[0].startswith("결과 폴더 없음"))
+        out = self._fake_build(list(self.bp.PDF_REQUIRED_MODULES))
+        self.assertEqual(self.bp.finish_bundle(out), [])
+        self.assertTrue(os.path.isfile(os.path.join(self.bp.dist_dir(out), "licenses", "README.md")))
+        self.assertTrue(self.bp.finish_bundle(out)[0].startswith("제3자 고지 복사 실패"))  # 두 번째 복사(이미 있음)
+
+    def test_license_tree_walk_error_fails(self):
+        """고지 대조의 폴더 탐색 오류(onerror)·파일 읽기 오류는 '같음'이 아니라 실패다."""
+        out = self._fake_build(list(self.bp.PDF_REQUIRED_MODULES))
+        dist = self.bp.dist_dir(out)
+        self.bp.copy_licenses(out)
+        self.assertEqual(self.bp.licenses_problems(dist), [])
+        real_walk = os.walk
+
+        def bad_walk(top, onerror=None, **kw):
+            if onerror is not None and os.path.normcase(top).startswith(os.path.normcase(dist)):
+                onerror(PermissionError(13, "액세스 거부(모의)", os.path.join(top, "qt")))
+            return real_walk(top, onerror=onerror, **kw)
+        with mock.patch.object(self.bp.os, "walk", side_effect=bad_walk):
+            probs = self.bp.licenses_problems(dist)
+        self.assertEqual(len(probs), 1)
+        self.assertTrue(probs[0].startswith("고지 대조 중 탐색 오류:"), probs)
+        with mock.patch("builtins.open", side_effect=PermissionError(13, "읽기 거부(모의)")):
+            self.assertTrue(self.bp.licenses_problems(dist)[0].startswith("고지 대조 중 탐색 오류:"))
+
+    def test_main_rc3_when_finish_bundle_fails(self):
+        """빌드 뒤 마무리(finish_bundle)가 문제를 돌려주면 main은 rc=3이고, 마무리는 결과 폴더 경로로 한 번 불린다."""
+        out = self._tmp()
+        fin = mock.Mock(return_value=["x"])
+        with mock.patch.dict(sys.modules, {"PyInstaller": mock.Mock()}), \
+                mock.patch.object(self.bp, "build", return_value=0), \
+                mock.patch.object(self.bp, "check_dist", return_value=[]), \
+                mock.patch.object(self.bp, "check_sources", return_value=[]), \
+                mock.patch.object(self.bp, "python_problems", return_value=[]), \
+                mock.patch.object(self.bp, "finish_bundle", fin):
+            self.assertEqual(self.bp.main(["--out", out, "--build"]), 3)
+            fin.assert_called_once_with(os.path.abspath(out), False)
+            fin.return_value = []
+            self.assertEqual(self.bp.main(["--out", out, "--build", "--with-check"]), 0)
+            fin.assert_called_with(os.path.abspath(out), True)
+
+    def test_pdf_probe_problems(self):
+        bundle = self._tmp()
+        inner = os.path.join(bundle, "_internal")
+        exp = {"extraction_run_id": "x", "summary": {"nodes": 1}, "counts": {"nodes": 1}}
+        files = {m: os.path.join(inner, m, "__init__.pyc") for m in self.probe.PROBE_MODULES}
+        good = {"frozen": True, "extraction": dict(exp), "render_size": [100, 80], "module_files": files,
+                "pdfium_dll": os.path.join(inner, "pypdfium2_raw", "pdfium.dll"), "pdfium_dll_exists": True}
+        self.assertEqual(self.vb.pdf_probe_problems(good, exp, bundle), [])
+        self.assertEqual(self.vb.PDF_PROBE_MODULES, self.probe.PROBE_MODULES)
+        # 필수 키 누락: 모듈 키가 빠지거나 pdfium_dll 키가 없으면 실패(빈 결과가 통과하지 않게)
+        missing = dict(good, module_files={k: v for k, v in files.items() if k not in ("PIL", "cryptography")})
+        del missing["pdfium_dll"]
+        self.assertEqual(self.vb.pdf_probe_problems(missing, exp, bundle),
+                         ["결과에 없음: PIL", "결과에 없음: cryptography", "결과에 없음: pdfium.dll"])
+        self.assertEqual(self.vb.pdf_probe_problems(dict(good, module_files=None), exp, bundle),
+                         ["결과에 없음: %s" % m for m in self.probe.PROBE_MODULES])
+        self.assertEqual(self.vb.pdf_probe_problems(None, exp, bundle), ["결과 없음"])
+        self.assertEqual(self.vb.pdf_probe_problems({"error": "ImportError: x"}, exp, bundle), ["오류: ImportError: x"])
+        bad = dict(good, frozen=False, extraction=dict(exp, summary={"nodes": 2}), render_size=[0, 5],
+                   pdfium_dll_exists=False,
+                   module_files=dict(files, pdfplumber=r"C:\venv\Lib\site-packages\pdfplumber\__init__.py", PIL=None))
+        self.assertEqual(self.vb.pdf_probe_problems(bad, exp, bundle),
+                         ["묶인 실행이 아님", "추출 요약이 개발 실행과 다름", "pypdfium2 그림 크기 이상: [0, 5]",
+                          "읽히지 않음: PIL", "읽히지 않음: pdfium.dll",
+                          "묶음 밖에서 읽힘: pdfplumber (C:\\venv\\Lib\\site-packages\\pdfplumber\\__init__.py)"])
+
+    @unittest.skipUnless(importlib.util.find_spec("pdfplumber"), "pdfplumber 없음(전용 venv에서 실행)")
+    def test_probe_runs_in_dev_venv(self):
+        """개발 실행(묶지 않음)에서 pdf_probe가 샘플 PDF를 추출·그리고, 요약이 verify의 기대값(pdf_expected)과 같다."""
+        pdf = os.path.join(REPO_ROOT, *self.vb.SAMPLE, self.vb.SAMPLE[-1] + ".pdf")
+        res = os.path.join(self._tmp(), "r.json")
+        self.assertEqual(self.probe.main(["--pdf", pdf, "--result", res]), 0)
+        got = data.read_json(res)
+        self.assertFalse(got["frozen"])
+        self.assertEqual(got["extraction"], self.vb.pdf_expected(pdf))
+        self.assertTrue(got["pdfium_dll_exists"])
+        self.assertTrue(all(got["module_files"].values()))
+        # 묶음 판정으로 보면 개발 실행은 '묶인 실행이 아님'·'묶음 밖에서 읽힘'으로 실패한다
+        probs = self.vb.pdf_probe_problems(got, got["extraction"], self._tmp())
+        self.assertIn("묶인 실행이 아님", probs)
+        self.assertTrue(any(p.startswith("묶음 밖에서 읽힘: pdfplumber") for p in probs))
 
 
 def _load(rel, name):

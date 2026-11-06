@@ -41,4 +41,8 @@ Qt 라이브러리는 개별 DLL 파일로 들어 있다.
 
 - `LGPL-3.0.txt`: GNU Lesser General Public License v3
 - `GPL-3.0.txt`: GNU General Public License v3(LGPL v3가 참조하는 본문)
+- `GPL-2.0.txt`: GNU General Public License v2(PySide6 선택지 중 하나)
+- 위 세 파일은 Qt 6.12.0 소스(qtbase 태그 `v6.12.0`)의 `LICENSES/` 원문이다(W9, 2026-11-06).
+- `third-party/`: Qt 내부 제3자 구성요소의 `qt_attribution.json`과 SPDX 본문, qtimageformats의 libtiff·libwebp 원문(W9)
+- `opengl32sw/`: `opengl32sw.dll`(Mesa llvmpipe)의 Mesa·LLVM 원문(W9)
 - `LicenseRef-Qt-Commercial.txt`: PySide6 휠에 들어 있는 상용 라이선스 안내문(원문 그대로)
