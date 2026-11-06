@@ -24,7 +24,8 @@
 뷰어·앱 색 비교(W4, D5): 배치 측정 전에 독립 뷰어 템플릿 :root·하드코딩 색을 앱 tokens.web_css()와 비교한다.
 어긋나면 플랫폼과 관계없이 종료 코드 1(판정 불가 2는 유지). --colors-only는 색 검사만 한다(Qt 불필요).
 명암비(W5, D7): 이어서 CONTRAST_PAIRS의 토큰 쌍을 WCAG 2.1 공식으로 계산해 글자 4.5:1·그래픽 3:1 미달이면 종료 코드 1.
-판정은 불투명 토큰 값 기준이다. 반투명 선·채움을 흰 도면에 합성한 대비는 보고만 한다(종료 코드 미반영).
+판정은 불투명 토큰 값 기준이다. 반투명 관계선(W8, D13)은 흰 도면 합성 대비가 3:1 미만이거나 판정하지 않는
+선택자·위치에서 선 불투명도를 낮추면 종료 코드 1. 반투명 채움·그림자 합성 대비는 보고만 한다(종료 코드 미반영).
 앱 코드 색 리터럴(W6, D8): hazop/app/**/*.py(tokens.py는 COLORS 블록만 제외, T1 파일 제외)·hazop/viewer/build.py에
 색 리터럴이 있으면(APP_COLOR_ALLOW 밖) 종료 코드 1. --colors-only에도 포함한다.
 """
@@ -762,12 +763,22 @@ def contrast_check():
     return bad
 
 
-# 반투명 선·채움을 실제 바탕에 합성한 대비(보고 전용, rc 미반영, D7). 판정은 불투명 토큰 값 기준이고,
-# 반투명 관계선의 실제 대비는 열린 항목이다(PROGRESS §5). 선 색은 템플릿 JS가 종류별 var(--종류)로 넣는다.
-TRANSLUCENT_STROKES = {
-    ".pipe-line": ("physical_connection", "signal_connection", "measurement_connection", "unresolved"),  # 종류 없으면 unresolved
-    ".gedge": ("physical_connection", "signal_connection", "measurement_connection"),  # 그래프 관계 EDGE_COLOR
-}
+# 반투명 관계선 합성 대비(W8, D13 — 사용자 결정 2026-11-06, has_endpoint는 총괄 판정으로 예외 아님). 선 색은 템플릿 JS가
+# 종류별 var(--토큰)으로 넣고, 불투명도는 CSS 기본 규칙(.pipe-line·.gedge)과 .gedge 종류별 규칙([data-kind="종류"] > .gedge,
+# 부모 <g>의 data-kind)에서 정해진다(stroke-opacity × opacity). 모든 선 종류가 색만으로 구분되므로 흰 도면(--card)에
+# 합성한 대비가 3:1 미만이면 실패. 선 종류는 손으로 옮기지 않고 읽는다: .gedge는 템플릿 JS EDGE_COLOR(주석 제거,
+# 문자열 밖), .pipe-line은 추출 규칙의 관계 종류(hazop.extract.rules.LINE_TYPE_RELATION) + 미해결(템플릿 conns 색 식).
+# 우회 차단: 위 두 형식이 아닌 선택자(예: '#graphsvg .gedge', 'g[data-kind=…] > .gedge', '.gedge.unknown', ':not(…)',
+# 컨테이너 #stage·#overlay·#graphsvg·#viewport, SVG 요소 선택자)가 불투명도 < 1을 주면 실패, 인식한 형식이라도 @media 안에서
+# < 1이거나 !important면 실패, 선에 닿는 선택자의 filter: opacity()·선 규칙의 CSS 중첩도 실패, HTML·JS(주석·문자열 내용 밖)가
+# 불투명도를 직접 설정하면 실패. 휴리스틱이라 모든 우회를 막지는 않는다(한계: evidence/w8-반투명선.md §8).
+STROKE_SELECTORS = (".pipe-line", ".gedge")
+_OPACITY_PROPS = ("stroke-opacity", "opacity")
+_LINE_CLASS = r"\.(?:gedge|pipe-line)(?![\w-])"
+_CONTAINERS = ("#stage", "#overlay", "#graphsvg", "#viewport")
+_PIPE_COLOR_EXPR = 'c.unresolved ? "var(--unresolved)" : "var(--" + (c.r.kind || "unresolved") + ")"'
+_GEDGE_KIND_ATTR = 'el("g", { "data-kind": e.kind'
+_KIND_OVERRIDE = r'\[data-kind="([\w-]+)"\]\s*>\s*(\.[\w-]+)'
 
 
 def _over(rgb, a, bg):
@@ -778,8 +789,312 @@ def _over(rgb, a, bg):
     return "#%02x%02x%02x" % tuple(round(c * a + d * (1 - a)) for c, d in zip(rgb, base))
 
 
+def css_rules_ctx(css):
+    """CSS → [(선택자, [(속성, 값)], 감싼 블록 머리들)]. 주석을 지운 뒤 중괄호 중첩을 따라간다. 감싼 머리에는 @media 같은
+    at 규칙과 CSS 중첩의 부모 선택자가 모두 들어간다(자식이 있는 블록은 규칙으로 내지 않는다)."""
+    import re
+    css = re.sub(r"/\*.*?\*/", " ", css, flags=re.S)
+    out, stack, buf = [], [], []
+    for ch in css:
+        if ch == "{":
+            if stack:
+                stack[-1][1] = True
+            stack.append([" ".join("".join(buf).rsplit(";", 1)[-1].split()), False])  # 부모 선언 뒤의 중첩 머리
+            buf = []
+        elif ch == "}":
+            if stack:
+                prelude, has_child = stack.pop()
+                if not has_child:
+                    decls = []
+                    for d in "".join(buf).split(";"):
+                        if ":" in d:
+                            k, v = d.split(":", 1)
+                            k = k.strip()
+                            decls.append((k if k.startswith("--") else k.lower(), " ".join(v.split())))
+                    out.append((prelude, decls, tuple(p for p, _c in stack)))
+            buf = []
+        elif ch == ";" and stack and stack[-1][1]:
+            buf = []  # at 규칙 블록 안의 규칙 사이 찌꺼기
+        else:
+            buf.append(ch)
+    return out
+
+
+def _split_selectors(sel):
+    """쉼표로 선택자 목록을 나눈다(괄호·대괄호 안 쉼표는 그대로)."""
+    parts, depth, cur = [], 0, []
+    for ch in sel:
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append("".join(cur).strip())
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur).strip())
+    return [p for p in parts if p]
+
+
+def _js_code(js):
+    """JS에서 주석을 지운 코드와 그 안의 리터럴 구간 [(시작, 끝, 'str'|'re')]. 템플릿 리터럴의 ${…}는 코드로 다시 읽는다.
+    정규식 리터럴은 앞 문자로 가린다(휴리스틱: return·typeof 뒤 정규식은 나눗셈으로 본다)."""
+    out, spans = [], []
+    _scan_js(js, 0, out, spans, False)
+    return "".join(out), spans
+
+
+def _scan_js(js, i, out, spans, in_expr):
+    n, prev, depth = len(js), "", 0
+    while i < n:
+        ch = js[i]
+        if in_expr and ch == "{":
+            depth += 1
+        elif in_expr and ch == "}":
+            if depth == 0:
+                out.append("}")
+                return i + 1
+            depth -= 1
+        if ch == "`":
+            start = len(out)
+            out.append(ch)
+            i += 1
+            while i < n and js[i] != "`":
+                if js[i] == "\\" and i + 1 < n:
+                    out.append(js[i])
+                    i += 1
+                elif js.startswith("${", i):
+                    out.extend("${")  # out은 한 글자씩: len(out)을 문자 위치로 쓴다
+                    spans.append((start, len(out), "str"))
+                    i = _scan_js(js, i + 2, out, spans, True)
+                    start = len(out)
+                    continue
+                out.append(js[i])
+                i += 1
+            if i < n:
+                out.append("`")
+                i += 1
+            spans.append((start, len(out), "str"))
+            prev = ch
+        elif ch in "\"'":
+            start = len(out)
+            out.append(ch)
+            i += 1
+            while i < n and js[i] != ch:
+                if js[i] == "\\" and i + 1 < n:
+                    out.append(js[i])
+                    i += 1
+                out.append(js[i])
+                i += 1
+            if i < n:
+                out.append(js[i])
+                i += 1
+            spans.append((start, len(out), "str"))
+            prev = ch
+        elif js.startswith("//", i):
+            while i < n and js[i] != "\n":
+                i += 1
+        elif js.startswith("/*", i):
+            j = js.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            out.append(" ")
+        elif ch == "/" and (prev == "" or prev in "(,=:[!&|?{};+-*%<>~^"):
+            start = len(out)
+            out.append(ch)
+            i += 1
+            cls = False
+            while i < n and (cls or js[i] != "/") and js[i] != "\n":
+                if js[i] == "\\" and i + 1 < n:
+                    out.append(js[i])
+                    i += 1
+                elif js[i] == "[":
+                    cls = True
+                elif js[i] == "]":
+                    cls = False
+                out.append(js[i])
+                i += 1
+            if i < n and js[i] == "/":
+                out.append("/")
+                i += 1
+            spans.append((start, len(out), "re"))
+            prev = "/"
+        else:
+            out.append(ch)
+            if not ch.isspace():
+                prev = ch
+            i += 1
+    return i
+
+
+def _code_find(code, spans, needle):
+    """리터럴 밖에서 시작하는 needle의 첫 위치, 없으면 -1."""
+    i = code.find(needle)
+    while i >= 0:
+        if not any(a <= i < b for a, b, _k in spans):
+            return i
+        i = code.find(needle, i + 1)
+    return -1
+
+
+def _js_opacity_hits(code, spans):
+    """JS가 불투명도를 직접 설정하는 곳: 리터럴 밖 코드의 opacity·strokeOpacity·stroke-opacity 이름, 또는 문자열이
+    속성 이름 그 자체('stroke-opacity'·'opacity'·'strokeOpacity')이거나 CSS 선언('opacity:' 꼴)·SVG 속성('opacity=' 꼴)인 경우."""
+    import re
+    masked = list(code)
+    for a, b, _k in spans:
+        masked[a:b] = " " * (b - a)
+    masked = "".join(masked)
+    hits = [m.start() for m in re.finditer(r"stroke-?opacity|\bopacity\b", masked, re.I)]
+    for a, b, k in spans:
+        if k != "str":
+            continue
+        lit = code[a:b]
+        bare = lit.strip("\"'`${} ")
+        if re.fullmatch(r"(?:stroke-?)?opacity", bare, re.I) or re.search(r"(?:^|[\s;{\"'`])(?:stroke-)?opacity\s*[:=]", lit, re.I):
+            hits.append(a)
+    return sorted(hits)
+
+
+def _template_parts(template):
+    """(style CSS, 본 스크립트 JS, 그 밖의 HTML). HTML 주석(안의 style·script 포함)과 application/json 스크립트(데이터
+    자리)는 뺀다."""
+    import re
+    # 앞에서부터 HTML 주석·style·script 중 먼저 시작하는 것을 취한다: script·style 안의 "<!--"는 주석이 아니다.
+    styles, scripts, rest, pos = [], [], [], 0
+    for m in re.finditer(r"<!--.*?-->|<(style|script)\b([^>]*)>(.*?)</\1\s*>", template, re.S | re.I):
+        rest.append(template[pos:m.start()])
+        pos = m.end()
+        if m.group(1) is None:
+            continue
+        if m.group(1).lower() == "style":
+            styles.append(m.group(3))
+        elif "application/json" not in m.group(2):
+            scripts.append(m.group(3))
+    rest.append(template[pos:])
+    return "\n".join(styles), "\n".join(scripts), " ".join(rest)
+
+
+def stroke_kinds(template):
+    """{선택자: {종류: 색 토큰}}. 템플릿에서 읽을 수 없으면 ValueError."""
+    import re
+    from hazop.extract import rules
+    code, spans = _js_code(_template_parts(template)[1])
+    m = None
+    for cand in re.finditer(r"\bvar\s+EDGE_COLOR\s*=\s*\{(.*?)\}\s*;", code, re.S):
+        if not any(a <= cand.start() < b for a, b, _k in spans):
+            m = cand
+            break
+    if not m:
+        raise ValueError("템플릿 JS에서 EDGE_COLOR를 찾지 못함(주석·문자열 밖)")
+    gedge = {}
+    for item in (i for i in m.group(1).split(",") if i.strip()):
+        im = re.fullmatch(r'\s*"?([\w-]+)"?\s*:\s*"var\(--([\w-]+)\)"\s*', item)
+        if not im:
+            raise ValueError("EDGE_COLOR 항목을 해석하지 못함: %r" % " ".join(item.split()))
+        gedge[im.group(1)] = im.group(2)
+    if not gedge:
+        raise ValueError("EDGE_COLOR가 비어 있음")
+    if _code_find(code, spans, _PIPE_COLOR_EXPR) < 0:
+        raise ValueError("도면 연결선 색 식(var(--관계 종류)·미해결)을 찾지 못함(주석·문자열 밖)")
+    pipe = {k: k for k in sorted(set(rules.LINE_TYPE_RELATION.values()))}
+    pipe["unresolved"] = "unresolved"
+    return {".pipe-line": pipe, ".gedge": gedge}
+
+
+def _opacity(v):
+    raw = v.replace("!important", "").strip()
+    a = float(raw[:-1]) / 100 if raw.endswith("%") else float(raw)  # 50%도 유효한 CSS 값
+    return min(1.0, max(0.0, a))  # CSS처럼 [0,1]로 제한
+
+
+def _touches_lines(part):
+    """선택자 하나가 관계선이나 그 컨테이너·SVG 요소에 불투명도를 줄 수 있으면 참(휴리스틱)."""
+    import re
+    if re.search(_LINE_CLASS, part):
+        return True
+    last = [s for s in re.split(r"\s*[>+~]\s*|\s+", part) if s]
+    last = last[-1] if last else part
+    if any(re.search(re.escape(c) + r"(?![\w-])", last) for c in _CONTAINERS):
+        return True
+    return bool(re.match(r"(?:line|path|polyline|g|svg|\*)(?![\w-])|[\[:]", last))
+
+
+def stroke_rows(template, colors):
+    """([(선택자, 종류, 토큰, 색, 불투명도, 합성 색, 바탕, 대비)], [구성 문제]). 바탕은 도면 --card."""
+    import re
+    style, script, rest = _template_parts(template)
+    bg = colors["card"]
+    try:
+        kinds = stroke_kinds(template)
+    except ValueError as e:
+        return [], ["반투명 선: %s" % e]
+    bad, base, over = [], {}, {}
+    for sel, decls, ctx in css_rules_ctx(style):
+        where = (" (%s 안)" % " ".join(ctx)) if ctx else ""
+        parents = [p for p in ctx if not p.startswith("@")]
+        if parents and any(_touches_lines(x) for p in parents + [sel] for x in _split_selectors(p)):
+            bad.append("반투명 선: 선 규칙에 CSS 중첩('%s' 안의 '%s') — 부모 선언을 판정하지 않음" % (" ".join(parents), sel))
+        for k, v in decls:
+            if k in ("filter", "-webkit-filter") and "opacity(" in v.lower():
+                for part in _split_selectors(sel):
+                    if part in STROKE_SELECTORS or re.fullmatch(_KIND_OVERRIDE, part) or _touches_lines(part):
+                        bad.append("반투명 선: '%s' filter에 opacity()%s — 판정하지 않음" % (part, where))
+                continue
+            if k not in _OPACITY_PROPS:
+                continue
+            for part in _split_selectors(sel):
+                om = re.fullmatch(_KIND_OVERRIDE, part)
+                known = part in STROKE_SELECTORS or bool(om and om.group(2) == ".gedge" and om.group(1) in kinds[".gedge"])
+                if not (known or k == "stroke-opacity" or _touches_lines(part)):
+                    continue  # 선과 무관한 opacity(예: '.tabs button:disabled')
+                try:
+                    a = _opacity(v)
+                except ValueError:
+                    bad.append("반투명 선: '%s' %s 값 %r을 해석하지 못함%s" % (part, k, v, where))
+                    continue
+                if known and "!important" in v.lower():
+                    bad.append("반투명 선: '%s' %s에 !important(우선순위를 판정하지 않음)%s" % (part, k, where))
+                elif known and not ctx:
+                    if part in STROKE_SELECTORS:
+                        base.setdefault(part, {})[k] = a
+                    else:
+                        over.setdefault((".gedge", om.group(1)), {})[k] = a
+                elif a < 1:
+                    bad.append("반투명 선: '%s' %s %g%s — 판정하지 않는 선택자·위치에서 불투명도 < 1(기본 규칙 '%s' 또는 "
+                               "'[data-kind=\"종류\"] > .gedge'만 허용)" % (part, k, a, where, "'·'".join(STROKE_SELECTORS)))
+    code, spans = _js_code(script)
+    hits = [("JS", code, i) for i in _js_opacity_hits(code, spans)]
+    hits += [("HTML", rest, m.start()) for m in re.finditer(r"stroke-?opacity|\bopacity\b", rest, re.I)]
+    for name, text, i in hits:
+        bad.append("반투명 선: 템플릿 %s가 불투명도를 직접 설정함(판정 불가): %r" % (
+            name, " ".join(text[max(0, i - 30):i + 40].split())))
+    if over and _code_find(code, spans, _GEDGE_KIND_ATTR) < 0:
+        bad.append("반투명 선: 종류별 규칙이 기대는 그래프 관계 <g data-kind> 생성 코드를 템플릿에서 찾지 못함")
+    rows = []
+    for sel in STROKE_SELECTORS:
+        for kind, tok in kinds[sel].items():
+            if tok not in colors:
+                bad.append("반투명 선 '%s' %s: 색 토큰 --%s가 tokens.COLORS에 없음" % (sel, kind, tok))
+                continue
+            b, o = base.get(sel, {}), over.get((sel, kind), {})
+            a = o.get("stroke-opacity", b.get("stroke-opacity", 1.0)) * o.get("opacity", b.get("opacity", 1.0))
+            c = _norm_color(colors[tok])
+            mix = _over([int(c[i:i + 2], 16) for i in (1, 3, 5)], a, bg)
+            rows.append((sel, kind, tok, c, a, mix, bg, contrast_ratio(mix, bg)))
+    return rows, bad
+
+
+def stroke_problems(template, colors):
+    """관계선의 합성 대비 < 3:1과 구성·우회 문제."""
+    rows, bad = stroke_rows(template, colors)
+    return bad + ["반투명 선 '%s' %s(--%s %s × %g → %s) / %s = %.4f:1 < %.1f:1 (D13)"
+                  % (sel, kind, tok, c, a, mix, bg, r, GRAPHIC)
+                  for sel, kind, tok, c, a, mix, bg, r in rows if r < GRAPHIC]
+
+
 def translucent_rows(template, colors):
-    """[(선택자, 속성, 원래 색, 불투명도, 합성 색, 바탕, 대비)]. 바탕은 도면 --card."""
+    """반투명 채움·그림자 rgba [(선택자, 속성, 원래 색, 불투명도, 합성 색, 바탕, 대비)] — 보고 전용. 관계선은 stroke_rows."""
     import re
     style = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", template, re.S | re.I))
     bg = colors["card"]
@@ -788,19 +1103,6 @@ def translucent_rows(template, colors):
         if ":root" in sel:
             continue
         for k, v in decls:
-            if k == "stroke-opacity" and sel in TRANSLUCENT_STROKES:
-                raw = v.replace("!important", "").strip()
-                try:
-                    a = float(raw[:-1]) / 100 if raw.endswith("%") else float(raw)  # 50%도 유효한 CSS 값
-                except ValueError:
-                    continue
-                a = min(1.0, max(0.0, a))
-                if a < 1:
-                    for kind in TRANSLUCENT_STROKES[sel]:
-                        c = _norm_color(colors[kind])
-                        mix = _over([int(c[i:i + 2], 16) for i in (1, 3, 5)], a, bg)
-                        rows.append((sel, "stroke(--%s)" % kind, c, a, mix, bg, contrast_ratio(mix, bg)))
-                continue
             for lit in color_literals(v, named=False):
                 ra = _rgba_alpha(lit)
                 if ra:
@@ -810,16 +1112,25 @@ def translucent_rows(template, colors):
 
 
 def translucent_check():
-    """실제 템플릿의 반투명 선·채움 합성 대비를 출력만 한다(rc 미반영)."""
+    """실제 템플릿의 반투명 관계선을 판정해 문제 목록을 돌려주고, 채움·그림자 합성 대비는 출력만 한다."""
     from hazop.app import tokens
     from hazop.viewer import build
     with open(build.TEMPLATE, encoding="utf-8") as fh:
-        rows = translucent_rows(fh.read(), tokens.COLORS)
-    print("반투명 합성 대비(보고 전용, 종료 코드 미반영, 바탕 --card): %d건" % len(rows))
-    for sel, k, c, a, mix, bg, r in rows:
-        print("  - '%s' %s %s × %g → %s / %s = %.4f:1%s" % (sel, k, c, a, mix, bg, r,
-                                                          " (선 3:1 미만)" if k.startswith("stroke") and r < GRAPHIC else ""))
-    return rows
+        tpl = fh.read()
+    rows, _ = stroke_rows(tpl, tokens.COLORS)
+    bad = stroke_problems(tpl, tokens.COLORS)
+    print("반투명 관계선(흰 도면 --card 합성 3:1, D13): %s" % (
+        "통과(선 %d종)" % len(rows) if not bad else "실패 %d건" % len(bad)))
+    for sel, kind, tok, c, a, mix, bg, r in rows:
+        print("  - '%s' %s --%s %s × %g → %s / %s = %.4f:1%s" % (sel, kind, tok, c, a, mix, bg, r,
+                                                              " 미달" if r < GRAPHIC else ""))
+    for b in bad:
+        print("  - %s" % b)
+    fills = translucent_rows(tpl, tokens.COLORS)
+    print("반투명 채움·그림자 합성 대비(보고 전용, 종료 코드 미반영, 바탕 --card): %d건" % len(fills))
+    for sel, k, c, a, mix, bg, r in fills:
+        print("  - '%s' %s %s × %g → %s / %s = %.4f:1" % (sel, k, c, a, mix, bg, r))
+    return bad
 
 
 # ---------------------------------------------------------------- 앱 코드 색 리터럴(W6, D8).
@@ -1031,10 +1342,10 @@ def app_color_check():
 
 
 def merge_color_result(rc, verdict, color_bad):
-    """배치 판정(rc, verdict)에 색 검사(뷰어·앱 색 비교, 명암비, 앱 코드 색 리터럴) 결과를 합친다. 판정 불가(2)는 그대로 둔다."""
+    """배치 판정(rc, verdict)에 색 검사(뷰어·앱 색 비교, 명암비, 반투명 관계선, 앱 코드 색 리터럴) 결과를 합친다. 판정 불가(2)는 그대로 둔다."""
     if color_bad:
         rc = rc if rc == 2 else 1
-        verdict += "; 색 검사 실패 %d건(뷰어·앱 색 비교·명암비·앱 코드 색 리터럴): %s" % (len(color_bad), color_bad)
+        verdict += "; 색 검사 실패 %d건(뷰어·앱 색 비교·명암비·반투명 관계선·앱 코드 색 리터럴): %s" % (len(color_bad), color_bad)
     return rc, verdict
 
 
@@ -1071,10 +1382,9 @@ def main(argv=None):
     ap.add_argument("--top", type=int, default=5, help="가장 넓은 위젯 보고 개수")
     ap.add_argument("--baseline", help="offscreen 회귀 감시용 이전 결과 JSON(늘어나면 경고)")
     ap.add_argument("--out", help="결과 JSON 경로(기본 출력/디자인검사/design-<platform>[-s<배율>].json)")
-    ap.add_argument("--colors-only", action="store_true", help="색 검사(뷰어·앱 색 비교·명암비·앱 코드 색 리터럴)만 하고 배치 측정은 하지 않음")
+    ap.add_argument("--colors-only", action="store_true", help="색 검사(뷰어·앱 색 비교·명암비·반투명 관계선·앱 코드 색 리터럴)만 하고 배치 측정은 하지 않음")
     args = ap.parse_args(argv)
-    color_bad = color_check() + contrast_check() + app_color_check()
-    translucent_check()
+    color_bad = color_check() + contrast_check() + translucent_check() + app_color_check()
     if args.colors_only:
         return 1 if color_bad else 0
     if "PySide6.QtGui" in sys.modules:

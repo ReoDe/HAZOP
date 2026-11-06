@@ -66,7 +66,8 @@ aside .warn { color: #b45309; }
 /* 오버레이 */
 .sym { fill: rgba(37,99,235,.06); stroke-width: 1.5; cursor: pointer; }
 .sym:hover { fill: rgba(37,99,235,.18); }
-.pipe-line { fill: none; stroke-width: 2.5; stroke-opacity: .75; pointer-events: none; stroke-linejoin: round; }
+/* 도면 연결선은 종류를 색으로만 구분하므로(범례 실선 견본) 흰 도면 합성 대비 3:1 이상이 되는 불투명도(design-system W8, D13) */
+.pipe-line { fill: none; stroke-width: 2.5; stroke-opacity: .93; pointer-events: none; stroke-linejoin: round; }
 .pipe-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
 .pipe-hit:hover + .pipe-line, .pipe-line.hover { stroke-opacity: 1; stroke-width: 4; }
 .tagbox { fill: rgba(17,24,39,.06); stroke: var(--tag); stroke-width: .8; cursor: pointer; }
@@ -100,7 +101,12 @@ body.tab-graph #layers, body.tab-drawing #glegend { display: none; }
 #glegend .btns button:hover, #pathq button:hover { border-color: var(--ui); }
 .gnode { stroke: var(--card); stroke-width: 1.5; cursor: pointer; }
 .gnode.unknown { stroke: var(--muted); stroke-dasharray: 2 2; }
-.gedge { stroke-width: 1.4; stroke-opacity: .55; fill: none; pointer-events: none; }
+/* 그래프 관계선은 종류를 색으로만 구분하므로 종류별로 흰 바탕 합성 3:1 이상이 되는 가장 작은 불투명도(W8, D13).
+   기본값 .92는 has_endpoint(물리), 아래 두 규칙은 신호·계측. 선택·경로 강조(.selected.gedge·.onpath.gedge)가 이기도록
+   종류별 규칙은 그 앞에 둔다(명시도 같음) */
+.gedge { stroke-width: 1.4; stroke-opacity: .92; fill: none; pointer-events: none; }
+[data-kind="signal_connection"] > .gedge { stroke-opacity: .66; }
+[data-kind="measurement_connection"] > .gedge { stroke-opacity: .93; }
 .gedge-hit { stroke: transparent; stroke-width: 8; pointer-events: stroke; cursor: pointer; }
 .glabel { font-size: 9px; fill: var(--ink-2); pointer-events: none; }
 /* 그래프 노드 선택(design-system W7, D10): 노드 흰 테두리는 그대로 두고 바깥 고리(반지름 +4, 선 2.5)를 노드 층 위·라벨 층 아래에 그린다 */
