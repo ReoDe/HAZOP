@@ -66,8 +66,10 @@ class AiScreenTest(unittest.TestCase):
         os.environ["HAZOP_STORE_ROOT"] = os.path.join(cls.tmp, "store")
         os.makedirs(os.environ["HAZOP_WORK_ROOT"])
         _out_dir, cls.graph = build_temp_drawing(os.environ["HAZOP_WORK_ROOT"])
+        from hazop.graph import project
         from hazop.study import nodes
-        cls.node_set = nodes.confirm(nodes.propose(cls.graph), cls.graph, "검토자A")
+        cls.pg = project.load(project.project_id_of(cls.graph))
+        cls.node_set = nodes.confirm(nodes.propose(cls.pg), cls.pg, "검토자A")
         nodes.save(cls.node_set)
         from hazop.app import make_application
         cls.qapp = make_application(["test"])
@@ -116,6 +118,107 @@ class AiScreenTest(unittest.TestCase):
     def units(self):
         from hazop.study import ai_cells, results as res
         return ai_cells.plan_units(self.node_set, res.load_deviations())
+
+    def explorer_segment(self, win, node_id):
+        from PySide6.QtCore import Qt
+        for g in range(win.explorer.topLevelItemCount()):
+            grp = win.explorer.topLevelItem(g)
+            if grp.text(0).startswith("검토구간"):
+                for c in range(grp.childCount()):
+                    if grp.child(c).data(0, Qt.UserRole) == (5, node_id):
+                        return grp.child(c)
+        raise AssertionError("탐색기에 %s 없음" % node_id)
+
+    def test_run_shows_live_progress_and_explorer_keeps_results(self):
+        from PySide6.QtCore import QCoreApplication
+        from hazop.study import results as res
+        gate = threading.Event()
+        client = FakeClient(on_call=lambda n: n == 2 and gate.wait(30))
+        win, scr = self.screen(client)
+        self.assertTrue(scr.run_ai("all"))
+        self.addCleanup(gate.set)
+        self.assertTrue(wait_for(lambda: len(client.calls) >= 2 and scr.progress.value() >= 1, 30), "두 번째 호출 중")
+        for _ in range(20):
+            QCoreApplication.processEvents()
+        unit = self.units()[1]
+        param = next(d["parameter"] for d in res.load_deviations() if d["deviation_id"] == unit["deviation_ids"][0])
+        label = scr.progress_label.text()
+        self.assertIn("%s · %s 분석 중" % (unit["node_id"], param), label, "지금 구간·변수")
+        self.assertIn("경과", label)
+        self.assertIn("남음", label)
+        self.assertIn("$", label)
+        self.assertIn("입력", scr.progress_label.toolTip(), "이번 실행 토큰")
+        self.assertTrue(win.msg_label.text().startswith("● AI 분석 실행 중"), "상태 표시줄 실행 중 표시")
+        row = scr._row_of(unit["node_id"])
+        col = next(i for i, d in enumerate(scr.deviations) if d["deviation_id"] == unit["deviation_ids"][0])
+        self.assertEqual(scr.matrix.item(row, col).text(), "분석 중", "호출 중인 칸 표시")
+        self.assertNotEqual(scr.matrix.item(0, 0).text(), "분석 전", "끝난 칸은 바로 채워짐")
+
+        other = scr.node_set["nodes"][-1]["node_id"]
+        win._explorer_clicked(self.explorer_segment(win, other))
+        self.assertEqual(win.stack.currentIndex(), RESULTS, "⑤에서 탐색기 구간을 눌러도 ⑤에 머묾")
+        self.assertEqual(scr.selected_node_id(), other, "그 구간 행을 고름")
+        self.assertTrue(scr.running(), "분석은 계속됨")
+        win.drawing = "다른-도면"
+        win._explorer_clicked(self.explorer_segment(win, other))
+        self.assertEqual(win.stack.currentIndex(), 5, "⑤가 다른 도면을 열고 있으면 옛 행 대신 ④")
+        self.assertTrue(scr.running(), "④로 가도 분석은 계속됨")
+        win.drawing = scr.name
+        win.go(RESULTS)
+        self.assertIn("분석 중", scr.progress_label.text(), "진행 표시 유지")
+
+        gate.set()
+        self.assertTrue(wait_for(lambda: not scr.running(), 120), "실행이 끝남")
+        self.assertEqual(len(client.calls), len(self.units()))
+        self.assertFalse(any(scr.matrix.item(r, c).text() == "분석 중" for r in range(scr.matrix.rowCount())
+                             for c in range(scr.matrix.columnCount())), "끝나면 '분석 중' 칸 없음")
+        path = res.store_path(self.node_set.get("project_id"), self.node_set["graph_id"])
+        self.assertIn("저장: %s" % path, win.msg_label.text(), "끝나면 저장 위치")
+        self.assertIn("결과 파일 저장", scr.save_label.text())
+        self.assertIn(path, scr.save_label.toolTip())
+        right = self.explorer_segment(win, unit["node_id"]).text(1)
+        self.assertTrue(right.startswith("미"), "탐색기 구간 옆 미검토 수: %r" % right)
+        scr.results = dict(scr.results, study_nodes_ref={"graph_version": "old", "confirmed_at": "old"})
+        win._refresh_explorer()
+        self.assertEqual(self.explorer_segment(win, unit["node_id"]).text(1), "", "이전 확정본 결과는 진행으로 보이지 않음")
+
+    def test_finish_message_says_when_save_failed(self):
+        from hazop import paths
+        # 창을 닫을 때 shutdown이 저장을 다시 시도하므로 정리는 창이 닫힌 뒤(가장 나중)에 한다
+        self.addCleanup(shutil.rmtree, paths.work_path("데이터", "분석결과"), True)
+        client = FakeClient()
+        win, scr = self.screen(client)
+        with mock.patch("hazop.app.screens.results.res.save", side_effect=PermissionError("잠김")):
+            self.run_and_wait(scr)
+        self.assertIn("저장 실패", win.msg_label.text())
+        self.assertNotIn("저장: ", win.msg_label.text())
+
+    def test_estimate_uses_same_model_successful_calls(self):
+        _win, scr = self.screen(FakeClient())
+        from hazop.app.screens import results as rscr
+        model = scr.app.api_keys.model
+        scr.results = dict(scr.results, ai_log=[
+            {"status": "failed", "model": model, "cost_usd": 0.0},
+            {"status": "ok", "model": "other-model", "cost_usd": 9.0},
+            {"status": "ok", "model": model, "cost_usd": 0.2}])
+        self.assertAlmostEqual(scr.estimate(10)[1], 2.0, msg="같은 모델 성공 호출만 평균")
+        scr.results = dict(scr.results, ai_log=[])
+        self.assertGreater(scr.estimate(10)[1], 0)
+        self.assertEqual(scr.estimate(10)[0], 10 * rscr.EST_SEC_PER_CALL)
+
+    def test_request_asks_before_many_calls(self):
+        client = FakeClient()
+        _win, scr = self.screen(client)
+        from hazop.study import results as res
+        with mock.patch("hazop.app.screens.results.QMessageBox.question",
+                        return_value=__import__("PySide6.QtWidgets", fromlist=["QMessageBox"]).QMessageBox.No) as q:
+            self.assertFalse(scr.request_ai("all"), "아니요면 시작 안 함")
+        text = q.call_args[0][2]
+        self.assertIn("%d회" % len(self.units()), text)
+        self.assertIn("$", text)
+        self.assertIn(res.store_path(self.node_set.get("project_id"), self.node_set["graph_id"]), text)
+        self.assertEqual(client.calls, [])
+        self.assertFalse(scr.running())
 
     def test_full_run_fills_cells_saves_and_reopens(self):
         from hazop.study import results as res
@@ -198,7 +301,11 @@ class AiScreenTest(unittest.TestCase):
         nid = self.node_set["nodes"][0]["node_id"]
         d1, d2, d3 = (d["deviation_id"] for d in scr.deviations[:3])
         scr.open_cell(nid, d1)
-        self.assertFalse(scr.approve_btn.isEnabled(), "항목을 고르기 전에는 비활성")
+        self.assertTrue(scr.approve_btn.isEnabled(), "칸을 열면 첫 미검토 항목이 골라져 있음")
+        scr.table.clearSelection()
+        self.assertFalse(scr.approve_btn.isEnabled(), "고른 항목이 없으면 비활성")
+        self.assertFalse(scr.set_entry_status("approved"))
+        self.assertIn("승인할 항목 행을 먼저 고르세요", _win.msg_label.text(), "고른 행 없이 A = 안내")
         scr.select_entry(0)
         self.assertTrue(scr.set_entry_status("approved"))
         self.assertEqual(scr.table.item(0, 6).text(), "승인")
@@ -247,6 +354,8 @@ class AiScreenTest(unittest.TestCase):
         scr.keys["Return"].activated.emit()
         self.assertEqual(scr.cell, (nid, scr.deviations[2]["deviation_id"]), "Enter = 지금 칸 열기")
 
+        self.assertEqual(scr.selected_entry()["status"], "proposed", "칸을 열면 첫 미검토 항목을 골라 둠")
+        scr.table.clearSelection()
         self.assertTrue(scr.row_actions.isHidden(), "고른 행이 없으면 동작 버튼 없음")
         scr.select_entry(0)
         QApplication.processEvents()

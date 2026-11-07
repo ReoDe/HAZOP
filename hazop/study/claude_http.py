@@ -22,13 +22,26 @@ FALLBACK_BETA = ai.FALLBACK_BETA
 DEFAULT_MODEL = "claude-opus-5-5"
 TEST_TIMEOUT = 20
 
-# USD / 백만 토큰 (claude-api 스킬 2026-10-06 캐시). cache_write는 5분 TTL(입력 단가의 1.25배).
+# USD / 백만 토큰 (claude-api 스킬 2026-10-06 캐시). cache_write는 5분 TTL(입력 단가의 1.25배), cache_read는 0.1배
+# (Opus 5.5·Sonnet 5.5는 표의 $0.20). Haiku 5.5는 프롬프트 100K 토큰 이하 단가다(초과분은 $0.50/$2.50).
 # fallbacks "default"는 거절 범주에 따라 다른 모델로 넘어갈 수 있어(예: cyber -> Opus 4.8) 그 모델 단가도 둔다.
 PRICES = {
     "claude-opus-5-5": {"input": 4.00, "output": 20.00, "cache_read": 0.20, "cache_write": 5.00},
+    "claude-sonnet-5-5": {"input": 2.00, "output": 10.00, "cache_read": 0.20, "cache_write": 2.50},
+    "claude-haiku-5-5": {"input": 0.10, "output": 0.50, "cache_read": 0.01, "cache_write": 0.125},
     "claude-opus-5": {"input": 5.00, "output": 25.00, "cache_read": 0.50, "cache_write": 6.25},
+    "claude-sonnet-5": {"input": 2.00, "output": 10.00, "cache_read": 0.20, "cache_write": 2.50},
     "claude-opus-4-8": {"input": 5.00, "output": 25.00, "cache_read": 0.50, "cache_write": 6.25},
 }
+
+# 고를 수 있는 모델. fallback: 서버 측 대체 모델(fallbacks "default") 지원 여부 - Haiku 5.5는 없다(스킬 기준).
+# section_usd: 구간 1개 예상 비용. Opus는 실측($0.86, 2026-11-07), 나머지는 같은 토큰 수를 가정해 단가 비율로 환산한 추정.
+MODELS = {
+    "claude-opus-5-5": {"label": "Opus 5.5 (기본, 품질 우선)", "fallback": True, "section_usd": 0.86},
+    "claude-sonnet-5-5": {"label": "Sonnet 5.5 (균형)", "fallback": True, "section_usd": 0.43},
+    "claude-haiku-5-5": {"label": "Haiku 5.5 (저비용, 대체 모델 없음)", "fallback": False, "section_usd": 0.02},
+}
+CONSOLE_KEYS_URL = "https://console.anthropic.com/settings/keys"
 
 STATUSES = ("completed", "refused", "truncated", "api_error", "parse_error", "no_key")
 NO_KEY_MESSAGE = "API 키가 설정되지 않음(파일 > API 키 설정)"
@@ -132,7 +145,7 @@ class ClaudeHttpClient:
         return {"x-api-key": key, "anthropic-version": API_VERSION, "content-type": "application/json"}
 
     def build_body(self, request):
-        return {
+        body = {
             "model": self.model,
             "max_tokens": self.max_tokens,
             "system": request["system"],
@@ -141,8 +154,13 @@ class ClaudeHttpClient:
                 {"type": "text", "text": request["user"]},
             ]}],
             "output_config": {"effort": self.effort, "format": {"type": "json_schema", "schema": request["schema"]}},
-            "fallbacks": "default",
         }
+        if self._fallback():
+            body["fallbacks"] = "default"
+        return body
+
+    def _fallback(self):
+        return MODELS.get(self.model, {"fallback": True})["fallback"]
 
     def analyze(self, request):
         """request = {"system", "context", "user", "schema"} -> 결과 dict(계약의 7개 필드).
@@ -153,7 +171,9 @@ class ClaudeHttpClient:
         if not key:
             return dict(res, status="no_key", error=NO_KEY_MESSAGE)
         body = json.dumps(self.build_body(request), ensure_ascii=False).encode("utf-8")
-        headers = dict(self._headers(key), **{"anthropic-beta": FALLBACK_BETA})
+        headers = self._headers(key)
+        if self._fallback():
+            headers["anthropic-beta"] = FALLBACK_BETA
         return _scrub(self._call(res, headers, body), key)
 
     def _call(self, res, headers, body):
@@ -207,12 +227,25 @@ class ClaudeHttpClient:
             return {"ok": False, "message": "AI 서비스에 연결하지 못함(네트워크·프록시 확인)"}
         if code == 200:
             return {"ok": True, "message": "연결됨. 모델 %s 사용 가능" % self.model}
-        if code == 401:
-            return {"ok": False, "message": "키가 거부됨(HTTP 401). 키를 다시 확인하세요."}
-        if code == 403:
-            return {"ok": False, "message": "이 키에 권한이 없음(HTTP 403)"}
-        if code == 404:
-            return {"ok": False, "message": "모델 %s을 찾을 수 없음(HTTP 404)" % self.model}
         detail = _api_detail(raw, key)
-        msg = _message(_error_type(code), code)
-        return {"ok": False, "message": msg + (" - " + detail if detail else "")}
+        msg = _test_message(code, detail, self.model)
+        return {"ok": False, "message": msg + (" (%s)" % detail if detail else "")}
+
+
+def _test_message(code, detail, model):
+    """연결 시험 실패 -> 다음 행동을 알려 주는 한국어 문구(키 값 없음)."""
+    low = detail.lower()
+    if code == 402 or "credit" in low or "billing" in low:
+        return "크레딧이 부족하거나 결제 문제가 있음(HTTP %d). Console > Billing에서 잔액을 확인하세요." % code
+    if code == 401:
+        return "키가 거부됨(HTTP 401). 키를 끝까지 정확히 복사했는지, Console에서 키가 비활성·삭제되지 않았는지 확인하세요."
+    if code == 403:
+        return "이 키에 권한이 없음(HTTP 403). Console에서 키가 속한 워크스페이스의 권한을 확인하세요."
+    if code == 404:
+        return "모델 %s을 찾을 수 없음(HTTP 404). 이 키의 조직·워크스페이스가 이 모델을 쓸 수 있는지 확인하거나 다른 모델을 고르세요." % model
+    if code == 400:
+        return ("요청이 거부됨(HTTP 400). 워크스페이스에 속한 키인지 확인하세요"
+                "(Console > API keys에서 워크스페이스를 고른 뒤 새 키 발급).")
+    if code == 429:
+        return "사용 한도를 넘음(HTTP 429). 잠시 뒤 다시 시험하거나 Console > Limits를 확인하세요."
+    return _message(_error_type(code), code)

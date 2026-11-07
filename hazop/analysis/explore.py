@@ -5,7 +5,8 @@
 - 밸브 정상 위치: 경로 중간의 밸브가 NC·LC면 정상 운전 유로가 아님, NO·LO면 열림, 값이 없으면 미확인.
   미확인을 열림·닫힘으로 가정하지 않는다.
 - 순환은 방문 상태로 종료하고, 이미 방문한 대상으로 이어지는 엣지를 기록한다.
-- 깊이·도달 수 한계, 구간 경계, 다른 도면 연결점에서 멈춘 사실을 truncations에 남긴다.
+- 깊이·도달 수 한계, 구간 경계, 다른 도면 연결점에서 멈춘 사실을 truncations에 남긴다. 프로젝트 그래프
+  (hazop.graph.project)에서 상대 도면과 이어진 연결점은 멈추지 않고 넘어간다.
 - 연결상 도달 가능하다는 사실은 인과관계를 입증하지 않는다(경로 근거에 note로 표시).
 """
 
@@ -51,7 +52,8 @@ def _bfs(query, start, members, kinds, max_depth, max_reached, ext):
         sid = head
         cur, depth, out_cur, prev_sid, in_edge = states[head]
         head += 1
-        if query.nodes[cur]["kind"] == "continuation" and cur != start:  # 최대 깊이에 걸려도 기록
+        linked = (query.nodes[cur].get("sheet_link") or {}).get("status") == "linked"  # 프로젝트 그래프에서 이어진 연결점
+        if query.nodes[cur]["kind"] == "continuation" and cur != start and not linked:  # 최대 깊이에 걸려도 기록
             a = query.nodes[cur]["attributes"]
             trunc(("external_drawing", cur), {
                 "reason": "external_drawing", "at": cur, "to_drawing": a.get("to_drawing"),

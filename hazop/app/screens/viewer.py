@@ -3,20 +3,28 @@
 
 편집 모드(drawing-edit-spec.md '화면'): 사람이 도면 위에서 추출 결과를 고친다. 원본 추출은 그대로 두고 수정 기록(ops)만
 쌓는다. 웹뷰는 클릭 좌표·맞은 항목(editPick)만 보내고, 값 편집·실행 취소·저장은 오른쪽 Qt 편집 패널이 맡는다.
-EditSession(작업 중 ops·실행 취소/다시 실행)과 tool_pick(여러 번 클릭하는 도구의 상태 기계)은 웹뷰 없이 검사할 수 있다."""
+EditSession(작업 중 ops·실행 취소/다시 실행)과 tool_pick(여러 번 클릭하는 도구의 상태 기계)은 웹뷰 없이 검사할 수 있다.
 
+도면 연결점(프로젝트 그래프 hazop.graph.project): 보기 모드에서 연결점 옆에 칩을 달고(누르면 상대 도면으로), 오른쪽
+'도면 연결점' 패널에 짝·미연결을 보인다. 사람이 짝을 정하거나 끊은 기록은 도면별 수정 기록(hazop.extract.corrections)이
+아니라 프로젝트의 도면 연결 지정(project.save_manual, 데이터/도면연결/<project>.json)에 쓴다. 짝은 두 도면에 걸쳐서
+도면 한 장의 수정 기록으로는 적을 수 없다."""
+
+import uuid
 from dataclasses import dataclass, replace
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush, QColor
-from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
-                               QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QScrollArea,
-                               QStackedWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QFrame,
+                               QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QMessageBox, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
-from hazop.app import data, tokens
+from hazop.app import data, project_ctx, tokens
 from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, empty_label, esc, kst_text
 from hazop.extract import corrections
 from hazop.extract.rules import KIND_CATEGORY
+from hazop.graph import project
+from hazop.study import nodes as sn
 
 CATEGORY_LABELS = {"equipment": "설비", "valve": "밸브", "instrument": "계기", "piping_element": "배관 요소"}
 KIND_LABELS = {
@@ -38,6 +46,9 @@ OP_LABELS = {"set_tag": "태그", "set_kind": "종류", "set_flow": "흐름 방�
              "set_path": "경로 다시 그리기", "confirm": "미확인 확정", "add_node": "기기 추가", "delete_node": "기기 삭제",
              "add_relation": "연결 추가", "delete_relation": "연결 삭제"}
 NEW_NODE_SIZE = 40  # 기기 추가: 클릭한 점을 가운데로 하는 정사각형(도면 좌표)
+# 미연결 칩의 짧은 사유. 전체 문장(project.REASONS)은 툴팁·패널에.
+UNLINKED_SHORT = {"unregistered_drawing": "상대 도면 없음", "no_counterpart": "짝 없음", "ambiguous": "짝 여럿",
+                  "direction_conflict": "방향 모순", "missing_key": "번호 못 읽음", "manual_unlink": "사람이 끊음"}
 HINTS = {
     "select": "도면에서 항목을 클릭해 고르세요.",
     "add_node": "기기를 놓을 자리를 클릭하세요.",
@@ -230,6 +241,166 @@ def op_status(op, corrected):
     return ("적용", False) if op.get("op_id") in (c.get("applied") or []) else ("—", False)
 
 
+# ---------------------------------------------------------------- 도면 연결점(순수 함수)
+def link_points(ctx):
+    """이 도면의 연결점과 짝 상태. 미연결 먼저, 그다음 이름순. 항목: {entity_id, local_id, label, line_no, to_drawing,
+    source_object_id, status, reason, reason_text, origin, op_id, peer}. peer = {entity_id, drawing, label}(짝 있을 때)."""
+    out = []
+    for l in ctx.pg["sheet_links"]:
+        ends = (l["from"], l.get("to"))
+        for i, end in enumerate(ends):
+            if not end or end["graph_id"] != ctx.graph_id:
+                continue
+            eid, other = project.nid(end["graph_id"], end["entity_id"]), ends[1 - i]
+            n = ctx.by_id.get(eid) or {}
+            peer = None
+            if other:
+                pid = project.nid(other["graph_id"], other["entity_id"])
+                peer = {"entity_id": pid, "drawing": other["drawing_number"],
+                        "label": project_ctx.continuation_label(ctx.by_id.get(pid) or {})}
+            out.append({"entity_id": eid, "local_id": ctx.local_of.get(eid) or n.get("local_id"),
+                        "label": project_ctx.continuation_label(n), "line_no": end.get("line_no"),
+                        "to_drawing": end.get("to_drawing"),
+                        "source_object_id": end.get("source_object_id") or n.get("source_object_id"),
+                        "status": l["status"], "reason": l["reason"],
+                        "reason_text": project.REASONS.get(l["reason"], l["reason"]) if l["reason"] else None,
+                        "origin": l.get("origin"), "op_id": l.get("op_id"),
+                        "peer": peer if l["status"] == project.LINKED else None})
+    return sorted(out, key=lambda p: (p["status"] == project.LINKED, p["line_no"] or p["label"] or "", p["entity_id"]))
+
+
+def drawing_chips(ctx, view=None):
+    """② 도면 칩 [{local_id, text, key, kind, tip, row}]. 저장한 구간 집합의 보기(ctx.view)가 있으면 연결점마다
+    "S7 → SNP-M-101에서 계속", 구간 칩이 없는 연결점은 "→ SNP-M-101 (RC-L011)", 미연결은 "미연결 · 사유".
+    key는 "link|상대 도면 번호|구간 ID(없으면 빈칸)|상대 연결점 ID" 또는 "unlinked|연결점 ID"."""
+    points = link_points(ctx)
+    peer_of = {p["entity_id"]: p["peer"] for p in points if p["peer"]}
+    chips, done = [], set()
+    for n in (view or {}).get("nodes") or []:
+        for c in ctx.chips(n):
+            peer = peer_of.get(c["entity_id"])
+            if not c["local_id"] or not peer:
+                continue
+            chips.append({"local_id": c["local_id"], "text": c["text"], "kind": "link",
+                          "key": "link|%s|%s|%s" % (c["drawing"], c["node_id"], peer["entity_id"]),
+                          "tip": "%s — 누르면 %s의 같은 구간으로 이동" % (c["text"], c["drawing"])})
+            done.add(c["entity_id"])
+    for p in points:
+        if not p["local_id"] or p["entity_id"] in done:
+            continue
+        if p["peer"]:
+            text = "→ %s (%s)" % (p["peer"]["drawing"], p["line_no"] or p["peer"]["label"])
+            chips.append({"local_id": p["local_id"], "text": text, "kind": "link",
+                          "key": "link|%s||%s" % (p["peer"]["drawing"], p["peer"]["entity_id"]),
+                          "tip": "%s — 누르면 %s로 이동" % (text, p["peer"]["drawing"])})
+        else:
+            chips.append({"local_id": p["local_id"], "text": "미연결 · %s" % UNLINKED_SHORT.get(p["reason"], p["reason"]),
+                          "kind": "unlinked", "key": "unlinked|%s" % p["entity_id"],
+                          "tip": "%s — 누르면 짝 지정" % p["reason_text"]})
+    rows = {}
+    for c in chips:
+        c["row"] = rows.get(c["local_id"], 0)
+        rows[c["local_id"]] = c["row"] + 1
+    return chips
+
+
+def pair_candidates(ctx, entity_id):
+    """짝 후보: 다른 도면의 연결점 전부. 짝 없는 것 → 이 도면을 가리키는 것 → 배관 번호가 같은 것 순.
+    [{entity_id, drawing_number, source_object_id, label, line_no, to_drawing, linked}]"""
+    point = next((p for p in link_points(ctx) if p["entity_id"] == entity_id), {})
+    dn = {s["graph_id"]: s["drawing_number"] for s in ctx.pg["sheets"]}
+    out = []
+    for n in ctx.pg["nodes"]:
+        if n.get("kind") != "continuation" or n.get("sheet") in (None, ctx.graph_id):
+            continue
+        k = project.continuation_key({"graph_id": n["sheet"], "source": {"drawing_number": dn.get(n["sheet"])}}, n)
+        out.append({"entity_id": n["entity_id"], "drawing_number": dn.get(n["sheet"]),
+                    "source_object_id": n.get("source_object_id"), "label": project_ctx.continuation_label(n),
+                    "line_no": k["line_no"], "to_drawing": k["to_drawing"],
+                    "linked": (n.get("sheet_link") or {}).get("status") == project.LINKED})
+    return sorted(out, key=lambda c: (c["linked"], c["to_drawing"] != ctx.drawing_number,
+                                      c["line_no"] != point.get("line_no"), c["drawing_number"] or "", c["label"]))
+
+
+def _end_key(end):
+    return ((end.get("drawing_number") or "").strip().upper(), end.get("source_object_id"))
+
+
+def replace_link_ops(ops, new):
+    """도면 연결 지정 목록에 new를 더한다. new가 가리키는 연결점을 건드리는 앞선 지정은 뺀다
+    (project.match는 앞선 지정을 쓰고 같은 연결점의 뒤 지정을 건너뛰므로, 남겨 두면 새 지정이 무시된다)."""
+    keys = {_end_key(e) for e in new["ends"]}
+    return [o for o in ops if not keys & {_end_key(e) for e in o.get("ends") or []}] + [new]
+
+
+def new_link_op(op, ends, by, reason=""):
+    return {"op_id": "sl-%s" % uuid.uuid4().hex[:12], "op": op, "ends": ends, "by": by, "at": sn.now_utc(),
+            "reason": reason or ""}
+
+
+class PairDialog(QDialog):
+    """연결점 짝 지정: 다른 도면의 연결점 후보 중 하나와 사유. chosen()은 (후보, 사유) 또는 None."""
+
+    def __init__(self, parent, point, drawing_number, candidates):
+        super().__init__(parent)
+        self.setWindowTitle("연결점 짝 지정")
+        self.candidates = candidates
+        v = QVBoxLayout(self)
+        head = QLabel("%s · %s (%s)의 짝을 고르세요." % (drawing_number, point["line_no"] or "-", point["label"]))
+        head.setWordWrap(True)
+        v.addWidget(head)
+        if point.get("reason_text"):
+            why = QLabel("지금: %s" % (point["reason_text"] if not point.get("peer") else
+                                      "%s와 연결됨(지정하면 바뀜)" % point["peer"]["drawing"]))
+            why.setObjectName("muted")
+            why.setWordWrap(True)
+            v.addWidget(why)
+        self.filter = QLineEdit()
+        self.filter.setPlaceholderText("도면 번호·배관 번호로 찾기")
+        self.filter.setAccessibleName("후보 찾기")
+        self.filter.textChanged.connect(self._filter)
+        v.addWidget(self.filter)
+        self.list = QListWidget()
+        self.list.setAccessibleName("짝 후보 목록")
+        for c in candidates:
+            text = "%s · %s · %s" % (c["drawing_number"], c["line_no"] or "-", c["label"])
+            if c["linked"]:
+                text += " · 이미 짝 있음(지정하면 그 짝이 풀림)"
+            it = QListWidgetItem(text)
+            it.setData(Qt.UserRole, c["entity_id"])
+            if c["linked"]:
+                it.setForeground(QBrush(QColor(tokens.c("muted"))))
+            self.list.addItem(it)
+        self.list.itemDoubleClicked.connect(lambda _it: self.accept())
+        v.addWidget(self.list, 1)
+        self.reason = QLineEdit()
+        self.reason.setPlaceholderText("사유(선택): 예) 도면 개정으로 배관 번호가 바뀜")
+        self.reason.setAccessibleName("지정 사유")
+        v.addWidget(self.reason)
+        bb = QDialogButtonBox()
+        self.ok = bb.addButton("짝 지정", QDialogButtonBox.AcceptRole)
+        bb.addButton("취소", QDialogButtonBox.RejectRole)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        v.addWidget(bb)
+        self.list.currentRowChanged.connect(lambda _r: self.ok.setEnabled(self.list.currentItem() is not None))
+        self.ok.setEnabled(False)
+        self.resize(520, 420)
+
+    def _filter(self, text):
+        t = text.strip().casefold()
+        for i in range(self.list.count()):
+            it = self.list.item(i)
+            it.setHidden(bool(t) and t not in it.text().casefold())
+
+    def chosen(self):
+        it = self.list.currentItem()
+        if it is None or it.isHidden():
+            return None
+        c = next(c for c in self.candidates if c["entity_id"] == it.data(Qt.UserRole))
+        return c, self.reason.text().strip()
+
+
 def ask_choice(parent, title, text, choices):
     """버튼 글자를 한국어로 쓰는 선택 상자. choices = [(key, 글자)], 첫 항목이 기본. 고른 key(닫으면 마지막 key)."""
     box = QMessageBox(QMessageBox.Question, title, text, parent=parent)
@@ -264,12 +435,15 @@ class ViewerScreen(QWidget):
         self.items = {}
         self.selected = None      # 고른 항목 local_id
         self.view = None          # 마지막으로 알려진 웹 확대·위치
+        self.ctx = None           # 보기 모드의 프로젝트 맥락(project_ctx.ProjectContext)
+        self.points = []          # 이 도면 연결점(link_points)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(12, 12, 12, 12)
         bar = QHBoxLayout()
         bar.addWidget(QLabel("도면"))
         self.combo = QComboBox()
         self.combo.setMinimumWidth(320)
+        self.combo.setAccessibleName("도면")
         self.combo.currentIndexChanged.connect(self._combo_changed)
         bar.addWidget(self.combo)
         self.chip_valid = Chip()
@@ -299,7 +473,205 @@ class ViewerScreen(QWidget):
         self.edit_panel = self._edit_panel()
         self.edit_panel.hide()
         body.addWidget(self.edit_panel)
+        self.link_panel = self._link_panel()
+        self.link_panel.hide()
+        body.addWidget(self.link_panel)
         lay.addLayout(body, 1)
+
+    def main_focus(self):
+        """화면에 들어오면 초점: 도면이 보이면 도면, 아니면 도면 고르기."""
+        return self.app.webview if self.stack.currentIndex() == 1 else self.combo
+
+    # ------------------------------------------------------------ 도면 연결점 패널
+    def _link_panel(self):
+        box = QFrame()
+        box.setObjectName("panel")
+        box.setFixedWidth(260)
+        v = QVBoxLayout(box)
+        v.setContentsMargins(10, 8, 10, 8)
+        v.setSpacing(6)
+        v.addWidget(_section("도면 연결점"))
+        self.link_counts = QLabel("")
+        v.addWidget(self.link_counts)
+        self.link_list = QListWidget()
+        self.link_list.setAccessibleName("도면 연결점 목록")
+        self.link_list.setWordWrap(True)
+        self.link_list.currentRowChanged.connect(lambda _r: self._sync_link_buttons())
+        self.link_list.itemDoubleClicked.connect(lambda it: self.open_pair(it.data(Qt.UserRole)))
+        v.addWidget(self.link_list, 1)
+        row = QHBoxLayout()
+        self.pair_btn = QPushButton("짝 지정…")
+        self.pair_btn.setToolTip("고른 연결점의 짝을 다른 도면의 연결점에서 사람이 고릅니다")
+        self.pair_btn.clicked.connect(lambda: self.open_pair())
+        self.unlink_btn = QPushButton("연결 끊기")
+        self.unlink_btn.setToolTip("고른 연결점을 '연결하지 않음'으로 지정합니다")
+        self.unlink_btn.clicked.connect(lambda: self.unlink())
+        row.addWidget(self.pair_btn)
+        row.addWidget(self.unlink_btn)
+        v.addLayout(row)
+        self.link_note = QLabel("")
+        self.link_note.setObjectName("muted")
+        self.link_note.setWordWrap(True)
+        v.addWidget(self.link_note)
+        return box
+
+    def _point(self, entity_id=None):
+        if entity_id is None:
+            it = self.link_list.currentItem()
+            entity_id = it.data(Qt.UserRole) if it else None
+        return next((p for p in self.points if p["entity_id"] == entity_id), None)
+
+    def _sync_link_buttons(self):
+        p = self._point()
+        self.pair_btn.setEnabled(p is not None)
+        self.unlink_btn.setEnabled(bool(p and p["status"] == project.LINKED))
+
+    def _refresh_links(self):
+        """프로젝트 맥락을 다시 읽어 칩과 '도면 연결점' 패널을 채운다(보기 모드)."""
+        try:
+            self.ctx = project_ctx.load(self.name)
+        except (OSError, ValueError, KeyError) as exc:
+            self.app.log_error("프로젝트 그래프 읽기", exc)
+            self.ctx = None
+        ctx = self.ctx
+        self.points = link_points(ctx) if ctx and ctx.pg else []
+        view = None
+        if self.points:
+            try:
+                saved = sn.load(ctx.pg)
+                view = ctx.view(saved) if saved else None
+            except (OSError, ValueError, KeyError) as exc:
+                self.app.log_error("검토구간 읽기(도면 칩)", exc)
+        self.app.webview.set_chips(drawing_chips(ctx, view) if self.points else [])
+        self.link_panel.setVisible(bool(self.points) or bool(ctx and ctx.error))
+        if ctx and ctx.error:
+            self.link_counts.setText(ctx.error)
+        self._fill_link_panel()
+
+    def _fill_link_panel(self):
+        linked = sum(1 for p in self.points if p["status"] == project.LINKED)
+        if self.points:
+            self.link_counts.setText("짝 %d · 미연결 %d" % (linked, len(self.points) - linked))
+        manual, skipped = {}, []
+        if self.ctx and self.ctx.pg:
+            try:
+                manual = {o["op_id"]: o for o in (project.load_manual(self.ctx.project_id) or {}).get("ops") or []}
+            except (OSError, ValueError) as exc:
+                skipped.append("도면 연결 지정 파일을 읽을 수 없음: %s" % exc)
+            skipped += ["%s: %s" % (s.get("op_id"), s.get("reason")) for s in self.ctx.pg.get("manual_skipped") or []]
+        cur = self.link_list.currentItem().data(Qt.UserRole) if self.link_list.currentItem() else None
+        self.link_list.clear()
+        for p in self.points:
+            if p["peer"]:
+                text = "%s → %s" % (p["line_no"] or p["label"], p["peer"]["drawing"])
+            else:
+                text = "미연결 · %s · %s\n%s" % (p["line_no"] or "-", p["label"], p["reason_text"])
+            if p["origin"] == "manual":
+                o = manual.get(p["op_id"]) or {}
+                try:
+                    at = kst_text(o.get("at") or "")
+                except ValueError:
+                    at = o.get("at") or "-"
+                text += "\n사람 지정 · %s · %s%s" % (o.get("by") or "-", at, " · %s" % o["reason"] if o.get("reason") else "")
+            it = QListWidgetItem(text)
+            it.setToolTip(text)
+            it.setData(Qt.UserRole, p["entity_id"])
+            if not p["peer"]:
+                it.setForeground(QBrush(QColor(tokens.c("warn-ink"))))
+            self.link_list.addItem(it)
+            if p["entity_id"] == cur:
+                self.link_list.setCurrentItem(it)
+        self.link_note.setText("적용하지 못한 사람 지정: %s" % "; ".join(skipped) if skipped else
+                               "칩이나 목록에서 미연결 연결점을 골라 짝을 지정할 수 있습니다.")
+        self._sync_link_buttons()
+
+    def on_chip(self, key):
+        """도면 칩: 연결된 칩은 상대 도면으로 가서(구간이 있으면 그 구간을 선택) 상대 연결점에 초점, 미연결 칩은 짝 지정."""
+        parts = key.split("|")
+        if parts[0] == "unlinked" and len(parts) == 2 and self._point(parts[1]):
+            self.open_pair(parts[1])
+            return
+        if parts[0] != "link" or len(parts) != 4 or not self.ctx:
+            return
+        dn, node_id, peer = parts[1:]
+        name = self.ctx.drawing_names.get(dn)
+        if not name or self.combo.findText(name) < 0:
+            self.app.status_message("상대 도면 %s의 추출 결과가 ② 목록에 없습니다." % dn)
+            return
+        self.select_drawing(name)
+        if self.combo.currentText() != name:  # 저장하지 않은 수정 때문에 떠나지 않음
+            return
+        if node_id:
+            self.app.set_selection({"kind": "node", "drawing": name, "node_id": node_id})
+        local = self.ctx.local_of.get(peer) if self.ctx else None
+        if local:
+            self.app.webview.focus(local)
+
+    def open_pair(self, entity_id=None):
+        """짝 지정 대화상자를 열고 고르면 저장한다."""
+        p = self._point(entity_id)
+        if p is None or not self.ctx:
+            return False
+        dlg = PairDialog(self, p, self.ctx.drawing_number, pair_candidates(self.ctx, p["entity_id"]))
+        if dlg.exec() != QDialog.Accepted or dlg.chosen() is None:
+            return False
+        cand, reason = dlg.chosen()
+        return self.pair(p["entity_id"], cand, reason)
+
+    def pair(self, entity_id, cand, reason=""):
+        """이 도면 연결점 entity_id와 다른 도면 연결점 cand(pair_candidates 항목)를 짝으로 지정해 저장한다."""
+        p = self._point(entity_id)
+        ends = [{"drawing_number": self.ctx.drawing_number, "source_object_id": p["source_object_id"]},
+                {"drawing_number": cand["drawing_number"], "source_object_id": cand["source_object_id"]}]
+        return self._save_link_op("link", ends, reason, "%s ↔ %s %s 짝을 지정했습니다." % (
+            p["line_no"] or p["label"], cand["drawing_number"], cand["line_no"] or cand["label"]))
+
+    def unlink(self, entity_id=None, reason=""):
+        """연결된 연결점 하나를 '연결하지 않음'으로 지정해 저장한다."""
+        p = self._point(entity_id)
+        if p is None or p["status"] != project.LINKED:
+            return False
+        ends = [{"drawing_number": self.ctx.drawing_number, "source_object_id": p["source_object_id"]}]
+        return self._save_link_op("unlink", ends, reason, "%s 연결을 끊었습니다." % (p["line_no"] or p["label"]))
+
+    def _ask_name(self):
+        name, ok = QInputDialog.getText(self, "지정한 사람", "도면 연결을 지정한 사람 이름(검토자 이름이 설정되어 있지 않음):")
+        return name.strip() if ok else None
+
+    def _save_link_op(self, op, ends, reason, done_text):
+        by = self.app.reviewer_name() or self._ask_name()
+        if not by:
+            return False
+        pid = self.ctx.project_id
+        try:
+            prev = (project.load_manual(pid) or {}).get("ops") or []
+            new = new_link_op(op, ends, by, reason)
+            project.save_manual(pid, replace_link_ops(prev, new), by=by, at=new["at"])
+        except (OSError, ValueError) as exc:
+            self.app.log_error("도면 연결 지정 저장", exc)
+            notify(self, "저장 실패", "도면 연결 지정을 저장하지 못했습니다: %s" % exc, warn=True)
+            return False
+        self._refresh_links()
+        self.app.toast(done_text + self._stale_note(), undo=lambda: self._restore_link_ops(pid, prev, by))
+        return True
+
+    def _restore_link_ops(self, pid, ops, by):
+        try:
+            project.save_manual(pid, ops, by=by, at=sn.now_utc())
+        except (OSError, ValueError) as exc:
+            self.app.log_error("도면 연결 지정 되돌리기", exc)
+            return
+        if self.ctx and self.ctx.project_id == pid and self.app.current_screen() is self:
+            self._refresh_links()
+        self.app.toast("도면 연결 지정을 되돌렸습니다.")
+
+    def _stale_note(self):
+        """연결이 바뀌면 프로젝트 그래프 판이 바뀌어 저장한 ④ 검토구간이 옛 판이 된다."""
+        try:
+            saved = sn.load(self.ctx.pg) if self.ctx and self.ctx.pg else None
+        except (OSError, ValueError):
+            return ""
+        return " ④ 검토구간은 이전 연결 기준이라 다시 확인이 필요합니다." if saved and sn.is_stale(saved, self.ctx.pg) else ""
 
     # ------------------------------------------------------------ 편집 패널
     def _edit_panel(self):
@@ -361,13 +733,16 @@ class ViewerScreen(QWidget):
         nd.setSpacing(4)
         nd.addWidget(QLabel("기기 종류"), 0, 0)
         self.new_kind = self._kind_combo()
+        self.new_kind.setAccessibleName("새 기기 종류")
         nd.addWidget(self.new_kind, 0, 1)
         nd.addWidget(QLabel("기기 태그"), 1, 0)
         self.new_tag = QLineEdit()
         self.new_tag.setPlaceholderText("비워도 됨")
+        self.new_tag.setAccessibleName("새 기기 태그")
         nd.addWidget(self.new_tag, 1, 1)
         nd.addWidget(QLabel("연결 종류"), 2, 0)
         self.new_rel = QComboBox()
+        self.new_rel.setAccessibleName("새 연결 종류")
         for k, label, _ in RELATION_KINDS:
             self.new_rel.addItem(label, k)
         nd.addWidget(self.new_rel, 2, 1)
@@ -383,6 +758,7 @@ class ViewerScreen(QWidget):
         self.tag_label = QLabel("태그")
         sg.addWidget(self.tag_label, 0, 0)
         self.tag_edit = QLineEdit()
+        self.tag_edit.setAccessibleName("고른 항목 태그")
         sg.addWidget(self.tag_edit, 0, 1)
         self.tag_apply = QPushButton("적용")
         self.tag_apply.clicked.connect(self._apply_tag)
@@ -390,6 +766,7 @@ class ViewerScreen(QWidget):
         self.kind_label = QLabel("종류")
         sg.addWidget(self.kind_label, 1, 0)
         self.kind_combo = self._kind_combo()
+        self.kind_combo.setAccessibleName("고른 항목 종류")
         sg.addWidget(self.kind_combo, 1, 1)
         self.kind_apply = QPushButton("적용")
         self.kind_apply.clicked.connect(self._apply_kind)
@@ -414,6 +791,7 @@ class ViewerScreen(QWidget):
         fr.addLayout(fb)
         v.addWidget(self.flow_row)
         self.unknown_list = QListWidget()
+        self.unknown_list.setAccessibleName("미확인 목록")
         self.unknown_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.unknown_list.setWordWrap(True)
         self.unknown_list.setMaximumHeight(96)
@@ -446,6 +824,7 @@ class ViewerScreen(QWidget):
         hb.addWidget(self.revert_btn, 1, 1)
         v.addLayout(hb)
         self.op_list = QListWidget()
+        self.op_list.setAccessibleName("수정 기록 목록")
         self.op_list.setWordWrap(True)
         self.op_list.setMinimumHeight(90)
         v.addWidget(self.op_list, 1)
@@ -498,6 +877,7 @@ class ViewerScreen(QWidget):
         if name != self.name:
             self.session, self.selected, self.view, self.tool = None, None, None, ToolState()
         self.name = name or None
+        self.link_panel.hide()
         if not name:
             self.info = None
             self.stack.setCurrentIndex(0)
@@ -550,6 +930,10 @@ class ViewerScreen(QWidget):
             self.app.webview.load_file(info["html"])
             if keep_view and self.view:
                 self.app.webview.restore_view(self.view)
+            if editing:  # 편집 중에는 칩이 클릭을 가리지 않게 단다
+                self.app.webview.set_chips([])
+            else:
+                self._refresh_links()
             if info.get("graph_only"):
                 self.app.status_message("SVG 없음 — 그래프 보기만 표시")
         else:
@@ -842,6 +1226,7 @@ class ViewerScreen(QWidget):
             self.sel_title.setText("<b>%s</b> · %s · %s" % (esc(item.get("tag") or "(태그 없음)"),
                                                             esc(kind_label(item.get("kind"))), esc(self.selected)))
             self.tag_label.setText("태그")
+            self.tag_edit.setAccessibleName("고른 항목 태그")
             self.tag_edit.setText(item.get("tag") or "")
             self.kind_combo.setCurrentIndex(self.kind_combo.findData(item.get("kind")))  # 목록 밖 종류면 빈 칸
         else:
@@ -849,6 +1234,7 @@ class ViewerScreen(QWidget):
                                                             RELATION_LABELS.get(item.get("kind"), "미해결 커넥터"),
                                                             esc(self.selected)))
             self.tag_label.setText("배관 번호")
+            self.tag_edit.setAccessibleName("고른 항목 배관 번호")
             self.tag_edit.setText(item.get("line_no") or "")
         for w in (self.kind_label, self.kind_combo, self.kind_apply):
             w.setVisible(is_node)

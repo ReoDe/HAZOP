@@ -26,6 +26,7 @@ from hazop import paths
 from hazop.analysis.ai import STATUS_LABELS_KO
 from hazop import review as rv
 from hazop.review import store
+from hazop.study import span
 
 SCOPES = {"all": "전체", "accepted_modified": "수용·수정 행만"}
 SHEETS = ("분석 정보", "전체 편차 후보", "HAZOP 워크시트", "설계보완 후보", "개선 권고", "자료 요청 메모")
@@ -41,7 +42,7 @@ WORKSHEET_COLUMNS = (
     ("deviation", "이탈", None), ("cause", "원인", None), ("consequence", "결과", None),
     ("safeguards", "현재안전조치", None),
     ("frequency", "위험도", "빈도"), ("severity", "위험도", "강도"), ("risk", "위험도", "위험도"),
-    ("recommendation", "개선권고사항", None),
+    ("recommendation", "개선권고사항", None), ("drawings", "도면 번호", None),
     ("candidate_id", "편차 ID", None), ("scenario_id", "시나리오 ID", None), ("origin", "출처", None),
     ("pattern", "적용 패턴", None), ("value_source", "값 출처", None), ("ai_safeguards", "AI 제시 보호수단", None),
     ("ai_risk", "AI 위험도 제안", None), ("risk_source", "위험도 확정 출처", None),
@@ -200,10 +201,19 @@ def _decisions(rec):
             {d["dic_id"]: d for d in rec.get("design_improvement_decisions") or []})
 
 
-def worksheet_rows(run, records, scope):
+def drawing_numbers(run, node=None):
+    """'도면 번호' 열 값. node(span.annotate를 거친 검토구간)를 주면 그 구간이 지나는 모든 도면(흐름 순서),
+    없으면 분석 실행의 도면(구간 JSON은 도면 하나 기준)."""
+    if node is not None:
+        return span.drawing_column(node)
+    return (run["doc"]["analysis_run"]["versions"].get("graph_source") or {}).get("drawing_number")
+
+
+def worksheet_rows(run, records, scope, node=None):
     """HAZOP 워크시트 행 목록(dict, 키는 WORKSHEET_COLUMNS). 선택 편차의 시나리오마다 한 행,
-    시나리오 없는 선택 편차는 '시나리오 없음' 한 행(전체 범위에서만)."""
+    시나리오 없는 선택 편차는 '시나리오 없음' 한 행(전체 범위에서만). node는 drawing_numbers 참고."""
     doc, tags = run["doc"], _tags(run)
+    drawings = drawing_numbers(run, node)
     holds_by_scope = {}
     for h in doc["holds"]:
         holds_by_scope.setdefault(h.get("scope"), []).append(h)
@@ -223,7 +233,7 @@ def worksheet_rows(run, records, scope):
             rows.append({
                 "deviation": c["deviation"], "cause": NO_SCENARIO, "consequence": NO_SCENARIO,
                 "safeguards": NO_SCENARIO, "frequency": UNCONFIRMED, "severity": UNCONFIRMED, "risk": UNCONFIRMED,
-                "recommendation": "해당 없음(시나리오 없음)", "candidate_id": cid, "scenario_id": NO_SCENARIO,
+                "recommendation": "해당 없음(시나리오 없음)", "drawings": drawings, "candidate_id": cid, "scenario_id": NO_SCENARIO,
                 "origin": "해당 없음", "pattern": "해당 없음", "value_source": "해당 없음", "ai_safeguards": "해당 없음",
                 "ai_risk": "해당 없음", "risk_source": "미확정 — 시나리오 없음", "risk_name": UNCONFIRMED,
                 "decision": DECISION_LABELS["confirm_no_scenario" if nsc else None],
@@ -270,7 +280,7 @@ def worksheet_rows(run, records, scope):
                 "deviation": c["deviation"], "cause": merged["cause"]["value"],
                 "consequence": merged["consequence"]["value"],
                 "safeguards": _safeguards_text(merged["safeguards"]["value"], merged["safeguards"]["source"], tags),
-                "recommendation": _recommendation_text(recs, pending, dics),
+                "recommendation": _recommendation_text(recs, pending, dics), "drawings": drawings,
                 "candidate_id": cid, "scenario_id": sid, "origin": ORIGIN_LABELS.get(s.get("origin"), s.get("origin")),
                 "pattern": "%s v%s" % (ref["pattern_id"], ref.get("pattern_version")) if ref.get("pattern_id")
                 else "해당 없음",
@@ -400,7 +410,7 @@ def _sheet_worksheet(ws, run, records, rows):
         for c, (key, _h, _s) in enumerate(WORKSHEET_COLUMNS, 1):
             _put(ws, r, c, row[key])
     widths = {"deviation": 14, "cause": 36, "consequence": 36, "safeguards": 40, "frequency": 8, "severity": 8,
-              "risk": 8, "recommendation": 30}
+              "risk": 8, "recommendation": 30, "drawings": 16}
     for i, (key, _h, _s) in enumerate(WORKSHEET_COLUMNS, 1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = widths.get(key, 24)
     ws.print_title_rows = "%d:%d" % (HEADER_ROW, SUBHEADER_ROW)
@@ -467,12 +477,13 @@ def _sheet_memos(ws, run, records):
 
 
 # ---------------------------------------------------------------- 공개 API
-def export_worksheet(run_dir, store_root, out_root, scope="all", now=None):
+def export_worksheet(run_dir, store_root, out_root, scope="all", now=None, node=None):
     """분석 실행과 그 검토 기록으로 Excel 워크시트를 새로 만든다.
 
     run_dir: 분석 실행 폴더(analysis.json). store_root: 검토 기록 저장 루트(<store_root>/reviews/...).
     out_root: 워크시트 출력 루트(기본 사용처는 <작업 루트>/출력/워크시트). scope: "all"(기본) 또는 "accepted_modified".
     now: 출력 시각(UTC ISO 'YYYY-MM-DDTHH:MM:SSZ', 기본 현재). 파일 이름과 출력 기록 이름에 쓴다.
+    node: '도면 번호' 열에 쓸 검토구간(span.annotate 사본, 여러 도면에 걸친 구간). 없으면 분석 실행의 도면.
     반환 {"path", "export_record_path", "record"}. 차단·같은 이름 파일 있음이면 ExportError(아무 파일도 만들지 않음),
     analysis.json이 없으면 ReviewError."""
     if scope not in SCOPES:
@@ -499,7 +510,7 @@ def export_worksheet(run_dir, store_root, out_root, scope="all", now=None):
             raise ExportError("같은 이름의 파일이 이미 있음(덮어쓰지 않음): %s" % p)
     xlsx_rel = paths.rel_or_abs(xlsx_path, paths.work_root())
 
-    ws_rows = worksheet_rows(run, records, scope)
+    ws_rows = worksheet_rows(run, records, scope, node)
     rec_rows = recommendation_rows(run, records)
     wb = Workbook()
     sheets = [wb.active] + [wb.create_sheet() for _ in SHEETS[1:]]

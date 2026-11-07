@@ -24,9 +24,10 @@ def stamp():
 
 
 class AiRunner(QObject):
-    """jobs = [(unit, ctx)] (UI 스레드에서 준비). start() 뒤 unit마다 unit_done(UnitResult)·progress(done, total),
+    """jobs = [(unit, ctx)] (UI 스레드에서 준비). start() 뒤 unit마다 unit_started(unit)·unit_done(UnitResult)·progress(done, total),
     끝에 finished(cancelled)를 보낸다. cancelled는 남은 unit을 부르지 않고 멈췄을 때 True."""
 
+    unit_started = Signal(object)
     unit_done = Signal(object)
     progress = Signal(int, int)
     finished = Signal(bool)
@@ -62,6 +63,7 @@ class AiRunner(QObject):
             for unit, ctx in self.jobs:
                 if self._cancel.is_set():
                     break
+                self.unit_started.emit(unit)
                 self.unit_done.emit(ai_cells.run_unit(self.client, unit, ctx, self.deviations, stamp()))
                 done += 1
                 self.progress.emit(done, total)

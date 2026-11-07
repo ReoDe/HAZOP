@@ -592,11 +592,11 @@ def rv_match_key(scenario):
     return rv.scenario_match_key(scenario)
 
 
-def build_temp_drawing(work):
+def build_temp_drawing(work, drawing="SNP-M-102"):
     """작업 루트 안으로 샘플 도면을 복사해 추출·그래프를 만든다(뷰어 SVG는 작업 루트·저장 루트 안만 허용).
     반환 (추출 폴더, 그래프). 추출 경로가 달라 graph_version은 분석 실행의 그래프와 다르다."""
     from hazop.app import data
-    src = [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*")) if "SNP-M-102" in p][0]
+    src = [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*")) if drawing in p][0]
     dst = os.path.join(work, "샘플", os.path.basename(src))
     if not os.path.isdir(dst):
         shutil.copytree(src, dst)

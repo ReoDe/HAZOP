@@ -105,6 +105,33 @@ class RegisterUiTest(base.AppTestBase):
         self.assertIn("추출·그래프 생성 완료", scr.result.toPlainText())
         self.assertEqual(win.msg_label.text(), "")
 
+    def test_drawio_extraction_then_viewer_opens_the_new_drawing(self):
+        """다른 도면을 보던 중 ①에서 drawio를 추출하고 ②로 가면 방금 추출한 도면이 열린다."""
+        old = os.path.basename(base.build_temp_drawing(os.environ["HAZOP_WORK_ROOT"], "SNP-M-102")[0])
+        win, scr = self.screen()
+        win.set_drawing(old)
+        self.assertTrue(scr.set_files([base.sample_file("SNP-M-101", "drawio")]))
+        base.pump(win)
+        scr.do_register()
+        base.pump(win, 0.1)
+        row = next(r for r in range(len(scr.rows)) if "SNP-M-101" in scr.rows[r]["record"].get("original_name", ""))
+        scr.table.selectRow(row)
+        scr.do_extract()
+        base.pump(win, 0.1)
+        self.assertIn("추출·그래프 생성 완료", scr.result.toPlainText())
+        self.assertEqual(win.stack.currentIndex(), 0, "drawio는 화면 이동 없음")
+        new = scr.rows[row]["extract_name"]
+        self.assertNotEqual(new, old)
+        win.go(1)
+        self.assertEqual((win.drawing, win.screens[1].combo.currentText()), (new, new))
+
+    def test_inputs_have_accessible_names(self):
+        from PySide6.QtWidgets import QComboBox, QLineEdit
+        _win, scr = self.screen()
+        unnamed = [w for w in scr.findChildren(QLineEdit) + scr.findChildren(QComboBox)
+                   if not w.accessibleName() and not isinstance(w.parent(), QComboBox)]
+        self.assertEqual(unnamed, [])
+
 
 if __name__ == "__main__":
     unittest.main()

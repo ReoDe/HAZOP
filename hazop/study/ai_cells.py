@@ -15,6 +15,7 @@ import json
 import os
 
 from hazop import paths
+from hazop.graph import project as project_graph
 from hazop.kg import build as kg_build
 from hazop.kg import context as kg_context
 from hazop.study import claude_http
@@ -50,7 +51,7 @@ SYSTEM_PROMPT = """너는 원자력발전소 계통 HAZOP 검토를 돕는 분�
 
 규칙:
 1. 근거는 입력 맥락의 구성요소(components), 구간 밖 인접 요소(neighbors), 도면 연결(connections), 설계 의도(design_intent), 지식 항목(knowledge)뿐이다.
-2. 원인·결과·보호수단에는 도면에 있는 실제 기기만 쓴다. 도면에 없는 설비(도면에 표시되지 않은 경보·차단밸브·전열기, 다른 도면 연결점 너머의 설비 등)를 가정하지 않는다. 연결 요소(tee·continuation·pipe_cap)와 배관 구간은 기기가 아니다.
+2. 원인·결과·보호수단에는 도면에 있는 실제 기기만 쓴다. 도면에 없는 설비(도면에 표시되지 않은 경보·차단밸브·전열기, 입력에 없는 다른 도면 연결점 너머의 설비 등)를 가정하지 않는다. 연결 요소(tee·continuation·pipe_cap)와 배관 구간은 기기가 아니다. 구성요소·인접 요소에 drawing이 있으면 출처 도면 번호다. 구간이 여러 도면에 걸치면 구성요소의 다른 도면 기기도 근거로 쓸 수 있으나, 구간 밖(neighbors)의 다른 도면 요소는 인접 정보로만 쓰고 원인·보호수단으로 쓰지 않는다.
 3. equipment_tags에는 시나리오에 쓴 기기의 태그를 입력의 tag 값 그대로 모두 적는다.
 4. kg_paths에는 시나리오 근거가 된 연결 경로를 ID 목록으로 적는다. 입력에 있는 entity_id(도면)와 knowledge_id(지식)만 쓰고, 없는 ID를 만들지 않는다. 경로에서 이웃한 두 ID는 입력의 connections 또는 지식 항목의 applies_to·specified_in으로 실제 이어져 있어야 한다.
 5. sources에는 근거로 쓴 설계문서를 적는다. doc에는 지식 항목 source의 document_id를, where에는 page와 locator를 적는다. 문서를 근거로 쓰지 않았으면 빈 목록으로 둔다.
@@ -149,12 +150,23 @@ def _doc_ids(kg):
 # ---------------------------------------------------------------- 맥락
 
 def _component(n):
-    return {"entity_id": n["entity_id"], "tag": n.get("tag"), "kind": n.get("kind"), "category": n.get("category")}
+    c = {"entity_id": n["entity_id"], "tag": n.get("tag"), "kind": n.get("kind"), "category": n.get("category")}
+    if n.get("sheet_drawing"):
+        c["drawing"] = n["sheet_drawing"]
+    return c
 
 
 def node_context(node, graph, kg, intent=None):
     """구간 맥락. intent: 설계 의도 (글, 출처 설명) 또는 None. kg가 None이거나 이 도면에 쓸 수 없으면 지식 항목 없이
-    만들고 kg_note에 이유를 적는다. 같은 입력이면 prompt는 같은 값(목록 정렬 고정)."""
+    만들고 kg_note에 이유를 적는다. 같은 입력이면 prompt는 같은 값(목록 정렬 고정).
+    graph가 프로젝트 그래프(hazop.graph.project)면 kg를 프로젝트 그래프 ID로 옮겨 쓰고, 구성요소에 출처 도면을 붙이며,
+    구간 밖 다른 도면 기기 태그를 근거 검증 경고 대상(allowed.outside_sheet_tags)으로 둔다."""
+    is_project = project_graph.is_project_graph(graph)
+    if is_project:
+        drawing_of = {s["graph_id"]: s["drawing_number"] for s in graph["sheets"]}
+        graph = dict(graph, nodes=[dict(n, sheet_drawing=drawing_of.get(n.get("sheet"))) for n in graph["nodes"]])
+        if kg is not None:
+            kg = project_graph.kg_view(kg, graph)
     by_id = {n["entity_id"]: n for n in graph.get("nodes", [])}
     members = [m for m in node["members"] if m in by_id]
     member_set = set(members)
@@ -192,8 +204,10 @@ def node_context(node, graph, kg, intent=None):
 
     prompt = {
         "node": {"node_id": node["node_id"], "name": node.get("name"), "basis": node.get("basis")},
-        "drawing": {"graph_id": graph.get("graph_id"), "graph_version": graph.get("graph_version"),
-                    "drawing_number": (graph.get("source") or {}).get("drawing_number")},
+        "drawing": dict({"graph_id": graph.get("graph_id"), "graph_version": graph.get("graph_version"),
+                         "drawing_number": (graph.get("source") or {}).get("drawing_number")},
+                        **({"drawings": sorted({by_id[m]["sheet_drawing"] for m in members
+                                                if by_id[m].get("sheet_drawing")})} if is_project else {})),
         "design_intent": {"text": intent[0], "source": intent[1]} if intent else None,
         "components": [_component(by_id[m]) for m in sorted(members)],
         "neighbors": [_component(by_id[m]) for m in sorted(outside)],
@@ -205,10 +219,17 @@ def node_context(node, graph, kg, intent=None):
         "node_id": node["node_id"],
         "prompt": prompt,
         "allowed": {"entity_ids": set(by_id), "tags": {n["tag"] for n in by_id.values() if n.get("tag")},
-                    "kg_ids": kg_ids, "doc_ids": doc_ids},
+                    "kg_ids": kg_ids, "doc_ids": doc_ids, "outside_sheet_tags": _outside_sheet_tags(by_id, members)},
         "adjacency": adjacency,
         "kg_note": kg_note,
     }
+
+
+def _outside_sheet_tags(by_id, members):
+    """구간 밖이면서 구간 구성요소가 없는 도면에 있는 기기 태그(프로젝트 그래프에서만 생김)."""
+    sheets = {by_id[m].get("sheet") for m in members}
+    return {n["tag"] for e, n in by_id.items() if n.get("tag") and n.get("sheet") and e not in members
+            and n["sheet"] not in sheets and n.get("node_type") == "drawing_object"}
 
 
 def build_request(unit, ctx, deviations):
@@ -233,6 +254,8 @@ def check_evidence(scenario, ctx):
     for tag in scenario.get("equipment_tags") or []:
         if tag not in allowed["tags"]:
             out.append("도면에 없는 태그: %s" % tag)
+        elif tag in allowed.get("outside_sheet_tags", ()):
+            out.append("구간 밖 다른 도면의 기기(인접 정보로만 허용): %s" % tag)
     for path in scenario.get("kg_paths") or []:
         for x in path:
             if x not in known:

@@ -215,8 +215,10 @@ class RegisterScreen(QWidget):
         rl.addWidget(t2)
         form = QFormLayout()
         self.project = QLineEdit("sample-project")
+        self.project.setAccessibleName("프로젝트 ID")
         form.addRow("프로젝트 ID", self.project)
         self.material = QComboBox()
+        self.material.setAccessibleName("자료 종류")
         for label, mtype, _, _ in MATERIAL_CHOICES:
             self.material.addItem(label, mtype)
         self.material.currentIndexChanged.connect(lambda _: self._repreview())
@@ -239,6 +241,7 @@ class RegisterScreen(QWidget):
         for i, (key, label) in enumerate(META_FIELDS, start=1):
             ed = QLineEdit()
             ed.setPlaceholderText("미확인")
+            ed.setAccessibleName(label)
             auto = QLabel("")
             auto.setTextFormat(Qt.RichText)
             btn = QPushButton()
@@ -252,7 +255,9 @@ class RegisterScreen(QWidget):
         rl.addLayout(meta)
         form2 = QFormLayout()
         self.actor = QLineEdit(app.reviewer_name() or getpass.getuser())
+        self.actor.setAccessibleName("등록자")
         self.reason = QLineEdit()
+        self.reason.setAccessibleName("사유")
         self.reason.setPlaceholderText("확정 사유(식별정보를 입력한 경우)")
         form2.addRow("등록자", self.actor)
         form2.addRow("사유", self.reason)
@@ -362,6 +367,10 @@ class RegisterScreen(QWidget):
 
     def on_enter(self):
         self.refresh()
+
+    def main_focus(self):
+        """화면에 들어오면 초점을 둘 곳: 등록 자료 목록(없으면 빈 목록 안내의 파일 선택)."""
+        return self.table if self.rows else self.empty_pick
 
     def is_done(self):
         return bool(self.rows)
@@ -646,9 +655,10 @@ class RegisterScreen(QWidget):
         self._show_result("".join(h))
         self.refresh()
         self._job_done("추출·그래프를 만들었습니다 · %s" % name)
+        if auto or self.app.current_screen() is self:  # 다음에 여는 ②④⑤는 방금 추출한 도면(다른 도면을 보는 중이면 그대로)
+            self.app.set_drawing(os.path.basename(out["extract_dir"]))
         if auto:
             self.app.go(1)
-            self.app.screens[1].select_drawing(os.path.basename(out["extract_dir"]))
 
     def _document_extracted(self, out, auto=False, name=""):
         doc = out["document"]

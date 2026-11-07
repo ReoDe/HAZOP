@@ -8,13 +8,13 @@ import os
 
 from PySide6.QtCore import QRectF, QSize, Qt, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
-from PySide6.QtWidgets import (QButtonGroup, QDialog, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QComboBox, QDialog, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
                                QLineEdit, QMainWindow, QMenuBar, QMessageBox, QPushButton, QSplitter, QStackedWidget,
                                QTabBar, QTableWidget, QTableWidgetItem, QToolButton, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget)
 
 from hazop import paths
-from hazop.app import palette, related, tokens
+from hazop.app import data, palette, project_ctx, related, tokens
 from hazop.app.related_panel import RelatedPanel
 from hazop.app.screens.analysis import AnalysisScreen
 from hazop.app.screens.knowledge import KnowledgeScreen
@@ -23,10 +23,12 @@ from hazop.app.screens.results import ResultsScreen
 from hazop.app.screens.review import ReviewScreen
 from hazop.app.screens.study import StudyNodesScreen, seg_icon
 from hazop.app.screens.viewer import ViewerScreen
-from hazop.app.settings_dialog import SettingsDialog
+from hazop.app.settings_dialog import SettingsDialog, status_bar_html
 from hazop.app.webview import HazopWebView
 from hazop.app.widgets import VALIDATION_LABELS, Chip, TaskRunner, Toast, esc, kst_text, write_log
-from hazop.study.apikey import KEY_FILE_NAME, KeyStore
+from hazop.study.apikey import STORE_FILE_NAME, KeyStore
+from hazop.study import results as res
+from hazop.study import span
 
 APP_NAME = "HAZOP 분석 도구"
 APP_VERSION = "0.1.0"
@@ -123,7 +125,7 @@ class MainWindow(QMainWindow):
         self.debug = debug  # True면 상태줄에 Python↔웹 메시지 등 개발자 정보를 보여 준다(--debug)
         self.settings_path = settings_path
         self.settings = paths.load_settings(settings_path)
-        self.api_keys = KeyStore(os.path.join(os.path.dirname(settings_path or paths.settings_path()), KEY_FILE_NAME))
+        self.api_keys = KeyStore(os.path.join(os.path.dirname(settings_path or paths.settings_path()), STORE_FILE_NAME))
         self._key_dialog = None
         self.run_ctx = None
         self.setWindowTitle(APP_NAME)
@@ -138,6 +140,7 @@ class MainWindow(QMainWindow):
         self.webview.bridge.linkSelected.connect(self._link_selected)
         self.webview.bridge.algorithmRequested.connect(self._algorithm_requested)
         self.webview.bridge.editPick.connect(self._edit_pick)
+        self.webview.bridge.chipClicked.connect(self._chip_clicked)
 
         central = QWidget()
         cl = QVBoxLayout(central)
@@ -190,6 +193,7 @@ class MainWindow(QMainWindow):
                         KnowledgeScreen(self), StudyNodesScreen(self), ResultsScreen(self)]
         for s in self.screens:
             self.stack.addWidget(s)
+            s.setFocusPolicy(Qt.ClickFocus)  # 주 작업 영역이 없을 때 화면 자체가 초점을 받아 화면 단축키가 듣게
             if self.stack.count() - 1 in DRAWING_SCREENS:
                 s.combo.currentTextChanged.connect(lambda _t, scr=s: self._drawing_changed(scr))
         self.screens[2].review_requested.connect(self.review_candidate)
@@ -303,8 +307,16 @@ class MainWindow(QMainWindow):
         self.explorer_filter.setObjectName("explorer_filter")
         self.explorer_filter.setPlaceholderText("⌕ 필터 (Ctrl+Shift+E)")
         self.explorer_filter.setClearButtonEnabled(True)
+        self.explorer_filter.setAccessibleName("탐색기 필터")
         self.explorer_filter.textChanged.connect(self._apply_filter)
         v.addWidget(self.explorer_filter)
+        self.explorer_drawing = QComboBox()  # 검토구간 묶음을 그 도면을 지나는 구간으로 좁힌다(걸친 구간 포함)
+        self.explorer_drawing.setObjectName("explorer_drawing")
+        self.explorer_drawing.setAccessibleName("탐색기 도면 필터")
+        self.explorer_drawing.setToolTip("검토구간: 모든 도면(프로젝트 전체) 또는 고른 도면을 지나는 구간만")
+        self.explorer_drawing.addItem("모든 도면", None)
+        self.explorer_drawing.currentIndexChanged.connect(lambda _i: self._refresh_explorer())
+        v.addWidget(self.explorer_drawing)
         self.explorer = QTreeWidget()
         self.explorer.setObjectName("explorer")
         self.explorer.setColumnCount(2)
@@ -313,65 +325,110 @@ class MainWindow(QMainWindow):
         self.explorer.setIconSize(QSize(10, 10))
         self.explorer.header().setStretchLastSection(False)
         self.explorer.header().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.explorer.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.explorer.header().setSectionResizeMode(1, QHeaderView.Fixed)  # 진행 글자 열이 좁은 탐색기에서 이름 열을 밀어내지 않게
+        self.explorer.header().resizeSection(1, 64)
         self.explorer.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.explorer.setTextElideMode(Qt.ElideRight)
+        self.explorer.setTextElideMode(Qt.ElideMiddle)  # 구간 이름 끝의 도면 범위 [101 → 102] ⇄를 남긴다
         self.explorer.itemClicked.connect(self._explorer_clicked)
         v.addWidget(self.explorer, 1)
         self.explorer_wanted = True  # 보기 메뉴로 접고 편다. 창이 좁으면 자동으로 숨긴다(_fit_explorer)
         return self.explorer_panel
 
     def _explorer_groups(self):
-        """[(이름, 화면 index, [(글자, key, 오른쪽 글자, 아이콘)], 빈 안내)]. 검토구간·권고는 지금 도면 기준."""
+        """[(이름, [(글자, (화면 index, key), 오른쪽 글자, 아이콘, 도구 설명)], 빈 안내, 바로가기, 그룹 설명)].
+        검토구간은 지금 도면이 속한 프로젝트 전체 구간(도면 필터로 좁힘), 권고는 그 프로젝트 결과 기준.
+        바로가기는 (글자, (화면 index, key), 도구 설명) 또는 None으로, 그룹 맨 아래 한 줄이고 개수에 세지 않는다.
+        그룹 설명은 묶음 제목 도구 설명에 덧붙이는 글(검토구간 덮음률) 또는 None."""
         idx = self.index()
-        dwg = idx.drawing_number if idx and idx.graph else None
-        reg = list(self.screens[0].explorer_items())
-        kgs = list(self.screens[4].explorer_items())
-        groups = [("자료", 0, [(t, k, "", None) for t, k in reg], "① 자료 등록에서 도면·문서를 올리세요"),
-                  ("지식그래프", 4, [(t, k, "", None) for t, k in kgs], "① 등록과 추출이 끝나면 자동으로 만듭니다")]
+        reg = [(t, (0, k), "", None, t) for t, k in self.screens[0].explorer_items()]
+        # ① 등록 없이 출력/추출에 있는 도면(샘플 실행 등)도 자료로 보여 '자료 0'이 열린 도면과 어긋나지 않게 한다
+        reg += [("%s · %s" % (name, origin), (1, name), "", None,
+                 "%s: ① 등록을 거치지 않고 출력/추출에 있는 도면입니다. 누르면 ② 도면에서 엽니다." % origin)
+                for name, origin in data.unregistered_extractions()]
+        kgs = [(t, (4, k), "", None, t) for t, k in self.screens[4].explorer_items()]
+        groups = [("자료", reg, "① 자료 등록에서 도면·문서를 올리세요", None, None),
+                  ("지식그래프", kgs, "① 등록과 추출이 끝나면 자동으로 만듭니다", None, None)]
         study = self.screens[5]
-        live = study.node_set if study.node_set and study.name == self.drawing else None
+        pg = idx.graph if idx else None
+        live = (study.node_set if pg and study.node_set and study.name == self.drawing
+                and study.node_set.get("graph_id") == pg["graph_id"] else None)  # ④가 연 프로젝트 집합(저장 전 포함)
         ns = live or (idx.node_set if idx else None)
+        view = (idx.view_of(ns) if live else idx.view) if ns else None
+        usable = idx is not None and (live is None or live.get("status") == "confirmed")  # 결과는 확정본에만 있다
+        rs = self.screens[6]
+        # ⑤가 같은 도면을 열고 있으면 그 결과(실행 중 반영분 포함), 아니면 저장본
+        results = (rs.results if rs.results is not None and rs.name == self.drawing else idx.results if idx else None)
+        if results is not None and ns and res.is_stale(results, ns):
+            results = None  # 다른(이전) 확정본으로 만든 결과는 지금 구간의 진행으로 보이지 않는다
+        dn = self._explorer_drawing_choice(pg)
+        listed = (view or ns or {}).get("nodes", [])
+        shown = span.nodes_on_drawing(view, dn) if dn and view else listed
+        order = {n["node_id"]: i for i, n in enumerate(listed)}
         items = []
-        for i, n in enumerate((ns or {}).get("nodes", [])):
-            usable = idx is not None and (live is None or live.get("status") == "confirmed")  # 결과는 확정본에만 있다
-            u = idx.unreviewed(n["node_id"]) if usable else 0
-            items.append(("%s %s" % (n["node_id"], n["name"]), n["node_id"], "미%d" % u if u else "",
-                          seg_icon(i, "")))
-        groups.append(("검토구간" + (" · %s" % dwg if dwg else ""), 5, items,
-                       "④ 검토구간에서 구간을 제안·확정합니다" if dwg else "도면을 고르면 그 도면의 구간이 보입니다"))
+        for n in shown:
+            right, detail = related.node_progress(results if usable else None, n["node_id"], len(rs.deviations))
+            text = project_ctx.node_label(n)
+            items.append((text, (5, n["node_id"]), right, seg_icon(order[n["node_id"]], ""),
+                          "%s\n%s\n누르기: ⑤ 결과 화면에서는 그 행, 다른 화면에서는 ④ 구간 · Alt+누르기: ④ 구간"
+                          % (text, detail)))
+        scope = dn or ("프로젝트 %s" % pg["project_id"] if pg else None)
+        action = (("⑤ 결과 행렬 열기", (6, None), "%s의 구간 × 편차 결과(⑤ 분석 결과)" % scope)
+                  if usable and ns and ns.get("status") == "confirmed" else None)
+        cover = idx.ctx.coverage_text(ns)[0] if ns and pg else None
+        groups.append(("검토구간" + (" · %s" % scope if scope else ""), items,
+                       ("고른 도면을 지나는 구간이 없습니다" if ns else "④ 검토구간에서 구간을 제안·확정합니다")
+                       if pg else "도면을 고르면 그 프로젝트의 구간이 보입니다",
+                       action, cover))
         recs = []
         if idx and idx.results:
             for c in idx.results["cells"]:
                 for e in c.get("entries") or []:
                     if e.get("recommendation") and e.get("status") != "rejected":
                         d = idx.deviation(c["deviation_id"])
-                        recs.append(("%s × %s · %s" % (c["node_id"], d["label"] if d else c["deviation_id"],
-                                                        e["recommendation"]),
-                                     (c["node_id"], c["deviation_id"]), "", None))
-        groups.append(("권고", 6, recs, "AI 분석 후 권고가 모입니다"))
+                        text = "%s × %s · %s" % (c["node_id"], d["label"] if d else c["deviation_id"],
+                                                 e["recommendation"])
+                        recs.append((text, (6, (c["node_id"], c["deviation_id"])), "", None, text))
+        groups.append(("권고", recs, "AI 분석 후 권고가 모입니다", None, None))
         return groups
+
+    def _explorer_drawing_choice(self, pg):
+        """도면 필터 목록을 프로젝트 도면으로 맞추고 고른 도면 번호(모든 도면이면 None)를 돌려준다."""
+        box = self.explorer_drawing
+        numbers = [s["drawing_number"] for s in pg["sheets"]] if pg else []
+        have = [box.itemData(i) for i in range(1, box.count())]
+        if have != numbers:
+            cur = box.currentData()
+            box.blockSignals(True)
+            while box.count() > 1:
+                box.removeItem(1)
+            for d in numbers:
+                box.addItem(d, d)
+            box.setCurrentIndex(box.findData(cur) if cur in numbers else 0)
+            box.blockSignals(False)
+        box.setVisible(len(numbers) > 1)
+        return box.currentData()
 
     def _refresh_explorer(self):
         """내용이 같으면 다시 만들지 않는다(선택 유지, 항목 클릭 처리 중 항목 삭제 방지)."""
         groups = self._explorer_groups()
-        sig = [(n, i, [(t, k, r) for t, k, r, _ in its], e) for n, i, its, e in groups]
+        sig = [(n, [(t, k, r, tip) for t, k, r, _, tip in its], e, a, c) for n, its, e, a, c in groups]
         if sig != getattr(self, "_explorer_sig", None):
             self._explorer_sig = sig
             self.explorer.clear()
             muted = QColor(tokens.c("muted"))
-            for name, idx, items, hint in groups:
+            for name, items, hint, action, about in groups:
                 grp = QTreeWidgetItem([name, str(len(items))])
                 f = grp.font(0)
                 f.setBold(True)
                 grp.setFont(0, f)
                 grp.setForeground(1, muted)
                 grp.setFlags(Qt.ItemIsEnabled)
-                grp.setToolTip(0, name)
-                for text, key, right, icon in items:
+                grp.setToolTip(0, "%s\n%s" % (name, about) if about else name)
+                for text, target, right, icon, tip in items:
                     child = QTreeWidgetItem([text, right])
-                    child.setData(0, Qt.UserRole, (idx, key))
-                    child.setToolTip(0, text)
+                    child.setData(0, Qt.UserRole, target)
+                    child.setToolTip(0, tip)
+                    child.setToolTip(1, tip)
                     child.setForeground(1, muted)
                     if icon is not None:
                         child.setIcon(0, icon)
@@ -386,8 +443,15 @@ class MainWindow(QMainWindow):
                     empty.setData(0, Qt.UserRole + 1, "hint")
                     empty.setToolTip(0, hint)
                     grp.addChild(empty)
+                if action is not None:
+                    link = QTreeWidgetItem([action[0], ""])
+                    link.setData(0, Qt.UserRole, action[1])
+                    link.setData(0, Qt.UserRole + 1, "action")
+                    link.setForeground(0, QColor(tokens.c("ui")))
+                    link.setToolTip(0, action[2])
+                    grp.insertChild(0, link)  # 구간이 많아도(프로젝트 전체) 펼치면 바로 보이게 맨 위
                 self.explorer.addTopLevelItem(grp)
-                grp.setExpanded(len(items) <= EXPLORER_OPEN_MAX)
+                grp.setExpanded(len(items) <= EXPLORER_OPEN_MAX or name.startswith("검토구간"))  # 구간 목록·⑤ 결과 바로가기는 주 탐색이라 늘 편다
             self._apply_filter()
         self._mark_explorer_current()
 
@@ -398,7 +462,7 @@ class MainWindow(QMainWindow):
             shown = total = 0
             for c in range(grp.childCount()):
                 ch = grp.child(c)
-                hint = ch.data(0, Qt.UserRole + 1) == "hint"
+                hint = ch.data(0, Qt.UserRole + 1) in ("hint", "action")  # 안내·바로가기는 개수에 세지 않는다
                 hide = bool(q) and (hint or palette.fuzzy_score(q, ch.text(0)) is None)
                 ch.setHidden(hide)
                 total += not hint
@@ -428,11 +492,28 @@ class MainWindow(QMainWindow):
         if not target:
             return
         idx, key = target
+        if idx == 6 and key is None:
+            self.go(6)
+            return
         if idx == 6:
             self.open_target({"kind": "cell", "drawing": self.drawing, "node_id": key[0], "deviation_id": key[1]})
             return
         if idx == 5:
-            self.open_target({"kind": "node", "drawing": self.drawing, "node_id": key})
+            # ⑤에서는 결과 행렬의 그 행을 고르고 ⑤에 머문다(실행 중이어도 분석은 그대로). Alt+누르기는 ④ 구간.
+            alt = bool(QApplication.keyboardModifiers() & Qt.AltModifier)
+            rs = self.screens[6]
+            if self.stack.currentIndex() == 6 and not alt and rs.name == self.drawing and rs._row_of(key) is not None:
+                rs.show_node(self.drawing, key)
+                self.set_selection({"kind": "node", "drawing": self.drawing, "node_id": key})
+                self._mark_explorer_current()
+                return
+            idx = self.index()
+            self.open_target({"kind": "node", "drawing": idx.node_drawing_name(key) if idx else self.drawing,
+                              "node_id": key})
+            return
+        if idx == 1:
+            if self.go(1):
+                self.screens[1].select_drawing(key)
             return
         if not self.go(idx):
             return
@@ -497,9 +578,16 @@ class MainWindow(QMainWindow):
         self.keys_label.setObjectName("muted")
         for w in (self.drawing_label, self.count_label, self.chip_valid):
             sb.addWidget(w)
-        for w in (self.msg_label, self.task_label, self.saved_label, self.keys_label):
+        self.ai_label = QLabel("")  # AI 연결 표시. 누르면(또는 Tab 후 Enter) API 키 설정 창
+        self.ai_label.setTextInteractionFlags(Qt.LinksAccessibleByMouse | Qt.LinksAccessibleByKeyboard)
+        self.ai_label.linkActivated.connect(lambda _: self.open_key_settings())
+        self._update_ai_label()
+        for w in (self.msg_label, self.task_label, self.saved_label, self.ai_label, self.keys_label):
             sb.addPermanentWidget(w)
         self._update_reviewer_label()
+
+    def _update_ai_label(self):
+        self.ai_label.setText(status_bar_html(self.api_keys))
 
     def _refresh_status(self):
         """왼쪽은 지금 도면과 개수, 오른쪽은 메시지·진행·저장·단축키 안내. 값이 없는 칸은 숨긴다."""
@@ -608,15 +696,14 @@ class MainWindow(QMainWindow):
         if idx and idx.graph:
             dw = self.drawing
             for eid, text, kind in idx.components():
-                items.append(palette.Item("component", text, "%s · %s" % (kind, idx.drawing_number), "",
-                                          lambda nt, e=eid: self.open_target(
-                                              {"kind": "component", "drawing": dw, "entity_id": e, "open": "drawing"}, nt),
+                items.append(palette.Item("component", text, kind, "",
+                                          lambda nt, e=eid, d=idx.drawing_name_of(eid) or dw: self.open_target(
+                                              {"kind": "component", "drawing": d, "entity_id": e, "open": "drawing"}, nt),
                                           ("component", dw, eid)))
-            for n in (idx.node_set or {}).get("nodes", []):
-                items.append(palette.Item("node", "%s %s" % (n["node_id"], n["name"]),
-                                          "구성요소 %d · %s" % (len(n["members"]), idx.drawing_number), "",
-                                          lambda nt, nid=n["node_id"]: self.open_target(
-                                              {"kind": "node", "drawing": dw, "node_id": nid}, nt),
+            for n in (idx.view or idx.node_set or {}).get("nodes", []):
+                items.append(palette.Item("node", project_ctx.node_label(n), "구성요소 %d" % len(n["members"]), "",
+                                          lambda nt, nid=n["node_id"], d=idx.node_drawing_name(n["node_id"]):
+                                          self.open_target({"kind": "node", "drawing": d, "node_id": nid}, nt),
                                           ("node", dw, n["node_id"])))
             for node, dev, s in idx.cells():
                 text, tail = related.cell_text(idx, node, dev, s)
@@ -889,15 +976,20 @@ class MainWindow(QMainWindow):
     def _drawing_changed(self, scr):
         if scr is not self.current_screen():
             return
-        name = scr.combo.currentText() or None
-        if name and name != self.drawing:
-            self.drawing = name
-            self.selection = None
-            self.invalidate_index()
+        if self.set_drawing(scr.combo.currentText() or None):
             self._tab_follow(self.stack.currentIndex())
             self.refresh_related()
-            self._refresh_explorer()
-            self._refresh_status()
+
+    def set_drawing(self, name):
+        """지금 도면을 바꾼다(다음에 들어가는 ②④⑤가 이 도면을 연다). 바뀌었으면 True."""
+        if not name or name == self.drawing:
+            return False
+        self.drawing = name
+        self.selection = None
+        self.invalidate_index()
+        self._refresh_explorer()
+        self._refresh_status()
+        return True
 
     def _sync_drawing_into(self, scr):
         """도면을 고르는 화면(②④⑤)에 들어갈 때 지금 도면을 미리 넣어 둔다(on_enter가 그 도면을 그대로 연다)."""
@@ -998,8 +1090,10 @@ class MainWindow(QMainWindow):
                 self.webview.setParent(None)
                 self.webview.hide()
             self.webview.clear_segments()  # ④ 구간 색은 ④에서만 보인다(④는 on_enter에서 다시 칠함)
+            self.webview.set_chips([])  # 도면 연결점 칩도 ②④에서만(on_enter에서 다시 닮)
             self.webview.set_edit_mode(False)  # ② 편집은 ②에서만(②는 on_enter에서 다시 켬)
         scr.on_enter()
+        self._focus_main(scr)
         if index in DRAWING_SCREENS and scr.combo.currentText() and scr.combo.currentText() != self.drawing:
             self.drawing = scr.combo.currentText()
             self.selection = None
@@ -1010,6 +1104,16 @@ class MainWindow(QMainWindow):
         self._fit_explorer()
         self.refresh_related()
         return True
+
+    @staticmethod
+    def _focus_main(scr):
+        """화면을 바꾸면 초점을 그 화면의 주 작업 영역으로 옮긴다(머리말 찾기 버튼에 남으면 화면 단축키가 듣지 않음)."""
+        w = getattr(scr, "main_focus", None)
+        w = w() if callable(w) else w
+        if w is not None and w.isVisible():
+            w.setFocus(Qt.OtherFocusReason)
+        elif scr.isVisible():
+            scr.setFocus(Qt.OtherFocusReason)
 
     def back(self):
         """Alt+←: 바로 전에 본 화면. 떠나기를 거절하면 기록 위치를 그대로 둔다."""
@@ -1092,6 +1196,11 @@ class MainWindow(QMainWindow):
         if h:
             h(req)
 
+    def _chip_clicked(self, key):
+        h = getattr(self.canvas_screen(), "on_chip", None)
+        if h:
+            h(key)
+
     def _edit_pick(self, pick):
         h = getattr(self.canvas_screen(), "on_edit_pick", None)
         if h:
@@ -1130,6 +1239,7 @@ class MainWindow(QMainWindow):
             self._key_dialog = SettingsDialog(self.api_keys, self)
         self._key_dialog.refresh()
         self._key_dialog.exec()
+        self._update_ai_label()
 
     def _ask_reviewer(self):
         name, ok = QInputDialog.getText(self, "검토자 이름", "검토자 이름", text=self.reviewer_name() or "")
