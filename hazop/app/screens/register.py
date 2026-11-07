@@ -201,6 +201,17 @@ class RegisterScreen(QWidget):
     def on_enter(self):
         self.refresh()
 
+    def is_done(self):
+        return bool(self.rows)
+
+    def explorer_items(self):
+        return [(e["record"].get("original_name") or e["record"]["material_id"], e["path"]) for e in self.rows]
+
+    def open_item(self, path):
+        r = next((i for i, e in enumerate(self.rows) if e["path"] == path), -1)
+        if r >= 0:
+            self.table.selectRow(r)
+
     def refresh(self):
         self.rows = data.list_registrations()
         self.table.setRowCount(len(self.rows))

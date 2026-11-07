@@ -432,14 +432,21 @@ class WindowTestBase(unittest.TestCase):
 
 class KnowledgeTabTest(WindowTestBase):
     def test_step_tabs_order_and_indexes(self):
-        from hazop.app.main_window import STEP_ORDER, STEPS
+        from hazop.app.main_window import STEPS
         win = self.open()
-        header = win.centralWidget().layout().itemAt(0).widget().layout()
-        shown = [header.itemAt(i).widget().text() for i in range(header.count())
-                 if header.itemAt(i).widget() in win.step_buttons]
-        self.assertEqual(shown, ["① 자료 등록", "② 도면·그래프", "③ 지식그래프", "④ HAZOP 분석", "⑤ 설계보완·확정"])
-        self.assertEqual(STEPS[:4], ("① 자료 등록", "② 도면·그래프", "④ HAZOP 분석", "⑤ 설계보완·확정"))  # 기존 index 유지
-        self.assertEqual([STEPS[i] for i in STEP_ORDER], shown)
+        rail = win.rail.layout()
+        shown = [rail.itemAt(i).widget() for i in range(rail.count())
+                 if rail.itemAt(i).widget() in win.step_buttons]
+        self.assertEqual([b.accessibleName() for b in shown],
+                         ["① 자료 등록", "② 도면 추출", "③ 지식그래프", "④ 검토구간", "⑤ 분석 결과"])
+        self.assertEqual([b.text().split("\n")[1] for b in shown], ["등록", "추출", "그래프", "구간", "결과"])
+        self.assertEqual(STEPS, ("① 자료 등록", "② 도면 추출", "고정 응답 분석(이전 ④)", "설계보완·확정(이전 ⑤)",
+                                 "③ 지식그래프", "④ 검토구간", "⑤ 분석 결과"))  # 기존 index 유지, 뒤에 추가
+        self.assertEqual([i for i, b in enumerate(win.step_buttons) if not b.isHidden()], [0, 1, 4, 5, 6])
+        win.go(2)  # 이전 ④는 ⑤ 결과 단계 아래: 숨은 버튼이 눌리고 레일은 ⑤가 현재
+        self.assertTrue(win.step_buttons[2].isChecked())
+        self.assertEqual(win.step_buttons[6].property("state"), "now")
+        self.assertEqual(win.step_buttons[0].property("state"), "todo")
 
     def test_open_select_run_algorithm_and_layout(self):
         win = self.open()

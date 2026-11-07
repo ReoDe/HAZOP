@@ -251,6 +251,17 @@ class KnowledgeScreen(QWidget):
         self.showing_prev = False
         self._load()
 
+    def is_done(self):
+        return bool(screen.list_kg_roots(kg_root_dir()))
+
+    def explorer_items(self):
+        return screen.list_kg_roots(kg_root_dir())
+
+    def open_item(self, path):
+        i = self.kg_combo.findData(path)
+        if i >= 0:
+            self.kg_combo.setCurrentIndex(i)
+
     # ------------------------------------------------------------ 읽기
     def _set_empty(self, text):
         self.kg = self.graph = self.data = None

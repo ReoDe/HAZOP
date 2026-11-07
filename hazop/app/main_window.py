@@ -1,29 +1,39 @@
-"""주 창 (기획서/인터페이스.md §2.1): 헤더(현재 위치·단계 탭·검토자), 화면 5개, 상태줄, 메뉴. 웹뷰는 하나를 공유한다.
+"""주 창 (기획서/인터페이스.md §2.1, 디자인/시안/완성본 B안 + A안 단계 표시). 웹뷰는 하나를 공유한다.
 
-화면 번호(self.screens·go()의 index)는 추가 순서를 유지한다: 0 ①, 1 ②, 2 ④, 3 ⑤, 4 ③(T1 W6에서 추가).
-단계 탭과 보기 메뉴는 STEP_ORDER 순서(① ② ③ ④ ⑤)로 보인다."""
+틀: 어두운 제목줄(로고·메뉴·현재 위치·검토자) / 왼쪽 단계 레일(①~⑤, 완료 ✓·현재·남음) / 탐색기 트리 / 화면 / 상태줄.
+화면 번호(self.screens·go()의 index)는 추가 순서를 유지한다: 0 ①, 1 ②, 2 이전 ④, 3 이전 ⑤, 4 ③, 5 ④, 6 ⑤.
+레일 단계는 STAGES, 보기 메뉴는 STEP_ORDER 순서로 보인다."""
 
 import os
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QButtonGroup, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow,
-                               QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QButtonGroup, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMenuBar,
+                               QMessageBox, QPushButton, QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+                               QWidget)
 
 from hazop import paths
 from hazop.app import tokens
 from hazop.app.screens.analysis import AnalysisScreen
 from hazop.app.screens.knowledge import KnowledgeScreen
 from hazop.app.screens.register import RegisterScreen
+from hazop.app.screens.results import ResultsScreen
 from hazop.app.screens.review import ReviewScreen
+from hazop.app.screens.study import StudyNodesScreen
 from hazop.app.screens.viewer import ViewerScreen
 from hazop.app.webview import HazopWebView
 from hazop.app.widgets import VALIDATION_LABELS, Chip, TaskRunner, esc, kst_text, write_log
 
 APP_NAME = "HAZOP 분석 도구"
 APP_VERSION = "0.1.0"
-STEPS = ("① 자료 등록", "② 도면·그래프", "④ HAZOP 분석", "⑤ 설계보완·확정", "③ 지식그래프")  # 화면 index 순
-STEP_ORDER = (0, 1, 4, 2, 3)  # 화면에 보이는 단계 탭 순서(①②③④⑤)
+STEPS = ("① 자료 등록", "② 도면 추출", "고정 응답 분석(이전 ④)", "설계보완·확정(이전 ⑤)", "③ 지식그래프", "④ 검토구간",
+         "⑤ 분석 결과")  # 화면 index 순
+STEP_ORDER = (0, 1, 4, 5, 6, 2, 3)  # 보기 메뉴 순서
+# 레일 단계: (번호, 짧은 이름, 화면 index들). 첫 화면이 레일 클릭 대상이고 그 화면의 is_done()이 완료(✓)를 정한다.
+STAGES = (("1", "등록", (0,)), ("2", "추출", (1,)), ("3", "그래프", (4,)), ("4", "구간", (5,)), ("5", "결과", (6, 2, 3)))
+# 탐색기 묶음: (이름, 단계 번호). 자식은 그 단계 첫 화면의 explorer_items() [(글자, key)]
+EXPLORER_GROUPS = (("자료", 0), ("지식그래프", 2), ("검토구간", 3), ("권고", 4))
+RAIL_W, EXPLORER_W = 52, 180
 # 도움말 > 버전·데이터 위치(패키징 W10, D18): 제3자 고지 위치와 법무 검토 전 안내
 LICENSE_NOTE = "LGPL 등 제3자 라이선스 의무의 법무 검토 전이므로 내부용으로만 사용하십시오."
 
@@ -70,11 +80,23 @@ class MainWindow(QMainWindow):
         cl.setContentsMargins(0, 0, 0, 0)
         cl.setSpacing(0)
         cl.addWidget(self._header())
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        body.addWidget(self._rail())
+        self.explorer = QTreeWidget()
+        self.explorer.setObjectName("explorer")
+        self.explorer.setHeaderHidden(True)
+        self.explorer.setFixedWidth(EXPLORER_W)
+        self.explorer.itemClicked.connect(self._explorer_clicked)
+        self.explorer_wanted = True  # 보기 메뉴로 접고 편다. 창이 좁으면 자동으로 숨긴다(_fit_explorer)
+        body.addWidget(self.explorer)
         self.stack = QStackedWidget()
-        cl.addWidget(self.stack, 1)
+        body.addWidget(self.stack, 1)
+        cl.addLayout(body, 1)
         self.setCentralWidget(central)
         self.screens = [RegisterScreen(self), ViewerScreen(self), AnalysisScreen(self), ReviewScreen(self),
-                        KnowledgeScreen(self)]
+                        KnowledgeScreen(self), StudyNodesScreen(self), ResultsScreen(self)]
         for s in self.screens:
             self.stack.addWidget(s)
         self.screens[2].review_requested.connect(self.review_candidate)
@@ -90,37 +112,121 @@ class MainWindow(QMainWindow):
     def _header(self):
         h = QWidget()
         h.setObjectName("header")
-        h.setFixedHeight(56)
+        h.setFixedHeight(34)
         lay = QHBoxLayout(h)
-        lay.setContentsMargins(16, 0, 16, 0)
-        lay.setSpacing(12)
-        logo = QLabel()
+        lay.setContentsMargins(10, 0, 10, 0)
+        lay.setSpacing(4)
+        logo = QLabel("HAZOP")
         logo.setObjectName("logo")
         lay.addWidget(logo)
-        name = QLabel(APP_NAME)
-        name.setObjectName("appname")
-        lay.addWidget(name)
+        self.menu_bar = QMenuBar()
+        self.menu_bar.setObjectName("titlemenu")
+        lay.addWidget(self.menu_bar, 0, Qt.AlignVCenter)
+        lay.addStretch(1)
         self.where_label = WhereLabel("")
         self.where_label.setObjectName("where")
         self.where_label.setTextFormat(Qt.RichText)
-        self.where_label.setMinimumWidth(120)  # 단계 탭 5개(③ 추가) + 긴 위치 글자에도 1366 폭 유지: 넘치면 잘림
+        self.where_label.setMinimumWidth(120)  # 긴 위치 글자에도 1366 폭 유지: 넘치면 잘리고 툴팁
         lay.addWidget(self.where_label)
         lay.addStretch(1)
+        self.reviewer_label = QLabel("")
+        self.reviewer_label.setObjectName("reviewer")
+        lay.addWidget(self.reviewer_label)
+        return h
+
+    def _rail(self):
+        """단계 레일. step_buttons[i]는 화면 i마다 하나(같은 QButtonGroup). 보이는 것은 단계 첫 화면 버튼 5개다."""
+        self.rail = QWidget()
+        self.rail.setObjectName("rail")
+        self.rail.setFixedWidth(RAIL_W)
+        lay = QVBoxLayout(self.rail)
+        lay.setContentsMargins(4, 6, 4, 6)
+        lay.setSpacing(2)
         self.step_group = QButtonGroup(self)
         self.step_buttons = []
         for i, label in enumerate(STEPS):
-            b = QPushButton(label)
+            b = QPushButton(label, self.rail)
             b.setObjectName("step")
             b.setCheckable(True)
+            b.setToolTip(label)
+            b.setAccessibleName(label)
             b.clicked.connect(lambda _=False, k=i: self.go(k))
             self.step_group.addButton(b)
             self.step_buttons.append(b)
-        for i in STEP_ORDER:
-            lay.addWidget(self.step_buttons[i])
+            b.hide()
+        for _, _, idxs in STAGES:
+            b = self.step_buttons[idxs[0]]
+            b.show()
+            lay.addWidget(b)
         lay.addStretch(1)
-        self.reviewer_label = QLabel("")
-        lay.addWidget(self.reviewer_label)
-        return h
+        return self.rail
+
+    def stage_of(self, index):
+        return next(k for k, (_, _, idxs) in enumerate(STAGES) if index in idxs)
+
+    def refresh_stages(self):
+        """레일 단계 표시(A안)와 탐색기를 다시 계산한다. done = 단계 첫 화면의 is_done(), now = 현재 화면의 단계."""
+        now = self.stage_of(self.stack.currentIndex())
+        for k, (num, short, idxs) in enumerate(STAGES):
+            done = bool(getattr(self.screens[idxs[0]], "is_done", lambda: False)())
+            b = self.step_buttons[idxs[0]]
+            b.setText("%s\n%s" % ("✓" if done else num, short))
+            b.setProperty("state", "now" if k == now else "done" if done else "todo")
+            b.style().unpolish(b)
+            b.style().polish(b)
+        self._refresh_explorer()
+
+    def _refresh_explorer(self):
+        """내용이 같으면 다시 만들지 않는다(선택 유지, 항목 클릭 처리 중 항목 삭제 방지)."""
+        groups = []
+        for name, k in EXPLORER_GROUPS:
+            idx = STAGES[k][2][0]
+            groups.append((name, idx, list(getattr(self.screens[idx], "explorer_items", lambda: [])())))
+        if groups == getattr(self, "_explorer_groups", None):
+            return
+        self._explorer_groups = groups
+        self.explorer.clear()
+        for name, idx, items in groups:
+            grp = QTreeWidgetItem([name])
+            f = grp.font(0)
+            f.setBold(True)
+            grp.setFont(0, f)
+            grp.setFlags(Qt.ItemIsEnabled)
+            for text, key in items:
+                child = QTreeWidgetItem([text])
+                child.setData(0, Qt.UserRole, (idx, key))
+                child.setToolTip(0, text)
+                grp.addChild(child)
+            if not items:
+                empty = QTreeWidgetItem(["없음"])
+                empty.setFlags(Qt.NoItemFlags)
+                grp.addChild(empty)
+            self.explorer.addTopLevelItem(grp)
+            grp.setExpanded(True)
+
+    def _explorer_clicked(self, item, _col=0):
+        target = item.data(0, Qt.UserRole)
+        if not target:
+            return
+        idx, key = target
+        self.go(idx)
+        h = getattr(self.screens[idx], "open_item", None)
+        if h:
+            h(key)
+
+    def toggle_explorer(self):
+        self.explorer_wanted = not self.explorer_wanted
+        self._fit_explorer()
+
+    def _fit_explorer(self):
+        """탐색기는 원할 때, 그리고 창 폭이 레일 + 탐색기 + 화면 최소 폭 이상일 때만 보인다(1366 폭 유지)."""
+        need = RAIL_W + EXPLORER_W + self.stack.minimumSizeHint().width()
+        self.explorer.setVisible(self.explorer_wanted and self.width() >= need)
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        if hasattr(self, "stack"):
+            self._fit_explorer()
 
     def _status_bar(self):
         sb = self.statusBar()
@@ -136,7 +242,7 @@ class MainWindow(QMainWindow):
         self._update_reviewer_label()
 
     def _menus(self):
-        m = self.menuBar()
+        m = self.menu_bar
         f = m.addMenu("파일")
         f.addAction("구간 열기…", self._open_region)
         f.addAction("실행 열기…", self._open_run_dialog)
@@ -149,6 +255,7 @@ class MainWindow(QMainWindow):
         for i in STEP_ORDER:
             v.addAction(STEPS[i], lambda k=i: self.go(k))
         v.addSeparator()
+        v.addAction("탐색기 접기/펴기", self.toggle_explorer)
         v.addAction("도면 보기", lambda: self.webview.set_view("drawing"))
         v.addAction("그래프 보기", lambda: self.webview.set_view("graph"))
         v.addAction("웹 속성 패널 숨기기/보이기", lambda: self.webview.set_mode(not self.webview.hide_panel, self.webview.hide_graph))
@@ -169,6 +276,8 @@ class MainWindow(QMainWindow):
             self.webview.hide()
         scr.on_enter()
         self.update_header()
+        self.refresh_stages()
+        self._fit_explorer()
 
     def attach_webview(self, host):
         """웹뷰 인스턴스 하나를 화면의 캔버스 자리로 옮긴다(§2.2)."""
@@ -197,7 +306,7 @@ class MainWindow(QMainWindow):
     def update_header(self):
         w = self.current_screen().where() or (self.screens[2].where() if self.run_ctx else None)
         if not w:
-            self.where_label.set_where("<span style='color:%s'>열린 구간 없음</span>" % tokens.c("muted"), "열린 구간 없음")
+            self.where_label.set_where("<span style='color:%s'>열린 구간 없음</span>" % tokens.c("nav-muted"), "열린 구간 없음")
             return
         parts, plain = [], []
         if w.get("region"):
@@ -207,7 +316,7 @@ class MainWindow(QMainWindow):
             parts.append("도면 <b>%s</b>" % esc(w["drawing"]))
             plain.append("도면 %s" % w["drawing"])
         if w.get("run"):
-            parts.append("<span style='color:%s'>%s</span>" % (tokens.c("muted"), esc(w["run"])))
+            parts.append("<span style='color:%s'>%s</span>" % (tokens.c("nav-muted"), esc(w["run"])))
             plain.append(str(w["run"]))
         self.where_label.set_where(" · ".join(parts), " · ".join(plain))
 

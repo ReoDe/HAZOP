@@ -669,6 +669,14 @@ class RegisterScreenTest(AppTestBase):
         self.assertTrue(os.path.isfile(os.path.join(work, "출력", "그래프", name, "graph.json")))
         self.assertTrue(scr.rows[0]["extracted"] and scr.rows[0]["graphed"])
         self.assertEqual(win.stack.currentIndex(), 0)                 # drawio는 자동 추출·화면 이동 없음
+        win.refresh_stages()  # 레일 단계 표시: ①·② 완료(✓), ①이 현재, ④ 남음
+        rail = {i: (win.step_buttons[i].text().split("\n")[0], win.step_buttons[i].property("state")) for i in (0, 1, 5)}
+        self.assertEqual(rail, {0: ("✓", "now"), 1: ("✓", "done"), 5: ("4", "todo")})
+        win.go(1)
+        item = win.explorer.topLevelItem(0).child(0)                  # 탐색기 자료 → ① 그 행 선택
+        self.assertEqual(item.text(0), rec["original_name"])
+        win._explorer_clicked(item)
+        self.assertEqual((win.stack.currentIndex(), scr.table.currentRow()), (0, 0))
 
     def test_drawio_register_does_not_auto_extract(self):
         win = self.make_window()

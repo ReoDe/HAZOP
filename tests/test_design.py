@@ -273,7 +273,8 @@ class ViewerColorTest(unittest.TestCase):
         w5 = ("--muted:", "--instrument:", "--unclassified:", "--measurement_connection:")  # W5 명암비 조정(D7)분
         self.assertEqual(sum(b.startswith(w5) for b in bad), 4, bad)
         # W4 10건 + W9(D15)에서 허용 목록을 비워 실패가 된 3건(#16a34a 통과 점, #b45309 경고 글자 2곳)
-        self.assertEqual(len([b for b in bad if not b.startswith(w5)]), 13, bad)
+        # + B안 토큰(2026-11-07) 5건(--ui·--line·--ink 값, 옛 ui 반투명 .sym·.sym:hover 채움)
+        self.assertEqual(len([b for b in bad if not b.startswith(w5)]), 18, bad)
         self.assertEqual(sum("#16a34a" in b or "#b45309" in b for b in bad), 3, bad)
         for k in ("--valve:", "--selected:", "클릭 선택 채움"):
             self.assertTrue(any(b.startswith(k) for b in bad), (k, bad))
@@ -584,10 +585,10 @@ class AppColorTest(unittest.TestCase):
     def test_allow_list_context(self):
         """허용 목록은 (경로, 리터럴, 최상위 문장, 선택자)가 모두 맞아야 한다. 같은 rgba도 다른 함수·규칙이면 실패."""
         ok = {"hazop/app/tokens.py": ("CARD_SHADOW = '0 2px 10px rgba(0,0,0,.06)'\n"
-                                      "def web_css():\n    return '.selected.sym, .selected.tagbox { fill: rgba(37,99,235,.12); }'\n")}
+                                      "def web_css():\n    return '.selected.sym, .selected.tagbox { fill: rgba(10,95,194,.12); }'\n")}
         self.assertEqual(cd.app_color_problems(ok), [])
         bad = {"hazop/app/tokens.py": ("def qss():\n    return 'QFrame { background: rgba(0,0,0,.06); }'\n"
-                                       "def web_css():\n    return '.other { fill: rgba(37,99,235,.12); }'\n"
+                                       "def web_css():\n    return '.other { fill: rgba(10,95,194,.12); }'\n"
                                        "OTHER = 'rgba(0,0,0,.06)'\n")}
         self.assertEqual(len(cd.app_color_problems(bad)), 3)
         self.assertEqual(len(cd.app_color_problems({"hazop/app/widgets.py": ok["hazop/app/tokens.py"]})), 2)
@@ -607,7 +608,8 @@ class AppColorTest(unittest.TestCase):
             cd.APP_COLOR_ALLOW.update(allow)
 
     def test_pre_w6_code_fails(self):
-        """W6 이전 코드(2727e56)는 50건 실패한다(tokens.py qss·web_css 9건 포함, 허용 2건 제외). git이나 커밋이 없으면 건너뛰고,
+        """W6 이전 코드(2727e56)는 51건 실패한다(tokens.py qss·web_css 10건 포함, 허용 1건 제외. 클릭 선택 채움 허용 값이
+        B안 ui 색(2026-11-07)으로 rgba(10,95,194,.12)가 되어 옛 rgba(37,99,235,.12)도 실패). git이나 커밋이 없으면 건너뛰고,
         그 뒤 새로 생긴 파일은 빈 문자열로 본다."""
         import subprocess
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -620,7 +622,7 @@ class AppColorTest(unittest.TestCase):
             r = subprocess.run(["git", "show", "2727e56:" + rel], cwd=root, capture_output=True)
             src[rel] = r.stdout.decode("utf-8") if r.returncode == 0 else ""
         bad = cd.app_color_problems(src)
-        self.assertEqual(len(bad), 50, bad)
+        self.assertEqual(len(bad), 51, bad)
         for k in ("hazop/app/widgets.py:116 #ffffff", "hazop/app/render.py:146 #9ca3af",
                   "hazop/viewer/build.py:84 rgba(0,0,0,.06)", "hazop/app/screens/review.py:808 #fca5a5",
                   "hazop/app/tokens.py:131 #dcfce7", "hazop/app/tokens.py:100 #fff",
@@ -703,7 +705,7 @@ class ContrastTest(unittest.TestCase):
             ("muted", "bg", 4.5), ("muted", "ui-weak", 4.5), ("risk-cond-line", "card", 4.5),
             ("instrument", "card", 3.0), ("instrument", "bg", 3.0), ("instrument", "kg-canvas", 3.0),
             ("unclassified", "card", 3.0), ("unclassified", "bg", 3.0), ("unclassified", "kg-canvas", 3.0),
-            ("measurement_connection", "bg", 3.0)})
+            ("measurement_connection", "bg", 3.0), ("muted", "surface-2", 4.5)})
 
     def test_translucent_text_color_fails(self):
         """반투명 rgba는 채움·그림자에만 허용하고, 글자색(color)에 쓰면 실패한다."""

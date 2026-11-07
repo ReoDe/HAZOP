@@ -713,7 +713,7 @@ class ExcelDialog(QDialog):
 
 
 class ReviewScreen(QWidget):
-    title = "⑤ 설계보완·확정"
+    title = "설계보완·확정(이전 ⑤)"
 
     def __init__(self, app, parent=None):
         super().__init__(parent)

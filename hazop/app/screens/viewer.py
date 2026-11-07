@@ -9,7 +9,7 @@ from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, empty_label
 
 
 class ViewerScreen(QWidget):
-    title = "② 도면·그래프"
+    title = "② 도면 추출"
 
     def __init__(self, app, parent=None):
         super().__init__(parent)
@@ -60,6 +60,9 @@ class ViewerScreen(QWidget):
             self.combo.setCurrentText(cur)
         self.combo.blockSignals(False)
         self._load()
+
+    def is_done(self):
+        return bool(data.list_extractions())
 
     def select_drawing(self, name):
         if self.combo.findText(name) >= 0:

@@ -146,7 +146,7 @@ class DecisionDialog(QDialog):
 
 
 class AnalysisScreen(QWidget):
-    title = "④ HAZOP 분석"
+    title = "고정 응답 분석(이전 ④)"
     review_requested = Signal(str, str)  # candidate_id, scenario_id
 
     def __init__(self, app, parent=None):
