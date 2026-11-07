@@ -1,6 +1,6 @@
 """③ 지식그래프 (기획서/인터페이스.md §3.5, 그래프활용.md §5, 디자인/지식그래프화면.md §4·§5).
 
-- 도구줄(Qt): 지식그래프·도면 선택, kg_version·검증·graph_version·충돌·재확인·계산 제외·알고리즘 칩
+- 도구줄(Qt): 지식그래프·도면 선택, 검증·충돌·재확인·계산 제외·알고리즘 칩, 버전 정보(kg_version·graph_version은 툴팁)
 - 띠(Qt): blocked(차단 목록, 직전 passed 버전 보기), 알고리즘 비활성 사유, S1 노드 수 상한 초과, 재확인 필요
 - 캔버스(웹, 공유 웹뷰): hazop/kg/screen_template.html 셸에 loadKnowledge로 데이터를 넘긴다. 좌측 필터도 웹 안에 있다.
 - 우측 상세(Qt): 클릭한 노드·관계의 속성·근거·A1~A3·연결 목록, P&ID 노드면 "도면에서 보기"(② 전환 + focus)
@@ -31,6 +31,11 @@ EMPTY_TEXT = ("지식그래프가 없습니다.\n① 자료 등록에서 P&ID �
               "만들어집니다.\n설계 문서 PDF를 등록하면 설정치·운전조건·요건을 자동 추출해 '자동 추출 · 사람 확인 전'으로 "
               "더합니다.")
 AUTO_BADGE = "자동 추출 · 사람 확인 전"
+# 우측 상세 빈 상태(U-09): 제목 한 줄 + 이유 + 다음 단계. 파일 경로 같은 내부값은 넣지 않는다. %s = 제목 색, 본문 색
+DETAIL_EMPTY = ("<div style='color:%s;font-weight:700'>선택한 항목 없음</div>"
+                "<p style='color:%s'>그래프에서 노드나 관계를 누르면 속성·근거·연결 목록이 여기에 나옵니다.<br>"
+                "표시·배치는 근거가 아닙니다. 근거는 이 패널의 출처입니다.<br><br>"
+                "다음 단계: 왼쪽 검색에서 태그를 찾거나 그래프의 노드를 누르세요.</p>")
 
 
 def auto_extracted(rec):
@@ -96,6 +101,16 @@ class FlowLayout(QLayout):
         return y + line - rect.y()
 
 
+def info_tooltip(meta, standalone=None):
+    """도구줄 '버전 정보' 칩의 툴팁: 내부 버전 해시와 브라우저 단독 모드 HTML 위치."""
+    lines = ["kg_version %s" % meta["kg_version"], "graph_version %s" % meta["graph_version"]]
+    if meta["graph_ref_version"] != meta["graph_version"]:
+        lines.append("지식그래프 기준 graph_version %s" % meta["graph_ref_version"])
+    if standalone:
+        lines.append("브라우저 단독 모드 HTML(미리 계산된 결과만): %s" % standalone)
+    return "\n".join(lines)
+
+
 def kg_root_dir():
     return paths.output_root("지식그래프")
 
@@ -137,9 +152,14 @@ class KnowledgeScreen(QWidget):
         self.graph_combo.setMinimumWidth(140)
         self.graph_combo.currentIndexChanged.connect(lambda _: self._load(keep_kg=True))
         bar.addWidget(self.graph_combo)
-        self.chips = {k: Chip() for k in ("ver", "valid", "graph", "conf", "recheck", "excl", "algo")}
+        self.chips = {k: Chip() for k in ("valid", "graph", "conf", "recheck", "excl", "algo")}
         for c in self.chips.values():
             bar.addWidget(c)
+        # 내부 버전 해시(kg_version·graph_version)는 도구줄 글자로 보이지 않고 툴팁으로만(U-15). Chip은 줄임이 없을 때
+        # 툴팁을 지우므로 일반 QLabel에 칩 모양만 입힌다.
+        self.info_chip = QLabel("버전 정보")
+        self.info_chip.setObjectName("chip")
+        bar.addWidget(self.info_chip)
         lay.addWidget(bar_w)
         self.blockers = Banner("err")
         self.prev_btn = QPushButton("이전 버전 보기")
@@ -180,7 +200,14 @@ class KnowledgeScreen(QWidget):
         self.detail = QTextBrowser()
         self.detail.setOpenLinks(False)
         self.detail.anchorClicked.connect(self._anchor)
-        dl.addWidget(self.detail, 1)
+        self.detail_empty = QLabel(DETAIL_EMPTY % (tokens.c("ink"), tokens.c("muted")))
+        self.detail_empty.setWordWrap(True)
+        self.detail_empty.setAlignment(Qt.AlignCenter)
+        self.detail_empty.setContentsMargins(12, 12, 12, 12)
+        self.detail_stack = QStackedWidget()
+        self.detail_stack.addWidget(self.detail_empty)
+        self.detail_stack.addWidget(self.detail)
+        dl.addWidget(self.detail_stack, 1)
         foot = QHBoxLayout()
         self.goto_btn = QPushButton("도면에서 보기")
         self.goto_btn.setEnabled(False)
@@ -200,7 +227,7 @@ class KnowledgeScreen(QWidget):
         if not self.kg:
             return None
         return {"region": self.kg.get("kg_id"), "drawing": self.graph_dir,
-                "run": "이전 버전" if self.showing_prev else None}  # kg_version은 도구줄 칩에 있음(헤더 폭 1366 유지)
+                "run": "이전 버전" if self.showing_prev else None}  # kg_version은 도구줄 '버전 정보' 툴팁(헤더 폭 1366 유지)
 
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
@@ -216,7 +243,7 @@ class KnowledgeScreen(QWidget):
 
     def _toggle_detail(self):
         self.detail_collapsed = not self.detail_collapsed
-        for w in (self.detail, self.goto_btn, self.detail_title):
+        for w in (self.detail_stack, self.goto_btn, self.detail_title):
             w.setVisible(not self.detail_collapsed)
         self.detail_toggle.setText("펴기" if self.detail_collapsed else "접기")
         self._size_detail()
@@ -267,7 +294,7 @@ class KnowledgeScreen(QWidget):
         self.kg = self.graph = self.data = None
         self.stack.setCurrentIndex(0)
         self.empty.setText(text)
-        for c in self.chips.values():
+        for c in list(self.chips.values()) + [self.info_chip]:
             c.hide()
         for b in (self.blockers, self.algo_band, self.s1_band, self.recheck_band):
             b.set_messages(None)
@@ -340,23 +367,24 @@ class KnowledgeScreen(QWidget):
         m, a = self.data["meta"], self.data["algo"]
         v = self.kg.get("validation") or {}
         ch = self.chips
-        for c in ch.values():
+        for c in list(ch.values()) + [self.info_chip]:
             c.show()
-        ch["ver"].set_state("kg_version %s%s" % (m["kg_version"], " · 이전 버전" if self.showing_prev else ""))
+        same = m["graph_ref_version"] == m["graph_version"]
+        self.info_chip.setText("버전 정보 · 이전 버전" if self.showing_prev else "버전 정보")
+        self.info_chip.setToolTip(info_tooltip(m, getattr(self, "standalone", None)))
         st = m["status"]
         ch["valid"].set_state("검증 %s · 차단 %d · 미확인 %d" % (VALIDATION_LABELS.get(st, st),
                                                             m["blockers"], m["unknowns"]),
                               "passed" if st == "passed" else "blocked")
-        same = m["graph_ref_version"] == m["graph_version"]
-        ch["graph"].set_state("graph_version %s%s" % (m["graph_version"], "" if same else " (지식그래프 기준 %s)"
-                                                      % m["graph_ref_version"]), "" if same else "warn")
+        ch["graph"].set_state("도면 그래프가 지식그래프 기준과 다름(버전 정보 참고)", "warn")
+        ch["graph"].setVisible(not same)
         ch["conf"].set_state("충돌 %d" % m["conflicts"], "warn" if m["conflicts"] else "")
         ch["recheck"].set_state("재확인 필요 %d" % m["recheck"], "warn")
         ch["recheck"].setVisible(m["recheck"] > 0)
         c = m["candidates"]
         ch["excl"].set_state("계산 제외 노드 %d · 관계 %d · 후보 %s" % (m["excluded_nodes"], m["excluded_links"],
                                                                  c["shown"] if c["file"] else "파일 없음"))
-        ch["algo"].set_state("알고리즘: 이 kg_version으로 계산" if a["enabled"] else "알고리즘 비활성",
+        ch["algo"].set_state("알고리즘: 현재 버전으로 계산" if a["enabled"] else "알고리즘 비활성",
                              "" if a["enabled"] else "warn")
         if st != "passed":
             self.blockers.set_messages("지식그래프 검증 차단 — 알고리즘을 실행하지 않음(A1·A2·A3·A5 비활성). 아래 항목의 "
@@ -411,12 +439,8 @@ class KnowledgeScreen(QWidget):
     def _clear_detail(self):
         self.sel = None
         self.goto_btn.setEnabled(False)
-        h = ("<p style='color:%s'>노드나 관계를 클릭하면 속성·근거·연결 목록이 여기에 나옵니다. "
-             "표시·배치는 근거가 아닙니다. 근거는 이 패널의 출처입니다.</p>" % tokens.c("muted"))
-        if getattr(self, "standalone", None):
-            h += "<p style='color:%s'>브라우저 단독 모드 HTML(미리 계산된 결과만): %s</p>" % (tokens.c("muted"),
-                                                                                esc(self.standalone))
-        self.detail.setHtml(h)
+        self.detail.clear()
+        self.detail_stack.setCurrentWidget(self.detail_empty)
 
     def _nodes(self):
         return {n["id"]: n for n in self.data["nodes"]} if self.data else {}
@@ -515,7 +539,11 @@ class KnowledgeScreen(QWidget):
 
     def render_node(self, nid):
         self.sel = ("n", nid)
+        self.detail_stack.setCurrentWidget(self.detail)
         n = self._nodes()[nid]
+        # P&ID 노드는 도면 구성요소와 같은 entity_id(관련 항목 패널이 따라감). 지식 노드는 도면 구성요소가 아님.
+        self.app.set_selection({"kind": "component", "drawing": self.graph_dir, "entity_id": nid}
+                               if n["layer"] == "pid" else None)
         h = "<div style='font-size:11px;color:%s'>%s</div><div style='font-size:15px;font-weight:700'>%s</div>" % (
             tokens.c("muted"), esc(TYPE_NAMES.get(n["type"], n["type"])), esc(n.get("label")))
         h += "<div style='color:%s'>%s</div><p>" % (tokens.c("muted"), esc(nid))
@@ -579,6 +607,7 @@ class KnowledgeScreen(QWidget):
         d = next((l for l in self.data["links"] if l["id"] == lid), None)
         if d is None:
             return
+        self.detail_stack.setCurrentWidget(self.detail)
         h = "<div style='font-size:11px;color:%s'>관계</div><div style='font-size:15px;font-weight:700'>%s</div>" \
             "<div style='color:%s'>%s</div>" % (tokens.c("muted"), esc(d["kind"]), tokens.c("muted"), esc(lid))
         h += self._kv([("시작", "<a href='node:%s'>%s</a>" % (esc(d["s"]), esc(d["s"]))),

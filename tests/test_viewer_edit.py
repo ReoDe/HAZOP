@@ -286,6 +286,32 @@ class EditScreenTest(unittest.TestCase):
         self.assertIn("미확인 %d" % len(scr.info["graph"]["validation"]["unknowns"]), scr.chip_stats.text())
         self.assertNotIn("저장 전", scr.chip_stats.text())
 
+    def js(self, expr):
+        out = []
+        self.win.webview.page().runJavaScript(expr, 0, out.append)
+        self.assertTrue(wait_for(lambda: out, 10), "runJavaScript 결과 없음: %s" % expr)
+        return out[0]
+
+    def test_chrome_shown_once_and_palette_commands(self):
+        """② 보기 모드: 검증 칩은 도구줄(Qt)에만, 경로 질의는 접힌 채 시작하고 명령으로 연다. 고른 항목은 관련 항목 선택이 된다."""
+        scr = self.scr
+        scr.edit_btn.setChecked(False)
+        self.settle()
+        display = "getComputedStyle(document.getElementById('%s')).display"
+        self.assertEqual(self.js(display % "status"), "none")
+        self.assertIn("구조 검증", scr.chip_valid.text())
+        self.assertEqual(self.js(display % "pathq"), "none")
+        self.assertNotEqual(self.js(display % "pq-chip"), "none")
+        cmds = {label: fn for label, _, fn in scr.commands()}
+        cmds["경로 질의 열기"]()
+        self.assertTrue(wait_for(lambda: self.js(display % "pathq") == "block", 10))
+        cmds["레이어: 태그 보이기/숨기기"]()
+        self.assertTrue(wait_for(lambda: self.js("document.getElementById('layer-tag').classList.contains('hidden')"), 10))
+        g = next(n for n in scr.info["graph"]["nodes"] if n.get("local_id"))
+        scr.on_node({"local_id": g["local_id"], "entity_id": None})
+        self.assertEqual(self.win.selection, {"kind": "component", "drawing": self.name, "entity_id": g["entity_id"],
+                                              "local_id": g["local_id"]})
+
     def test_web_click_sends_drawing_coordinates(self):
         """웹 클릭 → editPick: 오버레이 좌표 + offset이 노드 bbox 중심(도면 좌표)과 같다. 끌어서 이동한 클릭은 버린다."""
         scr = self.scr

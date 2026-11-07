@@ -6,7 +6,7 @@
 - 네트워크 차단: 요청 가로채기(file:·qrc:·data:·blob:·about: 외 차단), 탐색 제한(로드한 파일만),
   LocalContentCanAccessRemoteUrls 끔, 디스크 캐시·쿠키 저장 없음(off-the-record 프로필).
 - 메시지는 JSON 문자열 하나: Python→웹 load/setView/highlight/clearHighlight/focus/setMode/segments/clearSegments(④ 구간 색)/
-  editMode/editPreview/restoreView(② 도면 편집), 웹→Python ready/nodeSelected/highlightResult/editPick.
+  editMode/editPreview/restoreView(② 도면 편집)/openPathQuery/toggleLayer(② 명령), 웹→Python ready/nodeSelected/highlightResult/editPick.
 - ③ 지식그래프 페이지(hazop/kg/screen_template.html, window.hzKG)는 같은 주입 스크립트가 연결만 해 주고 메시지 처리는
   페이지가 한다: Python→웹 loadKnowledge/selectNode/algorithmResult, 웹→Python ready/nodeSelected/linkSelected/
   runAlgorithm(기획서/그래프활용.md §5.2, 인터페이스.md §2.3).
@@ -307,8 +307,10 @@ BRIDGE_JS = r"""
       e.setAttribute("data-hz-seg", tag);
       segEls.push(e);
     }
+    function segLegend(groups, uncovered) { if (window.hzSegLegend) window.hzSegLegend(groups, uncovered); }
     function segments(m) {
       clearSegments();
+      segLegend(m.groups || [], (m.uncovered || []).length);
       (m.groups || []).forEach(function (g) {
         var first = null, label = String(g.label || "");
         (g.ids || []).forEach(function (lid) {
@@ -383,9 +385,13 @@ BRIDGE_JS = r"""
         // ②: 도면 기준 추출만 보인다('P&ID 구조' 그래프 탭 없음, 결정로그 2026-11-06). ④⑤는 그래프 탭을 그대로 쓴다.
         document.body.classList.toggle("hz-no-graph", !!m.hide_graph);
         if (m.hide_graph && document.body.classList.contains("tab-graph")) setView("drawing");
+        // 도구줄(Qt)에 같은 검증 칩이 있는 화면은 웹 머리줄 칩을 숨긴다(E-2: 한 번만 보이기)
+        document.body.classList.toggle("hz-hide-status", !!m.hide_status);
         window.dispatchEvent(new Event("resize"));
       } else if (m.type === "segments") segments(m);
-      else if (m.type === "clearSegments") clearSegments();
+      else if (m.type === "clearSegments") { clearSegments(); segLegend([], 0); }
+      else if (m.type === "openPathQuery") { if (window.openPathQuery) window.openPathQuery(); }
+      else if (m.type === "toggleLayer") { if (window.hzToggleLayer) window.hzToggleLayer(m.layer); }
       else if (m.type === "clearHighlight") clear();
       else if (m.type === "focus") focus(m.local_id);
       else if (m.type === "highlight") {
@@ -410,8 +416,15 @@ BRIDGE_JS = r"""
 """
 
 
+# 뷰어 템플릿의 앱 전용 표시 규칙(색 토큰은 tokens.web_css). ④⑤(hz-hide-panel)에서는 경로 질의를 쓰지 않는다.
+VIEWER_CSS = """
+body.hz-hide-status #status { display: none; }
+body.hz-hide-panel #pq-chip { display: none; }
+"""
+
+
 def bridge_js():
-    return BRIDGE_JS % {"css": json.dumps(tokens.web_css(), ensure_ascii=False)}
+    return BRIDGE_JS % {"css": json.dumps(tokens.web_css() + VIEWER_CSS, ensure_ascii=False)}
 
 
 class HazopWebView(QWebEngineView):
@@ -452,6 +465,7 @@ class HazopWebView(QWebEngineView):
         self.current_stamp = None
         self.hide_panel = False
         self.hide_graph = False
+        self.hide_status = False
         self.drawing_enabled = True
         self.edit = {"on": False, "tool": "select"}
 
@@ -478,7 +492,7 @@ class HazopWebView(QWebEngineView):
         self.current_stamp = stamp
         self.page().allowed_file = path
         self.bridge.reset()
-        self.bridge.send("setMode", hide_panel=self.hide_panel, hide_graph=self.hide_graph)
+        self.bridge.send("setMode", hide_panel=self.hide_panel, hide_graph=self.hide_graph, hide_status=self.hide_status)
         # 도면 탭 잠금은 페이지를 새로 읽을 때마다(loadFinished 후 브리지 ready 시점) 다시 적용한다
         self.bridge.send("setDrawingEnabled", enabled=self.drawing_enabled)
         self.bridge.send("editMode", **self.edit)
@@ -490,11 +504,13 @@ class HazopWebView(QWebEngineView):
         self.drawing_enabled = bool(enabled)
         self.bridge.send("setDrawingEnabled", enabled=self.drawing_enabled)
 
-    def set_mode(self, hide_panel, hide_graph=False):
-        """②: 웹 속성 패널 사용·그래프 탭 숨김(hide_graph), ④⑤: 웹 패널 숨기고 Qt 상세 패널 사용(§2.2)."""
+    def set_mode(self, hide_panel, hide_graph=False, hide_status=False):
+        """②: 웹 속성 패널 사용·그래프 탭 숨김(hide_graph), ④⑤: 웹 패널 숨기고 Qt 상세 패널 사용(§2.2).
+        hide_status: 도구줄에 같은 검증 칩이 있어 웹 머리줄 검증 칩을 숨긴다(②)."""
         self.hide_panel = bool(hide_panel)
         self.hide_graph = bool(hide_graph)
-        self.bridge.send("setMode", hide_panel=self.hide_panel, hide_graph=self.hide_graph)
+        self.hide_status = bool(hide_status)
+        self.bridge.send("setMode", hide_panel=self.hide_panel, hide_graph=self.hide_graph, hide_status=self.hide_status)
 
     def set_view(self, view):
         self.bridge.send("setView", view=view)
@@ -515,6 +531,14 @@ class HazopWebView(QWebEngineView):
 
     def focus(self, local_id):
         self.bridge.send("focus", local_id=local_id)
+
+    def open_path_query(self):
+        """도면 뷰어의 접힌 경로 질의 상자를 연다(② 명령 팔레트)."""
+        self.bridge.send("openPathQuery")
+
+    def toggle_layer(self, layer):
+        """도면 오버레이 층(symbol·pipe·tag)을 켜고 끈다."""
+        self.bridge.send("toggleLayer", layer=layer)
 
     def set_edit_mode(self, on, tool="select"):
         """② 편집 모드와 도구. 상태를 기억해 다시 읽을 때도 적용한다(다른 화면으로 가면 main_window.go가 끈다)."""

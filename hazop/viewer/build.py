@@ -19,8 +19,9 @@ TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "template.ht
 # 템플릿에 id를 추가하면 여기에도 추가한다(tests/test_viewer.py가 대조).
 TEMPLATE_IDS = frozenset("""
 alignwarn dwg dwgtitle extraction g-all g-layout g-none glegend graph graphsvg layer-pipe layer-symbol
-layer-tag layers n-pipe n-symbol n-tag overlay panel pathq pct pq-a pq-a-sel pq-b pq-b-sel pq-clear pq-go
-pq-list pq-mode pq-res q results search stage status tab-drawing tab-graph tooltip viewport zfit zin zoom zout
+layer-tag layers legend-btn legend-drop n-pipe n-symbol n-tag overlay panel pathq pct pq-a pq-a-sel pq-b pq-b-sel
+pq-body pq-chip pq-clear pq-close pq-go pq-list pq-mode pq-res q results search seglegend stage status taglabels tab-drawing
+tab-graph tooltip viewport zfit zin zoom zout
 """.split())
 
 

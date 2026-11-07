@@ -466,7 +466,7 @@ class ViewerScreen(QWidget):
         return {"drawing": d.get("drawing_number"), "region": None, "run": None}
 
     def on_enter(self):
-        self.app.webview.set_mode(hide_panel=False, hide_graph=True)
+        self.app.webview.set_mode(hide_panel=False, hide_graph=True, hide_status=True)
         self.app.webview.clear_highlight()
         names = [e["name"] for e in data.list_extractions()]
         cur = self.combo.currentText()
@@ -545,7 +545,7 @@ class ViewerScreen(QWidget):
             self.app.attach_webview(self.canvas_host)
             self.app.webview.set_drawing_enabled(True)  # ②는 현재 도면 그대로(분석 실행 기준 잠금 없음)
             editing = self.editable() and self.edit_btn.isChecked()
-            self.app.webview.set_mode(hide_panel=editing, hide_graph=True)  # 편집 중에는 Qt 편집 패널이 속성 패널을 대신함
+            self.app.webview.set_mode(hide_panel=editing, hide_graph=True, hide_status=True)  # 편집 중에는 Qt 편집 패널이 속성 패널을 대신함
             self.app.webview.set_edit_mode(editing, self.tool.tool)
             self.app.webview.load_file(info["html"])
             if keep_view and self.view:
@@ -561,8 +561,28 @@ class ViewerScreen(QWidget):
     def editable(self):
         return bool(self.info and self.info.get("html") and not self.info.get("graph_only"))
 
+    def selection_for(self, local_id, entity_id=None):
+        """도면에서 고른 항목 → 관련 항목 패널 선택. 도면 오버레이는 entity_id를 보내지 않으므로 그래프에서 찾는다.
+        그래프에 없는 항목(신호·계측 연결, 그래프가 없는 도면)은 entity_id 없이 local_id만 둔다. 고른 것이 없으면 None."""
+        if not local_id or not self.name:
+            return None
+        if not entity_id:
+            g = (self.info or {}).get("graph") or {}
+            entity_id = next((n["entity_id"] for n in g.get("nodes") or [] if n.get("local_id") == local_id), None)
+        return {"kind": "component", "drawing": self.name, "entity_id": entity_id, "local_id": local_id}
+
+    def commands(self):
+        """명령 팔레트 항목 (label, 단축키 글자, 함수)."""
+        wv = self.app.webview
+        return [("경로 질의 열기", "", wv.open_path_query),
+                ("레이어: 태그 보이기/숨기기", "", lambda: wv.toggle_layer("tag")),
+                ("레이어: 심볼 보이기/숨기기", "", lambda: wv.toggle_layer("symbol")),
+                ("레이어: 배관 보이기/숨기기", "", lambda: wv.toggle_layer("pipe")),
+                ("도면 편집 켜기/끄기", "", self.edit_btn.click)]
+
     def on_node(self, sel):
         self.app.debug_message("nodeSelected: %s" % (sel.get("entity_id") or sel.get("local_id")))
+        self.app.set_selection(self.selection_for(sel.get("local_id"), sel.get("entity_id")))
         if self.session is not None and sel.get("local_id") in self.items:
             self.selected = sel["local_id"]
             self._show_selected()
