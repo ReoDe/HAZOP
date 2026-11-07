@@ -9,12 +9,12 @@ import os
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel,
-                               QLineEdit, QPushButton, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
-                               QTextBrowser, QVBoxLayout, QWidget)
+                               QLineEdit, QProgressBar, QPushButton, QSplitter, QStackedWidget, QTableWidget,
+                               QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 
 from hazop import paths
 from hazop.app import data, tokens
-from hazop.app.widgets import VALIDATION_LABELS, badge, esc, empty_label
+from hazop.app.widgets import VALIDATION_LABELS, badge, esc
 from hazop.extract import svg_align
 from hazop.register import fileinfo, registry
 
@@ -31,6 +31,12 @@ MATERIAL_CHOICES = (
 EXTRACT_LABELS = {t: label for _, t, _, label in MATERIAL_CHOICES}
 DOC_COUNT_LABELS = (("doc_chunk", "문서 조각"), ("setpoint", "설정치"), ("condition", "운전조건"), ("requirement", "요건"))
 KNOWLEDGE_SCREEN = 4  # main_window STEPS 인덱스(③ 지식그래프)
+# 파일 상태별로 '등록'이 꺼진 이유(R-3)
+REGISTER_HINTS = {"none": "파일을 고르면 등록할 수 있습니다", "checking": "파일 확인이 끝나면 등록할 수 있습니다",
+                  "many": "파일을 한 개만 고르세요", "error": "파일을 읽을 수 없어 등록할 수 없습니다",
+                  "busy": "진행 중인 작업이 끝나면 등록할 수 있습니다"}
+JOB_STEPS = {"register": "등록 · 형식 확인·해시·저장", "extract": "선·기호 추출 · 그래프 · 지식그래프",
+             "document": "지식 추출 · 지식그래프"}
 
 
 def material_type_of(rec):
@@ -46,6 +52,11 @@ def page_text(e):
     return text + (" (미추출 %d)" % pages["skipped"] if pages["skipped"] else "")
 
 
+def one_line(err):
+    """작업 실패 문구에서 로그 파일 안내를 뗀 한 줄 원인."""
+    return (str(err).split(" (자세한 내용:")[0].splitlines() or ["원인 미상"])[0]
+
+
 def kg_line(out):
     """추출 결과의 지식그래프 빌드 한 줄(HTML)."""
     if out.get("kg_error"):
@@ -59,20 +70,33 @@ def kg_line(out):
 
 
 class DropZone(QFrame):
-    """파일 끌어 놓기(1개). 여러 개를 놓으면 아무것도 고르지 않고 안내한다."""
+    """파일 끌어 놓기(1개). 눌러도(Enter·Space 포함) 파일 선택을 연다. 여러 개를 놓으면 아무것도 고르지 않고 안내한다."""
 
     files_dropped = Signal(list)
+    clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("dropzone")
         self.setAcceptDrops(True)
         self.setMinimumHeight(84)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.StrongFocus)
         lay = QVBoxLayout(self)
-        self.label = QLabel("P&ID 도면(.drawio·벡터 PDF) 또는 설계 문서 PDF 1개를 여기에 끌어 놓거나 '파일 선택'을 누르세요")
+        self.label = QLabel("P&ID 도면(.drawio·벡터 PDF) 또는 설계 문서 PDF 1개를 여기에 끌어 놓거나 <b>눌러서 선택</b>")
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setWordWrap(True)
         lay.addWidget(self.label)
+
+    def mouseReleaseEvent(self, e):  # noqa: N802
+        if e.button() == Qt.LeftButton and self.rect().contains(e.position().toPoint()):
+            self.clicked.emit()
+
+    def keyPressEvent(self, e):  # noqa: N802
+        if e.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
+            self.clicked.emit()
+        else:
+            super().keyPressEvent(e)
 
     def _hover(self, on):
         self.setProperty("hover", "true" if on else "false")
@@ -93,6 +117,51 @@ class DropZone(QFrame):
         self.files_dropped.emit(files)
 
 
+class JobRow(QFrame):
+    """진행 중이거나 실패한 작업 한 줄(U-11). 단계 수는 화면이 아는 작업 경계(등록 → 자동 추출)만 센다.
+    data.extract_and_graph·extract_document는 안쪽 진행을 알려 주지 않아 막대는 끝을 모르는 형태이고 남은 시간은 보이지 않는다.
+    TaskRunner 작업은 취소할 수 없어 취소 버튼이 없다."""
+
+    def __init__(self, on_retry, parent=None):
+        super().__init__(parent)
+        self.setObjectName("panel")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(8, 4, 8, 4)
+        self.state = QLabel()
+        self.name = QLabel()
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 0)
+        self.bar.setTextVisible(False)
+        self.bar.setFixedSize(120, 4)
+        self.bar.setObjectName("thin")
+        self.step = QLabel()
+        self.cause = QLabel()
+        self.retry_btn = QPushButton("다시 시도")
+        self.retry_btn.clicked.connect(on_retry)
+        for w in (self.state, self.name, self.bar, self.step, self.cause):
+            lay.addWidget(w)
+        lay.addStretch(1)
+        lay.addWidget(self.retry_btn)
+        self.hide()
+
+    def running(self, name, text):
+        self.state.setText("진행")
+        self.name.setText(name)
+        self.step.setText(text)
+        for w, on in ((self.bar, True), (self.step, True), (self.cause, False), (self.retry_btn, False)):
+            w.setVisible(on)
+        self.show()
+
+    def failed(self, name, cause):
+        self.state.setText("<span style='color:%s'><b>! 실패</b></span>" % tokens.c("err-ink"))
+        self.name.setText(name)
+        self.cause.setText("<span style='color:%s'>%s</span>" % (tokens.c("err-ink"), esc(cause)))
+        self.cause.setToolTip(cause)
+        for w, on in ((self.bar, False), (self.step, False), (self.cause, True), (self.retry_btn, True)):
+            w.setVisible(on)
+        self.show()
+
+
 class RegisterScreen(QWidget):
     title = "① 자료 등록"
     canvas_host = None
@@ -106,6 +175,9 @@ class RegisterScreen(QWidget):
         self._picked = None  # 확인 중이거나 확인한 파일(자료 종류를 바꾸면 다시 확인)
         self._preview_seq = 0  # 파일 확인 요청 번호: 확인 중 다른 파일을 고르면 앞 결과를 버린다
         self.rows = []
+        self._file_state = "none"  # "ready" 또는 REGISTER_HINTS 키("busy" 제외)
+        self._busy = False  # 이 화면이 시작한 등록·추출 작업이 도는 중
+        self._retry = None  # 실패한 작업을 같은 인자로 다시 시작하는 함수
         root = QHBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         split = QSplitter(Qt.Horizontal)
@@ -127,9 +199,10 @@ class RegisterScreen(QWidget):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_row)
-        self.list_stack.addWidget(empty_label("등록된 자료가 없습니다. 오른쪽에 P&ID 도면(draw.io·벡터 PDF) 또는 "
-                                              "설계 문서 PDF를 놓아 등록하세요."))
+        self.list_stack.addWidget(self._empty_state())
         self.list_stack.addWidget(self.table)
+        self.job = JobRow(self._retry_job)
+        ll.addWidget(self.job)
         ll.addWidget(self.list_stack)
         split.addWidget(left)
 
@@ -151,10 +224,8 @@ class RegisterScreen(QWidget):
         rl.addLayout(form)
         self.drop = DropZone()
         self.drop.files_dropped.connect(self.set_files)
+        self.drop.clicked.connect(self._pick)
         rl.addWidget(self.drop)
-        pick = QPushButton("파일 선택")
-        pick.clicked.connect(self._pick)
-        rl.addWidget(pick, alignment=Qt.AlignLeft)
         self.file_info = QLabel("")
         self.file_info.setWordWrap(True)
         self.file_info.setTextFormat(Qt.RichText)
@@ -170,8 +241,8 @@ class RegisterScreen(QWidget):
             ed.setPlaceholderText("미확인")
             auto = QLabel("")
             auto.setTextFormat(Qt.RichText)
-            btn = QPushButton("후보 확정")
-            btn.setEnabled(False)
+            btn = QPushButton()
+            btn.hide()
             btn.clicked.connect(lambda _=False, k=key: self._confirm_candidate(k))
             meta.addWidget(QLabel(label), i, 0)
             meta.addWidget(ed, i, 1)
@@ -194,16 +265,96 @@ class RegisterScreen(QWidget):
         self.btn_extract = QPushButton("추출·그래프 만들기")
         self.btn_extract.setEnabled(False)
         self.btn_extract.clicked.connect(lambda: self.do_extract())
+        self.register_hint = QLabel()
+        self.register_hint.setObjectName("muted")
         btns.addWidget(self.btn_register)
         btns.addWidget(self.btn_extract)
+        btns.addWidget(self.register_hint)
         btns.addStretch(1)
         rl.addLayout(btns)
         self.result = QTextBrowser()
         self.result.setOpenLinks(False)
+        self.result.hide()  # 보일 결과가 생기기 전에는 빈 상자를 두지 않는다(R-2)
         rl.addWidget(self.result, 1)
+        rl.addStretch(0)
         split.addWidget(right)
         split.setSizes([640, 560])
         self.refresh()
+
+    def _empty_state(self):
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.addStretch(1)
+        title = QLabel("등록된 자료가 없습니다")
+        title.setObjectName("title")
+        why = QLabel("P&ID 도면이나 설계 문서를 등록해야 추출과 HAZOP 분석을 시작할 수 있습니다.")
+        why.setObjectName("muted")
+        self.empty_pick = QPushButton("파일 선택…")
+        self.empty_pick.clicked.connect(self._pick)
+        steps = QLabel("1. P&ID 도면(.drawio·벡터 PDF)이나 설계 문서 PDF를 고르거나 오른쪽에 끌어 놓습니다\n"
+                       "2. 식별정보를 확인하고 등록합니다\n"
+                       "3. PDF는 등록하면 바로 추출해 ② 도면(설계 문서는 ③ 지식그래프)에서 엽니다")
+        steps.setObjectName("muted")
+        for lab in (title, why, steps):
+            lab.setWordWrap(True)
+            lab.setAlignment(Qt.AlignCenter)
+        lay.addWidget(title)
+        lay.addWidget(why)
+        lay.addWidget(self.empty_pick, alignment=Qt.AlignCenter)
+        lay.addWidget(steps)
+        lay.addStretch(1)
+        return w
+
+    def commands(self):
+        """명령 팔레트용 [(이름, 단축키 문구, 함수)]."""
+        return [("파일 선택…", "", self._pick), ("등록", "", self.do_register),
+                ("추출·그래프 만들기", "", self.do_extract)]
+
+    # ------------------------------------------------------------ 버튼·작업 상태
+    def _update_actions(self):
+        """주 버튼은 상태마다 하나(R-3): 등록할 파일 → 등록, 고른 등록 자료 → 추출, 빈 목록 → 파일 선택, 그 밖에는 등록."""
+        e = self.selected_registration()
+        can_register = self._file_state == "ready" and not self._busy
+        can_extract = bool(e) and e["record"].get("status") == "registered" and not self._busy
+        self.btn_register.setEnabled(can_register)
+        self.btn_extract.setEnabled(can_extract)
+        self.register_hint.setText("" if can_register else REGISTER_HINTS["busy" if self._busy else self._file_state])
+        primary = (self.btn_register if can_register else self.btn_extract if can_extract
+                   else self.empty_pick if not self.rows else self.btn_register)
+        for b in (self.btn_register, self.btn_extract, self.empty_pick):
+            name = "primary" if b is primary else ""
+            if b.objectName() != name:
+                b.setObjectName(name)
+                b.style().unpolish(b)
+                b.style().polish(b)
+
+    def _show_result(self, html):
+        self.result.setHtml(html)
+        self.result.show()
+
+    def _job_running(self, name, index, total, step):
+        self._busy = True
+        text = ("%d/%d " % (index, total) if total > 1 else "") + JOB_STEPS[step]
+        self.job.running(name, text)
+        self.app.status_message("%s · %s" % (name, text))
+        self._update_actions()
+
+    def _job_done(self, message):
+        self._busy, self._retry = False, None
+        self.job.hide()
+        self.app.status_message("")
+        self.app.toast(message)
+        self._update_actions()
+
+    def _job_failed(self, name, cause, retry):
+        self._busy, self._retry = False, retry
+        self.job.failed(name, cause)
+        self.app.status_message("실패: %s · %s" % (name, cause))
+        self._update_actions()
+
+    def _retry_job(self):
+        if self._retry and not self._busy:
+            self._retry()
 
     # ------------------------------------------------------------ 목록
     def where(self):
@@ -238,6 +389,7 @@ class RegisterScreen(QWidget):
                 self.table.setItem(r, c, QTableWidgetItem("" if v is None else str(v)))
         self.table.resizeColumnsToContents()
         self.list_stack.setCurrentIndex(1 if self.rows else 0)
+        self._update_actions()
 
     def selected_registration(self):
         r = self.table.currentRow()
@@ -245,8 +397,8 @@ class RegisterScreen(QWidget):
 
     def _on_row(self):
         e = self.selected_registration()
-        self.btn_extract.setEnabled(bool(e) and e["record"].get("status") == "registered")
         self.btn_extract.setText(EXTRACT_LABELS[material_type_of(e["record"]) if e else "P&ID"])
+        self._update_actions()
         if e:
             self.show_record(e["record"], None, e["path"])
 
@@ -271,13 +423,13 @@ class RegisterScreen(QWidget):
         확인을 시작했으면 True. 등록 버튼은 확인이 끝나야 켜진다."""
         self.source_path, self.preview, self._picked = None, None, None
         self._preview_seq += 1
-        self.btn_register.setEnabled(False)
         for k in self.meta_auto:
             self.meta_auto[k].setText("")
-            self.meta_btns[k].setEnabled(False)
+            self.meta_btns[k].hide()
         if len(files) != 1:
             self.file_info.setText("<span style='color:%s'><b>한 개씩 등록하세요.</b> 놓은 파일 %d개 — 아무것도 등록하지 않음</span>"
                                    % (tokens.c("err-ink"), len(files)))
+            self._set_file_state("many")
             return False
         path = files[0]
         try:
@@ -285,8 +437,10 @@ class RegisterScreen(QWidget):
                 raw = fh.read()
         except OSError as exc:
             self.file_info.setText("<span style='color:%s'>파일을 읽을 수 없음: %s</span>" % (tokens.c("err-ink"), esc(exc)))
+            self._set_file_state("error")
             return False
         self._picked = path
+        self._set_file_state("checking")
         seq, mtype = self._preview_seq, self.material_type()
         self.file_info.setText("<b>%s</b> · 파일 확인 중…" % esc(os.path.basename(path)))
         self.app.tasks.run("파일 확인", lambda: fileinfo.inspect(path, raw, mtype),
@@ -294,9 +448,25 @@ class RegisterScreen(QWidget):
                            lambda err: self._preview_failed(seq, err))
         return True
 
+    def _clear_file(self):
+        self.source_path, self.preview, self._picked = None, None, None
+        self._preview_seq += 1
+        self.file_info.setText("")
+        for key, _ in META_FIELDS:
+            self.meta_edits[key].clear()
+            self.meta_auto[key].setText("")
+            self.meta_btns[key].hide()
+        self.reason.clear()
+        self._set_file_state("none")
+
+    def _set_file_state(self, state):
+        self._file_state = state
+        self._update_actions()
+
     def _preview_failed(self, seq, err):
         if seq == self._preview_seq:
             self.file_info.setText("<span style='color:%s'>파일을 읽을 수 없음: %s</span>" % (tokens.c("err-ink"), esc(err)))
+            self._set_file_state("error")
 
     def _show_preview(self, seq, path, mtype, info):
         if seq != self._preview_seq:  # 확인 중에 다른 파일·자료 종류를 골랐다
@@ -323,11 +493,15 @@ class RegisterScreen(QWidget):
         for key, _ in META_FIELDS:
             cand = (info.get("auto_candidates") or {}).get(key)
             if cand:
-                self.meta_auto[key].setText("%s %s" % (badge("자동 후보", "ai"), esc(cand.get("value"))))
-                self.meta_btns[key].setEnabled(True)
+                value = str(cand.get("value"))
+                self.meta_auto[key].setText("%s %s" % (badge("자동 후보", "ai"), esc(value)))
+                short = value if len(value) <= 16 else value[:15] + "…"
+                self.meta_btns[key].setText("후보 '%s' 쓰기" % short.replace("&", "&&"))
+                self.meta_btns[key].setToolTip(value)
+                self.meta_btns[key].show()
             else:
                 self.meta_auto[key].setText("<span style='color:%s'>자동 후보 없음</span>" % tokens.c("muted"))
-        self.btn_register.setEnabled(True)
+        self._set_file_state("ready")
 
     def _confirm_candidate(self, key):
         cand = ((self.preview or {}).get("auto_candidates") or {}).get(key)
@@ -345,18 +519,21 @@ class RegisterScreen(QWidget):
 
     # ------------------------------------------------------------ 등록·추출
     def do_register(self):
-        if not self.source_path:
+        if self._file_state != "ready" or self._busy:
             return
         path, project, meta, actor = self.source_path, self.project.text().strip(), self.metadata(), \
             self.actor.text().strip() or None
-        mtype = self.material_type()
-        self.result.setHtml("<p>등록 중: 형식 확인 → 해시 → 저장 → 저장 후 해시 확인</p>")
-        self.btn_register.setEnabled(False)
-        self.app.tasks.run("등록", lambda: registry.register(path, project, mtype, paths.store_root(), meta, actor),
-                           self._registered, self._failed)
+        mtype, name = self.material_type(), os.path.basename(self.source_path)
+        total = 2 if (self.preview or {}).get("format") == "pdf" else 1  # PDF는 등록 뒤 추출이 이어진다
 
-    def _registered(self, result):
-        self.btn_register.setEnabled(bool(self.source_path))
+        def start():
+            self._job_running(name, 1, total, "register")
+            self.app.tasks.run("등록", lambda: registry.register(path, project, mtype, paths.store_root(), meta, actor),
+                               lambda result: self._registered(result, total, start),
+                               lambda err: self._failed(name, err, start))
+        start()
+
+    def _registered(self, result, total=1, retry=None):
         self.refresh()
         rec = result["record"]
         for r, e in enumerate(self.rows):
@@ -364,14 +541,24 @@ class RegisterScreen(QWidget):
                     e["record"].get("project_id") == rec.get("project_id"):
                 self.table.selectRow(r)
         self.show_record(rec, result, result.get("registration_file"))
-        if rec.get("format") == "pdf" and rec.get("status") == "registered" and \
-                result["outcome"] not in ("failed", "on_hold") and result.get("registration_file"):
-            self.do_extract(result["registration_file"], auto=True, material_type=material_type_of(rec))
+        name = rec.get("original_name") or rec.get("material_id")
+        outcome = OUTCOME_LABELS.get(result["outcome"], result["outcome"])
+        if rec.get("status") != "registered" or result["outcome"] in ("failed", "on_hold"):
+            blockers = (rec.get("validation") or {}).get("blockers") or []
+            cause = (blockers[0].get("reason") if blockers else None) or next(iter(result.get("notes") or []), None)
+            self._job_failed(name, "%s: %s" % (outcome, cause) if cause else outcome, retry)
+            return
+        self._clear_file()  # 등록을 마친 파일은 내려놓아 다음 주 동작(추출)이 주 버튼이 되게 한다
+        if rec.get("format") == "pdf" and result.get("registration_file"):
+            self.do_extract(result["registration_file"], auto=True, material_type=material_type_of(rec),
+                            name=name, step=(2, total))
+        else:
+            self._job_done("%s · %s" % (outcome, name))
 
-    def _failed(self, err):
-        self.btn_register.setEnabled(bool(self.source_path))
-        self.btn_extract.setEnabled(self.selected_registration() is not None)
-        self.result.setHtml("<p style='color:%s'><b>실패 — 완료로 표시하지 않음</b></p><p>%s</p>" % (tokens.c("err-ink"), esc(err)))
+    def _failed(self, name, err, retry):
+        self._show_result("<p style='color:%s'><b>실패 — 완료로 표시하지 않음</b></p><p>%s</p>"
+                          % (tokens.c("err-ink"), esc(err)))
+        self._job_failed(name, one_line(err), retry)
 
     def show_record(self, rec, result, path):
         h = []
@@ -404,27 +591,33 @@ class RegisterScreen(QWidget):
         if unk:
             h.append("<p><b>미확인 (validation.unknowns)</b></p><ul>%s</ul>" % "".join(
                 "<li>%s: %s</li>" % (esc(u.get("field")), esc(u.get("reason"))) for u in unk))
-        self.result.setHtml("".join(h))
+        self._show_result("".join(h))
 
-    def do_extract(self, registration_path=None, auto=False, material_type=None):
-        """auto: PDF 등록 직후 자동 실행. 끝나면 P&ID는 ② 도면 화면으로 옮겨 이 도면을 열고, 설계 문서는 ③으로 옮긴다."""
+    def do_extract(self, registration_path=None, auto=False, material_type=None, name=None, step=(1, 1)):
+        """auto: PDF 등록 직후 자동 실행. 끝나면 P&ID는 ② 도면 화면으로 옮겨 이 도면을 열고, 설계 문서는 ③으로 옮긴다.
+        name·step: 작업 행에 보일 자료 이름과 (몇 번째 단계, 전체 단계 수)."""
         if not registration_path:
             e = self.selected_registration()
-            if not e:
+            if not e or self._busy or e["record"].get("status") != "registered":
                 return
             registration_path, material_type = e["path"], material_type_of(e["record"])
-        self.btn_extract.setEnabled(False)
-        if material_type == "design_document":
-            self.result.setHtml("<p>설계 문서 지식 추출 → 지식그래프 빌드 중…</p>")
-            self.app.tasks.run("지식 추출", lambda: data.extract_document(registration_path),
-                               lambda out: self._document_extracted(out, auto), self._failed)
-            return
-        self.result.setHtml("<p>추출 → 그래프 생성 중…</p>")
-        self.app.tasks.run("추출·그래프", lambda: data.extract_and_graph(registration_path),
-                           lambda out: self._extracted(out, auto), self._failed)
+            name = e["record"].get("original_name") or e["record"].get("material_id")
+        name = name or os.path.basename(registration_path)
+        doc = material_type == "design_document"
 
-    def _extracted(self, out, auto=False):
-        self.btn_extract.setEnabled(True)
+        def start():
+            self._job_running(name, step[0], step[1], "document" if doc else "extract")
+            if doc:
+                self.app.tasks.run("지식 추출", lambda: data.extract_document(registration_path),
+                                   lambda out: self._document_extracted(out, auto, name),
+                                   lambda err: self._failed(name, err, start))
+            else:
+                self.app.tasks.run("추출·그래프", lambda: data.extract_and_graph(registration_path),
+                                   lambda out: self._extracted(out, auto, name),
+                                   lambda err: self._failed(name, err, start))
+        start()
+
+    def _extracted(self, out, auto=False, name=""):
         ex, g = out["extraction"], out["graph"]
         s = ex["summary"]
         al = ex["coordinate_system"].get("svg_alignment") or {}
@@ -450,14 +643,14 @@ class RegisterScreen(QWidget):
             h.append("<p style='color:%s'>%d쪽 추출 안 함: %s</p>" % (tokens.c("warn-ink"), sk["page_index"] + 1,
                                                                  esc(sk["reason"])))
         h.append(kg_line(out))
-        self.result.setHtml("".join(h))
+        self._show_result("".join(h))
         self.refresh()
+        self._job_done("추출·그래프를 만들었습니다 · %s" % name)
         if auto:
             self.app.go(1)
             self.app.screens[1].select_drawing(os.path.basename(out["extract_dir"]))
 
-    def _document_extracted(self, out, auto=False):
-        self.btn_extract.setEnabled(True)
+    def _document_extracted(self, out, auto=False, name=""):
         doc = out["document"]
         s, v = doc["summary"], doc["validation"]
         ok = v["status"] == "passed"
@@ -470,7 +663,8 @@ class RegisterScreen(QWidget):
         for b in v.get("blockers") or []:
             h.append("<p style='color:%s'>차단: %s — %s</p>" % (tokens.c("err-ink"), esc(b.get("check")), esc(b.get("reason"))))
         h.append(kg_line(out))
-        self.result.setHtml("".join(h))
+        self._show_result("".join(h))
         self.refresh()
+        self._job_done("설계 문서 지식을 추출했습니다 · %s" % name)
         if auto:
             self.app.go(KNOWLEDGE_SCREEN)
