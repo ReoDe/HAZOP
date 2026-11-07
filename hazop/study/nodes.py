@@ -387,8 +387,9 @@ def load(graph):
     return doc
 
 
-def any_confirmed():
-    """작업 루트 아래 확정된 집합이 하나라도 있으면 True(레일 ✓ 표시용). 읽을 수 없는 파일은 확정이 아닌 것으로 본다."""
+def any_confirmed(project_only=False):
+    """작업 루트 아래 확정된 집합이 하나라도 있으면 True(레일 ✓ 표시용). 읽을 수 없는 파일은 확정이 아닌 것으로 본다.
+    project_only면 프로젝트 전체 집합(graph_id "project-…")만 센다(옛 도면별 확정본은 화면이 쓰지 않음)."""
     root = store_dir()
     if not os.path.isdir(root):
         return False
@@ -403,6 +404,8 @@ def any_confirmed():
                 with open(os.path.join(folder, name), encoding="utf-8") as fh:
                     doc = json.load(fh)
             except (OSError, ValueError):
+                continue
+            if project_only and not str((doc or {}).get("graph_id") or "").startswith("project-"):
                 continue
             if isinstance(doc, dict) and doc.get("kind") == KIND and doc.get("status") == "confirmed":
                 return True

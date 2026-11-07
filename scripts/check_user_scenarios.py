@@ -774,20 +774,21 @@ def s3_review_keys(d):
              "칸을 열면 워크시트 선택이 비워진다. 사용자는 A가 왜 안 듣는지 알 수 없음", severity="하")
     if not pick_first_row(d):
         return
+    # 칸을 열면 첫 미검토 항목이 골라져 있어 앞의 A가 이미 승인했을 수 있다. 기각(R) 다음 승인(A)이면 어느 경우든 수가 는다.
     c0 = d.entry_counts()
-    d.step("A로 승인")
-    t = time.time()
-    d.key("a")
-    ok = d.wait(lambda: d.entry_counts().get("approved", 0) > c0.get("approved", 0), "A 승인 저장", since=t)
-    d.shot("A 승인 후")
-    d.expect(ok, "칸을 연 뒤 A를 눌러도 승인이 저장되지 않음", "상태 수: %s" % d.entry_counts())
-    c1 = d.entry_counts()
     d.step("R로 기각")
     t = time.time()
     d.key("r")
-    ok = d.wait(lambda: d.entry_counts().get("rejected", 0) > c1.get("rejected", 0), "R 기각 저장", since=t)
+    ok = d.wait(lambda: d.entry_counts().get("rejected", 0) > c0.get("rejected", 0), "R 기각 저장", since=t)
     d.shot("R 기각 후")
     d.expect(ok, "R을 눌러도 기각이 저장되지 않음", "상태 수: %s" % d.entry_counts())
+    c1 = d.entry_counts()
+    d.step("A로 승인")
+    t = time.time()
+    d.key("a")
+    ok = d.wait(lambda: d.entry_counts().get("approved", 0) > c1.get("approved", 0), "A 승인 저장", since=t)
+    d.shot("A 승인 후")
+    d.expect(ok, "칸을 연 뒤 A를 눌러도 승인이 저장되지 않음", "상태 수: %s" % d.entry_counts())
     c2 = d.entry_counts()
     d.step("Ctrl+Z로 실행 취소")
     t = time.time()
@@ -827,7 +828,12 @@ def s4_ime_shortcut(d):
         if not d.expect(bool(matrix), "⑤ 행렬을 찾지 못함"):
             break
         d.step("%s 상태: 행렬 칸 클릭 후 A" % mode)
+        # 가짜 AI 결과는 SNP-M-102를 지나는 구간(첫 행 S4, 4번째 행)에만 있다. 첫 행을 누르고 ↓로 내려가 Enter로 연다.
         d.click(matrix[0], dx=260 + (100 if hangul else 200), dy=55)
+        d.key("down")
+        d.key("down")
+        d.key("down")
+        d.key("enter")
         d.wait(lambda: WORKSHEET_EMPTY not in d.texts(), "%s 상태 칸 열기" % mode, timeout=3)
         if not pick_first_row(d):
             break
@@ -976,14 +982,20 @@ def s8_ops_during_run(d):
 
 
 SEL_JS = r"""(() => {
-  const painted = [...document.querySelectorAll('svg *')].filter(e => e.style && e.style.getPropertyValue('stroke'));
-  const active = painted.filter(e => ['7', '4', '2'].includes(e.style.getPropertyValue('stroke-width')));
-  return {painted: painted.length, active: active.length};
-})()"""  # ④ 구간 색: 모든 구간 요소에 인라인 stroke, 고른 구간만 굵게(hazop/app/webview.py segments())
+  const segs = [...document.querySelectorAll('[data-hz-seg]')].filter(e => e.getAttribute('data-hz-seg') !== 'uncovered');
+  const labels = [...new Set(segs.map(e => e.getAttribute('data-hz-seg')))];
+  const others = [...document.querySelectorAll('#overlay .sym, #overlay .pipe-line, #overlay .tagbox')]
+    .filter(e => !e.classList.contains('hz-seg-in'));
+  const op = e => parseFloat(getComputedStyle(e).opacity);
+  return {focused: document.body.classList.contains('hz-segfocus'), labels: labels, painted: segs.length,
+          colored_others: others.filter(e => e.getAttribute('data-hz-seg') && op(e) > 0.6).length,
+          bright_others: others.filter(e => op(e) > 0.6).length, others: others.length};
+})()"""  # ④ 구간 색(hazop/app/webview.py segments()): 구간 색은 data-hz-seg, 고른 구간 요소는 hz-seg-in, 나머지는 흐림
 
 
 def s9_selection_feedback(d):
-    """④에서 구간 하나를 고르면 그 구간 구성요소만 강조되는지(CDP로 강조 요소 수를 잰다)."""
+    """④에서 구간 하나를 고르면 그 구간 구성요소만 색이 남고 다른 구간·요소는 흐려지는지(CDP로 도면 요소를 센다).
+    도면 원본 SVG의 인라인 stroke는 세지 않는다(앞 판은 이것까지 세어 '고르지 않은 구간 색칠 74'로 잘못 판정)."""
     goto_stage(d, 4)
     time.sleep(1.0)
     rows = [e for e in d.tree() if e["type"] == "ListItem" and "SegList" in e["aid"] and not e["offscreen"]]
@@ -997,13 +1009,63 @@ def s9_selection_feedback(d):
         m = d.cdp.evaluate(SEL_JS) or {}
         seen.append(m)
         d.shot("구간 선택 후")
-        painted, active = m.get("painted", 0), m.get("active", 0)
-        detail = "색칠된 도면 요소 %d 중 굵게 강조 %d, 고르지 않은 구간인데 색칠된 요소 %d" % (painted, active, painted - active)
-        if not d.expect(active > 0, "④에서 구간을 골라도 도면에서 그 구간이 굵게 강조되지 않음", detail):
+        detail = ("색 구간 %s · 색칠 요소 %d · 고른 구간 밖인데 색이 남은 요소 %d · 흐리지 않은 구간 밖 요소 %d/%d"
+                  % (m.get("labels"), m.get("painted", 0), m.get("colored_others", 0), m.get("bright_others", 0),
+                     m.get("others", 0)))
+        if not d.expect(m.get("focused") and m.get("painted", 0) > 0, "④에서 구간을 골라도 도면에서 그 구간만 강조되지 않음",
+                        detail):
             continue
-        d.expect(painted - active < active, "④에서 구간 하나를 골라도 다른 구간 요소까지 모두 색으로 칠해져 고른 구간만 "
-                 "두드러지지 않음(사용자 보고)", detail)
+        d.expect(len(m.get("labels") or []) == 1 and not m.get("colored_others") and not m.get("bright_others"),
+                 "④에서 구간 하나를 골라도 다른 구간 요소가 색이 남거나 흐려지지 않음(사용자 보고)", detail)
     d.r["selection"] = seen
+
+
+def s11_cross_drawing_node(d):
+    """도면을 넘는 구간: ④에서 ⇄ 구간을 고르면 범위·경계·수가 보이고, 연결점 칩으로 상대 도면에 가도 같은 구간이 고른 채로
+    열리며, ⑤ 행 이름에도 도면 범위가 있는지."""
+    goto_stage(d, 4)
+    time.sleep(1.0)
+
+    def rows():
+        return [e for e in d.tree() if e["type"] == "ListItem" and "SegList" in e["aid"] and not e["offscreen"]]
+    span_rows = [e for e in rows() if "⇄" in (e["name"] or "")]
+    if not d.expect(bool(span_rows), "④ 이 도면 구간 목록에 여러 도면에 걸친 구간(⇄)이 없음",
+                    "목록: %s" % [e["name"][:30] for e in rows()]):
+        return
+    row = span_rows[0]
+    node_id = (row["name"] or "").split()[0]
+    d.step("⇄ 구간 '%s' 클릭" % row["name"][:30])
+    d.click(row, dx=60)
+    time.sleep(0.8)
+    d.shot("⇄ 구간 선택")
+    texts = d.texts()
+    rng = re.search(r"\[(\d+(?: → \d+)+)\]", row["name"] or "")
+    d.expect(bool(rng), "⇄ 구간 이름에 도면 범위 [101 → 102]가 없음", row["name"])
+    d.expect(any("시작:" in t and "끝:" in t for t in texts), "고른 구간의 경계(시작·끝)가 보이지 않음")
+    d.expect(any(re.search(r"이 도면 \d+ / 전체 \d+", t) for t in texts), "고른 구간의 '이 도면 N / 전체 M'이 보이지 않음")
+    d.expect(any("프로젝트" in t and "이 도면" in t and "%" in t for t in texts), "덮음률이 '프로젝트 · 이 도면' 둘 다 보이지 않음")
+    web = d.cdp.evaluate("[...document.querySelectorAll('.hz-chip')].map(e => e.textContent)") or []
+    d.expect(any("에서 계속" in t for t in web), "④ 도면의 연결점 옆에 '… 에서 계속' 칩이 없음", "도면 칩: %s" % web[:5])
+    chips = [e for e in d.tree() if e["type"] == "Button" and "에서 계속" in (e["name"] or "") and not e["offscreen"]]
+    if not d.expect(bool(chips), "④ 패널에 연결점 칩 버튼이 없음"):
+        return
+    target = re.search(r"→ (\S+)에서 계속", chips[0]["name"]).group(1)
+    d.step("칩 '%s' 클릭" % chips[0]["name"])
+    t = time.time()
+    d.click(chips[0])
+    moved = d.wait(lambda: target in d.where(), "칩 → 상대 도면", timeout=10, since=t)
+    time.sleep(1.0)
+    d.shot("칩으로 상대 도면")
+    d.expect(bool(moved), "칩을 눌러도 상대 도면 %s로 가지 않음" % target, "머리말: %s" % d.where())
+    m = d.cdp.evaluate(SEL_JS) or {}
+    d.expect(m.get("focused") and m.get("labels") == [node_id], "상대 도면에서 같은 구간 %s가 고른 채로 열리지 않음" % node_id,
+             "도면 색 구간 %s" % m.get("labels"))
+    if goto_stage(d, 5):
+        time.sleep(1.0)
+        d.shot("⑤ 행렬")
+        names = [x for x in d.texts() if x.startswith(node_id + " ")]
+        d.expect(any(rng and rng.group(1) in x for x in names), "⑤ 행 이름에 도면 범위가 없음", "행: %s" % names[:3])
+    d.r["cross_drawing"] = {"node": node_id, "target": target}
 
 
 def s10_explorer_structure(d):
@@ -1081,9 +1143,12 @@ def s5_register_drawio(d):
     time.sleep(0.8)
     d.shot("② 도면")
     title = d.cdp.evaluate("(document.getElementById('dwg') || document.body).textContent.slice(0, 200)") or ""
-    d.expect(bool(ok) and "SNP-M-201" in (title + d.where()),
+    # 등록 때 도면 번호를 넣지 않으면 머리말에 번호가 없다. 새로 생긴 추출 이름(② 도면 고르기 값)으로도 판정한다.
+    combo = [e["name"] for e in d.tree() if e["type"] == "ComboBox" and "viewer" in e["aid"].lower()]
+    shown = title + d.where() + " ".join(combo) + " ".join(x for x in d.texts() if x in (done or []))
+    d.expect(bool(ok) and ("SNP-M-201" in shown or any(g in shown for g in (done or []))),
              "추출을 마치고 ②로 가도 방금 만든 SNP-M-201이 아니라 이전 도면이 열려 있음",
-             "위치: %s. 사용자가 ② 도면 목록에서 새 도면을 직접 골라야 함" % d.where())
+             "위치: %s. 새 추출 %s. 사용자가 ② 도면 목록에서 새 도면을 직접 골라야 함" % (d.where(), done))
 
 
 def s6_merge_confirm(d):
@@ -1142,6 +1207,7 @@ SCENARIOS = (("S1", "키보드만으로 ①→⑤ 이동·뒤로·단축키 표"
              ("S8", "AI 실행 중 조작(탐색기 구간·Ctrl+P·화면 이동)", s8_ops_during_run),
              ("S9", "④ 구간 선택 때 그 구간만 강조", s9_selection_feedback),
              ("S10", "탐색기 구조(자료 수·결과 위치)", s10_explorer_structure),
+             ("S11", "도면을 넘는 구간: ④ ⇄ 구간·경계·칩으로 상대 도면 이동·⑤ 행 이름", s11_cross_drawing_node),
              ("S5", "drawio 등록 → 추출 → ② 확인", s5_register_drawio),
              ("S6", "④ 확정 해제 → 병합(M) → 확정(Ctrl+Enter)", s6_merge_confirm))
 
@@ -1163,9 +1229,11 @@ def prepare(work_root):
     win.go(6)
     res = win.screens[6]
     res.make_client = lambda: shoot_results.FakeClient()
-    res.run_ai("all")
-    if not wait(lambda: not res.running(), 180):
-        raise SystemExit("가짜 AI 분석이 끝나지 않음")
+    for nid in shoot_results.drawing_node_ids():
+        res.matrix.setCurrentCell(res._row_of(nid), 0)
+        res.run_ai("node")
+        if not wait(lambda: not res.running(), 180):
+            raise SystemExit("가짜 AI 분석이 끝나지 않음")
     win.close()
     app.processEvents()
     return 0

@@ -57,6 +57,11 @@ class StudyScreensTest(unittest.TestCase):
         win.set_reviewer_name("검토자A")
         return win
 
+    def pg(self):
+        """④가 구간을 다루는 기준 = 이 도면이 든 프로젝트 그래프(도면 한 장)."""
+        from hazop.graph import project
+        return project.load(project.project_id_of(self.graph))
+
     def open_study(self, win):
         win.go(STUDY)
         scr = win.screens[STUDY]
@@ -150,8 +155,7 @@ class StudyScreensTest(unittest.TestCase):
         scr2 = self.open_study(win2)
         self.assertEqual(scr2.node_set["status"], "confirmed", "재시작 후에도 확정 유지")
         self.assertEqual(scr2.node_set["nodes"], expected)
-        self.assertIn("가압기 검토구간", [scr2.node_list.item(i).text().split(" · ")[0]
-                                      for i in range(scr2.node_list.count())])
+        self.assertTrue(any("가압기 검토구간" in scr2.node_list.item(i).text() for i in range(scr2.node_list.count())))
 
         member = expected[-1]["members"][0]
         scr2.on_node({"entity_id": member, "local_id": None})
@@ -191,7 +195,8 @@ class StudyScreensTest(unittest.TestCase):
 
     def test_stale_saved_set_blocks_confirm(self):
         from hazop.study import nodes
-        ns = nodes.rename(nodes.propose(self.graph), "S1", "옛 판")
+        pg = self.pg()
+        ns = nodes.rename(nodes.propose(pg), "S1", "옛 판")
         ns["graph_version"] = "v-old"
         nodes.save(ns)
         win = self.window()
@@ -201,7 +206,7 @@ class StudyScreensTest(unittest.TestCase):
         self.assertTrue(scr.repropose(ask=False))
         self.assertTrue(scr.stale.isHidden())
         self.assertTrue(scr.confirm_btn.isEnabled())
-        self.assertEqual(nodes.load(self.graph)["graph_version"], self.graph["graph_version"], "다시 제안은 저장됨")
+        self.assertEqual(nodes.load(pg)["graph_version"], pg["graph_version"], "다시 제안은 저장됨")
 
     def test_confirm_not_shown_when_save_fails(self):
         from unittest import mock
@@ -211,12 +216,12 @@ class StudyScreensTest(unittest.TestCase):
         with mock.patch.object(nodes, "save", side_effect=OSError(28, "디스크 부족")):
             self.assertFalse(scr.confirm("검토자A"))
         self.assertEqual(scr.node_set["status"], "proposed", "저장 못 하면 확정으로 보이지 않음")
-        self.assertIsNone(nodes.load(self.graph))
+        self.assertIsNone(nodes.load(self.pg()))
 
     def test_all_segments_visible_at_1366(self):
         """구간 10개(제안 5개를 나눠 만든 집합)가 1366×768에서 스크롤 없이 보인다(U-18 완료 기준)."""
         from hazop.study import nodes
-        ns = nodes.propose(self.graph)
+        ns = nodes.propose(self.pg())
         while len(ns["nodes"]) < 10:
             big = max(ns["nodes"], key=lambda n: len(n["members"]))
             ns = nodes.split(ns, big["node_id"], big["members"][:1])
@@ -262,25 +267,26 @@ class StudyScreensTest(unittest.TestCase):
         self.assertFalse(scr.rename_current("첫 이름"), "처음은 전체 보기라 이름을 바꿀 구간이 없음")
         scr.select_node(scr.node_set["nodes"][0]["node_id"])
         self.assertTrue(scr.rename_current("첫 이름"))
-        before = nodes.load(self.graph)
+        pg = self.pg()
+        before = nodes.load(pg)
         scr.set_checked([n["node_id"] for n in scr.node_set["nodes"][:2]])
         self.assertTrue(scr.merge_checked())
         self.assertFalse(win.toast_box.isHidden())
         self.assertIn("병합했습니다", win.toast_box.label.text())
         self.assertTrue(win.toast_box.run_undo())
-        self.assertEqual(nodes.load(self.graph), before, "실행 취소 = 병합 전 집합을 다시 저장")
+        self.assertEqual(nodes.load(pg), before, "실행 취소 = 병합 전 집합을 다시 저장")
         self.assertEqual(scr.node_set, before)
 
         self.assertTrue(scr.confirm("검토자A"))
-        self.assertEqual(nodes.load(self.graph)["status"], "confirmed")
+        self.assertEqual(nodes.load(pg)["status"], "confirmed")
         self.assertTrue(win.toast_box.run_undo())
-        self.assertEqual(nodes.load(self.graph), before, "확정 실행 취소 = 확정 전 집합")
+        self.assertEqual(nodes.load(pg), before, "확정 실행 취소 = 확정 전 집합")
         self.assertEqual(scr.node_set["status"], "proposed")
 
         self.assertTrue(scr.repropose(ask=False))
-        self.assertNotEqual(nodes.load(self.graph), before)
+        self.assertNotEqual(nodes.load(pg), before)
         self.assertTrue(win.toast_box.run_undo())
-        self.assertEqual(nodes.load(self.graph), before, "다시 제안으로 버린 집합도 되살림")
+        self.assertEqual(nodes.load(pg), before, "다시 제안으로 버린 집합도 되살림")
 
     def test_empty_hints_and_selection(self):
         win = self.window()
@@ -388,8 +394,10 @@ class StudyScreensTest(unittest.TestCase):
                              "다른 화면으로 가면 ④ 강조가 남지 않음")
 
     def test_results_refuse_stale_confirmed_set(self):
+        from hazop.graph import project
         from hazop.study import nodes
-        ns = nodes.confirm(nodes.propose(self.graph), self.graph, "검토자A")
+        pg = project.load(project.project_id_of(self.graph))
+        ns = nodes.confirm(nodes.propose(pg), pg, "검토자A")
         ns["graph_version"] = "v-old"
         nodes.save(ns)
         win = self.window()

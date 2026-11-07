@@ -66,8 +66,10 @@ class AiScreenTest(unittest.TestCase):
         os.environ["HAZOP_STORE_ROOT"] = os.path.join(cls.tmp, "store")
         os.makedirs(os.environ["HAZOP_WORK_ROOT"])
         _out_dir, cls.graph = build_temp_drawing(os.environ["HAZOP_WORK_ROOT"])
+        from hazop.graph import project
         from hazop.study import nodes
-        cls.node_set = nodes.confirm(nodes.propose(cls.graph), cls.graph, "검토자A")
+        cls.pg = project.load(project.project_id_of(cls.graph))
+        cls.node_set = nodes.confirm(nodes.propose(cls.pg), cls.pg, "검토자A")
         nodes.save(cls.node_set)
         from hazop.app import make_application
         cls.qapp = make_application(["test"])
@@ -299,7 +301,11 @@ class AiScreenTest(unittest.TestCase):
         nid = self.node_set["nodes"][0]["node_id"]
         d1, d2, d3 = (d["deviation_id"] for d in scr.deviations[:3])
         scr.open_cell(nid, d1)
-        self.assertFalse(scr.approve_btn.isEnabled(), "항목을 고르기 전에는 비활성")
+        self.assertTrue(scr.approve_btn.isEnabled(), "칸을 열면 첫 미검토 항목이 골라져 있음")
+        scr.table.clearSelection()
+        self.assertFalse(scr.approve_btn.isEnabled(), "고른 항목이 없으면 비활성")
+        self.assertFalse(scr.set_entry_status("approved"))
+        self.assertIn("승인할 항목 행을 먼저 고르세요", _win.msg_label.text(), "고른 행 없이 A = 안내")
         scr.select_entry(0)
         self.assertTrue(scr.set_entry_status("approved"))
         self.assertEqual(scr.table.item(0, 6).text(), "승인")
@@ -348,6 +354,8 @@ class AiScreenTest(unittest.TestCase):
         scr.keys["Return"].activated.emit()
         self.assertEqual(scr.cell, (nid, scr.deviations[2]["deviation_id"]), "Enter = 지금 칸 열기")
 
+        self.assertEqual(scr.selected_entry()["status"], "proposed", "칸을 열면 첫 미검토 항목을 골라 둠")
+        scr.table.clearSelection()
         self.assertTrue(scr.row_actions.isHidden(), "고른 행이 없으면 동작 버튼 없음")
         scr.select_entry(0)
         QApplication.processEvents()

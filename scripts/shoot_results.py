@@ -68,14 +68,25 @@ class FakeClient:
                 "error_type": None, "status_code": 200, "error": None}
 
 
+SHEETS = ("SNP-M-101", "SNP-M-102", "SNP-M-201", "SNP-M-301", "SNP-M-401", "SNP-M-501")  # 도면 연결로 이어진 샘플 프로젝트
+
+
 def prepare(tmp):
-    for sub in (("추출", DRAWING), ("그래프", DRAWING), ("지식그래프",)):
+    """샘플 6장(추출·그래프)과 지식그래프를 복사하고 프로젝트 전체 검토구간(S1…Sn)을 확정해 둔다."""
+    for sub in [("추출", d) for d in SHEETS] + [("그래프", d) for d in SHEETS] + [("지식그래프",)]:
         shutil.copytree(os.path.join(REPO_ROOT, "출력", *sub), os.path.join(tmp, "출력", *sub))
-    from hazop import paths
+    from hazop.graph import project
     from hazop.study import nodes
-    from hazop.viewer import build as viewer_build
-    graph = viewer_build.load_graph(paths.output_root("그래프"), DRAWING)
-    nodes.save(nodes.confirm(nodes.propose(graph), graph, "검토자(예시)"))
+    pg = project.load(project.UNREGISTERED_PROJECT)
+    nodes.save(nodes.confirm(nodes.propose(pg), pg, "검토자(예시)"))
+
+
+def drawing_node_ids(drawing=DRAWING):
+    """DRAWING을 지나는 프로젝트 구간 ID(가짜 AI를 이 구간에만 돌려 준비 시간을 줄인다)."""
+    from hazop.graph import project
+    from hazop.study import nodes, span
+    pg = project.load(project.UNREGISTERED_PROJECT)
+    return [n["node_id"] for n in span.nodes_on_drawing(span.annotate(nodes.load(pg), pg), drawing)]
 
 
 def screen_text(widget):

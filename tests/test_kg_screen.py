@@ -412,6 +412,44 @@ class RenderTest(unittest.TestCase):
         v.page().deleteLater()
 
 
+# ---------------------------------------------------------------- 프로젝트 그래프: 도면 경계
+def two_sheet_project():
+    """A·B 두 도면이 L-1로 이어지고 A의 다른 연결점(L-2 → Q)은 미연결인 프로젝트 그래프."""
+    from hazop.graph import project
+    from tests.test_project_graph import cont, sheet
+    return project.build("P", [sheet("A", cont("C1", "FROM B\nL-1"), cont("C2", "TO Q\nL-2")),
+                               sheet("B", cont("C1", "TO A\nL-1"))])
+
+
+class CrossDrawingTest(unittest.TestCase):
+    def test_path_marks_drawing_boundary_and_filters(self):
+        pg = two_sheet_project()
+        steps = screen.cross_path(pg, "A-E", "B-E")
+        texts = [s["text"] for s in steps]
+        self.assertEqual(texts[0], "[A] A-E")
+        self.assertEqual(texts[-1], "[B] B-E")
+        self.assertIn("── A → B (L-1) ──", texts)
+        self.assertEqual([s["kind"] for s in steps].count("boundary"), 1)
+        only_b = [s["text"] for s in screen.filter_by_drawing(steps, "B")]
+        self.assertTrue(only_b and all(t.startswith("[B]") or t.startswith("──") for t in only_b))
+        self.assertEqual(screen.filter_by_drawing(steps, None), steps)
+
+    def test_sheet_link_rows_and_filter(self):
+        rows = screen.sheet_link_rows(two_sheet_project())
+        linked = [r for r in rows if r["status"] == "linked"]
+        self.assertEqual([(r["from_drawing"], r["to_drawing"], r["line_no"]) for r in linked], [("B", "A", "L-1")])
+        un = [r for r in rows if r["status"] == "unlinked"]
+        self.assertEqual((un[0]["to_drawing"], un[0]["to_label"]), ("Q", None))
+        self.assertIn("상대 도면", un[0]["reason"])
+        self.assertEqual(len(screen.filter_by_drawing(rows, "B")), 1)
+        self.assertEqual(len(screen.filter_by_drawing(rows, "A")), 2)
+
+    def test_unknown_or_ambiguous_tag_raises(self):
+        from hazop.graph.query import QueryError
+        with self.assertRaises(QueryError):
+            screen.cross_path(two_sheet_project(), "A-E", "NO-SUCH")
+
+
 # ---------------------------------------------------------------- 주 창
 class WindowTestBase(unittest.TestCase):
     @classmethod
@@ -501,6 +539,38 @@ class KnowledgeTabTest(WindowTestBase):
         self.assertEqual(win.selection, {"kind": "component", "drawing": scr.graph_dir, "entity_id": "entity-node-001"})
         win.webview.bridge.fromWeb(json.dumps({"type": "nodeSelected", "local_id": None, "entity_id": "req-001"}))
         self.assertIsNone(win.selection)
+
+    def test_cross_drawing_panel(self):
+        from unittest import mock
+        win = self.open()
+        probs, info = ks.tab_problems(win, self.inp)
+        self.assertEqual(probs, [], info)
+        scr = win.current_screen()
+        self.assertEqual(scr.side_tabs.tabText(1), "도면 경계")
+        self.assertIsNotNone(scr.pg, scr.pg_error)                         # 샘플 프로젝트 그래프를 읽음
+        for w in (scr.path_from, scr.path_to, scr.drawing_filter, scr.kg_combo, scr.graph_combo):
+            self.assertTrue(w.accessibleName(), w)
+        scr.pg = None
+        with mock.patch("hazop.app.screens.knowledge.project.load", return_value=two_sheet_project()):
+            scr._load_project()
+        self.assertEqual([scr.drawing_filter.itemText(i) for i in range(scr.drawing_filter.count())],
+                         ["모든 도면", "A", "B"])
+        self.assertEqual(scr.link_table.rowCount(), 2)
+        scr.path_from.setText("A-E")
+        scr.path_to.setText("B-E")
+        scr.path_btn.click()
+        rows = [scr.path_list.item(i).text() for i in range(scr.path_list.count())]
+        self.assertIn("── A → B (L-1) ──", rows)
+        self.assertIn("도면 경계 1번", scr.path_summary.text())
+        scr.drawing_filter.setCurrentIndex(scr.drawing_filter.findData("B"))
+        rows = [scr.path_list.item(i).text() for i in range(scr.path_list.count())]
+        self.assertTrue(rows and not any(r.startswith("[A]") for r in rows))
+        self.assertEqual(scr.link_table.rowCount(), 1)
+        scr.path_to.setText("NO-SUCH")
+        scr.find_path()
+        self.assertIn("찾을 수 없음", scr.path_summary.text())
+        win.webview.bridge.fromWeb(json.dumps({"type": "nodeSelected", "local_id": None, "entity_id": "req-001"}))
+        self.assertEqual(scr.side_tabs.currentIndex(), 0)                   # 노드를 누르면 상세 탭으로
 
     def test_s1_band_on_synthetic(self):
         win = self.open()

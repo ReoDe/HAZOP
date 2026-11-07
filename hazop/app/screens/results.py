@@ -17,17 +17,16 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogBut
                                QPushButton,
                                QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
-from hazop import paths
-from hazop.app import data, tokens
+from hazop.app import data, project_ctx, tokens
 from hazop.app.ai_runner import AiRunner
 from hazop.app.screens.results_paint import CELL_ROLE, DRAFT_ROLE, CellDelegate, GroupHeader, SheetDelegate
 from hazop.app.screens.study import seg_icon
-from hazop.app.widgets import Chip, empty_label, kst_text, plain_label
-from hazop.study import ai_cells, nodes
+from hazop.app.widgets import Banner, Chip, empty_label, kst_text, plain_label
+from hazop.graph import project
+from hazop.study import ai_cells, nodes, span
 from hazop.study import results as res
 from hazop.study import claude_http
 from hazop.study.claude_http import ClaudeHttpClient
-from hazop.viewer import build as viewer_build
 
 AI_NOTE = "AI 결과는 모두 초안 · 사람이 수정·승인·기각"
 STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각"}
@@ -39,20 +38,26 @@ RISK_KEYS = ("칸 숫자 = 최고 위험도 · 미N = 미검토 시나리오 · 
              "! 실패 = AI 실행 실패(위험도 아님)")
 NAV_KEYS = "←↑↓→ 칸 이동 · Enter 열기 · J 다음 미검토 · 워크시트 A 승인 · R 기각 · E 수정 · Ctrl+Z 실행 취소"
 EDIT_TEXT_FIELDS = (("cause", "원인"), ("consequence", "결과"), ("recommendation", "권고"))
+# 옛 도면별 결과에서 옮긴 항목 표시(project_ctx.migrate_results). 사람 상태는 그대로 두고 다시 보게만 한다.
+ENTRY_FLAGS = (("scope_changed", "범위 바뀜 · 다시 확인", "옛 도면별 구간과 범위가 달라진 구간으로 옮긴 항목"),
+               ("source_stale", "옛 결과 · 다시 확인", "옛 확정본과 이미 맞지 않던 옛 결과에서 옮긴 항목"))
+NEED_ROW = {"approved": "승인할", "rejected": "기각할", "edit": "수정할"}
 
 
-def design_intent(node, graph_id):
-    """구간 JSON(데이터/구간) 중 같은 그래프를 가리키고 이 구간의 구성요소를 모두 포함하는 것의 설계 의도.
-    (글, 출처 설명) 또는 None. 상위 구간의 설계 의도이므로 화면에 출처와 지식 상태를 함께 적는다."""
+def design_intent(node):
+    """구간 JSON(데이터/구간) 중 이 구간의 구성요소(프로젝트 ID)를 모두 포함하는 것의 설계 의도.
+    (글, 출처 설명) 또는 None. 구간 JSON은 도면 하나 기준이라 구성요소를 그 도면의 프로젝트 ID로 바꿔 비교한다.
+    상위 구간의 설계 의도이므로 화면에 출처와 지식 상태를 함께 적는다."""
     members = set(node["members"])
     for path in data.list_regions():
         try:
             region = data.read_json(path)
         except (OSError, ValueError):
             continue
-        if (region.get("graph_ref") or {}).get("graph_id") != graph_id:
+        gid = (region.get("graph_ref") or {}).get("graph_id")
+        if not gid:
             continue
-        scope = {m.get("entity_id") for m in region.get("members") or []}
+        scope = set(project.lift_ids(gid, [m.get("entity_id") for m in region.get("members") or [] if m.get("entity_id")]))
         intent = region.get("design_intent") or {}
         if members and members <= scope and intent.get("text"):
             return intent["text"], "상위 구간 %s · 지식 상태 %s" % (
@@ -98,13 +103,17 @@ class EntryDialog(QDialog):
         for key, label in EDIT_TEXT_FIELDS:
             ed = QPlainTextEdit(entry.get(key) or "")
             ed.setFixedHeight(60)
+            ed.setAccessibleName(label)
             self.texts[key] = ed
             lay.addRow(label, ed)
         self.safeguards = QPlainTextEdit("\n".join(entry.get("safeguards") or []))
         self.safeguards.setFixedHeight(60)
+        self.safeguards.setAccessibleName("보호수단")
         lay.insertRow(2, "보호수단\n(한 줄에 하나)", self.safeguards)
         self.sev = self._combo(res.SEVERITIES, entry.get("severity"))
+        self.sev.setAccessibleName("강도")
         self.freq = self._combo(res.FREQUENCIES, entry.get("frequency"))
+        self.freq.setAccessibleName("발생빈도")
         lay.addRow("강도(1–4)", self.sev)
         lay.addRow("발생빈도(1–3)", self.freq)
         note = QLabel("고치면 상태가 '수정'이 됩니다. 승인한 항목도 다시 승인해야 합니다.")
@@ -153,8 +162,10 @@ class ResultsScreen(QWidget):
         self.app = app
         self.setObjectName("screen")
         self.name = None
-        self.graph = None
-        self.node_set = None   # 확정된 검토구간 집합만
+        self.ctx = None        # project_ctx.ProjectContext(고른 도면 기준)
+        self.graph = None      # 프로젝트 그래프(ctx.pg)
+        self.node_set = None   # 확정된 프로젝트 검토구간 집합만(저장·결과 기준은 이 원본)
+        self.view = {}         # {node_id: 표기·경계를 붙인 구간(ctx.view)} 화면 표시용
         self.results = None
         self.kg, self.kg_reason = None, None
         self.deviations = res.load_deviations()
@@ -172,7 +183,8 @@ class ResultsScreen(QWidget):
         lay.setSpacing(4)
         bar = QHBoxLayout()
         self.combo = QComboBox()
-        self.combo.setToolTip("도면")
+        self.combo.setToolTip("도면(행렬은 프로젝트 전체 구간, 고른 도면은 '이 도면' 기준)")
+        self.combo.setAccessibleName("도면")
         self.combo.setMinimumWidth(140)
         self.combo.currentIndexChanged.connect(self._load)
         bar.addWidget(self.combo)
@@ -180,6 +192,8 @@ class ResultsScreen(QWidget):
         bar.addWidget(self.kpi, 1)
         bar.addLayout(self._toolbar())
         lay.addLayout(bar)
+        self.banner = Banner("warn")  # 옛 도면별 저장본 이전 알림
+        lay.addWidget(self.banner)
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self._empty_page())
@@ -212,6 +226,7 @@ class ResultsScreen(QWidget):
         top.addLayout(head)
         self.matrix = QTableWidget()
         self.matrix.setObjectName("matrix")
+        self.matrix.setAccessibleName("구간 × 편차 행렬")
         self.matrix.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.matrix.setSelectionMode(QAbstractItemView.SingleSelection)
         self.matrix.setHorizontalHeader(GroupHeader(self.matrix))
@@ -221,7 +236,7 @@ class ResultsScreen(QWidget):
         self.matrix.verticalHeader().setDefaultSectionSize(ROW_H)
         self.matrix.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
         self.matrix.verticalHeader().setFixedWidth(ROW_HEAD_W)  # 긴 구간 이름은 줄임표 + 툴팁
-        self.matrix.verticalHeader().setTextElideMode(Qt.ElideRight)
+        self.matrix.verticalHeader().setTextElideMode(Qt.ElideMiddle)  # 끝의 도면 범위 [101 → 102] ⇄를 남긴다
         self.matrix.setIconSize(QSize(30, 16))
         self.matrix.setWordWrap(False)
         self.matrix.setItemDelegate(CellDelegate(self.matrix))
@@ -320,12 +335,15 @@ class ResultsScreen(QWidget):
         self.sheet_count.setObjectName("muted")
         hrow.addWidget(self.sheet_count)
         sv.addLayout(hrow)
+        self.sheet_span = plain_label("", name="muted", elide=Qt.ElideRight, min_chars=10)
+        sv.addWidget(self.sheet_span)
         self.intent_src = plain_label("", name="muted", elide=Qt.ElideRight, min_chars=10)
         sv.addWidget(self.intent_src)
         self.run_note = plain_label("", wrap=True)
         self.run_note.hide()
         sv.addWidget(self.run_note)
         self.table = QTableWidget(0, len(SHEET_COLUMNS))
+        self.table.setAccessibleName("워크시트")
         self.table.setHorizontalHeaderLabels(list(SHEET_COLUMNS))
         self.table.horizontalHeaderItem(COL_RISK).setToolTip("위험도 = 강도 × 발생빈도 〈표5〉(KOSHA P-86) · 구분 〈표9〉")
         self.table.horizontalHeaderItem(COL_BASIS).setToolTip("AI 근거: 지식그래프 경로 · 출처 문서 · ⚠ 근거 확인 경고")
@@ -373,7 +391,11 @@ class ResultsScreen(QWidget):
     def where(self):
         if not self.node_set:
             return None
-        return {"drawing": self.node_set.get("drawing_number") or self.name, "region": None, "run": None}
+        return {"drawing": (self.ctx.drawing_number if self.ctx else None) or self.name, "region": None, "run": None}
+
+    def main_focus(self):
+        """화면에 들어오면 초점: 칸이 열려 있으면 워크시트, 아니면 행렬(J·A·R·E가 바로 듣게)."""
+        return self.table if self.sheet_stack.currentIndex() == 1 else self.matrix
 
     def is_done(self):
         return False
@@ -458,41 +480,67 @@ class ResultsScreen(QWidget):
             return
         name = self.combo.currentText()
         self.name, self.graph, self.node_set, self.results, self.cell = name or None, None, None, None, None
+        self.ctx, self.view = None, {}
         self.kg, self.kg_reason, self._old_saved = None, None, None
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
         self.progress_label.setText("")
-        if name:
-            self.graph = viewer_build.load_graph(paths.output_root("그래프"), name)
+        self.banner.set_messages(None)
+        self.ctx = project_ctx.load(name) if name else None
         saved = None
-        if self.graph:
+        if self.ctx is not None and self.ctx.pg is None:
+            self.empty.setText(self.ctx.error)
+        elif self.ctx is not None:
+            self.graph = self.ctx.pg
             try:
-                saved = nodes.load(self.graph)
+                saved, _was_saved = self.ctx.load_set()
             except (OSError, ValueError) as exc:
                 self.empty.setText("검토구간 파일을 읽을 수 없음: %s" % exc)
-        usable = (saved and saved.get("status") == "confirmed" and not nodes.is_stale(saved, self.graph)
+            if self.ctx.notice:
+                self.banner.set_messages("옛 도면별 검토구간을 옮김", [self.ctx.notice])
+        confirmed = bool(saved) and saved.get("status") == "confirmed"
+        usable = (confirmed and not nodes.is_stale(saved, self.graph)
                   and not nodes.coverage(saved, self.graph)["uncovered"])
-        if saved and saved.get("status") == "confirmed" and not usable:
-            self.empty.setText("확정된 검토구간이 현재 도면과 맞지 않습니다(도면이 바뀜 또는 미포함 구성요소). "
+        if confirmed and not usable:
+            self.empty.setText("확정된 프로젝트 검토구간이 지금 도면들과 맞지 않습니다(도면이 바뀜 또는 미포함 구성요소). "
                                "④ 검토구간에서 다시 확정하세요.")
         if usable:
             self.node_set = saved
+            self.view = {n["node_id"]: n for n in self.ctx.view(saved)["nodes"]}
             self.kg, self.kg_reason = ai_cells.load_kg_for(saved)
             self.kg_chip.set_state("지식그래프 없음: %s · 도면만으로 분석" % self.kg_reason, "warn")
             self.kg_chip.setVisible(self.kg is None)
+            self._migrate_results(saved)
             self.set_results(self._saved_results(saved))
             self._show_save_info()
             self.stack.setCurrentIndex(1)
         else:
-            if self.graph is None:
+            if self.ctx is None:
                 self.empty.setText("이 도면의 그래프가 없습니다. ① 자료 등록에서 '추출·그래프 만들기'를 실행하세요."
                                    if name else "추출 결과가 없습니다. ①·②에서 도면을 등록·추출하세요.")
-            elif saved is None or saved.get("status") != "confirmed":
-                self.empty.setText("이 도면의 검토구간이 아직 확정되지 않았습니다. ④ 검토구간에서 구간을 확정하세요.")
+            elif saved is not None and not confirmed:
+                self.empty.setText("프로젝트 검토구간이 아직 확정되지 않았습니다. ④ 검토구간에서 구간을 확정하세요."
+                                   + (" (옛 도면별 검토구간을 옮겨 '제안' 상태로 두었습니다.)" if self.ctx.notice else ""))
             self.kpi.setText("구간 — · 편차 %d" % len(self.deviations))
             self.stack.setCurrentIndex(0)
         self._update_buttons()
         self.app.update_header()
+
+    def _migrate_results(self, node_set):
+        """확정된 프로젝트 집합에 결과가 없고 옛 도면별 결과가 있으면 백업 뒤 옮겨 저장한다(migrate_results는 있는 프로젝트
+        결과를 덮어쓰지 않음). 옮기지 못하면 사유만 띄우고 옛 파일은 그대로 둔다."""
+        try:
+            moved = project_ctx.migrate_results(self.graph, node_set)
+        except (OSError, ValueError) as exc:
+            self.app.log_error("옛 분석 결과 이전 실패", exc)
+            moved = (None, "옛 분석 결과를 옮기지 못함(%s). 옛 파일은 그대로 있습니다." % exc)
+        if moved is None:
+            return
+        doc, text = moved
+        msgs = list(self.banner.messages) + [text]
+        self.banner.set_messages("옛 도면별 분석 결과를 옮김" if doc is not None else "옛 분석 결과를 옮기지 않음", msgs)
+        if doc is not None:
+            self.app.toast("옛 도면별 분석 결과를 프로젝트 구간으로 옮겼습니다")
 
     def _saved_results(self, node_set):
         """저장본이 있고 지금 확정본으로 만든 것이면 그것, 아니면 빈 결과. 쓰지 않은 저장본은 지우지 않고 첫 저장 때
@@ -637,8 +685,7 @@ class ResultsScreen(QWidget):
         for u in units:
             if u["node_id"] not in ctxs:
                 node = by_id[u["node_id"]]
-                ctxs[u["node_id"]] = ai_cells.node_context(node, self.graph, self.kg,
-                                                           design_intent(node, self.node_set.get("graph_id")))
+                ctxs[u["node_id"]] = ai_cells.node_context(node, self.graph, self.kg, design_intent(node))
         self.runner = AiRunner([(u, ctxs[u["node_id"]]) for u in units], self.deviations, self.make_client())
         self.runner.unit_started.connect(self._on_unit_started)
         self.runner.unit_done.connect(self._on_unit_done)
@@ -777,8 +824,11 @@ class ResultsScreen(QWidget):
             m.setHorizontalHeaderItem(c, h)
         total_s = total_u = 0
         for r, n in enumerate(ns["nodes"]):
-            head = QTableWidgetItem(seg_icon(r, n["node_id"]), "%s %s" % (n["node_id"], n["name"]))
-            head.setToolTip("%s %s · 구성요소 %d" % (n["node_id"], n["name"], len(n["members"])))
+            v = self.view.get(n["node_id"]) or n
+            head = QTableWidgetItem(seg_icon(r, n["node_id"]), project_ctx.node_label(v))
+            head.setToolTip("%s\n%s\n구성요소 %s" % (project_ctx.node_label(v), project_ctx.boundary_text(v),
+                                                 project_ctx.counts_text(v, self.ctx.drawing_number)
+                                                 if self.ctx else len(n["members"])))
             m.setVerticalHeaderItem(r, head)
             for c, d in enumerate(self.deviations):
                 s = summary.get(n["node_id"], {}).get(d["deviation_id"]) or {"state": "not_analyzed", "scenarios": 0,
@@ -827,10 +877,20 @@ class ResultsScreen(QWidget):
 
     # ------------------------------------------------------------ 워크시트
     def _entity_label(self, eid):
-        for n in (self.graph or {}).get("nodes", []):
-            if n["entity_id"] == eid:
-                return n.get("tag") or n.get("kind") or eid
-        return eid
+        n = self.ctx.by_id.get(eid) if self.ctx and self.ctx.pg else None
+        return (n.get("tag") or n.get("kind") or eid) if n else eid
+
+    def _shown(self, text):
+        """다른 도면 태그에 도면번호를 붙인 표시 글("RC-P01(101)"). 저장값은 그대로."""
+        return self.ctx.tag_label(text) if text and self.ctx and self.ctx.pg else text
+
+    def _span_text(self, node_id):
+        """워크시트 머리말: "도면 SNP-M-101 → SNP-M-102 · 시작: X(SNP-M-102) / 끝: Y(SNP-M-101)"."""
+        v = self.view.get(node_id)
+        if not v:
+            return ""
+        h = span.worksheet_header(v)
+        return "도면 %s · 시작: %s / 끝: %s" % (" → ".join(h["drawings"]) or "-", h["start"] or "-", h["end"] or "-")
 
     def _cell_doc(self):
         if not self.cell or not self.results:
@@ -854,7 +914,9 @@ class ResultsScreen(QWidget):
         cell = self._cell_doc()
         row = self._row_of(node_id)
         self.sheet_badge.setPixmap(seg_icon(row, node_id).pixmap(30, 16))
-        self.sheet_title.setText("%s × %s" % (node["name"], dev["label"]))
+        self.sheet_title.setText("%s × %s" % (project_ctx.node_label(self.view.get(node_id) or node), dev["label"]))
+        self.sheet_span.setText(self._span_text(node_id))
+        self.sheet_span.setToolTip(self.sheet_span.text())
         self.app.set_selection({"kind": "cell", "drawing": self.name, "node_id": node_id, "deviation_id": deviation_id})
         run = (cell or {}).get("ai_run") or {}
         if run.get("status") == "failed":
@@ -862,7 +924,7 @@ class ResultsScreen(QWidget):
         else:
             self.run_note.setText("AI 메모: %s" % run["note"] if run.get("note") else "")
         self.run_note.setVisible(bool(self.run_note.text()))
-        intent = design_intent(node, self.node_set.get("graph_id"))
+        intent = design_intent(node)
         self.intent.setText("설계 의도: %s" % intent[0] if intent else "설계의도 미입력")
         self.intent_src.setText("출처: %s" % intent[1] if intent else "")
         self.intent_src.setVisible(bool(intent))
@@ -889,9 +951,11 @@ class ResultsScreen(QWidget):
             draft = res.is_ai_draft(e)
             status = STATUS_LABELS.get(e.get("status"), e.get("status") or "-")
             basis = self._basis_text(e)
-            values = (e.get("cause"), e.get("consequence"), ", ".join(e.get("safeguards") or []),
-                      e.get("recommendation"), risk_text(e.get("risk")), basis,
-                      ("AI 초안 · " if draft else "") + status)
+            flags = [f for f in ENTRY_FLAGS if e.get(f[0])]
+            values = (self._shown(e.get("cause")), self._shown(e.get("consequence")),
+                      self._shown(", ".join(e.get("safeguards") or [])), self._shown(e.get("recommendation")),
+                      risk_text(e.get("risk")), basis,
+                      "".join(f[1] + " · " for f in flags) + ("AI 초안 · " if draft else "") + status)
             for c, v in enumerate(values):
                 it = QTableWidgetItem(v or "-")
                 it.setData(Qt.UserRole, e["entry_id"])
@@ -905,6 +969,10 @@ class ResultsScreen(QWidget):
                 risk_it.setForeground(QColor(ink))
             basis_it = t.item(r, COL_BASIS)
             basis_it.setToolTip(basis)
+            if flags:
+                st = t.item(r, COL_STATUS)
+                st.setToolTip("\n".join(f[2] for f in flags) + "\n(상태는 옛 결과 그대로. 내용을 다시 확인하세요)")
+                st.setForeground(QColor(tokens.c("warn-ink")))
             if e.get("status") == "rejected":
                 for c in range(len(SHEET_COLUMNS)):
                     t.item(r, c).setForeground(QColor(tokens.c("muted")))
@@ -912,6 +980,10 @@ class ResultsScreen(QWidget):
         ids = [e["entry_id"] for e in entries]
         if keep in ids:
             t.selectRow(ids.index(keep))
+        else:  # 처음 연 칸은 첫 미검토 항목을 골라 둔다(A·R·E가 바로 듣게)
+            first = next((i for i, e in enumerate(entries) if e.get("status") not in ("approved", "rejected")), None)
+            if first is not None:
+                t.selectRow(first)
         self.sheet_stack.setCurrentIndex(1)
         if row is not None:
             c = next(i for i, d in enumerate(self.deviations) if d["deviation_id"] == deviation_id)
@@ -975,8 +1047,23 @@ class ResultsScreen(QWidget):
             self.open_cell(*cell)
         return undo
 
-    def set_entry_status(self, status):
+    def _entry_or_hint(self, action):
+        """고른 항목. 없으면 왜 안 되는지 상태줄에 알리고 None(A·R·E가 조용히 무시되지 않게)."""
         e = None if self.running() else self.selected_entry()
+        if e is None:
+            if self.running():
+                text = "AI 분석 중에는 항목을 승인·기각·수정할 수 없습니다. 끝난 뒤 다시 하세요."
+            elif self.node_set is None or self._cell_doc() is None:
+                text = "행렬에서 칸을 먼저 여세요 (←↑↓→ 후 Enter 또는 클릭)."
+            elif not self._cell_doc()["entries"]:
+                text = "이 칸에는 검토할 항목이 없습니다."
+            else:
+                text = "%s 항목 행을 먼저 고르세요 (↑↓ 또는 클릭)." % NEED_ROW[action]
+            self.app.status_message(text)
+        return e
+
+    def set_entry_status(self, status):
+        e = self._entry_or_hint(status)
         if e is None:
             return False
         old, cell = self.results, self.cell
@@ -987,7 +1074,7 @@ class ResultsScreen(QWidget):
 
     def edit_selected(self, fields=None):
         """fields가 없으면 수정 창을 띄운다. 바뀐 필드가 없으면 저장하지 않는다."""
-        e = None if self.running() else self.selected_entry()
+        e = self._entry_or_hint("edit")
         if e is None:
             return False
         if fields is None:

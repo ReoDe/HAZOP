@@ -1,6 +1,8 @@
 """④ 검토구간(HAZOP study node) 화면 (stage3-spec §A·§B, 디자인/시안/완성본/B-고밀도작업대/4-검토구간).
 
-도면 하나의 그래프에서 구간 집합(hazop.study.nodes)을 제안·편집·확정한다. 화면 상태의 기준은 self.node_set 하나이고,
+프로젝트 그래프(모든 도면을 이은 것, hazop.app.project_ctx)에서 구간 집합(hazop.study.nodes)을 제안·편집·확정한다.
+도면 고르기는 어느 도면을 *볼지*만 정한다. 구간 ID S1…Sn은 프로젝트 전체에서 하나다(사용자 결정 2026-11-07).
+화면 상태의 기준은 self.node_set(저장하는 원본) 하나이고, 표기·경계·칩은 다시 그릴 때마다 ctx.view로 만든 사본(self.view)에서 읽는다.
 편집은 모두 nodes의 순수 함수로 새 집합을 만든 뒤 저장하고 다시 그린다. 처음 제안은 사용자가 편집하거나 확정할 때 저장된다.
 도면 위 구간 색은 seg1..seg5를 순환하고, 목록의 S 번호 배지에도 같은 색을 써서 색만으로 구분하지 않는다.
 """
@@ -13,15 +15,17 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QHBoxLayout
                                QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QSizePolicy, QStackedWidget,
                                QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTabWidget, QVBoxLayout, QWidget)
 
-from hazop.app import data, tokens
+from hazop.app import data, project_ctx, tokens
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text
-from hazop.study import nodes
+from hazop.graph import project
+from hazop.study import nodes, span
 
 SEG_COUNT = 5
 PANEL_MIN_W, PANEL_MAX_W = 264, 340     # 셸 오른쪽 열 clamp(264px, 20vw, 340px)
 ROW_H = 24
 MIN_ROWS = 4                            # 패널 높이가 모자랄 때도 구간 목록에 남기는 행 수
 COUNT_ROLE = Qt.UserRole + 1
+SCOPES = ("이 도면 구간", "프로젝트 전체")
 
 
 def panel_width(window_width):
@@ -125,7 +129,7 @@ class _SegRowDelegate(QStyledItemDelegate):
         count = index.data(COUNT_ROLE) or ""
         rect = style.subElementRect(QStyle.SE_ItemViewItemText, o, widget)
         room = rect.width() - o.fontMetrics.horizontalAdvance(count) - 10
-        o.text = o.fontMetrics.elidedText(o.text, Qt.ElideRight, max(room, 0))
+        o.text = o.fontMetrics.elidedText(o.text, Qt.ElideMiddle, max(room, 0))  # 끝의 도면 범위 [101 → 102] ⇄를 남긴다
         style.drawControl(QStyle.CE_ItemViewItem, o, painter, widget)
         painter.save()
         painter.setPen(QColor(tokens.c("muted")))
@@ -140,14 +144,18 @@ class StudyNodesScreen(QWidget):
         super().__init__(parent)
         self.app = app
         self.setObjectName("screen")
-        self.name = None        # 추출 폴더 이름(도면 선택)
-        self.graph = None
+        self.name = None        # 추출 폴더 이름(보는 도면)
+        self.ctx = None         # project_ctx.ProjectContext
+        self.graph = None       # 구간 연산의 기준 = 프로젝트 그래프(ctx.pg)
         self.node_set = None
+        self.view = None        # node_set의 표기 사본(ctx.view)
         self.saved = False      # node_set이 저장본과 같은가(처음 제안은 False)
-        self.entities = {}      # entity_id → graph node
-        self.local_map = {}     # entity_id → 뷰어 data-local-id
+        self.entities = {}      # 프로젝트 ID → 프로젝트 그래프 node
+        self.local_map = {}     # 프로젝트 ID → 보는 도면의 data-local-id
         self.entity_of_local = {}
         self.picked_entity = None  # 도면에서 누른 구성요소
+        self.notice = None      # 옛 도면별 저장본을 옮겼다는 알림(이번 실행 동안 띠로 보임)
+        self._pending = None    # 도면을 바꾼 뒤 고를 구간(칩으로 건너갈 때)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(12, 10, 12, 10)
         lay.setSpacing(6)
@@ -155,6 +163,7 @@ class StudyNodesScreen(QWidget):
         bar = QHBoxLayout()
         bar.addWidget(QLabel("도면"))
         self.combo = QComboBox()
+        self.combo.setAccessibleName("보는 도면")
         self.combo.setMinimumWidth(200)
         self.combo.currentIndexChanged.connect(self._load)
         bar.addWidget(self.combo)
@@ -175,6 +184,8 @@ class StudyNodesScreen(QWidget):
         lay.addLayout(bar)
         self.stale = Banner("warn")
         self.warn = Banner("warn")
+        self.notice_bar = Banner("warn")
+        lay.addWidget(self.notice_bar)
         lay.addWidget(self.stale)
         lay.addWidget(self.warn)
 
@@ -192,6 +203,7 @@ class StudyNodesScreen(QWidget):
         self.stack.addWidget(body)
         lay.addWidget(self.stack, 1)
         self._shortcuts()
+        self.main_focus = self.node_list
 
     # ------------------------------------------------------------ 오른쪽 패널
     def _panel(self):
@@ -221,6 +233,12 @@ class StudyNodesScreen(QWidget):
         self.gate.setObjectName("muted")
         self.gate.setWordWrap(True)
         v.addWidget(self.gate)
+        self.scope = QComboBox()
+        self.scope.addItems(SCOPES)
+        self.scope.setAccessibleName("구간 목록 범위")
+        self.scope.setToolTip("이 도면을 지나는 구간(걸친 구간 포함)만 볼지, 프로젝트의 모든 구간을 볼지 고릅니다")
+        self.scope.currentIndexChanged.connect(lambda _i: self._render())
+        v.addWidget(self.scope)
 
         self.node_list = _SegList()
         self.node_list.setIconSize(QSize(30, 16))
@@ -248,6 +266,7 @@ class StudyNodesScreen(QWidget):
         row.addStretch(1)
         row.addWidget(self.to_results_btn)
         v.addLayout(row)
+        v.addWidget(self._node_card())
 
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
@@ -299,6 +318,21 @@ class StudyNodesScreen(QWidget):
         self.pick_card.hide()
         return self.pick_card
 
+    def _node_card(self):
+        """고른 구간 카드: 경계·구성요소 수와 다른 도면으로 이어지는 칩(누르면 그 도면에서 같은 구간을 연다)."""
+        self.node_card = QFrame()
+        self.node_card.setObjectName("pickcard")
+        v = QVBoxLayout(self.node_card)
+        v.setContentsMargins(8, 6, 8, 6)
+        v.setSpacing(2)
+        self.node_text = QLabel()
+        self.node_text.setWordWrap(True)
+        v.addWidget(self.node_text)
+        self.jump_host = None
+        self.jump_buttons = []
+        self.node_card.hide()
+        return self.node_card
+
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
         self.panel.setFixedWidth(panel_width(self.window().width()))
@@ -324,15 +358,17 @@ class StudyNodesScreen(QWidget):
     def where(self):
         if not self.node_set:
             return None
-        return {"drawing": self.node_set.get("drawing_number") or self.name, "region": None, "run": None}
+        return {"drawing": self.ctx.drawing_number if self.ctx else self.name, "region": None, "run": None}
 
     def is_done(self):
-        return nodes.any_confirmed()
+        if self.node_set is not None:
+            return self.node_set.get("status") == "confirmed"
+        return nodes.any_confirmed(project_only=True)
 
     def explorer_items(self):
-        if not self.node_set:
+        if not self.view:
             return []
-        return [("%s %s" % (n["node_id"], n["name"]), n["node_id"]) for n in self.node_set["nodes"]]
+        return [(project_ctx.node_label(n), n["node_id"]) for n in self.view["nodes"]]
 
     def open_item(self, key):
         self.select_node(key)
@@ -357,7 +393,9 @@ class StudyNodesScreen(QWidget):
     # ------------------------------------------------------------ 읽기
     def _load(self):
         name = self.combo.currentText()
-        self.name, self.graph, self.node_set, self.picked_entity = name or None, None, None, None
+        pending, self._pending = self._pending, None
+        self.name, self.ctx, self.graph, self.node_set, self.view = name or None, None, None, None, None
+        self.picked_entity = None
         self.stale.set_messages(None)
         self.warn.set_messages(None)
         if not name:
@@ -366,37 +404,69 @@ class StudyNodesScreen(QWidget):
             return
         try:
             info = data.viewer_html_for(name)
+            ctx = project_ctx.load(name)
         except (OSError, ValueError, KeyError) as exc:
-            info = {"html": None, "graph": None, "error": "추출 결과를 읽을 수 없음: %s" % exc}
-        self.graph = info.get("graph")
-        if not self.graph:
+            info, ctx = {"html": None, "graph": None, "error": "추출 결과를 읽을 수 없음: %s" % exc}, None
+        if not info.get("graph") or ctx is None:
             self.stack.setCurrentIndex(0)
             self.empty.setText("이 도면의 그래프가 없습니다. ① 자료 등록에서 '추출·그래프 만들기'를 실행하세요.")
             self._render()
             return
-        self.entities = {n["entity_id"]: n for n in self.graph.get("nodes", [])}
-        self.local_map = data.entity_local_map(self.graph)
-        self.entity_of_local = {n["local_id"]: n["entity_id"] for n in self.graph.get("nodes", []) if n.get("local_id")}
+        if ctx.pg is None:
+            self.stack.setCurrentIndex(0)
+            self.empty.setText("프로젝트 그래프가 없어 검토구간을 보여 줄 수 없습니다.")
+            self.warn.set_messages(ctx.error)
+            self._render()
+            return
+        self.ctx, self.graph = ctx, ctx.pg
+        self.entities = ctx.by_id
+        self.local_map, self.entity_of_local = ctx.local_of, ctx.pid_of_local
         self.warn.set_messages(info.get("error"))
         try:
-            saved = nodes.load(self.graph)
+            self.node_set, self.saved = ctx.load_set()
         except (OSError, ValueError) as exc:
-            saved = None
-            self.warn.set_messages("저장된 검토구간을 읽을 수 없어 새로 제안합니다", [str(exc)])
-        if saved is not None:
-            self.node_set, self.saved = saved, True
-        else:
             self.node_set, self.saved = nodes.propose(self.graph), False
+            self.warn.set_messages("저장된 검토구간을 읽을 수 없어 새로 제안합니다", [str(exc)])
+        if ctx.notice:
+            self.notice = ctx.notice
+            self.app.toast(ctx.notice)
         self.stack.setCurrentIndex(1)
         if info.get("html"):
             self.app.attach_webview(self.canvas_host)
             self.app.webview.set_drawing_enabled(True)
             self.app.webview.load_file(info["html"])
-        self._render()
+        self._render(pending)
+        if pending and self.current_node_id() != pending:
+            self.select_node(pending)
 
     # ------------------------------------------------------------ 그리기
     def _coverage(self):
         return nodes.coverage(self.node_set, self.graph)
+
+    def _view_node(self, node_id):
+        return next((n for n in self.view["nodes"] if n["node_id"] == node_id), None) if self.view else None
+
+    def _shown(self):
+        """목록에 보일 구간(표기 사본). '이 도면 구간'은 이 도면을 지나는 구간과 어느 도면에도 없는 빈 구간."""
+        if self.scope.currentIndex() == 1:
+            return self.view["nodes"]
+        here = {n["node_id"] for n in span.nodes_on_drawing(self.view, self.ctx.drawing_number)}
+        return [n for n in self.view["nodes"] if n["node_id"] in here or not n["drawings"]]
+
+    def _drawing_of(self, eid):
+        sheet = (self.entities.get(eid) or {}).get("sheet")
+        return next((s["drawing_number"] for s in self.graph["sheets"] if s["graph_id"] == sheet), None)
+
+    def _entity_text(self, eid, missing="-", always_drawing=False):
+        """"RC-P01 · pump", 다른 도면 것이면 뒤에 "(101)". 도면 연결 구간은 "(도면 연결)"."""
+        node = self.entities.get(eid)
+        dn = self._drawing_of(eid)
+        text = "%s · %s" % (entity_label(node), (node or {}).get("kind") or missing)
+        if dn is None and node is not None:
+            return text + " (도면 연결)"
+        if dn and (always_drawing or dn != self.ctx.drawing_number):
+            return text + " (%s)" % self.ctx.short.get(dn, dn)
+        return text
 
     def _render(self, keep=None):
         """node_set 기준으로 패널·도면 색·머리말을 다시 그린다. keep은 다시 선택할 node_id."""
@@ -406,6 +476,7 @@ class StudyNodesScreen(QWidget):
         self.node_list.clear()
         self.uncovered_list.clear()
         if ns is None:
+            self.view = None
             self.node_list.blockSignals(False)
             self.node_list.updateGeometry()
             self.chip_status.set_state("검토구간 —")
@@ -414,17 +485,27 @@ class StudyNodesScreen(QWidget):
             self.gate.setText("")
             self.member_list.clear()
             self.owner_list.clear()
+            self.notice_bar.set_messages(None)
+            self._fill_node_card()
             self._update_buttons()
             self.app.update_header()
             self.app.refresh_stages()
             return
+        self.view = self.ctx.view(ns)
         confirmed = ns["status"] == "confirmed"
-        for i, n in enumerate(ns["nodes"]):
-            it = QListWidgetItem(seg_icon(i, n["node_id"]), n["name"])
+        # 옮긴 집합은 다시 확정해야 한다는 알림이라 확정되면 내린다.
+        self.notice_bar.set_messages(None if confirmed else self.notice)
+        index = {n["node_id"]: i for i, n in enumerate(ns["nodes"])}   # 색은 집합 순서로(목록 거르기와 무관하게 같은 색)
+        dn = self.ctx.drawing_number
+        shown = self._shown()
+        for n in shown:
+            here = (n.get("members_by_drawing") or {}).get(dn, 0)
+            it = QListWidgetItem(seg_icon(index[n["node_id"]], n["node_id"]), project_ctx.node_label(n))
             it.setData(Qt.UserRole, n["node_id"])
-            it.setData(COUNT_ROLE, "%d개" % len(n["members"]))
-            it.setToolTip("%s %s · 구성요소 %d개\n근거: %s" % (n["node_id"], n["name"], len(n["members"]),
-                                                          n.get("basis") or "-"))
+            it.setData(COUNT_ROLE, "%d개" % n["member_count"] if here == n["member_count"]
+                       else "%d/%d" % (here, n["member_count"]))
+            it.setToolTip("%s\n%s\n%s\n근거: %s" % (project_ctx.node_label(n), project_ctx.counts_text(n, dn),
+                                                 project_ctx.boundary_text(n), n.get("basis") or "-"))
             flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable | (Qt.NoItemFlags if confirmed else Qt.ItemIsUserCheckable)
             it.setFlags(flags)
             if not confirmed:
@@ -435,21 +516,22 @@ class StudyNodesScreen(QWidget):
         cov = self._coverage()
         empties = [n["node_id"] for n in ns["nodes"] if not n["members"]]
         # 확정·제안은 구간 하나가 아니라 집합 전체의 상태라 목록 머리에 한 번만 쓴다.
-        self.list_head.setText("검토구간 · %d개 · %s" % (len(ns["nodes"]), "확정" if confirmed else "제안"))
-        self.kpi.setText("구성요소 <b>%d</b> · 덮음 <b>%d/%d</b> · 미포함 <b>%d</b>"
-                         % (cov["total"], cov["covered"], cov["total"], len(cov["uncovered"])))
+        total = len(ns["nodes"])
+        count = "%d개" % total if len(shown) == total else "%d/%d개" % (len(shown), total)
+        self.list_head.setText("검토구간 · %s · %s" % (count, "확정" if confirmed else "제안"))
+        self.kpi.setText("구성요소 <b>%d</b> · 미포함 <b>%d</b> · 덮음 %s"
+                         % (cov["total"], len(cov["uncovered"]), html.escape(self.ctx.coverage_text(ns)[0])))
         self.progress.setRange(0, max(cov["total"], 1))
         self.progress.setValue(cov["covered"])
         for eid in cov["uncovered"]:
-            node = self.entities.get(eid)
-            it = QListWidgetItem("%s · %s" % (entity_label(node), (node or {}).get("kind") or "-"))
+            it = QListWidgetItem(self._entity_text(eid, always_drawing=True))
             it.setData(Qt.UserRole, eid)
             self.uncovered_list.addItem(it)
         self.tabs.setTabText(1, "미포함 %d" % len(cov["uncovered"]))
         show_list_or_hint(self.uncovered_list, self.uncovered_hint)
         stale = nodes.is_stale(ns, self.graph)
         self.stale.set_messages(
-            "도면 그래프가 바뀌었습니다(저장본 %s → 현재 %s). '다시 제안'으로 새로 만들거나 확정 해제 뒤 고치세요."
+            "프로젝트 그래프(도면·도면 연결)가 바뀌었습니다(저장본 %s → 현재 %s). '다시 제안'으로 새로 만들거나 확정 해제 뒤 고치세요."
             % (ns.get("graph_version"), self.graph.get("graph_version")) if stale else None)
         if confirmed:
             at = ns.get("confirmed_at")
@@ -469,11 +551,13 @@ class StudyNodesScreen(QWidget):
             if stale:
                 reasons.append("그래프 판 바뀜")
             self.gate.setText("확정 가능" if not reasons else "확정하려면 해결: " + " · ".join(reasons))
-        row = next((i for i, n in enumerate(ns["nodes"]) if n["node_id"] == keep), -1)   # 고른 구간이 없으면 전체 보기
-        self.node_list.setCurrentRow(row)
+        row = next((i for i, n in enumerate(shown) if n["node_id"] == keep), -1)   # 고른 구간이 없으면 전체 보기
+        # setCurrentRow(-1)만으로는 목록이 초점을 받을 때(main_focus) Qt가 첫 행을 골라 전체 보기가 풀린다.
+        self.node_list.setCurrentIndex(self.node_list.model().index(row, 0))
         self._fill_members()
         self._sync_pick()
         self._fill_owner()
+        self._fill_node_card()
         self._paint()
         self._update_buttons()
         self._publish_node()
@@ -487,17 +571,105 @@ class StudyNodesScreen(QWidget):
         groups = [{"color": "var(--%s)" % seg_token(i), "active": n["node_id"] == cur, "label": n["node_id"],
                    "ids": [self.local_map[m] for m in n["members"] if m in self.local_map]}
                   for i, n in enumerate(self.node_set["nodes"])]
+        # 이 도면에 없는 구간은 범례·색에서 뺀다. 고른 구간은 이 도면에 없어도 넘겨서 나머지를 흐리게 한다.
+        groups = [g for g in groups if g["ids"] or g["active"]]
         unc = [self.local_map[e] for e in self._coverage()["uncovered"] if e in self.local_map]
         self.app.webview.set_segments(groups, unc)
+        chips = self.drawing_chips()
+        self._chip_keys = {c["key"] for c in chips}  # on_chip은 이 화면이 단 칩의 key만 받는다(웹 메시지는 신뢰하지 않음)
+        self.app.webview.set_chips(chips)
         self.app.webview.pick(self.local_map.get(self.picked_entity) if self.picked_entity else None)
+
+    # ------------------------------------------------------------ 도면 연결 칩
+    def _chip_target(self, chip):
+        """칩이 여는 추출 이름과 열 수 없는 사유(열 수 있으면 None)."""
+        name = chip.get("name")
+        if not name or self.combo.findText(name) < 0:
+            return None, "%s 추출 결과가 없어 열 수 없습니다. ① 자료 등록에서 그 도면을 추출하세요." % chip["drawing"]
+        return name, None
+
+    def drawing_chips(self):
+        """도면 위 칩. 고른 구간이 있으면 그 구간 것만, 전체 보기면 이 도면의 모든 구간 것.
+        같은 연결점·같은 상대(도면, 구간)는 한 번만, 같은 연결점의 칩 여러 개는 row로 쌓는다."""
+        if not self.view:
+            return []
+        cur = self._view_node(self.current_node_id())
+        out, seen, rows = [], set(), {}
+        for n in [cur] if cur else self.view["nodes"]:
+            for c in self.ctx.chips(n):
+                key = (c["local_id"], c["drawing"], c["node_id"])
+                if not c["local_id"] or key in seen:
+                    continue
+                seen.add(key)
+                name, why = self._chip_target(c)
+                rows[c["local_id"]] = rows.get(c["local_id"], -1) + 1
+                out.append({"local_id": c["local_id"], "text": c["text"], "kind": "link", "row": rows[c["local_id"]],
+                            "key": "%s|%s" % (c["node_id"], name or ""),
+                            "tip": why or "%s에서 %s 열기" % (c["drawing"], c["node_id"])})
+        return out
+
+    def on_chip(self, key):
+        """도면 위 칩을 누름. key = "<구간 ID>|<추출 이름>"(이름이 비면 열 수 없는 도면)."""
+        if key not in getattr(self, "_chip_keys", ()):
+            return False
+        node_id, _, name = str(key).partition("|")
+        if not name:
+            self.msg.setText("상대 도면의 추출 결과가 없어 열 수 없습니다.")
+            return False
+        return self.jump(name, node_id)
+
+    def jump(self, name, node_id):
+        """name 도면으로 바꾸고 같은 구간을 고른다(같은 도면이면 구간만 고른다)."""
+        if not name or self.combo.findText(name) < 0:
+            return False
+        if name == self.combo.currentText():
+            return self.select_node(node_id)
+        self._pending = node_id
+        self.combo.setCurrentText(name)
+        return self.current_node_id() == node_id
+
+    def _fill_node_card(self):
+        """고른 구간의 경계·구성요소 수와 이어지는 도면 버튼. 이 도면에 없는 구간이면 그 구간이 있는 도면 버튼."""
+        # 버튼은 담는 상자째 바꾼다. 버튼만 deleteLater하면 지워지기 전 재진입(도면 바꿈 중 다시 그림)에서 남은 버튼이
+        # 레이아웃 밖 640×480으로 떠서 카드 글자를 덮었다.
+        if self.jump_host is not None:
+            self.jump_host.hide()
+            self.jump_host.setParent(None)
+            self.jump_host.deleteLater()
+        self.jump_host = QWidget()
+        self.jump_box = QVBoxLayout(self.jump_host)
+        self.jump_box.setContentsMargins(0, 0, 0, 0)
+        self.jump_box.setSpacing(2)
+        self.node_card.layout().addWidget(self.jump_host)
+        self.jump_buttons = []
+        n = self._view_node(self.current_node_id())
+        self.node_card.setVisible(n is not None)
+        if n is None:
+            return
+        dn = self.ctx.drawing_number
+        lines = [project_ctx.boundary_text(n), project_ctx.counts_text(n, dn)]
+        if dn in n["drawings"]:
+            targets = self.ctx.chips(n)
+        else:
+            lines.append("이 도면에는 이 구간의 구성요소가 없습니다.")
+            targets = [{"text": "%s에서 보기" % d, "drawing": d, "name": self.ctx.drawing_names.get(d),
+                        "node_id": n["node_id"]} for d in n["drawings"]]
+        self.node_text.setText("\n".join(lines))
+        for c in targets:
+            name, why = self._chip_target(c)
+            b = QPushButton(c["text"])
+            b.setToolTip(why or "%s 도면으로 가서 %s을(를) 고릅니다" % (c["drawing"], c["node_id"]))
+            b.setEnabled(name is not None)
+            b.clicked.connect(lambda _c=False, nm=name, nid=c["node_id"]: self.jump(nm, nid))
+            self.jump_box.addWidget(b)
+            self.jump_buttons.append(b)
 
     def _fill_members(self):
         self.member_list.blockSignals(True)   # 목록을 다시 채우는 것은 구성요소 선택이 아니다
         self.member_list.clear()
         n = self.current_node()
         for eid in (n["members"] if n else []):
-            node = self.entities.get(eid)
-            it = QListWidgetItem("%s · %s" % (entity_label(node), (node or {}).get("kind") or "그래프에 없음"))
+            it = QListWidgetItem(self._entity_text(eid, missing="그래프에 없음"))
             it.setData(Qt.UserRole, eid)
             self.member_list.addItem(it)
             it.setSelected(eid == self.picked_entity)
@@ -513,7 +685,7 @@ class StudyNodesScreen(QWidget):
         owners = nodes.nodes_of(self.node_set, eid) if eid and self.node_set else []
         index = {n["node_id"]: i for i, n in enumerate(self.node_set["nodes"])} if self.node_set else {}
         for nid in owners:
-            it = QListWidgetItem(seg_icon(index[nid], nid), self._node(nid)["name"])
+            it = QListWidgetItem(seg_icon(index[nid], nid), project_ctx.node_label(self._view_node(nid)))
             it.setData(Qt.UserRole, nid)
             self.owner_list.addItem(it)
         label = entity_label(self.entities.get(eid)) if eid else None
@@ -565,11 +737,18 @@ class StudyNodesScreen(QWidget):
         return [it.data(Qt.UserRole) for it in self.member_list.selectedItems()]
 
     def select_node(self, node_id):
+        """목록에서 구간을 고른다. '이 도면 구간'에 없는 프로젝트 구간이면 목록을 '프로젝트 전체'로 넓혀 고른다."""
         for i in range(self.node_list.count()):
             if self.node_list.item(i).data(Qt.UserRole) == node_id:
                 self.node_list.setCurrentRow(i)
                 return True
-        return False
+        if self._node(node_id) is None or self.scope.currentIndex() == 1:
+            return False
+        self.scope.blockSignals(True)
+        self.scope.setCurrentIndex(1)
+        self.scope.blockSignals(False)
+        self._render(node_id)
+        return self.current_node_id() == node_id
 
     def set_checked(self, node_ids):
         for i in range(self.node_list.count()):
@@ -587,6 +766,7 @@ class StudyNodesScreen(QWidget):
         self._fill_members()
         self._sync_pick()
         self._fill_owner()
+        self._fill_node_card()
         self._paint()
         self._update_buttons()
         self._publish_node()
@@ -658,6 +838,8 @@ class StudyNodesScreen(QWidget):
         if not self.node_set:
             return
         eid = sel.get("entity_id")
+        if eid not in self.entities and eid:   # 뷰어는 도면 안 entity_id를 보낸다
+            eid = project.nid(self.ctx.graph_id, eid)
         if eid not in self.entities:
             eid = self.entity_of_local.get(sel.get("local_id"))
         if eid not in self.entities:

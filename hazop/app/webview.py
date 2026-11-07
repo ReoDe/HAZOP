@@ -120,6 +120,7 @@ class Bridge(QObject):
     linkSelected = Signal(str)     # ③ 지식그래프: 클릭한 관계 ID
     algorithmRequested = Signal(dict)  # ③ 지식그래프 runAlgorithm: {"algorithm", "start"}
     editPick = Signal(dict)        # ② 편집: {"point": 도면 좌표 [x, y], "local_id"(없으면 None), "view"(없으면 None)}
+    chipClicked = Signal(str)      # ②④ 도면 연결점 칩: 앱이 준 key
     ready = Signal()
 
     def __init__(self, parent=None):
@@ -177,6 +178,10 @@ class Bridge(QObject):
             alg, start = msg.get("algorithm"), clean_id(msg.get("start"))
             if alg in ("A1",) and start:
                 self.algorithmRequested.emit({"algorithm": alg, "start": start})
+        elif kind == "chip":
+            key = clean_id(msg.get("key"))
+            if key:
+                self.chipClicked.emit(key)
         elif kind == "editPick":
             pick = clean_edit_pick(msg)
             if pick:
@@ -349,6 +354,44 @@ BRIDGE_JS = r"""
       var cx = (b.left + b.width / 2 - vr.left - v.x) / v.s, cy = (b.top + b.height / 2 - vr.top - v.y) / v.s;
       window.hzView.set({ s: s, x: vr.width / 2 - cx * s, y: vr.height / 2 - cy * s });
     }
+    // ②④ 도면 연결점 칩: 연결점 아래에 "S7 → SNP-M-101에서 계속"(link) 또는 "미연결 · 사유"(unlinked). 누르면 key를 앱에 보낸다.
+    // 칩은 도면 좌표계 안에 있지만 확대 배율과 상관없이 화면에서 같은 크기(글자 12px)로 보이게 배율이 바뀌면 다시 그린다.
+    var chipMarks = [], chipList = [], chipScale = 0;
+    function chipPx(e) { var m = e.parentNode && e.parentNode.getScreenCTM ? e.parentNode.getScreenCTM() : null; return m ? Math.hypot(m.a, m.b) || 1 : 1; }
+    function chips(list) {
+      chipList = list || [];
+      chipMarks.forEach(function (m) { if (m.parentNode) m.parentNode.removeChild(m); });
+      chipMarks = [];
+      chipList.forEach(function (c) {
+        var e = els(c.local_id).filter(function (x) { return x.closest && x.closest("#overlay"); })[0] || els(c.local_id)[0];
+        if (!e) return;
+        var bb; try { bb = e.getBBox(); } catch (x) { return; }
+        var k = 1 / chipPx(e);
+        chipScale = chipPx(e);
+        var g = document.createElementNS(NS, "g"), r = document.createElementNS(NS, "rect"), t = document.createElementNS(NS, "text");
+        var text = String(c.text || ""), h = 18 * k, w = (text.length * 8 + 16) * k, y = bb.y + bb.height + 16 * k + (c.row || 0) * (h + 2 * k);  // 태그 글자 한 줄 아래
+        g.setAttribute("class", "hz-chip " + (c.kind === "unlinked" ? "hz-chip-warn" : "hz-chip-link"));
+        g.setAttribute("data-chip-key", String(c.key || ""));
+        g.setAttribute("role", "button"); g.setAttribute("aria-label", text);
+        r.setAttribute("x", bb.x); r.setAttribute("y", y); r.setAttribute("width", w); r.setAttribute("height", h); r.setAttribute("rx", h / 2);
+        r.style.setProperty("stroke-width", 1.2 * k);
+        t.setAttribute("x", bb.x + 8 * k); t.setAttribute("y", y + 13 * k); t.textContent = text;
+        t.style.setProperty("font-size", (12 * k) + "px");
+        var tip = document.createElementNS(NS, "title"); tip.textContent = String(c.tip || text); g.appendChild(tip);
+        g.appendChild(r); g.appendChild(t);
+        g.addEventListener("click", function (ev) { ev.stopPropagation(); send({ type: "chip", key: String(c.key || "") }); }, true);
+        g.addEventListener("mousedown", function (ev) { ev.stopPropagation(); }, true);
+        e.parentNode.appendChild(g); chipMarks.push(g);
+        try { r.setAttribute("width", t.getComputedTextLength() + 16 * k); } catch (x) { /* 글자 폭을 못 재면 어림 폭 */ }
+      });
+    }
+    (function watchChipZoom() {  // 확대·축소(휠·버튼·맞춤)는 여러 길로 오므로 화면 배율을 매 프레임 비교한다(칩이 있을 때만 다시 그림)
+      if (chipMarks.length && chipMarks[0].parentNode) {
+        var now = chipPx(chipMarks[0]);
+        if (Math.abs(now - chipScale) / chipScale > 0.02) chips(chipList);
+      }
+      requestAnimationFrame(watchChipZoom);
+    })();
     // ② 편집: 선택 외 도구에서는 클릭을 도면 좌표로 바꿔 editPick만 보낸다(템플릿 선택·nodeSelected는 막음).
     // 도면 좌표 = 오버레이 SVG 사용자 좌표 + svg_alignment.offset. 끌어서 이동을 끝낸 클릭은 버린다.
     var edit = { on: false, tool: "select" }, down = null, preview = null, OFF = [0, 0];
@@ -413,6 +456,7 @@ BRIDGE_JS = r"""
         window.dispatchEvent(new Event("resize"));
       } else if (m.type === "segments") segments(m);
       else if (m.type === "clearSegments") { clearSegments(); segLegend([], 0); }
+      else if (m.type === "chips") chips(m.chips);
       else if (m.type === "openPathQuery") { if (window.openPathQuery) window.openPathQuery(); }
       else if (m.type === "toggleLayer") { if (window.hzToggleLayer) window.hzToggleLayer(m.layer); }
       else if (m.type === "clearHighlight") clear();
@@ -448,6 +492,12 @@ body.hz-segfocus #overlay .sym:not(.hz-seg-in), body.hz-segfocus #overlay .tagbo
 body.hz-segfocus #overlay .pipe-line:not(.hz-seg-in), body.hz-segfocus #graphsvg .gnode:not(.hz-seg-in),
 body.hz-segfocus #graphsvg .gedge:not(.hz-seg-in), body.hz-segfocus #graphsvg .glabel,
 body.hz-segfocus #taglabels span:not(.hz-seg-in), body.hz-segfocus .segchip:not(.active) { opacity: var(--hl-dim); }
+.hz-chip { cursor: pointer; opacity: 1 !important; }
+.hz-chip rect { fill: var(--card); stroke: var(--ui); }
+.hz-chip text { fill: var(--ui); font-weight: 700; }
+.hz-chip-warn rect { fill: var(--warn-bg); stroke: var(--warn-line); stroke-dasharray: 4 2; }
+.hz-chip-warn text { fill: var(--warn-ink); }
+.hz-chip:hover rect { fill: var(--line); }
 .hz-pick { opacity: 1 !important; stroke: var(--ui) !important; filter: drop-shadow(0 0 3px var(--ui)) drop-shadow(0 0 3px var(--ui));
   animation: hz-pulse 1.2s ease-in-out 3; }
 @keyframes hz-pulse { 50% { stroke-width: 7; } }
@@ -560,6 +610,11 @@ class HazopWebView(QWebEngineView):
 
     def clear_segments(self):
         self.bridge.send("clearSegments")
+
+    def set_chips(self, chips):
+        """②④ 도면 연결점 칩 [{"local_id", "text", "key", "kind": "link"|"unlinked", "tip", "row"}]. 빈 목록이면 지운다.
+        누르면 bridge.chipClicked(key)."""
+        self.bridge.send("chips", chips=[dict(c) for c in chips if c.get("local_id")])
 
     def focus(self, local_id):
         self.bridge.send("focus", local_id=local_id)
