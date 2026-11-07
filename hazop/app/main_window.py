@@ -23,10 +23,10 @@ from hazop.app.screens.results import ResultsScreen
 from hazop.app.screens.review import ReviewScreen
 from hazop.app.screens.study import StudyNodesScreen, seg_icon
 from hazop.app.screens.viewer import ViewerScreen
-from hazop.app.settings_dialog import SettingsDialog
+from hazop.app.settings_dialog import SettingsDialog, status_bar_html
 from hazop.app.webview import HazopWebView
 from hazop.app.widgets import VALIDATION_LABELS, Chip, TaskRunner, Toast, esc, kst_text, write_log
-from hazop.study.apikey import KEY_FILE_NAME, KeyStore
+from hazop.study.apikey import STORE_FILE_NAME, KeyStore
 
 APP_NAME = "HAZOP 분석 도구"
 APP_VERSION = "0.1.0"
@@ -123,7 +123,7 @@ class MainWindow(QMainWindow):
         self.debug = debug  # True면 상태줄에 Python↔웹 메시지 등 개발자 정보를 보여 준다(--debug)
         self.settings_path = settings_path
         self.settings = paths.load_settings(settings_path)
-        self.api_keys = KeyStore(os.path.join(os.path.dirname(settings_path or paths.settings_path()), KEY_FILE_NAME))
+        self.api_keys = KeyStore(os.path.join(os.path.dirname(settings_path or paths.settings_path()), STORE_FILE_NAME))
         self._key_dialog = None
         self.run_ctx = None
         self.setWindowTitle(APP_NAME)
@@ -497,9 +497,16 @@ class MainWindow(QMainWindow):
         self.keys_label.setObjectName("muted")
         for w in (self.drawing_label, self.count_label, self.chip_valid):
             sb.addWidget(w)
-        for w in (self.msg_label, self.task_label, self.saved_label, self.keys_label):
+        self.ai_label = QLabel("")  # AI 연결 표시. 누르면(또는 Tab 후 Enter) API 키 설정 창
+        self.ai_label.setTextInteractionFlags(Qt.LinksAccessibleByMouse | Qt.LinksAccessibleByKeyboard)
+        self.ai_label.linkActivated.connect(lambda _: self.open_key_settings())
+        self._update_ai_label()
+        for w in (self.msg_label, self.task_label, self.saved_label, self.ai_label, self.keys_label):
             sb.addPermanentWidget(w)
         self._update_reviewer_label()
+
+    def _update_ai_label(self):
+        self.ai_label.setText(status_bar_html(self.api_keys))
 
     def _refresh_status(self):
         """왼쪽은 지금 도면과 개수, 오른쪽은 메시지·진행·저장·단축키 안내. 값이 없는 칸은 숨긴다."""
@@ -1130,6 +1137,7 @@ class MainWindow(QMainWindow):
             self._key_dialog = SettingsDialog(self.api_keys, self)
         self._key_dialog.refresh()
         self._key_dialog.exec()
+        self._update_ai_label()
 
     def _ask_reviewer(self):
         name, ok = QInputDialog.getText(self, "검토자 이름", "검토자 이름", text=self.reviewer_name() or "")

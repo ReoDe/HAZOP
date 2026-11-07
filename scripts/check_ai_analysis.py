@@ -3,7 +3,7 @@
 저장소의 출력/그래프·출력/지식그래프를 임시 작업 루트로 복사해 실제 샘플 도면(SNP-M-102)과 지식그래프로 확인한다
 (저장소의 출력/·데이터/에 쓰지 않음). 네트워크 대신 가짜 opener를 끼운 ClaudeHttpClient를 쓴다. Qt 없음.
 가짜 응답은 스키마에 맞고, 도면에 없는 태그 1개와 이어지지 않는 경로 1개를 일부러 넣는다.
-확인: 요청 결정성, 근거 경고, 위험도(MATRIX_P86), 저장·읽기 왕복, 키가 파일·요청 본문에 없음(헤더에만),
+확인: 요청 결정성, 모델별 요청 모양(Haiku는 대체 모델 없음), 다중 키 보관·옛 키 파일 이전, 근거 경고, 위험도(MATRIX_P86), 저장·읽기 왕복, 키가 파일·요청 본문에 없음(헤더에만),
 취소(남은 unit 미호출)·실패 칸 재실행(그 칸만 다시, 나머지 유지).
 종료 코드 0 = 전부 통과.
 """
@@ -22,6 +22,7 @@ from hazop.console import safe_console  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.analysis.risk import MATRIX_P86  # noqa: E402
 from hazop.study import ai_cells as ac  # noqa: E402
+from hazop.study import apikey  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 from hazop.study import results as sr  # noqa: E402
 from hazop.study.claude_http import ClaudeHttpClient  # noqa: E402
@@ -29,6 +30,7 @@ from hazop.viewer import build as viewer_build  # noqa: E402
 
 DRAWING = "SNP-M-102"
 KEY = "sk-ant-api03-CHECKKEY-never-in-files-9876543210"
+KEY2 = "sk-ant-api03-SECONDKEY-never-in-files-0123456789"
 BAD_TAG = "NO-SUCH-TAG-999"
 AT = "2026-11-07T00:00:00Z"
 
@@ -170,17 +172,46 @@ def check(tmp):
         f.append("재실행이 성공했던 칸을 바꿈")
     sr.save(res2, ns.get("project_id"))
 
+    f += check_key_store(tmp, ctxs, jobs[0], devs)
     hits = []
     for base, _dirs, files in os.walk(tmp):
         for name in files:
             with open(os.path.join(base, name), "rb") as fh:
-                if KEY.encode("utf-8") in fh.read():
+                raw = fh.read()
+                if any(k.encode(enc) in raw for k in (KEY, KEY2) for enc in ("utf-8", "utf-16-le")):
                     hits.append(os.path.relpath(os.path.join(base, name), tmp))
     if hits:
         f.append("키가 파일에 남음: %s" % hits)
     print("%-10s nodes %d · units %d · cells %d · retry %d · warnings/entry %d"
           % (DRAWING, len(ns["nodes"]), len(units), len(results["cells"]), len(failed),
              len(entries[0]["ai_basis"]["warnings"]) if entries else -1))
+    return f
+
+
+def check_key_store(tmp, ctxs, job, devs):
+    """다중 키 보관(옛 파일 이전·저장·시험 결과)과 모델별 요청 모양. 키는 임시 폴더의 가짜 값만 쓴다."""
+    f = []
+    haiku = FakeApi(ctxs)
+    ClaudeHttpClient(lambda: KEY, model="claude-haiku-5-5", opener=haiku).analyze(ac.build_request(*job, devs))
+    headers, body = haiku.calls[0]
+    if b'"fallbacks"' in body or "anthropic-beta" in headers:
+        f.append("Haiku 요청에 대체 모델(fallbacks)이 붙음")
+    if sys.platform != "win32":
+        return f
+    legacy = os.path.join(tmp, apikey.LEGACY_FILE_NAME)
+    with open(legacy, "wb") as fh:
+        fh.write(apikey.protect(KEY.encode("utf-8")))
+    path = os.path.join(tmp, apikey.STORE_FILE_NAME)
+    store = apikey.KeyStore(path)
+    if store.get() != KEY or os.path.exists(legacy):
+        f.append("옛 단일 키 파일을 새 목록으로 옮기지 못함")
+    kid = store.add("둘째 키", KEY2, persist=True)
+    store.record_test(kid, False, "거부됨 %s" % KEY2, "2026-11-07T00:00:00Z", store.model)
+    again = apikey.KeyStore(path)
+    if again.get() != KEY2 or [e["name"] for e in again.entries()] != [apikey.LEGACY_NAME, "둘째 키"]:
+        f.append("저장한 키 목록을 다시 읽지 못함")
+    if KEY2 in repr(again) or KEY2 in str(again.entries()):
+        f.append("키 목록 표시에 키가 보임")
     return f
 
 

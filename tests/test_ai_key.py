@@ -19,6 +19,7 @@ from hazop.study.apikey import KeyStore, mask  # noqa: E402
 from hazop.study.claude_http import ClaudeHttpClient, cost_usd  # noqa: E402
 
 KEY = "sk-ant-test-0123456789abcdefSECRET"
+KEY2 = "sk-ant-test-second-key-zyxwvuTWO2"
 REQUEST = {"system": "시스템", "context": "구간 맥락", "user": "편차 묶음", "schema": {"type": "object"}}
 WIN = sys.platform == "win32"
 
@@ -49,10 +50,22 @@ def client(opener):
 class TempDirTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.path = os.path.join(self.tmp, "api_key.dpapi")
+        self.path = os.path.join(self.tmp, "api_keys.json")
+        self.legacy = os.path.join(self.tmp, "api_key.dpapi")
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def files_have_no_key(self, *keys):
+        for name in os.listdir(self.tmp):
+            path = os.path.join(self.tmp, name)
+            if not os.path.isfile(path):
+                continue
+            with open(path, "rb") as fh:
+                raw = fh.read()
+            for k in keys:
+                self.assertNotIn(k.encode("utf-8"), raw, name)
+                self.assertNotIn(k.encode("utf-16-le"), raw, name)
 
 
 class KeyStoreTest(TempDirTest):
@@ -64,33 +77,48 @@ class KeyStoreTest(TempDirTest):
         self.assertEqual(apikey.unprotect(enc), data)
 
     @unittest.skipUnless(WIN, "Windows DPAPI 전용")
-    def test_persisted_file_has_no_plaintext_and_reloads(self):
-        KeyStore(self.path).set(KEY, persist=True)
-        with open(self.path, "rb") as fh:
-            raw = fh.read()
-        self.assertNotIn(KEY.encode("utf-8"), raw)
-        self.assertNotIn(KEY.encode("utf-16-le"), raw)
-        again = KeyStore(self.path)
-        self.assertTrue(again.is_persisted())
-        self.assertEqual(again.get(), KEY)
-
-    @unittest.skipUnless(WIN, "Windows DPAPI 전용")
-    def test_clear_deletes_file(self):
+    def test_several_keys_persist_switch_and_reload(self):
         store = KeyStore(self.path)
-        store.set(KEY, persist=True)
-        store.clear()
-        self.assertFalse(os.path.exists(self.path))
-        self.assertIsNone(store.get())
-        self.assertIsNone(KeyStore(self.path).get())
-
-    @unittest.skipUnless(WIN, "Windows DPAPI 전용")
-    def test_session_only_set_removes_old_persisted_key(self):
-        store = KeyStore(self.path)
-        store.set("old-key-value", persist=True)
-        store.set(KEY, persist=False)
-        self.assertFalse(store.is_persisted())
+        a = store.add("회사 워크스페이스", KEY, persist=True)
+        b = store.add("개인 시험용", KEY2, persist=True)
+        self.assertEqual(store.get(), KEY2)
+        store.select(a)
         self.assertEqual(store.get(), KEY)
-        self.assertIsNone(KeyStore(self.path).get())
+        self.files_have_no_key(KEY, KEY2)
+        again = KeyStore(self.path)
+        self.assertEqual([e["name"] for e in again.entries()], ["회사 워크스페이스", "개인 시험용"])
+        self.assertEqual(again.get(), KEY)
+        again.select(b)
+        self.assertEqual(KeyStore(self.path).get(), KEY2)
+
+    @unittest.skipUnless(WIN, "Windows DPAPI 전용")
+    def test_rename_and_remove(self):
+        store = KeyStore(self.path)
+        a = store.add("A", KEY, persist=True)
+        b = store.add("B", KEY2, persist=True)
+        store.rename(a, "  회사  ")
+        with self.assertRaises(ValueError):
+            store.rename(a, " ")
+        store.remove(b)
+        self.assertEqual(store.get(), KEY)
+        again = KeyStore(self.path)
+        self.assertEqual([e["name"] for e in again.entries()], ["회사"])
+        again.clear()
+        self.assertIsNone(again.get())
+        self.assertEqual(KeyStore(self.path).entries(), [])
+        self.files_have_no_key(KEY, KEY2)
+
+    @unittest.skipUnless(WIN, "Windows DPAPI 전용")
+    def test_session_only_key_stays_out_of_file(self):
+        store = KeyStore(self.path)
+        store.add("저장", KEY, persist=True)
+        store.add("임시", KEY2, persist=False)
+        self.assertFalse(store.is_persisted())
+        store.select(store.entries()[0]["id"])
+        self.files_have_no_key(KEY, KEY2)
+        again = KeyStore(self.path)
+        self.assertEqual([e["name"] for e in again.entries()], ["저장"])
+        self.assertEqual(again.get(), KEY)
 
     def test_session_only_writes_nothing(self):
         store = KeyStore(self.path)
@@ -98,29 +126,100 @@ class KeyStoreTest(TempDirTest):
         self.assertEqual(store.get(), KEY)
         self.assertEqual(os.listdir(self.tmp), [])
 
-    def test_corrupt_file_reads_as_no_key(self):
-        with open(self.path, "wb") as fh:
+    @unittest.skipUnless(WIN, "Windows DPAPI 전용")
+    def test_legacy_single_key_migrates(self):
+        with open(self.legacy, "wb") as fh:
+            fh.write(apikey.protect(KEY.encode("utf-8")))
+        store = KeyStore(self.path)
+        self.assertEqual(store.get(), KEY)
+        self.assertEqual(store.active()["name"], apikey.LEGACY_NAME)
+        self.assertTrue(store.is_persisted())
+        self.assertFalse(os.path.exists(self.legacy))
+        self.assertEqual(KeyStore(self.path).get(), KEY)
+        self.files_have_no_key(KEY)
+
+    @unittest.skipUnless(WIN, "Windows DPAPI 전용")
+    def test_legacy_kept_when_migration_write_fails(self):
+        with open(self.legacy, "wb") as fh:
+            fh.write(apikey.protect(KEY.encode("utf-8")))
+        os.mkdir(self.path)  # 새 파일 자리를 폴더로 막아 쓰기 실패
+        store = KeyStore(self.path)
+        self.assertEqual(store.get(), KEY)
+        self.assertTrue(store.load_error)
+        with open(self.legacy, "rb") as fh:
+            self.assertEqual(apikey.unprotect(fh.read()).decode("utf-8"), KEY)
+
+    def test_unreadable_legacy_is_left_alone(self):
+        with open(self.legacy, "wb") as fh:
             fh.write(b"not dpapi")
         store = KeyStore(self.path)
         self.assertIsNone(store.get())
         self.assertTrue(store.load_error)
+        with open(self.legacy, "rb") as fh:
+            self.assertEqual(fh.read(), b"not dpapi")
+        self.assertFalse(os.path.exists(self.path))
 
-    def test_repr_masks_key(self):
+    @unittest.skipUnless(WIN, "Windows DPAPI 전용")
+    def test_unreadable_key_survives_next_save(self):
+        store = KeyStore(self.path)
+        store.add("좋은 키", KEY, persist=True)
+        with open(self.path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        doc["keys"].append({"id": "broken", "name": "읽지 못함", "blob": "bm90LWRwYXBp", "last_test": None})
+        with open(self.path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        again = KeyStore(self.path)
+        self.assertEqual(len(again.entries()), 1)
+        self.assertTrue(again.load_error)
+        again.set_model("claude-sonnet-5-5")
+        with open(self.path, encoding="utf-8") as fh:
+            self.assertIn("broken", [k["id"] for k in json.load(fh)["keys"]])
+
+    def test_corrupt_store_reads_as_no_key(self):
+        with open(self.path, "wb") as fh:
+            fh.write(b"{not json")
+        store = KeyStore(self.path)
+        self.assertIsNone(store.get())
+        self.assertTrue(store.load_error)
+
+    def test_repr_entries_and_hint_hide_key(self):
         store = KeyStore(self.path)
         store.set(KEY, persist=False)
         self.assertNotIn(KEY, repr(store))
-        self.assertNotIn(KEY, str(store))
+        text = json.dumps(store.entries(), ensure_ascii=False)
+        self.assertNotIn(KEY, text)
+        self.assertNotIn("0123456789abcdef", text)
+        self.assertEqual(store.active()["hint"], "sk-ant-…CRET")
 
-    def test_empty_key_rejected(self):
-        with self.assertRaises(ValueError):
-            KeyStore(self.path).set("  ", persist=False)
+    def test_pasted_whitespace_cleaned(self):
+        store = KeyStore(self.path)
+        store.add("붙여넣기", "  sk-ant-AAA\nBBB \t", persist=False)
+        self.assertEqual(store.get(), "sk-ant-AAABBB")
 
-    def test_key_with_inner_newline_or_space_rejected(self):
-        for bad in ("sk-ant-AAA\nBBB", "sk-ant-AAA BBB", "sk-ant-AAA\tBBB", "sk-ant-키"):
+    def test_bad_key_rejected(self):
+        for bad in ("  ", "sk-ant-키", "sk-ant-\x00x"):
             with self.assertRaises(ValueError) as cm:
-                KeyStore(self.path).set(bad, persist=False)
-            self.assertNotIn("AAA", str(cm.exception))
-        self.assertFalse(os.path.exists(self.path))
+                KeyStore(self.path).add("x", bad, persist=False)
+            self.assertNotIn("sk-ant", str(cm.exception))
+        self.assertEqual(os.listdir(self.tmp), [])
+
+    def test_model_choice(self):
+        store = KeyStore(self.path)
+        self.assertEqual(store.model, "claude-opus-5-5")
+        with self.assertRaises(ValueError):
+            store.set_model("gpt-x")
+        if WIN:
+            store.set_model("claude-haiku-5-5")
+            self.assertEqual(KeyStore(self.path).model, "claude-haiku-5-5")
+
+    @unittest.skipUnless(WIN, "Windows DPAPI 전용")
+    def test_record_test_masks_key(self):
+        store = KeyStore(self.path)
+        kid = store.add("저장", KEY, persist=True)
+        store.record_test(kid, False, "거부 %s" % KEY, "2026-11-07T05:00:00Z", "claude-opus-5-5")
+        self.assertNotIn(KEY, store.active()["last_test"]["message"])
+        self.assertFalse(KeyStore(self.path).active()["last_test"]["ok"])
+        self.files_have_no_key(KEY)
 
     def test_mask(self):
         self.assertEqual(mask("a %s b %s" % (KEY, KEY), KEY), "a *** b ***")
@@ -130,8 +229,40 @@ class KeyStoreTest(TempDirTest):
 
     def test_default_path_next_to_settings(self):
         from hazop import paths
-        self.assertEqual(os.path.dirname(apikey.default_key_path()), os.path.dirname(paths.settings_path()))
-        self.assertEqual(os.path.basename(apikey.default_key_path()), "api_key.dpapi")
+        self.assertEqual(os.path.dirname(apikey.default_store_path()), os.path.dirname(paths.settings_path()))
+        self.assertEqual(os.path.basename(apikey.default_store_path()), "api_keys.json")
+
+
+class ModelChoiceTest(unittest.TestCase):
+    def test_models_have_prices_and_fallback_rule(self):
+        for mid in claude_http.MODELS:
+            self.assertIn(mid, claude_http.PRICES)
+        self.assertEqual(claude_http.PRICES["claude-sonnet-5-5"]["input"], 2.00)
+        self.assertEqual(claude_http.PRICES["claude-haiku-5-5"]["output"], 0.50)
+
+    def test_haiku_request_has_no_fallback(self):
+        op = FakeOpener(body=message(model="claude-haiku-5-5"))
+        ClaudeHttpClient(lambda: KEY, model="claude-haiku-5-5", opener=op).analyze(REQUEST)
+        body = json.loads(op.calls[0]["body"])
+        self.assertEqual(body["model"], "claude-haiku-5-5")
+        self.assertNotIn("fallbacks", body)
+        self.assertNotIn("anthropic-beta", op.calls[0]["headers"])
+        self.assertEqual(body["output_config"]["effort"], "high")
+
+    def test_sonnet_request_keeps_fallback(self):
+        op = FakeOpener(body=message(model="claude-sonnet-5-5"))
+        ClaudeHttpClient(lambda: KEY, model="claude-sonnet-5-5", opener=op).analyze(REQUEST)
+        self.assertEqual(json.loads(op.calls[0]["body"])["fallbacks"], "default")
+
+    def test_connection_messages_name_next_step(self):
+        def detail(text):
+            return json.dumps({"error": {"type": "invalid_request_error", "message": text}}).encode()
+        cases = ((400, detail("bad"), "워크스페이스"), (400, detail("Your credit balance is too low"), "Billing"),
+                 (402, b"{}", "Billing"), (401, b"{}", "Console"), (404, b"{}", "다른 모델"))
+        for code, body, word in cases:
+            res = client(FakeOpener(status=code, body=body)).test_connection()
+            self.assertFalse(res["ok"])
+            self.assertIn(word, res["message"], code)
 
 
 class RequestShapeTest(unittest.TestCase):
@@ -291,52 +422,125 @@ class SettingsDialogTest(TempDirTest):
     def dialog(self, opener=None):
         from hazop.app.settings_dialog import SettingsDialog
         self.store = KeyStore(self.path)
-        return SettingsDialog(self.store, opener=opener)
+        return SettingsDialog(self.store, opener=opener or FakeOpener())
 
-    def test_session_only_save(self):
-        from PySide6.QtWidgets import QLineEdit
-        dlg = self.dialog()
-        self.assertEqual(dlg.status_label.text(), "없음")
-        self.assertEqual(dlg.key_edit.echoMode(), QLineEdit.Password)
-        dlg.key_edit.setText(KEY)
-        dlg.persist_box.setChecked(False)
-        dlg.save()
-        self.assertEqual(self.store.get(), KEY)
-        self.assertEqual(os.listdir(self.tmp), [])
-        self.assertEqual(dlg.status_label.text(), "이번 실행만")
-        self.assertEqual(dlg.key_edit.text(), "")
-        for label in (dlg.status_label, dlg.message_label):
-            self.assertNotIn(KEY, label.text())
-        dlg.clear_key()
-        self.assertEqual(dlg.status_label.text(), "없음")
-        self.assertIsNone(self.store.get())
-
-    @unittest.skipUnless(WIN, "Windows DPAPI 전용")
-    def test_persisted_save_label(self):
-        dlg = self.dialog()
-        dlg.key_edit.setText(KEY)
-        dlg.persist_box.setChecked(True)
-        dlg.save()
-        self.assertEqual(dlg.status_label.text(), "저장됨(암호화)")
-        self.assertTrue(os.path.isfile(self.path))
-
-    def test_connection_runs_off_ui_thread(self):
+    def wait(self, dlg):
         from PySide6.QtCore import QCoreApplication
-        op = FakeOpener(status=401)
-        dlg = self.dialog(opener=op)
-        dlg.key_edit.setText(KEY)
-        dlg.test_connection()
-        self.assertFalse(dlg.test_btn.isEnabled())
         dlg.tasks.wait(10000)
         end = time.monotonic() + 5
         while not dlg.test_btn.isEnabled() and time.monotonic() < end:
             QCoreApplication.processEvents()
             time.sleep(0.01)
+        QCoreApplication.processEvents()
+
+    def screen_text(self, dlg):
+        from PySide6.QtWidgets import QComboBox, QLabel
+        parts = [w.text() for w in dlg.findChildren(QLabel)]
+        for combo in dlg.findChildren(QComboBox):
+            parts += [combo.itemText(i) for i in range(combo.count())]
+        return "\n".join(parts)
+
+    def test_add_session_key_tests_and_shows_connected(self):
+        from PySide6.QtWidgets import QLineEdit
+        from hazop.app.settings_dialog import connection_state, status_bar_html
+        op = FakeOpener()
+        dlg = self.dialog(op)
+        self.assertIn("키 없음", dlg.state_chip.text())
+        self.assertEqual(dlg.key_edit.echoMode(), QLineEdit.Password)
+        dlg.show_btn.setChecked(True)
+        self.assertEqual(dlg.key_edit.echoMode(), QLineEdit.Normal)
+        dlg.name_edit.setText("개인 시험용")
+        dlg.key_edit.setText(" " + KEY + "\n")
+        dlg.persist_box.setChecked(False)
+        dlg.add_key()
+        self.wait(dlg)
+        self.assertEqual(self.store.get(), KEY)
+        self.assertEqual(os.listdir(self.tmp), [])
+        self.assertEqual(dlg.key_edit.text(), "")
+        self.assertEqual(dlg.key_edit.echoMode(), QLineEdit.Password)
+        self.assertEqual(op.calls[0]["url"], "https://api.anthropic.com/v1/models/claude-opus-5-5")
+        self.assertIn("연결됨", dlg.state_chip.text())
+        text = self.screen_text(dlg)
+        for word in ("api.anthropic.com", "claude-opus-5-5", claude_http.API_VERSION, "개인 시험용", "sk-ant-…CRET",
+                     "이번 실행만"):
+            self.assertIn(word, text)
+        self.assertNotIn(KEY, text)
+        self.assertEqual(connection_state(self.store)[0], "ok")
+        self.assertIn("AI 연결됨 · 개인 시험용", status_bar_html(self.store))
+
+    def test_error_message_guides_next_step_and_hides_key(self):
+        body = json.dumps({"error": {"type": "invalid_request_error",
+                                     "message": "Your credit balance is too low %s" % KEY}}).encode()
+        dlg = self.dialog(FakeOpener(status=400, body=body))
+        dlg.key_edit.setText(KEY)
+        dlg.persist_box.setChecked(False)
+        dlg.add_key()
+        self.wait(dlg)
+        self.assertIn("연결 안 됨", dlg.state_chip.text())
+        self.assertIn("Billing", dlg.detail_label.text())
+        self.assertNotIn(KEY, self.screen_text(dlg))
+
+    def test_model_change_resets_state_and_uses_model(self):
+        op = FakeOpener()
+        dlg = self.dialog(op)
+        dlg.key_edit.setText(KEY)
+        dlg.persist_box.setChecked(False)
+        dlg.add_key()
+        self.wait(dlg)
+        self.store._model = "claude-sonnet-5-5"  # 파일 쓰기 없이 모델만 바꿈(메모리 키)
+        dlg.refresh()
+        self.assertIn("확인 안 함", dlg.state_chip.text())
+        self.assertIn("$2.00", dlg.price_label.text())
+        dlg.test_connection()
+        self.wait(dlg)
+        self.assertTrue(op.calls[-1]["url"].endswith("/claude-sonnet-5-5"))
+        self.assertIn("연결됨", dlg.state_chip.text())
+
+    def test_switch_rename_and_delete_with_confirmation(self):
+        dlg = self.dialog()
+        a = self.store.add("회사", KEY, persist=False)
+        self.store.add("개인", KEY2, persist=False)
+        dlg.refresh()
+        self.assertEqual(dlg.key_combo.count(), 2)
+        dlg._select_key(0)
+        self.assertEqual(self.store.get(), KEY)
+        dlg._ask_delete = lambda e: False
+        dlg.delete_key()
+        self.assertEqual(len(self.store.entries()), 2)
+        dlg._ask_delete = lambda e: True
+        dlg.delete_key()
+        self.assertNotIn(a, [e["id"] for e in self.store.entries()])
+        self.assertEqual(self.store.get(), KEY2)
+        dlg._ask_name = lambda cur: "새 이름"
+        dlg.rename_key()
+        self.assertEqual(self.store.active()["name"], "새 이름")
+
+    def test_close_warns_about_unadded_key(self):
+        dlg = self.dialog()
+        asked = []
+        dlg._ask_discard = lambda: asked.append(1) or False
+        dlg.key_edit.setText(KEY)
+        dlg.show()
+        dlg.reject()
+        self.assertEqual(asked, [1])
+        self.assertTrue(dlg.isVisible())
+        dlg._ask_discard = lambda: True
+        dlg.reject()
+        self.assertFalse(dlg.isVisible())
+        self.assertEqual(dlg.key_edit.text(), "")
+
+    def test_connection_runs_off_ui_thread(self):
+        op = FakeOpener(status=401)
+        dlg = self.dialog(op)
+        self.store.add("x", KEY, persist=False)
+        dlg.refresh()
+        dlg.test_connection()
+        self.assertFalse(dlg.test_btn.isEnabled())
+        self.wait(dlg)
         self.assertTrue(dlg.test_btn.isEnabled())
-        self.assertIn("401", dlg.message_label.text())
-        self.assertNotIn(KEY, dlg.message_label.text())
+        self.assertIn("401", dlg.detail_label.text())
+        self.assertNotIn(KEY, self.screen_text(dlg))
         self.assertEqual(op.calls[0]["headers"]["x-api-key"], KEY)
-        self.assertIsNone(self.store.get())
 
 
 if __name__ == "__main__":

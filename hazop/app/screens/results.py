@@ -519,7 +519,7 @@ class ResultsScreen(QWidget):
         return self.runner is not None
 
     def make_client(self):
-        return ClaudeHttpClient(self.app.api_keys.get)
+        return ClaudeHttpClient(self.app.api_keys.get, model=self.app.api_keys.model)
 
     def selected_node_id(self):
         row = self.matrix.currentRow()
