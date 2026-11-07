@@ -878,7 +878,16 @@ def start_failed_rerun(d):
     time.sleep(0.5)
     t = time.time()
     d.key("enter")
-    ok = d.wait(lambda: any("호출" in x for x in progress_texts(d)[0]), "AI 실행 시작 표시", timeout=5, since=t)
+
+    def confirm():
+        return [e for e in d.tree() if e["type"] == "Window" and e.get("name") == "AI 분석 시작"]
+    if d.wait(lambda: confirm() or running_text(progress_texts(d)[0]), "실행 확인 또는 시작", timeout=5, since=t) and confirm():
+        d.r["confirm_text"] = [x for x in d.texts() if "시작할까요" in x][:1]
+        d.shot("AI 실행 확인 대화상자")
+        d.step("확인 대화상자에서 Enter(예)")
+        t = time.time()
+        d.key("enter")
+    ok = d.wait(lambda: running_text(progress_texts(d)[0]), "AI 실행 시작 표시", timeout=5, since=t)
     d.shot("AI 실행 시작")
     return d.expect(bool(ok), "'실패 칸 다시 실행' 뒤 진행 표시가 보이지 않음", "보인 글자: %s" % (progress_texts(d)[0],))
 
