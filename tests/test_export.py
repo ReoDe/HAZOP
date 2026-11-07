@@ -380,6 +380,15 @@ class TestHeaderAndFiles(ExportTestBase):
         self.assertEqual([ws.cell(row=4, column=c).value for c in range(1, 9)],
                          ["이탈", "원인", "결과", "현재안전조치", "위험도", None, None, "개선권고사항"])
         self.assertEqual([ws.cell(row=5, column=c).value for c in (5, 6, 7)], ["빈도", "강도", "위험도"])
+        self.assertEqual(ws.cell(row=4, column=COL["drawings"]).value, "도면 번호")
+        self.assertEqual({r["drawings"] for r in read_rows(ws)}, {"SNP-M-102"}, "구간 JSON 실행은 그 도면 하나")
+
+    def test_drawing_column_lists_every_drawing_of_spanning_node(self):
+        self.save_d09()
+        node = {"node_id": "S7", "drawings": ["SNP-M-101", "SNP-M-102"]}  # span.annotate가 붙인 흐름 순서
+        res = export_worksheet(self.run_dir, self.store, self.out, now=NOW, node=node)
+        rows = read_rows(openpyxl.load_workbook(res["path"])["HAZOP 워크시트"])
+        self.assertEqual({r["drawings"] for r in rows}, {"SNP-M-101, SNP-M-102"})
 
     def test_no_overwrite_and_export_record(self):
         self.save_d09()

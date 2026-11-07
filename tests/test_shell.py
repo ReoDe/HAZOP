@@ -2,7 +2,8 @@
 U-14 관련 항목) 테스트. 실행: python -m unittest tests.test_shell
 
 작업 루트·저장 루트·설정 파일은 임시 폴더다(자료저장소·출력 폴더를 건드리지 않음). 샘플 도면 SNP-M-102를 임시 작업 루트에
-추출·그래프로 만들고, 검토구간 확정본과 분석 결과(고정 값)를 임시 저장 루트에 쓴 뒤 창을 연다. 네트워크·AI 호출 없음.
+추출·그래프로 만들고, 프로젝트 검토구간 확정본과 분석 결과(고정 값)를 임시 저장 루트에 쓴 뒤 창을 연다.
+ProjectExplorerTest는 SNP-M-101·102 두 장을 한 프로젝트로 잇는다. 네트워크·AI 호출 없음.
 """
 
 import os
@@ -81,9 +82,11 @@ class ShellTest(unittest.TestCase):
         os.makedirs(os.environ["HAZOP_WORK_ROOT"])
         out_dir, cls.graph = build_temp_drawing(os.environ["HAZOP_WORK_ROOT"])
         cls.drawing = os.path.basename(out_dir)
+        from hazop.app import project_ctx
         from hazop.study import nodes
         from hazop.study import results as res
-        ns = nodes.confirm(nodes.propose(cls.graph), cls.graph, "검토자A")
+        pg = project_ctx.load(cls.drawing).pg
+        ns = nodes.confirm(nodes.propose(pg), pg, "검토자A")
         nodes.save(ns)
         cls.node_set = ns
         devs = res.load_deviations()
@@ -151,17 +154,35 @@ class ShellTest(unittest.TestCase):
                   for i in range(win.explorer.topLevelItemCount())}
         study = next(g for name, g in groups.items() if name.startswith("검토구간 · "))
         self.assertEqual(study.text(1), str(len(self.node_set["nodes"])))
-        first = study.child(0)
-        self.assertEqual(first.text(1), "미1", "미검토 수")
-        self.assertEqual(groups["자료"].child(0).flags(), Qt.NoItemFlags, "빈 그룹은 누를 수 없는 안내 한 줄")
+        self.assertEqual(study.child(0).text(0), "⑤ 결과 행렬 열기", "결과 바로가기는 구간이 많아도 보이게 맨 위")
+        first = study.child(1)
+        self.assertEqual(first.text(1), "미1·실패1", "미검토 수와 AI 실패 칸 수")
+        src = groups["자료"].child(0)
+        self.assertEqual(src.text(0), "%s · 등록 없이 추출" % self.drawing, "등록 없이 추출된 도면도 자료에 출처와 함께")
+        self.assertEqual(groups["자료"].text(1), "1")
+        self.assertEqual(groups["지식그래프"].child(0).flags(), Qt.NoItemFlags, "빈 그룹은 누를 수 없는 안내 한 줄")
+        link = study.child(0)
+        self.assertEqual(link.text(0), "⑤ 결과 행렬 열기", "결과로 들어가는 입구")
         self.assertEqual(groups["권고"].text(1), "1")
         win.explorer_filter.setText("zzzz")
         self.assertEqual(study.text(1), "0")
         self.assertTrue(first.isHidden())
         win.explorer_filter.setText("")
+        self.assertIn("미검토 1", first.toolTip(0))
+        nid = self.node_set["nodes"][0]["node_id"]
         win._explorer_clicked(first)
-        self.assertEqual(win.stack.currentIndex(), STUDY)
-        self.assertEqual(win.screens[STUDY].current_node_id(), self.node_set["nodes"][0]["node_id"])
+        self.assertEqual(win.stack.currentIndex(), RESULTS, "⑤에서는 결과 행렬의 그 행")
+        self.assertEqual(win.screens[RESULTS].selected_node_id(), nid)
+        from unittest import mock
+        from PySide6.QtWidgets import QApplication
+        with mock.patch.object(QApplication, "keyboardModifiers", return_value=Qt.AltModifier):
+            win._explorer_clicked(first)
+        self.assertEqual(win.stack.currentIndex(), STUDY, "Alt+누르기는 ④ 구간")
+        self.assertEqual(win.screens[STUDY].current_node_id(), nid)
+        win._explorer_clicked(link)
+        self.assertEqual(win.stack.currentIndex(), RESULTS)
+        win._explorer_clicked(src)
+        self.assertEqual(win.stack.currentIndex(), 1, "자료의 추출 도면 → ② 도면")
 
     def test_palette_finds_and_opens_cell(self):
         win = self.window()
@@ -205,6 +226,14 @@ class ShellTest(unittest.TestCase):
         self.press(win, "Ctrl+Alt+B")
         self.assertTrue(win.related.isVisible())
         self.assertIn(win.related.counts()["도면 위치"], (1,))
+
+    def test_go_moves_focus_into_the_screen(self):
+        win = self.window()
+        for index in (RESULTS, 0, STUDY):
+            win.go(index)
+            pump(win, 0.02)
+            scr, w = win.screens[index], win.focusWidget()
+            self.assertTrue(w is scr or scr.isAncestorOf(w), "%d: %r" % (index, w))
 
     def test_toast_undo_with_ctrl_z(self):
         win = self.window()
@@ -302,6 +331,76 @@ class ShellTest(unittest.TestCase):
         win.go(1)
         self.assertFalse(win.toggle_split(STUDY), "도면 화면 둘은 나누지 않음")
         self.assertIsNone(win.split_index)
+
+
+class ProjectExplorerTest(unittest.TestCase):
+    """탐색기 검토구간: 기본은 프로젝트 전체 구간, 도면 필터는 그 도면을 지나는 구간(걸친 구간 포함)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix="hazop-project-")
+        cls._env = {k: os.environ.get(k) for k in ("HAZOP_WORK_ROOT", "HAZOP_STORE_ROOT")}
+        os.environ["HAZOP_WORK_ROOT"] = os.path.join(cls.tmp, "work")
+        os.environ["HAZOP_STORE_ROOT"] = os.path.join(cls.tmp, "store")
+        os.makedirs(os.environ["HAZOP_WORK_ROOT"])
+        cls.names = {dn: os.path.basename(build_temp_drawing(os.environ["HAZOP_WORK_ROOT"], dn)[0])
+                     for dn in ("SNP-M-101", "SNP-M-102")}
+        from hazop.app import project_ctx
+        from hazop.study import nodes
+        ctx = project_ctx.load(cls.names["SNP-M-102"])
+        ns = nodes.confirm(nodes.propose(ctx.pg), ctx.pg, "검토자A")
+        nodes.save(ns)
+        cls.view = ctx.view(ns)
+        from hazop.app import make_application
+        cls.qapp = make_application(["test"])
+        cls.settings = os.path.join(cls.tmp, "settings.json")
+
+    tearDownClass = classmethod(ShellTest.tearDownClass.__func__)
+    window = ShellTest.window
+
+    def study_group(self, win):
+        return next(win.explorer.topLevelItem(i) for i in range(win.explorer.topLevelItemCount())
+                    if win.explorer.topLevelItem(i).text(0).startswith("검토구간"))
+
+    def test_project_nodes_by_default_and_drawing_filter(self):
+        from hazop.app import project_ctx
+        from hazop.study import span
+        win = self.window()
+        win.set_drawing(self.names["SNP-M-102"])
+        grp = self.study_group(win)
+        self.assertEqual(grp.text(0), "검토구간 · 프로젝트 SNP-SAMPLE")
+        labels = [project_ctx.node_label(n) for n in self.view["nodes"]]
+        nodes = [grp.child(i) for i in range(grp.childCount()) if grp.child(i).data(0, Qt.UserRole + 1) is None]
+        self.assertEqual([c.text(0) for c in nodes], labels, "어느 도면에서 보든 S1…Sn 전체")
+        self.assertEqual(grp.text(1), str(len(labels)))
+        spanning = [n for n in self.view["nodes"] if n["spans_drawings"]]
+        self.assertTrue(spanning and all(project_ctx.node_label(n).endswith("⇄") for n in spanning))
+        self.assertIn("프로젝트 100% · 이 도면 100%", grp.toolTip(0))
+        box = win.explorer_drawing
+        self.assertEqual(box.accessibleName(), "탐색기 도면 필터")
+        self.assertEqual([box.itemText(i) for i in range(box.count())], ["모든 도면", "SNP-M-101", "SNP-M-102"])
+        box.setCurrentIndex(box.findData("SNP-M-101"))
+        grp = self.study_group(win)
+        on101 = span.nodes_on_drawing(self.view, "SNP-M-101")
+        self.assertEqual(grp.text(0), "검토구간 · SNP-M-101")
+        self.assertEqual([c.data(0, Qt.UserRole)[1] for c in (grp.child(i) for i in range(grp.childCount()))
+                          if c.data(0, Qt.UserRole + 1) is None], [n["node_id"] for n in on101])
+        self.assertTrue(any(n["spans_drawings"] for n in on101), "걸친 구간도 그 도면 필터에 남는다")
+        self.assertLess(len(on101), len(labels))
+        box.setCurrentIndex(0)
+        self.assertEqual(self.study_group(win).text(1), str(len(labels)))
+
+    def test_node_of_another_drawing_opens_where_it_exists(self):
+        only101 = next(n for n in self.view["nodes"] if n["drawings"] == ["SNP-M-101"])
+        win = self.window()
+        win.set_drawing(self.names["SNP-M-102"])
+        grp = self.study_group(win)
+        item = next(grp.child(i) for i in range(grp.childCount())
+                    if grp.child(i).data(0, Qt.UserRole) == (STUDY, only101["node_id"]))
+        win._explorer_clicked(item)
+        self.assertEqual(win.stack.currentIndex(), STUDY)
+        self.assertEqual(win.drawing, self.names["SNP-M-101"], "그 구간이 있는 도면에서 연다")
+        self.assertEqual(win.screens[STUDY].current_node_id(), only101["node_id"])
 
 
 if __name__ == "__main__":

@@ -464,7 +464,7 @@ function hazopPathEngine(G) {
         "class": "tagbox" + ((unknownsOf[n.local_id] || []).some(function (u) { return u.field === "tag"; }) ? " unknown" : "") + edited(n), "data-local-id": n.local_id,
         "data-cell-id": n.source_object_id }, layers.tag);
       byLocal[n.local_id].els.push(tr); nTag++;
-      tagRecs.push(tagOf[n.local_id] = { fs: tagFontSize(n), box: tr, text: labelTextEls(n.source_object_id), small: null,
+      tagRecs.push(tagOf[n.local_id] = { id: n.local_id, fs: tagFontSize(n), box: tr, text: labelTextEls(n.source_object_id), small: null,
         label: n.tag || String(n.label_text || "").split("\n")[0], cx: t[0] + t[2] / 2, cy: t[1] + t[3] / 2 });
     }
   });
@@ -522,9 +522,11 @@ function hazopPathEngine(G) {
       if (small && r.label && !r.span) {
         r.span = document.createElement("span");
         r.span.textContent = r.label;
+        r.span.setAttribute("data-local-id", r.id);
         tagLabels.appendChild(r.span);
       }
       if (r.span) {
+        r.span.classList.toggle("hz-seg-in", r.box.classList.contains("hz-seg-in"));  // 앱이 고른 구간 밖 태그는 흐리게
         r.span.style.display = small ? "" : "none";
         r.span.style.left = (r.cx * view.s + view.x) + "px";
         r.span.style.top = (r.cy * view.s + view.y) + "px";

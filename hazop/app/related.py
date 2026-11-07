@@ -1,4 +1,4 @@
-"""도면 하나의 읽기 전용 색인과 관련 항목 계산 (UIUX 개선명세 U-01 명령 팔레트, U-04 탐색기, U-14 관련 항목).
+"""도면 하나를 보며 읽는 프로젝트 색인과 관련 항목 계산 (UIUX 개선명세 U-01 명령 팔레트, U-04 탐색기, U-14 관련 항목).
 
 색인은 디스크의 그래프·검토구간·분석 결과·지식그래프를 읽기만 한다. 화면의 편집 상태는 각 화면이 기준이다.
 선택(sel)은 {"kind": "component"|"node"|"cell", "drawing", "entity_id", "node_id", "deviation_id"} 중 해당 키를 쓴다.
@@ -7,10 +7,10 @@
 
 from dataclasses import dataclass
 
-from hazop import paths
+from hazop.app import project_ctx
+from hazop.graph import project
 from hazop.study import ai_cells, nodes
 from hazop.study import results as res
-from hazop.viewer import build as viewer_build
 
 SECTIONS = ("도면 위치", "구성요소", "지식그래프 근거", "같은 구성요소를 쓰는 다른 칸", "변경 이력")
 KG_TEXT_FIELDS = ("item", "name", "text")
@@ -31,19 +31,26 @@ def entity_label(node):
 
 
 class DrawingIndex:
-    """도면 하나의 그래프·검토구간·결과·지식그래프. 없는 것은 None. node_set은 저장본(확정·제안)만 본다."""
+    """도면 하나(name)를 보며 읽는 프로젝트 색인. 없는 것은 None.
+    graph는 프로젝트 그래프(구성요소 ID = 프로젝트 ID), node_set은 프로젝트 검토구간 저장본(확정·제안)만 본다.
+    옛 도면별 저장본 이전은 ④가 한다(색인은 읽기만). view는 표기·경계를 붙인 node_set 사본."""
 
     def __init__(self, name):
         self.name = name
-        self.graph = viewer_build.load_graph(paths.output_root("그래프"), name) if name else None
-        self.node_set = self.results = self.kg = None
+        self.ctx = project_ctx.load(name) if name else None
+        self.graph = self.ctx.pg if self.ctx else None
+        self.node_set = self.view = self.results = self.kg = None
         self.deviations = res.load_deviations()
+        self.entities = {n["entity_id"]: n for n in (self.graph or {}).get("nodes", [])}
         if not self.graph:
             return
+        self._dn_of_sheet = {s["graph_id"]: s["drawing_number"] for s in self.graph["sheets"]}
         try:
             self.node_set = nodes.load(self.graph)
         except (OSError, ValueError):
             self.node_set = None
+        if self.node_set:
+            self.view = self.view_of(self.node_set)
         usable = (self.node_set and self.node_set.get("status") == "confirmed"  # ⑤ 화면이 쓰는 조건과 같다
                   and not nodes.is_stale(self.node_set, self.graph)
                   and not nodes.coverage(self.node_set, self.graph)["uncovered"])
@@ -54,15 +61,39 @@ class DrawingIndex:
                 doc = None
             if doc is not None and not res.is_stale(doc, self.node_set) and not res.validate(doc, self.node_set):
                 self.results = doc
-        self.kg = ai_cells.load_kg_for(self.node_set or {"graph_id": self.graph.get("graph_id")})[0]
+        kg = ai_cells.load_kg_for(self.node_set or {"graph_id": self.graph["graph_id"],
+                                                    "project_id": self.graph.get("project_id")})[0]
+        self.kg = project.kg_view(kg, self.graph) if kg is not None else None
 
-    @property
-    def entities(self):
-        return {n["entity_id"]: n for n in (self.graph or {}).get("nodes", [])}
+    def view_of(self, node_set):
+        """표기를 붙인 사본. 그래프가 바뀌어 없는 구성요소를 가리키는 저장본이면 None."""
+        try:
+            return self.ctx.view(node_set)
+        except (KeyError, ValueError):
+            return None
 
     @property
     def drawing_number(self):
-        return (self.node_set or {}).get("drawing_number") or (self.graph or {}).get("drawing_number") or self.name
+        return self.ctx.drawing_number if self.ctx else self.name
+
+    def label(self, entity_id):
+        """구성요소 글자. 다른 도면의 것은 "RC-P01(101)"처럼 짧은 도면 번호를 붙인다."""
+        n = self.entities.get(entity_id)
+        dn = self._dn_of_sheet.get((n or {}).get("sheet")) if self.graph else None
+        text = entity_label(n)
+        return "%s(%s)" % (text, self.ctx.short.get(dn, dn)) if dn and dn != self.drawing_number else text
+
+    def drawing_name_of(self, entity_id):
+        """구성요소가 있는 도면의 추출 이름(②에서 열 이름). 도면 밖(도면 연결 배관)이면 None."""
+        n = self.entities.get(entity_id) or {}
+        return self.ctx.names.get(n.get("sheet")) if self.ctx and self.graph else None
+
+    def node_drawing_name(self, node_id):
+        """구간을 열 도면의 추출 이름: 이 도면을 지나면 이 도면, 아니면 그 구간의 첫 도면."""
+        vn = next((n for n in (self.view or {}).get("nodes", []) if n["node_id"] == node_id), None)
+        if not vn or not vn.get("drawings") or self.drawing_number in vn["drawings"]:
+            return self.name
+        return self.ctx.drawing_names.get(vn["drawings"][0]) or self.name
 
     def node(self, node_id):
         return next((n for n in (self.node_set or {}).get("nodes", []) if n["node_id"] == node_id), None)
@@ -85,7 +116,7 @@ class DrawingIndex:
         for n in (self.graph or {}).get("nodes", []):
             if n.get("node_type", "drawing_object") != "drawing_object" or not n.get("local_id"):
                 continue
-            out.append((n["entity_id"], entity_label(n), n.get("kind") or ""))
+            out.append((n["entity_id"], self.label(n["entity_id"]), n.get("kind") or ""))
         return out
 
     def cells(self):
@@ -131,6 +162,24 @@ OP_LABELS = {"propose": "제안", "status": "상태", "edit": "수정", "merge":
              "confirm": "확정", "reopen": "확정 해제", "add": "넣기", "remove": "빼기"}
 
 
+def node_progress(results, node_id, n_deviations):
+    """탐색기 구간 오른쪽 짧은 글자와 도구 설명. results가 없으면 ("", 이유).
+    수치는 ⑤ 행렬과 같다: 분석된 칸(분석 전·실패 아님), 미검토 항목, AI 실행 실패 칸."""
+    if not results:
+        return "", "⑤ 결과 없음(구간 확정 전이거나 분석 전)"
+    cells = [c for c in results["cells"] if c["node_id"] == node_id]
+    failed = sum((c.get("ai_run") or {}).get("status") == "failed" for c in cells)
+    analyzed = sum(c["state"] != "not_analyzed" and (c.get("ai_run") or {}).get("status") != "failed" for c in cells)
+    unreviewed = sum(s["unreviewed"] for s in res.matrix_summary(results).get(node_id, {}).values())
+    detail = "⑤ 결과: 분석 %d/%d칸 · 미검토 %d · 실패 %d" % (analyzed, n_deviations, unreviewed, failed)
+    parts = (["미%d" % unreviewed] if unreviewed else []) + (["실패%d" % failed] if failed else [])
+    if parts:
+        return "·".join(parts), detail
+    if not analyzed:
+        return "분석 전", detail
+    return ("완료" if analyzed >= n_deviations else "%d/%d" % (analyzed, n_deviations)), detail
+
+
 def history_text(h):
     op = h.get("op") or "-"
     if op == "status":
@@ -164,7 +213,7 @@ def selection_entities(index, sel):
 def selection_title(index, sel):
     kind = sel.get("kind")
     if kind == "component":
-        return entity_label(index.entities.get(sel.get("entity_id")))
+        return index.label(sel.get("entity_id"))
     n = index.node(sel.get("node_id"))
     name = "%s %s" % (n["node_id"], n["name"]) if n else sel.get("node_id") or "?"
     if kind == "cell":
@@ -181,17 +230,23 @@ def related(index, sel):
     drawing = index.name
     ents = selection_entities(index, sel)
     by_id = index.entities
-    tags = [entity_label(by_id.get(e)) for e in ents]
+    tags = [index.label(e) for e in ents]
     n = index.node(sel.get("node_id")) if sel.get("node_id") else None
     if n is not None:
-        out["도면 위치"].append(Row("%s · 도면 %s" % (n["node_id"], index.drawing_number), "④ 구간에서 보기",
-                                  {"kind": "node", "drawing": drawing, "node_id": n["node_id"]}))
+        vn = next((v for v in (index.view or {}).get("nodes", []) if v["node_id"] == n["node_id"]), {})
+        out["도면 위치"].append(Row("%s · 도면 %s" % (n["node_id"], ", ".join(vn.get("drawings") or [index.drawing_number])),
+                                  "④ 구간에서 보기",
+                                  {"kind": "node", "drawing": index.node_drawing_name(n["node_id"]),
+                                   "node_id": n["node_id"]}))
     for eid in ents[:1] if sel.get("kind") == "component" else []:
-        out["도면 위치"].append(Row("%s · 도면 %s" % (tags[0], index.drawing_number), "② 도면에서 보기",
-                                  {"kind": "component", "drawing": drawing, "entity_id": eid, "open": "drawing"}))
+        dn = index._dn_of_sheet.get((by_id.get(eid) or {}).get("sheet")) or index.drawing_number
+        out["도면 위치"].append(Row("%s · 도면 %s" % (tags[0], dn), "② 도면에서 보기",
+                                  {"kind": "component", "drawing": index.drawing_name_of(eid) or drawing,
+                                   "entity_id": eid, "open": "drawing"}))
     for eid, tag in zip(ents, tags):
         out["구성요소"].append(Row(tag, (by_id.get(eid) or {}).get("kind") or "그래프에 없음",
-                                {"kind": "component", "drawing": drawing, "entity_id": eid, "open": "drawing"}))
+                                {"kind": "component", "drawing": index.drawing_name_of(eid) or drawing,
+                                 "entity_id": eid, "open": "drawing"}))
     out["지식그래프 근거"] = index.kg_evidence(ents)
     here = (sel.get("node_id"), sel.get("deviation_id")) if sel.get("kind") == "cell" else None
     owners = set()

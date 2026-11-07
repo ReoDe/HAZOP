@@ -165,6 +165,7 @@ QLabel#muted { color: %(muted)s; }
 QLabel#title { font-size: %(lg)spx; font-weight: 700; }
 QLabel#section { font-size: %(sm)spx; color: %(muted)s; font-weight: 700; }
 QFrame#panel { background: %(card)s; border: 1px solid %(line)s; border-radius: 4px; }
+QFrame#pickcard { background: %(ui-weak)s; border: 1px solid %(ui)s; border-radius: 4px; }
 QFrame#banner_warn { background: %(warn-bg)s; border: 1px solid %(warn-line)s; border-radius: 4px; }
 QFrame#banner_err { background: %(err-bg)s; border: 1px solid %(err-line)s; border-radius: 4px; }
 QFrame#banner_warn QLabel { color: %(warn-ink)s; }

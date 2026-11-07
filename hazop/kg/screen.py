@@ -356,3 +356,68 @@ def write_html(path, html):
         fh.write(data)
     os.replace(tmp, path)
     return path
+
+
+# ---------------------------------------------------------------- 프로젝트 그래프: 도면 경계
+def _drawing_of(pg):
+    return {s["graph_id"]: s["drawing_number"] for s in pg["sheets"]}
+
+
+def _end_text(by_id, end):
+    """도면 연결 끝 → 연결점 이름(태그·라벨 첫 줄)."""
+    from hazop.graph import project
+    n = by_id.get(project.nid(end["graph_id"], end["entity_id"])) or {}
+    first = (n.get("label_text") or end.get("label_text") or "").split("\n")[0].strip()
+    return n.get("tag") or first or end["entity_id"]
+
+
+def sheet_link_rows(pg):
+    """③ '도면 연결' 표: 도면 연결마다 {from_drawing, from_label, to_drawing, to_label, line_no, status, reason, drawings}.
+    linked면 from이 흐름이 나가는 쪽. unlinked면 to가 없고 to_drawing은 연결점이 가리키는 도면 번호(없으면 None)."""
+    from hazop.graph import project
+    by_id = {n["entity_id"]: n for n in pg["nodes"]}
+    rows = []
+    for l in pg["sheet_links"]:
+        a, b = l["from"], l.get("to")
+        rows.append({"from_drawing": a["drawing_number"], "from_label": _end_text(by_id, a),
+                     "to_drawing": b["drawing_number"] if b else a.get("to_drawing"),
+                     "to_label": _end_text(by_id, b) if b else None, "line_no": a.get("line_no") or (b or {}).get("line_no"),
+                     "status": l["status"], "origin": l.get("origin"),
+                     "reason": project.REASONS.get(l["reason"], l["reason"]) if l["reason"] else None,
+                     "drawings": sorted({a["drawing_number"]} | ({b["drawing_number"]} if b else set()))})
+    return rows
+
+
+def cross_path(pg, a, b):
+    """도면 경계를 넘는 물리 경로(GraphQuery(pg).path, 흐름 방향 무시). 찾지 못하면 None, 대상이 없거나 여럿이면
+    QueryError. 단계 [{"kind": "step"|"boundary", "text", "drawings"}]: 도면 연결 구간은 지나는 순서대로
+    "── SNP-M-101 → SNP-M-102 (RC-L011) ──" 경계 표시가 된다."""
+    from hazop.graph.query import GraphQuery
+    from hazop.study import span
+    q = GraphQuery(pg)
+    p = q.path(a, b)["ignoring_direction"]
+    if not p["found"]:
+        return None
+    sheet_dn = _drawing_of(pg)
+    short = span.short_numbers(sheet_dn.values())[1]
+    ids = [s["entity_id"] for s in p["nodes"]]
+    dn = [sheet_dn.get(q.nodes[i].get("sheet")) for i in ids]
+    steps = []
+    for k, i in enumerate(ids):
+        n = q.nodes[i]
+        if n.get("sheet") is None and n.get("sheet_link"):
+            before = next((d for d in reversed(dn[:k]) if d), None)
+            after = next((d for d in dn[k + 1:] if d), None)
+            steps.append({"kind": "boundary", "drawings": [d for d in (before, after) if d],
+                          "text": "── %s → %s (%s) ──" % (before, after, n.get("line_no") or n.get("tag") or "-")})
+            continue
+        first = (n.get("label_text") or "").split("\n")[0].strip()
+        label = n.get("tag") or (first if n.get("kind") == "continuation" else None) or             ("배관 구간" if n.get("kind") == "pipe_segment" else n.get("kind"))
+        steps.append({"kind": "step", "drawings": [dn[k]] if dn[k] else [],
+                      "text": "[%s] %s" % (short.get(dn[k], dn[k] or "-"), label)})
+    return steps
+
+
+def filter_by_drawing(rows, drawing):
+    """도면 필터: drawing이 None이면 그대로, 아니면 그 도면을 지나는 행(경로 단계·연결 표)만."""
+    return list(rows) if not drawing else [r for r in rows if drawing in r["drawings"]]

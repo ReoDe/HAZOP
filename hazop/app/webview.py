@@ -120,6 +120,7 @@ class Bridge(QObject):
     linkSelected = Signal(str)     # ③ 지식그래프: 클릭한 관계 ID
     algorithmRequested = Signal(dict)  # ③ 지식그래프 runAlgorithm: {"algorithm", "start"}
     editPick = Signal(dict)        # ② 편집: {"point": 도면 좌표 [x, y], "local_id"(없으면 None), "view"(없으면 None)}
+    chipClicked = Signal(str)      # ②④ 도면 연결점 칩: 앱이 준 key
     ready = Signal()
 
     def __init__(self, parent=None):
@@ -177,6 +178,10 @@ class Bridge(QObject):
             alg, start = msg.get("algorithm"), clean_id(msg.get("start"))
             if alg in ("A1",) and start:
                 self.algorithmRequested.emit({"algorithm": alg, "start": start})
+        elif kind == "chip":
+            key = clean_id(msg.get("key"))
+            if key:
+                self.chipClicked.emit(key)
         elif kind == "editPick":
             pick = clean_edit_pick(msg)
             if pick:
@@ -285,8 +290,12 @@ BRIDGE_JS = r"""
     function clearSegments() {
       segEls.forEach(function (e) { SEG_PROPS.forEach(function (p) { e.style.removeProperty(p); }); e.removeAttribute("data-hz-seg"); });
       segMarks.forEach(function (m) { if (m.parentNode) m.parentNode.removeChild(m); });
+      Array.prototype.forEach.call(document.querySelectorAll(".hz-seg-in, .hz-pick"), function (e) { e.classList.remove("hz-seg-in", "hz-pick"); });
+      document.body.classList.remove("hz-segfocus");
       segEls = []; segMarks = [];
+      refreshTags();
     }
+    function refreshTags() { if (window.hzView) window.hzView.set(window.hzView.get()); }  // 태그 글자 층을 다시 그린다
     function segBadge(e, color, text) {  // 구간 번호 꼬리표: 색만으로 구분하지 않도록 도면에도 S 번호를 적는다
       var bb; try { bb = e.getBBox(); } catch (x) { return; }
       var g = document.createElementNS(NS, "g"), r = document.createElementNS(NS, "rect"), t = document.createElementNS(NS, "text");
@@ -308,13 +317,18 @@ BRIDGE_JS = r"""
       segEls.push(e);
     }
     function segLegend(groups, uncovered) { if (window.hzSegLegend) window.hzSegLegend(groups, uncovered); }
+    // 구간 하나를 고르면(active) 그 구간만 칠하고 나머지 요소는 흐리게 한다(hz-segfocus). 고른 구간이 없으면 전체 보기.
     function segments(m) {
       clearSegments();
-      segLegend(m.groups || [], (m.uncovered || []).length);
-      (m.groups || []).forEach(function (g) {
+      var groups = m.groups || [], focused = groups.some(function (g) { return g.active; });
+      segLegend(groups, (m.uncovered || []).length);
+      document.body.classList.toggle("hz-segfocus", focused);
+      groups.forEach(function (g) {
+        if (focused && !g.active) return;
         var first = null, label = String(g.label || "");
         (g.ids || []).forEach(function (lid) {
           els(lid).forEach(function (e) {
+            if (focused) e.classList.add("hz-seg-in");
             if (e.getAttribute("data-hz-seg")) return;
             paintSeg(e, g.color, !!g.active, label);
             if (!first || (!first.classList.contains("sym") && e.classList.contains("sym"))) first = e;
@@ -322,10 +336,62 @@ BRIDGE_JS = r"""
         });
         if (first && label) segBadge(first, g.color, label);
       });
-      (m.uncovered || []).forEach(function (lid) {
+      if (!focused) (m.uncovered || []).forEach(function (lid) {
         els(lid).forEach(function (e) { paintSeg(e, "var(--warn-line)", false, "uncovered"); e.style.setProperty("stroke-dasharray", "5 3"); e.style.setProperty("fill-opacity", "0"); });
       });
+      refreshTags();
     }
+    // ④ 고른 구성요소 하나: 구간 색 위에 따로 강조(hz-pick). center면 화면 가운데로 옮기고 확대한다.
+    function pick(lid, center) {
+      // 템플릿 클릭이 남긴 선택 표시(.selected)도 지운다. ④에서 고른 구성요소 표시는 hz-pick 하나뿐이다.
+      Array.prototype.forEach.call(document.querySelectorAll(".hz-pick, .selected"), function (e) { e.classList.remove("hz-pick", "selected"); });
+      if (!lid) return;
+      var found = els(lid);
+      found.forEach(function (e) { e.classList.add("hz-pick"); });
+      var shown = found.filter(function (e) { var r = e.getBoundingClientRect(); return r.width || r.height; })[0];
+      if (!center || !shown || !vp || !window.hzView) return;
+      var v = window.hzView.get(), vr = vp.getBoundingClientRect(), b = shown.getBoundingClientRect(), s = Math.max(v.s, 1.5);
+      var cx = (b.left + b.width / 2 - vr.left - v.x) / v.s, cy = (b.top + b.height / 2 - vr.top - v.y) / v.s;
+      window.hzView.set({ s: s, x: vr.width / 2 - cx * s, y: vr.height / 2 - cy * s });
+    }
+    // ②④ 도면 연결점 칩: 연결점 아래에 "S7 → SNP-M-101에서 계속"(link) 또는 "미연결 · 사유"(unlinked). 누르면 key를 앱에 보낸다.
+    // 칩은 도면 좌표계 안에 있지만 확대 배율과 상관없이 화면에서 같은 크기(글자 12px)로 보이게 배율이 바뀌면 다시 그린다.
+    var chipMarks = [], chipList = [], chipScale = 0;
+    function chipPx(e) { var m = e.parentNode && e.parentNode.getScreenCTM ? e.parentNode.getScreenCTM() : null; return m ? Math.hypot(m.a, m.b) || 1 : 1; }
+    function chips(list) {
+      chipList = list || [];
+      chipMarks.forEach(function (m) { if (m.parentNode) m.parentNode.removeChild(m); });
+      chipMarks = [];
+      chipList.forEach(function (c) {
+        var e = els(c.local_id).filter(function (x) { return x.closest && x.closest("#overlay"); })[0] || els(c.local_id)[0];
+        if (!e) return;
+        var bb; try { bb = e.getBBox(); } catch (x) { return; }
+        var k = 1 / chipPx(e);
+        chipScale = chipPx(e);
+        var g = document.createElementNS(NS, "g"), r = document.createElementNS(NS, "rect"), t = document.createElementNS(NS, "text");
+        var text = String(c.text || ""), h = 18 * k, w = (text.length * 8 + 16) * k, y = bb.y + bb.height + 16 * k + (c.row || 0) * (h + 2 * k);  // 태그 글자 한 줄 아래
+        g.setAttribute("class", "hz-chip " + (c.kind === "unlinked" ? "hz-chip-warn" : "hz-chip-link"));
+        g.setAttribute("data-chip-key", String(c.key || ""));
+        g.setAttribute("role", "button"); g.setAttribute("aria-label", text);
+        r.setAttribute("x", bb.x); r.setAttribute("y", y); r.setAttribute("width", w); r.setAttribute("height", h); r.setAttribute("rx", h / 2);
+        r.style.setProperty("stroke-width", 1.2 * k);
+        t.setAttribute("x", bb.x + 8 * k); t.setAttribute("y", y + 13 * k); t.textContent = text;
+        t.style.setProperty("font-size", (12 * k) + "px");
+        var tip = document.createElementNS(NS, "title"); tip.textContent = String(c.tip || text); g.appendChild(tip);
+        g.appendChild(r); g.appendChild(t);
+        g.addEventListener("click", function (ev) { ev.stopPropagation(); send({ type: "chip", key: String(c.key || "") }); }, true);
+        g.addEventListener("mousedown", function (ev) { ev.stopPropagation(); }, true);
+        e.parentNode.appendChild(g); chipMarks.push(g);
+        try { r.setAttribute("width", t.getComputedTextLength() + 16 * k); } catch (x) { /* 글자 폭을 못 재면 어림 폭 */ }
+      });
+    }
+    (function watchChipZoom() {  // 확대·축소(휠·버튼·맞춤)는 여러 길로 오므로 화면 배율을 매 프레임 비교한다(칩이 있을 때만 다시 그림)
+      if (chipMarks.length && chipMarks[0].parentNode) {
+        var now = chipPx(chipMarks[0]);
+        if (Math.abs(now - chipScale) / chipScale > 0.02) chips(chipList);
+      }
+      requestAnimationFrame(watchChipZoom);
+    })();
     // ② 편집: 선택 외 도구에서는 클릭을 도면 좌표로 바꿔 editPick만 보낸다(템플릿 선택·nodeSelected는 막음).
     // 도면 좌표 = 오버레이 SVG 사용자 좌표 + svg_alignment.offset. 끌어서 이동을 끝낸 클릭은 버린다.
     var edit = { on: false, tool: "select" }, down = null, preview = null, OFF = [0, 0];
@@ -390,10 +456,12 @@ BRIDGE_JS = r"""
         window.dispatchEvent(new Event("resize"));
       } else if (m.type === "segments") segments(m);
       else if (m.type === "clearSegments") { clearSegments(); segLegend([], 0); }
+      else if (m.type === "chips") chips(m.chips);
       else if (m.type === "openPathQuery") { if (window.openPathQuery) window.openPathQuery(); }
       else if (m.type === "toggleLayer") { if (window.hzToggleLayer) window.hzToggleLayer(m.layer); }
       else if (m.type === "clearHighlight") clear();
       else if (m.type === "focus") focus(m.local_id);
+      else if (m.type === "pick") pick(m.local_id, !!m.center);
       else if (m.type === "highlight") {
         clear();
         var missing = [];
@@ -420,6 +488,19 @@ BRIDGE_JS = r"""
 VIEWER_CSS = """
 body.hz-hide-status #status { display: none; }
 body.hz-hide-panel #pq-chip { display: none; }
+body.hz-segfocus #overlay .sym:not(.hz-seg-in), body.hz-segfocus #overlay .tagbox:not(.hz-seg-in),
+body.hz-segfocus #overlay .pipe-line:not(.hz-seg-in), body.hz-segfocus #graphsvg .gnode:not(.hz-seg-in),
+body.hz-segfocus #graphsvg .gedge:not(.hz-seg-in), body.hz-segfocus #graphsvg .glabel,
+body.hz-segfocus #taglabels span:not(.hz-seg-in), body.hz-segfocus .segchip:not(.active) { opacity: var(--hl-dim); }
+.hz-chip { cursor: pointer; opacity: 1 !important; }
+.hz-chip rect { fill: var(--card); stroke: var(--ui); }
+.hz-chip text { fill: var(--ui); font-weight: 700; }
+.hz-chip-warn rect { fill: var(--warn-bg); stroke: var(--warn-line); stroke-dasharray: 4 2; }
+.hz-chip-warn text { fill: var(--warn-ink); }
+.hz-chip:hover rect { fill: var(--line); }
+.hz-pick { opacity: 1 !important; stroke: var(--ui) !important; filter: drop-shadow(0 0 3px var(--ui)) drop-shadow(0 0 3px var(--ui));
+  animation: hz-pulse 1.2s ease-in-out 3; }
+@keyframes hz-pulse { 50% { stroke-width: 7; } }
 """
 
 
@@ -523,14 +604,24 @@ class HazopWebView(QWebEngineView):
 
     def set_segments(self, groups, uncovered=()):
         """④ 검토구간 색. groups = [{"color", "active", "label"(S 번호), "ids": [local_id]}] 순서대로, 한 요소는 첫 구간 색만.
-        uncovered = 어느 구간에도 없는 요소의 local_id(점선)."""
+        active인 구간이 있으면 그 구간만 칠하고 나머지는 흐리게, 없으면 모든 구간을 칠한다.
+        uncovered = 어느 구간에도 없는 요소의 local_id(점선, 전체 보기에서만)."""
         self.bridge.send("segments", groups=list(groups), uncovered=list(uncovered))
 
     def clear_segments(self):
         self.bridge.send("clearSegments")
 
+    def set_chips(self, chips):
+        """②④ 도면 연결점 칩 [{"local_id", "text", "key", "kind": "link"|"unlinked", "tip", "row"}]. 빈 목록이면 지운다.
+        누르면 bridge.chipClicked(key)."""
+        self.bridge.send("chips", chips=[dict(c) for c in chips if c.get("local_id")])
+
     def focus(self, local_id):
         self.bridge.send("focus", local_id=local_id)
+
+    def pick(self, local_id, center=False):
+        """④ 고른 구성요소 하나를 따로 강조한다(None이면 지움). center면 가운데로 옮겨 확대한다."""
+        self.bridge.send("pick", local_id=local_id, center=bool(center))
 
     def open_path_query(self):
         """도면 뷰어의 접힌 경로 질의 상자를 연다(② 명령 팔레트)."""

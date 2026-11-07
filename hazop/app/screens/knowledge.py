@@ -10,13 +10,17 @@
 import os
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLayout, QPushButton, QStackedWidget,
-                               QTextBrowser, QVBoxLayout, QWidget)
+from PySide6.QtGui import QBrush, QColor
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
+                               QLayout, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QStackedWidget, QTabWidget,
+                               QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 
 from hazop import paths
 from hazop.app import data as app_data
-from hazop.app import tokens
+from hazop.app import project_ctx, tokens
 from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, badge, empty_label, esc
+from hazop.graph import project
+from hazop.graph.query import VALVE_POSITION_NOTE, QueryError
 from hazop.kg import algo, auto, build, screen
 
 APP_SHELL = "kg-screen.html"  # 출력/뷰어/ 아래 앱 셸(데이터 없음, loadKnowledge로 받음)
@@ -145,11 +149,13 @@ class KnowledgeScreen(QWidget):
         bar.addWidget(QLabel("지식그래프"))
         self.kg_combo = QComboBox()
         self.kg_combo.setMinimumWidth(150)
+        self.kg_combo.setAccessibleName("지식그래프")
         self.kg_combo.currentIndexChanged.connect(lambda _: self._load())
         bar.addWidget(self.kg_combo)
         bar.addWidget(QLabel("도면"))
         self.graph_combo = QComboBox()
         self.graph_combo.setMinimumWidth(140)
+        self.graph_combo.setAccessibleName("도면")
         self.graph_combo.currentIndexChanged.connect(lambda _: self._load(keep_kg=True))
         bar.addWidget(self.graph_combo)
         self.chips = {k: Chip() for k in ("valid", "graph", "conf", "recheck", "excl", "algo")}
@@ -207,7 +213,11 @@ class KnowledgeScreen(QWidget):
         self.detail_stack = QStackedWidget()
         self.detail_stack.addWidget(self.detail_empty)
         self.detail_stack.addWidget(self.detail)
-        dl.addWidget(self.detail_stack, 1)
+        self.side_tabs = QTabWidget()
+        self.side_tabs.setDocumentMode(True)
+        self.side_tabs.addTab(self.detail_stack, "상세")
+        self.side_tabs.addTab(self._project_panel(), "도면 경계")
+        dl.addWidget(self.side_tabs, 1)
         foot = QHBoxLayout()
         self.goto_btn = QPushButton("도면에서 보기")
         self.goto_btn.setEnabled(False)
@@ -216,6 +226,7 @@ class KnowledgeScreen(QWidget):
         foot.addStretch(1)
         dl.addLayout(foot)
         self.detail_collapsed = False
+        self.pg, self.pg_error, self.path_steps = None, None, None
         bl.addWidget(self.detail_box)
         self.stack.addWidget(self.empty)
         self.stack.addWidget(body)
@@ -243,7 +254,7 @@ class KnowledgeScreen(QWidget):
 
     def _toggle_detail(self):
         self.detail_collapsed = not self.detail_collapsed
-        for w in (self.detail_stack, self.goto_btn, self.detail_title):
+        for w in (self.side_tabs, self.goto_btn, self.detail_title):
             w.setVisible(not self.detail_collapsed)
         self.detail_toggle.setText("펴기" if self.detail_collapsed else "접기")
         self._size_detail()
@@ -276,6 +287,7 @@ class KnowledgeScreen(QWidget):
             self.kg_combo.setCurrentIndex(i)
         self.kg_combo.blockSignals(False)
         self.showing_prev = False
+        self.pg = None
         self._load()
 
     def is_done(self):
@@ -345,6 +357,7 @@ class KnowledgeScreen(QWidget):
             self._set_empty("지식그래프를 읽을 수 없음: %s" % exc)
             return
         self._fill_status()
+        self._load_project()
         self.stack.setCurrentIndex(1)
         self.app.attach_webview(self.canvas_host)
         self.app.webview.load_file(shell)
@@ -539,6 +552,7 @@ class KnowledgeScreen(QWidget):
 
     def render_node(self, nid):
         self.sel = ("n", nid)
+        self.side_tabs.setCurrentIndex(0)
         self.detail_stack.setCurrentWidget(self.detail)
         n = self._nodes()[nid]
         # P&ID 노드는 도면 구성요소와 같은 entity_id(관련 항목 패널이 따라감). 지식 노드는 도면 구성요소가 아님.
@@ -607,6 +621,7 @@ class KnowledgeScreen(QWidget):
         d = next((l for l in self.data["links"] if l["id"] == lid), None)
         if d is None:
             return
+        self.side_tabs.setCurrentIndex(0)
         self.detail_stack.setCurrentWidget(self.detail)
         h = "<div style='font-size:11px;color:%s'>관계</div><div style='font-size:15px;font-weight:700'>%s</div>" \
             "<div style='color:%s'>%s</div>" % (tokens.c("muted"), esc(d["kind"]), tokens.c("muted"), esc(lid))
@@ -689,3 +704,136 @@ class KnowledgeScreen(QWidget):
                      None if compact["active"] else compact["reason"])
         if self.sel and self.sel[0] == "n":
             self.render_node(self.sel[1])
+
+    # ------------------------------------------------------------ 도면 경계(프로젝트 그래프)
+    def _project_panel(self):
+        """프로젝트 그래프에서 도면 경계를 넘는 경로 찾기와 도면 연결 표. 도면 필터는 둘 다에 적용한다."""
+        box = QWidget()
+        v = QVBoxLayout(box)
+        v.setContentsMargins(0, 6, 0, 0)
+        v.setSpacing(6)
+        self.project_note = QLabel("")
+        self.project_note.setObjectName("muted")
+        self.project_note.setWordWrap(True)
+        v.addWidget(self.project_note)
+        g = QGridLayout()
+        g.setSpacing(4)
+        g.addWidget(QLabel("시작"), 0, 0)
+        self.path_from = QLineEdit()
+        self.path_from.setPlaceholderText("태그 또는 구성요소 ID")
+        self.path_from.setAccessibleName("경로 시작 태그")
+        g.addWidget(self.path_from, 0, 1)
+        g.addWidget(QLabel("끝"), 1, 0)
+        self.path_to = QLineEdit()
+        self.path_to.setPlaceholderText("태그 또는 구성요소 ID")
+        self.path_to.setAccessibleName("경로 끝 태그")
+        g.addWidget(self.path_to, 1, 1)
+        self.path_btn = QPushButton("찾기")
+        self.path_btn.clicked.connect(self.find_path)
+        self.path_from.returnPressed.connect(self.find_path)
+        self.path_to.returnPressed.connect(self.find_path)
+        g.addWidget(self.path_btn, 0, 2, 2, 1)
+        g.addWidget(QLabel("도면"), 2, 0)
+        self.drawing_filter = QComboBox()
+        self.drawing_filter.setAccessibleName("도면 필터")
+        self.drawing_filter.currentIndexChanged.connect(lambda _: self._fill_project_lists())
+        g.addWidget(self.drawing_filter, 2, 1, 1, 2)
+        g.setColumnStretch(1, 1)
+        v.addLayout(g)
+        self.path_summary = QLabel("두 태그를 넣고 찾기를 누르면 도면 경계를 넘는 물리 배관 경로가 나옵니다.")
+        self.path_summary.setWordWrap(True)
+        v.addWidget(self.path_summary)
+        self.path_list = QListWidget()
+        self.path_list.setAccessibleName("경로 단계")
+        v.addWidget(self.path_list, 2)
+        sec = QLabel("도면 연결")
+        sec.setObjectName("section")
+        v.addWidget(sec)
+        self.link_table = QTableWidget(0, 5)
+        self.link_table.setAccessibleName("도면 연결 표")
+        self.link_table.setHorizontalHeaderLabels(["출발", "도착", "배관", "상태", "사유"])
+        self.link_table.verticalHeader().hide()
+        self.link_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.link_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.link_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        v.addWidget(self.link_table, 3)
+        return box
+
+    def _project_id(self):
+        """③의 프로젝트: 고른 지식그래프의 프로젝트, 없으면 지금 도면의 프로젝트, 그것도 없으면 샘플 프로젝트."""
+        if self.kg and self.kg.get("project_id"):
+            return self.kg["project_id"]
+        ctx = project_ctx.load(self.app.drawing) if getattr(self.app, "drawing", None) else None
+        return ctx.project_id if ctx else project.UNREGISTERED_PROJECT
+
+    def _load_project(self):
+        """프로젝트 그래프를 읽고(같은 프로젝트면 화면 진입 때만 다시) 도면 필터·목록을 채운다."""
+        pid = self._project_id()
+        if self.pg is not None and self.pg.get("project_id") == pid:
+            return
+        try:
+            self.pg, self.pg_error = project.load(pid), None
+        except (OSError, ValueError, KeyError) as exc:
+            self.pg, self.pg_error = None, "프로젝트 그래프를 만들 수 없음: %s" % exc
+        self.path_steps = None
+        cur = self.drawing_filter.currentData()
+        self.drawing_filter.blockSignals(True)
+        self.drawing_filter.clear()
+        self.drawing_filter.addItem("모든 도면", None)
+        for s in (self.pg or {}).get("sheets") or []:
+            self.drawing_filter.addItem(s["drawing_number"], s["drawing_number"])
+        self.drawing_filter.setCurrentIndex(max(self.drawing_filter.findData(cur), 0))
+        self.drawing_filter.blockSignals(False)
+        if self.pg:
+            linked = sum(1 for l in self.pg["sheet_links"] if l["status"] == project.LINKED)
+            self.project_note.setText("프로젝트 %s · 도면 %d장 · 도면 연결 %d · 미연결 %d" % (
+                pid, len(self.pg["sheets"]), linked, len(self.pg["sheet_links"]) - linked))
+        else:
+            self.project_note.setText(self.pg_error)
+        for w in (self.path_from, self.path_to, self.path_btn, self.drawing_filter):
+            w.setEnabled(self.pg is not None)
+        self._fill_project_lists()
+
+    def find_path(self):
+        """두 태그 사이 물리 경로(프로젝트 그래프). 대상이 없거나 여럿이면 사유를 보인다."""
+        a, b = self.path_from.text().strip(), self.path_to.text().strip()
+        if not self.pg or not a or not b:
+            self.path_summary.setText("시작과 끝 태그를 모두 넣으세요.")
+            return
+        try:
+            self.path_steps = screen.cross_path(self.pg, a, b)
+        except QueryError as exc:
+            self.path_steps = None
+            self.path_summary.setText("찾을 수 없음: %s" % exc)
+        else:
+            if self.path_steps is None:
+                self.path_summary.setText("%s와 %s 사이에 물리 배관 경로가 없습니다(도면 연결이 끊겼거나 신호 연결만 있음)."
+                                          % (a, b))
+            else:
+                cross = sum(1 for s in self.path_steps if s["kind"] == "boundary")
+                self.path_summary.setText("구성요소 %d개 · 도면 경계 %d번 넘음 · 흐름 방향 무시. %s" % (
+                    len(self.path_steps) - cross, cross, VALVE_POSITION_NOTE))
+        self._fill_project_lists()
+
+    def _fill_project_lists(self):
+        dwg = self.drawing_filter.currentData()
+        self.path_list.clear()
+        for s in screen.filter_by_drawing(self.path_steps or [], dwg):
+            it = QListWidgetItem(s["text"])
+            if s["kind"] == "boundary":
+                it.setForeground(QBrush(QColor(tokens.c("ui"))))
+                f = it.font()
+                f.setBold(True)
+                it.setFont(f)
+            self.path_list.addItem(it)
+        rows = screen.filter_by_drawing(screen.sheet_link_rows(self.pg), dwg) if self.pg else []
+        self.link_table.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            cells = ("%s · %s" % (r["from_drawing"], r["from_label"]),
+                     "%s · %s" % (r["to_drawing"] or "-", r["to_label"] or "짝 없음"), r["line_no"] or "-",
+                     ("연결" if r["status"] == project.LINKED else "미연결")
+                     + (" · 사람 지정" if r["origin"] == "manual" else ""), r["reason"] or "")
+            for j, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                item.setToolTip(text)
+                self.link_table.setItem(i, j, item)

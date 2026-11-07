@@ -85,6 +85,8 @@ def harness(tmp, src, failures):
     ok("AI 제안 위험도 4가 있는 보류 행은 5–7열 '미확정', 제안은 추가 열에만",
        [rows[s[2]][k].value for k in ("frequency", "severity", "risk")] == ["미확정"] * 3
        and "위험도 4" in rows[s[2]]["ai_risk"].value, failures)
+    ok("'도면 번호' 열 = 실행 도면(SNP-M-102)", ws.cell(row=4, column=keys.index("drawings") + 1).value == "도면 번호"
+       and {row["drawings"].value for row in rows.values()} == {"SNP-M-102"}, failures)
     ok("수식 문자열 '=1+1'이 문자열 셀", rows[s[0]]["consequence"].value == "=1+1"
        and rows[s[0]]["consequence"].data_type == "s", failures)
     rec_ws = wb["개선 권고"]
