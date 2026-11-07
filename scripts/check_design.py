@@ -838,6 +838,11 @@ CONTRAST_PAIRS += [
     ("nav-active-ink", "nav-active-bg", TEXT, "레일 현재 단계·메뉴 선택 글자"),
     ("ink", "surface-2", TEXT, "탐색기 글자"),
     ("muted", "surface-2", TEXT, "표 머리 글자"),
+    ("rail-check", "nav-bg", GRAPHIC, "레일 완료 ✓ 배지(U-05)"),
+    ("nav-muted", "nav-field", TEXT, "제목줄 명령 찾기 상자 글자(U-01)"),
+    ("toast-ink", "toast-bg", TEXT, "토스트 글자(U-07)"),
+    ("toast-link", "toast-bg", TEXT, "토스트 실행 취소 링크(U-07)"),
+    ("err-line", "card", GRAPHIC, "위험 동작 버튼 테두리(U-10)"),
 ]
 CONTRAST_PAIRS += [("on-seg", "seg%d" % i, TEXT, "구간 꼬리표 글자") for i in range(1, 6)]
 CONTRAST_PAIRS += [("seg%d" % i, "card", GRAPHIC, "구간 색 / 도면 바탕") for i in range(1, 6)]

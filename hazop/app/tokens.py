@@ -47,6 +47,9 @@ COLORS = {
     "kg-canvas": "#fcfcfd",
     # 셸(디자인/시안/완성본 B안): 어두운 제목줄·단계 레일·상태줄
     "nav-bg": "#23282f", "nav-ink": "#e6e9ee", "nav-muted": "#aab2bd", "nav-active-bg": "#3b4452", "nav-active-ink": "#ffffff",
+    "rail-check": "#4ade80", "nav-field": "#353c46",  # 레일 완료 ✓ 배지, 제목줄 명령 찾기 상자(UIUX U-01·U-05)
+    # 토스트(U-07): 어두운 바탕 알림, 실행 취소 링크
+    "toast-bg": "#1f2937", "toast-ink": "#f9fafb", "toast-link": "#93c5fd",
     # ④ 검토구간 색(구간 번호 S1~S5 순환, 꼬리표 글자 on-seg)
     "seg1": "#0b7285", "seg2": "#6d28d9", "seg3": "#b54708", "seg4": "#a61e4d", "seg5": "#3f6212", "on-seg": "#ffffff",
 }
@@ -186,4 +189,38 @@ QStatusBar QLabel, QStatusBar QLabel#muted { color: %(nav-muted)s; font-size: %(
 QGroupBox { background: %(card)s; border: 1px solid %(line)s; border-radius: 4px; margin-top: 12px; padding: 8px; }
 QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: %(ink)s; font-weight: 700; }
 QSplitter::handle { background: %(line)s; }
+QToolButton#step { border: 0; border-left: 2px solid transparent; border-radius: 4px; padding: 3px 0; margin: 0;
+  background: transparent; color: %(nav-muted)s; font-size: %(xs)spx; }
+QToolButton#step:hover { background: %(nav-active-bg)s; }
+QToolButton#step[done="true"] { color: %(nav-ink)s; }
+QToolButton#step[state="now"] { background: %(nav-active-bg)s; color: %(nav-active-ink)s; border-left-color: %(ui)s; font-weight: 700; }
+QPushButton#cmdbox { background: %(nav-field)s; color: %(nav-muted)s; border: 1px solid %(nav-active-bg)s; border-radius: 4px;
+  padding: 2px 10px; text-align: left; font-size: %(sm)spx; }
+QPushButton#cmdbox:hover { border-color: %(nav-muted)s; color: %(nav-ink)s; }
+QLabel#kbd_nav { color: %(nav-muted)s; border: 1px solid %(nav-active-bg)s; border-radius: 3px; padding: 0 4px; font-size: %(xs)spx; }
+QLabel#kbd { color: %(toast-ink)s; border: 1px solid %(toast-link)s; border-radius: 3px; padding: 0 4px; font-size: %(xs)spx; }
+QWidget#explorer_box { background: %(surface-2)s; border-right: 1px solid %(line)s; }
+QLineEdit#explorer_filter { font-size: %(sm)spx; padding: 2px 6px; margin-right: 6px; }
+QTreeWidget#explorer::item:selected { border-left: 2px solid %(ui)s; }
+QFrame#related { background: %(card)s; border-left: 1px solid %(line)s; }
+QLabel#rel_title { font-weight: 700; padding: 8px 10px; border-bottom: 1px solid %(line)s; }
+QWidget#rel_body { background: %(card)s; }
+QToolButton#rel_head { border: 0; background: transparent; font-weight: 700; padding: 4px 6px; text-align: left; }
+QListWidget#rel_list { border: 0; background: %(card)s; font-size: %(sm)spx; }
+QListWidget#rel_list::item { padding: 1px 10px; height: 20px; }
+QListWidget#rel_list::item:hover { background: %(ui-weak)s; }
+QFrame#toast { background: %(toast-bg)s; border-radius: 6px; }
+QLabel#toast_text { color: %(toast-ink)s; }
+QPushButton#toast_undo { background: transparent; border: 0; color: %(toast-link)s; font-weight: 700; padding: 0 4px; }
+QPushButton#danger { color: %(err-ink)s; border-color: %(err-line)s; }
+QPushButton#danger:hover { border-color: %(err-ink)s; background: %(err-bg)s; }
+QProgressBar#thin { border: 0; border-radius: 2px; background: %(line)s; }
+QProgressBar#thin::chunk { background: %(ui)s; border-radius: 2px; }
+QWidget#tabrow { background: %(surface-2)s; border-bottom: 1px solid %(line)s; }
+QTabBar#tabs::tab { padding: 5px 10px; max-width: 240px; }
+QTabBar#tabs::tab:selected { background: %(card)s; }
+QDialog#palette { background: %(card)s; border: 1px solid %(line-strong)s; border-radius: 6px; }
+QListWidget#palette_list { border: 0; }
+QListWidget#palette_list::item { padding: 3px 8px; }
+QListWidget#palette_list::item:selected { background: %(ui-weak)s; color: %(ink)s; }
 """ % k
