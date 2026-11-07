@@ -2,7 +2,9 @@
 실행: python -m unittest discover -s tests -t .  샘플 파일과 임시 저장 폴더만 쓴다.
 """
 
+import contextlib
 import glob
+import io
 import importlib.util
 import json
 import os
@@ -520,6 +522,34 @@ class PdfRegisterTest(RegisterBase):
             rows = data.list_registrations()
             self.assertEqual([(e["extract_name"], e["extracted"], e["graphed"]) for e in rows], [(name, True, True)])
         self.assertFalse(os.path.exists(os.path.join(REPO_ROOT, "출력", "추출", name)))
+
+    def test_multi_page_registration_extracts_every_page(self):
+        import extract_pdf
+        from hazop.app import data
+        from tests.test_adapter import merged_pdf
+        pdf_102 = glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "SNP-M-102*", "*.pdf"))[0]
+        src = merged_pdf(os.path.join(self.tmp, "merged.pdf"), [PDF_101, pdf_102])
+        work = os.path.join(self.tmp, "work")
+        with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": work, "HAZOP_STORE_ROOT": self.store}):
+            r = self.reg(src)
+            self.assertEqual(r["record"]["documents"][0]["page_ids"], ["page-1", "page-2", "page-3"])
+            out = data.extract_and_graph(r["registration_file"])
+            names = [extract_drawio.registered_out_name(r["record"], i) for i in range(3)]
+            self.assertEqual([p["extract_dir"] for p in out["pages"]],
+                             [os.path.join(work, "출력", "추출", n) for n in names[:2]])
+            self.assertEqual([p["extraction"]["drawing"]["title_block_candidates"]["drawing_number"]
+                              for p in out["pages"]], ["SNP-M-101", "SNP-M-102"])
+            self.assertTrue(all(os.path.isfile(os.path.join(p["graph_dir"], "graph.json")) for p in out["pages"]))
+            self.assertEqual([(s["page_id"], "글자" in s["reason"]) for s in out["skipped_pages"]], [("page-3", True)])
+            self.assertTrue(os.path.isfile(os.path.join(work, "출력", "추출", names[2], extract_pdf.NOT_EXTRACTED)))
+            row = data.list_registrations()[0]
+            self.assertEqual((row["extracted"], row["pages"]), (True, {"total": 3, "extracted": 2, "skipped": 1}))
+            cli_out = os.path.join(self.tmp, "cli")
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = extract_pdf.main(["--registration", r["registration_file"], "--out-root", cli_out])
+            self.assertEqual(rc, 0)
+            self.assertEqual(sorted(os.listdir(cli_out)), sorted(names))
+            self.assertTrue(os.path.isfile(os.path.join(cli_out, names[1], "page.svg")))
 
 
 class ReviewFixTest(RegisterBase):

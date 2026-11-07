@@ -7,8 +7,6 @@ draw.io는 도면 객체를 추출하지 않는다. PDF는 표제란 판독을 �
 (사용자 결정 2026-11-04).
 """
 
-import hashlib
-import io
 import os
 import xml.etree.ElementTree as ET
 
@@ -88,13 +86,12 @@ def _title_block_candidates(pages):
 
 
 def _inspect_pdf(path, data, info):
-    """PDF: 쪽 목록(page-<번호>)과 첫 쪽 표제란 자동 후보. 추출과 같은 읽기(pdf_vector)를 쓴다."""
+    """PDF: 쪽 목록(page-<번호>)과 첫 쪽 표제란 자동 후보. 추출과 같은 읽기(pdf_vector)를 쓰며, 분석 결과는
+    pdf_vector.analyze_bytes가 기억해 등록·추출 때 같은 쪽을 다시 분석하지 않는다."""
     try:
         from hazop.extract.adapters import pdf_vector
-        page_count, width, height, words, prims = pdf_vector.load_page(io.BytesIO(data), 0)
-        analysis = pdf_vector.analyze(width, height, words, prims)
-        res = pdf_vector.build_extraction(analysis, width, height, page_count, 0, os.path.basename(path),
-                                          hashlib.sha256(data).hexdigest())
+        sha, page_count, width, height, analysis = pdf_vector.analyze_bytes(data, 0)
+        res = pdf_vector.build_extraction(analysis, width, height, page_count, 0, os.path.basename(path), sha)
     except ImportError:
         info["blockers"].append(_problem("unreadable", "PDF를 읽을 pdfplumber가 없음"))
         return

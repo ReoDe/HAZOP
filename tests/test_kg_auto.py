@@ -152,6 +152,15 @@ class DocumentLinkTest(unittest.TestCase):
         self.assertTrue(any("RC-PIC110" in n and "2개" in n for n in notes))
         self.assertEqual(knowledge["inputs"]["notes"], notes)
 
+    def test_link_to_inferred_pdf_tag_says_so(self):
+        g, d = pid_graph(), document()
+        node = next(n for n in g["nodes"] if n.get("tag") == "RC-PIC110")
+        node["tag_basis"] = "isa_label+page_prefix:RC [추론]"
+        links, _ = auto.tag_links([d], [g])
+        notes = {l["from"]: json.dumps(l, ensure_ascii=False) for l in links}
+        self.assertIn("[추론]", notes["graph-SNP-M-102:RC-PIC110"])
+        self.assertNotIn("[추론]", notes["graph-SNP-M-102:RC-PV101"])
+
     def test_tag_missing_from_drawing_is_noted_not_linked(self):
         g, d = pid_graph(), copy.deepcopy(document())
         d["tag_mentions"].append({"node_id": by_type(d, "requirement")[0]["id"], "tags": ["RC-V999"]})

@@ -84,30 +84,64 @@ def list_registrations(store_root=None):
         else:
             e["extracted"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("추출"), name, "extraction.json"))
             e["graphed"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("그래프"), name, "graph.json"))
+            if name and r.get("format") == "pdf":
+                e["pages"] = _pdf_page_state(r)
         rows.append(e)
     return rows
 
 
+def _pdf_page_state(record):
+    """PDF 등록 쪽별 추출 상태 {"total", "extracted", "skipped"}(skipped: not_extracted.json이 있는 쪽)."""
+    xp, ex = script_module("extract_pdf"), script_module("extract_drawio")
+    out = {"total": 0, "extracted": 0, "skipped": 0}
+    for i in xp.registered_pages(record):
+        d = os.path.join(paths.output_root("추출"), ex.registered_out_name(record, i))
+        out["total"] += 1
+        out["extracted"] += os.path.isfile(os.path.join(d, "extraction.json"))
+        out["skipped"] += os.path.isfile(os.path.join(d, xp.NOT_EXTRACTED))
+    return out
+
+
 def extract_and_graph(registration_path):
     """등록정보 → `--registration` 추출 → 그래프 생성 (scripts/extract_drawio.run_one 또는 PDF면
-    scripts/extract_pdf.run_one, 그리고 scripts/build_graph.build_one) → 프로젝트 지식그래프 다시 빌드.
+    scripts/extract_pdf.run_pages로 등록된 모든 쪽, 그리고 scripts/build_graph.build_one) → 프로젝트 지식그래프 다시 빌드.
     출력 폴더 이름은 두 형식이 같다.
-    반환 {"extraction", "extract_dir", "graph", "graph_dir", "kg" 또는 "kg_error"}. 등록 완료가 아니거나
-    해시 불일치면 ValueError. 지식그래프 빌드 실패는 추출을 실패로 만들지 않고 kg_error로 돌려준다."""
+    반환 {"extraction", "extract_dir", "graph", "graph_dir", "kg" 또는 "kg_error"}(PDF는 _extract_pdf_pages의 키 추가).
+    등록 완료가 아니거나 해시 불일치면 ValueError. 지식그래프 빌드 실패는 추출을 실패로 만들지 않고 kg_error로 돌려준다."""
     ex = script_module("extract_drawio")
     bg = script_module("build_graph")
     record, original = registry.load_for_extraction(registration_path)
     if record.get("format") == "pdf":
-        result, out_dir = script_module("extract_pdf").run_one(
-            original, paths.output_root("추출"), page=0, registration=record,
-            out_name=ex.registered_out_name(record, 0))
-    else:
-        reg_svg = registry.registered_svgs(registration_path, record)
-        result, out_dir = ex.run_one(original, paths.output_root("추출"), svg="auto", page=0, registration=record,
-                                     registered_svgs=reg_svg)
+        return _extract_pdf_pages(record, original, ex, bg)
+    reg_svg = registry.registered_svgs(registration_path, record)
+    result, out_dir = ex.run_one(original, paths.output_root("추출"), svg="auto", page=0, registration=record,
+                                 registered_svgs=reg_svg)
     graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("그래프"))
     return _with_kg({"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir},
                     record["project_id"])
+
+
+def _extract_pdf_pages(record, original, ex, bg):
+    """PDF: 등록된 모든 쪽을 추출하고 쪽마다 그래프를 만든 뒤 지식그래프를 한 번 빌드한다.
+    반환은 extract_and_graph와 같은 키(첫 추출 쪽 기준)에 "pages"(추출한 쪽별 결과)와 "skipped_pages"(추출하지 않은 쪽과
+    사유, 그 쪽 출력 폴더의 not_extracted.json에도 남음)를 더한 것. 추출한 쪽이 하나도 없으면 ValueError."""
+    xp = script_module("extract_pdf")
+    done, skipped = xp.run_pages(original, paths.output_root("추출"), xp.registered_pages(record), registration=record,
+                                 out_name=lambda i: ex.registered_out_name(record, i))
+    for s in skipped:  # 전에 추출했던 쪽이면 남은 그래프가 지식그래프에 섞이지 않게 지운다
+        stale = os.path.join(paths.output_root("그래프"), ex.registered_out_name(record, s["page_index"]), "graph.json")
+        if os.path.isfile(stale):
+            os.remove(stale)
+    if not done:
+        raise ValueError("추출한 쪽이 없음: %s" % "; ".join("%s %s" % (s["page_id"], s["reason"]) for s in skipped))
+    pages = []
+    for page, result, out_dir in done:
+        graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("그래프"))
+        pages.append({"page_index": page, "extraction": result, "extract_dir": out_dir, "graph": graph,
+                      "graph_dir": gdir})
+    out = {k: pages[0][k] for k in ("extraction", "extract_dir", "graph", "graph_dir")}
+    out.update(pages=pages, skipped_pages=skipped)
+    return _with_kg(out, record["project_id"])
 
 
 # ---------------------------------------------------------------- ① 설계 문서 → 문서 지식 → ③ 지식그래프
