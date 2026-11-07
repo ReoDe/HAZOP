@@ -172,7 +172,13 @@ class AiScreenTest(unittest.TestCase):
         it = scr.matrix.item(scr._row_of(nid), col)
         self.assertEqual(it.text(), "실패")
         self.assertIn("가짜 실패", it.toolTip())
-        self.assertEqual(it.background().color().name(), tokens.c("risk-deny-bg"))
+        self.assertIn("위험도 아님", it.toolTip())
+        from hazop.app.screens.results_paint import CELL_ROLE, FAILED_TEXT, cell_style
+        bg, ink, border, text = cell_style(it.data(CELL_ROLE))  # U-19: 실패 칸은 위험도 5(불허) 색과 겹치지 않는다
+        self.assertEqual((bg, text, border["dash"]), (tokens.c("card"), FAILED_TEXT, True))
+        deny = cell_style({"kind": "scored", "risk": 5, "unreviewed": 0, "scenarios": 1})
+        self.assertNotEqual((bg, ink), deny[:2])
+        self.assertEqual(deny[0], tokens.c("risk-deny-bg"))
         before = {(c["node_id"], c["deviation_id"]): [e["entry_id"] for e in c["entries"]]
                   for c in scr.results["cells"] if (c["node_id"], c["deviation_id"]) not in failed}
 
@@ -225,6 +231,48 @@ class AiScreenTest(unittest.TestCase):
             self.assertEqual(entries[1]["cause"], "두 번째 원인 %s" % did)
         self.assertEqual(len({e["entry_id"] for c in saved["cells"] for e in c["entries"]}),
                          sum(len(c["entries"]) for c in saved["cells"]), "재실행해도 항목 ID가 겹치지 않음")
+
+    def test_keys_row_actions_toast_undo_and_visible_columns(self):
+        """U-02 행렬 키(J·Enter)와 워크시트 키(A·R), U-21 고른 행에만 동작 버튼, U-07 토스트 실행 취소, U-20 열 수."""
+        from PySide6.QtWidgets import QApplication
+        win, scr = self.screen(FakeClient())
+        self.run_and_wait(scr)
+        nid = self.node_set["nodes"][0]["node_id"]
+        self.assertTrue(scr.next_unreviewed())
+        first = scr.cell
+        self.assertEqual(first, (nid, scr.deviations[0]["deviation_id"]), "J = 첫 미검토 칸")
+        scr.keys["J"].activated.emit()
+        self.assertNotEqual(scr.cell, first, "J 다시 = 다음 미검토 칸")
+        scr.matrix.setCurrentCell(0, 2)
+        scr.keys["Return"].activated.emit()
+        self.assertEqual(scr.cell, (nid, scr.deviations[2]["deviation_id"]), "Enter = 지금 칸 열기")
+
+        self.assertTrue(scr.row_actions.isHidden(), "고른 행이 없으면 동작 버튼 없음")
+        scr.select_entry(0)
+        QApplication.processEvents()
+        self.assertFalse(scr.row_actions.isHidden())
+        geo, cell = scr.row_actions.geometry(), scr.table.visualRect(scr.table.model().index(0, 6))
+        self.assertTrue(cell.contains(geo.center()), "버튼은 고른 행의 상태 칸 위")
+        scr.keys["A"].activated.emit()
+        self.assertEqual(self.cell(self.saved(), *scr.cell)["entries"][0]["status"], "approved")
+        self.assertIn("승인했습니다", win.toast_box.label.text())
+        win.undo()
+        self.assertEqual(self.cell(self.saved(), *scr.cell)["entries"][0]["status"], "proposed", "실행 취소 = 저장본도 되돌림")
+        scr.select_entry(0)
+        scr.keys["A"].activated.emit()
+        scr.set_results(json.loads(json.dumps(scr.results)))  # 그 뒤 결과가 바뀜(예: AI 결과 반영)
+        win.undo()
+        self.assertEqual(self.cell(self.saved(), *scr.cell)["entries"][0]["status"], "approved",
+                         "그 사이 결과가 바뀌면 실행 취소가 통째로 되돌리지 않음")
+        scr.select_entry(0)
+        scr.keys["R"].activated.emit()
+        self.assertEqual(self.cell(self.saved(), *scr.cell)["entries"][0]["status"], "rejected")
+
+        win.resize(1366, 768)
+        QApplication.processEvents()
+        shown = (scr.matrix.viewport().width()) / scr.matrix.columnWidth(0)
+        self.assertGreaterEqual(shown, 10.0, "1366에서 편차 열 약 11개(명세 U-20, Qt 여백으로 1열 줄 수 있음)")
+        self.assertEqual(scr.matrix.rowHeight(0), 30)
 
     def test_review_actions_blocked_while_running(self):
         _win, scr = self.screen(FakeClient())

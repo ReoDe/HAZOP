@@ -8,8 +8,8 @@ AI가 쓴 항목은 승인 전까지 언제나 'AI 초안'으로 표시한다(re
 
 import os
 
-from PySide6.QtCore import QCoreApplication, Qt
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtCore import QCoreApplication, QSize, Qt
+from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
                                QHBoxLayout, QHeaderView, QLabel, QPlainTextEdit, QProgressBar, QPushButton,
                                QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogBut
 from hazop import paths
 from hazop.app import data, tokens
 from hazop.app.ai_runner import AiRunner
+from hazop.app.screens.results_paint import CELL_ROLE, DRAFT_ROLE, CellDelegate, GroupHeader, SheetDelegate
 from hazop.app.screens.study import seg_icon
 from hazop.app.widgets import Chip, empty_label, plain_label
 from hazop.study import ai_cells, nodes
@@ -29,7 +30,10 @@ STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인"
 BAND_LABELS = {"ok": "수용", "cond": "조건부 수용", "deny": "불허"}  # tokens.risk_band 구분
 SHEET_COLUMNS = ("원인", "결과", "보호수단", "권고", "위험도", "AI 근거", "상태")
 COL_RISK, COL_BASIS, COL_STATUS = 4, 5, 6
-CELL_W, SHEET_W, ROW_HEAD_W = 76, 460, 170
+CELL_W, ROW_H, ROW_HEAD_W = 54, 30, 210  # U-20: 1366에서 편차 열 약 11개가 보이게 칸 한 줄
+RISK_KEYS = ("칸 숫자 = 최고 위험도 · 미N = 미검토 시나리오 · – 분석 전 · 없음 = AI 초안(해당 없음·시나리오 없음) · "
+             "! 실패 = AI 실행 실패(위험도 아님)")
+NAV_KEYS = "←↑↓→ 칸 이동 · Enter 열기 · J 다음 미검토 · 워크시트 A 승인 · R 기각 · E 수정 · Ctrl+Z 실행 취소"
 EDIT_TEXT_FIELDS = (("cause", "원인"), ("consequence", "결과"), ("recommendation", "권고"))
 
 
@@ -140,50 +144,33 @@ class ResultsScreen(QWidget):
         self._old_saved = None  # 쓰지 않기로 한 저장본 경로(처음 저장할 때 옆에 보관본으로 옮김)
         self._unsaved = False   # 마지막 저장이 실패해 화면에만 있는 변경이 있음
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(12, 10, 12, 10)
-        lay.setSpacing(6)
+        lay.setContentsMargins(8, 6, 8, 6)  # U-20: 1366에서 편차 열 약 11개(가운데 폭 − 행 머리 210) ÷ 54
+        lay.setSpacing(4)
         bar = QHBoxLayout()
-        bar.addWidget(QLabel("도면"))
         self.combo = QComboBox()
-        self.combo.setMinimumWidth(200)
+        self.combo.setToolTip("도면")
+        self.combo.setMinimumWidth(140)
         self.combo.currentIndexChanged.connect(self._load)
         bar.addWidget(self.combo)
-        self.kpi = Chip()
-        bar.addWidget(self.kpi)
-        bar.addStretch(1)
-        self.legacy_btn = QPushButton("이전 고정 응답 분석 열기")
-        self.legacy_btn.setToolTip("MVP 고정 응답 분석·설계보완 화면(이전 ④⑤)")
-        self.legacy_btn.clicked.connect(lambda: self.app.go(2))
-        bar.addWidget(self.legacy_btn)
+        self.kpi = plain_label("", name="muted", elide=Qt.ElideRight, min_chars=10)
+        bar.addWidget(self.kpi, 1)
+        bar.addLayout(self._toolbar())
         lay.addLayout(bar)
 
         self.stack = QStackedWidget()
-        empty = QWidget()
-        el = QVBoxLayout(empty)
-        el.addStretch(1)
-        self.empty = empty_label("확정된 검토구간이 없습니다. ④ 검토구간에서 구간을 확정하면 여기서 구간 × 편차 결과를 봅니다.")
-        el.addWidget(self.empty)
-        self.to_study_btn = QPushButton("④ 검토구간으로")
-        self.to_study_btn.clicked.connect(lambda: self.app.go(5))
-        el.addWidget(self.to_study_btn, 0, Qt.AlignHCenter)
-        el.addStretch(1)
-        self.stack.addWidget(empty)
+        self.stack.addWidget(self._empty_page())
 
         body = QWidget()
         bv = QVBoxLayout(body)
         bv.setContentsMargins(0, 0, 0, 0)
-        bv.setSpacing(6)
-        bv.addLayout(self._toolbar())
-        split = QSplitter(Qt.Horizontal)
+        bv.setSpacing(4)
+        split = QSplitter(Qt.Vertical)
         split.setChildrenCollapsible(False)
-        left_w = QWidget()
-        left = QVBoxLayout(left_w)
-        left.setContentsMargins(0, 0, 0, 0)
-        left.setSpacing(4)
+        top_w = QWidget()
+        top = QVBoxLayout(top_w)
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(2)
         head = QHBoxLayout()
-        t = QLabel("구간 × 편차 요약")
-        t.setObjectName("section")
-        head.addWidget(t)
         self.ai_chip = Chip(AI_NOTE, elide=Qt.ElideRight)
         head.addWidget(self.ai_chip)
         self.stale_chip = Chip(elide=Qt.ElideRight)
@@ -193,33 +180,71 @@ class ResultsScreen(QWidget):
         self.kg_chip.hide()
         head.addWidget(self.kg_chip)
         head.addStretch(1)
-        left.addLayout(head)
+        top.addLayout(head)
         self.matrix = QTableWidget()
+        self.matrix.setObjectName("matrix")
         self.matrix.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.matrix.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.matrix.setHorizontalHeader(GroupHeader(self.matrix))
         self.matrix.horizontalHeader().setDefaultSectionSize(CELL_W)
+        self.matrix.horizontalHeader().setMinimumSectionSize(CELL_W)
         self.matrix.horizontalHeader().setSectionResizeMode(QHeaderView.Fixed)
-        self.matrix.verticalHeader().setDefaultSectionSize(40)
-        self.matrix.verticalHeader().setMaximumWidth(ROW_HEAD_W)  # 긴 구간 이름이 칸을 밀어내지 않게(전체 이름은 툴팁)
+        self.matrix.verticalHeader().setDefaultSectionSize(ROW_H)
+        self.matrix.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self.matrix.verticalHeader().setFixedWidth(ROW_HEAD_W)  # 긴 구간 이름은 줄임표 + 툴팁
+        self.matrix.verticalHeader().setTextElideMode(Qt.ElideRight)
+        self.matrix.setIconSize(QSize(30, 16))
+        self.matrix.setWordWrap(False)
+        self.matrix.setItemDelegate(CellDelegate(self.matrix))
         self.matrix.cellClicked.connect(lambda r, c: self.open_cell(self._node_at(r), self.deviations[c]["deviation_id"]))
-        left.addWidget(self.matrix, 1)
-        note = QLabel("칸 = 시나리오 수 · 최고 위험 · 미검토 수. 빗금 '분석 전' = 아직 분석하지 않은 칸, "
-                      "'실패' = 마지막 AI 실행 실패")
-        note.setObjectName("muted")
-        note.setWordWrap(True)
-        left.addWidget(note)
-        split.addWidget(left_w)
+        top.addWidget(self.matrix, 1)
+        legend = plain_label(RISK_KEYS, name="muted", elide=Qt.ElideRight, min_chars=12)
+        top.addWidget(legend)
+        keys = plain_label(NAV_KEYS, name="muted", elide=Qt.ElideRight, min_chars=12)
+        top.addWidget(keys)
+        split.addWidget(top_w)
         split.addWidget(self._sheet())
         split.setStretchFactor(0, 2)
         split.setStretchFactor(1, 3)
-        split.setSizes([400, 600])
+        split.setSizes([300, 420])
         bv.addWidget(split, 1)
         self.stack.addWidget(body)
         lay.addWidget(self.stack, 1)
+        self._shortcuts()
+
+    def _empty_page(self):
+        """빈 상태(U-09): 제목 한 줄 + 이유 + 주 버튼 + 다음 단계."""
+        empty = QWidget()
+        el = QVBoxLayout(empty)
+        el.addStretch(1)
+        title = QLabel("아직 볼 분석 결과가 없습니다")
+        title.setObjectName("title")
+        title.setAlignment(Qt.AlignCenter)
+        el.addWidget(title)
+        self.empty = empty_label("확정된 검토구간이 없습니다. ④ 검토구간에서 구간을 확정하면 여기서 구간 × 편차 결과를 봅니다.")
+        el.addWidget(self.empty)
+        self.to_study_btn = QPushButton("④ 검토구간으로")
+        self.to_study_btn.setObjectName("primary")
+        self.to_study_btn.clicked.connect(lambda: self.app.go(5))
+        el.addWidget(self.to_study_btn, 0, Qt.AlignHCenter)
+        steps = empty_label("다음 단계: ④에서 구간 확정 → 여기서 'AI 일괄 분석' → 칸마다 AI 초안을 승인·기각·수정")
+        el.addWidget(steps)
+        el.addStretch(1)
+        return empty
 
     def _toolbar(self):
         row = QHBoxLayout()
         row.setSpacing(6)
+        self.progress = QProgressBar()
+        self.progress.setObjectName("thin")
+        self.progress.setTextVisible(False)
+        self.progress.setFixedSize(120, 4)
+        self.progress.setRange(0, 1)
+        self.progress.setValue(0)
+        self.progress_label = QLabel("")
+        self.progress_label.setObjectName("muted")
+        row.addWidget(self.progress, 0, Qt.AlignVCenter)
+        row.addWidget(self.progress_label)
         self.run_all_btn = QPushButton("AI 일괄 분석")
         self.run_all_btn.setObjectName("primary")
         self.run_all_btn.setToolTip("확정된 모든 구간 × 편차를 Claude API로 분석(사람이 손댄 항목은 유지)")
@@ -227,35 +252,25 @@ class ResultsScreen(QWidget):
         self.run_node_btn = QPushButton("선택 구간 분석")
         self.run_node_btn.setToolTip("행렬에서 고른 행의 구간만 분석")
         self.run_node_btn.clicked.connect(lambda: self.run_ai("node"))
-        self.retry_btn = QPushButton("실패 칸 재실행")
+        self.retry_btn = QPushButton("실패 칸 다시 실행")
         self.retry_btn.setToolTip("마지막 AI 실행이 실패한 칸만 칸마다 다시 호출")
         self.retry_btn.clicked.connect(lambda: self.run_ai("failed"))
         self.cancel_btn = QPushButton("취소")
         self.cancel_btn.setToolTip("남은 호출을 멈춤(진행 중인 호출 1건은 끝까지 받아 반영)")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self.cancel_ai)
-        self.progress = QProgressBar()
-        self.progress.setFixedWidth(130)
-        self.progress.setRange(0, 1)
-        self.progress.setValue(0)
-        self.progress.setFormat("호출 없음")
-        self.usage = QLabel()
-        self.usage.setObjectName("muted")
-        for w in (self.run_all_btn, self.run_node_btn, self.retry_btn, self.cancel_btn, self.progress, self.usage):
+        self.usage = QLabel()  # 토큰·비용은 도구 설명으로(도구줄 폭 절약)
+        self.usage.hide()
+        for w in (self.retry_btn, self.run_node_btn, self.cancel_btn, self.run_all_btn):
             row.addWidget(w)
-        row.addStretch(1)
         return row
 
     def _sheet(self):
         frame = QFrame()
         frame.setObjectName("panel")
-        frame.setMinimumWidth(SHEET_W)
         v = QVBoxLayout(frame)
-        v.setContentsMargins(8, 8, 8, 8)
+        v.setContentsMargins(8, 6, 8, 6)
         v.setSpacing(4)
-        t = QLabel("상세 워크시트")
-        t.setObjectName("section")
-        v.addWidget(t)
         self.sheet_stack = QStackedWidget()
         self.sheet_stack.addWidget(empty_label("행렬의 칸을 누르면 구간 × 편차 워크시트가 열립니다."))
         sheet = QWidget()
@@ -265,25 +280,22 @@ class ResultsScreen(QWidget):
         hrow = QHBoxLayout()
         self.sheet_badge = QLabel()
         hrow.addWidget(self.sheet_badge)
-        self.sheet_title = plain_label("", wrap=True)
+        self.sheet_title = plain_label("", elide=Qt.ElideRight, min_chars=12)
         self.sheet_title.setObjectName("title")
-        hrow.addWidget(self.sheet_title, 1)
+        hrow.addWidget(self.sheet_title)
+        self.draft_chip = Chip()
+        hrow.addWidget(self.draft_chip)
+        self.intent = plain_label("", elide=Qt.ElideRight, min_chars=10)
+        hrow.addWidget(self.intent, 1)
+        self.sheet_count = QLabel()
+        self.sheet_count.setObjectName("muted")
+        hrow.addWidget(self.sheet_count)
         sv.addLayout(hrow)
-        self.ai_banner = QFrame()
-        self.ai_banner.setObjectName("ai_box")
-        al = QVBoxLayout(self.ai_banner)
-        al.setContentsMargins(8, 4, 8, 4)
-        self.ai_banner_label = QLabel(AI_NOTE)
-        self.ai_banner_label.setWordWrap(True)
-        al.addWidget(self.ai_banner_label)
-        sv.addWidget(self.ai_banner)
+        self.intent_src = plain_label("", name="muted", elide=Qt.ElideRight, min_chars=10)
+        sv.addWidget(self.intent_src)
         self.run_note = plain_label("", wrap=True)
         self.run_note.hide()
         sv.addWidget(self.run_note)
-        self.intent = plain_label("", wrap=True)
-        sv.addWidget(self.intent)
-        self.intent_src = plain_label("", name="muted", wrap=True)
-        sv.addWidget(self.intent_src)
         self.table = QTableWidget(0, len(SHEET_COLUMNS))
         self.table.setHorizontalHeaderLabels(list(SHEET_COLUMNS))
         self.table.horizontalHeaderItem(COL_RISK).setToolTip("위험도 = 강도 × 발생빈도 〈표5〉(KOSHA P-86) · 구분 〈표9〉")
@@ -297,22 +309,31 @@ class ResultsScreen(QWidget):
         hh.setSectionResizeMode(QHeaderView.Stretch)
         for c in (COL_RISK, COL_STATUS):
             hh.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        self.table.setItemDelegate(SheetDelegate(COL_BASIS, self.table))
         self.table.itemSelectionChanged.connect(self._update_entry_buttons)
+        self.table.verticalScrollBar().valueChanged.connect(lambda _v: self._place_row_actions())
         sv.addWidget(self.table, 1)
-        act = QHBoxLayout()
-        act.setSpacing(4)
-        self.approve_btn = QPushButton("승인")
+        # 행 단위 동작(U-21): 고른 행의 상태 칸 위에만 승인 A · 기각 R · 수정 E를 띄운다
+        self.row_actions = QWidget(self.table.viewport())
+        self.row_actions.setObjectName("row_actions")
+        ra = QHBoxLayout(self.row_actions)
+        ra.setContentsMargins(2, 2, 2, 2)
+        ra.setSpacing(3)
+        self.approve_btn = QPushButton("승인 A")
         self.approve_btn.clicked.connect(lambda: self.set_entry_status("approved"))
-        self.reject_btn = QPushButton("기각")
+        self.reject_btn = QPushButton("기각 R")
         self.reject_btn.clicked.connect(lambda: self.set_entry_status("rejected"))
-        self.edit_btn = QPushButton("수정…")
+        self.edit_btn = QPushButton("수정 E")
         self.edit_btn.clicked.connect(lambda: self.edit_selected())
+        for b in (self.approve_btn, self.reject_btn, self.edit_btn):
+            b.setObjectName("row_btn")
+            ra.addWidget(b)
+        self.row_actions.hide()
+        act = QHBoxLayout()
+        act.addStretch(1)
         self.rerun_cell_btn = QPushButton("이 칸 다시 실행")
         self.rerun_cell_btn.setToolTip("이 칸만 다시 AI 분석(승인·수정·기각한 항목은 유지)")
         self.rerun_cell_btn.clicked.connect(lambda: self.run_ai("cell"))
-        for b in (self.approve_btn, self.reject_btn, self.edit_btn):
-            act.addWidget(b)
-        act.addStretch(1)
         act.addWidget(self.rerun_cell_btn)
         sv.addLayout(act)
         self.sheet_stack.addWidget(sheet)
@@ -326,6 +347,51 @@ class ResultsScreen(QWidget):
         return {"drawing": self.node_set.get("drawing_number") or self.name, "region": None, "run": None}
 
     def is_done(self):
+        return False
+
+    def commands(self):
+        """명령 팔레트(U-01) 항목 [(이름, 단축키, 함수)]."""
+        return [("AI 일괄 분석", "", lambda: self.run_ai("all")), ("선택 구간 분석", "", lambda: self.run_ai("node")),
+                ("실패 칸 다시 실행", "", lambda: self.run_ai("failed")), ("이 칸 다시 실행", "", lambda: self.run_ai("cell")),
+                ("다음 미검토 칸", "J", self.next_unreviewed), ("칸 열기", "Enter", self.open_current),
+                ("항목 승인", "A", lambda: self.set_entry_status("approved")),
+                ("항목 기각", "R", lambda: self.set_entry_status("rejected")),
+                ("항목 수정…", "E", lambda: self.edit_selected()),
+                ("이전 고정 응답 분석 열기", "", lambda: self.app.go(2))]
+
+    def _shortcuts(self):
+        """행렬·워크시트 단축키(U-02). 이 화면 안에서만 듣고, 글 입력칸에 초점이 있으면 입력이 먼저다."""
+        keys = (("J", self.next_unreviewed), ("A", lambda: self.set_entry_status("approved")),
+                ("R", lambda: self.set_entry_status("rejected")), ("E", lambda: self.edit_selected()))
+        self.keys = {}
+        for seq, fn in keys:
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.setContext(Qt.WidgetWithChildrenShortcut)
+            sc.activated.connect(fn)
+            self.keys[seq] = sc
+        for seq in ("Return", "Enter"):
+            sc = QShortcut(QKeySequence(seq), self.matrix)
+            sc.setContext(Qt.WidgetShortcut)
+            sc.activated.connect(self.open_current)
+            self.keys[seq] = sc
+
+    def open_current(self):
+        r, c = self.matrix.currentRow(), self.matrix.currentColumn()
+        if self.node_set is None or r < 0 or c < 0:
+            return False
+        return self.open_cell(self._node_at(r), self.deviations[c]["deviation_id"])
+
+    def next_unreviewed(self):
+        """J: 지금 칸 다음(행 순서)의 미검토 시나리오가 있는 칸을 연다. 끝에서는 처음으로 돌아간다."""
+        if not self.results:
+            return False
+        summary = res.matrix_summary(self.results)
+        order = [(n["node_id"], d["deviation_id"]) for n in self.node_set["nodes"] for d in self.deviations]
+        start = order.index(self.cell) + 1 if self.cell in order else 0
+        for key in order[start:] + order[:start]:
+            if (summary.get(key[0], {}).get(key[1]) or {}).get("unreviewed"):
+                return self.open_cell(*key)
+        self.app.status_message("미검토 시나리오가 있는 칸이 없습니다.")
         return False
 
     def on_enter(self):
@@ -366,7 +432,7 @@ class ResultsScreen(QWidget):
         self.kg, self.kg_reason, self._old_saved = None, None, None
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
-        self.progress.setFormat("호출 없음")
+        self.progress_label.setText("")
         if name:
             self.graph = viewer_build.load_graph(paths.output_root("그래프"), name)
         saved = None
@@ -393,7 +459,7 @@ class ResultsScreen(QWidget):
                                    if name else "추출 결과가 없습니다. ①·②에서 도면을 등록·추출하세요.")
             elif saved is None or saved.get("status") != "confirmed":
                 self.empty.setText("이 도면의 검토구간이 아직 확정되지 않았습니다. ④ 검토구간에서 구간을 확정하세요.")
-            self.kpi.set_state("구간 — · 편차 %d" % len(self.deviations))
+            self.kpi.setText("구간 — · 편차 %d" % len(self.deviations))
             self.stack.setCurrentIndex(0)
         self._update_buttons()
         self.app.update_header()
@@ -426,6 +492,7 @@ class ResultsScreen(QWidget):
         self.results = doc
         self._fill_matrix()
         self.usage.setText(usage_text(ai_cells.usage_total(doc)))
+        self.kpi.setToolTip("%s\nAI 사용량: %s" % (self.kpi.text(), self.usage.text()))
         if self.cell:
             self.open_cell(*self.cell)
         else:
@@ -495,9 +562,9 @@ class ResultsScreen(QWidget):
         self.runner.unit_done.connect(self._on_unit_done)
         self.runner.progress.connect(self._on_progress)
         self.runner.finished.connect(self._on_finished)
-        self.progress.setFormat("%v/%m 호출")
         self.progress.setRange(0, len(units))
         self.progress.setValue(0)
+        self._progress_text()
         self._update_buttons()
         self.app.status_message("AI 분석 중: %d회 호출 예정" % len(units))
         self.runner.start()
@@ -531,12 +598,22 @@ class ResultsScreen(QWidget):
     def _on_progress(self, done, total):
         self.progress.setRange(0, total)
         self.progress.setValue(done)
+        self._progress_text()
+
+    def _progress_text(self):
+        """'AI 12/50 · 실패 2' 한 줄을 막대 옆과 상태 표시줄에 같이 보인다."""
+        failed = len(ai_cells.failed_cells(self.results)) if self.results else 0
+        text = "AI %d/%d 호출%s" % (self.progress.value(), self.progress.maximum(), " · 실패 %d" % failed if failed else "")
+        self.progress_label.setText(text)
+        if self.running():
+            self.app.status_message("AI 분석 중: " + text)
 
     def _on_finished(self, cancelled):
         self.runner.wait()
         done, total = self.progress.value(), self.progress.maximum()
         self.runner = None
         failed = len(ai_cells.failed_cells(self.results))
+        self._progress_text()
         self.app.status_message("AI 분석 %s: %d/%d 호출%s" % ("취소됨" if cancelled else "끝남", done, total,
                                                          " · 실패 칸 %d" % failed if failed else ""))
         self._update_buttons()
@@ -546,6 +623,9 @@ class ResultsScreen(QWidget):
         for b in (self.run_all_btn, self.run_node_btn, self.retry_btn, self.rerun_cell_btn):
             b.setEnabled(idle)
         self.cancel_btn.setEnabled(self.running())
+        self.cancel_btn.setVisible(self.running())
+        has_failed = bool(self.results) and bool(ai_cells.failed_cells(self.results))
+        self.retry_btn.setVisible(has_failed)
         self.combo.setEnabled(not self.running())
         self._update_entry_buttons()
 
@@ -559,6 +639,8 @@ class ResultsScreen(QWidget):
         return next((i for i, n in enumerate(self.node_set["nodes"]) if n["node_id"] == node_id), None)
 
     def _fill_matrix(self):
+        """칸 한 줄(U-20). 아이템 text()는 설명 글자, 그리기는 CellDelegate가 CELL_ROLE 상태로 한다.
+        AI 실행 실패 칸은 위험도 색을 쓰지 않는다(U-19): 흰 바탕 + 빨강 점선 테두리 + '! 실패'."""
         ns, summary = self.node_set, res.matrix_summary(self.results)
         failed = {(c["node_id"], c["deviation_id"]): c["ai_run"].get("error") for c in self.results["cells"]
                   if (c.get("ai_run") or {}).get("status") == "failed"}
@@ -568,10 +650,11 @@ class ResultsScreen(QWidget):
         m.clear()
         m.setRowCount(len(ns["nodes"]))
         m.setColumnCount(len(self.deviations))
-        m.setHorizontalHeaderLabels(["%s\n%s" % (d["parameter"], d["guideword"]) for d in self.deviations])
+        m.horizontalHeader().set_groups([(d["parameter"], d["guideword"]) for d in self.deviations])
         for c, d in enumerate(self.deviations):
-            m.horizontalHeaderItem(c).setToolTip("%s %s" % (d["deviation_id"], d["label"]))
-        hatch = QBrush(QColor(tokens.c("ai-hatch-b")), Qt.BDiagPattern)
+            h = QTableWidgetItem("%s %s" % (d["parameter"], d["guideword"]))
+            h.setToolTip("%s %s" % (d["deviation_id"], d["label"]))
+            m.setHorizontalHeaderItem(c, h)
         total_s = total_u = 0
         for r, n in enumerate(ns["nodes"]):
             head = QTableWidgetItem(seg_icon(r, n["node_id"]), "%s %s" % (n["node_id"], n["name"]))
@@ -581,43 +664,42 @@ class ResultsScreen(QWidget):
                 s = summary.get(n["node_id"], {}).get(d["deviation_id"]) or {"state": "not_analyzed", "scenarios": 0,
                                                                             "max_risk": None, "unreviewed": 0}
                 it = QTableWidgetItem()
-                it.setTextAlignment(Qt.AlignCenter)
                 tip = "%s %s × %s" % (n["node_id"], n["name"], d["label"])
                 key = (n["node_id"], d["deviation_id"])
+                state = {"kind": "scored", "risk": s["max_risk"], "unreviewed": s["unreviewed"],
+                         "scenarios": s["scenarios"]}
                 if key in failed:
                     it.setText("실패")
-                    it.setBackground(QColor(tokens.c("risk-deny-bg")))
-                    it.setForeground(QColor(tokens.c("risk-deny-ink")))
-                    tip = "%s\nAI 실행 실패: %s" % (tip, failed[key] or "-")
+                    state = {"kind": "failed"}
+                    tip = "%s\nAI 실행 실패(위험도 아님): %s" % (tip, failed[key] or "-")
                 elif s["state"] == "not_analyzed":
                     it.setText("분석 전")
-                    it.setBackground(hatch)
-                    it.setForeground(QColor(tokens.c("muted")))
+                    state = {"kind": "not_analyzed"}
                 elif s["state"] == "excluded":
                     it.setText("제외")
-                    it.setForeground(QColor(tokens.c("muted")))
+                    state = {"kind": "excluded"}
                 else:
                     lines = ["%d건" % s["scenarios"]]
                     if s["max_risk"] is not None:
                         lines.append("위험 %d" % s["max_risk"])
-                        bg, ink, _line = tokens.risk_colors(s["max_risk"])
-                        it.setBackground(QColor(bg))
-                        it.setForeground(QColor(ink))
                     if s["scenarios"] == 0 and not s["unreviewed"] and runs.get(key, {}).get("status") == "ok":
                         lines = [empty_cell_label(runs[key]), "AI 초안"]
-                        it.setBackground(hatch)
+                        state = {"kind": "empty"}
                     else:
                         lines.append("미검토 %d" % s["unreviewed"] if s["unreviewed"] else "완료")
                     it.setText("\n".join(lines))
+                    tip = "%s\n%s" % (tip, " · ".join(lines))
+                it.setData(CELL_ROLE, state)
                 total_s += s["scenarios"]
                 total_u += s["unreviewed"]
                 it.setToolTip(tip)
                 m.setItem(r, c, it)
-        m.resizeRowsToContents()
         if cur[0] >= 0 and cur[1] >= 0:
             m.setCurrentCell(*cur)
-        self.kpi.set_state("구간 %d · 편차 %d · 시나리오 %d · 미검토 %d · 실패 %d"
-                           % (len(ns["nodes"]), len(self.deviations), total_s, total_u, len(failed)))
+        self.kpi.setText("구간 %d · 편차 %d · 시나리오 %d · 미검토 %d%s"
+                         % (len(ns["nodes"]), len(self.deviations), total_s, total_u,
+                            " · 실패 %d" % len(failed) if failed else ""))
+        self._update_buttons()
 
     # ------------------------------------------------------------ 워크시트
     def _entity_label(self, eid):
@@ -649,6 +731,7 @@ class ResultsScreen(QWidget):
         row = self._row_of(node_id)
         self.sheet_badge.setPixmap(seg_icon(row, node_id).pixmap(30, 16))
         self.sheet_title.setText("%s × %s" % (node["name"], dev["label"]))
+        self.app.set_selection({"kind": "cell", "drawing": self.name, "node_id": node_id, "deviation_id": deviation_id})
         run = (cell or {}).get("ai_run") or {}
         if run.get("status") == "failed":
             self.run_note.setText("AI 실행 실패: %s" % (run.get("error") or "-"))
@@ -658,7 +741,13 @@ class ResultsScreen(QWidget):
         intent = design_intent(node, self.node_set.get("graph_id"))
         self.intent.setText("설계 의도: %s" % intent[0] if intent else "설계의도 미입력")
         self.intent_src.setText("출처: %s" % intent[1] if intent else "")
+        self.intent_src.setVisible(bool(intent))
         entries = (cell or {}).get("entries") or []
+        drafts = sum(1 for e in entries if res.is_ai_draft(e))
+        self.draft_chip.set_state("AI 초안 %d건" % drafts if drafts else "", "warn" if drafts else "")
+        self.draft_chip.setVisible(bool(drafts))
+        live = [e for e in entries if e.get("status") != "rejected"]
+        self.sheet_count.setText("시나리오 %d · 기각 %d" % (len(live), len(entries) - len(live)) if entries else "")
         t = self.table
         t.clearSelection()
         t.setRowCount(max(len(entries), 1))
@@ -682,8 +771,7 @@ class ResultsScreen(QWidget):
             for c, v in enumerate(values):
                 it = QTableWidgetItem(v or "-")
                 it.setData(Qt.UserRole, e["entry_id"])
-                if draft:
-                    it.setBackground(QColor(tokens.c("ai-hatch-a")))
+                it.setData(DRAFT_ROLE, draft)
                 t.setItem(r, c, it)
             risk_it = t.item(r, COL_RISK)
             risk_it.setToolTip("강도 %s · 발생빈도 %s" % (e.get("severity") or "-", e.get("frequency") or "-"))
@@ -693,8 +781,6 @@ class ResultsScreen(QWidget):
                 risk_it.setForeground(QColor(ink))
             basis_it = t.item(r, COL_BASIS)
             basis_it.setToolTip(basis)
-            if (e.get("ai_basis") or {}).get("warnings"):
-                basis_it.setForeground(QColor(tokens.c("warn-ink")))
             if e.get("status") == "rejected":
                 for c in range(len(SHEET_COLUMNS)):
                     t.item(r, c).setForeground(QColor(tokens.c("muted")))
@@ -727,17 +813,52 @@ class ResultsScreen(QWidget):
         self.approve_btn.setEnabled(e is not None and e.get("status") != "approved")
         self.reject_btn.setEnabled(e is not None and e.get("status") != "rejected")
         self.edit_btn.setEnabled(e is not None)
+        self._place_row_actions()
+
+    def _place_row_actions(self):
+        """고른 행의 상태 칸 아래쪽에 동작 버튼을 띄운다. 그 행 높이는 버튼이 들어가게 늘린다."""
+        rows = {i.row() for i in self.table.selectedItems()}
+        if len(rows) != 1 or self.selected_entry() is None:
+            self.row_actions.hide()
+            return
+        row = rows.pop()
+        need = self.row_actions.sizeHint()
+        cell = self.table.visualRect(self.table.model().index(row, COL_STATUS))
+        text_h = self.table.fontMetrics().height() + 8
+        if cell.height() < text_h + need.height():
+            self.table.setRowHeight(row, text_h + need.height())
+            cell = self.table.visualRect(self.table.model().index(row, COL_STATUS))
+        w = max(need.width(), cell.width())
+        self.row_actions.setGeometry(cell.right() - w + 1, cell.bottom() - need.height(), w, need.height())
+        self.row_actions.show()
+        self.row_actions.raise_()
 
     def _apply_review(self, doc):
         self.results = doc
         self._save()
         self.set_results(doc)
 
+    def _undo_to(self, old, cell):
+        """토스트 실행 취소: 바로 전 결과로 되돌려 저장한다. 이 동작 뒤 결과가 조금이라도 바뀌었으면(다른 승인·AI 결과
+        반영·도면 바꾸기) 되돌리지 않는다. 결과 문서 전체를 바꿔 끼우므로 그 사이 변경을 지우지 않게 한다."""
+        after = self.results
+
+        def undo():
+            if self.running() or self.results is not after:
+                self.app.status_message("그 뒤에 결과가 바뀌어 되돌리지 않았습니다.")
+                return
+            self._apply_review(old)
+            self.open_cell(*cell)
+        return undo
+
     def set_entry_status(self, status):
         e = None if self.running() else self.selected_entry()
         if e is None:
             return False
+        old, cell = self.results, self.cell
         self._apply_review(res.set_status(self.results, self.cell[0], self.cell[1], e["entry_id"], status))
+        dev = next((d["label"] for d in self.deviations if d["deviation_id"] == cell[1]), cell[1])
+        self.app.toast("%s × %s 시나리오를 %s했습니다" % (cell[0], dev, STATUS_LABELS[status]), self._undo_to(old, cell))
         return True
 
     def edit_selected(self, fields=None):
@@ -752,5 +873,7 @@ class ResultsScreen(QWidget):
             fields = dlg.changed()
         if not fields:
             return False
+        old, cell = self.results, self.cell
         self._apply_review(res.edit_entry(self.results, self.cell[0], self.cell[1], e["entry_id"], fields))
+        self.app.toast("%s 시나리오를 수정했습니다" % cell[0], self._undo_to(old, cell))
         return True
