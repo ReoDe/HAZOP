@@ -10,6 +10,7 @@ import os
 
 from hazop import paths
 from hazop.analysis.risk import FREQUENCIES, MATRIX_P86, SEVERITIES
+from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
 from hazop.kg.build import write_json_atomic
 from hazop.study.nodes import now_utc
 
@@ -172,8 +173,15 @@ def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None):
 # ---------------------------------------------------------------- 저장
 
 def store_path(project_id, graph_id):
-    return paths.work_path("데이터", "분석결과", paths.safe_name(project_id or "no-project"),
+    return paths.work_path("데이터", "분석결과", paths.safe_name(project_id or UNREGISTERED_PROJECT),
                            paths.safe_name(graph_id) + ".json")
+
+
+def _readable_path(project_id, graph_id):
+    """저장 경로. 없고 project_id가 없으면 이 규칙 이전 폴더(no-project)의 저장본을 그대로 읽는다(옮기지 않음)."""
+    path = store_path(project_id, graph_id)
+    legacy = paths.work_path("데이터", "분석결과", LEGACY_PROJECT_DIR, paths.safe_name(graph_id) + ".json")
+    return legacy if not project_id and not os.path.isfile(path) and os.path.isfile(legacy) else path
 
 
 def save(results, project_id):
@@ -185,7 +193,7 @@ def save(results, project_id):
 
 def load(node_set):
     """node_set 도면의 저장본. 없으면 None. 다른 종류·다른 도면의 파일이면 ValueError. 판 비교는 is_stale로 한다."""
-    path = store_path(node_set.get("project_id"), node_set["graph_id"])
+    path = _readable_path(node_set.get("project_id"), node_set["graph_id"])
     if not os.path.isfile(path):
         return None
     with open(path, encoding="utf-8") as fh:

@@ -1,6 +1,8 @@
 """④ 검토구간 집합(StudyNodeSet): 자동 제안·편집·확정·저장. 근거: 3단계 명세 §B nodes.py.
 
 도면 그래프(graph.json) 하나당 집합 하나. 구성요소 = graph nodes 전부(배관 구간 포함).
+프로젝트 그래프(hazop.graph.project)를 넣으면 도면 경계를 넘는 프로젝트 전체 집합이 된다. 도면 연결점(continuation)과
+도면 연결 구간은 배관 경로 요소라 경로가 이어진 도면까지 한 구간에 든다. 도면별 저장본은 그대로 따로 읽힌다.
 편집 연산은 모두 순수 함수다. 입력을 바꾸지 않고 새 dict를 돌려주며 history에 한 줄 덧붙인다.
 확정된 집합은 reopen 뒤에만 고칠 수 있다.
 """
@@ -13,6 +15,7 @@ from collections import deque
 from datetime import datetime, timezone
 
 from hazop import paths
+from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
 
 SCHEMA_VERSION = "0.1"
 KIND = "hazop_study_nodes"
@@ -118,7 +121,7 @@ def _position_target(eid, nodes, groups):
     for i, g in enumerate(groups):
         for m in g["core"]:
             p = nodes[m].get("position")
-            if p:
+            if p and nodes[m].get("sheet") == nodes[eid].get("sheet"):  # 위치는 같은 도면 안에서만 비교
                 cand = (math.hypot(p[0] - pos[0], p[1] - pos[1]), i)
                 best = cand if best is None or cand < best else best
     return None if best is None else best[1]
@@ -347,8 +350,15 @@ def store_dir():
 
 
 def store_path(project_id, graph_id):
-    return os.path.join(store_dir(), paths.safe_name(project_id or "no-project"),
+    return os.path.join(store_dir(), paths.safe_name(project_id or UNREGISTERED_PROJECT),
                         paths.safe_name(graph_id) + ".json")
+
+
+def _readable_path(project_id, graph_id):
+    """저장 경로. 없고 project_id가 없으면 이 규칙 이전 폴더(no-project)의 저장본을 그대로 읽는다(옮기지 않음)."""
+    path = store_path(project_id, graph_id)
+    legacy = os.path.join(store_dir(), LEGACY_PROJECT_DIR, paths.safe_name(graph_id) + ".json")
+    return legacy if not project_id and not os.path.isfile(path) and os.path.isfile(legacy) else path
 
 
 def save(node_set):
@@ -367,7 +377,7 @@ def save(node_set):
 
 def load(graph):
     """graph의 저장본. 없으면 None. 판 비교는 is_stale로 한다."""
-    path = store_path(graph.get("project_id"), graph.get("graph_id"))
+    path = _readable_path(graph.get("project_id"), graph.get("graph_id"))
     if not os.path.isfile(path):
         return None
     with open(path, encoding="utf-8") as fh:
