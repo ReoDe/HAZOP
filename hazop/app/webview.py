@@ -285,8 +285,12 @@ BRIDGE_JS = r"""
     function clearSegments() {
       segEls.forEach(function (e) { SEG_PROPS.forEach(function (p) { e.style.removeProperty(p); }); e.removeAttribute("data-hz-seg"); });
       segMarks.forEach(function (m) { if (m.parentNode) m.parentNode.removeChild(m); });
+      Array.prototype.forEach.call(document.querySelectorAll(".hz-seg-in, .hz-pick"), function (e) { e.classList.remove("hz-seg-in", "hz-pick"); });
+      document.body.classList.remove("hz-segfocus");
       segEls = []; segMarks = [];
+      refreshTags();
     }
+    function refreshTags() { if (window.hzView) window.hzView.set(window.hzView.get()); }  // 태그 글자 층을 다시 그린다
     function segBadge(e, color, text) {  // 구간 번호 꼬리표: 색만으로 구분하지 않도록 도면에도 S 번호를 적는다
       var bb; try { bb = e.getBBox(); } catch (x) { return; }
       var g = document.createElementNS(NS, "g"), r = document.createElementNS(NS, "rect"), t = document.createElementNS(NS, "text");
@@ -308,13 +312,18 @@ BRIDGE_JS = r"""
       segEls.push(e);
     }
     function segLegend(groups, uncovered) { if (window.hzSegLegend) window.hzSegLegend(groups, uncovered); }
+    // 구간 하나를 고르면(active) 그 구간만 칠하고 나머지 요소는 흐리게 한다(hz-segfocus). 고른 구간이 없으면 전체 보기.
     function segments(m) {
       clearSegments();
-      segLegend(m.groups || [], (m.uncovered || []).length);
-      (m.groups || []).forEach(function (g) {
+      var groups = m.groups || [], focused = groups.some(function (g) { return g.active; });
+      segLegend(groups, (m.uncovered || []).length);
+      document.body.classList.toggle("hz-segfocus", focused);
+      groups.forEach(function (g) {
+        if (focused && !g.active) return;
         var first = null, label = String(g.label || "");
         (g.ids || []).forEach(function (lid) {
           els(lid).forEach(function (e) {
+            if (focused) e.classList.add("hz-seg-in");
             if (e.getAttribute("data-hz-seg")) return;
             paintSeg(e, g.color, !!g.active, label);
             if (!first || (!first.classList.contains("sym") && e.classList.contains("sym"))) first = e;
@@ -322,9 +331,23 @@ BRIDGE_JS = r"""
         });
         if (first && label) segBadge(first, g.color, label);
       });
-      (m.uncovered || []).forEach(function (lid) {
+      if (!focused) (m.uncovered || []).forEach(function (lid) {
         els(lid).forEach(function (e) { paintSeg(e, "var(--warn-line)", false, "uncovered"); e.style.setProperty("stroke-dasharray", "5 3"); e.style.setProperty("fill-opacity", "0"); });
       });
+      refreshTags();
+    }
+    // ④ 고른 구성요소 하나: 구간 색 위에 따로 강조(hz-pick). center면 화면 가운데로 옮기고 확대한다.
+    function pick(lid, center) {
+      // 템플릿 클릭이 남긴 선택 표시(.selected)도 지운다. ④에서 고른 구성요소 표시는 hz-pick 하나뿐이다.
+      Array.prototype.forEach.call(document.querySelectorAll(".hz-pick, .selected"), function (e) { e.classList.remove("hz-pick", "selected"); });
+      if (!lid) return;
+      var found = els(lid);
+      found.forEach(function (e) { e.classList.add("hz-pick"); });
+      var shown = found.filter(function (e) { var r = e.getBoundingClientRect(); return r.width || r.height; })[0];
+      if (!center || !shown || !vp || !window.hzView) return;
+      var v = window.hzView.get(), vr = vp.getBoundingClientRect(), b = shown.getBoundingClientRect(), s = Math.max(v.s, 1.5);
+      var cx = (b.left + b.width / 2 - vr.left - v.x) / v.s, cy = (b.top + b.height / 2 - vr.top - v.y) / v.s;
+      window.hzView.set({ s: s, x: vr.width / 2 - cx * s, y: vr.height / 2 - cy * s });
     }
     // ② 편집: 선택 외 도구에서는 클릭을 도면 좌표로 바꿔 editPick만 보낸다(템플릿 선택·nodeSelected는 막음).
     // 도면 좌표 = 오버레이 SVG 사용자 좌표 + svg_alignment.offset. 끌어서 이동을 끝낸 클릭은 버린다.
@@ -394,6 +417,7 @@ BRIDGE_JS = r"""
       else if (m.type === "toggleLayer") { if (window.hzToggleLayer) window.hzToggleLayer(m.layer); }
       else if (m.type === "clearHighlight") clear();
       else if (m.type === "focus") focus(m.local_id);
+      else if (m.type === "pick") pick(m.local_id, !!m.center);
       else if (m.type === "highlight") {
         clear();
         var missing = [];
@@ -420,6 +444,13 @@ BRIDGE_JS = r"""
 VIEWER_CSS = """
 body.hz-hide-status #status { display: none; }
 body.hz-hide-panel #pq-chip { display: none; }
+body.hz-segfocus #overlay .sym:not(.hz-seg-in), body.hz-segfocus #overlay .tagbox:not(.hz-seg-in),
+body.hz-segfocus #overlay .pipe-line:not(.hz-seg-in), body.hz-segfocus #graphsvg .gnode:not(.hz-seg-in),
+body.hz-segfocus #graphsvg .gedge:not(.hz-seg-in), body.hz-segfocus #graphsvg .glabel,
+body.hz-segfocus #taglabels span:not(.hz-seg-in), body.hz-segfocus .segchip:not(.active) { opacity: var(--hl-dim); }
+.hz-pick { opacity: 1 !important; stroke: var(--ui) !important; filter: drop-shadow(0 0 3px var(--ui)) drop-shadow(0 0 3px var(--ui));
+  animation: hz-pulse 1.2s ease-in-out 3; }
+@keyframes hz-pulse { 50% { stroke-width: 7; } }
 """
 
 
@@ -523,7 +554,8 @@ class HazopWebView(QWebEngineView):
 
     def set_segments(self, groups, uncovered=()):
         """④ 검토구간 색. groups = [{"color", "active", "label"(S 번호), "ids": [local_id]}] 순서대로, 한 요소는 첫 구간 색만.
-        uncovered = 어느 구간에도 없는 요소의 local_id(점선)."""
+        active인 구간이 있으면 그 구간만 칠하고 나머지는 흐리게, 없으면 모든 구간을 칠한다.
+        uncovered = 어느 구간에도 없는 요소의 local_id(점선, 전체 보기에서만)."""
         self.bridge.send("segments", groups=list(groups), uncovered=list(uncovered))
 
     def clear_segments(self):
@@ -531,6 +563,10 @@ class HazopWebView(QWebEngineView):
 
     def focus(self, local_id):
         self.bridge.send("focus", local_id=local_id)
+
+    def pick(self, local_id, center=False):
+        """④ 고른 구성요소 하나를 따로 강조한다(None이면 지움). center면 가운데로 옮겨 확대한다."""
+        self.bridge.send("pick", local_id=local_id, center=bool(center))
 
     def open_path_query(self):
         """도면 뷰어의 접힌 경로 질의 상자를 연다(② 명령 팔레트)."""

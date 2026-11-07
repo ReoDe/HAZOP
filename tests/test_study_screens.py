@@ -253,12 +253,14 @@ class StudyScreensTest(unittest.TestCase):
         QTest.keyClick(scr.node_list, Qt.Key_Return, Qt.ControlModifier)
         self.assertEqual(scr.node_set["status"], "confirmed", "Ctrl+Enter = 구간 확정")
         self.assertEqual([c[0] for c in scr.commands()],
-                         ["병합", "분할", "이름 바꾸기", "구간 확정", "확정 해제", "다시 제안", "⑤ 결과에서 보기"])
+                         ["전체 보기", "병합", "분할", "이름 바꾸기", "구간 확정", "확정 해제", "다시 제안", "⑤ 결과에서 보기"])
 
     def test_toast_undo_restores_saved_set(self):
         from hazop.study import nodes
         win = self.window()
         scr = self.open_study(win)
+        self.assertFalse(scr.rename_current("첫 이름"), "처음은 전체 보기라 이름을 바꿀 구간이 없음")
+        scr.select_node(scr.node_set["nodes"][0]["node_id"])
         self.assertTrue(scr.rename_current("첫 이름"))
         before = nodes.load(self.graph)
         scr.set_checked([n["node_id"] for n in scr.node_set["nodes"][:2]])
@@ -295,6 +297,95 @@ class StudyScreensTest(unittest.TestCase):
         self.assertEqual(scr.current_node_id(), node_id)
         self.assertEqual(scr.tabs.currentIndex(), 0)
         self.assertEqual(scr.selected_members(), [eid])
+
+    def seg_state(self, win):
+        return json.loads(self.js(win, """JSON.stringify({
+            focus: document.body.classList.contains('hz-segfocus'),
+            painted: Array.from(new Set(Array.prototype.map.call(document.querySelectorAll('[data-hz-seg]'),
+                                                                  function (e) { return e.getAttribute('data-hz-seg'); }))),
+            inside: Array.from(new Set(Array.prototype.map.call(document.querySelectorAll('.hz-seg-in'),
+                                                                 function (e) { return e.getAttribute('data-local-id')
+                                                                   || e.previousElementSibling.getAttribute('data-local-id'); }))),
+            badges: Array.prototype.map.call(document.querySelectorAll('.hz-seg-badge text'), function (t) { return t.textContent; }),
+            picked: Array.from(new Set(Array.prototype.map.call(document.querySelectorAll('.hz-pick, .selected'),
+                                                                 function (e) { return e.getAttribute('data-local-id')
+                                                                   || e.previousElementSibling.getAttribute('data-local-id'); }))),
+            scale: window.hzView.get().s })"""))
+
+    def test_segment_focus_and_component_pick(self):
+        win = self.window()
+        scr = self.open_study(win)
+        self.assertTrue(wait_for(lambda: win.webview.bridge.is_ready), "④ 도면 브리지 ready 없음")
+        pump(seconds=0.3)
+        all_ids = sorted(n["node_id"] for n in scr.node_set["nodes"])
+        st = self.seg_state(win)
+        self.assertIsNone(scr.current_node_id(), "처음은 고른 구간 없이 전체 보기")
+        self.assertFalse(st["focus"])
+        self.assertEqual(sorted(st["badges"]), all_ids, "전체 보기는 모든 구간을 칠함")
+        self.assertFalse(scr.overview_btn.isEnabled())
+
+        node = next(n for n in scr.node_set["nodes"] if len(n["members"]) >= 2)
+        scr.select_node(node["node_id"])
+        pump(seconds=0.3)
+        st = self.seg_state(win)
+        mine = {scr.local_map[m] for m in node["members"] if m in scr.local_map}
+        self.assertTrue(st["focus"], "구간을 고르면 나머지를 흐리게")
+        self.assertEqual(st["painted"], [node["node_id"]], "고른 구간만 칠함")
+        self.assertEqual(st["badges"], [node["node_id"]])
+        self.assertTrue(st["inside"] and set(st["inside"]) <= mine, "흐리지 않는 요소는 고른 구간 구성요소뿐")
+        self.assertTrue(scr.pick_card.isHidden(), "구성요소를 고르기 전에는 카드 없음")
+
+        eid = node["members"][0]
+        self.select_members(scr, [eid])
+        pump(seconds=0.3)
+        st = self.seg_state(win)
+        self.assertEqual(scr.picked_entity, eid)
+        self.assertEqual(st["picked"], [scr.local_map[eid]], "고른 구성요소 하나만 따로 강조")
+        self.assertGreaterEqual(st["scale"], 1.5, "목록에서 고르면 가운데로 확대")
+        self.assertFalse(scr.pick_card.isHidden())
+        info = dict(scr.pick_info())
+        from hazop.study import nodes
+        from hazop.app.screens.study import entity_label
+        self.assertEqual(info["태그"], entity_label(scr.entities[eid]))
+        self.assertEqual(info["종류"], scr.entities[eid]["kind"])
+        self.assertEqual(info["속한 구간"], ", ".join(nodes.nodes_of(scr.node_set, eid)))
+        self.assertIn(node["node_id"], scr.pick_text.text())
+
+        other = node["members"][1]
+        self.js(win, "(function(){var e=document.querySelector('#overlay [data-local-id=\"%s\"]');"
+                     "if(e)e.dispatchEvent(new MouseEvent('click',{bubbles:true}));return !!e})()" % scr.local_map[other])
+        self.assertTrue(wait_for(lambda: scr.picked_entity == other), "도면 클릭 = 구성요소 선택")
+        pump(seconds=0.3)
+        self.assertEqual(scr.current_node_id(), node["node_id"], "도면에서 누른 구성요소가 고른 구간에 있으면 구간 유지")
+        self.assertEqual(self.seg_state(win)["picked"], [scr.local_map[other]])
+        self.assertEqual(dict(scr.pick_info())["태그"], entity_label(scr.entities[other]))
+
+
+        from PySide6.QtTest import QTest
+        win.activateWindow()
+        scr.node_list.setFocus()
+        QTest.keyClick(scr.node_list, Qt.Key_Escape)
+        pump(seconds=0.3)
+        self.assertIsNone(scr.picked_entity, "Esc 한 번 = 구성요소 선택만 풂")
+        self.assertTrue(scr.pick_card.isHidden())
+        self.assertEqual(scr.current_node_id(), node["node_id"])
+        self.assertEqual(self.seg_state(win)["picked"], [])
+        scr.overview_btn.click()
+        pump(seconds=0.3)
+        st = self.seg_state(win)
+        self.assertIsNone(scr.current_node_id(), "Esc 두 번 = 전체 보기")
+        self.assertFalse(st["focus"])
+        self.assertEqual(sorted(st["badges"]), all_ids, "전체 보기로 돌아오면 모든 구간 색")
+
+        scr.select_node(node["node_id"])
+        self.select_members(scr, [eid])
+        pump(seconds=0.3)
+        self.assertEqual(self.seg_state(win)["picked"], [scr.local_map[eid]])
+        win.go(2)
+        pump(seconds=0.5)
+        if win.webview.bridge.is_ready:
+            self.assertEqual(self.js(win, "document.querySelectorAll('.hz-pick, .hz-seg-in').length"), 0,
+                             "다른 화면으로 가면 ④ 강조가 남지 않음")
 
     def test_results_refuse_stale_confirmed_set(self):
         from hazop.study import nodes

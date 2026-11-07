@@ -5,6 +5,8 @@
 도면 위 구간 색은 seg1..seg5를 순환하고, 목록의 S 번호 배지에도 같은 색을 써서 색만으로 구분하지 않는다.
 """
 
+import html
+
 from PySide6.QtCore import QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QHBoxLayout, QInputDialog, QLabel, QListWidget,
@@ -200,8 +202,14 @@ class StudyNodesScreen(QWidget):
         v = QVBoxLayout(self.panel)
         v.setContentsMargins(8, 8, 8, 8)
         v.setSpacing(4)
+        head = QHBoxLayout()
         self.list_head = section("검토구간")
-        v.addWidget(self.list_head)
+        head.addWidget(self.list_head, 1)
+        self.overview_btn = QPushButton("전체 보기 Esc")
+        self.overview_btn.setToolTip("구간 선택을 풀고 모든 구간 색을 다시 보여 줍니다 (Esc)")
+        self.overview_btn.clicked.connect(self.show_overview)
+        head.addWidget(self.overview_btn)
+        v.addLayout(head)
         self.kpi = QLabel()
         self.kpi.setWordWrap(True)
         v.addWidget(self.kpi)
@@ -269,11 +277,27 @@ class StudyNodesScreen(QWidget):
         self.tabs.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Ignored)
         self.tabs.setMinimumHeight(140)
         v.addWidget(self.tabs, 1)
+        v.addWidget(self._pick_card())
         self.msg = QLabel()
         self.msg.setObjectName("muted")
         self.msg.setWordWrap(True)
         v.addWidget(self.msg)
         return self.panel
+
+    def _pick_card(self):
+        """오른쪽 패널 맨 아래 '선택 구성요소' 카드: 고른 구성요소의 태그·종류·속한 구간·주요 속성."""
+        self.pick_card = QFrame()
+        self.pick_card.setObjectName("pickcard")
+        v = QVBoxLayout(self.pick_card)
+        v.setContentsMargins(8, 6, 8, 6)
+        v.setSpacing(2)
+        v.addWidget(section("선택 구성요소"))
+        self.pick_text = QLabel()
+        self.pick_text.setWordWrap(True)
+        self.pick_text.setTextFormat(Qt.RichText)
+        v.addWidget(self.pick_text)
+        self.pick_card.hide()
+        return self.pick_card
 
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
@@ -281,7 +305,7 @@ class StudyNodesScreen(QWidget):
 
     def _shortcuts(self):
         """화면 단축키(U-02). 버튼을 누르는 것과 같아서 비활성 버튼이면 아무 일도 하지 않는다."""
-        keys = [("M", self.merge_btn), ("F2", self.rename_btn),
+        keys = [("M", self.merge_btn), ("F2", self.rename_btn), ("Esc", self.overview_btn),
                 ("Ctrl+Return", self.confirm_btn), ("Ctrl+Enter", self.confirm_btn)]
         self.shortcuts = []
         for key, btn in keys:
@@ -291,7 +315,7 @@ class StudyNodesScreen(QWidget):
 
     def commands(self):
         """명령 팔레트 항목 (label, 단축키 글자, 함수). 함수는 버튼을 누르는 것과 같다."""
-        return [("병합", "M", self.merge_btn.click), ("분할", "", self.split_btn.click),
+        return [("전체 보기", "Esc", self.overview_btn.click), ("병합", "M", self.merge_btn.click), ("분할", "", self.split_btn.click),
                 ("이름 바꾸기", "F2", self.rename_btn.click), ("구간 확정", "Ctrl+Enter", self.confirm_btn.click),
                 ("확정 해제", "", self.reopen_btn.click), ("다시 제안", "", self.repropose_btn.click),
                 ("⑤ 결과에서 보기", "", self.to_results_btn.click)]
@@ -445,9 +469,10 @@ class StudyNodesScreen(QWidget):
             if stale:
                 reasons.append("그래프 판 바뀜")
             self.gate.setText("확정 가능" if not reasons else "확정하려면 해결: " + " · ".join(reasons))
-        row = next((i for i, n in enumerate(ns["nodes"]) if n["node_id"] == keep), 0 if ns["nodes"] else -1)
+        row = next((i for i, n in enumerate(ns["nodes"]) if n["node_id"] == keep), -1)   # 고른 구간이 없으면 전체 보기
         self.node_list.setCurrentRow(row)
         self._fill_members()
+        self._sync_pick()
         self._fill_owner()
         self._paint()
         self._update_buttons()
@@ -464,8 +489,10 @@ class StudyNodesScreen(QWidget):
                   for i, n in enumerate(self.node_set["nodes"])]
         unc = [self.local_map[e] for e in self._coverage()["uncovered"] if e in self.local_map]
         self.app.webview.set_segments(groups, unc)
+        self.app.webview.pick(self.local_map.get(self.picked_entity) if self.picked_entity else None)
 
     def _fill_members(self):
+        self.member_list.blockSignals(True)   # 목록을 다시 채우는 것은 구성요소 선택이 아니다
         self.member_list.clear()
         n = self.current_node()
         for eid in (n["members"] if n else []):
@@ -473,6 +500,8 @@ class StudyNodesScreen(QWidget):
             it = QListWidgetItem("%s · %s" % (entity_label(node), (node or {}).get("kind") or "그래프에 없음"))
             it.setData(Qt.UserRole, eid)
             self.member_list.addItem(it)
+            it.setSelected(eid == self.picked_entity)
+        self.member_list.blockSignals(False)
         self.tabs.setTabText(0, "구성요소 %d" % len(n["members"]) if n else "구성요소")
         self.member_hint.setText("%s은(는) 빈 구간입니다. 미포함 탭에서 구성요소를 넣거나 병합하세요." % n["node_id"]
                                  if n else "구간을 고르면 구성요소가 여기에 나옵니다.")
@@ -514,6 +543,7 @@ class StudyNodesScreen(QWidget):
         self.reopen_btn.setEnabled(bool(ns) and ns["status"] == "confirmed")
         self.repropose_btn.setEnabled(bool(ns) and ns["status"] != "confirmed")
         self.to_results_btn.setEnabled(cur is not None)
+        self.overview_btn.setEnabled(cur is not None or self.picked_entity is not None)
 
     # ------------------------------------------------------------ 선택
     def _node(self, node_id):
@@ -555,15 +585,67 @@ class StudyNodesScreen(QWidget):
         if self.node_set is None:
             return
         self._fill_members()
+        self._sync_pick()
+        self._fill_owner()
         self._paint()
         self._update_buttons()
         self._publish_node()
 
     def _member_selection(self):
-        self._update_buttons()
         ids = self.selected_members()
-        if len(ids) == 1 and ids[0] in self.local_map:
-            self.app.webview.focus(self.local_map[ids[0]])
+        self._set_pick(ids[0] if len(ids) == 1 else None, center=True)
+        self._update_buttons()
+
+    def show_overview(self):
+        """Esc: 고른 구성요소가 있으면 그것만 풀고, 없으면 구간 선택을 풀어 전체 보기로 돌아간다."""
+        if self.picked_entity is not None:
+            self.member_list.blockSignals(True)
+            self.member_list.clearSelection()
+            self.member_list.blockSignals(False)
+            self._set_pick(None)
+        else:
+            self.node_list.setCurrentRow(-1)
+        self._update_buttons()
+
+    def _sync_pick(self):
+        """고른 구간 밖의 구성요소 선택은 푼다(전체 보기에서는 유지)."""
+        cur = self.current_node()
+        if self.picked_entity and cur is not None and self.picked_entity not in cur["members"]:
+            self.picked_entity = None
+        self._fill_pick()
+
+    def _set_pick(self, eid, center=False):
+        self.picked_entity = eid
+        self._fill_pick()
+        self._fill_owner()
+        if self.node_set and self.app.webview.current_file is not None:
+            self.app.webview.pick(self.local_map.get(eid) if eid else None, center=center)
+
+    def pick_info(self):
+        """선택 구성요소 카드의 내용 [(항목, 값)]. 고른 구성요소가 없으면 빈 목록."""
+        eid = self.picked_entity
+        node = self.entities.get(eid) if eid else None
+        if node is None:
+            return []
+        rows = [("태그", entity_label(node)), ("종류", node.get("kind") or "-"),
+                ("속한 구간", ", ".join(nodes.nodes_of(self.node_set, eid)) or "없음(미포함)")]
+        desc = [x.strip() for x in (node.get("label_text") or "").split("\n")[1:] if x.strip()]
+        if desc:
+            rows.append(("설명", " ".join(desc)))
+        for key in ("line_no", "line_type"):
+            if node.get(key):
+                rows.append((key, node[key]))
+        if node.get("node_type") == "pipe_segment":
+            rows.append(("흐름 방향", "확인됨" if node.get("flow_direction") else "미확인"))
+        shown = {"kind", "tag", "line_no", "line_type", "flow_direction"}
+        rows += [(k, v) for k, v in (node.get("attributes") or {}).items() if k not in shown and v not in (None, "")]
+        return rows
+
+    def _fill_pick(self):
+        rows = self.pick_info()
+        self.pick_card.setVisible(bool(rows))
+        self.pick_text.setText("".join("<div><span style='color:%s'>%s</span>&nbsp; <b>%s</b></div>"
+                                       % (tokens.c("muted"), html.escape(str(k)), html.escape(str(v))) for k, v in rows))
 
     def _owner_clicked(self, item):
         nid = item.data(Qt.UserRole)
@@ -571,7 +653,8 @@ class StudyNodesScreen(QWidget):
             self.select_node(nid)
 
     def on_node(self, sel):
-        """도면에서 누른 구성요소. 속한 구간이 하나면 그 구간과 구성요소를 고르고, 없으면 미포함 탭, 여럿이면 속한 구간 탭을 연다."""
+        """도면에서 누른 구성요소. 지금 구간에 있거나 속한 구간이 하나면 그 구간에서 구성요소를 고르고,
+        없으면 미포함 탭, 여럿이면 속한 구간 탭을 연다."""
         if not self.node_set:
             return
         eid = sel.get("entity_id")
@@ -579,18 +662,23 @@ class StudyNodesScreen(QWidget):
             eid = self.entity_of_local.get(sel.get("local_id"))
         if eid not in self.entities:
             return
-        self.picked_entity = eid
-        self._fill_owner()
         owners = nodes.nodes_of(self.node_set, eid)
-        if len(owners) == 1:
-            self.select_node(owners[0])
-            for i in range(self.member_list.count()):
-                it = self.member_list.item(i)
-                it.setSelected(it.data(Qt.UserRole) == eid)
+        cur = self.current_node_id()
+        target = cur if cur in owners else owners[0] if len(owners) == 1 else None
+        self.picked_entity = eid
+        if target is not None:
+            self.select_node(target)
+        self.member_list.blockSignals(True)   # 도면에서 누른 것이라 화면을 옮기지 않는다
+        for i in range(self.member_list.count()):
+            it = self.member_list.item(i)
+            it.setSelected(it.data(Qt.UserRole) == eid)
+        self.member_list.blockSignals(False)
+        self._set_pick(eid)
+        self._update_buttons()
         for i in range(self.uncovered_list.count()):
             it = self.uncovered_list.item(i)
             it.setSelected(it.data(Qt.UserRole) == eid)
-        self.tabs.setCurrentIndex(0 if len(owners) == 1 else 1 if not owners else 2)
+        self.tabs.setCurrentIndex(0 if target is not None else 1 if not owners else 2)
         self.app.set_selection({"kind": "component", "drawing": self.name, "entity_id": eid})
 
     # ------------------------------------------------------------ 편집
