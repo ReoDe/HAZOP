@@ -27,6 +27,9 @@ def _font(px, bold=False):
     return f
 
 
+RUNNING_TEXT = "분석 중"
+
+
 def cell_style(state):
     """칸 상태 → (바탕, 글자색, 테두리 dict 또는 None, 가운데 글자). 실패는 위험도 색과 겹치지 않는다."""
     kind = state["kind"]
@@ -35,6 +38,8 @@ def cell_style(state):
         return c["card"], c["err-ink"], {"color": c["err-ink"], "dash": True}, FAILED_TEXT
     if kind == "not_analyzed":
         return "hatch", c["muted"], None, "–"
+    if kind == "running":
+        return c["ui-weak"], c["ui-ink"], {"color": c["ui"], "dash": False}, RUNNING_TEXT
     if kind == "excluded":
         return c["card"], c["muted"], None, "제외"
     if kind == "empty":  # AI가 해당 없음·시나리오 없음이라 한 칸도 사람이 보기 전까지 AI 초안이다(점선 = AI)

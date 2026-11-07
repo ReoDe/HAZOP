@@ -193,6 +193,36 @@ def list_extractions():
     return out
 
 
+_SOURCE_CACHE = {}
+
+
+def extraction_origin(path):
+    """추출 결과가 어디서 왔는지: None(① 등록 자료) · "샘플 실행 데이터"(참고자료 샘플) · "등록 없이 추출".
+    extraction.json의 source.material_id가 없으면 등록을 거치지 않은 추출이다. 파일 수정 시각으로 캐시한다."""
+    try:
+        key = (path, os.path.getmtime(path))
+    except OSError:
+        return None
+    if key not in _SOURCE_CACHE:
+        try:
+            src = read_json(path).get("source") or {}
+        except (OSError, ValueError, AttributeError):
+            src = {}
+        if src.get("material_id"):
+            origin = None
+        elif str(src.get("file") or "").replace("\\", "/").startswith("참고자료/"):
+            origin = "샘플 실행 데이터"
+        else:
+            origin = "등록 없이 추출"
+        _SOURCE_CACHE[key] = origin
+    return _SOURCE_CACHE[key]
+
+
+def unregistered_extractions():
+    """[(도면 이름, 출처 글자)] ① 등록 없이 출력/추출에 있는 도면(샘플 실행 등)."""
+    return [(e["name"], o) for e in list_extractions() for o in [extraction_origin(e["path"])] if o]
+
+
 def extraction_path(name):
     return os.path.join(paths.output_root("추출"), name, "extraction.json")
 

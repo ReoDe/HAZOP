@@ -131,6 +131,24 @@ OP_LABELS = {"propose": "제안", "status": "상태", "edit": "수정", "merge":
              "confirm": "확정", "reopen": "확정 해제", "add": "넣기", "remove": "빼기"}
 
 
+def node_progress(results, node_id, n_deviations):
+    """탐색기 구간 오른쪽 짧은 글자와 도구 설명. results가 없으면 ("", 이유).
+    수치는 ⑤ 행렬과 같다: 분석된 칸(분석 전·실패 아님), 미검토 항목, AI 실행 실패 칸."""
+    if not results:
+        return "", "⑤ 결과 없음(구간 확정 전이거나 분석 전)"
+    cells = [c for c in results["cells"] if c["node_id"] == node_id]
+    failed = sum((c.get("ai_run") or {}).get("status") == "failed" for c in cells)
+    analyzed = sum(c["state"] != "not_analyzed" and (c.get("ai_run") or {}).get("status") != "failed" for c in cells)
+    unreviewed = sum(s["unreviewed"] for s in res.matrix_summary(results).get(node_id, {}).values())
+    detail = "⑤ 결과: 분석 %d/%d칸 · 미검토 %d · 실패 %d" % (analyzed, n_deviations, unreviewed, failed)
+    parts = (["미%d" % unreviewed] if unreviewed else []) + (["실패%d" % failed] if failed else [])
+    if parts:
+        return "·".join(parts), detail
+    if not analyzed:
+        return "분석 전", detail
+    return ("완료" if analyzed >= n_deviations else "%d/%d" % (analyzed, n_deviations)), detail
+
+
 def history_text(h):
     op = h.get("op") or "-"
     if op == "status":

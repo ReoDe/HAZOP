@@ -152,16 +152,33 @@ class ShellTest(unittest.TestCase):
         study = next(g for name, g in groups.items() if name.startswith("검토구간 · "))
         self.assertEqual(study.text(1), str(len(self.node_set["nodes"])))
         first = study.child(0)
-        self.assertEqual(first.text(1), "미1", "미검토 수")
-        self.assertEqual(groups["자료"].child(0).flags(), Qt.NoItemFlags, "빈 그룹은 누를 수 없는 안내 한 줄")
+        self.assertEqual(first.text(1), "미1·실패1", "미검토 수와 AI 실패 칸 수")
+        src = groups["자료"].child(0)
+        self.assertEqual(src.text(0), "%s · 등록 없이 추출" % self.drawing, "등록 없이 추출된 도면도 자료에 출처와 함께")
+        self.assertEqual(groups["자료"].text(1), "1")
+        self.assertEqual(groups["지식그래프"].child(0).flags(), Qt.NoItemFlags, "빈 그룹은 누를 수 없는 안내 한 줄")
+        link = study.child(study.childCount() - 1)
+        self.assertEqual(link.text(0), "⑤ 결과 행렬 열기", "결과로 들어가는 입구")
         self.assertEqual(groups["권고"].text(1), "1")
         win.explorer_filter.setText("zzzz")
         self.assertEqual(study.text(1), "0")
         self.assertTrue(first.isHidden())
         win.explorer_filter.setText("")
+        self.assertIn("미검토 1", first.toolTip(0))
+        nid = self.node_set["nodes"][0]["node_id"]
         win._explorer_clicked(first)
-        self.assertEqual(win.stack.currentIndex(), STUDY)
-        self.assertEqual(win.screens[STUDY].current_node_id(), self.node_set["nodes"][0]["node_id"])
+        self.assertEqual(win.stack.currentIndex(), RESULTS, "⑤에서는 결과 행렬의 그 행")
+        self.assertEqual(win.screens[RESULTS].selected_node_id(), nid)
+        from unittest import mock
+        from PySide6.QtWidgets import QApplication
+        with mock.patch.object(QApplication, "keyboardModifiers", return_value=Qt.AltModifier):
+            win._explorer_clicked(first)
+        self.assertEqual(win.stack.currentIndex(), STUDY, "Alt+누르기는 ④ 구간")
+        self.assertEqual(win.screens[STUDY].current_node_id(), nid)
+        win._explorer_clicked(link)
+        self.assertEqual(win.stack.currentIndex(), RESULTS)
+        win._explorer_clicked(src)
+        self.assertEqual(win.stack.currentIndex(), 1, "자료의 추출 도면 → ② 도면")
 
     def test_palette_finds_and_opens_cell(self):
         win = self.window()

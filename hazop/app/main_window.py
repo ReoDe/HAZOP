@@ -8,13 +8,13 @@ import os
 
 from PySide6.QtCore import QRectF, QSize, Qt, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
-from PySide6.QtWidgets import (QButtonGroup, QDialog, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QDialog, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
                                QLineEdit, QMainWindow, QMenuBar, QMessageBox, QPushButton, QSplitter, QStackedWidget,
                                QTabBar, QTableWidget, QTableWidgetItem, QToolButton, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget)
 
 from hazop import paths
-from hazop.app import palette, related, tokens
+from hazop.app import data, palette, related, tokens
 from hazop.app.related_panel import RelatedPanel
 from hazop.app.screens.analysis import AnalysisScreen
 from hazop.app.screens.knowledge import KnowledgeScreen
@@ -27,6 +27,7 @@ from hazop.app.settings_dialog import SettingsDialog, status_bar_html
 from hazop.app.webview import HazopWebView
 from hazop.app.widgets import VALIDATION_LABELS, Chip, TaskRunner, Toast, esc, kst_text, write_log
 from hazop.study.apikey import STORE_FILE_NAME, KeyStore
+from hazop.study import results as res
 
 APP_NAME = "HAZOP 분석 도구"
 APP_VERSION = "0.1.0"
@@ -322,45 +323,60 @@ class MainWindow(QMainWindow):
         return self.explorer_panel
 
     def _explorer_groups(self):
-        """[(이름, 화면 index, [(글자, key, 오른쪽 글자, 아이콘)], 빈 안내)]. 검토구간·권고는 지금 도면 기준."""
+        """[(이름, [(글자, (화면 index, key), 오른쪽 글자, 아이콘, 도구 설명)], 빈 안내, 바로가기)]. 검토구간·권고는 지금 도면 기준.
+        바로가기는 (글자, (화면 index, key), 도구 설명) 또는 None으로, 그룹 맨 아래 한 줄이고 개수에 세지 않는다."""
         idx = self.index()
         dwg = idx.drawing_number if idx and idx.graph else None
-        reg = list(self.screens[0].explorer_items())
-        kgs = list(self.screens[4].explorer_items())
-        groups = [("자료", 0, [(t, k, "", None) for t, k in reg], "① 자료 등록에서 도면·문서를 올리세요"),
-                  ("지식그래프", 4, [(t, k, "", None) for t, k in kgs], "① 등록과 추출이 끝나면 자동으로 만듭니다")]
+        reg = [(t, (0, k), "", None, t) for t, k in self.screens[0].explorer_items()]
+        # ① 등록 없이 출력/추출에 있는 도면(샘플 실행 등)도 자료로 보여 '자료 0'이 열린 도면과 어긋나지 않게 한다
+        reg += [("%s · %s" % (name, origin), (1, name), "", None,
+                 "%s: ① 등록을 거치지 않고 출력/추출에 있는 도면입니다. 누르면 ② 도면에서 엽니다." % origin)
+                for name, origin in data.unregistered_extractions()]
+        kgs = [(t, (4, k), "", None, t) for t, k in self.screens[4].explorer_items()]
+        groups = [("자료", reg, "① 자료 등록에서 도면·문서를 올리세요", None),
+                  ("지식그래프", kgs, "① 등록과 추출이 끝나면 자동으로 만듭니다", None)]
         study = self.screens[5]
         live = study.node_set if study.node_set and study.name == self.drawing else None
         ns = live or (idx.node_set if idx else None)
+        usable = idx is not None and (live is None or live.get("status") == "confirmed")  # 결과는 확정본에만 있다
+        rs = self.screens[6]
+        # ⑤가 같은 도면을 열고 있으면 그 결과(실행 중 반영분 포함), 아니면 저장본
+        results = (rs.results if rs.results is not None and rs.name == self.drawing else idx.results if idx else None)
+        if results is not None and ns and res.is_stale(results, ns):
+            results = None  # 다른(이전) 확정본으로 만든 결과는 지금 구간의 진행으로 보이지 않는다
         items = []
         for i, n in enumerate((ns or {}).get("nodes", [])):
-            usable = idx is not None and (live is None or live.get("status") == "confirmed")  # 결과는 확정본에만 있다
-            u = idx.unreviewed(n["node_id"]) if usable else 0
-            items.append(("%s %s" % (n["node_id"], n["name"]), n["node_id"], "미%d" % u if u else "",
-                          seg_icon(i, "")))
-        groups.append(("검토구간" + (" · %s" % dwg if dwg else ""), 5, items,
-                       "④ 검토구간에서 구간을 제안·확정합니다" if dwg else "도면을 고르면 그 도면의 구간이 보입니다"))
+            right, detail = related.node_progress(results if usable else None, n["node_id"], len(rs.deviations))
+            text = "%s %s" % (n["node_id"], n["name"])
+            items.append((text, (5, n["node_id"]), right, seg_icon(i, ""),
+                          "%s\n%s\n누르기: ⑤ 결과 화면에서는 그 행, 다른 화면에서는 ④ 구간 · Alt+누르기: ④ 구간"
+                          % (text, detail)))
+        action = (("⑤ 결과 행렬 열기", (6, None), "%s의 구간 × 편차 결과(⑤ 분석 결과)" % dwg)
+                  if usable and ns and ns.get("status") == "confirmed" else None)
+        groups.append(("검토구간" + (" · %s" % dwg if dwg else ""), items,
+                       "④ 검토구간에서 구간을 제안·확정합니다" if dwg else "도면을 고르면 그 도면의 구간이 보입니다",
+                       action))
         recs = []
         if idx and idx.results:
             for c in idx.results["cells"]:
                 for e in c.get("entries") or []:
                     if e.get("recommendation") and e.get("status") != "rejected":
                         d = idx.deviation(c["deviation_id"])
-                        recs.append(("%s × %s · %s" % (c["node_id"], d["label"] if d else c["deviation_id"],
-                                                        e["recommendation"]),
-                                     (c["node_id"], c["deviation_id"]), "", None))
-        groups.append(("권고", 6, recs, "AI 분석 후 권고가 모입니다"))
+                        text = "%s × %s · %s" % (c["node_id"], d["label"] if d else c["deviation_id"],
+                                                 e["recommendation"])
+                        recs.append((text, (6, (c["node_id"], c["deviation_id"])), "", None, text))
+        groups.append(("권고", recs, "AI 분석 후 권고가 모입니다", None))
         return groups
 
     def _refresh_explorer(self):
         """내용이 같으면 다시 만들지 않는다(선택 유지, 항목 클릭 처리 중 항목 삭제 방지)."""
         groups = self._explorer_groups()
-        sig = [(n, i, [(t, k, r) for t, k, r, _ in its], e) for n, i, its, e in groups]
+        sig = [(n, [(t, k, r, tip) for t, k, r, _, tip in its], e, a) for n, its, e, a in groups]
         if sig != getattr(self, "_explorer_sig", None):
             self._explorer_sig = sig
             self.explorer.clear()
             muted = QColor(tokens.c("muted"))
-            for name, idx, items, hint in groups:
+            for name, items, hint, action in groups:
                 grp = QTreeWidgetItem([name, str(len(items))])
                 f = grp.font(0)
                 f.setBold(True)
@@ -368,10 +384,11 @@ class MainWindow(QMainWindow):
                 grp.setForeground(1, muted)
                 grp.setFlags(Qt.ItemIsEnabled)
                 grp.setToolTip(0, name)
-                for text, key, right, icon in items:
+                for text, target, right, icon, tip in items:
                     child = QTreeWidgetItem([text, right])
-                    child.setData(0, Qt.UserRole, (idx, key))
-                    child.setToolTip(0, text)
+                    child.setData(0, Qt.UserRole, target)
+                    child.setToolTip(0, tip)
+                    child.setToolTip(1, tip)
                     child.setForeground(1, muted)
                     if icon is not None:
                         child.setIcon(0, icon)
@@ -386,6 +403,13 @@ class MainWindow(QMainWindow):
                     empty.setData(0, Qt.UserRole + 1, "hint")
                     empty.setToolTip(0, hint)
                     grp.addChild(empty)
+                if action is not None:
+                    link = QTreeWidgetItem([action[0], ""])
+                    link.setData(0, Qt.UserRole, action[1])
+                    link.setData(0, Qt.UserRole + 1, "action")
+                    link.setForeground(0, QColor(tokens.c("ui")))
+                    link.setToolTip(0, action[2])
+                    grp.addChild(link)
                 self.explorer.addTopLevelItem(grp)
                 grp.setExpanded(len(items) <= EXPLORER_OPEN_MAX)
             self._apply_filter()
@@ -398,7 +422,7 @@ class MainWindow(QMainWindow):
             shown = total = 0
             for c in range(grp.childCount()):
                 ch = grp.child(c)
-                hint = ch.data(0, Qt.UserRole + 1) == "hint"
+                hint = ch.data(0, Qt.UserRole + 1) in ("hint", "action")  # 안내·바로가기는 개수에 세지 않는다
                 hide = bool(q) and (hint or palette.fuzzy_score(q, ch.text(0)) is None)
                 ch.setHidden(hide)
                 total += not hint
@@ -428,11 +452,26 @@ class MainWindow(QMainWindow):
         if not target:
             return
         idx, key = target
+        if idx == 6 and key is None:
+            self.go(6)
+            return
         if idx == 6:
             self.open_target({"kind": "cell", "drawing": self.drawing, "node_id": key[0], "deviation_id": key[1]})
             return
         if idx == 5:
+            # ⑤에서는 결과 행렬의 그 행을 고르고 ⑤에 머문다(실행 중이어도 분석은 그대로). Alt+누르기는 ④ 구간.
+            alt = bool(QApplication.keyboardModifiers() & Qt.AltModifier)
+            rs = self.screens[6]
+            if self.stack.currentIndex() == 6 and not alt and rs.name == self.drawing and rs._row_of(key) is not None:
+                rs.show_node(self.drawing, key)
+                self.set_selection({"kind": "node", "drawing": self.drawing, "node_id": key})
+                self._mark_explorer_current()
+                return
             self.open_target({"kind": "node", "drawing": self.drawing, "node_id": key})
+            return
+        if idx == 1:
+            if self.go(1):
+                self.screens[1].select_drawing(key)
             return
         if not self.go(idx):
             return

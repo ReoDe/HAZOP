@@ -7,11 +7,14 @@ AI가 쓴 항목은 승인 전까지 언제나 'AI 초안'으로 표시한다(re
 """
 
 import os
+import time
+from datetime import datetime, timezone
 
-from PySide6.QtCore import QCoreApplication, QSize, Qt
-from PySide6.QtGui import QColor, QKeySequence, QShortcut
+from PySide6.QtCore import QCoreApplication, QSize, Qt, QTimer, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
-                               QHBoxLayout, QHeaderView, QLabel, QPlainTextEdit, QProgressBar, QPushButton,
+                               QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPlainTextEdit, QProgressBar,
+                               QPushButton,
                                QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from hazop import paths
@@ -19,9 +22,10 @@ from hazop.app import data, tokens
 from hazop.app.ai_runner import AiRunner
 from hazop.app.screens.results_paint import CELL_ROLE, DRAFT_ROLE, CellDelegate, GroupHeader, SheetDelegate
 from hazop.app.screens.study import seg_icon
-from hazop.app.widgets import Chip, empty_label, plain_label
+from hazop.app.widgets import Chip, empty_label, kst_text, plain_label
 from hazop.study import ai_cells, nodes
 from hazop.study import results as res
+from hazop.study import claude_http
 from hazop.study.claude_http import ClaudeHttpClient
 from hazop.viewer import build as viewer_build
 
@@ -59,6 +63,21 @@ def design_intent(node, graph_id):
 def risk_text(risk):
     band = tokens.risk_band(risk)
     return "%d %s" % (risk, BAND_LABELS[band]) if band else "미정"
+
+
+# 실행 전 확인 창의 어림값(기본 모델 Opus 기준). 사용자 실사용 관찰(2026-11-07): 호출 하나 15~60초, 50회 약 $4~5.
+# 결정로그: 구간 1개(10회) Opus 실측 $0.86. 같은 모델로 성공한 호출 기록이 있으면 그 평균을 쓴다.
+EST_SEC_PER_CALL = 40
+EST_USD_PER_CALL = 0.09
+
+
+def clock(seconds):
+    m, s = divmod(int(seconds), 60)
+    return "%d:%02d" % (m, s) if m < 60 else "%d시간 %d분" % (m // 60, m % 60)
+
+
+def usage_diff(now, base):
+    return {k: now[k] - base.get(k, 0) for k in now}
 
 
 def usage_text(total):
@@ -141,6 +160,11 @@ class ResultsScreen(QWidget):
         self.deviations = res.load_deviations()
         self.cell = None       # (node_id, deviation_id)
         self.runner = None
+        self.run_info = None   # 실행 중: {"start", "base"(시작 때 사용량), "unit"(지금 호출 중인 묶음)}
+        self.in_progress = set()  # 지금 호출 중인 칸 (node_id, deviation_id)
+        self.tick = QTimer(self)
+        self.tick.setInterval(1000)
+        self.tick.timeout.connect(self._progress_text)
         self._old_saved = None  # 쓰지 않기로 한 저장본 경로(처음 저장할 때 옆에 보관본으로 옮김)
         self._unsaved = False   # 마지막 저장이 실패해 화면에만 있는 변경이 있음
         lay = QVBoxLayout(self)
@@ -180,6 +204,11 @@ class ResultsScreen(QWidget):
         self.kg_chip.hide()
         head.addWidget(self.kg_chip)
         head.addStretch(1)
+        self.save_label = QLabel("")  # 결과 파일 위치·마지막 저장 시각. 누르면 폴더를 연다
+        self.save_label.setObjectName("muted")
+        self.save_label.setTextInteractionFlags(Qt.LinksAccessibleByMouse | Qt.LinksAccessibleByKeyboard)
+        self.save_label.linkActivated.connect(self._open_save_dir)
+        head.addWidget(self.save_label)
         top.addLayout(head)
         self.matrix = QTableWidget()
         self.matrix.setObjectName("matrix")
@@ -248,13 +277,13 @@ class ResultsScreen(QWidget):
         self.run_all_btn = QPushButton("AI 일괄 분석")
         self.run_all_btn.setObjectName("primary")
         self.run_all_btn.setToolTip("확정된 모든 구간 × 편차를 Claude API로 분석(사람이 손댄 항목은 유지)")
-        self.run_all_btn.clicked.connect(lambda: self.run_ai("all"))
+        self.run_all_btn.clicked.connect(lambda: self.request_ai("all"))
         self.run_node_btn = QPushButton("선택 구간 분석")
         self.run_node_btn.setToolTip("행렬에서 고른 행의 구간만 분석")
-        self.run_node_btn.clicked.connect(lambda: self.run_ai("node"))
+        self.run_node_btn.clicked.connect(lambda: self.request_ai("node"))
         self.retry_btn = QPushButton("실패 칸 다시 실행")
         self.retry_btn.setToolTip("마지막 AI 실행이 실패한 칸만 칸마다 다시 호출")
-        self.retry_btn.clicked.connect(lambda: self.run_ai("failed"))
+        self.retry_btn.clicked.connect(lambda: self.request_ai("failed"))
         self.cancel_btn = QPushButton("취소")
         self.cancel_btn.setToolTip("남은 호출을 멈춤(진행 중인 호출 1건은 끝까지 받아 반영)")
         self.cancel_btn.setEnabled(False)
@@ -351,8 +380,8 @@ class ResultsScreen(QWidget):
 
     def commands(self):
         """명령 팔레트(U-01) 항목 [(이름, 단축키, 함수)]."""
-        return [("AI 일괄 분석", "", lambda: self.run_ai("all")), ("선택 구간 분석", "", lambda: self.run_ai("node")),
-                ("실패 칸 다시 실행", "", lambda: self.run_ai("failed")), ("이 칸 다시 실행", "", lambda: self.run_ai("cell")),
+        return [("AI 일괄 분석", "", lambda: self.request_ai("all")), ("선택 구간 분석", "", lambda: self.request_ai("node")),
+                ("실패 칸 다시 실행", "", lambda: self.request_ai("failed")), ("이 칸 다시 실행", "", lambda: self.run_ai("cell")),
                 ("다음 미검토 칸", "J", self.next_unreviewed), ("칸 열기", "Enter", self.open_current),
                 ("항목 승인", "A", lambda: self.set_entry_status("approved")),
                 ("항목 기각", "R", lambda: self.set_entry_status("rejected")),
@@ -452,6 +481,7 @@ class ResultsScreen(QWidget):
             self.kg_chip.set_state("지식그래프 없음: %s · 도면만으로 분석" % self.kg_reason, "warn")
             self.kg_chip.setVisible(self.kg is None)
             self.set_results(self._saved_results(saved))
+            self._show_save_info()
             self.stack.setCurrentIndex(1)
         else:
             if self.graph is None:
@@ -512,7 +542,29 @@ class ResultsScreen(QWidget):
             return False
         self._unsaved = False
         self.app.mark_saved(nodes.now_utc())
+        self._show_save_info()
         return True
+
+    def _show_save_info(self):
+        """'결과 파일 저장 11-07 20:31 · 폴더' (저장본이 없으면 '아직 저장 안 됨'). 전체 경로는 도구 설명."""
+        path = self.store_path()
+        if not path:
+            self.save_label.setText("")
+            return
+        if os.path.isfile(path):
+            at = kst_text(datetime.fromtimestamp(os.path.getmtime(path), timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))[5:16]
+            text = "결과 파일 저장 %s" % at
+        else:
+            text = "결과 파일 아직 저장 안 됨"
+        self.save_label.setText("%s · <a href='open'>폴더</a>" % text)
+        self.save_label.setToolTip("분석 결과 파일(AI 호출이 끝날 때마다·항목을 고칠 때마다 저장):\n%s" % path)
+
+    def _open_save_dir(self, _link=None):
+        path = self.store_path()
+        if path:
+            d = os.path.dirname(path)
+            os.makedirs(d, exist_ok=True)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(d))
 
     # ------------------------------------------------------------ AI 실행
     def running(self):
@@ -537,6 +589,35 @@ class ResultsScreen(QWidget):
             return ai_cells.plan_units(ns, self.deviations, ai_cells.failed_cells(self.results))
         return [] if self.cell is None else ai_cells.plan_units(ns, self.deviations, [self.cell])
 
+    def store_path(self):
+        return res.store_path(self.node_set.get("project_id"), self.node_set["graph_id"]) if self.node_set else None
+
+    def estimate(self, n_calls):
+        """(초, 달러) 어림값. 지금 모델로 성공한 호출 기록이 있으면 그 평균 비용, 없으면 기본 Opus 어림값을 모델 단가 비율로 바꾼다."""
+        model = self.app.api_keys.model
+        ok = [r["cost_usd"] for r in (self.results or {}).get("ai_log") or []
+              if r.get("status") != "failed" and r.get("model") == model and r.get("cost_usd")]
+        if ok:
+            usd = sum(ok) / len(ok)
+        else:
+            base, cur = claude_http.PRICES[claude_http.DEFAULT_MODEL], claude_http.PRICES.get(model)
+            usd = EST_USD_PER_CALL * (cur["output"] / base["output"] if cur else 1)
+        return n_calls * EST_SEC_PER_CALL, n_calls * usd
+
+    def request_ai(self, scope="all"):
+        """버튼·팔레트: 호출이 2회 이상이면 예상 호출 수·시간·비용과 저장 위치를 보여 주고 확인을 받은 뒤 시작한다."""
+        if self.running() or self.node_set is None:
+            return False
+        n = len(self._plan(scope))
+        if n > 1:
+            sec, usd = self.estimate(n)
+            text = ("AI를 %d회 호출합니다.\n예상 시간: 약 %d분 (호출 하나 15~60초)\n예상 비용: 약 $%.2f\n\n"
+                    "칸은 호출이 끝날 때마다 바로 화면에 채워지고 저장됩니다.\n저장 위치: %s\n\n시작할까요?"
+                    % (n, max(1, round(sec / 60.0)), usd, self.store_path()))
+            if QMessageBox.question(self, "AI 분석 시작", text) != QMessageBox.Yes:
+                return False
+        return self.run_ai(scope)
+
     def run_ai(self, scope="all"):
         """scope: all(모든 구간) · node(선택 행 구간) · failed(실패 칸) · cell(열린 칸). 시작했으면 True."""
         if self.running() or self.node_set is None:
@@ -559,14 +640,16 @@ class ResultsScreen(QWidget):
                 ctxs[u["node_id"]] = ai_cells.node_context(node, self.graph, self.kg,
                                                            design_intent(node, self.node_set.get("graph_id")))
         self.runner = AiRunner([(u, ctxs[u["node_id"]]) for u in units], self.deviations, self.make_client())
+        self.runner.unit_started.connect(self._on_unit_started)
         self.runner.unit_done.connect(self._on_unit_done)
         self.runner.progress.connect(self._on_progress)
         self.runner.finished.connect(self._on_finished)
+        self.run_info = {"start": time.monotonic(), "base": ai_cells.usage_total(self.results), "unit": None}
         self.progress.setRange(0, len(units))
         self.progress.setValue(0)
         self._progress_text()
         self._update_buttons()
-        self.app.status_message("AI 분석 중: %d회 호출 예정" % len(units))
+        self.tick.start()
         self.runner.start()
         return True
 
@@ -585,7 +668,15 @@ class ResultsScreen(QWidget):
         if self._unsaved and self.results is not None:
             self._save()
 
+    def _on_unit_started(self, unit):
+        if self.run_info is not None:
+            self.run_info["unit"] = unit
+        self.in_progress = {(unit["node_id"], did) for did in unit["deviation_ids"]}
+        self._fill_matrix()
+        self._progress_text()
+
     def _on_unit_done(self, unit_result):
+        self.in_progress = set()
         try:
             doc = ai_cells.apply_unit(self.results, unit_result)
         except ValueError as exc:
@@ -600,22 +691,51 @@ class ResultsScreen(QWidget):
         self.progress.setValue(done)
         self._progress_text()
 
+    def unit_text(self, unit):
+        """'S1 · 유량' (구간 · 변수)."""
+        by_id = {d["deviation_id"]: d for d in self.deviations}
+        params = []
+        for did in unit["deviation_ids"]:
+            p = (by_id.get(did) or {}).get("parameter") or did
+            if p not in params:
+                params.append(p)
+        return "%s · %s" % (unit["node_id"], "·".join(params))
+
     def _progress_text(self):
-        """'AI 12/50 · 실패 2' 한 줄을 막대 옆과 상태 표시줄에 같이 보인다."""
+        """막대 옆 짧은 줄 + 상태 표시줄 긴 줄. 실행 중이면 지금 칸, 경과·남은 시간, 이번 실행의 토큰·비용을 보인다."""
         failed = len(ai_cells.failed_cells(self.results)) if self.results else 0
-        text = "AI %d/%d 호출%s" % (self.progress.value(), self.progress.maximum(), " · 실패 %d" % failed if failed else "")
-        self.progress_label.setText(text)
-        if self.running():
-            self.app.status_message("AI 분석 중: " + text)
+        done, total = self.progress.value(), self.progress.maximum()
+        text = "AI %d/%d 호출%s" % (done, total, " · 실패 %d" % failed if failed else "")
+        info = self.run_info
+        if info is None:
+            self.progress_label.setText(text)
+            return
+        elapsed = time.monotonic() - info["start"]
+        left = "남은 시간 계산 중" if not done else "약 %s 남음" % clock(elapsed / done * (total - done))
+        spent = usage_diff(ai_cells.usage_total(self.results), info["base"]) if self.results else None
+        cost = "$%.2f" % spent["cost_usd"] if spent else "$0.00"
+        now = "%s 분석 중" % self.unit_text(info["unit"]) if info["unit"] else "시작 중"
+        self.progress_label.setText("%s · %s · %s 경과 · %s · %s" % (text, now, clock(elapsed), left, cost))
+        self.progress_label.setToolTip("이번 실행: %s\n칸은 호출마다 저장됩니다: %s"
+                                       % (usage_text(spent) if spent else "-", self.store_path()))
+        self.app.status_message("● AI 분석 실행 중 · %s · %s · %s 경과 · %s · %s"
+                                % (text, now, clock(elapsed), left, usage_text(spent) if spent else cost))
 
     def _on_finished(self, cancelled):
         self.runner.wait()
+        self.tick.stop()
         done, total = self.progress.value(), self.progress.maximum()
-        self.runner = None
+        info, self.run_info, self.runner, self.in_progress = self.run_info, None, None, set()
         failed = len(ai_cells.failed_cells(self.results))
+        spent = usage_diff(ai_cells.usage_total(self.results), info["base"]) if info else None
+        self._fill_matrix()
         self._progress_text()
-        self.app.status_message("AI 분석 %s: %d/%d 호출%s" % ("취소됨" if cancelled else "끝남", done, total,
-                                                         " · 실패 칸 %d" % failed if failed else ""))
+        self.app.status_message("AI 분석 %s: %d/%d 호출%s · %s 걸림%s · %s" % (
+            "취소됨" if cancelled else "끝남", done, total, " · 실패 칸 %d" % failed if failed else "",
+            clock(time.monotonic() - info["start"]) if info else "-",
+            " · " + usage_text(spent) if spent else "",
+            "저장 실패 — 화면에만 있음(다시 저장을 시도하려면 항목을 고치거나 화면을 다시 여세요)" if self._unsaved
+            else "저장: %s" % self.store_path()))
         self._update_buttons()
 
     def _update_buttons(self):
@@ -668,7 +788,11 @@ class ResultsScreen(QWidget):
                 key = (n["node_id"], d["deviation_id"])
                 state = {"kind": "scored", "risk": s["max_risk"], "unreviewed": s["unreviewed"],
                          "scenarios": s["scenarios"]}
-                if key in failed:
+                if key in self.in_progress:
+                    it.setText("분석 중")
+                    state = {"kind": "running"}
+                    tip = "%s\nAI 호출 중" % tip
+                elif key in failed:
                     it.setText("실패")
                     state = {"kind": "failed"}
                     tip = "%s\nAI 실행 실패(위험도 아님): %s" % (tip, failed[key] or "-")
