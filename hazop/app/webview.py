@@ -5,7 +5,7 @@
   (hazop/viewer/check.py의 TEMPLATE_SCRIPT_COUNT = 3 유지). bridge가 없으면 뷰어는 단독 모드로 동작한다.
 - 네트워크 차단: 요청 가로채기(file:·qrc:·data:·blob:·about: 외 차단), 탐색 제한(로드한 파일만),
   LocalContentCanAccessRemoteUrls 끔, 디스크 캐시·쿠키 저장 없음(off-the-record 프로필).
-- 메시지는 JSON 문자열 하나: Python→웹 load/setView/highlight/clearHighlight/focus/setMode,
+- 메시지는 JSON 문자열 하나: Python→웹 load/setView/highlight/clearHighlight/focus/setMode/segments/clearSegments(④ 구간 색),
   웹→Python ready/nodeSelected/highlightResult.
 - ③ 지식그래프 페이지(hazop/kg/screen_template.html, window.hzKG)는 같은 주입 스크립트가 연결만 해 주고 메시지 처리는
   페이지가 한다: Python→웹 loadKnowledge/selectNode/algorithmResult, 웹→Python ready/nodeSelected/linkSelected/
@@ -251,6 +251,50 @@ BRIDGE_JS = r"""
       var e = els(lid)[0];
       if (e && e.scrollIntoView) e.scrollIntoView({ block: "center", inline: "center" });
     }
+    // ④ 검토구간 색: 강조(hz-*)와 따로 인라인 style로 칠한다. !important 강조·선택 규칙이 그 위에 그대로 이긴다.
+    var segEls = [], segMarks = [], SEG_PROPS = ["stroke", "stroke-width", "stroke-dasharray", "fill", "fill-opacity", "stroke-opacity"];
+    function clearSegments() {
+      segEls.forEach(function (e) { SEG_PROPS.forEach(function (p) { e.style.removeProperty(p); }); e.removeAttribute("data-hz-seg"); });
+      segMarks.forEach(function (m) { if (m.parentNode) m.parentNode.removeChild(m); });
+      segEls = []; segMarks = [];
+    }
+    function segBadge(e, color, text) {  // 구간 번호 꼬리표: 색만으로 구분하지 않도록 도면에도 S 번호를 적는다
+      var bb; try { bb = e.getBBox(); } catch (x) { return; }
+      var g = document.createElementNS(NS, "g"), r = document.createElementNS(NS, "rect"), t = document.createElementNS(NS, "text");
+      g.setAttribute("class", "hz-seg-badge"); g.setAttribute("pointer-events", "none");
+      r.setAttribute("x", bb.x); r.setAttribute("y", bb.y - 17); r.setAttribute("width", text.length * 8 + 8); r.setAttribute("height", 14); r.setAttribute("rx", 3);
+      r.style.setProperty("fill", color);
+      t.setAttribute("x", bb.x + 4); t.setAttribute("y", bb.y - 6); t.textContent = text;
+      t.style.setProperty("fill", "var(--on-seg)"); t.style.setProperty("font-size", "11px"); t.style.setProperty("font-weight", "700");
+      g.appendChild(r); g.appendChild(t); e.parentNode.appendChild(g); segMarks.push(g);
+    }
+    function paintSeg(e, color, active, tag) {
+      var c = e.classList, line = c.contains("pipe-line") || c.contains("gedge");
+      e.style.setProperty("stroke", color);
+      e.style.setProperty("stroke-opacity", "1");
+      if (line) e.style.setProperty("stroke-width", active ? "7" : "4.5");
+      else if (c.contains("tagbox")) e.style.setProperty("stroke-width", active ? "2" : "1.2");
+      else { e.style.setProperty("stroke-width", active ? "4" : "2.5"); e.style.setProperty("fill", color); e.style.setProperty("fill-opacity", active ? ".22" : ".1"); }
+      e.setAttribute("data-hz-seg", tag);
+      segEls.push(e);
+    }
+    function segments(m) {
+      clearSegments();
+      (m.groups || []).forEach(function (g) {
+        var first = null, label = String(g.label || "");
+        (g.ids || []).forEach(function (lid) {
+          els(lid).forEach(function (e) {
+            if (e.getAttribute("data-hz-seg")) return;
+            paintSeg(e, g.color, !!g.active, label);
+            if (!first || (!first.classList.contains("sym") && e.classList.contains("sym"))) first = e;
+          });
+        });
+        if (first && label) segBadge(first, g.color, label);
+      });
+      (m.uncovered || []).forEach(function (lid) {
+        els(lid).forEach(function (e) { paintSeg(e, "var(--warn-line)", false, "uncovered"); e.style.setProperty("stroke-dasharray", "5 3"); e.style.setProperty("fill-opacity", "0"); });
+      });
+    }
     function handle(m) {
       if (!m || typeof m !== "object") return;
       if (m.type === "setView") setView(m.view);
@@ -264,7 +308,9 @@ BRIDGE_JS = r"""
         document.body.classList.toggle("hz-no-graph", !!m.hide_graph);
         if (m.hide_graph && document.body.classList.contains("tab-graph")) setView("drawing");
         window.dispatchEvent(new Event("resize"));
-      } else if (m.type === "clearHighlight") clear();
+      } else if (m.type === "segments") segments(m);
+      else if (m.type === "clearSegments") clearSegments();
+      else if (m.type === "clearHighlight") clear();
       else if (m.type === "focus") focus(m.local_id);
       else if (m.type === "highlight") {
         clear();
@@ -380,6 +426,14 @@ class HazopWebView(QWebEngineView):
 
     def clear_highlight(self):
         self.bridge.send("clearHighlight")
+
+    def set_segments(self, groups, uncovered=()):
+        """④ 검토구간 색. groups = [{"color", "active", "label"(S 번호), "ids": [local_id]}] 순서대로, 한 요소는 첫 구간 색만.
+        uncovered = 어느 구간에도 없는 요소의 local_id(점선)."""
+        self.bridge.send("segments", groups=list(groups), uncovered=list(uncovered))
+
+    def clear_segments(self):
+        self.bridge.send("clearSegments")
 
     def focus(self, local_id):
         self.bridge.send("focus", local_id=local_id)

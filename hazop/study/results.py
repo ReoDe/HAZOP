@@ -44,7 +44,8 @@ def is_ai_draft(entry):
 
 
 def matrix_summary(results):
-    """{node_id: {deviation_id: {state, scenarios, max_risk, unreviewed}}}. scenarios는 기각되지 않은 항목 수."""
+    """{node_id: {deviation_id: {state, scenarios, max_risk, unreviewed}}}. scenarios는 기각되지 않은 항목 수.
+    unreviewed는 제안 상태 항목과, 사람이 고쳤어도 승인 전인 AI 초안(revised)을 함께 센다."""
     out = {}
     for cell in results["cells"]:
         live = [e for e in cell["entries"] if e.get("status") != "rejected"]
@@ -53,7 +54,8 @@ def matrix_summary(results):
             "state": cell["state"],
             "scenarios": len(live),
             "max_risk": max(risks) if risks else None,
-            "unreviewed": sum(e.get("status") == "proposed" for e in cell["entries"]),
+            "unreviewed": sum(e.get("status") == "proposed" or (is_ai_draft(e) and e.get("status") != "rejected")
+                              for e in cell["entries"]),
         }
     return out
 

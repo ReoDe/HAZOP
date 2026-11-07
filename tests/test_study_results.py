@@ -50,6 +50,9 @@ class ResultsTest(unittest.TestCase):
         got = sr.matrix_summary(res)[cell["node_id"]][cell["deviation_id"]]
         self.assertEqual(got, {"state": "analyzed", "scenarios": 2, "max_risk": 4, "unreviewed": 1})
         self.assertEqual(sr.validate(res, self.nodes), [])
+        cell["entries"].append(entry("e4", status="revised", risk=2, origin="ai_draft"))
+        got = sr.matrix_summary(res)[cell["node_id"]][cell["deviation_id"]]
+        self.assertEqual(got["unreviewed"], 2, "고친 AI 초안도 승인 전에는 미검토")
         self.assertTrue(sr.is_ai_draft(cell["entries"][0]))
         self.assertFalse(sr.is_ai_draft(dict(cell["entries"][0], status="approved")))
 

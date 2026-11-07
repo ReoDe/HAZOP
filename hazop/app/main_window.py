@@ -274,6 +274,7 @@ class MainWindow(QMainWindow):
         if getattr(scr, "canvas_host", None) is None:
             self.webview.setParent(None)
             self.webview.hide()
+        self.webview.clear_segments()  # ④ 구간 색은 ④에서만 보인다(④는 on_enter에서 다시 칠함)
         scr.on_enter()
         self.update_header()
         self.refresh_stages()
@@ -284,6 +285,11 @@ class MainWindow(QMainWindow):
         if self.webview.parent() is not host:
             host.layout().addWidget(self.webview)
         self.webview.show()
+
+    def open_results_for(self, drawing_name, node_id):
+        """④에서 고른 구간을 ⑤ 분석 결과에서 연다."""
+        self.go(6)
+        self.screens[6].show_node(drawing_name, node_id)
 
     def review_candidate(self, cid, scenario_id):
         self.go(3)
