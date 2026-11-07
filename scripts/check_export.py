@@ -8,6 +8,10 @@
    〈별표9〉 수용·수정만·'관리 안 함', 검토일(KST)·쪽 머리글, exports/ 출력 기록
 3) analysis.json 재작성(해시 불일치) 뒤 출력 차단(종료 코드 1, 파일 추가 없음)
 4) tests/test_export.py
+5) ⑤ 분석 결과(구간 × 편차) 내보내기: 두 도면 합성 그래프 + 가짜 결과(tests.test_study_export.sample)로 xlsx를 만들고
+   openpyxl로 다시 읽어 시나리오 행 수 = 결과 시나리오 수, 도면 번호 열, 상태 필터(승인만·선택한 구간만),
+   경로·키 모양 글자 없음, 수식 셀 없음을 본다. 이어서 tests.test_study_export와 ⑤ 화면 내보내기 테스트.
+   --keep-sample <폴더>를 주면 전체 범위 예시 파일을 그 폴더에 남긴다(저장소 밖 폴더를 쓴다).
 종료 코드 0 = 전부 통과.
 """
 
@@ -115,8 +119,48 @@ def harness(tmp, src, failures):
        code == 1 and len(glob.glob(os.path.join(out, "*", "*", "worksheet-*.xlsx"))) == 1, failures)
 
 
+def study_harness(tmp, failures, keep=None):
+    from hazop.export import study_xlsx as sx
+    from tests.test_study_export import DEVS, KEY, sample
+    r, ns, pg, span_node, single = sample()
+
+    def read(name, **kw):
+        path, n = sx.export(os.path.join(tmp, name), r, ns, pg, DEVS, now="2026-11-08T03:00:00Z", **kw)
+        wb = openpyxl.load_workbook(path)
+        ws = wb[sx.SHEETS[2]]
+        head = [c.value for c in ws[1]]
+        return wb, [dict(zip(head, [c.value for c in row])) for row in ws.iter_rows(min_row=2)], n
+
+    wb, rows, n = read("all.xlsx", reviewer="검토자A")
+    if keep:
+        os.makedirs(keep, exist_ok=True)
+        shutil.copy(os.path.join(tmp, "all.xlsx"), os.path.join(keep, "HAZOP-sample-all.xlsx"))
+        print("  예시 파일: %s" % os.path.join(keep, "HAZOP-sample-all.xlsx"))
+    ok("시트 4개 %s" % list(sx.SHEETS), wb.sheetnames == list(sx.SHEETS), failures)
+    entry_rows = [x for x in rows if x["상태"].split(" · ")[0] in sx.STATUS_LABELS.values()]
+    ok("시나리오 행 %d = 결과 시나리오 %d" % (len(entry_rows), sx.counts(r)["scenarios"]),
+       len(entry_rows) == sx.counts(r)["scenarios"], failures)
+    ok("칸 표시 행(해당 없음·실패) 포함, 행 수 %d = 반환값 %d" % (len(rows), n),
+       len(rows) == n and {"해당 없음(AI 판단)", "실패(AI 실행)"} <= {x["상태"] for x in rows}, failures)
+    ok("도면 번호 열: 모든 행에 있고 걸친 구간은 두 도면",
+       all(x["도면 번호"] for x in rows)
+       and any(x["도면 번호"] == "SNP-M-101, SNP-M-102" for x in rows if x["구간"].startswith(span_node + " ")),
+       failures)
+    _, approved, _ = read("approved.xlsx", scope="approved")
+    ok("상태 필터 '승인만': 승인 행만 %d" % len(approved),
+       approved and all(x["상태"] == "승인" for x in approved), failures)
+    _, picked, _ = read("nodes.xlsx", scope="nodes", node_ids=[single])
+    ok("범위 '선택한 구간만': %s 행만" % single, picked and all(x["구간"].startswith(single + " ") for x in picked),
+       failures)
+    text = " ".join(str(c.value) for ws in wb.worksheets for row in ws.iter_rows() for c in row if c.value is not None)
+    ok("API 키·드라이브 경로 글자 없음", KEY not in text and ":\\" not in text, failures)
+    ok("수식 셀 없음", all(c.data_type != "f" for ws in wb.worksheets for row in ws.iter_rows() for c in row),
+       failures)
+
+
 def main():
     safe_console()
+    keep = sys.argv[sys.argv.index("--keep-sample") + 1] if "--keep-sample" in sys.argv else None
     failures = []
     try:
         src = fresh_run_dir()
@@ -135,6 +179,22 @@ def main():
     suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_export")
     result = unittest.TextTestRunner(verbosity=1).run(suite)
     ok("단위 테스트 %d개" % result.testsRun, result.wasSuccessful(), failures)
+    print("5) ⑤ 분석 결과 내보내기")
+    tmp = tempfile.mkdtemp(prefix="hazop-check-study-export-")
+    try:
+        study_harness(tmp, failures, keep)
+    except Exception as e:  # 검사 도중 예외도 실패로 보고
+        failures.append("예외: %r" % e)
+        print("  [FAIL] 예외: %r" % e)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    suite = unittest.TestSuite([
+        unittest.defaultTestLoader.loadTestsFromName("tests.test_study_export"),
+        unittest.defaultTestLoader.loadTestsFromName(
+            "tests.test_results_project_ui.ResultsProjectUiTest.test_excel_export_button_palette_and_toast")])
+    result = unittest.TextTestRunner(verbosity=1).run(suite)
+    ok("⑤ 내보내기 단위·화면 테스트 %d개" % result.testsRun, result.wasSuccessful(), failures)
     print("결과: %s" % ("전부 통과" if not failures else "실패 %d건: %s" % (len(failures), failures)))
     return 0 if not failures else 1
 

@@ -29,8 +29,9 @@ class StubApp:
     def status_message(self, text):
         self.messages.append(text)
 
-    def toast(self, text, undo=None):
+    def toast(self, text, undo=None, actions=(), ms=5000):
         self.toasts.append(text)
+        self.toast_actions = [label for label, _fn in actions]
 
     def log_error(self, title, exc):
         raise AssertionError("%s: %s" % (title, exc))
@@ -129,6 +130,28 @@ class ResultsProjectUiTest(unittest.TestCase):
         self.assertTrue(scr.set_entry_status("approved"))
         saved = next(c for c in res.load(scr.node_set)["cells"] if c["entries"])
         self.assertEqual(saved["entries"][0]["status"], "approved")
+
+    def test_excel_export_button_palette_and_toast(self):
+        import openpyxl
+        from hazop.export import study_xlsx
+        self.confirm_project_set()
+        app, scr = self.screen()
+        self.assertTrue(scr.export_btn.isEnabled())
+        self.assertIn("Excel로 내보내기…", [c[0] for c in scr.commands()])
+        node = self.spanning(scr)
+        doc = json.loads(json.dumps(scr.results))
+        cell = next(c for c in doc["cells"] if c["node_id"] == node["node_id"])
+        cell.update(state="analyzed", entries=[
+            {"entry_id": "E1", "cause": "SNP-M-101-E 누설", "consequence": "c", "safeguards": [], "recommendation": "r",
+             "severity": 4, "frequency": 3, "risk": 5, "origin": "ai_draft", "status": "approved"}])
+        scr.set_results(doc)
+        out = os.path.join(self.tmp, "export", "x.xlsx")
+        os.makedirs(os.path.dirname(out))
+        self.assertEqual(scr.export_excel(path=out, scope="all"), out)
+        self.assertEqual(app.toast_actions, ["열기", "폴더 열기"])
+        ws = openpyxl.load_workbook(out)[study_xlsx.SHEETS[2]]
+        self.assertEqual(ws.cell(row=2, column=11).value, "5 불허")
+        self.assertEqual(ws.cell(row=2, column=2).value, "SNP-M-101, SNP-M-102")
 
     def test_old_results_wait_for_confirm_then_move_with_flags(self):
         old = sn.confirm(sn.propose(self.a, at=AT), self.a, "EJ", at=AT)
