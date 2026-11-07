@@ -17,24 +17,29 @@
    나머지는 가장 가까운 기호 하나에 1:1로 붙인다(거리 상한 있음). 붙지 않은 글자는 texts로 남긴다.
 6. 종류: 형상(계기 원, 나비 모양 밸브와 구동부, 스프링, 표식 있는 선 기호) + 일반 P&ID 표기(ISA 계기 문자,
    장비 이름 낱말, 도면 연결 표기 TO/FROM). 근거가 없으면 kind 없음(unclassified)으로 둔다.
+7. 태그: 보이는 글자로만 정한다(_assign_tags). 관계마다 실제 선 점(evidence.pdf_path)을 남겨 ② 배경 SVG가 그린다.
 
 좌표: PDF 페이지 pt, 원점 왼쪽 위, x 오른쪽·y 아래쪽 증가(pdfplumber top 기준). drawio 좌표로의 변환은
 추정하지 않는다(평가 쪽 align.py가 기준점으로 추정).
 """
 
+import collections
 import hashlib
+import io
 import math
 import os
 import re
+import threading
 
 from hazop import paths
+from hazop.kg.docextract import TAG_RE
 
 from .. import drawio, rules
 
 SCHEMA_VERSION = drawio.SCHEMA_VERSION
 SCRIPT_NAME = "hazop.extract.adapters.pdf_vector"
-SCRIPT_VERSION = "0.2.0"
-RULES_VERSION = "pdf-vector-rules-0.3.0"
+SCRIPT_VERSION = "0.3.0"
+RULES_VERSION = "pdf-vector-rules-0.4.0"  # 0.4.0: 보이는 글자로 tag 지정(_assign_tags)
 SOURCE_FORMAT = "pdf_vector"
 COORDINATE_SPACE = "pdf_page_pt"
 UNIT = "pt"
@@ -98,6 +103,8 @@ EQUIPMENT_WORDS = [
     (("ATM",), "vent"),
 ]
 CONTINUATION_RE = re.compile(r"^(TO|FROM)\s+\S*\d")
+# ISA 계기 글자(기능 문자 + 번호, 예: 'PT 110'·'PIC 110'). 태그 앞 계통 접두는 글자에 없다.
+ISA_LABEL_RE = re.compile(r"([A-Z]{1,4})[ \-]*(\d{1,5}[A-Z]?)")
 
 
 # ---------------------------------------------------------------- 기하 보조
@@ -335,6 +342,31 @@ def load_page(path, page=0):
                           "stroke_white": _is_white(obj.get("stroking_color")),
                           "dash": _dash(obj.get("dash")), "subpaths": _subpaths(obj)})
     return page_count, width, height, words, prims
+
+
+# ① 미리보기·등록·추출이 같은 쪽을 거듭 분석하지 않도록 최근 분석 결과를 프로세스 안에 둔다(화면 작업 스레드와 공유).
+_CACHE_MAX = 8
+_cache = collections.OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def analyze_bytes(data, page=0, params=None):
+    """PDF 바이트 한 쪽 → (sha256, page_count, width, height, analysis). (해시, 쪽, 문턱)이 같으면 다시 분석하지 않는다.
+    analysis는 호출끼리 함께 쓰므로 고치지 않는다(build_extraction은 읽기만 한다)."""
+    sha = hashlib.sha256(data).hexdigest()
+    key = (sha, page, tuple(sorted((params or {}).items())))
+    with _cache_lock:
+        hit = _cache.get(key)
+        if hit is not None:
+            _cache.move_to_end(key)
+            return (sha,) + hit
+    page_count, width, height, words, prims = load_page(io.BytesIO(data), page)
+    hit = (page_count, width, height, analyze(width, height, words, prims, params))
+    with _cache_lock:
+        _cache[key] = hit
+        while len(_cache) > _CACHE_MAX:
+            _cache.popitem(last=False)
+    return (sha,) + hit
 
 
 # ---------------------------------------------------------------- 1. 원시 요소 분류
@@ -1064,6 +1096,48 @@ def _classify(sym, text, degree, prm, marks=()):
     return None, None
 
 
+# ---------------------------------------------------------------- 태그
+
+def _assign_tags(nodes, unknowns):
+    """기호 노드의 tag를 같은 쪽의 보이는 글자로 정한다.
+    (a) 글자가 태그 모양(③ 문서 언급과 같은 hazop.kg.docextract.TAG_RE)으로 시작하면 그 낱말.
+    (b) 계기의 ISA 글자(예: 'PT 110')면 <접두>-<문자><번호>. 접두는 같은 쪽 (a) 태그에서 가장 많은 계통 접두다.
+        글자에 없는 값을 고른 것이라 근거에 [추론]을 남기고, 가장 많은 접두가 둘 이상이면 정하지 않는다.
+    같은 tag가 두 노드 이상에 나오면 모두 비우고 duplicate_tag 미확인을 남긴다. 정하지 못한 노드는 missing_tag 미확인."""
+    tags, isa = {}, {}
+    for i, n in enumerate(nodes):
+        if n["kind"] in rules.KINDS_WITHOUT_TAG:
+            continue
+        m = TAG_RE.match(n["label_text"].strip())
+        if m:
+            tags[i] = (m.group(0), "label_tag_token")
+            continue
+        lines = [" ".join(l.split()) for l in n["label_text"].splitlines() if l.strip()]
+        m = ISA_LABEL_RE.fullmatch(" ".join(lines[:2]))
+        if m and n["category"] == "instrument":
+            isa[i] = m.group(1) + m.group(2)
+    counts = collections.Counter(t.split("-")[0] for t, _ in tags.values()).most_common(2)
+    prefix = counts[0][0] if counts and (len(counts) == 1 or counts[0][1] > counts[1][1]) else None
+    if prefix:
+        for i, body in isa.items():
+            tags[i] = ("%s-%s" % (prefix, body), "isa_label+page_prefix:%s [추론]" % prefix)
+    seen = collections.Counter(t.casefold() for t, _ in tags.values())
+    for i, n in enumerate(nodes):
+        if n["kind"] in rules.KINDS_WITHOUT_TAG:
+            continue
+        tag, basis = tags.get(i, (None, None))
+        if tag is not None and seen[tag.casefold()] > 1:
+            _issue(unknowns, "duplicate_tag", "같은 쪽에서 태그 %r 가 두 노드 이상에 나옴(어느 것인지 정하지 않음)" % tag,
+                   n["source_object_id"], n["local_id"], "tag")
+            tag, basis = None, "duplicate_on_page"
+        n["tag"] = tag
+        n["evidence"]["tag_basis"] = basis
+        if tag is None and basis is None:
+            reason = ("ISA 계기 글자는 있으나 같은 쪽 계통 접두를 하나로 정할 수 없음" if i in isa and not prefix
+                      else "보이는 글자에서 태그를 정하지 못함(글자는 label_text에 보존)")
+            _issue(unknowns, "missing_tag", reason, n["source_object_id"], n["local_id"], "tag")
+
+
 # ---------------------------------------------------------------- 조립
 
 def _issue(lst, check, reason, source_object_id=None, target=None, field=None):
@@ -1177,9 +1251,6 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         classification = "classified" if category else "unclassified"
         if kind is None:
             _issue(unknowns, "missing_kind", "형상·글자 규칙으로 종류를 정할 근거 없음", sid, local_id, "kind")
-        if kind not in rules.KINDS_WITHOUT_TAG:
-            _issue(unknowns, "missing_tag", "PDF에는 tag 속성이 없음(보이는 글자는 label_text에 보존)",
-                   sid, local_id, "tag")
         node_out.append({
             "local_id": local_id, "source_object_id": sid, "classification": classification,
             "category": category, "kind": kind, "tag": None, "label": text, "label_text": text,
@@ -1192,6 +1263,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         })
         locations.append({"object_id": sid, "local_id": local_id, "coordinate_space": COORDINATE_SPACE,
                           "unit": UNIT, "bbox": _box_out(s.bbox), "approximate": False})
+    _assign_tags(node_out, unknowns)
     tee_ids = {}
     for k, (x, y) in enumerate(tees):
         n = len(node_out) + 1
@@ -1255,7 +1327,9 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             "label": "", "label_text": "", "label_cells": [], "attributes": {}, "style": None, "parent": None,
             "geometry": None,
             "evidence": {"classification_basis": "dash_chain" if ch.get("dashed") else "solid_path",
-                         "pdf_objects": ch["evidence"]},
+                         "pdf_objects": list(ch["evidence"]),
+                         # 선이 지나는 실제 점(양 끝 포함, 점선은 조각 중심). ② 배경 SVG의 관계 경로로 그린다
+                         "pdf_path": [[_num(p[0]), _num(p[1])] for p in ch["pts"]]},
         }
         (relations if resolved else unresolved).append(record)
         pts = ch["pts"] + [tuple(e["point"]) for e in endpoints]
@@ -1315,7 +1389,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         "project_id": None,
         "extraction_run_id": run_id,
         "run": {"script": SCRIPT_NAME, "script_version": SCRIPT_VERSION, "rules_version": RULES_VERSION,
-                "scope": "full", "settings": {"page_index": page, "params": prm}},
+                "scope": "full", "settings": {"page_index": page, "params": dict(prm)}},
         "source": {"material_id": None, "registration_version": None, "format": SOURCE_FORMAT,
                    "file": file_label, "sha256": sha, "compressed": None, "page_count": page_count},
         "source_context": {"document_id": None, "page_id": "page-%d" % (page + 1), "page_name": None},
@@ -1341,11 +1415,52 @@ def words_or_paths(analysis):
     return bool(analysis["blocks"] or cls["bodies"] or cls["polys"] or cls["dashes"])
 
 
-def extract(path, page=0, repo_root=None, params=None):
-    """벡터 PDF 한 쪽 → extraction dict. pdfplumber가 없으면 ImportError."""
+def apply_registration(result, registration):
+    """① 등록정보를 추출 결과에 반영한다(drawio.extract의 registration 경로와 같은 규칙).
+    식별 값은 ①에서 사람이 확정한 값만 쓰고 표제란 값은 title_block_candidates로만 남긴다."""
+    reg = registration
+    val = result["validation"]
+    # 등록 경로의 식별 값은 등록정보가 정한다(drawio 등록 경로와 같이 표제란 누락은 미확인으로 남기지 않음)
+    blockers = val["blockers"]
+    unknowns = [u for u in val["unknowns"] if u["check"] not in ("not_registered", "missing_drawing_number")]
+    drawing = result["drawing"]
+    drawing["identification_basis"] = "registration_confirmed"
+    drawing["title_block_candidates"] = {f: drawing.get(f) for f in ("drawing_number", "revision", "title")}
+    for field, reg_field in (("drawing_number", "drawing_number"), ("revision", "design_revision"),
+                             ("title", "title")):
+        drawing[field] = reg.get(reg_field)
+    reg_val = reg.get("validation") or {}
+    if reg.get("status") != "registered" or reg_val.get("status") != "passed" or reg_val.get("blockers"):
+        _issue(blockers, "registration_not_completed", "등록 완료(registered·passed)가 아닌 등록정보: status=%r"
+               % reg.get("status"), field="status")
+    if reg.get("sha256") != result["source"]["sha256"]:
+        _issue(blockers, "registration_hash_mismatch", "입력 파일 해시가 등록정보의 sha256과 다름", field="sha256")
+    page_id = result["source_context"]["page_id"]
+    registered_pages = [pid for d in reg.get("documents") or [] for pid in d.get("page_ids") or []]
+    if page_id not in registered_pages:
+        _issue(blockers, "registration_page_mismatch", "추출한 페이지 %r 가 등록정보 page_ids %r 에 없음"
+               % (page_id, registered_pages), field="page_id")
+    for u in reg_val.get("unknowns", []):
+        _issue(unknowns, "registration_unknown", "등록 단계 미확인: %s" % u["reason"], field=u["field"])
+    val["unknowns"] = unknowns
+    val["status"] = "blocked" if blockers else "passed"
+    result["project_id"] = reg.get("project_id")
+    result["source"]["material_id"] = reg.get("material_id")
+    result["source"]["registration_version"] = reg.get("registration_version")
+    result["source_context"]["document_id"] = (reg.get("documents") or [{}])[0].get("document_id")
+    stem = os.path.splitext(os.path.basename(result["source"]["file"]))[0]
+    result["extraction_run_id"] = "extract-pdf-%s-p%d-%s-%s-%s-%s-r%s" % (
+        drawing["drawing_number"] or stem, result["run"]["settings"]["page_index"], RULES_VERSION,
+        result["source"]["sha256"][:12], reg.get("project_id"), reg.get("material_id"), reg.get("registration_version"))
+    result["summary"] = drawio.summarize(result)
+    return result
+
+
+def extract(path, page=0, repo_root=None, params=None, registration=None):
+    """벡터 PDF 한 쪽 → extraction dict. pdfplumber가 없으면 ImportError.
+    registration: ① 등록정보(dict). 주면 apply_registration으로 식별 정보를 채우고 검사한다."""
     with open(path, "rb") as fh:
-        sha = hashlib.sha256(fh.read()).hexdigest()
-    page_count, width, height, words, prims = load_page(path, page)
-    analysis = analyze(width, height, words, prims, params)
+        sha, page_count, width, height, analysis = analyze_bytes(fh.read(), page, params)
     label = paths.rel_or_abs(path, repo_root) if repo_root else path
-    return build_extraction(analysis, width, height, page_count, page, label, sha)
+    result = build_extraction(analysis, width, height, page_count, page, label, sha)
+    return apply_registration(result, registration) if registration is not None else result

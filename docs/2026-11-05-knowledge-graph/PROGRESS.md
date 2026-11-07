@@ -19,6 +19,7 @@
 | `W6` | 완료 | `WP4` 그래프 화면(별도 HTML, vendoring, 브리지 메시지). 담당: designer(색·배치) → developer | V1·V2를 통과한다. D1에 따라 `기획서/인터페이스.md`·`기획서/전체기획.md`의 ③ 화면 관련 본문을 갱신한다(planner). | 완료 관문(`W3`~`W5` 완료, K1~K8·L1~L4·A1~A5·A1′ 통과)과 `W2` 결과(렌더러 확정) |
 | `W7` | 완료 | `WP5` ④ 근거 묶음 `knowledge_context`, `kg_version` 고정, ⑤ 관련 지식 표시. 담당: planner(규격) → developer | 산출물 3종을 [그래프활용 §6.4](../../기획서/그래프활용.md#64-wp5-상세-규격) 규격대로 반영하고 §7.2 C1~C10을 통과한다. | 완료 관문(`W3`~`W5` 완료, K1~K8·L1~L4·A1~A5·A1′ 통과) |
 | `W8` | 보류(후속) | `WP6` 후속 알고리즘(A6~A11), 여러 도면 통합, 화면에서 연결 확인. 담당: 미정 | 미정(그래프활용 §8.1에서 "후속") | `W2`~`W7` [추론] |
+| `W9` | 완료 | 완성본 2단계: 도면 기반 지식그래프 자동 생성, 설계 문서 PDF 규칙 기반 지식 추출, ① 설계 문서 등록, ③ 안내 문구([그래프활용 §9](../../기획서/그래프활용.md#9-지식그래프-자동-생성과-문서-지식-추출)) | 배포본에서 drawio·PDF 도면 등록 → ③ 표시, 가상 설계 문서 등록 → 추출 항목이 근거와 함께 ③ 표시, 전체 unittest·check_kg·check_kg_screen·check_contract·check_app·verify_bundle --app-only 통과 | 1단계(커밋 3dbc515), `W6`, D12 |
 
 작업 추가·분할은 [`README.md`](README.md)의 확장 규칙을 따른다. 기존 ID·완료 이력·증거는 보존하고 새 작업에는 관련 결정 ID를 연결한다.
 
@@ -28,6 +29,7 @@
 |---|---|---|---|
 | `W2` | 미착수 | — | 외부망 차단 QtWebEngine에서 force-graph·Cytoscape.js UMD 적재를 확인하고 결과를 `evidence/`에 남긴다 |
 | `W3` | 미착수 | — | 그래프활용 §2·§7.1에 따라 지식 CSV 규격·빌더·정상 샘플·차단 픽스처를 만들고 K1~K8 검사를 작성한다 |
+| `W9` | 완료(2026-11-07) | [`evidence/w9-auto-kg.md`](evidence/w9-auto-kg.md), [`decisions.md`](decisions.md) D12 | 후속: PDF 도면 태그 미부여(1단계 어댑터), 자동 추출 항목 사람 확인 화면 |
 | `W7` | 완료. Claude 승인·Codex 승인(재작업 2회), C1~C10 통과 | [`evidence/w7-implementation.md`](evidence/w7-implementation.md), [그래프활용 §6.4·§7.2](../../기획서/그래프활용.md#64-wp5-상세-규격), [`decisions.md`](decisions.md) D11 | T6 W3(④⑤ 칩 축약, 같은 화면 파일)을 이어서 진행 |
 
 ## 3. 완료 결과
@@ -91,3 +93,4 @@ P1(성능)은 그래프활용 §8.1에 배정이 없어 총괄 판정으로 `W5`
 | 2026-11-05 21:08 | `W7` 재작업 1회차(Claude·Codex 조건부 승인 지적 12건 반영, 커밋 전): 목록만 잘린 경우도 생략 기록·보류·⑤ 표시(`max_list`, `reasons`), 사유별 생략 문구, 사본 바이트 해시 resume(CRLF), 지식그래프 구조 검사(읽기 실패 InputError·내용 blockers), 그래프 차단 중복 제거, C9 전용 응답으로 병합 뒤 보류 유지 확인, 고정 응답 빈도 감소 철회·가설 원인 정리, 잠긴 실행에서도 관련 지식·③ 이동, ③ 웹 선택 상태·이전 버전 이동 테스트. C1~C10 OK, 전체 테스트 552 OK(건너뜀 14: T3 pdfplumber 3건 증가분), T1 검사 4종·check_design rc=0. 증거 [`evidence/w7-implementation.md`](evidence/w7-implementation.md) |
 | 2026-11-05 21:18 | `W7` 재작업 2회차(Codex 반려 3건, 커밋 전): 지식그래프 중첩 구조 검사와 `build_context` 예외 방어선(입력 차단 blockers), 고정 응답의 근거 없는 '희박' 문장 삭제(C8·C9 validated 유지), 항목·연결이 함께 잘릴 때 생략 문구. 전체 테스트 556 OK(건너뜀 14), check_kg_context C1~C10 OK, T1 검사 4종 rc=0 |
 | 2026-11-05 21:30 | `W7` 완료: 구현 재작업 2회 뒤 Claude 승인·Codex 승인. 규격(그래프활용 §6.4·§7.2)에 구현 중 확정한 값(`per_item_limits`·`max_list`·`reasons`·`truncated_lists` 등) 반영. 총괄 확인: 전용 venv 전체 테스트 OK(건너뜀 14), check_kg_context C1~C10·check_kg·check_kg_link·check_kg_algo·check_kg_screen rc=0. ⑤ 배치·배지 디자인 확인은 T6 W3에서 |
+| 2026-11-07 | `W9` 완료: `hazop/kg/docextract.py`(규칙 기반 문서 지식 추출), `hazop/kg/auto.py`(프로젝트 지식그래프 자동 조립), `build_kg`의 `pid_graphs`, ① 설계 문서 등록·자동 추출, ③ 자동 빌드·안내 문구·자동 추출 배지·기본 표시. 증거 [`evidence/w9-auto-kg.md`](evidence/w9-auto-kg.md) |

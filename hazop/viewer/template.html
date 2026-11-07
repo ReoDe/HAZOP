@@ -5,11 +5,11 @@
 <title>__TITLE__</title>
 <style>
 :root {
-  --ui: #2563eb; --bg: #f4f5f7; --card: #ffffff; --line: #e3e5e9; --muted: #6a717e; --ink: #111827; --ink-2: #374151;
+  --ui: #0a5fc2; --bg: #f4f5f7; --card: #ffffff; --line: #d6d9de; --muted: #525b67; --ink: #0f1419; --ink-2: #2a313b;
   --equipment: #1d4ed8; --valve: #0f766e; --instrument: #0d97d6; --piping_element: #6366f1; --unclassified: #868e9d;
   --physical_connection: #16a34a; --signal_connection: #7c3aed; --measurement_connection: #d67506; --unresolved: #dc2626;
-  --hl-path: #ea580c; --ok: #15803d; --warn-bg: #fef3c7; --warn-ink: #92400e;
-  --tag: #111827; --selected: #2563eb;
+  --hl-path: #ea580c; --ok: #127238; --warn-bg: #fdf0d2; --warn-ink: #74430a;
+  --tag: #111827; --selected: #0a5fc2; --human-edit: #db2777; --on-seg: #ffffff; --warn-line: #a8740d;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; color: var(--ink); background: var(--bg); }
@@ -31,9 +31,25 @@ main { position: absolute; top: 56px; left: 0; right: 0; bottom: 0; display: fle
 #stage > svg { display: block; }
 #overlay { position: absolute; left: 0; top: 0; }
 .float { position: absolute; background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
-#layers { top: 16px; right: 16px; padding: 12px 16px; font-size: 13px; }
-#layers label { display: flex; align-items: center; gap: 8px; margin: 4px 0; cursor: pointer; }
-#layers .note { margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+/* 떠 있는 칩 줄(U-12): 레이어·범례·경로 질의(오른쪽 위), 구간 색(왼쪽 위)은 한 줄로 접어 도면을 덮지 않는다 */
+.chiprow { display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 8px; font-size: 12px; white-space: nowrap; }
+.lchip { display: inline-flex; align-items: center; border: 1px solid transparent; background: none; font: inherit; font-size: 12px;
+  color: var(--muted); padding: 3px 8px; border-radius: 6px; cursor: pointer; }
+.lchip:hover { border-color: var(--line); }
+.lchip.on { background: var(--bg); color: var(--ink); }
+.lchip input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+#layers { top: 16px; right: 16px; }
+#legend-drop { display: none; position: absolute; top: calc(100% + 4px); right: 0; width: 240px; padding: 10px 12px; background: var(--card);
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.06); white-space: normal; color: var(--muted); line-height: 1.6; }
+#layers.open #legend-drop { display: block; }
+#legend-drop .cnts { color: var(--ink); margin-bottom: 4px; }
+#seglegend { display: none; top: 16px; left: 16px; max-width: calc(50% - 32px); overflow-x: auto; }
+body.has-seg #seglegend { display: flex; }
+body.has-seg #search { top: 56px; }
+#seglegend .lbl { color: var(--muted); padding: 0 4px; }
+.segchip { color: var(--on-seg); font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+.segchip.active { outline: 2px solid var(--ink); outline-offset: 1px; }
+.segchip.uncov { color: var(--warn-ink); background: var(--card); border: 1px dashed var(--warn-line); font-weight: 400; }
 .sw { display: inline-block; width: 18px; height: 0; border-top: 3px solid; vertical-align: middle; }
 .sw.dash { border-top-style: dashed; }
 #search { top: 16px; left: 16px; width: 280px; padding: 10px; }
@@ -64,16 +80,24 @@ aside .warn { color: var(--warn-ink); }
 #tooltip b { font-size: 13px; }
 #tooltip .k { color: var(--muted); }
 /* 오버레이 */
-.sym { fill: rgba(37,99,235,.06); stroke-width: 1.5; cursor: pointer; }
-.sym:hover { fill: rgba(37,99,235,.18); }
+.sym { fill: rgba(10,95,194,.06); stroke-width: 1.5; cursor: pointer; }
+.sym:hover { fill: rgba(10,95,194,.18); }
 /* 도면 연결선은 종류를 색으로만 구분하므로(범례 실선 견본) 흰 도면 합성 대비 3:1 이상이 되는 불투명도(design-system W8, D13) */
 .pipe-line { fill: none; stroke-width: 2.5; stroke-opacity: .93; pointer-events: none; stroke-linejoin: round; }
 .pipe-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
 .pipe-hit:hover + .pipe-line, .pipe-line.hover { stroke-opacity: 1; stroke-width: 4; }
 .tagbox { fill: rgba(17,24,39,.06); stroke: var(--tag); stroke-width: .8; cursor: pointer; }
 .tagbox:hover { fill: rgba(17,24,39,.16); }
+/* 태그 글자가 화면 11px보다 작은 배율: 도면 글자는 숨기고 상자만(U-13). 글자는 확대하거나 마우스를 올리면(툴팁) 보인다 */
+.tagbox.tag-collapsed { fill: var(--bg); }
+#taglabels { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+#taglabels span { position: absolute; transform: translate(-50%, -50%); font-size: 11px; line-height: 13px; padding: 0 2px;
+  background: var(--card); border: 1px solid var(--tag); border-radius: 2px; color: var(--tag); white-space: nowrap; }
 .unknown { stroke-dasharray: 5 3; }
-.selected.sym, .selected.tagbox { stroke: var(--selected) !important; stroke-width: 3; fill: rgba(37,99,235,.12); }
+/* 사람 수정(② 편집): 종류 색은 그대로 두고 바깥에 별도 색 번짐을 둘러 구분한다 */
+.edited { filter: drop-shadow(0 0 2px var(--human-edit)) drop-shadow(0 0 2px var(--human-edit)); }
+.edited.tagbox { stroke: var(--human-edit); }
+.selected.sym, .selected.tagbox { stroke: var(--selected) !important; stroke-width: 3; fill: rgba(10,95,194,.12); }
 .selected.pipe-line { stroke: var(--selected) !important; stroke-width: 4.5; stroke-opacity: 1; }
 .flash { animation: flash 0.6s ease-in-out 3; }
 @keyframes flash { 50% { stroke-width: 8; } }
@@ -114,7 +138,11 @@ body.tab-graph #layers, body.tab-drawing #glegend { display: none; }
 .selected.gedge { stroke: var(--selected) !important; stroke-opacity: 1; stroke-width: 3; }
 .ghide { display: none; }
 /* 경로 질의 */
-#pathq { right: 16px; bottom: 16px; width: 310px; padding: 12px 14px; font-size: 12px; max-height: 55%; overflow: auto; }
+#pathq { display: none; right: 16px; bottom: 16px; width: 310px; padding: 12px 14px; font-size: 12px; max-height: 55%; overflow: auto; }
+#pathq.open { display: block; }
+#pathq .pq-h { display: flex; align-items: center; gap: 6px; }
+#pathq .pq-h small { color: var(--muted); }
+#pathq #pq-close { margin-left: auto; border: 0; padding: 2px 6px; }
 #pathq .row { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
 #pathq input, #pathq select { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; }
 #pathq .res { margin-top: 8px; line-height: 1.6; }
@@ -134,8 +162,10 @@ body.tab-graph #layers, body.tab-drawing #glegend { display: none; }
   #viewport { flex: 1 1 55%; min-height: 240px; }
   aside { width: auto; flex: 1 1 45%; border-left: 0; border-top: 1px solid var(--line); padding: 14px; }
   #search { left: 8px; right: 8px; top: 8px; width: auto; padding: 6px; }
-  #layers { top: 64px; right: 8px; padding: 8px 10px; font-size: 12px; }
-  #layers .note { display: none; }
+  #layers { top: 64px; right: 8px; }
+  #seglegend { top: 64px; left: 8px; max-width: calc(100% - 16px); }
+  body.has-seg #search { top: 8px; }
+  body.has-seg #layers { top: 104px; }
   #zoom { left: 8px; bottom: 8px; }
   #glegend { top: 64px; right: 8px; width: 190px; max-height: calc(100% - 130px); }
   #pathq { right: 8px; bottom: 56px; width: calc(100% - 16px); max-height: 45%; }
@@ -163,29 +193,36 @@ __SVG__
     </div>
     <div class="float" id="glegend"></div>
     <div class="float" id="pathq">
-      <b>경로 질의</b> <small style="color:var(--muted)">(그래프 검증용)</small>
+      <div class="pq-h"><b>경로 질의</b> <small>(그래프 검증용)</small><button id="pq-close" title="닫기">&#10005;</button></div>
+      <div id="pq-body">
       <div class="row"><input id="pq-a" list="pq-list" placeholder="시작: 태그 또는 ID"><button id="pq-a-sel" title="현재 선택을 시작으로">선택</button></div>
       <div class="row"><input id="pq-b" list="pq-list" placeholder="끝: 태그 또는 ID"><button id="pq-b-sel" title="현재 선택을 끝으로">선택</button></div>
-      <div class="row"><select id="pq-mode"><option value="physical">물리 배관만 (계측·신호 제외)</option><option value="all">모든 연결</option></select>
-        <button id="pq-go">찾기</button><button id="pq-clear">지우기</button></div>
+      <div class="row"><select id="pq-mode"><option value="physical">물리 배관만 (계측·신호 제외)</option><option value="all">모든 연결</option></select></div>
+      <div class="row"><button id="pq-go">찾기</button><button id="pq-clear">지우기</button></div>
       <datalist id="pq-list"></datalist>
       <div class="res" id="pq-res"></div>
+      </div>
     </div>
     <div class="float" id="search">
       <input id="q" type="search" placeholder="태그·이름으로 찾기" autocomplete="off">
       <div id="results"></div>
     </div>
-    <div class="float" id="layers">
-      <label><input type="checkbox" data-layer="symbol" checked><span class="sw" style="border-color:var(--equipment)"></span>심볼 <small id="n-symbol"></small></label>
-      <label><input type="checkbox" data-layer="pipe" checked><span class="sw" style="border-color:var(--physical_connection)"></span>배관·연결 <small id="n-pipe"></small></label>
-      <label><input type="checkbox" data-layer="tag" checked><span class="sw" style="border-color:var(--tag)"></span>태그 <small id="n-tag"></small></label>
-      <div class="note">
+    <div class="float chiprow" id="seglegend"></div>
+    <div class="float chiprow" id="layers">
+      <label class="lchip on" title="심볼 층 보이기/숨기기"><input type="checkbox" data-layer="symbol" checked>심볼</label>
+      <label class="lchip on" title="배관·연결 층 보이기/숨기기"><input type="checkbox" data-layer="pipe" checked>배관</label>
+      <label class="lchip on" title="태그 층 보이기/숨기기"><input type="checkbox" data-layer="tag" checked>태그</label>
+      <button class="lchip" id="legend-btn" aria-expanded="false" title="범례·개수">범례 &#9662;</button>
+      <button class="lchip" id="pq-chip" title="경로 질의 열기(그래프 검증용)">경로 질의</button>
+      <div id="legend-drop">
+        <div class="cnts">심볼 <b id="n-symbol"></b> · 배관 <b id="n-pipe"></b> · 태그 <b id="n-tag"></b></div>
         <span class="sw" style="border-color:var(--physical_connection)"></span> 공정 배관<br>
         <span class="sw" style="border-color:var(--signal_connection)"></span> 계장 신호<br>
         <span class="sw" style="border-color:var(--measurement_connection)"></span> 계측 연결<br>
         <span class="sw dash" style="border-color:var(--unresolved)"></span> 미해결 커넥터<br>
         <span class="sw dash" style="border-color:var(--muted)"></span> 점선 = 미확인 항목 있음<br>
-        태그 위치는 근사값
+        <span class="sw" style="border-color:var(--human-edit)"></span> 사람 수정<br>
+        태그 위치는 근사값. 태그 글자가 화면에서 11px보다 작아지는 배율에서는 태그 상자만 보입니다(확대하거나 마우스를 올리면 보임).
       </div>
     </div>
     <div class="float" id="zoom">
@@ -348,6 +385,7 @@ function hazopPathEngine(G) {
     if (parent) parent.appendChild(e);
     return e;
   }
+  function edited(d) { return d.human_edit ? " edited" : ""; }
   function hasUnknown(id) {
     var it = byLocal[id];
     return !!unknownsOf[id] || (it.type === "node" && it.d.classification !== "classified");
@@ -363,11 +401,35 @@ function hazopPathEngine(G) {
   var layers = { pipe: pipeLayer, symbol: el("g", { id: "layer-symbol" }, root),
                  tag: el("g", { id: "layer-tag" }, root) };
   var MIN = 8, nSym = 0, nPipe = 0, nTag = 0, nPipeApprox = 0;
+  var cellIndex = null;
   function cellGroup(cellId) {
-    var all = bg.querySelectorAll("[data-cell-id]");
-    for (var i = 0; i < all.length; i++) if (all[i].getAttribute("data-cell-id") === cellId) return all[i];
-    return null;
+    if (!cellIndex) {
+      cellIndex = Object.create(null);
+      Array.prototype.forEach.call(bg.querySelectorAll("[data-cell-id]"), function (g) {
+        var k = g.getAttribute("data-cell-id");
+        if (!(k in cellIndex)) cellIndex[k] = g;
+      });
+    }
+    return cellIndex[cellId] || null;
   }
+  // ---------- 태그 글자 최소 크기(U-13): 화면 글자 크기 = 도면 글자 크기 × 배율. 11px 미만이면 도면 글자를 숨기고 상자만 보인다.
+  var TAG_MIN_PX = 11;
+  function tagFontSize(n) {
+    var ll = n.label_location, fs = ll.style && Number(ll.style.fontSize);
+    if (fs > 0) return fs;
+    // 글자 크기 정보가 없으면(PDF 글자 블록) 상자 높이를 줄 수로 나눈다(drawio 추정과 같은 줄 높이 1.2)
+    return ll.bbox[3] / (1.2 * String(n.label_text || "x").split("\n").length);
+  }
+  function tagReadable(fontSize, scale) { return fontSize * scale >= TAG_MIN_PX; }
+  // 셀의 라벨 글자(drawio: switch 안 foreignObject·대체 이미지, 또는 text). 다른 셀 안의 것은 빼고 맨 바깥 것만.
+  function labelTextEls(cellId) {
+    var g = cellGroup(cellId);
+    if (!g) return [];
+    return Array.prototype.filter.call(g.querySelectorAll("switch, foreignObject, text"), function (e) {
+      return e.closest("[data-cell-id]") === g && !e.parentNode.closest("switch, foreignObject");
+    });
+  }
+  var tagRecs = [], tagOf = Object.create(null);
   // 커넥터 셀 그룹 안의 선 경로(fill=none)와, 배경 SVG 루트까지의 transform 사슬
   function svgLinePaths(cellId) {
     var g = cellGroup(cellId), out = [];
@@ -389,9 +451,9 @@ function hazopPathEngine(G) {
     var b = loc.bbox, w = Math.max(b[2], MIN), h = Math.max(b[3], MIN);
     var x = b[0] + b[2] / 2 - w / 2, y = b[1] + b[3] / 2 - h / 2;
     var color = "var(--" + (n.category || "unclassified") + ")";
-    var rot = (n.style.match(/(?:^|;)rotation=(-?[\d.]+)/g) || []).pop();
+    var rot = ((n.style || "").match(/(?:^|;)rotation=(-?[\d.]+)/g) || []).pop();
     var attrs = { x: x, y: y, width: w, height: h, rx: 2, style: "stroke:" + color,
-      "class": "sym" + (hasUnknown(n.local_id) || loc.approximate ? " unknown" : ""), "data-local-id": n.local_id,
+      "class": "sym" + (hasUnknown(n.local_id) || loc.approximate ? " unknown" : "") + edited(n), "data-local-id": n.local_id,
       "data-cell-id": n.source_object_id };
     if (rot) attrs.transform = "rotate(" + parseFloat(rot.split("=")[1]) + "," + (b[0] + b[2] / 2) + "," + (b[1] + b[3] / 2) + ")";
     var r = el("rect", attrs, layers.symbol);
@@ -399,15 +461,19 @@ function hazopPathEngine(G) {
     if (n.label_location) {
       var t = n.label_location.bbox;
       var tr = el("rect", { x: t[0], y: t[1], width: t[2], height: t[3], rx: 2,
-        "class": "tagbox" + ((unknownsOf[n.local_id] || []).some(function (u) { return u.field === "tag"; }) ? " unknown" : ""), "data-local-id": n.local_id,
+        "class": "tagbox" + ((unknownsOf[n.local_id] || []).some(function (u) { return u.field === "tag"; }) ? " unknown" : "") + edited(n), "data-local-id": n.local_id,
         "data-cell-id": n.source_object_id }, layers.tag);
       byLocal[n.local_id].els.push(tr); nTag++;
+      tagRecs.push(tagOf[n.local_id] = { fs: tagFontSize(n), box: tr, text: labelTextEls(n.source_object_id), small: null,
+        label: n.tag || String(n.label_text || "").split("\n")[0], cx: t[0] + t[2] / 2, cy: t[1] + t[3] / 2 });
     }
   });
   conns.forEach(function (c) {
     var color = c.unresolved ? "var(--unresolved)" : "var(--" + (c.r.kind || "unresolved") + ")";
-    var cls = "pipe-line" + (c.unresolved || hasUnknown(c.r.local_id) ? " unknown" : "");
-    var paths = svgLinePaths(c.r.source_object_id);
+    var cls = "pipe-line" + (c.unresolved || hasUnknown(c.r.local_id) ? " unknown" : "") + edited(c.r);
+    // 사람이 다시 그린 경로는 SVG 경로 대신 양 끝점·경유점 폴리라인을 실선으로 그린다
+    var human = c.r.geometry_source === "human";
+    var paths = human ? [] : svgLinePaths(c.r.source_object_id);
     var it = byLocal[c.r.local_id];
     if (paths.length) {
       paths.forEach(function (p) {
@@ -425,9 +491,9 @@ function hazopPathEngine(G) {
       var ps = pts.map(function (p) { return p[0] + "," + p[1]; }).join(" ");
       var g = el("g", {}, pipeApprox);
       el("polyline", { points: ps, "class": "pipe-hit", "data-local-id": c.r.local_id, "data-cell-id": c.r.source_object_id }, g);
-      it.els.push(el("polyline", { points: ps, style: "stroke:" + color, "class": cls + " unknown" }, g));
-      it.pathSource = "approx";
-      nPipeApprox++;
+      it.els.push(el("polyline", { points: ps, style: "stroke:" + color, "class": cls + (human ? "" : " unknown") }, g));
+      it.pathSource = human ? "human" : "approx";
+      if (!human) nPipeApprox++;
     }
     nPipe++;
   });
@@ -436,9 +502,90 @@ function hazopPathEngine(G) {
   ov.setAttribute("data-pipe-svg", nPipe - nPipeApprox);
   ov.setAttribute("data-pipe-approx", nPipeApprox);
   document.getElementById("n-tag").textContent = nTag;
+  var tagLayerOn = true;
+  // 태그 층을 끄면 상자가 없으므로 도면 글자를 그대로 둔다
+  // 도면 글자를 숨긴 태그는 확대하지 않는 글자 층에 태그를 11px로 다시 쓴다(배율과 상관없이 읽힘, 사람 수정 태그 반영)
+  var tagLabels = null;
+  function updateTags() {
+    if (!tagLabels) {
+      tagLabels = document.createElement("div");
+      tagLabels.id = "taglabels";
+      document.getElementById("viewport").appendChild(tagLabels);
+    }
+    tagRecs.forEach(function (r) {
+      var small = tagLayerOn && !tagReadable(r.fs, view.s);
+      if (r.small !== small) {
+        r.small = small;
+        r.box.classList.toggle("tag-collapsed", small);
+        r.text.forEach(function (e) { e.style.visibility = small ? "hidden" : ""; });
+      }
+      if (small && r.label && !r.span) {
+        r.span = document.createElement("span");
+        r.span.textContent = r.label;
+        tagLabels.appendChild(r.span);
+      }
+      if (r.span) {
+        r.span.style.display = small ? "" : "none";
+        r.span.style.left = (r.cx * view.s + view.x) + "px";
+        r.span.style.top = (r.cy * view.s + view.y) + "px";
+      }
+    });
+  }
+  function setLayer(cb, on) {
+    cb.checked = on;
+    cb.parentNode.classList.toggle("on", on);
+    layers[cb.dataset.layer].classList.toggle("hidden", !on);
+    if (cb.dataset.layer === "tag") { tagLayerOn = on; updateTags(); }
+  }
   Array.prototype.forEach.call(document.querySelectorAll("#layers input"), function (cb) {
-    cb.addEventListener("change", function () { layers[cb.dataset.layer].classList.toggle("hidden", !cb.checked); });
+    cb.addEventListener("change", function () { setLayer(cb, cb.checked); });
   });
+  // 앱 명령(팔레트)용: 이름(symbol·pipe·tag)의 층을 켜고 끈다. 돌려주는 값은 바뀐 뒤 켜짐 여부
+  window.hzToggleLayer = function (name) {
+    var cb = document.querySelector('#layers input[data-layer="' + String(name).replace(/["\\]/g, "") + '"]');
+    if (!cb) return null;
+    setLayer(cb, !cb.checked);
+    return cb.checked;
+  };
+  var layersBox = document.getElementById("layers"), legendBtn = document.getElementById("legend-btn");
+  legendBtn.addEventListener("click", function () {
+    var open = layersBox.classList.toggle("open");
+    legendBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  var pathq = document.getElementById("pathq");
+  window.openPathQuery = function () {
+    pathq.classList.add("open");
+    var a = document.getElementById("pq-a");
+    if (a) a.focus();
+    return true;
+  };
+  document.getElementById("pq-chip").addEventListener("click", function () {
+    if (pathq.classList.contains("open")) pathq.classList.remove("open"); else window.openPathQuery();
+  });
+  document.getElementById("pq-close").addEventListener("click", function () { pathq.classList.remove("open"); });
+  // ④ 구간 색 범례(왼쪽 위 칩 줄). 앱 연결 스크립트가 구간 색을 칠할 때 같은 groups로 부른다. 빈 목록이면 숨긴다.
+  var segLegend = document.getElementById("seglegend");
+  window.hzSegLegend = function (groups, uncovered) {
+    segLegend.textContent = "";
+    groups = Array.isArray(groups) ? groups : [];
+    if (groups.length || uncovered) {
+      var lbl = document.createElement("span"); lbl.className = "lbl"; lbl.textContent = "구간"; segLegend.appendChild(lbl);
+    }
+    groups.forEach(function (g) {
+      var c = document.createElement("span");
+      c.className = "segchip" + (g.active ? " active" : "");
+      c.textContent = String(g.label || "");
+      c.title = String(g.label || "") + " · 구성요소 " + ((g.ids || []).length) + "개";
+      c.style.setProperty("background", String(g.color || ""));
+      segLegend.appendChild(c);
+    });
+    if (uncovered) {
+      var u = document.createElement("span");
+      u.className = "segchip uncov"; u.textContent = "미포함 " + uncovered; u.title = "어느 구간에도 없는 요소(점선)";
+      segLegend.appendChild(u);
+    }
+    document.body.classList.toggle("has-seg", !!(groups.length || uncovered));
+  };
 
   // ---------- 확대·축소·이동
   var vp = document.getElementById("viewport"), stage = document.getElementById("stage");
@@ -446,7 +593,24 @@ function hazopPathEngine(G) {
   function apply() {
     stage.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.s + ")";
     document.getElementById("pct").textContent = Math.round(view.s * 100) + "%";
+    updateTags();
   }
+  window.hzTags = {
+    MIN_PX: TAG_MIN_PX, readable: tagReadable,
+    state: function () {
+      var c = 0, hidden = 0;
+      tagRecs.forEach(function (r) { if (r.small) { c++; hidden += r.text.length; } });
+      return { scale: view.s, total: tagRecs.length, collapsed: c, hidden_text: hidden };
+    }
+  };
+  // 앱이 다시 읽은 뒤 확대·위치를 되돌릴 때 쓴다(② 편집)
+  window.hzView = {
+    get: function () { return { s: view.s, x: view.x, y: view.y }; },
+    set: function (v) {
+      if (!v || ![v.s, v.x, v.y].every(function (n) { return typeof n === "number" && isFinite(n); }) || v.s <= 0) return;
+      view.s = Math.min(Math.max(v.s, 0.1), 12); view.x = v.x; view.y = v.y; apply();
+    }
+  };
   function fit() {
     var r = vp.getBoundingClientRect();
     view.s = Math.min(r.width / W, r.height / H) * 0.95;
@@ -561,7 +725,7 @@ function hazopPathEngine(G) {
       h += rows({ local_id: d.local_id, source_object_id: d.source_object_id, kind: d.kind, line_type: d.line_type,
                   line_no: d.line_no,
                   flow_direction: d.flow_direction ? (label(d.flow_direction.from) + " → " + label(d.flow_direction.to)) : "— (원본에 방향 없음)",
-                  path_source: it.pathSource === "svg" ? "SVG 실제 경로" : "근사 폴리라인" });
+                  path_source: { svg: "SVG 실제 경로", human: "사람이 그린 경로" }[it.pathSource] || "근사 폴리라인" });
       if (d.label_cells && d.label_cells.length) h += "<h3>커넥터 라벨</h3>" + d.label_cells.map(function (lc) {
         return "<div>" + esc(lc.text || "(빈 라벨)") + " <small>" + esc(lc.source_object_id) + "</small></div>";
       }).join("");
@@ -602,6 +766,9 @@ function hazopPathEngine(G) {
     tip.innerHTML = it.type === "node"
       ? "<b>" + val(d.tag) + "</b><br><span class='k'>" + esc(CAT[d.category] || "미분류") + " · " + val(d.kind) + "</span>"
       : "<b>" + val(d.line_no) + "</b><br><span class='k'>" + esc(it.unresolved ? "미해결 커넥터" : (REL[d.kind] || "미확인")) + " · " + val(d.line_type) + "</span>";
+    var tr = tagOf[d.local_id];
+    if (tr && tr.small && d.label_text && d.label_text.replace(/\n/g, " ") !== d.tag)  // 숨긴 도면 글자를 툴팁에서 보인다
+      tip.innerHTML += "<br>" + esc(d.label_text.replace(/\n/g, " "));
     if (unknownsOf[d.local_id]) tip.innerHTML += "<br><span class='k'>미확인 " + esc(unknownsOf[d.local_id].length) + "건</span>";
     tip.style.display = "block"; tip.style.left = (e.clientX + 14) + "px"; tip.style.top = (e.clientY + 14) + "px";
   }
@@ -657,7 +824,7 @@ function hazopPathEngine(G) {
   if (!G) {
     tabGraph.disabled = true;
     tabGraph.title = "그래프 결과 없음 (scripts/build_graph.py 실행 후 다시 빌드)";
-    document.getElementById("pathq").innerHTML = "<b>경로 질의</b><div class='res'>그래프 결과가 없어 사용할 수 없습니다.</div>";
+    document.getElementById("pq-body").innerHTML = "<div class='res'>그래프 결과가 없어 사용할 수 없습니다.</div>";
   } else {
     tabGraph.onclick = function () { setTab("graph"); };
     gsvg.setAttribute("viewBox", vb);

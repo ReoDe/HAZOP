@@ -25,6 +25,7 @@ import glob
 import importlib.util
 import json
 import os
+import re
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,9 +35,13 @@ from hazop.console import safe_console  # noqa: E402
 from hazop.extract import drawio  # noqa: E402
 from hazop.extract.adapters import align  # noqa: E402
 from hazop.extract.adapters import evaluation as ev  # noqa: E402
-from hazop.extract.adapters import pdf_vector  # noqa: E402
+from hazop.extract.adapters import pdf_svg, pdf_vector  # noqa: E402
 from hazop.extract.adapters import raster  # noqa: E402  (cv2는 함수 안에서만 읽는다)
 from hazop.graph import build as graph_build  # noqa: E402
+from hazop.kg import inputs  # noqa: E402
+from hazop.study import nodes as study_nodes  # noqa: E402
+from hazop.viewer import build as viewer_build  # noqa: E402
+from hazop.viewer import check as view_check  # noqa: E402
 
 FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "adapter", "truth_small.json")
 SAMPLE_GLOB = os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio")
@@ -350,14 +355,83 @@ def evaluate_pdf(name, drawio_path, pdf_path, mutate=None):
     if result["status"] != "ok":
         errs.append("%s: 평가 %s %s" % (name, result["status"], result["reasons"]))
         return errs, None, {"extraction": cand, "alignment": al, "evaluation": result}
+    w3_errs, drawing = drawing_metrics(name, truth, cand, pdf_path, result)
+    errs += w3_errs
     row = {"name": name, "truth_nodes": len(truth["nodes"]), "cand_nodes": len(cand["nodes"]),
            "truth_relations": len(truth["relations"]), "cand_relations": len(cand["relations"]),
            "unresolved": len(cand["unresolved_connectors"]), "blockers": len(cand["validation"]["blockers"]),
            "objects": result["objects"], "relations": result["relations"], "tags": result["tags"],
            "anchors": "%d/%d" % (al["anchors_used"], al["anchors_total"]), "outliers": al["outliers"],
-           "rms": al["residual_rms"], "max": al["residual_max"], "rms_all": al["residual_rms_all"]}
+           "rms": al["residual_rms"], "max": al["residual_max"], "rms_all": al["residual_rms_all"],
+           "drawing": drawing}
     errs += quality_problems(row)
     return errs, row, {"extraction": cand, "alignment": al, "evaluation": result}
+
+
+def _study_tag_sets(graph):
+    """검토구간 제안(④)의 구간별 구성 태그 집합. 배관 구간·배관 요소(분기점·끝막음 등, 도면에 태그 글자가 없음)·
+    태그 없는 요소는 뺀다."""
+    tags = {n["entity_id"]: n.get("tag") for n in graph["nodes"]
+            if n["node_type"] != "pipe_segment" and n.get("category") != "piping_element"}
+    proposal = study_nodes.propose(graph, at="2026-01-01T00:00:00Z")
+    sets = {frozenset(inputs.normalize_tag(tags[m]) for m in s["members"] if tags.get(m)) for s in proposal["nodes"]}
+    return proposal, sets - {frozenset()}
+
+
+def drawing_metrics(name, truth, cand, pdf_path, result):
+    """drawio 대비 도면 활용 지표와 구조 검사 (문제 목록, 지표 dict).
+    실패로 보는 것: 근사로 그릴 배관이 있음, ② 뷰어 HTML 검사(check_drawing_html) 문제, 기호 bbox 정렬 대조 0건."""
+    errs = []
+    t_nodes = {n["local_id"]: n for n in truth["nodes"]}
+    c_nodes = {n["local_id"]: n for n in cand["nodes"]}
+    tagged = [(t_nodes[m["truth_local_id"]]["tag"], c_nodes[m["candidate_local_id"]]["tag"]) for m in result["matches"]
+              if t_nodes[m["truth_local_id"]].get("tag")]
+    tag_same = sum(1 for t, c in tagged if c and inputs.normalize_tag(t) == inputs.normalize_tag(c))
+    tag_wrong = sum(1 for t, c in tagged if c and inputs.normalize_tag(t) != inputs.normalize_tag(c))
+    cand_n = len(cand["nodes"]) + len(cand["relations"]) + len(cand["unresolved_connectors"])
+    truth_n = len(truth["nodes"]) + len(truth["relations"]) + len(truth["unresolved_connectors"])
+    # ② 뷰어: 추출 결과로 그린 배경 SVG, 정렬 측정, 같은 추출로 만든 그래프
+    svg_text = pdf_svg.render_page_svg(pdf_path, 0, cand)
+    view = copy.deepcopy(cand)
+    view["coordinate_system"]["svg_alignment"] = dict(pdf_svg.measure_alignment(svg_text, cand), svg_file="page.svg",
+                                                      source="rendered_from_pdf")
+    cand_graph, truth_graph = graph_build.build_graph(cand), graph_build.build_graph(truth)
+    groups = set(re.findall(r'<g data-cell-id="([^"]+)"', svg_text))
+    conns = cand["relations"] + cand["unresolved_connectors"]
+    approx = [r["source_object_id"] for r in conns if r["source_object_id"] not in groups]
+    al = view["coordinate_system"]["svg_alignment"]
+    problems = view_check.check_drawing_html(viewer_build.build_drawing_html(view, svg_text, cand_graph), view, cand_graph)
+    c_prop, c_sets = _study_tag_sets(cand_graph)
+    t_prop, t_sets = _study_tag_sets(truth_graph)
+    m = {"node_match": "%d/%d" % (len(result["matches"]), len(truth["nodes"])),
+         "tag_same": tag_same, "tag_wrong": tag_wrong, "tag_total": len(tagged),
+         "unknown_ratio": round(len(cand["validation"]["unknowns"]) / cand_n, 3) if cand_n else None,
+         "truth_unknown_ratio": round(len(truth["validation"]["unknowns"]) / truth_n, 3) if truth_n else None,
+         "approx_pipes": len(approx), "pipes": len(conns), "align": "%s %d/%d (최대 %s pt)" % (
+             al["status"], al["consistent_cells"], al["compared_cells"], al["max_residual"]),
+         "viewer_problems": len(problems), "study_nodes": "%d/%d" % (len(t_prop["nodes"]), len(c_prop["nodes"])),
+         "study_coverage": round(study_nodes.coverage(c_prop, cand_graph)["ratio"], 3),
+         "study_same": "%d/%d" % (len(t_sets & c_sets), len(t_sets))}
+    if approx:
+        errs.append("%s: 근사로 그릴 배관 %d건 %s" % (name, len(approx), approx[:5]))
+    errs += ["%s: 뷰어 HTML %s" % (name, p) for p in problems[:5]]
+    if not al["compared_cells"]:
+        errs.append("%s: 기호 bbox 정렬 대조 0건" % name)
+    return errs, m
+
+
+def drawing_table(rows):
+    """W3 도면 활용 지표 표(drawio 대비). 목표치 없음(근사 배관 0·뷰어 검사·정렬 대조만 실패로 본다)."""
+    lines = ["| 도면 | 노드 대응(정답 기준) | 태그 일치/오답/정답 태그 | 미확인 비율 PDF (drawio) | 근사 배관 | SVG 정렬 대조 "
+             "| 뷰어 검사 문제 | ④ 구간 수 drawio/PDF | ④ 덮음률 PDF | ④ 같은 구성 태그 구간 |",
+             "|---|---|---|---|---|---|---|---|---|---|"]
+    for w in rows:
+        d = w["drawing"]
+        lines.append("| %s | %s | %d/%d/%d | %s (%s) | %d/%d | %s | %d | %s | %s | %s |" % (
+            w["name"], d["node_match"], d["tag_same"], d["tag_wrong"], d["tag_total"], d["unknown_ratio"],
+            d["truth_unknown_ratio"], d["approx_pipes"], d["pipes"], d["align"], d["viewer_problems"],
+            d["study_nodes"], d["study_coverage"], d["study_same"]))
+    return "\n".join(lines) + "\n"
 
 
 def _m(m):
@@ -410,7 +484,7 @@ def run_pdf_checks(out=None):
                 _write(os.path.join(d, key + ".json"), ev.dumps(value))
             if "evaluation" in outputs:
                 _write(os.path.join(d, "evaluation.md"), ev.render_report(outputs["evaluation"]))
-    table = summary_table(rows)
+    table = summary_table(rows) + "\n" + drawing_table(rows)
     print(table)
     if out:
         _write(os.path.join(out, "summary.md"), table)

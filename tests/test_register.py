@@ -2,7 +2,10 @@
 실행: python -m unittest discover -s tests -t .  샘플 파일과 임시 저장 폴더만 쓴다.
 """
 
+import contextlib
 import glob
+import io
+import importlib.util
 import json
 import os
 import re
@@ -22,6 +25,7 @@ import extract_drawio  # noqa: E402
 import register as register_cli  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.extract import drawio  # noqa: E402
+from hazop.extract.adapters import pdf_vector  # noqa: E402
 from hazop.graph import build  # noqa: E402
 from hazop.register import registry  # noqa: E402
 from tests.test_extract_drawio import compress  # noqa: E402
@@ -29,7 +33,25 @@ from tests.test_extract_drawio import compress  # noqa: E402
 SAMPLES = sorted(glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio")))
 SAMPLE_101 = [p for p in SAMPLES if "SNP-M-101" in p][0]
 PDF_101 = glob.glob(os.path.join(os.path.dirname(SAMPLE_101), "*.pdf"))[0]
-NOW = lambda: "2026-11-04T00:00:00+00:00"  # noqa: E731
+HAS_PDFPLUMBER = importlib.util.find_spec("pdfplumber") is not None
+DESIGN_DOC = glob.glob(os.path.join(REPO_ROOT, "tests", "fixtures", "docextract", "*.pdf"))[0]  # 가상 설계 문서
+
+
+def minimal_pdf(content, mediabox="0 0 300 300"):
+    """한 쪽짜리 PDF 바이트(Helvetica 글꼴 F1, 내용 스트림 content)."""
+    objs = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [%s] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>"
+            % mediabox.encode(),
+            b"<< /Length %d >>\nstream\n%s\nendstream" % (len(content), content),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out, offsets = b"%PDF-1.4\n", []
+    for i, obj in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n%s\nendobj\n" % (i, obj)
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1) + b"".join(b"%010d 00000 n \n" % o for o in offsets)
+    return out + b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
+NOW = lambda:"2026-11-04T00:00:00+00:00"  # noqa: E731
 
 
 def read_bytes(path):
@@ -401,6 +423,135 @@ class ExtractionLinkTest(RegisterBase):
             extract_drawio.main(["--registration", r["registration_file"], "--out-root", self.tmp])
 
 
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1: 전용 venv에서 실행)")
+class PdfRegisterTest(RegisterBase):
+    """벡터 PDF 등록 → 등록정보 반영 추출 → ① 자동 추출 흐름(사용자 결정 2026-11-06)."""
+
+    def test_pdf_registers_without_sibling_svg(self):
+        self.assertTrue(glob.glob(os.path.join(os.path.dirname(PDF_101), "*.drawio.svg")))  # 옆에 drawio SVG가 있음
+        before = read_bytes(PDF_101)
+        r = self.reg(PDF_101)
+        rec = r["record"]
+        self.assertEqual((r["outcome"], rec["status"], rec["validation"]["status"]),
+                         ("registered", "registered", "passed"))
+        self.assertEqual(rec["format"], "pdf")
+        self.assertEqual(rec["documents"][0]["page_ids"], ["page-1"])
+        self.assertFalse(rec.get("derived_files"))
+        self.assertNotIn(registry.NO_SVG_FIELD, [u["field"] for u in rec["validation"]["unknowns"]])
+        self.assertEqual(rec["auto_candidates"]["drawing_number"]["value"], "SNP-M-101")
+        _, original = registry.load_for_extraction(r["registration_file"])
+        self.assertEqual(read_bytes(original), before)
+
+    def test_pdf_extension_with_non_pdf_bytes_fails(self):
+        for data, name in ((read_bytes(SAMPLE_101), "drawio_as.pdf"), (b"\x89PNG\r\n\x1a\n0000", "png_as.pdf"),
+                           (b"\x00\x01garbage", "bin.pdf")):
+            with self.subTest(name=name):
+                self.assert_failed_not_stored(self.reg(self.put(data, name)), "format_mismatch")
+
+    def test_pdf_without_vector_content_fails(self):
+        """스캔 PDF처럼 글자·벡터가 없는 PDF는 등록하지 않는다(이미지 등록 제외)."""
+        self.assert_failed_not_stored(self.reg(self.put(minimal_pdf(b""), "empty.pdf")), "no_vector_content")
+
+    def test_rendered_svg_matches_extraction_coordinates_with_offset_mediabox(self):
+        """MediaBox 원점이 0이 아니어도 배경 SVG의 글자·선이 추출 좌표(pdfplumber)와 같은 자리에 놓인다."""
+        import io
+        import pdfplumber
+        from hazop.extract.adapters import pdf_svg
+        data = minimal_pdf(b"BT /F1 20 Tf 30 100 Td (AB) Tj ET 0 0 m 100 100 l S", "-20 -10 400 300")
+        with pdfplumber.open(io.BytesIO(data)) as pdf:
+            ch, page = pdf.pages[0].chars[0], pdf.pages[0]
+            line = (page.lines or page.curves)[0]["pts"]
+        svg = pdf_svg.render_page_svg(io.BytesIO(data))
+        x, y = map(float, re.search(r'<text transform="matrix\([^ ]+ [^ ]+ [^ ]+ [^ ]+ ([^ ]+) ([^ )]+)\)', svg).groups())
+        self.assertAlmostEqual(x, ch["x0"], places=2)
+        self.assertTrue(ch["top"] < y <= ch["bottom"], (y, ch["top"], ch["bottom"]))
+        self.assertIn('d="M%g %g L%g %g"' % (line[0] + line[1]), svg)
+        vb = [float(v) for v in re.search(r'viewBox="([^"]+)"', svg).group(1).split()]
+        self.assertTrue(vb[0] <= ch["x0"] <= vb[0] + vb[2] and vb[1] <= ch["top"] <= vb[1] + vb[3], vb)
+
+    def registered_pdf(self):
+        meta = {"drawing_number": "REG-DN-1", "design_revision": "B", "title": "등록 제목", "by": "검토자",
+                "reason": "표제란 대조"}
+        record, original = registry.load_for_extraction(self.reg(PDF_101, metadata=meta)["registration_file"])
+        return record, original
+
+    def test_apply_registration_uses_registered_ids_only(self):
+        record, original = self.registered_pdf()
+        ex = pdf_vector.extract(original, registration=record)
+        d = ex["drawing"]
+        self.assertEqual((d["drawing_number"], d["revision"], d["title"]), ("REG-DN-1", "B", "등록 제목"))
+        self.assertEqual(d["title_block_candidates"]["drawing_number"], "SNP-M-101")  # 표제란 값은 후보로만
+        self.assertEqual(ex["project_id"], "proj-1")
+        self.assertEqual((ex["source"]["material_id"], ex["source"]["registration_version"]),
+                         (record["material_id"], record["registration_version"]))
+        self.assertEqual(ex["source_context"]["document_id"], "document-001")
+        self.assertNotIn("not_registered", [u["check"] for u in ex["validation"]["unknowns"]])
+        self.assertEqual(ex["validation"]["status"], "passed")
+        plain = pdf_vector.extract(original)
+        self.assertIn("not_registered", [u["check"] for u in plain["validation"]["unknowns"]])
+        self.assertEqual(plain["drawing"]["drawing_number"], "SNP-M-101")
+
+    def test_apply_registration_blockers(self):
+        record, original = self.registered_pdf()
+        docs = [dict(record["documents"][0], page_ids=["page-2"])]
+        cases = {"registration_hash_mismatch": dict(record, sha256="0" * 64),
+                 "registration_page_mismatch": dict(record, documents=docs),
+                 "registration_not_completed": dict(record, status="on_hold")}
+        for check, reg in cases.items():
+            with self.subTest(check=check):
+                ex = pdf_vector.extract(original, registration=reg)
+                self.assertEqual(ex["validation"]["status"], "blocked")
+                self.assertEqual([b["check"] for b in ex["validation"]["blockers"]], [check])
+
+    def test_extract_and_graph_pdf_flow(self):
+        from hazop.app import data
+        work = os.path.join(self.tmp, "work")
+        with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": work, "HAZOP_STORE_ROOT": self.store}):
+            r = self.reg(PDF_101)
+            out = data.extract_and_graph(r["registration_file"])
+            name = extract_drawio.registered_out_name(r["record"], 0)
+            self.assertEqual(out["extract_dir"], os.path.join(work, "출력", "추출", name))
+            self.assertTrue(os.path.isfile(os.path.join(out["extract_dir"], "page.svg")))
+            with open(os.path.join(out["extract_dir"], "extraction.json"), encoding="utf-8") as fh:
+                al = json.load(fh)["coordinate_system"]["svg_alignment"]
+            self.assertEqual((al["source"], al["offset"], al["status"]), ("rendered_from_pdf", [0, 0], "verified"))
+            self.assertEqual(out["graph"]["validation"]["status"], "passed")
+            info = data.viewer_html_for(name)
+            self.assertIsNone(info["error"])
+            self.assertTrue(info["html"] and os.path.isfile(info["html"]))
+            rows = data.list_registrations()
+            self.assertEqual([(e["extract_name"], e["extracted"], e["graphed"]) for e in rows], [(name, True, True)])
+        self.assertFalse(os.path.exists(os.path.join(REPO_ROOT, "출력", "추출", name)))
+
+    def test_multi_page_registration_extracts_every_page(self):
+        import extract_pdf
+        from hazop.app import data
+        from tests.test_adapter import merged_pdf
+        pdf_102 = glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "SNP-M-102*", "*.pdf"))[0]
+        src = merged_pdf(os.path.join(self.tmp, "merged.pdf"), [PDF_101, pdf_102])
+        work = os.path.join(self.tmp, "work")
+        with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": work, "HAZOP_STORE_ROOT": self.store}):
+            r = self.reg(src)
+            self.assertEqual(r["record"]["documents"][0]["page_ids"], ["page-1", "page-2", "page-3"])
+            out = data.extract_and_graph(r["registration_file"])
+            names = [extract_drawio.registered_out_name(r["record"], i) for i in range(3)]
+            self.assertEqual([p["extract_dir"] for p in out["pages"]],
+                             [os.path.join(work, "출력", "추출", n) for n in names[:2]])
+            self.assertEqual([p["extraction"]["drawing"]["title_block_candidates"]["drawing_number"]
+                              for p in out["pages"]], ["SNP-M-101", "SNP-M-102"])
+            self.assertTrue(all(os.path.isfile(os.path.join(p["graph_dir"], "graph.json")) for p in out["pages"]))
+            self.assertEqual([(s["page_id"], "글자" in s["reason"]) for s in out["skipped_pages"]], [("page-3", True)])
+            self.assertTrue(os.path.isfile(os.path.join(work, "출력", "추출", names[2], extract_pdf.NOT_EXTRACTED)))
+            row = data.list_registrations()[0]
+            self.assertEqual((row["extracted"], row["pages"]), (True, {"total": 3, "extracted": 2, "skipped": 1}))
+            cli_out = os.path.join(self.tmp, "cli")
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = extract_pdf.main(["--registration", r["registration_file"], "--out-root", cli_out])
+            self.assertEqual(rc, 0)
+            self.assertEqual(sorted(os.listdir(cli_out)), sorted(names))
+            self.assertTrue(os.path.isfile(os.path.join(cli_out, names[1], "page.svg")))
+
+
 class ReviewFixTest(RegisterBase):
     """Codex 적대적 검토 A 지적 사항 재현 테스트."""
 
@@ -663,6 +814,59 @@ class ReviewFix3Test(RegisterBase):
         self.assertEqual(os.listdir(self.store), ["alpha"])  # 새 폴더를 만들거나 섞지 않음
         with open(os.path.join(self.store, "alpha", "registry.json"), encoding="utf-8") as fh:
             self.assertEqual(json.load(fh)["project_id"], "alpha")
+
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(전용 venv에서 실행)")
+class DesignDocumentRegisterTest(RegisterBase):
+    """설계 문서(PDF) 등록: 글자를 읽을 수 있는 PDF만, 벡터 도면 분석·표제란 후보 없음."""
+
+    def test_design_document_registers(self):
+        r = self.reg(DESIGN_DOC, material_type="design_document")
+        rec = r["record"]
+        self.assertEqual((r["outcome"], rec["status"], rec["material_type"], rec["format"]),
+                         ("registered", "registered", "design_document", "pdf"))
+        self.assertEqual(rec["documents"][0]["page_ids"][:2], ["page-1", "page-2"])
+        self.assertEqual(rec["auto_candidates"], {})
+        self.assertFalse(rec.get("derived_files"))
+        _, original = registry.load_for_extraction(r["registration_file"])
+        self.assertEqual(read_bytes(original), read_bytes(DESIGN_DOC))
+
+    def test_text_less_pdf_fails(self):
+        r = self.reg(self.put(minimal_pdf(b"0 0 m 100 100 l S"), "scan.pdf"), material_type="design_document")
+        self.assert_failed_not_stored(r, "no_text_content")
+
+    def test_drawio_is_not_a_design_document(self):
+        self.assert_failed_not_stored(self.reg(SAMPLE_101, material_type="design_document"), "unsupported_extension")
+
+    def test_same_file_as_other_type_is_held(self):
+        self.assertEqual(self.reg(DESIGN_DOC, material_type="design_document")["outcome"], "registered")
+        r = self.reg(DESIGN_DOC)
+        self.assertEqual(r["outcome"], "on_hold")
+        self.assertEqual(r["record"]["validation"]["blockers"][0]["check"], "material_type_conflict")
+
+    def test_unknown_material_type_on_hold(self):
+        r = self.reg(DESIGN_DOC, material_type="photo")
+        self.assertEqual(r["outcome"], "on_hold")
+        self.assertEqual(r["record"]["validation"]["blockers"][0]["check"], "unsupported_material_type")
+
+    def test_extract_document_writes_knowledge_and_kg(self):
+        from hazop.app import data
+        work = os.path.join(self.tmp, "work")
+        with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": work, "HAZOP_STORE_ROOT": self.store}):
+            r = self.reg(DESIGN_DOC, material_type="design_document")
+            out = data.extract_document(r["registration_file"])
+            name = extract_drawio.registered_out_name(r["record"], 0)
+            self.assertEqual(out["path"], os.path.join(work, "출력", "문서지식", name, "document_knowledge.json"))
+            with open(out["path"], encoding="utf-8") as fh:
+                doc = json.load(fh)
+            self.assertEqual((doc["project_id"], doc["material_id"]), ("proj-1", r["record"]["material_id"]))
+            self.assertGreater(doc["summary"]["setpoint"], 0)
+            self.assertEqual(out["kg"]["kg"]["kg_id"], "kg-proj-1")             # 도면 없이 문서만으로도 빌드
+            self.assertNotIn("kg_error", out)
+            rows = data.list_registrations()
+            self.assertEqual([(e["extracted"], e["graphed"]) for e in rows], [(True, None)])
+        self.assertFalse(os.path.exists(os.path.join(REPO_ROOT, "출력", "문서지식", name)))
 
 
 if __name__ == "__main__":

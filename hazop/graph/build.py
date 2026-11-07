@@ -85,6 +85,9 @@ def build_graph(extraction, extraction_file=None):
             "bbox": loc["bbox"] if loc else None,
             "position": _center(loc["bbox"]) if loc else None,
         })
+        basis = (n.get("evidence") or {}).get("tag_basis")
+        if basis:  # PDF 추출: 태그 근거(추정 접두는 [추론])를 ③ 자동 연결까지 넘긴다. drawio 그래프는 그대로
+            nodes[-1]["tag_basis"] = basis
         mapping.append({"extraction_run_id": run_id, "local_id": n["local_id"], "entity_id": eid})
 
     seg_no = rel_no = 0

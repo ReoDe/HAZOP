@@ -297,11 +297,23 @@ def tab_problems(win, inp):
     info["painted"] = painted
     if not painted or painted <= 0:
         p.append("③ canvas 픽셀 없음")
+    if not kr.js_value(win.webview, "document.getElementById('legend').classList.contains('min')"):
+        p.append("③ 범례가 처음부터 펼쳐짐(U-12: 기본 접힘)")
+    fit_lines = kr.js_value(win.webview, "(function(){var r=document.createRange();"
+                                         "r.selectNodeContents(document.getElementById('z-fit'));return r.getClientRects().length;})()")
+    if fit_lines != 1:
+        p.append("③ '맞춤' 버튼 글자가 %s줄(K-5: 한 줄)" % fit_lines)
     if scr.data["meta"]["kg_version"] != inp["kg"]["kg_version"]:
         p.append("kg_version 칩 데이터 불일치")
-    for k in ("ver", "valid", "graph"):
-        if scr.chips[k].isHidden() or not scr.chips[k].text():
-            p.append("도구줄 칩 %s 비어 있음" % k)
+    if scr.chips["valid"].isHidden() or not scr.chips["valid"].text():
+        p.append("도구줄 검증 칩 비어 있음")
+    if scr.info_chip.isHidden() or inp["kg"]["kg_version"] not in scr.info_chip.toolTip():
+        p.append("버전 정보 칩 툴팁에 kg_version 없음")
+    bar = " ".join(w.text() for w in list(scr.chips.values()) + [scr.info_chip] if not w.isHidden())
+    if "kg_version" in bar or "graph_version" in bar or inp["kg"]["kg_version"] in bar:
+        p.append("도구줄 글자에 내부 버전 해시가 보임(U-15): %s" % bar)
+    if scr.detail_stack.currentWidget() is not scr.detail_empty or ":\\" in scr.detail_empty.text():
+        p.append("선택 전 상세 패널이 빈 상태 안내가 아니거나 파일 경로를 보임(K-2)")
     # 노드 클릭(웹 → nodeSelected) → Qt 상세
     win.webview.page().runJavaScript("window.hzKG.handle({type:'selectNode', id:'entity-node-001'});")
     win.webview.bridge.fromWeb(json.dumps({"type": "nodeSelected", "local_id": "local-node-001",

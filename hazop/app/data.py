@@ -12,13 +12,19 @@ import os
 
 from hazop import paths
 from hazop.analysis import ai as ai_mod
+from hazop.extract import corrections
+from hazop.graph import build as graph_build
+from hazop.kg import auto, docextract
+from hazop.kg import build as kg_build
 from hazop.kg.context import omission_texts
 from hazop.register import registry
+from hazop.study import nodes as study_nodes
+from hazop.study import results as study_results
 from hazop.viewer import build as viewer_build
 
 # 참고값(이름만 남김): 가져올 때의 scripts/ 위치. 로딩에는 쓰지 않으며 script_module은 호출 시점 경로를 쓴다
 SCRIPTS_DIR = paths.program_path("scripts")
-SCRIPT_NAMES = ("extract_drawio", "build_graph")  # 화면이 읽는 스크립트(허용 목록, 묶음 datas 대상)
+SCRIPT_NAMES = ("extract_drawio", "extract_pdf", "build_graph")  # 화면이 읽는 스크립트(허용 목록, 묶음 datas 대상)
 _script_cache = {}  # 키: 정규화한 파일 경로(루트가 바뀌면 새로 읽음)
 
 
@@ -76,23 +82,103 @@ def list_registrations(store_root=None):
             except (KeyError, TypeError):
                 name = None
         e["extract_name"] = name
-        e["extracted"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("추출"), name, "extraction.json"))
-        e["graphed"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("그래프"), name, "graph.json"))
+        if r.get("material_type") == "design_document":  # 설계 문서: 지식 추출만 있고 도면 그래프는 해당 없음(None)
+            e["extracted"] = bool(name) and os.path.isfile(os.path.join(doc_root(), name, auto.DOC_FILE))
+            e["graphed"] = None
+        else:
+            e["extracted"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("추출"), name, "extraction.json"))
+            e["graphed"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("그래프"), name, "graph.json"))
+            if name and r.get("format") == "pdf":
+                e["pages"] = _pdf_page_state(r)
         rows.append(e)
     return rows
 
 
+def _pdf_page_state(record):
+    """PDF 등록 쪽별 추출 상태 {"total", "extracted", "skipped"}(skipped: not_extracted.json이 있는 쪽)."""
+    xp, ex = script_module("extract_pdf"), script_module("extract_drawio")
+    out = {"total": 0, "extracted": 0, "skipped": 0}
+    for i in xp.registered_pages(record):
+        d = os.path.join(paths.output_root("추출"), ex.registered_out_name(record, i))
+        out["total"] += 1
+        out["extracted"] += os.path.isfile(os.path.join(d, "extraction.json"))
+        out["skipped"] += os.path.isfile(os.path.join(d, xp.NOT_EXTRACTED))
+    return out
+
+
 def extract_and_graph(registration_path):
-    """등록정보 → `--registration` 추출 → 그래프 생성 (scripts/extract_drawio.run_one, scripts/build_graph.build_one).
-    반환 {"extraction", "extract_dir", "graph", "graph_dir"}. 등록 완료가 아니거나 해시 불일치면 ValueError."""
+    """등록정보 → `--registration` 추출 → 그래프 생성 (scripts/extract_drawio.run_one 또는 PDF면
+    scripts/extract_pdf.run_pages로 등록된 모든 쪽, 그리고 scripts/build_graph.build_one) → 프로젝트 지식그래프 다시 빌드.
+    출력 폴더 이름은 두 형식이 같다.
+    반환 {"extraction", "extract_dir", "graph", "graph_dir", "kg" 또는 "kg_error"}(PDF는 _extract_pdf_pages의 키 추가).
+    등록 완료가 아니거나 해시 불일치면 ValueError. 지식그래프 빌드 실패는 추출을 실패로 만들지 않고 kg_error로 돌려준다."""
     ex = script_module("extract_drawio")
     bg = script_module("build_graph")
     record, original = registry.load_for_extraction(registration_path)
+    if record.get("format") == "pdf":
+        return _extract_pdf_pages(record, original, ex, bg)
     reg_svg = registry.registered_svgs(registration_path, record)
     result, out_dir = ex.run_one(original, paths.output_root("추출"), svg="auto", page=0, registration=record,
                                  registered_svgs=reg_svg)
     graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("그래프"))
-    return {"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir}
+    return _with_kg({"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir},
+                    record["project_id"])
+
+
+def _extract_pdf_pages(record, original, ex, bg):
+    """PDF: 등록된 모든 쪽을 추출하고 쪽마다 그래프를 만든 뒤 지식그래프를 한 번 빌드한다.
+    반환은 extract_and_graph와 같은 키(첫 추출 쪽 기준)에 "pages"(추출한 쪽별 결과)와 "skipped_pages"(추출하지 않은 쪽과
+    사유, 그 쪽 출력 폴더의 not_extracted.json에도 남음)를 더한 것. 추출한 쪽이 하나도 없으면 ValueError."""
+    xp = script_module("extract_pdf")
+    done, skipped = xp.run_pages(original, paths.output_root("추출"), xp.registered_pages(record), registration=record,
+                                 out_name=lambda i: ex.registered_out_name(record, i))
+    for s in skipped:  # 전에 추출했던 쪽이면 남은 그래프가 지식그래프에 섞이지 않게 지운다
+        stale = os.path.join(paths.output_root("그래프"), ex.registered_out_name(record, s["page_index"]), "graph.json")
+        if os.path.isfile(stale):
+            os.remove(stale)
+    if not done:
+        raise ValueError("추출한 쪽이 없음: %s" % "; ".join("%s %s" % (s["page_id"], s["reason"]) for s in skipped))
+    pages = []
+    for page, result, out_dir in done:
+        graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("그래프"))
+        pages.append({"page_index": page, "extraction": result, "extract_dir": out_dir, "graph": graph,
+                      "graph_dir": gdir})
+    out = {k: pages[0][k] for k in ("extraction", "extract_dir", "graph", "graph_dir")}
+    out.update(pages=pages, skipped_pages=skipped)
+    return _with_kg(out, record["project_id"])
+
+
+# ---------------------------------------------------------------- ① 설계 문서 → 문서 지식 → ③ 지식그래프
+def doc_root():
+    """문서 지식 출력 루트 출력/문서지식/<등록 출력 이름>/document_knowledge.json."""
+    return paths.output_root("문서지식")
+
+
+def build_project_kg(project_id):
+    """프로젝트 지식그래프를 도면 그래프·문서 지식·지식 CSV(있으면)로 다시 빌드한다(hazop.kg.auto.build_project).
+    반환 {"kg", "dir", "notes"}. 도면도 문서도 없으면 ValueError."""
+    return auto.build_project(project_id, paths.output_root("그래프"), doc_root(), paths.work_path("데이터", "지식"),
+                              paths.output_root("지식그래프"))
+
+
+def _with_kg(out, project_id):
+    try:
+        out["kg"] = build_project_kg(project_id)
+    except (OSError, ValueError, KeyError) as exc:
+        out["kg_error"] = str(exc)
+    return out
+
+
+def extract_document(registration_path):
+    """설계 문서 등록정보 → 규칙 기반 지식 추출(hazop.kg.docextract) → document_knowledge.json → 지식그래프 빌드.
+    반환 {"document", "path", "kg" 또는 "kg_error"}. 등록 완료가 아니거나 해시 불일치면 ValueError."""
+    record, original = registry.load_for_extraction(registration_path)
+    doc = docextract.extract_pdf(original, record["material_id"], record["registration_version"], registry.DOCUMENT_ID,
+                                 title=record.get("title") or record.get("original_name"))
+    doc["project_id"] = record["project_id"]
+    path = os.path.join(doc_root(), script_module("extract_drawio").registered_out_name(record, 0), auto.DOC_FILE)
+    kg_build.write_json_atomic(path, doc)
+    return _with_kg({"document": doc, "path": path}, record["project_id"])
 
 
 # ---------------------------------------------------------------- ② 추출 결과·뷰어
@@ -107,13 +193,32 @@ def list_extractions():
     return out
 
 
-def viewer_html_for(name):
+def extraction_path(name):
+    return os.path.join(paths.output_root("추출"), name, "extraction.json")
+
+
+def load_extraction(name, ops=None):
+    """(원본, 고친 추출). ops가 None이면 저장된 수정 기록(데이터/도면수정)을, 아니면 주어진 작업 중 ops를 적용한다."""
+    original = read_json(extraction_path(name))
+    corrected = (corrections.apply_saved(original, name) if ops is None
+                 else corrections.apply(original, ops))
+    return original, corrected
+
+
+def viewer_html_for(name, ops=None):
     """출력/추출/<name>의 뷰어 HTML을 출력/뷰어/<name>.html로 만든다(scripts/build_viewer.py와 같은 빌드 함수).
-    반환 {"html", "extraction", "graph", "svg"(bool), "error"}. SVG가 없으면 html None과 사유."""
-    extraction = read_json(os.path.join(paths.output_root("추출"), name, "extraction.json"))
-    graph = viewer_build.load_graph(paths.output_root("그래프"), name)
+    뷰어는 고친 추출로 그린다(ops None: 저장된 수정 기록, 아니면 작업 중 ops와 그 ops로 메모리에서 만든 그래프).
+    반환 {"html", "extraction"(고친 추출), "corrected", "original", "graph", "svg"(bool), "error"}.
+    SVG가 없으면 html None과 사유."""
+    original, extraction = load_extraction(name, ops)
+    if ops is None:
+        graph = viewer_build.load_graph(paths.output_root("그래프"), name)
+    else:
+        graph = graph_build.build_graph(extraction, extraction_file=paths.rel_or_abs(extraction_path(name),
+                                                                                   paths.work_root()))
     al = extraction["coordinate_system"].get("svg_alignment") or {}
-    info = {"html": None, "extraction": extraction, "graph": graph, "svg": bool(al.get("svg_file")), "error": None}
+    info = {"html": None, "extraction": extraction, "corrected": extraction, "original": original, "graph": graph,
+            "svg": bool(al.get("svg_file")), "error": None}
     if not al.get("svg_file"):
         info["error"] = "SVG 없음 — 도면 오버레이를 만들 수 없음(그래프 보기만 가능)"
         if graph is None:
@@ -142,6 +247,53 @@ def viewer_html_for(name):
         fh.write(html_text)
     info["html"] = out
     return info
+
+
+def tag_conflicts(tag, project_id, exclude=()):
+    """같은 프로젝트(project_id가 같은 추출)의 고친 추출에서 태그가 같은(앞뒤 공백 제외, 대소문자 무시) 노드 목록
+    [{"name", "local_id"}]. exclude: (name, local_id) 하나 또는 그 묶음. 태그가 비면 []."""
+    key = (tag or "").strip().casefold()
+    if not key:
+        return []
+    single = isinstance(exclude, tuple) and len(exclude) == 2 and isinstance(exclude[0], str)
+    skip = {exclude} if single else set(exclude or ())
+    out = []
+    for e in list_extractions():
+        try:
+            _, ext = load_extraction(e["name"])
+        except (OSError, ValueError):
+            continue
+        if ext.get("project_id") != project_id:
+            continue
+        out += [{"name": e["name"], "local_id": n["local_id"]} for n in ext["nodes"]
+                if (n.get("tag") or "").strip().casefold() == key and (e["name"], n["local_id"]) not in skip]
+    return out
+
+
+def save_corrections(name, ops, by):
+    """수정 기록 저장 → 그 도면 그래프 다시 빌드(scripts/build_graph.build_one이 기록을 적용) → 프로젝트 지식그래프 다시 빌드.
+    반환 {"path", "graph", "kg" 또는 "kg_error", "recheck": [안내 문구]}. ④ 검토구간·⑤ 분석 결과 저장본은 고치지 않고,
+    바뀐 그래프 판과 다르면 재확인 안내만 돌려준다."""
+    original = read_json(extraction_path(name))
+    path = corrections.save(name, ops, by, drawing_number=original["drawing"].get("drawing_number"))
+    graph, _ = script_module("build_graph").build_one(extraction_path(name), paths.output_root("그래프"))
+    out = {"path": path, "graph": graph}
+    if graph.get("project_id"):
+        _with_kg(out, graph["project_id"])
+    else:
+        out["kg_error"] = "프로젝트에 등록되지 않은 도면이라 지식그래프를 다시 만들지 않음"
+    recheck = []
+    node_set = study_nodes.load(graph)
+    if node_set is not None and study_nodes.is_stale(node_set, graph):
+        recheck.append("④ 검토구간 %s이 고치기 전 도면 기준입니다. 재확인이 필요합니다."
+                       % ("확정본" if node_set.get("status") == "confirmed" else "저장본"))
+    res_path = study_results.store_path(graph.get("project_id"), graph["graph_id"])
+    if os.path.isfile(res_path):
+        ref = (read_json(res_path).get("study_nodes_ref") or {}).get("graph_version")
+        if ref != graph["graph_version"]:
+            recheck.append("⑤ 분석 결과가 고치기 전 도면 기준입니다. 재확인이 필요합니다.")
+    out["recheck"] = recheck
+    return out
 
 
 def graph_only_html(graph, title, warning):

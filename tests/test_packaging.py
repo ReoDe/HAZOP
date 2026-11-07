@@ -221,7 +221,7 @@ class ScriptLoadingTest(unittest.TestCase):
                 with self.subTest(name=bad), self.assertRaises(ValueError):
                     data.script_module(bad)
             self.assertEqual(data._script_cache, {})
-        self.assertEqual(data.SCRIPT_NAMES, ("extract_drawio", "build_graph"))
+        self.assertEqual(data.SCRIPT_NAMES, ("extract_drawio", "extract_pdf", "build_graph"))
 
 
 # ---------------------------------------------------------------- 3) 자원 루트·작업 루트 분리 ①~⑤
@@ -292,9 +292,9 @@ class SplitRootsFlowTest(unittest.TestCase):
             kg = kg_build.build_kg(knowledge, [g for _, g in graphs.values()])
             kg_out = paths.output_root("지식그래프")
             kg_build.write_outputs(paths.safe_join(kg_out, paths.safe_name(kg["kg_id"])), knowledge, kg)
-            roots = kg_screen.list_kg_roots(kg_out)
-            self.assertEqual([r[0] for r in roots], [kg["kg_id"]])
-            _, loaded = kg_build.load_outputs(roots[0][1])
+            roots = dict(kg_screen.list_kg_roots(kg_out))
+            self.assertEqual(sorted(roots), sorted([kg["kg_id"], "kg-p"]))  # kg-p: ① 추출 때 자동 생성(도면 기반)
+            _, loaded = kg_build.load_outputs(roots[kg["kg_id"]])
             self.assertEqual(loaded["kg_version"], kg["kg_version"])
             _, graph = next(iter(graphs.values()))
             sdata = kg_screen.screen_data(loaded, graph, kg_screen.load_regions(paths.work_path("데이터", "구간")),
@@ -386,10 +386,10 @@ class BuildSpecTest(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, src)), src)
 
     def test_datas_scope(self):
-        """참고자료/ 샘플은 넣지 않고(D5안), .py는 화면이 읽는 두 스크립트뿐, 데이터는 3종 폴더만."""
+        """참고자료/ 샘플은 넣지 않고(D5안), .py는 화면이 읽는 세 스크립트뿐, 데이터는 3종 폴더만."""
         self.assertFalse([s for s in self.srcs if s.startswith("참고자료/")])
         self.assertEqual(sorted(s for s in self.srcs if s.endswith(".py")),
-                         ["scripts/build_graph.py", "scripts/extract_drawio.py"])
+                         ["scripts/build_graph.py", "scripts/extract_drawio.py", "scripts/extract_pdf.py"])
         self.assertEqual({s.split("/")[1] for s in self.srcs if s.startswith("데이터/")}, {"이탈후보", "기준표", "패턴"})
         self.assertFalse([s for s in self.srcs if "__pycache__" in s])
 

@@ -829,7 +829,23 @@ CONTRAST_PAIRS += [
     ("card", "equipment", GRAPHIC, "그래프 선택 노드의 흰 띠 / 설비 채움(선택 고리와 채움을 떼어 놓음)"),
     ("tag", "card", GRAPHIC, "태그 상자 테두리"),
     ("ok", "bg", GRAPHIC, "뷰어 통과 점(.chip.passed::before, .chip 바탕 --bg, W9)"),
+    ("human-edit", "card", GRAPHIC, "② 사람 수정 번짐·편집 미리보기(흰 도면)"),
 ]
+# 셸(B안): 어두운 제목줄·레일·상태줄, 탐색기(surface-2), 표 머리(surface-2). ④ 검토구간 색 꼬리표와 도면 위 구간 선
+CONTRAST_PAIRS += [
+    ("nav-ink", "nav-bg", TEXT, "제목줄 메뉴·현재 위치·레일 완료 단계 글자"),
+    ("nav-muted", "nav-bg", TEXT, "레일 남은 단계·검토자·상태줄 글자"),
+    ("nav-active-ink", "nav-active-bg", TEXT, "레일 현재 단계·메뉴 선택 글자"),
+    ("ink", "surface-2", TEXT, "탐색기 글자"),
+    ("muted", "surface-2", TEXT, "표 머리 글자"),
+    ("rail-check", "nav-bg", GRAPHIC, "레일 완료 ✓ 배지(U-05)"),
+    ("nav-muted", "nav-field", TEXT, "제목줄 명령 찾기 상자 글자(U-01)"),
+    ("toast-ink", "toast-bg", TEXT, "토스트 글자(U-07)"),
+    ("toast-link", "toast-bg", TEXT, "토스트 실행 취소 링크(U-07)"),
+    ("err-line", "card", GRAPHIC, "위험 동작 버튼 테두리(U-10)"),
+]
+CONTRAST_PAIRS += [("on-seg", "seg%d" % i, TEXT, "구간 꼬리표 글자") for i in range(1, 6)]
+CONTRAST_PAIRS += [("seg%d" % i, "card", GRAPHIC, "구간 색 / 도면 바탕") for i in range(1, 6)]
 
 
 def relative_luminance(color):
@@ -1253,7 +1269,7 @@ APP_COLOR_T1 = ("hazop/app/screens/knowledge.py", "hazop/app/webview.py")  # T1 
 # 판정할 수 없어 남기는 리터럴: (저장소 기준 경로, 리터럴, 최상위 문장 이름, CSS 선택자 또는 None) → 사유.
 # 최상위 문장 이름은 리터럴을 감싼 최상위 def·class 이름이나 대입 대상 이름이다. 같은 리터럴도 다른 자리면 실패한다.
 APP_COLOR_ALLOW = {
-    ("hazop/app/tokens.py", "rgba(37,99,235,.12)", "web_css", ".selected.sym, .selected.tagbox"):
+    ("hazop/app/tokens.py", "rgba(10,95,194,.12)", "web_css", ".selected.sym, .selected.tagbox"):
         "클릭 선택 채움(반투명 ui). 독립 뷰어와 같은 값이어야 한다(D5 ⑤)",
     ("hazop/app/tokens.py", "rgba(220,38,38,.30)", "web_css", ".hz-cause.sym, .hz-cause.gnode, .hz-cause.tagbox"):
         "원인 설비 강조 채움(반투명 hl-cause). 반투명 채움은 토큰 밖(D7)",

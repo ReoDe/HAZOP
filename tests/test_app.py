@@ -27,13 +27,18 @@ NETWORK_MODULES = ("socket", "ssl", "urllib", "http", "requests", "httpx", "aioh
                    "imaplib", "telnetlib", "websocket", "websockets", "xmlrpc", "PySide6.QtNetwork", "anthropic")
 
 
+# 4단계: Claude API 호출은 hazop/study/claude_http.py 한 곳에서만 한다. 다른 hazop 모듈은 전송 모듈을 가져오지 않는다.
+TRANSPORT_MODULES = ("urllib.request", "http.client", "socket", "ssl", "requests", "httpx")
+TRANSPORT_OWNER = os.path.join(REPO_ROOT, "hazop", "study", "claude_http.py")
+
+
 def app_sources():
     files = glob.glob(os.path.join(APP_DIR, "**", "*.py"), recursive=True)
     files += [os.path.join(REPO_ROOT, "scripts", n) for n in ("run_app.py", "check_app.py")]
     return [f for f in files if os.path.isfile(f)]
 
 
-def network_imports(path):
+def network_imports(path, modules=NETWORK_MODULES):
     """파일이 가져오는 네트워크 모듈 목록(ast 기준, 문자열 속 이름은 세지 않음)."""
     with open(path, encoding="utf-8") as fh:
         tree = ast.parse(fh.read(), path)
@@ -45,7 +50,7 @@ def network_imports(path):
         elif isinstance(node, ast.ImportFrom) and node.module:
             names = [node.module] + ["%s.%s" % (node.module, a.name) for a in node.names]
         for n in names:
-            if any(n == m or n.startswith(m + ".") for m in NETWORK_MODULES):
+            if any(n == m or n.startswith(m + ".") for m in modules):
                 found.append(n)
     return found
 
@@ -99,11 +104,18 @@ def tearDownModule():
 
 class StaticTest(unittest.TestCase):
     def test_no_network_modules(self):
-        """앱 코드가 네트워크 모듈을 쓰지 않음(§8 공통 정적 검사)."""
+        """앱 코드가 네트워크 모듈을 쓰지 않음(§8 공통 정적 검사). 4단계부터 Claude API 전송은
+        hazop/study/claude_http.py만 하므로, hazop/ 전체에서 그 파일 밖의 전송 모듈 import도 막는다."""
         bad = {os.path.relpath(f, REPO_ROOT): network_imports(f) for f in app_sources()}
         bad = {k: v for k, v in bad.items() if v}
         self.assertEqual(bad, {})
         self.assertGreater(len(app_sources()), 8)
+        pkg = [f for f in glob.glob(os.path.join(REPO_ROOT, "hazop", "**", "*.py"), recursive=True)
+               if os.path.normcase(f) != os.path.normcase(TRANSPORT_OWNER)]
+        bad = {os.path.relpath(f, REPO_ROOT): network_imports(f, TRANSPORT_MODULES) for f in pkg}
+        self.assertEqual({k: v for k, v in bad.items() if v}, {})
+        self.assertGreater(len(pkg), len(app_sources()))
+        self.assertTrue(network_imports(TRANSPORT_OWNER, TRANSPORT_MODULES), "검사가 전송 모듈 import를 찾아냄")
 
     def test_template_unchanged_script_count(self):
         """qwebchannel.js를 템플릿에 넣지 않음: 템플릿 <script> 3개 유지."""
@@ -645,6 +657,7 @@ class RegisterScreenTest(AppTestBase):
         self.assertIn("한 개씩", scr.file_info.text())
         self.assertFalse(scr.btn_register.isEnabled())
         self.assertTrue(scr.set_files([sample]))
+        pump(win)  # 파일 확인은 작업 스레드에서 끝난다
         self.assertTrue(scr.meta_btns["drawing_number"].isEnabled())
         self.assertIn("자동 후보", scr.meta_auto["drawing_number"].text())
         scr._confirm_candidate("drawing_number")
@@ -668,6 +681,172 @@ class RegisterScreenTest(AppTestBase):
         self.assertEqual(ex["coordinate_system"]["svg_alignment"]["source"], "registered_derived")
         self.assertTrue(os.path.isfile(os.path.join(work, "출력", "그래프", name, "graph.json")))
         self.assertTrue(scr.rows[0]["extracted"] and scr.rows[0]["graphed"])
+        self.assertEqual(win.stack.currentIndex(), 0)                 # drawio는 자동 추출·화면 이동 없음
+        win.refresh_stages()  # 레일 단계 표시: ①·② 완료(✓ 배지, 번호는 그대로), ①이 현재, ④ 남음
+        rail = {i: (bool(win.step_buttons[i].property("done")), win.step_buttons[i].property("state")) for i in (0, 1, 5)}
+        self.assertEqual(rail, {0: (True, "now"), 1: (True, "done"), 5: (False, "todo")})
+        win.go(1)
+        item = win.explorer.topLevelItem(0).child(0)                  # 탐색기 자료 → ① 그 행 선택
+        self.assertEqual(item.text(0), rec["original_name"])
+        win._explorer_clicked(item)
+        self.assertEqual((win.stack.currentIndex(), scr.table.currentRow()), (0, 0))
+
+    def test_drawio_register_does_not_auto_extract(self):
+        win = self.make_window()
+        scr = win.screens[0]
+        self.assertTrue(scr.set_files([sample_file("SNP-M-102", "drawio")]))
+        pump(win)  # 파일 확인은 작업 스레드에서 끝난다
+        scr.do_register()
+        pump(win, 0.1)
+        pump(win, 0.1)
+        self.assertEqual(scr.rows[0]["record"]["status"], "registered")
+        self.assertFalse(scr.rows[0]["extracted"])
+        self.assertFalse(os.path.isdir(os.path.join(os.environ["HAZOP_WORK_ROOT"], "출력", "추출", scr.rows[0]["extract_name"])))
+        self.assertEqual(win.stack.currentIndex(), 0)
+
+    def test_preview_result_of_previous_file_is_dropped(self):
+        """파일 확인 중에 다른 파일을 고르면 앞 파일의 확인 결과는 화면에 쓰지 않는다."""
+        win = self.make_window()
+        scr = win.screens[0]
+        pdf, dwg = sample_file("SNP-M-102", "pdf"), sample_file("SNP-M-101", "drawio")
+        self.assertTrue(scr.set_files([pdf]))
+        self.assertTrue(scr.set_files([dwg]))
+        pump(win)
+        self.assertEqual(scr.source_path, dwg)
+        self.assertIn(os.path.basename(dwg), scr.file_info.text())
+        self.assertNotIn(os.path.basename(pdf), scr.file_info.text())
+
+    def test_multi_page_pdf_shows_pages_and_unextracted_page(self):
+        from tests.test_adapter import merged_pdf
+        win = self.make_window()
+        scr = win.screens[0]
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        src = merged_pdf(os.path.join(tmp, "merged.pdf"), [sample_file("SNP-M-101", "pdf"), sample_file("SNP-M-102", "pdf")])
+        self.assertTrue(scr.set_files([src]))
+        pump(win)
+        self.assertIn("PDF 3쪽", scr.file_info.text())
+        scr.do_register()
+        self.assertTrue(wait_for(lambda: (win.tasks.wait(1000), win.stack.currentIndex() == 1)[1], 180),
+                        scr.result.toPlainText())
+        text = scr.result.toPlainText()
+        self.assertIn("1쪽 노드", text)
+        self.assertIn("2쪽 노드", text)
+        self.assertIn("3쪽 추출 안 함", text)
+        self.assertEqual(scr.table.item(0, 7).text(), "2/3쪽 (미추출 1)")
+
+    def test_pdf_register_auto_extracts_and_opens_viewer_without_graph_tab(self):
+        win = self.make_window()
+        win.show()
+        scr = win.screens[0]
+        self.assertTrue(scr.set_files([sample_file("SNP-M-102", "pdf")]))
+        self.assertIn("확인 중", scr.file_info.text())
+        self.assertFalse(scr.btn_register.isEnabled())
+        pump(win)  # 파일 확인은 작업 스레드에서 끝난다
+        self.assertIn("모든 쪽을 자동 추출", scr.file_info.text())
+        scr.do_register()
+        self.assertTrue(wait_for(lambda: (win.tasks.wait(1000), win.stack.currentIndex() == 1)[1], 180),
+                        scr.result.toPlainText())
+        row = scr.rows[0]
+        self.assertEqual(row["record"]["format"], "pdf")
+        self.assertTrue(row["extracted"] and row["graphed"])
+        viewer = win.screens[1]
+        self.assertEqual(viewer.combo.currentText(), row["extract_name"])
+        self.assertTrue(viewer.info and viewer.info["html"] and not viewer.info.get("graph_only"), viewer.info)
+        self.assertTrue(wait_for(lambda: win.webview.bridge.is_ready), "② 뷰어 브리지 ready 없음")
+        probe = ("JSON.stringify([document.body.classList.contains('hz-no-graph'),"
+                 " getComputedStyle(document.querySelector('header .tabs')).display])")
+
+        def state():
+            got = []
+            win.webview.page().runJavaScript(probe, 0, got.append)
+            return json.loads(got[-1]) if wait_for(lambda: got, 10) else None
+
+        self.assertTrue(wait_for(lambda: state() == [True, "none"], 15), state())   # ②: 'P&ID 구조' 탭 숨김
+        pipes = []  # PDF 배관도 근사 점선이 아니라 배경 SVG의 실제 경로로 그린다
+        win.webview.page().runJavaScript("JSON.stringify(['data-pipe-svg','data-pipe-approx'].map(function (a) {"
+                                         " return document.getElementById('overlay').getAttribute(a); }))", 0, pipes.append)
+        self.assertTrue(wait_for(lambda: pipes, 10))
+        self.assertEqual(json.loads(pipes[-1]), [str(sum(len(viewer.info["extraction"][k]) for k in ("relations", "unresolved_connectors"))), "0"])
+        win.go(2)                                                                   # ④는 그래프 탭을 그대로 씀
+        self.assertTrue(wait_for(lambda: (state() or [True])[0] is False, 15), state())
+        self.assertNotEqual(state()[1], "none")
+
+    def test_drawing_and_design_document_build_knowledge_graph(self):
+        """도면 등록·추출 → kg-<프로젝트> 자동 생성·③ 표시, 설계 문서 등록 → 자동 추출 항목이 ③에 근거와 함께 더해짐."""
+        from hazop.app.screens import knowledge
+        win = self.make_window()
+        scr = win.screens[0]
+        scr.project.setText("X")
+        self.assertTrue(scr.set_files([sample_file("SNP-M-102", "drawio")]))
+        pump(win)  # 파일 확인은 작업 스레드에서 끝난다
+        scr.do_register()
+        pump(win, 0.1)
+        scr.table.selectRow(next(r for r, e in enumerate(scr.rows) if e["record"]["project_id"] == "X"))
+        self.assertEqual(scr.btn_extract.text(), "추출·그래프 만들기")
+        scr.do_extract()
+        pump(win, 0.1)
+        self.assertIn("지식그래프 kg-X", scr.result.toPlainText())
+        kg_root = os.path.join(os.environ["HAZOP_WORK_ROOT"], "출력", "지식그래프", "kg-X")
+        self.assertTrue(os.path.isfile(os.path.join(kg_root, "current.json")))
+        win.go(4)
+        kscr = win.screens[4]
+        kscr.kg_combo.setCurrentIndex(kscr.kg_combo.findText("kg-X"))
+        self.assertEqual(kscr.stack.currentIndex(), 1, kscr.empty.text())
+        self.assertTrue(any(n["layer"] == "pid" for n in kscr.data["nodes"]))
+
+        win.go(0)
+        scr.material.setCurrentIndex(scr.material.findData("design_document"))
+        doc_pdf = glob.glob(os.path.join(REPO_ROOT, "tests", "fixtures", "docextract", "*.pdf"))[0]
+        self.assertTrue(scr.set_files([doc_pdf]))
+        pump(win)  # 파일 확인은 작업 스레드에서 끝난다
+        self.assertIn("자동 추출", scr.file_info.text())
+        scr.do_register()
+        self.assertTrue(wait_for(lambda: (win.tasks.wait(1000), win.stack.currentIndex() == 4)[1], 120),
+                        scr.result.toPlainText())
+        self.assertIn("설정치", scr.result.toPlainText())
+        self.assertIn(knowledge.AUTO_BADGE, scr.result.toPlainText())
+        row = next(e for e in scr.rows if e["record"].get("material_type") == "design_document")
+        self.assertEqual((row["extracted"], row["graphed"]), (True, None))
+        kscr.kg_combo.setCurrentIndex(kscr.kg_combo.findText("kg-X"))
+        setpoints = [n for n in kscr.kg["nodes"] if n["node_type"] == "setpoint"]
+        self.assertTrue(setpoints)
+        self.assertTrue(all(n["source"]["page"] for n in setpoints))
+        shown = {n["id"] for n in kscr.data["nodes"]}
+        self.assertTrue({n["id"] for n in setpoints} <= shown)
+        kscr.render_node(setpoints[0]["id"])
+        html = kscr.detail.toPlainText()
+        self.assertIn(knowledge.AUTO_BADGE, html)
+        self.assertIn("hazop.kg.docextract", html)
+        auto_link = next(l for l in kscr.data["links"] if l["st"] == "candidate" and l["kind"] == "has_setpoint")
+        kscr.render_link(auto_link["id"])
+        self.assertIn(knowledge.AUTO_BADGE, kscr.detail.toPlainText())
+        self.assertNotIn("link_candidates.csv", kscr.detail.toPlainText())
+
+    def test_document_only_project_and_missing_kg_rebuilt_on_enter(self):
+        """도면 없이 설계 문서만 있는 프로젝트: ③은 개발 명령 없이 항목 수와 도면 등록 안내. 지식그래프가 지워져 있으면 ③ 진입 때 다시 만듦."""
+        from hazop.app import data
+        from hazop.register import registry
+        work = os.environ["HAZOP_WORK_ROOT"]
+        doc_pdf = glob.glob(os.path.join(REPO_ROOT, "tests", "fixtures", "docextract", "*.pdf"))[0]
+        r = registry.register(doc_pdf, "Y", "design_document", os.environ["HAZOP_STORE_ROOT"], None, "tester")
+        data.extract_document(r["registration_file"])
+        shutil.rmtree(os.path.join(work, "출력", "지식그래프", "kg-Y"))
+        win = self.make_window()
+        win.go(4)
+        kscr = win.screens[4]
+        self.assertGreaterEqual(kscr.kg_combo.findText("kg-Y"), 0)
+        kscr.kg_combo.setCurrentIndex(kscr.kg_combo.findText("kg-Y"))
+        self.assertEqual(kscr.stack.currentIndex(), 0)
+        text = kscr.empty.text()
+        self.assertIn("P&ID 도면을 등록", text)
+        self.assertNotIn("build_kg", text)
+        self.assertNotIn("참조한 도면 그래프가 없습니다", text)
+
+
+def sample_file(drawing, ext):
+    return [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*." + ext))
+            if drawing in p][0]
 
 
 class BridgeTest(unittest.TestCase):

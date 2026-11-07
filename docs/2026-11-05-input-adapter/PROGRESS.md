@@ -14,6 +14,7 @@
 | `W3` | 완료(알려진 한계 기록, D6) | PDF 어댑터(pdfplumber) | 샘플 PDF에서 extraction.json 계약 통과, 하네스 지표 기록 | `W2` |
 | `W4` | 구현 완료(검토 대기) | 래스터 어댑터(OpenCV + rapidocr OCR, D7) | 샘플 PNG 지표 기록 | `W2`, 설치 승인(D7) |
 | `W5` | 측정 완료(검토 대기) | 열화 시험(해상도·잡음·회전) | 열화 단계별 지표 표 | `W3`·`W4` |
+| `W6` | 구현 완료 | PDF 등록 연동(① PDF 등록 → 자동 추출 → ② 도면 표시, ② 그래프 탭 숨김) | 앱에서 PDF 등록 시 추출·② 표시 자동, drawio 흐름 유지, 전체 시험·검사·배포 빌드 통과 | `W3`, 사용자 결정 2026-11-06 |
 
 작업 추가·분할은 [`README.md`](README.md)의 확장 규칙을 따른다. 기존 ID·완료 이력·증거는 보존하고 새 작업에는 관련 결정 ID를 연결한다.
 
@@ -39,7 +40,7 @@
 
 | 열린 결정 | 관련 | 상태 |
 |---|---|---|
-| 샘플 PDF·PNG 판 일치 확인, PDF·PNG 등록 허용(hazop/register 소유) | D1 | 사용자 결정 대기. 판 일치는 [W3 §5](evidence/w3-pdf.md) 정렬 잔차가 간접 근거 |
+| 샘플 PDF·PNG 판 일치 확인, PDF·PNG 등록 허용(hazop/register 소유) | D1 | PDF 등록은 사용자 결정(2026-11-06)으로 허용, `W6`에서 구현. PNG·JPG 등록은 제외. 판 일치는 [W3 §5](evidence/w3-pdf.md) 정렬 잔차가 간접 근거 |
 | 정답지의 차수 1·2 tee(화면 근거 없음)를 평가에서 별도 범주로 뺄지 | `W3`, [W3 §8](evidence/w3-pdf.md) | 미정(평가 하네스 변경 필요) |
 
 ## 6. 변경 이력
@@ -57,4 +58,5 @@
 | 2026-11-05 23:45 | `W3` 완료: 재검토 결과 Claude 승인(총괄이 `_dash_intervals` 방어 조건 추가), Codex 반려(합성 점선 경계 사례 4건). 사용자 결정 D6으로 알려진 한계 기록 후 완료. test_adapter 48 OK |
 | 2026-11-06 10:45 | pdfplumber 배포본 포함(사용자 결정, T3 D1): T2 `W9`가 전용 빌드 venv에 pdfplumber 0.11.9와 의존성 7개를 해시 고정 설치하고 배포 묶음에 넣었다. 묶인 실행에서 `pdf_vector` 추출이 개발 실행과 같음을 확인([T2 W9](../2026-11-05-packaging/evidence/w9-고지원문.md)). 화면의 PDF 등록 경로는 D1 열린 결정 그대로 |
 | 2026-11-06 16:00 | `W4` 구현(검토 대기): [W4 래스터](evidence/w4-래스터.md). OpenCV·rapidocr를 별도 venv에 해시 고정 설치(D7). 샘플 PNG 6장 blocker 0, 관계 F1 0.609~0.925·객체 F1 0.815~0.974(표본 내), 품질 하한 등록. 배포 빌드 TOC에 cv2·numpy 0건. 검토 지적 수정 1회(경계 잘라내기 범위, 입력·처리량 상한, ID 접두어 일관화, 102 kind 하한 0.85, `--no-ocr` 사유 분리), 설치 위치는 총괄 승인(D7) |
+| 2026-11-06 22:00 | `W6` PDF 등록 연동: `fileinfo`·`registry`가 `.pdf`를 받고(원본 옆 SVG는 쓰지 않음), `pdf_vector.apply_registration`이 등록 식별 정보를 반영, `scripts/extract_pdf.py`가 PDF에서 그린 `page.svg`를 offset (0, 0)으로 정렬해 ② 배경으로 씀. ①은 PDF 등록 직후 추출하고 ②로 이동. ②에서 그래프 탭 숨김(결정로그 2026-11-06) |
 | 2026-11-06 18:00 | `W5` 측정(검토 대기): [W5 열화](evidence/w5-열화.md). `scripts/degrade_raster.py`로 해상도·잡음·회전·JPEG 단계별 84회 측정, 예외·blocker 0, `raster.py` 수정 없음. W3 PDF는 벡터라 열화 대상 아님 |

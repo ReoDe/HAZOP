@@ -247,3 +247,64 @@ class TaskRunner(QObject):
 
     def wait(self, msecs=-1):
         return self.pool.waitForDone(msecs)
+
+
+class Toast(QFrame):
+    """오른쪽 아래 알림 한 줄(U-07). undo가 있으면 [실행 취소] 링크와 Ctrl+Z 안내를 붙인다. ms 뒤 사라진다.
+    되돌릴 수 없는 동작은 토스트 대신 확인 대화상자를 쓴다(명세 U-07)."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QHBoxLayout, QPushButton
+        self.setObjectName("toast")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(14, 8, 10, 8)
+        lay.setSpacing(12)
+        self.label = QLabel()
+        self.label.setObjectName("toast_text")
+        self.label.setTextFormat(Qt.PlainText)
+        lay.addWidget(self.label)
+        self.undo_btn = QPushButton("실행 취소")
+        self.undo_btn.setObjectName("toast_undo")
+        self.undo_btn.setCursor(Qt.PointingHandCursor)
+        self.undo_btn.clicked.connect(self.run_undo)
+        lay.addWidget(self.undo_btn)
+        self.key = QLabel("Ctrl+Z")
+        self.key.setObjectName("kbd")
+        lay.addWidget(self.key)
+        self.undo = None
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.dismiss)
+        self.hide()
+
+    def show_message(self, text, undo=None, ms=5000):
+        self.undo = undo
+        self.label.setText(text)
+        self.undo_btn.setVisible(undo is not None)
+        self.key.setVisible(undo is not None)
+        self.adjustSize()
+        self.place()
+        self.show()
+        self.raise_()
+        self.timer.start(ms)
+
+    def place(self):
+        p = self.parentWidget()
+        self.move(max(0, p.width() - self.width() - 24), max(0, p.height() - self.height() - 40))
+
+    def run_undo(self):
+        """실행 취소를 한 번 실행한다. 되돌린 것이 있으면 True."""
+        fn, self.undo = self.undo, None
+        self.dismiss()
+        if fn is None:
+            return False
+        fn()
+        return True
+
+    def dismiss(self):
+        """사라진 토스트의 실행 취소는 남기지 않는다(나중 Ctrl+Z가 오래된 상태로 되돌리지 않게)."""
+        self.undo = None
+        self.timer.stop()
+        self.hide()

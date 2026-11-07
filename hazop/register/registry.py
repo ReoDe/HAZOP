@@ -31,10 +31,10 @@ from . import fileinfo
 SCHEMA_VERSION = "0.1"
 REGISTRAR = "hazop.register"
 REGISTRAR_VERSION = "0.1.0"
-MATERIAL_TYPES = ("P&ID",)
+MATERIAL_TYPES = tuple(fileinfo.MATERIAL_FORMATS)  # ("P&ID", "design_document")
 META_FIELDS = ("drawing_number", "design_revision", "title")
 META_INPUT_KEYS = set(META_FIELDS) | {"by", "reason"}
-DOCUMENT_ID = "document-001"  # drawio 파일 1개 = 문서 1개
+DOCUMENT_ID = "document-001"  # 원본 파일(drawio·PDF) 1개 = 문서 1개
 REPO_ROOT = paths.REPO_ROOT
 DEFAULT_STORE = paths.store_root()  # HAZOP_STORE_ROOT 또는 <작업 루트>/자료저장소 (가져올 때 결정)
 SVG_ROLE = "svg"
@@ -149,6 +149,8 @@ def _unknowns(record):
             reason = ("사람 확정 전. 표제란 자동 후보 %r" % cand["value"] if cand
                       else "미확인(표제란 자동 후보 없음, 사람 입력 없음)")
             out.append({"field": field, "reason": reason})
+    if record.get("format") == "pdf":
+        return out  # PDF는 원본에서 도면 SVG를 그리므로(추출 단계) 원본 옆 SVG를 찾지 않는다
     pages = [pid for d in record.get("documents") or [] for pid in d.get("page_ids") or []]
     covered = {pid for e in _svg_entries(record) for pid in e.get("page_ids") or []}
     missing = [pid for pid in pages if pid not in covered]
@@ -323,7 +325,8 @@ def _unfinished_trace_only(store, material_id, sha):
 
 def register(source_path, project_id, material_type="P&ID", store_root=None, metadata=None, actor=None,
              now=None):
-    """draw.io 원본 1개를 등록한다. 원본 파일은 읽기만 한다.
+    """원본 1개를 등록한다. 원본 파일은 읽기만 한다. material_type: P&ID(draw.io·벡터 PDF) 또는
+    design_document(글자가 있는 PDF 설계 문서). 저장 구조는 같다.
 
     metadata: {"drawing_number", "design_revision", "title", "by", "reason"} 중 사람이 확정하는 값(없으면 None).
     반환: {"outcome": registered|reused|new_version|failed|on_hold, "registration_file", "notes", "record"}
@@ -339,7 +342,8 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
                                  "'.'·'_'로 시작·끝나지 않음, Windows 예약 이름(CON·NUL 등) 아님, 120자 이하: %r"
                                  % project_id, "project_id"))
     if material_type not in MATERIAL_TYPES:
-        problems.append(_problem("unsupported_material_type", "MVP 자료 종류는 P&ID만: %r" % material_type,
+        problems.append(_problem("unsupported_material_type", "자료 종류는 %s 중 하나: %r"
+                                 % ("·".join(MATERIAL_TYPES), material_type),
                                  "material_type"))
     if problems:
         return _on_hold(project_id, material_type, source_path, problems)
@@ -355,7 +359,7 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
         rec["status"] = "failed"
         return _result(rec, "failed")
 
-    info = fileinfo.inspect(source_path, data)
+    info = fileinfo.inspect(source_path, data, material_type)
     sha = sha256_of(data)
     if info["blockers"]:
         rec = _on_hold(project_id, material_type, source_path, info["blockers"])["record"]
@@ -363,7 +367,8 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
                     "sha256": sha})
         return _result(rec, "failed")
     try:
-        svgs = _read_svgs(source_path, info["pages"])
+        # PDF는 원본 옆 SVG를 파생 자료로 등록하지 않는다(같은 폴더의 drawio SVG를 잘못 붙이지 않게)
+        svgs = [] if info["format"] == "pdf" else _read_svgs(source_path, info["pages"])
     except OSError as exc:
         rec = _on_hold(project_id, material_type, source_path,
                        [_problem("unreadable", "원본 옆 SVG를 읽을 수 없음: %s" % exc, NO_SVG_FIELD)])["record"]
@@ -385,6 +390,10 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
         latest = entry["versions"][-1]
         path = store.snapshot_path(entry["material_id"], latest)
         record = _read_json(path)
+        if (record.get("material_type") or "P&ID") != material_type:
+            return _on_hold(project_id, material_type, source_path, [_problem(
+                "material_type_conflict", "같은 원본이 이미 %s(으)로 등록됨(%s). 다른 자료 종류로 다시 등록하지 않음"
+                % (record.get("material_type") or "P&ID", record["material_id"]), "material_type")])
         if record["status"] != "registered":
             # 저장 실패·중단 후 재시도: 같은 자료 ID·버전으로 다시 저장한다(중복 등록 없음).
             _apply_meta(record, metadata, actor, at)

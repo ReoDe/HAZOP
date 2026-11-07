@@ -432,14 +432,21 @@ class WindowTestBase(unittest.TestCase):
 
 class KnowledgeTabTest(WindowTestBase):
     def test_step_tabs_order_and_indexes(self):
-        from hazop.app.main_window import STEP_ORDER, STEPS
+        from hazop.app.main_window import STEPS
         win = self.open()
-        header = win.centralWidget().layout().itemAt(0).widget().layout()
-        shown = [header.itemAt(i).widget().text() for i in range(header.count())
-                 if header.itemAt(i).widget() in win.step_buttons]
-        self.assertEqual(shown, ["① 자료 등록", "② 도면·그래프", "③ 지식그래프", "④ HAZOP 분석", "⑤ 설계보완·확정"])
-        self.assertEqual(STEPS[:4], ("① 자료 등록", "② 도면·그래프", "④ HAZOP 분석", "⑤ 설계보완·확정"))  # 기존 index 유지
-        self.assertEqual([STEPS[i] for i in STEP_ORDER], shown)
+        rail = win.rail.layout()
+        shown = [rail.itemAt(i).widget() for i in range(rail.count())
+                 if rail.itemAt(i).widget() in win.step_buttons]
+        self.assertEqual([b.accessibleName() for b in shown],
+                         ["① 자료 등록", "② 도면 추출", "③ 지식그래프", "④ 검토구간", "⑤ 분석 결과"])
+        self.assertEqual([b.text() for b in shown], ["등록", "추출", "그래프", "구간", "결과"])  # 번호는 원 아이콘(U-05)
+        self.assertEqual(STEPS, ("① 자료 등록", "② 도면 추출", "고정 응답 분석(이전 ④)", "설계보완·확정(이전 ⑤)",
+                                 "③ 지식그래프", "④ 검토구간", "⑤ 분석 결과"))  # 기존 index 유지, 뒤에 추가
+        self.assertEqual([i for i, b in enumerate(win.step_buttons) if not b.isHidden()], [0, 1, 4, 5, 6])
+        win.go(2)  # 이전 ④는 ⑤ 결과 단계 아래: 숨은 버튼이 눌리고 레일은 ⑤가 현재
+        self.assertTrue(win.step_buttons[2].isChecked())
+        self.assertEqual(win.step_buttons[6].property("state"), "now")
+        self.assertEqual(win.step_buttons[0].property("state"), "todo")
 
     def test_open_select_run_algorithm_and_layout(self):
         win = self.open()
@@ -473,6 +480,27 @@ class KnowledgeTabTest(WindowTestBase):
         # 단독 모드 HTML도 작업 루트 출력/ 아래에 씀
         self.assertTrue(scr.standalone.startswith(os.path.join(self.roots.work, "출력", "지식그래프")))
         self.assertTrue(os.path.isfile(scr.standalone))
+
+    def test_toolbar_hides_versions_and_selection_follows(self):
+        win = self.open()
+        probs, info = ks.tab_problems(win, self.inp)
+        self.assertEqual(probs, [], info)
+        scr = win.current_screen()
+        bar = " ".join(c.text() for c in scr.chips.values() if not c.isHidden())
+        self.assertNotIn("kg_version", bar)
+        self.assertNotIn("graph_version", bar)
+        self.assertTrue(scr.chips["graph"].isHidden())  # 도면 그래프 버전이 지식그래프 기준과 같음
+        self.assertIn(self.inp["kg"]["kg_version"], scr.info_chip.toolTip())
+        self.assertIn(scr.standalone, scr.info_chip.toolTip())
+        scr._clear_detail()
+        self.assertIs(scr.detail_stack.currentWidget(), scr.detail_empty)
+        self.assertIn("선택한 항목 없음", scr.detail_empty.text())
+        self.assertNotIn(scr.standalone, scr.detail_empty.text())
+        win.webview.bridge.fromWeb(json.dumps({"type": "nodeSelected", "local_id": "local-node-001",
+                                               "entity_id": "entity-node-001"}))
+        self.assertEqual(win.selection, {"kind": "component", "drawing": scr.graph_dir, "entity_id": "entity-node-001"})
+        win.webview.bridge.fromWeb(json.dumps({"type": "nodeSelected", "local_id": None, "entity_id": "req-001"}))
+        self.assertIsNone(win.selection)
 
     def test_s1_band_on_synthetic(self):
         win = self.open()
@@ -519,7 +547,7 @@ class KnowledgeTabTest(WindowTestBase):
         self.assertTrue(scr.showing_prev)
         self.assertEqual(scr.data["meta"]["kg_version"], self.inp["kg"]["kg_version"])
         self.assertTrue(scr.data["algo"]["enabled"])
-        self.assertIn("이전 버전", scr.chips["ver"].text())
+        self.assertIn("이전 버전", scr.info_chip.text())
         scr.prev_btn.click()
         self.assertFalse(scr.showing_prev)
         shutil.rmtree(os.path.join(kg_root, kg["kg_version"]))

@@ -344,6 +344,14 @@ def build_kg(knowledge, graphs):
                                  "reason": "출처 없음(근거 없음 배지)"})
         l["valid"] = ok
 
+    # 프로젝트 도면(knowledge.pid_graphs): 지식 관계가 없어도 도면 기반 지식그래프로 참조한다(§9 자동 생성)
+    for gid in knowledge.get("pid_graphs") or []:
+        found = {g["graph_version"] for g in pid.by_id.get(gid, [])}
+        if len(found) == 1:
+            resolved_graphs.setdefault(gid, found.pop())
+        else:
+            block("K2", "graph_ambiguous" if found else "graph_not_found", gid,
+                  "프로젝트 도면 그래프가 %s: %s" % ("여러 버전으로 있음" if found else "없음", gid))
     graph_refs = [{"graph_id": g, "graph_version": v} for g, v in sorted(resolved_graphs.items())]
 
     # ---- §3.2 mentions 재확인
