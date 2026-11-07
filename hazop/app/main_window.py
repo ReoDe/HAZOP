@@ -21,8 +21,10 @@ from hazop.app.screens.results import ResultsScreen
 from hazop.app.screens.review import ReviewScreen
 from hazop.app.screens.study import StudyNodesScreen
 from hazop.app.screens.viewer import ViewerScreen
+from hazop.app.settings_dialog import SettingsDialog
 from hazop.app.webview import HazopWebView
 from hazop.app.widgets import VALIDATION_LABELS, Chip, TaskRunner, esc, kst_text, write_log
+from hazop.study.apikey import KEY_FILE_NAME, KeyStore
 
 APP_NAME = "HAZOP 분석 도구"
 APP_VERSION = "0.1.0"
@@ -62,6 +64,8 @@ class MainWindow(QMainWindow):
         self.debug = debug  # True면 상태줄에 Python↔웹 메시지 등 개발자 정보를 보여 준다(--debug)
         self.settings_path = settings_path
         self.settings = paths.load_settings(settings_path)
+        self.api_keys = KeyStore(os.path.join(os.path.dirname(settings_path or paths.settings_path()), KEY_FILE_NAME))
+        self._key_dialog = None
         self.run_ctx = None
         self.setWindowTitle(APP_NAME)
         self.resize(1440, 860)
@@ -249,6 +253,7 @@ class MainWindow(QMainWindow):
         f.addAction("Excel 내보내기…", lambda: (self.go(3), self.screens[3].ask_excel()))
         f.addSeparator()
         f.addAction("설정(검토자 이름)…", self._ask_reviewer)
+        f.addAction("API 키 설정…", self.open_key_settings)
         f.addSeparator()
         f.addAction("끝내기", self.close)
         v = m.addMenu("보기")
@@ -348,6 +353,7 @@ class MainWindow(QMainWindow):
             h(missing, request_id)
 
     def closeEvent(self, event):  # noqa: N802
+        self.screens[6].shutdown()
         self.tasks.wait(30000)
         self.webview.dispose()
         super().closeEvent(event)
@@ -365,6 +371,12 @@ class MainWindow(QMainWindow):
         n = self.reviewer_name()
         if hasattr(self, "reviewer_label"):
             self.reviewer_label.setText("검토자 %s" % (n or "미설정"))
+
+    def open_key_settings(self):
+        if self._key_dialog is None:  # 연결 시험 작업이 창을 닫은 뒤에도 끝날 수 있어 창 하나를 재사용한다
+            self._key_dialog = SettingsDialog(self.api_keys, self)
+        self._key_dialog.refresh()
+        self._key_dialog.exec()
 
     def _ask_reviewer(self):
         name, ok = QInputDialog.getText(self, "검토자 이름", "검토자 이름", text=self.reviewer_name() or "")
@@ -407,7 +419,7 @@ class MainWindow(QMainWindow):
 
     def about_text(self):
         return ("%s %s\n자원 루트: %s\n작업 루트: %s\n저장 루트: %s\n설정: %s\n"
-                "AI 호출 없음(고정 응답 폴더만), 웹뷰 외부 네트워크 차단\n\n제3자 라이선스 고지: %s\n%s"
+                "AI 호출: ⑤ 분석 결과의 AI 분석 실행 때만 Claude API(api.anthropic.com), 웹뷰 외부 네트워크 차단\n\n제3자 라이선스 고지: %s\n%s"
                 % (APP_NAME, APP_VERSION, paths.resource_root(), paths.work_root(), paths.store_root(),
                    self.settings_path or paths.settings_path(), paths.licenses_dir(), LICENSE_NOTE))
 

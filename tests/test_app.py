@@ -27,13 +27,18 @@ NETWORK_MODULES = ("socket", "ssl", "urllib", "http", "requests", "httpx", "aioh
                    "imaplib", "telnetlib", "websocket", "websockets", "xmlrpc", "PySide6.QtNetwork", "anthropic")
 
 
+# 4단계: Claude API 호출은 hazop/study/claude_http.py 한 곳에서만 한다. 다른 hazop 모듈은 전송 모듈을 가져오지 않는다.
+TRANSPORT_MODULES = ("urllib.request", "http.client", "socket", "ssl", "requests", "httpx")
+TRANSPORT_OWNER = os.path.join(REPO_ROOT, "hazop", "study", "claude_http.py")
+
+
 def app_sources():
     files = glob.glob(os.path.join(APP_DIR, "**", "*.py"), recursive=True)
     files += [os.path.join(REPO_ROOT, "scripts", n) for n in ("run_app.py", "check_app.py")]
     return [f for f in files if os.path.isfile(f)]
 
 
-def network_imports(path):
+def network_imports(path, modules=NETWORK_MODULES):
     """파일이 가져오는 네트워크 모듈 목록(ast 기준, 문자열 속 이름은 세지 않음)."""
     with open(path, encoding="utf-8") as fh:
         tree = ast.parse(fh.read(), path)
@@ -45,7 +50,7 @@ def network_imports(path):
         elif isinstance(node, ast.ImportFrom) and node.module:
             names = [node.module] + ["%s.%s" % (node.module, a.name) for a in node.names]
         for n in names:
-            if any(n == m or n.startswith(m + ".") for m in NETWORK_MODULES):
+            if any(n == m or n.startswith(m + ".") for m in modules):
                 found.append(n)
     return found
 
@@ -99,11 +104,18 @@ def tearDownModule():
 
 class StaticTest(unittest.TestCase):
     def test_no_network_modules(self):
-        """앱 코드가 네트워크 모듈을 쓰지 않음(§8 공통 정적 검사)."""
+        """앱 코드가 네트워크 모듈을 쓰지 않음(§8 공통 정적 검사). 4단계부터 Claude API 전송은
+        hazop/study/claude_http.py만 하므로, hazop/ 전체에서 그 파일 밖의 전송 모듈 import도 막는다."""
         bad = {os.path.relpath(f, REPO_ROOT): network_imports(f) for f in app_sources()}
         bad = {k: v for k, v in bad.items() if v}
         self.assertEqual(bad, {})
         self.assertGreater(len(app_sources()), 8)
+        pkg = [f for f in glob.glob(os.path.join(REPO_ROOT, "hazop", "**", "*.py"), recursive=True)
+               if os.path.normcase(f) != os.path.normcase(TRANSPORT_OWNER)]
+        bad = {os.path.relpath(f, REPO_ROOT): network_imports(f, TRANSPORT_MODULES) for f in pkg}
+        self.assertEqual({k: v for k, v in bad.items() if v}, {})
+        self.assertGreater(len(pkg), len(app_sources()))
+        self.assertTrue(network_imports(TRANSPORT_OWNER, TRANSPORT_MODULES), "검사가 전송 모듈 import를 찾아냄")
 
     def test_template_unchanged_script_count(self):
         """qwebchannel.js를 템플릿에 넣지 않음: 템플릿 <script> 3개 유지."""

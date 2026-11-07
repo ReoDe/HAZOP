@@ -180,8 +180,8 @@ class StudyScreensTest(unittest.TestCase):
                             "recommendation": "권고 예", "risk": 4, "origin": "ai_draft", "status": "proposed",
                             "ai_basis": {"kg_paths": [[member]], "sources": [{"doc": "DOC-1", "where": "p.1"}]}}]
         res.set_results(doc)
-        self.assertEqual(res.table.item(0, 5).text(), "AI 초안 · 제안")
-        self.assertIn("DOC-1", res.table.item(0, 4).text())
+        self.assertEqual(res.table.item(0, 6).text(), "AI 초안 · 제안")
+        self.assertIn("DOC-1", res.table.item(0, 5).text())
         self.assertEqual(res.matrix.item(0, 3).text(), "1건\n위험 4\n미검토 1")
         res.legacy_btn.click()
         self.assertEqual(win2.stack.currentIndex(), 2)
