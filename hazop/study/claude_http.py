@@ -93,6 +93,16 @@ def _message(error_type, status_code=None):
     return ai.user_message("api_error", {"error_type": error_type, "status_code": status_code})
 
 
+def _api_detail(raw, key):
+    """API 오류 본문의 error.type·message(키는 가림, 200자 제한). 읽지 못하면 빈 문자열."""
+    try:
+        err = json.loads(raw.decode("utf-8")).get("error") or {}
+        text = "%s: %s" % (err.get("type", ""), err.get("message", ""))
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        return ""
+    return mask(text, key)[:200] if err else ""
+
+
 def _scrub(obj, key):
     if isinstance(obj, str):
         return mask(obj, key)
@@ -157,7 +167,9 @@ class ClaudeHttpClient:
         res["status_code"] = code
         if code != 200:
             et = _error_type(code)
-            return dict(res, status="api_error", error_type=et, error=_message(et, code))
+            detail = _api_detail(raw, headers.get("x-api-key"))
+            return dict(res, status="api_error", error_type=et,
+                        error=_message(et, code) + (" - " + detail if detail else ""))
         try:
             doc = json.loads(raw.decode("utf-8"))
             if not isinstance(doc, dict):
@@ -186,7 +198,7 @@ class ClaudeHttpClient:
         if not key:
             return {"ok": False, "message": "API 키가 없음. 키를 입력하세요."}
         try:
-            code, _raw = self.opener(MODELS_URL + self.model, self._headers(key), None, min(self.timeout, TEST_TIMEOUT))
+            code, raw = self.opener(MODELS_URL + self.model, self._headers(key), None, min(self.timeout, TEST_TIMEOUT))
         except ValueError:
             return {"ok": False, "message": BAD_KEY_MESSAGE}
         except (OSError, http.client.HTTPException) as exc:
@@ -201,4 +213,6 @@ class ClaudeHttpClient:
             return {"ok": False, "message": "이 키에 권한이 없음(HTTP 403)"}
         if code == 404:
             return {"ok": False, "message": "모델 %s을 찾을 수 없음(HTTP 404)" % self.model}
-        return {"ok": False, "message": _message(_error_type(code), code)}
+        detail = _api_detail(raw, key)
+        msg = _message(_error_type(code), code)
+        return {"ok": False, "message": msg + (" - " + detail if detail else "")}
