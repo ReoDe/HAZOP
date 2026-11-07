@@ -51,7 +51,11 @@ def render(result):
     lines += ["", "## SVG 좌표 대응", ""]
     if al and al.get("source") == "rendered_from_pdf":
         lines += ["- SVG: `%s` (viewBox `%s`)" % (al["svg_file"], al["viewBox"]),
-                  "- offset: %s → %s" % (al["offset"], al["transform"]), "- %s" % al["note"]]
+                  "- offset: %s → %s" % (al["offset"], al["transform"]),
+                  "- 기호 bbox 대조 %d개 중 일치 %d개(허용 오차 %s pt, 최대 차 %s), 불일치 %s, SVG에 없는 기호 %s"
+                  % (al["compared_cells"], al["consistent_cells"], al.get("tolerance"), al.get("max_residual"),
+                     al["inconsistent_offsets"] or "없음", al["cells_missing_in_svg"] or "없음"),
+                  "- %s" % al["note"]]
     elif al:
         lines += [
             "- SVG: `%s` (viewBox `%s`)" % (al["svg_file"], al["viewBox"]),

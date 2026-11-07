@@ -9,6 +9,7 @@ import glob
 import importlib.util
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -516,6 +517,139 @@ class AlignTest(unittest.TestCase):
         self.assertEqual(al["transform"], {"scale": [1.0, 1.0], "offset": [0.0, 0.0]})
         self.assertEqual(len(align._candidate_pairs(502, 500)), 500)
         self.assertEqual(len(align._candidate_pairs(5, 500)), 10)  # 적으면 전수
+
+
+class PdfTagTest(unittest.TestCase):
+    """PDF 기호 노드의 tag: 글자 맨 앞 태그, ISA 계기 글자 + 같은 쪽 최다 접두([추론]), 중복·동률이면 비움."""
+
+    def tags(self, labels):
+        prims, words = [], []
+        for i, (shape, lines) in enumerate(labels):
+            x = 60 + 90 * i
+            prims.append(circle(x + 10, 110, 10) if shape == "circle" else rect(x, 100, x + 20, 120))
+            for k, text in enumerate(lines):  # 기호 안에 줄마다 한 단어
+                words.append(word(text, x + 3, 104 + 6.5 * k))
+        ext = pdf_run(prims, words)
+        nodes = sorted(ext["nodes"], key=lambda n: n["geometry"]["x"])
+        unknown = {(u["check"], u["source_object_id"]): u["reason"] for u in ext["validation"]["unknowns"]}
+        return nodes, unknown
+
+    def test_leading_tag_and_inferred_instrument_prefix(self):
+        nodes, unknown = self.tags([("rect", ["RC-V111"]), ("rect", ["RC-PP01"]), ("rect", ["CV-V201"]),
+                                    ("circle", ["PT", "110"]), ("rect", ["FILTER"])])
+        self.assertEqual([n["tag"] for n in nodes], ["RC-V111", "RC-PP01", "CV-V201", "RC-PT110", None])
+        self.assertEqual(nodes[0]["evidence"]["tag_basis"], "label_tag_token")
+        self.assertIn("[추론]", nodes[3]["evidence"]["tag_basis"])
+        self.assertEqual([k for k in unknown if k[0] == "missing_tag"], [("missing_tag", nodes[4]["source_object_id"])])
+
+    def test_duplicate_and_tied_prefix_leave_tag_empty(self):
+        nodes, unknown = self.tags([("rect", ["RC-V111"]), ("rect", ["RC-V111"]), ("rect", ["CV-V201"]),
+                                    ("circle", ["PT", "110"])])
+        self.assertEqual([n["tag"] for n in nodes], [None, None, "CV-V201", "RC-PT110"])  # 중복 태그도 접두 집계에는 든다
+        self.assertIn(("duplicate_tag", nodes[0]["source_object_id"]), unknown)
+        self.assertNotIn(("missing_tag", nodes[0]["source_object_id"]), unknown)
+        nodes, unknown = self.tags([("rect", ["RC-V111"]), ("rect", ["CV-V201"]), ("circle", ["PT", "110"])])
+        self.assertIsNone(nodes[2]["tag"])
+        self.assertIn("접두", unknown[("missing_tag", nodes[2]["source_object_id"])])
+
+
+def merged_pdf(out, sources, blank=True):
+    """샘플 PDF 여러 개를 쪽으로 이어 붙이고(blank면 빈 쪽 하나 더) out에 저장한다(pypdfium2)."""
+    import pypdfium2 as pdfium
+    doc, srcs = pdfium.PdfDocument.new(), [pdfium.PdfDocument(p) for p in sources]
+    try:
+        for s in srcs:
+            doc.import_pages(s)
+        if blank:
+            doc.new_page(*doc[0].get_size())
+        doc.save(out)
+    finally:
+        doc.close()
+        for s in srcs:
+            s.close()
+    return out
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1: PATH python에서 실행)")
+class PdfViewerPathTest(unittest.TestCase):
+    """② 뷰어용 배경 SVG의 data-cell-id, 정렬 측정, 분석 결과 재사용, 여러 쪽 추출."""
+
+    def setUp(self):
+        self.pdf = [s for s in check_adapter.pdf_samples() if "SNP-M-102" in s[0]][0][2]
+
+    def test_svg_marks_keep_drawing_and_cover_every_object(self):
+        from hazop.extract.adapters import pdf_svg
+        ex = pdf_vector.extract(self.pdf)
+        svg = pdf_svg.render_page_svg(self.pdf, 0, ex)
+        conns = ex["relations"] + ex["unresolved_connectors"]
+        self.assertTrue(conns and all(len(r["evidence"]["pdf_path"]) >= 2 for r in conns))
+        for r in conns:
+            self.assertIn('<g data-cell-id="%s"><path d="M' % r["source_object_id"], svg)
+        for n in ex["nodes"]:
+            self.assertIn('data-cell-id="%s"' % n["source_object_id"], svg)
+        # 그림 자체는 표식 없는 SVG와 같다(속성만 붙고, 표식 묶음은 도면 뒤에 덧붙음)
+        body = re.sub(r' data-cell-id="[^"]+"', "", re.sub(r'\n<g data-cell-id="[^"]+">.*?</g>', "", svg))
+        self.assertEqual(body, pdf_svg.render_page_svg(self.pdf, 0))
+
+    def test_alignment_measures_symbol_boxes(self):
+        from hazop.extract.adapters import pdf_svg
+        ex = pdf_vector.extract(self.pdf)
+        svg = pdf_svg.render_page_svg(self.pdf, 0, ex)
+        al = pdf_svg.measure_alignment(svg, ex)
+        symbols = [n for n in ex["nodes"] if n["evidence"]["pdf_objects"]]
+        self.assertEqual((al["status"], al["compared_cells"], al["consistent_cells"]),
+                         ("verified", len(symbols), len(symbols)))
+        self.assertLessEqual(al["max_residual"], al["tolerance"])
+        self.assertIn("독립 정답", al["note"])
+        moved = copy.deepcopy(ex)
+        target = next(n for n in moved["nodes"] if n["evidence"]["pdf_objects"])
+        target["geometry"]["x"] += 2
+        bad = pdf_svg.measure_alignment(svg, moved)
+        self.assertEqual(bad["status"], "failed")
+        self.assertEqual([c["cell"] for c in bad["inconsistent_offsets"]], [target["source_object_id"]])
+
+    def test_preview_registration_and_extraction_analyze_once(self):
+        from hazop.register import fileinfo
+        with open(self.pdf, "rb") as fh:
+            data = fh.read()
+        pdf_vector._cache.clear()
+        with mock.patch.object(pdf_vector, "load_page", wraps=pdf_vector.load_page) as load:
+            info = fileinfo.inspect(self.pdf, data)
+            first, again = pdf_vector.extract(self.pdf), pdf_vector.extract(self.pdf)
+        self.assertEqual(info["blockers"], [])
+        self.assertEqual(load.call_count, 1)
+        self.assertEqual(ev.dumps(first), ev.dumps(again))  # 함께 쓰는 분석 결과를 바꾸지 않는다
+
+    def test_cli_extracts_every_page_and_records_blank_page(self):
+        import extract_pdf
+        samples = check_adapter.pdf_samples()
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        src = merged_pdf(os.path.join(tmp, "merged.pdf"), [samples[0][2], samples[1][2]])
+        out = os.path.join(tmp, "out")
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            rc = extract_pdf.main([src, "--pages", "all", "--out-root", out])
+        self.assertEqual(rc, 0, buf.getvalue())
+        self.assertEqual(sorted(os.listdir(out)), ["SNP-M-101", "SNP-M-102-p1", "merged-p2"])
+        with open(os.path.join(out, "SNP-M-102-p1", "extraction.json"), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["source_context"]["page_id"], "page-2")
+        self.assertEqual(os.listdir(os.path.join(out, "merged-p2")), [extract_pdf.NOT_EXTRACTED])
+        self.assertIn("p2: 미추출", buf.getvalue())
+
+    def test_reextract_switches_page_state_without_leftovers(self):
+        import extract_pdf
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        name = lambda _p: "page"  # noqa: E731
+        done, _ = extract_pdf.run_pages(self.pdf, tmp, [0], out_name=name)
+        self.assertEqual(len(done), 1)
+        with mock.patch.object(extract_pdf.pdf_vector, "extract", side_effect=ValueError("읽기 실패")):
+            done, skipped = extract_pdf.run_pages(self.pdf, tmp, [0], out_name=name)
+        self.assertEqual((done, len(skipped)), ([], 1))
+        self.assertEqual(os.listdir(os.path.join(tmp, "page")), [extract_pdf.NOT_EXTRACTED])
+        done, _ = extract_pdf.run_pages(self.pdf, tmp, [0], out_name=name)
+        self.assertEqual(len(done), 1)
+        self.assertNotIn(extract_pdf.NOT_EXTRACTED, os.listdir(os.path.join(tmp, "page")))
 
 
 class SkipReportTest(unittest.TestCase):

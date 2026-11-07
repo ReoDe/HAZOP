@@ -657,6 +657,7 @@ class RegisterScreenTest(AppTestBase):
         self.assertIn("한 개씩", scr.file_info.text())
         self.assertFalse(scr.btn_register.isEnabled())
         self.assertTrue(scr.set_files([sample]))
+        pump(win)  # 파일 확인은 작업 스레드에서 끝난다
         self.assertTrue(scr.meta_btns["drawing_number"].isEnabled())
         self.assertIn("자동 후보", scr.meta_auto["drawing_number"].text())
         scr._confirm_candidate("drawing_number")
@@ -694,6 +695,7 @@ class RegisterScreenTest(AppTestBase):
         win = self.make_window()
         scr = win.screens[0]
         self.assertTrue(scr.set_files([sample_file("SNP-M-102", "drawio")]))
+        pump(win)  # 파일 확인은 작업 스레드에서 끝난다
         scr.do_register()
         pump(win, 0.1)
         pump(win, 0.1)
@@ -702,11 +704,46 @@ class RegisterScreenTest(AppTestBase):
         self.assertFalse(os.path.isdir(os.path.join(os.environ["HAZOP_WORK_ROOT"], "출력", "추출", scr.rows[0]["extract_name"])))
         self.assertEqual(win.stack.currentIndex(), 0)
 
+    def test_preview_result_of_previous_file_is_dropped(self):
+        """파일 확인 중에 다른 파일을 고르면 앞 파일의 확인 결과는 화면에 쓰지 않는다."""
+        win = self.make_window()
+        scr = win.screens[0]
+        pdf, dwg = sample_file("SNP-M-102", "pdf"), sample_file("SNP-M-101", "drawio")
+        self.assertTrue(scr.set_files([pdf]))
+        self.assertTrue(scr.set_files([dwg]))
+        pump(win)
+        self.assertEqual(scr.source_path, dwg)
+        self.assertIn(os.path.basename(dwg), scr.file_info.text())
+        self.assertNotIn(os.path.basename(pdf), scr.file_info.text())
+
+    def test_multi_page_pdf_shows_pages_and_unextracted_page(self):
+        from tests.test_adapter import merged_pdf
+        win = self.make_window()
+        scr = win.screens[0]
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        src = merged_pdf(os.path.join(tmp, "merged.pdf"), [sample_file("SNP-M-101", "pdf"), sample_file("SNP-M-102", "pdf")])
+        self.assertTrue(scr.set_files([src]))
+        pump(win)
+        self.assertIn("PDF 3쪽", scr.file_info.text())
+        scr.do_register()
+        self.assertTrue(wait_for(lambda: (win.tasks.wait(1000), win.stack.currentIndex() == 1)[1], 180),
+                        scr.result.toPlainText())
+        text = scr.result.toPlainText()
+        self.assertIn("1쪽 노드", text)
+        self.assertIn("2쪽 노드", text)
+        self.assertIn("3쪽 추출 안 함", text)
+        self.assertEqual(scr.table.item(0, 7).text(), "2/3쪽 (미추출 1)")
+
     def test_pdf_register_auto_extracts_and_opens_viewer_without_graph_tab(self):
         win = self.make_window()
         win.show()
         scr = win.screens[0]
         self.assertTrue(scr.set_files([sample_file("SNP-M-102", "pdf")]))
+        self.assertIn("확인 중", scr.file_info.text())
+        self.assertFalse(scr.btn_register.isEnabled())
+        pump(win)  # 파일 확인은 작업 스레드에서 끝난다
+        self.assertIn("모든 쪽을 자동 추출", scr.file_info.text())
         scr.do_register()
         self.assertTrue(wait_for(lambda: (win.tasks.wait(1000), win.stack.currentIndex() == 1)[1], 180),
                         scr.result.toPlainText())
@@ -726,7 +763,12 @@ class RegisterScreenTest(AppTestBase):
             return json.loads(got[-1]) if wait_for(lambda: got, 10) else None
 
         self.assertTrue(wait_for(lambda: state() == [True, "none"], 15), state())   # ②: 'P&ID 구조' 탭 숨김
-        win.go(2)                                                                    # ④는 그래프 탭을 그대로 씀
+        pipes = []  # PDF 배관도 근사 점선이 아니라 배경 SVG의 실제 경로로 그린다
+        win.webview.page().runJavaScript("JSON.stringify(['data-pipe-svg','data-pipe-approx'].map(function (a) {"
+                                         " return document.getElementById('overlay').getAttribute(a); }))", 0, pipes.append)
+        self.assertTrue(wait_for(lambda: pipes, 10))
+        self.assertEqual(json.loads(pipes[-1]), [str(sum(len(viewer.info["extraction"][k]) for k in ("relations", "unresolved_connectors"))), "0"])
+        win.go(2)                                                                   # ④는 그래프 탭을 그대로 씀
         self.assertTrue(wait_for(lambda: (state() or [True])[0] is False, 15), state())
         self.assertNotEqual(state()[1], "none")
 
@@ -737,6 +779,7 @@ class RegisterScreenTest(AppTestBase):
         scr = win.screens[0]
         scr.project.setText("X")
         self.assertTrue(scr.set_files([sample_file("SNP-M-102", "drawio")]))
+        pump(win)  # 파일 확인은 작업 스레드에서 끝난다
         scr.do_register()
         pump(win, 0.1)
         scr.table.selectRow(next(r for r, e in enumerate(scr.rows) if e["record"]["project_id"] == "X"))
@@ -756,6 +799,7 @@ class RegisterScreenTest(AppTestBase):
         scr.material.setCurrentIndex(scr.material.findData("design_document"))
         doc_pdf = glob.glob(os.path.join(REPO_ROOT, "tests", "fixtures", "docextract", "*.pdf"))[0]
         self.assertTrue(scr.set_files([doc_pdf]))
+        pump(win)  # 파일 확인은 작업 스레드에서 끝난다
         self.assertIn("자동 추출", scr.file_info.text())
         scr.do_register()
         self.assertTrue(wait_for(lambda: (win.tasks.wait(1000), win.stack.currentIndex() == 4)[1], 120),

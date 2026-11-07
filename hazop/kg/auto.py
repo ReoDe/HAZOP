@@ -103,8 +103,10 @@ def tag_links(documents, graphs):
                     gid, nodes = hits[0]
                     ref = "%s:%s" % (gid, nodes[0]["tag"])
                     lid = "krel-%s-%s" % (m["node_id"], hashlib.sha256(ref.encode("utf-8")).hexdigest()[:8])
-                    links.append(docextract.link_record(lid, kind, ref, m["node_id"],
-                                                        "자동 연결(문장 속 태그 %s) — 사람 확인 전" % tag))
+                    inferred = "[추론]" in (nodes[0].get("tag_basis") or "")
+                    links.append(docextract.link_record(
+                        lid, kind, ref, m["node_id"], "자동 연결(문장 속 태그 %s%s) — 사람 확인 전"
+                        % (tag, ", 도면 태그는 계통 접두를 추정한 값 [추론]" if inferred else "")))
                 else:
                     notes.append("태그 %s가 프로젝트 도면에 없음 — 연결하지 않음" % tag)
     return links, sorted(set(notes))

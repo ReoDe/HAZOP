@@ -37,6 +37,15 @@ def material_type_of(rec):
     return rec.get("material_type") or "P&ID"
 
 
+def page_text(e):
+    """목록 '추출' 칸. 여러 쪽 PDF는 추출한 쪽 수와 추출하지 않은 쪽 수를 함께 보인다."""
+    pages = e.get("pages") or {}
+    if pages.get("total", 0) <= 1:
+        return "있음" if e["extracted"] else "없음"
+    text = "%d/%d쪽" % (pages["extracted"], pages["total"])
+    return text + (" (미추출 %d)" % pages["skipped"] if pages["skipped"] else "")
+
+
 def kg_line(out):
     """추출 결과의 지식그래프 빌드 한 줄(HTML)."""
     if out.get("kg_error"):
@@ -94,6 +103,8 @@ class RegisterScreen(QWidget):
         self.setObjectName("screen")
         self.source_path = None
         self.preview = None
+        self._picked = None  # 확인 중이거나 확인한 파일(자료 종류를 바꾸면 다시 확인)
+        self._preview_seq = 0  # 파일 확인 요청 번호: 확인 중 다른 파일을 고르면 앞 결과를 버린다
         self.rows = []
         root = QHBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -221,7 +232,7 @@ class RegisterScreen(QWidget):
             vals = [rec.get("material_id"), rec.get("registration_version"), rec.get("original_name"),
                     data.unknown_text(rec.get("drawing_number")), data.unknown_text(rec.get("design_revision")),
                     hist[0].get("at"), STATUS_LABELS.get(rec.get("status"), rec.get("status")),
-                    "있음" if e["extracted"] else "없음",
+                    page_text(e),
                     "해당 없음" if e["graphed"] is None else "있음" if e["graphed"] else "없음"]
             for c, v in enumerate(vals):
                 self.table.setItem(r, c, QTableWidgetItem("" if v is None else str(v)))
@@ -251,12 +262,15 @@ class RegisterScreen(QWidget):
 
     def _repreview(self):
         """자료 종류를 바꾸면 고른 파일을 그 종류로 다시 확인한다."""
-        if self.source_path:
-            self.set_files([self.source_path])
+        if self._picked:
+            self.set_files([self._picked])
 
     def set_files(self, files):
-        """여러 개를 놓으면 '한 개씩 등록'을 안내하고 아무것도 등록하지 않는다(§3.1)."""
-        self.source_path, self.preview = None, None
+        """여러 개를 놓으면 '한 개씩 등록'을 안내하고 아무것도 등록하지 않는다(§3.1).
+        파일 확인(PDF는 도면 분석 포함)은 작업 스레드(app.tasks)에서 하고 끝나면 _show_preview가 표시한다.
+        확인을 시작했으면 True. 등록 버튼은 확인이 끝나야 켜진다."""
+        self.source_path, self.preview, self._picked = None, None, None
+        self._preview_seq += 1
         self.btn_register.setEnabled(False)
         for k in self.meta_auto:
             self.meta_auto[k].setText("")
@@ -269,10 +283,24 @@ class RegisterScreen(QWidget):
         try:
             with open(path, "rb") as fh:
                 raw = fh.read()
-            info = fileinfo.inspect(path, raw, self.material_type())
-        except (OSError, ValueError) as exc:
+        except OSError as exc:
             self.file_info.setText("<span style='color:%s'>파일을 읽을 수 없음: %s</span>" % (tokens.c("err-ink"), esc(exc)))
             return False
+        self._picked = path
+        seq, mtype = self._preview_seq, self.material_type()
+        self.file_info.setText("<b>%s</b> · 파일 확인 중…" % esc(os.path.basename(path)))
+        self.app.tasks.run("파일 확인", lambda: fileinfo.inspect(path, raw, mtype),
+                           lambda info: self._show_preview(seq, path, mtype, info),
+                           lambda err: self._preview_failed(seq, err))
+        return True
+
+    def _preview_failed(self, seq, err):
+        if seq == self._preview_seq:
+            self.file_info.setText("<span style='color:%s'>파일을 읽을 수 없음: %s</span>" % (tokens.c("err-ink"), esc(err)))
+
+    def _show_preview(self, seq, path, mtype, info):
+        if seq != self._preview_seq:  # 확인 중에 다른 파일·자료 종류를 골랐다
+            return
         self.source_path, self.preview = path, info
         parts = ["<b>%s</b> · 형식 %s · %d바이트" % (esc(os.path.basename(path)), esc(info.get("format")),
                                                  info.get("size_bytes") or 0)]
@@ -280,11 +308,11 @@ class RegisterScreen(QWidget):
             parts.append("<span style='color:%s'>문제: %s %s</span>" % (tokens.c("err-ink"), esc(b.get("check")), esc(b.get("reason"))))
         pages = info.get("pages") or []
         svg = None
-        if self.material_type() == "design_document":
+        if mtype == "design_document":
             parts.append("설계 문서 PDF %d쪽 · 등록하면 설정치·운전조건·요건을 자동 추출해 ③ 지식그래프에 추가"
                          "(자동 추출 · 사람 확인 전)" % len(pages))
         elif info.get("format") == "pdf":
-            parts.append("PDF %d쪽 · 등록하면 첫 쪽을 자동 추출해 ② 도면에 표시(도면은 PDF에서 그림)" % len(pages))
+            parts.append("PDF %d쪽 · 등록하면 모든 쪽을 자동 추출해 ② 도면에 표시(도면은 PDF에서 그림)" % len(pages))
         elif pages:
             svg = svg_align.find_svg(path, 0, pages[0].get("page_name"), len(pages))
         if svg:
@@ -300,7 +328,6 @@ class RegisterScreen(QWidget):
             else:
                 self.meta_auto[key].setText("<span style='color:%s'>자동 후보 없음</span>" % tokens.c("muted"))
         self.btn_register.setEnabled(True)
-        return True
 
     def _confirm_candidate(self, key):
         cand = ((self.preview or {}).get("auto_candidates") or {}).get(key)
@@ -407,7 +434,7 @@ class RegisterScreen(QWidget):
              "<p>추출 검증: %s · 노드 %d · 관계 %d · 미해결 %d · 미확인 %d<br>%s</p>" % (
                  esc(VALIDATION_LABELS.get(ex["validation"]["status"], ex["validation"]["status"])), s["nodes"], s["relations"], s["unresolved_connectors"], s["unknowns"],
                  esc(paths.rel_or_abs(out["extract_dir"], paths.work_root()))),
-             "<p>SVG 대응: %s (출처: %s)</p>" % (esc({"verified": "확인됨"}.get(al.get("status"), al.get("status") or "SVG 없음")), esc({"registered_derived": "등록된 파생 SVG", "input_path_sibling, unregistered": "원본 옆 SVG(미등록)", "rendered_from_pdf": "PDF에서 그린 도면(같은 좌표, 셀 비교 없음)"}.get(al.get("source"), al.get("source") or "없음"))),
+             "<p>SVG 대응: %s (출처: %s)</p>" % (esc({"verified": "확인됨"}.get(al.get("status"), al.get("status") or "SVG 없음")), esc({"registered_derived": "등록된 파생 SVG", "input_path_sibling, unregistered": "원본 옆 SVG(미등록)", "rendered_from_pdf": "PDF에서 그린 도면(같은 좌표, 기호 %s/%s개 bbox 일치)" % (al.get("consistent_cells"), al.get("compared_cells"))}.get(al.get("source"), al.get("source") or "없음"))),
              "<p>그래프 %s · 버전 %s · 노드 %d · 관계 %d<br>%s</p>" % (
                  esc(g["graph_id"]), esc(g["graph_version"]), g["structure"]["node_count"], g["structure"]["edge_count"],
                  esc(paths.rel_or_abs(out["graph_dir"], paths.work_root())))]
@@ -415,6 +442,13 @@ class RegisterScreen(QWidget):
             h.append("<p style='color:%s'>차단: %s %s</p>" % (tokens.c("err-ink"), esc(b.get("check")), esc(b.get("target"))))
         if not al:
             h.append("<p style='color:%s'>경고: SVG 없음 — 도면 오버레이를 만들 수 없음(그래프 보기만 가능)</p>" % tokens.c("warn-ink"))
+        if len(out.get("pages") or []) > 1 or out.get("skipped_pages"):
+            h.append("<p>쪽별 추출: %s</p>" % " · ".join(
+                "%d쪽 노드 %d · 관계 %d" % (p["page_index"] + 1, p["extraction"]["summary"]["nodes"],
+                                          p["extraction"]["summary"]["relations"]) for p in out["pages"]))
+        for sk in out.get("skipped_pages") or []:
+            h.append("<p style='color:%s'>%d쪽 추출 안 함: %s</p>" % (tokens.c("warn-ink"), sk["page_index"] + 1,
+                                                                 esc(sk["reason"])))
         h.append(kg_line(out))
         self.result.setHtml("".join(h))
         self.refresh()
