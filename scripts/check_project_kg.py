@@ -8,6 +8,8 @@
 - 도면을 넘는 경로 질의(SNP-M-102 RC-PZ01 → SNP-M-301 SI-TK01), 탐색이 이어진 연결점에서 멈추지 않음
 - AI 맥락: 지식그래프를 프로젝트 ID로 옮겨 차단 없이 씀, 구간 밖 다른 도면 기기 태그는 근거 경고
 - 사람 지정(link·unlink)이 자동 매칭보다 앞섬, no-project 저장본을 그대로 읽음
+- 표기(hazop.study.span): 이름 "[101 → 102]", 경계, 도면별 덮음률 100%, 도면별 집합·결과 이전이 사람 검토 항목을
+  잃거나 바꾸지 않음(legacy_ids, scope_changed)
 종료 코드 0 = 전부 통과.
 """
 
@@ -30,6 +32,8 @@ from hazop.graph import project  # noqa: E402
 from hazop.graph.query import GraphQuery  # noqa: E402
 from hazop.study import ai_cells  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
+from hazop.study import results as res  # noqa: E402
+from hazop.study import span  # noqa: E402
 
 import check_study_nodes  # noqa: E402
 
@@ -157,6 +161,45 @@ def check_legacy(tmp):
     return f
 
 
+def check_span(graphs, pg, s):
+    f = []
+    a = span.annotate(s, pg)
+    for n in a["nodes"]:
+        if not n["display_name"].startswith(n["node_id"] + " ") or not n["display_name"].endswith(
+                "[%s]" % " → ".join(n["drawings_short"])):
+            f.append("%s 표시 이름 형식: %s" % (n["node_id"], n["display_name"]))
+        if n["spans_drawings"] != (len(n["drawings"]) > 1) or not n["boundary"]["start"]:
+            f.append("%s 걸침 표시 또는 시작 경계 없음" % n["node_id"])
+    cov = span.coverage_by_drawing(s, pg)
+    if cov["project"]["ratio"] != 1.0 or any(v["ratio"] != 1.0 for v in cov["drawings"].values()):
+        f.append("덮음률 100%% 아님: %s" % cov)
+    old_sets = [sn.propose(g, at=AT) for g in graphs]
+    devs = res.load_deviations()
+    old_results = []
+    for o in old_sets:
+        r = res.empty_results(o, devs)
+        for c in r["cells"]:
+            c.update(state="analyzed", entries=[{"entry_id": "%s-%s" % (c["node_id"], c["deviation_id"]),
+                                                 "origin": "human", "status": "approved", "cause": "검사"}])
+        old_results.append(r)
+    moved = span.migrate_set(old_sets, s, pg)
+    legacy = sorted(i for n in moved["nodes"] for i in n["legacy_ids"])
+    if legacy != sorted("%s:%s" % (o["graph_id"], n["node_id"]) for o in old_sets for n in o["nodes"]):
+        f.append("legacy_ids가 옛 구간을 모두 한 번씩 담지 않음")
+    out, report = span.migrate_results(old_results, old_sets, s, devs, pg)
+    entries = [e for c in out["cells"] for e in c["entries"]]
+    want = sum(len(c["entries"]) for r in old_results for c in r["cells"])
+    if span.blocked(report) or len(entries) != want or any(e["status"] != "approved" for e in entries):
+        f.append("결과 이전에서 사람 승인 항목이 빠지거나 바뀜(%d/%d)" % (len(entries), want))
+    if res.validate(out, s):
+        f.append("이전한 결과가 형식 검사에 걸림: %s" % res.validate(out, s)[:3])
+    widened = {k for k, v in span.legacy_map(old_sets, s, pg).items() if not v["exact"]}
+    flagged = {e["legacy"]["from"] for e in entries if e.get("scope_changed")}
+    if widened != flagged:
+        f.append("범위가 바뀐 구간에서 온 항목 표시가 맞지 않음")
+    return f, a, report, len(widened)
+
+
 def main():
     safe_console()
     tmp = tempfile.mkdtemp(prefix="hazop_project_kg_")
@@ -175,6 +218,8 @@ def main():
         failures += check_ai(graphs, pg, cross)
         failures += check_manual(graphs, pg)
         failures += check_legacy(tmp)
+        f, annotated, mig, widened = check_span(graphs, pg, nodes)
+        failures += f
         per_sheet = sum(len(project.components(g)) for g in graphs)
         print("== 도면 %d장, 연결점 %d개" % (s["sheets"], s["continuations"]))
         print("   연결 매칭: 짝 %d, 미연결 %s, 방향 모순 %d" % (s["linked"], s["unlinked"], s["direction_conflicts"]))
@@ -190,6 +235,9 @@ def main():
         for n in cross:
             print("     %s %s — %s" % (n["node_id"], n["name"], ", ".join(
                 x[len("graph-"):] for x in project.sheets_of(pg, n["members"]))))
+        print("   표기 예: %s" % "; ".join(n["display_name"] for n in annotated["nodes"] if n["spans_drawings"])[:400])
+        print("   이전(도면별 제안 → 프로젝트): 옮긴 항목 %d, 범위 바뀐 옛 구간 %d, 대응 없음 %d"
+              % (mig["moved_entries"], widened, len(mig["unmapped"])))
         print("   경로 RC-PZ01 → SI-TK01: %d단계, 도면 %s" % (
             p["ignoring_direction"].get("length", -1),
             project.sheets_of(pg, [x["entity_id"] for x in p["ignoring_direction"].get("nodes", [])])))
