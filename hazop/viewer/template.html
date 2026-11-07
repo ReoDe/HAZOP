@@ -9,7 +9,7 @@
   --equipment: #1d4ed8; --valve: #0f766e; --instrument: #0d97d6; --piping_element: #6366f1; --unclassified: #868e9d;
   --physical_connection: #16a34a; --signal_connection: #7c3aed; --measurement_connection: #d67506; --unresolved: #dc2626;
   --hl-path: #ea580c; --ok: #127238; --warn-bg: #fdf0d2; --warn-ink: #74430a;
-  --tag: #111827; --selected: #0a5fc2;
+  --tag: #111827; --selected: #0a5fc2; --human-edit: #db2777;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; color: var(--ink); background: var(--bg); }
@@ -73,6 +73,9 @@ aside .warn { color: var(--warn-ink); }
 .tagbox { fill: rgba(17,24,39,.06); stroke: var(--tag); stroke-width: .8; cursor: pointer; }
 .tagbox:hover { fill: rgba(17,24,39,.16); }
 .unknown { stroke-dasharray: 5 3; }
+/* 사람 수정(② 편집): 종류 색은 그대로 두고 바깥에 별도 색 번짐을 둘러 구분한다 */
+.edited { filter: drop-shadow(0 0 2px var(--human-edit)) drop-shadow(0 0 2px var(--human-edit)); }
+.edited.tagbox { stroke: var(--human-edit); }
 .selected.sym, .selected.tagbox { stroke: var(--selected) !important; stroke-width: 3; fill: rgba(10,95,194,.12); }
 .selected.pipe-line { stroke: var(--selected) !important; stroke-width: 4.5; stroke-opacity: 1; }
 .flash { animation: flash 0.6s ease-in-out 3; }
@@ -185,6 +188,7 @@ __SVG__
         <span class="sw" style="border-color:var(--measurement_connection)"></span> 계측 연결<br>
         <span class="sw dash" style="border-color:var(--unresolved)"></span> 미해결 커넥터<br>
         <span class="sw dash" style="border-color:var(--muted)"></span> 점선 = 미확인 항목 있음<br>
+        <span class="sw" style="border-color:var(--human-edit)"></span> 사람 수정<br>
         태그 위치는 근사값
       </div>
     </div>
@@ -348,6 +352,7 @@ function hazopPathEngine(G) {
     if (parent) parent.appendChild(e);
     return e;
   }
+  function edited(d) { return d.human_edit ? " edited" : ""; }
   function hasUnknown(id) {
     var it = byLocal[id];
     return !!unknownsOf[id] || (it.type === "node" && it.d.classification !== "classified");
@@ -391,7 +396,7 @@ function hazopPathEngine(G) {
     var color = "var(--" + (n.category || "unclassified") + ")";
     var rot = ((n.style || "").match(/(?:^|;)rotation=(-?[\d.]+)/g) || []).pop();
     var attrs = { x: x, y: y, width: w, height: h, rx: 2, style: "stroke:" + color,
-      "class": "sym" + (hasUnknown(n.local_id) || loc.approximate ? " unknown" : ""), "data-local-id": n.local_id,
+      "class": "sym" + (hasUnknown(n.local_id) || loc.approximate ? " unknown" : "") + edited(n), "data-local-id": n.local_id,
       "data-cell-id": n.source_object_id };
     if (rot) attrs.transform = "rotate(" + parseFloat(rot.split("=")[1]) + "," + (b[0] + b[2] / 2) + "," + (b[1] + b[3] / 2) + ")";
     var r = el("rect", attrs, layers.symbol);
@@ -399,15 +404,17 @@ function hazopPathEngine(G) {
     if (n.label_location) {
       var t = n.label_location.bbox;
       var tr = el("rect", { x: t[0], y: t[1], width: t[2], height: t[3], rx: 2,
-        "class": "tagbox" + ((unknownsOf[n.local_id] || []).some(function (u) { return u.field === "tag"; }) ? " unknown" : ""), "data-local-id": n.local_id,
+        "class": "tagbox" + ((unknownsOf[n.local_id] || []).some(function (u) { return u.field === "tag"; }) ? " unknown" : "") + edited(n), "data-local-id": n.local_id,
         "data-cell-id": n.source_object_id }, layers.tag);
       byLocal[n.local_id].els.push(tr); nTag++;
     }
   });
   conns.forEach(function (c) {
     var color = c.unresolved ? "var(--unresolved)" : "var(--" + (c.r.kind || "unresolved") + ")";
-    var cls = "pipe-line" + (c.unresolved || hasUnknown(c.r.local_id) ? " unknown" : "");
-    var paths = svgLinePaths(c.r.source_object_id);
+    var cls = "pipe-line" + (c.unresolved || hasUnknown(c.r.local_id) ? " unknown" : "") + edited(c.r);
+    // 사람이 다시 그린 경로는 SVG 경로 대신 양 끝점·경유점 폴리라인을 실선으로 그린다
+    var human = c.r.geometry_source === "human";
+    var paths = human ? [] : svgLinePaths(c.r.source_object_id);
     var it = byLocal[c.r.local_id];
     if (paths.length) {
       paths.forEach(function (p) {
@@ -425,9 +432,9 @@ function hazopPathEngine(G) {
       var ps = pts.map(function (p) { return p[0] + "," + p[1]; }).join(" ");
       var g = el("g", {}, pipeApprox);
       el("polyline", { points: ps, "class": "pipe-hit", "data-local-id": c.r.local_id, "data-cell-id": c.r.source_object_id }, g);
-      it.els.push(el("polyline", { points: ps, style: "stroke:" + color, "class": cls + " unknown" }, g));
-      it.pathSource = "approx";
-      nPipeApprox++;
+      it.els.push(el("polyline", { points: ps, style: "stroke:" + color, "class": cls + (human ? "" : " unknown") }, g));
+      it.pathSource = human ? "human" : "approx";
+      if (!human) nPipeApprox++;
     }
     nPipe++;
   });
@@ -447,6 +454,14 @@ function hazopPathEngine(G) {
     stage.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.s + ")";
     document.getElementById("pct").textContent = Math.round(view.s * 100) + "%";
   }
+  // 앱이 다시 읽은 뒤 확대·위치를 되돌릴 때 쓴다(② 편집)
+  window.hzView = {
+    get: function () { return { s: view.s, x: view.x, y: view.y }; },
+    set: function (v) {
+      if (!v || ![v.s, v.x, v.y].every(function (n) { return typeof n === "number" && isFinite(n); }) || v.s <= 0) return;
+      view.s = Math.min(Math.max(v.s, 0.1), 12); view.x = v.x; view.y = v.y; apply();
+    }
+  };
   function fit() {
     var r = vp.getBoundingClientRect();
     view.s = Math.min(r.width / W, r.height / H) * 0.95;
@@ -561,7 +576,7 @@ function hazopPathEngine(G) {
       h += rows({ local_id: d.local_id, source_object_id: d.source_object_id, kind: d.kind, line_type: d.line_type,
                   line_no: d.line_no,
                   flow_direction: d.flow_direction ? (label(d.flow_direction.from) + " → " + label(d.flow_direction.to)) : "— (원본에 방향 없음)",
-                  path_source: it.pathSource === "svg" ? "SVG 실제 경로" : "근사 폴리라인" });
+                  path_source: { svg: "SVG 실제 경로", human: "사람이 그린 경로" }[it.pathSource] || "근사 폴리라인" });
       if (d.label_cells && d.label_cells.length) h += "<h3>커넥터 라벨</h3>" + d.label_cells.map(function (lc) {
         return "<div>" + esc(lc.text || "(빈 라벨)") + " <small>" + esc(lc.source_object_id) + "</small></div>";
       }).join("");

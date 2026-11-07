@@ -5,8 +5,8 @@
   (hazop/viewer/check.py의 TEMPLATE_SCRIPT_COUNT = 3 유지). bridge가 없으면 뷰어는 단독 모드로 동작한다.
 - 네트워크 차단: 요청 가로채기(file:·qrc:·data:·blob:·about: 외 차단), 탐색 제한(로드한 파일만),
   LocalContentCanAccessRemoteUrls 끔, 디스크 캐시·쿠키 저장 없음(off-the-record 프로필).
-- 메시지는 JSON 문자열 하나: Python→웹 load/setView/highlight/clearHighlight/focus/setMode/segments/clearSegments(④ 구간 색),
-  웹→Python ready/nodeSelected/highlightResult.
+- 메시지는 JSON 문자열 하나: Python→웹 load/setView/highlight/clearHighlight/focus/setMode/segments/clearSegments(④ 구간 색)/
+  editMode/editPreview/restoreView(② 도면 편집), 웹→Python ready/nodeSelected/highlightResult/editPick.
 - ③ 지식그래프 페이지(hazop/kg/screen_template.html, window.hzKG)는 같은 주입 스크립트가 연결만 해 주고 메시지 처리는
   페이지가 한다: Python→웹 loadKnowledge/selectNode/algorithmResult, 웹→Python ready/nodeSelected/linkSelected/
   runAlgorithm(기획서/그래프활용.md §5.2, 인터페이스.md §2.3).
@@ -14,6 +14,7 @@
 
 import json
 import logging
+import math
 import os
 import re
 
@@ -35,6 +36,29 @@ LOG = logging.getLogger("hazop.app.webview")
 def clean_id(v):
     """웹에서 온 ID: 문자열이고 길이·형식이 맞으면 그대로, 아니면 None. 있는 ID인지는 받는 화면이 확인한다."""
     return v if isinstance(v, str) and ID_RE.fullmatch(v) else None
+
+
+MAX_COORD = 1e7  # 도면 좌표·보기 값 절댓값 상한
+
+
+def _finite(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and abs(v) <= MAX_COORD
+
+
+def clean_view(v):
+    """웹에서 온 보기 {s, x, y}: 모두 유한한 수이고 s > 0이면 그 값, 아니면 None."""
+    if not isinstance(v, dict) or not all(_finite(v.get(k)) for k in ("s", "x", "y")) or v["s"] <= 0:
+        return None
+    return {"s": float(v["s"]), "x": float(v["x"]), "y": float(v["y"])}
+
+
+def clean_edit_pick(msg):
+    """editPick 메시지 → {"point": [x, y], "local_id", "view"}. 점이 유한한 수 두 개가 아니면 None."""
+    p = msg.get("point")
+    if not isinstance(p, list) or len(p) != 2 or not all(_finite(c) for c in p):
+        return None
+    return {"point": [float(p[0]), float(p[1])], "local_id": clean_id(msg.get("local_id")),
+            "view": clean_view(msg.get("view"))}
 
 
 def url_allowed(url):
@@ -95,6 +119,7 @@ class Bridge(QObject):
     highlightResultFor = Signal(str, list)  # (request_id, 그리지 못한 local_id 목록) — 이전 요청 응답 구분용
     linkSelected = Signal(str)     # ③ 지식그래프: 클릭한 관계 ID
     algorithmRequested = Signal(dict)  # ③ 지식그래프 runAlgorithm: {"algorithm", "start"}
+    editPick = Signal(dict)        # ② 편집: {"point": 도면 좌표 [x, y], "local_id"(없으면 None), "view"(없으면 None)}
     ready = Signal()
 
     def __init__(self, parent=None):
@@ -152,6 +177,10 @@ class Bridge(QObject):
             alg, start = msg.get("algorithm"), clean_id(msg.get("start"))
             if alg in ("A1",) and start:
                 self.algorithmRequested.emit({"algorithm": alg, "start": start})
+        elif kind == "editPick":
+            pick = clean_edit_pick(msg)
+            if pick:
+                self.editPick.emit(pick)
 
 
 def _qwebchannel_js():
@@ -295,9 +324,56 @@ BRIDGE_JS = r"""
         els(lid).forEach(function (e) { paintSeg(e, "var(--warn-line)", false, "uncovered"); e.style.setProperty("stroke-dasharray", "5 3"); e.style.setProperty("fill-opacity", "0"); });
       });
     }
+    // ② 편집: 선택 외 도구에서는 클릭을 도면 좌표로 바꿔 editPick만 보낸다(템플릿 선택·nodeSelected는 막음).
+    // 도면 좌표 = 오버레이 SVG 사용자 좌표 + svg_alignment.offset. 끌어서 이동을 끝낸 클릭은 버린다.
+    var edit = { on: false, tool: "select" }, down = null, preview = null, OFF = [0, 0];
+    try {
+      var exd = JSON.parse(document.getElementById("extraction").textContent);
+      var o = exd.coordinate_system.svg_alignment.offset;
+      if (o && isFinite(o[0]) && isFinite(o[1])) OFF = [Number(o[0]), Number(o[1])];
+    } catch (x) { /* 오프셋 없음: 0 */ }
+    var ovl = document.getElementById("overlay");
+    function curView() { return window.hzView && window.hzView.get ? window.hzView.get() : null; }
+    if (vp && ovl) {
+      vp.addEventListener("mousedown", function (e) { down = [e.clientX, e.clientY]; }, true);
+      vp.addEventListener("click", function (e) {
+        if (!edit.on || edit.tool === "select") return;
+        if (e.target.closest && e.target.closest(".float, .hz-legend")) return;
+        e.stopPropagation();
+        if (down && Math.abs(e.clientX - down[0]) + Math.abs(e.clientY - down[1]) > 3) return;
+        var m = ovl.getScreenCTM(); if (!m) return;
+        var p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+        var t = e.target.closest ? e.target.closest("#overlay [data-local-id]") : null;
+        send({ type: "editPick", point: [p.x + OFF[0], p.y + OFF[1]], local_id: t ? t.getAttribute("data-local-id") : null, view: curView() });
+      }, true);
+    }
+    function editPreview(points) {
+      if (preview && preview.parentNode) preview.parentNode.removeChild(preview);
+      preview = null;
+      if (!ovl || !Array.isArray(points) || !points.length) return;
+      preview = document.createElementNS(NS, "g");
+      preview.setAttribute("class", "hz-preview"); preview.setAttribute("pointer-events", "none");
+      preview.setAttribute("transform", "translate(" + (-OFF[0]) + "," + (-OFF[1]) + ")");
+      var pts = points.filter(function (p) { return Array.isArray(p) && isFinite(p[0]) && isFinite(p[1]); });
+      var pl = document.createElementNS(NS, "polyline");
+      pl.setAttribute("points", pts.map(function (p) { return Number(p[0]) + "," + Number(p[1]); }).join(" "));
+      preview.appendChild(pl);
+      pts.forEach(function (p) {
+        var c = document.createElementNS(NS, "circle");
+        c.setAttribute("cx", Number(p[0])); c.setAttribute("cy", Number(p[1])); c.setAttribute("r", 4);
+        preview.appendChild(c);
+      });
+      ovl.appendChild(preview);
+    }
     function handle(m) {
       if (!m || typeof m !== "object") return;
-      if (m.type === "setView") setView(m.view);
+      if (m.type === "editMode") {
+        edit.on = !!m.on; edit.tool = typeof m.tool === "string" ? m.tool : "select";
+        document.body.classList.toggle("hz-editing", edit.on && edit.tool !== "select");
+        if (!edit.on) editPreview(null);
+      } else if (m.type === "editPreview") editPreview(m.points);
+      else if (m.type === "restoreView") { if (window.hzView && m.view) window.hzView.set(m.view); }
+      else if (m.type === "setView") setView(m.view);
       else if (m.type === "setDrawingEnabled") {
         var dt = document.getElementById("tab-drawing");
         if (dt) dt.disabled = !m.enabled;
@@ -377,6 +453,7 @@ class HazopWebView(QWebEngineView):
         self.hide_panel = False
         self.hide_graph = False
         self.drawing_enabled = True
+        self.edit = {"on": False, "tool": "select"}
 
     def dispose(self):
         """종료 전에 페이지를 먼저 지운다(웹 렌더 프로세스가 남은 채 인터프리터가 끝나면 비정상 종료될 수 있음)."""
@@ -404,6 +481,7 @@ class HazopWebView(QWebEngineView):
         self.bridge.send("setMode", hide_panel=self.hide_panel, hide_graph=self.hide_graph)
         # 도면 탭 잠금은 페이지를 새로 읽을 때마다(loadFinished 후 브리지 ready 시점) 다시 적용한다
         self.bridge.send("setDrawingEnabled", enabled=self.drawing_enabled)
+        self.bridge.send("editMode", **self.edit)
         self.load(QUrl.fromLocalFile(path))
         return True
 
@@ -437,3 +515,22 @@ class HazopWebView(QWebEngineView):
 
     def focus(self, local_id):
         self.bridge.send("focus", local_id=local_id)
+
+    def set_edit_mode(self, on, tool="select"):
+        """② 편집 모드와 도구. 상태를 기억해 다시 읽을 때도 적용한다(다른 화면으로 가면 main_window.go가 끈다)."""
+        self.edit = {"on": bool(on), "tool": tool}
+        self.bridge.send("editMode", **self.edit)
+
+    def edit_preview(self, points):
+        """경로 그리기 중인 점들(도면 좌표)을 임시 선으로 보인다. 빈 목록이면 지운다."""
+        self.bridge.send("editPreview", points=[list(p) for p in points])
+
+    def restore_view(self, view):
+        self.bridge.send("restoreView", view=view)
+
+    def current_view(self, callback):
+        """지금 확대·위치 {s, x, y}를 callback으로 넘긴다(페이지가 준비되지 않았거나 값이 이상하면 None)."""
+        if not self.bridge.is_ready:
+            callback(None)
+            return
+        self.page().runJavaScript("window.hzView ? window.hzView.get() : null", 0, lambda v: callback(clean_view(v)))

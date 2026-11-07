@@ -78,6 +78,7 @@ class MainWindow(QMainWindow):
         self.webview.bridge.highlightResultFor.connect(self._highlight_result)
         self.webview.bridge.linkSelected.connect(self._link_selected)
         self.webview.bridge.algorithmRequested.connect(self._algorithm_requested)
+        self.webview.bridge.editPick.connect(self._edit_pick)
 
         central = QWidget()
         cl = QVBoxLayout(central)
@@ -213,7 +214,8 @@ class MainWindow(QMainWindow):
         if not target:
             return
         idx, key = target
-        self.go(idx)
+        if not self.go(idx):
+            return
         h = getattr(self.screens[idx], "open_item", None)
         if h:
             h(key)
@@ -271,8 +273,17 @@ class MainWindow(QMainWindow):
     def current_screen(self):
         return self.screens[self.stack.currentIndex()]
 
+    def can_leave(self):
+        """지금 화면이 떠나도 되는지(저장하지 않은 수정이 있으면 화면이 묻는다)."""
+        h = getattr(self.current_screen(), "can_leave", None)
+        return h() if h else True
+
     def go(self, index):
-        """단계 탭은 자유 이동. 앞 단계 결과가 없으면 해당 화면이 빈 화면 안내를 보여 준다(§2.1)."""
+        """단계 탭은 자유 이동. 앞 단계 결과가 없으면 해당 화면이 빈 화면 안내를 보여 준다(§2.1).
+        지금 화면이 떠나기를 거절하면(can_leave) 이동하지 않고 False."""
+        if index != self.stack.currentIndex() and not self.can_leave():
+            self.step_buttons[self.stack.currentIndex()].setChecked(True)
+            return False
         self.stack.setCurrentIndex(index)
         self.step_buttons[index].setChecked(True)
         scr = self.screens[index]
@@ -280,10 +291,12 @@ class MainWindow(QMainWindow):
             self.webview.setParent(None)
             self.webview.hide()
         self.webview.clear_segments()  # ④ 구간 색은 ④에서만 보인다(④는 on_enter에서 다시 칠함)
+        self.webview.set_edit_mode(False)  # ② 편집은 ②에서만(②는 on_enter에서 다시 켬)
         scr.on_enter()
         self.update_header()
         self.refresh_stages()
         self._fit_explorer()
+        return True
 
     def attach_webview(self, host):
         """웹뷰 인스턴스 하나를 화면의 캔버스 자리로 옮긴다(§2.2)."""
@@ -347,12 +360,20 @@ class MainWindow(QMainWindow):
         if h:
             h(req)
 
+    def _edit_pick(self, pick):
+        h = getattr(self.current_screen(), "on_edit_pick", None)
+        if h:
+            h(pick)
+
     def _highlight_result(self, request_id, missing):
         h = getattr(self.current_screen(), "on_highlight_result", None)
         if h:
             h(missing, request_id)
 
     def closeEvent(self, event):  # noqa: N802
+        if not self.can_leave():
+            event.ignore()
+            return
         self.screens[6].shutdown()
         self.tasks.wait(30000)
         self.webview.dispose()

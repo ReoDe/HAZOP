@@ -14,6 +14,7 @@ sys.path.insert(0, REPO_ROOT)
 from hazop.console import safe_console  # noqa: E402
 
 from hazop import paths  # noqa: E402
+from hazop.extract import corrections  # noqa: E402
 from hazop.graph import build  # noqa: E402
 from hazop.graph.query import GraphQuery  # noqa: E402
 
@@ -24,10 +25,13 @@ DEFAULT_OUT = paths.output_root("그래프")
 def build_one(extraction_path, out_root):
     with open(extraction_path, encoding="utf-8") as fh:
         extraction = json.load(fh)
+    folder = os.path.basename(os.path.dirname(extraction_path))
+    # ② 사람 수정 기록을 매번 다시 적용한다(다시 추출해도 수정 유지, extraction.json은 원본 그대로)
+    extraction = corrections.apply_saved(extraction, folder)
     rel = os.path.relpath(extraction_path, paths.work_root()).replace("\\", "/")
     graph = build.build_graph(extraction, extraction_file=rel)
     # 추출 결과 폴더 이름을 그대로 쓴다(--samples: 도면번호, 등록 경로: <자료 ID>-r<버전>). 뷰어도 같은 이름으로 그래프를 찾는다.
-    name = paths.safe_name(os.path.basename(os.path.dirname(extraction_path)))
+    name = paths.safe_name(folder)
     out_dir = paths.safe_join(out_root, name)
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "graph.json"), "w", encoding="utf-8", newline="\n") as fh:

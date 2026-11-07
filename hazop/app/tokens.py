@@ -34,6 +34,7 @@ COLORS = {
     # 출처: AI·자동 판독 = 빗금(Qt는 옅은 회색 + 점선 테두리로 대신), 사람 확정 = 흰 바탕 진한 실선
     "ai-hatch-a": "#eef0f2", "ai-hatch-b": "#e3e6ea", "ai-ink": "#3a414b", "human-line": "#111827",
     "tag": "#111827",
+    "human-edit": "#db2777",  # ② 도면 사람 수정 표시(뷰어 번짐·편집 미리보기)
     # ③ 지식그래프 (디자인/지식그래프화면.md §7). 별칭 토큰(=)은 같은 값을 풀어 적는다
     "kg-document": "#475569", "kg-doc_chunk": "#64748b", "kg-requirement": "#a16207", "kg-setpoint": "#be185d",
     "kg-condition": "#4d7c0f", "kg-analysis_case": "#9a3412", "kg-pipe_segment": "#16a34a",
@@ -113,6 +114,9 @@ body.hz-dim #graphsvg .gedge:not(.hz-on), body.hz-dim #graphsvg .glabel { opacit
 body.hz-dim .hz-legend { display: block; }
 .hz-legend span { display: inline-block; white-space: nowrap; margin-right: 10px; }
 .hz-legend i { display: inline-block; width: 16px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 4px; }
+body.hz-editing #viewport { cursor: crosshair; }
+.hz-preview polyline { fill: none; stroke: var(--human-edit); stroke-width: 2.5; stroke-dasharray: 6 4; }
+.hz-preview circle { fill: var(--human-edit); }
 @media (max-width: 760px) { .hz-legend { left: 8px; bottom: 56px; max-width: calc(100%% - 16px); } }
 """ % {"root": root, "ui": COLORS["ui"], "dim": HL_DIM, "font": FONT_FAMILY, "onfill": COLORS["on-fill"],
        "card": COLORS["card"], "shadow": CARD_SHADOW}
@@ -148,6 +152,7 @@ QPushButton { border: 1px solid %(line-strong)s; border-radius: 4px; padding: 3p
 QPushButton:hover { border-color: %(ui)s; }
 QPushButton:disabled { color: %(muted)s; background: %(bg)s; border-color: %(line)s; }
 QPushButton#primary { background: %(ui)s; color: %(on-fill)s; border-color: %(ui)s; font-weight: 700; }
+QPushButton#tool:checked { background: %(ui-weak)s; border-color: %(ui)s; color: %(ui-ink)s; font-weight: 700; }
 QPushButton#primary:disabled { background: %(line)s; border-color: %(line)s; color: %(muted)s; }
 QLabel#chip { border-radius: 3px; padding: 2px 8px; background: %(bg)s; color: %(ink-2)s; font-size: %(sm)spx; }
 QLabel#chip[state="passed"] { background: %(ok-bg)s; color: %(ok)s; }

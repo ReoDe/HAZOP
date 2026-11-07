@@ -829,6 +829,7 @@ CONTRAST_PAIRS += [
     ("card", "equipment", GRAPHIC, "그래프 선택 노드의 흰 띠 / 설비 채움(선택 고리와 채움을 떼어 놓음)"),
     ("tag", "card", GRAPHIC, "태그 상자 테두리"),
     ("ok", "bg", GRAPHIC, "뷰어 통과 점(.chip.passed::before, .chip 바탕 --bg, W9)"),
+    ("human-edit", "card", GRAPHIC, "② 사람 수정 번짐·편집 미리보기(흰 도면)"),
 ]
 # 셸(B안): 어두운 제목줄·레일·상태줄, 탐색기(surface-2), 표 머리(surface-2). ④ 검토구간 색 꼬리표와 도면 위 구간 선
 CONTRAST_PAIRS += [
