@@ -844,6 +844,11 @@ CONTRAST_PAIRS += [
     ("toast-link", "toast-bg", TEXT, "토스트 실행 취소 링크(U-07)"),
     ("err-line", "card", GRAPHIC, "위험 동작 버튼 테두리(U-10)"),
 ]
+# ③ 지식그래프 노드 점·강조 간선(옵시디언식, 2026-11-08). 기본 간선 kg-edge는 반투명 배경선이라 쌍에 넣지 않고,
+# 관계를 읽어야 할 때(마우스 올림·선택) 쓰는 kg-edge-hi를 검사한다.
+CONTRAST_PAIRS += [(k, "kg-canvas", GRAPHIC, "③ 노드 점 / 캔버스") for k in (
+    "kg-equipment", "kg-valve", "kg-instrument", "kg-piping_element", "kg-unclassified", "kg-pipe_segment",
+    "kg-analysis_case", "kg-requirement", "kg-setpoint", "kg-condition", "kg-document", "kg-doc_chunk", "kg-edge-hi")]
 CONTRAST_PAIRS += [("on-seg", "seg%d" % i, TEXT, "구간 꼬리표 글자") for i in range(1, 6)]
 CONTRAST_PAIRS += [("seg%d" % i, "card", GRAPHIC, "구간 색 / 도면 바탕") for i in range(1, 6)]
 

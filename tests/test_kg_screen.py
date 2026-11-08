@@ -226,8 +226,8 @@ class HtmlTest(unittest.TestCase):
     def test_tokens_from_single_source(self):
         from hazop.app import tokens
         css = tokens.kg_css_vars()
-        for k, v in (("kg-setpoint", "#be185d"), ("kg-requirement", "#a16207"), ("a1-down", "#0072b2"),
-                     ("comp-1", "#0072b2"), ("valve", "#0f766e"), ("kg-pipe_segment", tokens.COLORS["physical_connection"])):
+        for k, v in (("kg-setpoint", "#796293"), ("kg-requirement", "#65507c"), ("a1-down", "#0072b2"),
+                     ("comp-1", "#0072b2"), ("valve", "#0f766e"), ("kg-pipe_segment", "#54836b")):
             self.assertIn("--%s: %s" % (k, v), css)
         self.assertIn("--kg-excl-opacity: 0.5", css)
         self.assertIn(css, screen.build_html(None))

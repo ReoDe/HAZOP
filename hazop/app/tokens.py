@@ -36,9 +36,13 @@ COLORS = {
     "tag": "#111827",
     "human-edit": "#db2777",  # ② 도면 사람 수정 표시(뷰어 번짐·편집 미리보기)
     # ③ 지식그래프 (디자인/지식그래프화면.md §7). 별칭 토큰(=)은 같은 값을 풀어 적는다
-    "kg-document": "#475569", "kg-doc_chunk": "#64748b", "kg-requirement": "#a16207", "kg-setpoint": "#be185d",
-    "kg-condition": "#4d7c0f", "kg-analysis_case": "#9a3412", "kg-pipe_segment": "#16a34a",
-    "kg-rel-mentions": "#64748b", "kg-rel-docpos": "#cbd5e1", "kg-rel-depends": "#334155",
+    # 노드 종류(2026-11-08 옵시디언식): 채도 낮은 4계열(P&ID 회청·배관 구간 녹회·지식 회보라·문서 회색), 계열 안은 명도만 다름.
+    # ②의 equipment·valve 등과 별도 키라 ② 색은 그대로다. 간선은 회색 하나(kg-edge 반투명, 강조 때 kg-edge-hi)
+    "kg-equipment": "#3b5472", "kg-valve": "#4d6889", "kg-instrument": "#5e7ca1", "kg-piping_element": "#788da5",
+    "kg-unclassified": "#8d939a", "kg-pipe_segment": "#54836b",
+    "kg-analysis_case": "#503c67", "kg-requirement": "#65507c", "kg-setpoint": "#796293", "kg-condition": "#88759f",
+    "kg-document": "#575f6b", "kg-doc_chunk": "#757e8a",
+    "kg-edge": "#9aa1ab", "kg-edge-hi": "#5b6470",
     "kg-flag": "#f59e0b", "kg-flag-ink": "#92400e", "kg-conflict": "#b91c1c", "kg-nosrc": "#b91c1c",
     "a1-start": "#111827", "a1-down": "#0072b2", "a1-up": "#d55e00", "a1-mixed": "#cc79a7", "a1-unknown": "#9ca3af",
     "a1-adj": "#009e73", "a1-na": "#6b7280", "a1-off": "#d1d5db",

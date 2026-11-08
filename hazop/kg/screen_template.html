@@ -23,7 +23,7 @@ button, input { font: inherit; color: inherit; }
 .tg.off { opacity: .45; pointer-events: none; }
 .sw { width: 10px; height: 10px; flex: none; border-radius: 50%; }
 .sw.sq { border-radius: 2px; }
-.ln { width: 16px; height: 0; border-top: 2px solid; flex: none; }
+.ln { width: 14px; height: 0; border-top: 1.5px solid var(--kg-edge-hi); flex: none; }
 .cnt { margin-left: auto; font-size: 11px; color: var(--muted); }
 .hint { font-size: 11px; color: var(--muted); line-height: 1.45; margin-top: 4px; }
 #q { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 4px 8px; }
@@ -37,7 +37,7 @@ button, input { font: inherit; color: inherit; }
 .dis { opacity: .45; pointer-events: none; }
 #cv { position: relative; background: var(--kg-canvas); min-width: 0; min-height: 0; overflow: hidden; }
 #graph { position: absolute; inset: 0; }
-.cv-top { position: absolute; left: 10px; top: 8px; right: 64px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; pointer-events: none; z-index: 2; }
+.cv-top { position: absolute; left: 10px; top: 8px; right: 250px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; pointer-events: none; z-index: 2; }
 .cv-top > * { pointer-events: auto; }
 .seg { display: flex; gap: 2px; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
 .seg button { border: 0; background: none; padding: 3px 10px; border-radius: 999px; cursor: pointer; color: var(--muted); font-size: 12px; white-space: nowrap; }
@@ -45,7 +45,10 @@ button, input { font: inherit; color: inherit; }
 .seg button:disabled { opacity: .4; cursor: not-allowed; }
 .chip { font-size: 11px; color: var(--ink-2); background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
 .chip.warn { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-line); white-space: normal; }
-.cv-zoom { position: absolute; right: 10px; top: 8px; display: flex; flex-direction: column; gap: 4px; z-index: 2; }
+.cv-right { position: absolute; right: 10px; top: 8px; display: flex; gap: 6px; align-items: flex-start; z-index: 2; }
+.cv-zoom { display: flex; flex-direction: column; gap: 4px; }
+.lbtns { display: flex; gap: 6px; margin-top: 6px; }
+.lbtns .btn { flex: 1; }
 .cv-zoom button { min-width: 30px; height: 26px; padding: 0 6px; white-space: nowrap; border: 1px solid var(--line); background: #fff; border-radius: 8px; cursor: pointer; font-size: 12px; }
 #legend { position: absolute; left: 10px; bottom: 10px; max-width: min(540px, 72%); background: rgba(255,255,255,.96); border: 1px solid var(--line); border-radius: 14px; padding: 6px 10px; font-size: 11px; color: var(--ink-2); line-height: 1.5; z-index: 2; }
 #legend .lg-h { font-weight: 700; color: var(--ink); display: flex; gap: 6px; align-items: center; }
@@ -64,11 +67,13 @@ button, input { font: inherit; color: inherit; }
   <aside id="left">
     <div class="ph"><span class="t">보기 설정</span><span class="sp"></span><button class="colbtn" id="lcol" title="접기/펴기">&#9664;</button></div>
     <div class="pb">
-      <div class="sec"><div class="sec-h">검색</div><input type="text" id="q" placeholder="태그·이름·ID"><div id="qres"></div></div>
-      <div class="sec"><div class="sec-h">노드 종류 · 색 그룹 (범례 겸용)</div>
-        <label class="layer-h"><input type="checkbox" id="ly-pid" checked> P&amp;ID 층 — 원</label><div id="t-pid"></div>
-        <label class="layer-h"><input type="checkbox" id="ly-kn" checked> 지식 층 — 각진 도형</label><div id="t-kn"></div></div>
-      <div class="sec"><div class="sec-h">관계 종류</div><div id="g-list"></div></div>
+      <div class="sec"><div class="sec-h">검색</div><input type="text" id="q" placeholder="태그·이름으로 찾기" aria-label="태그·이름으로 찾기"><div id="qres"></div></div>
+      <div class="sec"><div class="sec-h">노드 종류</div>
+        <label class="layer-h"><input type="checkbox" id="ly-pid" checked> P&amp;ID 층</label><div id="t-pid"></div>
+        <label class="layer-h"><input type="checkbox" id="ly-kn" checked> 지식 층</label><div id="t-kn"></div>
+        <div class="lbtns"><button class="btn" id="t-all">모두</button><button class="btn" id="t-none">모두 끄기</button></div></div>
+      <div class="sec"><div class="sec-h">관계</div><div id="g-list"></div>
+        <div class="lbtns"><button class="btn" id="g-all">모두</button><button class="btn" id="g-none">모두 끄기</button></div></div>
       <div class="sec"><div class="sec-h">계산 제외 항목 표시</div>
         <label class="tg"><input type="checkbox" id="o-cand"> 후보 링크 <span class="cnt" id="c-cand"></span></label>
         <label class="tg"><input type="checkbox" id="o-excl"> 미확인·가설 항목 <span class="cnt" id="c-excl"></span></label>
@@ -82,7 +87,8 @@ button, input { font: inherit; color: inherit; }
       <div class="sec"><div class="sec-h">표시</div>
         <label class="tg"><input type="checkbox" id="o-fold"> 배관 구간 접기 (화면 전용)</label>
         <label class="tg"><input type="checkbox" id="o-arrows" checked> 흐름 화살표 (방향 확인 구간만)</label>
-        <label class="tg"><input type="checkbox" id="o-labels" checked> 라벨</label></div>
+        <label class="tg"><input type="checkbox" id="o-labels" checked> 라벨 (확대하면 서서히 나타남)</label>
+        <label class="tg"><input type="checkbox" id="o-isolated" checked> 고립 노드 (연결 없음)</label></div>
       <div class="sec" id="sec-depth"><div class="sec-h">로컬 깊이 <b id="d-val" style="color:var(--ink)">2</b></div>
         <input type="range" id="depth" min="1" max="3" value="2" style="width:100%"><div class="hint" id="d-note"></div></div>
       <div class="sec" id="sec-a1"><div class="sec-h">A1 상·하류 시작점</div>
@@ -90,9 +96,9 @@ button, input { font: inherit; color: inherit; }
         <div style="margin-top:4px"><button class="btn" id="a1-run" disabled>선택 노드로 A1 계산</button></div></div>
       <div class="sec"><div class="sec-h">힘 (배치 전용, 근거 아님)</div>
         <div class="rng"><span>중심</span><input type="range" id="f-c" min="0" max="1" step="0.05" value="0.1"><span class="v" id="v-c"></span></div>
-        <div class="rng"><span>반발</span><input type="range" id="f-r" min="0" max="400" step="5" value="120"><span class="v" id="v-r"></span></div>
+        <div class="rng"><span>반발</span><input type="range" id="f-r" min="0" max="400" step="5" value="70"><span class="v" id="v-r"></span></div>
         <div class="rng"><span>링크 당김</span><input type="range" id="f-s" min="0" max="1" step="0.05" value="0.5"><span class="v" id="v-s"></span></div>
-        <div class="rng"><span>링크 길이</span><input type="range" id="f-d" min="10" max="150" step="5" value="45"><span class="v" id="v-d"></span></div>
+        <div class="rng"><span>링크 길이</span><input type="range" id="f-d" min="10" max="150" step="5" value="35"><span class="v" id="v-d"></span></div>
         <div style="margin-top:6px"><button class="btn" id="relayout">다시 배치</button></div>
         <div class="hint">d3 forceCenter · forceManyBody · forceLink.strength · forceLink.distance. 시작값은 샘플을 보고 정한 값(근거 아님)입니다.</div></div>
     </div>
@@ -102,11 +108,11 @@ button, input { font: inherit; color: inherit; }
     <div class="cv-top">
       <div class="seg" id="vmode"><button data-v="global" class="on">전역</button><button data-v="local">로컬</button></div>
       <div class="seg" id="cmode"><button data-c="type" class="on">종류</button><button data-c="a1">A1 상·하류</button><button data-c="a5">A5 연결 성분</button></div>
-      <span class="chip" id="cv-info"></span>
       <span class="chip warn" id="s1" style="display:none"></span>
       <span class="chip" id="mode-chip"></span>
     </div>
-    <div class="cv-zoom"><button id="z-in" title="확대">+</button><button id="z-out" title="축소">&#8722;</button><button id="z-fit" title="화면에 맞춤">맞춤</button></div>
+    <div class="cv-right"><span class="chip" id="cv-info"></span>
+      <div class="cv-zoom"><button id="z-in" title="확대">+</button><button id="z-out" title="축소">&#8722;</button><button id="z-fit" title="화면에 맞춤">맞춤</button></div></div>
     <div id="legend" class="min"></div>
     <div class="cv-note">배치는 근거가 아님 · 계산 결과는 Python</div>
     <div id="empty"><div class="box" id="empty-box"></div></div>
@@ -124,17 +130,21 @@ button, input { font: inherit; color: inherit; }
   function esc(v) { return String(v === null || v === undefined ? "" : v).replace(/[&<>"]/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]; }); }
   var ROOT = getComputedStyle(document.documentElement);
-  function cv(name) { return (ROOT.getPropertyValue("--" + name) || "").trim() || "#9ca3af"; }
+  var CV = Object.create(null);
+  function cv(name) {
+    if (!(name in CV)) CV[name] = (ROOT.getPropertyValue("--" + name) || "").trim() || "#9ca3af";
+    return CV[name];
+  }
   var DIM = parseFloat(cv("hl-dim")) || 0.16, EXCL = parseFloat(cv("kg-excl-opacity")) || 0.5;
   var DASH = cv("kg-dash").split(/\s+/).map(Number);
 
   var TYPE = {
-    equipment: { layer: "pid", name: "설비", col: "equipment", shape: "circle" },
-    valve: { layer: "pid", name: "밸브", col: "valve", shape: "circle" },
-    instrument: { layer: "pid", name: "계장", col: "instrument", shape: "circle" },
-    piping_element: { layer: "pid", name: "배관 요소(티·도면 연결점)", col: "piping_element", shape: "circle" },
+    equipment: { layer: "pid", name: "설비", col: "kg-equipment", shape: "circle" },
+    valve: { layer: "pid", name: "밸브", col: "kg-valve", shape: "circle" },
+    instrument: { layer: "pid", name: "계장", col: "kg-instrument", shape: "circle" },
+    piping_element: { layer: "pid", name: "배관 요소(티·도면 연결점)", col: "kg-piping_element", shape: "circle" },
     pipe_segment: { layer: "pid", name: "배관 구간", col: "kg-pipe_segment", shape: "circle" },
-    unclassified: { layer: "pid", name: "미분류", col: "unclassified", shape: "circle" },
+    unclassified: { layer: "pid", name: "미분류", col: "kg-unclassified", shape: "circle" },
     document: { layer: "kn", name: "문서", col: "kg-document", shape: "page" },
     doc_chunk: { layer: "kn", name: "문서 조각", col: "kg-doc_chunk", shape: "square" },
     requirement: { layer: "kn", name: "요건", col: "kg-requirement", shape: "hex" },
@@ -145,14 +155,15 @@ button, input { font: inherit; color: inherit; }
   var GRP_OF = { has_endpoint: "phys", measurement_connection: "meas", signal_connection: "sig", mentions: "men",
     governed_by: "app", has_setpoint: "app", has_condition: "app", analyzed_in: "app", part_of: "pos", specified_in: "pos",
     depends_on: "dep" };
+  /* 관계는 색 대신 회색 선 하나로 그린다(옵시디언식). A1 보기에서만 굵기 w를 쓴다. */
   var GRP = {
-    phys: { name: "물리 연결 (has_endpoint)", col: "physical_connection", w: 2.4 },
-    meas: { name: "계측 연결", col: "measurement_connection", w: 1.4 },
-    sig: { name: "신호 연결", col: "signal_connection", w: 1.4 },
-    men: { name: "언급 (mentions)", col: "kg-rel-mentions", w: 1.4 },
-    app: { name: "설비 적용 (governed_by·has_setpoint·has_condition·analyzed_in)", col: "kg-requirement", w: 1.8 },
-    pos: { name: "문서 안 위치 (part_of·specified_in)", col: "kg-rel-docpos", w: 1 },
-    dep: { name: "문서 근거 의존 (depends_on)", col: "kg-rel-depends", w: 1.6 }
+    phys: { name: "물리 연결 (has_endpoint)", w: 2.4 },
+    meas: { name: "계측 연결", w: 1.4 },
+    sig: { name: "신호 연결", w: 1.4 },
+    men: { name: "언급 (mentions)", w: 1.4 },
+    app: { name: "설비 적용 (governed_by·has_setpoint·has_condition·analyzed_in)", w: 1.8 },
+    pos: { name: "문서 안 위치 (part_of·specified_in)", w: 1 },
+    dep: { name: "문서 근거 의존 (depends_on)", w: 1.6 }
   };
   var A1_DIR = { start: ["a1-start", "시작"], downstream: ["a1-down", "↓하"], upstream: ["a1-up", "↑상"],
     mixed: ["a1-mixed", "↕혼"], unknown: ["a1-unknown", "?"], adjacent: ["a1-adj", "접"], not_applicable: ["a1-na", "—"] };
@@ -167,7 +178,13 @@ button, input { font: inherit; color: inherit; }
   function typeOf(t) { return own(TYPE, t) || TYPE.unclassified; }
   function grpOf(kind) { return own(GRP_OF, kind) || "dep"; }
   function dirOf(d) { return own(A1_DIR, d) || ["a1-unknown", "?"]; }
-  function normA1(a) { if (a && a.active) { a.reached = dict(a.reached); a.truncated = dict(a.truncated); } return a; }
+  function normA1(a) {
+    if (a && a.active) {
+      a.reached = dict(a.reached); a.truncated = dict(a.truncated); a.byEdge = nul();
+      Object.keys(a.reached).forEach(function (k) { var e = a.reached[k].edge; if (e) a.byEdge[e] = a.reached[k]; });
+    }
+    return a;
+  }
   function normAlgo(a) {
     if (a.A3) a.A3 = dict(a.A3);
     if (a.A2) { a.A2.orphans = dict(a.A2.orphans); a.A2.gaps = dict(a.A2.gaps); a.A2.noInput = setOf(a.A2.no_input);
@@ -175,10 +192,13 @@ button, input { font: inherit; color: inherit; }
     if (a.A5) a.A5.comp = dict(a.A5.comp);
     normA1(a.A1);
   }
-  var KN_LABEL_SCALE = 2.2;  /* 지식 노드 라벨은 호버·선택 때 또는 이 배율 이상에서만 */
+  var KN_LABEL_SCALE = 2.2;  /* 지식 노드 라벨은 호버·선택 때 또는 이 배율 근처부터 서서히 */
+  var PID_LABEL_SCALE = 1.2, LABEL_FADE = 0.6, SHAPE_PX = 7;  /* 점 반지름이 SHAPE_PX 화면 픽셀 이상이면 지식 노드 도형을 그림 */
   var D = null, G = null, NB = nul(), LB = nul(), ADJ = nul(), VIS = nul(), VISL = nul(), HOVER = null, send = null, fitted = false;
   var S = { mode: "global", color: "type", sel: null, center: null, depth: 2, fold: false, labels: true, arrows: true,
-    showCand: false, showExcl: false, showRechk: false, orphan: false, gap: false, noInput: false, types: {}, grps: {} };
+    showCand: false, showExcl: false, showRechk: false, orphan: false, gap: false, noInput: false, isolated: true,
+    query: "", types: {}, grps: {} };
+  var QS = null, ISO = 0, DRAG = false;  /* QS: 검색어와 맞는 노드 집합(없으면 null), ISO: 연결 없는 표시 노드 수 */
 
   /* ---------------- 표시 집합 (계산 아님: 넘겨받은 V5 표시값으로만 고름) ---------------- */
   function nodeStatusOn(n) { return n.v5 || S.showExcl; }
@@ -237,6 +257,14 @@ button, input { font: inherit; color: inherit; }
     D.links.forEach(function (l) {
       if (vis[l.s] && vis[l.t] && linkStatusOn(l) && S.grps[grpOf(l.kind)] !== false) visl[l.id] = 1;
     });
+    var linked = nul();
+    Object.keys(visl).forEach(function (id) { linked[LB[id].s] = 1; linked[LB[id].t] = 1; });
+    ISO = 0;
+    Object.keys(vis).forEach(function (id) {
+      if (linked[id] || (S.fold && NB[id].fold)) return;
+      ISO += 1;
+      if (!S.isolated && id !== S.center && !(S.sel && S.sel.id === id)) delete vis[id];
+    });
     VIS = vis; VISL = visl;
   }
   KG.bfs = function (center, depth) { return Object.keys(bfs(center, depth)).sort(); };
@@ -246,8 +274,18 @@ button, input { font: inherit; color: inherit; }
     return { mode: S.mode, center: S.center, depth: S.depth, color: S.color, sel: S.sel, s1: !!(D && D.meta.s1),
       nodes: D ? D.nodes.length : 0, links: D ? D.links.length : 0, visible: Object.keys(VIS).length,
       visibleLinks: Object.keys(VISL).length, app: KG.app, a1start: D && D.algo.A1 ? D.algo.A1.start : null,
-      kg_version: D ? D.meta.kg_version : null, errors: KG.errors.slice() };
+      kg_version: D ? D.meta.kg_version : null, hover: HOVER, matches: QS ? Object.keys(QS).length : 0, isolated: ISO,
+      errors: KG.errors.slice() };
   };
+  /* 노드의 페이지 좌표(CSS px). 사용자 시나리오 검사가 실제 마우스를 노드 위에 올릴 때 쓴다. */
+  KG.pageOf = function (id) {
+    var n = NB[id];
+    if (!G || !n || n.x === undefined) return null;
+    var p = G.graph2ScreenCoords(n.x, n.y), r = $("graph").getBoundingClientRect();
+    return { x: r.left + p.x, y: r.top + p.y };
+  };
+  KG.hover = function (id) { HOVER = NB[id] ? id : null; HS = hoverSet(); redraw(); };
+  KG.search = function (q) { $("q").value = q; $("q").oninput(); return QS ? Object.keys(QS).sort() : []; };
   KG.setLocal = function (center, depth) { S.center = center; S.depth = depth; $("depth").value = depth; setMode("local"); };
   KG.setGlobal = function () { setMode("global"); };
   KG.setToggles = function (o) {
@@ -264,11 +302,11 @@ button, input { font: inherit; color: inherit; }
 
   /* ---------------- 그리기 ---------------- */
   function radius(n) {
-    if (n.type === "pipe_segment") return 3.5;
-    if (n.cont) return 6;
-    if (!n.v5) return 6.5;
+    if (n.type === "pipe_segment") return 2.2;
+    if (n.cont) return 3.2;
     var deg = D.algo.A3 ? D.algo.A3[n.id] : null;
-    return deg === null || deg === undefined ? 6 : Math.min(15, 4.5 + 2.3 * Math.sqrt(deg));
+    if (!n.v5 || deg === null || deg === undefined) return 3;
+    return Math.min(5.5, 2.6 + 0.7 * Math.sqrt(deg));  /* 연결 수(A3)에 비례하되 좁은 범위 */
   }
   function a1Of(id) {
     var a = D.algo.A1;
@@ -343,52 +381,61 @@ button, input { font: inherit; color: inherit; }
     if (!a2) return null;
     return a2.noInput[id] ? "지식 입력 없음" : a2.noInputCont[id] ? "지식 입력 없음(도면 연결점)" : null;
   }
+  /* 강조 집합: 마우스 올림(이웃 포함)이 먼저, 그다음 검색 결과. 둘 다 없으면 null(모두 보통). */
+  function focusSet() { return HS || QS; }
+  function labelAlpha(n, scale, hot) {
+    if (hot) return 1;
+    if (!S.labels || n.type === "pipe_segment") return 0;
+    var at = n.layer === "kn" ? KN_LABEL_SCALE : PID_LABEL_SCALE;
+    return Math.max(0, Math.min(1, (scale - at + LABEL_FADE) / LABEL_FADE));
+  }
   function drawNode(n, ctx, scale) {
     if (S.fold && n.fold) return;
-    var t = typeOf(n.type), r = radius(n), x = n.x, y = n.y;
-    var alpha = 1;
-    if (HS && !HS[n.id]) alpha = DIM;
-    if (!n.v5) alpha *= EXCL;
+    var t = typeOf(n.type), r = radius(n), x = n.x, y = n.y, F = focusSet();
+    var sel = S.sel && S.sel.k === "n" && S.sel.id === n.id, hit = !!(F && F[n.id]);
+    var alpha = F && !hit && !sel ? DIM : 1;
     if (S.color === "a1" && n.layer === "kn") alpha *= 0.35;
     ctx.globalAlpha = alpha;
-    shapePath(ctx, t.shape, x, y, r);
     var col = fillOf(n);
-    if (!n.v5 || n.cont) {
-      ctx.fillStyle = "#fff"; ctx.fill();
-      ctx.lineWidth = 2 / Math.max(scale, 0.5) * 0.8; ctx.strokeStyle = col;
-      if (!n.v5) ctx.setLineDash([3, 2]);
-      ctx.stroke(); ctx.setLineDash([]);
+    /* 화면에서 작으면 모두 점. 크게 확대했을 때만 지식 노드 도형(색 없이도 종류 구분)을 그린다. */
+    shapePath(ctx, r * scale >= SHAPE_PX ? t.shape : "circle", x, y, r);
+    if (!n.v5 || n.cont) {  /* 속 빈 점: 계산 제외(파선) · 도면 연결점(다른 도면으로 이어짐) */
+      ctx.fillStyle = cv("kg-canvas"); ctx.fill();
+      ctx.lineWidth = 1.2 / scale; ctx.strokeStyle = col;
+      if (!n.v5) { ctx.globalAlpha = alpha * EXCL; ctx.setLineDash([2.5 / scale, 1.5 / scale]); }
+      ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = alpha;
     } else {
       ctx.fillStyle = col; ctx.fill();
-      ctx.lineWidth = 1.5 / Math.max(scale, 0.5) * 0.7; ctx.strokeStyle = "#fff"; ctx.stroke();
     }
-    function ring(color, w, pad) { ctx.beginPath(); ctx.arc(x, y, r + pad, 0, 2 * Math.PI); ctx.lineWidth = w; ctx.strokeStyle = color; ctx.stroke(); }
-    if (n.conflict) ring(cv("kg-conflict"), 1.6, 2.5);
-    if ((S.orphan && D.algo.A2 && D.algo.A2.orphans[n.id]) || (S.gap && D.algo.A2 && D.algo.A2.gaps[n.id])) ring(cv("kg-flag"), 2.4, 4);
+    function ring(color, w, pad) {
+      ctx.beginPath(); ctx.arc(x, y, r + pad / scale, 0, 2 * Math.PI); ctx.lineWidth = w / scale; ctx.strokeStyle = color; ctx.stroke();
+    }
+    if (n.conflict) ring(cv("kg-conflict"), 1.2, 2);
+    if ((S.orphan && D.algo.A2 && D.algo.A2.orphans[n.id]) || (S.gap && D.algo.A2 && D.algo.A2.gaps[n.id])) ring(cv("kg-flag"), 2, 3);
     if (S.noInput && noInputOf(n.id)) {
-      ctx.setLineDash([3 / scale, 2 / scale]); ring(cv("muted"), 1.4, 3.5); ctx.setLineDash([]);
+      ctx.setLineDash([3 / scale, 2 / scale]); ring(cv("muted"), 1.2, 2.5); ctx.setLineDash([]);
     }
-    if (S.color === "a1" && a1Of(n.id) === "start") ring(cv("a1-start"), 1.4, 3);
-    if (S.sel && S.sel.k === "n" && S.sel.id === n.id) ring(cv("ui"), 2.6, 5.5);
-    var focused = HOVER === n.id || (S.sel && S.sel.id === n.id);
-    var showLabel = S.labels && (focused || (n.layer === "kn" ? scale >= KN_LABEL_SCALE : n.type !== "pipe_segment"));
-    if (showLabel && (focused || scale > 0.7 || D.nodes.length < 300)) {
-      var fs = Math.max(10 / scale, 2.5);
-      ctx.font = fs + "px Malgun Gothic, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
-      ctx.lineWidth = 3 / scale; ctx.strokeStyle = cv("kg-canvas"); ctx.fillStyle = cv("ink-2");
-      ctx.strokeText(n.label, x, y + r + 2); ctx.fillText(n.label, x, y + r + 2);
+    if (S.color === "a1" && a1Of(n.id) === "start") ring(cv("a1-start"), 1.4, 2.5);
+    if (QS && QS[n.id] && !HS) ring(cv("ui"), 1.6, 2.5);
+    if (sel) ring(cv("ui"), 2.2, 3.5);
+    var hot = HOVER === n.id || sel || (hit && (HS || QS)), la = labelAlpha(n, scale, hot);
+    if (la > 0.02) {
+      ctx.globalAlpha = alpha * la;
+      ctx.font = 11 / scale + "px Malgun Gothic, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+      ctx.lineWidth = 3 / scale; ctx.strokeStyle = cv("kg-canvas"); ctx.fillStyle = hot ? cv("ink") : cv("ink-2");
+      ctx.strokeText(n.label, x, y + r + 2 / scale); ctx.fillText(n.label, x, y + r + 2 / scale);
       if (n.type === "valve") {  /* 밸브 정상 위치(NC·NO·LC·LO), 값이 없으면 "위치 미확인" */
         var vp = n.np || "위치 미확인";
-        ctx.font = "bold " + Math.max(9 / scale, 2.2) + "px Malgun Gothic, sans-serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
-        ctx.strokeStyle = "#fff"; ctx.strokeText(vp, x - r - 2, y);
-        ctx.fillStyle = n.np ? cv("ink") : cv("kg-flag-ink"); ctx.fillText(vp, x - r - 2, y);
+        ctx.font = "bold " + 10 / scale + "px Malgun Gothic, sans-serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        ctx.strokeText(vp, x - r - 2 / scale, y);
+        ctx.fillStyle = n.np ? cv("ink") : cv("kg-flag-ink"); ctx.fillText(vp, x - r - 2 / scale, y);
       }
-      var bs = badges(n), by = y - r - 2;
-      if (bs.length && scale > 0.9) {
-        ctx.font = "bold " + Math.max(9 / scale, 2.2) + "px Malgun Gothic, sans-serif"; ctx.textBaseline = "bottom"; ctx.textAlign = "left";
+      var bs = hot || scale > 1.6 ? badges(n) : [], by = y - r - 2 / scale;
+      if (bs.length) {
+        ctx.font = "bold " + 10 / scale + "px Malgun Gothic, sans-serif"; ctx.textBaseline = "bottom"; ctx.textAlign = "left";
         bs.forEach(function (b) {
-          ctx.strokeStyle = "#fff"; ctx.strokeText(b[0], x + r + 1, by); ctx.fillStyle = b[1]; ctx.fillText(b[0], x + r + 1, by);
-          by -= Math.max(10 / scale, 2.5);
+          ctx.strokeText(b[0], x + r + 1 / scale, by); ctx.fillStyle = b[1]; ctx.fillText(b[0], x + r + 1 / scale, by);
+          by -= 11 / scale;
         });
       }
     }
@@ -398,46 +445,44 @@ button, input { font: inherit; color: inherit; }
   function a1Edge(id) {
     var a = D.algo.A1;
     if (!a || !a.active) return null;
-    var hit = null;
-    Object.keys(a.reached).forEach(function (k) { if (a.reached[k].edge === id) hit = a.reached[k]; });
-    return hit;
+    return own(a.byEdge, id) || null;
   }
+  /* 기본 간선은 반투명 회색 1px. 마우스 올린 노드의 간선과 선택 간선만 진하게, A1 보기는 방향 색을 쓴다. */
   function drawLink(l, ctx, scale) {
     var s = l.source, t = l.target;
     if (!s || !t || s.x === undefined) return;
-    var g = GRP[grpOf(l.kind)], col = cv(g.col), w = g.w, alpha = 1, dash = null;
-    if (grpOf(l.kind) === "app") { var kn = s.layer === "kn" ? s : t; col = cv(typeOf(kn.type).col); }
-    if (l.st === "candidate" || l.st === "excluded") { dash = DASH; alpha = EXCL; }
-    if (l.st === "recheck") { dash = DASH; col = cv("kg-flag"); w = 2.2; }
-    var nnf = false;
+    var F = focusSet(), near = HS ? (s.id === HOVER || t.id === HOVER) : !!(QS && QS[s.id] && QS[t.id]);
+    var col = cv(near ? "kg-edge-hi" : "kg-edge"), w = near ? 1.4 : 1, alpha = near ? 0.9 : 0.55, dash = null, nnf = false;
+    if (l.st === "candidate" || l.st === "excluded") { dash = DASH; alpha *= EXCL; }
+    if (l.st === "recheck") { dash = DASH; col = cv("kg-flag"); w = 1.6; alpha = 1; }
     if (S.color === "a1") {
       var r = a1Edge(l.id);
-      if (r) { col = cv(dirOf(r.dir)[0]); w = Math.max(w, 2.4); nnf = r.nnf; }
-      else { col = cv("a1-off"); if (l.layer === "kn") alpha *= 0.35; }
+      if (r) { col = cv(dirOf(r.dir)[0]); w = 2.2; alpha = 1; nnf = r.nnf; }
+      else { col = cv("a1-off"); alpha = (dash ? EXCL : 1) * (l.layer === "kn" ? 0.35 : 1); }
     }
-    if (S.sel && S.sel.k === "l" && S.sel.id === l.id) { col = cv("ui"); w = 3.2; }
-    if (HS && !(HS[s.id] && HS[t.id] && (s.id === HOVER || t.id === HOVER))) alpha *= DIM;
+    if (S.sel && S.sel.k === "l" && S.sel.id === l.id) { col = cv("ui"); w = 2.4; alpha = 1; }
+    else if (F && !near) alpha *= DIM;
     ctx.globalAlpha = alpha;
-    ctx.lineWidth = (nnf ? 6 : w) / Math.max(scale, 0.6) * 0.8;
+    ctx.lineWidth = (nnf ? 5 : w) / scale;
     ctx.strokeStyle = col;
     ctx.setLineDash(dash ? dash.map(function (v) { return v / scale; }) : []);
     ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
     if (nnf) {
-      ctx.lineWidth = 2.2 / Math.max(scale, 0.6) * 0.8; ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1.8 / scale; ctx.strokeStyle = cv("kg-canvas");
       ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
     }
     ctx.setLineDash([]);
-    if (S.arrows && l.a) {
+    if (S.arrows && l.a) {  /* 흐름 방향이 확인된 배관만 작은 화살표 */
       var fx = l.a > 0 ? s : t, tx = l.a > 0 ? t : s, mx = (fx.x + tx.x) / 2, my = (fx.y + tx.y) / 2;
-      var ang = Math.atan2(tx.y - fx.y, tx.x - fx.x), L = 5 / Math.max(scale, 0.6) + 2;
-      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(mx + L * Math.cos(ang), my + L * Math.sin(ang));
+      var ang = Math.atan2(tx.y - fx.y, tx.x - fx.x), L = 4 / scale;
+      ctx.fillStyle = S.color === "a1" ? col : cv("kg-edge-hi"); ctx.beginPath(); ctx.moveTo(mx + L * Math.cos(ang), my + L * Math.sin(ang));
       ctx.lineTo(mx + L * Math.cos(ang + 2.5), my + L * Math.sin(ang + 2.5));
       ctx.lineTo(mx + L * Math.cos(ang - 2.5), my + L * Math.sin(ang - 2.5)); ctx.closePath(); ctx.fill();
     }
     if ((l.st === "candidate" || l.st === "recheck") && scale > 1.1) {
       var txt = l.st === "candidate" ? "후보" : "⟳ 재확인 필요";
-      ctx.font = Math.max(9 / scale, 2) + "px Malgun Gothic, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.lineWidth = 3 / scale; ctx.strokeStyle = "#fff"; ctx.strokeText(txt, (s.x + t.x) / 2, (s.y + t.y) / 2);
+      ctx.font = 10 / scale + "px Malgun Gothic, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.lineWidth = 3 / scale; ctx.strokeStyle = cv("kg-canvas"); ctx.strokeText(txt, (s.x + t.x) / 2, (s.y + t.y) / 2);
       ctx.fillStyle = l.st === "recheck" ? cv("kg-flag-ink") : cv("ink-2"); ctx.fillText(txt, (s.x + t.x) / 2, (s.y + t.y) / 2);
     }
     ctx.globalAlpha = 1;
@@ -457,8 +502,11 @@ button, input { font: inherit; color: inherit; }
     computeVisible();
     G.nodeVisibility(function (n) { return !!VIS[n.id]; });
     G.linkVisibility(function (l) { return !!VISL[l.id]; });
-    $("cv-info").textContent = "표시 " + Object.keys(VIS).filter(function (id) { return !(S.fold && NB[id].fold); }).length +
-      " · 관계 " + Object.keys(VISL).length;
+    $("cv-info").textContent = "노드 " + Object.keys(VIS).filter(function (id) { return !(S.fold && NB[id].fold); }).length +
+      " · 관계 " + Object.keys(VISL).length + (ISO ? " · 고립 " + ISO + (S.isolated ? "" : " 제외") : "");
+    if (S.query) matchQuery();
+    HS = hoverSet();
+    redraw();
     $("sec-depth").classList.toggle("dis", S.mode !== "local");
     $("d-val").textContent = S.depth;
     $("d-note").textContent = S.mode !== "local" ? "로컬 보기에서만 씁니다." :
@@ -479,6 +527,8 @@ button, input { font: inherit; color: inherit; }
     Array.prototype.forEach.call(document.querySelectorAll("#cmode button"), function (b) { b.classList.toggle("on", b.getAttribute("data-c") === c); });
     refresh();
   }
+  /* force-graph는 배치가 멈추면 다시 그리지 않는다(autoPauseRedraw). 표시 상태가 바뀌면 같은 배율로 확대해 한 장을 요청한다. */
+  function redraw() { if (G && !DRAG) G.zoom(G.zoom()); }  /* 끄는 중에는 배치가 돌며 계속 그린다 */
   function fit() {
     if (!G) return;
     setTimeout(function () { G.zoomToFit(300, 40, function (n) { return !!VIS[n.id]; }); }, 50);
@@ -510,9 +560,9 @@ button, input { font: inherit; color: inherit; }
   function legend() {
     var h = '<div class="lg-h">범례 <button class="colbtn" id="lg-tog">' + ($("legend").classList.contains("min") ? "펴기" : "접기") + '</button></div><div class="body">';
     if (S.color === "type") {
-      h += '<div class="row">';
-      Object.keys(GRP).forEach(function (k) { h += '<span class="it"><span class="ln" style="border-color:' + cv(GRP[k].col) + '"></span>' + esc(GRP[k].name.split(" (")[0]) + "</span>"; });
-      h += '</div><div class="note">파선·흐림 = 계산 제외(후보·미확인·가설), 호박 파선 = 재확인 필요, 빨간 고리 = 충돌, 파란 고리 = 선택. 화살표는 흐름 방향이 확인된 배관만. 크기 = 연결 수(A3).</div>';
+      h += '<div class="note">색 = 노드 종류(왼쪽 목록), 점 크기 = 연결 수(A3). 속 빈 파선 점 = 계산 제외(미확인·가설), 속 빈 점 = 도면 연결점. ' +
+        '회색 선 = 관계(마우스를 올리면 그 노드의 관계만 진하게), 화살표 = 흐름 방향이 확인된 배관만. 파란 고리 = 선택·검색 결과, ' +
+        '빨간 고리 = 충돌, 호박 파선 = 재확인 필요. 라벨은 확대하면 나타납니다.</div>';
     } else if (S.color === "a1") {
       h += '<div class="row">';
       Object.keys(A1_NAME).forEach(function (k) { h += '<span class="it">' + sw(A1_DIR[k][0]) + esc(A1_DIR[k][1] + " " + A1_NAME[k]) + "</span>"; });
@@ -551,8 +601,7 @@ button, input { font: inherit; color: inherit; }
     D.links.forEach(function (l) { var g = grpOf(l.kind); gc[g] = (gc[g] || 0) + 1; });
     Object.keys(GRP).forEach(function (k) {
       S.grps[k] = S.grps[k] !== false;
-      h += '<label class="tg"><input type="checkbox" data-g="' + k + '"' + (S.grps[k] ? " checked" : "") + '> <span class="ln" style="border-color:' +
-        cv(GRP[k].col) + '"></span>' + esc(GRP[k].name) + '<span class="cnt">' + (gc[k] || 0) + "</span></label>";
+      h += '<label class="tg"><input type="checkbox" data-g="' + k + '"' + (S.grps[k] ? " checked" : "") + '> <span class="ln"></span>' + esc(GRP[k].name) + '<span class="cnt">' + (gc[k] || 0) + "</span></label>";
     });
     $("g-list").innerHTML = h;
     Array.prototype.forEach.call(document.querySelectorAll("[data-t]"), function (el) {
@@ -569,6 +618,17 @@ button, input { font: inherit; color: inherit; }
         refresh();
       };
     });
+    function allOf(sel, key, map, on) {
+      return function () {
+        Array.prototype.forEach.call(document.querySelectorAll(sel), function (el) { el.checked = on; map[el.getAttribute(key)] = on; });
+        if (key === "data-t") { $("ly-pid").checked = on; $("ly-kn").checked = on; }
+        refresh();
+      };
+    }
+    $("t-all").onclick = allOf("[data-t]", "data-t", S.types, true);
+    $("t-none").onclick = allOf("[data-t]", "data-t", S.types, false);
+    $("g-all").onclick = allOf("[data-g]", "data-g", S.grps, true);
+    $("g-none").onclick = allOf("[data-g]", "data-g", S.grps, false);
     var st = { candidate: 0, excluded: 0, recheck: 0 };
     D.links.forEach(function (l) { if (st[l.st] !== undefined) st[l.st] += 1; });
     $("c-cand").textContent = st.candidate;
@@ -588,6 +648,7 @@ button, input { font: inherit; color: inherit; }
     function tog(id, key) { $(id).onchange = function () { S[key] = $(id).checked; if (key === "fold") ADJ = adjacency(); refresh(); }; }
     tog("o-cand", "showCand"); tog("o-excl", "showExcl"); tog("o-rechk", "showRechk"); tog("o-orphan", "orphan");
     tog("o-gap", "gap"); tog("o-noinput", "noInput"); tog("o-fold", "fold"); tog("o-arrows", "arrows"); tog("o-labels", "labels");
+    tog("o-isolated", "isolated");
     $("depth").oninput = function () { S.depth = parseInt($("depth").value, 10); refresh(); fit(); };
     Array.prototype.forEach.call(document.querySelectorAll("#vmode button"), function (b) { b.onclick = function () { setMode(b.getAttribute("data-v")); }; });
     Array.prototype.forEach.call(document.querySelectorAll("#cmode button"), function (b) { b.onclick = function () { setColor(b.getAttribute("data-c")); }; });
@@ -596,10 +657,12 @@ button, input { font: inherit; color: inherit; }
     $("z-fit").onclick = fit;
     $("lcol").onclick = function () { $("kg-app").classList.toggle("lcol"); setTimeout(resize, 30); };
     $("q").oninput = function () {
-      var q = $("q").value.trim().toLowerCase(), out = "";
-      if (q && D) D.nodes.filter(function (n) { return (n.id + " " + (n.label || "") + " " + (n.tag || "")).toLowerCase().indexOf(q) >= 0; })
-        .slice(0, 12).forEach(function (n) { out += '<div data-id="' + esc(n.id) + '">' + esc(n.label) + ' <span style="color:var(--muted)">' + esc(n.id) + "</span></div>"; });
+      S.query = $("q").value.trim().toLowerCase();
+      var out = "", hits = matchQuery();
+      hits.slice(0, 12).forEach(function (n) { out += '<div data-id="' + esc(n.id) + '">' + esc(n.label) + ' <span style="color:var(--muted)">' + esc(n.id) + "</span></div>"; });
+      if (hits.length > 12) out += '<div style="color:var(--muted);cursor:default">외 ' + (hits.length - 12) + "개 (캔버스에 표시)</div>";
       $("qres").innerHTML = out;
+      redraw();
       Array.prototype.forEach.call(document.querySelectorAll("#qres [data-id]"), function (el) {
         el.onclick = function () { var id = el.getAttribute("data-id"); select(id, true); focusNode(id); };
       });
@@ -618,6 +681,16 @@ button, input { font: inherit; color: inherit; }
     $("a1-run").onclick = function () {
       if (send && S.sel && S.sel.k === "n") send({ type: "runAlgorithm", algorithm: "A1", start: S.sel.id });
     };
+  }
+  /* 검색: ID·라벨·태그가 검색어를 포함하는 노드 중 표시 중인 것을 QS에 넣어 캔버스에서 강조한다(마우스 올림이 우선). */
+  function matchQuery() {
+    var q = S.query, hits = [];
+    if (q && D) hits = D.nodes.filter(function (n) {
+      return (n.id + " " + (n.label || "") + " " + (n.tag || "")).toLowerCase().indexOf(q) >= 0;
+    });
+    var shown = hits.filter(function (n) { return VIS[n.id]; });
+    QS = shown.length ? setOf(shown.map(function (n) { return n.id; })) : null;
+    return hits;
   }
   function focusNode(id) {
     var n = NB[id];
@@ -686,7 +759,8 @@ button, input { font: inherit; color: inherit; }
     D.links = D.links.filter(function (l) { return NB[l.s] && NB[l.t]; });
     D.links.forEach(function (l) { LB[l.id] = l; l.source = l.s; l.target = l.t; });
     S.depth = D.meta.default_radius || 2; $("depth").value = S.depth;
-    S.center = null; S.sel = null; fitted = false;
+    S.center = null; S.sel = null; fitted = false; HOVER = null; HS = null; S.query = ""; QS = null;
+    $("q").value = ""; $("qres").innerHTML = "";
     if (D.meta.auto_items) { S.showExcl = true; S.showCand = true; syncInputs(); }  /* 자동 추출(사람 확인 전) 항목은 처음부터 보임 */
     ADJ = adjacency();
     initialPositions();
@@ -706,7 +780,8 @@ button, input { font: inherit; color: inherit; }
         })
         .linkCanvasObject(drawLink).linkCanvasObjectMode(function () { return "replace"; }).linkWidth(3)
         .nodeLabel(tip).linkLabel(function (l) { return esc(l.kind + " · " + l.id + (l.st !== "confirmed" ? " · " + l.st : "")); })
-        .onNodeHover(function (n) { HOVER = n ? n.id : null; HS = hoverSet(); })
+        .onNodeHover(function (n) { HOVER = n ? n.id : null; HS = hoverSet(); redraw(); })
+        .onNodeDrag(function () { DRAG = true; }).onNodeDragEnd(function () { DRAG = false; })
         .onNodeClick(function (n) { select(n.id, true); })
         .onLinkClick(function (l) { selectLink(l); })
         .onBackgroundClick(function () { S.sel = null; refresh(); })
