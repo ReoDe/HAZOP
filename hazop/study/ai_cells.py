@@ -18,6 +18,7 @@ from hazop import paths
 from hazop.graph import project as project_graph
 from hazop.kg import build as kg_build
 from hazop.kg import context as kg_context
+from hazop.kg import expect
 from hazop.study import claude_http
 from hazop.study import results as res
 
@@ -156,9 +157,12 @@ def _component(n):
     return c
 
 
-def node_context(node, graph, kg, intent=None):
+def node_context(node, graph, kg, intent=None, expectations=None):
     """구간 맥락. intent: 설계 의도 (글, 출처 설명) 또는 None. kg가 None이거나 이 도면에 쓸 수 없으면 지식 항목 없이
     만들고 kg_note에 이유를 적는다. 같은 입력이면 prompt는 같은 값(목록 정렬 고정).
+    expectations: 잠재 후보(hazop.kg.expect.evaluate 결과) 또는 None. 주면 구성요소에 걸린 '보호수단 미확인·부재 확정 항목'을
+    prompt.unverified_expectations로 넣는다(정보 부족 단서일 뿐, 권고를 만들지 않음). 잠재 후보 ID는 allowed·adjacency에
+    넣지 않으며, kg_paths에 쓰면 그 경로를 저장 전에 빼고 경고를 남긴다. None이면 prompt는 이 인자가 없던 때와 같은 바이트.
     graph가 프로젝트 그래프(hazop.graph.project)면 kg를 프로젝트 그래프 ID로 옮겨 쓰고, 구성요소에 출처 도면을 붙이며,
     구간 밖 다른 도면 기기 태그를 근거 검증 경고 대상(allowed.outside_sheet_tags)으로 둔다."""
     is_project = project_graph.is_project_graph(graph)
@@ -215,6 +219,15 @@ def node_context(node, graph, kg, intent=None):
         "knowledge": knowledge,
         "knowledge_note": kg_note,
     }
+    if expectations is not None:
+        refs = set()
+        for m in members:
+            n = by_id[m]
+            gid = n.get("sheet") if is_project else graph.get("graph_id")
+            if gid and n.get("source_object_id"):
+                refs.add("%s#%s" % (gid, n["source_object_id"]))
+        prompt["unverified_expectations"] = {"note": expect.CONTEXT_NOTE,
+                                             "items": expect.context_items(expectations["items"], refs)}
     return {
         "node_id": node["node_id"],
         "prompt": prompt,
@@ -284,16 +297,30 @@ def _scenario_ok(s):
             and type(s.get("severity")) is not bool and type(s.get("frequency")) is not bool)
 
 
+def _split_paths(kg_paths, ctx):
+    """kg_paths -> (남길 경로, 경고). 잠재 후보는 사실이 아니라 근거가 될 수 없어(KD6) 그 ID가 든 경로는 통째로 뺀다.
+    ID만 빼면 앞뒤 단계가 이어진 것처럼 보이기 때문이다."""
+    known = ctx["allowed"]["entity_ids"] | ctx["allowed"]["kg_ids"]
+    kept, warns = [], []
+    for p in kg_paths:
+        if any(x.startswith(expect.ID_PREFIX) and x not in known for x in p):
+            warns.append("잠재 후보가 든 근거 경로를 뺌(잠재 후보는 근거가 아님): %s" % " → ".join(p))
+        else:
+            kept.append(list(p))
+    return kept, warns
+
+
 def _entry(scenario, ctx, entry_id):
     sev, freq = scenario["severity"], scenario["frequency"]
+    kg_paths, dropped = _split_paths(scenario["kg_paths"], ctx)
     return {"entry_id": entry_id, "origin": "ai_draft", "status": "proposed",
             "cause": scenario["cause"], "consequence": scenario["consequence"],
             "safeguards": list(scenario["safeguards"]), "recommendation": scenario["recommendation"],
             "severity": sev, "frequency": freq, "risk": res.risk_of(sev, freq),
-            "ai_basis": {"kg_paths": [list(p) for p in scenario["kg_paths"]],
+            "ai_basis": {"kg_paths": kg_paths,
                          "sources": [{"doc": s.get("doc"), "where": s.get("where")} for s in scenario["sources"]],
                          "equipment_tags": list(scenario["equipment_tags"]),
-                         "warnings": check_evidence(scenario, ctx)},
+                         "warnings": list(dict.fromkeys(dropped)) + check_evidence(dict(scenario, kg_paths=kg_paths), ctx)},
             "history": []}
 
 

@@ -4,7 +4,8 @@
   지식 노드·관계만), V5 통합 무방향(V1 + V3 + V4). V2(흐름 방향)와 A6~A11은 후속이라 만들지 않는다.
 - A1 상·하류 전파: ④ hazop.analysis.explore.explore()를 그대로 호출한다. 인자는 선택 노드가 속한 검토 구간 JSON의
   멤버로 만든 region_members와 그 구간의 exploration 값(④ run.prepare_doc과 같은 방식). 구간 밖이면 비활성.
-- A2 고아·근거 공백: V4만 쓴다. 설비 적용 관계(governed_by·has_setpoint·has_condition·analyzed_in)만 센다.
+- A2 고아·근거 공백: V4만 쓴다. 설비 적용 관계(레지스트리 a2_role apply, 지금 governed_by·has_setpoint·has_condition·
+  analyzed_in)만 센다. 기대 층(잠재 후보)은 레지스트리 v4=false라 어느 뷰에도 들어가지 않는다.
 - A3 차수(V5, 배관 구간 접기 결과 함께), A4 ego_graph(V5, undirected=True), A5 connected_components(V1·V5).
 - 결과는 결정적이다(정렬, 무작위 없음, 시각 기록 없음). 원본 레이어 파일은 읽기만 한다.
 - 연결·도달·차수는 계산 참고 자료이며 인과관계나 HAZOP 근거를 확정하지 않는다(§6).
@@ -26,7 +27,7 @@ from hazop.kg.schema import REGISTRY
 GENERATOR = "hazop.kg.algo"
 GENERATOR_VERSION = "0.1.0"
 SCHEMA_VERSION = "0.1"
-(PHYSICAL,) = REGISTRY.pid_view_kinds("V1")
+PHYSICAL_KINDS = REGISTRY.pid_view_kinds("V1")
 INSTRUMENT_KINDS = REGISTRY.pid_view_kinds("V3")
 # 지식 노드 종류 -> 그 노드를 설비에 적용하는 관계(§2.3 설비 적용 관계, §4.2 A2 판정 규칙). analyzed_in 포함 4종
 APPLY_KIND_OF = REGISTRY.apply_kind_of()
@@ -112,7 +113,7 @@ def v4_items(kg, graph):
 
 
 def view_v1(graph):
-    return to_networkx(graph, kinds={PHYSICAL})
+    return to_networkx(graph, kinds=set(PHYSICAL_KINDS))
 
 
 def view_v3(graph):
@@ -141,7 +142,7 @@ def view_v5(kg, graph):
     for n in graph["nodes"]:
         g.add_node(n["entity_id"], layer="pid", node_type=n["node_type"])
     for e in graph["edges"]:
-        if e["kind"] == PHYSICAL or e["kind"] in INSTRUMENT_KINDS:
+        if e["kind"] in PHYSICAL_KINDS or e["kind"] in INSTRUMENT_KINDS:
             g.add_edge(e["nodes"][0], e["nodes"][1], key=e["entity_id"], kind=e["kind"], layer="pid")
     v4 = view_v4(kg, graph)
     for n, d in v4.nodes(data=True):
@@ -236,7 +237,7 @@ def a1_propagation(graph, regions, start):
 
 # ---------------------------------------------------------------- A2
 def a2_orphans_gaps(kg, graph):
-    """A2 (§4.2 판정 규칙, V4만). 문서(document)는 판정하지 않는다.
+    """A2 (§4.2 판정 규칙, V4만). 설비 적용 관계가 없는 종류(문서 등)는 판정하지 않는다.
     - 고아: 지식그래프 전체 V4로 판정(다른 도면 P&ID 노드에 적용·언급된 것도 고아가 아님).
     - 근거 공백·지식 입력 없음: 선택 도면의 도면 객체 기준. 도면 연결점(continuation)은 따로 센다."""
     nodes = [n for n in kg["nodes"] if n["compute_view"]["v4"]]
@@ -267,7 +268,9 @@ def a2_orphans_gaps(kg, graph):
     orphans, judged = [], 0
     for n in sorted(nodes, key=lambda x: x["id"]):
         t = n["node_type"]
-        if t == "document":
+        rel = APPLY_KIND_OF.get(t)
+        # 설비 적용 관계가 없는 종류(문서, 앞으로 더할 클래스)는 고아 판정 대상이 아니다
+        if t != "doc_chunk" and rel is None:
             continue
         judged += 1
         if t == "doc_chunk":
@@ -278,8 +281,7 @@ def a2_orphans_gaps(kg, graph):
             continue
         hints = [{"chunk": c, "graph_id": e[0], "entity_id": e[1], "tag": tag(e)}
                  for c in sorted(chunks_of.get(n["id"], ())) for e in sorted(mentions_of.get(c, ()))]
-        orphans.append({"id": n["id"], "node_type": t, "reason": "%s 없음" % APPLY_KIND_OF[t],
-                        "link_hints": hints})
+        orphans.append({"id": n["id"], "node_type": t, "reason": "%s 없음" % rel, "link_hints": hints})
     gaps, no_input, no_input_cont = [], [], []
     objects = sorted(e for e, n in pid.items() if n["node_type"] == "drawing_object")
     for e in objects:
@@ -312,14 +314,14 @@ def fold_segments(v5, graph):
     (접은 그래프, [{segment, reason}] 접지 않은 구간)"""
     ends = {}
     for e in graph["edges"]:
-        if e["kind"] == PHYSICAL:
+        if e["kind"] in PHYSICAL_KINDS and e.get("segment"):
             ends.setdefault(e["segment"], []).append(e["node"])
     g = v5.copy()
     kept = []
     for n in sorted(v5.nodes):
         if v5.nodes[n].get("node_type") != "pipe_segment":
             continue
-        if any(d.get("kind") != PHYSICAL for _, _, d in v5.edges(n, data=True)):
+        if any(d.get("kind") not in PHYSICAL_KINDS for _, _, d in v5.edges(n, data=True)):
             kept.append({"segment": n, "reason": "지식·계장 연결 있음"})
             continue
         ns = ends.get(n, [])
@@ -401,7 +403,7 @@ def analyze(kg, graph, regions, start, radius=2, candidate_file=None):
                    "graph_refs": [{"graph_id": graph["graph_id"], "graph_version": graph["graph_version"]}],
                    "region_ref": a1.get("region_ref"), "region_key": _region_key(a1),
                    "start": start, "radius": radius},
-        "views": {"V1": dict(_view_stats(v1), kinds=[PHYSICAL]),
+        "views": {"V1": dict(_view_stats(v1), kinds=list(PHYSICAL_KINDS)),
                   "V3": dict(_view_stats(v3), kinds=list(INSTRUMENT_KINDS)),
                   "V4": dict(_view_stats(v4), rule="compute_view.v4 = true인 지식 노드·관계만(그래프활용 §4.1)"),
                   "V5": dict(_view_stats(v5), rule="V1 + V3 + V4, 무방향 MultiGraph")},

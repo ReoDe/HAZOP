@@ -1,5 +1,11 @@
 {
-  "registry_version": "0.4.0",
+  "registry_version": "0.5.0",
+  "layers": [
+    {"id": "pid", "label_ko": "P&ID 층", "screen": "pid", "filter": "type", "default_on": true},
+    {"id": "knowledge", "label_ko": "지식 층", "screen": "kn", "filter": "type", "default_on": true},
+    {"id": "expectation", "label_ko": "기대 층", "screen": "exp", "filter": "state", "default_on": true},
+    {"id": "study", "label_ko": "검토 층", "screen": "st", "filter": "type", "default_on": false}
+  ],
   "classes": [
     {"id": "plant_item", "parent": null, "layer": "pid", "label_ko": "P&ID 대상", "label_en": "Plant item",
      "properties": ["kind", "tag", "symbol_id", "flow_direction", "system_code", "safety_class", "seismic_category",
@@ -106,7 +112,10 @@
     {"id": "condition", "parent": "knowledge_item", "id_prefix": "cond-", "label_ko": "운전조건·설계값", "label_en": "Operating or design condition",
      "legend": {"shape": "capsule", "token": "kg-condition"}},
     {"id": "analysis_case", "parent": "knowledge_item", "id_prefix": "case-", "label_ko": "해석 사례", "label_en": "Analysis case",
-     "legend": {"shape": "tri", "token": "kg-analysis_case"}}
+     "legend": {"shape": "tri", "token": "kg-analysis_case"}},
+
+    {"id": "expectation", "parent": null, "layer": "expectation", "id_prefix": "exp-", "label_ko": "잠재 후보",
+     "label_en": "Expectation", "legend": {"shape": "circle", "token": "kg-edge-hi", "line": "dashed"}}
   ],
   "properties": [
     {"id": "kind", "type": "text", "label_ko": "종류"},
@@ -179,7 +188,8 @@
     {"id": "mention", "label_ko": "언급 (mentions)", "width": 1.4},
     {"id": "apply", "label_ko": "설비 적용 (governed_by·has_setpoint·has_condition·analyzed_in)", "width": 1.8},
     {"id": "doc_location", "label_ko": "문서 안 위치 (part_of·specified_in)", "width": 1},
-    {"id": "dependency", "label_ko": "문서 근거 의존 (depends_on)", "width": 1.6}
+    {"id": "dependency", "label_ko": "문서 근거 의존 (depends_on)", "width": 1.6},
+    {"id": "expect", "label_ko": "기대 (expects·satisfied_by)", "width": 1}
   ],
   "relations": [
     {"id": "has_endpoint", "layer": "pid", "from": ["pipe_segment"], "to": ["plant_item"], "group": "physical",
@@ -204,6 +214,11 @@
     {"id": "depends_on", "layer": "knowledge", "from": ["plant_item"], "to": ["plant_item"], "group": "dependency",
      "v4": true, "a2_role": null, "label_ko": "문서 근거 의존"},
     {"id": "analyzed_in", "layer": "knowledge", "from": ["plant_item"], "to": ["analysis_case"], "group": "apply",
-     "v4": true, "a2_role": "apply", "evidence_gap": false, "label_ko": "다뤄진 해석 사례"}
+     "v4": true, "a2_role": "apply", "evidence_gap": false, "label_ko": "다뤄진 해석 사례"},
+
+    {"id": "expects", "layer": "expectation", "from": ["plant_item", "knowledge_item"], "to": ["expectation"],
+     "group": "expect", "v4": false, "a2_role": null, "label_ko": "기대"},
+    {"id": "satisfied_by", "layer": "expectation", "from": ["expectation"], "to": ["plant_item", "knowledge_item"],
+     "group": "expect", "v4": false, "a2_role": null, "label_ko": "기대 충족 대상"}
   ]
 }

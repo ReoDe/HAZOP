@@ -8,8 +8,9 @@ import json
 import os
 
 REGISTRY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "registry.json")
-LAYERS = ("pid", "knowledge", "expectation", "study")
 SHAPES = ("circle", "square", "page", "hex", "diamond", "capsule", "tri")
+LEGEND_LINES = ("solid", "dashed")
+LAYER_FILTERS = ("type", "state")  # ③ 왼쪽 패널: 종류별 켜기·끄기 / 상태별 켜기·끄기(기대 층)
 A2_ROLES = (None, "mention", "apply")
 PID_VIEWS = ("V1", "V3")
 PID_ROOT = "plant_item"
@@ -20,6 +21,7 @@ PROPERTY_TYPES = ("enum", "quantity", "text")
 RELATION_KEYS = {"id", "layer", "from", "to", "group", "v4", "a2_role", "evidence_gap", "conflict_check",
                  "pid_view", "label_ko"}
 GROUP_KEYS = {"id", "label_ko", "width"}
+LAYER_KEYS = {"id", "label_ko", "screen", "filter", "default_on"}
 ORIGIN_KEYS = {"id", "label_ko", "layer", "legacy_methods", "confirm_needs_reviewer"}
 
 
@@ -55,11 +57,12 @@ def validate(data):
     if not isinstance(data, dict):
         return ["최상위가 JSON 객체가 아님"]
     problems = []
-    extra = sorted(set(data) - {"registry_version", "classes", "properties", "relations", "groups", "origins"})
+    extra = sorted(set(data) - {"registry_version", "layers", "classes", "properties", "relations", "groups", "origins"})
     if extra:
         problems.append("모르는 최상위 키 %s" % ", ".join(extra))
     if not _str(data.get("registry_version")):
         problems.append("registry_version 없음")
+    layer_ids = _check_items(data.get("layers"), "layers", LAYER_KEYS, problems)
     class_ids = _check_items(data.get("classes"), "classes", CLASS_KEYS, problems)
     group_ids = _check_items(data.get("groups"), "groups", GROUP_KEYS, problems)
     _check_items(data.get("relations"), "relations", RELATION_KEYS, problems)
@@ -67,16 +70,28 @@ def validate(data):
     prop_ids = set(_check_items(data.get("properties", []), "properties", PROPERTY_KEYS, problems))
     if problems:
         return problems
+    layers = tuple(layer_ids)
+    screens = []
+    for ly in data["layers"]:
+        if not _str(ly.get("label_ko")) or not _str(ly.get("screen")) or ly.get("filter") not in LAYER_FILTERS \
+                or not isinstance(ly.get("default_on"), bool):
+            problems.append("layers %s: label_ko·screen·filter(%s)·default_on(참·거짓) 필요"
+                            % (ly["id"], "/".join(LAYER_FILTERS)))
+        screens.append(ly.get("screen"))
+    for x in sorted({x for x in screens if _str(x) and screens.count(x) > 1}):
+        problems.append("layers: 화면 키 %s 중복" % x)
     classes = {c["id"]: c for c in data["classes"]}
     kinds = {}
     for c in data["classes"]:
         cid, parent = c["id"], c.get("parent")
-        if parent is None:
-            if c.get("layer") not in LAYERS:
-                problems.append("classes %s: 최상위 클래스의 layer가 %s 중 하나가 아님" % (cid, "/".join(LAYERS)))
+        if parent is not None and not _str(parent):
+            problems.append("classes %s: parent는 클래스 ID(문자열) 또는 null" % cid)
+        elif parent is None:
+            if c.get("layer") not in layers:
+                problems.append("classes %s: 최상위 클래스의 layer가 %s 중 하나가 아님" % (cid, "/".join(layers)))
         elif parent not in classes:
             problems.append("classes %s: 상위 클래스 %s가 없음(R1)" % (cid, parent))
-        elif "layer" in c and c["layer"] not in LAYERS:
+        elif "layer" in c and c["layer"] not in layers:
             problems.append("classes %s: layer 값 오류" % cid)
         for f in ("label_ko", "label_en"):
             if not _str(c.get(f)):
@@ -86,12 +101,14 @@ def validate(data):
                 problems.append("classes %s: %s가 빈 문자열이 아닌 문자열이 아님" % (cid, f))
         if "kind" in c:
             kinds.setdefault(c["kind"], []).append(cid)
-            if parent is None or classes.get(parent, {}).get("parent") is None:
+            if not _str(parent) or classes.get(parent, {}).get("parent") is None:
                 problems.append("classes %s: kind 클래스의 상위는 분류(최상위 아래 클래스)여야 함" % cid)
         lg = c.get("legend")
-        if lg is not None and (not isinstance(lg, dict) or set(lg) != {"shape", "token"} or lg["shape"] not in SHAPES
-                               or not _str(lg["token"]) or not lg["token"].startswith("kg-")):
-            problems.append("classes %s: legend는 {shape(%s), token(kg-...)}이어야 함" % (cid, "/".join(SHAPES)))
+        if "legend" in c and (not isinstance(lg, dict) or not {"shape", "token"} <= set(lg) <= {"shape", "token", "line"}
+                              or lg["shape"] not in SHAPES or not _str(lg["token"]) or not lg["token"].startswith("kg-")
+                              or lg.get("line", "solid") not in LEGEND_LINES):
+            problems.append("classes %s: legend는 {shape(%s), token(kg-...), line(%s, 선택)}이어야 함"
+                            % (cid, "/".join(SHAPES), "/".join(LEGEND_LINES)))
     for p in data.get("properties", []):
         pid = p["id"]
         if p.get("type") not in PROPERTY_TYPES or not _str(p.get("label_ko")):
@@ -121,6 +138,8 @@ def validate(data):
     for k, cids in sorted(kinds.items()):
         if len(cids) > 1:
             problems.append("kind %s가 클래스 %s에 겹침(R4)" % (k, ", ".join(cids)))
+    if problems:
+        return problems
     for cid in classes:
         seen, cur = [], cid
         while cur is not None and cur in classes:
@@ -144,7 +163,7 @@ def validate(data):
             problems.append("groups %s: label_ko·width(숫자) 필요" % g["id"])
     for r in data["relations"]:
         rid = r["id"]
-        if r.get("layer") not in LAYERS:
+        if r.get("layer") not in layers:
             problems.append("relations %s: layer 값 오류" % rid)
         for side in ("from", "to"):
             ends = r.get(side)
@@ -164,8 +183,6 @@ def validate(data):
             problems.append("relations %s: 설비 적용 관계는 evidence_gap(참·거짓) 필요" % rid)
         if r.get("a2_role") != "apply" and "evidence_gap" in r:
             problems.append("relations %s: evidence_gap은 설비 적용 관계에만 씀" % rid)
-        if r.get("a2_role") == "apply" and len(r.get("to") or []) != 1:
-            problems.append("relations %s: 설비 적용 관계의 to는 클래스 하나여야 함" % rid)
         if "conflict_check" in r and (not isinstance(r["conflict_check"], bool) or len(r.get("to") or []) != 1):
             problems.append("relations %s: conflict_check는 참·거짓이고 to가 클래스 하나여야 함" % rid)
         if r.get("layer") == "pid" and r.get("pid_view") not in PID_VIEWS:
@@ -174,8 +191,8 @@ def validate(data):
             problems.append("relations %s: pid_view는 P&ID 관계에만 씀" % rid)
     methods = []
     for o in data["origins"]:
-        if not _str(o.get("label_ko")) or o.get("layer") not in LAYERS:
-            problems.append("origins %s: label_ko·layer(%s) 필요" % (o["id"], "/".join(LAYERS)))
+        if not _str(o.get("label_ko")) or o.get("layer") not in layers:
+            problems.append("origins %s: label_ko·layer(%s) 필요" % (o["id"], "/".join(layers)))
         lm = o.get("legacy_methods")
         if not isinstance(lm, list) or not all(_str(m) for m in lm):
             problems.append("origins %s: legacy_methods는 method 이름 목록이어야 함" % o["id"])
@@ -194,9 +211,16 @@ def validate(data):
     for k, ps in sorted(seen_items.items()):
         if len(ps) > 1:
             problems.append("문서 항목 %s/%s가 속성 둘 이상(%s)에 대응" % (k[0], k[1], ", ".join(ps)))
-    apply_targets = [r["to"][0] for r in data["relations"] if r.get("a2_role") == "apply"]
-    for t in sorted({t for t in apply_targets if apply_targets.count(t) > 1}):
-        problems.append("설비 적용 관계 둘 이상이 같은 클래스 %s를 가리킴" % t)
+    if problems:
+        return problems
+    if not any(r.get("pid_view") == "V1" for r in data["relations"]):
+        problems.append("relations: 물리 연결 뷰(pid_view V1) 관계가 하나도 없음")
+    # 적용 관계 끝은 상위 클래스로 적어도 하위 클래스에 적용된다. 한 클래스에 둘 이상 걸리면 A2 판정이 모호하다.
+    for cid in classes:
+        hits = sorted({r["id"] for r in data["relations"] if r.get("a2_role") == "apply"
+                       for t in r["to"] if t in _ancestors(classes, cid)})
+        if len(hits) > 1:
+            problems.append("설비 적용 관계 둘 이상이 같은 클래스 %s를 가리킴(%s)" % (cid, ", ".join(hits)))
     return problems
 
 
@@ -241,6 +265,7 @@ class Registry:
         self.sha256 = hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False,
                                                 separators=(",", ":")).encode("utf-8")).hexdigest()
         self.classes = {c["id"]: c for c in data["classes"]}
+        self.layers = {ly["id"]: ly for ly in data["layers"]}
         self.relations = {r["id"]: r for r in data["relations"]}
         self.groups = {g["id"]: g for g in data["groups"]}
         self.origins = {o["id"]: o for o in data["origins"]}
@@ -303,10 +328,34 @@ class Registry:
     def pid_view_kinds(self, view):
         return tuple(r["id"] for r in self.data["relations"] if r.get("pid_view") == view)
 
+    def apply_relation_of(self, cid, evidence_gap=None):
+        """지식 클래스 -> 그 노드를 설비에 적용하는 관계(끝 클래스를 상위 클래스로 적은 관계 포함). 없으면 None.
+        evidence_gap=True면 근거 공백 판정에 세는 관계만."""
+        ancestors = _ancestors(self.classes, cid)
+        for r in self.data["relations"]:
+            if r.get("a2_role") == "apply" and (evidence_gap is None or r["evidence_gap"] is evidence_gap) \
+                    and any(t in ancestors for t in r["to"]):
+                return r["id"]
+        return None
+
     def apply_kind_of(self, evidence_gap=None):
-        """A2 '설비 적용' 관계의 끝 클래스 -> 관계. evidence_gap=True면 근거 공백 판정에 세는 것만."""
-        return {r["to"][0]: r["id"] for r in self.data["relations"] if r.get("a2_role") == "apply"
-                and (evidence_gap is None or r["evidence_gap"] is evidence_gap)}
+        """A2 '설비 적용' 관계를 가진 클래스 -> 관계(파일 순서, 상속 포함). evidence_gap=True면 근거 공백 판정에 세는 것만."""
+        out = {}
+        for cid in self.classes:
+            rel = self.apply_relation_of(cid, evidence_gap)
+            if rel is not None:
+                out[cid] = rel
+        return out
+
+    def pair_allowed(self, relation, from_cls, to_cls):
+        """관계 허용 쌍: 끝 클래스가 허용 클래스이거나 그 하위 클래스(단일 상속)."""
+        r = self.relations.get(relation)
+        return r is not None and any(self.is_a(from_cls, a) for a in r["from"]) \
+            and any(self.is_a(to_cls, a) for a in r["to"])
+
+    def screen_layer(self, layer):
+        """레지스트리 층 -> ③ 화면 층 키."""
+        return self.layers[layer]["screen"]
 
     def conflict_kinds(self):
         """같은 대상·항목 값 충돌(K7)을 비교하는 관계 -> 끝 클래스."""

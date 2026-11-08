@@ -31,7 +31,7 @@ BUILDER_VERSION = "0.3.0"  # 0.3.0: 속성 주장(claims)·도면값 충돌(M3)
 
 NODE_PREFIX = REGISTRY.node_prefix()
 LINK_PREFIX = "krel-"
-PID = "pid"  # 타입 쌍 표에서 P&ID 노드(drawing_object·pipe_segment)를 뜻함. 오류 문구가 바뀌지 않게 레지스트리 최상위 클래스 대신 씀
+PID = "pid"  # LINK_TYPES 표에서 P&ID 노드를 뜻함(표시용). 허용 쌍 판정은 pair_allowed가 P&ID 끝의 실제 클래스로 한다
 # kind -> (허용 시작 타입, 허용 끝 타입) (§2.3)
 LINK_TYPES = {k: tuple({PID if c == PID_ROOT else c for c in side} for side in pair)
               for k, pair in REGISTRY.link_types().items()}
@@ -67,9 +67,14 @@ def origin_of(rec):
     return rec.get("origin") or ORIGIN_OF_METHOD.get(rec.get("method"))
 
 
-def _type_allowed(t, allowed):
-    """허용 쌍은 상위 클래스로 적어도 하위 클래스에 적용된다(단일 상속)."""
-    return any(t == a or REGISTRY.is_a(t, a) for a in allowed)
+def pid_end_class(node):
+    """P&ID 끝 노드 -> 레지스트리 클래스(kind 클래스, 없으면 분류). 모르는 종류는 최상위 클래스로 본다."""
+    return claims.pid_class(node or {}) or PID_ROOT
+
+
+def pair_allowed(kind, from_cls, to_cls):
+    """허용 쌍은 상위 클래스로 적어도 하위 클래스에 적용된다(단일 상속, 레지스트리 pair_allowed)."""
+    return REGISTRY.pair_allowed(kind, from_cls, to_cls)
 
 
 def _has_source(src):
@@ -206,6 +211,13 @@ class _PidIndex:
                    source_object_id=n["source_object_id"])
         return end, None
 
+    def node(self, end):
+        """해석된 P&ID 끝 -> 그래프 노드(없으면 None)."""
+        found = self.by_id.get(end.get("graph_id")) or []
+        if len(found) != 1:
+            return None
+        return next((n for n in found[0]["nodes"] if n["entity_id"] == end.get("entity_id")), None)
+
 
 def build_kg(knowledge, graphs):
     """knowledge dict + P&ID graph dict 목록 -> knowledge_graph dict."""
@@ -325,10 +337,9 @@ def build_kg(knowledge, graphs):
                 ok = False
         l["ends"] = {s: ends.get(s) for s in ("from", "to")}
         if ok and len(ends) == 2:
-            allowed_from, allowed_to = LINK_TYPES[kind]
-            tf = PID if ends["from"]["layer"] == "pid" else ends["from"]["node_type"]
-            tt = PID if ends["to"]["layer"] == "pid" else ends["to"]["node_type"]
-            if not _type_allowed(tf, allowed_from) or not _type_allowed(tt, allowed_to):
+            tf, tt = (pid_end_class(pid.node(ends[s])) if ends[s]["layer"] == "pid" else ends[s]["node_type"]
+                      for s in ("from", "to"))
+            if not pair_allowed(kind, tf, tt):
                 block("K1", "type_pair_not_allowed", lid, "%s의 허용 타입 쌍이 아님: %s -> %s" % (kind, tf, tt))
                 ok = False
         l["source_inherited_from"] = None
@@ -418,6 +429,9 @@ def build_kg(knowledge, graphs):
                 reasons.append("%s 끝 지식 노드가 V4 밖" % s)
         if l["recheck"]:
             reasons.append("recheck_required")
+        rel = REGISTRY.relations.get(l.get("kind"))
+        if rel is not None and not rel["v4"]:
+            reasons.append("relation_not_in_v4")
         l["compute_view"] = {"v4": not reasons, "excluded_reasons": reasons}
 
     # ---- 속성 주장(KD4)과 K7: 같은 대상·같은 칸의 서로 다른 값 -> 모두 보존하고 충돌 표시

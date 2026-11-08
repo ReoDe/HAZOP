@@ -64,11 +64,13 @@ def sample_checks(kg, knowledge, graphs, out_dir):
     gmap = {g["graph_id"]: g for g in graphs}
     res = []
     def end_type(e):
-        return build.PID if e["layer"] == "pid" else node[e["ref"]]["node_type"]
+        if e["layer"] != "pid":
+            return node[e["ref"]]["node_type"]
+        g = gmap.get(e.get("graph_id")) or {"nodes": []}
+        return build.pid_end_class(next((n for n in g["nodes"] if n["entity_id"] == e.get("entity_id")), None))
 
     def pair_ok(l):
-        allowed_from, allowed_to = build.LINK_TYPES[l["kind"]]
-        return end_type(l["ends"]["from"]) in allowed_from and end_type(l["ends"]["to"]) in allowed_to
+        return build.pair_allowed(l["kind"], end_type(l["ends"]["from"]), end_type(l["ends"]["to"]))
     res.append(("K1", "노드·관계 종류와 관계 타입 쌍(from·to node_type)이 화이트리스트 안",
                 all(n["node_type"] in build.NODE_PREFIX for n in kg["nodes"])
                 and all(l["kind"] in build.LINK_TYPES and pair_ok(l) for l in kg["links"])))

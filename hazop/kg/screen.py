@@ -4,6 +4,8 @@
   algo.py 함수 그대로 호출한다. JS는 넘겨받은 값으로 그리기만 하고, 로컬 깊이 BFS는 표시 전용이다(§5.2, 검사 V1).
 - 데이터: P&ID 노드·관계 + 지식 노드·관계(V5 포함 여부 표시) + 표시 전용 연결 후보(link_candidates.csv의
   link_status=candidate 행, 현재 도면·버전에서 대상이 풀리는 것만, T1 D9). 후보·미확인·가설·재확인 항목은 계산에 넣지 않는다.
+- 잠재 후보(hazop.kg.expect 결과)는 기대 층 노드·관계(expects·satisfied_by)로 넣되 v5=false로 두고 계산 뷰에 넣지 않는다.
+  화면이 상태별로 켜고 끄며, 사람 판단은 앱(③ 상세 패널)이 저장한다.
 - HTML: force-graph vendor JS를 인라인으로 넣는다(<script src> 없음, T1 D5). 데이터를 넣으면 브라우저 단독 모드,
   데이터 없이(app 셸) 만들면 앱이 브리지 loadKnowledge 메시지로 데이터를 넘긴다. 데이터 JSON의 '/'는 '\\/'로 적어
   생성 부분에 URL 문자열이 생기지 않게 한다(검사 V2).
@@ -16,7 +18,7 @@ import os
 
 from hazop.app import tokens
 from hazop.graph.build import node_origin
-from hazop.kg import algo, build, link
+from hazop.kg import algo, build, expect, link
 from hazop.kg.schema import REGISTRY
 
 NODE_LIMIT = 5000  # 전역 보기 노드 수 상한(그래프활용 §7.3, 검사 S1, T1 D8)
@@ -27,7 +29,12 @@ TEMPLATE = os.path.join(HERE, "screen_template.html")
 VENDOR_DIR = os.path.join(HERE, "vendor", "force-graph-1.52.0")
 VENDOR_JS = os.path.join(VENDOR_DIR, "force-graph.min.js")
 PLACEHOLDERS = ("/*@CSS_VARS@*/", "/*@DATA@*/", "/*@VENDOR@*/", "/*@SCHEMA@*/")
-SCREEN_LAYER = {"pid": "pid", "knowledge": "kn"}
+SCREEN_LAYER = {ly: REGISTRY.screen_layer(ly) for ly in REGISTRY.layers}
+EXP_LAYER = REGISTRY.screen_layer("expectation")
+# 잠재 후보 상태: (상태, 색 토큰, 처음 켬). 색은 ③의 차분한 계열에서 고름(새 토큰 없음). 무관·확인됨은 기본 숨김(입력 §2.1)
+EXPECT_STATES = (("expected", "kg-edge-hi", True), ("candidate_found", "kg-instrument", True),
+                 ("confirmed_absent", "kg-flag-ink", True), ("confirmed_present", "kg-pipe_segment", False),
+                 ("not_applicable", "kg-unclassified", False))
 TRUNCATION_LABELS = {"external_drawing": "도면 경계에서 멈춤"}  # 디자인 §3.2. 그 밖의 사유는 reason 그대로
 S1_TEXT ="전역 보기 노드 수 상한 초과 — 노드 %s개 > %s. 로컬 보기를 권장합니다(전역 보기는 그대로 쓸 수 있음)"
 
@@ -183,9 +190,52 @@ def _label(n):
     return n["id"]
 
 
-def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_note=None):
+def expectation_view(expectations, graph):
+    """잠재 후보(expect.evaluate 결과) -> 이 도면의 기대 층 노드·관계와 집계. 대상이 다른 도면이면 넣지 않고 센다.
+    후보(satisfied_by) 끝이 다른 도면이면 관계만 빼고 노드 상세에는 남긴다."""
+    if expectations is None:
+        return [], [], None
+    gid = graph["graph_id"]
+    by_soid = {n.get("source_object_id"): n["entity_id"] for n in graph["nodes"] if n.get("source_object_id")}
+
+    def entity(ref):
+        g, _, soid = (ref or "").partition("#")
+        return by_soid.get(soid) if g == gid else None
+    nodes, links, other, gap = [], [], 0, {}
+    for it in expectations["items"]:
+        target = entity(it["target"])
+        if target is None:
+            other += 1
+            continue
+        label = it["label"] if len(it["label"]) <= 24 else it["label"][:23] + "…"
+        nodes.append({"id": it["id"], "layer": EXP_LAYER, "type": "expectation", "label": label, "xs": it["state"],
+                      "recheck": it["recheck"], "rule": it["rule_id"], "target": target, "v5": False})
+        links.append({"id": "xrel-%s-t" % it["id"], "kind": "expects", "s": target, "t": it["id"], "layer": EXP_LAYER,
+                      "st": "expect", "v5": False, "a": 0})
+        if it["state"] in ("candidate_found", "confirmed_present"):
+            refs = (it.get("judgement") or {}).get("found") if it["state"] == "confirmed_present" else None
+            for ref in sorted(set(refs or [f["ref"] for f in it["found"]])):
+                e = entity(ref)
+                if e is not None and e != target:
+                    links.append({"id": "xrel-%s-%s" % (it["id"], e), "kind": "satisfied_by", "s": it["id"], "t": e,
+                                  "layer": EXP_LAYER, "st": "expect", "v5": False, "a": 0})
+        if it["state"] in expect.GAP_STATES:
+            gap.setdefault(target, []).append(it["id"])
+    states = {}
+    for n in nodes:
+        states[n["xs"]] = states.get(n["xs"], 0) + 1
+    info = {"shown": len(nodes), "other_graphs": other, "states": dict(sorted(states.items())),
+            "recheck": sum(1 for n in nodes if n["recheck"]), "gap": gap,
+            "gap_absent": sum(1 for n in nodes if n["xs"] == "confirmed_absent"),
+            "gap_expected": sum(1 for n in nodes if n["xs"] == "expected"),
+            "rules_version": expectations.get("rules_version")}
+    return nodes, links, info
+
+
+def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_note=None, expectations=None):
     """화면 JSON(dict). candidates: link_candidates.csv 행 목록 또는 None(파일 없음).
-    start: A1 시작점(None이면 default_start). 알고리즘을 실행할 수 없으면 algo.enabled=false와 사유."""
+    start: A1 시작점(None이면 default_start). 알고리즘을 실행할 수 없으면 algo.enabled=false와 사유.
+    expectations: 잠재 후보(expect.evaluate 결과) 또는 None(계산하지 않음)."""
     gid, gver = graph["graph_id"], graph["graph_version"]
     v5 = algo.view_v5(kg, graph)
     v5_keys = {k for _, _, k in v5.edges(keys=True)}
@@ -225,7 +275,7 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
             continue
         a, b = e["nodes"][0], e["nodes"][1]
         links.append({"id": e["entity_id"], "kind": e["kind"], "s": a, "t": b, "layer": "pid", "st": "confirmed",
-                      "v5": True, "a": _flow_sign(e, segs) if e["kind"] == algo.PHYSICAL else 0})
+                      "v5": True, "a": _flow_sign(e, segs) if e["kind"] in algo.PHYSICAL_KINDS else 0})
     for l in kg["links"]:
         if l.get("link_status") == "rejected":
             skipped["rejected"] += 1
@@ -274,6 +324,10 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
                       "amb": (r.get("ambiguous") or "").strip().lower() == "true", "match": r.get("match_text"),
                       "key": r.get("candidate_key")})
 
+    x_nodes, x_links, x_info = expectation_view(expectations, graph)
+    nodes += x_nodes
+    links += x_links
+
     problem = algo_problem(kg, graph)
     alg = {"enabled": problem is None, "reason": problem}
     if problem is None:
@@ -315,6 +369,8 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
         # 자동 추출·사람 확인 전 지식 노드 수. 0보다 크면 화면이 미확인·후보 표시를 켠 채로 연다(§9.3)
         "auto_items": sum(1 for n in kg["nodes"] if n.get("method") == "extractor"
                           and n.get("knowledge_status") != "confirmed"),
+        "ai_items": sum(1 for x in nodes + links if x.get("ai") and not x["v5"]),
+        "expectations": x_info,
     }
     return {"meta": meta, "nodes": nodes, "links": links, "algo": alg}
 
@@ -345,11 +401,28 @@ def data_js(data):
 
 def legend_tables():
     """화면 범례 표 (TYPE, GRP_OF, GRP). 순서는 레지스트리 파일 순서(범례 표시 순서)."""
-    types = {c["id"]: {"layer": SCREEN_LAYER[REGISTRY.layer(c["id"])], "name": c["label_ko"],
-                       "col": c["legend"]["token"], "shape": c["legend"]["shape"]} for c in REGISTRY.legend_classes()}
+    types = {}
+    for c in REGISTRY.legend_classes():
+        t = {"layer": SCREEN_LAYER[REGISTRY.layer(c["id"])], "name": c["label_ko"], "col": c["legend"]["token"],
+             "shape": c["legend"]["shape"]}
+        if c["legend"].get("line", "solid") != "solid":
+            t["line"] = c["legend"]["line"]
+        types[c["id"]] = t
     grp_of = {r["id"]: r["group"] for r in REGISTRY.data["relations"]}
     grps = {g["id"]: {"name": g["label_ko"], "w": g["width"]} for g in REGISTRY.data["groups"]}
     return types, grp_of, grps
+
+
+def layer_table():
+    """화면 층 표 [{key, name, filter, on}] (레지스트리 layers 순서). 종류 필터 층은 '노드 종류'에, 상태 필터 층은
+    자기 묶음(기대 층은 '잠재 후보')에 나온다."""
+    return [{"key": ly["screen"], "name": ly["label_ko"], "filter": ly["filter"], "on": ly["default_on"]}
+            for ly in REGISTRY.data["layers"]]
+
+
+def expect_table():
+    """잠재 후보 상태 표 [{state, name, col, on}]."""
+    return [{"state": st, "name": expect.STATES[st], "col": col, "on": on} for st, col, on in EXPECT_STATES]
 
 
 def schema_js():
@@ -357,7 +430,8 @@ def schema_js():
     def js(obj):
         return json.dumps(obj, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace("/", "\\/")
     types, grp_of, grps = legend_tables()
-    return "var TYPE = %s;\n  var GRP_OF = %s;\n  var GRP = %s;" % (js(types), js(grp_of), js(grps))
+    return "var TYPE = %s;\n  var GRP_OF = %s;\n  var GRP = %s;\n  var LAYERS = %s;\n  var XSTATES = %s;" % (
+        js(types), js(grp_of), js(grps), js(layer_table()), js(expect_table()))
 
 
 def build_html(data=None):

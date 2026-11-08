@@ -81,6 +81,10 @@ OLD_GRP = {
     "pos": {"name": "문서 안 위치 (part_of·specified_in)", "w": 1},
     "dep": {"name": "문서 근거 의존 (depends_on)", "w": 1.6},
 }
+# M4: 기대 층(잠재 후보) 클래스·관계 묶음 추가(설계안 §8.3, 사전 §3.4)
+M4_TYPE = {"expectation": {"layer": "exp", "name": "잠재 후보", "col": "kg-edge-hi", "shape": "circle", "line": "dashed"}}
+M4_GRP = {"expect": {"name": "기대 (expects·satisfied_by)", "w": 1}}
+M4_GRP_OF = {"expects": "expect", "satisfied_by": "expect"}
 # 화면 내부 키만 사전 §4 묶음 ID로 바뀜(화면에 보이지 않음)
 GROUP_RENAME = {"phys": "physical", "meas": "measurement", "sig": "signal", "men": "mention", "app": "apply",
                 "pos": "doc_location", "dep": "dependency"}
@@ -211,14 +215,14 @@ class RegistryEquivalenceTest(unittest.TestCase):
         self.assertEqual(context.TYPE_ORDER, OLD_CONTEXT_TYPE_ORDER)
 
     def test_algo_views(self):
-        self.assertEqual(algo.PHYSICAL, "has_endpoint")
+        self.assertEqual(algo.PHYSICAL_KINDS, ("has_endpoint",))
         self.assertEqual(algo.INSTRUMENT_KINDS, ("measurement_connection", "signal_connection"))
 
     def test_screen_tables_same_labels_colors_order(self):
         types, grp_of, grps = screen.legend_tables()
-        self.assertEqual(list(types.items()), list(OLD_TYPE.items()))
-        self.assertEqual(list(grps.items()), [(GROUP_RENAME[k], v) for k, v in OLD_GRP.items()])
-        self.assertEqual(grp_of, {k: GROUP_RENAME[v] for k, v in OLD_GRP_OF.items()})
+        self.assertEqual(list(types.items()), list(OLD_TYPE.items()) + list(M4_TYPE.items()))
+        self.assertEqual(list(grps.items()), [(GROUP_RENAME[k], v) for k, v in OLD_GRP.items()] + list(M4_GRP.items()))
+        self.assertEqual(grp_of, dict({k: GROUP_RENAME[v] for k, v in OLD_GRP_OF.items()}, **M4_GRP_OF))
 
     def test_html_has_tables_once(self):
         html = screen.build_html(None)

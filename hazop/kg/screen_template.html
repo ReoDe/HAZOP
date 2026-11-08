@@ -23,6 +23,7 @@ button, input { font: inherit; color: inherit; }
 .tg.off { opacity: .45; pointer-events: none; }
 .sw { width: 10px; height: 10px; flex: none; border-radius: 50%; }
 .sw.sq { border-radius: 2px; }
+.sw.dash { background: none !important; border: 1.5px dashed; box-sizing: border-box; }
 .ln { width: 14px; height: 0; border-top: 1.5px solid var(--kg-edge-hi); flex: none; }
 .cnt { margin-left: auto; font-size: 11px; color: var(--muted); }
 .hint { font-size: 11px; color: var(--muted); line-height: 1.45; margin-top: 4px; }
@@ -68,9 +69,7 @@ button, input { font: inherit; color: inherit; }
     <div class="ph"><span class="t">보기 설정</span><span class="sp"></span><button class="colbtn" id="lcol" title="접기/펴기">&#9664;</button></div>
     <div class="pb">
       <div class="sec"><div class="sec-h">검색</div><input type="text" id="q" placeholder="태그·이름으로 찾기" aria-label="태그·이름으로 찾기"><div id="qres"></div></div>
-      <div class="sec"><div class="sec-h">노드 종류</div>
-        <label class="layer-h"><input type="checkbox" id="ly-pid" checked> P&amp;ID 층</label><div id="t-pid"></div>
-        <label class="layer-h"><input type="checkbox" id="ly-kn" checked> 지식 층</label><div id="t-kn"></div>
+      <div class="sec"><div class="sec-h">노드 종류</div><div id="t-layers"></div>
         <div class="lbtns"><button class="btn" id="t-all">모두</button><button class="btn" id="t-none">모두 끄기</button></div></div>
       <div class="sec"><div class="sec-h">관계</div><div id="g-list"></div>
         <div class="lbtns"><button class="btn" id="g-all">모두</button><button class="btn" id="g-none">모두 끄기</button></div></div>
@@ -78,12 +77,16 @@ button, input { font: inherit; color: inherit; }
         <label class="tg"><input type="checkbox" id="o-cand"> 후보 링크 <span class="cnt" id="c-cand"></span></label>
         <label class="tg"><input type="checkbox" id="o-excl"> 미확인·가설 항목 <span class="cnt" id="c-excl"></span></label>
         <label class="tg"><input type="checkbox" id="o-rechk"> 재확인 필요 <span class="cnt" id="c-rechk"></span></label>
+        <label class="tg"><input type="checkbox" id="o-ai"> AI 초안 <span class="cnt" id="c-ai"></span></label>
         <div class="hint">켜도 계산 뷰(V4·V5)와 알고리즘 결과에 들어가지 않습니다. 흐린 파선과 "계산 제외" 표시로 구분합니다.</div></div>
+      <div class="sec" id="sec-exp"><div class="sec-h">잠재 후보</div><div id="x-list"></div>
+        <div class="hint" id="x-note">규칙으로 만든 기대이며 사실이 아닙니다. 점선 테두리로 그리고 계산 뷰(V4·V5)와 알고리즘 결과에 넣지 않습니다. 상태는 오른쪽 상세에서 바꿉니다.</div></div>
       <div class="sec" id="sec-a2"><div class="sec-h">A2 고아 · 근거 공백</div>
         <label class="tg"><input type="checkbox" id="o-orphan"> 고아 강조 <span class="cnt" id="c-orphan"></span></label>
         <label class="tg"><input type="checkbox" id="o-gap"> 근거 공백 강조 <span class="cnt" id="c-gap"></span></label>
         <label class="tg"><input type="checkbox" id="o-noinput"> 지식 입력 없음 표시 <span class="cnt" id="c-noinput"></span></label>
-        <div class="hint">연결 없음은 "해당 없음"이 아니라 "지식 입력 미확인"입니다. 근거 공백은 자료 요청 메모 후보입니다.</div></div>
+        <label class="tg" id="tg-xgap"><input type="checkbox" id="o-xgap"> 기대 공백 강조 <span class="cnt" id="c-xgap"></span></label>
+        <div class="hint">연결 없음은 "해당 없음"이 아니라 "지식 입력 미확인"입니다. 근거 공백은 자료 요청 메모 후보입니다. 기대 공백은 부재 확정과 아직 기대됨인 잠재 후보입니다.</div></div>
       <div class="sec"><div class="sec-h">표시</div>
         <label class="tg"><input type="checkbox" id="o-fold"> 배관 구간 접기 (화면 전용)</label>
         <label class="tg"><input type="checkbox" id="o-arrows" checked> 흐름 화살표 (방향 확인 구간만)</label>
@@ -172,14 +175,29 @@ button, input { font: inherit; color: inherit; }
   var PID_LABEL_SCALE = 1.2, LABEL_FADE = 0.6, SHAPE_PX = 7;  /* 점 반지름이 SHAPE_PX 화면 픽셀 이상이면 지식 노드 도형을 그림 */
   var D = null, G = null, NB = nul(), LB = nul(), ADJ = nul(), VIS = nul(), VISL = nul(), HOVER = null, send = null, fitted = false;
   var S = { mode: "global", color: "type", sel: null, center: null, depth: 2, fold: false, labels: true, arrows: true,
-    showCand: false, showExcl: false, showRechk: false, orphan: false, gap: false, noInput: false, isolated: true,
-    query: "", types: {}, grps: {} };
+    showCand: false, showExcl: false, showRechk: false, showAi: false, orphan: false, gap: false, noInput: false,
+    xgap: false, isolated: true, query: "", types: {}, grps: {}, xs: {} };
+  var EXPL = (LAYERS.filter(function (l) { return l.filter === "state"; })[0] || {}).key;  /* 기대 층 화면 키 */
+  var XS = nul();
+  XSTATES.forEach(function (x) { XS[x.state] = x; S.xs[x.state] = x.on; });
   var QS = null, ISO = 0, DRAG = false;  /* QS: 검색어와 맞는 노드 집합(없으면 null), ISO: 연결 없는 표시 노드 수 */
 
   /* ---------------- 표시 집합 (계산 아님: 넘겨받은 V5 표시값으로만 고름) ---------------- */
-  function nodeStatusOn(n) { return n.v5 || S.showExcl; }
+  function nodeStatusOn(n) {
+    if (n.layer === EXPL) return S.xs[n.xs] !== false;
+    return n.v5 || (n.ai ? S.showAi : S.showExcl);
+  }
   function linkStatusOn(l) {
+    if (l.st === "expect") return true;
+    if (l.ai && l.st !== "confirmed") return S.showAi;
     return l.st === "confirmed" ? true : l.st === "candidate" ? S.showCand : l.st === "recheck" ? S.showRechk : S.showExcl;
+  }
+  function xgapOf(id) {  /* 기대 공백: 부재 확정·기대됨 잠재 후보와 그 대상 */
+    var x = D.meta.expectations;
+    if (!x) return false;
+    var n = NB[id];
+    if (n && n.layer === EXPL) return n.xs === "expected" || n.xs === "confirmed_absent";
+    return !!own(x.gap, id);
   }
   function adjacency() {
     var adj = nul();
@@ -251,7 +269,7 @@ button, input { font: inherit; color: inherit; }
       nodes: D ? D.nodes.length : 0, links: D ? D.links.length : 0, visible: Object.keys(VIS).length,
       visibleLinks: Object.keys(VISL).length, app: KG.app, a1start: D && D.algo.A1 ? D.algo.A1.start : null,
       kg_version: D ? D.meta.kg_version : null, hover: HOVER, matches: QS ? Object.keys(QS).length : 0, isolated: ISO,
-      errors: KG.errors.slice() };
+      expectations: D ? D.nodes.filter(function (n) { return n.layer === EXPL; }).length : 0, errors: KG.errors.slice() };
   };
   /* 노드의 페이지 좌표(CSS px). 사용자 시나리오 검사가 실제 마우스를 노드 위에 올릴 때 쓴다. */
   KG.pageOf = function (id) {
@@ -265,7 +283,8 @@ button, input { font: inherit; color: inherit; }
   KG.setLocal = function (center, depth) { S.center = center; S.depth = depth; $("depth").value = depth; setMode("local"); };
   KG.setGlobal = function () { setMode("global"); };
   KG.setToggles = function (o) {
-    ["showCand", "showExcl", "showRechk", "fold", "noInput"].forEach(function (k) { if (k in o) S[k] = !!o[k]; });
+    ["showCand", "showExcl", "showRechk", "showAi", "fold", "noInput", "xgap"].forEach(function (k) { if (k in o) S[k] = !!o[k]; });
+    if (o.xs) Object.keys(o.xs).forEach(function (k) { S.xs[k] = !!o.xs[k]; });
     ADJ = adjacency(); syncInputs(); refresh();
   };
   KG.painted = function () {
@@ -279,6 +298,7 @@ button, input { font: inherit; color: inherit; }
   /* ---------------- 그리기 ---------------- */
   function radius(n) {
     if (n.type === "pipe_segment") return 2.2;
+    if (n.layer === EXPL) return 3.4;
     if (n.cont) return 3.2;
     var deg = D.algo.A3 ? D.algo.A3[n.id] : null;
     if (!n.v5 || deg === null || deg === undefined) return 3;
@@ -300,6 +320,7 @@ button, input { font: inherit; color: inherit; }
       var c = own(D.algo.A5.comp, n.id);
       return c === undefined ? cv("comp-other") : c < 6 ? cv("comp-" + (c + 1)) : cv("comp-other");
     }
+    if (n.layer === EXPL && XS[n.xs]) return cv(XS[n.xs].col);
     return cv(typeOf(n.type).col);
   }
   function shapePath(ctx, shape, x, y, r) {
@@ -334,6 +355,11 @@ button, input { font: inherit; color: inherit; }
   var HS = null;
   function badges(n) {
     var out = [];
+    if (n.layer === EXPL) {
+      out.push(["잠재 후보 · " + (XS[n.xs] ? XS[n.xs].name : n.xs), fillOf(n)]);
+      if (n.recheck) out.push(["⟳ 재확인 필요", cv("kg-flag-ink")]);
+      return out;
+    }
     if (n.conflict) out.push(["≠ 충돌", cv("kg-conflict")]);
     if (n.nosrc) out.push(["∅ 근거 없음", cv("kg-nosrc")]);
     if (n.hedit) out.push(["사람 수정", cv("ink-2")]);
@@ -364,7 +390,7 @@ button, input { font: inherit; color: inherit; }
   function labelAlpha(n, scale, hot) {
     if (hot) return 1;
     if (!S.labels || n.type === "pipe_segment") return 0;
-    var at = n.layer === "kn" ? KN_LABEL_SCALE : PID_LABEL_SCALE;
+    var at = n.layer === "pid" ? PID_LABEL_SCALE : KN_LABEL_SCALE;
     return Math.max(0, Math.min(1, (scale - at + LABEL_FADE) / LABEL_FADE));
   }
   function drawNode(n, ctx, scale) {
@@ -377,7 +403,11 @@ button, input { font: inherit; color: inherit; }
     var col = fillOf(n);
     /* 화면에서 작으면 모두 점. 크게 확대했을 때만 지식 노드 도형(색 없이도 종류 구분)을 그린다. */
     shapePath(ctx, r * scale >= SHAPE_PX ? t.shape : "circle", x, y, r);
-    if (!n.v5 || n.cont) {  /* 속 빈 점: 계산 제외(파선) · 도면 연결점(다른 도면으로 이어짐) */
+    if (n.layer === EXPL) {  /* 잠재 후보: 점선 테두리(사실 아님, 계산 제외) */
+      ctx.fillStyle = cv("kg-canvas"); ctx.fill();
+      ctx.lineWidth = 1.4 / scale; ctx.strokeStyle = col; ctx.setLineDash([2 / scale, 1.6 / scale]);
+      ctx.stroke(); ctx.setLineDash([]);
+    } else if (!n.v5 || n.cont) {  /* 속 빈 점: 계산 제외(파선) · 도면 연결점(다른 도면으로 이어짐) */
       ctx.fillStyle = cv("kg-canvas"); ctx.fill();
       ctx.lineWidth = 1.2 / scale; ctx.strokeStyle = col;
       if (!n.v5) { ctx.globalAlpha = alpha * EXCL; ctx.setLineDash([2.5 / scale, 1.5 / scale]); }
@@ -393,6 +423,8 @@ button, input { font: inherit; color: inherit; }
     if (S.noInput && noInputOf(n.id)) {
       ctx.setLineDash([3 / scale, 2 / scale]); ring(cv("muted"), 1.2, 2.5); ctx.setLineDash([]);
     }
+    if (S.xgap && xgapOf(n.id)) { ctx.setLineDash([3 / scale, 2 / scale]); ring(cv("kg-flag"), 1.6, 3.5); ctx.setLineDash([]); }
+    if (n.layer === EXPL && n.recheck) ring(cv("kg-flag"), 1, 2);
     if (S.color === "a1" && a1Of(n.id) === "start") ring(cv("a1-start"), 1.4, 2.5);
     if (QS && QS[n.id] && !HS) ring(cv("ui"), 1.6, 2.5);
     if (sel) ring(cv("ui"), 2.2, 3.5);
@@ -433,6 +465,7 @@ button, input { font: inherit; color: inherit; }
     var col = cv(near ? "kg-edge-hi" : "kg-edge"), w = near ? 1.4 : 1, alpha = near ? 0.9 : 0.55, dash = null, nnf = false;
     if (l.st === "candidate" || l.st === "excluded") { dash = DASH; alpha *= EXCL; }
     if (l.st === "recheck") { dash = DASH; col = cv("kg-flag"); w = 1.6; alpha = 1; }
+    if (l.st === "expect") { dash = DASH; alpha *= EXCL; }
     if (S.color === "a1") {
       var r = a1Edge(l.id);
       if (r) { col = cv(dirOf(r.dir)[0]); w = 2.2; alpha = 1; nnf = r.nnf; }
@@ -468,6 +501,8 @@ button, input { font: inherit; color: inherit; }
   function tip(n) {
     var t = typeOf(n.type);
     var s = "<b>" + esc(n.label) + "</b><br>" + esc(t.name) + " · " + esc(n.id);
+    if (n.layer === EXPL) return s + "<br>" + esc((XS[n.xs] ? XS[n.xs].name : n.xs) + " · 규칙 " + n.rule) +
+      (n.recheck ? "<br>재확인 필요(판·내용 변경)" : "") + "<br>사실 아님 · 계산 제외";
     if (!n.v5) s += "<br>계산 제외(" + esc(n.ks) + ")";
     if (n.nosrc) s += "<br>근거 없음";
     if (n.hedit) s += "<br>사람 수정(② 도면 추출)";
@@ -542,7 +577,7 @@ button, input { font: inherit; color: inherit; }
     if (S.color === "type") {
       h += '<div class="note">색 = 노드 종류(왼쪽 목록), 점 크기 = 연결 수(A3). 속 빈 파선 점 = 계산 제외(미확인·가설), 속 빈 점 = 도면 연결점. ' +
         '회색 선 = 관계(마우스를 올리면 그 노드의 관계만 진하게), 화살표 = 흐름 방향이 확인된 배관만. 파란 고리 = 선택·검색 결과, ' +
-        '빨간 고리 = 충돌, 호박 파선 = 재확인 필요. 라벨은 확대하면 나타납니다.</div>';
+        '빨간 고리 = 충돌, 호박 파선 = 재확인 필요, 점선 테두리 = 잠재 후보(사실 아님). 라벨은 확대하면 나타납니다.</div>';
     } else if (S.color === "a1") {
       h += '<div class="row">';
       Object.keys(A1_NAME).forEach(function (k) { h += '<span class="it">' + sw(A1_DIR[k][0]) + esc(A1_DIR[k][1] + " " + A1_NAME[k]) + "</span>"; });
@@ -561,21 +596,45 @@ button, input { font: inherit; color: inherit; }
   }
   function syncInputs() {
     $("o-cand").checked = S.showCand; $("o-excl").checked = S.showExcl; $("o-rechk").checked = S.showRechk; $("o-fold").checked = S.fold; $("o-noinput").checked = S.noInput;
+    $("o-ai").checked = S.showAi; $("o-xgap").checked = S.xgap;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-x]"), function (el) { el.checked = S.xs[el.getAttribute("data-x")] !== false; });
   }
 
   /* ---------------- 좌측 패널 ---------------- */
+  /* 종류 필터 층(레지스트리 layers의 filter=type)만 '노드 종류'에 나온다. 범례 클래스가 없는 층은 건너뛴다. */
+  function typeLayers() {
+    return LAYERS.filter(function (l) {
+      return l.filter === "type" && Object.keys(TYPE).some(function (k) { return TYPE[k].layer === l.key; });
+    });
+  }
   function buildFilters() {
-    var cnt = nul();
+    var cnt = nul(), lh = "";
     D.nodes.forEach(function (n) { cnt[n.type] = (cnt[n.type] || 0) + 1; });
-    ["pid", "kn"].forEach(function (layer) {
+    typeLayers().forEach(function (l) {
       var h = "";
       Object.keys(TYPE).forEach(function (k) {
-        if (TYPE[k].layer !== layer || (!cnt[k] && k === "unclassified")) return;
-        S.types[k] = S.types[k] !== false;
-        h += '<label class="tg"><input type="checkbox" data-t="' + k + '"' + (S.types[k] ? " checked" : "") + "> " +
+        if (TYPE[k].layer !== l.key || (!cnt[k] && k === "unclassified")) return;
+        if (!(k in S.types)) S.types[k] = l.on;
+        h += '<label class="tg"><input type="checkbox" data-t="' + k + '"' + (S.types[k] !== false ? " checked" : "") + "> " +
           sw(TYPE[k].col, TYPE[k].shape) + esc(TYPE[k].name) + '<span class="cnt">' + (cnt[k] || 0) + "</span></label>";
       });
-      $("t-" + layer).innerHTML = h;
+      lh += '<label class="layer-h"><input type="checkbox" id="ly-' + esc(l.key) + '"' + (l.on ? " checked" : "") + "> " +
+        esc(l.name) + '</label><div id="t-' + esc(l.key) + '">' + h + "</div>";
+    });
+    $("t-layers").innerHTML = lh;
+    var xi = D.meta.expectations, xh = "";
+    XSTATES.forEach(function (x) {
+      xh += '<label class="tg"><input type="checkbox" data-x="' + x.state + '"' + (S.xs[x.state] !== false ? " checked" : "") +
+        '> <span class="sw dash" style="border-color:' + cv(x.col) + '"></span>' + esc(x.name) + '<span class="cnt">' +
+        ((xi && xi.states[x.state]) || 0) + "</span></label>";
+    });
+    $("x-list").innerHTML = xh;
+    $("sec-exp").style.display = xi ? "" : "none";
+    if (xi) $("x-note").textContent = "규칙으로 만든 기대이며 사실이 아닙니다. 점선 테두리로 그리고 계산 뷰(V4·V5)와 알고리즘 결과에 넣지 않습니다. " +
+      "상태는 오른쪽 상세에서 바꿉니다." + (xi.recheck ? " 재확인 필요 " + xi.recheck + "건." : "") +
+      (xi.other_graphs ? " 다른 도면 대상 " + xi.other_graphs + "건은 그 도면에서 보입니다." : "");
+    Array.prototype.forEach.call(document.querySelectorAll("[data-x]"), function (el) {
+      el.onchange = function () { S.xs[el.getAttribute("data-x")] = el.checked; refresh(); };
     });
     var gc = nul(), h = "";
     D.links.forEach(function (l) { var g = grpOf(l.kind); gc[g] = (gc[g] || 0) + 1; });
@@ -590,7 +649,8 @@ button, input { font: inherit; color: inherit; }
     Array.prototype.forEach.call(document.querySelectorAll("[data-g]"), function (el) {
       el.onchange = function () { S.grps[el.getAttribute("data-g")] = el.checked; refresh(); };
     });
-    ["pid", "kn"].forEach(function (layer) {
+    typeLayers().forEach(function (l) {
+      var layer = l.key;
       $("ly-" + layer).onchange = function () {
         var on = $("ly-" + layer).checked;
         Object.keys(TYPE).forEach(function (k) { if (TYPE[k].layer === layer) S.types[k] = on; });
@@ -601,7 +661,7 @@ button, input { font: inherit; color: inherit; }
     function allOf(sel, key, map, on) {
       return function () {
         Array.prototype.forEach.call(document.querySelectorAll(sel), function (el) { el.checked = on; map[el.getAttribute(key)] = on; });
-        if (key === "data-t") { $("ly-pid").checked = on; $("ly-kn").checked = on; }
+        if (key === "data-t") typeLayers().forEach(function (l) { $("ly-" + l.key).checked = on; });
         refresh();
       };
     }
@@ -610,10 +670,14 @@ button, input { font: inherit; color: inherit; }
     $("g-all").onclick = allOf("[data-g]", "data-g", S.grps, true);
     $("g-none").onclick = allOf("[data-g]", "data-g", S.grps, false);
     var st = { candidate: 0, excluded: 0, recheck: 0 };
-    D.links.forEach(function (l) { if (st[l.st] !== undefined) st[l.st] += 1; });
+    D.links.forEach(function (l) { if (st[l.st] !== undefined && !(l.ai && l.st !== "confirmed")) st[l.st] += 1; });
     $("c-cand").textContent = st.candidate;
-    $("c-excl").textContent = D.nodes.filter(function (n) { return !n.v5; }).length + " · 관계 " + st.excluded;
+    $("c-excl").textContent = D.nodes.filter(function (n) { return !n.v5 && !n.ai && n.layer !== EXPL; }).length +
+      " · 관계 " + st.excluded;
     $("c-rechk").textContent = st.recheck;
+    $("c-ai").textContent = D.meta.ai_items || 0;
+    $("c-xgap").textContent = xi ? "부재 확정 " + xi.gap_absent + " · 기대됨 " + xi.gap_expected : "—";
+    $("tg-xgap").classList.toggle("off", !xi);
     var a2 = D.algo.A2;
     $("c-orphan").textContent = a2 ? Object.keys(a2.orphans).length : "—";
     $("c-gap").textContent = a2 ? Object.keys(a2.gaps).length : "—";
@@ -627,6 +691,7 @@ button, input { font: inherit; color: inherit; }
   function bindControls() {
     function tog(id, key) { $(id).onchange = function () { S[key] = $(id).checked; if (key === "fold") ADJ = adjacency(); refresh(); }; }
     tog("o-cand", "showCand"); tog("o-excl", "showExcl"); tog("o-rechk", "showRechk"); tog("o-orphan", "orphan");
+    tog("o-ai", "showAi"); tog("o-xgap", "xgap");
     tog("o-gap", "gap"); tog("o-noinput", "noInput"); tog("o-fold", "fold"); tog("o-arrows", "arrows"); tog("o-labels", "labels");
     tog("o-isolated", "isolated");
     $("depth").oninput = function () { S.depth = parseInt($("depth").value, 10); refresh(); fit(); };
@@ -792,7 +857,29 @@ button, input { font: inherit; color: inherit; }
     else if (m.type === "algorithmResult" && D && m.algorithm === "A1" && m.kg_version === D.meta.kg_version) {
       D.algo.A1 = normA1(m.result); buildFilters(); if (S.color !== "a1") setColor("a1"); else refresh();
     }
+    else if (m.type === "updateExpectations" && D && G && m.kg_version === D.meta.kg_version) updateExpectations(m);
   };
+  /* 사람 판단 뒤 잠재 후보만 바꾼다. ID가 같은 노드는 자리를 그대로 두어 배치가 흔들리지 않게 한다. */
+  function updateExpectations(m) {
+    var old = nul();
+    D.nodes.forEach(function (n) { if (n.layer === EXPL) old[n.id] = n; });
+    var nodes = (m.nodes || []).map(function (n) {
+      var o = old[n.id];
+      if (o) { n.x = o.x; n.y = o.y; n.vx = 0; n.vy = 0; }
+      else if (NB[n.target]) { n.x = NB[n.target].x + 20; n.y = NB[n.target].y + 20; }
+      return n;
+    });
+    D.nodes = D.nodes.filter(function (n) { return n.layer !== EXPL; }).concat(nodes);
+    NB = nul(); D.nodes.forEach(function (n) { NB[n.id] = n; });
+    D.links = D.links.filter(function (l) { return l.layer !== EXPL; }).concat((m.links || []).filter(function (l) {
+      return NB[l.s] && NB[l.t]; }).map(function (l) { l.source = l.s; l.target = l.t; return l; }));
+    LB = nul(); D.links.forEach(function (l) { LB[l.id] = l; });
+    D.meta.expectations = m.info;
+    if (S.sel && S.sel.k === "n" && !NB[S.sel.id]) S.sel = null;
+    buildFilters(); syncInputs();
+    G.graphData({ nodes: D.nodes, links: D.links });
+    refresh();
+  }
   if (window.__KG_DATA__) init(window.__KG_DATA__);
   else { $("empty").style.display = "grid"; $("empty-box").textContent = "지식그래프를 불러오는 중…"; }
 })();
