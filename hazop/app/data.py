@@ -591,12 +591,15 @@ def related_knowledge(doc, scenario):
         elif it.get("conflict_outside"):
             reasons = sorted({KG_CONFLICT_REASONS.get(c["reason"], c["reason"]) for c in it["conflict_outside"]})
             badges += [("충돌(상대 미포함: %s)" % r, "err") for r in reasons]
+        if it.get("conflict_with_drawing"):
+            badges.append(("도면값과 충돌", "err"))
         if sc:
             badges.append(("시나리오 인용", "ui"))
         if fc:
             badges.append(("사실 인용", "ui"))
         items.append({"item": it, "entities": hit, "badges": badges, "scenario_cited": sc, "fact_cited": fc,
-                      "conflict": bool(it.get("conflict_with") or it.get("conflict_outside"))})
+                      "conflict": bool(it.get("conflict_with") or it.get("conflict_outside")
+                                       or it.get("conflict_with_drawing"))})
     trunc = kc.get("truncated") or {}
     affected = set(trunc.get("affected_entity_ids") or [])
     excluded = {}

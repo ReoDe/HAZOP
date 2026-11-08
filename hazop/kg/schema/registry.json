@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.5.0",
+  "registry_version": "0.6.0",
   "layers": [
     {"id": "pid", "label_ko": "P&ID 층", "screen": "pid", "filter": "type", "default_on": true},
     {"id": "knowledge", "label_ko": "지식 층", "screen": "kn", "filter": "type", "default_on": true},
@@ -115,7 +115,21 @@
      "legend": {"shape": "tri", "token": "kg-analysis_case"}},
 
     {"id": "expectation", "parent": null, "layer": "expectation", "id_prefix": "exp-", "label_ko": "잠재 후보",
-     "label_en": "Expectation", "legend": {"shape": "circle", "token": "kg-edge-hi", "line": "dashed"}}
+     "label_en": "Expectation", "legend": {"shape": "circle", "token": "kg-edge-hi", "line": "dashed"}},
+
+    {"id": "study_item", "parent": null, "layer": "study", "id_prefix": "st-", "label_ko": "검토 항목", "label_en": "Study item"},
+    {"id": "study_node", "parent": "study_item", "label_ko": "검토구간", "label_en": "Study node",
+     "legend": {"shape": "diamond", "token": "kg-edge-hi"}},
+    {"id": "scenario", "parent": "study_item", "label_ko": "시나리오", "label_en": "Scenario",
+     "legend": {"shape": "diamond", "token": "kg-flag-ink"}},
+    {"id": "cause", "parent": "study_item", "label_ko": "원인", "label_en": "Cause",
+     "legend": {"shape": "diamond", "token": "kg-conflict"}},
+    {"id": "consequence", "parent": "study_item", "label_ko": "결과", "label_en": "Consequence",
+     "legend": {"shape": "diamond", "token": "kg-flag"}},
+    {"id": "safeguard", "parent": "study_item", "label_ko": "보호수단", "label_en": "Safeguard",
+     "legend": {"shape": "diamond", "token": "kg-pipe_segment"}},
+    {"id": "recommendation", "parent": "study_item", "label_ko": "권고", "label_en": "Recommendation",
+     "legend": {"shape": "diamond", "token": "kg-unclassified"}}
   ],
   "properties": [
     {"id": "kind", "type": "text", "label_ko": "종류"},
@@ -189,7 +203,8 @@
     {"id": "apply", "label_ko": "설비 적용 (governed_by·has_setpoint·has_condition·analyzed_in)", "width": 1.8},
     {"id": "doc_location", "label_ko": "문서 안 위치 (part_of·specified_in)", "width": 1},
     {"id": "dependency", "label_ko": "문서 근거 의존 (depends_on)", "width": 1.6},
-    {"id": "expect", "label_ko": "기대 (expects·satisfied_by)", "width": 1}
+    {"id": "expect", "label_ko": "기대 (expects·satisfied_by)", "width": 1},
+    {"id": "study", "label_ko": "검토 (covers·cause_at·affects·safeguard_by 등)", "width": 1}
   ],
   "relations": [
     {"id": "has_endpoint", "layer": "pid", "from": ["pipe_segment"], "to": ["plant_item"], "group": "physical",
@@ -219,6 +234,28 @@
     {"id": "expects", "layer": "expectation", "from": ["plant_item", "knowledge_item"], "to": ["expectation"],
      "group": "expect", "v4": false, "a2_role": null, "label_ko": "기대"},
     {"id": "satisfied_by", "layer": "expectation", "from": ["expectation"], "to": ["plant_item", "knowledge_item"],
-     "group": "expect", "v4": false, "a2_role": null, "label_ko": "기대 충족 대상"}
+     "group": "expect", "v4": false, "a2_role": null, "label_ko": "기대 충족 대상"},
+    {"id": "covers", "layer": "study", "from": ["study_node"], "to": ["plant_item"], "group": "study", "v4": false,
+     "a2_role": null, "label_ko": "구간 구성요소"},
+    {"id": "in_node", "layer": "study", "from": ["scenario"], "to": ["study_node"], "group": "study", "v4": false,
+     "a2_role": null, "label_ko": "검토구간"},
+    {"id": "has_cause", "layer": "study", "from": ["scenario"], "to": ["cause"], "group": "study", "v4": false,
+     "a2_role": null, "label_ko": "원인"},
+    {"id": "has_consequence", "layer": "study", "from": ["scenario"], "to": ["consequence"], "group": "study",
+     "v4": false, "a2_role": null, "label_ko": "결과"},
+    {"id": "cause_at", "layer": "study", "from": ["cause"], "to": ["plant_item"], "group": "study", "v4": false,
+     "a2_role": null, "label_ko": "원인 위치"},
+    {"id": "affects", "layer": "study", "from": ["consequence"], "to": ["plant_item"], "group": "study", "v4": false,
+     "a2_role": null, "label_ko": "영향 대상"},
+    {"id": "protected_by", "layer": "study", "from": ["scenario"], "to": ["safeguard"], "group": "study", "v4": false,
+     "a2_role": null, "label_ko": "보호수단"},
+    {"id": "safeguard_by", "layer": "study", "from": ["safeguard"], "to": ["plant_item", "knowledge_item"],
+     "group": "study", "v4": false, "a2_role": null, "label_ko": "보호수단 구현 대상"},
+    {"id": "addresses", "layer": "study", "from": ["recommendation"], "to": ["scenario"], "group": "study", "v4": false,
+     "a2_role": null, "label_ko": "권고 대상 시나리오"},
+    {"id": "raised_from", "layer": "study", "from": ["scenario", "recommendation"], "to": ["expectation"],
+     "group": "study", "v4": false, "a2_role": null, "label_ko": "관련 잠재 후보"},
+    {"id": "cites", "layer": "study", "from": ["study_item"], "to": ["knowledge_item", "plant_item"], "group": "study",
+     "v4": false, "a2_role": null, "label_ko": "근거"}
   ]
 }

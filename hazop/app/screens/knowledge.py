@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QGridLayout
 from hazop import paths
 from hazop.app import data as app_data
 from hazop.app import project_ctx, tokens
+from hazop.app.related import STATUS_LABELS as ENTRY_STATUS_LABELS
 from hazop.app.screens.viewer import OP_LABELS
 from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, badge, empty_label, esc
 from hazop.graph import project
@@ -29,6 +30,7 @@ from hazop.graph.query import VALVE_POSITION_NOTE, QueryError
 from hazop.kg import algo, auto, build, expect, screen
 from hazop.kg.schema import REGISTRY
 from hazop.study import nodes as study_nodes
+from hazop.study import results as study_results
 
 APP_SHELL = "kg-screen.html"  # 출력/뷰어/ 아래 앱 셸(데이터 없음, loadKnowledge로 받음)
 TYPE_NAMES = {"equipment": "설비", "valve": "밸브", "inline_component": "배관 부품", "instrument": "계장",
@@ -382,7 +384,7 @@ class KnowledgeScreen(QWidget):
             self.expect = self._expectations()
             self.data = screen.screen_data(kg, self.graph, self.regions, cands,
                                            standalone_note="이전 버전" if self.showing_prev else None,
-                                           expectations=self.expect)
+                                           expectations=self.expect, study=self._study())
             self.a1_full = None
             shell = screen.write_html(paths.output_root("뷰어", APP_SHELL), screen.build_html(None))
             self.standalone = screen.write_html(standalone_path(kg, gid), screen.build_html(self.data))
@@ -525,6 +527,49 @@ class KnowledgeScreen(QWidget):
             self.app.log_error("잠재 후보 계산", exc)
             self.expect_calc_error = str(exc)
             return None
+
+    def _study(self):
+        """검토 층 원본 {"node_set", "results", "note"}(⑤와 같은 조건의 확정 구간·결과만). 읽기만 하고 고치지 않는다."""
+        if self.pg is None:
+            return None
+        try:
+            ns = study_nodes.load(self.pg)
+        except (OSError, ValueError) as exc:
+            return {"node_set": None, "results": None, "note": "검토구간 파일을 읽을 수 없음: %s" % exc}
+        if not ns or ns.get("status") != "confirmed" or study_nodes.is_stale(ns, self.pg) \
+                or study_nodes.coverage(ns, self.pg)["uncovered"]:
+            return {"node_set": None, "results": None, "note": "확정된 프로젝트 검토구간이 없거나 지금 도면과 맞지 않습니다."}
+        try:
+            doc = study_results.load(ns)
+        except (OSError, ValueError) as exc:
+            return {"node_set": ns, "results": None, "note": "분석 결과를 읽을 수 없음: %s" % exc}
+        if doc is not None and study_results.is_stale(doc, ns):
+            return {"node_set": ns, "results": None, "note": "분석 결과가 이전 검토구간 확정본으로 만든 것이라 투영하지 않습니다."}
+        return {"node_set": ns, "results": doc, "note": None if doc else "아직 분석 결과가 없습니다."}
+
+    def render_study(self, n):
+        """검토 층 노드 상세(읽기 전용, 원본은 ⑤ 결과 파일)."""
+        self._show_expect_buttons(None)
+        self.goto_btn.setEnabled(False)
+        self.app.set_selection(None)
+        d = dict(n.get("detail") or {})
+        if d.get("status"):
+            d["status"] = ENTRY_STATUS_LABELS.get(d["status"], d["status"])
+        h = "<div style='font-size:11px;color:%s'>검토 층 · %s</div><div style='font-size:15px;font-weight:700'>%s</div>" % (
+            tokens.c("muted"), esc(REGISTRY.label(n["type"], n["type"])), esc(n.get("label")))
+        h += "<div style='color:%s'>%s</div><p>%s" % (tokens.c("muted"), esc(n["id"]), badge("읽기 전용", "plain"))
+        if n.get("draft"):
+            h += " " + badge(AI_BADGE, "ai")
+        if n.get("missing"):
+            h += " " + badge("대상 없음(재확인) %d" % n["missing"], "warn")
+        names = {"name": "이름", "here": "이 도면 구성요소", "members": "전체 구성요소", "deviation": "편차", "cause": "원인",
+                 "consequence": "결과", "text": "내용", "role": "역할", "status": "상태", "risk": "위험도"}
+        rows = [(names[k], esc(v)) for k, v in d.items() if k in names and v not in (None, "")]
+        rows += [("대상 없음", esc(r)) for r in d.get("missing") or []]
+        h += "</p>" + self._kv(rows) + "<h4>연결 목록</h4>" + self._connections(n["id"])
+        h += "<p style='color:%s'>⑤ 분석 결과에서 고칩니다. 여기서는 보기만 하고 계산 뷰(V4·V5)와 알고리즘에 넣지 않습니다.</p>" \
+             % tokens.c("muted")
+        self.detail.setHtml(h)
 
     def _expect_item(self, xid):
         return next((i for i in (self.expect or {}).get("items") or [] if i["id"] == xid), None)
@@ -764,6 +809,9 @@ class KnowledgeScreen(QWidget):
         if n["layer"] == screen.EXP_LAYER:
             self.render_expectation(nid)
             return
+        if n["layer"] == screen.STUDY_LAYER:
+            self.render_study(n)
+            return
         self._show_expect_buttons(None)
         # P&ID 노드는 도면 구성요소와 같은 entity_id(관련 항목 패널이 따라감). 지식 노드는 도면 구성요소가 아님.
         self.app.set_selection({"kind": "component", "drawing": self.graph_dir, "entity_id": nid}
@@ -854,6 +902,9 @@ class KnowledgeScreen(QWidget):
                  % tokens.c("warn-ink")
         elif d["layer"] == screen.EXP_LAYER:
             h += "<p>잠재 후보 관계(%s) — 사실 아님, 계산 제외. 상태는 잠재 후보 노드를 눌러 바꿉니다.</p>" % esc(
+                REGISTRY.relations[d["kind"]]["label_ko"])
+        elif d["layer"] == screen.STUDY_LAYER:
+            h += "<p>검토 층 관계(%s) — ⑤ 결과 파일에서 읽은 투영(읽기 전용), 계산 제외.</p>" % esc(
                 REGISTRY.relations[d["kind"]]["label_ko"])
         elif d["layer"] == "kn":
             kl = next(l for l in self.kg["links"] if l["id"] == lid)

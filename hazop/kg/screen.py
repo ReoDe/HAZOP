@@ -31,6 +31,7 @@ VENDOR_JS = os.path.join(VENDOR_DIR, "force-graph.min.js")
 PLACEHOLDERS = ("/*@CSS_VARS@*/", "/*@DATA@*/", "/*@VENDOR@*/", "/*@SCHEMA@*/")
 SCREEN_LAYER = {ly: REGISTRY.screen_layer(ly) for ly in REGISTRY.layers}
 EXP_LAYER = REGISTRY.screen_layer("expectation")
+STUDY_LAYER = REGISTRY.screen_layer("study")
 # 잠재 후보 상태: (상태, 색 토큰, 처음 켬). 색은 ③의 차분한 계열에서 고름(새 토큰 없음). 무관·확인됨은 기본 숨김(입력 §2.1)
 EXPECT_STATES = (("expected", "kg-edge-hi", True), ("candidate_found", "kg-instrument", True),
                  ("confirmed_absent", "kg-flag-ink", True), ("confirmed_present", "kg-pipe_segment", False),
@@ -232,10 +233,96 @@ def expectation_view(expectations, graph):
     return nodes, links, info
 
 
-def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_note=None, expectations=None):
+def _short(text, n=24):
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= n else text[:n - 1] + "…"
+
+
+def study_view(study, graph, exp_ids=()):
+    """검토 층 투영(설계안 KD7·§8.3, U2(가)): ⑤ 결과 파일을 읽어 이 도면에 걸친 검토구간의 시나리오·보호수단을 노드·관계로
+    만든다. 원본은 결과 파일이고 여기서는 읽기만 한다. 모두 v5=false라 계산 뷰·알고리즘에 들어가지 않는다.
+    구간 구성요소(covers)는 선을 그리지 않는다. 구간 하나가 구성요소 수십 개에 선을 그어 시나리오가 보이지 않게 되기 때문이다.
+    study: {"node_set", "results"(없으면 None), "note"} 또는 None. 원인·결과 노드는 이 도면 대상을 가리키는 참조가 있을 때만
+    만든다(cause_at·affects 경로를 보이기 위해). 기각한 항목은 넣지 않는다. 대상을 찾지 못한 참조는 지우지 않고 센다."""
+    from hazop.graph.project import SEP
+    from hazop.study import refs, results as res
+    if study is None:
+        return [], [], None
+    gid = graph["graph_id"]
+    ids = {n["entity_id"] for n in graph["nodes"]}
+    idx = {r: n["entity_id"] for r, n in refs.index(graph).items()}
+    devs = {d["deviation_id"]: d["label"] for d in (study.get("results") or {}).get("deviations") or []}
+    cells = {}
+    for c in (study.get("results") or {}).get("cells") or []:
+        cells.setdefault(c["node_id"], []).append(c)
+    nodes, links, rows = [], [], []
+
+    def node(nid, typ, label, sn, **kw):
+        nodes.append(dict({"id": nid, "layer": STUDY_LAYER, "type": typ, "label": _short(label), "sn": sn, "v5": False}, **kw))
+
+    def link(kind, s, t, **kw):
+        links.append(dict({"id": "srel-%s-%s-%s" % (kind, s, t), "kind": kind, "s": s, "t": t, "layer": STUDY_LAYER,
+                           "st": "study", "v5": False, "a": 0}, **kw))
+    for sn in (study.get("node_set") or {}).get("nodes") or []:
+        members = []
+        for m in sn["members"]:
+            g, sep, e = m.partition(SEP)
+            if sep and g == gid and e in ids:
+                members.append(e)
+        if not members:
+            continue
+        snid = "st-" + sn["node_id"]
+        n_scen = n_missing = 0
+        node(snid, "study_node", "%s %s" % (sn["node_id"], sn.get("name") or ""), sn["node_id"],
+             detail={"name": sn.get("name"), "members": len(sn["members"]), "here": len(members)})
+        for cell in cells.get(sn["node_id"], []):
+            for e in cell["entries"]:
+                if e.get("status") == "rejected":
+                    continue
+                n_scen += 1
+                draft = res.is_ai_draft(e)
+                sc = "st-" + e["entry_id"]
+                miss = [r for r in refs.all_refs(e) if r not in idx and refs.drawing_of(r) == gid]
+                n_missing += len(miss)
+                node(sc, "scenario", "%s · %s" % (devs.get(cell["deviation_id"], cell["deviation_id"]), e.get("cause") or ""),
+                     sn["node_id"], draft=draft, missing=len(miss),
+                     detail={"deviation": devs.get(cell["deviation_id"]), "cause": e.get("cause"),
+                             "consequence": e.get("consequence"), "status": e.get("status"), "risk": e.get("risk"),
+                             "missing": miss})
+                link("in_node", sc, snid)
+                for key, typ, rel, suffix in (("cause_refs", "cause", "cause_at", "c"),
+                                              ("consequence_refs", "consequence", "affects", "q")):
+                    hits = [idx[r["ref"]] for r in e.get(key) or [] if isinstance(r, dict) and r.get("ref") in idx]
+                    if not hits:
+                        continue
+                    cid = "%s-%s" % (sc, suffix)
+                    node(cid, typ, e.get(typ) or "", sn["node_id"], draft=draft, detail={"text": e.get(typ)})
+                    link("has_" + typ, sc, cid)
+                    for h in dict.fromkeys(hits):
+                        link(rel, cid, h)
+                for i, s in enumerate(refs.safeguard_items(e)):
+                    gid_ = "%s-g%d" % (sc, i + 1)
+                    node(gid_, "safeguard", s["text"], sn["node_id"], draft=draft or not refs.is_confirmed(s, e),
+                         role=s["role"], detail={"text": s["text"], "role": refs.ROLES[s["role"]]})
+                    link("protected_by", sc, gid_, role=s["role"])
+                    for r in s["refs"]:
+                        if r.get("ref") in idx:
+                            link("safeguard_by", gid_, idx[r["ref"]])
+                for x in e.get("expectation_refs") or []:
+                    if x in exp_ids:
+                        link("raised_from", sc, x)
+        rows.append({"sn": sn["node_id"], "name": sn.get("name"), "scenarios": n_scen, "missing": n_missing})
+    info = {"nodes": rows, "note": study.get("note"), "scenarios": sum(r["scenarios"] for r in rows),
+            "missing": sum(r["missing"] for r in rows)}
+    return nodes, links, info
+
+
+def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_note=None, expectations=None,
+                study=None):
     """화면 JSON(dict). candidates: link_candidates.csv 행 목록 또는 None(파일 없음).
     start: A1 시작점(None이면 default_start). 알고리즘을 실행할 수 없으면 algo.enabled=false와 사유.
-    expectations: 잠재 후보(expect.evaluate 결과) 또는 None(계산하지 않음)."""
+    expectations: 잠재 후보(expect.evaluate 결과) 또는 None(계산하지 않음).
+    study: 검토 층 원본 {"node_set", "results", "note"} 또는 None(투영하지 않음, study_view)."""
     gid, gver = graph["graph_id"], graph["graph_version"]
     v5 = algo.view_v5(kg, graph)
     v5_keys = {k for _, _, k in v5.edges(keys=True)}
@@ -327,6 +414,9 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
     x_nodes, x_links, x_info = expectation_view(expectations, graph)
     nodes += x_nodes
     links += x_links
+    s_nodes, s_links, s_info = study_view(study, graph, {n["id"] for n in x_nodes})
+    nodes += s_nodes
+    links += s_links
 
     problem = algo_problem(kg, graph)
     alg = {"enabled": problem is None, "reason": problem}
@@ -354,7 +444,9 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
                    "sizes": a5["V5"]["sizes"]},
         })
     v = kg.get("validation") or {}
-    global_count = len(nodes)  # 렌더러가 받는 전체 노드(계산 제외 노드도 물리 배치에는 들어감)
+    off = {ly["screen"] for ly in REGISTRY.data["layers"] if not ly["default_on"]}
+    # 렌더러가 처음 그리는 노드(계산 제외 노드도 물리 배치에는 들어감). 기본으로 꺼진 층은 켜기 전엔 그리지 않으므로 세지 않는다
+    global_count = sum(1 for n in nodes if n["layer"] not in off)
     meta = {
         "kg_id": kg.get("kg_id"), "kg_version": kg.get("kg_version"), "graph_id": gid, "graph_version": gver,
         "graph_ref_version": {r["graph_id"]: r["graph_version"] for r in kg.get("graph_refs") or []}.get(gid),
@@ -371,6 +463,7 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
                           and n.get("knowledge_status") != "confirmed"),
         "ai_items": sum(1 for x in nodes + links if x.get("ai") and not x["v5"]),
         "expectations": x_info,
+        "study": s_info,
     }
     return {"meta": meta, "nodes": nodes, "links": links, "algo": alg}
 
@@ -430,8 +523,8 @@ def schema_js():
     def js(obj):
         return json.dumps(obj, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace("/", "\\/")
     types, grp_of, grps = legend_tables()
-    return "var TYPE = %s;\n  var GRP_OF = %s;\n  var GRP = %s;\n  var LAYERS = %s;\n  var XSTATES = %s;" % (
-        js(types), js(grp_of), js(grps), js(layer_table()), js(expect_table()))
+    return "var TYPE = %s;\n  var GRP_OF = %s;\n  var GRP = %s;\n  var LAYERS = %s;\n  var XSTATES = %s;\n  var STL = %s;" % (
+        js(types), js(grp_of), js(grps), js(layer_table()), js(expect_table()), js(STUDY_LAYER))
 
 
 def build_html(data=None):

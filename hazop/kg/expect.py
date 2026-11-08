@@ -57,7 +57,8 @@ GAP_STATES = ("expected", "confirmed_absent")
 CHECK_TYPES = ("neighbor", "property", "relation", "compare")
 COMPARE_OPS = ("<=",)
 CONTEXT_NOTE = ("규칙상 있어야 하지만 이 그래프에서 확인하지 못한 항목(기대됨)과 사람이 근거를 보고 없다고 확정한 항목(부재 확정). "
-                "보호수단이 없다는 결론이 아니라 정보 부족으로 다룬다. 사실이 아니므로 kg_paths·sources 근거로 쓰지 않는다")
+                "근거가 아니라 확인할 단서다. 보호수단이 없다는 결론이 아니라 정보 부족으로 다루고, "
+                "kg_paths·sources·참조(cause_refs·consequence_refs·safeguards)에 쓰지 않는다")
 
 
 class ExpectError(ValueError):

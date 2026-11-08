@@ -85,6 +85,14 @@ OLD_GRP = {
 M4_TYPE = {"expectation": {"layer": "exp", "name": "잠재 후보", "col": "kg-edge-hi", "shape": "circle", "line": "dashed"}}
 M4_GRP = {"expect": {"name": "기대 (expects·satisfied_by)", "w": 1}}
 M4_GRP_OF = {"expects": "expect", "satisfied_by": "expect"}
+# M5 검토 층(설계안 §8.3, 사전 §2.5·§3.5). 색은 기존 ③ 토큰에서 고름(디자인 담당 미확인)
+M5_TYPE = {k: {"layer": "st", "name": n, "col": c, "shape": "diamond"} for k, n, c in (
+    ("study_node", "검토구간", "kg-edge-hi"), ("scenario", "시나리오", "kg-flag-ink"), ("cause", "원인", "kg-conflict"),
+    ("consequence", "결과", "kg-flag"), ("safeguard", "보호수단", "kg-pipe_segment"),
+    ("recommendation", "권고", "kg-unclassified"))}
+M5_GRP = {"study": {"name": "검토 (covers·cause_at·affects·safeguard_by 등)", "w": 1}}
+M5_GRP_OF = {k: "study" for k in ("covers", "in_node", "has_cause", "has_consequence", "cause_at", "affects",
+                                  "protected_by", "safeguard_by", "addresses", "raised_from", "cites")}
 # 화면 내부 키만 사전 §4 묶음 ID로 바뀜(화면에 보이지 않음)
 GROUP_RENAME = {"phys": "physical", "meas": "measurement", "sig": "signal", "men": "mention", "app": "apply",
                 "pos": "doc_location", "dep": "dependency"}
@@ -220,9 +228,10 @@ class RegistryEquivalenceTest(unittest.TestCase):
 
     def test_screen_tables_same_labels_colors_order(self):
         types, grp_of, grps = screen.legend_tables()
-        self.assertEqual(list(types.items()), list(OLD_TYPE.items()) + list(M4_TYPE.items()))
-        self.assertEqual(list(grps.items()), [(GROUP_RENAME[k], v) for k, v in OLD_GRP.items()] + list(M4_GRP.items()))
-        self.assertEqual(grp_of, dict({k: GROUP_RENAME[v] for k, v in OLD_GRP_OF.items()}, **M4_GRP_OF))
+        self.assertEqual(list(types.items()), list(OLD_TYPE.items()) + list(M4_TYPE.items()) + list(M5_TYPE.items()))
+        self.assertEqual(list(grps.items()), [(GROUP_RENAME[k], v) for k, v in OLD_GRP.items()] + list(M4_GRP.items())
+                         + list(M5_GRP.items()))
+        self.assertEqual(grp_of, dict({k: GROUP_RENAME[v] for k, v in OLD_GRP_OF.items()}, **M4_GRP_OF, **M5_GRP_OF))
 
     def test_html_has_tables_once(self):
         html = screen.build_html(None)

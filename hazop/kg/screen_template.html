@@ -27,7 +27,7 @@ button, input { font: inherit; color: inherit; }
 .ln { width: 14px; height: 0; border-top: 1.5px solid var(--kg-edge-hi); flex: none; }
 .cnt { margin-left: auto; font-size: 11px; color: var(--muted); }
 .hint { font-size: 11px; color: var(--muted); line-height: 1.45; margin-top: 4px; }
-#q { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 4px 8px; }
+#q, #st-node { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 4px 8px; }
 #qres div { padding: 3px 6px; border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #qres div:hover { background: var(--ui-weak); }
 .rng { display: grid; grid-template-columns: 58px 1fr 34px; align-items: center; gap: 6px; font-size: 12px; }
@@ -81,6 +81,8 @@ button, input { font: inherit; color: inherit; }
         <div class="hint">켜도 계산 뷰(V4·V5)와 알고리즘 결과에 들어가지 않습니다. 흐린 파선과 "계산 제외" 표시로 구분합니다.</div></div>
       <div class="sec" id="sec-exp"><div class="sec-h">잠재 후보</div><div id="x-list"></div>
         <div class="hint" id="x-note">규칙으로 만든 기대이며 사실이 아닙니다. 점선 테두리로 그리고 계산 뷰(V4·V5)와 알고리즘 결과에 넣지 않습니다. 상태는 오른쪽 상세에서 바꿉니다.</div></div>
+      <div class="sec" id="sec-st"><div class="sec-h">검토 층 구간</div><select id="st-node" aria-label="검토 층 구간"></select>
+        <div class="hint" id="st-note">⑤ 분석 결과를 읽어 보여 주기만 합니다(원본은 결과 파일). 노드 종류의 '검토 층'을 켜면 고른 구간의 시나리오·보호수단이 보이고, 계산 뷰(V4·V5)와 알고리즘에는 넣지 않습니다.</div></div>
       <div class="sec" id="sec-a2"><div class="sec-h">A2 고아 · 근거 공백</div>
         <label class="tg"><input type="checkbox" id="o-orphan"> 고아 강조 <span class="cnt" id="c-orphan"></span></label>
         <label class="tg"><input type="checkbox" id="o-gap"> 근거 공백 강조 <span class="cnt" id="c-gap"></span></label>
@@ -176,7 +178,7 @@ button, input { font: inherit; color: inherit; }
   var D = null, G = null, NB = nul(), LB = nul(), ADJ = nul(), VIS = nul(), VISL = nul(), HOVER = null, send = null, fitted = false;
   var S = { mode: "global", color: "type", sel: null, center: null, depth: 2, fold: false, labels: true, arrows: true,
     showCand: false, showExcl: false, showRechk: false, showAi: false, orphan: false, gap: false, noInput: false,
-    xgap: false, isolated: true, query: "", types: {}, grps: {}, xs: {} };
+    xgap: false, isolated: true, query: "", types: {}, grps: {}, xs: {}, sn: null };
   var EXPL = (LAYERS.filter(function (l) { return l.filter === "state"; })[0] || {}).key;  /* 기대 층 화면 키 */
   var XS = nul();
   XSTATES.forEach(function (x) { XS[x.state] = x; S.xs[x.state] = x.on; });
@@ -185,10 +187,11 @@ button, input { font: inherit; color: inherit; }
   /* ---------------- 표시 집합 (계산 아님: 넘겨받은 V5 표시값으로만 고름) ---------------- */
   function nodeStatusOn(n) {
     if (n.layer === EXPL) return S.xs[n.xs] !== false;
+    if (n.layer === STL) return n.sn === S.sn;  /* 검토 층: 고른 구간만(전역 표시는 노드 수 폭증) */
     return n.v5 || (n.ai ? S.showAi : S.showExcl);
   }
   function linkStatusOn(l) {
-    if (l.st === "expect") return true;
+    if (l.st === "expect" || l.st === "study") return true;
     if (l.ai && l.st !== "confirmed") return S.showAi;
     return l.st === "confirmed" ? true : l.st === "candidate" ? S.showCand : l.st === "recheck" ? S.showRechk : S.showExcl;
   }
@@ -269,7 +272,8 @@ button, input { font: inherit; color: inherit; }
       nodes: D ? D.nodes.length : 0, links: D ? D.links.length : 0, visible: Object.keys(VIS).length,
       visibleLinks: Object.keys(VISL).length, app: KG.app, a1start: D && D.algo.A1 ? D.algo.A1.start : null,
       kg_version: D ? D.meta.kg_version : null, hover: HOVER, matches: QS ? Object.keys(QS).length : 0, isolated: ISO,
-      expectations: D ? D.nodes.filter(function (n) { return n.layer === EXPL; }).length : 0, errors: KG.errors.slice() };
+      expectations: D ? D.nodes.filter(function (n) { return n.layer === EXPL; }).length : 0,
+      study: D ? D.nodes.filter(function (n) { return n.layer === STL; }).length : 0, sn: S.sn, errors: KG.errors.slice() };
   };
   /* 노드의 페이지 좌표(CSS px). 사용자 시나리오 검사가 실제 마우스를 노드 위에 올릴 때 쓴다. */
   KG.pageOf = function (id) {
@@ -299,6 +303,7 @@ button, input { font: inherit; color: inherit; }
   function radius(n) {
     if (n.type === "pipe_segment") return 2.2;
     if (n.layer === EXPL) return 3.4;
+    if (n.layer === STL) return n.type === "study_node" ? 4.2 : 3.4;
     if (n.cont) return 3.2;
     var deg = D.algo.A3 ? D.algo.A3[n.id] : null;
     if (!n.v5 || deg === null || deg === undefined) return 3;
@@ -360,6 +365,13 @@ button, input { font: inherit; color: inherit; }
       if (n.recheck) out.push(["⟳ 재확인 필요", cv("kg-flag-ink")]);
       return out;
     }
+    if (n.layer === STL) {
+      out.push(["검토 층 · 읽기 전용", cv("muted")]);
+      if (n.role && n.role !== "unknown") out.push([n.role === "preventive" ? "예방" : "완화", cv("ink-2")]);
+      if (n.draft) out.push(["AI 초안", cv("ai-ink")]);
+      if (n.missing) out.push(["대상 없음(재확인) " + n.missing, cv("kg-flag-ink")]);
+      return out;
+    }
     if (n.conflict) out.push(["≠ 충돌", cv("kg-conflict")]);
     if (n.nosrc) out.push(["∅ 근거 없음", cv("kg-nosrc")]);
     if (n.hedit) out.push(["사람 수정", cv("ink-2")]);
@@ -407,6 +419,9 @@ button, input { font: inherit; color: inherit; }
       ctx.fillStyle = cv("kg-canvas"); ctx.fill();
       ctx.lineWidth = 1.4 / scale; ctx.strokeStyle = col; ctx.setLineDash([2 / scale, 1.6 / scale]);
       ctx.stroke(); ctx.setLineDash([]);
+    } else if (n.layer === STL) {  /* 검토 층: 채운 마름모, AI 초안은 속 빈 마름모(사람 승인 전) */
+      ctx.fillStyle = n.draft ? cv("kg-canvas") : col; ctx.fill();
+      if (n.draft) { ctx.lineWidth = 1.4 / scale; ctx.strokeStyle = col; ctx.stroke(); }
     } else if (!n.v5 || n.cont) {  /* 속 빈 점: 계산 제외(파선) · 도면 연결점(다른 도면으로 이어짐) */
       ctx.fillStyle = cv("kg-canvas"); ctx.fill();
       ctx.lineWidth = 1.2 / scale; ctx.strokeStyle = col;
@@ -503,6 +518,8 @@ button, input { font: inherit; color: inherit; }
     var s = "<b>" + esc(n.label) + "</b><br>" + esc(t.name) + " · " + esc(n.id);
     if (n.layer === EXPL) return s + "<br>" + esc((XS[n.xs] ? XS[n.xs].name : n.xs) + " · 규칙 " + n.rule) +
       (n.recheck ? "<br>재확인 필요(판·내용 변경)" : "") + "<br>사실 아님 · 계산 제외";
+    if (n.layer === STL) return s + "<br>검토 층 · 구간 " + esc(n.sn) + " · ⑤ 결과 파일에서 읽음(읽기 전용)" +
+      (n.draft ? "<br>AI 초안 · 사람 승인 전" : "") + (n.missing ? "<br>대상 없음(재확인) " + n.missing : "") + "<br>계산 제외";
     if (!n.v5) s += "<br>계산 제외(" + esc(n.ks) + ")";
     if (n.nosrc) s += "<br>근거 없음";
     if (n.hedit) s += "<br>사람 수정(② 도면 추출)";
@@ -577,7 +594,7 @@ button, input { font: inherit; color: inherit; }
     if (S.color === "type") {
       h += '<div class="note">색 = 노드 종류(왼쪽 목록), 점 크기 = 연결 수(A3). 속 빈 파선 점 = 계산 제외(미확인·가설), 속 빈 점 = 도면 연결점. ' +
         '회색 선 = 관계(마우스를 올리면 그 노드의 관계만 진하게), 화살표 = 흐름 방향이 확인된 배관만. 파란 고리 = 선택·검색 결과, ' +
-        '빨간 고리 = 충돌, 호박 파선 = 재확인 필요, 점선 테두리 = 잠재 후보(사실 아님). 라벨은 확대하면 나타납니다.</div>';
+        '빨간 고리 = 충돌, 호박 파선 = 재확인 필요, 점선 테두리 = 잠재 후보(사실 아님), 마름모 = 검토 층(⑤ 결과, 속 빈 것은 AI 초안). 라벨은 확대하면 나타납니다.</div>';
     } else if (S.color === "a1") {
       h += '<div class="row">';
       Object.keys(A1_NAME).forEach(function (k) { h += '<span class="it">' + sw(A1_DIR[k][0]) + esc(A1_DIR[k][1] + " " + A1_NAME[k]) + "</span>"; });
@@ -630,6 +647,19 @@ button, input { font: inherit; color: inherit; }
     });
     $("x-list").innerHTML = xh;
     $("sec-exp").style.display = xi ? "" : "none";
+    var si = D.meta.study, sh = "";
+    if (si && si.nodes.length && !si.nodes.some(function (r) { return r.sn === S.sn; })) {
+      var first = si.nodes.filter(function (r) { return r.scenarios; })[0] || si.nodes[0];
+      S.sn = first.sn;
+    }
+    (si ? si.nodes : []).forEach(function (r) {
+      sh += '<option value="' + esc(r.sn) + '"' + (r.sn === S.sn ? " selected" : "") + ">" + esc(r.sn + " " + (r.name || "")) +
+        " · 시나리오 " + r.scenarios + (r.missing ? " · 대상 없음 " + r.missing : "") + "</option>";
+    });
+    $("st-node").innerHTML = sh;
+    $("st-node").onchange = function () { S.sn = $("st-node").value; refresh(); };
+    $("sec-st").style.display = si ? "" : "none";
+    if (si && (si.note || !si.nodes.length)) $("st-note").textContent = si.note || "이 도면에 걸친 확정 검토구간이 없습니다.";
     if (xi) $("x-note").textContent = "규칙으로 만든 기대이며 사실이 아닙니다. 점선 테두리로 그리고 계산 뷰(V4·V5)와 알고리즘 결과에 넣지 않습니다. " +
       "상태는 오른쪽 상세에서 바꿉니다." + (xi.recheck ? " 재확인 필요 " + xi.recheck + "건." : "") +
       (xi.other_graphs ? " 다른 도면 대상 " + xi.other_graphs + "건은 그 도면에서 보입니다." : "");
@@ -672,7 +702,7 @@ button, input { font: inherit; color: inherit; }
     var st = { candidate: 0, excluded: 0, recheck: 0 };
     D.links.forEach(function (l) { if (st[l.st] !== undefined && !(l.ai && l.st !== "confirmed")) st[l.st] += 1; });
     $("c-cand").textContent = st.candidate;
-    $("c-excl").textContent = D.nodes.filter(function (n) { return !n.v5 && !n.ai && n.layer !== EXPL; }).length +
+    $("c-excl").textContent = D.nodes.filter(function (n) { return !n.v5 && !n.ai && n.layer !== EXPL && n.layer !== STL; }).length +
       " · 관계 " + st.excluded;
     $("c-rechk").textContent = st.recheck;
     $("c-ai").textContent = D.meta.ai_items || 0;
@@ -720,7 +750,8 @@ button, input { font: inherit; color: inherit; }
     }
     force("f-c", "v-c", function (v) { var c = G.d3Force("center"); if (c && c.strength) c.strength(v); });
     force("f-r", "v-r", function (v) { var c = G.d3Force("charge"); if (c) c.strength(-v); });
-    force("f-s", "v-s", function (v) { var c = G.d3Force("link"); if (c) c.strength(v); });
+    /* 검토 층 관계는 배치에 힘을 주지 않는다(꺼 둔 투영이 기본 배치를 끌어당기지 않게) */
+    force("f-s", "v-s", function (v) { var c = G.d3Force("link"); if (c) c.strength(function (l) { return l.layer === STL ? 0 : v; }); });
     force("f-d", "v-d", function (v) { var c = G.d3Force("link"); if (c) c.distance(v); });
     $("relayout").onclick = function () { if (G) { D.nodes.forEach(function (n) { n.fx = undefined; n.fy = undefined; }); G.d3ReheatSimulation(); } };
     $("a1-run").onclick = function () {
