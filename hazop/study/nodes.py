@@ -331,6 +331,8 @@ def confirm(node_set, graph, reviewer, at=None):
         raise ValueError("어느 구간에도 없는 구성요소 %d개: %s"
                          % (len(cov["uncovered"]), ", ".join(cov["uncovered"][:5])))
     out.update({"status": "confirmed", "confirmed_at": at or now_utc(), "confirmed_by": reviewer})
+    from hazop.study import migrate
+    out.update(member_refs=migrate.member_refs(out, graph), member_digest=migrate.member_digest(graph))
     return _log(out, "confirm", {"reviewer": reviewer, "nodes": len(out["nodes"])}, out["confirmed_at"])
 
 
@@ -363,7 +365,10 @@ def _readable_path(project_id, graph_id):
 
 def save(node_set):
     """임시 파일에 쓴 뒤 os.replace로 교체한다. 쓴 경로를 돌려준다."""
-    path = store_path(node_set.get("project_id"), node_set["graph_id"])
+    return write(store_path(node_set.get("project_id"), node_set["graph_id"]), node_set)
+
+
+def write(path, node_set):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
@@ -376,7 +381,9 @@ def save(node_set):
 
 
 def load(graph):
-    """graph의 저장본. 없으면 None. 판 비교는 is_stale로 한다."""
+    """graph의 저장본. 없으면 None. 판 비교는 is_stale로 한다.
+    확정본은 읽을 때 판 이전(hazop.study.migrate)을 적용한다. 그래프는 등록·수정·화면 열기 등 여러 길에서 다시 만들어지고
+    모두 이 함수로 저장본을 읽으므로, 여기서 한 번 적용하면 어느 길로 판이 바뀌어도 확정 작업이 같은 규칙으로 이어진다."""
     path = _readable_path(graph.get("project_id"), graph.get("graph_id"))
     if not os.path.isfile(path):
         return None
@@ -384,7 +391,8 @@ def load(graph):
         doc = json.load(fh)
     if not isinstance(doc, dict) or doc.get("kind") != KIND:
         raise ValueError("검토구간 파일이 아님: %s" % path)
-    return doc
+    from hazop.study import migrate
+    return migrate.on_load(doc, graph, path)
 
 
 def any_confirmed(project_only=False):

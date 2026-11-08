@@ -310,8 +310,8 @@ def tag_conflicts(tag, project_id, exclude=()):
 
 def save_corrections(name, ops, by):
     """수정 기록 저장 → 그 도면 그래프 다시 빌드(scripts/build_graph.build_one이 기록을 적용) → 프로젝트 지식그래프 다시 빌드.
-    반환 {"path", "graph", "kg" 또는 "kg_error", "recheck": [안내 문구]}. ④ 검토구간·⑤ 분석 결과 저장본은 고치지 않고,
-    바뀐 그래프 판과 다르면 재확인 안내만 돌려준다."""
+    반환 {"path", "graph", "kg" 또는 "kg_error", "recheck": [안내 문구]}. ④ 검토구간·⑤ 분석 결과 저장본은 여기서
+    고치지 않는다. 판 이전 조건을 채우면 다음에 읽을 때 study.migrate가 옮기고, 아니면 재확인 안내를 돌려준다."""
     original = read_json(extraction_path(name))
     path = corrections.save(name, ops, by, drawing_number=original["drawing"].get("drawing_number"))
     graph, _ = script_module("build_graph").build_one(extraction_path(name), paths.output_root("그래프"))
