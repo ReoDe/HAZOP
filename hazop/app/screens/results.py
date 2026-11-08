@@ -10,11 +10,11 @@ import os
 import time
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QCoreApplication, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QCoreApplication, QSize, QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
-                               QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPlainTextEdit, QProgressBar,
-                               QPushButton,
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+                               QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
                                QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from hazop.app import data, project_ctx, tokens
@@ -22,6 +22,7 @@ from hazop.app.ai_runner import AiRunner
 from hazop.app.screens.results_paint import CELL_ROLE, DRAFT_ROLE, CellDelegate, GroupHeader, SheetDelegate
 from hazop.app.screens.study import seg_icon
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text, plain_label
+from hazop.export import study_xlsx
 from hazop.graph import project
 from hazop.study import ai_cells, nodes, span
 from hazop.study import results as res
@@ -143,6 +144,59 @@ class EntryDialog(QDialog):
 
     def changed(self):
         return {k: v for k, v in self.fields().items() if self.entry.get(k) != v}
+
+
+class ExportDialog(QDialog):
+    """Excel 내보내기 범위: 전체 / 승인만 / 선택한 구간만(목록에서 고름, 기본은 행렬에서 고른 구간) + 검토자."""
+
+    def __init__(self, nodes, selected, reviewer="", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Excel로 내보내기")
+        self.setMinimumWidth(460)
+        lay = QFormLayout(self)
+        self.scope = QComboBox()
+        self.scope.setAccessibleName("내보낼 범위")
+        for key, label in study_xlsx.SCOPES.items():
+            self.scope.addItem(label, key)
+        lay.addRow("범위", self.scope)
+        self.nodes = QListWidget()
+        self.nodes.setAccessibleName("내보낼 구간")
+        self.nodes.setFixedHeight(140)
+        for n in nodes:
+            it = QListWidgetItem(project_ctx.node_label(n))
+            it.setData(Qt.UserRole, n["node_id"])
+            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+            it.setCheckState(Qt.Checked if n["node_id"] == selected else Qt.Unchecked)
+            self.nodes.addItem(it)
+        lay.addRow("구간", self.nodes)
+        self.reviewer = QLineEdit(reviewer)
+        self.reviewer.setAccessibleName("검토자")
+        self.reviewer.setPlaceholderText("표지에 적을 이름(비워도 됨)")
+        lay.addRow("검토자", self.reviewer)
+        note = QLabel(AI_NOTE + ". 표지에도 같은 고지를 적습니다.")
+        note.setObjectName("muted")
+        note.setWordWrap(True)
+        lay.addRow(note)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.button(QDialogButtonBox.Ok).setText("저장 위치 고르기…")
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        lay.addRow(bb)
+        self.scope.currentIndexChanged.connect(self._sync)
+        self._sync()
+
+    def _sync(self):
+        self.nodes.setEnabled(self.scope.currentData() == "nodes")
+
+    def node_ids(self):
+        return [self.nodes.item(i).data(Qt.UserRole) for i in range(self.nodes.count())
+                if self.nodes.item(i).checkState() == Qt.Checked]
+
+    def accept(self):
+        if self.scope.currentData() == "nodes" and not self.node_ids():
+            QMessageBox.information(self, "Excel로 내보내기", "내보낼 구간을 하나 이상 고르세요.")
+            return
+        super().accept()
 
 
 def empty_cell_label(run):
@@ -305,7 +359,10 @@ class ResultsScreen(QWidget):
         self.cancel_btn.clicked.connect(self.cancel_ai)
         self.usage = QLabel()  # 토큰·비용은 도구 설명으로(도구줄 폭 절약)
         self.usage.hide()
-        for w in (self.retry_btn, self.run_node_btn, self.cancel_btn, self.run_all_btn):
+        self.export_btn = QPushButton("Excel로 내보내기")
+        self.export_btn.setToolTip("구간 × 편차 결과를 HAZOP 워크시트 Excel(.xlsx)로 저장(전체·승인만·선택한 구간만)")
+        self.export_btn.clicked.connect(lambda: self.export_excel())
+        for w in (self.export_btn, self.retry_btn, self.run_node_btn, self.cancel_btn, self.run_all_btn):
             row.addWidget(w)
         return row
 
@@ -408,6 +465,7 @@ class ResultsScreen(QWidget):
                 ("항목 승인", "A", lambda: self.set_entry_status("approved")),
                 ("항목 기각", "R", lambda: self.set_entry_status("rejected")),
                 ("항목 수정…", "E", lambda: self.edit_selected()),
+                ("Excel로 내보내기…", "", lambda: self.export_excel()),
                 ("이전 고정 응답 분석 열기", "", lambda: self.app.go(2))]
 
     def _shortcuts(self):
@@ -614,6 +672,51 @@ class ResultsScreen(QWidget):
             os.makedirs(d, exist_ok=True)
             QDesktopServices.openUrl(QUrl.fromLocalFile(d))
 
+    # ------------------------------------------------------------ Excel 내보내기
+    def export_excel(self, path=None, scope=None, node_ids=None, reviewer=None):
+        """범위 대화상자 → 저장 대화상자 → .xlsx 저장 → 토스트 [열기]·[폴더 열기]. path·scope를 주면 대화상자 없이
+        (검사용). 저장한 경로 또는 None."""
+        if self.node_set is None or self.results is None:
+            self.app.status_message("내보낼 분석 결과가 없습니다. ④에서 검토구간을 확정하세요.")
+            return None
+        now = nodes.now_utc()
+        if scope is None:
+            dlg = ExportDialog(list(self.view.values()), self.selected_node_id(),
+                               getattr(self, "_export_reviewer", ""), self)
+            if dlg.exec() != QDialog.Accepted:
+                return None
+            scope, node_ids, reviewer = dlg.scope.currentData(), dlg.node_ids(), dlg.reviewer.text().strip()
+            self._export_reviewer = reviewer
+        if path is None:
+            folder = getattr(self, "_export_dir", None) or QStandardPaths.writableLocation(
+                QStandardPaths.DocumentsLocation)
+            name = study_xlsx.default_filename(self.node_set.get("project_id"), now)
+            path, _ = QFileDialog.getSaveFileName(self, "Excel로 내보내기", os.path.join(folder, name),
+                                                  "Excel 통합 문서 (*.xlsx)")
+            if not path:
+                return None
+            if not path.lower().endswith(".xlsx"):
+                path += ".xlsx"
+        intents = {}
+        for nid, n in self.view.items():
+            found = design_intent(n)
+            if found:
+                intents[nid] = found[0]
+        try:
+            path, n_rows = study_xlsx.export(path, self.results, self.node_set, self.graph, self.deviations,
+                                             scope=scope, node_ids=node_ids, reviewer=reviewer or "",
+                                             intents=intents, now=now)
+        except (OSError, ValueError) as exc:
+            self.app.log_error("Excel 내보내기 실패", exc)
+            QMessageBox.warning(self, "Excel로 내보내기", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요).\n%s"
+                                % exc)
+            return None
+        self._export_dir = os.path.dirname(path)
+        self.app.toast("Excel로 내보냄: %s · 워크시트 %d행" % (os.path.basename(path), n_rows), ms=10000, actions=(
+            ("열기", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(path))),
+            ("폴더 열기", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path))))))
+        return path
+
     # ------------------------------------------------------------ AI 실행
     def running(self):
         return self.runner is not None
@@ -789,6 +892,7 @@ class ResultsScreen(QWidget):
         idle = not self.running() and self.node_set is not None
         for b in (self.run_all_btn, self.run_node_btn, self.retry_btn, self.rerun_cell_btn):
             b.setEnabled(idle)
+        self.export_btn.setEnabled(self.node_set is not None and self.results is not None)
         self.cancel_btn.setEnabled(self.running())
         self.cancel_btn.setVisible(self.running())
         has_failed = bool(self.results) and bool(ai_cells.failed_cells(self.results))

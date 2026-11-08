@@ -14,6 +14,7 @@ Each row is a scenario in `scripts/check_user_scenarios.py`. The end state is wh
 | Operating during a run | explorer Sx click, Ctrl+P, Ctrl+4 then Ctrl+5 while running | S8 | stage unchanged, progress still shown, entry counts not lower |
 | ④ selection highlight | click `_SegList` rows | S9 | CDP count of `.selected`-style vs all drawing elements |
 | Explorer structure | ⑤ explorer groups | S10 | '자료' count > 0 when a drawing is open, a path to results |
+| ⑤ Excel export | palette `>Excel`, Enter in the scope dialog, type a path in the native save dialog | S12 | xlsx exists, worksheet scenario rows = saved entries, toast buttons `열기`·`폴더 열기` |
 | ④ node merge + confirm | palette `>확정 해제`, Space on `_SegList` items, M, Ctrl+Enter | S6 | `_SegList` item count drops, confirm text appears |
 
 ## Gotchas

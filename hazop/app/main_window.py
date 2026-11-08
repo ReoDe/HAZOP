@@ -1254,9 +1254,10 @@ class MainWindow(QMainWindow):
     def log_error(self, title, exc):
         write_log(title, "%s: %s" % (type(exc).__name__, exc))
 
-    def toast(self, text, undo=None):
-        """동작 결과 알림(U-07). undo는 인자 없는 함수로, 토스트의 [실행 취소]나 Ctrl+Z가 한 번 부른다."""
-        self.toast_box.show_message(text, undo)
+    def toast(self, text, undo=None, actions=(), ms=5000):
+        """동작 결과 알림(U-07). undo는 인자 없는 함수로, 토스트의 [실행 취소]나 Ctrl+Z가 한 번 부른다.
+        actions는 [(버튼 글, 함수)]로 토스트에 버튼을 더한다(예: 내보낸 파일 [열기]·[폴더 열기])."""
+        self.toast_box.show_message(text, undo, ms, actions)
 
     def status_message(self, text):
         self.msg_label.setText(text)

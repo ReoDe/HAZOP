@@ -1199,6 +1199,75 @@ def s6_merge_confirm(d):
     d.expect(bool(ok), "Ctrl+Enter 뒤 확정 표시가 보이지 않음")
 
 
+def s12_excel_export(d):
+    """⑤ Ctrl+P '>Excel' → 범위 대화상자 Enter(전체) → 저장 대화상자에 경로 입력 → 파일·토스트 [열기]·[폴더 열기] 확인.
+    파일은 openpyxl로 다시 읽어 시나리오 행 수가 저장된 결과의 항목 수와 같은지 본다. [열기]는 누르지 않는다(Excel 실행)."""
+    import openpyxl
+    goto_stage(d, 5)
+    out = os.path.join(os.path.dirname(os.path.dirname(d.data_root)), "내보내기", "S12-export.xlsx")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    d.step("Ctrl+P에서 '>Excel' 실행")
+    d.key("ctrl+p")
+    time.sleep(0.4)
+    d.type(">Excel")
+    time.sleep(0.4)
+    t = time.time()
+    d.key("enter")
+    dlg = d.wait(lambda: d.find(lambda e: e["type"] == "Window" and e.get("name") == "Excel로 내보내기"),
+                 "범위 대화상자", timeout=5, since=t)
+    d.shot("범위 대화상자")
+    if not d.expect(bool(dlg), "Ctrl+P '>Excel'로 내보내기 대화상자가 뜨지 않음"):
+        return
+    d.step("범위 '전체' 그대로 Enter(저장 위치 고르기)")
+    t = time.time()
+    d.key("enter")
+
+    def save_dialog():
+        return [e for e in d.tree() if e["type"] == "Window" and e["cls"] == "#32770"]
+    sd = d.wait(save_dialog, "저장 대화상자", timeout=8, since=t)
+    d.shot("저장 대화상자")
+    if not d.expect(bool(sd), "범위를 고른 뒤 저장 대화상자가 뜨지 않음"):
+        return
+    time.sleep(0.5)
+    f = d.uia.q(op="focus")  # 파일 목록이 길면 tree 상한(1500)에 걸려 파일 이름 칸이 빠지므로 초점 칸을 읽는다
+    value = (f[0].get("value") or "") if f else ""
+    if not value:
+        d.inconclusive("저장 대화상자 파일 이름 칸 값을 UIA로 읽지 못해 기본 이름은 스크린샷으로만 확인")
+    else:
+        d.expect(value.startswith("HAZOP-") and value.endswith(".xlsx"),
+                 "저장 대화상자 파일 이름 칸에 기본 이름(HAZOP-…xlsx)이 없음", "초점 칸 값: %r" % value, severity="하")
+    d.step("파일 이름 칸에 경로 입력하고 Enter")
+    time.sleep(0.5)
+    d.key("ctrl+a")
+    d.type(out)
+    t = time.time()
+    d.key("enter")
+    saved = d.wait(lambda: os.path.isfile(out), "파일 저장", timeout=10, since=t)
+    toast = d.wait(lambda: d.find(lambda e: e["type"] == "Button" and e.get("name") == "폴더 열기"
+                                  and not e["offscreen"]), "토스트 [폴더 열기]", timeout=5, since=t)
+    d.shot("내보낸 뒤 토스트")
+    if not d.expect(bool(saved), "저장 대화상자에서 Enter 뒤 xlsx 파일이 생기지 않음", out):
+        return
+    d.expect(bool(toast) and any("Excel로 내보냄" in x for x in d.texts())
+             and d.find(lambda e: e["type"] == "Button" and e.get("name") == "열기"),
+             "내보낸 뒤 토스트에 '열기'·'폴더 열기'가 보이지 않음", severity="중")
+    entries = 0
+    for root, _dirs, files in os.walk(d.data_root):
+        for f in files:
+            if f.endswith(".json") and ".bak." not in f:
+                with open(os.path.join(root, f), encoding="utf-8") as fh:
+                    doc = json.load(fh)
+                if isinstance(doc, dict) and doc.get("kind") == "hazop_study_results":
+                    entries += sum(len(c["entries"]) for c in doc["cells"])
+    ws = openpyxl.load_workbook(out)["워크시트"]
+    head = [c.value for c in ws[1]]
+    status = [row[head.index("상태")] for row in ws.iter_rows(min_row=2, values_only=True)]
+    rows = sum(1 for x in status if x and x.split(" · ")[0] in ("제안", "수정", "승인", "기각"))
+    dn = [row[head.index("도면 번호")] for row in ws.iter_rows(min_row=2, values_only=True)]
+    d.expect(rows == entries and entries > 0 and all(dn), "내보낸 워크시트 시나리오 행 수가 저장된 결과와 다르거나 도면 번호가 빔",
+             "워크시트 %d행, 결과 항목 %d개, 도면 번호 빈 행 %d" % (rows, entries, sum(1 for x in dn if not x)))
+
+
 SCENARIOS = (("S1", "키보드만으로 ①→⑤ 이동·뒤로·단축키 표", s1_keyboard_stages),
              ("S2", "Ctrl+P 구성요소 찾기 → 관련 항목 → 이동", s2_palette_related),
              ("S3", "⑤ J·A·R·Ctrl+Z 검토 키", s3_review_keys),
@@ -1208,6 +1277,7 @@ SCENARIOS = (("S1", "키보드만으로 ①→⑤ 이동·뒤로·단축키 표"
              ("S9", "④ 구간 선택 때 그 구간만 강조", s9_selection_feedback),
              ("S10", "탐색기 구조(자료 수·결과 위치)", s10_explorer_structure),
              ("S11", "도면을 넘는 구간: ④ ⇄ 구간·경계·칩으로 상대 도면 이동·⑤ 행 이름", s11_cross_drawing_node),
+             ("S12", "⑤에서 Excel 내보내기(Ctrl+P → 범위 → 저장 대화상자 → 토스트)", s12_excel_export),
              ("S5", "drawio 등록 → 추출 → ② 확인", s5_register_drawio),
              ("S6", "④ 확정 해제 → 병합(M) → 확정(Ctrl+Enter)", s6_merge_confirm))
 

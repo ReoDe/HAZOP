@@ -273,15 +273,27 @@ class Toast(QFrame):
         self.key = QLabel("Ctrl+Z")
         self.key.setObjectName("kbd")
         lay.addWidget(self.key)
+        self.action_btns = []  # show_message(actions=)의 [열기]·[폴더 열기] 같은 버튼(누르면 실행하고 닫힘)
         self.undo = None
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.dismiss)
         self.hide()
 
-    def show_message(self, text, undo=None, ms=5000):
+    def show_message(self, text, undo=None, ms=5000, actions=()):
+        from PySide6.QtWidgets import QPushButton
         self.undo = undo
         self.label.setText(text)
+        for b in self.action_btns:
+            b.deleteLater()
+        self.action_btns = []
+        for label, fn in actions:
+            b = QPushButton(label)
+            b.setObjectName("toast_undo")
+            b.setCursor(Qt.PointingHandCursor)
+            b.clicked.connect(lambda _c=False, f=fn: (self.dismiss(), f()))
+            self.layout().insertWidget(1 + len(self.action_btns), b)
+            self.action_btns.append(b)
         self.undo_btn.setVisible(undo is not None)
         self.key.setVisible(undo is not None)
         self.adjustSize()

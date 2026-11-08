@@ -1,0 +1,360 @@
+"""⑤ 분석 결과(구간 × 편차, hazop.study.results) Excel 내보내기. 실무 HAZOP 워크시트(IEC 61882 용어) 형식.
+
+build_workbook(results, node_set, pg, deviations, scope, node_ids, reviewer, intents, now) → openpyxl Workbook
+- 시트: 표지·요약 / 구간 목록 / 워크시트 / 권고 목록
+- 워크시트 행 하나 = 시나리오(항목) 하나. 항목 없는 분석 칸('해당 없음'·'시나리오 없음')·AI 실패 칸·제외 칸도
+  한 행으로 남기고 상태 열에서 구분한다. 분석 전 칸은 행으로 쓰지 않고 요약에 칸 수만 적는다.
+- 범위(SCOPES): 전체 / 승인만(승인 항목만, 칸 표시 행 없음) / 선택한 구간만.
+- 다른 도면 태그는 'RC-P01(101)'처럼 짧은 도면번호를 붙인다(span.label_tags). 여러 도면에 걸친 구간은 기준 도면이
+  하나가 아니므로 모든 태그에 붙인다.
+- 위험도는 KOSHA P-86 〈표5〉 값(항목의 risk)과 구분(수용·조건부 수용·불허)을 글자로 함께 쓰고 색은 보조로만 쓴다.
+- 모든 문자열은 수식으로 실행되지 않게 문자열 셀로 쓰고, 드라이브 경로·API 키처럼 보이는 글자는 가린다.
+"""
+
+import datetime
+import os
+import re
+import tempfile
+
+from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+
+from hazop.app.tokens import COLORS, risk_band
+from hazop.study import results as res
+from hazop.study import span
+
+SCOPES = {"all": "전체", "approved": "승인만", "nodes": "선택한 구간만"}
+SHEETS = ("표지·요약", "구간 목록", "워크시트", "권고 목록")
+STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각"}
+BAND_LABELS = {"ok": "수용", "cond": "조건부 수용", "deny": "불허"}
+FIELD_LABELS = {"cause": "원인", "consequence": "결과", "safeguards": "보호수단", "recommendation": "권고",
+                "severity": "강도", "frequency": "빈도"}
+FLAG_LABELS = (("scope_changed", "범위 바뀜 · 다시 확인"), ("source_stale", "옛 결과 · 다시 확인"))
+NOTICE = "AI 결과는 초안이며 사람이 승인한 항목만 확정입니다. 상태가 '승인'이 아닌 행은 검토 전 초안입니다."
+
+# 칸 표시 행(항목이 아닌 행)의 상태 문구
+CELL_ROW_LABELS = {"not_applicable": "해당 없음(AI 판단)", "no_scenario": "시나리오 없음(AI)",
+                   "failed": "실패(AI 실행)", "excluded": "제외"}
+
+# (키, 머리글, 열 너비)
+WORKSHEET_COLUMNS = (
+    ("node", "구간", 22), ("drawings", "도면 번호", 18), ("parameter", "변수", 8), ("guideword", "가이드워드", 9),
+    ("deviation", "편차", 14), ("cause", "원인", 34), ("consequence", "결과", 34), ("safeguards", "보호수단", 30),
+    ("severity", "강도", 6), ("frequency", "빈도", 6), ("risk", "위험도", 13), ("recommendation", "권고", 32),
+    ("basis", "AI 근거(KG 경로·출처 문서)", 34), ("warnings", "근거 경고", 22), ("status", "상태", 14),
+    ("history", "수정 이력 요약", 28),
+)
+NODE_COLUMNS = (("구간 ID", 9), ("표시 이름", 30), ("도면 범위", 14), ("경계 시작", 20), ("경계 끝", 20),
+                ("설계의도", 40), ("구성요소", 50))
+RECOMMENDATION_COLUMNS = (("번호", 6), ("구간", 22), ("편차", 16), ("권고", 50), ("위험도", 13), ("상태", 12),
+                          ("담당", 12), ("기한", 12))
+
+_SECRET = re.compile(r"(?<![A-Za-z0-9])sk-ant-[A-Za-z0-9_-]{8,}"
+                     r"|(?<![A-Za-z])[A-Za-z]:[\\/](?:[^\\/\n]*[\\/])*[^\s\\/,;)]*"
+                     r"|\\\\(?:[^\\/\n]*[\\/])*[^\s\\/,;)]*")
+_FORMULA_PREFIX = ("=", "+", "-", "@")
+_KST = datetime.timezone(datetime.timedelta(hours=9), "KST")
+_HEAD_FILL = PatternFill("solid", fgColor="E2EDFB")
+
+
+def scrub(text):
+    """내보낸 파일에 남기면 안 되는 글자(API 키 모양, 드라이브·네트워크 경로)를 가린다."""
+    return _SECRET.sub("[가림]", text)
+
+
+def kst(utc_iso, fmt="%Y-%m-%d %H:%M"):
+    t = datetime.datetime.strptime(utc_iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+    return t.astimezone(_KST).strftime(fmt)
+
+
+def risk_text(risk):
+    band = risk_band(risk)
+    return "%d %s" % (risk, BAND_LABELS[band]) if band else ""
+
+
+def default_filename(project_id, now):
+    """저장 대화상자 기본 이름: HAZOP-<프로젝트>-<KST 날짜시각>.xlsx."""
+    return "HAZOP-%s-%s.xlsx" % (re.sub(r'[\\/:*?"<>|\s]+', "_", project_id or "프로젝트"), kst(now, "%Y%m%d-%H%M"))
+
+
+# ---------------------------------------------------------------- 행 모델
+
+def _entity_labels(pg):
+    """{entity_id: 태그(짧은 도면번호)}. 태그 없는 요소는 넣지 않는다(근거 경로는 ID로 남김)."""
+    short = span.short_numbers(s["drawing_number"] for s in pg["sheets"])[1]
+    dn = {s["graph_id"]: s["drawing_number"] for s in pg["sheets"]}
+    out = {}
+    for n in pg["nodes"]:
+        if n.get("tag"):
+            d = dn.get(n.get("sheet"))
+            out[n["entity_id"]] = "%s(%s)" % (n["tag"], short.get(d, d)) if d else n["tag"]
+    return out
+
+
+def _basis_text(entry, labels):
+    basis = entry.get("ai_basis") or {}
+    lines = ["KG: " + " → ".join(labels.get(i, i) for i in path) for path in basis.get("kg_paths") or [] if path]
+    for s in basis.get("sources") or []:
+        lines.append("문서: %s%s" % (s.get("doc") or "-", " (%s)" % s["where"] if s.get("where") else ""))
+    return "\n".join(lines)
+
+
+def _warnings_text(entry):
+    items = list((entry.get("ai_basis") or {}).get("warnings") or [])
+    items += [label for key, label in FLAG_LABELS if entry.get(key)]
+    return "\n".join("⚠ %s" % w for w in items)
+
+
+def _history_text(entry):
+    out = []
+    for h in entry.get("history") or []:
+        at = kst(h["at"], "%m-%d %H:%M") if h.get("at") else ""
+        if h.get("op") == "status":
+            out.append("%s %s→%s" % (at, STATUS_LABELS.get(h.get("from"), h.get("from")),
+                                     STATUS_LABELS.get(h.get("to"), h.get("to"))))
+        elif h.get("op") == "edit":
+            fields = "·".join(FIELD_LABELS.get(k, k) for k in h.get("before") or {})
+            out.append("%s 수정(%s)" % (at, fields or "변경 없음"))
+    return "\n".join(out)
+
+
+def _status_text(entry):
+    """기각은 사람이 내린 판정이라 'AI 초안'을 붙이지 않는다(제안·수정인 AI 항목만 초안)."""
+    text = STATUS_LABELS.get(entry.get("status"), entry.get("status") or "")
+    return text + " · AI 초안" if res.is_ai_draft(entry) and entry.get("status") != "rejected" else text
+
+
+def _cell_kind(cell):
+    """칸 표시 행 종류 목록. 항목 행과 별도로 쓴다."""
+    run = cell.get("ai_run") or {}
+    kinds = []
+    if run.get("status") == "failed":
+        kinds.append("failed")
+    if cell["state"] == "excluded":
+        kinds.append("excluded")
+    elif cell["state"] == "analyzed" and not cell["entries"] and run.get("status") != "failed":
+        kinds.append("not_applicable" if run.get("applicable") is False else "no_scenario")
+    return kinds
+
+
+def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None):
+    """워크시트 행 [{키: 값, "kind": "entry"|칸 표시 종류, "risk_value", "status_key"}] (구간 순서 × 편차 순서)."""
+    if scope not in SCOPES:
+        raise ValueError("모르는 범위: %r" % scope)
+    nodes = {n["node_id"]: n for n in view["nodes"]}
+    order = [n["node_id"] for n in view["nodes"] if scope != "nodes" or n["node_id"] in (node_ids or ())]
+    devs = {d["deviation_id"]: d for d in deviations}
+    dev_rank = {d["deviation_id"]: i for i, d in enumerate(deviations)}
+    tag_drawing = span.tag_drawings(pg)
+    labels = _entity_labels(pg)
+    short = view.get("drawing_short") or {}
+    cells = {}
+    for c in results["cells"]:
+        cells.setdefault(c["node_id"], []).append(c)
+    rows = []
+    for nid in order:
+        node = nodes[nid]
+        home = node["drawings"][0] if len(node.get("drawings") or []) == 1 else None
+
+        def tagged(text):
+            return span.label_tags(text, tag_drawing, home, short) if text else text
+        for cell in sorted(cells.get(nid, []), key=lambda c: dev_rank.get(c["deviation_id"], 10 ** 6)):
+            d = devs.get(cell["deviation_id"]) or {"label": cell["deviation_id"], "parameter": "", "guideword": ""}
+            base = {"node": node.get("display_name") or nid, "node_id": nid, "drawings": span.drawing_column(node),
+                    "parameter": d["parameter"], "guideword": d["guideword"], "deviation": d["label"],
+                    "deviation_id": cell["deviation_id"]}
+            for e in cell["entries"]:
+                if scope == "approved" and e.get("status") != "approved":
+                    continue
+                rows.append(dict(base, kind="entry", status_key=e.get("status"), risk_value=e.get("risk"),
+                                 cause=tagged(e.get("cause")), consequence=tagged(e.get("consequence")),
+                                 safeguards="\n".join(tagged(s) for s in e.get("safeguards") or []),
+                                 severity=e.get("severity"), frequency=e.get("frequency"),
+                                 risk=risk_text(e.get("risk")), recommendation=tagged(e.get("recommendation")),
+                                 basis=_basis_text(e, labels), warnings=_warnings_text(e),
+                                 status=_status_text(e), history=_history_text(e)))
+            if scope == "approved":
+                continue
+            run = cell.get("ai_run") or {}
+            for kind in _cell_kind(cell):
+                extra = ({"warnings": "⚠ %s" % run["error"]} if kind == "failed" and run.get("error") else
+                         {"basis": "AI 메모: %s" % run["note"]} if kind != "failed" and run.get("note") else {})
+                rows.append(dict(base, kind=kind, status_key=kind, risk_value=None, status=CELL_ROW_LABELS[kind],
+                                 **extra))
+    return rows
+
+
+def counts(results, node_ids=None):
+    """요약 수치. node_ids를 주면 그 구간 칸만 센다. scenarios는 모든 상태의 항목 수."""
+    keep = (lambda c: True) if node_ids is None else (lambda c: c["node_id"] in node_ids)
+    cells = [c for c in results["cells"] if keep(c)]
+    entries = [e for c in cells for e in c["entries"]]
+    by_status = {s: sum(e.get("status") == s for e in entries) for s in res.ENTRY_STATUSES}
+    unreviewed = sum(e.get("status") == "proposed" or (res.is_ai_draft(e) and e.get("status") != "rejected")
+                     for e in entries)
+    return {"nodes": len({c["node_id"] for c in cells}), "deviations": len({c["deviation_id"] for c in cells}),
+            "scenarios": len(entries), "by_status": by_status, "unreviewed": unreviewed,
+            "failed_cells": sum((c.get("ai_run") or {}).get("status") == "failed" for c in cells),
+            "not_analyzed_cells": sum(c["state"] == "not_analyzed" for c in cells)}
+
+
+# ---------------------------------------------------------------- 쓰기
+
+def _put(ws, row, col, value, bold=False):
+    cell = ws.cell(row=row, column=col)
+    if isinstance(value, str):
+        value = scrub(ILLEGAL_CHARACTERS_RE.sub("", value))
+    cell.value = value if value != "" else None
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIX):
+        cell.data_type = "s"
+        cell.quotePrefix = True
+    cell.alignment = Alignment(wrap_text=True, vertical="top")
+    if bold:
+        cell.font = Font(bold=True)
+    return cell
+
+
+def _header(ws, columns):
+    for i, (title, width) in enumerate(columns, 1):
+        c = _put(ws, 1, i, title, bold=True)
+        c.fill = _HEAD_FILL
+        ws.column_dimensions[get_column_letter(i)].width = width
+    ws.freeze_panes = "A2"
+    ws.print_title_rows = "1:1"
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+
+def _filter(ws, ncols, nrows):
+    ws.auto_filter.ref = "A1:%s%d" % (get_column_letter(ncols), max(1, nrows + 1))
+
+
+def _paint_risk(cell, risk):
+    band = risk_band(risk)
+    if band:
+        cell.fill = PatternFill("solid", fgColor=COLORS["risk-%s-bg" % band].lstrip("#").upper())
+        cell.font = Font(bold=True, color=COLORS["risk-%s-ink" % band].lstrip("#").upper())
+
+
+def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, n_rows):
+    c = counts(results, set(node_ids) if scope == "nodes" else None)
+    ref = results.get("study_nodes_ref") or {}
+    s = c["by_status"]
+    lines = [
+        ("HAZOP 분석 결과 (⑤ 구간 × 편차)", None),
+        ("고지", NOTICE),
+        ("프로젝트", node_set.get("project_id") or "-"),
+        ("도면 목록", ", ".join(view.get("drawing_numbers") or [])),
+        ("그래프 판", ref.get("graph_version") or "-"),
+        ("검토구간 확정 시각", kst(ref["confirmed_at"]) + " KST" if ref.get("confirmed_at") else "-"),
+        ("내보낸 시각", kst(now) + " KST"),
+        ("검토자", reviewer or ""),
+        ("내보낸 범위", SCOPES[scope] + (" (%s)" % ", ".join(node_ids) if scope == "nodes" else "")),
+        ("구간 수", c["nodes"]), ("편차 수", c["deviations"]), ("시나리오 수", c["scenarios"]),
+        ("상태별: 제안", s["proposed"]), ("상태별: 수정", s["revised"]), ("상태별: 승인", s["approved"]),
+        ("상태별: 기각", s["rejected"]), ("미검토 시나리오", c["unreviewed"]), ("실패 칸", c["failed_cells"]),
+        ("분석 전 칸(워크시트에 행 없음)", c["not_analyzed_cells"]), ("워크시트 행 수", n_rows),
+        ("위험도", "KOSHA P-86 〈표5〉 강도 × 빈도 → 1–5. 구분 1·2 수용 · 3·4 조건부 수용 · 5 불허는 〈표9〉 비고를 "
+              "허용 구분으로 해석한 것 [추론](HAZOP기법지침 §6). 글자와 색 함께 표기"),
+        ("용어", "구간 = node, 편차 = deviation, 가이드워드 = guide word, 원인 = cause, 결과 = consequence, "
+               "보호수단 = safeguard, 권고 = recommendation (IEC 61882)"),
+    ]
+    for r, (k, v) in enumerate(lines, 1):
+        _put(ws, r, 1, k, bold=True)
+        if v is not None:
+            _put(ws, r, 2, v)
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["B2"].font = Font(bold=True, color="991B1B")
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["B"].width = 90
+    ws.page_setup.orientation = "landscape"
+
+
+def _nodes_sheet(ws, view, node_ids, intents, labels):
+    _header(ws, NODE_COLUMNS)
+    r = 1
+    for n in view["nodes"]:
+        if node_ids is not None and n["node_id"] not in node_ids:
+            continue
+        r += 1
+        b = n.get("boundary") or {}
+        short = view.get("drawing_short") or {}
+
+        def one(x):
+            if not x:
+                return ""
+            return "%s(%s)" % (x["label"], short.get(x["drawing"], x["drawing"])) if x.get("drawing") else x["label"]
+        members = [labels.get(m) for m in n["members"]]
+        tagged = sorted({m for m in members if m})
+        untagged = len(members) - len([m for m in members if m])
+        comp = ", ".join(tagged) + ((" 외 태그 없는 요소 %d" % untagged) if untagged else "")
+        intent = (intents or {}).get(n["node_id"]) or ""
+        for c, v in enumerate((n["node_id"], n.get("name") or "", "[%s]" % " → ".join(n.get("drawings_short") or []),
+                               one(b.get("start")), one(b.get("end")), intent, comp), 1):
+            _put(ws, r, c, v)
+    _filter(ws, len(NODE_COLUMNS), r - 1)
+
+
+def _worksheet_sheet(ws, rows):
+    cols = [(title, width) for _k, title, width in WORKSHEET_COLUMNS]
+    _header(ws, cols)
+    keys = [k for k, _t, _w in WORKSHEET_COLUMNS]
+    risk_col = keys.index("risk") + 1
+    for r, row in enumerate(rows, 2):
+        for c, k in enumerate(keys, 1):
+            _put(ws, r, c, row.get(k, ""))
+        _paint_risk(ws.cell(row=r, column=risk_col), row["risk_value"])
+        if row["kind"] != "entry":
+            ws.cell(row=r, column=keys.index("status") + 1).font = Font(italic=True, bold=True)
+    _filter(ws, len(cols), len(rows))
+
+
+def _recommendation_sheet(ws, rows):
+    _header(ws, RECOMMENDATION_COLUMNS)
+    picked = [x for x in rows if x["kind"] == "entry" and x.get("recommendation") and x["status_key"] != "rejected"]
+    for i, x in enumerate(picked, 1):
+        for c, v in enumerate((i, x["node"], x["deviation"], x["recommendation"], x["risk"], x["status"], "", ""), 1):
+            _put(ws, i + 1, c, v)
+        _paint_risk(ws.cell(row=i + 1, column=5), x["risk_value"])
+    _filter(ws, len(RECOMMENDATION_COLUMNS), len(picked))
+
+
+def build_workbook(results, node_set, pg, deviations, scope="all", node_ids=None, reviewer="", intents=None, now=None):
+    """Workbook과 워크시트 행 수. scope가 'nodes'면 node_ids(구간 ID 목록)가 있어야 한다."""
+    if scope == "nodes" and not node_ids:
+        raise ValueError("선택한 구간이 없습니다")
+    now = now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    view = span.annotate(node_set, pg)
+    rows = worksheet_rows(results, view, pg, deviations, scope, node_ids)
+    wb = Workbook()
+    _summary_sheet(wb.active, results, node_set, view, scope, list(node_ids or ()), reviewer, now, len(rows))
+    wb.active.title = SHEETS[0]
+    _nodes_sheet(wb.create_sheet(SHEETS[1]), view, set(node_ids) if scope == "nodes" else None, intents,
+                 _entity_labels(pg))
+    _worksheet_sheet(wb.create_sheet(SHEETS[2]), rows)
+    _recommendation_sheet(wb.create_sheet(SHEETS[3]), rows)
+    return wb, len(rows)
+
+
+def save_workbook(wb, path):
+    """같은 폴더 임시 파일에 쓴 뒤 교체한다(열려 있는 파일이면 PermissionError 그대로)."""
+    folder = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(prefix=".hazop-export-", suffix=".xlsx", dir=folder)
+    os.close(fd)
+    try:
+        wb.save(tmp)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return path
+
+
+def export(path, results, node_set, pg, deviations, **kw):
+    """build_workbook + save_workbook. (경로, 워크시트 행 수)."""
+    wb, n = build_workbook(results, node_set, pg, deviations, **kw)
+    return save_workbook(wb, path), n
