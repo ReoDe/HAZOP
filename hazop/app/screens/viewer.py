@@ -24,25 +24,21 @@ from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, empty_label, esc,
 from hazop.extract import corrections
 from hazop.extract.rules import KIND_CATEGORY
 from hazop.graph import project
+from hazop.kg.schema import REGISTRY
 from hazop.study import nodes as sn
 
-CATEGORY_LABELS = {"equipment": "설비", "valve": "밸브", "instrument": "계기", "piping_element": "배관 요소"}
-KIND_LABELS = {
-    "reactor_vessel": "원자로 용기", "steam_generator": "증기발생기", "pressurizer": "가압기", "pump": "펌프",
-    "vessel": "용기", "tank": "탱크", "heat_exchanger": "열교환기", "turbine": "터빈", "condenser": "복수기",
-    "filter": "필터", "demineralizer": "탈염기", "orifice": "오리피스", "vent": "벤트",
-    "manual_valve": "수동 밸브", "motor_operated_valve": "전동 밸브(MOV)", "control_valve": "제어 밸브",
-    "check_valve": "체크 밸브", "isolation_valve": "격리 밸브", "psv": "안전 밸브(PSV)",
-    "transmitter": "전송기", "controller": "제어기", "indicator": "지시계", "temperature_element": "온도 검출기",
-    "tee": "티", "pipe_cap": "배관 캡", "continuation": "도면 연결",
-}
+# 분류·종류 이름과 순서는 타입 레지스트리(사전 §2.1)
+CATEGORY_ORDER = REGISTRY.pid_categories()
+# 고른 기기에서 고칠 수 있는 속성(값은 레지스트리 속성 사전의 허용값): (수정 연산, 속성)
+POSITION_OPS = (("set_normal_position", "normal_position"), ("set_fail_position", "fail_position"))
 # (관계 종류, 화면 이름, 새 연결의 line_type)
 RELATION_KINDS = (("physical_connection", "공정 배관", "process"), ("signal_connection", "계장 신호", "signal"),
                   ("measurement_connection", "계측 연결", "instrument_tap"))
 RELATION_LABELS = {k: label for k, label, _ in RELATION_KINDS}
 TOOLS = (("select", "선택"), ("add_node", "기기 추가"), ("connect", "연결 추가"), ("endpoint", "끝점 잇기"),
          ("path", "경로 그리기"))
-OP_LABELS = {"set_tag": "태그", "set_kind": "종류", "set_flow": "흐름 방향", "set_endpoint": "끝점 잇기",
+OP_LABELS = {"set_tag": "태그", "set_kind": "종류", "set_normal_position": "정상 위치", "set_fail_position": "고장 위치",
+             "set_flow": "흐름 방향", "set_endpoint": "끝점 잇기",
              "set_path": "경로 다시 그리기", "confirm": "미확인 확정", "add_node": "기기 추가", "delete_node": "기기 삭제",
              "add_relation": "연결 추가", "delete_relation": "연결 삭제"}
 NEW_NODE_SIZE = 40  # 기기 추가: 클릭한 점을 가운데로 하는 정사각형(도면 좌표)
@@ -62,7 +58,14 @@ HINTS = {
 
 def kind_label(kind):
     cat = KIND_CATEGORY.get(kind)
-    return "%s · %s" % (CATEGORY_LABELS.get(cat, "미분류"), KIND_LABELS.get(kind, kind or "종류 없음"))
+    return "%s · %s" % (REGISTRY.label(cat, "미분류"), REGISTRY.label(REGISTRY.kind_class.get(kind), kind or "종류 없음"))
+
+
+def position_props(kind):
+    """이 kind에서 고칠 수 있는 위치 속성 [(수정 연산, 속성)]. 레지스트리 클래스 properties에 있는 것만."""
+    cid = REGISTRY.kind_class.get(kind)
+    have = REGISTRY.class_properties(cid) if cid else []
+    return [(op, prop) for op, prop in POSITION_OPS if prop in have]
 
 
 def index_items(extraction):
@@ -773,6 +776,25 @@ class ViewerScreen(QWidget):
         sg.addWidget(self.kind_apply, 1, 2)
         sg.setColumnStretch(1, 1)
         v.addLayout(sg)
+        pg = QGridLayout()  # 따로 둔다: 긴 이름(정상 위치)이 태그·종류 칸을 넓혀 패널이 가로로 잘리지 않게
+        pg.setSpacing(4)
+        self.pos_rows = {}
+        for row, (op, prop) in enumerate(POSITION_OPS):
+            spec = REGISTRY.properties[prop]
+            lab = QLabel(spec["label_ko"])
+            cb = QComboBox()
+            cb.setAccessibleName("고른 항목 %s" % spec["label_ko"])
+            cb.addItem("—", None)
+            for val in spec["values"]:
+                cb.addItem(val, val)
+            btn = QPushButton("적용")
+            btn.clicked.connect(lambda _=False, o=op, p=prop: self._apply_position(o, p))
+            pg.addWidget(lab, row, 0)
+            pg.addWidget(cb, row, 1)
+            pg.addWidget(btn, row, 2)
+            self.pos_rows[prop] = (lab, cb, btn)
+        pg.setColumnStretch(1, 1)
+        v.addLayout(pg)
         self.flow_row = QWidget()
         fr = QVBoxLayout(self.flow_row)
         fr.setContentsMargins(0, 0, 0, 0)
@@ -833,7 +855,7 @@ class ViewerScreen(QWidget):
 
     def _kind_combo(self):
         cb = QComboBox()
-        for k in sorted(KIND_CATEGORY, key=lambda k: (list(CATEGORY_LABELS).index(KIND_CATEGORY[k]), kind_label(k))):
+        for k in sorted(KIND_CATEGORY, key=lambda k: (CATEGORY_ORDER.index(KIND_CATEGORY[k]), kind_label(k))):
             cb.addItem(kind_label(k), k)
         return cb
 
@@ -1071,6 +1093,12 @@ class ViewerScreen(QWidget):
             self.commit({"op": "set_kind", "target": item["source_object_id"],
                          "value": {"kind": k, "category": KIND_CATEGORY[k]}})
 
+    def _apply_position(self, op, prop):
+        kind, item = self._selected_item()
+        val = self.pos_rows[prop][1].currentData()
+        if kind == "node" and val:
+            self.commit({"op": op, "target": item["source_object_id"], "value": {"value": val}})
+
     def _apply_flow(self, flip):
         req, why = flow_request(self.items, self.selected, flip)
         if why:
@@ -1157,7 +1185,7 @@ class ViewerScreen(QWidget):
     def _sync_edit_ui(self):
         on = self.edit_btn.isChecked() and self.session is not None and self.editable()
         self.edit_btn.setEnabled(self.editable() or self.edit_btn.isChecked())
-        self.edit_btn.setToolTip("도면 위에서 추출 결과(흐름 방향·연결·태그·종류·기기·배관 경로)를 고칩니다"
+        self.edit_btn.setToolTip("도면 위에서 추출 결과(흐름 방향·연결·태그·종류·밸브 위치·기기·배관 경로)를 고칩니다"
                                  if self.editable() else "SVG가 있는 도면 오버레이에서만 편집할 수 있습니다")
         self.edit_panel.setVisible(on)
         if not on:
@@ -1220,6 +1248,9 @@ class ViewerScreen(QWidget):
             self.tag_edit.clear()
             for w in (self.kind_label, self.kind_combo, self.kind_apply, self.flow_row):
                 w.setVisible(False)
+            for row in self.pos_rows.values():
+                for w in row:
+                    w.setVisible(False)
             return
         is_node = kind == "node"
         if is_node:
@@ -1238,6 +1269,13 @@ class ViewerScreen(QWidget):
             self.tag_edit.setText(item.get("line_no") or "")
         for w in (self.kind_label, self.kind_combo, self.kind_apply):
             w.setVisible(is_node)
+        editable = {prop for _, prop in position_props(item.get("kind"))} if is_node else set()
+        for prop, (lab, cb, btn) in self.pos_rows.items():
+            for w in (lab, cb, btn):
+                w.setVisible(prop in editable)
+            if prop in editable:
+                cur = (item.get("attributes") or {}).get(prop)
+                cb.setCurrentIndex(max(cb.findData(cur), 0))  # 허용값 밖·없음이면 '—'(적용해도 바뀌지 않음)
         physical = not is_node and item.get("kind") == "physical_connection"
         self.flow_row.setVisible(physical)
         if physical:

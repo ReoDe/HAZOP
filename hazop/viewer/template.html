@@ -6,7 +6,7 @@
 <style>
 :root {
   --ui: #0a5fc2; --bg: #f4f5f7; --card: #ffffff; --line: #d6d9de; --muted: #525b67; --ink: #0f1419; --ink-2: #2a313b;
-  --equipment: #1d4ed8; --valve: #0f766e; --instrument: #0d97d6; --piping_element: #6366f1; --unclassified: #868e9d;
+  --equipment: #1d4ed8; --valve: #0f766e; --instrument: #0d97d6; --piping_element: #6366f1; --unclassified: #868e9d; --inline_component: #1e3a8a;
   --physical_connection: #16a34a; --signal_connection: #7c3aed; --measurement_connection: #d67506; --unresolved: #dc2626;
   --hl-path: #ea580c; --ok: #127238; --warn-bg: #fdf0d2; --warn-ink: #74430a;
   --tag: #111827; --selected: #0a5fc2; --human-edit: #db2777; --on-seg: #ffffff; --warn-line: #a8740d;
@@ -676,7 +676,7 @@ function hazopPathEngine(G) {
     return "<table>" + Object.keys(obj).map(function (k) { return "<tr><td>" + esc(k) + "</td><td>" + val(obj[k]) + "</td></tr>"; }).join("") + "</table>";
   }
   function linkTo(id) { return '<span class="link" data-goto="' + esc(id) + '">' + esc(label(id)) + "</span>"; }
-  var CAT = { equipment: "설비", valve: "밸브", instrument: "계기", piping_element: "배관 요소" };
+  var CAT = { equipment: "설비", valve: "밸브", inline_component: "배관 부품", instrument: "계기", piping_element: "배관 요소" };
   var REL = { physical_connection: "공정 배관", signal_connection: "계장 신호", measurement_connection: "계측 연결" };
   // 체크밸브 허용 방향 문구(기획서/정보추출.md #rules-code-diff). 확정 방향처럼 보이지 않게 상태를 항상 붙인다.
   var CHECK_STATUS = { declared: "작성자 선언, 사람 확인 전", symbol: "기호 기반" };
@@ -807,7 +807,7 @@ function hazopPathEngine(G) {
   var gsvg = document.getElementById("graphsvg");
   var gpos = {};               // 추출 local_id -> 그래프 위치(drawio 좌표)
   var entityOfLocal = {}, gNodes = {}, gEdgeEls = [];
-  var NODE_R = { equipment: 7, valve: 6, instrument: 5, piping_element: 4, pipe_segment: 3.5 };
+  var NODE_R = { equipment: 7, valve: 6, inline_component: 5, instrument: 5, piping_element: 4, pipe_segment: 3.5 };
   var EDGE_COLOR = { has_endpoint: "var(--physical_connection)", signal_connection: "var(--signal_connection)",
                      measurement_connection: "var(--measurement_connection)" };
   var GKIND = { pipe_segment: "배관 구간" };

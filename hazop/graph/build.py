@@ -12,6 +12,7 @@
 - 노드·엣지마다 생성 주체 origin(pid_extract, ② 사람 수정이 닿은 대상은 human_edit와 수정 표시 human_edit{op_ids, ops, by, at})
   (기획서/지식그래프-스키마.md §3). 둘 다 추출 결과(graph_version 입력)에서 정해지므로 BUILDER_VERSION은 올리지 않는다.
   올리면 수정이 없는 도면까지 판이 바뀌어 구간 JSON·mentions 기록이 모두 재확인으로 간다.
+- 계기 노드의 isa(태그에서 읽은 ISA-5.1 식 문자, hazop.extract.isa)도 태그에서만 정해지므로 같은 이유로 올리지 않는다.
 같은 입력이면 같은 결과(ID·순서)가 나오도록 결정적으로 만든다.
 """
 
@@ -20,6 +21,8 @@ import json
 import math
 
 import networkx as nx
+
+from hazop.extract import isa
 
 SCHEMA_VERSION = "0.1"
 BUILDER = "hazop.graph.build"
@@ -104,6 +107,8 @@ def build_graph(extraction, extraction_file=None):
             "position": _center(loc["bbox"]) if loc else None,
             **_origin(n),
         })
+        if n["category"] == "instrument":  # 태그에서 읽은 측정변수·기능 문자·루프 번호(못 읽으면 None). tag는 그대로
+            nodes[-1]["isa"] = isa.parse_tag(n["tag"])
         basis = (n.get("evidence") or {}).get("tag_basis")
         if basis:  # PDF 추출: 태그 근거(추정 접두는 [추론])를 ③ 자동 연결까지 넘긴다. drawio 그래프는 그대로
             nodes[-1]["tag_basis"] = basis

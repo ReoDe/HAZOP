@@ -5,7 +5,9 @@
   entity_id는 바뀔 수 있어도 이 참조는 그대로라서, 판이 바뀐 뒤에도 옛 구성요소를 새 entity_id로 찾을 수 있다.
 - 확정을 유지하는 조건은 보수적이다. 옛 참조 집합과 새 그래프의 참조 집합이 정확히 같고 양쪽 모두 참조가 하나씩만
   있을 때만 유지한다. 구성요소가 빠지거나 늘거나 겹치거나 참조가 없으면 손대지 않는다(지금처럼 '재확인 필요').
-- 참조가 같아도 구성요소의 종류·태그·배관 번호·흐름 방향·연결(member_digest)이 바뀌었으면 유지하지 않는다.
+- 참조가 같아도 구성요소의 종류·태그·배관 번호·흐름 방향·정상 위치·고장 위치·연결(member_digest)이 바뀌었으면 유지하지 않는다.
+  분류(category)는 kind에서 레지스트리로 정해지므로 넣지 않는다(레지스트리 분류 이동만으로 재확인되지 않게, M2 U9).
+  분류를 넣어 계산한 옛 기록("md-")은 그 기록을 만들 때의 분류표(레지스트리 0.2.0)로 새 그래프를 다시 계산해 비교한다.
   ② 도면 사람 수정(태그·종류·흐름·끝점)은 '재확인 필요'로 알린다는 결정(결정로그 2026-11-07)을 지키고,
   밸브가 펌프로 바뀐 것처럼 구간 판단이 달라질 변경에서 확정을 그대로 두지 않기 위해서다.
 - 유지하면 구성요소·판만 바꾸고 history에 판 이전(옛 판 → 새 판, 대응 수, 바뀐 ID)을 남긴다. 확정자·확정 시각은 그대로다.
@@ -43,19 +45,52 @@ def member_refs(node_set, graph):
     return {m: ref_of(by_id[m], graph.get("graph_id")) if m in by_id else None for m in members}
 
 
-def member_digest(graph):
-    """구간 판단에 쓰는 내용(구성요소 종류·분류·태그·배관 번호·흐름 방향, 관계 종류와 양 끝)을 참조로 적은 해시.
-    entity_id·판·위치·속성은 넣지 않는다(재추출·필드 추가로는 바뀌지 않게)."""
+POSITION_ATTRS = ("normal_position", "fail_position")
+
+
+def _digest(graph, prefix, category=None, positions=False):
     gid = graph.get("graph_id")
     ref = {n["entity_id"]: ref_of(n, gid) for n in graph.get("nodes", [])}
-    nodes = sorted(([ref[n["entity_id"]] or "", n.get("kind"), n.get("category"), n.get("tag"), n.get("line_no"),
-                     [ref.get((n.get("flow_direction") or {}).get(k)) or "" for k in ("from", "to")]
-                     if isinstance(n.get("flow_direction"), dict) else None] for n in graph.get("nodes", [])),
+
+    def pos(n):
+        a = n.get("attributes") or {}
+        return [[a.get(k) for k in POSITION_ATTRS]] if positions else []
+    nodes = sorted(([ref[n["entity_id"]] or "", n.get("kind")] + ([category(n)] if category else [])
+                    + [n.get("tag"), n.get("line_no"),
+                       [ref.get((n.get("flow_direction") or {}).get(k)) or "" for k in ("from", "to")]
+                       if isinstance(n.get("flow_direction"), dict) else None] + pos(n)
+                    for n in graph.get("nodes", [])),
                    key=json.dumps)
     edges = sorted(([e.get("kind")] + sorted(ref.get(x) or "" for x in e.get("nodes") or [])
                     for e in graph.get("edges", [])), key=json.dumps)
     canon = json.dumps({"nodes": nodes, "edges": edges}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return "md-" + hashlib.sha256(canon.encode("utf-8")).hexdigest()[:16]
+    return prefix + hashlib.sha256(canon.encode("utf-8")).hexdigest()[:16]
+
+
+def member_digest(graph):
+    """구간 판단에 쓰는 내용(구성요소 종류·태그·배관 번호·흐름 방향·정상 위치·고장 위치, 관계 종류와 양 끝)을 참조로 적은 해시.
+    정상·고장 위치는 ⑤ 원인·결과 판단이 기대므로 바뀌면 재확인한다(결정로그 2026-11-07 "② 수정 시 ④·⑤ 재확인").
+    entity_id·판·도면 위치·그 밖의 속성·분류는 넣지 않는다(재추출·필드 추가·레지스트리 분류 이동으로는 바뀌지 않게)."""
+    return _digest(graph, "md2-", positions=True)
+
+
+def legacy_member_digest(graph):
+    """옛 "md-" 기록과 비교할 값: 분류를 M2 이전 분류표(rules.LEGACY_KIND_CATEGORY)로 다시 정해 옛 방식대로 계산한다.
+    배관 구간과 표에 없는 kind는 그래프의 분류를 쓰되, 그 뒤 레지스트리에 생긴 kind는 그때처럼 None으로 본다."""
+    from hazop.extract.rules import KIND_CATEGORY, LEGACY_KIND_CATEGORY
+
+    def category(n):
+        k = n.get("kind")
+        if k in LEGACY_KIND_CATEGORY:
+            return LEGACY_KIND_CATEGORY[k]
+        return None if k in KIND_CATEGORY else n.get("category")
+    return _digest(graph, "md-", category)
+
+
+def digest_matches(recorded, graph):
+    if not recorded:
+        return False
+    return recorded == (member_digest(graph) if recorded.startswith("md2-") else legacy_member_digest(graph))
 
 
 def _usable(node_set, graph):
@@ -64,11 +99,12 @@ def _usable(node_set, graph):
 
 
 def with_refs(node_set, graph):
-    """판이 같은 확정본에 member_refs가 없거나 모자라면 채운 사본, 아니면 입력 그대로."""
+    """판이 같은 확정본에 member_refs가 없거나 모자라거나 내용 기록이 옛 방식(md-)이면 채운 사본, 아니면 입력 그대로.
+    판이 같으면 그래프 내용도 같으므로 옛 기록을 지금 방식으로 다시 계산해도 된다."""
     if not _usable(node_set, graph) or node_set.get("graph_version") != graph["graph_version"]:
         return node_set
     members = {m for n in node_set["nodes"] for m in n["members"]}
-    if set(node_set.get("member_refs") or {}) == members and node_set.get("member_digest"):
+    if set(node_set.get("member_refs") or {}) == members and (node_set.get("member_digest") or "").startswith("md2-"):
         return node_set
     out = copy.deepcopy(node_set)
     out.update(member_refs=member_refs(out, graph), member_digest=member_digest(graph))
@@ -109,8 +145,8 @@ def plan(node_set, graph):
             reason = "새 판에 늘어난 구성요소 %d개(%s)" % (len(extra), ", ".join(extra[:3]))
         elif not node_set.get("member_digest"):
             reason = "옛 판의 구성요소 내용 기록(member_digest)이 없음"
-        elif node_set["member_digest"] != member_digest(graph):
-            reason = "구성요소의 종류·태그·흐름·연결이 바뀜"
+        elif not digest_matches(node_set["member_digest"], graph):
+            reason = "구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"
     if reason:
         return dict(out, state="recheck", reason=reason)
     mapping = {m: new[old[m]][0] for m in members}

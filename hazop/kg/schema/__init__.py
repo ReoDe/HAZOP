@@ -13,7 +13,10 @@ SHAPES = ("circle", "square", "page", "hex", "diamond", "capsule", "tri")
 A2_ROLES = (None, "mention", "apply")
 PID_VIEWS = ("V1", "V3")
 PID_ROOT = "plant_item"
-CLASS_KEYS = {"id", "parent", "layer", "label_ko", "label_en", "legend", "kind", "id_prefix", "dexpi_class"}
+CLASS_KEYS = {"id", "parent", "layer", "label_ko", "label_en", "legend", "kind", "id_prefix", "dexpi_class",
+              "properties", "required"}
+PROPERTY_KEYS = {"id", "type", "values", "label_ko", "dimension", "needs_basis"}
+PROPERTY_TYPES = ("enum", "quantity", "text")
 RELATION_KEYS = {"id", "layer", "from", "to", "group", "v4", "a2_role", "evidence_gap", "conflict_check",
                  "pid_view", "label_ko"}
 GROUP_KEYS = {"id", "label_ko", "width"}
@@ -52,7 +55,7 @@ def validate(data):
     if not isinstance(data, dict):
         return ["최상위가 JSON 객체가 아님"]
     problems = []
-    extra = sorted(set(data) - {"registry_version", "classes", "relations", "groups", "origins"})
+    extra = sorted(set(data) - {"registry_version", "classes", "properties", "relations", "groups", "origins"})
     if extra:
         problems.append("모르는 최상위 키 %s" % ", ".join(extra))
     if not _str(data.get("registry_version")):
@@ -61,6 +64,7 @@ def validate(data):
     group_ids = _check_items(data.get("groups"), "groups", GROUP_KEYS, problems)
     _check_items(data.get("relations"), "relations", RELATION_KEYS, problems)
     _check_items(data.get("origins"), "origins", ORIGIN_KEYS, problems)
+    prop_ids = set(_check_items(data.get("properties", []), "properties", PROPERTY_KEYS, problems))
     if problems:
         return problems
     classes = {c["id"]: c for c in data["classes"]}
@@ -88,6 +92,28 @@ def validate(data):
         if lg is not None and (not isinstance(lg, dict) or set(lg) != {"shape", "token"} or lg["shape"] not in SHAPES
                                or not _str(lg["token"]) or not lg["token"].startswith("kg-")):
             problems.append("classes %s: legend는 {shape(%s), token(kg-...)}이어야 함" % (cid, "/".join(SHAPES)))
+    for p in data.get("properties", []):
+        pid = p["id"]
+        if p.get("type") not in PROPERTY_TYPES or not _str(p.get("label_ko")):
+            problems.append("properties %s: type(%s)·label_ko 필요" % (pid, "/".join(PROPERTY_TYPES)))
+        vals = p.get("values")
+        if p.get("type") == "enum" and (not isinstance(vals, list) or not vals or not all(_str(v) for v in vals)):
+            problems.append("properties %s: enum은 values(문자열 목록) 필요" % pid)
+        if p.get("type") != "enum" and "values" in p:
+            problems.append("properties %s: values는 enum에만 씀" % pid)
+        if "needs_basis" in p and not isinstance(p["needs_basis"], bool):
+            problems.append("properties %s: needs_basis는 참·거짓" % pid)
+    for c in data["classes"]:
+        for f in ("properties", "required"):
+            if f not in c:
+                continue
+            v = c[f]
+            if not isinstance(v, list) or not all(_str(x) for x in v):
+                problems.append("classes %s: %s는 속성 ID 목록이어야 함" % (c["id"], f))
+                continue
+            for x in v:
+                if x not in prop_ids:
+                    problems.append("classes %s: %s의 속성 %s가 없음" % (c["id"], f, x))
     for k, cids in sorted(kinds.items()):
         if len(cids) > 1:
             problems.append("kind %s가 클래스 %s에 겹침(R4)" % (k, ", ".join(cids)))
@@ -101,6 +127,11 @@ def validate(data):
             cur = classes[cur].get("parent")
     if problems:
         return problems
+    for c in data["classes"]:
+        missing = [x for x in c.get("required", []) if x not in _class_properties(classes, c["id"])]
+        if missing:
+            problems.append("classes %s: required %s가 이 클래스·상위 클래스의 properties에 없음"
+                            % (c["id"], ", ".join(missing)))
     for c in data["classes"]:
         if c.get("parent") is not None and "layer" in c and c["layer"] != _layer(classes, c["parent"]):
             problems.append("classes %s: layer가 상위 클래스와 다름" % c["id"])
@@ -156,6 +187,22 @@ def validate(data):
     return problems
 
 
+def _ancestors(classes, cid):
+    out = []
+    while cid is not None and cid in classes:
+        out.append(cid)
+        cid = classes[cid].get("parent")
+    return out
+
+
+def _class_properties(classes, cid):
+    """상속 포함 속성 ID(위 클래스 것부터, 중복 없이)."""
+    out = []
+    for a in reversed(_ancestors(classes, cid)):
+        out += [p for p in classes[a].get("properties", []) if p not in out]
+    return out
+
+
 def _layer(classes, cid):
     cur = classes[cid]
     while "layer" not in cur:
@@ -179,6 +226,8 @@ class Registry:
         self.relations = {r["id"]: r for r in data["relations"]}
         self.groups = {g["id"]: g for g in data["groups"]}
         self.origins = {o["id"]: o for o in data["origins"]}
+        self.properties = {p["id"]: p for p in data.get("properties", [])}
+        self.kind_class = {c["kind"]: c["id"] for c in data["classes"] if "kind" in c}
 
     def layer(self, cid):
         return _layer(self.classes, cid)
@@ -190,6 +239,28 @@ class Registry:
                 return True
             cid = self.classes[cid].get("parent")
         return False
+
+    def class_properties(self, cid):
+        """클래스가 가질 수 있는 속성 ID(상속 포함). 레지스트리에 없는 클래스는 빈 목록."""
+        return _class_properties(self.classes, cid)
+
+    def class_required(self, cid):
+        """없으면 미확인으로 기록하는 속성 ID(상속 포함)."""
+        out = []
+        for a in reversed(_ancestors(self.classes, cid)):
+            out += [p for p in self.classes[a].get("required", []) if p not in out]
+        return out
+
+    def kinds_requiring(self, prop):
+        return {k for k, cid in self.kind_class.items() if prop in self.class_required(cid)}
+
+    def label(self, cid, default=None):
+        c = self.classes.get(cid)
+        return c["label_ko"] if c else default
+
+    def pid_categories(self):
+        """P&ID 분류(최상위 plant_item 바로 아래 클래스) ID, 파일 순서."""
+        return [c["id"] for c in self.data["classes"] if c.get("parent") == PID_ROOT]
 
     def kind_category(self):
         """kind -> 분류(상위 클래스 ID). 추출 규칙의 KIND_CATEGORY."""

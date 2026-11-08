@@ -146,7 +146,7 @@ class MigrateTest(unittest.TestCase):
         link = graph("v-2", pipes=[("L1", "TK", "V2"), ("L2", "V1", "V2"), ("L3", "V2", "PP")])
         for g in (tag, kind, link):
             p = migrate.plan(self.ns, g)
-            self.assertEqual((p["state"], p["reason"]), ("recheck", "구성요소의 종류·태그·흐름·연결이 바뀜"))
+            self.assertEqual((p["state"], p["reason"]), ("recheck", "구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"))
         extra_field = graph("v-2", shift=10)
         for n in extra_field["nodes"]:
             n["origin"] = "drawing"

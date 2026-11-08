@@ -1,4 +1,5 @@
-"""타입 레지스트리(hazop/kg/schema) 형식 검사와 '레지스트리 조회 결과 = M0 이전 고정 목록' 동치 검사."""
+"""타입 레지스트리(hazop/kg/schema) 형식 검사와 '레지스트리 조회 결과 = M0 이전 고정 목록' 동치 검사.
+M2(2026-11-08)에서 P&ID 분류가 바뀐 부분(배관 부품, 새 kind)은 차이만 따로 적어 검사한다."""
 
 import copy
 import hashlib
@@ -24,6 +25,15 @@ for _k in ("transmitter", "controller", "indicator", "temperature_element"):
     OLD_KIND_CATEGORY[_k] = "instrument"
 for _k in ("tee", "pipe_cap", "continuation"):
     OLD_KIND_CATEGORY[_k] = "piping_element"
+# M2: 오리피스·벤트는 배관 부품으로 이동(U9), 새 kind(사전 §2.1)
+M2_MOVED = {"orifice": "inline_component", "vent": "inline_component"}
+M2_NEW_KINDS = {
+    "compressor": "equipment", "fan": "equipment", "accumulator": "equipment",
+    "air_operated_valve": "valve", "solenoid_valve": "valve", "relief_valve": "valve", "rupture_disc": "valve",
+    "drain": "inline_component", "strainer": "inline_component", "reducer": "inline_component",
+    "flow_element": "inline_component", "blind_flange": "inline_component",
+    "switch": "instrument", "recorder": "instrument", "nozzle": "piping_element",
+}
 OLD_NODE_PREFIX = {"document": "doc-", "doc_chunk": "chunk-", "requirement": "req-", "setpoint": "setpt-",
                    "condition": "cond-", "analysis_case": "case-"}
 OLD_LINK_TYPES = {
@@ -46,8 +56,10 @@ OLD_CONTEXT_TYPE_ORDER = {"requirement": 0, "setpoint": 1, "condition": 2}
 OLD_TYPE = {
     "equipment": {"layer": "pid", "name": "설비", "col": "kg-equipment", "shape": "circle"},
     "valve": {"layer": "pid", "name": "밸브", "col": "kg-valve", "shape": "circle"},
+    "inline_component": {"layer": "pid", "name": "배관 부품", "col": "kg-inline_component", "shape": "circle"},  # M2
     "instrument": {"layer": "pid", "name": "계장", "col": "kg-instrument", "shape": "circle"},
-    "piping_element": {"layer": "pid", "name": "배관 요소(티·도면 연결점)", "col": "kg-piping_element", "shape": "circle"},
+    "piping_element": {"layer": "pid", "name": "배관 요소",  # M2: 사전 §2.1 이름(② 종류 목록 폭)
+                       "col": "kg-piping_element", "shape": "circle"},
     "pipe_segment": {"layer": "pid", "name": "배관 구간", "col": "kg-pipe_segment", "shape": "circle"},
     "unclassified": {"layer": "pid", "name": "미분류", "col": "kg-unclassified", "shape": "circle"},
     "document": {"layer": "kn", "name": "문서", "col": "kg-document", "shape": "page"},
@@ -179,8 +191,11 @@ class RegistryFormatTest(unittest.TestCase):
 
 class RegistryEquivalenceTest(unittest.TestCase):
     def test_extract_rules(self):
-        self.assertEqual(rules.KIND_CATEGORY, OLD_KIND_CATEGORY)
-        self.assertEqual(list(rules.KIND_CATEGORY), list(OLD_KIND_CATEGORY))
+        old_part = {k: v for k, v in rules.KIND_CATEGORY.items() if k in OLD_KIND_CATEGORY}
+        self.assertEqual(old_part, dict(OLD_KIND_CATEGORY, **M2_MOVED))
+        self.assertEqual({k: v for k, v in rules.KIND_CATEGORY.items() if k not in OLD_KIND_CATEGORY}, M2_NEW_KINDS)
+        self.assertEqual([k for k in rules.KIND_CATEGORY if k in OLD_KIND_CATEGORY and k not in M2_MOVED],
+                         [k for k in OLD_KIND_CATEGORY if k not in M2_MOVED])
 
     def test_build(self):
         self.assertEqual(build.NODE_PREFIX, OLD_NODE_PREFIX)

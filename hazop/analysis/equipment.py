@@ -1,14 +1,18 @@
 """④ 원인·전제·보호수단으로 쓸 수 있는 '실제 기기' 종류 (한 곳에서 정의).
 
-근거: 사용자 결정(2026-11-04) '도면에 있는 설비만'. 종류 분류는 ② 작성 규칙(hazop/extract/rules.py KIND_CATEGORY)을 따른다.
-- 허용: category가 equipment·valve·instrument인 kind
-- 불가: 연결 요소(tee·pipe_cap·continuation = piping_element)와 배관 구간(pipe_segment).
+근거: 사용자 결정(2026-11-04) '도면에 있는 설비만'. 종류 분류는 ② 작성 규칙(hazop/extract/rules.py KIND_CATEGORY,
+타입 레지스트리)을 따른다.
+- 허용: 연결 요소가 아닌 분류(설비·밸브·배관 부품·계기 기능)의 kind. 배관 부품(오리피스·벤트 등)은 2026-11-08 설비에서
+  나뉘었으나(사전 §2.1, U9) 막힘·누설 원인이 되는 실제 부품이라 그대로 허용한다
+- 불가: 연결 요소(tee·pipe_cap·continuation·nozzle = piping_element)와 배관 구간(pipe_segment).
   continuation은 다른 도면으로 이어지는 연결점이므로, 이를 전제하는 것은 도면 밖 설비를 전제하는 것으로 본다.
 """
 
 from hazop.extract.rules import KIND_CATEGORY
+from hazop.kg.schema import REGISTRY
 
-EQUIPMENT_CATEGORIES = ("equipment", "valve", "instrument")
+CONNECTION_CATEGORIES = ("piping_element", "pipe_segment")
+EQUIPMENT_CATEGORIES = tuple(c for c in REGISTRY.pid_categories() if c not in CONNECTION_CATEGORIES + ("unclassified",))
 EQUIPMENT_KINDS = frozenset(k for k, c in KIND_CATEGORY.items() if c in EQUIPMENT_CATEGORIES)
 CONNECTION_KINDS = frozenset(k for k, c in KIND_CATEGORY.items() if c == "piping_element") | {"pipe_segment"}
 

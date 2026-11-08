@@ -19,6 +19,7 @@ COLORS = {
     # 데이터: 노드 종류(밸브는 UI 파랑과 분리)
     "equipment": "#1d4ed8", "valve": "#0f766e", "instrument": "#0d97d6", "piping_element": "#6366f1",
     "unclassified": "#868e9d",
+    "inline_component": "#1e3a8a",  # 배관 부품(2026-11-08 설비에서 나뉨): 설비 파랑의 진한 쪽이라 옛 도면 인상을 크게 바꾸지 않음
     # 데이터: 관계 종류
     "physical_connection": "#16a34a", "signal_connection": "#7c3aed", "measurement_connection": "#d67506",
     "unresolved": "#dc2626",
@@ -40,6 +41,7 @@ COLORS = {
     # ②의 equipment·valve 등과 별도 키라 ② 색은 그대로다. 간선은 회색 하나(kg-edge 반투명, 강조 때 kg-edge-hi)
     "kg-equipment": "#3b5472", "kg-valve": "#4d6889", "kg-instrument": "#5e7ca1", "kg-piping_element": "#788da5",
     "kg-unclassified": "#8d939a", "kg-pipe_segment": "#54836b",
+    "kg-inline_component": "#6a7f99",  # P&ID 회청 계열, 계장(#5e7ca1)과 배관 요소(#788da5) 사이 명도
     "kg-analysis_case": "#503c67", "kg-requirement": "#65507c", "kg-setpoint": "#796293", "kg-condition": "#88759f",
     "kg-document": "#575f6b", "kg-doc_chunk": "#757e8a",
     "kg-edge": "#9aa1ab", "kg-edge-hi": "#5b6470",

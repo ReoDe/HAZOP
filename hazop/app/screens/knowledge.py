@@ -26,8 +26,9 @@ from hazop.graph.query import VALVE_POSITION_NOTE, QueryError
 from hazop.kg import algo, auto, build, screen
 
 APP_SHELL = "kg-screen.html"  # 출력/뷰어/ 아래 앱 셸(데이터 없음, loadKnowledge로 받음)
-TYPE_NAMES = {"equipment": "설비", "valve": "밸브", "instrument": "계장", "piping_element": "배관 요소",
-              "pipe_segment": "배관 구간", "unclassified": "미분류", "document": "문서", "doc_chunk": "문서 조각",
+TYPE_NAMES = {"equipment": "설비", "valve": "밸브", "inline_component": "배관 부품", "instrument": "계장",
+              "piping_element": "배관 요소", "pipe_segment": "배관 구간", "unclassified": "미분류", "document": "문서",
+              "doc_chunk": "문서 조각",
               "requirement": "요건", "setpoint": "설정치", "condition": "운전조건·설계값", "analysis_case": "해석 사례"}
 STATUS_ORDER = {"confirmed": 0, "recheck": 1, "excluded": 2, "candidate": 3}
 STATUS_NAMES = {"confirmed": "확인", "recheck": "재확인 필요", "excluded": "계산 제외", "candidate": "후보"}
