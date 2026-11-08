@@ -15,7 +15,7 @@ PID_VIEWS = ("V1", "V3")
 PID_ROOT = "plant_item"
 CLASS_KEYS = {"id", "parent", "layer", "label_ko", "label_en", "legend", "kind", "id_prefix", "dexpi_class",
               "properties", "required"}
-PROPERTY_KEYS = {"id", "type", "values", "label_ko", "dimension", "needs_basis"}
+PROPERTY_KEYS = {"id", "type", "values", "label_ko", "dimension", "needs_basis", "knowledge_items"}
 PROPERTY_TYPES = ("enum", "quantity", "text")
 RELATION_KEYS = {"id", "layer", "from", "to", "group", "v4", "a2_role", "evidence_gap", "conflict_check",
                  "pid_view", "label_ko"}
@@ -103,6 +103,10 @@ def validate(data):
             problems.append("properties %s: values는 enum에만 씀" % pid)
         if "needs_basis" in p and not isinstance(p["needs_basis"], bool):
             problems.append("properties %s: needs_basis는 참·거짓" % pid)
+        ki = p.get("knowledge_items", [])
+        if not isinstance(ki, list) or not all(isinstance(x, dict) and set(x) == {"node_type", "item"}
+                                               and _str(x["node_type"]) and _str(x["item"]) for x in ki):
+            problems.append("properties %s: knowledge_items는 {node_type, item} 목록이어야 함" % pid)
     for c in data["classes"]:
         for f in ("properties", "required"):
             if f not in c:
@@ -181,10 +185,24 @@ def validate(data):
             problems.append("origins %s: confirm_needs_reviewer는 참·거짓" % o["id"])
     for m in sorted({m for m in methods if methods.count(m) > 1}):
         problems.append("method %s가 생성 주체 둘 이상의 legacy_methods에 있음" % m)
+    seen_items = {}
+    for p in data.get("properties", []):
+        for x in p.get("knowledge_items", []):
+            if x["node_type"] not in classes or _layer(classes, x["node_type"]) != "knowledge":
+                problems.append("properties %s: knowledge_items의 %s가 지식 층 클래스가 아님" % (p["id"], x["node_type"]))
+            seen_items.setdefault(_item_key(x["node_type"], x["item"]), []).append(p["id"])
+    for k, ps in sorted(seen_items.items()):
+        if len(ps) > 1:
+            problems.append("문서 항목 %s/%s가 속성 둘 이상(%s)에 대응" % (k[0], k[1], ", ".join(ps)))
     apply_targets = [r["to"][0] for r in data["relations"] if r.get("a2_role") == "apply"]
     for t in sorted({t for t in apply_targets if apply_targets.count(t) > 1}):
         problems.append("설비 적용 관계 둘 이상이 같은 클래스 %s를 가리킴" % t)
     return problems
+
+
+def _item_key(node_type, item):
+    """문서 항목 비교 키: 공백을 지우고 대소문자를 무시한다('설정 압력' = '설정압력')."""
+    return node_type, "".join(str(item).split()).casefold()
 
 
 def _ancestors(classes, cid):
@@ -228,6 +246,8 @@ class Registry:
         self.origins = {o["id"]: o for o in data["origins"]}
         self.properties = {p["id"]: p for p in data.get("properties", [])}
         self.kind_class = {c["kind"]: c["id"] for c in data["classes"] if "kind" in c}
+        self.item_property = {_item_key(x["node_type"], x["item"]): p["id"]
+                              for p in data.get("properties", []) for x in p.get("knowledge_items", [])}
 
     def layer(self, cid):
         return _layer(self.classes, cid)
@@ -250,6 +270,12 @@ class Registry:
         for a in reversed(_ancestors(self.classes, cid)):
             out += [p for p in self.classes[a].get("required", []) if p not in out]
         return out
+
+    def property_of_item(self, node_type, item):
+        """설정치·운전조건의 항목(item) -> 같은 칸으로 비교할 P&ID 속성 ID(knowledge_items). 없으면 None."""
+        if not node_type or not item:
+            return None
+        return self.item_property.get(_item_key(node_type, item))
 
     def kinds_requiring(self, prop):
         return {k for k, cid in self.kind_class.items() if prop in self.class_required(cid)}

@@ -20,13 +20,14 @@ import shutil
 
 import networkx as nx
 
+from hazop.kg import claims
 from hazop.kg.inputs import SOURCE_COLUMNS, candidate_fields, normalize_tag, normalize_text, text_sha256
 from hazop.kg.schema import PID_ROOT, REGISTRY
 
 SCHEMA_VERSION = "0.2"
 READABLE_SCHEMA_VERSIONS = ("0.1", "0.2")  # 0.1 -> 0.2는 registry 필드만 더함(옛 판은 그대로 읽음)
 BUILDER = "hazop.kg.build"
-BUILDER_VERSION = "0.2.0"
+BUILDER_VERSION = "0.3.0"  # 0.3.0: 속성 주장(claims)·도면값 충돌(M3)
 
 NODE_PREFIX = REGISTRY.node_prefix()
 LINK_PREFIX = "krel-"
@@ -44,7 +45,7 @@ RESERVED_PREFIXES = ("entity-", "relation-", "graph-")  # P&ID ID·target_ref와
 REF_RE = re.compile(r"^(graph-[^:#]+)([:#])(.+)$")
 # mentions 대상이 기록 당시와 다른 도면 버전에서 사라지거나 모호해진 경우 차단 대신 재확인(§3.2)
 STALE_TARGET_CODES = ("pid_ref_not_found", "ambiguous_tag")
-# 같은 대상·항목 충돌 비교에 쓰는 설비 적용 관계(K7)
+# 문서 값을 P&ID 노드의 속성 주장으로 옮기고 충돌을 비교하는 설비 적용 관계(K7)
 CONFLICT_KINDS = REGISTRY.conflict_kinds()
 
 
@@ -419,39 +420,61 @@ def build_kg(knowledge, graphs):
             reasons.append("recheck_required")
         l["compute_view"] = {"v4": not reasons, "excluded_reasons": reasons}
 
-    # ---- K7: 같은 대상·항목의 서로 다른 값 -> 둘 다 보존하고 충돌 표시
-    groups = {}
+    # ---- 속성 주장(KD4)과 K7: 같은 대상·같은 칸의 서로 다른 값 -> 모두 보존하고 충돌 표시
+    # 도면 주장은 graph_refs에 판이 하나로 정해진 그래프에서만 만든다(kg_version이 같으면 결과 바이트도 같게)
+    claim_list, where = [], {}
+    for r in graph_refs:
+        found = pid.by_id.get(r["graph_id"], [])
+        if r["graph_version"] is None or len(found) != 1:
+            continue
+        for n in found[0]["nodes"]:
+            if n.get("source_object_id"):
+                where[claims.stable_ref(r["graph_id"], n["source_object_id"])] = (r["graph_id"], n["entity_id"])
+        claim_list += claims.drawing_claims(found[0])
     for l in links:
-        ntype = CONFLICT_KINDS.get(l.get("kind"))
-        if not ntype or not l["valid"] or l.get("link_status") == "rejected":
+        if not CONFLICT_KINDS.get(l.get("kind")) or not l["valid"] or l.get("link_status") == "rejected":
             continue
         n = node_by_id[l["to"]]
         if n.get("item") is None:
             continue
-        key = (l["ends"]["from"]["graph_id"], l["ends"]["from"]["entity_id"], ntype, n["item"])
-        groups.setdefault(key, {})[n["id"]] = n
+        f = l["ends"]["from"]
+        pn = next(x for x in pid.by_id[f["graph_id"]][0]["nodes"] if x["entity_id"] == f["entity_id"])
+        c = claims.knowledge_claim(l, n, pn, f["graph_id"])
+        where[c["target"]] = (f["graph_id"], f["entity_id"])
+        claim_list.append(c)
+    groups = {}
+    for c in claim_list:
+        groups.setdefault((c["target"], claims.compare_key(c)), {}).setdefault(claims.member_id(c), c)
     conflicts = []
-    for key, uniq in sorted(groups.items(), key=lambda kv: _canon(list(kv[0]))):
+    for (target, ck), uniq in sorted(groups.items(), key=lambda kv: _canon([kv[0][0], list(kv[0][1])])):
         ids = sorted(uniq)
         for x, ia in enumerate(ids):
             for ib in ids[x + 1:]:
                 a, b = uniq[ia], uniq[ib]
                 if not _comparable_modes(a, b) or not _values_differ(a, b):
                     continue
-                conflicts.append({"graph_id": key[0], "entity_id": key[1], "node_type": key[2], "item": key[3],
-                                  "members": [ia, ib],
-                                  "values": [{"id": i, "value": uniq[i].get("value"), "unit": uniq[i].get("unit"),
+                gid, eid = where[target]
+                types = {a["node_type"], b["node_type"]}
+                prop = ck[1] if ck[0] == "property" else None
+                item = prop if prop else ck[2]
+                conflicts.append({"graph_id": gid, "entity_id": eid, "node_type": types.pop() if len(types) == 1 else None,
+                                  "item": item, "property": prop, "members": [ia, ib], "claims": [a["id"], b["id"]],
+                                  "values": [{"id": i, "claim": uniq[i]["id"], "origin": uniq[i]["origin"],
+                                              "value": uniq[i].get("value"), "unit": uniq[i].get("unit"),
                                               "pressure_basis": uniq[i].get("pressure_basis"),
                                               "operating_mode": uniq[i].get("operating_mode")} for i in (ia, ib)]})
                 unknowns.append({"check": "conflict", "target": "%s,%s" % (ia, ib), "field": "value",
-                                 "reason": "같은 대상(%s)·항목(%s)에 서로 다른 값 - 둘 다 보존" % (key[1], key[3])})
+                                 "reason": "같은 대상(%s)·항목(%s)에 서로 다른 값 - 둘 다 보존"
+                                 % (eid, REGISTRY.properties[prop]["label_ko"] if prop else item)})
     conflict_of = {}
     for c in conflicts:
         a, b = c["members"]
         conflict_of.setdefault(a, set()).add(b)
         conflict_of.setdefault(b, set()).add(a)
     for n in nodes:
-        n["conflict_with"] = sorted(conflict_of.get(n.get("id"), ()))
+        partners = conflict_of.get(n.get("id"), ())
+        n["conflict_with"] = sorted(p for p in partners if p in node_by_id)
+        n["conflict_with_pid"] = sorted(p for p in partners if p not in node_by_id)  # 도면 주장 상대(graph_id#source_object_id)
 
     for l in links:
         l.pop("valid")
@@ -470,6 +493,7 @@ def build_kg(knowledge, graphs):
         "graph_refs": graph_refs,
         "nodes": nodes,
         "links": links,
+        "claims": claim_list,
         "conflicts": conflicts,
         "validation": {"status": "blocked" if blockers else "passed", "blockers": blockers, "unknowns": unknowns},
         "review_items": review_items,
@@ -492,6 +516,7 @@ def summary(kg):
         "v4_nodes": sum(1 for n in kg["nodes"] if n["compute_view"]["v4"]),
         "v4_links": sum(1 for l in kg["links"] if l["compute_view"]["v4"]),
         "conflicts": len(kg["conflicts"]),
+        "claims": len(kg.get("claims") or []),
         "blockers": len(kg["validation"]["blockers"]),
         "unknowns": len(kg["validation"]["unknowns"]),
     }

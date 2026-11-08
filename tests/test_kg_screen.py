@@ -519,6 +519,23 @@ class KnowledgeTabTest(WindowTestBase):
         self.assertTrue(scr.standalone.startswith(os.path.join(self.roots.work, "출력", "지식그래프")))
         self.assertTrue(os.path.isfile(scr.standalone))
 
+    def test_drawing_value_conflict_in_detail(self):
+        """샘플: RC-PSV101 도면 설정압력 17.2 MPa ≠ setpt-003 9(단위 미확인). 양쪽 상세에 충돌 배지·두 값이 보인다."""
+        win = self.open()
+        win.go(ks.knowledge_index())
+        self.assertTrue(ks.wait_knowledge(win))
+        scr = win.current_screen()
+        eid = next(n["entity_id"] for n in scr.graph["nodes"] if n.get("tag") == "RC-PSV101")
+        self.assertTrue(next(n for n in scr.data["nodes"] if n["id"] == eid)["conflict"])
+        win.webview.bridge.fromWeb(json.dumps({"type": "nodeSelected", "local_id": None, "entity_id": eid}))
+        text = scr.detail.toPlainText()
+        for frag in ("≠ 충돌", "둘 다 보존(setpt-003)", "설정압력: 17.2 MPa (도면 RC-PSV101) ≠ 9(단위 미확인) (setpt-003)"):
+            self.assertIn(frag, text)
+        win.webview.bridge.fromWeb(json.dumps({"type": "nodeSelected", "local_id": None, "entity_id": "setpt-003"}))
+        self.assertIn("둘 다 보존(도면 RC-PSV101)", scr.detail.toPlainText())
+        win.webview.bridge.fromWeb(json.dumps({"type": "nodeSelected", "local_id": None, "entity_id": "setpt-001"}))
+        self.assertIn("고압 트립: 8 bar (setpt-001) ≠ 8.5 bar (setpt-002)", scr.detail.toPlainText())
+
     def test_toolbar_hides_versions_and_selection_follows(self):
         win = self.open()
         probs, info = ks.tab_problems(win, self.inp)

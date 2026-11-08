@@ -105,8 +105,14 @@ def sample_checks(kg, knowledge, graphs, out_dir):
                 all(x["has_source"] for x in kg["nodes"] + kg["links"] if x["knowledge_status"] == "confirmed")
                 and all(build._has_source(l["source"]) for l in kg["links"] if l["kind"] == "depends_on")))
     conf = {tuple(c["members"]) for c in kg["conflicts"]}
-    res.append(("K7", "설정치 충돌(setpt-001·002) 둘 다 보존·표시, 운전압력·설계압력은 충돌 아님",
-                conf == {("setpt-001", "setpt-002")} and node["setpt-001"]["conflict_with"] == ["setpt-002"]
+    psv = next(n for n in gmap[SAMPLE_GRAPH]["nodes"] if n.get("tag") == "RC-PSV101")
+    psv_ref = "%s#%s" % (SAMPLE_GRAPH, psv["source_object_id"])
+    res.append(("K7", "설정치 충돌(setpt-001·002)과 도면 설정압력(RC-PSV101 17.2 MPa)≠setpt-003(9) 모두 보존·표시, "
+                      "운전압력·설계압력은 충돌 아님",
+                conf == {("setpt-001", "setpt-002"), (psv_ref, "setpt-003")}
+                and node["setpt-001"]["conflict_with"] == ["setpt-002"]
+                and node["setpt-003"]["conflict_with_pid"] == [psv_ref] and node["setpt-003"]["value"] == "9"
+                and psv["attributes"].get("set_pressure") == "17.2 MPa"
                 and node["setpt-002"]["value"] == "8.5" and not node["cond-001"]["conflict_with"]))
     sp = node["setpt-003"]
     res.append(("K8", "빈 칸은 null·사유로 남고 0으로 바뀌지 않음",

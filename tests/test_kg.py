@@ -405,14 +405,21 @@ class K6SourceTest(unittest.TestCase):
         self.assertIsNone(lk["krel-015"]["source"]["material_id"])
 
 
+def doc_conflicts(kg):
+    """문서 값끼리의 충돌 members(도면 주장 충돌 제외). 샘플은 RC-PSV101 도면 설정압력 17.2 MPa와 setpt-003(9)도 충돌한다."""
+    return [c["members"] for c in kg["conflicts"] if not any(m.startswith("graph-") for m in c["members"])]
+
+
 class K7ConflictTest(unittest.TestCase):
 
     def test_both_values_kept_and_flagged(self):
         kg = build.build_kg(sample(), [pid_graph()])
-        self.assertEqual([c["members"] for c in kg["conflicts"]], [["setpt-001", "setpt-002"]])
+        self.assertEqual(doc_conflicts(kg), [["setpt-001", "setpt-002"]])
         vals = {n["id"]: n["value"] for n in kg["nodes"]}
         self.assertEqual((vals["setpt-001"], vals["setpt-002"]), ("8", "8.5"))
-        self.assertEqual(kg["conflicts"][0]["entity_id"], "entity-node-009")  # RC-PT110
+        c = next(c for c in kg["conflicts"] if c["members"] == ["setpt-001", "setpt-002"])
+        self.assertEqual(c["entity_id"], "entity-node-009")  # RC-PT110
+        self.assertEqual((c["node_type"], c["item"], c["property"]), ("setpoint", "고압 트립", None))
         self.assertFalse(any("cond-" in i for c in kg["conflicts"] for i in c["members"]))  # 운전압력≠설계압력 항목
 
     def test_blank_operating_mode_compared_with_all_modes(self):
@@ -420,14 +427,14 @@ class K7ConflictTest(unittest.TestCase):
         sp = {n["id"]: n for n in k["nodes"]}
         sp["setpt-002"]["operating_mode"] = "정상 운전"  # setpt-001은 빈 칸
         kg = build.build_kg(k, [pid_graph()])
-        self.assertEqual([c["members"] for c in kg["conflicts"]], [["setpt-001", "setpt-002"]])
+        self.assertEqual(doc_conflicts(kg), [["setpt-001", "setpt-002"]])
         sp["setpt-001"]["operating_mode"] = "기동"  # 둘 다 적혀 있고 다르면 비교하지 않음
-        self.assertEqual(build.build_kg(k, [pid_graph()])["conflicts"], [])
+        self.assertEqual(doc_conflicts(build.build_kg(k, [pid_graph()])), [])
 
     def test_numeric_equal_values_not_conflict(self):
         k = sample()
         next(n for n in k["nodes"] if n["id"] == "setpt-002")["value"] = "8.0"
-        self.assertEqual(build.build_kg(k, [pid_graph()])["conflicts"], [])
+        self.assertEqual(doc_conflicts(build.build_kg(k, [pid_graph()])), [])
 
 
 class K8UnknownValueTest(unittest.TestCase):

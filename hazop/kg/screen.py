@@ -192,6 +192,7 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
     folded, _ = algo.fold_segments(v5, graph)
     foldable = {k for _, _, k, d in folded.edges(keys=True, data=True) if d.get("kind") == "folded_segment"}
     segs = {n["entity_id"]: n for n in graph["nodes"] if n.get("node_type") == "pipe_segment"}
+    pid_conflict = {r for n in kg["nodes"] for r in n.get("conflict_with_pid") or []}  # 문서 값과 다른 도면 속성 주장
 
     nodes = []
     for n in graph["nodes"]:
@@ -204,13 +205,15 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
                       "local_id": n.get("local_id"), "pos": pos if isinstance(pos, list) and len(pos) == 2 else None,
                       "np": attrs.get("normal_position"), "cont": n.get("kind") == "continuation",
                       "fold": n["entity_id"] in foldable, "v5": n["entity_id"] in v5,
-                      "hedit": node_origin(n) == "human_edit"})
+                      "hedit": node_origin(n) == "human_edit",
+                      "conflict": "%s#%s" % (gid, n.get("source_object_id")) in pid_conflict})
     kn_ids = set()
     for n in kg["nodes"]:
         kn_ids.add(n["id"])
         nodes.append({"id": n["id"], "layer": "kn", "type": n.get("node_type"), "label": _label(n),
                       "ks": n.get("knowledge_status") or "confirmed", "v5": n["id"] in v5,
-                      "nosrc": n.get("has_source") is False, "conflict": bool(n.get("conflict_with")),
+                      "nosrc": n.get("has_source") is False,
+                      "conflict": bool(n.get("conflict_with") or n.get("conflict_with_pid")),
                       "unit_unknown": n.get("node_type") == "setpoint" and not n.get("unit"),
                       "ai": build.origin_of(n) == "ai_draft"})
     pid_ids = {n["entity_id"] for n in graph["nodes"]}

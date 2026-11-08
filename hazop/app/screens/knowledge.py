@@ -24,6 +24,7 @@ from hazop.graph import project
 from hazop.graph.build import node_origin
 from hazop.graph.query import VALVE_POSITION_NOTE, QueryError
 from hazop.kg import algo, auto, build, screen
+from hazop.kg.schema import REGISTRY
 
 APP_SHELL = "kg-screen.html"  # 출력/뷰어/ 아래 앱 셸(데이터 없음, loadKnowledge로 받음)
 TYPE_NAMES = {"equipment": "설비", "valve": "밸브", "inline_component": "배관 부품", "instrument": "계장",
@@ -507,6 +508,33 @@ class KnowledgeScreen(QWidget):
             rows.append(("근거 상속", esc(inherited)))
         return self._kv(rows)
 
+    def _member_label(self, member):
+        """충돌 상대 이름: 도면 주장(graph_id#source_object_id)이면 '도면 <태그>', 지식 노드면 ID."""
+        gid, sep, soid = member.partition("#")
+        if not sep:
+            return member
+        g = next((x for x in self.graph["nodes"] if x.get("source_object_id") == soid), None) \
+            if gid == self.graph["graph_id"] else None
+        return "도면 %s" % ((g.get("tag") or soid) if g else member)
+
+    def _conflict_box(self, member):
+        """member(지식 노드 ID 또는 도면 주장 참조)가 든 충돌. 어느 값도 고르지 않고 모두 보인다."""
+        rows = [c for c in self.kg.get("conflicts") or [] if member in (c.get("members") or ())]
+        if not rows:
+            return ""
+        partners = sorted({m for c in rows for m in c["members"] if m != member})
+        lines = []
+        for c in rows:
+            prop = REGISTRY.properties.get(c.get("property"))
+            vals = " ≠ ".join("%s%s (%s)" % (v.get("value"), " " + v["unit"] if v.get("unit") else "(단위 미확인)",
+                                              self._member_label(v["id"]))
+                              for v in c["values"])
+            lines.append("%s: %s" % (prop["label_ko"] if prop else c.get("item"), vals))
+        return "<table width='100%%' cellpadding='6' style='border:2px solid %s;margin-top:4px'><tr><td>" \
+               "<b>충돌</b>: 같은 대상·항목에 다른 값 — %s 보존(%s)<br>%s</td></tr></table>" % (
+                   tokens.c("kg-conflict"), "둘 다" if len(partners) <= 1 else "모두", esc(", ".join(self._member_label(m) for m in partners)),
+                   "<br>".join(esc(x) for x in lines))
+
     def _connections(self, nid):
         nodes = self._nodes()
         ls = [l for l in self.data["links"] if nid in (l["s"], l["t"])]
@@ -575,7 +603,7 @@ class KnowledgeScreen(QWidget):
                 h += " " + badge("계산 제외", "plain")
             if not kn.get("has_source"):
                 h += " " + badge("∅ 근거 없음", "err")
-            if kn.get("conflict_with"):
+            if kn.get("conflict_with") or kn.get("conflict_with_pid"):
                 h += " " + badge("≠ 충돌", "err")
             if auto_extracted(kn):
                 h += " " + badge(AUTO_BADGE, "ai")
@@ -595,10 +623,7 @@ class KnowledgeScreen(QWidget):
             if kn.get("compute_view", {}).get("excluded_reasons"):
                 rows.append(("계산 제외 사유", esc(", ".join(kn["compute_view"]["excluded_reasons"]))))
             h += self._kv(rows)
-            if kn.get("conflict_with"):
-                h += "<table width='100%%' cellpadding='6' style='border:2px solid %s;margin-top:4px'><tr><td>" \
-                     "<b>충돌</b>: 같은 대상·항목에 다른 값 — 둘 다 보존(%s)</td></tr></table>" % (
-                         tokens.c("kg-conflict"), esc(", ".join(kn["conflict_with"])))
+            h += self._conflict_box(nid)
             h += "<h4>근거(출처)</h4>" + self._source(kn.get("source"))
             self.goto_btn.setEnabled(False)
         else:
@@ -619,8 +644,10 @@ class KnowledgeScreen(QWidget):
                 he = g.get("human_edit") or {}
                 rows.append(("사람 수정", esc(" · ".join(OP_LABELS.get(o, o) for o in he.get("ops") or []) or "수정 기록 있음")
                              + (" (%s)" % esc(he["by"]) if he.get("by") else "")))
+            conflict = self._conflict_box("%s#%s" % (self.graph["graph_id"], g.get("source_object_id")))
             h += badge("P&ID 레이어", "plain") + (" " + badge(HUMAN_EDIT_BADGE, "human") if edited else "")
-            h += "</p><h4>속성</h4>" + self._kv(rows)
+            h += (" " + badge("≠ 충돌", "err") if conflict else "")
+            h += "</p><h4>속성</h4>" + self._kv(rows) + conflict
             self.goto_btn.setEnabled(bool(g.get("local_id")))
         h += "<h4>알고리즘</h4>" + self._algo_section(nid)
         h += "<h4>연결 목록</h4>" + self._connections(nid)
