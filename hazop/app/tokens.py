@@ -206,6 +206,8 @@ QLabel#kbd_nav { color: %(nav-muted)s; border: 1px solid %(nav-active-bg)s; bord
 QLabel#kbd { color: %(toast-ink)s; border: 1px solid %(toast-link)s; border-radius: 3px; padding: 0 4px; font-size: %(xs)spx; }
 QWidget#explorer_box { background: %(surface-2)s; border-right: 1px solid %(line)s; }
 QLineEdit#explorer_filter { font-size: %(sm)spx; padding: 2px 6px; margin-right: 6px; }
+QLabel#explorer_title { font-weight: 700; font-size: %(sm)spx; color: %(ink)s; padding: 0 2px; }
+QPushButton#explorer_next { font-size: %(xs)spx; padding: 1px 8px; color: %(ui-ink)s; border-color: %(ui)s; }
 QTreeWidget#explorer::item:selected { border-left: 2px solid %(ui)s; }
 QFrame#related { background: %(card)s; border-left: 1px solid %(line)s; }
 QLabel#rel_title { font-weight: 700; padding: 8px 10px; border-bottom: 1px solid %(line)s; }

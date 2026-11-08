@@ -686,8 +686,13 @@ class RegisterScreenTest(AppTestBase):
         rail = {i: (bool(win.step_buttons[i].property("done")), win.step_buttons[i].property("state")) for i in (0, 1, 5)}
         self.assertEqual(rail, {0: (True, "now"), 1: (True, "done"), 5: (False, "todo")})
         win.go(1)
-        item = win.explorer.topLevelItem(0).child(0)                  # 탐색기 자료 → ① 그 행 선택
-        self.assertEqual(item.text(0), rec["original_name"])
+        scr.table.clearSelection()
+        win.go(0)
+        from PySide6.QtCore import Qt
+        grp = win.explorer.topLevelItem(0)                            # ① 탐색기 도면 → ① 그 행 선택
+        item = next(grp.child(i) for i in range(grp.childCount()) if grp.child(i).data(0, Qt.UserRole + 1) is None)
+        self.assertEqual(item.text(0), rec.get("drawing_number") or rec["original_name"])
+        self.assertIn(rec["original_name"], item.toolTip(0))
         win._explorer_clicked(item)
         self.assertEqual((win.stack.currentIndex(), scr.table.currentRow()), (0, 0))
 

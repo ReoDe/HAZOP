@@ -146,23 +146,74 @@ class ShellTest(unittest.TestCase):
         self.assertEqual(b.property("state"), "now")
         self.assertFalse(b.icon().isNull(), "번호 원 아이콘")
 
-    def test_explorer_follows_drawing_with_counts_and_hints(self):
+    @staticmethod
+    def groups(win):
+        return {win.explorer.topLevelItem(i).text(0): win.explorer.topLevelItem(i)
+                for i in range(win.explorer.topLevelItemCount())}
+
+    @staticmethod
+    def entries(grp, role=None):
+        """묶음의 자식 중 역할(role)이 같은 줄. None은 항목(누를 수 있는 목록 줄)."""
+        return [grp.child(i) for i in range(grp.childCount()) if grp.child(i).data(0, Qt.UserRole + 1) == role]
+
+    def test_each_stage_shows_only_its_module(self):
+        win = self.window()
+        seen = {}
+        for k, first in enumerate((0, 1, 4, STUDY, RESULTS)):
+            win.go(first)
+            self.assertEqual(win.explorer_stage(), k)
+            self.assertTrue(win.explorer_title.text().startswith("①②③④⑤"[k]), "탐색기 머리에 지금 단계")
+            seen[k] = set(self.groups(win))
+        self.assertEqual(seen[0], {"도면", "문서", "등록 없이 추출"})
+        self.assertEqual(seen[1], {"도면 추출"})
+        self.assertEqual(seen[2], {"지식그래프"})
+        self.assertEqual(seen[3], {"검토구간 · %s" % win.index().graph["project_id"]})
+        self.assertEqual(seen[4], {"구간별 분석", "권고"})
+        names = [n for v in seen.values() for n in v]
+        self.assertEqual(len(names), len(set(names)), "단계끼리 같은 묶음을 나누어 보이지 않음")
+        win.go(1)
+        self.assertFalse(win.explorer_drawing.isVisibleTo(win.explorer_panel), "도면 필터는 ④·⑤에서만")
+
+    def test_stage_items_name_first_with_origin_aside(self):
+        win = self.window()
+        win.go(0)
+        src = self.entries(self.groups(win)["등록 없이 추출"])[0]
+        self.assertEqual(src.text(0), self.drawing, "도면 이름을 앞에 두고 잘리지 않게 출처는 오른쪽·툴팁")
+        self.assertEqual(src.text(1), "미등록")
+        self.assertIn("출처: 등록 없이 추출", src.toolTip(0))
+        win._explorer_clicked(src)
+        self.assertEqual(win.stack.currentIndex(), 1, "등록 없이 추출된 도면 → ② 추출")
+        ex = self.entries(self.groups(win)["도면 추출"])[0]
+        self.assertEqual(ex.data(0, Qt.UserRole), (1, self.drawing))
+        self.assertIn("미확인", ex.toolTip(0))
+        self.assertIn("사람 수정 0", ex.toolTip(0))
+
+    def test_empty_state_offers_next_step_button(self):
+        from PySide6.QtWidgets import QPushButton
+        win = self.window()
+        win.go(4)
+        kg = self.groups(win)["지식그래프"]
+        self.assertEqual(self.entries(kg, "hint")[0].flags(), Qt.NoItemFlags, "빈 안내는 누를 수 없는 한 줄")
+        button = win.explorer.itemWidget(self.entries(kg, "hint")[1], 0)
+        self.assertIsInstance(button, QPushButton)
+        self.assertEqual(button.accessibleName(), "② 추출 보기")
+        button.click()
+        self.assertEqual(win.stack.currentIndex(), 1, "빈 상태 버튼이 다음 할 일 단계로")
+        win.go(0)
+        self.assertEqual(win.explorer.itemWidget(self.entries(self.groups(win)["문서"], "hint")[0], 0), None,
+                         "버튼이 없는 빈 안내도 있다")
+
+    def test_results_module_progress_recommendations_and_filter(self):
         win = self.window()
         win.go(RESULTS)
         self.assertEqual(win.drawing, self.drawing)
-        groups = {win.explorer.topLevelItem(i).text(0): win.explorer.topLevelItem(i)
-                  for i in range(win.explorer.topLevelItemCount())}
-        study = next(g for name, g in groups.items() if name.startswith("검토구간 · "))
+        groups = self.groups(win)
+        study = next(g for name, g in groups.items() if name.startswith("구간별 분석"))
         self.assertEqual(study.text(1), str(len(self.node_set["nodes"])))
-        self.assertEqual(study.child(0).text(0), "⑤ 결과 행렬 열기", "결과 바로가기는 구간이 많아도 보이게 맨 위")
-        first = study.child(1)
+        self.assertEqual([i.text(0).split(" ")[0] for i in self.entries(study, "info")], ["분석", "미검토"], "⑤ 진행 요약")
+        self.assertEqual(self.entries(study, "action")[0].text(0), "Excel로 내보내기…")
+        first = self.entries(study)[0]
         self.assertEqual(first.text(1), "미1·실패1", "미검토 수와 AI 실패 칸 수")
-        src = groups["자료"].child(0)
-        self.assertEqual(src.text(0), "%s · 등록 없이 추출" % self.drawing, "등록 없이 추출된 도면도 자료에 출처와 함께")
-        self.assertEqual(groups["자료"].text(1), "1")
-        self.assertEqual(groups["지식그래프"].child(0).flags(), Qt.NoItemFlags, "빈 그룹은 누를 수 없는 안내 한 줄")
-        link = study.child(0)
-        self.assertEqual(link.text(0), "⑤ 결과 행렬 열기", "결과로 들어가는 입구")
         self.assertEqual(groups["권고"].text(1), "1")
         win.explorer_filter.setText("zzzz")
         self.assertEqual(study.text(1), "0")
@@ -179,10 +230,9 @@ class ShellTest(unittest.TestCase):
             win._explorer_clicked(first)
         self.assertEqual(win.stack.currentIndex(), STUDY, "Alt+누르기는 ④ 구간")
         self.assertEqual(win.screens[STUDY].current_node_id(), nid)
-        win._explorer_clicked(link)
-        self.assertEqual(win.stack.currentIndex(), RESULTS)
-        win._explorer_clicked(src)
-        self.assertEqual(win.stack.currentIndex(), 1, "자료의 추출 도면 → ② 도면")
+        grp = next(g for name, g in self.groups(win).items() if name.startswith("검토구간 · "))
+        self.assertEqual([i.text(0).split(" · ")[0] for i in self.entries(grp, "info")], ["상태", "덮음률", "미포함 0"])
+        self.assertEqual(self.entries(grp)[0].text(1), "", "④에는 ⑤ 진행 대신 구간 목록만")
 
     def test_palette_finds_and_opens_cell(self):
         win = self.window()
@@ -359,6 +409,8 @@ class ProjectExplorerTest(unittest.TestCase):
     window = ShellTest.window
 
     def study_group(self, win):
+        if win.explorer_stage() != 3:
+            win.go(STUDY)
         return next(win.explorer.topLevelItem(i) for i in range(win.explorer.topLevelItemCount())
                     if win.explorer.topLevelItem(i).text(0).startswith("검토구간"))
 
@@ -368,7 +420,7 @@ class ProjectExplorerTest(unittest.TestCase):
         win = self.window()
         win.set_drawing(self.names["SNP-M-102"])
         grp = self.study_group(win)
-        self.assertEqual(grp.text(0), "검토구간 · 프로젝트 SNP-SAMPLE")
+        self.assertEqual(grp.text(0), "검토구간 · SNP-SAMPLE")
         labels = [project_ctx.node_label(n) for n in self.view["nodes"]]
         nodes = [grp.child(i) for i in range(grp.childCount()) if grp.child(i).data(0, Qt.UserRole + 1) is None]
         self.assertEqual([c.text(0) for c in nodes], labels, "어느 도면에서 보든 S1…Sn 전체")

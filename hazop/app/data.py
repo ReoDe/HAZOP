@@ -196,26 +196,34 @@ def list_extractions():
 _SOURCE_CACHE = {}
 
 
-def extraction_origin(path):
-    """추출 결과가 어디서 왔는지: None(① 등록 자료) · "샘플 실행 데이터"(참고자료 샘플) · "등록 없이 추출".
-    extraction.json의 source.material_id가 없으면 등록을 거치지 않은 추출이다. 파일 수정 시각으로 캐시한다."""
+def extraction_brief(path):
+    """추출 결과 요약 {"origin", "drawing_number", "title", "nodes", "relations", "unknowns"}. 파일 수정 시각으로 캐시한다.
+    origin: None(① 등록 자료) · "샘플 실행 데이터"(참고자료 샘플) · "등록 없이 추출". 읽을 수 없으면 None."""
     try:
         key = (path, os.path.getmtime(path))
     except OSError:
         return None
     if key not in _SOURCE_CACHE:
         try:
-            src = read_json(path).get("source") or {}
+            doc = read_json(path)
+            src, drawing, summary = doc.get("source") or {}, doc.get("drawing") or {}, doc.get("summary") or {}
         except (OSError, ValueError, AttributeError):
-            src = {}
+            src, drawing, summary = {}, {}, {}
         if src.get("material_id"):
             origin = None
         elif str(src.get("file") or "").replace("\\", "/").startswith("참고자료/"):
             origin = "샘플 실행 데이터"
         else:
             origin = "등록 없이 추출"
-        _SOURCE_CACHE[key] = origin
+        _SOURCE_CACHE[key] = {"origin": origin, "drawing_number": drawing.get("drawing_number"),
+                              "title": drawing.get("title"), "nodes": summary.get("nodes"),
+                              "relations": summary.get("relations"), "unknowns": summary.get("unknowns")}
     return _SOURCE_CACHE[key]
+
+
+def extraction_origin(path):
+    """추출 결과가 어디서 왔는지(extraction_brief의 origin). extraction.json의 source.material_id가 없으면 등록을 거치지 않은 추출이다."""
+    return (extraction_brief(path) or {}).get("origin")
 
 
 def unregistered_extractions():

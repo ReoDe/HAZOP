@@ -14,21 +14,19 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QComboBox, QDialog, Q
                                QVBoxLayout, QWidget)
 
 from hazop import paths
-from hazop.app import data, palette, project_ctx, related, tokens
+from hazop.app import data, explorer, palette, project_ctx, related, tokens
 from hazop.app.related_panel import RelatedPanel
 from hazop.app.screens.analysis import AnalysisScreen
 from hazop.app.screens.knowledge import KnowledgeScreen
 from hazop.app.screens.register import RegisterScreen
 from hazop.app.screens.results import ResultsScreen
 from hazop.app.screens.review import ReviewScreen
-from hazop.app.screens.study import StudyNodesScreen, seg_icon
+from hazop.app.screens.study import StudyNodesScreen
 from hazop.app.screens.viewer import ViewerScreen
 from hazop.app.settings_dialog import SettingsDialog, status_bar_html
 from hazop.app.webview import HazopWebView
 from hazop.app.widgets import VALIDATION_LABELS, Chip, TaskRunner, Toast, esc, kst_text, write_log
 from hazop.study.apikey import STORE_FILE_NAME, KeyStore
-from hazop.study import results as res
-from hazop.study import span
 
 APP_NAME = "HAZOP 분석 도구"
 APP_VERSION = "0.1.0"
@@ -37,8 +35,6 @@ STEPS = ("① 자료 등록", "② 도면 추출", "고정 응답 분석(이전 
 STEP_ORDER = (0, 1, 4, 5, 6, 2, 3)  # 보기 메뉴 순서
 # 레일 단계: (번호, 짧은 이름, 화면 index들). 첫 화면이 레일 클릭 대상이고 그 화면의 is_done()이 완료(✓)를 정한다.
 STAGES = (("1", "등록", (0,)), ("2", "추출", (1,)), ("3", "그래프", (4,)), ("4", "구간", (5,)), ("5", "결과", (6, 2, 3)))
-# 탐색기 묶음: (이름, 단계 번호). 자식은 그 단계 첫 화면의 explorer_items() [(글자, key)]
-EXPLORER_GROUPS = (("자료", 0), ("지식그래프", 2), ("검토구간", 3), ("권고", 4))
 RAIL_W = 52
 EXPLORER_MIN, EXPLORER_MAX, EXPLORER_VW = 200, 260, 0.14  # 탐색기 clamp(200px, 14vw, 260px), 끌어서 조절
 RELATED_MIN, RELATED_MAX, RELATED_VW = 264, 340, 0.20     # 관련 항목 clamp(264px, 20vw, 340px)
@@ -51,6 +47,7 @@ GLOBAL_KEYS = (("Ctrl+P", "명령 팔레트(구간 #, 구성요소 @, 명령 >)"
                ("Ctrl+Enter (팔레트)", "새 탭으로 열기"), ("?  또는  F1", "단축키 표"))
 HISTORY_MAX = 50
 DRAWING_SCREENS = (1, 5, 6)  # 도면 선택(combo)이 있는 화면 ②④⑤: 지금 도면을 함께 따른다
+EXPLORER_RIGHT_MAX = 84  # 탐색기 오른쪽 글자 열 최대 폭(미확인 11·미3·실패2)
 EXPLORER_OPEN_MAX = 30  # 이보다 항목이 많은 묶음(권고 등)은 접어서 연다
 EXPLORER_FOLDED = (3,)  # 이전 ⑤ 결정 폼은 1366에서 탐색기 폭(200)이면 가로가 6px 모자라 탐색기를 접는다
 
@@ -303,11 +300,15 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(self.explorer_panel)
         v.setContentsMargins(6, 6, 0, 0)
         v.setSpacing(4)
+        self.explorer_title = QLabel("")
+        self.explorer_title.setObjectName("explorer_title")
+        v.addWidget(self.explorer_title)
         self.explorer_filter = QLineEdit()
         self.explorer_filter.setObjectName("explorer_filter")
-        self.explorer_filter.setPlaceholderText("⌕ 필터 (Ctrl+Shift+E)")
+        self.explorer_filter.setPlaceholderText("⌕ 찾기 (Ctrl+Shift+E)")
         self.explorer_filter.setClearButtonEnabled(True)
         self.explorer_filter.setAccessibleName("탐색기 필터")
+        self.explorer_filter.setToolTip("지금 단계 목록 안에서 찾습니다")
         self.explorer_filter.textChanged.connect(self._apply_filter)
         v.addWidget(self.explorer_filter)
         self.explorer_drawing = QComboBox()  # 검토구간 묶음을 그 도면을 지나는 구간으로 좁힌다(걸친 구간 포함)
@@ -334,64 +335,14 @@ class MainWindow(QMainWindow):
         self.explorer_wanted = True  # 보기 메뉴로 접고 편다. 창이 좁으면 자동으로 숨긴다(_fit_explorer)
         return self.explorer_panel
 
-    def _explorer_groups(self):
-        """[(이름, [(글자, (화면 index, key), 오른쪽 글자, 아이콘, 도구 설명)], 빈 안내, 바로가기, 그룹 설명)].
-        검토구간은 지금 도면이 속한 프로젝트 전체 구간(도면 필터로 좁힘), 권고는 그 프로젝트 결과 기준.
-        바로가기는 (글자, (화면 index, key), 도구 설명) 또는 None으로, 그룹 맨 아래 한 줄이고 개수에 세지 않는다.
-        그룹 설명은 묶음 제목 도구 설명에 덧붙이는 글(검토구간 덮음률) 또는 None."""
-        idx = self.index()
-        reg = [(t, (0, k), "", None, t) for t, k in self.screens[0].explorer_items()]
-        # ① 등록 없이 출력/추출에 있는 도면(샘플 실행 등)도 자료로 보여 '자료 0'이 열린 도면과 어긋나지 않게 한다
-        reg += [("%s · %s" % (name, origin), (1, name), "", None,
-                 "%s: ① 등록을 거치지 않고 출력/추출에 있는 도면입니다. 누르면 ② 도면에서 엽니다." % origin)
-                for name, origin in data.unregistered_extractions()]
-        kgs = [(t, (4, k), "", None, t) for t, k in self.screens[4].explorer_items()]
-        groups = [("자료", reg, "① 자료 등록에서 도면·문서를 올리세요", None, None),
-                  ("지식그래프", kgs, "① 등록과 추출이 끝나면 자동으로 만듭니다", None, None)]
-        study = self.screens[5]
-        pg = idx.graph if idx else None
-        live = (study.node_set if pg and study.node_set and study.name == self.drawing
-                and study.node_set.get("graph_id") == pg["graph_id"] else None)  # ④가 연 프로젝트 집합(저장 전 포함)
-        ns = live or (idx.node_set if idx else None)
-        view = (idx.view_of(ns) if live else idx.view) if ns else None
-        usable = idx is not None and (live is None or live.get("status") == "confirmed")  # 결과는 확정본에만 있다
-        rs = self.screens[6]
-        # ⑤가 같은 도면을 열고 있으면 그 결과(실행 중 반영분 포함), 아니면 저장본
-        results = (rs.results if rs.results is not None and rs.name == self.drawing else idx.results if idx else None)
-        if results is not None and ns and res.is_stale(results, ns):
-            results = None  # 다른(이전) 확정본으로 만든 결과는 지금 구간의 진행으로 보이지 않는다
-        dn = self._explorer_drawing_choice(pg)
-        listed = (view or ns or {}).get("nodes", [])
-        shown = span.nodes_on_drawing(view, dn) if dn and view else listed
-        order = {n["node_id"]: i for i, n in enumerate(listed)}
-        items = []
-        for n in shown:
-            right, detail = related.node_progress(results if usable else None, n["node_id"], len(rs.deviations))
-            text = project_ctx.node_label(n)
-            items.append((text, (5, n["node_id"]), right, seg_icon(order[n["node_id"]], ""),
-                          "%s\n%s\n누르기: ⑤ 결과 화면에서는 그 행, 다른 화면에서는 ④ 구간 · Alt+누르기: ④ 구간"
-                          % (text, detail)))
-        scope = dn or ("프로젝트 %s" % pg["project_id"] if pg else None)
-        action = (("⑤ 결과 행렬 열기", (6, None), "%s의 구간 × 편차 결과(⑤ 분석 결과)" % scope)
-                  if usable and ns and ns.get("status") == "confirmed" else None)
-        cover = idx.ctx.coverage_text(ns)[0] if ns and pg else None
-        groups.append(("검토구간" + (" · %s" % scope if scope else ""), items,
-                       ("고른 도면을 지나는 구간이 없습니다" if ns else "④ 검토구간에서 구간을 제안·확정합니다")
-                       if pg else "도면을 고르면 그 프로젝트의 구간이 보입니다",
-                       action, cover))
-        recs = []
-        if idx and idx.results:
-            for c in idx.results["cells"]:
-                for e in c.get("entries") or []:
-                    if e.get("recommendation") and e.get("status") != "rejected":
-                        d = idx.deviation(c["deviation_id"])
-                        text = "%s × %s · %s" % (c["node_id"], d["label"] if d else c["deviation_id"],
-                                                 e["recommendation"])
-                        recs.append((text, (6, (c["node_id"], c["deviation_id"])), "", None, text))
-        groups.append(("권고", recs, "AI 분석 후 권고가 모입니다", None, None))
-        return groups
+    def explorer_stage(self):
+        return self.stage_of(self.stack.currentIndex())
 
-    def _explorer_drawing_choice(self, pg):
+    def _explorer_groups(self):
+        """지금 단계의 탐색기 모듈이 만든 [explorer.Group](hazop/app/explorer.py)."""
+        return explorer.STAGE_MODULES[self.explorer_stage()](self)
+
+    def explorer_drawing_choice(self, pg):
         """도면 필터 목록을 프로젝트 도면으로 맞추고 고른 도면 번호(모든 도면이면 None)를 돌려준다."""
         box = self.explorer_drawing
         numbers = [s["drawing_number"] for s in pg["sheets"]] if pg else []
@@ -409,22 +360,48 @@ class MainWindow(QMainWindow):
         return box.currentData()
 
     def _refresh_explorer(self):
-        """내용이 같으면 다시 만들지 않는다(선택 유지, 항목 클릭 처리 중 항목 삭제 방지)."""
+        """지금 단계 모듈만 보인다. 내용이 같으면 다시 만들지 않는다(선택 유지, 항목 클릭 처리 중 항목 삭제 방지)."""
+        stage = self.explorer_stage()
+        if stage != getattr(self, "_explorer_stage", stage):
+            self.explorer_filter.clear()  # 다른 단계 목록을 앞 단계 검색어로 거르지 않는다
+        self._explorer_stage = stage
+        _num, short, idxs = STAGES[stage]
+        self.explorer_title.setText("%s %s" % ("①②③④⑤"[stage], short))
+        self.explorer_title.setToolTip("%s 단계의 목록입니다. 다른 단계 항목은 레일(Ctrl+1~5)이나 명령 팔레트(Ctrl+P)로 찾습니다."
+                                       % STEPS[idxs[0]])
+        if stage not in explorer.DRAWING_FILTER_STAGES:
+            self.explorer_drawing.hide()
         groups = self._explorer_groups()
-        sig = [(n, [(t, k, r, tip) for t, k, r, _, tip in its], e, a, c) for n, its, e, a, c in groups]
+        sig = [stage] + [(g.name, [(t, k, r, tip) for t, k, r, _, tip in g.items], g.empty, g.action, g.about, list(g.info))
+                         for g in groups]
         if sig != getattr(self, "_explorer_sig", None):
             self._explorer_sig = sig
             self.explorer.clear()
             muted = QColor(tokens.c("muted"))
-            for name, items, hint, action, about in groups:
-                grp = QTreeWidgetItem([name, str(len(items))])
+            for gi, g in enumerate(groups):
+                grp = QTreeWidgetItem([g.name, str(len(g.items))])
                 f = grp.font(0)
                 f.setBold(True)
                 grp.setFont(0, f)
                 grp.setForeground(1, muted)
                 grp.setFlags(Qt.ItemIsEnabled)
-                grp.setToolTip(0, "%s\n%s" % (name, about) if about else name)
-                for text, target, right, icon, tip in items:
+                grp.setToolTip(0, "%s\n%s" % (g.name, g.about) if g.about else g.name)
+                self.explorer.addTopLevelItem(grp)
+                for text, tip in g.info:
+                    row = QTreeWidgetItem([text, ""])
+                    row.setFlags(Qt.ItemIsEnabled)
+                    row.setForeground(0, muted)
+                    row.setData(0, Qt.UserRole + 1, "info")
+                    row.setToolTip(0, tip)
+                    grp.addChild(row)
+                if g.action is not None:
+                    link = QTreeWidgetItem([g.action[0], ""])
+                    link.setData(0, Qt.UserRole, g.action[1])
+                    link.setData(0, Qt.UserRole + 1, "action")
+                    link.setForeground(0, QColor(tokens.c("ui")))
+                    link.setToolTip(0, g.action[2])
+                    grp.addChild(link)  # 항목이 많아도 펼치면 바로 보이게 목록 위
+                for text, target, right, icon, tip in g.items:
                     child = QTreeWidgetItem([text, right])
                     child.setData(0, Qt.UserRole, target)
                     child.setToolTip(0, tip)
@@ -433,7 +410,8 @@ class MainWindow(QMainWindow):
                     if icon is not None:
                         child.setIcon(0, icon)
                     grp.addChild(child)
-                if not items:
+                hint, button = g.empty
+                if not g.items and hint:
                     empty = QTreeWidgetItem([hint])
                     empty.setFlags(Qt.NoItemFlags)
                     empty.setForeground(0, muted)
@@ -443,31 +421,40 @@ class MainWindow(QMainWindow):
                     empty.setData(0, Qt.UserRole + 1, "hint")
                     empty.setToolTip(0, hint)
                     grp.addChild(empty)
-                if action is not None:
-                    link = QTreeWidgetItem([action[0], ""])
-                    link.setData(0, Qt.UserRole, action[1])
-                    link.setData(0, Qt.UserRole + 1, "action")
-                    link.setForeground(0, QColor(tokens.c("ui")))
-                    link.setToolTip(0, action[2])
-                    grp.insertChild(0, link)  # 구간이 많아도(프로젝트 전체) 펼치면 바로 보이게 맨 위
-                self.explorer.addTopLevelItem(grp)
-                grp.setExpanded(len(items) <= EXPLORER_OPEN_MAX or name.startswith("검토구간"))  # 구간 목록·⑤ 결과 바로가기는 주 탐색이라 늘 편다
+                    if button is not None:  # 빈 상태의 다음 할 일
+                        row = QTreeWidgetItem([""])
+                        row.setFlags(Qt.ItemIsEnabled)
+                        row.setData(0, Qt.UserRole + 1, "hint")
+                        grp.addChild(row)
+                        b = QPushButton(button[0])
+                        b.setObjectName("explorer_next")
+                        b.setToolTip(button[2])
+                        b.setAccessibleName(button[0])
+                        b.setCursor(Qt.PointingHandCursor)
+                        b.clicked.connect(lambda _=False, t=button[1]: self._explorer_open(t))
+                        self.explorer.setItemWidget(row, 0, b)
+                grp.setExpanded(len(g.items) <= EXPLORER_OPEN_MAX or gi == 0)  # 단계의 첫 묶음(주 목록)은 늘 편다
+            rights = [r for g in groups for _t, _k, r, _i, _tip in g.items if r] + [str(len(g.items)) for g in groups]
+            fm = self.explorer.fontMetrics()  # 오른쪽 글자 열은 이 단계에서 쓰는 만큼만(이름 열이 덜 잘리게)
+            self.explorer.header().resizeSection(1, min(EXPLORER_RIGHT_MAX, max(fm.horizontalAdvance(r) for r in rights) + 14))
             self._apply_filter()
         self._mark_explorer_current()
 
     def _apply_filter(self):
+        """필터는 지금 단계 모듈 안에서만 찾는다. 안내·정보·바로가기 줄은 개수에 세지 않고 찾는 동안 숨긴다."""
         q = self.explorer_filter.text().strip()
         for g in range(self.explorer.topLevelItemCount()):
             grp = self.explorer.topLevelItem(g)
             shown = total = 0
             for c in range(grp.childCount()):
                 ch = grp.child(c)
-                hint = ch.data(0, Qt.UserRole + 1) in ("hint", "action")  # 안내·바로가기는 개수에 세지 않는다
+                hint = ch.data(0, Qt.UserRole + 1) in ("hint", "action", "info")
                 hide = bool(q) and (hint or palette.fuzzy_score(q, ch.text(0)) is None)
                 ch.setHidden(hide)
                 total += not hint
                 shown += not hide and not hint
-            grp.setText(1, str(shown if q else total))
+            grp.setText(1, str(shown if q else total) if total or grp.childCount() == 0 or q
+                        or any(grp.child(c).data(0, Qt.UserRole + 1) == "hint" for c in range(grp.childCount())) else "")
 
     def _mark_explorer_current(self):
         """지금 화면이 연 대상(④ 구간·⑤ 칸의 구간)을 탐색기에서 선택해 왼쪽 파랑 선으로 보인다."""
@@ -489,9 +476,14 @@ class MainWindow(QMainWindow):
 
     def _explorer_clicked(self, item, _col=0):
         target = item.data(0, Qt.UserRole)
-        if not target:
-            return
+        if target:
+            self._explorer_open(target)
+
+    def _explorer_open(self, target):
         idx, key = target
+        if idx == "cmd":
+            explorer.COMMANDS[key](self)
+            return
         if idx == 6 and key is None:
             self.go(6)
             return
