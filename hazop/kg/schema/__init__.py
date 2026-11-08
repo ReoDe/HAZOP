@@ -17,6 +17,7 @@ CLASS_KEYS = {"id", "parent", "layer", "label_ko", "label_en", "legend", "kind",
 RELATION_KEYS = {"id", "layer", "from", "to", "group", "v4", "a2_role", "evidence_gap", "conflict_check",
                  "pid_view", "label_ko"}
 GROUP_KEYS = {"id", "label_ko", "width"}
+ORIGIN_KEYS = {"id", "label_ko", "layer", "legacy_methods", "confirm_needs_reviewer"}
 
 
 class RegistryError(ValueError):
@@ -51,7 +52,7 @@ def validate(data):
     if not isinstance(data, dict):
         return ["최상위가 JSON 객체가 아님"]
     problems = []
-    extra = sorted(set(data) - {"registry_version", "classes", "relations", "groups"})
+    extra = sorted(set(data) - {"registry_version", "classes", "relations", "groups", "origins"})
     if extra:
         problems.append("모르는 최상위 키 %s" % ", ".join(extra))
     if not _str(data.get("registry_version")):
@@ -59,6 +60,7 @@ def validate(data):
     class_ids = _check_items(data.get("classes"), "classes", CLASS_KEYS, problems)
     group_ids = _check_items(data.get("groups"), "groups", GROUP_KEYS, problems)
     _check_items(data.get("relations"), "relations", RELATION_KEYS, problems)
+    _check_items(data.get("origins"), "origins", ORIGIN_KEYS, problems)
     if problems:
         return problems
     classes = {c["id"]: c for c in data["classes"]}
@@ -135,6 +137,19 @@ def validate(data):
             problems.append("relations %s: P&ID 관계는 pid_view(%s) 필요" % (rid, "/".join(PID_VIEWS)))
         if r.get("layer") != "pid" and "pid_view" in r:
             problems.append("relations %s: pid_view는 P&ID 관계에만 씀" % rid)
+    methods = []
+    for o in data["origins"]:
+        if not _str(o.get("label_ko")) or o.get("layer") not in LAYERS:
+            problems.append("origins %s: label_ko·layer(%s) 필요" % (o["id"], "/".join(LAYERS)))
+        lm = o.get("legacy_methods")
+        if not isinstance(lm, list) or not all(_str(m) for m in lm):
+            problems.append("origins %s: legacy_methods는 method 이름 목록이어야 함" % o["id"])
+        else:
+            methods += lm
+        if "confirm_needs_reviewer" in o and not isinstance(o["confirm_needs_reviewer"], bool):
+            problems.append("origins %s: confirm_needs_reviewer는 참·거짓" % o["id"])
+    for m in sorted({m for m in methods if methods.count(m) > 1}):
+        problems.append("method %s가 생성 주체 둘 이상의 legacy_methods에 있음" % m)
     apply_targets = [r["to"][0] for r in data["relations"] if r.get("a2_role") == "apply"]
     for t in sorted({t for t in apply_targets if apply_targets.count(t) > 1}):
         problems.append("설비 적용 관계 둘 이상이 같은 클래스 %s를 가리킴" % t)
@@ -163,6 +178,7 @@ class Registry:
         self.classes = {c["id"]: c for c in data["classes"]}
         self.relations = {r["id"]: r for r in data["relations"]}
         self.groups = {g["id"]: g for g in data["groups"]}
+        self.origins = {o["id"]: o for o in data["origins"]}
 
     def layer(self, cid):
         return _layer(self.classes, cid)
@@ -198,6 +214,14 @@ class Registry:
     def conflict_kinds(self):
         """같은 대상·항목 값 충돌(K7)을 비교하는 관계 -> 끝 클래스."""
         return {r["id"]: r["to"][0] for r in self.data["relations"] if r.get("conflict_check")}
+
+    def origin_of_method(self):
+        """method -> origin. origin이 없던 옛 지식 입력을 읽을 때 쓴다."""
+        return {m: o["id"] for o in self.data["origins"] for m in o["legacy_methods"]}
+
+    def origins_needing_reviewer(self):
+        """사람 확인(reviewed_by) 없이 confirmed가 될 수 없는 생성 주체."""
+        return tuple(o["id"] for o in self.data["origins"] if o.get("confirm_needs_reviewer"))
 
     def legend_classes(self):
         """범례가 있는 클래스(파일 순서)."""

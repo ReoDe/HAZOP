@@ -9,6 +9,9 @@
 - 체크밸브 check_direction은 입구·출구 local_id를 구간 엔터티 ID로 바꿔 그대로 전달, 끝점 port는 has_endpoint·unresolved에 전달
   (기획서/정보추출.md #check-valve-direction, #port-rule)
 - 관계 대상 제약·자기 루프 등 [가정] 기반 점검은 unknowns가 아니라 review_items로 분리한다.
+- 노드·엣지마다 생성 주체 origin(pid_extract, ② 사람 수정이 닿은 대상은 human_edit와 수정 표시 human_edit{op_ids, ops, by, at})
+  (기획서/지식그래프-스키마.md §3). 둘 다 추출 결과(graph_version 입력)에서 정해지므로 BUILDER_VERSION은 올리지 않는다.
+  올리면 수정이 없는 도면까지 판이 바뀌어 구간 JSON·mentions 기록이 모두 재확인으로 간다.
 같은 입력이면 같은 결과(ID·순서)가 나오도록 결정적으로 만든다.
 """
 
@@ -53,6 +56,21 @@ def _center(bbox):
     return [round(bbox[0] + bbox[2] / 2.0, 3), round(bbox[1] + bbox[3] / 2.0, 3)]
 
 
+def _origin(rec):
+    """추출 노드·관계 -> {origin, human_edit(있을 때만)}."""
+    mark = rec.get("human_edit")
+    if not mark:
+        return {"origin": "pid_extract"}
+    return {"origin": "human_edit", "human_edit": {"op_ids": list(mark.get("op_ids") or []),
+                                                   "ops": list(mark.get("ops") or []),
+                                                   "by": mark.get("by"), "at": mark.get("at")}}
+
+
+def node_origin(n):
+    """그래프 노드·엣지의 생성 주체. origin이 없는 옛 graph.json은 수정 표시 유무로 정한다."""
+    return n.get("origin") or ("human_edit" if n.get("human_edit") else "pid_extract")
+
+
 def _graph_version(extraction):
     """입력(추출 결과)과 변환기 버전이 같으면 같은 값, 하나라도 바뀌면 다른 값."""
     canon = json.dumps(extraction, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
@@ -84,6 +102,7 @@ def build_graph(extraction, extraction_file=None):
             "source_object_id": n["source_object_id"],
             "bbox": loc["bbox"] if loc else None,
             "position": _center(loc["bbox"]) if loc else None,
+            **_origin(n),
         })
         basis = (n.get("evidence") or {}).get("tag_basis")
         if basis:  # PDF 추출: 태그 근거(추정 접두는 [추론])를 ③ 자동 연결까지 넘긴다. drawio 그래프는 그대로
@@ -119,6 +138,7 @@ def build_graph(extraction, extraction_file=None):
                 "source_object_id": r["source_object_id"],
                 "bbox": loc["bbox"] if loc else None,
                 "position": _polyline_midpoint(pts),
+                **_origin(r),
             })
             mapping.append({"extraction_run_id": run_id, "local_id": r["local_id"], "entity_id": sid})
             for ep, ne in zip(ends, end_entities):
@@ -126,7 +146,7 @@ def build_graph(extraction, extraction_file=None):
                 edges.append({"entity_id": "relation-%03d" % rel_no, "kind": "has_endpoint",
                               "nodes": [sid, ne], "segment": sid, "node": ne, "end": ep["end"],
                               "constraint": ep["constraint"], "port": ep.get("port"), "local_id": r["local_id"],
-                              "source_object_id": r["source_object_id"]})
+                              "source_object_id": r["source_object_id"], "origin": _origin(r)["origin"]})
             if flow is None:
                 unknowns.append({"check": "unknown_flow_direction", "target": sid, "field": "flow_direction",
                                  "reason": "흐름 방향 미확인(원본에 지정 없음)"})
@@ -137,7 +157,7 @@ def build_graph(extraction, extraction_file=None):
             edges.append({"entity_id": rid, "kind": r["kind"], "nodes": end_entities,
                           "ends": [ep["end"] for ep in ends], "line_type": r["line_type"],
                           "line_no": r["line_no"], "flow_direction": flow, "local_id": r["local_id"],
-                          "source_object_id": r["source_object_id"]})
+                          "source_object_id": r["source_object_id"], **_origin(r)})
             mapping.append({"extraction_run_id": run_id, "local_id": r["local_id"], "entity_id": rid})
         else:
             unknowns.append({"check": "unknown_relation_kind", "target": r["local_id"], "field": "kind",

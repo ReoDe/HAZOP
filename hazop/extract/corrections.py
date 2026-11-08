@@ -441,6 +441,9 @@ def _apply_one(st, original_fp, op):
     if edited is not None:
         mark = edited.setdefault("human_edit", {"op_ids": []})
         mark["op_ids"].append(op["op_id"])
+        ops = mark.setdefault("ops", [])
+        if op["op"] not in ops:
+            ops.append(op["op"])
         mark.update(by=op.get("by"), at=op.get("at"))
 
 

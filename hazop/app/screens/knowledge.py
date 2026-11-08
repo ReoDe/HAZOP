@@ -18,8 +18,10 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QGridLayout
 from hazop import paths
 from hazop.app import data as app_data
 from hazop.app import project_ctx, tokens
+from hazop.app.screens.viewer import OP_LABELS
 from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, badge, empty_label, esc
 from hazop.graph import project
+from hazop.graph.build import node_origin
 from hazop.graph.query import VALVE_POSITION_NOTE, QueryError
 from hazop.kg import algo, auto, build, screen
 
@@ -35,6 +37,8 @@ EMPTY_TEXT = ("지식그래프가 없습니다.\n① 자료 등록에서 P&ID �
               "만들어집니다.\n설계 문서 PDF를 등록하면 설정치·운전조건·요건을 자동 추출해 '자동 추출 · 사람 확인 전'으로 "
               "더합니다.")
 AUTO_BADGE = "자동 추출 · 사람 확인 전"
+AI_BADGE = "AI 초안"
+HUMAN_EDIT_BADGE = "사람 수정"
 # 우측 상세 빈 상태(U-09): 제목 한 줄 + 이유 + 다음 단계. 파일 경로 같은 내부값은 넣지 않는다. %s = 제목 색, 본문 색
 DETAIL_EMPTY = ("<div style='color:%s;font-weight:700'>선택한 항목 없음</div>"
                 "<p style='color:%s'>그래프에서 노드나 관계를 누르면 속성·근거·연결 목록이 여기에 나옵니다.<br>"
@@ -574,6 +578,8 @@ class KnowledgeScreen(QWidget):
                 h += " " + badge("≠ 충돌", "err")
             if auto_extracted(kn):
                 h += " " + badge(AUTO_BADGE, "ai")
+            if build.origin_of(kn) == "ai_draft":
+                h += " " + badge(AI_BADGE, "ai")
             h += "</p><h4>내용</h4>"
             fields = [("이름", "name"), ("원문", "text"), ("항목", "item"), ("값", "value"), ("단위", "unit"),
                       ("압력 기준", "pressure_basis"), ("운전 모드", "operating_mode")]
@@ -607,7 +613,13 @@ class KnowledgeScreen(QWidget):
                              "<span style='color:%s'>미확인(화살표 없음)</span>" % tokens.c("warn-ink")))
             if g.get("kind") == "continuation":
                 rows.append(("도면 연결점", "이어지는 도면(이 그래프 밖)"))
-            h += badge("P&ID 레이어", "plain") + "</p><h4>속성</h4>" + self._kv(rows)
+            edited = node_origin(g) == "human_edit"
+            if edited:
+                he = g.get("human_edit") or {}
+                rows.append(("사람 수정", esc(" · ".join(OP_LABELS.get(o, o) for o in he.get("ops") or []) or "수정 기록 있음")
+                             + (" (%s)" % esc(he["by"]) if he.get("by") else "")))
+            h += badge("P&ID 레이어", "plain") + (" " + badge(HUMAN_EDIT_BADGE, "human") if edited else "")
+            h += "</p><h4>속성</h4>" + self._kv(rows)
             self.goto_btn.setEnabled(bool(g.get("local_id")))
         h += "<h4>알고리즘</h4>" + self._algo_section(nid)
         h += "<h4>연결 목록</h4>" + self._connections(nid)
@@ -638,6 +650,8 @@ class KnowledgeScreen(QWidget):
             kl = next(l for l in self.kg["links"] if l["id"] == lid)
             if auto_extracted(kl):
                 h += "<p>%s</p>" % badge(AUTO_BADGE, "ai")
+            if build.origin_of(kl) == "ai_draft":
+                h += "<p>%s</p>" % badge(AI_BADGE, "ai")
             rows = [("link_status", esc(kl.get("link_status"))), ("knowledge_status", esc(kl.get("knowledge_status"))),
                     ("방법", esc(kl.get("method"))), ("확인자", esc(kl.get("reviewed_by"))),
                     ("확인일", esc(kl.get("reviewed_at")))]

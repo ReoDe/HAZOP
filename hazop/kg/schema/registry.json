@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.1.0",
+  "registry_version": "0.2.0",
   "classes": [
     {"id": "plant_item", "parent": null, "layer": "pid", "label_ko": "P&ID 대상", "label_en": "Plant item"},
     {"id": "equipment", "parent": "plant_item", "label_ko": "설비", "label_en": "Equipment",
@@ -64,6 +64,15 @@
      "legend": {"shape": "capsule", "token": "kg-condition"}},
     {"id": "analysis_case", "parent": "knowledge_item", "id_prefix": "case-", "label_ko": "해석 사례", "label_en": "Analysis case",
      "legend": {"shape": "tri", "token": "kg-analysis_case"}}
+  ],
+  "origins": [
+    {"id": "pid_extract", "label_ko": "도면 추출", "layer": "pid", "legacy_methods": []},
+    {"id": "human_edit", "label_ko": "사람 수정", "layer": "pid", "legacy_methods": []},
+    {"id": "doc_rule", "label_ko": "문서 규칙 추출", "layer": "knowledge",
+     "legacy_methods": ["extractor", "regex", "exact_norm", "fuzzy"]},
+    {"id": "human", "label_ko": "사람 입력", "layer": "knowledge", "legacy_methods": ["manual"]},
+    {"id": "ai_draft", "label_ko": "AI 초안", "layer": "knowledge", "legacy_methods": [], "confirm_needs_reviewer": true},
+    {"id": "expectation_rule", "label_ko": "기대 규칙", "layer": "expectation", "legacy_methods": []}
   ],
   "groups": [
     {"id": "physical", "label_ko": "물리 연결 (has_endpoint)", "width": 2.4},

@@ -7,6 +7,8 @@
   같은 태그가 여러 개인데 `graph_id:tag`로 쓰면 자동으로 고르지 않고 차단한다(K2).
 - 노드·관계 ID는 입력 그대로 쓴다. 빌더는 순번을 매기지 않는다.
 - 차단 오류(blockers)가 하나라도 있으면 validation.status = blocked. 각 항목의 rule은 검사 번호(K1~K8)다.
+- 노드·관계마다 생성 주체 origin을 둔다(기획서/지식그래프-스키마.md §3, KD5). 입력에 없으면 method로 정한다(레지스트리
+  legacy_methods). AI 초안처럼 사람 확인이 필요한 생성 주체는 reviewed_by 없이 knowledge_status confirmed가 되면 차단한다(K1).
 - 같은 입력이면 같은 kg_version·같은 결과(입력 순서 유지, 집계는 정렬).
 """
 
@@ -24,7 +26,7 @@ from hazop.kg.schema import PID_ROOT, REGISTRY
 SCHEMA_VERSION = "0.2"
 READABLE_SCHEMA_VERSIONS = ("0.1", "0.2")  # 0.1 -> 0.2는 registry 필드만 더함(옛 판은 그대로 읽음)
 BUILDER = "hazop.kg.build"
-BUILDER_VERSION = "0.1.0"
+BUILDER_VERSION = "0.2.0"
 
 NODE_PREFIX = REGISTRY.node_prefix()
 LINK_PREFIX = "krel-"
@@ -35,6 +37,9 @@ LINK_TYPES = {k: tuple({PID if c == PID_ROOT else c for c in side} for side in p
 KNOWLEDGE_STATUS = ("confirmed", "unknown", "hypothesis")
 LINK_STATUS = ("candidate", "confirmed", "rejected")
 METHODS = ("manual", "regex", "exact_norm", "fuzzy", "extractor")
+ORIGINS = tuple(o for o, v in REGISTRY.origins.items() if v["layer"] == "knowledge")
+ORIGIN_OF_METHOD = REGISTRY.origin_of_method()
+NEEDS_REVIEWER = REGISTRY.origins_needing_reviewer()
 RESERVED_PREFIXES = ("entity-", "relation-", "graph-")  # P&ID ID·target_ref와 겹치는 접두어(K3)
 REF_RE = re.compile(r"^(graph-[^:#]+)([:#])(.+)$")
 # mentions 대상이 기록 당시와 다른 도면 버전에서 사라지거나 모호해진 경우 차단 대신 재확인(§3.2)
@@ -54,6 +59,11 @@ def kg_version(knowledge, graph_refs):
     canon = _canon({"knowledge": knowledge, "graph_refs": graph_refs})
     head = "%s|nx=%s|registry=%s:%s|" % (BUILDER_VERSION, nx.__version__, REGISTRY.version, REGISTRY.sha256)
     return "v-" + hashlib.sha256((head + canon).encode("utf-8")).hexdigest()[:12]
+
+
+def origin_of(rec):
+    """지식 노드·관계의 생성 주체. origin이 없는 옛 입력은 method로 정하고, 정할 수 없으면 None."""
+    return rec.get("origin") or ORIGIN_OF_METHOD.get(rec.get("method"))
 
 
 def _type_allowed(t, allowed):
@@ -203,6 +213,16 @@ def build_kg(knowledge, graphs):
     def block(rule, code, target, reason):
         blockers.append({"rule": rule, "check": code, "target": target, "reason": reason})
 
+    def check_origin(it):
+        given = it.get("origin")
+        it["origin"] = origin_of(it)
+        if given is not None and given not in ORIGINS:
+            block("K1", "invalid_origin", it.get("id"), "origin 값 오류: %r" % given)
+        elif it["origin"] in NEEDS_REVIEWER and it.get("knowledge_status") == "confirmed" and not it.get("reviewed_by"):
+            block("K1", "%s_confirmed_without_reviewer" % it["origin"], it.get("id"),
+                  "%s(%s)인데 사람 확인(reviewed_by) 없이 knowledge_status confirmed"
+                  % (REGISTRY.origins[it["origin"]]["label_ko"], it["origin"]))
+
     nodes = [dict(n) for n in knowledge["nodes"]]
     links = [dict(l) for l in knowledge["links"]]
     pid = _PidIndex(graphs)
@@ -239,6 +259,7 @@ def build_kg(knowledge, graphs):
             block("K1", "unknown_node_type", n.get("id"), "목록 밖 노드 종류: %r" % n.get("node_type"))
         if n.get("knowledge_status") not in KNOWLEDGE_STATUS:
             block("K1", "invalid_knowledge_status", n.get("id"), "knowledge_status 값 오류: %r" % n.get("knowledge_status"))
+        check_origin(n)
         n["has_source"] = _has_source(n.get("source"))
         if not n["has_source"]:
             unknowns.append({"check": "no_source", "target": n.get("id"), "field": "source",
@@ -270,6 +291,7 @@ def build_kg(knowledge, graphs):
             block("K1", "invalid_method", lid, "method 값 오류: %r" % l.get("method"))
         if l.get("link_status") == "confirmed" and l.get("reviewed_by") is None:
             block("K1", "confirmed_without_reviewer", lid, "link_status confirmed인데 reviewed_by 없음")
+        check_origin(l)
         if l.get("unused_mention_columns"):
             review_items.append({"check": "unused_mention_columns", "target": lid,
                                  "reason": "mentions가 아닌 관계에 재확인 열이 채워짐(무시): %s"

@@ -336,6 +336,8 @@ button, input { font: inherit; color: inherit; }
     var out = [];
     if (n.conflict) out.push(["≠ 충돌", cv("kg-conflict")]);
     if (n.nosrc) out.push(["∅ 근거 없음", cv("kg-nosrc")]);
+    if (n.hedit) out.push(["사람 수정", cv("ink-2")]);
+    if (n.ai) out.push(["AI 초안", cv("ai-ink")]);
     if (!n.v5) out.push([(n.ks === "hypothesis" ? "가설" : n.ks === "unknown" ? "미확인" : "제외") + " · 계산 제외", cv("muted")]);
     if (S.orphan && D.algo.A2 && D.algo.A2.orphans[n.id]) out.push(["고아", cv("kg-flag-ink")]);
     if (S.gap && D.algo.A2 && D.algo.A2.gaps[n.id]) out.push(["근거 공백", cv("kg-flag-ink")]);
@@ -468,6 +470,8 @@ button, input { font: inherit; color: inherit; }
     var s = "<b>" + esc(n.label) + "</b><br>" + esc(t.name) + " · " + esc(n.id);
     if (!n.v5) s += "<br>계산 제외(" + esc(n.ks) + ")";
     if (n.nosrc) s += "<br>근거 없음";
+    if (n.hedit) s += "<br>사람 수정(② 도면 추출)";
+    if (n.ai) s += n.ks === "confirmed" ? "<br>AI 초안 · 사람 확인함" : "<br>AI 초안 · 사람 확인 전";
     if (D.algo.A3 && D.algo.A3[n.id] !== undefined) s += "<br>연결 수(A3) " + D.algo.A3[n.id];
     return s;
   }

@@ -15,6 +15,7 @@ import json
 import os
 
 from hazop.app import tokens
+from hazop.graph.build import node_origin
 from hazop.kg import algo, build, link
 from hazop.kg.schema import REGISTRY
 
@@ -202,14 +203,16 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
                       "kind": n.get("kind"), "tag": n.get("tag"), "label": n.get("tag") or n.get("kind") or n["entity_id"],
                       "local_id": n.get("local_id"), "pos": pos if isinstance(pos, list) and len(pos) == 2 else None,
                       "np": attrs.get("normal_position"), "cont": n.get("kind") == "continuation",
-                      "fold": n["entity_id"] in foldable, "v5": n["entity_id"] in v5})
+                      "fold": n["entity_id"] in foldable, "v5": n["entity_id"] in v5,
+                      "hedit": node_origin(n) == "human_edit"})
     kn_ids = set()
     for n in kg["nodes"]:
         kn_ids.add(n["id"])
         nodes.append({"id": n["id"], "layer": "kn", "type": n.get("node_type"), "label": _label(n),
                       "ks": n.get("knowledge_status") or "confirmed", "v5": n["id"] in v5,
                       "nosrc": n.get("has_source") is False, "conflict": bool(n.get("conflict_with")),
-                      "unit_unknown": n.get("node_type") == "setpoint" and not n.get("unit")})
+                      "unit_unknown": n.get("node_type") == "setpoint" and not n.get("unit"),
+                      "ai": build.origin_of(n) == "ai_draft"})
     pid_ids = {n["entity_id"] for n in graph["nodes"]}
 
     links, skipped = [], {"other_graph_or_unresolved": 0, "rejected": 0}
@@ -244,13 +247,17 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
         else:
             st = "excluded"
         links.append({"id": l["id"], "kind": l["kind"], "s": ends[0], "t": ends[1], "layer": "kn", "st": st,
-                      "v5": st == "confirmed", "a": 0, "ks": l.get("knowledge_status")})
+                      "v5": st == "confirmed", "a": 0, "ks": l.get("knowledge_status"),
+                      "ai": build.origin_of(l) == "ai_draft"})
 
     cand_info = {"file": candidates is not None, "rows": 0, "shown": 0, "not_shown": 0}
     sid_map = {n.get("source_object_id"): n["entity_id"] for n in graph["nodes"] if n.get("source_object_id")}
+    kg_link_ids = {l["id"] for l in kg["links"]}
     for r in candidates or []:
         if (r.get("link_status") or "").strip() != "candidate":
             continue
+        if link.relation_id(r.get("candidate_key") or "") in kg_link_ids:
+            continue  # 자동 지식그래프가 이미 같은 후보 키로 만든 언급(hazop.kg.auto.mention_links)
         cand_info["rows"] += 1
         target = sid_map.get(r.get("target_source_object_id"))
         if (r.get("target_graph_id") != gid or r.get("target_graph_version") != gver or target is None

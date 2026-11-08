@@ -294,6 +294,7 @@ def build(project_id, graphs, manual_ops=()):
             continue
         a, b = nid(l["from"]["graph_id"], l["from"]["entity_id"]), nid(l["to"]["graph_id"], l["to"]["entity_id"])
         line = l["from"]["line_no"] or l["to"]["line_no"]
+        origin = "human_edit" if l["origin"] == "manual" else "pid_extract"
         flow = {"from": a, "to": b, "from_end": "source", "to_end": "target",
                 "basis": "도면 연결 표시 TO→FROM"} if l["flow_known"] else None
         nodes.append({"entity_id": l["link_id"], "node_type": "pipe_segment", "kind": "pipe_segment",
@@ -301,11 +302,11 @@ def build(project_id, graphs, manual_ops=()):
                       "label_text": "%s → %s" % (l["from"]["drawing_number"], l["to"]["drawing_number"]),
                       "line_type": "process", "flow_direction": flow, "sheet": None, "sheet_entity_id": None,
                       "sheet_link": {"link_id": l["link_id"], "status": LINKED, "origin": l["origin"]},
-                      "attributes": {"line_no": line, "sheet_link": l["link_id"]}, "position": None})
+                      "attributes": {"line_no": line, "sheet_link": l["link_id"]}, "position": None, "origin": origin})
         for suffix, node, end in (("a", a, "source"), ("b", b, "target")):
             edges.append({"entity_id": "%s-%s" % (l["link_id"], suffix), "kind": PHYSICAL, "nodes": [l["link_id"], node],
                           "segment": l["link_id"], "node": node, "end": end, "sheet": None,
-                          "sheet_link": l["link_id"]})
+                          "sheet_link": l["link_id"], "origin": origin})
     sheets = [{"graph_id": g["graph_id"], "graph_version": g["graph_version"],
                "drawing_number": (g.get("source") or {}).get("drawing_number")} for g in graphs]
     version = "pv-" + _sha({"sheets": sheets, "links": [(l["link_id"], l["status"], l["reason"]) for l in links]})
