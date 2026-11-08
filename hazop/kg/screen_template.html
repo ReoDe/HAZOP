@@ -138,33 +138,9 @@ button, input { font: inherit; color: inherit; }
   var DIM = parseFloat(cv("hl-dim")) || 0.16, EXCL = parseFloat(cv("kg-excl-opacity")) || 0.5;
   var DASH = cv("kg-dash").split(/\s+/).map(Number);
 
-  var TYPE = {
-    equipment: { layer: "pid", name: "설비", col: "kg-equipment", shape: "circle" },
-    valve: { layer: "pid", name: "밸브", col: "kg-valve", shape: "circle" },
-    instrument: { layer: "pid", name: "계장", col: "kg-instrument", shape: "circle" },
-    piping_element: { layer: "pid", name: "배관 요소(티·도면 연결점)", col: "kg-piping_element", shape: "circle" },
-    pipe_segment: { layer: "pid", name: "배관 구간", col: "kg-pipe_segment", shape: "circle" },
-    unclassified: { layer: "pid", name: "미분류", col: "kg-unclassified", shape: "circle" },
-    document: { layer: "kn", name: "문서", col: "kg-document", shape: "page" },
-    doc_chunk: { layer: "kn", name: "문서 조각", col: "kg-doc_chunk", shape: "square" },
-    requirement: { layer: "kn", name: "요건", col: "kg-requirement", shape: "hex" },
-    setpoint: { layer: "kn", name: "설정치", col: "kg-setpoint", shape: "diamond" },
-    condition: { layer: "kn", name: "운전조건·설계값", col: "kg-condition", shape: "capsule" },
-    analysis_case: { layer: "kn", name: "해석 사례", col: "kg-analysis_case", shape: "tri" }
-  };
-  var GRP_OF = { has_endpoint: "phys", measurement_connection: "meas", signal_connection: "sig", mentions: "men",
-    governed_by: "app", has_setpoint: "app", has_condition: "app", analyzed_in: "app", part_of: "pos", specified_in: "pos",
-    depends_on: "dep" };
-  /* 관계는 색 대신 회색 선 하나로 그린다(옵시디언식). A1 보기에서만 굵기 w를 쓴다. */
-  var GRP = {
-    phys: { name: "물리 연결 (has_endpoint)", w: 2.4 },
-    meas: { name: "계측 연결", w: 1.4 },
-    sig: { name: "신호 연결", w: 1.4 },
-    men: { name: "언급 (mentions)", w: 1.4 },
-    app: { name: "설비 적용 (governed_by·has_setpoint·has_condition·analyzed_in)", w: 1.8 },
-    pos: { name: "문서 안 위치 (part_of·specified_in)", w: 1 },
-    dep: { name: "문서 근거 의존 (depends_on)", w: 1.6 }
-  };
+  /* 노드 종류(TYPE)·관계 묶음(GRP_OF·GRP) 표는 타입 레지스트리에서 screen.py가 넣는다. 관계는 색 대신 회색 선 하나로
+     그린다(옵시디언식). A1 보기에서만 굵기 w를 쓴다. */
+  /*@SCHEMA@*/
   var A1_DIR = { start: ["a1-start", "시작"], downstream: ["a1-down", "↓하"], upstream: ["a1-up", "↑상"],
     mixed: ["a1-mixed", "↕혼"], unknown: ["a1-unknown", "?"], adjacent: ["a1-adj", "접"], not_applicable: ["a1-na", "—"] };
   var A1_NAME = { downstream: "하류", upstream: "상류", mixed: "혼합", unknown: "방향 미확인", adjacent: "인접 구간",
@@ -176,7 +152,7 @@ button, input { font: inherit; color: inherit; }
   function setOf(list) { var r = nul(); (list || []).forEach(function (k) { r[k] = 1; }); return r; }
   function own(o, k) { return o && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined; }
   function typeOf(t) { return own(TYPE, t) || TYPE.unclassified; }
-  function grpOf(kind) { return own(GRP_OF, kind) || "dep"; }
+  function grpOf(kind) { return own(GRP_OF, kind) || "dependency"; }
   function dirOf(d) { return own(A1_DIR, d) || ["a1-unknown", "?"]; }
   function normA1(a) {
     if (a && a.active) {

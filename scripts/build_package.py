@@ -66,6 +66,7 @@ CHECK_ENTRY = "packaging/check_entry.py"
 DATA_FILES = (
     "hazop/viewer/template.html",
     "hazop/kg/screen_template.html",
+    "hazop/kg/schema/registry.json",
     "기획서/HAZOP기법지침.md",
     "scripts/extract_drawio.py",
     "scripts/extract_pdf.py",

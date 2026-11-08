@@ -21,17 +21,17 @@ from hazop.analysis import explore as ex_mod
 from hazop.graph.build import to_networkx
 from hazop.graph.query import GraphQuery
 from hazop.kg import build as kg_build
+from hazop.kg.schema import REGISTRY
 
 GENERATOR = "hazop.kg.algo"
 GENERATOR_VERSION = "0.1.0"
 SCHEMA_VERSION = "0.1"
-PHYSICAL = "has_endpoint"
-INSTRUMENT_KINDS = ("measurement_connection", "signal_connection")
-# 지식 노드 종류 -> 그 노드를 설비에 적용하는 관계(§2.3 설비 적용 관계, §4.2 A2 판정 규칙)
-APPLY_KIND_OF = {"requirement": "governed_by", "setpoint": "has_setpoint", "condition": "has_condition",
-                 "analysis_case": "analyzed_in"}
+(PHYSICAL,) = REGISTRY.pid_view_kinds("V1")
+INSTRUMENT_KINDS = REGISTRY.pid_view_kinds("V3")
+# 지식 노드 종류 -> 그 노드를 설비에 적용하는 관계(§2.3 설비 적용 관계, §4.2 A2 판정 규칙). analyzed_in 포함 4종
+APPLY_KIND_OF = REGISTRY.apply_kind_of()
 APPLY_KINDS = tuple(sorted(APPLY_KIND_OF.values()))
-GAP_KINDS = ("governed_by", "has_condition", "has_setpoint")  # 근거 공백(b) 판정에 세는 관계(§4.2)
+GAP_KINDS = tuple(sorted(REGISTRY.apply_kind_of(evidence_gap=True).values()))  # 근거 공백(b) 판정에 세는 관계(§4.2)
 FOLD_LIMIT = ("구간 접기는 구간 노드를 목록에서 빼고 중심성 분모만 바꾼다. 구간 1개가 엣지 1개로 바뀌므로 "
               "설비의 차수 값은 접어도 같다")
 RESULT_FILE = "algo_result.json"

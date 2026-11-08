@@ -16,6 +16,7 @@ import os
 
 from hazop.app import tokens
 from hazop.kg import algo, build, link
+from hazop.kg.schema import REGISTRY
 
 NODE_LIMIT = 5000  # 전역 보기 노드 수 상한(그래프활용 §7.3, 검사 S1, T1 D8)
 DEFAULT_RADIUS = 2  # 로컬 깊이 기본값(§5.1)
@@ -24,7 +25,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE = os.path.join(HERE, "screen_template.html")
 VENDOR_DIR = os.path.join(HERE, "vendor", "force-graph-1.52.0")
 VENDOR_JS = os.path.join(VENDOR_DIR, "force-graph.min.js")
-PLACEHOLDERS = ("/*@CSS_VARS@*/", "/*@DATA@*/", "/*@VENDOR@*/")
+PLACEHOLDERS = ("/*@CSS_VARS@*/", "/*@DATA@*/", "/*@VENDOR@*/", "/*@SCHEMA@*/")
+SCREEN_LAYER = {"pid": "pid", "knowledge": "kn"}
 TRUNCATION_LABELS = {"external_drawing": "도면 경계에서 멈춤"}  # 디자인 §3.2. 그 밖의 사유는 reason 그대로
 S1_TEXT ="전역 보기 노드 수 상한 초과 — 노드 %s개 > %s. 로컬 보기를 권장합니다(전역 보기는 그대로 쓸 수 있음)"
 
@@ -331,6 +333,23 @@ def data_js(data):
     return text.replace("<", "\\u003c").replace("/", "\\/")
 
 
+def legend_tables():
+    """화면 범례 표 (TYPE, GRP_OF, GRP). 순서는 레지스트리 파일 순서(범례 표시 순서)."""
+    types = {c["id"]: {"layer": SCREEN_LAYER[REGISTRY.layer(c["id"])], "name": c["label_ko"],
+                       "col": c["legend"]["token"], "shape": c["legend"]["shape"]} for c in REGISTRY.legend_classes()}
+    grp_of = {r["id"]: r["group"] for r in REGISTRY.data["relations"]}
+    grps = {g["id"]: {"name": g["label_ko"], "w": g["width"]} for g in REGISTRY.data["groups"]}
+    return types, grp_of, grps
+
+
+def schema_js():
+    """템플릿 /*@SCHEMA@*/ 자리에 넣을 JS. data_js와 같은 방식으로 '<'·'/'를 적는다(검사 V2)."""
+    def js(obj):
+        return json.dumps(obj, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace("/", "\\/")
+    types, grp_of, grps = legend_tables()
+    return "var TYPE = %s;\n  var GRP_OF = %s;\n  var GRP = %s;" % (js(types), js(grp_of), js(grps))
+
+
 def build_html(data=None):
     """data가 있으면 단독 모드 HTML(데이터 포함), None이면 앱 셸(데이터는 loadKnowledge로 받음)."""
     with open(TEMPLATE, encoding="utf-8") as fh:
@@ -340,6 +359,7 @@ def build_html(data=None):
             raise ValueError("템플릿 자리표시 %s가 정확히 1개가 아님" % p)
     html = tpl.replace("/*@DATA@*/", data_js(data) if data is not None else "null")
     html = html.replace("/*@CSS_VARS@*/", tokens.kg_css_vars())
+    html = html.replace("/*@SCHEMA@*/", schema_js())
     return html.replace("/*@VENDOR@*/", vendor_text())
 
 

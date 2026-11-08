@@ -4,20 +4,12 @@
 규칙이 바뀌면 RULES_VERSION을 올린다.
 """
 
+from hazop.kg.schema import REGISTRY
+
 RULES_VERSION = "drawio-rules-draft-2026-11-06"
 
-# kind -> category. 표시 필터(심볼·배관 등)와 미분류 판정에 쓴다.
-KIND_CATEGORY = {}
-for _k in ("reactor_vessel", "steam_generator", "pressurizer", "pump", "vessel", "tank",
-           "heat_exchanger", "turbine", "condenser", "filter", "demineralizer", "orifice", "vent"):
-    KIND_CATEGORY[_k] = "equipment"
-for _k in ("manual_valve", "motor_operated_valve", "control_valve", "check_valve",
-           "isolation_valve", "psv"):
-    KIND_CATEGORY[_k] = "valve"
-for _k in ("transmitter", "controller", "indicator", "temperature_element"):
-    KIND_CATEGORY[_k] = "instrument"
-for _k in ("tee", "pipe_cap", "continuation"):
-    KIND_CATEGORY[_k] = "piping_element"
+# kind -> category. 표시 필터(심볼·배관 등)와 미분류 판정에 쓴다. 목록은 타입 레지스트리(hazop/kg/schema/registry.json)
+KIND_CATEGORY = REGISTRY.kind_category()
 
 # 태그가 없어도 규칙 위반이 아닌 kind (continuation은 tag 없이 to_drawing·to_object 보유)
 KINDS_WITHOUT_TAG = {"continuation"}

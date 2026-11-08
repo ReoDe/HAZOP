@@ -19,26 +19,19 @@ import shutil
 import networkx as nx
 
 from hazop.kg.inputs import SOURCE_COLUMNS, candidate_fields, normalize_tag, normalize_text, text_sha256
+from hazop.kg.schema import PID_ROOT, REGISTRY
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
+READABLE_SCHEMA_VERSIONS = ("0.1", "0.2")  # 0.1 -> 0.2는 registry 필드만 더함(옛 판은 그대로 읽음)
 BUILDER = "hazop.kg.build"
 BUILDER_VERSION = "0.1.0"
 
-NODE_PREFIX = {"document": "doc-", "doc_chunk": "chunk-", "requirement": "req-", "setpoint": "setpt-",
-               "condition": "cond-", "analysis_case": "case-"}
+NODE_PREFIX = REGISTRY.node_prefix()
 LINK_PREFIX = "krel-"
-PID = "pid"  # 타입 쌍 표에서 P&ID 노드(drawing_object·pipe_segment)를 뜻함
+PID = "pid"  # 타입 쌍 표에서 P&ID 노드(drawing_object·pipe_segment)를 뜻함. 오류 문구가 바뀌지 않게 레지스트리 최상위 클래스 대신 씀
 # kind -> (허용 시작 타입, 허용 끝 타입) (§2.3)
-LINK_TYPES = {
-    "part_of": ({"doc_chunk"}, {"document"}),
-    "mentions": ({"doc_chunk"}, {PID}),
-    "specified_in": ({"requirement", "setpoint", "condition"}, {"doc_chunk"}),
-    "governed_by": ({PID}, {"requirement"}),
-    "has_setpoint": ({PID}, {"setpoint"}),
-    "has_condition": ({PID}, {"condition"}),
-    "depends_on": ({PID}, {PID}),
-    "analyzed_in": ({PID}, {"analysis_case"}),
-}
+LINK_TYPES = {k: tuple({PID if c == PID_ROOT else c for c in side} for side in pair)
+              for k, pair in REGISTRY.link_types().items()}
 KNOWLEDGE_STATUS = ("confirmed", "unknown", "hypothesis")
 LINK_STATUS = ("candidate", "confirmed", "rejected")
 METHODS = ("manual", "regex", "exact_norm", "fuzzy", "extractor")
@@ -47,7 +40,7 @@ REF_RE = re.compile(r"^(graph-[^:#]+)([:#])(.+)$")
 # mentions 대상이 기록 당시와 다른 도면 버전에서 사라지거나 모호해진 경우 차단 대신 재확인(§3.2)
 STALE_TARGET_CODES = ("pid_ref_not_found", "ambiguous_tag")
 # 같은 대상·항목 충돌 비교에 쓰는 설비 적용 관계(K7)
-CONFLICT_KINDS = {"has_setpoint": "setpoint", "has_condition": "condition"}
+CONFLICT_KINDS = REGISTRY.conflict_kinds()
 
 
 def _canon(obj):
@@ -56,11 +49,16 @@ def _canon(obj):
 
 def kg_version(knowledge, graph_refs):
     """정규화한 지식 입력(knowledge.json 전체: 노드·관계·입력 파일 sha256·ID) + 참조한 graph_version
-    + 빌더 버전(networkx 버전 포함)의 해시. 형식은 graph_version과 같다.
+    + 빌더 버전(networkx 버전 포함) + 타입 레지스트리 버전·해시의 해시. 형식은 graph_version과 같다.
     출력에 들어가는 값은 모두 이 해시나 graph_version에 반영되므로 kg_version이 같으면 두 결과 파일의 바이트도 같다."""
     canon = _canon({"knowledge": knowledge, "graph_refs": graph_refs})
-    head = "%s|nx=%s|" % (BUILDER_VERSION, nx.__version__)
+    head = "%s|nx=%s|registry=%s:%s|" % (BUILDER_VERSION, nx.__version__, REGISTRY.version, REGISTRY.sha256)
     return "v-" + hashlib.sha256((head + canon).encode("utf-8")).hexdigest()[:12]
+
+
+def _type_allowed(t, allowed):
+    """허용 쌍은 상위 클래스로 적어도 하위 클래스에 적용된다(단일 상속)."""
+    return any(t == a or REGISTRY.is_a(t, a) for a in allowed)
 
 
 def _has_source(src):
@@ -307,7 +305,7 @@ def build_kg(knowledge, graphs):
             allowed_from, allowed_to = LINK_TYPES[kind]
             tf = PID if ends["from"]["layer"] == "pid" else ends["from"]["node_type"]
             tt = PID if ends["to"]["layer"] == "pid" else ends["to"]["node_type"]
-            if tf not in allowed_from or tt not in allowed_to:
+            if not _type_allowed(tf, allowed_from) or not _type_allowed(tt, allowed_to):
                 block("K1", "type_pair_not_allowed", lid, "%s의 허용 타입 쌍이 아님: %s -> %s" % (kind, tf, tt))
                 ok = False
         l["source_inherited_from"] = None
@@ -444,6 +442,7 @@ def build_kg(knowledge, graphs):
         "kg_version": version,
         "project_id": knowledge.get("project_id"),
         "builder": {"name": BUILDER, "version": BUILDER_VERSION, "networkx": nx.__version__},
+        "registry": {"version": REGISTRY.version, "sha256": REGISTRY.sha256},
         "inputs": knowledge.get("inputs"),
         "knowledge_sha256": hashlib.sha256(dump_bytes(knowledge)).hexdigest(),  # 함께 쓰는 knowledge.json의 바이트 해시
         "graph_refs": graph_refs,
@@ -588,6 +587,9 @@ def load_outputs_raw(kg_root):
     kg = json.loads(gbytes.decode("utf-8"))
     if not isinstance(kg, dict):
         raise ValueError("%s: knowledge_graph.json이 JSON 객체가 아님" % ver_dir)
+    if kg.get("schema_version", "0.1") not in READABLE_SCHEMA_VERSIONS:  # 판 필드가 없던 시험용 파일은 0.1로 봄
+        raise ValueError("%s: knowledge_graph.json의 schema_version %r를 읽을 수 없음(읽는 판: %s)"
+                         % (ver_dir, kg.get("schema_version"), ", ".join(READABLE_SCHEMA_VERSIONS)))
     if kg.get("knowledge_sha256") != ptr["knowledge_sha256"] or kg.get("kg_version") != ptr["kg_version"]:
         raise ValueError("%s: knowledge_graph.json과 knowledge.json·포인터가 서로 맞지 않음" % ver_dir)
     return json.loads(kbytes.decode("utf-8")), kg, gbytes, ver_dir, ptr

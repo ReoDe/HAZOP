@@ -12,10 +12,13 @@ import copy
 import json
 
 from hazop.kg import algo
+from hazop.kg.schema import REGISTRY
 
-RELATION_KINDS = ("governed_by", "has_condition", "has_setpoint")
+RELATION_KINDS = algo.GAP_KINDS  # 설비 적용 관계 중 근거 공백 판정에 세는 3종(analyzed_in 제외)
 CITATION_KIND = "specified_in"
-TYPE_ORDER = {"requirement": 0, "setpoint": 1, "condition": 2}
+# 항목 정렬: 레지스트리 클래스 순서(요건, 설정치, 운전조건)
+TYPE_ORDER = {c: i for i, c in enumerate(c for c in REGISTRY.classes
+                                         if c in REGISTRY.apply_kind_of(evidence_gap=True))}
 VALUE_FIELDS = ("name", "text", "item", "value", "unit", "pressure_basis", "operating_mode")
 UNKNOWN_FIELDS = ("item", "value", "unit", "pressure_basis")
 SOURCE_FIELDS = ("material_id", "registration_version", "document_id", "page", "locator")

@@ -16,14 +16,15 @@ import os
 
 from hazop import paths
 from hazop.kg import build, docextract, inputs
+from hazop.kg.schema import REGISTRY
 
 ASSEMBLER = "hazop.kg.auto"
 ASSEMBLER_VERSION = "0.1.0"
 DOC_FILE = "document_knowledge.json"
 NODES_CSV = "knowledge_nodes.csv"
 LINKS_CSV = "knowledge_links.csv"
-# 문서 지식 노드 종류 -> 도면 노드에서 그 노드로 가는 설비 적용 관계(§2.3)
-APPLY_KIND = {"setpoint": "has_setpoint", "condition": "has_condition", "requirement": "governed_by"}
+# 문서 지식 노드 종류 -> 도면 노드에서 그 노드로 가는 설비 적용 관계(§2.3). 근거 공백 판정에 세는 3종만(analyzed_in 제외)
+APPLY_KIND = REGISTRY.apply_kind_of(evidence_gap=True)
 
 
 def _read(path):
