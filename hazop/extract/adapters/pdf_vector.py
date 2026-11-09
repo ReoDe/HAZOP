@@ -84,7 +84,8 @@ PARAMS = {
     "block_gap_max_ratio": 0.5,  # 같은 문단: 줄 사이 간격 ≤ 글자 크기 × 비율
 }
 
-INSTRUMENT_FUNCTION = {"T": "transmitter", "C": "controller", "I": "indicator"}  # ISA 5.1 뒤 글자(기능)
+INSTRUMENT_FUNCTION = {"T": "transmitter", "C": "controller", "I": "indicator", "S": "switch",
+                       "R": "recorder"}  # ISA 5.1 뒤 글자(기능)
 # 장비 이름 낱말 → kind (일반 P&ID 표기). 순서대로 먼저 맞는 것을 쓴다.
 EQUIPMENT_WORDS = [
     (("REACTOR", "VESSEL"), "reactor_vessel"),
@@ -1009,6 +1010,20 @@ def _is_circle(body, prm):
     return body["closed"] and bool(body.get("curved")) and w > 0 and abs(w - h) <= prm["circle_aspect_tol"] * max(w, h)
 
 
+def _is_tombstone(body):
+    """비석 모양 계기 기호(APR1400 DCD 범례 그림 1.7-1): 위는 반원, 아래는 네모. 닫힌 곡선 하나로 그려지고
+    아래 두 모서리가 상자 아래 모서리에, 반원 꼭대기가 상자 위 가운데에 있다. 높이/폭 0.95~1.45."""
+    if not (body["closed"] and body.get("curved")):
+        return False
+    x0, y0, x1, y1 = body["bbox"]
+    w, h = x1 - x0, y1 - y0
+    if w <= 0 or not 0.95 <= h / w <= 1.45:
+        return False
+    tol = 0.05 * w
+    near = lambda px, py: any(abs(x - px) <= tol and abs(y - py) <= tol for x, y in body["pts"])  # noqa: E731
+    return near(x0, y1) and near(x1, y1) and near((x0 + x1) / 2, y0)
+
+
 def _is_triangle(body):
     pts = body["pts"][:-1] if body["pts"][0] == body["pts"][-1] else body["pts"]
     return body["closed"] and not body.get("curved") and len(pts) == 3
@@ -1043,6 +1058,8 @@ def _shape_kind(sym, prm):
             return "orifice", "parallel_plates"
     if len(circles) == 1 and not tris and not others and len(sym.bodies) == 1:
         return "instrument", "circle"
+    if len(sym.bodies) == 1 and _is_tombstone(sym.bodies[0]):
+        return "instrument", "tombstone"
     return None, None
 
 
@@ -1098,11 +1115,20 @@ def _classify(sym, text, degree, prm, marks=()):
 
 # ---------------------------------------------------------------- 태그
 
-def _assign_tags(nodes, unknowns):
+def _bubble_like(node, letters):
+    """종류를 못 정한 계기 모양 기호가 계기 원으로 볼 만한가: 기능 문자 두 자 이상이고 기호 짧은 변 8pt 이상.
+    밸브 힌지 점·댐퍼 축 점처럼 작은 원 옆 밸브 번호('V5402', 'Y0013A')를 계기 태그로 읽지 않게 한다."""
+    g = node.get("geometry") or {}
+    return len(letters) >= 2 and min(g.get("width", 0), g.get("height", 0)) >= 8
+
+
+def _assign_tags(nodes, unknowns, instrument_ids=()):
     """기호 노드의 tag를 같은 쪽의 보이는 글자로 정한다.
     (a) 글자가 태그 모양(③ 문서 언급과 같은 hazop.kg.docextract.TAG_RE)으로 시작하면 그 낱말.
-    (b) 계기의 ISA 글자(예: 'PT 110')면 <접두>-<문자><번호>. 접두는 같은 쪽 (a) 태그에서 가장 많은 계통 접두다.
-        글자에 없는 값을 고른 것이라 근거에 [추론]을 남기고, 가장 많은 접두가 둘 이상이면 정하지 않는다.
+    (b) 계기(분류가 계기이거나 instrument_ids의 계기 모양 기호)의 ISA 글자(예: 'PT 110')면 <접두>-<문자><번호>.
+        접두는 같은 쪽 (a) 태그 두 개 이상이 함께 쓰는 계통 접두 중 가장 많은 것이다. 글자에 없는 값을 고른 것이라
+        근거에 [추론]을 남기고, 가장 많은 접두가 둘 이상이면 정하지 않는다. 가장 많은 접두도 태그 하나뿐이거나
+        (a) 태그가 없으면(APR1400 DCD처럼 계기 원에 접두를 쓰지 않는 도면) 원 안 글자 그대로 <문자>-<번호>로 둔다.
     같은 tag가 두 노드 이상에 나오면 모두 비우고 duplicate_tag 미확인을 남긴다. 정하지 못한 노드는 missing_tag 미확인."""
     tags, isa = {}, {}
     for i, n in enumerate(nodes):
@@ -1114,13 +1140,16 @@ def _assign_tags(nodes, unknowns):
             continue
         lines = [" ".join(l.split()) for l in n["label_text"].splitlines() if l.strip()]
         m = ISA_LABEL_RE.fullmatch(" ".join(lines[:2]))
-        if m and n["category"] == "instrument":
-            isa[i] = m.group(1) + m.group(2)
+        if m and (n["category"] == "instrument" or n["local_id"] in instrument_ids and _bubble_like(n, m.group(1))):
+            isa[i] = (m.group(1), m.group(2))
     counts = collections.Counter(t.split("-")[0] for t, _ in tags.values()).most_common(2)
-    prefix = counts[0][0] if counts and (len(counts) == 1 or counts[0][1] > counts[1][1]) else None
-    if prefix:
-        for i, body in isa.items():
-            tags[i] = ("%s-%s" % (prefix, body), "isa_label+page_prefix:%s [추론]" % prefix)
+    tied = len(counts) == 2 and counts[0][1] == counts[1][1]
+    prefix = counts[0][0] if counts and not tied and counts[0][1] >= 2 else None
+    for i, (letters, number) in isa.items():
+        if prefix:
+            tags[i] = ("%s-%s%s" % (prefix, letters, number), "isa_label+page_prefix:%s [추론]" % prefix)
+        elif not tied:
+            tags[i] = ("%s-%s" % (letters, number), "isa_label")
     seen = collections.Counter(t.casefold() for t, _ in tags.values())
     for i, n in enumerate(nodes):
         if n["kind"] in rules.KINDS_WITHOUT_TAG:
@@ -1133,7 +1162,7 @@ def _assign_tags(nodes, unknowns):
         n["tag"] = tag
         n["evidence"]["tag_basis"] = basis
         if tag is None and basis is None:
-            reason = ("ISA 계기 글자는 있으나 같은 쪽 계통 접두를 하나로 정할 수 없음" if i in isa and not prefix
+            reason = ("ISA 계기 글자는 있으나 같은 쪽 계통 접두를 하나로 정할 수 없음" if i in isa
                       else "보이는 글자에서 태그를 정하지 못함(글자는 label_text에 보존)")
             _issue(unknowns, "missing_tag", reason, n["source_object_id"], n["local_id"], "tag")
 
@@ -1263,7 +1292,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         })
         locations.append({"object_id": sid, "local_id": local_id, "coordinate_space": COORDINATE_SPACE,
                           "unit": UNIT, "bbox": _box_out(s.bbox), "approximate": False})
-    _assign_tags(node_out, unknowns)
+    _assign_tags(node_out, unknowns, instrument_ids)
     tee_ids = {}
     for k, (x, y) in enumerate(tees):
         n = len(node_out) + 1

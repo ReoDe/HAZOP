@@ -5,7 +5,7 @@
    "connectors": 3,
    "continuations": 0,
    "continuations_correct": 0,
-   "instrument_hits": 0,
+   "instrument_hits": 4,
    "instruments": 4,
    "key_connectors": 3,
    "key_instruments": 4,
@@ -16,25 +16,25 @@
     "continuations": 0,
     "nodes": 73,
     "offpage_labels": 3,
-    "tag_exact": 0,
+    "tag_exact": 4,
     "tag_not_in_text": 0,
-    "tagged": 0,
-    "unclassified": 47,
-    "unknowns": 189
+    "tagged": 4,
+    "unclassified": 46,
+    "unknowns": 180
    },
    "proxy_bubbles": 4,
    "proxy_bubbles_in_key": 4,
    "proxy_offpage": 3,
    "proxy_offpage_in_key": 3,
-   "tagged": 0,
-   "tagged_correct": 0
+   "tagged": 4,
+   "tagged_correct": 4
   },
   "9.3.3-1-S7": {
    "connector_hits": 0,
    "connectors": 7,
    "continuations": 0,
    "continuations_correct": 0,
-   "instrument_hits": 0,
+   "instrument_hits": 16,
    "instruments": 16,
    "key_connectors": 7,
    "key_instruments": 16,
@@ -45,47 +45,47 @@
     "continuations": 0,
     "nodes": 140,
     "offpage_labels": 5,
-    "tag_exact": 0,
+    "tag_exact": 16,
     "tag_not_in_text": 0,
-    "tagged": 0,
-    "unclassified": 76,
-    "unknowns": 683
+    "tagged": 16,
+    "unclassified": 72,
+    "unknowns": 663
    },
    "proxy_bubbles": 16,
    "proxy_bubbles_in_key": 16,
    "proxy_offpage": 5,
    "proxy_offpage_in_key": 5,
-   "tagged": 0,
-   "tagged_correct": 0
+   "tagged": 16,
+   "tagged_correct": 16
   },
   "9.3.4-1-S1": {
    "connector_hits": 0,
    "connectors": 17,
    "continuations": 0,
    "continuations_correct": 0,
-   "instrument_hits": 0,
+   "instrument_hits": 12,
    "instruments": 15,
    "key_connectors": 17,
    "key_instruments": 15,
    "proxy": {
-    "bubbles": 14,
+    "bubbles": 15,
     "connector_bad_target": 0,
     "connectors_detected": 0,
     "continuations": 0,
     "nodes": 261,
     "offpage_labels": 4,
-    "tag_exact": 0,
+    "tag_exact": 12,
     "tag_not_in_text": 0,
-    "tagged": 0,
-    "unclassified": 137,
-    "unknowns": 997
+    "tagged": 12,
+    "unclassified": 131,
+    "unknowns": 966
    },
-   "proxy_bubbles": 14,
-   "proxy_bubbles_in_key": 14,
+   "proxy_bubbles": 15,
+   "proxy_bubbles_in_key": 15,
    "proxy_offpage": 4,
    "proxy_offpage_in_key": 4,
-   "tagged": 0,
-   "tagged_correct": 0
+   "tagged": 12,
+   "tagged_correct": 12
   }
  },
  "pages": {
@@ -104,7 +104,7 @@
   "100": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 1,
    "tag_not_in_text": 0
   },
   "101": {
@@ -134,13 +134,13 @@
   "105": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 4,
    "tag_not_in_text": 0
   },
   "106": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 1,
    "tag_not_in_text": 0
   },
   "107": {
@@ -200,7 +200,7 @@
   "115": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 1,
    "tag_not_in_text": 0
   },
   "116": {
@@ -230,7 +230,7 @@
   "12": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 4,
    "tag_not_in_text": 0
   },
   "120": {
@@ -266,43 +266,43 @@
   "125": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 32,
    "tag_not_in_text": 0
   },
   "126": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 18,
    "tag_not_in_text": 0
   },
   "127": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 13,
    "tag_not_in_text": 0
   },
   "128": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 7,
    "tag_not_in_text": 0
   },
   "129": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 16,
    "tag_not_in_text": 0
   },
   "13": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 18,
    "tag_not_in_text": 0
   },
   "130": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 5,
    "tag_not_in_text": 0
   },
   "131": {
@@ -326,25 +326,25 @@
   "134": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 5,
    "tag_not_in_text": 0
   },
   "135": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 4,
    "tag_not_in_text": 0
   },
   "136": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 6,
    "tag_not_in_text": 0
   },
   "137": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 12,
    "tag_not_in_text": 0
   },
   "138": {
@@ -356,7 +356,7 @@
   "139": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 4,
    "tag_not_in_text": 0
   },
   "14": {
@@ -368,7 +368,7 @@
   "140": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 5,
    "tag_not_in_text": 0
   },
   "141": {
@@ -380,25 +380,25 @@
   "142": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 11,
    "tag_not_in_text": 0
   },
   "143": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 1,
    "tag_not_in_text": 0
   },
   "15": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 18,
    "tag_not_in_text": 0
   },
   "16": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 17,
    "tag_not_in_text": 0
   },
   "17": {
@@ -410,13 +410,13 @@
   "18": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 16,
    "tag_not_in_text": 0
   },
   "19": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 2,
    "tag_not_in_text": 0
   },
   "2": {
@@ -428,56 +428,56 @@
   "20": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 2,
    "tag_not_in_text": 0
   },
   "21": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 2,
    "tag_not_in_text": 0
   },
   "22": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 19,
    "tag_not_in_text": 0
   },
   "23": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 26,
    "tag_not_in_text": 0
   },
   "24": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 12,
    "tag_not_in_text": 0
   },
   "25": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 32,
    "tag_not_in_text": 0
   },
   "26": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 14,
    "tag_not_in_text": 0
   },
   "27": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 24,
    "tag_not_in_text": 0
   },
   "28": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
-   "tag_not_in_text": 19
+   "tag_exact": 57,
+   "tag_not_in_text": 1
   },
   "29": {
    "connector_bad_target": 0,
@@ -488,13 +488,13 @@
   "3": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 1,
    "tag_not_in_text": 0
   },
   "30": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 8,
    "tag_not_in_text": 0
   },
   "31": {
@@ -512,7 +512,7 @@
   "33": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 17,
    "tag_not_in_text": 0
   },
   "34": {
@@ -524,7 +524,7 @@
   "35": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 17,
    "tag_not_in_text": 0
   },
   "36": {
@@ -608,13 +608,13 @@
   "48": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 3,
    "tag_not_in_text": 0
   },
   "49": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 2,
    "tag_not_in_text": 0
   },
   "5": {
@@ -662,73 +662,73 @@
   "56": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 23,
    "tag_not_in_text": 0
   },
   "57": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 12,
    "tag_not_in_text": 0
   },
   "58": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 6,
    "tag_not_in_text": 0
   },
   "59": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 6,
    "tag_not_in_text": 0
   },
   "6": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 23,
    "tag_not_in_text": 0
   },
   "60": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 18,
    "tag_not_in_text": 0
   },
   "61": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 2,
    "tag_not_in_text": 0
   },
   "62": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 16,
    "tag_not_in_text": 0
   },
   "63": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 12,
    "tag_not_in_text": 0
   },
   "64": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 1,
    "tag_not_in_text": 0
   },
   "65": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 12,
    "tag_not_in_text": 0
   },
   "66": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 6,
    "tag_not_in_text": 0
   },
   "67": {
@@ -740,37 +740,37 @@
   "68": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 6,
    "tag_not_in_text": 0
   },
   "69": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 5,
    "tag_not_in_text": 0
   },
   "7": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 11,
    "tag_not_in_text": 0
   },
   "70": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 24,
    "tag_not_in_text": 0
   },
   "71": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 2,
    "tag_not_in_text": 0
   },
   "72": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 14,
    "tag_not_in_text": 0
   },
   "73": {
@@ -782,7 +782,7 @@
   "74": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 4,
    "tag_not_in_text": 0
   },
   "75": {
@@ -794,7 +794,7 @@
   "76": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 3,
    "tag_not_in_text": 0
   },
   "77": {
@@ -812,13 +812,13 @@
   "79": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 1,
    "tag_not_in_text": 0
   },
   "8": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 12,
    "tag_not_in_text": 0
   },
   "80": {
@@ -830,19 +830,19 @@
   "81": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 16,
    "tag_not_in_text": 0
   },
   "82": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 4,
    "tag_not_in_text": 0
   },
   "83": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 11,
    "tag_not_in_text": 0
   },
   "84": {
@@ -854,19 +854,19 @@
   "85": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 15,
    "tag_not_in_text": 0
   },
   "86": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 2,
    "tag_not_in_text": 0
   },
   "87": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 12,
    "tag_not_in_text": 0
   },
   "88": {
@@ -932,24 +932,24 @@
   "97": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 6,
    "tag_not_in_text": 0
   },
   "98": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 9,
    "tag_not_in_text": 0
   },
   "99": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 0,
+   "tag_exact": 2,
    "tag_not_in_text": 0
   }
  },
  "totals": {
-  "bubbles": 1150,
+  "bubbles": 1619,
   "connector_bad_target": 0,
   "connectors_detected": 0,
   "continuations": 0,
@@ -958,11 +958,11 @@
   "offpage_labels": 269,
   "pages": 143,
   "paired": 0,
-  "seconds": 118,
-  "tag_exact": 0,
-  "tag_not_in_text": 66,
-  "tagged": 214,
-  "unclassified": 12405,
-  "unknowns": 103667
+  "seconds": 209,
+  "tag_exact": 753,
+  "tag_not_in_text": 48,
+  "tagged": 950,
+  "unclassified": 11871,
+  "unknowns": 101608
  }
 }

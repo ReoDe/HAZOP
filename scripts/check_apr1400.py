@@ -7,7 +7,9 @@
 쪽마다 pdf_vector로 추출하고 그래프를 만든 뒤, 같은 PDF의 텍스트 층에서 센 기준과 견준다(대리 지표, 독립 정답 아님).
 - 재현율: tag_exact(계기 원 글자와 정확히 같은 태그가 그 원 위치의 노드에 붙은 수), connectors_detected(연결 표기
   위치에 연결점 노드를 만든 수), paired(프로젝트 그래프에서 짝지은 연결 수)
-- 정밀도(오류 수): tag_not_in_text(그 쪽 텍스트 층에 없는 태그), connector_bad_target(없는 도면·계통을 가리킨 연결점)
+- 정밀도(오류 수): tag_not_in_text(글자에 없는 태그. 계기 글자로 만든 태그(근거 isa_label…)는 그 노드 상자 안에 찍힌
+  위아래 두 줄을 이은 글자와 같아야 하고, 나머지 태그는 그 쪽 텍스트 층 낱말에 있어야 한다),
+  connector_bad_target(없는 도면·계통을 가리킨 연결점)
 독립 정답(tests/fixtures/apr1400/answer_key/*.json, 렌더한 그림을 눈으로 읽어 만든 정답, tests/fixtures/apr1400/SOURCE.md)이 있는 쪽은 정답 대비 값도 낸다.
 톱니: 재현율 값은 기준값보다 낮아지면, 오류 값은 높아지면 실패(종료 코드 1). 합계·쪽마다·정답 쪽마다 모두 본다.
 쪽 수·계기 원 수·연결 표기 수(입력과 대리 지표)가 기준값과 다르면 비교하지 않고 실패한다.
@@ -65,28 +67,65 @@ def symbol_boxes(page):
 
 
 def text_layer(path):
-    """→ {"bubbles": [(문자, 번호, 중심 x, 중심 y)], "offpage": [(글자, 계통, x, y)], "tokens": set(norm)}.
-    계기 원: 작은 닫힌 곡선(symbol_boxes) 안에 기능 문자 낱말과 그 아래 루프 번호 낱말이 함께 든 것.
+    """→ {"bubbles": [(문자, 번호, 중심 x, 중심 y)], "offpage": [(글자, 계통, x, y)], "tokens": set(norm),
+    "chars": [(글자, 중심 x, 중심 y, 위 끝, x0, x1)]}.
+    계기 원: 작은 닫힌 곡선(symbol_boxes) 안에 든 글자만 줄로 묶어, 기능 문자 줄 바로 아래 루프 번호 줄이 있는 것.
+    (글자를 한 자씩 따로 놓은 도면은 pdfplumber 낱말이 'P'·'D'·'IS'로 쪼개지므로 낱말 대신 글자를 묶는다.)
     연결 표기: 'CV:CHARGING'처럼 계통 약어로 시작하는 낱말(회전 글자는 char_dir_rotated='btt'로 읽음)."""
     import pdfplumber
     with pdfplumber.open(path) as pdf:
         page = pdf.pages[0]
         words = page.extract_words(char_dir_rotated="btt")
+        chars = [(c["text"], (c["x0"] + c["x1"]) / 2, (c["top"] + c["bottom"]) / 2, c["top"], c["x0"], c["x1"])
+                 for c in page.chars if c["upright"] and c["text"].strip()]
         boxes = symbol_boxes(page)
-    up = [w for w in words if w["upright"]]
     bubbles = []
     for b in boxes:
-        inside = sorted((w for w in up if _inside(((w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2), b)),
-                        key=lambda w: w["top"])
-        letters = next((w for w in inside if ISA_LETTERS_RE.match(w["text"])), None)
-        number = letters and next((w for w in inside if LOOP_NO_RE.match(w["text"])
-                                   and w["top"] >= letters["bottom"] - 1), None)
-        if number:
-            bubbles.append((letters["text"], number["text"], (b[0] + b[2]) / 2, (b[1] + b[3]) / 2))
+        lines = box_lines(chars, b)
+        i = next((i for i, t in enumerate(lines) if ISA_LETTERS_RE.match(t)), None)
+        if i is not None and i + 1 < len(lines) and LOOP_NO_RE.match(lines[i + 1]):
+            bubbles.append((lines[i], lines[i + 1], (b[0] + b[2]) / 2, (b[1] + b[3]) / 2))
     offpage = [(w["text"], OFFPAGE_RE.match(w["text"]).group(1), (w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2)
                for w in words if OFFPAGE_RE.match(w["text"])]
     tokens = {norm(w["text"]) for w in words} | {norm(a + b) for a, b, _, _ in bubbles}
-    return {"bubbles": bubbles, "offpage": offpage, "tokens": tokens}
+    return {"bubbles": bubbles, "offpage": offpage, "tokens": tokens, "chars": chars}
+
+
+def box_words(chars, box, gap=0.5):
+    """상자 안(중심 기준) 글자를 위 끝 1.5pt 안으로 줄을 묶고, 줄 안에서 gap pt 넘게 떨어지거나 위 끝이 0.5pt 넘게
+    다른 곳에서 낱말을 나눈다(한 낱말의 글자는 붙어 있고 위 끝이 같다).
+    → 줄마다 [(낱말, 중심 x)] (위 줄부터). 기호 상자에 걸친 옆 글자('LL', 'I/')가 태그 글자에 붙지 않게 한다."""
+    lines = []
+    for c in sorted((c for c in chars if _inside((c[1], c[2]), box)), key=lambda c: c[3]):
+        if lines and abs(lines[-1][0][3] - c[3]) < 1.5:
+            lines[-1].append(c)
+        else:
+            lines.append([c])
+    out = []
+    for line in lines:
+        words = []
+        for c in sorted(line, key=lambda c: c[4]):
+            if words and c[4] - words[-1][-1][5] <= gap and abs(c[3] - words[-1][-1][3]) < 0.5:
+                words[-1].append(c)
+            else:
+                words.append([c])
+        out.append([("".join(c[0] for c in w), (w[0][4] + w[-1][5]) / 2) for w in words])
+    return out
+
+
+def box_lines(chars, box):
+    """상자 안 글자의 줄마다 이은 글자 목록(위 줄부터). 계기 원 안은 줄마다 낱말 하나라 이것으로 읽는다."""
+    return ["".join(t for t, _ in line) for line in box_words(chars, box)]
+
+
+def tag_in_text(node, tl):
+    """태그가 도면에 찍힌 글자와 같은가. 계기 글자로 만든 태그는 노드 상자 안 위아래 두 줄을 이은 글자와 같아야 한다
+    (접두를 추정해 붙였거나 기호 밖 번호를 가져온 태그는 틀림). 나머지는 그 쪽 낱말 하나와 같아야 한다."""
+    if (node.get("evidence") or {}).get("tag_basis", "").startswith("isa_label"):
+        lines = box_words(tl["chars"], _box(node, 1.0))
+        pairs = {norm(a + b) for up, down in zip(lines, lines[1:]) for a, ax in up for b, bx in down if abs(ax - bx) < 6}
+        return norm(node["tag"]) in pairs
+    return norm(node["tag"]) in tl["tokens"]
 
 
 def _box(node, margin):
@@ -138,7 +177,7 @@ def score_page(ex, tl, valid_targets):
     bad = sum(1 for code, n in pairs if continuation_target(n) != code)
     bad += sum(1 for n in conts if n["local_id"] not in paired_ids and continuation_target(n) not in valid_targets)
     return {"bubbles": len(tl["bubbles"]), "offpage_labels": len(tl["offpage"]), "tagged": len(tagged),
-            "tag_exact": len(exact), "tag_not_in_text": sum(1 for n in tagged if norm(n["tag"]) not in tl["tokens"]),
+            "tag_exact": len(exact), "tag_not_in_text": sum(1 for n in tagged if not tag_in_text(n, tl)),
             "continuations": len(conts), "connectors_detected": len(pairs), "connector_bad_target": bad,
             "unknowns": ex["summary"]["unknowns"], "nodes": len(nodes),
             "unclassified": sum(1 for n in nodes if not n.get("kind"))}

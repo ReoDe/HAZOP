@@ -102,6 +102,33 @@ class AprScore(unittest.TestCase):
         self.assertEqual((s["tag_exact"], s["tag_not_in_text"]), (1, 1))
 
 
+class AprTagInText(unittest.TestCase):
+    """계기 글자로 만든 태그는 노드 상자 안 위아래 두 줄과 같아야 한다(접두 조각·번호 끝 글자 누락도 틀림)."""
+    # 상자 (0,0)-(10,10) 안: 윗줄 'PDIS', 아랫줄 '3014A'. 상자 밖(40,40): 'V5402'
+    CHARS = [(c, 1.5 + k, 3, 2, 1 + k, 2 + k) for k, c in enumerate("PDIS")] + \
+        [(c, 1.5 + k, 7, 6, 1 + k, 2 + k) for k, c in enumerate("3014A")] + \
+        [(c, 40.5 + k, 40, 39, 40 + k, 41 + k) for k, c in enumerate("V5402")] + \
+        [(c, -2.5 + k, 3, 2, -3 + k, -2 + k) for k, c in enumerate("LL")]  # 상자에 걸친 옆 경보 글자
+    TL = {"chars": CHARS, "tokens": {"PDIS", "3014A", "V5402"}}
+
+    def isa(self, tag, x=0, w=10):
+        return dict(node("n", x, 0 if x == 0 else 38, w, 10, tag=tag), evidence={"tag_basis": "isa_label"})
+
+    def test_exact_two_lines_pass(self):
+        self.assertTrue(ca.tag_in_text(self.isa("PDIS-3014A"), self.TL))
+
+    def test_dropped_letters_or_suffix_fail(self):
+        for tag in ("PD-3014A", "PDIS-3014", "VP-PDIS3014A"):
+            self.assertFalse(ca.tag_in_text(self.isa(tag), self.TL), tag)
+
+    def test_number_outside_the_symbol_fails(self):
+        self.assertFalse(ca.tag_in_text(self.isa("V-5402", x=45, w=3), self.TL))
+
+    def test_label_tag_uses_page_words(self):
+        n = dict(node("a", 40, 38, 30, 6, tag="V5402"), evidence={"tag_basis": "label_tag_token"})
+        self.assertTrue(ca.tag_in_text(n, self.TL))
+
+
 class AprRatchet(unittest.TestCase):
     def base(self):
         totals = {"pages": 2, "bubbles": 5, "offpage_labels": 3, "failed_pages": 0, "tag_exact": 4, "paired": 0,
