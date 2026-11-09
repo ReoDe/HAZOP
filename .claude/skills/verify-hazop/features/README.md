@@ -14,6 +14,9 @@ Each row is a scenario in `scripts/check_user_scenarios.py`. The end state is wh
 | Operating during a run | explorer Sx click, Ctrl+P, Ctrl+4 then Ctrl+5 while running | S8 | stage unchanged, progress still shown, entry counts not lower |
 | ④ selection highlight | click `_SegList` rows | S9 | CDP count of `.selected`-style vs all drawing elements |
 | Explorer structure | ⑤ explorer groups | S10 | '자료' count > 0 when a drawing is open, a path to results |
+| Explorer per stage | Ctrl+1~5 | S14 | explorer title starts with the current ①~⑤, only that stage's groups (`STAGE_GROUPS`) are listed |
+| Cross-drawing node | ④ click a `⇄` row in `_SegList`, then the `… 에서 계속` chip, then Ctrl+5 | S11 | row name has `[101 → 102]`, panel shows `시작:`·`끝:`, `이 도면 N / 전체 M` and both coverages, chip opens the other drawing with the same node selected (CDP `SEL_JS`), ⑤ row name keeps the range |
+| ③ knowledge graph | Ctrl+3, type in `태그·이름으로 찾기`, Ctrl+A Backspace, hover a node, click it, `로컬` button | S13 | `hzKG.state()`: `matches` > 0 then 0, `hover` set and non-neighbours fade (canvas alpha), `sel.id` set, `mode` local with fewer visible nodes, no `errors` |
 | ⑤ Excel export | palette `>Excel`, Enter in the scope dialog, type a path in the native save dialog | S12 | xlsx exists, worksheet scenario rows = saved entries, toast buttons `열기`·`폴더 열기` |
 | ④ node merge + confirm | palette `>확정 해제`, Space on `_SegList` items, M, Ctrl+Enter | S6 | `_SegList` item count drops, confirm text appears |
 
