@@ -23,7 +23,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
 from hazop.app import conn_view, data, project_ctx, tokens
 from hazop.app.ai_runner import AiRunner, RunMachine
 from hazop.app.conn_widgets import NoticeBand, ResolveBand
-from hazop.app.screens.results_paint import CELL_ROLE, DRAFT_ROLE, CellDelegate, GroupHeader, SheetDelegate
+from hazop.app.screens.results_matrix import MatrixModel, MatrixView, empty_cell_label
+from hazop.app.screens.results_paint import DRAFT_ROLE, CellDelegate, GroupHeader, SheetDelegate
 from hazop.app.screens.study import seg_icon
 from hazop.app.settings_dialog import ACTION_HELP, ask_terms
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text, plain_label
@@ -651,15 +652,6 @@ def is_limit_stop(run):
     return (run or {}).get("status") == "failed" and (run or {}).get("error_kind") == "limit_reached"
 
 
-def empty_cell_label(run):
-    """항목 없는 분석 칸의 문구. AI가 '해당 없음'이라 한 칸과, 해당한다면서 시나리오를 내지 않은 칸을 구분한다."""
-    if run.get("applicable") is False:
-        return "해당 없음(AI 판단)"
-    if run.get("applicable") is True:
-        return "시나리오 없음(AI)"
-    return "항목 없음"
-
-
 def _status(node):
     return ((node or {}).get("screen") or {}).get("status") or "keep"
 
@@ -757,7 +749,9 @@ class ResultsScreen(QWidget):
         self.save_label.linkActivated.connect(self._open_save_dir)
         head.addWidget(self.save_label)
         top.addLayout(head)
-        self.matrix = QTableWidget()
+        self.matrix = MatrixView()
+        self.matrix_model = MatrixModel(lambda row: seg_icon(row["color"], row["node"]["node_id"]), self.matrix)
+        self.matrix.setModel(self.matrix_model)
         self.matrix.setObjectName("matrix")
         self.matrix.setAccessibleName("구간 × 편차 행렬")
         self.matrix.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -1954,77 +1948,36 @@ class ResultsScreen(QWidget):
         return next((i for i, n in enumerate(self._rows()) if n["node_id"] == node_id), None)
 
     def _fill_matrix(self):
-        """칸 한 줄(U-20). 아이템 text()는 설명 글자, 그리기는 CellDelegate가 CELL_ROLE 상태로 한다.
+        """칸 한 줄(U-20). 칸 글자·상태·툴팁은 MatrixModel이 보이는 칸만 계산하고, 그리기는 CellDelegate가 CELL_ROLE 상태로 한다.
         AI 실행 실패 칸은 위험도 색을 쓰지 않는다(U-19): 흰 바탕 + 빨강 점선 테두리 + '! 실패'."""
         ns, summary = self._scope_set(), res.matrix_summary(self.results)
         hidden = [n for n in self.node_set["nodes"] if _status(n) == "excluded"]
         runs = {(c["node_id"], c["deviation_id"]): c.get("ai_run") or {} for c in self.results["cells"]}
         shown = {n["node_id"] for n in ns["nodes"]}
-        failed = {k: r.get("error") for k, r in runs.items() if r.get("status") == "failed" and k[0] in shown}
+        failed = {k for k, r in runs.items() if r.get("status") == "failed" and k[0] in shown}
         limited = {k for k in failed if is_limit_stop(runs[k])}
+        marks = {k: "failed" for k in failed}
+        marks.update((k, "limit") for k in limited)
+        marks.update((k, "running") for k in self.in_progress)
+        color = {n["node_id"]: i for i, n in enumerate(self.node_set["nodes"])}
+        rows = []
+        for n in ns["nodes"]:
+            v = self.view.get(n["node_id"]) or n
+            label = project_ctx.node_label(v)
+            rows.append({"node": n, "color": color.get(n["node_id"], 0), "label": label,
+                         "tip": "%s\n%s\n구성요소 %s%s" % (label, project_ctx.boundary_text(v),
+                                                         project_ctx.counts_text(v, self.ctx.drawing_number)
+                                                         if self.ctx else len(n["members"]),
+                                                         "\n스크리닝 낮음: 편차원을 알아보지 못한 배관 묶음(맨 아래, 주배관일 수 있음)"
+                                                         if _status(n) == "low" else "")})
         m = self.matrix
         cur = (m.currentRow(), m.currentColumn())
-        m.clear()
-        m.setRowCount(len(ns["nodes"]))
-        m.setColumnCount(len(self.deviations))
         m.horizontalHeader().set_groups([(d["parameter"], d["guideword"]) for d in self.deviations])
-        for c, d in enumerate(self.deviations):
-            h = QTableWidgetItem("%s %s" % (d["parameter"], d["guideword"]))
-            h.setToolTip("%s %s" % (d["deviation_id"], d["label"]))
-            m.setHorizontalHeaderItem(c, h)
-        total_s = total_u = 0
-        for r, n in enumerate(ns["nodes"]):
-            v = self.view.get(n["node_id"]) or n
-            head = QTableWidgetItem(seg_icon(self._color_of(n["node_id"]), n["node_id"]), project_ctx.node_label(v))
-            head.setToolTip("%s\n%s\n구성요소 %s%s" % (project_ctx.node_label(v), project_ctx.boundary_text(v),
-                                                   project_ctx.counts_text(v, self.ctx.drawing_number)
-                                                   if self.ctx else len(n["members"]),
-                                                   "\n스크리닝 낮음: 편차원을 알아보지 못한 배관 묶음(맨 아래, 주배관일 수 있음)"
-                                                   if _status(n) == "low" else ""))
-            m.setVerticalHeaderItem(r, head)
-            for c, d in enumerate(self.deviations):
-                s = summary.get(n["node_id"], {}).get(d["deviation_id"]) or {"state": "not_analyzed", "scenarios": 0,
-                                                                            "max_risk": None, "unreviewed": 0}
-                it = QTableWidgetItem()
-                tip = "%s %s × %s" % (n["node_id"], n["name"], d["label"])
-                key = (n["node_id"], d["deviation_id"])
-                state = {"kind": "scored", "risk": s["max_risk"], "unreviewed": s["unreviewed"],
-                         "scenarios": s["scenarios"]}
-                if key in self.in_progress:
-                    it.setText("분석 중")
-                    state = {"kind": "running"}
-                    tip = "%s\nAI 호출 중" % tip
-                elif key in limited:
-                    it.setText("한도로 멈춤")
-                    state = {"kind": "limit"}
-                    tip = "%s\n구독 사용 한도에 닿아 멈춤(실패 아님, 다시 실행): %s" % (tip, failed[key] or "-")
-                elif key in failed:
-                    it.setText("실패")
-                    state = {"kind": "failed"}
-                    tip = "%s\nAI 실행 실패(위험도 아님): %s" % (tip, failed[key] or "-")
-                elif s["state"] == "not_analyzed":
-                    it.setText("분석 전")
-                    state = {"kind": "not_analyzed"}
-                elif s["state"] == "excluded":
-                    it.setText("제외")
-                    state = {"kind": "excluded"}
-                else:
-                    lines = ["%d건" % s["scenarios"]]
-                    if s["max_risk"] is not None:
-                        lines.append("위험 %d" % s["max_risk"])
-                    if s["scenarios"] == 0 and not s["unreviewed"] and runs.get(key, {}).get("status") == "ok":
-                        lines = [empty_cell_label(runs[key]), "AI 초안"]
-                        state = {"kind": "empty"}
-                    else:
-                        lines.append("미검토 %d" % s["unreviewed"] if s["unreviewed"] else "완료")
-                    it.setText("\n".join(lines))
-                    tip = "%s\n%s" % (tip, " · ".join(lines))
-                it.setData(CELL_ROLE, state)
-                total_s += s["scenarios"]
-                total_u += s["unreviewed"]
-                it.setToolTip(tip)
-                m.setItem(r, c, it)
-        if cur[0] >= 0 and cur[1] >= 0:
+        self.matrix_model.set_data(rows, self.deviations, summary, runs, marks)
+        dev_ids = {d["deviation_id"] for d in self.deviations}
+        cells = [s for nid in shown for did, s in summary.get(nid, {}).items() if did in dev_ids]
+        total_s, total_u = sum(s["scenarios"] for s in cells), sum(s["unreviewed"] for s in cells)
+        if cur[0] >= 0 and cur[1] >= 0 and cur[0] < len(rows) and cur[1] < len(self.deviations):
             m.setCurrentCell(*cur)
         self.kpi.setText("구간 %d · 편차 %d · 시나리오 %d · 미검토 %d%s"
                          % (len(ns["nodes"]), len(self.deviations), total_s, total_u,

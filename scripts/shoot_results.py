@@ -151,7 +151,7 @@ def main():
                 raise SystemExit("실행이 끝나지 않음")
             scr.open_cell(first, scr.deviations[0]["deviation_id"])
             failed_col = next(i for i, d in enumerate(scr.deviations) if d["parameter"] == "온도")
-            scr.matrix.scrollToItem(scr.matrix.item(0, failed_col), QAbstractItemView.PositionAtCenter)
+            scr.matrix.scrollTo(scr.matrix_model.index(0, failed_col), QAbstractItemView.PositionAtCenter)
             shoot(win, scr, out_dir, w, "after", files)
         win.close()
         app.processEvents()

@@ -7,6 +7,7 @@
 도면 위 구간 색은 seg1..seg5를 순환하고, 목록의 S 번호 배지에도 같은 색을 써서 색만으로 구분하지 않는다.
 """
 
+import functools
 import html
 import os
 
@@ -39,15 +40,20 @@ def seg_token(index):
 
 
 def seg_icon(index, text):
-    """구간 번호 배지(색 + S 번호 글자). 목록·행렬 머리에 쓴다."""
+    """구간 번호 배지(색 + S 번호 글자). 목록·행렬 머리에 쓴다. 같은 색·글자면 그려 둔 것을 쓴다(구간이 1,800개면 그리기만 0.2초)."""
+    return _badge(tokens.c(seg_token(index)), tokens.c("on-seg"), text)
+
+
+@functools.lru_cache(maxsize=4096)
+def _badge(fill, ink, text):
     pm = QPixmap(30, 16)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     p.setPen(Qt.NoPen)
-    p.setBrush(QColor(tokens.c(seg_token(index))))
+    p.setBrush(QColor(fill))
     p.drawRoundedRect(QRectF(0, 0, 30, 16), 3, 3)
-    p.setPen(QColor(tokens.c("on-seg")))
+    p.setPen(QColor(ink))
     f = QFont(tokens.FONT_FAMILY)
     f.setPixelSize(tokens.FONT_SIZE["xs"])
     f.setBold(True)

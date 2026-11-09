@@ -188,6 +188,10 @@ def matrix_summary(results):
     unreviewed는 제안 상태 항목과, 사람이 고쳤어도 승인 전인 AI 초안(revised)을 함께 센다."""
     out = {}
     for cell in results["cells"]:
+        if not cell["entries"]:  # 대부분의 칸(분석 전)은 셀 것이 없다
+            out.setdefault(cell["node_id"], {})[cell["deviation_id"]] = {
+                "state": cell["state"], "scenarios": 0, "max_risk": None, "unreviewed": 0}
+            continue
         live = [e for e in cell["entries"] if e.get("status") != "rejected"]
         risks = [e["risk"] for e in live if e.get("risk") is not None]
         out.setdefault(cell["node_id"], {})[cell["deviation_id"]] = {
