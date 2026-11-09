@@ -9,6 +9,7 @@
   ⑤ 결과는 프로젝트 집합이 확정된 뒤(결과의 study_nodes_ref가 확정본 기준이어야 하므로) 옮긴다. 옛 파일은 지우지 않는다.
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -45,9 +46,22 @@ def boundary_text(n):
     return "시작: %s / 끝: %s" % (one(b.get("start")), one(b.get("end")))
 
 
+_NAMES = {}
+
+
 def graph_names(project_id):
     """{도면 graph_id: 출력/그래프 폴더 이름(= ②④⑤ 도면 고르기 이름)}. 이 프로젝트 도면만, 같은 graph_id면 가장 최근 것
-    (project.load가 고르는 판과 같은 규칙)."""
+    (project.load가 고르는 판과 같은 규칙). 입력 파일 지문이 같으면 다시 읽지 않는다."""
+    key = _graph_inputs(project_id)
+    hit = _NAMES.get(project_id)
+    if hit is not None and hit[0] == key:
+        return dict(hit[1])
+    out = _read_graph_names(project_id)
+    _NAMES[project_id] = (key, out)
+    return dict(out)
+
+
+def _read_graph_names(project_id):
     root = paths.output_root("그래프")
     best = {}
     for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
@@ -66,6 +80,40 @@ def graph_names(project_id):
     return {g: v[1] for g, v in best.items()}
 
 
+_PROJECT_GRAPHS = {}
+_VIEWS = {}
+
+
+def _graph_inputs(project_id):
+    """project.load가 읽는 파일의 (경로, 바뀐 시각, 크기). 하나라도 바뀌면 프로젝트 그래프를 다시 짓는다."""
+    root = paths.output_root("그래프")
+    files = [os.path.join(root, n, "graph.json") for n in sorted(os.listdir(root))] if os.path.isdir(root) else []
+    files += [project.manual_path(project_id), paths.folder("APR1400", project.SYSTEM_CODES_FILE)]
+    out = []
+    for f in files:
+        try:
+            st = os.stat(f)
+        except OSError:
+            continue
+        out.append((f, st.st_mtime_ns, st.st_size))
+    return (paths.work_root(), tuple(out))
+
+
+def project_graph(project_id):
+    """프로젝트 그래프. 화면을 옮길 때마다 143쪽을 다시 읽고 짓지 않게, 입력 파일 지문이 같으면 지은 것을 그대로 준다.
+    돌려준 dict는 여러 화면이 함께 쓰므로 고치지 않는다(읽기 전용)."""
+    key = _graph_inputs(project_id)
+    hit = _PROJECT_GRAPHS.get(project_id)
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    pg = project.load(project_id)
+    if hit is not None:  # 옛 그래프를 붙잡은 표기 사본은 버린다(143쪽 그래프가 메모리에 여러 벌 남지 않게)
+        for k in [k for k, v in _VIEWS.items() if v[0] is hit[1]]:
+            del _VIEWS[k]
+    _PROJECT_GRAPHS[project_id] = (key, pg)
+    return pg
+
+
 class ProjectContext:
     """도면 하나(name)를 보는 프로젝트 맥락. pg가 None이면 프로젝트 그래프를 만들 수 없는 것(error에 사유)."""
 
@@ -76,7 +124,7 @@ class ProjectContext:
         self.project_id = project.project_id_of(sheet)
         self.pg, self.error, self.node_set, self.saved, self.notice = None, None, None, False, None
         try:
-            self.pg = project.load(self.project_id)
+            self.pg = project_graph(self.project_id)
         except (OSError, ValueError) as exc:
             self.error = "프로젝트 그래프를 만들 수 없음: %s" % exc
             return
@@ -122,12 +170,22 @@ class ProjectContext:
         return self.node_set, False
 
     def view(self, node_set=None):
-        """표기·경계·칩을 붙인 사본(span.annotate). 경계 항목에 drawing_short를 더한다."""
-        v = span.annotate(node_set if node_set is not None else self.node_set, self.pg)
+        """표기·경계·칩을 붙인 사본(span.annotate). 경계 항목에 drawing_short를 더한다.
+        같은 프로젝트 그래프·같은 내용의 집합이면 지은 사본을 그대로 준다(화면 여럿이 함께 쓰므로 고치지 않는다)."""
+        ns = node_set if node_set is not None else self.node_set
+        digest = hashlib.sha1(json.dumps(ns, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+        key = (id(self.pg), digest)
+        hit = _VIEWS.get(key)
+        if hit is not None and hit[0] is self.pg:
+            return hit[1]
+        v = span.annotate(ns, self.pg)
         for n in v["nodes"]:
             for x in (n.get("boundary") or {}).values():
                 if x and x.get("drawing"):
                     x["drawing_short"] = self.short.get(x["drawing"], x["drawing"])
+        if len(_VIEWS) >= 8:  # 최근 몇 개만(편집마다 새 집합이 생긴다)
+            _VIEWS.pop(next(iter(_VIEWS)))
+        _VIEWS[key] = (self.pg, v)  # pg를 붙잡아 id 재사용으로 다른 그래프의 사본을 주지 않게
         return v
 
     def chips(self, n, drawing_number=None):

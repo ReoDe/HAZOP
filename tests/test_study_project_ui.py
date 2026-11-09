@@ -209,6 +209,15 @@ class StudyProjectUiTest(unittest.TestCase):
         self.assertTrue(scr.confirm("EJ", ack=True))
         self.assertEqual(nodes.load(scr.graph)["status"], "confirmed")
 
+    def test_screens_do_not_change_the_shared_project_graph(self):
+        """프로젝트 그래프는 화면 여럿이 함께 쓴다(캐시). 화면을 돌아도 내용이 그대로여야 한다."""
+        from hazop.app import project_ctx
+        win, _scr = self.open_study(A)
+        before = json.dumps(project_ctx.project_graph("P"), sort_keys=True, ensure_ascii=False)
+        for index in (4, 5, 6, 5):  # ②는 이 픽스처의 간이 그래프(structure 없음)를 열지 못해 뺌
+            win.go(index)
+        self.assertEqual(json.dumps(project_ctx.project_graph("P"), sort_keys=True, ensure_ascii=False), before)
+
     def test_selecting_a_folded_bucket_unfolds_it(self):
         _win, scr = self.open_study(A)
         scr.scope.setCurrentIndex(1)

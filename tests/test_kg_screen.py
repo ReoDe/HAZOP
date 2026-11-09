@@ -570,7 +570,7 @@ class KnowledgeTabTest(WindowTestBase):
         for w in (scr.path_from, scr.path_to, scr.drawing_filter, scr.kg_combo, scr.graph_combo):
             self.assertTrue(w.accessibleName(), w)
         scr.pg = None
-        with mock.patch("hazop.app.screens.knowledge.project.load", return_value=two_sheet_project()):
+        with mock.patch("hazop.app.project_ctx.project_graph", return_value=two_sheet_project()):
             scr._load_project()
         self.assertEqual([scr.drawing_filter.itemText(i) for i in range(scr.drawing_filter.count())],
                          ["모든 도면", "A", "B"])

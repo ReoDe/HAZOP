@@ -299,7 +299,7 @@ def expectations_for(graph, kg):
     except (OSError, expect.ExpectError) as exc:
         judgements, note = {}, "잠재 후보 판단 파일을 읽지 못함: %s" % exc
     try:
-        return expect.evaluate(graph, kg, judgements), note
+        return expect.evaluate_cached(graph, kg, judgements), note
     except (expect.ExpectError, KeyError, ValueError) as exc:
         return None, "잠재 후보를 계산하지 못함: %s" % exc
 

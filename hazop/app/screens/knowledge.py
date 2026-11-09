@@ -525,7 +525,7 @@ class KnowledgeScreen(QWidget):
             self.expect_error = str(exc)
             judgements = {}
         try:
-            return expect.evaluate(self.pg, self.kg, judgements)
+            return expect.evaluate_cached(self.pg, self.kg, judgements)
         except expect.ExpectError as exc:
             self.app.log_error("잠재 후보 계산", exc)
             self.expect_calc_error = str(exc)
@@ -1061,7 +1061,7 @@ class KnowledgeScreen(QWidget):
         if self.pg is not None and self.pg.get("project_id") == pid:
             return
         try:
-            self.pg, self.pg_error = project.load(pid), None
+            self.pg, self.pg_error = project_ctx.project_graph(pid), None
         except (OSError, ValueError, KeyError) as exc:
             self.pg, self.pg_error = None, "프로젝트 그래프를 만들 수 없음: %s" % exc
         self.path_steps = None

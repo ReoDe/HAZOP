@@ -36,6 +36,27 @@ class ProjectCtxTest(unittest.TestCase):
         from hazop.app import project_ctx
         self.pc = project_ctx
 
+    def test_project_graph_is_reused_until_a_graph_file_changes(self):
+        first = self.pc.project_graph("P")
+        self.assertIs(self.pc.project_graph("P"), first, "입력이 같으면 다시 짓지 않음")
+        p = os.path.join(self.tmp, "출력", "그래프", "SNP-M-102", "graph.json")
+        g = dict(self.b, graph_version="v2")
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(g, fh)
+        os.utime(p, ns=(os.stat(p).st_atime_ns, os.stat(p).st_mtime_ns + 10 ** 9))
+        again = self.pc.project_graph("P")
+        self.assertIsNot(again, first, "도면 그래프 파일이 바뀌면 다시 짓는다")
+        self.assertIn("v2", [s["graph_version"] for s in again["sheets"]])
+
+    def test_view_is_shared_for_the_same_content_only(self):
+        ctx = self.pc.load("SNP-M-102")
+        ns, _ = ctx.load_set()
+        v = ctx.view(ns)
+        self.assertIs(ctx.view(json.loads(json.dumps(ns))), v, "내용이 같으면 같은 표기 사본")
+        renamed = json.loads(json.dumps(ns))
+        renamed["nodes"][0]["name"] = "다른 이름"
+        self.assertIsNot(ctx.view(renamed), v)
+
     def tearDown(self):
         if self._env is None:
             os.environ.pop("HAZOP_WORK_ROOT", None)

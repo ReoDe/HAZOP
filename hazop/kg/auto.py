@@ -49,9 +49,33 @@ def _scan(root, filename):
     return out
 
 
+_IDS = {}
+
+
+def _project_id_of(path):
+    """파일의 project_id. 바뀐 시각·크기가 같으면 다시 읽지 않는다(143쪽이면 화면마다 수 초가 걸려서)."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _IDS.get(path)
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    try:
+        pid = _read(path).get("project_id")
+    except OSError:
+        return None  # 잠깐 못 읽은 것은 기억하지 않는다(다음에 다시 읽게)
+    except (ValueError, AttributeError):
+        pid = None
+    _IDS[path] = (key, pid)
+    return pid
+
+
 def project_ids(graph_root, doc_root):
     """도면 그래프·문서 지식에 나오는 project_id 집합(등록 경로로 만든 것만)."""
-    ids = {g.get("project_id") for _, g in _scan(graph_root, "graph.json")}
+    ids = {_project_id_of(os.path.join(graph_root, n, "graph.json"))
+           for n in (sorted(os.listdir(graph_root)) if os.path.isdir(graph_root) else [])}
     ids |= {d.get("project_id") for _, d in _scan(doc_root, DOC_FILE)}
     return sorted(i for i in ids if i)
 
