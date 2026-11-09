@@ -207,6 +207,12 @@ def study_module(win):
                 ("덮음률 · %d%%" % round(c["project"]["ratio"] * 100), "%s\n모든 구성요소가 어느 구간에 들어가야 100%%" % cover),
                 ("미포함 %d" % (c["project"]["total"] - c["project"]["covered"]),
                  "어느 구간에도 들어가지 않은 프로젝트 구성요소 수")]
+    scr = win.screens[5]
+    ai = scr.review_counts() if ns and scr.node_set is not None and scr.node_set.get("graph_id") == ns.get("graph_id") else None
+    if ai and ai["total"]:
+        info.append(("AI 제안 %d건 · 미처리 %d건" % (ai["total"], ai["open"]),
+                     "④ AI 구간 검토 제안(초안). 미처리 제안이 있어도 확정은 막지 않습니다%s"
+                     % (" · 오래된 제안 %d건(구간이 바뀜)" % ai["stale"] if ai["stale"] else "")))
     items = node_items(win, view, ns, dn, lambda _nid: ("", "구간 구성은 ④ 구간 화면에서 봅니다"))
     empty = (("이 도면을 지나는 구간 없음", None) if ns else
              ("아직 구간이 없습니다", ("구간 제안 실행", cmd("repropose"), "프로젝트 그래프로 구간을 새로 제안합니다")))

@@ -78,9 +78,11 @@ class AiRunner(QObject):
     progress = Signal(int, int)
     finished = Signal(str)
 
-    def __init__(self, jobs, deviations, client, workers=1):
+    def __init__(self, jobs, deviations, client, workers=1, run=None):
         super().__init__()
         self.jobs = list(jobs)
+        # run(client, unit, ctx, at) -> 결과 dict(error_kind 포함). 없으면 ⑤ 칸 분석(ai_cells.run_unit). ④ 구간 검토가 바꿔 낀다
+        self.run = run or (lambda client, unit, ctx, at: ai_cells.run_unit(client, unit, ctx, self.deviations, at))
         self.deviations = deviations
         self.client = client
         self.workers = max(1, int(workers))
@@ -154,7 +156,7 @@ class AiRunner(QObject):
                     break
                 unit, ctx = job
                 self.unit_started.emit(unit)
-                ur = ai_cells.run_unit(self.client, unit, ctx, self.deviations, stamp())
+                ur = self.run(self.client, unit, ctx, stamp())
                 with self._lock:
                     self._done += 1
                     done = self._done

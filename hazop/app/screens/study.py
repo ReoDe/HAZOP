@@ -13,14 +13,15 @@ import os
 
 from PySide6.QtCore import QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QMenu, QToolButton, QFrame, QHBoxLayout, QInputDialog, QLabel, QListWidget,
-                               QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QSizePolicy, QStackedWidget,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QMenu, QToolButton, QFrame,
+                               QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit,
+                               QProgressBar, QPushButton, QSizePolicy, QStackedWidget,
                                QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTabWidget, QVBoxLayout, QWidget)
 
 from hazop.app import data, project_ctx, tokens
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text
 from hazop.graph import project
-from hazop.study import migrate, nodes, remap, span
+from hazop.study import migrate, node_review as nr, nodes, remap, span
 
 SEG_COUNT = 5
 PANEL_MIN_W, PANEL_MAX_W = 264, 340     # 셸 오른쪽 열 clamp(264px, 20vw, 340px)
@@ -28,6 +29,7 @@ ROW_H = 24
 MIN_ROWS = 4                            # 패널 높이가 모자랄 때도 구간 목록에 남기는 행 수
 COUNT_ROLE = Qt.UserRole + 1
 GRADE_ROLE = Qt.UserRole + 2           # 스크리닝 등급(주요·일반·낮음·제외), 개수 앞에 흐리게
+AI_ROLE = Qt.UserRole + 3              # 미처리 AI 구간 검토 제안이 있으면 "AI 제안"
 SCOPES = ("이 도면 구간", "프로젝트 전체")
 
 
@@ -134,7 +136,7 @@ class _SegRowDelegate(QStyledItemDelegate):
         self.initStyleOption(o, index)
         widget = o.widget
         style = widget.style()
-        count = " · ".join(x for x in (index.data(GRADE_ROLE), index.data(COUNT_ROLE)) if x)
+        count = " · ".join(x for x in (index.data(AI_ROLE), index.data(GRADE_ROLE), index.data(COUNT_ROLE)) if x)
         rect = style.subElementRect(QStyle.SE_ItemViewItemText, o, widget)
         room = rect.width() - o.fontMetrics.horizontalAdvance(count) - 10
         o.text = o.fontMetrics.elidedText(o.text, Qt.ElideMiddle, max(room, 0))  # 끝의 도면 범위 [101 → 102] ⇄를 남긴다
@@ -170,6 +172,10 @@ class StudyNodesScreen(QWidget):
         self.picked_entity = None  # 도면에서 누른 구성요소
         self.notice = None      # 옛 도면별 저장본을 옮겼다는 알림(이번 실행 동안 띠로 보임)
         self._pending = None    # 도면을 바꾼 뒤 고를 구간(칩으로 건너갈 때)
+        self.review_doc = None  # AI 구간 검토 제안 묶음(node_review). 구간 파일과 따로 저장한다
+        self.review_runner = None
+        self._review_adj = None
+        self._review_checking = False  # 연결 확인 중(두 번 눌러 실행이 둘 생기지 않게)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(12, 10, 12, 10)
         lay.setSpacing(6)
@@ -291,9 +297,16 @@ class StudyNodesScreen(QWidget):
         self.exclude_act = self.screen_menu.addAction("스크리닝 제외로 옮기기…")
         self.exclude_act.setToolTip("고른 구간을 스크리닝 제외로 옮깁니다. 이유를 꼭 적습니다")
         self.exclude_act.triggered.connect(lambda: self.exclude_current())
+        self.screen_menu.addSeparator()
+        self.review_act = self.screen_menu.addAction("AI 구간 검토…")
+        self.review_act.setToolTip("AI가 경계·병합·분할·스크리닝 판정을 검토해 제안(초안)을 냅니다. 실행 전 호출 수·시간·사용량을 보여 줍니다")
+        self.review_act.triggered.connect(lambda: self.review_ai("all"))
+        self.review_node_act = self.screen_menu.addAction("고른 구간만 AI 검토…")
+        self.review_node_act.setToolTip("고른 구간 하나만 AI에게 검토를 맡깁니다")
+        self.review_node_act.triggered.connect(lambda: self.review_ai("node"))
         self.screen_btn = QToolButton()
         self.screen_btn.setText("스크리닝")
-        self.screen_btn.setToolTip("스크리닝 제외 구간 보기, 꺼내기·떼기·제외로 옮기기")
+        self.screen_btn.setToolTip("스크리닝 제외 구간 보기, 꺼내기·떼기·제외로 옮기기, AI 구간 검토")
         self.screen_btn.setPopupMode(QToolButton.InstantPopup)
         self.screen_btn.setMenu(self.screen_menu)
         for b in (self.merge_btn, self.split_btn, self.rename_btn, self.screen_btn):
@@ -389,7 +402,8 @@ class StudyNodesScreen(QWidget):
                 ("확정 해제", "", self.reopen_btn.click), ("다시 제안", "", self.repropose_btn.click),
                 ("⑤ 결과에서 보기", "", self.to_results_btn.click), ("스크리닝 제외에서 꺼내기", "", self.take_out_act.trigger),
                 ("붙인 조각 떼기", "", self.detach_act.trigger), ("스크리닝 제외로 옮기기", "", self.exclude_act.trigger),
-                ("스크리닝 제외 구간 보기·접기", "", self.show_excluded.toggle)]
+                ("스크리닝 제외 구간 보기·접기", "", self.show_excluded.toggle),
+                ("AI 구간 검토", "", self.review_act.trigger)]
 
     # ------------------------------------------------------------ 틀 연결
     def where(self):
@@ -470,6 +484,7 @@ class StudyNodesScreen(QWidget):
             self.disk_fp = nodes.fingerprint(self._store_path())
         except OSError:  # 지금 읽지 못하는 파일이면 저장 때 다시 지문을 구해 보고, 그때 읽히면 다른 값이라 저장하지 않는다
             self.disk_fp = None
+        self._load_review()
         if ctx.notice:
             self.notice = ctx.notice
             self.app.toast(ctx.notice)
@@ -549,6 +564,8 @@ class StudyNodesScreen(QWidget):
         dn = self.ctx.drawing_number
         shown = self._shown()
         grades = nodes.screens(ns, self.graph)
+        self._review_adj = nr.adjacency(ns, self.graph)
+        ai = self.review_pending()
         for n in shown:
             here = (n.get("members_by_drawing") or {}).get(dn, 0)
             sc = grades.get(n["node_id"])
@@ -556,6 +573,7 @@ class StudyNodesScreen(QWidget):
             it = QListWidgetItem(seg_icon(index[n["node_id"]], n["node_id"]), project_ctx.node_label(n))
             it.setData(Qt.UserRole, n["node_id"])
             it.setData(GRADE_ROLE, grade.rstrip(" ·"))
+            it.setData(AI_ROLE, "AI 제안" if n["node_id"] in ai else "")
             it.setData(COUNT_ROLE, "%d개" % n["member_count"] if here == n["member_count"]
                        else "%d/%d" % (here, n["member_count"]))
             it.setToolTip("%s\n%s\n%s\n근거: %s" % (project_ctx.node_label(n), project_ctx.counts_text(n, dn),
@@ -575,7 +593,8 @@ class StudyNodesScreen(QWidget):
         excluded = [n for n in self._scope_nodes() if _status(n) == "excluded"]
         folded = "" if self.show_excluded.isChecked() or not excluded else " · 제외 %d개 접음(구성요소 %d개)" % (
             len(excluded), sum(len(n["members"]) for n in excluded))
-        self.list_head.setText("검토구간 · %s · %s%s" % (count, "확정" if confirmed else "제안", folded))
+        self.list_head.setText("검토구간 · %s · %s%s%s" % (count, "확정" if confirmed else "제안", folded,
+                                                         " · AI 제안 %d" % len(ai) if ai else ""))
         self.kpi.setText("구성요소 <b>%d</b> · 미포함 <b>%d</b> · 덮음 %s"
                          % (cov["total"], len(cov["uncovered"]), html.escape(self.ctx.coverage_text(ns)[0])))
         self.progress.setRange(0, max(cov["total"], 1))
@@ -712,6 +731,7 @@ class StudyNodesScreen(QWidget):
             targets = [{"text": "%s에서 보기" % d, "drawing": d, "name": self.ctx.drawing_names.get(d),
                         "node_id": n["node_id"]} for d in n["drawings"]]
         self.node_text.setText("\n".join(lines))
+        self._review_block(n)
         for c in targets:
             name, why = self._chip_target(c)
             b = QPushButton(c["text"])
@@ -776,6 +796,11 @@ class StudyNodesScreen(QWidget):
         self.take_out_act.setEnabled(editable and cur_status == "excluded")
         self.detach_act.setEnabled(editable and cur is not None and self._absorbed_of(cur, picked) is not None)
         self.exclude_act.setEnabled(editable and cur is not None and cur_status != "excluded")
+        running = self.review_runner is not None
+        self.review_act.setText("AI 구간 검토 멈추기" if running else "AI 구간 검토…")
+        idle = not running and not self.app.ai_conn.running and not self._review_checking
+        self.review_act.setEnabled(bool(ns) and (running or idle))
+        self.review_node_act.setEnabled(bool(ns) and cur is not None and idle)
         self.overview_btn.setEnabled(cur is not None or self.picked_entity is not None)
 
     # ------------------------------------------------------------ 선택
@@ -1157,7 +1182,9 @@ class StudyNodesScreen(QWidget):
                     self, "스크리닝 제외 확인", text, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
                 self.msg.setText("확정하지 않았습니다. '스크리닝 제외 구간 보기'로 제외 구간을 확인하세요.")
                 return False
-        if not self._apply(lambda s: nodes.confirm(s, self.graph, reviewer), done="구간을 확정했습니다"):
+        left = self.review_counts()["open"]
+        done = "구간을 확정했습니다" + (" · 처리하지 않은 AI 제안 %d건이 남았습니다" % left if left else "")
+        if not self._apply(lambda s: nodes.confirm(s, self.graph, reviewer), done=done):
             return False
         self._carry_results()
         return True
@@ -1177,6 +1204,380 @@ class StudyNodesScreen(QWidget):
 
     def reopen(self):
         return self._apply(nodes.reopen, done="확정을 해제했습니다")
+
+    # ------------------------------------------------------------ AI 구간 검토(설계 §4.7, 선택 단계)
+    def _load_review(self):
+        pid, gid = self.node_set.get("project_id"), self.node_set["graph_id"]
+        try:
+            self.review_doc = nr.load(pid, gid)
+        except (OSError, ValueError) as exc:
+            path = nr.store_path(pid, gid)
+            note = [str(exc)]
+            try:  # 덮어쓰지 않게 옆으로 옮겨 둔다(받아들임·기각 기록이 남은 파일일 수 있음)
+                kept = "%s.읽기실패-%s.json" % (path[:-5], nodes.now_utc().replace(":", "").replace("-", ""))
+                os.replace(path, kept)
+                note.append("원래 파일은 %s로 옮겨 두었습니다" % os.path.basename(kept))
+            except OSError as move:
+                note.append("원래 파일을 옮기지 못함: %s" % move)
+            self.review_doc = nr.empty(pid, gid)
+            self.warn.set_messages("AI 구간 검토 제안 파일을 읽을 수 없어 비워 두고 시작합니다", note)
+
+    def review_pending(self):
+        """{node_id: 미처리이고 오래되지 않은 제안}."""
+        if self.review_doc is None or self.node_set is None or self._review_adj is None:
+            return {}
+        return nr.pending(self.review_doc, self.node_set, self._review_adj)
+
+    def review_counts(self):
+        """탐색기·확정 알림용 {"total", "open", "stale"}."""
+        if self.review_doc is None or self.node_set is None or self._review_adj is None:
+            return {"total": 0, "open": 0, "stale": 0}
+        return nr.counts(self.review_doc, self.node_set, self._review_adj)
+
+    def _review_block(self, n):
+        """고른 구간 카드 안 'AI 제안': 규칙 판정과 AI 제안을 나란히, 받아들이기·고쳐서 받기·기각."""
+        self.review_buttons = {}
+        prop = self.review_pending().get(n["node_id"])
+        stale = None if prop else next((p for p in (self.review_doc or {}).get("proposals", [])
+                                        if p["node_id"] == n["node_id"] and p["decision"] == "open"), None)
+        if prop is None and stale is None:
+            return
+        box = QFrame()
+        box.setObjectName("aiReview")
+        box.setStyleSheet("QFrame#aiReview { border: 1px dashed %s; border-radius: 3px; background: %s; }"
+                          % (tokens.c("line-strong"), tokens.c("ai-hatch-a")))
+        v = QVBoxLayout(box)
+        v.setContentsMargins(6, 4, 6, 4)
+        v.setSpacing(2)
+        head = QLabel(("AI 제안(초안)%s" % (" · 시험 응답" if prop.get("via") == "fixed" else "")) if prop
+                      else "AI 제안 · 오래됨")
+        head.setStyleSheet("font-weight: 700")
+        v.addWidget(head)
+        if prop is None:
+            note = QLabel("구간이나 이웃 구간이 바뀌어 이 제안은 받아들일 수 없습니다. 다시 검토하려면 '고른 구간만 AI 검토'를 누르세요.")
+            note.setWordWrap(True)
+            v.addWidget(note)
+            self.jump_box.addWidget(box)
+            return
+        node = self._node(n["node_id"])
+        rule_line, ai_line = nr.compare_text(prop, node)
+        for text in (rule_line, ai_line) + (("설계 의도 초안: %s" % prop["design_intent"],) if prop["design_intent"] else ()):
+            lab = QLabel(text)
+            lab.setWordWrap(True)
+            lab.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            v.addWidget(lab)
+        editable = self.node_set["status"] != "confirmed"
+        rows = [QHBoxLayout(), QHBoxLayout()]  # 좁은 패널(1366×768)에서 단추 글자가 잘리지 않게 두 줄
+        for r, key, text, fn in ((0, "accept", "받아들이기", lambda: self.accept_review(prop["id"])),
+                                 (0, "reject", "기각…", lambda: self.reject_review(prop["id"])),
+                                 (1, "edit", "고쳐서 받기…", lambda: self.edit_review(prop["id"]))):
+            b = QPushButton(text)
+            b.clicked.connect(lambda _c=False, f=fn: f())
+            b.setEnabled(editable or key == "reject")
+            if not editable and key != "reject":
+                b.setToolTip("확정된 구간은 '확정 해제' 뒤에 고칠 수 있습니다")
+            rows[r].addWidget(b)
+            self.review_buttons[key] = b
+        for row in rows:
+            row.setSpacing(4)
+            row.addStretch(1)
+            v.addLayout(row)
+        self.jump_box.addWidget(box)
+
+    def _reviewer(self):
+        return self.app.reviewer_name() or "검토자"
+
+    def accept_review(self, proposal_id, edited=None):
+        """제안을 지금의 편집 연산으로 적용하고 구간 파일과 제안 묶음을 저장한다. 실행 취소는 둘 다 되돌린다."""
+        old_set, old_doc = self.node_set, self.review_doc
+        keep = self.current_node_id()
+        try:
+            new_set, new_doc = nr.accept(self.node_set, self.review_doc, proposal_id, self._reviewer(),
+                                         nr.adjacency(self.node_set, self.graph), edited=edited)
+        except ValueError as exc:
+            self.msg.setText("할 수 없음: %s" % exc)
+            return False
+        if not self._replace(new_set, keep):
+            return False
+        if not self._save_review(new_doc):  # 제안 묶음을 못 쓰면 구간도 되돌린다(두 파일이 어긋나지 않게)
+            if not self._replace(old_set, keep):
+                self.app.log_error("AI 제안 받아들이기 되돌림 실패", RuntimeError(self.msg.text()))
+            self.review_doc = old_doc
+            self._render(keep)
+            return False
+        self._render(keep)
+        target = (old_set.get("project_id"), old_set["graph_id"])
+
+        def undo():
+            if self.node_set is not None and self.node_set["graph_id"] == old_set["graph_id"]:
+                restored = self._replace(old_set, keep)
+            else:
+                try:
+                    nodes.save(old_set)
+                    restored = True
+                except OSError as exc:
+                    self.app.log_error("검토구간 실행 취소 실패", exc)
+                    restored = False
+            if not restored:
+                return
+            try:  # 그 제안 하나만 미처리로 돌린다(받아들인 뒤 온 다른 결과는 그대로)
+                doc = nr.undo_decision(nr.load(*target), proposal_id)
+                if self.node_set is not None and (self.node_set.get("project_id"), self.node_set["graph_id"]) == target:
+                    self._save_review(doc)
+                    self._render(keep)
+                else:
+                    nr.save(doc)
+            except (OSError, ValueError) as exc:
+                self.app.log_error("AI 제안 되돌리기 실패", exc)
+                self.msg.setText("구간은 되돌렸지만 AI 제안 기록을 되돌리지 못했습니다: %s" % exc)
+        self.app.toast("AI 제안을 %s 적용했습니다" % ("고쳐서" if edited else "그대로"), undo=undo)
+        return True
+
+    def edit_review(self, proposal_id, edited=None):
+        """고쳐서 받기: 설계 의도 초안을 고치고, 구간 연산(병합·분할·판정 변경)을 함께 적용할지 고른다."""
+        prop = next(p for p in self.review_doc["proposals"] if p["id"] == proposal_id)
+        if edited is None:
+            dlg = QDialog(self)
+            dlg.setWindowTitle("AI 제안 고쳐서 받기")
+            v = QVBoxLayout(dlg)
+            apply_op = QCheckBox("구간 연산도 적용: %s" % nr.compare_text(prop, self._node(prop["node_id"]))[1].split(" · 이유")[0])
+            apply_op.setChecked(prop["verdict"] != "ok")
+            apply_op.setEnabled(prop["verdict"] != "ok")
+            v.addWidget(apply_op)
+            v.addWidget(QLabel("설계 의도(⑤ 워크시트 '설계 의도' 칸의 초안이 됩니다)"))
+            intent = QPlainTextEdit(prop["design_intent"])
+            intent.setAccessibleName("설계 의도")
+            v.addWidget(intent)
+            buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            buttons.accepted.connect(dlg.accept)
+            buttons.rejected.connect(dlg.reject)
+            v.addWidget(buttons)
+            if dlg.exec() != QDialog.Accepted:
+                return False
+            edited = {"design_intent": intent.toPlainText().strip()}
+            if not apply_op.isChecked():
+                edited["verdict"] = "ok"
+        return self.accept_review(proposal_id, edited=edited)
+
+    def reject_review(self, proposal_id, reason=None):
+        if reason is None:
+            reason, ok = QInputDialog.getItem(self, "AI 제안 기각", "기각 이유", list(nr.REJECT_REASONS), 0, False)
+            if not ok:
+                return False
+        try:
+            doc = nr.reject(self.review_doc, proposal_id, self._reviewer(), reason)
+        except ValueError as exc:
+            self.msg.setText("할 수 없음: %s" % exc)
+            return False
+        if not self._save_review(doc):
+            return False
+        self._render(self.current_node_id())
+        return True
+
+    def _save_review(self, doc):
+        try:
+            nr.save(doc)
+        except OSError as exc:
+            self.app.log_error("AI 구간 검토 제안 저장 실패", exc)
+            self.msg.setText("AI 제안 묶음을 저장하지 못했습니다: %s" % exc)
+            return False
+        self.review_doc = doc
+        return True
+
+    def review_busy(self):
+        """④ AI 구간 검토가 연결을 확인하거나 호출하는 중인가(⑤ 실행과 겹치지 않게)."""
+        return self._review_checking or self.review_runner is not None
+
+    def _other_ai_busy(self):
+        results = self.app.screens[6] if len(self.app.screens) > 6 else None
+        return self.app.ai_conn.running or bool(results is not None and results.running())
+
+    def review_ai(self, scope="all", ask=True):
+        """AI 구간 검토 시작(실행 중이면 멈춤). scope: all(모든 구간) · node(고른 구간). 연결 확인 → 실행 확인 → 호출."""
+        if self.review_runner is not None:
+            self.cancel_review()
+            return False
+        if self.node_set is None or self._review_checking:
+            return False
+        if self._other_ai_busy():
+            self.app.status_message("⑤ AI 분석이 끝난 뒤에 실행하세요.")
+            return False
+        ids = None if scope == "all" else [self.current_node_id()] if self.current_node_id() else []
+        batches = nr.plan_batches(self.node_set, node_ids=ids)
+        if not batches:
+            self.app.status_message("검토할 구간이 없습니다.")
+            return False
+        conn = self.app.ai_conn
+        method = conn.method
+        pending = {"ids": ids, "method": method, "ask": ask,
+                   "target": (self.node_set.get("project_id"), self.node_set["graph_id"])}
+        self._review_checking = True
+        self._update_buttons()
+        if method == "api":
+            self._review_preflight(pending, conn.status("api"))
+        else:
+            self.app.status_message("AI 연결을 확인하는 중…")
+            conn.check(method, done=lambda status: self._review_preflight(pending, status))
+        return True
+
+    def _review_preflight(self, pending, status):
+        self._review_checking = False
+        try:
+            self._review_preflight_go(pending, status)
+        finally:
+            self._update_buttons()
+
+    def _review_preflight_go(self, pending, status):
+        from hazop.app import conn_view
+        from hazop.app.settings_dialog import ask_terms
+        conn, method = self.app.ai_conn, pending["method"]
+        if method != "api":
+            self.app.status_message("")
+        if self.node_set is None or (self.node_set.get("project_id"), self.node_set["graph_id"]) != pending["target"]:
+            self.app.status_message("연결을 확인하는 동안 도면을 바꿔 AI 구간 검토를 시작하지 않았습니다. 다시 실행하세요.")
+            return
+        if self._other_ai_busy():
+            self.app.status_message("⑤ AI 분석이 실행 중이라 AI 구간 검토를 시작하지 않았습니다.")
+            return
+        # 확인하는 동안 구간을 고쳤을 수 있으니 지금 집합으로 다시 나눈다(옛 호출 단위를 새 집합에 쓰지 않게)
+        pending["batches"] = nr.plan_batches(self.node_set, node_ids=pending["ids"])
+        if not pending["batches"]:
+            self.app.status_message("검토할 구간이 없습니다.")
+            return
+        state = (status or {}).get("state") or "unchecked"
+        if not conn_view.can_start(method, state):
+            self.app.status_message("AI 연결을 쓸 수 없어 구간 검토를 시작하지 않았습니다: %s"
+                                    % ((status or {}).get("detail") or conn_view.look(method, state).short))
+            return
+        if method == "subscription" and not conn.terms_acked() and ask_terms(self, conn.prefs, "run") != "ok":
+            return
+        if state == "overage_risk" and not conn.prefs.allow_overage and not self.ask_overage():
+            return
+        if pending["ask"] and not self._review_confirm(method, pending["batches"]):
+            return
+        self._review_start(method, pending["batches"])
+
+    def ask_overage(self):
+        """⑤와 같은 초과 사용 확인(기본 단추는 취소)."""
+        from hazop.app.screens.results import OVERAGE_TEXT
+        box = QMessageBox(QMessageBox.Warning, "초과 사용 주의", OVERAGE_TEXT, parent=self)
+        go = box.addButton("시작", QMessageBox.AcceptRole)
+        box.setDefaultButton(box.addButton("취소", QMessageBox.RejectRole))
+        box.exec()
+        return box.clickedButton() is go
+
+    def review_estimate_rows(self, method, batches):
+        """실행 확인 창의 (lead, rows). 시간·사용량은 U5 실측(⑤ 칸 분석)으로 본 추정이다."""
+        from hazop.app import conn_view
+        conn = self.app.ai_conn
+        e = nr.estimate(len(batches), 1 if method == "fixed" else conn.prefs.concurrency)
+        kept = sum(len(b["node_ids"]) for b in batches if b["kind"] == "nodes")
+        dropped = sum(1 for b in batches if b["kind"] == "excluded")
+        link = {"subscription": "Claude 구독 · %s" % conn_view.model_name(conn.model(method)),
+                "api": "API 키 · %s" % conn_view.model_name(conn.model(method)),
+                "fixed": "고정 응답(시험)"}.get(method, method)
+        rows = [("호출", "%d회 (남긴 구간 %d개 ÷ %d개씩 + 제외 구간 %d개)" % (e["calls"], kept, nr.BATCH_SIZE, dropped),
+                 "호출 %d회" % e["calls"]),
+                ("예상 시간", "약 %d분, 느린 호출이 많으면 약 %d분 (동시 %d)" % (e["minutes"], e["minutes_slow"], e["concurrency"]),
+                 "예상 시간 약 %d분" % e["minutes"])]
+        if method == "subscription":
+            rows.append(("구독 사용량", "7일 사용률 약 +%.2f%%p (호출당 약 %.3f%%p)" % (e["usage_pp"], nr.USAGE_PER_CALL),
+                         "7일 사용률 약 %.2f퍼센트포인트 증가" % e["usage_pp"]))
+        elif method == "api":
+            rows.append(("비용", "API 요금이 호출마다 붙습니다", "API 요금이 붙음"))
+        rows += [("연결", link, link), ("저장", nr.store_path(self.node_set.get("project_id"), self.node_set["graph_id"]),
+                                        "제안 저장 위치")]
+        lead = "검토구간 %d개를 AI로 검토합니다. 제안은 초안이며, 받아들이기 전에는 구간을 바꾸지 않습니다." % (
+            kept + dropped)
+        return lead, rows
+
+    def _review_confirm(self, method, batches):
+        from hazop.app.screens.results import RunConfirmDialog
+        lead, rows = self.review_estimate_rows(method, batches)
+        dlg = RunConfirmDialog(method, lead, rows, "", self)
+        dlg.setWindowTitle("AI 구간 검토")
+        choice = dlg.ask()
+        if choice == "change":
+            self.app.open_ai_settings(method)
+        return choice == "start"
+
+    def _review_start(self, method, batches):
+        from hazop.app.ai_runner import AiRunner
+        conn = self.app.ai_conn
+        ns, graph = self.node_set, self.graph
+        view, adj = self.ctx.view(ns), nr.adjacency(ns, graph)
+        client = conn.make_client(method)
+        workers = 1 if method == "fixed" else conn.prefs.concurrency
+        runner = AiRunner([(b, None) for b in batches], None, client, workers,
+                          run=lambda c, b, _ctx, at: nr.run_batch(c, b, ns, view, graph, adj, at))
+        self.review_runner = runner
+        self._review_target = (ns.get("project_id"), ns["graph_id"])  # 실행 중 도면을 바꿔도 결과는 시작한 집합의 묶음에 쓴다
+        self.review_tally = {"calls": len(batches), "done": 0, "proposals": 0, "dropped": 0, "failed": 0}
+        runner.unit_done.connect(self._review_unit_done)
+        runner.finished.connect(lambda reason, r=runner: self._review_finished(r, reason))
+        conn.cancel_handler = self.cancel_review
+        conn.set_running(True, "AI 구간 검토 중 · 0/%d 호출" % len(batches))
+        self._update_buttons()
+        runner.start()
+
+    def _review_unit_done(self, result):
+        t = self.review_tally
+        t["done"] += 1
+        t["failed"] += result["status"] != "ok"
+        here = self.node_set is not None and (self.node_set.get("project_id"), self.node_set["graph_id"]) == self._review_target
+        try:
+            doc = self.review_doc if here and self.review_doc is not None else nr.load(*self._review_target)
+        except (OSError, ValueError) as exc:
+            self.app.log_error("AI 구간 검토 제안 읽기 실패", exc)
+            doc = None
+        saved = False
+        if doc is not None:
+            merged = nr.merge_result(doc, result)
+            if here:
+                saved = self._save_review(merged)
+            else:
+                try:
+                    nr.save(merged)
+                    saved = True
+                except OSError as exc:
+                    self.app.log_error("AI 구간 검토 제안 저장 실패", exc)
+        if saved:  # 저장하지 못한 호출의 제안은 세지 않는다(완료 알림이 실제 남은 제안 수와 맞게)
+            t["proposals"] += len(result["proposals"])
+            t["dropped"] += len(result["dropped"])
+        self.app.ai_conn.set_running(True, "AI 구간 검토 중 · %d/%d 호출" % (t["done"], t["calls"]))
+        if self.node_set is not None:
+            self._render(self.current_node_id())
+
+    def _review_finished(self, runner, reason):
+        if runner is not self.review_runner:
+            return
+        self.review_runner = None
+        conn = self.app.ai_conn
+        conn.set_running(False)
+        conn.cancel_handler = None
+        t = self.review_tally
+        text = "AI 구간 검토 %s: 호출 %d/%d · 제안 %d건 · 걸러 낸 제안 %d건 · 실패 %d회" % (
+            {"done": "끝", "cancelled": "멈춤", "halted": "멈춤", "killed": "끊음"}.get(reason, reason),
+            t["done"], t["calls"], t["proposals"], t["dropped"], t["failed"])
+        if reason == "halted" and runner.halted_by is not None:
+            text += " · 남은 호출을 멈춘 이유: %s" % (runner.halted_by.get("error") or runner.halted_by.get("error_kind"))
+        self.app.toast(text)
+        self.app.status_message(text)
+        if self.node_set is not None:
+            self._render(self.current_node_id())
+
+    def kill_review(self):
+        """창을 닫을 때: 진행 중인 호출까지 바로 끊는다(받은 호출 결과는 호출마다 이미 저장했다)."""
+        runner = self.review_runner
+        if runner is not None:
+            runner.kill()
+            runner.wait(5000)
+
+    def cancel_review(self):
+        """남은 호출을 부르지 않는다. 진행 중인 호출은 끝까지 받는다(⑤와 같은 규칙)."""
+        if self.review_runner is not None:
+            self.review_runner.cancel()
+            self.app.status_message("AI 구간 검토 취소 요청: 진행 중인 호출을 마친 뒤 멈춥니다.")
 
     def open_in_results(self):
         nid = self.current_node_id()

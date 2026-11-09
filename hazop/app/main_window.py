@@ -1293,6 +1293,7 @@ class MainWindow(QMainWindow):
         if not self.screens[6].shutdown():  # 진행 중인 AI 호출: 물은 뒤 기다리거나 끊고, 끝나면 다시 닫는다
             event.ignore()
             return
+        self.screens[5].kill_review()  # ④ AI 구간 검토: 받은 호출은 이미 저장했다. 남은 호출은 끊는다
         self.tasks.wait(30000)
         self.webview.dispose()
         super().closeEvent(event)

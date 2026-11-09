@@ -30,7 +30,7 @@ from hazop.app.settings_dialog import ACTION_HELP, ask_terms
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text, plain_label
 from hazop.export import study_xlsx
 from hazop.graph import project
-from hazop.study import ai_cells, claude_cli, claude_http, nodes, providers, refs, remap, span
+from hazop.study import ai_cells, claude_cli, claude_http, node_review, nodes, providers, refs, remap, span
 from hazop.study import results as res
 
 AI_NOTE = "AI 결과는 모두 초안 · 사람이 수정·승인·기각"
@@ -54,10 +54,11 @@ ENTRY_FLAGS = (("scope_changed", "범위 바뀜 · 다시 확인", "옛 도면�
 NEED_ROW = {"approved": "승인할", "rejected": "기각할", "edit": "수정할", "ie": "초기사건을 판정할"}
 
 
-def design_intent(node):
+def design_intent(node, review=None):
     """구간 JSON(데이터/구간) 중 이 구간의 구성요소(프로젝트 ID)를 모두 포함하는 것의 설계 의도.
     (글, 출처 설명) 또는 None. 구간 JSON은 도면 하나 기준이라 구성요소를 그 도면의 프로젝트 ID로 바꿔 비교한다.
-    상위 구간의 설계 의도이므로 화면에 출처와 지식 상태를 함께 적는다."""
+    상위 구간의 설계 의도이므로 화면에 출처와 지식 상태를 함께 적는다.
+    구간 JSON에 없으면 ④ AI 구간 검토에서 사람이 받아들인 설계 의도 초안(review = node_review 묶음)을 쓴다."""
     members = set(node["members"])
     for path in data.list_regions():
         try:
@@ -72,7 +73,8 @@ def design_intent(node):
         if members and members <= scope and intent.get("text"):
             return intent["text"], "상위 구간 %s · 지식 상태 %s" % (
                 region.get("name") or os.path.basename(path), intent.get("knowledge_status") or "-")
-    return None
+    drafted = node_review.accepted_intent(review, node) if review else None
+    return (drafted, "AI 초안 · ④ AI 구간 검토에서 사람이 받아들임") if drafted else None
 
 
 def risk_text(risk):
@@ -671,6 +673,7 @@ class ResultsScreen(QWidget):
         self.view = {}         # {node_id: 표기·경계를 붙인 구간(ctx.view)} 화면 표시용
         self.results = None
         self.kg, self.kg_reason = None, None
+        self.node_review = None
         self.expectations = None  # 잠재 후보(expect.evaluate). AI 맥락·관련 잠재 후보 보기용, 근거 아님
         self.ref_idx = {}         # {안정 참조: 프로젝트 그래프 노드}
         self.deviations = res.load_deviations()
@@ -1059,6 +1062,7 @@ class ResultsScreen(QWidget):
         self.name, self.graph, self.node_set, self.results, self.cell = name or None, None, None, None, None
         self.ctx, self.view = None, {}
         self.kg, self.kg_reason, self._old_saved = None, None, None
+        self.node_review = None
         self.expectations, self.ref_idx = None, {}
         self.fixed_view, self.last_run = False, None
         self.test_band.hide()
@@ -1089,6 +1093,10 @@ class ResultsScreen(QWidget):
             self.node_set = saved
             self.view = {n["node_id"]: n for n in self.ctx.view(saved)["nodes"]}
             self.kg, self.kg_reason = ai_cells.load_kg_for(saved)
+            try:
+                self.node_review = node_review.load(saved.get("project_id"), saved["graph_id"])
+            except (OSError, ValueError):
+                self.node_review = None  # 제안 파일을 못 읽으면 AI 설계 의도 초안만 빠진다(④에서 알림)
             self.kg_chip.set_state("지식그래프 없음: %s · 도면만으로 분석" % self.kg_reason, "warn")
             self.kg_chip.setVisible(self.kg is None)
             self.ref_idx = refs.index(self.graph)
@@ -1249,7 +1257,7 @@ class ResultsScreen(QWidget):
                 path += ".xlsx"
         intents = {}
         for nid, n in self.view.items():
-            found = design_intent(n)
+            found = design_intent(n, self.node_review)
             if found:
                 intents[nid] = found[0]
         try:
@@ -1354,6 +1362,9 @@ class ResultsScreen(QWidget):
         """method를 주면 이번 실행만 그 방식으로 돌린다('API 키로 이어서', D4). 없으면 지금 방식."""
         if self.machine.busy or self.node_set is None:
             return False
+        if self.app.screens[5].review_busy():  # ④ AI 구간 검토와 겹치면 사용량 확인·멈춤·설정 잠금이 어긋난다
+            self.app.status_message("④ AI 구간 검토가 끝난 뒤에 실행하세요.")
+            return False
         conn = self.app.ai_conn
         override = method is not None and method != conn.method
         method = method or conn.method
@@ -1430,7 +1441,7 @@ class ResultsScreen(QWidget):
         for u in units:
             if u["node_id"] not in ctxs:
                 node = by_id[u["node_id"]]
-                ctxs[u["node_id"]] = ai_cells.node_context(node, self.graph, self.kg, design_intent(node),
+                ctxs[u["node_id"]] = ai_cells.node_context(node, self.graph, self.kg, design_intent(node, self.node_review),
                                                            expectations=self.expectations)
         return ctxs
 
@@ -2095,7 +2106,7 @@ class ResultsScreen(QWidget):
         else:
             self.run_note.setText("AI 메모: %s" % run["note"] if run.get("note") else "")
         self.run_note.setVisible(bool(self.run_note.text()))
-        intent = design_intent(node)
+        intent = design_intent(node, self.node_review)
         self.intent.setText("설계 의도: %s" % intent[0] if intent else "설계의도 미입력")
         self.intent_src.setText("출처: %s" % intent[1] if intent else "")
         self.intent_src.setVisible(bool(intent))
