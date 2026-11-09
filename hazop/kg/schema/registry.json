@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.6.0",
+  "registry_version": "0.7.0",
   "layers": [
     {"id": "pid", "label_ko": "P&ID 층", "screen": "pid", "filter": "type", "default_on": true},
     {"id": "knowledge", "label_ko": "지식 층", "screen": "kn", "filter": "type", "default_on": true},
@@ -129,7 +129,19 @@
     {"id": "safeguard", "parent": "study_item", "label_ko": "보호수단", "label_en": "Safeguard",
      "legend": {"shape": "diamond", "token": "kg-pipe_segment"}},
     {"id": "recommendation", "parent": "study_item", "label_ko": "권고", "label_en": "Recommendation",
-     "legend": {"shape": "diamond", "token": "kg-unclassified"}}
+     "legend": {"shape": "diamond", "token": "kg-unclassified"}},
+    {"id": "ie_candidate", "parent": "study_item", "label_ko": "초기사건 후보", "label_en": "IE candidate",
+     "legend": {"shape": "tri", "token": "kg-flag-ink"}},
+    {"id": "ie_group", "parent": "study_item", "label_ko": "초기사건 그룹", "label_en": "IE group",
+     "legend": {"shape": "hex", "token": "kg-edge-hi"}},
+    {"id": "top_event", "parent": "study_item", "label_ko": "사건수목 표제 후보", "label_en": "Top event candidate",
+     "legend": {"shape": "square", "token": "kg-pipe_segment"}},
+    {"id": "end_state", "parent": "study_item", "label_ko": "최종상태 후보", "label_en": "End state candidate",
+     "legend": {"shape": "capsule", "token": "kg-flag"}},
+    {"id": "basic_event", "parent": "study_item", "label_ko": "기본사건 후보", "label_en": "Basic event candidate",
+     "legend": {"shape": "circle", "token": "kg-valve"}},
+    {"id": "reference_ie", "parent": "study_item", "label_ko": "일반 초기사건 범주", "label_en": "Reference IE category",
+     "legend": {"shape": "page", "token": "kg-requirement"}}
   ],
   "properties": [
     {"id": "kind", "type": "text", "label_ko": "종류"},
@@ -255,6 +267,20 @@
      "a2_role": null, "label_ko": "권고 대상 시나리오"},
     {"id": "raised_from", "layer": "study", "from": ["scenario", "recommendation"], "to": ["expectation"],
      "group": "study", "v4": false, "a2_role": null, "label_ko": "관련 잠재 후보"},
+    {"id": "derived_from", "layer": "study", "from": ["ie_candidate"], "to": ["scenario"], "group": "study", "v4": false,
+     "a2_role": null, "label_ko": "출처 시나리오"},
+    {"id": "member_of", "layer": "study", "from": ["ie_candidate"], "to": ["ie_group"], "group": "study", "v4": false,
+     "a2_role": null, "label_ko": "소속 그룹"},
+    {"id": "corresponds_to", "layer": "study", "from": ["ie_group"], "to": ["reference_ie"], "group": "study",
+     "v4": false, "a2_role": null, "label_ko": "일반 범주"},
+    {"id": "pivotal", "layer": "study", "from": ["ie_group"], "to": ["top_event"], "group": "study", "v4": false,
+     "a2_role": null, "label_ko": "사건수목 표제 후보"},
+    {"id": "leads_to", "layer": "study", "from": ["ie_group"], "to": ["end_state"], "group": "study", "v4": false,
+     "a2_role": null, "label_ko": "최종상태 후보"},
+    {"id": "heading_from", "layer": "study", "from": ["top_event"], "to": ["scenario"], "group": "study", "v4": false,
+     "a2_role": null, "label_ko": "출처 보호수단의 시나리오"},
+    {"id": "basic_event_at", "layer": "study", "from": ["basic_event"], "to": ["plant_item"], "group": "study",
+     "v4": false, "a2_role": null, "label_ko": "기본사건 기기"},
     {"id": "cites", "layer": "study", "from": ["study_item"], "to": ["knowledge_item", "plant_item"], "group": "study",
      "v4": false, "a2_role": null, "label_ko": "근거"}
   ]

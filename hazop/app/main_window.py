@@ -1,7 +1,7 @@
 """주 창 (기획서/인터페이스.md §2.1, 디자인/시안/완성본 B안 + A안 단계 표시). 웹뷰는 하나를 공유한다.
 
-틀: 어두운 제목줄(로고·메뉴·현재 위치·검토자) / 왼쪽 단계 레일(①~⑤, 완료 ✓·현재·남음) / 탐색기 트리 / 화면 / 상태줄.
-화면 번호(self.screens·go()의 index)는 추가 순서를 유지한다: 0 ①, 1 ②, 2 이전 ④, 3 이전 ⑤, 4 ③, 5 ④, 6 ⑤.
+틀: 어두운 제목줄(로고·메뉴·현재 위치·검토자) / 왼쪽 단계 레일(①~⑥, 완료 ✓·현재·남음) / 탐색기 트리 / 화면 / 상태줄.
+화면 번호(self.screens·go()의 index)는 추가 순서를 유지한다: 0 ①, 1 ②, 2 이전 ④, 3 이전 ⑤, 4 ③, 5 ④, 6 ⑤, 7 ⑥.
 레일 단계는 STAGES, 보기 메뉴는 STEP_ORDER 순서로 보인다."""
 
 import os
@@ -17,6 +17,7 @@ from hazop import paths
 from hazop.app import data, explorer, palette, project_ctx, related, tokens
 from hazop.app.related_panel import RelatedPanel
 from hazop.app.screens.analysis import AnalysisScreen
+from hazop.app.screens.initiating import InitiatingScreen
 from hazop.app.screens.knowledge import KnowledgeScreen
 from hazop.app.screens.register import RegisterScreen
 from hazop.app.screens.results import ResultsScreen
@@ -31,16 +32,19 @@ from hazop.study.apikey import STORE_FILE_NAME, KeyStore
 APP_NAME = "HAZOP 분석 도구"
 APP_VERSION = "0.1.0"
 STEPS = ("① 자료 등록", "② 도면 추출", "고정 응답 분석(이전 ④)", "설계보완·확정(이전 ⑤)", "③ 지식그래프", "④ 검토구간",
-         "⑤ 분석 결과")  # 화면 index 순
-STEP_ORDER = (0, 1, 4, 5, 6, 2, 3)  # 보기 메뉴 순서
+         "⑤ 분석 결과", "⑥ 초기사건")  # 화면 index 순
+STEP_ORDER = (0, 1, 4, 5, 6, 7, 2, 3)  # 보기 메뉴 순서
 # 레일 단계: (번호, 짧은 이름, 화면 index들). 첫 화면이 레일 클릭 대상이고 그 화면의 is_done()이 완료(✓)를 정한다.
-STAGES = (("1", "등록", (0,)), ("2", "추출", (1,)), ("3", "그래프", (4,)), ("4", "구간", (5,)), ("5", "결과", (6, 2, 3)))
+STAGES = (("1", "등록", (0,)), ("2", "추출", (1,)), ("3", "그래프", (4,)), ("4", "구간", (5,)), ("5", "결과", (6, 2, 3)),
+          ("6", "초기사건", (7,)))
+STAGE_GLYPHS = "①②③④⑤⑥"
+assert len(explorer.STAGE_MODULES) == len(STAGES) == len(STAGE_GLYPHS)  # 단계마다 탐색기 모듈·원 번호가 하나씩
 RAIL_W = 52
 EXPLORER_MIN, EXPLORER_MAX, EXPLORER_VW = 200, 260, 0.14  # 탐색기 clamp(200px, 14vw, 260px), 끌어서 조절
 RELATED_MIN, RELATED_MAX, RELATED_VW = 264, 340, 0.20     # 관련 항목 clamp(264px, 20vw, 340px)
 RELATED_DEFAULT = (6,)  # 관련 항목을 처음부터 펴 두는 화면(⑤). ④·③은 자기 오른쪽 패널을 쓴다
 # 단축키 표(? 또는 F1). (키, 설명). 화면별 키는 각 화면의 commands()가 더한다
-GLOBAL_KEYS = (("Ctrl+P", "명령 팔레트(구간 #, 구성요소 @, 명령 >)"), ("Ctrl+1 ~ Ctrl+5", "단계 ①~⑤로 이동"),
+GLOBAL_KEYS = (("Ctrl+P", "명령 팔레트(구간 #, 구성요소 @, 명령 >)"), ("Ctrl+1 ~ Ctrl+6", "단계 ①~⑥으로 이동"),
                ("Alt+← / Alt+→", "뒤로 / 앞으로"), ("Ctrl+Z", "방금 한 동작 실행 취소(토스트가 있을 때)"),
                ("Ctrl+Shift+E", "탐색기 필터"), ("Ctrl+Alt+B", "관련 항목 패널 접기/펴기"),
                ("Ctrl+T / Ctrl+W", "새 탭 / 탭 닫기"), ("Ctrl+Tab", "다음 탭"), ("Ctrl+\\", "오른쪽 분할 켜기/끄기"),
@@ -187,7 +191,7 @@ class MainWindow(QMainWindow):
         self.history, self.history_pos = [], -1  # 뒤로·앞으로(Alt+←/→)
         self.recent = []          # 명령 팔레트 최근 항목 ident
         self.screens = [RegisterScreen(self), ViewerScreen(self), AnalysisScreen(self), ReviewScreen(self),
-                        KnowledgeScreen(self), StudyNodesScreen(self), ResultsScreen(self)]
+                        KnowledgeScreen(self), StudyNodesScreen(self), ResultsScreen(self), InitiatingScreen(self)]
         for s in self.screens:
             self.stack.addWidget(s)
             s.setFocusPolicy(Qt.ClickFocus)  # 주 작업 영역이 없을 때 화면 자체가 초점을 받아 화면 단축키가 듣게
@@ -366,8 +370,8 @@ class MainWindow(QMainWindow):
             self.explorer_filter.clear()  # 다른 단계 목록을 앞 단계 검색어로 거르지 않는다
         self._explorer_stage = stage
         _num, short, idxs = STAGES[stage]
-        self.explorer_title.setText("%s %s" % ("①②③④⑤"[stage], short))
-        self.explorer_title.setToolTip("%s 단계의 목록입니다. 다른 단계 항목은 레일(Ctrl+1~5)이나 명령 팔레트(Ctrl+P)로 찾습니다."
+        self.explorer_title.setText("%s %s" % (STAGE_GLYPHS[stage], short))
+        self.explorer_title.setToolTip("%s 단계의 목록입니다. 다른 단계 항목은 레일(Ctrl+1~6)이나 명령 팔레트(Ctrl+P)로 찾습니다."
                                        % STEPS[idxs[0]])
         if stage not in explorer.DRAWING_FILTER_STAGES:
             self.explorer_drawing.hide()

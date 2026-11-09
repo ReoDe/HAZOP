@@ -11,6 +11,7 @@ from hazop.app.screens.register import STATUS_LABELS, material_type_of
 from hazop.app.screens.study import seg_icon
 from hazop.extract import corrections
 from hazop.graph import project
+from hazop.ie import model as ie_model
 from hazop.study import results as res
 from hazop.study import span
 
@@ -37,6 +38,9 @@ COMMANDS = {
     "go_results": go_then(6),
     "run_ai": go_then(6, "request_ai", "all"),
     "export_excel": go_then(6, "export_excel"),
+    "go_initiating": go_then(7),
+    "export_ie": go_then(7, "export_bundle"),
+    "suggest_ie": go_then(7, "suggest"),
 }
 
 
@@ -250,5 +254,35 @@ def results_module(win):
     return groups
 
 
-STAGE_MODULES = (register_module, extract_module, graph_module, study_module, results_module)  # 레일 단계 ①~⑤
+# ---------------------------------------------------------------- ⑥ 초기사건
+def initiating_module(win):
+    """초기사건 그룹(상태), 판정 대기(보류·AI 초안 판정·미배정), 완전성 공백, 내보내기. ⑥ 화면이 그린 묶음 dict를 읽는다."""
+    scr = win.screens[7]
+    v = scr.view
+    if v is None:
+        return [Group("초기사건 그룹", [], ("⑥ 화면을 열면 ⑤에서 승인한 원인이 후보로 들어옵니다",
+                                        ("⑥ 초기사건 열기", cmd("go_initiating"), "⑥ 초기사건 화면으로 갑니다")))]
+    groups = [("%s %s" % (g["group_id"], g["name"]), (7, ("group", g["group_id"])),
+               ie_model.GROUP_STATUSES[g["status"]], None,
+               "%s %s\n상태: %s · 후보 %d%s" % (g["group_id"], g["name"], ie_model.GROUP_STATUSES[g["status"]],
+                                            g["member_count"], "".join("\n· " + p for p in g["problems"][:4])))
+              for g in v["groups"]]
+    loose = sum(c["group_id"] is None and c["judgement"] == "yes" for c in v["candidates"])
+    held = sum(c["judgement"] == "undecided" for c in v["candidates"])
+    ai = sum(c["ie_origin"] != "human" for c in v["candidates"])
+    suggest = ("규칙 초안 만들기", cmd("suggest_ie"), "같은 범주·같은 보호수단 후보를 초안 그룹으로 묶습니다(§6.3)")
+    gaps = [r for r in v["completeness"] if r["status"] == "gap" and r["code"] not in scr.doc["coverage"]]
+    return [Group("초기사건 그룹", groups, ("아직 그룹이 없습니다", suggest), suggest if groups else None,
+                  info=[("미배정 후보 %d" % loose, "판정이 '후보'인데 그룹에 들지 않은 후보")]),
+            Group("판정 대기", [("보류 %d · 사람 판정 필요" % held, (7, ("tab", 0)), "", None, "⑤에서 판정을 정합니다"),
+                                ("AI 초안 판정 %d" % ai, (7, ("tab", 0)), "", None, "⑤에서 사람이 판정해야 그룹을 확정할 수 있음")],
+                  ("", None)),
+            Group("완전성 대조", [("처리를 정하지 않은 공백 범주 %d" % len(gaps), (7, ("tab", 5)), "", None,
+                                   "공백 행마다 범위 밖 · 다른 기법 · 해당 없음 중 하나와 사유를 적습니다")], ("", None)),
+            Group("내보내기", [("IE 인계 묶음(Excel·JSON)…", cmd("export_ie"), "", None,
+                                "승인 항목만으로 IE 인계 묶음을 저장합니다")], ("", None))]
+
+
+STAGE_MODULES = (register_module, extract_module, graph_module, study_module, results_module,
+                 initiating_module)  # 레일 단계 ①~⑥
 DRAWING_FILTER_STAGES = (3, 4)  # 도면 필터는 구간 목록이 있는 ④·⑤ 모듈에만

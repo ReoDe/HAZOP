@@ -26,8 +26,6 @@ from hazop.app.screens.study import seg_icon
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text, plain_label
 from hazop.export import study_xlsx
 from hazop.graph import project
-from hazop.ie import bundle as ie_bundle
-from hazop.ie import bundle_xlsx as ie_xlsx
 from hazop.study import ai_cells, nodes, refs, span
 from hazop.study import results as res
 from hazop.study import claude_http
@@ -664,7 +662,8 @@ class ResultsScreen(QWidget):
         self.excel_action = menu.addAction("Excel로 내보내기…", lambda: self.export_excel())
         self.excel_action.setToolTip("구간 × 편차 결과를 HAZOP 워크시트 Excel(.xlsx)로 저장")
         self.ie_export_action = menu.addAction("IE 인계 묶음 내보내기…", lambda: self.export_ie_bundle())
-        self.ie_export_action.setToolTip("승인한 항목만으로 초기사건 인계 묶음을 저장. HAZOP 위험도는 넣지 않음")
+        self.ie_export_action.setToolTip("⑥ 초기사건 화면으로 가서 승인 항목만으로 초기사건 인계 묶음을 저장. "
+                                         "HAZOP 위험도는 넣지 않음")
         menu.setToolTipsVisible(True)
         self.export_btn.setMenu(menu)
         for w in (self.export_btn, self.retry_btn, self.run_node_btn, self.cancel_btn, self.run_all_btn):
@@ -1051,45 +1050,8 @@ class ResultsScreen(QWidget):
         return path
 
     def export_ie_bundle(self, path=None):
-        """승인 항목만으로 IE 인계 묶음을 만든다: 저장 대화상자(.xlsx) → .xlsx와 같은 이름의 .json → 토스트 [열기]·[폴더 열기].
-        범위는 늘 승인만이라 범위 대화상자가 없다. 승인 항목이 없으면 파일을 쓰지 않는다. path를 주면 대화상자 없이(검사용).
-        저장한 .xlsx 경로 또는 None."""
-        if self.node_set is None or self.results is None:
-            self.app.status_message("내보낼 분석 결과가 없습니다. ④에서 검토구간을 확정하세요.")
-            return None
-        now = nodes.now_utc()
-        b = ie_bundle.build_bundle(self.results, self.node_set, self.graph, now)
-        if not b["candidates"]:
-            self.app.status_message("승인한 항목이 없어 IE 인계 묶음을 만들지 않았습니다. 항목을 승인한 뒤 다시 내보내세요.")
-            return None
-        if path is None:
-            folder = getattr(self, "_export_dir", None) or QStandardPaths.writableLocation(
-                QStandardPaths.DocumentsLocation)
-            name = ie_xlsx.default_stem(self.node_set.get("project_id"), now) + ".xlsx"
-            path, _ = QFileDialog.getSaveFileName(self, "IE 인계 묶음 내보내기", os.path.join(folder, name),
-                                                  "Excel 통합 문서 (*.xlsx)")
-            if not path:
-                return None
-            if not path.lower().endswith(".xlsx"):
-                path += ".xlsx"
-            json_path = os.path.splitext(path)[0] + ".json"
-            if os.path.exists(json_path) and QMessageBox.question(
-                    self, "IE 인계 묶음 내보내기", "같은 이름의 JSON 파일이 이미 있습니다. 덮어쓸까요?\n%s" % json_path
-            ) != QMessageBox.Yes:
-                return None
-        try:
-            path, json_path = ie_xlsx.export(path, b)
-        except (OSError, ValueError) as exc:
-            self.app.log_error("IE 인계 묶음 내보내기 실패", exc)
-            QMessageBox.warning(self, "IE 인계 묶음 내보내기", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요).\n%s"
-                                % exc)
-            return None
-        self._export_dir = os.path.dirname(path)
-        self.app.toast("IE 인계 묶음 내보냄: %s · 후보 %d건 · JSON 원본 %s" % (
-            os.path.basename(path), len(b["candidates"]), os.path.basename(json_path)), ms=10000, actions=(
-            ("열기", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(path))),
-            ("폴더 열기", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path))))))
-        return path
+        """IE 인계 묶음은 ⑥ 초기사건 화면이 내보낸다(IEC 대응표를 쓰는 곳이 ⑥ 하나). ⑥으로 가서 내보내기를 연다."""
+        return self.app.screens[7].export_bundle(path) if self.app.go(7) else None
 
     # ------------------------------------------------------------ AI 실행
     def running(self):

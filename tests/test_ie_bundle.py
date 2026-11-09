@@ -17,15 +17,26 @@ import openpyxl  # noqa: E402
 
 from hazop.ie import bundle as ib  # noqa: E402
 from hazop.ie import bundle_xlsx as ix  # noqa: E402
+from hazop.ie import model  # noqa: E402
 from hazop.study import results as res  # noqa: E402
 from tests.test_study_export import KEY, NOW, _entry, sample  # noqa: E402
 
-# §3.4 예시 Excel(make_ie_example.py)의 머리글 그대로
+# §3.4 예시 Excel(make_ie_example.py)의 시트 순서·머리글 그대로. 예시 파일이 있으면 그것과도 맞춰 본다(IeExampleTest)
+EXAMPLE_XLSX = os.environ.get("HAZOP_IE_EXAMPLE_XLSX", r"C:\Users\kim92\AppData\Local\Temp\claude\651b8b1fdf982330"
+                              r"\414338d8-0829-4c60-8f87-e0356dc53783\scratchpad\IE인계묶음-예시.xlsx")  # 설계 §3.4
 EXPECTED = {
     "읽는 법": ["항목", "내용"],
     "IE 후보": ["후보 ID", "판정", "정상운전 교란", "안전기능 도전", "도전받는 안전기능", "원인", "원인 유형", "원인 위치",
               "고장모드", "구간", "편차", "비완화 결과", "일반 범주 제안", "그룹 ID", "제외·보류 사유", "식별 기법",
               "출처 항목 ID", "안정 참조", "작성", "⑤ 상태"],
+    "IE 그룹": ["그룹 ID", "그룹 이름", "정의", "일반 범주", "범주 출처", "대표 후보", "대표 선정 이유", "소속 후보", "후보 수",
+              "플랜트 응답", "영향받는 완화계통", "지원계통 IE", "표제 후보", "최종상태 후보", "작성", "상태", "PRA IE 이름",
+              "성공기준", "빈도 근거"],
+    "사건수목 표제 후보": ["표제 ID", "표제 이름(제안)", "출처 보호수단", "구현 대상", "관련 계통", "역할", "작동 방식",
+                    "운전원 조치 단서", "적용 그룹", "출처 항목 ID", "작성", "PRA 표제 이름"],
+    "최종상태 후보": ["ES ID", "비완화 결과(대표 문장)", "결과 범주 제안", "관련 그룹", "출처 항목 수", "작성", "PRA 최종상태"],
+    "기본사건 후보": ["BE ID", "앱 제안 이름", "기기 태그", "기기 종류", "계통", "고장모드 코드", "고장모드 설명", "정상 위치",
+                "고장 위치", "관련 표제·후보", "출처", "작성", "PRA 기본사건 이름"],
     "추적표": ["구간·편차", "출처 항목 ID", "원인", "후보 ID", "판정", "그룹 ID", "표제 ID", "ES ID", "근거 KG 경로",
             "출처 문서"],
     "완전성 대조": ["범주 코드", "범주 이름", "기준표 출처", "대응 그룹", "후보 수", "상태", "사유·처리"],
@@ -66,6 +77,15 @@ def ie_sample():
     return r, ns, pg
 
 
+def synced(r):
+    """⑥ 저장 파일이 없을 때의 문서: 빈 문서를 ⑤ 결과와 맞춘 것."""
+    return model.sync(model.empty("P"), r, at=NOW)
+
+
+def build(r, ns, pg, now=NOW, doc=None):
+    return ib.build_bundle(r, ns, pg, doc if doc is not None else synced(r), now)
+
+
 def all_strings(x):
     if isinstance(x, str):
         yield x
@@ -101,7 +121,7 @@ class IeBundleTest(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="hazop-ie-")
         self.r, self.ns, self.pg = ie_sample()
         self.entries = entries_by_status(self.r)
-        self.b = ib.build_bundle(self.r, self.ns, self.pg, NOW)
+        self.b = build(self.r, self.ns, self.pg)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -158,9 +178,9 @@ class IeBundleTest(unittest.TestCase):
             self.assertFalse(any(text in s for s in cells + list(all_strings(self.b))), text)
 
     def test_same_input_same_json_and_ids_new_time_changes_only_created_at(self):
-        again = ib.build_bundle(copy.deepcopy(self.r), copy.deepcopy(self.ns), self.pg, NOW)
+        again = build(copy.deepcopy(self.r), copy.deepcopy(self.ns), self.pg)
         self.assertEqual(ib.dumps(again), ib.dumps(self.b))
-        later = ib.build_bundle(self.r, self.ns, self.pg, LATER)
+        later = build(self.r, self.ns, self.pg, LATER)
         self.assertEqual(later["created_at"], LATER)
         self.assertEqual(dict(later, created_at=NOW), self.b)
         self.assertEqual([c["candidate_id"] for c in self.b["candidates"]],
@@ -238,7 +258,7 @@ class IeBundleTest(unittest.TestCase):
                     e["ie_hint"] = dict(e["ie_hint"], origin="ai_draft", status="draft")
                 if e["entry_id"] == "c4":
                     e["ie_hint"] = dict(e["ie_hint"], category="OLDCODE")
-        b = ib.build_bundle(r, self.ns, self.pg, NOW)
+        b = build(r, self.ns, self.pg)
         ids = {c["entry_id"]: c["candidate_id"] for c in b["candidates"]}
         by = {x["code"]: x for x in b["completeness"]}
         self.assertEqual((by["LOMFW"]["status"], by["LOMFW"]["note"]), ("covered", "AI 초안 판정만 있음: " + ids["c1"]))
@@ -249,7 +269,7 @@ class IeBundleTest(unittest.TestCase):
     def test_source_ref_keeps_only_version_fields(self):
         r = copy.deepcopy(self.r)
         r["study_nodes_ref"] = dict(r["study_nodes_ref"], recommendation="권고 누출", extra={PATH: KEY})
-        b = ib.build_bundle(r, self.ns, self.pg, NOW)
+        b = build(r, self.ns, self.pg)
         self.assertEqual(set(b["source"]["study_nodes_ref"]), {"graph_version", "confirmed_at"})
 
     def test_same_bundle_same_workbook_metadata(self):
@@ -272,8 +292,9 @@ class IeBundleTest(unittest.TestCase):
         self.assertEqual(guide["만든 시각"], "2026-11-08 12:00 KST")
         self.assertIn("'승인' 항목 %d건" % self.b["source"]["approved_entries"], guide["입력"])
         self.assertIn("%d건" % self.b["source"]["left_out_unapproved"], guide["넣지 않은 항목"])
-        self.assertEqual(guide["시트"], " / ".join(EXPECTED))
-        self.assertIn("⑥ 화면", guide["다음 단계"])
+        self.assertEqual(guide["시트"], " / ".join(list(EXPECTED)[1:]))
+        self.assertNotIn("다음 단계", guide)
+        self.assertIn("같은 원인은 같은 ID", guide["ID 규칙"])
 
 
 class IeBundleCliTest(unittest.TestCase):
@@ -302,7 +323,7 @@ class IeBundleCliTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(sorted(os.listdir(out)), ["IE-P-20261108-1200.json", "IE-P-20261108-1200.xlsx"])
         with open(os.path.join(out, "IE-P-20261108-1200.json"), encoding="utf-8") as fh:
-            self.assertEqual(fh.read(), ib.dumps(ib.build_bundle(self.r, self.ns, self.pg, NOW)))
+            self.assertEqual(fh.read(), ib.dumps(build(self.r, self.ns, self.pg)))
 
     def test_mismatched_node_set_is_refused(self):
         r = dict(copy.deepcopy(self.r), graph_id="graph-OTHER")
@@ -327,75 +348,178 @@ class IeBundleCliTest(unittest.TestCase):
         self.assertFalse(os.path.exists(out))
 
 
-class IeBundleScreenTest(unittest.TestCase):
-    """⑤ 화면의 IE 인계 묶음 내보내기(버튼·명령 팔레트·토스트). 합성 프로젝트를 임시 작업 루트에 둔다."""
+class IeExampleTest(unittest.TestCase):
+    """§3.4 예시 Excel과 시트 순서(0~9)·머리글이 같은지. 예시 파일이 없으면 위에 적어 둔 EXPECTED로만 본다."""
 
-    @classmethod
-    def setUpClass(cls):
-        from PySide6.QtWidgets import QApplication
-        cls.qapp = QApplication.instance() or QApplication(["test"])
+    def test_expected_matches_example_file(self):
+        if not os.path.isfile(EXAMPLE_XLSX):
+            self.skipTest("예시 Excel 없음: %s" % EXAMPLE_XLSX)
+        wb = openpyxl.load_workbook(EXAMPLE_XLSX, read_only=True)
+        self.assertEqual(wb.sheetnames, list(EXPECTED))
+        for name in ("IE 그룹", "사건수목 표제 후보", "최종상태 후보", "기본사건 후보"):
+            self.assertEqual([c.value for c in next(wb[name].iter_rows(max_row=1))], EXPECTED[name], name)
+
+    def test_sheet_order_and_widths_follow_columns(self):
+        self.assertEqual(ix.SHEETS, tuple(EXPECTED))
+        for name, cols in (("IE 그룹", ix.GROUP_COLUMNS), ("사건수목 표제 후보", ix.HEADING_COLUMNS),
+                           ("최종상태 후보", ix.END_STATE_COLUMNS), ("기본사건 후보", ix.BASIC_EVENT_COLUMNS)):
+            self.assertEqual([t for t, _ in cols], EXPECTED[name], name)
+
+
+class IeBundleP3Test(unittest.TestCase):
+    """⑥ 문서에서 오는 시트 2~5와 그룹 정보(그룹 ID·표제·최종상태·완전성 대응 그룹·사람 판정)."""
 
     def setUp(self):
-        from tests.test_project_graph import cont, sheet
-        self.tmp = tempfile.mkdtemp(prefix="hazop-ie-ui-")
-        self._env = os.environ.get("HAZOP_WORK_ROOT")
-        os.environ["HAZOP_WORK_ROOT"] = self.tmp
-        for g in (sheet("SNP-M-101", cont("C1", "TO SNP-M-102\nL-1")),
-                  sheet("SNP-M-102", cont("C1", "FROM SNP-M-101\nL-1"))):
-            d = os.path.join(self.tmp, "출력", "그래프", g["source"]["drawing_number"])
-            os.makedirs(d)
-            with open(os.path.join(d, "graph.json"), "w", encoding="utf-8") as fh:
-                json.dump(g, fh)
+        self.tmp = tempfile.mkdtemp(prefix="hazop-ie-p3-")
+        self.r, self.ns, self.pg = ie_sample()
+        doc = model.suggest(synced(self.r), self.r, self.pg, at=NOW)
+        self.gid = next(g for g, v in doc["groups"].items() if v["categories"] == ["LOMFW"])
+        self.h = doc["groups"][self.gid]["heading_ids"][0]
+        doc = model.accept(doc, ("heading", self.h), at=NOW)
+        doc, self.loose = model.create_group(doc, "사람이 만든 빈 그룹", at=NOW)
+        doc = model.set_coverage(doc, "LOCHS", "not_applicable", "복수기 없음(가상)", "김검토", at=NOW)
+        doc = model.set_coverage(doc, "LOOP", "other_method", "전력계통은 FMEA로 확인", "김검토", at=NOW)
+        self.doc = doc
+        self.b = build(self.r, self.ns, self.pg, doc=doc)
 
     def tearDown(self):
-        if self._env is None:
-            os.environ.pop("HAZOP_WORK_ROOT", None)
-        else:
-            os.environ["HAZOP_WORK_ROOT"] = self._env
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def screen(self, status):
-        from hazop.app import project_ctx
-        from hazop.app.screens.results import ResultsScreen
-        from hazop.study import nodes as sn
-        from tests.test_results_project_ui import AT, StubApp
-        ctx = project_ctx.load("SNP-M-102")
-        sn.save(sn.confirm(ctx.load_set()[0], ctx.pg, "EJ", at=AT))
-        app = StubApp()
-        scr = ResultsScreen(app)
-        self.addCleanup(scr.deleteLater)
-        scr.combo.blockSignals(True)
-        scr.combo.addItems(["SNP-M-101", "SNP-M-102"])
-        scr.combo.setCurrentText("SNP-M-102")
-        scr.combo.blockSignals(False)
-        scr._load()
-        doc = json.loads(json.dumps(scr.results))
-        doc["cells"][0].update(state="analyzed", entries=[
-            {"entry_id": "E1", "cause": "SNP-M-101-E 누설", "consequence": "c", "safeguards": [], "recommendation": "r",
-             "severity": 4, "frequency": 3, "risk": 5, "origin": "ai_draft", "status": status}])
-        scr.set_results(doc)
-        return app, scr
+    def rows(self, sheet):
+        wb = openpyxl.load_workbook(ix.export(os.path.join(self.tmp, "ie.xlsx"), self.b)[0])
+        ws = wb[sheet]
+        head = [c.value for c in ws[1]]
+        return ws, [dict(zip(head, [c.value for c in row])) for row in ws.iter_rows(min_row=2)]
 
-    def test_button_palette_and_both_files(self):
-        app, scr = self.screen("approved")
-        self.assertTrue(scr.export_btn.isEnabled())
-        self.assertIn("IE 인계 묶음 내보내기…", [a.text() for a in scr.export_btn.menu().actions()])
-        self.assertIn("IE 인계 묶음 내보내기…", [c[0] for c in scr.commands()])
-        out = os.path.join(self.tmp, "export", "ie.xlsx")
-        os.makedirs(os.path.dirname(out))
-        self.assertEqual(scr.export_ie_bundle(path=out), out)
-        self.assertEqual(sorted(os.listdir(os.path.dirname(out))), ["ie.json", "ie.xlsx"])
-        self.assertIn("후보 1건", app.toasts[-1])
-        self.assertEqual(app.toast_actions, ["열기", "폴더 열기"])
-        with open(os.path.join(self.tmp, "export", "ie.json"), encoding="utf-8") as fh:
-            self.assertEqual([c["entry_id"] for c in json.load(fh)["candidates"]], ["E1"])
+    def test_group_sheet(self):
+        ws, rows = self.rows("IE 그룹")
+        by = {x["그룹 ID"]: x for x in rows}
+        g = by[self.gid]
+        c1 = next(c["candidate_id"] for c in self.b["candidates"] if c["entry_id"] == "c1")
+        self.assertEqual((g["일반 범주"], g["범주 출처"], g["대표 후보"], g["소속 후보"], g["후보 수"]),
+                         ("LOMFW", "INL 2015 IE 범주", c1, c1, 1))
+        self.assertEqual((g["표제 후보"], g["작성"], g["상태"]), (self.h, "AI 초안", "초안"))
+        self.assertEqual((by[self.loose]["작성"], by[self.loose]["후보 수"]), ("사람", 0))
+        fills = [ws.cell(row=1, column=c).fill.fgColor.rgb[-6:] for c in range(1, ws.max_column + 1)]
+        self.assertEqual(fills, ["E2EDFB"] * 16 + ["FDF0D2"] * 3)
+        self.assertEqual([ws.cell(row=r, column=17).value for r in range(2, ws.max_row + 1)], [None] * len(rows))
 
-    def test_no_approved_entry_writes_nothing(self):
-        app, scr = self.screen("proposed")
-        out = os.path.join(self.tmp, "export", "ie.xlsx")
-        self.assertIsNone(scr.export_ie_bundle(path=out))
-        self.assertIn("승인한 항목이 없어", app.messages[-1])
-        self.assertFalse(os.path.exists(os.path.dirname(out)))
+    def test_candidate_and_trace_carry_group(self):
+        c1 = next(c for c in self.b["candidates"] if c["entry_id"] == "c1")
+        t1 = next(t for t in self.b["trace"] if t["entry_id"] == "c1")
+        self.assertEqual((c1["group_id"], t1["group_id"], t1["top_event_ids"]), (self.gid, self.gid, [self.h]))
+        self.assertEqual(t1["end_state_ids"], self.doc["groups"][self.gid]["end_state_ids"])
+
+    def test_heading_end_state_and_basic_event_sheets(self):
+        _, hs = self.rows("사건수목 표제 후보")
+        self.assertEqual([(x["표제 ID"], x["표제 이름(제안)"], x["작동 방식"], x["적용 그룹"], x["출처 항목 ID"], x["작성"])
+                          for x in hs], [(self.h, "PSV", "자체작동", self.gid, "c1", "사람")])
+        _, es = self.rows("최종상태 후보")
+        self.assertEqual([(x["비완화 결과(대표 문장)"], x["결과 범주 제안"], x["관련 그룹"], x["출처 항목 수"], x["작성"])
+                          for x in es], [("급수가 끊겨 열제거 상실", "미분류", self.gid, 1, "AI 초안")])
+        _, be = self.rows("기본사건 후보")
+        ftr = next(x for x in be if x["고장모드 코드"] == "FTR")
+        self.assertEqual((ftr["기기 태그"], ftr["출처"], ftr["작성"]), ("SNP-M-101-E", "HAZOP 원인", "AI 초안"))
+        self.assertIn(next(c["candidate_id"] for c in self.b["candidates"] if c["entry_id"] == "c1"), ftr["관련 표제·후보"])
+
+    def test_completeness_uses_groups_and_human_dispositions(self):
+        by = {x["code"]: x for x in self.b["completeness"]}
+        self.assertEqual(by["LOMFW"]["group_id"], self.gid)
+        self.assertEqual((by["LOCHS"]["status"], by["LOCHS"]["note"]), ("not_applicable", "해당 없음(설계 특성): 복수기 없음(가상)"))
+        self.assertEqual((by["LOOP"]["status"], by["LOOP"]["note"]), ("gap", "다른 기법으로 확인 예정: 전력계통은 FMEA로 확인"))
+        _, rows = self.rows("완전성 대조")
+        self.assertEqual(next(x for x in rows if x["범주 코드"] == "LOCHS")["상태"], "해당 없음")
+
+    def test_group_status_is_effective_not_stored(self):
+        doc = model.accept(self.doc, ("member", self.b["groups"][0]["members"][0]), at=NOW)
+        for e in doc["groups"][self.gid]["end_state_ids"]:
+            doc = model.accept(doc, ("end_state", e), at=NOW)
+        doc = model.accept(doc, ("group", self.gid), at=NOW)
+        doc = model.confirm(doc, self.gid, self.r, "김검토", at=NOW)
+        self.assertEqual(next(g for g in build(self.r, self.ns, self.pg, doc=doc)["groups"]
+                              if g["group_id"] == self.gid)["status"], "confirmed")
+        r = res.edit_entry(self.r, *next((c["node_id"], c["deviation_id"], "c1") for c in self.b["candidates"]
+                                         if c["entry_id"] == "c1"), {"cause": "바뀐 원인"}, at=NOW)
+        r = res.set_status(r, *next((c["node_id"], c["deviation_id"], "c1") for c in self.b["candidates"]
+                                    if c["entry_id"] == "c1"), "approved", at=NOW)
+        g = next(g for g in build(r, self.ns, self.pg, doc=doc)["groups"] if g["group_id"] == self.gid)
+        self.assertEqual(g["status"], "draft", "저장 상태는 확정이어도 ⑤ 내용이 바뀌면 묶음에는 초안으로 나간다")
+
+    def where(self, r, entry_id):
+        f = model.entry_facts(r)[model.key_of(r["graph_id"], entry_id)]
+        return f["node_id"], f["deviation_id"], entry_id
+
+    def test_unapproved_member_is_held_out_of_members_and_noted(self):
+        iec = {model.entry_of_key(c["key"]): i for i, c in self.doc["candidates"].items()}
+        doc, gid = model.create_group(self.doc, "사람 그룹", [iec["c4"], iec["b1c"]], at=NOW)
+        r = res.set_status(self.r, *self.where(self.r, "b1c"), "revised", at=NOW)
+        self.b = build(r, self.ns, self.pg, doc=model.sync(doc, r, at=NOW))
+        g = next(x for x in self.b["groups"] if x["group_id"] == gid)
+        self.assertEqual((g["members"], g["held_members"], g["member_count"]), ([iec["c4"]], [iec["b1c"]], 1))
+        ws, rows = self.rows("IE 그룹")
+        row = next(x for x in rows if x["그룹 ID"] == gid)
+        self.assertEqual((row["소속 후보"], row["후보 수"]), (iec["c4"], 1))
+        self.assertEqual(row["정의"], "승인 해제로 빠진 후보: " + iec["b1c"])
+        self.assertEqual(ws.max_column, len(ix.GROUP_COLUMNS), "예시 Excel 열을 늘리지 않음")
+
+    def test_records_without_an_approved_source_are_left_out(self):
+        doc, hid = model.add_heading(self.doc, self.gid, {"name": "운전원 수동 급수"}, at=NOW)
+        r = res.set_status(self.r, *self.where(self.r, "c1"), "revised", at=NOW)
+        b = build(r, self.ns, self.pg, doc=model.sync(doc, r, at=NOW))
+        self.assertEqual(([h["heading_id"] for h in b["top_events"]], b["end_states"], b["basic_events"]),
+                         ([hid], [], []), "출처 없이 사람이 쓴 표제만 남음")
+        g = next(x for x in b["groups"] if x["group_id"] == self.gid)
+        self.assertEqual((g["members"], g["heading_ids"], g["end_state_ids"]), ([], [hid], []))
+        text = ib.dumps(b)
+        gone = [self.h] + list(doc["end_states"]) + list(doc["basic_events"])
+        self.assertEqual([x for x in gone if '"%s"' % x in text], [], "빠진 기록의 ID가 묶음 어디에도 없음")
+
+    def test_end_state_with_a_source_lacking_unmitigated_basis_is_marked(self):
+        r = copy.deepcopy(self.r)
+        c4 = entries_by_status(r)["c4"]
+        c4["ie_hint"]["category"] = "LOMFW"
+        c4["consequence"] = "급수가 끊겨 열제거 상실"  # c1과 같은 문장이지만 비완화 기준 표시가 없음
+        doc = model.suggest(synced(r), r, self.pg, at=NOW)
+        es = next(iter(doc["end_states"].values()))
+        self.assertEqual(len(es["source_keys"]), 2)
+        self.b = build(r, self.ns, self.pg, doc=doc)
+        self.assertEqual([e["text"] for e in self.b["end_states"]], [ix.BASIS_UNKNOWN_PREFIX + "급수가 끊겨 열제거 상실"])
+        _, rows = self.rows("최종상태 후보")
+        self.assertEqual(rows[0]["비완화 결과(대표 문장)"], "[비완화 여부 미확인] 급수가 끊겨 열제거 상실")
+
+    def test_split_and_deleted_groups_are_listed_as_retired(self):
+        doc = model.delete_group(self.doc, self.loose, at=NOW)
+        b = build(self.r, self.ns, self.pg, doc=doc)
+        self.assertEqual(b["retired"], [{"id": self.loose, "status": "deleted", "split_into": []}])
+        self.assertNotIn(self.loose, [g["group_id"] for g in b["groups"]])
+        guide = dict(ix.guide_rows(b))
+        self.assertIn("%s(삭제)" % self.loose, guide["나뉨·삭제 그룹"])
+
+
+class IeKgProjectionTest(unittest.TestCase):
+    """지식그래프 검토 층의 ⑥ 투영(kg/screen.ie_view). ⑥ 파일이 원본이고 그래프는 투영이다."""
+
+    def test_projection_uses_only_registered_types_and_relations(self):
+        from hazop.kg import screen
+        from hazop.kg.schema import REGISTRY
+        from tests.test_study_span import two_sheets
+        r, ns, pg = ie_sample()
+        doc = model.suggest(synced(r), r, pg, at=NOW)
+        drawing = two_sheets()[0]  # SNP-M-101: c1의 원인 위치(graph-SNP-M-101#E)가 있는 도면
+        nodes, links, info = screen.study_view({"node_set": ns, "results": r, "note": None,
+                                                "ie": build(r, ns, pg, doc=doc)}, drawing)
+        classes = {c["id"] for c in REGISTRY.data["classes"]}
+        relations = {x["id"] for x in REGISTRY.data["relations"]}
+        self.assertTrue({n["type"] for n in nodes} <= classes, {n["type"] for n in nodes} - classes)
+        self.assertTrue({x["kind"] for x in links} <= relations, {x["kind"] for x in links} - relations)
+        kinds = {x["kind"] for x in links}
+        self.assertTrue({"derived_from", "member_of", "corresponds_to", "pivotal", "leads_to", "heading_from",
+                         "basic_event_at"} <= kinds, kinds)
+        ids = {n["id"] for n in nodes}
+        self.assertTrue(all(x["s"] in ids for x in links if x["kind"] != "basic_event_at"))
+        self.assertTrue(all(not n["v5"] for n in nodes) and info["ie"]["groups"] >= 1)
+        self.assertTrue(next(n for n in nodes if n["type"] == "ie_group")["draft"])
+        self.assertEqual(screen.study_view({"node_set": ns, "results": r, "note": None}, drawing)[2]["ie"], None)
 
 
 if __name__ == "__main__":

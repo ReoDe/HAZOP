@@ -314,7 +314,69 @@ def study_view(study, graph, exp_ids=()):
         rows.append({"sn": sn["node_id"], "name": sn.get("name"), "scenarios": n_scen, "missing": n_missing})
     info = {"nodes": rows, "note": study.get("note"), "scenarios": sum(r["scenarios"] for r in rows),
             "missing": sum(r["missing"] for r in rows)}
+    info["ie"] = ie_view(study.get("ie"), {n["id"] for n in nodes if n["type"] == "scenario"}, idx, node, link)
     return nodes, links, info
+
+
+def ie_view(bundle, scenario_ids, idx, node, link):
+    """⑥ 초기사건 투영(설계 §8 P3): IE 인계 묶음 dict(hazop.ie.bundle)에서 이 도면 시나리오에서 온 후보와 그 그룹·표제·
+    최종상태·일반 범주, 이 도면 기기에 걸린 기본사건 후보를 만든다. 원본은 ⑥ 저장 파일이고 여기서는 읽기만 한다.
+    node·link는 study_view의 만들기 함수라 같은 목록에 같은 층·v5=false로 들어간다. 사람이 확정하지 않은 것은 draft.
+    개수 정보를 돌려준다(묶음이 없으면 None)."""
+    if not bundle:
+        return None
+    made, n_links = set(), [0]
+
+    def add(nid, typ, label, **kw):
+        node(nid, typ, label, None, **kw)
+        made.add(nid)
+
+    def rel(kind, s, t):
+        link(kind, s, t)
+        n_links[0] += 1
+    shown = [c for c in bundle["candidates"] if "st-" + c["entry_id"] in scenario_ids]
+    groups = {g["group_id"]: g for g in bundle["groups"]}
+    used = {c["group_id"] for c in shown if c["group_id"] in groups}
+    for c in shown:
+        cid = "st-" + c["candidate_id"]
+        add(cid, "ie_candidate", "%s %s" % (c["candidate_id"], c["cause"]), draft=c["ie_origin"] != "human",
+            detail={"cause": c["cause"]})
+        rel("derived_from", cid, "st-" + c["entry_id"])
+        if c["group_id"] in used:
+            rel("member_of", cid, "st-" + c["group_id"])
+    heads = {h["heading_id"]: h for h in bundle["top_events"]}
+    ends = {e["end_state_id"]: e for e in bundle["end_states"]}
+    refs_done = set()
+    for gid in sorted(used):
+        g = groups[gid]
+        add("st-" + gid, "ie_group", "%s %s" % (gid, g["name"]),
+            draft=g["status"] != "confirmed" or g["origin"] == "ai_draft", detail={"name": g["name"]})
+        for code in g["categories"]:
+            rid = "st-ref-" + code
+            if rid not in refs_done:
+                refs_done.add(rid)
+                add(rid, "reference_ie", code)
+            rel("corresponds_to", "st-" + gid, rid)
+        for hid in g["heading_ids"]:
+            if "st-" + hid not in made:
+                h = heads[hid]
+                add("st-" + hid, "top_event", "%s %s" % (hid, h["name"]), draft=h["origin"] != "human",
+                    detail={"name": h["name"]})
+                for e in h["entry_ids"]:
+                    if "st-" + e in scenario_ids:
+                        rel("heading_from", "st-" + hid, "st-" + e)
+            rel("pivotal", "st-" + gid, "st-" + hid)
+        for eid in g["end_state_ids"]:
+            if "st-" + eid not in made:
+                add("st-" + eid, "end_state", "%s %s" % (eid, ends[eid]["text"]), draft=ends[eid]["origin"] != "human",
+                    detail={"text": ends[eid]["text"]})
+            rel("leads_to", "st-" + gid, "st-" + eid)
+    for b in bundle["basic_events"]:
+        if b.get("ref") in idx:
+            add("st-" + b["be_id"], "basic_event", "%s %s" % (b["be_id"], b["name"]), draft=b["origin"] != "human",
+                detail={"name": b["name"], "text": b["failure_text"] or b["failure_mode"]})
+            rel("basic_event_at", "st-" + b["be_id"], idx[b["ref"]])
+    return {"candidates": len(shown), "groups": len(used), "nodes": len(made), "links": n_links[0]}
 
 
 def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_note=None, expectations=None,
