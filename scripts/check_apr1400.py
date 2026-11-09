@@ -282,6 +282,7 @@ def main(argv=None):
     from hazop.console import safe_console
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hazop import paths
     ap.add_argument("--input-dir", default=None, help="쪽별 PDF 폴더(기본: 저장소의 %s/도면별)" % paths.folder_rel("APR1400"))
     ap.add_argument("--catalog", default=None, help="도면목록.csv(기본: 입력 폴더의 상위 폴더)")
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)))

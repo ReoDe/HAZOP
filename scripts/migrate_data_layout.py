@@ -132,6 +132,12 @@ def build_plan(repo, phase):
         steps.append(step)
     if left_3a:
         problems.append("3a가 끝나지 않았음(3a 규칙에 맞는 파일 %d개가 남아 있음, 미리보기에서는 뺐음)" % left_3a)
+    seen = {}
+    for s in steps:  # 서로 다른 원본이 같은 대상으로 가면 뒤의 것이 앞의 것을 덮으므로 충돌로 본다
+        if s["dst"] in seen and seen[s["dst"]]["sha256"] != s["sha256"]:
+            s["state"] = seen[s["dst"]]["state"] = "conflict"
+            problems.append("같은 대상으로 가는 원본 둘(내용 다름): %s, %s" % (seen[s["dst"]]["src"], s["src"]))
+        seen.setdefault(s["dst"], s)
     return steps, problems
 
 
@@ -159,19 +165,27 @@ def print_plan(repo, phase, steps, problems):
         print("문제: %s" % p)
 
 
-def app_running(repo):
-    """앱과 같은 QLockFile을 잡아 본다. 잡히면 바로 놓는다. PySide6가 없으면 판단할 수 없으므로 실행 중으로 본다."""
+def hold_app_locks(repo, roots=None):
+    """앱과 같은 QLockFile을 작업 루트 후보(HAZOP_WORK_ROOT, 저장소/작업, 저장소 루트) 모두에서 잡는다.
+    (잠금 목록, None) 또는 (None, 이유). 잡은 잠금은 호출한 쪽이 끝날 때까지 들고 있어 그동안 앱이 시작하지 못한다.
+    PySide6가 없으면 판단할 수 없으므로 실행 중으로 본다."""
     try:
         from PySide6.QtCore import QLockFile
     except ImportError:
-        return True, "PySide6가 없어 앱 실행 여부를 확인할 수 없음"
-    root = os.environ.get("HAZOP_WORK_ROOT") or repo
-    lock = QLockFile(os.path.join(root, LOCK_NAME))
-    lock.setStaleLockTime(0)
-    if lock.tryLock(0):
-        lock.unlock()
-        return False, ""
-    return True, "앱이 실행 중이거나 잠금을 쥐고 있음: %s" % os.path.join(root, LOCK_NAME)
+        return None, "PySide6가 없어 앱 실행 여부를 확인할 수 없음"
+    roots = roots or [os.environ.get("HAZOP_WORK_ROOT"), os.path.join(repo, "작업"), repo]
+    held = []
+    for root in dict.fromkeys(os.path.abspath(r) for r in roots if r):
+        if not os.path.isdir(root):
+            continue
+        lock = QLockFile(os.path.join(root, LOCK_NAME))
+        lock.setStaleLockTime(0)
+        if not lock.tryLock(0):
+            for h in held:
+                h.unlock()
+            return None, "앱이 실행 중이거나 잠금을 쥐고 있음: %s" % os.path.join(root, LOCK_NAME)
+        held.append(lock)
+    return held, None
 
 
 def new_backup_dir():
@@ -209,10 +223,19 @@ def apply_steps(repo, steps):
             if not os.path.exists(keep):
                 os.makedirs(os.path.dirname(keep), exist_ok=True)
                 shutil.copy2(src, keep)
+        if os.path.exists(dst):  # 계획 뒤에 생긴 대상은 덮지 않는다
+            print("계획 뒤에 대상이 생겨 옮기지 않음: %s" % s["dst"])
+            s["state"] = "conflict"
+            continue
         if s["how"] == "git":
             git(repo, "mv", "--", s["src"], s["dst"])
             if s.get("keep_copy"):
-                git(repo, "restore", "--worktree", "--", s["dst"])  # 색인(HEAD 내용)으로: 이동 커밋에 내용 수정이 섞이지 않게
+                # 새 위치는 HEAD 내용으로(색인에 올린 수정도 빼고): 이동 커밋이 이름 바꾸기만 되게 한다
+                head = subprocess.run(["git", "-c", "core.quotepath=off", "show", "HEAD:" + s["src"]], cwd=repo,
+                                      capture_output=True, check=True).stdout
+                with open(dst, "wb") as fh:
+                    fh.write(head)
+                git(repo, "add", "--", s["dst"])
         else:
             os.replace(src, dst)
         done.append(s)
@@ -258,8 +281,8 @@ def cmd_apply(repo, phase, write):
     if not write:
         print("미리보기만 했음(--write 없음)")
         return 0
-    running, why = app_running(repo)
-    if running:
+    locks, why = hold_app_locks(repo)
+    if locks is None:
         print("멈춤: %s" % why)
         return 1
     todo = [s for s in steps if s["state"] == "move"]
@@ -273,7 +296,7 @@ def cmd_apply(repo, phase, write):
     backup(repo, todo, dest)
     print("백업: %s (%d개, 해시 확인)" % (dest, len(todo)))
     apply_steps(repo, todo)
-    bad = verify(repo, steps)
+    bad = verify(repo, steps) + [s["dst"] for s in todo if s["state"] == "conflict"]
     with open(os.path.join(dest, "report.json"), "w", encoding="utf-8") as fh:
         json.dump({"moved": len(todo), "mismatch": bad}, fh, ensure_ascii=False, indent=1)
     if bad:

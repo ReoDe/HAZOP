@@ -30,12 +30,13 @@ def safe_join(root, name):
 
 def rel_or_abs(path, root):
     """root 기준 상대 경로('/' 구분). 다른 드라이브 등으로 상대 경로를 만들 수 없으면 절대 경로.
-    참고 폴더(샘플 도면 등) 아래 파일은 root와 관계없이 논리 경로 '참고자료/<나머지>'로 쓴다: 추출 JSON의
-    source.file·svg_file이 그래프 판(graph_version) 해시에 들어가므로 폴더 위치가 바뀌어도 판이 같아야 한다(D9)."""
-    ref = folder("참고")
+    저장소 전용 폴더(샘플 도면·APR1400) 아래 파일은 root와 관계없이 옮기기 전 위치의 논리 경로(LEGACY_PREFIXES,
+    예: '참고자료/<나머지>')로 쓴다: 추출 JSON의 source.file·svg_file이 그래프 판(graph_version) 해시에 들어가므로
+    폴더 위치가 바뀌어도 판이 같아야 한다(D9). resolve_rel이 같은 표로 되돌려 읽는다."""
     try:
-        if _inside(path, ref):
-            return REFERENCE_LOGICAL + os.path.relpath(os.path.abspath(path), ref).replace("\\", "/")
+        for prefix, name in LEGACY_PREFIXES:
+            if FOLDERS[name].root == "repo" and _inside(path, folder(name)):
+                return prefix + os.path.relpath(os.path.abspath(path), folder(name)).replace("\\", "/")
         rel = os.path.relpath(path, root)
     except ValueError:
         rel = os.path.abspath(path)
@@ -190,7 +191,7 @@ def folder_rel(name):
 
 
 def _inside(path, root):
-    path, root = os.path.abspath(path), os.path.abspath(root)
+    path, root = os.path.normcase(os.path.abspath(path)), os.path.normcase(os.path.abspath(root))
     try:
         return os.path.commonpath([path, root]) == root
     except ValueError:

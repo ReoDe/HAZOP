@@ -78,8 +78,8 @@ def git_lines(repo, *args):
 
 
 def file_kind(rel):
-    if rel == ".gitignore":
-        return "gitignore"
+    if rel in (".gitignore", ".gitattributes"):
+        return rel[1:]
     if rel.endswith(".spec"):
         return "spec"
     top = rel.split("/", 1)[0]
@@ -153,12 +153,12 @@ def scan_files(repo):
     tracked = set(git_lines(repo, "ls-files", "-z"))
     untracked = set(git_lines(repo, "ls-files", "-z", "--others", "--exclude-standard"))
     ignored = set(git_lines(repo, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--", *ROOTS))
-    files = {".gitignore"} | tracked | untracked | ignored
+    files = {".gitignore", ".gitattributes"} | tracked | untracked | ignored
     keep = []
     for rel in files:
         if rel.startswith(EXCLUDE_PREFIX):
             continue
-        if rel != ".gitignore" and os.path.splitext(rel)[1].lower() not in TEXT_EXT:
+        if rel not in (".gitignore", ".gitattributes") and os.path.splitext(rel)[1].lower() not in TEXT_EXT:
             continue
         full = os.path.join(repo, rel)
         if os.path.isfile(full) and os.path.getsize(full) <= MAX_BYTES:
@@ -173,7 +173,7 @@ def collect_refs(repo, files, subs):
             for no, line in enumerate(fh, 1):
                 if not ROOT_RE.search(line):
                     continue
-                for root, sub in parse_refs(line, subs, rel == ".gitignore"):
+                for root, sub in parse_refs(line, subs, rel in (".gitignore", ".gitattributes")):
                     cls = FOLDER_CLASS.get((root, sub), ("루트" if not sub else "미분류", ""))[0]
                     rows.append({"file": rel, "line": no, "kind": file_kind(rel), "root": root, "sub": sub,
                                  "class": cls, "accessor": accessor(line), "text": line.strip()[:200]})

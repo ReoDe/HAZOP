@@ -9,6 +9,7 @@
 
 import argparse
 import datetime
+import importlib.util
 import hashlib
 import os
 import shutil
@@ -53,6 +54,13 @@ def backup_dir(work_root):
             n += 1
 
 
+def _migrate():
+    spec = importlib.util.spec_from_file_location("migrate_data_layout", os.path.join(REPO, "scripts", "migrate_data_layout.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def main(argv=None):
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -68,18 +76,28 @@ def main(argv=None):
     else:
         from hazop import paths
         work_root = paths.work_root()
+    locks, why = _migrate().hold_app_locks(REPO, [work_root])
+    if locks is None:
+        print("멈춤: %s" % why)
+        return 1
     items = plan(work_root)
     bdir = None
     for rel, state in items:
         src = os.path.join(SAMPLE_ROOT, rel)
         dst = os.path.join(work_root, "데이터", rel)
-        if state == "copy" or state == "differs" and args.refresh:
-            if state == "differs":
-                bdir = bdir or backup_dir(work_root)
-                keep = os.path.join(bdir, "데이터", rel)
-                os.makedirs(os.path.dirname(keep), exist_ok=True)
-                shutil.copy2(dst, keep)
+        if state == "copy":
             os.makedirs(os.path.dirname(dst), exist_ok=True)
+            try:
+                with open(src, "rb") as fin, open(dst, "xb") as fout:  # 그사이 생긴 파일은 덮지 않는다
+                    shutil.copyfileobj(fin, fout)
+                shutil.copystat(src, dst)
+            except FileExistsError:
+                print("그사이 생긴 파일이라 그대로 둠: %s" % rel)
+        elif state == "differs" and args.refresh:
+            bdir = bdir or backup_dir(work_root)
+            keep = os.path.join(bdir, "데이터", rel)
+            os.makedirs(os.path.dirname(keep), exist_ok=True)
+            shutil.copy2(dst, keep)
             shutil.copy2(src, dst)
         if state == "differs":
             print("%s: %s" % ("백업 후 덮음" if args.refresh else "내용 다름(그대로 둠)", rel))
