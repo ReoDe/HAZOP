@@ -11,7 +11,12 @@ import sys
 import threading
 import time
 
-OUTPUT = {"deviations": [{"deviation_id": "D01", "applicable": False, "note": "해당 없음", "scenarios": []}]}
+# 실제 claude CLI는 콘솔 코드 페이지와 관계없이 UTF-8로 쓴다(기획서/AI연결-구독제.md 실측). 가짜도 같게 해야
+# 한국어가 든 이벤트가 cp949 콘솔에서 깨지지 않는다.
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
+
+OUTPUT ={"deviations": [{"deviation_id": "D01", "applicable": False, "note": "해당 없음", "scenarios": []}]}
 USAGE = {"input_tokens": 2, "output_tokens": 453, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 1688}
 LIMIT_OK = {"status": "allowed", "resetsAt": 4102444800, "rateLimitType": "seven_day", "overageStatus": "rejected",
             "isUsingOverage": False, "unifiedWindows": {"seven_day": {"utilization": 0.04, "resetsAt": 4102444800,
