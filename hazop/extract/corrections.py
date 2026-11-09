@@ -282,7 +282,12 @@ def _apply_set_tag(st, kind, obj, op):
 def _apply_set_kind(st, kind, obj, op):
     v = op["value"]
     obj.update(kind=v["kind"].strip(), category=_category(v), classification="classified")
-    obj.setdefault("attributes", {})["kind"] = obj["kind"]
+    attrs = obj.setdefault("attributes", {})
+    cid = REGISTRY.kind_class.get(obj["kind"])
+    allowed = REGISTRY.class_properties(cid) if cid else ()
+    for prop in [k for k in attrs if k in REGISTRY.properties and k not in allowed]:
+        del attrs[prop]  # 새 종류에 없는 속성(예: 사전이 붙인 valve_type)은 남기지 않는다
+    attrs["kind"] = obj["kind"]
     return obj
 
 
@@ -454,7 +459,15 @@ def _same(base, cur):
     '대상이 바뀜'이 되지 않게, M2 U9)."""
     if base is None or cur is None:
         return base is cur
-    return {k: v for k, v in base.items() if k != "category"} == {k: v for k, v in cur.items() if k != "category"}
+    base = {k: v for k, v in base.items() if k != "category"}
+    cur = {k: v for k, v in cur.items() if k != "category"}
+    if base.get("at") is not None:  # 같은 자리에서 지식이 늘어난 것은 대상이 바뀐 것이 아니다(기호 사전, 기획서/PID-기호사전.md D14)
+        for k in ("kind", "tag"):  # 없던 값이 새로 채워짐
+            if base.get(k) is None and cur.get(k) is not None:
+                base[k] = cur[k]
+        if "ends" in base and (base.get("kind"), cur.get("kind")) == ("physical_connection", "measurement_connection"):
+            base["kind"] = cur["kind"]  # 끝 기호가 계기로 밝혀져 같은 선이 측정 연결이 됨
+    return base == cur
 
 
 def _refs(value):

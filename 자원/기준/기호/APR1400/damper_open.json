@@ -1,19 +1,19 @@
 {
  "id": "apr1400.damper_open",
- "revision": 1,
+ "revision": 2,
  "added": "2026-11-09",
- "updated": "2026-11-09",
+ "updated": "2026-11-10",
  "name": {
   "en": "NORMALLY OPEN DAMPER",
   "ko": "댐퍼(상시 열림)"
  },
- "category": "공조",
+ "category": "밸브",
  "role": "symbol",
  "kind": "damper",
  "attributes": {
   "normal_position": "NO"
  },
- "enabled": false,
+ "enabled": true,
  "match": [
   {
    "shape": "grid",
@@ -78,6 +78,5 @@
    "template_parity": "all"
   }
  ],
- "note": "새 kind는 레지스트리 반영(연결 커밋) 뒤 enabled",
  "image": "그림/damper_open.png"
 }

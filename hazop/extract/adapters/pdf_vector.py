@@ -34,7 +34,7 @@ import threading
 from hazop import paths
 from hazop.kg.docextract import TAG_RE
 
-from .. import drawio, rules
+from .. import drawio, rules, symbols
 
 SCHEMA_VERSION = drawio.SCHEMA_VERSION
 SCRIPT_NAME = "hazop.extract.adapters.pdf_vector"
@@ -358,7 +358,8 @@ def load_page(path, page=0):
             prims.append({"fill": bool(obj.get("fill")), "stroke": bool(obj.get("stroke", True)),
                           "fill_white": _is_white(obj.get("non_stroking_color")),
                           "stroke_white": _is_white(obj.get("stroking_color")),
-                          "dash": _dash(obj.get("dash")), "subpaths": _subpaths(obj)})
+                          "dash": _dash(obj.get("dash")), "subpaths": _subpaths(obj),
+                          "fine": symbols.sample_subpaths(obj)})  # 기호 사전 서명용: 곡선을 표본점으로 편 점
     return page_count, width, height, words, prims
 
 
@@ -401,6 +402,8 @@ def _classify_primitives(width, height, prims, prm):
             b = _bbox_pts(ext)
             covers = _w(b) * _h(b) >= prm["page_cover_ratio"] * page_area
             item = {"id": pid, "pts": pts, "bbox": b, "closed": closed and len(pts) >= 3, "curved": curved}
+            if pr.get("fine") and k < len(pr["fine"]):
+                item["fine"] = pr["fine"][k]
             if pr["fill"] and pr["fill_white"]:
                 if not covers:
                     white_fills.append(item)
@@ -1169,6 +1172,47 @@ def _instrument_kind(text):
     return None, None
 
 
+_symbol_library = None
+PIPE_CAP_BASIS = "small_closed_body_single_connection"
+ACTUATOR_REACH_RATIO = 2.0  # 밸브 몸통 긴 변 × 비율 안에 구동부 기호가 있으면 구동 밸브로 본다(APR1400 축 길이 기준)
+
+
+def symbol_library():
+    """기호 사전(자원/기준/기호). 프로세스마다 한 번 읽는다. 없거나 깨졌으면 SymbolLibraryError로 멈춘다."""
+    global _symbol_library
+    with _cache_lock:
+        if _symbol_library is None:
+            lib = symbols.Library.load()
+            _check_against_registry(lib)
+            _symbol_library = lib
+        return _symbol_library
+
+
+def _check_against_registry(lib):
+    """켜진 항목의 kind와 열거형 속성값이 타입 레지스트리에 있어야 한다. 아니면 SymbolLibraryError(조용히 넘어가지 않음)."""
+    problems = []
+    for e in sorted(lib.entries.values(), key=lambda e: e.id):
+        if not e.enabled:
+            continue
+        if e.kind is not None and e.kind not in rules.KIND_CATEGORY:
+            problems.append("%s: kind %r가 레지스트리에 없음" % (e.id, e.kind))
+        for attrs in [e.attributes] + [t.set_attributes for t in e.templates]:
+            for prop, value in attrs.items():
+                spec = rules.REGISTRY.properties.get(prop)
+                if spec and spec.get("type") == "enum" and value not in spec.get("values", ()):
+                    problems.append("%s: %s=%r는 허용값 밖" % (e.id, prop, value))
+    if problems:
+        raise symbols.SymbolLibraryError("기호 사전이 레지스트리와 맞지 않음: " + "; ".join(problems))
+
+
+def _symbol_match(sym, blocks):
+    """기호 상자 안에 가운데가 든 글자 문단을 글자 조건으로 넘겨 사전에 대 본다."""
+    x0, y0, x1, y1 = sym.bbox
+    inside = [b["text"] for b in blocks if x0 <= (b["bbox"][0] + b["bbox"][2]) / 2 <= x1
+              and y0 <= (b["bbox"][1] + b["bbox"][3]) / 2 <= y1]
+    return symbol_library().match(symbols.sym_signature(sym), inside)
+
+
 def _classify(sym, text, degree, prm, marks=()):
     """(kind, basis) — 근거가 없으면 kind None. marks: 기호 안 표기 글자(밸브 구동부의 M 등)."""
     shape, sbasis = _shape_kind(sym, prm)
@@ -1185,7 +1229,7 @@ def _classify(sym, text, degree, prm, marks=()):
     if kind is not None:
         return kind, basis
     if not text and degree == 1 and not sym.stroke_only and max(_w(sym.bbox), _h(sym.bbox)) <= prm["pipe_cap_max"]:
-        return "pipe_cap", "small_closed_body_single_connection"
+        return "pipe_cap", PIPE_CAP_BASIS
     return None, None
 
 
@@ -1365,18 +1409,32 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                 marks.setdefault(si, []).append(b["text"])
                 roles[bi] = "symbol_mark"
                 break
+    degree = {}
+    for ch in chains:
+        for v, _, _ in ch["ends"]:
+            if v[0] == "sym":
+                degree[id(v[1])] = degree.get(id(v[1]), 0) + 1
+    # 형상 규칙이 못 정한 기호는 사전에 먼저 대 본다. 사전이 연결 표시로 본 기호도 화살표 목록에 넣어야 이웃 화살표의
+    # 계통 글자를 가져가지 않는다(_continuation_attributes). 버릴 기호(무늬 점)는 글자를 가져가지 않게 후보에서 뺀다
+    hits = {si: _symbol_match(s, blocks) for si, s in enumerate(syms) if shape_of[si][0] in (None, "instrument")}
+    drop = {si for si, h in hits.items() if h.outcome == "matched" and h.entry.role == "drop"
+            and not degree.get(id(syms[si]))}
+    actuators = [syms[si] for si, h in sorted(hits.items()) if h.outcome == "matched" and h.entry.role == "actuator"]
     cand = []
     for bi, b in enumerate(blocks):
         if bi in roles:
             continue
         for si, s in enumerate(syms):
+            if si in drop:
+                continue
             if b.get("rotated") and shape_of[si][0] not in ("instrument", "continuation"):
                 continue  # 돌린 글자는 대개 행선지·위치 설명이라 다른 기호의 종류를 정하는 글자로 쓰지 않는다
             inside = _inside(_center(b["bbox"]), s.bbox)
             gap = -1.0 if inside else _box_gap(b["bbox"], s.bbox)
             if gap <= prm["label_gap_max"]:
                 cand.append((round(gap, 6), bi, si))
-    arrows = [s for si, s in enumerate(syms) if shape_of[si][0] == "continuation"]
+    arrows = [s for si, s in enumerate(syms) if shape_of[si][0] == "continuation" or
+              (si in hits and hits[si].outcome == "matched" and hits[si].entry.role == "continuation")]
     label_of, taken = {}, set()
     for gap, bi, si in sorted(cand):
         if si in label_of or bi in taken:
@@ -1384,13 +1442,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         label_of[si] = bi
         taken.add(bi)
 
-    degree = {}
-    for ch in chains:
-        for v, _, _ in ch["ends"]:
-            if v[0] == "sym":
-                degree[id(v[1])] = degree.get(id(v[1]), 0) + 1
-
-    node_out, locations, local_of, instrument_ids = [], [], {}, set()
+    node_out, locations, local_of, instrument_ids, dropped = [], [], {}, set(), []
     for n, s in enumerate(syms, 1):
         local_id = "local-node-%03d" % n
         sid = "pdf-p%d-sym-%04d" % (page, n)
@@ -1398,6 +1450,34 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         bi = label_of.get(n - 1)
         text = blocks[bi]["text"] if bi is not None else ""
         kind, basis = _classify(s, text, degree.get(id(s), 0), prm, marks.get(n - 1, []))
+        symbol_id, symbol_attrs = None, {}
+        fallback = basis == PIPE_CAP_BASIS  # 끝막음은 형상 규칙이 아니라 뒤처리 규칙: 사전에 후보가 없을 때만 남긴다(§4.2 5번)
+        if kind is None or fallback:  # 기존 규칙이 못 정한 기호에만 기호 사전을 쓴다(기획서/PID-기호사전.md §4.2)
+            hit = hits.get(n - 1) or _symbol_match(s, blocks)
+            if fallback and hit.outcome != "none":
+                kind, basis = None, None
+            if hit.outcome == "matched":
+                entry = hit.entry
+                symbol_id, basis = entry.id, "symbol:%s" % entry.id
+                if entry.role == "drop" and not degree.get(id(s)):
+                    dropped.append({"source_object_id": sid, "label_text": "", "bbox": _box_out(s.bbox),
+                                    "reason": basis})
+                    continue  # 노드 번호는 비워 둔다(다른 기호 번호가 밀리지 않게)
+                if entry.role in ("symbol", "continuation") and entry.kind_from == "isa_letters":
+                    kind, isa_basis = _instrument_kind(text)
+                    basis = "%s+%s" % (basis, isa_basis) if kind else basis
+                    instrument_ids.add(local_id)
+                elif entry.role in ("symbol", "continuation"):
+                    kind = entry.kind
+                    symbol_attrs = {k: v for k, v in sorted(hit.attributes.items()) if k in rules.REGISTRY.properties}
+                    reach = ACTUATOR_REACH_RATIO * max(_w(s.bbox), _h(s.bbox))
+                    if kind == "manual_valve" and any(_box_gap(a.bbox, s.bbox) <= reach for a in actuators):
+                        kind = None  # 몸통만으로는 수동인지 모른다. 구동부를 밸브에 합치는 단계(S5) 전에는 정하지 않는다
+                        _issue(unknowns, "actuated_valve_pending", "구동부 기호가 붙은 밸브 몸통: 구동 방식은 아직 정하지 않음",
+                               sid, local_id, "kind")
+            elif hit.outcome == "ambiguous":
+                _issue(unknowns, "ambiguous_symbol", "기호 사전 후보가 둘 이상이라 정하지 않음: %s"
+                       % ", ".join(c for c, _ in hit.candidates[:3]), sid, local_id, "kind")
         if rules.KIND_CATEGORY.get(kind) == "instrument" or (kind is None and shape_of[n - 1][0] == "instrument"):
             instrument_ids.add(local_id)  # 측정 연결 판정: 계기로 분류됐거나 원형이고 다른 종류 근거가 없는 기호
         category = rules.KIND_CATEGORY.get(kind)
@@ -1410,18 +1490,19 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             "label_location": ({"bbox": _box_out(blocks[bi]["bbox"]), "approximate": False,
                                 "method": "pdf_text_block"} if bi is not None else None),
             "attributes": (_continuation_attributes(s, blocks, prm, blocks[bi] if bi is not None else None, arrows)
-                           if kind == "continuation" else {}),
+                           if kind == "continuation" else symbol_attrs),
             "style": None, "parent": None,
             "geometry": dict(zip(("x", "y", "width", "height"), _box_out(s.bbox))),
-            "evidence": {"classification_basis": basis, "pdf_objects": s.evidence(),
-                         "stroke_only": s.stroke_only, "symbol_marks": marks.get(n - 1, [])},
+            "evidence": dict({"classification_basis": basis, "pdf_objects": s.evidence(),
+                              "stroke_only": s.stroke_only, "symbol_marks": marks.get(n - 1, [])},
+                             **({"symbol_id": symbol_id} if symbol_id else {})),
         })
         locations.append({"object_id": sid, "local_id": local_id, "coordinate_space": COORDINATE_SPACE,
                           "unit": UNIT, "bbox": _box_out(s.bbox), "approximate": False})
     _assign_tags(node_out, unknowns, instrument_ids)
     tee_ids = {}
     for k, (x, y) in enumerate(tees):
-        n = len(node_out) + 1
+        n = len(syms) + k + 1  # 사전이 버린 기호가 있어도 기호 노드 번호와 겹치지 않게
         local_id, sid = "local-node-%03d" % n, "pdf-p%d-junction-%04d" % (page, k + 1)
         tee_ids[k] = (local_id, sid)
         box = (x - prm["tee_half"], y - prm["tee_half"], x + prm["tee_half"], y + prm["tee_half"])
@@ -1514,7 +1595,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     if drawing["drawing_number"] is None:
         _issue(unknowns, "missing_drawing_number", "표제란에서 DWG NO.를 찾지 못함", field="drawing_number")
     drawing["ignored_objects"] = [{"source_object_id": o["id"], "label_text": "", "bbox": _box_out(o["bbox"])}
-                                  for o in cls["frames"] + cls["cells"]]
+                                  for o in cls["frames"] + cls["cells"]] + dropped
     for pid in cls["invisible_dashed"]:
         _issue(unknowns, "dashed_path_no_visible_piece", "점선 무늬·위상 때문에 그려지는 구간이 없는 경로(선으로 보지 않음)",
                pid)

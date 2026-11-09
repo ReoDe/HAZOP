@@ -1,13 +1,13 @@
 {
  "id": "apr1400.test_connection",
- "revision": 1,
+ "revision": 3,
  "added": "2026-11-09",
- "updated": "2026-11-09",
+ "updated": "2026-11-10",
  "name": {
   "en": "TEST CONNECTION",
   "ko": "시험 연결"
  },
- "category": "배관 부속",
+ "category": "배관 부품",
  "role": "symbol",
  "kind": "test_connection",
  "attributes": {},
@@ -327,6 +327,6 @@
    "template_parity": "all"
   }
  ],
- "note": "새 kind는 레지스트리 반영(연결 커밋) 뒤 enabled",
- "image": "그림/test_connection.png"
+ "image": "그림/test_connection.png",
+ "note": "2단계 검토: 견본이 덕트 끝·배관 캡·관 안 U자 조각까지 맞혔다(103개 중 약 84개). 글자 깃발(P·G·T·F·X)이 붙은 시험 연결만 고르는 견본을 만들 때까지 끈다"
 }

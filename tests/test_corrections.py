@@ -234,6 +234,41 @@ class CorrectionsTest(unittest.TestCase):
         self.assertTrue(reasons["c-0002"].startswith("연결 대상 기기가 바뀌었거나 없음: n6"))
         self.assertEqual(corrections.apply(self.ext, ops)["corrections"]["not_applicable"], [])
 
+    def test_newly_filled_kind_or_tag_keeps_target(self):
+        """미분류였던 기호에 사전이 kind·태그를 채워도 같은 자리의 사람 수정은 그대로 적용된다(D14).
+        이미 있던 kind가 다른 값으로 바뀐 것은 여전히 '대상이 바뀜'이다."""
+        from hazop.extract import corrections
+        ops = []
+        self.op(ops, self.ext, "set_tag", "n6", {"tag": "RC-TE111"})
+        ops[0]["base"] = dict(ops[0]["base"], kind=None, tag=None)
+        out = corrections.apply(self.ext, ops)
+        self.assertEqual(out["corrections"]["applied"], ["c-0001"])
+        self.assertEqual(by_sid(out, "n6")["tag"], "RC-TE111")
+        ops[0]["base"] = dict(ops[0]["base"], kind="pump")
+        reasons = {s["op_id"]: s["reason"] for s in corrections.apply(self.ext, ops)["corrections"]["not_applicable"]}
+        self.assertTrue(reasons["c-0001"].startswith("대상이 바뀜: kind 'pump'"))
+
+    def test_relation_becoming_measurement_keeps_target(self):
+        """끝 기호가 계기로 밝혀져 같은 선이 physical → measurement로 바뀌어도 그 선의 사람 수정은 적용된다(D14)."""
+        from hazop.extract import corrections
+        rel = next(r for r in self.ext["relations"] if r["kind"] == "physical_connection")
+        ops = []
+        self.op(ops, self.ext, "delete_relation", rel["source_object_id"], {})
+        changed = copy.deepcopy(self.ext)
+        next(r for r in changed["relations"] if r["source_object_id"] == rel["source_object_id"])["kind"] = \
+            "measurement_connection"
+        self.assertEqual(corrections.apply(changed, ops)["corrections"]["applied"], ["c-0001"])
+
+    def test_set_kind_drops_properties_the_new_kind_cannot_have(self):
+        from hazop.extract import corrections
+        base = copy.deepcopy(self.ext)
+        node = by_sid(base, "n6")
+        node["attributes"] = {"valve_type": "gate", "note": "keep"}
+        ops = []
+        self.op(ops, base, "set_kind", "n6", {"kind": "drain", "category": "inline_component"})
+        out = by_sid(corrections.apply(base, ops), "n6")
+        self.assertEqual(out["attributes"], {"note": "keep", "kind": "drain"})
+
     def test_make_op_rejects_invalid_ops(self):
         from hazop.extract import corrections
         bad = [("rename", "n1", {}), ("set_tag", "nope", {"tag": "a"}), ("set_kind", "n1", {"kind": "pump", "category": "valve"}),

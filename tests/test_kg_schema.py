@@ -34,6 +34,8 @@ M2_NEW_KINDS = {
     "flow_element": "inline_component", "blind_flange": "inline_component",
     "switch": "instrument", "recorder": "instrument", "nozzle": "piping_element",
 }
+# 기호 사전 연결(레지스트리 0.8.0, 기획서/PID-기호사전.md D4): APR1400 범례의 댐퍼·시험 연결
+SYMBOL_DICT_KINDS = {"damper": "valve", "test_connection": "inline_component"}
 OLD_NODE_PREFIX = {"document": "doc-", "doc_chunk": "chunk-", "requirement": "req-", "setpoint": "setpt-",
                    "condition": "cond-", "analysis_case": "case-"}
 OLD_LINK_TYPES = {
@@ -212,7 +214,8 @@ class RegistryEquivalenceTest(unittest.TestCase):
     def test_extract_rules(self):
         old_part = {k: v for k, v in rules.KIND_CATEGORY.items() if k in OLD_KIND_CATEGORY}
         self.assertEqual(old_part, dict(OLD_KIND_CATEGORY, **M2_MOVED))
-        self.assertEqual({k: v for k, v in rules.KIND_CATEGORY.items() if k not in OLD_KIND_CATEGORY}, M2_NEW_KINDS)
+        self.assertEqual({k: v for k, v in rules.KIND_CATEGORY.items() if k not in OLD_KIND_CATEGORY},
+                         dict(M2_NEW_KINDS, **SYMBOL_DICT_KINDS))
         self.assertEqual([k for k in rules.KIND_CATEGORY if k in OLD_KIND_CATEGORY and k not in M2_MOVED],
                          [k for k in OLD_KIND_CATEGORY if k not in M2_MOVED])
 

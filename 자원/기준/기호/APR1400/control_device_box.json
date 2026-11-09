@@ -1,8 +1,8 @@
 {
  "id": "apr1400.control_device_box",
- "revision": 1,
+ "revision": 2,
  "added": "2026-11-09",
- "updated": "2026-11-09",
+ "updated": "2026-11-10",
  "name": {
   "en": "CONTROL DEVICE AND/OR CCS CABINET MOUNTED DEVICE",
   "ko": "제어 장치(캐비닛 설치)"
@@ -12,7 +12,7 @@
  "kind": null,
  "kind_from": "isa_letters",
  "attributes": {},
- "enabled": true,
+ "enabled": false,
  "text": {
   "inside": "^[A-Z]{1,5}$"
  },
@@ -86,5 +86,6 @@
    "template_parity": "all"
   }
  ],
- "image": "그림/control_device_box.png"
+ "image": "그림/control_device_box.png",
+ "note": "2단계 검토: 'PC'·'IC' 상자는 범례의 격납 관통부 표시(PENETRATION OF PRIMARY CONTAINMENT)라 제어 장치가 아니다. 관통부와 HSI 손스위치 상자를 가르는 견본·글자 조건을 다시 만들 때까지 끈다"
 }

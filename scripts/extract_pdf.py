@@ -26,7 +26,7 @@ sys.path.insert(0, REPO_ROOT)
 
 from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
-from hazop.extract import report  # noqa: E402
+from hazop.extract import report, symbols  # noqa: E402
 from hazop.extract.adapters import pdf_svg, pdf_vector  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
@@ -100,11 +100,12 @@ def run_pages(path, out_root, pages, registration=None, out_name=None):
     """여러 쪽을 차례로 run_one. out_name: 쪽 번호 → 폴더 이름(없으면 run_one 기본 이름).
     반환 (추출한 쪽 [(쪽, result, out_dir)], 추출하지 않은 쪽 [{"page_index", "page_id", "reason"}])."""
     done, skipped = [], []
+    pdf_vector.symbol_library()  # 기호 사전이 없거나 깨졌으면 어떤 쪽의 이전 결과도 지우기 전에 멈춘다
     for page in pages:
         name = out_name(page) if out_name else None
         try:
             result, out_dir = run_one(path, out_root, page, registration, name)
-        except ImportError:
+        except (ImportError, symbols.SymbolLibraryError):
             raise
         except Exception as exc:  # 쪽 하나를 읽지 못해도 그 쪽만 미추출로 남기고 다음 쪽을 읽는다
             reason = "추출 오류: %s" % exc

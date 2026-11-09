@@ -110,7 +110,7 @@ def comp_key(comp):
 
 def _points(item, fine):
     pid = item["id"]
-    pts = fine.get(pid[:-1] if pid.endswith("s") else pid) if fine else None
+    pts = item.get("fine") or (fine.get(pid[:-1] if pid.endswith("s") else pid) if fine else None)
     pts = list(pts or item.get("pts") or [])
     if item.get("closed") and pts and pts[0] != pts[-1]:
         pts.append(pts[0])

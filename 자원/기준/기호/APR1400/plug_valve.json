@@ -1,8 +1,8 @@
 {
  "id": "apr1400.plug_valve",
- "revision": 1,
+ "revision": 2,
  "added": "2026-11-09",
- "updated": "2026-11-09",
+ "updated": "2026-11-10",
  "name": {
   "en": "PLUG (2-WAY)",
   "ko": "플러그 밸브"
@@ -10,7 +10,9 @@
  "category": "밸브",
  "role": "symbol",
  "kind": "manual_valve",
- "attributes": {},
+ "attributes": {
+  "valve_type": "plug"
+ },
  "enabled": true,
  "match": [
   {
@@ -245,6 +247,5 @@
    "template_parity": "all"
   }
  ],
- "note": "valve_type 'plug'는 레지스트리 허용값(gate·globe·ball·butterfly)에 더한 뒤 붙인다",
  "image": "그림/plug_valve.png"
 }

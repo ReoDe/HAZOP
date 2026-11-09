@@ -6,6 +6,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 from hazop import paths
 from hazop.extract import symbols
@@ -260,6 +261,82 @@ class LoadTest(LibraryCase):
         self.assertEqual(v1, symbols.Library.load(self.tmp).versions)
         v2 = self.write([dict(entry("t.gate", s), revision=2)]).versions
         self.assertNotEqual(v1, v2)
+
+
+def prim(pts, closed=True):
+    return {"fill": False, "stroke": True, "fill_white": False, "stroke_white": False, "dash": None,
+            "subpaths": [(pts, closed, pts, False)]}
+
+
+GATE = [(100, 100), (106, 103), (106, 100), (100, 103), (100, 100)]     # APR1400 게이트 밸브: 나비 모양 한 경로
+DOT = [(200, 200), (200, 200.27), (200, 200), (200, 200)]                # 탱크 무늬 점: 폭 0, 길이 0.27pt
+
+
+def extract(prims):
+    a = pdf_vector.analyze(400, 300, [], prims)
+    return pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+
+
+class PdfVectorLinkTest(unittest.TestCase):
+    """추출기 연결(2단계): 기존 규칙이 못 정한 기호만 사전으로 정한다."""
+
+    def test_unclassified_gate_valve_gets_kind_from_dictionary(self):
+        ex = extract([prim(GATE), prim([(80, 101.5), (100, 101.5)], False), prim([(106, 101.5), (126, 101.5)], False)])
+        valve = ex["nodes"][0]
+        self.assertEqual((valve["kind"], valve["attributes"]), ("manual_valve", {"valve_type": "gate"}))
+        self.assertEqual(valve["evidence"]["symbol_id"], "apr1400.gate_valve")
+        self.assertEqual(valve["evidence"]["classification_basis"], "symbol:apr1400.gate_valve")
+
+    def test_dropped_dot_keeps_other_node_numbers(self):
+        ex = extract([prim(DOT), prim(GATE)])
+        self.assertEqual([(n["local_id"], n["kind"]) for n in ex["nodes"]], [("local-node-001", "manual_valve")])
+        self.assertEqual(ex["drawing"]["ignored_objects"][-1]["reason"], "symbol:common.pattern_dot")
+
+    def test_pipe_cap_fallback_yields_to_dictionary(self):
+        """연결 하나·글자 없는 작은 몸체(끝막음 뒤처리 규칙)라도 사전에 맞으면 사전이 정한다(2단계 검토)."""
+        ex = extract([prim(GATE), prim([(80, 101.5), (100, 101.5)], False)])
+        self.assertEqual(ex["nodes"][0]["kind"], "manual_valve")
+        self.assertEqual(ex["nodes"][0]["evidence"]["symbol_id"], "apr1400.gate_valve")
+
+    def test_dropped_dot_does_not_swallow_text(self):
+        word = {"text": "TANK-NOTE", "x0": 202.0, "x1": 230.0, "top": 199.0, "bottom": 203.0, "size": 4.0, "upright": True}
+        a = pdf_vector.analyze(400, 300, [word], [prim(DOT), prim(GATE)])
+        ex = pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+        self.assertIn("TANK-NOTE", [t.get("text") for t in ex["texts"]])
+
+    def test_existing_rule_wins(self):
+        """기존 규칙이 정한 기호(삼각형 둘 = 수동 밸브)는 사전을 보지 않는다."""
+        ex = extract([prim([(0, 0), (5, 3), (0, 6), (0, 0)]), prim([(10, 0), (5, 3), (10, 6), (10, 0)])])
+        self.assertEqual(ex["nodes"][0]["kind"], "manual_valve")
+        self.assertNotIn("symbol_id", ex["nodes"][0]["evidence"])
+
+    def test_dictionary_kind_outside_registry_fails_loudly(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            shutil.copytree(paths.folder("기호"), os.path.join(tmp, "기호"))
+            p = os.path.join(tmp, "기호", "APR1400", "gate_valve.json")
+            with open(p, encoding="utf-8") as f:
+                e = json.load(f)
+            e["kind"] = "manual_valvee"
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(e, f, ensure_ascii=False)
+            with mock.patch.object(pdf_vector, "_symbol_library", None), \
+                    mock.patch.object(symbols.Library, "load", classmethod(
+                        lambda cls, root=None, _load=symbols.Library.load.__func__: _load(cls, os.path.join(tmp, "기호")))):
+                with self.assertRaises(symbols.SymbolLibraryError):
+                    extract([prim(GATE)])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_missing_dictionary_fails_loudly(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            with mock.patch.object(pdf_vector, "_symbol_library", None), \
+                    mock.patch.dict(os.environ, {"HAZOP_RESOURCE_ROOT": tmp}):
+                with self.assertRaises(symbols.SymbolLibraryError):
+                    extract([prim(GATE)])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 class RepoLibraryTest(unittest.TestCase):

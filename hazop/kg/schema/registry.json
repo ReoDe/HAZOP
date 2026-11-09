@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.7.0",
+  "registry_version": "0.8.0",
   "layers": [
     {"id": "pid", "label_ko": "P&ID 층", "screen": "pid", "filter": "type", "default_on": true},
     {"id": "knowledge", "label_ko": "지식 층", "screen": "kn", "filter": "type", "default_on": true},
@@ -58,6 +58,7 @@
      "required": ["normal_position", "fail_position"]},
     {"id": "check_valve", "parent": "valve", "kind": "check_valve", "label_ko": "체크 밸브", "label_en": "Check valve",
      "dexpi_class": "CheckValve"},
+    {"id": "damper", "parent": "valve", "kind": "damper", "label_ko": "댐퍼", "label_en": "Damper"},
     {"id": "isolation_valve", "parent": "valve", "kind": "isolation_valve", "label_ko": "격리 밸브", "label_en": "Isolation valve",
      "required": ["normal_position"]},
     {"id": "psv", "parent": "valve", "kind": "psv", "label_ko": "안전밸브", "label_en": "Pressure safety valve",
@@ -79,6 +80,8 @@
     {"id": "vent", "parent": "inline_component", "kind": "vent", "label_ko": "벤트", "label_en": "Vent"},
     {"id": "drain", "parent": "inline_component", "kind": "drain", "label_ko": "드레인", "label_en": "Drain"},
     {"id": "strainer", "parent": "inline_component", "kind": "strainer", "label_ko": "스트레이너", "label_en": "Strainer"},
+    {"id": "test_connection", "parent": "inline_component", "kind": "test_connection", "label_ko": "시험 연결",
+     "label_en": "Test connection"},
     {"id": "reducer", "parent": "inline_component", "kind": "reducer", "label_ko": "리듀서", "label_en": "Reducer",
      "dexpi_class": "PipeReducer"},
     {"id": "flow_element", "parent": "inline_component", "kind": "flow_element", "label_ko": "유량요소", "label_en": "Flow element",
@@ -170,7 +173,7 @@
     {"id": "normal_position", "type": "enum", "values": ["NO", "NC", "LO", "LC"], "label_ko": "정상 위치"},
     {"id": "fail_position", "type": "enum", "values": ["FO", "FC", "FL", "FAI"], "label_ko": "고장 위치"},
     {"id": "size", "type": "text", "label_ko": "크기"},
-    {"id": "valve_type", "type": "enum", "values": ["gate", "globe", "ball", "butterfly"], "label_ko": "밸브 형식"},
+    {"id": "valve_type", "type": "enum", "values": ["gate", "globe", "ball", "butterfly", "plug"], "label_ko": "밸브 형식"},
     {"id": "actuator_type", "type": "text", "label_ko": "구동기 형식"},
     {"id": "motive_power", "type": "enum", "values": ["air", "electric", "hydraulic"], "label_ko": "구동 동력"},
     {"id": "set_pressure", "type": "quantity", "dimension": "pressure", "needs_basis": true, "label_ko": "설정압력",
