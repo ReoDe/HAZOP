@@ -117,6 +117,7 @@ EQUIPMENT_WORDS = [
     (("VENT",), "vent"),
     (("ATM",), "vent"),
 ]
+SHEET_WORD_RE = re.compile(r"\bSHEET\b")  # 연결 표시 화살표 글자의 DCD 시트 표기('SHEET 2 "E"')
 CONTINUATION_RE = re.compile(r"^(TO|FROM)\s+\S*\d")
 SYSTEM_LABEL_RE = re.compile(r"^([A-Z]{2,3}):\S")  # 'CV:RDT', 'SI:SAFETY INJECTION LINE 3' — 다른 계통 도면으로 가는 표시
 # 쌍점 없이 화살표 바로 옆에 두 글자만 쓴 계통 약어(범례 1.7-1 'MS / SHEET 2"A"'). 밸브 위치 약어(범례 같은 쪽)는 뺀다
@@ -1505,16 +1506,20 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     # 글자 줄과 같은 방향(가로)으로 글자 위를 지나는 선만 선 라벨 근거로 본다(세로로 가로지르는 선은 우연한 겹침)
     solid_segments = [(a, b) for ch in chains if not ch.get("dashed") for a, b in _segs(ch["pts"])
                       if abs(b[1] - a[1]) <= 0.2 * abs(b[0] - a[0])]
+    shape_of = [_shape_kind(s, prm) for s in syms]
+    # 연결 표시 화살표와 겹치는 문단(화살표 안 'SHEET n "X"'까지 한 문단)은 화살표 몫이다. 화살표로 들어가는 배관이
+    # 그 문단을 지나도 배관 글자로 보지 않는다
+    arrow_boxes = [s.bbox for s, sh in zip(syms, shape_of) if sh[0] == "continuation"]
     roles = {}
     for bi, b in enumerate(blocks):
         c = _center(b["bbox"])
         if any(_inside(c, cb) for cb in cell_boxes):
             roles[bi] = "title_block"
-        elif any(_inside(c, m["bbox"]) for m in cls["masks"]) or \
-                any(_poly_box_dist([s1, s2], _expand(b["bbox"], -0.5)) == 0.0 for s1, s2 in solid_segments):
+        elif any(_inside(c, m["bbox"]) for m in cls["masks"]) or (
+                any(_poly_box_dist([s1, s2], _expand(b["bbox"], -0.5)) == 0.0 for s1, s2 in solid_segments)
+                and not (SHEET_WORD_RE.search(b["text"]) and any(_box_gap(b["bbox"], ab) <= 0 for ab in arrow_boxes))):
             roles[bi] = "line_label"
     # 밸브 몸통·구동부 안 글자(M, E/H 등)는 태그가 아니라 기호 표기로 본다
-    shape_of = [_shape_kind(s, prm) for s in syms]
     marks = {}
     for bi, b in enumerate(blocks):
         if bi in roles:

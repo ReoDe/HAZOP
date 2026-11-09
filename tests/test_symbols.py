@@ -440,6 +440,26 @@ class BuriedPipeTest(unittest.TestCase):
                                                  if r["line_type"] == "pdf_dashed"})
 
 
+def word(text, x0, top, size=3.0):
+    return {"text": text, "x0": x0, "x1": x0 + 0.6 * size * len(text), "top": top, "bottom": top + size,
+            "size": size, "upright": True}
+
+
+class ArrowLabelTest(unittest.TestCase):
+    """연결 표시 화살표와 겹치고 'SHEET'가 든 문단은 화살표로 들어가는 배관이 지나도 배관 글자가 아니다(3d, 10.3.2-1 S1)."""
+
+    def test_arrow_keeps_its_sheet_paragraph(self):
+        arrow = [(100, 100), (126, 100), (130, 103.5), (126, 107), (100, 107), (96, 103.5), (100, 100)]
+        pipe = prim([(60, 103.5), (118, 103.5)], False)  # 실제 도면처럼 배관이 화살표 안 글자 밑까지 들어간다
+        words = [word("DRAIN", 101, 96.2), word("TO", 111, 96.2), word("SHEET", 101, 102.0), word('2"K"', 112, 102.0),
+                 word('2"', 88, 100.0)]
+        a = pdf_vector.analyze(400, 300, words, [prim(arrow), pipe])
+        ex = pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+        arrows = [n for n in ex["nodes"] if n["kind"] == "continuation"]
+        self.assertEqual(len(arrows), 1)
+        self.assertIn("SHEET", arrows[0]["label_text"])
+
+
 class RepoLibraryTest(unittest.TestCase):
     def test_repo_library_loads_and_checks(self):
         root = paths.folder("기호")
