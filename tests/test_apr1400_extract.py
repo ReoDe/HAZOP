@@ -103,5 +103,49 @@ class PrefixInference(unittest.TestCase):
             self.assertIsNone(nodes[0]["tag"], label)
 
 
+class SplitLetters(unittest.TestCase):
+    """글자 크기가 조금씩 달라 pdfplumber가 한 자씩 끊은 연결 표시 글('SHEET 3"A"')을 한 줄로 다시 묶는다."""
+
+    @staticmethod
+    def word(text, x0, x1, top, size=3.159):
+        return {"text": text, "x0": x0, "x1": x1, "top": top, "bottom": top + 3.2, "size": size, "upright": True}
+
+    def texts(self, words):
+        return [b["text"] for b in pdf_vector._text_blocks(words, pdf_vector.PARAMS)]
+
+    def test_letters_that_overlap_by_kerning_join_without_spaces(self):
+        """9.5.1-1 시트 1: 'S' 끝(869.380)보다 'H' 시작(869.374)이 조금 앞선다. 예전에는 라벨이 'S'만 남았다."""
+        words = [self.word("S", 867.266, 869.380, 243.089), self.word("H", 869.374, 871.662, 243.093),
+                 self.word("EE", 871.656, 875.878, 243.097), self.word("T", 875.872, 877.809, 243.104),
+                 self.word("3", 878.682, 880.445, 243.109), self.word('"', 881.318, 882.446, 243.114),
+                 self.word("A", 882.440, 884.554, 243.116), self.word('"', 884.549, 885.676, 243.120)]
+        self.assertEqual(self.texts(words), ['SHEET 3 "A"'])
+
+    def test_a_piece_whose_top_is_a_hair_higher_still_joins_the_line_on_its_left(self):
+        """10.4.9-1 시트 1: '"E"'의 윗변이 0.1pt 높아 먼저 줄을 열면 왼쪽 'SHEET 2'가 붙지 못했다."""
+        words = [self.word("SHEET", 755.9, 765.9, 222.8), self.word("2", 766.6, 768.4, 222.8),
+                 self.word('"E"', 769.2, 773.6, 222.7)]
+        self.assertEqual(self.texts(words), ['SHEET 2 "E"'])
+
+    def test_a_bracketed_number_beside_a_bubble_stays_its_own_line(self):
+        """9.4.5-1 시트 2: 원 옆 '(3057)'이 'PDIS'에 붙으면 문단 가운데가 원 밖으로 밀려 'PDIS 3055' 태그를 잃는다."""
+        words = [self.word("PDIS", 230.6, 239.3, 193.3, 3.7), self.word("(3057)", 241.6, 252.4, 193.2, 3.7)]
+        self.assertEqual(sorted(self.texts(words)), ["(3057)", "PDIS"])
+
+    def test_an_equipment_number_in_brackets_stays_with_its_name(self):
+        """'LUBE OIL FILTER (FT32A)'의 설비 번호는 이름에서 떼지 않는다(검토 지적)."""
+        words = [self.word("FILTER", 100.0, 111.0, 50.0, 3.7), self.word("(FT32A)", 112.0, 124.0, 50.0, 3.7)]
+        self.assertEqual(self.texts(words), ["FILTER (FT32A)"])
+
+    def test_narrowly_spaced_words_keep_their_space(self):
+        """10.4.8-1 시트 2 'V1337 V1338'(간격 0.232pt), 9.4.3-1 'MOTOR DRIVEN'(0.254pt)이 붙지 않는다(검토 지적)."""
+        words = [self.word("V1337", 100.0, 109.6, 50.0, 3.7), self.word("V1338", 109.832, 119.4, 50.0, 3.7)]
+        self.assertEqual(self.texts(words), ["V1337 V1338"])
+
+    def test_words_far_apart_on_one_row_stay_apart(self):
+        words = [self.word("LEFT", 100.0, 108.0, 50.0), self.word("RIGHT", 120.0, 130.0, 50.0)]
+        self.assertEqual(sorted(self.texts(words)), ["LEFT", "RIGHT"])
+
+
 if __name__ == "__main__":
     unittest.main()

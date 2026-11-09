@@ -81,6 +81,9 @@ PARAMS = {
     "line_size_tol": 0.5,        # 글자 줄·문단: 글자 크기 차 상한(pt)
     "line_top_ratio": 0.3,       # 같은 줄: 윗변 차 ≤ 글자 크기 × 비율
     "word_gap_ratio": 0.6,       # 같은 줄: 단어 사이 간격 ≤ 글자 크기 × 비율
+    "word_overlap_ratio": 0.1,   # 같은 줄: 단어가 앞 단어와 겹쳐도 되는 폭 ≤ 글자 크기 × 비율(커닝)
+    "word_join_ratio": 0.02,     # 같은 줄: 간격이 글자 크기 × 비율보다 작으면 띄어 쓰지 않는다(한 자씩 끊긴 조각은
+                                 # |간격| < 0.01×크기에 몰리고, 'AFW PUMP'처럼 좁게 띄어 쓴 낱말은 0.03×크기 이상이다)
     "block_gap_min_ratio": -0.2,  # 같은 문단: 줄 사이 간격 ≥ 글자 크기 × 비율
     "block_gap_max_ratio": 0.5,  # 같은 문단: 줄 사이 간격 ≤ 글자 크기 × 비율
     "tick_len_max": 4.0,         # 신호선 빗금(//): 짧은 직선 조각 길이 상한(APR1400 범례 1.7-1 4/4 공압 신호선)
@@ -117,6 +120,7 @@ SYSTEM_LABEL_RE = re.compile(r"^([A-Z]{2,3}):\S")  # 'CV:RDT', 'SI:SAFETY INJECT
 BARE_SYSTEM_RE = re.compile(r"^(?!(?:FC|FO|FL|LO|LC|LT|NO|NC)$)[A-Z]{2}$")
 # ISA 계기 글자(기능 문자 + 번호, 예: 'PT 110'·'PIC 110'). 태그 앞 계통 접두는 글자에 없다.
 ISA_LABEL_RE = re.compile(r"([A-Z]{1,4})[ \-]*(\d{1,5}[A-Z]?)")
+PAREN_TOKEN_RE = re.compile(r"\(\d{1,5}[A-Z]?\)")  # 계기 원 옆 다른 계열 번호 '(3057)'·'(3004D)'. 설비 번호 '(FT32A)'는 아님
 
 
 # ---------------------------------------------------------------- 기하 보조
@@ -1065,20 +1069,27 @@ def _text_blocks(words, prm):
 
 def _upright_blocks(words, prm):
     """가로 글자 단어 → 줄 → 문단."""
-    words = sorted(words, key=lambda w: (round(w["top"], 1), w["x0"]))
+    # 글자 크기가 조금씩 다르면 pdfplumber가 'SHEET 3"A"'를 한 자씩 끊는다. 그런 조각은 윗변이 조금씩 달라 윗변 순으로
+    # 보면 오른쪽 조각이 먼저 줄을 열어 왼쪽 조각이 붙지 못하고(10.4.9-1-S1 'SHEET 2' / '"E"'), 커닝으로 앞 조각과
+    # 조금 겹치기도 한다(9.5.1-1-S1 'S'·'H' -0.006pt). 그래서 왼쪽부터 보고, 조금 겹쳐도 같은 줄로 보며 띄어 쓰지 않는다.
+    # 괄호로 싼 낱말('(3057)', 계기 원 옆 다른 계열 번호)은 붙어 있지 않으면 따로 둔다(9.4.5-1-S2 'PDIS'가 태그를 잃음)
+    words = sorted(words, key=lambda w: (w["x0"], w["top"]))
     lines = []
     for w in words:
-        for ln in lines:
-            if abs(ln["size"] - w["size"]) <= prm["line_size_tol"] and \
-                    abs(ln["top"] - w["top"]) <= prm["line_top_ratio"] * w["size"] and \
-                    0 <= w["x0"] - ln["x1"] <= prm["word_gap_ratio"] * w["size"]:
-                ln["words"].append(w)
-                ln["x1"] = w["x1"]
-                ln["bottom"] = max(ln["bottom"], w["bottom"])
-                break
+        reach = (prm["word_join_ratio"] if PAREN_TOKEN_RE.fullmatch(w["text"]) else prm["word_gap_ratio"]) * w["size"]
+        fits = [ln for ln in lines if abs(ln["size"] - w["size"]) <= prm["line_size_tol"] and
+                abs(ln["top"] - w["top"]) <= prm["line_top_ratio"] * w["size"] and
+                -prm["word_overlap_ratio"] * w["size"] <= w["x0"] - ln["x1"] < reach]
+        if fits:
+            ln = min(fits, key=lambda ln: (abs(ln["top"] - w["top"]), w["x0"] - ln["x1"]))
+            gap = w["x0"] - ln["x1"]
+            ln["words"].append(w)
+            ln["seps"].append("" if gap < prm["word_join_ratio"] * w["size"] else " ")
+            ln["x1"] = w["x1"]
+            ln["bottom"] = max(ln["bottom"], w["bottom"])
         else:
-            lines.append({"words": [w], "x0": w["x0"], "x1": w["x1"], "top": w["top"], "bottom": w["bottom"],
-                          "size": w["size"]})
+            lines.append({"words": [w], "seps": [""], "x0": w["x0"], "x1": w["x1"], "top": w["top"],
+                          "bottom": w["bottom"], "size": w["size"]})
     lines.sort(key=lambda ln: (round(ln["top"], 1), ln["x0"]))
     blocks = []
     for ln in lines:
@@ -1096,7 +1107,7 @@ def _upright_blocks(words, prm):
     for b in blocks:
         box = (min(l["x0"] for l in b["lines"]), min(l["top"] for l in b["lines"]),
                max(l["x1"] for l in b["lines"]), max(l["bottom"] for l in b["lines"]))
-        text = "\n".join(" ".join(w["text"] for w in l["words"]) for l in b["lines"])
+        text = "\n".join("".join(s + w["text"] for s, w in zip(l["seps"], l["words"])) for l in b["lines"])
         out.append({"text": text, "bbox": box, "size": b["lines"][0]["size"]})
     out.sort(key=lambda b: (round(b["bbox"][1], 2), round(b["bbox"][0], 2)))
     return out

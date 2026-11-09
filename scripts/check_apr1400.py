@@ -78,7 +78,11 @@ def text_layer(path):
     import pdfplumber
     with pdfplumber.open(path) as pdf:
         page = pdf.pages[0]
-        words = page.extract_words(char_dir_rotated="btt")
+        words = [dict(w, direction="btt") for w in page.extract_words(char_dir_rotated="btt", return_chars=True)
+                 if w["upright"] or all((c.get("matrix") or (0, 0))[1] > 0 for c in w["chars"])]
+        # 위→아래로 읽는 글자('CS:CS HEAT EXCHANGER 1', 6.3.2-1)는 btt로 읽으면 뒤섞인다. 추출기(load_page)와 같이 따로 읽는다
+        words += [dict(w, direction="ttb") for w in page.extract_words(char_dir_rotated="ttb", return_chars=True)
+                  if not w["upright"] and all((c.get("matrix") or (0, 0))[1] < 0 for c in w["chars"])]
         chars = [(c["text"], (c["x0"] + c["x1"]) / 2, (c["top"] + c["bottom"]) / 2, c["top"], c["x0"], c["x1"])
                  for c in page.chars if c["upright"] and c["text"].strip()]
         # 90° 돌린 글자(아래→위로 읽음)는 읽는 방향이 가로가 되게 좌표를 돌려 둔다: x' = -y, y' = x
@@ -94,11 +98,24 @@ def text_layer(path):
         i = next((i for i, t in enumerate(lines) if ISA_LETTERS_RE.match(t)), None)
         if i is not None and i + 1 < len(lines) and LOOP_NO_RE.match(lines[i + 1]):
             bubbles.append((lines[i], lines[i + 1], (b[0] + b[2]) / 2, (b[1] + b[3]) / 2))
-    labels = join_fragments([w for w in words if w["upright"]]) + [w for w in words if not w["upright"]]
+    labels = join_fragments([w for w in words if w["upright"]])
+    for direction in ("btt", "ttb"):
+        labels += join_rotated([w for w in words if not w["upright"] and w["direction"] == direction], direction)
     offpage = [(w["text"], OFFPAGE_RE.match(w["text"]).group(1), (w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2)
                for w in labels if OFFPAGE_RE.match(w["text"])]
     tokens = {norm(w["text"]) for w in words} | {norm(a + b) for a, b, _, _ in bubbles}
     return {"bubbles": bubbles, "offpage": offpage, "tokens": tokens, "chars": chars, "turned": turned, "down": down}
+
+
+def join_rotated(words, direction):
+    """돌린 글자 낱말을 읽는 방향이 가로가 되게 돌려 join_fragments로 잇고 되돌린다(돌린 글자도 한 자씩 끊긴다)."""
+    if direction == "btt":  # 아래→위: x' = -y, y' = x
+        there = [dict(w, x0=-w["bottom"], x1=-w["top"], top=w["x0"], bottom=w["x1"]) for w in words]
+        back = lambda w: dict(w, x0=w["top"], x1=w["bottom"], top=-w["x1"], bottom=-w["x0"])  # noqa: E731
+    else:  # 위→아래: x' = y, y' = -x
+        there = [dict(w, x0=w["top"], x1=w["bottom"], top=-w["x1"], bottom=-w["x0"]) for w in words]
+        back = lambda w: dict(w, x0=-w["bottom"], x1=-w["top"], top=w["x0"], bottom=w["x1"])  # noqa: E731
+    return [back(w) for w in join_fragments(there)]
 
 
 def join_fragments(words, gap=0.5):
