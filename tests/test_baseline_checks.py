@@ -86,7 +86,7 @@ class AprScore(unittest.TestCase):
           "tokens": {"PT1", "FT2", "RCA", "RCB", "SIC"}}
 
     def score(self, nodes):
-        return ca.score_page({"nodes": nodes, "summary": {"unknowns": 0}}, self.TL, {"RC", "SI"})
+        return ca.score_page({"nodes": nodes, "summary": {"unknowns": 0}}, self.TL)
 
     def test_one_giant_continuation_counts_once(self):
         s = self.score([node("c", 0, 0, 1000, 1000, kind="continuation", label="RC:A")])
@@ -96,10 +96,54 @@ class AprScore(unittest.TestCase):
         s = self.score([node("c", 295, 95, 10, 10, kind="continuation", label="RC:WRONG")])
         self.assertEqual((s["connectors_detected"], s["connector_bad_target"]), (1, 1))
 
+    def stacked(self, up_system, down_system):
+        """글자 SI:C(300,100)가 위 화살표(y 88~94)와 아래 화살표(y 106~112)에 거의 똑같이 가깝다(9.3.4-1 시트 6).
+        위 화살표 자기 글자는 이 쪽에 없다(계통 약어를 생략한 표시)."""
+        up = dict(node("u", 280, 88, 40, 6, kind="continuation"), attributes={"to_system": up_system} if up_system else {})
+        down = dict(node("d", 280, 106, 40, 6, kind="continuation"), attributes={"to_system": down_system})
+        return self.score([up, down])
+
+    def test_stacked_arrows_pair_with_the_arrow_below_the_label(self):
+        s = self.stacked(None, "SI")
+        self.assertEqual((s["connectors_detected"], s["connector_bad_target"]), (1, 0))
+
+    def test_borrowing_the_neighbours_system_is_a_wrong_target(self):
+        """위 화살표가 아래 화살표의 글자 SI:C에서 계통을 가져오면 짝 없는 계통으로 틀린 대상(opus 검토 재현)."""
+        s = self.stacked("SI", "SI")
+        self.assertEqual((s["connectors_detected"], s["connector_bad_target"]), (1, 1))
+
+    def test_swapped_systems_on_stacked_arrows_are_wrong_targets(self):
+        """짝은 위치로만 정하므로 이웃 화살표의 계통이 뒤바뀌면 둘 다 틀린 대상으로 센다(Codex 검토 재현)."""
+        s = self.stacked("SI", "RC")
+        self.assertEqual((s["connectors_detected"], s["connector_bad_target"]), (1, 2))
+
+    def test_label_glued_to_pipe_size_is_still_a_label(self):
+        """9.2.1-1의 '4"CV:IRWST'(배관 크기와 붙어 한 낱말)."""
+        self.assertEqual([ca.OFFPAGE_RE.match(t) and ca.OFFPAGE_RE.match(t).group(1)
+                          for t in ('4"CV:IRWST', "CV:RDT", '3"X4"', "PDIS")], ["CV", "CV", None, None])
+
+    def test_unread_system_is_a_miss_not_a_wrong_target(self):
+        s = self.score([node("c", 295, 95, 10, 10, kind="continuation", label="SHEET 4")])
+        self.assertEqual((s["connectors_detected"], s["connector_bad_target"]), (1, 0))
+
+    def test_arrow_without_a_system_is_not_a_wrong_target(self):
+        s = self.score([node("m", 500, 500, 30, 6, kind="continuation", label="MAKE-UP\nDEMIN. WATER")])
+        self.assertEqual(s["connector_bad_target"], 0)
+
     def test_tag_exact_needs_same_text_at_same_place(self):
         s = self.score([node("a", 5, 5, 10, 10, tag="PT-1"), node("b", 45, 5, 10, 10, tag="PT-1"),
                         node("c", 400, 400, 10, 10, tag="LINE-1B")])
         self.assertEqual((s["tag_exact"], s["tag_not_in_text"]), (1, 1))
+
+
+class AprLabelWords(unittest.TestCase):
+    def test_char_by_char_label_is_joined_but_words_stay_apart(self):
+        """9.3.2-1 시트 1: 'RC:RCS HOT'를 글자마다 따로 놓아 pdfplumber가 'R'·'C'·':'·'RC'·'S'로 쪼갠다."""
+        def w(t, x0, x1, top=125.5):
+            return {"text": t, "x0": x0, "x1": x1, "top": top, "bottom": top + 3}
+        got = ca.join_fragments([w("R", 265.0, 267.3), w("C", 267.3, 269.6), w(":", 269.6, 270.5), w("RC", 270.5, 275.2),
+                                 w("S", 275.2, 277.3), w("H", 278.2, 280.6), w("(S", 265.0, 268.2, top=129.3)])
+        self.assertEqual(sorted(x["text"] for x in got), ["(S", "H", "RC:RCS"])
 
 
 class AprTagInText(unittest.TestCase):

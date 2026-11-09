@@ -1,10 +1,10 @@
 {
  "answer_key": {
   "5.4.12-1-S1": {
-   "connector_hits": 0,
+   "connector_hits": 3,
    "connectors": 3,
-   "continuations": 0,
-   "continuations_correct": 0,
+   "continuations": 3,
+   "continuations_correct": 3,
    "instrument_hits": 4,
    "instruments": 4,
    "key_connectors": 3,
@@ -12,15 +12,15 @@
    "proxy": {
     "bubbles": 4,
     "connector_bad_target": 0,
-    "connectors_detected": 0,
-    "continuations": 0,
-    "nodes": 73,
+    "connectors_detected": 3,
+    "continuations": 3,
+    "nodes": 78,
     "offpage_labels": 3,
     "tag_exact": 4,
     "tag_not_in_text": 0,
     "tagged": 4,
-    "unclassified": 46,
-    "unknowns": 180
+    "unclassified": 45,
+    "unknowns": 186
    },
    "proxy_bubbles": 4,
    "proxy_bubbles_in_key": 4,
@@ -30,10 +30,10 @@
    "tagged_correct": 4
   },
   "9.3.3-1-S7": {
-   "connector_hits": 0,
+   "connector_hits": 7,
    "connectors": 7,
-   "continuations": 0,
-   "continuations_correct": 0,
+   "continuations": 7,
+   "continuations_correct": 7,
    "instrument_hits": 16,
    "instruments": 16,
    "key_connectors": 7,
@@ -41,14 +41,14 @@
    "proxy": {
     "bubbles": 16,
     "connector_bad_target": 0,
-    "connectors_detected": 0,
-    "continuations": 0,
-    "nodes": 140,
+    "connectors_detected": 5,
+    "continuations": 7,
+    "nodes": 145,
     "offpage_labels": 5,
     "tag_exact": 16,
     "tag_not_in_text": 0,
     "tagged": 16,
-    "unclassified": 72,
+    "unclassified": 69,
     "unknowns": 663
    },
    "proxy_bubbles": 16,
@@ -59,10 +59,10 @@
    "tagged_correct": 16
   },
   "9.3.4-1-S1": {
-   "connector_hits": 0,
+   "connector_hits": 17,
    "connectors": 17,
-   "continuations": 0,
-   "continuations_correct": 0,
+   "continuations": 17,
+   "continuations_correct": 17,
    "instrument_hits": 12,
    "instruments": 15,
    "key_connectors": 17,
@@ -70,15 +70,15 @@
    "proxy": {
     "bubbles": 15,
     "connector_bad_target": 0,
-    "connectors_detected": 0,
-    "continuations": 0,
-    "nodes": 261,
+    "connectors_detected": 4,
+    "continuations": 17,
+    "nodes": 279,
     "offpage_labels": 4,
     "tag_exact": 12,
     "tag_not_in_text": 0,
     "tagged": 12,
-    "unclassified": 131,
-    "unknowns": 966
+    "unclassified": 121,
+    "unknowns": 1000
    },
    "proxy_bubbles": 15,
    "proxy_bubbles_in_key": 15,
@@ -229,7 +229,7 @@
   },
   "12": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 3,
    "tag_exact": 4,
    "tag_not_in_text": 0
   },
@@ -278,7 +278,7 @@
   "127": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 13,
+   "tag_exact": 15,
    "tag_not_in_text": 0
   },
   "128": {
@@ -290,7 +290,7 @@
   "129": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 16,
+   "tag_exact": 18,
    "tag_not_in_text": 0
   },
   "13": {
@@ -325,13 +325,13 @@
   },
   "134": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 6,
    "tag_exact": 5,
    "tag_not_in_text": 0
   },
   "135": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 3,
    "tag_exact": 4,
    "tag_not_in_text": 0
   },
@@ -349,13 +349,13 @@
   },
   "138": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 2,
    "tag_exact": 0,
    "tag_not_in_text": 0
   },
   "139": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 4,
    "tag_exact": 4,
    "tag_not_in_text": 0
   },
@@ -367,49 +367,49 @@
   },
   "140": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 2,
    "tag_exact": 5,
    "tag_not_in_text": 0
   },
   "141": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 13,
    "tag_exact": 0,
    "tag_not_in_text": 0
   },
   "142": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 2,
    "tag_exact": 11,
    "tag_not_in_text": 0
   },
   "143": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 5,
    "tag_exact": 1,
    "tag_not_in_text": 0
   },
   "15": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 19,
    "tag_exact": 18,
    "tag_not_in_text": 0
   },
   "16": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 15,
    "tag_exact": 17,
    "tag_not_in_text": 0
   },
   "17": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 8,
    "tag_exact": 0,
    "tag_not_in_text": 0
   },
   "18": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 12,
    "tag_exact": 16,
    "tag_not_in_text": 0
   },
@@ -439,43 +439,43 @@
   },
   "22": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 16,
    "tag_exact": 19,
    "tag_not_in_text": 0
   },
   "23": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 18,
    "tag_exact": 26,
    "tag_not_in_text": 0
   },
   "24": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 4,
    "tag_exact": 12,
    "tag_not_in_text": 0
   },
   "25": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 10,
    "tag_exact": 32,
    "tag_not_in_text": 0
   },
   "26": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 14,
+   "tag_exact": 18,
    "tag_not_in_text": 0
   },
   "27": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 24,
+   "tag_exact": 26,
    "tag_not_in_text": 0
   },
   "28": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 4,
    "tag_exact": 57,
    "tag_not_in_text": 1
   },
@@ -493,7 +493,7 @@
   },
   "30": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 2,
    "tag_exact": 8,
    "tag_not_in_text": 0
   },
@@ -607,13 +607,13 @@
   },
   "48": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
-   "tag_exact": 3,
+   "connectors_detected": 21,
+   "tag_exact": 4,
    "tag_not_in_text": 0
   },
   "49": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 9,
    "tag_exact": 2,
    "tag_not_in_text": 0
   },
@@ -661,7 +661,7 @@
   },
   "56": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 2,
    "tag_exact": 23,
    "tag_not_in_text": 0
   },
@@ -673,7 +673,7 @@
   },
   "58": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 1,
    "tag_exact": 6,
    "tag_not_in_text": 0
   },
@@ -685,31 +685,31 @@
   },
   "6": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 16,
    "tag_exact": 23,
    "tag_not_in_text": 0
   },
   "60": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 3,
    "tag_exact": 18,
    "tag_not_in_text": 0
   },
   "61": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 3,
    "tag_exact": 2,
    "tag_not_in_text": 0
   },
   "62": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 5,
    "tag_exact": 16,
    "tag_not_in_text": 0
   },
   "63": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 4,
    "tag_exact": 12,
    "tag_not_in_text": 0
   },
@@ -721,32 +721,32 @@
   },
   "65": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 1,
    "tag_exact": 12,
    "tag_not_in_text": 0
   },
   "66": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 5,
    "tag_exact": 6,
    "tag_not_in_text": 0
   },
   "67": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 15,
    "tag_exact": 0,
-   "tag_not_in_text": 1
+   "tag_not_in_text": 0
   },
   "68": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 35,
    "tag_exact": 6,
    "tag_not_in_text": 0
   },
   "69": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
-   "tag_exact": 5,
+   "connectors_detected": 4,
+   "tag_exact": 6,
    "tag_not_in_text": 0
   },
   "7": {
@@ -817,7 +817,7 @@
   },
   "8": {
    "connector_bad_target": 0,
-   "connectors_detected": 0,
+   "connectors_detected": 4,
    "tag_exact": 12,
    "tag_not_in_text": 0
   },
@@ -951,18 +951,18 @@
  "totals": {
   "bubbles": 1619,
   "connector_bad_target": 0,
-  "connectors_detected": 0,
-  "continuations": 0,
+  "connectors_detected": 276,
+  "continuations": 1598,
   "failed_pages": 0,
-  "nodes": 25151,
-  "offpage_labels": 269,
+  "nodes": 26235,
+  "offpage_labels": 293,
   "pages": 143,
   "paired": 0,
-  "seconds": 209,
-  "tag_exact": 753,
-  "tag_not_in_text": 48,
-  "tagged": 950,
-  "unclassified": 11871,
-  "unknowns": 101608
+  "seconds": 200,
+  "tag_exact": 765,
+  "tag_not_in_text": 47,
+  "tagged": 976,
+  "unclassified": 10714,
+  "unknowns": 102576
  }
 }

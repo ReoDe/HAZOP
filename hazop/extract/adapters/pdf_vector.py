@@ -104,6 +104,7 @@ EQUIPMENT_WORDS = [
     (("ATM",), "vent"),
 ]
 CONTINUATION_RE = re.compile(r"^(TO|FROM)\s+\S*\d")
+SYSTEM_LABEL_RE = re.compile(r"^([A-Z]{2,3}):\S")  # 'CV:RDT', 'SI:SAFETY INJECTION LINE 3' — 다른 계통 도면으로 가는 표시
 # ISA 계기 글자(기능 문자 + 번호, 예: 'PT 110'·'PIC 110'). 태그 앞 계통 접두는 글자에 없다.
 ISA_LABEL_RE = re.compile(r"([A-Z]{1,4})[ \-]*(\d{1,5}[A-Z]?)")
 
@@ -334,8 +335,21 @@ def load_page(path, page=0):
         pg = pdf.pages[page]
         width, height = float(pg.width), float(pg.height)
         words = [{"text": w["text"], "x0": float(w["x0"]), "x1": float(w["x1"]), "top": float(w["top"]),
-                  "bottom": float(w["bottom"]), "size": float(w.get("size") or (w["bottom"] - w["top"]))}
-                 for w in pg.extract_words(keep_blank_chars=False, use_text_flow=False, extra_attrs=["size"])]
+                  "bottom": float(w["bottom"]), "size": float(w.get("size") or (w["bottom"] - w["top"])),
+                  "upright": True}
+                 for w in pg.extract_words(keep_blank_chars=False, use_text_flow=False, extra_attrs=["size"])
+                 if w.get("upright", True)]
+        # 90° 돌린 글자(아래→위로 읽음)는 char_dir_rotated="btt"로 따로 읽는다. 기본값으로 읽으면 거꾸로·한 자씩 끊긴다
+        # (APR1400 DCD 'CV:RDT' → 'TDR:VC'). 돌린 글자는 글자마다 size 값이 달라 size로 낱말을 나누지 않고,
+        # 줄 높이에 해당하는 낱말 폭을 size로 쓴다.
+        for direction, sign in (("btt", 1), ("ttb", -1)):  # 아래→위(글자 행렬 b > 0)와 위→아래(b < 0)를 따로 읽는다
+            words += [{"text": w["text"], "x0": float(w["x0"]), "x1": float(w["x1"]), "top": float(w["top"]),
+                       "bottom": float(w["bottom"]), "size": float(w["x1"] - w["x0"]), "upright": False,
+                       "direction": direction}
+                      for w in pg.extract_words(keep_blank_chars=False, use_text_flow=False,
+                                                char_dir_rotated=direction, return_chars=True)
+                      if not w.get("upright", True) and all((c.get("matrix") or (0, 0))[1] * sign > 0
+                                                            for c in w["chars"])]
         prims = []
         for obj in list(pg.lines) + list(pg.rects) + list(pg.curves):
             prims.append({"fill": bool(obj.get("fill")), "stroke": bool(obj.get("stroke", True)),
@@ -494,9 +508,13 @@ class _Sym:
         return max(prm["inner_tol_min"], min(prm["inner_tol_max"],
                                              prm["inner_tol_ratio"] * max(_w(self.core), _h(self.core))))
 
+    def arrow_only(self):
+        """도면 연결 표시 화살표만으로 된 기호. 주변 선을 몸체 일부로 받아들이지 않는다(선은 배관 연결이다)."""
+        return bool(self.bodies) and all(_is_chevron(b) for b in self.bodies)
+
     def deep(self, p, prm):
-        if self.stroke_only:
-            return False
+        if self.stroke_only or self.arrow_only():
+            return False  # 화살표 안으로 들어간 배관은 연결이지 화살표의 일부가 아니다
         return _depth(p, self.core) > max(prm["deep_min"], prm["deep_ratio"] * min(_w(self.core), _h(self.core)))
 
     def evidence(self):
@@ -527,7 +545,10 @@ def _uf_groups(n, linked):
 def _cluster_bodies(bodies, prm):
     for b in bodies:
         b["kind_"] = "body"
-    groups = _uf_groups(len(bodies), lambda i, j: _box_gap(bodies[i]["bbox"], bodies[j]["bbox"]) <= prm["touch_tol"])
+    # 연결 표시 화살표는 맞닿은 밸브·축소관 몸체와 한 기호로 묶지 않는다(묶이면 화살표도 밸브도 종류를 잃는다)
+    alone = [_is_chevron(b) for b in bodies]
+    groups = _uf_groups(len(bodies), lambda i, j: not (alone[i] or alone[j]) and
+                        _box_gap(bodies[i]["bbox"], bodies[j]["bbox"]) <= prm["touch_tol"])
     return [_Sym([bodies[i] for i in g]) for g in groups]
 
 
@@ -579,7 +600,7 @@ def _group_symbols(cls, prm):
         for p in polys:
             host = None
             for s in live:
-                if s.alive and all(_inside(q, s.bbox, s.inner_tol(prm)) for q in p["pts"]):
+                if s.alive and not s.arrow_only() and all(_inside(q, s.bbox, s.inner_tol(prm)) for q in p["pts"]):
                     if host is None or _w(s.bbox) * _h(s.bbox) < _w(host.bbox) * _h(host.bbox):
                         host = s
             if host is not None:
@@ -625,7 +646,7 @@ def _group_symbols(cls, prm):
                 touching = [s for s in live if s.alive and
                             min(_poly_box_dist(it["pts"], s.bbox) for it in items) <= prm["attach_tol"]]
                 host = None
-                for s in touching:
+                for s in (t for t in touching if not t.arrow_only()):
                     out = max(s.bbox[0] - box[0], box[2] - s.bbox[2], s.bbox[1] - box[1], box[3] - s.bbox[3], 0.0)
                     if out <= prm["decor_extent_ratio"] * max(_w(s.core), _h(s.core)):
                         if host is None or _w(s.bbox) * _h(s.bbox) > _w(host.bbox) * _h(host.bbox):
@@ -960,7 +981,27 @@ def _merge_appendages(syms, chains, prm):
 # ---------------------------------------------------------------- 5. 글자
 
 def _text_blocks(words, prm):
-    """단어 → 줄 → 문단. 반환: [{text, bbox, lines, size}] (위→아래, 왼→오 순)."""
+    """단어 → 줄 → 문단. 반환: [{text, bbox, size}] (위→아래, 왼→오 순).
+    90° 돌린 낱말(upright 거짓, 아래→위 또는 위→아래로 읽음)은 읽는 방향이 가로가 되게 좌표를 돌려 같은 규칙으로
+    묶은 뒤 되돌린다."""
+    upright = [w for w in words if w.get("upright", True)]
+    up_turn = [dict(w, x0=-w["bottom"], x1=-w["top"], top=w["x0"], bottom=w["x1"])  # 아래→위: x' = -y, y' = x
+               for w in words if not w.get("upright", True) and w.get("direction", "btt") == "btt"]
+    down_turn = [dict(w, x0=w["top"], x1=w["bottom"], top=-w["x1"], bottom=-w["x0"])  # 위→아래: x' = y, y' = -x
+                 for w in words if not w.get("upright", True) and w.get("direction") == "ttb"]
+    out = _upright_blocks(upright, prm)
+    for b in _upright_blocks(up_turn, prm):
+        x0, y0, x1, y1 = b["bbox"]
+        out.append(dict(b, bbox=(y0, -x1, y1, -x0), rotated=True))
+    for b in _upright_blocks(down_turn, prm):
+        x0, y0, x1, y1 = b["bbox"]
+        out.append(dict(b, bbox=(-y1, x0, -y0, x1), rotated=True))
+    out.sort(key=lambda b: (round(b["bbox"][1], 2), round(b["bbox"][0], 2)))
+    return out
+
+
+def _upright_blocks(words, prm):
+    """가로 글자 단어 → 줄 → 문단."""
     words = sorted(words, key=lambda w: (round(w["top"], 1), w["x0"]))
     lines = []
     for w in words:
@@ -1024,6 +1065,36 @@ def _is_tombstone(body):
     return near(x0, y1) and near(x1, y1) and near((x0 + x1) / 2, y0)
 
 
+def _is_chevron(body):
+    """도면 연결 표시 화살표(APR1400 DCD 범례 그림 1.7-1): 꼭짓점 6개짜리 닫힌 직선 도형, 긴 변이 짧은 변의 2.5배
+    이상이고 짧은 변 4~14pt(가로·세로 모두). 두 가지 모양이 있다.
+    - 같은 그림의 다른 시트: 꼬리가 안으로 파인 갈매기(파인 꼭짓점 정확히 하나)
+    - 다른 그림: 양 끝이 뾰족한 볼록 육각형(두 끝 꼭짓점이 짧은 변 가운데)
+    파인 꼭짓점이 둘 이상인 도형(9.4.1 등의 세로 펌프 기둥)은 아니다."""
+    pts = body["pts"][:-1] if body["pts"][0] == body["pts"][-1] else body["pts"]
+    x0, y0, x1, y1 = body["bbox"]
+    w, h = x1 - x0, y1 - y0
+    short, long_ = min(w, h), max(w, h)
+    if not (body["closed"] and not body.get("curved") and len(pts) == 6 and 4 <= short <= 14 and long_ >= 2.5 * short):
+        return False
+    turns = [(b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])
+             for a, b, c in zip(pts, pts[1:] + pts[:1], pts[2:] + pts[:2])]
+    signs = [t > 0 for t in turns if abs(t) > 1e-6]
+    if len(signs) != 6:
+        return False
+    reflex = min(signs.count(True), signs.count(False))
+    if reflex == 1:
+        return True
+    if reflex:
+        return False
+    tol = 0.15 * short
+    if w >= h:  # 가로: 왼쪽·오른쪽 끝 꼭짓점이 세로 가운데
+        tips = [p for p in pts if abs(p[0] - x0) <= tol or abs(p[0] - x1) <= tol]
+        return len(tips) == 2 and all(abs(p[1] - (y0 + y1) / 2) <= tol for p in tips)
+    tips = [p for p in pts if abs(p[1] - y0) <= tol or abs(p[1] - y1) <= tol]
+    return len(tips) == 2 and all(abs(p[0] - (x0 + x1) / 2) <= tol for p in tips)
+
+
 def _is_triangle(body):
     pts = body["pts"][:-1] if body["pts"][0] == body["pts"][-1] else body["pts"]
     return body["closed"] and not body.get("curved") and len(pts) == 3
@@ -1060,6 +1131,8 @@ def _shape_kind(sym, prm):
         return "instrument", "circle"
     if len(sym.bodies) == 1 and _is_tombstone(sym.bodies[0]):
         return "instrument", "tombstone"
+    if sym.bodies and all(_is_chevron(b) for b in sym.bodies):
+        return "continuation", "chevron_arrow"
     return None, None
 
 
@@ -1111,6 +1184,48 @@ def _classify(sym, text, degree, prm, marks=()):
     if not text and degree == 1 and not sym.stroke_only and max(_w(sym.bbox), _h(sym.bbox)) <= prm["pipe_cap_max"]:
         return "pipe_cap", "small_closed_body_single_connection"
     return None, None
+
+
+def _continuation_attributes(sym, blocks, prm, own=None, arrows=()):
+    """연결 표시 화살표 옆 글자에서 상대 계통을 읽는다. 화살표에 붙은 글자 문단(own)에 'CV:RDT'처럼 계통 약어로
+    시작하는 줄이 있으면 그것을, 없으면 그런 줄이 있는 문단 중 화살표에서 label_gap_max 안으로 가장 가까운 것을 쓴다.
+    DCD는 가로 화살표의 글자를 화살표 위에, 세로 화살표의 글자를 왼쪽에 쓰므로 그 자리(또는 화살표 안)의 문단만 보고,
+    다른 화살표(arrows)가 그 문단에 더 가까우면 그 화살표의 글자로 보아 쓰지 않는다. 화살표가 촘촘히 쌓인 곳에서
+    이웃 화살표의 계통을 가져오지 않게 하려는 것이다(같은 계통의 다른 시트로 가면 약어를 생략한다, 범례 1.7-1).
+    약어를 to_system, 그 줄부터의 글자를 to_label로 둔다. 없으면 빈 dict
+    (계통 약어 없이 'MAKE-UP DEMIN. WATER'처럼 쓴 표시는 상대를 정하지 않는다). 쪽끼리 짝짓기는 하지 않는다."""
+    ax0, ay0, ax1, ay1 = sym.bbox
+    across = ax1 - ax0 >= ay1 - ay0
+
+    def code_line(text):
+        lines = text.split("\n")
+        k = next((k for k, line in enumerate(lines) if SYSTEM_LABEL_RE.match(line)), None)
+        return None if k is None else (SYSTEM_LABEL_RE.match(lines[k]).group(1), " ".join(" ".join(lines[k:]).split()))
+
+    def in_place(b):
+        bx0, by0, bx1, by1 = b["bbox"]
+        if _inside(_center(b["bbox"]), sym.bbox):
+            return True
+        if across:
+            return (by0 + by1) / 2 < (ay0 + ay1) / 2 and bx0 < ax1 and bx1 > ax0  # 문단 가운데가 화살표 가운데보다 위
+        return (bx0 + bx1) / 2 < (ax0 + ax1) / 2 and by0 < ay1 and by1 > ay0
+
+    def mine(b, gap):
+        return in_place(b) and all(_box_gap(b["bbox"], a.bbox) >= gap for a in arrows if a is not sym)
+
+    if own is not None and code_line(own["text"]) and mine(own, _box_gap(own["bbox"], sym.bbox)):
+        code, text = code_line(own["text"])
+        return {"to_system": code, "to_label": text}
+    near = []
+    for b in blocks:
+        hit = code_line(b["text"])
+        gap = _box_gap(b["bbox"], sym.bbox)
+        if hit and gap <= prm["label_gap_max"] and mine(b, gap):
+            near.append((gap,) + hit)
+    if not near:
+        return {}
+    _, code, text = min(near)
+    return {"to_system": code, "to_label": text}
 
 
 # ---------------------------------------------------------------- 태그
@@ -1249,10 +1364,13 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         if bi in roles:
             continue
         for si, s in enumerate(syms):
+            if b.get("rotated") and shape_of[si][0] not in ("instrument", "continuation"):
+                continue  # 돌린 글자는 대개 행선지·위치 설명이라 다른 기호의 종류를 정하는 글자로 쓰지 않는다
             inside = _inside(_center(b["bbox"]), s.bbox)
             gap = -1.0 if inside else _box_gap(b["bbox"], s.bbox)
             if gap <= prm["label_gap_max"]:
                 cand.append((round(gap, 6), bi, si))
+    arrows = [s for si, s in enumerate(syms) if shape_of[si][0] == "continuation"]
     label_of, taken = {}, set()
     for gap, bi, si in sorted(cand):
         if si in label_of or bi in taken:
@@ -1285,7 +1403,9 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             "category": category, "kind": kind, "tag": None, "label": text, "label_text": text,
             "label_location": ({"bbox": _box_out(blocks[bi]["bbox"]), "approximate": False,
                                 "method": "pdf_text_block"} if bi is not None else None),
-            "attributes": {}, "style": None, "parent": None,
+            "attributes": (_continuation_attributes(s, blocks, prm, blocks[bi] if bi is not None else None, arrows)
+                           if kind == "continuation" else {}),
+            "style": None, "parent": None,
             "geometry": dict(zip(("x", "y", "width", "height"), _box_out(s.bbox))),
             "evidence": {"classification_basis": basis, "pdf_objects": s.evidence(),
                          "stroke_only": s.stroke_only, "symbol_marks": marks.get(n - 1, [])},

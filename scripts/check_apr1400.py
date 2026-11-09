@@ -9,7 +9,7 @@
   위치에 연결점 노드를 만든 수), paired(프로젝트 그래프에서 짝지은 연결 수)
 - 정밀도(오류 수): tag_not_in_text(글자에 없는 태그. 계기 글자로 만든 태그(근거 isa_label…)는 그 노드 상자 안에 찍힌
   위아래 두 줄을 이은 글자와 같아야 하고, 나머지 태그는 그 쪽 텍스트 층 낱말에 있어야 한다),
-  connector_bad_target(없는 도면·계통을 가리킨 연결점)
+  connector_bad_target(짝지은 글자와 계통이 다르거나, 짝이 없는데 계통을 단 연결점)
 독립 정답(tests/fixtures/apr1400/answer_key/*.json, 렌더한 그림을 눈으로 읽어 만든 정답, tests/fixtures/apr1400/SOURCE.md)이 있는 쪽은 정답 대비 값도 낸다.
 톱니: 재현율 값은 기준값보다 낮아지면, 오류 값은 높아지면 실패(종료 코드 1). 합계·쪽마다·정답 쪽마다 모두 본다.
 쪽 수·계기 원 수·연결 표기 수(입력과 대리 지표)가 기준값과 다르면 비교하지 않고 실패한다.
@@ -36,11 +36,12 @@ HIGHER = ("tag_exact", "connectors_detected", "paired")
 LOWER = ("tag_not_in_text", "connector_bad_target")
 PAGE_HIGHER = ("tag_exact", "connectors_detected")
 PAGE_LOWER = ("tag_not_in_text", "connector_bad_target")
-OFFPAGE_RE = re.compile(r"^([A-Z]{2,3}):[A-Z0-9]")     # 'CV:CHARGING' 계통 약어 연결 표기
+OFFPAGE_RE = re.compile(r"^(?:[\d/.]+\")?([A-Z]{2,3}):[A-Z0-9]")  # 'CV:CHARGING'. 배관 크기가 붙은 '4"CV:IRWST'도
 ISA_LETTERS_RE = re.compile(r"^[A-Z]{2,5}$")
 LOOP_NO_RE = re.compile(r"^\d{1,4}[A-Z]?$")  # 루프 번호는 한 자리도 있음(TEW / 8, PDT / 1D)
 NEAR = 3.0        # 계기 원 글자 중심이 노드 상자 안(여유 pt)
 CONN_NEAR = 12.0  # 연결 표기 글자 중심이 연결점 노드 상자 안(여유 pt)
+LABEL_REACH = 30.0  # 여러 줄 연결 표기의 첫 줄이 화살표에서 떨어질 수 있는 거리(글자 쓰는 쪽, pt)
 
 
 def norm(s):
@@ -78,6 +79,12 @@ def text_layer(path):
         words = page.extract_words(char_dir_rotated="btt")
         chars = [(c["text"], (c["x0"] + c["x1"]) / 2, (c["top"] + c["bottom"]) / 2, c["top"], c["x0"], c["x1"])
                  for c in page.chars if c["upright"] and c["text"].strip()]
+        # 90° 돌린 글자(아래→위로 읽음)는 읽는 방향이 가로가 되게 좌표를 돌려 둔다: x' = -y, y' = x
+        turned = [(c["text"], -(c["top"] + c["bottom"]) / 2, (c["x0"] + c["x1"]) / 2, c["x0"], -c["bottom"], -c["top"])
+                  for c in page.chars if not c["upright"] and c["text"].strip() and c["matrix"][1] > 0]
+        # 위→아래로 읽는 글자: x' = y, y' = -x
+        down = [(c["text"], (c["top"] + c["bottom"]) / 2, -(c["x0"] + c["x1"]) / 2, -c["x1"], c["top"], c["bottom"])
+                for c in page.chars if not c["upright"] and c["text"].strip() and c["matrix"][1] < 0]
         boxes = symbol_boxes(page)
     bubbles = []
     for b in boxes:
@@ -85,10 +92,25 @@ def text_layer(path):
         i = next((i for i, t in enumerate(lines) if ISA_LETTERS_RE.match(t)), None)
         if i is not None and i + 1 < len(lines) and LOOP_NO_RE.match(lines[i + 1]):
             bubbles.append((lines[i], lines[i + 1], (b[0] + b[2]) / 2, (b[1] + b[3]) / 2))
+    labels = join_fragments([w for w in words if w["upright"]]) + [w for w in words if not w["upright"]]
     offpage = [(w["text"], OFFPAGE_RE.match(w["text"]).group(1), (w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2)
-               for w in words if OFFPAGE_RE.match(w["text"])]
+               for w in labels if OFFPAGE_RE.match(w["text"])]
     tokens = {norm(w["text"]) for w in words} | {norm(a + b) for a, b, _, _ in bubbles}
-    return {"bubbles": bubbles, "offpage": offpage, "tokens": tokens, "chars": chars}
+    return {"bubbles": bubbles, "offpage": offpage, "tokens": tokens, "chars": chars, "turned": turned, "down": down}
+
+
+def join_fragments(words, gap=0.5):
+    """글자를 한 자씩 따로 놓은 도면(예: 9.3.2-1 시트 1)에서 pdfplumber가 'R'·'C'·':'·'RC'로 쪼갠 낱말을 다시 잇는다.
+    같은 줄(위 끝 0.5pt 안)에서 앞 낱말 끝과 -0.5~gap pt 안에 붙은 것만 잇는다(낱말 사이 띄어쓰기는 약 0.9pt)."""
+    out = []
+    for w in sorted(words, key=lambda w: (round(w["top"], 1), w["x0"])):
+        last = next((o for o in reversed(out) if abs(o["top"] - w["top"]) < 0.5 and -0.5 <= w["x0"] - o["x1"] <= gap),
+                    None)
+        if last is not None:
+            last.update(text=last["text"] + w["text"], x1=w["x1"], bottom=max(last["bottom"], w["bottom"]))
+        else:
+            out.append(dict(w))
+    return out
 
 
 def box_words(chars, box, gap=0.5):
@@ -122,8 +144,13 @@ def tag_in_text(node, tl):
     """태그가 도면에 찍힌 글자와 같은가. 계기 글자로 만든 태그는 노드 상자 안 위아래 두 줄을 이은 글자와 같아야 한다
     (접두를 추정해 붙였거나 기호 밖 번호를 가져온 태그는 틀림). 나머지는 그 쪽 낱말 하나와 같아야 한다."""
     if (node.get("evidence") or {}).get("tag_basis", "").startswith("isa_label"):
-        lines = box_words(tl["chars"], _box(node, 1.0))
-        pairs = {norm(a + b) for up, down in zip(lines, lines[1:]) for a, ax in up for b, bx in down if abs(ax - bx) < 6}
+        x0, y0, x1, y1 = _box(node, 1.0)
+        pairs = set()
+        for chars, box in ((tl["chars"], (x0, y0, x1, y1)), (tl.get("turned") or [], (-y1, x0, -y0, x1)),
+                           (tl.get("down") or [], (y0, -x1, y1, -x0))):
+            lines = box_words(chars, box)
+            pairs |= {norm(a + b) for up, down in zip(lines, lines[1:]) for a, ax in up for b, bx in down
+                      if abs(ax - bx) < 6}
         return norm(node["tag"]) in pairs
     return norm(node["tag"]) in tl["tokens"]
 
@@ -157,6 +184,33 @@ def match_one_to_one(points, nodes, ok, margin):
     return pairs
 
 
+def match_connectors(points, conts):
+    """연결 표기 글자와 연결점 노드를 위치만으로 1:1로 짝짓는다(계통은 보지 않는다. 계통은 짝을 정한 뒤 따로 맞춘다).
+    DCD는 가로 화살표의 글자를 화살표 위에, 세로 화살표의 글자를 왼쪽에 쓴다. 그래서 글자 아래(가로)·오른쪽(세로)에 있는
+    화살표를 먼저 고르고, 그런 화살표가 없을 때만 반대쪽을 고른다. 화살표가 촘촘히 쌓여 글자 하나가 위아래 화살표에
+    똑같이 가까울 때 생기는 오대응을 막는다. 짝은 비용이 작은 것부터 정한다."""
+    cand = []
+    for i, (code, x, y) in enumerate(points):
+        for n in conts:
+            g = n["geometry"]
+            across = g["width"] >= g["height"]
+            # 상자 둘레 CONN_NEAR 안, 또는 글자를 쓰는 쪽(가로 화살표 위·세로 화살표 왼쪽)으로 LABEL_REACH 안(여러 줄 글자)
+            reach = ((g["x"] - CONN_NEAR, g["y"] - LABEL_REACH, g["x"] + g["width"] + CONN_NEAR, g["y"]) if across else
+                     (g["x"] - LABEL_REACH, g["y"] - CONN_NEAR, g["x"], g["y"] + g["height"] + CONN_NEAR))
+            if not (_inside((x, y), _box(n, CONN_NEAR)) or _inside((x, y), reach)):
+                continue
+            ahead = (g["y"] - y) if across else (g["x"] - x)  # 화살표가 글자 아래·오른쪽이면 ≥ 0
+            cost = ahead if ahead >= -2 else 1000 - ahead
+            cand.append((cost, i, n["local_id"], code, n))
+    used_pt, used_node, pairs = set(), set(), []
+    for cost, i, nid, code, n in sorted(cand, key=lambda c: c[:3]):
+        if i not in used_pt and nid not in used_node:
+            used_pt.add(i)
+            used_node.add(nid)
+            pairs.append((code, n))
+    return pairs
+
+
 def continuation_target(node):
     attrs = node.get("attributes") or {}
     t = attrs.get("to_drawing") or attrs.get("to_system")
@@ -166,16 +220,19 @@ def continuation_target(node):
     return m.group(1) if m else None
 
 
-def score_page(ex, tl, valid_targets):
+def score_page(ex, tl):
     nodes = ex["nodes"]
     tagged = [n for n in nodes if n.get("tag")]
     exact = match_one_to_one([(norm(a + b), x, y) for a, b, x, y in tl["bubbles"]], tagged,
                              lambda want, n: norm(n["tag"]) == want, NEAR)
     conts = [n for n in nodes if n.get("kind") == "continuation"]
-    pairs = match_one_to_one([(code, x, y) for _, code, x, y in tl["offpage"]], conts, lambda k, n: True, CONN_NEAR)
+    pairs = match_connectors([(code, x, y) for _, code, x, y in tl["offpage"]], conts)
     paired_ids = {n["local_id"] for _, n in pairs}
-    bad = sum(1 for code, n in pairs if continuation_target(n) != code)
-    bad += sum(1 for n in conts if n["local_id"] not in paired_ids and continuation_target(n) not in valid_targets)
+    # 계통을 못 읽은 연결점(None)은 놓친 것이지 틀린 대상이 아니다
+    bad = sum(1 for code, n in pairs if continuation_target(n) not in (None, code))
+    # 짝이 없는데 계통을 단 연결점: 그 계통 글자는 다른 화살표 몫으로 짝지어졌거나 없는 글자다(이웃 화살표 글자를 가져옴).
+    # 상대를 적지 않은 표시(계통 약어 생략, 범례 1.7-1)는 틀린 대상이 아니다
+    bad += sum(1 for n in conts if n["local_id"] not in paired_ids and continuation_target(n) is not None)
     return {"bubbles": len(tl["bubbles"]), "offpage_labels": len(tl["offpage"]), "tagged": len(tagged),
             "tag_exact": len(exact), "tag_not_in_text": sum(1 for n in tagged if not tag_in_text(n, tl)),
             "continuations": len(conts), "connectors_detected": len(pairs), "connector_bad_target": bad,
@@ -255,15 +312,12 @@ def run(input_dir, catalog, jobs, pages=None):
             pool.join()  # 작업 프로세스가 임시 폴더 파일을 놓은 뒤에 지운다(Windows 파일 잠금)
     finally:
         shutil.rmtree(work, ignore_errors=True)
-    figures = {r["그림번호"] for r in rows}
-    systems = {code for d in done if d["ok"] for _, code, _, _ in d["tl"]["offpage"]}
-    valid = figures | {d["dwg"] for d in done} | systems
     per_page = []
     for r, d in zip(rows, done):
         row = {"seq": int(r["순번"]), "drawing": d["dwg"], "ok": d["ok"], "seconds": d["seconds"],
                "error": d.get("error", "")}
         if d["ok"]:
-            row.update(score_page(d["ex"], d["tl"], valid))
+            row.update(score_page(d["ex"], d["tl"]))
         per_page.append(row)
     from hazop.graph import project
     graphs = [d["graph"] for d in done if d["ok"]]
@@ -279,7 +333,7 @@ def run(input_dir, catalog, jobs, pages=None):
         for r, d in zip(rows, done):
             if int(r["순번"]) == key["seq"] and d["ok"]:
                 keyed[d["dwg"]] = dict(score_against_key(d["ex"], key), **proxy_against_key(d["tl"], key),
-                                       proxy=score_page(d["ex"], d["tl"], valid))
+                                       proxy=score_page(d["ex"], d["tl"]))
     return {"totals": totals, "answer_key": keyed, "per_page": per_page}
 
 
