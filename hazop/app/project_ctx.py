@@ -115,7 +115,10 @@ class ProjectContext:
         if migrated is not None:
             self.node_set, self.saved, self.notice = migrated[0], True, migrated[1]
             return self.node_set, True
-        self.node_set, self.saved = sn.propose(self.pg), False
+        sheets, problem = sn.exclusion_for(self.pg)
+        if problem:
+            self.notice = problem
+        self.node_set, self.saved = sn.propose(self.pg, exclude_sheets=sheets), False
         return self.node_set, False
 
     def view(self, node_set=None):
@@ -230,7 +233,10 @@ def migrate_sets(pg):
     old_sets = [o for _g, o in olds]
     files = [sn._readable_path(g.get("project_id"), g["graph_id"]) for g, _o in olds]
     folder = backup(files, "검토구간-이전")
-    proposal = sn.propose(pg)
+    sheets, problem = sn.exclusion_for(pg)
+    if problem:
+        raise ValueError(problem)  # 이전은 한 번뿐이라, 표시를 못 읽은 채 옮기지 않고 저장본을 읽지 못한 것처럼 알린다
+    proposal = sn.propose(pg, exclude_sheets=sheets)
     mapping = span.legacy_map(old_sets, proposal, pg)
     out = span.migrate_set(old_sets, proposal, pg)
     path = sn.save(out)

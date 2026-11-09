@@ -31,7 +31,8 @@ class G:
         seg = self.add("s%03d" % self.n, "pipe_segment", "pipe_segment",
                        flow_direction={"from": a, "to": b} if flow else None, **kw)
         for end in (a, b):
-            self.edges.append({"entity_id": "e-%s-%s" % (seg, end), "kind": "has_endpoint", "nodes": [seg, end]})
+            self.edges.append({"entity_id": "e-%s-%s" % (seg, end), "kind": "has_endpoint", "nodes": [seg, end],
+                               "segment": seg, "node": end})
         return seg
 
     def chain(self, start, count, prefix):
@@ -251,6 +252,40 @@ class ScreenRecordTest(unittest.TestCase):
         self.assertEqual({s.status for s in got.values()}, {"keep"})
         self.assertTrue(all(s.score is not None for s in got.values()))
 
+    def test_saved_file_from_the_old_proposer_loads_unchanged(self):
+        import tempfile
+        from hazop import paths
+        old = copy.deepcopy(self.ns)
+        old["proposer"] = {"name": "hazop.study.nodes", "version": "0.1.0", "max_active": 5}
+        for n in old["nodes"]:
+            for key in ("screen", "absorbed", "parts"):
+                n.pop(key, None)
+        old = sn.confirm(old, self.graph, "검토자", at=AT)
+        tmp, env = tempfile.mkdtemp(), os.environ.get(paths.ENV_WORK_ROOT)
+        os.environ[paths.ENV_WORK_ROOT] = tmp
+        try:
+            path = sn.save(old)
+            before = open(path, "rb").read()
+            self.assertEqual(sn.load(self.graph), old)
+            self.assertEqual(open(path, "rb").read(), before)  # 읽기만 하고 다시 쓰지 않는다
+        finally:
+            if env is None:
+                os.environ.pop(paths.ENV_WORK_ROOT, None)
+            else:
+                os.environ[paths.ENV_WORK_ROOT] = env
+
+    def test_pieces_cut_from_a_long_line_keep_both_boundaries(self):
+        from hazop.study import span
+        g = G()
+        a = g.add("a-tank", "tank", "equipment", "TK-A")
+        end = g.chain(a, 100, "t")
+        b = g.add("z-tank", "tank", "equipment", "TK-Z")
+        g.pipe(end, g.add("v-valve", "manual_valve", "valve", "V-1"))
+        g.pipe("v-valve", b)
+        graph = dict(g.graph(), sheets=[{"graph_id": "graph-T", "drawing_number": "T-1"}], sheet_links=[])
+        for n in span.annotate(sn.propose(graph, at=AT), graph)["nodes"]:
+            self.assertTrue(n["boundary"]["start"] and n["boundary"]["end"], n["node_id"])
+
     def test_merge_with_an_exclusion_bucket_is_refused(self):
         ids = [n["node_id"] for n in self.ns["nodes"]]
         with self.assertRaises(ValueError):
@@ -306,6 +341,84 @@ class ScreenRecordTest(unittest.TestCase):
         node = by_member(out, "새-ID")
         self.assertIn("새-ID", node["absorbed"][0]["members"])
         self.assertNotIn(old, json.dumps(out))
+
+
+class ExcludedDrawingsTest(unittest.TestCase):
+
+    def setUp(self):
+        import tempfile
+        from hazop import paths
+        self.tmp = tempfile.mkdtemp()
+        self.old = os.environ.get(paths.ENV_WORK_ROOT)
+        os.environ[paths.ENV_WORK_ROOT] = self.tmp
+
+    def tearDown(self):
+        import shutil
+        from hazop import paths
+        if self.old is None:
+            os.environ.pop(paths.ENV_WORK_ROOT, None)
+        else:
+            os.environ[paths.ENV_WORK_ROOT] = self.old
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def pg(self):
+        g = G("project-P")
+        g.add("a-tank", "tank", "equipment", "TK-1", sheet="graph-A")
+        g.add("l-valve", "manual_valve", "valve", "V-L", sheet="graph-L")
+        return dict(g.graph(), project_id="P", sheets=[{"graph_id": "graph-A", "drawing_number": "A-1"},
+                                                       {"graph_id": "graph-L", "drawing_number": "1.7-1-S1"}])
+
+    def test_marked_drawing_number_maps_to_its_sheet_and_feeds_r0(self):
+        pg = self.pg()
+        self.assertEqual(sn.exclusion_for(pg), (frozenset(), None))
+        sn.set_excluded("P", "1.7-1-S1", True, "검토자", "범례 도면", at=AT)
+        before = open(sn.excluded_path("P"), "rb").read()
+        sn.set_excluded("P", "1.7-1-S1", True, "검토자", "다른 사유", at=AT)  # 같은 상태면 파일을 바꾸지 않음
+        self.assertEqual(open(sn.excluded_path("P"), "rb").read(), before)
+        self.assertEqual(sn.load_excluded("P")["1.7-1-S1"], {"by": "검토자", "reason": "범례 도면", "at": AT})
+        self.assertEqual(sn.exclusion_for(pg), (frozenset({"graph-L"}), None))
+        ns = sn.propose(pg, at=AT, exclude_sheets=sn.exclusion_for(pg)[0])
+        self.assertEqual(by_member(ns, "l-valve")["screen"]["rule"], "R0")
+        sn.set_excluded("P", "1.7-1-S1", False, "검토자", at=AT)
+        self.assertEqual(sn.exclusion_for(pg), (frozenset(), None))
+
+    def test_marking_every_linked_drawing_excludes_the_link_piece_too(self):
+        from tests.test_study_span import two_sheets
+        _a, _b, pg, _s = two_sheets()
+        ns = sn.propose(pg, at=AT, exclude_sheets={s["graph_id"] for s in pg["sheets"]})
+        self.assertEqual({n["screen"]["status"] for n in ns["nodes"]}, {"excluded"})
+
+    def test_marking_needs_a_drawing_number_and_a_name(self):
+        with self.assertRaises(ValueError):
+            sn.set_excluded("P", "", True, "검토자")
+        with self.assertRaises(ValueError):
+            sn.set_excluded("P", "A-1", True, " ")
+
+    def test_broken_file_is_reported_not_silently_ignored(self):
+        os.makedirs(os.path.dirname(sn.excluded_path("P")), exist_ok=True)
+        for text in ("[1]", "{", "", "[" * 100000):
+            with open(sn.excluded_path("P"), "w", encoding="utf-8") as fh:
+                fh.write(text)
+            with self.assertRaises(ValueError):
+                sn.load_excluded("P")
+            sheets, problem = sn.exclusion_for(self.pg())
+            self.assertEqual(sheets, frozenset())
+            self.assertIn("읽지 못해", problem)
+            self.assertFalse(sn.any_confirmed(project_only=True))  # 다른 파일을 훑는 코드도 깨지지 않는다
+
+    def test_drawing_numbers_are_compared_without_surrounding_spaces(self):
+        pg = self.pg()
+        pg["sheets"][1]["drawing_number"] = " 1.7-1-s1 "
+        sn.set_excluded("P", "1.7-1-S1 ", True, "검토자", at=AT)
+        self.assertEqual(sn.exclusion_for(pg)[0], frozenset({"graph-L"}))  # 프로젝트 그래프와 같은 도면 규칙
+        self.assertIsNotNone(sn.excluded_mark("P", "1.7-1-s1"))
+        sn.set_excluded("P", "1.7-1-s1", False, "검토자", at=AT)
+        self.assertEqual(sn.load_excluded("P"), {})
+
+    def test_legend_words_only_suggest(self):
+        self.assertTrue(sn.looks_like_legend("001_Ch01_Fig1.7-1_s1of4_Flow_Diagram_Symbols_and_Legend.pdf"))
+        self.assertTrue(sn.looks_like_legend(None, "흐름도 기호 및 범례"))
+        self.assertFalse(sn.looks_like_legend("025_Ch09_Fig9.2.2-1_s1of4_Component_Cooling_Water_System.pdf"))
 
 
 if __name__ == "__main__":

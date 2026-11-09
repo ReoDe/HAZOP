@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 from hazop import paths
 from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
+from hazop.graph.project import _norm as drawing_key  # 프로젝트 그래프가 같은 도면으로 보는 규칙(공백 무시·대문자)
 from hazop.study import segment
 
 SCHEMA_VERSION = "0.1"  # 필드를 더하기만 하고 옛 파일은 screen이 없으면 keep으로 읽으므로 올리지 않는다
@@ -410,6 +411,83 @@ def _check_shape(doc, path):
         raise ValueError("검토구간 파일 형식이 맞지 않음: %s" % path)
 
 
+# ---------------------------------------------------------------- 구간 분석에서 뺀 도면(R0)
+#
+# 범례·기호표처럼 공정 흐름이 없는 도면을 사람이 표시한다. 등록 정보는 판(registration_version)마다 고정된
+# 기록이라 여기 두지 않고, 프로젝트마다 파일 하나에 도면번호로 적는다(다시 추출해도 그대로 이어짐).
+# 표시를 바꿔도 저장된 검토구간은 그대로이고, ④에서 다시 제안할 때 반영된다.
+
+EXCLUDED_KIND = "hazop_study_excluded_drawings"
+LEGEND_WORDS = ("legend", "symbol", "범례", "기호표", "기호 및")
+
+
+def excluded_path(project_id):
+    return os.path.join(store_dir(), paths.safe_name(project_id or UNREGISTERED_PROJECT), "구간제외도면.json")
+
+
+def load_excluded(project_id):
+    """{도면번호: {by, reason, at}}. 파일이 없으면 빈 dict. 형식이 틀리면 ValueError."""
+    path = excluded_path(project_id)
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
+            doc = json.load(fh)
+    except RecursionError as exc:  # 지나치게 겹친 JSON도 형식 오류로 다룬다
+        raise ValueError("구간 제외 도면 파일 형식이 맞지 않음: %s" % path) from exc
+    drawings = doc.get("drawings") if isinstance(doc, dict) and doc.get("kind") == EXCLUDED_KIND else None
+    if not isinstance(drawings, dict) or not all(isinstance(k, str) and isinstance(v, dict) for k, v in drawings.items()):
+        raise ValueError("구간 제외 도면 파일 형식이 맞지 않음: %s" % path)
+    return drawings
+
+
+def excluded_mark(project_id, drawing_number):
+    """그 도면의 표시 기록 {by, reason, at} 또는 None. 도면번호는 프로젝트 그래프와 같은 규칙으로 맞춘다."""
+    key = drawing_key(drawing_number)
+    return next((v for k, v in load_excluded(project_id).items() if key and drawing_key(k) == key), None)
+
+
+def set_excluded(project_id, drawing_number, excluded, by, reason=None, at=None):
+    """도면 하나를 구간 분석에서 빼거나(excluded=True) 다시 넣는다. 같은 상태면 파일을 바꾸지 않는다. 쓴 경로."""
+    drawing_number = (drawing_number or "").strip()
+    by = (by or "").strip()
+    if not drawing_number:
+        raise ValueError("도면번호가 없는 도면은 표시할 수 없음(먼저 도면번호를 확정)")
+    if not by:
+        raise ValueError("표시한 사람 이름 필요")
+    drawings = dict(load_excluded(project_id))
+    same = [k for k in drawings if drawing_key(k) == drawing_key(drawing_number)]
+    if bool(excluded) == bool(same):
+        return excluded_path(project_id)
+    if excluded:
+        drawings[drawing_number] = {"by": by, "reason": (reason or "").strip() or "범례·기호표 도면", "at": at or now_utc()}
+    else:
+        for k in same:
+            drawings.pop(k)
+    return write(excluded_path(project_id), {"schema_version": SCHEMA_VERSION, "kind": EXCLUDED_KIND,
+                                             "project_id": project_id, "drawings": dict(sorted(drawings.items()))})
+
+
+def exclusion_for(pg):
+    """(구간 분석에서 뺀 도면의 graph_id 집합, 문제 글 또는 None). 집합은 propose의 exclude_sheets로 넘긴다.
+    표시 파일을 읽지 못하면 빈 집합과 문제 글을 돌려준다. 부르는 쪽은 문제 글을 꼭 보여야 한다(뺀 도면이 말없이
+    다시 분석에 들어가지 않게)."""
+    try:
+        marked = load_excluded(pg.get("project_id"))
+    except (OSError, ValueError) as exc:
+        return frozenset(), "구간 분석에서 뺀 도면 표시를 읽지 못해 모든 도면으로 제안합니다(%s)" % exc
+    sheets = pg.get("sheets") or [{"graph_id": pg.get("graph_id"),
+                                   "drawing_number": (pg.get("source") or {}).get("drawing_number")}]
+    keys = {drawing_key(k) for k in marked}
+    return frozenset(s["graph_id"] for s in sheets if drawing_key(s.get("drawing_number")) in keys - {None}), None
+
+
+def looks_like_legend(*texts):
+    """파일 이름·표제에 범례·기호표 낱말이 있으면 True. 표시를 제안할 때만 쓰고 스스로 빼지는 않는다."""
+    low = " ".join(t for t in texts if t).lower()
+    return any(w in low for w in LEGEND_WORDS)
+
+
 def any_confirmed(project_only=False):
     """작업 루트 아래 확정된 집합이 하나라도 있으면 True(레일 ✓ 표시용). 읽을 수 없는 파일은 확정이 아닌 것으로 본다.
     project_only면 프로젝트 전체 집합(graph_id "project-…")만 센다(옛 도면별 확정본은 화면이 쓰지 않음)."""
@@ -426,9 +504,11 @@ def any_confirmed(project_only=False):
             try:
                 with open(os.path.join(folder, name), encoding="utf-8-sig") as fh:
                     doc = json.load(fh)
-            except (OSError, ValueError):
+            except (OSError, ValueError, RecursionError):
                 continue
-            if project_only and not str((doc or {}).get("graph_id") or "").startswith("project-"):
+            if not isinstance(doc, dict):
+                continue
+            if project_only and not str(doc.get("graph_id") or "").startswith("project-"):
                 continue
             if isinstance(doc, dict) and doc.get("kind") == KIND and doc.get("status") == "confirmed":
                 return True

@@ -466,7 +466,9 @@ def _screen(ix, pieces, exclude_sheets):
     rule = [None] * n
     frag = set()
     for i, p in enumerate(pieces):
-        if exclude_sheets and {ix.sheet[m] for m in p.members} <= exclude_sheets:
+        # 도면을 잇는 배관 구간(sheet 없음)은 어느 도면에도 속하지 않으므로 판정에서 뺀다
+        real = {ix.nodes[m]["sheet"] for m in p.members if ix.nodes[m].get("sheet")} or {ix.sheet[m] for m in p.members}
+        if exclude_sheets and real <= exclude_sheets:
             rule[i] = "R0"
         elif not any(TRAITS[ix.part[m]].source for m in p.members):
             frag.add(i)

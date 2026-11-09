@@ -62,7 +62,7 @@ def _segment_ends(pg):
     return seg_ends
 
 
-def _boundaries(node, by_id, drawing_of, node_of, seg_ends, seg_rank):
+def _boundaries(node, by_id, drawing_of, node_of, seg_ends, seg_rank, segs_of):
     """(start, end, continuations). 경계 = 구간 밖 주요 기기·미연결 연결점으로 이어지는 배관 구간의 끝.
     seg_ends·seg_rank는 annotate가 한 번 만든 색인이다(구간마다 전체 간선을 다시 훑지 않게). 구간 순서는 간선 순서 그대로."""
     members = set(node["members"])
@@ -106,6 +106,14 @@ def _boundaries(node, by_id, drawing_of, node_of, seg_ends, seg_rank):
             start = inside
         else:
             end = inside
+    if (start is None) != (end is None):
+        # 긴 경로를 크기 예산으로 나눈 조각: 경계 기기가 한쪽에만 있으면 나눈 자리(이웃 구간과 맞닿은 요소)를 다른 쪽 경계로 쓴다
+        cut = sorted({x for seg in members if seg in seg_ends for x in (e["node"] for e in seg_ends[seg]) if x not in members}
+                     | {seg for m in members for seg in segs_of.get(m, ()) if seg not in members})
+        if cut:
+            nxt = cut[0]
+            mark = dict(item(nxt), note="구간 나눔" + ("(%s)" % ", ".join(node_of[nxt]) if node_of.get(nxt) else ""))
+            start, end = (mark, end) if start is None else (start, mark)
     if start is None and end is None:  # 경계 기기 없이 배관 요소만 남은 구간: 태그 있는 첫 구성요소로 설명
         first = next((m for m in node["members"] if (by_id.get(m) or {}).get("tag")), node["members"][0])
         start = end = dict(item(first), note="경계 기기 없음")
@@ -129,6 +137,10 @@ def annotate(node_set, pg):
     prefix, short = short_numbers([s["drawing_number"] for s in pg["sheets"]])
     seg_ends = _segment_ends(pg)
     seg_rank = {seg: i for i, seg in enumerate(seg_ends)}
+    segs_of = {}
+    for seg, es in seg_ends.items():
+        for e in es:
+            segs_of.setdefault(e["node"], []).append(seg)
     node_of = {}
     for n in out["nodes"]:
         for m in n["members"]:
@@ -139,7 +151,7 @@ def annotate(node_set, pg):
             if drawing_of.get(m):
                 counts[drawing_of[m]] = counts.get(drawing_of[m], 0) + 1
         drawings = _flow_order(set(counts), pg, set(n["members"]))
-        start, end, conts = _boundaries(n, by_id, drawing_of, node_of, seg_ends, seg_rank)
+        start, end, conts = _boundaries(n, by_id, drawing_of, node_of, seg_ends, seg_rank, segs_of)
         n.update({
             "drawings": drawings, "drawings_short": [short.get(d, d) for d in drawings],
             "spans_drawings": len(drawings) > 1, "members_by_drawing": dict(sorted(counts.items())),

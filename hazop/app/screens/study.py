@@ -429,8 +429,9 @@ class StudyNodesScreen(QWidget):
         try:
             self.node_set, self.saved = ctx.load_set()
         except (OSError, ValueError) as exc:
-            self.node_set, self.saved, self.unreadable = nodes.propose(self.graph), False, True
-            self.warn.set_messages("저장된 검토구간을 읽을 수 없어 새로 제안합니다", [str(exc)])
+            sheets, problem = nodes.exclusion_for(self.graph)
+            self.node_set, self.saved, self.unreadable = nodes.propose(self.graph, exclude_sheets=sheets), False, True
+            self.warn.set_messages("저장된 검토구간을 읽을 수 없어 새로 제안합니다", [str(exc)] + ([problem] if problem else []))
         try:
             self.disk_fp = nodes.fingerprint(self._store_path())
         except OSError:  # 지금 읽지 못하는 파일이면 저장 때 다시 지문을 구해 보고, 그때 읽히면 다른 값이라 저장하지 않는다
@@ -1000,7 +1001,11 @@ class StudyNodesScreen(QWidget):
         if ask and edited and QMessageBox.question(
                 self, "다시 제안", "지금 구간 편집 내용을 버리고 다시 제안할까요?") != QMessageBox.Yes:
             return False
-        return self._replace(nodes.propose(self.graph), done="다시 제안했습니다")
+        sheets, problem = nodes.exclusion_for(self.graph)
+        if problem:
+            self.warn.set_messages(problem)
+        return self._replace(nodes.propose(self.graph, exclude_sheets=sheets),
+                             done="다시 제안했습니다" + (" · 뺀 도면 표시를 읽지 못함" if problem else ""))
 
     def confirm(self, reviewer=None):
         reviewer = reviewer or self.app.reviewer_name()

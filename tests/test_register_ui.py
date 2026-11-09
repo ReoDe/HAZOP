@@ -125,6 +125,51 @@ class RegisterUiTest(base.AppTestBase):
         win.go(1)
         self.assertEqual((win.drawing, win.screens[1].combo.currentText()), (new, new))
 
+    def test_mark_drawing_out_of_study_and_back(self):
+        """도면번호를 확정한 P&ID는 '구간 분석에서 빼기'로 표시하고 다시 넣을 수 있다(스크리닝 R0)."""
+        from hazop.study import nodes as sn
+        win, scr = self.screen()
+        self.assertTrue(scr.set_files([base.sample_file("SNP-M-102", "drawio")]))
+        base.pump(win)
+        scr._confirm_candidate("drawing_number")
+        scr.do_register()
+        base.pump(win, 0.1)
+        scr.table.selectRow(0)
+        rec = scr.rows[0]["record"]
+        self.assertTrue(scr.btn_exclude.isEnabled())
+        self.assertTrue(scr.toggle_excluded())
+        self.assertIn(rec["drawing_number"], sn.load_excluded(rec.get("project_id")))
+        self.assertEqual(scr.btn_exclude.text(), "구간 분석에 다시 넣기")
+        self.assertRegex(scr.result.toPlainText(), r"구간 분석:\s+뺌")
+        self.assertTrue(scr.toggle_excluded())
+        self.assertEqual(sn.load_excluded(rec.get("project_id")), {})
+        self.assertEqual(scr.btn_exclude.text(), "구간 분석에서 빼기")
+
+    def test_exclusion_problems_are_shown_to_the_person(self):
+        from unittest import mock
+        from hazop.study import nodes as sn
+        win, scr = self.screen()
+        self.assertTrue(scr.set_files([base.sample_file("SNP-M-102", "drawio")]))
+        base.pump(win)
+        scr._confirm_candidate("drawing_number")
+        scr.do_register()
+        base.pump(win, 0.1)
+        scr.table.selectRow(0)
+        scr.actor.setText(" ")
+        with mock.patch.object(win, "toast") as toast:
+            self.assertFalse(scr.toggle_excluded())
+        self.assertIn("표시한 사람", toast.call_args[0][0])
+        rec = scr.rows[0]["record"]
+        os.makedirs(os.path.dirname(sn.excluded_path(rec.get("project_id"))), exist_ok=True)
+        with open(sn.excluded_path(rec.get("project_id")), "w", encoding="utf-8") as fh:
+            fh.write("{broken")
+        try:
+            with mock.patch.object(win, "status_message") as status:
+                self.assertFalse(scr.toggle_excluded())
+            self.assertIn("표시를 읽지 못함", status.call_args[0][0])
+        finally:
+            os.remove(sn.excluded_path(rec.get("project_id")))
+
     def test_inputs_have_accessible_names(self):
         from PySide6.QtWidgets import QComboBox, QLineEdit
         _win, scr = self.screen()

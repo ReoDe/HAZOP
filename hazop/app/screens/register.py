@@ -17,6 +17,7 @@ from hazop.app import data, tokens
 from hazop.app.widgets import VALIDATION_LABELS, badge, esc
 from hazop.extract import svg_align
 from hazop.register import fileinfo, registry
+from hazop.study import nodes as sn
 
 META_FIELDS = (("drawing_number", "도면번호"), ("design_revision", "개정번호"), ("title", "제목"))
 OUTCOME_LABELS = {"registered": "등록 완료", "reused": "기존 등록 재사용(같은 해시)", "new_version": "새 등록 버전",
@@ -270,10 +271,15 @@ class RegisterScreen(QWidget):
         self.btn_extract = QPushButton("추출·그래프 만들기")
         self.btn_extract.setEnabled(False)
         self.btn_extract.clicked.connect(lambda: self.do_extract())
+        self.btn_exclude = QPushButton("구간 분석에서 빼기")
+        self.btn_exclude.setEnabled(False)
+        self.btn_exclude.setToolTip("범례·기호표처럼 공정 흐름이 없는 도면을 ④ 검토구간 제안에서 뺍니다(스크리닝 R0)")
+        self.btn_exclude.clicked.connect(lambda: self.toggle_excluded())
         self.register_hint = QLabel()
         self.register_hint.setObjectName("muted")
         btns.addWidget(self.btn_register)
         btns.addWidget(self.btn_extract)
+        btns.addWidget(self.btn_exclude)
         btns.addWidget(self.register_hint)
         btns.addStretch(1)
         rl.addLayout(btns)
@@ -313,7 +319,7 @@ class RegisterScreen(QWidget):
     def commands(self):
         """명령 팔레트용 [(이름, 단축키 문구, 함수)]."""
         return [("파일 선택…", "", self._pick), ("등록", "", self.do_register),
-                ("추출·그래프 만들기", "", self.do_extract)]
+                ("추출·그래프 만들기", "", self.do_extract), ("구간 분석에서 빼기·다시 넣기", "", self.toggle_excluded)]
 
     # ------------------------------------------------------------ 버튼·작업 상태
     def _update_actions(self):
@@ -323,6 +329,9 @@ class RegisterScreen(QWidget):
         can_extract = bool(e) and e["record"].get("status") == "registered" and not self._busy
         self.btn_register.setEnabled(can_register)
         self.btn_extract.setEnabled(can_extract)
+        excluded = self.is_excluded(e)
+        self.btn_exclude.setEnabled(excluded is not None and not self._busy)
+        self.btn_exclude.setText("구간 분석에 다시 넣기" if excluded else "구간 분석에서 빼기")
         self.register_hint.setText("" if can_register else REGISTER_HINTS["busy" if self._busy else self._file_state])
         primary = (self.btn_register if can_register else self.btn_extract if can_extract
                    else self.empty_pick if not self.rows else self.btn_register)
@@ -399,6 +408,47 @@ class RegisterScreen(QWidget):
         self.table.resizeColumnsToContents()
         self.list_stack.setCurrentIndex(1 if self.rows else 0)
         self._update_actions()
+
+    @staticmethod
+    def is_excluded(entry):
+        """도면을 구간 분석에서 뺐으면 True, 넣었으면 False. 표시할 수 없으면(도면 아님·도면번호 없음·파일 오류) None."""
+        rec = (entry or {}).get("record") or {}
+        if not (rec.get("drawing_number") or "").strip() or material_type_of(rec) != "P&ID":
+            return None
+        try:
+            return sn.excluded_mark(rec.get("project_id"), rec["drawing_number"]) is not None
+        except (OSError, ValueError):
+            return None
+
+    @staticmethod
+    def excluded_mark(rec):
+        """(표시 기록 또는 None, 읽기 문제 글 또는 None)."""
+        try:
+            return sn.excluded_mark(rec.get("project_id"), rec.get("drawing_number")), None
+        except (OSError, ValueError) as exc:
+            return None, "구간 분석에서 뺀 도면 표시를 읽지 못함(%s)" % exc
+
+    def toggle_excluded(self):
+        """고른 도면을 구간 분석에서 빼거나 다시 넣는다. 사유는 '사유' 칸, 표시한 사람은 '등록자' 칸에서 읽는다."""
+        e = self.selected_registration()
+        excluded = self.is_excluded(e)
+        if excluded is None:
+            problem = self.excluded_mark(e["record"])[1] if e else None
+            self.app.status_message(problem or "도면번호를 확정한 P&ID 도면만 구간 분석에서 뺄 수 있습니다")
+            return False
+        rec = e["record"]
+        try:
+            sn.set_excluded(rec.get("project_id"), rec["drawing_number"], not excluded, self.actor.text(),
+                            self.reason.text())
+        except (OSError, ValueError) as exc:
+            self.app.log_error("구간 분석 표시", exc)
+            self.app.toast("구간 분석 표시를 바꾸지 못했습니다: %s" % exc)
+            return False
+        self.app.toast("%s 도면을 구간 분석에서 %s. ④에서 다시 제안하면 반영됩니다"
+                       % (rec["drawing_number"], "다시 넣었습니다" if excluded else "뺐습니다"))
+        self._update_actions()
+        self.show_record(rec, None, e["path"])
+        return True
 
     def selected_registration(self):
         r = self.table.currentRow()
@@ -590,6 +640,14 @@ class RegisterScreen(QWidget):
                 val += " &nbsp; %s %s" % (badge("자동 후보", "ai"), esc(cand.get("value")))
             rows.append("<tr><td style='color:%s'>%s</td><td>%s</td></tr>" % (tokens.c("muted"), label, val))
         h.append("<table cellpadding='3'>%s</table>" % "".join(rows))
+        mark, problem = self.excluded_mark(rec)
+        if problem:
+            h.append("<p style='color:%s'>구간 분석: %s</p>" % (tokens.c("err-ink"), esc(problem)))
+        elif mark:
+            h.append("<p>구간 분석: %s %s (%s)</p>" % (badge("뺌", "human"), esc(mark.get("reason")), esc(mark.get("by"))))
+        elif self.is_excluded({"record": rec}) is False and sn.looks_like_legend(rec.get("original_name"), rec.get("title")):
+            h.append("<p>구간 분석: %s 범례·기호표 도면으로 보입니다. 공정 흐름이 없으면 '구간 분석에서 빼기'를 누르세요.</p>"
+                     % badge("제안", "ai"))
         derived = rec.get("derived_files") or []
         for d in derived:
             h.append("<p>SVG 파생 등록: %s (sha256 %s…)</p>" % (esc(d.get("storage_ref")), esc((d.get("sha256") or "")[:12])))
