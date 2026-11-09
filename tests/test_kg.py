@@ -21,11 +21,12 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 import build_kg  # noqa: E402
 import check_kg  # noqa: E402
 import extract_drawio  # noqa: E402
+from hazop import paths  # noqa: E402
 from hazop.graph import build as gbuild  # noqa: E402
 from hazop.kg import build, inputs  # noqa: E402
 
-SAMPLE_DIR = os.path.join(REPO_ROOT, "데이터", "지식", "SNP-SAMPLE")
-_DRAWIO = [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio"))
+SAMPLE_DIR = paths.folder("표본", "지식", "SNP-SAMPLE")
+_DRAWIO = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
            if os.path.basename(os.path.dirname(p)).startswith("SNP-M-102")]
 _GRAPH = None
 

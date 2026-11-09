@@ -53,7 +53,7 @@ def first(res, rule, state):
 def persistence(pg, kg, failures):
     tmp = tempfile.mkdtemp(prefix="hazop-expect-")
     try:
-        path = os.path.join(tmp, *expect.STORE_DIR, "%s.json" % PROJECT)
+        path = os.path.join(tmp, *paths.FOLDERS["잠재후보"].rel, "%s.json" % PROJECT)
         res = expect.evaluate(pg, kg)
         plan = [("E01", "candidate_found", "confirm", {}),
                 ("E02", "candidate_found", "reject", {}),
@@ -134,7 +134,7 @@ def main():
     persistence(pg, kg, failures)
     print("== 4. 계산 뷰 제외")
     exclusion(pg, kg, failures)
-    store = paths.work_path(*expect.STORE_DIR)
+    store = paths.folder("잠재후보")
     print("  실제 판단 폴더(읽지도 쓰지도 않음): %s" % store)
     print("== 5. unittest tests.test_kg_expect")
     outcome = unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromName("tests.test_kg_expect"))

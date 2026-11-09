@@ -9,6 +9,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from hazop import paths  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 from hazop.study import results as res  # noqa: E402
 from tests.test_project_graph import cont, sheet  # noqa: E402
@@ -78,10 +79,10 @@ class ProjectCtxTest(unittest.TestCase):
         self.assertIn("백업", ctx.notice)
         with open(old_path, "rb") as fh:
             self.assertEqual(fh.read(), before)
-        backups = os.listdir(os.path.join(self.tmp, "데이터", "백업"))
+        backups = os.listdir(paths.folder_in(self.tmp, "백업"))
         self.assertEqual(len(backups), 1)
-        self.assertTrue(os.path.isfile(os.path.join(self.tmp, "데이터", "백업", backups[0], "데이터", "검토구간", "P",
-                                                    "graph-SNP-M-101.json")))
+        self.assertTrue(os.path.isfile(paths.folder_in(self.tmp, "백업", backups[0], *paths.FOLDERS["검토구간"].rel,
+                                                    "P", "graph-SNP-M-101.json")))
         again, _ = self.pc.load("SNP-M-101").load_set()  # 두 번째는 저장본을 읽고 다시 옮기지 않음
         self.assertEqual(again, ns)
 

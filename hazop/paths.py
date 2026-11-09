@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sys
+from typing import NamedTuple
 
 _RESERVED = {"CON", "PRN", "AUX", "NUL"} | {"COM%d" % i for i in range(1, 10)} | {"LPT%d" % i for i in range(1, 10)}
 
@@ -28,8 +29,13 @@ def safe_join(root, name):
 
 
 def rel_or_abs(path, root):
-    """root 기준 상대 경로('/' 구분). 다른 드라이브 등으로 상대 경로를 만들 수 없으면 절대 경로."""
+    """root 기준 상대 경로('/' 구분). 다른 드라이브 등으로 상대 경로를 만들 수 없으면 절대 경로.
+    참고 폴더(샘플 도면 등) 아래 파일은 root와 관계없이 논리 경로 '참고자료/<나머지>'로 쓴다: 추출 JSON의
+    source.file·svg_file이 그래프 판(graph_version) 해시에 들어가므로 폴더 위치가 바뀌어도 판이 같아야 한다(D9)."""
+    ref = folder("참고")
     try:
+        if _inside(path, ref):
+            return REFERENCE_LOGICAL + os.path.relpath(os.path.abspath(path), ref).replace("\\", "/")
         rel = os.path.relpath(path, root)
     except ValueError:
         rel = os.path.abspath(path)
@@ -114,7 +120,103 @@ def output_root(*parts):
 
 def fixed_test_results_path(project_name, graph_name):
     """고정 응답(시험)으로 채운 ⑤ 결과 파일. 실제 결과(데이터/분석결과)와 따로 둔다(화면 설계 D5·§8.3)."""
-    return work_path("데이터", "분석결과-시험", safe_name(project_name), safe_name(graph_name) + ".json")
+    return folder("분석결과-시험", safe_name(project_name), safe_name(graph_name) + ".json")
+
+
+# ---------------------------------------------------------------- 폴더 표 (docs/2026-11-09-data-consolidation §3)
+# 데이터 폴더는 이 표로만 연다(paths.folder). 다른 모듈에 '데이터'·'참고자료' 경로 문자열을 쓰지 않는다
+# (tests/test_path_literals.py가 막음). 새 기능이 폴더를 더하면 여기 한 줄을 더한다.
+class Folder(NamedTuple):
+    # "resource": 자원 루트(읽기 전용 기준 자료, 배포본에 묶음 = scripts/build_package.py DATA_DIRS)
+    # "repo": 저장소에만 있는 개발·검사 입력(샘플 도면, 표본). 배포본에 묶지 않고 자원 루트 환경변수와 무관
+    # "work": 작업 루트(쓰기). 이 아래 배치는 배포본 작업 루트(%LOCALAPPDATA%\HAZOP)와 같아야 한다(바꾸지 않는 계약)
+    root: str
+    rel: tuple  # 루트 기준 상대 경로
+
+
+FOLDERS = {
+    "이탈후보": Folder("resource", ("데이터", "이탈후보")),
+    "기준표": Folder("resource", ("데이터", "기준표")),
+    "패턴": Folder("resource", ("데이터", "패턴")),
+    "참고": Folder("repo", ("참고자료",)),
+    "APR1400": Folder("repo", ("데이터", "참고자료", "APR1400_DCD")),
+    "표본": Folder("repo", ("데이터",)),
+    "작업데이터": Folder("work", ("데이터",)),
+    "구간": Folder("work", ("데이터", "구간")),
+    "고정응답": Folder("work", ("데이터", "고정응답")),
+    "지식": Folder("work", ("데이터", "지식")),
+    "검토구간": Folder("work", ("데이터", "검토구간")),
+    "분석결과": Folder("work", ("데이터", "분석결과")),
+    "분석결과-시험": Folder("work", ("데이터", "분석결과-시험")),
+    "백업": Folder("work", ("데이터", "백업")),
+    "초기사건": Folder("work", ("데이터", "초기사건")),
+    "도면수정": Folder("work", ("데이터", "도면수정")),
+    "도면연결": Folder("work", ("데이터", "도면연결")),
+    "잠재후보": Folder("work", ("데이터", "잠재후보")),
+}
+REFERENCE_LOGICAL = "참고자료/"  # 참고 폴더 아래 파일의 기록용 접두(rel_or_abs)
+# 사용자 파일(구간 JSON inputs, 추출 JSON source.file·svg_file)에 저장된 옛 상대 경로 접두 → 폴더 이름.
+# 읽을 때만 풀고(resolve_rel) 파일은 고치지 않는다. 긴 접두가 먼저.
+LEGACY_PREFIXES = (
+    ("데이터/참고자료/APR1400_DCD/", "APR1400"),
+    ("데이터/이탈후보/", "이탈후보"),
+    ("데이터/기준표/", "기준표"),
+    ("데이터/패턴/", "패턴"),
+    (REFERENCE_LOGICAL, "참고"),
+)
+
+
+def folder(name, *parts):
+    """FOLDERS의 폴더(또는 그 아래 경로)의 절대 경로. 이름이 표에 없으면 KeyError."""
+    base = {"resource": resource_root, "work": work_root, "repo": lambda: REPO_ROOT}[FOLDERS[name].root]()
+    return folder_in(base, name, *parts)
+
+
+def folder_in(root, name, *parts):
+    """FOLDERS 폴더가 주어진 root 아래 있을 자리. 임시 작업 루트나 검사 입력 사본(작은 저장소)을 다룰 때 쓴다."""
+    return os.path.join(root, *FOLDERS[name].rel, *parts)
+
+
+def logical_reference_dir(root):
+    """root 아래 논리 경로(REFERENCE_LOGICAL) 자리. 참고 폴더 사본을 여기 두면 그 안 파일의 기록 경로가 저장소와 같다."""
+    return os.path.join(root, *REFERENCE_LOGICAL.strip("/").split("/"))
+
+
+def folder_rel(name):
+    """FOLDERS 폴더의 루트 기준 상대 경로('/' 구분). 화면 문구·묶음 목록용."""
+    return "/".join(FOLDERS[name].rel)
+
+
+def _inside(path, root):
+    path, root = os.path.abspath(path), os.path.abspath(root)
+    try:
+        return os.path.commonpath([path, root]) == root
+    except ValueError:
+        return False
+
+
+def resolve_rel(rel, root):
+    """저장된 상대 경로를 실제 경로로. 절대 경로면 그대로, root 아래에 있으면 그것, 없으면 LEGACY_PREFIXES로 푼 위치에
+    파일이 있을 때 그것. 어디에도 없으면 root 기준 경로(호출한 쪽이 '없음'을 알린다)."""
+    if os.path.isabs(rel):
+        return rel
+    direct = os.path.join(root, rel)
+    if os.path.exists(direct):
+        return direct
+    norm = rel.replace("\\", "/")
+    while norm.startswith("./"):
+        norm = norm[2:]
+    for prefix, name in LEGACY_PREFIXES:
+        if norm.startswith(prefix):
+            alt = folder(name, *norm[len(prefix):].split("/"))
+            if os.path.exists(alt):
+                return alt
+    return direct
+
+
+def is_reference_rel(rel):
+    """기록된 경로(source.file 등)가 참고 폴더(샘플 도면) 아래 파일인지."""
+    return str(rel or "").replace("\\", "/").startswith(REFERENCE_LOGICAL)
 
 
 # ---------------------------------------------------------------- 설정 파일 (%APPDATA%\HAZOP\settings.json)

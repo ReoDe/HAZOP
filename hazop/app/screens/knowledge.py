@@ -381,8 +381,8 @@ class KnowledgeScreen(QWidget):
                 self.kg = kg
                 return
             self.graph_dir, self.graph = found
-            self.regions = screen.load_regions(paths.work_path("데이터", "구간"))
-            cands = screen.read_candidates(paths.safe_join(paths.work_path("데이터", "지식"), kg.get("project_id") or ""))
+            self.regions = screen.load_regions(paths.folder("구간"))
+            cands = screen.read_candidates(paths.safe_join(paths.folder("지식"), kg.get("project_id") or ""))
             self._load_project()
             self.expect = self._expectations()
             self.data = screen.screen_data(kg, self.graph, self.regions, cands,

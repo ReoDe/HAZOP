@@ -19,6 +19,7 @@ os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu
 
 from scripts import check_kg_renderer as kr  # noqa: E402
 from scripts import check_kg_screen as ks  # noqa: E402
+from hazop import paths  # noqa: E402
 from hazop.kg import algo, build, screen  # noqa: E402
 
 _INP = {}
@@ -674,7 +675,7 @@ class ShowInDrawingTest(unittest.TestCase):
         knowledge = self.base_inp["knowledge"]
         kg = build.build_kg(knowledge, [graph])
         build.write_outputs(os.path.join(work, "출력", "지식그래프", kg["kg_id"]), knowledge, kg)
-        kdir = os.path.join(work, "데이터", "지식", ks.SAMPLE_PROJECT)
+        kdir = paths.folder_in(work, "지식", ks.SAMPLE_PROJECT)
         os.makedirs(kdir, exist_ok=True)
         shutil.copy(os.path.join(ks.SAMPLE_DIR, screen.CANDIDATES_CSV), kdir)
         win = ks.open_window(self.roots.tmp)

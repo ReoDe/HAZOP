@@ -18,8 +18,6 @@ from hazop.ie import model
 from hazop.kg.build import dump_bytes
 from hazop.study.nodes import now_utc
 
-FOLDER = ("데이터", "초기사건")
-BACKUP_DIR = ("데이터", "백업")
 BACKUP_LABEL = "초기사건읽기실패"
 
 
@@ -36,7 +34,7 @@ class Unreadable(Exception):
 
 
 def store_path(project_id):
-    return paths.work_path(*FOLDER, paths.safe_name(project_id or "프로젝트") + ".json")
+    return paths.folder("초기사건", paths.safe_name(project_id or "프로젝트") + ".json")
 
 
 def fingerprint(path):
@@ -99,10 +97,10 @@ def backup(project_id, label=BACKUP_LABEL):
     stamp = now_utc().replace(":", "").replace("-", "")
     rel = os.path.relpath(path, paths.work_root())
     folder, n = "%s-%s" % (stamp, label), 1
-    while os.path.exists(paths.work_path(*BACKUP_DIR, folder)):
+    while os.path.exists(paths.folder("백업", folder)):
         n += 1
         folder = "%s-%s-%d" % (stamp, label, n)
-    dst = paths.work_path(*BACKUP_DIR, folder, rel)
+    dst = paths.folder("백업", folder, rel)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.copy2(path, dst)
     return dst

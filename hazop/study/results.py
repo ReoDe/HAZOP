@@ -25,7 +25,7 @@ from hazop.study.nodes import now_utc
 
 SCHEMA_VERSION = "0.1"
 KIND = "hazop_study_results"
-DEVIATION_CHART = ("데이터", "이탈후보", "kosha-p86-2017-deviation-chart.json")
+DEVIATION_CHART = "kosha-p86-2017-deviation-chart.json"  # 이탈후보 폴더
 CELL_STATES = ("not_analyzed", "analyzed", "excluded")
 ENTRY_ORIGINS = ("ai_draft", "human")
 ENTRY_STATUSES = ("proposed", "revised", "approved", "rejected")
@@ -43,7 +43,7 @@ IE_CANDIDATES = {"yes": "후보", "no": "제외", "undecided": "보류"}
 IE_ANSWERS = {"yes": "예", "no": "아니오", "unknown": "모름"}
 IE_STATUSES = {"draft": "초안", "confirmed": "확정"}
 IE_KEYS = ("candidate", "disturbs", "challenges", "safety_functions", "category", "reason", "origin", "status")
-IE_CATEGORY_TABLE = ("데이터", "기준표", "lwr-generic-ie-categories.json")
+IE_CATEGORY_TABLE = "lwr-generic-ie-categories.json"  # 기준표 폴더
 UNCLASSIFIED_LABEL = "미분류"
 # 품질 경고 종류 {키: (이름, 근거)}. 근거는 PSAM14 PHA-to-PRA 논문 쪽수(초기사건 출력설계 §3.2 시트 8)
 QUALITY_KINDS = {"mitigated_consequence": ("완화 결과로 적힘", "PSAM14 382·383"),
@@ -56,7 +56,7 @@ MITIGATED_PHRASES = ("영향 없음", "영향이 없", "영향은 없", "문제 
 
 def load_deviations(path=None):
     """[{deviation_id, item_id, parameter, guideword, label}] 파일 순서대로. deviation_id는 D01부터."""
-    with open(path or paths.resource_path(*DEVIATION_CHART), encoding="utf-8") as fh:
+    with open(path or paths.folder("이탈후보", DEVIATION_CHART), encoding="utf-8") as fh:
         chart = json.load(fh)
     return [{"deviation_id": "D%02d" % (i + 1), "item_id": item["item_id"], "parameter": item["parameter_ko"],
              "guideword": item["guide_word_ko"], "label": item["deviation_ko"]}
@@ -86,7 +86,7 @@ def _ie_category_table(path):
 
 def ie_category_table(path=None):
     """일반 범주 기준표 문서 {table_id, title, basis, categories} 사본."""
-    return copy.deepcopy(_ie_category_table(path or paths.resource_path(*IE_CATEGORY_TABLE)))
+    return copy.deepcopy(_ie_category_table(path or paths.folder("기준표", IE_CATEGORY_TABLE)))
 
 
 def ie_categories(path=None):
@@ -321,7 +321,7 @@ def set_ie_hint(results, node_id, deviation_id, entry_id, hint, at=None):
 # ---------------------------------------------------------------- 저장
 
 def store_path(project_id, graph_id):
-    return paths.work_path("데이터", "분석결과", paths.safe_name(project_id or UNREGISTERED_PROJECT),
+    return paths.folder("분석결과", paths.safe_name(project_id or UNREGISTERED_PROJECT),
                            paths.safe_name(graph_id) + ".json")
 
 
@@ -333,7 +333,7 @@ def test_store_path(project_id, graph_id):
 def _readable_path(project_id, graph_id):
     """저장 경로. 없고 project_id가 없으면 이 규칙 이전 폴더(no-project)의 저장본을 그대로 읽는다(옮기지 않음)."""
     path = store_path(project_id, graph_id)
-    legacy = paths.work_path("데이터", "분석결과", LEGACY_PROJECT_DIR, paths.safe_name(graph_id) + ".json")
+    legacy = paths.folder("분석결과", LEGACY_PROJECT_DIR, paths.safe_name(graph_id) + ".json")
     return legacy if not project_id and not os.path.isfile(path) and os.path.isfile(legacy) else path
 
 

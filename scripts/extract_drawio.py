@@ -29,7 +29,7 @@ from hazop import paths  # noqa: E402
 from hazop.extract import drawio, report, svg_align  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
-SAMPLE_GLOB = paths.resource_path("참고자료", "P&ID 도면 샘플", "*", "*.drawio")
+SAMPLE_GLOB = paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")
 DEFAULT_OUT = paths.output_root("추출")
 
 

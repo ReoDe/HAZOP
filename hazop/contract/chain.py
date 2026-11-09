@@ -1082,7 +1082,7 @@ def _chain_doc(c):
 # ---------------------------------------------------------------- 연쇄 찾기·실행
 def _region_files(work_root, errors):
     """데이터/구간/*.json → {region_id: 경로}. region_id가 없으면 파일 이름 줄기."""
-    folder = os.path.join(work_root, "데이터", "구간")
+    folder = os.path.join(work_root, *paths.FOLDERS["구간"].rel)
     out = {}
     if not os.path.isdir(folder):
         return out
@@ -1275,7 +1275,7 @@ def write_report(result, path, checked_at=None):
     link = _link_in_path(path)
     if link:
         raise ContractError("보고 파일 경로에 링크·정션이 있어 거부함: %s (%s)" % (path, link))
-    for folder in (os.path.join(roots["work_root"], "출력"), os.path.join(roots["work_root"], "데이터"),
+    for folder in (os.path.join(roots["work_root"], "출력"), os.path.join(roots["work_root"], *paths.FOLDERS["작업데이터"].rel),
                    roots["store_root"]):
         if _inside(path, folder):
             raise ContractError("보고 파일 경로가 입력 폴더 안이라 거부함: %s (입력 폴더 %s)" % (path, folder))

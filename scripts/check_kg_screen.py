@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing --log-level=3")
 
+from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 
 import check_kg  # noqa: E402
@@ -43,7 +44,7 @@ from hazop.graph import build as gbuild  # noqa: E402
 from hazop.kg import build, screen  # noqa: E402
 
 SAMPLE_PROJECT = "SNP-SAMPLE"
-SAMPLE_DIR = os.path.join(REPO_ROOT, "데이터", "지식", SAMPLE_PROJECT)
+SAMPLE_DIR = paths.folder_in(REPO_ROOT, "표본", "지식", SAMPLE_PROJECT)  # 묶음 검사에서는 REPO_ROOT = 검사 입력 사본
 REGION_FILE = check_kg_algo.REGION_FILE
 DRAWING = "SNP-M-102"
 V1_CASES = (("entity-node-001", (1, 2, 3)), ("entity-node-008", (1, 2, 3)), ("entity-seg-004", (1, 2)),
@@ -59,7 +60,7 @@ _CACHE = {}
 def sample_graph():
     """샘플 도면을 임시 폴더에서 추출·빌드(원본 위치 그대로 읽으므로 graph_version이 샘플 CSV의 기록과 같다)."""
     if "graph" not in _CACHE:
-        drawio = [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio"))
+        drawio = [p for p in glob.glob(paths.folder_in(REPO_ROOT, "참고", "P&ID 도면 샘플", "*", "*.drawio"))
                   if os.path.basename(os.path.dirname(p)).startswith(DRAWING)][0]
         tmp = tempfile.mkdtemp(prefix="kg-screen-graph-")
         try:
@@ -90,10 +91,10 @@ def prepare_work_root(work, inp):
     with open(os.path.join(gdir, "graph.json"), "w", encoding="utf-8") as fh:
         json.dump(inp["graph"], fh, ensure_ascii=False)
     build.write_outputs(os.path.join(work, "출력", "지식그래프", inp["kg"]["kg_id"]), inp["knowledge"], inp["kg"])
-    kdir = os.path.join(work, "데이터", "지식", SAMPLE_PROJECT)
+    kdir = paths.folder_in(work, "지식", SAMPLE_PROJECT)
     os.makedirs(kdir, exist_ok=True)
     shutil.copy(os.path.join(SAMPLE_DIR, screen.CANDIDATES_CSV), kdir)
-    rdir = os.path.join(work, "데이터", "구간")
+    rdir = paths.folder_in(work, "구간")
     os.makedirs(rdir, exist_ok=True)
     shutil.copy(REGION_FILE, rdir)
     return inp

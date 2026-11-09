@@ -128,7 +128,7 @@ def main():
         win.ai_prefs.choose("api")  # 가짜 API 클라이언트로 돌린다
         win.show()
         for w, h in SIZES:
-            shutil.rmtree(paths.work_path("데이터", "분석결과"), ignore_errors=True)
+            shutil.rmtree(paths.folder("분석결과"), ignore_errors=True)
             win.showNormal()
             win.resize(w, h)
             win.go(6)

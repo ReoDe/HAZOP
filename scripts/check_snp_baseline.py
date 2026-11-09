@@ -36,7 +36,7 @@ PDF_BETTER = {"unknowns": "lower", "unclassified": "lower", "linked": "higher", 
 
 
 def default_samples_dir():
-    return paths.resource_path("참고자료", "P&ID 도면 샘플")
+    return paths.folder("참고", "P&ID 도면 샘플")
 
 
 def drawing_summary(extraction, graph, proposal):

@@ -30,7 +30,7 @@ from hazop.extract import report  # noqa: E402
 from hazop.extract.adapters import pdf_svg, pdf_vector  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
-SAMPLE_GLOB = paths.resource_path("참고자료", "P&ID 도면 샘플", "*", "*.pdf")
+SAMPLE_GLOB = paths.folder("참고", "P&ID 도면 샘플", "*", "*.pdf")
 DEFAULT_OUT = paths.output_root("어댑터", "pdf_vector")
 SVG_NAME = "page.svg"
 SVG_SOURCE = "rendered_from_pdf"

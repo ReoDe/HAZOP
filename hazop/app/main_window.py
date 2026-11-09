@@ -1367,7 +1367,7 @@ class MainWindow(QMainWindow):
         self._fit_conn_chip()
 
     def _open_region(self):
-        path, _ = QFileDialog.getOpenFileName(self, "구간 JSON", paths.work_path("데이터", "구간"), "JSON (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self, "구간 JSON", paths.folder("구간"), "JSON (*.json)")
         if path:
             scr = self.screens[2]
             i = scr.region_combo.findData(path)

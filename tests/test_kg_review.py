@@ -21,6 +21,7 @@ sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
 import check_kg_context as chk  # noqa: E402
+from hazop import paths  # noqa: E402
 from hazop.analysis import ai, run  # noqa: E402
 from hazop.kg import build, context  # noqa: E402
 from tests.test_app import pump, tearDownModule  # noqa: E402,F401  (창·웹뷰 정리)
@@ -43,8 +44,8 @@ class KgReviewBase(unittest.TestCase):
         cls.graph_path = os.path.join(gdir, "graph.json")
         with open(cls.graph_path, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(cls.graph, fh, ensure_ascii=False)
-        os.makedirs(os.path.join(cls.work, "데이터", "구간"))
-        shutil.copy(chk.REGION_FILE, os.path.join(cls.work, "데이터", "구간"))
+        os.makedirs(paths.folder_in(cls.work, "구간"))
+        shutil.copy(chk.REGION_FILE, paths.folder_in(cls.work, "구간"))
         cls.kg = cls.build_kg(chk.sample_knowledge())
         cls.runs = {"kg": cls.make_run("kg", chk.KG_REF),
                     "nokg": cls.make_run("nokg", None, chk.FIXED_DIR)}

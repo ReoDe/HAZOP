@@ -11,7 +11,7 @@
 """
 
 import argparse
-import ast
+import importlib.util
 import collections
 import csv
 import os
@@ -35,6 +35,7 @@ FOLDER_CLASS = {
     ("데이터", "지식"): ("작업", "지식그래프 카드 CSV"),
     ("데이터", "검토구간"): ("작업", "프로젝트 검토구간 저장본"),
     ("데이터", "분석결과"): ("작업", "분석 결과 저장본"),
+    ("데이터", "분석결과-시험"): ("작업", "고정 응답(시험) 분석 결과, 실제 결과와 따로 둠(AI 연결 D5)"),
     ("데이터", "백업"): ("작업", "앱이 이전 전에 만든 백업"),
     ("데이터", "초기사건"): ("작업", "초기사건 그룹 저장본(P3)"),
     ("데이터", "도면수정"): ("작업", "도면 추출 수정 OPS"),
@@ -137,15 +138,15 @@ def accessor(line):
 
 
 def bundled_dirs(repo):
-    """scripts/build_package.py의 DATA_DIRS·DATA_FILES를 import 없이 읽는다."""
+    """그 저장소의 scripts/build_package.py가 정한 DATA_DIRS·DATA_FILES. 폴더 표에서 계산되므로 불러서 읽는다."""
     path = os.path.join(repo, "scripts", "build_package.py")
     if not os.path.isfile(path):
         return set()
-    out = set()
-    for node in ast.parse(open(path, encoding="utf-8").read()).body:
-        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") in ("DATA_DIRS", "DATA_FILES") for t in node.targets):
-            out.update(ast.literal_eval(node.value))
-    return out
+    sys.path.insert(0, repo)
+    spec = importlib.util.spec_from_file_location("inventory_build_package", path)
+    bp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bp)
+    return set(bp.DATA_DIRS) | set(bp.DATA_FILES)
 
 
 def scan_files(repo):

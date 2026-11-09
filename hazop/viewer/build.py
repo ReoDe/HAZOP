@@ -107,10 +107,10 @@ def load_graph(graph_root, name):
 
 
 def _svg_path(svg_rel, roots):
-    """svg_file(첫 루트 기준 상대 경로 또는 절대 경로)이 허용 루트 중 하나의 안에 있을 때만 경로를 돌려준다.
-    어느 루트 안에도 없으면 ValueError(기존 safe_join 오류)."""
-    target = os.path.join(roots[0], svg_rel)
-    for root in roots[1:]:
+    """svg_file(첫 루트 기준 상대 경로, 참고 폴더 논리 경로 또는 절대 경로)이 허용 루트(roots와 참고 폴더) 중 하나의
+    안에 있을 때만 경로를 돌려준다. 어느 루트 안에도 없으면 ValueError(기존 safe_join 오류)."""
+    target = paths.resolve_rel(svg_rel, roots[0])
+    for root in list(roots) + [paths.folder("참고")]:
         try:
             return paths.safe_join(root, target)
         except ValueError:

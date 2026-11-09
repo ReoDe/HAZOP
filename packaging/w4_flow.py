@@ -23,7 +23,6 @@ import sys
 
 T = "2026-11-05T00:00:00Z"
 REGION = "region-SNP-M-102-pzr"
-PATTERNS_REL = "데이터/패턴/pressurizer-patterns.json"
 GUIDE_REL = "기획서/HAZOP기법지침.md"
 
 
@@ -99,11 +98,11 @@ class Stop(Exception):
     """검사 실패: 이후 단계를 하지 않고 끝낸다."""
 
 
-def resource_path_problems(inputs, guide_rel, resource_root, program_root, expect):
+def resource_path_problems(inputs, guide_rel, resource_root, program_root, expect, resolve):
     """분석 전: 구간 JSON의 기준 자료 경로(자원 루트 기준)와 지침서가 묶음 안이고 빌드 원본 해시와 같은지."""
     probs = []
     for role, rel in sorted(inputs.items()) + [("guide", guide_rel)]:
-        full = os.path.join(resource_root, *str(rel).split("/"))
+        full = resolve(str(rel), resource_root)
         if not within(full, program_root):
             probs.append("%s: 묶음 밖 %s" % (role, full))
         elif not os.path.isfile(full):
@@ -159,9 +158,10 @@ def flow(args, paths, res, ok):
     probs = datas_problems(bundle, expect)
     ok("bundle-datas", not probs, "; ".join(probs) or "%d개 해시 일치" % len(expect))
     samples = os.path.abspath(args.samples)
-    with open(os.path.join(samples, "데이터", "구간", REGION + ".json"), encoding="utf-8") as fh:
+    # samples = 검사 입력 사본(작은 저장소, verify_bundle.make_inputs): 표본·참고 폴더가 저장소와 같은 자리에 있다
+    with open(paths.folder_in(samples, "표본", "구간", REGION + ".json"), encoding="utf-8") as fh:
         region_inputs = json.load(fh)["inputs"]
-    probs = resource_path_problems(region_inputs, GUIDE_REL, paths.resource_root(), bundle, expect)
+    probs = resource_path_problems(region_inputs, GUIDE_REL, paths.resource_root(), bundle, expect, paths.resolve_rel)
     ok("resource_paths", not probs, "; ".join(probs) or "기준 자료 4종·지침서 = 묶음 파일(분석 전 확인)")
 
     from hazop import review as rv
@@ -172,13 +172,15 @@ def flow(args, paths, res, ok):
     from hazop.register import registry
 
     work = paths.work_root()
-    for rel in (("데이터", "구간"), ("데이터", "고정응답"), ("데이터", "지식"), ("참고자료",)):
-        shutil.copytree(os.path.join(samples, *rel), os.path.join(work, *rel), dirs_exist_ok=True)
-    region_path = os.path.join(work, "데이터", "구간", REGION + ".json")
+    for name in ("구간", "고정응답", "지식"):
+        shutil.copytree(paths.folder_in(samples, "표본", name), paths.folder(name), dirs_exist_ok=True)
+    # 샘플 도면은 논리 경로 자리에 둔다: 추출 JSON이 저장소와 같아야 구간의 그래프 판이 맞는다
+    shutil.copytree(paths.folder_in(samples, "참고"), paths.logical_reference_dir(work), dirs_exist_ok=True)
+    region_path = paths.folder("구간", REGION + ".json")
     region = data.read_json(region_path)
 
     # ④용 samples 경로 추출·그래프(구간 how_to_build와 같은 방법): 묶음 scripts/의 run_one·build_one
-    drawio_path = [p for p in glob.glob(os.path.join(work, "참고자료", "P&ID 도면 샘플", "*", "*.drawio"))
+    drawio_path = [p for p in glob.glob(os.path.join(paths.logical_reference_dir(work), "P&ID 도면 샘플", "*", "*.drawio"))
                    if "SNP-M-102" in p][0]
     svg = glob.glob(os.path.join(os.path.dirname(drawio_path), "*.drawio.svg"))
     _, ex_dir = data.script_module("extract_drawio").run_one(drawio_path, paths.output_root("추출"))
@@ -211,20 +213,20 @@ def flow(args, paths, res, ok):
     ok("2-viewer", info["error"] is None and os.path.isfile(info["html"]), "%s %s" % (names, info.get("html")))
 
     # ③ 지식그래프(묶음 screen_template.html·vendor)
-    kdir = os.path.join(paths.work_path("데이터", "지식"), "SNP-SAMPLE")
+    kdir = os.path.join(paths.folder("지식"), "SNP-SAMPLE")
     knowledge = kg_inputs.load_knowledge(os.path.join(kdir, "knowledge_nodes.csv"),
                                          os.path.join(kdir, "knowledge_links.csv"), "SNP-SAMPLE")
     graphs = kg_screen.load_graphs(paths.output_root("그래프"))
     kg = kg_build.build_kg(knowledge, [g for _, g in graphs.values()])
     kg_build.write_outputs(paths.safe_join(paths.output_root("지식그래프"), paths.safe_name(kg["kg_id"])), knowledge, kg)
-    sdata = kg_screen.screen_data(kg, graph, kg_screen.load_regions(paths.work_path("데이터", "구간")),
+    sdata = kg_screen.screen_data(kg, graph, kg_screen.load_regions(paths.folder("구간")),
                                   kg_screen.read_candidates(kdir))
     html = kg_screen.build_html(sdata)
     ok("3-kg_html", bool(sdata["nodes"]) and "/*@VENDOR@*/" not in html and within(kg_screen.VENDOR_DIR, bundle),
        "노드 %d, HTML %d자, vendor %s" % (len(sdata["nodes"]), len(html), kg_screen.VENDOR_DIR))
 
     # ④ 분석(고정 응답): 기준 자료 4종·지침서는 묶음(자원 루트)
-    fixed = os.path.join(work, "데이터", "고정응답", REGION)
+    fixed = paths.folder("고정응답", REGION)
     r = api.run_analysis(region_path, response_dir=fixed, run_id="analysis-w4")
     c = r["doc"]["validation"]["counts"] if r.get("doc") else {}
     counts = (c.get("candidates"), c.get("scenarios"), c.get("risk_proposed"), c.get("design_improvement_candidates"))
@@ -240,7 +242,7 @@ def flow(args, paths, res, ok):
     ok("4-resource_reads", not probs, "; ".join(probs) or "기준 자료 4종·지침서 = 묶음 파일, 해시 일치")
 
     # ④ 음성: 묶음 자원을 잠시 치우면 분석이 통과하지 못해야 한다(다른 위치로 대체하지 않음)
-    for label, rel in (("patterns", PATTERNS_REL), ("guide", GUIDE_REL)):
+    for label, rel in (("patterns", paths.folder_rel("패턴") + "/pressurizer-patterns.json"), ("guide", GUIDE_REL)):
         target = os.path.join(bundle, *rel.split("/"))
         moved = target + ".w4-moved"
         run_id = "analysis-w4-no-" + label

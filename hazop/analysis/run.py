@@ -47,7 +47,7 @@ def _sha_obj(obj):
 
 # ---------------------------------------------------------------- 입력
 def _resolve(path, repo_root):
-    return path if os.path.isabs(path) else os.path.join(repo_root, path)
+    return paths.resolve_rel(path, repo_root)
 
 
 def load_inputs(region_path, repo_root, graph_path=None, resource_root=None):

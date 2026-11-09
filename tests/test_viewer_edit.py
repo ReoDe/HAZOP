@@ -16,6 +16,7 @@ os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu
 
 from tests.test_app import pump, wait_for  # noqa: E402
 from scripts.check_edit_screen import install_sample  # noqa: E402
+from hazop import paths  # noqa: E402
 from hazop.app.screens import viewer  # noqa: E402
 from hazop.app.screens.viewer import EditSession, ToolState, choose_end, finish_path, flow_request, start_tool, tool_pick  # noqa: E402,E501
 
@@ -180,7 +181,7 @@ class EditScreenTest(unittest.TestCase):
 
     def setUp(self):
         from hazop.app.main_window import MainWindow
-        shutil.rmtree(os.path.join(os.environ["HAZOP_WORK_ROOT"], "데이터", "도면수정"), ignore_errors=True)
+        shutil.rmtree(paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "도면수정"), ignore_errors=True)
         win = MainWindow(settings_path=os.path.join(tempfile.mkdtemp(dir=self.tmp), "settings.json"), ask_reviewer=False)
         win.set_reviewer_name("검토자A")
         win.resize(1440, 860)
@@ -323,7 +324,7 @@ class EditScreenTest(unittest.TestCase):
             self.assertTrue(scr.save())
         self.assertFalse(scr.session.dirty)
         self.assertIn("저장", note.call_args[0][2])
-        saved = os.path.join(os.environ["HAZOP_WORK_ROOT"], "데이터", "도면수정")
+        saved = paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "도면수정")
         self.assertTrue(os.listdir(saved))
         self.settle()
         self.assertIn("미확인 %d" % len(scr.info["graph"]["validation"]["unknowns"]), scr.chip_stats.text())

@@ -67,7 +67,7 @@ class PinnedValuesTest(unittest.TestCase):
     def test_hash_mismatch_reported_before_parse(self):
         """해시가 다르면 파싱하지 않고 그 사유만 돌려준다(파싱 예외가 사유를 가리지 않음)."""
         g = self._broken_guide()
-        cat, crit = _load(os.path.join(REPO_ROOT, REGION["inputs"]["candidate_catalog"])), CRIT
+        cat, crit = _load(paths.resolve_rel(REGION["inputs"]["candidate_catalog"], REPO_ROOT)), CRIT
         self.assertEqual(integrity.check_catalog(cat, None, guide=g),
                          ["지침서 파일 해시가 고정값과 다름(변조 또는 미승인 변경) — 카탈로그 대조 불가: %s" % g])
         self.assertEqual(integrity.check_criteria(crit, guide=g),
@@ -75,7 +75,7 @@ class PinnedValuesTest(unittest.TestCase):
 
     def test_parse_failure_becomes_blocker(self):
         g = self._broken_guide()
-        cat = _load(os.path.join(REPO_ROOT, REGION["inputs"]["candidate_catalog"]))
+        cat = _load(paths.resolve_rel(REGION["inputs"]["candidate_catalog"], REPO_ROOT))
         with mock.patch.object(integrity, "GUIDE_SHA256", integrity.guide_sha256(g)):
             e1 = integrity.check_catalog(cat, None, guide=g)
             e2 = integrity.check_criteria(CRIT, guide=g)
@@ -87,7 +87,7 @@ class PinnedValuesTest(unittest.TestCase):
     def test_read_failure_becomes_blocker(self):
         """존재 확인 뒤 읽기 실패(권한 등)·파싱 직전 삭제(OSError)는 경로와 원인을 담은 사유가 된다."""
         g = os.path.join(REPO_ROOT, *integrity.GUIDE_PARTS)
-        cat = _load(os.path.join(REPO_ROOT, REGION["inputs"]["candidate_catalog"]))
+        cat = _load(paths.resolve_rel(REGION["inputs"]["candidate_catalog"], REPO_ROOT))
         with mock.patch.object(integrity, "guide_sha256", side_effect=PermissionError(13, "거부됨")):
             self.assertEqual(integrity.check_criteria(CRIT, guide=g),
                              ["지침서 읽기 실패 — 기준표 대조 불가: %s (PermissionError: [Errno 13] 거부됨)" % g])
@@ -114,8 +114,8 @@ class TamperedResourceRootTest(unittest.TestCase):
         for rel in RESOURCE_RELS:
             dst = os.path.join(self.res, *rel.split("/"))
             os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copyfile(os.path.join(REPO_ROOT, *rel.split("/")), dst)
-        self.region_path = os.path.join(self.work, "데이터", "구간", os.path.basename(REGION_FILE))
+            shutil.copyfile(paths.resolve_rel(rel, REPO_ROOT), dst)
+        self.region_path = paths.folder_in(self.work, "구간", os.path.basename(REGION_FILE))
         os.makedirs(os.path.dirname(self.region_path))
         shutil.copyfile(REGION_FILE, self.region_path)
         gpath = os.path.join(self.work, REGION["graph_ref"]["graph_file"])

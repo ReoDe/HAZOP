@@ -101,7 +101,7 @@ def _ref(end):
 # ---------------------------------------------------------------- 사람 지정 기록
 
 def manual_path(project_id):
-    return paths.work_path("데이터", "도면연결", paths.safe_name(project_id) + ".json")
+    return paths.folder("도면연결", paths.safe_name(project_id) + ".json")
 
 
 def load_manual(project_id):

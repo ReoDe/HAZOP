@@ -34,7 +34,7 @@ def _reference_inputs(region, resource_root):
         if rel is None:
             docs[role] = None
             continue
-        full = rel if os.path.isabs(rel) else os.path.join(resource_root, rel)
+        full = paths.resolve_rel(rel, resource_root)
         if not os.path.isfile(full):
             raise run.InputError("%s 파일 없음: %s" % (role, rel))
         docs[role] = _load(full)

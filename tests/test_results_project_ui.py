@@ -14,6 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from hazop import paths  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 from hazop.study import results as res  # noqa: E402
 from tests.test_project_graph import cont, sheet  # noqa: E402
@@ -187,7 +188,7 @@ class ResultsProjectUiTest(unittest.TestCase):
         self.assertIn("범위", status.toolTip())
         with open(old_res_path, "rb") as fh:
             self.assertEqual(fh.read(), before, "옛 결과 파일은 그대로")
-        backups = os.listdir(os.path.join(self.tmp, "데이터", "백업"))
+        backups = os.listdir(paths.folder_in(self.tmp, "백업"))
         self.assertTrue(any(b.endswith("분석결과-이전") for b in backups), backups)
 
         _app, again = self.screen("SNP-M-101")

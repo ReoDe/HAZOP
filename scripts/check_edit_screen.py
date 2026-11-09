@@ -22,6 +22,7 @@ import time
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
+from hazop import paths  # noqa: E402
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing --log-level=3")
 
 DRAWING = "SNP-M-101"
@@ -32,7 +33,7 @@ MIN_CANVAS_W = 600  # 1366 폭에서 편집 패널을 연 뒤에도 남아야 �
 def install_sample(work, drawing=DRAWING):
     """샘플 도면을 작업 루트 안으로 복사해 추출·그래프를 만든다(뷰어 SVG는 작업·저장 루트 안만 허용). 추출 폴더 이름."""
     from hazop.app import data
-    src = [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*")) if drawing in p][0]
+    src = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*")) if drawing in p][0]
     dst = os.path.join(work, "샘플", os.path.basename(src))
     if not os.path.isdir(dst):
         shutil.copytree(src, dst)

@@ -21,6 +21,7 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing --log-level=3")
 
+from hazop import paths  # noqa: E402
 from tests.test_ai_screen import FakeClient  # noqa: E402
 from tests.test_app import REPO_ROOT, build_temp_drawing, tearDownModule, wait_for  # noqa: E402,F401
 
@@ -121,7 +122,7 @@ class FlowCase(unittest.TestCase):
     def clean_results():
         from hazop import paths
         for d in ("분석결과", "분석결과-시험"):
-            shutil.rmtree(paths.work_path("데이터", d), ignore_errors=True)
+            shutil.rmtree(paths.folder(d), ignore_errors=True)
 
     def window(self, method="subscription", scenarios="ok", terms=True, concurrency=1, debug=False, api_client=None):
         """구독은 가짜 CLI, API 키는 api_client(가짜). 창을 닫을 때 묻는 창은 시험이 정한 답(기본: 바로 끊음).

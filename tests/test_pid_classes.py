@@ -15,6 +15,7 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+from hazop import paths  # noqa: E402
 from hazop.analysis import equipment  # noqa: E402
 from hazop.extract import corrections, isa, properties, rules  # noqa: E402
 from hazop.graph import build as gb  # noqa: E402
@@ -169,7 +170,7 @@ class PropertyCheckTest(unittest.TestCase):
     def test_samples_have_no_unknown_attribute_warnings(self):
         import glob
         from hazop.extract import drawio
-        for f in sorted(glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio"))):
+        for f in sorted(glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))):
             checks = [u["check"] for u in drawio.extract(f)["validation"]["unknowns"]]
             self.assertNotIn("unknown_attribute", checks, f)
             self.assertFalse([c for c in checks if c.startswith("invalid_")], f)

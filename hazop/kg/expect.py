@@ -25,7 +25,6 @@ from hazop.kg import build, claims
 from hazop.kg.schema import REGISTRY
 
 RULES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema", "expectations.json")
-STORE_DIR = ("데이터", "잠재후보")
 STORE_KIND = "hazop_expectation_judgements"
 STORE_SCHEMA_VERSION = "0.1"
 ID_PREFIX = "exp-"
@@ -608,7 +607,7 @@ def apply_action(item, action, by, reason="", evidence="", at=None, found_ref=No
 
 
 def store_path(project_id):
-    return paths.work_path(*STORE_DIR, paths.safe_name(project_id, "project") + ".json")
+    return paths.folder("잠재후보", paths.safe_name(project_id, "project") + ".json")
 
 
 def _check_store(doc, project_id, path):

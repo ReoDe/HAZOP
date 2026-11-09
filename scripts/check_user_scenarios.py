@@ -27,9 +27,12 @@ import time
 import urllib.request
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+from hazop import paths  # noqa: E402  (표준 라이브러리만 쓰는 경로 모듈)
 CDP_PORT = 9339
 WINDOW_SIZE = (1366, 768)
-DRAWIO_SAMPLE = os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "SNP-M-201_CVCS", "SNP-M-201_CVCS.drawio")
+DRAWIO_SAMPLE = paths.folder("참고", "P&ID 도면 샘플", "SNP-M-201_CVCS", "SNP-M-201_CVCS.drawio")
 
 # KLM 연산자 시간(초). Card, Moran & Newell(1980) "The Keystroke-Level Model for User Performance Time with Interactive
 # Systems", CACM 23(7):396-410. K는 비전문 평균 타자(40 wpm) 값 0.28(같은 논문 표 1의 범위 0.08~1.2 중).
@@ -1492,7 +1495,7 @@ def prepare(work_root):
     sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
     import shoot_results
     shoot_results.prepare(work_root)
-    shutil.copytree(os.path.join(REPO_ROOT, "참고자료"), os.path.join(work_root, "참고자료"))  # ②④ 뷰어 바탕 그림
+    shutil.copytree(paths.folder("참고"), paths.logical_reference_dir(work_root))  # ②④ 뷰어 바탕 그림
     from hazop.app import make_application
     from hazop.app.main_window import MainWindow
     from hazop.app.screenshots import wait
@@ -1611,7 +1614,7 @@ def run(out_dir, only=None, keep_temp=False, focus_wait=120):
             print(exc)
             return 2
         w32.resize(hwnd, *WINDOW_SIZE)
-        d = Driver(w32, uia, cdp, pid, hwnd, shots, os.path.join(tmp, "work", "데이터", "분석결과"))
+        d = Driver(w32, uia, cdp, pid, hwnd, shots, paths.folder_in(os.path.join(tmp, "work"), "분석결과"))
         d.focus_wait = focus_wait
         w32.activate(hwnd)
         time.sleep(1.0)

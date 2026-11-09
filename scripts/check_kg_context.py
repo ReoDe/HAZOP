@@ -24,15 +24,16 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
+from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 
 import check_kg  # noqa: E402
 from hazop.analysis import ai, run, validate  # noqa: E402
 from hazop.kg import build, context  # noqa: E402
 
-REGION_FILE = os.path.join(REPO_ROOT, "데이터", "구간", "region-SNP-M-102-pzr.json")
-FIXED_DIR = os.path.join(REPO_ROOT, "데이터", "고정응답", "region-SNP-M-102-pzr")
-SAMPLE_DIR = os.path.join(REPO_ROOT, "데이터", "지식", "SNP-SAMPLE")
+REGION_FILE = paths.folder("표본", "구간", "region-SNP-M-102-pzr.json")
+FIXED_DIR = paths.folder("표본", "고정응답", "region-SNP-M-102-pzr")
+SAMPLE_DIR = paths.folder("표본", "지식", "SNP-SAMPLE")
 FIXTURE_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "kg_context")
 KG_RESPONSES = os.path.join(FIXTURE_DIR, "responses")
 C9_RESPONSES = os.path.join(FIXTURE_DIR, "responses_c9")
@@ -326,7 +327,7 @@ def c3_problems(env):
 
 def _plain_inputs(env):
     region = load(REGION_FILE)
-    files = {k: os.path.join(REPO_ROOT, v) for k, v in region["inputs"].items()}
+    files = {k: paths.resolve_rel(v, REPO_ROOT) for k, v in region["inputs"].items()}
     return (region, env.graph, load(files["candidate_catalog"]), load(files["applicability"]),
             load(files["patterns"]), load(files["risk_criteria"]))
 

@@ -23,7 +23,7 @@ from hazop.console import safe_console  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.analysis import bundle_export, run  # noqa: E402
 
-DEFAULT_REGION = paths.work_path("데이터", "구간", "region-SNP-M-102-pzr.json")
+DEFAULT_REGION = paths.folder("구간", "region-SNP-M-102-pzr.json")
 DEFAULT_OUT = paths.output_root("근거묶음")
 
 

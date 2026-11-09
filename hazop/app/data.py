@@ -157,7 +157,7 @@ def doc_root():
 def build_project_kg(project_id):
     """프로젝트 지식그래프를 도면 그래프·문서 지식·지식 CSV(있으면)로 다시 빌드한다(hazop.kg.auto.build_project).
     반환 {"kg", "dir", "notes"}. 도면도 문서도 없으면 ValueError."""
-    return auto.build_project(project_id, paths.output_root("그래프"), doc_root(), paths.work_path("데이터", "지식"),
+    return auto.build_project(project_id, paths.output_root("그래프"), doc_root(), paths.folder("지식"),
                               paths.output_root("지식그래프"))
 
 
@@ -211,7 +211,7 @@ def extraction_brief(path):
             src, drawing, summary = {}, {}, {}
         if src.get("material_id"):
             origin = None
-        elif str(src.get("file") or "").replace("\\", "/").startswith("참고자료/"):
+        elif paths.is_reference_rel(src.get("file")):
             origin = "샘플 실행 데이터"
         else:
             origin = "등록 없이 추출"
@@ -397,7 +397,7 @@ def extraction_name_for_graph_file(graph_file):
 
 # ---------------------------------------------------------------- ④ 구간·실행
 def list_regions():
-    root = paths.work_path("데이터", "구간")
+    root = paths.folder("구간")
     return sorted(glob.glob(os.path.join(root, "*.json")))
 
 

@@ -45,6 +45,7 @@ import traceback
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
+from hazop import paths  # noqa: E402
 
 LIMIT_W, LIMIT_H = 1366, 768  # 측정 때 창을 맞추는 크기(100% 화면)
 TASKBAR_H, TITLEBAR_H = 48, 31  # 논리 px. Windows 11 기본 작업 표시줄, 제목 표시줄(SM_CYCAPTION 23 + 크기 틀 4 + 여백 4, 96 DPI)
@@ -207,9 +208,8 @@ class TempRoots:
         """샘플 구간 JSON과 고정 응답 분석 실행을 임시 작업 루트에 복사. 실행 폴더 경로."""
         from tests.run_fixture import fresh_run_dir
         src = fresh_run_dir()
-        os.makedirs(os.path.join(self.work, "데이터", "구간"), exist_ok=True)
-        shutil.copy(os.path.join(REPO_ROOT, "데이터", "구간", REGION + ".json"),
-                    os.path.join(self.work, "데이터", "구간"))
+        os.makedirs(paths.folder_in(self.work, "구간"), exist_ok=True)
+        shutil.copy(paths.folder("표본", "구간", REGION + ".json"), paths.folder_in(self.work, "구간"))
         run_dir = os.path.join(self.work, "출력", "분석", REGION, os.path.basename(src))
         if not os.path.isdir(run_dir):
             shutil.copytree(src, run_dir)
@@ -426,7 +426,7 @@ def _js_value(win, expr, timeout=10.0):
 def sample_drawing_dir():
     """샘플 도면(SNP-M-102) 폴더. 없으면 None."""
     import glob
-    found = [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*")) if "SNP-M-102" in p]
+    found = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*")) if "SNP-M-102" in p]
     return found[0] if found else None
 
 

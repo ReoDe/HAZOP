@@ -34,7 +34,7 @@ class _Skip(Exception):
 RENAMED_REASONS = {"제어밸브 실패 위치 미확인": "밸브 고장 위치 미확인"}
 
 def store_path(name):
-    return paths.work_path("데이터", "도면수정", paths.safe_name(name) + ".json")
+    return paths.folder("도면수정", paths.safe_name(name) + ".json")
 
 
 def load(name):

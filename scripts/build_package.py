@@ -53,6 +53,7 @@ import tempfile
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 
 APP_NAME = "HAZOP"
@@ -73,13 +74,13 @@ DATA_FILES = (
     "scripts/extract_pdf.py",
     "scripts/build_graph.py",
 )
-DATA_DIRS = (
-    "hazop/kg/vendor",
-    "데이터/이탈후보",
-    "데이터/기준표",
-    "데이터/패턴",
-)
-EXCLUDED_DIRS = ("참고자료",)  # D5안: 샘플 도면(28 MB)은 넣지 않는다
+# 자원 폴더는 hazop.paths.FOLDERS의 resource 행에서 만든다(묶음 안에서도 같은 상대 위치)
+DATA_DIRS = ("hazop/kg/vendor",) + tuple(paths.folder_rel(n) for n, f in paths.FOLDERS.items() if f.root == "resource")
+# 패키징 D5안: 저장소에만 있는 자료(샘플 도면·표본)는 넣지 않는다
+# (표본이 아직 데이터/에 있는 동안은 자원 폴더를 품은 repo 폴더를 뺀다. 표본을 자원/표본으로 옮기면 지운다.)
+_RESOURCE_RELS = [f.rel for f in paths.FOLDERS.values() if f.root == "resource"]
+EXCLUDED_DIRS = tuple(paths.folder_rel(n) for n, f in paths.FOLDERS.items()
+                      if f.root == "repo" and not any(r[:len(f.rel)] == f.rel for r in _RESOURCE_RELS))
 EXCLUDES = ("anthropic", "httpx")
 SCRIPT_MODULES = ("extract_drawio", "extract_pdf", "build_graph")
 # W9(D15): 제3자 고지는 실행 파일 옆 licenses/에 둔다(D9의 _internal/licenses/를 대체, 사용자 결정 2026-11-06)

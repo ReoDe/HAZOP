@@ -30,7 +30,7 @@ from hazop.graph import build  # noqa: E402
 from hazop.register import registry  # noqa: E402
 from tests.test_extract_drawio import compress  # noqa: E402
 
-SAMPLES = sorted(glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio")))
+SAMPLES = sorted(glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")))
 SAMPLE_101 = [p for p in SAMPLES if "SNP-M-101" in p][0]
 PDF_101 = glob.glob(os.path.join(os.path.dirname(SAMPLE_101), "*.pdf"))[0]
 HAS_PDFPLUMBER = importlib.util.find_spec("pdfplumber") is not None
@@ -527,7 +527,7 @@ class PdfRegisterTest(RegisterBase):
         import extract_pdf
         from hazop.app import data
         from tests.test_adapter import merged_pdf
-        pdf_102 = glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "SNP-M-102*", "*.pdf"))[0]
+        pdf_102 = glob.glob(paths.folder("참고", "P&ID 도면 샘플", "SNP-M-102*", "*.pdf"))[0]
         src = merged_pdf(os.path.join(self.tmp, "merged.pdf"), [PDF_101, pdf_102])
         work = os.path.join(self.tmp, "work")
         with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": work, "HAZOP_STORE_ROOT": self.store}):

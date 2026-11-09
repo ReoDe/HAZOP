@@ -15,6 +15,7 @@ os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu
 
 from tests.test_app import pump, wait_for  # noqa: E402
 from scripts.check_edit_screen import install_sample  # noqa: E402
+from hazop import paths  # noqa: E402
 from hazop.app import project_ctx  # noqa: E402
 from hazop.app.screens import viewer  # noqa: E402
 from hazop.graph import project  # noqa: E402
@@ -44,7 +45,7 @@ class LinkTestBase(unittest.TestCase):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def setUp(self):
-        shutil.rmtree(os.path.join(os.environ["HAZOP_WORK_ROOT"], "데이터"), ignore_errors=True)
+        shutil.rmtree(paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "작업데이터"), ignore_errors=True)
 
 
 class LinkDataTest(LinkTestBase):

@@ -11,6 +11,7 @@ import shutil
 import tempfile
 import unittest
 
+from hazop import paths  # noqa: E402
 from tests.test_app import build_temp_drawing
 
 PROJECT = "corr-test"
@@ -78,8 +79,8 @@ class CorrectionsTest(unittest.TestCase):
 
     def tearDown(self):
         from hazop import paths
-        for sub in (("데이터", "도면수정"), ("데이터", "검토구간"), ("데이터", "분석결과")):
-            shutil.rmtree(paths.work_path(*sub), ignore_errors=True)
+        for name in ("도면수정", "검토구간", "분석결과"):
+            shutil.rmtree(paths.folder(name), ignore_errors=True)
 
     def op(self, ops, base_ext, name, target, value):
         from hazop.extract import corrections
@@ -365,7 +366,7 @@ class CorrectionsTest(unittest.TestCase):
         ops = []
         self.op(ops, self.ext, "set_tag", "n1", {"tag": "RC-PZ02"})
         out = data.save_corrections(NAME, ops, "검토자")
-        self.assertEqual(out["path"], os.path.join(paths.work_path("데이터", "도면수정"), NAME + ".json"))
+        self.assertEqual(out["path"], os.path.join(paths.folder("도면수정"), NAME + ".json"))
         self.assertNotEqual(out["graph"]["graph_version"], graph["graph_version"])
         on_disk = data.read_json(os.path.join(paths.output_root("그래프"), NAME, "graph.json"))
         self.assertEqual(on_disk["graph_version"], out["graph"]["graph_version"])

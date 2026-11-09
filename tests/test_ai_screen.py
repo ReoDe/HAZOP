@@ -18,6 +18,7 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing --log-level=3")
 
+from hazop import paths  # noqa: E402
 from tests.test_app import build_temp_drawing, tearDownModule, wait_for  # noqa: E402,F401
 
 RESULTS = 6
@@ -86,7 +87,7 @@ class AiScreenTest(unittest.TestCase):
 
     def tearDown(self):
         from hazop import paths
-        shutil.rmtree(paths.work_path("데이터", "분석결과"), ignore_errors=True)
+        shutil.rmtree(paths.folder("분석결과"), ignore_errors=True)
 
     def screen(self, client=None, key=KEY):
         from hazop.app.main_window import MainWindow
@@ -186,7 +187,7 @@ class AiScreenTest(unittest.TestCase):
     def test_finish_message_says_when_save_failed(self):
         from hazop import paths
         # 창을 닫을 때 shutdown이 저장을 다시 시도하므로 정리는 창이 닫힌 뒤(가장 나중)에 한다
-        self.addCleanup(shutil.rmtree, paths.work_path("데이터", "분석결과"), True)
+        self.addCleanup(shutil.rmtree, paths.folder("분석결과"), True)
         client = FakeClient()
         win, scr = self.screen(client)
         with mock.patch("hazop.app.screens.results.res.save", side_effect=PermissionError("잠김")):

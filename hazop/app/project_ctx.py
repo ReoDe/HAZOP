@@ -20,7 +20,6 @@ from hazop.study import results as res
 from hazop.study import span
 
 SPAN_MARK = "⇄"
-BACKUP_DIR = ("데이터", "백업")
 
 
 def node_label(n):
@@ -206,7 +205,7 @@ def _old_sets(pg):
 def backup(paths_to_copy, label):
     """파일들을 <작업 루트>/데이터/백업/<시각>-<label>/ 아래 원래 상대 경로 그대로 복사한다. 백업 폴더를 돌려준다."""
     stamp = sn.now_utc().replace(":", "").replace("-", "")
-    root = paths.work_path(*BACKUP_DIR, "%s-%s" % (stamp, label))
+    root = paths.folder("백업", "%s-%s" % (stamp, label))
     for p in paths_to_copy:
         rel = os.path.relpath(p, paths.work_root())
         dst = os.path.join(root, rel)

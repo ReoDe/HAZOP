@@ -28,6 +28,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
+from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 
 import analyze_kg  # noqa: E402
@@ -37,7 +38,7 @@ from hazop.kg import algo, build  # noqa: E402
 
 SAMPLE_PROJECT = "SNP-SAMPLE"
 EXPECTED = os.path.join(REPO_ROOT, "tests", "fixtures", "kg_algo", "expected_SNP-SAMPLE.json")
-REGION_FILE = os.path.join(REPO_ROOT, "데이터", "구간", "region-SNP-M-102-pzr.json")
+REGION_FILE = paths.folder_in(REPO_ROOT, "표본", "구간", "region-SNP-M-102-pzr.json")
 P1_NODES = 5000  # §7.3 전역 보기 노드 수 상한
 P1_FILE = "p1_performance.json"
 

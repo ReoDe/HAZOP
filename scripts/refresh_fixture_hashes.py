@@ -21,10 +21,11 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 from hazop.analysis import ai, run  # noqa: E402
 
-DEFAULT_REGION = os.path.join(REPO_ROOT, "데이터", "구간", "region-SNP-M-102-pzr.json")
+DEFAULT_REGION = paths.folder("표본", "구간", "region-SNP-M-102-pzr.json")
 BAD_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "analysis", "bad")
 
 
@@ -44,7 +45,7 @@ def main(argv=None):
         return 1
     region_id = inputs["region"]["region_id"]
     doc = run.prepare_doc(inputs, None, "refresh", lambda: "refresh")
-    dirs = args.fixed_dir or [os.path.join(REPO_ROOT, "데이터", "고정응답", region_id), BAD_DIR]
+    dirs = args.fixed_dir or [paths.folder("표본", "고정응답", region_id), BAD_DIR]
     stale = 0
     for d in dirs:
         for path in sorted(glob.glob(os.path.join(d, "*.json"))):
