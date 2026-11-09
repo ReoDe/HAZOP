@@ -405,7 +405,7 @@ class BuildSpecTest(unittest.TestCase):
             ast.parse(text)
             self.assertIn("collect_submodules('hazop')", text)
             self.assertIn("EXCLUDES = ['anthropic', 'httpx']", text)  # W9(D15): pdfplumber는 묶는다
-            self.assertEqual(text.count("'pdfplumber', 'pypdfium2']"), 2 if with_check else 1)  # 두 Analysis 모두
+            self.assertEqual(text.count("'pdfplumber', 'pypdfium2', 'openpyxl']"), 2 if with_check else 1)  # 두 Analysis 모두
             self.assertIn("name='HAZOP', console=False, upx=False", text)
             self.assertIn("scripts/run_app.py", text)
             self.assertEqual("HAZOP-check" in text, with_check)
@@ -1378,9 +1378,11 @@ class PdfBundleTest(unittest.TestCase):
         return out
 
     def test_pdf_problems(self):
-        mods = list(self.bp.PDF_REQUIRED_MODULES) + ["hazop", "PIL"]
+        mods = list(self.bp.PDF_REQUIRED_MODULES + self.bp.LAZY_MODULES) + ["hazop", "PIL"]
         for with_check in (False, True):
             self.assertEqual(self.bp.pdf_problems(self._fake_build(mods, with_check=with_check), with_check), [])
+        self.assertEqual(self.bp.pdf_problems(self._fake_build([m for m in mods if m != "openpyxl"])),
+                         ["앱 PYZ에 지연 import 모듈 없음: openpyxl"])
         out = self._fake_build([m for m in mods if m != "pypdfium2_raw"], dll=False)
         probs = self.bp.pdf_problems(out)
         self.assertEqual(probs[0], "앱 PYZ에 PDF 모듈 없음: pypdfium2_raw")
@@ -1390,14 +1392,14 @@ class PdfBundleTest(unittest.TestCase):
     def test_finish_bundle(self):
         """빌드 뒤 마무리: 실행 파일 옆 licenses/ 복사 + 고지 대조 + PDF 검사. 결과 폴더가 없으면 실패."""
         self.assertTrue(self.bp.finish_bundle(self._tmp())[0].startswith("결과 폴더 없음"))
-        out = self._fake_build(list(self.bp.PDF_REQUIRED_MODULES))
+        out = self._fake_build(list(self.bp.PDF_REQUIRED_MODULES + self.bp.LAZY_MODULES))
         self.assertEqual(self.bp.finish_bundle(out), [])
         self.assertTrue(os.path.isfile(os.path.join(self.bp.dist_dir(out), "licenses", "README.md")))
         self.assertTrue(self.bp.finish_bundle(out)[0].startswith("제3자 고지 복사 실패"))  # 두 번째 복사(이미 있음)
 
     def test_license_tree_walk_error_fails(self):
         """고지 대조의 폴더 탐색 오류(onerror)·파일 읽기 오류는 '같음'이 아니라 실패다."""
-        out = self._fake_build(list(self.bp.PDF_REQUIRED_MODULES))
+        out = self._fake_build(list(self.bp.PDF_REQUIRED_MODULES + self.bp.LAZY_MODULES))
         dist = self.bp.dist_dir(out)
         self.bp.copy_licenses(out)
         self.assertEqual(self.bp.licenses_problems(dist), [])

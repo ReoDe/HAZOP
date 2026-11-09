@@ -10,7 +10,9 @@
 - 제3자 고지(W9, D15): licenses/는 datas(_internal/licenses/)가 아니라 빌드 뒤 결과 폴더의 실행 파일 옆 licenses/로
   복사한다(copy_licenses). 빌드 뒤 검사가 실행 파일 옆 사본이 저장소와 같고 _internal/licenses/가 없는지 본다.
 - hiddenimports: collect_submodules("hazop") + 세 스크립트 모듈(스크립트가 가져오는 표준 라이브러리까지 묶이게)
-  + PDF 어댑터 모듈 pdfplumber·pypdfium2(W9, D15: pdf_vector가 함수 안에서 지연 import).
+  + PDF 어댑터 모듈 pdfplumber·pypdfium2(W9, D15: pdf_vector가 함수 안에서 지연 import)
+  + 함수 안에서만 import하는 라이브러리 LAZY_MODULES(openpyxl: 시작을 빠르게 하려고 내보낼 때만 읽음). 빌드 뒤 검사가
+  앱 PYZ에 있는지 본다.
 - excludes: anthropic·httpx(D1, 배포본 제외). pdfplumber와 의존성(pdfminer.six·Pillow·pypdfium2·charset-normalizer·
   cryptography·cffi·pycparser, packaging/requirements-pdf.txt)은 묶는다(W9, D15). 빌드 뒤 검사가 앱 PYZ(PYZ-00.toc)에
   PDF_REQUIRED_MODULES가 있고 결과 폴더에 _internal/pypdfium2_raw/pdfium.dll이 있는지 본다.
@@ -84,6 +86,8 @@ SCRIPT_MODULES = ("extract_drawio", "extract_pdf", "build_graph")
 LICENSES_DIR = "licenses"
 # W9(D15): PDF 어댑터. pdf_vector가 pdfplumber를 함수 안에서 import하므로 명시적으로 묶는다.
 PDF_MODULES = ("pdfplumber", "pypdfium2")
+# 시작 시간 때문에 함수 안에서만 import하는 라이브러리. 정적 분석이 놓쳐도 묶이게 명시하고, 빌드 뒤 앱 PYZ에서 확인한다.
+LAZY_MODULES = ("openpyxl",)
 PDF_REQUIRED_MODULES = ("pdfplumber", "pdfminer", "pypdfium2", "pypdfium2_raw", "PIL.Image", "charset_normalizer",
                         "cryptography")
 PDFIUM_DLL = ("pypdfium2_raw", "pdfium.dll")  # _internal 아래
@@ -173,7 +177,7 @@ def spec_text(repo_root=REPO_ROOT, with_check=False):
         "PATHEX = [REPO, os.path.join(REPO, 'scripts')]",
         "DATAS = [tuple(x) for x in json.loads(%s)]" % json.dumps(json.dumps(datas)),
         "EXCLUDES = %r" % list(EXCLUDES),
-        "HIDDEN = collect_submodules('hazop') + %r" % list(SCRIPT_MODULES + PDF_MODULES),
+        "HIDDEN = collect_submodules('hazop') + %r" % list(SCRIPT_MODULES + PDF_MODULES + LAZY_MODULES),
         "import importlib.util, shutil",
         "# D10 TLS 허용 목록·D13 Qt 모듈 제외(사후 검사와 같은 규칙). scripts/를 sys.path에 넣지 않고 경로로 읽는다(D11 후속)",
         "_BP = importlib.util.spec_from_file_location('build_package', os.path.join(REPO, 'scripts', 'build_package.py'))",
@@ -199,7 +203,7 @@ def spec_text(repo_root=REPO_ROOT, with_check=False):
             "# 검증 전용(배포본 제외): 저장소 밖 사본의 검사 스크립트를 묶인 인터프리터·hazop으로 실행",
             "c = Analysis([os.path.join(REPO, %r)], pathex=PATHEX, datas=DATAS," % CHECK_ENTRY,
             "             hiddenimports=collect_submodules('hazop') + %r, excludes=EXCLUDES, noarchive=False)"
-            % list(CHECK_MODULES + PDF_MODULES),
+            % list(CHECK_MODULES + PDF_MODULES + LAZY_MODULES),
             "keep_warn('check')",
             "c.binaries = drop_binaries(c.binaries)",
             "c.datas = drop_binaries(c.datas)",
@@ -376,7 +380,7 @@ def pyz_modules(path):
 
 
 def pdf_problems(out_dir, with_check=False):
-    """PDF 어댑터 묶음 검사(W9, D15). 앱 PYZ(PYZ-00.toc, HAZOP.exe의 Analysis)에 PDF_REQUIRED_MODULES가 있고 결과 폴더에
+    """PDF 어댑터 묶음 검사(W9, D15). 앱 PYZ(PYZ-00.toc, HAZOP.exe의 Analysis)에 PDF_REQUIRED_MODULES·LAZY_MODULES가 있고 결과 폴더에
     _internal/pypdfium2_raw/pdfium.dll이 있는지. 문제 목록(빈 목록 = 통과)."""
     probs = []
     toc = os.path.join(out_dir, "build", APP_NAME, "PYZ-00.toc")
@@ -385,6 +389,7 @@ def pdf_problems(out_dir, with_check=False):
     except (OSError, SyntaxError, ValueError, IndexError, TypeError) as e:
         return ["앱 PYZ TOC를 읽을 수 없음: %s (%s)" % (toc, e)]
     probs += ["앱 PYZ에 PDF 모듈 없음: %s" % m for m in PDF_REQUIRED_MODULES if m not in mods]
+    probs += ["앱 PYZ에 지연 import 모듈 없음: %s" % m for m in LAZY_MODULES if m not in mods]
     dll = os.path.join(dist_dir(out_dir, with_check), "_internal", *PDFIUM_DLL)
     if not os.path.isfile(dll):
         probs.append("pdfium.dll 없음: %s" % dll)
