@@ -64,11 +64,13 @@ def sample_checks(kg, knowledge, graphs, out_dir):
     gmap = {g["graph_id"]: g for g in graphs}
     res = []
     def end_type(e):
-        return build.PID if e["layer"] == "pid" else node[e["ref"]]["node_type"]
+        if e["layer"] != "pid":
+            return node[e["ref"]]["node_type"]
+        g = gmap.get(e.get("graph_id")) or {"nodes": []}
+        return build.pid_end_class(next((n for n in g["nodes"] if n["entity_id"] == e.get("entity_id")), None))
 
     def pair_ok(l):
-        allowed_from, allowed_to = build.LINK_TYPES[l["kind"]]
-        return end_type(l["ends"]["from"]) in allowed_from and end_type(l["ends"]["to"]) in allowed_to
+        return build.pair_allowed(l["kind"], end_type(l["ends"]["from"]), end_type(l["ends"]["to"]))
     res.append(("K1", "노드·관계 종류와 관계 타입 쌍(from·to node_type)이 화이트리스트 안",
                 all(n["node_type"] in build.NODE_PREFIX for n in kg["nodes"])
                 and all(l["kind"] in build.LINK_TYPES and pair_ok(l) for l in kg["links"])))
@@ -105,8 +107,14 @@ def sample_checks(kg, knowledge, graphs, out_dir):
                 all(x["has_source"] for x in kg["nodes"] + kg["links"] if x["knowledge_status"] == "confirmed")
                 and all(build._has_source(l["source"]) for l in kg["links"] if l["kind"] == "depends_on")))
     conf = {tuple(c["members"]) for c in kg["conflicts"]}
-    res.append(("K7", "설정치 충돌(setpt-001·002) 둘 다 보존·표시, 운전압력·설계압력은 충돌 아님",
-                conf == {("setpt-001", "setpt-002")} and node["setpt-001"]["conflict_with"] == ["setpt-002"]
+    psv = next(n for n in gmap[SAMPLE_GRAPH]["nodes"] if n.get("tag") == "RC-PSV101")
+    psv_ref = "%s#%s" % (SAMPLE_GRAPH, psv["source_object_id"])
+    res.append(("K7", "설정치 충돌(setpt-001·002)과 도면 설정압력(RC-PSV101 17.2 MPa)≠setpt-003(9) 모두 보존·표시, "
+                      "운전압력·설계압력은 충돌 아님",
+                conf == {("setpt-001", "setpt-002"), (psv_ref, "setpt-003")}
+                and node["setpt-001"]["conflict_with"] == ["setpt-002"]
+                and node["setpt-003"]["conflict_with_pid"] == [psv_ref] and node["setpt-003"]["value"] == "9"
+                and psv["attributes"].get("set_pressure") == "17.2 MPa"
                 and node["setpt-002"]["value"] == "8.5" and not node["cond-001"]["conflict_with"]))
     sp = node["setpt-003"]
     res.append(("K8", "빈 칸은 null·사유로 남고 0으로 바뀌지 않음",

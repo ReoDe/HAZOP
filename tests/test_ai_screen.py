@@ -123,7 +123,7 @@ class AiScreenTest(unittest.TestCase):
         from PySide6.QtCore import Qt
         for g in range(win.explorer.topLevelItemCount()):
             grp = win.explorer.topLevelItem(g)
-            if grp.text(0).startswith("검토구간"):
+            if grp.text(0).startswith(("검토구간", "구간별 분석")):
                 for c in range(grp.childCount()):
                     if grp.child(c).data(0, Qt.UserRole) == (5, node_id):
                         return grp.child(c)

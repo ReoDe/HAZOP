@@ -7,6 +7,8 @@
   같은 태그가 여러 개인데 `graph_id:tag`로 쓰면 자동으로 고르지 않고 차단한다(K2).
 - 노드·관계 ID는 입력 그대로 쓴다. 빌더는 순번을 매기지 않는다.
 - 차단 오류(blockers)가 하나라도 있으면 validation.status = blocked. 각 항목의 rule은 검사 번호(K1~K8)다.
+- 노드·관계마다 생성 주체 origin을 둔다(기획서/지식그래프-스키마.md §3, KD5). 입력에 없으면 method로 정한다(레지스트리
+  legacy_methods). AI 초안처럼 사람 확인이 필요한 생성 주체는 reviewed_by 없이 knowledge_status confirmed가 되면 차단한다(K1).
 - 같은 입력이면 같은 kg_version·같은 결과(입력 순서 유지, 집계는 정렬).
 """
 
@@ -18,36 +20,33 @@ import shutil
 
 import networkx as nx
 
+from hazop.kg import claims
 from hazop.kg.inputs import SOURCE_COLUMNS, candidate_fields, normalize_tag, normalize_text, text_sha256
+from hazop.kg.schema import PID_ROOT, REGISTRY
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
+READABLE_SCHEMA_VERSIONS = ("0.1", "0.2")  # 0.1 -> 0.2는 registry 필드만 더함(옛 판은 그대로 읽음)
 BUILDER = "hazop.kg.build"
-BUILDER_VERSION = "0.1.0"
+BUILDER_VERSION = "0.3.0"  # 0.3.0: 속성 주장(claims)·도면값 충돌(M3)
 
-NODE_PREFIX = {"document": "doc-", "doc_chunk": "chunk-", "requirement": "req-", "setpoint": "setpt-",
-               "condition": "cond-", "analysis_case": "case-"}
+NODE_PREFIX = REGISTRY.node_prefix()
 LINK_PREFIX = "krel-"
-PID = "pid"  # 타입 쌍 표에서 P&ID 노드(drawing_object·pipe_segment)를 뜻함
+PID = "pid"  # LINK_TYPES 표에서 P&ID 노드를 뜻함(표시용). 허용 쌍 판정은 pair_allowed가 P&ID 끝의 실제 클래스로 한다
 # kind -> (허용 시작 타입, 허용 끝 타입) (§2.3)
-LINK_TYPES = {
-    "part_of": ({"doc_chunk"}, {"document"}),
-    "mentions": ({"doc_chunk"}, {PID}),
-    "specified_in": ({"requirement", "setpoint", "condition"}, {"doc_chunk"}),
-    "governed_by": ({PID}, {"requirement"}),
-    "has_setpoint": ({PID}, {"setpoint"}),
-    "has_condition": ({PID}, {"condition"}),
-    "depends_on": ({PID}, {PID}),
-    "analyzed_in": ({PID}, {"analysis_case"}),
-}
+LINK_TYPES = {k: tuple({PID if c == PID_ROOT else c for c in side} for side in pair)
+              for k, pair in REGISTRY.link_types().items()}
 KNOWLEDGE_STATUS = ("confirmed", "unknown", "hypothesis")
 LINK_STATUS = ("candidate", "confirmed", "rejected")
 METHODS = ("manual", "regex", "exact_norm", "fuzzy", "extractor")
+ORIGINS = tuple(o for o, v in REGISTRY.origins.items() if v["layer"] == "knowledge")
+ORIGIN_OF_METHOD = REGISTRY.origin_of_method()
+NEEDS_REVIEWER = REGISTRY.origins_needing_reviewer()
 RESERVED_PREFIXES = ("entity-", "relation-", "graph-")  # P&ID ID·target_ref와 겹치는 접두어(K3)
 REF_RE = re.compile(r"^(graph-[^:#]+)([:#])(.+)$")
 # mentions 대상이 기록 당시와 다른 도면 버전에서 사라지거나 모호해진 경우 차단 대신 재확인(§3.2)
 STALE_TARGET_CODES = ("pid_ref_not_found", "ambiguous_tag")
-# 같은 대상·항목 충돌 비교에 쓰는 설비 적용 관계(K7)
-CONFLICT_KINDS = {"has_setpoint": "setpoint", "has_condition": "condition"}
+# 문서 값을 P&ID 노드의 속성 주장으로 옮기고 충돌을 비교하는 설비 적용 관계(K7)
+CONFLICT_KINDS = REGISTRY.conflict_kinds()
 
 
 def _canon(obj):
@@ -56,11 +55,26 @@ def _canon(obj):
 
 def kg_version(knowledge, graph_refs):
     """정규화한 지식 입력(knowledge.json 전체: 노드·관계·입력 파일 sha256·ID) + 참조한 graph_version
-    + 빌더 버전(networkx 버전 포함)의 해시. 형식은 graph_version과 같다.
+    + 빌더 버전(networkx 버전 포함) + 타입 레지스트리 버전·해시의 해시. 형식은 graph_version과 같다.
     출력에 들어가는 값은 모두 이 해시나 graph_version에 반영되므로 kg_version이 같으면 두 결과 파일의 바이트도 같다."""
     canon = _canon({"knowledge": knowledge, "graph_refs": graph_refs})
-    head = "%s|nx=%s|" % (BUILDER_VERSION, nx.__version__)
+    head = "%s|nx=%s|registry=%s:%s|" % (BUILDER_VERSION, nx.__version__, REGISTRY.version, REGISTRY.sha256)
     return "v-" + hashlib.sha256((head + canon).encode("utf-8")).hexdigest()[:12]
+
+
+def origin_of(rec):
+    """지식 노드·관계의 생성 주체. origin이 없는 옛 입력은 method로 정하고, 정할 수 없으면 None."""
+    return rec.get("origin") or ORIGIN_OF_METHOD.get(rec.get("method"))
+
+
+def pid_end_class(node):
+    """P&ID 끝 노드 -> 레지스트리 클래스(kind 클래스, 없으면 분류). 모르는 종류는 최상위 클래스로 본다."""
+    return claims.pid_class(node or {}) or PID_ROOT
+
+
+def pair_allowed(kind, from_cls, to_cls):
+    """허용 쌍은 상위 클래스로 적어도 하위 클래스에 적용된다(단일 상속, 레지스트리 pair_allowed)."""
+    return REGISTRY.pair_allowed(kind, from_cls, to_cls)
 
 
 def _has_source(src):
@@ -197,6 +211,13 @@ class _PidIndex:
                    source_object_id=n["source_object_id"])
         return end, None
 
+    def node(self, end):
+        """해석된 P&ID 끝 -> 그래프 노드(없으면 None)."""
+        found = self.by_id.get(end.get("graph_id")) or []
+        if len(found) != 1:
+            return None
+        return next((n for n in found[0]["nodes"] if n["entity_id"] == end.get("entity_id")), None)
+
 
 def build_kg(knowledge, graphs):
     """knowledge dict + P&ID graph dict 목록 -> knowledge_graph dict."""
@@ -204,6 +225,16 @@ def build_kg(knowledge, graphs):
 
     def block(rule, code, target, reason):
         blockers.append({"rule": rule, "check": code, "target": target, "reason": reason})
+
+    def check_origin(it):
+        given = it.get("origin")
+        it["origin"] = origin_of(it)
+        if given is not None and given not in ORIGINS:
+            block("K1", "invalid_origin", it.get("id"), "origin 값 오류: %r" % given)
+        elif it["origin"] in NEEDS_REVIEWER and it.get("knowledge_status") == "confirmed" and not it.get("reviewed_by"):
+            block("K1", "%s_confirmed_without_reviewer" % it["origin"], it.get("id"),
+                  "%s(%s)인데 사람 확인(reviewed_by) 없이 knowledge_status confirmed"
+                  % (REGISTRY.origins[it["origin"]]["label_ko"], it["origin"]))
 
     nodes = [dict(n) for n in knowledge["nodes"]]
     links = [dict(l) for l in knowledge["links"]]
@@ -241,6 +272,7 @@ def build_kg(knowledge, graphs):
             block("K1", "unknown_node_type", n.get("id"), "목록 밖 노드 종류: %r" % n.get("node_type"))
         if n.get("knowledge_status") not in KNOWLEDGE_STATUS:
             block("K1", "invalid_knowledge_status", n.get("id"), "knowledge_status 값 오류: %r" % n.get("knowledge_status"))
+        check_origin(n)
         n["has_source"] = _has_source(n.get("source"))
         if not n["has_source"]:
             unknowns.append({"check": "no_source", "target": n.get("id"), "field": "source",
@@ -272,6 +304,7 @@ def build_kg(knowledge, graphs):
             block("K1", "invalid_method", lid, "method 값 오류: %r" % l.get("method"))
         if l.get("link_status") == "confirmed" and l.get("reviewed_by") is None:
             block("K1", "confirmed_without_reviewer", lid, "link_status confirmed인데 reviewed_by 없음")
+        check_origin(l)
         if l.get("unused_mention_columns"):
             review_items.append({"check": "unused_mention_columns", "target": lid,
                                  "reason": "mentions가 아닌 관계에 재확인 열이 채워짐(무시): %s"
@@ -304,10 +337,9 @@ def build_kg(knowledge, graphs):
                 ok = False
         l["ends"] = {s: ends.get(s) for s in ("from", "to")}
         if ok and len(ends) == 2:
-            allowed_from, allowed_to = LINK_TYPES[kind]
-            tf = PID if ends["from"]["layer"] == "pid" else ends["from"]["node_type"]
-            tt = PID if ends["to"]["layer"] == "pid" else ends["to"]["node_type"]
-            if tf not in allowed_from or tt not in allowed_to:
+            tf, tt = (pid_end_class(pid.node(ends[s])) if ends[s]["layer"] == "pid" else ends[s]["node_type"]
+                      for s in ("from", "to"))
+            if not pair_allowed(kind, tf, tt):
                 block("K1", "type_pair_not_allowed", lid, "%s의 허용 타입 쌍이 아님: %s -> %s" % (kind, tf, tt))
                 ok = False
         l["source_inherited_from"] = None
@@ -397,41 +429,66 @@ def build_kg(knowledge, graphs):
                 reasons.append("%s 끝 지식 노드가 V4 밖" % s)
         if l["recheck"]:
             reasons.append("recheck_required")
+        rel = REGISTRY.relations.get(l.get("kind"))
+        if rel is not None and not rel["v4"]:
+            reasons.append("relation_not_in_v4")
         l["compute_view"] = {"v4": not reasons, "excluded_reasons": reasons}
 
-    # ---- K7: 같은 대상·항목의 서로 다른 값 -> 둘 다 보존하고 충돌 표시
-    groups = {}
+    # ---- 속성 주장(KD4)과 K7: 같은 대상·같은 칸의 서로 다른 값 -> 모두 보존하고 충돌 표시
+    # 도면 주장은 graph_refs에 판이 하나로 정해진 그래프에서만 만든다(kg_version이 같으면 결과 바이트도 같게)
+    claim_list, where = [], {}
+    for r in graph_refs:
+        found = pid.by_id.get(r["graph_id"], [])
+        if r["graph_version"] is None or len(found) != 1:
+            continue
+        for n in found[0]["nodes"]:
+            if n.get("source_object_id"):
+                where[claims.stable_ref(r["graph_id"], n["source_object_id"])] = (r["graph_id"], n["entity_id"])
+        claim_list += claims.drawing_claims(found[0])
     for l in links:
-        ntype = CONFLICT_KINDS.get(l.get("kind"))
-        if not ntype or not l["valid"] or l.get("link_status") == "rejected":
+        if not CONFLICT_KINDS.get(l.get("kind")) or not l["valid"] or l.get("link_status") == "rejected":
             continue
         n = node_by_id[l["to"]]
         if n.get("item") is None:
             continue
-        key = (l["ends"]["from"]["graph_id"], l["ends"]["from"]["entity_id"], ntype, n["item"])
-        groups.setdefault(key, {})[n["id"]] = n
+        f = l["ends"]["from"]
+        pn = next(x for x in pid.by_id[f["graph_id"]][0]["nodes"] if x["entity_id"] == f["entity_id"])
+        c = claims.knowledge_claim(l, n, pn, f["graph_id"])
+        where[c["target"]] = (f["graph_id"], f["entity_id"])
+        claim_list.append(c)
+    groups = {}
+    for c in claim_list:
+        groups.setdefault((c["target"], claims.compare_key(c)), {}).setdefault(claims.member_id(c), c)
     conflicts = []
-    for key, uniq in sorted(groups.items(), key=lambda kv: _canon(list(kv[0]))):
+    for (target, ck), uniq in sorted(groups.items(), key=lambda kv: _canon([kv[0][0], list(kv[0][1])])):
         ids = sorted(uniq)
         for x, ia in enumerate(ids):
             for ib in ids[x + 1:]:
                 a, b = uniq[ia], uniq[ib]
                 if not _comparable_modes(a, b) or not _values_differ(a, b):
                     continue
-                conflicts.append({"graph_id": key[0], "entity_id": key[1], "node_type": key[2], "item": key[3],
-                                  "members": [ia, ib],
-                                  "values": [{"id": i, "value": uniq[i].get("value"), "unit": uniq[i].get("unit"),
+                gid, eid = where[target]
+                types = {a["node_type"], b["node_type"]}
+                prop = ck[1] if ck[0] == "property" else None
+                item = prop if prop else ck[2]
+                conflicts.append({"graph_id": gid, "entity_id": eid, "node_type": types.pop() if len(types) == 1 else None,
+                                  "item": item, "property": prop, "members": [ia, ib], "claims": [a["id"], b["id"]],
+                                  "values": [{"id": i, "claim": uniq[i]["id"], "origin": uniq[i]["origin"],
+                                              "value": uniq[i].get("value"), "unit": uniq[i].get("unit"),
                                               "pressure_basis": uniq[i].get("pressure_basis"),
                                               "operating_mode": uniq[i].get("operating_mode")} for i in (ia, ib)]})
                 unknowns.append({"check": "conflict", "target": "%s,%s" % (ia, ib), "field": "value",
-                                 "reason": "같은 대상(%s)·항목(%s)에 서로 다른 값 - 둘 다 보존" % (key[1], key[3])})
+                                 "reason": "같은 대상(%s)·항목(%s)에 서로 다른 값 - 둘 다 보존"
+                                 % (eid, REGISTRY.properties[prop]["label_ko"] if prop else item)})
     conflict_of = {}
     for c in conflicts:
         a, b = c["members"]
         conflict_of.setdefault(a, set()).add(b)
         conflict_of.setdefault(b, set()).add(a)
     for n in nodes:
-        n["conflict_with"] = sorted(conflict_of.get(n.get("id"), ()))
+        partners = conflict_of.get(n.get("id"), ())
+        n["conflict_with"] = sorted(p for p in partners if p in node_by_id)
+        n["conflict_with_pid"] = sorted(p for p in partners if p not in node_by_id)  # 도면 주장 상대(graph_id#source_object_id)
 
     for l in links:
         l.pop("valid")
@@ -444,11 +501,13 @@ def build_kg(knowledge, graphs):
         "kg_version": version,
         "project_id": knowledge.get("project_id"),
         "builder": {"name": BUILDER, "version": BUILDER_VERSION, "networkx": nx.__version__},
+        "registry": {"version": REGISTRY.version, "sha256": REGISTRY.sha256},
         "inputs": knowledge.get("inputs"),
         "knowledge_sha256": hashlib.sha256(dump_bytes(knowledge)).hexdigest(),  # 함께 쓰는 knowledge.json의 바이트 해시
         "graph_refs": graph_refs,
         "nodes": nodes,
         "links": links,
+        "claims": claim_list,
         "conflicts": conflicts,
         "validation": {"status": "blocked" if blockers else "passed", "blockers": blockers, "unknowns": unknowns},
         "review_items": review_items,
@@ -471,6 +530,7 @@ def summary(kg):
         "v4_nodes": sum(1 for n in kg["nodes"] if n["compute_view"]["v4"]),
         "v4_links": sum(1 for l in kg["links"] if l["compute_view"]["v4"]),
         "conflicts": len(kg["conflicts"]),
+        "claims": len(kg.get("claims") or []),
         "blockers": len(kg["validation"]["blockers"]),
         "unknowns": len(kg["validation"]["unknowns"]),
     }
@@ -588,6 +648,9 @@ def load_outputs_raw(kg_root):
     kg = json.loads(gbytes.decode("utf-8"))
     if not isinstance(kg, dict):
         raise ValueError("%s: knowledge_graph.json이 JSON 객체가 아님" % ver_dir)
+    if kg.get("schema_version", "0.1") not in READABLE_SCHEMA_VERSIONS:  # 판 필드가 없던 시험용 파일은 0.1로 봄
+        raise ValueError("%s: knowledge_graph.json의 schema_version %r를 읽을 수 없음(읽는 판: %s)"
+                         % (ver_dir, kg.get("schema_version"), ", ".join(READABLE_SCHEMA_VERSIONS)))
     if kg.get("knowledge_sha256") != ptr["knowledge_sha256"] or kg.get("kg_version") != ptr["kg_version"]:
         raise ValueError("%s: knowledge_graph.json과 knowledge.json·포인터가 서로 맞지 않음" % ver_dir)
     return json.loads(kbytes.decode("utf-8")), kg, gbytes, ver_dir, ptr

@@ -4,6 +4,8 @@
   algo.py 함수 그대로 호출한다. JS는 넘겨받은 값으로 그리기만 하고, 로컬 깊이 BFS는 표시 전용이다(§5.2, 검사 V1).
 - 데이터: P&ID 노드·관계 + 지식 노드·관계(V5 포함 여부 표시) + 표시 전용 연결 후보(link_candidates.csv의
   link_status=candidate 행, 현재 도면·버전에서 대상이 풀리는 것만, T1 D9). 후보·미확인·가설·재확인 항목은 계산에 넣지 않는다.
+- 잠재 후보(hazop.kg.expect 결과)는 기대 층 노드·관계(expects·satisfied_by)로 넣되 v5=false로 두고 계산 뷰에 넣지 않는다.
+  화면이 상태별로 켜고 끄며, 사람 판단은 앱(③ 상세 패널)이 저장한다.
 - HTML: force-graph vendor JS를 인라인으로 넣는다(<script src> 없음, T1 D5). 데이터를 넣으면 브라우저 단독 모드,
   데이터 없이(app 셸) 만들면 앱이 브리지 loadKnowledge 메시지로 데이터를 넘긴다. 데이터 JSON의 '/'는 '\\/'로 적어
   생성 부분에 URL 문자열이 생기지 않게 한다(검사 V2).
@@ -15,7 +17,9 @@ import json
 import os
 
 from hazop.app import tokens
-from hazop.kg import algo, build, link
+from hazop.graph.build import node_origin
+from hazop.kg import algo, build, expect, link
+from hazop.kg.schema import REGISTRY
 
 NODE_LIMIT = 5000  # 전역 보기 노드 수 상한(그래프활용 §7.3, 검사 S1, T1 D8)
 DEFAULT_RADIUS = 2  # 로컬 깊이 기본값(§5.1)
@@ -24,7 +28,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE = os.path.join(HERE, "screen_template.html")
 VENDOR_DIR = os.path.join(HERE, "vendor", "force-graph-1.52.0")
 VENDOR_JS = os.path.join(VENDOR_DIR, "force-graph.min.js")
-PLACEHOLDERS = ("/*@CSS_VARS@*/", "/*@DATA@*/", "/*@VENDOR@*/")
+PLACEHOLDERS = ("/*@CSS_VARS@*/", "/*@DATA@*/", "/*@VENDOR@*/", "/*@SCHEMA@*/")
+SCREEN_LAYER = {ly: REGISTRY.screen_layer(ly) for ly in REGISTRY.layers}
+EXP_LAYER = REGISTRY.screen_layer("expectation")
+STUDY_LAYER = REGISTRY.screen_layer("study")
+# 잠재 후보 상태: (상태, 색 토큰, 처음 켬). 색은 ③의 차분한 계열에서 고름(새 토큰 없음). 무관·확인됨은 기본 숨김(입력 §2.1)
+EXPECT_STATES = (("expected", "kg-edge-hi", True), ("candidate_found", "kg-instrument", True),
+                 ("confirmed_absent", "kg-flag-ink", True), ("confirmed_present", "kg-pipe_segment", False),
+                 ("not_applicable", "kg-unclassified", False))
 TRUNCATION_LABELS = {"external_drawing": "도면 경계에서 멈춤"}  # 디자인 §3.2. 그 밖의 사유는 reason 그대로
 S1_TEXT ="전역 보기 노드 수 상한 초과 — 노드 %s개 > %s. 로컬 보기를 권장합니다(전역 보기는 그대로 쓸 수 있음)"
 
@@ -180,15 +191,145 @@ def _label(n):
     return n["id"]
 
 
-def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_note=None):
+def expectation_view(expectations, graph):
+    """잠재 후보(expect.evaluate 결과) -> 이 도면의 기대 층 노드·관계와 집계. 대상이 다른 도면이면 넣지 않고 센다.
+    후보(satisfied_by) 끝이 다른 도면이면 관계만 빼고 노드 상세에는 남긴다."""
+    if expectations is None:
+        return [], [], None
+    gid = graph["graph_id"]
+    by_soid = {n.get("source_object_id"): n["entity_id"] for n in graph["nodes"] if n.get("source_object_id")}
+
+    def entity(ref):
+        g, _, soid = (ref or "").partition("#")
+        return by_soid.get(soid) if g == gid else None
+    nodes, links, other, gap = [], [], 0, {}
+    for it in expectations["items"]:
+        target = entity(it["target"])
+        if target is None:
+            other += 1
+            continue
+        label = it["label"] if len(it["label"]) <= 24 else it["label"][:23] + "…"
+        nodes.append({"id": it["id"], "layer": EXP_LAYER, "type": "expectation", "label": label, "xs": it["state"],
+                      "recheck": it["recheck"], "rule": it["rule_id"], "target": target, "v5": False})
+        links.append({"id": "xrel-%s-t" % it["id"], "kind": "expects", "s": target, "t": it["id"], "layer": EXP_LAYER,
+                      "st": "expect", "v5": False, "a": 0})
+        if it["state"] in ("candidate_found", "confirmed_present"):
+            refs = (it.get("judgement") or {}).get("found") if it["state"] == "confirmed_present" else None
+            for ref in sorted(set(refs or [f["ref"] for f in it["found"]])):
+                e = entity(ref)
+                if e is not None and e != target:
+                    links.append({"id": "xrel-%s-%s" % (it["id"], e), "kind": "satisfied_by", "s": it["id"], "t": e,
+                                  "layer": EXP_LAYER, "st": "expect", "v5": False, "a": 0})
+        if it["state"] in expect.GAP_STATES:
+            gap.setdefault(target, []).append(it["id"])
+    states = {}
+    for n in nodes:
+        states[n["xs"]] = states.get(n["xs"], 0) + 1
+    info = {"shown": len(nodes), "other_graphs": other, "states": dict(sorted(states.items())),
+            "recheck": sum(1 for n in nodes if n["recheck"]), "gap": gap,
+            "gap_absent": sum(1 for n in nodes if n["xs"] == "confirmed_absent"),
+            "gap_expected": sum(1 for n in nodes if n["xs"] == "expected"),
+            "rules_version": expectations.get("rules_version")}
+    return nodes, links, info
+
+
+def _short(text, n=24):
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= n else text[:n - 1] + "…"
+
+
+def study_view(study, graph, exp_ids=()):
+    """검토 층 투영(설계안 KD7·§8.3, U2(가)): ⑤ 결과 파일을 읽어 이 도면에 걸친 검토구간의 시나리오·보호수단을 노드·관계로
+    만든다. 원본은 결과 파일이고 여기서는 읽기만 한다. 모두 v5=false라 계산 뷰·알고리즘에 들어가지 않는다.
+    구간 구성요소(covers)는 선을 그리지 않는다. 구간 하나가 구성요소 수십 개에 선을 그어 시나리오가 보이지 않게 되기 때문이다.
+    study: {"node_set", "results"(없으면 None), "note"} 또는 None. 원인·결과 노드는 이 도면 대상을 가리키는 참조가 있을 때만
+    만든다(cause_at·affects 경로를 보이기 위해). 기각한 항목은 넣지 않는다. 대상을 찾지 못한 참조는 지우지 않고 센다."""
+    from hazop.graph.project import SEP
+    from hazop.study import refs, results as res
+    if study is None:
+        return [], [], None
+    gid = graph["graph_id"]
+    ids = {n["entity_id"] for n in graph["nodes"]}
+    idx = {r: n["entity_id"] for r, n in refs.index(graph).items()}
+    devs = {d["deviation_id"]: d["label"] for d in (study.get("results") or {}).get("deviations") or []}
+    cells = {}
+    for c in (study.get("results") or {}).get("cells") or []:
+        cells.setdefault(c["node_id"], []).append(c)
+    nodes, links, rows = [], [], []
+
+    def node(nid, typ, label, sn, **kw):
+        nodes.append(dict({"id": nid, "layer": STUDY_LAYER, "type": typ, "label": _short(label), "sn": sn, "v5": False}, **kw))
+
+    def link(kind, s, t, **kw):
+        links.append(dict({"id": "srel-%s-%s-%s" % (kind, s, t), "kind": kind, "s": s, "t": t, "layer": STUDY_LAYER,
+                           "st": "study", "v5": False, "a": 0}, **kw))
+    for sn in (study.get("node_set") or {}).get("nodes") or []:
+        members = []
+        for m in sn["members"]:
+            g, sep, e = m.partition(SEP)
+            if sep and g == gid and e in ids:
+                members.append(e)
+        if not members:
+            continue
+        snid = "st-" + sn["node_id"]
+        n_scen = n_missing = 0
+        node(snid, "study_node", "%s %s" % (sn["node_id"], sn.get("name") or ""), sn["node_id"],
+             detail={"name": sn.get("name"), "members": len(sn["members"]), "here": len(members)})
+        for cell in cells.get(sn["node_id"], []):
+            for e in cell["entries"]:
+                if e.get("status") == "rejected":
+                    continue
+                n_scen += 1
+                draft = res.is_ai_draft(e)
+                sc = "st-" + e["entry_id"]
+                miss = [r for r in refs.all_refs(e) if r not in idx and refs.drawing_of(r) == gid]
+                n_missing += len(miss)
+                node(sc, "scenario", "%s · %s" % (devs.get(cell["deviation_id"], cell["deviation_id"]), e.get("cause") or ""),
+                     sn["node_id"], draft=draft, missing=len(miss),
+                     detail={"deviation": devs.get(cell["deviation_id"]), "cause": e.get("cause"),
+                             "consequence": e.get("consequence"), "status": e.get("status"), "risk": e.get("risk"),
+                             "missing": miss})
+                link("in_node", sc, snid)
+                for key, typ, rel, suffix in (("cause_refs", "cause", "cause_at", "c"),
+                                              ("consequence_refs", "consequence", "affects", "q")):
+                    hits = [idx[r["ref"]] for r in e.get(key) or [] if isinstance(r, dict) and r.get("ref") in idx]
+                    if not hits:
+                        continue
+                    cid = "%s-%s" % (sc, suffix)
+                    node(cid, typ, e.get(typ) or "", sn["node_id"], draft=draft, detail={"text": e.get(typ)})
+                    link("has_" + typ, sc, cid)
+                    for h in dict.fromkeys(hits):
+                        link(rel, cid, h)
+                for i, s in enumerate(refs.safeguard_items(e)):
+                    gid_ = "%s-g%d" % (sc, i + 1)
+                    node(gid_, "safeguard", s["text"], sn["node_id"], draft=draft or not refs.is_confirmed(s, e),
+                         role=s["role"], detail={"text": s["text"], "role": refs.ROLES[s["role"]]})
+                    link("protected_by", sc, gid_, role=s["role"])
+                    for r in s["refs"]:
+                        if r.get("ref") in idx:
+                            link("safeguard_by", gid_, idx[r["ref"]])
+                for x in e.get("expectation_refs") or []:
+                    if x in exp_ids:
+                        link("raised_from", sc, x)
+        rows.append({"sn": sn["node_id"], "name": sn.get("name"), "scenarios": n_scen, "missing": n_missing})
+    info = {"nodes": rows, "note": study.get("note"), "scenarios": sum(r["scenarios"] for r in rows),
+            "missing": sum(r["missing"] for r in rows)}
+    return nodes, links, info
+
+
+def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_note=None, expectations=None,
+                study=None):
     """화면 JSON(dict). candidates: link_candidates.csv 행 목록 또는 None(파일 없음).
-    start: A1 시작점(None이면 default_start). 알고리즘을 실행할 수 없으면 algo.enabled=false와 사유."""
+    start: A1 시작점(None이면 default_start). 알고리즘을 실행할 수 없으면 algo.enabled=false와 사유.
+    expectations: 잠재 후보(expect.evaluate 결과) 또는 None(계산하지 않음).
+    study: 검토 층 원본 {"node_set", "results", "note"} 또는 None(투영하지 않음, study_view)."""
     gid, gver = graph["graph_id"], graph["graph_version"]
     v5 = algo.view_v5(kg, graph)
     v5_keys = {k for _, _, k in v5.edges(keys=True)}
     folded, _ = algo.fold_segments(v5, graph)
     foldable = {k for _, _, k, d in folded.edges(keys=True, data=True) if d.get("kind") == "folded_segment"}
     segs = {n["entity_id"]: n for n in graph["nodes"] if n.get("node_type") == "pipe_segment"}
+    pid_conflict = {r for n in kg["nodes"] for r in n.get("conflict_with_pid") or []}  # 문서 값과 다른 도면 속성 주장
 
     nodes = []
     for n in graph["nodes"]:
@@ -200,14 +341,18 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
                       "kind": n.get("kind"), "tag": n.get("tag"), "label": n.get("tag") or n.get("kind") or n["entity_id"],
                       "local_id": n.get("local_id"), "pos": pos if isinstance(pos, list) and len(pos) == 2 else None,
                       "np": attrs.get("normal_position"), "cont": n.get("kind") == "continuation",
-                      "fold": n["entity_id"] in foldable, "v5": n["entity_id"] in v5})
+                      "fold": n["entity_id"] in foldable, "v5": n["entity_id"] in v5,
+                      "hedit": node_origin(n) == "human_edit",
+                      "conflict": "%s#%s" % (gid, n.get("source_object_id")) in pid_conflict})
     kn_ids = set()
     for n in kg["nodes"]:
         kn_ids.add(n["id"])
         nodes.append({"id": n["id"], "layer": "kn", "type": n.get("node_type"), "label": _label(n),
                       "ks": n.get("knowledge_status") or "confirmed", "v5": n["id"] in v5,
-                      "nosrc": n.get("has_source") is False, "conflict": bool(n.get("conflict_with")),
-                      "unit_unknown": n.get("node_type") == "setpoint" and not n.get("unit")})
+                      "nosrc": n.get("has_source") is False,
+                      "conflict": bool(n.get("conflict_with") or n.get("conflict_with_pid")),
+                      "unit_unknown": n.get("node_type") == "setpoint" and not n.get("unit"),
+                      "ai": build.origin_of(n) == "ai_draft"})
     pid_ids = {n["entity_id"] for n in graph["nodes"]}
 
     links, skipped = [], {"other_graph_or_unresolved": 0, "rejected": 0}
@@ -217,7 +362,7 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
             continue
         a, b = e["nodes"][0], e["nodes"][1]
         links.append({"id": e["entity_id"], "kind": e["kind"], "s": a, "t": b, "layer": "pid", "st": "confirmed",
-                      "v5": True, "a": _flow_sign(e, segs) if e["kind"] == algo.PHYSICAL else 0})
+                      "v5": True, "a": _flow_sign(e, segs) if e["kind"] in algo.PHYSICAL_KINDS else 0})
     for l in kg["links"]:
         if l.get("link_status") == "rejected":
             skipped["rejected"] += 1
@@ -242,13 +387,17 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
         else:
             st = "excluded"
         links.append({"id": l["id"], "kind": l["kind"], "s": ends[0], "t": ends[1], "layer": "kn", "st": st,
-                      "v5": st == "confirmed", "a": 0, "ks": l.get("knowledge_status")})
+                      "v5": st == "confirmed", "a": 0, "ks": l.get("knowledge_status"),
+                      "ai": build.origin_of(l) == "ai_draft"})
 
     cand_info = {"file": candidates is not None, "rows": 0, "shown": 0, "not_shown": 0}
     sid_map = {n.get("source_object_id"): n["entity_id"] for n in graph["nodes"] if n.get("source_object_id")}
+    kg_link_ids = {l["id"] for l in kg["links"]}
     for r in candidates or []:
         if (r.get("link_status") or "").strip() != "candidate":
             continue
+        if link.relation_id(r.get("candidate_key") or "") in kg_link_ids:
+            continue  # 자동 지식그래프가 이미 같은 후보 키로 만든 언급(hazop.kg.auto.mention_links)
         cand_info["rows"] += 1
         target = sid_map.get(r.get("target_source_object_id"))
         if (r.get("target_graph_id") != gid or r.get("target_graph_version") != gver or target is None
@@ -261,6 +410,13 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
                       "method": r.get("method"), "conf": r.get("confidence"),
                       "amb": (r.get("ambiguous") or "").strip().lower() == "true", "match": r.get("match_text"),
                       "key": r.get("candidate_key")})
+
+    x_nodes, x_links, x_info = expectation_view(expectations, graph)
+    nodes += x_nodes
+    links += x_links
+    s_nodes, s_links, s_info = study_view(study, graph, {n["id"] for n in x_nodes})
+    nodes += s_nodes
+    links += s_links
 
     problem = algo_problem(kg, graph)
     alg = {"enabled": problem is None, "reason": problem}
@@ -288,7 +444,9 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
                    "sizes": a5["V5"]["sizes"]},
         })
     v = kg.get("validation") or {}
-    global_count = len(nodes)  # 렌더러가 받는 전체 노드(계산 제외 노드도 물리 배치에는 들어감)
+    off = {ly["screen"] for ly in REGISTRY.data["layers"] if not ly["default_on"]}
+    # 렌더러가 처음 그리는 노드(계산 제외 노드도 물리 배치에는 들어감). 기본으로 꺼진 층은 켜기 전엔 그리지 않으므로 세지 않는다
+    global_count = sum(1 for n in nodes if n["layer"] not in off)
     meta = {
         "kg_id": kg.get("kg_id"), "kg_version": kg.get("kg_version"), "graph_id": gid, "graph_version": gver,
         "graph_ref_version": {r["graph_id"]: r["graph_version"] for r in kg.get("graph_refs") or []}.get(gid),
@@ -303,6 +461,9 @@ def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_n
         # 자동 추출·사람 확인 전 지식 노드 수. 0보다 크면 화면이 미확인·후보 표시를 켠 채로 연다(§9.3)
         "auto_items": sum(1 for n in kg["nodes"] if n.get("method") == "extractor"
                           and n.get("knowledge_status") != "confirmed"),
+        "ai_items": sum(1 for x in nodes + links if x.get("ai") and not x["v5"]),
+        "expectations": x_info,
+        "study": s_info,
     }
     return {"meta": meta, "nodes": nodes, "links": links, "algo": alg}
 
@@ -331,6 +492,41 @@ def data_js(data):
     return text.replace("<", "\\u003c").replace("/", "\\/")
 
 
+def legend_tables():
+    """화면 범례 표 (TYPE, GRP_OF, GRP). 순서는 레지스트리 파일 순서(범례 표시 순서)."""
+    types = {}
+    for c in REGISTRY.legend_classes():
+        t = {"layer": SCREEN_LAYER[REGISTRY.layer(c["id"])], "name": c["label_ko"], "col": c["legend"]["token"],
+             "shape": c["legend"]["shape"]}
+        if c["legend"].get("line", "solid") != "solid":
+            t["line"] = c["legend"]["line"]
+        types[c["id"]] = t
+    grp_of = {r["id"]: r["group"] for r in REGISTRY.data["relations"]}
+    grps = {g["id"]: {"name": g["label_ko"], "w": g["width"]} for g in REGISTRY.data["groups"]}
+    return types, grp_of, grps
+
+
+def layer_table():
+    """화면 층 표 [{key, name, filter, on}] (레지스트리 layers 순서). 종류 필터 층은 '노드 종류'에, 상태 필터 층은
+    자기 묶음(기대 층은 '잠재 후보')에 나온다."""
+    return [{"key": ly["screen"], "name": ly["label_ko"], "filter": ly["filter"], "on": ly["default_on"]}
+            for ly in REGISTRY.data["layers"]]
+
+
+def expect_table():
+    """잠재 후보 상태 표 [{state, name, col, on}]."""
+    return [{"state": st, "name": expect.STATES[st], "col": col, "on": on} for st, col, on in EXPECT_STATES]
+
+
+def schema_js():
+    """템플릿 /*@SCHEMA@*/ 자리에 넣을 JS. data_js와 같은 방식으로 '<'·'/'를 적는다(검사 V2)."""
+    def js(obj):
+        return json.dumps(obj, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace("/", "\\/")
+    types, grp_of, grps = legend_tables()
+    return "var TYPE = %s;\n  var GRP_OF = %s;\n  var GRP = %s;\n  var LAYERS = %s;\n  var XSTATES = %s;\n  var STL = %s;" % (
+        js(types), js(grp_of), js(grps), js(layer_table()), js(expect_table()), js(STUDY_LAYER))
+
+
 def build_html(data=None):
     """data가 있으면 단독 모드 HTML(데이터 포함), None이면 앱 셸(데이터는 loadKnowledge로 받음)."""
     with open(TEMPLATE, encoding="utf-8") as fh:
@@ -340,6 +536,7 @@ def build_html(data=None):
             raise ValueError("템플릿 자리표시 %s가 정확히 1개가 아님" % p)
     html = tpl.replace("/*@DATA@*/", data_js(data) if data is not None else "null")
     html = html.replace("/*@CSS_VARS@*/", tokens.kg_css_vars())
+    html = html.replace("/*@SCHEMA@*/", schema_js())
     return html.replace("/*@VENDOR@*/", vendor_text())
 
 

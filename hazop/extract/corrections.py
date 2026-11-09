@@ -16,6 +16,7 @@ from hazop import paths
 from hazop.extract import rules
 from hazop.extract.drawio import summarize
 from hazop.kg.build import write_json_atomic
+from hazop.kg.schema import REGISTRY
 from hazop.study.nodes import now_utc
 
 KIND = "hazop_drawing_corrections"
@@ -28,6 +29,9 @@ ENDS = ("source", "target")
 class _Skip(Exception):
     """적용 불가(not_applicable) 사유."""
 
+
+# 문구를 바꾼 미확인 사유: 옛 문구로 저장된 확정 기록이 새 문구의 미확인도 지우게 한다(M2에서 고장 위치 검사를 전동 밸브까지 넓힘).
+RENAMED_REASONS = {"제어밸브 실패 위치 미확인": "밸브 고장 위치 미확인"}
 
 def store_path(name):
     return paths.work_path("데이터", "도면수정", paths.safe_name(name) + ".json")
@@ -91,12 +95,27 @@ def _points(pts, key="points"):
 
 def _kind_category(value):
     kind, cat = _str(value, "kind"), _str(value, "category")
-    if kind in rules.KIND_CATEGORY and rules.KIND_CATEGORY[kind] != cat:
+    # M2 이전에 저장한 연산(오리피스·벤트 = equipment, 그때 없던 kind는 분류 자유)도 받는다. 적용할 때 분류는 레지스트리 값으로 맞춘다
+    legacy_ok = rules.LEGACY_KIND_CATEGORY.get(kind, cat) == cat
+    if kind in rules.KIND_CATEGORY and rules.KIND_CATEGORY[kind] != cat and not legacy_ok:
         raise ValueError("kind %s의 category는 %s여야 함(받은 값 %s)" % (kind, rules.KIND_CATEGORY[kind], cat))
+
+
+def _category(v):
+    return rules.KIND_CATEGORY.get(v["kind"].strip(), v["category"].strip())
 
 
 def _check_tag(value):
     _str(value, "tag")
+
+
+def _position_check(prop):
+    allowed = REGISTRY.properties[prop]["values"]
+
+    def check(value):
+        if value.get("value") not in allowed:
+            raise ValueError("%s는 %s 중 하나여야 함" % (REGISTRY.properties[prop]["label_ko"], "/".join(allowed)))
+    return check
 
 
 def _check_flow(value):
@@ -248,9 +267,20 @@ def _apply_set_tag(st, kind, obj, op):
 
 def _apply_set_kind(st, kind, obj, op):
     v = op["value"]
-    obj.update(kind=v["kind"].strip(), category=v["category"].strip(), classification="classified")
+    obj.update(kind=v["kind"].strip(), category=_category(v), classification="classified")
     obj.setdefault("attributes", {})["kind"] = obj["kind"]
     return obj
+
+
+def _apply_position(prop):
+    def apply(st, kind, obj, op):
+        cid = REGISTRY.kind_class.get(obj.get("kind"))
+        if cid is None or prop not in REGISTRY.class_properties(cid):
+            raise _Skip("%s에는 %s를 두지 않음(종류 %s)" % (REGISTRY.label(cid, "이 항목"),
+                                                    REGISTRY.properties[prop]["label_ko"], obj.get("kind")))
+        obj.setdefault("attributes", {})[prop] = op["value"]["value"]
+        return obj
+    return apply
 
 
 def _apply_set_flow(st, kind, obj, op):
@@ -300,7 +330,7 @@ def _apply_add_node(st, kind, obj, op):
     tag = (v.get("tag") or "").strip() or None
     x, y, w, h = v["bbox"]
     node = {"local_id": new_id, "source_object_id": new_id, "classification": "classified",
-            "category": v["category"].strip(), "kind": v["kind"].strip(), "tag": tag, "label": tag or "",
+            "category": _category(v), "kind": v["kind"].strip(), "tag": tag, "label": tag or "",
             "label_text": tag or "", "label_location": None,
             "attributes": {"kind": v["kind"].strip(), **({"tag": tag} if tag else {})},
             "style": None, "parent": None, "geometry": {"x": x, "y": y, "width": w, "height": h}}
@@ -360,6 +390,11 @@ OPS = {
                       lambda u, k, v: u.get("field") == ("tag" if k == "node" else "line_no")),
     "set_kind": OpSpec(("node",), _kind_category, _apply_set_kind,
                        lambda u, k, v: u.get("field") == "kind" and u["check"] in ("missing_kind", "unclassified_kind")),
+    # 정상 위치·고장 위치(기획서/지식그래프-스키마-입력.md §3.2). 같은 속성의 누락·허용값 미확인을 지운다
+    "set_normal_position": OpSpec(("node",), _position_check("normal_position"), _apply_position("normal_position"),
+                                  lambda u, k, v: u.get("field") == "normal_position"),
+    "set_fail_position": OpSpec(("node",), _position_check("fail_position"), _apply_position("fail_position"),
+                                lambda u, k, v: u.get("field") == "fail_position"),
     "set_flow": OpSpec(("relation",), _check_flow, _apply_set_flow,
                        lambda u, k, v: u.get("field") == "flow_direction"),
     "set_endpoint": OpSpec(("relation",), _check_endpoint, _apply_set_endpoint,
@@ -368,7 +403,8 @@ OPS = {
     "set_path": OpSpec(("relation",), _check_path, _apply_set_path,
                        lambda u, k, v: u.get("field") in ("bbox", "geometry")),
     "confirm": OpSpec(("node", "relation"), _check_confirm, _apply_confirm,
-                      lambda u, k, v: any(u["check"] == i["check"] and (u.get("reason") or "") == i["reason"]
+                      lambda u, k, v: any(u["check"] == i["check"]
+                                          and (u.get("reason") or "") == RENAMED_REASONS.get(i["reason"], i["reason"])
                                           for i in v["items"])),
     "add_node": OpSpec((), _check_add_node, _apply_add_node, lambda u, k, v: False),
     "delete_node": OpSpec(("node",), _check_empty, _apply_delete_node, lambda u, k, v: True),
@@ -399,6 +435,14 @@ def _fingerprints(extraction):
 REF_KEYS = ("from", "to", "node")  # value 안에서 노드를 가리키는 키
 
 
+def _same(base, cur):
+    """지문 비교. 분류(category)는 kind에서 레지스트리로 정해지므로 보지 않는다(레지스트리 분류 이동만으로 옛 연산이
+    '대상이 바뀜'이 되지 않게, M2 U9)."""
+    if base is None or cur is None:
+        return base is cur
+    return {k: v for k, v in base.items() if k != "category"} == {k: v for k, v in cur.items() if k != "category"}
+
+
 def _refs(value):
     return sorted({value[k] for k in REF_KEYS if isinstance(value.get(k), str) and not value[k].startswith(MANUAL_PREFIX)})
 
@@ -426,14 +470,14 @@ def _apply_one(st, original_fp, op):
         kind, obj = st.index[target]
         if kind not in spec.targets:
             raise _Skip("형식 오류: %s는 %s 대상에 쓸 수 없음" % (op["op"], kind))
-        if not str(target).startswith(MANUAL_PREFIX) and op.get("base") != original_fp.get(target):
+        if not str(target).startswith(MANUAL_PREFIX) and not _same(op.get("base"), original_fp.get(target)):
             cur, base = original_fp.get(target) or {}, op.get("base") or {}
             diff = ["%s %r→%r" % (k, base.get(k), cur.get(k)) for k in sorted(set(cur) | set(base))
-                    if base.get(k) != cur.get(k)]
+                    if base.get(k) != cur.get(k) and k != "category"]
             raise _Skip("대상이 바뀜: %s" % ", ".join(diff))
     refs = op.get("refs") or {}
     for sid in _refs(value):
-        if refs.get(sid) is None or refs[sid] != original_fp.get(sid):
+        if refs.get(sid) is None or not _same(refs[sid], original_fp.get(sid)):
             raise _Skip("연결 대상 기기가 바뀌었거나 없음: %s" % sid)
     edited = spec.apply(st, kind, obj, op)
     if obj is not None:
@@ -441,6 +485,9 @@ def _apply_one(st, original_fp, op):
     if edited is not None:
         mark = edited.setdefault("human_edit", {"op_ids": []})
         mark["op_ids"].append(op["op_id"])
+        ops = mark.setdefault("ops", [])
+        if op["op"] not in ops:
+            ops.append(op["op"])
         mark.update(by=op.get("by"), at=op.get("at"))
 
 

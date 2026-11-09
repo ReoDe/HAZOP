@@ -7,6 +7,9 @@
 - 사람 지식 = 데이터/지식/<project_id>/knowledge_nodes.csv·knowledge_links.csv(둘 다 있을 때만).
 - 태그 연결: 문서 문장에서 찾은 태그가 프로젝트 도면에 정확히 하나 있으면 설비 적용 관계(has_setpoint·has_condition·
   governed_by)를 후보(link_status=candidate)로 만든다. 같은 태그가 여럿(배관 라인 번호 등)이면 만들지 않고 notes에 남긴다.
+- 언급 후보: 문서 지식의 문서 조각 원문에서 hazop.kg.link.generate(정확 일치·유사 일치)로 조각 -> 도면 mentions 후보를 만든다.
+  판단은 사람 지식 폴더의 link_candidates.csv 판단 열을 후보 키로 읽어 쓴다(confirmed면 확인된 언급, rejected면 넣지 않음).
+  이 모듈은 그 파일을 쓰지 않는다. 사람 CSV의 조각은 기존 link.py 흐름(run_generate·run_apply)이 맡는다.
 - 결과는 build.write_outputs로 출력/지식그래프/kg-<project_id>/에 쓴다(같은 입력이면 같은 kg_version, 다시 써도 그대로).
 """
 
@@ -15,15 +18,17 @@ import json
 import os
 
 from hazop import paths
-from hazop.kg import build, docextract, inputs
+from hazop.kg import build, docextract, inputs, link
+from hazop.kg.schema import REGISTRY
 
 ASSEMBLER = "hazop.kg.auto"
-ASSEMBLER_VERSION = "0.1.0"
+ASSEMBLER_VERSION = "0.2.0"
 DOC_FILE = "document_knowledge.json"
 NODES_CSV = "knowledge_nodes.csv"
 LINKS_CSV = "knowledge_links.csv"
-# 문서 지식 노드 종류 -> 도면 노드에서 그 노드로 가는 설비 적용 관계(§2.3)
-APPLY_KIND = {"setpoint": "has_setpoint", "condition": "has_condition", "requirement": "governed_by"}
+CANDIDATES_CSV = link.CANDIDATES_CSV
+# 문서 지식 노드 종류 -> 도면 노드에서 그 노드로 가는 설비 적용 관계(§2.3). 근거 공백 판정에 세는 3종만(analyzed_in 제외)
+APPLY_KIND = REGISTRY.apply_kind_of(evidence_gap=True)
 
 
 def _read(path):
@@ -112,6 +117,52 @@ def tag_links(documents, graphs):
     return links, sorted(set(notes))
 
 
+def read_judgements(csv_dir):
+    """(link_candidates.csv의 판단 행 {후보 키: 행}, notes). 파일이 없으면 빈 dict. 판단 열이 잘못되면 판단을 쓰지 않고 notes에 남긴다."""
+    path = os.path.join(csv_dir, CANDIDATES_CSV) if csv_dir else None
+    if not path or not os.path.isfile(path):
+        return {}, []
+    try:
+        rows = link.read_candidates(path)
+        link.check_judgements(rows)
+    except (ValueError, OSError) as exc:
+        return {}, ["link_candidates.csv 판단을 읽지 못함 — 언급 후보는 모두 후보로 둠: %s" % exc]
+    return {r["candidate_key"]: r for r in rows if r["link_status"] != "candidate"}, []
+
+
+def mention_links(documents, graphs, judgements=None):
+    """문서 조각 -> mentions 관계 레코드(inputs.link_record 형식, origin doc_rule). 판단이 없으면 link_status=candidate."""
+    chunks = [{"id": n["id"], "node_type": n["node_type"], "text": n.get("text"),
+               "material_id": (n.get("source") or {}).get("material_id"),
+               "registration_version": (n.get("source") or {}).get("registration_version")}
+              for d in documents for n in d["nodes"] if n.get("node_type") == "doc_chunk"]
+    passed = [g for g in graphs if (g.get("validation") or {}).get("status") == "passed"]
+    out = []
+    for cand in link.generate(chunks, passed)["candidates"]:
+        judged = (judgements or {}).get(cand["candidate_key"])
+        status = judged["link_status"] if judged else "candidate"
+        if status == "rejected":
+            continue
+        if judged:
+            cand = dict(cand, **{k: judged[k] for k in link.JUDGE_COLUMNS})
+        row = link.mention_row(cand, link_status=status, knowledge_status="confirmed" if status == "confirmed" else "unknown")
+        if status == "candidate":
+            row["reason"] = "자동 연결 후보(%s %s) — 사람 확인 전" % (cand["method"], cand["confidence"])
+        out.append(dict(inputs.link_record(row), origin="doc_rule"))
+    return out
+
+
+def _lost_judgements(documents, mentions, judgements):
+    """사람이 확인한 조각 언급 중 지금 후보 키와 맞지 않는 것(도면·문서 판이 바뀜)을 알린다. 알리지 않으면 확인이 조용히 후보로 돌아간다."""
+    chunk_ids = {n["id"] for d in documents for n in d["nodes"] if n.get("node_type") == "doc_chunk"}
+    current = {(l.get("mention") or {}).get("candidate_key") for l in mentions}
+    lost = [k for k, r in (judgements or {}).items()
+            if r["link_status"] == "confirmed" and r.get("chunk_id") in chunk_ids and k not in current]
+    if not lost:
+        return []
+    return ["확인한 조각 언급 %d건이 도면이나 문서 판이 바뀌어 다시 후보가 됨 — 재확인 필요" % len(lost)]
+
+
 def assemble(project_id, graphs, documents, csv_dir=None, graph_notes=()):
     """입력 -> (knowledge dict, notes). knowledge는 hazop.kg.inputs.load_knowledge와 같은 계약에 pid_graphs를 더한 것.
     notes(같은 도면 ID 여럿, 연결하지 않은 태그)는 inputs.notes에도 남겨 결과 파일에서 볼 수 있게 한다."""
@@ -126,8 +177,13 @@ def assemble(project_id, graphs, documents, csv_dir=None, graph_notes=()):
         nodes += d["nodes"]
         links += d["links"]
     auto_links, notes = tag_links(documents, graphs)
-    notes = sorted(set(graph_notes)) + notes
+    judgements, judge_notes = read_judgements(csv_dir)
+    notes = sorted(set(graph_notes)) + notes + judge_notes
     links += auto_links
+    taken = {l.get("id") for l in links}
+    mentions = mention_links(documents, graphs, judgements)
+    links += [l for l in mentions if l["id"] not in taken]
+    notes += _lost_judgements(documents, mentions, judgements)
     ins["notes"] = notes
     ins["documents"] = [{"material_id": d["material_id"], "registration_version": d["registration_version"],
                          "source_sha256": d.get("source_sha256"), "extractor": d["extractor"]} for d in documents]

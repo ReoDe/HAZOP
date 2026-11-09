@@ -9,6 +9,8 @@ build_workbook(results, node_set, pg, deviations, scope, node_ids, reviewer, int
   하나가 아니므로 모든 태그에 붙인다.
 - 위험도는 KOSHA P-86 〈표5〉 값(항목의 risk)과 구분(수용·조건부 수용·불허)을 글자로 함께 쓰고 색은 보조로만 쓴다.
 - 모든 문자열은 수식으로 실행되지 않게 문자열 셀로 쓰고, 드라이브 경로·API 키처럼 보이는 글자는 가린다.
+- 그래프 참조(원인 위치·영향 대상·보호수단 역할·구현 대상·관련 잠재 후보, hazop.study.refs)는 '그래프 참조' 열에
+  "보호수단: RC-PSV101 (SNP-M-102) · 완화"처럼 적는다. 잠재 후보는 근거가 아니라 확인할 단서라 줄 앞에 "단서:"를 붙인다. 참조가 없는 옛 항목은 빈칸이다.
 """
 
 import datetime
@@ -22,6 +24,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from hazop.app.tokens import COLORS, risk_band
+from hazop.study import refs as srefs
 from hazop.study import results as res
 from hazop.study import span
 
@@ -30,7 +33,8 @@ SHEETS = ("표지·요약", "구간 목록", "워크시트", "권고 목록")
 STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각"}
 BAND_LABELS = {"ok": "수용", "cond": "조건부 수용", "deny": "불허"}
 FIELD_LABELS = {"cause": "원인", "consequence": "결과", "safeguards": "보호수단", "recommendation": "권고",
-                "severity": "강도", "frequency": "빈도"}
+                "severity": "강도", "frequency": "빈도", "cause_refs": "원인 위치", "consequence_refs": "영향 대상",
+                "expectation_refs": "잠재 후보"}
 FLAG_LABELS = (("scope_changed", "범위 바뀜 · 다시 확인"), ("source_stale", "옛 결과 · 다시 확인"))
 NOTICE = "AI 결과는 초안이며 사람이 승인한 항목만 확정입니다. 상태가 '승인'이 아닌 행은 검토 전 초안입니다."
 
@@ -43,7 +47,8 @@ WORKSHEET_COLUMNS = (
     ("node", "구간", 22), ("drawings", "도면 번호", 18), ("parameter", "변수", 8), ("guideword", "가이드워드", 9),
     ("deviation", "편차", 14), ("cause", "원인", 34), ("consequence", "결과", 34), ("safeguards", "보호수단", 30),
     ("severity", "강도", 6), ("frequency", "빈도", 6), ("risk", "위험도", 13), ("recommendation", "권고", 32),
-    ("basis", "AI 근거(KG 경로·출처 문서)", 34), ("warnings", "근거 경고", 22), ("status", "상태", 14),
+    ("basis", "AI 근거(KG 경로·출처 문서)", 34), ("refs", "그래프 참조", 34),
+    ("warnings", "근거 경고", 22), ("status", "상태", 14),
     ("history", "수정 이력 요약", 28),
 )
 NODE_COLUMNS = (("구간 ID", 9), ("표시 이름", 30), ("도면 범위", 14), ("경계 시작", 20), ("경계 끝", 20),
@@ -101,6 +106,11 @@ def _basis_text(entry, labels):
     return "\n".join(lines)
 
 
+def _refs_text(entry, idx, drawing_numbers, expectations):
+    return "\n".join("단서: " + t if k == "expectation" else t
+                     for k, t in srefs.lines(entry, idx, drawing_numbers, None, expectations))
+
+
 def _warnings_text(entry):
     items = list((entry.get("ai_basis") or {}).get("warnings") or [])
     items += [label for key, label in FLAG_LABELS if entry.get(key)]
@@ -139,8 +149,9 @@ def _cell_kind(cell):
     return kinds
 
 
-def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None):
-    """워크시트 행 [{키: 값, "kind": "entry"|칸 표시 종류, "risk_value", "status_key"}] (구간 순서 × 편차 순서)."""
+def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, expectations=None):
+    """워크시트 행 [{키: 값, "kind": "entry"|칸 표시 종류, "risk_value", "status_key"}] (구간 순서 × 편차 순서).
+    expectations {잠재 후보 ID: 항목}이 있으면 관련 잠재 후보를 규칙·대상·상태로 적는다(없으면 ID)."""
     if scope not in SCOPES:
         raise ValueError("모르는 범위: %r" % scope)
     nodes = {n["node_id"]: n for n in view["nodes"]}
@@ -150,6 +161,8 @@ def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None):
     tag_drawing = span.tag_drawings(pg)
     labels = _entity_labels(pg)
     short = view.get("drawing_short") or {}
+    idx = srefs.index(pg)
+    dn = {s["graph_id"]: s["drawing_number"] for s in pg["sheets"]}
     cells = {}
     for c in results["cells"]:
         cells.setdefault(c["node_id"], []).append(c)
@@ -170,10 +183,11 @@ def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None):
                     continue
                 rows.append(dict(base, kind="entry", status_key=e.get("status"), risk_value=e.get("risk"),
                                  cause=tagged(e.get("cause")), consequence=tagged(e.get("consequence")),
-                                 safeguards="\n".join(tagged(s) for s in e.get("safeguards") or []),
+                                 safeguards="\n".join(tagged(s) for s in srefs.safeguard_texts(e)),
                                  severity=e.get("severity"), frequency=e.get("frequency"),
                                  risk=risk_text(e.get("risk")), recommendation=tagged(e.get("recommendation")),
-                                 basis=_basis_text(e, labels), warnings=_warnings_text(e),
+                                 basis=_basis_text(e, labels), refs=_refs_text(e, idx, dn, expectations),
+                                 warnings=_warnings_text(e),
                                  status=_status_text(e), history=_history_text(e)))
             if scope == "approved":
                 continue
@@ -323,13 +337,16 @@ def _recommendation_sheet(ws, rows):
     _filter(ws, len(RECOMMENDATION_COLUMNS), len(picked))
 
 
-def build_workbook(results, node_set, pg, deviations, scope="all", node_ids=None, reviewer="", intents=None, now=None):
-    """Workbook과 워크시트 행 수. scope가 'nodes'면 node_ids(구간 ID 목록)가 있어야 한다."""
+def build_workbook(results, node_set, pg, deviations, scope="all", node_ids=None, reviewer="", intents=None, now=None,
+                   expectations=None):
+    """Workbook과 워크시트 행 수. scope가 'nodes'면 node_ids(구간 ID 목록)가 있어야 한다.
+    expectations: 잠재 후보 계산 결과(hazop.kg.expect.evaluate) 또는 None."""
     if scope == "nodes" and not node_ids:
         raise ValueError("선택한 구간이 없습니다")
     now = now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     view = span.annotate(node_set, pg)
-    rows = worksheet_rows(results, view, pg, deviations, scope, node_ids)
+    xs = {i["id"]: i for i in expectations["items"]} if expectations else None
+    rows = worksheet_rows(results, view, pg, deviations, scope, node_ids, xs)
     wb = Workbook()
     _summary_sheet(wb.active, results, node_set, view, scope, list(node_ids or ()), reviewer, now, len(rows))
     wb.active.title = SHEETS[0]

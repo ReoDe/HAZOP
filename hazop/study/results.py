@@ -12,6 +12,7 @@ from hazop import paths
 from hazop.analysis.risk import FREQUENCIES, MATRIX_P86, SEVERITIES
 from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
 from hazop.kg.build import write_json_atomic
+from hazop.study import refs
 from hazop.study.nodes import now_utc
 
 SCHEMA_VERSION = "0.1"
@@ -22,7 +23,8 @@ ENTRY_ORIGINS = ("ai_draft", "human")
 ENTRY_STATUSES = ("proposed", "revised", "approved", "rejected")
 HUMAN_STATUSES = ("revised", "approved", "rejected")  # proposed는 AI만 쓴다(재실행이 덮어쓰는 상태)
 AI_RUN_STATUSES = ("ok", "failed")
-EDITABLE_FIELDS = ("cause", "consequence", "safeguards", "recommendation", "severity", "frequency")
+EDITABLE_FIELDS = ("cause", "consequence", "safeguards", "recommendation", "severity", "frequency",
+                   "cause_refs", "consequence_refs", "expectation_refs")  # 참조 필드: hazop.study.refs
 
 
 def load_deviations(path=None):
@@ -115,6 +117,7 @@ def validate(results, node_set=None):
                 v = e.get(name)
                 if v is not None and (type(v) is not int or v not in allowed):
                     problems.append("%s/%s: %s 값 %r(%d~%d 또는 null)" % (where, eid, name, v, allowed[0], allowed[-1]))
+            problems += ["%s/%s: %s" % (where, eid, p) for p in refs.problems(e)]
         if cell.get("state") == "not_analyzed" and cell.get("entries"):
             problems.append("%s: not_analyzed 칸에 항목이 있음" % where)
         run = cell.get("ai_run")
@@ -157,9 +160,11 @@ def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None):
         v = fields.get(name)
         if v is not None and (type(v) is not int or v not in allowed):
             raise ValueError("%s 값 %r(%d~%d 또는 null)" % (name, v, allowed[0], allowed[-1]))
-    if "safeguards" in fields and not (isinstance(fields["safeguards"], list)
-                                       and all(isinstance(x, str) for x in fields["safeguards"])):
-        raise ValueError("safeguards는 문자열 목록이어야 함")
+    if "safeguards" in fields and not isinstance(fields["safeguards"], list):
+        raise ValueError("safeguards는 목록이어야 함")
+    bad = refs.problems(fields)
+    if bad:
+        raise ValueError("; ".join(bad))
     out = copy.deepcopy(results)
     e = _entry(out, node_id, deviation_id, entry_id)
     before = {k: copy.deepcopy(e.get(k)) for k in sorted(fields) if e.get(k) != fields[k]}
@@ -186,23 +191,36 @@ def _readable_path(project_id, graph_id):
 
 def save(results, project_id):
     """임시 파일에 쓴 뒤 os.replace로 교체한다. 쓴 경로를 돌려준다."""
-    path = store_path(project_id, results["graph_id"])
+    return write(store_path(project_id, results["graph_id"]), results)
+
+
+def write(path, results):
     write_json_atomic(path, results)
     return path
 
 
-def load(node_set):
-    """node_set 도면의 저장본. 없으면 None. 다른 종류·다른 도면의 파일이면 ValueError. 판 비교는 is_stale로 한다."""
-    path = _readable_path(node_set.get("project_id"), node_set["graph_id"])
+def read(path):
+    """path의 결과 문서. 없으면 None, 다른 종류면 ValueError."""
     if not os.path.isfile(path):
         return None
     with open(path, encoding="utf-8") as fh:
         doc = json.load(fh)
     if not isinstance(doc, dict) or doc.get("kind") != KIND:
         raise ValueError("분석 결과 파일이 아님: %s" % path)
+    return doc
+
+
+def load(node_set):
+    """node_set 도면의 저장본. 없으면 None. 다른 종류·다른 도면의 파일이면 ValueError. 판 비교는 is_stale로 한다.
+    집합이 판 이전된 뒤 옛 판으로 저장된 결과는 읽을 때 같은 규칙으로 이전한다(파일은 nodes.load가 이전할 때만 씀)."""
+    from hazop.study import migrate
+    path = _readable_path(node_set.get("project_id"), node_set["graph_id"])
+    doc = read(path)
+    if doc is None:
+        return None
     if doc.get("graph_id") != node_set["graph_id"]:
         raise ValueError("다른 도면의 분석 결과: %s (%s)" % (path, doc.get("graph_id")))
-    return doc
+    return migrate.migrate_results(doc, node_set)[0]
 
 
 def is_stale(results, node_set):

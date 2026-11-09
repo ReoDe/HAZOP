@@ -399,6 +399,7 @@ class StudyScreensTest(unittest.TestCase):
         pg = project.load(project.project_id_of(self.graph))
         ns = nodes.confirm(nodes.propose(pg), pg, "검토자A")
         ns["graph_version"] = "v-old"
+        ns["member_refs"][sorted(ns["member_refs"])[0]] = "graph-gone#x"  # 새 판에 대응 없음 -> 판 이전하지 않음
         nodes.save(ns)
         win = self.window()
         win.go(RESULTS)

@@ -3,7 +3,9 @@
 - 도구줄(Qt): 지식그래프·도면 선택, 검증·충돌·재확인·계산 제외·알고리즘 칩, 버전 정보(kg_version·graph_version은 툴팁)
 - 띠(Qt): blocked(차단 목록, 직전 passed 버전 보기), 알고리즘 비활성 사유, S1 노드 수 상한 초과, 재확인 필요
 - 캔버스(웹, 공유 웹뷰): hazop/kg/screen_template.html 셸에 loadKnowledge로 데이터를 넘긴다. 좌측 필터도 웹 안에 있다.
-- 우측 상세(Qt): 클릭한 노드·관계의 속성·근거·A1~A3·연결 목록, P&ID 노드면 "도면에서 보기"(② 전환 + focus)
+- 우측 상세(Qt): 클릭한 노드·관계의 속성·근거·A1~A3·연결 목록, P&ID 노드면 "도면에서 보기"(② 전환 + focus).
+  잠재 후보(hazop.kg.expect)면 규칙·근거 수준·후보와 판단 버튼(후보 확인·후보 기각·부재 확정·무관·판단 되돌리기). 판단은
+  데이터/잠재후보/<project_id>.json에 저장하고 updateExpectations로 캔버스의 잠재 후보만 바꾼다.
 - 계산은 Python(hazop.kg.screen → hazop.kg.algo). runAlgorithm(A1) 요청을 받아 algorithmResult로 돌려준다.
 """
 
@@ -11,31 +13,44 @@ import os
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt
 from PySide6.QtGui import QBrush, QColor
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog,
+                               QLabel,
                                QLayout, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QStackedWidget, QTabWidget,
                                QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 
 from hazop import paths
 from hazop.app import data as app_data
 from hazop.app import project_ctx, tokens
+from hazop.app.related import STATUS_LABELS as ENTRY_STATUS_LABELS
+from hazop.app.screens.viewer import OP_LABELS
 from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, badge, empty_label, esc
 from hazop.graph import project
+from hazop.graph.build import node_origin
 from hazop.graph.query import VALVE_POSITION_NOTE, QueryError
-from hazop.kg import algo, auto, build, screen
+from hazop.kg import algo, auto, build, expect, screen
+from hazop.kg.schema import REGISTRY
+from hazop.study import nodes as study_nodes
+from hazop.study import results as study_results
 
 APP_SHELL = "kg-screen.html"  # 출력/뷰어/ 아래 앱 셸(데이터 없음, loadKnowledge로 받음)
-TYPE_NAMES = {"equipment": "설비", "valve": "밸브", "instrument": "계장", "piping_element": "배관 요소",
-              "pipe_segment": "배관 구간", "unclassified": "미분류", "document": "문서", "doc_chunk": "문서 조각",
-              "requirement": "요건", "setpoint": "설정치", "condition": "운전조건·설계값", "analysis_case": "해석 사례"}
-STATUS_ORDER = {"confirmed": 0, "recheck": 1, "excluded": 2, "candidate": 3}
-STATUS_NAMES = {"confirmed": "확인", "recheck": "재확인 필요", "excluded": "계산 제외", "candidate": "후보"}
+TYPE_NAMES = {"equipment": "설비", "valve": "밸브", "inline_component": "배관 부품", "instrument": "계장",
+              "piping_element": "배관 요소", "pipe_segment": "배관 구간", "unclassified": "미분류", "document": "문서",
+              "doc_chunk": "문서 조각",
+              "requirement": "요건", "setpoint": "설정치", "condition": "운전조건·설계값", "analysis_case": "해석 사례",
+              "expectation": "잠재 후보"}
+STATUS_ORDER = {"confirmed": 0, "recheck": 1, "excluded": 2, "candidate": 3, "expect": 4}
+STATUS_NAMES = {"confirmed": "확인", "recheck": "재확인 필요", "excluded": "계산 제외", "candidate": "후보",
+                "expect": "잠재 후보"}
 A1_NAMES = {"downstream": "하류", "upstream": "상류", "mixed": "혼합", "unknown": "방향 미확인", "adjacent": "인접 구간",
             "not_applicable": "방향 해당 없음"}
 EMPTY_TEXT = ("지식그래프가 없습니다.\n① 자료 등록에서 P&ID 도면(drawio·PDF)을 등록하고 추출하면 지식그래프가 자동으로 "
               "만들어집니다.\n설계 문서 PDF를 등록하면 설정치·운전조건·요건을 자동 추출해 '자동 추출 · 사람 확인 전'으로 "
               "더합니다.")
 AUTO_BADGE = "자동 추출 · 사람 확인 전"
+AI_BADGE = "AI 초안"
+HUMAN_EDIT_BADGE = "사람 수정"
 # 우측 상세 빈 상태(U-09): 제목 한 줄 + 이유 + 다음 단계. 파일 경로 같은 내부값은 넣지 않는다. %s = 제목 색, 본문 색
+EXPECT_NOTE = "잠재 후보는 사실이 아닙니다. 계산 뷰(V4·V5)와 근거 경로에 넣지 않으며, 부재 확정은 근거를 본 사람만 합니다."
 DETAIL_EMPTY = ("<div style='color:%s;font-weight:700'>선택한 항목 없음</div>"
                 "<p style='color:%s'>그래프에서 노드나 관계를 누르면 속성·근거·연결 목록이 여기에 나옵니다.<br>"
                 "표시·배치는 근거가 아닙니다. 근거는 이 패널의 출처입니다.<br><br>"
@@ -141,6 +156,9 @@ class KnowledgeScreen(QWidget):
         self.prev = None         # blocked일 때 (kg_version, kg)
         self.showing_prev = False
         self.sel = None          # ("n"|"l", id)
+        self.expect = None       # 잠재 후보(expect.evaluate 결과)
+        self.expect_error = None  # 판단 파일을 읽지 못한 사유(있으면 판단 버튼을 막음)
+        self.expect_calc_error = None  # 잠재 후보를 계산하지 못한 사유(③의 나머지는 그대로 보임)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(12, 8, 12, 8)
         lay.setSpacing(6)
@@ -225,6 +243,21 @@ class KnowledgeScreen(QWidget):
         foot.addWidget(self.goto_btn)
         foot.addStretch(1)
         dl.addLayout(foot)
+        xrow = QGridLayout()  # 상세 폭(최소 320px)에서 버튼 글자가 잘리지 않게 두 칸씩
+        xrow.setSpacing(4)
+        self.expect_btns = {}
+        for k, (action, label, tip) in enumerate((("confirm", "후보 확인", "찾은 후보가 기대를 채운다고 확인합니다"),
+                                   ("reject", "후보 기각", "찾은 후보가 맞지 않습니다. 기대됨으로 돌아갑니다"),
+                                   ("absent", "부재 확정…", "근거를 보고 없다고 확정합니다(사유·근거 필수)"),
+                                   ("not_applicable", "무관…", "이 대상에는 기대가 맞지 않습니다(사유 필수)"),
+                                   ("undo", "판단 되돌리기", "사람 판단을 거두고 자동 판정으로 돌아갑니다(이전 기록은 남김)"))):
+            b = QPushButton(label)
+            b.setToolTip(tip)
+            b.clicked.connect(lambda _=False, a=action: self.judge_expectation(a))
+            b.hide()
+            xrow.addWidget(b, k // 2, k % 2)
+            self.expect_btns[action] = b
+        dl.addLayout(xrow)
         self.detail_collapsed = False
         self.pg, self.pg_error, self.path_steps = None, None, None
         bl.addWidget(self.detail_box)
@@ -347,8 +380,11 @@ class KnowledgeScreen(QWidget):
             self.graph_dir, self.graph = found
             self.regions = screen.load_regions(paths.work_path("데이터", "구간"))
             cands = screen.read_candidates(paths.safe_join(paths.work_path("데이터", "지식"), kg.get("project_id") or ""))
+            self._load_project()
+            self.expect = self._expectations()
             self.data = screen.screen_data(kg, self.graph, self.regions, cands,
-                                           standalone_note="이전 버전" if self.showing_prev else None)
+                                           standalone_note="이전 버전" if self.showing_prev else None,
+                                           expectations=self.expect, study=self._study())
             self.a1_full = None
             shell = screen.write_html(paths.output_root("뷰어", APP_SHELL), screen.build_html(None))
             self.standalone = screen.write_html(standalone_path(kg, gid), screen.build_html(self.data))
@@ -357,7 +393,6 @@ class KnowledgeScreen(QWidget):
             self._set_empty("지식그래프를 읽을 수 없음: %s" % exc)
             return
         self._fill_status()
-        self._load_project()
         self.stack.setCurrentIndex(1)
         self.app.attach_webview(self.canvas_host)
         self.app.webview.load_file(shell)
@@ -413,8 +448,33 @@ class KnowledgeScreen(QWidget):
         self.algo_band.set_messages("알고리즘 비활성: %s" % a["reason"] if not a["enabled"] and st == "passed" else None)
         self.s1_band.set_messages(screen.s1_message(self.data))
         rk = [l for l in self.kg.get("links") or [] if l.get("recheck")]
-        self.recheck_band.set_messages("재확인 필요 %d건 — 계산에서 빠짐. 후보 CSV에서 다시 판단한 뒤 반영하세요" % len(rk)
-                                       if rk else None, ["%s: %s" % (l["id"], l.get("recheck")) for l in rk])
+        msgs = []
+        if rk:
+            msgs.append("재확인 필요 %d건 — 계산에서 빠짐. 후보 CSV에서 다시 판단한 뒤 반영하세요" % len(rk))
+        x_msgs, x_details = self._expect_band()
+        self.recheck_band.set_messages(" · ".join(msgs + x_msgs) if msgs or x_msgs else None,
+                                       ["%s: %s" % (l["id"], l.get("recheck")) for l in rk] + x_details)
+
+    def _expect_band(self):
+        """재확인 띠에 넣을 잠재 후보 안내 (문장 목록, 상세 목록)."""
+        xr = [i for i in (self.expect or {}).get("items") or [] if i["recheck"]]
+        lost = (self.expect or {}).get("orphan_judgements") or []
+        bad = (self.expect or {}).get("bad_judgements") or []
+        msgs = []
+        if self.expect_calc_error:
+            msgs.append("잠재 후보를 계산하지 못함: %s" % self.expect_calc_error)
+        if xr:
+            msgs.append("잠재 후보 재확인 필요 %d건 — 도면·문서 내용이나 규칙 판이 바뀌어 판단을 다시 봐야 함" % len(xr))
+        if lost:
+            msgs.append("대상을 찾지 못한 잠재 후보 판단 %d건 — 도면에서 대상이 없어졌거나 바뀜(판단 파일에는 보존)" % len(lost))
+        if bad:
+            msgs.append("잠재 후보 판단 기록 %d건을 읽지 못해 적용하지 않음(파일은 그대로 둠)" % len(bad))
+        if self.expect_error:
+            msgs.append("잠재 후보 판단 파일을 읽지 못해 판단을 보이지 않음(파일은 그대로 둠): %s" % self.expect_error)
+        details = (["%s %s: 이전 %s" % (i["rule_id"], i["target_tag"] or i["target"], expect.previous_label(i)) for i in xr]
+                   + ["대상 없음: %s" % k for k in lost]
+                   + ["읽지 못한 판단 %s: %s" % (b["key"], ", ".join(b["problems"])) for b in bad])
+        return msgs, details
 
     def open_node(self, kg_id, graph_id, entity_id, kg_version):
         """⑤ '③에서 보기' 진입(그래프활용 §6.4.5). kg_id 지식그래프와 실행 도면을 고른 뒤, ③이 연 버전(현재 또는
@@ -449,8 +509,172 @@ class KnowledgeScreen(QWidget):
         self._load()
 
     # ------------------------------------------------------------ 상세
+    def _expectations(self):
+        """프로젝트 그래프·지식그래프·판단 파일로 잠재 후보를 계산한다. 프로젝트 그래프가 없으면 None."""
+        self.expect_error = self.expect_calc_error = None
+        if self.pg is None:
+            return None
+        pid = self.pg["project_id"]
+        try:
+            judgements = expect.load_judgements(expect.store_path(pid), pid)
+        except (OSError, expect.ExpectError) as exc:
+            self.app.log_error("잠재 후보 판단 읽기", exc)
+            self.expect_error = str(exc)
+            judgements = {}
+        try:
+            return expect.evaluate(self.pg, self.kg, judgements)
+        except expect.ExpectError as exc:
+            self.app.log_error("잠재 후보 계산", exc)
+            self.expect_calc_error = str(exc)
+            return None
+
+    def _study(self):
+        """검토 층 원본 {"node_set", "results", "note"}(⑤와 같은 조건의 확정 구간·결과만). 읽기만 하고 고치지 않는다."""
+        if self.pg is None:
+            return None
+        try:
+            ns = study_nodes.load(self.pg)
+        except (OSError, ValueError) as exc:
+            return {"node_set": None, "results": None, "note": "검토구간 파일을 읽을 수 없음: %s" % exc}
+        if not ns or ns.get("status") != "confirmed" or study_nodes.is_stale(ns, self.pg) \
+                or study_nodes.coverage(ns, self.pg)["uncovered"]:
+            return {"node_set": None, "results": None, "note": "확정된 프로젝트 검토구간이 없거나 지금 도면과 맞지 않습니다."}
+        try:
+            doc = study_results.load(ns)
+        except (OSError, ValueError) as exc:
+            return {"node_set": ns, "results": None, "note": "분석 결과를 읽을 수 없음: %s" % exc}
+        if doc is not None and study_results.is_stale(doc, ns):
+            return {"node_set": ns, "results": None, "note": "분석 결과가 이전 검토구간 확정본으로 만든 것이라 투영하지 않습니다."}
+        return {"node_set": ns, "results": doc, "note": None if doc else "아직 분석 결과가 없습니다."}
+
+    def render_study(self, n):
+        """검토 층 노드 상세(읽기 전용, 원본은 ⑤ 결과 파일)."""
+        self._show_expect_buttons(None)
+        self.goto_btn.setEnabled(False)
+        self.app.set_selection(None)
+        d = dict(n.get("detail") or {})
+        if d.get("status"):
+            d["status"] = ENTRY_STATUS_LABELS.get(d["status"], d["status"])
+        h = "<div style='font-size:11px;color:%s'>검토 층 · %s</div><div style='font-size:15px;font-weight:700'>%s</div>" % (
+            tokens.c("muted"), esc(REGISTRY.label(n["type"], n["type"])), esc(n.get("label")))
+        h += "<div style='color:%s'>%s</div><p>%s" % (tokens.c("muted"), esc(n["id"]), badge("읽기 전용", "plain"))
+        if n.get("draft"):
+            h += " " + badge(AI_BADGE, "ai")
+        if n.get("missing"):
+            h += " " + badge("대상 없음(재확인) %d" % n["missing"], "warn")
+        names = {"name": "이름", "here": "이 도면 구성요소", "members": "전체 구성요소", "deviation": "편차", "cause": "원인",
+                 "consequence": "결과", "text": "내용", "role": "역할", "status": "상태", "risk": "위험도"}
+        rows = [(names[k], esc(v)) for k, v in d.items() if k in names and v not in (None, "")]
+        rows += [("대상 없음", esc(r)) for r in d.get("missing") or []]
+        h += "</p>" + self._kv(rows) + "<h4>연결 목록</h4>" + self._connections(n["id"])
+        h += "<p style='color:%s'>⑤ 분석 결과에서 고칩니다. 여기서는 보기만 하고 계산 뷰(V4·V5)와 알고리즘에 넣지 않습니다.</p>" \
+             % tokens.c("muted")
+        self.detail.setHtml(h)
+
+    def _expect_item(self, xid):
+        return next((i for i in (self.expect or {}).get("items") or [] if i["id"] == xid), None)
+
+    def _show_expect_buttons(self, item):
+        for action, b in self.expect_btns.items():
+            b.setVisible(item is not None)
+            b.setEnabled(bool(item) and not self.expect_error and action in item["actions"])
+
+    def judge_expectation(self, action, reason=None, evidence=None, by=None):
+        """선택한 잠재 후보에 사람 판단을 적용·저장한다. reason·evidence·by가 None이면 입력 상자로 묻는다. 반환: 저장했으면 True."""
+        item = self._expect_item(self.sel[1]) if self.sel and self.sel[0] == "n" else None
+        if item is None or self.expect_error or self.pg is None or action not in item["actions"]:
+            return False
+        by = by or self.app.reviewer_name()
+        if not by:
+            name, ok = QInputDialog.getText(self, "검토자 이름", "판단을 저장하려면 검토자 이름이 필요합니다(설정에 저장).")
+            if not ok or not name.strip():
+                return False
+            self.app.set_reviewer_name(name.strip())
+            by = name.strip()
+        row = expect.transition(item["state"], action=action)
+        if "reason" in row[4] and reason is None:
+            reason, ok = QInputDialog.getText(self, expect.ACTION_LABELS[action], "%s 사유" % item["label"])
+            if not ok:
+                return False
+        if "evidence" in row[4] and evidence is None:
+            evidence, ok = QInputDialog.getText(self, expect.ACTION_LABELS[action], "근거 문서·쪽(예: 계통설계기술서 3.2절)")
+            if not ok:
+                return False
+        pid = self.pg["project_id"]
+        try:
+            rec = expect.apply_action(item, action, by, reason or "", evidence or "", at=study_nodes.now_utc())
+            expect.save_judgement(expect.store_path(pid), pid, rec)
+        except (OSError, expect.ExpectError) as exc:
+            self.app.log_error("잠재 후보 판단 저장", exc)
+            self._status("판단을 저장하지 못함(사유는 툴팁)", str(exc))
+            return False
+        self.expect = self._expectations()
+        x_nodes, x_links, x_info = screen.expectation_view(self.expect, self.graph)
+        self.data["nodes"] = [n for n in self.data["nodes"] if n["layer"] != screen.EXP_LAYER] + x_nodes
+        self.data["links"] = [l for l in self.data["links"] if l["layer"] != screen.EXP_LAYER] + x_links
+        self.data["meta"]["expectations"] = x_info
+        self.app.webview.bridge.send("updateExpectations", kg_version=self.kg["kg_version"], nodes=x_nodes,
+                                     links=x_links, info=x_info)
+        self._fill_status()
+        self._status("%s: %s %s → %s" % (expect.ACTION_LABELS[action], item["rule_id"], item["target_tag"] or "",
+                                         expect.STATES[rec["state"]]))
+        self.render_node(item["id"])
+        return True
+
+    def render_expectation(self, xid):
+        item = self._expect_item(xid)
+        if item is None:
+            return
+        self._show_expect_buttons(item)
+        self.goto_btn.setEnabled(False)
+        self.app.set_selection(None)
+        st = item["state"]
+        h = "<div style='font-size:11px;color:%s'>잠재 후보 · 규칙 %s</div><div style='font-size:15px;font-weight:700'>%s</div>" % (
+            tokens.c("muted"), esc(item["rule_id"]), esc(item["label"]))
+        h += "<div style='color:%s'>%s</div><p>" % (tokens.c("muted"), esc(xid))
+        h += badge(item["state_label"], "warn" if st in expect.GAP_STATES else "plain")
+        if item["recheck"]:
+            h += " " + badge(expect.RECHECK_LABEL, "warn")
+        h += " " + badge("계산 제외", "plain") + " " + badge(item["basis_label"], "ai")
+        target = "<a href='node:%s'>%s</a>" % (esc(item["target_entity"]), esc(item["target_tag"] or item["target"])) \
+            if item["target_entity"] in self._nodes() else esc(item["target_tag"] or item["target"])
+        rows = [("대상", target), ("대상 참조", esc(item["target"])), ("규칙", "%s (판 %s)" % (esc(item["rule_id"]),
+                                                                                    esc(item["rule_version"]))),
+                ("근거 수준", esc(item["basis_label"])), ("근거", esc(item["basis"])), ("HAZOP 쓰임", esc(item["hazop"])),
+                ("자동 판정", esc(expect.STATES[item["auto_state"]]))]
+        if item["note"]:
+            rows.append(("비고", esc(item["note"])))
+        if item["recheck"]:
+            rows.append(("재확인", "이전 판단 %s — 대상·후보 내용이나 규칙 판이 바뀜" % esc(expect.previous_label(item))))
+        h += "</p><h4>기대</h4>" + self._kv(rows)
+        h += "<h4>찾은 후보</h4>"
+        if item["found"]:
+            for f in item["found"]:
+                bits = [f.get("tag") or f.get("ref") or "-"]
+                for k, fmt in (("relation", "%s"), ("property", "%s"), ("value", "값 %s"), ("unit", "%s"),
+                               ("hops", "%s홉"), ("direction", "%s")):
+                    if f.get(k) not in (None, ""):
+                        bits.append(fmt % f[k])
+                link = "<a href='node:%s'>%s</a>" % (esc(f["entity"]), esc(bits[0])) if f.get("entity") in self._nodes() \
+                    else esc(bits[0])
+                h += "<div>%s %s</div>" % (link, esc(" · ".join(str(b) for b in bits[1:])))
+        else:
+            h += "<div style='color:%s'>못 찾음 — 다른 도면·미등록 도면에 있을 수 있음</div>" % tokens.c("warn-ink")
+        if item["rejected"]:
+            h += "<div style='color:%s'>기각한 후보: %s</div>" % (tokens.c("muted"), esc(", ".join(item["rejected"])))
+        j = item["judgement"]
+        if j:
+            h += "<h4>판단</h4>" + self._kv([(k, esc(j.get(f))) for k, f in (
+                ("판단", "action"), ("판단한 사람", "by"), ("판단 시각", "at"), ("사유", "reason"), ("근거", "evidence"))
+                if j.get(f)] + [("기록 상태", esc(expect.STATES.get(j.get("state"))))])
+        h += "<p style='color:%s'>%s</p>" % (tokens.c("muted"), EXPECT_NOTE)
+        if self.expect_error:
+            h += "<p style='color:%s'>판단 파일을 읽지 못해 판단 버튼을 막음: %s</p>" % (tokens.c("err-ink"), esc(self.expect_error))
+        self.detail.setHtml(h)
+
     def _clear_detail(self):
         self.sel = None
+        self._show_expect_buttons(None)
         self.goto_btn.setEnabled(False)
         self.detail.clear()
         self.detail_stack.setCurrentWidget(self.detail_empty)
@@ -501,6 +725,33 @@ class KnowledgeScreen(QWidget):
         if inherited:
             rows.append(("근거 상속", esc(inherited)))
         return self._kv(rows)
+
+    def _member_label(self, member):
+        """충돌 상대 이름: 도면 주장(graph_id#source_object_id)이면 '도면 <태그>', 지식 노드면 ID."""
+        gid, sep, soid = member.partition("#")
+        if not sep:
+            return member
+        g = next((x for x in self.graph["nodes"] if x.get("source_object_id") == soid), None) \
+            if gid == self.graph["graph_id"] else None
+        return "도면 %s" % ((g.get("tag") or soid) if g else member)
+
+    def _conflict_box(self, member):
+        """member(지식 노드 ID 또는 도면 주장 참조)가 든 충돌. 어느 값도 고르지 않고 모두 보인다."""
+        rows = [c for c in self.kg.get("conflicts") or [] if member in (c.get("members") or ())]
+        if not rows:
+            return ""
+        partners = sorted({m for c in rows for m in c["members"] if m != member})
+        lines = []
+        for c in rows:
+            prop = REGISTRY.properties.get(c.get("property"))
+            vals = " ≠ ".join("%s%s (%s)" % (v.get("value"), " " + v["unit"] if v.get("unit") else "(단위 미확인)",
+                                              self._member_label(v["id"]))
+                              for v in c["values"])
+            lines.append("%s: %s" % (prop["label_ko"] if prop else c.get("item"), vals))
+        return "<table width='100%%' cellpadding='6' style='border:2px solid %s;margin-top:4px'><tr><td>" \
+               "<b>충돌</b>: 같은 대상·항목에 다른 값 — %s 보존(%s)<br>%s</td></tr></table>" % (
+                   tokens.c("kg-conflict"), "둘 다" if len(partners) <= 1 else "모두", esc(", ".join(self._member_label(m) for m in partners)),
+                   "<br>".join(esc(x) for x in lines))
 
     def _connections(self, nid):
         nodes = self._nodes()
@@ -555,6 +806,13 @@ class KnowledgeScreen(QWidget):
         self.side_tabs.setCurrentIndex(0)
         self.detail_stack.setCurrentWidget(self.detail)
         n = self._nodes()[nid]
+        if n["layer"] == screen.EXP_LAYER:
+            self.render_expectation(nid)
+            return
+        if n["layer"] == screen.STUDY_LAYER:
+            self.render_study(n)
+            return
+        self._show_expect_buttons(None)
         # P&ID 노드는 도면 구성요소와 같은 entity_id(관련 항목 패널이 따라감). 지식 노드는 도면 구성요소가 아님.
         self.app.set_selection({"kind": "component", "drawing": self.graph_dir, "entity_id": nid}
                                if n["layer"] == "pid" else None)
@@ -570,10 +828,12 @@ class KnowledgeScreen(QWidget):
                 h += " " + badge("계산 제외", "plain")
             if not kn.get("has_source"):
                 h += " " + badge("∅ 근거 없음", "err")
-            if kn.get("conflict_with"):
+            if kn.get("conflict_with") or kn.get("conflict_with_pid"):
                 h += " " + badge("≠ 충돌", "err")
             if auto_extracted(kn):
                 h += " " + badge(AUTO_BADGE, "ai")
+            if build.origin_of(kn) == "ai_draft":
+                h += " " + badge(AI_BADGE, "ai")
             h += "</p><h4>내용</h4>"
             fields = [("이름", "name"), ("원문", "text"), ("항목", "item"), ("값", "value"), ("단위", "unit"),
                       ("압력 기준", "pressure_basis"), ("운전 모드", "operating_mode")]
@@ -588,10 +848,7 @@ class KnowledgeScreen(QWidget):
             if kn.get("compute_view", {}).get("excluded_reasons"):
                 rows.append(("계산 제외 사유", esc(", ".join(kn["compute_view"]["excluded_reasons"]))))
             h += self._kv(rows)
-            if kn.get("conflict_with"):
-                h += "<table width='100%%' cellpadding='6' style='border:2px solid %s;margin-top:4px'><tr><td>" \
-                     "<b>충돌</b>: 같은 대상·항목에 다른 값 — 둘 다 보존(%s)</td></tr></table>" % (
-                         tokens.c("kg-conflict"), esc(", ".join(kn["conflict_with"])))
+            h += self._conflict_box(nid)
             h += "<h4>근거(출처)</h4>" + self._source(kn.get("source"))
             self.goto_btn.setEnabled(False)
         else:
@@ -607,7 +864,15 @@ class KnowledgeScreen(QWidget):
                              "<span style='color:%s'>미확인(화살표 없음)</span>" % tokens.c("warn-ink")))
             if g.get("kind") == "continuation":
                 rows.append(("도면 연결점", "이어지는 도면(이 그래프 밖)"))
-            h += badge("P&ID 레이어", "plain") + "</p><h4>속성</h4>" + self._kv(rows)
+            edited = node_origin(g) == "human_edit"
+            if edited:
+                he = g.get("human_edit") or {}
+                rows.append(("사람 수정", esc(" · ".join(OP_LABELS.get(o, o) for o in he.get("ops") or []) or "수정 기록 있음")
+                             + (" (%s)" % esc(he["by"]) if he.get("by") else "")))
+            conflict = self._conflict_box("%s#%s" % (self.graph["graph_id"], g.get("source_object_id")))
+            h += badge("P&ID 레이어", "plain") + (" " + badge(HUMAN_EDIT_BADGE, "human") if edited else "")
+            h += (" " + badge("≠ 충돌", "err") if conflict else "")
+            h += "</p><h4>속성</h4>" + self._kv(rows) + conflict
             self.goto_btn.setEnabled(bool(g.get("local_id")))
         h += "<h4>알고리즘</h4>" + self._algo_section(nid)
         h += "<h4>연결 목록</h4>" + self._connections(nid)
@@ -617,6 +882,7 @@ class KnowledgeScreen(QWidget):
 
     def render_link(self, lid):
         self.sel = ("l", lid)
+        self._show_expect_buttons(None)
         self.goto_btn.setEnabled(False)
         d = next((l for l in self.data["links"] if l["id"] == lid), None)
         if d is None:
@@ -634,10 +900,18 @@ class KnowledgeScreen(QWidget):
                 ("일치 원문", esc(d.get("match"))), ("후보 키", esc(d.get("key")))])
             h += "<p style='color:%s'>자동 생성 후보 — 계산 제외. 판단은 link_candidates.csv에서(점수는 정렬용, 확인을 대신하지 않음)</p>" \
                  % tokens.c("warn-ink")
+        elif d["layer"] == screen.EXP_LAYER:
+            h += "<p>잠재 후보 관계(%s) — 사실 아님, 계산 제외. 상태는 잠재 후보 노드를 눌러 바꿉니다.</p>" % esc(
+                REGISTRY.relations[d["kind"]]["label_ko"])
+        elif d["layer"] == screen.STUDY_LAYER:
+            h += "<p>검토 층 관계(%s) — ⑤ 결과 파일에서 읽은 투영(읽기 전용), 계산 제외.</p>" % esc(
+                REGISTRY.relations[d["kind"]]["label_ko"])
         elif d["layer"] == "kn":
             kl = next(l for l in self.kg["links"] if l["id"] == lid)
             if auto_extracted(kl):
                 h += "<p>%s</p>" % badge(AUTO_BADGE, "ai")
+            if build.origin_of(kl) == "ai_draft":
+                h += "<p>%s</p>" % badge(AI_BADGE, "ai")
             rows = [("link_status", esc(kl.get("link_status"))), ("knowledge_status", esc(kl.get("knowledge_status"))),
                     ("방법", esc(kl.get("method"))), ("확인자", esc(kl.get("reviewed_by"))),
                     ("확인일", esc(kl.get("reviewed_at")))]

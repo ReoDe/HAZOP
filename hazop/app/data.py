@@ -196,26 +196,34 @@ def list_extractions():
 _SOURCE_CACHE = {}
 
 
-def extraction_origin(path):
-    """추출 결과가 어디서 왔는지: None(① 등록 자료) · "샘플 실행 데이터"(참고자료 샘플) · "등록 없이 추출".
-    extraction.json의 source.material_id가 없으면 등록을 거치지 않은 추출이다. 파일 수정 시각으로 캐시한다."""
+def extraction_brief(path):
+    """추출 결과 요약 {"origin", "drawing_number", "title", "nodes", "relations", "unknowns"}. 파일 수정 시각으로 캐시한다.
+    origin: None(① 등록 자료) · "샘플 실행 데이터"(참고자료 샘플) · "등록 없이 추출". 읽을 수 없으면 None."""
     try:
         key = (path, os.path.getmtime(path))
     except OSError:
         return None
     if key not in _SOURCE_CACHE:
         try:
-            src = read_json(path).get("source") or {}
+            doc = read_json(path)
+            src, drawing, summary = doc.get("source") or {}, doc.get("drawing") or {}, doc.get("summary") or {}
         except (OSError, ValueError, AttributeError):
-            src = {}
+            src, drawing, summary = {}, {}, {}
         if src.get("material_id"):
             origin = None
         elif str(src.get("file") or "").replace("\\", "/").startswith("참고자료/"):
             origin = "샘플 실행 데이터"
         else:
             origin = "등록 없이 추출"
-        _SOURCE_CACHE[key] = origin
+        _SOURCE_CACHE[key] = {"origin": origin, "drawing_number": drawing.get("drawing_number"),
+                              "title": drawing.get("title"), "nodes": summary.get("nodes"),
+                              "relations": summary.get("relations"), "unknowns": summary.get("unknowns")}
     return _SOURCE_CACHE[key]
+
+
+def extraction_origin(path):
+    """추출 결과가 어디서 왔는지(extraction_brief의 origin). extraction.json의 source.material_id가 없으면 등록을 거치지 않은 추출이다."""
+    return (extraction_brief(path) or {}).get("origin")
 
 
 def unregistered_extractions():
@@ -302,8 +310,8 @@ def tag_conflicts(tag, project_id, exclude=()):
 
 def save_corrections(name, ops, by):
     """수정 기록 저장 → 그 도면 그래프 다시 빌드(scripts/build_graph.build_one이 기록을 적용) → 프로젝트 지식그래프 다시 빌드.
-    반환 {"path", "graph", "kg" 또는 "kg_error", "recheck": [안내 문구]}. ④ 검토구간·⑤ 분석 결과 저장본은 고치지 않고,
-    바뀐 그래프 판과 다르면 재확인 안내만 돌려준다."""
+    반환 {"path", "graph", "kg" 또는 "kg_error", "recheck": [안내 문구]}. ④ 검토구간·⑤ 분석 결과 저장본은 여기서
+    고치지 않는다. 판 이전 조건을 채우면 다음에 읽을 때 study.migrate가 옮기고, 아니면 재확인 안내를 돌려준다."""
     original = read_json(extraction_path(name))
     path = corrections.save(name, ops, by, drawing_number=original["drawing"].get("drawing_number"))
     graph, _ = script_module("build_graph").build_one(extraction_path(name), paths.output_root("그래프"))
@@ -583,12 +591,15 @@ def related_knowledge(doc, scenario):
         elif it.get("conflict_outside"):
             reasons = sorted({KG_CONFLICT_REASONS.get(c["reason"], c["reason"]) for c in it["conflict_outside"]})
             badges += [("충돌(상대 미포함: %s)" % r, "err") for r in reasons]
+        if it.get("conflict_with_drawing"):
+            badges.append(("도면값과 충돌", "err"))
         if sc:
             badges.append(("시나리오 인용", "ui"))
         if fc:
             badges.append(("사실 인용", "ui"))
         items.append({"item": it, "entities": hit, "badges": badges, "scenario_cited": sc, "fact_cited": fc,
-                      "conflict": bool(it.get("conflict_with") or it.get("conflict_outside"))})
+                      "conflict": bool(it.get("conflict_with") or it.get("conflict_outside")
+                                       or it.get("conflict_with_drawing"))})
     trunc = kc.get("truncated") or {}
     affected = set(trunc.get("affected_entity_ids") or [])
     excluded = {}

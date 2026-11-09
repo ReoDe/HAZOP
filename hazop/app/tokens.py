@@ -19,6 +19,7 @@ COLORS = {
     # 데이터: 노드 종류(밸브는 UI 파랑과 분리)
     "equipment": "#1d4ed8", "valve": "#0f766e", "instrument": "#0d97d6", "piping_element": "#6366f1",
     "unclassified": "#868e9d",
+    "inline_component": "#1e3a8a",  # 배관 부품(2026-11-08 설비에서 나뉨): 설비 파랑의 진한 쪽이라 옛 도면 인상을 크게 바꾸지 않음
     # 데이터: 관계 종류
     "physical_connection": "#16a34a", "signal_connection": "#7c3aed", "measurement_connection": "#d67506",
     "unresolved": "#dc2626",
@@ -36,9 +37,14 @@ COLORS = {
     "tag": "#111827",
     "human-edit": "#db2777",  # ② 도면 사람 수정 표시(뷰어 번짐·편집 미리보기)
     # ③ 지식그래프 (디자인/지식그래프화면.md §7). 별칭 토큰(=)은 같은 값을 풀어 적는다
-    "kg-document": "#475569", "kg-doc_chunk": "#64748b", "kg-requirement": "#a16207", "kg-setpoint": "#be185d",
-    "kg-condition": "#4d7c0f", "kg-analysis_case": "#9a3412", "kg-pipe_segment": "#16a34a",
-    "kg-rel-mentions": "#64748b", "kg-rel-docpos": "#cbd5e1", "kg-rel-depends": "#334155",
+    # 노드 종류(2026-11-08 옵시디언식): 채도 낮은 4계열(P&ID 회청·배관 구간 녹회·지식 회보라·문서 회색), 계열 안은 명도만 다름.
+    # ②의 equipment·valve 등과 별도 키라 ② 색은 그대로다. 간선은 회색 하나(kg-edge 반투명, 강조 때 kg-edge-hi)
+    "kg-equipment": "#3b5472", "kg-valve": "#4d6889", "kg-instrument": "#5e7ca1", "kg-piping_element": "#788da5",
+    "kg-unclassified": "#8d939a", "kg-pipe_segment": "#54836b",
+    "kg-inline_component": "#6a7f99",  # P&ID 회청 계열, 계장(#5e7ca1)과 배관 요소(#788da5) 사이 명도
+    "kg-analysis_case": "#503c67", "kg-requirement": "#65507c", "kg-setpoint": "#796293", "kg-condition": "#88759f",
+    "kg-document": "#575f6b", "kg-doc_chunk": "#757e8a",
+    "kg-edge": "#9aa1ab", "kg-edge-hi": "#5b6470",
     "kg-flag": "#f59e0b", "kg-flag-ink": "#92400e", "kg-conflict": "#b91c1c", "kg-nosrc": "#b91c1c",
     "a1-start": "#111827", "a1-down": "#0072b2", "a1-up": "#d55e00", "a1-mixed": "#cc79a7", "a1-unknown": "#9ca3af",
     "a1-adj": "#009e73", "a1-na": "#6b7280", "a1-off": "#d1d5db",
@@ -202,6 +208,8 @@ QLabel#kbd_nav { color: %(nav-muted)s; border: 1px solid %(nav-active-bg)s; bord
 QLabel#kbd { color: %(toast-ink)s; border: 1px solid %(toast-link)s; border-radius: 3px; padding: 0 4px; font-size: %(xs)spx; }
 QWidget#explorer_box { background: %(surface-2)s; border-right: 1px solid %(line)s; }
 QLineEdit#explorer_filter { font-size: %(sm)spx; padding: 2px 6px; margin-right: 6px; }
+QLabel#explorer_title { font-weight: 700; font-size: %(sm)spx; color: %(ink)s; padding: 0 2px; }
+QPushButton#explorer_next { font-size: %(xs)spx; padding: 1px 8px; color: %(ui-ink)s; border-color: %(ui)s; }
 QTreeWidget#explorer::item:selected { border-left: 2px solid %(ui)s; }
 QFrame#related { background: %(card)s; border-left: 1px solid %(line)s; }
 QLabel#rel_title { font-weight: 700; padding: 8px 10px; border-bottom: 1px solid %(line)s; }

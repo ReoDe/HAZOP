@@ -540,8 +540,8 @@ def baseline_increases(rows, baseline_rows):
 # ---------------------------------------------------------------- 뷰어·앱 색 비교(W4, D5). Qt 없이 문자열만 본다.
 # 독립 뷰어(hazop/viewer/template.html)의 색은 앱 토큰(hazop/app/tokens.py)을 따른다. 앱 안에서는 web_css()가
 # :root를 덮어쓰므로, 비교 기준은 web_css()의 :root(= COLORS + --selected + --hl-dim)다.
-VIEWER_DATA_VARS = ("equipment", "valve", "instrument", "piping_element", "unclassified", "physical_connection",
-                    "signal_connection", "measurement_connection", "unresolved")  # 템플릿 JS가 "var(--" + 종류 로 만듦
+VIEWER_DATA_VARS = ("equipment", "valve", "instrument", "piping_element", "inline_component", "unclassified",
+                    "physical_connection", "signal_connection", "measurement_connection", "unresolved")  # 템플릿 JS가 "var(--" + 종류 로 만듦
 # 색 리터럴 허용 목록: (선택자, 속성, 값) 조합. W9(D15)에서 남은 3곳(통과 점 #16a34a, 경고 글자 #b45309 2곳)을
 # var(--ok)·var(--warn-ink)로 바꿔 비웠다. 다시 채우면 tests/test_design.py가 실패한다(새 색은 tokens.py 토큰으로).
 # 템플릿 HTML 속성·JS에는 색 리터럴이 없다(EDGE_COLOR에 없는 관계 종류는 undefined, 범례 대체는 var(--muted)).
@@ -844,6 +844,11 @@ CONTRAST_PAIRS += [
     ("toast-link", "toast-bg", TEXT, "토스트 실행 취소 링크(U-07)"),
     ("err-line", "card", GRAPHIC, "위험 동작 버튼 테두리(U-10)"),
 ]
+# ③ 지식그래프 노드 점·강조 간선(옵시디언식, 2026-11-08). 기본 간선 kg-edge는 반투명 배경선이라 쌍에 넣지 않고,
+# 관계를 읽어야 할 때(마우스 올림·선택) 쓰는 kg-edge-hi를 검사한다.
+CONTRAST_PAIRS += [(k, "kg-canvas", GRAPHIC, "③ 노드 점 / 캔버스") for k in (
+    "kg-equipment", "kg-valve", "kg-instrument", "kg-piping_element", "kg-unclassified", "kg-pipe_segment",
+    "kg-analysis_case", "kg-requirement", "kg-setpoint", "kg-condition", "kg-document", "kg-doc_chunk", "kg-edge-hi")]
 CONTRAST_PAIRS += [("on-seg", "seg%d" % i, TEXT, "구간 꼬리표 글자") for i in range(1, 6)]
 CONTRAST_PAIRS += [("seg%d" % i, "card", GRAPHIC, "구간 색 / 도면 바탕") for i in range(1, 6)]
 

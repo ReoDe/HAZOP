@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QHBoxLayout
 from hazop.app import data, project_ctx, tokens
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text
 from hazop.graph import project
-from hazop.study import nodes, span
+from hazop.study import migrate, nodes, span
 
 SEG_COUNT = 5
 PANEL_MIN_W, PANEL_MAX_W = 264, 340     # 셸 오른쪽 열 clamp(264px, 20vw, 340px)
@@ -532,7 +532,7 @@ class StudyNodesScreen(QWidget):
         stale = nodes.is_stale(ns, self.graph)
         self.stale.set_messages(
             "프로젝트 그래프(도면·도면 연결)가 바뀌었습니다(저장본 %s → 현재 %s). '다시 제안'으로 새로 만들거나 확정 해제 뒤 고치세요."
-            % (ns.get("graph_version"), self.graph.get("graph_version")) if stale else None)
+            % (ns.get("graph_version"), self.graph.get("graph_version")) if stale else migrate.notice(ns))
         if confirmed:
             at = ns.get("confirmed_at")
             try:

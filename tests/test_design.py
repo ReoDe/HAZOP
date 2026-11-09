@@ -274,7 +274,9 @@ class ViewerColorTest(unittest.TestCase):
         self.assertEqual(sum(b.startswith(w5) for b in bad), 4, bad)
         # W4 10건 + W9(D15)에서 허용 목록을 비워 실패가 된 3건(#16a34a 통과 점, #b45309 경고 글자 2곳)
         # + B안 토큰(2026-11-07) 5건(--ui·--line·--ink 값, 옛 ui 반투명 .sym·.sym:hover 채움)
-        self.assertEqual(len([b for b in bad if not b.startswith(w5)]), 18, bad)
+        # + 배관 부품 분류(M2, 2026-11-08) 1건(옛 :root에 --inline_component 없음)
+        self.assertEqual(len([b for b in bad if not b.startswith(w5)]), 19, bad)
+        self.assertTrue(any("--inline_component" in b for b in bad), bad)
         self.assertEqual(sum("#16a34a" in b or "#b45309" in b for b in bad), 3, bad)
         for k in ("--valve:", "--selected:", "클릭 선택 채움"):
             self.assertTrue(any(b.startswith(k) for b in bad), (k, bad))

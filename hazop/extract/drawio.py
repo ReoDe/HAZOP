@@ -16,7 +16,7 @@ from html.parser import HTMLParser
 
 from hazop import paths
 
-from . import rules
+from . import properties, rules
 
 SCHEMA_VERSION = "0.1"
 SCRIPT_NAME = "hazop.extract.drawio"
@@ -598,17 +598,8 @@ def extract(path, page=0, repo_root=None, registration=None):
         tag = c.user_attrs.get("tag") or None
         if tag is None and kind not in rules.KINDS_WITHOUT_TAG:
             _issue(unknowns, "missing_tag", "tag 속성이 없음", c.cell_id, local_id, "tag")
-        if kind in rules.KINDS_NEED_NORMAL_POSITION:
-            npos = c.user_attrs.get("normal_position")
-            if not npos:
-                _issue(unknowns, "missing_normal_position", "밸브 정상 위치 미확인",
-                       c.cell_id, local_id, "normal_position")
-            elif npos not in rules.NORMAL_POSITION_VALUES:
-                _issue(unknowns, "invalid_normal_position", "규칙에 없는 값 %r" % npos,
-                       c.cell_id, local_id, "normal_position")
-        if kind in rules.KINDS_NEED_FAIL_POSITION and not c.user_attrs.get("fail_position"):
-            _issue(unknowns, "missing_fail_position", "제어밸브 실패 위치 미확인",
-                   c.cell_id, local_id, "fail_position")
+        for check, field, reason in properties.node_issues(kind, c.user_attrs):
+            _issue(unknowns, check, reason, c.cell_id, local_id, field)
         if kind == "check_valve":
             check_valves.append((c, local_id))  # 허용 방향은 커넥터를 모두 읽은 뒤 판정
         elif c.user_attrs.get("flow_direction"):

@@ -117,7 +117,8 @@ class CorrectionsTest(unittest.TestCase):
         self.assertEqual(loc["bbox"], [100, 100, 100, 20])
         for sid in ("n6", "n7", "e4", "e13", "n11"):
             self.assertEqual(checks_of(out, sid), [], sid)
-        self.assertEqual(e13["human_edit"], {"op_ids": ["c-0002", "c-0005"], "by": "검토자", "at": "2026-11-07T00:00:00Z"})
+        self.assertEqual(e13["human_edit"], {"op_ids": ["c-0002", "c-0005"], "ops": ["set_tag", "set_path"],
+                                             "by": "검토자", "at": "2026-11-07T00:00:00Z"})
         self.assertEqual(out["corrections"], {"ops": 6, "applied": [o["op_id"] for o in ops], "not_applicable": [],
                                               "resolved_unknowns": 5})
         self.assertEqual(out["summary"]["unknowns"], len(out["validation"]["unknowns"]))

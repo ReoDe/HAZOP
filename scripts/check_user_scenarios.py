@@ -1068,26 +1068,123 @@ def s11_cross_drawing_node(d):
     d.r["cross_drawing"] = {"node": node_id, "target": target}
 
 
+def explorer_view(d):
+    """(머리 단계 글자, 보이는 탐색기 줄 이름)."""
+    tree = d.tree()
+    title = next((e["name"] for e in tree if e["aid"].endswith("explorer_title")), "")
+    names = [e["name"] for e in tree if e["type"] == "TreeItem" and "explorer" in e["aid"] and not e.get("offscreen")]
+    return title, names
+
+
 def s10_explorer_structure(d):
-    """탐색기 구조가 이해되는지: 묶음 이름과 수가 지금 연 도면과 맞는지, 결과를 찾을 곳이 있는지."""
+    """⑤ 탐색기가 결과를 찾을 곳을 보이는지: 구간별 분석 묶음과 그 수, 권고 묶음."""
     goto_stage(d, 5)
     time.sleep(0.5)
-    items = [e for e in d.tree() if e["type"] == "TreeItem" and "explorer" in e["aid"] and not e.get("offscreen")]
-    names = [e["name"] for e in items]
+    _title, names = explorer_view(d)
     d.r["explorer"] = names
     d.shot("⑤ 탐색기")
-    groups = {}
-    for i, n in enumerate(names[:-1]):
-        if n in ("자료", "지식그래프", "검토구간", "권고", "결과") or n.startswith("검토구간"):
-            if re.fullmatch(r"\d+", names[i + 1] or ""):
-                groups[n] = int(names[i + 1])
+    groups = {n: int(names[i + 1]) for i, n in enumerate(names[:-1])
+              if (n == "권고" or n.startswith("구간별 분석")) and re.fullmatch(r"\d+", names[i + 1] or "")}
     d.r["explorer_groups"] = groups
-    where = d.where()
-    if "도면" in where:
-        d.expect(groups.get("자료", 1) > 0, "도면이 열려 있는데 탐색기 '자료'가 0", "위치: %s, 묶음: %s" % (where, groups),
-                 severity="중")
-    d.expect(any(k.startswith("결과") or "분석" in k for k in groups) or any("결과" in n for n in names),
-             "탐색기에 ⑤ 분석 결과로 가는 묶음이 없음(사용자 질문: 결과는 어디?)", "묶음: %s" % groups, severity="하")
+    d.expect(any(k.startswith("구간별 분석") and v > 0 for k, v in groups.items()),
+             "⑤ 탐색기에 구간별 분석 진행이 없음(사용자 질문: 결과는 어디?)", "묶음: %s" % groups, severity="하")
+
+
+# 단계별 탐색기 모듈(hazop/app/explorer.py)의 묶음 이름. 앞부분이 같으면 그 묶음이다(검토구간 · SNP-SAMPLE)
+STAGE_GROUPS = {1: ("도면", "문서", "등록 없이 추출"), 2: ("도면 추출", "미추출"), 3: ("지식그래프", "요약"),
+                4: ("검토구간",), 5: ("구간별 분석", "권고")}
+
+
+def s14_stage_explorer(d):
+    """레일 단계마다 탐색기 내용이 바뀌는지: 머리에 그 단계, 그 단계 묶음만, 다른 단계 묶음 없음."""
+    seen = {}
+    for k in range(1, 6):
+        if not goto_stage(d, k):
+            continue
+        time.sleep(1.0 if k in (2, 3, 4) else 0.4)
+        title, names = explorer_view(d)
+        def group_of(n):
+            return next((st for st, gs in STAGE_GROUPS.items() for g in gs if n == g or n.startswith(g + " · ")), None)
+        present = {n: group_of(n) for n in names if group_of(n)}
+        seen[k] = {"title": title, "groups": sorted(present)}
+        d.shot("%s 탐색기" % STAGE_WHERE[k - 1])
+        d.expect(title.startswith("①②③④⑤"[k - 1]), "탐색기 머리에 지금 단계가 없음", "단계 %d, 머리: %r" % (k, title))
+        d.expect(any(st == k for st in present.values()), "%s 탐색기에 그 단계 묶음이 없음" % STAGE_WHERE[k - 1],
+                 "줄: %s" % names[:12])
+        other = sorted(n for n, st in present.items() if st != k)
+        d.expect(not other, "%s 탐색기에 다른 단계 묶음이 보임" % STAGE_WHERE[k - 1], "다른 단계 묶음: %s" % other)
+    d.r["stage_explorer"] = seen
+
+
+def s13_kg_graph(d):
+    """③ 지식그래프(옵시디언식): 검색어 입력 → 캔버스 강조, 노드에 마우스 올림 → 이웃 강조, 클릭 → 선택, 로컬 그래프.
+    입력은 실제 키보드·마우스. 판정은 페이지 상태(hzKG.state)로 한다."""
+    if not goto_stage(d, 3):
+        return
+    if not d.expect(d.wait(lambda: d.cdp.evaluate("!!(window.hzKG && hzKG.ready)") is True, "③ 그래프 준비", 30),
+                    "③ 그래프가 준비되지 않음"):
+        return
+    time.sleep(3.0)  # 힘 배치가 멈출 때까지
+    st = lambda: d.cdp.evaluate("hzKG.state()") or {}
+    box = [e for e in d.tree() if e["type"] == "Edit" and e["name"] == "태그·이름으로 찾기" and not e["offscreen"]]
+    if not d.expect(box, "③ 검색 상자('태그·이름으로 찾기')를 UIA에서 찾지 못함"):
+        return
+    d.step("검색 상자 클릭 후 'RC-P' 입력")
+    d.click(box[0])
+    d.w32.set_hangul(d.hwnd, False)
+    d.type("RC-P")
+    ok = d.wait(lambda: st().get("matches", 0) > 0, "검색 → 캔버스 강조")
+    d.shot("검색 강조")
+    d.expect(ok, "검색어를 넣어도 캔버스에서 맞는 노드가 강조되지 않음", "matches=%s" % st().get("matches"))
+    d.step("Ctrl+A, Backspace로 검색어 지움")
+    d.key("ctrl+a")
+    d.key("back")
+    d.expect(d.wait(lambda: st().get("matches") == 0, "검색 지움 → 강조 해제"), "검색어를 지워도 강조가 남음")
+    hub = d.cdp.evaluate("""(function(){var b=null,m=-1;hzKG.visibleIds().forEach(function(i){
+        var k=hzKG.bfs(i,1).length;if(k>m){m=k;b=i;}});return b;})()""")
+    css = d.cdp.evaluate("(function(){var r=document.getElementById('q').getBoundingClientRect();"
+                         "var p=hzKG.pageOf(%s);return p&&{qx:r.left,qy:r.top,x:p.x,y:p.y,dpr:devicePixelRatio};})()"
+                         % json.dumps(hub))
+    if not d.expect(css, "③ 노드 화면 좌표를 얻지 못함", "hub=%s" % hub):
+        return
+    bx, by = box[0]["rect"][0], box[0]["rect"][1]
+    sx, sy = bx + (css["x"] - css["qx"]) * css["dpr"], by + (css["y"] - css["qy"]) * css["dpr"]
+    far = d.cdp.evaluate("(function(h){var nb=hzKG.bfs(h,1),c=hzKG.pageOf(h),b=null,m=-1;hzKG.visibleIds().forEach("
+                         "function(i){var p=hzKG.pageOf(i);if(nb.indexOf(i)>=0||!p)return;var e=Math.hypot(p.x-c.x,p.y-c.y);"
+                         "if(e>m){m=e;b=i;}});return b;})(%s)" % json.dumps(hub))  # 라벨에 가리지 않게 가장 먼 비이웃
+    # 이웃이 아닌 노드 중심의 불투명도(3×3 최댓값). 캔버스 바탕은 투명이라 흐려지면 줄어든다.
+    ink = lambda: d.cdp.evaluate("(function(id){var c=document.querySelector('#graph canvas'),r=c.getBoundingClientRect(),"
+                                 "p=hzKG.pageOf(id),k=c.width/r.width,x=Math.round((p.x-r.left)*k),y=Math.round((p.y-r.top)*k),"
+                                 "a=c.getContext('2d').getImageData(x-1,y-1,3,3).data,m=0;for(var i=3;i<a.length;i+=4)"
+                                 "m=Math.max(m,a[i]);return m;})(%s)" % json.dumps(far)) or 0
+    ink0 = ink()
+    d.step("가장 연결이 많은 노드(%s) 위에 마우스 올림" % hub)
+    d._guard()
+    if not d.ours(d.w32.pid_at(sx, sy)):
+        raise Abort("마우스를 올릴 자리(%d,%d) 아래 창이 이 실행의 앱이 아님" % (sx, sy))
+    for k in (3, 0):
+        d.w32.u.SetCursorPos(int(sx) + k, int(sy) + k)
+        time.sleep(0.2)
+    ok = d.wait(lambda: st().get("hover") == hub and ink() < ink0 * 0.6, "마우스 올림 → 이웃 강조(캔버스 다시 그림)")
+    d.shot("마우스 올림")
+    d.expect(ok, "노드에 마우스를 올려도 캔버스에서 나머지가 흐려지지 않음",
+             "hover=%s · 이웃 아닌 노드 %s의 불투명도 %s → %s" % (st().get("hover"), far, ink0, ink()))
+    d.step("그 노드 클릭")
+    d.click({"rect": [int(sx) - 1, int(sy) - 1, 2, 2]})
+    sel = d.wait(lambda: (st().get("sel") or {}).get("id") == hub, "클릭 → 선택")
+    d.expect(sel, "노드를 클릭해도 선택되지 않음", "sel=%s" % st().get("sel"))
+    local = [e for e in d.tree() if e["type"] == "Button" and e["name"] == "로컬" and not e["offscreen"]]
+    if not d.expect(local, "③ '로컬' 버튼을 찾지 못함"):
+        return
+    d.step("'로컬' 버튼 클릭")
+    d.click(local[0])
+    s = d.wait(lambda: (lambda v: v if v.get("mode") == "local" else None)(st()), "로컬 그래프")
+    time.sleep(1.5)
+    d.shot("로컬 그래프")
+    d.expect(s and s.get("center") == hub and 0 < s.get("visible", 0) < s.get("nodes", 0),
+             "로컬 그래프가 선택 노드를 중심으로 일부 노드만 보이지 않음", str({k: (s or {}).get(k) for k in ("center", "visible", "nodes")}))
+    d.expect(not st().get("errors"), "③ 페이지 JS 오류", str(st().get("errors")))
+    d.audit()
 
 
 def s5_register_drawio(d):
@@ -1275,9 +1372,11 @@ SCENARIOS = (("S1", "키보드만으로 ①→⑤ 이동·뒤로·단축키 표"
              ("S7", "오래 걸리는 AI 실행의 진행 표시(무엇·경과·남은 시간·비용·실시간 반영)", s7_progress_visibility),
              ("S8", "AI 실행 중 조작(탐색기 구간·Ctrl+P·화면 이동)", s8_ops_during_run),
              ("S9", "④ 구간 선택 때 그 구간만 강조", s9_selection_feedback),
-             ("S10", "탐색기 구조(자료 수·결과 위치)", s10_explorer_structure),
+             ("S10", "⑤ 탐색기 결과 위치(구간별 분석·권고)", s10_explorer_structure),
+             ("S14", "단계마다 탐색기 내용이 바뀌는지(①~⑤ 모듈)", s14_stage_explorer),
              ("S11", "도면을 넘는 구간: ④ ⇄ 구간·경계·칩으로 상대 도면 이동·⑤ 행 이름", s11_cross_drawing_node),
              ("S12", "⑤에서 Excel 내보내기(Ctrl+P → 범위 → 저장 대화상자 → 토스트)", s12_excel_export),
+             ("S13", "③ 그래프 검색 강조·마우스 올림·클릭 선택·로컬 그래프", s13_kg_graph),
              ("S5", "drawio 등록 → 추출 → ② 확인", s5_register_drawio),
              ("S6", "④ 확정 해제 → 병합(M) → 확정(Ctrl+Enter)", s6_merge_confirm))
 

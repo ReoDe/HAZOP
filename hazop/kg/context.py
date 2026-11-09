@@ -12,10 +12,13 @@ import copy
 import json
 
 from hazop.kg import algo
+from hazop.kg.schema import REGISTRY
 
-RELATION_KINDS = ("governed_by", "has_condition", "has_setpoint")
+RELATION_KINDS = algo.GAP_KINDS  # 설비 적용 관계 중 근거 공백 판정에 세는 3종(analyzed_in 제외)
 CITATION_KIND = "specified_in"
-TYPE_ORDER = {"requirement": 0, "setpoint": 1, "condition": 2}
+# 항목 정렬: 레지스트리 클래스 순서(요건, 설정치, 운전조건)
+TYPE_ORDER = {c: i for i, c in enumerate(c for c in REGISTRY.classes
+                                         if c in REGISTRY.apply_kind_of(evidence_gap=True))}
 VALUE_FIELDS = ("name", "text", "item", "value", "unit", "pressure_basis", "operating_mode")
 UNKNOWN_FIELDS = ("item", "value", "unit", "pressure_basis")
 SOURCE_FIELDS = ("material_id", "registration_version", "document_id", "page", "locator")
@@ -136,6 +139,22 @@ def content_blockers(kg, graph):
     return []
 
 
+def drawing_conflicts(kg, kid):
+    """지식 노드 kid와 값이 다른 도면 속성 주장(M3 conflict_with_pid) [{target, property, value, unit, pressure_basis}].
+    target은 도면 대상 안정 참조. 값은 고르지 않고 둘 다 보이게 그대로 옮긴다."""
+    pid = set(next((n.get("conflict_with_pid") or [] for n in kg["nodes"] if n.get("id") == kid), []))
+    out = []
+    for c in kg.get("conflicts") or []:
+        members = c.get("members") or []
+        if kid not in members:
+            continue
+        for v in c.get("values") or []:
+            if v.get("id") in pid:
+                out.append({"target": v["id"], "property": c.get("property"), "value": v.get("value"),
+                            "unit": v.get("unit"), "pressure_basis": v.get("pressure_basis")})
+    return sorted(out, key=lambda x: (x["target"], x["property"] or ""))
+
+
 def build_context(kg, graph, node_ids, limits=None):
     """(knowledge_context, too_large). too_large면 항목을 모두 빼도 크기 상한을 넘음(입력 차단 대상)."""
     lim = dict(LIMITS, **(limits or {}))
@@ -236,6 +255,9 @@ def build_context(kg, graph, node_ids, limits=None):
                     "not_in_v4" if (p not in v4_ids or p in excluded_kids) else "out_of_scope"
                 out.append({"id": p, "reason": why})
             it["conflict_outside"] = sorted(out, key=lambda x: (x["id"], x["reason"]))
+            drawing = drawing_conflicts(kg, kid)
+            if drawing:  # 도면 충돌이 없는 항목은 이 필드가 없던 때와 같은 바이트(④ 고정 응답 근거 묶음 해시 유지)
+                it["conflict_with_drawing"] = drawing
             items.append(it)
         ctx = dict(copy.deepcopy(base), items=items, truncated=None)
         tl = dict(truncated_lists)

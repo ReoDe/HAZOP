@@ -4,30 +4,34 @@
 규칙이 바뀌면 RULES_VERSION을 올린다.
 """
 
+from hazop.kg.schema import REGISTRY
+
+# 2026-11-08 M2(배관 부품 분류·속성 사전 검사)에는 올리지 않았다. 이 값은 실행 ID에 들어가 결과 내용이 같은 도면까지
+# graph_version을 바꾸고, 그러면 데이터/구간 판 고정·고정 AI 응답·mentions 기록이 모두 재확인으로 간다.
+# 결과 내용이 바뀐 도면은 올리지 않아도 graph_version이 바뀐다.
 RULES_VERSION = "drawio-rules-draft-2026-11-06"
 
-# kind -> category. 표시 필터(심볼·배관 등)와 미분류 판정에 쓴다.
-KIND_CATEGORY = {}
-for _k in ("reactor_vessel", "steam_generator", "pressurizer", "pump", "vessel", "tank",
-           "heat_exchanger", "turbine", "condenser", "filter", "demineralizer", "orifice", "vent"):
-    KIND_CATEGORY[_k] = "equipment"
-for _k in ("manual_valve", "motor_operated_valve", "control_valve", "check_valve",
-           "isolation_valve", "psv"):
-    KIND_CATEGORY[_k] = "valve"
-for _k in ("transmitter", "controller", "indicator", "temperature_element"):
-    KIND_CATEGORY[_k] = "instrument"
-for _k in ("tee", "pipe_cap", "continuation"):
-    KIND_CATEGORY[_k] = "piping_element"
+# kind -> category. 표시 필터(심볼·배관 등)와 미분류 판정에 쓴다. 목록은 타입 레지스트리(hazop/kg/schema/registry.json)
+KIND_CATEGORY = REGISTRY.kind_category()
 
 # 태그가 없어도 규칙 위반이 아닌 kind (continuation은 tag 없이 to_drawing·to_object 보유)
 KINDS_WITHOUT_TAG = {"continuation"}
 
-# normal_position을 기대하는 밸브. check_valve는 정책상 누락 검사에서 제외(정상 위치가 있는 체크밸브도 있을 수 있음)
-KINDS_NEED_NORMAL_POSITION = {"manual_valve", "motor_operated_valve", "control_valve",
-                              "isolation_valve", "psv"}
-NORMAL_POSITION_VALUES = {"NO", "NC", "LO", "LC"}
-# 제어밸브만 fail_position 누락을 미확인으로 본다 ('해당 없으면 비움')
-KINDS_NEED_FAIL_POSITION = {"control_valve"}
+# 정상 위치·고장 위치를 기대하는 kind와 허용값은 레지스트리 클래스 required·속성 사전(기획서/지식그래프-스키마-사전.md §2.1).
+# check_valve는 정상 위치 누락 검사에서 제외(정상 위치가 있는 체크밸브도 있을 수 있음). 검사는 hazop.extract.properties
+KINDS_NEED_NORMAL_POSITION = REGISTRY.kinds_requiring("normal_position")
+NORMAL_POSITION_VALUES = set(REGISTRY.properties["normal_position"]["values"])
+KINDS_NEED_FAIL_POSITION = REGISTRY.kinds_requiring("fail_position")
+
+# M2(2026-11-08, 레지스트리 0.2.0) 이전의 kind → 분류. 그때 저장한 수정 연산·판 이전 기록을 읽을 때만 쓴다.
+# 표에 없는 kind는 그때 미분류였다(분류 자유).
+LEGACY_KIND_CATEGORY = dict(
+    [(k, "equipment") for k in ("reactor_vessel", "steam_generator", "pressurizer", "pump", "vessel", "tank",
+                                "heat_exchanger", "turbine", "condenser", "filter", "demineralizer", "orifice", "vent")]
+    + [(k, "valve") for k in ("manual_valve", "motor_operated_valve", "control_valve", "check_valve",
+                              "isolation_valve", "psv")]
+    + [(k, "instrument") for k in ("transmitter", "controller", "indicator", "temperature_element")]
+    + [(k, "piping_element") for k in ("tee", "pipe_cap", "continuation")])
 
 # line_type -> 관계 종류. 그래프 표현(구간 노드 여부)은 ③에서 정한다.
 LINE_TYPE_RELATION = {

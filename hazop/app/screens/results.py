@@ -24,7 +24,7 @@ from hazop.app.screens.study import seg_icon
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text, plain_label
 from hazop.export import study_xlsx
 from hazop.graph import project
-from hazop.study import ai_cells, nodes, span
+from hazop.study import ai_cells, nodes, refs, span
 from hazop.study import results as res
 from hazop.study import claude_http
 from hazop.study.claude_http import ClaudeHttpClient
@@ -91,15 +91,88 @@ def usage_text(total):
     return "입력 {:,} · 출력 {:,} 토큰 · 추정 ${:.2f}".format(inp, total["output_tokens"], total["cost_usd"])
 
 
-class EntryDialog(QDialog):
-    """항목 수정: 원인·결과·보호수단(한 줄에 하나)·권고·강도·발생빈도. changed()는 바뀐 필드만 돌려준다."""
+class RefPicker(QWidget):
+    """그래프 대상 고르기: 찾기 칸 + 체크 목록. 지금 참조(대상이 없어진 것 포함)를 맨 위에 체크해 두어 조용히 빠지지 않게 한다.
+    choices [(안정 참조, 표시 글)]은 구간 구성요소가 먼저 온다."""
 
-    def __init__(self, entry, parent=None):
+    def __init__(self, name, current, choices, label_of, height=96, parent=None):
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(2)
+        self.find = QLineEdit()
+        self.find.setPlaceholderText("태그로 찾기")
+        self.find.setAccessibleName("%s 찾기" % name)
+        self.find.textChanged.connect(self._filter)
+        v.addWidget(self.find)
+        self.list = QListWidget()
+        self.list.setAccessibleName(name)
+        self.list.setFixedHeight(height)
+        seen = set()
+        for ref in current:
+            self._add(ref, label_of(ref), True)
+            seen.add(ref)
+        for ref, text in choices:
+            if ref not in seen:
+                self._add(ref, text, False)
+                seen.add(ref)
+        v.addWidget(self.list)
+
+    def _add(self, ref, text, checked):
+        it = QListWidgetItem(text)
+        it.setData(Qt.UserRole, ref)
+        it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+        it.setCheckState(Qt.Checked if checked else Qt.Unchecked)
+        self.list.addItem(it)
+
+    def _filter(self, text):
+        q = text.strip().lower()
+        for i in range(self.list.count()):
+            it = self.list.item(i)
+            it.setHidden(bool(q) and q not in it.text().lower() and it.checkState() != Qt.Checked)
+
+    def set_checked(self, ref, on=True):
+        for i in range(self.list.count()):
+            if self.list.item(i).data(Qt.UserRole) == ref:
+                self.list.item(i).setCheckState(Qt.Checked if on else Qt.Unchecked)
+                return True
+        return False
+
+    def checked(self):
+        return [self.list.item(i).data(Qt.UserRole) for i in range(self.list.count())
+                if self.list.item(i).checkState() == Qt.Checked]
+
+
+def _keep_refs(chosen, old, extra_keys=()):
+    """고른 참조 -> [{ref, ...}]. 원래 있던 참조는 원래 값(origin·고장 모드)을 그대로, 새로 고른 것은 origin human."""
+    by_ref = {r.get("ref"): r for r in old or [] if isinstance(r, dict)}
+    out = []
+    for ref in chosen:
+        o = by_ref.get(ref)
+        out.append({k: o[k] for k in ("ref", "origin") + tuple(extra_keys) if k in o} if o else
+                   {"ref": ref, "origin": "human"})
+    return out
+
+
+class EntryDialog(QDialog):
+    """항목 수정: 원인·결과·보호수단(한 줄에 하나)과 역할·구현 대상·권고·강도·발생빈도, 원인 위치·영향 대상·관련 잠재 후보.
+    changed()는 바뀐 필드만 돌려준다. ref_ctx가 없으면(그래프 없음) 참조 고르기 칸을 숨기고 지금 참조는 그대로 둔다.
+    ref_ctx: {"choices": [(안정 참조, 표시 글)], "label": 참조 -> 표시 글, "expectations": [(잠재 후보 ID, 표시 글)]}."""
+
+    SG_COLUMNS = ("보호수단", "역할", "구현 대상")
+
+    def __init__(self, entry, parent=None, ref_ctx=None):
         super().__init__(parent)
         self.entry = entry
+        self.ref_ctx = ref_ctx
+        self.label_of = (ref_ctx or {}).get("label") or (lambda r: r)
         self.setWindowTitle("항목 수정")
-        self.setMinimumWidth(480)
-        lay = QFormLayout(self)
+        self.setMinimumWidth(480 if ref_ctx is None else 900)
+        outer = QVBoxLayout(self)
+        cols = QHBoxLayout()
+        outer.addLayout(cols)
+        lay = QFormLayout()
+        cols.addLayout(lay, 3)
         self.texts = {}
         for key, label in EDIT_TEXT_FIELDS:
             ed = QPlainTextEdit(entry.get(key) or "")
@@ -107,24 +180,127 @@ class EntryDialog(QDialog):
             ed.setAccessibleName(label)
             self.texts[key] = ed
             lay.addRow(label, ed)
-        self.safeguards = QPlainTextEdit("\n".join(entry.get("safeguards") or []))
+        # 줄 순서로 원래 보호수단과 짝짓는다. 같은 문장의 보호수단이 둘일 수 있어 문장을 열쇠로 쓰면 하나로 합쳐진다
+        raws = [s for s in entry.get("safeguards") or [] if isinstance(s, (str, dict))]
+        self.sg_orig = list(zip(raws, refs.safeguard_items({"safeguards": raws})))
+        self.safeguards = QPlainTextEdit("\n".join(refs.safeguard_texts(entry)))
         self.safeguards.setFixedHeight(60)
         self.safeguards.setAccessibleName("보호수단")
         lay.insertRow(2, "보호수단\n(한 줄에 하나)", self.safeguards)
+        self.sg_table = QTableWidget(0, len(self.SG_COLUMNS))
+        self.sg_table.setAccessibleName("보호수단 역할·구현 대상")
+        self.sg_table.setHorizontalHeaderLabels(list(self.SG_COLUMNS))
+        self.sg_table.verticalHeader().hide()
+        self.sg_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.sg_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.sg_table.setFixedHeight(96)
+        lay.insertRow(3, "역할·구현 대상", self.sg_table)
+        self.safeguards.textChanged.connect(self._sync_safeguards)
+        self._sync_safeguards()
         self.sev = self._combo(res.SEVERITIES, entry.get("severity"))
         self.sev.setAccessibleName("강도")
         self.freq = self._combo(res.FREQUENCIES, entry.get("frequency"))
         self.freq.setAccessibleName("발생빈도")
         lay.addRow("강도(1–4)", self.sev)
         lay.addRow("발생빈도(1–3)", self.freq)
+        self.pickers = {}
+        if ref_ctx is not None:
+            right = QFormLayout()
+            cols.addLayout(right, 2)
+            for key, title in refs.REF_FIELDS:
+                p = RefPicker(title, [r.get("ref") for r in entry.get(key) or [] if isinstance(r, dict)],
+                              ref_ctx["choices"], self.label_of)
+                self.pickers[key] = p
+                right.addRow(title, p)
+            xs = dict(ref_ctx.get("expectations") or [])
+            p = RefPicker("관련 잠재 후보", list(entry.get("expectation_refs") or []),
+                          list(xs.items()), lambda x: xs.get(x) or "%s %s" % (x, refs.MISSING), height=80)
+            self.pickers["expectation_refs"] = p
+            right.addRow("관련 잠재 후보", p)
+            hint = QLabel("원인 위치·영향 대상은 이 검토구간 구성요소가 먼저 나옵니다. 잠재 후보는 근거가 아니라 확인할 단서입니다.")
+            hint.setObjectName("muted")
+            hint.setWordWrap(True)
+            right.addRow(hint)
         note = QLabel("고치면 상태가 '수정'이 됩니다. 승인한 항목도 다시 승인해야 합니다.")
         note.setObjectName("muted")
         note.setWordWrap(True)
-        lay.addRow(note)
+        outer.addWidget(note)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.button(QDialogButtonBox.Ok).setText("확인")
+        bb.button(QDialogButtonBox.Cancel).setText("취소")
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
-        lay.addRow(bb)
+        outer.addWidget(bb)
+
+    def _target_choices(self, current):
+        """구현 대상 고르기 항목 [(표시 글, 참조 목록)]. 지금 참조가 여럿이면 그 묶음을 한 항목으로 둔다(잃지 않게)."""
+        out = [("지정 안 함", [])]
+        if len(current) > 1:
+            out.append(("여러 대상: %s" % ", ".join(self.label_of(r) for r in current), list(current)))
+        elif current:
+            out.append((self.label_of(current[0]), list(current)))
+        for ref, text in (self.ref_ctx or {}).get("choices") or []:
+            if [ref] != current:
+                out.append((text, [ref]))
+        return out
+
+    def _sg_state(self):
+        """표의 지금 상태 [(역할, 참조 목록)] (줄 순서)."""
+        return [(self.sg_table.cellWidget(r, 1).currentData(), self.sg_table.cellWidget(r, 2).currentData())
+                for r in range(self.sg_table.rowCount())]
+
+    def _sg_lines(self):
+        return [s.strip() for s in self.safeguards.toPlainText().splitlines() if s.strip()]
+
+    def _sync_safeguards(self):
+        """보호수단 글이 바뀌면 줄마다 역할·구현 대상 행을 다시 만든다. 같은 순서의 행이 고른 값을 이어받는다."""
+        state = self._sg_state()
+        lines = self._sg_lines()
+        t = self.sg_table
+        t.setRowCount(len(lines))
+        for r, text in enumerate(lines):
+            if r < len(state):
+                role, targets = state[r]
+            elif r < len(self.sg_orig):
+                old = self.sg_orig[r][1]
+                role, targets = old["role"], [x.get("ref") for x in old["refs"] if x.get("ref")]
+            else:
+                role, targets = "unknown", []
+            it = QTableWidgetItem(text)
+            it.setToolTip(text)
+            t.setItem(r, 0, it)
+            rc = QComboBox()
+            rc.setAccessibleName("역할 %d" % (r + 1))
+            for key, name in refs.ROLES.items():
+                rc.addItem(name, key)
+            rc.setCurrentIndex(max(rc.findData(role), 0))
+            t.setCellWidget(r, 1, rc)
+            tc = QComboBox()
+            tc.setAccessibleName("구현 대상 %d" % (r + 1))
+            for name, refs_ in self._target_choices(targets):
+                tc.addItem(name, refs_)
+            tc.setCurrentIndex(1 if targets else 0)
+            t.setCellWidget(r, 2, tc)
+
+    def _safeguards_value(self):
+        """줄마다 같은 순서의 원래 보호수단과 비교한다. 문자열 줄은 역할 미정·구현 대상 없음이면 문자열(옛 형식) 그대로.
+        객체 줄은 문장·역할·구현 대상이 모두 같으면 원래 값(AI 초안 표시 origin 포함) 그대로 두고, 무엇이든 바뀌면
+        나머지 키·참조(대상 없는 참조 포함)를 이어받은 채 그 줄만 origin human이 된다."""
+        state = self._sg_state()
+        out = []
+        for r, text in enumerate(self._sg_lines()):
+            role, targets = state[r] if r < len(state) else ("unknown", [])
+            raw = self.sg_orig[r][0] if r < len(self.sg_orig) else None
+            if not isinstance(raw, dict):
+                out.append(text if role == "unknown" and not targets else
+                           {"text": text, "role": role, "refs": _keep_refs(targets, None), "ipl": None, "origin": "human"})
+                continue
+            if (raw.get("text") or "").strip() == text and raw.get("role", "unknown") == role and \
+                    [x.get("ref") for x in raw.get("refs") or [] if isinstance(x, dict)] == targets:
+                out.append(raw)
+                continue
+            out.append(dict(raw, text=text, role=role, refs=_keep_refs(targets, raw.get("refs")), origin="human"))
+        return out
 
     @staticmethod
     def _combo(values, current):
@@ -137,13 +313,28 @@ class EntryDialog(QDialog):
 
     def fields(self):
         out = {k: ed.toPlainText().strip() for k, ed in self.texts.items()}
-        out["safeguards"] = [s.strip() for s in self.safeguards.toPlainText().splitlines() if s.strip()]
+        out["safeguards"] = self._safeguards_value()
         out["severity"] = self.sev.currentData()
         out["frequency"] = self.freq.currentData()
+        for key, _title in refs.REF_FIELDS:
+            if key in self.pickers:
+                out[key] = _keep_refs(self.pickers[key].checked(), self.entry.get(key),
+                                      ("failure_mode",) if key == "cause_refs" else ())
+        if "expectation_refs" in self.pickers:
+            out["expectation_refs"] = self.pickers["expectation_refs"].checked()
         return out
 
     def changed(self):
-        return {k: v for k, v in self.fields().items() if self.entry.get(k) != v}
+        """바뀐 필드. 참조 필드는 없던 것과 빈 목록을 같게 본다(옛 항목에 빈 필드를 새로 쓰지 않음)."""
+        out = {}
+        for k, v in self.fields().items():
+            old = self.entry.get(k)
+            if k in ("cause_refs", "consequence_refs", "expectation_refs"):
+                if (old or []) != v:
+                    out[k] = v
+            elif old != v:
+                out[k] = v
+        return out
 
 
 class ExportDialog(QDialog):
@@ -222,6 +413,8 @@ class ResultsScreen(QWidget):
         self.view = {}         # {node_id: 표기·경계를 붙인 구간(ctx.view)} 화면 표시용
         self.results = None
         self.kg, self.kg_reason = None, None
+        self.expectations = None  # 잠재 후보(expect.evaluate). AI 맥락·관련 잠재 후보 보기용, 근거 아님
+        self.ref_idx = {}         # {안정 참조: 프로젝트 그래프 노드}
         self.deviations = res.load_deviations()
         self.cell = None       # (node_id, deviation_id)
         self.runner = None
@@ -403,7 +596,7 @@ class ResultsScreen(QWidget):
         self.table.setAccessibleName("워크시트")
         self.table.setHorizontalHeaderLabels(list(SHEET_COLUMNS))
         self.table.horizontalHeaderItem(COL_RISK).setToolTip("위험도 = 강도 × 발생빈도 〈표5〉(KOSHA P-86) · 구분 〈표9〉")
-        self.table.horizontalHeaderItem(COL_BASIS).setToolTip("AI 근거: 지식그래프 경로 · 출처 문서 · ⚠ 근거 확인 경고")
+        self.table.horizontalHeaderItem(COL_BASIS).setToolTip("AI 근거: 지식그래프 경로 · 출처 문서 · ⚠ 근거 확인 경고. '확인할 단서'는 사람이 고른 잠재 후보(근거 아님)")
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -540,6 +733,7 @@ class ResultsScreen(QWidget):
         self.name, self.graph, self.node_set, self.results, self.cell = name or None, None, None, None, None
         self.ctx, self.view = None, {}
         self.kg, self.kg_reason, self._old_saved = None, None, None
+        self.expectations, self.ref_idx = None, {}
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
         self.progress_label.setText("")
@@ -568,6 +762,10 @@ class ResultsScreen(QWidget):
             self.kg, self.kg_reason = ai_cells.load_kg_for(saved)
             self.kg_chip.set_state("지식그래프 없음: %s · 도면만으로 분석" % self.kg_reason, "warn")
             self.kg_chip.setVisible(self.kg is None)
+            self.ref_idx = refs.index(self.graph)
+            self.expectations, x_note = ai_cells.expectations_for(self.graph, self.kg)
+            if x_note:
+                self.banner.set_messages("잠재 후보", list(self.banner.messages) + [x_note])
             self._migrate_results(saved)
             self.set_results(self._saved_results(saved))
             self._show_save_info()
@@ -705,7 +903,7 @@ class ResultsScreen(QWidget):
         try:
             path, n_rows = study_xlsx.export(path, self.results, self.node_set, self.graph, self.deviations,
                                              scope=scope, node_ids=node_ids, reviewer=reviewer or "",
-                                             intents=intents, now=now)
+                                             intents=intents, now=now, expectations=self.expectations)
         except (OSError, ValueError) as exc:
             self.app.log_error("Excel 내보내기 실패", exc)
             QMessageBox.warning(self, "Excel로 내보내기", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요).\n%s"
@@ -788,7 +986,8 @@ class ResultsScreen(QWidget):
         for u in units:
             if u["node_id"] not in ctxs:
                 node = by_id[u["node_id"]]
-                ctxs[u["node_id"]] = ai_cells.node_context(node, self.graph, self.kg, design_intent(node))
+                ctxs[u["node_id"]] = ai_cells.node_context(node, self.graph, self.kg, design_intent(node),
+                                                           expectations=self.expectations)
         self.runner = AiRunner([(u, ctxs[u["node_id"]]) for u in units], self.deviations, self.make_client())
         self.runner.unit_started.connect(self._on_unit_started)
         self.runner.unit_done.connect(self._on_unit_done)
@@ -1006,7 +1205,57 @@ class ResultsScreen(QWidget):
         lines = [" → ".join(self._entity_label(x) for x in p) for p in basis.get("kg_paths") or []]
         lines += ["%s %s" % (s.get("doc") or "", s.get("where") or "") for s in basis.get("sources") or []]
         lines += ["⚠ %s" % w for w in basis.get("warnings") or []]
+        clues = [t for k, t in self._ref_lines(e) if k == "expectation"]
+        if clues:  # 사람이 고른 잠재 후보는 AI 근거가 아니라 확인할 단서라 따로 묶는다
+            lines += ([""] if lines else []) + ["확인할 단서(근거 아님)"] + clues
         return "\n".join(lines) or "-"
+
+    def _expect_items(self):
+        return {i["id"]: i for i in (self.expectations or {}).get("items") or []}
+
+    def _ref_label(self, ref):
+        dn = {s["graph_id"]: s["drawing_number"] for s in self.graph["sheets"]} if self.graph else {}
+        return refs.label(ref, self.ref_idx, dn, self.ctx.short if self.ctx and self.ctx.pg else None)
+
+    def _ref_lines(self, e):
+        dn = {s["graph_id"]: s["drawing_number"] for s in self.graph["sheets"]} if self.graph else {}
+        return refs.lines(e, self.ref_idx, dn, self.ctx.short if self.ctx and self.ctx.pg else None,
+                          self._expect_items() if self.expectations is not None else None)
+
+    def _safeguard_cell(self, e):
+        """보호수단 칸: 역할·구현 대상이 있는 항목은 줄마다 "문장 — 완화 · RC-PSV101(102)"(승인 전 AI 참조는 "AI 초안")."""
+        items = refs.safeguard_items(e)
+        if not any(s["role"] != "unknown" or s["refs"] for s in items):
+            return self._shown(", ".join(s["text"] for s in items))
+        out = []
+        for s in items:
+            bits = [refs.ROLES[s["role"]]] if s["role"] != "unknown" else []
+            bits += [self._ref_label(r["ref"]) for r in s["refs"] if r.get("ref")]
+            draft = not refs.is_confirmed(s, e) or any(not refs.is_confirmed(r, e) for r in s["refs"])
+            out.append("%s — %s%s" % (self._shown(s["text"]), " · ".join(bits) or "미정", " · AI 초안" if draft else ""))
+        return "\n".join(out)
+
+    def _with_refs(self, text, e, kind):
+        extra = [t for k, t in self._ref_lines(e) if k == kind]
+        return "\n".join([self._shown(text) or "-"] + extra) if extra else self._shown(text)
+
+    def ref_context(self, node_id):
+        """수정 창 ref_ctx: 구간 구성요소(먼저)와 태그가 있는 프로젝트 그래프 대상, 구간에 걸린 잠재 후보.
+        도면 연결 구간처럼 "도면#원본 객체" 꼴 참조가 없는 대상은 결과 파일에 저장할 수 없어 고르기 목록에서 뺀다."""
+        node = next((n for n in self.node_set["nodes"] if n["node_id"] == node_id), {"members": []})
+        members = set(node["members"])
+        first, rest = [], []
+        for ref, n in sorted(self.ref_idx.items(), key=lambda kv: refs.node_text(kv[1]) or ""):
+            if not refs.drawing_of(ref):
+                continue
+            if n["entity_id"] in members:
+                first.append((ref, "%s · 이 검토구간" % self._ref_label(ref)))
+            elif n.get("tag") and n.get("node_type") == "drawing_object":
+                rest.append((ref, self._ref_label(ref)))
+        mine = {r for r, n in self.ref_idx.items() if n["entity_id"] in members}
+        xs = [(i["id"], "%s %s %s · %s" % (i["rule_id"], i.get("target_tag") or i["target"], i["label"], i["state_label"]))
+              for i in (self.expectations or {}).get("items") or [] if i["target"] in mine]
+        return {"choices": first + rest, "label": self._ref_label, "expectations": xs}
 
     def open_cell(self, node_id, deviation_id):
         node = next((n for n in self.node_set["nodes"] if n["node_id"] == node_id), None)
@@ -1056,8 +1305,8 @@ class ResultsScreen(QWidget):
             status = STATUS_LABELS.get(e.get("status"), e.get("status") or "-")
             basis = self._basis_text(e)
             flags = [f for f in ENTRY_FLAGS if e.get(f[0])]
-            values = (self._shown(e.get("cause")), self._shown(e.get("consequence")),
-                      self._shown(", ".join(e.get("safeguards") or [])), self._shown(e.get("recommendation")),
+            values = (self._with_refs(e.get("cause"), e, "cause"), self._with_refs(e.get("consequence"), e, "consequence"),
+                      self._safeguard_cell(e), self._shown(e.get("recommendation")),
                       risk_text(e.get("risk")), basis,
                       "".join(f[1] + " · " for f in flags) + ("AI 초안 · " if draft else "") + status)
             for c, v in enumerate(values):
@@ -1071,6 +1320,9 @@ class ResultsScreen(QWidget):
                 bg, ink, _line = tokens.risk_colors(e["risk"])
                 risk_it.setBackground(QColor(bg))
                 risk_it.setForeground(QColor(ink))
+            for c in range(3):  # 참조 줄이 붙은 원인·결과·보호수단 칸은 줄이 잘려도 전체 글을 볼 수 있게
+                if "\n" in (values[c] or ""):
+                    t.item(r, c).setToolTip(values[c])
             basis_it = t.item(r, COL_BASIS)
             basis_it.setToolTip(basis)
             if flags:
@@ -1181,14 +1433,24 @@ class ResultsScreen(QWidget):
         e = self._entry_or_hint("edit")
         if e is None:
             return False
-        if fields is None:
-            dlg = EntryDialog(e, self)
-            if dlg.exec() != QDialog.Accepted:
+        dlg = None if fields is not None else EntryDialog(e, self, self.ref_context(self.cell[0]) if self.ref_idx else None)
+        while True:
+            if dlg is not None:
+                if dlg.exec() != QDialog.Accepted:
+                    return False
+                fields = dlg.changed()
+            if not fields:
                 return False
-            fields = dlg.changed()
-        if not fields:
-            return False
+            try:
+                new = res.edit_entry(self.results, self.cell[0], self.cell[1], e["entry_id"], fields)
+                break
+            except ValueError as exc:
+                self.app.log_error("항목 수정 저장 실패", exc)
+                QMessageBox.warning(self, "항목 수정", "저장할 수 없는 값이 있어 저장하지 않았습니다.%s" % (
+                    " 고친 내용은 창에 그대로 남아 있습니다." if dlg is not None else ""))
+                if dlg is None:
+                    return False
         old, cell = self.results, self.cell
-        self._apply_review(res.edit_entry(self.results, self.cell[0], self.cell[1], e["entry_id"], fields))
+        self._apply_review(new)
         self.app.toast("%s 시나리오를 수정했습니다" % cell[0], self._undo_to(old, cell))
         return True
