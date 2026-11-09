@@ -95,7 +95,8 @@ class AiResponseTest(Base):
     def test_mitigated_consequence_not_marked_unmitigated(self):
         _, (e,) = self.run_one(new_scenario(consequence="경보 후 회복, 영향 없음"))
         self.assertNotIn("consequence_basis", e)
-        self.assertTrue(res.quality_warnings(e)[0].startswith("결과가 완화 결과로 적힘"))
+        self.assertEqual([k for k, _ in res.quality_warnings(e)], ["mitigated_consequence"])
+        self.assertTrue(res.quality_line(*res.quality_warnings(e)[0]).startswith("완화 결과로 적힘: 결과에 '"))
 
     def test_malfunction_wording_is_not_mitigated(self):
         _, (e,) = self.run_one(new_scenario(consequence="제어밸브가 오작동하여 배관 과압"))
@@ -106,7 +107,7 @@ class AiResponseTest(Base):
         for k in ("cause_kind", "consequence_basis", "ie_hint"):
             self.assertNotIn(k, e)
         self.assertEqual(e["safeguards"], ["보호"])
-        self.assertTrue(res.quality_warnings(e)[0].startswith("작동 방식 미확인: 보호수단 1개"))
+        self.assertTrue(res.quality_line(*res.quality_warnings(e)[0]).startswith("작동 방식 미확인: 보호수단 1개"))
 
     def test_saved_and_exported(self):
         _, (e,) = self.run_one(new_scenario(ie_hint=dict(IE, category="NOPE")))

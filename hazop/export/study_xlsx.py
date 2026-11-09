@@ -92,10 +92,11 @@ def default_filename(project_id, now):
 
 # ---------------------------------------------------------------- 행 모델
 
-def _entity_labels(pg):
+def entity_labels(pg):
     """{entity_id: 태그(짧은 도면번호)}. 태그 없는 요소는 넣지 않는다(근거 경로는 ID로 남김)."""
-    short = span.short_numbers(s["drawing_number"] for s in pg["sheets"])[1]
-    dn = {s["graph_id"]: s["drawing_number"] for s in pg["sheets"]}
+    sheets = pg.get("sheets") or []  # 도면 그래프 하나에는 sheets가 없다
+    short = span.short_numbers(s["drawing_number"] for s in sheets)[1]
+    dn = {s["graph_id"]: s["drawing_number"] for s in sheets}
     out = {}
     for n in pg["nodes"]:
         if n.get("tag"):
@@ -118,7 +119,8 @@ def _refs_text(entry, idx, drawing_numbers, expectations):
 
 
 def _warnings_text(entry):
-    items = list((entry.get("ai_basis") or {}).get("warnings") or []) + res.quality_warnings(entry)
+    items = list((entry.get("ai_basis") or {}).get("warnings") or [])
+    items += [res.quality_line(k, t) for k, t in res.quality_warnings(entry)]
     items += [label for key, label in FLAG_LABELS if entry.get(key)]
     return "\n".join("⚠ %s" % w for w in items)
 
@@ -187,7 +189,7 @@ def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, ex
     devs = {d["deviation_id"]: d for d in deviations}
     dev_rank = {d["deviation_id"]: i for i, d in enumerate(deviations)}
     tag_drawing = span.tag_drawings(pg)
-    labels = _entity_labels(pg)
+    labels = entity_labels(pg)
     short = view.get("drawing_short") or {}
     idx = srefs.index(pg)
     dn = {s["graph_id"]: s["drawing_number"] for s in pg["sheets"]}
@@ -245,7 +247,7 @@ def counts(results, node_ids=None):
 
 # ---------------------------------------------------------------- 쓰기
 
-def _put(ws, row, col, value, bold=False):
+def put(ws, row, col, value, bold=False):
     cell = ws.cell(row=row, column=col)
     if isinstance(value, str):
         value = scrub(ILLEGAL_CHARACTERS_RE.sub("", value))
@@ -259,9 +261,9 @@ def _put(ws, row, col, value, bold=False):
     return cell
 
 
-def _header(ws, columns):
+def header(ws, columns):
     for i, (title, width) in enumerate(columns, 1):
-        c = _put(ws, 1, i, title, bold=True)
+        c = put(ws, 1, i, title, bold=True)
         c.fill = _HEAD_FILL
         ws.column_dimensions[get_column_letter(i)].width = width
     ws.freeze_panes = "A2"
@@ -272,7 +274,7 @@ def _header(ws, columns):
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
 
-def _filter(ws, ncols, nrows):
+def autofilter(ws, ncols, nrows):
     ws.auto_filter.ref = "A1:%s%d" % (get_column_letter(ncols), max(1, nrows + 1))
 
 
@@ -307,9 +309,9 @@ def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, 
                "보호수단 = safeguard, 권고 = recommendation (IEC 61882)"),
     ]
     for r, (k, v) in enumerate(lines, 1):
-        _put(ws, r, 1, k, bold=True)
+        put(ws, r, 1, k, bold=True)
         if v is not None:
-            _put(ws, r, 2, v)
+            put(ws, r, 2, v)
     ws["A1"].font = Font(bold=True, size=14)
     ws["B2"].font = Font(bold=True, color="991B1B")
     ws.column_dimensions["A"].width = 30
@@ -318,7 +320,7 @@ def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, 
 
 
 def _nodes_sheet(ws, view, node_ids, intents, labels):
-    _header(ws, NODE_COLUMNS)
+    header(ws, NODE_COLUMNS)
     r = 1
     for n in view["nodes"]:
         if node_ids is not None and n["node_id"] not in node_ids:
@@ -338,32 +340,32 @@ def _nodes_sheet(ws, view, node_ids, intents, labels):
         intent = (intents or {}).get(n["node_id"]) or ""
         for c, v in enumerate((n["node_id"], n.get("name") or "", "[%s]" % " → ".join(n.get("drawings_short") or []),
                                one(b.get("start")), one(b.get("end")), intent, comp), 1):
-            _put(ws, r, c, v)
-    _filter(ws, len(NODE_COLUMNS), r - 1)
+            put(ws, r, c, v)
+    autofilter(ws, len(NODE_COLUMNS), r - 1)
 
 
 def _worksheet_sheet(ws, rows):
     cols = [(title, width) for _k, title, width in WORKSHEET_COLUMNS]
-    _header(ws, cols)
+    header(ws, cols)
     keys = [k for k, _t, _w in WORKSHEET_COLUMNS]
     risk_col = keys.index("risk") + 1
     for r, row in enumerate(rows, 2):
         for c, k in enumerate(keys, 1):
-            _put(ws, r, c, row.get(k, ""))
+            put(ws, r, c, row.get(k, ""))
         _paint_risk(ws.cell(row=r, column=risk_col), row["risk_value"])
         if row["kind"] != "entry":
             ws.cell(row=r, column=keys.index("status") + 1).font = Font(italic=True, bold=True)
-    _filter(ws, len(cols), len(rows))
+    autofilter(ws, len(cols), len(rows))
 
 
 def _recommendation_sheet(ws, rows):
-    _header(ws, RECOMMENDATION_COLUMNS)
+    header(ws, RECOMMENDATION_COLUMNS)
     picked = [x for x in rows if x["kind"] == "entry" and x.get("recommendation") and x["status_key"] != "rejected"]
     for i, x in enumerate(picked, 1):
         for c, v in enumerate((i, x["node"], x["deviation"], x["recommendation"], x["risk"], x["status"], "", ""), 1):
-            _put(ws, i + 1, c, v)
+            put(ws, i + 1, c, v)
         _paint_risk(ws.cell(row=i + 1, column=5), x["risk_value"])
-    _filter(ws, len(RECOMMENDATION_COLUMNS), len(picked))
+    autofilter(ws, len(RECOMMENDATION_COLUMNS), len(picked))
 
 
 def build_workbook(results, node_set, pg, deviations, scope="all", node_ids=None, reviewer="", intents=None, now=None,
@@ -380,7 +382,7 @@ def build_workbook(results, node_set, pg, deviations, scope="all", node_ids=None
     _summary_sheet(wb.active, results, node_set, view, scope, list(node_ids or ()), reviewer, now, len(rows))
     wb.active.title = SHEETS[0]
     _nodes_sheet(wb.create_sheet(SHEETS[1]), view, set(node_ids) if scope == "nodes" else None, intents,
-                 _entity_labels(pg))
+                 entity_labels(pg))
     _worksheet_sheet(wb.create_sheet(SHEETS[2]), rows)
     _recommendation_sheet(wb.create_sheet(SHEETS[3]), rows)
     return wb, len(rows)

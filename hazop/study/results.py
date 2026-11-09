@@ -45,6 +45,9 @@ IE_STATUSES = {"draft": "초안", "confirmed": "확정"}
 IE_KEYS = ("candidate", "disturbs", "challenges", "safety_functions", "category", "reason", "origin", "status")
 IE_CATEGORY_TABLE = ("데이터", "기준표", "lwr-generic-ie-categories.json")
 UNCLASSIFIED_LABEL = "미분류"
+# 품질 경고 종류 {키: (이름, 근거)}. 근거는 PSAM14 PHA-to-PRA 논문 쪽수(초기사건 출력설계 §3.2 시트 8)
+QUALITY_KINDS = {"mitigated_consequence": ("완화 결과로 적힘", "PSAM14 382·383"),
+                 "actuation_unknown": ("작동 방식 미확인", "PSAM14 383")}
 # 보호수단이 작동해 결과를 막았다고 쓴 표현(초기사건 출력설계 §5.2 예시에서 넓힘). 경고만 하고 막지 않는다 [추론]
 MITIGATED_PHRASES = ("영향 없음", "영향이 없", "영향은 없", "문제 없음", "문제가 없", "경보 후 회복", "회복된다", "회복됨",
                      "정상 복귀", "정상으로 복귀", "정상 상태로 돌아", "작동하여", "작동해 ", "작동하므로", "방지된다",
@@ -76,14 +79,19 @@ def empty_results(node_set, deviations):
 
 
 @functools.lru_cache(maxsize=None)
-def _ie_categories(path):
+def _ie_category_table(path):
     with open(path, encoding="utf-8") as fh:
-        return tuple(dict(c) for c in json.load(fh)["categories"])
+        return json.load(fh)
+
+
+def ie_category_table(path=None):
+    """일반 범주 기준표 문서 {table_id, title, basis, categories} 사본."""
+    return copy.deepcopy(_ie_category_table(path or paths.resource_path(*IE_CATEGORY_TABLE)))
 
 
 def ie_categories(path=None):
     """일반 범주 기준표 [{code, nureg_6928, name_en, name_ko}] 파일 순서대로."""
-    return [dict(c) for c in _ie_categories(path or paths.resource_path(*IE_CATEGORY_TABLE))]
+    return ie_category_table(path)["categories"]
 
 
 def ie_category_label(code, categories=None):
@@ -144,18 +152,23 @@ def mitigated_phrase(text):
 
 
 def quality_warnings(entry):
-    """초기사건 인계 품질 경고 2종(초기사건 출력설계 §3.2 시트 8 중 P1 범위). 결과가 완화 결과로 적혔는지는 표현으로만
-    짐작하고, 보호수단 작동 방식이 미확인인지 본다. 항목을 막지 않는다."""
+    """초기사건 인계 품질 경고 [(종류 키, 내용)] (초기사건 출력설계 §3.2 시트 8 중 P1 범위, 종류는 QUALITY_KINDS).
+    결과가 완화 결과로 적혔는지는 표현으로만 짐작하고, 보호수단 작동 방식이 미확인인지 본다. 항목을 막지 않는다."""
     out = []
     hit = mitigated_phrase(entry.get("consequence"))
     if hit:
-        out.append("결과가 완화 결과로 적힘: '%s' 같은 표현이 있어 보호수단이 작동한 뒤의 결과일 수 있습니다. 보호수단이 모두 "
-                   "실패했다고 보고 썼는지 확인하세요" % hit.strip())
+        out.append(("mitigated_consequence", "결과에 '%s' 같은 표현이 있어 보호수단이 작동한 뒤의 결과일 수 있습니다. "
+                    "보호수단이 모두 실패했다고 보고 썼는지 확인하세요" % hit.strip()))
     unknown = [s["text"] for s in refs.safeguard_items(entry) if s["actuation"] == "unknown"]
     if unknown:
-        out.append("작동 방식 미확인: 보호수단 %d개(%s)가 자동·운전원·자체작동 가운데 무엇인지 정해지지 않았습니다"
-                   % (len(unknown), ", ".join(t or "-" for t in unknown[:3]) + (" 외" if len(unknown) > 3 else "")))
+        out.append(("actuation_unknown", "보호수단 %d개(%s)가 자동·운전원·자체작동 가운데 무엇인지 정해지지 않았습니다"
+                    % (len(unknown), ", ".join(t or "-" for t in unknown[:3]) + (" 외" if len(unknown) > 3 else ""))))
     return out
+
+
+def quality_line(kind, text):
+    """화면·⑤ Excel에 한 줄로 쓰는 품질 경고: '작동 방식 미확인: 보호수단 1개(...)...'."""
+    return "%s: %s" % (QUALITY_KINDS[kind][0], text)
 
 
 def risk_of(severity, frequency):
