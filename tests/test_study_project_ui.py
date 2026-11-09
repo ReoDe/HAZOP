@@ -21,6 +21,11 @@ STUDY = 5
 A, B = "SNP-M-101", "SNP-M-102"
 
 
+# 배관에 이어지지 않은 T: 스크리닝 제외 구간 하나를 만든다(④ 접기·꺼내기 시험)
+LONE_TEE = {"entity_id": "T9", "node_type": "drawing_object", "kind": "tee", "category": "piping_element",
+            "tag": None, "label_text": "", "attributes": {}, "source_object_id": "T9"}
+
+
 def write_drawing(work, dn, graph):
     """출력/추출/<dn>/extraction.json(SVG 없음)과 출력/그래프/<dn>/graph.json. 추출 이름 = 도면번호."""
     for i, n in enumerate(graph["nodes"]):
@@ -41,7 +46,7 @@ class StudyProjectUiTest(unittest.TestCase):
         cls._env = {k: os.environ.get(k) for k in ("HAZOP_WORK_ROOT", "HAZOP_STORE_ROOT")}
         os.environ["HAZOP_WORK_ROOT"] = os.path.join(cls.tmp, "work")
         os.environ["HAZOP_STORE_ROOT"] = os.path.join(cls.tmp, "store")
-        cls.sheets = {A: sheet(A, cont("C1", "TO %s\nL-1" % B), valve=True), B: sheet(B, cont("C1", "FROM %s\nL-1" % A), valve=True)}
+        cls.sheets = {A: sheet(A, cont("C1", "TO %s\nL-1" % B), valve=True, extra=[LONE_TEE]), B: sheet(B, cont("C1", "FROM %s\nL-1" % A), valve=True)}
         for dn, g in cls.sheets.items():
             write_drawing(os.environ["HAZOP_WORK_ROOT"], dn, g)
         from hazop.app import make_application
@@ -102,7 +107,9 @@ class StudyProjectUiTest(unittest.TestCase):
         self.assertEqual(scr.scope.currentText(), "이 도면 구간")
         self.assertFalse(set(only_a) & set(self.rows(scr)), "이 도면 구간에는 101 전용 구간이 없음")
         scr.scope.setCurrentIndex(1)
-        self.assertEqual(set(self.rows(scr)), {n["node_id"] for n in scr.node_set["nodes"]}, "프로젝트 전체 = 모든 구간")
+        self.assertEqual(set(self.rows(scr)), {n["node_id"] for n in scr.node_set["nodes"]
+                                               if n["screen"]["status"] != "excluded"},
+                         "프로젝트 전체 = 모든 구간(스크리닝 제외 구간은 접음)")
         self.assertEqual([k for _t, k in scr.explorer_items()], [n["node_id"] for n in scr.node_set["nodes"]])
         self.assertTrue(any("⇄" in t for t, _k in scr.explorer_items()))
 
@@ -177,11 +184,42 @@ class StudyProjectUiTest(unittest.TestCase):
         res.save(r, first["project_id"])
         nodes.save(nodes.reopen(first, at="2026-11-09T00:00:00Z"))
         _win, scr = self.open_study(A)
-        self.assertTrue(scr.confirm("EJ"))
+        self.assertTrue(scr.confirm("EJ", ack=True))
         now = nodes.load(scr.graph)
         saved = res.load(now)
         self.assertFalse(res.is_stale(saved, now), "⑤를 열기 전에도 디스크 결과가 새 확정본 것")
         self.assertEqual([e["status"] for c in saved["cells"] for e in c["entries"]], ["approved"])
+
+    def test_exclusion_bucket_is_folded_taken_out_and_acknowledged(self):
+        from hazop.study import nodes
+        _win, scr = self.open_study(A)
+        self.assertIn("제외 1개 접음", scr.list_head.text())
+        self.assertNotIn(self.bucket_id(scr), self.rows(scr))
+        scr.show_excluded.setChecked(True)
+        self.assertIn(self.bucket_id(scr), self.rows(scr))
+        self.assertFalse(scr.confirm("EJ", ack=False), "제외 구간을 확인하지 않으면 확정하지 않는다")
+        scr.select_node(self.bucket_id(scr))
+        self.assertTrue(scr.take_out_act.isEnabled())
+        self.assertTrue(scr.take_out_selected())
+        self.assertEqual([n for n in scr.node_set["nodes"] if n["screen"]["status"] == "excluded"], [])
+        keep = scr.node_set["nodes"][0]["node_id"]
+        scr.select_node(keep)
+        self.assertFalse(scr.exclude_current(" "), "이유 없이 제외로 옮기지 않는다")
+        self.assertTrue(scr.exclude_current("검토 범위 밖"))
+        self.assertTrue(scr.confirm("EJ", ack=True))
+        self.assertEqual(nodes.load(scr.graph)["status"], "confirmed")
+
+    def test_selecting_a_folded_bucket_unfolds_it(self):
+        _win, scr = self.open_study(A)
+        scr.scope.setCurrentIndex(1)
+        scr.select_node(scr.node_set["nodes"][0]["node_id"])
+        self.assertTrue(scr.select_node(self.bucket_id(scr)))
+        self.assertEqual(scr.current_node_id(), self.bucket_id(scr))
+        self.assertTrue(scr.show_excluded.isChecked())
+
+    @staticmethod
+    def bucket_id(scr):
+        return next(n["node_id"] for n in scr.node_set["nodes"] if n["screen"]["status"] == "excluded")
 
     def test_migration_notice_from_old_per_drawing_set(self):
         from hazop.study import nodes
@@ -192,7 +230,7 @@ class StudyProjectUiTest(unittest.TestCase):
         self.assertIn("옮겼습니다", win.toast_box.label.text())
         self.assertTrue(scr.saved)
         self.assertEqual(nodes.load(scr.graph)["graph_id"], "project-P")
-        self.assertTrue(scr.confirm("검토자A"))
+        self.assertTrue(scr.confirm("검토자A", ack=True))
         self.assertTrue(scr.notice_bar.isHidden(), "다시 확정하면 알림을 내림")
 
 

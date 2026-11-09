@@ -334,6 +334,58 @@ class ScreenRecordTest(unittest.TestCase):
             else:
                 os.environ[paths.ENV_WORK_ROOT] = old
 
+    def test_people_can_override_take_out_and_detach(self):
+        bucket = next(n for n in self.ns["nodes"] if n["screen"]["status"] == "excluded")
+        with self.assertRaises(ValueError):
+            sn.screen_override(self.ns, bucket["node_id"], "excluded", "")
+        out = sn.take_out(self.ns, bucket["node_id"], [])
+        taken = next(n for n in out["nodes"] if n["node_id"] == bucket["node_id"])
+        self.assertEqual((taken["screen"]["status"], taken["screen"]["by"]), ("keep", "human"))
+        self.assertIs(sn.screen_override(out, bucket["node_id"], "keep", "다시"), out)  # 같은 판정이면 그대로
+        keep = next(n for n in self.ns["nodes"] if n.get("absorbed"))
+        piece = keep["absorbed"][0]
+        cut = sn.detach(self.ns, keep["node_id"], piece["members"][:1])
+        new = by_member(cut, piece["members"][0])
+        self.assertNotEqual(new["node_id"], keep["node_id"])
+        self.assertEqual((new["screen"]["by"], new["screen"]["reason"]), ("human", "규칙이 붙인 조각을 뗌"))
+        self.assertEqual(cut["history"][-1]["op"], "screen_override")
+        moved = sn.screen_override(self.ns, keep["node_id"], "excluded", "검토 범위 밖")
+        self.assertEqual(moved["history"][-1]["op"], "screen_override")
+        sn.confirm(moved, self.graph, "검사", at=AT)  # 사람이 옮긴 제외는 확정을 막지 않는다
+
+    def test_take_out_finds_pieces_by_members_not_by_label(self):
+        g = G()
+        for i in range(3):
+            a, b = g.add("x%da" % i, "tee", "piping_element"), g.add("x%db" % i, "tee", "piping_element")
+            g.pipe(a, b)
+        g.pipe(g.add("k-tank", "tank", "equipment", "TK"), g.add("k-valve", "manual_valve", "valve", "V"))
+        graph = g.graph()
+        ns = sn.propose(graph, at=AT)
+        bucket = next(n for n in ns["nodes"] if n["screen"]["status"] == "excluded")
+        self.assertEqual(len(bucket["parts"]), 3)
+        with self.assertRaises(ValueError):  # 서로 다른 조각의 구성요소를 고르면 묶음 전체를 꺼내지 않는다
+            sn.take_out(ns, bucket["node_id"], ["x0a", "x1a"])
+        first = bucket["parts"][0]
+        out = sn.take_out(ns, bucket["node_id"], first["members"][:1])
+        self.assertEqual(sorted(by_member(out, first["members"][0])["members"]), sorted(first["members"]))
+        rest = by_member(out, bucket["parts"][1]["members"][0])["screen"]
+        self.assertEqual((rest["status"], rest["rule"], rest["by"]), ("excluded", "R3", "rule"))  # 남은 묶음은 규칙 판정 그대로
+        again, dropped = sn.reapply(out, sn.propose(graph, at=AT))  # 다시 제안해도 꺼낸 조각은 구성요소로 다시 꺼낸다
+        self.assertEqual(dropped, [])
+        self.assertEqual(by_member(again, first["members"][0])["screen"]["status"], "keep")
+        self.assertEqual(by_member(again, bucket["parts"][1]["members"][0])["screen"]["status"], "excluded")
+        keeps = [n["node_id"] for n in ns["nodes"] if n["screen"]["status"] == "keep"]
+        merged = sn.merge(ns, keeps[:2], at=AT) if len(keeps) > 1 else ns
+        self.assertEqual(sn.reapply(merged, sn.propose(graph, at=AT))[1], [])  # 병합은 스크리닝 판정이 아니다
+        sn.confirm(out, graph, "검사", at=AT)
+
+    def test_reproposal_reapplies_human_judgements_with_the_same_members(self):
+        keep = next(n for n in self.ns["nodes"] if n["screen"]["status"] == "keep")
+        moved = sn.screen_override(self.ns, keep["node_id"], "excluded", "검토 범위 밖")
+        again, dropped = sn.reapply(moved, sn.propose(self.graph, at=AT))
+        self.assertEqual(dropped, [])
+        self.assertEqual(by_member(again, keep["members"][0])["screen"]["status"], "excluded")
+
     def test_map_members_renames_piece_records_too(self):
         keep = next(n for n in self.ns["nodes"] if n.get("absorbed"))
         old = keep["absorbed"][0]["members"][0]

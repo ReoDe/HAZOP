@@ -12,7 +12,7 @@ import os
 
 from PySide6.QtCore import QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QHBoxLayout, QInputDialog, QLabel, QListWidget,
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QMenu, QToolButton, QFrame, QHBoxLayout, QInputDialog, QLabel, QListWidget,
                                QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QSizePolicy, QStackedWidget,
                                QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTabWidget, QVBoxLayout, QWidget)
 
@@ -26,6 +26,7 @@ PANEL_MIN_W, PANEL_MAX_W = 264, 340     # 셸 오른쪽 열 clamp(264px, 20vw, 3
 ROW_H = 24
 MIN_ROWS = 4                            # 패널 높이가 모자랄 때도 구간 목록에 남기는 행 수
 COUNT_ROLE = Qt.UserRole + 1
+GRADE_ROLE = Qt.UserRole + 2           # 스크리닝 등급(주요·일반·낮음·제외), 개수 앞에 흐리게
 SCOPES = ("이 도면 구간", "프로젝트 전체")
 
 
@@ -127,7 +128,7 @@ class _SegRowDelegate(QStyledItemDelegate):
         self.initStyleOption(o, index)
         widget = o.widget
         style = widget.style()
-        count = index.data(COUNT_ROLE) or ""
+        count = " · ".join(x for x in (index.data(GRADE_ROLE), index.data(COUNT_ROLE)) if x)
         rect = style.subElementRect(QStyle.SE_ItemViewItemText, o, widget)
         room = rect.width() - o.fontMetrics.horizontalAdvance(count) - 10
         o.text = o.fontMetrics.elidedText(o.text, Qt.ElideMiddle, max(room, 0))  # 끝의 도면 범위 [101 → 102] ⇄를 남긴다
@@ -136,6 +137,10 @@ class _SegRowDelegate(QStyledItemDelegate):
         painter.setPen(QColor(tokens.c("muted")))
         painter.drawText(rect.adjusted(0, 0, -4, 0), Qt.AlignRight | Qt.AlignVCenter, count)
         painter.restore()
+
+
+def _status(node):
+    return ((node or {}).get("screen") or {}).get("status") or "keep"
 
 
 class StudyNodesScreen(QWidget):
@@ -264,7 +269,28 @@ class StudyNodesScreen(QWidget):
         self.to_results_btn = QPushButton("⑤ →")
         self.to_results_btn.setToolTip("⑤ 결과에서 보기")
         self.to_results_btn.clicked.connect(self.open_in_results)
-        for b in (self.merge_btn, self.split_btn, self.rename_btn):
+        # 스크리닝 판정 고치기는 메뉴 하나로 둔다(1366×768에서 구간 목록 높이를 지키려고 줄을 늘리지 않음)
+        self.screen_menu = QMenu(self)
+        self.show_excluded = self.screen_menu.addAction("스크리닝 제외 구간 보기")
+        self.show_excluded.setCheckable(True)
+        self.show_excluded.setToolTip("편차원 구간에 닿지 않는 조각·구간 분석에서 뺀 도면의 구성요소를 담은 구간(맨 아래)을 펼칩니다")
+        self.show_excluded.toggled.connect(lambda _on: self._render())
+        self.screen_menu.addSeparator()
+        self.take_out_act = self.screen_menu.addAction("스크리닝 제외에서 꺼내기")
+        self.take_out_act.setToolTip("구성요소 탭에서 고른 구성요소가 든 조각을(고르지 않으면 구간 전체를) 남긴 구간으로 꺼냅니다")
+        self.take_out_act.triggered.connect(lambda: self.take_out_selected())
+        self.detach_act = self.screen_menu.addAction("붙인 조각 떼기")
+        self.detach_act.setToolTip("규칙이 이 구간에 붙인 부속 배관 조각 중 고른 구성요소가 든 조각을 새 구간으로 뗍니다")
+        self.detach_act.triggered.connect(lambda: self.detach_selected())
+        self.exclude_act = self.screen_menu.addAction("스크리닝 제외로 옮기기…")
+        self.exclude_act.setToolTip("고른 구간을 스크리닝 제외로 옮깁니다. 이유를 꼭 적습니다")
+        self.exclude_act.triggered.connect(lambda: self.exclude_current())
+        self.screen_btn = QToolButton()
+        self.screen_btn.setText("스크리닝")
+        self.screen_btn.setToolTip("스크리닝 제외 구간 보기, 꺼내기·떼기·제외로 옮기기")
+        self.screen_btn.setPopupMode(QToolButton.InstantPopup)
+        self.screen_btn.setMenu(self.screen_menu)
+        for b in (self.merge_btn, self.split_btn, self.rename_btn, self.screen_btn):
             row.addWidget(b)
         row.addStretch(1)
         row.addWidget(self.to_results_btn)
@@ -355,7 +381,9 @@ class StudyNodesScreen(QWidget):
         return [("전체 보기", "Esc", self.overview_btn.click), ("병합", "M", self.merge_btn.click), ("분할", "", self.split_btn.click),
                 ("이름 바꾸기", "F2", self.rename_btn.click), ("구간 확정", "Ctrl+Enter", self.confirm_btn.click),
                 ("확정 해제", "", self.reopen_btn.click), ("다시 제안", "", self.repropose_btn.click),
-                ("⑤ 결과에서 보기", "", self.to_results_btn.click)]
+                ("⑤ 결과에서 보기", "", self.to_results_btn.click), ("스크리닝 제외에서 꺼내기", "", self.take_out_act.trigger),
+                ("붙인 조각 떼기", "", self.detach_act.trigger), ("스크리닝 제외로 옮기기", "", self.exclude_act.trigger),
+                ("스크리닝 제외 구간 보기·접기", "", self.show_excluded.toggle)]
 
     # ------------------------------------------------------------ 틀 연결
     def where(self):
@@ -457,6 +485,13 @@ class StudyNodesScreen(QWidget):
 
     def _shown(self):
         """목록에 보일 구간(표기 사본). '이 도면 구간'은 이 도면을 지나는 구간과 어느 도면에도 없는 빈 구간."""
+        listed = self._scope_nodes()
+        if not self.show_excluded.isChecked():  # 제외 구간은 접어 두고 머리글에 수만 보인다
+            listed = [n for n in listed if _status(n) != "excluded"]
+        return sorted(listed, key=lambda n: _status(n) == "excluded")  # 제외 구간은 맨 아래
+
+    def _scope_nodes(self):
+        """목록 범위(이 도면 구간·프로젝트 전체)에 드는 구간. 제외 구간 접기 전."""
         if self.scope.currentIndex() == 1:
             return self.view["nodes"]
         here = {n["node_id"] for n in span.nodes_on_drawing(self.view, self.ctx.drawing_number)}
@@ -507,10 +542,14 @@ class StudyNodesScreen(QWidget):
         index = {n["node_id"]: i for i, n in enumerate(ns["nodes"])}   # 색은 집합 순서로(목록 거르기와 무관하게 같은 색)
         dn = self.ctx.drawing_number
         shown = self._shown()
+        grades = nodes.screens(ns, self.graph)
         for n in shown:
             here = (n.get("members_by_drawing") or {}).get(dn, 0)
+            sc = grades.get(n["node_id"])
+            grade = "" if sc is None else "제외 · " if sc.status == "excluded" else ("%s · " % sc.grade if sc.grade else "")
             it = QListWidgetItem(seg_icon(index[n["node_id"]], n["node_id"]), project_ctx.node_label(n))
             it.setData(Qt.UserRole, n["node_id"])
+            it.setData(GRADE_ROLE, grade.rstrip(" ·"))
             it.setData(COUNT_ROLE, "%d개" % n["member_count"] if here == n["member_count"]
                        else "%d/%d" % (here, n["member_count"]))
             it.setToolTip("%s\n%s\n%s\n근거: %s" % (project_ctx.node_label(n), project_ctx.counts_text(n, dn),
@@ -527,7 +566,10 @@ class StudyNodesScreen(QWidget):
         # 확정·제안은 구간 하나가 아니라 집합 전체의 상태라 목록 머리에 한 번만 쓴다.
         total = len(ns["nodes"])
         count = "%d개" % total if len(shown) == total else "%d/%d개" % (len(shown), total)
-        self.list_head.setText("검토구간 · %s · %s" % (count, "확정" if confirmed else "제안"))
+        excluded = [n for n in self._scope_nodes() if _status(n) == "excluded"]
+        folded = "" if self.show_excluded.isChecked() or not excluded else " · 제외 %d개 접음(구성요소 %d개)" % (
+            len(excluded), sum(len(n["members"]) for n in excluded))
+        self.list_head.setText("검토구간 · %s · %s%s" % (count, "확정" if confirmed else "제안", folded))
         self.kpi.setText("구성요소 <b>%d</b> · 미포함 <b>%d</b> · 덮음 %s"
                          % (cov["total"], len(cov["uncovered"]), html.escape(self.ctx.coverage_text(ns)[0])))
         self.progress.setRange(0, max(cov["total"], 1))
@@ -724,6 +766,10 @@ class StudyNodesScreen(QWidget):
         self.reopen_btn.setEnabled(bool(ns) and ns["status"] == "confirmed")
         self.repropose_btn.setEnabled(bool(ns) and ns["status"] != "confirmed")
         self.to_results_btn.setEnabled(cur is not None)
+        cur_status = _status(cur) if cur else None
+        self.take_out_act.setEnabled(editable and cur_status == "excluded")
+        self.detach_act.setEnabled(editable and cur is not None and self._absorbed_of(cur, picked) is not None)
+        self.exclude_act.setEnabled(editable and cur is not None and cur_status != "excluded")
         self.overview_btn.setEnabled(cur is not None or self.picked_entity is not None)
 
     # ------------------------------------------------------------ 선택
@@ -750,6 +796,13 @@ class StudyNodesScreen(QWidget):
         for i in range(self.node_list.count()):
             if self.node_list.item(i).data(Qt.UserRole) == node_id:
                 self.node_list.setCurrentRow(i)
+                return True
+        if _status(self._node(node_id)) == "excluded" and not self.show_excluded.isChecked():
+            self.show_excluded.blockSignals(True)  # 접힌 제외 구간을 고르면 펼쳐서 고른다(다른 구간이 편집 대상으로 남지 않게)
+            self.show_excluded.setChecked(True)
+            self.show_excluded.blockSignals(False)
+            self._render(node_id)
+            if self.current_node_id() == node_id:
                 return True
         if self._node(node_id) is None or self.scope.currentIndex() == 1:
             return False
@@ -981,6 +1034,47 @@ class StudyNodesScreen(QWidget):
             return s
         return self._apply(fn, keep=cur, done="%s에 구성요소 %d개를 넣었습니다" % (cur, len(ids)))
 
+    @staticmethod
+    def _absorbed_of(node, picked):
+        """picked 구성요소를 모두 품은 규칙 조각(absorbed)이 하나뿐이면 그 조각. 없으면 None."""
+        want = set(picked or ())
+        hits = [p for p in node.get("absorbed") or [] if want and want <= set(p["members"])]
+        return hits[0] if len(hits) == 1 else None
+
+    def take_out_selected(self):
+        cur = self.current_node()
+        if not cur or _status(cur) != "excluded":
+            return False
+        picked = self.selected_members()
+        try:
+            nodes.take_out(self.node_set, cur["node_id"], picked)  # 고른 구성요소가 여러 조각에 걸치면 여기서 멈춘다
+        except ValueError as exc:
+            self.msg.setText(str(exc))
+            return False
+        return self._apply(lambda s: nodes.take_out(s, cur["node_id"], picked),
+                           done="%s에서 꺼냈습니다" % cur["node_id"])
+
+    def detach_selected(self):
+        cur = self.current_node()
+        picked = self.selected_members()
+        if not cur or self._absorbed_of(cur, picked) is None:
+            return False
+        return self._apply(lambda s: nodes.detach(s, cur["node_id"], picked), done="붙인 조각을 뗐습니다")
+
+    def exclude_current(self, reason=None):
+        cur = self.current_node()
+        if not cur:
+            return False
+        if reason is None:
+            reason, ok = QInputDialog.getText(self, "스크리닝 제외로 옮기기", "%s을(를) 제외하는 이유" % cur["node_id"])
+            if not ok:
+                return False
+        if not (reason or "").strip():
+            self.msg.setText("제외하는 이유를 적어야 합니다.")
+            return False
+        return self._apply(lambda s: nodes.screen_override(s, cur["node_id"], "excluded", reason),
+                           keep=cur["node_id"], done="%s를 스크리닝 제외로 옮겼습니다" % cur["node_id"])
+
     def rename_current(self, name=None):
         cur = self.current_node()
         if cur is None:
@@ -1002,9 +1096,11 @@ class StudyNodesScreen(QWidget):
                 self, "다시 제안", "지금 구간 편집 내용을 버리고 다시 제안할까요?") != QMessageBox.Yes:
             return False
         sheets, problem = nodes.exclusion_for(self.graph)
-        if problem:
-            self.warn.set_messages(problem)
-        new = nodes.propose(self.graph, exclude_sheets=sheets)
+        new, dropped = nodes.reapply(self.node_set, nodes.propose(self.graph, exclude_sheets=sheets))
+        notes = [problem] if problem else []
+        if dropped:
+            notes.append("사람이 바꾼 스크리닝 판정 %d개는 구성요소가 같은 구간이 없어 다시 얹지 못했습니다: %s"
+                         % (len(dropped), ", ".join(dropped[:8])))
         previous = (self.node_set or {}).get("previous")
         if previous:  # 확정 해제한 집합이면 옛 확정본과의 대응을 보이고, 사람이 '이대로 적용'해야 바꾼다(§4.6)
             new["previous"] = previous
@@ -1033,9 +1129,13 @@ class StudyNodesScreen(QWidget):
                     self.app.log_error("검토구간 백업 실패", exc)
                     self.msg.setText("다시 제안하기 전 백업을 하지 못해 바꾸지 않았습니다: %s" % exc)
                     return False
-        return self._replace(new, done="다시 제안했습니다" + (" · 뺀 도면 표시를 읽지 못함" if problem else ""))
+        if not self._replace(new, done="다시 제안했습니다" + (" · 뺀 도면 표시를 읽지 못함" if problem else "")):
+            return False
+        if notes:  # 실제로 바꾼 뒤에만 알린다(취소했으면 아무것도 바뀌지 않음)
+            self.warn.set_messages(notes[0], notes[1:])
+        return True
 
-    def confirm(self, reviewer=None):
+    def confirm(self, reviewer=None, ack=None):
         reviewer = reviewer or self.app.reviewer_name()
         if not reviewer:
             name, ok = QInputDialog.getText(self, "검토자 이름", "확정하려면 검토자 이름이 필요합니다(설정에 저장).")
@@ -1043,6 +1143,14 @@ class StudyNodesScreen(QWidget):
                 return False
             self.app.set_reviewer_name(name.strip())
             reviewer = name.strip()
+        excluded = [n for n in (self.node_set or {}).get("nodes", []) if _status(n) == "excluded"]
+        if excluded and not ack:  # 제외 묶음은 실제 기기를 못 알아본 기호도 품을 수 있어 확정 전에 사람이 확인한다
+            text = ("스크리닝 제외 구간 %d개(구성요소 %d개)는 ⑤ 분석에서 빠집니다. 도면 위에서 확인했습니까?"
+                    % (len(excluded), sum(len(n["members"]) for n in excluded)))
+            if ack is False or QMessageBox.question(  # 기본 단추를 '아니요'로 둬 Enter 한 번으로 넘어가지 않게
+                    self, "스크리닝 제외 확인", text, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+                self.msg.setText("확정하지 않았습니다. '스크리닝 제외 구간 보기'로 제외 구간을 확인하세요.")
+                return False
         if not self._apply(lambda s: nodes.confirm(s, self.graph, reviewer), done="구간을 확정했습니다"):
             return False
         self._carry_results()

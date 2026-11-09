@@ -251,6 +251,106 @@ def split(node_set, node_id, members_for_new, name=None, at=None):
     return _log(out, "split", {"node_id": node_id, "new_node_id": new["node_id"], "members": moved}, at)
 
 
+def screen_override(node_set, node_id, status, reason=None, at=None):
+    """구간의 스크리닝 판정만 사람 판정으로 바꾼다(구성요소는 그대로). 제외로 옮길 때는 이유가 꼭 있어야 한다.
+    같은 판정이면 입력 그대로 돌려준다(기록도 늘지 않음)."""
+    if status not in STATUSES:
+        raise ValueError("판정 값은 %s 중 하나" % "·".join(STATUSES))
+    reason = (reason or "").strip()
+    if status == "excluded" and not reason:
+        raise ValueError("스크리닝 제외로 옮기는 이유 필요")
+    node = _find(node_set, node_id)
+    old = (node.get("screen") or {}).get("status") or "keep"
+    if old == status:
+        return node_set
+    out = _begin(node_set)
+    node = _find(out, node_id)
+    node["screen"] = {"status": status, "score": None, "grade": None, "rule": None, "by": "human",
+                      "reason": reason or None}
+    return _log(out, "screen_override", {"node_id": node_id, "from": old, "to": status, "reason": reason or None}, at)
+
+
+def _piece_with(records, members):
+    """members를 모두 품은 조각 기록 하나(구성요소로 찾는다. 나누고 다시 합치면 from이 겹칠 수 있어 from으로 찾지 않음)."""
+    want = set(members or ())
+    hits = [p for p in records or [] if want and want <= set(p["members"])]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _split_piece(node_set, node_id, members, name, reason, at):
+    """조각을 새 구간으로 떼고 새 구간만 사람 판정 keep으로 둔다. 원래 구간은 사람이 판정을 바꾼 것이 아니므로
+    그 판정(규칙·이유)을 그대로 둔다(split의 _settle이 사람 판정으로 바꾼 것을 되돌림)."""
+    before = copy.deepcopy(_find(node_set, node_id).get("screen"))
+    out = split(node_set, node_id, members, name=name, at=at)
+    if before is not None:
+        _find(out, node_id)["screen"] = dict(before, score=None, grade=None)
+    return _human_keep(out, out["history"][-1]["detail"]["new_node_id"], reason, at)
+
+
+def _human_keep(out, node_id, reason, at):
+    node = _find(out, node_id)
+    old = (node.get("screen") or {}).get("status") or "keep"
+    node["screen"] = {"status": "keep", "score": None, "grade": None, "rule": None, "by": "human", "reason": reason}
+    return _log(out, "screen_override", {"node_id": node_id, "from": old, "to": "keep", "reason": reason}, at)
+
+
+def take_out(node_set, node_id, members=None, at=None):
+    """'스크리닝 제외' 구간에서 members가 든 조각 하나를 남긴 구간으로 꺼낸다. members가 없거나 조각이 구간 전체면
+    구간 전체를 남긴 구간으로 바꾼다. members가 한 조각 안에 다 들지 않으면 ValueError. 꺼낸 구간은 사람 판정 keep."""
+    node = _find(node_set, node_id)
+    if (node.get("screen") or {}).get("status") != "excluded":
+        raise ValueError("%s는 스크리닝 제외 구간이 아님" % node_id)
+    reason = "스크리닝 제외에서 꺼냄"
+    if not members:
+        return screen_override(node_set, node_id, "keep", reason, at=at)
+    part = _piece_with(node.get("parts"), members)
+    if part is None:
+        raise ValueError("고른 구성요소가 한 조각 안에 있지 않음(조각 하나의 구성요소만 고르거나 아무것도 고르지 마세요)")
+    if set(part["members"]) >= set(node["members"]):
+        return screen_override(node_set, node_id, "keep", reason, at=at)
+    return _split_piece(node_set, node_id, part["members"], "꺼낸 조각 %s" % part["from"], reason, at)
+
+
+def detach(node_set, node_id, members, at=None):
+    """규칙이 붙인 조각 중 members가 든 것을 떼어 바로 뒤에 새 구간으로 둔다(사람 판정 keep, 기록 screen_override)."""
+    node = _find(node_set, node_id)
+    piece = _piece_with(node.get("absorbed"), members)
+    if piece is None:
+        raise ValueError("%s에서 고른 구성요소가 든 붙인 조각을 하나로 찾지 못함" % node_id)
+    return _split_piece(node_set, node_id, piece["members"], "떼어 낸 조각 %s" % piece["from"], "규칙이 붙인 조각을 뗌", at)
+
+
+def reapply(old_set, new_set):
+    """다시 제안할 때 사람이 내린 스크리닝 판정(이유가 있는 by human)을 구성요소 기준으로 새 제안에 다시 얹는다.
+    (새 집합, 얹지 못한 옛 구간 ID). 병합·분할 같은 구성 편집은 판정이 아니므로 세지 않는다.
+    - 꺼낸·뗀 구간(keep): 그 구성요소가 새 제안의 제외 구간 한 조각 안에 있으면 같은 조각을 꺼낸다. 이미 남긴 구간에 있으면 할 일 없음.
+    - 제외로 옮긴 구간: 구성요소가 똑같은 새 구간을 제외로 옮긴다.
+    구성요소가 사라졌거나 위처럼 맞출 곳이 없으면 얹지 못한 것으로 알린다."""
+    out = copy.deepcopy(new_set)
+    dropped = []
+    for n in (old_set or {}).get("nodes") or []:
+        sc = n.get("screen") or {}
+        if sc.get("by") != "human" or not sc.get("reason"):
+            continue
+        members = set(n["members"])
+        owners = {o["node_id"]: o for o in out["nodes"] if members & set(o["members"])}
+        try:
+            if sc.get("status") == "excluded":
+                same = next((o for o in owners.values() if set(o["members"]) == members), None)
+                if same is None:
+                    raise ValueError("구성요소가 같은 새 구간 없음")
+                out = screen_override(out, same["node_id"], "excluded", sc["reason"])
+            else:
+                if len(owners) != 1:
+                    raise ValueError("구성요소가 새 구간 하나에 있지 않음")
+                (owner,) = owners.values()
+                if (owner.get("screen") or {}).get("status") == "excluded":
+                    out = take_out(out, owner["node_id"], sorted(members))
+        except ValueError:
+            dropped.append(n["node_id"])
+    return out, dropped
+
+
 def rename(node_set, node_id, name, at=None):
     name = (name or "").strip()
     if not name:

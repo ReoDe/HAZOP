@@ -265,7 +265,8 @@ class StudyScreensTest(unittest.TestCase):
         QTest.keyClick(scr.node_list, Qt.Key_Return, Qt.ControlModifier)
         self.assertEqual(scr.node_set["status"], "confirmed", "Ctrl+Enter = 구간 확정")
         self.assertEqual([c[0] for c in scr.commands()],
-                         ["전체 보기", "병합", "분할", "이름 바꾸기", "구간 확정", "확정 해제", "다시 제안", "⑤ 결과에서 보기"])
+                         ["전체 보기", "병합", "분할", "이름 바꾸기", "구간 확정", "확정 해제", "다시 제안", "⑤ 결과에서 보기",
+                          "스크리닝 제외에서 꺼내기", "붙인 조각 떼기", "스크리닝 제외로 옮기기", "스크리닝 제외 구간 보기·접기"])
 
     def test_toast_undo_restores_saved_set(self):
         from hazop.study import nodes
