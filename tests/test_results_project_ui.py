@@ -150,7 +150,8 @@ class ResultsProjectUiTest(unittest.TestCase):
         self.assertEqual(scr.export_excel(path=out, scope="all"), out)
         self.assertEqual(app.toast_actions, ["열기", "폴더 열기"])
         ws = openpyxl.load_workbook(out)[study_xlsx.SHEETS[2]]
-        self.assertEqual(ws.cell(row=2, column=11).value, "5 불허")
+        head = [c.value for c in ws[1]]
+        self.assertEqual(ws.cell(row=2, column=head.index("위험도") + 1).value, "5 불허")
         self.assertEqual(ws.cell(row=2, column=2).value, "SNP-M-101, SNP-M-102")
 
     def test_old_results_wait_for_confirm_then_move_with_flags(self):

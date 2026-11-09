@@ -65,7 +65,8 @@ class FormatTest(unittest.TestCase):
 
     def test_string_safeguard_reads_as_unknown_role(self):
         items = refs.safeguard_items(new_entry())
-        self.assertEqual(items[0], {"text": "LT 저액위 경보", "role": "unknown", "refs": [], "ipl": None, "origin": None})
+        self.assertEqual(items[0], {"text": "LT 저액위 경보", "role": "unknown", "actuation": "unknown", "refs": [],
+                                    "ipl": None, "origin": None})
         self.assertEqual((items[1]["role"], items[1]["refs"][0]["ref"]), ("mitigative", "graph-T#V2"))
         self.assertEqual(refs.safeguard_texts({"safeguards": ["a", "b"]}), ["a", "b"])
         self.assertEqual(refs.all_refs(new_entry()), ["graph-T#V1", "graph-T#PP", "graph-T#V2"])
@@ -188,8 +189,8 @@ class AiRefsTest(unittest.TestCase):
         e = ai_cells._entry(s, self.ctx, "x1")
         self.assertEqual(e["cause_refs"], [{"ref": "graph-T#V1", "origin": "ai_draft", "failure_mode": "닫힘 고착"}])
         self.assertEqual(e["consequence_refs"], [{"ref": "graph-T#PP", "origin": "ai_draft"}])
-        self.assertEqual(e["safeguards"][0], {"text": "LT 저액위 경보", "role": "preventive", "ipl": None,
-                                              "origin": "ai_draft", "refs": [{"ref": "graph-T#LT", "origin": "ai_draft"}]})
+        self.assertEqual(e["safeguards"][0], {"text": "LT 저액위 경보", "role": "preventive", "actuation": "unknown",
+                                              "ipl": None, "origin": "ai_draft", "refs": [{"ref": "graph-T#LT", "origin": "ai_draft"}]})
         self.assertEqual(e["safeguards"][1]["role"], "unknown")
         w = e["ai_basis"]["warnings"]
         self.assertIn("그래프에 없는 원인 위치 대상을 뺌: entity-node-999", w)
@@ -357,7 +358,7 @@ class ExcelTest(unittest.TestCase):
         self.assertEqual(mine[col].split("\n"), [
             "원인 위치: %s · 닫힘 고착" % label, "영향 대상: 대상 없음(재확인): %s#gone" % node["sheet"],
             "보호수단: %s · 완화" % label, "단서: 잠재 후보: E02 %s 과압 보호수단 · 부재 확정" % node["tag"]])
-        self.assertEqual(mine["보호수단"], "안전밸브\n옛 문자열 보호수단")
+        self.assertEqual(mine["보호수단"], "[미확인] 안전밸브\n[미확인] 옛 문자열 보호수단")
         others = [x for x in rows if x is not mine and x["상태"] and not x["상태"].startswith(("해당", "실패", "시나리오"))]
         self.assertTrue(others)
         self.assertTrue(all(x[col] is None for x in others))  # 옛 항목은 빈칸
@@ -393,7 +394,7 @@ class DialogTest(unittest.TestCase):
         self.assertTrue(dlg.pickers["expectation_refs"].set_checked("exp-1"))
         role = dlg.sg_table.cellWidget(0, 1)
         role.setCurrentIndex(role.findData("mitigative"))
-        target = dlg.sg_table.cellWidget(0, 2)
+        target = dlg.sg_table.cellWidget(0, 3)
         target.setCurrentIndex(target.findText("V1(1)"))
         got = dlg.changed()
         self.assertEqual(got["cause_refs"], [{"ref": "g#gone", "origin": "ai_draft", "failure_mode": "FTC"},
@@ -435,7 +436,7 @@ class DialogTest(unittest.TestCase):
         dlg = self.dialog(entry)
         self.assertEqual(dlg.changed(), {}, "고치지 않으면 아무것도 바뀌지 않음")
         self.assertEqual(dlg.fields()["safeguards"], [a, b])
-        target = dlg.sg_table.cellWidget(1, 2)
+        target = dlg.sg_table.cellWidget(1, 3)
         target.setCurrentIndex(target.findText("PP(1)"))
         self.assertEqual(dlg.changed()["safeguards"],
                          [a, dict(b, refs=[{"ref": "g#PP", "origin": "human"}], origin="human")])

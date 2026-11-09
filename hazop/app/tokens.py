@@ -167,6 +167,8 @@ QLabel#chip { border-radius: 3px; padding: 2px 8px; background: %(bg)s; color: %
 QLabel#chip[state="passed"] { background: %(ok-bg)s; color: %(ok)s; }
 QLabel#chip[state="blocked"] { background: %(err-bg)s; color: %(err-ink)s; }
 QLabel#chip[state="warn"] { background: %(warn-bg)s; color: %(warn-ink)s; }
+QLabel#chip[state="ai"] { background: %(ai-hatch-a)s; color: %(ai-ink)s; border: 1px dashed %(ai-ink)s; }
+QLabel#chip[state="human"] { background: %(human-line)s; color: %(on-fill)s; }
 QLabel#muted { color: %(muted)s; }
 QLabel#title { font-size: %(lg)spx; font-weight: 700; }
 QLabel#section { font-size: %(sm)spx; color: %(muted)s; font-weight: 700; }

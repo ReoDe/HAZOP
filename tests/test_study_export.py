@@ -99,7 +99,8 @@ class StudyExportTest(unittest.TestCase):
         self.assertEqual(a2["원인"], "SNP-M-101-E(101) 펌프 정지")
         self.assertIn("KG: SNP-M-101-E(101) → SNP-M-102-E(102)", a2["AI 근거(KG 경로·출처 문서)"])
         self.assertIn("문서: DOC-1 (p.3)", a2["AI 근거(KG 경로·출처 문서)"])
-        self.assertEqual(a2["근거 경고"], "⚠ 없는 ID 참조")
+        self.assertEqual(a2["근거 경고"].splitlines()[0], "⚠ 없는 ID 참조")
+        self.assertIn("⚠ 작동 방식 미확인: 보호수단 1개", a2["근거 경고"])
         self.assertEqual(a2["위험도"], "4 조건부 수용")
 
     def test_status_filters(self):

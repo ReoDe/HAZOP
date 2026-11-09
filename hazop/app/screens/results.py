@@ -4,6 +4,8 @@
 (ai_cells, 작업 스레드는 ai_runner) 사람이 항목을 수정·승인·기각한다. 결과는 바뀔 때마다 results.save로 저장하고
 화면을 다시 열면 results.load로 읽는다(확정 구간이 바뀐 저장본은 쓰지 않고 빈 결과로 시작).
 AI가 쓴 항목은 승인 전까지 언제나 'AI 초안'으로 표시한다(results.is_ai_draft).
+워크시트 아래 '초기사건 판정' 줄은 고른 항목의 ie_hint를 칩으로 보이고(AI 값은 점선 칩, 사람이 정한 값은 채운 칩),
+항목 승인과 따로 확정한다(results.set_ie_hint, 기획서/초기사건-출력설계.md §5.3).
 """
 
 import os
@@ -12,7 +14,7 @@ from datetime import datetime, timezone
 
 from PySide6.QtCore import QCoreApplication, QSize, QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
                                QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
                                QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
@@ -32,17 +34,19 @@ from hazop.study.claude_http import ClaudeHttpClient
 AI_NOTE = "AI 결과는 모두 초안 · 사람이 수정·승인·기각"
 STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각"}
 BAND_LABELS = {"ok": "수용", "cond": "조건부 수용", "deny": "불허"}  # tokens.risk_band 구분
-SHEET_COLUMNS = ("원인", "결과", "보호수단", "권고", "위험도", "AI 근거", "상태")
+SHEET_COLUMNS = ("원인", "결과(보호수단 실패 가정)", "보호수단", "권고", "위험도", "AI 근거", "상태")
+CONSEQUENCE_TIP = ("비완화 결과: 보호수단이 하나도 작동하지 않는다고 보고 쓴 결과입니다. "
+                   "보호수단이 막아 주는 결과('영향 없음', '경보 후 회복')는 여기에 쓰지 않습니다.")
 COL_RISK, COL_BASIS, COL_STATUS = 4, 5, 6
 CELL_W, ROW_H, ROW_HEAD_W = 54, 30, 210  # U-20: 1366에서 편차 열 약 11개가 보이게 칸 한 줄
 RISK_KEYS = ("칸 숫자 = 최고 위험도 · 미N = 미검토 시나리오 · – 분석 전 · 없음 = AI 초안(해당 없음·시나리오 없음) · "
              "! 실패 = AI 실행 실패(위험도 아님)")
-NAV_KEYS = "←↑↓→ 칸 이동 · Enter 열기 · J 다음 미검토 · 워크시트 A 승인 · R 기각 · E 수정 · Ctrl+Z 실행 취소"
+NAV_KEYS = "←↑↓→ 칸 이동 · Enter 열기 · J 다음 미검토 · 워크시트 A 승인 · R 기각 · E 수정 · I 초기사건 판정 · Ctrl+Z 실행 취소"
 EDIT_TEXT_FIELDS = (("cause", "원인"), ("consequence", "결과"), ("recommendation", "권고"))
 # 옛 도면별 결과에서 옮긴 항목 표시(project_ctx.migrate_results). 사람 상태는 그대로 두고 다시 보게만 한다.
 ENTRY_FLAGS = (("scope_changed", "범위 바뀜 · 다시 확인", "옛 도면별 구간과 범위가 달라진 구간으로 옮긴 항목"),
                ("source_stale", "옛 결과 · 다시 확인", "옛 확정본과 이미 맞지 않던 옛 결과에서 옮긴 항목"))
-NEED_ROW = {"approved": "승인할", "rejected": "기각할", "edit": "수정할"}
+NEED_ROW = {"approved": "승인할", "rejected": "기각할", "edit": "수정할", "ie": "초기사건을 판정할"}
 
 
 def design_intent(node):
@@ -159,7 +163,7 @@ class EntryDialog(QDialog):
     changed()는 바뀐 필드만 돌려준다. ref_ctx가 없으면(그래프 없음) 참조 고르기 칸을 숨기고 지금 참조는 그대로 둔다.
     ref_ctx: {"choices": [(안정 참조, 표시 글)], "label": 참조 -> 표시 글, "expectations": [(잠재 후보 ID, 표시 글)]}."""
 
-    SG_COLUMNS = ("보호수단", "역할", "구현 대상")
+    SG_COLUMNS = ("보호수단", "역할", "작동 방식", "구현 대상")
 
     def __init__(self, entry, parent=None, ref_ctx=None):
         super().__init__(parent)
@@ -178,8 +182,10 @@ class EntryDialog(QDialog):
             ed = QPlainTextEdit(entry.get(key) or "")
             ed.setFixedHeight(60)
             ed.setAccessibleName(label)
+            if key == "consequence":
+                ed.setToolTip(CONSEQUENCE_TIP)
             self.texts[key] = ed
-            lay.addRow(label, ed)
+            lay.addRow("결과\n(보호수단 실패 가정)" if key == "consequence" else label, ed)
         # 줄 순서로 원래 보호수단과 짝짓는다. 같은 문장의 보호수단이 둘일 수 있어 문장을 열쇠로 쓰면 하나로 합쳐진다
         raws = [s for s in entry.get("safeguards") or [] if isinstance(s, (str, dict))]
         self.sg_orig = list(zip(raws, refs.safeguard_items({"safeguards": raws})))
@@ -188,13 +194,13 @@ class EntryDialog(QDialog):
         self.safeguards.setAccessibleName("보호수단")
         lay.insertRow(2, "보호수단\n(한 줄에 하나)", self.safeguards)
         self.sg_table = QTableWidget(0, len(self.SG_COLUMNS))
-        self.sg_table.setAccessibleName("보호수단 역할·구현 대상")
+        self.sg_table.setAccessibleName("보호수단 역할·작동 방식·구현 대상")
         self.sg_table.setHorizontalHeaderLabels(list(self.SG_COLUMNS))
         self.sg_table.verticalHeader().hide()
         self.sg_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.sg_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.sg_table.setFixedHeight(96)
-        lay.insertRow(3, "역할·구현 대상", self.sg_table)
+        lay.insertRow(3, "역할·작동·대상", self.sg_table)
         self.safeguards.textChanged.connect(self._sync_safeguards)
         self._sync_safeguards()
         self.sev = self._combo(res.SEVERITIES, entry.get("severity"))
@@ -203,6 +209,18 @@ class EntryDialog(QDialog):
         self.freq.setAccessibleName("발생빈도")
         lay.addRow("강도(1–4)", self.sev)
         lay.addRow("발생빈도(1–3)", self.freq)
+        self.cause_kind = QComboBox()
+        self.cause_kind.setAccessibleName("원인 유형")
+        self.cause_kind.addItem(res.UNKNOWN_LABEL, None)
+        for key, name in res.CAUSE_KINDS.items():
+            self.cause_kind.addItem(name, key)
+        self.cause_kind.setCurrentIndex(max(self.cause_kind.findData(entry.get("cause_kind")), 0))
+        lay.insertRow(1, "원인 유형", self.cause_kind)
+        self.basis = QCheckBox("보호수단이 모두 실패했다고 보고 쓴 결과(비완화)")
+        self.basis.setAccessibleName("비완화 결과 확인")
+        self.basis.setToolTip(CONSEQUENCE_TIP)
+        self.basis.setChecked(entry.get("consequence_basis") == "unmitigated")
+        lay.insertRow(3, "결과 기준", self.basis)
         self.pickers = {}
         if ref_ctx is not None:
             right = QFormLayout()
@@ -245,8 +263,8 @@ class EntryDialog(QDialog):
         return out
 
     def _sg_state(self):
-        """표의 지금 상태 [(역할, 참조 목록)] (줄 순서)."""
-        return [(self.sg_table.cellWidget(r, 1).currentData(), self.sg_table.cellWidget(r, 2).currentData())
+        """표의 지금 상태 [(역할, 작동 방식, 참조 목록)] (줄 순서)."""
+        return [tuple(self.sg_table.cellWidget(r, c).currentData() for c in (1, 2, 3))
                 for r in range(self.sg_table.rowCount())]
 
     def _sg_lines(self):
@@ -260,12 +278,13 @@ class EntryDialog(QDialog):
         t.setRowCount(len(lines))
         for r, text in enumerate(lines):
             if r < len(state):
-                role, targets = state[r]
+                role, actuation, targets = state[r]
             elif r < len(self.sg_orig):
                 old = self.sg_orig[r][1]
-                role, targets = old["role"], [x.get("ref") for x in old["refs"] if x.get("ref")]
+                role, actuation = old["role"], old["actuation"]
+                targets = [x.get("ref") for x in old["refs"] if x.get("ref")]
             else:
-                role, targets = "unknown", []
+                role, actuation, targets = "unknown", "unknown", []
             it = QTableWidgetItem(text)
             it.setToolTip(text)
             t.setItem(r, 0, it)
@@ -275,31 +294,42 @@ class EntryDialog(QDialog):
                 rc.addItem(name, key)
             rc.setCurrentIndex(max(rc.findData(role), 0))
             t.setCellWidget(r, 1, rc)
+            ac = QComboBox()
+            ac.setAccessibleName("작동 방식 %d" % (r + 1))
+            for key, name in refs.ACTUATIONS.items():
+                ac.addItem(name, key)
+            ac.setCurrentIndex(max(ac.findData(actuation), 0))
+            t.setCellWidget(r, 2, ac)
             tc = QComboBox()
             tc.setAccessibleName("구현 대상 %d" % (r + 1))
             for name, refs_ in self._target_choices(targets):
                 tc.addItem(name, refs_)
             tc.setCurrentIndex(1 if targets else 0)
-            t.setCellWidget(r, 2, tc)
+            t.setCellWidget(r, 3, tc)
 
     def _safeguards_value(self):
-        """줄마다 같은 순서의 원래 보호수단과 비교한다. 문자열 줄은 역할 미정·구현 대상 없음이면 문자열(옛 형식) 그대로.
-        객체 줄은 문장·역할·구현 대상이 모두 같으면 원래 값(AI 초안 표시 origin 포함) 그대로 두고, 무엇이든 바뀌면
-        나머지 키·참조(대상 없는 참조 포함)를 이어받은 채 그 줄만 origin human이 된다."""
+        """줄마다 같은 순서의 원래 보호수단과 비교한다. 문자열 줄은 역할·작동 방식 미정·구현 대상 없음이면 문자열(옛 형식)
+        그대로. 객체 줄은 문장·역할·작동 방식·구현 대상이 모두 같으면 원래 값(AI 초안 표시 origin 포함) 그대로 두고,
+        무엇이든 바뀌면 나머지 키·참조(대상 없는 참조 포함)를 이어받은 채 그 줄만 origin human이 된다."""
         state = self._sg_state()
         out = []
         for r, text in enumerate(self._sg_lines()):
-            role, targets = state[r] if r < len(state) else ("unknown", [])
+            role, actuation, targets = state[r] if r < len(state) else ("unknown", "unknown", [])
             raw = self.sg_orig[r][0] if r < len(self.sg_orig) else None
             if not isinstance(raw, dict):
-                out.append(text if role == "unknown" and not targets else
-                           {"text": text, "role": role, "refs": _keep_refs(targets, None), "ipl": None, "origin": "human"})
+                out.append(text if role == "unknown" and actuation == "unknown" and not targets else dict(
+                    {"text": text, "role": role, "refs": _keep_refs(targets, None), "ipl": None, "origin": "human"},
+                    **({"actuation": actuation} if actuation != "unknown" else {})))
                 continue
             if (raw.get("text") or "").strip() == text and raw.get("role", "unknown") == role and \
+                    raw.get("actuation", "unknown") == actuation and \
                     [x.get("ref") for x in raw.get("refs") or [] if isinstance(x, dict)] == targets:
                 out.append(raw)
                 continue
-            out.append(dict(raw, text=text, role=role, refs=_keep_refs(targets, raw.get("refs")), origin="human"))
+            new = dict(raw, text=text, role=role, refs=_keep_refs(targets, raw.get("refs")), origin="human")
+            if actuation != "unknown" or "actuation" in raw:  # 옛 객체에 미확인 값을 새로 쓰지 않는다
+                new["actuation"] = actuation
+            out.append(new)
         return out
 
     @staticmethod
@@ -316,6 +346,8 @@ class EntryDialog(QDialog):
         out["safeguards"] = self._safeguards_value()
         out["severity"] = self.sev.currentData()
         out["frequency"] = self.freq.currentData()
+        out["cause_kind"] = self.cause_kind.currentData()
+        out["consequence_basis"] = "unmitigated" if self.basis.isChecked() else None
         for key, _title in refs.REF_FIELDS:
             if key in self.pickers:
                 out[key] = _keep_refs(self.pickers[key].checked(), self.entry.get(key),
@@ -332,9 +364,80 @@ class EntryDialog(QDialog):
             if k in ("cause_refs", "consequence_refs", "expectation_refs"):
                 if (old or []) != v:
                     out[k] = v
+            elif k in ("cause_kind", "consequence_basis"):
+                if old != v:
+                    out[k] = v
             elif old != v:
                 out[k] = v
         return out
+
+
+class IeHintDialog(QDialog):
+    """초기사건 판정(ie_hint) 정하기: 후보·제외·보류, 정상운전 교란, 안전기능 도전, 일반 범주, 안전기능, 이유.
+    확인하면 사람이 정한 판정이 되고 항목 상태(승인 등)는 바뀌지 않는다."""
+
+    def __init__(self, entry, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("초기사건 판정")
+        self.setMinimumWidth(520)
+        h = entry.get("ie_hint") if isinstance(entry.get("ie_hint"), dict) else {}
+        lay = QFormLayout(self)
+        self.combos = {}
+        for key, title, values, default in (("candidate", "초기사건 후보", res.IE_CANDIDATES, "undecided"),
+                                            ("disturbs", "정상운전 교란", res.IE_ANSWERS, "unknown"),
+                                            ("challenges", "안전기능 도전", res.IE_ANSWERS, "unknown")):
+            cb = QComboBox()
+            cb.setAccessibleName(title)
+            for k, name in values.items():
+                cb.addItem(name, k)
+            cb.setCurrentIndex(max(cb.findData(h.get(key, default)), 0))
+            self.combos[key] = cb
+            lay.addRow(title, cb)
+        self.category = QComboBox()
+        self.category.setAccessibleName("일반 범주")
+        self.category.addItem(res.UNCLASSIFIED_LABEL, None)
+        for c in res.ie_categories():
+            self.category.addItem(res.ie_category_label(c["code"]), c["code"])
+        self.category.setCurrentIndex(max(self.category.findData(h.get("category")), 0))
+        lay.addRow("일반 범주", self.category)
+        self.functions = QLineEdit(", ".join(h.get("safety_functions") or []))
+        self.functions.setAccessibleName("도전받는 안전기능")
+        self.functions.setPlaceholderText("쉼표로 나눔. 예: 노심 냉각, 원자로냉각재 재고 유지")
+        lay.addRow("안전기능", self.functions)
+        self.reason = QPlainTextEdit(h.get("reason") or "")
+        self.reason.setAccessibleName("판정 이유")
+        self.reason.setFixedHeight(60)
+        lay.addRow("판정 이유", self.reason)
+        note = QLabel("항목 승인과 따로 확정합니다. 확인하면 사람이 정한 판정으로 저장되고 항목 상태는 그대로입니다. "
+                      "맞는 범주가 없으면 일반 과도사건(TRANS)으로 넣지 말고 미분류로 두세요.")
+        note.setObjectName("muted")
+        note.setWordWrap(True)
+        lay.addRow(note)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.button(QDialogButtonBox.Ok).setText("확정")
+        bb.button(QDialogButtonBox.Cancel).setText("취소")
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        lay.addRow(bb)
+
+    def hint(self):
+        out = {k: cb.currentData() for k, cb in self.combos.items()}
+        out.update(category=self.category.currentData(), reason=self.reason.toPlainText(),
+                   safety_functions=[x.strip() for x in self.functions.text().split(",") if x.strip()])
+        return out
+
+
+def ie_chips(entry):
+    """초기사건 판정 줄 칩 [(글, 상태)]. 상태 ai = AI 초안(점선), human = 사람이 정함(채움)."""
+    h = entry.get("ie_hint") if isinstance(entry.get("ie_hint"), dict) else None
+    if h is None:
+        return [("미판정", "")]
+    st = "human" if h.get("origin") == "human" else "ai"
+    return [(res.IE_CANDIDATES.get(h.get("candidate"), "보류"), st),
+            ("교란 %s · 도전 %s" % (res.IE_ANSWERS.get(h.get("disturbs"), "모름"),
+                                 res.IE_ANSWERS.get(h.get("challenges"), "모름")), st),
+            (res.ie_category_label(h.get("category")), st),
+            ("사람 확정" if st == "human" else "AI 초안", "" if st == "human" else "warn")]
 
 
 class ExportDialog(QDialog):
@@ -595,6 +698,7 @@ class ResultsScreen(QWidget):
         self.table = QTableWidget(0, len(SHEET_COLUMNS))
         self.table.setAccessibleName("워크시트")
         self.table.setHorizontalHeaderLabels(list(SHEET_COLUMNS))
+        self.table.horizontalHeaderItem(1).setToolTip(CONSEQUENCE_TIP)
         self.table.horizontalHeaderItem(COL_RISK).setToolTip("위험도 = 강도 × 발생빈도 〈표5〉(KOSHA P-86) · 구분 〈표9〉")
         self.table.horizontalHeaderItem(COL_BASIS).setToolTip("AI 근거: 지식그래프 경로 · 출처 문서 · ⚠ 근거 확인 경고. '확인할 단서'는 사람이 고른 잠재 후보(근거 아님)")
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -626,6 +730,25 @@ class ResultsScreen(QWidget):
             b.setObjectName("row_btn")
             ra.addWidget(b)
         self.row_actions.hide()
+        ie = QHBoxLayout()
+        ie.setSpacing(4)
+        self.ie_title = QLabel("초기사건 판정")
+        self.ie_title.setObjectName("section")
+        ie.addWidget(self.ie_title)
+        self.ie_chips = []
+        for i in range(4):
+            c = Chip(min_chars=4)
+            c.setAccessibleName("초기사건 판정 %d" % (i + 1))
+            c.hide()  # 보이는 칩 수가 바뀌면 워크시트 폭이 달라져 행 동작 버튼 위치가 어긋나므로 처음부터 숨겨 둔다
+            self.ie_chips.append(c)
+            ie.addWidget(c)
+        self.ie_reason = plain_label("", name="muted", elide=Qt.ElideRight, min_chars=10)
+        ie.addWidget(self.ie_reason, 1)
+        self.ie_btn = QPushButton("판정 I")
+        self.ie_btn.setToolTip("고른 항목의 초기사건 판정을 정합니다(항목 승인과 따로)")
+        self.ie_btn.clicked.connect(lambda: self.set_ie_selected())
+        ie.addWidget(self.ie_btn)
+        sv.addLayout(ie)
         act = QHBoxLayout()
         act.addStretch(1)
         self.rerun_cell_btn = QPushButton("이 칸 다시 실행")
@@ -658,13 +781,15 @@ class ResultsScreen(QWidget):
                 ("항목 승인", "A", lambda: self.set_entry_status("approved")),
                 ("항목 기각", "R", lambda: self.set_entry_status("rejected")),
                 ("항목 수정…", "E", lambda: self.edit_selected()),
+                ("초기사건 판정…", "I", lambda: self.set_ie_selected()),
                 ("Excel로 내보내기…", "", lambda: self.export_excel()),
                 ("이전 고정 응답 분석 열기", "", lambda: self.app.go(2))]
 
     def _shortcuts(self):
         """행렬·워크시트 단축키(U-02). 이 화면 안에서만 듣고, 글 입력칸에 초점이 있으면 입력이 먼저다."""
         keys = (("J", self.next_unreviewed), ("A", lambda: self.set_entry_status("approved")),
-                ("R", lambda: self.set_entry_status("rejected")), ("E", lambda: self.edit_selected()))
+                ("R", lambda: self.set_entry_status("rejected")), ("E", lambda: self.edit_selected()),
+                ("I", lambda: self.set_ie_selected()))
         self.keys = {}
         for seq, fn in keys:
             sc = QShortcut(QKeySequence(seq), self)
@@ -1204,7 +1329,7 @@ class ResultsScreen(QWidget):
         basis = e.get("ai_basis") or {}
         lines = [" → ".join(self._entity_label(x) for x in p) for p in basis.get("kg_paths") or []]
         lines += ["%s %s" % (s.get("doc") or "", s.get("where") or "") for s in basis.get("sources") or []]
-        lines += ["⚠ %s" % w for w in basis.get("warnings") or []]
+        lines += ["⚠ %s" % w for w in list(basis.get("warnings") or []) + res.quality_warnings(e)]
         clues = [t for k, t in self._ref_lines(e) if k == "expectation"]
         if clues:  # 사람이 고른 잠재 후보는 AI 근거가 아니라 확인할 단서라 따로 묶는다
             lines += ([""] if lines else []) + ["확인할 단서(근거 아님)"] + clues
@@ -1223,13 +1348,15 @@ class ResultsScreen(QWidget):
                           self._expect_items() if self.expectations is not None else None)
 
     def _safeguard_cell(self, e):
-        """보호수단 칸: 역할·구현 대상이 있는 항목은 줄마다 "문장 — 완화 · RC-PSV101(102)"(승인 전 AI 참조는 "AI 초안")."""
+        """보호수단 칸: 역할·작동 방식·구현 대상이 있는 항목은 줄마다 "문장 — 완화 · 자체작동 · RC-PSV101(102)"
+        (승인 전 AI 참조는 "AI 초안")."""
         items = refs.safeguard_items(e)
-        if not any(s["role"] != "unknown" or s["refs"] for s in items):
+        if not any(s["role"] != "unknown" or s["actuation"] != "unknown" or s["refs"] for s in items):
             return self._shown(", ".join(s["text"] for s in items))
         out = []
         for s in items:
             bits = [refs.ROLES[s["role"]]] if s["role"] != "unknown" else []
+            bits += [refs.ACTUATIONS[s["actuation"]]] if s["actuation"] != "unknown" else []
             bits += [self._ref_label(r["ref"]) for r in s["refs"] if r.get("ref")]
             draft = not refs.is_confirmed(s, e) or any(not refs.is_confirmed(r, e) for r in s["refs"])
             out.append("%s — %s%s" % (self._shown(s["text"]), " · ".join(bits) or "미정", " · AI 초안" if draft else ""))
@@ -1365,6 +1492,14 @@ class ResultsScreen(QWidget):
         self.approve_btn.setEnabled(e is not None and e.get("status") != "approved")
         self.reject_btn.setEnabled(e is not None and e.get("status") != "rejected")
         self.edit_btn.setEnabled(e is not None)
+        self.ie_btn.setEnabled(e is not None)
+        chips = ie_chips(e) if e is not None else []
+        for i, c in enumerate(self.ie_chips):
+            c.set_state(*(chips[i] if i < len(chips) else ("", "")))
+            c.setVisible(i < len(chips))
+        h = (e or {}).get("ie_hint") if isinstance((e or {}).get("ie_hint"), dict) else {}
+        self.ie_reason.setText(h.get("reason") or ("항목을 고르면 판정이 보입니다" if e is None else ""))
+        self.ie_reason.setToolTip(self.ie_reason.text())
         self._place_row_actions()
 
     def _place_row_actions(self):
@@ -1453,4 +1588,25 @@ class ResultsScreen(QWidget):
         old, cell = self.results, self.cell
         self._apply_review(new)
         self.app.toast("%s 시나리오를 수정했습니다" % cell[0], self._undo_to(old, cell))
+        return True
+
+    def set_ie_selected(self, hint=None):
+        """hint가 없으면 초기사건 판정 창을 띄운다. 항목 상태는 그대로 두고 판정만 사람 확정으로 저장한다."""
+        e = self._entry_or_hint("ie")
+        if e is None:
+            return False
+        if hint is None:
+            dlg = IeHintDialog(e, self)
+            if dlg.exec() != QDialog.Accepted:
+                return False
+            hint = dlg.hint()
+        try:
+            new = res.set_ie_hint(self.results, self.cell[0], self.cell[1], e["entry_id"], hint)
+        except ValueError as exc:
+            self.app.log_error("초기사건 판정 저장 실패", exc)
+            QMessageBox.warning(self, "초기사건 판정", "저장할 수 없는 값이 있어 저장하지 않았습니다.")
+            return False
+        old, cell = self.results, self.cell
+        self._apply_review(new)
+        self.app.toast("%s 시나리오의 초기사건 판정을 정했습니다" % cell[0], self._undo_to(old, cell))
         return True

@@ -1,10 +1,18 @@
 """⑤ 분석 결과 셸: 검토구간 × 편차 행렬. 4단계에서 AI가 칸을 채운다. 근거: 3단계 명세 §B results.py.
 
 편차 목록은 데이터/이탈후보/kosha-p86-2017-deviation-chart.json의 items(파라미터 × 가이드워드)에서 만든다.
-편집 연산(set_status·edit_entry)은 순수 함수다. 입력을 바꾸지 않고 새 dict를 돌려주며 항목 history에 한 줄 덧붙인다.
+편집 연산(set_status·edit_entry·set_ie_hint)은 순수 함수다. 입력을 바꾸지 않고 새 dict를 돌려주며 항목 history에 한 줄 덧붙인다.
+
+초기사건 인계용 항목 필드(기획서/초기사건-출력설계.md §5.1, E1·E2·E4). 모두 선택이며 없으면 옛 항목처럼 읽는다.
+- cause_kind: CAUSE_KINDS 키. 없으면 '미확인'.
+- consequence_basis: "unmitigated"(결과를 보호수단 실패 가정으로 쓴 것) 또는 없음('비완화 여부 미확인').
+- ie_hint: 원인 단위 초기사건 판정 {candidate, disturbs, challenges, safety_functions, category, reason, origin, status}.
+  category는 일반 범주 기준표(IE_CATEGORY_TABLE) 코드 또는 null(미분류). 항목 승인과 따로 확정하므로 edit_entry가 아니라
+  set_ie_hint로 고친다(항목 상태를 바꾸지 않음).
 """
 
 import copy
+import functools
 import json
 import os
 
@@ -24,7 +32,23 @@ ENTRY_STATUSES = ("proposed", "revised", "approved", "rejected")
 HUMAN_STATUSES = ("revised", "approved", "rejected")  # proposed는 AI만 쓴다(재실행이 덮어쓰는 상태)
 AI_RUN_STATUSES = ("ok", "failed")
 EDITABLE_FIELDS = ("cause", "consequence", "safeguards", "recommendation", "severity", "frequency",
-                   "cause_refs", "consequence_refs", "expectation_refs")  # 참조 필드: hazop.study.refs
+                   "cause_refs", "consequence_refs", "expectation_refs",  # 참조 필드: hazop.study.refs
+                   "cause_kind", "consequence_basis")
+CAUSE_KINDS = {"equipment": "기기 고장", "human": "인적 오류", "support": "지원계통 상실", "external": "외부 요인",
+               "other": "기타"}
+UNKNOWN_LABEL = "미확인"
+CONSEQUENCE_BASES = {"unmitigated": "비완화"}
+BASIS_UNKNOWN_LABEL = "비완화 여부 미확인"
+IE_CANDIDATES = {"yes": "후보", "no": "제외", "undecided": "보류"}
+IE_ANSWERS = {"yes": "예", "no": "아니오", "unknown": "모름"}
+IE_STATUSES = {"draft": "초안", "confirmed": "확정"}
+IE_KEYS = ("candidate", "disturbs", "challenges", "safety_functions", "category", "reason", "origin", "status")
+IE_CATEGORY_TABLE = ("데이터", "기준표", "lwr-generic-ie-categories.json")
+UNCLASSIFIED_LABEL = "미분류"
+# 보호수단이 작동해 결과를 막았다고 쓴 표현(초기사건 출력설계 §5.2 예시에서 넓힘). 경고만 하고 막지 않는다 [추론]
+MITIGATED_PHRASES = ("영향 없음", "영향이 없", "영향은 없", "문제 없음", "문제가 없", "경보 후 회복", "회복된다", "회복됨",
+                     "정상 복귀", "정상으로 복귀", "정상 상태로 돌아", "작동하여", "작동해 ", "작동하므로", "방지된다",
+                     "방지됨", "막아 준다", "막는다")
 
 
 def load_deviations(path=None):
@@ -49,6 +73,89 @@ def empty_results(node_set, deviations):
                   for n in node_set["nodes"] for d in deviations],
         "ai_log": [],
     }
+
+
+@functools.lru_cache(maxsize=None)
+def _ie_categories(path):
+    with open(path, encoding="utf-8") as fh:
+        return tuple(dict(c) for c in json.load(fh)["categories"])
+
+
+def ie_categories(path=None):
+    """일반 범주 기준표 [{code, nureg_6928, name_en, name_ko}] 파일 순서대로."""
+    return [dict(c) for c in _ie_categories(path or paths.resource_path(*IE_CATEGORY_TABLE))]
+
+
+def ie_category_label(code, categories=None):
+    """'LOCCW 기기냉각수 완전 상실'. null은 '미분류', 기준표에 없는 코드는 코드 그대로."""
+    if code is None:
+        return UNCLASSIFIED_LABEL
+    c = next((c for c in categories or ie_categories() if c["code"] == code), None)
+    return "%s %s" % (code, c["name_ko"]) if c else code
+
+
+def ie_hint_problems(hint, codes=None):
+    """ie_hint 형식 문제 목록. codes(기준표 코드 집합)를 주면 category가 그 안에 있는지도 본다."""
+    if not isinstance(hint, dict):
+        return ["ie_hint는 객체여야 함"]
+    out = []
+    unknown = sorted(set(hint) - set(IE_KEYS))
+    if unknown:
+        out.append("ie_hint: 모르는 키 %s" % ", ".join(unknown))
+    for k, allowed in (("candidate", IE_CANDIDATES), ("disturbs", IE_ANSWERS), ("challenges", IE_ANSWERS),
+                       ("origin", dict.fromkeys(ENTRY_ORIGINS)), ("status", IE_STATUSES)):
+        if hint.get(k) not in allowed:
+            out.append("ie_hint.%s 값 %r(%s)" % (k, hint.get(k), "/".join(allowed)))
+    sf = hint.get("safety_functions", [])
+    if not isinstance(sf, list) or not all(isinstance(x, str) for x in sf):
+        out.append("ie_hint.safety_functions는 문자열 목록이어야 함")
+    if not isinstance(hint.get("reason", ""), str):
+        out.append("ie_hint.reason은 문자열이어야 함")
+    cat = hint.get("category")
+    if cat is not None and (not isinstance(cat, str) or (codes is not None and cat not in codes)):
+        out.append("ie_hint.category 값 %r(기준표 코드 또는 null)" % (cat,))
+    return out
+
+
+def entry_problems(entry, codes=None):
+    """초기사건 인계용 필드(cause_kind·consequence_basis·ie_hint) 형식 문제. 필드가 없으면 검사하지 않는다."""
+    out = []
+    if entry.get("cause_kind") is not None and entry["cause_kind"] not in CAUSE_KINDS:
+        out.append("cause_kind 값 %r(%s 또는 null)" % (entry["cause_kind"], "/".join(CAUSE_KINDS)))
+    if entry.get("consequence_basis") is not None and entry["consequence_basis"] not in CONSEQUENCE_BASES:
+        out.append("consequence_basis 값 %r(unmitigated 또는 null)" % (entry["consequence_basis"],))
+    if entry.get("ie_hint") is not None:
+        out += ie_hint_problems(entry["ie_hint"], codes)
+    return out
+
+
+def cause_kind_label(entry):
+    return CAUSE_KINDS.get(entry.get("cause_kind"), UNKNOWN_LABEL)
+
+
+def basis_label(entry):
+    return CONSEQUENCE_BASES.get(entry.get("consequence_basis"), BASIS_UNKNOWN_LABEL)
+
+
+def mitigated_phrase(text):
+    """결과 문장에서 보호수단이 작동한 뒤의 결과로 보이는 표현(없으면 None). '오작동하여'는 고장 표현이라 보지 않는다."""
+    text = (text or "").replace("오작동", "")
+    return next((p for p in MITIGATED_PHRASES if p in text), None)
+
+
+def quality_warnings(entry):
+    """초기사건 인계 품질 경고 2종(초기사건 출력설계 §3.2 시트 8 중 P1 범위). 결과가 완화 결과로 적혔는지는 표현으로만
+    짐작하고, 보호수단 작동 방식이 미확인인지 본다. 항목을 막지 않는다."""
+    out = []
+    hit = mitigated_phrase(entry.get("consequence"))
+    if hit:
+        out.append("결과가 완화 결과로 적힘: '%s' 같은 표현이 있어 보호수단이 작동한 뒤의 결과일 수 있습니다. 보호수단이 모두 "
+                   "실패했다고 보고 썼는지 확인하세요" % hit.strip())
+    unknown = [s["text"] for s in refs.safeguard_items(entry) if s["actuation"] == "unknown"]
+    if unknown:
+        out.append("작동 방식 미확인: 보호수단 %d개(%s)가 자동·운전원·자체작동 가운데 무엇인지 정해지지 않았습니다"
+                   % (len(unknown), ", ".join(t or "-" for t in unknown[:3]) + (" 외" if len(unknown) > 3 else "")))
+    return out
 
 
 def risk_of(severity, frequency):
@@ -117,7 +224,7 @@ def validate(results, node_set=None):
                 v = e.get(name)
                 if v is not None and (type(v) is not int or v not in allowed):
                     problems.append("%s/%s: %s 값 %r(%d~%d 또는 null)" % (where, eid, name, v, allowed[0], allowed[-1]))
-            problems += ["%s/%s: %s" % (where, eid, p) for p in refs.problems(e)]
+            problems += ["%s/%s: %s" % (where, eid, p) for p in refs.problems(e) + entry_problems(e)]
         if cell.get("state") == "not_analyzed" and cell.get("entries"):
             problems.append("%s: not_analyzed 칸에 항목이 있음" % where)
         run = cell.get("ai_run")
@@ -162,7 +269,7 @@ def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None):
             raise ValueError("%s 값 %r(%d~%d 또는 null)" % (name, v, allowed[0], allowed[-1]))
     if "safeguards" in fields and not isinstance(fields["safeguards"], list):
         raise ValueError("safeguards는 목록이어야 함")
-    bad = refs.problems(fields)
+    bad = refs.problems(fields) + entry_problems(fields)
     if bad:
         raise ValueError("; ".join(bad))
     out = copy.deepcopy(results)
@@ -172,6 +279,29 @@ def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None):
     e["risk"] = risk_of(e.get("severity"), e.get("frequency"))
     old, e["status"] = e.get("status"), "revised"
     e.setdefault("history", []).append({"at": at or now_utc(), "op": "edit", "from": old, "before": before})
+    return out
+
+
+def set_ie_hint(results, node_id, deviation_id, entry_id, hint, at=None):
+    """사람이 초기사건 판정을 정한다. origin human·status confirmed로 저장하고 승인·수정·기각 상태는 그대로 둔다.
+    제안(proposed) 항목만 수정(revised)이 된다. 제안 항목은 AI 재실행이 통째로 바꾸므로 사람이 정한 판정이 사라지기 때문이다.
+    category는 기준표 코드 또는 None. history에는 op ie_hint, 판정 뒤 항목 상태, 이전 판정을 남긴다."""
+    new = {"candidate": hint.get("candidate"), "disturbs": hint.get("disturbs", "unknown"),
+           "challenges": hint.get("challenges", "unknown"),
+           "safety_functions": [x.strip() for x in hint.get("safety_functions") or [] if isinstance(x, str) and x.strip()],
+           "category": hint.get("category"), "reason": (hint.get("reason") or "").strip(),
+           "origin": "human", "status": "confirmed"}
+    bad = ie_hint_problems(new, {c["code"] for c in ie_categories()})
+    if bad:
+        raise ValueError("; ".join(bad))
+    out = copy.deepcopy(results)
+    e = _entry(out, node_id, deviation_id, entry_id)
+    before = copy.deepcopy(e.get("ie_hint"))
+    e["ie_hint"] = new
+    if e.get("status") == "proposed":
+        e["status"] = "revised"
+    e.setdefault("history", []).append({"at": at or now_utc(), "op": "ie_hint", "status": e.get("status"),
+                                        "before": before})
     return out
 
 
