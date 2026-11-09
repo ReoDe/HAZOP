@@ -58,6 +58,11 @@ def read_stdin(log):
 
 def main():
     scenario, log_dir, args = sys.argv[1], sys.argv[2], sys.argv[3:]
+    if "@" in scenario:  # '<시나리오>@<JSON 파일>': structured_output을 그 파일 내용으로(구간 검토 등 다른 스키마 시험)
+        scenario, out_path = scenario.split("@", 1)
+        with open(out_path, encoding="utf-8") as fh:
+            OUTPUT.clear()
+            OUTPUT.update(json.load(fh))
     os.makedirs(log_dir, exist_ok=True)
     if args[:1] == ["--version"]:
         print("%s (Claude Code)" % ("2.1.200" if scenario == "old" else "2.1.319"))
