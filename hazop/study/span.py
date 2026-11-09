@@ -314,7 +314,8 @@ def migrate_results(old_results, old_sets, project_set, deviations, pg=None):
     m = legacy_map(old_sets, project_set, pg)
     sets = {s["graph_id"]: s for s in old_sets}
     report = {"moved_entries": 0, "unmapped": [], "unmapped_nodes": unmapped_ids(m), "unmapped_deviations": [],
-              "scope_changed_entries": 0, "stale_entries": 0, "human_entries": 0}
+              "to_excluded": [], "scope_changed_entries": 0, "stale_entries": 0, "human_entries": 0}
+    excluded = {n["node_id"] for n in project_set["nodes"] if (n.get("screen") or {}).get("status") == "excluded"}
     for old in old_results:
         gid = old["graph_id"]
         stale = gid not in sets or res.is_stale(old, sets[gid])
@@ -330,6 +331,9 @@ def migrate_results(old_results, old_sets, project_set, deviations, pg=None):
                 report["unmapped"].append({"legacy_id": lid, "deviation_id": c["deviation_id"],
                                            "entries": len(c["entries"]), "state": c["state"]})
                 continue
+            if m[lid]["node_id"] in excluded and any(e.get("status") in res.HUMAN_STATUSES for e in c["entries"]):
+                report["to_excluded"].append({"legacy_id": lid, "deviation_id": c["deviation_id"], "node_id": m[lid]["node_id"]})
+                continue  # 사람이 판정한 항목을 행 없는 '스크리닝 제외' 구간에 숨기지 않는다(§4.6 '제외로 감')
             exact = m[lid]["exact"]
             flags = dict({} if exact else {"scope_changed": True}, **({"source_stale": True} if stale else {}))
             cell.setdefault("legacy_cells", []).append({"from": lid, "deviation_id": c["deviation_id"],
@@ -357,4 +361,4 @@ def migrate_results(old_results, old_sets, project_set, deviations, pg=None):
 
 def blocked(report):
     """이전을 멈출 사유(보고 키) 목록. 빈 목록이면 진행."""
-    return [k for k in ("unmapped", "unmapped_nodes", "unmapped_deviations") if report[k]]
+    return [k for k in ("unmapped", "unmapped_nodes", "unmapped_deviations", "to_excluded") if report.get(k)]

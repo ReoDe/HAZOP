@@ -195,6 +195,23 @@ class ResultsProjectUiTest(unittest.TestCase):
         self.assertTrue(again.banner.isHidden(), "두 번째에는 다시 옮기지 않음")
         self.assertEqual([e["status"] for c in again.results["cells"] for e in c["entries"]], ["approved"])
 
+    def test_reconfirmed_set_keeps_approved_entries(self):
+        """확정 해제 → 다시 확정해도 사람이 승인한 항목이 ⑤에서 사라지지 않는다(§4.6, D11)."""
+        ns = self.confirm_project_set()
+        r = res.empty_results(ns, res.load_deviations())
+        r["cells"][0].update(state="analyzed", entries=[
+            {"entry_id": "e1", "origin": "ai_draft", "status": "approved", "cause": "c"}])
+        res.save(r, ns["project_id"])
+        from hazop.app import project_ctx
+        pg = project_ctx.load("SNP-M-102").pg
+        sn.save(sn.confirm(sn.reopen(ns, at=AT), pg, "EJ", at="2026-11-10T00:00:00Z"))
+        _app, scr = self.screen()
+        self.assertEqual([e["status"] for c in scr.results["cells"] for e in c["entries"]], ["approved"])
+        self.assertIn("이전 확정본 결과를 옮김", scr.stale_chip.text())
+        saved = res.load(sn.load(pg))
+        self.assertFalse(res.is_stale(saved, sn.load(pg)), "옮긴 결과를 바로 저장해 다른 화면도 같은 결과를 읽음")
+        self.assertEqual([e["status"] for c in saved["cells"] for e in c["entries"]], ["approved"])
+
     def test_no_cell_open_hint(self):
         self.confirm_project_set()
         app, scr = self.screen()

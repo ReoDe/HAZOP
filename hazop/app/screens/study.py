@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QHBoxLayout
 from hazop.app import data, project_ctx, tokens
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text
 from hazop.graph import project
-from hazop.study import migrate, nodes, span
+from hazop.study import migrate, nodes, remap, span
 
 SEG_COUNT = 5
 PANEL_MIN_W, PANEL_MAX_W = 264, 340     # 셸 오른쪽 열 clamp(264px, 20vw, 340px)
@@ -1004,8 +1004,36 @@ class StudyNodesScreen(QWidget):
         sheets, problem = nodes.exclusion_for(self.graph)
         if problem:
             self.warn.set_messages(problem)
-        return self._replace(nodes.propose(self.graph, exclude_sheets=sheets),
-                             done="다시 제안했습니다" + (" · 뺀 도면 표시를 읽지 못함" if problem else ""))
+        new = nodes.propose(self.graph, exclude_sheets=sheets)
+        previous = (self.node_set or {}).get("previous")
+        if previous:  # 확정 해제한 집합이면 옛 확정본과의 대응을 보이고, 사람이 '이대로 적용'해야 바꾼다(§4.6)
+            new["previous"] = previous
+            from hazop.study import results as res
+            pv = remap.preview(self.node_set, new, res.load_deviations())
+            text = ("옛 확정본과 새 제안의 대응(새 구간 수): 같음 %(same)d · 합쳐짐 %(merged)d · 나뉨 %(split)d · "
+                    "범위 바뀜 %(changed)d · 새 구간 %(new)d · 제외 구간 %(excluded)d" % pv["counts"])
+            text += "\n옛 구간 중 스크리닝 제외로 가는 것 %d개 · 새 제안과 겹치지 않는 것 %d개" % (
+                pv["to_excluded_old"], pv["unmatched_old"])
+            if pv["blocked_by"]:
+                b = pv["blocked_by"]
+                text += ("\n\n주의: 이대로 다시 확정하면 ⑤ 결과를 옮기지 못합니다. 사람이 판정한 항목이 있는 옛 구간 %d개가 "
+                         "스크리닝 제외로 가고, 옮길 곳이 없는 옛 칸이 %d개입니다. 적용한 뒤 ④에서 해당 구성요소를 꺼내 "
+                         "다시 확정하세요(옛 결과는 보관본으로 남고, 다시 확정하면 거기서 옮깁니다)." % (
+                             len(b["to_excluded"]), len(b["unmapped"])))
+            else:
+                text += "\n\n같음 구간의 ⑤ 결과는 다시 확정하면 그대로 이어지고, 나머지는 '범위 바뀜 · 다시 확인'으로 옮깁니다."
+            text += " 이대로 적용할까요?"
+            if ask and QMessageBox.question(self, "다시 제안 대응표", text) != QMessageBox.Yes:
+                return False
+            path = self._store_path()
+            if os.path.isfile(path):
+                try:
+                    project_ctx.backup([path], "검토구간-다시제안")
+                except OSError as exc:
+                    self.app.log_error("검토구간 백업 실패", exc)
+                    self.msg.setText("다시 제안하기 전 백업을 하지 못해 바꾸지 않았습니다: %s" % exc)
+                    return False
+        return self._replace(new, done="다시 제안했습니다" + (" · 뺀 도면 표시를 읽지 못함" if problem else ""))
 
     def confirm(self, reviewer=None):
         reviewer = reviewer or self.app.reviewer_name()
@@ -1015,7 +1043,23 @@ class StudyNodesScreen(QWidget):
                 return False
             self.app.set_reviewer_name(name.strip())
             reviewer = name.strip()
-        return self._apply(lambda s: nodes.confirm(s, self.graph, reviewer), done="구간을 확정했습니다")
+        if not self._apply(lambda s: nodes.confirm(s, self.graph, reviewer), done="구간을 확정했습니다"):
+            return False
+        self._carry_results()
+        return True
+
+    def _carry_results(self):
+        """다시 확정했으면 옛 확정본의 ⑤ 결과를 바로 옮겨 저장한다(⑤를 열기 전에도 ⑥·탐색기가 같은 결과를 읽게)."""
+        from hazop.study import results as res
+        try:
+            carried, report = remap.carry_saved(self.node_set, res.load_deviations())
+        except (OSError, ValueError) as exc:
+            self.app.log_error("분석 결과 옮기기 실패", exc)
+            return
+        if carried is not None:
+            self.app.toast("이전 확정본의 ⑤ 결과를 옮겼습니다: 범위 바뀜 %d건은 다시 확인" % report["scope_changed_entries"])
+        elif report.get("to_excluded") or report.get("unmapped"):
+            self.app.toast("⑤ 결과를 옮기지 못했습니다: %s" % report.get("reason"))
 
     def reopen(self):
         return self._apply(nodes.reopen, done="확정을 해제했습니다")

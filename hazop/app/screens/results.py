@@ -29,7 +29,7 @@ from hazop.app.settings_dialog import ACTION_HELP, ask_terms
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text, plain_label
 from hazop.export import study_xlsx
 from hazop.graph import project
-from hazop.study import ai_cells, claude_cli, claude_http, nodes, providers, refs, span
+from hazop.study import ai_cells, claude_cli, claude_http, nodes, providers, refs, remap, span
 from hazop.study import results as res
 
 AI_NOTE = "AI 결과는 모두 초안 · 사람이 수정·승인·기각"
@@ -1134,9 +1134,28 @@ class ResultsScreen(QWidget):
             doc = res.load(node_set)
         except (OSError, ValueError) as exc:
             doc, problem = None, "저장된 분석 결과를 읽을 수 없음(%s)" % exc
+        if doc is None and problem is None and not self.fixed_view:  # 옛 결과가 보관본에만 있어도 다시 확정하면 잇는다
+            carried, report = remap.carry_saved(node_set, self.deviations)
+            if carried is not None:
+                self.stale_chip.set_state("이전 확정본 결과를 옮김: 범위 바뀜 %d건(다시 확인) · 옛 파일은 보관본"
+                                          % report["scope_changed_entries"], "warn")
+                self.stale_chip.show()
+                return carried
         if doc is not None:
             if res.is_stale(doc, node_set):
+                carried, report = (remap.carry_saved(node_set, self.deviations) if not self.fixed_view
+                                   else remap.carry_results(doc, node_set, self.deviations))
+                if carried is not None:  # 확정 해제 → 다시 확정: 같은 구간은 그대로, 바뀐 구간은 '범위 바뀜'으로 잇는다
+                    self.stale_chip.set_state("이전 확정본 결과를 옮김: 범위 바뀜 %d건(다시 확인) · 옛 파일은 보관본"
+                                              % report["scope_changed_entries"], "warn")
+                    self.stale_chip.show()
+                    return carried
                 problem = "저장된 분석 결과가 이전 검토구간 확정본으로 만든 것"
+                if report.get("to_excluded"):
+                    problem += "(사람이 판정한 항목이 있는 구간 %s이 스크리닝 제외로 감 · ④에서 꺼낸 뒤 다시 확정하면 옮김)" % (
+                        ", ".join(report["to_excluded"][:5]))
+                elif report.get("reason") and remap.latest(node_set):
+                    problem += "(%s)" % report["reason"]
             else:
                 bad = res.validate(doc, node_set)
                 if bad:

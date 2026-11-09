@@ -190,6 +190,9 @@ def map_members(node_set, rename):
         for key in ("absorbed", "parts"):
             for p in n.get(key, []):
                 p["members"] = sorted(rename.get(m, m) for m in p["members"])
+    for p in out.get("previous") or []:
+        for n in p["nodes"]:
+            n["members"] = sorted(rename.get(m, m) for m in n["members"])
     return out
 
 
@@ -317,6 +320,8 @@ def reopen(node_set, at=None):
         raise ValueError("확정되지 않은 검토구간")
     out = copy.deepcopy(node_set)
     detail = {"confirmed_at": out["confirmed_at"], "confirmed_by": out["confirmed_by"]}
+    from hazop.study import remap
+    out["previous"] = remap.remember(node_set, node_set["confirmed_at"])  # 다시 확정할 때 ⑤ 결과를 잇는 열쇠
     out.update({"status": "proposed", "confirmed_at": None, "confirmed_by": None})
     return _log(out, "reopen", detail, at)
 
@@ -400,6 +405,12 @@ def _check_shape(doc, path):
                   and isinstance(n.get("members"), list) for n in doc["nodes"]))
     pieces_ok = lambda v: isinstance(v, list) and all(  # noqa: E731
         isinstance(p, dict) and isinstance(p.get("members"), list) for p in v)
+    snap_ok = lambda p: (isinstance(p, dict) and isinstance(p.get("study_nodes_ref"), dict)  # noqa: E731
+                         and isinstance(p.get("nodes"), list) and all(
+                             isinstance(n, dict) and isinstance(n.get("node_id"), str) and isinstance(n.get("members"), list)
+                             for n in p["nodes"]))
+    prev = doc.get("previous")
+    ok = ok and (prev is None or (isinstance(prev, list) and all(snap_ok(p) for p in prev)))
     opt = lambda v, t: v is None or (isinstance(v, t) and not isinstance(v, bool))  # noqa: E731
     screen_ok = lambda sc: sc is None or (  # noqa: E731
         isinstance(sc, dict) and sc.get("status") in STATUSES and opt(sc.get("score"), int)

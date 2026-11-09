@@ -271,8 +271,10 @@ def migrate_results(pg, node_set):
     out, report = span.migrate_results(old_results, [o for _g, o in olds], node_set, res.load_deviations(), pg)
     stop = span.blocked(report)
     if stop:
-        return None, "옛 분석 결과를 옮기지 않음: 대응 없는 옛 자료 %s. 옛 파일은 그대로 있습니다." % (
-            ", ".join("%s %d" % (k, len(report[k])) for k in stop))
+        labels = {"unmapped": "옮길 칸 없음", "unmapped_nodes": "대응 구간 없음", "unmapped_deviations": "대응 편차 없음",
+                  "to_excluded": "사람 판정 항목이 스크리닝 제외 구간으로 감(④에서 꺼낸 뒤 다시 확정)"}
+        return None, "옛 분석 결과를 옮기지 않음: %s. 옛 파일은 그대로 있습니다." % (
+            ", ".join("%s %d건" % (labels.get(k, k), len(report[k])) for k in stop))
     folder = backup(files, "분석결과-이전")
     path = res.save(out, node_set["project_id"])
     _write_report(folder, dict(report, kind="results_migration", at=sn.now_utc(), written=path, old_files=files))

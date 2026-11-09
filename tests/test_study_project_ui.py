@@ -156,6 +156,33 @@ class StudyProjectUiTest(unittest.TestCase):
         scr.on_node({"entity_id": "E", "local_id": "L-E"})
         self.assertEqual(scr.picked_entity, "graph-%s/E" % A, "뷰어의 도면 안 ID를 프로젝트 ID로")
 
+    def test_repropose_after_reopen_keeps_the_confirmed_snapshot(self):
+        from hazop.study import nodes
+        _win, scr = self.open_study(A)
+        nodes.save(nodes.reopen(nodes.confirm(scr.node_set, scr.graph, "EJ"), at="2026-11-09T00:00:00Z"))
+        _win, scr = self.open_study(A)
+        self.assertTrue(scr.repropose(ask=False))
+        prev = nodes.load(scr.graph)["previous"][-1]
+        self.assertTrue(prev["study_nodes_ref"]["confirmed_at"])
+        self.assertTrue(prev["nodes"])
+
+    def test_confirm_after_reopen_saves_the_carried_results_for_every_screen(self):
+        from hazop.study import nodes, results as res
+        _win, scr = self.open_study(A)
+        first = nodes.confirm(scr.node_set, scr.graph, "EJ", at="2026-11-09T00:00:00Z")
+        nodes.save(first)
+        r = res.empty_results(first, res.load_deviations())
+        r["cells"][0].update(state="analyzed", entries=[
+            {"entry_id": "e1", "origin": "ai_draft", "status": "approved", "cause": "c"}])
+        res.save(r, first["project_id"])
+        nodes.save(nodes.reopen(first, at="2026-11-09T00:00:00Z"))
+        _win, scr = self.open_study(A)
+        self.assertTrue(scr.confirm("EJ"))
+        now = nodes.load(scr.graph)
+        saved = res.load(now)
+        self.assertFalse(res.is_stale(saved, now), "⑤를 열기 전에도 디스크 결과가 새 확정본 것")
+        self.assertEqual([e["status"] for c in saved["cells"] for e in c["entries"]], ["approved"])
+
     def test_migration_notice_from_old_per_drawing_set(self):
         from hazop.study import nodes
         nodes.save(nodes.propose(self.sheets[A]))
