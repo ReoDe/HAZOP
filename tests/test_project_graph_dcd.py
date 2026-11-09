@@ -47,6 +47,35 @@ class SameFigureSheets(unittest.TestCase):
                     sheet("6.3.2-1-S2", cont("B", "SHEET 1"), cont("C", 'SHEET 1"X"')))
         self.assertNotIn("linked", {g[0] for g in got})
 
+    def test_curly_quotes_and_a_spaced_dash_read_as_point_letters(self):
+        """9.5.1-1-S4 'SHEET 2 “D”'(굽은 따옴표), 9.2.2-1-S4 'SHEET 3 - X'(띄운 줄표)."""
+        got = links(sheet("9.5.1-1-S4", cont("A", "SHEET 2 “D”")), sheet("9.5.1-1-S2", cont("B", 'SHEET 4"D"')))
+        self.assertEqual([g[:2] for g in got], [("linked", None)])
+        got = links(sheet("9.2.2-1-S4", cont("A", "SHEET 3 - X")), sheet("9.2.2-1-S3", cont("B", 'SHEET 4"X"')))
+        self.assertEqual([g[:2] for g in got], [("linked", None)])
+
+    def test_a_code_in_front_of_sheet_means_another_system(self):
+        """'FP SHEET 2 “D”'는 'FP\\nSHEET 2'와 같다. FP가 이 그림의 약어라는 문서 근거가 없어 같은 그림으로 잇지 않는다."""
+        a = sheet("9.5.1-1-S4", cont("A", "FP SHEET 2 “D”"))
+        got = links(a, sheet("9.5.1-1-S2", cont("B", 'SHEET 4"D"')))
+        self.assertNotIn("linked", {g[0] for g in got})
+        end = project.continuation_key(a, a["nodes"][1])
+        self.assertEqual((end["unkeyed"], end["system_ref"]), ("other_system", {"code": "FP", "sheet": 2, "letter": "D"}))
+
+    def test_a_direction_word_in_front_of_sheet_is_not_a_system_code(self):
+        a = sheet("9.5.1-1-S4", cont("A", "TO SHEET 2"))
+        self.assertIsNone(project._DCD_SHEET.match("TO SHEET 2"))
+        self.assertNotEqual(project.continuation_key(a, a["nodes"][1])["unkeyed"], "other_system")
+
+    def test_two_point_letters_on_one_arrow_never_link_to_one_letter_or_none(self):
+        """10.4.6-1-S2 'SHEET 1 "C"/"E"': 어느 글자인지 정할 수 없어 사람이 고르게 둔다. 글자 없는 표시나 다른 글자 둘과도
+        잇지 않는다(Codex 검토 재현: 글자를 지웠더니 'SHEET 2 "X"/"Y"', 'SHEET 2'와 이어졌다)."""
+        two = sheet("10.4.6-1-S2", cont("A", 'SHEET 1 "C"/"E"'))
+        for other in ((cont("B", 'SHEET 2"C"'), cont("C", 'SHEET 2"E"')), (cont("B", 'SHEET 2 "X"/"Y"'),),
+                      (cont("B", "SHEET 2"),), (cont("B", 'SHEET 2"C"'),)):
+            got = links(two, sheet("10.4.6-1-S1", *other))
+            self.assertNotIn("linked", {g[0] for g in got}, other)
+
     def test_line_no_attribute_wins_over_the_label_letter(self):
         a = sheet("9.3.4-1-S1", cont("A", 'SHEET 5"RC"', line_no="L-99"))
         b = sheet("9.3.4-1-S5", cont("B", 'SHEET 1"RD"', line_no="L-99"))

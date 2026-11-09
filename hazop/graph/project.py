@@ -48,7 +48,12 @@ REASONS = {
     "manual_unlink": "사람이 연결하지 않음으로 지정",
 }
 _LINE_TOKEN = re.compile(r"^[A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*$")
-_DCD_SHEET = re.compile(r'^SHEET\s*(\d+)\s*(?:"\s*([A-Z0-9]+)\s*"|-([A-Z0-9]+))?$')  # 'SHEET 5"RC"', 'SHEET 2-A', 'SHEET 2'
+# 'SHEET 5"RC"', 'SHEET 2-A', 'SHEET 3 - X', 'SHEET 2'. 굽은 따옴표('SHEET 2 “D”', 9.5.1-1-S4)도 받는다.
+# 'FP SHEET 2 “D”'처럼 두 글자 계통 약어를 같은 줄 앞에 쓴 것은 약어를 따로 쓴 줄('FP\nSHEET 2')과 같게 본다.
+# 짝 글자를 둘 쓴 'SHEET 1 "C"/"E"'(10.4.6-1-S2)는 글자 하나로 정할 수 없어 more에 남긴다
+_DCD_SHEET = re.compile(r'^(?:(?!(?:TO|FC|FO|FL|LO|LC|LT|NO|NC)\s)(?P<code>[A-Z]{2})\s+)?SHEET\s*(?P<sheet>\d+)\s*'
+                        r'(?:["“”]\s*(?P<quoted>[A-Z0-9]+)\s*["“”](?P<more>(?:\s*/\s*["“”][A-Z0-9]+["“”])+)?'
+                        r'|-\s*(?P<dashed>[A-Z0-9]+))?$')
 _BARE_CODE = re.compile(r"^[A-Z]{2}$")  # 쌍점 없이 따로 쓴 계통 약어 줄('CC', 'PS', 범례 예 'MS'). DCD 계통 약어는 두 글자
 _FIG_SHEET = re.compile(r"^(.+)-S(\d+)$")                             # 도면번호 '9.3.4-1-S1'
 
@@ -127,10 +132,19 @@ def _system_ref(lines, attrs):
     """다른 계통 표시의 (계통 약어, 시트 번호, 짝 글자). 'CV:RDT / SHEET 5' → CV·5, 'MS\\nSHEET 2"A"' → MS·2·A.
     약어나 시트 번호가 없으면 None(계통 약어 대응표로도 상대를 찾을 수 없다)."""
     m = next((m for m in (_DCD_SHEET.match(line) for line in lines) if m), None)
-    code = attrs.get("to_system") or next((line for line in lines if _BARE_CODE.match(line)), None)
+    code = attrs.get("to_system") or next((line for line in lines if _BARE_CODE.match(line)), None) or \
+        (m and m.group("code"))
     if m is None or not code:
         return None
-    return {"code": code, "sheet": int(m.group(1)), "letter": m.group(2) or m.group(3)}
+    return {"code": code, "sheet": int(m.group("sheet")), "letter": _sheet_letter(m)}
+
+
+def _sheet_letter(m):
+    """'SHEET n' 표시의 짝 글자. 없으면 None. 둘 이상('"C"/"E"')이면 'C/E' 그대로 두어 글자 하나뿐인 표시나 글자 없는
+    표시와는 잇지 않는다(글자 없는 것으로 지우면 상대의 글자 없는 표시와 잘못 이어진다, Codex 검토 재현)."""
+    if m.group("more"):
+        return "/".join([m.group("quoted")] + re.findall(r"[A-Z0-9]+", m.group("more")))
+    return m.group("quoted") or m.group("dashed")
 
 
 def _dcd_sheet_ref(lines, attrs, drawing_number):
@@ -144,14 +158,14 @@ def _dcd_sheet_ref(lines, attrs, drawing_number):
     if m is None:
         return None
     fig = _FIG_SHEET.match(drawing_number or "")
-    letter = m.group(2) or m.group(3)
+    letter = _sheet_letter(m)
     # 두 글자만 있는 줄은 계통 약어다(범례 'MS\nSHEET 2"A"'). 세 글자 이상('RDT')은 같은 계통 기기 이름일 수 있다
-    bare_code = any(_BARE_CODE.match(line) for line in lines)
+    bare_code = any(_BARE_CODE.match(line) for line in lines) or m.group("code")
     if fig is None:
         return None, None, False, None
-    if attrs.get("to_system") or bare_code or int(m.group(1)) == int(fig.group(2)):
+    if attrs.get("to_system") or bare_code or int(m.group("sheet")) == int(fig.group(2)):
         return None, None, False, "other_system"
-    return "%s-S%d" % (fig.group(1), int(m.group(1))), letter, letter is None, None
+    return "%s-S%d" % (fig.group(1), int(m.group("sheet"))), letter, letter is None, None
 
 
 def _ref(end):
