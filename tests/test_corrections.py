@@ -234,6 +234,15 @@ class CorrectionsTest(unittest.TestCase):
         self.assertTrue(reasons["c-0002"].startswith("연결 대상 기기가 바뀌었거나 없음: n6"))
         self.assertEqual(corrections.apply(self.ext, ops)["corrections"]["not_applicable"], [])
 
+    def test_cleared_kind_keeps_target(self):
+        """다시 추출에서 틀린 kind가 지워져도(예: 끝막음 → 없음) 같은 자리의 사람 수정은 적용된다(D14, 3c 검토)."""
+        from hazop.extract import corrections
+        ops = []
+        self.op(ops, self.ext, "set_tag", "n6", {"tag": "RC-TE111"})
+        cleared = copy.deepcopy(self.ext)
+        by_sid(cleared, "n6")["kind"] = None
+        self.assertEqual(corrections.apply(cleared, ops)["corrections"]["applied"], ["c-0001"])
+
     def test_newly_filled_kind_or_tag_keeps_target(self):
         """미분류였던 기호에 사전이 kind·태그를 채워도 같은 자리의 사람 수정은 그대로 적용된다(D14).
         이미 있던 kind가 다른 값으로 바뀐 것은 여전히 '대상이 바뀜'이다."""

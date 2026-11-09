@@ -462,9 +462,9 @@ def _same(base, cur):
     base = {k: v for k, v in base.items() if k != "category"}
     cur = {k: v for k, v in cur.items() if k != "category"}
     if base.get("at") is not None:  # 같은 자리에서 지식이 늘어난 것은 대상이 바뀐 것이 아니다(기호 사전, 기획서/PID-기호사전.md D14)
-        for k in ("kind", "tag"):  # 없던 값이 새로 채워짐
-            if base.get(k) is None and cur.get(k) is not None:
-                base[k] = cur[k]
+        for k in ("kind", "tag"):  # 없던 값이 새로 채워지거나, 틀린 값이 지워짐(같은 자리의 같은 대상)
+            if (base.get(k) is None) != (cur.get(k) is None):
+                base[k] = cur.get(k)
         if (base.get("kind"), cur.get("kind")) == ("physical_connection", "measurement_connection"):
             base["kind"] = cur["kind"]  # 끝 기호가 계기로 밝혀져 같은 선이 측정 연결이 됨
     return base == cur

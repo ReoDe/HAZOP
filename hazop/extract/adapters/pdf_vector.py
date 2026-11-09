@@ -93,6 +93,9 @@ PARAMS = {
     "tick_pair_gap": 3.0,        # 같은 선 위 빗금 둘 이상이 이 거리 안에 나란히 있어야 빗금 묶음
     "tick_host_min": 10.0,       # 빗금이 가로지르는 선의 최소 길이
     "tick_pairs_min": 2,         # 한 선에 빗금 묶음이 이 수 이상이어야 신호선(교차점 옆 빗금 한 묶음으로 배관을 바꾸지 않게)
+    "dot_max": 1.5,              # 매설 배관 점(범례 1.7-1 1/4 BURIED PIPE): 작은 채운 점의 긴 변 상한
+    "dot_host_dist": 1.0,        # 점 가운데와 그 점이 얹힌 선 사이 거리 상한
+    "dots_min": 2,               # 한 선에 점이 이 수 이상이어야 선 장식(외톨이 조각 하나는 지우지 않음)
 }
 
 INSTRUMENT_FUNCTION = {"T": "transmitter", "C": "controller", "I": "indicator", "S": "switch",
@@ -650,6 +653,34 @@ def _line_ticks(polys, prm):
             marked[host] = [(sum(items[i][0][0] for i in g) / len(g), sum(items[i][0][1] for i in g) / len(g))
                             for g in groups]
     return ticks, marked
+
+
+def _line_dots(dashes, polys, prm):
+    """실선 위 점(매설 배관 무늬, 범례 1.7-1 1/4 BURIED PIPE) 찾기 → 점 id 집합.
+    점: 긴 변 dot_max 이하이고 꽉 찬(면적이 상자의 절반 이상) 정사각형에 가까운 채운 조각이 실선 조각 위 dot_host_dist
+    안에 있다. 같은 선에 dots_min개 이상일 때만 장식으로 본다. 점선 경로 위 점(신호선 분기점 점)과 선에서 떨어진 점
+    (열선 추적 표시)은 건드리지 않는다. APR1400의 매설 배관은 실선이나 채운 조각으로 그려져 선 종류는 바꾸지 않는다."""
+    hosts = [(p["id"], a, b) for p in polys for a, b in _segs(p["pts"])]
+    on = collections.defaultdict(list)
+    for d in dashes:
+        if "src" in d:
+            continue
+        w, h = _w(d["bbox"]), _h(d["bbox"])
+        if max(w, h) > prm["dot_max"] or max(w, h) > 1.6 * max(min(w, h), 1e-6):
+            continue
+        pts = d.get("fine") or d["pts"]
+        area = abs(sum(p[0] * q[1] - q[0] * p[1] for p, q in zip(pts, pts[1:] + pts[:1]))) / 2
+        if area < 0.5 * w * h:  # 꽉 찬 점·작은 네모만. 상자만 정사각형인 가는 대각 대시는 점이 아니다
+            continue
+        c = _center(d["bbox"])
+        best = None
+        for hid, a, b in hosts:
+            dist = _seg_dist(c, a, b)[0]
+            if dist <= prm["dot_host_dist"] and (best is None or dist < best[0]):
+                best = (dist, hid)
+        if best is not None:
+            on[best[1]].append(d["id"])
+    return {i for ids in on.values() if len(ids) >= prm["dots_min"] for i in ids}
 
 
 def _group_symbols(cls, prm):
@@ -1296,7 +1327,9 @@ def _classify(sym, text, degree, prm, marks=()):
     kind, basis = _kind_from_text(text)
     if kind is not None:
         return kind, basis
-    if not text and degree == 1 and not sym.stroke_only and max(_w(sym.bbox), _h(sym.bbox)) <= prm["pipe_cap_max"]:
+    # 몸체 안에 원이 든 기호(소화전 등)는 끝막음이 아니다
+    if not text and degree == 1 and not sym.stroke_only and max(_w(sym.bbox), _h(sym.bbox)) <= prm["pipe_cap_max"] \
+            and not (len(sym.bodies) >= 2 and any(b.get("curved") for b in sym.bodies)):
         return "pipe_cap", PIPE_CAP_BASIS
     return None, None
 
@@ -1449,7 +1482,9 @@ def analyze(width, height, words, prims, params=None):
                 _seg_dist(c, a, b)[0] <= prm["tick_host_dist"] for e in ch["evidence"] for c in marked[e]
                 for a, b in _segs(ch["pts"])):
             ch["pneumatic"] = True
-    chains += _build_dashed(syms, dashes, markers, prm)
+    dots = _line_dots(dashes, polys, prm)  # 실선 위 점(매설 배관 무늬)은 점선 조각이 아니다
+    cls["dots"] = [d for d in dashes if d["id"] in dots]
+    chains += _build_dashed(syms, [d for d in dashes if d["id"] not in dots], markers, prm)
     syms = _merge_appendages(syms, chains, prm)
     blocks = _text_blocks(words, prm)
     return {"params": prm, "classified": cls, "symbols": syms, "tees": tees, "chains": chains,
@@ -1678,7 +1713,9 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     drawing["ignored_objects"] = [{"source_object_id": o["id"], "label_text": "", "bbox": _box_out(o["bbox"])}
                                   for o in cls["frames"] + cls["cells"]] + dropped + [
         {"source_object_id": o["id"], "label_text": "", "bbox": _box_out(o["bbox"]), "reason": "line_tick"}
-        for o in cls.get("ticks", [])]
+        for o in cls.get("ticks", [])] + [
+        {"source_object_id": o["id"], "label_text": "", "bbox": _box_out(o["bbox"]), "reason": "line_dot"}
+        for o in cls.get("dots", [])]
     for pid in cls["invisible_dashed"]:
         _issue(unknowns, "dashed_path_no_visible_piece", "점선 무늬·위상 때문에 그려지는 구간이 없는 경로(선으로 보지 않음)",
                pid)

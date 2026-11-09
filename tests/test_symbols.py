@@ -397,6 +397,49 @@ class LineTickTest(unittest.TestCase):
         self.assertFalse([u for u in ex["validation"]["unknowns"] if u["check"] == "missing_tag" and u["target"] in tees])
 
 
+def dot(x, y, r=0.55):
+    pts = [(x - r, y - r), (x + r, y - r), (x + r, y + r), (x - r, y + r), (x - r, y - r)]
+    return {"fill": True, "stroke": False, "fill_white": False, "stroke_white": False, "dash": None,
+            "subpaths": [(pts, True, pts, False)]}
+
+
+def dashed(pts, pattern=(5.867, 2.933)):
+    return dict(prim(pts, False), dash=[list(pattern), 0.0])
+
+
+class BuriedPipeTest(unittest.TestCase):
+    """매설 배관 무늬(선 위 점, 범례 1.7-1 1/4 BURIED PIPE): 실선 위 점은 점선 조각이 아니다(3c)."""
+
+    def test_dots_on_solid_line_are_dropped(self):
+        ex = extract([prim([(50, 100), (150, 100)], False)] + [dot(x, 100) for x in (60, 70, 80, 90)])
+        self.assertFalse([r for r in ex["relations"] + ex["unresolved_connectors"] if r["line_type"] == "pdf_dashed"])
+        self.assertEqual(sum(1 for o in ex["drawing"]["ignored_objects"] if o.get("reason") == "line_dot"), 4)
+
+    def test_lone_dot_and_offset_heat_tracing_dots_are_kept(self):
+        lone = extract([prim([(50, 100), (150, 100)], False), dot(60, 100)])
+        self.assertFalse(any(o.get("reason") == "line_dot" for o in lone["drawing"]["ignored_objects"]))
+        tracing = extract([prim([(50, 100), (150, 100)], False)] + [dot(x, 102.5) for x in (60, 70, 80, 90)])
+        self.assertFalse(any(o.get("reason") == "line_dot" for o in tracing["drawing"]["ignored_objects"]))
+
+    def test_thin_diagonal_dashes_are_not_dots(self):
+        """상자만 정사각형인 가는 대각 대시(점선 신호선 조각)는 점이 아니다(3c 검토)."""
+        thin = []
+        for x in (60, 70, 80):
+            pts = [(x - 0.6, 100.6), (x - 0.5, 100.6), (x + 0.6, 99.4), (x + 0.5, 99.4), (x - 0.6, 100.6)]
+            thin.append({"fill": True, "stroke": False, "fill_white": False, "stroke_white": False, "dash": None,
+                         "subpaths": [(pts, True, pts, False)]})
+        ex = extract([prim([(50, 100), (150, 100)], False)] + thin)
+        self.assertFalse(any(o.get("reason") == "line_dot" for o in ex["drawing"]["ignored_objects"]))
+
+    def test_dots_on_dashed_signal_line_are_kept(self):
+        """점선 신호선의 분기점 점은 매설 배관 무늬가 아니다. 점선 위 점은 지우지 않고 선 종류도 그대로다(3c 검토)."""
+        ex = extract([prim(GATE), prim([(130, 100), (136, 103), (136, 100), (130, 103), (130, 100)]),
+                      dashed([(106, 101.5), (130, 101.5)])] + [dot(x, 101.5) for x in (113.3, 122.1)])
+        self.assertFalse(any(o.get("reason") == "line_dot" for o in ex["drawing"]["ignored_objects"]))
+        self.assertNotIn("physical_connection", {r["kind"] for r in ex["relations"] + ex["unresolved_connectors"]
+                                                 if r["line_type"] == "pdf_dashed"})
+
+
 class RepoLibraryTest(unittest.TestCase):
     def test_repo_library_loads_and_checks(self):
         root = paths.folder("기호")
