@@ -460,6 +460,27 @@ class ArrowLabelTest(unittest.TestCase):
         self.assertIn("SHEET", arrows[0]["label_text"])
 
 
+class IsaBubbleKindTest(unittest.TestCase):
+    """기존 마지막 글자 규칙이 못 정한 계기 원만 ISA 기능 문자로 정한다(3e)."""
+
+    def test_function_letters(self):
+        cases = {"ZL\n202C": "indicator", "LG\n5": "indicator", "FICKS\n101": "controller",
+                 "PISL\n101": "switch", "LEITS\n2": "transmitter", "PTAL\n3110A": "transmitter"}
+        for text, kind in cases.items():
+            self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], kind, text)
+
+    def test_thermowell_alarm_and_annotation_get_no_kind(self):
+        # FE(원 안 검출부)는 배관 부품 kind로 두지 않는다. V(밸브)·설비 번호(RCP 1A)·PSE(파열판)도 계기 kind가 아니다(3e 검토)
+        for text in ("TEW\n4", "TEWIS\n1", "PDAH\n032", "LL", "HHL", "NO", "SY\n019", "RE\n073A", "FE\n341A",
+                     "PSV\n101", "PSE\n101", "PCV\n101", "FCV\n101", "RCP\n1A"):
+            self.assertIsNone(pdf_vector._instrument_kind(text, 12.0)[0], text)
+
+    def test_small_circle_and_existing_rule_unchanged(self):
+        self.assertIsNone(pdf_vector._instrument_kind("ZL\n202C", 6.0)[0])
+        self.assertEqual(pdf_vector._instrument_kind("TIS\n5", 12.0), ("switch", "isa_letters:TIS"))
+        self.assertEqual(pdf_vector._instrument_kind("PT\n101"), ("transmitter", "isa_letters:PT"))
+
+
 class RepoLibraryTest(unittest.TestCase):
     def test_repo_library_loads_and_checks(self):
         root = paths.folder("기호")

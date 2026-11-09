@@ -98,6 +98,7 @@ PARAMS = {
     "dots_min": 2,               # 한 선에 점이 이 수 이상이어야 선 장식(외톨이 조각 하나는 지우지 않음)
 }
 
+VARIABLE_MODIFIERS_ISA = frozenset("DFJKQ")  # hazop.extract.isa.VARIABLE_MODIFIERS와 같은 ISA 변수 수식 문자
 INSTRUMENT_FUNCTION = {"T": "transmitter", "C": "controller", "I": "indicator", "S": "switch",
                        "R": "recorder"}  # ISA 5.1 뒤 글자(기능)
 # 장비 이름 낱말 → kind (일반 P&ID 표기). 순서대로 먼저 맞는 것을 쓴다.
@@ -1253,7 +1254,7 @@ def _kind_from_text(text):
     return None, None
 
 
-def _instrument_kind(text):
+def _instrument_kind(text, min_side=None):
     """ISA 5.1 식 계기 표기(기능 문자 + 번호)를 나눠 읽는다: 'PT\n101'·'PT\n101\nA1'·'PT-101'·'PT 101'·'PT'.
     글자가 여러 줄이면 첫 두 줄(기능 문자·번호)로, 맞지 않으면 첫 줄로 판정한다."""
     lines = [" ".join(l.upper().split()) for l in text.split("\n") if l.strip()]
@@ -1263,12 +1264,45 @@ def _instrument_kind(text):
         if m:
             break
     if not m:
-        return None, None
+        return _isa_bubble_kind(lines, min_side)
     letters = m.group(1)
     if len(letters) >= 2 and letters[-1] == "E" and letters[0] == "T":
         return "temperature_element", "isa_letters:%s" % letters
     if len(letters) >= 2 and letters[-1] in INSTRUMENT_FUNCTION:
         return INSTRUMENT_FUNCTION[letters[-1]], "isa_letters:%s" % letters
+    return _isa_bubble_kind(lines, min_side)
+
+
+# ISA 5.1 뒤 글자(기능)에서 kind를 고르는 순서. 위 규칙(마지막 글자)이 못 정한 계기 원에만 쓴다(기존 판정은 그대로).
+# G(유리·게이지)·L(표시등)은 지시 기능이라 indicator로 본다. E(검출부)는 정하지 않는다: 원 안 FE를 배관 부품
+# flow_element로 두면 검토구간 나누기에서 배관 핵심 조각이 되어 계기 원마다 따로 검토구간이 생긴다(3e 검토).
+ISA_FUNCTION_ORDER = (("T", "transmitter"), ("C", "controller"), ("S", "switch"), ("R", "recorder"),
+                      ("I", "indicator"), ("G", "indicator"), ("L", "indicator"))  # 출력(T·C·S) > 판독(R·I·G·L)
+ISA_LAST_FUNCTIONS = frozenset("TCSRIGLAK")  # 계기 표기의 마지막 기능 문자로 볼 수 있는 글자(A 경보, K 조작반 포함)
+ISA_BUBBLE_MIN = 8.0  # 계기 원 짧은 변 하한(pt)
+
+
+def _isa_bubble_kind(lines, min_side=None):
+    """계기 원 글자가 '기능 문자 2~6자 + 루프 번호' 꼴일 때만(예: 'TEW 4', 'FICKS 101', 'ZL 202C', 줄바꿈으로 나뉨)
+    ISA 뒤 글자로 kind를 정한다. 번호 없는 글자('LL', 'HHL', 'NO' 같은 경보·위치 표기)는 보지 않는다. → (kind, basis) 또는 (None, None)."""
+    if min_side is None or min_side < ISA_BUBBLE_MIN:
+        return None, None  # 작은 원(밸브 힌지 점 등)은 계기 원이 아니다(_bubble_like와 같은 8pt 기준)
+    flat = " ".join(lines[:2])
+    m = re.fullmatch(r"([A-Z]{2,6})[ \-]*\d+[A-Z]?\d?", flat)
+    if not m:
+        return None, None
+    letters = m.group(1)
+    if "W" in letters or "V" in letters:
+        return None, None  # W 보호관(DCD 범례 1.7-1의 TEW), V 밸브(PSV·PCV): 계기 kind가 아니다
+    rest = letters[1:]
+    if rest[:1] in VARIABLE_MODIFIERS_ISA and len(rest) > 1:
+        rest = rest[1:]  # 변수 수식 문자(D 차압 등)
+    funcs = rest.rstrip("HLM") or rest  # 끝의 H·L·M은 높음·낮음·중간 수식 문자(PSAL → SA)
+    if funcs[-1:] not in ISA_LAST_FUNCTIONS:
+        return None, None  # 마지막 글자가 기능 문자가 아니면(RCP 1A 같은 설비 번호, PSE 파열판) 계기 표기로 보지 않는다
+    for letter, kind in ISA_FUNCTION_ORDER:
+        if letter in funcs:
+            return kind, "isa_function:%s" % letters
     return None, None
 
 
@@ -1319,7 +1353,7 @@ def _classify(sym, text, degree, prm, marks=()):
     if shape in ("control_valve", "motor_operated_valve") and "M" in [m.strip().upper() for m in marks]:
         return "motor_operated_valve", "valve_body+actuator_mark:M"
     if shape == "instrument":
-        kind, basis = _instrument_kind(text)
+        kind, basis = _instrument_kind(text, min(_w(sym.bbox), _h(sym.bbox)))
         if kind is None:  # 원형이지만 계기 문자가 아니면 장비 이름 낱말(예: 원형 펌프 기호에 PUMP)을 본다
             kind, basis = _kind_from_text(text)
         return kind, basis or "circle_without_isa_letters"
@@ -1584,7 +1618,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                                     "reason": basis})
                     continue  # 노드 번호는 비워 둔다(다른 기호 번호가 밀리지 않게)
                 if entry.role in ("symbol", "continuation") and entry.kind_from == "isa_letters":
-                    kind, isa_basis = _instrument_kind(text)
+                    kind, isa_basis = _instrument_kind(text, min(_w(s.bbox), _h(s.bbox)))
                     basis = "%s+%s" % (basis, isa_basis) if kind else basis
                     instrument_ids.add(local_id)
                 elif entry.role in ("symbol", "continuation"):
