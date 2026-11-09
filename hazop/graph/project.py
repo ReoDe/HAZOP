@@ -14,6 +14,7 @@
 """
 
 import copy
+import csv
 import hashlib
 import json
 import os
@@ -27,6 +28,7 @@ from hazop.graph.build import to_networkx
 SCHEMA_VERSION = "0.1"
 KIND = "hazop_project_graph"
 MANUAL_KIND = "hazop_sheet_links"
+SYSTEM_CODES_FILE = "계통약어.csv"  # APR1400 DCD 계통 약어 → 그림 번호(paths.folder("APR1400") 아래)
 # 등록 경로 밖 도면(project_id 없음: 샘플 실행 등)을 묶는 프로젝트. 샘플 지식(데이터/지식/SNP-SAMPLE)과 같은 이름.
 UNREGISTERED_PROJECT = "SNP-SAMPLE"
 LEGACY_PROJECT_DIR = "no-project"  # 이 규칙 이전 저장본 폴더(읽기 대체 경로)
@@ -42,6 +44,7 @@ REASONS = {
     "missing_key": "상대 도면 번호나 배관 번호를 읽을 수 없음",
     "other_system": "다른 계통 도면을 가리킴(계통 약어→그림 번호 대응이 없어 상대를 정하지 않음)",
     "description_only": "행선지 설명 글자만 있어 상대 도면을 알 수 없음",
+    "system_candidate": "계통 약어 대응표의 추정 행으로 찾은 후보(사람 확인 전이라 잇지 않음)",
     "manual_unlink": "사람이 연결하지 않음으로 지정",
 }
 _LINE_TOKEN = re.compile(r"^[A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*$")
@@ -116,8 +119,18 @@ def continuation_key(graph, node):
     return {"graph_id": graph["graph_id"], "drawing_number": drawing_number,
             "entity_id": node["entity_id"], "source_object_id": node.get("source_object_id"),
             "direction": direction, "to_drawing": to_drawing, "line_no": line_no, "sheet_only": sheet_only,
-            "unkeyed": unkeyed,
+            "unkeyed": unkeyed, "system_ref": _system_ref(lines, attrs) if unkeyed == "other_system" else None,
             "to_object": attrs.get("to_object"), "label_text": node.get("label_text")}
+
+
+def _system_ref(lines, attrs):
+    """다른 계통 표시의 (계통 약어, 시트 번호, 짝 글자). 'CV:RDT / SHEET 5' → CV·5, 'MS\\nSHEET 2"A"' → MS·2·A.
+    약어나 시트 번호가 없으면 None(계통 약어 대응표로도 상대를 찾을 수 없다)."""
+    m = next((m for m in (_DCD_SHEET.match(line) for line in lines) if m), None)
+    code = attrs.get("to_system") or next((line for line in lines if _BARE_CODE.match(line)), None)
+    if m is None or not code:
+        return None
+    return {"code": code, "sheet": int(m.group(1)), "letter": m.group(2) or m.group(3)}
 
 
 def _dcd_sheet_ref(lines, attrs, drawing_number):
@@ -198,7 +211,7 @@ def check_op(op):
 
 # ---------------------------------------------------------------- 매칭
 
-def match(graphs, manual_ops=()):
+def match(graphs, manual_ops=(), system_codes=None):
     """(sheet_links, manual_skipped). sheet_links 항목:
     {"link_id", "status": linked|unlinked, "reason": None|REASONS 키, "detail", "origin": auto|manual,
      "from": 끝, "to": 끝|None, "candidates": [끝 ref]}. linked면 from = 흐름이 나가는 쪽(TO), to = 들어오는 쪽(FROM).
@@ -258,9 +271,38 @@ def match(graphs, manual_ops=()):
                 and _dn(x["to_drawing"]) == _dn(e["drawing_number"])]
         return back if e.get("sheet_only") else [x for x in back if _norm(x["line_no"]) == _norm(e["line_no"])]
 
+    def system_peer(e):
+        """다른 계통 표시 e의 상대: 대응표가 e의 약어로 가리키는 그림의 그 시트에서, 약어가 e의 그림을 가리키고 시트 번호가
+        e의 시트이며 짝 글자가 같은 표시. → (상대 또는 None, 양쪽 약어가 모두 확정인지)"""
+        ref, home = e.get("system_ref"), _FIG_SHEET.match(_dn(e["drawing_number"]) or "")
+        row = (system_codes or {}).get((ref or {}).get("code"))
+        if not (ref and home and row) or row["figure"] == home.group(1):  # 제 그림을 가리키는 약어로는 잇지 않는다
+            return None, False
+        target = _dn("%s-S%d" % (row["figure"], ref["sheet"]))
+        found = [x for x in ends if x is not e and _ref(x) not in manual_used and _dn(x["drawing_number"]) == target
+                 and x.get("system_ref") and (system_codes.get(x["system_ref"]["code"]) or {}).get("figure") == home.group(1)
+                 and x["system_ref"]["sheet"] == int(home.group(2))
+                 and _norm(x["system_ref"]["letter"]) == _norm(ref["letter"])
+                 and _norm(x["line_no"]) == _norm(e["line_no"])]  # 사람이 적은 배관 번호가 다르면 짝이 아니다
+        if len(found) != 1:
+            return None, False
+        x = found[0]
+        return x, row["confirmed"] and system_codes[x["system_ref"]["code"]]["confirmed"]
+
     for e in sorted(ends, key=_ref):
         if _ref(e) in used:
             continue
+        if e.get("unkeyed") == "other_system" and system_codes:
+            x, confirmed = system_peer(e)
+            if x is not None and e["direction"] and x["direction"] and e["direction"] == x["direction"]:
+                record(UNLINKED, "direction_conflict", "auto", e, candidates=[_ref(x)])
+                continue
+            if x is not None and confirmed and _ref(x) not in used and system_peer(x)[0] is e:
+                record(LINKED, None, "auto", e, x)
+                continue
+            if x is not None and system_peer(x)[0] is e:  # [추론] 행에 기댄 짝은 확정하지 않고 후보로만(서로 하나뿐일 때)
+                record(UNLINKED, "system_candidate", "auto", e, candidates=[_ref(x)])
+                continue
         if not e["to_drawing"] or not (e["line_no"] or e.get("sheet_only")):
             record(UNLINKED, e.get("unkeyed") or "missing_key", "auto", e)
             continue
@@ -316,7 +358,7 @@ def _duplicate_tags(graphs):
             for t, ids in sorted(seen.items()) if len({i.split(SEP)[0] for i in ids}) > 1]
 
 
-def build(project_id, graphs, manual_ops=()):
+def build(project_id, graphs, manual_ops=(), system_codes=None):
     """도면 그래프 목록 -> 프로젝트 그래프 dict. 도면 graph_id가 겹치면 ValueError(auto.project_graphs가 먼저 고른다)."""
     graphs = sorted(graphs, key=lambda g: g["graph_id"])
     gids = [g["graph_id"] for g in graphs]
@@ -330,7 +372,7 @@ def build(project_id, graphs, manual_ops=()):
         if (g.get("validation") or {}).get("status") != "passed":
             blockers.append({"graph_id": g["graph_id"], "reason": "도면 그래프 구조 검증이 passed가 아님(%s)"
                              % (g.get("validation") or {}).get("status")})
-    links, skipped = match(graphs, manual_ops)
+    links, skipped = match(graphs, manual_ops, system_codes)
     by_id = {n["entity_id"]: n for n in nodes}
     for l in links:
         for side in ("from", "to"):
@@ -389,7 +431,40 @@ def load(project_id, graph_root=None):
     graphs = [best[k][1] for k in sorted(best)]
     if not graphs:
         raise ValueError("프로젝트 %s에 추출한 도면이 없음" % project_id)
-    return build(project_id, graphs, (load_manual(project_id) or {}).get("ops") or ())
+    return build(project_id, graphs, (load_manual(project_id) or {}).get("ops") or (),
+                 load_system_codes(paths.folder("APR1400", SYSTEM_CODES_FILE)))
+
+
+def load_system_codes(path):
+    """계통 약어 → {"figure", "confirmed"} 대응표(scripts/build_system_codes.py가 만드는 계통약어.csv). 파일이 없으면 None.
+    confirmed: 출처가 [문서]이거나 사람이 '확인'한 행. 나머지([추론])는 후보 연결에만 쓴다.
+    같은 약어가 여러 행이면 그림 번호가 모두 같고 모든 행이 확정일 때만 확정이다(그림이 다르면 그 약어는 쓰지 않는다)."""
+    rows = read_system_code_rows(path)
+    if rows is None:
+        return None
+    out = {}
+    for r in rows:
+        code, fig = (r.get("계통약어") or "").strip(), (r.get("그림번호") or "").strip()
+        if not code or not fig:
+            continue
+        ok = (r.get("출처") or "").strip() == "[문서]" or (r.get("사람 확인") or "").strip() == "확인"
+        if code in out:
+            out[code] = None if out[code] is None or out[code]["figure"] != fig else \
+                {"figure": fig, "confirmed": out[code]["confirmed"] and ok}
+        else:
+            out[code] = {"figure": fig, "confirmed": ok}
+    return {k: v for k, v in out.items() if v is not None}
+
+
+def read_system_code_rows(path):
+    """계통약어.csv의 행 목록. 엑셀로 고쳐 저장하면 cp949가 되므로 그것도 읽는다. 읽을 수 없으면 None."""
+    for enc in ("utf-8-sig", "cp949"):
+        try:
+            with open(path, encoding=enc) as fh:
+                return list(csv.DictReader(fh))
+        except (OSError, UnicodeDecodeError, csv.Error):
+            continue
+    return None
 
 
 # ---------------------------------------------------------------- 조회

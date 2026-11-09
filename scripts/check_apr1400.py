@@ -328,13 +328,15 @@ def run(input_dir, catalog, jobs, pages=None):
         per_page.append(row)
     from hazop.graph import project
     graphs = [d["graph"] for d in done if d["ok"]]
-    built = project.build("APR1400", graphs) if graphs else None
+    codes = project.load_system_codes(os.path.join(os.path.dirname(input_dir), project.SYSTEM_CODES_FILE))
+    built = project.build("APR1400", graphs, (), codes) if graphs else None
     pg = project.summary(built) if built else {"linked": 0}
     totals = {k: sum(p.get(k, 0) for p in per_page) for k in
               ("bubbles", "offpage_labels", "tagged", "tag_exact", "tag_not_in_text", "continuations",
                "connectors_detected", "connector_bad_target", "unknowns", "nodes", "unclassified")}
     totals.update(pages=len(per_page), failed_pages=sum(1 for p in per_page if not p["ok"]), paired=pg["linked"])
     totals.update(score_pairs(built, {d["dwg"]: d for d in done if d["ok"]}))
+    totals["pair_candidates"] = sum(1 for l in (built or {}).get("sheet_links") or [] if l["reason"] == "system_candidate")
     keyed = {}
     for kp in sorted(glob.glob(os.path.join(ANSWER_KEY, "*.json"))):
         with open(kp, encoding="utf-8") as fh:
@@ -410,10 +412,10 @@ def ratchet(base, now):
 
 def headline(t):
     return ("APR1400: 태그 정확 %d/%d(원) · 텍스트 층에 없는 태그 %d · 연결 표기 검출 %d/%d · 없는 대상 %d · 짝 %d"
-            "(정답 짝 %d/%d · 틀린 짝 %d) · 미확인 %d"
+            "(정답 짝 %d/%d · 틀린 짝 %d · 후보 %d) · 미확인 %d"
             % (t["tag_exact"], t["bubbles"], t["tag_not_in_text"], t["connectors_detected"], t["offpage_labels"],
                t["connector_bad_target"], t["paired"], t.get("pair_key_hit", 0), t.get("pair_key", 0),
-               t.get("pair_key_wrong", 0), t["unknowns"]))
+               t.get("pair_key_wrong", 0), t.get("pair_candidates", 0), t["unknowns"]))
 
 
 def main(argv=None):

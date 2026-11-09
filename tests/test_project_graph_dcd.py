@@ -113,5 +113,74 @@ class SameFigureSheets(unittest.TestCase):
         self.assertEqual(got, [("linked", None, "B", "A")])
 
 
+class OtherSystems(unittest.TestCase):
+    """다른 계통 표시('CV:RDT / SHEET 5', 'IA\nSHEET 1')는 계통 약어 대응표(계통약어.csv)로 상대 그림을 찾는다.
+    양쪽 약어가 모두 확정([문서] 또는 사람 확인)이면 잇고, 하나라도 [추론]이면 후보로만 남긴다."""
+
+    CODES = {"IA": {"figure": "9.3.1-1", "confirmed": True}, "SA": {"figure": "9.3.1-2", "confirmed": True},
+             "CV": {"figure": "9.3.4-1", "confirmed": False}, "RC": {"figure": "5.1.2-1", "confirmed": False}}
+
+    def links(self, *graphs, codes=CODES):
+        return sorted((l["status"], l["reason"]) for l in project.build("P", list(graphs), (), codes)["sheet_links"])
+
+    def test_confirmed_codes_both_ways_link(self):
+        got = self.links(sheet("9.3.1-2-S1", cont("A", 'IA\nSHEET 1"K"')), sheet("9.3.1-1-S1", cont("B", 'SA\nSHEET 1"K"')))
+        self.assertEqual(got, [("linked", None)])
+
+    def test_inferred_code_only_makes_candidates(self):
+        got = self.links(sheet("5.1.2-1-S1", cont("A", "SHEET 1", to_system="CV")),
+                         sheet("9.3.4-1-S1", cont("B", "SHEET 1", to_system="RC")))
+        self.assertEqual(got, [("unlinked", "system_candidate"), ("unlinked", "system_candidate")])
+
+    def test_wrong_sheet_or_letter_finds_nothing(self):
+        got = self.links(sheet("9.3.1-2-S1", cont("A", 'IA\nSHEET 1"K"')), sheet("9.3.1-1-S1", cont("B", 'SA\nSHEET 1"L"')))
+        self.assertEqual({g[1] for g in got}, {"other_system"})
+
+    def test_same_direction_on_both_sides_is_a_conflict(self):
+        """Codex 검토 재현: 확정 약어라도 TO·TO면 잇지 않는다."""
+        got = self.links(sheet("9.3.1-2-S1", cont("A", 'IA\nSHEET 1"K"', direction="to")),
+                         sheet("9.3.1-1-S1", cont("B", 'SA\nSHEET 1"K"', direction="to")))
+        self.assertNotIn("linked", {g[0] for g in got})
+
+    def test_different_line_numbers_given_by_people_do_not_pair(self):
+        got = self.links(sheet("9.3.1-2-S1", cont("A", 'IA\nSHEET 1"K"', line_no="L-1")),
+                         sheet("9.3.1-1-S1", cont("B", 'SA\nSHEET 1"K"', line_no="L-2")))
+        self.assertNotIn("linked", {g[0] for g in got})
+
+    def test_duplicate_rows_never_promote_an_inferred_code(self):
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "codes.csv")
+        with open(path, "w", encoding="utf-8-sig", newline="") as fh:
+            fh.write("계통약어,그림번호,계통명,출처,근거,사람 확인\n"
+                     "CV,9.3.4-1,x,[추론],x,미확인\nCV,9.3.4-1,x,[문서],x,미확인\n"
+                     "RC,5.1.2-1,x,[문서],x,미확인\nRC,5.1.1-1,x,[문서],x,미확인\nIA,9.3.1-1,x,[문서],x,미확인\n")
+        codes = project.load_system_codes(path)
+        self.assertEqual((codes["CV"]["confirmed"], "RC" in codes, codes["IA"]["confirmed"]), (False, False, True))
+
+    def test_a_code_naming_its_own_figure_never_links_a_sheet_to_itself(self):
+        got = self.links(sheet("9.3.1-1-S1", cont("A", 'IA\nSHEET 1"K"'), cont("B", 'IA\nSHEET 1"K"')))
+        self.assertNotIn("linked", {g[0] for g in got})
+
+    def test_a_table_saved_by_excel_in_cp949_still_loads(self):
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "codes.csv")
+        with open(path, "w", encoding="cp949", newline="") as fh:
+            fh.write("계통약어,그림번호,계통명,출처,근거,사람 확인\nCV,9.3.4-1,화학체적제어계통,[추론],x,확인\n")
+        self.assertEqual(project.load_system_codes(path), {"CV": {"figure": "9.3.4-1", "confirmed": True}})
+
+    def test_a_table_without_the_expected_columns_is_ignored_quietly(self):
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "codes.csv")
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write("a,b\n1,2\n")
+        self.assertEqual(project.load_system_codes(path), {})
+        self.assertIsNone(project.load_system_codes(path + ".none"))
+
+    def test_without_the_table_nothing_changes(self):
+        got = self.links(sheet("9.3.1-2-S1", cont("A", 'IA\nSHEET 1"K"')), sheet("9.3.1-1-S1", cont("B", 'SA\nSHEET 1"K"')),
+                         codes=None)
+        self.assertEqual({g[1] for g in got}, {"other_system"})
+
+
 if __name__ == "__main__":
     unittest.main()
