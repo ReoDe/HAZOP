@@ -56,8 +56,8 @@ class ResultsProjectUiTest(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="hazop-res-proj-")
         self._env = os.environ.get("HAZOP_WORK_ROOT")
         os.environ["HAZOP_WORK_ROOT"] = self.tmp
-        self.a = sheet("SNP-M-101", cont("C1", "TO SNP-M-102\nL-1"))
-        self.b = sheet("SNP-M-102", cont("C1", "FROM SNP-M-101\nL-1"))
+        self.a = sheet("SNP-M-101", cont("C1", "TO SNP-M-102\nL-1"), valve=True)
+        self.b = sheet("SNP-M-102", cont("C1", "FROM SNP-M-101\nL-1"), valve=True)
         for g in (self.a, self.b):
             d = os.path.join(self.tmp, "출력", "그래프", g["source"]["drawing_number"])
             os.makedirs(d)

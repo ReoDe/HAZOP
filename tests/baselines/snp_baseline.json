@@ -16,7 +16,7 @@
     "transmitter": 5
    },
    "pipes": 35,
-   "proposed_nodes": 10,
+   "proposed_nodes": 6,
    "tags": [
     "RC-CAP01",
     "RC-CAP02",
@@ -103,7 +103,7 @@
     "transmitter": 4
    },
    "pipes": 23,
-   "proposed_nodes": 16,
+   "proposed_nodes": 7,
    "tags": [
     "CV-F01",
     "CV-FO01",
@@ -139,7 +139,7 @@
     "transmitter": 4
    },
    "pipes": 21,
-   "proposed_nodes": 8,
+   "proposed_nodes": 4,
    "tags": [
     "SI-FO01",
     "SI-FT301",
@@ -173,7 +173,7 @@
     "transmitter": 3
    },
    "pipes": 24,
-   "proposed_nodes": 9,
+   "proposed_nodes": 4,
    "tags": [
     "CC-FT401",
     "CC-HX01",
@@ -213,7 +213,7 @@
     "vent": 1
    },
    "pipes": 20,
-   "proposed_nodes": 9,
+   "proposed_nodes": 3,
    "tags": [
     "FW-FIC503",
     "FW-FT503",
@@ -255,7 +255,7 @@
     "transmitter": 5
    },
    "pipes": 35,
-   "proposed_nodes": 10,
+   "proposed_nodes": 6,
    "tags": [
     "RC-FT101",
     "RC-LT101",
@@ -327,7 +327,7 @@
     "transmitter": 4
    },
    "pipes": 23,
-   "proposed_nodes": 16,
+   "proposed_nodes": 7,
    "tags": [
     "CV-F01",
     "CV-FO01",
@@ -360,7 +360,7 @@
     "transmitter": 4
    },
    "pipes": 21,
-   "proposed_nodes": 8,
+   "proposed_nodes": 4,
    "tags": [
     "SI-FO01",
     "SI-FT301",
@@ -390,7 +390,7 @@
     "unclassified": 2
    },
    "pipes": 22,
-   "proposed_nodes": 6,
+   "proposed_nodes": 4,
    "tags": [
     "CC-FT401",
     "CC-HX01",
@@ -420,7 +420,7 @@
     "vent": 1
    },
    "pipes": 20,
-   "proposed_nodes": 9,
+   "proposed_nodes": 3,
    "tags": [
     "FW-FV501",
     "FW-PP01",
@@ -439,7 +439,7 @@
   "drawio": {
    "direction_conflicts": 0,
    "linked": 12,
-   "proposed_nodes": 45,
+   "proposed_nodes": 29,
    "sheets": 6,
    "unlinked": {
     "unregistered_drawing": 2
@@ -448,7 +448,7 @@
   "pdf": {
    "direction_conflicts": 0,
    "linked": 12,
-   "proposed_nodes": 41,
+   "proposed_nodes": 25,
    "sheets": 6,
    "unlinked": {
     "unregistered_drawing": 2

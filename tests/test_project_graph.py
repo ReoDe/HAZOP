@@ -14,8 +14,9 @@ def cont(eid, label, soid=None, **attrs):
             "source_object_id": soid or eid}
 
 
-def sheet(dn, *conts, extra=()):
-    """연결점 + 기기 E(태그 <dn>-E) + 배관 구간으로 각 연결점을 기기에 잇는 도면."""
+def sheet(dn, *conts, extra=(), valve=False):
+    """연결점 + 기기 E(태그 <dn>-E) + 배관 구간으로 각 연결점을 기기에 잇는 도면.
+    valve면 연결점마다 밸브 가지를 달아, 도면을 잇는 배관이 편차원을 가진 제 구간으로 남게 한다."""
     nodes = [{"entity_id": "E", "node_type": "drawing_object", "kind": "tank", "category": "equipment",
               "tag": "%s-E" % dn, "label_text": "", "attributes": {}, "source_object_id": "E"}] + list(conts)
     edges = []
@@ -27,6 +28,17 @@ def sheet(dn, *conts, extra=()):
                    "node": c["entity_id"], "end": "source"},
                   {"entity_id": seg + "b", "kind": "has_endpoint", "nodes": [seg, "E"], "segment": seg, "node": "E",
                    "end": "target"}]
+    if valve:
+        for i, c in enumerate(conts):
+            vid, seg = "V%d" % i, "SV%d" % i
+            nodes += [{"entity_id": vid, "node_type": "drawing_object", "kind": "manual_valve", "category": "valve",
+                       "tag": "%s-V%d" % (dn, i), "label_text": "", "attributes": {}, "source_object_id": vid},
+                      {"entity_id": seg, "node_type": "pipe_segment", "kind": "pipe_segment", "category": "pipe_segment",
+                       "tag": None, "line_no": None, "flow_direction": None, "attributes": {}}]
+            edges += [{"entity_id": seg + "a", "kind": "has_endpoint", "nodes": [seg, c["entity_id"]], "segment": seg,
+                       "node": c["entity_id"], "end": "source"},
+                      {"entity_id": seg + "b", "kind": "has_endpoint", "nodes": [seg, vid], "segment": seg, "node": vid,
+                       "end": "target"}]
     return {"graph_id": "graph-" + dn, "graph_version": "v1", "project_id": "P", "source": {"drawing_number": dn},
             "nodes": nodes + list(extra), "edges": edges, "validation": {"status": "passed"}}
 

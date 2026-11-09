@@ -41,7 +41,7 @@ class StudyProjectUiTest(unittest.TestCase):
         cls._env = {k: os.environ.get(k) for k in ("HAZOP_WORK_ROOT", "HAZOP_STORE_ROOT")}
         os.environ["HAZOP_WORK_ROOT"] = os.path.join(cls.tmp, "work")
         os.environ["HAZOP_STORE_ROOT"] = os.path.join(cls.tmp, "store")
-        cls.sheets = {A: sheet(A, cont("C1", "TO %s\nL-1" % B)), B: sheet(B, cont("C1", "FROM %s\nL-1" % A))}
+        cls.sheets = {A: sheet(A, cont("C1", "TO %s\nL-1" % B), valve=True), B: sheet(B, cont("C1", "FROM %s\nL-1" % A), valve=True)}
         for dn, g in cls.sheets.items():
             write_drawing(os.environ["HAZOP_WORK_ROOT"], dn, g)
         from hazop.app import make_application

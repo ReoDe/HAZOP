@@ -159,10 +159,9 @@ def migrate_set(node_set, graph, at=None):
     p = plan(node_set, graph)
     if p["state"] != "kept":
         return node_set, p
-    out = copy.deepcopy(node_set)
+    from hazop.study.nodes import map_members
     ren = p["renamed"]
-    for n in out["nodes"]:
-        n["members"] = sorted(ren.get(m, m) for m in n["members"])
+    out = map_members(node_set, ren)
     old_version = out.get("graph_version")
     out["graph_version"] = graph["graph_version"]
     out.update(member_refs=member_refs(out, graph), member_digest=member_digest(graph))

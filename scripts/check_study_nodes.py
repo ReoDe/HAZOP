@@ -1,7 +1,7 @@
 """④ 검토구간 자동 제안 검사 (QA용). 근거: 3단계 명세 §B nodes.py.
 
 샘플 도면 전부를 임시 폴더에서 새로 추출·빌드한 그래프로 확인한다(저장소의 출력/·데이터/에 쓰지 않음).
-도면마다: 덮음률 100%, 구간당 능동 요소 ≤ 5, 같은 입력 → 같은 출력,
+도면마다: 덮음률 100%, 남긴 구간당 분할 가중 요소(밸브·펌프) ≤ 5, 같은 입력 → 같은 출력,
 병합·분할·확정·저장·읽기 왕복, 미포함 구성요소가 있으면 확정 거부, 구성요소가 바뀐 그래프 판은 stale 감지,
 구성요소가 같고 판만 바뀌면 확정을 판 이전(U10).
 종료 코드 0 = 전부 통과.
@@ -22,7 +22,7 @@ from hazop.console import safe_console  # noqa: E402
 
 from hazop import paths  # noqa: E402
 from hazop.graph import build  # noqa: E402
-from hazop.study import nodes as sn  # noqa: E402
+from hazop.study import nodes as sn, segment  # noqa: E402
 
 AT = "2026-11-07T00:00:00Z"
 
@@ -43,9 +43,9 @@ def check_proposal(g, s):
     if cov["uncovered"]:
         f.append("미포함 %d개 %s" % (len(cov["uncovered"]), cov["uncovered"][:5]))
     for n in s["nodes"]:
-        active = sum(sn.is_active(by[m]) for m in n["members"] if m in by)
-        if active > sn.MAX_ACTIVE:
-            f.append("%s 능동 요소 %d개 > %d" % (n["node_id"], active, sn.MAX_ACTIVE))
+        active = sum(segment.traits(by[m]).weighted for m in n["members"] if m in by)
+        if n["screen"]["status"] != "excluded" and active > segment.MAX_ACTIVE:
+            f.append("%s 분할 가중 요소 %d개 > %d" % (n["node_id"], active, segment.MAX_ACTIVE))
         if not n["members"] or n["members"] != sorted(set(n["members"])):
             f.append("%s members가 비었거나 정렬·중복 위반" % n["node_id"])
     if [n["node_id"] for n in s["nodes"]] != ["S%d" % i for i in range(1, len(s["nodes"]) + 1)]:

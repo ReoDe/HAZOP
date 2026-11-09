@@ -14,7 +14,7 @@ sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "tests"))
 
 from hazop import paths  # noqa: E402
-from hazop.study import nodes as sn  # noqa: E402
+from hazop.study import nodes as sn, segment  # noqa: E402
 
 AT = "2026-11-07T00:00:00Z"
 
@@ -54,7 +54,7 @@ def synthetic_graph():
 
 def active_count(node, graph):
     by = {n["entity_id"]: n for n in graph["nodes"]}
-    return sum(sn.is_active(by[m]) for m in node["members"])
+    return sum(segment.traits(by[m]).weighted for m in node["members"])
 
 
 def node_named(node_set, entity_id):
@@ -72,23 +72,22 @@ class ProposeTest(unittest.TestCase):
         self.assertEqual((cov["covered"], cov["total"], cov["uncovered"], cov["ratio"]),
                          (len(self.g["nodes"]), len(self.g["nodes"]), [], 1.0))
         for n in self.s["nodes"]:
-            self.assertLessEqual(active_count(n, self.g), sn.MAX_ACTIVE, n["node_id"])
+            self.assertLessEqual(active_count(n, self.g), segment.MAX_ACTIVE, n["node_id"])
         self.assertEqual(self.s["status"], "proposed")
         self.assertEqual([n["node_id"] for n in self.s["nodes"]], ["S%d" % i for i in range(1, len(self.s["nodes"]) + 1)])
 
-    def test_equipment_is_its_own_boundary(self):
+    def test_only_vessels_are_boundaries(self):
         tank = node_named(self.s, "n-E1")
-        self.assertEqual(sn.nodes_of(self.s, "n-E1"), [tank["node_id"]])
-        self.assertNotIn("n-V1", tank["members"])
-        self.assertNotEqual(sn.nodes_of(self.s, "n-P1"), sn.nodes_of(self.s, "n-V7"))
+        self.assertEqual(tank["members"], ["n-E1", "n-LI1", "n-LT1"])
+        self.assertEqual(sn.nodes_of(self.s, "n-P1"), sn.nodes_of(self.s, "n-V7"))  # 펌프는 배관 경로 안(D1)
 
-    def test_long_path_is_split_in_connection_order(self):
+    def test_long_path_is_split_into_connected_pieces(self):
         first, second = node_named(self.s, "n-V1"), node_named(self.s, "n-V7")
-        self.assertNotEqual(first["node_id"], second["node_id"])
-        self.assertEqual(active_count(first, self.g), 5)
-        self.assertEqual(active_count(second, self.g), 2)
-        self.assertIn("n-V5", first["members"])
-        self.assertIn("n-V6", second["members"])
+        self.assertEqual([m for m in first["members"] if not m.startswith("n-FT")],
+                         ["n-V1", "n-V2", "n-V3", "s-1", "s-2", "s-3"])
+        self.assertEqual([m for m in second["members"] if m != "n-TI9"],
+                         ["n-P1", "n-V4", "n-V5", "n-V6", "n-V7", "s-4", "s-5", "s-6", "s-7", "s-8"])
+        self.assertEqual((active_count(first, self.g), active_count(second, self.g)), (3, 5))
 
     def test_instruments_attach_by_link_then_position_then_other(self):
         self.assertEqual(sn.nodes_of(self.s, "n-LI1"), sn.nodes_of(self.s, "n-E1"))

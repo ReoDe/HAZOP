@@ -96,6 +96,16 @@ def _boundaries(node, by_id, drawing_of, node_of, seg_ends, seg_rank):
         return only, only, []
     start = starts[0] if starts else (unknown.pop(0) if unknown else None)
     end = ends[-1] if ends else (unknown.pop() if unknown else None)
+    if equipment and (start is None) != (end is None):
+        # 기기와 그 출구 배관을 한 구간에 묶으면(스크리닝 R2) 안쪽 기기가 한쪽 경계다. 배관은 상류 기기에 붙으므로
+        # 흐름상 시작이 밖에서 보이지 않았으면 안쪽 기기가 시작이고, 밖의 경계는 끝으로 옮긴다
+        inside = item(equipment[0])
+        if start is not None and not starts:
+            start, end = inside, start
+        elif start is None:
+            start = inside
+        else:
+            end = inside
     if start is None and end is None:  # 경계 기기 없이 배관 요소만 남은 구간: 태그 있는 첫 구성요소로 설명
         first = next((m for m in node["members"] if (by_id.get(m) or {}).get("tag")), node["members"][0])
         start = end = dict(item(first), note="경계 기기 없음")
