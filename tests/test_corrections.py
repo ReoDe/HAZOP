@@ -269,6 +269,34 @@ class CorrectionsTest(unittest.TestCase):
         out = by_sid(corrections.apply(base, ops), "n6")
         self.assertEqual(out["attributes"], {"note": "keep", "kind": "drain"})
 
+    def test_renumbered_target_is_found_by_position(self):
+        """다시 추출로 id만 바뀐 같은 대상(같은 종류·태그·위치)은 새 id로 적용하고 retargeted에 남긴다(D14)."""
+        from hazop.extract import corrections
+        ops = []
+        self.op(ops, self.ext, "set_tag", "n6", {"tag": "RC-TE111"})
+        moved = copy.deepcopy(self.ext)
+        by_sid(moved, "n6")["source_object_id"] = "n6-renumbered"
+        out = corrections.apply(moved, ops)
+        self.assertEqual(out["corrections"]["applied"], ["c-0001"])
+        self.assertEqual(out["corrections"]["retargeted"], [{"op_id": "c-0001", "from": "n6", "to": "n6-renumbered"}])
+        self.assertEqual(by_sid(out, "n6-renumbered")["tag"], "RC-TE111")
+
+    def test_two_candidates_at_same_position_are_not_guessed(self):
+        from hazop.extract import corrections
+        ops = []
+        self.op(ops, self.ext, "set_tag", "n6", {"tag": "RC-TE111"})
+        moved = copy.deepcopy(self.ext)
+        twin = copy.deepcopy(by_sid(moved, "n6"))
+        by_sid(moved, "n6")["source_object_id"] = "n6-a"
+        twin.update(source_object_id="n6-b", local_id=twin["local_id"] + "-b")
+        moved["nodes"].append(twin)
+        loc = copy.deepcopy(next(l for l in moved["source_locations"] if l["local_id"] == by_sid(moved, "n6-a")["local_id"]))
+        loc["local_id"] = twin["local_id"]
+        moved["source_locations"].append(loc)
+        out = corrections.apply(moved, ops)
+        self.assertEqual(out["corrections"]["applied"], [])
+        self.assertNotIn("retargeted", out["corrections"])
+
     def test_make_op_rejects_invalid_ops(self):
         from hazop.extract import corrections
         bad = [("rename", "n1", {}), ("set_tag", "nope", {"tag": "a"}), ("set_kind", "n1", {"kind": "pump", "category": "valve"}),

@@ -465,7 +465,7 @@ def _same(base, cur):
         for k in ("kind", "tag"):  # 없던 값이 새로 채워짐
             if base.get(k) is None and cur.get(k) is not None:
                 base[k] = cur[k]
-        if "ends" in base and (base.get("kind"), cur.get("kind")) == ("physical_connection", "measurement_connection"):
+        if (base.get("kind"), cur.get("kind")) == ("physical_connection", "measurement_connection"):
             base["kind"] = cur["kind"]  # 끝 기호가 계기로 밝혀져 같은 선이 측정 연결이 됨
     return base == cur
 
@@ -518,6 +518,42 @@ def _apply_one(st, original_fp, op):
         mark.update(by=op.get("by"), at=op.get("at"))
 
 
+def _rematch(fp, original_fp):
+    """번호가 밀린 대상을 지문으로 다시 찾는다(기획서/PID-기호사전.md D14). 같은 위치(at)·같은 종류의 대상이 정확히
+    하나일 때만 그 id. 관계의 양 끝(ends)은 노드 번호가 같이 밀리므로 보지 않는다. 둘 이상이거나 없으면 None."""
+    if not fp or fp.get("at") is None:
+        return None
+    is_rel = "ends" in fp
+    strip = {k: v for k, v in fp.items() if k != "ends"}
+    hits = [sid for sid, cur in sorted(original_fp.items())
+            if cur and cur.get("at") == fp["at"] and ("ends" in cur) == is_rel
+            and _same(strip, {k: v for k, v in cur.items() if k != "ends"})]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _retarget(op, original_fp):
+    """대상·참조 노드가 다시 추출로 번호만 바뀌었으면 새 번호로 바꾼 연산 사본과 바뀐 (옛, 새) 목록."""
+    moved, target, base = [], op.get("target"), op.get("base")
+    if target and not str(target).startswith(MANUAL_PREFIX) and base and not _same(base, original_fp.get(target)):
+        alt = _rematch(base, original_fp)
+        if alt:  # 같은 자리·같은 종류가 하나뿐: 번호(대상 id나 끝 노드 id)만 바뀐 같은 대상이다
+            op = dict(op, target=alt, base=original_fp[alt])
+            moved.append((target, alt))
+    value, refs = op.get("value"), op.get("refs") or {}
+    if isinstance(value, dict):
+        repl = {}
+        for sid in _refs(value):
+            if refs.get(sid) is not None and not _same(refs[sid], original_fp.get(sid)):
+                alt = _rematch(refs[sid], original_fp)
+                if alt and alt != sid:
+                    repl[sid] = alt
+        if repl:
+            value = {k: (repl.get(v, v) if k in REF_KEYS and isinstance(v, str) else v) for k, v in value.items()}
+            op = dict(op, value=value, refs={repl.get(k, k): v for k, v in refs.items()})
+            moved += sorted(repl.items())
+    return op, moved
+
+
 def apply(extraction, ops):
     """원본 extraction에 ops를 순서대로 적용한 깊은 사본. 입력은 바꾸지 않는다.
     ops가 비면 같은 내용의 사본("corrections" 키 없음, graph_version 그대로)."""
@@ -525,16 +561,20 @@ def apply(extraction, ops):
     if not ops:
         return doc
     st, original_fp = _State(doc), _fingerprints(extraction)
-    applied, skipped = [], []
+    applied, skipped, retargeted = [], [], []
     for op in ops:
         try:
+            op, moved = _retarget(op, original_fp)
             _apply_one(st, original_fp, op)
         except _Skip as exc:
             skipped.append({"op_id": op.get("op_id"), "reason": str(exc)})
         else:
             applied.append(op["op_id"])
+            retargeted += [{"op_id": op["op_id"], "from": a, "to": b} for a, b in moved]
     doc["corrections"] = {"ops": len(ops), "applied": applied, "not_applicable": skipped,
                           "resolved_unknowns": st.resolved}
+    if retargeted:
+        doc["corrections"]["retargeted"] = retargeted  # 다시 추출로 번호만 바뀐 대상(지문 위치로 다시 찾음)
     doc["summary"] = summarize(doc)
     return doc
 

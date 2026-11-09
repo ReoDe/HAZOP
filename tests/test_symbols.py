@@ -339,6 +339,64 @@ class PdfVectorLinkTest(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+def ticks_at(xs, y=100.0, slant=1.0):
+    """가로선 y 위 x마다 빗금 둘(//)을 1pt 간격으로 그린다."""
+    out = []
+    for x in xs:
+        for dx in (0.0, 1.0):
+            out.append(prim([(x + dx - 0.6 * slant, y + 1.0), (x + dx + 0.6 * slant, y - 1.0)], False))
+    return out
+
+
+class LineTickTest(unittest.TestCase):
+    """신호선 빗금(//, 범례 1.7-1 4/4): 배관 위상에 넣지 않고 그 선을 공압 신호선으로 본다(3단계)."""
+
+    def test_ticked_line_is_pneumatic_signal_without_junctions(self):
+        ex = extract([prim(GATE, True), prim([(50, 100), (100, 100)], False)] + ticks_at((60, 80)))
+        rels = [r for r in ex["relations"] + ex["unresolved_connectors"]]
+        self.assertEqual({r["line_type"] for r in rels}, {"pdf_pneumatic"})
+        self.assertEqual([n for n in ex["nodes"] if n["kind"] == "tee"], [])
+        self.assertEqual(sum(1 for o in ex["drawing"]["ignored_objects"] if o.get("reason") == "line_tick"), 4)
+
+    def test_one_pair_or_perpendicular_marks_are_not_ticks(self):
+        one = extract([prim([(50, 100), (100, 100)], False)] + ticks_at((60,)))
+        self.assertFalse(any(r["line_type"] == "pdf_pneumatic" for r in one["relations"] + one["unresolved_connectors"]))
+        plates = [prim([(x, 98), (x, 102)], False) for x in (60, 61, 80, 81)]
+        perp = extract([prim([(50, 100), (100, 100)], False)] + plates)
+        self.assertFalse(any(o.get("reason") == "line_tick" for o in perp["drawing"]["ignored_objects"]))
+
+    def test_touching_taps_are_not_ticks(self):
+        """선에 한 끝만 닿은 45° 짧은 탭(계기 탭·가지)은 가로지르지 않으므로 빗금이 아니다(3a 검토)."""
+        taps = [prim([(x, 100.0), (x + 1.2, 98.8)], False) for x in (60, 61, 80, 81)]
+        ex = extract([prim([(50, 100), (100, 100)], False)] + taps)
+        self.assertFalse(any(o.get("reason") == "line_tick" for o in ex["drawing"]["ignored_objects"]))
+        self.assertFalse(any(r["line_type"] == "pdf_pneumatic" for r in ex["relations"] + ex["unresolved_connectors"]))
+
+    def test_one_crowded_group_is_not_two_pairs(self):
+        """빗금 넷이 한 자리에 몰리면(해칭) 독립된 // 묶음 둘이 아니다(3a 검토)."""
+        crowd = [prim([(x - 0.6, 101.0), (x + 0.6, 99.0)], False) for x in (60, 60.8, 61.6, 62.4)]
+        ex = extract([prim([(50, 100), (100, 100)], False)] + crowd)
+        self.assertFalse(any(o.get("reason") == "line_tick" for o in ex["drawing"]["ignored_objects"]))
+
+    def test_split_path_marks_only_the_ticked_piece(self):
+        """빗금은 앞쪽에만 있는 꺾인 경로가 분기점에서 나뉘면 빗금 없는 뒤쪽 토막은 배관이다(3a 검토)."""
+        path = prim([(50, 100), (100, 100), (100, 150)], False)
+        branch = prim([(100, 120), (130, 120)], False)
+        ex = extract([path, branch] + ticks_at((60, 80)))
+        kinds = {}
+        for r in ex["relations"] + ex["unresolved_connectors"]:
+            pts = r["evidence"]["pdf_path"]
+            kinds[(round(pts[0][1]), round(pts[-1][1]))] = r["line_type"]
+        self.assertEqual(kinds.get((100, 120)) or kinds.get((120, 100)), "pdf_pneumatic")
+        self.assertNotEqual(kinds.get((120, 150)) or kinds.get((150, 120)), "pdf_pneumatic")
+
+    def test_junctions_have_no_missing_tag(self):
+        ex = extract([prim([(0, 50), (100, 50)], False), prim([(50, 50), (50, 0)], False)])
+        tees = {n["local_id"] for n in ex["nodes"] if n["kind"] == "tee"}
+        self.assertTrue(tees)
+        self.assertFalse([u for u in ex["validation"]["unknowns"] if u["check"] == "missing_tag" and u["target"] in tees])
+
+
 class RepoLibraryTest(unittest.TestCase):
     def test_repo_library_loads_and_checks(self):
         root = paths.folder("기호")

@@ -83,6 +83,13 @@ PARAMS = {
     "word_gap_ratio": 0.6,       # 같은 줄: 단어 사이 간격 ≤ 글자 크기 × 비율
     "block_gap_min_ratio": -0.2,  # 같은 문단: 줄 사이 간격 ≥ 글자 크기 × 비율
     "block_gap_max_ratio": 0.5,  # 같은 문단: 줄 사이 간격 ≤ 글자 크기 × 비율
+    "tick_len_max": 4.0,         # 신호선 빗금(//): 짧은 직선 조각 길이 상한(APR1400 범례 1.7-1 4/4 공압 신호선)
+    "tick_host_dist": 1.0,       # 빗금 가운데와 가로지르는 선 사이 거리 상한
+    "tick_angle_min": 30.0,      # 빗금과 선 사이 각도 범위(도). 직각(오리피스 판)은 빗금으로 보지 않는다
+    "tick_angle_max": 80.0,
+    "tick_pair_gap": 3.0,        # 같은 선 위 빗금 둘 이상이 이 거리 안에 나란히 있어야 빗금 묶음
+    "tick_host_min": 10.0,       # 빗금이 가로지르는 선의 최소 길이
+    "tick_pairs_min": 2,         # 한 선에 빗금 묶음이 이 수 이상이어야 신호선(교차점 옆 빗금 한 묶음으로 배관을 바꾸지 않게)
 }
 
 INSTRUMENT_FUNCTION = {"T": "transmitter", "C": "controller", "I": "indicator", "S": "switch",
@@ -589,6 +596,56 @@ def _end_status(poly, k, polys, syms, markers, prm):
             if _seg_dist(p, a, b)[0] <= prm["end_tol"]:
                 return "interior"
     return None
+
+
+def _line_ticks(polys, prm):
+    """신호선 빗금(//) 찾기(범례 1.7-1 4/4 공압 신호선). → (빗금 id 집합, {선 id: [빗금 묶음 가운데]}).
+    빗금: 4pt 이하 직선 조각이 긴 열린 선을 비스듬히(30~80도) 실제로 가로지른다(두 끝이 선의 양쪽에 떨어져 있음).
+    가장 가까운 선 하나에만 딸린다. 서로 가까운 평행 빗금 2~3개가 묶음 하나이고, 묶음이 tick_pairs_min개 이상인 선만
+    신호선 후보다. 선에 한 끝만 닿은 짧은 탭·가지는 가로지르지 않으므로 빗금이 아니다."""
+    def length(p):
+        return sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in _segs(p["pts"]))
+    hosts = [p for p in polys if length(p) >= prm["tick_host_min"]]
+    lo, hi = math.cos(math.radians(prm["tick_angle_max"])), math.cos(math.radians(prm["tick_angle_min"]))
+    cand = collections.defaultdict(list)  # 선 id → [(빗금 가운데, 빗금 방향, 빗금 id)]
+    for p in polys:
+        tl = length(p)
+        if len(p["pts"]) != 2 or not 0.3 <= tl <= prm["tick_len_max"]:
+            continue
+        (x0, y0), (x1, y1) = p["pts"]
+        mid, dx, dy = ((x0 + x1) / 2, (y0 + y1) / 2), x1 - x0, y1 - y0
+        best = None  # 가장 가까운 선 하나(교차점 옆 빗금이 배관까지 신호선으로 만들지 않게)
+        for q in hosts:
+            if q is p:
+                continue
+            for a, b in _segs(q["pts"]):
+                d = _seg_dist(mid, a, b)[0]
+                if d > prm["tick_host_dist"] or (best is not None and d >= best[0]):
+                    continue
+                ex, ey = b[0] - a[0], b[1] - a[1]
+                el = math.hypot(ex, ey)
+                if el <= 0:
+                    continue
+                cos = abs(dx * ex + dy * ey) / (math.hypot(dx, dy) * el)
+                s0 = (ex * (y0 - a[1]) - ey * (x0 - a[0])) / el  # 두 끝의 선 기준 부호 있는 거리
+                s1 = (ex * (y1 - a[1]) - ey * (x1 - a[0])) / el
+                if lo <= cos <= hi and s0 * s1 < 0 and min(abs(s0), abs(s1)) >= 0.25 * tl:
+                    best = (d, q["id"])
+        if best is not None:
+            cand[best[1]].append((mid, (dx, dy), p["id"]))
+    ticks, marked = set(), {}
+    for host, items in cand.items():
+        def near(i, j):
+            (m, d, _), (m2, d2, _) = items[i], items[j]
+            return (math.hypot(m[0] - m2[0], m[1] - m2[1]) <= prm["tick_pair_gap"]
+                    and abs(d[0] * d2[1] - d[1] * d2[0]) <= 0.2 * math.hypot(*d) * math.hypot(*d2))
+        groups = [g for g in _uf_groups(len(items), near) if 2 <= len(g) <= 3]  # 4개 이상 = 빗금이 아닌 해칭
+        if len(groups) >= prm["tick_pairs_min"]:
+            for g in groups:
+                ticks.update(items[i][2] for i in g)
+            marked[host] = [(sum(items[i][0][0] for i in g) / len(g), sum(items[i][0][1] for i in g) / len(g))
+                            for g in groups]
+    return ticks, marked
 
 
 def _group_symbols(cls, prm):
@@ -1367,8 +1424,20 @@ def analyze(width, height, words, prims, params=None):
     prm = dict(PARAMS)
     prm.update(params or {})
     cls = _classify_primitives(width, height, prims, prm)
+    ticks, marked = _line_ticks(cls["polys"], prm)
     syms, polys, markers, dashes = _group_symbols(cls, prm)
+    # 빗금은 기호 묶기가 끝난 뒤에 남은 선에서만 뺀다. 기호 장식선으로 흡수된 빗금은 그대로 두어 기호 모양과 번호가
+    # 빗금 처리 전과 같게 한다(빗금을 먼저 빼면 안전밸브 규칙이 응축기 몸통에 맞는 등 기호 판정이 바뀜)
+    cls["ticks"] = [p for p in polys if p["id"] in ticks]
+    polys = [p for p in polys if p["id"] not in ticks]
     tees, chains = _build_solid(syms, polys, markers, prm)
+    for ch in chains:
+        # 빗금 선으로만 되고 그 사슬 위에 빗금 묶음이 실제로 있는 사슬 = 공압 신호선. 배관과 섞이거나, 원래 경로가
+        # 분기점에서 나뉘어 빗금 없는 쪽 토막이면 배관으로 둔다
+        if ch["evidence"] and all(e in marked for e in ch["evidence"]) and any(
+                _seg_dist(c, a, b)[0] <= prm["tick_host_dist"] for e in ch["evidence"] for c in marked[e]
+                for a, b in _segs(ch["pts"])):
+            ch["pneumatic"] = True
     chains += _build_dashed(syms, dashes, markers, prm)
     syms = _merge_appendages(syms, chains, prm)
     blocks = _text_blocks(words, prm)
@@ -1513,8 +1582,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             "geometry": dict(zip(("x", "y", "width", "height"), _box_out(box))),
             "evidence": {"classification_basis": "line_junction_3plus", "pdf_objects": [], "stroke_only": False,
                          "symbol_marks": []},
-        })
-        _issue(unknowns, "missing_tag", "PDF에는 tag 속성이 없음", sid, local_id, "tag")
+        })  # 분기점은 선이 만나는 자리를 계산해 만든 노드라 태그가 있을 수 없다(태그 없음 미확인을 남기지 않음)
         locations.append({"object_id": sid, "local_id": local_id, "coordinate_space": COORDINATE_SPACE,
                           "unit": UNIT, "bbox": _box_out(box), "approximate": True,
                           "method": "line_junction_point"})
@@ -1549,6 +1617,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             _issue(unknowns, "self_loop", "양 끝이 같은 기호에 닿음(기호 내부선일 수 있음)", sid, local_id)
         if ch.get("dashed"):
             rel_kind, line_type = "signal_connection", "pdf_dashed"
+        elif ch.get("pneumatic"):
+            rel_kind, line_type = "signal_connection", "pdf_pneumatic"
         elif any(i in instrument_ids for i in ids if i):
             rel_kind, line_type = "measurement_connection", "pdf_solid"
         else:
@@ -1595,7 +1665,9 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     if drawing["drawing_number"] is None:
         _issue(unknowns, "missing_drawing_number", "표제란에서 DWG NO.를 찾지 못함", field="drawing_number")
     drawing["ignored_objects"] = [{"source_object_id": o["id"], "label_text": "", "bbox": _box_out(o["bbox"])}
-                                  for o in cls["frames"] + cls["cells"]] + dropped
+                                  for o in cls["frames"] + cls["cells"]] + dropped + [
+        {"source_object_id": o["id"], "label_text": "", "bbox": _box_out(o["bbox"]), "reason": "line_tick"}
+        for o in cls.get("ticks", [])]
     for pid in cls["invisible_dashed"]:
         _issue(unknowns, "dashed_path_no_visible_piece", "점선 무늬·위상 때문에 그려지는 구간이 없는 경로(선으로 보지 않음)",
                pid)
