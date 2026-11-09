@@ -105,6 +105,7 @@ PARAMS = {
     "flange_gap_max": 2.6,       # 플랜지 두 판 사이 간격 상한(범례 FLANGED CONNECTION)
     "valve_gap_max": 8.0,        # 밸브 몸통 두 판 사이 간격 상한
     "plate_dot_max": 6.0,        # 판 사이 둥근 점(버터플라이 축·볼) 긴 변 상한
+    "number_reach": 6.0,         # 밸브 번호 원 지시선의 떠 있는 끝에서 밸브 상자까지 거리 상한
 }
 
 VARIABLE_MODIFIERS_ISA = frozenset("DFJKQ")  # hazop.extract.isa.VARIABLE_MODIFIERS와 같은 ISA 변수 수식 문자
@@ -127,6 +128,29 @@ EQUIPMENT_WORDS = [
     (("VENT",), "vent"),
     (("ATM",), "vent"),
 ]
+# 구동부 사전 항목의 actuator_type → 밸브 kind. 범례 1.7-1이 정한 경우만 합치고 kind를 올린다(기획서/PID-기호사전.md
+# §4.2 4번). 솔레노이드는 다이어프램과 같이 붙을 때만 공기구동 밸브의 파일럿으로 합친다(4/4). 솔레노이드 혼자는 스프링
+# 복귀·복동 실린더 구동부(4/4)의 파일럿일 수 있어 합치지 않는다. 전기유압(1/4)은 kind를 정할 근거가 없어 합치지 않는다.
+# 속성 값은 사전 항목의 attributes다
+ACTUATED_KIND = {"motor": "motor_operated_valve", "diaphragm": "air_operated_valve"}
+OPERATED_VALVES = frozenset({"motor_operated_valve", "air_operated_valve", "control_valve", "solenoid_valve"})
+VALVE_NUMBER_RE = re.compile(r"\d{2,4}[A-Z]?")  # 범례 1.7-1 1/4 VALVE IDENT. NUMBER(사전 apr1400.ident_bubble_circle)
+
+
+def _actuated_kind(entries):
+    """밸브 하나에 붙은 구동부 사전 항목들 → (kind, attributes). 범례가 정하지 않은 조합이면 (None, {})."""
+    by_type = {e.attributes.get("actuator_type"): e for e in entries}
+    found = set(by_type)
+    if "diaphragm" in found and found <= {"diaphragm", "solenoid"}:
+        attrs = dict(by_type["diaphragm"].attributes)
+        if "solenoid" in found:
+            attrs["actuator_type"] = "diaphragm+solenoid_pilot"
+        return "air_operated_valve", attrs
+    if len(found) != 1 or not found <= set(ACTUATED_KIND):
+        return None, {}  # 솔레노이드·전기유압 혼자, 전동+다이어프램 등
+    return ACTUATED_KIND[next(iter(found))], dict(next(iter(entries)).attributes)
+
+
 SHEET_WORD_RE = re.compile(r"\bSHEET\b")  # 연결 표시 화살표 글자의 DCD 시트 표기('SHEET 2 "E"')
 CONTINUATION_RE = re.compile(r"^(TO|FROM)\s+\S*\d")
 SYSTEM_LABEL_RE = re.compile(r"^([A-Z]{2,3}):\S")  # 'CV:RDT', 'SI:SAFETY INJECTION LINE 3' — 다른 계통 도면으로 가는 표시
@@ -1622,6 +1646,85 @@ def _continuation_attributes(sym, blocks, prm, own=None, arrows=()):
 
 # ---------------------------------------------------------------- 태그
 
+def _merged_line(ch, merge_into, number_ids):
+    """합친 기호와 그 밸브 사이 선(축), 번호 원에서 떠 있는 지시선이면 그 이유. 아니면 None."""
+    ends = [v[1] for v, _, _ in ch["ends"] if v[0] == "sym"]
+    for x in ends:
+        target = merge_into.get(id(x))
+        if target is None:
+            continue
+        number = id(x) in number_ids
+        if len(ends) == 2 and any(y is target for y in ends):
+            return "valve_number_leader" if number else "actuator_stem"
+        if len(ends) == 1 and number and not ch.get("dashed"):
+            return "valve_number_leader"
+    return None
+
+
+def _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, local_of, chains, acts_on, numbers_on):
+    """S5(D6): 계획한 구동부·번호 원을 노드 kind가 정해진 뒤 밸브에 합친다 → {합친 기호 id: 밸브 기호}.
+    - 구동부: 밸브 kind가 없거나 수동이면 범례가 정한 kind로 올리고 actuator_type·motive_power를 단다. 이미 구동 밸브면
+      속성만 단다(kind가 다르면 합치지 않는다). 그 밖의 kind(체크 밸브, 글자로 정한 펌프 등)나 범례에 없는 조합은
+      합치지 않는다(구동부를 노드로 남겨 정보를 잃지 않는다).
+    - 번호 원: 밸브(또는 kind 없는 밸브 모양)에 번호가 하나뿐일 때만 evidence.ident_number로 둔다.
+    합친 기호의 노드·미확인은 지우고 drawing.ignored_objects에 남긴다. 합친 기호·축·지시선의 PDF 객체는 밸브의
+    evidence.merged_objects에 남긴다. analysis의 기호 객체는 호출끼리 함께 쓰므로 고치지 않는다.
+    → ({합친 기호 id: 밸브 기호}, 번호 원 id 집합)"""
+    by_local = {nd["local_id"]: nd for nd in node_out}
+    node_of = {id(sy): by_local[local_of[id(sy)][0]] for sy in syms if local_of[id(sy)][0] in by_local}
+    merge_into, number_ids = {}, set()
+    for sy in syms:
+        nd = node_of.get(id(sy))
+        if nd is None:
+            continue
+        kind, changed = nd["kind"], False
+        entries = acts_on.get(id(sy), [])
+        if entries and (kind is None or rules.KIND_CATEGORY.get(kind) == "valve"):
+            new_kind, extra = _actuated_kind([e for _, e in entries])
+            if new_kind and kind in (None, "manual_valve"):
+                nd.update(kind=new_kind, category=rules.KIND_CATEGORY.get(new_kind), classification="classified")
+                nd["evidence"]["classification_basis"] = "%s+actuator:%s" % (
+                    nd["evidence"]["classification_basis"], "+".join(sorted({e.id for _, e in entries})))
+                changed = True
+            elif new_kind and (kind == new_kind or kind == "control_valve"):
+                changed = True
+            if changed:
+                nd["attributes"] = dict(nd["attributes"], **{k: v for k, v in extra.items()
+                                                             if k in rules.REGISTRY.properties})
+                merge_into.update({id(a): sy for a, _ in entries})
+        numbers = numbers_on.get(id(sy), [])
+        if numbers and len({t for _, t in numbers}) == 1 and (nd["kind"] is None or
+                                                              rules.KIND_CATEGORY.get(nd["kind"]) == "valve"):
+            nd["evidence"]["ident_number"] = numbers[0][1]
+            number_ids.update(id(c) for c, _ in numbers)
+            merge_into.update({id(c): sy for c, _ in numbers})
+    if not merge_into:
+        return merge_into, number_ids
+    gone = {local_of[i][0] for i in merge_into}
+    for sy in syms:
+        nd = node_of.get(id(sy))
+        if nd is None or nd["local_id"] in gone or not any(v is sy for v in merge_into.values()):
+            continue
+        objs = [o for i, v in merge_into.items() if v is sy for x in syms if id(x) == i for o in x.evidence()]
+        objs += [o for ch in chains if _merged_line(ch, merge_into, number_ids) and
+                 any(v[0] == "sym" and merge_into.get(id(v[1])) is sy for v, _, _ in ch["ends"]) for o in ch["evidence"]]
+        nd["evidence"]["merged_objects"] = sorted(set(objs))
+        if nd["kind"] is not None:  # kind를 정했으면 보류·종류 없음 미확인은 풀린다
+            unknowns[:] = [u for u in unknowns if not (u.get("target") == nd["local_id"] and
+                                                      u["check"] in ("actuated_valve_pending", "missing_kind"))]
+    for i in merge_into:
+        nd = node_of[i]
+        g = nd["geometry"]
+        dropped.append({"source_object_id": nd["source_object_id"], "label_text": nd["label_text"],
+                        "bbox": [g["x"], g["y"], g["width"], g["height"]],
+                        "reason": "valve_number_merged" if i in number_ids else "actuator_merged"})
+    node_out[:] = [nd for nd in node_out if nd["local_id"] not in gone]
+    locations[:] = [lc for lc in locations if lc["local_id"] not in gone]
+    unknowns[:] = [u for u in unknowns if u.get("target") not in gone]
+    instrument_ids.difference_update(gone)
+    return merge_into, number_ids
+
+
 def _bubble_like(node, letters):
     """종류를 못 정한 계기 모양 기호가 계기 원으로 볼 만한가: 기능 문자 두 자 이상이고 기호 짧은 변 8pt 이상.
     밸브 힌지 점·댐퍼 축 점처럼 작은 원 옆 밸브 번호('V5402', 'Y0013A')를 계기 태그로 읽지 않게 한다."""
@@ -1793,14 +1896,17 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         else:
             c, lim = _center(v.core), 0.25 * max(_w(v.core), _h(v.core))
         return math.hypot(pt[0] - c[0], pt[1] - c[1]) <= lim
-    stem_of = {}  # 구동부 기호 id → 밸브 기호
+    stem_of, straight_stem_of = {}, {}  # 구동부 기호 id → 밸브 기호(합치기는 꺾이지 않은 축만 쓴다)
     for ch in chains:
         if ch.get("dashed") or any(v[0] != "sym" for v, _, _ in ch["ends"]):
             continue
         (va, pa, _), (vb, pb, _) = ch["ends"]
+        straight = len({(round(q[0], 2), round(q[1], 2)) for q in ch["pts"]}) == 2
         for (v, pt), (x, _) in (((va[1], pa), (vb[1], pb)), ((vb[1], pb), (va[1], pa))):
             if id(v) in valve_like and id(x) not in valve_like and x is not v and at_stem(v, pt):
                 stem_of.setdefault(id(x), []).append(v)
+                if straight:
+                    straight_stem_of.setdefault(id(x), []).append(v)
     on_valve = set(stem_of)
     # 실선 배관이 몸체 한가운데를 지나가는 작은 기호는 배관 위 부품이지 끝막음이 아니다
     solid = [(_bbox_pts(ch["pts"]), ch) for ch in chains if not ch.get("dashed")]
@@ -1811,6 +1917,19 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                    and all(v[0] != "sym" or v[1] is not sy for v, _, _ in ch["ends"]) for cb, ch in solid):
                 on_valve.add(id(sy))
     stemmed = {id(v) for vs in stem_of.values() for v in vs}
+    # S5 계획: 사전 구동부를 꺾이지 않은 축으로 이어진(축이 없으면 닿은) 밸브 하나에 합칠 후보로 둔다(D6). 실제로 합칠지는
+    # 노드 kind가 정해진 뒤 정한다(아래 _apply_merges). 밸브가 없거나 둘 이상이면 후보가 아니다
+    plan_into, acts_on = {}, {}
+    for si, h in sorted(hits.items()):
+        if h.outcome != "matched" or h.entry.role != "actuator":
+            continue
+        a = syms[si]
+        cands = {id(v): v for v in straight_stem_of.get(id(a), [])} or {
+            id(v): v for v in syms if id(v) in valve_like and _box_gap(a.bbox, v.bbox) <= prm["attach_tol"]}
+        if len(cands) == 1:
+            v = next(iter(cands.values()))
+            plan_into[id(a)] = v
+            acts_on.setdefault(id(v), []).append((a, h.entry))
     cand = []
     for bi, b in enumerate(blocks):
         if bi in roles:
@@ -1832,6 +1951,36 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             continue
         label_of[si] = bi
         taken.add(bi)
+    # S5: 밸브 번호 원(원 안 숫자뿐)은 지시선 하나의 반대 끝이 밸브에 닿거나, 가장 가까운 밸브가 number_reach 안이고
+    # 두 번째 밸브가 그 두 배보다 멀 때만 그 밸브에 합친다(기획서/PID-기호사전.md §4.2 4번). 숫자만으로는 계통 접두를
+    # 알 수 없어 태그는 만들지 않고 근거(ident_number)로만 남긴다
+    leaders = collections.defaultdict(list)
+    for ch in chains:
+        if ch.get("dashed"):
+            continue
+        for k in (0, 1):
+            v = ch["ends"][k][0]
+            if v[0] == "sym":
+                leaders[id(v[1])].append((ch, ch["ends"][1 - k]))
+    valves = [sy for sy in syms if id(sy) in valve_like]
+    numbers_on = {}  # 밸브 id → [(번호 원, 숫자)]
+    for si, sy in enumerate(syms):
+        bi = label_of.get(si)
+        if shape_of[si][0] != "instrument" or bi is None or id(sy) in plan_into or len(leaders[id(sy)]) != 1:
+            continue
+        if not (VALVE_NUMBER_RE.fullmatch(blocks[bi]["text"].strip()) and _inside(_center(blocks[bi]["bbox"]), sy.bbox)):
+            continue
+        ch, (far, pt, _) = leaders[id(sy)][0]
+        target = None
+        if far[0] == "sym":
+            hit_sym = plan_into.get(id(far[1]), far[1])  # 지시선이 합칠 구동부에 닿았으면 그 밸브
+            target = hit_sym if id(hit_sym) in valve_like else None
+        elif far[0] == "free":  # 분기점·통과점에 닿은 선은 지시선이 아니다
+            near = sorted((_pt_box_dist(pt, v.bbox), k) for k, v in enumerate(valves))
+            if near and near[0][0] <= prm["number_reach"] and (len(near) == 1 or near[1][0] > 2 * near[0][0]):
+                target = valves[near[0][1]]
+        if target is not None:
+            numbers_on.setdefault(id(target), []).append((sy, blocks[bi]["text"].strip()))
 
     node_out, locations, local_of, instrument_ids, dropped = [], [], {}, set(), []
     for n, s in enumerate(syms, 1):
@@ -1896,6 +2045,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         })
         locations.append({"object_id": sid, "local_id": local_id, "coordinate_space": COORDINATE_SPACE,
                           "unit": UNIT, "bbox": _box_out(s.bbox), "approximate": False})
+    merge_into, number_ids = _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, local_of, chains,
+                               acts_on, numbers_on)
     _assign_tags(node_out, unknowns, instrument_ids)
     tee_ids = {}
     for k, (x, y) in enumerate(tees):
@@ -1918,7 +2069,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
 
     def ref(v):
         if v[0] == "sym":
-            return local_of[id(v[1])]
+            return local_of[id(merge_into.get(id(v[1]), v[1]))]  # 합친 구동부에 닿은 선(신호선 등)은 밸브로
         if v[0] == "tee":
             return tee_ids[v[1]]
         return None
@@ -1927,6 +2078,12 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     relations, unresolved = [], []
     for n, ch in enumerate(ordered, 1):
         local_id, sid = "local-edge-%03d" % n, "pdf-p%d-conn-%04d" % (page, n)
+        why = _merged_line(ch, merge_into, number_ids)
+        if why:
+            dropped.append({"source_object_id": sid, "label_text": "", "bbox": _box_out(_bbox_pts(ch["pts"])),
+                            "reason": why})
+            continue  # 구동부 축·번호 원 지시선: 합친 밸브 안의 선이다(관계 번호는 비워 둔다)
+        moved = any(v[0] == "sym" and id(v[1]) in merge_into for v, _, _ in ch["ends"])
         endpoints, resolved = [], True
         for end, (v, pt, basis) in zip(("source", "target"), ch["ends"]):
             r = ref(v)
@@ -1945,6 +2102,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             _issue(unknowns, "self_loop", "양 끝이 같은 기호에 닿음(기호 내부선일 수 있음)", sid, local_id)
         if ch.get("dashed"):
             rel_kind, line_type = "signal_connection", "pdf_dashed"
+        elif moved:  # 합친 구동부로 들어가던 선은 구동 신호다(배관 분기로 보지 않는다)
+            rel_kind, line_type = "signal_connection", "pdf_solid"
         elif ch.get("pneumatic"):
             rel_kind, line_type = "signal_connection", "pdf_pneumatic"
         elif any(i in instrument_ids for i in ids if i):

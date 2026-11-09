@@ -600,5 +600,62 @@ class RepoLibraryTest(unittest.TestCase):
         self.assertEqual(errors, [])
 
 
+
+def ring(cx, cy, r):
+    pts = [(cx + r * math.cos(t / 16 * math.pi), cy + r * math.sin(t / 16 * math.pi)) for t in range(33)]
+    return {"fill": False, "stroke": True, "fill_white": False, "stroke_white": False, "dash": None,
+            "subpaths": [(pts, True, pts, True)]}
+
+
+class ActuatorMergeTest(unittest.TestCase):
+    """S5(D6): 사전 구동부와 밸브 번호 원은 노드가 아니라 축·지시선으로 이어진 밸브 하나의 속성·근거다."""
+
+    def run_page(self, extra_prims, words):
+        prims = [prim(GATE, True), prim([(0, 101.5), (100, 101.5)], False),
+                 prim([(106, 101.5), (200, 101.5)], False)] + extra_prims
+        a = pdf_vector.analyze(400, 300, words, prims)
+        return pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+
+    def test_motor_operator_makes_motor_operated_valve(self):
+        ex = self.run_page([ring(103, 94, 1.85), prim([(103, 95.85), (103, 101.5)], False)], [word("M", 102.4, 93.0, 2.0)])
+        valves = [n for n in ex["nodes"] if n["kind"] == "motor_operated_valve"]
+        self.assertEqual(len(valves), 1)
+        self.assertEqual(valves[0]["attributes"].get("motive_power"), "electric")
+        self.assertFalse([n for n in ex["nodes"] if n["evidence"].get("symbol_id") == "apr1400.motor_operator"])
+        reasons = [o.get("reason") for o in ex["drawing"]["ignored_objects"]]
+        self.assertIn("actuator_merged", reasons)
+        self.assertFalse([u for u in ex["validation"]["unknowns"] if u["check"] == "actuated_valve_pending"])
+
+    def test_valve_number_circle_becomes_evidence(self):
+        ex = self.run_page([ring(90, 88, 4.5), prim([(93.2, 91.2), (99.6, 99.6)], False)], [word("302", 87.3, 86.5, 3.0)])
+        self.assertTrue(any(n["evidence"].get("ident_number") == "302" for n in ex["nodes"]))
+        self.assertFalse([n for n in ex["nodes"] if n["label_text"] == "302"])
+        self.assertFalse([u for u in ex["validation"]["unknowns"] if u["check"] == "unconnected_endpoint"
+                          and u["source_object_id"] and "conn" in u["source_object_id"]
+                          and any(o["source_object_id"] == u["source_object_id"]
+                                  for o in ex["drawing"]["ignored_objects"])])
+
+    def test_number_circle_between_two_valves_is_left_alone(self):
+        second = [(100, 80), (106, 83), (106, 80), (100, 83), (100, 80)]
+        ex = self.run_page([prim(second, True), ring(90, 88, 4.5), prim([(93.2, 91.2), (95, 93)], False)],
+                           [word("302", 87.3, 86.5, 3.0)])
+        self.assertFalse(any(n["evidence"].get("ident_number") for n in ex["nodes"]))
+
+    def test_solenoid_alone_is_not_merged(self):
+        """솔레노이드 혼자는 스프링 복귀·복동 실린더의 파일럿일 수 있어 kind를 올리지 않는다(범례 4/4, S5 검토)."""
+        box = prim([(101.5, 92.5), (104.5, 92.5), (104.5, 95.5), (101.5, 95.5), (101.5, 92.5)])
+        ex = self.run_page([box, prim([(103, 95.5), (103, 101.5)], False)], [word("S", 102.5, 93.0, 2.0)])
+        self.assertFalse(any(n["kind"] == "solenoid_valve" for n in ex["nodes"]))
+        self.assertNotIn("actuator_merged", [o.get("reason") for o in ex["drawing"]["ignored_objects"]])
+
+    def test_two_numbers_on_one_valve_are_left_alone(self):
+        ex = self.run_page([ring(90, 88, 4.5), prim([(93.2, 91.2), (99.6, 99.6)], False),
+                            ring(116, 88, 4.5), prim([(112.8, 91.2), (106.4, 99.6)], False)],
+                           [word("302", 87.3, 86.5, 3.0), word("303", 113.3, 86.5, 3.0)])
+        self.assertFalse(any(n["evidence"].get("ident_number") for n in ex["nodes"]))
+        self.assertEqual(sorted(n["label_text"] for n in ex["nodes"] if n["label_text"] in ("302", "303")),
+                         ["302", "303"])
+
+
 if __name__ == "__main__":
     unittest.main()
