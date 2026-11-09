@@ -16,3 +16,4 @@ __pycache__/
 
 # 외부 기준 문서 원본 PDF: 요약 지침서(기획서/HAZOP기법지침.md)만 저장소에 둔다
 참고자료/HAZOP 기법/*.pdf
+.hazop-app.lock

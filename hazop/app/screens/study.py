@@ -8,6 +8,7 @@
 """
 
 import html
+import os
 
 from PySide6.QtCore import QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
@@ -150,6 +151,8 @@ class StudyNodesScreen(QWidget):
         self.node_set = None
         self.view = None        # node_set의 표기 사본(ctx.view)
         self.saved = False      # node_set이 저장본과 같은가(처음 제안은 False)
+        self.disk_fp = None     # 읽을 때 저장 파일의 nodes.fingerprint. 저장 직전 다르면 다른 창이 먼저 저장한 것
+        self.unreadable = False  # 저장 파일을 읽지 못했음. 처음 덮어쓰기 전에 묻고 원본을 백업한다
         self.entities = {}      # 프로젝트 ID → 프로젝트 그래프 node
         self.local_map = {}     # 프로젝트 ID → 보는 도면의 data-local-id
         self.entity_of_local = {}
@@ -422,11 +425,16 @@ class StudyNodesScreen(QWidget):
         self.entities = ctx.by_id
         self.local_map, self.entity_of_local = ctx.local_of, ctx.pid_of_local
         self.warn.set_messages(info.get("error"))
+        self.unreadable = False
         try:
             self.node_set, self.saved = ctx.load_set()
         except (OSError, ValueError) as exc:
-            self.node_set, self.saved = nodes.propose(self.graph), False
+            self.node_set, self.saved, self.unreadable = nodes.propose(self.graph), False, True
             self.warn.set_messages("저장된 검토구간을 읽을 수 없어 새로 제안합니다", [str(exc)])
+        try:
+            self.disk_fp = nodes.fingerprint(self._store_path())
+        except OSError:  # 지금 읽지 못하는 파일이면 저장 때 다시 지문을 구해 보고, 그때 읽히면 다른 값이라 저장하지 않는다
+            self.disk_fp = None
         if ctx.notice:
             self.notice = ctx.notice
             self.app.toast(ctx.notice)
@@ -899,14 +907,41 @@ class StudyNodesScreen(QWidget):
                 self.app.log_error("검토구간 실행 취소 실패", exc)
         return undo
 
+    def _store_path(self):
+        return nodes.store_path(self.node_set.get("project_id"), self.node_set["graph_id"])
+
+    def ask_overwrite_unreadable(self, path):
+        return QMessageBox.question(
+            self, "검토구간 파일을 읽을 수 없음",
+            "저장된 검토구간 파일을 읽지 못했습니다.\n%s\n\n원래 파일을 백업 폴더에 남기고 지금 내용으로 저장할까요?" % path
+        ) == QMessageBox.Yes
+
     def _save(self):
-        """디스크에 쓴 경우에만 True. 실패하면 화면은 이전 집합으로 되돌린다(확정이 저장된 것처럼 보이지 않게)."""
+        """디스크에 쓴 경우에만 True. 실패하면 화면은 이전 집합으로 되돌린다(확정이 저장된 것처럼 보이지 않게).
+        읽은 뒤 다른 창이 먼저 저장했으면 쓰지 않는다. 읽지 못한 파일은 사용자가 허락할 때만 백업한 뒤 덮어쓴다."""
+        path = self._store_path()
+        if self.unreadable and os.path.isfile(path):
+            if not self.ask_overwrite_unreadable(path):
+                self.msg.setText("저장하지 않았습니다. 읽지 못한 검토구간 파일은 그대로 있습니다.")
+                return False
+            try:
+                migrate._backup(path, "읽기실패")
+            except OSError as exc:
+                self.app.log_error("검토구간 백업 실패", exc)
+                self.msg.setText("원래 파일을 백업하지 못해 저장하지 않았습니다: %s" % exc)
+                return False
         try:
-            nodes.save(self.node_set)
+            nodes.save(self.node_set, expect=self.disk_fp)
+        except nodes.Conflict:
+            self.msg.setText("다른 창에서 이 검토구간을 먼저 저장해서 이번 변경은 저장하지 않았습니다. "
+                             "도면을 다시 열어 최신 내용을 불러온 뒤 고치세요.")
+            return False
         except OSError as exc:
             self.app.log_error("검토구간 저장 실패", exc)
             self.msg.setText("저장 실패 — 변경을 적용하지 않음: %s" % exc)
             return False
+        self.unreadable = False
+        self.disk_fp = nodes.fingerprint(path)
         self.saved = True
         self.app.mark_saved(self.node_set["history"][-1]["at"])
         return True

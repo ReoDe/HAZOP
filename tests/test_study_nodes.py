@@ -1,5 +1,6 @@
 """④ 검토구간 데이터 모델(hazop.study.nodes) 시험. 저장은 임시 HAZOP_WORK_ROOT 아래에만 한다."""
 
+import codecs
 import json
 import os
 import random
@@ -233,6 +234,51 @@ class StoreTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             sn.load(g)
 
+
+    def test_save_refuses_when_file_changed_since_read(self):
+        g = synthetic_graph()
+        path = sn.store_path(None, "graph-T")
+        self.assertIsNone(sn.fingerprint(path))
+        mine = sn.propose(g, at=AT)
+        theirs = sn.rename(mine, "S1", "다른 창")
+        seen = sn.fingerprint(path)
+        sn.save(theirs, expect=seen)
+        with open(path, "rb") as fh:
+            written = fh.read()
+        with self.assertRaises(sn.Conflict):
+            sn.save(sn.rename(mine, "S2", "늦은 창"), expect=seen)
+        with open(path, "rb") as fh:
+            self.assertEqual(fh.read(), written, "거절하면 쓰지 않음")
+        sn.save(sn.rename(theirs, "S2", "이어서"), expect=sn.fingerprint(path))
+        self.assertEqual(sn.load(g)["nodes"][1]["name"], "이어서")
+
+    def test_load_accepts_bom_and_rejects_broken_shape(self):
+        g = synthetic_graph()
+        s = sn.propose(g, at=AT)
+        path = sn.save(s)
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        with open(path, "wb") as fh:
+            fh.write(codecs.BOM_UTF8 + raw)
+        self.assertEqual(sn.load(g), s)
+        for broken in ({"members": None}, {"node_id": 3}, "S1"):
+            doc = json.loads(raw.decode("utf-8"))
+            if isinstance(broken, dict):
+                doc["nodes"][0].update(broken)
+            else:
+                doc["nodes"][0] = broken
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh, ensure_ascii=False)
+            with self.subTest(broken=broken), self.assertRaises(ValueError):
+                sn.load(g)
+        doc = json.loads(raw.decode("utf-8"))
+        for n in doc["nodes"]:
+            del n["members"]
+        doc["status"] = "confirmed"
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, ensure_ascii=False)
+        with self.assertRaises(ValueError):
+            sn.load(g)
 
 if __name__ == "__main__":
     unittest.main()

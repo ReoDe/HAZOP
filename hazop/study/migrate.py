@@ -231,14 +231,16 @@ def notice(node_set):
         d["from"], d["to"], d["matched"])
 
 
-def _backup(path):
+def _backup(path, label="판이전"):
+    """<작업 루트>/데이터/백업/<시각>-<label>/<작업 루트 기준 경로>에 복사하고 그 경로를 돌려준다."""
     from hazop.study.nodes import now_utc
     stamp = now_utc().replace(":", "").replace("-", "")
     root = paths.work_root()
     rel = os.path.relpath(path, root) if os.path.abspath(path).startswith(os.path.abspath(root)) else os.path.basename(path)
-    dst = os.path.join(paths.work_path("데이터", "백업", "%s-판이전" % stamp), rel)
+    dst = os.path.join(paths.work_path("데이터", "백업", "%s-%s" % (stamp, label)), rel)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.copy2(path, dst)
+    return dst
 
 
 def on_load(node_set, graph, path):

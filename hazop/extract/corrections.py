@@ -50,22 +50,36 @@ def load(name):
 
 
 def save(name, ops, by, drawing_number=None, at=None):
-    """ops 전체를 저장하고 이전 파일과 비교한 op_id 증감을 log에 덧붙인다. 임시 파일에 쓴 뒤 교체. 쓴 경로를 돌려준다."""
+    """ops 전체를 저장하고 이전 파일과 비교한 op_id 증감을 log에 덧붙인다. 임시 파일에 쓴 뒤 교체. 쓴 경로를 돌려준다.
+    지운 연산은 내용까지 log의 removed_ops에 남긴다(지운 사람 수정도 기록에서 찾을 수 있게)."""
     prev = load(name) or {}
     ops = [dict(o) for o in ops]
     before = [o["op_id"] for o in prev.get("ops") or []]
     after = [o["op_id"] for o in ops]
+    removed = [o for o in prev.get("ops") or [] if o["op_id"] not in after]
     doc = {
         "kind": KIND, "schema_version": SCHEMA_VERSION, "extraction_name": name,
         "drawing_number": drawing_number if drawing_number is not None else prev.get("drawing_number"),
         "ops": ops,
         "log": list(prev.get("log") or []) + [{
             "at": at or now_utc(), "by": by, "action": "save",
-            "added": [i for i in after if i not in before], "removed": [i for i in before if i not in after]}],
+            "added": [i for i in after if i not in before], "removed": [o["op_id"] for o in removed],
+            "removed_ops": removed}],
     }
     path = store_path(name)
     write_json_atomic(path, doc)
     return path
+
+
+def issued_op_ids(name):
+    """저장 기록에 한 번이라도 나온 op_id(지금 연산과 log의 추가·삭제). 새 op_id는 이 번호들과 겹치지 않게 발급한다."""
+    doc = load(name) or {}
+    ids = {o.get("op_id") for o in doc.get("ops") or []}
+    for entry in doc.get("log") or []:
+        ids.update(entry.get("added") or [])
+        ids.update(entry.get("removed") or [])
+    ids.discard(None)
+    return ids
 
 
 def unknown_ratio(extraction):
@@ -518,14 +532,16 @@ def apply_saved(extraction, name):
     return apply(extraction, doc["ops"] if doc else [])
 
 
-def _next_op_id(existing_ops):
-    nums = [int(o["op_id"][2:]) for o in existing_ops
-            if str(o.get("op_id", "")).startswith("c-") and o["op_id"][2:].isdigit()]
+def _next_op_id(existing_ops, used_ids=()):
+    ids = [str(o.get("op_id", "")) for o in existing_ops] + [str(i) for i in used_ids]
+    nums = [int(i[2:]) for i in ids if i.startswith("c-") and i[2:].isdigit()]
     return "c-%04d" % (max(nums, default=0) + 1)
 
 
-def make_op(original_extraction, op, target, value, by, at=None, op_id=None, existing_ops=()):
+def make_op(original_extraction, op, target, value, by, at=None, op_id=None, existing_ops=(), used_ids=()):
     """검사를 마친 Op dict. base는 원본 추출(수정 전)에서 계산하고 manual 대상이면 None.
+    새 op_id는 existing_ops와 used_ids(issued_op_ids: 저장 기록에 나온 번호)보다 크게 발급한다.
+    지운 연산의 번호를 다시 쓰면 manual- ID가 다른 기기를 가리키게 되기 때문이다.
     existing_ops 뒤에 붙여 적용해 볼 때 적용 불가면 ValueError(사유)."""
     if op not in OPS:
         raise ValueError("알 수 없는 수정 연산: %r" % (op,))
@@ -536,7 +552,7 @@ def make_op(original_extraction, op, target, value, by, at=None, op_id=None, exi
             raise ValueError("원본 추출에 없는 대상: %s" % target)
         base = fp[target]
     refs = {sid: fp.get(sid) for sid in _refs(value)} if isinstance(value, dict) else {}
-    new = {"op_id": op_id or _next_op_id(existing_ops), "op": op, "target": target, "base": base, "refs": refs,
+    new = {"op_id": op_id or _next_op_id(existing_ops, used_ids), "op": op, "target": target, "base": base, "refs": refs,
            "value": copy.deepcopy(value), "by": by, "at": at or now_utc()}
     if any(o.get("op_id") == new["op_id"] for o in existing_ops):
         raise ValueError("이미 있는 op_id: %s" % new["op_id"])

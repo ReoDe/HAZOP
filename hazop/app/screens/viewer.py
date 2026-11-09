@@ -124,6 +124,10 @@ class EditSession:
     def mark_saved(self):
         self.saved = list(self.ops)
 
+    def issued_ids(self):
+        """작업 중·저장본·실행 취소·다시 실행 목록에 있는 op_id. 되살릴 수 있는 연산의 번호도 새로 발급하지 않는다."""
+        return {o.get("op_id") for ops in [self.ops, self.saved, *self.undo_stack, *self.redo_stack] for o in ops}
+
 
 @dataclass(frozen=True)
 class ToolState:
@@ -1061,8 +1065,8 @@ class ViewerScreen(QWidget):
             return False
         try:
             op = corrections.make_op(self.info["original"], req["op"], req["target"], req["value"], self._by(),
-                                     existing_ops=self.session.ops)
-        except ValueError as exc:
+                                     existing_ops=self.session.ops, used_ids=corrections.issued_op_ids(self.name) | self.session.issued_ids())
+        except (OSError, ValueError) as exc:
             notify(self, "수정할 수 없음", str(exc), warn=True)
             return False
         self.session.add(op)

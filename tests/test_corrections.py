@@ -288,6 +288,23 @@ class CorrectionsTest(unittest.TestCase):
         self.assertEqual(saved, corrections.apply(original, ops))
         self.assertEqual(data.load_extraction(NAME, ops=[])[1], original)
 
+    def test_op_ids_are_never_reissued_after_removal(self):
+        """저장했다가 지운 op_id(=manual- ID)는 다시 쓰지 않고, 지운 연산 내용은 log에 남는다."""
+        from hazop.extract import corrections
+        self.assertEqual(corrections.issued_op_ids(NAME), set())
+        value = {"category": "equipment", "kind": "pump", "tag": "RC-P900", "bbox": [500, 500, 20, 20]}
+        first = corrections.make_op(self.ext, "add_node", None, value, "검토자")
+        corrections.save(NAME, [first], "검토자", drawing_number=NAME)
+        corrections.save(NAME, [], "검토자")
+        again = corrections.make_op(self.ext, "add_node", None, dict(value, tag="RC-P901"), "검토자",
+                                    used_ids=corrections.issued_op_ids(NAME))
+        self.assertNotEqual(again["op_id"], first["op_id"], "빈 기록으로 저장한 뒤에도 새 번호")
+        corrections.save(NAME, [again], "검토자")
+        doc = corrections.load(NAME)
+        self.assertEqual(doc["log"][1]["removed"], [first["op_id"]])
+        self.assertEqual(doc["log"][1]["removed_ops"], [first], "지운 사람 수정 내용이 기록에 남음")
+        self.assertEqual(corrections.issued_op_ids(NAME), {first["op_id"], again["op_id"]})
+
     def test_load_rejects_other_kind(self):
         from hazop.extract import corrections
         os.makedirs(os.path.dirname(corrections.store_path(NAME)))

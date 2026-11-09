@@ -6,6 +6,8 @@
   이름을 바꾸기 직전에 파일을 다시 확인해(크기·수정 시각·내용 해시) 그사이 바뀌었으면 백업하지 않고 다시 판정한다.
 - 읽기 실패(OSError: 권한·잠금 등): 백업 선택지 없이 안내 후 종료.
 비대화형 실행(--screenshots)은 대화상자 없이 stderr에 안내하고 종료 코드 2로 끝낸다.
+
+한 작업 루트에서는 대화형 실행을 하나만 띄운다(single_instance). 두 실행이 같은 저장본을 따로 고치다 덮어쓰지 않게 하려는 것이다.
 """
 
 import hashlib
@@ -21,6 +23,8 @@ QUIT = "quit"
 CORRUPT = "corrupt"        # 내용 손상: 백업 후 기본값으로 시작할 수 있음
 UNREADABLE = "unreadable"  # 읽기 실패(OSError): 종료만
 EXIT_SETTINGS = 2  # 설정 파일 때문에 시작하지 않음
+EXIT_RUNNING = 3   # 같은 작업 루트에서 이미 실행 중이라 시작하지 않음
+LOCK_NAME = ".hazop-app.lock"
 _log = logging.getLogger("hazop.settings")
 _log.addHandler(logging.NullHandler())  # 개발 실행에서 logging 기본 출력(lastResort)이 stderr 안내와 겹치지 않게
 
@@ -113,3 +117,38 @@ def check_settings(path, interactive, ask=None, notify=None, err=None, now=None)
             return EXIT_SETTINGS
         _log.warning("설정 파일 백업: %s -> %s, 기본값으로 시작", path, dest)
         return None
+
+
+def notify_running(title, text):
+    from PySide6.QtWidgets import QMessageBox
+    box = QMessageBox(QMessageBox.Information, title, text)
+    box.addButton("확인", QMessageBox.AcceptRole)
+    box.exec()
+
+
+def single_instance(notify=None, err=None):
+    """(잠금, None) 또는 (None, EXIT_RUNNING). 작업 루트의 잠금 파일(QLockFile)을 잡는다.
+    다른 실행이 쥐고 있으면 안내하고 종료 코드를 돌려준다. 잠금 파일을 만들 수 없으면(권한 등) 막지 않고 시작한다.
+    잠금은 돌려받은 객체가 살아 있는 동안 유지되므로 호출한 쪽이 종료할 때까지 들고 있어야 한다."""
+    from PySide6.QtCore import QLockFile
+    path = paths.work_path(LOCK_NAME)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    except OSError as e:
+        problem = e
+    else:
+        lock = QLockFile(path)
+        lock.setStaleLockTime(0)  # 시간으로는 버리지 않는다. 쥔 프로세스가 없어진 잠금만 버린다
+        if lock.tryLock(0):
+            return lock, None
+        if lock.error() == QLockFile.LockFailedError:
+            _log.warning("이미 실행 중: %s", path)
+            (notify or notify_running)(
+                "HAZOP이 이미 실행 중입니다",
+                "HAZOP이 이미 실행 중입니다. 열려 있는 창으로 가서 작업하세요.\n\n"
+                "저장한 작업을 서로 덮어쓰지 않도록 한 번에 하나만 실행할 수 있습니다.")
+            return None, EXIT_RUNNING
+        problem = lock.error()
+    _log.warning("실행 잠금 파일을 만들 수 없음: %s (%s)", path, problem)
+    _write(err, "실행 잠금 파일을 만들 수 없어 잠금 없이 시작합니다: %s (%s)\n" % (path, problem))
+    return None, None

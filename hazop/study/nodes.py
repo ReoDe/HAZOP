@@ -8,6 +8,7 @@
 """
 
 import copy
+import hashlib
 import json
 import math
 import os
@@ -363,9 +364,29 @@ def _readable_path(project_id, graph_id):
     return legacy if not project_id and not os.path.isfile(path) and os.path.isfile(legacy) else path
 
 
-def save(node_set):
-    """임시 파일에 쓴 뒤 os.replace로 교체한다. 쓴 경로를 돌려준다."""
-    return write(store_path(node_set.get("project_id"), node_set["graph_id"]), node_set)
+class Conflict(ValueError):
+    """읽은 뒤 다른 창·프로그램이 저장 파일을 바꿔서 저장하지 않음."""
+
+
+ANY = object()
+
+
+def fingerprint(path):
+    """파일 내용의 SHA-256. 파일이 없으면 None."""
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+    except FileNotFoundError:
+        return None
+
+
+def save(node_set, expect=ANY):
+    """임시 파일에 쓴 뒤 os.replace로 교체한다. 쓴 경로를 돌려준다.
+    expect(fingerprint 값)를 주면 지금 파일이 그 값과 다를 때 쓰지 않고 Conflict를 낸다."""
+    path = store_path(node_set.get("project_id"), node_set["graph_id"])
+    if expect is not ANY and fingerprint(path) != expect:
+        raise Conflict("읽은 뒤 저장 파일이 바뀜: %s" % path)
+    return write(path, node_set)
 
 
 def write(path, node_set):
@@ -387,12 +408,23 @@ def load(graph):
     path = _readable_path(graph.get("project_id"), graph.get("graph_id"))
     if not os.path.isfile(path):
         return None
-    with open(path, encoding="utf-8") as fh:
+    with open(path, encoding="utf-8-sig") as fh:  # 메모장 등이 붙인 BOM도 읽는다
         doc = json.load(fh)
     if not isinstance(doc, dict) or doc.get("kind") != KIND:
         raise ValueError("검토구간 파일이 아님: %s" % path)
+    _check_shape(doc, path)
     from hazop.study import migrate
     return migrate.on_load(doc, graph, path)
+
+
+def _check_shape(doc, path):
+    """판 이전·화면이 가리지 않고 꺼내 쓰는 값이 제 모양인지 본다. 아니면 ValueError(화면은 경고와 함께 새로 제안한다)."""
+    ok = (isinstance(doc.get("graph_id"), str) and isinstance(doc.get("status"), str)
+          and isinstance(doc.get("history"), list) and isinstance(doc.get("nodes"), list)
+          and all(isinstance(n, dict) and isinstance(n.get("node_id"), str) and isinstance(n.get("name"), str)
+                  and isinstance(n.get("members"), list) for n in doc["nodes"]))
+    if not ok:
+        raise ValueError("검토구간 파일 형식이 맞지 않음: %s" % path)
 
 
 def any_confirmed(project_only=False):
@@ -409,7 +441,7 @@ def any_confirmed(project_only=False):
             if not name.endswith(".json"):
                 continue
             try:
-                with open(os.path.join(folder, name), encoding="utf-8") as fh:
+                with open(os.path.join(folder, name), encoding="utf-8-sig") as fh:
                     doc = json.load(fh)
             except (OSError, ValueError):
                 continue

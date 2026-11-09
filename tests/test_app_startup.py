@@ -185,6 +185,9 @@ class RunAppStartupTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="hazop-runapp-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
+        env = mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: os.path.join(self.tmp, "work")})
+        env.start()
+        self.addCleanup(env.stop)
         self.path = os.path.join(self.tmp, "settings.json")
         with open(self.path, "wb") as fh:
             fh.write(b"{ not json")
@@ -243,6 +246,64 @@ class RunAppStartupTest(unittest.TestCase):
         backups = [n for n in os.listdir(self.tmp) if n.startswith("settings.json.bad-")]
         self.assertEqual(len(backups), 1)
 
+
+    def test_second_instance_quits_before_window(self):
+        """다른 실행이 잠금을 쥐고 있으면 대화형 실행은 안내 후 창을 만들지 않고 끝낸다. --screenshots는 잠금을 보지 않는다."""
+        with open(self.path, "w", encoding="utf-8") as fh:
+            fh.write("{")
+        held, rc = startup.single_instance(notify=mock.Mock())
+        self.assertIsNone(rc)
+        self.addCleanup(held.unlock)
+        with mock.patch.object(startup, "notify_running") as notify, \
+                mock.patch.object(startup, "ask_dialog") as ask, \
+                mock.patch("hazop.app.main_window.MainWindow") as win:
+            self.assertEqual(self.ra.main(["--settings", self.path]), startup.EXIT_RUNNING)
+        notify.assert_called_once()
+        ask.assert_not_called()
+        win.assert_not_called()
+        with open(self.path, encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), "{", "실행 중인 프로그램의 설정 파일은 두 번째 실행이 건드리지 않음")
+        with open(self.path, "w", encoding="utf-8") as fh:
+            fh.write("{}")
+        with mock.patch("hazop.app.main_window.MainWindow") as win, \
+                mock.patch("hazop.app.screenshots.take_all", return_value=[]), \
+                mock.patch.object(startup, "notify_running") as notify:
+            self.assertEqual(self.ra.main(["--screenshots", os.path.join(self.tmp, "png"), "--settings", self.path]), 0)
+        notify.assert_not_called()
+        win.assert_called_once()
+
+
+class SingleInstanceTest(unittest.TestCase):
+    """한 작업 루트에서는 프로그램을 하나만 띄운다(두 창이 같은 저장본을 덮어쓰지 않게)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="hazop-lock-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        env = mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: os.path.join(self.tmp, "work")})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_second_acquisition_is_refused_until_first_exits(self):
+        notify = mock.Mock()
+        first, rc = startup.single_instance(notify=notify)
+        self.assertIsNone(rc)
+        self.assertTrue(first.isLocked())
+        second, rc = startup.single_instance(notify=notify)
+        self.assertIsNone(second)
+        self.assertEqual(rc, startup.EXIT_RUNNING)
+        notify.assert_called_once()
+        self.assertIn("이미 실행 중", notify.call_args[0][1])
+        first.unlock()
+        third, rc = startup.single_instance(notify=notify)
+        self.assertIsNone(rc, "먼저 띄운 실행이 끝나면 다시 띄울 수 있음")
+        third.unlock()
+
+    def test_lock_that_cannot_be_created_does_not_block(self):
+        err = io.StringIO()
+        with mock.patch("hazop.app.startup.os.makedirs", side_effect=PermissionError(13, "거부")):
+            lock, rc = startup.single_instance(notify=mock.Mock(), err=err)
+        self.assertIsNone(rc)
+        self.assertIn("잠금", err.getvalue())
 
 class AboutLicensesTest(unittest.TestCase):
     """도움말 > 버전·데이터 위치: 고지 폴더 위치(개발 = 저장소 licenses/, 묶인 실행 = 실행 파일 옆), 열기 버튼 동작."""
