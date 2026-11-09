@@ -18,10 +18,6 @@ import json
 import os
 import re
 
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font
-from openpyxl.utils.exceptions import IllegalCharacterError
-
 from hazop import paths
 from hazop.analysis.ai import STATUS_LABELS_KO
 from hazop import review as rv
@@ -77,6 +73,7 @@ def kst_date(utc_iso):
 
 def _put(ws, row, col, value, bold=False):
     """셀 쓰기. None은 '미확인'으로 쓰고(빈칸으로 바꾸지 않음), 수식처럼 시작하는 문자열은 문자열 셀로 고정한다."""
+    from openpyxl.styles import Alignment, Font
     if value is None:
         value = "미확인"
     cell = ws.cell(row=row, column=col)
@@ -486,6 +483,8 @@ def export_worksheet(run_dir, store_root, out_root, scope="all", now=None, node=
     node: '도면 번호' 열에 쓸 검토구간(span.annotate 사본, 여러 도면에 걸친 구간). 없으면 분석 실행의 도면.
     반환 {"path", "export_record_path", "record"}. 차단·같은 이름 파일 있음이면 ExportError(아무 파일도 만들지 않음),
     analysis.json이 없으면 ReviewError."""
+    from openpyxl import Workbook
+    from openpyxl.utils.exceptions import IllegalCharacterError
     if scope not in SCOPES:
         raise ExportError("출력 범위는 %s 중 하나: %r" % (", ".join(SCOPES), scope))
     now = now or rv.utc_now()

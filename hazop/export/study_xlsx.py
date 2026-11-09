@@ -24,11 +24,6 @@ import os
 import re
 import tempfile
 
-from openpyxl import Workbook
-from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
-
 from hazop.app.conn_view import api_cost, drafted_cells, provenance
 from hazop.app.tokens import COLORS, risk_band
 from hazop.study import refs as srefs
@@ -72,7 +67,7 @@ _SECRET = re.compile(r"(?<![A-Za-z0-9])sk-ant-[A-Za-z0-9_-]{8,}"
                      r"|\\\\(?:[^\\/\n]*[\\/])*[^\s\\/,;)]*")
 _FORMULA_PREFIX = ("=", "+", "-", "@")
 _KST = datetime.timezone(datetime.timedelta(hours=9), "KST")
-_HEAD_FILL = PatternFill("solid", fgColor="E2EDFB")
+_HEAD_FILL = "E2EDFB"
 
 
 def scrub(text):
@@ -255,6 +250,8 @@ def counts(results, node_ids=None):
 # ---------------------------------------------------------------- 쓰기
 
 def put(ws, row, col, value, bold=False):
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+    from openpyxl.styles import Alignment, Font
     cell = ws.cell(row=row, column=col)
     if isinstance(value, str):
         value = scrub(ILLEGAL_CHARACTERS_RE.sub("", value))
@@ -269,9 +266,11 @@ def put(ws, row, col, value, bold=False):
 
 
 def header(ws, columns):
+    from openpyxl.styles import PatternFill
+    from openpyxl.utils import get_column_letter
     for i, (title, width) in enumerate(columns, 1):
         c = put(ws, 1, i, title, bold=True)
-        c.fill = _HEAD_FILL
+        c.fill = PatternFill("solid", fgColor=_HEAD_FILL)
         ws.column_dimensions[get_column_letter(i)].width = width
     ws.freeze_panes = "A2"
     ws.print_title_rows = "1:1"
@@ -282,10 +281,12 @@ def header(ws, columns):
 
 
 def autofilter(ws, ncols, nrows):
+    from openpyxl.utils import get_column_letter
     ws.auto_filter.ref = "A1:%s%d" % (get_column_letter(ncols), max(1, nrows + 1))
 
 
 def _paint_risk(cell, risk):
+    from openpyxl.styles import Font, PatternFill
     band = risk_band(risk)
     if band:
         cell.fill = PatternFill("solid", fgColor=COLORS["risk-%s-bg" % band].lstrip("#").upper())
@@ -293,6 +294,7 @@ def _paint_risk(cell, risk):
 
 
 def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, n_rows, test=False):
+    from openpyxl.styles import Font
     # 표지 수치는 내보낸 구간만 센다(⑤가 스크리닝 제외 구간을 뺀 집합을 넘기면 그 칸도 빠지게)
     keep = set(node_ids) if scope == "nodes" else {n["node_id"] for n in node_set["nodes"]}
     c = counts(results, keep)
@@ -361,6 +363,7 @@ def _nodes_sheet(ws, view, node_ids, intents, labels):
 
 
 def _worksheet_sheet(ws, rows):
+    from openpyxl.styles import Font
     cols = [(title, width) for _k, title, width in WORKSHEET_COLUMNS]
     header(ws, cols)
     keys = [k for k, _t, _w in WORKSHEET_COLUMNS]
@@ -388,6 +391,7 @@ def build_workbook(results, node_set, pg, deviations, scope="all", node_ids=None
                    expectations=None, test=False):
     """Workbook과 워크시트 행 수. scope가 'nodes'면 node_ids(구간 ID 목록)가 있어야 한다.
     expectations: 잠재 후보 계산 결과(hazop.kg.expect.evaluate) 또는 None. test: 고정 응답(시험) 결과에서 내보냄."""
+    from openpyxl import Workbook
     if scope == "nodes" and not node_ids:
         raise ValueError("선택한 구간이 없습니다")
     now = now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

@@ -13,9 +13,6 @@ import os
 import re
 import tempfile
 
-from openpyxl import Workbook
-from openpyxl.styles import PatternFill
-
 from hazop.export import study_xlsx as sx
 from hazop.ie import bundle as ib
 from hazop.ie import model
@@ -28,8 +25,8 @@ ORIGINS = {"ai_draft": "AI 초안", "human": "사람"}
 COVERAGE = {"covered": "대응 있음", "gap": "공백", "not_applicable": "해당 없음", "unclassified": "미분류"}
 BASIS_UNKNOWN_PREFIX = ib.BASIS_UNKNOWN_PREFIX
 NOT_JUDGED = "초기사건 판정 전"
-AI_FILL = PatternFill("solid", fgColor="EEF0F2")
-PRA_FILL = PatternFill("solid", fgColor="FDF0D2")
+AI_FILL = "EEF0F2"
+PRA_FILL = "FDF0D2"
 
 GUIDE_COLUMNS = (("항목", 22), ("내용", 100))
 CANDIDATE_COLUMNS = (("후보 ID", 9), ("판정", 7), ("정상운전 교란", 8), ("안전기능 도전", 8), ("도전받는 안전기능", 16),
@@ -147,22 +144,24 @@ def guide_rows(b):
 
 
 def _sheet(wb, title, columns, rows, first=False, ai_col=None):
+    from openpyxl.styles import PatternFill
     ws = wb.active if first else wb.create_sheet()
     ws.title = title
     sx.header(ws, columns)
     for c in range(len(columns) - PRA_COLUMNS.get(title, 0) + 1, len(columns) + 1):
-        ws.cell(row=1, column=c).fill = PRA_FILL
+        ws.cell(row=1, column=c).fill = PatternFill("solid", fgColor=PRA_FILL)
     for r, row in enumerate(rows, 2):
         draft = ai_col is not None and row[ai_col] == ORIGINS["ai_draft"]
         for c, v in enumerate(row, 1):
             cell = sx.put(ws, r, c, v)
             if draft:
-                cell.fill = AI_FILL
+                cell.fill = PatternFill("solid", fgColor=AI_FILL)
     sx.autofilter(ws, len(columns), len(rows))
     return ws
 
 
 def build_workbook(b):
+    from openpyxl import Workbook
     wb = Workbook()
     made = datetime.datetime.strptime(b["created_at"], "%Y-%m-%dT%H:%M:%SZ")
     wb.properties.created = wb.properties.modified = made  # 같은 묶음이면 같은 파일이 나오게 실행 시각 대신 만든 시각

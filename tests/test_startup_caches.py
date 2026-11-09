@@ -1,8 +1,11 @@
-"""시작·③ 첫 진입을 빠르게 하는 캐시: 추출 요약 캐시 파일(data.extraction_brief)과 도면 그래프 머리(kg.auto.graph_head)."""
+"""시작·③ 첫 진입을 빠르게 하는 것: 추출 요약 캐시 파일(data.extraction_brief), 도면 그래프 머리(kg.auto.graph_head),
+시작할 때 Excel 라이브러리를 읽지 않음."""
 
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -107,6 +110,17 @@ class GraphForRefTest(unittest.TestCase):
         write(p, {"graph_id": "G1", "graph_version": "v2", "nodes": ["새로"]})
         bump(p)
         self.assertEqual(screen.graph_for_ref(self.root, "G1", "v2")[1]["nodes"], ["새로"])
+
+
+class StartupImportsTest(unittest.TestCase):
+    def test_the_main_window_module_does_not_load_openpyxl(self):
+        """openpyxl은 내보낼 때만 읽는다(시작이 0.5초 이상 늦어져서)."""
+        code = ("import sys\nfrom hazop.app import make_application\nfrom hazop.app.main_window import MainWindow\n"
+                "print('openpyxl' in sys.modules)")
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env,
+                             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))), timeout=120)
+        self.assertEqual(out.stdout.strip(), "False", out.stderr[-2000:])
 
 
 if __name__ == "__main__":
