@@ -18,7 +18,7 @@ import os
 
 from hazop.app import tokens
 from hazop.graph.build import node_origin
-from hazop.kg import algo, build, expect, link
+from hazop.kg import algo, auto, build, expect, link
 from hazop.kg.schema import REGISTRY
 
 NODE_LIMIT = 5000  # 전역 보기 노드 수 상한(그래프활용 §7.3, 검사 S1, T1 D8)
@@ -61,22 +61,24 @@ def load_graphs(graph_root):
     return out
 
 
-def graph_for_ref(graph_root, graph_id, graph_version):
+def graph_for_ref(graph_root, graph_id, graph_version, retry=True):
     """지식그래프 graph_ref에 맞는 (폴더 이름, graph) 또는 None. 같은 graph_id 폴더가 여럿이면(같은 도면을 drawio·PDF로
     따로 등록한 경우 등) graph_version이 같은 폴더를 먼저, 없으면 load_graphs와 같은 첫 폴더(이름순)를 쓴다."""
-    first = None
+    same = []
     for name in sorted(os.listdir(graph_root)) if os.path.isdir(graph_root) else []:
         p = os.path.join(graph_root, name, "graph.json")
-        if not os.path.isfile(p):
-            continue
-        with open(p, encoding="utf-8") as fh:
-            g = json.load(fh)
-        if g.get("graph_id") != graph_id:
-            continue
-        if g.get("graph_version") == graph_version:
-            return name, g
-        first = first or (name, g)
-    return first
+        head = auto.graph_head(p)  # 머리만 캐시해 두고 고른 도면 하나만 다시 읽는다
+        if head is not None and head["graph_id"] == graph_id:
+            same.append((head["graph_version"] != graph_version, name, p))
+    if not same:
+        return None
+    other_version, name, p = min(same)
+    with open(p, encoding="utf-8") as fh:
+        g = json.load(fh)
+    if retry and (g.get("graph_id") != graph_id or (g.get("graph_version") != graph_version) != other_version):
+        auto.forget_heads()  # 머리를 읽은 뒤 파일이 바뀜: 머리를 새로 읽어 한 번만 다시 고른다
+        return graph_for_ref(graph_root, graph_id, graph_version, retry=False)
+    return name, g
 
 
 def load_regions(region_dir):

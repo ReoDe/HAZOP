@@ -110,6 +110,7 @@ def extract_module(win):
             "\n출처: %s" % b["origin"] if b.get("origin") else "")
         right = "미확인 %d" % unk if unk else ("미연결 %d" % link if link else "추출됨")
         items.append((number if number == e["name"] else "%s (%s)" % (number, e["name"]), (1, e["name"]), right, None, tip))
+    data.save_briefs()
     pending = []
     for e in win.screens[0].rows:
         rec, pages = e["record"], e.get("pages") or {}

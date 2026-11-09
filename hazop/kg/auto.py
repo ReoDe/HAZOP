@@ -49,32 +49,40 @@ def _scan(root, filename):
     return out
 
 
-_IDS = {}
+_HEADS = {}
+HEAD_KEYS = ("project_id", "graph_id", "graph_version")
 
 
-def _project_id_of(path):
-    """파일의 project_id. 바뀐 시각·크기가 같으면 다시 읽지 않는다(143쪽이면 화면마다 수 초가 걸려서)."""
+def forget_heads():
+    """머리 캐시를 비운다(읽은 뒤 파일이 바뀐 것을 알았을 때)."""
+    _HEADS.clear()
+
+
+def graph_head(path):
+    """도면 graph.json의 {project_id, graph_id, graph_version}. 파일이 없거나 지금 읽지 못하면 None, JSON이 아니면 값이 모두 None.
+    바뀐 시각·크기가 같으면 다시 읽지 않는다(143쪽이면 화면마다 수 초가 걸려서)."""
     try:
         st = os.stat(path)
     except OSError:
         return None
     key = (st.st_mtime_ns, st.st_size)
-    hit = _IDS.get(path)
+    hit = _HEADS.get(path)
     if hit is not None and hit[0] == key:
-        return hit[1]
+        return dict(hit[1])
     try:
-        pid = _read(path).get("project_id")
+        g = _read(path)
     except OSError:
         return None  # 잠깐 못 읽은 것은 기억하지 않는다(다음에 다시 읽게)
-    except (ValueError, AttributeError):
-        pid = None
-    _IDS[path] = (key, pid)
-    return pid
+    except ValueError:
+        g = {}
+    head = {k: g.get(k) if isinstance(g, dict) else None for k in HEAD_KEYS}
+    _HEADS[path] = (key, head)
+    return dict(head)
 
 
 def project_ids(graph_root, doc_root):
     """도면 그래프·문서 지식에 나오는 project_id 집합(등록 경로로 만든 것만)."""
-    ids = {_project_id_of(os.path.join(graph_root, n, "graph.json"))
+    ids = {(graph_head(os.path.join(graph_root, n, "graph.json")) or {}).get("project_id")
            for n in (sorted(os.listdir(graph_root)) if os.path.isdir(graph_root) else [])}
     ids |= {d.get("project_id") for _, d in _scan(doc_root, DOC_FILE)}
     return sorted(i for i in ids if i)

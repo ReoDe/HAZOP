@@ -157,6 +157,7 @@ FOLDERS = {
     "도면수정": Folder("work", ("데이터", "도면수정")),
     "도면연결": Folder("work", ("데이터", "도면연결")),
     "잠재후보": Folder("work", ("데이터", "잠재후보")),
+    "캐시": Folder("work", ("데이터", "캐시")),  # 지워도 되는 계산 결과(hazop.app.data 추출 요약)
     "기호후보": Folder("work", ("기호후보",)),
 }
 REFERENCE_LOGICAL = "참고자료/"  # 참고 폴더 아래 파일의 기록용 접두(rel_or_abs)
