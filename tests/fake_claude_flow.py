@@ -80,7 +80,8 @@ def main():
         fc.limit(status="allowed", overageStatus="allowed", isUsingOverage=True)
         fc.result(structured_output=out, modelUsage={model: {}})
     elif scenario == "rejected":
-        fc.limit(status="rejected", resetsAt=int(time.time()) + 3600)
+        resets = os.environ.get("FAKE_CLAUDE_RESETS_AT")
+        fc.limit(status="rejected", resetsAt=int(resets) if resets else int(time.time()) + 3600)
         fc.result(is_error=True, result="You've hit your limit", structured_output=None)
         return 1
     elif scenario == "rejected_noreset":

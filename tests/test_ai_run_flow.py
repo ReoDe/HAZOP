@@ -199,6 +199,21 @@ class FlowCase(unittest.TestCase):
     def cell_texts(self, scr, row=0):
         return [scr.matrix.item(row, c).text() for c in range(scr.matrix.columnCount())]
 
+    def fix_reset_clock(self, other_day):
+        """가짜 CLI의 한도 재설정 시각을 한 시간 뒤로 고정하고, 앱의 '지금'을 그 시각과 같은 날(또는 하루 전)로 맞춘다.
+        돌리는 시각(자정 근처 등)과 무관하게 표시가 정해진다. 기대하는 재설정 표시 글자를 돌려준다."""
+        import datetime
+        from hazop.app import conn_view
+        resets = int(time.time()) + 3600
+        at = conn_view._kst(resets)
+        now = at - datetime.timedelta(days=1) if other_day else at.replace(hour=0, minute=0, second=0)
+        env = mock.patch.dict(os.environ, {"FAKE_CLAUDE_RESETS_AT": str(resets)})
+        clock = mock.patch.object(conn_view, "_now", lambda: now)
+        for p in (env, clock):
+            p.start()
+            self.addCleanup(p.stop)
+        return at.strftime("%m-%d %H:%M" if other_day else "%H:%M")
+
 
 # ---------------------------------------------------------------- 구독 경로(가짜 CLI)
 
@@ -273,6 +288,7 @@ class SubscriptionFlowTest(FlowCase):
         from hazop.study import ai_cells
         units = self.units()
         self.assertGreaterEqual(len(units), 3, "시험에는 호출 3회 이상인 구간이 필요")
+        reset = self.fix_reset_clock(other_day=False)
         win, scr = self.window(scenarios="ok,rejected")
         scr.matrix.setFocus()
         self.run_node(scr)
@@ -289,7 +305,8 @@ class SubscriptionFlowTest(FlowCase):
         left = len(units) - 1
         self.assertIn("구독 사용 한도에 닿아 AI 분석을 멈췄습니다.", body)
         self.assertIn("호출 %d회 중 1회의 결과(%d칸)는 저장했습니다." % (len(units), n_first), body)
-        self.assertRegex(body, r"남은 %d회\(%d칸\)는 \d\d:\d\d 재설정 뒤에" % (left, len(texts) - n_first))
+        self.assertIn("남은 %d회(%d칸)는 %s 재설정 뒤에" % (left, len(texts) - n_first, reset), body,
+                      "같은 날이면 시각만")
         self.assertEqual(scr.run_band.accessibleName(), "알림: 구독 사용 한도에 닿아 AI 분석을 멈춤")
         first = scr.run_band.first_button()
         self.assertEqual(first.text(), "남은 칸 이어서 실행(&C)")
@@ -315,6 +332,14 @@ class SubscriptionFlowTest(FlowCase):
         self.assertIn("AI를 %d회 호출해" % left, seen["text"], "아직 한도여도 이어서 실행은 부름(재설정 전에도 누를 수 있음)")
         self.assertEqual(self.calls(), 3)
         self.assertFalse(scr.run_band.isHidden(), "첫 호출에서 같은 띠가 다시 뜸")
+
+    def test_limit_reset_on_another_day_shows_date(self):
+        reset = self.fix_reset_clock(other_day=True)
+        win, scr = self.window(scenarios="ok,rejected")
+        self.run_node(scr)
+        self.assertEqual(scr.run_band.kind, "limit_reached")
+        self.assertIn("는 %s 재설정 뒤에" % reset, scr.run_band.text.text(), "다른 날이면 날짜(MM-DD)도 붙임")
+        self.assertIn("%s 재설정" % reset, win.conn_chip.wide, "칩도 같은 규칙")
 
     def test_reset_time_rechecks_and_toasts_without_running(self):
         from hazop.study import claude_cli

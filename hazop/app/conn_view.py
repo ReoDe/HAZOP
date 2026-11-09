@@ -182,13 +182,17 @@ def _kst(epoch):
     return datetime.datetime.fromtimestamp(epoch, claude_cli.KST)
 
 
+def _now():
+    return datetime.datetime.now(claude_cli.KST)
+
+
 def _hhmm(dt, now=None):
-    now = now or datetime.datetime.now(claude_cli.KST)
+    now = now or _now()
     return dt.strftime("%H:%M") if dt.date() == now.date() else dt.strftime("%m-%d %H:%M")
 
 
 def _spoken(dt, now=None):
-    now = now or datetime.datetime.now(claude_cli.KST)
+    now = now or _now()
     day = "" if dt.date() == now.date() else "%d월 %d일 " % (dt.month, dt.day)
     return "%s%d시 %d분" % (day, dt.hour, dt.minute)
 
