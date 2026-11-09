@@ -293,8 +293,9 @@ def _paint_risk(cell, risk):
 
 
 def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, n_rows, test=False):
-    c = counts(results, set(node_ids) if scope == "nodes" else None)
-    keep = set(node_ids) if scope == "nodes" else None
+    # 표지 수치는 내보낸 구간만 센다(⑤가 스크리닝 제외 구간을 뺀 집합을 넘기면 그 칸도 빠지게)
+    keep = set(node_ids) if scope == "nodes" else {n["node_id"] for n in node_set["nodes"]}
+    c = counts(results, keep)
     cells = [x for x in results["cells"] if keep is None or x["node_id"] in keep]
     ref = results.get("study_nodes_ref") or {}
     s = c["by_status"]

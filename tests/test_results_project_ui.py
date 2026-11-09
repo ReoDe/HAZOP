@@ -212,6 +212,37 @@ class ResultsProjectUiTest(unittest.TestCase):
         self.assertFalse(res.is_stale(saved, sn.load(pg)), "옮긴 결과를 바로 저장해 다른 화면도 같은 결과를 읽음")
         self.assertEqual([e["status"] for c in saved["cells"] for e in c["entries"]], ["approved"])
 
+    def test_screening_buckets_have_no_rows_and_low_nodes_come_last(self):
+        """⑤ 행렬·AI 일괄·Excel 범위는 스크리닝 제외 구간을 빼고, 낮음 구간은 맨 아래(S4, D6)."""
+        ns = self.confirm_project_set()
+        status = {n["node_id"]: n["screen"]["status"] for n in ns["nodes"]}
+        from hazop.app import project_ctx
+        pg = project_ctx.load("SNP-M-102").pg
+        keeps = [nid for nid, st in status.items() if st == "keep"]
+        bucket_like = sn.reopen(ns, at=AT)
+        bucket_like = sn.screen_override(bucket_like, keeps[0], "excluded", "검토 범위 밖", at=AT)
+        bucket_like = sn.screen_override(bucket_like, keeps[1], "low", "부속 배관", at=AT)
+        sn.save(sn.confirm(bucket_like, pg, "EJ", at="2026-11-10T00:00:00Z"))
+        _app, scr = self.screen()
+        rows = [scr._node_at(r) for r in range(scr.matrix.rowCount())]
+        self.assertNotIn(keeps[0], rows, "제외 구간은 행이 없음")
+        self.assertEqual(rows[-1], keeps[1], "낮음 구간은 맨 아래")
+        self.assertIn("스크리닝 제외 1개", scr.kpi.text())
+        self.assertNotIn(keeps[0], {u["node_id"] for u in scr._plan("all")}, "AI 일괄 범위에서 뺌")
+        self.assertIn(keeps[1], {u["node_id"] for u in scr._plan("all")}, "낮음은 AI 일괄 범위에 넣음")
+        path = scr.export_excel(os.path.join(self.tmp, "x.xlsx"), scope="all", reviewer="EJ")
+        import openpyxl
+        names = [c.value for c in openpyxl.load_workbook(path).worksheets[1]["A"]]
+        self.assertFalse(any(v and keeps[0] == v for v in names), "Excel 구간 목록에도 없음")
+        cover = {r[0].value: r[1].value for r in openpyxl.load_workbook(path).worksheets[0].iter_rows() if r[0].value}
+        self.assertEqual(cover.get("구간 수", len(rows)), len(rows), "표지 구간 수 = 내보낸 구간")
+        did = scr.deviations[0]["deviation_id"]
+        self.assertFalse(scr.open_cell(keeps[0], did), "제외 구간 칸은 열지 않고 안내만")
+        doc = scr.results
+        cell = next(c for c in doc["cells"] if (c["node_id"], c["deviation_id"]) == (keeps[0], did))
+        cell["ai_run"] = {"status": "failed", "error": "x"}
+        self.assertEqual(scr._plan("failed"), [], "제외 구간 실패 칸은 다시 실행 범위에 없음")
+
     def test_no_cell_open_hint(self):
         self.confirm_project_set()
         app, scr = self.screen()

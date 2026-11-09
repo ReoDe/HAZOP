@@ -179,7 +179,7 @@ def node_items(win, view, ns, dn, progress):
     """구간 항목. progress(node_id) → (오른쪽 글자, 설명). 도면 필터 dn이면 그 도면을 지나는 구간(걸친 구간 포함)."""
     listed = (view or ns or {}).get("nodes", [])
     shown = span.nodes_on_drawing(view, dn) if dn and view else listed
-    order = {n["node_id"]: i for i, n in enumerate(listed)}
+    order = {n["node_id"]: i for i, n in enumerate((ns or view or {}).get("nodes", []))}  # 색은 집합 순서(④·⑤와 같게)
     out = []
     for n in shown:
         right, detail = progress(n["node_id"])
@@ -213,6 +213,15 @@ def study_module(win):
                   about="%s%s" % ("" if dn else "프로젝트 전체 구간\n", cover or ""), info=info)]
 
 
+def _result_rows(view):
+    """⑤ 행렬과 같은 행: 스크리닝 제외 구간은 빼고 낮음 구간은 맨 아래(results 화면 _rows와 같은 규칙)."""
+    if not view:
+        return view
+    status = lambda n: (n.get("screen") or {}).get("status") or "keep"  # noqa: E731
+    shown = [n for n in view["nodes"] if status(n) != "excluded"]
+    return dict(view, nodes=[n for n in shown if status(n) != "low"] + [n for n in shown if status(n) == "low"])
+
+
 def results_module(win):
     """구간별 분석 진행(분석 전·미검토·실패), 권고 목록, 내보내기."""
     idx, pg, ns, view, usable, results = project_nodes(win)
@@ -223,10 +232,14 @@ def results_module(win):
     shown = results if usable else None
     summary = res.matrix_summary(shown) if shown else None
     table = related.progress_table(shown, len(rs.deviations), summary) if shown else None
-    items = node_items(win, view, ns, dn, lambda nid: related.node_progress(table, nid, len(rs.deviations)))
+    rows = _result_rows(view)
+    items = node_items(win, rows, ns, dn,
+                       lambda nid: related.node_progress(table, nid, len(rs.deviations)))
     info, todo = [], None
     if confirmed and shown:
-        cells = shown["cells"]
+        visible = {n["node_id"] for n in (rows or {}).get("nodes", [])} if rows else None
+        cells = [c for c in shown["cells"] if visible is None or c["node_id"] in visible]  # ⑤ 행렬 행과 같은 칸만
+        summary = {k: v for k, v in summary.items() if visible is None or k in visible}
         failed = sum((c.get("ai_run") or {}).get("status") == "failed" for c in cells)
         todo = sum(c["state"] == "not_analyzed" for c in cells)
         unrev = sum(s["unreviewed"] for row in summary.values() for s in row.values())

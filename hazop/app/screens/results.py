@@ -660,6 +660,10 @@ def empty_cell_label(run):
     return "항목 없음"
 
 
+def _status(node):
+    return ((node or {}).get("screen") or {}).get("status") or "keep"
+
+
 class ResultsScreen(QWidget):
     title = "⑤ 분석 결과"
     CLOSE_WAIT_SEC = 120  # 창 닫기 '기다렸다 닫기'의 최대 대기(U9)
@@ -1013,7 +1017,7 @@ class ResultsScreen(QWidget):
         if not self.results:
             return False
         summary = res.matrix_summary(self.results)
-        order = [(n["node_id"], d["deviation_id"]) for n in self.node_set["nodes"] for d in self.deviations]
+        order = [(n["node_id"], d["deviation_id"]) for n in self._rows() for d in self.deviations]
         start = order.index(self.cell) + 1 if self.cell in order else 0
         for key in order[start:] + order[:start]:
             if (summary.get(key[0], {}).get(key[1]) or {}).get("unreviewed"):
@@ -1042,6 +1046,9 @@ class ResultsScreen(QWidget):
         if row is not None:
             self.matrix.selectRow(row)
             self.open_cell(node_id, self.deviations[0]["deviation_id"])
+        elif self.node_set and any(n["node_id"] == node_id for n in self.node_set["nodes"]):
+            self.matrix.clearSelection()
+            self.app.status_message("%s는 스크리닝 제외 구간이라 ⑤ 행이 없습니다. ④에서 꺼내면 볼 수 있습니다." % node_id)
 
     # ------------------------------------------------------------ 읽기
     def _load(self):
@@ -1229,7 +1236,8 @@ class ResultsScreen(QWidget):
             return None
         now = nodes.now_utc()
         if scope is None:
-            dlg = ExportDialog(list(self.view.values()), self.selected_node_id(),
+            dlg = ExportDialog([self.view[n["node_id"]] for n in self._rows() if n["node_id"] in self.view],
+                               self.selected_node_id(),
                                getattr(self, "_export_reviewer", ""), self)
             if dlg.exec() != QDialog.Accepted:
                 return None
@@ -1251,8 +1259,10 @@ class ResultsScreen(QWidget):
             if found:
                 intents[nid] = found[0]
         try:
-            path, n_rows = study_xlsx.export(path, self.results, self.node_set, self.graph, self.deviations,
-                                             scope=scope, node_ids=node_ids, reviewer=reviewer or "",
+            rows = {n["node_id"] for n in self._rows()}
+            path, n_rows = study_xlsx.export(path, self.results, self._scope_set(), self.graph, self.deviations,
+                                             scope=scope, node_ids=[x for x in node_ids or () if x in rows] or None
+                                             if scope == "nodes" else node_ids, reviewer=reviewer or "",
                                              intents=intents, now=now, expectations=self.expectations,
                                              test=self.fixed_view)
         except (OSError, ValueError) as exc:
@@ -1282,11 +1292,11 @@ class ResultsScreen(QWidget):
 
     def selected_node_id(self):
         row = self.matrix.currentRow()
-        return self._node_at(row) if self.node_set and 0 <= row < len(self.node_set["nodes"]) else None
+        return self._node_at(row) if self.node_set and 0 <= row < len(self._rows()) else None
 
     def _plan(self, scope, test=None):
         """test: 실행이 쓸 결과 파일이 시험용인지(None이면 보고 있는 쪽). 실패 칸은 그 파일에서 뽑는다."""
-        ns = self.node_set
+        ns = self._scope_set()  # 스크리닝 제외 구간은 AI 일괄 범위에서 뺀다(행이 없는 구간을 몰래 분석하지 않게)
         if scope == "all":
             return ai_cells.plan_units(ns, self.deviations)
         if scope == "node":
@@ -1295,7 +1305,8 @@ class ResultsScreen(QWidget):
                 dict(ns, nodes=[n for n in ns["nodes"] if n["node_id"] == nid]), self.deviations)
         if scope == "failed":
             doc = self.results if test is None else self._results_for(test)
-            return ai_cells.plan_units(ns, self.deviations, ai_cells.failed_cells(doc))
+            rows = {n["node_id"] for n in ns["nodes"]}
+            return ai_cells.plan_units(ns, self.deviations, [c for c in ai_cells.failed_cells(doc) if c[0] in rows])
         if scope == "resume":
             return ai_cells.plan_units(ns, self.deviations, (self.last_run or {}).get("cells") or [], group=True)
         return [] if self.cell is None else ai_cells.plan_units(ns, self.deviations, [self.cell])
@@ -1913,7 +1924,7 @@ class ResultsScreen(QWidget):
         self.cancel_btn.setVisible(self.machine.alive)
         self.cancel_btn.setText(CANCEL_NOW if st in ("draining", "killing") else "취소")
         self.cancel_btn.setToolTip(CANCEL_NOW_TIP if st == "draining" else CANCEL_TIP)
-        has_failed = bool(self.results) and bool(ai_cells.failed_cells(self.results))
+        has_failed = bool(self.results) and bool(self._plan("failed"))
         self.retry_btn.setVisible(has_failed)
         self.combo.setEnabled(not self.running())
         for b in self.test_band.btns.values():
@@ -1921,20 +1932,35 @@ class ResultsScreen(QWidget):
         self._update_entry_buttons()
 
     # ------------------------------------------------------------ 행렬
+    def _rows(self):
+        """행렬 행이 되는 구간: 스크리닝 제외 구간은 행이 없고(④에서 확인), 낮음 구간은 맨 아래에 모은다(D6)."""
+        if not self.node_set:
+            return []
+        shown = [n for n in self.node_set["nodes"] if _status(n) != "excluded"]
+        return [n for n in shown if _status(n) != "low"] + [n for n in shown if _status(n) == "low"]
+
+    def _scope_set(self):
+        """AI 일괄·Excel의 기본 범위 = 행렬 행과 같은 구간."""
+        return dict(self.node_set, nodes=self._rows())
+
+    def _color_of(self, node_id):
+        """구간 색 번호는 ④와 같게 집합 순서로 정한다(행 순서가 달라도 같은 구간은 같은 색)."""
+        return next((i for i, n in enumerate(self.node_set["nodes"]) if n["node_id"] == node_id), 0)
+
     def _node_at(self, row):
-        return self.node_set["nodes"][row]["node_id"]
+        return self._rows()[row]["node_id"]
 
     def _row_of(self, node_id):
-        if not self.node_set:
-            return None
-        return next((i for i, n in enumerate(self.node_set["nodes"]) if n["node_id"] == node_id), None)
+        return next((i for i, n in enumerate(self._rows()) if n["node_id"] == node_id), None)
 
     def _fill_matrix(self):
         """칸 한 줄(U-20). 아이템 text()는 설명 글자, 그리기는 CellDelegate가 CELL_ROLE 상태로 한다.
         AI 실행 실패 칸은 위험도 색을 쓰지 않는다(U-19): 흰 바탕 + 빨강 점선 테두리 + '! 실패'."""
-        ns, summary = self.node_set, res.matrix_summary(self.results)
+        ns, summary = self._scope_set(), res.matrix_summary(self.results)
+        hidden = [n for n in self.node_set["nodes"] if _status(n) == "excluded"]
         runs = {(c["node_id"], c["deviation_id"]): c.get("ai_run") or {} for c in self.results["cells"]}
-        failed = {k: r.get("error") for k, r in runs.items() if r.get("status") == "failed"}
+        shown = {n["node_id"] for n in ns["nodes"]}
+        failed = {k: r.get("error") for k, r in runs.items() if r.get("status") == "failed" and k[0] in shown}
         limited = {k for k in failed if is_limit_stop(runs[k])}
         m = self.matrix
         cur = (m.currentRow(), m.currentColumn())
@@ -1949,10 +1975,12 @@ class ResultsScreen(QWidget):
         total_s = total_u = 0
         for r, n in enumerate(ns["nodes"]):
             v = self.view.get(n["node_id"]) or n
-            head = QTableWidgetItem(seg_icon(r, n["node_id"]), project_ctx.node_label(v))
-            head.setToolTip("%s\n%s\n구성요소 %s" % (project_ctx.node_label(v), project_ctx.boundary_text(v),
-                                                 project_ctx.counts_text(v, self.ctx.drawing_number)
-                                                 if self.ctx else len(n["members"])))
+            head = QTableWidgetItem(seg_icon(self._color_of(n["node_id"]), n["node_id"]), project_ctx.node_label(v))
+            head.setToolTip("%s\n%s\n구성요소 %s%s" % (project_ctx.node_label(v), project_ctx.boundary_text(v),
+                                                   project_ctx.counts_text(v, self.ctx.drawing_number)
+                                                   if self.ctx else len(n["members"]),
+                                                   "\n스크리닝 낮음: 편차원을 알아보지 못한 배관 묶음(맨 아래, 주배관일 수 있음)"
+                                                   if _status(n) == "low" else ""))
             m.setVerticalHeaderItem(r, head)
             for c, d in enumerate(self.deviations):
                 s = summary.get(n["node_id"], {}).get(d["deviation_id"]) or {"state": "not_analyzed", "scenarios": 0,
@@ -2001,7 +2029,8 @@ class ResultsScreen(QWidget):
         self.kpi.setText("구간 %d · 편차 %d · 시나리오 %d · 미검토 %d%s"
                          % (len(ns["nodes"]), len(self.deviations), total_s, total_u,
                             " · 실패 %d" % (len(failed) - len(limited)) if len(failed) > len(limited) else "")
-                         + (" · 한도로 멈춤 %d" % len(limited) if limited else ""))
+                         + (" · 한도로 멈춤 %d" % len(limited) if limited else "")
+                         + (" · 스크리닝 제외 %d개(④에서 확인)" % len(hidden) if hidden else ""))
         self._update_buttons()
 
     # ------------------------------------------------------------ 워크시트
@@ -2091,11 +2120,14 @@ class ResultsScreen(QWidget):
         dev = next((d for d in self.deviations if d["deviation_id"] == deviation_id), None)
         if node is None or dev is None:
             return False
+        if self._row_of(node_id) is None:  # 스크리닝 제외 구간은 행이 없다
+            self.app.status_message("%s는 스크리닝 제외 구간입니다. ④에서 꺼내면 ⑤에서 볼 수 있습니다." % node_id)
+            return False
         keep = (self.selected_entry() or {}).get("entry_id") if self.cell == (node_id, deviation_id) else None
         self.cell = (node_id, deviation_id)
         cell = self._cell_doc()
         row = self._row_of(node_id)
-        self.sheet_badge.setPixmap(seg_icon(row, node_id).pixmap(30, 16))
+        self.sheet_badge.setPixmap(seg_icon(self._color_of(node_id), node_id).pixmap(30, 16))
         self.sheet_title.setText("%s × %s" % (project_ctx.node_label(self.view.get(node_id) or node), dev["label"]))
         self.sheet_span.setText(self._span_text(node_id))
         self.sheet_span.setToolTip(self.sheet_span.text())
