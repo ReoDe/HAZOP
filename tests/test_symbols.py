@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import math
 import os
 import shutil
 import tempfile
@@ -395,6 +396,112 @@ class LineTickTest(unittest.TestCase):
         tees = {n["local_id"] for n in ex["nodes"] if n["kind"] == "tee"}
         self.assertTrue(tees)
         self.assertFalse([u for u in ex["validation"]["unknowns"] if u["check"] == "missing_tag" and u["target"] in tees])
+
+
+def plate(x, y=100.0, half=1.5):
+    return prim([(x, y - half), (x, y + half)], False)
+
+
+def disc(x, y, r=0.95):
+    pts = [(x + r, y), (x, y + r), (x - r, y), (x, y - r), (x + r, y)]
+    return {"fill": True, "stroke": False, "fill_white": False, "stroke_white": False, "dash": None,
+            "subpaths": [(pts, True, pts, True)]}
+
+
+def butterfly(x0=70.0, y=100.0):
+    """APR1400 028쪽 V1681 그대로: 플랜지 판 | 밸브 판 | 빗금·점 | 밸브 판 | 플랜지 판."""
+    return [plate(x0, y), plate(x0 + 1.88, y), prim([(x0 + 2.64, y - 1.14), (x0 + 7.16, y + 1.12)], False),
+            disc(x0 + 4.9, y), plate(x0 + 7.91, y), plate(x0 + 9.79, y)]
+
+
+class PlateAssemblyTest(unittest.TestCase):
+    """배관을 가로지르는 판(범례 1.7-1 FLANGED CONNECTION, BUTTERFLY·BALL): 판 조각이 배관을 자르지 않는다(3f)."""
+
+    def rels(self, ex):
+        return ex["relations"] + ex["unresolved_connectors"]
+
+    def test_flanged_connection_joins_the_pipe(self):
+        ex = extract([prim([(0, 100), (70, 100)], False), plate(70), plate(72), prim([(72, 100), (200, 100)], False)])
+        self.assertEqual([n for n in ex["nodes"] if n["kind"] == "tee"], [])
+        self.assertEqual(len(self.rels(ex)), 1)
+        self.assertEqual(sum(o.get("reason") == "flange_plate" for o in ex["drawing"]["ignored_objects"]), 2)
+
+    def test_butterfly_valve_is_one_symbol_between_two_pipes(self):
+        ex = extract([prim([(50, 100), (70, 100)], False)] + butterfly() + [prim([(79.79, 100), (100, 100)], False)])
+        valves = [n for n in ex["nodes"] if n["kind"] == "manual_valve"]
+        self.assertEqual(len(valves), 1)
+        self.assertEqual(valves[0]["attributes"], {"valve_type": "butterfly"})
+        self.assertEqual([n for n in ex["nodes"] if n["kind"] == "tee"], [])
+        ends = [e["node_local_id"] for r in self.rels(ex) for e in r["endpoints"]]
+        self.assertEqual(ends.count(valves[0]["local_id"]), 2)
+        self.assertFalse([u for u in ex["validation"]["unknowns"] if u["check"] == "self_loop"])
+
+    def test_ball_valve_with_open_circle(self):
+        ring = [(76 + 1.5 * math.cos(t / 8 * math.pi), 100 + 1.5 * math.sin(t / 8 * math.pi)) for t in range(17)]
+        circle = {"fill": False, "stroke": True, "fill_white": False, "stroke_white": False, "dash": None,
+                  "subpaths": [(ring, True, ring, True)]}
+        ex = extract([prim([(50, 100), (73, 100)], False), plate(73), circle, plate(79), prim([(79, 100), (100, 100)], False)])
+        valves = [n for n in ex["nodes"] if n["kind"] == "manual_valve"]
+        self.assertEqual([v["attributes"] for v in valves], [{"valve_type": "ball"}])
+
+    def test_orifice_stub_and_tapped_plates_are_left_alone(self):
+        """판 사이에 짧은 선이 있으면(오리피스) 밸브도 플랜지도 아니고, 판 끝에 선이 닿으면(계기 탭) 잇지 않는다."""
+        orifice = extract([prim([(50, 100), (70, 100)], False), plate(70), prim([(71.5, 100), (72.5, 100)], False),
+                           plate(74), prim([(74, 100), (100, 100)], False)])
+        self.assertFalse(any(o.get("reason") == "flange_plate" for o in orifice["drawing"]["ignored_objects"]))
+        self.assertFalse(any(n["kind"] == "manual_valve" for n in orifice["nodes"]))
+        tapped = extract([prim([(50, 100), (70, 100)], False), plate(70), plate(72), prim([(72, 100), (100, 100)], False),
+                          prim([(72, 101.5), (72, 120)], False)])
+        self.assertFalse(any(o.get("reason") == "flange_plate" for o in tapped["drawing"]["ignored_objects"]))
+
+    def test_slash_drawn_in_two_halves_is_still_butterfly(self):
+        parts = butterfly()
+        parts[2] = prim([(72.64, 98.86), (74.9, 100)], False)
+        parts.insert(3, prim([(74.9, 100), (77.16, 101.12)], False))
+        ex = extract([prim([(0, 100), (70, 100)], False)] + parts + [prim([(79.79, 100), (200, 100)], False)])
+        self.assertEqual([n["attributes"] for n in ex["nodes"] if n["kind"] == "manual_valve"],
+                         [{"valve_type": "butterfly"}])
+
+    def test_actuator_box_on_a_stem_is_not_a_pipe_cap(self):
+        box = prim([(72, 86), (78, 86), (78, 90), (72, 90), (72, 86)])
+        ex = extract([prim([(0, 100), (70, 100)], False)] + butterfly() + [prim([(79.79, 100), (200, 100)], False),
+                                                                           prim([(74.9, 100), (74.9, 90)], False), box])
+        self.assertFalse(any(n["kind"] == "pipe_cap" for n in ex["nodes"]))
+
+    def test_actuator_stem_on_the_disc_does_not_break_the_valve(self):
+        stem = prim([(74.9, 100), (74.9, 90)], False)
+        m = [(74.9 + 3 * math.cos(t / 8 * math.pi), 87 + 3 * math.sin(t / 8 * math.pi)) for t in range(17)]
+        motor = {"fill": False, "stroke": True, "fill_white": False, "stroke_white": False, "dash": None,
+                 "subpaths": [(m, True, m, True)]}
+        ex = extract([prim([(50, 100), (70, 100)], False)] + butterfly() + [prim([(79.79, 100), (100, 100)], False),
+                                                                            stem, motor])
+        valve = next(n for n in ex["nodes"] if n["attributes"] == {"valve_type": "butterfly"})
+        self.assertIsNone(valve["kind"])  # 축 끝에 구동부(원)가 있으면 수동으로 정하지 않는다
+        self.assertTrue(any(u["check"] == "actuated_valve_pending" and u["target"] == valve["local_id"]
+                            for u in ex["validation"]["unknowns"]))
+
+    def test_review_cases(self):
+        """3f 검토(Codex)가 재현한 입력: 채운 마름모·판 사이 채운 조각·뒤집힌 판·밸브 뒤 진짜 끝막음."""
+        pipe_l, pipe_r = prim([(0, 100), (73, 100)], False), prim([(79, 100), (200, 100)], False)
+        diamond = [(76, 98.6), (77.4, 100), (76, 101.4), (74.6, 100), (76, 98.6)]
+        filled = {"fill": True, "stroke": False, "fill_white": False, "stroke_white": False, "dash": None,
+                  "subpaths": [(diamond, True, diamond, False)]}
+        ex = extract([pipe_l, plate(73), filled, plate(79), pipe_r])
+        self.assertFalse(any(n["attributes"].get("valve_type") == "ball" for n in ex["nodes"]))
+        bar = {"fill": True, "stroke": False, "fill_white": False, "stroke_white": False, "dash": None,
+               "subpaths": [([(70.8, 99.8), (71.2, 99.8), (71.2, 100.2), (70.8, 100.2), (70.8, 99.8)], True,
+                             [(70.8, 99.8), (71.2, 99.8), (71.2, 100.2), (70.8, 100.2), (70.8, 99.8)], False)]}
+        ex = extract([prim([(0, 100), (70, 100)], False), plate(70), bar, plate(72), prim([(72, 100), (200, 100)], False)])
+        self.assertFalse(any(o.get("reason") == "flange_plate" for o in ex["drawing"]["ignored_objects"]))
+        flipped = prim([(72, 101.5), (72, 98.5)], False)
+        ex = extract([prim([(0, 100), (70, 100)], False), plate(70), flipped, prim([(72, 100), (200, 100)], False)])
+        self.assertEqual(len(self.rels(ex)), 1)
+        cap = prim([(110, 98), (113, 98), (113, 102), (110, 102), (110, 98)])
+        after_valve = extract([prim([(0, 100), (70, 100)], False)] + butterfly()
+                              + [prim([(79.79, 100), (110, 100)], False), cap])
+        plain = extract([prim([(0, 100), (110, 100)], False), cap])
+        end = lambda ex: [n["kind"] for n in ex["nodes"] if n["geometry"]["x"] >= 109]  # noqa: E731
+        self.assertEqual(end(after_valve), end(plain))  # 배관 끝 기호는 앞의 판 밸브 때문에 종류가 바뀌지 않는다
 
 
 def dot(x, y, r=0.55):

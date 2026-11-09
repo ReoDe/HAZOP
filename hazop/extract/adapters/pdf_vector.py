@@ -96,6 +96,15 @@ PARAMS = {
     "dot_max": 1.5,              # 매설 배관 점(범례 1.7-1 1/4 BURIED PIPE): 작은 채운 점의 긴 변 상한
     "dot_host_dist": 1.0,        # 점 가운데와 그 점이 얹힌 선 사이 거리 상한
     "dots_min": 2,               # 한 선에 점이 이 수 이상이어야 선 장식(외톨이 조각 하나는 지우지 않음)
+    "plate_len_min": 2.0,        # 배관을 가로지르는 판(플랜지·버터플라이·볼 밸브 몸통 판) 길이 범위
+    "plate_len_max": 5.0,
+    "plate_par_tol": 0.09,       # 두 판이 나란함: 방향 벡터 외적 상한(약 5도)
+    "plate_len_tol": 0.35,       # 두 판 길이 차 상한
+    "plate_align_tol": 0.35,     # 두 판 가운데가 같은 배관 축 위: 판 방향으로 어긋난 거리 상한
+    "plate_touch_tol": 0.6,      # 배관 끝이 판 가운데에 닿음·점이 판 사이 가운데에 있음
+    "flange_gap_max": 2.6,       # 플랜지 두 판 사이 간격 상한(범례 FLANGED CONNECTION)
+    "valve_gap_max": 8.0,        # 밸브 몸통 두 판 사이 간격 상한
+    "plate_dot_max": 6.0,        # 판 사이 둥근 점(버터플라이 축·볼) 긴 변 상한
 }
 
 VARIABLE_MODIFIERS_ISA = frozenset("DFJKQ")  # hazop.extract.isa.VARIABLE_MODIFIERS와 같은 ISA 변수 수식 문자
@@ -685,12 +694,195 @@ def _line_dots(dashes, polys, prm):
     return {i for ids in on.values() if len(ids) >= prm["dots_min"] for i in ids}
 
 
+def _plate_assemblies(syms, polys, markers, dashes, prm):
+    """배관을 가로지르는 짧은 판(범례 1.7-1 1/4 FLANGED CONNECTION '—| |—', 1.7-1 VALVE SYMBOLS의 BUTTERFLY '|\\●|'·
+    BALL '|○|'·'|●|') 찾기 → (밸브 기호 [_Sym], 남은 선, 남은 표식, 플랜지 [(판, 판, (점, 점))]).
+    판: 길이 plate_len_min~max의 직선 조각. 같은 길이·나란한 판이 같은 축 위에 있으면 한 줄로 본다.
+    - 두 판 사이가 비었고 간격이 flange_gap_max 이하이며, 두 판 가운데에 바깥에서 배관 끝이 하나씩 닿고 판 끝에는 아무
+      선도 닿지 않으면 플랜지 연결이다. 판은 기호 묶기가 끝난 뒤 지우고 두 배관 끝을 잇는다(배관이 끊기지 않게).
+      먼저 지우면 판에 닿아 있던 배관 끝이 떠 보여 장식선으로 흡수된다.
+    - 두 판 사이에 둥근 점 하나와 그 점을 지나는 빗금이 있으면 버터플라이, 빗금 없이 점이나 원 하나만 있으면 볼 밸브다.
+      바로 바깥의 플랜지 판까지 한 기호로 묶는다.
+    판 사이에 다른 것(오리피스의 짧은 선, 플러그 밸브의 마름모)이 있으면 건드리지 않는다."""
+    plates = []
+    for p in polys:
+        if len(p["pts"]) != 2 or p.get("curved"):
+            continue
+        (x0, y0), (x1, y1) = p["pts"]
+        length = math.hypot(x1 - x0, y1 - y0)
+        if prm["plate_len_min"] <= length <= prm["plate_len_max"]:
+            u = ((x1 - x0) / length, (y1 - y0) / length)
+            if u[0] < -1e-9 or (abs(u[0]) <= 1e-9 and u[1] < 0):  # 점 순서와 상관없이 같은 방향(축 부호를 맞춘다)
+                u = (-u[0], -u[1])
+            plates.append({"p": p, "L": length, "u": u,
+                           "c": ((x0 + x1) / 2, (y0 + y1) / 2)})
+    if not plates:
+        return [], polys, markers, []
+    reach = prm["valve_gap_max"]
+    cell = collections.defaultdict(list)
+    for i, a in enumerate(plates):
+        cell[(int(a["c"][0] // reach), int(a["c"][1] // reach))].append(i)
+
+    def axial(a, q):  # 판 a의 법선(배관 축) 방향 좌표
+        return (q[0] - a["c"][0]) * -a["u"][1] + (q[1] - a["c"][1]) * a["u"][0]
+
+    def lateral(a, q):  # 판 a의 길이 방향 좌표
+        return (q[0] - a["c"][0]) * a["u"][0] + (q[1] - a["c"][1]) * a["u"][1]
+
+    nbr = collections.defaultdict(list)
+    for i, a in enumerate(plates):
+        gx, gy = int(a["c"][0] // reach), int(a["c"][1] // reach)
+        for j in (j for dx in (-1, 0, 1) for dy in (-1, 0, 1) for j in cell[(gx + dx, gy + dy)] if j != i):
+            b = plates[j]
+            if abs(a["u"][0] * b["u"][1] - a["u"][1] * b["u"][0]) > prm["plate_par_tol"] or \
+                    abs(a["L"] - b["L"]) > prm["plate_len_tol"] or abs(lateral(a, b["c"])) > prm["plate_align_tol"]:
+                continue
+            sep = axial(a, b["c"])
+            if 0.5 <= abs(sep) <= reach:
+                nbr[i].append((abs(sep), j, sep > 0))
+    # 판마다 축 양쪽으로 가장 가까운 이웃 하나씩
+    side = {}
+    for i, lst in nbr.items():
+        for positive in (True, False):
+            near = [x for x in lst if x[2] == positive]
+            if near:
+                side[(i, positive)] = min(near)[1]
+    plate_ids = {id(plates[i]["p"]) for i, lst in nbr.items() if lst}  # 짝 판이 있는 것만 판(빗금 반쪽 등은 칸 안 선)
+    others = [q for q in polys if id(q) not in plate_ids]
+    tol = prm["end_tol"]
+
+    def gap_items(a, b):
+        """판 a·b 사이 칸 안의 (선, 표식, 몸체 기호)와 칸을 가로지르는 다른 선이 있는지."""
+        lo, hi = sorted((0.0, axial(a, b["c"])))
+        half = a["L"] / 2 + prm["plate_touch_tol"]
+        pad = prm["plate_touch_tol"]
+
+        def inside(q):
+            return lo - pad <= axial(a, q) <= hi + pad and abs(lateral(a, q)) <= half
+
+        def core(q):
+            return lo + 0.1 < axial(a, q) < hi - 0.1 and abs(lateral(a, q)) < a["L"] / 2
+        lines, crossing = [], []
+        for q in others:
+            if all(inside(t) for t in q["pts"]):
+                lines.append(q)
+            elif any(core(t) for t in q["pts"]) or any(core(m) for m in
+                                                     (((s[0] + e[0]) / 2, (s[1] + e[1]) / 2) for s, e in _segs(q["pts"]))):
+                crossing.append(q)
+        dots = [m for m in markers if core(_center(m["bbox"]))]
+        bodies = [s for s in syms if s.alive and core(_center(s.bbox))]
+        crossing += [d for d in dashes if core(_center(d["bbox"]))]  # 채운 짧은 선(오리피스 표시 등)도 빈칸이 아니다
+        return lines, dots, bodies, crossing
+
+    def pipe_end(a, away):
+        """판 a 가운데에 바깥(away 쪽, 배관 축 부호)에서 닿는 배관 끝. 하나일 때만 그 (선, 끝 점)."""
+        hits = []
+        for q in others:
+            for k in (0, -1):
+                e, nxt = q["pts"][k], q["pts"][1 if k == 0 else -2]
+                if math.hypot(e[0] - a["c"][0], e[1] - a["c"][1]) <= prm["plate_touch_tol"]:
+                    d = axial(a, nxt)
+                    if (d > 0) == away and abs(lateral(a, nxt)) <= 0.3 * abs(d):
+                        hits.append((q, e))
+        return hits[0] if len(hits) == 1 else None
+
+    def touched(a, allow):
+        """판 a에 (allow 말고) 다른 선이 닿는지. 오리피스 탭선·계기 지시선이 닿은 판은 플랜지로 보지 않는다."""
+        seg = a["p"]["pts"]
+        return any(q is not None and q not in allow and _poly_dist(q["pts"], seg) <= tol
+                   for q in others)
+
+    def round_dot(m):
+        w, h = _w(m["bbox"]), _h(m["bbox"])
+        return bool(m.get("curved")) and max(w, h) <= prm["plate_dot_max"] and max(w, h) <= 1.3 * max(min(w, h), 1e-6)
+
+    used, valves, flanges = set(), [], []
+    removed_lines, removed_marks = set(), set()
+
+    def flange_out(i, outward):
+        """판 i 바깥쪽(outward 부호)에 붙은 플랜지 판 → 그 판 번호. 없으면 None."""
+        j = side.get((i, outward))
+        if j is None or j in used or side.get((j, not outward)) != i:
+            return None
+        a = plates[i]
+        if abs(axial(a, plates[j]["c"])) > prm["flange_gap_max"]:
+            return None
+        lines, dots, bodies, crossing = gap_items(a, plates[j])
+        return None if lines or dots or bodies or crossing else j
+
+    for i in sorted(range(len(plates)), key=lambda i: plates[i]["p"]["id"]):
+        if i in used:
+            continue
+        j = side.get((i, True))
+        if j is None or j in used or side.get((j, False)) != i:
+            continue
+        a, b = plates[i], plates[j]
+        lines, dots, bodies, crossing = gap_items(a, b)
+        sep = axial(a, b["c"])
+        mid = ((a["c"][0] + b["c"][0]) / 2, (a["c"][1] + b["c"][1]) / 2)
+        centred = [m for m in dots if round_dot(m) and math.hypot(*(_center(m["bbox"])[k] - mid[k] for k in (0, 1)))
+                   <= prm["plate_touch_tol"]]
+        # 구동부 축: 한 끝이 가운데 점에 닿고 판 길이 방향으로 빠져나가는 선. 칸을 가로지르는 선으로 치지 않는다
+        # (빗금을 점에서 둘로 나눠 그린 반쪽은 판 길이 안에 머무르므로 축이 아니다)
+        stems = [q for q in crossing if centred and any(
+            math.hypot(e[0] - _center(centred[0]["bbox"])[0], e[1] - _center(centred[0]["bbox"])[1])
+            <= prm["plate_touch_tol"] + max(_w(centred[0]["bbox"]), _h(centred[0]["bbox"])) / 2
+            for e in (q["pts"][0], q["pts"][-1])) and max(abs(lateral(a, t)) for t in q["pts"]) > a["L"] / 2 + 1.0]
+        if len(crossing) > len(stems):
+            continue
+        circles = [s for s in bodies if len(s.bodies) == 1 and _is_circle(s.bodies[0], prm)
+                   and math.hypot(*(_center(s.bbox)[k] - mid[k] for k in (0, 1))) <= prm["plate_touch_tol"]]
+        def diagonal(q):  # 판과도 배관 축과도 나란하지 않은 선(빗금). 점에서 둘로 나눠 그린 반쪽도 같다
+            d = (q["pts"][-1][0] - q["pts"][0][0], q["pts"][-1][1] - q["pts"][0][1])
+            n = math.hypot(*d)
+            return n > 0 and min(abs(d[0] * a["u"][0] + d[1] * a["u"][1]),
+                                 abs(-d[0] * a["u"][1] + d[1] * a["u"][0])) > 0.3 * n
+        slashes = [q for q in lines if centred and diagonal(q)
+                   and _poly_dist(q["pts"], [_center(centred[0]["bbox"])] * 2) <= prm["plate_touch_tol"]]
+        valve = None
+        if len(centred) == 1 and len(dots) == 1 and not bodies and lines and len(slashes) == len(lines) <= 2:
+            valve = "butterfly"
+        elif not lines and ((len(centred) == 1 and len(dots) == 1 and not bodies) or
+                            (len(circles) == 1 and len(bodies) == 1 and not dots)):
+            valve = "ball"
+        if valve is not None:
+            group = [i, j]
+            out_a, out_b = flange_out(i, False), flange_out(j, True)
+            group += [k for k in (out_a, out_b) if k is not None]
+            used.update(group)
+            members = [dict(plates[k]["p"]) for k in group] + [dict(q) for q in lines]
+            for q in members:
+                q["kind_"] = "poly"
+            if circles:
+                circles[0].alive = False
+                members += circles[0].bodies
+            s = _Sym(members, stroke_only=True)
+            s.add([m for m in dots], "markers")
+            s.plate_valve = valve
+            s.plate_center = mid
+            valves.append(s)
+            removed_lines.update(id(plates[k]["p"]) for k in group)
+            removed_lines.update(id(q) for q in lines)
+            removed_marks.update(id(m) for m in dots)
+            continue
+        if lines or dots or bodies or crossing or sep > prm["flange_gap_max"]:
+            continue
+        ea, eb = pipe_end(a, False), pipe_end(b, True)
+        if ea is None or eb is None or touched(a, (ea[0],)) or touched(b, (eb[0],)):
+            continue
+        used.update((i, j))
+        flanges.append((a["p"], b["p"], (ea, eb)))
+    return (valves, [q for q in polys if id(q) not in removed_lines],
+            [m for m in markers if id(m) not in removed_marks], flanges)
+
+
 def _group_symbols(cls, prm):
     syms = _cluster_bodies(cls["bodies"], prm)
-    polys = list(cls["polys"])
+    valves, polys, markers, flange_pairs = _plate_assemblies(syms, list(cls["polys"]), list(cls["markers"]),
+                                                             cls["dashes"], prm)
+    syms = [s for s in syms if s.alive] + valves
     for p in polys:
         p["kind_"] = "poly"
-    markers = list(cls["markers"])
     dashes = list(cls["dashes"])
     for _ in range(prm["max_iterations"]):
         changed = False
@@ -786,6 +978,16 @@ def _group_symbols(cls, prm):
             break
     syms = [s for s in syms if s.alive]
     syms.sort(key=lambda s: (round(s.bbox[1], 2), round(s.bbox[0], 2), s.evidence()[0]))
+    # 플랜지 판은 두 판과 양쪽 배관이 모두 낱 선으로 남았을 때만 지우고 잇는다(기호에 흡수됐으면 그대로 둔다)
+    loose = {id(p) for p in polys}
+    cls["flanges"], cls["bridges"] = [], []
+    for a, b, ends in flange_pairs:
+        if all(id(x) in loose for x in (a, b) + tuple(q for q, _ in ends)) and \
+                all(_nearest_sym(e, syms, prm["attach_tol"]) is None for _, e in ends):
+            cls["flanges"] += [a, b]
+            cls["bridges"].append(tuple(e for _, e in ends))
+    gone = {id(p) for p in cls["flanges"]}
+    polys = [p for p in polys if id(p) not in gone]
     return syms, polys, markers, dashes
 
 
@@ -808,7 +1010,7 @@ def _attach(p, syms, markers, prm):
     return None, None
 
 
-def _build_solid(syms, polys, markers, prm):
+def _build_solid(syms, polys, markers, prm, bridges=()):
     """→ (tees [(x, y)], chains [{pts, ends:[(vertex, point, basis)], evidence}])."""
     # 선 끝 분류
     pieces = [{"pts": list(p["pts"]), "id": p["id"]} for p in polys]
@@ -868,9 +1070,11 @@ def _build_solid(syms, polys, markers, prm):
             for i, pc in enumerate(pieces) for k in (0, 1) if (i, k) not in att]
     def same_marker(p, q):  # 두 선 끝 사이에 화살촉 하나가 끼어 있으면 이어진 것으로 본다
         return any(_inside(p, m["bbox"], prm["end_tol"]) and _inside(q, m["bbox"], prm["end_tol"]) for m in markers)
+    def bridged(p, q):  # 플랜지 연결로 지운 판 양쪽의 배관 끝(_plate_assemblies)
+        return any((p == x and q == y) or (p == y and q == x) for x, y in bridges)
     groups = _uf_groups(len(pend), lambda a, b: math.hypot(pend[a][2][0] - pend[b][2][0],
                                                            pend[a][2][1] - pend[b][2][1]) <= prm["end_tol"]
-                        or same_marker(pend[a][2], pend[b][2]))
+                        or same_marker(pend[a][2], pend[b][2]) or bridged(pend[a][2], pend[b][2]))
     vertex = {}
     tees = []
     for g in groups:
@@ -1212,6 +1416,8 @@ def _shape_kind(sym, prm):
     circles = [b for b in sym.bodies if _is_circle(b, prm)]
     tris = [b for b in sym.bodies if _is_triangle(b)]
     others = [b for b in sym.bodies if b not in circles and b not in tris]
+    if getattr(sym, "plate_valve", None):  # 판 사이 원판·공(_plate_assemblies)
+        return "manual_valve", "plates+%s" % sym.plate_valve
     if len(tris) == 2:  # 나비 모양(두 삼각형이 꼭짓점을 맞댐) = 밸브 몸통
         bow = _union(tris[0]["bbox"], tris[1]["bbox"])
         # 몸통 bbox 밖에 중심이 있는 몸체 = 구동부(안쪽 원은 글로브 표시라 구동부가 아니다)
@@ -1509,7 +1715,7 @@ def analyze(width, height, words, prims, params=None):
     # 빗금 처리 전과 같게 한다(빗금을 먼저 빼면 안전밸브 규칙이 응축기 몸통에 맞는 등 기호 판정이 바뀜)
     cls["ticks"] = [p for p in polys if p["id"] in ticks]
     polys = [p for p in polys if p["id"] not in ticks]
-    tees, chains = _build_solid(syms, polys, markers, prm)
+    tees, chains = _build_solid(syms, polys, markers, prm, cls["bridges"])
     for ch in chains:
         # 빗금 선으로만 되고 그 사슬 위에 빗금 묶음이 실제로 있는 사슬 = 공압 신호선. 배관과 섞이거나, 원래 경로가
         # 분기점에서 나뉘어 빗금 없는 쪽 토막이면 배관으로 둔다
@@ -1574,6 +1780,37 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     drop = {si for si, h in hits.items() if h.outcome == "matched" and h.entry.role == "drop"
             and not degree.get(id(syms[si]))}
     actuators = [syms[si] for si, h in sorted(hits.items()) if h.outcome == "matched" and h.entry.role == "actuator"]
+    # 밸브 축: 밸브 가운데(판 밸브는 원판 점, 그 밖은 몸통 상자 가운데)로 들어가는 선. 배관은 몸통 양 끝에 닿는다.
+    # 축 반대 끝 기호 = 구동부. 끝막음 규칙(연결 하나)에 넣지 않고, 판 밸브는 수동으로 정하지 않는다
+    valve_like = {id(sy) for si, sy in enumerate(syms) if getattr(sy, "plate_valve", None)
+                  or rules.KIND_CATEGORY.get(shape_of[si][0]) == "valve"
+                  or (si in hits and hits[si].outcome == "matched" and hits[si].entry.role == "symbol"
+                      and rules.KIND_CATEGORY.get(hits[si].entry.kind) == "valve")}
+
+    def at_stem(v, pt):
+        if getattr(v, "plate_valve", None):
+            c, lim = v.plate_center, prm["plate_touch_tol"] + 1.0
+        else:
+            c, lim = _center(v.core), 0.25 * max(_w(v.core), _h(v.core))
+        return math.hypot(pt[0] - c[0], pt[1] - c[1]) <= lim
+    stem_of = {}  # 구동부 기호 id → 밸브 기호
+    for ch in chains:
+        if ch.get("dashed") or any(v[0] != "sym" for v, _, _ in ch["ends"]):
+            continue
+        (va, pa, _), (vb, pb, _) = ch["ends"]
+        for (v, pt), (x, _) in (((va[1], pa), (vb[1], pb)), ((vb[1], pb), (va[1], pa))):
+            if id(v) in valve_like and id(x) not in valve_like and x is not v and at_stem(v, pt):
+                stem_of.setdefault(id(x), []).append(v)
+    on_valve = set(stem_of)
+    # 실선 배관이 몸체 한가운데를 지나가는 작은 기호는 배관 위 부품이지 끝막음이 아니다
+    solid = [(_bbox_pts(ch["pts"]), ch) for ch in chains if not ch.get("dashed")]
+    for sy in syms:
+        if max(_w(sy.bbox), _h(sy.bbox)) <= prm["pipe_cap_max"] and _w(sy.core) > 1 and _h(sy.core) > 1:
+            inner = _expand(sy.core, -0.5)
+            if any(_box_gap(cb, inner) <= 0 and _poly_box_dist(ch["pts"], inner) == 0.0
+                   and all(v[0] != "sym" or v[1] is not sy for v, _, _ in ch["ends"]) for cb, ch in solid):
+                on_valve.add(id(sy))
+    stemmed = {id(v) for vs in stem_of.values() for v in vs}
     cand = []
     for bi, b in enumerate(blocks):
         if bi in roles:
@@ -1603,10 +1840,16 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         local_of[id(s)] = (local_id, sid)
         bi = label_of.get(n - 1)
         text = blocks[bi]["text"] if bi is not None else ""
-        kind, basis = _classify(s, text, degree.get(id(s), 0), prm, marks.get(n - 1, []))
+        kind, basis = _classify(s, text, 0 if id(s) in on_valve else degree.get(id(s), 0), prm, marks.get(n - 1, []))
         symbol_id, symbol_attrs = None, {}
+        if getattr(s, "plate_valve", None):
+            symbol_attrs = {"valve_type": s.plate_valve}
+            if id(s) in stemmed or any(_box_gap(a.bbox, s.bbox) <= prm["attach_tol"] for a in actuators):
+                kind = None  # 사전 몸통과 같이, 구동부가 붙은 몸통은 구동 방식을 정하기 전까지 수동으로 두지 않는다
+                _issue(unknowns, "actuated_valve_pending", "구동부 기호가 붙은 밸브 몸통: 구동 방식은 아직 정하지 않음",
+                       sid, local_id, "kind")
         fallback = basis == PIPE_CAP_BASIS  # 끝막음은 형상 규칙이 아니라 뒤처리 규칙: 사전에 후보가 없을 때만 남긴다(§4.2 5번)
-        if kind is None or fallback:  # 기존 규칙이 못 정한 기호에만 기호 사전을 쓴다(기획서/PID-기호사전.md §4.2)
+        if (kind is None or fallback) and not getattr(s, "plate_valve", None):  # 기존 규칙이 못 정한 기호에만 기호 사전을 쓴다(기획서/PID-기호사전.md §4.2)
             hit = hits.get(n - 1) or _symbol_match(s, blocks)
             if fallback and hit.outcome != "none":
                 kind, basis = None, None
@@ -1754,7 +1997,9 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         {"source_object_id": o["id"], "label_text": "", "bbox": _box_out(o["bbox"]), "reason": "line_tick"}
         for o in cls.get("ticks", [])] + [
         {"source_object_id": o["id"], "label_text": "", "bbox": _box_out(o["bbox"]), "reason": "line_dot"}
-        for o in cls.get("dots", [])]
+        for o in cls.get("dots", [])] + [
+        {"source_object_id": o["id"], "label_text": "", "bbox": _box_out(o["bbox"]), "reason": "flange_plate"}
+        for o in cls.get("flanges", [])]
     for pid in cls["invisible_dashed"]:
         _issue(unknowns, "dashed_path_no_visible_piece", "점선 무늬·위상 때문에 그려지는 구간이 없는 경로(선으로 보지 않음)",
                pid)
