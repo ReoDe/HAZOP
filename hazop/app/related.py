@@ -163,15 +163,34 @@ OP_LABELS = {"propose": "제안", "status": "상태", "edit": "수정", "merge":
              "ie_hint": "초기사건 판정"}
 
 
-def node_progress(results, node_id, n_deviations):
-    """탐색기 구간 오른쪽 짧은 글자와 도구 설명. results가 없으면 ("", 이유).
-    수치는 ⑤ 행렬과 같다: 분석된 칸(분석 전·실패 아님), 미검토 항목, AI 실행 실패 칸."""
+NO_RESULTS = ("", "⑤ 결과 없음(구간 확정 전이거나 분석 전)")
+
+
+def progress_table(results, n_deviations, summary=None):
+    """탐색기 구간 진행 {node_id: (오른쪽 짧은 글자, 도구 설명)}. 결과 칸을 한 번만 훑는다(구간마다 전체 요약을 다시 만들면
+    구간 수의 제곱으로 느려짐). 결과에 칸이 없는 구간은 표에 없으므로 node_progress(표, node_id)로 읽는다.
+    summary: 이미 만든 res.matrix_summary(results)(없으면 여기서 한 번 만든다)."""
     if not results:
-        return "", "⑤ 결과 없음(구간 확정 전이거나 분석 전)"
-    cells = [c for c in results["cells"] if c["node_id"] == node_id]
+        return {}
+    summary = res.matrix_summary(results) if summary is None else summary
+    by_node = {}
+    for c in results["cells"]:
+        by_node.setdefault(c["node_id"], []).append(c)
+    return {nid: _progress(cells, summary.get(nid, {}), n_deviations) for nid, cells in by_node.items()}
+
+
+def node_progress(table, node_id, n_deviations):
+    """progress_table 한 줄. 결과가 없으면(표가 None) ("", 이유), 결과에 이 구간 칸이 없으면 '분석 전'."""
+    if table is None:
+        return NO_RESULTS
+    return table.get(node_id) or _progress([], {}, n_deviations)
+
+
+def _progress(cells, node_summary, n_deviations):
+    """수치는 ⑤ 행렬과 같다: 분석된 칸(분석 전·실패 아님), 미검토 항목, AI 실행 실패 칸."""
     failed = sum((c.get("ai_run") or {}).get("status") == "failed" for c in cells)
     analyzed = sum(c["state"] != "not_analyzed" and (c.get("ai_run") or {}).get("status") != "failed" for c in cells)
-    unreviewed = sum(s["unreviewed"] for s in res.matrix_summary(results).get(node_id, {}).values())
+    unreviewed = sum(s["unreviewed"] for s in node_summary.values())
     detail = "⑤ 결과: 분석 %d/%d칸 · 미검토 %d · 실패 %d" % (analyzed, n_deviations, unreviewed, failed)
     parts = (["미%d" % unreviewed] if unreviewed else []) + (["실패%d" % failed] if failed else [])
     if parts:

@@ -53,13 +53,19 @@ def _flow_order(drawings, pg, members):
 
 # ---------------------------------------------------------------- 표기·경계
 
-def _boundaries(node, pg, by_id, drawing_of, node_of):
-    """(start, end, continuations). 경계 = 구간 밖 주요 기기·미연결 연결점으로 이어지는 배관 구간의 끝."""
-    members = set(node["members"])
+def _segment_ends(pg):
+    """{배관 구간 ID: 그 구간의 물리 간선 목록}. 키는 간선 순서대로 처음 나온 차례다."""
     seg_ends = {}
     for e in pg["edges"]:
         if e["kind"] == PHYSICAL:
             seg_ends.setdefault(e["segment"], []).append(e)
+    return seg_ends
+
+
+def _boundaries(node, by_id, drawing_of, node_of, seg_ends, seg_rank):
+    """(start, end, continuations). 경계 = 구간 밖 주요 기기·미연결 연결점으로 이어지는 배관 구간의 끝.
+    seg_ends·seg_rank는 annotate가 한 번 만든 색인이다(구간마다 전체 간선을 다시 훑지 않게). 구간 순서는 간선 순서 그대로."""
+    members = set(node["members"])
     starts, ends, unknown = [], [], []
 
     def item(eid):
@@ -67,9 +73,9 @@ def _boundaries(node, pg, by_id, drawing_of, node_of):
         first = (n.get("label_text") or "").split("\n")[0].strip()
         return {"entity_id": eid, "label": n.get("tag") or first or n.get("kind"), "drawing": drawing_of.get(eid)}
 
-    for seg, es in seg_ends.items():
-        outs = [e for e in es if e["node"] not in members]
-        if seg not in members or not outs:
+    for seg in sorted((m for m in members if m in seg_ends), key=seg_rank.get):
+        outs = [e for e in seg_ends[seg] if e["node"] not in members]
+        if not outs:
             continue
         for e in outs:
             o = by_id[e["node"]]
@@ -111,6 +117,8 @@ def annotate(node_set, pg):
     by_id = {n["entity_id"]: n for n in pg["nodes"]}
     drawing_of = _sheet_of(pg)
     prefix, short = short_numbers([s["drawing_number"] for s in pg["sheets"]])
+    seg_ends = _segment_ends(pg)
+    seg_rank = {seg: i for i, seg in enumerate(seg_ends)}
     node_of = {}
     for n in out["nodes"]:
         for m in n["members"]:
@@ -121,7 +129,7 @@ def annotate(node_set, pg):
             if drawing_of.get(m):
                 counts[drawing_of[m]] = counts.get(drawing_of[m], 0) + 1
         drawings = _flow_order(set(counts), pg, set(n["members"]))
-        start, end, conts = _boundaries(n, pg, by_id, drawing_of, node_of)
+        start, end, conts = _boundaries(n, by_id, drawing_of, node_of, seg_ends, seg_rank)
         n.update({
             "drawings": drawings, "drawings_short": [short.get(d, d) for d in drawings],
             "spans_drawings": len(drawings) > 1, "members_by_drawing": dict(sorted(counts.items())),

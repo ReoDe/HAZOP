@@ -221,13 +221,15 @@ def results_module(win):
     rs = win.screens[6]
     confirmed = bool(ns) and ns.get("status") == "confirmed"
     shown = results if usable else None
-    items = node_items(win, view, ns, dn, lambda nid: related.node_progress(shown, nid, len(rs.deviations)))
+    summary = res.matrix_summary(shown) if shown else None
+    table = related.progress_table(shown, len(rs.deviations), summary) if shown else None
+    items = node_items(win, view, ns, dn, lambda nid: related.node_progress(table, nid, len(rs.deviations)))
     info, todo = [], None
     if confirmed and shown:
         cells = shown["cells"]
         failed = sum((c.get("ai_run") or {}).get("status") == "failed" for c in cells)
         todo = sum(c["state"] == "not_analyzed" for c in cells)
-        unrev = sum(s["unreviewed"] for row in res.matrix_summary(shown).values() for s in row.values())
+        unrev = sum(s["unreviewed"] for row in summary.values() for s in row.values())
         info = [("분석 전 %d칸" % todo, "⑤ 행렬 전체 칸 기준"),
                 ("미검토 %d · 실패 %d" % (unrev, failed), "⑤ 행렬 전체 칸 기준. J로 다음 미검토 칸")]
     export = (("Excel로 내보내기…", cmd("export_excel"), "⑤ 결과를 HAZOP 워크시트(Excel)로 내보냅니다")
