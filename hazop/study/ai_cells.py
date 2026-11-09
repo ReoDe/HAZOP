@@ -12,7 +12,10 @@ Qt에 의존하지 않는다. 작업 스레드는 run_unit(네트워크·파싱�
   초기사건 인계 필드(기획서/초기사건-출력설계.md §5.2): 응답에 있으면 cause_kind, 보호수단 actuation, ie_hint(origin ai_draft·
   status draft)를 넣는다. 허용값 밖 값과 일반 범주 기준표 밖 코드는 버리고 경고를 남긴다. ie_hint가 있는 응답(비완화 결과
   규칙으로 쓴 응답)의 결과에는 consequence_basis unmitigated를 붙이되, 완화 결과로 보이는 표현이 있으면 붙이지 않는다.
-- cell["ai_run"]: {"status": "ok"|"failed", "error", "at", "model", "note", "applicable": bool|None}.
+- cell["ai_run"]: {"status": "ok"|"failed", "error", "at", "model", "note", "applicable": bool|None,
+  "via", "error_kind", "model_requested"}. ai_log 한 줄에는 여기에 billing·cost_usd·api_equiv_usd·limit이 더 있다.
+  via·error_kind 이름은 기획서/AI연결-구독제.md §0. via가 없는 옛 기록은 api로 읽는다(providers.record_via).
+  cost_usd는 클라이언트가 채우면 그 값(구독은 null), 없으면 API 단가로 계산한다. api_equiv_usd는 구독 호출의 API 환산값(U6).
 """
 
 import copy
@@ -25,6 +28,7 @@ from hazop.kg import build as kg_build
 from hazop.kg import context as kg_context
 from hazop.kg import expect
 from hazop.study import claude_http
+from hazop.study import providers
 from hazop.study import refs as srefs
 from hazop.study import results as res
 
@@ -509,14 +513,26 @@ def run_unit(client, unit, ctx, deviations, at):
     try:
         resp = client.analyze(build_request(unit, ctx, deviations))
     except Exception as exc:  # 작업 스레드가 죽지 않게 하는 경계. 예외 문구에는 키가 섞일 수 있어 종류만 남긴다
-        resp = {"status": "api_error", "error": "AI 호출 중 오류(%s)" % type(exc).__name__}
+        resp = {"status": "api_error", "error": "AI 호출 중 오류(%s)" % type(exc).__name__, "error_kind": "other"}
     usage = {k: (resp.get("usage") or {}).get(k) or 0 for k in USAGE_KEYS}
     model = resp.get("model")
+    via = providers.record_via(resp)
+    if "error_kind" in resp:
+        kind, conn = resp["error_kind"], resp.get("conn_state")
+    else:
+        kind, conn = providers.api_error_kind(resp)
     out = {"unit_id": unit["unit_id"], "node_id": unit["node_id"], "status": "ok", "error": None,
-           "usage": usage, "cost_usd": claude_http.cost_usd(usage, model), "model": model, "at": at, "cells": {}}
+           "usage": usage,
+           "cost_usd": resp["cost_usd"] if "cost_usd" in resp else claude_http.cost_usd(usage, model),
+           "model": model, "at": at, "cells": {},
+           "via": via, "billing": resp.get("billing") or providers.BILLING[via], "error_kind": kind,
+           "conn_state": conn, "model_requested": resp.get("model_requested", model),
+           "api_equiv_usd": resp.get("api_equiv_usd"), "limit": resp.get("limit")}
     status, output = resp.get("status"), resp.get("output")
     if status == "completed" and not (isinstance(output, dict) and isinstance(output.get("deviations"), list)):
         status, resp = "parse_error", dict(resp, error=BAD_RESPONSE)
+        if out["error_kind"] is None:
+            out.update(error_kind="bad_output")
     if status != "completed":
         error = resp.get("error") or STATUS_ERRORS.get(status) or "AI 호출 실패(%s)" % status
         out.update(status="failed", error=error)
@@ -544,11 +560,15 @@ def apply_unit(results, unit_result):
             cell["entries"] = kept + copy.deepcopy(cr["entries"])
             cell["state"] = "analyzed"
         cell["ai_run"] = {"status": cr["status"], "error": cr["error"], "at": ur["at"], "model": ur["model"],
-                          "note": cr["note"], "applicable": cr.get("applicable")}
+                          "note": cr["note"], "applicable": cr.get("applicable"), "via": providers.record_via(ur),
+                          "error_kind": ur.get("error_kind"), "model_requested": ur.get("model_requested", ur["model"])}
     out.setdefault("ai_log", []).append({
         "unit_id": ur["unit_id"], "node_id": ur["node_id"], "deviation_ids": list(ur["cells"]),
         "status": ur["status"], "error": ur["error"], "at": ur["at"], "model": ur["model"],
-        "usage": dict(ur["usage"]), "cost_usd": ur["cost_usd"]})
+        "usage": dict(ur["usage"]), "cost_usd": ur["cost_usd"], "via": providers.record_via(ur),
+        "billing": ur.get("billing") or providers.BILLING[providers.record_via(ur)],
+        "error_kind": ur.get("error_kind"), "model_requested": ur.get("model_requested", ur["model"]),
+        "api_equiv_usd": ur.get("api_equiv_usd"), "limit": ur.get("limit")})
     return out
 
 
@@ -561,5 +581,11 @@ def failed_cells(results):
 def usage_total(results):
     log = results.get("ai_log") or []
     total = {k: sum((r.get("usage") or {}).get(k) or 0 for r in log) for k in USAGE_KEYS}
-    total.update(cost_usd=sum(r.get("cost_usd") or 0.0 for r in log), calls=len(log))
+    total.update(cost_usd=_sum(r.get("cost_usd") for r in log), api_equiv_usd=_sum(r.get("api_equiv_usd") for r in log),
+                 calls=len(log))
     return total
+
+
+def _sum(values):
+    """숫자인 값만 더한다(구독 기록의 cost_usd null은 합계에 넣지 않는다)."""
+    return sum(v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool))

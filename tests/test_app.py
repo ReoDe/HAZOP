@@ -30,6 +30,9 @@ NETWORK_MODULES = ("socket", "ssl", "urllib", "http", "requests", "httpx", "aioh
 # 4단계: Claude API 호출은 hazop/study/claude_http.py 한 곳에서만 한다. 다른 hazop 모듈은 전송 모듈을 가져오지 않는다.
 TRANSPORT_MODULES = ("urllib.request", "http.client", "socket", "ssl", "requests", "httpx")
 TRANSPORT_OWNER = os.path.join(REPO_ROOT, "hazop", "study", "claude_http.py")
+# 구독 연결: 하위 프로세스는 hazop/study/claude_cli.py만 띄운다(기획서/AI연결-구독제.md §6.6). 우회 경로도 막는다.
+PROCESS_OWNER = os.path.join(REPO_ROOT, "hazop", "study", "claude_cli.py")
+BANNED_CALLS = ("os.startfile", "os.system", "os.popen", "os.spawn", "os.exec", "QProcess")
 
 
 def app_sources():
@@ -116,6 +119,26 @@ class StaticTest(unittest.TestCase):
         self.assertEqual({k: v for k, v in bad.items() if v}, {})
         self.assertGreater(len(pkg), len(app_sources()))
         self.assertTrue(network_imports(TRANSPORT_OWNER, TRANSPORT_MODULES), "검사가 전송 모듈 import를 찾아냄")
+
+    def test_subprocess_only_in_claude_cli(self):
+        pkg = glob.glob(os.path.join(REPO_ROOT, "hazop", "**", "*.py"), recursive=True)
+        spawn = {os.path.relpath(f, REPO_ROOT) for f in pkg if network_imports(f, ("subprocess",))}
+        self.assertEqual(spawn, {os.path.relpath(PROCESS_OWNER, REPO_ROOT)})
+        bad = {}
+        for f in pkg:
+            with open(f, encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), f)
+            for node in ast.walk(tree):
+                name = (ast.unparse(node) if isinstance(node, ast.Attribute)
+                        else node.id if isinstance(node, ast.Name) else "")
+                if any(name == b or name.startswith(b) for b in BANNED_CALLS):
+                    bad.setdefault(os.path.relpath(f, REPO_ROOT), []).append(name)
+        self.assertEqual(bad, {})
+        with open(PROCESS_OWNER, encoding="utf-8") as fh:
+            src = fh.read()
+        self.assertNotIn("shell=True", src)
+        self.assertNotIn("/IM", src, "프로세스 이름으로 끄지 않음")
+        self.assertEqual(network_imports(PROCESS_OWNER), [], "구독 연결 파일은 네트워크 모듈을 쓰지 않음")
 
     def test_template_unchanged_script_count(self):
         """qwebchannel.js를 템플릿에 넣지 않음: 템플릿 <script> 3개 유지."""

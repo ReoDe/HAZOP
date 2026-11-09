@@ -244,7 +244,8 @@ class ApplyTest(Base):
                                ("새 원인", "proposed")])
         self.assertEqual(self.cell(r2, "D01")["ai_run"], {"status": "ok", "error": None, "at": AT2,
                                                          "model": "claude-opus-5-5", "note": None,
-                                                         "applicable": True})
+                                                         "applicable": True, "via": "api", "error_kind": None,
+                                                         "model_requested": "claude-opus-5-5"})
         self.assertEqual(sr.validate(r2, self.node_set), [])
 
     def test_failure_keeps_entries_and_marks_failed(self):
