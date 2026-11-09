@@ -44,7 +44,8 @@ OP_LABELS = {"set_tag": "태그", "set_kind": "종류", "set_normal_position": "
 NEW_NODE_SIZE = 40  # 기기 추가: 클릭한 점을 가운데로 하는 정사각형(도면 좌표)
 # 미연결 칩의 짧은 사유. 전체 문장(project.REASONS)은 툴팁·패널에.
 UNLINKED_SHORT = {"unregistered_drawing": "상대 도면 없음", "no_counterpart": "짝 없음", "ambiguous": "짝 여럿",
-                  "direction_conflict": "방향 모순", "missing_key": "번호 못 읽음", "manual_unlink": "사람이 끊음"}
+                  "direction_conflict": "방향 모순", "missing_key": "번호 못 읽음", "manual_unlink": "사람이 끊음",
+                  "other_system": "다른 계통", "description_only": "설명만 있음"}
 HINTS = {
     "select": "도면에서 항목을 클릭해 고르세요.",
     "add_node": "기기를 놓을 자리를 클릭하세요.",

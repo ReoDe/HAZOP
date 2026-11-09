@@ -67,6 +67,7 @@ PARAMS = {
     "dash_gap_max": 3.0,         # 점선 조각 사이 간격 상한
     "dash_attach_tol": 8.0,      # 점선 끝 조각과 기호 사이 거리 상한(점선 끝 빈칸·구동부 여백 포함)
     "label_gap_max": 15.0,       # 글자 문단과 기호 사이 거리 상한
+    "bare_code_gap_max": 5.0,    # 쌍점 없는 두 글자 계통 약어를 연결 표시 글자로 볼 거리 상한(바로 옆만)
     "appendage_gap_ratio": 0.1,  # 연결 없는 작은 기호를 옆 큰 기호에 합치는 거리 = 큰 기호 긴 변 × 비율
     "tee_half": 1.0,             # 분기점 노드 bbox 반폭
     "max_iterations": 10,
@@ -105,6 +106,8 @@ EQUIPMENT_WORDS = [
 ]
 CONTINUATION_RE = re.compile(r"^(TO|FROM)\s+\S*\d")
 SYSTEM_LABEL_RE = re.compile(r"^([A-Z]{2,3}):\S")  # 'CV:RDT', 'SI:SAFETY INJECTION LINE 3' — 다른 계통 도면으로 가는 표시
+# 쌍점 없이 화살표 바로 옆에 두 글자만 쓴 계통 약어(범례 1.7-1 'MS / SHEET 2"A"'). 밸브 위치 약어(범례 같은 쪽)는 뺀다
+BARE_SYSTEM_RE = re.compile(r"^(?!(?:FC|FO|FL|LO|LC|LT|NO|NC)$)[A-Z]{2}$")
 # ISA 계기 글자(기능 문자 + 번호, 예: 'PT 110'·'PIC 110'). 태그 앞 계통 접두는 글자에 없다.
 ISA_LABEL_RE = re.compile(r"([A-Z]{1,4})[ \-]*(\d{1,5}[A-Z]?)")
 
@@ -1217,9 +1220,12 @@ def _continuation_attributes(sym, blocks, prm, own=None, arrows=()):
         code, text = code_line(own["text"])
         return {"to_system": code, "to_label": text}
     near = []
+    sheet_ref = own is not None and re.search(r"SHEET\s*\d", own["text"])  # 범례 꼴: 화살표 안에 시트 번호가 있을 때만
     for b in blocks:
         hit = code_line(b["text"])
         gap = _box_gap(b["bbox"], sym.bbox)
+        if not hit and sheet_ref and BARE_SYSTEM_RE.match(b["text"].strip()) and gap <= prm["bare_code_gap_max"]:
+            hit = (b["text"].strip(), b["text"].strip())  # 범례 'MS / SHEET 2"A"'처럼 쌍점 없이 바로 옆에 쓴 계통 약어
         if hit and gap <= prm["label_gap_max"] and mine(b, gap):
             near.append((gap,) + hit)
     if not near:

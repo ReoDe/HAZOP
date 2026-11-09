@@ -99,8 +99,10 @@ class AprScore(unittest.TestCase):
     def stacked(self, up_system, down_system):
         """글자 SI:C(300,100)가 위 화살표(y 88~94)와 아래 화살표(y 106~112)에 거의 똑같이 가깝다(9.3.4-1 시트 6).
         위 화살표 자기 글자는 이 쪽에 없다(계통 약어를 생략한 표시)."""
-        up = dict(node("u", 280, 88, 40, 6, kind="continuation"), attributes={"to_system": up_system} if up_system else {})
-        down = dict(node("d", 280, 106, 40, 6, kind="continuation"), attributes={"to_system": down_system})
+        up = dict(node("u", 280, 88, 40, 6, kind="continuation"),
+                  attributes={"to_system": up_system, "to_label": up_system + ":X"} if up_system else {})
+        down = dict(node("d", 280, 106, 40, 6, kind="continuation"),
+                    attributes={"to_system": down_system, "to_label": down_system + ":C"})
         return self.score([up, down])
 
     def test_stacked_arrows_pair_with_the_arrow_below_the_label(self):

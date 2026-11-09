@@ -93,5 +93,30 @@ class ChevronShape(unittest.TestCase):
         self.assertFalse(pdf_vector._is_chevron(self.body(off_centre)))
 
 
+class BareSystemCode(unittest.TestCase):
+    """쌍점 없이 화살표 바로 옆에 두 글자만 쓴 계통 약어(범례 1.7-1 'MS / SHEET 2"A"', 10.4.2-1 'WI / SHEET 2"B"')."""
+
+    class Arrow:
+        bbox = (457.0, 150.0, 488.0, 156.0)
+
+    def attrs(self, text, top, own='SHEET 2 "B"'):
+        from hazop.extract.adapters import pdf_vector
+        block = {"text": text, "bbox": (458.0, top, 466.0, top + 3.3)}
+        own_block = {"text": own, "bbox": (462.0, 151.0, 480.0, 155.0)}
+        return pdf_vector._continuation_attributes(self.Arrow(), [block, own_block], dict(pdf_vector.PARAMS), own_block)
+
+    def test_two_letters_right_above_the_arrow_are_the_system(self):
+        self.assertEqual(self.attrs("WI", 145.0).get("to_system"), "WI")
+
+    def test_valve_position_or_far_letters_are_not(self):
+        self.assertEqual(self.attrs("FC", 145.0), {})
+        self.assertEqual(self.attrs("WI", 135.0), {})
+        self.assertEqual(self.attrs("RDT", 145.0), {})
+
+    def test_only_next_to_a_sheet_reference(self):
+        """9.3.3-1 시트 7 'MAKE-UP DEMIN. WATER' 화살표 옆 밸브 표기 'DE'는 계통 약어가 아니다."""
+        self.assertEqual(self.attrs("DE", 145.0, own="MAKE-UP\nDEMIN. WATER"), {})
+
+
 if __name__ == "__main__":
     unittest.main()

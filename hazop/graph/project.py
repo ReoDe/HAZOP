@@ -40,9 +40,14 @@ REASONS = {
     "ambiguous": "짝이 여럿이라 고르지 않음",
     "direction_conflict": "양쪽 방향 표시가 같음(TO·TO 또는 FROM·FROM)",
     "missing_key": "상대 도면 번호나 배관 번호를 읽을 수 없음",
+    "other_system": "다른 계통 도면을 가리킴(계통 약어→그림 번호 대응이 없어 상대를 정하지 않음)",
+    "description_only": "행선지 설명 글자만 있어 상대 도면을 알 수 없음",
     "manual_unlink": "사람이 연결하지 않음으로 지정",
 }
 _LINE_TOKEN = re.compile(r"^[A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*$")
+_DCD_SHEET = re.compile(r'^SHEET\s*(\d+)\s*(?:"\s*([A-Z0-9]+)\s*"|-([A-Z0-9]+))?$')  # 'SHEET 5"RC"', 'SHEET 2-A', 'SHEET 2'
+_BARE_CODE = re.compile(r"^[A-Z]{2}$")  # 쌍점 없이 따로 쓴 계통 약어 줄('CC', 'PS', 범례 예 'MS'). DCD 계통 약어는 두 글자
+_FIG_SHEET = re.compile(r"^(.+)-S(\d+)$")                             # 도면번호 '9.3.4-1-S1'
 
 
 def project_id_of(graph):
@@ -74,6 +79,12 @@ def _norm(s):
     return re.sub(r"\s+", "", str(s or "")).upper() or None
 
 
+def _dn(s):
+    """도면번호 비교 키. '<그림>-S<시트>' 꼴이면 시트 번호 앞 0을 없앤다('9.3.4-1-S01' = '9.3.4-1-S1')."""
+    m = _FIG_SHEET.match(_norm(s) or "")
+    return "%s-S%d" % (m.group(1), int(m.group(2))) if m else _norm(s)
+
+
 # ---------------------------------------------------------------- 연결점 읽기
 
 def continuation_key(graph, node):
@@ -83,15 +94,51 @@ def continuation_key(graph, node):
     head = lines[0].split() if lines else []
     direction = (attrs.get("direction") or (head[0] if head else "")).strip().lower()
     direction = direction if direction in ("to", "from") else None
-    to_drawing = attrs.get("to_drawing") or (head[1] if len(head) > 1 else None)
-    line_no = attrs.get("line_no")
-    if not line_no and len(lines) > 1:
-        tok = lines[1].split()[0].upper()
-        line_no = tok if _LINE_TOKEN.match(tok) else None
-    return {"graph_id": graph["graph_id"], "drawing_number": (graph.get("source") or {}).get("drawing_number"),
+    drawing_number = (graph.get("source") or {}).get("drawing_number")
+    # DCD 'SHEET n' 줄이 있으면 DCD식으로 읽는다. 'FROM QUADRANT A\nSUPPLY HEADER\nSHEET 1 "C"'처럼 설명이 FROM·TO로
+    # 시작해도 SNP식 상대 도면번호('QUADRANT')로 읽지 않는다(방향 낱말은 방향으로만 쓴다)
+    dcd = None if attrs.get("to_drawing") else _dcd_sheet_ref(lines, attrs, drawing_number)
+    keyed = direction or attrs.get("to_drawing")
+    unkeyed = None
+    if dcd is None and not keyed and _FIG_SHEET.match(_norm(drawing_number) or ""):
+        # DCD식 도면번호인데 시트 표시가 없다: 계통 약어만 있거나('CV:IRWST RETURN LINE') 설명뿐('SPRAY LINE')
+        dcd = (None, None, False, "other_system" if attrs.get("to_system") else "description_only")
+    if dcd is not None:
+        to_drawing, line_no, sheet_only, unkeyed = dcd
+        if attrs.get("line_no"):  # 속성이 라벨보다 먼저다(사람이 고친 값)
+            line_no, sheet_only = attrs["line_no"], False
+    else:
+        to_drawing = attrs.get("to_drawing") or (head[1] if len(head) > 1 else None)
+        line_no, sheet_only = attrs.get("line_no"), False
+        if not line_no and len(lines) > 1:
+            tok = lines[1].split()[0].upper()
+            line_no = tok if _LINE_TOKEN.match(tok) else None
+    return {"graph_id": graph["graph_id"], "drawing_number": drawing_number,
             "entity_id": node["entity_id"], "source_object_id": node.get("source_object_id"),
-            "direction": direction, "to_drawing": to_drawing, "line_no": line_no,
+            "direction": direction, "to_drawing": to_drawing, "line_no": line_no, "sheet_only": sheet_only,
+            "unkeyed": unkeyed,
             "to_object": attrs.get("to_object"), "label_text": node.get("label_text")}
+
+
+def _dcd_sheet_ref(lines, attrs, drawing_number):
+    """APR1400 DCD식 표시(범례 그림 1.7-1). 같은 그림의 다른 시트로 가면 'SHEET 5"RC"'(시트 번호 + 짝 글자) 또는
+    'SHEET 2'만 쓴다. 도면번호가 '<그림 번호>-S<시트>'(예: 9.3.4-1-S1)이면 상대 도면번호는 '<그림 번호>-S5'이고
+    짝 글자를 배관 번호 자리(line_no)에 둔다. 짝 글자가 없으면 sheet_only(상대 시트에서 되짚는 화살표가 하나뿐일 때만 잇는다).
+    다른 계통으로 가는 표시(to_system 있음, 또는 'CC\nSHEET 4'처럼 계통 약어만 따로 쓴 줄이 있음)와 제 시트 번호를
+    가리키는 표시('PS\nSHEET 2')는 계통 약어→그림 번호 대응이 없어 상대를 정하지 않는다. 시트 번호 앞 0은 무시한다.
+    DCD식이 아니면 None. → (to_drawing, line_no, sheet_only, 상대를 못 정한 사유 또는 None)"""
+    m = next((m for m in (_DCD_SHEET.match(line) for line in lines) if m), None)
+    if m is None:
+        return None
+    fig = _FIG_SHEET.match(drawing_number or "")
+    letter = m.group(2) or m.group(3)
+    # 두 글자만 있는 줄은 계통 약어다(범례 'MS\nSHEET 2"A"'). 세 글자 이상('RDT')은 같은 계통 기기 이름일 수 있다
+    bare_code = any(_BARE_CODE.match(line) for line in lines)
+    if fig is None:
+        return None, None, False, None
+    if attrs.get("to_system") or bare_code or int(m.group(1)) == int(fig.group(2)):
+        return None, None, False, "other_system"
+    return "%s-S%d" % (fig.group(1), int(m.group(1))), letter, letter is None, None
 
 
 def _ref(end):
@@ -159,7 +206,7 @@ def match(graphs, manual_ops=()):
     ends = []
     by_drawing = {}
     for g in graphs:
-        by_drawing.setdefault(_norm((g.get("source") or {}).get("drawing_number")), []).append(g["graph_id"])
+        by_drawing.setdefault(_dn((g.get("source") or {}).get("drawing_number")), []).append(g["graph_id"])
         for n in g["nodes"]:
             if n.get("kind") == "continuation":
                 ends.append(continuation_key(g, n))
@@ -203,18 +250,21 @@ def match(graphs, manual_ops=()):
     manual_used.update(used)
 
     def peers(e):
-        return [x for x in ends if _ref(x) not in manual_used and x is not e
-                and _norm(x["drawing_number"]) == _norm(e["to_drawing"])
-                and _norm(x["to_drawing"]) == _norm(e["drawing_number"])
-                and _norm(x["line_no"]) == _norm(e["line_no"])]
+        """e를 되짚는 연결점. 짝 글자 없는 DCD 표시(sheet_only)는 글자와 상관없이 상대 시트에서 이 시트를 가리키는
+        모든 화살표를 돌려준다(하나뿐이고 그것도 글자가 없을 때만 잇는다)."""
+        back = [x for x in ends if _ref(x) not in manual_used and x is not e
+                and x["to_drawing"] and (x["line_no"] or x.get("sheet_only"))  # 키가 없는 끝(missing_key)은 짝이 아니다
+                and _dn(x["drawing_number"]) == _dn(e["to_drawing"])
+                and _dn(x["to_drawing"]) == _dn(e["drawing_number"])]
+        return back if e.get("sheet_only") else [x for x in back if _norm(x["line_no"]) == _norm(e["line_no"])]
 
     for e in sorted(ends, key=_ref):
         if _ref(e) in used:
             continue
-        if not e["to_drawing"] or not e["line_no"]:
-            record(UNLINKED, "missing_key", "auto", e)
+        if not e["to_drawing"] or not (e["line_no"] or e.get("sheet_only")):
+            record(UNLINKED, e.get("unkeyed") or "missing_key", "auto", e)
             continue
-        if _norm(e["to_drawing"]) not in by_drawing:
+        if _dn(e["to_drawing"]) not in by_drawing:
             record(UNLINKED, "unregistered_drawing", "auto", e)
             continue
         cands = peers(e)
@@ -222,7 +272,7 @@ def match(graphs, manual_ops=()):
             record(UNLINKED, "no_counterpart", "auto", e)
             continue
         back = peers(cands[0]) if len(cands) == 1 else []
-        if len(cands) > 1 or len(back) != 1:
+        if len(cands) > 1 or len(back) != 1 or bool(e.get("sheet_only")) != bool(cands[0].get("sheet_only")):
             record(UNLINKED, "ambiguous", "auto", e, candidates=[_ref(x) for x in cands + back if x is not e])
             continue
         b = cands[0]

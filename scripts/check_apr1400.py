@@ -32,8 +32,9 @@ sys.path.insert(0, REPO_ROOT)
 
 SCORE = os.path.join(REPO_ROOT, "tests", "baselines", "apr1400_score.json")
 ANSWER_KEY = os.path.join(REPO_ROOT, "tests", "fixtures", "apr1400", "answer_key")
-HIGHER = ("tag_exact", "connectors_detected", "paired")
-LOWER = ("tag_not_in_text", "connector_bad_target")
+PAIR_KEY = os.path.join(REPO_ROOT, "tests", "fixtures", "apr1400", "pairs_key.json")
+HIGHER = ("tag_exact", "connectors_detected", "paired", "pair_key_hit")
+LOWER = ("tag_not_in_text", "connector_bad_target", "pair_key_wrong")
 PAGE_HIGHER = ("tag_exact", "connectors_detected")
 PAGE_LOWER = ("tag_not_in_text", "connector_bad_target")
 OFFPAGE_RE = re.compile(r"^(?:[\d/.]+\")?([A-Z]{2,3}):[A-Z0-9]")  # 'CV:CHARGING'. 배관 크기가 붙은 '4"CV:IRWST'도
@@ -42,6 +43,7 @@ LOOP_NO_RE = re.compile(r"^\d{1,4}[A-Z]?$")  # 루프 번호는 한 자리도 �
 NEAR = 3.0        # 계기 원 글자 중심이 노드 상자 안(여유 pt)
 CONN_NEAR = 12.0  # 연결 표기 글자 중심이 연결점 노드 상자 안(여유 pt)
 LABEL_REACH = 30.0  # 여러 줄 연결 표기의 첫 줄이 화살표에서 떨어질 수 있는 거리(글자 쓰는 쪽, pt)
+SPAN_SLACK = 6.0  # 연결 표기 글자 가운데가 화살표 길이 방향 범위를 벗어나도 되는 거리(pt)
 
 
 def norm(s):
@@ -201,6 +203,9 @@ def match_connectors(points, conts):
                 continue
             ahead = (g["y"] - y) if across else (g["x"] - x)  # 화살표가 글자 아래·오른쪽이면 ≥ 0
             cost = ahead if ahead >= -2 else 1000 - ahead
+            span = (g["x"], g["x"] + g["width"], x) if across else (g["y"], g["y"] + g["height"], y)
+            if not span[0] - SPAN_SLACK <= span[2] <= span[1] + SPAN_SLACK:
+                continue  # 글자 가운데가 화살표 길이 방향 범위 밖: 옆 화살표(추출 못 했을 수 있음)의 글자다
             cand.append((cost, i, n["local_id"], code, n))
     used_pt, used_node, pairs = set(), set(), []
     for cost, i, nid, code, n in sorted(cand, key=lambda c: c[:3]):
@@ -231,8 +236,10 @@ def score_page(ex, tl):
     # 계통을 못 읽은 연결점(None)은 놓친 것이지 틀린 대상이 아니다
     bad = sum(1 for code, n in pairs if continuation_target(n) not in (None, code))
     # 짝이 없는데 계통을 단 연결점: 그 계통 글자는 다른 화살표 몫으로 짝지어졌거나 없는 글자다(이웃 화살표 글자를 가져옴).
-    # 상대를 적지 않은 표시(계통 약어 생략, 범례 1.7-1)는 틀린 대상이 아니다
-    bad += sum(1 for n in conts if n["local_id"] not in paired_ids and continuation_target(n) is not None)
+    # 상대를 적지 않은 표시(계통 약어 생략, 범례 1.7-1)는 틀린 대상이 아니다. 쌍점 없이 쓴 두 글자 약어('CC / SHEET 4')는
+    # 대리 지표의 연결 표기 글자(XX:)에 없어 짝이 안 생기므로 이 벌점에서 뺀다(짝이 생기면 위에서 계통을 맞춘다)
+    bad += sum(1 for n in conts if n["local_id"] not in paired_ids and continuation_target(n) is not None
+               and ":" in ((n.get("attributes") or {}).get("to_label") or n.get("label_text") or ""))
     return {"bubbles": len(tl["bubbles"]), "offpage_labels": len(tl["offpage"]), "tagged": len(tagged),
             "tag_exact": len(exact), "tag_not_in_text": sum(1 for n in tagged if not tag_in_text(n, tl)),
             "continuations": len(conts), "connectors_detected": len(pairs), "connector_bad_target": bad,
@@ -321,11 +328,13 @@ def run(input_dir, catalog, jobs, pages=None):
         per_page.append(row)
     from hazop.graph import project
     graphs = [d["graph"] for d in done if d["ok"]]
-    pg = project.summary(project.build("APR1400", graphs)) if graphs else {"linked": 0}
+    built = project.build("APR1400", graphs) if graphs else None
+    pg = project.summary(built) if built else {"linked": 0}
     totals = {k: sum(p.get(k, 0) for p in per_page) for k in
               ("bubbles", "offpage_labels", "tagged", "tag_exact", "tag_not_in_text", "continuations",
                "connectors_detected", "connector_bad_target", "unknowns", "nodes", "unclassified")}
     totals.update(pages=len(per_page), failed_pages=sum(1 for p in per_page if not p["ok"]), paired=pg["linked"])
+    totals.update(score_pairs(built, {d["dwg"]: d for d in done if d["ok"]}))
     keyed = {}
     for kp in sorted(glob.glob(os.path.join(ANSWER_KEY, "*.json"))):
         with open(kp, encoding="utf-8") as fh:
@@ -337,6 +346,39 @@ def run(input_dir, catalog, jobs, pages=None):
     return {"totals": totals, "answer_key": keyed, "per_page": per_page}
 
 
+def score_pairs(built, by_dwg):
+    """짝 정답(PAIR_KEY, 렌더한 그림을 눈으로 확인한 짝) 대비: 맞게 이은 짝 수와 틀린 짝 수(정답 화살표가 다른 화살표와
+    이어짐). 화살표는 그 도면에서 정답 상자 가운데를 품는 연결점 노드로 찾는다."""
+    if not os.path.isfile(PAIR_KEY):
+        return {}
+    with open(PAIR_KEY, encoding="utf-8") as fh:
+        key = json.load(fh)
+    peer = {}
+    for l in (built or {}).get("sheet_links") or []:
+        if l["status"] == "linked":
+            a, b = (project_ref(l["from"]), project_ref(l["to"]))
+            peer[a], peer[b] = b, a
+
+    def ref(end):
+        d = by_dwg.get(end["drawing"])
+        if d is None:
+            return None
+        c = _center(end["bbox"])
+        hit = [n for n in d["ex"]["nodes"] if n.get("kind") == "continuation" and _inside(c, _box(n, 2.0))]
+        return "%s#%s" % (d["graph"]["graph_id"], hit[0]["source_object_id"]) if len(hit) == 1 else None
+
+    hits = wrong = 0
+    for p in key["pairs"]:
+        a, b = ref(p["a"]), ref(p["b"])
+        hits += bool(a and b and peer.get(a) == b)
+        wrong += bool((a and peer.get(a) not in (None, b)) or (b and peer.get(b) not in (None, a)))
+    return {"pair_key": len(key["pairs"]), "pair_key_hit": hits, "pair_key_wrong": wrong}
+
+
+def project_ref(end):
+    return "%s#%s" % (end["graph_id"], end["source_object_id"] or end["entity_id"])
+
+
 def ratchet(base, now):
     """기준값(base: {"totals", "answer_key"}) 대비 후퇴 목록. 입력 집합·대리 지표가 바뀌면(쪽·원·연결 표기 수) 비교하지
     않고 실패한다(--update로 기준값을 바꾸고 커밋 메시지에 이유를 적는다)."""
@@ -345,8 +387,9 @@ def ratchet(base, now):
            for k in ("pages", "bubbles", "offpage_labels") if bt[k] != nt[k]]
     if bad:
         return bad
-    bad += ["%s %d → %d (낮아짐)" % (k, bt[k], nt[k]) for k in HIGHER if nt[k] < bt[k]]
-    bad += ["%s %d → %d (늘어남)" % (k, bt[k], nt[k]) for k in LOWER + ("failed_pages",) if nt[k] > bt[k]]
+    bad += ["%s %d → %d (낮아짐)" % (k, bt.get(k, 0), nt.get(k, 0)) for k in HIGHER if nt.get(k, 0) < bt.get(k, 0)]
+    bad += ["%s %d → %d (늘어남)" % (k, bt.get(k, 0), nt.get(k, 0)) for k in LOWER + ("failed_pages",)
+            if nt.get(k, 0) > bt.get(k, 0)]
     bk, nk = base["answer_key"], now["answer_key"]
     if set(bk) != set(nk):
         return bad + ["정답 쪽 집합이 다름: %s → %s" % (sorted(bk), sorted(nk))]
@@ -366,9 +409,11 @@ def ratchet(base, now):
 
 
 def headline(t):
-    return ("APR1400: 태그 정확 %d/%d(원) · 텍스트 층에 없는 태그 %d · 연결 표기 검출 %d/%d · 없는 대상 %d · 짝 %d · 미확인 %d"
+    return ("APR1400: 태그 정확 %d/%d(원) · 텍스트 층에 없는 태그 %d · 연결 표기 검출 %d/%d · 없는 대상 %d · 짝 %d"
+            "(정답 짝 %d/%d · 틀린 짝 %d) · 미확인 %d"
             % (t["tag_exact"], t["bubbles"], t["tag_not_in_text"], t["connectors_detected"], t["offpage_labels"],
-               t["connector_bad_target"], t["paired"], t["unknowns"]))
+               t["connector_bad_target"], t["paired"], t.get("pair_key_hit", 0), t.get("pair_key", 0),
+               t.get("pair_key_wrong", 0), t["unknowns"]))
 
 
 def main(argv=None):
