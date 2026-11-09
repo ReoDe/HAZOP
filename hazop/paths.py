@@ -141,6 +141,7 @@ FOLDERS = {
     "이탈후보": Folder("resource", ("자원", "기준", "이탈후보")),
     "기준표": Folder("resource", ("자원", "기준", "기준표")),
     "패턴": Folder("resource", ("자원", "기준", "패턴")),
+    "기호": Folder("resource", ("자원", "기준", "기호")),
     "참고": Folder("repo", ("자원", "참고자료")),
     "APR1400": Folder("repo", ("자원", "참고자료", "APR1400_DCD")),
     "표본": Folder("repo", ("자원", "표본")),
@@ -156,6 +157,7 @@ FOLDERS = {
     "도면수정": Folder("work", ("데이터", "도면수정")),
     "도면연결": Folder("work", ("데이터", "도면연결")),
     "잠재후보": Folder("work", ("데이터", "잠재후보")),
+    "기호후보": Folder("work", ("기호후보",)),
 }
 REFERENCE_LOGICAL = "참고자료/"  # 참고 폴더 아래 파일의 기록용 접두(rel_or_abs)
 # 사용자 파일(구간 JSON inputs, 추출 JSON source.file·svg_file)에 저장된 옛 상대 경로 접두 → 폴더 이름.

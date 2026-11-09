@@ -1,0 +1,17 @@
+{
+ "margin": 0.1,
+ "bundles": [
+  {
+   "name": "APR1400",
+   "prefix": "apr1400",
+   "active": true,
+   "source": "APR1400 DCD Rev.3"
+  },
+  {
+   "name": "공통",
+   "prefix": "common",
+   "active": true,
+   "source": "여러 도면 묶음에 공통인 기호"
+  }
+ ]
+}

@@ -387,7 +387,7 @@ class BuildSpecTest(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, src)), src)
 
     def test_datas_scope(self):
-        """저장소에만 있는 자료(샘플 도면·표본)는 넣지 않고(D5안), .py는 화면이 읽는 세 스크립트뿐, 데이터는 3종 폴더만."""
+        """저장소에만 있는 자료(샘플 도면·표본)는 넣지 않고(D5안), .py는 화면이 읽는 세 스크립트뿐, 데이터는 기준 4종 폴더만."""
         self.assertFalse([s for s in self.srcs if any(s.startswith(d + "/") for d in self.bp.EXCLUDED_DIRS)])
         self.assertEqual(sorted(s for s in self.srcs if s.endswith(".py")),
                          ["scripts/build_graph.py", "scripts/extract_drawio.py", "scripts/extract_pdf.py"])
@@ -395,7 +395,7 @@ class BuildSpecTest(unittest.TestCase):
         self.assertTrue(data)
         self.assertEqual({n for n, f in paths.FOLDERS.items()
                           if f.root == "resource" and any(s.startswith(paths.folder_rel(n) + "/") for s in data)},
-                         {"이탈후보", "기준표", "패턴"})
+                         {"이탈후보", "기준표", "패턴", "기호"})
         self.assertFalse([s for s in self.srcs if "__pycache__" in s])
 
     def test_spec_text(self):

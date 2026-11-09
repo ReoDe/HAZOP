@@ -1,0 +1,22 @@
+﻿id,name_en,name_ko,category,role,kind,kind_from,attributes,text_inside,text_forbid,enabled,legend_ref,note
+apr1400.offsheet_continuation,PIPE AND TUBING LINE CONTINUATION (DIFFERENT FIGURE SHEET),도면 간 배관 연결 표시,배관 요소,continuation,continuation,,"{""continuation_scope"": ""other_sheet""}",,,true,1.7-1 1/4 MISCELLANEOUS SYMBOLS,
+apr1400.sequence_letter,SEQUENCE LETTER (ON SAME FIGURE SHEET),같은 도면 안 연결 기호(순서 문자),배관 요소,continuation,continuation,,"{""continuation_scope"": ""same_sheet""}","^[A-Z]{1,2}$",,true,1.7-1 1/4 MISCELLANEOUS SYMBOLS,
+apr1400.ident_bubble_circle,VALVE IDENTIFICATION NUMBER,밸브 번호 원,주석,annotation,annotation,,,"^\d{1,4}[A-Z]?$","(?m)^[A-Z]{2,5}\b",false,1.7-1 1/4 OPERATOR SYMBOLS,새 kind는 레지스트리 반영(연결 커밋) 뒤 enabled
+apr1400.ident_bubble_ellipse,VALVE IDENTIFICATION NUMBER (ELLIPSE),밸브 번호 타원,주석,annotation,annotation,,,"^\d{1,4}[A-Z]?$","(?m)^[A-Z]{2,5}\b",false,범례 밖(도면에서 발견),새 kind는 레지스트리 반영(연결 커밋) 뒤 enabled
+apr1400.gate_valve,GATE,게이트 밸브,밸브,symbol,manual_valve,,"{""valve_type"": ""gate""}",,,true,1.7-1 1/4 VALVE SYMBOLS,
+apr1400.globe_valve,GLOBE,글로브 밸브,밸브,symbol,manual_valve,,"{""valve_type"": ""globe""}",,,true,1.7-1 1/4 VALVE SYMBOLS,
+apr1400.plug_valve,PLUG (2-WAY),플러그 밸브,밸브,symbol,manual_valve,,,,,true,1.7-1 1/4 VALVE SYMBOLS,valve_type 'plug'는 레지스트리 허용값(gate·globe·ball·butterfly)에 더한 뒤 붙인다
+apr1400.check_valve_box,CHECK,체크 밸브(상자형),밸브,symbol,check_valve,,,,,true,1.7-1 1/4 VALVE SYMBOLS,
+apr1400.reducer,CONCENTRIC REDUCER OR ENLARGER,동심 리듀서,배관 부품,symbol,reducer,,,,,true,1.7-1 1/4 PIPE LINE COMPONENT SYMBOLS,
+apr1400.hsi_shared_display,SHARED HUMAN-SYSTEM INTERFACE (HSI),공유 HSI 표시(지시·제어),계기,symbol,,isa_letters,,,,true,1.7-1 3/4 INSTRUMENT & CONTROL DEVICE SYMBOLS,
+apr1400.tombstone_instrument,INSTRUMENT IN POWER BLOCK (TOMBSTONE),"파워블록 안 계기(비석형, 의미 확인 필요)",계기,symbol,,isa_letters,,,,true,1.7-1 3/4 INSTRUMENT & CONTROL DEVICE SYMBOLS,
+apr1400.control_device_box,CONTROL DEVICE AND/OR CCS CABINET MOUNTED DEVICE,제어 장치(캐비닛 설치),계기,symbol,,isa_letters,,"^[A-Z]{1,5}$",,true,1.7-1 3/4 INSTRUMENT & CONTROL DEVICE SYMBOLS,
+apr1400.motor_operator,ELECTRIC MOTOR OPERATOR (M),전동 구동부,구동기,actuator,,,"{""actuator_type"": ""motor"", ""motive_power"": ""electric""}",^M$,,true,1.7-1 1/4 OPERATOR SYMBOLS,
+apr1400.solenoid_operator,SOLENOID OPERATOR (S),솔레노이드 구동부,구동기,actuator,,,"{""actuator_type"": ""solenoid"", ""motive_power"": ""electric""}",^S$,,true,1.7-1 1/4 OPERATOR SYMBOLS,
+apr1400.diaphragm_operator,DIAPHRAGM OPERATOR,다이어프램 구동부,구동기,actuator,,,"{""actuator_type"": ""diaphragm"", ""motive_power"": ""air""}",,,true,1.7-1 1/4 OPERATOR SYMBOLS,
+apr1400.eh_operator,ELECTRO-HYDRAULIC ACTUATOR (E/H),전기유압 구동부,구동기,actuator,,,"{""actuator_type"": ""electro_hydraulic"", ""motive_power"": ""hydraulic""}",^(E\s*/?\s*H|E|H)$,,true,1.7-1 1/4 OPERATOR SYMBOLS,
+apr1400.equipment_drain,EQUIPMENT DRAIN (DE OR ED),기기 배수,배관 부품,symbol,drain,,,,,true,1.7-1 1/4 PIPE LINE COMPONENT SYMBOLS,
+apr1400.test_connection,TEST CONNECTION,시험 연결,배관 부속,symbol,test_connection,,,,,false,1.7-1 2/4 TEST CONNECTIONS,새 kind는 레지스트리 반영(연결 커밋) 뒤 enabled
+apr1400.damper_open,NORMALLY OPEN DAMPER,댐퍼(상시 열림),공조,symbol,damper,,"{""normal_position"": ""NO""}",,,false,1.7-1 2/4 HVAC EQUIPMENT / DAMPERS SYMBOLS,새 kind는 레지스트리 반영(연결 커밋) 뒤 enabled
+apr1400.damper_closed,NORMALLY CLOSED DAMPER,댐퍼(상시 닫힘),공조,symbol,damper,,"{""normal_position"": ""NC""}",,,false,1.7-1 2/4 HVAC EQUIPMENT / DAMPERS SYMBOLS,새 kind는 레지스트리 반영(연결 커밋) 뒤 enabled
+common.pattern_dot,PATTERN DOT (DEGENERATE PATH),무늬 점(폭 0인 닫힌 경로),버림,drop,,,,,,true,-,탱크 무늬 점처럼 폭이 0이고 길이 0.3pt 안팎인 닫힌 경로와 크기가 정확히 0인 경로. 노드로 만들지 않고 ignored_objects에 남긴다
