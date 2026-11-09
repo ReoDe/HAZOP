@@ -9,6 +9,7 @@
 
 import copy
 import os
+import pickle
 import re
 
 from hazop.graph import project
@@ -131,7 +132,7 @@ def annotate(node_set, pg):
     display_name, drawings(흐름 순서 전체 번호), drawings_short, spans_drawings, members_by_drawing{번호: 수},
     member_count, boundary{start, end}(각 {entity_id, label, drawing}), continuations[{entity_id, drawing,
     to_drawing, to_node_ids}](화면 칩 "S7 → SNP-M-101에서 계속"). 집합 위에 drawing_numbers·drawing_prefix·drawing_short."""
-    out = copy.deepcopy(node_set)
+    out = pickle.loads(pickle.dumps(node_set, pickle.HIGHEST_PROTOCOL))  # JSON 값이라 deepcopy와 같은 사본, 몇 배 빠름
     by_id = {n["entity_id"]: n for n in pg["nodes"]}
     drawing_of = _sheet_of(pg)
     prefix, short = short_numbers([s["drawing_number"] for s in pg["sheets"]])

@@ -18,9 +18,8 @@ import csv
 import hashlib
 import json
 import os
+import pickle
 import re
-
-import networkx as nx
 
 from hazop import paths
 from hazop.graph.build import to_networkx
@@ -342,18 +341,23 @@ def match(graphs, manual_ops=(), system_codes=None):
 
 # ---------------------------------------------------------------- 프로젝트 그래프
 
+def _clone(obj):
+    """JSON에서 온 값의 깊은 사본. copy.deepcopy와 같은 결과지만 143쪽이면 3초 걸리던 것이 C 구현이라 몇 배 빠르다."""
+    return pickle.loads(pickle.dumps(obj, pickle.HIGHEST_PROTOCOL))
+
+
 def _copy_sheet(g):
     gid = g["graph_id"]
     nodes, edges = [], []
     for n in sorted(g["nodes"], key=lambda x: x["entity_id"]):
-        c = copy.deepcopy(n)
+        c = _clone(n)
         c.update(entity_id=nid(gid, n["entity_id"]), sheet=gid, sheet_entity_id=n["entity_id"])
         fd = c.get("flow_direction")
         if isinstance(fd, dict):
             fd.update({k: nid(gid, fd[k]) for k in ("from", "to") if fd.get(k)})
         nodes.append(c)
     for e in sorted(g["edges"], key=lambda x: x["entity_id"]):
-        c = copy.deepcopy(e)
+        c = _clone(e)
         c.update(entity_id=nid(gid, e["entity_id"]), sheet=gid, nodes=[nid(gid, x) for x in e["nodes"]])
         for k in ("segment", "node"):
             if c.get(k):
@@ -429,6 +433,12 @@ def build(project_id, graphs, manual_ops=(), system_codes=None):
 def load(project_id, graph_root=None):
     """출력/그래프의 프로젝트 도면(project_id_of가 같은 것) + 사람 지정 기록으로 프로젝트 그래프를 만든다.
     도면이 없으면 ValueError. 지식그래프 자동 빌드(hazop.kg.auto)의 도면 선택 규칙은 바꾸지 않는다."""
+    return load_with_names(project_id, graph_root)[0]
+
+
+def pick_graphs(project_id, graph_root=None):
+    """{graph_id: ((바뀐 시각, 경로), graph, 폴더 이름)} 이 프로젝트의 도면. 같은 graph_id는 가장 최근 것
+    (hazop.kg.auto.project_graphs와 같은 규칙). load와 ② 도면 이름표(project_ctx.graph_names)가 함께 쓴다."""
     root = graph_root or paths.output_root("그래프")
     best = {}
     for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
@@ -441,12 +451,19 @@ def load(project_id, graph_root=None):
         if project_id_of(g) == project_id:
             key = (os.path.getmtime(p), p)  # 같은 graph_id는 가장 최근 것(hazop.kg.auto.project_graphs와 같은 규칙)
             if g.get("graph_id") not in best or key > best[g["graph_id"]][0]:
-                best[g["graph_id"]] = (key, g)
+                best[g["graph_id"]] = (key, g, name)
+    return best
+
+
+def load_with_names(project_id, graph_root=None):
+    """(load와 같은 프로젝트 그래프, {도면 graph_id: 고른 출력/그래프 폴더 이름}). 도면 파일을 한 번만 읽으려고 둔다."""
+    best = pick_graphs(project_id, graph_root)
     graphs = [best[k][1] for k in sorted(best)]
     if not graphs:
         raise ValueError("프로젝트 %s에 추출한 도면이 없음" % project_id)
-    return build(project_id, graphs, (load_manual(project_id) or {}).get("ops") or (),
-                 load_system_codes(paths.folder("APR1400", SYSTEM_CODES_FILE)))
+    pg = build(project_id, graphs, (load_manual(project_id) or {}).get("ops") or (),
+               load_system_codes(paths.folder("APR1400", SYSTEM_CODES_FILE)))
+    return pg, {gid: v[2] for gid, v in best.items() if gid}
 
 
 def load_system_codes(path):
@@ -485,6 +502,7 @@ def read_system_code_rows(path):
 
 def components(pg, kinds=(PHYSICAL,)):
     """연결 성분(노드 2개 이상) [[노드 ID]] 큰 것부터. kinds=None이면 모든 관계."""
+    import networkx as nx
     g = to_networkx(pg, kinds=set(kinds) if kinds else None)
     comps = [sorted(c) for c in nx.connected_components(g) if len(c) > 1]
     return sorted(comps, key=lambda c: (-len(c), c[0]))

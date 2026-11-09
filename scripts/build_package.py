@@ -11,7 +11,7 @@
   복사한다(copy_licenses). 빌드 뒤 검사가 실행 파일 옆 사본이 저장소와 같고 _internal/licenses/가 없는지 본다.
 - hiddenimports: collect_submodules("hazop") + 세 스크립트 모듈(스크립트가 가져오는 표준 라이브러리까지 묶이게)
   + PDF 어댑터 모듈 pdfplumber·pypdfium2(W9, D15: pdf_vector가 함수 안에서 지연 import)
-  + 함수 안에서만 import하는 라이브러리 LAZY_MODULES(openpyxl: 시작을 빠르게 하려고 내보낼 때만 읽음). 빌드 뒤 검사가
+  + 함수 안에서만 import하는 라이브러리 LAZY_MODULES(openpyxl·networkx: 시작을 빠르게 하려고 쓸 때만 읽음). 빌드 뒤 검사가
   앱 PYZ에 있는지 본다.
 - excludes: anthropic·httpx(D1, 배포본 제외). pdfplumber와 의존성(pdfminer.six·Pillow·pypdfium2·charset-normalizer·
   cryptography·cffi·pycparser, packaging/requirements-pdf.txt)은 묶는다(W9, D15). 빌드 뒤 검사가 앱 PYZ(PYZ-00.toc)에
@@ -87,7 +87,7 @@ LICENSES_DIR = "licenses"
 # W9(D15): PDF 어댑터. pdf_vector가 pdfplumber를 함수 안에서 import하므로 명시적으로 묶는다.
 PDF_MODULES = ("pdfplumber", "pypdfium2")
 # 시작 시간 때문에 함수 안에서만 import하는 라이브러리. 정적 분석이 놓쳐도 묶이게 명시하고, 빌드 뒤 앱 PYZ에서 확인한다.
-LAZY_MODULES = ("openpyxl",)
+LAZY_MODULES = ("openpyxl", "networkx")
 PDF_REQUIRED_MODULES = ("pdfplumber", "pdfminer", "pypdfium2", "pypdfium2_raw", "PIL.Image", "charset_normalizer",
                         "cryptography")
 PDFIUM_DLL = ("pypdfium2_raw", "pdfium.dll")  # _internal 아래

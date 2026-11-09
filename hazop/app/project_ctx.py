@@ -62,22 +62,7 @@ def graph_names(project_id):
 
 
 def _read_graph_names(project_id):
-    root = paths.output_root("그래프")
-    best = {}
-    for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
-        p = os.path.join(root, name, "graph.json")
-        try:
-            with open(p, encoding="utf-8") as fh:
-                g = json.load(fh)
-        except (OSError, ValueError):
-            continue
-        if project.project_id_of(g) != project_id:
-            continue
-        gid = g.get("graph_id")
-        key = (os.path.getmtime(p), p)
-        if gid and (gid not in best or key > best[gid][0]):
-            best[gid] = (key, name)
-    return {g: v[1] for g, v in best.items()}
+    return {gid: v[2] for gid, v in project.pick_graphs(project_id).items() if gid}
 
 
 _PROJECT_GRAPHS = {}
@@ -106,7 +91,8 @@ def project_graph(project_id):
     hit = _PROJECT_GRAPHS.get(project_id)
     if hit is not None and hit[0] == key:
         return hit[1]
-    pg = project.load(project_id)
+    pg, names = project.load_with_names(project_id)
+    _NAMES[project_id] = (key, names)  # 같은 파일을 읽어 고른 이름(graph_names가 다시 읽지 않게)
     if hit is not None:  # 옛 그래프를 붙잡은 표기 사본은 버린다(143쪽 그래프가 메모리에 여러 벌 남지 않게)
         for k in [k for k, v in _VIEWS.items() if v[0] is hit[1]]:
             del _VIEWS[k]

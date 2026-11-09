@@ -113,14 +113,14 @@ class GraphForRefTest(unittest.TestCase):
 
 
 class StartupImportsTest(unittest.TestCase):
-    def test_the_main_window_module_does_not_load_openpyxl(self):
-        """openpyxl은 내보낼 때만 읽는다(시작이 0.5초 이상 늦어져서)."""
+    def test_the_main_window_module_does_not_load_openpyxl_or_networkx(self):
+        """openpyxl은 내보낼 때만, networkx는 그래프 계산 때만 읽는다(각각 시작이 0.5초 안팎 늦어져서)."""
         code = ("import sys\nfrom hazop.app import make_application\nfrom hazop.app.main_window import MainWindow\n"
-                "print('openpyxl' in sys.modules)")
+                "print([m for m in ('openpyxl', 'networkx') if m in sys.modules])")
         env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
         out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env,
                              cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))), timeout=120)
-        self.assertEqual(out.stdout.strip(), "False", out.stderr[-2000:])
+        self.assertEqual(out.stdout.strip(), "[]", out.stderr[-2000:])
 
 
 if __name__ == "__main__":

@@ -15,8 +15,6 @@ import hashlib
 import os
 import shutil
 
-import networkx as nx
-
 from hazop import paths
 from hazop.analysis import explore as ex_mod
 from hazop.graph.build import to_networkx
@@ -122,6 +120,7 @@ def view_v3(graph):
 
 def view_v4(kg, graph):
     """지식 노드(V4) + V4 관계가 닿는 P&ID 노드. MultiGraph, 엣지 키 = 관계 ID."""
+    import networkx as nx
     nodes, links, _ = v4_items(kg, graph)
     pid = {n["entity_id"]: n for n in graph["nodes"]}
     g = nx.MultiGraph()
@@ -138,6 +137,7 @@ def view_v4(kg, graph):
 
 def view_v5(kg, graph):
     """V1 + V3 + V4 통합 무방향 MultiGraph. P&ID 노드는 entity_id, 지식 노드는 지식 ID(접두어가 겹치지 않음, K3)."""
+    import networkx as nx
     g = nx.MultiGraph()
     for n in graph["nodes"]:
         g.add_node(n["entity_id"], layer="pid", node_type=n["node_type"])
@@ -334,6 +334,7 @@ def fold_segments(v5, graph):
 
 
 def _degrees(g):
+    import networkx as nx
     cent = nx.degree_centrality(g) if g.number_of_nodes() > 1 else {n: 0.0 for n in g}
     return {n: {"degree": g.degree(n), "centrality": round(cent[n], 6)} for n in sorted(g.nodes)}
 
@@ -348,6 +349,7 @@ def a3_degree(v5, graph):
 
 # ---------------------------------------------------------------- A4
 def a4_ego(v5, start, radius):
+    import networkx as nx
     if start not in v5:
         return {"active": False, "reason": "V5에 없음(계산 제외 노드이거나 없는 ID)"}
     ego = nx.ego_graph(v5, start, radius=radius, undirected=True)
@@ -361,6 +363,7 @@ def a4_ego(v5, start, radius):
 
 # ---------------------------------------------------------------- A5
 def _components(g):
+    import networkx as nx
     comps = sorted((sorted(c) for c in nx.connected_components(g)), key=lambda c: (-len(c), c[0]))
     return {"count": len(comps), "singletons": sum(1 for c in comps if len(c) == 1),
             "sizes": [len(c) for c in comps], "components": comps}
@@ -387,6 +390,7 @@ def analyze(kg, graph, regions, start, radius=2, candidate_file=None):
     """A1~A5를 한 번에 계산해 결과 문서(dict)를 돌려준다. 같은 입력이면 같은 결과.
     regions: [(라벨, 구간 dict, 구간 파일 sha256)]. candidate_file: 후보 CSV 집계
     {"file", "sha256", "unconfirmed_candidates"} 또는 None(파일 없음)."""
+    import networkx as nx
     check_inputs(kg, graph)
     if not isinstance(radius, int) or radius < 0:
         raise AlgoError("radius는 0 이상 정수: %r" % radius)

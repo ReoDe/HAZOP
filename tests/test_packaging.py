@@ -405,7 +405,7 @@ class BuildSpecTest(unittest.TestCase):
             ast.parse(text)
             self.assertIn("collect_submodules('hazop')", text)
             self.assertIn("EXCLUDES = ['anthropic', 'httpx']", text)  # W9(D15): pdfplumber는 묶는다
-            self.assertEqual(text.count("'pdfplumber', 'pypdfium2', 'openpyxl']"), 2 if with_check else 1)  # 두 Analysis 모두
+            self.assertEqual(text.count("'pdfplumber', 'pypdfium2', 'openpyxl', 'networkx']"), 2 if with_check else 1)  # 두 Analysis 모두
             self.assertIn("name='HAZOP', console=False, upx=False", text)
             self.assertIn("scripts/run_app.py", text)
             self.assertEqual("HAZOP-check" in text, with_check)
