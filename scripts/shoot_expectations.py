@@ -15,6 +15,7 @@ import tempfile
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+from hazop import paths  # noqa: E402
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing --log-level=3")
 if os.environ["QT_QPA_PLATFORM"] == "offscreen" and os.path.isdir(r"C:\Windows\Fonts"):
@@ -24,7 +25,7 @@ SIZES = ((1366, 768), (1920, 1080))
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO_ROOT, "출력", "스크린샷", "expectations"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "expectations"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-expect-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")

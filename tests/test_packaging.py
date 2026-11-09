@@ -150,7 +150,7 @@ class PathsCompatTest(unittest.TestCase):
                     FrozenMock(bundle, frozen=frozen):
                 self.assertEqual(paths.frozen_bundle_dir(), bundle)
                 self.assertEqual((paths.program_root(), paths.resource_root()), (want, want))
-                self.assertEqual(paths.work_root(), os.path.join("C:/L", "HAZOP") if bundle else REPO_ROOT)
+                self.assertEqual(paths.work_root(), os.path.join("C:/L", "HAZOP") if bundle else paths.DEV_WORK_ROOT)
 
 
 # ---------------------------------------------------------------- 2) importlib 로딩 경로
@@ -256,7 +256,7 @@ class SplitRootsFlowTest(unittest.TestCase):
 
     def test_flow_1_to_5_with_split_roots(self):
         res_before = _tree(self.res)
-        repo_before = {d: _names(os.path.join(REPO_ROOT, d)) for d in ("출력", "자료저장소")}
+        repo_before = {d: _names(os.path.join(paths.DEV_WORK_ROOT, d)) for d in ("출력", "자료저장소")}
         env = _clean_env(HAZOP_RESOURCE_ROOT=self.res, HAZOP_WORK_ROOT=self.work)
         with mock.patch.dict(os.environ, env, clear=True), mock.patch.dict(data._script_cache, {}, clear=True):
             self.assertEqual((paths.resource_root(), paths.work_root()), (self.res, self.work))
@@ -347,7 +347,7 @@ class SplitRootsFlowTest(unittest.TestCase):
             self.assertEqual(len(files), 1, ex)
 
         self.assertEqual(_tree(self.res), res_before)  # 자원 루트는 읽기만
-        self.assertEqual({d: _names(os.path.join(REPO_ROOT, d)) for d in ("출력", "자료저장소")}, repo_before)
+        self.assertEqual({d: _names(os.path.join(paths.DEV_WORK_ROOT, d)) for d in ("출력", "자료저장소")}, repo_before)
 
 
 # ---------------------------------------------------------------- 4) W4 spec·datas 목록(빌드하지 않음)
@@ -379,7 +379,8 @@ class BuildSpecTest(unittest.TestCase):
         want = {rel(viewer_build.TEMPLATE), rel(kg_screen.TEMPLATE), "/".join(integrity.GUIDE_PARTS)}
         want |= {rel(os.path.join(kg_screen.VENDOR_DIR, f)) for f in ("force-graph.min.js", "LICENSE", "SOURCE.md")}
         want |= {"scripts/%s.py" % n for n in data.SCRIPT_NAMES}
-        want |= {rel(paths.resolve_rel(v, REPO_ROOT)) for v in data.read_json(REGION_FILE)["inputs"].values()}  # 기준 자료 4종(옛 경로도 별칭으로 묶음 파일)
+        res = paths.resource_root()
+        want |= {paths.rel_or_abs(paths.resolve_rel(v, res), res) for v in data.read_json(REGION_FILE)["inputs"].values()}  # 기준 자료 4종(옛 경로도 별칭으로 묶음 파일)
         self.assertEqual(want - self.srcs, set())
         for src, dest in self.datas:  # 묶음 안에서도 저장소와 같은 상대 위치
             self.assertEqual(dest, os.path.dirname(src), src)

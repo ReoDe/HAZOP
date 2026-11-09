@@ -164,7 +164,7 @@ def main():
     from hazop.console import safe_console
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default=os.path.join(REPO_ROOT, "출력", "스크린샷"), help="스크린샷 폴더")
+    ap.add_argument("--out", default=os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷"), help="스크린샷 폴더")
     ap.add_argument("--platform", default="windows" if sys.platform == "win32" else "offscreen",
                     help="Qt 플랫폼. offscreen은 한글 글꼴이 없어 폭 측정·스크린샷이 실제와 다르다")
     args = ap.parse_args()

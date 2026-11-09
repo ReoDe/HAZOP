@@ -30,7 +30,7 @@ REPO = paths.REPO_ROOT
 CRIT_DIR = paths.folder("표본", "평가기준")
 CRIT_JSON = os.path.join(CRIT_DIR, "criteria-SNP-M-102-pzr-sample.json")
 CRIT_XLSX = os.path.join(CRIT_DIR, "criteria-SNP-M-102-pzr-sample.xlsx")
-REAL_RUNS = os.path.join(REPO, "출력", "분석", "region-SNP-M-102-pzr")
+REAL_RUNS = os.path.join(paths.DEV_WORK_ROOT, "출력", "분석", "region-SNP-M-102-pzr")
 T1, T2 = "2026-11-06T00:00:00Z", "2026-11-06T00:00:01Z"
 
 
@@ -500,7 +500,7 @@ class RunCopyCases(unittest.TestCase):
             from tests.run_fixture import fresh_run_dir
             cls.src = fresh_run_dir()
         cls.before = _snapshot(cls.src)
-        cls.out_existed = os.path.exists(os.path.join(REPO, "출력", "평가비교"))
+        cls.out_existed = os.path.exists(os.path.join(paths.DEV_WORK_ROOT, "출력", "평가비교"))
         cls.tmp = tempfile.mkdtemp(prefix="hazop-evaluate-")
         cls.run_dir = os.path.join(cls.tmp, "runs", os.path.basename(cls.src))
         shutil.copytree(cls.src, cls.run_dir)
@@ -530,7 +530,7 @@ class RunCopyCases(unittest.TestCase):
         self.assertEqual(view["graph_tags"], sorted({norm(n["tag"]) for n in graph["nodes"] if n.get("tag")}))
         self.assertEqual((view["reviews"], view["excluded_by_review"]), ([], 0))
         self.assertEqual(_snapshot(self.src), self.before)  # 원본 실행 폴더는 바뀌지 않음
-        self.assertEqual(os.path.exists(os.path.join(REPO, "출력", "평가비교")), self.out_existed)
+        self.assertEqual(os.path.exists(os.path.join(paths.DEV_WORK_ROOT, "출력", "평가비교")), self.out_existed)
 
     def test_E14_export_hash_mismatch(self):
         from hazop.export import export_worksheet

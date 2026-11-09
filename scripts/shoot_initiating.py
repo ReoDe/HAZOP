@@ -14,6 +14,7 @@ import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
+from hazop import paths  # noqa: E402
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 if os.environ["QT_QPA_PLATFORM"] == "offscreen" and os.path.isdir(r"C:\Windows\Fonts"):
     os.environ.setdefault("QT_QPA_FONTDIR", r"C:\Windows\Fonts")  # offscreen은 시스템 글꼴을 찾지 못해 한글이 깨짐
@@ -96,7 +97,7 @@ def build_ie(pg, r):
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO_ROOT, "출력", "스크린샷", "초기사건"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "초기사건"))
     w, h = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (1366, 768)
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-ie-")

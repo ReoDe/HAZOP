@@ -51,7 +51,7 @@ def sample_drawio():
 
 
 def latest_repo_run():
-    d = os.path.join(REPO_ROOT, "출력", "분석", REGION_ID)
+    d = os.path.join(paths.DEV_WORK_ROOT, "출력", "분석", REGION_ID)
     if not os.path.isdir(d):
         return None
     runs = sorted((x for x in os.listdir(d) if os.path.isfile(os.path.join(d, x, "analysis.json"))),
@@ -135,7 +135,7 @@ def build_sample_chain(base, src_run):
     shutil.copy2(paths.folder("표본", "구간", REGION_ID + ".json"), paths.folder_in(work, "구간"))
     if src_run is not None:
         for rel in (("출력", "추출", "SNP-M-102"), ("출력", "그래프", "SNP-M-102")):
-            shutil.copytree(os.path.join(REPO_ROOT, *rel), os.path.join(work, *rel))
+            shutil.copytree(os.path.join(paths.DEV_WORK_ROOT, *rel), os.path.join(work, *rel))
         run_dir = os.path.join(work, "출력", "분석", REGION_ID, os.path.basename(src_run))
         shutil.copytree(src_run, run_dir)
         # 현재 구간 JSON = 실행 당시 사본(저장소 구간 JSON이 실행 뒤 바뀌었어도 버전을 섞지 않음)
@@ -264,7 +264,7 @@ class SampleChainTest(_Base):
         """저장소 실제 출력/의 최신 실행(읽기 전용). 검토본·출력 기록은 저장소 자료저장소/에 있으면 함께 본다."""
         if self.src_run is None:
             self.skipTest("저장소 출력/분석 없음(git 제외 폴더) — 실제 실행 판정만 생략, 나머지는 합성 연쇄로 검사")
-        res = self.check(REPO_ROOT, os.path.join(REPO_ROOT, "자료저장소"), region=REGION_ID)
+        res = self.check(paths.DEV_WORK_ROOT, os.path.join(paths.DEV_WORK_ROOT, "자료저장소"), region=REGION_ID)
         self.assertEqual(res["chains"][0]["analysis_run_id"], os.path.basename(self.src_run))
         bad = fails(res)
         stale = [x for x in bad if " X2 " in x and "빌더 버전이 그래프 생성 뒤 바뀜" in x]

@@ -51,7 +51,7 @@ def js(win, code, timeout=10.0):
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO_ROOT, "출력", "스크린샷", "uiux"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "uiux"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-uiux-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")

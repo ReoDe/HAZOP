@@ -56,7 +56,7 @@ VISIT_CANDIDATES = ("deviation-p86-d09", "deviation-p86-d12")
 REVIEW_CANDIDATE = "deviation-p86-d12"
 REVIEW_KG_CANDIDATE = "deviation-p86-d09"
 TEXT_HEAD = 40
-OUT_DIR = os.path.join(REPO_ROOT, "출력", "디자인검사")
+OUT_DIR = os.path.join(paths.DEV_WORK_ROOT, "출력", "디자인검사")
 
 
 # ---------------------------------------------------------------- 위젯 측정(순수 함수, Qt 위젯만 받음)

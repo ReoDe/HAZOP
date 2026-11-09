@@ -43,15 +43,17 @@ def rel_or_abs(path, root):
 
 
 # ---------------------------------------------------------------- 자원 루트·작업 루트 (기획서/인터페이스.md §7.1)
-# 자원 루트(읽기 전용): 이탈 카탈로그·적용 판단·패턴·기준표(데이터/이탈후보·패턴·기준표), 기법 지침서, 샘플 도면.
+# 자원 루트(읽기 전용): 기준 자료(자원/기준/이탈후보·기준표·패턴), 기법 지침서. 폴더 위치는 아래 FOLDERS 표가 정한다.
 #   뷰어 템플릿은 패키지 안(hazop/viewer/template.html)에 두므로 패키지 위치를 그대로 쓴다.
-# 작업 루트(쓰기): 저장 루트(자료저장소/), 출력/, 구간 JSON(데이터/구간), 고정 응답(데이터/고정응답).
-# 기본값은 둘 다 저장소 루트(지금까지와 같은 경로). 환경변수로 바꿀 수 있고 HAZOP_STORE_ROOT는 계속 우선한다.
+# 작업 루트(쓰기): 저장 루트(자료저장소/), 출력/, logs/, 데이터/(구간·고정응답·검토구간·분석결과 등).
+# 기본값: 자원 루트 = 저장소 루트, 작업 루트 = 저장소/작업(DEV_WORK_ROOT, git 제외). 환경변수로 바꿀 수 있고
+# HAZOP_STORE_ROOT는 계속 우선한다. 표본(자원/표본)은 scripts/seed_samples.py로 작업 루트에 채운다.
 # PyInstaller 실행(sys._MEIPASS)은 감지만 한다: 자원 루트 = 묶음 폴더, 작업 루트 = %LOCALAPPDATA%\HAZOP [제안, §7.1].
 # 프로그램 루트(program_root): 화면이 importlib로 읽는 scripts/*.py 위치. 묶음 폴더 또는 저장소 루트(자원 루트 환경변수와 무관).
 # 값은 호출할 때마다 환경변수를 다시 읽는다. 다만 스크립트의 기본 인자(DEFAULT_*)는 가져올 때 한 번 정해진다.
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEV_WORK_ROOT = os.path.join(REPO_ROOT, "작업")  # 개발 환경 작업 루트 기본값(배포본은 %LOCALAPPDATA%\HAZOP)
 ENV_RESOURCE_ROOT = "HAZOP_RESOURCE_ROOT"
 ENV_WORK_ROOT = "HAZOP_WORK_ROOT"
 ENV_STORE_ROOT = "HAZOP_STORE_ROOT"
@@ -97,7 +99,7 @@ def work_root():
     if frozen_bundle_dir():
         base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
         return os.path.join(base, "HAZOP")
-    return REPO_ROOT
+    return DEV_WORK_ROOT
 
 
 def resource_path(*parts):
@@ -140,7 +142,7 @@ FOLDERS = {
     "패턴": Folder("resource", ("자원", "기준", "패턴")),
     "참고": Folder("repo", ("자원", "참고자료")),
     "APR1400": Folder("repo", ("자원", "참고자료", "APR1400_DCD")),
-    "표본": Folder("repo", ("데이터",)),
+    "표본": Folder("repo", ("자원", "표본")),
     "작업데이터": Folder("work", ("데이터",)),
     "구간": Folder("work", ("데이터", "구간")),
     "고정응답": Folder("work", ("데이터", "고정응답")),

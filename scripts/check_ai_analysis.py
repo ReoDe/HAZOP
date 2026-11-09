@@ -223,7 +223,7 @@ def main():
     failures = []
     try:
         for d in ("그래프", "지식그래프"):
-            shutil.copytree(os.path.join(REPO_ROOT, "출력", d), os.path.join(tmp, "출력", d))
+            shutil.copytree(os.path.join(paths.DEV_WORK_ROOT, "출력", d), os.path.join(tmp, "출력", d))
         failures = check(tmp)
     finally:
         if old is None:

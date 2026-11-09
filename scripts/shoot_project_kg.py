@@ -22,7 +22,7 @@ SIZES = ((1366, 768), (1920, 1080))
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO_ROOT, "출력", "스크린샷", "project-kg"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "project-kg"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-pkg-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")

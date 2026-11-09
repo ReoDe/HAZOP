@@ -15,6 +15,7 @@ import threading
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
+from hazop import paths  # noqa: E402
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 if os.environ["QT_QPA_PLATFORM"] == "offscreen" and os.path.isdir(r"C:\Windows\Fonts"):
     os.environ.setdefault("QT_QPA_FONTDIR", r"C:\Windows\Fonts")  # offscreen은 시스템 글꼴을 찾지 못해 한글이 깨짐
@@ -74,7 +75,7 @@ SHEETS = ("SNP-M-101", "SNP-M-102", "SNP-M-201", "SNP-M-301", "SNP-M-401", "SNP-
 def prepare(tmp):
     """샘플 6장(추출·그래프)과 지식그래프를 복사하고 프로젝트 전체 검토구간(S1…Sn)을 확정해 둔다."""
     for sub in [("추출", d) for d in SHEETS] + [("그래프", d) for d in SHEETS] + [("지식그래프",)]:
-        shutil.copytree(os.path.join(REPO_ROOT, "출력", *sub), os.path.join(tmp, "출력", *sub))
+        shutil.copytree(os.path.join(paths.DEV_WORK_ROOT, "출력", *sub), os.path.join(tmp, "출력", *sub))
     from hazop.graph import project
     from hazop.study import nodes
     pg = project.load(project.UNREGISTERED_PROJECT)
@@ -108,7 +109,7 @@ def shoot(win, scr, out_dir, w, state, files):
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO_ROOT, "출력", "스크린샷", "stage4"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "stage4"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-results-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")

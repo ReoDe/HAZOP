@@ -70,9 +70,9 @@ class PathsTest(unittest.TestCase):
     def test_defaults_are_repo_paths(self):
         with mock.patch.dict(os.environ, _clean_env(), clear=True):
             self.assertEqual(paths.resource_root(), REPO_ROOT)
-            self.assertEqual(paths.work_root(), REPO_ROOT)
-            self.assertEqual(paths.store_root(), os.path.join(REPO_ROOT, "자료저장소"))
-            self.assertEqual(paths.output_root("분석"), os.path.join(REPO_ROOT, "출력", "분석"))
+            self.assertEqual(paths.work_root(), os.path.join(REPO_ROOT, "작업"))  # 경로문자열-허용: 개발 작업 루트 기본값(계약)
+            self.assertEqual(paths.store_root(), os.path.join(paths.DEV_WORK_ROOT, "자료저장소"))
+            self.assertEqual(paths.output_root("분석"), os.path.join(paths.DEV_WORK_ROOT, "출력", "분석"))
         self.assertEqual(paths.REPO_ROOT, registry.REPO_ROOT)
 
     def test_env_overrides_and_store_priority(self):
@@ -561,8 +561,8 @@ class SplitRootsTest(TmpCase):
         _dump(os.path.join(work, region["graph_ref"]["graph_file"]), GRAPH)
         env = dict(_clean_env(), HAZOP_RESOURCE_ROOT=res, HAZOP_WORK_ROOT=work)
         env.pop("PYTHONIOENCODING", None)
-        repo_runs = sorted(os.listdir(os.path.join(REPO_ROOT, "출력", "분석"))) \
-            if os.path.isdir(os.path.join(REPO_ROOT, "출력", "분석")) else []
+        repo_runs = sorted(os.listdir(os.path.join(paths.DEV_WORK_ROOT, "출력", "분석"))) \
+            if os.path.isdir(os.path.join(paths.DEV_WORK_ROOT, "출력", "분석")) else []
 
         rc, out = self.run_cli(env, os.path.join(REPO_ROOT, "scripts", "analyze.py"), "--run-id", "analysis-split")
         self.assertEqual(rc, 0, out)
@@ -598,8 +598,8 @@ class SplitRootsTest(TmpCase):
                          ("registered_derived", "자료저장소/p/originals/%s/1/derived/P-1.drawio.svg" % mid))
         self.assertEqual(_load(os.path.join(reg_dir, mid, "1.json"))["input_path"], "in/P-1.drawio")
 
-        now_runs = sorted(os.listdir(os.path.join(REPO_ROOT, "출력", "분석"))) \
-            if os.path.isdir(os.path.join(REPO_ROOT, "출력", "분석")) else []
+        now_runs = sorted(os.listdir(os.path.join(paths.DEV_WORK_ROOT, "출력", "분석"))) \
+            if os.path.isdir(os.path.join(paths.DEV_WORK_ROOT, "출력", "분석")) else []
         self.assertEqual(now_runs, repo_runs)  # 저장소 출력/은 건드리지 않음
 
         # 자원 루트에 기준 자료가 없으면 분석하지 않는다(저장소 자료로 몰래 대체하지 않음)
