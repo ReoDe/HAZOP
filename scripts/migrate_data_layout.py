@@ -216,11 +216,18 @@ def apply_steps(repo, steps):
         else:
             os.replace(src, dst)
         done.append(s)
-    for s in steps:  # 비게 된 원본 폴더만 정리(파일은 지우지 않음)
+    left = set()
+    for s in steps:  # 비게 된 원본 폴더만 정리(파일은 지우지 않음). 다른 프로그램이 쥔 폴더는 남기고 알린다
         d = os.path.dirname(os.path.join(repo, s["src"]))
         while os.path.isdir(d) and not os.listdir(d) and os.path.abspath(d) != os.path.abspath(repo):
-            os.rmdir(d)
+            try:
+                os.rmdir(d)
+            except OSError:
+                left.add(os.path.relpath(d, repo))
+                break
             d = os.path.dirname(d)
+    for d in sorted(left):
+        print("빈 폴더를 지우지 못함(다른 프로그램이 열어 둠?): %s" % d)
     return done
 
 

@@ -34,7 +34,7 @@ def _bump_version_digit(data):
 class PinnedValuesTest(unittest.TestCase):
 
     def test_repo_resources_match_pins(self):
-        pat = _load(os.path.join(REPO_ROOT, PATTERNS_REL))
+        pat = _load(paths.resolve_rel(PATTERNS_REL, REPO_ROOT))
         self.assertEqual(integrity.check_patterns(pat), [])
         self.assertEqual(integrity.guide_sha256(os.path.join(REPO_ROOT, *integrity.GUIDE_PARTS)), integrity.GUIDE_SHA256)
 
@@ -99,7 +99,7 @@ class PinnedValuesTest(unittest.TestCase):
                              ["지침서 §6 표 파싱 실패 — 대조 불가: %s (FileNotFoundError: [Errno 2] 없음)" % g])
 
     def test_unpinned_library_blocks(self):
-        pat = _load(os.path.join(REPO_ROOT, PATTERNS_REL))
+        pat = _load(paths.resolve_rel(PATTERNS_REL, REPO_ROOT))
         pat["library_id"] = "user-added-library"
         self.assertTrue(any("고정 해시 없음" in e for e in integrity.check_patterns(pat)))
 

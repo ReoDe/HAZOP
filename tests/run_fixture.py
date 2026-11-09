@@ -42,7 +42,7 @@ def _sample_graph():
     svg = glob.glob(os.path.join(os.path.dirname(path), "*.drawio.svg"))
     if len(svg) == 1:
         al = svg_align.align(svg[0], result)
-        al["svg_file"] = os.path.relpath(svg[0], REPO_ROOT).replace("\\", "/")
+        al["svg_file"] = paths.rel_or_abs(svg[0], REPO_ROOT)
         result["coordinate_system"]["svg_alignment"] = al
     return build.build_graph(result)
 

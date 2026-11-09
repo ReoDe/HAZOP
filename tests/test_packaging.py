@@ -379,7 +379,7 @@ class BuildSpecTest(unittest.TestCase):
         want = {rel(viewer_build.TEMPLATE), rel(kg_screen.TEMPLATE), "/".join(integrity.GUIDE_PARTS)}
         want |= {rel(os.path.join(kg_screen.VENDOR_DIR, f)) for f in ("force-graph.min.js", "LICENSE", "SOURCE.md")}
         want |= {"scripts/%s.py" % n for n in data.SCRIPT_NAMES}
-        want |= set(data.read_json(REGION_FILE)["inputs"].values())  # 기준 자료 4종(자원 루트)
+        want |= {rel(paths.resolve_rel(v, REPO_ROOT)) for v in data.read_json(REGION_FILE)["inputs"].values()}  # 기준 자료 4종(옛 경로도 별칭으로 묶음 파일)
         self.assertEqual(want - self.srcs, set())
         for src, dest in self.datas:  # 묶음 안에서도 저장소와 같은 상대 위치
             self.assertEqual(dest, os.path.dirname(src), src)
@@ -433,7 +433,7 @@ class BuildSpecTest(unittest.TestCase):
         self.assertEqual(os.path.basename(spec), "HAZOP.spec")
         listed = data.read_json(os.path.join(tmp, "datas.json"))
         self.assertEqual([tuple(x) for x in listed["datas"]], self.datas)
-        self.assertEqual(listed["excluded_dirs"], [paths.folder_rel("참고"), paths.folder_rel("APR1400")])
+        self.assertEqual(listed["excluded_dirs"], [paths.folder_rel(n) for n in ("참고", "APR1400", "표본")])
 
     def test_spec_roundtrip_odd_path(self):
         """한글·공백·작은따옴표·백틱이 든 저장소 경로가 spec(JSON 이스케이프)을 거쳐도 그대로다(Windows는 " 금지)."""

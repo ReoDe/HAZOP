@@ -23,7 +23,7 @@ def extraction_with_svg(path):
     r = drawio.extract(path, repo_root=REPO_ROOT)
     svg = glob.glob(os.path.join(os.path.dirname(path), "*.drawio.svg"))[0]
     al = svg_align.align(svg, r)
-    al["svg_file"] = os.path.relpath(svg, REPO_ROOT).replace("\\", "/")
+    al["svg_file"] = paths.rel_or_abs(svg, REPO_ROOT)
     r["coordinate_system"]["svg_alignment"] = al
     with open(svg, encoding="utf-8") as fh:
         return r, fh.read()

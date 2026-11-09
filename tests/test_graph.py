@@ -331,7 +331,7 @@ class ViewerGraphTest(unittest.TestCase):
         ex = drawio.extract(SAMPLE[key], repo_root=REPO_ROOT)
         svg = glob.glob(os.path.join(os.path.dirname(SAMPLE[key]), "*.drawio.svg"))[0]
         al = svg_align.align(svg, ex)
-        al["svg_file"] = os.path.relpath(svg, REPO_ROOT).replace("\\", "/")
+        al["svg_file"] = paths.rel_or_abs(svg, REPO_ROOT)
         ex["coordinate_system"]["svg_alignment"] = al
         g = build.build_graph(ex) if graph == "build" else graph
         with open(svg, encoding="utf-8") as fh:

@@ -135,11 +135,11 @@ class Folder(NamedTuple):
 
 
 FOLDERS = {
-    "이탈후보": Folder("resource", ("데이터", "이탈후보")),
-    "기준표": Folder("resource", ("데이터", "기준표")),
-    "패턴": Folder("resource", ("데이터", "패턴")),
-    "참고": Folder("repo", ("참고자료",)),
-    "APR1400": Folder("repo", ("데이터", "참고자료", "APR1400_DCD")),
+    "이탈후보": Folder("resource", ("자원", "기준", "이탈후보")),
+    "기준표": Folder("resource", ("자원", "기준", "기준표")),
+    "패턴": Folder("resource", ("자원", "기준", "패턴")),
+    "참고": Folder("repo", ("자원", "참고자료")),
+    "APR1400": Folder("repo", ("자원", "참고자료", "APR1400_DCD")),
     "표본": Folder("repo", ("데이터",)),
     "작업데이터": Folder("work", ("데이터",)),
     "구간": Folder("work", ("데이터", "구간")),
