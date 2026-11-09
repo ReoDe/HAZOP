@@ -71,6 +71,7 @@ def main():
         win = MainWindow(settings_path=os.path.join(tmp, "settings.json"), ask_reviewer=False)
         win.set_reviewer_name("검토자(예시)")
         win.api_keys.set(KEY, persist=False)
+        win.ai_prefs.choose("api")  # 가짜 API 클라이언트로 돌린다
         win.show()
         node_id = shoot_results.drawing_node_ids()[0]
 

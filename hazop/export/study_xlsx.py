@@ -14,6 +14,9 @@ build_workbook(results, node_set, pg, deviations, scope, node_ids, reviewer, int
 - 초기사건 인계 열(기획서/초기사건-출력설계.md §5.3, P1): 원인 유형, 결과 기준(표시가 없으면 '비완화 여부 미확인'),
   초기사건 판정, 일반 범주, 판정 작성(AI 초안·사람 확정). 보호수단 열의 줄마다 작동 방식을 "[자동]"처럼 앞에 붙인다.
   품질 경고(완화 결과로 적힘·작동 방식 미확인)는 근거 경고 열에 함께 적는다.
+- AI 초안의 출처(디자인/AI연결-화면설계.md §8.2, D3): 표지에 'AI 초안 생성'(모델·연결 방식별 칸 수)과
+  'AI 사용 요금(API 키 호출분)', 워크시트 오른쪽 끝에 'AI 초안 생성' 열(AI 항목만, 사람이 더한 항목은 빈칸).
+  고정 응답(시험) 결과에서 내보내면 표지 고지 아래 빨간 경고 줄을 넣고 파일 이름 끝에 '-시험'을 붙인다.
 """
 
 import datetime
@@ -26,6 +29,7 @@ from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from hazop.app.conn_view import api_cost, drafted_cells, provenance
 from hazop.app.tokens import COLORS, risk_band
 from hazop.study import refs as srefs
 from hazop.study import results as res
@@ -41,6 +45,7 @@ FIELD_LABELS = {"cause": "원인", "consequence": "결과", "safeguards": "보�
 IE_ORIGIN_LABELS = {"ai_draft": "AI 초안", "human": "사람 확정"}
 FLAG_LABELS = (("scope_changed", "범위 바뀜 · 다시 확인"), ("source_stale", "옛 결과 · 다시 확인"))
 NOTICE = "AI 결과는 초안이며 사람이 승인한 항목만 확정입니다. 상태가 '승인'이 아닌 행은 검토 전 초안입니다."
+TEST_NOTICE = "시험용 고정 응답으로 채운 결과입니다. 실제 검토 결과로 쓰지 마세요."
 
 # 칸 표시 행(항목이 아닌 행)의 상태 문구
 CELL_ROW_LABELS = {"not_applicable": "해당 없음(AI 판단)", "no_scenario": "시나리오 없음(AI)",
@@ -55,7 +60,7 @@ WORKSHEET_COLUMNS = (
     ("basis", "AI 근거(KG 경로·출처 문서)", 34), ("refs", "그래프 참조", 34),
     ("warnings", "근거 경고", 22), ("status", "상태", 14),
     ("ie_judgement", "초기사건 판정", 28), ("ie_category", "일반 범주", 18), ("ie_origin", "판정 작성", 11),
-    ("history", "수정 이력 요약", 28),
+    ("history", "수정 이력 요약", 28), ("ai_origin", "AI 초안 생성", 22),
 )
 NODE_COLUMNS = (("구간 ID", 9), ("표시 이름", 30), ("도면 범위", 14), ("경계 시작", 20), ("경계 끝", 20),
                 ("설계의도", 40), ("구성요소", 50))
@@ -85,9 +90,10 @@ def risk_text(risk):
     return "%d %s" % (risk, BAND_LABELS[band]) if band else ""
 
 
-def default_filename(project_id, now):
-    """저장 대화상자 기본 이름: HAZOP-<프로젝트>-<KST 날짜시각>.xlsx."""
-    return "HAZOP-%s-%s.xlsx" % (re.sub(r'[\\/:*?"<>|\s]+', "_", project_id or "프로젝트"), kst(now, "%Y%m%d-%H%M"))
+def default_filename(project_id, now, test=False):
+    """저장 대화상자 기본 이름: HAZOP-<프로젝트>-<KST 날짜시각>[-시험].xlsx."""
+    return "HAZOP-%s-%s%s.xlsx" % (re.sub(r'[\\/:*?"<>|\s]+', "_", project_id or "프로젝트"), kst(now, "%Y%m%d-%H%M"),
+                                   "-시험" if test else "")
 
 
 # ---------------------------------------------------------------- 행 모델
@@ -204,6 +210,7 @@ def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, ex
         def tagged(text):
             return span.label_tags(text, tag_drawing, home, short) if text else text
         for cell in sorted(cells.get(nid, []), key=lambda c: dev_rank.get(c["deviation_id"], 10 ** 6)):
+            run = cell.get("ai_run") or {}
             d = devs.get(cell["deviation_id"]) or {"label": cell["deviation_id"], "parameter": "", "guideword": ""}
             base = {"node": node.get("display_name") or nid, "node_id": nid, "drawings": span.drawing_column(node),
                     "parameter": d["parameter"], "guideword": d["guideword"], "deviation": d["label"],
@@ -219,10 +226,10 @@ def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, ex
                                  risk=risk_text(e.get("risk")), recommendation=tagged(e.get("recommendation")),
                                  basis=_basis_text(e, labels), refs=_refs_text(e, idx, dn, expectations),
                                  warnings=_warnings_text(e),
-                                 status=_status_text(e), history=_history_text(e)))
+                                 status=_status_text(e), history=_history_text(e),
+                                 ai_origin=provenance(run, excel=True) if e.get("origin") == "ai_draft" else ""))
             if scope == "approved":
                 continue
-            run = cell.get("ai_run") or {}
             for kind in _cell_kind(cell):
                 extra = ({"warnings": "⚠ %s" % run["error"]} if kind == "failed" and run.get("error") else
                          {"basis": "AI 메모: %s" % run["note"]} if kind != "failed" and run.get("note") else {})
@@ -285,13 +292,16 @@ def _paint_risk(cell, risk):
         cell.font = Font(bold=True, color=COLORS["risk-%s-ink" % band].lstrip("#").upper())
 
 
-def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, n_rows):
+def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, n_rows, test=False):
     c = counts(results, set(node_ids) if scope == "nodes" else None)
+    keep = set(node_ids) if scope == "nodes" else None
+    cells = [x for x in results["cells"] if keep is None or x["node_id"] in keep]
     ref = results.get("study_nodes_ref") or {}
     s = c["by_status"]
     lines = [
         ("HAZOP 분석 결과 (⑤ 구간 × 편차)", None),
         ("고지", NOTICE),
+    ] + ([("시험 결과", TEST_NOTICE)] if test else []) + [
         ("프로젝트", node_set.get("project_id") or "-"),
         ("도면 목록", ", ".join(view.get("drawing_numbers") or [])),
         ("그래프 판", ref.get("graph_version") or "-"),
@@ -303,6 +313,8 @@ def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, 
         ("상태별: 제안", s["proposed"]), ("상태별: 수정", s["revised"]), ("상태별: 승인", s["approved"]),
         ("상태별: 기각", s["rejected"]), ("미검토 시나리오", c["unreviewed"]), ("실패 칸", c["failed_cells"]),
         ("분석 전 칸(워크시트에 행 없음)", c["not_analyzed_cells"]), ("워크시트 행 수", n_rows),
+        ("AI 초안 생성", drafted_cells(cells)),
+        ("AI 사용 요금(API 키 호출분)", "$%.2f" % api_cost(results.get("ai_log"))),
         ("위험도", "KOSHA P-86 〈표5〉 강도 × 빈도 → 1–5. 구분 1·2 수용 · 3·4 조건부 수용 · 5 불허는 〈표9〉 비고를 "
               "허용 구분으로 해석한 것 [추론](HAZOP기법지침 §6). 글자와 색 함께 표기"),
         ("용어", "구간 = node, 편차 = deviation, 가이드워드 = guide word, 원인 = cause, 결과 = consequence, "
@@ -314,6 +326,9 @@ def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, 
             put(ws, r, 2, v)
     ws["A1"].font = Font(bold=True, size=14)
     ws["B2"].font = Font(bold=True, color="991B1B")
+    if test:
+        ws["A3"].font = Font(bold=True, color="991B1B")
+        ws["B3"].font = Font(bold=True, color="991B1B")
     ws.column_dimensions["A"].width = 30
     ws.column_dimensions["B"].width = 90
     ws.page_setup.orientation = "landscape"
@@ -369,9 +384,9 @@ def _recommendation_sheet(ws, rows):
 
 
 def build_workbook(results, node_set, pg, deviations, scope="all", node_ids=None, reviewer="", intents=None, now=None,
-                   expectations=None):
+                   expectations=None, test=False):
     """Workbook과 워크시트 행 수. scope가 'nodes'면 node_ids(구간 ID 목록)가 있어야 한다.
-    expectations: 잠재 후보 계산 결과(hazop.kg.expect.evaluate) 또는 None."""
+    expectations: 잠재 후보 계산 결과(hazop.kg.expect.evaluate) 또는 None. test: 고정 응답(시험) 결과에서 내보냄."""
     if scope == "nodes" and not node_ids:
         raise ValueError("선택한 구간이 없습니다")
     now = now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -379,7 +394,7 @@ def build_workbook(results, node_set, pg, deviations, scope="all", node_ids=None
     xs = {i["id"]: i for i in expectations["items"]} if expectations else None
     rows = worksheet_rows(results, view, pg, deviations, scope, node_ids, xs)
     wb = Workbook()
-    _summary_sheet(wb.active, results, node_set, view, scope, list(node_ids or ()), reviewer, now, len(rows))
+    _summary_sheet(wb.active, results, node_set, view, scope, list(node_ids or ()), reviewer, now, len(rows), test)
     wb.active.title = SHEETS[0]
     _nodes_sheet(wb.create_sheet(SHEETS[1]), view, set(node_ids) if scope == "nodes" else None, intents,
                  entity_labels(pg))

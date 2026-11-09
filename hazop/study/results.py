@@ -325,6 +325,11 @@ def store_path(project_id, graph_id):
                            paths.safe_name(graph_id) + ".json")
 
 
+def test_store_path(project_id, graph_id):
+    """고정 응답(시험) 결과 파일. 시험 값이 실제 검토 기록의 AI 초안을 덮지 않게 따로 둔다(D5)."""
+    return paths.fixed_test_results_path(project_id or UNREGISTERED_PROJECT, graph_id)
+
+
 def _readable_path(project_id, graph_id):
     """저장 경로. 없고 project_id가 없으면 이 규칙 이전 폴더(no-project)의 저장본을 그대로 읽는다(옮기지 않음)."""
     path = store_path(project_id, graph_id)

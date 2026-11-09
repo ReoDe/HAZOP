@@ -125,16 +125,23 @@ USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache
 
 # ---------------------------------------------------------------- 계획
 
-def plan_units(node_set, deviations, cells=None):
+def plan_units(node_set, deviations, cells=None, group=False):
     """cells=None: 구간마다 변수(parameter)별 묶음 하나씩(편차 파일 순서 유지).
-    cells=[(node_id, deviation_id), ...]: 그 칸만, 칸 하나당 unit 하나(실패 칸 재실행용)."""
-    if cells is not None:
+    cells=[(node_id, deviation_id), ...]: 그 칸만, 칸 하나당 unit 하나(실패 칸 재실행용).
+    group=True면 cells를 구간·변수별로 다시 묶어 일괄 실행과 같은 호출 단위로 만든다('남은 칸 이어서 실행', 기술 설계 §11 3번)."""
+    if cells is not None and not group:
         return [{"unit_id": "%s/%s" % (nid, did), "node_id": nid, "deviation_ids": [did]} for nid, did in cells]
+    wanted = None if cells is None else set(cells)
     groups = {}
     for d in deviations:
         groups.setdefault(d["parameter"], []).append(d["deviation_id"])
-    return [{"unit_id": "%s/%s" % (n["node_id"], param), "node_id": n["node_id"], "deviation_ids": ids}
-            for n in node_set["nodes"] for param, ids in groups.items()]
+    units = []
+    for n in node_set["nodes"]:
+        for param, ids in groups.items():
+            keep = [i for i in ids if wanted is None or (n["node_id"], i) in wanted]
+            if keep:
+                units.append({"unit_id": "%s/%s" % (n["node_id"], param), "node_id": n["node_id"], "deviation_ids": keep})
+    return units
 
 
 # ---------------------------------------------------------------- 지식그래프

@@ -112,6 +112,11 @@ def output_root(*parts):
     return work_path("출력", *parts)
 
 
+def fixed_test_results_path(project_name, graph_name):
+    """고정 응답(시험)으로 채운 ⑤ 결과 파일. 실제 결과(데이터/분석결과)와 따로 둔다(화면 설계 D5·§8.3)."""
+    return work_path("데이터", "분석결과-시험", safe_name(project_name), safe_name(graph_name) + ".json")
+
+
 # ---------------------------------------------------------------- 설정 파일 (%APPDATA%\HAZOP\settings.json)
 DEFAULT_SETTINGS = {"reviewer_name": None, "work_root": None, "recent_regions": [], "recent_runs": []}
 

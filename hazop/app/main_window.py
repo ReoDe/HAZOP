@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QComboBox, QDialog, Q
                                QVBoxLayout, QWidget)
 
 from hazop import paths
-from hazop.app import data, explorer, palette, project_ctx, related, tokens
+from hazop.app import conn_view, data, explorer, palette, project_ctx, related, tokens
 from hazop.app.related_panel import RelatedPanel
 from hazop.app.screens.analysis import AnalysisScreen
 from hazop.app.screens.initiating import InitiatingScreen
@@ -24,9 +24,12 @@ from hazop.app.screens.results import ResultsScreen
 from hazop.app.screens.review import ReviewScreen
 from hazop.app.screens.study import StudyNodesScreen
 from hazop.app.screens.viewer import ViewerScreen
-from hazop.app.settings_dialog import SettingsDialog, status_bar_html
+from hazop.app.ai_conn import AiConnection
+from hazop.app.conn_widgets import ConnChip, ConnPopup
+from hazop.app.settings_dialog import ACTION_HELP, SettingsDialog, show_help
 from hazop.app.webview import HazopWebView
-from hazop.app.widgets import VALIDATION_LABELS, Chip, TaskRunner, Toast, esc, kst_text, write_log
+from hazop.app.widgets import VALIDATION_LABELS, Chip, ElidedLabel, TaskRunner, Toast, esc, kst_text, write_log
+from hazop.study.ai_settings import AiPrefs
 from hazop.study.apikey import STORE_FILE_NAME, KeyStore
 
 APP_NAME = "HAZOP 분석 도구"
@@ -53,6 +56,7 @@ HISTORY_MAX = 50
 DRAWING_SCREENS = (1, 5, 6)  # 도면 선택(combo)이 있는 화면 ②④⑤: 지금 도면을 함께 따른다
 EXPLORER_RIGHT_MAX = 84  # 탐색기 오른쪽 글자 열 최대 폭(미확인 11·미3·실패2)
 EXPLORER_OPEN_MAX = 30  # 이보다 항목이 많은 묶음(권고 등)은 접어서 연다
+MSG_KEEP = 480  # 상태줄 메시지가 연결 칩보다 먼저 받는 폭(넘으면 메시지가 줄어듦)
 EXPLORER_FOLDED = (3,)  # 이전 ⑤ 결정 폼은 1366에서 탐색기 폭(200)이면 가로가 6px 모자라 탐색기를 접는다
 
 
@@ -127,7 +131,11 @@ class MainWindow(QMainWindow):
         self.settings_path = settings_path
         self.settings = paths.load_settings(settings_path)
         self.api_keys = KeyStore(os.path.join(os.path.dirname(settings_path or paths.settings_path()), STORE_FILE_NAME))
+        self.ai_prefs = AiPrefs(self.settings, lambda s: paths.save_settings(s, settings_path))
+        self.ai_conn = AiConnection(self.ai_prefs, self.api_keys, debug=debug, parent=self)
         self._key_dialog = None
+        self._conn_popup = None
+        self._conn_alerted = None
         self.run_ctx = None
         self.setWindowTitle(APP_NAME)
         self.resize(1440, 860)
@@ -198,7 +206,11 @@ class MainWindow(QMainWindow):
             if self.stack.count() - 1 in DRAWING_SCREENS:
                 s.combo.currentTextChanged.connect(lambda _t, scr=s: self._drawing_changed(scr))
         self.screens[2].review_requested.connect(self.review_candidate)
+        self.ai_conn.fixed_match = self.screens[6].fixed_match  # 설정 창 고정 응답 '맞는 칸'(§3.5)
         self._status_bar()
+        self.ai_conn.changed.connect(self._update_conn_chip)
+        self.ai_conn.notice.connect(lambda text: self.toast(text, actions=[("AI 연결 설정", self.open_ai_settings)],
+                                                            ms=10000))
         self._menus()
         self._shortcuts()
         self.toast_box = Toast(central)
@@ -557,6 +569,7 @@ class MainWindow(QMainWindow):
             self._fit_explorer()
         if hasattr(self, "toast_box") and self.toast_box.isVisible():
             self.toast_box.place()
+        self._fit_conn_chip()
 
     # ------------------------------------------------------------ 상태 표시줄(U-06)
     def _status_bar(self):
@@ -568,22 +581,85 @@ class MainWindow(QMainWindow):
         self.chip_valid.hide()  # 열린 실행(이전 ④⑤)이 있을 때만
         self.task_label = QLabel("")
         self.saved_label = QLabel("")
-        self.msg_label = QLabel("")
+        self.msg_label = ElidedLabel("", elide=Qt.ElideMiddle)  # 상태줄이 모자라면 연결 칩보다 먼저 줄어든다(§5.1)
         self.msg_label.setObjectName("muted")
         self.keys_label = QLabel("Ctrl+P 명령 · ? 단축키")
         self.keys_label.setObjectName("muted")
         for w in (self.drawing_label, self.count_label, self.chip_valid):
             sb.addWidget(w)
-        self.ai_label = QLabel("")  # AI 연결 표시. 누르면(또는 Tab 후 Enter) API 키 설정 창
-        self.ai_label.setTextInteractionFlags(Qt.LinksAccessibleByMouse | Qt.LinksAccessibleByKeyboard)
-        self.ai_label.linkActivated.connect(lambda _: self.open_key_settings())
-        self._update_ai_label()
-        for w in (self.msg_label, self.task_label, self.saved_label, self.ai_label, self.keys_label):
+        self.conn_chip = ConnChip()  # AI 연결 칩(화면 설계 §5). 누르면(또는 Tab 후 Enter·Space) 상세 창
+        self.conn_chip.clicked.connect(self.open_conn_popup)
+        sb.addPermanentWidget(self.msg_label, 1)
+        for w in (self.task_label, self.saved_label, self.conn_chip, self.keys_label):
             sb.addPermanentWidget(w)
+        self._update_conn_chip()
         self._update_reviewer_label()
 
-    def _update_ai_label(self):
-        self.ai_label.setText(status_bar_html(self.api_keys))
+    def _update_conn_chip(self):
+        """칩 글자·모양·접근성 이름을 연결 상태 표(conn_view)로 다시 만든다. 실행할 수 없는 상태로 바뀔 때만
+        상태줄 메시지로도 알린다(화면 낭독기가 읽게, §10.3)."""
+        conn = self.ai_conn
+        this_run = conn.run_override is not None
+        method = conn.run_override or conn.method
+        status, model = conn.status(method), conn.model(method)
+        self.conn_chip.set_chip(conn_view.chip_look(method, status, this_run),
+                                conn_view.chip_text(method, status, model, False, this_run),
+                                conn_view.chip_text(method, status, model, True, this_run),
+                                conn_view.chip_accessible(method, status, model, this_run))
+        self._fit_conn_chip()
+        lk = conn_view.look(method, status["state"])
+        key = (method, status["state"])
+        if lk.can_start or status["state"] == "checking":
+            self._conn_alerted = None
+        elif key != self._conn_alerted:
+            self._conn_alerted = key
+            self.status_message("AI 연결(%s): %s." % (conn_view.METHOD_NAMES[method], lk.title))
+        if self._conn_popup is not None and self._conn_popup.isVisible():
+            self._conn_popup.fill(conn)
+
+    def _fit_conn_chip(self):
+        """넓은 형식이 실제로 들어가면 넓게, 아니면 좁게(창 폭 기준이 아님, §5.1). 메시지는 MSG_KEEP까지는 칩보다
+        먼저 자리를 받고, 그보다 길면 메시지가 말줄임으로 줄어든다(칩은 줄이지 않음). 나머지 칸은 지금 폭 그대로 센다."""
+        if not hasattr(self, "conn_chip"):
+            return
+        sb = self.statusBar()
+        fixed = [self.drawing_label, self.count_label, self.chip_valid, self.task_label, self.saved_label,
+                 self.keys_label]
+        used = sum(w.sizeHint().width() for w in fixed if not w.isHidden())
+        msg = min(self.msg_label.sizeHint().width(), MSG_KEEP) if self.msg_label.text() else 0
+        room = sb.width() - used - msg - 12 * (len(fixed) + 2)
+        chip = self.conn_chip
+        chip.set_narrow(chip.width_for(chip.wide) > min(room, 340))
+
+    def set_conn_status(self, status):
+        """⑤ 실행 흐름이 받은 연결 상태(ConnStatus)를 칩·설정 창에 반영한다."""
+        self.ai_conn.set_status(status)
+
+    def set_run_override(self, method):
+        """'API 키로 이어서 실행' 동안 칩을 'API 키 · 모델 · 이번 실행만'으로 둔다. None이면 되돌린다(D4)."""
+        self.ai_conn.set_run_override(method)
+
+    def open_conn_popup(self):
+        if self._conn_popup is None:
+            self._conn_popup = ConnPopup(self.conn_chip)
+            self._conn_popup.action.connect(self.conn_action)
+        self._conn_popup.fill(self.ai_conn)
+        self._conn_popup.show_above()
+        return self._conn_popup
+
+    def conn_action(self, name, method=None):
+        """칩 상세 창·해결 안내의 동작. method를 주면 그 방식에 대해 한다(없으면 지금 방식)."""
+        if name == "check":
+            self.ai_conn.check(method)
+        elif name == "to_api":
+            self.open_ai_settings("api")
+        elif name in ACTION_HELP:
+            show_help(self, ACTION_HELP[name])
+        else:  # settings와 설정 창에서 하는 동작(위치 지정·연결 시험·찾아보기·키 추가·오류 복사)
+            self.open_ai_settings(method)
+
+    def recheck_ai(self):
+        self.ai_conn.check()
 
     def _refresh_status(self):
         """왼쪽은 지금 도면과 개수, 오른쪽은 메시지·진행·저장·단축키 안내. 값이 없는 칸은 숨긴다."""
@@ -605,6 +681,7 @@ class MainWindow(QMainWindow):
         self.count_label.setText("   ".join(parts))
         for lab in (self.drawing_label, self.count_label, self.task_label, self.saved_label, self.msg_label):
             lab.setVisible(bool(lab.text()))
+        self._fit_conn_chip()
 
     def _menus(self):
         m = self.menu_bar
@@ -614,7 +691,7 @@ class MainWindow(QMainWindow):
         f.addAction("Excel 내보내기…", lambda: (self.go(3), self.screens[3].ask_excel()))
         f.addSeparator()
         f.addAction("설정(검토자 이름)…", self._ask_reviewer)
-        f.addAction("API 키 설정…", self.open_key_settings)
+        f.addAction("AI 연결 설정…", self.open_ai_settings)
         f.addSeparator()
         f.addAction("끝내기", self.close)
         v = m.addMenu("보기")
@@ -679,7 +756,8 @@ class MainWindow(QMainWindow):
                                 ("관련 항목 접기/펴기", "Ctrl+Alt+B", self.toggle_related),
                                 ("탐색기 접기/펴기", "", self.toggle_explorer),
                                 ("탐색기 필터", "Ctrl+Shift+E", self.focus_explorer_filter),
-                                ("단축키 표", "?", self.show_shortcuts), ("API 키 설정…", "", self.open_key_settings),
+                                ("단축키 표", "?", self.show_shortcuts), ("AI 연결 설정", "", self.open_ai_settings),
+                                ("AI 연결 다시 확인", "", self.recheck_ai),
                                 ("새 탭", "Ctrl+T", self.new_tab), ("오른쪽 분할 켜기/끄기", "Ctrl+\\", self.toggle_split),
                                 ("검토자 이름 설정…", "", self._ask_reviewer)):
             items.append(palette.Item("command", label, "", keys, lambda _n, f=fn: f()))
@@ -1209,9 +1287,12 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):  # noqa: N802
         if not self.can_leave():
+            self.screens[6].close_refused()
             event.ignore()
             return
-        self.screens[6].shutdown()
+        if not self.screens[6].shutdown():  # 진행 중인 AI 호출: 물은 뒤 기다리거나 끊고, 끝나면 다시 닫는다
+            event.ignore()
+            return
         self.tasks.wait(30000)
         self.webview.dispose()
         super().closeEvent(event)
@@ -1230,12 +1311,20 @@ class MainWindow(QMainWindow):
         if hasattr(self, "reviewer_label"):
             self.reviewer_label.setText("검토자 %s" % (n or "미설정"))
 
-    def open_key_settings(self):
-        if self._key_dialog is None:  # 연결 시험 작업이 창을 닫은 뒤에도 끝날 수 있어 창 하나를 재사용한다
-            self._key_dialog = SettingsDialog(self.api_keys, self)
-        self._key_dialog.refresh()
-        self._key_dialog.exec()
-        self._update_ai_label()
+    def open_ai_settings(self, method=None):
+        """'AI 연결 설정' 창. method를 주면 그 방식의 상세를 고른 채 연다(방식은 바꾸지 않음). 열 때 지금 방식을 다시
+        확인한다(API 키는 연결 시험을 누를 때만, 화면 설계 §2.4)."""
+        if self._key_dialog is None:  # 창 하나를 재사용한다(열린 동안 받은 확인 결과를 그대로 그림)
+            self._key_dialog = SettingsDialog(self.api_keys, self, conn=self.ai_conn)
+        dlg = self._key_dialog
+        dlg.say("")
+        dlg.select(method if method in dlg.pages else self.ai_conn.method)
+        if self.ai_conn.method != "api":
+            self.ai_conn.check()
+        dlg.refresh()
+        dlg.exec()
+        self._update_conn_chip()
+        return dlg
 
     def _ask_reviewer(self):
         name, ok = QInputDialog.getText(self, "검토자 이름", "검토자 이름", text=self.reviewer_name() or "")
@@ -1258,12 +1347,14 @@ class MainWindow(QMainWindow):
     def status_message(self, text):
         self.msg_label.setText(text)
         self.msg_label.setVisible(bool(text))
+        self._fit_conn_chip()
 
     def mark_saved(self, utc_iso):
         """저장됨 표시. 저장된 자료가 바뀌었으므로 도면 색인(탐색기·관련 항목·팔레트)도 다시 읽는다."""
         self.saved_label.setText("● 저장됨 %s" % kst_text(utc_iso)[11:16])
         self.saved_label.setToolTip("최근 저장 %s" % kst_text(utc_iso))
         self.saved_label.show()
+        self._fit_conn_chip()
         self.invalidate_index()
         self._refresh_explorer()
         self._refresh_status()
@@ -1273,6 +1364,7 @@ class MainWindow(QMainWindow):
     def _task(self, label):
         self.task_label.setText("진행 중: %s" % label if label else "")
         self.task_label.setVisible(bool(label))
+        self._fit_conn_chip()
 
     def _open_region(self):
         path, _ = QFileDialog.getOpenFileName(self, "구간 JSON", paths.work_path("데이터", "구간"), "JSON (*.json)")
@@ -1296,9 +1388,11 @@ class MainWindow(QMainWindow):
 
     def about_text(self):
         return ("%s %s\n자원 루트: %s\n작업 루트: %s\n저장 루트: %s\n설정: %s\n"
-                "AI 호출: ⑤ 분석 결과의 AI 분석 실행 때만 Claude API(api.anthropic.com), 웹뷰 외부 네트워크 차단\n\n제3자 라이선스 고지: %s\n%s"
+                "%s\n\n제3자 라이선스 고지: %s\n%s"
                 % (APP_NAME, APP_VERSION, paths.resource_root(), paths.work_root(), paths.store_root(),
-                   self.settings_path or paths.settings_path(), paths.licenses_dir(), LICENSE_NOTE))
+                   self.settings_path or paths.settings_path(),
+                   conn_view.ai_call_line(getattr(getattr(self, "ai_conn", None), "method", "api")),
+                   paths.licenses_dir(), LICENSE_NOTE))
 
     def _about(self):
         box = QMessageBox(QMessageBox.Information, "버전·데이터 위치", self.about_text(), parent=self)

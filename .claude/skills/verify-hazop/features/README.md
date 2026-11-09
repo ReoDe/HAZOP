@@ -19,6 +19,7 @@ Each row is a scenario in `scripts/check_user_scenarios.py`. The end state is wh
 | ③ knowledge graph | Ctrl+3, type in `태그·이름으로 찾기`, Ctrl+A Backspace, hover a node, click it, `로컬` button | S13 | `hzKG.state()`: `matches` > 0 then 0, `hover` set and non-neighbours fade (canvas alpha), `sel.id` set, `mode` local with fewer visible nodes, no `errors` |
 | ⑤ Excel export | palette `>Excel`, Enter in the scope dialog, type a path in the native save dialog | S12 | xlsx exists, worksheet scenario rows = saved entries, toast buttons `열기`·`폴더 열기` |
 | ④ node merge + confirm | palette `>확정 해제`, Space on `_SegList` items, M, Ctrl+Enter | S6 | `_SegList` item count drops, confirm text appears |
+| Subscription run, cancel, close | palette `>AI 연결 설정`, list item `Claude 구독`, Alt+U, palette `>AI 일괄 분석`, `취소`, Alt+F4, Enter | S15 | no `$` in confirm or progress, close question window `AI 분석 중에 닫기`, app exits, `ai_log[].via` has `subscription` |
 
 ## Gotchas
 

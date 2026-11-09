@@ -844,6 +844,16 @@ CONTRAST_PAIRS += [
     ("toast-link", "toast-bg", TEXT, "토스트 실행 취소 링크(U-07)"),
     ("err-line", "card", GRAPHIC, "위험 동작 버튼 테두리(U-10)"),
 ]
+# AI 연결 칩·상태 칩·해결 띠(디자인/AI연결-화면설계.md §10.4). warn-ink/warn-bg·err-ink/err-bg·ok/ok-bg는 위에 있다.
+# err-line/err-bg는 바탕만으로는 3:1을 맞출 수 없어(흰색이어도 3.08) 테두리 토큰 err-line을 진하게 했다(#d9776f → #cc665e)
+CONTRAST_PAIRS += [
+    ("ink-2", "surface-2", TEXT, "AI 연결 칩 글자(확인 안 함·확인 중·키 없음)"),
+    ("warn-line", "warn-bg", GRAPHIC, "AI 연결 칩 테두리(한도·로그인·미설치)"),
+    ("err-line", "err-bg", GRAPHIC, "AI 연결 칩 테두리(키 거부·연결 못 함)"),
+    ("line-strong", "surface-2", GRAPHIC, "AI 연결 칩 테두리(키 없음)·실행 중 잠금 띠"),
+    ("line-strong", "ai-hatch-a", GRAPHIC, "AI 연결 칩 점선 테두리(고정 응답 시험)"),
+    ("ai-ink", "ai-hatch-b", TEXT, "AI 연결 칩 글자(고정 응답, 빗금 진한 줄 위)"),
+]
 # ③ 지식그래프 노드 점·강조 간선(옵시디언식, 2026-11-08). 기본 간선 kg-edge는 반투명 배경선이라 쌍에 넣지 않고,
 # 관계를 읽어야 할 때(마우스 올림·선택) 쓰는 kg-edge-hi를 검사한다.
 CONTRAST_PAIRS += [(k, "kg-canvas", GRAPHIC, "③ 노드 점 / 캔버스") for k in (

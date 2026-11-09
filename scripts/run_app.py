@@ -73,6 +73,7 @@ def main(argv=None):
             print(f)
         win.close()
         return 0
+    win.ai_conn.start()  # 지금 연결 방식만 확인(구독은 작업 스레드에서 check(), API 키는 '확인 안 함' 그대로)
     code = app.exec()
     win.close()
     if lock is not None:

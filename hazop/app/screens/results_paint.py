@@ -2,6 +2,7 @@
 
 - CellDelegate: 행렬 칸 한 줄. 숫자 = 최고 위험도(〈표9〉 3단 색), 오른쪽 위 '미N' = 미검토 수.
   AI 실행 실패 칸은 위험도 색을 쓰지 않는다: 흰 바탕 + 빨강 점선 테두리 + '! 실패'(U-19, 결함 W-1).
+  구독 한도로 멈춘 칸은 실패와 구분한다: 주황 바탕 + 주황 실선 테두리 + '한도로 멈춤' 두 줄(화면 설계 §7.3, D6).
 - GroupHeader: 편차 머리 두 단(위 변수, 아래 가이드워드). 같은 변수가 이어진 열은 위 칸을 하나로 그린다.
 - SheetDelegate: 워크시트 첫 열 왼쪽 띠(AI 초안 회색, 선택 파랑), AI 근거 열의 ⚠ 경고는 빨강 테두리 칩(W-6).
 칸 상태는 아이템의 CELL_ROLE에 {"kind", "risk", "unreviewed", "scenarios"}로 둔다. 아이템 text()는 화면 읽기·테스트용
@@ -17,6 +18,7 @@ from hazop.app import tokens
 CELL_ROLE = Qt.UserRole + 10
 DRAFT_ROLE = Qt.UserRole + 11
 FAILED_TEXT = "! 실패"
+LIMIT_TEXT = "한도로\n멈춤"
 WARN_PREFIX = "⚠ "
 
 
@@ -36,6 +38,8 @@ def cell_style(state):
     c = tokens.COLORS
     if kind == "failed":
         return c["card"], c["err-ink"], {"color": c["err-ink"], "dash": True}, FAILED_TEXT
+    if kind == "limit":
+        return c["warn-bg"], c["warn-ink"], {"color": c["warn-line"], "dash": False}, LIMIT_TEXT
     if kind == "not_analyzed":
         return "hatch", c["muted"], None, "–"
     if kind == "running":
@@ -67,9 +71,10 @@ class CellDelegate(QStyledItemDelegate):
         if border:
             pen = QPen(QColor(border["color"]), 1.5, Qt.DashLine if border["dash"] else Qt.SolidLine)
             p.setPen(pen)
-            p.drawRect(r.adjusted(2, 2, -3, -3))
+            p.drawRect(r.adjusted(0, 0, -1, -1) if state["kind"] == "limit" else r.adjusted(2, 2, -3, -3))
         p.setPen(QColor(ink))
-        p.setFont(_font(tokens.FONT_SIZE["sm"], bold=state["kind"] in ("scored", "failed")))
+        p.setFont(_font(10 if state["kind"] == "limit" else tokens.FONT_SIZE["sm"],
+                        bold=state["kind"] in ("scored", "failed", "limit")))
         p.drawText(r, Qt.AlignCenter, text)
         if state["kind"] == "empty":
             p.setFont(_font(9))

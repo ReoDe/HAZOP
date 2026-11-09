@@ -125,6 +125,7 @@ def main():
         win = MainWindow(settings_path=os.path.join(tmp, "settings.json"), ask_reviewer=False)
         win.set_reviewer_name("검토자(예시)")
         win.api_keys.set(KEY, persist=False)
+        win.ai_prefs.choose("api")  # 가짜 API 클라이언트로 돌린다
         win.show()
         for w, h in SIZES:
             shutil.rmtree(paths.work_path("데이터", "분석결과"), ignore_errors=True)
