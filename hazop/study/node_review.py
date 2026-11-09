@@ -33,7 +33,9 @@ CALL_SECONDS_MEDIAN = 31.7
 CALL_SECONDS_P90 = 76.0
 CONCURRENCY = 2
 CONCURRENCY_GAIN = 1.4  # 동시 2의 실효 처리량(동시 1 대비)
-USAGE_PER_CALL = 0.027  # 호출 1회당 구독 7일 사용률 상승(%p). 150회에 0.12→0.16
+# 호출 1회당 구독 7일 사용률 상승(%p) 범위. 두 실측이 다르고 원인은 확인하지 못함:
+# 초기사건 계통 실행(2026-11-10 총괄 보고) 745회 0.25→0.35, U5 계통 실행(2026-11-09) 150회 0.12→0.16
+USAGE_PER_CALL = (0.013, 0.027)
 
 _STR = {"type": "string"}
 _STRS = {"type": "array", "items": _STR}
@@ -126,7 +128,7 @@ def estimate(n_calls, concurrency=CONCURRENCY):
     return {"calls": n_calls,
             "minutes": math.ceil(n_calls * CALL_SECONDS_MEDIAN / gain / 60) if n_calls else 0,
             "minutes_slow": math.ceil(n_calls * CALL_SECONDS_P90 / gain / 60) if n_calls else 0,
-            "usage_pp": round(n_calls * USAGE_PER_CALL, 2),
+            "usage_pp": tuple(round(n_calls * u, 2) for u in USAGE_PER_CALL),
             "concurrency": concurrency}
 
 

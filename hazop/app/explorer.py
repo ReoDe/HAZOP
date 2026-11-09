@@ -237,7 +237,8 @@ def results_module(win):
     rs = win.screens[6]
     confirmed = bool(ns) and ns.get("status") == "confirmed"
     shown = results if usable else None
-    summary = res.matrix_summary(shown) if shown else None
+    cached, counted = getattr(rs, "summary_of", (None, None))
+    summary = (counted if shown is cached else res.matrix_summary(shown)) if shown else None
     table = related.progress_table(shown, len(rs.deviations), summary) if shown else None
     rows = _result_rows(view)
     items = node_items(win, rows, ns, dn,

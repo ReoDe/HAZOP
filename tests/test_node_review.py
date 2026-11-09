@@ -70,7 +70,7 @@ class PlanTest(Base):
         e = nr.estimate(180)
         self.assertEqual(e["calls"], 180)
         self.assertEqual(e["minutes"], 68)  # 180 × 31.7초 ÷ 1.4 ≈ 68분
-        self.assertEqual(e["usage_pp"], 4.86)
+        self.assertEqual(e["usage_pp"], (2.34, 4.86))
         self.assertEqual(nr.estimate(14, concurrency=1)["minutes"], 8, "동시 1이면 1.4배를 쓰지 않음")
         self.assertEqual(nr.estimate(0)["minutes"], 0)
 

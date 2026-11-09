@@ -672,6 +672,8 @@ class ResultsScreen(QWidget):
         self.node_set = None   # 확정된 프로젝트 검토구간 집합만(저장·결과 기준은 이 원본)
         self.view = {}         # {node_id: 표기·경계를 붙인 구간(ctx.view)} 화면 표시용
         self.results = None
+        self.summary_of = (None, None)
+        self._empty = (None, None)
         self.kg, self.kg_reason = None, None
         self.node_review = None
         self.expectations = None  # 잠재 후보(expect.evaluate). AI 맥락·관련 잠재 후보 보기용, 근거 아님
@@ -1175,7 +1177,16 @@ class ResultsScreen(QWidget):
             self.stale_chip.show()
             return res.empty_results(node_set, self.deviations)
         self.stale_chip.hide()
-        return doc if doc is not None else res.empty_results(node_set, self.deviations)
+        return doc if doc is not None else self._empty_for(node_set)
+
+    def _empty_for(self, node_set):
+        """분석 전 빈 결과. 같은 확정본이면 지난번 것을 그대로 쓴다(1,800구간이면 만드는 데 0.3초, 결과 dict는 고칠 때마다
+        새로 만들어지므로 함께 써도 바뀌지 않는다)."""
+        key = (node_set["graph_id"], node_set.get("graph_version"), node_set.get("confirmed_at"),
+               tuple(n["node_id"] for n in node_set["nodes"]), tuple(d["deviation_id"] for d in self.deviations))
+        if self._empty[0] != key:
+            self._empty = (key, res.empty_results(node_set, self.deviations))
+        return self._empty[1]
 
     def set_results(self, doc):
         """결과 dict(hazop_study_results)를 보여 준다. 칸·워크시트·사용량은 이 dict에서만 그린다."""
@@ -1961,7 +1972,9 @@ class ResultsScreen(QWidget):
     def _fill_matrix(self):
         """칸 한 줄(U-20). 칸 글자·상태·툴팁은 MatrixModel이 보이는 칸만 계산하고, 그리기는 CellDelegate가 CELL_ROLE 상태로 한다.
         AI 실행 실패 칸은 위험도 색을 쓰지 않는다(U-19): 흰 바탕 + 빨강 점선 테두리 + '! 실패'."""
-        ns, summary = self._scope_set(), res.matrix_summary(self.results)
+        cached, counted = self.summary_of
+        ns, summary = self._scope_set(), counted if cached is self.results else res.matrix_summary(self.results)
+        self.summary_of = (self.results, summary)  # 탐색기·다음 진입이 같은 결과로 다시 세지 않게(결과는 바뀔 때마다 새 dict다)
         hidden = [n for n in self.node_set["nodes"] if _status(n) == "excluded"]
         runs = {(c["node_id"], c["deviation_id"]): c.get("ai_run") or {} for c in self.results["cells"]}
         shown = {n["node_id"] for n in ns["nodes"]}

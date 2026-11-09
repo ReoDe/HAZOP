@@ -175,6 +175,7 @@ class StudyNodesScreen(QWidget):
         self.review_doc = None  # AI 구간 검토 제안 묶음(node_review). 구간 파일과 따로 저장한다
         self.review_runner = None
         self._review_adj = None
+        self._adj_of = None     # _review_adj를 센 집합(같은 객체면 다시 세지 않음)
         self._review_checking = False  # 연결 확인 중(두 번 눌러 실행이 둘 생기지 않게)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(12, 10, 12, 10)
@@ -564,7 +565,11 @@ class StudyNodesScreen(QWidget):
         dn = self.ctx.drawing_number
         shown = self._shown()
         grades = nodes.screens(ns, self.graph)
-        self._review_adj = nr.adjacency(ns, self.graph)
+        # 제안이 있을 때만, 집합이 바뀔 때만 다시 센다(1,900구간이면 0.4초. 집합은 고칠 때마다 새 dict다)
+        if not (self.review_doc or {}).get("proposals"):
+            self._review_adj, self._adj_of = None, None
+        elif self._adj_of is not ns:
+            self._review_adj, self._adj_of = nr.adjacency(ns, self.graph), ns
         ai = self.review_pending()
         for n in shown:
             here = (n.get("members_by_drawing") or {}).get(dn, 0)
@@ -1481,8 +1486,10 @@ class StudyNodesScreen(QWidget):
                 ("예상 시간", "약 %d분, 느린 호출이 많으면 약 %d분 (동시 %d)" % (e["minutes"], e["minutes_slow"], e["concurrency"]),
                  "예상 시간 약 %d분" % e["minutes"])]
         if method == "subscription":
-            rows.append(("구독 사용량", "7일 사용률 약 +%.2f%%p (호출당 약 %.3f%%p)" % (e["usage_pp"], nr.USAGE_PER_CALL),
-                         "7일 사용률 약 %.2f퍼센트포인트 증가" % e["usage_pp"]))
+            low, high = e["usage_pp"]
+            rows.append(("구독 사용량", "7일 사용률 약 +%.2f~%.2f%%p (호출당 %.3f~%.3f%%p, 실측 두 번의 범위)"
+                         % (low, high, nr.USAGE_PER_CALL[0], nr.USAGE_PER_CALL[1]),
+                         "7일 사용률 약 %.2f에서 %.2f퍼센트포인트 증가" % (low, high)))
         elif method == "api":
             rows.append(("비용", "API 요금이 호출마다 붙습니다", "API 요금이 붙음"))
         rows += [("연결", link, link), ("저장", nr.store_path(self.node_set.get("project_id"), self.node_set["graph_id"]),
