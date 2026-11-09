@@ -37,7 +37,7 @@ def main(argv=None):
     ap.add_argument("--fixed-dir", action="append", default=[])
     ap.add_argument("--check", action="store_true", help="보고만 하고 파일을 바꾸지 않음")
     args = ap.parse_args(argv)
-    inputs = run.load_inputs(args.region, REPO_ROOT, graph_path=args.graph)
+    inputs = run.load_inputs(args.region, paths.work_root(), graph_path=args.graph, resource_root=paths.resource_root())
     if inputs["blockers"]:
         print("입력 차단 오류 — 계산하지 않음:")
         for b in inputs["blockers"]:

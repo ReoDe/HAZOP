@@ -98,7 +98,7 @@ def expected_problems(kg, graph, regions, exp):
 
 def a1_prime_problems(kg, graph, region_path):
     """A1′. ④ 분석 실행의 탐색(run.load_inputs + run.prepare_doc, AI 단계 전)과 A1을 비교한다."""
-    inputs = run.load_inputs(region_path, REPO_ROOT)
+    inputs = run.load_inputs(region_path, paths.work_root(), resource_root=paths.resource_root())
     if inputs["blockers"]:
         return ["④ 입력 차단: %s" % " / ".join(inputs["blockers"])]
     region = inputs["region"]
