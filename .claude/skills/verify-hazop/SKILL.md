@@ -24,7 +24,8 @@ One command prepares a temp work root, launches the app, runs the scenarios, wri
 ## Doctor
 
 - `git status --short`. Other sessions edit this folder. If `hazop/` is mid-edit and does not import, test a commit in a detached worktree instead (see the doc).
-- Is anyone else driving the desktop? Look for other `run_app.py` processes: `Get-CimInstance Win32_Process -Filter "Name like 'python%'" | ? CommandLine -like '*run_app.py*'`. If another agent's instance is open, do not run. Inputs go to the foreground window.
+- Is anyone else driving the desktop? Run `scripts/desktop_lease.py status`. `check_user_scenarios.py` takes the machine-wide lease itself (`%USERPROFILE%\.hazop\desktop.lock`, outside the Claude app's MSIX redirection of `%LOCALAPPDATA%`) and refuses with rc=2 while another live process holds it. Any ad-hoc driver script (one-off `ie_drive.py`-style scripts included) must run as `scripts/desktop_lease.py run --purpose "<what>" -- <command>` (a wrapped `check_user_scenarios.py` inherits the outer lease). Set `HAZOP_OWNER=<session name>` so others can see who holds it. Never hand the desktop over by message. Also look for stray `run_app.py`/`--_app` processes: `Get-CimInstance Win32_Process -Filter "Name like 'python%'" | ? CommandLine -match 'run_app.py|--_app'`. If another agent's instance is open, do not run. Inputs go to the foreground window.
+- The Claude desktop window can take the foreground mid-run (notifications, a new message). Keys then land in Claude's prompt box. Before a run, ask the user to leave the machine alone, and keep `--focus-wait` so `_guard` waits for a click instead of typing into another window.
 - Port 9339 free (the script refuses otherwise).
 
 ## Drive
@@ -37,7 +38,7 @@ One command prepares a temp work root, launches the app, runs the scenarios, wri
 
 ## Evidence
 
-`<out>/report.html` (scenario table, defects by severity with repro steps and screenshot, screen audit, KLM sources), `<out>/results.json`, `<out>/shots/`. These survive cleanup. A defect from a failed `expect` is a claim about the app only after you check its screenshot. Harness misses look the same.
+`<out>/report.html` (scenario table, defects by severity with repro steps and screenshot, screen audit, KLM sources), `<out>/results.json`, `<out>/shots/`. These survive cleanup. A defect from a failed `expect` is a claim about the app only after you check its screenshot. Harness misses look the same. A step that ran while the foreground window was not the app (for example "맨 앞 창: Claude", or a key that reached an `Edit '프롬프트'` control) is a harness miss: rerun it and never file it as an app defect. On 2026-11-09 a Ctrl+1 that went to Claude's prompt box was filed as "① '파일 선택…' 버튼이 없음".
 
 ## Cleanup
 

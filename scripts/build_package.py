@@ -137,7 +137,7 @@ QT_EXCLUDED_MODULES = (
 )
 # D10: 출처와 관계없이 묶음에 있으면 안 되는 이름(UCRT는 Windows 10 이상 시스템 구성요소, OpenSSL -x64는 PATH 경유)
 FORBIDDEN_NAME = re.compile(r"^(ucrtbase\.dll|api-ms-win-.*\.dll|lib(ssl|crypto)-3-x64\.dll)$", re.I)
-VENV_DIR = os.path.join(os.path.expanduser("~"), ".hazop", "venv-py312")  # 전용 venv(T2 D4)
+VENV_DIR = os.environ.get("HAZOP_VENV") or os.path.join(os.path.expanduser("~"), ".hazop", "venv-py312")  # 전용 venv(T2 D4)
 # 기반 CPython 판(T2 D4). 패치 판을 올리면 이 상수와 packaging/README.md·requirements를 함께 바꾼다.
 PYTHON_VERSION = (3, 12, 10)
 # HAZOP-check.exe가 실행할 검사·준비 스크립트(저장소 밖 사본에서 실행)가 가져오는 모듈을 묶기 위한 이름

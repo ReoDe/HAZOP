@@ -149,7 +149,12 @@ def main(argv=None):
     ap.add_argument("--samples-dir", default=None, help="SNP 샘플 폴더(기본: 자원 루트의 참고자료/P&ID 도면 샘플)")
     ap.add_argument("--baseline", default=BASELINE)
     ap.add_argument("--update", action="store_true", help="기준값을 지금 결과로 바꿈")
+    ap.add_argument("--force", action="store_true", help="HEAD와 다른(커밋 안 한) 기준값도 --update로 덮음")
     args = ap.parse_args(argv)
+    import devenv
+    devenv.require("apr1400")  # pdfplumber·networkx만 필요(PySide6는 요구하지 않음)
+    if args.update:
+        devenv.require_baseline_update(args.baseline, args.force)
     samples = os.path.abspath(args.samples_dir or default_samples_dir())
     tmp = tempfile.mkdtemp(prefix="hazop_snp_baseline_")
     old = os.environ.get(paths.ENV_WORK_ROOT)
@@ -163,6 +168,7 @@ def main(argv=None):
             os.environ[paths.ENV_WORK_ROOT] = old
         shutil.rmtree(tmp, ignore_errors=True)
     if args.update:
+        devenv.require_baseline_update(args.baseline, args.force)
         os.makedirs(os.path.dirname(args.baseline), exist_ok=True)
         with open(args.baseline, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(now, fh, ensure_ascii=False, indent=1, sort_keys=True)

@@ -27,7 +27,7 @@ from hazop.graph import build as graph_build  # noqa: E402
 HAS_CV = importlib.util.find_spec("cv2") is not None and importlib.util.find_spec("numpy") is not None
 HAS_OCR = importlib.util.find_spec("rapidocr_onnxruntime") is not None
 HEAVY = ("cv2", "numpy", "rapidocr_onnxruntime", "onnxruntime")  # 배포본에 넣지 않는 래스터 의존성(결정 D7)
-BUILD_VENV = os.path.join(os.path.expanduser("~"), ".hazop", "venv-py312")
+BUILD_VENV = os.environ.get("HAZOP_VENV") or os.path.join(os.path.expanduser("~"), ".hazop", "venv-py312")
 W, H = 1191, 842
 # 샘플 PNG와 같은 배율(2.75 px/pt, 가는 선 2 px)이 되도록 공칭 페이지 폭을 맞춘다
 SYN = {"nominal_page_width_pt": W / 2.75}

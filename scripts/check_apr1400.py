@@ -446,11 +446,22 @@ def main(argv=None):
     ap.add_argument("--pages", help="순번 몇 개만(쉼표). 점수 비교·갱신을 하지 않음")
     ap.add_argument("--score", default=SCORE)
     ap.add_argument("--update", action="store_true")
+    ap.add_argument("--force", action="store_true", help="HEAD와 다른(커밋 안 한) 기준값도 --update로 덮음")
     ap.add_argument("--out", help="쪽별 결과 CSV를 쓸 경로")
     args = ap.parse_args(argv)
+    import devenv
+    # 143쪽 전체 실행은 10GB 여유를 요구한다(HAZOP_MIN_FREE_GB로 바꿀 수 있음). --pages 몇 쪽 확인은 디스크를 보지 않는다
+    devenv.require("apr1400", need_gb=devenv.min_free_gb(10.0), check_disk=not args.pages)
+    if args.update:  # 오래 도는 검사라, 끝나고 덮기 전에 다시 본다(다른 세션이 그새 갱신했을 수 있음)
+        devenv.require_baseline_update(args.score, args.force)
     input_dir = os.path.abspath(args.input_dir or default_input_dir())
     catalog = os.path.abspath(args.catalog or os.path.join(os.path.dirname(input_dir), "도면목록.csv"))
     pages = {int(x) for x in args.pages.split(",")} if args.pages else None
+    from hazop.graph import project
+    codes_file = os.path.join(os.path.dirname(input_dir), project.SYSTEM_CODES_FILE)
+    if not pages and not os.path.isfile(codes_file):  # 빈 표로 매기면 후보가 조용히 0이 된다(시험 폴더 사고 2026-11-09)
+        print("계통 약어 표 없음: %s. 저장소 밖 시험 폴더라면 git이 추적하지 않는 입력도 복사할 것" % codes_file, file=sys.stderr)
+        return 2
     t = time.time()
     res = run(input_dir, catalog, args.jobs, pages)
     res["totals"]["seconds"] = round(time.time() - t)
@@ -472,6 +483,7 @@ def main(argv=None):
     saved = {"totals": res["totals"], "answer_key": res["answer_key"],
              "pages": {str(p["seq"]): {k: p.get(k, 0) for k in PAGE_HIGHER + PAGE_LOWER} for p in res["per_page"]}}
     if args.update:
+        devenv.require_baseline_update(args.score, args.force)
         os.makedirs(os.path.dirname(args.score), exist_ok=True)
         with open(args.score, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(saved, fh, ensure_ascii=False, indent=1, sort_keys=True)

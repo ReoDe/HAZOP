@@ -10,6 +10,7 @@
 import ast
 import os
 import re
+import subprocess
 import sys
 import unittest
 
@@ -38,29 +39,41 @@ def docstring_ids(tree):
     return ids
 
 
+def python_files(repo=REPO, tops=SCAN):
+    """git이 추적하는(스테이징 포함) .py만 본다. 같은 체크아웃에서 다른 세션이 둔 추적 안 한 임시 파일 때문에
+    모두의 시험이 깨지던 일을 막는다(2026-11-10 교훈). 새 파일은 git add 뒤에 검사된다. git이 없으면 폴더를 훑는다."""
+    try:
+        r = subprocess.run(["git", "-C", repo, "ls-files", "-z", "--"] + list(tops), capture_output=True)
+        if r.returncode == 0:
+            rels = r.stdout.decode("utf-8").split("\0")
+            return sorted(p for p in rels if p.endswith(".py") and os.path.isfile(os.path.join(repo, p)))
+    except OSError:
+        pass
+    out = []
+    for top in tops:
+        for d, dirs, files in os.walk(os.path.join(repo, top)):
+            dirs[:] = [x for x in dirs if x != "__pycache__" and not x.startswith(".")]
+            out += [os.path.relpath(os.path.join(d, f), repo).replace("\\", "/") for f in files if f.endswith(".py")]
+    return sorted(out)
+
+
 def violations(repo=REPO):
     out = []
-    for top in SCAN:
-        for d, dirs, files in os.walk(os.path.join(repo, top)):
-            dirs[:] = sorted(x for x in dirs if x not in ("__pycache__", "fake_claude") and not x.startswith("."))
-            for f in sorted(files):
-                if not f.endswith(".py"):
-                    continue
-                full = os.path.join(d, f)
-                rel = os.path.relpath(full, repo).replace("\\", "/")
-                if rel in ALLOW:
-                    continue
-                try:
-                    tree = ast.parse(open(full, encoding="utf-8").read(), rel)
-                except SyntaxError as e:
-                    out.append((rel, e.lineno or 0, "구문 오류"))
-                    continue
-                skip = docstring_ids(tree)
-                lines = open(full, encoding="utf-8").read().splitlines()
-                for node in ast.walk(tree):
-                    if (isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip
-                            and PATH_PART.search(node.value) and ALLOW_MARK not in lines[node.lineno - 1]):
-                        out.append((rel, node.lineno, node.value[:80]))
+    for rel in python_files(repo):
+        if rel in ALLOW or "/fake_claude/" in rel:
+            continue
+        full = os.path.join(repo, rel)
+        try:
+            tree = ast.parse(open(full, encoding="utf-8").read(), rel)
+        except SyntaxError as e:
+            out.append((rel, e.lineno or 0, "구문 오류"))
+            continue
+        skip = docstring_ids(tree)
+        lines = open(full, encoding="utf-8").read().splitlines()
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip
+                    and PATH_PART.search(node.value) and ALLOW_MARK not in lines[node.lineno - 1]):
+                out.append((rel, node.lineno, node.value[:80]))
     return sorted(out)
 
 

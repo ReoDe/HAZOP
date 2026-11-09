@@ -12,6 +12,7 @@ import json
 import multiprocessing
 import os
 import re
+import shutil
 import sys
 import tempfile
 
@@ -45,6 +46,8 @@ def one(job):
         ex = pdf_vector.extract(path, page=0, repo_root=work)
     except Exception as e:  # 이미지 쪽 등
         return seq, None, str(e)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)  # 쪽마다 빈 폴더가 남아 2,000개 넘게 쌓였다(2026-11-10)
     kinds = target_kind(ex)
     rows = []
     for u in ex["validation"]["unknowns"]:

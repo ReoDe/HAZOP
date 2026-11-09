@@ -2,7 +2,7 @@
 같은 방법으로 수정 전후를 비교한다. 실제 창을 띄우지 않으므로 화면 그리기(GPU·창 합성) 시간은 빠진다.
 
 사용:
-  python scripts/bench_results_screen.py --trial C:/Users/kim92/HAZOP-trials/apr1400-2026-11-09 [--runs 5]
+  python scripts/bench_results_screen.py --trial <저장소 밖 시험 폴더> [--runs 5]
       [--root <임시 작업 루트>] [--code <코드 저장소>] [--fresh] [--fill N] [--profile <out.prof>] [--json <out.json>]
 
 - --code: 시험할 코드가 있는 저장소(기본은 이 스크립트의 저장소). 수정 전 코드는 `git archive`로 푼 사본을 준다.

@@ -22,8 +22,7 @@ from hazop.study import results as res  # noqa: E402
 from tests.test_study_export import KEY, NOW, _entry, sample  # noqa: E402
 
 # §3.4 예시 Excel(make_ie_example.py)의 시트 순서·머리글 그대로. 예시 파일이 있으면 그것과도 맞춰 본다(IeExampleTest)
-EXAMPLE_XLSX = os.environ.get("HAZOP_IE_EXAMPLE_XLSX", r"C:\Users\kim92\AppData\Local\Temp\claude\651b8b1fdf982330"
-                              r"\414338d8-0829-4c60-8f87-e0356dc53783\scratchpad\IE인계묶음-예시.xlsx")  # 설계 §3.4
+EXAMPLE_XLSX = os.environ.get("HAZOP_IE_EXAMPLE_XLSX", "")  # 설계 §3.4 예시 파일(없으면 IeExampleTest를 건너뜀)
 EXPECTED = {
     "읽는 법": ["항목", "내용"],
     "IE 후보": ["후보 ID", "판정", "정상운전 교란", "안전기능 도전", "도전받는 안전기능", "원인", "원인 유형", "원인 위치",

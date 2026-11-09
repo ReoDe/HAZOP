@@ -1684,8 +1684,18 @@ def main(argv=None):
     if sys.platform != "win32":
         print("Windows에서만 동작합니다(UI Automation·SendInput)")
         return 2
-    return run(os.path.abspath(args.out), set(args.only.split(",")) if args.only else None, args.keep_temp,
-               args.focus_wait)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import devenv
+    try:  # 실제 데스크톱은 한 번에 하나만(scripts/desktop_lease.py)
+        devenv.acquire_desktop("check_user_scenarios %s" % (args.only or "전체"))
+    except devenv.DesktopBusy as exc:
+        print(exc)
+        return 2
+    try:
+        return run(os.path.abspath(args.out), set(args.only.split(",")) if args.only else None, args.keep_temp,
+                   args.focus_wait)
+    finally:
+        devenv.release_desktop()
 
 
 if __name__ == "__main__":
