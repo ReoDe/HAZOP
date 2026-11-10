@@ -135,3 +135,24 @@ SNP 묶음은 만들지 않았다. 옮긴 규칙 가운데 합성 샘플에만 �
 | `scripts/run_ci.py` | 시험 2074, 실패 0, 오류 0, 건너뜀 21, 검사 스크립트 10개 rc=0 |
 
 시험 수는 `4e55e62`의 2064에서 10 늘었다(`tests/test_symbols.py`의 `RuleTemplateTest` 6건, `CommonRuleTest` 4건). `CommonRuleTest`는 옮기기 전 표를 기대값으로 두고, 낱말 17개(규칙에 나오는 16개와 무관한 낱말 하나)의 모든 조합(131,072가지)에서 옛 표와 같은 종류가 나오는지 본다.
+
+### 커밋 뒤 확인 (`16c3536`, 작업트리 깨끗함, 시험용 venv)
+
+| 확인 | 결과 |
+| --- | --- |
+| SNP 추출·그래프 JSON을 다시 만들어 `f1-0-before-snp-hashes.json`과 대조 | 바이트 같음 24/24, `graph_version` 다른 것 0/12 |
+| `scripts/build_package.py --with-check --build` | rc=0. datas 78개(`ddb4c46`의 F1-0 빌드는 59개, 사전 항목 19개만큼 늘었다). 결과 폴더 검사·바이너리 검사 통과 |
+| 묶음 안 사전 | `_internal/resources/library/symbols/common/`에 항목 파일 20개 |
+| `packaging/verify_bundle.py`(`scripts/desktop_lease.py run` 안에서) | rc=0, '오류 없음, 결과 통과'. 묶음 파일 2,660개(F1-0 때 2,641개), `pdf_problems: []` |
+
+로그는 시험 폴더 `D:\HAZOP-trials\2026-11-11-unit-f1\f1-1\`의 `build.log`, `verify.log`, `verify-out/`에 있다. 빌드 폴더는 확인 뒤 지웠다. 배포용(`--with-check` 없는) 빌드는 돌리지 않았다.
+
+## F1-2: 사전 판을 실행 정보에 (D8) — 구현하지 않고 자리부터 묻는다
+
+기획서 D8이 말하는 '등록 기록의 추출 실행 정보'에 해당하는 저장 자리가 지금 코드에 없다. 후보가 둘 이상으로 갈려 구현하지 않았다. 확인한 사실은 다음과 같다(`16c3536`의 코드를 읽은 것).
+
+- 등록정보(`store/<프로젝트>/registrations/<자료 ID>/<버전>.json`)는 추출 전에 쓰고, 등록이 끝난 버전은 고치지 않는다(`hazop/register/registry.py` 머리말). 추출 실행을 적는 필드는 없다.
+- 자료 목록(`store/<프로젝트>/registry.json`)은 고칠 수 있는 색인이지만 등록 모듈만 쓴다. 추출 단계는 저장소를 읽기만 한다(`registry.load_for_extraction`).
+- 추출 결과 폴더(`<작업 루트>/output/extract/<이름>/`)에는 `extraction.json`, `validation_report.md`, `page.svg`, 추출하지 못한 쪽의 `not_extracted.json`이 있다. 그래프는 `extraction.json`만 읽는다(`scripts/build_graph.py`의 `build_one`, `hazop/graph/build.py`의 `_graph_version`).
+
+선택지와 권장안은 세션 보고(`unit-F1-1-2-report.md`)에 적었다.
