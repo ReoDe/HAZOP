@@ -165,6 +165,42 @@ GitHub 기계는 매번 새로 깔린 빈 Windows다. 공개 저장소용 표준
 4. **CI가 실패하면 PR 합치기를 막을까요?** 막으면 안전하지만, 글꼴 같은 CI 기계 문제로 급한 PR이 멈출 수 있다. 처음 몇 주는 알림만 받고 나중에 막는 순서를 권한다.
 5. **빌드본을 GitHub에 올려도 되나요?** 지금 결정(내부용, LGPL 판단 보류)으로는 안 된다. c를 하려면 이 결정이 먼저 바뀌어야 한다.
 
+## 7. 첫 실행 결과
+
+가벼운 CI(b)를 `.github/workflows/tests.yml`로 들였다. 워크플로는 Python을 깔고 `scripts/preflight.py --profile test`와 `scripts/run_ci.py`만 부른다. 무엇을 돌릴지는 `run_ci.py`의 `CHECKS`·`NOT_IN_CI` 표가 정한다. `tests/test_ci_config.py`가 두 표에 모든 `scripts/check_*.py`가 들어 있는지, 워크플로가 가리키는 파일이 있는지, SHA 고정·읽기 권한·비밀값 0을 지키는지 본다. 이름 이전 단위가 경로를 바꾸면 이 시험이 먼저 깨진다.
+
+### 로컬 리허설 (2026-11-10, 이 PC)
+
+조건: `D:\HAZOP-trials\ci-rehearsal-20261110\`에 HEAD 3db5f55를 `git clone --no-local`로 받고 새 CI 파일 3개를 얹었다. 새 venv(Python 3.12.10)에 워크플로와 같은 두 줄로 설치했다(`--no-cache-dir`). `HAZOP_WORK_ROOT`는 그 아래 빈 폴더, `QT_QPA_PLATFORM=offscreen`이다. 이 PC는 맑은 고딕이 있고, 임시 폴더는 C:, 작업 폴더는 D:다. 러너 시간과 섞어 읽지 않는다.
+
+| 항목 | 1차 (검사 19개) | 2차 (확정한 검사 10개) |
+| --- | --- | --- |
+| 설치 | 29초, 성공 | 같은 venv |
+| unittest | 1,761개, 실패 0, 건너뜀 23, 348초 | 1,761개, 실패 0, 건너뜀 23, 334초 |
+| 검사 스크립트 | 6개 실패, 1,484초 | 10개 모두 rc 0, 87초 |
+| `run_ci.py` 전체 | rc 1, 1,835초 | rc 0, 422초 |
+
+건너뜀 23개의 이유는 OpenCV·rapidocr 없음 14(결정 D7, raster venv 몫), anthropic SDK 없음 5, 저장소 밖 출력·예시 파일 없음 3, pefile 없음 1이다. 모두 '없는 것'을 이유로 건너뛴다. 같은 날 `D:\HAZOP`에서 평소 venv로 돌린 unittest는 1,761개 중 20개를 건너뛰었다(실패 0, 347초). 차이 3개는 깨끗한 복제에 없는 저장소 밖 출력·예시 파일 몫이다.
+
+1차에서 뺀 검사는 두 갈래다.
+
+- `check_analysis`, `check_expect`, `check_kg`, `check_kg_algo`, `check_contract`는 작업 루트의 git 제외 데이터(`데이터/구간`, `데이터/지식`, `출력/그래프`, `출력/분석`)를 읽는다. 깨끗한 복제에는 그 데이터가 없어 실패한다.
+- `check_extract`, `check_graph`, `check_register`, `check_viewer`는 안에서 unittest 전체를 다시 돈다. 하나에 330~395초가 걸려 같은 시험을 네 번 더 도는 셈이다. 이 스크립트들에 unittest를 끄는 옵션이 생기면 앞부분 검사만 CI에 넣는다(후속).
+
+1차의 `check_extract` 안 unittest에서 `test_ai_run_flow.SubscriptionFlowTest.test_close_now_kills_and_closes`가 한 번 실패했다(창이 30초 안에 닫히지 않음). 같은 실행의 본 unittest와 2차에서는 통과했다. 간헐 실패라서 건너뛰기 표시를 하지 않고 후속으로 남긴다.
+
+### 확정한 CI 검사 목록
+
+`check_adapter`, `check_compare`, `check_corrections`, `check_export`, `check_kg_context`, `check_review`, `check_study_nodes`, `check_symbols`, `check_version_migration`, `check_snp_baseline`. 빼는 검사와 이유는 `scripts/run_ci.py`의 `NOT_IN_CI`에 있다.
+
+### 러너에서만 하는 건너뛰기 표시
+
+아직 없다. GitHub 첫 실행 뒤 러너 고유 원인으로 표시를 달면 여기에 시험 이름, 이유, run id를 적는다.
+
+### GitHub 첫 실행
+
+총괄이 푸시한 뒤 run id, 걸린 시간(설치·unittest·검사), 진단 줄(맑은 고딕 유무, 드라이브)을 여기에 적는다.
+
 ## 미확인 목록
 
 - GitHub Windows 기계에 맑은 고딕(`malgun.ttf`)이 있는지
