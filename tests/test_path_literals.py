@@ -23,6 +23,7 @@ ALLOW = {
     "scripts/codemod_data_paths.py",
     "scripts/seed_samples.py",
     "tests/test_path_literals.py",
+    "tests/test_naming_rules.py",
 }
 # 사용자 데이터·배치 계약을 그대로 적어야 하는 줄은 끝에 "# 경로문자열-허용: <이유>"를 단다
 ALLOW_MARK = "# 경로문자열-허용:"

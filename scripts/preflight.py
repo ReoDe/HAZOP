@@ -4,7 +4,9 @@
   <시험용 venv python> scripts/preflight.py --profile apr1400 --min-free-gb 10
   <시험용 venv python> scripts/preflight.py --clean-temp     # 남은 hazop_* 임시 폴더를 지움(2시간 넘은 것만)
 
-통과하면 rc=0, 막히는 문제가 있으면 rc=2. 경고(임시 폴더가 큼, 기준값이 HEAD와 다름)는 rc를 바꾸지 않는다.
+통과하면 rc=0, 막히는 문제가 있으면 rc=2. 경고는 rc를 바꾸지 않는다. 경고하는 것: 임시 폴더가 큼, 기준값이 HEAD와 다름,
+저장소 밖 시험 폴더(저장소 옆 `<저장소 이름>-trials`, 환경변수 HAZOP_TRIALS_ROOT로 바꿈)가 이름 규칙 §4.11과 다름, 병합된 로컬 브랜치,
+폴더가 없는 작업트리 기록.
 """
 
 import argparse
@@ -69,6 +71,7 @@ def main(argv=None):
                                                                      for d, g in big)))
     for b in sorted(glob.glob(os.path.join(devenv.REPO_ROOT, "tests", "baselines", "*.json"))):
         warn += ["경고: " + x for x in devenv.baseline_update_problems(b)]
+    warn += devenv.trials_warnings() + devenv.git_leftover_warnings()
 
     for line in warn:
         print("주의: %s" % line)

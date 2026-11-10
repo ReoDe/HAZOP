@@ -10,6 +10,7 @@
 
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -190,6 +191,76 @@ def sweep_stale_temp(older_than_hours=24, base=None):
         if not os.path.exists(p):
             gone.append(p)
     return gone
+
+
+ENV_TRIALS_ROOT = "HAZOP_TRIALS_ROOT"
+TRIAL_NAME = re.compile(r"\d{4}-\d{2}-\d{2}-[a-z0-9]+(-[a-z0-9]+)*\Z")
+KEEP_UNTIL = re.compile(r"keep_until\W{0,4}(forever|\d{4}-\d{2}-\d{2})")
+
+
+def trials_root():
+    """저장소 밖 시험 폴더. 기본은 저장소 옆 `<저장소 이름>-trials`."""
+    return os.environ.get(ENV_TRIALS_ROOT) or REPO_ROOT + "-trials"
+
+
+def _some(names, limit=5):
+    names = sorted(names)
+    return ", ".join(names[:limit]) + (" 외 %d개" % (len(names) - limit) if len(names) > limit else "")
+
+
+def trials_warnings(root=None, today=None):
+    """시험 폴더가 이름 규칙 §4.11을 지키는지 본다(HZ-GOV-02 §8.2). 다른 세션의 폴더 때문에 내 시험이 막히면
+    안 되므로 경고만 낸다."""
+    import datetime
+    root = root or trials_root()
+    today = today or datetime.date.today().isoformat()
+    if not os.path.isdir(root):
+        return []
+    loose, bad_name, no_readme, no_keep, expired = [], [], [], [], []
+    for name in sorted(os.listdir(root)):
+        full = os.path.join(root, name)
+        if not os.path.isdir(full):
+            if name != "README.md":
+                loose.append(name)
+            continue
+        if not TRIAL_NAME.match(name):
+            bad_name.append(name)
+        try:
+            with open(os.path.join(full, "README.md"), encoding="utf-8", errors="replace") as f:
+                keep = KEEP_UNTIL.search(f.read())
+        except OSError:
+            no_readme.append(name)
+            continue
+        if not keep:
+            no_keep.append(name)
+        elif keep.group(1) != "forever" and keep.group(1) < today:
+            expired.append(name)
+    rows = (
+        (loose, "루트에 낱개 파일 %d개: %s"),
+        (bad_name, "이름이 YYYY-MM-DD-<slug>가 아닌 폴더 %d개: %s"),
+        (no_readme, "README.md가 없는 폴더 %d개: %s"),
+        (no_keep, "README에 keep_until이 없는 폴더 %d개: %s"),
+        (expired, "keep_until이 지난 폴더 %d개(지우기는 사람 확인 뒤): %s"),
+    )
+    return ["시험 폴더 %s %s" % (root, text % (len(names), _some(names))) for names, text in rows if names]
+
+
+def git_leftover_warnings(main="main"):
+    """main에 병합된 로컬 브랜치와, 폴더가 없어진 작업트리 기록."""
+    out = []
+    merged = _git("branch", "--merged", main, "--format=%(refname:short)")
+    current = _git("symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
+    if merged.returncode == 0:
+        names = [b for b in merged.stdout.split() if b not in (main, current)]
+        if names:
+            out.append("%s에 병합된 로컬 브랜치 %d개: %s" % (main, len(names), _some(names)))
+    trees = _git("worktree", "list", "--porcelain")
+    if trees.returncode == 0:
+        gone = [line[len("worktree "):] for line in trees.stdout.splitlines()
+                if line.startswith("worktree ") and not os.path.isdir(line[len("worktree "):])]
+        if gone:
+            out.append("폴더가 없는 작업트리 기록 %d개: %s" % (len(gone), _some(gone)))
+    return out
 
 
 def require_baseline_update(path, force=False):
