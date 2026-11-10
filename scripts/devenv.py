@@ -16,6 +16,9 @@ import sys
 import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO_ROOT)
+
+from hazop import paths as hp  # noqa: E402
 
 # 시험용 venv(빌드 venv와 같음): %USERPROFILE%\.hazop\venv-py312. 다른 곳으로 옮기면 HAZOP_VENV로 알려 준다.
 ENV_VENV = "HAZOP_VENV"
@@ -83,8 +86,6 @@ def disk_problems(paths=None, need_gb=None):
     """작업 루트·임시 폴더(기본) 드라이브마다 여유가 need_gb보다 적으면 이유 목록을 돌려준다."""
     need = min_free_gb() if need_gb is None else need_gb
     if paths is None:
-        sys.path.insert(0, REPO_ROOT)
-        from hazop import paths as hp
         paths = [hp.work_root(), tempfile.gettempdir()]
     seen, bad = set(), []
     for p in paths:
@@ -105,9 +106,9 @@ def _git(*args):
 
 
 # 점수에 닿는 입력: 코드, 기호 사전(pdf_vector가 폴더를 훑어 읽음), APR1400 정답지
-SCORING_PATHS = ("hazop", "scripts", "자원/기준/기호", "tests/fixtures/apr1400")
+SCORING_PATHS = ("hazop", "scripts", hp.folder_rel("기호"), "tests/fixtures/apr1400")
 # 이 아래는 추적 안 한 새 파일도 읽히므로 그것까지 본다
-SCORING_UNTRACKED = ("자원/기준/기호",)
+SCORING_UNTRACKED = (hp.folder_rel("기호"),)
 
 
 def baseline_update_problems(path, force=False, code_paths=SCORING_PATHS, untracked_paths=SCORING_UNTRACKED):

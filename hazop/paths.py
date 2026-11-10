@@ -43,6 +43,20 @@ def rel_or_abs(path, root):
     return rel.replace("\\", "/")
 
 
+EXTERNAL_BACKUP_DIR = "_외부"
+
+
+def backup_rel(path, root):
+    """백업 폴더 아래 path를 둘 자리(상대 경로). root 안이면 root 기준 경로, 밖이면(다른 드라이브, '작업2' 같은 형제 폴더)
+    _외부/<드라이브>/<나머지 경로>. 결과에 '..'나 드라이브 표시가 없으므로 os.path.join(백업 폴더, 결과)가 백업 폴더 밖으로
+    나가거나 원본 자리로 바뀌지 않는다. rel_or_abs는 기록용이라 절대 경로를 돌려줄 수 있어 이 자리에 쓰면 안 된다."""
+    path, root = os.path.abspath(path), os.path.abspath(root)
+    if _inside(path, root):
+        return path[len(root):].lstrip("\\/")
+    drive, rest = os.path.splitdrive(path)
+    return os.path.join(EXTERNAL_BACKUP_DIR, safe_name(drive, "_"), rest.lstrip("\\/"))
+
+
 # ---------------------------------------------------------------- 자원 루트·작업 루트 (기획서/인터페이스.md §7.1)
 # 자원 루트(읽기 전용): 기준 자료(자원/기준/이탈후보·기준표·패턴), 기법 지침서. 폴더 위치는 아래 FOLDERS 표가 정한다.
 #   뷰어 템플릿은 패키지 안(hazop/viewer/template.html)에 두므로 패키지 위치를 그대로 쓴다.

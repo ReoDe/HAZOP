@@ -28,8 +28,7 @@ def build_one(extraction_path, out_root):
     folder = os.path.basename(os.path.dirname(extraction_path))
     # ② 사람 수정 기록을 매번 다시 적용한다(다시 추출해도 수정 유지, extraction.json은 원본 그대로)
     extraction = corrections.apply_saved(extraction, folder)
-    rel = os.path.relpath(extraction_path, paths.work_root()).replace("\\", "/")
-    graph = build.build_graph(extraction, extraction_file=rel)
+    graph = build.build_graph(extraction, extraction_file=paths.rel_or_abs(extraction_path, paths.work_root()))
     # 추출 결과 폴더 이름을 그대로 쓴다(--samples: 도면번호, 등록 경로: <자료 ID>-r<버전>). 뷰어도 같은 이름으로 그래프를 찾는다.
     name = paths.safe_name(folder)
     out_dir = paths.safe_join(out_root, name)
@@ -65,7 +64,7 @@ def main(argv=None):
         print("%s: %s nodes=%d edges=%d components_physical=%d unknowns=%d -> %s" % (
             graph["source"]["drawing_number"] or os.path.basename(out_dir), graph["validation"]["status"], s["node_count"],
             s["edge_count"], s["components_physical"], len(graph["validation"]["unknowns"]),
-            os.path.relpath(out_dir, paths.work_root())))
+            paths.rel_or_abs(out_dir, paths.work_root())))
         built += 1
         blocked += graph["validation"]["status"] != "passed"
     return 1 if blocked or not built else 0

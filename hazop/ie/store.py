@@ -95,7 +95,7 @@ def backup(project_id, label=BACKUP_LABEL):
     같은 시각 폴더가 이미 있으면 -2, -3 …을 붙여 옛 백업을 덮어쓰지 않는다."""
     path = store_path(project_id)
     stamp = now_utc().replace(":", "").replace("-", "")
-    rel = os.path.relpath(path, paths.work_root())
+    rel = paths.backup_rel(path, paths.work_root())
     folder, n = "%s-%s" % (stamp, label), 1
     while os.path.exists(paths.folder("백업", folder)):
         n += 1

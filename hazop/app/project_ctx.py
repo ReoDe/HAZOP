@@ -254,8 +254,7 @@ def backup(paths_to_copy, label):
     stamp = sn.now_utc().replace(":", "").replace("-", "")
     root = paths.folder("백업", "%s-%s" % (stamp, label))
     for p in paths_to_copy:
-        rel = os.path.relpath(p, paths.work_root())
-        dst = os.path.join(root, rel)
+        dst = os.path.join(root, paths.backup_rel(p, paths.work_root()))
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copy2(p, dst)
     return root
