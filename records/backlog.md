@@ -409,3 +409,11 @@ HEAD d411d15(5028fcd 포함) 재실행 결과(`출력/사용자검증/2026-11-07
 - 다른 문서의 ①~⑤ 표기: `design/screen-spec.md`, `packaging/README.md`, `.claude/skills/verify-hazop/features/README.md`, `hazop/app/screens/__init__.py` docstring
 - 판 0.2.0 배포본을 실제로 빌드한 기록이 없다(코드의 판 번호와 빌드 스크립트만 확인)
 - README '프로젝트 방향'의 AI 연결 순서는 INTENT §7 5번 답 대기
+
+## AI 구간 검토(단위 G) 후속(2026-11-11)
+
+- g1 실제 구독 소량 실측(SNP 6장, 호출 3회)은 사용자가 직접 돌린다. 지금 `specs/study-node-segmentation.md` §4.7의 호출당 시간은 ⑤ 칸 분석 값을 빌린 추정이다.
+- g4 도면 위 제안 경계 점선, g5 제외 묶음의 조각 경계 보내기는 하지 않았다.
+- 실제 창 확인(`check_user_scenarios.py` S9·S11)은 아직 돌리지 않았다. 이 PC의 개발 작업 루트 `D:\HAZOP\작업`이 옛 배치라 열리지 않으므로 옮긴 뒤 확인한다.
+- 단위 G 뒤의 제안은 `knowledge_fp` 열쇠를 달고 있다. 검토를 돌린 뒤 ④를 처음 열 때 지식그래프를 한 번 읽는다. 여는 시간은 재지 않았다.
+- 143쪽 전체 AI 구간 검토(약 320회)는 돌리지 않았다. 돌리려면 사용자 결정이 필요하다.
