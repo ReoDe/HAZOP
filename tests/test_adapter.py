@@ -21,7 +21,7 @@ sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
 import check_adapter  # noqa: E402
-from hazop.extract import drawio  # noqa: E402
+from hazop.extract import drawio, runinfo  # noqa: E402
 from hazop.extract.adapters import align  # noqa: E402
 from hazop.extract.adapters import evaluation as ev  # noqa: E402
 from hazop.extract.adapters import pdf_vector  # noqa: E402
@@ -633,7 +633,7 @@ class PdfViewerPathTest(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(out)), ["SNP-M-101", "SNP-M-102-p1", "merged-p2"])
         with open(os.path.join(out, "SNP-M-102-p1", "extraction.json"), encoding="utf-8") as fh:
             self.assertEqual(json.load(fh)["source_context"]["page_id"], "page-2")
-        self.assertEqual(os.listdir(os.path.join(out, "merged-p2")), [extract_pdf.NOT_EXTRACTED])
+        self.assertEqual(sorted(os.listdir(os.path.join(out, "merged-p2"))), [runinfo.FILE_NAME, extract_pdf.NOT_EXTRACTED])
         self.assertIn("p2: 미추출", buf.getvalue())
 
     def test_reextract_switches_page_state_without_leftovers(self):
@@ -646,7 +646,7 @@ class PdfViewerPathTest(unittest.TestCase):
         with mock.patch.object(extract_pdf.pdf_vector, "extract", side_effect=ValueError("읽기 실패")):
             done, skipped = extract_pdf.run_pages(self.pdf, tmp, [0], out_name=name)
         self.assertEqual((done, len(skipped)), ([], 1))
-        self.assertEqual(os.listdir(os.path.join(tmp, "page")), [extract_pdf.NOT_EXTRACTED])
+        self.assertEqual(sorted(os.listdir(os.path.join(tmp, "page"))), [runinfo.FILE_NAME, extract_pdf.NOT_EXTRACTED])
         done, _ = extract_pdf.run_pages(self.pdf, tmp, [0], out_name=name)
         self.assertEqual(len(done), 1)
         self.assertNotIn(extract_pdf.NOT_EXTRACTED, os.listdir(os.path.join(tmp, "page")))

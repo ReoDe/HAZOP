@@ -196,12 +196,69 @@ F1-1 뒤의 코드는 밸브·계기·설비를 사전의 `structure`·`label_wo
 - `9d51869`를 `core.autocrlf=true`로 새로 뽑은 분리 작업트리에서도 같은 판이 나온다. 그 사본에서 다른 파일(`hazop/extract/symbols.py`)은 CRLF로 풀렸고 사전 JSON 41개는 LF로 풀렸다. 작업트리는 확인 뒤 지웠다.
 - 그림(`.png`) 21개는 규칙을 더하기 전에도 git이 내용으로 바이너리라고 판정해 줄 끝을 바꾸지 않았다(`i/-text w/-text`). 이제는 속성으로도 `text: unset`이다.
 
-## F1-2: 사전 판을 실행 정보에 (D8) — 구현하지 않고 자리부터 묻는다
+## F1-2: 사전 판을 추출 결과 폴더에 남긴다 (D8)
 
-기획서 D8이 말하는 '등록 기록의 추출 실행 정보'에 해당하는 저장 자리가 지금 코드에 없다. 후보가 둘 이상으로 갈려 구현하지 않았다. 확인한 사실은 다음과 같다(`16c3536`의 코드를 읽은 것).
+기획서 D8은 사전 판을 '등록 기록의 실행 정보'에 둔다고 적었는데, 그 자리가 코드에 없었다. 총괄이 추출 결과 폴더의 곁 파일로 정했다(2026-11-11). 기획서에는 `specs/pid-symbol-dictionary.md` §8 표 아래 'D8의 실제 저장 자리'로 적었다(결정 행의 글자는 그대로다).
 
-- 등록정보(`store/<프로젝트>/registrations/<자료 ID>/<버전>.json`)는 추출 전에 쓰고, 등록이 끝난 버전은 고치지 않는다(`hazop/register/registry.py` 머리말). 추출 실행을 적는 필드는 없다.
-- 자료 목록(`store/<프로젝트>/registry.json`)은 고칠 수 있는 색인이지만 등록 모듈만 쓴다. 추출 단계는 저장소를 읽기만 한다(`registry.load_for_extraction`).
-- 추출 결과 폴더(`<작업 루트>/output/extract/<이름>/`)에는 `extraction.json`, `validation_report.md`, `page.svg`, 추출하지 못한 쪽의 `not_extracted.json`이 있다. 그래프는 `extraction.json`만 읽는다(`scripts/build_graph.py`의 `build_one`, `hazop/graph/build.py`의 `_graph_version`).
+### 정한 것
 
-선택지와 권장안은 세션 보고(`unit-F1-1-2-report.md`)에 적었다.
+| 항목 | 결정 |
+| --- | --- |
+| 자리 | 추출 결과 폴더(`<작업 루트>/output/extract/<이름>/`)의 `extraction_run.json`. 이름은 같은 폴더의 `not_extracted.json`에 맞췄다 |
+| 쓰는 곳 | 추출 단계. `hazop/extract/runinfo.py`의 `write`를 `scripts/extract_pdf.py`·`extract_drawio.py`·`extract_raster.py`의 `run_one`이 `extraction.json`을 쓴 뒤에 부른다. PDF는 추출하지 못한 쪽(`not_extracted.json`)에도 쓴다 |
+| 내용 | `extractor`(추출기 종류), `extracted`(추출했는지), `extraction_run_id`(추출하지 못했으면 `null`), `symbol_dictionary_versions`(묶음 이름 → 판), `written_at`(UTC), `schema_version`(`"1"`) |
+| 사전을 쓰지 않는 추출기 | drawio는 파일을 남기되 `symbol_dictionary_versions`를 `null`로 둔다. 래스터는 `pdf_vector.build_extraction`으로 기호를 정하므로 사전 판을 적는다 |
+| 다시 추출 | 덮어쓴다. `store_io.write_json`으로 원자적으로 쓴다 |
+| 등록 없이 돌린 추출 | `output/adapter/pdf_vector/` 같은 폴더에도 같은 이름으로 남는다. 결과 폴더를 쓰는 함수가 같아서 따로 가르지 않았다 |
+| 파일 이름을 둔 곳 | `runinfo.FILE_NAME` 한 곳. 폴더는 지금처럼 `paths.output_root`·`paths.safe_join`으로 연다. `extraction.json`·`not_extracted.json`도 `paths.py` 표에 없는 파일 이름이라 같은 관례를 따랐다 |
+| 기록 경로 관례 | 해당 없음. 파일 안에 경로가 없다 |
+| 화면·탐색기 표시 | 하지 않았다(후속) |
+
+등록 기록에 두지 않은 까닭: 등록정보(`registrations/<자료 ID>/<버전>.json`)는 추출 전에 쓰고 끝난 버전은 고치지 않는다. 자료 목록(`registry.json`)은 등록 모듈만 쓴다. 그래프는 `extraction.json`만 읽으므로 곁 파일은 `graph_version`에 들어가지 않는다.
+
+### 달라진 동작
+
+- 추출 결과 폴더마다 파일이 하나 늘었다. 추출하지 못한 쪽 폴더에는 이제 `not_extracted.json`과 `extraction_run.json` 둘이 있다. 그 폴더의 파일 목록을 적어 둔 시험 두 줄(`tests/test_adapter.py`)을 맞췄다.
+- `extract_pdf.run_one`은 쪽 폴더를 건드리기 전에 사전을 읽는다. 전에는 기호가 하나도 없는 쪽을 `run_one`으로 직접 추출하면 사전 없이도 됐다. `run_pages`(앱과 명령줄이 쓰는 길)는 전부터 사전을 먼저 읽었으므로 그 길은 그대로다.
+- 래스터 추출도 기호가 없는 그림에서 사전을 읽게 됐다. OpenCV가 없어 실제 래스터 추출로는 돌려 보지 못했고, 대역 시험으로만 확인했다.
+
+### 영향 확인
+
+| 본 것 | 결과 |
+| --- | --- |
+| 단계 연쇄 검사(`hazop/contract/chain.py`) | 추출 폴더를 훑지 않는다. 그래프 사본의 `source.extraction_file`이 가리키는 `extraction.json`과 그래프 폴더의 `graph.json`·`entity_mapping.json`만 이름으로 연다. 영향 없음 |
+| 근거 묶음 해시(`bundle_sha256`), 분석 묶음 내보내기(`hazop/analysis/bundle_export.py`) | 해시는 구간·그래프에서 만든 묶음 dict로 계산한다. 내보내기는 추출 폴더를 복사하지 않는다. 영향 없음. `tests.test_packaging`·`check_export`가 `run_ci.py`에서 통과했다 |
+| `scripts/clean_outputs.py` | 대상이 `output/analysis`와 `output/knowledge-graph` 둘뿐이다. 추출 폴더는 보지 않는다 |
+| 작업 루트 이전 도구(`hazop/workroot.py`) | 옛 이름 폴더 아래 파일을 이름과 상관없이 모두 옮긴다(`_walk`). 파일 이름 목록이 없어 새 파일도 같이 간다. `tests.test_workroot`·`test_workroot_app`·`test_workroot_review` 71건 통과 |
+| `scripts/check_work_root_counts.py` | 폴더별 파일 수를 세어 같은 사본의 이전 전후를 견준다. 코드에 고정된 기대 수는 없다. 전후 사이에 다시 추출하면 추출 폴더의 파일 수가 폴더당 하나 늘어난 것으로 나온다. `docs/2026-11-10-naming-rules/evidence/step6-counts-before.json`은 지난 측정 기록이라 고치지 않았다 |
+| 0.1.x 기록 경로 표(`OLD_OUTPUT_NAMES`) | 폴더 이름 표다. 새 폴더가 없고 새 파일 안에 경로가 없어 더할 줄이 없다 |
+| 추출 폴더의 파일을 세거나 통째로 해시하는 다른 코드 | `hazop/app/data.py`(`list_extractions`, `_pdf_page_state`), `hazop/app/runctx.py`, `hazop/viewer/build.py`, `scripts/build_graph.py`, `check_extract.py`·`check_graph.py`·`check_viewer.py`·`check_register.py`를 읽었다. 모두 `extraction.json`, `not_extracted.json`, `validation_report.md`를 이름으로 찾는다. 통째로 해시하는 곳은 없었다(`git grep`으로 `listdir`·`os.walk`·`copytree` 가운데 추출 폴더에 닿는 곳을 봤다). `verify_bundle.py`의 저장소 `output/`·`store/` 전후 해시는 검증이 임시 작업 루트를 써서 걸리지 않는다 |
+
+고정값(`tests/baselines/`, `PINNED_SHA256`, `bundle_sha256`, `GUIDE_SHA256`)은 손대지 않았다.
+
+### 시험 (`tests/test_extraction_run.py` 9건)
+
+구현 전에 먼저 쓰고, 모듈만 있고 추출 단계가 부르지 않는 상태에서 8건이 실패하는 것을 확인했다(나머지 한 건은 drawio 추출 JSON 바이트가 같은지 보는 것이라 그 상태에서도 통과한다).
+
+- 추출 뒤 파일이 생기고 내용이 맞다(키 여섯, 추출기 종류, 실행 ID, 사전 판이 추출기가 읽은 사전의 것과 같음).
+- 다시 추출하면 덮어쓴다(시각과 사전 판이 새 값, 임시 파일이 남지 않음).
+- 추출하지 못한 쪽에도 남는다. 추출됨 → 못 함 → 다시 추출됨으로 바뀔 때마다 그 실행의 값이 된다.
+- `extraction.json` 바이트와 `graph_version`이 곁 파일 유무와 무관하다(PDF, drawio).
+- 곁 파일이 없는 옛 추출 폴더를 앱 목록(`data.list_extractions`)과 그래프 빌드가 그대로 읽는다.
+- drawio는 사전 판이 `null`, 래스터는 사전 판을 적는다(대역).
+
+### 전후 대조 (명령과 출력, 곁 파일 예는 `evidence/f1-2-compare-output.txt`)
+
+실행 조건: `82f9e0e`에 이 변경을 넣은 작업 폴더(커밋 전, `git diff HEAD` sha256 앞 16자 `715ab7688a25ffb2`, 그 내용이 그대로 커밋됐다), 주 체크아웃, 시험용 venv, `--update` 없음.
+
+| 대조 | 결과 |
+| --- | --- |
+| SNP 6장 추출 JSON·그래프 JSON(24개 파일)과 `graph_version` 12건 | 바이트 같음 24/24, 다른 것 0/12 (`f1-0-before-snp-hashes.json` 기준) |
+| APR1400 143쪽 쪽별 추출·그래프 해시, `graph_version` | 다른 것 0/143 |
+| APR1400 쪽별 결과 CSV(걸린 시간 열 제외) | 다른 행 0/143 |
+| `check_apr1400.py` 143쪽 | 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63723, rc=0 |
+| `check_snp_baseline.py` | 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6 |
+| 사전 판 | APR1400 `2c997ba7e6ce`, 공통 `ac25f22101ce`. 그대로다 |
+| `scripts/run_ci.py` | 시험 2091, 실패 0, 오류 0, 건너뜀 20, 검사 스크립트 10개 rc=0 |
+
+시험 수는 `82f9e0e`의 2082에서 9 늘었다(`tests/test_extraction_run.py`).

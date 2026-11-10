@@ -26,7 +26,7 @@ sys.path.insert(0, REPO_ROOT)
 from hazop.console import safe_console  # noqa: E402
 
 from hazop import paths  # noqa: E402
-from hazop.extract import drawio, report, svg_align  # noqa: E402
+from hazop.extract import drawio, report, runinfo, svg_align  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
 SAMPLE_GLOB = paths.folder("references", "pid-samples", "*", "*.drawio")
@@ -91,6 +91,7 @@ def run_one(path, out_root, svg="auto", page=0, registration=None, registered_sv
         fh.write("\n")
     with open(os.path.join(out_dir, "validation_report.md"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(report.render(result))
+    runinfo.write(out_dir, "drawio", result)  # drawio 추출은 기호 사전을 쓰지 않는다. 사전 판 자리는 비운다
     return result, out_dir
 
 

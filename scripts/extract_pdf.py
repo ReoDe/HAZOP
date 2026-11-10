@@ -7,7 +7,8 @@
   python scripts/extract_pdf.py --registration store/<프로젝트>/registrations/<자료 ID>/<버전>.json
 --registration(① 등록 완료 자료)이면 보관 원본의 등록된 모든 쪽을 <--out-root>/<프로젝트>__<자료 ID>-r<등록 버전>-p<쪽>/에
 쓰고 PDF에서 그린 page.svg를 함께 만든다(쪽을 고르면 그 쪽만). 글자·벡터 경로가 없거나 읽지 못한 쪽은 그 쪽 폴더에
-not_extracted.json(사유)만 남긴다. 등록 없이 두 쪽 이상이면 폴더 이름 끝에 -p<쪽>을 붙인다(0쪽 제외).
+extraction.json 대신 not_extracted.json(사유)을 남긴다. 등록 없이 두 쪽 이상이면 폴더 이름 끝에 -p<쪽>을 붙인다(0쪽 제외).
+추출했든 못 했든 쪽 폴더에 extraction_run.json(이 실행이 읽은 기호 사전 판, hazop/extract/runinfo.py)을 함께 남긴다.
 pdfplumber가 필요하다(결정 D1). 없으면 종료 코드 2로 끝난다.
 출력은 drawio 추출 결과(output/extract/)와 섞이지 않도록 기본값을 output/adapter/pdf_vector/ 로 둔다.
 평가(drawio 정답 대비 지표)는 scripts/check_adapter.py가 한다.
@@ -26,7 +27,7 @@ sys.path.insert(0, REPO_ROOT)
 
 from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
-from hazop.extract import report, symbols  # noqa: E402
+from hazop.extract import report, runinfo, symbols  # noqa: E402
 from hazop.extract.adapters import pdf_svg, pdf_vector  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
@@ -35,6 +36,7 @@ DEFAULT_OUT = paths.output_root("adapter", "pdf_vector")
 SVG_NAME = "page.svg"
 SVG_SOURCE = "rendered_from_pdf"
 NOT_EXTRACTED = "not_extracted.json"  # 추출하지 않은 쪽의 사유 기록(extraction.json 대신)
+EXTRACTOR = "pdf_vector"  # 실행 정보(extraction_run.json)에 적는 추출기 종류
 
 
 def not_extracted_reason(result):
@@ -56,11 +58,12 @@ def _clear(out_dir, names):
             os.remove(p)
 
 
-def _skip(out_dir, page, reason):
+def _skip(out_dir, page, reason, symbol_versions):
     os.makedirs(out_dir, exist_ok=True)
     _clear(out_dir, ("extraction.json", "validation_report.md", SVG_NAME))
     _write_json(os.path.join(out_dir, NOT_EXTRACTED), {"page_index": page, "page_id": "page-%d" % (page + 1),
                                                        "reason": reason})
+    runinfo.write(out_dir, EXTRACTOR, None, symbol_versions)
 
 
 def _default_name(path, page, drawing_number=None):
@@ -73,10 +76,11 @@ def run_one(path, out_root, page=0, registration=None, out_name=None):
     쓰며, PDF에서 그린 도면 SVG(page.svg, pdf_svg)를 함께 저장하고 기호 bbox 대조로 ② 뷰어 정렬을 측정한다.
     글자·벡터 경로가 없는 쪽은 extraction.json 대신 not_extracted.json(사유)을 쓴다(not_extracted_reason)."""
     result = pdf_vector.extract(path, page=page, repo_root=paths.work_root(), registration=registration)
+    symbol_versions = pdf_vector.symbol_library().versions  # 사전을 읽지 못하면 이 쪽 폴더를 건드리기 전에 멈춘다
     out_dir = paths.safe_join(out_root, out_name or _default_name(path, page, result["drawing"]["drawing_number"]))
     reason = not_extracted_reason(result)
     if reason:
-        _skip(out_dir, page, reason)
+        _skip(out_dir, page, reason, symbol_versions)
         return result, out_dir
     os.makedirs(out_dir, exist_ok=True)
     _clear(out_dir, (NOT_EXTRACTED,))
@@ -93,6 +97,7 @@ def run_one(path, out_root, page=0, registration=None, out_name=None):
     _write_json(os.path.join(out_dir, "extraction.json"), result)
     with open(os.path.join(out_dir, "validation_report.md"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(report.render(result))
+    runinfo.write(out_dir, EXTRACTOR, result, symbol_versions)
     return result, out_dir
 
 
@@ -100,7 +105,7 @@ def run_pages(path, out_root, pages, registration=None, out_name=None):
     """여러 쪽을 차례로 run_one. out_name: 쪽 번호 → 폴더 이름(없으면 run_one 기본 이름).
     반환 (추출한 쪽 [(쪽, result, out_dir)], 추출하지 않은 쪽 [{"page_index", "page_id", "reason"}])."""
     done, skipped = [], []
-    pdf_vector.symbol_library()  # 기호 사전이 없거나 깨졌으면 어떤 쪽의 이전 결과도 지우기 전에 멈춘다
+    symbol_versions = pdf_vector.symbol_library().versions  # 기호 사전이 없거나 깨졌으면 어떤 쪽의 이전 결과도 지우기 전에 멈춘다
     for page in pages:
         name = out_name(page) if out_name else None
         try:
@@ -109,7 +114,7 @@ def run_pages(path, out_root, pages, registration=None, out_name=None):
             raise
         except Exception as exc:  # 쪽 하나를 읽지 못해도 그 쪽만 미추출로 남기고 다음 쪽을 읽는다
             reason = "추출 오류: %s" % exc
-            _skip(paths.safe_join(out_root, name or _default_name(path, page)), page, reason)
+            _skip(paths.safe_join(out_root, name or _default_name(path, page)), page, reason, symbol_versions)
         else:
             reason = not_extracted_reason(result)
             if reason is None:

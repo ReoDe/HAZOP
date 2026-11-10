@@ -1,0 +1,111 @@
+# F1-2(D8, extraction_run.json) 전후 대조. 실행 조건
+# - 실행 커밋: 82f9e0e
+# - 작업트리: 82f9e0e + F1-2 변경(커밋 전). 바뀐 파일은 hazop/extract/runinfo.py(새 파일), scripts/extract_pdf.py,
+#   scripts/extract_drawio.py, scripts/extract_raster.py, specs/pid-symbol-dictionary.md, tests/test_adapter.py,
+#   tests/test_extraction_run.py(새 파일). `git diff HEAD`의 sha256 앞 16자는 715ab7688a25ffb2.
+#   이 내용이 그대로 커밋됐다(이 파일과 README는 실행 뒤에 더했다. 추출 입력이 아니다)
+# - 인터프리터: C:\Users\kim92\.hazop\venv-py312\Scripts\python.exe, PYTHONIOENCODING=utf-8, 저장소 루트(D:\HAZOP, 주 체크아웃)
+# - 작업 루트: 대조 스크립트가 D:\HAZOP-trials\2026-11-11-unit-f1\f1-2\work 를 쓰고 지운다. check_apr1400.py·check_snp_baseline.py는 스스로 임시 작업 루트를 쓴다
+# - '전': D:\HAZOP-trials\2026-11-11-unit-f1\before (072d5c0. 해시 목록은 evidence/f1-0-before-*.json과 바이트로 같음)
+# - check_apr1400.py: 143쪽 전체, 기본 --jobs, --update 없음. tests/baselines/는 손대지 않음
+# - 시각: 2026-11-11 08:10~08:25 (+0900)
+# - 아래는 시험 폴더 f1-2/run.log 에서 git의 줄 끝 경고 줄만 뺀 것이다
+
+# HEAD 82f9e0e, 2026-11-11 08:10:19 +0900
+# git status --short:
+ A hazop/extract/runinfo.py
+ M scripts/extract_drawio.py
+ M scripts/extract_pdf.py
+ M scripts/extract_raster.py
+ M specs/pid-symbol-dictionary.md
+ M tests/test_adapter.py
+ A tests/test_extraction_run.py
+# git diff HEAD sha256: 715ab7688a25ffb2
+# interpreter: C:\Users\kim92/.hazop/venv-py312/Scripts/python.exe
+$ check_symbols.py (첫 줄)
+묶음 {'APR1400': '2c997ba7e6ce', '공통': 'ac25f22101ce'}, 항목 40(켜짐 36)
+$ f1-0-extract-compare.py snp
+SNP 12건 → D:\HAZOP-trials\2026-11-11-unit-f1\f1-2\snp-hashes.json
+rc=0
+$ f1-0-extract-compare.py apr1400
+APR1400 143쪽(실패 0) → D:\HAZOP-trials\2026-11-11-unit-f1\f1-2\apr1400-hashes.json
+rc=0
+$ check_apr1400.py --out
+APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63723
+  정답 5.4.12-1-S1: 계기 4/4(태그 4 중 맞음 4) · 연결 3/3(연결점 3 중 맞음 3) · 대리 원 4(정답 안 4)/정답 4 · 대리 연결 표기 3(정답 안 3)/정답 3
+  정답 9.3.3-1-S7: 계기 16/16(태그 16 중 맞음 16) · 연결 7/7(연결점 7 중 맞음 7) · 대리 원 16(정답 안 16)/정답 16 · 대리 연결 표기 5(정답 안 5)/정답 7
+  정답 9.3.4-1-S1: 계기 12/15(태그 12 중 맞음 12) · 연결 17/17(연결점 17 중 맞음 17) · 대리 원 15(정답 안 15)/정답 15 · 대리 연결 표기 4(정답 안 4)/정답 17
+기준값: APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 71203
+check_apr1400 rc=0
+$ check_snp_baseline.py
+SNP: 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6
+check_snp rc=0
+$ compare
+snp-hashes.json: 12건 중 다른 것 0
+apr1400-hashes.json: 143건 중 다른 것 0
+SNP JSON 파일: 24개 중 바이트 같음 24
+쪽별 CSV(seconds 열 제외): 143행 중 다른 행 0
+결과: 전후가 같음
+compare rc=0
+# 2026-11-11 08:14:29
+$ run_ci.py
+run_ci rc=0
+# 2026-11-11 08:25:05
+2605:[모듈 끝] tests.test_viewer_links 시험 7, 실패 0, 건너뜀 0, 5.6초
+2609:[모듈 끝] tests.test_viewer_panel 시험 6, 실패 0, 건너뜀 0, 2.4초
+2613:[모듈 끝] tests.test_work_record_paths 시험 24, 실패 0, 건너뜀 0, 3.1초
+2617:[모듈 끝] tests.test_workroot 시험 23, 실패 0, 건너뜀 0, 24.6초
+2621:[모듈 끝] tests.test_workroot_app 시험 17, 실패 0, 건너뜀 0, 5.5초
+2625:[모듈 끝] tests.test_workroot_review 시험 31, 실패 0, 건너뜀 0, 23.3초
+2748:[건너뜀] OpenCV 또는 rapidocr 없음(결정 D7). packaging/requirements-raster.txt를 설치한 Python으로 다시 실행할 것
+2749:== 결과: 전부 통과 (W4 건너뜀)
+2750:=== check_adapter rc=0 7.3초
+2755:Ran 26 tests in 0.986s
+2757:OK
+2782:=== check_compare rc=0 1.7초
+2793:통과 test_not_applicable_ops_are_skipped_and_later_ops_still_apply
+2811:=== check_corrections rc=0 6.0초
+2834:Ran 24 tests in 6.776s
+2836:OK
+2839:Ran 10 tests in 0.714s
+2841:OK
+2858:=== check_export rc=0 10.7초
+3283:Ran 40 tests in 49.613s
+3285:OK
+3298:=== check_kg_context rc=0 68.7초
+3303:Ran 45 tests in 5.074s
+3305:OK
+3341:=== check_review rc=0 7.7초
+3352:=== check_study_nodes rc=0 0.7초
+3365:=== check_symbols rc=0 3.9초
+3376:=== check_version_migration rc=0 0.2초
+3386:=== check_snp_baseline rc=0 5.5초
+3390:시험 2091, 실패 0, 오류 0, 건너뜀 20, 예상 밖 통과 0
+# 끝 git status --short:
+ A hazop/extract/runinfo.py
+ M scripts/extract_drawio.py
+ M scripts/extract_pdf.py
+ M scripts/extract_raster.py
+ M specs/pid-symbol-dictionary.md
+ M tests/test_adapter.py
+ A tests/test_extraction_run.py
+
+# 곁 파일 예 (같은 작업 폴더, 08:25)
+$ python scripts/extract_pdf.py resources/references/pid-samples/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.pdf --out-root D:/HAZOP-trials/2026-11-11-unit-f1/f1-2/sample-out
+SNP-M-102 p0: passed nodes=19 relations=20 unresolved=0 texts=4 unknowns=15 blockers=0 -> ../sample-out/SNP-M-102
+$ ls sample-out/SNP-M-102
+extraction.json
+extraction_run.json
+validation_report.md
+$ cat sample-out/SNP-M-102/extraction_run.json
+{
+  "extracted": true,
+  "extraction_run_id": "extract-pdf-SNP-M-102-p0-pdf-vector-rules-0.4.0-401c4822849a",
+  "extractor": "pdf_vector",
+  "schema_version": "1",
+  "symbol_dictionary_versions": {
+    "APR1400": "2c997ba7e6ce",
+    "공통": "ac25f22101ce"
+  },
+  "written_at": "2026-11-10T23:25:27Z"
+}

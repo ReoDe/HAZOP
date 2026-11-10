@@ -22,8 +22,8 @@ sys.path.insert(0, REPO_ROOT)
 
 from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
-from hazop.extract import report  # noqa: E402
-from hazop.extract.adapters import raster  # noqa: E402
+from hazop.extract import report, runinfo  # noqa: E402
+from hazop.extract.adapters import pdf_vector, raster  # noqa: E402
 
 SAMPLE_GLOB = paths.folder("references", "pid-samples", "*", "*.png")
 DEFAULT_OUT = paths.output_root("adapter", "raster")
@@ -44,6 +44,8 @@ def run_one(path, out_root, use_ocr=True):
         fh.write("\n")
     with open(os.path.join(out_dir, "validation_report.md"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(report.render(result))
+    # 래스터 추출도 pdf_vector.build_extraction으로 기호를 정하므로 같은 사전을 읽는다
+    runinfo.write(out_dir, "raster", result, pdf_vector.symbol_library().versions)
     return result, out_dir
 
 
