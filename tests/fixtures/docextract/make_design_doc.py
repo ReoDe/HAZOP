@@ -2,8 +2,9 @@
 
 문장과 값은 모두 가상이며 실제 발전소 설계자료가 아니다. 태그는 샘플 도면 SNP-M-102(가상)의 태그를 쓴다.
 Qt(QPdfWriter + QTextDocument)로 글자가 들어 있는 PDF를 만든다(이미지 없음). 패키지 설치 없이 전용 venv에서 실행:
-  <전용 venv python> tests/fixtures/docextract/make_design_doc.py
-결과: 같은 폴더의 SNP-DOC-102_가압기압력제어_설계설명서(가상).pdf (3쪽)
+  <전용 venv python> tests/fixtures/docextract/make_design_doc.py [출력 경로]
+결과: 같은 폴더의 SNP-DOC-102-pzr-pressure-control-design-description-fictional.pdf (3쪽)
+출력 경로를 주면 거기에 쓴다. 추적 중인 PDF를 덮어쓰지 않고 같은 내용이 나오는지 비교할 때 쓴다.
 """
 
 import os
@@ -15,7 +16,7 @@ from PySide6.QtCore import QMarginsF
 from PySide6.QtGui import QFont, QGuiApplication, QPageLayout, QPageSize, QPdfWriter, QTextDocument
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "SNP-DOC-102_가압기압력제어_설계설명서(가상).pdf")
+OUT = os.path.join(HERE, "SNP-DOC-102-pzr-pressure-control-design-description-fictional.pdf")
 
 PAGES = [
     """<h2>가압기 압력제어 계통 설계 설명서 (가상)</h2>
@@ -38,9 +39,9 @@ PAGES = [
 ]
 
 
-def main():
+def main(out=OUT):
     app = QGuiApplication.instance() or QGuiApplication(sys.argv)  # noqa: F841 (글꼴 사용에 필요)
-    w = QPdfWriter(OUT)
+    w = QPdfWriter(out)
     w.setPageSize(QPageSize(QPageSize.A4))
     w.setPageMargins(QMarginsF(20, 20, 20, 20), QPageLayout.Millimeter)
     w.setResolution(300)
@@ -51,8 +52,8 @@ def main():
     doc.setHtml("".join(html if i == 0 else '<div style="page-break-before: always">%s</div>' % html
                         for i, html in enumerate(PAGES)))
     doc.print_(w)
-    print(OUT)
+    print(out)
 
 
 if __name__ == "__main__":
-    main()
+    main(*sys.argv[1:2])
