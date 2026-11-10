@@ -81,9 +81,10 @@ def main(argv=None):
     except (OSError, ValueError, KeyError) as exc:
         print("출력하지 않음: %s" % exc)
         return 1
-    print("IE 후보 %d건 (승인 항목 %d건, 넣지 않은 항목 %d건), 그룹 %d건, 품질 경고 %d건"
+    print("IE 후보 %d건 (승인 항목 %d건, 넣지 않은 항목 %d건), 그룹 %d건"
           % (len(b["candidates"]), b["source"]["approved_entries"], b["source"]["left_out_unapproved"],
-             len(b["groups"]), len(b["warnings"])))
+             len(b["groups"])))
+    print("품질 경고:", ib.warning_summary_text(b))
     print("Excel:", xlsx)
     print("JSON:", js)
     return 0

@@ -462,7 +462,11 @@ class InitiatingScreen(QWidget):
         w = QWidget()
         v = QVBoxLayout(w)
         v.setContentsMargins(0, 4, 0, 0)
-        self.warning_table = _table((("경고", 130), ("대상", 160), ("내용", 0), ("근거", 120)), "품질 경고 표")
+        self.warning_summary = QLabel("")
+        self.warning_summary.setWordWrap(True)
+        self.warning_summary.setAccessibleName("품질 경고 요약")
+        v.addWidget(self.warning_summary)
+        self.warning_table = _table((("경고", 190), ("대상", 160), ("내용", 0), ("근거", 170)), "품질 경고 표")
         v.addWidget(self.warning_table, 1)
         return w, TABS[6]
 
@@ -655,7 +659,8 @@ class InitiatingScreen(QWidget):
             if r["status"] == "gap" and r["code"] not in self.doc["coverage"]:
                 for c in range(self.coverage_table.columnCount()):
                     self.coverage_table.item(row, c).setBackground(QColor(tokens.c("warn-bg")))
-        _fill(self.warning_table, [[res.QUALITY_KINDS[w["kind"]][0], w["target"], w["text"], w["basis"]]
+        self.warning_summary.setText(ib.warning_summary_text(v))
+        _fill(self.warning_table, [[ib.WARNING_KINDS[w["kind"]][0], w["target"], w["text"], w["basis"]]
                                    for w in v["warnings"]])
         self.group_combo.blockSignals(True)
         self.group_combo.clear()

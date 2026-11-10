@@ -18,6 +18,7 @@ import openpyxl  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from hazop import paths  # noqa: E402
+from hazop.ie import bundle as ib  # noqa: E402
 from hazop.ie import model, store  # noqa: E402
 from hazop.study import results as res  # noqa: E402
 from tests.test_results_project_ui import StubApp  # noqa: E402
@@ -107,6 +108,8 @@ class InitiatingScreenTest(unittest.TestCase):
         self.assertEqual(self.scr.cand_table.rowCount(), 2)
         self.assertEqual([self.scr.tabs.tabText(i) for i in range(7)],
                          ["후보 2", "그룹 0", "사건수목 표제 0", "최종상태 0", "기본사건 0", "완전성 대조", "품질 경고 0"])
+        self.assertEqual(self.scr.warning_summary.text(), ib.warning_summary_text(self.scr.view))
+        self.assertIn("구간 경계 결과 끊김 0건", self.scr.warning_summary.text())
         self.assertIn("완전성을 뜻하지 않음", self.scr.scope_chip.text())
         self.assertIn("⑤ 결과 기준", self.scr.basis.text())
         fp = self.scr.fp

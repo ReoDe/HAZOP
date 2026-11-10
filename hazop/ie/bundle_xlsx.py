@@ -28,7 +28,17 @@ NOT_JUDGED = "초기사건 판정 전"
 AI_FILL = "EEF0F2"
 PRA_FILL = "FDF0D2"
 
-GUIDE_COLUMNS = (("항목", 22), ("내용", 100))
+# 읽는 법 시트에 적는 경고별 한 줄 안내(ib.WARNING_KINDS 순서)
+WARNING_GUIDE = (
+    ("safeguard_as_cause", "원인 위치가 안전밸브 같은 보호설비이거나 다른 승인 항목이 보호수단으로 적은 대상입니다. "
+                           "보호설비 고장은 대개 초기사건이 아니라 표제의 실패입니다"),
+    ("mitigated_consequence", "결과 문장이 보호수단이 작동한 뒤의 결과로 읽힙니다. 표현으로만 짐작하므로 틀릴 수 있습니다"),
+    ("actuation_unknown", "보호수단이 자동·운전원·자체작동 가운데 무엇인지 정해지지 않았습니다"),
+    ("boundary_cut", "결과의 영향 대상이 다른 구간에 있는데 그 구간에 승인 항목이 없어 사건 진행을 이을 수 없습니다"),
+    ("fmea_pending", "계기·제어 구성요소가 든 구간입니다. 이 앱에는 아직 FMEA 입력이 없어 항목마다 띄우지 않고 구간 수만 "
+                     "한 줄로 적습니다"),
+)
+GUIDE_COLUMNS =(("항목", 22), ("내용", 100))
 CANDIDATE_COLUMNS = (("후보 ID", 9), ("판정", 7), ("정상운전 교란", 8), ("안전기능 도전", 8), ("도전받는 안전기능", 16),
                      ("원인", 30), ("원인 유형", 11), ("원인 위치", 11), ("고장모드", 10), ("구간", 7), ("편차", 10),
                      ("비완화 결과", 34), ("일반 범주 제안", 10), ("그룹 ID", 8), ("제외·보류 사유", 26), ("식별 기법", 8),
@@ -111,7 +121,7 @@ def completeness_row(r):
 
 
 def warning_row(w):
-    return (res.QUALITY_KINDS[w["kind"]][0], w["target"], w["text"], w["basis"])
+    return (ib.WARNING_KINDS[w["kind"]][0], w["target"], w["text"], w["basis"])
 
 
 def guide_rows(b):
@@ -136,6 +146,9 @@ def guide_rows(b):
         ("ID 규칙", "IEC-nnn 후보 · IEG-nn 그룹 · H-nn 사건수목 표제 후보 · ES-nn 최종상태 후보 · BE-nnn 기본사건 후보. "
                   "대응표를 ⑥ 저장 파일에 두므로 묶음을 다시 만들어도 같은 원인은 같은 ID를 유지합니다. 나눈 그룹은 새 ID를 받고 "
                   "옛 ID는 '나뉨' 기록으로 남습니다(지운 ID도 다시 쓰지 않음)"),
+        ("품질 경고 요약", ib.warning_summary_text(b)),
+        ("품질 경고 읽는 법", "'품질 경고' 시트는 인계 전에 다시 볼 곳을 알려 줄 뿐 항목을 막지 않습니다. "
+                         + " ".join("%s: %s." % (ib.WARNING_KINDS[k][0], t) for k, t in WARNING_GUIDE)),
         ("기준표", "일반 범주 코드: %s · %s. 출처는 '용어·출처' 시트에 있습니다" % (table["title"] or "-", table["source_label"])),
         ("시트", " / ".join(SHEETS[1:])),
     ) + ((("나뉨·삭제 그룹", ", ".join("%s(%s%s)" % (r["id"], model.GROUP_STATUSES[r["status"]],
