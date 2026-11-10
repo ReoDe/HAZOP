@@ -156,7 +156,7 @@ class WriteFailureTest(WorkRootCase):
 
     def test_migration_reports_sharing_a_backup_folder_do_not_overwrite_each_other(self):
         from hazop.app import project_ctx
-        folder = os.path.join(self.tmp, "백업")
+        folder = os.path.join(self.tmp, "reports")
         project_ctx._write_report(folder, {"project": "A"})
         project_ctx._write_report(folder, {"project": "B"})
         docs = [json.loads(raw(os.path.join(folder, n))) for n in sorted(os.listdir(folder))]

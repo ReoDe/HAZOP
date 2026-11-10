@@ -279,7 +279,7 @@ class OldFilesTest(WorkRootCase):
 
 
 class Stored01FilesTest(WorkRootCase):
-    """tests/fixtures/store-0.1/: 0.1.x 코드(d86bd89)의 저장 함수가 쓴 파일 그대로(SOURCE.json).
+    """tests/fixtures/store-0.1/: 0.1.x 코드(d86bd89)의 저장 함수가 쓴 파일 그대로(source.json).
     지금 코드로 읽고 다시 저장해도 사람이 고친 내용이 그대로다."""
 
     def old(self, name):
