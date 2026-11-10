@@ -243,7 +243,7 @@ class StoreAcceptTest(Base):
 REQUEST_FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "node-review", "request-snp-s1.json")
 
 
-class KnowledgeTest(unittest.TestCase):
+class KnowledgeBase(unittest.TestCase):
     """지식 맥락(단위 G, specs/study-node-segmentation.md §4.7). SNP 표본 도면 한 장과 표본 지식으로 지은 지식그래프를 쓴다.
     claude CLI는 찾지 않는다(가짜 클라이언트만 쓴다. 찾으면 시험이 실패한다)."""
 
@@ -288,6 +288,7 @@ class KnowledgeTest(unittest.TestCase):
         review.update(kw)
         return nr.run_batch(Client({"reviews": [review]}), self.batch, self.ns, self.view, self.pg, self.adj, AT, kn)
 
+class KnowledgeTest(KnowledgeBase):
     def test_request_with_knowledge_matches_the_stored_bytes(self):
         with open(REQUEST_FIXTURE, "rb") as fh:
             self.assertEqual(self.request(self.kn), fh.read())
@@ -415,6 +416,167 @@ class EditedAcceptTest(Base):
         new, _ = nr.accept(self.ns, doc, doc["proposals"][0]["id"], "검토자", self.adj,
                            edited={"design_intent": "탱크에서 펌프로 보낸다"}, at=AT)
         self.assertNotIn("changes", new["history"][-1]["detail"])
+
+
+class DrawingBasisTest(KnowledgeBase):
+    """교차검증 지적: 지식 근거만으로는 구간을 바꾸지 못하고, 도면에 없는 설비 태그를 든 제안은 버린다(INTENT §2)."""
+
+    def test_a_change_needs_drawing_evidence_and_knowledge_alone_is_not_enough(self):
+        nid = self.node["node_id"]
+        shown = nr.node_knowledge(self.node, self.kn)[0][0]["knowledge_id"]
+        only_knowledge = self.answer(self.kn, verdict="screen_change", screen_to="low", evidence=[shown])
+        self.assertEqual(only_knowledge["proposals"], [])
+        self.assertIn("도면", only_knowledge["dropped"][0]["reason"])
+        both = self.answer(self.kn, verdict="screen_change", screen_to="low", evidence=[shown, self.node["members"][0]])
+        self.assertEqual(len(both["proposals"]), 1, both["dropped"])
+        intent_only = self.answer(self.kn, evidence=[shown])
+        self.assertEqual(len(intent_only["proposals"]), 1, "구간을 바꾸지 않는 설계 의도 초안은 지식 근거만으로 받는다")
+        self.assertEqual(nid, intent_only["proposals"][0]["node_id"])
+
+    def test_equipment_tags_that_are_not_on_the_drawing_drop_the_proposal(self):
+        nid = self.node["node_id"]
+        real = next(n["tag"] for n in self.pg["nodes"] if n["entity_id"] in self.node["members"] and n.get("tag"))
+        for field in ("reason", "design_intent"):
+            with self.subTest(field):
+                out = self.answer(self.kn, verdict="screen_change", screen_to="low", evidence=[nid],
+                                  **{field: "예비펌프 P-NOT-IN-DRAWING 이 있으므로 낮춘다"})
+                self.assertEqual(out["proposals"], [])
+                self.assertIn("P-NOT-IN-DRAWING", out["dropped"][0]["reason"])
+        ok = self.answer(self.kn, verdict="screen_change", screen_to="low", evidence=[nid],
+                         reason="%s 하나뿐이라 낮춘다(도면 SNP-M-102)" % real)
+        self.assertEqual(len(ok["proposals"]), 1, ok["dropped"])
+
+    def test_evidence_may_not_name_knowledge_of_another_node_in_the_same_call(self):
+        """제안의 지식 지문은 자기 구간의 항목만 본다. 다른 구간 항목을 근거로 받으면 그 항목이 바뀌어도 제안이 살아 있게 된다."""
+        both = nr.plan_batches(self.ns, node_ids=[self.node["node_id"], self.other["node_id"]])[0]
+        theirs = nr.node_knowledge(self.other, self.kn)[0][0]["knowledge_id"]
+        nid = self.node["node_id"]
+
+        def review(n, evidence):
+            return {"node_id": n, "verdict": "ok", "merge_with": [], "split_off": [], "screen_to": None,
+                    "design_intent": "", "reason": "이유", "evidence": evidence}
+        out = nr.run_batch(Client({"reviews": [review(nid, [theirs]), review(self.other["node_id"], [theirs])]}),
+                           both, self.ns, self.view, self.pg, self.adj, AT, self.kn)
+        self.assertEqual([p["node_id"] for p in out["proposals"]], [self.other["node_id"]])
+        self.assertEqual([d["node_id"] for d in out["dropped"]], [nid])
+
+    def test_several_proposals_go_stale_when_their_knowledge_changes(self):
+        import copy
+        props = []
+        for n in (self.node, self.other):
+            batch = nr.plan_batches(self.ns, node_ids=[n["node_id"]])[0]
+            review = {"node_id": n["node_id"], "verdict": "ok", "merge_with": [], "split_off": [], "screen_to": None,
+                      "design_intent": "", "reason": "이유", "evidence": [n["node_id"]]}
+            props += nr.run_batch(Client({"reviews": [review]}), batch, self.ns, self.view, self.pg, self.adj, AT,
+                                  self.kn)["proposals"]
+        doc = nr.merge_result(nr.empty("SNP-SAMPLE", self.pg["graph_id"]), {"proposals": props, "dropped": []})
+        kg = copy.deepcopy(self.kg)
+        for n in (self.node, self.other):
+            kid = nr.node_knowledge(n, self.kn)[0][0]["knowledge_id"]
+            next(k for k in kg["nodes"] if k.get("id") == kid)["text"] = "바뀐 문구"
+        self.assertEqual(nr.counts(doc, self.ns, self.adj, self.kn)["stale"], 0)
+        self.assertEqual(nr.counts(doc, self.ns, self.adj, self.index(kg)), {"total": 2, "open": 0, "stale": 2})
+
+    def test_snp_sample_order_is_written_out(self):
+        self.assertEqual([i["knowledge_id"] for i in nr.node_knowledge(self.node, self.kn)[0]],
+                         ["req-001", "cond-001", "cond-002", "setpt-001", "setpt-002"])
+
+
+class KnowledgeLimitTest(unittest.TestCase):
+    """상한 경계를 손으로 만든 색인으로 본다."""
+
+    def kn(self, count, text="문구"):
+        return {"by_entity": {"e1": ["k%02d" % i for i in range(count, 0, -1)]},
+                "nodes": {"k%02d" % i: {"id": "k%02d" % i, "node_type": "requirement", "text": text} for i in range(1, count + 1)}}
+
+    def items(self, kn):
+        return nr.node_knowledge({"node_id": "S1", "members": ["e1"]}, kn)
+
+    def test_eight_fit_and_the_ninth_is_counted_as_omitted(self):
+        items, omitted = self.items(self.kn(8))
+        self.assertEqual(([i["knowledge_id"] for i in items], omitted), (["k%02d" % i for i in range(1, 9)], 0))
+        items, omitted = self.items(self.kn(9))
+        self.assertEqual(([i["knowledge_id"] for i in items], omitted), (["k%02d" % i for i in range(1, 9)], 1))
+
+    def test_text_of_exactly_the_limit_is_kept_and_one_more_is_cut(self):
+        self.assertEqual(self.items(self.kn(1, "가" * 200))[0][0]["text"], "가" * 200)
+        self.assertEqual(self.items(self.kn(1, "가" * 201))[0][0]["text"], "가" * 200 + "…")
+
+    def test_the_cut_does_not_split_a_letter_from_its_combining_mark(self):
+        text = "a" * 199 + "q́" + "zz"  # q와 결합 문자는 한 글자다(합친 글자가 따로 없음)
+        self.assertEqual(self.items(self.kn(1, text))[0][0]["text"], "a" * 199 + "…")
+        hangul = "가" * 150  # 조합형 자모 '가' 150자는 완성형으로 150자라 자르지 않는다
+        self.assertEqual(self.items(self.kn(1, hangul))[0][0]["text"], "가" * 150)
+
+
+class EditedTargetsTest(Base):
+    """교차검증 지적: 고쳐서 받기의 편집값도 허용 대상(제안한 구간과 이웃 구간, 그 구간의 구성요소)만 받는다."""
+
+    def setUp(self):
+        super().setUp()
+        self.doc = nr.empty("P", self.pg["graph_id"])
+
+    def test_edited_merge_target_must_be_proposed_or_a_neighbor(self):
+        x = self.ids[0]
+        near = sorted(self.adj[x])[0]
+        far = next(i for i in self.ids if i != x and i not in self.adj[x])
+        doc = nr.merge_result(self.doc, self.answer([self.review(x, "merge", merge_with=[near])]))
+        pid = doc["proposals"][0]["id"]
+        for bad in ({"merge_with": [far]}, {"merge_with": []}, {"merge_with": [near, "S999"]}):
+            with self.subTest(bad), self.assertRaises(ValueError):
+                nr.accept(self.ns, doc, pid, "검토자", self.adj, edited=bad, at=AT)
+
+    def test_edit_cannot_turn_an_ok_proposal_into_another_operation(self):
+        x = self.ids[0]
+        far = next(i for i in self.ids if i != x and i not in self.adj[x])
+        batch = nr.plan_batches(self.ns, node_ids=[x])[0]
+        doc = nr.merge_result(self.doc, self.answer([self.review(x)], batch))
+        pid = doc["proposals"][0]["id"]
+        for bad in ({"verdict": "merge", "merge_with": [far]}, {"verdict": "screen_change", "screen_to": "excluded"},
+                    {"screen_to": "아무 값"}):
+            with self.subTest(bad), self.assertRaises(ValueError):
+                nr.accept(self.ns, doc, pid, "검토자", self.adj, edited=bad, at=AT)
+
+    def test_knowledge_id_that_is_also_a_component_id_counts_as_the_component(self):
+        node = self.ns["nodes"][0]
+        member = node["members"][0]
+        kn = {"by_entity": {member: [member, "k-only"]},
+              "nodes": {member: {"id": member, "node_type": "requirement", "text": "같은 글자의 ID"},
+                        "k-only": {"id": "k-only", "node_type": "requirement", "text": "지식에만 있는 ID"}}}
+        batch = nr.plan_batches(self.ns, node_ids=[node["node_id"]])[0]
+
+        def run(evidence):
+            review = self.review(node["node_id"], "screen_change", screen_to="low", evidence=evidence)
+            return nr.run_batch(Client({"reviews": [review]}), batch, self.ns, self.view, self.pg, self.adj, AT, kn)
+        self.assertEqual(len(run([member])["proposals"]), 1)
+        self.assertEqual(run(["k-only"])["proposals"], [])
+
+    def test_latest_accepted_intent_wins_within_the_same_second(self):
+        x = self.ids[0]
+        batch = nr.plan_batches(self.ns, node_ids=[x])[0]
+        doc = nr.merge_result(self.doc, self.answer([self.review(x, design_intent="first-human-intent")], batch))
+        ns, doc = nr.accept(self.ns, doc, doc["proposals"][-1]["id"], "검토자", self.adj, at=AT)
+        doc = nr.merge_result(doc, self.answer([self.review(x, design_intent="ai 초안")], batch))
+        ns, doc = nr.accept(ns, doc, doc["proposals"][-1]["id"], "검토자", nr.adjacency(ns, self.pg),
+                            edited={"design_intent": "second-human-intent"}, at=AT)
+        node = next(n for n in ns["nodes"] if n["node_id"] == x)
+        self.assertEqual(nr.accepted_intent(doc, node), "second-human-intent")
+
+    def test_resync_marks_proposals_the_set_already_accepted(self):
+        """구간 파일은 받아들인 뒤인데 제안 묶음은 저장되지 않은 상태(두 파일 사이에서 끊김)를 다음에 읽을 때 맞춘다."""
+        a, b = self.ids[0], sorted(self.adj[self.ids[0]])[0]
+        doc = nr.merge_result(self.doc, self.answer([self.review(a, "merge", merge_with=[b]), self.review(b)]))
+        pid = doc["proposals"][0]["id"]
+        new_set, accepted = nr.accept(self.ns, doc, pid, "검토자", self.adj, at=AT)
+        fixed, ids = nr.resync(doc, new_set)
+        self.assertEqual(ids, [pid])
+        got = next(p for p in fixed["proposals"] if p["id"] == pid)
+        want = next(p for p in accepted["proposals"] if p["id"] == pid)
+        self.assertEqual((got["decision"], got["accepted"], got["decided_at"]), (want["decision"], want["accepted"], AT))
+        self.assertEqual(nr.resync(accepted, new_set), (accepted, []), "맞는 묶음은 그대로")
+        self.assertEqual(nr.resync(doc, self.ns), (doc, []))
+        later = sn.rename(new_set, a, "받은 뒤 사람이 고침", at=AT)
+        self.assertEqual(nr.resync(doc, later)[1], [pid])
 
 
 class FakeCliTest(Base):

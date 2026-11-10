@@ -1229,8 +1229,14 @@ class StudyNodesScreen(QWidget):
     # ------------------------------------------------------------ AI 구간 검토(설계 §4.7, 선택 단계)
     def _load_review(self):
         pid, gid = self.node_set.get("project_id"), self.node_set["graph_id"]
+        self._kn = None
         try:
             self.review_doc, self.review_fp = nr.load_fp(pid, gid)
+            fixed, ids = nr.resync(self.review_doc, self.node_set)
+            if ids and self._save_review(fixed):
+                self.warn.set_messages("AI 제안 기록을 구간 파일에 맞췄습니다", [
+                    "구간 파일에는 받아들인 기록이 있는데 제안 기록에는 미처리로 남아 있던 제안 %d건(%s)을 '받음'으로 "
+                    "맞췄습니다(받아들이는 도중 저장이 끊긴 흔적)." % (len(ids), ", ".join(ids[:5]))])
         except (OSError, ValueError) as exc:
             path = nr.store_path(pid, gid)
             note = [str(exc)]
@@ -1245,10 +1251,11 @@ class StudyNodesScreen(QWidget):
 
     def _knowledge(self, force=False):
         """지식 맥락 색인(nr.knowledge_index) 또는 None. 지식그래프를 읽는 일이라 지식 항목을 본 미처리 제안이 있거나
-        (오래됨 판정) 검토를 새로 돌릴 때(force)만 만들고, 같은 프로젝트 그래프면 다시 쓴다."""
+        (오래됨 판정) 검토를 새로 돌릴 때(force)만 만든다. 검토를 돌릴 때는 늘 다시 읽고, 오래됨 판정은 도면을 연 뒤
+        처음 읽은 것을 쓴다(도면을 다시 열면 _load_review가 버린다)."""
         if not force and not (self.review_doc and nr.uses_knowledge(self.review_doc)):
             return None
-        if self._kn is None or self._kn[0] is not self.graph:
+        if force or self._kn is None or self._kn[0] is not self.graph:
             from hazop.study import ai_cells
             kg, _why = ai_cells.load_kg_for(self.node_set)
             self._kn = (self.graph, nr.knowledge_index(kg, self.graph)[0])
@@ -1332,10 +1339,14 @@ class StudyNodesScreen(QWidget):
         if not self._replace(new_set, keep):
             return False
         if not self._save_review(new_doc):  # 제안 묶음을 못 쓰면 구간도 되돌린다(두 파일이 어긋나지 않게)
-            if not self._replace(old_set, keep):
-                self.app.log_error("AI 제안 받아들이기 되돌림 실패", RuntimeError(self.msg.text()))
+            why = self.msg.text()
+            restored = self._replace(old_set, keep)
             self.review_doc = old_doc
             self._render(keep)
+            if not restored:
+                self.app.log_error("AI 제안 받아들이기 되돌림 실패", RuntimeError("%s / %s" % (why, self.msg.text())))
+                self.msg.setText("AI 제안 기록을 저장하지 못했고 구간도 되돌리지 못했습니다. 구간 파일은 받아들인 뒤 상태로 "
+                                 "남아 있습니다. 도면을 다시 열면 제안 기록을 그에 맞춥니다.")
             return False
         self._render(keep)
         target = (old_set.get("project_id"), old_set["graph_id"])

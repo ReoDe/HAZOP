@@ -207,6 +207,47 @@ class StudyReviewUiTest(unittest.TestCase):
         self.assertFalse(scr.edit_review(prop["id"], edited={"split_off": []}))
         self.assertIn("하나 이상", scr.msg.text())
 
+    def test_accept_cut_between_the_two_files_is_reported_and_resynced_on_reopen(self):
+        """구간 저장 성공 → 제안 묶음 저장 실패 → 구간 복원 실패: 화면이 알리고, 다시 열면 제안을 '받음'으로 맞춘다."""
+        from unittest import mock
+        from hazop.study import node_review as nr, nodes
+        win, scr = self.open_study()
+        target, others = self._trio(scr)
+        self.fixed_answers(win, scr, lambda n, b: self.review(n, "merge", merge_with=others[:1])
+                           if n["node_id"] == target else self.review(n))
+        self.run_review(scr)
+        pid = scr.review_pending()[target]["id"]
+        real, calls = nodes.save_fp, []
+
+        def set_saves_once(*args, **kwargs):
+            calls.append(1)
+            if len(calls) > 1:
+                raise OSError(28, "디스크 부족")
+            return real(*args, **kwargs)
+        with mock.patch.object(nodes, "save_fp", side_effect=set_saves_once), \
+                mock.patch.object(nr, "save_fp", side_effect=OSError(28, "디스크 부족")):
+            self.assertFalse(scr.accept_review(pid))
+        self.assertIn("되돌리지 못", scr.msg.text())
+        on_disk = nodes.load(scr.graph)
+        self.assertEqual(on_disk["history"][-1]["op"], "ai_review_accept", "구간 파일은 받아들인 뒤 상태로 남음")
+        self.assertEqual(nr.load(on_disk.get("project_id"), on_disk["graph_id"])["proposals"][0]["decision"], "open")
+        win.close()
+        _win2, scr2 = self.open_study()
+        saved = nr.load(on_disk.get("project_id"), on_disk["graph_id"])
+        self.assertEqual(next(p for p in saved["proposals"] if p["id"] == pid)["decision"], "accepted")
+        self.assertEqual(next(p for p in scr2.review_doc["proposals"] if p["id"] == pid)["decision"], "accepted")
+        self.assertIn("맞췄", scr2.warn.label.text())
+
+    def test_knowledge_is_read_again_for_each_review_run(self):
+        """지식 색인은 그래프 객체로만 기억하지 않는다. 검토를 돌릴 때마다 지식그래프를 다시 읽는다."""
+        from unittest import mock
+        from hazop.study import ai_cells
+        _win, scr = self.open_study()
+        with mock.patch.object(ai_cells, "load_kg_for", return_value=(None, "없음")) as load:
+            scr._knowledge(force=True)
+            scr._knowledge(force=True)
+        self.assertEqual(load.call_count, 2)
+
     def test_confirm_dialog_rows_show_calls_time_and_usage(self):
         from hazop.study import node_review as nr
         _win, scr = self.open_study()
