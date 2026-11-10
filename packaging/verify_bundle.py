@@ -31,6 +31,8 @@
  5) 저장소 output/·store/ 파일 해시가 전후 같은지, 3)이 입력 사본을 바꾸지 않았는지, PNG가 이번 실행에서 생겼는지
  6) 제3자 고지(W9, D15): 실행 파일 옆 licenses/의 파일 목록·바이트 해시가 저장소 licenses/와 같은지(빠짐·추가·변경
     없음), 이전 위치 _internal/licenses/가 없는지(scripts/build_package.licenses_problems와 같은 규칙)
+ 7) 기호 사전: 묶음 안 사전이 읽히고 구조·이름 낱말 견본이 들어 있는지(symbols_problems). 견본이 없는 옛 판 사전이 묶이면
+    추출이 오류로 멈추므로 여기서 먼저 잡는다
 자식 프로세스 환경: PYTHONPATH·PYTHONHOME·HAZOP_* 제거, HAZOP_WORK_ROOT·APPDATA·TEMP = 임시, 작업 폴더 = 임시(저장소 아님).
 PATH = Windows System32·Windows 폴더만, QT_*·OPENSSL_*·SSL_CERT_* 제거(D10): 사용자 PATH 경유 탐색을 제한한다
 (JDK·Git 등 PATH에 있는 UCRT·OpenSSL DLL을 찾지 못함). 다른 PC와 같은 조건이라는 보장은 아니다.
@@ -129,6 +131,17 @@ def new_run_root(base, name=None):
 def licenses_problems(bundle_dir, repo=REPO_ROOT):
     """묶음(one-folder)의 실행 파일 옆 licenses/가 저장소 licenses/와 같은지(W9, D15, build_package와 같은 규칙). 문제 목록."""
     return bp.licenses_problems(bundle_dir, repo)
+
+
+def symbols_problems(bundle_dir):
+    """묶음 안 기호 사전(_internal 아래, 저장소와 같은 상대 위치)을 이 검증기의 코드로 읽는다. 읽히지 않거나 구조·이름
+    낱말 견본이 없으면(코드보다 옛 판 사전이 묶임) 문제다. 그런 사전은 밸브·계기·설비 분류가 오류 없이 빠진다. 문제 목록."""
+    from hazop.extract import symbols
+    try:
+        missing = symbols.Library.load(paths.folder_in(os.path.join(bundle_dir, "_internal"), "symbols")).missing_rule_shapes()
+    except symbols.SymbolLibraryError as e:
+        return ["기호 사전을 읽지 못함: %s" % e]
+    return ["기호 사전에 %s 견본이 없음(코드보다 옛 판 사전)" % shape for shape in missing]
 
 
 def _pdf_probe_module():
@@ -396,6 +409,7 @@ def steps(args, summary, run_root, out, repo_dirs):
                                              for rel in bp.EXCLUDED_DIRS),
                    has_check_exe=os.path.isfile(os.path.join(target, "HAZOP-check.exe")))
     summary["checks"]["licenses_problems"] = licenses_problems(target)
+    summary["checks"]["symbols_problems"] = symbols_problems(target)
     env = child_env(tmp)
     summary["child_path"] = env["PATH"]
     start = time.time()
@@ -507,6 +521,7 @@ def main(argv=None):
         rc_ok and not summary["errors"] and summary["run_root_removed"]
         and not checks.get("png_fresh_problems", ["미실행"])
         and not checks.get("licenses_problems", ["미실행"])
+        and not checks.get("symbols_problems", ["미실행"])
         and not checks.get("pdf_problems", ["미실행"])
         and checks.get("repo_unchanged") and checks.get("app_log_started") and checks.get("app_bad_option_rc2")
         and checks.get("app_bad_settings")

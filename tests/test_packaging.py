@@ -1351,6 +1351,23 @@ class BundleLicensesTest(unittest.TestCase):
         self.assertEqual(probs[-1], "이전 위치 _internal/licenses/가 있음(실행 파일 옆으로 옮김, D15)")
 
 
+class BundleSymbolsTest(unittest.TestCase):
+    """packaging/verify_bundle.symbols_problems: 묶음 안 기호 사전이 읽히고 구조·이름 낱말 견본이 들어 있는지(빌드 없이)."""
+
+    def test_symbols_problems(self):
+        vb = _load("packaging/verify_bundle.py", "hazop_verify_bundle_sym")
+        tmp = tempfile.mkdtemp(prefix="hazop-bundle-sym-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        dest = paths.folder_in(os.path.join(tmp, "_internal"), "symbols")
+        self.assertEqual(len(vb.symbols_problems(tmp)), 1)  # 묶음에 사전 없음
+        shutil.copytree(paths.folder("symbols"), dest)
+        self.assertEqual(vb.symbols_problems(tmp), [])
+        for fn in os.listdir(os.path.join(dest, "common")):
+            if fn.startswith("name_"):
+                os.remove(os.path.join(dest, "common", fn))
+        self.assertEqual(vb.symbols_problems(tmp), ["기호 사전에 label_words 견본이 없음(코드보다 옛 판 사전)"])
+
+
 class PdfBundleTest(unittest.TestCase):
     """W9(D15): PDF 어댑터 묶음 — requirements-pdf.txt 고정, 빌드 뒤 PDF 검사, verify의 pdf_probe 판정(빌드 없이)."""
 

@@ -147,6 +147,46 @@ SNP 묶음은 만들지 않았다. 옮긴 규칙 가운데 합성 샘플에만 �
 
 로그는 시험 폴더 `D:\HAZOP-trials\2026-11-11-unit-f1\f1-1\`의 `build.log`, `verify.log`, `verify-out/`에 있다. 빌드 폴더는 확인 뒤 지웠다. 배포용(`--with-check` 없는) 빌드는 돌리지 않았다.
 
+## F1-1 검토 지적 수정
+
+검토에서 차단 하나와 경미 넷이 나왔다. 추출 결과는 그대로다.
+
+### 차단: 코드보다 옛 판 사전을 읽으면 오류 없이 분류가 빠진다
+
+F1-1 뒤의 코드는 밸브·계기·설비를 사전의 `structure`·`label_words` 견본으로만 정한다. 그 견본이 없는 사전(F1-1 이전 판)을 읽어도 형식은 맞으므로 멈추지 않았고, 구조 규칙과 이름 낱말 분류가 통째로 빠졌다.
+
+- 재현(`evidence/f1-1-fix-old-dictionary-repro.txt`): `8b415bb`의 코드에 `HAZOP_RESOURCE_ROOT`를 `ddb4c46`의 사전으로 두고 SNP 샘플 PDF 6장을 추출하면 종료 코드 0, 6장 모두 passed인데 노드 종류가 `continuation` 26, 종류 없음 80, `pipe_cap` 2, `tee` 31뿐이다. 밸브·계기·설비가 하나도 없다.
+- 고친 것: `Library.missing_rule_shapes()`가 켜진 견본이 하나도 없는 규칙 종류를 돌려주고, 추출기가 사전을 읽는 자리(`pdf_vector.symbol_library()`)에서 하나라도 비면 `SymbolLibraryError`로 멈춘다. 메시지는 어느 견본이 없는지, 사전 폴더, '코드보다 옛 판 사전'임을 알린다. 여러 쪽 추출(`extract_pdf.run_pages`)은 쪽을 처리하기 전에 사전을 읽으므로 이전 결과를 지우기 전에 멈춘다.
+- 검사를 사전 읽기(`Library.load`)가 아니라 추출기 쪽에 둔 까닭: 견본이 꼭 있어야 하는 것은 추출기다. 묶기 도구(`scripts/symbols/cluster_unclassified.py`)와 사전 시험은 격자 견본만 든 사전도 읽는다.
+- 같은 재현 뒤: 종료 코드 1, `SymbolLibraryError`, 출력 폴더는 생기지 않는다.
+- 시험(`tests/test_symbols.py`의 `OldDictionaryTest` 4건): 저장소 사전 사본에서 규칙 견본이 든 항목을 빼 옛 꼴 사전을 만들고 추출이 멈추는지 본다(둘 다 없음, 구조만 없음, 낱말만 없음, 여러 쪽 추출이 이전 결과를 건드리지 않음). 고치기 전 코드에서 4건 모두 실패하는 것을 먼저 확인했다.
+
+### 경미
+
+| 지적 | 처리 |
+| --- | --- |
+| 기획서가 새 구조와 어긋남 | `specs/pid-symbol-dictionary.md`에 문장을 더했다. §1(표 아래), §3.1 폴더 그림의 `common/`·`SNP/` 줄, §3.2(견본 종류 넷과 `order`·`requires`·`basis` 규칙), §4.2 2·5번, §4.4(`symbol_id` 예외와 이유), §7 표 아래, §7.1 구현 기록. §8 결정 행과 '결정 상태' 표의 글자는 그대로다. `status`는 `draft` 그대로다. 이 기획서는 고정 해시에 걸려 있지 않다(`GUIDE_SHA256`은 `specs/hazop-method-guide.md`의 것이다) |
+| 구조 견본의 `basis`가 겹치면 출처 항목을 되짚을 수 없음 | 켜진 `structure` 견본의 `basis`가 겹치면 사전을 읽을 때 `SymbolLibraryError`로 멈춘다. 시험 `RuleTemplateTest.test_same_basis_twice_fails_loudly`(다른 항목끼리, 한 항목 안, 꺼진 항목은 세지 않음). 지금 사전의 `basis` 11개는 서로 다르다 |
+| 구조 판정과 옛 코드의 일치를 한 경우만 봄 | `OldShapeBranchTest.test_every_old_branch`가 옛 `_shape_kind`의 가지마다 기호를 하나씩 만들어(16가지: 판 2종, 전동, 제어, 나비 몸통 둘, 안전밸브와 그 반례, 체크밸브, 오리피스 둘과 반례, 원, 비석, 화살표, 해당 없음) 추출기와 사전이 함께 내는 (종류, 근거)를 본다. 기대값은 `ddb4c46`의 return 값을 글자로 적었다 |
+| 묶음 검사가 사전을 보지 않음 | `packaging/verify_bundle.py`에 `symbols_problems`를 더했다. 묶음 안 사전이 읽히고 두 규칙 견본이 모두 있는지 보고, 문제가 있으면 결과가 실패다. 시험 `tests/test_packaging.py`의 `BundleSymbolsTest` |
+| `.gitattributes`에 사전 폴더가 없음 | 따로 커밋했다(아래 절) |
+
+### 전후 대조 (명령과 출력은 `evidence/f1-1-fix-compare-output.txt`)
+
+실행 조건: `8b415bb`에 이 수정을 넣은 작업 폴더(커밋 전, `git diff HEAD` sha256 앞 16자 `4245642987173510`, 그 내용이 그대로 커밋됐다), 주 체크아웃, 시험용 venv, `--update` 없음.
+
+| 대조 | 결과 |
+| --- | --- |
+| SNP 6장 추출 JSON·그래프 JSON(24개 파일)과 `graph_version` 12건 | 바이트 같음 24/24, 다른 것 0/12 (`f1-0-before-snp-hashes.json` 기준) |
+| APR1400 143쪽 쪽별 추출·그래프 해시, `graph_version` | 다른 것 0/143 |
+| APR1400 쪽별 결과 CSV(걸린 시간 열 제외) | 다른 행 0/143 |
+| `check_apr1400.py` 143쪽 | 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63723, rc=0 |
+| `check_snp_baseline.py` | 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6 |
+| 사전 판(`check_symbols.py` 첫 줄) | APR1400 `2c997ba7e6ce`, 공통 `ac25f22101ce`, 항목 40(켜짐 36). 그대로다 |
+| `scripts/run_ci.py` | 시험 2082, 실패 0, 오류 0, 건너뜀 20, 검사 스크립트 10개 rc=0 |
+
+시험 수는 `8b415bb`의 2074에서 8 늘었다(`tests/test_symbols.py` 7건, `tests/test_packaging.py` 1건).
+
 ## F1-2: 사전 판을 실행 정보에 (D8) — 구현하지 않고 자리부터 묻는다
 
 기획서 D8이 말하는 '등록 기록의 추출 실행 정보'에 해당하는 저장 자리가 지금 코드에 없다. 후보가 둘 이상으로 갈려 구현하지 않았다. 확인한 사실은 다음과 같다(`16c3536`의 코드를 읽은 것).

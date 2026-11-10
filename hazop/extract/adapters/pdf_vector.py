@@ -889,9 +889,20 @@ def symbol_library():
     with _cache_lock:
         if _symbol_library is None:
             lib = symbols.Library.load()
+            _check_has_rules(lib)
             _check_against_registry(lib)
             _symbol_library = lib
         return _symbol_library
+
+
+def _check_has_rules(lib):
+    """형상 규칙과 장비 이름 낱말은 사전에만 있다(S7). 그 견본이 없는 사전은 코드보다 옛 판이고, 그대로 쓰면
+    밸브·계기·설비가 오류 없이 미분류로 나온다. SymbolLibraryError로 멈춘다."""
+    missing = lib.missing_rule_shapes()
+    if missing:
+        raise symbols.SymbolLibraryError(
+            "기호 사전에 %s 견본이 하나도 없음: %s. 코드보다 옛 판 사전이다(형상 규칙과 장비 이름 낱말을 사전으로 "
+            "옮기기 전). 이 코드와 함께 배포된 사전으로 바꿔야 한다" % ("·".join(missing), paths.folder("symbols")))
 
 
 def _check_against_registry(lib):

@@ -382,6 +382,18 @@ class Library:
                 if o1 == o2:
                     raise SymbolLibraryError("%s 견본의 order %d가 겹침: %s, %s" % (shape, o1, e1.id, e2.id))
         self._structure, self._label_words = rules["structure"], rules["label_words"]
+        # 구조 규칙으로 정한 노드에는 symbol_id가 없고 근거 글자(basis)만 남는다. 그 글자로 항목을 되짚으려면 겹치면 안 된다
+        seen = {}
+        for _, e, t in self._structure:
+            if t.basis in seen:
+                raise SymbolLibraryError("structure 견본의 basis %r가 겹침: %s, %s" % (t.basis, seen[t.basis], e.id))
+            seen[t.basis] = e.id
+
+    def missing_rule_shapes(self):
+        """RULE_SHAPES 가운데 켜진 견본이 하나도 없는 종류. 추출기는 이 견본들로 밸브·계기·설비를 정하므로,
+        하나라도 비면 그 분류가 오류 없이 통째로 빠진다(형상 규칙을 사전으로 옮기기 전 판의 사전이 그렇다)."""
+        return [shape for shape, found in (("structure", self._structure), ("label_words", self._label_words))
+                if not found]
 
     def shape_rule(self, features):
         """추출기가 본 구조 특징(STRUCTURE_FEATURES의 이름들) → (항목, 근거). 요구 특징이 모두 있는 견본 가운데

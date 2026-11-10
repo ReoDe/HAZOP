@@ -1,0 +1,46 @@
+# F1-1 검토 차단 지적의 재현: 코드보다 옛 판 기호 사전을 읽으면 오류 없이 분류가 빠진다
+# - 인터프리터: C:\Users\kim92\.hazop\venv-py312\Scripts\python.exe, PYTHONIOENCODING=utf-8
+# - 옛 사전: `git archive ddb4c46 resources/library`를 시험 폴더 f1-1-fix/old-resources 에 푼 것(F1-1 이전 판. F1-1이 더한 구조·이름 낱말 항목 19개가 없다)
+# - 고치기 전 코드: `git archive 8b415bb hazop scripts`를 시험 폴더 f1-1-fix/code-8b415bb 에 푼 사본
+# - 고친 코드: 주 체크아웃 작업 폴더(8b415bb + 이 수정, 커밋 전. `git diff HEAD` sha256 앞 16자 4245642987173510)
+# - 입력: 저장소 resources/references/pid-samples/*/*.pdf (SNP 가상 샘플 6장)
+# - 환경변수: HAZOP_RESOURCE_ROOT=<시험 폴더>/f1-1-fix/old-resources, HAZOP_WORK_ROOT=<시험 폴더>/f1-1-fix/work-… (끝나고 지움)
+# - 시각: 2026-11-11 07:44 (+0900)
+
+== 1. 고치기 전 코드 + 옛 사전
+$ python <시험 폴더>/f1-1-fix/code-8b415bb/scripts/extract_pdf.py <PDF 6개> --out-root <시험 폴더>/f1-1-fix/out-before
+SNP-M-101 p0: passed nodes=35 relations=35 unresolved=0 texts=5 unknowns=62 blockers=0 -> ../out-before/SNP-M-101
+SNP-M-102 p0: passed nodes=19 relations=20 unresolved=0 texts=4 unknowns=38 blockers=0 -> ../out-before/SNP-M-102
+SNP-M-201 p0: passed nodes=22 relations=23 unresolved=0 texts=5 unknowns=45 blockers=0 -> ../out-before/SNP-M-201
+SNP-M-301 p0: passed nodes=21 relations=21 unresolved=0 texts=8 unknowns=43 blockers=0 -> ../out-before/SNP-M-301
+SNP-M-401 p0: passed nodes=22 relations=22 unresolved=0 texts=4 unknowns=37 blockers=0 -> ../out-before/SNP-M-401
+SNP-M-501 p0: passed nodes=20 relations=20 unresolved=0 texts=7 unknowns=42 blockers=0 -> ../out-before/SNP-M-501
+rc=0
+
+추출 JSON 6개의 노드 종류를 센 것(out-before/*/extraction.json):
+{'continuation': 26, None: 80, 'pipe_cap': 2, 'tee': 31}
+밸브·계기·설비 종류가 하나도 없다. 종료 코드는 0이고 6장 모두 passed다.
+
+== 2. 고친 코드 + 옛 사전
+$ python scripts/extract_pdf.py <PDF 6개> --out-root <시험 폴더>/f1-1-fix/out-after
+  File "D:\HAZOP\hazop\extract\adapters\pdf_vector.py", line 903, in _check_has_rules
+    raise symbols.SymbolLibraryError(
+hazop.extract.symbols.SymbolLibraryError: 기호 사전에 structure·label_words 견본이 하나도 없음: D:\HAZOP-trials\2026-11-11-unit-f1\f1-1-fix\old-resources\resources\library\symbols. 코드보다 옛 판 사전이다(형상 규칙과 장비 이름 낱말을 사전으로 옮기기 전). 이 코드와 함께 배포된 사전으로 바꿔야 한다
+rc=1
+out-after 폴더는 생기지 않았다(어떤 쪽도 쓰기 전에 멈춘다).
+
+== 3. 시험으로 둔 재현 (tests/test_symbols.py)
+새 시험을 먼저 쓰고, 고치기 전 코드(8b415bb의 symbols.py·pdf_vector.py)에서 돌린 결과:
+$ python -m unittest tests.test_symbols
+ERROR: test_missing_rule_shapes_names_what_the_dictionary_lacks (RuleTemplateTest)   AttributeError: 'Library' object has no attribute 'missing_rule_shapes'
+FAIL: test_dictionary_from_before_the_rules_moved_stops_extraction (OldDictionaryTest)   AssertionError: SymbolLibraryError not raised
+FAIL: test_missing_label_word_rules_stop_extraction (OldDictionaryTest)   AssertionError: SymbolLibraryError not raised
+FAIL: test_missing_structure_rules_stop_extraction (OldDictionaryTest)   AssertionError: SymbolLibraryError not raised
+FAIL: test_multi_page_run_stops_before_touching_previous_results (OldDictionaryTest)   AssertionError: SymbolLibraryError not raised
+FAIL: test_same_basis_twice_fails_loudly (RuleTemplateTest)   AssertionError: SymbolLibraryError not raised
+Ran 79 tests in 42.017s
+FAILED (failures=5, errors=1)
+옛 `_shape_kind` 가지를 모두 적은 OldShapeBranchTest.test_every_old_branch 는 고치기 전에도 통과했다(운영 코드를 바꾸지 않는 확인 시험이다).
+
+고친 뒤: tests.test_symbols 79건 통과(tests.test_adapter, tests.test_packaging.BundleSymbolsTest, tests.test_naming_rules,
+tests.test_path_literals 와 함께 돌려 169건 통과). 전체는 f1-1-fix-compare-output.txt 의 run_ci.py 결과에 있다.

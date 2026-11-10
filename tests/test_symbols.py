@@ -644,6 +644,30 @@ class RuleTemplateTest(LibraryCase):
             with self.assertRaises(symbols.SymbolLibraryError, msg=template):
                 self.write([rule_entry("t.bad", "manual_valve", [template])])
 
+    def test_same_basis_twice_fails_loudly(self):
+        """노드에는 근거 글자(classification_basis)만 남는다. 두 구조 견본의 근거가 같으면 어느 항목이 정했는지 되짚을 수 없다."""
+        with self.assertRaises(symbols.SymbolLibraryError) as ctx:
+            self.write([rule_entry("t.a", "manual_valve", [structure(["bowtie"], 10, "valve_body")]),
+                        rule_entry("t.b", "psv", [structure(["body_with_springs"], 20, "valve_body")])])
+        self.assertIn("valve_body", str(ctx.exception))
+        with self.assertRaises(symbols.SymbolLibraryError):
+            self.write([rule_entry("t.a", "manual_valve", [structure(["bowtie"], 10, "valve_body"),
+                                                           structure(["chevrons"], 20, "valve_body")])])
+        lib = self.write([rule_entry("t.a", "manual_valve", [structure(["bowtie"], 10, "valve_body")]),
+                          rule_entry("t.b", "psv", [structure(["body_with_springs"], 20, "valve_body")],
+                                     extra={"enabled": False})])
+        self.assertEqual(lib.shape_rule({"body_with_springs"}), (None, None))
+
+    def test_missing_rule_shapes_names_what_the_dictionary_lacks(self):
+        lib = self.write([entry("t.gate", sig_of([body(BOWTIE_H)]))])
+        self.assertEqual(lib.missing_rule_shapes(), ["structure", "label_words"])
+        lib = self.write([rule_entry("t.plain", "manual_valve", [structure(["bowtie"], 20, "valve_body")]),
+                          rule_entry("t.off", "pump", [label_words(["PUMP"], 10)], extra={"enabled": False})])
+        self.assertEqual(lib.missing_rule_shapes(), ["label_words"])
+        lib = self.write([rule_entry("t.plain", "manual_valve", [structure(["bowtie"], 20, "valve_body")]),
+                          rule_entry("t.pump", "pump", [label_words(["PUMP"], 10)])])
+        self.assertEqual(lib.missing_rule_shapes(), [])
+
     def test_same_order_twice_fails_loudly(self):
         with self.assertRaises(symbols.SymbolLibraryError):
             self.write([rule_entry("t.a", "manual_valve", [structure(["bowtie"], 10, "valve_body")]),
@@ -712,6 +736,142 @@ class CommonRuleTest(unittest.TestCase):
         self.assertEqual(features, {"bowtie"})
         self.assertLessEqual(features, set(symbols.STRUCTURE_FEATURES))
         self.assertEqual(pdf_vector._shape_rule(a["symbols"][0], a["params"]), ("manual_valve", "valve_body"))
+
+
+def _member(pts, closed=True, curved=False, kind="body"):
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    return {"id": "pdf-path-0001", "pts": list(pts), "closed": closed, "curved": curved, "kind_": kind,
+            "bbox": (min(xs), min(ys), max(xs), max(ys))}
+
+
+def _line(a, b):
+    return _member([a, b], closed=False, kind="poly")
+
+
+def _sym(members, stroke_only=False, markers=(), plate_valve=None):
+    sym = pdf_vector._Sym(list(members), stroke_only)
+    if markers:
+        sym.add(list(markers), "markers")
+    if plate_valve:
+        sym.plate_valve = plate_valve
+    return sym
+
+
+TRI_A = _member([(0, 0), (5, 3), (0, 6), (0, 0)])
+TRI_B = _member([(10, 0), (5, 3), (10, 6), (10, 0)])
+CIRCLE_ABOVE = _member([(3, -8), (7, -8), (7, -4), (3, -4), (3, -8)], curved=True)      # 나비 몸통 상자 밖의 원
+CIRCLE_INSIDE = _member([(4, 2), (6, 2), (6, 4), (4, 4), (4, 2)], curved=True)          # 몸통 안 원(글로브 표시)
+BOX_ABOVE = _member([(2, -8), (8, -8), (8, -5), (2, -5), (2, -8)])
+BOX = _member([(0, 0), (8, 0), (8, 5), (0, 5), (0, 0)])
+CIRCLE = _member([(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)], curved=True)
+TOMBSTONE = _member([(0, 13), (0, 5), (5, 0), (10, 5), (10, 13), (0, 13)], curved=True)  # 높이/폭 1.3
+CHEVRON = _member([(0, 0), (20, 0), (25, 3), (20, 6), (0, 6), (5, 3), (0, 0)])
+MARKER = _member([(4, 0), (6, 1), (4, 2), (4, 0)])
+
+
+class OldShapeBranchTest(unittest.TestCase):
+    """옛 `_shape_kind`의 가지마다 기호 하나를 만들어, 추출기의 구조 판정과 공통 묶음 견본이 함께 내는 (종류, 근거)가
+    옮기기 전과 같은지 본다. 기대값은 옮기기 전 코드(ddb4c46)의 return 값을 그대로 적은 것이다."""
+
+    CASES = [
+        ("판 사이 원판", lambda: _sym([_line((0, 0), (0, 6))], True, plate_valve="butterfly"),
+         ("manual_valve", "plates+butterfly")),
+        ("판 사이 공", lambda: _sym([_line((0, 0), (0, 6))], True, plate_valve="ball"), ("manual_valve", "plates+ball")),
+        ("나비 몸통 + 바깥 원", lambda: _sym([TRI_A, TRI_B, CIRCLE_ABOVE]),
+         ("motor_operated_valve", "valve_body+circle_actuator")),
+        ("나비 몸통 + 바깥 몸체", lambda: _sym([TRI_A, TRI_B, BOX_ABOVE]),
+         ("control_valve", "valve_body+diaphragm_actuator")),
+        ("나비 몸통", lambda: _sym([TRI_A, TRI_B]), ("manual_valve", "valve_body")),
+        ("나비 몸통 + 안쪽 원", lambda: _sym([TRI_A, TRI_B, CIRCLE_INSIDE]), ("manual_valve", "valve_body")),
+        ("몸체 + 같은 기울기 사선 둘", lambda: _sym([BOX, _line((1, 6), (3, 9)), _line((4, 6), (6, 9))]),
+         ("psv", "body+spring")),
+        ("몸체 + 기울기가 다른 사선 둘", lambda: _sym([BOX, _line((1, 6), (3, 9)), _line((4, 6), (6, 10))]), (None, None)),
+        ("선 + 표식", lambda: _sym([_line((0, 0), (0, 6)), _line((0, 0), (4, 6))], True, markers=[MARKER]),
+         ("check_valve", "lines+marker")),
+        ("세로선 둘", lambda: _sym([_line((0, 0), (0, 6)), _line((2, 0), (2, 6))], True), ("orifice", "parallel_plates")),
+        ("가로선 둘", lambda: _sym([_line((0, 0), (6, 0)), _line((0, 2), (6, 2))], True), ("orifice", "parallel_plates")),
+        ("세로선 하나와 가로선 하나", lambda: _sym([_line((0, 0), (0, 6)), _line((0, 3), (6, 3))], True), (None, None)),
+        ("원 하나", lambda: _sym([CIRCLE]), ("instrument", "circle")),
+        ("비석 모양 하나", lambda: _sym([TOMBSTONE]), ("instrument", "tombstone")),
+        ("오각 화살표", lambda: _sym([CHEVRON]), ("continuation", "chevron_arrow")),
+        ("네모 하나", lambda: _sym([BOX]), (None, None)),
+    ]
+
+    def test_every_old_branch(self):
+        for name, make, want in self.CASES:
+            self.assertEqual(pdf_vector._shape_rule(make(), pdf_vector.PARAMS), want, name)
+
+
+def _old_dictionary(dest, drop):
+    """저장소 사전의 사본에서 drop 종류의 견본이 든 항목 파일을 뺀다(형상 규칙을 사전으로 옮기기 전 판의 꼴)."""
+    shutil.copytree(paths.folder("symbols"), dest)
+    removed = 0
+    for folder, _, files in os.walk(dest):
+        for fn in files:
+            if not fn.endswith(".json") or fn == symbols.BUNDLES_FILE:
+                continue
+            with open(os.path.join(folder, fn), encoding="utf-8") as f:
+                shapes = {t.get("shape") for t in json.load(f)["match"]}
+            if shapes & set(drop):
+                os.remove(os.path.join(folder, fn))
+                removed += 1
+    return removed
+
+
+def _load_extract_pdf():
+    spec = importlib.util.spec_from_file_location("extract_pdf_for_symbols",
+                                                  os.path.join(REPO_ROOT, "scripts", "extract_pdf.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class OldDictionaryTest(unittest.TestCase):
+    """코드보다 옛 판 사전(구조·낱말 견본이 없음)을 읽으면 밸브·계기·설비 분류가 오류 없이 모두 빠진다(F1-1 검토 차단).
+    추출기는 그런 사전으로는 시작하지 않는다."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def old_dictionary(self, drop):
+        self.assertGreater(_old_dictionary(paths.folder_in(self.tmp, "symbols"), drop), 0)
+        for patch in (mock.patch.object(pdf_vector, "_symbol_library", None),
+                      mock.patch.dict(os.environ, {"HAZOP_RESOURCE_ROOT": self.tmp})):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def failure(self):
+        with self.assertRaises(symbols.SymbolLibraryError) as ctx:
+            extract([prim([(0, 0), (5, 3), (0, 6), (0, 0)]), prim([(10, 0), (5, 3), (10, 6), (10, 0)])])
+        return str(ctx.exception)
+
+    def test_dictionary_from_before_the_rules_moved_stops_extraction(self):
+        self.old_dictionary(symbols.RULE_SHAPES)
+        message = self.failure()
+        self.assertIn("옛 판", message)
+        self.assertIn("structure", message)
+        self.assertIn("label_words", message)
+
+    def test_missing_structure_rules_stop_extraction(self):
+        self.old_dictionary(("structure",))
+        self.assertIn("structure", self.failure())
+
+    def test_missing_label_word_rules_stop_extraction(self):
+        self.old_dictionary(("label_words",))
+        self.assertIn("label_words", self.failure())
+
+    def test_multi_page_run_stops_before_touching_previous_results(self):
+        self.old_dictionary(symbols.RULE_SHAPES)
+        out = os.path.join(self.tmp, "out")
+        kept = os.path.join(out, "page", "extraction.json")
+        os.makedirs(os.path.dirname(kept))
+        with open(kept, "w", encoding="utf-8") as f:
+            f.write("{}")
+        with self.assertRaises(symbols.SymbolLibraryError):
+            _load_extract_pdf().run_pages(os.path.join(self.tmp, "none.pdf"), out, [0], out_name=lambda i: "page")
+        with open(kept, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "{}")
 
 
 class RepoLibraryTest(unittest.TestCase):
