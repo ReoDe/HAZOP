@@ -7,7 +7,7 @@
   지식그래프 원본에 넣지 않는다(KD1, graph_version·kg_version 불변). 잠재 후보는 사실이 아니므로 계산 뷰(V4·V5)와 근거 경로
   (kg_paths)에 넣지 않는다.
 - 이웃 탐색의 홉은 배관 구간 노드를 세지 않는다(기기에서 기기까지 1홉). 화면 계산과 같은 물리 무방향 연결을 쓰고 방향은 표시만 한다.
-- 사람 판단은 데이터/잠재후보/<project_id>.json에 안정 키(규칙 ID|graph_id#source_object_id)로 둔다. 다시 계산하면 키로 맞추고,
+- 사람 판단은 data/latent-candidates/<project_id>.json에 안정 키(규칙 ID|graph_id#source_object_id)로 둔다. 다시 계산하면 키로 맞추고,
   규칙 판이나 대상·후보·관계 대상 내용(digest)이 바뀌면 확인됨·부재 확정·무관과 후보 기각을 재확인 필요(previous_state)로
   돌린다(U10과 같은 보수적 방식, 입력 §2.1). 허용 전이는 TRANSITIONS 표 하나이며 그 밖의 전이는 거부한다.
 - 판단 기록은 적용 전에 하나씩 검사한다. 어긋난 기록은 적용하지 않고 bad_judgements로 알리며 파일에서 지우지 않는다.

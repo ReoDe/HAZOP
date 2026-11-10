@@ -43,7 +43,7 @@ def css_rgb(hex_color):
 
 
 def build_viewer_html(out_dir):
-    """SNP-M-102 추출·그래프로 뷰어 HTML을 만든다(저장소 출력/은 건드리지 않음)."""
+    """SNP-M-102 추출·그래프로 뷰어 HTML을 만든다(저장소 output/은 건드리지 않음)."""
     import glob
     from hazop.extract import drawio, svg_align
     from hazop.graph import build as gbuild

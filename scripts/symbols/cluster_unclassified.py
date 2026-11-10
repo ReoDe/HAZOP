@@ -8,7 +8,7 @@
 2. kind 없는 기호를 사전(기본: resources/library/symbols)에 대 보고, 맞음·애매함·후보 없음을 센다.
 3. 사전에 맞지 않은 미분류를 구성 키가 같고 크기 비 1.25 안이며 8방향 챔퍼 거리 --dist 칸 이하인 것끼리 묶는다.
    대표에 붙이는 탐욕 묶음이라 입력 순서(쪽, 기호 번호)에 대해 결정적이다.
-결과: <out>/요약.json, 묶음.csv, 묶음.json, 그림판.html(+ 그림/c###.png). 기본 <out>은 작업 루트의 기호후보/<묶음>/.
+결과: <out>/요약.json, 묶음.csv, 묶음.json, 그림판.html(+ 그림/c###.png). 기본 <out>은 작업 루트의 symbol-candidates/<묶음>/.
 """
 
 import argparse

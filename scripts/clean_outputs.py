@@ -1,27 +1,27 @@
-"""출력/ 정리 후보를 찾고, --apply일 때만 출력/_보관/<시각>/으로 옮긴다(삭제하지 않음).
+"""output/ 정리 후보를 찾고, --apply일 때만 output/_archive/<시각>/으로 옮긴다(삭제하지 않음).
 
   python scripts/clean_outputs.py                 # dry-run: 옮길 후보·보존 사유만 출력
   python scripts/clean_outputs.py --keep 3        # 구간별 최근 3개 실행만 남기는 후보
-  python scripts/clean_outputs.py --apply         # 후보를 출력/_보관/<UTC 시각>/<원래 상대 경로>로 이동
+  python scripts/clean_outputs.py --apply         # 후보를 output/_archive/<UTC 시각>/<원래 상대 경로>로 이동
   --out-root를 주면 --store-root도 함께 줘야 한다. 검토 기록 폴더(<저장 루트>/reviews)가 없으면 --apply에
   --no-review-records를 명시해야 진행한다. 앱·build_kg가 끝난 뒤 --apply 한다.
 
-대상은 두 곳뿐이다. 그 밖(검토본·출력 기록이 있는 저장 루트, 자료저장소/, 출력의 다른 폴더)은 읽기만 하거나 보지 않는다.
-1) 출력/분석/<구간>/<실행>/ (analysis.json이 있는 폴더): analysis_run.created_at(없으면 폴더 이름) 기준 최근 --keep개 보존.
+대상은 두 곳뿐이다. 그 밖(검토본·출력 기록이 있는 저장 루트, store/, 출력의 다른 폴더)은 읽기만 하거나 보지 않는다.
+1) output/analysis/<구간>/<실행>/ (analysis.json이 있는 폴더): analysis_run.created_at(없으면 폴더 이름) 기준 최근 --keep개 보존.
    그 밖의 실행도 다음이 참조하면 보존한다: 검토 기록(<저장 루트>/reviews/<region_id>/<analysis_run_id>/),
-   평가 비교 보고서(출력/평가비교/<region_id>/<analysis_run_id>/ 또는 그 아래 JSON의 target.analysis_run_id),
+   평가 비교 보고서(output/evaluation-compare/<region_id>/<analysis_run_id>/ 또는 그 아래 JSON의 target.analysis_run_id),
    설정 파일(hazop.paths.settings_path)의 recent_runs. analysis.json을 읽을 수 없는 폴더는 건드리지 않는다.
-2) 출력/지식그래프/<kg>/ (current.json이 있는 폴더): 옛 경로 파일(<kg>/knowledge.json·knowledge_graph.json)과
+2) output/knowledge-graph/<kg>/ (current.json이 있는 폴더): 옛 경로 파일(<kg>/knowledge.json·knowledge_graph.json)과
    이전 버전 폴더(<kg>/v-…/, <kg>/screen/v-…/, <kg>/algo/v-…/). 다음 버전은 보존한다:
    current.json이 가리키는 버전, ③ 화면이 blocked 때 보여 줄 직전 passed 버전(hazop.kg.screen.previous_passed),
    보존하는 분석 실행이 참조한 버전(analysis_run.versions.knowledge_graph). current.json을 읽을 수 없으면 그 kg는 건드리지 않는다.
    건너뛴 분석 실행(analysis.json 읽기 실패·링크·정션)이 하나라도 있으면 그 실행의 참조를 알 수 없으므로
    버전 폴더는 옮기지 않는다(옛 경로 파일은 옮김).
-링크·정션 폴더(기준 폴더 출력/분석·출력/지식그래프와 screen/·algo/ 포함)는 따라가지 않는다.
+링크·정션 폴더(기준 폴더 output/analysis·output/knowledge-graph와 screen/·algo/ 포함)는 따라가지 않는다.
 이동: os.rename만 쓴다(복사 없음). 이동 직전에 검토 기록·평가 비교 참조와 kg current.json 해시를 다시 확인해 바뀌었으면
 그 항목을 건너뛴다. 한계: recent_runs와 계획 이후 새로 생긴 분석 실행의 kg 버전 참조는 다시 확인하지 않는다
 (앱·analyze·build_kg를 끝낸 뒤 실행한다는 운영 지침에 의존).
-기록: 항목마다 rename 전에 출력/_보관/<시각>/manifest.json의 entries에 status "pending"을 먼저 쓰고, 성공하면 "moved"로 고친다.
+기록: 항목마다 rename 전에 output/_archive/<시각>/manifest.json의 entries에 status "pending"을 먼저 쓰고, 성공하면 "moved"로 고친다.
 사전 기록이 실패하면 옮기지 않고 멈추고, rename이 실패하면 "failed"로 기록한 뒤 멈춘다. 갱신이 실패해도 pending 항목으로 복구할 수 있다.
 종료 코드 0 = 정상(후보가 없어도 0), 1 = 이동·기록 중 실패, 2 = 인자 오류·이동 전 검사 실패.
 """
@@ -259,7 +259,7 @@ def _changed(item, out_root, store_root):
 
 
 def apply_plan(plan, out_root, store_root, stamp):
-    """후보를 <out_root>/_보관/<stamp>/<상대 경로>로 os.rename한다. manifest.json의 entries에 rename 전 "pending",
+    """후보를 <out_root>/_archive/<stamp>/<상대 경로>로 os.rename한다. manifest.json의 entries에 rename 전 "pending",
     성공 후 "moved", 실패 시 "failed"를 기록한다. 재확인에서 바뀐 항목은 건너뛴다(skipped).
     기록·rename이 실패하면 그 자리에서 OSError를 올린다(그 뒤 항목은 손대지 않음).
     보관 폴더가 이미 있거나 정리 대상 밖 경로면 ValueError(아무것도 옮기지 않음). manifest 경로를 돌려준다."""

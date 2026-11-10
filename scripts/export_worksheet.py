@@ -1,7 +1,7 @@
-"""Excel 워크시트 출력 (기획서/인터페이스.md §6) -> 출력/워크시트/<구간 ID>/<실행 ID>/worksheet-<출력 시각>.xlsx
+"""Excel 워크시트 출력 (기획서/인터페이스.md §6) -> output/worksheets/<구간 ID>/<실행 ID>/worksheet-<출력 시각>.xlsx
 
 사용 예:
-  python scripts/export_worksheet.py --run 출력/분석/region-SNP-M-102-pzr/<실행 ID>
+  python scripts/export_worksheet.py --run output/analysis/region-SNP-M-102-pzr/<실행 ID>
   python scripts/export_worksheet.py --run <실행 폴더> --scope accepted_modified   # 수용·수정 행만
   python scripts/export_worksheet.py --run <실행 폴더> --store-root <저장 루트> --out-root <워크시트 루트>
 

@@ -298,7 +298,7 @@ K·L열 조합 규칙:
 
 ### 5.1 비교 보고 JSON
 
-위치: `<작업 루트>/출력/평가비교/<region_id>/<analysis_run_id>/compare-<criteria_id>-v<criteria_version>-<basis>-<YYYYMMDDTHHMMSSZ>.json`. 같은 이름이 있으면 덮어쓰지 않고 실패합니다. 아래는 필드 형태 예시이며 지표 값은 §7.3 E1, 목록은 줄여 적었습니다.
+위치: `<작업 루트>/output/evaluation-compare/<region_id>/<analysis_run_id>/compare-<criteria_id>-v<criteria_version>-<basis>-<YYYYMMDDTHHMMSSZ>.json`. 같은 이름이 있으면 덮어쓰지 않고 실패합니다. 아래는 필드 형태 예시이며 지표 값은 §7.3 E1, 목록은 줄여 적었습니다.
 
 ```json
 {
@@ -350,7 +350,7 @@ K·L열 조합 규칙:
 | 모듈 | `hazop/evaluate/criteria.py`(읽기·검사·정규화), `hazop/evaluate/view.py`(비교 입력 뷰 생성), `hazop/evaluate/match.py`(대응·지표), `hazop/evaluate/report.py`(JSON·Excel), `hazop/evaluate/adapters/`(§6) |
 | 명령 | `python scripts/compare_criteria.py --criteria <파일> --run <분석 실행 폴더> [--store-root] [--basis draft\|reviewed] [--export <출력 기록 JSON>] [--format json\|xlsx_sheet] [--now]`. 출력 루트를 바꾸는 옵션(`--out-root`)은 없고, 작업 루트(`HAZOP_WORK_ROOT`)를 바꿔 정함 |
 | 검사 스크립트 | `scripts/check_compare.py`·`tests/test_evaluate.py`: §7 사례 전체, 종료 코드 0 = 통과. 네트워크·AI 호출 없음 |
-| 샘플 기준 파일 | §7.1의 JSON을 `데이터/평가기준/criteria-SNP-M-102-pzr-sample.json`으로 저장(구현 담당) |
+| 샘플 기준 파일 | §7.1의 JSON을 `data/evaluation-criteria/criteria-SNP-M-102-pzr-sample.json`으로 저장(구현 담당) |
 
 ## 6. 변환 어댑터 자리
 
@@ -456,7 +456,7 @@ K·L열 조합 규칙:
 | E10 | §2.2 Excel 양식으로 7.1과 같은 내용을 작성해 `xlsx_sheet` 어댑터로 읽음 | 변환 결과가 §2.2에서 Excel로 받는다고 명시한 모든 필드에서 7.1과 같음(양쪽 모두 생략 필드에 기본값 `required: true`·`expected: "scenarios"`·`recommendations: []`·`safeguards: null`을 채운 뒤 키 정렬 비교). 다른 점은 R05 보호수단의 `text`("저압 경보 후 운전원 조치")가 없는 것 하나. 지표는 E1과 같음 |
 | E11 | Excel H열 2줄, J열 1줄 | `blocked`(줄 수 불일치) |
 | E12 | Excel 셀에 `=1+1` 수식 | `blocked`(수식 셀) |
-| E13 | 뷰 생성기: 실제 실행 폴더(`출력/분석/region-SNP-M-102-pzr/` 최신 실행)를 임시 작업 루트에 복사하고, 빈 임시 저장 루트(검토 기록 없음)로 `draft` 뷰 생성 | 뷰의 시나리오 수 = analysis.json에서 선택 편차의 시나리오 수, 각 원인·결과 문장 = `merge_display(s, None)` 값, `analysis_sha256` = 파일 SHA-256, `graph_tags` = 사본 `inputs/graph.json` 태그. 저장소의 `출력/`은 바뀌지 않음 |
+| E13 | 뷰 생성기: 실제 실행 폴더(`output/analysis/region-SNP-M-102-pzr/` 최신 실행)를 임시 작업 루트에 복사하고, 빈 임시 저장 루트(검토 기록 없음)로 `draft` 뷰 생성 | 뷰의 시나리오 수 = analysis.json에서 선택 편차의 시나리오 수, 각 원인·결과 문장 = `merge_display(s, None)` 값, `analysis_sha256` = 파일 SHA-256, `graph_tags` = 사본 `inputs/graph.json` 태그. 저장소의 `output/`은 바뀌지 않음 |
 | E14 | E13의 임시 사본에서 `export_worksheet`로 출력 기록을 만든 뒤, 사본 `analysis.json`을 1바이트 바꾸고 `--export`로 비교 | `blocked`(해시 불일치) |
 | E15 | `provenance.kind: synthetic` | 보고 JSON·Excel 요약에 "가상 기준 — MVP 성공 판단에 쓰지 않음" 표시 |
 

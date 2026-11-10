@@ -153,7 +153,7 @@ P&ID 레이어 노드는 기존 정의([노드 단위](integration.md#node-unit)
 
 - `from`·`to`는 지식 노드 ID 또는 P&ID 안정 참조 `target_ref`(§2.5)입니다. 예: 태그가 하나뿐이면 `graph-SNP-M-102:RC-PV101`, 같은 태그가 여러 개면 `graph-SNP-M-102#<source_object_id>` [제안]. 동명 태그를 `graph_id:tag`로 쓰면 차단 오류입니다.
 - CSV는 UTF-8(BOM 허용)으로 저장해 Excel에서 고칠 수 있게 합니다. 표준 라이브러리만으로 읽을 수 있어 의존성이 늘지 않습니다(현재 저장소는 YAML 라이브러리를 쓰지 않음). YAML은 대안입니다(§8 D3).
-- 저장 위치 [제안]: 입력은 사용자 데이터인 `데이터/지식/<project_id>/`, 결과는 `출력/지식그래프/<kg_id>/`([인터페이스 §7.1](interface.md#71-경로-분리)의 사용자 데이터 분류).
+- 저장 위치 [제안]: 입력은 사용자 데이터인 `data/knowledge-graph/<project_id>/`, 결과는 `output/knowledge-graph/<kg_id>/`([인터페이스 §7.1](interface.md#71-경로-분리)의 사용자 데이터 분류).
 - 값이 빈 칸이면 `null`(미확인)로 읽고 0이나 "없음"으로 바꾸지 않습니다. 단위·압력 기준은 추정하지 않습니다.
 
 ### 2.7 용어
@@ -378,7 +378,7 @@ T1 W7의 개발 규격입니다. 사실 근거는 파일:행으로 적고, 근�
 
 #### 6.4.1 지식그래프 지정과 입력 고정
 
-- **지정**: 구간 JSON의 `inputs.knowledge_graph`에 지식그래프 폴더(`출력/지식그래프/<kg_id>`, `current.json`이 있는 폴더)를 적습니다(W7-1). 값이 없거나 `null`이면 지식 맥락을 쓰지 않습니다. 기존 구간 JSON(`데이터/구간/region-SNP-M-102-pzr.json` 180–185행)에는 이 키가 없으므로 동작이 바뀌지 않습니다.
+- **지정**: 구간 JSON의 `inputs.knowledge_graph`에 지식그래프 폴더(`output/knowledge-graph/<kg_id>`, `current.json`이 있는 폴더)를 적습니다(W7-1). 값이 없거나 `null`이면 지식 맥락을 쓰지 않습니다. 기존 구간 JSON(`data/regions/region-SNP-M-102-pzr.json` 180–185행)에는 이 키가 없으므로 동작이 바뀌지 않습니다.
 - **읽기 (한 번만)**: `load_inputs`(`hazop/analysis/run.py` 52행)가 지정된 폴더에서 포인터를 **한 번** 읽고, 그 포인터가 가리킨 버전 폴더의 `knowledge_graph.json` 바이트를 읽습니다. 이 바이트 하나로 해시 계산, 분석, 사본 저장을 모두 합니다. 포인터를 다시 조회하지 않습니다.
   - 이를 위해 `hazop/kg/build.py`의 읽기 전용을 최소 범위로 풉니다(T1 decisions D11). `load_outputs`(550행)의 본문을 새 함수(예: `load_outputs_raw(kg_root)`)로 옮겨 `(knowledge, kg, gbytes, ver_dir, pointer)`를 돌려주게 하고, `load_outputs`는 그 함수를 불러 지금처럼 `(knowledge, kg)`만 돌려줍니다. 기존 호출부(`hazop/app/screens/knowledge.py` 249행 등)는 바뀌지 않습니다.
   - 버전 폴더는 덮어쓰지 않으므로(`write_outputs`, `build.py` 496–526행) 포인터를 읽은 뒤 다른 빌드가 포인터를 바꿔도 이미 고른 버전의 바이트는 그대로입니다. 실행은 처음 읽은 포인터 기준으로 일관됩니다(C7).
@@ -512,7 +512,7 @@ knowledge_context = {
 | 위치 | 값 |
 | --- | --- |
 | `analysis_run.versions.knowledge_graph` | `{"id": kg_id, "version": kg_version, "knowledge_graph_sha256": <읽은 파일 바이트의 해시>, "graph_refs": [...]}`. 이 값은 포인터의 `knowledge_graph_sha256`과 같음(읽을 때 대조, C7). 지정하지 않았으면 `null`. 기존 `versions` 항목 형식(`run.py` 410–423행)과 맞춤 |
-| `analysis_run.input_files[]` | `{"role": "knowledge_graph", "path": "출력/지식그래프/<kg_id>/<kg_version>/knowledge_graph.json", "sha256": ...}` |
+| `analysis_run.input_files[]` | `{"role": "knowledge_graph", "path": "output/knowledge-graph/<kg_id>/<kg_version>/knowledge_graph.json", "sha256": ...}` |
 | `<실행 폴더>/inputs/knowledge_graph.json` | 분석 당시 바이트 사본 |
 
 근거 묶음 내보내기(`hazop/analysis/bundle_export.py` 58–105행)는 같은 `prepare_doc` 경로를 쓰므로 묶음 해시가 분석 때와 같고, `manifest.json`의 입력 파일 목록에 지식그래프 항목이 자동으로 남습니다. Excel 출력의 입력 파일 목록에도 `input_files`를 따라 `knowledge_graph` 행이 생깁니다(`hazop/export/worksheet.py`는 바꾸지 않음).
@@ -538,7 +538,7 @@ knowledge_context = {
 
 #### 6.4.4 기존 고정 응답과 `bundle_sha256` (W7-4)
 
-현재 `bundle_sha256`이 기록된 고정 응답은 `데이터/고정응답/region-SNP-M-102-pzr/`의 5개와 `tests/fixtures/analysis/bad/deviation-p86-d09.json`입니다(파일 검색으로 확인).
+현재 `bundle_sha256`이 기록된 고정 응답은 `data/fixed-responses/region-SNP-M-102-pzr/`의 5개와 `tests/fixtures/analysis/bad/deviation-p86-d09.json`입니다(파일 검색으로 확인).
 
 | 안 | 내용 | 기존 고정 응답 | 단점 |
 | --- | --- | --- | --- |
@@ -550,7 +550,7 @@ A를 권고합니다. 지식 맥락이 있는 경우의 고정 응답은 새로 
 
 `TEMPLATE_VERSION`을 `"4"`로 올리면 기존 고정 응답(v3 문구 기준으로 작성)으로 실행해도 실행 기록(`ai_runs[].template`, `run.py` 558행)과 내보내기 manifest에는 v4가 남습니다. 고정 응답 대조는 문구를 보지 않으므로 통과하지만, 기록만 보면 그 응답이 v4 문구로 만들어진 것처럼 읽힙니다. 지식그래프를 지정하지 않은 실행에서는 규칙 11이 대상(`knowledge_context`)이 없어 실질적인 차이는 없습니다 [추론]. 응답 파일의 `sample_note`에 작성 당시 템플릿 버전을 적는 방식은 후속으로 둡니다 [제안].
 
-- 위치 [제안]: `tests/fixtures/kg_context/`. 기존 구간 JSON은 고치지 않고, 같은 구간 JSON의 사본에 `inputs.knowledge_graph`만 넣은 테스트용 구간과 샘플 지식그래프(`데이터/지식/SNP-SAMPLE/`로 빌드)를 씁니다. 기존 QA 기준([인터페이스 §8](interface.md#8-완료-기준-구현-단계-검사-항목) 616–617행)은 바뀌지 않습니다.
+- 위치 [제안]: `tests/fixtures/kg_context/`. 기존 구간 JSON은 고치지 않고, 같은 구간 JSON의 사본에 `inputs.knowledge_graph`만 넣은 테스트용 구간과 샘플 지식그래프(`data/knowledge-graph/SNP-SAMPLE/`로 빌드)를 씁니다. 기존 QA 기준([인터페이스 §8](interface.md#8-완료-기준-구현-단계-검사-항목) 616–617행)은 바뀌지 않습니다.
 - 작성 방법: 근거 묶음 내보내기 → 응답 틀(`region_id`·`bundle_sha256` 미리 채움)에 응답 작성. 응답은 개발 담당이 Claude Code 세션에서 근거 묶음을 읽고 쓰며, 실제 Anthropic API는 호출하지 않습니다(사용자 결정, [인터페이스 §2.5](interface.md#25-ai-확장-지점)). 검사용 응답은 `ev-kg-*`를 사실에서 인용하는 사례와 시나리오(패턴 해석·AI 추가 가설)에서 인용하는 사례를 각각 포함합니다(C8 (a1)(a2)).
 
 #### 6.4.5 ⑤ 관련 지식 표시
@@ -583,7 +583,7 @@ A를 권고합니다. 지식 맥락이 있는 경우의 고정 응답은 새로 
 | ④ 분석 | `hazop/analysis/run.py`(`load_inputs`·`prepare`·`prepare_doc`·`build_bundle`·`_check_derived`·`resume`의 지식그래프 입력·사본·근거 묶음), `hazop/analysis/ai.py`(`SYSTEM_PROMPT` 규칙 11, `TEMPLATE_VERSION`), `hazop/analysis/bundle_export.py`(manifest의 지식그래프 기록이 자동으로 남지 않을 때만) |
 | ⑤·③ 화면 | `hazop/app/runctx.py`(기록·현재 `kg_version` 판정), `hazop/app/data.py`(시나리오별 관련 지식 고르기), `hazop/app/render.py`(관련 지식 HTML), `hazop/app/screens/review.py`(관련 지식 묶음·버전 띠·③ 이동), `hazop/app/screens/knowledge.py`(`open_node` 진입만), `hazop/app/tokens.py`(디자인이 새 토큰을 정할 때만) |
 | 지식 빌더 (최소 변경) | `hazop/kg/build.py`: `load_outputs`의 바이트·버전 경로·포인터를 함께 돌려주는 함수 추가와 포인터 필수 키·자료형 검사만(§6.4.1). `load_outputs`의 반환값과 다른 함수는 바꾸지 않음 |
-| 읽기만 | `hazop/kg/algo.py`, `hazop/kg/screen_template.html`, `hazop/export/worksheet.py`, `데이터/구간/`, `데이터/고정응답/`, `데이터/지식/` |
+| 읽기만 | `hazop/kg/algo.py`, `hazop/kg/screen_template.html`, `hazop/export/worksheet.py`, `data/regions/`, `data/fixed-responses/`, `data/knowledge-graph/` |
 
 - 의존성: T6 W3(④⑤ 긴 칩·라벨 축약, `docs/2026-11-05-design-system/PROGRESS.md` 14행)은 같은 ⑤ 화면 파일(`review.py`)을 다루며 "T1 W7과 순차"로 등록되어 있습니다. W7을 먼저 끝내고 T6 W3이 W7이 추가한 ⑤ 요소까지 포함해 1366 폭 기준을 확인합니다. 두 작업을 동시에 돌리지 않습니다.
 - W7의 ⑤ 추가 요소도 기존 화면 폭 검사(`scripts/check_design.py`)를 통과해야 합니다 [제안].
@@ -671,8 +671,8 @@ A를 권고합니다. 지식 맥락이 있는 경우의 고정 응답은 새로 
 | V2 | 오프라인 | 생성 HTML 중 vendor 본문을 뺀 생성 부분에 외부 URL(`http://`, `https://`, `ws(s)://`, `//host`) 없음. 인라인한 vendor 본문은 SHA-256이 기록값과 같고, 그 안의 URL 문자열은 반입 시 확인한 허용 목록(요청 대상이 아닌 이름공간·명세·저장소 주소)과 같음. LICENSE 파일 존재 (T1 decisions D5) |
 | S1 | 화면 상한 | 전역 보기 노드 수가 §7.3 상한(5,000)을 넘으면 경고하고 로컬 보기를 권함 (T1 decisions D8) |
 | P1 | 성능 | §7.3 상한 규모의 합성 그래프에서 계산 시간 기록 |
-| C1 | 하위 호환 (§6.4.4) | 입력: 기존 구간 JSON(`inputs.knowledge_graph` 없음)과 `데이터/고정응답/region-SNP-M-102-pzr/`. 기대: 근거 묶음에 `knowledge_context` 키와 `ev-kg-*`가 없고, 후보별 `bundle_sha256`이 고정 응답 5개의 값과 같으며, 5개 모두 `validated`. 후보·시나리오·위험도·설계보완 후보 수가 W7 이전 결과와 같음. 메모: 실행 기록의 템플릿은 v4로 남음(응답은 v3 문구로 작성됨, §6.4.4). 이 차이는 실패로 보지 않음 |
-| C2 | 범위·스키마 (§6.4.2) | 입력: 같은 구간 사본에 샘플 지식그래프(`데이터/지식/SNP-SAMPLE/`)를 지정. 기대(확정값, RC-PSV101·RC-PT110 탐색 도달은 검토자 실측 확인): `items`는 정확히 6개 — `req-001`·`req-002`·`cond-001`·`cond-002`·`setpt-001`·`setpt-002`. `excluded.links_not_in_v4 = 1`(`krel-012` → `setpt-003`, `unknown`). `req-003`(적용 관계 없음), `case-001`(`hypothesis`·`analyzed_in`), `mentions`·`depends_on`은 항목에 없음. `req-001`의 `specified_in`은 `chunk-001`, `req-002`는 `chunk-002`이고 어느 항목에도 조각 `text`가 없음. `setpt-001`·`setpt-002`는 서로 `conflict_with`. `nodes_with_gap`에는 RC-PV101(`entity-node-008`)이 들어감(검토자 실측: 탐색 범위 28개 노드에 포함, §7.1 A2 기대값과 같음). 추가 사례 C2-0: 지식그래프를 지정했지만 범위 노드에 걸린 항목이 0개인 픽스처 — `knowledge_context`가 있고 `items: []`, 범위의 `drawing_object`가 `nodes_without_knowledge`에 있으며 분석은 정상 진행 |
+| C1 | 하위 호환 (§6.4.4) | 입력: 기존 구간 JSON(`inputs.knowledge_graph` 없음)과 `data/fixed-responses/region-SNP-M-102-pzr/`. 기대: 근거 묶음에 `knowledge_context` 키와 `ev-kg-*`가 없고, 후보별 `bundle_sha256`이 고정 응답 5개의 값과 같으며, 5개 모두 `validated`. 후보·시나리오·위험도·설계보완 후보 수가 W7 이전 결과와 같음. 메모: 실행 기록의 템플릿은 v4로 남음(응답은 v3 문구로 작성됨, §6.4.4). 이 차이는 실패로 보지 않음 |
+| C2 | 범위·스키마 (§6.4.2) | 입력: 같은 구간 사본에 샘플 지식그래프(`data/knowledge-graph/SNP-SAMPLE/`)를 지정. 기대(확정값, RC-PSV101·RC-PT110 탐색 도달은 검토자 실측 확인): `items`는 정확히 6개 — `req-001`·`req-002`·`cond-001`·`cond-002`·`setpt-001`·`setpt-002`. `excluded.links_not_in_v4 = 1`(`krel-012` → `setpt-003`, `unknown`). `req-003`(적용 관계 없음), `case-001`(`hypothesis`·`analyzed_in`), `mentions`·`depends_on`은 항목에 없음. `req-001`의 `specified_in`은 `chunk-001`, `req-002`는 `chunk-002`이고 어느 항목에도 조각 `text`가 없음. `setpt-001`·`setpt-002`는 서로 `conflict_with`. `nodes_with_gap`에는 RC-PV101(`entity-node-008`)이 들어감(검토자 실측: 탐색 범위 28개 노드에 포함, §7.1 A2 기대값과 같음). 추가 사례 C2-0: 지식그래프를 지정했지만 범위 노드에 걸린 항목이 0개인 픽스처 — `knowledge_context`가 있고 `items: []`, 범위의 `drawing_object`가 `nodes_without_knowledge`에 있으며 분석은 정상 진행 |
 | C3 | 계산 제외 (§6.4.2) | 입력: 샘플을 고친 픽스처 — 적용 관계 1개를 `knowledge_status: hypothesis`로, 다른 1개를 `link_status: rejected`로, 적용 대상 지식 노드 1개를 `unknown`으로 바꿈. `link_candidates.csv`에 후보가 있는 상태. 기대: 세 항목이 `items`에서 빠지고 `excluded.links_not_in_v4`에 셈. 후보 CSV는 읽지 않음 |
 | C4 | 결정성 (§6.4.2) | 입력: 같은 입력 두 번, 그리고 이 구간과 무관한 지식 노드 1개만 추가해 `kg_version`이 바뀐 지식그래프. 기대: 두 번 실행의 `knowledge_context`·`bundle_sha256`이 바이트 단위로 같고, 무관한 노드만 추가한 경우에도 `bundle_sha256`이 같음(`kg_version`은 다름) |
 | C5 | 크기 상한 (§6.4.2) | 입력: 합성 지식그래프. (a) 탐색 시작 노드에 요건 40개 / 41개 (b) 순위·종류가 같고 ID만 다른 항목이 41번째 경계에 걸침 (c) 문구가 긴 요건 여러 개로 64 KiB를 넘김, 문구 하나만으로 64 KiB를 넘는 요건 1개 (d) 요건 하나가 범위 노드 21개 이상에 걸리고 `specified_in` 11개 이상 (e) 생략 대상 ID 201개 이상 (f) 충돌 짝 중 한쪽만 상한으로 생략됨 (g) 범위 노드 5,000개가 모두 지식 입력 없음(`items: []`). 기대: (a) 40개는 `truncated: null`·`truncated_lists: {}`, 41개는 40개와 `reason: max_items`·`omitted_ids` 1개 (b) ID 오름차순으로 앞선 항목이 남음 (c) 단독 초과 항목이 먼저 빠지고 그다음 정렬 뒤쪽부터 생략, `reason: max_bytes`, 직렬화 크기 ≤ 64 KiB, 문구는 잘리지 않음 (d) 항목은 빠지지 않고 `applies_to` 20개와 `applies_to_omitted`, `specified_in` 10개와 `specified_in_omitted`, `truncated.reason: per_item_limits`·`omitted_count: 0`, `missing_information`은 "항목은 모두 포함, 적용 설비·인용 연결 일부 생략(per_item_limits)". `specified_in`만 잘린 변형은 `affected_entity_ids: []` (e) `omitted_ids` 200개, `omitted_count`는 전체 수, `omitted_ids_truncated: true` (f) 남은 쪽에 `conflict_outside: [{id, reason: "truncated"}]` (g) `nodes_without_knowledge` 200개, `truncated.reason: max_list`·`omitted_count: 0`, `missing_information`은 "범위 노드 분류 목록 일부 생략(max_list)", 빠진 노드 4,800개가 `affected_entity_ids`에 들어가므로 그 목록도 200개로 잘려 `truncated_lists: {"nodes_without_knowledge": 5000, "truncated.affected_entity_ids": 4800}`, 직렬화 크기 ≤ 64 KiB(목록 상한으로도 넘으면 `knowledge_context_too_large` 차단) (h) `max_items`와 `per_item_limits`가 함께 걸리면 `reason: max_items`, `reasons`에 둘 다, `missing_information`은 "항목 N개 중 40개만 포함(max_items); 적용 설비·인용 연결 일부 생략(per_item_limits)". (a)(c)(d)에서 `truncated.affected_entity_ids`가 생략된 항목·연결이 걸린 범위 노드와 같고 문자열 오름차순. 공통: 생략이 있으면 `missing_information`과 보류(`source: knowledge`, `scope: knowledge_context`, 요청 "지식 맥락 상한 검토 또는 지식 입력 범위 조정 후 재분석")가 하나씩 생김, 생략 항목의 `ev-kg-*`는 `allowed_ids.evidence_ids`에 없음 |
@@ -693,7 +693,7 @@ A를 권고합니다. 지식 맥락이 있는 경우의 고정 응답은 새로 
 | `all_simple_paths` | `cutoff` 8, 경로 100개 | 근거 없음, 샘플로 정함 |
 | `simple_cycles` | `length_bound` 10 | 근거 없음, 샘플로 정함 |
 
-현재 샘플 도면 6장은 도면당 `graph.json` 노드 30~61개, `entity_mapping.json` 항목 38~70개(노드와 직접 관계 포함)로 상한보다 훨씬 작습니다(2026-11-05 `출력/그래프/` 집계). 실제 발전소 자료 규모는 모릅니다.
+현재 샘플 도면 6장은 도면당 `graph.json` 노드 30~61개, `entity_mapping.json` 항목 38~70개(노드와 직접 관계 포함)로 상한보다 훨씬 작습니다(2026-11-05 `output/graph/` 집계). 실제 발전소 자료 규모는 모릅니다.
 
 ## 8. 구현 단계 제안과 남은 결정
 
@@ -752,7 +752,7 @@ WP5 상세 규격의 결정 사항은 §6.4.8(W7-1~W7-10)에 따로 둡니다.
 ```
 ① P&ID 등록·추출 ─> graph.json(project_id) ─┐
 ① 설계 문서(PDF) 등록 ─> 문서 지식 추출기 ─> document_knowledge.json ─┼─> hazop.kg.auto ─> kg-<project_id>/<kg_version>/
-데이터/지식/<project_id>/*.csv (있을 때만) ───────────────────────────┘
+data/knowledge-graph/<project_id>/*.csv (있을 때만) ───────────────────────────┘
 ```
 
 - 다시 빌드하는 때: ①에서 도면을 추출했을 때, 설계 문서를 등록·재추출했을 때, ③에 들어갔는데 그 프로젝트의 지식그래프가 아직 없을 때.

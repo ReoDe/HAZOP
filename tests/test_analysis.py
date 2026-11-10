@@ -1,7 +1,7 @@
 """단계 ④ HAZOP 분석 테스트. 실행: python -m unittest discover -s tests -t .
 
-실제 API 호출 없음: AI는 고정 응답(데이터/고정응답/, tests/fixtures/analysis/)과 모의 SDK 객체만 쓴다.
-입력 그래프는 샘플 drawio에서 직접 만든다(출력/ 폴더에 의존하지 않음).
+실제 API 호출 없음: AI는 고정 응답(data/fixed-responses/, tests/fixtures/analysis/)과 모의 SDK 객체만 쓴다.
+입력 그래프는 샘플 drawio에서 직접 만든다(output/ 폴더에 의존하지 않음).
 """
 
 import copy

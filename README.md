@@ -77,7 +77,7 @@
 | `specs/flows/` | 전체 및 단계별 플로우차트: 순서·분기·입출력 |
 | `specs/` | 전체 및 단계별 기획서: 목적·요구사항·판단 기준·사례·미결정 사항 |
 | `design/` | 실제 사용 시 화면·구성·사용 흐름의 뼈대 설계. 참고: ['출력화면 AX' 데모 분석](design/output-screen-ax-demo.md) |
-| `작업/` | 개발 환경의 작업 루트(`hazop/paths.py` `DEV_WORK_ROOT`, 저장소에 포함하지 않음). 배포본의 `%LOCALAPPDATA%\HAZOP`와 배치가 같다: `데이터/`(구간·고정 응답·검토구간·분석결과·백업 등 사람과 앱의 작업), `출력/`(생성 결과물), `자료저장소/`(① 등록 원본), `logs/`. 새로 받은 저장소에서는 `python scripts/seed_samples.py`로 표본을 채운다. `git clean -fdx`는 이 폴더를 지우므로 쓰지 않는다 |
+| `work/` | 개발 환경의 작업 루트(`hazop/paths.py` `DEV_WORK_ROOT`, 저장소에 포함하지 않음). 배포본의 `%LOCALAPPDATA%\HAZOP`와 배치가 같다: `data/`(구간·고정 응답·검토구간·분석결과·백업 등 사람과 앱의 작업), `output/`(생성 결과물), `store/`(① 등록 원본), `logs/`. 새로 받은 저장소에서는 `python scripts/seed_samples.py`로 표본을 채운다. `git clean -fdx`는 이 폴더를 지우므로 쓰지 않는다 |
 | `records/` | 결정 로그와 미구현 작업 목록 |
 | `hazop/` | Python 패키지: 추출·그래프·뷰어 |
 | `scripts/` | 실행·검사 스크립트 |
@@ -88,26 +88,26 @@
 
 ## 실행 방법
 
-저장소 루트에서 실행합니다. 아래 `출력/`·`데이터/`·`자료저장소/`는 작업 루트(기본 `작업/`) 기준 경로입니다. `PYTHONIOENCODING=utf-8` 설정은 권장하나 없어도 동작하며, 필요 패키지는 `networkx`, 검사용으로 `node`가 필요합니다.
+저장소 루트에서 실행합니다. 아래 `output/`·`data/`·`store/`는 작업 루트(기본 `work/`) 기준 경로입니다. `PYTHONIOENCODING=utf-8` 설정은 권장하나 없어도 동작하며, 필요 패키지는 `networkx`, 검사용으로 `node`가 필요합니다.
 
 1. `python scripts/extract_drawio.py --samples`
 2. `python scripts/build_graph.py`
-3. `python scripts/build_viewer.py` 후 `출력/뷰어/index.html`을 브라우저로 엽니다.
+3. `python scripts/build_viewer.py` 후 `output/viewer/index.html`을 브라우저로 엽니다.
 4. `python -m unittest discover -s tests -t .`
 5. `python scripts/check_extract.py`, `python scripts/check_graph.py`, `python scripts/check_viewer.py`
 6. `node scripts/check_viewer_paths.js`
 7. 질의 예: `python scripts/query_graph.py SNP-M-101 path RC-RV01 RC-PP01 --mode physical`
 8. 등록: `python scripts/register.py --project <ID> <파일.drawio> [--drawing-number X --revision 0 --title T --by 이름 --reason 사유]`
-9. 등록 자료 추출: `python scripts/extract_drawio.py --registration 자료저장소/<ID>/registrations/<material_id>/<버전>.json`
-10. 일괄(등록→추출→그래프→뷰어): `python scripts/run_samples.py` → `출력/samples/추출·그래프·뷰어/`(1~3번 `--samples` 결과와 분리). 앱 ① 화면은 `출력/추출/`만 보므로 이 결과(기본 프로젝트 sample-project)를 미추출로 표시함(데이터 손실 없음, 필요하면 ①에서 다시 추출)
-11. HAZOP 분석(고정 응답): `python scripts/analyze.py` → 출력/분석/region-SNP-M-102-pzr/<실행ID>/analysis.json
+9. 등록 자료 추출: `python scripts/extract_drawio.py --registration store/<ID>/registrations/<material_id>/<버전>.json`
+10. 일괄(등록→추출→그래프→뷰어): `python scripts/run_samples.py` → `output/samples/extract·그래프·뷰어/`(1~3번 `--samples` 결과와 분리). 앱 ① 화면은 `output/extract/`만 보므로 이 결과(기본 프로젝트 sample-project)를 미추출로 표시함(데이터 손실 없음, 필요하면 ①에서 다시 추출)
+11. HAZOP 분석(고정 응답): `python scripts/analyze.py` → output/analysis/region-SNP-M-102-pzr/<실행ID>/analysis.json
 12. 실제 API: `ANTHROPIC_API_KEY` 설정 후 `python scripts/analyze.py --live [--only p86-d09]`, 재시도 `--resume <실행 폴더>`, 그래프 버전 재연결 `--rebind-graph --confirm --by 이름 --reason 사유`
 13. 검사 추가: `python scripts/check_register.py`, `python scripts/check_analysis.py`, `python scripts/refresh_fixture_hashes.py --check`
 14. 데스크톱 앱(PySide6 필요): `python scripts/run_app.py [--run <분석 실행 폴더>] [--debug] [--screenshots <폴더>]`. `--screenshots`는 화면별 스크린샷을 저장한 뒤 종료
 15. 워크시트 내보내기(openpyxl 필요): `python scripts/export_worksheet.py --run <분석 실행 폴더> [--scope all|accepted_modified] [--store-root <저장 루트>] [--out-root <출력 루트>]`
 16. 근거 묶음 내보내기: `python scripts/export_bundles.py [--region <구간 JSON>] [--graph <그래프 JSON>] [--out-root <출력 루트>]`
-17. 지식 빌드: `python scripts/build_kg.py <프로젝트 ID>` → `출력/지식그래프/<kg_id>/current.json` 포인터(입력 `데이터/지식/<프로젝트 ID>/`)
+17. 지식 빌드: `python scripts/build_kg.py <프로젝트 ID>` → `output/knowledge-graph/<kg_id>/current.json` 포인터(입력 `data/knowledge-graph/<프로젝트 ID>/`)
 18. 엔티티 연결(`--graph-id` 필수, 반복 지정 가능): `python scripts/link_kg.py candidates|confirm-exact|apply <프로젝트 ID> --graph-id <그래프 ID>` (`confirm-exact`는 `--reviewer`·`--reason` 포함)
 19. 그래프 알고리즘 A1~A5: `python scripts/analyze_kg.py <프로젝트 ID> --start <노드 ID> [--radius 2] [--region <구간 JSON>] [--graph-id <그래프 ID>]`
 20. 지식그래프 검사: `python scripts/check_kg_renderer.py`, `python scripts/check_kg.py`, `python scripts/check_kg_link.py`, `python scripts/check_kg_algo.py`
-21. 출력 정리: `python scripts/clean_outputs.py [--keep 5] [--apply] [--out-root <출력 루트> --store-root <저장 루트>] [--no-review-records]`. 기본은 후보 목록만 출력(dry-run). `--apply`일 때만 구간별 최근 N개 밖의 분석 실행(검토 기록·평가 비교 보고서·설정 recent_runs가 참조하는 실행은 보존)과 지식그래프 옛 경로 파일·이전 버전 폴더를 `출력/_보관/<시각>/`으로 옮기고 `manifest.json`에 기록(삭제 안 함). 주의: 앱·`analyze.py`·`build_kg.py`를 끝낸 뒤 `--apply`(이동 직전 재확인은 검토 기록·평가 비교·kg `current.json`만 보며, `recent_runs`와 새 실행의 kg 참조는 이 운영 지침에 의존)
+21. 출력 정리: `python scripts/clean_outputs.py [--keep 5] [--apply] [--out-root <출력 루트> --store-root <저장 루트>] [--no-review-records]`. 기본은 후보 목록만 출력(dry-run). `--apply`일 때만 구간별 최근 N개 밖의 분석 실행(검토 기록·평가 비교 보고서·설정 recent_runs가 참조하는 실행은 보존)과 지식그래프 옛 경로 파일·이전 버전 폴더를 `output/_archive/<시각>/`으로 옮기고 `manifest.json`에 기록(삭제 안 함). 주의: 앱·`analyze.py`·`build_kg.py`를 끝낸 뒤 `--apply`(이동 직전 재확인은 검토 기록·평가 비교·kg `current.json`만 보며, `recent_runs`와 새 실행의 kg 참조는 이 운영 지침에 의존)

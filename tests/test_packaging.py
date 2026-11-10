@@ -5,7 +5,7 @@
    묶인 실행은 빌드하지 않고 sys.frozen·sys._MEIPASS를 패치해 모의한다. 이 테스트의 통과는 경로 선택만 검증하며,
    실제 실행 파일의 의존성(hiddenimports)·자료(datas) 포함·기동 성공을 보장하지 않는다(실빌드 확인은 W4).
 3) HAZOP_RESOURCE_ROOT·HAZOP_WORK_ROOT를 서로 다른 임시 폴더로 바꿔 ①~⑤ 흐름(등록·추출·그래프 → 뷰어 → 지식그래프 →
-   분석 → 검토 저장·Excel 출력)을 화면이 쓰는 함수로 실행한다. 자원 루트와 저장소의 출력/·자료저장소/는 바뀌지 않는다.
+   분석 → 검토 저장·Excel 출력)을 화면이 쓰는 함수로 실행한다. 자원 루트와 저장소의 output/·store/는 바뀌지 않는다.
 4) W4: scripts/build_package.py의 datas 목록·spec 원문을 빌드 없이 검사한다(코드의 경로 상수와 대조).
 5) W6·W9: licenses/README.md 고지 목록이 기준 목록(원문 경로·라이선스 식별자)과 맞고, 원문 파일의 SHA-256·버전이 목록과
    같다. W9(D15)부터 licenses/는 datas가 아니라 빌드 뒤 실행 파일 옆 licenses/로 복사되며, 그 복사·대조 함수
@@ -327,7 +327,7 @@ class SplitRootsFlowTest(unittest.TestCase):
             self.assertIn("candidate_catalog 파일 없음", str(cm.exception))
             self.assertFalse(os.path.exists(paths.output_in(self.work, "analysis", self.region["region_id"], "analysis-noresource")))
 
-            # ⑤ 검토 저장(작업 루트 안 저장 루트) → Excel 출력(작업 루트 출력/워크시트)
+            # ⑤ 검토 저장(작업 루트 안 저장 루트) → Excel 출력(작업 루트 output/worksheets)
             run = rv.open_run(res["run_dir"])
             doc = run["doc"]
             cid = "deviation-p86-d12"

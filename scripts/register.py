@@ -4,7 +4,7 @@
   python scripts/register.py --project sample-project "resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio"
   python scripts/register.py --project sample-project 파일.drawio --drawing-number SNP-M-101 --revision 0 --by 홍길동 --reason "표제란 대조"
   python scripts/register.py --project sample-project 파일.drawio --metadata 식별정보.json
-저장 루트 기본값: 환경변수 HAZOP_STORE_ROOT 또는 <작업 루트>/자료저장소/(작업 루트 기본은 저장소 루트, HAZOP_WORK_ROOT로
+저장 루트 기본값: 환경변수 HAZOP_STORE_ROOT 또는 <작업 루트>/store/(작업 루트 기본은 저장소 루트, HAZOP_WORK_ROOT로
 변경). --store-root로 바꿀 수 있다.
 원본 옆 도면 SVG는 페이지마다 찾아 파생 자료로 originals/<자료 ID>/<버전>/derived/에 함께 보관하고 등록정보
 derived_files(page_ids·해시)에 기록한다. 찾는 규칙은 추출과 같은 함수(hazop.extract.svg_align.find_svg):

@@ -13,7 +13,7 @@ approved: —
 
 그래프활용 §5.1이 "디자인 담당 필요"로 남긴 지식 노드 색·배지 등 시각 규칙을 정합니다. 화면은 Obsidian 그래프 보기처럼 P&ID 레이어와 지식 레이어를 한 캔버스에 보여 주되, 사용자가 **근거 있음 / 미확인·가설 / 충돌 / 계산 제외**를 바로 구분할 수 있게 하는 것이 목표입니다([공통 원칙](../specs/overview.md#principles)).
 
-- 시안 데이터: `출력/지식그래프/kg-SNP-SAMPLE/v-43034b88b9c9/knowledge_graph.json`(current.json이 가리키는 버전), 같은 kg_version의 `algo/…/entity-node-001-r2/algo_result.json`, `데이터/지식/SNP-SAMPLE/link_candidates.csv`, `출력/그래프/SNP-M-102/graph.json`을 발췌해 HTML 안에 넣었습니다. 모두 가상 샘플입니다.
+- 시안 데이터: `output/knowledge-graph/kg-SNP-SAMPLE/v-43034b88b9c9/knowledge_graph.json`(current.json이 가리키는 버전), 같은 kg_version의 `algo/…/entity-node-001-r2/algo_result.json`, `data/knowledge-graph/SNP-SAMPLE/link_candidates.csv`, `output/graph/SNP-M-102/graph.json`을 발췌해 HTML 안에 넣었습니다. 모두 가상 샘플입니다.
 - 시안 렌더러: force-graph를 인라인하지 않고 **SVG + 간이 힘 계산**(결정적, 시안 전용)으로 대신했습니다. 실제 구현은 그래프활용 §5.2대로 force-graph(Canvas)입니다. 아래 규칙은 Canvas에서도 그릴 수 있는 것(채움·테두리·파선·글자)만 씁니다.
 
 ## 1. 노드 색 그룹

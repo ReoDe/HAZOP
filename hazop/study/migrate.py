@@ -231,7 +231,7 @@ def notice(node_set):
 
 
 def _backup(path, label="판이전"):
-    """<작업 루트>/데이터/백업/<시각>-<label>/<작업 루트 기준 경로>에 복사하고 그 경로를 돌려준다."""
+    """<작업 루트>/data/backup/<시각>-<label>/<작업 루트 기준 경로>에 복사하고 그 경로를 돌려준다."""
     from hazop.study.nodes import now_utc
     stamp = now_utc().replace(":", "").replace("-", "")
     dst = os.path.join(paths.folder("backup", "%s-%s" % (stamp, label)), paths.backup_rel(path, paths.work_root()))

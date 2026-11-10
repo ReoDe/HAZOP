@@ -1,6 +1,6 @@
 """데스크톱 화면 지원(기획서/인터페이스.md §2.5·§3.1·§3.3·§7.1) 테스트.
 경로 분리·설정 파일, SVG 파생 등록, 후보 판단 변경, 근거 묶음 내보내기, 분석 실행 API.
-실행: python -m unittest discover -s tests -t .  임시 폴더만 쓰고 데이터/·자료저장소/·출력/ 원본은 바꾸지 않는다. AI 호출·네트워크 없음.
+실행: python -m unittest discover -s tests -t .  임시 폴더만 쓰고 data/·store/·output/ 원본은 바꾸지 않는다. AI 호출·네트워크 없음.
 """
 
 import json
@@ -600,7 +600,7 @@ class SplitRootsTest(TmpCase):
 
         now_runs = sorted(os.listdir(paths.output_in(paths.DEV_WORK_ROOT, "analysis"))) \
             if os.path.isdir(paths.output_in(paths.DEV_WORK_ROOT, "analysis")) else []
-        self.assertEqual(now_runs, repo_runs)  # 저장소 출력/은 건드리지 않음
+        self.assertEqual(now_runs, repo_runs)  # 저장소 output/은 건드리지 않음
 
         # 자원 루트에 기준 자료가 없으면 분석하지 않는다(저장소 자료로 몰래 대체하지 않음)
         empty = os.path.join(self.tmp, "empty")

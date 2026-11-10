@@ -279,7 +279,7 @@ JSON이다. 저장소의 다른 사전(`registry.json`)과 같고, 배포본에 
 
 새 도면 묶음이 오거나 미분류가 눈에 띄면 다음 순서로 돈다. 모두 다시 돌릴 수 있는 스크립트이고, 같은 입력이면 같은 결과를 낸다.
 
-1. **범례 수집(범례가 있으면).** `python scripts/symbols/harvest_legend.py --set <묶음> --pages <범례 PDF…>` → 작업 루트의 `기호후보/<묶음>/범례.csv`, 잘라 낸 그림, 그림판 HTML. 이 폴더는 S6에서 `paths.FOLDERS`에 `work` 행으로 더한다(git이 보지 않는 작업 산출물).
+1. **범례 수집(범례가 있으면).** `python scripts/symbols/harvest_legend.py --set <묶음> --pages <범례 PDF…>` → 작업 루트의 `symbol-candidates/<묶음>/범례.csv`, 잘라 낸 그림, 그림판 HTML. 이 폴더는 S6에서 `paths.FOLDERS`에 `work` 행으로 더한다(git이 보지 않는 작업 산출물).
 2. **미분류 묶기.** `python scripts/symbols/cluster_unclassified.py --set <묶음> --input-dir <도면 폴더>` → 묶음 순위표(CSV)와 그림판 HTML(묶음마다 서로 다른 쪽 예시 8개, 범례 후보 그림 나란히). 상위 묶음이 덮는 비율을 함께 보여 준다.
 3. **사람이 이름 붙이기.** 그림판을 보고 `라벨.csv`에 `순위, 사전 id, 국내 용어, 범주, kind, 글자 조건, 확신`을 적는다. 같은 기호의 여러 묶음은 같은 id로 적는다. 모르면 비워 둔다.
 4. **사전 항목 만들기.** `python scripts/symbols/add_symbols.py --set <묶음> --labels 라벨.csv` → 묶음 표본에서 서로 다른 격자를 빈도순으로 골라 `resources/library/symbols/<묶음>/<id>.json`과 예시 그림을 만든다. 이미 있는 항목이면 견본만 더하고 `revision`을 올린다.

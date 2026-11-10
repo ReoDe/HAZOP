@@ -55,7 +55,7 @@ NEED_ROW = {"approved": "승인할", "rejected": "기각할", "edit": "수정할
 
 
 def design_intent(node, review=None):
-    """구간 JSON(데이터/구간) 중 이 구간의 구성요소(프로젝트 ID)를 모두 포함하는 것의 설계 의도.
+    """구간 JSON(data/regions) 중 이 구간의 구성요소(프로젝트 ID)를 모두 포함하는 것의 설계 의도.
     (글, 출처 설명) 또는 None. 구간 JSON은 도면 하나 기준이라 구성요소를 그 도면의 프로젝트 ID로 바꿔 비교한다.
     상위 구간의 설계 의도이므로 화면에 출처와 지식 상태를 함께 적는다.
     구간 JSON에 없으면 ④ AI 구간 검토에서 사람이 받아들인 설계 의도 초안(review = node_review 묶음)을 쓴다."""

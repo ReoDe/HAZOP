@@ -478,7 +478,7 @@ def export_worksheet(run_dir, store_root, out_root, scope="all", now=None, node=
     """분석 실행과 그 검토 기록으로 Excel 워크시트를 새로 만든다.
 
     run_dir: 분석 실행 폴더(analysis.json). store_root: 검토 기록 저장 루트(<store_root>/reviews/...).
-    out_root: 워크시트 출력 루트(기본 사용처는 <작업 루트>/출력/워크시트). scope: "all"(기본) 또는 "accepted_modified".
+    out_root: 워크시트 출력 루트(기본 사용처는 <작업 루트>/output/worksheets). scope: "all"(기본) 또는 "accepted_modified".
     now: 출력 시각(UTC ISO 'YYYY-MM-DDTHH:MM:SSZ', 기본 현재). 파일 이름과 출력 기록 이름에 쓴다.
     node: '도면 번호' 열에 쓸 검토구간(span.annotate 사본, 여러 도면에 걸친 구간). 없으면 분석 실행의 도면.
     반환 {"path", "export_record_path", "record"}. 차단·같은 이름 파일 있음이면 ExportError(아무 파일도 만들지 않음),

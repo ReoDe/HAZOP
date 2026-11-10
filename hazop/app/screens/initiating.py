@@ -565,7 +565,7 @@ class InitiatingScreen(QWidget):
         if self.unreadable is None:
             return False
         if ask and QMessageBox.question(
-                self, "초기사건 저장 파일", "읽지 못한 파일을 데이터/백업 아래에 복사한 뒤 빈 문서로 바꿉니다.\n"
+                self, "초기사건 저장 파일", "읽지 못한 파일을 data/backup 아래에 복사한 뒤 빈 문서로 바꿉니다.\n"
                 "그룹·표제는 다시 묶어야 합니다. 번호는 원본에 있던 가장 큰 번호 다음부터 매기므로 옛 ID를 다시 쓰지 않지만, "
                 "원인마다 받았던 IEC 번호는 이어지지 않습니다. 계속할까요?\n%s" % self.unreadable.path) != QMessageBox.Yes:
             return False

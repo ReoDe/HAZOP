@@ -1,8 +1,8 @@
 """평가 기준 비교 독립 검증 E1–E15 (기획서/평가기준비교.md §7). 실행: python -m unittest tests.test_evaluate
 
-- E1–E12·E15: 고정 비교 입력 뷰(§7.2)와 가상 기준(데이터/평가기준/)만 쓴다. 분석 실행·검토 저장소 없음.
-- E13·E14·E3(파일): 실제 최신 분석 실행(출력/분석/region-SNP-M-102-pzr/ 최신)을 임시 폴더에 복사해 쓴다.
-  출력/에 실행이 없으면 tests/run_fixture.py의 고정 응답 실행을 쓴다. 저장소의 출력/·자료저장소/에는 쓰지 않는다.
+- E1–E12·E15: 고정 비교 입력 뷰(§7.2)와 가상 기준(data/evaluation-criteria/)만 쓴다. 분석 실행·검토 저장소 없음.
+- E13·E14·E3(파일): 실제 최신 분석 실행(output/analysis/region-SNP-M-102-pzr/ 최신)을 임시 폴더에 복사해 쓴다.
+  output/에 실행이 없으면 tests/run_fixture.py의 고정 응답 실행을 쓴다. 저장소의 output/·store/에는 쓰지 않는다.
 - 네트워크·AI 호출 없음. 기대값은 기획 §7.3 표 그대로.
 """
 
@@ -120,7 +120,7 @@ SAMPLE_ROWS = [
 
 
 def write_sheet(path, meta=META, rows=SAMPLE_ROWS):
-    """§2.2 양식 Excel을 쓴다. 데이터/평가기준/의 샘플 Excel도 이 함수로 만들었다."""
+    """§2.2 양식 Excel을 쓴다. data/evaluation-criteria/의 샘플 Excel도 이 함수로 만들었다."""
     wb = Workbook()
     ws = wb.active
     ws.title = xlsx_sheet.SHEET

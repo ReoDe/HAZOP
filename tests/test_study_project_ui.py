@@ -28,7 +28,7 @@ LONE_TEE = {"entity_id": "T9", "node_type": "drawing_object", "kind": "tee", "ca
 
 
 def write_drawing(work, dn, graph):
-    """출력/추출/<dn>/extraction.json(SVG 없음)과 출력/그래프/<dn>/graph.json. 추출 이름 = 도면번호."""
+    """output/extract/<dn>/extraction.json(SVG 없음)과 output/graph/<dn>/graph.json. 추출 이름 = 도면번호."""
     for i, n in enumerate(graph["nodes"]):
         n["local_id"] = "L-" + n["entity_id"]
         n["position"] = [40 + 60 * i, 80]

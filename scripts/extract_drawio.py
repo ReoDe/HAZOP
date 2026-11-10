@@ -1,13 +1,13 @@
-"""drawio P&ID -> 출력/추출/<도면번호>/extraction.json + validation_report.md
+"""drawio P&ID -> output/extract/<도면번호>/extraction.json + validation_report.md
 
 사용 예:
   python scripts/extract_drawio.py "resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio"
   python scripts/extract_drawio.py --samples          # 샘플 6개 전체
-  python scripts/extract_drawio.py --registration 자료저장소/<프로젝트>/registrations/<자료 ID>/<버전>.json
+  python scripts/extract_drawio.py --registration store/<프로젝트>/registrations/<자료 ID>/<버전>.json
 옵션 --svg를 생략하면 원본 옆 SVG를 좌표 대응 측정에 쓴다(hazop.extract.svg_align.find_svg, 등록과 같은 규칙):
   한 페이지 문서는 같은 이름 <파일명>.svg·<stem>.svg -> <NN>_<페이지 이름>.drawio.svg -> 폴더에 하나뿐인 *.drawio.svg,
   여러 페이지 문서는 <NN>_<페이지 이름>.drawio.svg만. 경로로 해석될 수 있는 페이지 이름·원본 폴더 밖 파일은 쓰지 않는다.
---registration(① 등록 완료 자료)이면 보관 원본을 읽어 출력/추출/<프로젝트>__<자료 ID>-r<등록 버전>-p<페이지>/에 쓴다.
+--registration(① 등록 완료 자료)이면 보관 원본을 읽어 output/extract/<프로젝트>__<자료 ID>-r<등록 버전>-p<페이지>/에 쓴다.
   SVG는 등록정보의 파생 자료(derived_files, role svg)를 먼저 쓰고(svg_alignment.source = registered_derived),
   없을 때만 등록 당시 입력 경로(input_path) 옆에서 찾는다(source = "input_path_sibling, unregistered").
 경로: 출력·입력 표시 경로는 작업 루트(HAZOP_WORK_ROOT, 기본 저장소 루트), 샘플은 자원 루트(HAZOP_RESOURCE_ROOT) 기준.

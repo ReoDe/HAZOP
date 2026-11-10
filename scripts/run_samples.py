@@ -1,10 +1,10 @@
 """샘플 6개를 등록 -> 추출 -> 그래프 -> 뷰어까지 한 번에 실행한다. 하위 프로세스를 쓰지 않는다.
 
-  python scripts/run_samples.py [--project sample-project] [--store-root 자료저장소] [--by 이름] [--out-root 출력/samples]
+  python scripts/run_samples.py [--project sample-project] [--store-root store] [--by 이름] [--out-root output/samples]
 
 1) 참고자료 샘플 drawio를 하나씩 등록(이미 등록된 같은 원본은 재사용)
-2) 등록정보로 추출(출력/samples/추출/), 3) 그래프(출력/samples/그래프/), 4) 뷰어(출력/samples/뷰어/)
-결과는 출력/samples/ 아래에 따로 둔다: extract_drawio --samples 결과(출력/추출·그래프·뷰어)와 화면 등록 결과를 덮어쓰지 않는다.
+2) 등록정보로 추출(output/samples/extract/), 3) 그래프(output/samples/graph/), 4) 뷰어(output/samples/viewer/)
+결과는 output/samples/ 아래에 따로 둔다: extract_drawio --samples 결과(output/extract·그래프·뷰어)와 화면 등록 결과를 덮어쓰지 않는다.
 종료 코드 0 = 전부 성공.
 """
 

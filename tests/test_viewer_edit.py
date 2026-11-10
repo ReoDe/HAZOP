@@ -1,7 +1,7 @@
 """② 도면 편집 모드(drawing-edit-spec.md '화면'). 실행: python -m unittest discover -s tests -t .
 
 순수 부분(EditSession·도구 상태 기계·흐름 요청)은 웹뷰 없이, 화면·브리지는 QT_QPA_PLATFORM=offscreen에서 검사한다.
-작업 루트·저장 루트·설정은 임시 폴더만 쓴다(실제 자료저장소·데이터/ 미사용). 네트워크 사용 없음.
+작업 루트·저장 루트·설정은 임시 폴더만 쓴다(실제 store·data/ 미사용). 네트워크 사용 없음.
 """
 
 import json

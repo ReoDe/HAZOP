@@ -1,7 +1,7 @@
 """엔티티 연결 후보 생성·일괄 확인·확인 반영 (기획서/그래프활용.md §3.1·§3.2, §8.2 D6).
 
   python scripts/link_kg.py candidates SNP-SAMPLE --graph-id graph-SNP-M-102
-      데이터/지식/<project_id>/knowledge_nodes.csv의 문서 조각 -> link_candidates.csv(재실행 시 사람 판단 보존)
+      data/knowledge-graph/<project_id>/knowledge_nodes.csv의 문서 조각 -> link_candidates.csv(재실행 시 사람 판단 보존)
   python scripts/link_kg.py confirm-exact SNP-SAMPLE --graph-id graph-SNP-M-102 --reviewer 이름 --reason 사유 [--reviewed-at YYYY-MM-DD]
       정확 일치·비모호 후보 일괄 확인(검토자·사유 필수, 조건은 원문·그래프로 다시 계산해 판단).
       유사·모호·재확인(previous_status 있음) 후보는 CSV에서 한 건씩 판단

@@ -2,7 +2,7 @@
 
 사용: python scripts/check_user_scenarios.py --out <폴더> [--only S1,S3] [--keep-temp] [--focus-wait 120]
 
-- 임시 작업 루트에 샘플 도면 SNP-M-102(출력/ 사본, 검토구간 확정, 가짜 AI 결과)를 준비한다. 자료저장소/에 쓰지 않는다.
+- 임시 작업 루트에 샘플 도면 SNP-M-102(output/ 사본, 검토구간 확정, 가짜 AI 결과)를 준비한다. store/에 쓰지 않는다.
 - 앱(run_app.py와 같은 창 + 가짜 AI 클라이언트, 호출마다 AI_DELAY초)을 QTWEBENGINE_REMOTE_DEBUGGING으로 띄우고, Qt 위젯은 Windows UI Automation(scripts/uia_server.ps1),
   웹뷰(②③④)는 CDP로 읽는다. 입력은 Win32 SendInput(실제 키보드·마우스 이벤트)으로 보낸다.
 - 입력 전마다 이 실행이 띄운 창이 맨 앞인지 확인하고, 아니면 입력을 보내지 않고 시나리오를 중단한다.
@@ -1233,7 +1233,7 @@ def s5_register_drawio(d):
     def new_graph():
         return [g for g in graph_dirs() - g0
                 if any(f.endswith(".json") for f in os.listdir(os.path.join(graphs, g)))]
-    done = d.wait(new_graph, "추출·그래프 완료(출력/그래프에 새 그래프 파일)", timeout=60, since=t)
+    done = d.wait(new_graph, "추출·그래프 완료(output/graph에 새 그래프 파일)", timeout=60, since=t)
     time.sleep(2.0)
     d.shot("추출 후")
     d.expect(bool(done), "추출·그래프 만들기가 60초 안에 끝나지 않음")

@@ -17,7 +17,7 @@ VALIDATION_LABELS = {"passed": "통과", "blocked": "차단"}
 
 
 def log_path():
-    """개발자용 오류 기록(traceback) 위치: <작업 루트>/출력/로그/app.log. 화면에는 요약만 보여 준다."""
+    """개발자용 오류 기록(traceback) 위치: <작업 루트>/output/logs/app.log. 화면에는 요약만 보여 준다."""
     return paths.output_root("logs", "app.log")
 
 

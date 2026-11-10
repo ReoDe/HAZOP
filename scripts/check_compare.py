@@ -1,13 +1,13 @@
 """평가 기준 비교 검사를 한 번에 실행한다 (QA용, 기획서/평가기준비교.md §7). 네트워크·AI 호출 없음.
 
-입력: 실제 최신 분석 실행(출력/분석/region-SNP-M-102-pzr/ 최신)을 임시 폴더에 복사해 쓴다. 실행이 없으면
+입력: 실제 최신 분석 실행(output/analysis/region-SNP-M-102-pzr/ 최신)을 임시 폴더에 복사해 쓴다. 실행이 없으면
 tests/run_fixture.py의 고정 응답 실행을 쓴다. 비교 보고는 임시 작업 루트(HAZOP_WORK_ROOT)에만 쓰고 끝나면 지운다
-(출력/·자료저장소/에 쓰지 않음, 원본 실행 폴더는 읽기만 함).
+(output/·store/에 쓰지 않음, 원본 실행 폴더는 읽기만 함).
 
 1) 가상 기준(JSON)으로 scripts/compare_criteria.py 실행(draft, 종료 코드 0): JSON·Excel 생성, 가상 기준 표시, status ok
 2) 같은 기준의 Excel판(xlsx_sheet)으로 실행: 지표가 JSON판과 같음
 3) 같은 시각(--now)으로 다시 실행하면 실패(종료 코드 1, 덮어쓰지 않음)
-4) 원본 실행 폴더·저장소 출력/평가비교가 바뀌지 않음
+4) 원본 실행 폴더·저장소 output/evaluation-compare가 바뀌지 않음
 5) tests/test_evaluate.py
 종료 코드 0 = 전부 통과.
 """
@@ -151,7 +151,7 @@ def main():
         shutil.rmtree(tmp, ignore_errors=True)
     print("4) 원본 보존")
     ok("원본 실행 폴더 바뀌지 않음", snapshot(src) == src_before, failures)
-    ok("저장소 출력/평가비교 생성·변경 없음",
+    ok("저장소 output/evaluation-compare 생성·변경 없음",
        os.path.exists(repo_cmp) == out_existed and (not out_existed or snapshot(repo_cmp) == out_before), failures)
     print("5) tests/test_evaluate.py")
     suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_evaluate")

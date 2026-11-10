@@ -39,9 +39,10 @@ EXEMPT = {
         ("N1", "resources/references/pid-symbol-catalog/*", "받은 기호 카탈로그의 파일 이름을 그대로 둔다"),
         ("N1", "resources/references/APR1400_DCD/*", "받은 이름을 그대로 둔다(§5.5)"),
         ("N8", "자원/ @ docs/2026-11-09-data-consolidation/README.md", "2026-11-09 정리의 계획이자 기록. 그때 정한 배치를 적었다"),
-    ],
-    6: [
-        ("N8", "작업/ @ *", ""),
+        ("N8", "작업/ @ docs/2026-11-09-data-consolidation/README.md", "같은 문서. 그때의 개발 작업 루트 이름이다"),
+        ("N8", "작업/ @ docs/2026-11-10-ci-review/README.md", "2026-11-10 CI 검토 기록. 그때의 작업 루트 이름을 적었다"),
+        ("N8", "작업/ @ docs/2026-11-10-lessons/d-drive-move.md", "D 드라이브 이전 기록. 그때 옮긴 폴더 이름이다"),
+        ("N8", "작업/ @ design/mockups/README.md", "시안에 넣은 자료를 가져온 그때의 경로다"),
     ],
 }
 

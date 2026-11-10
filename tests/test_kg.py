@@ -1,6 +1,6 @@
 """지식 레이어 입력·빌더 테스트 (기획서/그래프활용.md §7.2 K1~K8). 실행: python -m unittest discover -s tests -t .
 
-P&ID 그래프는 샘플 도면 SNP-M-102를 임시 폴더에서 추출·빌드해 쓴다(출력/ 폴더에 의존하지 않음).
+P&ID 그래프는 샘플 도면 SNP-M-102를 임시 폴더에서 추출·빌드해 쓴다(output/ 폴더에 의존하지 않음).
 """
 
 import copy

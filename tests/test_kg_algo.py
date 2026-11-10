@@ -2,7 +2,7 @@
 실행: python -m unittest discover -s tests -t .
 
 P&ID 그래프는 샘플 도면 SNP-M-102를 임시 폴더에서 빌드하고(tests.test_kg.pid_graph), 지식그래프는 정상 샘플 CSV로
-메모리에서 빌드한다(출력/ 폴더에 의존하지 않음).
+메모리에서 빌드한다(output/ 폴더에 의존하지 않음).
 """
 
 import copy

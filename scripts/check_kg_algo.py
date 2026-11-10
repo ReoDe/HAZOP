@@ -5,7 +5,7 @@
 2) A1~A5: 샘플 결과가 정답 파일 tests/fixtures/kg_algo/expected_SNP-SAMPLE.json과 같음
 3) A1′: 선택 노드 = 구간 focus_entities[0]일 때 A1 탐색 결과가 ④ 분석 실행(run.load_inputs + run.prepare_doc)의
    탐색 결과와 같음(도달 대상·경로·방향 표시·밸브 위치 표시·절단 기록 포함 전체)
-4) 결정성: 같은 입력 두 번 -> 같은 결과 바이트. 결과 JSON·보고서를 출력/지식그래프/ 아래에 씀
+4) 결정성: 같은 입력 두 번 -> 같은 결과 바이트. 결과 JSON·보고서를 output/knowledge-graph/ 아래에 씀
 5) P1: §7.3 전역 보기 상한(5,000 노드) 규모 합성 그래프에서 계산 시간 기록(합격 기준 아님)
 6) tests/test_kg_algo.py
 P&ID 그래프가 없으면 먼저: python scripts/extract_drawio.py --samples && python scripts/build_graph.py

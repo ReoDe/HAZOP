@@ -1,8 +1,8 @@
 """④ 근거 묶음 지식 맥락·kg_version 고정·⑤ 관련 지식 검사 C1~C10 (QA용, 기획서/그래프활용.md §6.4, §7.2).
 
-- 모든 입출력은 임시 폴더에서 한다(실제 출력/·자료저장소/·데이터/를 바꾸지 않음). 네트워크·실제 AI 호출 없음.
+- 모든 입출력은 임시 폴더에서 한다(실제 output/·store/·data/를 바꾸지 않음). 네트워크·실제 AI 호출 없음.
 - P&ID 그래프는 샘플 drawio에서 직접 만들고(tests/run_fixture.py와 같은 방법), 지식그래프는 정상 샘플 CSV
-  (데이터/지식/SNP-SAMPLE)로 임시 작업 루트의 출력/지식그래프/kg-SNP-SAMPLE에 빌드한다.
+  (data/knowledge-graph/SNP-SAMPLE)로 임시 작업 루트의 output/knowledge-graph/kg-SNP-SAMPLE에 빌드한다.
 - C10은 Qt 없는 판정(시나리오별 관련 지식·배지·범위 노드 분류 문구, 버전 상태 4가지)만 한다.
   화면(Qt 오프스크린) 확인은 tests/test_kg_review.py.
 종료 코드 0 = 전부 통과. 마지막에 tests/test_kg_context.py·tests/test_kg_review.py를 실행한다(--skip-tests로 생략).
@@ -81,7 +81,7 @@ def link(knowledge, lid):
 
 
 class Env:
-    """임시 작업 루트: graph.json, 지식그래프 폴더(출력/지식그래프/<kg_id>), 구간 JSON 사본, 분석 출력 폴더."""
+    """임시 작업 루트: graph.json, 지식그래프 폴더(output/knowledge-graph/<kg_id>), 구간 JSON 사본, 분석 출력 폴더."""
 
     def __init__(self):
         self.root = tempfile.mkdtemp(prefix="hazop-kgctx-")

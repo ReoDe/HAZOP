@@ -50,7 +50,7 @@ _NAMES = {}
 
 
 def graph_names(project_id):
-    """{도면 graph_id: 출력/그래프 폴더 이름(= ②④⑤ 도면 고르기 이름)}. 이 프로젝트 도면만, 같은 graph_id면 가장 최근 것
+    """{도면 graph_id: output/graph 폴더 이름(= ②④⑤ 도면 고르기 이름)}. 이 프로젝트 도면만, 같은 graph_id면 가장 최근 것
     (project.load가 고르는 판과 같은 규칙). 입력 파일 지문이 같으면 다시 읽지 않는다."""
     key = _graph_inputs(project_id)
     hit = _NAMES.get(project_id)
@@ -250,7 +250,7 @@ def _old_sets(pg):
 
 
 def backup(paths_to_copy, label):
-    """파일들을 <작업 루트>/데이터/백업/<시각>-<label>/ 아래 원래 상대 경로 그대로 복사한다. 백업 폴더를 돌려준다."""
+    """파일들을 <작업 루트>/data/backup/<시각>-<label>/ 아래 원래 상대 경로 그대로 복사한다. 백업 폴더를 돌려준다."""
     stamp = sn.now_utc().replace(":", "").replace("-", "")
     root = paths.folder("backup", "%s-%s" % (stamp, label))
     for p in paths_to_copy:

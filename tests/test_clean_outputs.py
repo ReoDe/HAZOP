@@ -1,5 +1,5 @@
-"""scripts/clean_outputs.py(출력 정리)와 scripts/run_samples.py 출력 경로(출력/samples/) 검사.
-임시 폴더에서만 실행한다(실제 출력/·자료저장소/·설정 파일은 쓰지 않음)."""
+"""scripts/clean_outputs.py(출력 정리)와 scripts/run_samples.py 출력 경로(output/samples/) 검사.
+임시 폴더에서만 실행한다(실제 output/·store/·설정 파일은 쓰지 않음)."""
 
 import contextlib
 import io
@@ -377,7 +377,7 @@ class JunctionTest(Base):
 
 
 class RunSamplesOutRootTest(unittest.TestCase):
-    """run_samples 결과는 <작업 루트>/출력/samples/ 아래에 쓰고 출력/추출·그래프·뷰어는 건드리지 않는다."""
+    """run_samples 결과는 <작업 루트>/출력/samples/ 아래에 쓰고 output/extract·그래프·뷰어는 건드리지 않는다."""
 
     def test_default_out_root(self):
         import run_samples

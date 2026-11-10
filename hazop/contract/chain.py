@@ -154,8 +154,8 @@ class _Chain:
         self.extraction_path = _resolve(ext_file, work_root) if isinstance(ext_file, str) and ext_file else None
         self.extraction = self._json(self.extraction_path) if self.extraction_path else None
         # ③ 현재 그래프: 추출 결과 폴더 이름(scripts/build_graph.py build_one과 같은 이름 규칙)으로
-        # 먼저 extraction_file의 형제 폴더(…/추출/<이름> → …/그래프/<이름>, 예: run_samples의 출력/samples/그래프)에서 찾고,
-        # graph.json이 없으면 출력/그래프/<이름>을 본다(총괄 추가 지시 2026-11-06, 기획 §2 표는 출력/그래프만 적음).
+        # 먼저 extraction_file의 형제 폴더(…/추출/<이름> → …/그래프/<이름>, 예: run_samples의 output/samples/graph)에서 찾고,
+        # graph.json이 없으면 output/graph/<이름>을 본다(총괄 추가 지시 2026-11-06, 기획 §2 표는 output/graph만 적음).
         self.ext_name = os.path.basename(os.path.dirname(self.extraction_path)) if self.extraction_path else None
         if self.ext_name:
             name = paths.safe_name(self.ext_name)
@@ -1081,7 +1081,7 @@ def _chain_doc(c):
 
 # ---------------------------------------------------------------- 연쇄 찾기·실행
 def _region_files(work_root, errors):
-    """데이터/구간/*.json → {region_id: 경로}. region_id가 없으면 파일 이름 줄기."""
+    """data/regions/*.json → {region_id: 경로}. region_id가 없으면 파일 이름 줄기."""
     folder = os.path.join(work_root, *paths.FOLDERS["regions"].rel)
     out = {}
     if not os.path.isdir(folder):

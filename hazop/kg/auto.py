@@ -1,16 +1,16 @@
 """프로젝트 지식그래프 자동 생성: 도면 그래프 + 문서 지식(자동 추출) + 사람이 쓴 지식 CSV(있으면) -> knowledge_graph.json.
 
 근거: 기획서/그래프활용.md §9(자동 생성). 앱 ①에서 도면을 추출하거나 설계 문서를 등록하면 이 모듈로 다시 빌드한다.
-- 프로젝트 도면 = 출력/그래프/*/graph.json 중 project_id가 같은 것. 같은 graph_id가 여럿이면 graph.json이 가장 최근인 것
+- 프로젝트 도면 = output/graph/*/graph.json 중 project_id가 같은 것. 같은 graph_id가 여럿이면 graph.json이 가장 최근인 것
   하나만 쓰고 notes에 남긴다(빌더가 같은 graph_id 여러 버전을 차단하므로).
-- 문서 지식 = 출력/문서지식/*/document_knowledge.json 중 project_id가 같은 것(자료마다 최신 등록 버전).
-- 사람 지식 = 데이터/지식/<project_id>/knowledge_nodes.csv·knowledge_links.csv(둘 다 있을 때만).
+- 문서 지식 = output/document-knowledge/*/document_knowledge.json 중 project_id가 같은 것(자료마다 최신 등록 버전).
+- 사람 지식 = data/knowledge-graph/<project_id>/knowledge_nodes.csv·knowledge_links.csv(둘 다 있을 때만).
 - 태그 연결: 문서 문장에서 찾은 태그가 프로젝트 도면에 정확히 하나 있으면 설비 적용 관계(has_setpoint·has_condition·
   governed_by)를 후보(link_status=candidate)로 만든다. 같은 태그가 여럿(배관 라인 번호 등)이면 만들지 않고 notes에 남긴다.
 - 언급 후보: 문서 지식의 문서 조각 원문에서 hazop.kg.link.generate(정확 일치·유사 일치)로 조각 -> 도면 mentions 후보를 만든다.
   판단은 사람 지식 폴더의 link_candidates.csv 판단 열을 후보 키로 읽어 쓴다(confirmed면 확인된 언급, rejected면 넣지 않음).
   이 모듈은 그 파일을 쓰지 않는다. 사람 CSV의 조각은 기존 link.py 흐름(run_generate·run_apply)이 맡는다.
-- 결과는 build.write_outputs로 출력/지식그래프/kg-<project_id>/에 쓴다(같은 입력이면 같은 kg_version, 다시 써도 그대로).
+- 결과는 build.write_outputs로 output/knowledge-graph/kg-<project_id>/에 쓴다(같은 입력이면 같은 kg_version, 다시 써도 그대로).
 """
 
 import hashlib

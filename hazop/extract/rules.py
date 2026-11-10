@@ -7,7 +7,7 @@
 from hazop.kg.schema import REGISTRY
 
 # 2026-11-08 M2(배관 부품 분류·속성 사전 검사)에는 올리지 않았다. 이 값은 실행 ID에 들어가 결과 내용이 같은 도면까지
-# graph_version을 바꾸고, 그러면 데이터/구간 판 고정·고정 AI 응답·mentions 기록이 모두 재확인으로 간다.
+# graph_version을 바꾸고, 그러면 data/regions 판 고정·고정 AI 응답·mentions 기록이 모두 재확인으로 간다.
 # 결과 내용이 바뀐 도면은 올리지 않아도 graph_version이 바뀐다.
 RULES_VERSION = "drawio-rules-draft-2026-11-06"
 

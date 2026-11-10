@@ -1,4 +1,4 @@
-"""출력/추출/<도면번호>/extraction.json -> 출력/뷰어/<도면번호>.html + index.html
+"""output/extract/<도면번호>/extraction.json -> output/viewer/<도면번호>.html + index.html
 
 추출 결과가 없으면 먼저: python scripts/extract_drawio.py --samples
 """

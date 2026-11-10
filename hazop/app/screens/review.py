@@ -19,7 +19,7 @@ from hazop.app.screens.analysis import fill_candidate_table, make_candidate_tabl
 from hazop.app.widgets import Banner, Chip, badge, empty_label, esc, kst_text, plain_label, risk_chip
 from hazop.export import SCOPES, ExportError, export_worksheet
 
-SAVE_FAIL_NEXT = "다음 조치: 저장 위치(자료저장소)의 쓰기 권한·디스크 공간을 확인한 뒤 다시 저장하세요. 입력 내용은 폼에 남아 있습니다."
+SAVE_FAIL_NEXT = "다음 조치: 저장 위치(작업 폴더의 store)의 쓰기 권한·디스크 공간을 확인한 뒤 다시 저장하세요. 입력 내용은 폼에 남아 있습니다."
 
 
 def confirmed_box():

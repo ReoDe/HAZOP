@@ -1,5 +1,5 @@
 """화면이 읽는 데이터 목록·표시 계산. 파일 쓰기는 기존 API(등록·추출·그래프·뷰어 빌드)만 거친다.
-다만 추출 요약 캐시(데이터/캐시/추출요약.json, 지워도 됨)는 여기서 직접 쓴다.
+다만 추출 요약 캐시(data/cache/추출요약.json, 지워도 됨)는 여기서 직접 쓴다.
 
 - 목록: 등록정보, 추출 결과, 구간 JSON, 분석 실행 (경로는 hazop/paths.py)
 - 뷰어 HTML: hazop/viewer/build.build_drawing_html (scripts/build_viewer.py와 같은 함수, 한 도면만)
@@ -151,7 +151,7 @@ def _extract_pdf_pages(record, original, ex, bg):
 
 # ---------------------------------------------------------------- ① 설계 문서 → 문서 지식 → ③ 지식그래프
 def doc_root():
-    """문서 지식 출력 루트 출력/문서지식/<등록 출력 이름>/document_knowledge.json."""
+    """문서 지식 출력 루트 output/document-knowledge/<등록 출력 이름>/document_knowledge.json."""
     return paths.output_root("document-knowledge")
 
 
@@ -293,7 +293,7 @@ def extraction_origin(path):
 
 
 def unregistered_extractions():
-    """[(도면 이름, 출처 글자)] ① 등록 없이 출력/추출에 있는 도면(샘플 실행 등)."""
+    """[(도면 이름, 출처 글자)] ① 등록 없이 output/extract에 있는 도면(샘플 실행 등)."""
     out = [(e["name"], o) for e in list_extractions() for o in [extraction_origin(e["path"])] if o]
     save_briefs()
     return out
@@ -304,7 +304,7 @@ def extraction_path(name):
 
 
 def load_extraction(name, ops=None):
-    """(원본, 고친 추출). ops가 None이면 저장된 수정 기록(데이터/도면수정)을, 아니면 주어진 작업 중 ops를 적용한다."""
+    """(원본, 고친 추출). ops가 None이면 저장된 수정 기록(data/drawing-edits)을, 아니면 주어진 작업 중 ops를 적용한다."""
     original = read_json(extraction_path(name))
     corrected = (corrections.apply_saved(original, name) if ops is None
                  else corrections.apply(original, ops))
@@ -312,7 +312,7 @@ def load_extraction(name, ops=None):
 
 
 def viewer_html_for(name, ops=None):
-    """출력/추출/<name>의 뷰어 HTML을 출력/뷰어/<name>.html로 만든다(scripts/build_viewer.py와 같은 빌드 함수).
+    """output/extract/<name>의 뷰어 HTML을 output/viewer/<name>.html로 만든다(scripts/build_viewer.py와 같은 빌드 함수).
     뷰어는 고친 추출로 그린다(ops None: 저장된 수정 기록, 아니면 작업 중 ops와 그 ops로 메모리에서 만든 그래프).
     반환 {"html", "extraction"(고친 추출), "corrected", "original", "graph", "svg"(bool), "error"}.
     SVG가 없으면 html None과 사유."""

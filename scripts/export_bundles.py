@@ -1,8 +1,8 @@
-"""단계 ④ 근거 묶음 내보내기 -> 출력/근거묶음/<구간 ID>/<내보낸 시각>/ (기획서/인터페이스.md §2.5)
+"""단계 ④ 근거 묶음 내보내기 -> output/evidence-bundles/<구간 ID>/<내보낸 시각>/ (기획서/인터페이스.md §2.5)
 
 사용 예:
   python scripts/export_bundles.py                                   # 기본 구간(SNP-M-102 가압기)
-  python scripts/export_bundles.py --region 데이터/구간/region-SNP-M-102-pzr.json --out-root <폴더>
+  python scripts/export_bundles.py --region data/regions/region-SNP-M-102-pzr.json --out-root <폴더>
 
 판단이 '선택'인 후보마다 근거 묶음(bundle.json)·요청 프롬프트(user_prompt.txt)와 응답 틀(responses/<candidate_id>.json)을
 만든다. AI를 호출하지 않고 분석 실행 폴더를 만들지 않는다. 응답을 채운 뒤:

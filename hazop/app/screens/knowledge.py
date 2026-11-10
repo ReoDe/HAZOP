@@ -5,7 +5,7 @@
 - 캔버스(웹, 공유 웹뷰): hazop/kg/screen_template.html 셸에 loadKnowledge로 데이터를 넘긴다. 좌측 필터도 웹 안에 있다.
 - 우측 상세(Qt): 클릭한 노드·관계의 속성·근거·A1~A3·연결 목록, P&ID 노드면 "도면에서 보기"(② 전환 + focus).
   잠재 후보(hazop.kg.expect)면 규칙·근거 수준·후보와 판단 버튼(후보 확인·후보 기각·부재 확정·무관·판단 되돌리기). 판단은
-  데이터/잠재후보/<project_id>.json에 저장하고 updateExpectations로 캔버스의 잠재 후보만 바꾼다.
+  data/latent-candidates/<project_id>.json에 저장하고 updateExpectations로 캔버스의 잠재 후보만 바꾼다.
 - 계산은 Python(hazop.kg.screen → hazop.kg.algo). runAlgorithm(A1) 요청을 받아 algorithmResult로 돌려준다.
 """
 
@@ -35,7 +35,7 @@ from hazop.kg.schema import REGISTRY
 from hazop.study import nodes as study_nodes
 from hazop.study import results as study_results
 
-APP_SHELL = "kg-screen.html"  # 출력/뷰어/ 아래 앱 셸(데이터 없음, loadKnowledge로 받음)
+APP_SHELL = "kg-screen.html"  # output/viewer/ 아래 앱 셸(데이터 없음, loadKnowledge로 받음)
 TYPE_NAMES = {"equipment": "설비", "valve": "밸브", "inline_component": "배관 부품", "instrument": "계장",
               "piping_element": "배관 요소", "pipe_segment": "배관 구간", "unclassified": "미분류", "document": "문서",
               "doc_chunk": "문서 조각",
@@ -138,7 +138,7 @@ def kg_root_dir():
 
 
 def standalone_path(kg, graph_id):
-    """브라우저 단독 모드 HTML: 출력/지식그래프/<kg_id>/screen/<kg_version>/<graph_id>.html."""
+    """브라우저 단독 모드 HTML: output/knowledge-graph/<kg_id>/screen/<kg_version>/<graph_id>.html."""
     base = paths.safe_join(kg_root_dir(), paths.safe_name(kg["kg_id"]))
     return os.path.join(base, "screen", paths.safe_name(kg["kg_version"]), paths.safe_name(graph_id) + ".html")
 

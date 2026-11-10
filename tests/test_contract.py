@@ -1,8 +1,8 @@
 """단계 연쇄 검사(hazop/contract, scripts/check_contract.py) 독립 검증 V1–V21 (기획서/단계연쇄검사.md §6).
 
-저장소의 출력/·자료저장소/는 읽기만 한다. 정상 연쇄를 임시 작업 루트·저장 루트에 만든 뒤(샘플 연쇄 S, 등록 연쇄 R),
+저장소의 output/·store/는 읽기만 한다. 정상 연쇄를 임시 작업 루트·저장 루트에 만든 뒤(샘플 연쇄 S, 등록 연쇄 R),
 사례마다 그 복사본에서 한 곳만 바꿔 검사한다. 네트워크·AI 호출 없음(고정 응답).
-샘플 연쇄 S는 저장소 출력/(git 제외)의 최신 분석 실행을 복사해 쓰고, 출력/이 없으면 저장소 안 샘플 도면·구간 JSON·
+샘플 연쇄 S는 저장소 output/(git 제외)의 최신 분석 실행을 복사해 쓰고, output/이 없으면 저장소 안 샘플 도면·구간 JSON·
 고정 응답으로 같은 형태의 연쇄를 임시 폴더에 새로 만든다(이 경우 V1의 저장소 실제 실행 판정만 건너뜀).
 샘플 도면(참고자료/P&ID 도면 샘플/*SNP-M-102*/*.drawio)이 없으면 준비 오류(RuntimeError)로 보고한다.
 """
@@ -102,7 +102,7 @@ def make_junction(link, target):
 
 # ---------------------------------------------------------------- 정상 연쇄 만들기
 def _synth_sample_outputs(work):
-    """출력/이 없을 때: 샘플 도면을 등록 없이(project_id null, 샘플 경로) hazop.extract.drawio.extract로 추출하고
+    """output/이 없을 때: 샘플 도면을 등록 없이(project_id null, 샘플 경로) hazop.extract.drawio.extract로 추출하고
     그래프를 만든다. scripts/extract_drawio --samples와 달리 SVG 좌표 대응(svg_alignment)은 하지 않는다(연쇄 검사와 무관).
     구간 JSON을 그 그래프에 맞춘 뒤 고정 응답으로 분석 1회. 실행 폴더 경로를 돌려준다."""
     with env(work, paths.folder_in(work, "store")):
@@ -141,7 +141,7 @@ def build_sample_chain(base, src_run):
         # 현재 구간 JSON = 실행 당시 사본(저장소 구간 JSON이 실행 뒤 바뀌었어도 버전을 섞지 않음)
         shutil.copyfile(os.path.join(run_dir, "inputs", "region.json"),
                         paths.folder_in(work, "regions", REGION_ID + ".json"))
-        # 저장소 출력/의 현재 그래프가 이전 빌더 버전으로 만들어졌으면(BUILDER_VERSION 변경 뒤 재생성 전) 복사본의
+        # 저장소 output/의 현재 그래프가 이전 빌더 버전으로 만들어졌으면(BUILDER_VERSION 변경 뒤 재생성 전) 복사본의
         # 현재 그래프만 현재 빌더로 다시 만든다(실행 사본은 그대로 — 현재 그래프와 다르면 A7 WARN은 허용).
         ext = read_json(paths.output_in(work, "extract", "SNP-M-102", "extraction.json"))
         g_dir = paths.output_in(work, "graph", "SNP-M-102")
@@ -167,7 +167,7 @@ def build_sample_chain(base, src_run):
 
 def build_registration_chain(base, out_sub=()):
     """등록 연쇄 R: 임시 저장 루트에 SNP-M-102 등록(p-test) → 등록정보로 추출·그래프 → 구간 맞춤 → 고정 응답 분석 1회.
-    out_sub: 추출·그래프를 둘 작업 루트 아래 폴더(기본 출력/, run_samples 배치는 출력/samples/)."""
+    out_sub: 추출·그래프를 둘 작업 루트 아래 폴더(기본 output/, run_samples 배치는 output/samples/)."""
     import build_graph
     import extract_drawio
     work, store = os.path.join(base, "work"), os.path.join(base, "store")
@@ -220,7 +220,7 @@ class _Base(unittest.TestCase):
 class SampleChainTest(_Base):
     @classmethod
     def setUpClass(cls):
-        cls.src_run = latest_repo_run()  # 없으면 합성(출력/ 부재)
+        cls.src_run = latest_repo_run()  # 없으면 합성(output/ 부재)
         cls.base = tempfile.mkdtemp(prefix="hazop-contract-S-")
         try:
             cls.work, cls.store, cls.run_name = build_sample_chain(cls.base, cls.src_run)
@@ -261,7 +261,7 @@ class SampleChainTest(_Base):
         self.assertEqual(contract.exit_code(res), 0)
 
     def test_v1_repository_latest_run_read_only(self):
-        """저장소 실제 출력/의 최신 실행(읽기 전용). 검토본·출력 기록은 저장소 자료저장소/에 있으면 함께 본다."""
+        """저장소 실제 output/의 최신 실행(읽기 전용). 검토본·출력 기록은 저장소 store/에 있으면 함께 본다."""
         if self.src_run is None:
             self.skipTest("저장소 출력/분석 없음(git 제외 폴더) — 실제 실행 판정만 생략, 나머지는 합성 연쇄로 검사")
         res = self.check(paths.DEV_WORK_ROOT, paths.folder_in(paths.DEV_WORK_ROOT, "store"), region=REGION_ID)
@@ -735,7 +735,7 @@ class SampleChainTest(_Base):
 
 
 class SyntheticSampleChainTest(_Base):
-    """출력/ 부재 대비 경로(합성 샘플 연쇄)가 그 자체로 정상 연쇄인지: FAIL 0, R SKIP, C·E PASS."""
+    """output/ 부재 대비 경로(합성 샘플 연쇄)가 그 자체로 정상 연쇄인지: FAIL 0, R SKIP, C·E PASS."""
 
     @classmethod
     def setUpClass(cls):
@@ -817,7 +817,7 @@ class RegistrationChainTest(_Base):
 
 
 class RunSamplesLayoutTest(_Base):
-    """run_samples 배치(출력/samples/추출·그래프)의 등록 경로 실행: 현재 그래프를 extraction_file의 형제 그래프 폴더에서 찾는다."""
+    """run_samples 배치(output/samples/extract·그래프)의 등록 경로 실행: 현재 그래프를 extraction_file의 형제 그래프 폴더에서 찾는다."""
 
     @classmethod
     def setUpClass(cls):

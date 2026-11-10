@@ -66,7 +66,7 @@ def main(argv=None):
                 lock.unlock()
             return rc
     from hazop.app.main_window import MainWindow
-    if args.screenshots:  # 스크린샷의 확정 예시 저장은 임시 저장 루트에만(자료저장소/를 건드리지 않음)
+    if args.screenshots:  # 스크린샷의 확정 예시 저장은 임시 저장 루트에만(store/를 건드리지 않음)
         import tempfile
         os.environ["HAZOP_STORE_ROOT"] = tempfile.mkdtemp(prefix="hazop-screenshot-store-")
     win = MainWindow(settings_path=args.settings, ask_reviewer=not args.screenshots, debug=args.debug)

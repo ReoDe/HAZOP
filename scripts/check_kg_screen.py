@@ -1,7 +1,7 @@
 """③ 지식그래프 화면 검사 (기획서/그래프활용.md §5·§7.2 V1·V2·S1, 디자인/지식그래프화면.md). 네트워크·AI 호출 없음.
 
 입력은 저장소 안 샘플만 쓴다: 샘플 도면 SNP-M-102를 임시 폴더에서 추출·그래프 빌드(tests/test_kg.pid_graph와 같은 방식),
-데이터/지식/SNP-SAMPLE CSV로 지식그래프 빌드, 데이터/구간 구간 JSON, link_candidates.csv. 출력/ 폴더에 의존하지 않는다.
+data/knowledge-graph/SNP-SAMPLE CSV로 지식그래프 빌드, data/regions 구간 JSON, link_candidates.csv. output/ 폴더에 의존하지 않는다.
 
 1) V2 오프라인: 생성 HTML(단독·앱 셸)에서 vendor 본문을 뺀 생성 부분에 외부 URL 없음, vendor URL은 허용 목록,
    vendor SHA-256 = SOURCE.md 기록, LICENSE 있음, <script src> 없음(scripts/check_kg_renderer.py 규칙 재사용)
@@ -87,8 +87,8 @@ def sample_inputs():
 
 
 def prepare_work_root(work, inp):
-    """임시 작업 루트에 화면 입력을 둔다(inp = sample_inputs(), 작업 루트를 바꾸기 전에 만든 것): 출력/그래프/<도면>/graph.json, 출력/지식그래프/kg-…(write_outputs),
-    데이터/지식/<project>/link_candidates.csv, 데이터/구간/<구간>.json."""
+    """임시 작업 루트에 화면 입력을 둔다(inp = sample_inputs(), 작업 루트를 바꾸기 전에 만든 것): output/graph/<도면>/graph.json, output/knowledge-graph/kg-…(write_outputs),
+    data/knowledge-graph/<project>/link_candidates.csv, data/regions/<구간>.json."""
     gdir = paths.output_in(work, "graph", DRAWING)
     os.makedirs(gdir, exist_ok=True)
     with open(os.path.join(gdir, "graph.json"), "w", encoding="utf-8") as fh:
@@ -225,7 +225,7 @@ def html_problems(html):
 
 # ---------------------------------------------------------------- 주 창(③ 탭)
 class TempRoots:
-    """HAZOP_WORK_ROOT·HAZOP_STORE_ROOT를 임시 폴더로 바꾸고 끝나면 되돌린다(실제 자료저장소·출력 미사용)."""
+    """HAZOP_WORK_ROOT·HAZOP_STORE_ROOT를 임시 폴더로 바꾸고 끝나면 되돌린다(실제 store·출력 미사용)."""
 
     def __init__(self):
         self.tmp = tempfile.mkdtemp(prefix="kg-screen-app-")
@@ -367,7 +367,7 @@ def s1_window_problem(win):
 
 
 def write_synthetic_kg(work, total):
-    """합성 그래프·지식그래프(가상)를 임시 작업 루트 출력/ 아래에 둔다(S1 확인용)."""
+    """합성 그래프·지식그래프(가상)를 임시 작업 루트 output/ 아래에 둔다(S1 확인용)."""
     graph, kg, regions = synthetic_inputs(total)
     gdir = paths.output_in(work, "graph", "SYN-S1")
     os.makedirs(gdir, exist_ok=True)

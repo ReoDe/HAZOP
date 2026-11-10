@@ -1,5 +1,5 @@
-"""데이터/지식/<project_id>/knowledge_*.csv + 출력/그래프/*/graph.json
--> 출력/지식그래프/kg-<project_id>/<kg_version>/knowledge.json + knowledge_graph.json, 그 다음 kg-<project_id>/current.json 교체
+"""data/knowledge-graph/<project_id>/knowledge_*.csv + output/graph/*/graph.json
+-> output/knowledge-graph/kg-<project_id>/<kg_version>/knowledge.json + knowledge_graph.json, 그 다음 kg-<project_id>/current.json 교체
 
 근거: 기획서/그래프활용.md §2.6 (CSV -> knowledge.json -> knowledge_graph.json). P&ID 그래프는 읽기만 한다.
 그래프가 없으면 먼저: python scripts/build_graph.py

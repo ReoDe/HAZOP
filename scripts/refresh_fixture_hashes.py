@@ -9,7 +9,7 @@
   python scripts/refresh_fixture_hashes.py --check      # 불일치만 보고(파일 변경 없음, 불일치 있으면 종료 코드 1)
   python scripts/refresh_fixture_hashes.py              # 해시 갱신
 옵션: --region <구간 JSON>, --graph <그래프 JSON>, --fixed-dir <폴더>(여러 번 지정 가능.
-기본: 데이터/고정응답/<구간 ID>/ 와 tests/fixtures/analysis/bad/)
+기본: data/fixed-responses/<구간 ID>/ 와 tests/fixtures/analysis/bad/)
 """
 
 import argparse

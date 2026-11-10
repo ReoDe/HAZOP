@@ -1,8 +1,8 @@
 """데스크톱 화면 지원 검사(기획서/인터페이스.md §2.5·§3.1·§3.3·§7.1, §8의 ①·④·패키징 대비 행). QA용.
 
-임시 폴더만 쓴다(데이터/·자료저장소/·출력/ 원본은 바꾸지 않음). AI 호출·네트워크 없음.
+임시 폴더만 쓴다(data/·store/·output/ 원본은 바꾸지 않음). AI 호출·네트워크 없음.
 1) 샘플 추출 -> 그래프 (임시 폴더, scripts/extract_drawio.py --samples·build_graph.py와 같은 함수)
-2) 근거 묶음 내보내기: 내보낸 bundle_sha256 = 데이터/고정응답/의 bundle_sha256, 실행 폴더·analysis.json 없음
+2) 근거 묶음 내보내기: 내보낸 bundle_sha256 = data/fixed-responses/의 bundle_sha256, 실행 폴더·analysis.json 없음
 3) 자원 루트·작업 루트를 임시 폴더로 바꿔 analyze.py·export_bundles.py·register.py·extract_drawio.py를 새 프로세스로 실행
    (graph_version = 구간 파일이 고정한 값, 후보 44·시나리오 14·위험도 제안 6·설계보완 후보 11, 등록 SVG 우선 사용)
 4) 샘플 6개 등록: SVG 6개 파생 등록, 등록 SVG 추출 = 원본 옆 SVG 추출(svg_file·source 제외)
@@ -58,7 +58,7 @@ def check_export(graph_file, tmp, failures):
     by_id = {c["candidate_id"]: c["bundle_sha256"] for c in m["candidates"]}
     fixed = sorted(f for f in os.listdir(analyze.DEFAULT_FIXED) if f.endswith(".json"))
     same = [f for f in fixed if _load(os.path.join(analyze.DEFAULT_FIXED, f))["bundle_sha256"] == by_id.get(f[:-5])]
-    ok("내보낸 bundle_sha256 = 데이터/고정응답 %d/%d" % (len(same), len(fixed)), fixed and same == fixed, failures)
+    ok("내보낸 bundle_sha256 = data/fixed-responses %d/%d" % (len(same), len(fixed)), fixed and same == fixed, failures)
     ok("그래프 버전 %s" % m["graph"]["graph_version"], m["graph"]["graph_version"] == GRAPH_VERSION, failures)
     files = [f for _, _, fs in os.walk(tmp) for f in fs]
     ok("실행 폴더·analysis.json 만들지 않음", "analysis.json" not in files

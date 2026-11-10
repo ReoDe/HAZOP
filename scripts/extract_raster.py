@@ -1,4 +1,4 @@
-"""래스터(PNG·JPG) P&ID -> 출력/어댑터/raster/<도면번호>/extraction.json + validation_report.md (T3 W4)
+"""래스터(PNG·JPG) P&ID -> output/adapter/raster/<도면번호>/extraction.json + validation_report.md (T3 W4)
 
 사용 예:
   python scripts/extract_raster.py "resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.png"
@@ -7,7 +7,7 @@
 OpenCV(opencv-python-headless)가 필요하다(결정 D7, packaging/requirements-raster.txt의 별도 venv). 없으면 종료 코드 2.
 빈 파일·손상 파일·상한(파일 100 MB, 50 MP)을 넘는 입력은 형식 오류로 알리고 종료 코드 2(blocker로 기록하지 않음).
 글자 인식(rapidocr-onnxruntime)이 없으면 글자 없이 추출하고 미확인으로 남긴다.
-출력은 drawio 추출 결과(출력/추출/)와 섞이지 않도록 기본값을 출력/어댑터/raster/ 로 둔다.
+출력은 drawio 추출 결과(output/extract/)와 섞이지 않도록 기본값을 output/adapter/raster/ 로 둔다.
 평가(drawio 정답 대비 지표)는 scripts/check_adapter.py가 한다.
 """
 

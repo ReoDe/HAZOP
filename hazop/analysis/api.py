@@ -29,7 +29,7 @@ def run_analysis(region_path, response_dir=None, client=None, out_root=None, gra
     """분석을 실행해 <out_root>/<구간 ID>/<실행 ID>/analysis.json을 만든다.
 
     response_dir: 고정 응답 폴더(<candidate_id>.json). client를 주면 그것을 쓴다.
-    out_root: 기본 <작업 루트>/출력/분석.
+    out_root: 기본 <작업 루트>/output/analysis.
     반환: {"status": "input_blocked"|"passed"|"blocked", "blockers": [...], "doc": dict|None, "run_dir": str|None}
     입력 파일 없음·JSON 오류·같은 실행 ID 결과 있음은 run.InputError 또는 ValueError로 올린다.
     """

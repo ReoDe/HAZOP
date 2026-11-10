@@ -31,11 +31,11 @@ approved: —
 | 단계 | 파일 | 위치 |
 | --- | --- | --- |
 | ① | 등록 색인, 등록 스냅샷, 저장 원본 | `<저장 루트>/<project_id>/registry.json`, `<저장 루트>/<project_id>/registrations/<material_id>/<registration_version>.json`, 스냅샷의 `storage_ref`(프로젝트 폴더 `<저장 루트>/<project_id>/` 기준 상대 경로, `hazop/register/registry.py` `Store.abs_ref`) |
-| ② | 추출 결과 | 분석 실행의 `source.extraction_file`(샘플 경로는 `<작업 루트>/출력/추출/<도면번호>/extraction.json`, 등록 경로는 `출력/samples/추출/…` 등 그 파일 위치) |
-| ③ | 그래프, 대상 매핑 | `graph.json`, `entity_mapping.json`. 폴더는 실행 사본 그래프의 `source.extraction_file`(추출 결과)의 형제 `…/그래프/<추출 폴더 이름>/`, 없으면 `<작업 루트>/출력/그래프/<추출 폴더 이름>/` |
-| ④ | 구간 JSON, 분석 실행 | `<작업 루트>/데이터/구간/<region_id>.json`, `<작업 루트>/출력/분석/<region_id>/<analysis_run_id>/analysis.json`, 같은 폴더 `inputs/*.json` |
+| ② | 추출 결과 | 분석 실행의 `source.extraction_file`(샘플 경로는 `<작업 루트>/output/extract/<도면번호>/extraction.json`, 등록 경로는 `output/samples/extract/…` 등 그 파일 위치) |
+| ③ | 그래프, 대상 매핑 | `graph.json`, `entity_mapping.json`. 폴더는 실행 사본 그래프의 `source.extraction_file`(추출 결과)의 형제 `…/graph/<추출 폴더 이름>/`, 없으면 `<작업 루트>/output/graph/<추출 폴더 이름>/` |
+| ④ | 구간 JSON, 분석 실행 | `<작업 루트>/data/regions/<region_id>.json`, `<작업 루트>/output/analysis/<region_id>/<analysis_run_id>/analysis.json`, 같은 폴더 `inputs/*.json` |
 | ⑤ | 검토본, 출력 기록, 워크시트 | `<저장 루트>/reviews/<region_id>/<analysis_run_id>/<candidate_id>/v<n>.json`, 같은 실행의 `exports/<시각>.json`, 출력 기록의 `file`(작업 루트 기준). 실행 폴더 아래의 `exports` 폴더는 후보 폴더로 보지 않음(`hazop/review/store.py` `load_run_reviews`와 같은 규칙) |
-| (선택) | 평가 비교 보고 | `<작업 루트>/출력/평가비교/<region_id>/<analysis_run_id>/*.json`([평가 기준 비교 §5.1](criteria-comparison.md#51-비교-보고-json)) |
+| (선택) | 평가 비교 보고 | `<작업 루트>/output/evaluation-compare/<region_id>/<analysis_run_id>/*.json`([평가 기준 비교 §5.1](criteria-comparison.md#51-비교-보고-json)) |
 
 작업 루트·저장 루트는 `hazop.paths.work_root()`·`store_root()`를 따릅니다.
 
@@ -50,7 +50,7 @@ approved: —
 
 ### 2.2 경로 구분: 등록 경로와 샘플 경로
 
-현재 `출력/`의 결과는 등록 없이 만든 **샘플 경로**입니다(`project_id: null`, `source.material_id: null`, 구간의 `graph_ref.graph_source: "samples"`). 등록 경로(`scripts/run_samples.py`. `출력/samples/{추출,그래프,뷰어}`에 씀)는 `project_id`와 `material_id`가 채워집니다.
+현재 `output/`의 결과는 등록 없이 만든 **샘플 경로**입니다(`project_id: null`, `source.material_id: null`, 구간의 `graph_ref.graph_source: "samples"`). 등록 경로(`scripts/run_samples.py`. `output/samples/{추출,그래프,뷰어}`에 씀)는 `project_id`와 `material_id`가 채워집니다.
 
 | 경로 | 판정 | ① 관련 검사 |
 | --- | --- | --- |
@@ -66,9 +66,9 @@ python scripts/check_contract.py [--region <region_id>] [--run latest|all|<analy
 
 | 옵션 | 기본값 | 의미 |
 | --- | --- | --- |
-| `--region` | `데이터/구간/*.json` 전체 | 검사할 구간 |
+| `--region` | `data/regions/*.json` 전체 | 검사할 구간 |
 | `--run` | `latest` | `latest`는 `analysis.json`이 있는 실행 폴더 중 최신(폴더 이름의 시각 순), `all`은 `analysis.json`이 있는 실행 폴더 전부. `analysis.json`이 없는 미완성 폴더는 두 경우 모두 건너뛰고 보고의 `notes`에 남김. `<analysis_run_id>`로 지정한 실행에 `analysis.json`이 없으면 실행 오류(종료 코드 2) |
-| `--store-root` | `HAZOP_STORE_ROOT`, 없으면 `<작업 루트>/자료저장소` | 저장 루트 |
+| `--store-root` | `HAZOP_STORE_ROOT`, 없으면 `<작업 루트>/store` | 저장 루트 |
 | `--report` | 없음 | 결과 JSON을 쓸 경로. 경로는 realpath 기준으로 판정하며, `<작업 루트>/출력`·`<작업 루트>/데이터`·저장 루트 밖이어야 함(상위 폴더는 samefile로 비교). 드라이브 표시(`C:` 등) 뒤에 `:`가 있는 경로, 경로에 링크·정션이 있는 경우, 이미 있는 파일(덮어쓰기)은 거부. 거부하면 종료 코드 2 |
 
 종료 코드: `0` = `FAIL` 없음, `1` = `FAIL` 1개 이상, `2` = 실행 오류 1개 이상. 실행 오류가 있으면 `FAIL`이 함께 있어도 `2`입니다. 실행 오류는 JSON 읽기 실패, JSON이 객체가 아님, 파일 접근 실패(`OSError`), 입력 형식 오류(경로·이름 `ValueError`), 입력 폴더 없음, 지정한 구간·실행 없음, 지정한 실행의 `analysis.json` 없음, 보고 경로 거부, 보고 파일 쓰기 실패입니다. 참조한 파일이 없는 것은 실행 오류가 아니라 해당 항목의 `FAIL`이며, 다른 연쇄의 검사는 계속합니다. 네트워크·AI 호출이 없습니다.
@@ -110,7 +110,7 @@ python scripts/check_contract.py [--region <region_id>] [--run latest|all|<analy
 
 ### 4.3 ② → ③
 
-현재 산출물(`출력/추출/`·`출력/그래프/`)끼리 비교합니다. 실행 당시 사본과의 비교는 4.4에서 합니다.
+현재 산출물(`output/extract/`·`output/graph/`)끼리 비교합니다. 실행 당시 사본과의 비교는 4.4에서 합니다.
 
 | ID | 검사 | 근거 | 실패 메시지 예 |
 | --- | --- | --- | --- |
@@ -215,11 +215,11 @@ K3·K4·K6은 `hazop.analysis.run.check_result`와 `_run_level_holds`가 실행 
 
 ## 6. 독립 검증
 
-임시 작업 루트·저장 루트(환경변수 `HAZOP_WORK_ROOT`·`HAZOP_STORE_ROOT`)에 샘플을 복사하거나 새로 만든 뒤 검사합니다. 저장소의 `출력/`·`자료저장소/`는 고치지 않습니다. 각 사례는 정상 연쇄를 만든 뒤 한 곳만 바꿉니다.
+임시 작업 루트·저장 루트(환경변수 `HAZOP_WORK_ROOT`·`HAZOP_STORE_ROOT`)에 샘플을 복사하거나 새로 만든 뒤 검사합니다. 저장소의 `output/`·`store/`는 고치지 않습니다. 각 사례는 정상 연쇄를 만든 뒤 한 곳만 바꿉니다.
 
 정상 연쇄 준비(구현 담당):
 
-- **샘플 연쇄 S**: `출력/추출/SNP-M-102/`, `출력/그래프/SNP-M-102/`, `데이터/구간/region-SNP-M-102-pzr.json`, 최신 분석 실행 폴더를 임시 작업 루트로 복사합니다. 기존 검토 API(`build_review`·`save_review`)로 `deviation-p86-d09` 검토본 v1·v2를 만들고(v2에는 미결정 시나리오를 남겨 `review_status: reviewing`), 그 뒤 `export_worksheet`로 출력 기록 1개를 만듭니다. 이 출력 기록의 `target.reviews`는 `deviation-p86-d09` v2를 가리킵니다.
+- **샘플 연쇄 S**: `output/extract/SNP-M-102/`, `output/graph/SNP-M-102/`, `data/regions/region-SNP-M-102-pzr.json`, 최신 분석 실행 폴더를 임시 작업 루트로 복사합니다. 기존 검토 API(`build_review`·`save_review`)로 `deviation-p86-d09` 검토본 v1·v2를 만들고(v2에는 미결정 시나리오를 남겨 `review_status: reviewing`), 그 뒤 `export_worksheet`로 출력 기록 1개를 만듭니다. 이 출력 기록의 `target.reviews`는 `deviation-p86-d09` v2를 가리킵니다.
 - **등록 연쇄 R**: 임시 저장 루트에 SNP-M-102 drawio를 등록하고(`registry.register`, 프로젝트 `p-test`, 파일 위치 `<임시 저장 루트>/p-test/`), 등록정보를 넣어 추출·그래프를 만듭니다. 구간 JSON의 `project_id`·`graph_ref`를 맞춘 뒤 고정 응답으로 분석 1회를 실행합니다.
 
 | ID | 사례 | 기대 결과 |
@@ -233,7 +233,7 @@ K3·K4·K6은 `hazop.analysis.run.check_result`와 `_run_level_holds`가 실행 
 | V7 | S에서 `entity_mapping.json`의 항목 1개 삭제 | X4 `FAIL`. X3은 `graph.json` 기준이라 `PASS` |
 | V8 | S에서 실행 사본 `inputs/graph.json`에 공백 1개 추가 | A2 `FAIL` |
 | V9 | S에서 `analysis.json`의 한 시나리오 `graph_evidence.node_ids`에 `entity-node-999` 추가(분석 해시가 바뀌므로 C2·E1도 `FAIL`) | A5·C2·E1 `FAIL` |
-| V10 | S에서 drawio 사본의 글자 1개를 바꿔 임시 `출력/추출/SNP-M-102/`에 다시 추출하고, 그 추출로 `출력/그래프/SNP-M-102/`를 다시 빌드(추출과 그래프를 함께 교체) | 현재 추출·그래프가 서로 맞으므로 X1–X4 `PASS`. A7 `WARN`(현재 그래프 버전이 실행 당시와 다름). 실행 사본 기준 검사 A2–A6 `PASS` |
+| V10 | S에서 drawio 사본의 글자 1개를 바꿔 임시 `output/extract/SNP-M-102/`에 다시 추출하고, 그 추출로 `output/graph/SNP-M-102/`를 다시 빌드(추출과 그래프를 함께 교체) | 현재 추출·그래프가 서로 맞으므로 X1–X4 `PASS`. A7 `WARN`(현재 그래프 버전이 실행 당시와 다름). 실행 사본 기준 검사 A2–A6 `PASS` |
 | V11 | S에서 검토본 v2를 지우고 v3을 `previous_review_version: 2`로 둠 | C3 `FAIL`, E2 `FAIL`(출력 기록이 가리키는 v2 없음) |
 | V12 | S에서 검토본 v2의 `review_status`를 `confirmed`로 고침(미결정 시나리오는 그대로) | C5 `FAIL`, E2 `FAIL`(출력 기록의 `review_status` `reviewing`과 다름) |
 | V13 | S에서 워크시트 xlsx 1바이트 변경 / xlsx 삭제 | E3 `FAIL` / E3 `WARN` |

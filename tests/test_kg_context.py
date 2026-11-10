@@ -2,7 +2,7 @@
 실행: python -m unittest discover -s tests
 
 검사 본문은 scripts/check_kg_context.py의 c*_problems(빈 목록 = 통과)를 그대로 쓰고, 여기서는 규격의 세부 규칙을
-작은 단위로 더 확인한다. 모든 파일은 임시 폴더에 만든다(출력/·데이터/를 바꾸지 않음). 네트워크·실제 AI 호출 없음.
+작은 단위로 더 확인한다. 모든 파일은 임시 폴더에 만든다(output/·data/를 바꾸지 않음). 네트워크·실제 AI 호출 없음.
 """
 
 import hashlib

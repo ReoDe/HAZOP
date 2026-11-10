@@ -2,7 +2,7 @@
 실행: python -m unittest discover -s tests -t .
 
 입력은 저장소 샘플만 쓴다(scripts/check_kg_screen.sample_inputs: 샘플 도면을 임시 폴더에서 추출·빌드, 정상 샘플 CSV).
-창 테스트는 HAZOP_WORK_ROOT·HAZOP_STORE_ROOT를 임시 폴더로 바꿔 출력/·자료저장소/를 건드리지 않는다.
+창 테스트는 HAZOP_WORK_ROOT·HAZOP_STORE_ROOT를 임시 폴더로 바꿔 output/·store/를 건드리지 않는다.
 웹뷰는 QT_QPA_PLATFORM=offscreen. 네트워크 사용 없음.
 """
 
@@ -517,7 +517,7 @@ class KnowledgeTabTest(WindowTestBase):
         win.webview.bridge.fromWeb(json.dumps({"type": "runAlgorithm", "algorithm": "A1", "start": "req-001"}))
         self.assertEqual(scr.data["algo"]["A1"]["start"], "req-001")
         self.assertFalse(scr.data["algo"]["A1"]["active"])
-        # 단독 모드 HTML도 작업 루트 출력/ 아래에 씀
+        # 단독 모드 HTML도 작업 루트 output/ 아래에 씀
         self.assertTrue(scr.standalone.startswith(paths.output_in(self.roots.work, "knowledge-graph")))
         self.assertTrue(os.path.isfile(scr.standalone))
 

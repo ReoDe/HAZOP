@@ -1,4 +1,4 @@
-"""출력/추출/<도면번호>/extraction.json -> 출력/그래프/<도면번호>/graph.json + structure_report.md + entity_mapping.json
+"""output/extract/<도면번호>/extraction.json -> output/graph/<도면번호>/graph.json + structure_report.md + entity_mapping.json
 
 추출 결과가 없으면 먼저: python scripts/extract_drawio.py --samples
 """

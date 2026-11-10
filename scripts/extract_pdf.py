@@ -1,15 +1,15 @@
-"""벡터 PDF P&ID -> 출력/어댑터/pdf_vector/<도면번호>/extraction.json + validation_report.md (T3 W3)
+"""벡터 PDF P&ID -> output/adapter/pdf_vector/<도면번호>/extraction.json + validation_report.md (T3 W3)
 
 사용 예:
   python scripts/extract_pdf.py "resources/references/pid-samples/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.pdf"
   python scripts/extract_pdf.py --samples          # 샘플 6개 PDF 전체
   python scripts/extract_pdf.py 도면.pdf --pages all   # 모든 쪽(또는 --pages 0,2 처럼 0부터 센 쪽 번호)
-  python scripts/extract_pdf.py --registration 자료저장소/<프로젝트>/registrations/<자료 ID>/<버전>.json
+  python scripts/extract_pdf.py --registration store/<프로젝트>/registrations/<자료 ID>/<버전>.json
 --registration(① 등록 완료 자료)이면 보관 원본의 등록된 모든 쪽을 <--out-root>/<프로젝트>__<자료 ID>-r<등록 버전>-p<쪽>/에
 쓰고 PDF에서 그린 page.svg를 함께 만든다(쪽을 고르면 그 쪽만). 글자·벡터 경로가 없거나 읽지 못한 쪽은 그 쪽 폴더에
 not_extracted.json(사유)만 남긴다. 등록 없이 두 쪽 이상이면 폴더 이름 끝에 -p<쪽>을 붙인다(0쪽 제외).
 pdfplumber가 필요하다(결정 D1). 없으면 종료 코드 2로 끝난다.
-출력은 drawio 추출 결과(출력/추출/)와 섞이지 않도록 기본값을 출력/어댑터/pdf_vector/ 로 둔다.
+출력은 drawio 추출 결과(output/extract/)와 섞이지 않도록 기본값을 output/adapter/pdf_vector/ 로 둔다.
 평가(drawio 정답 대비 지표)는 scripts/check_adapter.py가 한다.
 """
 

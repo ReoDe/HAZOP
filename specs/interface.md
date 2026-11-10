@@ -24,7 +24,7 @@ approved: —
 | 출력 | Excel 워크시트(.xlsx, KOSHA P-86 워크시트 양식 기준)를 이번 구현에 포함 |
 | AI 연동 | 프로그램은 AI를 호출하지 않음. Claude Code 구독제 세션에서 따로 만든 고정 응답 파일을 불러와 기존 파이프라인(`hazop/analysis`)으로 검증·계산한 결과를 표시. API 호출은 확장 지점만 남김 |
 | 확정 방식 | 시나리오와 설계보완 후보마다 수용·수정·기각·보류 중 하나와 사유를 기록. 검토자·시각, AI 원본 값과 사람 수정값을 구분해 보관 |
-| 저장 | 단일 사용자, 로컬 PC. `자료저장소/`·`출력/` 아래 JSON 파일 |
+| 저장 | 단일 사용자, 로컬 PC. `store/`·`output/` 아래 JSON 파일 |
 | 패키징 | 구조만 대비하고 방안을 기획서에 기록. 실행파일 빌드는 하지 않음 |
 | 디자인 | ['출력화면 AX' 데모 분석](../design/output-screen-ax-demo.md)의 방향(캔버스 우선, 무채색 바탕에 파랑 하나만 UI 강조색, 레이어 토글, 근거 집계, 도면·그래프 색 체계 공유)에 HAZOP 전용 화면을 더함 |
 
@@ -95,7 +95,7 @@ QWebChannel로 Python 객체 하나(`bridge`)를 웹에 노출합니다. 메시�
 | Python → 웹 | `loadKnowledge` | ③ 지식그래프 데이터(노드·링크·속성·근거 ID·미리 계산한 알고리즘 결과) |
 | 웹 → Python | `runAlgorithm` | ③에서 알고리즘 실행 요청. 결과는 Python → 웹 `algorithmResult {algorithm, start, kg_version, result}`로 돌려줌. ③의 다른 메시지: Python → 웹 `loadKnowledge`·`selectNode {id}`, 웹 → Python `linkSelected {id}`·`nodeSelected`(T1 W6 구현) |
 
-- 뷰어는 브라우저에서 단독으로 여는 기존 사용 방식(`출력/뷰어/*.html`)과 기존 검사(`scripts/check_viewer.py`, `check_viewer_paths.js`)를 계속 지원해야 합니다. `bridge`가 없으면 단독 모드로 동작합니다.
+- 뷰어는 브라우저에서 단독으로 여는 기존 사용 방식(`output/viewer/*.html`)과 기존 검사(`scripts/check_viewer.py`, `check_viewer_paths.js`)를 계속 지원해야 합니다. `bridge`가 없으면 단독 모드로 동작합니다.
 - `qwebchannel.js`는 템플릿에 `<script>` 태그로 넣지 않고, Qt 쪽에서 `QWebEngineScript`로 실행 시점에 주입합니다. 따라서 `hazop/viewer/check.py`의 템플릿 `<script>` 개수 검사(`TEMPLATE_SCRIPT_COUNT = 3`)는 그대로 유지합니다 (총괄 결정(권고안, 사용자 위임 2026-11-04)).
 - 생성 HTML은 크기 제한을 피하려고 `setHtml`이 아니라 파일 경로로 로드합니다 [일반지식].
 - 웹뷰의 외부 네트워크 접근은 끕니다. 도면 SVG는 사용자 제공 파일이므로 기존 `hazop/viewer/sanitize.py` 처리를 거친 결과만 표시합니다([신뢰 경계](overview.md#trust-boundary)).
@@ -114,7 +114,7 @@ QWebChannel로 Python 객체 하나(`bridge`)를 웹에 노출합니다. 메시�
 **내보내기·응답 폴더 형식** (총괄 결정(권고안, 사용자 위임 2026-11-04))
 
 ```
-출력/근거묶음/<region_id>/<내보낸 시각>/
+output/evidence-bundles/<region_id>/<내보낸 시각>/
   manifest.json                  구간 ID·버전, 그래프 ID·버전, 입력 파일 해시, 템플릿 정보(ai.template_info()), 후보 목록
   response_schema.json           ai.RESPONSE_SCHEMA
   system_prompt.txt              ai.SYSTEM_PROMPT
@@ -125,7 +125,7 @@ QWebChannel로 Python 객체 하나(`bridge`)를 웹에 노출합니다. 메시�
 
 - 구간 JSON이 지식그래프를 지정하면(`inputs.knowledge_graph`) 근거 묶음에 `knowledge_context`가 들어가고, 지정하지 않으면 이 키가 없어 기존 고정 응답의 `bundle_sha256`이 그대로입니다([그래프 활용 §6.4](graph-usage.md#64-wp5-상세-규격), T1 W7).
 - 대상은 판단이 '선택'인 후보입니다. 근거 묶음은 시각을 포함하지 않으므로, 입력이 같으면 내보낼 때와 분석할 때의 `bundle_sha256`이 같습니다.
-- 내보내기는 분석 실행 폴더(`출력/분석/...`)와 `analysis.json`을 만들지 않습니다.
+- 내보내기는 분석 실행 폴더(`output/analysis/...`)와 `analysis.json`을 만들지 않습니다.
 - 응답 파일(`<응답 폴더>/<candidate_id>.json`)의 필수 필드는 `ai.FixedResponseClient` 형식(`hazop/analysis/ai.py` 121행)을 따릅니다: `region_id`, `bundle_sha256`, `stop_reason`(`end_turn`·`refusal`·`max_tokens`), `output`(`RESPONSE_SCHEMA`를 따르는 객체). `sample_note`, `stop_details`는 선택입니다.
 - 반출: 근거 묶음은 도면 내용을 담습니다. 데이터 반출 정책은 [HAZOP 분석 모델 연결](hazop-analysis.md#모델-연결)을 따르며, 보안 등급이 있는 실제 설계자료는 사용자 확인 뒤에만 내보냅니다.
 
@@ -147,7 +147,7 @@ QWebChannel로 Python 객체 하나(`bridge`)를 웹에 노출합니다. 메시�
 | 좌측 | 등록 자료 목록 표: 자료 ID, 등록 버전, 원본 파일명, 도면번호·개정번호(미확인 표시), 등록 시각, 상태(`registered` 등록 완료·`failed` 실패·`on_hold` 보류·`draft` 저장 진행 중), 추출·그래프 생성 여부 |
 | 우측 | 등록 폼: 프로젝트 ID, 원본 파일 선택 또는 끌어 놓기(1개), 도면번호·개정번호·제목(비우면 미확인), 등록자, 사유. 아래에 결과 영역 |
 
-도면 SVG는 draw.io 원본과 같은 이름의 SVG를 파생 자료로 함께 등록합니다(사용자 결정, 2026-11-04). 원본은 바꾸지 않으며, SVG는 원본을 대체하지 않습니다(자료등록.md). PDF는 원본 옆 SVG를 찾지 않고 파생 자료도 등록하지 않습니다. 추출할 때 PDF의 벡터 요소를 추출과 같은 좌표로 그린 SVG(`출력/추출/<이름>/page.svg`)를 만들어 ② 배경으로 씁니다([정보추출](extraction.md)).
+도면 SVG는 draw.io 원본과 같은 이름의 SVG를 파생 자료로 함께 등록합니다(사용자 결정, 2026-11-04). 원본은 바꾸지 않으며, SVG는 원본을 대체하지 않습니다(자료등록.md). PDF는 원본 옆 SVG를 찾지 않고 파생 자료도 등록하지 않습니다. 추출할 때 PDF의 벡터 요소를 추출과 같은 좌표로 그린 SVG(`output/extract/<이름>/page.svg`)를 만들어 ② 배경으로 씁니다([정보추출](extraction.md)).
 
 **SVG 파생 등록 형식** (총괄 결정(권고안, 사용자 위임 2026-11-04))
 
@@ -163,8 +163,8 @@ QWebChannel로 Python 객체 하나(`bridge`)를 웹에 노출합니다. 메시�
 | 표시 데이터 | 출처 |
 | --- | --- |
 | 등록정보 | `<저장 루트>/<프로젝트>/registrations/<material_id>/<버전>.json` (`register.py`가 만드는 형식) |
-| 추출 결과 | `출력/추출/<프로젝트>__<자료>-r<버전>-p<페이지>/extraction.json` |
-| 그래프 | `출력/그래프/<같은 이름>/graph.json`의 `graph_version`, `validation.status` |
+| 추출 결과 | `output/extract/<프로젝트>__<자료>-r<버전>-p<페이지>/extraction.json` |
+| 그래프 | `output/graph/<같은 이름>/graph.json`의 `graph_version`, `validation.status` |
 
 사용자 조작:
 
@@ -204,7 +204,7 @@ QWebChannel로 Python 객체 하나(`bridge`)를 웹에 노출합니다. 메시�
 
 | 영역 | 구성 |
 | --- | --- |
-| 상단 도구줄 | 구간 선택(`데이터/구간/*.json`), 실행 선택(`출력/분석/<구간>/<실행 ID>/`), "근거 묶음 내보내기"(§2.5), "새 분석 실행"(응답 폴더 선택), 결과 검증 칩, 집계 "후보 44(선택·제외·보류) · 시나리오 · 위험도 제안 · 설계보완 후보 · 열린 보류" |
+| 상단 도구줄 | 구간 선택(`data/regions/*.json`), 실행 선택(`output/analysis/<구간>/<실행 ID>/`), "근거 묶음 내보내기"(§2.5), "새 분석 실행"(응답 폴더 선택), 결과 검증 칩, 집계 "후보 44(선택·제외·보류) · 시나리오 · 위험도 제안 · 설계보완 후보 · 열린 보류" |
 | 좌측 패널 | 편차 목록 표 |
 | 중앙 | 웹뷰 캔버스와 근거 집계 한 줄 |
 | 우측 패널 | 선택한 편차의 상세 탭: 시나리오 · 설계보완 후보 · 자료 요청 · AI 실행 기록 |
@@ -386,9 +386,9 @@ UI 강조색은 파랑 하나입니다. 다른 색은 데이터(노드 종류·�
 <저장 루트>/reviews/<region_id>/<analysis_run_id>/exports/<출력 시각>.json   (출력 기록)
 ```
 
-- `<저장 루트>`는 `자료저장소/`(또는 `HAZOP_STORE_ROOT`)입니다.
+- `<저장 루트>`는 `store/`(또는 `HAZOP_STORE_ROOT`)입니다.
 - [신뢰 경계](overview.md#trust-boundary)에서 `reviews/`는 '사람 기록'으로 분류합니다. 변조는 범위 밖이며, 버전 파일로 이력을 보존합니다 (총괄 결정(권고안, 사용자 위임 2026-11-04)).
-- `출력/`이 아닌 `자료저장소/`에 두는 이유: `출력/`은 스크립트로 다시 만들 수 있는 생성물로 관리되고(`.gitignore` 주석. `run_samples.py`는 `출력/samples/{추출,그래프,뷰어}`에 쓰고, 오래된 분석 실행은 `scripts/clean_outputs.py`(기본 dry-run, `--apply` 시 `출력/_보관/`으로 이동, 삭제 없음)로 정리), 검토 기록은 다시 만들 수 없는 사람의 판단이기 때문입니다.
+- `output/`이 아닌 `store/`에 두는 이유: `output/`은 스크립트로 다시 만들 수 있는 생성물로 관리되고(`.gitignore` 주석. `run_samples.py`는 `output/samples/{추출,그래프,뷰어}`에 쓰고, 오래된 분석 실행은 `scripts/clean_outputs.py`(기본 dry-run, `--apply` 시 `output/_archive/`으로 이동, 삭제 없음)로 정리), 검토 기록은 다시 만들 수 없는 사람의 판단이기 때문입니다.
 - 저장할 때마다 새 버전 파일을 만들고 이전 파일은 고치지 않습니다.
 - 검토본은 편차 단위이며 그 편차의 시나리오·설계보완 후보 결정을 모두 담습니다(검토결과관리.md).
 
@@ -584,7 +584,7 @@ UI 강조색은 파랑 하나입니다. 다른 색은 데이터(노드 종류·�
 - 출력은 `blocked` 결과에서 막고 사유를 표시합니다(사용자 결정, 2026-11-04).
 - 셀 값이 `=`, `+`, `-`, `@`로 시작해도 수식으로 해석되지 않게 문자열로 씁니다(검토결과관리.md 독립 검증).
 - 빈 위험도를 0이나 안전으로 쓰지 않고 상태와 사유를 씁니다.
-- 파일은 `출력/워크시트/<region_id>/<analysis_run_id>/worksheet-<출력 시각>.xlsx`에 새로 만들고 덮어쓰지 않습니다. 출력 기록(시각·대상 버전·범위·행 식별자)은 §5.1의 `exports/`에 남깁니다 [제안].
+- 파일은 `output/worksheets/<region_id>/<analysis_run_id>/worksheet-<출력 시각>.xlsx`에 새로 만들고 덮어쓰지 않습니다. 출력 기록(시각·대상 버전·범위·행 식별자)은 §5.1의 `exports/`에 남깁니다 [제안].
 - 검토 기록의 `analysis_sha256`이 현재 `analysis.json`과 다르면 출력을 막습니다(§3.4).
 - 라이브러리는 openpyxl을 씁니다(사용자 결정, 2026-11-04).
 
@@ -597,7 +597,7 @@ UI 강조색은 파랑 하나입니다. 다른 색은 데이터(노드 종류·�
 | 구분 | 내용 | 개발 실행 | 패키징 실행 [제안] |
 | --- | --- | --- | --- |
 | 프로그램 자원(읽기 전용) | 뷰어 템플릿, 토큰 파일, 이탈 카탈로그·적용 판단·패턴·기준표 | 저장소 안 경로(`resources/library/`) | 실행 폴더 안 자원 폴더 |
-| 사용자 데이터(쓰기) | 저장 루트(등록 원본·검토 기록), `출력/`, 구간 JSON, 고정 응답 | 저장소 안 `작업/`(git 제외) 아래 `자료저장소/`·`출력/`·`데이터/` | 사용자가 고른 작업 폴더(기본 `%LOCALAPPDATA%\HAZOP\`) |
+| 사용자 데이터(쓰기) | 저장 루트(등록 원본·검토 기록), `output/`, 구간 JSON, 고정 응답 | 저장소 안 `work/`(git 제외) 아래 `store/`·`output/`·`data/` | 사용자가 고른 작업 폴더(기본 `%LOCALAPPDATA%\HAZOP\`) |
 | 설정 | 검토자 이름, 작업 폴더, 최근 연 구간·실행 | `%APPDATA%\HAZOP\settings.json` | 같음 |
 
 - 경로 결정은 `hazop/paths.py` 하나에 모읍니다. 데이터 폴더는 폴더 표(`FOLDERS`)로만 열고(`paths.folder`), 다른 모듈에 `데이터`·`참고자료` 경로 문자열을 쓰지 않습니다(`tests/test_path_literals.py`). 작업 루트 안 배치는 개발 실행과 배포본이 같습니다([정리 설계](../docs/2026-11-09-data-consolidation/README.md)).
@@ -614,7 +614,7 @@ UI 강조색은 파랑 하나입니다. 다른 색은 데이터(노드 종류·�
 | --- | --- |
 | 방식 | PyInstaller one-folder 방식. QtWebEngine은 보조 실행파일(`QtWebEngineProcess.exe`)과 자원 파일이 필요해 one-file보다 one-folder가 안정적임 [일반지식] |
 | 크기 | QtWebEngine 포함으로 수백 MB 규모 예상 [일반지식] |
-| 한글 경로 | 폴더 이름(`자료저장소`, `출력`)과 사용자 경로의 한글 처리. 패키징 후 실제 확인 필요 [추론] |
+| 한글 경로 | 폴더 이름(`store`, `출력`)과 사용자 경로의 한글 처리. 패키징 후 실제 확인 필요 [추론] |
 | 보안 프로그램 | 서명하지 않은 실행파일은 백신 오탐 가능성이 있음 [일반지식] |
 | 라이선스 | PySide6(LGPL)의 포함 조건 확인 필요. Pretendard 글꼴은 배포본에 넣지 않으므로 해당 없음(§9). ③의 force-graph 1.52.0은 MIT. UMD 번들에 포함된 의존성(d3 모듈 등)의 라이선스는 미확인이며 배포 전 확인([그래프 활용 §5.2](graph-usage.md#52-앱에-넣는-방식)) |
 | 신뢰 경계 | 자원 루트의 기준 자료 5종(이탈 카탈로그·적용 판단·위험도 기준표·패턴 라이브러리·[지침](hazop-method-guide.md))을 코드(`hazop/analysis/integrity.py`)에 고정한 해시와 대조함. 1바이트만 바뀌어도 분석을 차단하고 사유를 표시함(JSON은 파싱한 값이 같은 표기 차이(공백·줄바꿈·키 순서 등)와 지침서의 CRLF↔LF 변경은 제외). 데이터를 정당하게 바꿀 때는 사람 검토 뒤 `integrity.py`의 고정값(`PINNED_SHA256`·`GUIDE_SHA256`)을 갱신하고 배포본을 다시 빌드함(절차는 같은 파일 머리 주석). 패키징 T2 D1·D12, [W5 근거](../docs/2026-11-05-packaging/evidence/w5-trust-boundary.md) |
@@ -629,7 +629,7 @@ UI 강조색은 파랑 하나입니다. 다른 색은 데이터(노드 종류·�
 | ② | 기존 뷰어 검사(`check_viewer.py`의 `<script>` 개수 3 포함, `check_viewer_paths.js`)가 그대로 통과하고, 내장 모드에서 노드 클릭이 Python에 전달됨 |
 | ② | 웹뷰가 정화(`sanitize.py`)를 거친 SVG만 표시하고, 외부 URL 접근이 설정으로 차단됨 |
 | ③ | [그래프 활용 §7.2](graph-usage.md#72-검사-스크립트-항목)의 V1(JS 로컬 깊이 = Python), V2(오프라인), S1(화면 상한) 통과 |
-| ④ | 근거 묶음 내보내기가 실행 폴더를 만들지 않고, 테스트용 응답 폴더(기존 `데이터/고정응답/region-SNP-M-102-pzr`)로 대체해 불러오면 `scripts/analyze.py` 결과 JSON과 후보·시나리오·위험도·설계보완 후보 수까지 같음 |
+| ④ | 근거 묶음 내보내기가 실행 폴더를 만들지 않고, 테스트용 응답 폴더(기존 `data/fixed-responses/region-SNP-M-102-pzr`)로 대체해 불러오면 `scripts/analyze.py` 결과 JSON과 후보·시나리오·위험도·설계보완 후보 수까지 같음 |
 | ④ | `bundle_sha256`이 다른 고정 응답이 `input_mismatch`로 표시되고 결과에 쓰이지 않음 |
 | ④ | 후보 44개가 모두 목록에 있고, 적용 불가 19개가 사유와 함께 남음 |
 | ④ | 후보 판단 변경이 사유 없이 저장되지 않고, 구간 JSON에 이력으로 남으며 재분석 안내가 표시됨. 열려 있는 `analysis.json`은 바이트 단위로 바뀌지 않음 |

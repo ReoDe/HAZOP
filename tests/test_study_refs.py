@@ -1,7 +1,7 @@
 """⑤ 결과 항목의 그래프 참조(M5, 설계안 KD7·§7.1·§7.2·§8.3, U2(가)·U6(가)) 시험.
 실행: python -m unittest tests.test_study_refs
 
-저장은 임시 HAZOP_WORK_ROOT 아래에만 한다. 실제 데이터/분석결과는 읽기만 하고(있을 때만) 사본으로 왕복한다.
+저장은 임시 HAZOP_WORK_ROOT 아래에만 한다. 실제 data/analysis-results는 읽기만 하고(있을 때만) 사본으로 왕복한다.
 AI는 가짜 응답만 쓴다(네트워크 호출 없음).
 """
 

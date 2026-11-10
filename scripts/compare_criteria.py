@@ -1,11 +1,11 @@
-"""평가 기준 비교 (기획서/평가기준비교.md) -> 출력/평가비교/<구간 ID>/<실행 ID>/compare-<기준 ID>-v<버전>-<basis>-<시각>.json·.xlsx
+"""평가 기준 비교 (기획서/평가기준비교.md) -> output/evaluation-compare/<구간 ID>/<실행 ID>/compare-<기준 ID>-v<버전>-<basis>-<시각>.json·.xlsx
 
 사용 예:
-  python scripts/compare_criteria.py --criteria 데이터/평가기준/criteria-SNP-M-102-pzr-sample.json --run 출력/분석/region-SNP-M-102-pzr/<실행 ID>
+  python scripts/compare_criteria.py --criteria data/evaluation-criteria/criteria-SNP-M-102-pzr-sample.json --run output/analysis/region-SNP-M-102-pzr/<실행 ID>
   python scripts/compare_criteria.py --criteria <기준.xlsx> --format xlsx_sheet --run <실행 폴더> --basis reviewed
   python scripts/compare_criteria.py --criteria <기준> --run <실행 폴더> --export <저장 루트>/reviews/.../exports/<시각>.json
 
-결과 위치는 <작업 루트>/출력/평가비교(작업 루트는 HAZOP_WORK_ROOT로 바꿀 수 있음). 같은 이름 파일은 덮어쓰지 않는다.
+결과 위치는 <작업 루트>/output/evaluation-compare(작업 루트는 HAZOP_WORK_ROOT로 바꿀 수 있음). 같은 이름 파일은 덮어쓰지 않는다.
 AI·네트워크를 쓰지 않는다. 종료 코드 0 = 비교함(status ok), 1 = 차단(blocked 보고를 썼거나 쓸 수 없음)·오류.
 """
 

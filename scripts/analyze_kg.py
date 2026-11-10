@@ -1,10 +1,10 @@
 """지식그래프 알고리즘 A1~A5 실행 (기획서/그래프활용.md §4).
 
-입력: 출력/지식그래프/kg-<project_id>/current.json이 가리키는 knowledge_graph.json(scripts/build_kg.py로 생성),
-      출력/그래프/*/graph.json 중 지식그래프가 참조한 도면, 데이터/구간/*.json(A1 검토 구간).
-출력: 출력/지식그래프/kg-<project_id>/algo/<kg_version>/<graph_id>@<graph_version>/<구간 식별자>/<start>-r<radius>/
+입력: output/knowledge-graph/kg-<project_id>/current.json이 가리키는 knowledge_graph.json(scripts/build_kg.py로 생성),
+      output/graph/*/graph.json 중 지식그래프가 참조한 도면, data/regions/*.json(A1 검토 구간).
+출력: output/knowledge-graph/kg-<project_id>/algo/<kg_version>/<graph_id>@<graph_version>/<구간 식별자>/<start>-r<radius>/
       algo_result.json + algo_report.md (두 파일을 한 묶음으로 교체)
-후보 집계: 데이터/지식/<project_id>/link_candidates.csv가 있으면 미확인 후보 행 수를 함께 기록
+후보 집계: data/knowledge-graph/<project_id>/link_candidates.csv가 있으면 미확인 후보 행 수를 함께 기록
 예: python scripts/analyze_kg.py SNP-SAMPLE --start entity-node-001 --radius 2
 종료 코드: 0 = 계산함, 2 = 입력 오류(blocked 지식그래프, 버전 불일치, 파일 없음 등).
 """

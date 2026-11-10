@@ -1,7 +1,7 @@
 """데스크톱 인터페이스 테스트 (기획서/인터페이스.md §2·§3·§8). 실행: python -m unittest discover -s tests -t .
 
 QT_QPA_PLATFORM=offscreen으로 창을 만든다. 작업 루트(HAZOP_WORK_ROOT)·저장 루트(HAZOP_STORE_ROOT)·설정 파일은 임시 폴더로
-바꿔 저장소의 출력/·자료저장소/·%APPDATA%를 건드리지 않는다. 분석 실행은 tests/run_fixture.py(고정 응답, 임시 폴더).
+바꿔 저장소의 output/·store/·%APPDATA%를 건드리지 않는다. 분석 실행은 tests/run_fixture.py(고정 응답, 임시 폴더).
 웹뷰는 offscreen에서 실제로 띄워 브리지(ready·highlight·highlightResult)를 확인하고, 브리지 객체 단위 검사도 따로 한다.
 네트워크 사용 없음.
 """

@@ -1,9 +1,9 @@
 """IE 인계 묶음 내보내기 (기획서/초기사건-출력설계.md §3, §8 P2·P3) -> <출력 폴더>/IE-<프로젝트>-<KST 시각>.xlsx·.json
 
 사용 예:
-  python scripts/export_ie_bundle.py --results 데이터/분석결과/<프로젝트>/<graph_id>.json \\
-      --nodes 데이터/검토구간/<프로젝트>/<graph_id>.json --graph <프로젝트 그래프 또는 도면 graph.json>
-  python scripts/export_ie_bundle.py ... --ie 데이터/초기사건/<프로젝트>.json   # ⑥ 그룹·표제·최종상태·기본사건과 IEC 대응표
+  python scripts/export_ie_bundle.py --results data/analysis-results/<프로젝트>/<graph_id>.json \\
+      --nodes data/study-nodes/<프로젝트>/<graph_id>.json --graph <프로젝트 그래프 또는 도면 graph.json>
+  python scripts/export_ie_bundle.py ... --ie data/initiating-events/<프로젝트>.json   # ⑥ 그룹·표제·최종상태·기본사건과 IEC 대응표
   python scripts/export_ie_bundle.py ... --out <폴더> --now 2026-11-08T03:00:00Z   # 같은 입력이면 같은 JSON
 
 ⑤ 결과 중 승인 항목만 넣는다. 승인 항목이 없으면 파일을 쓰지 않는다. --ie가 없으면 빈 ⑥ 문서를 ⑤ 결과와 맞춰 쓰므로

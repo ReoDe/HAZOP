@@ -401,16 +401,20 @@ approved: director 2026-11-10
 | `작업/` | `work/` | `paths.DEV_WORK_ROOT` |
 | `데이터/` | `data/` | `FOLDERS` "작업데이터" |
 | `데이터/구간` · `고정응답` · `지식` · `검토구간` · `분석결과` · `분석결과-시험` · `백업` · `초기사건` · `도면수정` · `도면연결` · `잠재후보` · `캐시` | `data/regions` · `fixed-responses` · `knowledge-graph` · `study-nodes` · `analysis-results` · `analysis-results-test` · `backup` · `initiating-events` · `drawing-edits` · `drawing-links` · `latent-candidates` · `cache` | `paths.FOLDERS` |
+| `데이터/평가기준` | `data/evaluation-criteria` | `paths.FOLDERS`. 단계 6에서 더한 줄. `scripts/seed_samples.py`가 표본 평가 기준을 채우는 폴더인데 표에 없었다. 표본 쪽 이름(`resources/samples/evaluation-criteria`)과 같게 했다 |
 | `기호후보/` | `symbol-candidates/` | `paths.FOLDERS` |
 | `자료저장소/` | `store/` | `paths.store_root()`. 안의 `originals/<material_id>/…`는 이미 영어이고 `storage_ref`는 프로젝트 폴더 기준 상대 경로라 기록을 고치지 않아도 된다 |
 | `출력/` | `output/` | `paths.output_root()` |
 | `출력/그래프` · `분석` · `추출` · `지식그래프` · `뷰어` · `스크린샷` · `사용자검증` · `디자인검사` · `근거묶음` · `워크시트` · `평가비교` · `내보내기` | `output/graph` · `analysis` · `extract` · `knowledge-graph` · `viewer` · `screenshots` · `user-scenarios` · `design-check` · `evidence-bundles` · `worksheets` · `evaluation-compare` · `exports` | `scripts/*`, `hazop/*`에 흩어진 문자열(§6.1) |
-| `출력/_보관/` | `output/_archive/` | `scripts/clean_outputs.py` |
+| `출력/문서지식` · `어댑터` · `초기사건` · `로그` · `samples` | `output/document-knowledge` · `adapter` · `initiating-events` · `logs` · `samples` | `paths.OUTPUT_FOLDERS`. 단계 6에서 더한 줄. 개정 1의 표에 빠져 있던 출력 폴더다. `document-knowledge`는 `knowledge-graph`와 짝이 되게, `initiating-events`는 `data/initiating-events`와 같게 지었다. `adapter`는 어댑터를 등록 없이 돌린 결과 폴더 하나라 단수로 두었다. `output/logs`는 작업 루트의 `logs/`와 다른 폴더다. `samples`는 이미 영어라 그대로다. 그 아래에는 `extract`·`graph`·`viewer`가 다시 온다 |
+| `출력/_보관/` | `output/_archive/` | `scripts/clean_outputs.py`. 보관 폴더 안(`<시각>/분석/…`)은 옮길 때의 상대 경로 그대로 둔다 |
 | `백업/_외부/` | `backup/_external/` | `paths.EXTERNAL_BACKUP_DIR` |
 | `데이터/백업/20261108T124409Z-판이전` 같은 기존 백업 폴더 | 그대로 | 코드가 찍은 이름(결정 3) |
 | `logs/`, `cache/`, `cli-run/` | 그대로 | 이미 영어 |
 
-`paths.FOLDERS`의 키(`"이탈후보"` 등)도 영어(`"deviations"` 등)로 바꾼다. 코드 안의 식별자라 사용자에게 보이지 않지만, 규칙 2(전부 영어)와 `test_path_literals.py`의 단순화를 위해서다.
+`paths.FOLDERS`의 키(`"이탈후보"` 등)도 영어(`"deviations"` 등)로 바꾼다. 코드 안의 식별자라 사용자에게 보이지 않지만, 규칙 2(전부 영어)와 `test_path_literals.py`의 단순화를 위해서다. 작업 루트 행의 키는 폴더 이름과 같다(`"regions"`, `"store"`, `"output"`).
+
+**파일에 적는 경로는 옛 이름 그대로다(단계 6에서 확정).** 폴더는 위 표대로 바뀌지만, 사용자 파일에 적는 작업 루트 기준 경로(`source.file`, `svg_file`, `graph_ref.graph_file`, `input_files[].path`, `ai_client.response_dir` 등)는 0.1.x 이름으로 적는다(`자료저장소/<프로젝트>/originals/…`, `출력/추출/<이름>/page.svg`). `graph_version`이 추출 JSON 전체의 해시라서, 이름이 바뀐 뒤 같은 자료를 다시 추출해도 판이 같아야 하기 때문이다(§6.2의 샘플 도면과 같은 방식). 옛 이름은 `paths.OLD_WORK_RELS`·`OLD_OUTPUT_NAMES`에 있고, `rel_or_abs`가 그 이름으로 적고 `resolve_rel`이 지금 폴더로 푼다(지금 이름 폴더의 파일을 먼저 보고, 없을 때만 적힌 자리를 본다). 화면과 콘솔에 보이는 경로는 디스크 이름이다(`paths.plain_rel`).
 
 ### 5.7 저장소 밖
 
@@ -462,13 +466,13 @@ approved: director 2026-11-10
 
 ### 6.6 사용자 작업 루트(`%LOCALAPPDATA%\HAZOP`)에 이미 저장된 옛 경로
 
-- **위험.** 이 PC의 배포본 작업 루트에 이미 `자료저장소/`와 `출력/`이 있다(`ls "$LOCALAPPDATA/HAZOP"`). 다른 PC에 깐 배포본도 같다(`packaging/다른PC-점검표.md`). 새 버전이 `store/`, `output/`만 보면 사용자의 등록 자료와 분석 결과가 '없는 것'처럼 보인다. 설정 파일 `%APPDATA%\HAZOP\settings.json`의 `recent_runs`·`recent_regions`는 절대 경로를 적어서 옛 폴더를 가리킨다. 분석 결과(`analysis.json`)의 `inputs` 기록, 검토 기록, 평가 비교 보고서도 옛 상대 경로를 담을 수 있다(전수는 미확인).
+- **위험.** 이 PC의 배포본 작업 루트에 이미 `자료저장소/`와 `출력/`이 있다(`ls "$LOCALAPPDATA/HAZOP"`). 다른 PC에 깐 배포본도 같다(`packaging/다른PC-점검표.md`). 새 버전이 `store/`, `output/`만 보면 사용자의 등록 자료와 분석 결과가 '없는 것'처럼 보인다. 설정 파일 `%APPDATA%\HAZOP\settings.json`에서 옛 폴더를 가리킬 수 있는 값은 `fixed_response_dir`(고정 응답 폴더의 절대 경로, `<작업 루트>\데이터\고정응답\…`)다. `recent_runs`·`recent_regions`는 쓰는 코드가 없어 늘 빈 목록이다(읽는 곳은 `scripts/clean_outputs.py` 하나, 근거 `evidence/step6-path-compare-sites.md` §4). 분석 결과(`analysis.json`)의 `input_files`, 구간의 `graph_ref.graph_file`, 추출 결과의 `source.file`·`svg_file`은 옛 상대 경로를 담고 있다(같은 문서 §1).
 - **대책.**
-  1. 이전 도구 `scripts/migrate_names.py`를 만든다. 기존 `scripts/migrate_data_layout.py`처럼 기본은 목록만 보여 주고, `--apply`일 때 **복사**한 뒤 해시를 비교하고 `manifest.json`을 남긴다. 옛 폴더는 지우지 않고 `_before-0.2.0`으로 이름만 바꾼다. `--undo <manifest>`로 되돌린다.
-  2. 앱은 `0.2.0`부터 시작할 때 옛 한글 폴더를 찾으면 이전할지 묻는다(§9 질문 4). 거절하면 옛 폴더를 읽기 전용으로 연다.
-  3. 설정 파일의 경로는 읽을 때 옛 접두를 새 접두로 바꿔 보고, 저장할 때 새 경로로 쓴다.
-  4. 사용자 파일 안의 상대 경로는 고치지 않고 `paths.OLD_NAMES`로 읽는다(2026-11-09 정리와 같은 원칙).
-  5. 개발 환경의 `D:\HAZOP\작업\`도 같은 도구로 옮긴다. `.gitignore`의 `작업/` 줄은 `work/`로 바꾸되, 옛 줄도 한동안 둔다.
+  1. 이전 도구는 `scripts/migrate_names.py --work-root <작업 루트>`다(핵심은 `hazop/workroot.py`, 앱도 같은 코드를 쓴다). 기본은 옮길 것만 보여 주고, `--apply`일 때 **복사**한 뒤 해시를 비교하고 `manifest.json`을 남긴다. 옛 폴더는 지우지 않고 `<작업 루트>/_before-0.2.0/` 아래로 이름만 바꿔 옮긴다. `--undo`로 되돌린다. 새 이름 폴더에 이미 파일이 있으면 덮어쓰지 않고 멈춘다. 중간에 끊겨도 다시 돌리면 남은 일만 한다. 표에 없는 최상위 폴더(`logs/`, `cache/`, `cli-run/`, `venv-py312/`)는 건드리지 않는다.
+  2. 앱은 `0.2.0`부터 시작할 때 옛 한글 폴더를 찾으면 복사해 옮길지 묻는다(§9 질문 4, `hazop/app/startup.py`의 `offer_work_root_move`). 거절하거나 옮기지 못하면 옛 폴더를 그대로 두고, 까닭을 알린 뒤 시작하지 않는다(종료 코드 4). 다음에 시작할 때 다시 묻는다. 옛 폴더가 남은 작업 루트는 앱도 스크립트도 열지 않는다(`paths.work_root()`가 `OldLayoutError`를 낸다). 옛 폴더를 둔 채 새 이름 폴더에 쓰기 시작하면, 뒤에 옮길 때 새 파일과 부딪혀 사람이 한 수정·확정을 잃을 수 있어서다. 개정 1의 '거절하면 읽기 전용으로 연다'는 하지 않는다. 옛 배치를 읽는 길을 하나 더 두면 두 배치를 함께 지켜야 하기 때문이다.
+  3. 설정 파일의 `fixed_response_dir`는 읽을 때 옛 자리에 폴더가 없으면 새 자리에서 찾고(`paths.resolve_moved`), 고정 응답 폴더를 다시 고르면 새 경로가 저장된다.
+  4. 사용자 파일 안의 상대 경로는 고치지 않고 읽을 때 푼다(`paths.resolve_rel`, 표는 `OLD_WORK_RELS`·`OLD_OUTPUT_NAMES`). 2026-11-09 정리와 같은 원칙이다. 새로 적는 경로도 옛 이름이다(§5.6 끝).
+  5. 개발 환경의 `D:\HAZOP\작업\`도 같은 도구로 옮긴다(`--work-root D:/HAZOP/work --from-root D:/HAZOP/작업 --apply`). `.gitignore`에는 `work/`를 더하고 `작업/` 줄도 한동안 둔다.
 
 ### 6.7 git 이력 추적(`git mv`)
 

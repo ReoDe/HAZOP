@@ -7,7 +7,7 @@ EditSession(작업 중 ops·실행 취소/다시 실행)과 tool_pick(여러 번
 
 도면 연결점(프로젝트 그래프 hazop.graph.project): 보기 모드에서 연결점 옆에 칩을 달고(누르면 상대 도면으로), 오른쪽
 '도면 연결점' 패널에 짝·미연결을 보인다. 사람이 짝을 정하거나 끊은 기록은 도면별 수정 기록(hazop.extract.corrections)이
-아니라 프로젝트의 도면 연결 지정(project.save_manual, 데이터/도면연결/<project>.json)에 쓴다. 짝은 두 도면에 걸쳐서
+아니라 프로젝트의 도면 연결 지정(project.save_manual, data/drawing-links/<project>.json)에 쓴다. 짝은 두 도면에 걸쳐서
 도면 한 장의 수정 기록으로는 적을 수 없다."""
 
 import uuid
