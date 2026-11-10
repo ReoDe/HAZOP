@@ -187,6 +187,15 @@ F1-1 뒤의 코드는 밸브·계기·설비를 사전의 `structure`·`label_wo
 
 시험 수는 `8b415bb`의 2074에서 8 늘었다(`tests/test_symbols.py` 7건, `tests/test_packaging.py` 1건).
 
+### 사전 폴더의 줄 끝 (`9d51869`)
+
+`.gitattributes`에 `resources/library/symbols/** -text`를 더했다. 사전 판은 사전 파일 바이트의 해시라, `core.autocrlf=true`인 PC에서 새로 뽑은 사본의 JSON이 CRLF로 풀리면 같은 사전이 다른 판으로 나온다. F1-2가 판을 추출 결과 옆에 적기 전에 막았다. 확인한 것은 다음과 같다(`evidence/f1-1-fix-gitattributes.txt`).
+
+- 색인에 든 바이트는 바뀌지 않는다. 규칙을 더하고 `git add --renormalize`를 해도 `git status`에 사전 파일이 나오지 않는다.
+- 주 체크아웃의 사전 판은 그대로다(APR1400 `2c997ba7e6ce`, 공통 `ac25f22101ce`).
+- `9d51869`를 `core.autocrlf=true`로 새로 뽑은 분리 작업트리에서도 같은 판이 나온다. 그 사본에서 다른 파일(`hazop/extract/symbols.py`)은 CRLF로 풀렸고 사전 JSON 41개는 LF로 풀렸다. 작업트리는 확인 뒤 지웠다.
+- 그림(`.png`) 21개는 규칙을 더하기 전에도 git이 내용으로 바이너리라고 판정해 줄 끝을 바꾸지 않았다(`i/-text w/-text`). 이제는 속성으로도 `text: unset`이다.
+
 ## F1-2: 사전 판을 실행 정보에 (D8) — 구현하지 않고 자리부터 묻는다
 
 기획서 D8이 말하는 '등록 기록의 추출 실행 정보'에 해당하는 저장 자리가 지금 코드에 없다. 후보가 둘 이상으로 갈려 구현하지 않았다. 확인한 사실은 다음과 같다(`16c3536`의 코드를 읽은 것).
