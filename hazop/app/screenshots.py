@@ -1,6 +1,7 @@
 """화면별 스크린샷(QWidget.grab()) — scripts/run_app.py --screenshots, scripts/check_app.py가 쓴다.
 ③ 지식그래프는 작업 루트에 지식그래프가 있을 때만 찍고, 없으면 건너뛰고 표준 출력에 남긴다.
-take_stages는 레일 단계 ①~⑤의 첫 화면을 STAGE_SIZES 크기마다 찍는다(작업 루트에 있는 그대로, 아무것도 저장하지 않음)."""
+② 편집할 수 있는 도면이 있으면 편집 모드를 켠 화면(02-viewer-edit.png)도 찍는다(아무것도 고치지 않음).
+take_stages는 레일 단계 ①~⑥의 첫 화면을 STAGE_SIZES 크기마다 찍는다(작업 루트에 있는 그대로, 아무것도 저장하지 않음)."""
 
 import os
 import time
@@ -110,7 +111,7 @@ STAGE_SIZES = ((1366, 768), (1920, 1080))
 
 
 def take_stages(win, out_dir, sizes=STAGE_SIZES):
-    """단계 ①②③④⑤(레일 순서) × sizes. 파일 이름 stage<번호>-<짧은 이름>-<폭>x<높이>.png.
+    """단계 ①②③④⑤⑥(레일 순서) × sizes. 파일 이름 stage<번호>-<짧은 이름>-<폭>x<높이>.png.
     ④는 첫 구간을 고른 상태, ⑤는 확정 구간이 있으면 첫 칸 워크시트를 연 상태로 찍는다."""
     from hazop.app.main_window import STAGES
     os.makedirs(out_dir, exist_ok=True)

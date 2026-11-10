@@ -1654,6 +1654,20 @@ class VerifierTest(unittest.TestCase):
                          ["이번 실행 전 파일: 01.png", "없음: 02.png"])
         self.assertEqual(self.vb.fresh_problems(self.tmp, 500, ["01.png"]), [])
 
+    def test_kg_work_root_puts_reference_copy_at_logical_path(self):
+        """③ 검사 작업 루트 기준으로 참고 사본의 기록 경로가 저장소와 같은 논리 경로('참고자료/…')가 된다."""
+        work = self.vb.kg_work_root(self.tmp)
+        drawio = paths.folder_in(self.tmp, "참고", "P&ID 도면 샘플", "x", "a.drawio")
+        self.assertEqual(paths.rel_or_abs(drawio, work), paths.REFERENCE_LOGICAL + "P&ID 도면 샘플/x/a.drawio")
+
+    def test_lock_probe_matches_app_titles_and_exit_code(self):
+        """lock_probe가 기다리는 주 창 제목·종료 코드·잠금 파일 이름이 앱 정의와 같다."""
+        from hazop.app import main_window, startup
+        lp = _load("packaging/lock_probe.py", "hazop_lock_probe")
+        self.assertEqual(lp.MAIN_TITLE, main_window.APP_NAME)
+        self.assertEqual(lp.EXIT_RUNNING, startup.EXIT_RUNNING)
+        self.assertEqual(lp.LOCK_NAME, startup.LOCK_NAME)
+
     def test_app_png_covers_every_rail_stage_and_edit_mode(self):
         """배포본 스크린샷 목록이 레일 단계 ①~⑥ × 두 크기와 ② 편집 모드를 모두 요구한다(앱의 단계 정의와 같은 이름)."""
         from hazop.app import screenshots

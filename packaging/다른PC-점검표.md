@@ -14,17 +14,20 @@
 
 ## 빌드 PC에서 zip 만들기
 
-1. 빌드 PC에서 배포용으로 빌드한다. 출력 폴더는 저장소 밖에 둔다.
+1. 빌드 PC의 저장소 루트(예: `D:\HAZOP`)에서 배포용으로 빌드한다. 출력 폴더는 저장소 밖에 둔다. 이 절의 명령은 모두 저장소 루트에서 실행한다.
 
    ```powershell
+   Set-Location D:\HAZOP
+   $env:PYTHONIOENCODING = "utf-8"
    $py = if ($env:HAZOP_VENV) { "$env:HAZOP_VENV\Scripts\python.exe" } else { "$env:USERPROFILE\.hazop\venv-py312\Scripts\python.exe" }
-   & $py scripts\build_package.py --out D:\HAZOP-trials\pkg-<날짜>\build-app --build
+   $out = "$env:TEMP\hazop-pkg-<날짜>"   # 저장소 밖이면 어디든 된다
+   & $py scripts\build_package.py --out "$out\build-app" --build
    ```
 
 2. 같은 PC에서 배포용 검증을 먼저 통과시킨다. `summary.json`의 `passed`가 `true`여야 한다.
 
    ```powershell
-   & $py packaging\verify_bundle.py --dist D:\HAZOP-trials\pkg-<날짜>\build-app\dist\HAZOP --target-base $env:TEMP\hz_ascii --out D:\HAZOP-trials\pkg-<날짜>\verify --app-only
+   & $py packaging\verify_bundle.py --dist "$out\build-app\dist\HAZOP" --target-base $env:TEMP\hz_ascii --out "$out\verify" --app-only
    ```
 
 3. `dist\HAZOP` 폴더를 통째로 zip으로 묶는다. zip 안의 맨 위 폴더 이름은 `HAZOP`이다.
@@ -34,6 +37,10 @@
 
 각 단계의 결과를 아래 결과 표에 적는다. 단계마다 '기대 결과'가 아니면 화면을 찍고 `%LOCALAPPDATA%\HAZOP\logs\app.log`를 함께 보관한다.
 
+0. 기존 작업을 먼저 보관한다. 배포본은 작업 자료를 `%LOCALAPPDATA%\HAZOP`에 쓰고, 이 점검은 시험 도면을 그곳에 등록한다. 그 PC에서 HAZOP을 이미 쓰고 있었다면 시험 자료가 실제 작업과 섞인다.
+   - `%LOCALAPPDATA%\HAZOP` 폴더가 있는지 본다. 결과 표의 '기존 폴더' 칸에 '있음' 또는 '없음'을 적는다.
+   - 폴더가 있으면 HAZOP을 모두 닫은 뒤 폴더째 다른 곳에 복사한다. 예: `robocopy "%LOCALAPPDATA%\HAZOP" "D:\HAZOP-보관-<날짜>" /E`. 복사본의 파일 수가 원본과 같은지 확인한다.
+   - 폴더가 없으면 14단계에서 시험 자료를 지워도 된다.
 1. Windows 판을 확인한다. `winver`를 실행해 판 번호와 빌드 번호를 적는다. 화면 배율(설정 > 디스플레이 > 배율)도 적는다.
 2. zip의 SHA-256이 빌드 PC에서 적은 값과 같은지 확인한다.
 3. zip을 한글과 공백이 든 경로에 푼다. 예: `C:\사용자 시험\HAZOP`. 기대 결과는 폴더 안에 `HAZOP.exe`, `_internal\`, `licenses\`가 있는 것이다.
@@ -47,14 +54,17 @@
 11. 첫 창을 닫고 다시 실행한다. 기대 결과는 잠금 안내 없이 바로 뜨는 것이다. 앞 실행이 남긴 잠금 파일(`%LOCALAPPDATA%\HAZOP\.hazop-app.lock`)이 다음 실행을 막으면 안 된다.
 12. 인터넷을 끊은 상태(랜선을 뽑거나 Wi-Fi 끄기)에서 4~9를 한 번 더 한다. 기대 결과는 결과가 같은 것이다. 프로그램은 네트워크를 쓰지 않는다.
 13. 배율이 125% 이상인 PC가 있으면 그 PC에서 5·8·9를 한 번 더 하고, 글자나 단추가 잘리는지 본다.
-14. 끝나면 `%LOCALAPPDATA%\HAZOP\logs\app.log`를 보관한다. 시험 자료를 남기지 않으려면 `%LOCALAPPDATA%\HAZOP` 폴더와 푼 폴더를 지운다.
+14. 끝나면 `%LOCALAPPDATA%\HAZOP\logs\app.log`를 보관한다. 그다음 0단계 기록에 따라 정리한다.
+    - 0단계에서 '없음'이었던 PC만 `%LOCALAPPDATA%\HAZOP` 폴더를 지운다.
+    - '있음'이었던 PC는 이 폴더를 지우지 않는다. HAZOP을 닫고 시험 폴더 이름을 `HAZOP-시험-<날짜>`로 바꾼 뒤, 0단계 복사본을 `%LOCALAPPDATA%\HAZOP`로 다시 복사한다. HAZOP을 열어 기존 작업이 보이는지 확인한다.
+    - 푼 폴더(예: `C:\사용자 시험\HAZOP`)는 지워도 된다.
 
 ## 결과 표
 
 PC마다 한 줄씩 적는다. 칸에는 통과, 실패(무엇이 달랐는지), 해당 없음 가운데 하나를 쓴다.
 
-| PC | Windows 판·빌드 | 배율 | 3 풀기 | 4 실행 허용 | 5 첫 화면(초) | 6 작업 루트·고지 | 7 등록 | 8 ②·편집 | 9 ③~⑥ | 10 두 번째 실행 | 11 다시 실행 | 12 오프라인 | 13 배율 | 확인한 사람·날짜 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| (사용자 확인 대기) | | | | | | | | | | | | | | |
+| PC | 기존 폴더(0) | Windows 판·빌드 | 배율 | 3 풀기 | 4 실행 허용 | 5 첫 화면(초) | 6 작업 루트·고지 | 7 등록 | 8 ②·편집 | 9 ③~⑥ | 10 두 번째 실행 | 11 다시 실행 | 12 오프라인 | 13 배율 | 확인한 사람·날짜 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| (사용자 확인 대기) | | | | | | | | | | | | | | | |
 
 실패가 나오면 결과 표의 해당 칸, 화면 사진, `app.log`를 총괄에게 넘긴다. `메모리/남은작업.md`의 '다른 PC·Windows 10 실기기 실행 확인' 항목은 결과 표가 채워진 뒤에 닫는다.

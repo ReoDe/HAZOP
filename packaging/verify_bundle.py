@@ -10,8 +10,8 @@
     그 아래 HAZOP/(dist 사본)과 w4-run/(검사 입력 사본·작업 루트·임시)을 둔다. 결과는 --out 아래 새 폴더(run-<시각>-xxxx).
  2) HAZOP-check.exe w4_flow.py: 루트·datas 해시·자원 경로(분석 전) → ①~⑤ 함수 흐름·기준 자료 읽기 위치·음성 검사
  3) HAZOP-check.exe check_kg_screen.py --skip-tests --screenshots: ③ V2·렌더링·V1·S1·③ 탭과 ③ PNG
-    (이 단계만 HAZOP_WORK_ROOT = 입력 사본: 샘플 graph_version이 개발 실행과 같게. QT_QPA_PLATFORM = windows:
-    offscreen은 위젯 한글이 빈 상자로 찍힘)
+    (이 단계만 HAZOP_WORK_ROOT = 입력 사본의 참고 폴더 부모(kg_work_root): 샘플 graph_version이 개발 실행과 같게.
+    QT_QPA_PLATFORM = windows: offscreen은 위젯 한글이 빈 상자로 찍힘)
  3b) PDF 어댑터(W9, D15): HAZOP-check.exe pdf_probe.py로 샘플 PDF 사본(SNP-M-102, 가상 샘플)을 묶음 안 pdf_vector로
     추출하고 pypdfium2로 그린다. 추출 요약이 이 검증기(전용 venv)에서 같은 파일을 추출한 결과와 같고, pdfplumber·pdfminer·
     pypdfium2·pypdfium2_raw·PIL·cryptography·charset_normalizer 모듈(7개 키가 모두 결과에 있어야 함)과 실제로 읽힌 pdfium.dll
@@ -232,6 +232,18 @@ def seed_app_work(work):
             os.environ[paths.ENV_WORK_ROOT] = old
 
 
+def kg_work_root(inputs):
+    """3) check_kg_screen의 작업 루트. 검사는 샘플 도면을 <inputs>/<참고 폴더>에서 찾고, 묶인 실행에서는 그 사본이 저장소
+    참고 폴더가 아니어서 source.file을 작업 루트 기준 상대 경로로 적는다. 그 경로가 저장소의 논리 경로('참고자료/…')와
+    같아야 graph_version과 link_candidates의 target_graph_version이 맞는다. 그래서 참고 사본이 논리 경로 자리
+    (logical_reference_dir)에 오도록 작업 루트를 참고 폴더의 부모로 둔다."""
+    ref = paths.folder_in(inputs, "참고")
+    work = os.path.dirname(ref)
+    if os.path.normcase(paths.logical_reference_dir(work)) != os.path.normcase(ref):
+        raise ValueError("참고 폴더 사본이 논리 경로 자리가 아님: %s" % ref)
+    return work
+
+
 def expected_datas(repo=REPO_ROOT):
     """{저장소 상대 경로: sha256} — 빌드가 묶은 datas 원본의 바이트 해시."""
     out = {}
@@ -404,7 +416,7 @@ def steps(args, summary, run_root, out, repo_dirs):
                                     "lines": [ln.strip() for ln in text.splitlines() if ln.startswith("  [")]}
         print("flow rc=%s %ss" % (rc, sec))
 
-        kenv = dict(env, HAZOP_WORK_ROOT=inputs, QT_QPA_PLATFORM="windows")
+        kenv = dict(env, HAZOP_WORK_ROOT=kg_work_root(inputs), QT_QPA_PLATFORM="windows")
         inputs_before = tree_hashes(inputs)
         rc, sec, text = run([check_exe, os.path.join(scripts, "check_kg_screen.py"), "--skip-tests",
                              "--screenshots", png], kenv, tmp, os.path.join(out, "check_kg_screen.log"))
