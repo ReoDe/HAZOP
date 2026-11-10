@@ -311,8 +311,8 @@ def bundle_dir(root, name, prefix):
 
 def image_path(folder, image):
     """항목의 image 값(묶음 폴더 기준 상대 경로)이 가리키는 파일."""
-    parts = image.replace("\\", "/").split("/")
-    if parts[0] == OLD_IMAGE_DIR:
+    parts = [p for p in image.replace("\\", "/").split("/") if p not in ("", ".")]
+    if parts and parts[0] == OLD_IMAGE_DIR:
         parts[0] = IMAGE_DIR
     return os.path.join(folder, *parts)
 

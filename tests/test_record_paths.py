@@ -50,6 +50,10 @@ OLD_RECORDS = (
     ("참고자료/APR1400_DCD/도면목록.csv", ("APR1400", "drawing-list.csv")),
     ("자원/참고자료/APR1400_DCD/계통약어.csv", ("APR1400", "system-codes.csv")),
     ("데이터/참고자료/APR1400_DCD/스크립트/make_index.py", ("APR1400", "scripts", "make_index.py")),
+    # 손으로 적은 옛 경로: '..'가 끼었거나 대소문자가 다르다(Windows에서는 옮기기 전에 읽히던 경로)
+    ("자원/기준/기호/공통/../묶음.json", ("기호", "bundles.json")),
+    ("참고자료/apr1400_dcd/계통약어.csv", ("APR1400", "system-codes.csv")),
+    ("자원/기준/기호/apr1400/그림/GATE_VALVE.png", ("기호", "APR1400", "images", "gate_valve.png")),
 )
 
 

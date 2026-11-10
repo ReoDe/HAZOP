@@ -2,6 +2,7 @@
 
 import json
 import os
+import posixpath
 import re
 import sys
 from typing import NamedTuple
@@ -328,11 +329,12 @@ def resolve_rel(rel, root):
     direct = os.path.join(root, rel)
     if os.path.exists(direct):
         return direct
-    norm = rel.replace("\\", "/")
-    while norm.startswith("./"):
-        norm = norm[2:]
+    # '.'·'..'를 먼저 정리하고, Windows 파일 이름처럼 대소문자를 가리지 않고 맞춘다(옛 파일에 손으로 적은 경로도 읽는다)
+    norm = posixpath.normpath(rel.replace("\\", "/"))
+    low = norm.lower()
     for row in OLD_NAMES:
-        if norm == row.old or norm.startswith(row.old + "/"):
+        old = row.old.lower()
+        if len(low) == len(norm) and (low == old or low.startswith(old + "/")):
             alt = folder(row.name, *row.sub, *[p for p in norm[len(row.old):].split("/") if p])
             if os.path.exists(alt):
                 return alt
