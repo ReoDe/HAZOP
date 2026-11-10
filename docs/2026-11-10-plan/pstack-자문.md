@@ -327,3 +327,114 @@ import를 보고 나눈 것이다. 하위 세션이 아래 '깨끗한 복제 리
 | 이름 이전과 충돌 | 워크플로에는 `scripts/run_ci.py`와 `packaging/requirements*.txt`만 적는다. 경로 필터(`paths:`)는 쓰지 않는다. `tests/test_ci_config.py`가 이전 단위의 안전망이 된다 |
 | 여러 세션의 커밋이 한 푸시에 섞임 | 단위마다 푸시하므로 실패하면 그 단위의 커밋부터 본다. 원인 커밋을 가리기 어려우면 `workflow_dispatch`로 앞 커밋을 다시 돌린다 |
 
+---
+
+## 단위 NAMING: 이름 규칙 이전 (2026-11-10 추가)
+
+기준 커밋 90b9cf6. 근거로 읽은 것은 `docs/2026-11-10-naming-rules/README.md`(HZ-GOV-02 개정 1) §5~§9이다. 계획서의 세 약속은 다음 코드와 맞대어 보았다. `hazop/paths.py`(`rel_or_abs`, `resolve_rel`, `LEGACY_PREFIXES`, `backup_rel`), `hazop/graph/build.py:75`, `hazop/analysis/run.py`(`load_inputs`, `build_bundle`), `hazop/analysis/ai.py:115`, `scripts/build_package.py:74,80`, 표본·시험 입력에 고정된 `graph_version`, `.github/workflows/tests.yml`, `scripts/run_ci.py`, 옛 경로가 남은 `.claude/`·운영 문서·사용자 메모리.
+
+### 먼저 확인한 사실 (계획을 바꾸거나 보강하는 것)
+
+1. **'샘플 기록 경로 고정'은 접두 한 줄로는 안 되고, 하위 폴더 단위로 대응시켜야 한다.** 지금 `rel_or_abs`는 `"참고자료/" + relpath(path, folder("참고"))`로 적는다(`paths.py` 37~39행). `자원/참고자료/`를 `resources/references/`로 옮기는 것만이면 결과가 같다. 하지만 `P&ID 도면 샘플/`을 `pid-samples/`로 바꾸면 뒷부분이 `pid-samples/…`로 바뀌고, 그만큼 `source.file`이 달라져 그래프 판도 바뀐다. 그래서 대응은 `references/pid-samples/` ↔ `참고자료/P&ID 도면 샘플/`처럼 **하위 폴더 단위로 양방향**이어야 한다. 쓰기(`rel_or_abs`)와 읽기(`resolve_rel`의 긴 접두를 먼저 보는 순서, `is_reference_rel`)를 함께 고친다. `P&ID 기호 카탈로그/`도 같다.
+2. **그래프 판이 바뀌면 바로 걸리는 장치가 이미 있다.** SNP-M-102 판 `v-f65e4ec1135d`가 `자원/표본/구간/region-SNP-M-102-pzr.json`, `tests/fixtures/kg_algo/expected_SNP-SAMPLE.json`, `tests/fixtures/kg/*/knowledge_links.csv` 8개, `tests/fixtures/kg_context/c1_pre_w7.json`에 고정되어 있다. 고정 응답의 `bundle_sha256`도 그래프 내용을 품은 근거 묶음의 해시다(`ai.py:115`). 단계 5의 완료 기준은 '이 고정값을 하나도 고치지 않고 시험이 통과한다'로 둔다. **고정값을 고쳐 시험을 맞추면 그 자체가 결함이다.**
+3. **기준 자료 JSON 안의 출처 문자열은 고치면 안 된다.** `자원/기준/` 아래 4개 파일이 `기획서/…`를 출처로 적는다(예: `applicability-region-SNP-M-102-pzr.json`의 `"source"`). 이 파일들은 `integrity.py`의 `PINNED_SHA256`로 고정되어 있다. 계획 §6.2의 '고치지 않는다'가 맞다. 그런데 `migrate_names.py --rewrite-links`가 `.md`·`.html`만 본다는 범위를 지켜야 한다. JSON·CSV는 대상에서 빼는 것을 시험으로 고정한다.
+4. **배포본의 '묶음 경로 유지'는 '같은 경로'가 아니라 '코드와 묶음이 같은 경로를 본다'는 뜻이다.** `build_package.py:80`의 `DATA_DIRS`는 `FOLDERS`의 resource 행에서 만들어져 따라 바뀐다. 묶음 안 경로는 `자원/기준/…`에서 `resources/library/…`로 바뀌고, 앱도 같은 표를 읽는다. 하지만 지침서는 네 곳에 문자열로 적혀 있다(`build_package.py:74`, `integrity.py`, `catalog_md.py`, `packaging/w4_flow.py`). 앱이 이름으로 부르는 `scripts/<이름>.py`는 질문 2 결정으로 바뀌지 않는다. 그래서 확인 방법은 이렇다. 단계 3·5 전후로 배포본 파일 목록과 내용 해시를 뽑아 대조하고, 대응표 밖의 차이가 0인지 본다(빠진 파일 0, 내용이 바뀐 파일은 지침서 하나).
+5. **사용자 데이터 호환은 계획서에 빠진 곳이 있다.** 사용자 파일은 작업 루트 기준 상대 경로를 적는다. 분석 결과의 `input_files[].path`(`run.py:70`, 예: `출력/그래프/<이름>/graph.json`), 구간의 `graph_ref.graph_file`, 지식그래프 경로가 그렇다. 지금 `LEGACY_PREFIXES`에는 자원 쪽 접두와 `참고자료/`만 있다. 단계 6에서 `출력/`·`데이터/…` 아래가 이름을 바꾸고 옛 폴더가 `_before-0.2.0`으로 밀려나면, 이 기록들은 `resolve_rel`의 '바로 찾기'에 실패한다. 그래서 **작업 루트 쪽 옛 접두(`출력/그래프/`, `데이터/구간/` 등)도 `LEGACY_PREFIXES`에 넣어야 한다.** 계획의 '출력 하위 폴더를 `FOLDERS`로 모으는 정리 단위'가 바로 이 일의 전제다. 다행히 분석 실행 ID의 해시(`files_sha`, `run.py:408`)는 내용 해시만 쓰고 경로는 쓰지 않는다. 그래도 기록 경로를 문자열 그대로 비교하는 곳(예: 같은 결과 찾기, 탐색기 키)이 있는지는 아직 전수로 보지 않았다(미확인).
+6. **이 PC의 배포본 작업 루트(`%LOCALAPPDATA%\HAZOP`)에는 `venv-py312`(옛 venv)도 들어 있다.** 이전 도구가 '모르는 폴더'를 건드리지 않게, 옮길 대상은 대응표의 폴더로만 한정한다.
+7. **단위 A에서 생긴 `paths.EXTERNAL_BACKUP_DIR = "_외부"`도 대상이다.** 계획 §5.6 표에 이미 있다(`backup/_external/`).
+8. **CI 설정은 이름 이전에 안전하다.** 워크플로는 `scripts/run_ci.py`와 `packaging/requirements*.txt`만 가리킨다. `run_ci.py`의 한글은 건너뜀 이유 문장(`출력/그래프`, `데이터/구간` 등)뿐이다. 단계 6에서 이 문장만 고친다.
+9. **§9에는 질문이 넷 있다.** 총괄이 받은 세 결정 말고, 4번 '배포본 옛 작업 폴더를 물어보고 복사할지, 자동으로 옮길지'가 남아 있다. 권장안 자동 선택 방침이면 '물어보고 복사(옛 폴더는 `_before-0.2.0`로 남김)'다. 이 결정을 결정로그에 남긴 뒤 단계 6을 시작한다.
+10. **브랜치.** 계획 §7은 `chore/naming-migration` 브랜치를 쓰라고 한다. 그런데 지금은 총괄이 단위마다 `feat/next-units`로 푸시하고 PR #15에서 CI를 본다. 새 브랜치로 가면 CI는 그 브랜치에서도 돌지만, 끝에 `feat/next-units`로 합치는 단계가 하나 더 생긴다. 이전하는 동안 다른 세션이 돌지 않으니, 같은 체크아웃에서 브랜치를 바꾸는 위험은 작다. 어느 쪽이든 되돌리기는 커밋 단위 `git revert`로 같다. **권장은 `feat/next-units`에 그대로 쌓는 것이다.** N11 검사도 이 브랜치 이름을 통과시킨다. 계획서와 다르게 가면 그 이유를 결정로그에 한 줄 남긴다.
+
+### 1. 세션 나누기
+
+총괄이 권한 '세션 1개로 7단계'는 맥락 창(context window)에 맞지 않는다. 문서 링크 480곳, 파일 약 650개를 옮기는 동안 앞 단계의 출력이 쌓여, 위험이 가장 큰 단계 5·6에 이를 때 맥락이 가장 나빠진다. 위험 등급에 맞춰 **순차 세션 4개**로 나눈다. 각 세션 안에서는 총괄 권장대로 단계마다 ①② 커밋을 하고, 단계가 끝날 때마다 총괄이 푸시해 CI로 확인한다. 이 4개를 규칙 3의 '작업 단위'로 본다. 검토는 세션마다 한 번이다.
+
+| 세션 | 단계 | 규모 | 비고 |
+| --- | --- | --- | --- |
+| N1 | 0(규칙·`test_naming_rules`), 1(저장소 밖·브랜치), 2(`docs/`), 4(시험 입력 1개) | 중 | 코드가 거의 읽지 않는 곳. 여기서 `scripts/migrate_names.py`의 링크 바꾸기(`--rewrite-links`)와 이동 기록(`moves.csv`)을 만들어 단계 2에서 처음 검증한다 |
+| N2 | 지침서 경로를 `FOLDERS`로 모으는 정리 → 3(사람 문서 폴더) | 대 | 지침서 해시, 배포본, `.claude/`, 링크 480곳 |
+| N3 | 5(`자원/` → `resources/`) | 대 | 그래프 판, 기준값, 기호 사전, 배포본 |
+| N4 | 출력 하위 폴더를 `FOLDERS`로 모으는 정리 → 6(`작업/` → `work/`, 이전 도구, 앱 시작 때 감지, 0.2.0) | 대 | 사용자 데이터. 정리 단위가 크면(계획서는 '수십 개 파일, 정리 단위에서 셈') 정리를 N4a, 단계 6을 N4b로 나눈다. 판단 기준: 정리 단위가 바꾸는 파일이 30개를 넘으면 나눈다 |
+
+- 단계 1의 지우기(병합된 로컬 브랜치 16개 삭제, 작업트리 5개 제거, 시험 폴더 이름 바꾸기)는 되돌리기 어렵거나 저장소 밖 일이다. 총괄이 목록을 받아 사용자 확인을 한 번 받은 뒤 진행한다(이전 점검표의 '지우는 일은 사용자 확인 뒤' 원칙). 확인을 기다리는 동안 N1은 단계 2·4를 먼저 한다.
+- 이전 단위가 도는 동안 D·E는 대기한다(규칙 4). N1은 코드와 거의 겹치지 않는다. 계획 §6.10대로라면 다른 세션과 함께 돌 수도 있지만, 이미 대기하기로 했으니 그대로 순차로 간다.
+
+#### 단계별 스킬
+
+| 단계 | 쓸 스킬 | 생략 |
+| --- | --- | --- |
+| 0 | `poteto-mode`, `correct`(N1~N11이 과거 실제 위반에서 실패함을 보인다. 예: `docs/screenshots-pdf`, 손 버전 `계통약어_v2.csv`), `unslop`(CLAUDE.md 규칙 18 문안. 문안은 총괄에게 넘긴다) | `tdd`, `architect` |
+| 1 | `poteto-mode`, `show-me-your-work`(`moves.csv`가 곧 결정 기록. 저장소 밖이라 git이 되돌려 주지 않는다) | 나머지 |
+| 2 | `poteto-mode`, `tdd`(링크 바꾸기 도구. 상대 링크, 백틱 경로, 바꾸면 안 되는 결정로그 본문 문장, JSON·CSV 제외), (원칙) `principle-make-operations-idempotent`(두 번 돌려도 같은 결과) | `arena`, `swarm` |
+| 3 | `poteto-mode`, `blast-radius`(지침서를 옮긴 뒤 `catalog_md`가 같은 카탈로그를 내는지, 배포본 지침서 경로를 실제 빌드로 증명) | `how`, `architect` |
+| 4 | `poteto-mode` | 나머지 |
+| 5 | `poteto-mode`, `blast-radius`(사실 1·2: 샘플 6장의 `graph_version`을 옮기기 전후로 실제로 뽑아 같음을 증명), `benchmark-checklist`는 쓰지 않는다(점수는 '맞은 수/분모 @커밋'으로 충분) | `arena`, `swarm`, `tdd` |
+| 6 | `poteto-mode`, `architect`(이전 도구·앱 시작 감지·설정 경로 변환·`LEGACY_PREFIXES` 작업 루트 접두의 서명을 코드 전에), `tdd`(`--apply`/`--undo` 왕복, 중간에 끊긴 이전, 두 번 실행), `interrogate`(검토 지적의 재현 수단. 사용자 데이터 경로라 규칙 3), 프로젝트 스킬 `verify-hazop`(S1~S6, 데스크톱 잠금 안) | `arena`, `figure-it-out`(계획서가 이미 있다) |
+| 모든 단계 | `unslop`(커밋 메시지·보고) | |
+
+`swarm`은 쓰지 않는다. 같은 파일을 여러 일꾼이 동시에 고치게 되기 때문이다. 다만 단계 6을 시작하기 전의 읽기 전용 조사, 곧 '기록 경로를 문자열 그대로 비교하는 곳 찾기'(사실 5의 미확인)는 `Explore` 하위 에이전트 하나에 맡기면 된다.
+
+### 2. 단계별 완료 기준과 되돌리기
+
+공통 완료 기준:
+- 전체 unittest(`PYTHONIOENCODING=utf-8 <py> -m unittest discover -s tests -t .`)
+- `test_naming_rules`의 그 단계 예외 줄 삭제
+- 총괄 푸시 뒤 CI 초록불(run id 기록)
+- 단계 전 `git bundle` 백업
+
+공통 되돌리기: 그 단계의 ②, ① 커밋 순서로 `git revert`한다. **단계는 뒤에서부터만 되돌린다**(5를 둔 채 3만 되돌리면 링크 표가 어긋난다).
+
+| 단계 | 그 밖의 완료 기준 | 되돌리기에 더할 것 |
+| --- | --- | --- |
+| 0 | `test_naming_rules`가 HEAD에서 통과하고, 일부러 넣은 위반 예에서 실패 | — |
+| 1 | `preflight.py` 경고 0, `git worktree list` 정리, 지운 브랜치 목록과 그 끝 커밋 SHA 기록 | `moves.csv` 역순으로 이름 되돌림. 브랜치는 기록한 SHA로 `git branch <이름> <SHA>` |
+| 2 | 링크 대상 검사(N9) 실패 0, 도구의 바꾼 줄 목록 저장 | — |
+| 3 | `test_integrity_pins`, `test_packaging` 통과. 새 `GUIDE_SHA256`과 이유가 같은 커밋에 있음. 시안 `build.py` 재실행 결과 같은 그림. 배포본 빌드 + `verify_bundle.py` 통과. 묶음 파일 목록·해시 대조(사실 4)에서 대응표 밖 차이 0. `.claude/agents/hazop-recorder.md`가 새 `records/`를 가리킴 | 지침서 해시는 ②에 같이 있어 함께 돌아감 |
+| 4 | 해당 시험 통과, `make_design_doc.py`가 같은 PDF를 만듦(바이트 비교 또는 추출 결과 비교) | — |
+| 5 | (1) 고정 `graph_version`·`bundle_sha256` 파일 수정 0(`git diff --stat`로 보임) (2) `refresh_fixture_hashes.py --check` 차이 0 (3) `check_snp_baseline.py` 후퇴 0과 `check_apr1400.py` 점수 동일(둘 다 `--update` 없이, '맞은 수/분모 @커밋') (4) 배포본 빌드·`verify_bundle.py`·묶음 대조 (5) S1~S6 | 추적 안 하는 APR1400 원본·도면별은 `moves.csv`로 되돌림. 저장소 밖 시험 폴더 사본도 같은 표로 |
+| 6 | (1) 재현 스크립트(아래)에서 이전 전후 화면 데이터 수 동일 (2) `--apply`→`--undo` 왕복 뒤 해시 동일 (3) 같은 작업 루트에 두 번 `--apply`해도 변화 없음 (4) 기준값 두 개 그대로 (5) 이 PC 배포본 작업 루트 **사본**으로 새 배포본을 열어 등록 자료·분석 결과가 보임 (6) S1~S6 | 코드는 revert. 사용자 데이터는 `migrate_names.py --undo <manifest>`. 개발 `작업/`은 시작 전 통째 사본(`D:\HAZOP-trials\<날짜>-naming-n4\work-before\`)으로도 되돌릴 수 있게 한다 |
+
+**단계 6 재현 스크립트(규칙 3).** 이 PC의 `%LOCALAPPDATA%\HAZOP`(`venv-py312` 제외)와 `D:\HAZOP\작업\`을 저장소 밖 시험 폴더에 복사한다. 그 사본을 작업 루트로 두고, 화면 없이 `hazop.app.data`와 탐색기가 보는 목록(등록 자료 수, 추출·그래프 수, 구간 수, 분석 결과 수, 검토 기록 수, 초기사건 그룹 수)을 센다. 이전 전 HEAD 코드, 이전 뒤 새 코드에서 각각 세어 같아야 한다. 수가 맞아도 '경로를 못 찾음' 경고가 하나라도 새로 생기면 실패로 본다.
+
+### 3. 검토 강도
+
+| 세션 | 검토 | 이유 |
+| --- | --- | --- |
+| N1 | hazop-reviewer 1회(세션 끝, 단계 0·1·2·4 묶어서) | 코드가 거의 읽지 않는 곳이다. `test_naming_rules`와 링크 검사가 기계적으로 지킨다 |
+| N2 | hazop-reviewer 1회 | 지침서 해시와 배포본은 시험과 빌드가 직접 증명한다. Codex는 생략해도 된다 |
+| N3 | hazop-reviewer + hazop-codex-reviewer 병렬 1회 | 그래프 판·기준값·기호 사전. 공개 자료라 Codex에 사용자 확인은 필요 없다(규칙 7) |
+| N4 | hazop-reviewer + hazop-codex-reviewer 병렬 1회. 지적의 재현은 `interrogate`로 | 사용자 데이터 경로라 지적은 재현 전에는 경미로 낮추지 않는다(규칙 3) |
+
+단계마다 검토하지 않는다. 단계마다 지켜야 할 것은 CI와 위 완료 기준이 지킨다. 검토는 세션 끝의 diff 전체를 한 번 본다. 검토 지적을 고쳐 다시 커밋하면, 총괄이 다시 푸시해 CI를 확인한다.
+
+### 4. 가장 위험한 단계, 먼저 확인할 것, 멈춤 기준
+
+- **가장 위험한 것은 단계 6이다.** 저장소 밖 사용자 데이터를 옮기고, 이미 깔린 배포본이 다음에 켜질 때 동작이 바뀐다. git으로 되돌릴 수 없는 유일한 단계다. 그다음은 단계 5다. 그래프 판이 바뀌면 고정 응답·지식그래프 연결·구간이 줄줄이 어긋난다.
+- **단계 6 전에 먼저 확인할 것.**
+  1. 사실 5의 미확인 사항, 곧 기록 경로를 문자열로 비교하는 곳을 전수로 찾는다.
+  2. 위 재현 스크립트를 **이전 코드를 쓰기 전에** 먼저 만들어, HEAD에서 기준 수를 뽑아 둔다.
+  3. `settings.json`의 `recent_runs`·`recent_regions` 절대 경로가 실제로 어떤 모양인지 본다. 이 PC는 지금 비어 있으니 시험 자료로 만든다.
+  4. §9 질문 4를 결정로그에 확정한다.
+- **단계 5 전에 먼저 확인할 것.** 옮기기 전 샘플 6장의 `graph_version`과 고정 응답 `bundle_sha256` 목록을 뽑아 저장소 밖에 둔다. 디스크 여유가 10GB 이상인지 본다(`check_apr1400.py`, 규칙 14). APR1400 원본은 손으로 옮겨야 하므로, `check_apr1400.py`의 입력 존재 확인이 새 이름을 보는지 먼저 돌려 본다.
+- **멈춤 기준(규칙 17).** 세는 것은 '대응표 밖의 차이'다. 아래 중 하나라도 나오면 그 단계를 되돌리고 총괄이 사용자에게 보고한다. 고쳐서 밀고 나가지 않는다.
+  - 고정 `graph_version`·`bundle_sha256`·`PINNED_SHA256`을 고쳐야만 통과하는 시험
+  - 기준값 점수 1이라도 변화
+  - 배포본 묶음 대조에서 대응표 밖 차이
+  - 단계 6 재현의 수 차이나 새 경고
+- **CI 멈춤.** 한 단계의 푸시 뒤 CI가 빨간불이면 같은 세션이 한 번 고친다. 두 번째도 빨간불이면 멈추고 묻는다.
+
+### 5. 옛 경로가 적힌 운영 파일은 누가 언제 고치나
+
+옛 경로가 남은 곳을 찾아 보니 `.claude/agents/` 4개(designer·developer·planner·recorder), `CLAUDE.md`, `INTENT.md`, 사용자 메모리 8개(`completion-target-scope`, `init-work-track-rollout`, `kg-schema-ie-decisions`, `korean-writing-polish`, `move-to-d-drive`, `parallel-when-possible`, `ultimate-goal-initiating-events`, `use-pstack-for-work`)였다. `.claude/skills/`와 `~/.claude/skills/init-work`에서는 찾지 못했다.
+
+| 대상 | 누가 | 언제 | 방법 |
+| --- | --- | --- | --- |
+| `.claude/agents/*.md`, `.claude/skills/*` | 그 단계의 하위 세션 | 그 폴더를 옮기는 단계의 ② 커밋(`디자인/`·`기획서/`·`메모리/`는 단계 3, `자원/`은 5, `작업/`은 6) | `migrate_names.py --rewrite-links`로 기계적으로 바꾼다. 특히 `hazop-recorder.md`는 단계 3과 같은 커밋이어야 한다. 늦으면 기록 담당이 없는 `메모리/`에 새 파일을 만든다. N8이 지킨다 |
+| `CLAUDE.md` | **총괄** | 단계 0에 규칙 18을 넣고, 단계 3·5·6이 끝날 때마다 경로(규칙 4의 `메모리/*.md`, 규칙 12의 `자원/기준/기호/` 등)를 고친다. 하위 세션의 ② 커밋 뒤, 푸시 전에 | 운영 규칙이라 하위 세션이 고치지 않는다. 도구의 바꾼 줄 목록을 받아 총괄이 직접 적용하고 따로 커밋한다 |
+| `INTENT.md` | 하위 세션의 도구가 **링크와 백틱 경로만** 바꾸고, 총괄이 diff를 확인 | 단계 3·5·6의 ② 커밋 | 의도 관리 세션의 문서라 본문 문장은 건드리지 않는다. 끝나면 의도 관리 세션에 바뀐 줄을 알린다 |
+| `메모리/결정로그.md`, `남은작업.md` | hazop-recorder | 단계 3이 옮긴 뒤(`records/`) | 링크만 도구로 바꾸고 본문 문장의 옛 이름은 기록이라 둔다(계획 §6.9) |
+| 사용자 메모리 `~/.claude/projects/D--HAZOP/memory/*.md` | **총괄** | 단계 3 끝(`메모리/`·`기획서/`), 단계 6 끝(`자원/`·`작업/`). git 밖이라 CI가 보지 않는다 | 먼저 폴더를 통째 복사해 둔다. 앞으로의 행동을 지시하는 경로만 고치고(예: '기록은 `메모리/…`에'), 지난 일을 적은 문장은 둔다. `MEMORY.md` 색인도 확인한다 |
+| 작업지시서 머리말(§8.3) | 총괄 | 단계마다 '지금 이전 단계: n'을 갱신 | 이전 중 새로 띄우는 세션이 옛 이름과 새 이름을 헷갈리지 않게 한다 |
+
+
