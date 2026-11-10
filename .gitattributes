@@ -6,3 +6,5 @@ tests/fixtures/kg/** -text
 tests/fixtures/kg_algo/** -text
 # 0.1.x 저장 함수가 쓴 바이트를 그대로 둔다(읽고 다시 저장한 바이트와 견준다).
 tests/fixtures/store-0.1/** -text
+# 요청 고정본은 바이트로 견준다.
+tests/fixtures/node-review/** -text

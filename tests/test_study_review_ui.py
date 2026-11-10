@@ -139,6 +139,74 @@ class StudyReviewUiTest(unittest.TestCase):
         self.assertEqual(nodes._status(scr._node(target["node_id"])), before, "연산 없이 의도만 받음")
         self.assertEqual(design_intent(scr._node(target["node_id"]), scr.review_doc)[0], "사람이 고친 의도")
 
+    def _trio(self, scr):
+        """(이웃이 둘 이상인 남긴 구간 ID, 그 이웃 둘)."""
+        from hazop.study import node_review as nr, nodes
+        kept = {n["node_id"] for n in scr.node_set["nodes"] if nodes._status(n) == "keep"}
+        for nid, nb in sorted(nr.adjacency(scr.node_set, scr.graph).items()):
+            others = [o for o in sorted(nb) if o in kept]
+            if nid in kept and len(others) >= 2:
+                return nid, others[:2]
+        self.fail("이웃이 둘 이상인 남긴 구간이 없음: %s" % sorted(kept))
+
+    def test_edit_dialog_drops_a_merge_target_and_matches_the_manual_merge(self):
+        """고쳐서 받기에서 합칠 구간 하나를 끄고 받는다: 이력에 제안 ID와 고친 내용이 남고, 결과는 손으로 병합한 것과 같다."""
+        from PySide6.QtCore import Qt
+        from hazop.study import nodes
+        win, scr = self.open_study()
+        target, others = self._trio(scr)
+        self.fixed_answers(win, scr, lambda n, b: self.review(n, "merge", merge_with=others)
+                           if n["node_id"] == target else self.review(n))
+        self.run_review(scr)
+        prop = scr.review_pending()[target]
+        before = scr.node_set
+        scr.select_node(target)
+        dlg, read = scr._edit_dialog(prop)
+        self.addCleanup(dlg.deleteLater)
+        box = scr.edit_boxes["merge"]
+        shown = {box.item(i).data(Qt.UserRole): box.item(i) for i in range(box.count())}
+        self.assertEqual([k for k, it in shown.items() if it.checkState() == Qt.Checked], others)
+        shown[others[1]].setCheckState(Qt.Unchecked)
+        edited = read()
+        self.assertEqual(edited["merge_with"], [others[0]])
+        self.assertTrue(scr.edit_review(prop["id"], edited=edited), scr.msg.text())
+        manual = nodes.merge(before, [target, others[0]])
+        self.assertEqual(scr.node_set["nodes"], manual["nodes"], "같은 병합을 손으로 한 것과 같은 구간")
+        last = scr.node_set["history"][-1]
+        self.assertEqual((last["op"], last["detail"]["proposal_id"], last["detail"]["changes"]),
+                         ("ai_review_accept", prop["id"], {"merge_with": [others[0]]}))
+        self.assertEqual(nodes.load(scr.graph), scr.node_set, "저장본도 같음")
+        self.assertTrue(win.toast_box.run_undo())
+        self.assertEqual(scr.node_set["nodes"], before["nodes"], "실행 취소로 되돌아감")
+
+    def test_edit_dialog_changes_the_split_members(self):
+        from PySide6.QtCore import Qt
+        from hazop.study import nodes
+        win, scr = self.open_study()
+        big = max((n for n in scr.node_set["nodes"] if nodes._status(n) == "keep"), key=lambda n: len(n["members"]))
+        part = {"members": sorted(big["members"][:2]), "name": "떼어 낸 구간"}
+        self.assertGreater(len(big["members"]), 2)
+        self.fixed_answers(win, scr, lambda n, b: self.review(n, "split", split_off=[part])
+                           if n["node_id"] == big["node_id"] else self.review(n))
+        self.run_review(scr)
+        prop = scr.review_pending()[big["node_id"]]
+        before = scr.node_set
+        scr.select_node(big["node_id"])
+        dlg, read = scr._edit_dialog(prop)
+        self.addCleanup(dlg.deleteLater)
+        box = scr.edit_boxes["split"][0]
+        box.item(1).setCheckState(Qt.Unchecked)
+        edited = read()
+        self.assertEqual(edited["split_off"], [{"members": part["members"][:1], "name": "떼어 낸 구간"}])
+        self.assertTrue(scr.edit_review(prop["id"], edited=edited), scr.msg.text())
+        manual = nodes.split(before, big["node_id"], part["members"][:1], name="떼어 낸 구간")
+        self.assertEqual(scr.node_set["nodes"], manual["nodes"])
+        for i in range(box.count()):
+            box.item(i).setCheckState(Qt.Unchecked)
+        self.assertEqual(read().get("split_off"), [])
+        self.assertFalse(scr.edit_review(prop["id"], edited={"split_off": []}))
+        self.assertIn("하나 이상", scr.msg.text())
+
     def test_confirm_dialog_rows_show_calls_time_and_usage(self):
         from hazop.study import node_review as nr
         _win, scr = self.open_study()
