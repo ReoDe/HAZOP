@@ -33,9 +33,9 @@ def main(argv=None):
     entries = build.build_all(args.extract_root, args.out_root, root, graph_root,
                               svg_roots=[paths.resource_root(), paths.store_root()])
     for e in entries:
-        print("%s -> %s (graph: %s)" % (e["drawing_number"], paths.rel_or_abs(os.path.join(args.out_root, e["file"]), root),
+        print("%s -> %s (graph: %s)" % (e["drawing_number"], paths.plain_rel(os.path.join(args.out_root, e["file"]), root),
                                         "있음" if e["graph"] else "없음"))
-    print("index -> %s" % paths.rel_or_abs(os.path.join(args.out_root, "index.html"), root))
+    print("index -> %s" % paths.plain_rel(os.path.join(args.out_root, "index.html"), root))
     return 0 if entries else 1
 
 

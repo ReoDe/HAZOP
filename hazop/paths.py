@@ -51,18 +51,40 @@ def long_path(path):
 
 
 def rel_or_abs(path, root):
-    """root 기준 상대 경로('/' 구분). 다른 드라이브 등으로 상대 경로를 만들 수 없으면 절대 경로.
-    저장소 전용 폴더(샘플 도면·APR1400) 아래 파일은 root와 관계없이 옮기기 전 이름의 기록 경로(OLD_NAMES의 record 줄,
-    예: '참고자료/P&ID 도면 샘플/<나머지>')로 쓴다: 추출 JSON의 source.file·svg_file이 그래프 판(graph_version) 해시에
-    들어가므로 폴더 위치나 이름이 바뀌어도 판이 같아야 한다(D9, HZ-GOV-02 §6.2). resolve_rel이 같은 표로 되돌려 읽는다."""
+    """파일에 적는 기록 경로: root 기준 상대 경로('/' 구분). 다른 드라이브 등으로 상대 경로를 만들 수 없으면 절대 경로.
+    폴더 이름은 옮기기 전 것으로 적는다. 추출 JSON의 source.file·svg_file이 그래프 판(graph_version) 해시에 들어가므로
+    폴더 위치나 이름이 바뀌어도 같은 자료의 판이 같아야 한다(D9, HZ-GOV-02 §6.2).
+    - 저장소 전용 폴더(샘플 도면·APR1400) 아래 파일은 root와 관계없이 OLD_NAMES의 record 줄로 적는다
+      (예: '참고자료/P&ID 도면 샘플/<나머지>').
+    - 작업 루트 폴더 아래 파일은 0.1.x 이름으로 적는다(예: '자료저장소/<프로젝트>/originals/…', '출력/추출/<이름>/page.svg').
+    resolve_rel이 같은 표로 되돌려 읽는다. 사람에게 보여 줄 경로는 plain_rel을 쓴다."""
     try:
         recorded = _record_path(path)
         if recorded is not None:
             return recorded
         rel = os.path.relpath(path, root)
     except ValueError:
-        rel = os.path.abspath(path)
-    return rel.replace("\\", "/")
+        return os.path.abspath(path).replace("\\", "/")
+    return _swap_prefix(rel.replace("\\", "/"), work_names())
+
+
+def plain_rel(path, root):
+    """root 기준 상대 경로('/' 구분)를 디스크에 있는 이름 그대로. 화면·콘솔에 보여 줄 때 쓴다. 파일에 적을 경로는 rel_or_abs."""
+    try:
+        return os.path.relpath(path, root).replace("\\", "/")
+    except ValueError:
+        return os.path.abspath(path).replace("\\", "/")
+
+
+def _swap_prefix(rel, pairs):
+    """rel이 pairs의 앞 이름이거나 그 아래면 뒤 이름으로 바꾼다. 긴 이름부터, 대소문자를 가리지 않고 맞춘다."""
+    low = rel.lower()
+    if len(low) != len(rel):
+        return rel
+    for src, dst in sorted(pairs, key=lambda p: -len(p[0])):
+        if low == src.lower() or low.startswith(src.lower() + "/"):
+            return dst + rel[len(src):]
+    return rel
 
 
 def _record_path(path):
@@ -230,6 +252,7 @@ FOLDERS = {
     "도면연결": Folder("work", ("데이터", "도면연결")),
     "잠재후보": Folder("work", ("데이터", "잠재후보")),
     "캐시": Folder("work", ("데이터", "캐시")),  # 지워도 되는 계산 결과(hazop.app.data 추출 요약)
+    "평가기준": Folder("work", ("데이터", "평가기준")),  # 표본 평가 기준을 채우는 자리(scripts/seed_samples.py)
     "기호후보": Folder("work", ("기호후보",)),
     "자료저장소": Folder("work", ("자료저장소",)),  # 등록 저장 루트 기본 자리. HAZOP_STORE_ROOT를 주면 그쪽이므로 store_root()로 연다
     "출력": Folder("work", ("출력",)),  # 이 아래 폴더는 OUTPUT_FOLDERS. output_root()·output_in()으로 연다
@@ -264,6 +287,23 @@ FILES = {
 # 표본 아래 폴더 이름(작업 루트 폴더 이름 → 표본 폴더 이름). 표본을 작업 루트에 채울 때 짝을 맞춘다. 작업 루트 쪽 이름은
 # 단계 6(HZ-GOV-02 §7)에서 같은 영어 이름이 된다.
 SAMPLE_FOLDERS = {"구간": "regions", "고정응답": "fixed-responses", "지식": "knowledge-graph", "평가기준": "evaluation-criteria"}
+# 작업 루트 폴더의 0.1.x 이름(HZ-GOV-02 §5.6): FOLDERS 열쇠 → 작업 루트 기준 옛 상대 경로, OUTPUT_FOLDERS 열쇠 → 옛 폴더 이름.
+# 기록 경로(rel_or_abs)는 이 이름으로 적고, 읽을 때(resolve_rel)와 옛 작업 폴더를 옮길 때(hazop.workroot) 지금 이름으로 푼다.
+# 0.1.x가 쓴 사용자 파일이 이 이름을 담고 있으므로 지우거나 고치지 않는다. 0.2.0 뒤에 생긴 폴더는 여기 줄이 없다.
+OLD_WORK_RELS = {
+    "작업데이터": "데이터", "구간": "데이터/구간", "고정응답": "데이터/고정응답", "지식": "데이터/지식", "검토구간": "데이터/검토구간",
+    "분석결과": "데이터/분석결과", "분석결과-시험": "데이터/분석결과-시험", "백업": "데이터/백업", "초기사건": "데이터/초기사건",
+    "도면수정": "데이터/도면수정", "도면연결": "데이터/도면연결", "잠재후보": "데이터/잠재후보", "캐시": "데이터/캐시",
+    "평가기준": "데이터/평가기준", "기호후보": "기호후보", "자료저장소": "자료저장소", "출력": "출력",
+}
+OLD_OUTPUT_NAMES = {
+    "추출": "추출", "그래프": "그래프", "뷰어": "뷰어", "문서지식": "문서지식", "지식그래프": "지식그래프", "분석": "분석",
+    "근거묶음": "근거묶음", "워크시트": "워크시트", "평가비교": "평가비교", "초기사건": "초기사건", "내보내기": "내보내기",
+    "어댑터": "어댑터", "samples": "samples", "스크린샷": "스크린샷", "사용자검증": "사용자검증", "디자인검사": "디자인검사",
+    "로그": "로그", "보관": "_보관",
+}
+OLD_EXTERNAL_BACKUP_DIR = "_외부"
+OLD_DEV_WORK_ROOT = os.path.join(REPO_ROOT, "작업")
 REFERENCE_LOGICAL = "참고자료/"  # 참고 폴더 아래 파일의 기록용 접두(rel_or_abs)
 
 
@@ -321,6 +361,18 @@ def _old_names():
 OLD_NAMES = _old_names()
 
 
+def work_names():
+    """[(지금 상대 경로, 0.1.x 상대 경로)] 작업 루트 기준, '/' 구분. 출력 폴더 아래와, run_samples.py가 출력/samples 아래에
+    다시 두는 출력 폴더 이름까지 담는다."""
+    rows = [("/".join(FOLDERS[name].rel), old) for name, old in OLD_WORK_RELS.items()]
+    out_now, out_old = "/".join(FOLDERS["출력"].rel), OLD_WORK_RELS["출력"]
+    under = [(OUTPUT_FOLDERS[key], old) for key, old in OLD_OUTPUT_NAMES.items()]
+    rows += [(out_now + "/" + now, out_old + "/" + old) for now, old in under]
+    samples = (out_now + "/" + OUTPUT_FOLDERS["samples"], out_old + "/" + OLD_OUTPUT_NAMES["samples"])
+    rows += [(samples[0] + "/" + now, samples[1] + "/" + old) for now, old in under]
+    return rows
+
+
 def folder(name, *parts):
     """FOLDERS의 폴더(또는 그 아래 경로)의 절대 경로. 이름이 표에 없으면 KeyError."""
     base = {"resource": resource_root, "work": work_root, "repo": lambda: REPO_ROOT}[FOLDERS[name].root]()
@@ -368,7 +420,8 @@ def _inside(path, root):
 
 def resolve_rel(rel, root):
     """저장된 상대 경로를 실제 경로로. 절대 경로면 그대로, root 아래에 있으면 그것, 없으면 OLD_NAMES로 푼 위치에
-    파일이 있을 때 그것(긴 옛 이름부터 맞춘다). 어디에도 없으면 root 기준 경로(호출한 쪽이 '없음'을 알린다)."""
+    파일이 있을 때 그것(긴 옛 이름부터 맞춘다). 거기에도 없으면 작업 루트 폴더의 0.1.x 이름을 지금 이름으로 바꾼
+    root 기준 경로(파일이 없어도 이 경로다. 호출한 쪽이 '없음'을 알리고, 새로 쓰는 쪽은 지금 폴더에 쓴다)."""
     if os.path.isabs(rel):
         return rel
     direct = os.path.join(root, rel)
@@ -383,7 +436,9 @@ def resolve_rel(rel, root):
             alt = folder(row.name, *row.sub, *[p for p in norm[len(row.old):].split("/") if p])
             if os.path.exists(alt):
                 return alt
-    return direct
+            return direct  # 저장소·자원 폴더의 옛 이름인데 파일이 없다. 작업 루트 이름으로 풀지 않는다
+    now = _swap_prefix(norm, [(old, new) for new, old in work_names()])
+    return os.path.join(root, *now.split("/")) if now != norm else direct
 
 
 def is_reference_rel(rel):

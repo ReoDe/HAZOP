@@ -67,7 +67,7 @@ def run_one(path, out_root, svg="auto", page=0, registration=None, registered_sv
         elif registration is not None:
             # 한계: 이 등록에는 파생 SVG가 없다. 등록 당시 입력 경로 옆에서 찾으므로
             # 그 SVG가 등록 원본과 같은 판인지 등록 단계가 보증하지 않는다(결과 JSON의 source로 표시).
-            near = os.path.join(root, registration["input_path"])  # 작업 루트 밖이면 절대 경로가 그대로 쓰임
+            near = paths.resolve_rel(registration["input_path"], root)  # 작업 루트 밖이면 절대 경로가 그대로 쓰임
             svg_source = "input_path_sibling, unregistered"
         if svg_source != "registered_derived":
             svg_path = find_svg(near, result["run"]["settings"]["page_index"], result["source_context"]["page_name"],
@@ -130,7 +130,7 @@ def main(argv=None):
               % (result["drawing"]["drawing_number"] or os.path.basename(out_dir), result["validation"]["status"], s["nodes"],
                  s["relations"], s["unresolved_connectors"], s["texts"], s["unknowns"],
                  s["blockers"], al["status"] if al else None, al["offset"] if al else None,
-                 paths.rel_or_abs(out_dir, paths.work_root())))
+                 paths.plain_rel(out_dir, paths.work_root())))
         blocked += result["validation"]["status"] == "blocked"
     return 1 if blocked else 0
 

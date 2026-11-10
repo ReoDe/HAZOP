@@ -187,7 +187,7 @@ def flow(args, paths, res, ok):
     _, ex_dir = data.script_module("extract_drawio").run_one(drawio_path, paths.output_root("추출"))
     graph, gdir = data.script_module("build_graph").build_one(os.path.join(ex_dir, "extraction.json"),
                                                               paths.output_root("그래프"))
-    gpath = os.path.join(work, region["graph_ref"]["graph_file"])
+    gpath = paths.resolve_rel(region["graph_ref"]["graph_file"], work)
     ok("graph_version", graph["graph_version"] == region["graph_ref"]["graph_version"]
        and norm(os.path.join(gdir, "graph.json")) == norm(gpath), "%s %s" % (graph["graph_version"], gdir))
 

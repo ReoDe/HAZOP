@@ -77,7 +77,7 @@ def main(argv=None):
         print("%s: %s nodes=%d relations=%d unresolved=%d texts=%d unknowns=%d blockers=%d -> %s"
               % (result["drawing"]["drawing_number"] or os.path.basename(out_dir), result["validation"]["status"],
                  s["nodes"], s["relations"], s["unresolved_connectors"], s["texts"], s["unknowns"], s["blockers"],
-                 paths.rel_or_abs(out_dir, paths.work_root())))
+                 paths.plain_rel(out_dir, paths.work_root())))
         blocked += result["validation"]["status"] == "blocked"
     return 2 if bad_input else (1 if blocked else 0)
 

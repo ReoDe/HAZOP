@@ -177,7 +177,7 @@ def main(argv=None):
             print("%s p%d: %s nodes=%d relations=%d unresolved=%d texts=%d unknowns=%d blockers=%d -> %s"
                   % (result["drawing"]["drawing_number"] or os.path.basename(out_dir), page,
                      result["validation"]["status"], s["nodes"], s["relations"], s["unresolved_connectors"],
-                     s["texts"], s["unknowns"], s["blockers"], paths.rel_or_abs(out_dir, paths.work_root())))
+                     s["texts"], s["unknowns"], s["blockers"], paths.plain_rel(out_dir, paths.work_root())))
             failed += result["validation"]["status"] == "blocked"
         for sk in skipped:
             print("%s p%d: 미추출 — %s" % (os.path.basename(path), sk["page_index"], sk["reason"]))

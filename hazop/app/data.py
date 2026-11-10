@@ -482,7 +482,7 @@ def current_graph(region):
     gf = (region.get("graph_ref") or {}).get("graph_file")
     if not gf:
         return None
-    full = gf if os.path.isabs(gf) else paths.work_path(gf)
+    full = paths.resolve_rel(gf, paths.work_root())
     return read_json(full) if os.path.isfile(full) else None
 
 

@@ -64,7 +64,7 @@ def main(argv=None):
         print("%s: %s nodes=%d edges=%d components_physical=%d unknowns=%d -> %s" % (
             graph["source"]["drawing_number"] or os.path.basename(out_dir), graph["validation"]["status"], s["node_count"],
             s["edge_count"], s["components_physical"], len(graph["validation"]["unknowns"]),
-            paths.rel_or_abs(out_dir, paths.work_root())))
+            paths.plain_rel(out_dir, paths.work_root())))
         built += 1
         blocked += graph["validation"]["status"] != "passed"
     return 1 if blocked or not built else 0

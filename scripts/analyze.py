@@ -55,7 +55,7 @@ def resume_client(args):
         return ai.AnthropicClient(model=rec.get("model") or args.model)
     if args.live:
         raise run.InputError("원래 실행은 고정 응답 — --live로 재시도할 수 없음")
-    return ai.FixedResponseClient(os.path.join(paths.work_root(), rec["response_dir"]), repo_root=paths.work_root(),
+    return ai.FixedResponseClient(paths.resolve_rel(rec["response_dir"], paths.work_root()), repo_root=paths.work_root(),
                                   verify_bundle=rec.get("verify_bundle", True))
 
 
@@ -66,7 +66,7 @@ def summary(doc, where):
           "AI 검증 통과 %d·미완료 %d·거부 시나리오 %d 보류 %d -> %s" % (
               doc["analysis_run_id"], v["status"], c["candidates"], c["selected"], c["excluded"], c["deferred"],
               c["scenarios"], c["risk_proposed"], c["design_improvement_candidates"], c["ai_validated"], c["ai_failed"],
-              c["ai_rejected_scenarios"], c["holds_open"], paths.rel_or_abs(where, paths.work_root())))
+              c["ai_rejected_scenarios"], c["holds_open"], paths.plain_rel(where, paths.work_root())))
     for e in v["errors"]:
         print("  오류:", e)
 

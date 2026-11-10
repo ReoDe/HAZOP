@@ -42,10 +42,10 @@ def main(argv=None):
     m = res["manifest"]
     print("%s v%s 그래프 %s: 근거 묶음 %d개 -> %s" % (
         m["region"]["region_id"], m["region"]["region_version"], m["graph"]["graph_version"], len(m["candidates"]),
-        paths.rel_or_abs(res["export_dir"], paths.work_root())))
+        paths.plain_rel(res["export_dir"], paths.work_root())))
     for c in m["candidates"]:
         print("  %s bundle_sha256=%s" % (c["candidate_id"], c["bundle_sha256"]))
-    print("응답 폴더:", paths.rel_or_abs(res["response_dir"], paths.work_root()))
+    print("응답 폴더:", paths.plain_rel(res["response_dir"], paths.work_root()))
     return 0
 
 

@@ -96,7 +96,7 @@ def _ver(value, label):
 
 
 def _resolve(path, root):
-    return path if os.path.isabs(path) else os.path.join(root, path)
+    return paths.resolve_rel(path, root)
 
 
 def _run_sort_key(name):

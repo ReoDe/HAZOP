@@ -24,7 +24,7 @@ def kg_state(doc, region):
     try:
         if not isinstance(ref, str) or not ref:
             raise ValueError("실행 구간 사본에 knowledge_graph 경로 없음")
-        root = ref if os.path.isabs(ref) else paths.work_path(ref)
+        root = paths.resolve_rel(ref, paths.work_root())
         out["current"] = kg_build.load_outputs_raw(root)[4]["kg_version"]
     except (OSError, ValueError) as exc:
         return dict(out, state="unreadable", text=KG_UNREADABLE, error=str(exc))
