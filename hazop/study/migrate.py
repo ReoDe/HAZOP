@@ -159,10 +159,9 @@ def migrate_set(node_set, graph, at=None):
     p = plan(node_set, graph)
     if p["state"] != "kept":
         return node_set, p
-    out = copy.deepcopy(node_set)
+    from hazop.study.nodes import map_members
     ren = p["renamed"]
-    for n in out["nodes"]:
-        n["members"] = sorted(ren.get(m, m) for m in n["members"])
+    out = map_members(node_set, ren)
     old_version = out.get("graph_version")
     out["graph_version"] = graph["graph_version"]
     out.update(member_refs=member_refs(out, graph), member_digest=member_digest(graph))
@@ -231,14 +230,16 @@ def notice(node_set):
         d["from"], d["to"], d["matched"])
 
 
-def _backup(path):
+def _backup(path, label="판이전"):
+    """<작업 루트>/데이터/백업/<시각>-<label>/<작업 루트 기준 경로>에 복사하고 그 경로를 돌려준다."""
     from hazop.study.nodes import now_utc
     stamp = now_utc().replace(":", "").replace("-", "")
     root = paths.work_root()
     rel = os.path.relpath(path, root) if os.path.abspath(path).startswith(os.path.abspath(root)) else os.path.basename(path)
-    dst = os.path.join(paths.work_path("데이터", "백업", "%s-판이전" % stamp), rel)
+    dst = os.path.join(paths.folder("백업", "%s-%s" % (stamp, label)), rel)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.copy2(path, dst)
+    return dst
 
 
 def on_load(node_set, graph, path):

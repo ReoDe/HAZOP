@@ -70,9 +70,9 @@ class PathsTest(unittest.TestCase):
     def test_defaults_are_repo_paths(self):
         with mock.patch.dict(os.environ, _clean_env(), clear=True):
             self.assertEqual(paths.resource_root(), REPO_ROOT)
-            self.assertEqual(paths.work_root(), REPO_ROOT)
-            self.assertEqual(paths.store_root(), os.path.join(REPO_ROOT, "자료저장소"))
-            self.assertEqual(paths.output_root("분석"), os.path.join(REPO_ROOT, "출력", "분석"))
+            self.assertEqual(paths.work_root(), os.path.join(REPO_ROOT, "작업"))  # 경로문자열-허용: 개발 작업 루트 기본값(계약)
+            self.assertEqual(paths.store_root(), os.path.join(paths.DEV_WORK_ROOT, "자료저장소"))
+            self.assertEqual(paths.output_root("분석"), os.path.join(paths.DEV_WORK_ROOT, "출력", "분석"))
         self.assertEqual(paths.REPO_ROOT, registry.REPO_ROOT)
 
     def test_env_overrides_and_store_priority(self):
@@ -80,7 +80,7 @@ class PathsTest(unittest.TestCase):
         with mock.patch.dict(os.environ, env, clear=True):
             self.assertEqual(paths.resource_root(), os.path.abspath("C:/r"))
             self.assertEqual(paths.store_root(), os.path.join(os.path.abspath("C:/w"), "자료저장소"))
-            self.assertEqual(paths.work_path("데이터", "구간"), os.path.join(os.path.abspath("C:/w"), "데이터", "구간"))
+            self.assertEqual(paths.folder("구간"), os.path.join(os.path.abspath("C:/w"), "데이터", "구간"))  # 경로문자열-허용: 작업 루트 배치 계약(배포본과 같음)
         with mock.patch.dict(os.environ, dict(env, HAZOP_STORE_ROOT="C:/s"), clear=True):
             self.assertEqual(paths.store_root(), "C:/s")  # HAZOP_STORE_ROOT 우선
 
@@ -100,7 +100,7 @@ class PathsTest(unittest.TestCase):
             self.assertEqual(paths.load_settings(), paths.DEFAULT_SETTINGS)  # 파일 없음 -> 기본값
             s = paths.load_settings()
             s["reviewer_name"] = "홍길동"
-            s["recent_regions"] = ["데이터/구간/a.json"]
+            s["recent_regions"] = ["데이터/구간/a.json"]  # 경로문자열-허용: 설정 파일에 저장된 사용자 값
             written = paths.save_settings(s)
             self.assertEqual(paths.load_settings(), s)
             self.assertFalse(os.path.exists(written + ".tmp"))
@@ -554,15 +554,15 @@ class SplitRootsTest(TmpCase):
         region = _load(REGION_FILE)
         for rel in list(region["inputs"].values()) + ["기획서/HAZOP기법지침.md"]:
             os.makedirs(os.path.dirname(os.path.join(res, rel)), exist_ok=True)
-            shutil.copyfile(os.path.join(REPO_ROOT, rel), os.path.join(res, rel))
-        os.makedirs(os.path.join(work, "데이터", "구간"))
-        shutil.copyfile(REGION_FILE, os.path.join(work, "데이터", "구간", os.path.basename(REGION_FILE)))
-        shutil.copytree(FIXED_DIR, os.path.join(work, "데이터", "고정응답", os.path.basename(FIXED_DIR)))
+            shutil.copyfile(paths.resolve_rel(rel, REPO_ROOT), os.path.join(res, rel))
+        os.makedirs(paths.folder_in(work, "구간"))
+        shutil.copyfile(REGION_FILE, paths.folder_in(work, "구간", os.path.basename(REGION_FILE)))
+        shutil.copytree(FIXED_DIR, paths.folder_in(work, "고정응답", os.path.basename(FIXED_DIR)))
         _dump(os.path.join(work, region["graph_ref"]["graph_file"]), GRAPH)
         env = dict(_clean_env(), HAZOP_RESOURCE_ROOT=res, HAZOP_WORK_ROOT=work)
         env.pop("PYTHONIOENCODING", None)
-        repo_runs = sorted(os.listdir(os.path.join(REPO_ROOT, "출력", "분석"))) \
-            if os.path.isdir(os.path.join(REPO_ROOT, "출력", "분석")) else []
+        repo_runs = sorted(os.listdir(os.path.join(paths.DEV_WORK_ROOT, "출력", "분석"))) \
+            if os.path.isdir(os.path.join(paths.DEV_WORK_ROOT, "출력", "분석")) else []
 
         rc, out = self.run_cli(env, os.path.join(REPO_ROOT, "scripts", "analyze.py"), "--run-id", "analysis-split")
         self.assertEqual(rc, 0, out)
@@ -572,10 +572,10 @@ class SplitRootsTest(TmpCase):
                          (44, 14, 6, 11))
         self.assertEqual(doc["graph_ref"]["graph_version"], region["graph_ref"]["graph_version"])
         self.assertEqual({f["role"]: f["path"] for f in doc["analysis_run"]["input_files"]},
-                         dict(region["inputs"], region="데이터/구간/" + os.path.basename(REGION_FILE),
+                         dict(region["inputs"], region=paths.folder_rel("구간") + "/" + os.path.basename(REGION_FILE),
                               graph=region["graph_ref"]["graph_file"]))
         self.assertEqual(doc["analysis_run"]["ai_client"]["response_dir"],
-                         "데이터/고정응답/" + os.path.basename(FIXED_DIR))
+                         paths.folder_rel("고정응답") + "/" + os.path.basename(FIXED_DIR))
 
         rc, out = self.run_cli(env, os.path.join(REPO_ROOT, "scripts", "export_bundles.py"))
         self.assertEqual(rc, 0, out)
@@ -598,8 +598,8 @@ class SplitRootsTest(TmpCase):
                          ("registered_derived", "자료저장소/p/originals/%s/1/derived/P-1.drawio.svg" % mid))
         self.assertEqual(_load(os.path.join(reg_dir, mid, "1.json"))["input_path"], "in/P-1.drawio")
 
-        now_runs = sorted(os.listdir(os.path.join(REPO_ROOT, "출력", "분석"))) \
-            if os.path.isdir(os.path.join(REPO_ROOT, "출력", "분석")) else []
+        now_runs = sorted(os.listdir(os.path.join(paths.DEV_WORK_ROOT, "출력", "분석"))) \
+            if os.path.isdir(os.path.join(paths.DEV_WORK_ROOT, "출력", "분석")) else []
         self.assertEqual(now_runs, repo_runs)  # 저장소 출력/은 건드리지 않음
 
         # 자원 루트에 기준 자료가 없으면 분석하지 않는다(저장소 자료로 몰래 대체하지 않음)

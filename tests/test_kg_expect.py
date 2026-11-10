@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
 import test_kg  # noqa: E402
 import test_kg_origin  # noqa: E402
+from hazop import paths  # noqa: E402
 from hazop.app import tokens  # noqa: E402
 from hazop.kg import algo, build, expect, schema, screen  # noqa: E402
 from hazop.kg.schema import REGISTRY  # noqa: E402
@@ -232,7 +233,7 @@ class StoreTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.path = os.path.join(self.tmp, "데이터", "잠재후보", "P.json")
+        self.path = paths.folder_in(self.tmp, "잠재후보", "P.json")
 
     def judge(self, res, rule, tag, action, **kw):
         rec = expect.apply_action(item(res, rule, tag), action, "검토자", at="2026-11-09T00:00:00Z", **kw)
@@ -391,7 +392,7 @@ class StoreTest(unittest.TestCase):
     def test_store_path_under_work_root(self):
         with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": self.tmp}):
             self.assertEqual(expect.store_path("SNP-SAMPLE"),
-                             os.path.join(self.tmp, "데이터", "잠재후보", "SNP-SAMPLE.json"))
+                             paths.folder_in(self.tmp, "잠재후보", "SNP-SAMPLE.json"))
 
 
 class ExclusionTest(unittest.TestCase):

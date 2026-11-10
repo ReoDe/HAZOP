@@ -11,6 +11,7 @@ import shutil
 import tempfile
 import unittest
 
+from hazop import paths  # noqa: E402
 from tests.test_app import build_temp_drawing
 
 PROJECT = "corr-test"
@@ -78,8 +79,8 @@ class CorrectionsTest(unittest.TestCase):
 
     def tearDown(self):
         from hazop import paths
-        for sub in (("데이터", "도면수정"), ("데이터", "검토구간"), ("데이터", "분석결과")):
-            shutil.rmtree(paths.work_path(*sub), ignore_errors=True)
+        for name in ("도면수정", "검토구간", "분석결과"):
+            shutil.rmtree(paths.folder(name), ignore_errors=True)
 
     def op(self, ops, base_ext, name, target, value):
         from hazop.extract import corrections
@@ -233,6 +234,78 @@ class CorrectionsTest(unittest.TestCase):
         self.assertTrue(reasons["c-0002"].startswith("연결 대상 기기가 바뀌었거나 없음: n6"))
         self.assertEqual(corrections.apply(self.ext, ops)["corrections"]["not_applicable"], [])
 
+    def test_cleared_kind_keeps_target(self):
+        """다시 추출에서 틀린 kind가 지워져도(예: 끝막음 → 없음) 같은 자리의 사람 수정은 적용된다(D14, 3c 검토)."""
+        from hazop.extract import corrections
+        ops = []
+        self.op(ops, self.ext, "set_tag", "n6", {"tag": "RC-TE111"})
+        cleared = copy.deepcopy(self.ext)
+        by_sid(cleared, "n6")["kind"] = None
+        self.assertEqual(corrections.apply(cleared, ops)["corrections"]["applied"], ["c-0001"])
+
+    def test_newly_filled_kind_or_tag_keeps_target(self):
+        """미분류였던 기호에 사전이 kind·태그를 채워도 같은 자리의 사람 수정은 그대로 적용된다(D14).
+        이미 있던 kind가 다른 값으로 바뀐 것은 여전히 '대상이 바뀜'이다."""
+        from hazop.extract import corrections
+        ops = []
+        self.op(ops, self.ext, "set_tag", "n6", {"tag": "RC-TE111"})
+        ops[0]["base"] = dict(ops[0]["base"], kind=None, tag=None)
+        out = corrections.apply(self.ext, ops)
+        self.assertEqual(out["corrections"]["applied"], ["c-0001"])
+        self.assertEqual(by_sid(out, "n6")["tag"], "RC-TE111")
+        ops[0]["base"] = dict(ops[0]["base"], kind="pump")
+        reasons = {s["op_id"]: s["reason"] for s in corrections.apply(self.ext, ops)["corrections"]["not_applicable"]}
+        self.assertTrue(reasons["c-0001"].startswith("대상이 바뀜: kind 'pump'"))
+
+    def test_relation_becoming_measurement_keeps_target(self):
+        """끝 기호가 계기로 밝혀져 같은 선이 physical → measurement로 바뀌어도 그 선의 사람 수정은 적용된다(D14)."""
+        from hazop.extract import corrections
+        rel = next(r for r in self.ext["relations"] if r["kind"] == "physical_connection")
+        ops = []
+        self.op(ops, self.ext, "delete_relation", rel["source_object_id"], {})
+        changed = copy.deepcopy(self.ext)
+        next(r for r in changed["relations"] if r["source_object_id"] == rel["source_object_id"])["kind"] = \
+            "measurement_connection"
+        self.assertEqual(corrections.apply(changed, ops)["corrections"]["applied"], ["c-0001"])
+
+    def test_set_kind_drops_properties_the_new_kind_cannot_have(self):
+        from hazop.extract import corrections
+        base = copy.deepcopy(self.ext)
+        node = by_sid(base, "n6")
+        node["attributes"] = {"valve_type": "gate", "note": "keep"}
+        ops = []
+        self.op(ops, base, "set_kind", "n6", {"kind": "drain", "category": "inline_component"})
+        out = by_sid(corrections.apply(base, ops), "n6")
+        self.assertEqual(out["attributes"], {"note": "keep", "kind": "drain"})
+
+    def test_renumbered_target_is_found_by_position(self):
+        """다시 추출로 id만 바뀐 같은 대상(같은 종류·태그·위치)은 새 id로 적용하고 retargeted에 남긴다(D14)."""
+        from hazop.extract import corrections
+        ops = []
+        self.op(ops, self.ext, "set_tag", "n6", {"tag": "RC-TE111"})
+        moved = copy.deepcopy(self.ext)
+        by_sid(moved, "n6")["source_object_id"] = "n6-renumbered"
+        out = corrections.apply(moved, ops)
+        self.assertEqual(out["corrections"]["applied"], ["c-0001"])
+        self.assertEqual(out["corrections"]["retargeted"], [{"op_id": "c-0001", "from": "n6", "to": "n6-renumbered"}])
+        self.assertEqual(by_sid(out, "n6-renumbered")["tag"], "RC-TE111")
+
+    def test_two_candidates_at_same_position_are_not_guessed(self):
+        from hazop.extract import corrections
+        ops = []
+        self.op(ops, self.ext, "set_tag", "n6", {"tag": "RC-TE111"})
+        moved = copy.deepcopy(self.ext)
+        twin = copy.deepcopy(by_sid(moved, "n6"))
+        by_sid(moved, "n6")["source_object_id"] = "n6-a"
+        twin.update(source_object_id="n6-b", local_id=twin["local_id"] + "-b")
+        moved["nodes"].append(twin)
+        loc = copy.deepcopy(next(l for l in moved["source_locations"] if l["local_id"] == by_sid(moved, "n6-a")["local_id"]))
+        loc["local_id"] = twin["local_id"]
+        moved["source_locations"].append(loc)
+        out = corrections.apply(moved, ops)
+        self.assertEqual(out["corrections"]["applied"], [])
+        self.assertNotIn("retargeted", out["corrections"])
+
     def test_make_op_rejects_invalid_ops(self):
         from hazop.extract import corrections
         bad = [("rename", "n1", {}), ("set_tag", "nope", {"tag": "a"}), ("set_kind", "n1", {"kind": "pump", "category": "valve"}),
@@ -287,6 +360,23 @@ class CorrectionsTest(unittest.TestCase):
         original, saved = data.load_extraction(NAME)
         self.assertEqual(saved, corrections.apply(original, ops))
         self.assertEqual(data.load_extraction(NAME, ops=[])[1], original)
+
+    def test_op_ids_are_never_reissued_after_removal(self):
+        """저장했다가 지운 op_id(=manual- ID)는 다시 쓰지 않고, 지운 연산 내용은 log에 남는다."""
+        from hazop.extract import corrections
+        self.assertEqual(corrections.issued_op_ids(NAME), set())
+        value = {"category": "equipment", "kind": "pump", "tag": "RC-P900", "bbox": [500, 500, 20, 20]}
+        first = corrections.make_op(self.ext, "add_node", None, value, "검토자")
+        corrections.save(NAME, [first], "검토자", drawing_number=NAME)
+        corrections.save(NAME, [], "검토자")
+        again = corrections.make_op(self.ext, "add_node", None, dict(value, tag="RC-P901"), "검토자",
+                                    used_ids=corrections.issued_op_ids(NAME))
+        self.assertNotEqual(again["op_id"], first["op_id"], "빈 기록으로 저장한 뒤에도 새 번호")
+        corrections.save(NAME, [again], "검토자")
+        doc = corrections.load(NAME)
+        self.assertEqual(doc["log"][1]["removed"], [first["op_id"]])
+        self.assertEqual(doc["log"][1]["removed_ops"], [first], "지운 사람 수정 내용이 기록에 남음")
+        self.assertEqual(corrections.issued_op_ids(NAME), {first["op_id"], again["op_id"]})
 
     def test_load_rejects_other_kind(self):
         from hazop.extract import corrections
@@ -348,7 +438,7 @@ class CorrectionsTest(unittest.TestCase):
         ops = []
         self.op(ops, self.ext, "set_tag", "n1", {"tag": "RC-PZ02"})
         out = data.save_corrections(NAME, ops, "검토자")
-        self.assertEqual(out["path"], os.path.join(paths.work_path("데이터", "도면수정"), NAME + ".json"))
+        self.assertEqual(out["path"], os.path.join(paths.folder("도면수정"), NAME + ".json"))
         self.assertNotEqual(out["graph"]["graph_version"], graph["graph_version"])
         on_disk = data.read_json(os.path.join(paths.output_root("그래프"), NAME, "graph.json"))
         self.assertEqual(on_disk["graph_version"], out["graph"]["graph_version"])

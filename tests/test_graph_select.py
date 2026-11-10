@@ -21,6 +21,7 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
+from hazop import paths  # noqa: E402
 
 NODE = "local-node-001"   # SNP-M-102의 설비 노드(RC-PZ01). 이 도면의 설비 노드는 하나
 NODE_R = 7                # template.html NODE_R.equipment
@@ -47,7 +48,7 @@ def build_viewer_html(out_dir):
     from hazop.extract import drawio, svg_align
     from hazop.graph import build as gbuild
     from hazop.viewer import build
-    src = [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio"))
+    src = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
            if "SNP-M-102" in p][0]
     r = drawio.extract(src, repo_root=REPO_ROOT)
     svg = glob.glob(os.path.join(os.path.dirname(src), "*.drawio.svg"))[0]

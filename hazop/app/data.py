@@ -1,4 +1,5 @@
 """화면이 읽는 데이터 목록·표시 계산. 파일 쓰기는 기존 API(등록·추출·그래프·뷰어 빌드)만 거친다.
+다만 추출 요약 캐시(데이터/캐시/추출요약.json, 지워도 됨)는 여기서 직접 쓴다.
 
 - 목록: 등록정보, 추출 결과, 구간 JSON, 분석 실행 (경로는 hazop/paths.py)
 - 뷰어 HTML: hazop/viewer/build.build_drawing_html (scripts/build_viewer.py와 같은 함수, 한 도면만)
@@ -157,7 +158,7 @@ def doc_root():
 def build_project_kg(project_id):
     """프로젝트 지식그래프를 도면 그래프·문서 지식·지식 CSV(있으면)로 다시 빌드한다(hazop.kg.auto.build_project).
     반환 {"kg", "dir", "notes"}. 도면도 문서도 없으면 ValueError."""
-    return auto.build_project(project_id, paths.output_root("그래프"), doc_root(), paths.work_path("데이터", "지식"),
+    return auto.build_project(project_id, paths.output_root("그래프"), doc_root(), paths.folder("지식"),
                               paths.output_root("지식그래프"))
 
 
@@ -194,30 +195,95 @@ def list_extractions():
 
 
 _SOURCE_CACHE = {}
+BRIEF_CACHE_VERSION = 1  # _read_brief가 만드는 값(출처 문구 등)을 바꾸면 올린다(옛 캐시를 버리게)
+_DISK = {"file": None, "entries": {}, "dirty": False}
+
+
+def _brief_file():
+    return paths.folder("캐시", "추출요약.json")
+
+
+def _disk_briefs():
+    """작업 루트의 추출 요약 캐시 {경로: {"stat": [바뀐 시각 ns, 크기], "brief": 요약}}. 앱을 새로 켤 때 143쪽 추출 JSON을
+    다시 읽지 않게 한다(시작 시간의 대부분). 없거나 깨졌으면 빈 캐시로 시작한다."""
+    f = _brief_file()
+    if _DISK["file"] != f:
+        try:
+            doc = read_json(f)
+            entries = doc.get("entries") if doc.get("version") == BRIEF_CACHE_VERSION else None
+        except (OSError, ValueError, AttributeError):
+            entries = None
+        _DISK.update(file=f, entries=entries if isinstance(entries, dict) else {}, dirty=False)
+    return _DISK["entries"]
+
+
+def save_briefs():
+    """새로 읽은 요약이 있으면 캐시 파일에 쓴다. 캐시일 뿐이라 쓰지 못해도 넘어간다."""
+    if not _DISK["dirty"] or _DISK["file"] is None:
+        return
+    tmp = "%s.%d.tmp" % (_DISK["file"], os.getpid())  # 앱을 둘 켜도 서로의 임시 파일을 덮지 않게
+    entries = {p: v for p, v in _DISK["entries"].items() if os.path.isfile(p)}  # 지운 추출은 뺀다
+    try:
+        os.makedirs(os.path.dirname(tmp), exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"version": BRIEF_CACHE_VERSION, "entries": entries}, fh, ensure_ascii=False)
+        os.replace(tmp, _DISK["file"])
+        _DISK["dirty"] = False
+    except OSError:
+        pass
+
+
+BRIEF_KEYS = ("origin", "drawing_number", "title", "nodes", "relations", "unknowns")
+COUNT_KEYS = ("nodes", "relations", "unknowns")
+
+
+def _brief_ok(brief):
+    return (isinstance(brief, dict) and set(brief) == set(BRIEF_KEYS)
+            and all(brief[k] is None or type(brief[k]) is int for k in COUNT_KEYS)
+            and all(brief[k] is None or isinstance(brief[k], str) for k in ("origin", "drawing_number", "title")))
+
+
+def _read_brief(path):
+    """추출 JSON의 요약. 지금 읽지 못하면 OSError를 그대로 낸다(잠깐의 실패를 캐시에 남기지 않게)."""
+    try:
+        doc = read_json(path)
+        src, drawing, summary = doc.get("source") or {}, doc.get("drawing") or {}, doc.get("summary") or {}
+    except (ValueError, AttributeError):
+        src, drawing, summary = {}, {}, {}
+    if src.get("material_id"):
+        origin = None
+    elif paths.is_reference_rel(src.get("file")):
+        origin = "샘플 실행 데이터"
+    else:
+        origin = "등록 없이 추출"
+    return {"origin": origin, "drawing_number": drawing.get("drawing_number"),
+            "title": drawing.get("title"), "nodes": summary.get("nodes"),
+            "relations": summary.get("relations"), "unknowns": summary.get("unknowns")}
 
 
 def extraction_brief(path):
-    """추출 결과 요약 {"origin", "drawing_number", "title", "nodes", "relations", "unknowns"}. 파일 수정 시각으로 캐시한다.
+    """추출 결과 요약 {"origin", "drawing_number", "title", "nodes", "relations", "unknowns"}. 파일 바뀐 시각·크기로 캐시한다
+    (메모리, 그리고 작업 루트의 캐시 파일. 파일에 쓰는 것은 save_briefs).
     origin: None(① 등록 자료) · "샘플 실행 데이터"(참고자료 샘플) · "등록 없이 추출". 읽을 수 없으면 None."""
     try:
-        key = (path, os.path.getmtime(path))
+        st = os.stat(path)
     except OSError:
         return None
+    stat = [st.st_mtime_ns, st.st_size]
+    key = (path, *stat)
     if key not in _SOURCE_CACHE:
-        try:
-            doc = read_json(path)
-            src, drawing, summary = doc.get("source") or {}, doc.get("drawing") or {}, doc.get("summary") or {}
-        except (OSError, ValueError, AttributeError):
-            src, drawing, summary = {}, {}, {}
-        if src.get("material_id"):
-            origin = None
-        elif str(src.get("file") or "").replace("\\", "/").startswith("참고자료/"):
-            origin = "샘플 실행 데이터"
+        disk = _disk_briefs()
+        hit = disk.get(path)
+        if isinstance(hit, dict) and hit.get("stat") == stat and _brief_ok(hit.get("brief")):
+            brief = hit["brief"]
         else:
-            origin = "등록 없이 추출"
-        _SOURCE_CACHE[key] = {"origin": origin, "drawing_number": drawing.get("drawing_number"),
-                              "title": drawing.get("title"), "nodes": summary.get("nodes"),
-                              "relations": summary.get("relations"), "unknowns": summary.get("unknowns")}
+            try:
+                brief = _read_brief(path)
+            except OSError:
+                return None
+            disk[path] = {"stat": stat, "brief": brief}
+            _DISK["dirty"] = True
+        _SOURCE_CACHE[key] = brief
     return _SOURCE_CACHE[key]
 
 
@@ -228,7 +294,9 @@ def extraction_origin(path):
 
 def unregistered_extractions():
     """[(도면 이름, 출처 글자)] ① 등록 없이 출력/추출에 있는 도면(샘플 실행 등)."""
-    return [(e["name"], o) for e in list_extractions() for o in [extraction_origin(e["path"])] if o]
+    out = [(e["name"], o) for e in list_extractions() for o in [extraction_origin(e["path"])] if o]
+    save_briefs()
+    return out
 
 
 def extraction_path(name):
@@ -397,7 +465,7 @@ def extraction_name_for_graph_file(graph_file):
 
 # ---------------------------------------------------------------- ④ 구간·실행
 def list_regions():
-    root = paths.work_path("데이터", "구간")
+    root = paths.folder("구간")
     return sorted(glob.glob(os.path.join(root, "*.json")))
 
 

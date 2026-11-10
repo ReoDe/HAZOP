@@ -45,6 +45,7 @@ import traceback
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
+from hazop import paths  # noqa: E402
 
 LIMIT_W, LIMIT_H = 1366, 768  # 측정 때 창을 맞추는 크기(100% 화면)
 TASKBAR_H, TITLEBAR_H = 48, 31  # 논리 px. Windows 11 기본 작업 표시줄, 제목 표시줄(SM_CYCAPTION 23 + 크기 틀 4 + 여백 4, 96 DPI)
@@ -55,7 +56,7 @@ VISIT_CANDIDATES = ("deviation-p86-d09", "deviation-p86-d12")
 REVIEW_CANDIDATE = "deviation-p86-d12"
 REVIEW_KG_CANDIDATE = "deviation-p86-d09"
 TEXT_HEAD = 40
-OUT_DIR = os.path.join(REPO_ROOT, "출력", "디자인검사")
+OUT_DIR = os.path.join(paths.DEV_WORK_ROOT, "출력", "디자인검사")
 
 
 # ---------------------------------------------------------------- 위젯 측정(순수 함수, Qt 위젯만 받음)
@@ -207,9 +208,8 @@ class TempRoots:
         """샘플 구간 JSON과 고정 응답 분석 실행을 임시 작업 루트에 복사. 실행 폴더 경로."""
         from tests.run_fixture import fresh_run_dir
         src = fresh_run_dir()
-        os.makedirs(os.path.join(self.work, "데이터", "구간"), exist_ok=True)
-        shutil.copy(os.path.join(REPO_ROOT, "데이터", "구간", REGION + ".json"),
-                    os.path.join(self.work, "데이터", "구간"))
+        os.makedirs(paths.folder_in(self.work, "구간"), exist_ok=True)
+        shutil.copy(paths.folder("표본", "구간", REGION + ".json"), paths.folder_in(self.work, "구간"))
         run_dir = os.path.join(self.work, "출력", "분석", REGION, os.path.basename(src))
         if not os.path.isdir(run_dir):
             shutil.copytree(src, run_dir)
@@ -426,7 +426,7 @@ def _js_value(win, expr, timeout=10.0):
 def sample_drawing_dir():
     """샘플 도면(SNP-M-102) 폴더. 없으면 None."""
     import glob
-    found = [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*")) if "SNP-M-102" in p]
+    found = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*")) if "SNP-M-102" in p]
     return found[0] if found else None
 
 
@@ -843,6 +843,16 @@ CONTRAST_PAIRS += [
     ("toast-ink", "toast-bg", TEXT, "토스트 글자(U-07)"),
     ("toast-link", "toast-bg", TEXT, "토스트 실행 취소 링크(U-07)"),
     ("err-line", "card", GRAPHIC, "위험 동작 버튼 테두리(U-10)"),
+]
+# AI 연결 칩·상태 칩·해결 띠(디자인/AI연결-화면설계.md §10.4). warn-ink/warn-bg·err-ink/err-bg·ok/ok-bg는 위에 있다.
+# err-line/err-bg는 바탕만으로는 3:1을 맞출 수 없어(흰색이어도 3.08) 테두리 토큰 err-line을 진하게 했다(#d9776f → #cc665e)
+CONTRAST_PAIRS += [
+    ("ink-2", "surface-2", TEXT, "AI 연결 칩 글자(확인 안 함·확인 중·키 없음)"),
+    ("warn-line", "warn-bg", GRAPHIC, "AI 연결 칩 테두리(한도·로그인·미설치)"),
+    ("err-line", "err-bg", GRAPHIC, "AI 연결 칩 테두리(키 거부·연결 못 함)"),
+    ("line-strong", "surface-2", GRAPHIC, "AI 연결 칩 테두리(키 없음)·실행 중 잠금 띠"),
+    ("line-strong", "ai-hatch-a", GRAPHIC, "AI 연결 칩 점선 테두리(고정 응답 시험)"),
+    ("ai-ink", "ai-hatch-b", TEXT, "AI 연결 칩 글자(고정 응답, 빗금 진한 줄 위)"),
 ]
 # ③ 지식그래프 노드 점·강조 간선(옵시디언식, 2026-11-08). 기본 간선 kg-edge는 반투명 배경선이라 쌍에 넣지 않고,
 # 관계를 읽어야 할 때(마우스 올림·선택) 쓰는 kg-edge-hi를 검사한다.

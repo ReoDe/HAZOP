@@ -14,6 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from hazop import paths  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 from hazop.study import results as res  # noqa: E402
 from tests.test_project_graph import cont, sheet  # noqa: E402
@@ -55,8 +56,8 @@ class ResultsProjectUiTest(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="hazop-res-proj-")
         self._env = os.environ.get("HAZOP_WORK_ROOT")
         os.environ["HAZOP_WORK_ROOT"] = self.tmp
-        self.a = sheet("SNP-M-101", cont("C1", "TO SNP-M-102\nL-1"))
-        self.b = sheet("SNP-M-102", cont("C1", "FROM SNP-M-101\nL-1"))
+        self.a = sheet("SNP-M-101", cont("C1", "TO SNP-M-102\nL-1"), valve=True)
+        self.b = sheet("SNP-M-102", cont("C1", "FROM SNP-M-101\nL-1"), valve=True)
         for g in (self.a, self.b):
             d = os.path.join(self.tmp, "출력", "그래프", g["source"]["drawing_number"])
             os.makedirs(d)
@@ -150,7 +151,8 @@ class ResultsProjectUiTest(unittest.TestCase):
         self.assertEqual(scr.export_excel(path=out, scope="all"), out)
         self.assertEqual(app.toast_actions, ["열기", "폴더 열기"])
         ws = openpyxl.load_workbook(out)[study_xlsx.SHEETS[2]]
-        self.assertEqual(ws.cell(row=2, column=11).value, "5 불허")
+        head = [c.value for c in ws[1]]
+        self.assertEqual(ws.cell(row=2, column=head.index("위험도") + 1).value, "5 불허")
         self.assertEqual(ws.cell(row=2, column=2).value, "SNP-M-101, SNP-M-102")
 
     def test_old_results_wait_for_confirm_then_move_with_flags(self):
@@ -186,12 +188,60 @@ class ResultsProjectUiTest(unittest.TestCase):
         self.assertIn("범위", status.toolTip())
         with open(old_res_path, "rb") as fh:
             self.assertEqual(fh.read(), before, "옛 결과 파일은 그대로")
-        backups = os.listdir(os.path.join(self.tmp, "데이터", "백업"))
+        backups = os.listdir(paths.folder_in(self.tmp, "백업"))
         self.assertTrue(any(b.endswith("분석결과-이전") for b in backups), backups)
 
         _app, again = self.screen("SNP-M-101")
         self.assertTrue(again.banner.isHidden(), "두 번째에는 다시 옮기지 않음")
         self.assertEqual([e["status"] for c in again.results["cells"] for e in c["entries"]], ["approved"])
+
+    def test_reconfirmed_set_keeps_approved_entries(self):
+        """확정 해제 → 다시 확정해도 사람이 승인한 항목이 ⑤에서 사라지지 않는다(§4.6, D11)."""
+        ns = self.confirm_project_set()
+        r = res.empty_results(ns, res.load_deviations())
+        r["cells"][0].update(state="analyzed", entries=[
+            {"entry_id": "e1", "origin": "ai_draft", "status": "approved", "cause": "c"}])
+        res.save(r, ns["project_id"])
+        from hazop.app import project_ctx
+        pg = project_ctx.load("SNP-M-102").pg
+        sn.save(sn.confirm(sn.reopen(ns, at=AT), pg, "EJ", at="2026-11-10T00:00:00Z"))
+        _app, scr = self.screen()
+        self.assertEqual([e["status"] for c in scr.results["cells"] for e in c["entries"]], ["approved"])
+        self.assertIn("이전 확정본 결과를 옮김", scr.stale_chip.text())
+        saved = res.load(sn.load(pg))
+        self.assertFalse(res.is_stale(saved, sn.load(pg)), "옮긴 결과를 바로 저장해 다른 화면도 같은 결과를 읽음")
+        self.assertEqual([e["status"] for c in saved["cells"] for e in c["entries"]], ["approved"])
+
+    def test_screening_buckets_have_no_rows_and_low_nodes_come_last(self):
+        """⑤ 행렬·AI 일괄·Excel 범위는 스크리닝 제외 구간을 빼고, 낮음 구간은 맨 아래(S4, D6)."""
+        ns = self.confirm_project_set()
+        status = {n["node_id"]: n["screen"]["status"] for n in ns["nodes"]}
+        from hazop.app import project_ctx
+        pg = project_ctx.load("SNP-M-102").pg
+        keeps = [nid for nid, st in status.items() if st == "keep"]
+        bucket_like = sn.reopen(ns, at=AT)
+        bucket_like = sn.screen_override(bucket_like, keeps[0], "excluded", "검토 범위 밖", at=AT)
+        bucket_like = sn.screen_override(bucket_like, keeps[1], "low", "부속 배관", at=AT)
+        sn.save(sn.confirm(bucket_like, pg, "EJ", at="2026-11-10T00:00:00Z"))
+        _app, scr = self.screen()
+        rows = [scr._node_at(r) for r in range(scr.matrix.rowCount())]
+        self.assertNotIn(keeps[0], rows, "제외 구간은 행이 없음")
+        self.assertEqual(rows[-1], keeps[1], "낮음 구간은 맨 아래")
+        self.assertIn("스크리닝 제외 1개", scr.kpi.text())
+        self.assertNotIn(keeps[0], {u["node_id"] for u in scr._plan("all")}, "AI 일괄 범위에서 뺌")
+        self.assertIn(keeps[1], {u["node_id"] for u in scr._plan("all")}, "낮음은 AI 일괄 범위에 넣음")
+        path = scr.export_excel(os.path.join(self.tmp, "x.xlsx"), scope="all", reviewer="EJ")
+        import openpyxl
+        names = [c.value for c in openpyxl.load_workbook(path).worksheets[1]["A"]]
+        self.assertFalse(any(v and keeps[0] == v for v in names), "Excel 구간 목록에도 없음")
+        cover = {r[0].value: r[1].value for r in openpyxl.load_workbook(path).worksheets[0].iter_rows() if r[0].value}
+        self.assertEqual(cover.get("구간 수", len(rows)), len(rows), "표지 구간 수 = 내보낸 구간")
+        did = scr.deviations[0]["deviation_id"]
+        self.assertFalse(scr.open_cell(keeps[0], did), "제외 구간 칸은 열지 않고 안내만")
+        doc = scr.results
+        cell = next(c for c in doc["cells"] if (c["node_id"], c["deviation_id"]) == (keeps[0], did))
+        cell["ai_run"] = {"status": "failed", "error": "x"}
+        self.assertEqual(scr._plan("failed"), [], "제외 구간 실패 칸은 다시 실행 범위에 없음")
 
     def test_no_cell_open_hint(self):
         self.confirm_project_set()

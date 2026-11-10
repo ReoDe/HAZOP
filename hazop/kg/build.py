@@ -18,8 +18,6 @@ import os
 import re
 import shutil
 
-import networkx as nx
-
 from hazop.kg import claims
 from hazop.kg.inputs import SOURCE_COLUMNS, candidate_fields, normalize_tag, normalize_text, text_sha256
 from hazop.kg.schema import PID_ROOT, REGISTRY
@@ -57,6 +55,7 @@ def kg_version(knowledge, graph_refs):
     """정규화한 지식 입력(knowledge.json 전체: 노드·관계·입력 파일 sha256·ID) + 참조한 graph_version
     + 빌더 버전(networkx 버전 포함) + 타입 레지스트리 버전·해시의 해시. 형식은 graph_version과 같다.
     출력에 들어가는 값은 모두 이 해시나 graph_version에 반영되므로 kg_version이 같으면 두 결과 파일의 바이트도 같다."""
+    import networkx as nx
     canon = _canon({"knowledge": knowledge, "graph_refs": graph_refs})
     head = "%s|nx=%s|registry=%s:%s|" % (BUILDER_VERSION, nx.__version__, REGISTRY.version, REGISTRY.sha256)
     return "v-" + hashlib.sha256((head + canon).encode("utf-8")).hexdigest()[:12]
@@ -221,6 +220,7 @@ class _PidIndex:
 
 def build_kg(knowledge, graphs):
     """knowledge dict + P&ID graph dict 목록 -> knowledge_graph dict."""
+    import networkx as nx
     blockers, unknowns, review_items = [], [], []
 
     def block(rule, code, target, reason):

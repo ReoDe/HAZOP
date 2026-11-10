@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
 import analyze_kg  # noqa: E402
 import check_kg_algo  # noqa: E402
+from hazop import paths  # noqa: E402
 from hazop.analysis import run  # noqa: E402
 from hazop.graph.query import GraphQuery  # noqa: E402
 from hazop.kg import algo, build  # noqa: E402
@@ -220,7 +221,7 @@ class A1Test(unittest.TestCase):
         """A1′: focus_entities[0]에서 A1 탐색 = ④ 분석 실행(prepare_doc) 탐색, 전체 일치."""
         kg, graph, regions = inputs()
         region = regions[0][1]
-        files = {k: os.path.join(REPO_ROOT, v) for k, v in region["inputs"].items()}
+        files = {k: paths.resolve_rel(v, REPO_ROOT) for k, v in region["inputs"].items()}
         prepared = run.prepare(region, graph, _load(files["candidate_catalog"]), _load(files["applicability"]),
                                _load(files["patterns"]), _load(files["risk_criteria"]))
         self.assertEqual(prepared["blockers"], [])

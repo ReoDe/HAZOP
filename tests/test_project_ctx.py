@@ -9,6 +9,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from hazop import paths  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 from hazop.study import results as res  # noqa: E402
 from tests.test_project_graph import cont, sheet  # noqa: E402
@@ -34,6 +35,27 @@ class ProjectCtxTest(unittest.TestCase):
                 json.dump(g, fh)
         from hazop.app import project_ctx
         self.pc = project_ctx
+
+    def test_project_graph_is_reused_until_a_graph_file_changes(self):
+        first = self.pc.project_graph("P")
+        self.assertIs(self.pc.project_graph("P"), first, "입력이 같으면 다시 짓지 않음")
+        p = os.path.join(self.tmp, "출력", "그래프", "SNP-M-102", "graph.json")
+        g = dict(self.b, graph_version="v2")
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(g, fh)
+        os.utime(p, ns=(os.stat(p).st_atime_ns, os.stat(p).st_mtime_ns + 10 ** 9))
+        again = self.pc.project_graph("P")
+        self.assertIsNot(again, first, "도면 그래프 파일이 바뀌면 다시 짓는다")
+        self.assertIn("v2", [s["graph_version"] for s in again["sheets"]])
+
+    def test_view_is_shared_for_the_same_content_only(self):
+        ctx = self.pc.load("SNP-M-102")
+        ns, _ = ctx.load_set()
+        v = ctx.view(ns)
+        self.assertIs(ctx.view(json.loads(json.dumps(ns))), v, "내용이 같으면 같은 표기 사본")
+        renamed = json.loads(json.dumps(ns))
+        renamed["nodes"][0]["name"] = "다른 이름"
+        self.assertIsNot(ctx.view(renamed), v)
 
     def tearDown(self):
         if self._env is None:
@@ -78,10 +100,10 @@ class ProjectCtxTest(unittest.TestCase):
         self.assertIn("백업", ctx.notice)
         with open(old_path, "rb") as fh:
             self.assertEqual(fh.read(), before)
-        backups = os.listdir(os.path.join(self.tmp, "데이터", "백업"))
+        backups = os.listdir(paths.folder_in(self.tmp, "백업"))
         self.assertEqual(len(backups), 1)
-        self.assertTrue(os.path.isfile(os.path.join(self.tmp, "데이터", "백업", backups[0], "데이터", "검토구간", "P",
-                                                    "graph-SNP-M-101.json")))
+        self.assertTrue(os.path.isfile(paths.folder_in(self.tmp, "백업", backups[0], *paths.FOLDERS["검토구간"].rel,
+                                                    "P", "graph-SNP-M-101.json")))
         again, _ = self.pc.load("SNP-M-101").load_set()  # 두 번째는 저장본을 읽고 다시 옮기지 않음
         self.assertEqual(again, ns)
 

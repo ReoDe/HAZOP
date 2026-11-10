@@ -30,8 +30,8 @@ SAMPLE_GRAPH = "graph-SNP-M-102"
 
 
 def load_inputs():
-    pg = project.load(PROJECT, os.path.join(REPO_ROOT, "출력", "그래프"))
-    kg_root = os.path.join(REPO_ROOT, "출력", "지식그래프", "kg-%s" % PROJECT)
+    pg = project.load(PROJECT, os.path.join(paths.DEV_WORK_ROOT, "출력", "그래프"))
+    kg_root = os.path.join(paths.DEV_WORK_ROOT, "출력", "지식그래프", "kg-%s" % PROJECT)
     kg = build.load_outputs(kg_root)[1] if os.path.isfile(os.path.join(kg_root, build.POINTER_FILE)) else None
     return pg, kg
 
@@ -53,7 +53,7 @@ def first(res, rule, state):
 def persistence(pg, kg, failures):
     tmp = tempfile.mkdtemp(prefix="hazop-expect-")
     try:
-        path = os.path.join(tmp, *expect.STORE_DIR, "%s.json" % PROJECT)
+        path = os.path.join(tmp, *paths.FOLDERS["잠재후보"].rel, "%s.json" % PROJECT)
         res = expect.evaluate(pg, kg)
         plan = [("E01", "candidate_found", "confirm", {}),
                 ("E02", "candidate_found", "reject", {}),
@@ -104,7 +104,7 @@ def exclusion(pg, kg, failures):
     if kg is None:
         print("  지식그래프 없음 — V5 제외 확인 건너뜀")
         return
-    graphs = screen.load_graphs(os.path.join(REPO_ROOT, "출력", "그래프"))
+    graphs = screen.load_graphs(os.path.join(paths.DEV_WORK_ROOT, "출력", "그래프"))
     hit = next((g for _, g in graphs.values() if g["graph_id"] == SAMPLE_GRAPH), None)
     if hit is None:
         failures.append("%s 그래프 없음" % SAMPLE_GRAPH)
@@ -134,7 +134,7 @@ def main():
     persistence(pg, kg, failures)
     print("== 4. 계산 뷰 제외")
     exclusion(pg, kg, failures)
-    store = paths.work_path(*expect.STORE_DIR)
+    store = paths.folder("잠재후보")
     print("  실제 판단 폴더(읽지도 쓰지도 않음): %s" % store)
     print("== 5. unittest tests.test_kg_expect")
     outcome = unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromName("tests.test_kg_expect"))

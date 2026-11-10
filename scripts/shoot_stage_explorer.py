@@ -12,6 +12,7 @@ import tempfile
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+from hazop import paths  # noqa: E402
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing --log-level=3")
 if os.environ["QT_QPA_PLATFORM"] == "offscreen" and os.path.isdir(r"C:\Windows\Fonts"):
@@ -22,7 +23,7 @@ STAGES = ((0, "1-register"), (1, "2-extract"), (4, "3-graph"), (5, "4-study"), (
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO_ROOT, "출력", "스크린샷", "stage-explorer"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "stage-explorer"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-explorer-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")
@@ -31,7 +32,7 @@ def main():
     try:
         import shoot_results
         shoot_results.prepare(os.environ["HAZOP_WORK_ROOT"])
-        shutil.copytree(os.path.join(REPO_ROOT, "참고자료"), os.path.join(os.environ["HAZOP_WORK_ROOT"], "참고자료"))
+        shutil.copytree(paths.folder("참고"), paths.logical_reference_dir(os.environ["HAZOP_WORK_ROOT"]))
         from hazop.app import make_application
         from hazop.app.main_window import MainWindow
         from hazop.app.screenshots import settle, wait
@@ -39,6 +40,7 @@ def main():
         win = MainWindow(settings_path=os.path.join(tmp, "settings.json"), ask_reviewer=False)
         win.set_reviewer_name("검토자(예시)")
         win.api_keys.set(shoot_results.KEY, persist=False)
+        win.ai_prefs.choose("api")  # 가짜 API 클라이언트로 돌린다
         win.show()
         win.resize(*SIZES[0])
         win.set_drawing("SNP-M-102")

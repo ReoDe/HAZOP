@@ -17,6 +17,7 @@ import tempfile
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+from hazop import paths  # noqa: E402
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing --log-level=3")
 if os.environ["QT_QPA_PLATFORM"] == "offscreen" and os.path.isdir(r"C:\Windows\Fonts"):
@@ -53,7 +54,7 @@ class RefClient:
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO_ROOT, "출력", "스크린샷", "m5"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "m5"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-m5-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")
@@ -71,6 +72,7 @@ def main():
         win = MainWindow(settings_path=os.path.join(tmp, "settings.json"), ask_reviewer=False)
         win.set_reviewer_name("검토자(예시)")
         win.api_keys.set(KEY, persist=False)
+        win.ai_prefs.choose("api")  # 가짜 API 클라이언트로 돌린다
         win.show()
         node_id = shoot_results.drawing_node_ids()[0]
 

@@ -12,17 +12,18 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+from hazop import paths  # noqa: E402
 from hazop.extract import drawio, svg_align  # noqa: E402
 from hazop.viewer import build, check, sanitize  # noqa: E402
 
-SAMPLES = sorted(glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio")))
+SAMPLES = sorted(glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")))
 
 
 def extraction_with_svg(path):
     r = drawio.extract(path, repo_root=REPO_ROOT)
     svg = glob.glob(os.path.join(os.path.dirname(path), "*.drawio.svg"))[0]
     al = svg_align.align(svg, r)
-    al["svg_file"] = os.path.relpath(svg, REPO_ROOT).replace("\\", "/")
+    al["svg_file"] = paths.rel_or_abs(svg, REPO_ROOT)
     r["coordinate_system"]["svg_alignment"] = al
     with open(svg, encoding="utf-8") as fh:
         return r, fh.read()

@@ -19,7 +19,7 @@ from hazop.console import safe_console  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.kg import build, inputs  # noqa: E402
 
-DEFAULT_INPUT_ROOT = paths.work_path("데이터", "지식")
+DEFAULT_INPUT_ROOT = paths.folder("지식")
 DEFAULT_GRAPH_ROOT = paths.output_root("그래프")
 DEFAULT_OUT = paths.output_root("지식그래프")
 NODES_CSV = "knowledge_nodes.csv"
@@ -48,7 +48,7 @@ def build_dir(input_dir, project_id, graphs, out_root):
 def main(argv=None):
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("project_id", help="데이터/지식/ 아래 프로젝트 폴더 이름")
+    ap.add_argument("project_id", help="%s/ 아래 프로젝트 폴더 이름" % paths.folder_rel("지식"))
     ap.add_argument("--input-root", default=DEFAULT_INPUT_ROOT)
     ap.add_argument("--graph-root", default=DEFAULT_GRAPH_ROOT)
     ap.add_argument("--out-root", default=DEFAULT_OUT)

@@ -25,7 +25,7 @@ from hazop.console import safe_console  # noqa: E402
 from hazop.extract import report  # noqa: E402
 from hazop.extract.adapters import raster  # noqa: E402
 
-SAMPLE_GLOB = paths.resource_path("참고자료", "P&ID 도면 샘플", "*", "*.png")
+SAMPLE_GLOB = paths.folder("참고", "P&ID 도면 샘플", "*", "*.png")
 DEFAULT_OUT = paths.output_root("어댑터", "raster")
 
 

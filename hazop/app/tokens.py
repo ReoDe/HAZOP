@@ -27,7 +27,7 @@ COLORS = {
     "hl-cause": "#dc2626", "hl-path": "#ea580c", "hl-safeguard": "#c026d3",
     # 상태
     "ok": "#127238", "ok-bg": "#e2f3e8", "warn-bg": "#fdf0d2", "warn-ink": "#74430a", "warn-line": "#a8740d",
-    "err-bg": "#fbe7e6", "err-ink": "#a8201a", "err-line": "#d9776f",
+    "err-bg": "#fbe7e6", "err-ink": "#a8201a", "err-line": "#cc665e",  # err-line: 연결 칩 테두리 3:1(err-bg)
     # 위험도 〈표9〉 허용 구분 3단
     "risk-ok-bg": "#eef0f3", "risk-ok-ink": "#374151", "risk-ok-line": "#9ca3af",
     "risk-cond-bg": "#fde68a", "risk-cond-ink": "#78350f", "risk-cond-line": "#b36205",
@@ -167,6 +167,8 @@ QLabel#chip { border-radius: 3px; padding: 2px 8px; background: %(bg)s; color: %
 QLabel#chip[state="passed"] { background: %(ok-bg)s; color: %(ok)s; }
 QLabel#chip[state="blocked"] { background: %(err-bg)s; color: %(err-ink)s; }
 QLabel#chip[state="warn"] { background: %(warn-bg)s; color: %(warn-ink)s; }
+QLabel#chip[state="ai"] { background: %(ai-hatch-a)s; color: %(ai-ink)s; border: 1px dashed %(ai-ink)s; }
+QLabel#chip[state="human"] { background: %(human-line)s; color: %(on-fill)s; }
 QLabel#muted { color: %(muted)s; }
 QLabel#title { font-size: %(lg)spx; font-weight: 700; }
 QLabel#section { font-size: %(sm)spx; color: %(muted)s; font-weight: 700; }
@@ -193,6 +195,7 @@ QTabBar::tab:selected { color: %(ink)s; font-weight: 700; border-bottom-color: %
 QStatusBar { background: %(nav-bg)s; }
 QStatusBar::item { border: 0; }
 QStatusBar QLabel, QStatusBar QLabel#muted { color: %(nav-muted)s; font-size: %(sm)spx; }
+QToolButton#conn_chip { font-size: %(sm)spx; border: 0; background: transparent; }  /* 모양은 conn_widgets가 그림 */
 QGroupBox { background: %(card)s; border: 1px solid %(line)s; border-radius: 4px; margin-top: 12px; padding: 8px; }
 QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: %(ink)s; font-weight: 700; }
 QSplitter::handle { background: %(line)s; }

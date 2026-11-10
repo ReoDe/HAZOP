@@ -30,7 +30,7 @@ from hazop.graph import build  # noqa: E402
 from hazop.register import registry  # noqa: E402
 from tests.test_extract_drawio import compress  # noqa: E402
 
-SAMPLES = sorted(glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio")))
+SAMPLES = sorted(glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")))
 SAMPLE_101 = [p for p in SAMPLES if "SNP-M-101" in p][0]
 PDF_101 = glob.glob(os.path.join(os.path.dirname(SAMPLE_101), "*.pdf"))[0]
 HAS_PDFPLUMBER = importlib.util.find_spec("pdfplumber") is not None
@@ -521,13 +521,13 @@ class PdfRegisterTest(RegisterBase):
             self.assertTrue(info["html"] and os.path.isfile(info["html"]))
             rows = data.list_registrations()
             self.assertEqual([(e["extract_name"], e["extracted"], e["graphed"]) for e in rows], [(name, True, True)])
-        self.assertFalse(os.path.exists(os.path.join(REPO_ROOT, "출력", "추출", name)))
+        self.assertFalse(os.path.exists(os.path.join(paths.DEV_WORK_ROOT, "출력", "추출", name)))
 
     def test_multi_page_registration_extracts_every_page(self):
         import extract_pdf
         from hazop.app import data
         from tests.test_adapter import merged_pdf
-        pdf_102 = glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "SNP-M-102*", "*.pdf"))[0]
+        pdf_102 = glob.glob(paths.folder("참고", "P&ID 도면 샘플", "SNP-M-102*", "*.pdf"))[0]
         src = merged_pdf(os.path.join(self.tmp, "merged.pdf"), [PDF_101, pdf_102])
         work = os.path.join(self.tmp, "work")
         with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": work, "HAZOP_STORE_ROOT": self.store}):
@@ -599,7 +599,7 @@ class ReviewFixTest(RegisterBase):
         self.assertEqual(sorted(os.listdir(out_ex)), [mid + "-r1-p0", mid + "-r2-p0"])
         self.assertEqual(build_graph.main(["--extract-root", out_ex, "--out-root", out_g]), 0)
         self.assertEqual(sorted(os.listdir(out_g)), [mid + "-r1-p0", mid + "-r2-p0"])
-        entries = build_viewer.build.build_all(out_ex, out_v, REPO_ROOT, out_g, svg_roots=[self.store])
+        entries = build_viewer.build.build_all(out_ex, out_v, paths.work_root(), out_g, svg_roots=[self.store])
         self.assertEqual([e["file"] for e in entries], [mid + "-r1-p0.html", mid + "-r2-p0.html"])
         self.assertTrue(all(e["graph"] for e in entries))  # 뷰어가 같은 이름으로 그래프를 찾음
         for ver in (1, 2):
@@ -866,7 +866,7 @@ class DesignDocumentRegisterTest(RegisterBase):
             self.assertNotIn("kg_error", out)
             rows = data.list_registrations()
             self.assertEqual([(e["extracted"], e["graphed"]) for e in rows], [(True, None)])
-        self.assertFalse(os.path.exists(os.path.join(REPO_ROOT, "출력", "문서지식", name)))
+        self.assertFalse(os.path.exists(os.path.join(paths.DEV_WORK_ROOT, "출력", "문서지식", name)))
 
 
 if __name__ == "__main__":

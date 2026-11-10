@@ -34,6 +34,8 @@ M2_NEW_KINDS = {
     "flow_element": "inline_component", "blind_flange": "inline_component",
     "switch": "instrument", "recorder": "instrument", "nozzle": "piping_element",
 }
+# 기호 사전 연결(레지스트리 0.8.0, 기획서/PID-기호사전.md D4): APR1400 범례의 댐퍼·시험 연결
+SYMBOL_DICT_KINDS = {"damper": "valve", "test_connection": "inline_component"}
 OLD_NODE_PREFIX = {"document": "doc-", "doc_chunk": "chunk-", "requirement": "req-", "setpoint": "setpt-",
                    "condition": "cond-", "analysis_case": "case-"}
 OLD_LINK_TYPES = {
@@ -91,8 +93,15 @@ M5_TYPE = {k: {"layer": "st", "name": n, "col": c, "shape": "diamond"} for k, n,
     ("consequence", "결과", "kg-flag"), ("safeguard", "보호수단", "kg-pipe_segment"),
     ("recommendation", "권고", "kg-unclassified"))}
 M5_GRP = {"study": {"name": "검토 (covers·cause_at·affects·safeguard_by 등)", "w": 1}}
+# P3 ⑥ 초기사건 투영(초기사건 출력설계 §8 P3). 같은 검토 층·검토 묶음, 색은 기존 ③ 토큰
+M6_TYPE = {k: {"layer": "st", "name": n, "col": c, "shape": sh} for k, n, c, sh in (
+    ("ie_candidate", "초기사건 후보", "kg-flag-ink", "tri"), ("ie_group", "초기사건 그룹", "kg-edge-hi", "hex"),
+    ("top_event", "사건수목 표제 후보", "kg-pipe_segment", "square"), ("end_state", "최종상태 후보", "kg-flag", "capsule"),
+    ("basic_event", "기본사건 후보", "kg-valve", "circle"), ("reference_ie", "일반 초기사건 범주", "kg-requirement", "page"))}
 M5_GRP_OF = {k: "study" for k in ("covers", "in_node", "has_cause", "has_consequence", "cause_at", "affects",
-                                  "protected_by", "safeguard_by", "addresses", "raised_from", "cites")}
+                                  "protected_by", "safeguard_by", "addresses", "raised_from", "derived_from",
+                                  "member_of", "corresponds_to", "pivotal", "leads_to", "heading_from",
+                                  "basic_event_at", "cites")}
 # 화면 내부 키만 사전 §4 묶음 ID로 바뀜(화면에 보이지 않음)
 GROUP_RENAME = {"phys": "physical", "meas": "measurement", "sig": "signal", "men": "mention", "app": "apply",
                 "pos": "doc_location", "dep": "dependency"}
@@ -205,7 +214,8 @@ class RegistryEquivalenceTest(unittest.TestCase):
     def test_extract_rules(self):
         old_part = {k: v for k, v in rules.KIND_CATEGORY.items() if k in OLD_KIND_CATEGORY}
         self.assertEqual(old_part, dict(OLD_KIND_CATEGORY, **M2_MOVED))
-        self.assertEqual({k: v for k, v in rules.KIND_CATEGORY.items() if k not in OLD_KIND_CATEGORY}, M2_NEW_KINDS)
+        self.assertEqual({k: v for k, v in rules.KIND_CATEGORY.items() if k not in OLD_KIND_CATEGORY},
+                         dict(M2_NEW_KINDS, **SYMBOL_DICT_KINDS))
         self.assertEqual([k for k in rules.KIND_CATEGORY if k in OLD_KIND_CATEGORY and k not in M2_MOVED],
                          [k for k in OLD_KIND_CATEGORY if k not in M2_MOVED])
 
@@ -228,7 +238,8 @@ class RegistryEquivalenceTest(unittest.TestCase):
 
     def test_screen_tables_same_labels_colors_order(self):
         types, grp_of, grps = screen.legend_tables()
-        self.assertEqual(list(types.items()), list(OLD_TYPE.items()) + list(M4_TYPE.items()) + list(M5_TYPE.items()))
+        self.assertEqual(list(types.items()), list(OLD_TYPE.items()) + list(M4_TYPE.items()) + list(M5_TYPE.items())
+                         + list(M6_TYPE.items()))
         self.assertEqual(list(grps.items()), [(GROUP_RENAME[k], v) for k, v in OLD_GRP.items()] + list(M4_GRP.items())
                          + list(M5_GRP.items()))
         self.assertEqual(grp_of, dict({k: GROUP_RENAME[v] for k, v in OLD_GRP_OF.items()}, **M4_GRP_OF, **M5_GRP_OF))

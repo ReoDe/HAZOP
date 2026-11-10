@@ -12,8 +12,6 @@
   흐름 판정은 노드가 아니라 has_endpoint 엣지의 end(source/target) 기준이다.
 """
 
-import networkx as nx
-
 from .build import to_networkx
 
 MODES = ("physical", "all")
@@ -207,6 +205,7 @@ class GraphQuery:
 
     # ------------------------------------------------------------ 성분
     def components(self):
+        import networkx as nx
         g = to_networkx(self.graph, kinds={"has_endpoint"})
         comps = []
         for c in nx.connected_components(g):

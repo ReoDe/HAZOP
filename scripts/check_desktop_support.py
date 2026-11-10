@@ -34,7 +34,7 @@ from hazop.graph import build  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
 import json as _json  # noqa: E402
-with open(os.path.join(REPO_ROOT, "데이터", "구간", "region-SNP-M-102-pzr.json"), encoding="utf-8") as _fh:
+with open(paths.folder("표본", "구간", "region-SNP-M-102-pzr.json"), encoding="utf-8") as _fh:
     GRAPH_VERSION = _json.load(_fh)["graph_ref"]["graph_version"]  # 구간 파일이 고정한 그래프 버전(재고정 시 따라감)
 COUNTS = {"candidates": 44, "scenarios": 14, "risk_proposed": 6, "design_improvement_candidates": 11}
 PYTHON = sys.executable if os.path.isfile(sys.executable) else (shutil.which("python") or sys.executable)
@@ -71,10 +71,10 @@ def check_split_roots(graph, tmp, failures):
     region = _load(analyze.DEFAULT_REGION)
     for rel in list(region["inputs"].values()) + ["기획서/HAZOP기법지침.md"]:
         os.makedirs(os.path.dirname(os.path.join(res, rel)), exist_ok=True)
-        shutil.copyfile(os.path.join(REPO_ROOT, rel), os.path.join(res, rel))
-    os.makedirs(os.path.join(work, "데이터", "구간"))
-    shutil.copyfile(analyze.DEFAULT_REGION, os.path.join(work, "데이터", "구간", os.path.basename(analyze.DEFAULT_REGION)))
-    shutil.copytree(analyze.DEFAULT_FIXED, os.path.join(work, "데이터", "고정응답", os.path.basename(analyze.DEFAULT_FIXED)))
+        shutil.copyfile(paths.resolve_rel(rel, REPO_ROOT), os.path.join(res, rel))
+    os.makedirs(paths.folder_in(work, "구간"))
+    shutil.copyfile(analyze.DEFAULT_REGION, paths.folder_in(work, "구간", os.path.basename(analyze.DEFAULT_REGION)))
+    shutil.copytree(analyze.DEFAULT_FIXED, paths.folder_in(work, "고정응답", os.path.basename(analyze.DEFAULT_FIXED)))
     gpath = os.path.join(work, region["graph_ref"]["graph_file"])
     os.makedirs(os.path.dirname(gpath))
     shutil.copyfile(graph, gpath)

@@ -570,7 +570,7 @@ def merged_pdf(out, sources, blank=True):
     return out
 
 
-@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1: PATH python에서 실행)")
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음: 시험용 venv(~/.hazop/venv-py312)로 실행할 것. PATH의 python은 LibreOffice 것")
 class PdfViewerPathTest(unittest.TestCase):
     """② 뷰어용 배경 SVG의 data-cell-id, 정렬 측정, 분석 결과 재사용, 여러 쪽 추출."""
 
@@ -669,7 +669,7 @@ class SkipReportTest(unittest.TestCase):
         self.assertIn("[건너뜀] OpenCV 또는 rapidocr 없음", buf.getvalue())
 
 
-@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1: PATH python에서 실행)")
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음: 시험용 venv(~/.hazop/venv-py312)로 실행할 것. PATH의 python은 LibreOffice 것")
 class PdfVectorSampleTest(unittest.TestCase):
     def test_samples_contract_alignment_and_evaluation(self):
         samples = check_adapter.pdf_samples()

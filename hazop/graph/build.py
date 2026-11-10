@@ -20,8 +20,6 @@ import hashlib
 import json
 import math
 
-import networkx as nx
-
 from hazop.extract import isa
 
 SCHEMA_VERSION = "0.1"
@@ -82,6 +80,7 @@ def _graph_version(extraction):
 
 def build_graph(extraction, extraction_file=None):
     """extraction dict -> graph dict."""
+    import networkx as nx
     locs = {l["local_id"]: l for l in extraction["source_locations"]}
     dwg = extraction["drawing"].get("drawing_number")
     run_id = extraction["extraction_run_id"]
@@ -257,6 +256,7 @@ def entity_mapping_document(graph, extraction):
 
 def to_networkx(graph, kinds=None):
     """graph dict -> nx.MultiGraph (무방향, 엣지 순서는 방향 아님). kinds로 엣지 종류를 제한."""
+    import networkx as nx
     g = nx.MultiGraph()
     for n in graph["nodes"]:
         g.add_node(n["entity_id"], **{k: v for k, v in n.items() if k != "entity_id"})
@@ -267,6 +267,7 @@ def to_networkx(graph, kinds=None):
 
 
 def structure_report(graph):
+    import networkx as nx
     g_all = to_networkx(graph)
     g_phys = to_networkx(graph, kinds={"has_endpoint"})
     node_kinds, edge_kinds = {}, {}

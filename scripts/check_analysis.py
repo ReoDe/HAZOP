@@ -20,6 +20,7 @@ import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
+from hazop import paths  # noqa: E402
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
 from hazop.console import safe_console  # noqa: E402
@@ -118,9 +119,9 @@ def main():
         print("== 2. 데이터 파일 = 지침서")
         cat, app = catalog_md.rows_to_files(catalog_md.parse_guide_table(GUIDE))
         region = _load(analyze.DEFAULT_REGION)
-        on_disk = [_load(os.path.join(REPO_ROOT, region["inputs"][k])) for k in ("candidate_catalog", "applicability")]
+        on_disk = [_load(paths.resolve_rel(region["inputs"][k], REPO_ROOT)) for k in ("candidate_catalog", "applicability")]
         ok("카탈로그 44개·적용 판단 파일이 지침서 §5.3 표와 같음", [cat, app] == on_disk and len(cat["items"]) == 44, failures)
-        crit = _load(os.path.join(REPO_ROOT, region["inputs"]["risk_criteria"]))
+        crit = _load(paths.resolve_rel(region["inputs"]["risk_criteria"], REPO_ROOT))
         tables = catalog_md.parse_risk_tables(GUIDE)
         ok("위험도 기준표가 지침서 표5~표9와 같음", all(tables[k] == crit[k] for k in tables), failures)
         integ = integrity.check_catalog(on_disk[0], on_disk[1]) + integrity.check_criteria(crit)

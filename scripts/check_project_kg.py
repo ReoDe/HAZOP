@@ -151,7 +151,7 @@ def check_legacy(tmp):
     g = {"graph_id": "graph-L", "graph_version": "v1", "project_id": None, "nodes": [], "edges": []}
     legacy = os.path.join(sn.store_dir(), project.LEGACY_PROJECT_DIR, "graph-L.json")
     os.makedirs(os.path.dirname(legacy), exist_ok=True)
-    doc = {"kind": sn.KIND, "graph_id": "graph-L", "status": "confirmed", "nodes": []}
+    doc = {"kind": sn.KIND, "graph_id": "graph-L", "status": "confirmed", "nodes": [], "history": []}  # 저장본에는 늘 history가 있다
     with open(legacy, "w", encoding="utf-8") as fh:
         json.dump(doc, fh)
     if sn.load(g) != doc:

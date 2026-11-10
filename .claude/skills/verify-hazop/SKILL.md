@@ -15,15 +15,17 @@ One command prepares a temp work root, launches the app, runs the scenarios, wri
 %USERPROFILE%\.hazop\venv-py312\Scripts\python.exe scripts/check_user_scenarios.py --out <dir> [--only S1,S3] [--keep-temp]
 ```
 
-- Preparation runs offscreen in a subprocess (`--_prepare`): copies `출력/추출|그래프/SNP-M-102`, `출력/지식그래프`, `참고자료/`, confirms study nodes, fills ⑤ with the fake AI client from `scripts/shoot_results.py`. No network.
+- Preparation runs offscreen in a subprocess (`--_prepare`): copies `출력/추출|그래프/SNP-M-102`, `출력/지식그래프`, the reference samples (`paths.folder("참고")`, copied to the logical `참고자료/` path), confirms study nodes, fills ⑤ with the fake AI client from `scripts/shoot_results.py`. No network.
 - The app under test is `check_user_scenarios.py --_app <settings>`: the same `MainWindow` as `run_app.py` with ⑤'s AI client swapped for a slow fake (`AI_DELAY` seconds per call). Never point a scenario at the real API.
+- S15 switches the AI connection to Claude subscription, runs ⑤ through the fake CLI (`tests/fake_claude_flow.py`, injected only inside `--_app`), cancels mid-run and closes the window with "기다렸다 닫기". It closes the app, so it runs last.
 - Launch sets `HAZOP_WORK_ROOT`, `HAZOP_STORE_ROOT` (temp), `QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9339`, `--settings <temp>/settings.json` with a reviewer name (so no startup dialog).
 - Ready means the UIA window `HAZOP 분석 도구` (class `MainWindow`) exists for the launcher pid or its child. The venv `python.exe` spawns the real interpreter as a child, so never match windows by the launcher pid alone.
 
 ## Doctor
 
 - `git status --short`. Other sessions edit this folder. If `hazop/` is mid-edit and does not import, test a commit in a detached worktree instead (see the doc).
-- Is anyone else driving the desktop? Look for other `run_app.py` processes: `Get-CimInstance Win32_Process -Filter "Name like 'python%'" | ? CommandLine -like '*run_app.py*'`. If another agent's instance is open, do not run. Inputs go to the foreground window.
+- Is anyone else driving the desktop? Run `scripts/desktop_lease.py status`. `check_user_scenarios.py` takes the machine-wide lease itself (`%USERPROFILE%\.hazop\desktop.lock`, outside the Claude app's MSIX redirection of `%LOCALAPPDATA%`) and refuses with rc=2 while another live process holds it. Any ad-hoc driver script (one-off `ie_drive.py`-style scripts included) must run as `scripts/desktop_lease.py run --purpose "<what>" -- <command>` (a wrapped `check_user_scenarios.py` inherits the outer lease). Set `HAZOP_OWNER=<session name>` so others can see who holds it. Never hand the desktop over by message. Also look for stray `run_app.py`/`--_app` processes: `Get-CimInstance Win32_Process -Filter "Name like 'python%'" | ? CommandLine -match 'run_app.py|--_app'`. If another agent's instance is open, do not run. Inputs go to the foreground window.
+- The Claude desktop window can take the foreground mid-run (notifications, a new message). Keys then land in Claude's prompt box. Before a run, ask the user to leave the machine alone, and keep `--focus-wait` so `_guard` waits for a click instead of typing into another window.
 - Port 9339 free (the script refuses otherwise).
 
 ## Drive
@@ -36,7 +38,7 @@ One command prepares a temp work root, launches the app, runs the scenarios, wri
 
 ## Evidence
 
-`<out>/report.html` (scenario table, defects by severity with repro steps and screenshot, screen audit, KLM sources), `<out>/results.json`, `<out>/shots/`. These survive cleanup. A defect from a failed `expect` is a claim about the app only after you check its screenshot. Harness misses look the same.
+`<out>/report.html` (scenario table, defects by severity with repro steps and screenshot, screen audit, KLM sources), `<out>/results.json`, `<out>/shots/`. These survive cleanup. A defect from a failed `expect` is a claim about the app only after you check its screenshot. Harness misses look the same. A step that ran while the foreground window was not the app (for example "맨 앞 창: Claude", or a key that reached an `Edit '프롬프트'` control) is a harness miss: rerun it and never file it as an app defect. On 2026-11-09 a Ctrl+1 that went to Claude's prompt box was filed as "① '파일 선택…' 버튼이 없음".
 
 ## Cleanup
 

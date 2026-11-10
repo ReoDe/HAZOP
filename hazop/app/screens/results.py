@@ -4,51 +4,61 @@
 (ai_cells, 작업 스레드는 ai_runner) 사람이 항목을 수정·승인·기각한다. 결과는 바뀔 때마다 results.save로 저장하고
 화면을 다시 열면 results.load로 읽는다(확정 구간이 바뀐 저장본은 쓰지 않고 빈 결과로 시작).
 AI가 쓴 항목은 승인 전까지 언제나 'AI 초안'으로 표시한다(results.is_ai_draft).
+워크시트 아래 '초기사건 판정' 줄은 고른 항목의 ie_hint를 칩으로 보이고(AI 값은 점선 칩, 사람이 정한 값은 채운 칩),
+항목 승인과 따로 확정한다(results.set_ie_hint, 기획서/초기사건-출력설계.md §5.3).
 """
 
 import os
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QCoreApplication, QSize, QStandardPaths, Qt, QTimer, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-                               QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
+from PySide6.QtCore import QEvent, QSize, QStandardPaths, Qt, QTimer, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+                               QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
                                QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
-from hazop.app import data, project_ctx, tokens
-from hazop.app.ai_runner import AiRunner
-from hazop.app.screens.results_paint import CELL_ROLE, DRAFT_ROLE, CellDelegate, GroupHeader, SheetDelegate
+from hazop.app import conn_view, data, project_ctx, tokens
+from hazop.app.ai_runner import AiRunner, RunMachine
+from hazop.app.conn_widgets import NoticeBand, ResolveBand
+from hazop.app.screens.results_matrix import MatrixModel, MatrixView, empty_cell_label
+from hazop.app.screens.results_paint import DRAFT_ROLE, CellDelegate, GroupHeader, SheetDelegate
 from hazop.app.screens.study import seg_icon
+from hazop.app.settings_dialog import ACTION_HELP, ask_terms
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text, plain_label
 from hazop.export import study_xlsx
 from hazop.graph import project
-from hazop.study import ai_cells, nodes, refs, span
+from hazop.study import ai_cells, claude_cli, claude_http, node_review, nodes, providers, refs, remap, span
 from hazop.study import results as res
-from hazop.study import claude_http
-from hazop.study.claude_http import ClaudeHttpClient
 
 AI_NOTE = "AI 결과는 모두 초안 · 사람이 수정·승인·기각"
 STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각"}
 BAND_LABELS = {"ok": "수용", "cond": "조건부 수용", "deny": "불허"}  # tokens.risk_band 구분
-SHEET_COLUMNS = ("원인", "결과", "보호수단", "권고", "위험도", "AI 근거", "상태")
+SHEET_COLUMNS = ("원인", "결과(보호수단 실패 가정)", "보호수단", "권고", "위험도", "AI 근거", "상태")
+CONSEQUENCE_TIP = ("비완화 결과: 보호수단이 하나도 작동하지 않는다고 보고 쓴 결과입니다. "
+                   "보호수단이 막아 주는 결과('영향 없음', '경보 후 회복')는 여기에 쓰지 않습니다.")
 COL_RISK, COL_BASIS, COL_STATUS = 4, 5, 6
 CELL_W, ROW_H, ROW_HEAD_W = 54, 30, 210  # U-20: 1366에서 편차 열 약 11개가 보이게 칸 한 줄
 RISK_KEYS = ("칸 숫자 = 최고 위험도 · 미N = 미검토 시나리오 · – 분석 전 · 없음 = AI 초안(해당 없음·시나리오 없음) · "
-             "! 실패 = AI 실행 실패(위험도 아님)")
-NAV_KEYS = "←↑↓→ 칸 이동 · Enter 열기 · J 다음 미검토 · 워크시트 A 승인 · R 기각 · E 수정 · Ctrl+Z 실행 취소"
+             "! 실패 = AI 실행 실패(위험도 아님) · 한도로 멈춤 = 구독 한도에 닿아 호출하지 못한 칸(다시 실행)")
+CANCEL_TIP = "남은 호출을 멈춤(진행 중인 호출은 끝까지 받아 반영)"
+CANCEL_NOW = "바로 끊기"
+CANCEL_NOW_TIP = "진행 중인 호출도 바로 끊습니다(그 호출의 결과는 받지 않음)"
+NAV_KEYS = "←↑↓→ 칸 이동 · Enter 열기 · J 다음 미검토 · 워크시트 A 승인 · R 기각 · E 수정 · I 초기사건 판정 · Ctrl+Z 실행 취소"
 EDIT_TEXT_FIELDS = (("cause", "원인"), ("consequence", "결과"), ("recommendation", "권고"))
 # 옛 도면별 결과에서 옮긴 항목 표시(project_ctx.migrate_results). 사람 상태는 그대로 두고 다시 보게만 한다.
 ENTRY_FLAGS = (("scope_changed", "범위 바뀜 · 다시 확인", "옛 도면별 구간과 범위가 달라진 구간으로 옮긴 항목"),
                ("source_stale", "옛 결과 · 다시 확인", "옛 확정본과 이미 맞지 않던 옛 결과에서 옮긴 항목"))
-NEED_ROW = {"approved": "승인할", "rejected": "기각할", "edit": "수정할"}
+NEED_ROW = {"approved": "승인할", "rejected": "기각할", "edit": "수정할", "ie": "초기사건을 판정할"}
 
 
-def design_intent(node):
+def design_intent(node, review=None):
     """구간 JSON(데이터/구간) 중 이 구간의 구성요소(프로젝트 ID)를 모두 포함하는 것의 설계 의도.
     (글, 출처 설명) 또는 None. 구간 JSON은 도면 하나 기준이라 구성요소를 그 도면의 프로젝트 ID로 바꿔 비교한다.
-    상위 구간의 설계 의도이므로 화면에 출처와 지식 상태를 함께 적는다."""
+    상위 구간의 설계 의도이므로 화면에 출처와 지식 상태를 함께 적는다.
+    구간 JSON에 없으면 ④ AI 구간 검토에서 사람이 받아들인 설계 의도 초안(review = node_review 묶음)을 쓴다."""
     members = set(node["members"])
     for path in data.list_regions():
         try:
@@ -63,7 +73,8 @@ def design_intent(node):
         if members and members <= scope and intent.get("text"):
             return intent["text"], "상위 구간 %s · 지식 상태 %s" % (
                 region.get("name") or os.path.basename(path), intent.get("knowledge_status") or "-")
-    return None
+    drafted = node_review.accepted_intent(review, node) if review else None
+    return (drafted, "AI 초안 · ④ AI 구간 검토에서 사람이 받아들임") if drafted else None
 
 
 def risk_text(risk):
@@ -84,11 +95,6 @@ def clock(seconds):
 
 def usage_diff(now, base):
     return {k: now[k] - base.get(k, 0) for k in now}
-
-
-def usage_text(total):
-    inp = total["input_tokens"] + total["cache_read_input_tokens"] + total["cache_creation_input_tokens"]
-    return "입력 {:,} · 출력 {:,} 토큰 · 추정 ${:.2f}".format(inp, total["output_tokens"], total["cost_usd"])
 
 
 class RefPicker(QWidget):
@@ -159,7 +165,7 @@ class EntryDialog(QDialog):
     changed()는 바뀐 필드만 돌려준다. ref_ctx가 없으면(그래프 없음) 참조 고르기 칸을 숨기고 지금 참조는 그대로 둔다.
     ref_ctx: {"choices": [(안정 참조, 표시 글)], "label": 참조 -> 표시 글, "expectations": [(잠재 후보 ID, 표시 글)]}."""
 
-    SG_COLUMNS = ("보호수단", "역할", "구현 대상")
+    SG_COLUMNS = ("보호수단", "역할", "작동 방식", "구현 대상")
 
     def __init__(self, entry, parent=None, ref_ctx=None):
         super().__init__(parent)
@@ -178,8 +184,10 @@ class EntryDialog(QDialog):
             ed = QPlainTextEdit(entry.get(key) or "")
             ed.setFixedHeight(60)
             ed.setAccessibleName(label)
+            if key == "consequence":
+                ed.setToolTip(CONSEQUENCE_TIP)
             self.texts[key] = ed
-            lay.addRow(label, ed)
+            lay.addRow("결과\n(보호수단 실패 가정)" if key == "consequence" else label, ed)
         # 줄 순서로 원래 보호수단과 짝짓는다. 같은 문장의 보호수단이 둘일 수 있어 문장을 열쇠로 쓰면 하나로 합쳐진다
         raws = [s for s in entry.get("safeguards") or [] if isinstance(s, (str, dict))]
         self.sg_orig = list(zip(raws, refs.safeguard_items({"safeguards": raws})))
@@ -188,13 +196,13 @@ class EntryDialog(QDialog):
         self.safeguards.setAccessibleName("보호수단")
         lay.insertRow(2, "보호수단\n(한 줄에 하나)", self.safeguards)
         self.sg_table = QTableWidget(0, len(self.SG_COLUMNS))
-        self.sg_table.setAccessibleName("보호수단 역할·구현 대상")
+        self.sg_table.setAccessibleName("보호수단 역할·작동 방식·구현 대상")
         self.sg_table.setHorizontalHeaderLabels(list(self.SG_COLUMNS))
         self.sg_table.verticalHeader().hide()
         self.sg_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.sg_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.sg_table.setFixedHeight(96)
-        lay.insertRow(3, "역할·구현 대상", self.sg_table)
+        lay.insertRow(3, "역할·작동·대상", self.sg_table)
         self.safeguards.textChanged.connect(self._sync_safeguards)
         self._sync_safeguards()
         self.sev = self._combo(res.SEVERITIES, entry.get("severity"))
@@ -203,6 +211,18 @@ class EntryDialog(QDialog):
         self.freq.setAccessibleName("발생빈도")
         lay.addRow("강도(1–4)", self.sev)
         lay.addRow("발생빈도(1–3)", self.freq)
+        self.cause_kind = QComboBox()
+        self.cause_kind.setAccessibleName("원인 유형")
+        self.cause_kind.addItem(res.UNKNOWN_LABEL, None)
+        for key, name in res.CAUSE_KINDS.items():
+            self.cause_kind.addItem(name, key)
+        self.cause_kind.setCurrentIndex(max(self.cause_kind.findData(entry.get("cause_kind")), 0))
+        lay.insertRow(1, "원인 유형", self.cause_kind)
+        self.basis = QCheckBox("보호수단이 모두 실패했다고 보고 쓴 결과(비완화)")
+        self.basis.setAccessibleName("비완화 결과 확인")
+        self.basis.setToolTip(CONSEQUENCE_TIP)
+        self.basis.setChecked(entry.get("consequence_basis") == "unmitigated")
+        lay.insertRow(3, "결과 기준", self.basis)
         self.pickers = {}
         if ref_ctx is not None:
             right = QFormLayout()
@@ -245,8 +265,8 @@ class EntryDialog(QDialog):
         return out
 
     def _sg_state(self):
-        """표의 지금 상태 [(역할, 참조 목록)] (줄 순서)."""
-        return [(self.sg_table.cellWidget(r, 1).currentData(), self.sg_table.cellWidget(r, 2).currentData())
+        """표의 지금 상태 [(역할, 작동 방식, 참조 목록)] (줄 순서)."""
+        return [tuple(self.sg_table.cellWidget(r, c).currentData() for c in (1, 2, 3))
                 for r in range(self.sg_table.rowCount())]
 
     def _sg_lines(self):
@@ -260,12 +280,13 @@ class EntryDialog(QDialog):
         t.setRowCount(len(lines))
         for r, text in enumerate(lines):
             if r < len(state):
-                role, targets = state[r]
+                role, actuation, targets = state[r]
             elif r < len(self.sg_orig):
                 old = self.sg_orig[r][1]
-                role, targets = old["role"], [x.get("ref") for x in old["refs"] if x.get("ref")]
+                role, actuation = old["role"], old["actuation"]
+                targets = [x.get("ref") for x in old["refs"] if x.get("ref")]
             else:
-                role, targets = "unknown", []
+                role, actuation, targets = "unknown", "unknown", []
             it = QTableWidgetItem(text)
             it.setToolTip(text)
             t.setItem(r, 0, it)
@@ -275,31 +296,42 @@ class EntryDialog(QDialog):
                 rc.addItem(name, key)
             rc.setCurrentIndex(max(rc.findData(role), 0))
             t.setCellWidget(r, 1, rc)
+            ac = QComboBox()
+            ac.setAccessibleName("작동 방식 %d" % (r + 1))
+            for key, name in refs.ACTUATIONS.items():
+                ac.addItem(name, key)
+            ac.setCurrentIndex(max(ac.findData(actuation), 0))
+            t.setCellWidget(r, 2, ac)
             tc = QComboBox()
             tc.setAccessibleName("구현 대상 %d" % (r + 1))
             for name, refs_ in self._target_choices(targets):
                 tc.addItem(name, refs_)
             tc.setCurrentIndex(1 if targets else 0)
-            t.setCellWidget(r, 2, tc)
+            t.setCellWidget(r, 3, tc)
 
     def _safeguards_value(self):
-        """줄마다 같은 순서의 원래 보호수단과 비교한다. 문자열 줄은 역할 미정·구현 대상 없음이면 문자열(옛 형식) 그대로.
-        객체 줄은 문장·역할·구현 대상이 모두 같으면 원래 값(AI 초안 표시 origin 포함) 그대로 두고, 무엇이든 바뀌면
-        나머지 키·참조(대상 없는 참조 포함)를 이어받은 채 그 줄만 origin human이 된다."""
+        """줄마다 같은 순서의 원래 보호수단과 비교한다. 문자열 줄은 역할·작동 방식 미정·구현 대상 없음이면 문자열(옛 형식)
+        그대로. 객체 줄은 문장·역할·작동 방식·구현 대상이 모두 같으면 원래 값(AI 초안 표시 origin 포함) 그대로 두고,
+        무엇이든 바뀌면 나머지 키·참조(대상 없는 참조 포함)를 이어받은 채 그 줄만 origin human이 된다."""
         state = self._sg_state()
         out = []
         for r, text in enumerate(self._sg_lines()):
-            role, targets = state[r] if r < len(state) else ("unknown", [])
+            role, actuation, targets = state[r] if r < len(state) else ("unknown", "unknown", [])
             raw = self.sg_orig[r][0] if r < len(self.sg_orig) else None
             if not isinstance(raw, dict):
-                out.append(text if role == "unknown" and not targets else
-                           {"text": text, "role": role, "refs": _keep_refs(targets, None), "ipl": None, "origin": "human"})
+                out.append(text if role == "unknown" and actuation == "unknown" and not targets else dict(
+                    {"text": text, "role": role, "refs": _keep_refs(targets, None), "ipl": None, "origin": "human"},
+                    **({"actuation": actuation} if actuation != "unknown" else {})))
                 continue
             if (raw.get("text") or "").strip() == text and raw.get("role", "unknown") == role and \
+                    raw.get("actuation", "unknown") == actuation and \
                     [x.get("ref") for x in raw.get("refs") or [] if isinstance(x, dict)] == targets:
                 out.append(raw)
                 continue
-            out.append(dict(raw, text=text, role=role, refs=_keep_refs(targets, raw.get("refs")), origin="human"))
+            new = dict(raw, text=text, role=role, refs=_keep_refs(targets, raw.get("refs")), origin="human")
+            if actuation != "unknown" or "actuation" in raw:  # 옛 객체에 미확인 값을 새로 쓰지 않는다
+                new["actuation"] = actuation
+            out.append(new)
         return out
 
     @staticmethod
@@ -316,6 +348,8 @@ class EntryDialog(QDialog):
         out["safeguards"] = self._safeguards_value()
         out["severity"] = self.sev.currentData()
         out["frequency"] = self.freq.currentData()
+        out["cause_kind"] = self.cause_kind.currentData()
+        out["consequence_basis"] = "unmitigated" if self.basis.isChecked() else None
         for key, _title in refs.REF_FIELDS:
             if key in self.pickers:
                 out[key] = _keep_refs(self.pickers[key].checked(), self.entry.get(key),
@@ -332,9 +366,80 @@ class EntryDialog(QDialog):
             if k in ("cause_refs", "consequence_refs", "expectation_refs"):
                 if (old or []) != v:
                     out[k] = v
+            elif k in ("cause_kind", "consequence_basis"):
+                if old != v:
+                    out[k] = v
             elif old != v:
                 out[k] = v
         return out
+
+
+class IeHintDialog(QDialog):
+    """초기사건 판정(ie_hint) 정하기: 후보·제외·보류, 정상운전 교란, 안전기능 도전, 일반 범주, 안전기능, 이유.
+    확인하면 사람이 정한 판정이 되고 항목 상태(승인 등)는 바뀌지 않는다."""
+
+    def __init__(self, entry, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("초기사건 판정")
+        self.setMinimumWidth(520)
+        h = entry.get("ie_hint") if isinstance(entry.get("ie_hint"), dict) else {}
+        lay = QFormLayout(self)
+        self.combos = {}
+        for key, title, values, default in (("candidate", "초기사건 후보", res.IE_CANDIDATES, "undecided"),
+                                            ("disturbs", "정상운전 교란", res.IE_ANSWERS, "unknown"),
+                                            ("challenges", "안전기능 도전", res.IE_ANSWERS, "unknown")):
+            cb = QComboBox()
+            cb.setAccessibleName(title)
+            for k, name in values.items():
+                cb.addItem(name, k)
+            cb.setCurrentIndex(max(cb.findData(h.get(key, default)), 0))
+            self.combos[key] = cb
+            lay.addRow(title, cb)
+        self.category = QComboBox()
+        self.category.setAccessibleName("일반 범주")
+        self.category.addItem(res.UNCLASSIFIED_LABEL, None)
+        for c in res.ie_categories():
+            self.category.addItem(res.ie_category_label(c["code"]), c["code"])
+        self.category.setCurrentIndex(max(self.category.findData(h.get("category")), 0))
+        lay.addRow("일반 범주", self.category)
+        self.functions = QLineEdit(", ".join(h.get("safety_functions") or []))
+        self.functions.setAccessibleName("도전받는 안전기능")
+        self.functions.setPlaceholderText("쉼표로 나눔. 예: 노심 냉각, 원자로냉각재 재고 유지")
+        lay.addRow("안전기능", self.functions)
+        self.reason = QPlainTextEdit(h.get("reason") or "")
+        self.reason.setAccessibleName("판정 이유")
+        self.reason.setFixedHeight(60)
+        lay.addRow("판정 이유", self.reason)
+        note = QLabel("항목 승인과 따로 확정합니다. 확인하면 사람이 정한 판정으로 저장되고 항목 상태는 그대로입니다. "
+                      "맞는 범주가 없으면 일반 과도사건(TRANS)으로 넣지 말고 미분류로 두세요.")
+        note.setObjectName("muted")
+        note.setWordWrap(True)
+        lay.addRow(note)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.button(QDialogButtonBox.Ok).setText("확정")
+        bb.button(QDialogButtonBox.Cancel).setText("취소")
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        lay.addRow(bb)
+
+    def hint(self):
+        out = {k: cb.currentData() for k, cb in self.combos.items()}
+        out.update(category=self.category.currentData(), reason=self.reason.toPlainText(),
+                   safety_functions=[x.strip() for x in self.functions.text().split(",") if x.strip()])
+        return out
+
+
+def ie_chips(entry):
+    """초기사건 판정 줄 칩 [(글, 상태)]. 상태 ai = AI 초안(점선), human = 사람이 정함(채움)."""
+    h = entry.get("ie_hint") if isinstance(entry.get("ie_hint"), dict) else None
+    if h is None:
+        return [("미판정", "")]
+    st = "human" if h.get("origin") == "human" else "ai"
+    return [(res.IE_CANDIDATES.get(h.get("candidate"), "보류"), st),
+            ("교란 %s · 도전 %s" % (res.IE_ANSWERS.get(h.get("disturbs"), "모름"),
+                                 res.IE_ANSWERS.get(h.get("challenges"), "모름")), st),
+            (res.ie_category_label(h.get("category")), st),
+            ("사람 확정" if st == "human" else "AI 초안", "" if st == "human" else "warn")]
 
 
 class ExportDialog(QDialog):
@@ -390,17 +495,172 @@ class ExportDialog(QDialog):
         super().accept()
 
 
-def empty_cell_label(run):
-    """항목 없는 분석 칸의 문구. AI가 '해당 없음'이라 한 칸과, 해당한다면서 시나리오를 내지 않은 칸을 구분한다."""
-    if run.get("applicable") is False:
-        return "해당 없음(AI 판단)"
-    if run.get("applicable") is True:
-        return "시나리오 없음(AI)"
-    return "항목 없음"
+RESUME_KINDS = ("limit_reached", "overage", "cancelled", "not_ready", "auth_mismatch")  # 기술 설계 §11 3번 (가)
+RESUME_API_NOTE = "이번 남은 호출만 API 키로 돌립니다. 끝나면 Claude 구독으로 돌아갑니다."
+FIXED_NOTE = "시험 결과는 실제 결과와 따로 시험용 파일에 저장합니다."
+OVERAGE_TEXT = ("구독 한도가 거의 찼고 초과 사용(유료)이 켜져 있습니다. 한도를 넘은 호출에는 요금이 붙을 수 있습니다. "
+                "초과 사용을 허용하지 않았으므로 한도를 넘는 순간 남은 호출을 멈춥니다. 시작할까요?")
+
+
+class RunConfirmDialog(QDialog):
+    """AI 실행 확인(화면 설계 §6): 폭 460, 칸 이름 왼쪽·값 오른쪽. 시작(&S)이 기본 단추이고 Esc는 취소.
+    ask() -> 'start' · 'change'('바꾸기…') · None."""
+
+    CHANGE = 2
+
+    def __init__(self, method, lead, rows, note="", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("시험 실행" if method == "fixed" else "AI 분석 시작")
+        self.setFixedWidth(460)
+        self.setMaximumHeight(480)
+        v = QVBoxLayout(self)
+        v.setSpacing(8)
+        if note:
+            self.note = QLabel(note)
+            self.note.setWordWrap(True)
+            self.note.setStyleSheet("QLabel { background: %s; color: %s; border: 1px solid %s; border-radius: 3px; "
+                                    "padding: 4px 6px; }" % (tokens.c("ui-weak"), tokens.c("ui-ink"), tokens.c("ui")))
+            v.addWidget(self.note)
+        self.lead = QLabel(lead)
+        self.lead.setWordWrap(True)
+        self.lead.setStyleSheet("font-weight: 700")
+        v.addWidget(self.lead)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(6)
+        grid.setColumnStretch(1, 1)
+        self.values = {}
+        for r, (name, value, say) in enumerate(rows):
+            lab = QLabel(name)
+            lab.setObjectName("muted")
+            grid.addWidget(lab, r, 0, Qt.AlignTop)
+            val = QLabel(value)
+            val.setWordWrap(True)
+            val.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            val.setAccessibleName(say)
+            if name == "비용":
+                val.setStyleSheet("font-weight: 700")
+            if name == "연결":
+                box = QHBoxLayout()
+                box.setSpacing(6)
+                box.addWidget(val, 1)
+                self.change_btn = QPushButton("바꾸기…")
+                self.change_btn.setAutoDefault(False)
+                self.change_btn.clicked.connect(lambda: self.done(self.CHANGE))
+                box.addWidget(self.change_btn, 0, Qt.AlignTop)
+                grid.addLayout(box, r, 1)
+            else:
+                grid.addWidget(val, r, 1)
+            self.values.setdefault(name, []).append(val)
+        v.addLayout(grid)
+        if method == "fixed":
+            test_note = QLabel(FIXED_NOTE)
+            test_note.setWordWrap(True)
+            test_note.setStyleSheet("QLabel { background: %s; color: %s; border: 1px dashed %s; border-radius: 3px; "
+                                    "padding: 4px 6px; }" % (tokens.c("ai-hatch-a"), tokens.c("ai-ink"),
+                                                            tokens.c("line-strong")))
+            v.addWidget(test_note)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.start_btn = QPushButton("시험 시작(&S)" if method == "fixed" else "시작(&S)")
+        self.start_btn.setObjectName("primary")
+        self.start_btn.setDefault(True)
+        self.start_btn.clicked.connect(self.accept)
+        cancel = QPushButton("취소")
+        cancel.setAutoDefault(False)
+        cancel.clicked.connect(self.reject)
+        row.addWidget(self.start_btn)
+        row.addWidget(cancel)
+        v.addLayout(row)
+        self.start_btn.setFocus()
+
+    def texts(self):
+        """시험·접근성 검사용: 보이는 글자 전부."""
+        return "\n".join(w.text() for w in self.findChildren(QLabel))
+
+    def fit(self):
+        """줄바꿈 글자에 맞춰 높이를 다시 잡는다(남는 세로 공간이 줄 사이로 퍼지지 않게, 최대 480)."""
+        self.setFixedHeight(min(480, self.layout().totalHeightForWidth(self.width())))
+
+    def ask(self):
+        self.fit()
+        r = self.exec()
+        return "start" if r == QDialog.Accepted else "change" if r == self.CHANGE else None
+
+
+class ResolveDialog(QDialog):
+    """실행할 수 없는 상태일 때 실행 확인 대신 뜨는 해결 안내(§6 끝, §9). choice는 고른 해결 동작 이름 또는 'settings'."""
+
+    def __init__(self, method, status, count=0, parent=None):
+        super().__init__(parent)
+        self.choice = None
+        self.setWindowTitle("AI 분석을 시작할 수 없습니다")
+        self.setMinimumWidth(460)
+        v = QVBoxLayout(self)
+        self.band = ResolveBand()
+        lk = conn_view.look(method, (status or {}).get("state") or "error")
+        acts = tuple(a for a in lk.actions if a in ACTION_HELP or a in ("check", "to_api", "copy_error", "open_logs")
+                     and (a != "to_api" or "api" in providers.available_methods()))
+        self.band.set_band(lk, conn_view.guide_text(method, status, count), acts)
+        self.band.action.connect(self._pick)
+        v.addWidget(self.band)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        settings = QPushButton("AI 연결 설정…")
+        settings.clicked.connect(lambda: self._pick("settings"))
+        close = QPushButton("닫기")
+        close.setDefault(True)
+        close.clicked.connect(self.reject)
+        row.addWidget(settings)
+        row.addWidget(close)
+        v.addLayout(row)
+
+    def _pick(self, name):
+        self.choice = name
+        self.accept()
+
+
+class CloseWaitBox(QDialog):
+    """'기다렸다 닫기' 동안 남은 시간을 보이는 창(모달 아님). '바로 끊고 닫기'로 기다림을 끝낼 수 있다."""
+
+    def __init__(self, on_now, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(conn_view.CLOSE_TITLE)
+        self.setModal(False)
+        self.setMinimumWidth(400)
+        v = QVBoxLayout(self)
+        self.label = QLabel()
+        self.label.setWordWrap(True)
+        v.addWidget(self.label)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.now_btn = QPushButton(conn_view.CLOSE_NOW)
+        self.now_btn.clicked.connect(on_now)
+        row.addWidget(self.now_btn)
+        v.addLayout(row)
+
+    def set_left(self, text):
+        self.label.setText(conn_view.CLOSE_WAITING % text)
+        self.label.setAccessibleName(self.label.text())
+        if not self.isVisible():
+            self.show()
+
+    def reject(self):  # Esc는 창만 숨긴다(기다림은 계속)
+        self.hide()
+
+
+def is_limit_stop(run):
+    """구독 한도로 멈춘 칸(실패와 구분, D6)."""
+    return (run or {}).get("status") == "failed" and (run or {}).get("error_kind") == "limit_reached"
+
+
+def _status(node):
+    return ((node or {}).get("screen") or {}).get("status") or "keep"
 
 
 class ResultsScreen(QWidget):
     title = "⑤ 분석 결과"
+    CLOSE_WAIT_SEC = 120  # 창 닫기 '기다렸다 닫기'의 최대 대기(U9)
 
     def __init__(self, app, parent=None):
         super().__init__(parent)
@@ -412,14 +672,31 @@ class ResultsScreen(QWidget):
         self.node_set = None   # 확정된 프로젝트 검토구간 집합만(저장·결과 기준은 이 원본)
         self.view = {}         # {node_id: 표기·경계를 붙인 구간(ctx.view)} 화면 표시용
         self.results = None
+        self.summary_of = (None, None)
+        self._empty = (None, None)
         self.kg, self.kg_reason = None, None
+        self.node_review = None
         self.expectations = None  # 잠재 후보(expect.evaluate). AI 맥락·관련 잠재 후보 보기용, 근거 아님
         self.ref_idx = {}         # {안정 참조: 프로젝트 그래프 노드}
         self.deviations = res.load_deviations()
         self.cell = None       # (node_id, deviation_id)
         self.runner = None
-        self.run_info = None   # 실행 중: {"start", "base"(시작 때 사용량), "unit"(지금 호출 중인 묶음)}
+        self.machine = RunMachine()  # 실행 수명(기술 설계 §6.4). running()·창 닫기·취소는 이 상태만 본다
+        self._pending = None   # 연결 확인 중인 요청 {"scope", "units", "method", "ask", "override"}
+        self.run_method = None  # 지금(또는 마지막) 실행의 연결 방식
+        self.run_info = None   # 실행 중: {"start", "base"(시작 때 사용량), "unit", "method", "override", 집계…}
+        self.last_run = None   # 멈춘 실행에서 이어서 돌릴 칸(메모리에만)
+        self.fixed_view = False  # 시험용 결과 파일(고정 응답)을 보는 중
         self.in_progress = set()  # 지금 호출 중인 칸 (node_id, deviation_id)
+        self._orphans = []     # 끊을 수 없어 두고 닫은 실행(데몬 작업자가 끝날 때까지 살려 둠)
+        self._reset_timer = QTimer(self)
+        self._reset_timer.setSingleShot(True)
+        self._reset_timer.timeout.connect(self._limit_reset_check)
+        self._close_timer = QTimer(self)
+        self._close_timer.setInterval(1000)
+        self._close_timer.timeout.connect(self._close_tick)
+        self._close_deadline = 0.0
+        self._close_wait_box = CloseWaitBox(self._close_now, self)
         self.tick = QTimer(self)
         self.tick.setInterval(1000)
         self.tick.timeout.connect(self._progress_text)
@@ -441,6 +718,12 @@ class ResultsScreen(QWidget):
         lay.addLayout(bar)
         self.banner = Banner("warn")  # 옛 도면별 저장본 이전 알림
         lay.addWidget(self.banner)
+        self.test_band = NoticeBand()  # 시험 결과를 보는 중(§8.1)
+        self.test_band.action.connect(self._band_action)
+        lay.addWidget(self.test_band)
+        self.run_band = NoticeBand()   # 한도 도달·도중 사건(§7.3·§7.4). 떠도 포커스를 옮기지 않는다(F6로 닿음)
+        self.run_band.action.connect(self._band_action)
+        lay.addWidget(self.run_band)
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self._empty_page())
@@ -471,7 +754,9 @@ class ResultsScreen(QWidget):
         self.save_label.linkActivated.connect(self._open_save_dir)
         head.addWidget(self.save_label)
         top.addLayout(head)
-        self.matrix = QTableWidget()
+        self.matrix = MatrixView()
+        self.matrix_model = MatrixModel(lambda row: seg_icon(row["color"], row["node"]["node_id"]), self.matrix)
+        self.matrix.setModel(self.matrix_model)
         self.matrix.setObjectName("matrix")
         self.matrix.setAccessibleName("구간 × 편차 행렬")
         self.matrix.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -547,14 +832,22 @@ class ResultsScreen(QWidget):
         self.retry_btn.setToolTip("마지막 AI 실행이 실패한 칸만 칸마다 다시 호출")
         self.retry_btn.clicked.connect(lambda: self.request_ai("failed"))
         self.cancel_btn = QPushButton("취소")
-        self.cancel_btn.setToolTip("남은 호출을 멈춤(진행 중인 호출 1건은 끝까지 받아 반영)")
+        self.cancel_btn.setToolTip(CANCEL_TIP)
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self.cancel_ai)
         self.usage = QLabel()  # 토큰·비용은 도구 설명으로(도구줄 폭 절약)
         self.usage.hide()
-        self.export_btn = QPushButton("Excel로 내보내기")
-        self.export_btn.setToolTip("구간 × 편차 결과를 HAZOP 워크시트 Excel(.xlsx)로 저장(전체·승인만·선택한 구간만)")
-        self.export_btn.clicked.connect(lambda: self.export_excel())
+        # 내보내기 두 가지를 버튼 하나의 메뉴로 묶는다. 버튼을 하나 더 두면 1366 폭과 ④⑤ 분할(U-03)에 도구줄이 들어가지 않는다
+        self.export_btn = QPushButton("내보내기")
+        self.export_btn.setToolTip("Excel 워크시트(전체·승인만·선택한 구간만) 또는 IE 인계 묶음(승인 항목만, Excel + JSON 원본)")
+        menu = QMenu(self.export_btn)
+        self.excel_action = menu.addAction("Excel로 내보내기…", lambda: self.export_excel())
+        self.excel_action.setToolTip("구간 × 편차 결과를 HAZOP 워크시트 Excel(.xlsx)로 저장")
+        self.ie_export_action = menu.addAction("IE 인계 묶음 내보내기…", lambda: self.export_ie_bundle())
+        self.ie_export_action.setToolTip("⑥ 초기사건 화면으로 가서 승인 항목만으로 초기사건 인계 묶음을 저장. "
+                                         "HAZOP 위험도는 넣지 않음")
+        menu.setToolTipsVisible(True)
+        self.export_btn.setMenu(menu)
         for w in (self.export_btn, self.retry_btn, self.run_node_btn, self.cancel_btn, self.run_all_btn):
             row.addWidget(w)
         return row
@@ -585,6 +878,10 @@ class ResultsScreen(QWidget):
         self.sheet_count.setObjectName("muted")
         hrow.addWidget(self.sheet_count)
         sv.addLayout(hrow)
+        self.sheet_source = plain_label("", name="muted", elide=Qt.ElideRight, min_chars=10)  # 출처 줄(§8.1)
+        self.sheet_source.setAccessibleName("AI 초안 출처")
+        self.sheet_source.hide()
+        sv.addWidget(self.sheet_source)
         self.sheet_span = plain_label("", name="muted", elide=Qt.ElideRight, min_chars=10)
         sv.addWidget(self.sheet_span)
         self.intent_src = plain_label("", name="muted", elide=Qt.ElideRight, min_chars=10)
@@ -595,6 +892,7 @@ class ResultsScreen(QWidget):
         self.table = QTableWidget(0, len(SHEET_COLUMNS))
         self.table.setAccessibleName("워크시트")
         self.table.setHorizontalHeaderLabels(list(SHEET_COLUMNS))
+        self.table.horizontalHeaderItem(1).setToolTip(CONSEQUENCE_TIP)
         self.table.horizontalHeaderItem(COL_RISK).setToolTip("위험도 = 강도 × 발생빈도 〈표5〉(KOSHA P-86) · 구분 〈표9〉")
         self.table.horizontalHeaderItem(COL_BASIS).setToolTip("AI 근거: 지식그래프 경로 · 출처 문서 · ⚠ 근거 확인 경고. '확인할 단서'는 사람이 고른 잠재 후보(근거 아님)")
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -609,6 +907,10 @@ class ResultsScreen(QWidget):
         self.table.setItemDelegate(SheetDelegate(COL_BASIS, self.table))
         self.table.itemSelectionChanged.connect(self._update_entry_buttons)
         self.table.verticalScrollBar().valueChanged.connect(lambda _v: self._place_row_actions())
+        # 창 폭이 바뀌어 열 폭이 달라지면 동작 버튼도 상태 칸을 따라간다. 머리말은 열을 하나씩 늘이며 신호를 내므로
+        # 마지막 열까지 자리 잡은 뒤(이벤트 한 바퀴 뒤)에 놓는다
+        hh.sectionResized.connect(lambda *_a: QTimer.singleShot(0, self._place_row_actions))
+        self.table.viewport().installEventFilter(self)
         sv.addWidget(self.table, 1)
         # 행 단위 동작(U-21): 고른 행의 상태 칸 위에만 승인 A · 기각 R · 수정 E를 띄운다
         self.row_actions = QWidget(self.table.viewport())
@@ -626,6 +928,25 @@ class ResultsScreen(QWidget):
             b.setObjectName("row_btn")
             ra.addWidget(b)
         self.row_actions.hide()
+        ie = QHBoxLayout()
+        ie.setSpacing(4)
+        self.ie_title = QLabel("초기사건 판정")
+        self.ie_title.setObjectName("section")
+        ie.addWidget(self.ie_title)
+        self.ie_chips = []
+        for i in range(4):
+            c = Chip(min_chars=4)
+            c.setAccessibleName("초기사건 판정 %d" % (i + 1))
+            c.hide()  # 보이는 칩 수가 바뀌면 워크시트 폭이 달라져 행 동작 버튼 위치가 어긋나므로 처음부터 숨겨 둔다
+            self.ie_chips.append(c)
+            ie.addWidget(c)
+        self.ie_reason = plain_label("", name="muted", elide=Qt.ElideRight, min_chars=10)
+        ie.addWidget(self.ie_reason, 1)
+        self.ie_btn = QPushButton("판정 I")
+        self.ie_btn.setToolTip("고른 항목의 초기사건 판정을 정합니다(항목 승인과 따로)")
+        self.ie_btn.clicked.connect(lambda: self.set_ie_selected())
+        ie.addWidget(self.ie_btn)
+        sv.addLayout(ie)
         act = QHBoxLayout()
         act.addStretch(1)
         self.rerun_cell_btn = QPushButton("이 칸 다시 실행")
@@ -658,19 +979,26 @@ class ResultsScreen(QWidget):
                 ("항목 승인", "A", lambda: self.set_entry_status("approved")),
                 ("항목 기각", "R", lambda: self.set_entry_status("rejected")),
                 ("항목 수정…", "E", lambda: self.edit_selected()),
+                ("초기사건 판정…", "I", lambda: self.set_ie_selected()),
                 ("Excel로 내보내기…", "", lambda: self.export_excel()),
+                ("IE 인계 묶음 내보내기…", "", lambda: self.export_ie_bundle()),
                 ("이전 고정 응답 분석 열기", "", lambda: self.app.go(2))]
 
     def _shortcuts(self):
         """행렬·워크시트 단축키(U-02). 이 화면 안에서만 듣고, 글 입력칸에 초점이 있으면 입력이 먼저다."""
         keys = (("J", self.next_unreviewed), ("A", lambda: self.set_entry_status("approved")),
-                ("R", lambda: self.set_entry_status("rejected")), ("E", lambda: self.edit_selected()))
+                ("R", lambda: self.set_entry_status("rejected")), ("E", lambda: self.edit_selected()),
+                ("I", lambda: self.set_ie_selected()))
         self.keys = {}
         for seq, fn in keys:
             sc = QShortcut(QKeySequence(seq), self)
             sc.setContext(Qt.WidgetWithChildrenShortcut)
             sc.activated.connect(fn)
             self.keys[seq] = sc
+        sc = QShortcut(QKeySequence("F6"), self)
+        sc.setContext(Qt.WidgetWithChildrenShortcut)
+        sc.activated.connect(self.focus_band)
+        self.keys["F6"] = sc
         for seq in ("Return", "Enter"):
             sc = QShortcut(QKeySequence(seq), self.matrix)
             sc.setContext(Qt.WidgetShortcut)
@@ -688,7 +1016,7 @@ class ResultsScreen(QWidget):
         if not self.results:
             return False
         summary = res.matrix_summary(self.results)
-        order = [(n["node_id"], d["deviation_id"]) for n in self.node_set["nodes"] for d in self.deviations]
+        order = [(n["node_id"], d["deviation_id"]) for n in self._rows() for d in self.deviations]
         start = order.index(self.cell) + 1 if self.cell in order else 0
         for key in order[start:] + order[:start]:
             if (summary.get(key[0], {}).get(key[1]) or {}).get("unreviewed"):
@@ -717,6 +1045,9 @@ class ResultsScreen(QWidget):
         if row is not None:
             self.matrix.selectRow(row)
             self.open_cell(node_id, self.deviations[0]["deviation_id"])
+        elif self.node_set and any(n["node_id"] == node_id for n in self.node_set["nodes"]):
+            self.matrix.clearSelection()
+            self.app.status_message("%s는 스크리닝 제외 구간이라 ⑤ 행이 없습니다. ④에서 꺼내면 볼 수 있습니다." % node_id)
 
     # ------------------------------------------------------------ 읽기
     def _load(self):
@@ -733,7 +1064,11 @@ class ResultsScreen(QWidget):
         self.name, self.graph, self.node_set, self.results, self.cell = name or None, None, None, None, None
         self.ctx, self.view = None, {}
         self.kg, self.kg_reason, self._old_saved = None, None, None
+        self.node_review = None
         self.expectations, self.ref_idx = None, {}
+        self.fixed_view, self.last_run = False, None
+        self.test_band.hide()
+        self.run_band.hide()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
         self.progress_label.setText("")
@@ -760,6 +1095,10 @@ class ResultsScreen(QWidget):
             self.node_set = saved
             self.view = {n["node_id"]: n for n in self.ctx.view(saved)["nodes"]}
             self.kg, self.kg_reason = ai_cells.load_kg_for(saved)
+            try:
+                self.node_review = node_review.load(saved.get("project_id"), saved["graph_id"])
+            except (OSError, ValueError):
+                self.node_review = None  # 제안 파일을 못 읽으면 AI 설계 의도 초안만 빠진다(④에서 알림)
             self.kg_chip.set_state("지식그래프 없음: %s · 도면만으로 분석" % self.kg_reason, "warn")
             self.kg_chip.setVisible(self.kg is None)
             self.ref_idx = refs.index(self.graph)
@@ -806,9 +1145,28 @@ class ResultsScreen(QWidget):
             doc = res.load(node_set)
         except (OSError, ValueError) as exc:
             doc, problem = None, "저장된 분석 결과를 읽을 수 없음(%s)" % exc
+        if doc is None and problem is None and not self.fixed_view:  # 옛 결과가 보관본에만 있어도 다시 확정하면 잇는다
+            carried, report = remap.carry_saved(node_set, self.deviations)
+            if carried is not None:
+                self.stale_chip.set_state("이전 확정본 결과를 옮김: 범위 바뀜 %d건(다시 확인) · 옛 파일은 보관본"
+                                          % report["scope_changed_entries"], "warn")
+                self.stale_chip.show()
+                return carried
         if doc is not None:
             if res.is_stale(doc, node_set):
+                carried, report = (remap.carry_saved(node_set, self.deviations) if not self.fixed_view
+                                   else remap.carry_results(doc, node_set, self.deviations))
+                if carried is not None:  # 확정 해제 → 다시 확정: 같은 구간은 그대로, 바뀐 구간은 '범위 바뀜'으로 잇는다
+                    self.stale_chip.set_state("이전 확정본 결과를 옮김: 범위 바뀜 %d건(다시 확인) · 옛 파일은 보관본"
+                                              % report["scope_changed_entries"], "warn")
+                    self.stale_chip.show()
+                    return carried
                 problem = "저장된 분석 결과가 이전 검토구간 확정본으로 만든 것"
+                if report.get("to_excluded"):
+                    problem += "(사람이 판정한 항목이 있는 구간 %s이 스크리닝 제외로 감 · ④에서 꺼낸 뒤 다시 확정하면 옮김)" % (
+                        ", ".join(report["to_excluded"][:5]))
+                elif report.get("reason") and remap.latest(node_set):
+                    problem += "(%s)" % report["reason"]
             else:
                 bad = res.validate(doc, node_set)
                 if bad:
@@ -819,14 +1177,23 @@ class ResultsScreen(QWidget):
             self.stale_chip.show()
             return res.empty_results(node_set, self.deviations)
         self.stale_chip.hide()
-        return doc if doc is not None else res.empty_results(node_set, self.deviations)
+        return doc if doc is not None else self._empty_for(node_set)
+
+    def _empty_for(self, node_set):
+        """분석 전 빈 결과. 같은 확정본이면 지난번 것을 그대로 쓴다(1,800구간이면 만드는 데 0.3초, 결과 dict는 고칠 때마다
+        새로 만들어지므로 함께 써도 바뀌지 않는다)."""
+        key = (node_set["graph_id"], node_set.get("graph_version"), node_set.get("confirmed_at"),
+               tuple(n["node_id"] for n in node_set["nodes"]), tuple(d["deviation_id"] for d in self.deviations))
+        if self._empty[0] != key:
+            self._empty = (key, res.empty_results(node_set, self.deviations))
+        return self._empty[1]
 
     def set_results(self, doc):
         """결과 dict(hazop_study_results)를 보여 준다. 칸·워크시트·사용량은 이 dict에서만 그린다."""
         self.results = doc
         self._fill_matrix()
-        self.usage.setText(usage_text(ai_cells.usage_total(doc)))
-        self.kpi.setToolTip("%s\nAI 사용량: %s" % (self.kpi.text(), self.usage.text()))
+        self.usage.setText(conn_view.usage_summary(doc.get("ai_log")))
+        self.kpi.setToolTip("%s\n%s" % (self.kpi.text(), self.usage.text()))
         if self.cell:
             self.open_cell(*self.cell)
         else:
@@ -835,10 +1202,13 @@ class ResultsScreen(QWidget):
     def _save(self):
         """현재 결과를 저장한다. 실패해도 화면의 결과는 유지하고 상태줄·로그에 남긴다."""
         try:
-            if self._old_saved and os.path.isfile(self._old_saved):
+            if not self.fixed_view and self._old_saved and os.path.isfile(self._old_saved):
                 os.replace(self._old_saved, "%s.%s.bak.json" % (self._old_saved[:-5], nodes.now_utc().replace(":", "")))
-            self._old_saved = None
-            res.save(self.results, self.node_set.get("project_id"))
+            if self.fixed_view:  # 시험 값은 시험용 파일에만(실제 결과의 AI 초안을 덮지 않음, D5)
+                res.write(self.store_path(), self.results)
+            else:
+                self._old_saved = None
+                res.save(self.results, self.node_set.get("project_id"))
         except OSError as exc:
             self.app.log_error("분석 결과 저장 실패", exc)
             self.app.status_message("분석 결과를 저장하지 못함: %s" % exc)
@@ -879,7 +1249,8 @@ class ResultsScreen(QWidget):
             return None
         now = nodes.now_utc()
         if scope is None:
-            dlg = ExportDialog(list(self.view.values()), self.selected_node_id(),
+            dlg = ExportDialog([self.view[n["node_id"]] for n in self._rows() if n["node_id"] in self.view],
+                               self.selected_node_id(),
                                getattr(self, "_export_reviewer", ""), self)
             if dlg.exec() != QDialog.Accepted:
                 return None
@@ -888,7 +1259,7 @@ class ResultsScreen(QWidget):
         if path is None:
             folder = getattr(self, "_export_dir", None) or QStandardPaths.writableLocation(
                 QStandardPaths.DocumentsLocation)
-            name = study_xlsx.default_filename(self.node_set.get("project_id"), now)
+            name = study_xlsx.default_filename(self.node_set.get("project_id"), now, test=self.fixed_view)
             path, _ = QFileDialog.getSaveFileName(self, "Excel로 내보내기", os.path.join(folder, name),
                                                   "Excel 통합 문서 (*.xlsx)")
             if not path:
@@ -897,13 +1268,16 @@ class ResultsScreen(QWidget):
                 path += ".xlsx"
         intents = {}
         for nid, n in self.view.items():
-            found = design_intent(n)
+            found = design_intent(n, self.node_review)
             if found:
                 intents[nid] = found[0]
         try:
-            path, n_rows = study_xlsx.export(path, self.results, self.node_set, self.graph, self.deviations,
-                                             scope=scope, node_ids=node_ids, reviewer=reviewer or "",
-                                             intents=intents, now=now, expectations=self.expectations)
+            rows = {n["node_id"] for n in self._rows()}
+            path, n_rows = study_xlsx.export(path, self.results, self._scope_set(), self.graph, self.deviations,
+                                             scope=scope, node_ids=[x for x in node_ids or () if x in rows] or None
+                                             if scope == "nodes" else node_ids, reviewer=reviewer or "",
+                                             intents=intents, now=now, expectations=self.expectations,
+                                             test=self.fixed_view)
         except (OSError, ValueError) as exc:
             self.app.log_error("Excel 내보내기 실패", exc)
             QMessageBox.warning(self, "Excel로 내보내기", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요).\n%s"
@@ -915,19 +1289,27 @@ class ResultsScreen(QWidget):
             ("폴더 열기", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path))))))
         return path
 
+    def export_ie_bundle(self, path=None):
+        """IE 인계 묶음은 ⑥ 초기사건 화면이 내보낸다(IEC 대응표를 쓰는 곳이 ⑥ 하나). ⑥으로 가서 내보내기를 연다."""
+        return self.app.screens[7].export_bundle(path) if self.app.go(7) else None
+
     # ------------------------------------------------------------ AI 실행
+    # 흐름: 요청 → preflight(지금 방식만 확인, 구독 처음이면 이용 조건) → 실행 확인 → calling → 끝·멈춤·취소·창 닫기.
+    # 수명은 RunMachine(기술 설계 §6.4 상태표) 하나로만 따진다. 결과 dict는 UI 스레드에서만 바꾼다.
     def running(self):
-        return self.runner is not None
+        return self.machine.busy
 
     def make_client(self):
-        return ClaudeHttpClient(self.app.api_keys.get, model=self.app.api_keys.model)
+        """이번 실행의 클라이언트(self.run_method 방식). 시험·검사 스크립트는 이 함수를 바꿔 끼운다."""
+        return self.app.ai_conn.make_client(self.run_method)
 
     def selected_node_id(self):
         row = self.matrix.currentRow()
-        return self._node_at(row) if self.node_set and 0 <= row < len(self.node_set["nodes"]) else None
+        return self._node_at(row) if self.node_set and 0 <= row < len(self._rows()) else None
 
-    def _plan(self, scope):
-        ns = self.node_set
+    def _plan(self, scope, test=None):
+        """test: 실행이 쓸 결과 파일이 시험용인지(None이면 보고 있는 쪽). 실패 칸은 그 파일에서 뽑는다."""
+        ns = self._scope_set()  # 스크리닝 제외 구간은 AI 일괄 범위에서 뺀다(행이 없는 구간을 몰래 분석하지 않게)
         if scope == "all":
             return ai_cells.plan_units(ns, self.deviations)
         if scope == "node":
@@ -935,109 +1317,406 @@ class ResultsScreen(QWidget):
             return [] if nid is None else ai_cells.plan_units(
                 dict(ns, nodes=[n for n in ns["nodes"] if n["node_id"] == nid]), self.deviations)
         if scope == "failed":
-            return ai_cells.plan_units(ns, self.deviations, ai_cells.failed_cells(self.results))
+            doc = self.results if test is None else self._results_for(test)
+            rows = {n["node_id"] for n in ns["nodes"]}
+            return ai_cells.plan_units(ns, self.deviations, [c for c in ai_cells.failed_cells(doc) if c[0] in rows])
+        if scope == "resume":
+            return ai_cells.plan_units(ns, self.deviations, (self.last_run or {}).get("cells") or [], group=True)
         return [] if self.cell is None else ai_cells.plan_units(ns, self.deviations, [self.cell])
 
-    def store_path(self):
-        return res.store_path(self.node_set.get("project_id"), self.node_set["graph_id"]) if self.node_set else None
+    def _results_for(self, test):
+        """시험용(test) 또는 실제 결과. 보고 있는 쪽이면 화면의 결과, 아니면 저장본."""
+        if test == self.fixed_view:
+            return self.results
+        return self._test_results() if test else self._saved_results(self.node_set)
 
-    def estimate(self, n_calls):
-        """(초, 달러) 어림값. 지금 모델로 성공한 호출 기록이 있으면 그 평균 비용, 없으면 기본 Opus 어림값을 모델 단가 비율로 바꾼다."""
+    def _test_results(self):
+        try:
+            doc = res.read(res.test_store_path(self.node_set.get("project_id"), self.node_set["graph_id"]))
+        except (OSError, ValueError):
+            doc = None
+        if doc is None or res.is_stale(doc, self.node_set) or res.validate(doc, self.node_set):
+            doc = res.empty_results(self.node_set, self.deviations)
+        return doc
+
+    def store_path(self):
+        if not self.node_set:
+            return None
+        if self.fixed_view:
+            return res.test_store_path(self.node_set.get("project_id"), self.node_set["graph_id"])
+        return res.store_path(self.node_set.get("project_id"), self.node_set["graph_id"])
+
+    def estimate(self, n_calls, method="api"):
+        """(초, 달러) 어림값. 지금 모델로 성공한 호출 기록이 있으면 그 평균 비용, 없으면 기본 Opus 어림값을 모델 단가 비율로
+        바꾼다. 동시 호출이 2면 시간을 나눈다. 세 번째 값은 근거가 기록인지."""
         model = self.app.api_keys.model
         ok = [r["cost_usd"] for r in (self.results or {}).get("ai_log") or []
-              if r.get("status") != "failed" and r.get("model") == model and r.get("cost_usd")]
+              if r.get("status") != "failed" and r.get("model") == model and r.get("cost_usd")
+              and conn_view.record_via(r) == "api"]
         if ok:
             usd = sum(ok) / len(ok)
         else:
             base, cur = claude_http.PRICES[claude_http.DEFAULT_MODEL], claude_http.PRICES.get(model)
             usd = EST_USD_PER_CALL * (cur["output"] / base["output"] if cur else 1)
-        return n_calls * EST_SEC_PER_CALL, n_calls * usd
+        workers = 1 if method == "fixed" else self.app.ai_conn.prefs.concurrency
+        return n_calls * EST_SEC_PER_CALL / workers, n_calls * usd, bool(ok)
 
     def request_ai(self, scope="all"):
-        """버튼·팔레트: 호출이 2회 이상이면 예상 호출 수·시간·비용과 저장 위치를 보여 주고 확인을 받은 뒤 시작한다."""
-        if self.running() or self.node_set is None:
-            return False
-        n = len(self._plan(scope))
-        if n > 1:
-            sec, usd = self.estimate(n)
-            text = ("AI를 %d회 호출합니다.\n예상 시간: 약 %d분 (호출 하나 15~60초)\n예상 비용: 약 $%.2f\n\n"
-                    "칸은 호출이 끝날 때마다 바로 화면에 채워지고 저장됩니다.\n저장 위치: %s\n\n시작할까요?"
-                    % (n, max(1, round(sec / 60.0)), usd, self.store_path()))
-            if QMessageBox.question(self, "AI 분석 시작", text) != QMessageBox.Yes:
-                return False
-        return self.run_ai(scope)
+        """버튼·팔레트: 호출이 2회 이상이면 실행 확인(화면 설계 §6)을 거친다. 시작했거나 연결 확인 중이면 True."""
+        return self._request(scope, ask=True)
 
     def run_ai(self, scope="all"):
-        """scope: all(모든 구간) · node(선택 행 구간) · failed(실패 칸) · cell(열린 칸). 시작했으면 True."""
-        if self.running() or self.node_set is None:
+        """scope: all(모든 구간) · node(선택 행 구간) · failed(실패 칸) · cell(열린 칸) · resume(남은 칸). 묻지 않는다."""
+        return self._request(scope, ask=False)
+
+    def _request(self, scope, ask, method=None):
+        """method를 주면 이번 실행만 그 방식으로 돌린다('API 키로 이어서', D4). 없으면 지금 방식."""
+        if self.machine.busy or self.node_set is None:
             return False
-        units = self._plan(scope)
+        if self.app.screens[5].review_busy():  # ④ AI 구간 검토와 겹치면 사용량 확인·멈춤·설정 잠금이 어긋난다
+            self.app.status_message("④ AI 구간 검토가 끝난 뒤에 실행하세요.")
+            return False
+        conn = self.app.ai_conn
+        override = method is not None and method != conn.method
+        method = method or conn.method
+        units = self._plan(scope, test=method == "fixed")
         if not units:
             self.app.status_message({"node": "행렬에서 분석할 구간의 행을 고르세요.",
-                                     "failed": "다시 실행할 실패 칸이 없습니다."}.get(scope, "분석할 칸이 없습니다."))
+                                     "failed": "다시 실행할 실패 칸이 없습니다.",
+                                     "resume": "이어서 실행할 칸이 없습니다."}.get(scope, "분석할 칸이 없습니다."))
             return False
-        if not self.app.api_keys.get():
-            self.app.open_key_settings()
-            if not self.app.api_keys.get():
-                self.app.status_message("API 키가 없어 AI 분석을 시작하지 않았습니다(파일 > API 키 설정).")
-                return False
+        self.machine.fire("start")
+        self._pending = {"scope": scope, "units": units, "method": method, "ask": ask, "override": override}
+        self._update_buttons()
+        if method == "api":  # API 키는 시작 전 네트워크 확인을 하지 않는다(키 저장소의 마지막 시험만, §2.4)
+            self._preflight_done(conn.status("api"))
+        else:
+            self.app.status_message("AI 연결을 확인하는 중…")
+            conn.check(method, done=self._preflight_done)
+        return self.machine.state in ("preflight", "calling")
+
+    def _abort(self, text=None):
+        self.machine.fire("check_fail")
+        self._pending = None
+        if text:
+            self.app.status_message(text)
+        self._update_buttons()
+
+    def _preflight_done(self, status):
+        p = self._pending
+        if p is None or self.machine.state != "preflight":
+            return
+        conn, method = self.app.ai_conn, p["method"]
+        if method != "api":
+            self.app.status_message("")  # 'AI 연결을 확인하는 중…'을 남기지 않는다
+        state = (status or {}).get("state") or "unchecked"
+        resume_anyway = p["scope"] == "resume" and state == "limit_reached"  # 아직 한도면 첫 호출에서 같은 띠가 다시 뜬다
+        if not conn_view.can_start(method, state) and not resume_anyway:
+            self._abort()
+            self._resolve(method, status, p)
+            return
+        if method == "subscription" and not conn.terms_acked():
+            choice = ask_terms(self, conn.prefs, "run")
+            if choice != "ok":
+                self._abort()
+                if choice == "api":
+                    self.app.open_ai_settings("api")
+                return
+        if state == "overage_risk" and not conn.prefs.allow_overage and not self.ask_overage():
+            self._abort()
+            return
+        units, ctxs = p["units"], self._contexts(p["units"])
+        missing = 0
+        if method == "fixed":
+            units, missing = self._fixed_units(units, ctxs)
+            if not units:
+                self._abort("고른 폴더에 지금 검토구간에 맞는 응답이 없습니다. 다른 폴더를 고르세요.")
+                return
+        if p["ask"] and (len(units) > 1 or p["override"]):
+            choice = self._confirm(method, units, missing, p["override"])
+            if choice == "change":
+                self._abort()
+                self.app.open_ai_settings(method)
+                if not p["override"]:
+                    self._request(p["scope"], True)
+                return
+            if choice != "start":
+                self._abort()
+                return
+        self.machine.fire("check_ok")
+        self._start(method, units, ctxs, p["override"])
+
+    def _contexts(self, units):
         by_id = {n["node_id"]: n for n in self.node_set["nodes"]}
         ctxs = {}
         for u in units:
             if u["node_id"] not in ctxs:
                 node = by_id[u["node_id"]]
-                ctxs[u["node_id"]] = ai_cells.node_context(node, self.graph, self.kg, design_intent(node),
+                ctxs[u["node_id"]] = ai_cells.node_context(node, self.graph, self.kg, design_intent(node, self.node_review),
                                                            expectations=self.expectations)
-        self.runner = AiRunner([(u, ctxs[u["node_id"]]) for u in units], self.deviations, self.make_client())
+        return ctxs
+
+    def _fixed_units(self, units, ctxs):
+        """고정 응답이 있는 호출 단위만(응답이 없는 칸은 '분석 전'으로 둔다, §6). (단위 목록, 빠진 칸 수)."""
+        folder = self.app.ai_conn.prefs.fixed_dir
+        try:
+            have = {n[:-5] for n in os.listdir(folder) if n.endswith(".json")} if folder else set()
+        except OSError:
+            have = set()
+        keep = [u for u in units
+                if providers.fixed_key(ai_cells.build_request(u, ctxs[u["node_id"]], self.deviations)) in have]
+        missing = sum(len(u["deviation_ids"]) for u in units if u not in keep)
+        return keep, missing
+
+    def fixed_match(self):
+        """(맞는 칸, 전체 칸): 지금 검토구간에서 고정 응답이 있는 칸 수(화면 설계 §3.5·§9.3)."""
+        if self.node_set is None:
+            return None
+        units = self._plan("all")
+        keep, _missing = self._fixed_units(units, self._contexts(units))
+        return sum(len(u["deviation_ids"]) for u in keep), sum(len(u["deviation_ids"]) for u in units)
+
+    def _resolve(self, method, status, pending):
+        """실행할 수 없는 상태: 확인 대화상자 대신 해결 안내(§6 끝). API 키가 없으면 설정 창의 API 키 상세를 바로 연다."""
+        state = (status or {}).get("state")
+        if method == "api" and state == "no_key":
+            self.app.open_ai_settings("api")
+            if self.app.api_keys.get():
+                self._request(pending["scope"], pending["ask"])
+            else:
+                self.app.status_message("API 키가 없어 AI 분석을 시작하지 않았습니다(파일 > AI 연결 설정).")
+            return
+        if state in ("checking", "unchecked"):
+            self.app.status_message("AI 연결을 아직 확인하지 못해 시작하지 않았습니다. 다시 실행해 보세요.")
+            return
+        choice = self.show_resolve(method, status)
+        if choice:
+            self.app.conn_action(choice, method)
+
+    def show_resolve(self, method, status):
+        """해결 안내 창. 고른 동작 이름(없으면 None)."""
+        dlg = ResolveDialog(method, status, self.app.ai_conn.fixed_count(), self)
+        dlg.exec()
+        return dlg.choice
+
+    def ask_overage(self):
+        box = QMessageBox(QMessageBox.Warning, "초과 사용 주의", OVERAGE_TEXT, parent=self)
+        go = box.addButton("시작", QMessageBox.AcceptRole)
+        box.addButton("취소", QMessageBox.RejectRole)
+        box.exec()
+        return box.clickedButton() is go
+
+    def _confirm(self, method, units, missing, override):
+        """실행 확인(§6). 'start' · 'change'(바꾸기…) · None(취소)."""
+        conn = self.app.ai_conn
+        calls, cells = len(units), sum(len(u["deviation_ids"]) for u in units)
+        sec, usd, from_log = self.estimate(calls, method)
+        if method == "api":
+            e, key = self.app.api_keys.active(), self.app.api_keys.get() or ""
+            link = "API 키 · '%s'(…%s) · %s" % ((e or {}).get("name") or "-", key[-4:],
+                                               conn_view.model_name(self.app.api_keys.model))
+        elif method == "subscription":
+            link = "Claude 구독 · %s" % conn_view.model_name(conn.model(method))
+        else:
+            folder = conn.prefs.fixed_dir or ""
+            link = "고정 응답(시험) · 응답 폴더 …\\%s" % os.path.basename(folder.rstrip("\\/"))
+        lead, rows = conn_view.confirm_rows(
+            method, calls, cells, link, sec, usd, conn_view.cost_basis(usd / max(calls, 1), from_log),
+            conn.status(method).get("limit"), missing,
+            res.test_store_path(self.node_set.get("project_id"), self.node_set["graph_id"]) if method == "fixed"
+            else res.store_path(self.node_set.get("project_id"), self.node_set["graph_id"]),
+            resume=self._pending is not None and self._pending["scope"] == "resume")
+        dlg = RunConfirmDialog(method, lead, rows, RESUME_API_NOTE if override else "", self)
+        return dlg.ask()
+
+    def _start(self, method, units, ctxs, override):
+        conn = self.app.ai_conn
+        self._pending = None
+        self._switch_view(method == "fixed")
+        self.run_method = method
+        client = self.make_client()
+        workers = 1 if method == "fixed" else conn.prefs.concurrency
+        self.runner = AiRunner([(u, ctxs[u["node_id"]]) for u in units], self.deviations, client, workers)
         self.runner.unit_started.connect(self._on_unit_started)
         self.runner.unit_done.connect(self._on_unit_done)
         self.runner.progress.connect(self._on_progress)
-        self.runner.finished.connect(self._on_finished)
-        self.run_info = {"start": time.monotonic(), "base": ai_cells.usage_total(self.results), "unit": None}
+        self.runner.finished.connect(lambda reason, r=self.runner: self._finish_run(r, reason))
+        self.run_info = {"start": time.monotonic(), "base": ai_cells.usage_total(self.results), "unit": None,
+                         "method": method, "override": override, "calls": len(units), "ok_calls": 0, "ok_cells": 0,
+                         "limit": None, "failed": []}
+        self.run_band.hide()
+        self._reset_timer.stop()
+        if override:
+            self.app.set_run_override(method)
+        conn.cancel_handler = self.cancel_ai
+        conn.set_running(True, "AI 분석 실행 중 · 0/%d 호출" % len(units))
         self.progress.setRange(0, len(units))
         self.progress.setValue(0)
         self._progress_text()
         self._update_buttons()
         self.tick.start()
         self.runner.start()
-        return True
 
     def cancel_ai(self):
-        if self.running():
+        """처음 누르면 남은 호출을 멈추고 진행 중인 1건은 받는다. 기다리는 중에 한 번 더 누르면 바로 끊는다(§6.3)."""
+        if self.runner is None:
+            return
+        if self.machine.state == "calling":
+            self.machine.fire("cancel")
             self.runner.cancel()
-            self.cancel_btn.setEnabled(False)
-            self.app.status_message("취소 요청: 진행 중인 호출 1건을 마친 뒤 멈춥니다.")
+            self.app.status_message("취소 요청: 진행 중인 호출을 마친 뒤 멈춥니다. 한 번 더 누르면 바로 끊습니다.")
+        elif self.machine.state == "draining":
+            self.machine.fire("cancel")
+            if self.runner.kill():
+                self.app.status_message("진행 중인 호출을 끊는 중…")
+            else:
+                self.app.status_message("이 연결은 진행 중인 호출을 끊을 수 없어 끝날 때까지 기다립니다.")
+        self._update_buttons()
 
-    def shutdown(self):
-        """창을 닫을 때: 남은 호출을 멈추고 진행 중인 호출의 결과까지 반영·저장한다(이미 비용이 든 결과를 버리지 않음)."""
-        if self.running():
+    # ---- 창 닫기(기술 설계 §6.3·§11 10번, U9)
+    def shutdown(self, ask=None):
+        """창을 닫을 때. 바로 닫아도 되면 받은 칸을 저장하고 True. 진행 중인 호출이 있으면 물은 뒤 False를 돌려주고,
+        기다림·끊기가 끝나면 창을 다시 닫는다(그때는 True)."""
+        st = self.machine.state
+        if not self.machine.alive:
+            if st != "closed":
+                self.machine.fire("close_now")
+            self._save_if_unsaved()
+            return True
+        if st in ("close_wait", "killing_close"):
+            self._close_tick()  # Esc로 숨긴 남은 시간 창을 다시 보인다
+            return False
+        n = self.runner.calls_in_flight() if self.runner else 0
+        choice = (ask or self.ask_close)(max(n, 1))
+        if choice is not None and not self.machine.alive:  # 묻는 사이에 호출이 끝났으면 바로 닫는다
+            return self.shutdown()
+        if choice in ("now", "wait"):
+            self._close_deadline = time.monotonic() + self.CLOSE_WAIT_SEC
+        if choice == "now":
+            self._close_now()
+        elif choice == "wait":
+            self.machine.fire("close_wait")
             self.runner.cancel()
-            self.runner.wait()
-            QCoreApplication.processEvents()
+            self._close_timer.start()
+            self._close_tick()
+        return False
+
+    def close_refused(self):
+        """창이 닫기를 거절했다(저장 안 한 변경에서 '취소'). 창은 열려 있으니 다시 실행을 받는다."""
+        if self.machine.fire("close_refused"):
+            self._update_buttons()
+
+    def ask_close(self, n_calls):
+        box = QMessageBox(QMessageBox.Question, conn_view.CLOSE_TITLE, conn_view.CLOSE_TEXT % n_calls, parent=self)
+        wait = box.addButton(conn_view.CLOSE_WAIT, QMessageBox.AcceptRole)
+        now = box.addButton(conn_view.CLOSE_NOW, QMessageBox.DestructiveRole)
+        box.addButton("취소", QMessageBox.RejectRole)
+        box.setDefaultButton(wait)
+        box.exec()
+        return {id(wait): "wait", id(now): "now"}.get(id(box.clickedButton()))
+
+    def _close_tick(self):
+        """기다렸다 닫기의 남은 시간. close_wait뿐 아니라 이미 끊는 중(killing)에 닫기를 기다린 killing_close도
+        상한을 둔다. 끊을 수 없는 클라이언트(API)는 취소를 두 번 눌러도 호출이 끝날 때까지 살아 있다."""
+        st = self.machine.state
+        if st not in ("close_wait", "killing_close"):
+            self._close_timer.stop()
+            self._close_wait_box.hide()
+            return
+        left = self._close_deadline - time.monotonic()
+        if left <= 0:
+            self._end_close_wait("wait_expired")
+            return
+        self._close_wait_box.set_left(clock(left))
+
+    def _close_now(self):
+        self._end_close_wait("close_now")
+
+    def _end_close_wait(self, event):
+        self._close_timer.stop()
+        self._close_wait_box.hide()
+        if self.machine.state == "killing_close":  # 이미 끊기를 보냈는데 아직 살아 있다
+            self._abandon_run()
+            return
+        self.machine.fire(event)
+        self._kill_for_close()
+
+    def _kill_for_close(self):
+        """killing_close: 앱이 띄운 트리만 끊는다(client.cancel). 끊을 수 없는 클라이언트는 기다리지 않고 닫는다.
+        끊기를 보냈는데도 끝나지 않으면 처음 닫기를 누른 때부터 2분이 지나면 버리고 닫는다(_close_tick)."""
+        if self.runner is None:
+            return
+        if self.runner.kill():
+            self._close_timer.start()
+        else:
+            self._abandon_run()
+
+    def _abandon_run(self):
+        """받은 칸은 이미 저장했다. 아직 오지 않은 결과는 버리고 닫는다(작업 스레드는 데몬이라 앱 종료를 막지 않는다)."""
+        runner = self.runner
+        if runner is None:
+            return
+        for sig in (runner.unit_started, runner.unit_done, runner.progress, runner.finished):
+            sig.disconnect()
+        self._orphans.append(runner)  # 데몬 작업자가 끝날 때까지 신호를 받을 객체를 살려 둔다
+        self._finish_run(runner, "killed")
+
+    def _save_if_unsaved(self):
         if self._unsaved and self.results is not None:
             self._save()
 
+    # ---- 진행
     def _on_unit_started(self, unit):
         if self.run_info is not None:
             self.run_info["unit"] = unit
-        self.in_progress = {(unit["node_id"], did) for did in unit["deviation_ids"]}
+        self.in_progress |= {(unit["node_id"], did) for did in unit["deviation_ids"]}
         self._fill_matrix()
         self._progress_text()
 
-    def _on_unit_done(self, unit_result):
-        self.in_progress = set()
+    def _on_unit_done(self, ur):
+        self.in_progress -= {(ur["node_id"], did) for did in ur["cells"]}
+        info = self.run_info
+        if info is not None:
+            if ur["status"] == "ok":
+                info["ok_calls"] += 1
+                info["ok_cells"] += len(ur["cells"])
+            else:
+                info["failed"].append(ur)
+            if ur.get("limit"):
+                info["limit"] = ur["limit"]
+            self._conn_from_result(info["method"], ur)
         try:
-            doc = ai_cells.apply_unit(self.results, unit_result)
+            doc = ai_cells.apply_unit(self.results, ur)
         except ValueError as exc:
             self.app.log_error("AI 결과 반영 실패", exc)
             return
         self.results = doc
         self._save()
         self.set_results(doc)
+        if self.machine.state == "calling":
+            self.machine.fire("call_more")
+
+    def _conn_from_result(self, method, ur):
+        """호출 결과의 연결 상태·한도를 칩과 설정 창에 반영한다(실행 중에도 칩 글자만 바뀌고 진행은 보이지 않는다).
+        성공한 호출은 앞서 받은 연결 오류(예: 한 번의 network)를 지운다. 연결과 무관한 실패(응답 형식 등)는 그대로 둔다."""
+        if method == "fixed":
+            return
+        state = ur.get("conn_state")
+        if not state and not ur.get("limit") and ur["status"] != "ok":
+            return
+        prev = self.app.ai_conn.status(method)
+        limit = ur.get("limit") or prev.get("limit")
+        state = state or (claude_cli.limit_state(limit) if method == "subscription" else None) or "ok"
+        if (state, limit) == (prev.get("state"), prev.get("limit")):
+            return
+        self.app.set_conn_status({"via": method, "state": state, "detail": ur.get("error") or "",
+                                  "plan": prev.get("plan"), "limit": limit})
 
     def _on_progress(self, done, total):
         self.progress.setRange(0, total)
         self.progress.setValue(done)
+        if self.runner is not None:
+            self.app.ai_conn.set_running(True, "AI 분석 실행 중 · %d/%d 호출" % (done, total))
         self._progress_text()
 
     def unit_text(self, unit):
@@ -1050,132 +1729,285 @@ class ResultsScreen(QWidget):
                 params.append(p)
         return "%s · %s" % (unit["node_id"], "·".join(params))
 
+    def _spent(self, info):
+        return usage_diff(ai_cells.usage_total(self.results), info["base"]) if self.results else None
+
     def _progress_text(self):
-        """막대 옆 짧은 줄 + 상태 표시줄 긴 줄. 실행 중이면 지금 칸, 경과·남은 시간, 이번 실행의 토큰·비용을 보인다."""
+        """막대 옆 짧은 줄 + 상태 표시줄 긴 줄(§7.1). 마지막 칸만 방식에 따라 바뀐다(API 키 $, 구독 '구독 사용량 차감')."""
         failed = len(ai_cells.failed_cells(self.results)) if self.results else 0
         done, total = self.progress.value(), self.progress.maximum()
-        text = "AI %d/%d 호출%s" % (done, total, " · 실패 %d" % failed if failed else "")
         info = self.run_info
+        method = info["method"] if info else None
+        if method == "fixed":
+            now = self.unit_text(info["unit"]) if info["unit"] else "시작 중"
+            self.progress_label.setText("시험 %d/%d · %s · 고정 응답" % (done, total, now))
+            self.progress_label.setToolTip("이번 실행: %s\n칸은 호출마다 시험용 파일에 저장됩니다: %s"
+                                           % (conn_view.run_usage_line(method, None), self.store_path()))
+            self.app.status_message("● 시험 실행 중 · 시험 %d/%d · %s · 고정 응답" % (done, total, now))
+            return
+        text = ("시험 %d/%d" if self.fixed_view else "AI %d/%d 호출%s") % ((done, total) if self.fixed_view else (
+            done, total, " · 실패 %d" % failed if failed else ""))
         if info is None:
             self.progress_label.setText(text)
             return
         elapsed = time.monotonic() - info["start"]
         left = "남은 시간 계산 중" if not done else "약 %s 남음" % clock(elapsed / done * (total - done))
-        spent = usage_diff(ai_cells.usage_total(self.results), info["base"]) if self.results else None
-        cost = "$%.2f" % spent["cost_usd"] if spent else "$0.00"
+        spent = self._spent(info)
+        tail = conn_view.progress_tail(method, spent, info["limit"])
         now = "%s 분석 중" % self.unit_text(info["unit"]) if info["unit"] else "시작 중"
-        self.progress_label.setText("%s · %s · %s 경과 · %s · %s" % (text, now, clock(elapsed), left, cost))
-        self.progress_label.setToolTip("이번 실행: %s\n칸은 호출마다 저장됩니다: %s"
-                                       % (usage_text(spent) if spent else "-", self.store_path()))
+        usage = conn_view.run_usage_line(method, spent)
+        self.progress_label.setText("%s · %s · %s 경과 · %s · %s" % (text, now, clock(elapsed), left, tail))
+        self.progress_label.setToolTip("이번 실행: %s\n칸은 호출마다 저장됩니다: %s" % (usage, self.store_path()))
         self.app.status_message("● AI 분석 실행 중 · %s · %s · %s 경과 · %s · %s"
-                                % (text, now, clock(elapsed), left, usage_text(spent) if spent else cost))
+                                % (text, now, clock(elapsed), left, usage))
 
-    def _on_finished(self, cancelled):
-        self.runner.wait()
+    def _finish_run(self, runner, reason):
+        if runner is None or runner is not self.runner:
+            return
+        if runner not in self._orphans:
+            runner.wait(5000)  # finished는 마지막 작업자가 끝나며 보내므로 곧 돌아온다
+        st = self.machine.state
+        if st == "calling":
+            self.machine.fire("limit" if reason == "halted" else "call_last")
+        elif st in ("draining", "close_wait"):
+            self.machine.fire("call_last")
+        elif st in ("killing", "killing_close"):
+            self.machine.fire("killed")
         self.tick.stop()
         done, total = self.progress.value(), self.progress.maximum()
         info, self.run_info, self.runner, self.in_progress = self.run_info, None, None, set()
+        conn = self.app.ai_conn
+        conn.cancel_handler = None
+        conn.set_running(False)
+        if info and info["override"]:
+            self.app.set_run_override(None)  # 'API 키로 이어서'는 이번 실행만(D4)
+        self._save_if_unsaved()
         failed = len(ai_cells.failed_cells(self.results))
-        spent = usage_diff(ai_cells.usage_total(self.results), info["base"]) if info else None
+        spent = self._spent(info) if info else None
+        method = info["method"] if info else None
+        kind = conn_view.band_kind(method, runner.halted_by) if reason == "halted" else None
+        self._remember_run(info, runner, reason)
         self._fill_matrix()
         self._progress_text()
-        self.app.status_message("AI 분석 %s: %d/%d 호출%s · %s 걸림%s · %s" % (
-            "취소됨" if cancelled else "끝남", done, total, " · 실패 칸 %d" % failed if failed else "",
+        verb = {"halted": "멈춤", "cancelled": "취소됨", "killed": "끊음"}.get(reason, "끝남")
+        if kind == "limit_reached":
+            verb = "멈춤(한도 도달)"
+        word = "시험" if method == "fixed" else "AI 분석"
+        self.app.status_message("%s %s: %d/%d 호출%s · %s 걸림%s · %s" % (
+            word, verb, done, total, " · 실패 칸 %d" % failed if failed else "",
             clock(time.monotonic() - info["start"]) if info else "-",
-            " · " + usage_text(spent) if spent else "",
+            " · " + conn_view.run_usage_line(method, spent) if spent and method != "fixed" else "",
             "저장 실패 — 화면에만 있음(다시 저장을 시도하려면 항목을 고치거나 화면을 다시 여세요)" if self._unsaved
             else "저장: %s" % self.store_path()))
+        if kind and self.machine.state != "closed":
+            self._show_run_band(kind)
+        self._update_buttons()
+        if self.machine.state == "closed":
+            self._close_wait_box.hide()
+            QTimer.singleShot(0, self.app.close)
+
+    # ---- 멈춘 뒤: 안내 띠와 이어서 실행(§7.3·§7.4, 기술 설계 §11 3번)
+    def _remember_run(self, info, runner, reason):
+        """이번 실행에서 다시 돌릴 칸: (가) limit_reached·overage·cancelled·not_ready·auth_mismatch로 끝난 칸과 멈춤을
+        부른 호출의 칸, (나) 아직 부르지 않은 호출 단위의 칸. 메모리에만 둔다."""
+        if info is None:
+            return
+        cells = []
+        halted_id = (runner.halted_by or {}).get("unit_id")
+        for ur in info["failed"]:
+            if ur.get("error_kind") in RESUME_KINDS or ur["unit_id"] == halted_id:
+                cells += [(ur["node_id"], did) for did in ur["cells"]]
+        for u in runner.remaining:
+            cells += [(u["node_id"], did) for did in u["deviation_ids"]]
+        seen = set()
+        cells = [c for c in cells if not (c in seen or seen.add(c))]
+        self.last_run = {"method": info["method"], "cells": cells, "reason": reason, "halted": runner.halted_by,
+                         "calls": info["calls"], "ok_calls": info["ok_calls"], "ok_cells": info["ok_cells"],
+                         "limit": info["limit"]} if cells else None
+
+    def _show_run_band(self, kind, actions=None):
+        lr = self.last_run or {}
+        units = self._plan("resume") if lr else []
+        band = conn_view.BANDS[kind]
+        if actions is not None:
+            band = replace(band, actions=actions)
+        if "resume_api" in band.actions and "api" not in self.app.ai_conn.methods():
+            band = replace(band, actions=tuple(a for a in band.actions if a != "resume_api"))
+        if not units:
+            band = replace(band, actions=tuple(a for a in band.actions if a not in ("resume", "resume_api")))
+        halted = lr.get("halted") or {}
+        guide = conn_view.guide_text(lr.get("method") or "api",
+                                     {"state": halted.get("conn_state") or "error", "detail": halted.get("error") or ""})
+        body = conn_view.band_text(kind, lr.get("calls", 0), lr.get("ok_calls", 0), lr.get("ok_cells", 0), len(units),
+                                   sum(len(u["deviation_ids"]) for u in units), lr.get("limit"),
+                                   guide if kind == "not_ready" else "")
+        self.run_band.set_band(kind, band, body, {})
+        limit = lr.get("limit") or {}
+        if kind == "limit_reached" and limit.get("resets_at"):
+            ms = int((limit["resets_at"] - time.time()) * 1000) + 5000
+            self._reset_timer.start(max(1000, min(ms, 2 ** 31 - 1)))
+
+    def _band_action(self, name):
+        conn, lr = self.app.ai_conn, self.last_run or {}
+        method = lr.get("method") or conn.method
+        if name == "close":
+            self.run_band.hide()
+        elif name == "resume":
+            self.run_band.hide()
+            self._request("resume", True)
+        elif name == "resume_api":
+            if not self.app.api_keys.get():
+                self.app.open_ai_settings("api")
+                return
+            self._request("resume", True, "api")
+        elif name == "login_help":
+            self.app.conn_action("login_help", method)
+        elif name == "recheck":
+            kind = self.run_band.kind
+
+            def checked(status):
+                if conn_view.can_start(method, status.get("state")) and self.last_run:
+                    self._show_run_band(kind, actions=tuple("resume" if a == "recheck" else a
+                                                            for a in conn_view.BANDS[kind].actions))
+            conn.check(method, done=checked)
+        elif name == "copy_error":
+            halted = lr.get("halted") or {}
+            QGuiApplication.clipboard().setText("사유: %s · %s\n시각: %s" % (
+                halted.get("error_kind") or "-", halted.get("error") or "-", claude_cli.now_kst()))
+            self.app.toast("오류 내용을 복사했습니다")
+        elif name == "settings":
+            self.app.open_ai_settings(method)
+        elif name == "to_real":
+            self.set_fixed_view(False)
+
+    def _limit_reset_check(self):
+        """재설정 시각이 지나면 다시 확인하고 토스트로만 알린다(자동 실행 없음, D2)."""
+        conn = self.app.ai_conn
+        if not self.last_run or "subscription" not in conn.methods():
+            return
+
+        def checked(status):
+            units = self._plan("resume") if self.last_run else []
+            if units and conn_view.can_start("subscription", status.get("state")) and status.get("state") != "limit_reached":
+                cells = sum(len(u["deviation_ids"]) for u in units)
+                self.app.toast(conn_view.reset_toast(cells), ms=15000,
+                               actions=(("이어서 실행", lambda: self._band_action("resume")),))
+        conn.check("subscription", done=checked)
+
+    def focus_band(self):
+        """F6: 떠 있는 안내 띠의 첫 단추로(띠가 떠도 포커스를 빼앗지 않으므로 사용자가 직접 간다)."""
+        for band in (self.run_band, self.test_band):
+            b = band.first_button() if band.isVisible() else None
+            if b is not None:
+                b.setFocus(Qt.ShortcutFocusReason)
+                return True
+        return False
+
+    # ---- 시험 결과(고정 응답) 파일(D5, §8.1)
+    def set_fixed_view(self, on):
+        """시험용 결과 파일을 보거나(on) 실제 결과로 돌아온다. 실행 중에는 바꾸지 않는다(실행이 받는 칸은 시작할 때
+        정한 파일에만 들어간다). 바꿨으면 True."""
+        if self.running():
+            return False
+        self._switch_view(on)
+        return True
+
+    def _switch_view(self, on):
+        if self.node_set is None or bool(on) == self.fixed_view:
+            return
+        self._save_if_unsaved()
+        self.fixed_view = bool(on)
+        if on:
+            doc = self._test_results()
+            self.test_band.set_band("fixed_view", conn_view.BANDS["fixed_view"], conn_view.FIXED_VIEW_TEXT, {})
+        else:
+            self.test_band.hide()
+            doc = self._saved_results(self.node_set)
+        self.set_results(doc)
+        self._show_save_info()
         self._update_buttons()
 
     def _update_buttons(self):
         idle = not self.running() and self.node_set is not None
         for b in (self.run_all_btn, self.run_node_btn, self.retry_btn, self.rerun_cell_btn):
             b.setEnabled(idle)
+        conn = getattr(self.app, "ai_conn", None)  # 화면만 띄우는 시험 틀에는 연결이 없다
+        if conn is not None:
+            self.run_all_btn.setToolTip(conn_view.run_tooltip(conn.method, conn.model(conn.method)))
         self.export_btn.setEnabled(self.node_set is not None and self.results is not None)
-        self.cancel_btn.setEnabled(self.running())
-        self.cancel_btn.setVisible(self.running())
-        has_failed = bool(self.results) and bool(ai_cells.failed_cells(self.results))
+        st = self.machine.state
+        self.cancel_btn.setEnabled(st in ("calling", "draining"))
+        self.cancel_btn.setVisible(self.machine.alive)
+        self.cancel_btn.setText(CANCEL_NOW if st in ("draining", "killing") else "취소")
+        self.cancel_btn.setToolTip(CANCEL_NOW_TIP if st == "draining" else CANCEL_TIP)
+        has_failed = bool(self.results) and bool(self._plan("failed"))
         self.retry_btn.setVisible(has_failed)
         self.combo.setEnabled(not self.running())
+        for b in self.test_band.btns.values():
+            b.setEnabled(not self.running())
         self._update_entry_buttons()
 
     # ------------------------------------------------------------ 행렬
+    def _rows(self):
+        """행렬 행이 되는 구간: 스크리닝 제외 구간은 행이 없고(④에서 확인), 낮음 구간은 맨 아래에 모은다(D6)."""
+        if not self.node_set:
+            return []
+        shown = [n for n in self.node_set["nodes"] if _status(n) != "excluded"]
+        return [n for n in shown if _status(n) != "low"] + [n for n in shown if _status(n) == "low"]
+
+    def _scope_set(self):
+        """AI 일괄·Excel의 기본 범위 = 행렬 행과 같은 구간."""
+        return dict(self.node_set, nodes=self._rows())
+
+    def _color_of(self, node_id):
+        """구간 색 번호는 ④와 같게 집합 순서로 정한다(행 순서가 달라도 같은 구간은 같은 색)."""
+        return next((i for i, n in enumerate(self.node_set["nodes"]) if n["node_id"] == node_id), 0)
+
     def _node_at(self, row):
-        return self.node_set["nodes"][row]["node_id"]
+        return self._rows()[row]["node_id"]
 
     def _row_of(self, node_id):
-        if not self.node_set:
-            return None
-        return next((i for i, n in enumerate(self.node_set["nodes"]) if n["node_id"] == node_id), None)
+        return next((i for i, n in enumerate(self._rows()) if n["node_id"] == node_id), None)
 
     def _fill_matrix(self):
-        """칸 한 줄(U-20). 아이템 text()는 설명 글자, 그리기는 CellDelegate가 CELL_ROLE 상태로 한다.
+        """칸 한 줄(U-20). 칸 글자·상태·툴팁은 MatrixModel이 보이는 칸만 계산하고, 그리기는 CellDelegate가 CELL_ROLE 상태로 한다.
         AI 실행 실패 칸은 위험도 색을 쓰지 않는다(U-19): 흰 바탕 + 빨강 점선 테두리 + '! 실패'."""
-        ns, summary = self.node_set, res.matrix_summary(self.results)
-        failed = {(c["node_id"], c["deviation_id"]): c["ai_run"].get("error") for c in self.results["cells"]
-                  if (c.get("ai_run") or {}).get("status") == "failed"}
+        cached, counted = self.summary_of
+        ns, summary = self._scope_set(), counted if cached is self.results else res.matrix_summary(self.results)
+        self.summary_of = (self.results, summary)  # 탐색기·다음 진입이 같은 결과로 다시 세지 않게(결과는 바뀔 때마다 새 dict다)
+        hidden = [n for n in self.node_set["nodes"] if _status(n) == "excluded"]
         runs = {(c["node_id"], c["deviation_id"]): c.get("ai_run") or {} for c in self.results["cells"]}
+        shown = {n["node_id"] for n in ns["nodes"]}
+        failed = {k for k, r in runs.items() if r.get("status") == "failed" and k[0] in shown}
+        limited = {k for k in failed if is_limit_stop(runs[k])}
+        marks = {k: "failed" for k in failed}
+        marks.update((k, "limit") for k in limited)
+        marks.update((k, "running") for k in self.in_progress)
+        color = {n["node_id"]: i for i, n in enumerate(self.node_set["nodes"])}
+        rows = []
+        for n in ns["nodes"]:
+            v = self.view.get(n["node_id"]) or n
+            label = project_ctx.node_label(v)
+            rows.append({"node": n, "color": color.get(n["node_id"], 0), "label": label,
+                         "tip": "%s\n%s\n구성요소 %s%s" % (label, project_ctx.boundary_text(v),
+                                                         project_ctx.counts_text(v, self.ctx.drawing_number)
+                                                         if self.ctx else len(n["members"]),
+                                                         "\n스크리닝 낮음: 편차원을 알아보지 못한 배관 묶음(맨 아래, 주배관일 수 있음)"
+                                                         if _status(n) == "low" else "")})
         m = self.matrix
         cur = (m.currentRow(), m.currentColumn())
-        m.clear()
-        m.setRowCount(len(ns["nodes"]))
-        m.setColumnCount(len(self.deviations))
         m.horizontalHeader().set_groups([(d["parameter"], d["guideword"]) for d in self.deviations])
-        for c, d in enumerate(self.deviations):
-            h = QTableWidgetItem("%s %s" % (d["parameter"], d["guideword"]))
-            h.setToolTip("%s %s" % (d["deviation_id"], d["label"]))
-            m.setHorizontalHeaderItem(c, h)
-        total_s = total_u = 0
-        for r, n in enumerate(ns["nodes"]):
-            v = self.view.get(n["node_id"]) or n
-            head = QTableWidgetItem(seg_icon(r, n["node_id"]), project_ctx.node_label(v))
-            head.setToolTip("%s\n%s\n구성요소 %s" % (project_ctx.node_label(v), project_ctx.boundary_text(v),
-                                                 project_ctx.counts_text(v, self.ctx.drawing_number)
-                                                 if self.ctx else len(n["members"])))
-            m.setVerticalHeaderItem(r, head)
-            for c, d in enumerate(self.deviations):
-                s = summary.get(n["node_id"], {}).get(d["deviation_id"]) or {"state": "not_analyzed", "scenarios": 0,
-                                                                            "max_risk": None, "unreviewed": 0}
-                it = QTableWidgetItem()
-                tip = "%s %s × %s" % (n["node_id"], n["name"], d["label"])
-                key = (n["node_id"], d["deviation_id"])
-                state = {"kind": "scored", "risk": s["max_risk"], "unreviewed": s["unreviewed"],
-                         "scenarios": s["scenarios"]}
-                if key in self.in_progress:
-                    it.setText("분석 중")
-                    state = {"kind": "running"}
-                    tip = "%s\nAI 호출 중" % tip
-                elif key in failed:
-                    it.setText("실패")
-                    state = {"kind": "failed"}
-                    tip = "%s\nAI 실행 실패(위험도 아님): %s" % (tip, failed[key] or "-")
-                elif s["state"] == "not_analyzed":
-                    it.setText("분석 전")
-                    state = {"kind": "not_analyzed"}
-                elif s["state"] == "excluded":
-                    it.setText("제외")
-                    state = {"kind": "excluded"}
-                else:
-                    lines = ["%d건" % s["scenarios"]]
-                    if s["max_risk"] is not None:
-                        lines.append("위험 %d" % s["max_risk"])
-                    if s["scenarios"] == 0 and not s["unreviewed"] and runs.get(key, {}).get("status") == "ok":
-                        lines = [empty_cell_label(runs[key]), "AI 초안"]
-                        state = {"kind": "empty"}
-                    else:
-                        lines.append("미검토 %d" % s["unreviewed"] if s["unreviewed"] else "완료")
-                    it.setText("\n".join(lines))
-                    tip = "%s\n%s" % (tip, " · ".join(lines))
-                it.setData(CELL_ROLE, state)
-                total_s += s["scenarios"]
-                total_u += s["unreviewed"]
-                it.setToolTip(tip)
-                m.setItem(r, c, it)
-        if cur[0] >= 0 and cur[1] >= 0:
+        self.matrix_model.set_data(rows, self.deviations, summary, runs, marks)
+        dev_ids = {d["deviation_id"] for d in self.deviations}
+        cells = [s for nid in shown for did, s in summary.get(nid, {}).items() if did in dev_ids]
+        total_s, total_u = sum(s["scenarios"] for s in cells), sum(s["unreviewed"] for s in cells)
+        if cur[0] >= 0 and cur[1] >= 0 and cur[0] < len(rows) and cur[1] < len(self.deviations):
             m.setCurrentCell(*cur)
         self.kpi.setText("구간 %d · 편차 %d · 시나리오 %d · 미검토 %d%s"
                          % (len(ns["nodes"]), len(self.deviations), total_s, total_u,
-                            " · 실패 %d" % len(failed) if failed else ""))
+                            " · 실패 %d" % (len(failed) - len(limited)) if len(failed) > len(limited) else "")
+                         + (" · 한도로 멈춤 %d" % len(limited) if limited else "")
+                         + (" · 스크리닝 제외 %d개(④에서 확인)" % len(hidden) if hidden else ""))
         self._update_buttons()
 
     # ------------------------------------------------------------ 워크시트
@@ -1204,7 +2036,8 @@ class ResultsScreen(QWidget):
         basis = e.get("ai_basis") or {}
         lines = [" → ".join(self._entity_label(x) for x in p) for p in basis.get("kg_paths") or []]
         lines += ["%s %s" % (s.get("doc") or "", s.get("where") or "") for s in basis.get("sources") or []]
-        lines += ["⚠ %s" % w for w in basis.get("warnings") or []]
+        lines += ["⚠ %s" % w for w in list(basis.get("warnings") or [])
+                  + [res.quality_line(k, t) for k, t in res.quality_warnings(e)]]
         clues = [t for k, t in self._ref_lines(e) if k == "expectation"]
         if clues:  # 사람이 고른 잠재 후보는 AI 근거가 아니라 확인할 단서라 따로 묶는다
             lines += ([""] if lines else []) + ["확인할 단서(근거 아님)"] + clues
@@ -1223,13 +2056,15 @@ class ResultsScreen(QWidget):
                           self._expect_items() if self.expectations is not None else None)
 
     def _safeguard_cell(self, e):
-        """보호수단 칸: 역할·구현 대상이 있는 항목은 줄마다 "문장 — 완화 · RC-PSV101(102)"(승인 전 AI 참조는 "AI 초안")."""
+        """보호수단 칸: 역할·작동 방식·구현 대상이 있는 항목은 줄마다 "문장 — 완화 · 자체작동 · RC-PSV101(102)"
+        (승인 전 AI 참조는 "AI 초안")."""
         items = refs.safeguard_items(e)
-        if not any(s["role"] != "unknown" or s["refs"] for s in items):
+        if not any(s["role"] != "unknown" or s["actuation"] != "unknown" or s["refs"] for s in items):
             return self._shown(", ".join(s["text"] for s in items))
         out = []
         for s in items:
             bits = [refs.ROLES[s["role"]]] if s["role"] != "unknown" else []
+            bits += [refs.ACTUATIONS[s["actuation"]]] if s["actuation"] != "unknown" else []
             bits += [self._ref_label(r["ref"]) for r in s["refs"] if r.get("ref")]
             draft = not refs.is_confirmed(s, e) or any(not refs.is_confirmed(r, e) for r in s["refs"])
             out.append("%s — %s%s" % (self._shown(s["text"]), " · ".join(bits) or "미정", " · AI 초안" if draft else ""))
@@ -1262,22 +2097,29 @@ class ResultsScreen(QWidget):
         dev = next((d for d in self.deviations if d["deviation_id"] == deviation_id), None)
         if node is None or dev is None:
             return False
+        if self._row_of(node_id) is None:  # 스크리닝 제외 구간은 행이 없다
+            self.app.status_message("%s는 스크리닝 제외 구간입니다. ④에서 꺼내면 ⑤에서 볼 수 있습니다." % node_id)
+            return False
         keep = (self.selected_entry() or {}).get("entry_id") if self.cell == (node_id, deviation_id) else None
         self.cell = (node_id, deviation_id)
         cell = self._cell_doc()
         row = self._row_of(node_id)
-        self.sheet_badge.setPixmap(seg_icon(row, node_id).pixmap(30, 16))
+        self.sheet_badge.setPixmap(seg_icon(self._color_of(node_id), node_id).pixmap(30, 16))
         self.sheet_title.setText("%s × %s" % (project_ctx.node_label(self.view.get(node_id) or node), dev["label"]))
         self.sheet_span.setText(self._span_text(node_id))
         self.sheet_span.setToolTip(self.sheet_span.text())
         self.app.set_selection({"kind": "cell", "drawing": self.name, "node_id": node_id, "deviation_id": deviation_id})
         run = (cell or {}).get("ai_run") or {}
-        if run.get("status") == "failed":
+        self.sheet_source.setText(conn_view.provenance(run) if run.get("status") == "ok" else "")
+        self.sheet_source.setVisible(bool(self.sheet_source.text()))
+        if is_limit_stop(run):
+            self.run_note.setText("구독 한도로 멈춤: %s" % (run.get("error") or "-"))
+        elif run.get("status") == "failed":
             self.run_note.setText("AI 실행 실패: %s" % (run.get("error") or "-"))
         else:
             self.run_note.setText("AI 메모: %s" % run["note"] if run.get("note") else "")
         self.run_note.setVisible(bool(self.run_note.text()))
-        intent = design_intent(node)
+        intent = design_intent(node, self.node_review)
         self.intent.setText("설계 의도: %s" % intent[0] if intent else "설계의도 미입력")
         self.intent_src.setText("출처: %s" % intent[1] if intent else "")
         self.intent_src.setVisible(bool(intent))
@@ -1295,7 +2137,7 @@ class ResultsScreen(QWidget):
             t.setSpan(0, 0, 1, len(SHEET_COLUMNS))
             for c in range(len(SHEET_COLUMNS)):
                 t.setItem(0, c, QTableWidgetItem(""))
-            state = "AI 실행 실패" if run.get("status") == "failed" else (
+            state = "한도로 멈춤" if is_limit_stop(run) else "AI 실행 실패" if run.get("status") == "failed" else (
                 "AI 초안 · %s" % empty_cell_label(run) if (cell or {}).get("state") == "analyzed" else "분석 전")
             t.item(0, 0).setText("%s · 항목 없음" % state)
             t.item(0, 0).setForeground(QColor(tokens.c("muted")))
@@ -1365,7 +2207,20 @@ class ResultsScreen(QWidget):
         self.approve_btn.setEnabled(e is not None and e.get("status") != "approved")
         self.reject_btn.setEnabled(e is not None and e.get("status") != "rejected")
         self.edit_btn.setEnabled(e is not None)
+        self.ie_btn.setEnabled(e is not None)
+        chips = ie_chips(e) if e is not None else []
+        for i, c in enumerate(self.ie_chips):
+            c.set_state(*(chips[i] if i < len(chips) else ("", "")))
+            c.setVisible(i < len(chips))
+        h = (e or {}).get("ie_hint") if isinstance((e or {}).get("ie_hint"), dict) else {}
+        self.ie_reason.setText(h.get("reason") or ("항목을 고르면 판정이 보입니다" if e is None else ""))
+        self.ie_reason.setToolTip(self.ie_reason.text())
         self._place_row_actions()
+
+    def eventFilter(self, obj, event):  # noqa: N802
+        if event.type() == QEvent.Resize and obj is self.table.viewport():
+            QTimer.singleShot(0, self._place_row_actions)
+        return super().eventFilter(obj, event)
 
     def _place_row_actions(self):
         """고른 행의 상태 칸 아래쪽에 동작 버튼을 띄운다. 그 행 높이는 버튼이 들어가게 늘린다."""
@@ -1453,4 +2308,25 @@ class ResultsScreen(QWidget):
         old, cell = self.results, self.cell
         self._apply_review(new)
         self.app.toast("%s 시나리오를 수정했습니다" % cell[0], self._undo_to(old, cell))
+        return True
+
+    def set_ie_selected(self, hint=None):
+        """hint가 없으면 초기사건 판정 창을 띄운다. 항목 상태는 그대로 두고 판정만 사람 확정으로 저장한다."""
+        e = self._entry_or_hint("ie")
+        if e is None:
+            return False
+        if hint is None:
+            dlg = IeHintDialog(e, self)
+            if dlg.exec() != QDialog.Accepted:
+                return False
+            hint = dlg.hint()
+        try:
+            new = res.set_ie_hint(self.results, self.cell[0], self.cell[1], e["entry_id"], hint)
+        except ValueError as exc:
+            self.app.log_error("초기사건 판정 저장 실패", exc)
+            QMessageBox.warning(self, "초기사건 판정", "저장할 수 없는 값이 있어 저장하지 않았습니다.")
+            return False
+        old, cell = self.results, self.cell
+        self._apply_review(new)
+        self.app.toast("%s 시나리오의 초기사건 판정을 정했습니다" % cell[0], self._undo_to(old, cell))
         return True

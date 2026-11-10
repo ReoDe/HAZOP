@@ -25,7 +25,6 @@ from hazop.kg import build, claims
 from hazop.kg.schema import REGISTRY
 
 RULES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema", "expectations.json")
-STORE_DIR = ("데이터", "잠재후보")
 STORE_KIND = "hazop_expectation_judgements"
 STORE_SCHEMA_VERSION = "0.1"
 ID_PREFIX = "exp-"
@@ -498,6 +497,23 @@ def _item(rule, rules, idx, e, found, note, j):
             "actions": human_actions(state)}
 
 
+_EVALUATED = []  # (graph, kg 열쇠, 판단 지문, 결과) 최근 몇 개
+
+
+def evaluate_cached(graph, kg=None, judgements=None):
+    """evaluate와 같지만, 같은 그래프 객체·같은 지식그래프 판·같은 판단이면 계산한 결과를 그대로 준다(③·⑤가 화면에
+    들어올 때마다 143쪽 그래프로 다시 계산하지 않게). 돌려준 결과는 여러 화면이 함께 쓰므로 고치지 않는다."""
+    kg_key = (kg or {}).get("kg_version") or (kg or {}).get("kg_id") or id(kg)
+    digest = json.dumps(judgements or {}, sort_keys=True, ensure_ascii=False)
+    for g, k, d, out in _EVALUATED:
+        if g is graph and k == kg_key and d == digest:
+            return out
+    out = evaluate(graph, kg, judgements)
+    _EVALUATED.append((graph, kg_key, digest, out))
+    del _EVALUATED[:-4]
+    return out
+
+
 def evaluate(graph, kg=None, judgements=None, rules=None):
     """잠재 후보 계산. graph: 프로젝트 그래프(또는 도면 그래프), kg: 지식그래프 또는 None, judgements: load_judgements 결과.
     입력은 바꾸지 않는다."""
@@ -608,7 +624,7 @@ def apply_action(item, action, by, reason="", evidence="", at=None, found_ref=No
 
 
 def store_path(project_id):
-    return paths.work_path(*STORE_DIR, paths.safe_name(project_id, "project") + ".json")
+    return paths.folder("잠재후보", paths.safe_name(project_id, "project") + ".json")
 
 
 def _check_store(doc, project_id, path):

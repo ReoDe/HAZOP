@@ -35,6 +35,8 @@ class SpanTest(unittest.TestCase):
         self.assertTrue(node["display_name"].endswith("[101 → 102]"))
         self.assertEqual(node["drawings"], ["SNP-M-101", "SNP-M-102"])
         self.assertEqual(node["member_count"], sum(node["members_by_drawing"].values()) + 1)  # + 도면 연결 구간
+        # 도면을 잇는 배관에는 편차원이 없어 번호가 앞선 탱크 구간에 붙는다(R2). 경계는 안쪽 탱크에서 밖의 다른 도면 탱크까지
+        self.assertIn("graph-SNP-M-101/E", node["members"])
         self.assertEqual(span.worksheet_header(node)["start"], "SNP-M-101-E(SNP-M-101)")
         self.assertEqual(span.worksheet_header(node)["end"], "SNP-M-102-E(SNP-M-102)")
         chips = [span.continuation_chip(node["node_id"], c) for c in node["continuations"]]

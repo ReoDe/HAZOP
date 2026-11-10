@@ -9,6 +9,7 @@
   ⑤ 결과는 프로젝트 집합이 확정된 뒤(결과의 study_nodes_ref가 확정본 기준이어야 하므로) 옮긴다. 옛 파일은 지우지 않는다.
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -20,7 +21,6 @@ from hazop.study import results as res
 from hazop.study import span
 
 SPAN_MARK = "⇄"
-BACKUP_DIR = ("데이터", "백업")
 
 
 def node_label(n):
@@ -46,25 +46,58 @@ def boundary_text(n):
     return "시작: %s / 끝: %s" % (one(b.get("start")), one(b.get("end")))
 
 
+_NAMES = {}
+
+
 def graph_names(project_id):
     """{도면 graph_id: 출력/그래프 폴더 이름(= ②④⑤ 도면 고르기 이름)}. 이 프로젝트 도면만, 같은 graph_id면 가장 최근 것
-    (project.load가 고르는 판과 같은 규칙)."""
+    (project.load가 고르는 판과 같은 규칙). 입력 파일 지문이 같으면 다시 읽지 않는다."""
+    key = _graph_inputs(project_id)
+    hit = _NAMES.get(project_id)
+    if hit is not None and hit[0] == key:
+        return dict(hit[1])
+    out = _read_graph_names(project_id)
+    _NAMES[project_id] = (key, out)
+    return dict(out)
+
+
+def _read_graph_names(project_id):
+    return {gid: v[2] for gid, v in project.pick_graphs(project_id).items() if gid}
+
+
+_PROJECT_GRAPHS = {}
+_VIEWS = {}
+
+
+def _graph_inputs(project_id):
+    """project.load가 읽는 파일의 (경로, 바뀐 시각, 크기). 하나라도 바뀌면 프로젝트 그래프를 다시 짓는다."""
     root = paths.output_root("그래프")
-    best = {}
-    for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
-        p = os.path.join(root, name, "graph.json")
+    files = [os.path.join(root, n, "graph.json") for n in sorted(os.listdir(root))] if os.path.isdir(root) else []
+    files += [project.manual_path(project_id), paths.folder("APR1400", project.SYSTEM_CODES_FILE)]
+    out = []
+    for f in files:
         try:
-            with open(p, encoding="utf-8") as fh:
-                g = json.load(fh)
-        except (OSError, ValueError):
+            st = os.stat(f)
+        except OSError:
             continue
-        if project.project_id_of(g) != project_id:
-            continue
-        gid = g.get("graph_id")
-        key = (os.path.getmtime(p), p)
-        if gid and (gid not in best or key > best[gid][0]):
-            best[gid] = (key, name)
-    return {g: v[1] for g, v in best.items()}
+        out.append((f, st.st_mtime_ns, st.st_size))
+    return (paths.work_root(), tuple(out))
+
+
+def project_graph(project_id):
+    """프로젝트 그래프. 화면을 옮길 때마다 143쪽을 다시 읽고 짓지 않게, 입력 파일 지문이 같으면 지은 것을 그대로 준다.
+    돌려준 dict는 여러 화면이 함께 쓰므로 고치지 않는다(읽기 전용)."""
+    key = _graph_inputs(project_id)
+    hit = _PROJECT_GRAPHS.get(project_id)
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    pg, names = project.load_with_names(project_id)
+    _NAMES[project_id] = (key, names)  # 같은 파일을 읽어 고른 이름(graph_names가 다시 읽지 않게)
+    if hit is not None:  # 옛 그래프를 붙잡은 표기 사본은 버린다(143쪽 그래프가 메모리에 여러 벌 남지 않게)
+        for k in [k for k, v in _VIEWS.items() if v[0] is hit[1]]:
+            del _VIEWS[k]
+    _PROJECT_GRAPHS[project_id] = (key, pg)
+    return pg
 
 
 class ProjectContext:
@@ -77,7 +110,7 @@ class ProjectContext:
         self.project_id = project.project_id_of(sheet)
         self.pg, self.error, self.node_set, self.saved, self.notice = None, None, None, False, None
         try:
-            self.pg = project.load(self.project_id)
+            self.pg = project_graph(self.project_id)
         except (OSError, ValueError) as exc:
             self.error = "프로젝트 그래프를 만들 수 없음: %s" % exc
             return
@@ -116,16 +149,29 @@ class ProjectContext:
         if migrated is not None:
             self.node_set, self.saved, self.notice = migrated[0], True, migrated[1]
             return self.node_set, True
-        self.node_set, self.saved = sn.propose(self.pg), False
+        sheets, problem = sn.exclusion_for(self.pg)
+        if problem:
+            self.notice = problem
+        self.node_set, self.saved = sn.propose(self.pg, exclude_sheets=sheets), False
         return self.node_set, False
 
     def view(self, node_set=None):
-        """표기·경계·칩을 붙인 사본(span.annotate). 경계 항목에 drawing_short를 더한다."""
-        v = span.annotate(node_set if node_set is not None else self.node_set, self.pg)
+        """표기·경계·칩을 붙인 사본(span.annotate). 경계 항목에 drawing_short를 더한다.
+        같은 프로젝트 그래프·같은 내용의 집합이면 지은 사본을 그대로 준다(화면 여럿이 함께 쓰므로 고치지 않는다)."""
+        ns = node_set if node_set is not None else self.node_set
+        digest = hashlib.sha1(json.dumps(ns, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+        key = (id(self.pg), digest)
+        hit = _VIEWS.get(key)
+        if hit is not None and hit[0] is self.pg:
+            return hit[1]
+        v = span.annotate(ns, self.pg)
         for n in v["nodes"]:
             for x in (n.get("boundary") or {}).values():
                 if x and x.get("drawing"):
                     x["drawing_short"] = self.short.get(x["drawing"], x["drawing"])
+        if len(_VIEWS) >= 8:  # 최근 몇 개만(편집마다 새 집합이 생긴다)
+            _VIEWS.pop(next(iter(_VIEWS)))
+        _VIEWS[key] = (self.pg, v)  # pg를 붙잡아 id 재사용으로 다른 그래프의 사본을 주지 않게
         return v
 
     def chips(self, n, drawing_number=None):
@@ -206,7 +252,7 @@ def _old_sets(pg):
 def backup(paths_to_copy, label):
     """파일들을 <작업 루트>/데이터/백업/<시각>-<label>/ 아래 원래 상대 경로 그대로 복사한다. 백업 폴더를 돌려준다."""
     stamp = sn.now_utc().replace(":", "").replace("-", "")
-    root = paths.work_path(*BACKUP_DIR, "%s-%s" % (stamp, label))
+    root = paths.folder("백업", "%s-%s" % (stamp, label))
     for p in paths_to_copy:
         rel = os.path.relpath(p, paths.work_root())
         dst = os.path.join(root, rel)
@@ -231,7 +277,10 @@ def migrate_sets(pg):
     old_sets = [o for _g, o in olds]
     files = [sn._readable_path(g.get("project_id"), g["graph_id"]) for g, _o in olds]
     folder = backup(files, "검토구간-이전")
-    proposal = sn.propose(pg)
+    sheets, problem = sn.exclusion_for(pg)
+    if problem:
+        raise ValueError(problem)  # 이전은 한 번뿐이라, 표시를 못 읽은 채 옮기지 않고 저장본을 읽지 못한 것처럼 알린다
+    proposal = sn.propose(pg, exclude_sheets=sheets)
     mapping = span.legacy_map(old_sets, proposal, pg)
     out = span.migrate_set(old_sets, proposal, pg)
     path = sn.save(out)
@@ -266,8 +315,10 @@ def migrate_results(pg, node_set):
     out, report = span.migrate_results(old_results, [o for _g, o in olds], node_set, res.load_deviations(), pg)
     stop = span.blocked(report)
     if stop:
-        return None, "옛 분석 결과를 옮기지 않음: 대응 없는 옛 자료 %s. 옛 파일은 그대로 있습니다." % (
-            ", ".join("%s %d" % (k, len(report[k])) for k in stop))
+        labels = {"unmapped": "옮길 칸 없음", "unmapped_nodes": "대응 구간 없음", "unmapped_deviations": "대응 편차 없음",
+                  "to_excluded": "사람 판정 항목이 스크리닝 제외 구간으로 감(④에서 꺼낸 뒤 다시 확정)"}
+        return None, "옛 분석 결과를 옮기지 않음: %s. 옛 파일은 그대로 있습니다." % (
+            ", ".join("%s %d건" % (labels.get(k, k), len(report[k])) for k in stop))
     folder = backup(files, "분석결과-이전")
     path = res.save(out, node_set["project_id"])
     _write_report(folder, dict(report, kind="results_migration", at=sn.now_utc(), written=path, old_files=files))

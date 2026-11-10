@@ -1,0 +1,972 @@
+{
+ "answer_key": {
+  "5.4.12-1-S1": {
+   "connector_hits": 3,
+   "connectors": 3,
+   "continuations": 3,
+   "continuations_correct": 3,
+   "instrument_hits": 4,
+   "instruments": 4,
+   "key_connectors": 3,
+   "key_instruments": 4,
+   "proxy": {
+    "bubbles": 4,
+    "connector_bad_target": 0,
+    "connectors_detected": 3,
+    "continuations": 3,
+    "nodes": 78,
+    "offpage_labels": 3,
+    "tag_exact": 4,
+    "tag_not_in_text": 0,
+    "tagged": 4,
+    "unclassified": 38,
+    "unknowns": 161
+   },
+   "proxy_bubbles": 4,
+   "proxy_bubbles_in_key": 4,
+   "proxy_offpage": 3,
+   "proxy_offpage_in_key": 3,
+   "tagged": 4,
+   "tagged_correct": 4
+  },
+  "9.3.3-1-S7": {
+   "connector_hits": 7,
+   "connectors": 7,
+   "continuations": 7,
+   "continuations_correct": 7,
+   "instrument_hits": 16,
+   "instruments": 16,
+   "key_connectors": 7,
+   "key_instruments": 16,
+   "proxy": {
+    "bubbles": 16,
+    "connector_bad_target": 0,
+    "connectors_detected": 5,
+    "continuations": 7,
+    "nodes": 145,
+    "offpage_labels": 5,
+    "tag_exact": 16,
+    "tag_not_in_text": 0,
+    "tagged": 16,
+    "unclassified": 55,
+    "unknowns": 593
+   },
+   "proxy_bubbles": 16,
+   "proxy_bubbles_in_key": 16,
+   "proxy_offpage": 5,
+   "proxy_offpage_in_key": 5,
+   "tagged": 16,
+   "tagged_correct": 16
+  },
+  "9.3.4-1-S1": {
+   "connector_hits": 17,
+   "connectors": 17,
+   "continuations": 17,
+   "continuations_correct": 17,
+   "instrument_hits": 12,
+   "instruments": 15,
+   "key_connectors": 17,
+   "key_instruments": 15,
+   "proxy": {
+    "bubbles": 15,
+    "connector_bad_target": 0,
+    "connectors_detected": 4,
+    "continuations": 17,
+    "nodes": 279,
+    "offpage_labels": 4,
+    "tag_exact": 12,
+    "tag_not_in_text": 0,
+    "tagged": 12,
+    "unclassified": 110,
+    "unknowns": 888
+   },
+   "proxy_bubbles": 15,
+   "proxy_bubbles_in_key": 15,
+   "proxy_offpage": 4,
+   "proxy_offpage_in_key": 4,
+   "tagged": 12,
+   "tagged_correct": 12
+  }
+ },
+ "pages": {
+  "1": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "10": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "100": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 1,
+   "tag_not_in_text": 0
+  },
+  "101": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "102": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "103": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "104": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "105": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 4,
+   "tag_not_in_text": 0
+  },
+  "106": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 1,
+   "tag_not_in_text": 0
+  },
+  "107": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "108": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "109": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "11": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "110": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "111": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "112": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "113": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "114": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "115": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 1,
+   "tag_not_in_text": 0
+  },
+  "116": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "117": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "118": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "119": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "12": {
+   "connector_bad_target": 0,
+   "connectors_detected": 3,
+   "tag_exact": 4,
+   "tag_not_in_text": 0
+  },
+  "120": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "121": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "122": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "123": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "124": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "125": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 36,
+   "tag_not_in_text": 0
+  },
+  "126": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 18,
+   "tag_not_in_text": 0
+  },
+  "127": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 15,
+   "tag_not_in_text": 0
+  },
+  "128": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 9,
+   "tag_not_in_text": 0
+  },
+  "129": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 35,
+   "tag_not_in_text": 0
+  },
+  "13": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 18,
+   "tag_not_in_text": 0
+  },
+  "130": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 6,
+   "tag_not_in_text": 0
+  },
+  "131": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "132": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "133": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "134": {
+   "connector_bad_target": 0,
+   "connectors_detected": 7,
+   "tag_exact": 8,
+   "tag_not_in_text": 0
+  },
+  "135": {
+   "connector_bad_target": 0,
+   "connectors_detected": 3,
+   "tag_exact": 4,
+   "tag_not_in_text": 0
+  },
+  "136": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 7,
+   "tag_not_in_text": 0
+  },
+  "137": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 12,
+   "tag_not_in_text": 0
+  },
+  "138": {
+   "connector_bad_target": 0,
+   "connectors_detected": 2,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "139": {
+   "connector_bad_target": 0,
+   "connectors_detected": 5,
+   "tag_exact": 6,
+   "tag_not_in_text": 0
+  },
+  "14": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "140": {
+   "connector_bad_target": 0,
+   "connectors_detected": 2,
+   "tag_exact": 5,
+   "tag_not_in_text": 0
+  },
+  "141": {
+   "connector_bad_target": 0,
+   "connectors_detected": 15,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "142": {
+   "connector_bad_target": 0,
+   "connectors_detected": 2,
+   "tag_exact": 11,
+   "tag_not_in_text": 0
+  },
+  "143": {
+   "connector_bad_target": 0,
+   "connectors_detected": 5,
+   "tag_exact": 1,
+   "tag_not_in_text": 0
+  },
+  "15": {
+   "connector_bad_target": 0,
+   "connectors_detected": 20,
+   "tag_exact": 18,
+   "tag_not_in_text": 0
+  },
+  "16": {
+   "connector_bad_target": 0,
+   "connectors_detected": 16,
+   "tag_exact": 18,
+   "tag_not_in_text": 0
+  },
+  "17": {
+   "connector_bad_target": 0,
+   "connectors_detected": 8,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "18": {
+   "connector_bad_target": 0,
+   "connectors_detected": 12,
+   "tag_exact": 20,
+   "tag_not_in_text": 0
+  },
+  "19": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 2,
+   "tag_not_in_text": 0
+  },
+  "2": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "20": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 2,
+   "tag_not_in_text": 0
+  },
+  "21": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 2,
+   "tag_not_in_text": 0
+  },
+  "22": {
+   "connector_bad_target": 0,
+   "connectors_detected": 16,
+   "tag_exact": 21,
+   "tag_not_in_text": 0
+  },
+  "23": {
+   "connector_bad_target": 0,
+   "connectors_detected": 18,
+   "tag_exact": 26,
+   "tag_not_in_text": 0
+  },
+  "24": {
+   "connector_bad_target": 0,
+   "connectors_detected": 4,
+   "tag_exact": 15,
+   "tag_not_in_text": 0
+  },
+  "25": {
+   "connector_bad_target": 0,
+   "connectors_detected": 10,
+   "tag_exact": 34,
+   "tag_not_in_text": 0
+  },
+  "26": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 18,
+   "tag_not_in_text": 0
+  },
+  "27": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 26,
+   "tag_not_in_text": 0
+  },
+  "28": {
+   "connector_bad_target": 0,
+   "connectors_detected": 4,
+   "tag_exact": 67,
+   "tag_not_in_text": 1
+  },
+  "29": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "3": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 1,
+   "tag_not_in_text": 0
+  },
+  "30": {
+   "connector_bad_target": 0,
+   "connectors_detected": 2,
+   "tag_exact": 8,
+   "tag_not_in_text": 0
+  },
+  "31": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "32": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "33": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 17,
+   "tag_not_in_text": 0
+  },
+  "34": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "35": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 17,
+   "tag_not_in_text": 0
+  },
+  "36": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "37": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 26
+  },
+  "38": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "39": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "4": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "40": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 20
+  },
+  "41": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "42": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "43": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "44": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "45": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "46": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "47": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "48": {
+   "connector_bad_target": 0,
+   "connectors_detected": 21,
+   "tag_exact": 4,
+   "tag_not_in_text": 0
+  },
+  "49": {
+   "connector_bad_target": 0,
+   "connectors_detected": 9,
+   "tag_exact": 2,
+   "tag_not_in_text": 0
+  },
+  "5": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "50": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "51": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "52": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "53": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "54": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "55": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "56": {
+   "connector_bad_target": 0,
+   "connectors_detected": 6,
+   "tag_exact": 23,
+   "tag_not_in_text": 0
+  },
+  "57": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 12,
+   "tag_not_in_text": 0
+  },
+  "58": {
+   "connector_bad_target": 0,
+   "connectors_detected": 1,
+   "tag_exact": 6,
+   "tag_not_in_text": 0
+  },
+  "59": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 6,
+   "tag_not_in_text": 0
+  },
+  "6": {
+   "connector_bad_target": 0,
+   "connectors_detected": 16,
+   "tag_exact": 28,
+   "tag_not_in_text": 0
+  },
+  "60": {
+   "connector_bad_target": 0,
+   "connectors_detected": 3,
+   "tag_exact": 18,
+   "tag_not_in_text": 0
+  },
+  "61": {
+   "connector_bad_target": 0,
+   "connectors_detected": 3,
+   "tag_exact": 2,
+   "tag_not_in_text": 0
+  },
+  "62": {
+   "connector_bad_target": 0,
+   "connectors_detected": 5,
+   "tag_exact": 16,
+   "tag_not_in_text": 0
+  },
+  "63": {
+   "connector_bad_target": 0,
+   "connectors_detected": 4,
+   "tag_exact": 12,
+   "tag_not_in_text": 0
+  },
+  "64": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 3,
+   "tag_not_in_text": 0
+  },
+  "65": {
+   "connector_bad_target": 0,
+   "connectors_detected": 1,
+   "tag_exact": 14,
+   "tag_not_in_text": 0
+  },
+  "66": {
+   "connector_bad_target": 0,
+   "connectors_detected": 5,
+   "tag_exact": 6,
+   "tag_not_in_text": 0
+  },
+  "67": {
+   "connector_bad_target": 0,
+   "connectors_detected": 15,
+   "tag_exact": 6,
+   "tag_not_in_text": 0
+  },
+  "68": {
+   "connector_bad_target": 0,
+   "connectors_detected": 35,
+   "tag_exact": 6,
+   "tag_not_in_text": 0
+  },
+  "69": {
+   "connector_bad_target": 0,
+   "connectors_detected": 4,
+   "tag_exact": 6,
+   "tag_not_in_text": 0
+  },
+  "7": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 12,
+   "tag_not_in_text": 0
+  },
+  "70": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 26,
+   "tag_not_in_text": 0
+  },
+  "71": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 2,
+   "tag_not_in_text": 0
+  },
+  "72": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 16,
+   "tag_not_in_text": 0
+  },
+  "73": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "74": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 6,
+   "tag_not_in_text": 0
+  },
+  "75": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "76": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 3,
+   "tag_not_in_text": 0
+  },
+  "77": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "78": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 1,
+   "tag_not_in_text": 0
+  },
+  "79": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 1,
+   "tag_not_in_text": 0
+  },
+  "8": {
+   "connector_bad_target": 0,
+   "connectors_detected": 4,
+   "tag_exact": 25,
+   "tag_not_in_text": 0
+  },
+  "80": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "81": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 16,
+   "tag_not_in_text": 0
+  },
+  "82": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 8,
+   "tag_not_in_text": 0
+  },
+  "83": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 26,
+   "tag_not_in_text": 0
+  },
+  "84": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "85": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 15,
+   "tag_not_in_text": 0
+  },
+  "86": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 2,
+   "tag_not_in_text": 0
+  },
+  "87": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 12,
+   "tag_not_in_text": 0
+  },
+  "88": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "89": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "9": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "90": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "91": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "92": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "93": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "94": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "95": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "96": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 0,
+   "tag_not_in_text": 0
+  },
+  "97": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 6,
+   "tag_not_in_text": 0
+  },
+  "98": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 9,
+   "tag_not_in_text": 0
+  },
+  "99": {
+   "connector_bad_target": 0,
+   "connectors_detected": 0,
+   "tag_exact": 2,
+   "tag_not_in_text": 0
+  }
+ },
+ "totals": {
+  "bubbles": 1619,
+  "connector_bad_target": 0,
+  "connectors_detected": 286,
+  "continuations": 1864,
+  "failed_pages": 0,
+  "nodes": 24789,
+  "offpage_labels": 295,
+  "pages": 143,
+  "pair_candidates": 10,
+  "pair_key": 6,
+  "pair_key_hit": 6,
+  "pair_key_wrong": 0,
+  "paired": 279,
+  "seconds": 233,
+  "tag_exact": 872,
+  "tag_not_in_text": 47,
+  "tagged": 1083,
+  "unclassified": 7919,
+  "unknowns": 71203
+ }
+}

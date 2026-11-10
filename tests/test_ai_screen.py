@@ -18,6 +18,7 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing --log-level=3")
 
+from hazop import paths  # noqa: E402
 from tests.test_app import build_temp_drawing, tearDownModule, wait_for  # noqa: E402,F401
 
 RESULTS = 6
@@ -86,7 +87,7 @@ class AiScreenTest(unittest.TestCase):
 
     def tearDown(self):
         from hazop import paths
-        shutil.rmtree(paths.work_path("데이터", "분석결과"), ignore_errors=True)
+        shutil.rmtree(paths.folder("분석결과"), ignore_errors=True)
 
     def screen(self, client=None, key=KEY):
         from hazop.app.main_window import MainWindow
@@ -97,6 +98,7 @@ class AiScreenTest(unittest.TestCase):
         win.show()
         if key:
             win.api_keys.set(key, persist=False)
+        win.ai_prefs.choose("api")  # 이 파일은 API 키 경로를 본다(구독 경로는 test_ai_run_flow)
         win.go(RESULTS)
         scr = win.screens[RESULTS]
         self.assertEqual(scr.stack.currentIndex(), 1, "확정 구간이 있으면 행렬 화면")
@@ -185,7 +187,7 @@ class AiScreenTest(unittest.TestCase):
     def test_finish_message_says_when_save_failed(self):
         from hazop import paths
         # 창을 닫을 때 shutdown이 저장을 다시 시도하므로 정리는 창이 닫힌 뒤(가장 나중)에 한다
-        self.addCleanup(shutil.rmtree, paths.work_path("데이터", "분석결과"), True)
+        self.addCleanup(shutil.rmtree, paths.folder("분석결과"), True)
         client = FakeClient()
         win, scr = self.screen(client)
         with mock.patch("hazop.app.screens.results.res.save", side_effect=PermissionError("잠김")):
@@ -210,11 +212,16 @@ class AiScreenTest(unittest.TestCase):
         client = FakeClient()
         _win, scr = self.screen(client)
         from hazop.study import results as res
-        with mock.patch("hazop.app.screens.results.QMessageBox.question",
-                        return_value=__import__("PySide6.QtWidgets", fromlist=["QMessageBox"]).QMessageBox.No) as q:
-            self.assertFalse(scr.request_ai("all"), "아니요면 시작 안 함")
-        text = q.call_args[0][2]
-        self.assertIn("%d회" % len(self.units()), text)
+        seen = {}
+
+        def ask(dlg):
+            seen["text"], seen["title"] = dlg.texts(), dlg.windowTitle()
+            return None
+
+        with mock.patch("hazop.app.screens.results.RunConfirmDialog.ask", ask):
+            self.assertFalse(scr.request_ai("all"), "취소면 시작 안 함")
+        text = seen["text"]
+        self.assertIn("AI를 %d회 호출해" % len(self.units()), text)
         self.assertIn("$", text)
         self.assertIn(res.store_path(self.node_set.get("project_id"), self.node_set["graph_id"]), text)
         self.assertEqual(client.calls, [])
@@ -360,8 +367,13 @@ class AiScreenTest(unittest.TestCase):
         scr.select_entry(0)
         QApplication.processEvents()
         self.assertFalse(scr.row_actions.isHidden())
-        geo, cell = scr.row_actions.geometry(), scr.table.visualRect(scr.table.model().index(0, 6))
-        self.assertTrue(cell.contains(geo.center()), "버튼은 고른 행의 상태 칸 위")
+        for width in (None, 2200, 1000, 1440):  # 창 폭이 바뀌어 열 폭이 달라져도 버튼은 상태 칸을 따라감
+            if width:
+                win.resize(width, 860)
+                QApplication.processEvents()
+            geo, cell = scr.row_actions.geometry(), scr.table.visualRect(scr.table.model().index(0, 6))
+            self.assertEqual(geo.right(), cell.right(), "버튼 줄 오른쪽 끝 = 상태 칸 오른쪽 끝(창 폭 %s)" % width)
+            self.assertTrue(geo.top() < cell.bottom() and cell.top() < geo.bottom(), "고른 행과 겹침(창 폭 %s)" % width)
         scr.keys["A"].activated.emit()
         self.assertEqual(self.cell(self.saved(), *scr.cell)["entries"][0]["status"], "approved")
         self.assertIn("승인했습니다", win.toast_box.label.text())
@@ -444,9 +456,9 @@ class AiScreenTest(unittest.TestCase):
         client = FakeClient()
         win, scr = self.screen(client, key=None)
         win.api_keys.clear()
-        win.open_key_settings = mock.Mock()
+        win.open_ai_settings = mock.Mock()
         self.assertFalse(scr.run_ai("all"))
-        win.open_key_settings.assert_called_once_with()
+        win.open_ai_settings.assert_called_once_with("api")
         self.assertEqual(client.calls, [])
         self.assertFalse(scr.running())
         self.assertIsNone(self.saved())

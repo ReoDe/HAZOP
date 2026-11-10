@@ -19,6 +19,7 @@ os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu
 
 from scripts import check_kg_renderer as kr  # noqa: E402
 from scripts import check_kg_screen as ks  # noqa: E402
+from hazop import paths  # noqa: E402
 from hazop.kg import algo, build, screen  # noqa: E402
 
 _INP = {}
@@ -476,11 +477,12 @@ class KnowledgeTabTest(WindowTestBase):
         shown = [rail.itemAt(i).widget() for i in range(rail.count())
                  if rail.itemAt(i).widget() in win.step_buttons]
         self.assertEqual([b.accessibleName() for b in shown],
-                         ["① 자료 등록", "② 도면 추출", "③ 지식그래프", "④ 검토구간", "⑤ 분석 결과"])
-        self.assertEqual([b.text() for b in shown], ["등록", "추출", "그래프", "구간", "결과"])  # 번호는 원 아이콘(U-05)
+                         ["① 자료 등록", "② 도면 추출", "③ 지식그래프", "④ 검토구간", "⑤ 분석 결과", "⑥ 초기사건"])
+        self.assertEqual([b.text() for b in shown],
+                         ["등록", "추출", "그래프", "구간", "결과", "초기사건"])  # 번호는 원 아이콘(U-05)
         self.assertEqual(STEPS, ("① 자료 등록", "② 도면 추출", "고정 응답 분석(이전 ④)", "설계보완·확정(이전 ⑤)",
-                                 "③ 지식그래프", "④ 검토구간", "⑤ 분석 결과"))  # 기존 index 유지, 뒤에 추가
-        self.assertEqual([i for i, b in enumerate(win.step_buttons) if not b.isHidden()], [0, 1, 4, 5, 6])
+                                 "③ 지식그래프", "④ 검토구간", "⑤ 분석 결과", "⑥ 초기사건"))  # 기존 index 유지, 뒤에 추가
+        self.assertEqual([i for i, b in enumerate(win.step_buttons) if not b.isHidden()], [0, 1, 4, 5, 6, 7])
         win.go(2)  # 이전 ④는 ⑤ 결과 단계 아래: 숨은 버튼이 눌리고 레일은 ⑤가 현재
         self.assertTrue(win.step_buttons[2].isChecked())
         self.assertEqual(win.step_buttons[6].property("state"), "now")
@@ -568,7 +570,7 @@ class KnowledgeTabTest(WindowTestBase):
         for w in (scr.path_from, scr.path_to, scr.drawing_filter, scr.kg_combo, scr.graph_combo):
             self.assertTrue(w.accessibleName(), w)
         scr.pg = None
-        with mock.patch("hazop.app.screens.knowledge.project.load", return_value=two_sheet_project()):
+        with mock.patch("hazop.app.project_ctx.project_graph", return_value=two_sheet_project()):
             scr._load_project()
         self.assertEqual([scr.drawing_filter.itemText(i) for i in range(scr.drawing_filter.count())],
                          ["모든 도면", "A", "B"])
@@ -673,7 +675,7 @@ class ShowInDrawingTest(unittest.TestCase):
         knowledge = self.base_inp["knowledge"]
         kg = build.build_kg(knowledge, [graph])
         build.write_outputs(os.path.join(work, "출력", "지식그래프", kg["kg_id"]), knowledge, kg)
-        kdir = os.path.join(work, "데이터", "지식", ks.SAMPLE_PROJECT)
+        kdir = paths.folder_in(work, "지식", ks.SAMPLE_PROJECT)
         os.makedirs(kdir, exist_ok=True)
         shutil.copy(os.path.join(ks.SAMPLE_DIR, screen.CANDIDATES_CSV), kdir)
         win = ks.open_window(self.roots.tmp)

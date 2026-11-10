@@ -20,7 +20,7 @@ from hazop.console import safe_console  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.graph.query import GraphQuery, QueryError  # noqa: E402
 
-DEFAULT_GRAPH_ROOT = os.path.join(REPO_ROOT, "출력", "그래프")
+DEFAULT_GRAPH_ROOT = os.path.join(paths.DEV_WORK_ROOT, "출력", "그래프")
 
 
 def load(drawing, graph_root=DEFAULT_GRAPH_ROOT):

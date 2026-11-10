@@ -23,6 +23,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
+from hazop import paths  # noqa: E402
 from hazop import contract, review as rv  # noqa: E402
 from hazop.analysis import api  # noqa: E402
 from hazop.contract import chain  # noqa: E402
@@ -35,14 +36,14 @@ REGION_ID = "region-SNP-M-102-pzr"
 CID = "deviation-p86-d09"
 WHO = "검토자A"
 EXPORT_AT = "2026-11-06T00:00:00Z"
-FIXED_DIR = os.path.join(REPO_ROOT, "데이터", "고정응답", REGION_ID)
+FIXED_DIR = paths.folder("표본", "고정응답", REGION_ID)
 REG_RUN_ID = "analysis-20261106T000000Z-regtst"
 SYNTH_RUN_ID = "analysis-20261106T000000Z-synth0"
 
 
 def sample_drawio():
     """SNP-M-102 샘플 도면 경로. 없으면 준비 오류."""
-    found = [p for p in glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio"))
+    found = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
              if "SNP-M-102" in p]
     if not found:
         raise RuntimeError("준비 오류: 샘플 도면 없음 (참고자료/P&ID 도면 샘플/*/*SNP-M-102*.drawio)")
@@ -50,7 +51,7 @@ def sample_drawio():
 
 
 def latest_repo_run():
-    d = os.path.join(REPO_ROOT, "출력", "분석", REGION_ID)
+    d = os.path.join(paths.DEV_WORK_ROOT, "출력", "분석", REGION_ID)
     if not os.path.isdir(d):
         return None
     runs = sorted((x for x in os.listdir(d) if os.path.isfile(os.path.join(d, x, "analysis.json"))),
@@ -114,7 +115,7 @@ def _synth_sample_outputs(work):
         graph = build.build_graph(ext, extraction_file="출력/추출/SNP-M-102/extraction.json")
         write_json(os.path.join(g_dir, "graph.json"), graph)
         write_json(os.path.join(g_dir, "entity_mapping.json"), build.entity_mapping_document(graph, ext))
-        region_path = os.path.join(work, "데이터", "구간", REGION_ID + ".json")
+        region_path = paths.folder_in(work, "구간", REGION_ID + ".json")
         region = read_json(region_path)
         region["graph_ref"].update(graph_id=graph["graph_id"], graph_version=graph["graph_version"],
                                    graph_file="출력/그래프/SNP-M-102/graph.json")
@@ -130,16 +131,16 @@ def build_sample_chain(base, src_run):
     """샘플 연쇄 S: 저장소 샘플 결과 복사(없으면 합성) + deviation-p86-d09 검토본 v1·v2(reviewing) + 출력 기록 1개.
     반환 (work, store, 실행 폴더 이름)."""
     work, store = os.path.join(base, "work"), os.path.join(base, "store")
-    os.makedirs(os.path.join(work, "데이터", "구간"))
-    shutil.copy2(os.path.join(REPO_ROOT, "데이터", "구간", REGION_ID + ".json"), os.path.join(work, "데이터", "구간"))
+    os.makedirs(paths.folder_in(work, "구간"))
+    shutil.copy2(paths.folder("표본", "구간", REGION_ID + ".json"), paths.folder_in(work, "구간"))
     if src_run is not None:
         for rel in (("출력", "추출", "SNP-M-102"), ("출력", "그래프", "SNP-M-102")):
-            shutil.copytree(os.path.join(REPO_ROOT, *rel), os.path.join(work, *rel))
+            shutil.copytree(os.path.join(paths.DEV_WORK_ROOT, *rel), os.path.join(work, *rel))
         run_dir = os.path.join(work, "출력", "분석", REGION_ID, os.path.basename(src_run))
         shutil.copytree(src_run, run_dir)
         # 현재 구간 JSON = 실행 당시 사본(저장소 구간 JSON이 실행 뒤 바뀌었어도 버전을 섞지 않음)
         shutil.copyfile(os.path.join(run_dir, "inputs", "region.json"),
-                        os.path.join(work, "데이터", "구간", REGION_ID + ".json"))
+                        paths.folder_in(work, "구간", REGION_ID + ".json"))
         # 저장소 출력/의 현재 그래프가 이전 빌더 버전으로 만들어졌으면(BUILDER_VERSION 변경 뒤 재생성 전) 복사본의
         # 현재 그래프만 현재 빌더로 다시 만든다(실행 사본은 그대로 — 현재 그래프와 다르면 A7 WARN은 허용).
         ext = read_json(os.path.join(work, "출력", "추출", "SNP-M-102", "extraction.json"))
@@ -170,7 +171,7 @@ def build_registration_chain(base, out_sub=("출력",)):
     import build_graph
     import extract_drawio
     work, store = os.path.join(base, "work"), os.path.join(base, "store")
-    os.makedirs(os.path.join(work, "데이터", "구간"))
+    os.makedirs(paths.folder_in(work, "구간"))
     with env(work, store), contextlib.redirect_stdout(io.StringIO()):
         res = registry.register(sample_drawio(), "p-test", store_root=store, actor="tester",
                                 now=lambda: "2026-11-06T00:00:00+00:00")
@@ -180,12 +181,12 @@ def build_registration_chain(base, out_sub=("출력",)):
         result, ex_dir = extract_drawio.run_one(original, os.path.join(work, *out_sub, "추출"), registration=record,
                                                 registered_svgs=svgs)
         graph, g_dir = build_graph.build_one(os.path.join(ex_dir, "extraction.json"), os.path.join(work, *out_sub, "그래프"))
-        region = read_json(os.path.join(REPO_ROOT, "데이터", "구간", REGION_ID + ".json"))
+        region = read_json(paths.folder("표본", "구간", REGION_ID + ".json"))
         region["project_id"] = "p-test"
         region["graph_ref"].update(graph_id=graph["graph_id"], graph_version=graph["graph_version"],
                                    graph_source="registration",
                                    graph_file=os.path.relpath(os.path.join(g_dir, "graph.json"), work).replace("\\", "/"))
-        region_path = os.path.join(work, "데이터", "구간", REGION_ID + ".json")
+        region_path = paths.folder_in(work, "구간", REGION_ID + ".json")
         write_json(region_path, region)
         out = api.run_analysis(region_path, response_dir=FIXED_DIR, out_root=os.path.join(work, "출력", "분석"),
                                run_id=REG_RUN_ID)
@@ -263,7 +264,7 @@ class SampleChainTest(_Base):
         """저장소 실제 출력/의 최신 실행(읽기 전용). 검토본·출력 기록은 저장소 자료저장소/에 있으면 함께 본다."""
         if self.src_run is None:
             self.skipTest("저장소 출력/분석 없음(git 제외 폴더) — 실제 실행 판정만 생략, 나머지는 합성 연쇄로 검사")
-        res = self.check(REPO_ROOT, os.path.join(REPO_ROOT, "자료저장소"), region=REGION_ID)
+        res = self.check(paths.DEV_WORK_ROOT, os.path.join(paths.DEV_WORK_ROOT, "자료저장소"), region=REGION_ID)
         self.assertEqual(res["chains"][0]["analysis_run_id"], os.path.basename(self.src_run))
         bad = fails(res)
         stale = [x for x in bad if " X2 " in x and "빌더 버전이 그래프 생성 뒤 바뀜" in x]
@@ -661,7 +662,7 @@ class SampleChainTest(_Base):
 
     def test_version_values_normalized_to_int(self):
         work, store = self.variant()
-        region_path = os.path.join(work, "데이터", "구간", REGION_ID + ".json")
+        region_path = paths.folder_in(work, "구간", REGION_ID + ".json")
         # 실행 당시 구간 버전(사본)과 같은 값을 문자열로 둔다(현재 구간이 재고정으로 올라가 있어도 A8 PASS 조건 유지)
         cur = read_json(os.path.join(self.run_dir_of(work), "inputs", "region.json"))["region_version"]
         self.edit_json(region_path, lambda d: d.update(region_version=str(cur)))
@@ -680,7 +681,7 @@ class SampleChainTest(_Base):
     def test_report_path_rules(self):
         res = self.check(self.work, self.store)
         for p in (os.path.join(self.work, "출력", "r.json"), os.path.join(self.store, "r.json"),
-                  os.path.join(self.work, "데이터", "x", "..", "r.json")):
+                  paths.folder_in(self.work, "작업데이터", "x", "..", "r.json")):
             with self.assertRaises(contract.ContractError):
                 contract.write_report(res, p)
             self.assertFalse(os.path.exists(os.path.normpath(p)))

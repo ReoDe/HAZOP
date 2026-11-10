@@ -22,7 +22,7 @@ import extract_drawio  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.extract import drawio, rules, svg_align  # noqa: E402
 
-SAMPLES = sorted(glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio")))
+SAMPLES = sorted(glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")))
 SAMPLE_101 = [p for p in SAMPLES if "SNP-M-101" in p][0]
 
 

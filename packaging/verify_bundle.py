@@ -52,7 +52,6 @@ import uuid
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECK_SCRIPTS = ("check_kg_screen", "check_kg", "check_kg_algo", "check_kg_renderer", "build_kg", "analyze_kg",
                  "analyze", "extract_drawio", "build_graph")
-SAMPLE = ("참고자료", "P&ID 도면 샘플", "SNP-M-102_RCS-pressurizer")
 APP_PNG = ("01-register.png", "02-viewer.png", "04-analysis.png", "05-review.png")
 FULL_PNG = APP_PNG + ("03-knowledge.png", "03-knowledge-1366.png", "05-review-confirmed.png")
 TIMEOUT = 900
@@ -67,6 +66,9 @@ def _build_package():
 
 
 bp = _build_package()
+from hazop import paths  # noqa: E402  (bp가 저장소를 sys.path에 넣었음)
+
+SAMPLE_DIR = ("P&ID 도면 샘플", "SNP-M-102_RCS-pressurizer")  # 참고 폴더 안
 inside = bp.inside  # 드라이브가 다르면 False(ValueError 처리)
 
 
@@ -183,20 +185,20 @@ def fresh_problems(png_dir, since, want):
 
 
 def make_inputs(dest):
-    """검사 입력 사본(저장소 구조 일부). hazop/ 은 넣지 않는다(묶음의 hazop만 읽히게)."""
+    """검사 입력 사본(작은 저장소: 표본·참고 폴더가 저장소와 같은 자리). hazop/ 은 넣지 않는다(묶음의 hazop만 읽히게)."""
     os.makedirs(os.path.join(dest, "scripts"))
     for n in CHECK_SCRIPTS:
         shutil.copy2(os.path.join(REPO_ROOT, "scripts", n + ".py"), os.path.join(dest, "scripts"))
     shutil.copy2(os.path.join(REPO_ROOT, "packaging", "w4_flow.py"), os.path.join(dest, "scripts"))
     shutil.copy2(os.path.join(REPO_ROOT, "packaging", "pdf_probe.py"), os.path.join(dest, "scripts"))
-    sdir = os.path.join(dest, *SAMPLE)
+    sdir = paths.folder_in(dest, "참고", *SAMPLE_DIR)
     os.makedirs(sdir)
-    for p in glob.glob(os.path.join(REPO_ROOT, *SAMPLE, "*.drawio")) + \
-            glob.glob(os.path.join(REPO_ROOT, *SAMPLE, "*.drawio.svg")) + \
-            glob.glob(os.path.join(REPO_ROOT, *SAMPLE, "*.pdf")):
+    src = paths.folder("참고", *SAMPLE_DIR)
+    for p in glob.glob(os.path.join(src, "*.drawio")) + glob.glob(os.path.join(src, "*.drawio.svg")) + \
+            glob.glob(os.path.join(src, "*.pdf")):
         shutil.copy2(p, sdir)
-    for rel in (("데이터", "구간"), ("데이터", "고정응답"), ("데이터", "지식", "SNP-SAMPLE")):
-        shutil.copytree(os.path.join(REPO_ROOT, *rel), os.path.join(dest, *rel))
+    for sub in (("구간",), ("고정응답",), ("지식", "SNP-SAMPLE")):
+        shutil.copytree(paths.folder("표본", *sub), paths.folder_in(dest, "표본", *sub))
 
 
 def expected_datas(repo=REPO_ROOT):
@@ -342,12 +344,13 @@ def steps(args, summary, run_root, out, repo_dirs):
     png = os.path.join(out, "png")
     target, tmp = os.path.join(run_root, "HAZOP"), os.path.join(run_root, "w4-run")
     summary["target"] = target
-    summary["repo_before"] = {d: tree_hashes(os.path.join(REPO_ROOT, d)) for d in repo_dirs}
+    summary["repo_before"] = {d: tree_hashes(os.path.join(paths.DEV_WORK_ROOT, d)) for d in repo_dirs}
     shutil.copytree(summary["dist"], target)
     os.mkdir(tmp)
     size, count = tree_size(target)
     summary.update(bundle_bytes=size, bundle_files=count,
-                   has_reference_samples=os.path.isdir(os.path.join(target, "_internal", "참고자료")),
+                   has_reference_samples=any(os.path.isdir(os.path.join(target, "_internal", *rel.split("/")))
+                                             for rel in bp.EXCLUDED_DIRS),
                    has_check_exe=os.path.isfile(os.path.join(target, "HAZOP-check.exe")))
     summary["checks"]["licenses_problems"] = licenses_problems(target)
     env = child_env(tmp)
@@ -380,7 +383,7 @@ def steps(args, summary, run_root, out, repo_dirs):
             "lines": [ln.strip() for ln in text.splitlines() if ln.strip().startswith(("[OK]", "[FAIL]", "결과"))]}
         print("check_kg_screen rc=%s %ss" % (rc, sec))
 
-        pdf = os.path.join(inputs, *SAMPLE, SAMPLE[-1] + ".pdf")
+        pdf = paths.folder_in(inputs, "참고", *SAMPLE_DIR, SAMPLE_DIR[-1] + ".pdf")
         pres = os.path.join(out, "pdf_probe.json")
         rc, sec, _ = run([check_exe, os.path.join(scripts, "pdf_probe.py"), "--pdf", pdf, "--result", pres], env, tmp,
                          os.path.join(out, "pdf_probe.log"))
@@ -402,7 +405,7 @@ def steps(args, summary, run_root, out, repo_dirs):
     summary["png"] = sorted(os.path.basename(p) for p in glob.glob(os.path.join(png, "*.png")))
     summary["checks"]["png_fresh_problems"] = fresh_problems(png, start, want)
     print("app rc=%s %ss png=%s, 잘못된 옵션 rc=%s" % (rc, sec, summary["png"], rc2))
-    summary["checks"]["repo_unchanged"] = {d: tree_hashes(os.path.join(REPO_ROOT, d)) for d in repo_dirs} \
+    summary["checks"]["repo_unchanged"] = {d: tree_hashes(os.path.join(paths.DEV_WORK_ROOT, d)) for d in repo_dirs} \
         == summary.pop("repo_before")
 
 

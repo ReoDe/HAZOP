@@ -29,7 +29,10 @@ from hazop.study import span  # noqa: E402
 
 def plan(project_id, at=None):
     pg = project.load(project_id)
-    pset = sn.load(pg) or sn.propose(pg, at=at)
+    sheets, problem = sn.exclusion_for(pg)
+    if problem:
+        raise SystemExit(problem)  # 표시를 못 읽은 채 뺀 도면까지 제안해 옮기지 않는다(앱의 이전과 같은 규칙)
+    pset = sn.load(pg) or sn.propose(pg, at=at, exclude_sheets=sheets)
     old_sets, old_results = [], []
     for s in pg["sheets"]:
         sheet_graph = {"graph_id": s["graph_id"], "project_id": None if project_id == project.UNREGISTERED_PROJECT

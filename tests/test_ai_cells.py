@@ -244,7 +244,8 @@ class ApplyTest(Base):
                                ("새 원인", "proposed")])
         self.assertEqual(self.cell(r2, "D01")["ai_run"], {"status": "ok", "error": None, "at": AT2,
                                                          "model": "claude-opus-5-5", "note": None,
-                                                         "applicable": True})
+                                                         "applicable": True, "via": "api", "error_kind": None,
+                                                         "model_requested": "claude-opus-5-5"})
         self.assertEqual(sr.validate(r2, self.node_set), [])
 
     def test_failure_keeps_entries_and_marks_failed(self):
@@ -329,7 +330,7 @@ class StoreTest(Base):
         ur = ac.run_unit(FakeClient(completed([answer("D01")])), self.unit("D01"), self.ctx(), self.devs, AT)
         res = ac.apply_unit(sr.empty_results(self.node_set, self.devs), ur)
         path = sr.save(res, self.node_set.get("project_id"))
-        self.assertEqual(path, os.path.join(self.tmp, "데이터", "분석결과", "SNP-SAMPLE", "graph-SNP-M-102.json"))
+        self.assertEqual(path, paths.folder_in(self.tmp, "분석결과", "SNP-SAMPLE", "graph-SNP-M-102.json"))
         with open(path, encoding="utf-8") as fh:
             self.assertEqual(json.load(fh), res)
         self.assertEqual(sr.load(self.node_set), res)

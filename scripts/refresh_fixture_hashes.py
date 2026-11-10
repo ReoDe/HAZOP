@@ -21,10 +21,11 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 from hazop.analysis import ai, run  # noqa: E402
 
-DEFAULT_REGION = os.path.join(REPO_ROOT, "데이터", "구간", "region-SNP-M-102-pzr.json")
+DEFAULT_REGION = paths.folder("표본", "구간", "region-SNP-M-102-pzr.json")
 BAD_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "analysis", "bad")
 
 
@@ -36,7 +37,7 @@ def main(argv=None):
     ap.add_argument("--fixed-dir", action="append", default=[])
     ap.add_argument("--check", action="store_true", help="보고만 하고 파일을 바꾸지 않음")
     args = ap.parse_args(argv)
-    inputs = run.load_inputs(args.region, REPO_ROOT, graph_path=args.graph)
+    inputs = run.load_inputs(args.region, paths.work_root(), graph_path=args.graph, resource_root=paths.resource_root())
     if inputs["blockers"]:
         print("입력 차단 오류 — 계산하지 않음:")
         for b in inputs["blockers"]:
@@ -44,7 +45,7 @@ def main(argv=None):
         return 1
     region_id = inputs["region"]["region_id"]
     doc = run.prepare_doc(inputs, None, "refresh", lambda: "refresh")
-    dirs = args.fixed_dir or [os.path.join(REPO_ROOT, "데이터", "고정응답", region_id), BAD_DIR]
+    dirs = args.fixed_dir or [paths.folder("표본", "고정응답", region_id), BAD_DIR]
     stale = 0
     for d in dirs:
         for path in sorted(glob.glob(os.path.join(d, "*.json"))):

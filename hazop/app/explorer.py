@@ -11,6 +11,7 @@ from hazop.app.screens.register import STATUS_LABELS, material_type_of
 from hazop.app.screens.study import seg_icon
 from hazop.extract import corrections
 from hazop.graph import project
+from hazop.ie import model as ie_model
 from hazop.study import results as res
 from hazop.study import span
 
@@ -37,6 +38,9 @@ COMMANDS = {
     "go_results": go_then(6),
     "run_ai": go_then(6, "request_ai", "all"),
     "export_excel": go_then(6, "export_excel"),
+    "go_initiating": go_then(7),
+    "export_ie": go_then(7, "export_bundle"),
+    "suggest_ie": go_then(7, "suggest"),
 }
 
 
@@ -106,6 +110,7 @@ def extract_module(win):
             "\n출처: %s" % b["origin"] if b.get("origin") else "")
         right = "미확인 %d" % unk if unk else ("미연결 %d" % link if link else "추출됨")
         items.append((number if number == e["name"] else "%s (%s)" % (number, e["name"]), (1, e["name"]), right, None, tip))
+    data.save_briefs()
     pending = []
     for e in win.screens[0].rows:
         rec, pages = e["record"], e.get("pages") or {}
@@ -175,7 +180,7 @@ def node_items(win, view, ns, dn, progress):
     """구간 항목. progress(node_id) → (오른쪽 글자, 설명). 도면 필터 dn이면 그 도면을 지나는 구간(걸친 구간 포함)."""
     listed = (view or ns or {}).get("nodes", [])
     shown = span.nodes_on_drawing(view, dn) if dn and view else listed
-    order = {n["node_id"]: i for i, n in enumerate(listed)}
+    order = {n["node_id"]: i for i, n in enumerate((ns or view or {}).get("nodes", []))}  # 색은 집합 순서(④·⑤와 같게)
     out = []
     for n in shown:
         right, detail = progress(n["node_id"])
@@ -202,11 +207,26 @@ def study_module(win):
                 ("덮음률 · %d%%" % round(c["project"]["ratio"] * 100), "%s\n모든 구성요소가 어느 구간에 들어가야 100%%" % cover),
                 ("미포함 %d" % (c["project"]["total"] - c["project"]["covered"]),
                  "어느 구간에도 들어가지 않은 프로젝트 구성요소 수")]
+    scr = win.screens[5]
+    ai = scr.review_counts() if ns and scr.node_set is not None and scr.node_set.get("graph_id") == ns.get("graph_id") else None
+    if ai and ai["total"]:
+        info.append(("AI 제안 %d건 · 미처리 %d건" % (ai["total"], ai["open"]),
+                     "④ AI 구간 검토 제안(초안). 미처리 제안이 있어도 확정은 막지 않습니다%s"
+                     % (" · 오래된 제안 %d건(구간이 바뀜)" % ai["stale"] if ai["stale"] else "")))
     items = node_items(win, view, ns, dn, lambda _nid: ("", "구간 구성은 ④ 구간 화면에서 봅니다"))
     empty = (("이 도면을 지나는 구간 없음", None) if ns else
              ("아직 구간이 없습니다", ("구간 제안 실행", cmd("repropose"), "프로젝트 그래프로 구간을 새로 제안합니다")))
     return [Group("검토구간" + (" · %s" % scope if scope else ""), items, empty,
                   about="%s%s" % ("" if dn else "프로젝트 전체 구간\n", cover or ""), info=info)]
+
+
+def _result_rows(view):
+    """⑤ 행렬과 같은 행: 스크리닝 제외 구간은 빼고 낮음 구간은 맨 아래(results 화면 _rows와 같은 규칙)."""
+    if not view:
+        return view
+    status = lambda n: (n.get("screen") or {}).get("status") or "keep"  # noqa: E731
+    shown = [n for n in view["nodes"] if status(n) != "excluded"]
+    return dict(view, nodes=[n for n in shown if status(n) != "low"] + [n for n in shown if status(n) == "low"])
 
 
 def results_module(win):
@@ -217,13 +237,20 @@ def results_module(win):
     rs = win.screens[6]
     confirmed = bool(ns) and ns.get("status") == "confirmed"
     shown = results if usable else None
-    items = node_items(win, view, ns, dn, lambda nid: related.node_progress(shown, nid, len(rs.deviations)))
+    cached, counted = getattr(rs, "summary_of", (None, None))
+    summary = (counted if shown is cached else res.matrix_summary(shown)) if shown else None
+    table = related.progress_table(shown, len(rs.deviations), summary) if shown else None
+    rows = _result_rows(view)
+    items = node_items(win, rows, ns, dn,
+                       lambda nid: related.node_progress(table, nid, len(rs.deviations)))
     info, todo = [], None
     if confirmed and shown:
-        cells = shown["cells"]
+        visible = {n["node_id"] for n in (rows or {}).get("nodes", [])} if rows else None
+        cells = [c for c in shown["cells"] if visible is None or c["node_id"] in visible]  # ⑤ 행렬 행과 같은 칸만
+        summary = {k: v for k, v in summary.items() if visible is None or k in visible}
         failed = sum((c.get("ai_run") or {}).get("status") == "failed" for c in cells)
         todo = sum(c["state"] == "not_analyzed" for c in cells)
-        unrev = sum(s["unreviewed"] for row in res.matrix_summary(shown).values() for s in row.values())
+        unrev = sum(s["unreviewed"] for row in summary.values() for s in row.values())
         info = [("분석 전 %d칸" % todo, "⑤ 행렬 전체 칸 기준"),
                 ("미검토 %d · 실패 %d" % (unrev, failed), "⑤ 행렬 전체 칸 기준. J로 다음 미검토 칸")]
     export = (("Excel로 내보내기…", cmd("export_excel"), "⑤ 결과를 HAZOP 워크시트(Excel)로 내보냅니다")
@@ -250,5 +277,35 @@ def results_module(win):
     return groups
 
 
-STAGE_MODULES = (register_module, extract_module, graph_module, study_module, results_module)  # 레일 단계 ①~⑤
+# ---------------------------------------------------------------- ⑥ 초기사건
+def initiating_module(win):
+    """초기사건 그룹(상태), 판정 대기(보류·AI 초안 판정·미배정), 완전성 공백, 내보내기. ⑥ 화면이 그린 묶음 dict를 읽는다."""
+    scr = win.screens[7]
+    v = scr.view
+    if v is None:
+        return [Group("초기사건 그룹", [], ("⑥ 화면을 열면 ⑤에서 승인한 원인이 후보로 들어옵니다",
+                                        ("⑥ 초기사건 열기", cmd("go_initiating"), "⑥ 초기사건 화면으로 갑니다")))]
+    groups = [("%s %s" % (g["group_id"], g["name"]), (7, ("group", g["group_id"])),
+               ie_model.GROUP_STATUSES[g["status"]], None,
+               "%s %s\n상태: %s · 후보 %d%s" % (g["group_id"], g["name"], ie_model.GROUP_STATUSES[g["status"]],
+                                            g["member_count"], "".join("\n· " + p for p in g["problems"][:4])))
+              for g in v["groups"]]
+    loose = sum(c["group_id"] is None and c["judgement"] == "yes" for c in v["candidates"])
+    held = sum(c["judgement"] == "undecided" for c in v["candidates"])
+    ai = sum(c["ie_origin"] != "human" for c in v["candidates"])
+    suggest = ("규칙 초안 만들기", cmd("suggest_ie"), "같은 범주·같은 보호수단 후보를 초안 그룹으로 묶습니다(§6.3)")
+    gaps = [r for r in v["completeness"] if r["status"] == "gap" and r["code"] not in scr.doc["coverage"]]
+    return [Group("초기사건 그룹", groups, ("아직 그룹이 없습니다", suggest), suggest if groups else None,
+                  info=[("미배정 후보 %d" % loose, "판정이 '후보'인데 그룹에 들지 않은 후보")]),
+            Group("판정 대기", [("보류 %d · 사람 판정 필요" % held, (7, ("tab", 0)), "", None, "⑤에서 판정을 정합니다"),
+                                ("AI 초안 판정 %d" % ai, (7, ("tab", 0)), "", None, "⑤에서 사람이 판정해야 그룹을 확정할 수 있음")],
+                  ("", None)),
+            Group("완전성 대조", [("처리를 정하지 않은 공백 범주 %d" % len(gaps), (7, ("tab", 5)), "", None,
+                                   "공백 행마다 범위 밖 · 다른 기법 · 해당 없음 중 하나와 사유를 적습니다")], ("", None)),
+            Group("내보내기", [("IE 인계 묶음(Excel·JSON)…", cmd("export_ie"), "", None,
+                                "승인 항목만으로 IE 인계 묶음을 저장합니다")], ("", None))]
+
+
+STAGE_MODULES = (register_module, extract_module, graph_module, study_module, results_module,
+                 initiating_module)  # 레일 단계 ①~⑥
 DRAWING_FILTER_STAGES = (3, 4)  # 도면 필터는 구간 목록이 있는 ④·⑤ 모듈에만

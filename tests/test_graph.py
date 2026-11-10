@@ -13,12 +13,13 @@ import xml.etree.ElementTree as ET
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+from hazop import paths  # noqa: E402
 from hazop.extract import drawio, svg_align  # noqa: E402
 from hazop.graph import build  # noqa: E402
 from hazop.graph.query import GraphQuery, QueryError  # noqa: E402
 from hazop.viewer import build as vbuild, check as vcheck  # noqa: E402
 
-SAMPLES = sorted(glob.glob(os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio")))
+SAMPLES = sorted(glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")))
 SAMPLE = {os.path.basename(os.path.dirname(p)).split("_")[0]: p for p in SAMPLES}
 
 
@@ -330,7 +331,7 @@ class ViewerGraphTest(unittest.TestCase):
         ex = drawio.extract(SAMPLE[key], repo_root=REPO_ROOT)
         svg = glob.glob(os.path.join(os.path.dirname(SAMPLE[key]), "*.drawio.svg"))[0]
         al = svg_align.align(svg, ex)
-        al["svg_file"] = os.path.relpath(svg, REPO_ROOT).replace("\\", "/")
+        al["svg_file"] = paths.rel_or_abs(svg, REPO_ROOT)
         ex["coordinate_system"]["svg_alignment"] = al
         g = build.build_graph(ex) if graph == "build" else graph
         with open(svg, encoding="utf-8") as fh:

@@ -5,6 +5,7 @@ AI를 호출하지 않으며(고정 응답 폴더만), 웹뷰의 외부 네트�
 옵션 --screenshots <폴더>: 각 화면을 열어 PNG로 저장하고 끝낸다(QWidget.grab()).
 설정 파일을 읽을 수 없으면(hazop/app/startup.py) 대화형은 한국어 대화상자(백업 후 기본값으로 시작 / 종료), --screenshots는
 stderr 안내와 종료 코드 2.
+대화형은 한 작업 루트에 하나만 띄운다. 이미 실행 중이면 안내 후 종료 코드 3(startup.single_instance).
 """
 
 import argparse
@@ -42,14 +43,18 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if os.environ.get(ENV_TEST_EXCEPTHOOK) == "1" and getattr(sys, "_hazop_verify_build", False):
         return _test_excepthook()
-    from hazop.app.startup import check_settings
+    from hazop.app.startup import check_settings, single_instance
     if args.screenshots:  # 비대화형: 설정 파일을 읽을 수 없으면 대화상자 없이 stderr 안내, 종료 코드 2
         rc = check_settings(args.settings, interactive=False)
         if rc is not None:
             return rc
     from hazop.app import make_application
     app = make_application()
-    if not args.screenshots:  # 대화형: 한국어 대화상자(백업 후 기본값으로 시작 / 종료), MainWindow 생성 전
+    lock = None
+    if not args.screenshots:  # 대화형: 이미 실행 중이면 설정 파일을 건드리기 전에 끝낸다. 그다음 설정 확인, MainWindow 생성 전
+        lock, rc = single_instance()
+        if rc is not None:
+            return rc
         rc = check_settings(args.settings, interactive=True)
         if rc is not None:
             return rc
@@ -68,8 +73,11 @@ def main(argv=None):
             print(f)
         win.close()
         return 0
+    win.ai_conn.start()  # 지금 연결 방식만 확인(구독은 작업 스레드에서 check(), API 키는 '확인 안 함' 그대로)
     code = app.exec()
     win.close()
+    if lock is not None:
+        lock.unlock()
     return code
 
 

@@ -18,7 +18,7 @@ import os
 
 from hazop.app import tokens
 from hazop.graph.build import node_origin
-from hazop.kg import algo, build, expect, link
+from hazop.kg import algo, auto, build, expect, link
 from hazop.kg.schema import REGISTRY
 
 NODE_LIMIT = 5000  # 전역 보기 노드 수 상한(그래프활용 §7.3, 검사 S1, T1 D8)
@@ -61,22 +61,24 @@ def load_graphs(graph_root):
     return out
 
 
-def graph_for_ref(graph_root, graph_id, graph_version):
+def graph_for_ref(graph_root, graph_id, graph_version, retry=True):
     """지식그래프 graph_ref에 맞는 (폴더 이름, graph) 또는 None. 같은 graph_id 폴더가 여럿이면(같은 도면을 drawio·PDF로
     따로 등록한 경우 등) graph_version이 같은 폴더를 먼저, 없으면 load_graphs와 같은 첫 폴더(이름순)를 쓴다."""
-    first = None
+    same = []
     for name in sorted(os.listdir(graph_root)) if os.path.isdir(graph_root) else []:
         p = os.path.join(graph_root, name, "graph.json")
-        if not os.path.isfile(p):
-            continue
-        with open(p, encoding="utf-8") as fh:
-            g = json.load(fh)
-        if g.get("graph_id") != graph_id:
-            continue
-        if g.get("graph_version") == graph_version:
-            return name, g
-        first = first or (name, g)
-    return first
+        head = auto.graph_head(p)  # 머리만 캐시해 두고 고른 도면 하나만 다시 읽는다
+        if head is not None and head["graph_id"] == graph_id:
+            same.append((head["graph_version"] != graph_version, name, p))
+    if not same:
+        return None
+    other_version, name, p = min(same)
+    with open(p, encoding="utf-8") as fh:
+        g = json.load(fh)
+    if retry and (g.get("graph_id") != graph_id or (g.get("graph_version") != graph_version) != other_version):
+        auto.forget_heads()  # 머리를 읽은 뒤 파일이 바뀜: 머리를 새로 읽어 한 번만 다시 고른다
+        return graph_for_ref(graph_root, graph_id, graph_version, retry=False)
+    return name, g
 
 
 def load_regions(region_dir):
@@ -314,7 +316,69 @@ def study_view(study, graph, exp_ids=()):
         rows.append({"sn": sn["node_id"], "name": sn.get("name"), "scenarios": n_scen, "missing": n_missing})
     info = {"nodes": rows, "note": study.get("note"), "scenarios": sum(r["scenarios"] for r in rows),
             "missing": sum(r["missing"] for r in rows)}
+    info["ie"] = ie_view(study.get("ie"), {n["id"] for n in nodes if n["type"] == "scenario"}, idx, node, link)
     return nodes, links, info
+
+
+def ie_view(bundle, scenario_ids, idx, node, link):
+    """⑥ 초기사건 투영(설계 §8 P3): IE 인계 묶음 dict(hazop.ie.bundle)에서 이 도면 시나리오에서 온 후보와 그 그룹·표제·
+    최종상태·일반 범주, 이 도면 기기에 걸린 기본사건 후보를 만든다. 원본은 ⑥ 저장 파일이고 여기서는 읽기만 한다.
+    node·link는 study_view의 만들기 함수라 같은 목록에 같은 층·v5=false로 들어간다. 사람이 확정하지 않은 것은 draft.
+    개수 정보를 돌려준다(묶음이 없으면 None)."""
+    if not bundle:
+        return None
+    made, n_links = set(), [0]
+
+    def add(nid, typ, label, **kw):
+        node(nid, typ, label, None, **kw)
+        made.add(nid)
+
+    def rel(kind, s, t):
+        link(kind, s, t)
+        n_links[0] += 1
+    shown = [c for c in bundle["candidates"] if "st-" + c["entry_id"] in scenario_ids]
+    groups = {g["group_id"]: g for g in bundle["groups"]}
+    used = {c["group_id"] for c in shown if c["group_id"] in groups}
+    for c in shown:
+        cid = "st-" + c["candidate_id"]
+        add(cid, "ie_candidate", "%s %s" % (c["candidate_id"], c["cause"]), draft=c["ie_origin"] != "human",
+            detail={"cause": c["cause"]})
+        rel("derived_from", cid, "st-" + c["entry_id"])
+        if c["group_id"] in used:
+            rel("member_of", cid, "st-" + c["group_id"])
+    heads = {h["heading_id"]: h for h in bundle["top_events"]}
+    ends = {e["end_state_id"]: e for e in bundle["end_states"]}
+    refs_done = set()
+    for gid in sorted(used):
+        g = groups[gid]
+        add("st-" + gid, "ie_group", "%s %s" % (gid, g["name"]),
+            draft=g["status"] != "confirmed" or g["origin"] == "ai_draft", detail={"name": g["name"]})
+        for code in g["categories"]:
+            rid = "st-ref-" + code
+            if rid not in refs_done:
+                refs_done.add(rid)
+                add(rid, "reference_ie", code)
+            rel("corresponds_to", "st-" + gid, rid)
+        for hid in g["heading_ids"]:
+            if "st-" + hid not in made:
+                h = heads[hid]
+                add("st-" + hid, "top_event", "%s %s" % (hid, h["name"]), draft=h["origin"] != "human",
+                    detail={"name": h["name"]})
+                for e in h["entry_ids"]:
+                    if "st-" + e in scenario_ids:
+                        rel("heading_from", "st-" + hid, "st-" + e)
+            rel("pivotal", "st-" + gid, "st-" + hid)
+        for eid in g["end_state_ids"]:
+            if "st-" + eid not in made:
+                add("st-" + eid, "end_state", "%s %s" % (eid, ends[eid]["text"]), draft=ends[eid]["origin"] != "human",
+                    detail={"text": ends[eid]["text"]})
+            rel("leads_to", "st-" + gid, "st-" + eid)
+    for b in bundle["basic_events"]:
+        if b.get("ref") in idx:
+            add("st-" + b["be_id"], "basic_event", "%s %s" % (b["be_id"], b["name"]), draft=b["origin"] != "human",
+                detail={"name": b["name"], "text": b["failure_text"] or b["failure_mode"]})
+            rel("basic_event_at", "st-" + b["be_id"], idx[b["ref"]])
+    return {"candidates": len(shown), "groups": len(used), "nodes": len(made), "links": n_links[0]}
 
 
 def screen_data(kg, graph, regions=(), candidates=None, start=None, standalone_note=None, expectations=None,

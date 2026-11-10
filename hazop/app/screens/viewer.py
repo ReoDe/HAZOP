@@ -44,7 +44,8 @@ OP_LABELS = {"set_tag": "태그", "set_kind": "종류", "set_normal_position": "
 NEW_NODE_SIZE = 40  # 기기 추가: 클릭한 점을 가운데로 하는 정사각형(도면 좌표)
 # 미연결 칩의 짧은 사유. 전체 문장(project.REASONS)은 툴팁·패널에.
 UNLINKED_SHORT = {"unregistered_drawing": "상대 도면 없음", "no_counterpart": "짝 없음", "ambiguous": "짝 여럿",
-                  "direction_conflict": "방향 모순", "missing_key": "번호 못 읽음", "manual_unlink": "사람이 끊음"}
+                  "direction_conflict": "방향 모순", "missing_key": "번호 못 읽음", "manual_unlink": "사람이 끊음",
+                  "other_system": "다른 계통", "description_only": "설명만 있음", "system_candidate": "후보·확인 전"}
 HINTS = {
     "select": "도면에서 항목을 클릭해 고르세요.",
     "add_node": "기기를 놓을 자리를 클릭하세요.",
@@ -123,6 +124,10 @@ class EditSession:
 
     def mark_saved(self):
         self.saved = list(self.ops)
+
+    def issued_ids(self):
+        """작업 중·저장본·실행 취소·다시 실행 목록에 있는 op_id. 되살릴 수 있는 연산의 번호도 새로 발급하지 않는다."""
+        return {o.get("op_id") for ops in [self.ops, self.saved, *self.undo_stack, *self.redo_stack] for o in ops}
 
 
 @dataclass(frozen=True)
@@ -1061,8 +1066,8 @@ class ViewerScreen(QWidget):
             return False
         try:
             op = corrections.make_op(self.info["original"], req["op"], req["target"], req["value"], self._by(),
-                                     existing_ops=self.session.ops)
-        except ValueError as exc:
+                                     existing_ops=self.session.ops, used_ids=corrections.issued_op_ids(self.name) | self.session.issued_ids())
+        except (OSError, ValueError) as exc:
             notify(self, "수정할 수 없음", str(exc), warn=True)
             return False
         self.session.add(op)

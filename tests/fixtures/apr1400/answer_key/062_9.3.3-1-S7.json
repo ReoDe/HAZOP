@@ -1,0 +1,227 @@
+{
+ "seq": 62,
+ "drawing": "9.3.3-1-S7",
+ "source_file": "062_Ch09_Fig9.3.3-1_s7of7_Radioactive_Drain_System_Flow_Diagram.pdf",
+ "method": "PDF를 4배로 렌더한 그림에서 Claude 시험 세션이 눈으로 읽음(scripts/apr1400_key_overlay.py candidates). 후보는 벡터 경로의 작은 원·비석 모양 곡선과 점 6개 화살표. 글자는 그림에서 읽고 텍스트 층은 쓰지 않음. 후보 모양 밖의 계기·연결 표시는 찾지 않았음(한계).",
+ "verified": "2026-11-09 Claude 시험 세션이 만들고 다른 Claude 검토 에이전트가 겹쳐 보기로 다시 확인. 사람 확인 전",
+ "scope": "instruments = 기능 문자 + 루프 번호가 든 계기 기호(원·비석). 번호만 든 원은 valve_callouts(점수에 넣지 않음). 번호 없는 공급자 패키지 계기와 FG 같은 기호 밖 태그는 뺌.",
+ "instruments": [
+  {
+   "tag": "LI 057",
+   "bbox": [
+    194.6,
+    557.5,
+    208.2,
+    571.1
+   ]
+  },
+  {
+   "tag": "LE 058",
+   "bbox": [
+    210.2,
+    567.2,
+    223.8,
+    580.9
+   ]
+  },
+  {
+   "tag": "LIS 058",
+   "bbox": [
+    210.2,
+    550.2,
+    223.8,
+    563.8
+   ]
+  },
+  {
+   "tag": "AX 134",
+   "bbox": [
+    160.8,
+    399.4,
+    174.4,
+    413.1
+   ]
+  },
+  {
+   "tag": "LI 067",
+   "bbox": [
+    441.5,
+    557.5,
+    455.1,
+    571.1
+   ]
+  },
+  {
+   "tag": "LE 068",
+   "bbox": [
+    457.3,
+    567.2,
+    470.9,
+    580.9
+   ]
+  },
+  {
+   "tag": "LIS 068",
+   "bbox": [
+    457.3,
+    550.2,
+    470.9,
+    563.8
+   ]
+  },
+  {
+   "tag": "LI 062",
+   "bbox": [
+    736.0,
+    557.5,
+    749.6,
+    571.1
+   ]
+  },
+  {
+   "tag": "LE 063",
+   "bbox": [
+    751.6,
+    567.2,
+    765.2,
+    580.9
+   ]
+  },
+  {
+   "tag": "LIS 063",
+   "bbox": [
+    751.6,
+    550.2,
+    765.2,
+    563.8
+   ]
+  },
+  {
+   "tag": "PDI 001",
+   "bbox": [
+    770.0,
+    350.8,
+    783.7,
+    364.4
+   ]
+  },
+  {
+   "tag": "LI 072",
+   "bbox": [
+    950.4,
+    557.5,
+    964.0,
+    571.1
+   ]
+  },
+  {
+   "tag": "LE 073",
+   "bbox": [
+    966.5,
+    567.2,
+    980.1,
+    580.9
+   ]
+  },
+  {
+   "tag": "LIS 073",
+   "bbox": [
+    966.5,
+    550.2,
+    980.1,
+    563.8
+   ]
+  },
+  {
+   "tag": "AX 136",
+   "bbox": [
+    407.6,
+    394.9,
+    421.3,
+    408.5
+   ]
+  },
+  {
+   "tag": "AX 135",
+   "bbox": [
+    702.1,
+    302.5,
+    715.8,
+    316.1
+   ]
+  }
+ ],
+ "valve_callouts": [],
+ "connectors": [
+  {
+   "label": "WV:LRS FLOOR DRAIN TANK / SHEET 1",
+   "bbox": [
+    183.0,
+    279.8,
+    190.7,
+    318.7
+   ],
+   "rotated": true
+  },
+  {
+   "label": "MAKE-UP DEMIN. WATER",
+   "bbox": [
+    313.3,
+    426.7,
+    352.2,
+    434.5
+   ],
+   "rotated": false
+  },
+  {
+   "label": "WV:LRS FLOOR DRAIN TANK / SHEET 1",
+   "bbox": [
+    429.8,
+    250.6,
+    437.6,
+    289.5
+   ],
+   "rotated": true
+  },
+  {
+   "label": "MAKE-UP DEMIN. WATER",
+   "bbox": [
+    560.2,
+    421.8,
+    599.1,
+    429.6
+   ],
+   "rotated": false
+  },
+  {
+   "label": "WV:LRS CHEMICAL WASTE TANK / SHEET 2",
+   "bbox": [
+    724.3,
+    250.6,
+    732.1,
+    289.5
+   ],
+   "rotated": true
+  },
+  {
+   "label": "WV:DETERGENT WASTE TANK A / SHEET 7",
+   "bbox": [
+    1086.7,
+    292.9,
+    1125.6,
+    300.7
+   ],
+   "rotated": false
+  },
+  {
+   "label": "WV:DETERGENT WASTE TANK B / SHEET 7",
+   "bbox": [
+    1086.7,
+    261.3,
+    1125.6,
+    269.1
+   ],
+   "rotated": false
+  }
+ ]
+}

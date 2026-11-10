@@ -442,7 +442,7 @@ class SettingsDialogTest(TempDirTest):
 
     def test_add_session_key_tests_and_shows_connected(self):
         from PySide6.QtWidgets import QLineEdit
-        from hazop.app.settings_dialog import connection_state, status_bar_html
+        from hazop.app import conn_view
         op = FakeOpener()
         dlg = self.dialog(op)
         self.assertIn("키 없음", dlg.state_chip.text())
@@ -465,8 +465,9 @@ class SettingsDialogTest(TempDirTest):
                      "이번 실행만"):
             self.assertIn(word, text)
         self.assertNotIn(KEY, text)
-        self.assertEqual(connection_state(self.store)[0], "ok")
-        self.assertIn("AI 연결됨 · 개인 시험용", status_bar_html(self.store))
+        self.assertEqual(conn_view.api_status(self.store)["state"], "ok")
+        self.assertEqual(conn_view.chip_text("api", dlg.conn.status("api"), self.store.model),
+                         "API 키 · Opus 5.5 · 연결됨")
 
     def test_error_message_guides_next_step_and_hides_key(self):
         body = json.dumps({"error": {"type": "invalid_request_error",
@@ -476,8 +477,8 @@ class SettingsDialogTest(TempDirTest):
         dlg.persist_box.setChecked(False)
         dlg.add_key()
         self.wait(dlg)
-        self.assertIn("연결 안 됨", dlg.state_chip.text())
-        self.assertIn("Billing", dlg.detail_label.text())
+        self.assertIn("크레딧 부족", dlg.state_chip.text())
+        self.assertIn("Billing", self.screen_text(dlg))
         self.assertNotIn(KEY, self.screen_text(dlg))
 
     def test_model_change_resets_state_and_uses_model(self):
@@ -538,7 +539,8 @@ class SettingsDialogTest(TempDirTest):
         self.assertFalse(dlg.test_btn.isEnabled())
         self.wait(dlg)
         self.assertTrue(dlg.test_btn.isEnabled())
-        self.assertIn("401", dlg.detail_label.text())
+        self.assertIn("키 거부됨", dlg.state_chip.text())
+        self.assertIn("401", self.screen_text(dlg))
         self.assertNotIn(KEY, self.screen_text(dlg))
         self.assertEqual(op.calls[0]["headers"]["x-api-key"], KEY)
 

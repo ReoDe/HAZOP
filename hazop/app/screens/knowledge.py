@@ -27,6 +27,9 @@ from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, badge, empty_labe
 from hazop.graph import project
 from hazop.graph.build import node_origin
 from hazop.graph.query import VALVE_POSITION_NOTE, QueryError
+from hazop.ie import bundle as ie_bundle
+from hazop.ie import model as ie_model
+from hazop.ie import store as ie_store
 from hazop.kg import algo, auto, build, expect, screen
 from hazop.kg.schema import REGISTRY
 from hazop.study import nodes as study_nodes
@@ -378,8 +381,8 @@ class KnowledgeScreen(QWidget):
                 self.kg = kg
                 return
             self.graph_dir, self.graph = found
-            self.regions = screen.load_regions(paths.work_path("데이터", "구간"))
-            cands = screen.read_candidates(paths.safe_join(paths.work_path("데이터", "지식"), kg.get("project_id") or ""))
+            self.regions = screen.load_regions(paths.folder("구간"))
+            cands = screen.read_candidates(paths.safe_join(paths.folder("지식"), kg.get("project_id") or ""))
             self._load_project()
             self.expect = self._expectations()
             self.data = screen.screen_data(kg, self.graph, self.regions, cands,
@@ -522,7 +525,7 @@ class KnowledgeScreen(QWidget):
             self.expect_error = str(exc)
             judgements = {}
         try:
-            return expect.evaluate(self.pg, self.kg, judgements)
+            return expect.evaluate_cached(self.pg, self.kg, judgements)
         except expect.ExpectError as exc:
             self.app.log_error("잠재 후보 계산", exc)
             self.expect_calc_error = str(exc)
@@ -545,7 +548,19 @@ class KnowledgeScreen(QWidget):
             return {"node_set": ns, "results": None, "note": "분석 결과를 읽을 수 없음: %s" % exc}
         if doc is not None and study_results.is_stale(doc, ns):
             return {"node_set": ns, "results": None, "note": "분석 결과가 이전 검토구간 확정본으로 만든 것이라 투영하지 않습니다."}
-        return {"node_set": ns, "results": doc, "note": None if doc else "아직 분석 결과가 없습니다."}
+        return {"node_set": ns, "results": doc, "note": None if doc else "아직 분석 결과가 없습니다.",
+                "ie": self._ie(ns, doc)}
+
+    def _ie(self, ns, doc):
+        """⑥ 초기사건 투영용 IE 인계 묶음 dict. ⑥ 파일을 읽기만 하고 ⑤와 맞추는 것도 메모리 안에서만 한다(저장은 ⑥ 화면)."""
+        if not doc:
+            return None
+        try:
+            ie_doc = ie_store.load(self.pg["project_id"])[0]
+            return ie_bundle.build_bundle(doc, ns, self.pg, ie_model.sync(ie_doc, doc), study_nodes.now_utc())
+        except (OSError, ValueError, ie_store.Unreadable) as exc:
+            self.app.log_error("초기사건 투영", exc)
+            return None
 
     def render_study(self, n):
         """검토 층 노드 상세(읽기 전용, 원본은 ⑤ 결과 파일)."""
@@ -1046,7 +1061,7 @@ class KnowledgeScreen(QWidget):
         if self.pg is not None and self.pg.get("project_id") == pid:
             return
         try:
-            self.pg, self.pg_error = project.load(pid), None
+            self.pg, self.pg_error = project_ctx.project_graph(pid), None
         except (OSError, ValueError, KeyError) as exc:
             self.pg, self.pg_error = None, "프로젝트 그래프를 만들 수 없음: %s" % exc
         self.path_steps = None

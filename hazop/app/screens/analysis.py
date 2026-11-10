@@ -573,7 +573,7 @@ class AnalysisScreen(QWidget):
 
     # ------------------------------------------------------------ 동작(대화상자와 검사가 같은 함수를 씀)
     def ask_analyze(self):
-        dlg = AnalysisDialog(self, paths.work_path("데이터", "고정응답", self.region_combo.currentText()))
+        dlg = AnalysisDialog(self, paths.folder("고정응답", self.region_combo.currentText()))
         if dlg.exec() == QDialog.Accepted:
             self.start_analysis(dlg.folder.text().strip())
 

@@ -9,6 +9,7 @@
 
 import copy
 import os
+import pickle
 import re
 
 from hazop.graph import project
@@ -53,13 +54,19 @@ def _flow_order(drawings, pg, members):
 
 # ---------------------------------------------------------------- 표기·경계
 
-def _boundaries(node, pg, by_id, drawing_of, node_of):
-    """(start, end, continuations). 경계 = 구간 밖 주요 기기·미연결 연결점으로 이어지는 배관 구간의 끝."""
-    members = set(node["members"])
+def _segment_ends(pg):
+    """{배관 구간 ID: 그 구간의 물리 간선 목록}. 키는 간선 순서대로 처음 나온 차례다."""
     seg_ends = {}
     for e in pg["edges"]:
         if e["kind"] == PHYSICAL:
             seg_ends.setdefault(e["segment"], []).append(e)
+    return seg_ends
+
+
+def _boundaries(node, by_id, drawing_of, node_of, seg_ends, seg_rank, segs_of):
+    """(start, end, continuations). 경계 = 구간 밖 주요 기기·미연결 연결점으로 이어지는 배관 구간의 끝.
+    seg_ends·seg_rank는 annotate가 한 번 만든 색인이다(구간마다 전체 간선을 다시 훑지 않게). 구간 순서는 간선 순서 그대로."""
+    members = set(node["members"])
     starts, ends, unknown = [], [], []
 
     def item(eid):
@@ -67,9 +74,9 @@ def _boundaries(node, pg, by_id, drawing_of, node_of):
         first = (n.get("label_text") or "").split("\n")[0].strip()
         return {"entity_id": eid, "label": n.get("tag") or first or n.get("kind"), "drawing": drawing_of.get(eid)}
 
-    for seg, es in seg_ends.items():
-        outs = [e for e in es if e["node"] not in members]
-        if seg not in members or not outs:
+    for seg in sorted((m for m in members if m in seg_ends), key=seg_rank.get):
+        outs = [e for e in seg_ends[seg] if e["node"] not in members]
+        if not outs:
             continue
         for e in outs:
             o = by_id[e["node"]]
@@ -90,6 +97,24 @@ def _boundaries(node, pg, by_id, drawing_of, node_of):
         return only, only, []
     start = starts[0] if starts else (unknown.pop(0) if unknown else None)
     end = ends[-1] if ends else (unknown.pop() if unknown else None)
+    if equipment and (start is None) != (end is None):
+        # 기기와 그 출구 배관을 한 구간에 묶으면(스크리닝 R2) 안쪽 기기가 한쪽 경계다. 배관은 상류 기기에 붙으므로
+        # 흐름상 시작이 밖에서 보이지 않았으면 안쪽 기기가 시작이고, 밖의 경계는 끝으로 옮긴다
+        inside = item(equipment[0])
+        if start is not None and not starts:
+            start, end = inside, start
+        elif start is None:
+            start = inside
+        else:
+            end = inside
+    if (start is None) != (end is None):
+        # 긴 경로를 크기 예산으로 나눈 조각: 경계 기기가 한쪽에만 있으면 나눈 자리(이웃 구간과 맞닿은 요소)를 다른 쪽 경계로 쓴다
+        cut = sorted({x for seg in members if seg in seg_ends for x in (e["node"] for e in seg_ends[seg]) if x not in members}
+                     | {seg for m in members for seg in segs_of.get(m, ()) if seg not in members})
+        if cut:
+            nxt = cut[0]
+            mark = dict(item(nxt), note="구간 나눔" + ("(%s)" % ", ".join(node_of[nxt]) if node_of.get(nxt) else ""))
+            start, end = (mark, end) if start is None else (start, mark)
     if start is None and end is None:  # 경계 기기 없이 배관 요소만 남은 구간: 태그 있는 첫 구성요소로 설명
         first = next((m for m in node["members"] if (by_id.get(m) or {}).get("tag")), node["members"][0])
         start = end = dict(item(first), note="경계 기기 없음")
@@ -107,10 +132,16 @@ def annotate(node_set, pg):
     display_name, drawings(흐름 순서 전체 번호), drawings_short, spans_drawings, members_by_drawing{번호: 수},
     member_count, boundary{start, end}(각 {entity_id, label, drawing}), continuations[{entity_id, drawing,
     to_drawing, to_node_ids}](화면 칩 "S7 → SNP-M-101에서 계속"). 집합 위에 drawing_numbers·drawing_prefix·drawing_short."""
-    out = copy.deepcopy(node_set)
+    out = pickle.loads(pickle.dumps(node_set, pickle.HIGHEST_PROTOCOL))  # JSON 값이라 deepcopy와 같은 사본, 몇 배 빠름
     by_id = {n["entity_id"]: n for n in pg["nodes"]}
     drawing_of = _sheet_of(pg)
     prefix, short = short_numbers([s["drawing_number"] for s in pg["sheets"]])
+    seg_ends = _segment_ends(pg)
+    seg_rank = {seg: i for i, seg in enumerate(seg_ends)}
+    segs_of = {}
+    for seg, es in seg_ends.items():
+        for e in es:
+            segs_of.setdefault(e["node"], []).append(seg)
     node_of = {}
     for n in out["nodes"]:
         for m in n["members"]:
@@ -121,7 +152,7 @@ def annotate(node_set, pg):
             if drawing_of.get(m):
                 counts[drawing_of[m]] = counts.get(drawing_of[m], 0) + 1
         drawings = _flow_order(set(counts), pg, set(n["members"]))
-        start, end, conts = _boundaries(n, pg, by_id, drawing_of, node_of)
+        start, end, conts = _boundaries(n, by_id, drawing_of, node_of, seg_ends, seg_rank, segs_of)
         n.update({
             "drawings": drawings, "drawings_short": [short.get(d, d) for d in drawings],
             "spans_drawings": len(drawings) > 1, "members_by_drawing": dict(sorted(counts.items())),
@@ -284,7 +315,8 @@ def migrate_results(old_results, old_sets, project_set, deviations, pg=None):
     m = legacy_map(old_sets, project_set, pg)
     sets = {s["graph_id"]: s for s in old_sets}
     report = {"moved_entries": 0, "unmapped": [], "unmapped_nodes": unmapped_ids(m), "unmapped_deviations": [],
-              "scope_changed_entries": 0, "stale_entries": 0, "human_entries": 0}
+              "to_excluded": [], "scope_changed_entries": 0, "stale_entries": 0, "human_entries": 0}
+    excluded = {n["node_id"] for n in project_set["nodes"] if (n.get("screen") or {}).get("status") == "excluded"}
     for old in old_results:
         gid = old["graph_id"]
         stale = gid not in sets or res.is_stale(old, sets[gid])
@@ -300,6 +332,9 @@ def migrate_results(old_results, old_sets, project_set, deviations, pg=None):
                 report["unmapped"].append({"legacy_id": lid, "deviation_id": c["deviation_id"],
                                            "entries": len(c["entries"]), "state": c["state"]})
                 continue
+            if m[lid]["node_id"] in excluded and any(e.get("status") in res.HUMAN_STATUSES for e in c["entries"]):
+                report["to_excluded"].append({"legacy_id": lid, "deviation_id": c["deviation_id"], "node_id": m[lid]["node_id"]})
+                continue  # 사람이 판정한 항목을 행 없는 '스크리닝 제외' 구간에 숨기지 않는다(§4.6 '제외로 감')
             exact = m[lid]["exact"]
             flags = dict({} if exact else {"scope_changed": True}, **({"source_stale": True} if stale else {}))
             cell.setdefault("legacy_cells", []).append({"from": lid, "deviation_id": c["deviation_id"],
@@ -327,4 +362,4 @@ def migrate_results(old_results, old_sets, project_set, deviations, pg=None):
 
 def blocked(report):
     """이전을 멈출 사유(보고 키) 목록. 빈 목록이면 진행."""
-    return [k for k in ("unmapped", "unmapped_nodes", "unmapped_deviations") if report[k]]
+    return [k for k in ("unmapped", "unmapped_nodes", "unmapped_deviations", "to_excluded") if report.get(k)]

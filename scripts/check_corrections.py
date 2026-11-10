@@ -17,13 +17,14 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 
 from hazop.extract import corrections  # noqa: E402
 from hazop.extract.adapters import pdf_vector  # noqa: E402
 from hazop.graph import build  # noqa: E402
 
-SAMPLE_GLOB = os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.pdf")
+SAMPLE_GLOB = paths.folder("참고", "P&ID 도면 샘플", "*", "*.pdf")
 FLOW = "unknown_flow_direction"
 
 

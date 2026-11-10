@@ -31,6 +31,7 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 from hazop.extract import drawio  # noqa: E402
 from hazop.extract.adapters import align  # noqa: E402
@@ -44,7 +45,7 @@ from hazop.viewer import build as viewer_build  # noqa: E402
 from hazop.viewer import check as view_check  # noqa: E402
 
 FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "adapter", "truth_small.json")
-SAMPLE_GLOB = os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "*", "*.drawio")
+SAMPLE_GLOB = paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")
 FAR = (3000.0, 2000.0)  # 페이지 밖으로 옮기는 거리(어떤 정답 bbox와도 겹치지 않음)
 
 

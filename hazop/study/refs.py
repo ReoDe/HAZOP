@@ -6,7 +6,8 @@
 - 항목 필드(모두 선택, 없으면 옛 항목처럼 자유 문장만):
   cause_refs        [{ref, failure_mode?, origin?}]
   consequence_refs  [{ref, origin?}]  다른 구간 대상 허용
-  safeguards[]      문자열 또는 {text, role, refs: [{ref, origin?}], ipl: null, origin?}. 문자열은 role unknown으로 읽는다
+  safeguards[]      문자열 또는 {text, role, actuation?, refs: [{ref, origin?}], ipl: null, origin?}.
+                    문자열이거나 값이 없으면 role·actuation 모두 unknown으로 읽는다(초기사건 출력설계 §5.1, E2)
   expectation_refs  [잠재 후보 ID(exp-<규칙>-<대상 해시>)]. 대상 안정 참조에서 정해지는 ID라 판이 바뀌어도 같다
 - origin이 ai_draft인 참조·역할은 항목이 승인되기 전까지 확정이 아니다(is_confirmed). 읽기만 하고 파일 내용을 바꾸지 않는다.
 - 대상이 그래프에서 사라진 참조는 지우지 않고 '대상 없음(재확인)'으로 보인다.
@@ -15,6 +16,7 @@
 from hazop.study import migrate
 
 ROLES = {"preventive": "예방", "mitigative": "완화", "unknown": "미정"}
+ACTUATIONS = {"automatic": "자동", "operator": "운전원", "passive": "자체작동", "unknown": "미확인"}
 REF_FIELDS = (("cause_refs", "원인 위치"), ("consequence_refs", "영향 대상"))
 ORIGINS = ("ai_draft", "human")
 MISSING = "대상 없음(재확인)"
@@ -25,13 +27,14 @@ CITATION_KIND = "specified_in"
 
 # ---------------------------------------------------------------- 읽기
 def safeguard_items(entry):
-    """보호수단을 {text, role, refs, ipl, origin} 목록으로 읽는다. 문자열은 role unknown·refs 없음."""
+    """보호수단을 {text, role, actuation, refs, ipl, origin} 목록으로 읽는다. 문자열은 role·actuation unknown·refs 없음."""
     out = []
     for s in entry.get("safeguards") or []:
         if isinstance(s, str):
-            out.append({"text": s, "role": "unknown", "refs": [], "ipl": None, "origin": None})
+            out.append({"text": s, "role": "unknown", "actuation": "unknown", "refs": [], "ipl": None, "origin": None})
         elif isinstance(s, dict):
             out.append({"text": s.get("text") or "", "role": s.get("role") if s.get("role") in ROLES else "unknown",
+                        "actuation": s.get("actuation") if s.get("actuation") in ACTUATIONS else "unknown",
                         "refs": [r for r in s.get("refs") or [] if isinstance(r, dict)], "ipl": s.get("ipl"),
                         "origin": s.get("origin")})
     return out
@@ -80,10 +83,12 @@ def problems(entry):
                 if isinstance(s, str):
                     continue
                 if not isinstance(s, dict) or not isinstance(s.get("text"), str):
-                    out.append("safeguards 항목은 문자열 또는 {text, role, refs, ipl} 객체여야 함")
+                    out.append("safeguards 항목은 문자열 또는 {text, role, actuation, refs, ipl} 객체여야 함")
                     continue
                 if s.get("role", "unknown") not in ROLES:
                     out.append("safeguards: role 값 %r(%s)" % (s.get("role"), "/".join(ROLES)))
+                if s.get("actuation", "unknown") not in ACTUATIONS:
+                    out.append("safeguards: actuation 값 %r(%s)" % (s.get("actuation"), "/".join(ACTUATIONS)))
                 if s.get("ipl") is not None:
                     out.append("safeguards: ipl은 null(LOPA는 후속, U6)")
                 if s.get("origin") not in (None,) + ORIGINS:

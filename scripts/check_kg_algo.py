@@ -28,6 +28,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
+from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 
 import analyze_kg  # noqa: E402
@@ -37,7 +38,7 @@ from hazop.kg import algo, build  # noqa: E402
 
 SAMPLE_PROJECT = "SNP-SAMPLE"
 EXPECTED = os.path.join(REPO_ROOT, "tests", "fixtures", "kg_algo", "expected_SNP-SAMPLE.json")
-REGION_FILE = os.path.join(REPO_ROOT, "데이터", "구간", "region-SNP-M-102-pzr.json")
+REGION_FILE = paths.folder_in(REPO_ROOT, "표본", "구간", "region-SNP-M-102-pzr.json")
 P1_NODES = 5000  # §7.3 전역 보기 노드 수 상한
 P1_FILE = "p1_performance.json"
 
@@ -97,7 +98,7 @@ def expected_problems(kg, graph, regions, exp):
 
 def a1_prime_problems(kg, graph, region_path):
     """A1′. ④ 분석 실행의 탐색(run.load_inputs + run.prepare_doc, AI 단계 전)과 A1을 비교한다."""
-    inputs = run.load_inputs(region_path, REPO_ROOT)
+    inputs = run.load_inputs(region_path, paths.work_root(), resource_root=paths.resource_root())
     if inputs["blockers"]:
         return ["④ 입력 차단: %s" % " / ".join(inputs["blockers"])]
     region = inputs["region"]

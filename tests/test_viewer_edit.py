@@ -16,6 +16,7 @@ os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu
 
 from tests.test_app import pump, wait_for  # noqa: E402
 from scripts.check_edit_screen import install_sample  # noqa: E402
+from hazop import paths  # noqa: E402
 from hazop.app.screens import viewer  # noqa: E402
 from hazop.app.screens.viewer import EditSession, ToolState, choose_end, finish_path, flow_request, start_tool, tool_pick  # noqa: E402,E501
 
@@ -180,7 +181,7 @@ class EditScreenTest(unittest.TestCase):
 
     def setUp(self):
         from hazop.app.main_window import MainWindow
-        shutil.rmtree(os.path.join(os.environ["HAZOP_WORK_ROOT"], "데이터", "도면수정"), ignore_errors=True)
+        shutil.rmtree(paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "도면수정"), ignore_errors=True)
         win = MainWindow(settings_path=os.path.join(tempfile.mkdtemp(dir=self.tmp), "settings.json"), ask_reviewer=False)
         win.set_reviewer_name("검토자A")
         win.resize(1440, 860)
@@ -237,6 +238,49 @@ class EditScreenTest(unittest.TestCase):
         self.assertEqual(self.win.stack.currentIndex(), 0)
         self.assertFalse(self.win.webview.edit["on"])                 # 다른 화면에서는 편집 모드 꺼짐
 
+    def test_new_op_after_undoing_saved_op_gets_new_id(self):
+        """저장한 추가를 실행 취소하고 새로 추가하면 op_id·manual- ID가 겹치지 않고, 지운 추가 내용은 기록에 남는다."""
+        from hazop.extract import corrections
+        scr = self.scr
+
+        def add(tag, x):
+            ok = scr.commit({"op": "add_node", "target": None,
+                             "value": {"category": "equipment", "kind": "pump", "tag": tag, "bbox": [x, 10, 40, 40]}})
+            self.settle()
+            self.assertTrue(ok)
+            return dict(scr.session.ops[-1])
+        with mock.patch.object(viewer, "notify"):
+            first = add("ZZ-P-100", 100)
+            self.assertTrue(scr.save())
+            self.settle()
+            scr.undo_btn.click()
+            self.settle()
+            second = add("ZZ-V-200", 300)
+            self.assertTrue(scr.save())
+        self.assertNotEqual(second["op_id"], first["op_id"])
+        self.assertEqual(scr.selected, "manual-" + second["op_id"])
+        doc = corrections.load(self.name)
+        self.assertEqual([o["op_id"] for o in doc["ops"]], [second["op_id"]])
+        self.assertEqual(doc["log"][-1]["removed_ops"], [first])
+
+    def test_new_op_does_not_reuse_id_still_on_undo_stack(self):
+        """저장하지 않고 되돌린 추가도 실행 취소로 되살아날 수 있으므로, 그 번호를 새 추가에 다시 주지 않는다."""
+        scr = self.scr
+
+        def add(tag, x):
+            ok = scr.commit({"op": "add_node", "target": None,
+                             "value": {"category": "equipment", "kind": "pump", "tag": tag, "bbox": [x, 10, 40, 40]}})
+            self.settle()
+            self.assertTrue(ok)
+            return dict(scr.session.ops[-1])
+        with mock.patch.object(viewer, "notify"):
+            unsaved = add("ZZ-P-101", 100)
+            scr.revert()
+            self.settle()
+            saved = add("ZZ-P-102", 300)
+            self.assertTrue(scr.save())
+        self.assertNotEqual(saved["op_id"], unsaved["op_id"])
+
     def test_duplicate_tag_asks(self):
         scr = self.scr
         tagged = [n for n in scr.info["corrected"]["nodes"] if n.get("tag")]
@@ -280,7 +324,7 @@ class EditScreenTest(unittest.TestCase):
             self.assertTrue(scr.save())
         self.assertFalse(scr.session.dirty)
         self.assertIn("저장", note.call_args[0][2])
-        saved = os.path.join(os.environ["HAZOP_WORK_ROOT"], "데이터", "도면수정")
+        saved = paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "도면수정")
         self.assertTrue(os.listdir(saved))
         self.settle()
         self.assertIn("미확인 %d" % len(scr.info["graph"]["validation"]["unknowns"]), scr.chip_stats.text())

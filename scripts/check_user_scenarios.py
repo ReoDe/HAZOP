@@ -27,9 +27,12 @@ import time
 import urllib.request
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+from hazop import paths  # noqa: E402  (표준 라이브러리만 쓰는 경로 모듈)
 CDP_PORT = 9339
 WINDOW_SIZE = (1366, 768)
-DRAWIO_SAMPLE = os.path.join(REPO_ROOT, "참고자료", "P&ID 도면 샘플", "SNP-M-201_CVCS", "SNP-M-201_CVCS.drawio")
+DRAWIO_SAMPLE = paths.folder("참고", "P&ID 도면 샘플", "SNP-M-201_CVCS", "SNP-M-201_CVCS.drawio")
 
 # KLM 연산자 시간(초). Card, Moran & Newell(1980) "The Keystroke-Level Model for User Performance Time with Interactive
 # Systems", CACM 23(7):396-410. K는 비전문 평균 타자(40 wpm) 값 0.28(같은 논문 표 1의 범위 0.08~1.2 중).
@@ -281,7 +284,7 @@ class Win32:
 
 
 VK = {"ctrl": 0x11, "shift": 0x10, "alt": 0x12, "enter": 0x0D, "esc": 0x1B, "tab": 0x09, "back": 0x08, "left": 0x25,
-      "up": 0x26, "right": 0x27, "down": 0x28, "f1": 0x70, "f2": 0x71, "hangul": 0x15, "space": 0x20}
+      "up": 0x26, "right": 0x27, "down": 0x28, "f1": 0x70, "f2": 0x71, "f4": 0x73, "f6": 0x75, "hangul": 0x15, "space": 0x20}
 
 
 def parse_chord(chord):
@@ -1365,6 +1368,108 @@ def s12_excel_export(d):
              "워크시트 %d행, 결과 항목 %d개, 도면 번호 빈 행 %d" % (rows, entries, sum(1 for x in dn if not x)))
 
 
+def _inside(e, rect):
+    x, y, w, h = e.get("rect") or (0, 0, 0, 0)
+    return rect[0] <= x and rect[1] <= y and x + w <= rect[0] + rect[2] and y + h <= rect[1] + rect[3]
+
+
+def window_named(d, name):
+    return [e for e in d.tree() if e["type"] == "Window" and e.get("name") == name]
+
+
+def window_texts(d, win):
+    return [e["name"] for e in d.tree() if e.get("name") and e is not win and _inside(e, win["rect"])]
+
+
+def s15_subscription_cancel_close(d):
+    """연결 방식을 Claude 구독으로 바꾸고 가짜 CLI로 ⑤ 실행 → 실행 중 취소 → 창 닫기(기다렸다 닫기).
+    구독 화면에 $가 없는지, 진행 중 호출이 있을 때 묻는지, 받은 칸을 저장하고 닫히는지 본다. 앱을 닫으므로 맨 마지막에 돈다."""
+    goto_stage(d, 5)
+    d.step("Ctrl+P에서 '>AI 연결 설정' 실행")
+    d.key("ctrl+p")
+    time.sleep(0.4)
+    d.type(">AI 연결 설정")
+    time.sleep(0.5)
+    d.key("enter")
+    if not d.expect(bool(d.wait(lambda: window_named(d, "AI 연결 설정"), "설정 창", 5)), "AI 연결 설정 창이 열리지 않음"):
+        return
+    d.shot("AI 연결 설정")
+    item = d.find(lambda e: e["type"] == "ListItem" and (e.get("name") or "").startswith("Claude 구독"))
+    if not d.expect(bool(item), "설정 창 목록에 Claude 구독이 없음"):
+        return
+    d.step("목록에서 Claude 구독 클릭")
+    d.click(item[0])
+    d.step("Alt+U(이 방식으로 사용)")
+    d.key("alt+u")
+    if d.wait(lambda: window_named(d, "Claude 구독으로 분석하기 전에"), "이용 조건 창", 5):
+        d.shot("구독 처음 사용(이용 조건)")
+        d.step("Space(확인란) → Alt+O(확인하고 계속)")
+        d.key("space")
+        d.key("alt+o")
+    chip = d.wait(lambda: d.find(lambda e: (e.get("name") or "").startswith("AI 연결: Claude 구독")), "칩이 구독으로", 15)
+    d.expect(bool(chip), "구독으로 바꿨는데 연결 칩이 'AI 연결: Claude 구독…'이 아님")
+    d.r["chip"] = chip[0]["name"] if chip else None
+    d.shot("구독으로 바꾼 뒤")
+    d.step("Esc로 설정 창 닫기")
+    d.key("esc")
+    time.sleep(0.5)
+    d.step("Ctrl+P에서 '>AI 일괄 분석' 실행")
+    d.key("ctrl+p")
+    time.sleep(0.4)
+    d.type(">AI 일괄 분석")
+    time.sleep(0.5)
+    t = time.time()
+    d.key("enter")
+    confirm = d.wait(lambda: window_named(d, "AI 분석 시작"), "실행 확인", 15, since=t)
+    if not d.expect(bool(confirm), "구독 실행 확인 창이 뜨지 않음"):
+        return
+    texts = window_texts(d, confirm[0])
+    d.r["confirm_text"] = texts
+    d.shot("구독 실행 확인")
+    d.expect(any("건별 요금 없음" in x for x in texts), "구독 실행 확인에 '건별 요금 없음'이 없음", " | ".join(texts)[:300])
+    d.expect(not any("$" in x for x in texts), "구독 실행 확인에 $가 보임", " | ".join(texts)[:300], severity="상")
+    d.step("Enter(시작)")
+    t = time.time()
+    d.key("enter")
+    if not d.expect(bool(d.wait(lambda: running_text(progress_texts(d)[0]), "실행 시작", 15, since=t)),
+                    "구독 실행이 시작되지 않음"):
+        return
+    time.sleep(1.0)
+    shown = progress_texts(d)[0]
+    d.r["progress"] = shown
+    d.shot("구독 실행 중")
+    d.expect(any("구독 사용량 차감" in x for x in shown), "구독 진행 줄에 '구독 사용량 차감'이 없음", " | ".join(shown)[:300])
+    d.expect(not any("$" in x for x in shown), "구독 진행 줄에 $가 보임", " | ".join(shown)[:300], severity="상")
+    cancel = d.find(lambda e: e["type"] == "Button" and e.get("name") == "취소" and _inside(e, d.windows()[0]["rect"]))
+    if not d.expect(bool(cancel), "실행 중 '취소' 단추가 없음"):
+        return
+    d.step("'취소' 클릭(남은 호출 멈춤, 진행 중 1건은 받음)")
+    d.click(cancel[0])
+    d.expect(bool(d.wait(lambda: d.find(lambda e: e["type"] == "Button" and e.get("name") == "바로 끊기"), "바로 끊기", 5)),
+             "취소한 뒤 '바로 끊기' 단추가 보이지 않음", severity="하")
+    d.shot("취소 뒤(진행 중 1건 기다림)")
+    d.step("Alt+F4로 창 닫기")
+    t = time.time()
+    d.key("alt+f4")
+    ask = d.wait(lambda: window_named(d, "AI 분석 중에 닫기"), "닫기 물음", 5, since=t)
+    if not d.expect(bool(ask), "진행 중인 호출이 있는데 창을 닫을 때 묻지 않음", severity="상"):
+        return
+    d.r["close_text"] = window_texts(d, ask[0])
+    d.shot("창 닫기 물음")
+    d.step("Enter(기다렸다 닫기, 기본 단추)")
+    d.key("enter")
+    gone = d.wait(lambda: not d.windows(), "창이 닫힘", 60)
+    d.expect(bool(gone), "기다렸다 닫기를 골랐는데 호출이 끝난 뒤에도 창이 닫히지 않음", severity="상")
+    vias = []
+    for root, _dirs, files in os.walk(d.data_root):
+        for f in files:
+            if f.endswith(".json") and ".bak." not in f:
+                with open(os.path.join(root, f), encoding="utf-8") as fh:
+                    vias += [r.get("via") for r in json.load(fh).get("ai_log") or []]
+    d.r["saved_vias"] = vias
+    d.expect("subscription" in vias, "구독으로 받은 칸이 결과 파일에 저장되지 않음", "기록된 연결 방식: %s" % vias, severity="상")
+
+
 SCENARIOS = (("S1", "키보드만으로 ①→⑤ 이동·뒤로·단축키 표", s1_keyboard_stages),
              ("S2", "Ctrl+P 구성요소 찾기 → 관련 항목 → 이동", s2_palette_related),
              ("S3", "⑤ J·A·R·Ctrl+Z 검토 키", s3_review_keys),
@@ -1378,7 +1483,9 @@ SCENARIOS = (("S1", "키보드만으로 ①→⑤ 이동·뒤로·단축키 표"
              ("S12", "⑤에서 Excel 내보내기(Ctrl+P → 범위 → 저장 대화상자 → 토스트)", s12_excel_export),
              ("S13", "③ 그래프 검색 강조·마우스 올림·클릭 선택·로컬 그래프", s13_kg_graph),
              ("S5", "drawio 등록 → 추출 → ② 확인", s5_register_drawio),
-             ("S6", "④ 확정 해제 → 병합(M) → 확정(Ctrl+Enter)", s6_merge_confirm))
+             ("S6", "④ 확정 해제 → 병합(M) → 확정(Ctrl+Enter)", s6_merge_confirm),
+             ("S15", "연결 방식 구독으로 바꾸기 → 가짜 CLI 실행 → 실행 중 취소 → 창 닫기(기다림)",
+              s15_subscription_cancel_close))  # 앱을 닫으므로 맨 마지막
 
 
 # ------------------------------------------------------------------ 준비·실행
@@ -1388,13 +1495,14 @@ def prepare(work_root):
     sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
     import shoot_results
     shoot_results.prepare(work_root)
-    shutil.copytree(os.path.join(REPO_ROOT, "참고자료"), os.path.join(work_root, "참고자료"))  # ②④ 뷰어 바탕 그림
+    shutil.copytree(paths.folder("참고"), paths.logical_reference_dir(work_root))  # ②④ 뷰어 바탕 그림
     from hazop.app import make_application
     from hazop.app.main_window import MainWindow
     from hazop.app.screenshots import wait
     app = make_application(["prepare"])
     win = MainWindow(settings_path=os.path.join(os.path.dirname(work_root), "settings.json"), ask_reviewer=False)
     win.api_keys.set(shoot_results.KEY, persist=False)
+    win.ai_prefs.choose("api")  # 준비는 가짜 API 클라이언트로(구독 확인·이용 조건 창을 띄우지 않음)
     win.go(6)
     res = win.screens[6]
     res.make_client = lambda: shoot_results.FakeClient()
@@ -1413,7 +1521,8 @@ AI_DELAY = 4.0  # 가짜 AI 호출 한 번의 지연(초). 실제는 15~60초
 
 def app_main(settings_path):
     """시험용 앱 실행: run_app.py와 같은 창에 가짜 AI 클라이언트(호출마다 AI_DELAY초)를 넣는다. 네트워크 없음.
-    키는 파일에 쓰지 않는다(persist=False)."""
+    키는 파일에 쓰지 않는다(persist=False). 시작 방식은 API 키(S7·S8). Claude 구독은 가짜 CLI(tests/fake_claude_flow.py,
+    호출마다 4초)를 이 경로 안에서만 주입한다(S15). 설정 파일·화면으로는 실행 명령을 바꿀 수 없다."""
     sys.path.insert(0, REPO_ROOT)
     sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
     from hazop.app import make_application
@@ -1431,9 +1540,16 @@ def app_main(settings_path):
                 r = dict(r, status="api_error", output=None, usage=None, error_type="overloaded", status_code=529,
                          error="AI 서비스가 과부하 상태임(HTTP 529, 시험용 가짜 응답)")
             return r
+    from hazop.study import claude_cli
     win = MainWindow(settings_path=settings_path, ask_reviewer=False)
     win.api_keys.set(shoot_results.KEY, persist=False)
-    win.screens[6].make_client = SlowFake
+    win.ai_prefs.choose("api")
+    tmp = os.path.dirname(os.path.abspath(settings_path))
+    fake = [sys.executable, os.path.join(REPO_ROOT, "tests", "fake_claude_flow.py"), "slow20", os.path.join(tmp, "fake-cli")]
+    win.ai_conn.cli_factory = lambda path, **kw: claude_cli.ClaudeCliClient(
+        argv_prefix=fake, limits_path=os.path.join(tmp, "ai_limits.json"), run_root=os.path.join(tmp, "cli-run"), **kw)
+    scr = win.screens[6]
+    scr.make_client = lambda: SlowFake() if scr.run_method == "api" else win.ai_conn.make_client(scr.run_method)
     win.show()
     code = app.exec()
     win.close()
@@ -1498,7 +1614,7 @@ def run(out_dir, only=None, keep_temp=False, focus_wait=120):
             print(exc)
             return 2
         w32.resize(hwnd, *WINDOW_SIZE)
-        d = Driver(w32, uia, cdp, pid, hwnd, shots, os.path.join(tmp, "work", "데이터", "분석결과"))
+        d = Driver(w32, uia, cdp, pid, hwnd, shots, paths.folder_in(os.path.join(tmp, "work"), "분석결과"))
         d.focus_wait = focus_wait
         w32.activate(hwnd)
         time.sleep(1.0)
@@ -1554,7 +1670,7 @@ def run(out_dir, only=None, keep_temp=False, focus_wait=120):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default=os.path.join(REPO_ROOT, "출력", "사용자검증"), help="결과 폴더")
+    ap.add_argument("--out", default=os.path.join(paths.DEV_WORK_ROOT, "출력", "사용자검증"), help="결과 폴더")
     ap.add_argument("--only", help="돌릴 시나리오 ID(쉼표), 예: S1,S3")
     ap.add_argument("--keep-temp", action="store_true", help="임시 작업 루트를 지우지 않음")
     ap.add_argument("--focus-wait", type=int, default=120, help="창 전환이 막히면 사용자가 창을 클릭하길 기다릴 초")
@@ -1568,8 +1684,18 @@ def main(argv=None):
     if sys.platform != "win32":
         print("Windows에서만 동작합니다(UI Automation·SendInput)")
         return 2
-    return run(os.path.abspath(args.out), set(args.only.split(",")) if args.only else None, args.keep_temp,
-               args.focus_wait)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import devenv
+    try:  # 실제 데스크톱은 한 번에 하나만(scripts/desktop_lease.py)
+        devenv.acquire_desktop("check_user_scenarios %s" % (args.only or "전체"))
+    except devenv.DesktopBusy as exc:
+        print(exc)
+        return 2
+    try:
+        return run(os.path.abspath(args.out), set(args.only.split(",")) if args.only else None, args.keep_temp,
+                   args.focus_wait)
+    finally:
+        devenv.release_desktop()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,508 @@
+{
+ "seq": 63,
+ "drawing": "9.3.4-1-S1",
+ "source_file": "063_Ch09_Fig9.3.4-1_s1of7_Chemical_and_Volume_Control_System_Flow_Diagram.pdf",
+ "method": "PDF를 4배로 렌더한 그림에서 Claude 시험 세션이 눈으로 읽음(scripts/apr1400_key_overlay.py candidates). 후보는 벡터 경로의 작은 원·비석 모양 곡선과 점 6개 화살표. 글자는 그림에서 읽고 텍스트 층은 쓰지 않음. 후보 모양 밖의 계기·연결 표시는 찾지 않았음(한계).",
+ "verified": "2026-11-09 Claude 시험 세션이 만들고 다른 Claude 검토 에이전트가 겹쳐 보기로 다시 확인. 사람 확인 전",
+ "scope": "instruments = 기능 문자 + 루프 번호가 든 계기 기호(원·비석). 번호만 든 원은 valve_callouts(점수에 넣지 않음). 번호 없는 공급자 패키지 계기와 FG 같은 기호 밖 태그는 뺌.",
+ "instruments": [
+  {
+   "tag": "TEW 7",
+   "bbox": [
+    257.6,
+    293.8,
+    274.4,
+    312.6
+   ]
+  },
+  {
+   "tag": "TW 214",
+   "bbox": [
+    444.7,
+    180.0,
+    456.4,
+    191.7
+   ]
+  },
+  {
+   "tag": "PDT 6",
+   "bbox": [
+    685.4,
+    243.5,
+    702.2,
+    262.3
+   ]
+  },
+  {
+   "tag": "TEW 5",
+   "bbox": [
+    576.3,
+    168.1,
+    593.1,
+    186.9
+   ]
+  },
+  {
+   "tag": "TW 022",
+   "bbox": [
+    469.8,
+    234.5,
+    481.6,
+    246.2
+   ]
+  },
+  {
+   "tag": "TEW 4",
+   "bbox": [
+    417.0,
+    251.9,
+    433.7,
+    270.7
+   ]
+  },
+  {
+   "tag": "TEW 8",
+   "bbox": [
+    576.3,
+    482.3,
+    593.1,
+    501.2
+   ]
+  },
+  {
+   "tag": "PT 1",
+   "bbox": [
+    408.6,
+    588.1,
+    425.4,
+    607.0
+   ]
+  },
+  {
+   "tag": "FT 2",
+   "bbox": [
+    429.8,
+    588.1,
+    446.5,
+    607.0
+   ]
+  },
+  {
+   "tag": "PTI 9",
+   "bbox": [
+    609.9,
+    431.0,
+    626.7,
+    449.8
+   ]
+  },
+  {
+   "tag": "PT 10",
+   "bbox": [
+    748.3,
+    431.0,
+    765.1,
+    449.8
+   ]
+  },
+  {
+   "tag": "PDIS 202",
+   "bbox": [
+    868.3,
+    640.9,
+    880.0,
+    652.7
+   ]
+  },
+  {
+   "tag": "FTI 11",
+   "bbox": [
+    981.1,
+    433.1,
+    997.9,
+    451.9
+   ]
+  },
+  {
+   "tag": "FE 202",
+   "bbox": [
+    983.6,
+    481.5,
+    995.3,
+    493.3
+   ]
+  },
+  {
+   "tag": "FE 212B",
+   "bbox": [
+    432.3,
+    632.4,
+    444.0,
+    644.1
+   ]
+  }
+ ],
+ "valve_callouts": [
+  {
+   "text": "515",
+   "bbox": [
+    287.8,
+    103.7,
+    297.9,
+    113.8
+   ]
+  },
+  {
+   "text": "516",
+   "bbox": [
+    405.2,
+    103.7,
+    415.3,
+    113.8
+   ]
+  },
+  {
+   "text": "302",
+   "bbox": [
+    405.2,
+    160.3,
+    415.3,
+    170.4
+   ]
+  },
+  {
+   "text": "240",
+   "bbox": [
+    720.6,
+    187.5,
+    730.7,
+    197.6
+   ]
+  },
+  {
+   "text": "203",
+   "bbox": [
+    682.0,
+    145.6,
+    692.1,
+    155.7
+   ]
+  },
+  {
+   "text": "524",
+   "bbox": [
+    192.2,
+    187.5,
+    202.2,
+    197.6
+   ]
+  },
+  {
+   "text": "202",
+   "bbox": [
+    229.9,
+    656.8,
+    240.0,
+    666.9
+   ]
+  },
+  {
+   "text": "200",
+   "bbox": [
+    292.8,
+    656.8,
+    302.9,
+    666.9
+   ]
+  },
+  {
+   "text": "110Y",
+   "bbox": [
+    246.7,
+    518.6,
+    256.8,
+    528.6
+   ]
+  },
+  {
+   "text": "110X",
+   "bbox": [
+    246.7,
+    455.7,
+    256.8,
+    465.8
+   ]
+  },
+  {
+   "text": "110Z",
+   "bbox": [
+    246.7,
+    581.4,
+    256.8,
+    591.5
+   ]
+  },
+  {
+   "text": "576",
+   "bbox": [
+    687.1,
+    606.6,
+    697.1,
+    616.6
+   ]
+  },
+  {
+   "text": "577",
+   "bbox": [
+    611.6,
+    606.6,
+    621.6,
+    616.6
+   ]
+  },
+  {
+   "text": "212P",
+   "bbox": [
+    504.2,
+    609.1,
+    514.3,
+    619.1
+   ]
+  },
+  {
+   "text": "212Q",
+   "bbox": [
+    502.5,
+    652.6,
+    512.6,
+    662.7
+   ]
+  },
+  {
+   "text": "522",
+   "bbox": [
+    393.5,
+    455.7,
+    403.6,
+    465.8
+   ]
+  },
+  {
+   "text": "523",
+   "bbox": [
+    485.8,
+    455.7,
+    495.8,
+    465.8
+   ]
+  },
+  {
+   "text": "201Q",
+   "bbox": [
+    703.0,
+    455.7,
+    713.1,
+    465.8
+   ]
+  },
+  {
+   "text": "354",
+   "bbox": [
+    746.0,
+    502.9,
+    756.1,
+    512.9
+   ]
+  },
+  {
+   "text": "201P",
+   "bbox": [
+    703.0,
+    405.4,
+    713.1,
+    415.5
+   ]
+  },
+  {
+   "text": "125",
+   "bbox": [
+    468.5,
+    606.6,
+    478.6,
+    616.6
+   ]
+  }
+ ],
+ "connectors": [
+  {
+   "label": "RC:LETDOWN LINE FROM RC LOOP 1B / SHEET 1",
+   "bbox": [
+    182.1,
+    115.5,
+    215.7,
+    122.2
+   ],
+   "rotated": false
+  },
+  {
+   "label": "RDT / SHEET 5\"RC\"",
+   "bbox": [
+    345.7,
+    169.9,
+    379.2,
+    176.6
+   ],
+   "rotated": false
+  },
+  {
+   "label": "RC:CHARGING LINE TO RC LOOP 1A / SHEET 1",
+   "bbox": [
+    844.8,
+    199.3,
+    878.3,
+    206.0
+   ],
+   "rotated": false
+  },
+  {
+   "label": "PRESSURIZER AUXILIARY SPRAY",
+   "bbox": [
+    844.8,
+    157.4,
+    878.3,
+    164.1
+   ],
+   "rotated": false
+  },
+  {
+   "label": "REACTOR DRAIN HEADER / SHEET 5\"RB\"",
+   "bbox": [
+    534.4,
+    320.8,
+    568.0,
+    327.5
+   ],
+   "rotated": false
+  },
+  {
+   "label": "REACTOR DRAIN HEADER / SHEET 5\"RE\"",
+   "bbox": [
+    630.9,
+    304.0,
+    664.4,
+    310.7
+   ],
+   "rotated": false
+  },
+  {
+   "label": "REACTOR DRAIN HEADER / SHEET 5\"RD\"",
+   "bbox": [
+    471.5,
+    320.8,
+    505.0,
+    327.5
+   ],
+   "rotated": false
+  },
+  {
+   "label": "SI:SHUTDOWN COOLING HEAT EXCHANGER 1 / SHEET 1",
+   "bbox": [
+    878.3,
+    333.4,
+    911.9,
+    340.1
+   ],
+   "rotated": false
+  },
+  {
+   "label": "SI:SHUTDOWN COOLING HEAT EXCHANGER 2 / SHEET 2",
+   "bbox": [
+    878.3,
+    358.5,
+    911.9,
+    365.2
+   ],
+   "rotated": false
+  },
+  {
+   "label": "CHARGING PUMPS / SHEET 3\"C\"",
+   "bbox": [
+    760.9,
+    618.3,
+    794.4,
+    625.0
+   ],
+   "rotated": false
+  },
+  {
+   "label": "PURIFICATION ION EXCHANGER / SHEET 2\"A\"",
+   "bbox": [
+    1016.7,
+    467.4,
+    1050.3,
+    474.2
+   ],
+   "rotated": false
+  },
+  {
+   "label": "SEAL INJECTION / SHEET 2\"D\"",
+   "bbox": [
+    370.8,
+    651.8,
+    404.4,
+    658.5
+   ],
+   "rotated": false
+  },
+  {
+   "label": "AUXILIARY CHARGING PUMP / SHEET 3\"E\"",
+   "bbox": [
+    568.0,
+    686.2,
+    601.5,
+    692.9
+   ],
+   "rotated": false
+  },
+  {
+   "label": "EQUIPMENT DRAIN RELIEF HEADER / SHEET 6\"ED\"",
+   "bbox": [
+    681.2,
+    513.5,
+    714.8,
+    520.2
+   ],
+   "rotated": false
+  },
+  {
+   "label": "RECYCLE DRAIN HEADER / SHEET 6\"YG\"",
+   "bbox": [
+    815.4,
+    513.5,
+    849.0,
+    520.2
+   ],
+   "rotated": false
+  },
+  {
+   "label": "RECYCLE DRAIN HEADER / SHEET 6\"YF\"",
+   "bbox": [
+    819.6,
+    614.1,
+    853.2,
+    620.8
+   ],
+   "rotated": false
+  },
+  {
+   "label": "EDT / SHEET 6\"EB\"",
+   "bbox": [
+    472.3,
+    599.2,
+    505.9,
+    605.9
+   ],
+   "rotated": false
+  }
+ ]
+}
