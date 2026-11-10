@@ -50,6 +50,24 @@ class RewriteText(unittest.TestCase):
         new, _ = rewrite("README.md", '[흐름](flow chart/00-overview.md) [흐름](<flow chart/00-overview.md> "제목")\n')
         self.assertEqual('[흐름](specs/flows/00-overview.md) [흐름](<specs/flows/00-overview.md> "제목")\n', new)
 
+    def test_backtick_path_with_a_space_in_the_old_name(self):
+        new, changes = rewrite("README.md", "흐름도는 `flow chart/`의 `flow chart/00-overview.md`, `../flow chart/00-overview.md`다. `flow` `chart`\n")
+        self.assertEqual("흐름도는 `specs/flows/`의 `specs/flows/00-overview.md`, `../flow chart/00-overview.md`다. `flow` `chart`\n", new)
+        self.assertEqual(["code"] * 2, [c[2] for c in changes])
+
+    def test_backtick_repo_path_inside_a_moved_folder(self):
+        """옮긴 폴더 안의 문서가 저장소 기준 경로를 적으면, 문서 폴더 기준으로 잘못 풀지 않고 저장소 기준으로 푼다."""
+        new, _ = rewrite("docs/2026-11-07-screenshots-pdf/README.md",
+                         "`docs/screenshots-pdf/`와 `docs/screenshots-pdf/지운그림.png`, `docs/screenshots-pdf/*.png`\n")
+        self.assertEqual("`docs/2026-11-07-screenshots-pdf/`와 `docs/2026-11-07-screenshots-pdf/지운그림.png`, "
+                         "`docs/2026-11-07-screenshots-pdf/*.png`\n", new)
+
+    def test_word_that_equals_a_folder_name_is_not_a_path(self):
+        rows = ROWS + [mn.Row("3d", "기획서", "specs")]
+        text = "[기획서](기획서/인터페이스.md)의 `기획서` 폴더, `기획서/` 아래\n"
+        new, _ = mn.rewrite_text("README.md", text, rows, exists)
+        self.assertEqual("[기획서](specs/interface.md)의 `기획서` 폴더, `specs/` 아래\n", new)
+
     def test_backtick_repo_path_and_folder_prefix(self):
         text = ("그림은 `docs/screenshots-pdf/`와 `docs/2026-11-09-symbol-library/그림/범례/L1-001.png`에 있고 "
                 "`python scripts/x.py docs/2026-11-09-symbol-library/범례항목.csv`로 만든다.\n")
@@ -218,6 +236,17 @@ class RealRepo(unittest.TestCase):
         self.assertEqual(before, {rel: self.read(rel) for rel in changed})
         with open(self.report, encoding="utf-8-sig", newline="") as f:
             self.assertEqual(rows, list(csv.DictReader(f)))
+
+    def test_only_rewrites_the_named_operating_files(self):
+        mn.move(self.rows, self.repo)
+        self.git("commit", "-q", "-m", "refactor: 옮김")
+        changes = mn.rewrite_links(self.rows, self.repo, write=True, only=[".claude"])
+        self.assertEqual([(".claude/agents/a.md", True)], [(c.file, c.applied) for c in changes])
+        self.assertEqual([".claude/agents/a.md"],
+                         [line[3:] for line in self.git("status", "--porcelain", "-uno").splitlines()])
+        self.assertEqual("[그림](../../docs/2026-11-07-screenshots-pdf/a.png)\n", self.read(".claude/agents/a.md"))
+        self.assertEqual(self.FILES["CLAUDE.md"], self.read("CLAUDE.md"))
+        self.assertEqual([], mn.rewrite_links(self.rows, self.repo, write=True, only=[".claude"]))
 
     def test_dry_run_writes_nothing(self):
         mn.move(self.rows, self.repo)

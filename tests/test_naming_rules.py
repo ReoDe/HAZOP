@@ -522,7 +522,7 @@ class PastViolationTest(unittest.TestCase):
         with open(os.path.join(REPO, NAMING_DOC), encoding="utf-8") as f:
             doc = f.read()
         self.assertIn("`ci`(CI 설정)", doc)
-        self.assertIn("build\|ci\|chore", doc)
+        self.assertIn(r"build\|ci\|chore", doc)
         self.assertIn("evidence/step1-moves.csv", doc)
         self.assertIn("docs/2026-11-10-naming-rules/evidence/step1-moves.csv", tracked_files())
 
