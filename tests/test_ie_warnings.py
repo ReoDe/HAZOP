@@ -58,6 +58,23 @@ class SafeguardAsCauseTest(Case):
         self.assertEqual((w["target"], w["basis"]), ("c4", "IChemE Hazards 26"))
         self.assertIn("PSV-1", w["text"])
 
+    def test_relief_valve_and_rupture_disc_count_as_protective_devices(self):
+        for soid, kind in (("RV1", "relief_valve"), ("RD1", "rupture_disc")):
+            ref = add_node(self.pg, self.ns, soid, kind, "valve", soid, self.other)
+            self.e["c4"]["cause_refs"] = [{"ref": ref}]
+            (w,) = self.warnings("safeguard_as_cause")
+            self.assertIn(soid, w["text"])
+
+    def test_target_of_a_preventive_control_loop_is_not_a_protective_device(self):
+        self.e["c3"]["safeguards"] = [{"text": "유량 제어 루프", "role": "preventive", "actuation": "automatic",
+                                       "refs": [{"ref": TANK_101}], "ipl": None}]
+        self.assertEqual(self.warnings("safeguard_as_cause"), [])
+
+    def test_an_entrys_own_safeguard_target_does_not_warn_about_itself(self):
+        self.e["c1"]["safeguards"] = [{"text": "탱크 수위 여유", "role": "mitigative", "actuation": "passive",
+                                       "refs": [{"ref": TANK_101}], "ipl": None}]
+        self.assertEqual(self.warnings("safeguard_as_cause"), [])
+
     def test_cause_at_another_entrys_safeguard_target_warns_and_names_that_entry(self):
         self.e["c3"]["safeguards"] = [{"text": "탱크 수위 여유", "role": "mitigative", "actuation": "passive",
                                        "refs": [{"ref": TANK_101}], "ipl": None}]
@@ -205,7 +222,7 @@ class SummaryAndGuideTest(Case):
         b = build(self.r, self.ns, self.pg)
         self.assertEqual(b["warnings"], [])
         self.assertEqual([s["count"] for s in b["warning_summary"]], [0] * 5)
-        self.assertTrue(ib.warning_summary_text(b).endswith("전기·제어 구간 없음"))
+        self.assertTrue(ib.warning_summary_text(b).endswith("승인된 구간 가운데 전기·제어 구간 없음"))
 
 
 if __name__ == "__main__":

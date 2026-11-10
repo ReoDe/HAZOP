@@ -30,7 +30,7 @@ from hazop.ie import model, store
 from hazop.study import nodes, refs
 from hazop.study import results as res
 
-INTRO = "⑤에서 승인한 원인을 초기사건 후보로 삼아 PSA 초기사건 그룹으로 묶습니다. 빈도 산정과 정량화는 PSA 도구에서 합니다."
+INTRO = "⑤에서 승인한 원인을 초기사건 후보로 삼아 PSA 초기사건 그룹으로 묶습니다. 빈도 산정과 정량화는 PRA 도구에서 합니다."
 TABS = ("후보", "그룹", "사건수목 표제", "최종상태", "기본사건", "완전성 대조", "품질 경고")
 TAB_GROUP, TAB_COVERAGE = 1, 5
 ORIGIN_ROLE = Qt.UserRole + 20
@@ -552,6 +552,10 @@ class InitiatingScreen(QWidget):
         self.render()
         self.stack.setCurrentIndex(1)
         self.app.update_header()
+        demoted = [h["ids"][0] for h in synced["history"][len(doc["history"]):] if h["op"] == "demote"]
+        if demoted:
+            self.app.toast("⑤ 결과가 바뀌어 확정 그룹 %d개가 초안으로 내려갔습니다: %s. 그룹 탭에서 이유를 보고 다시 확정하세요"
+                           % (len(demoted), ", ".join(demoted)), ms=10000)
         return True
 
     def _empty(self, text):

@@ -211,8 +211,10 @@ class FollowupTest(unittest.TestCase):
         doc, old = model.create_group(doc, "옛 그룹", [a, b], at=AT)
         self.assertEqual(doc["groups"][old]["representative"], a)
         doc, new = model.create_group(doc, "새 그룹", at=AT)
+        doc = model.edit(doc, ("group", old), {"representative_reason": "빈도가 가장 높음"}, at=AT)
         moved = model.place(doc, a, new, at=AT)
-        self.assertIsNone(moved["groups"][old]["representative"])
+        self.assertEqual((moved["groups"][old]["representative"], moved["groups"][old]["representative_reason"]),
+                         (None, ""), "대표가 비면 선정 이유도 비운다")
         self.assertEqual(model.confirm_problems(moved, old, r), [])
         pulled, _ = model.create_group(doc, "후보를 데려가는 그룹", [a], at=AT)
         self.assertIsNone(pulled["groups"][old]["representative"])

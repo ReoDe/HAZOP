@@ -498,12 +498,12 @@ def create_group(doc, name, iecs=(), at=None):
 
 
 def _leave(o, iec):
-    """후보가 지금 그룹을 떠나기 직전에 부른다. 그 그룹의 대표 후보였으면 대표를 비우고 [그 그룹 ID]를 돌려준다
-    (남겨 두면 옛 그룹 확정이 막힘). 아니면 []."""
+    """후보가 지금 그룹을 떠나기 직전에 부른다. 그 그룹의 대표 후보였으면 대표와 선정 이유를 비우고 [그 그룹 ID]를
+    돌려준다(남겨 두면 옛 그룹 확정이 막히고, 대표 없이 이유만 묶음에 나간다). 아니면 []."""
     gid = o["candidates"][iec]["group_id"]
     old = o["groups"].get(gid)
     if old is not None and old["representative"] == iec:
-        old["representative"] = None
+        old["representative"], old["representative_reason"] = None, ""
         return [gid]
     return []
 

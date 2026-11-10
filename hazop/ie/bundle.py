@@ -17,7 +17,6 @@ build_bundle(results, node_set, pg, ie_doc, now, table) → dict. 파일을 쓰�
 
 import json
 
-from hazop.analysis.equipment import SELF_ACTING_KINDS
 from hazop.export import study_xlsx as sx
 from hazop.ie import model
 from hazop.study import refs
@@ -39,6 +38,8 @@ WARNING_KINDS = {
     "boundary_cut": ("구간 경계 결과 끊김", "IChemE Hazards 26, PSAM14 383"),
     "fmea_pending": ("전기·제어 구간 FMEA 대조 전", "PSAM14 383"),
 }
+# 스스로 작동해 압력을 푸는 보호 기기(레지스트리 kind). 원인 위치가 이것이면 보호설비 고장을 원인으로 적은 것으로 본다
+PROTECTIVE_KINDS = frozenset({"psv", "relief_valve", "rupture_disc"})
 CONTROL_CATEGORY = "instrument"
 # 전기로 움직이거나 제어 신호를 받는 밸브. P&ID에 전동기·전원은 따로 그려지지 않아 펌프·팬의 전동기는 세지 못한다 [추론]
 ELECTRIC_KINDS = frozenset({"motor_operated_valve", "solenoid_valve", "control_valve"})
@@ -54,7 +55,8 @@ GLOSSARY = (
                  "PSA 담당이 고쳐 쓸 제안", "이 앱 정의 [추론]"),
     ("지원계통 초기사건(SSIE)", "정상운전을 교란하면서 완화계통도 약화하는 지원계통 고장. 'IE 그룹' 시트의 '지원계통 IE' 열",
      "NUREG-2122, EPRI 1016741"),
-    ("PSA", "확률론적 안전성 평가. 미국 문헌의 PRA와 같은 뜻으로 쓴다", "[일반지식]"),
+    ("PSA", "확률론적 안전성 평가. 미국 문헌의 PRA와 같은 뜻으로 쓴다. 이 묶음은 평가를 PSA로, 정량화 도구를 PRA 도구로 "
+            "적는다", "[일반지식]"),
     ("작동 방식", "자동 / 운전원 / 자체작동 / 미확인", "이 앱 정의(PSAM14 383 권고 반영)"),
 )
 
@@ -242,10 +244,13 @@ def _basic_events(doc, approved, iecs, scope):
 
 
 def _guarded(picked):
-    """{보호수단 구현 대상의 안정 참조: [그 보호수단을 적은 승인 항목 ID]}."""
+    """{완화 역할 보호수단의 구현 대상 안정 참조: [그 보호수단을 적은 승인 항목 ID]}. 예방 역할(제어 루프 등)의 대상은
+    넣지 않는다. 제어 밸브 고장처럼 그 고장이 곧 전형적인 초기사건 원인이기 때문이다 [추론]."""
     out = {}
     for _node_id, _dev, e in picked:
         for s in refs.safeguard_items(e):
+            if s["role"] != "mitigative":
+                continue
             for r in s["refs"]:
                 if r.get("ref") and e["entry_id"] not in out.setdefault(r["ref"], []):
                     out[r["ref"]].append(e["entry_id"])
@@ -253,17 +258,18 @@ def _guarded(picked):
 
 
 def _safeguard_as_cause(e, idx, guarded):
-    """원인 위치가 보호설비인 경우의 경고 글(없으면 None). 보호설비로 보는 것은 자력식 보호 기기(안전밸브)이거나 묶음 안
-    승인 항목이 보호수단 구현 대상으로 적은 대상이다 [추론]."""
+    """원인 위치가 보호설비인 경우의 경고 글(없으면 None). 보호설비로 보는 것은 자력식 보호 기기(안전밸브·방출밸브·
+    파열판)이거나 묶음 안 다른 승인 항목이 완화 역할 보호수단의 구현 대상으로 적은 대상이다 [추론]."""
     hits = []
     for r in e.get("cause_refs") or []:
         ref = r.get("ref") if isinstance(r, dict) else None
         if not ref:
             continue
-        if (idx.get(ref) or {}).get("kind") in SELF_ACTING_KINDS:
+        others = [x for x in guarded.get(ref, ()) if x != e["entry_id"]]
+        if (idx.get(ref) or {}).get("kind") in PROTECTIVE_KINDS:
             hits.append("%s(자력식 보호 기기)" % refs.label(ref, idx))
-        elif ref in guarded:
-            hits.append("%s(항목 %s의 보호수단 구현 대상)" % (refs.label(ref, idx), ", ".join(guarded[ref])))
+        elif others:
+            hits.append("%s(항목 %s의 완화 보호수단 구현 대상)" % (refs.label(ref, idx), ", ".join(others)))
     if not hits:
         return None
     return ("원인 위치가 보호설비입니다: %s. 보호설비 고장은 대개 초기사건이 아니라 사건수목 표제(완화 기능)의 실패로 "
@@ -345,7 +351,7 @@ def warning_summary_text(bundle):
     by = {s["kind"]: s["count"] for s in bundle["warning_summary"]}
     parts = ["%s %d건" % (WARNING_KINDS[k][0], by[k]) for k in WARNING_KINDS if k != "fmea_pending"]
     n = by["fmea_pending"]
-    return " · ".join(parts + ["전기·제어 구간 %d개: FMEA 대조 전" % n if n else "전기·제어 구간 없음"])
+    return " · ".join(parts + ["전기·제어 구간 %d개: FMEA 대조 전" % n if n else "승인된 구간 가운데 전기·제어 구간 없음"])
 
 
 def _scrubbed(x):

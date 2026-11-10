@@ -367,7 +367,8 @@ class IeBundleTest(unittest.TestCase):
         cells = [str(c.value) for ws in wb.worksheets for row in ws.iter_rows() for c in row if c.value is not None]
         meaning = next(g["meaning"] for g in self.b["glossary"] if g["term"] == "PSA")
         self.assertIn("PRA와 같은 뜻", meaning)
-        self.assertEqual([s for s in cells if "PRA" in s and s != meaning], [], "용어 풀이 한 곳만 PRA를 적는다")
+        self.assertEqual([s for s in cells if "PRA" in s.replace("PRA 도구", "") and s != meaning], [],
+                         "PRA는 용어 풀이와 'PRA 도구'에만 쓴다")
         self.assertIn("PSA IE 이름", cells)
 
     def test_guide_sheet(self):

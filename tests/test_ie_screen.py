@@ -216,6 +216,20 @@ class InitiatingScreenTest(unittest.TestCase):
         row = next(r for r in self.scr.view["completeness"] if r["code"] == "LOCHS")
         self.assertTrue(row["note"].startswith("범위 밖: 복수기 도면 미등록"))
 
+    def test_load_tells_when_sync_demoted_a_confirmed_group(self):
+        self.scr.load("SNP-M-102")
+        self.scr.create_group("주급수 상실", [self.iec("E1")])
+        gid = self.scr.view["groups"][0]["group_id"]
+        self.assertTrue(self.scr.confirm_group("김검토"))
+        r = res.edit_entry(self.results, self.results["cells"][0]["node_id"], self.results["cells"][0]["deviation_id"],
+                           "E1", {"consequence": "증기발생기 수위 저하"})
+        r = res.set_status(r, r["cells"][0]["node_id"], r["cells"][0]["deviation_id"], "E1", "approved")
+        self.write_results(r)
+        before = len(self.app.toasts)
+        self.assertTrue(self.scr.load("SNP-M-102"))
+        self.assertEqual(self.stored()["groups"][gid]["status"], "draft")
+        self.assertTrue(any(gid in t and "초안으로 내려갔" in t for t in self.app.toasts[before:]), self.app.toasts[before:])
+
     def test_coverage_asks_for_the_reviewer_name_when_it_is_not_set(self):
         self.scr.load("SNP-M-102")
         self.app.reviewer = ""
