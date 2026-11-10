@@ -36,15 +36,6 @@ EXEMPT = {
         ("N9", "docs/2026-11-05-packaging/evidence/w5-* -> HAZOP기법지침.md", "기획서 문장을 인용한 줄 안의 링크"),
         ("N8", "* @ docs/2026-11-10-plan/pstack-advice.md", "단위 NAMING 절이 옮길 이름과 데이터에 남는 옛 출처를 일부러 적는다"),
     ],
-    # 운영 파일은 이름 이전 세션이 고치지 않는다(세션 권한 규칙). 단계 3에서 옮긴 폴더를 아직 옛 이름으로 적고 있다.
-    # 총괄이 `migrate_names.py --stage 3 --stage 3d --rewrite-links --only .claude --only CLAUDE.md`로 고치고,
-    # INTENT.md에 머리(HZ-GOV-01)를 단 뒤 이 묶음을 지운다. 바꿀 줄은 evidence/step3-claude-pending.csv에 있다.
-    "총괄": [
-        ("N6", "INTENT.md", "의도 관리 문서라 머리는 총괄이 단다"),
-        ("N8", "기획서/ @ .claude/agents/*", ""), ("N8", "flow chart/ @ .claude/agents/*", ""),
-        ("N8", "디자인/ @ .claude/agents/*", ""), ("N8", "메모리/ @ .claude/agents/*", ""),
-        ("N8", "메모리/ @ CLAUDE.md", ""),
-    ],
     5: [
         ("N1", "자원/*", "resources/로 옮긴다"),
         ("N2", "자원", ""),
