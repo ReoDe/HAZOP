@@ -20,7 +20,6 @@ from hazop import paths, store_io
 from hazop.analysis.risk import FREQUENCIES, MATRIX_P86, SEVERITIES
 from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
 from hazop.study import refs
-from hazop.study.nodes import now_utc
 
 SCHEMA_VERSION = "0.1"
 KIND = "hazop_study_results"
@@ -269,7 +268,7 @@ def set_status(results, node_id, deviation_id, entry_id, status, at=None):
     out = copy.deepcopy(results)
     e = _entry(out, node_id, deviation_id, entry_id)
     old, e["status"] = e.get("status"), status
-    e.setdefault("history", []).append({"at": at or now_utc(), "op": "status", "from": old, "to": status})
+    e.setdefault("history", []).append(store_io.history_row("status", {"from": old, "to": status}, at))
     return out
 
 
@@ -294,7 +293,7 @@ def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None):
     e.update(copy.deepcopy(fields))
     e["risk"] = risk_of(e.get("severity"), e.get("frequency"))
     old, e["status"] = e.get("status"), "revised"
-    e.setdefault("history", []).append({"at": at or now_utc(), "op": "edit", "from": old, "before": before})
+    e.setdefault("history", []).append(store_io.history_row("edit", {"from": old, "before": before}, at))
     return out
 
 
@@ -316,8 +315,7 @@ def set_ie_hint(results, node_id, deviation_id, entry_id, hint, at=None):
     e["ie_hint"] = new
     if e.get("status") == "proposed":
         e["status"] = "revised"
-    e.setdefault("history", []).append({"at": at or now_utc(), "op": "ie_hint", "status": e.get("status"),
-                                        "before": before})
+    e.setdefault("history", []).append(store_io.history_row("ie_hint", {"status": e.get("status"), "before": before}, at))
     return out
 
 

@@ -106,11 +106,10 @@ def propose(graph, at=None, exclude_sheets=()):
         "nodes": out_nodes,
         "confirmed_at": None,
         "confirmed_by": None,
-        "history": [{"at": at or now_utc(), "op": "propose",
-                     "detail": {"nodes": len(out_nodes), "components": len(graph.get("nodes", [])),
-                                "kept": count("keep"), "low": count("low"), "excluded": count("excluded"),
-                                "excluded_members": sum(len(n["members"]) for n in out_nodes
-                                                        if n["screen"]["status"] == "excluded")}}],
+        "history": [store_io.history_row("propose", {"detail": {
+            "nodes": len(out_nodes), "components": len(graph.get("nodes", [])),
+            "kept": count("keep"), "low": count("low"), "excluded": count("excluded"),
+            "excluded_members": sum(len(n["members"]) for n in out_nodes if n["screen"]["status"] == "excluded")}}, at)],
     }
 
 
@@ -143,7 +142,7 @@ def _begin(node_set):
 
 
 def _log(node_set, op, detail, at):
-    node_set["history"].append({"at": at or now_utc(), "op": op, "detail": detail})
+    node_set["history"].append(store_io.history_row(op, {"detail": detail}, at))
     return node_set
 
 

@@ -153,7 +153,6 @@ def plan(node_set, graph):
 
 def migrate_set(node_set, graph, at=None):
     """(집합, plan). 유지할 수 있으면 구성요소·판을 새 판으로 바꾼 사본, 아니면 입력 그대로."""
-    from hazop.study.nodes import now_utc
     p = plan(node_set, graph)
     if p["state"] != "kept":
         return node_set, p
@@ -163,9 +162,9 @@ def migrate_set(node_set, graph, at=None):
     old_version = out.get("graph_version")
     out["graph_version"] = graph["graph_version"]
     out.update(member_refs=member_refs(out, graph), member_digest=member_digest(graph))
-    out["history"].append({"at": at or now_utc(), "op": OP,
-                           "detail": {"from": old_version, "to": graph["graph_version"],
-                                      "matched": p["matched"], "renamed": dict(sorted(ren.items()))}})
+    out["history"].append(store_io.history_row(OP, {"detail": {
+        "from": old_version, "to": graph["graph_version"],
+        "matched": p["matched"], "renamed": dict(sorted(ren.items()))}}, at))
     return out, p
 
 

@@ -410,9 +410,9 @@ def accept(node_set, doc, proposal_id, by, adj, edited=None, at=None):
     group = [prop["node_id"]] + (list(review.get("merge_with") or []) if review["verdict"] == "merge" else [])
     survivor = next((n for n in new_set["nodes"] if n["node_id"] in group), None)
     stamp = at or nodes.now_utc()
-    new_set["history"].append({"at": stamp, "op": "ai_review_accept",
-                               "detail": {"proposal_id": proposal_id, "node_id": prop["node_id"],
-                                          "verdict": review["verdict"], "edited": bool(edited)}})
+    new_set["history"].append(store_io.history_row("ai_review_accept", {"detail": {
+        "proposal_id": proposal_id, "node_id": prop["node_id"],
+        "verdict": review["verdict"], "edited": bool(edited)}}, stamp))
     prop.update(decision="edited" if edited else "accepted", decided_by=by, decided_at=stamp,
                 accepted=dict({k: review[k] for k in ("verdict", "merge_with", "split_off", "screen_to")},
                               design_intent=review.get("design_intent") or "",
