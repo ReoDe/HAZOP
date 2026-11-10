@@ -292,7 +292,9 @@ def n9_broken_links(docs, exists):
 
 
 # ---------------------------------------------------------------- N10, N11
-COMMIT_SUBJECT = re.compile(r"(feat|fix|docs|test|refactor|perf|build|chore|baseline)(\([a-z0-9-]+\))?!?: \S")
+COMMIT_SUBJECT = re.compile(r"(feat|fix|docs|test|refactor|perf|build|ci|chore|baseline)(\([a-z0-9-]+\))?!?: \S")
+# git과 GitHub가 스스로 붙이는 제목은 검사하지 않는다: `git revert` 기본 제목, 병합 제목, 스쿼시 병합 기본 제목(`… (#15)`).
+GENERATED_SUBJECT = re.compile(r'Revert "|Merge pull request #\d+|Merge (remote-tracking )?branch |.*\(#\d+\)\Z')
 HANGUL = re.compile(r"[가-힣]")
 BRANCH = re.compile(r"(feat|fix|docs|chore|refactor|test)/[a-z0-9]+(-[a-z0-9]+){0,3}\Z")
 
@@ -300,6 +302,8 @@ BRANCH = re.compile(r"(feat|fix|docs|chore|refactor|test)/[a-z0-9]+(-[a-z0-9]+){
 def n10_commit_subjects(subjects):
     out = []
     for s in subjects:
+        if GENERATED_SUBJECT.match(s):
+            continue
         if not COMMIT_SUBJECT.match(s):
             out.append(Violation("N10", s, "제목이 '<종류>(<범위>): <요약>' 꼴이 아니다(§4.10)"))
         elif not HANGUL.search(s.split(": ", 1)[1]):
@@ -397,6 +401,7 @@ class RepoTest(unittest.TestCase):
         self.assertEqual([], stale, "위반이 없어진 예외 줄은 EXEMPT에서 지운다")
 
     def test_commit_subjects(self):
+        """기준 커밋이 이력에 없으면(얕은 체크아웃) 실패가 아니라 건너뜀이다. 그때 N10은 아무것도 지키지 않는다."""
         subjects = commit_subjects_since()
         if subjects is None:
             self.skipTest("기준 커밋 %s이 이 체크아웃의 이력에 없다" % COMMIT_BASE)
@@ -499,12 +504,27 @@ class PastViolationTest(unittest.TestCase):
         self.assertEqual("c d.md", link_path("c%20d.md#절"))
 
     def test_n10_commit_subject(self):
-        bad = ["Add the core of the P&ID graph", "단위 B 검토 지적을 고친다", "ci: 워크플로의 YAML 문법 오류를 고친다",
-               "docs: fix typos", "feat:요약을 붙여 쓴다", "Feat(Study): 대문자 종류"]
+        bad = ["Add the core of the P&ID graph", "단위 B 검토 지적을 고친다", "docs: fix typos", "feat:요약을 붙여 쓴다", "Feat(Study): 대문자 종류"]
         self.assertEqual(bad, [v.subject for v in n10_commit_subjects(bad)])
         good = ["docs(naming): 이름 규칙 확정본과 이전 계획을 남긴다", "refactor(paths)!: 작업 루트 폴더 이름을 영어로 바꾼다",
-                "test: 이름 규칙 검사를 넣는다"]
+                "test: 이름 규칙 검사를 넣는다", "ci: 워크플로의 YAML 문법 오류를 고친다"]
         self.assertEqual([], n10_commit_subjects(good))
+
+    def test_n10_generated_subjects_are_skipped(self):
+        generated = ['Revert "docs(naming): 옮긴 docs 이름에 맞춰 링크와 백틱 경로를 고친다"',
+                     "Merge pull request #15 from ReoDe/feat/next-units", "Merge branch 'main' into feat/next-units",
+                     "Merge remote-tracking branch 'origin/main' into feat/next-units", "Feat/next units (#15)"]
+        self.assertEqual([], n10_commit_subjects(generated))
+        still_bad = ["Reverted something", "Merge things by hand", "Add a thing (#15) and more"]
+        self.assertEqual(still_bad, [v.subject for v in n10_commit_subjects(still_bad)])
+
+    def test_naming_doc_lists_ci_and_points_to_trial_folder_moves(self):
+        with open(os.path.join(REPO, NAMING_DOC), encoding="utf-8") as f:
+            doc = f.read()
+        self.assertIn("`ci`(CI 설정)", doc)
+        self.assertIn("build\|ci\|chore", doc)
+        self.assertIn("evidence/step1-moves.csv", doc)
+        self.assertIn("docs/2026-11-10-naming-rules/evidence/step1-moves.csv", tracked_files())
 
     def test_n11_branch(self):
         for name in ("worktree-agent-a1c5c7a98a4e905b2", "claude/pdf-extract-fix-b525b8", "my-branch",

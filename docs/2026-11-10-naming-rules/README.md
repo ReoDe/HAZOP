@@ -249,7 +249,7 @@ approved: director 2026-11-10
 
 | 항목 | 규칙 |
 | --- | --- |
-| 종류 | `feat`(기능), `fix`(결함 수정), `docs`(문서), `test`(시험), `refactor`(동작이 같은 정리), `perf`(속도), `build`(배포·빌드), `chore`(그 밖), `baseline`(기준값 갱신, CLAUDE.md 규칙 12) |
+| 종류 | `feat`(기능), `fix`(결함 수정), `docs`(문서), `test`(시험), `refactor`(동작이 같은 정리), `perf`(속도), `build`(배포·빌드), `ci`(CI 설정), `chore`(그 밖), `baseline`(기준값 갱신, CLAUDE.md 규칙 12) |
 | 범위 | 선택. 영어 모듈 이름(`study`, `kg`, `extract`, `packaging`, `naming`) |
 | `!` | 사용자 데이터나 작업 루트 배치, 파일 형식의 호환이 깨질 때 |
 | 요약 | 한국어 한 줄, 끝은 '~한다', 70자 안팎 |
@@ -423,6 +423,8 @@ approved: director 2026-11-10
 | `wt-*` 5개(분리 작업트리) | 옮기지 않고 `git worktree remove`로 지운다(작업트리는 경로를 절대 경로로 적는다) |
 | `D:\HAZOP-backup\feat-next-units.bundle`, `*.log` | `2026-11-10-feat-next-units.bundle`, `2026-11-10-<무엇>.log` |
 
+2026-11-10 이전 문서에 적힌 시험 폴더 경로(예: `D:\HAZOP-trials\symbols-2026-11-09`)는 옛 이름이다. 그 문서들은 지난 기록이라 고치지 않는다. 새 이름은 이동 기록 `evidence/step1-moves.csv`에서 찾는다.
+
 ---
 
 ## 6. 이전 위험과 대책
@@ -531,7 +533,7 @@ approved: director 2026-11-10
 | N7 | 손 버전 이름이 없음(`_v\d`, `_draft`, `_final`, `-new`, `복사본`) | `system-codes_v2.csv` |
 | N8 | `.md`·`.html`·`.claude/` 안에 옛 한글 최상위 경로(`기획서/`, `디자인/`, `메모리/`, `지식/`, `자원/`, `작업/`, `flow chart/`)가 링크나 백틱 경로로 나오지 않음(결정로그·남은작업 본문 문장, 이 문서의 대응표는 예외) | `.claude/agents/hazop-planner.md`의 `기획서/` |
 | N9 | `.md`의 상대 링크 대상이 실제로 있음 | `[인터페이스](기획서/인터페이스.md)` |
-| N10 | 커밋 메시지: 단계 0 커밋(기준 커밋) 이후 `git log <기준>..HEAD`의 제목이 `^(feat\|fix\|docs\|test\|refactor\|perf\|build\|chore\|baseline)(\([a-z0-9-]+\))?!?: \S`이고 요약에 한글이 있음. 병합 커밋 제외 | `Add the core of …` |
+| N10 | 커밋 메시지: 단계 0 커밋(기준 커밋) 이후 `git log <기준>..HEAD`의 제목이 `^(feat\|fix\|docs\|test\|refactor\|perf\|build\|ci\|chore\|baseline)(\([a-z0-9-]+\))?!?: \S`이고 요약에 한글이 있음. 병합 커밋, `git revert` 기본 제목(`Revert "…`), GitHub 병합 제목(`Merge pull request #…`, `Merge branch …`), 스쿼시 병합 기본 제목(`… (#숫자)`로 끝남)은 제외 | `Add the core of …` |
 | N11 | 브랜치: 현재 브랜치 이름이 `^(feat\|fix\|docs\|chore\|refactor\|test)/[a-z0-9]+(-[a-z0-9]+){0,3}$`이거나 `main` | `my-branch` |
 
 N10·N11은 CI(결정로그 237행의 가벼운 CI)에서도 돌린다. 처음 몇 주는 CI 결정대로 실패해도 병합을 막지 않는다.
