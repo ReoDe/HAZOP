@@ -1,0 +1,78 @@
+# F1-1(S7) 전후 대조. 실행 조건
+# - 실행 커밋: 4e55e62 (F1-0 경미 수정 커밋)
+# - 작업트리: 4e55e62 + F1-1의 코드·사전·시험 변경(커밋 전). 바뀐 파일은 hazop/extract/adapters/pdf_vector.py,
+#   hazop/extract/symbols.py, tests/test_symbols.py, resources/library/symbols/common/ 의 새 항목 19개.
+#   이 내용이 그대로 F1-1 커밋이 됐다(이 파일과 README는 실행 뒤에 더했다. 추출 입력이 아니다)
+# - 인터프리터: C:\Users\kim92\.hazop\venv-py312\Scripts\python.exe, PYTHONIOENCODING=utf-8, 저장소 루트(D:\HAZOP, 주 체크아웃)
+# - HAZOP_WORK_ROOT: D:\HAZOP-trials\2026-11-11-unit-f1\f1-1\work-root (끝나고 지움)
+# - '전': D:\HAZOP-trials\2026-11-11-unit-f1\before (072d5c0. 해시 목록은 evidence/f1-0-before-*.json과 바이트로 같음)
+# - check_apr1400.py: 143쪽 전체, 기본 --jobs, --update 없음. tests/baselines/는 손대지 않음
+# - 시각: 2026-11-11 07:07~07:21 (+0900)
+
+$ python docs/2026-11-11-unit-f1/evidence/f1-0-extract-compare.py snp --out D:/HAZOP-trials/2026-11-11-unit-f1/f1-1
+$ python docs/2026-11-11-unit-f1/evidence/f1-0-extract-compare.py apr1400 --out D:/HAZOP-trials/2026-11-11-unit-f1/f1-1
+$ python scripts/check_apr1400.py --out D:/HAZOP-trials/2026-11-11-unit-f1/f1-1/apr1400_pages.csv
+$ python scripts/check_snp_baseline.py   (마지막 줄)
+$ python docs/2026-11-11-unit-f1/evidence/f1-0-extract-compare.py compare D:/HAZOP-trials/2026-11-11-unit-f1/before D:/HAZOP-trials/2026-11-11-unit-f1/f1-1 --csv docs/2026-11-11-unit-f1/evidence/f1-0-before-apr1400-pages.csv D:/HAZOP-trials/2026-11-11-unit-f1/f1-1/apr1400_pages.csv
+$ python scripts/run_ci.py
+
+SNP 12건 → D:\HAZOP-trials\2026-11-11-unit-f1\f1-1\snp-hashes.json
+APR1400 143쪽(실패 0) → D:\HAZOP-trials\2026-11-11-unit-f1\f1-1\apr1400-hashes.json
+hash rc=0
+APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63723
+  정답 5.4.12-1-S1: 계기 4/4(태그 4 중 맞음 4) · 연결 3/3(연결점 3 중 맞음 3) · 대리 원 4(정답 안 4)/정답 4 · 대리 연결 표기 3(정답 안 3)/정답 3
+  정답 9.3.3-1-S7: 계기 16/16(태그 16 중 맞음 16) · 연결 7/7(연결점 7 중 맞음 7) · 대리 원 16(정답 안 16)/정답 16 · 대리 연결 표기 5(정답 안 5)/정답 7
+  정답 9.3.4-1-S1: 계기 12/15(태그 12 중 맞음 12) · 연결 17/17(연결점 17 중 맞음 17) · 대리 원 15(정답 안 15)/정답 15 · 대리 연결 표기 4(정답 안 4)/정답 17
+기준값: APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 71203
+check_apr1400 rc=0
+SNP: 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6
+check_snp rc=0
+snp-hashes.json: 12건 중 다른 것 0
+apr1400-hashes.json: 143건 중 다른 것 0
+SNP JSON 파일: 24개 중 바이트 같음 24
+쪽별 CSV(seconds 열 제외): 143행 중 다른 행 0
+결과: 전후가 같음
+compare rc=0
+Wed Nov 11 07:11:22     2026
+run_ci rc=0
+Wed Nov 11 07:21:09     2026
+
+(run_ci.py 출력의 요약 부분)
+## 시험 요약
+
+시험 2074, 실패 0, 오류 0, 건너뜀 21, 예상 밖 통과 0
+
+### 건너뛴 이유
+
+| 이유 | 수 |
+| --- | --- |
+| OpenCV 없음(결정 D7: packaging/requirements-raster.txt의 venv에서 실행) | 10 |
+| anthropic SDK 미설치(배포용 venv) | 5 |
+| OpenCV 없음(결정 D7) | 2 |
+| OpenCV·rapidocr 없음(결정 D7) | 2 |
+| 예시 Excel 없음:  | 1 |
+| 실제 분석 결과 파일 없음 | 1 |
+=== check_adapter
+=== check_adapter rc=0 7.1초
+=== check_compare
+=== check_compare rc=0 1.7초
+=== check_corrections
+=== check_corrections rc=0 5.8초
+=== check_export
+=== check_export rc=0 10.7초
+=== check_kg_context
+=== check_kg_context rc=0 65.0초
+=== check_review
+=== check_review rc=0 7.6초
+=== check_study_nodes
+=== check_study_nodes rc=0 0.6초
+=== check_symbols
+=== check_symbols rc=0 3.8초
+=== check_version_migration
+=== check_version_migration rc=0 0.2초
+=== check_snp_baseline
+=== check_snp_baseline rc=0 5.4초
+
+$ python scripts/check_symbols.py   (첫 줄. 전: 4e55e62 / 후: 위 작업트리)
+전: 묶음 {'APR1400': '2c997ba7e6ce', '공통': 'f80b0f4d94a7'}, 항목 21(켜짐 17)
+후: 묶음 {'APR1400': '2c997ba7e6ce', '공통': 'ac25f22101ce'}, 항목 40(켜짐 36)

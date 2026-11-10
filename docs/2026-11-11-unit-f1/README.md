@@ -63,3 +63,75 @@ pdf_vector에서 보이는 예전 이름 99/99, 옮긴 이름 40개 중 같은 �
 고치기 전(`ddb4c46`)에 넓힌 검사를 돌리면 `문제: pdf_vector에서 안 보이는 이름(import로 들어왔던 것): TAG_RE`가 나온다. SNP 12건의 추출 JSON·그래프 JSON은 이 수정 뒤에도 `f1-0-before-snp-hashes.json`과 바이트로 같다(24개 중 24개).
 
 이 검사는 F1-0의 내용(`ddb4c46`과 이 수정)에만 맞는다. F1-1이 `_shape_kind`와 `EQUIPMENT_WORDS`를 지운 뒤에는 '빠진 문장'으로 걸리는 것이 맞다.
+
+## F1-1: 형상 규칙과 장비 이름 낱말을 기호 사전으로 (S7)
+
+`pdf_vector.py`의 `_shape_kind`와 `EQUIPMENT_WORDS`를 지우고, 그 규칙을 기호 사전 공통 묶음(`resources/library/symbols/common/`)의 항목으로 옮겼다. 추출 결과는 그대로다.
+
+### 옮긴 방식
+
+두 규칙은 격자 견본으로 옮기지 않았다. `_shape_kind`는 몸체 수와 배치, 선의 방향을 보는 조건이고 `EQUIPMENT_WORDS`는 글자 조건이다. 격자 거리로 바꾸면 크기·구성이 다른 기호마다 견본이 따로 있어야 하고, APR1400 143쪽의 결과가 그대로라는 보장이 없다(재 보지 않은 판단이다). 그래서 조건은 그대로 두고, 견본에 종류를 둘 더해 사전이 그 조건을 가리키게 했다(`hazop/extract/symbols.py`).
+
+| 견본 `shape` | 요구하는 것 | 맞히는 함수 |
+| --- | --- | --- |
+| `structure` | `requires`: 구조 특징 이름들(모두 있어야 함), `order`, `basis`(노드 근거에 남는 글자) | `Library.shape_rule(특징 집합)` |
+| `label_words` | `words`: 라벨에 모두 있어야 하는 영문 대문자 낱말, `order` | `Library.word_rule(낱말 목록)` |
+
+- 여럿이 맞으면 `order`가 가장 작은 견본이 이긴다. 옮기기 전 코드의 `if` 순서와 표의 순서가 그대로 `order`다. 같은 `order`가 둘이면 사전을 읽을 때 오류로 멈춘다.
+- 구조 특징 이름과 뜻은 `symbols.STRUCTURE_FEATURES`에 있다(12개). 사전이 여기 없는 이름을 요구하면 읽을 때 오류로 멈춘다.
+- 이 견본들은 격자 매칭(`Library.match`)에 끼지 않는다. 그래서 기존 격자 항목의 판정은 그대로다.
+- 코드에 남은 것은 기호 하나의 구조 특징을 판정하는 `_shape_features`다(삼각형 둘인지, 사선이 스프링인지 같은 기하 판정). 어느 특징이 어느 종류인지와 보는 순서는 사전에만 있다.
+- 근거 글자(`classification_basis`)는 옮기기 전과 같다(`valve_body`, `text_word:PUMP` 등). 구조 규칙으로 정한 노드에는 `evidence.symbol_id`를 남기지 않는다. 남기면 거의 모든 PDF 도면의 `graph_version`이 바뀐다.
+
+### 사전 항목 (공통 묶음에 19개 추가, 모두 `revision` 1)
+
+| 항목 | kind | 견본 (`order`: 요구 → 근거) |
+| --- | --- | --- |
+| `common.manual_valve_body` | `manual_valve` | 10: `plate_valve:butterfly` → `plates+butterfly` / 11: `plate_valve:ball` → `plates+ball` / 40: `bowtie` → `valve_body` |
+| `common.motor_operated_valve_body` | `motor_operated_valve` | 20: `bowtie`+`outside_circle` → `valve_body+circle_actuator` |
+| `common.control_valve_body` | `control_valve` | 30: `bowtie`+`outside_body` → `valve_body+diaphragm_actuator` |
+| `common.psv_body` | `psv` | 50: `body_with_springs` → `body+spring` |
+| `common.check_valve_lines` | `check_valve` | 60: `stroke_only`+`markers` → `lines+marker` |
+| `common.orifice_plates` | `orifice` | 70: `parallel_plates` → `parallel_plates` |
+| `common.instrument_bubble` | 없음(`kind_from: isa_letters`) | 80: `single_circle` → `circle` / 90: `single_tombstone` → `tombstone` |
+| `common.continuation_arrow` | `continuation` | 100: `chevrons` → `chevron_arrow` |
+| `common.name_reactor_vessel` | `reactor_vessel` | 10: REACTOR+VESSEL |
+| `common.name_steam_generator` | `steam_generator` | 20: STEAM+GENERATOR |
+| `common.name_pressurizer` | `pressurizer` | 30: PRESSURIZER |
+| `common.name_condenser` | `condenser` | 40: CONDENSER |
+| `common.name_turbine` | `turbine` | 50: TURBINE |
+| `common.name_demineralizer` | `demineralizer` | 60: DEMINERALIZER |
+| `common.name_filter` | `filter` | 70: FILTER |
+| `common.name_heat_exchanger` | `heat_exchanger` | 80: EXCHANGER / 90: HX / 100: COOLER |
+| `common.name_pump` | `pump` | 110: PUMP |
+| `common.name_tank` | `tank` | 120: TANK |
+| `common.name_vent` | `vent` | 130: VENT / 140: ATM |
+
+SNP 묶음은 만들지 않았다. 옮긴 규칙 가운데 합성 샘플에만 쓰이는 것이 없다.
+
+### 코드에 남긴 것 (이 단위의 범위 밖)
+
+- 구조 특징 판정(`_shape_features`)과 모양 판별 함수 넷(`pdf_vector_common.py`).
+- 구동부 안 `M` 표기로 전동 밸브로 올리기, ISA 글자(`_instrument_kind`), TO/FROM 연결 표기(`CONTINUATION_RE`), 끝막음 뒤처리(`pipe_cap`). 이것들은 `_classify`에 그대로 있다.
+
+### 달라진 것
+
+- **사전 판.** `공통` 묶음의 판이 `f80b0f4d94a7`에서 `ac25f22101ce`로 바뀌었다(항목 파일 19개가 늘어서다). `APR1400` 묶음은 `2c997ba7e6ce` 그대로다. 항목 수는 21개(켜짐 17)에서 40개(켜짐 36)가 됐다. 출처는 `scripts/check_symbols.py` 출력이다(주 체크아웃, 시험용 venv, 전은 `4e55e62`, 후는 이 변경을 넣은 작업 폴더).
+- **사전 판을 적어 둔 곳.** 저장소에서 두 값을 찾아봤는데(`git grep f80b0f4d94a7`, `2c997ba7e6ce`) 시험·검사·문서 어디에도 적혀 있지 않았다. 그래서 따라 고친 곳은 없다. `tests/test_symbols.py`는 `APR1400` 열쇠가 있는지만 본다. 기획서 §7.1의 '사전 데이터 21항목'은 1단계 때의 기록이라 그대로 둔다.
+- **사전을 못 읽을 때.** 전에는 형상 규칙이 모든 기호를 정한 쪽이면 사전이 없어도 추출이 됐다. 이제는 기호가 하나라도 있으면 사전을 읽고, 없거나 깨졌으면 `SymbolLibraryError`로 멈춘다. 나비 모양 밸브 하나만 있는 쪽으로 확인했다(`4e55e62`: `manual_valve`, 이 변경 뒤: `SymbolLibraryError`). 기획서 §4.6의 '사전이 없거나 깨지면 오류로 멈춘다'와 같은 방향이다.
+- **배포 묶음.** 자원 파일이 19개 늘었다.
+
+### 전후 대조 (명령과 출력은 `evidence/f1-1-compare-output.txt`)
+
+실행 조건: 커밋 `4e55e62`에 이 단위의 코드·사전·시험 변경을 넣은 작업 폴더(커밋 전, 그 내용이 그대로 커밋됐다), 주 체크아웃, 시험용 venv, `--update` 없음.
+
+| 대조 | 결과 |
+| --- | --- |
+| SNP 6장 추출 JSON·그래프 JSON(24개 파일)과 `graph_version` 12건 | 바이트 같음 24/24, 다른 것 0/12 (`f1-0-before-snp-hashes.json` 기준) |
+| APR1400 143쪽 쪽별 추출·그래프 해시, `graph_version` | 다른 것 0/143 (`f1-0-before-apr1400-hashes.json` 기준) |
+| APR1400 쪽별 결과 CSV(걸린 시간 열 제외) | 다른 행 0/143 (`f1-0-before-apr1400-pages.csv` 기준) |
+| `check_apr1400.py` 143쪽 | 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63723, rc=0 |
+| `check_snp_baseline.py` | 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6 |
+| `scripts/run_ci.py` | 시험 2074, 실패 0, 오류 0, 건너뜀 21, 검사 스크립트 10개 rc=0 |
+
+시험 수는 `4e55e62`의 2064에서 10 늘었다(`tests/test_symbols.py`의 `RuleTemplateTest` 6건, `CommonRuleTest` 4건). `CommonRuleTest`는 옮기기 전 표를 기대값으로 두고, 낱말 17개(규칙에 나오는 16개와 무관한 낱말 하나)의 모든 조합(131,072가지)에서 옛 표와 같은 종류가 나오는지 본다.

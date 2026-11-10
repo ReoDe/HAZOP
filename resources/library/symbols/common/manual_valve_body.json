@@ -1,0 +1,48 @@
+{
+ "id": "common.manual_valve_body",
+ "revision": 1,
+ "added": "2026-11-11",
+ "updated": "2026-11-11",
+ "name": {
+  "en": "VALVE BODY (NO ACTUATOR)",
+  "ko": "밸브 몸통(구동부 없음)"
+ },
+ "category": "밸브",
+ "role": "symbol",
+ "kind": "manual_valve",
+ "attributes": {},
+ "enabled": true,
+ "match": [
+  {
+   "shape": "structure",
+   "requires": [
+    "plate_valve:butterfly"
+   ],
+   "order": 10,
+   "basis": "plates+butterfly"
+  },
+  {
+   "shape": "structure",
+   "requires": [
+    "plate_valve:ball"
+   ],
+   "order": 11,
+   "basis": "plates+ball"
+  },
+  {
+   "shape": "structure",
+   "requires": [
+    "bowtie"
+   ],
+   "order": 40,
+   "basis": "valve_body"
+  }
+ ],
+ "sources": [
+  {
+   "set": "일반 P&ID 표기",
+   "note": "pdf_vector.py의 형상 규칙(_shape_kind)을 옮긴 것(S7, 2026-11-11). 근거 글자(basis)는 옮기기 전과 같다"
+  }
+ ],
+ "note": "판 사이 원판·공은 다른 구조보다 먼저 본다. 나비 몸통은 구동부(order 20·30)가 없을 때만 수동이다"
+}

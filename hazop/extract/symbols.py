@@ -4,6 +4,10 @@
 추출기가 묶은 기호의 구성 요소(몸체·선·표식·점선 조각)에서 서명(구성 키, 크기, 24×24 격자)을 만들고,
 같은 구성 키의 견본과 양방향 평균 챔퍼 거리(칸)로 견준다. 결과는 맞음·애매함·후보 없음 셋 중 하나다.
 배포본에 numpy가 없으므로 순수 파이썬으로 계산한다. 같은 입력과 같은 사전이면 같은 결과를 낸다.
+
+격자로 가를 수 없는 규칙은 견본의 shape으로 구분해 같은 사전에 둔다(§7 S7). 'structure'는 추출기가 판정한 구조 특징을,
+'label_words'는 라벨의 장비 이름 낱말을 요구하고, 여럿이 맞으면 order가 가장 작은 견본이 이긴다(shape_rule, word_rule).
+이 견본들은 격자 매칭(match)에 끼지 않는다.
 """
 
 import collections
@@ -28,6 +32,7 @@ TRANSFORMS = (
 )
 ROTATION_SETS = {"dihedral8": tuple(n for n, _ in TRANSFORMS), "none": ("r0",)}
 ROLES = ("symbol", "actuator", "annotation", "continuation", "drop")
+RULE_SHAPES = ("structure", "label_words")  # 격자 대신 구조 특징·라벨 낱말로 맞히는 견본. order가 작은 것이 먼저다
 DEFAULT_MARGIN = 0.1
 CURVE_SAMPLES = 8
 BUNDLES_FILE = "bundles.json"
@@ -42,6 +47,23 @@ class SymbolLibraryError(ValueError):
 Signature = collections.namedtuple("Signature", "comp_key size cells zero")
 Match = collections.namedtuple("Match", "outcome entry distance rotation candidates attributes")
 ID_RE = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
+WORD_RE = re.compile(r"^[A-Z]+$")
+# 구조 규칙 견본(shape 'structure')이 요구할 수 있는 특징. 격자로는 못 가르는 구조(몸체 수와 배치, 선의 방향)를
+# 추출기(pdf_vector._shape_features)가 기호마다 판정해 이 이름으로 넘긴다.
+STRUCTURE_FEATURES = {
+    "plate_valve:butterfly": "배관을 가로지르는 두 판 사이에 원판 점(버터플라이 밸브 몸통)",
+    "plate_valve:ball": "배관을 가로지르는 두 판 사이에 공(볼 밸브 몸통)",
+    "bowtie": "삼각형 몸체가 정확히 둘(꼭짓점을 맞댄 나비 모양 밸브 몸통)",
+    "outside_circle": "나비 몸통 상자 밖에 가운데가 있는 원(전동 구동부)",
+    "outside_body": "나비 몸통 상자 밖에 가운데가 있는 몸체(구동부)",
+    "body_with_springs": "몸체가 있고 기울기와 길이가 같은 사선이 둘 이상(스프링)",
+    "stroke_only": "몸체 없이 선만으로 된 기호",
+    "markers": "표식(작은 검은 채움)이 있음",
+    "parallel_plates": "곧은 선만으로 된 기호이고 가로선이나 세로선이 둘 이상(오리피스 판)",
+    "single_circle": "몸체가 원 하나뿐",
+    "single_tombstone": "몸체가 비석 모양 하나뿐",
+    "chevrons": "몸체가 모두 오각 화살표 모양",
+}
 
 
 # ---------------------------------------------------------------- 곡선 펴기
@@ -206,7 +228,7 @@ def _number(entry_id, name, value, above):
 
 class Template:
     __slots__ = ("entry_id", "shape", "comp_key", "size", "size_ratio", "max_distance", "variants",
-                 "set_attributes")
+                 "set_attributes", "order", "requires", "basis", "words")
 
     def __init__(self, entry_id, spec):
         self.entry_id = entry_id
@@ -217,6 +239,25 @@ class Template:
         if self.shape == "zero_size":
             self.comp_key = None
             self.variants = ()
+            return
+        if self.shape in RULE_SHAPES:
+            self.order = spec["order"]
+            if isinstance(self.order, bool) or not isinstance(self.order, int):
+                raise SymbolLibraryError("%s: order=%r는 정수여야 한다" % (entry_id, self.order))
+            if self.shape == "structure":
+                self.requires, self.basis = spec["requires"], spec["basis"]
+                if not isinstance(self.requires, list) or not self.requires \
+                        or any(f not in STRUCTURE_FEATURES for f in self.requires):
+                    raise SymbolLibraryError("%s: requires=%r는 %s 중에서 하나 이상"
+                                             % (entry_id, self.requires, ", ".join(STRUCTURE_FEATURES)))
+                if not isinstance(self.basis, str) or not self.basis:
+                    raise SymbolLibraryError("%s: basis는 빈 문자열이 아닌 글자여야 한다" % entry_id)
+            else:
+                self.words = spec["words"]
+                if not isinstance(self.words, list) or not self.words \
+                        or any(not isinstance(w, str) or not WORD_RE.match(w) for w in self.words):
+                    raise SymbolLibraryError("%s: words=%r는 영문 대문자 낱말 하나 이상" % (entry_id, self.words))
+                self.words = tuple(self.words)
             return
         if self.shape != "grid":
             raise SymbolLibraryError("%s: 모르는 견본 모양 %r" % (entry_id, self.shape))
@@ -326,11 +367,36 @@ class Library:
         self.margin = margin
         self._by_key = collections.defaultdict(list)
         self._zero = []
+        rules = {shape: [] for shape in RULE_SHAPES}
         for e in sorted(entries, key=lambda e: e.id):
             if not e.enabled:
                 continue
             for t in e.templates:
-                (self._zero if t.shape == "zero_size" else self._by_key[t.comp_key]).append((e, t))
+                if t.shape in rules:
+                    rules[t.shape].append((t.order, e, t))
+                else:
+                    (self._zero if t.shape == "zero_size" else self._by_key[t.comp_key]).append((e, t))
+        for shape, found in rules.items():
+            found.sort(key=lambda x: x[0])
+            for (o1, e1, _), (o2, e2, _) in zip(found, found[1:]):
+                if o1 == o2:
+                    raise SymbolLibraryError("%s 견본의 order %d가 겹침: %s, %s" % (shape, o1, e1.id, e2.id))
+        self._structure, self._label_words = rules["structure"], rules["label_words"]
+
+    def shape_rule(self, features):
+        """추출기가 본 구조 특징(STRUCTURE_FEATURES의 이름들) → (항목, 근거). 요구 특징이 모두 있는 견본 가운데
+        order가 가장 작은 것. 없으면 (None, None)."""
+        for _, e, t in self._structure:
+            if all(f in features for f in t.requires):
+                return e, t.basis
+        return None, None
+
+    def word_rule(self, tokens):
+        """라벨의 영문 낱말들 → (항목, 맞은 낱말들). 낱말이 모두 있는 견본 가운데 order가 가장 작은 것."""
+        for _, e, t in self._label_words:
+            if all(w in tokens for w in t.words):
+                return e, t.words
+        return None, None
 
     @classmethod
     def load(cls, root=None):

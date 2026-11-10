@@ -1,0 +1,37 @@
+{
+ "id": "common.name_vent",
+ "revision": 1,
+ "added": "2026-11-11",
+ "updated": "2026-11-11",
+ "name": {
+  "en": "VENT / ATM",
+  "ko": "벤트(이름 낱말)"
+ },
+ "category": "배관 부품",
+ "role": "symbol",
+ "kind": "vent",
+ "attributes": {},
+ "enabled": true,
+ "match": [
+  {
+   "shape": "label_words",
+   "words": [
+    "VENT"
+   ],
+   "order": 130
+  },
+  {
+   "shape": "label_words",
+   "words": [
+    "ATM"
+   ],
+   "order": 140
+  }
+ ],
+ "sources": [
+  {
+   "set": "일반 P&ID 표기",
+   "note": "pdf_vector.py의 장비 이름 낱말 표(EQUIPMENT_WORDS)를 옮긴 것(S7, 2026-11-11)"
+  }
+ ]
+}

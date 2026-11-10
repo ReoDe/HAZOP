@@ -16,7 +16,8 @@
 5. 글자: 단어 → 줄 → 문단. 표 안 글자는 표제란, 선 위(흰 바탕 마스크 안이거나 선과 겹침)는 선 라벨(texts),
    나머지는 가장 가까운 기호 하나에 1:1로 붙인다(거리 상한 있음). 붙지 않은 글자는 texts로 남긴다.
 6. 종류: 형상(계기 원, 나비 모양 밸브와 구동부, 스프링, 표식 있는 선 기호) + 일반 P&ID 표기(ISA 계기 문자,
-   장비 이름 낱말, 도면 연결 표기 TO/FROM). 근거가 없으면 kind 없음(unclassified)으로 둔다.
+   장비 이름 낱말, 도면 연결 표기 TO/FROM). 근거가 없으면 kind 없음(unclassified)으로 둔다. 형상과 장비 이름 낱말이
+   어느 종류인지는 기호 사전 공통 묶음(resources/library/symbols/common)이 정하고, 여기서는 구조 특징만 판정한다.
 7. 태그: 보이는 글자로만 정한다(_assign_tags). 관계마다 실제 선 점(evidence.pdf_path)을 남겨 ② 배경 SVG가 그린다.
 
 좌표: PDF 페이지 pt, 원점 왼쪽 위, x 오른쪽·y 아래쪽 증가(pdfplumber top 기준). drawio 좌표로의 변환은
@@ -124,23 +125,6 @@ PARAMS = {
 VARIABLE_MODIFIERS_ISA = frozenset("DFJKQ")  # hazop.extract.isa.VARIABLE_MODIFIERS와 같은 ISA 변수 수식 문자
 INSTRUMENT_FUNCTION = {"T": "transmitter", "C": "controller", "I": "indicator", "S": "switch",
                        "R": "recorder"}  # ISA 5.1 뒤 글자(기능)
-# 장비 이름 낱말 → kind (일반 P&ID 표기). 순서대로 먼저 맞는 것을 쓴다.
-EQUIPMENT_WORDS = [
-    (("REACTOR", "VESSEL"), "reactor_vessel"),
-    (("STEAM", "GENERATOR"), "steam_generator"),
-    (("PRESSURIZER",), "pressurizer"),
-    (("CONDENSER",), "condenser"),
-    (("TURBINE",), "turbine"),
-    (("DEMINERALIZER",), "demineralizer"),
-    (("FILTER",), "filter"),
-    (("EXCHANGER",), "heat_exchanger"),
-    (("HX",), "heat_exchanger"),
-    (("COOLER",), "heat_exchanger"),
-    (("PUMP",), "pump"),
-    (("TANK",), "tank"),
-    (("VENT",), "vent"),
-    (("ATM",), "vent"),
-]
 # 구동부 사전 항목의 actuator_type → 밸브 kind. 범례 1.7-1이 정한 경우만 합치고 kind를 올린다(기획서/PID-기호사전.md
 # §4.2 4번). 솔레노이드는 다이어프램과 같이 붙을 때만 공기구동 밸브의 파일럿으로 합친다(4/4). 솔레노이드 혼자는 스프링
 # 복귀·복동 실린더 구동부(4/4)의 파일럿일 수 있어 합치지 않는다. 전기유압(1/4)은 kind를 정할 근거가 없어 합치지 않는다.
@@ -783,53 +767,63 @@ def _build_dashed(syms, dashes, markers, prm):
 # ---------------------------------------------------------------- 6. 종류
 
 
-def _shape_kind(sym, prm):
-    """형상만으로 정하는 종류와 근거. 없으면 (None, None)."""
+def _shape_features(sym, prm):
+    """기호의 구조 특징(이름과 뜻은 symbols.STRUCTURE_FEATURES). 어느 특징이 어느 종류인지와 보는 순서는
+    기호 사전 공통 묶음의 구조 규칙 견본이 정한다."""
     circles = [b for b in sym.bodies if _is_circle(b, prm)]
     tris = [b for b in sym.bodies if _is_triangle(b)]
-    others = [b for b in sym.bodies if b not in circles and b not in tris]
+    found = set()
     if getattr(sym, "plate_valve", None):  # 판 사이 원판·공(_plate_assemblies)
-        return "manual_valve", "plates+%s" % sym.plate_valve
-    if len(tris) == 2:  # 나비 모양(두 삼각형이 꼭짓점을 맞댐) = 밸브 몸통
+        found.add("plate_valve:%s" % sym.plate_valve)
+    if len(tris) == 2:
+        found.add("bowtie")
         bow = _union(tris[0]["bbox"], tris[1]["bbox"])
         # 몸통 bbox 밖에 중심이 있는 몸체 = 구동부(안쪽 원은 글로브 표시라 구동부가 아니다)
         outside = [b for b in sym.bodies if b not in tris and not _inside(_center(b["bbox"]), bow)]
         if any(_is_circle(b, prm) for b in outside):
-            return "motor_operated_valve", "valve_body+circle_actuator"
+            found.add("outside_circle")
         if outside:
-            return "control_valve", "valve_body+diaphragm_actuator"
-        return "manual_valve", "valve_body"
+            found.add("outside_body")
     springs = [s for s in sym.strokes if len(s["pts"]) == 2 and abs(s["pts"][0][0] - s["pts"][1][0]) > 1
                and abs(s["pts"][0][1] - s["pts"][1][1]) > 1]
     if sym.bodies and len(springs) >= 2 and len({(round(s["pts"][0][1] - s["pts"][1][1], 1),
                                                     round(s["pts"][0][0] - s["pts"][1][0], 1)) for s in springs}) == 1:
-        return "psv", "body+spring"
-    if sym.stroke_only and sym.markers:
-        return "check_valve", "lines+marker"
+        found.add("body_with_springs")
+    if sym.stroke_only:
+        found.add("stroke_only")
+    if sym.markers:
+        found.add("markers")
     straight = [s for s in sym.strokes if len(s["pts"]) == 2 and not s.get("curved")]
     if sym.stroke_only and straight and len(straight) == len(sym.strokes):
         vertical = [s for s in straight if abs(s["pts"][0][0] - s["pts"][1][0]) < 0.5]
         horizontal = [s for s in straight if abs(s["pts"][0][1] - s["pts"][1][1]) < 0.5]
-        if max(len(vertical), len(horizontal)) >= 2:  # 축 정렬 평행 판 여러 개 = 오리피스 판
-            return "orifice", "parallel_plates"
-    if len(circles) == 1 and not tris and not others and len(sym.bodies) == 1:
-        return "instrument", "circle"
+        if max(len(vertical), len(horizontal)) >= 2:
+            found.add("parallel_plates")
+    if len(sym.bodies) == 1 and len(circles) == 1 and not tris:
+        found.add("single_circle")
     if len(sym.bodies) == 1 and _is_tombstone(sym.bodies[0]):
-        return "instrument", "tombstone"
+        found.add("single_tombstone")
     if sym.bodies and all(_is_chevron(b) for b in sym.bodies):
-        return "continuation", "chevron_arrow"
-    return None, None
+        found.add("chevrons")
+    return found
+
+
+def _shape_rule(sym, prm):
+    """형상만으로 정하는 종류와 근거. 없으면 (None, None). 계기 모양은 종류 자리에 'instrument'를 돌려준다(종류는 ISA 글자로)."""
+    entry, basis = symbol_library().shape_rule(_shape_features(sym, prm))
+    if entry is None:
+        return None, None
+    return ("instrument" if entry.kind_from == "isa_letters" else entry.kind), basis
 
 
 def _kind_from_text(text):
     up = text.upper()
-    tokens = re.findall(r"[A-Z]+", up)
     if CONTINUATION_RE.match(up.strip()):
         return "continuation", "text_to_from"
-    for words, kind in EQUIPMENT_WORDS:
-        if all(w in tokens for w in words):
-            return kind, "text_word:%s" % "+".join(words)
-    return None, None
+    entry, words = symbol_library().word_rule(re.findall(r"[A-Z]+", up))
+    if entry is None:
+        return None, None
+    return entry.kind, "text_word:%s" % "+".join(words)
 
 
 def _instrument_kind(text, min_side=None):
@@ -927,7 +921,7 @@ def _symbol_match(sym, blocks):
 
 def _classify(sym, text, degree, prm, marks=()):
     """(kind, basis) — 근거가 없으면 kind None. marks: 기호 안 표기 글자(밸브 구동부의 M 등)."""
-    shape, sbasis = _shape_kind(sym, prm)
+    shape, sbasis = _shape_rule(sym, prm)
     if shape in ("control_valve", "motor_operated_valve") and "M" in [m.strip().upper() for m in marks]:
         return "motor_operated_valve", "valve_body+actuator_mark:M"
     if shape == "instrument":
@@ -1096,7 +1090,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     # 글자 줄과 같은 방향(가로)으로 글자 위를 지나는 선만 선 라벨 근거로 본다(세로로 가로지르는 선은 우연한 겹침)
     solid_segments = [(a, b) for ch in chains if not ch.get("dashed") for a, b in _segs(ch["pts"])
                       if abs(b[1] - a[1]) <= 0.2 * abs(b[0] - a[0])]
-    shape_of = [_shape_kind(s, prm) for s in syms]
+    shape_of = [_shape_rule(s, prm) for s in syms]
     # 연결 표시 화살표와 겹치는 문단(화살표 안 'SHEET n "X"'까지 한 문단)은 화살표 몫이다. 화살표로 들어가는 배관이
     # 그 문단을 지나도 배관 글자로 보지 않는다
     arrow_boxes = [s.bbox for s, sh in zip(syms, shape_of) if sh[0] == "continuation"]
@@ -1124,7 +1118,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         for v, _, _ in ch["ends"]:
             if v[0] == "sym":
                 degree[id(v[1])] = degree.get(id(v[1]), 0) + 1
-    # 형상 규칙이 못 정한 기호는 사전에 먼저 대 본다. 사전이 연결 표시로 본 기호도 화살표 목록에 넣어야 이웃 화살표의
+    # 구조 규칙이 못 정한 기호는 사전의 격자 견본에 먼저 대 본다. 사전이 연결 표시로 본 기호도 화살표 목록에 넣어야 이웃 화살표의
     # 계통 글자를 가져가지 않는다(_continuation_attributes). 버릴 기호(무늬 점)는 글자를 가져가지 않게 후보에서 뺀다
     hits = {si: _symbol_match(s, blocks) for si, s in enumerate(syms) if shape_of[si][0] in (None, "instrument")}
     drop = {si for si, h in hits.items() if h.outcome == "matched" and h.entry.role == "drop"
@@ -1245,7 +1239,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                 _issue(unknowns, "actuated_valve_pending", "구동부 기호가 붙은 밸브 몸통: 구동 방식은 아직 정하지 않음",
                        sid, local_id, "kind")
         fallback = basis == PIPE_CAP_BASIS  # 끝막음은 형상 규칙이 아니라 뒤처리 규칙: 사전에 후보가 없을 때만 남긴다(§4.2 5번)
-        if (kind is None or fallback) and not getattr(s, "plate_valve", None):  # 기존 규칙이 못 정한 기호에만 기호 사전을 쓴다(기획서/PID-기호사전.md §4.2)
+        if (kind is None or fallback) and not getattr(s, "plate_valve", None):  # 구조·글자 규칙이 못 정한 기호만 사전의 격자 견본에 대 본다(기획서/PID-기호사전.md §4.2)
             hit = hits.get(n - 1) or _symbol_match(s, blocks)
             if fallback and hit.outcome != "none":
                 kind, basis = None, None

@@ -306,7 +306,7 @@ class PdfVectorLinkTest(unittest.TestCase):
         self.assertIn("TANK-NOTE", [t.get("text") for t in ex["texts"]])
 
     def test_existing_rule_wins(self):
-        """기존 규칙이 정한 기호(삼각형 둘 = 수동 밸브)는 사전을 보지 않는다."""
+        """구조 규칙이 정한 기호(삼각형 둘 = 수동 밸브)는 격자 견본에 대 보지 않고, 근거에 symbol_id를 남기지 않는다."""
         ex = extract([prim([(0, 0), (5, 3), (0, 6), (0, 0)]), prim([(10, 0), (5, 3), (10, 6), (10, 0)])])
         self.assertEqual(ex["nodes"][0]["kind"], "manual_valve")
         self.assertNotIn("symbol_id", ex["nodes"][0]["evidence"])
@@ -586,6 +586,132 @@ class IsaBubbleKindTest(unittest.TestCase):
         self.assertIsNone(pdf_vector._instrument_kind("ZL\n202C", 6.0)[0])
         self.assertEqual(pdf_vector._instrument_kind("TIS\n5", 12.0), ("switch", "isa_letters:TIS"))
         self.assertEqual(pdf_vector._instrument_kind("PT\n101"), ("transmitter", "isa_letters:PT"))
+
+
+def rule_entry(eid, kind, match, role="symbol", extra=None):
+    e = {"id": eid, "revision": 1, "added": "2026-11-11", "updated": "2026-11-11", "name": {"en": eid, "ko": eid},
+         "category": "밸브", "role": role, "kind": kind, "match": match, "sources": []}
+    e.update(extra or {})
+    return e
+
+
+def structure(requires, order, basis):
+    return {"shape": "structure", "requires": list(requires), "order": order, "basis": basis}
+
+
+def label_words(words, order):
+    return {"shape": "label_words", "words": list(words), "order": order}
+
+
+class RuleTemplateTest(LibraryCase):
+    """구조 규칙·이름 낱말 규칙 견본(S7): 격자 대신 추출기가 본 구조 특징이나 라벨 낱말로 맞히고, order가 작은 것이 이긴다."""
+
+    def test_lowest_order_whose_features_all_present_wins(self):
+        lib = self.write([rule_entry("t.plain", "manual_valve", [structure(["bowtie"], 20, "valve_body")]),
+                          rule_entry("t.motor", "motor_operated_valve",
+                                     [structure(["bowtie", "outside_circle"], 10, "valve_body+circle_actuator")])])
+        entry_, basis = lib.shape_rule({"bowtie", "outside_circle", "markers"})
+        self.assertEqual((entry_.id, basis), ("t.motor", "valve_body+circle_actuator"))
+        entry_, basis = lib.shape_rule({"bowtie"})
+        self.assertEqual((entry_.id, basis), ("t.plain", "valve_body"))
+        self.assertEqual(lib.shape_rule({"markers"}), (None, None))
+
+    def test_label_words_need_every_word(self):
+        lib = self.write([rule_entry("t.sg", "steam_generator", [label_words(["STEAM", "GENERATOR"], 10)]),
+                          rule_entry("t.pump", "pump", [label_words(["PUMP"], 20)])])
+        self.assertEqual(lib.word_rule(["STEAM", "GENERATOR", "FEED", "PUMP"])[0].id, "t.sg")
+        self.assertEqual(lib.word_rule(["STEAM", "PUMP"])[0].id, "t.pump")
+        self.assertEqual(lib.word_rule(["PUMP"])[1], ("PUMP",))
+        self.assertEqual(lib.word_rule(["PUMPS"]), (None, None))
+
+    def test_rule_templates_do_not_join_grid_matching(self):
+        lib = self.write([rule_entry("t.plain", "manual_valve", [structure(["bowtie"], 20, "valve_body")])])
+        self.assertEqual(lib.match(sig_of([body(BOWTIE_H)])).outcome, "none")
+
+    def test_disabled_rule_is_skipped(self):
+        lib = self.write([rule_entry("t.plain", "manual_valve", [structure(["bowtie"], 20, "valve_body")],
+                                     extra={"enabled": False})])
+        self.assertEqual(lib.shape_rule({"bowtie"}), (None, None))
+
+    def test_bad_rule_templates_fail_loudly(self):
+        bad = [structure(["bowtye"], 10, "valve_body"),          # 추출기가 내지 않는 특징 이름
+               structure([], 10, "valve_body"),
+               structure(["bowtie"], 10, ""),
+               structure(["bowtie"], "10", "valve_body"),
+               structure(["bowtie"], True, "valve_body"),
+               label_words([], 10), label_words(["pump"], 10), label_words(["PUMP 1"], 10)]
+        for template in bad:
+            with self.assertRaises(symbols.SymbolLibraryError, msg=template):
+                self.write([rule_entry("t.bad", "manual_valve", [template])])
+
+    def test_same_order_twice_fails_loudly(self):
+        with self.assertRaises(symbols.SymbolLibraryError):
+            self.write([rule_entry("t.a", "manual_valve", [structure(["bowtie"], 10, "valve_body")]),
+                        rule_entry("t.b", "psv", [structure(["body_with_springs"], 10, "body+spring")])])
+        with self.assertRaises(symbols.SymbolLibraryError):
+            self.write([rule_entry("t.a", "pump", [label_words(["PUMP"], 10)]),
+                        rule_entry("t.b", "tank", [label_words(["TANK"], 10)])])
+
+
+class CommonRuleTest(unittest.TestCase):
+    """공통 묶음으로 옮긴 형상 규칙과 장비 이름 낱말(S7). 기대값은 옮기기 전 코드(`_shape_kind`, `EQUIPMENT_WORDS`)가 내던 값이다."""
+
+    SHAPES = [
+        ({"plate_valve:butterfly"}, ("manual_valve", "plates+butterfly")),
+        ({"plate_valve:ball", "bowtie", "outside_circle", "outside_body"}, ("manual_valve", "plates+ball")),
+        ({"bowtie", "outside_circle", "outside_body"}, ("motor_operated_valve", "valve_body+circle_actuator")),
+        ({"bowtie", "outside_body"}, ("control_valve", "valve_body+diaphragm_actuator")),
+        ({"bowtie", "body_with_springs", "markers"}, ("manual_valve", "valve_body")),
+        ({"body_with_springs", "single_circle"}, ("psv", "body+spring")),
+        ({"stroke_only", "markers", "parallel_plates"}, ("check_valve", "lines+marker")),
+        ({"stroke_only", "parallel_plates"}, ("orifice", "parallel_plates")),
+        ({"single_circle", "single_tombstone", "chevrons"}, ("instrument", "circle")),
+        ({"single_tombstone", "chevrons"}, ("instrument", "tombstone")),
+        ({"chevrons", "markers"}, ("continuation", "chevron_arrow")),
+        ({"stroke_only"}, (None, None)),
+        ({"markers"}, (None, None)),
+        (set(), (None, None)),
+    ]
+    WORDS = [
+        (("REACTOR", "VESSEL"), "reactor_vessel"), (("STEAM", "GENERATOR"), "steam_generator"),
+        (("PRESSURIZER",), "pressurizer"), (("CONDENSER",), "condenser"), (("TURBINE",), "turbine"),
+        (("DEMINERALIZER",), "demineralizer"), (("FILTER",), "filter"), (("EXCHANGER",), "heat_exchanger"),
+        (("HX",), "heat_exchanger"), (("COOLER",), "heat_exchanger"), (("PUMP",), "pump"), (("TANK",), "tank"),
+        (("VENT",), "vent"), (("ATM",), "vent"),
+    ]
+
+    def old_word_rule(self, tokens):
+        for words, kind in self.WORDS:
+            if all(w in tokens for w in words):
+                return kind, "text_word:%s" % "+".join(words)
+        return None, None
+
+    def test_shape_rules(self):
+        lib = pdf_vector.symbol_library()
+        for features, want in self.SHAPES:
+            entry_, basis = lib.shape_rule(features)
+            kind = None if entry_ is None else ("instrument" if entry_.kind_from == "isa_letters" else entry_.kind)
+            self.assertEqual((kind, basis), want, sorted(features))
+
+    def test_every_word_combination_gives_the_old_kind(self):
+        vocab = sorted({w for words, _ in self.WORDS for w in words}) + ["FEED"]
+        for mask in range(1 << len(vocab)):
+            tokens = [w for i, w in enumerate(vocab) if mask >> i & 1]
+            self.assertEqual(pdf_vector._kind_from_text(" ".join(tokens)), self.old_word_rule(tokens), tokens)
+
+    def test_text_rules_through_the_adapter(self):
+        self.assertEqual(pdf_vector._kind_from_text("Steam Generator\nfeed pump"),
+                         ("steam_generator", "text_word:STEAM+GENERATOR"))
+        self.assertEqual(pdf_vector._kind_from_text("TO M-102"), ("continuation", "text_to_from"))
+        self.assertEqual(pdf_vector._kind_from_text("PUMPS"), (None, None))
+
+    def test_adapter_features_are_the_dictionary_vocabulary(self):
+        a = pdf_vector.analyze(400, 300, [], [prim([(0, 0), (5, 3), (0, 6), (0, 0)]),
+                                              prim([(10, 0), (5, 3), (10, 6), (10, 0)])])
+        features = pdf_vector._shape_features(a["symbols"][0], a["params"])
+        self.assertEqual(features, {"bowtie"})
+        self.assertLessEqual(features, set(symbols.STRUCTURE_FEATURES))
+        self.assertEqual(pdf_vector._shape_rule(a["symbols"][0], a["params"]), ("manual_valve", "valve_body"))
 
 
 class RepoLibraryTest(unittest.TestCase):
