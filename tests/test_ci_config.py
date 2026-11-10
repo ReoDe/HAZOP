@@ -24,6 +24,7 @@ FORBIDDEN = (
     (r"\$\{\{\s*runner\.", "runner 컨텍스트는 job env에서 못 쓴다. 단계에서 $env:RUNNER_TEMP를 쓴다"),
     (r"persist-credentials:\s*(?!false\s*$)\S", "checkout 토큰을 남긴다"),
     (r"check_", "검사 스크립트 목록은 run_ci.py가 정한다"),
+    (r"^[ \t]*(?:- )?[\w-]+:[ \t]+[^|>\"'\s#][^#\n]*:[ \t]", "따옴표 없는 한 줄 값에 ': '가 있어 YAML이 깨진다(run 42771584149)"),
 )
 
 
@@ -82,6 +83,9 @@ class WorkflowTest(unittest.TestCase):
             "latest image": text.replace("windows-2025", "windows-latest"),
             "continue-on-error": text.replace(run, run + "        continue-on-error: true\n"),
             "check script named": text.replace(run, run.replace("run_ci", "check_kg")),
+            "colon-space in plain scalar": text.replace(
+                "run: |\n          python -m pip install --require-hashes",
+                "run: python -m pip install --require-hashes"),
             "hangul path": text.replace(run, run.replace("scripts", "도구")),
         }
         for name, variant in variants.items():

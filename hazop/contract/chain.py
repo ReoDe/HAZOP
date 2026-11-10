@@ -1247,7 +1247,7 @@ def _inside(path, folder):
 
 def _link_in_path(path):
     """경로(절대)와 그 상위 중 이미 있는 것에 심볼릭 링크·정션이 있으면 그 경로, 없으면 None.
-    realpath가 abspath와 다르면(다른 재분석 지점 등) 그것도 링크로 본다."""
+    realpath가 abspath(8.3 단축 이름은 펼친 뒤)와 다르면(다른 재분석 지점 등) 그것도 링크로 본다."""
     cur = os.path.abspath(path)
     while True:
         if os.path.lexists(cur) and (os.path.islink(cur) or os.path.isjunction(cur)):
@@ -1257,7 +1257,7 @@ def _link_in_path(path):
             break
         cur = parent
     absp = os.path.abspath(path)
-    if os.path.normcase(os.path.realpath(absp)) != os.path.normcase(absp):
+    if os.path.normcase(os.path.realpath(absp)) != os.path.normcase(paths.long_path(absp)):
         return absp
     return None
 

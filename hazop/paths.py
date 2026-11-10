@@ -20,12 +20,33 @@ def safe_name(name, default="drawing"):
 
 
 def safe_join(root, name):
-    """root 바로 아래 경로를 돌려준다. 결과가 root 밖이면 ValueError."""
+    """root 아래 경로를 root가 들어온 형태 그대로(8.3 단축 이름이면 단축 이름으로) 돌려준다. 결과가 root 밖이면 ValueError.
+    안팎 판정은 realpath로 하지만, realpath를 그대로 돌려주면 단축 이름 root와 긴 이름 결과가 섞여
+    rel_or_abs가 '../..'로 시작하는 저장 경로를 만든다(CI run 42771733162)."""
     root_abs = os.path.realpath(root)
     path = os.path.realpath(os.path.join(root_abs, name))
     if path == root_abs or os.path.commonpath([root_abs, path]) != root_abs:
         raise ValueError("출력 경로가 출력 루트 밖임: %r" % name)
-    return path
+    return os.path.join(os.path.abspath(root), path[len(root_abs):].lstrip("\\/"))
+
+
+def long_path(path):
+    """절대 경로에서 이미 있는 앞부분의 8.3 단축 이름을 긴 이름으로 펼친다. 링크·정션은 풀지 않는다."""
+    head, tail = os.path.abspath(path), []
+    try:
+        import ctypes
+        get_long = ctypes.windll.kernel32.GetLongPathNameW
+    except AttributeError:
+        return head
+    while True:
+        buf = ctypes.create_unicode_buffer(32768)
+        n = get_long(head, buf, 32768)
+        if 0 < n < 32768:
+            return os.path.join(buf.value, *reversed(tail))
+        parent, name = os.path.split(head)
+        if parent == head:
+            return os.path.abspath(path)
+        head, tail = parent, tail + [name]
 
 
 def rel_or_abs(path, root):

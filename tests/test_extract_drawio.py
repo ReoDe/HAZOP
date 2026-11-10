@@ -643,7 +643,7 @@ class OutputPathTest(unittest.TestCase):
         for bad in ("..", "../x", os.path.join("..", "..", "x"), "", "."):
             with self.assertRaises(ValueError):
                 paths.safe_join(root, bad)
-        self.assertTrue(paths.safe_join(root, "ok").startswith(os.path.realpath(root)))
+        self.assertEqual(paths.safe_join(root, "ok"), os.path.join(os.path.abspath(root), "ok"))
 
     def test_cli_writes_inside_out_root_for_hostile_drawing_number(self):
         text = read_text(SAMPLE_101).replace('value="SNP-M-101"', 'value="../../evil"', 1)
@@ -652,7 +652,7 @@ class OutputPathTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, out_root, True)
         result, out_dir = extract_drawio.run_one(src, out_root, svg=None)
         self.assertEqual(result["drawing"]["drawing_number"], "../../evil")
-        self.assertEqual(os.path.dirname(out_dir), os.path.realpath(out_root))
+        self.assertEqual(os.path.dirname(out_dir), os.path.abspath(out_root))
         self.assertTrue(os.path.isfile(os.path.join(out_dir, "extraction.json")))
 
 

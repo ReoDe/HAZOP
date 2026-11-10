@@ -208,11 +208,33 @@ checkout은 `fetch-depth: 0`으로 전체 이력을 받는다. `tests/test_desig
 
 ### 러너에서만 하는 건너뛰기 표시
 
-아직 없다. GitHub 첫 실행 뒤 러너 고유 원인으로 표시를 달면 여기에 시험 이름, 이유, run id를 적는다.
+없다. 러너에서 건너뛴 25개는 로컬 리허설의 23개에 '빌드 TOC 없음'과 '빌드 venv 없음' 2개를 더한 것이고, 모두 '없는 것'을 이유로 이미 달려 있던 표시다.
 
-### GitHub 첫 실행
+### GitHub 실행
 
-총괄이 푸시한 뒤 run id, 걸린 시간(설치·unittest·검사), 진단 줄(맑은 고딕 유무, 드라이브)을 여기에 적는다.
+| run | 커밋 | 결과 | 시간 | 내용 |
+| --- | --- | --- | --- | --- |
+| 42771584149 | 97edda1 | 실패, 0초 | - | 워크플로 파일 무효(`tests.yml` 50행). `--only-binary=:all: -r`의 ': '가 따옴표 없는 한 줄 값에 들어갔다. 총괄이 블록 스칼라로 고쳤다(90b9cf6) |
+| 42771733162 | 90b9cf6 | 실패 | 11분 10초 | 끝까지 돌았다. 받아오기 8초, 설치 30초(런타임 24초, PDF 6초), Preflight 1초, 시험·검사 10분 21초(unittest 475.2초, 검사 144.4초). unittest 1,759개 중 실패 11, 오류 3, 건너뜀 25. 검사는 `check_compare`·`check_export` rc 1, 나머지 8개 rc 0 |
+
+42771733162 진단 줄: 맑은 고딕 있음, 임시 폴더 C:, 작업 디렉터리와 작업 루트 D:. 로그는 `D:\HAZOP-trials\ci-rehearsal-20261110\gh-42771733162-full.log`에 받아 두었다.
+
+**실패 원인은 하나였다. 드라이브가 아니라 8.3 단축 이름이다.** 러너의 TEMP는 `C:\Users\RUNNER~1\…`로 단축 이름이다. `paths.safe_join`은 안팎을 realpath로 판정한 뒤 그 realpath(긴 이름 `runneradmin`)를 돌려주었다. 그래서 단축 이름 루트와 긴 이름 결과가 섞였다. 이 PC에서 TEMP·TMP를 8.3 단축 이름 폴더로 두면 14개가 똑같이 재현된다.
+
+| 실패 시험 | 분류 | 증상 |
+| --- | --- | --- |
+| `test_desktop_support` SplitRootsTest | 앱 결함(저장 경로) | `rel_or_abs`가 `../../../../../../runneradmin/…/자료저장소/…`를 저장 경로로 썼다 |
+| `test_contract` SampleChainTest 6개, RegistrationChainTest 1개 | 앱 결함 | `_link_in_path`가 realpath ≠ abspath를 링크로 보아 단축 이름 경로의 보고 쓰기를 거부했다. 판정 E3·G2도 이 때문에 달라졌다 |
+| `test_desktop_support` BundleExportTest, `test_evaluate` Hardening, `test_export` TestHeaderAndFiles, `test_kg_screen` KnowledgeTabTest, `test_packaging` SplitRootsFlowTest, `test_register` PdfRegisterTest 2개 | 같은 원인 | 앱이 돌려준 경로가 들어간 루트와 다른 표기(긴 이름)라 비교가 어긋났다 |
+| `check_compare`, `check_export` | 같은 원인 | 안에서 돌린 `test_evaluate`·`test_export`가 위와 같이 실패했다 |
+
+계정 이름이 길거나 한글인 사용자 PC도 TEMP가 단축 이름일 수 있다. 그래서 이것은 러너 고유 한계가 아니라 앱 결함으로 보고 고쳤다. 고친 커밋의 러너 결과는 총괄이 다음 푸시 뒤 이 표에 더한다.
+
+- `paths.safe_join`은 안팎 판정을 realpath로 그대로 하고, 결과를 루트가 들어온 형태 그대로 돌려준다.
+- `paths.long_path`를 새로 두었다. 이미 있는 앞부분의 단축 이름을 긴 이름으로 펼친다. `contract.chain._link_in_path`는 이것과 realpath를 견준다. 진짜 링크·정션은 그대로 거부한다.
+- 재현 시험은 `tests/test_short_path_names.py`(4개)다. 8.3 이름을 만들지 않는 볼륨에서는 건너뛴다.
+- `tests/test_extract_drawio.py`의 두 단언은 'safe_join이 realpath를 돌려준다'는 옛 규약을 적고 있어서, '루트 형태 그대로'로 바꿨다. 안팎 판정은 그대로다.
+- `tests/test_ci_config.py`에 '따옴표 없는 한 줄 값의 ': '' 규칙을 더했다. 97edda1의 워크플로를 넣으면 이 규칙으로 잡힌다.
 
 ## 미확인 목록
 
