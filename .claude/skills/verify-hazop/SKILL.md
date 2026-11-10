@@ -15,7 +15,7 @@ One command prepares a temp work root, launches the app, runs the scenarios, wri
 %USERPROFILE%\.hazop\venv-py312\Scripts\python.exe scripts/check_user_scenarios.py --out <dir> [--only S1,S3] [--keep-temp]
 ```
 
-- Preparation runs offscreen in a subprocess (`--_prepare`): copies `출력/추출|그래프/SNP-M-102`, `출력/지식그래프`, the reference samples (`paths.folder("참고")`, copied to the logical `참고자료/` path), confirms study nodes, fills ⑤ with the fake AI client from `scripts/shoot_results.py`. No network.
+- Preparation runs offscreen in a subprocess (`--_prepare`): copies `출력/추출|그래프/SNP-M-102`, `출력/지식그래프`, the sample drawings (`paths.folder("참고", "pid-samples")`, copied to their logical `참고자료/P&ID 도면 샘플/` path), confirms study nodes, fills ⑤ with the fake AI client from `scripts/shoot_results.py`. No network.
 - The app under test is `check_user_scenarios.py --_app <settings>`: the same `MainWindow` as `run_app.py` with ⑤'s AI client swapped for a slow fake (`AI_DELAY` seconds per call). Never point a scenario at the real API.
 - S15 switches the AI connection to Claude subscription, runs ⑤ through the fake CLI (`tests/fake_claude_flow.py`, injected only inside `--_app`), cancels mid-run and closes the window with "기다렸다 닫기". It closes the app, so it runs last.
 - Launch sets `HAZOP_WORK_ROOT`, `HAZOP_STORE_ROOT` (temp), `QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9339`, `--settings <temp>/settings.json` with a reviewer name (so no startup dialog).

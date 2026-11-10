@@ -38,9 +38,6 @@ EXEMPT = {
         ("N1", "resources/references/*", "샘플 도면 폴더 이름은 기준값의 키이고(§5.5), 기호 카탈로그와 APR1400_DCD는 받은 이름을 그대로 둔다"),
         ("N8", "자원/ @ docs/2026-11-09-data-consolidation/README.md", "2026-11-09 정리의 계획이자 기록. 그때 정한 배치를 적었다"),
     ],
-    "총괄": [
-        ("N8", "자원/ @ CLAUDE.md", "운영 규칙은 총괄이 고친다(evidence/step5-claude-pending.csv). 고치면 이 줄을 지운다"),
-    ],
     6: [
         ("N8", "작업/ @ *", ""),
     ],
