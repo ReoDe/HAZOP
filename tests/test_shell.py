@@ -285,6 +285,13 @@ class ShellTest(unittest.TestCase):
             scr, w = win.screens[index], win.focusWidget()
             self.assertTrue(w is scr or scr.isAncestorOf(w), "%d: %r" % (index, w))
 
+    def test_shared_inputs_have_accessible_names(self):
+        """화면 읽기 도구가 읽을 이름(2026-11-07 UIA 점검): 탐색기 필터, ②④⑤ 도면 선택."""
+        win = self.window()
+        self.assertTrue(win.explorer_filter.accessibleName())
+        for index in (1, STUDY, RESULTS):
+            self.assertTrue(win.screens[index].combo.accessibleName(), index)
+
     def test_toast_undo_with_ctrl_z(self):
         win = self.window()
         done = []
