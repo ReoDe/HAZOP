@@ -342,7 +342,8 @@ class EditScreenTest(unittest.TestCase):
         scr.edit_btn.setChecked(False)
         self.settle()
         display = "getComputedStyle(document.getElementById('%s')).display"
-        self.assertEqual(self.js(display % "status"), "none")
+        # 편집을 끈 뒤 다시 그리는 동안에는 값이 ''로 온다(CI run 42795547168에서 두 번). 그려질 때까지 기다린다
+        self.assertTrue(wait_for(lambda: self.js(display % "status") == "none", 10))
         self.assertIn("구조 검증", scr.chip_valid.text())
         self.assertEqual(self.js(display % "pathq"), "none")
         self.assertNotEqual(self.js(display % "pq-chip"), "none")
