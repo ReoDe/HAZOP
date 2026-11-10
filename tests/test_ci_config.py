@@ -1,4 +1,8 @@
-"""CI 설정이 가리키는 것이 실제로 있는지 본다. 이름 이전이 경로를 바꾸면 이 시험이 로컬에서 먼저 깨진다."""
+"""CI 설정이 가리키는 것이 실제로 있는지, 공개 저장소에서 위험한 설정이 들어오지 않았는지 본다.
+
+이름 이전이 경로를 바꾸면 이 시험이 로컬에서 먼저 깨진다. CI venv에는 PyYAML이 없어서 YAML을 구조로 읽지 않고
+워크플로 전체 글자에 정규식을 건다. 그래서 규칙은 '어디에 있든 안 됨'으로 넓게 잡았다.
+"""
 
 import glob
 import os
@@ -12,6 +16,38 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
 import run_ci  # noqa: E402
 
+FORBIDDEN = (
+    (r"\bsecrets\b", "secrets 컨텍스트를 쓴다"),
+    (r"pull_request_target", "pull_request_target은 남의 PR에 쓰기 토큰을 준다"),
+    (r"write-all|:\s*write\b", "쓰기 권한을 준다"),
+    (r"continue-on-error", "실패는 빨간불로 보여야 한다"),
+    (r"\$\{\{\s*runner\.", "runner 컨텍스트는 job env에서 못 쓴다. 단계에서 $env:RUNNER_TEMP를 쓴다"),
+    (r"persist-credentials:\s*(?!false\s*$)\S", "checkout 토큰을 남긴다"),
+    (r"check_", "검사 스크립트 목록은 run_ci.py가 정한다"),
+)
+
+
+def workflow_problems(text):
+    problems = []
+    if not text.isascii():
+        problems.append("ASCII 밖 글자(한글 경로 등)가 있다")
+    for pattern, why in FORBIDDEN:
+        if re.search(pattern, text, re.MULTILINE):
+            problems.append(why)
+    if not re.search(r"(?m)^permissions:\n  contents: read\n(?!  )", text):
+        problems.append("최상단 permissions가 contents: read 하나가 아니다")
+    uses = re.findall(r"uses:\s*(\S+)", text)
+    if not uses:
+        problems.append("액션이 없다")
+    problems += ["커밋 SHA로 고정하지 않은 액션: %s" % u for u in uses if not re.search(r"@[0-9a-f]{40}$", u)]
+    checkouts = len(re.findall(r"uses:\s*actions/checkout@", text))
+    if len(re.findall(r"(?m)persist-credentials:\s*false\s*$", text)) != checkouts:
+        problems.append("checkout마다 persist-credentials: false가 있어야 한다")
+    runs_on = re.findall(r"runs-on:\s*(\S+)", text)
+    if not runs_on or any("latest" in r for r in runs_on):
+        problems.append("러너 이미지 판 번호를 고정하지 않았다")
+    return problems
+
 
 def _workflow_text():
     with open(WORKFLOW, encoding="utf-8") as f:
@@ -19,34 +55,39 @@ def _workflow_text():
 
 
 class WorkflowTest(unittest.TestCase):
+    def test_workflow_has_no_problems(self):
+        self.assertEqual([], workflow_problems(_workflow_text()))
+
     def test_referenced_repo_files_exist(self):
         refs = re.findall(r"(?:scripts|packaging)/[\w./*-]+", _workflow_text())
         self.assertIn("scripts/run_ci.py", refs)
         for ref in refs:
             self.assertTrue(glob.glob(os.path.join(REPO_ROOT, ref)), "워크플로가 가리키는 파일이 없다: %s" % ref)
 
-    def test_workflow_names_only_the_entry_point(self):
+    def test_dangerous_variants_are_caught(self):
         text = _workflow_text()
-        self.assertTrue(text.isascii(), "워크플로에 한글이나 ASCII 밖 글자가 있다")
-        self.assertNotIn("check_", text, "검사 스크립트 목록은 run_ci.py가 정한다")
-
-    def test_no_secrets_and_read_only(self):
-        text = _workflow_text()
-        self.assertNotIn("secrets.", text)
-        self.assertRegex(text, r"(?m)^permissions:\n  contents: read$")
-        self.assertNotIn("continue-on-error", text, "실패는 빨간불로 보여야 한다")
-
-    def test_actions_pinned_to_commit(self):
-        uses = re.findall(r"uses:\s*(\S+)", _workflow_text())
-        self.assertTrue(uses)
-        for ref in uses:
-            self.assertRegex(ref, r"@[0-9a-f]{40}$", "커밋 SHA로 고정하지 않은 액션: %s" % ref)
-
-    def test_runner_image_pinned(self):
-        runs_on = re.findall(r"runs-on:\s*(\S+)", _workflow_text())
-        self.assertTrue(runs_on)
-        for image in runs_on:
-            self.assertNotIn("latest", image)
+        run = "run: python scripts/run_ci.py\n"
+        variants = {
+            "toJSON(secrets)": text.replace(run, "run: python scripts/run_ci.py ${{ toJSON(secrets) }}\n"),
+            "secrets[...]": text.replace(run, "run: python scripts/run_ci.py ${{ secrets['TOKEN'] }}\n"),
+            "job write-all": text.replace("    timeout-minutes", "    permissions: write-all\n    timeout-minutes"),
+            "job contents: write": text.replace("    timeout-minutes", "    permissions:\n      contents: write\n    timeout-minutes"),
+            "top-level extra scope": text.replace("  contents: read\n", "  contents: read\n  actions: read\n"),
+            "pull_request_target": text.replace("  workflow_dispatch:", "  pull_request_target:"),
+            "persist-credentials true": text.replace("persist-credentials: false", "persist-credentials: true"),
+            "persist-credentials missing": text.replace("          persist-credentials: false\n", ""),
+            "runner context in job env": text.replace("      QT_QPA_PLATFORM: offscreen\n",
+                                                      "      QT_QPA_PLATFORM: offscreen\n      W: ${{ runner.temp }}\n"),
+            "action by tag": re.sub(r"(actions/checkout@)[0-9a-f]{40}", r"\1v7", text),
+            "latest image": text.replace("windows-2025", "windows-latest"),
+            "continue-on-error": text.replace(run, run + "        continue-on-error: true\n"),
+            "check script named": text.replace(run, run.replace("run_ci", "check_kg")),
+            "hangul path": text.replace(run, run.replace("scripts", "도구")),
+        }
+        for name, variant in variants.items():
+            with self.subTest(name):
+                self.assertNotEqual(text, variant, "변형이 적용되지 않음")
+                self.assertTrue(workflow_problems(variant), "잡지 못한 변형")
 
 
 class CheckListTest(unittest.TestCase):

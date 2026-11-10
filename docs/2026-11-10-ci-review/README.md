@@ -167,7 +167,20 @@ GitHub 기계는 매번 새로 깔린 빈 Windows다. 공개 저장소용 표준
 
 ## 7. 첫 실행 결과
 
-가벼운 CI(b)를 `.github/workflows/tests.yml`로 들였다. 워크플로는 Python을 깔고 `scripts/preflight.py --profile test`와 `scripts/run_ci.py`만 부른다. 무엇을 돌릴지는 `run_ci.py`의 `CHECKS`·`NOT_IN_CI` 표가 정한다. `tests/test_ci_config.py`가 두 표에 모든 `scripts/check_*.py`가 들어 있는지, 워크플로가 가리키는 파일이 있는지, SHA 고정·읽기 권한·비밀값 0을 지키는지 본다. 이름 이전 단위가 경로를 바꾸면 이 시험이 먼저 깨진다.
+가벼운 CI(b)를 `.github/workflows/tests.yml`로 들였다. 워크플로는 Python을 깔고 `scripts/preflight.py --profile test`와 `scripts/run_ci.py`만 부른다. 무엇을 돌릴지는 `run_ci.py`의 `CHECKS`·`NOT_IN_CI` 표가 정한다.
+
+`tests/test_ci_config.py`가 지키는 범위는 아래까지다.
+
+- 모든 `scripts/check_*.py`가 두 표 중 하나에만 들어 있고, 표에 적힌 스크립트가 실제로 있다.
+- 워크플로가 적은 `scripts/…`·`packaging/…` 경로가 있다. 워크플로에 ASCII 밖 글자와 `check_` 이름이 없다.
+- 워크플로 글자 어디에도 `secrets`, `pull_request_target`, `write-all`·`: write`, `continue-on-error`, `${{ runner.` 가 없다. 최상단 `permissions`는 `contents: read` 한 줄뿐이다. 액션은 40자리 SHA로 고정되어 있고, checkout마다 `persist-credentials: false`가 있으며, `runs-on`에 `latest`가 없다.
+- 위 규칙마다 일부러 망가뜨린 변형 14개를 넣어 모두 잡히는지 시험이 확인한다.
+
+CI venv에 PyYAML이 없어 YAML을 구조로 읽지 않고 정규식으로 본다. 그래서 YAML 의미는 검사하지 않는다. 예를 들어 단계 순서, `if:` 조건, 다른 컨텍스트를 쓰지 못하는 자리에 쓴 표현식은 GitHub에서 돌려 봐야 드러난다. 이름 이전 단위가 경로를 바꾸면 이 시험이 먼저 깨진다.
+
+러너 이미지는 `windows-2025`로 고정했지만 판 번호가 이미지 내용까지 고정하지는 않는다. 검토 의견(2026-11-10, 이 세션에서는 확인하지 않음)에 따르면 이 이름은 지금 VS2026이 든 이미지로 연결되어 있다. GitHub이 같은 이름 아래 이미지를 바꾸면 글꼴·도구 판이 말없이 달라질 수 있다. 진단 줄(맑은 고딕 유무, Python·PySide6 판)을 실행마다 찍는 이유다.
+
+checkout은 `fetch-depth: 0`으로 전체 이력을 받는다. `tests/test_design.py`의 두 시험(271행 커밋 2178ddf, 621행 커밋 2727e56)이 과거 커밋을 읽기 때문이다. 얕게 받으면 이 둘이 건너뛴다. 저장소가 26MB 정도라 받는 시간은 크지 않다(추정).
 
 ### 로컬 리허설 (2026-11-10, 이 PC)
 
@@ -180,7 +193,7 @@ GitHub 기계는 매번 새로 깔린 빈 Windows다. 공개 저장소용 표준
 | 검사 스크립트 | 6개 실패, 1,484초 | 10개 모두 rc 0, 87초 |
 | `run_ci.py` 전체 | rc 1, 1,835초 | rc 0, 422초 |
 
-건너뜀 23개의 이유는 OpenCV·rapidocr 없음 14(결정 D7, raster venv 몫), anthropic SDK 없음 5, 저장소 밖 출력·예시 파일 없음 3, pefile 없음 1이다. 모두 '없는 것'을 이유로 건너뛴다. 같은 날 `D:\HAZOP`에서 평소 venv로 돌린 unittest는 1,761개 중 20개를 건너뛰었다(실패 0, 347초). 차이 3개는 깨끗한 복제에 없는 저장소 밖 출력·예시 파일 몫이다.
+건너뜀 23개의 이유는 OpenCV·rapidocr 없음 14(결정 D7, raster venv 몫), anthropic SDK 없음 5, 저장소 밖 출력·예시 파일 없음 3, pefile 없음 1이다. 모두 '없는 것'을 이유로 건너뛴다. 같은 날 `D:\HAZOP`에서 평소 시험용 venv(`%USERPROFILE%\.hazop\venv-py312`)로 돌린 unittest는 1,761개 중 20개를 건너뛰었다(실패 0, 347초). 작업 트리는 커밋 a21af4e 직전 내용이고, 기록은 `D:\HAZOP-trials\ci-rehearsal-20261110\local-unittest-a21af4e.log`에 있다. 차이 3개는 깨끗한 복제에 없는 저장소 밖 출력·예시 파일 몫이다.
 
 1차에서 뺀 검사는 두 갈래다.
 

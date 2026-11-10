@@ -74,17 +74,18 @@ def run_unittests():
     modules = []
     result.startTestRun()
     for module_suite in suite:
-        name = next((t.id().rsplit(".", 2)[0] for t in _iter_tests(module_suite)), "?")
+        if not module_suite.countTestCases():
+            continue
+        name = next(t.id().rsplit(".", 2)[0] for t in _iter_tests(module_suite))
+        print("\n[모듈 시작] %s" % name, flush=True)
         before = (result.testsRun, len(result.failures) + len(result.errors), len(result.skipped))
         start = time.perf_counter()
         module_suite.run(result)
         took = time.perf_counter() - start
         after = (result.testsRun, len(result.failures) + len(result.errors), len(result.skipped))
         row = (name, after[0] - before[0], after[1] - before[1], after[2] - before[2], took)
-        if not row[1]:
-            continue
         modules.append(row)
-        print("\n[모듈] %s 시험 %d, 실패 %d, 건너뜀 %d, %.1f초" % row, flush=True)
+        print("\n[모듈 끝] %s 시험 %d, 실패 %d, 건너뜀 %d, %.1f초" % row, flush=True)
     result.stopTestRun()
     result.printErrors()
     return result, modules
@@ -130,12 +131,15 @@ def diagnose_lines():
 
 def summary_markdown(result, modules, checks, timings):
     lines = ["## 시험 요약", ""]
-    lines.append("시험 %d, 실패 %d, 오류 %d, 건너뜀 %d" % (
-        result.testsRun, len(result.failures), len(result.errors), len(result.skipped)))
+    lines.append("시험 %d, 실패 %d, 오류 %d, 건너뜀 %d, 예상 밖 통과 %d" % (
+        result.testsRun, len(result.failures), len(result.errors), len(result.skipped),
+        len(result.unexpectedSuccesses)))
+    if not result.testsRun:
+        lines += ["", "**시험을 하나도 찾지 못했다. 실패로 친다.**"]
     lines += ["", "### 건너뛴 이유", "", "| 이유 | 수 |", "| --- | --- |"]
     for reason, count in collections.Counter(r for _, r in result.skipped).most_common():
         lines.append("| %s | %d |" % (_cell(reason), count))
-    bad = [t.id() for t, _ in result.failures + result.errors]
+    bad = [t.id() for t, _ in result.failures + result.errors] + [t.id() for t in result.unexpectedSuccesses]
     if bad:
         lines += ["", "### 실패·오류 시험", ""] + ["- `%s`" % b for b in bad]
     lines += ["", "### 오래 걸린 시험 모듈 (상위 10)", "", "| 모듈 | 시험 | 초 |", "| --- | --- | --- |"]
@@ -171,7 +175,7 @@ def main(argv=None):
     checks = run_checks()
     timings = [("unittest", unit_s), ("검사 스크립트", time.perf_counter() - start - unit_s)]
     write_summary(summary_markdown(result, modules, checks, timings))
-    failed = not result.wasSuccessful() or any(rc != 0 for _, rc, _ in checks)
+    failed = not result.testsRun or not result.wasSuccessful() or any(rc != 0 for _, rc, _ in checks)
     return 1 if failed else 0
 
 
