@@ -55,6 +55,12 @@ def save(name, ops, by, drawing_number=None, at=None):
     ops = [dict(o) for o in ops]
     before = [o["op_id"] for o in prev.get("ops") or []]
     after = [o["op_id"] for o in ops]
+    gone = _issued(prev) - set(before)
+    kept = [o for e in prev.get("log") or [] for o in e.get("removed_ops") or []]
+    reused = [o["op_id"] for o in ops if o["op_id"] in gone and o not in kept]  # 지운 그대로 되살리는 것(실행 취소)은 된다
+    if reused:
+        raise ValueError("지운 연산의 번호를 다른 연산에 쓸 수 없음: %s (새 연산은 make_op에 name을 넘겨 번호를 받을 것)"
+                         % ", ".join(reused))
     removed = [o for o in prev.get("ops") or [] if o["op_id"] not in after]
     doc = {
         "kind": KIND, "schema_version": SCHEMA_VERSION, "extraction_name": name,
@@ -72,7 +78,10 @@ def save(name, ops, by, drawing_number=None, at=None):
 
 def issued_op_ids(name):
     """저장 기록에 한 번이라도 나온 op_id(지금 연산과 log의 추가·삭제). 새 op_id는 이 번호들과 겹치지 않게 발급한다."""
-    doc = load(name) or {}
+    return _issued(load(name) or {})
+
+
+def _issued(doc):
     ids = {o.get("op_id") for o in doc.get("ops") or []}
     for entry in doc.get("log") or []:
         ids.update(entry.get("added") or [])
@@ -585,19 +594,20 @@ def apply_saved(extraction, name):
 
 
 def _next_op_id(existing_ops, used_ids=()):
-    ids = [str(o.get("op_id", "")) for o in existing_ops] + [str(i) for i in used_ids]
-    nums = [int(i[2:]) for i in ids if i.startswith("c-") and i[2:].isdigit()]
-    return "c-%04d" % (max(nums, default=0) + 1)
+    return store_io.next_id("c-%04d", [o.get("op_id") for o in existing_ops] + list(used_ids))
 
 
-def make_op(original_extraction, op, target, value, by, at=None, op_id=None, existing_ops=(), used_ids=()):
+def make_op(original_extraction, op, target, value, by, at=None, op_id=None, existing_ops=(), used_ids=(), name=None):
     """검사를 마친 Op dict. base는 원본 추출(수정 전)에서 계산하고 manual 대상이면 None.
-    새 op_id는 existing_ops와 used_ids(issued_op_ids: 저장 기록에 나온 번호)보다 크게 발급한다.
-    지운 연산의 번호를 다시 쓰면 manual- ID가 다른 기기를 가리키게 되기 때문이다.
+    새 op_id는 existing_ops, used_ids, name(추출 이름)의 저장 기록에 나온 번호(issued_op_ids)보다 크게 발급한다.
+    지운 연산의 번호를 다시 쓰면 manual- ID가 다른 기기를 가리키게 되기 때문이다. 저장할 기록이 있는 호출은 name을 넘긴다
+    (넘기지 않아 겹친 번호는 save가 거절한다).
     existing_ops 뒤에 붙여 적용해 볼 때 적용 불가면 ValueError(사유)."""
     if op not in OPS:
         raise ValueError("알 수 없는 수정 연산: %r" % (op,))
     existing_ops = list(existing_ops)
+    if name:
+        used_ids = set(used_ids) | issued_op_ids(name)
     base, fp = None, _fingerprints(original_extraction)
     if target is not None and not str(target).startswith(MANUAL_PREFIX):
         if target not in fp:

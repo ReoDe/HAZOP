@@ -194,6 +194,36 @@ class BackupTest(WorkRootCase):
         self.assertEqual((raw(one), raw(two)), (b"a", b"b"))
 
 
+class NodeIdTest(WorkRootCase):
+    def split_off(self, node_set, node_id="S1"):
+        members = next(n for n in node_set["nodes"] if n["node_id"] == node_id)["members"]
+        out = sn.split(node_set, node_id, members[:1], at=AT)
+        return out, out["history"][-1]["detail"]["new_node_id"]
+
+    def test_a_merged_away_number_is_not_issued_again(self):
+        s = sn.propose(self.g, at=AT)
+        top = len(s["nodes"])
+        s, first = self.split_off(s)
+        self.assertEqual(first, "S%d" % (top + 1))
+        s = sn.merge(s, ["S1", first], at=AT)
+        s, second = self.split_off(s)
+        self.assertEqual(second, "S%d" % (top + 2), "지운 번호를 다시 쓰지 않음")
+        sn.save(s)
+        _again, third = self.split_off(sn.load(self.g))
+        self.assertEqual(third, "S%d" % (top + 3), "저장했다 읽어도 이어짐")
+
+    def test_numbers_continue_from_the_history_of_an_old_file(self):
+        """옛 파일에는 발급 기록이 따로 없다. 이력에 남은 분할·병합에서 지운 번호를 찾는다."""
+        old = sn.propose(self.g, at=AT)
+        for n in old["nodes"]:
+            n.pop("screen"), n.pop("absorbed", None), n.pop("parts", None)
+        old["history"] += [{"at": AT, "op": "split", "detail": {"node_id": "S1", "new_node_id": "S41", "members": ["n-E1"]}},
+                           {"at": AT, "op": "merge", "detail": {"node_ids": ["S1", "S41"], "into": "S1"}}]
+        put(sn.store_path(None, "graph-T"), old_bytes(old, False))
+        _out, new = self.split_off(sn.load(self.g))
+        self.assertEqual(new, "S42")
+
+
 class OldFilesTest(WorkRootCase):
     """0.1.x가 쓴 파일을 지금 코드로 읽고 다시 저장해도 내용이 그대로다."""
 

@@ -1066,7 +1066,7 @@ class ViewerScreen(QWidget):
             return False
         try:
             op = corrections.make_op(self.info["original"], req["op"], req["target"], req["value"], self._by(),
-                                     existing_ops=self.session.ops, used_ids=corrections.issued_op_ids(self.name) | self.session.issued_ids())
+                                     existing_ops=self.session.ops, used_ids=self.session.issued_ids(), name=self.name)
         except (OSError, ValueError) as exc:
             notify(self, "수정할 수 없음", str(exc), warn=True)
             return False

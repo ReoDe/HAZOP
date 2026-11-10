@@ -171,9 +171,25 @@ def _status(node):
     return (node.get("screen") or {}).get("status") or "keep"
 
 
+def issued_node_ids(node_set):
+    """이 집합에서 한 번이라도 쓴 구간 ID: 지금 구간과 이력(제안·분할·병합 등)에 나온 구간.
+    다시 제안하면 이력과 함께 S1부터 새로 매긴다."""
+    ids = {n["node_id"] for n in node_set["nodes"]}
+    for h in node_set.get("history") or []:
+        d = h.get("detail") if isinstance(h, dict) else None
+        if not isinstance(d, dict):
+            continue
+        ids.update(d[k] for k in ("node_id", "new_node_id", "into") if isinstance(d.get(k), str))
+        if isinstance(d.get("node_ids"), list):
+            ids.update(x for x in d["node_ids"] if isinstance(x, str))
+        if h.get("op") == "propose" and type(d.get("nodes")) is int:
+            ids.add("S%d" % d["nodes"])
+    return ids
+
+
 def _next_id(node_set):
-    used = [int(n["node_id"][1:]) for n in node_set["nodes"] if n["node_id"][1:].isdigit()]
-    return "S%d" % (max(used, default=0) + 1)
+    """병합으로 없어진 구간의 번호도 다시 내지 않는다(이력의 'S5'가 두 구간을 가리키지 않게)."""
+    return store_io.next_id("S%d", issued_node_ids(node_set))
 
 
 def map_members(node_set, rename):

@@ -378,6 +378,44 @@ class CorrectionsTest(unittest.TestCase):
         self.assertEqual(doc["log"][1]["removed_ops"], [first], "지운 사람 수정 내용이 기록에 남음")
         self.assertEqual(corrections.issued_op_ids(NAME), {first["op_id"], again["op_id"]})
 
+    def test_direct_callers_do_not_get_a_removed_number_back(self):
+        """화면을 거치지 않는 스크립트: name을 주면 저장 기록의 번호를 피해 발급하고, 주지 않아 겹친 번호는 저장이 거절한다."""
+        from hazop.extract import corrections
+        value = {"category": "equipment", "kind": "pump", "tag": "RC-P900", "bbox": [500, 500, 20, 20]}
+        first = corrections.make_op(self.ext, "add_node", None, value, "검토자")
+        corrections.save(NAME, [first], "검토자", drawing_number=NAME)
+        corrections.save(NAME, [], "검토자")
+        other = dict(value, tag="RC-P901")
+        fresh = corrections.make_op(self.ext, "add_node", None, other, "스크립트", name=NAME)
+        self.assertEqual(fresh["op_id"], "c-0002")
+        reused = corrections.make_op(self.ext, "add_node", None, other, "스크립트")
+        self.assertEqual(reused["op_id"], first["op_id"], "기록을 모르는 호출은 같은 번호를 받는다")
+        with open(corrections.store_path(NAME), "rb") as fh:
+            before = fh.read()
+        with self.assertRaises(ValueError):
+            corrections.save(NAME, [reused], "스크립트")
+        with open(corrections.store_path(NAME), "rb") as fh:
+            self.assertEqual(fh.read(), before, "manual- ID가 다른 기기를 가리키게 되는 저장은 하지 않음")
+        corrections.save(NAME, [first], "검토자")
+        self.assertEqual(corrections.load(NAME)["ops"], [first], "지운 연산을 그대로 되살리는 저장(실행 취소)은 받는다")
+
+    def test_old_record_keeps_its_ops_and_log_and_numbers_continue(self):
+        """removed_ops가 생기기 전에 쓴 기록: 연산과 옛 log가 그대로 남고, 새 번호는 log에 나온 가장 큰 번호 다음이다."""
+        from hazop.extract import corrections
+        ops = []
+        self.op(ops, self.ext, "set_tag", "n1", {"tag": "RC-PZ99"})
+        old = {"kind": corrections.KIND, "schema_version": "0.1", "extraction_name": NAME, "drawing_number": NAME,
+               "ops": ops, "log": [{"at": "2026-11-07T00:00:00Z", "by": "검토자", "action": "save",
+                                    "added": ["c-0001", "c-0005"], "removed": ["c-0005"]}]}
+        os.makedirs(os.path.dirname(corrections.store_path(NAME)))
+        with open(corrections.store_path(NAME), "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(old, fh, ensure_ascii=False, indent=2, sort_keys=True)
+        new = corrections.make_op(self.ext, "set_tag", "n6", {"tag": "RC-TE99"}, "검토자B", existing_ops=ops, name=NAME)
+        self.assertEqual(new["op_id"], "c-0006")
+        corrections.save(NAME, ops + [new], "검토자B")
+        doc = corrections.load(NAME)
+        self.assertEqual((doc["ops"], doc["log"][0], doc["drawing_number"]), (ops + [new], old["log"][0], NAME))
+
     def test_load_rejects_other_kind(self):
         from hazop.extract import corrections
         os.makedirs(os.path.dirname(corrections.store_path(NAME)))
