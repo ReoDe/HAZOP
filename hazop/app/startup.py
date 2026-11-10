@@ -138,7 +138,7 @@ def ask_move_dialog(plan):
     from PySide6.QtWidgets import QMessageBox
     box = QMessageBox(QMessageBox.Question, MOVE_TITLE, move_question(plan))
     yes = box.addButton("복사해서 옮기기", QMessageBox.AcceptRole)
-    box.addButton("나중에", QMessageBox.RejectRole)
+    box.addButton("옮기지 않고 끝내기", QMessageBox.RejectRole)
     box.setDefaultButton(yes)
     box.exec()
     return box.clickedButton() is yes
@@ -164,30 +164,51 @@ def run_move_dialog(root):
         box.close()
 
 
-def offer_work_root_move(interactive, ask=None, notify=None, run=None, err=None):
+def offer_work_root_move(interactive, ask=None, notify=None, run=None, err=None, locked=True):
     """작업 루트가 0.1.x 배치면 0.2.0 배치로 복사해 옮길지 묻는다. None = 계속 시작(옮길 것이 없거나 옮겼다),
     EXIT_OLD_LAYOUT = 시작하지 않음(거절, 새 이름 폴더에 이미 파일이 있음, 옮기다 실패). 옮기기 전에는 작업 루트에서
-    아무것도 읽거나 쓰지 않는다. ask(plan) -> bool, notify(제목, 글), run(작업 루트). 비대화형 실행은 묻지 않고 끝낸다."""
+    아무것도 읽거나 쓰지 않는다. ask(plan) -> bool, notify(제목, 글), run(작업 루트). 비대화형 실행은 묻지 않고 끝낸다.
+    배치를 확인하지 못해도(권한 등) 시작하지 않는다. locked가 거짓이면(작업 루트 잠금을 잡지 못함) 옮기지 않는다:
+    다른 실행이 같은 폴더를 쓰고 있을 수 있다."""
     root = paths.raw_work_root()
+    notify = notify or notify_running
+
+    def stop(text):
+        _log.warning("작업 폴더 때문에 시작하지 않음: %s", text.replace("\n", " "))
+        if interactive:
+            notify(MOVE_TITLE, text)
+        else:
+            _write(err, text + "\n")
+        return EXIT_OLD_LAYOUT
+
     try:
         plan = workroot.make_plan(root)
-    except OSError as e:
-        _log.warning("작업 폴더 배치를 확인하지 못함: %s (%s)", root, e)
-        plan = None
-    if plan is None or plan.state in ("none", "done"):
+    except (OSError, workroot.MigrationError) as e:
+        return stop("작업 폴더의 배치를 확인하지 못해 프로그램을 시작하지 않습니다.\n\n위치: %s\n원인: %s\n\n"
+                    "폴더 권한을 확인한 뒤 다시 실행하세요." % (root, e))
+    if plan.state in ("none", "done"):
+        try:
+            paths.require_current_layout(root)
+        except paths.OldLayoutError as e:
+            return stop("%s\n\n옮긴 뒤 다시 실행하세요." % e)
         return None
+    if plan.state == "undoing":
+        return stop("작업 폴더를 되돌리다 끊긴 상태라 프로그램을 시작하지 않습니다.\n\n위치: %s\n\n"
+                    "scripts/migrate_names.py --work-root <작업 루트> --undo 를 다시 돌려 끝낸 뒤 실행하세요." % root)
     names = ", ".join(old for old, _now in plan.tops) or workroot.KEEP_DIR
     stays = "이전 버전에서 만든 자료는 옛 폴더(%s)에 그대로 있습니다.\n위치: %s" % (names, root)
     if not interactive:
         _write(err, "이전 버전(0.1)의 작업 폴더를 아직 옮기지 않아 종료합니다. %s\n프로그램을 창으로 켜서 안내를 따르거나 "
                "scripts/migrate_names.py --work-root로 옮긴 뒤 다시 실행하세요.\n" % stays)
         return EXIT_OLD_LAYOUT
-    notify = notify or notify_running
     if plan.state == "conflict":
         _log.warning("옛 작업 폴더를 옮기지 않음: %s", " ".join(plan.conflicts))
         notify(MOVE_TITLE, "이전 버전(0.1)의 작업 폴더를 옮길 수 없어 프로그램을 시작하지 않습니다.\n\n%s\n\n%s\n\n"
-               "새 이름 폴더를 다른 곳으로 옮긴 뒤 다시 시작하면 옮길지 묻습니다." % ("\n".join(plan.conflicts), stays))
+               "위 까닭을 정리한 뒤 다시 시작하면 옮길지 묻습니다." % ("\n".join(plan.conflicts), stays))
         return EXIT_OLD_LAYOUT
+    if not locked:
+        return stop("작업 폴더의 잠금을 잡지 못해 이전 버전(0.1)의 폴더를 옮기지 않았습니다. 프로그램을 시작하지 않습니다.\n\n%s\n\n"
+                    "다른 HAZOP 창이 열려 있는지, 폴더에 쓸 수 있는지 확인한 뒤 다시 실행하세요." % stays)
     if not (ask or ask_move_dialog)(plan):
         _log.warning("사용자가 옛 작업 폴더를 옮기지 않기로 함: %s", root)
         notify(MOVE_TITLE, "옮기지 않았습니다. 옛 폴더를 옮겨야 이 버전을 쓸 수 있어 프로그램을 시작하지 않습니다.\n\n%s\n\n"
@@ -200,6 +221,10 @@ def offer_work_root_move(interactive, ask=None, notify=None, run=None, err=None)
         notify(MOVE_TITLE, "작업 폴더를 옮기지 못해 프로그램을 시작하지 않습니다.\n\n원인: %s\n\n%s\n\n"
                "옛 폴더의 파일은 지워지지 않았습니다. 다음에 시작할 때 남은 일을 이어서 합니다." % (e, stays))
         return EXIT_OLD_LAYOUT
+    try:  # 옮겼다고 알리기 전에 정말 열 수 있는 배치가 됐는지 본다
+        paths.require_current_layout(root)
+    except paths.OldLayoutError as e:
+        return stop("작업 폴더를 옮기지 못해 프로그램을 시작하지 않습니다.\n\n%s" % e)
     _log.warning("옛 작업 폴더를 0.2.0 배치로 옮김: %s", root)
     notify(MOVE_TITLE, "작업 폴더를 새 이름으로 옮겼습니다.\n\n옛 폴더는 지우지 않고 '%s' 폴더에 두었습니다.\n위치: %s\n\n"
            "자료가 모두 보이는지 확인한 뒤에 지우면 됩니다." % (workroot.KEEP_DIR, os.path.join(root, workroot.KEEP_DIR)))

@@ -360,17 +360,17 @@ def _app_lock(root):
 
 def migrate_work_root(root, from_root=None, apply=False, undo=False, out=print):
     """작업 루트 옮기기 명령. 종료 코드를 돌려준다: 0 = 됨(또는 할 일 없음), 2 = 멈춤.
-    옮기거나 되돌리는 동안에는 앱이 켜지지 않게 작업 루트의 잠금을 쥔다. 폴더 이름을 바꾸는 순간에는 놓는다
-    (잠금 파일이 열려 있으면 Windows가 폴더 이름을 바꾸지 못한다)."""
+    옮기거나 되돌리는 동안에는 앱이 켜지지 않게 작업 루트의 잠금을 쥔다. 잠금을 못 잡으면 하지 않는다. 작업 루트 폴더의
+    이름을 바꾸는 순간에만 놓는다(잠금 파일이 열려 있으면 Windows가 폴더 이름을 바꾸지 못한다). 그 순간 뒤에 남는 일은
+    이름 바꾸기와 기록 정리뿐이다."""
     from hazop import workroot
     lock = None
     try:
         if undo:
             lock = _app_lock(root)
-            renamed = (workroot.read_manifest(root) or {}).get("root_renamed_from")
-            if lock is not None and renamed:
-                lock.unlock()
-            done = workroot.undo(root)
+            if lock is None:
+                raise MigrateError("작업 루트가 없다: %s" % root)
+            done = workroot.undo(root, before_rename=lock.unlock)  # 폴더 이름을 되돌리기 바로 앞까지 잠금을 쥔다
             out("되돌림: 옛 폴더 %d개를 제자리로 (%s)" % (len(done["restored"]), ", ".join(done["restored"]) or "없음"))
             for rel in done["left"]:
                 out("남김(옮긴 뒤 생겼거나 바뀐 파일): %s" % rel)

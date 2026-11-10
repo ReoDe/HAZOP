@@ -34,7 +34,6 @@ def to_old_layout(root):
         src = os.path.join(os.path.dirname(dst), now.split("/")[-1])
         if os.path.isdir(src) and src != dst:
             os.rename(src, dst)
-    paths._current_layout.discard(os.path.normcase(root))
 
 
 def new_layout_files(root):
@@ -51,7 +50,6 @@ class OfferTest(unittest.TestCase):
         env = mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: self.root})
         env.start()
         self.addCleanup(env.stop)
-        self.addCleanup(paths._current_layout.discard, os.path.normcase(self.root))
         self.told = []
 
     def offer(self, answer=None, interactive=True, **kw):
@@ -146,7 +144,6 @@ class RunAppOldLayoutTest(unittest.TestCase):
         env = mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: self.root, "QT_QPA_PLATFORM": "offscreen"})
         env.start()
         self.addCleanup(env.stop)
-        self.addCleanup(paths._current_layout.discard, os.path.normcase(self.root))
         self.settings = os.path.join(self.tmp, "settings.json")
 
     def test_declined_exits_before_the_window_and_writes_nothing(self):
@@ -219,7 +216,6 @@ class MovedRootIsReadByTheAppTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.patch.stop()
-        paths._current_layout.discard(os.path.normcase(cls.root))
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     @classmethod
@@ -286,7 +282,6 @@ class MovedRootIsReadByTheAppTest(unittest.TestCase):
         self.assertEqual([], counts.compare(self.counts_before, after))
         self.assertEqual([], after["errors"])
         workroot.undo(self.root)
-        paths._current_layout.discard(os.path.normcase(self.root))
         self.assertEqual(self.old_tree, tree(self.root))
 
 

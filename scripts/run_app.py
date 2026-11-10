@@ -60,7 +60,7 @@ def main(argv=None):
         rc = check_settings(args.settings, interactive=True)
         if rc is not None:
             return rc
-        rc = offer_work_root_move(interactive=True)
+        rc = offer_work_root_move(interactive=True, locked=lock is not None)
         if rc is not None:
             if lock is not None:
                 lock.unlock()

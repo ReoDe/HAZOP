@@ -181,7 +181,15 @@ class OldLayoutError(RuntimeError):
     """작업 루트가 0.1.x 배치(한글 이름 폴더)인데 아직 옮기지 않았다."""
 
 
-_current_layout = set()  # 0.1.x 폴더가 없다고 확인한 작업 루트(한 번 확인하면 다시 보지 않는다)
+def _one_line_for_old_layout(kind, value, trace, _next=sys.excepthook):
+    """스크립트가 옛 배치 작업 루트에서 멈출 때 추적 출력 대신 안내 한 줄을 낸다(종료 코드는 1 그대로)."""
+    if isinstance(value, OldLayoutError) and sys.stderr is not None:
+        sys.stderr.write("멈춤: %s\n" % value)
+    else:
+        _next(kind, value, trace)
+
+
+sys.excepthook = _one_line_for_old_layout
 
 
 def old_layout_folders(root):
@@ -192,19 +200,17 @@ def old_layout_folders(root):
 
 def require_current_layout(root):
     """root가 0.1.x 배치면 OldLayoutError. 옛 폴더가 남은 채로 새 이름 폴더에 쓰기 시작하면, 뒤에 옛 폴더를 옮길 때
-    새 파일과 부딪혀 사람이 한 수정·확정을 잃을 수 있다. 그래서 옮기기 전에는 읽지도 쓰지도 않는다(HZ-GOV-02 §6.6)."""
-    key = os.path.normcase(root)
-    if key in _current_layout:
-        return
+    새 파일과 부딪혀 사람이 한 수정·확정을 잃을 수 있다. 그래서 옮기기 전에는 읽지도 쓰지도 않는다(HZ-GOV-02 §6.6).
+    부를 때마다 디스크를 본다. 한 번 본 결과를 기억해 두면, 옮긴 것을 되돌린 뒤나 옛 폴더가 나중에 생긴 뒤에도 통과시킨다.
+    개발 작업 루트는 옛 개발 작업 루트(작업/)가 남아 있는 동안에도 막는다. 새 폴더(work/)가 이미 있어도 그렇다."""
     old = old_layout_folders(root)
     if old:
         raise OldLayoutError("작업 루트에 이전 버전(0.1)의 폴더가 남아 있습니다: %s 의 %s. 먼저 새 이름으로 옮기세요: "
                              "프로그램을 켜서 안내를 따르거나 python scripts/migrate_names.py --work-root \"%s\" --apply"
                              % (root, ", ".join(old), root))
-    if key == os.path.normcase(DEV_WORK_ROOT) and not os.path.isdir(root) and os.path.isdir(OLD_DEV_WORK_ROOT):
+    if os.path.normcase(root) == os.path.normcase(DEV_WORK_ROOT) and os.path.isdir(OLD_DEV_WORK_ROOT):
         raise OldLayoutError("옛 개발 작업 루트가 남아 있습니다: %s. 먼저 옮기세요: python scripts/migrate_names.py "
                              "--work-root \"%s\" --from-root \"%s\" --apply" % (OLD_DEV_WORK_ROOT, root, OLD_DEV_WORK_ROOT))
-    _current_layout.add(key)
 
 
 def raw_work_root():
@@ -235,8 +241,14 @@ def work_path(*parts):
 
 
 def store_root():
-    """등록 저장 루트: HAZOP_STORE_ROOT 우선, 없으면 <작업 루트>/store."""
-    return os.environ.get(ENV_STORE_ROOT) or folder("store")
+    """등록 저장 루트: HAZOP_STORE_ROOT 우선, 없으면 <작업 루트>/store. HAZOP_STORE_ROOT가 작업 루트 안을 가리키면
+    작업 루트와 같은 배치 검사를 거친다(옛 배치가 남은 작업 루트 안에 쓰지 않는다)."""
+    env = os.environ.get(ENV_STORE_ROOT)
+    if not env:
+        return folder("store")
+    if _inside(env, raw_work_root()):
+        require_current_layout(raw_work_root())
+    return env
 
 
 def output_root(*parts):

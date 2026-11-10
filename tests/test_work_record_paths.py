@@ -263,13 +263,11 @@ class OldLayoutGuardTest(unittest.TestCase):
         env = mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: self.root})
         env.start()
         self.addCleanup(env.stop)
-        self.addCleanup(paths._current_layout.discard, os.path.normcase(self.root))
 
     def test_every_old_top_folder_blocks_the_work_root(self):
         self.assertEqual(self.root, paths.work_root())
         for name in ("데이터", "기호후보", "자료저장소", "출력"):
             with self.subTest(name=name):
-                paths._current_layout.discard(os.path.normcase(self.root))
                 os.makedirs(os.path.join(self.root, name))
                 for call in (paths.work_root, paths.store_root, lambda: paths.folder("regions"), lambda: paths.output_root("graph"),
                              lambda: paths.work_path("x")):
@@ -293,8 +291,10 @@ class OldLayoutGuardTest(unittest.TestCase):
             with self.subTest(script=args[0]):
                 done = subprocess.run([sys.executable] + args, cwd=REPO_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                       env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+                said = done.stdout.decode("utf-8", "replace")
                 self.assertNotEqual(0, done.returncode)
-                self.assertIn("OldLayoutError", done.stdout.decode("utf-8", "replace"))
+                self.assertIn("이전 버전(0.1)의 폴더가 남아 있습니다", said)
+                self.assertNotIn("Traceback", said, "안내 한 줄 대신 추적 출력이 나옴")
                 self.assertEqual(before, sorted(os.listdir(self.root)))
 
     def test_old_dev_work_root_blocks_the_new_one_until_it_is_moved(self):
@@ -307,7 +307,6 @@ class OldLayoutGuardTest(unittest.TestCase):
                 paths.work_root()
             os.rename(old_root, new_root)
             self.assertEqual(new_root, paths.work_root())
-            paths._current_layout.discard(os.path.normcase(new_root))
 
 
 class OldNameTableTest(unittest.TestCase):

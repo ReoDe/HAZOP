@@ -85,6 +85,7 @@ def main(argv=None):
         work_root = os.path.abspath(args.work_root)
     else:
         work_root = paths.work_root()
+    paths.require_current_layout(work_root)  # --work-root로 받은 곳도 옛 배치면 쓰지 않는다
     locks, why = _migrate().hold_app_locks(REPO, [work_root])
     if locks is None:
         print("멈춤: %s" % why)
