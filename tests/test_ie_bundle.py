@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -29,13 +30,13 @@ EXPECTED = {
               "고장모드", "구간", "편차", "비완화 결과", "일반 범주 제안", "그룹 ID", "제외·보류 사유", "식별 기법",
               "출처 항목 ID", "안정 참조", "작성", "⑤ 상태"],
     "IE 그룹": ["그룹 ID", "그룹 이름", "정의", "일반 범주", "범주 출처", "대표 후보", "대표 선정 이유", "소속 후보", "후보 수",
-              "플랜트 응답", "영향받는 완화계통", "지원계통 IE", "표제 후보", "최종상태 후보", "작성", "상태", "PRA IE 이름",
+              "플랜트 응답", "영향받는 완화계통", "지원계통 IE", "표제 후보", "최종상태 후보", "작성", "상태", "PSA IE 이름",
               "성공기준", "빈도 근거"],
     "사건수목 표제 후보": ["표제 ID", "표제 이름(제안)", "출처 보호수단", "구현 대상", "관련 계통", "역할", "작동 방식",
-                    "운전원 조치 단서", "적용 그룹", "출처 항목 ID", "작성", "PRA 표제 이름"],
-    "최종상태 후보": ["ES ID", "비완화 결과(대표 문장)", "결과 범주 제안", "관련 그룹", "출처 항목 수", "작성", "PRA 최종상태"],
+                    "운전원 조치 단서", "적용 그룹", "출처 항목 ID", "작성", "PSA 표제 이름"],
+    "최종상태 후보": ["ES ID", "비완화 결과(대표 문장)", "결과 범주 제안", "관련 그룹", "출처 항목 수", "작성", "PSA 최종상태"],
     "기본사건 후보": ["BE ID", "앱 제안 이름", "기기 태그", "기기 종류", "계통", "고장모드 코드", "고장모드 설명", "정상 위치",
-                "고장 위치", "관련 표제·후보", "출처", "작성", "PRA 기본사건 이름"],
+                "고장 위치", "관련 표제·후보", "출처", "작성", "PSA 기본사건 이름"],
     "추적표": ["구간·편차", "출처 항목 ID", "원인", "후보 ID", "판정", "그룹 ID", "표제 ID", "ES ID", "근거 KG 경로",
             "출처 문서"],
     "완전성 대조": ["범주 코드", "범주 이름", "기준표 출처", "대응 그룹", "후보 수", "상태", "사유·처리"],
@@ -285,6 +286,53 @@ class IeBundleTest(unittest.TestCase):
         self.assertNotIn("c1", {x["대상"] for x in rows})
         self.assertEqual({w["kind"] for w in self.b["warnings"]}, set(res.QUALITY_KINDS))
 
+    def test_failed_json_swap_leaves_the_old_pair_untouched(self):
+        xlsx, js = ix.export(os.path.join(self.tmp, "ie.xlsx"), self.b)
+        before = {p: open(p, "rb").read() for p in (xlsx, js)}
+        later = build(self.r, self.ns, self.pg, LATER)
+        real = os.replace
+
+        def locked_json(src, dst):
+            if dst == js:
+                raise PermissionError(13, "다른 프로그램이 쓰는 중", dst)
+            return real(src, dst)
+        with mock.patch("os.replace", side_effect=locked_json), self.assertRaises(PermissionError):
+            ix.export(xlsx, later)
+        self.assertEqual({p: open(p, "rb").read() for p in (xlsx, js)}, before, "새 .xlsx와 옛 .json 짝이 남으면 안 됨")
+        self.assertEqual(sorted(os.listdir(self.tmp)), ["ie.json", "ie.xlsx"])
+
+    def test_failed_json_swap_on_a_new_name_leaves_nothing(self):
+        xlsx = os.path.join(self.tmp, "new.xlsx")
+        real = os.replace
+
+        def locked_json(src, dst):
+            if dst.endswith("new.json"):
+                raise PermissionError(13, "다른 프로그램이 쓰는 중", dst)
+            return real(src, dst)
+        with mock.patch("os.replace", side_effect=locked_json), self.assertRaises(PermissionError):
+            ix.export(xlsx, self.b)
+        self.assertEqual(os.listdir(self.tmp), [])
+
+    def test_keys_of_other_providers_are_masked_too(self):
+        r = copy.deepcopy(self.r)
+        keys = ["sk-proj-" + "a1B2" * 10, "AIza" + "Sy0_-" * 7, "ghp_" + "Z9" * 18]
+        entries_by_status(r)["c4"]["cause"] = "설정 메모 " + " ".join(keys)
+        text = ib.dumps(build(r, self.ns, self.pg))
+        self.assertEqual([k for k in keys if k in text], [])
+
+    def test_glossary_names_psa_terms_used_in_the_sheets(self):
+        terms = [g["term"] for g in self.b["glossary"]]
+        self.assertIn("지원계통 초기사건(SSIE)", terms)
+        self.assertIn("초기사건 그룹", terms)
+
+    def test_bundle_writes_psa_not_pra(self):
+        wb, _ = self.export()
+        cells = [str(c.value) for ws in wb.worksheets for row in ws.iter_rows() for c in row if c.value is not None]
+        meaning = next(g["meaning"] for g in self.b["glossary"] if g["term"] == "PSA")
+        self.assertIn("PRA와 같은 뜻", meaning)
+        self.assertEqual([s for s in cells if "PRA" in s and s != meaning], [], "용어 풀이 한 곳만 PRA를 적는다")
+        self.assertIn("PSA IE 이름", cells)
+
     def test_guide_sheet(self):
         wb, _ = self.export()
         guide = {x["항목"]: x["내용"] for x in self.rows(wb, "읽는 법")}
@@ -300,9 +348,34 @@ class IeBundleCliTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="hazop-ie-cli-")
         self.r, self.ns, self.pg = ie_sample()
+        env = mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": os.path.join(self.tmp, "work")})
+        env.start()
+        self.addCleanup(env.stop)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_without_ie_option_the_saved_ie_file_gives_the_ids(self):
+        from hazop.ie import store
+        saved = model.sync(model.empty(self.ns["project_id"], {"IEC": 40}), self.r, at=NOW)
+        store.save(saved, None)
+        before = open(store.store_path(self.ns["project_id"]), "rb").read()
+        code, out = self.run_cli(self.r)
+        self.assertEqual(code, 0)
+        with open(os.path.join(out, "IE-P-20261108-1200.json"), encoding="utf-8") as fh:
+            ids = [c["candidate_id"] for c in json.load(fh)["candidates"]]
+        self.assertEqual(ids, ["IEC-%03d" % i for i in range(41, 41 + len(ids))])
+        self.assertEqual(open(store.store_path(self.ns["project_id"]), "rb").read(), before, "⑥ 파일은 읽기만 함")
+
+    def test_unreadable_saved_ie_file_stops_the_export(self):
+        from hazop.ie import store
+        path = store.store_path(self.ns["project_id"])
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("{깨진")
+        code, out = self.run_cli(self.r)
+        self.assertEqual(code, 1)
+        self.assertFalse(os.path.exists(out))
 
     def write(self, name, doc):
         path = os.path.join(self.tmp, name)

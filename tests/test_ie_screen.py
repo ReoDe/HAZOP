@@ -216,6 +216,21 @@ class InitiatingScreenTest(unittest.TestCase):
         row = next(r for r in self.scr.view["completeness"] if r["code"] == "LOCHS")
         self.assertTrue(row["note"].startswith("범위 밖: 복수기 도면 미등록"))
 
+    def test_coverage_asks_for_the_reviewer_name_when_it_is_not_set(self):
+        self.scr.load("SNP-M-102")
+        self.app.reviewer = ""
+        self.app.set_reviewer_name = lambda name: setattr(self.app, "reviewer", name)
+        with mock.patch("hazop.app.screens.initiating.QInputDialog.getText", return_value=("", False)) as ask:
+            self.assertFalse(self.scr.set_coverage("out_of_scope", "복수기 도면 미등록", code="LOCHS"))
+        ask.assert_called_once()
+        self.assertNotIn("LOCHS", self.stored()["coverage"])
+        with mock.patch("hazop.app.screens.initiating.QInputDialog.getText", return_value=(" 박검토 ", True)):
+            self.assertTrue(self.scr.set_coverage("out_of_scope", "복수기 도면 미등록", code="LOCHS"))
+        self.assertEqual((self.stored()["coverage"]["LOCHS"]["by"], self.app.reviewer), ("박검토", "박검토"))
+        with mock.patch("hazop.app.screens.initiating.QInputDialog.getText") as ask:
+            self.assertTrue(self.scr.set_coverage(None, "", code="LOCHS"), "지울 때는 이름을 묻지 않음")
+        ask.assert_not_called()
+
     def test_export_writes_ten_sheets_and_results_menu_routes_here(self):
         from hazop.app.screens.results import ResultsScreen
         self.scr.load("SNP-M-102")

@@ -47,6 +47,11 @@ GLOSSARY = (
     ("사건수목 표제", "사건수목 위쪽의 완화 기능·계통", "NRC 용어집, NUREG-2122 Top Event"),
     ("최종상태", "사건 진행 끝의 발전소 상태", "NUREG-2122"),
     ("기본사건", "더 나누지 않는 PSA 모델 요소", "NUREG-2122"),
+    ("초기사건 그룹", "플랜트 응답과 필요한 완화 기능이 같아 PSA에서 한 초기사건으로 다루는 후보의 묶음. 이 묶음의 그룹은 "
+                 "PSA 담당이 고쳐 쓸 제안", "이 앱 정의 [추론]"),
+    ("지원계통 초기사건(SSIE)", "정상운전을 교란하면서 완화계통도 약화하는 지원계통 고장. 'IE 그룹' 시트의 '지원계통 IE' 열",
+     "NUREG-2122, EPRI 1016741"),
+    ("PSA", "확률론적 안전성 평가. 미국 문헌의 PRA와 같은 뜻으로 쓴다", "[일반지식]"),
     ("작동 방식", "자동 / 운전원 / 자체작동 / 미확인", "이 앱 정의(PSAM14 383 권고 반영)"),
 )
 
@@ -149,17 +154,10 @@ def _completeness(candidates, categories, source_label, groups, coverage):
     return rows
 
 
-def _in_scope(keys, approved):
-    """⑤ 출처가 있는 기록은 출처 중 승인 항목이 하나라도 있어야 묶음에 든다. 출처 없이 사람이 쓴 기록은 든다."""
-    return not keys or any(k in approved for k in keys)
-
-
-def _scope(doc, approved):
-    """{표: 묶음에 드는 live 기록 ID 집합}."""
-    keys = {"headings": lambda r: [s["key"] for s in r["sources"]], "end_states": lambda r: r["source_keys"],
-            "basic_events": lambda r: [s["key"] for s in r["sources"]]}
-    return {t: {rid for rid, r in doc[t].items() if r["status"] == "live" and _in_scope(f(r), approved)}
-            for t, f in keys.items()}
+def _scope(doc, facts):
+    """{표: 묶음에 드는 live 기록 ID 집합}. 드는 기준은 model.in_scope(그룹 확정 여부와 같은 기준)."""
+    return {t: {rid for rid, r in doc[t].items() if r["status"] == "live" and model.in_scope(t, r, facts)}
+            for t in ("headings", "end_states", "basic_events")}
 
 
 def _groups(doc, results, facts, source_label, scope):
@@ -354,7 +352,7 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None):
     unsynced = sorted(approved - set(iecs))
     if unsynced:
         raise ValueError("⑥ 초기사건 문서를 먼저 ⑤ 결과와 맞추세요(IEC 없는 승인 항목 %d건)" % len(unsynced))
-    scope = _scope(ie_doc, approved)
+    scope = _scope(ie_doc, facts)
     groups = _groups(ie_doc, results, facts, source_label, scope)
     by_gid = {g["group_id"]: g for g in groups}
     candidates, trace = [], []

@@ -896,18 +896,26 @@ class InitiatingScreen(QWidget):
             fields = dlg.fields()
         return bool(self._apply(lambda d: model.edit(d, ("group", g["group_id"]), fields)))
 
+    def _reviewer(self, why):
+        """설정의 검토자 이름. 없으면 물어서 설정에 저장한다. 취소하거나 비우면 ""."""
+        name = (self.app.reviewer_name() or "").strip()
+        if name:
+            return name
+        name, ok = QInputDialog.getText(self, "검토자 이름", "%s 검토자 이름이 필요합니다(설정에 저장)." % why)
+        if not ok or not name.strip():
+            return ""
+        self.app.set_reviewer_name(name.strip())
+        return name.strip()
+
     def confirm_group(self, reviewer=None):
         g = self.current_group()
         if g is None:
             return False
         if self._reload_if_results_changed("바뀐 내용을 확인한 뒤 다시 확정하세요."):
             return False
-        reviewer = reviewer if reviewer is not None else self.app.reviewer_name()
+        reviewer = reviewer or self._reviewer("확정하려면")
         if not reviewer:
-            reviewer, ok = QInputDialog.getText(self, "검토자 이름", "확정하려면 검토자 이름이 필요합니다(설정에 저장).")
-            if not ok or not reviewer.strip():
-                return False
-            self.app.set_reviewer_name(reviewer.strip())
+            return False
         done = self._apply(lambda d: model.confirm(d, g["group_id"], self.results, reviewer))
         if done:
             self.app.toast("%s 그룹을 확정했습니다 · 검토자 %s" % (g["group_id"], reviewer.strip()))
@@ -1002,8 +1010,12 @@ class InitiatingScreen(QWidget):
                 self.app.status_message("처리(범위 밖 · 다른 기법 · 해당 없음)를 고르세요.")
                 return False
         reason = self.coverage_reason.text() if reason is None else reason
-        return bool(self._apply(lambda d: model.set_coverage(d, r["code"], disposition, reason,
-                                                             self.app.reviewer_name() or "")))
+        reviewer = ""
+        if disposition is not None and (reason or "").strip():  # 사유가 비면 이름을 묻기 전에 모델이 이유를 알려 준다
+            reviewer = self._reviewer("공백 판정을 저장하려면")
+            if not reviewer:
+                return False
+        return bool(self._apply(lambda d: model.set_coverage(d, r["code"], disposition, reason, reviewer)))
 
     # ------------------------------------------------------------ 내보내기
     def export_bundle(self, path=None):

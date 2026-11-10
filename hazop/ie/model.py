@@ -15,6 +15,7 @@ import copy
 import hashlib
 import re
 
+from hazop import store_io
 from hazop.kg.build import dump_bytes
 from hazop.study import refs
 from hazop.study import results as res
@@ -165,6 +166,17 @@ def live_groups(doc):
     return sorted(g for g, v in doc["groups"].items() if v["status"] not in RETIRED)
 
 
+def source_keys(table, rec):
+    """표제·최종상태·기본사건 기록이 나온 ⑤ 항목 키. 사람이 출처 없이 쓴 기록은 빈 목록."""
+    return list(rec["source_keys"]) if table == "end_states" else [s["key"] for s in rec["sources"]]
+
+
+def in_scope(table, rec, facts):
+    """⑤ 출처가 있는 기록은 출처 가운데 승인 항목이 하나라도 있어야 묶음에 든다. 출처 없이 사람이 쓴 기록은 든다."""
+    keys = source_keys(table, rec)
+    return not keys or any((facts.get(k) or {}).get("approved") for k in keys)
+
+
 def _member_problems(doc, iec, facts):
     c = doc["candidates"][iec]
     f = facts.get(c["key"])
@@ -203,6 +215,8 @@ def confirm_problems(doc, gid, results, facts=None):
                 out.append("%s: 지운 %s" % (rid, what))
             elif r["origin"] != "human":
                 out.append("%s: AI 초안 %s(받아들이기 전)" % (rid, what))
+            elif not in_scope(table, r, facts):
+                out.append("%s: ⑤ 출처 항목의 승인이 모두 풀려 묶음에서 빠지는 %s" % (rid, what))
     return out
 
 
@@ -242,7 +256,7 @@ def _change(doc, op, ids, touched, at, fn, **detail):
         if rec is not None and rec["status"] == "confirmed":
             rec["status"], rec["confirmation"] = "draft", None
             demoted.append(g)
-    row = dict({"at": at or now_utc(), "op": op, "ids": list(ids)}, **detail)
+    row = store_io.history_row(op, dict({"ids": list(ids)}, **detail), at)
     if demoted:
         row["demoted"] = demoted
     out["history"].append(row)
@@ -353,7 +367,7 @@ def rule_key(fact):
 
 
 def _be_name(node, tag, mode):
-    """E6 꼴 '<계통>-<기기 종류>-<고장모드>-<태그>' 제안. 계통은 태그 앞부분으로 짐작한다(PRA 이름은 따로 둠)."""
+    """E6 꼴 '<계통>-<기기 종류>-<고장모드>-<태그>' 제안. 계통은 태그 앞부분으로 짐작한다(PSA 기본사건 이름은 따로 둠)."""
     system, _, rest = (tag or "").partition("-")
     kind = (node or {}).get("kind") or ""
     parts = (system, kind, mode or "미정", rest) if rest else (kind, mode or "미정", tag)
@@ -470,6 +484,7 @@ def create_group(doc, name, iecs=(), at=None):
         gid = _next_id(o, "IEG")
         o["groups"][gid] = _group_record(name.strip(), "human")
         for i in iecs:
+            _leave(o, i)
             o["candidates"][i].update(group_id=gid, placed_by="human")
         if iecs:
             o["groups"][gid]["representative"] = sorted(iecs)[0]
@@ -479,16 +494,24 @@ def create_group(doc, name, iecs=(), at=None):
     return out, gid
 
 
+def _leave(o, iec):
+    """후보가 지금 그룹을 떠나기 직전에 부른다. 그 그룹의 대표 후보였으면 대표를 비운다(남겨 두면 옛 그룹 확정이 막힘)."""
+    old = o["groups"].get(o["candidates"][iec]["group_id"])
+    if old is not None and old["representative"] == iec:
+        old["representative"] = None
+
+
 def place(doc, iec, gid, at=None):
-    """후보를 그룹 gid로 옮기거나(gid None이면) 그룹에서 뺀다. 사람이 정한 소속이 된다. 옛 그룹·새 그룹을 모두 건드린다."""
+    """후보를 그룹 gid로 옮기거나(gid None이면) 그룹에서 뺀다. 사람이 정한 소속이 된다. 옛 그룹·새 그룹을 모두 건드린다.
+    옛 그룹의 대표 후보였으면 옛 그룹의 대표를 비운다."""
     c = _record(doc, ("member", iec))
     if gid is not None:
         _live_group(doc, gid)
 
     def apply(o):
+        if gid != c["group_id"]:
+            _leave(o, iec)
         o["candidates"][iec].update(group_id=gid, placed_by="human" if gid else None)
-        if gid is None and o["groups"].get(c["group_id"], {}).get("representative") == iec:
-            o["groups"][c["group_id"]]["representative"] = None
     return _change(doc, "place", [iec], [c["group_id"], gid], at, apply, to=gid)[0]
 
 

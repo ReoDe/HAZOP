@@ -3,7 +3,7 @@
 build_workbook(bundle) → openpyxl Workbook. 내용은 모두 hazop.ie.bundle.build_bundle의 dict에서 옮긴다.
 - 시트 0~9: 읽는 법 / IE 후보 / IE 그룹 / 사건수목 표제 후보 / 최종상태 후보 / 기본사건 후보 / 추적표 / 완전성 대조 /
   품질 경고 / 용어·출처. 머리글·순서·열 너비는 §3.4 예시 Excel과 같다.
-- 작성이 'AI 초안'인 행은 회색 바탕으로 칠한다. PSA 담당이 채울 열('PRA …' 머리글)은 머리글을 노란색으로 두고 비워 둔다.
+- 작성이 'AI 초안'인 행은 회색 바탕으로 칠한다. PSA 담당이 채울 열('PSA …' 머리글)은 머리글을 노란색으로 두고 비워 둔다.
 - 셀 쓰기는 ⑤ Excel(hazop.export.study_xlsx.put)과 같다: 문자열 셀, 수식 모양 글자 실행 막기, 경로·키 가리기.
 export(xlsx_path, bundle)는 .xlsx와 같은 이름의 .json을 같은 폴더에 쓴다. 둘 다 임시 파일에 쓴 뒤 교체한다.
 """
@@ -11,6 +11,7 @@ export(xlsx_path, bundle)는 .xlsx와 같은 이름의 .json을 같은 폴더에
 import datetime
 import os
 import re
+import shutil
 import tempfile
 
 from hazop.export import study_xlsx as sx
@@ -26,7 +27,7 @@ COVERAGE = {"covered": "대응 있음", "gap": "공백", "not_applicable": "해�
 BASIS_UNKNOWN_PREFIX = ib.BASIS_UNKNOWN_PREFIX
 NOT_JUDGED = "초기사건 판정 전"
 AI_FILL = "EEF0F2"
-PRA_FILL = "FDF0D2"
+PSA_FILL = "FDF0D2"
 
 # 읽는 법 시트에 적는 경고별 한 줄 안내(ib.WARNING_KINDS 순서)
 WARNING_GUIDE = (
@@ -46,17 +47,17 @@ CANDIDATE_COLUMNS = (("후보 ID", 9), ("판정", 7), ("정상운전 교란", 8)
 GROUP_COLUMNS = (("그룹 ID", 8), ("그룹 이름", 18), ("정의", 34), ("일반 범주", 9), ("범주 출처", 14), ("대표 후보", 9),
                  ("대표 선정 이유", 20), ("소속 후보", 22), ("후보 수", 6), ("플랜트 응답", 26), ("영향받는 완화계통", 24),
                  ("지원계통 IE", 7), ("표제 후보", 18), ("최종상태 후보", 12), ("작성", 8), ("상태", 7),
-                 ("PRA IE 이름", 12), ("성공기준", 16), ("빈도 근거", 16))
+                 ("PSA IE 이름", 12), ("성공기준", 16), ("빈도 근거", 16))
 HEADING_COLUMNS = (("표제 ID", 7), ("표제 이름(제안)", 16), ("출처 보호수단", 30), ("구현 대상", 16), ("관련 계통", 12),
                    ("역할", 7), ("작동 방식", 8), ("운전원 조치 단서", 22), ("적용 그룹", 12), ("출처 항목 ID", 18),
-                   ("작성", 8), ("PRA 표제 이름", 12))
+                   ("작성", 8), ("PSA 표제 이름", 12))
 END_STATE_COLUMNS = (("ES ID", 7), ("비완화 결과(대표 문장)", 40), ("결과 범주 제안", 14), ("관련 그룹", 12),
-                     ("출처 항목 수", 8), ("작성", 8), ("PRA 최종상태", 12))
+                     ("출처 항목 수", 8), ("작성", 8), ("PSA 최종상태", 12))
 BASIC_EVENT_COLUMNS = (("BE ID", 8), ("앱 제안 이름", 22), ("기기 태그", 12), ("기기 종류", 14), ("계통", 9),
                        ("고장모드 코드", 8), ("고장모드 설명", 16), ("정상 위치", 8), ("고장 위치", 8),
-                       ("관련 표제·후보", 16), ("출처", 16), ("작성", 8), ("PRA 기본사건 이름", 16))
+                       ("관련 표제·후보", 16), ("출처", 16), ("작성", 8), ("PSA 기본사건 이름", 16))
 # PSA 담당 기입 칸(머리글 노란색, 값은 비움). 시트별 마지막 열들
-PRA_COLUMNS = {"IE 그룹": 3, "사건수목 표제 후보": 1, "최종상태 후보": 1, "기본사건 후보": 1}
+PSA_COLUMNS = {"IE 그룹": 3, "사건수목 표제 후보": 1, "최종상태 후보": 1, "기본사건 후보": 1}
 TRACE_COLUMNS = (("구간·편차", 14), ("출처 항목 ID", 14), ("원인", 30), ("후보 ID", 9), ("판정", 7), ("그룹 ID", 8),
                  ("표제 ID", 18), ("ES ID", 12), ("근거 KG 경로", 34), ("출처 문서", 24))
 COMPLETENESS_COLUMNS = (("범주 코드", 9), ("범주 이름", 28), ("기준표 출처", 16), ("대응 그룹", 10), ("후보 수", 6),
@@ -142,7 +143,7 @@ def guide_rows(b):
                    "여기에 듭니다"),
         ("그룹 상태", "'확정'은 검토자가 ⑥ 화면에서 확정한 뒤 소속 후보·표제·최종상태가 바뀌지 않은 그룹입니다. ⑤에서 소속 "
                     "항목을 고치거나 승인을 풀면 다시 '초안'이 됩니다"),
-        ("PSA 기입 칸", "머리글이 노란 열('PRA …' 열)은 PSA 담당이 채우는 칸이며 비워 두었습니다"),
+        ("PSA 기입 칸", "머리글이 노란 열('PSA …' 열)은 PSA 담당이 채우는 칸이며 비워 두었습니다"),
         ("ID 규칙", "IEC-nnn 후보 · IEG-nn 그룹 · H-nn 사건수목 표제 후보 · ES-nn 최종상태 후보 · BE-nnn 기본사건 후보. "
                   "대응표를 ⑥ 저장 파일에 두므로 묶음을 다시 만들어도 같은 원인은 같은 ID를 유지합니다. 나눈 그룹은 새 ID를 받고 "
                   "옛 ID는 '나뉨' 기록으로 남습니다(지운 ID도 다시 쓰지 않음)"),
@@ -161,8 +162,8 @@ def _sheet(wb, title, columns, rows, first=False, ai_col=None):
     ws = wb.active if first else wb.create_sheet()
     ws.title = title
     sx.header(ws, columns)
-    for c in range(len(columns) - PRA_COLUMNS.get(title, 0) + 1, len(columns) + 1):
-        ws.cell(row=1, column=c).fill = PatternFill("solid", fgColor=PRA_FILL)
+    for c in range(len(columns) - PSA_COLUMNS.get(title, 0) + 1, len(columns) + 1):
+        ws.cell(row=1, column=c).fill = PatternFill("solid", fgColor=PSA_FILL)
     for r, row in enumerate(rows, 2):
         draft = ai_col is not None and row[ai_col] == ORIGINS["ai_draft"]
         for c, v in enumerate(row, 1):
@@ -199,21 +200,32 @@ def default_stem(project_id, now):
 
 def export(xlsx_path, b):
     """xlsx_path와 같은 이름의 .json을 함께 쓴다. 둘 다 같은 폴더 임시 파일에 먼저 쓰고 둘 다 써진 뒤에 교체하므로, 쓰는
-    도중 실패하면 어느 쪽도 바뀌지 않는다. 다만 .xlsx를 교체한 뒤 .json 교체가 실패하면(.json이 열려 있는 등) 새 .xlsx와
-    옛 .json이 남는다. 오류는 그대로 올린다. (xlsx 경로, json 경로)."""
+    도중 실패하면 어느 쪽도 바뀌지 않는다. .xlsx를 교체한 뒤 .json 교체가 실패하면(.json이 열려 있는 등) 옛 .xlsx를
+    되돌려 놓는다(옛 파일이 없었으면 새 .xlsx를 지운다). 그래서 새 .xlsx와 옛 .json이 짝으로 남지 않는다.
+    오류는 그대로 올린다. (xlsx 경로, json 경로)."""
     json_path = os.path.splitext(xlsx_path)[0] + ".json"
     folder = os.path.dirname(os.path.abspath(xlsx_path))
     tmps = []
     try:
-        for suffix in (".xlsx", ".json"):
+        for suffix in (".xlsx", ".json", ".old"):
             fd, tmp = tempfile.mkstemp(prefix=".hazop-ie-", suffix=suffix, dir=folder)
             os.close(fd)
             tmps.append(tmp)
         build_workbook(b).save(tmps[0])
         with open(tmps[1], "w", encoding="utf-8", newline="\n") as fh:
             fh.write(ib.dumps(b))
+        had_old = os.path.exists(xlsx_path)
+        if had_old:
+            shutil.copy2(xlsx_path, tmps[2])
         os.replace(tmps[0], xlsx_path)
-        os.replace(tmps[1], json_path)
+        try:
+            os.replace(tmps[1], json_path)
+        except OSError:
+            if had_old:
+                os.replace(tmps[2], xlsx_path)
+            else:
+                os.remove(xlsx_path)
+            raise
     finally:
         for tmp in tmps:
             if os.path.exists(tmp):
