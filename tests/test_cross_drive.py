@@ -81,10 +81,10 @@ BACKUPS = {"project_ctx.backup": backup_project_ctx, "ie.store.backup": backup_i
 class BackupRelTest(unittest.TestCase):
     def test_inside_root_keeps_relative_path(self):
         root = os.path.join("D:" + os.sep, "w")
-        self.assertEqual(paths.backup_rel(os.path.join(root, "데이터", "x.json"), root), os.path.join("데이터", "x.json"))
+        self.assertEqual(paths.backup_rel(os.path.join(root, "데이터", "x.json"), root), os.path.join("데이터", "x.json"))  # 경로문자열-허용: 시험용 가짜 작업 루트 이름
 
     def test_outside_root_never_climbs_or_names_a_drive(self):
-        root = os.path.join("D:" + os.sep, "a", "작업")
+        root = os.path.join("D:" + os.sep, "a", "작업")  # 경로문자열-허용: 시험용 가짜 작업 루트 이름
         for p in (os.path.join("C:" + os.sep, "Users", "u", "x.json"), os.path.join("D:" + os.sep, "a", "작업2", "x.json"),
                   os.path.join("D:" + os.sep, "x.json"), r"\\srv\share\d\x.json"):
             rel = paths.backup_rel(p, root)
@@ -122,7 +122,7 @@ class BackupStaysInBackupFolderTest(unittest.TestCase):
 
     @unittest.skipUnless(CROSS, "임시 폴더와 저장소가 같은 드라이브")
     def test_a_other_drive_real(self):
-        work = os.path.join(other_drive_dir(self), "작업")
+        work = os.path.join(other_drive_dir(self), "작업")  # 경로문자열-허용: 시험용 가짜 작업 루트 이름
         src = write(os.path.join(temp_dir(self), "다른드라이브", "x.json"), '{"원본": 1}')
         self.run_case(work, src)
 
@@ -130,17 +130,17 @@ class BackupStaysInBackupFolderTest(unittest.TestCase):
         base = temp_dir(self)
         src = write(os.path.join(base, "밖", "x.json"), '{"원본": 1}')
         with mock.patch.object(os.path, "relpath", side_effect=ValueError("path is on mount 'D:'")):
-            self.run_case(os.path.join(base, "w", "작업"), src)
+            self.run_case(os.path.join(base, "w", "작업"), src)  # 경로문자열-허용: 시험용 가짜 작업 루트 이름
 
     def test_b_same_drive_outside_root(self):
         base = temp_dir(self)
         src = write(os.path.join(base, "x.json"), '{"원본": 1}')
-        self.run_case(os.path.join(base, "a", "b", "c", "d", "작업"), src)
+        self.run_case(os.path.join(base, "a", "b", "c", "d", "작업"), src)  # 경로문자열-허용: 시험용 가짜 작업 루트 이름
 
     def test_c_sibling_folder_with_similar_name(self):
         base = temp_dir(self)
         src = write(os.path.join(base, "작업2", "x.json"), '{"원본": 1}')
-        self.run_case(os.path.join(base, "작업"), src)
+        self.run_case(os.path.join(base, "작업"), src)  # 경로문자열-허용: 시험용 가짜 작업 루트 이름
 
 
 @unittest.skipUnless(CROSS, "임시 폴더와 저장소가 같은 드라이브")
@@ -151,7 +151,7 @@ class GraphFromOtherDriveTest(unittest.TestCase):
         src = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")) if "SNP-M-102" in p]
         if not src:
             self.skipTest("샘플 도면 없음")
-        work = os.path.join(other_drive_dir(self), "작업")
+        work = os.path.join(other_drive_dir(self), "작업")  # 경로문자열-허용: 시험용 가짜 작업 루트 이름
         outside = temp_dir(self)
         with mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: work}):
             ex = data.script_module("extract_drawio")
