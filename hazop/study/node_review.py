@@ -312,11 +312,16 @@ def empty(project_id, graph_id):
 
 def load(project_id, graph_id):
     """제안 묶음. 없으면 빈 묶음. 형식이 틀리거나 다른 그래프 것이면 ValueError(덮어쓰지 않게)."""
+    return load_fp(project_id, graph_id)[0]
+
+
+def load_fp(project_id, graph_id):
+    """(load와 같은 묶음, save_fp의 expect로 쓸 지문). 파일이 없으면 (빈 묶음, None)."""
     path = store_path(project_id, graph_id)
-    if not os.path.isfile(path):
-        return empty(project_id, graph_id)
-    with open(path, encoding="utf-8-sig") as fh:
-        doc = json.load(fh)
+    data, fp = store_io.read_bytes(path)
+    if data is None:
+        return empty(project_id, graph_id), None
+    doc = json.loads(data.decode("utf-8-sig"))
     if not (isinstance(doc, dict) and doc.get("kind") == KIND and isinstance(doc.get("proposals"), list)
             and isinstance(doc.get("dropped"), list) and isinstance(doc.get("runs"), list)
             and all(isinstance(p, dict) and isinstance(p.get("id"), str) and p.get("verdict") in VERDICTS
@@ -324,13 +329,18 @@ def load(project_id, graph_id):
         raise ValueError("구간 AI 검토 파일 형식이 맞지 않음: %s" % path)
     if doc.get("graph_id") != graph_id:
         raise ValueError("구간 AI 검토 파일의 그래프가 다름(%s): %s" % (doc.get("graph_id"), path))
-    return doc
+    return doc, fp
 
 
 def save(doc):
+    """지문 확인 없이 쓰고 경로를 돌려준다(검사·시험이 묶음을 처음 만들 때). 읽어서 고친 묶음은 save_fp로 쓴다."""
+    return save_fp(doc, store_io.ANY)[0]
+
+
+def save_fp(doc, expect):
+    """(쓴 경로, 새 지문). expect(load_fp의 지문)와 지금 파일이 다르면 store_io.Conflict."""
     path = store_path(doc["project_id"], doc["graph_id"])
-    store_io.write_json(path, doc, sort_keys=False)
-    return path
+    return path, store_io.write_json(path, doc, expect, sort_keys=False)
 
 
 def merge_result(doc, batch_result):

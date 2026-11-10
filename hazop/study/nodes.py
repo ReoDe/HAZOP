@@ -183,7 +183,25 @@ def issued_node_ids(node_set):
             ids.update(x for x in d["node_ids"] if isinstance(x, str))
         if h.get("op") == "propose" and type(d.get("nodes")) is int:
             ids.add("S%d" % d["nodes"])
+    if node_set.get("issued_upto"):
+        ids.add("S%d" % node_set["issued_upto"])
     return ids
+
+
+def _top(node_set):
+    return int(store_io.next_id("S%d", issued_node_ids(node_set))[1:]) - 1
+
+
+def keep_issued(restored, current):
+    """실행 취소로 current를 버리고 restored로 되돌릴 때 쓴다. current가 낸 번호가 restored의 이력에 없으면
+    그 가장 큰 번호를 issued_upto에 적은 사본을 돌려준다(되돌린 분할의 번호를 다른 구성요소에 다시 주지 않게).
+    current가 restored에서 이어 고친 집합이 아니면(다시 제안은 S1부터 새로 매김) 적지 않는다.
+    적을 것이 없으면 restored 그대로."""
+    old = restored.get("history") or []
+    top = _top(current)
+    if (current.get("history") or [])[:len(old)] != old or top <= _top(restored):
+        return restored
+    return dict(restored, issued_upto=top)
 
 
 def _next_id(node_set):
@@ -480,7 +498,7 @@ def load_fp(graph):
     """(graph의 저장본, 그 파일의 지문). 없으면 (None, None). 지문은 읽은 바이트에서 구한다.
     확정본은 읽을 때 판 이전(hazop.study.migrate)을 적용한다. 그래프는 등록·수정·화면 열기 등 여러 길에서 다시 만들어지고
     모두 이 함수로 저장본을 읽으므로, 여기서 한 번 적용하면 어느 길로 판이 바뀌어도 확정 작업이 같은 규칙으로 이어진다.
-    판 이전이 파일을 다시 썼으면 지문은 다시 쓴 파일의 것이다."""
+    판 이전이 파일을 다시 썼으면 지문은 다시 쓴 파일의 것이다. 지문은 save_fp의 expect로 쓰는 값이다."""
     path = _readable_path(graph.get("project_id"), graph.get("graph_id"))
     data, fp = store_io.read_bytes(path)
     if data is None:
@@ -490,7 +508,9 @@ def load_fp(graph):
         raise ValueError("검토구간 파일이 아님: %s" % path)
     _check_shape(doc, path)
     from hazop.study import migrate
-    return migrate.on_load(doc, graph, path, fp)
+    doc, fp = migrate.on_load(doc, graph, path, fp)
+    # 옛 자리(no-project)에서 읽었으면 저장할 자리에는 아직 파일이 없다. 지문은 저장할 자리의 것으로 돌려준다
+    return doc, fp if path == store_path(graph.get("project_id"), graph.get("graph_id")) else None
 
 
 def _check_shape(doc, path):
@@ -506,6 +526,8 @@ def _check_shape(doc, path):
                          and isinstance(p.get("nodes"), list) and all(
                              isinstance(n, dict) and isinstance(n.get("node_id"), str) and ids_ok(n.get("members"))
                              for n in p["nodes"]))
+    upto = doc.get("issued_upto")
+    ok = ok and (upto is None or (type(upto) is int and upto > 0))
     prev = doc.get("previous")
     ok = ok and (prev is None or (isinstance(prev, list) and all(snap_ok(p) for p in prev)))
     opt = lambda v, t: v is None or (isinstance(v, t) and not isinstance(v, bool))  # noqa: E731

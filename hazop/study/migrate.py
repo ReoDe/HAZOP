@@ -18,6 +18,7 @@
 import copy
 import hashlib
 import json
+import logging
 import re
 
 from hazop import store_io
@@ -228,6 +229,13 @@ def notice(node_set):
 
 
 BACKUP_LABEL = "판이전"
+_log = logging.getLogger(__name__)
+
+
+def unwritten(node_set, graph):
+    """읽은 집합이 아직 판 이전·참조 채우기를 기다리면 True. on_load가 파일에 쓰지 못하고 저장본을 그대로 돌려준 경우다."""
+    out = with_refs(node_set, graph)
+    return migrate_set(out, graph)[0] is not node_set
 
 
 def on_load(node_set, graph, path, fp):
@@ -242,7 +250,8 @@ def on_load(node_set, graph, path, fp):
     try:
         store_io.backup_file(path, BACKUP_LABEL)
         fp = store_io.write_json(path, out, expect=fp, sort_keys=False)
-    except (OSError, store_io.Conflict):  # 백업·쓰기를 못 하면 이전하지 않는다. 화면은 지금처럼 재확인 안내와 함께 저장본을 연다
+    except (OSError, store_io.Conflict) as exc:  # 백업·쓰기를 못 하면 이전하지 않는다. 부른 쪽은 unwritten으로 알아보고 알린다
+        _log.warning("검토구간 판 이전을 저장하지 못함: %s (%s)", path, exc)
         return node_set, fp
     if p["state"] == "kept":
         rpath = res._readable_path(out.get("project_id"), out["graph_id"])
@@ -256,6 +265,6 @@ def on_load(node_set, graph, path, fp):
                 try:
                     store_io.backup_file(rpath, BACKUP_LABEL)
                     res.write(rpath, moved, expect=rfp)
-                except (OSError, store_io.Conflict):  # 결과 파일은 다음에 읽을 때 results.load가 메모리에서 다시 이전한다
-                    pass
+                except (OSError, store_io.Conflict) as exc:  # 결과 파일은 다음에 읽을 때 results.load가 메모리에서 다시 이전한다
+                    _log.warning("분석 결과 판 이전을 저장하지 못함: %s (%s)", rpath, exc)
     return out, fp

@@ -421,6 +421,96 @@ class StudyScreensTest(unittest.TestCase):
         self.assertEqual(len(self._backups(path)), 1, "백업이 쌓이지 않음")
         self.assertEqual(nodes_load(path)["nodes"][1]["name"], "한 번 더")
 
+    # ---------------------------------------------------------------- 교차검증 지적 2·3·5·6 (화면 경로)
+
+    def _outside_edit(self, path, **change):
+        """저장 파일을 화면 밖에서 고친 것처럼 바꾸고 그 바이트를 돌려준다."""
+        doc = dict(nodes_load(path), **change)
+        data = (json.dumps(doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+        with open(path, "wb") as fh:
+            fh.write(data)
+        return data
+
+    def test_undo_after_leaving_the_drawing_does_not_overwrite_an_outside_change(self):
+        from hazop.study import nodes
+        win = self.window()
+        scr = self.open_study(win)
+        scr.select_node("S1")
+        self.assertTrue(scr.rename_current("바꾼 이름"))
+        path = nodes.store_path(scr.node_set.get("project_id"), scr.node_set["graph_id"])
+        outside = self._outside_edit(path, drawing_number="밖에서 고침")
+        scr.node_set = None  # 토스트가 떠 있는 사이 다른 도면으로 옮긴 상태
+        self.assertTrue(win.toast_box.run_undo())
+        with open(path, "rb") as fh:
+            self.assertEqual(fh.read(), outside, "읽은 뒤 바뀐 파일은 실행 취소로 덮어쓰지 않음")
+
+    def test_undo_then_split_again_does_not_reuse_the_number(self):
+        from hazop.study import nodes
+        win = self.window()
+        scr = self.open_study(win)
+        members = scr.node_set["nodes"][0]["members"]
+        self.assertGreater(len(members), 2)
+        self.assertTrue(scr._apply(lambda s: nodes.split(s, "S1", members[:1]), done="나눴습니다"))
+        first = scr.node_set["history"][-1]["detail"]["new_node_id"]
+        self.assertTrue(win.toast_box.run_undo())
+        self.assertEqual(len(scr.node_set["nodes"]), len(nodes.propose(self.pg())["nodes"]), "되돌림")
+        self.assertTrue(scr._apply(lambda s: nodes.split(s, "S1", members[1:2]), done="나눴습니다"))
+        second = scr.node_set["history"][-1]["detail"]["new_node_id"]
+        self.assertNotEqual(second, first, "되돌린 분할의 번호를 다른 구성요소에 다시 주지 않음")
+        self.assertEqual(nodes.load(self.pg()), scr.node_set)
+
+    def test_review_proposals_changed_outside_are_not_overwritten(self):
+        from hazop.study import node_review as nr
+        win = self.window()
+        scr = self.open_study(win)
+        path = nr.save(dict(scr.review_doc, next_id=40))  # 화면이 읽은 뒤 다른 프로그램이 쓴 묶음
+        with open(path, "rb") as fh:
+            outside = fh.read()
+        self.assertFalse(scr._save_review(dict(scr.review_doc, next_id=2)))
+        with open(path, "rb") as fh:
+            self.assertEqual(fh.read(), outside)
+        self.assertIn("바뀌어", scr.msg.text())
+
+    def test_results_changed_outside_are_not_overwritten(self):
+        from hazop.study import nodes, results as res_mod
+        win = self.window()
+        scr = self.open_study(win)
+        self.assertTrue(scr.confirm("검토자A"))
+        win.go(RESULTS)
+        rs = win.screens[RESULTS]
+        rs._load()
+        self.assertEqual(rs.stack.currentIndex(), 1)
+        self.assertTrue(rs._apply_review(dict(rs.results, ai_log=[{"at": "2026-11-07T00:00:00Z"}])) is None)
+        path = res_mod.store_path(rs.node_set.get("project_id"), rs.node_set["graph_id"])
+        self.assertEqual(nodes_load(path)["ai_log"], [{"at": "2026-11-07T00:00:00Z"}], "보통 때는 저장됨")
+        doc = dict(nodes_load(path), ai_log=[{"by": "다른 프로그램"}])
+        with open(path, "wb") as fh:
+            fh.write(json.dumps(doc, ensure_ascii=False).encode("utf-8"))
+        with open(path, "rb") as fh:
+            outside = fh.read()
+        rs._apply_review(dict(rs.results, ai_log=[]))
+        with open(path, "rb") as fh:
+            self.assertEqual(fh.read(), outside, "읽은 뒤 바뀐 결과 파일은 덮어쓰지 않음")
+        rs._load()
+        self.assertEqual(rs.results["ai_log"], [{"by": "다른 프로그램"}], "다시 읽으면 바깥 내용을 봄")
+        nodes  # noqa: B018
+
+    def test_failed_version_migration_is_shown(self):
+        """확정본에 참조를 채워 다시 써야 하는데 쓰지 못하면, 저장본을 그대로 열고 이유를 알린다."""
+        from unittest import mock
+        from hazop import paths
+        from hazop.study import nodes
+        self.addCleanup(shutil.rmtree, paths.folder("backup"), True)
+        pg = self.pg()
+        ns = nodes.confirm(nodes.propose(pg), pg, "검토자A")
+        ns.pop("member_refs")
+        nodes.save(ns)
+        win = self.window()
+        with mock.patch("os.replace", side_effect=OSError(13, "잠김")):
+            scr = self.open_study(win)
+        self.assertEqual(scr.node_set["status"], "confirmed")
+        self.assertIn("저장하지 못", scr.warn.label.text())
+
     def test_bom_saved_file_loads_unchanged(self):
         from hazop.study import nodes
         path, good, _cases = self._unreadable_cases()

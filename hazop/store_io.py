@@ -12,6 +12,7 @@
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -22,6 +23,8 @@ from hazop import paths
 
 ANY = object()
 STALE_TEMP_SECONDS = 600
+BACKUP_TRIES = 1000
+_log = logging.getLogger(__name__)
 
 
 class Conflict(ValueError):
@@ -100,8 +103,10 @@ def write_bytes(path, data, expect=ANY):
     finally:
         try:
             os.remove(tmp)
-        except OSError:
+        except FileNotFoundError:
             pass
+        except OSError as exc:  # 다음에 같은 파일을 쓸 때 _sweep이 지운다
+            _log.warning("임시 파일을 지우지 못함: %s (%s)", tmp, exc)
     return fingerprint_of(data)
 
 
@@ -124,16 +129,28 @@ def backup(files, label, at=None):
     stamp = (at or now_utc()).replace(":", "").replace("-", "")
     root = paths.work_root()
     rels = [(p, paths.backup_rel(p, root)) for p in files]
-    name, n = "%s-%s" % (stamp, label), 1
-    while any(os.path.exists(paths.folder("backup", name, rel)) for _p, rel in rels):
-        n += 1
-        name = "%s-%s-%d" % (stamp, label, n)
-    folder = paths.folder("backup", name)
-    for p, rel in rels:
-        dst = os.path.join(folder, rel)
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        _copy_new(p, dst)
-    return folder
+    for n in range(1, BACKUP_TRIES + 1):
+        folder = paths.folder("backup", "%s-%s" % (stamp, label) if n == 1 else "%s-%s-%d" % (stamp, label, n))
+        if any(os.path.exists(os.path.join(folder, rel)) for _p, rel in rels):
+            continue
+        try:
+            for p, rel in rels:
+                dst = os.path.join(folder, rel)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                _copy_new(p, dst)
+        except FileExistsError:  # 확인한 뒤 다른 쓰기가 같은 이름을 먼저 썼다. 다음 폴더에 처음부터 다시 복사한다
+            continue
+        return folder
+    raise FileExistsError("백업 폴더 이름을 정하지 못함: %s-%s" % (stamp, label))
+
+
+def unused_name(pattern):
+    """pattern의 %s 자리에 '', '-2', '-3' …을 넣어 아직 없는 첫 경로. 보관본 이름이 같은 초에 겹쳐 앞 보관본을 덮지 않게 한다."""
+    for n in range(1, BACKUP_TRIES + 1):
+        path = pattern % ("" if n == 1 else "-%d" % n)
+        if not os.path.exists(path):
+            return path
+    raise FileExistsError("보관본 이름을 정하지 못함: %s" % pattern)
 
 
 def backup_file(path, label, at=None):

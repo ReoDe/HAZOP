@@ -174,6 +174,7 @@ def carry_saved(node_set, deviations):
     """확정본 node_set의 저장된 결과가 옛 확정본 것이면 옮겨 바로 저장한다(옛 파일은 보관본). (옮긴 결과 또는 None, 보고).
     ④ 확정 직후와 ⑤ 열기에서 같은 길로 부른다(어느 화면이 먼저든 모든 화면이 같은 결과를 읽게)."""
     import os
+    from hazop import store_io
     from hazop.study import nodes
     from hazop.study import results as res
     if node_set.get("status") != "confirmed" or not node_set.get("previous"):
@@ -190,8 +191,8 @@ def carry_saved(node_set, deviations):
     if carried is None:
         return None, report
     if os.path.isfile(path):
-        os.replace(path, "%s.%s.bak.json" % (path[:-5], nodes.now_utc().replace(":", "")))
-    res.save(carried, node_set.get("project_id"))
+        os.replace(path, store_io.unused_name("%s.%s%%s.bak.json" % (path[:-5], nodes.now_utc().replace(":", ""))))
+    res.save_fp(carried, node_set.get("project_id"), expect=None)  # 옛 파일은 방금 보관본으로 옮겼다
     return carried, report
 
 

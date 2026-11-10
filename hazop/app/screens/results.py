@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
                                QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
                                QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
+from hazop import store_io
 from hazop.app import conn_view, data, project_ctx, tokens
 from hazop.app.ai_runner import AiRunner, RunMachine
 from hazop.app.conn_widgets import NoticeBand, ResolveBand
@@ -701,6 +702,7 @@ class ResultsScreen(QWidget):
         self.tick.setInterval(1000)
         self.tick.timeout.connect(self._progress_text)
         self._old_saved = None  # 쓰지 않기로 한 저장본 경로(처음 저장할 때 옆에 보관본으로 옮김)
+        self._fps = {}          # {결과 파일 경로: 화면이 읽거나 쓴 내용의 지문}. 저장할 때 그 뒤 바뀐 파일을 덮어쓰지 않게 한다
         self._unsaved = False   # 마지막 저장이 실패해 화면에만 있는 변경이 있음
         lay = QVBoxLayout(self)
         lay.setContentsMargins(8, 6, 8, 6)  # U-20: 1366에서 편차 열 약 11개(가운데 폭 − 행 머리 210) ÷ 54
@@ -1064,6 +1066,7 @@ class ResultsScreen(QWidget):
         self.name, self.graph, self.node_set, self.results, self.cell = name or None, None, None, None, None
         self.ctx, self.view = None, {}
         self.kg, self.kg_reason, self._old_saved = None, None, None
+        self._fps = {}
         self.node_review = None
         self.expectations, self.ref_idx = None, {}
         self.fixed_view, self.last_run = False, None
@@ -1083,6 +1086,8 @@ class ResultsScreen(QWidget):
                 saved, _was_saved = self.ctx.load_set()
             except (OSError, ValueError) as exc:
                 self.empty.setText("검토구간 파일을 읽을 수 없음: %s" % exc)
+            if self.ctx.problem:
+                self.banner.set_messages("검토구간을 지금 그래프 판에 맞춰 저장하지 못함", [self.ctx.problem])
             if self.ctx.notice:
                 self.banner.set_messages("옛 도면별 검토구간을 옮김", [self.ctx.notice])
         confirmed = bool(saved) and saved.get("status") == "confirmed"
@@ -1141,13 +1146,15 @@ class ResultsScreen(QWidget):
         """저장본이 있고 지금 확정본으로 만든 것이면 그것, 아니면 빈 결과. 쓰지 않은 저장본은 지우지 않고 첫 저장 때
         보관본으로 옮긴다(사람이 승인·수정한 내용을 덮어쓰지 않음)."""
         problem = None
+        path = res.store_path(node_set.get("project_id"), node_set["graph_id"])
         try:
-            doc = res.load(node_set)
+            doc, self._fps[path] = res.load_fp(node_set)
         except (OSError, ValueError) as exc:
             doc, problem = None, "저장된 분석 결과를 읽을 수 없음(%s)" % exc
         if doc is None and problem is None and not self.fixed_view:  # 옛 결과가 보관본에만 있어도 다시 확정하면 잇는다
             carried, report = remap.carry_saved(node_set, self.deviations)
             if carried is not None:
+                self._fps[path] = res.written_fp(carried)
                 self.stale_chip.set_state("이전 확정본 결과를 옮김: 범위 바뀜 %d건(다시 확인) · 옛 파일은 보관본"
                                           % report["scope_changed_entries"], "warn")
                 self.stale_chip.show()
@@ -1157,6 +1164,8 @@ class ResultsScreen(QWidget):
                 carried, report = (remap.carry_saved(node_set, self.deviations) if not self.fixed_view
                                    else remap.carry_results(doc, node_set, self.deviations))
                 if carried is not None:  # 확정 해제 → 다시 확정: 같은 구간은 그대로, 바뀐 구간은 '범위 바뀜'으로 잇는다
+                    if not self.fixed_view:
+                        self._fps[path] = res.written_fp(carried)
                     self.stale_chip.set_state("이전 확정본 결과를 옮김: 범위 바뀜 %d건(다시 확인) · 옛 파일은 보관본"
                                               % report["scope_changed_entries"], "warn")
                     self.stale_chip.show()
@@ -1201,14 +1210,25 @@ class ResultsScreen(QWidget):
 
     def _save(self):
         """현재 결과를 저장한다. 실패해도 화면의 결과는 유지하고 상태줄·로그에 남긴다."""
+        path = self.store_path()
         try:
-            if not self.fixed_view and self._old_saved and os.path.isfile(self._old_saved):
-                os.replace(self._old_saved, "%s.%s.bak.json" % (self._old_saved[:-5], nodes.now_utc().replace(":", "")))
+            if not self.fixed_view and self._old_saved:
+                if os.path.isfile(self._old_saved):
+                    os.replace(self._old_saved, store_io.unused_name(
+                        "%s.%s%%s.bak.json" % (self._old_saved[:-5], nodes.now_utc().replace(":", ""))))
+                self._fps[self._old_saved] = None
+            expect = self._fps.get(path, store_io.ANY)
             if self.fixed_view:  # 시험 값은 시험용 파일에만(실제 결과의 AI 초안을 덮지 않음, D5)
-                res.write(self.store_path(), self.results)
+                res.write(path, self.results, expect)
             else:
                 self._old_saved = None
-                res.save(self.results, self.node_set.get("project_id"))
+                res.save(self.results, self.node_set.get("project_id"), expect)
+            self._fps[path] = res.written_fp(self.results)
+        except store_io.Conflict:  # 다시 저장해도 같으므로 '저장 실패'로 두지 않는다. 도면을 다시 고르면 최신 결과를 읽는다
+            self.app.status_message("읽은 뒤 분석 결과 파일이 바뀌어 이번 변경은 저장하지 않았습니다. "
+                                    "도면을 다시 골라 최신 결과를 불러온 뒤 고치세요.")
+            self._unsaved = False
+            return False
         except OSError as exc:
             self.app.log_error("분석 결과 저장 실패", exc)
             self.app.status_message("분석 결과를 저장하지 못함: %s" % exc)
@@ -1331,8 +1351,9 @@ class ResultsScreen(QWidget):
         return self._test_results() if test else self._saved_results(self.node_set)
 
     def _test_results(self):
+        path = res.test_store_path(self.node_set.get("project_id"), self.node_set["graph_id"])
         try:
-            doc = res.read(res.test_store_path(self.node_set.get("project_id"), self.node_set["graph_id"]))
+            doc, self._fps[path] = res.read_fp(path)
         except (OSError, ValueError):
             doc = None
         if doc is None or res.is_stale(doc, self.node_set) or res.validate(doc, self.node_set):

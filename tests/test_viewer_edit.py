@@ -263,6 +263,28 @@ class EditScreenTest(unittest.TestCase):
         self.assertEqual([o["op_id"] for o in doc["ops"]], [second["op_id"]])
         self.assertEqual(doc["log"][-1]["removed_ops"], [first])
 
+    def test_save_refuses_when_the_record_changed_after_it_was_read(self):
+        """편집을 시작한 뒤 수정 기록 파일이 밖에서 바뀌면 덮어쓰지 않는다."""
+        from hazop.extract import corrections
+        scr = self.scr
+        with mock.patch.object(viewer, "notify") as notify:
+            self.assertTrue(scr.commit({"op": "add_node", "target": None, "value": {
+                "category": "equipment", "kind": "pump", "tag": "ZZ-P-300", "bbox": [100, 10, 40, 40]}}))
+            self.settle()
+            path = corrections.store_path(self.name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            outside = json.dumps({"kind": corrections.KIND, "schema_version": "0.1", "extraction_name": self.name,
+                                  "drawing_number": None, "ops": [], "log": [{"at": "2026-11-07T00:00:00Z", "by": "밖",
+                                                                              "action": "save", "added": [], "removed": []}]}
+                                 ).encode("utf-8")
+            with open(path, "wb") as fh:
+                fh.write(outside)
+            self.assertFalse(scr.save())
+        with open(path, "rb") as fh:
+            self.assertEqual(fh.read(), outside)
+        self.assertIn("바뀌", notify.call_args[0][2])
+        self.assertTrue(scr.session.dirty, "작업 중 수정은 화면에 남음")
+
     def test_new_op_does_not_reuse_id_still_on_undo_stack(self):
         """저장하지 않고 되돌린 추가도 실행 취소로 되살아날 수 있으므로, 그 번호를 새 추가에 다시 주지 않는다."""
         scr = self.scr

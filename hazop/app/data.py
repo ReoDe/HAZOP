@@ -11,7 +11,7 @@ import importlib.util
 import json
 import os
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.analysis import ai as ai_mod
 from hazop.extract import corrections
 from hazop.graph import build as graph_build
@@ -376,14 +376,15 @@ def tag_conflicts(tag, project_id, exclude=()):
     return out
 
 
-def save_corrections(name, ops, by):
+def save_corrections(name, ops, by, expect=store_io.ANY):
     """수정 기록 저장 → 그 도면 그래프 다시 빌드(scripts/build_graph.build_one이 기록을 적용) → 프로젝트 지식그래프 다시 빌드.
-    반환 {"path", "graph", "kg" 또는 "kg_error", "recheck": [안내 문구]}. ④ 검토구간·⑤ 분석 결과 저장본은 여기서
+    반환 {"path", "fingerprint", "graph", "kg" 또는 "kg_error", "recheck": [안내 문구]}. expect는 corrections.save_fp와 같다
+    (읽은 뒤 바뀐 기록이면 store_io.Conflict). ④ 검토구간·⑤ 분석 결과 저장본은 여기서
     고치지 않는다. 판 이전 조건을 채우면 다음에 읽을 때 study.migrate가 옮기고, 아니면 재확인 안내를 돌려준다."""
     original = read_json(extraction_path(name))
-    path = corrections.save(name, ops, by, drawing_number=original["drawing"].get("drawing_number"))
+    path, fp = corrections.save_fp(name, ops, by, drawing_number=original["drawing"].get("drawing_number"), expect=expect)
     graph, _ = script_module("build_graph").build_one(extraction_path(name), paths.output_root("graph"))
-    out = {"path": path, "graph": graph}
+    out = {"path": path, "fingerprint": fp, "graph": graph}
     if graph.get("project_id"):
         _with_kg(out, graph["project_id"])
     else:

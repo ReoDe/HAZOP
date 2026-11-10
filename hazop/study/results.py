@@ -338,9 +338,21 @@ def _readable_path(project_id, graph_id):
     return legacy if not project_id and not os.path.isfile(path) and os.path.isfile(legacy) else path
 
 
-def save(results, project_id):
-    """쓴 경로를 돌려준다."""
-    return write(store_path(project_id, results["graph_id"]), results)
+def save(results, project_id, expect=store_io.ANY):
+    """쓴 경로를 돌려준다. expect는 save_fp와 같다. 읽어서 고친 결과를 쓸 때는 expect를 꼭 넘긴다
+    (넘기지 않는 것은 방금 만든 결과를 처음 쓰는 검사·시험뿐이다)."""
+    return write(store_path(project_id, results["graph_id"]), results, expect)
+
+
+def save_fp(results, project_id, expect):
+    """(쓴 경로, 새 지문). expect(load_fp의 지문, 없던 파일이면 None)와 지금 파일이 다르면 store_io.Conflict."""
+    path = store_path(project_id, results["graph_id"])
+    return path, store_io.write_json(path, results, expect)
+
+
+def written_fp(results):
+    """results를 쓴 파일의 지문(직렬화가 결정적이라 다시 읽지 않고 안다)."""
+    return store_io.fingerprint_of(store_io.dump_bytes(results))
 
 
 def write(path, results, expect=store_io.ANY):
@@ -368,14 +380,21 @@ def read_fp(path):
 def load(node_set):
     """node_set 도면의 저장본. 없으면 None. 다른 종류·다른 도면의 파일이면 ValueError. 판 비교는 is_stale로 한다.
     집합이 판 이전된 뒤 옛 판으로 저장된 결과는 읽을 때 같은 규칙으로 이전한다(파일은 nodes.load가 이전할 때만 씀)."""
+    return load_fp(node_set)[0]
+
+
+def load_fp(node_set):
+    """(load와 같은 문서, save_fp의 expect로 쓸 지문). 없으면 (None, None).
+    옛 자리(no-project)에서 읽었으면 저장할 자리에는 아직 파일이 없으므로 지문은 None이다."""
     from hazop.study import migrate
     path = _readable_path(node_set.get("project_id"), node_set["graph_id"])
-    doc = read(path)
+    doc, fp = read_fp(path)
     if doc is None:
-        return None
+        return None, None
     if doc.get("graph_id") != node_set["graph_id"]:
         raise ValueError("다른 도면의 분석 결과: %s (%s)" % (path, doc.get("graph_id")))
-    return migrate.migrate_results(doc, node_set)[0]
+    same_place = path == store_path(node_set.get("project_id"), node_set["graph_id"])
+    return migrate.migrate_results(doc, node_set)[0], fp if same_place else None
 
 
 def is_stale(results, node_set):

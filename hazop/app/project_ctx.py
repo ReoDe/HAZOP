@@ -15,6 +15,7 @@ import os
 
 from hazop import paths, store_io
 from hazop.graph import project
+from hazop.study import migrate
 from hazop.study import nodes as sn
 from hazop.study import results as res
 from hazop.study import span
@@ -109,6 +110,7 @@ class ProjectContext:
         self.project_id = project.project_id_of(sheet)
         self.pg, self.error, self.node_set, self.saved, self.notice = None, None, None, False, None
         self.set_fp = None
+        self.problem = None  # 저장본을 열기는 했지만 사람이 알아야 할 문제(판 이전을 저장하지 못함)
         try:
             self.pg = project_graph(self.project_id)
         except (OSError, ValueError) as exc:
@@ -145,6 +147,7 @@ class ProjectContext:
         saved, self.set_fp = sn.load_fp(self.pg)
         if saved is not None:
             self.node_set, self.saved = saved, True
+            self.problem = MIGRATION_UNSAVED if migrate.unwritten(saved, self.pg) else None
             return saved, True
         migrated = migrate_sets(self.pg)
         if migrated is not None:
@@ -236,6 +239,10 @@ def load(name):
 
 # ---------------------------------------------------------------- 이전
 
+MIGRATION_UNSAVED = ("그래프가 다시 만들어져 저장된 검토구간을 새 판에 맞춰 다시 써야 하는데 쓰지 못했습니다"
+                     "(백업·쓰기 실패 또는 읽은 뒤 파일이 바뀜). 저장본을 그대로 엽니다. 자세한 이유는 로그에 있습니다.")
+
+
 def _old_sets(pg):
     out = []
     for s in pg["sheets"]:
@@ -309,7 +316,7 @@ def migrate_results(pg, node_set):
         return None, "옛 분석 결과를 옮기지 않음: %s. 옛 파일은 그대로 있습니다." % (
             ", ".join("%s %d건" % (labels.get(k, k), len(report[k])) for k in stop))
     folder = store_io.backup(files, "분석결과-이전")
-    path = res.save(out, node_set["project_id"])
+    path, _fp = res.save_fp(out, node_set["project_id"], expect=None)  # 위에서 없음을 확인한 자리. 그사이 생겼으면 쓰지 않는다
     _write_report(folder, dict(report, kind="results_migration", at=sn.now_utc(), written=path, old_files=files))
     text = ("옛 도면별 분석 결과 항목 %d건을 프로젝트 구간으로 옮겼습니다(사람 검토 %d건은 상태 그대로, "
             "범위 바뀐 구간 항목 %d건은 '범위 바뀜' 표시). 옛 파일은 그대로 두었고 백업: %s"

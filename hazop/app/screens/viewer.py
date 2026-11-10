@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QComboBox, QDial
                                QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMessageBox, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
+from hazop import store_io
 from hazop.app import data, project_ctx, tokens
 from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, empty_label, esc, kst_text
 from hazop.extract import corrections
@@ -84,9 +85,10 @@ def unknowns_of(extraction, local_id):
 class EditSession:
     """작업 중 수정 기록. ops는 적용 순서대로, saved는 마지막 저장본. 실행 취소·다시 실행은 ops 목록 전체의 사본을 쌓는다."""
 
-    def __init__(self, ops=()):
+    def __init__(self, ops=(), fp=None):
         self.ops = list(ops)
         self.saved = list(ops)
+        self.fp = fp  # saved를 읽은 기록 파일의 지문(없던 파일이면 None). 저장할 때 그 뒤 바뀐 파일을 덮어쓰지 않게 한다
         self.undo_stack, self.redo_stack = [], []
 
     @property
@@ -916,8 +918,8 @@ class ViewerScreen(QWidget):
             self.app.update_header()
             return
         if self.edit_btn.isChecked() and self.session is None:
-            doc = corrections.load(name)
-            self.session = EditSession((doc or {}).get("ops") or [])
+            doc, fp = corrections.load_fp(name)
+            self.session = EditSession((doc or {}).get("ops") or [], fp)
         try:
             self.info = info = data.viewer_html_for(name, ops=self.session.ops if self.session else None)
         except (OSError, ValueError, KeyError) as exc:
@@ -1145,12 +1147,17 @@ class ViewerScreen(QWidget):
             notify(self, "저장할 수 없음", "검토자 이름이 없습니다. 파일 > 설정(검토자 이름)에서 먼저 정하세요.", warn=True)
             return False
         try:
-            res = data.save_corrections(self.name, self.session.ops, by)
+            res = data.save_corrections(self.name, self.session.ops, by, expect=self.session.fp)
+        except store_io.Conflict:
+            notify(self, "저장하지 않음", "편집을 시작한 뒤 수정 기록 파일이 바뀌어 저장하지 않았습니다. "
+                   "작업 중 수정은 화면에 남아 있습니다. 편집을 껐다 켜면 최신 기록을 읽습니다(작업 중 수정은 버려짐).", warn=True)
+            return False
         except (OSError, ValueError) as exc:
             self.app.log_error("도면 수정 저장", exc)
             notify(self, "저장 실패", "수정 기록을 저장하지 못했습니다: %s" % exc, warn=True)
             return False
         self.session.mark_saved()
+        self.session.fp = res["fingerprint"]
         lines = ["수정 기록 %d건을 저장하고 그래프를 다시 만들었습니다." % len(self.session.ops)]
         if res.get("kg_error"):
             lines.append("지식그래프 다시 만들기 실패: %s" % res["kg_error"])
@@ -1172,7 +1179,7 @@ class ViewerScreen(QWidget):
         if c == "save":
             return self.save()
         if c == "discard":  # 도면은 다음에 읽을 때(화면 진입·도면 바꾸기·편집 끄기) 저장본으로 다시 그려진다
-            self.session = EditSession(self.session.saved)
+            self.session = EditSession(self.session.saved, self.session.fp)
             return True
         return False
 
