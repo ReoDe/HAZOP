@@ -403,7 +403,8 @@ class BuildSpecTest(unittest.TestCase):
         for with_check in (False, True):
             text = self.bp.spec_text(with_check=with_check)
             ast.parse(text)
-            self.assertIn("collect_submodules('hazop')", text)
+            self.assertFalse([t for t in ("sys.path.insert", "sys.path.append", "collect_submodules") if t in text])  # D11 후속
+            self.assertIn("HAZOP_MODULES = %r" % self.bp.hazop_modules(), text)
             self.assertIn("EXCLUDES = ['anthropic', 'httpx']", text)  # W9(D15): pdfplumber는 묶는다
             self.assertEqual(text.count("'pdfplumber', 'pypdfium2', 'openpyxl', 'networkx']"), 2 if with_check else 1)  # 두 Analysis 모두
             self.assertIn("name='HAZOP', console=False, upx=False", text)
@@ -416,12 +417,24 @@ class BuildSpecTest(unittest.TestCase):
             self.assertEqual(text.count("rthook_verify_build"), 1 if with_check else 0)
             self.assertEqual(text.count("keep_warn("), 3 if with_check else 2)  # 정의 1 + Analysis별 복사
             ns = {}
-            exec(text.split("from PyInstaller")[0] + "\n".join(
+            exec(text.split("HAZOP_MODULES =")[0] + "\n".join(
                 ln for ln in text.splitlines() if ln.startswith(("REPO =", "DATAS ="))), ns)
             self.assertEqual(ns["REPO"], REPO_ROOT)
             self.assertEqual(len(ns["DATAS"]), len(self.datas))
             for src, dest in ns["DATAS"]:
                 self.assertTrue(os.path.isfile(src), src)
+
+    def test_hazop_modules_lists_every_package_module(self):
+        """정적 목록은 __init__.py가 있는 폴더의 .py를 모두 담고, 패키지가 아닌 폴더(vendor)는 따라가지 않는다."""
+        mods = self.bp.hazop_modules()
+        self.assertIn("hazop", mods)
+        self.assertIn("hazop.app.startup", mods)
+        self.assertIn("hazop.extract.adapters.pdf_vector", mods)
+        self.assertFalse([m for m in mods if "vendor" in m or "__init__" in m])
+        on_disk = {os.path.relpath(os.path.join(d, f), REPO_ROOT)[:-3].replace(os.sep, ".")
+                   for d, _, fs in os.walk(os.path.join(REPO_ROOT, "hazop")) if "__pycache__" not in d
+                   and os.path.isfile(os.path.join(d, "__init__.py")) for f in fs if f.endswith(".py")}
+        self.assertEqual(set(mods), {m[:-len(".__init__")] if m.endswith(".__init__") else m for m in on_disk})
 
     def test_write_spec_outside_repo_only(self):
         inside = os.path.join(REPO_ROOT, "build-should-not-exist")
@@ -446,7 +459,7 @@ class BuildSpecTest(unittest.TestCase):
             shutil.copyfile(os.path.join(REPO_ROOT, src), os.path.join(root, src))
         text = self.bp.spec_text(root, with_check=True)
         ns = {}
-        exec(text.split("from PyInstaller")[0] + "\n".join(
+        exec(text.split("HAZOP_MODULES =")[0] + "\n".join(
             ln for ln in text.splitlines() if ln.startswith(("REPO =", "DATAS ="))), ns)
         self.assertEqual(ns["REPO"], root)
         self.assertEqual([os.path.relpath(s, root).replace("\\", "/") for s, _ in ns["DATAS"]],
@@ -1207,7 +1220,7 @@ class LicenseNoticeTest(unittest.TestCase):
         self.assertFalse([s for s, _ in self.bp.datas_list() if s.startswith("licenses/")])
         for with_check in (False, True):
             text, ns = self.bp.spec_text(with_check=with_check), {}
-            exec(text.split("from PyInstaller")[0] + "\n".join(
+            exec(text.split("HAZOP_MODULES =")[0] + "\n".join(
                 ln for ln in text.splitlines() if ln.startswith(("REPO =", "DATAS ="))), ns)
             self.assertFalse([s for s, _ in ns["DATAS"] if self.bp.inside(s, LICENSES_DIR)])
             out = tempfile.mkdtemp(prefix="hazop-lic-copy-")
@@ -1640,6 +1653,17 @@ class VerifierTest(unittest.TestCase):
         self.assertEqual(self.vb.fresh_problems(self.tmp, 2000, ["01.png", "02.png"]),
                          ["이번 실행 전 파일: 01.png", "없음: 02.png"])
         self.assertEqual(self.vb.fresh_problems(self.tmp, 500, ["01.png"]), [])
+
+    def test_app_png_covers_every_rail_stage_and_edit_mode(self):
+        """배포본 스크린샷 목록이 레일 단계 ①~⑥ × 두 크기와 ② 편집 모드를 모두 요구한다(앱의 단계 정의와 같은 이름)."""
+        from hazop.app import screenshots
+        from hazop.app.main_window import STAGES
+        self.assertEqual(self.vb.STAGE_NAMES, tuple((n, short) for n, short, _ in STAGES))
+        self.assertEqual(self.vb.STAGE_SIZES, screenshots.STAGE_SIZES)
+        self.assertIn("02-viewer-edit.png", self.vb.APP_PNG)
+        self.assertEqual([n for n in self.vb.APP_PNG if n.startswith("stages/stage6-")],
+                         ["stages/stage6-초기사건-1366x768.png", "stages/stage6-초기사건-1920x1080.png"])
+        self.assertFalse(set(self.vb.APP_PNG) - set(self.vb.FULL_PNG))
 
     def _summary(self, out):
         runs = sorted(os.listdir(out))

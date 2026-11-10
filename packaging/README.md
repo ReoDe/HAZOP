@@ -14,7 +14,9 @@
 | `rthook_verify_build.py` | 검증용 빌드(`--with-check`)의 `HAZOP.exe`에만 넣는 런타임 훅: 시험 트리거 표지(`sys._hazop_verify_build`). 배포용에는 없음(T2 D18) |
 | `check_entry.py` | 검증 전용 `HAZOP-check.exe` 입구(`scripts/build_package.py --with-check`). 배포본에 넣지 않는다 |
 | `w4_flow.py` | 묶인 실행에서 ①~⑤ 함수 흐름·자원 읽기 위치·음성 검사(`HAZOP-check.exe`로 실행) |
-| `verify_bundle.py` | 묶음을 저장소 밖 경로에 복사해 ①~⑤·③ V1·V2·S1·스크린샷·앱 로그 확인. 배포용은 `--app-only` |
+| `verify_bundle.py` | 묶음을 저장소 밖 경로에 복사해 ①~⑤·③ V1·V2·S1·스크린샷(② 편집 모드, 레일 단계 ①~⑥)·앱 로그 확인. 배포용은 `--app-only` |
+| `lock_probe.py` | 빌드한 `HAZOP.exe`를 두 번 띄워 두 번째가 잠금 안내를 띄우고 종료 코드 3으로 끝나는지 확인. 실제 창을 띄우므로 `scripts/desktop_lease.py run` 안에서 돌린다 |
+| `다른PC-점검표.md` | 다른 PC·Windows 10에서 배포본을 사람이 확인하는 절차와 결과 표 |
 | `make_snapshot.py` | 저장소 밖 빌드용 스냅숏(다른 트랙 진행 중 파일은 HEAD로), `SNAPSHOT.json` 해시 목록 |
 | `netwatch.ps1` | 빌드 중 네트워크 연결 표본 조사(관찰만) |
 | `tls_probe.py` | D10 측정(검증 전용): 검증용 묶음의 `HAZOP-check.exe`로 Qt TLS 백엔드와 로드된 모듈 목록을 기록(`--path-mode user|system`). 네트워크 접속 없음 |
@@ -53,4 +55,4 @@ $py = "$env:USERPROFILE\.hazop\venv-py312\Scripts\python.exe"
 - python.org는 3.12.11부터 Windows 설치 파일을 내지 않는다. 그래서 Windows 바이너리가 있는 마지막 판인 3.12.10을 쓴다(LibreOffice는 3.12.14).
 - 기반 인터프리터는 Python install manager로 `py install --target=<위 경로> 3.12` 방식으로 풀었다. `py -0p` 목록과 `python3.12` 별칭에는 나타나지 않는다.
 - Claude 데스크톱 앱(MSIX) 안에서 만든 venv는 `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\HAZOP\venv-py312`로 리디렉션된다. 그래서 venv는 `%USERPROFILE%\.hazop\venv-py312`에 둔다(2026-11-05 재생성, 전체 테스트 489 OK·건너뜀 5). 앱 안에서 처음 만든 리디렉션 위치의 venv는 쓰지 않는다.
-- `PYTHONIOENCODING`은 설정하지 않는다.
+- 시험·검사·빌드는 `PYTHONIOENCODING=utf-8`을 붙여 돌린다(`CLAUDE.md` 규칙 11). venv를 옮겼으면 환경변수 `HAZOP_VENV`에 새 경로를 둔다(`scripts/build_package.py` `VENV_DIR`).

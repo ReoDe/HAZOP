@@ -43,6 +43,13 @@ def take_all(app, win, out_dir, run_dir=None, candidate="deviation-p86-d09"):
     shot("01-register.png")
     win.go(1)
     shot("02-viewer.png")
+    viewer = win.screens[1]
+    if viewer.editable():  # 편집 모드는 켜기만 하고 아무것도 고치지 않는다(저장할 것이 없어 끌 때 묻지 않음)
+        viewer.edit_btn.setChecked(True)
+        shot("02-viewer-edit.png")
+        viewer.edit_btn.setChecked(False)
+    else:
+        print("[건너뜀] 02-viewer-edit.png: ②에 편집할 수 있는 도면 없음")
     win.go(2)
     if run_dir:
         win.open_run(run_dir)

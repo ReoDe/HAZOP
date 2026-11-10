@@ -17,7 +17,10 @@
     pypdfium2·pypdfium2_raw·PIL·cryptography·charset_normalizer 모듈(7개 키가 모두 결과에 있어야 함)과 실제로 읽힌 pdfium.dll
     (읽은 모듈 핸들의 경로)이 묶음 안인지 본다.
     --app-only(배포용)는 실행 단계 없이 _internal/pypdfium2_raw/pdfium.dll이 있는지만 본다(앱 PYZ의 모듈은 빌드 뒤 검사).
- 4) HAZOP.exe --screenshots [--run <④ 실행 폴더>]: ①②④⑤ PNG(앱의 --screenshots는 ③을 찍지 않음).
+ 4) HAZOP.exe --screenshots [--run <④ 실행 폴더>]: ①②(편집 모드 02-viewer-edit 포함)·이전 ④⑤ PNG와 레일 단계
+    ①~⑥ × 1366·1920 stages/ PNG(새 ④ 검토구간, 새 ⑤ 분석 결과, ⑥ 초기사건 포함). --app-only는 검증 exe가 없어 1)~3)이
+    작업 루트를 채우지 않으므로, 이 검증기가 개발 코드로 표본 구간·고정 응답·지식과 샘플 도면(SNP-M-102) 추출·그래프를
+    작업 루트에 먼저 넣는다(seed_app_work). 화면이 빈 안내만 찍히지 않게 하려는 것이고, 묶음의 추출 코드는 보지 않는다.
     <작업 루트>/logs/app.log에 시작 기록이 있는지. 잘못된 옵션(--w4-unknown-option)은 종료 코드 2와 사용법 오류(표준 출력
     사본)만 본다: 하위 프로세스로 띄우면 표준 출력 핸들이 있어 로그 파일 연결(핸들이 없을 때만)이 일어나지 않는다.
     손상 설정(W10, D18): JSON 문법 오류 설정 파일 + --screenshots → 종료 코드 2, 출력에 안내, app.log에 기록, 설정 파일은
@@ -52,7 +55,11 @@ import uuid
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECK_SCRIPTS = ("check_kg_screen", "check_kg", "check_kg_algo", "check_kg_renderer", "build_kg", "analyze_kg",
                  "analyze", "extract_drawio", "build_graph")
-APP_PNG = ("01-register.png", "02-viewer.png", "04-analysis.png", "05-review.png")
+# 레일 단계(hazop/app/main_window.STAGES의 번호·짧은 이름)와 크기(hazop/app/screenshots.STAGE_SIZES). 시험이 같은지 본다
+STAGE_NAMES = (("1", "등록"), ("2", "추출"), ("3", "그래프"), ("4", "구간"), ("5", "결과"), ("6", "초기사건"))
+STAGE_SIZES = ((1366, 768), (1920, 1080))
+STAGE_PNG = tuple("stages/stage%s-%s-%dx%d.png" % (n, short, w, h) for w, h in STAGE_SIZES for n, short in STAGE_NAMES)
+APP_PNG = ("01-register.png", "02-viewer.png", "02-viewer-edit.png", "04-analysis.png", "05-review.png") + STAGE_PNG
 FULL_PNG = APP_PNG + ("03-knowledge.png", "03-knowledge-1366.png", "05-review-confirmed.png")
 TIMEOUT = 900
 
@@ -199,6 +206,30 @@ def make_inputs(dest):
         shutil.copy2(p, sdir)
     for sub in (("구간",), ("고정응답",), ("지식", "SNP-SAMPLE")):
         shutil.copytree(paths.folder("표본", *sub), paths.folder_in(dest, "표본", *sub))
+
+
+def seed_app_work(work):
+    """--app-only 작업 루트 채우기(w4_flow와 같은 방법, 개발 코드로): 표본 구간·고정 응답·지식, 샘플 도면 사본(논리 경로
+    자리)과 그 추출·그래프. 이 프로세스의 HAZOP_WORK_ROOT만 잠시 바꾸고 되돌린다."""
+    from hazop.app import data
+    sources = {name: paths.folder("표본", name) for name in ("구간", "고정응답", "지식")}
+    sample = paths.folder("참고", *SAMPLE_DIR)
+    old = os.environ.get(paths.ENV_WORK_ROOT)
+    os.environ[paths.ENV_WORK_ROOT] = work
+    try:
+        for name, src in sources.items():
+            shutil.copytree(src, paths.folder(name), dirs_exist_ok=True)
+        dst = os.path.join(paths.logical_reference_dir(work), *SAMPLE_DIR)
+        shutil.copytree(sample, dst)
+        drawio = glob.glob(os.path.join(dst, "*.drawio"))[0]
+        _, ex_dir = data.script_module("extract_drawio").run_one(drawio, paths.output_root("추출"))
+        data.script_module("build_graph").build_one(os.path.join(ex_dir, "extraction.json"), paths.output_root("그래프"))
+        return os.path.basename(ex_dir)
+    finally:
+        if old is None:
+            os.environ.pop(paths.ENV_WORK_ROOT, None)
+        else:
+            os.environ[paths.ENV_WORK_ROOT] = old
 
 
 def expected_datas(repo=REPO_ROOT):
@@ -399,6 +430,7 @@ def steps(args, summary, run_root, out, repo_dirs):
         summary["steps"]["pdf_probe"] = {"rc": "skipped(--app-only)"}
         dll = os.path.join(target, "_internal", *bp.PDFIUM_DLL)
         summary["checks"]["pdf_problems"] = [] if os.path.isfile(dll) else ["pdfium.dll 없음: %s" % dll]
+        summary["steps"]["seed_app_work"] = {"extraction": seed_app_work(env["HAZOP_WORK_ROOT"])}
 
     rc, sec, rc2 = app_steps(os.path.join(target, "HAZOP.exe"), env, tmp, out, png, run_dir, args.app_only, summary)
     want = APP_PNG if args.app_only else FULL_PNG
