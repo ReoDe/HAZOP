@@ -2,9 +2,9 @@
 
 설계도면과 문서에서 설비·연결 관계·운전조건 등을 추출하여 통합 그래프로 관리하고, 그래프 알고리즘과 AI 탐색을 통해 전문가 검토용 HAZOP 분석 초안을 생성하는 프로젝트입니다. 궁극적인 대상은 원자력발전소 계통입니다.
 
-이 프로젝트의 결론은 **HAZOP 결과(워크시트와 구조화 기록)를 만드는 것**입니다. 최종 목표는 HAZOP 결과를 PSA 초기사건(IE) 도출에 활용하는 것입니다(2026-11-08 사용자 결정). 현재 구현 범위는 HAZOP 결과까지이며, IE 도출은 [조사](specs/ie-hazop-survey.md) 단계입니다.
+최종 목표는 HAZOP 결과로 원자력발전소 확률론적안전성평가(PSA)의 초기사건(IE) 후보 도출을 돕는 것입니다(DEC-0187). 앱은 HAZOP 워크시트 초안을 만들고 사람이 확정하며, 승인된 항목에서 초기사건 후보와 추적 근거를 인계 묶음(Excel+JSON)으로 넘깁니다(DEC-0188, DEC-0199). 초기사건 빈도 계산과 고장수목·사건수목 작성은 PRA 도구의 일이라 앱에서 하지 않습니다(DEC-0188, [초기사건 출력 설계](specs/ie-output-design.md) §4.1). 자세한 범위는 [전체 기획](specs/overview.md)에 있습니다.
 
-현재는 기획 단계이며, ①등록·②추출·③그래프·④HAZOP 분석(MVP, 고정 응답 기준)의 1차 구현이 있습니다. 모든 기획서는 초안이며 구현 완료를 의미하지 않습니다. 결정 사항과 남은 작업은 [메모리](records/README.md)에서 관리합니다.
+지금은 ① 자료 등록부터 ⑥ 초기사건까지 여섯 단계의 화면이 데스크톱 앱에 구현돼 있고, Windows 배포 묶음(판 0.2.0)이 있습니다. 배포본은 법무 검토 전까지 내부용으로만 씁니다(DEC-0103). 모든 기획서는 초안이며 구현 완료를 의미하지 않습니다. 결정 사항과 남은 작업은 [메모리](records/README.md)에서 관리합니다.
 
 ## 전체 기획과 워크플로우
 
@@ -22,13 +22,13 @@
   - [HAZOP 기법 지침](specs/hazop-method-guide.md): KOSHA P-86-2017(회분식 HAZOP 기술지침) 요약
 - ⑤ [검토·결과 관리 흐름](<specs/flows/05-review-results.md>) · [기획](specs/review-results.md): 편차별 확정, 재검토, Excel 출력
   - [평가 기준 비교](specs/criteria-comparison.md): 평가 기준 파일 형식, 대응 규칙, 지표
-- [데스크톱 인터페이스](specs/interface.md): ①②④⑤ 화면, 검토 확정 규격, Excel 출력, 패키징 대비
+- [데스크톱 인터페이스](specs/interface.md): ①~⑤ 화면, 검토 확정 규격, Excel 출력, 패키징 대비
 - ⑥ [초기사건 출력 설계](specs/ie-output-design.md): 초기사건 인계 묶음(JSON·Excel)과 ⑥ 화면. 구현: `hazop/ie/model.py`·`hazop/ie/store.py`, `hazop/app/screens/initiating.py`
 - [메모리](records/README.md): 결정 로그와 남은 작업
 - [그래프조사](specs/graph-survey.md) · [그래프활용](specs/graph-usage.md): 지식그래프·알고리즘·그래프 화면 조사와 구현 구상
 - [지식그래프 작업 공간](docs/2026-11-05-knowledge-graph/README.md): 지식그래프 활용 구현의 문서·결정·진행 현황
 
-전체 흐름은 **자료 등록 → 정보 추출 → 정보 통합·관리 → HAZOP 분석 → 검토·결과 관리**입니다.
+전체 흐름은 **자료 등록 → 정보 추출 → 정보 통합·관리 → HAZOP 분석 → 검토·결과 관리 → 초기사건 인계**입니다.
 
 ## 프로젝트 방향
 
