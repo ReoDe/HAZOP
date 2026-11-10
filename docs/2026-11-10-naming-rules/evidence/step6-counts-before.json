@@ -1,0 +1,207 @@
+{
+  "_note": "단계 6 전 기준 수. 기준 커밋 a810b99의 코드(git archive로 내보낸 사본)로 scripts/check_work_root_counts.py를 돌린 값이다. 사본마다 두 번 돌려 같았다(2026-11-10). 사본은 D:/HAZOP-trials/2026-11-10-naming-n4/work-before(개발 작업 루트)와 localappdata-before(이 PC 배포본 작업 루트, venv-py312 제외)다. 다시 견주기: python scripts/check_work_root_counts.py --work-root <사본> --compare <이 파일에서 꺼낸 해당 사본의 값>. 안 풀린 12건은 지워진 임시 폴더를 가리키는 옛 기록이다.",
+  "commit": "a810b99",
+  "dev_work_root": {
+    "seen": {
+      "registrations": 0,
+      "registrations_extracted": 0,
+      "registrations_graphed": 0,
+      "extractions": 6,
+      "unregistered_extractions": 6,
+      "graphs": 6,
+      "kg_roots": 1,
+      "regions": 1,
+      "regions_with_current_graph": 1,
+      "analysis_runs": 23,
+      "reviews": 0,
+      "project_graphs": 1,
+      "study_node_sets": 1,
+      "study_node_sets_confirmed": 0,
+      "study_results": 0,
+      "project_kg": 1,
+      "ie_groups": 0,
+      "ie_candidates": 0
+    },
+    "files": {
+      "work": {
+        "작업데이터": 20,
+        "구간": 1,
+        "고정응답": 5,
+        "지식": 3,
+        "검토구간": 3,
+        "분석결과": 1,
+        "분석결과-시험": null,
+        "백업": 5,
+        "초기사건": null,
+        "도면수정": null,
+        "도면연결": null,
+        "잠재후보": null,
+        "캐시": null,
+        "기호후보": null,
+        "자료저장소": null,
+        "출력": 655
+      },
+      "output": {
+        "추출": 12,
+        "그래프": 24,
+        "뷰어": 8,
+        "문서지식": null,
+        "지식그래프": 55,
+        "분석": 161,
+        "근거묶음": null,
+        "워크시트": null,
+        "평가비교": null,
+        "초기사건": null,
+        "내보내기": null,
+        "어댑터": null,
+        "samples": 43,
+        "스크린샷": 66,
+        "사용자검증": 282,
+        "디자인검사": 4,
+        "로그": null,
+        "보관": null
+      }
+    },
+    "records": {
+      "total": 348,
+      "resolved": 336,
+      "unresolved": 12,
+      "unresolved_paths": [
+        [
+          "source.file",
+          "../AppData/Local/Temp/claude/651b8b1fdf982330/88cff375-cf25-4a86-9049-1cd8cb38cad7/scratchpad/store/sample-project/originals/material-1977975935a0/1/SNP-M-301_SIS.drawio",
+          1
+        ],
+        [
+          "source.file",
+          "../AppData/Local/Temp/claude/651b8b1fdf982330/88cff375-cf25-4a86-9049-1cd8cb38cad7/scratchpad/store/sample-project/originals/material-28f5f99063fc/1/SNP-M-401_CCW.drawio",
+          1
+        ],
+        [
+          "source.file",
+          "../AppData/Local/Temp/claude/651b8b1fdf982330/88cff375-cf25-4a86-9049-1cd8cb38cad7/scratchpad/store/sample-project/originals/material-3a09f898d24c/1/SNP-M-501_MS-FW.drawio",
+          1
+        ],
+        [
+          "source.file",
+          "../AppData/Local/Temp/claude/651b8b1fdf982330/88cff375-cf25-4a86-9049-1cd8cb38cad7/scratchpad/store/sample-project/originals/material-7f4c87c61f8b/1/SNP-M-102_RCS-pressurizer.drawio",
+          1
+        ],
+        [
+          "source.file",
+          "../AppData/Local/Temp/claude/651b8b1fdf982330/88cff375-cf25-4a86-9049-1cd8cb38cad7/scratchpad/store/sample-project/originals/material-8bf200cdef9a/1/SNP-M-101_RCS-main-loop.drawio",
+          1
+        ],
+        [
+          "source.file",
+          "../AppData/Local/Temp/claude/651b8b1fdf982330/88cff375-cf25-4a86-9049-1cd8cb38cad7/scratchpad/store/sample-project/originals/material-8cb400a20d1d/1/SNP-M-201_CVCS.drawio",
+          1
+        ],
+        [
+          "svg_file",
+          "../AppData/Local/Temp/claude/651b8b1fdf982330/88cff375-cf25-4a86-9049-1cd8cb38cad7/scratchpad/store/sample-project/originals/material-1977975935a0/1/derived/01_SNP-M-301.drawio.svg",
+          1
+        ],
+        [
+          "svg_file",
+          "../AppData/Local/Temp/claude/651b8b1fdf982330/88cff375-cf25-4a86-9049-1cd8cb38cad7/scratchpad/store/sample-project/originals/material-28f5f99063fc/1/derived/01_SNP-M-401.drawio.svg",
+          1
+        ],
+        [
+          "svg_file",
+          "../AppData/Local/Temp/claude/651b8b1fdf982330/88cff375-cf25-4a86-9049-1cd8cb38cad7/scratchpad/store/sample-project/originals/material-3a09f898d24c/1/derived/01_SNP-M-501.drawio.svg",
+          1
+        ],
+        [
+          "svg_file",
+          "../AppData/Local/Temp/claude/651b8b1fdf982330/88cff375-cf25-4a86-9049-1cd8cb38cad7/scratchpad/store/sample-project/originals/material-7f4c87c61f8b/1/derived/01_SNP-M-102.drawio.svg",
+          1
+        ],
+        [
+          "svg_file",
+          "../AppData/Local/Temp/claude/651b8b1fdf982330/88cff375-cf25-4a86-9049-1cd8cb38cad7/scratchpad/store/sample-project/originals/material-8bf200cdef9a/1/derived/01_SNP-M-101.drawio.svg",
+          1
+        ],
+        [
+          "svg_file",
+          "../AppData/Local/Temp/claude/651b8b1fdf982330/88cff375-cf25-4a86-9049-1cd8cb38cad7/scratchpad/store/sample-project/originals/material-8cb400a20d1d/1/derived/01_SNP-M-201.drawio.svg",
+          1
+        ]
+      ]
+    },
+    "errors": [],
+    "changed_files": [],
+    "total_files": 675
+  },
+  "localappdata": {
+    "seen": {
+      "registrations": 1,
+      "registrations_extracted": 1,
+      "registrations_graphed": 1,
+      "extractions": 1,
+      "unregistered_extractions": 0,
+      "graphs": 1,
+      "kg_roots": 0,
+      "regions": 0,
+      "regions_with_current_graph": 0,
+      "analysis_runs": 0,
+      "reviews": 0,
+      "project_graphs": 1,
+      "study_node_sets": 0,
+      "study_node_sets_confirmed": 0,
+      "study_results": 0,
+      "project_kg": 0,
+      "ie_groups": 0,
+      "ie_candidates": 0
+    },
+    "files": {
+      "work": {
+        "작업데이터": null,
+        "구간": null,
+        "고정응답": null,
+        "지식": null,
+        "검토구간": null,
+        "분석결과": null,
+        "분석결과-시험": null,
+        "백업": null,
+        "초기사건": null,
+        "도면수정": null,
+        "도면연결": null,
+        "잠재후보": null,
+        "캐시": null,
+        "기호후보": null,
+        "자료저장소": 4,
+        "출력": 7
+      },
+      "output": {
+        "추출": 2,
+        "그래프": 4,
+        "뷰어": 1,
+        "문서지식": null,
+        "지식그래프": null,
+        "분석": null,
+        "근거묶음": null,
+        "워크시트": null,
+        "평가비교": null,
+        "초기사건": null,
+        "내보내기": null,
+        "어댑터": null,
+        "samples": null,
+        "스크린샷": null,
+        "사용자검증": null,
+        "디자인검사": null,
+        "로그": null,
+        "보관": null
+      }
+    },
+    "records": {
+      "total": 3,
+      "resolved": 3,
+      "unresolved": 0,
+      "unresolved_paths": []
+    },
+    "errors": [],
+    "changed_files": [],
+    "total_files": 14
+  }
+}
