@@ -33,7 +33,7 @@ from hazop.study.ai_settings import AiPrefs
 from hazop.study.apikey import STORE_FILE_NAME, KeyStore
 
 APP_NAME = "HAZOP 분석 도구"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 STEPS = ("① 자료 등록", "② 도면 추출", "고정 응답 분석(이전 ④)", "설계보완·확정(이전 ⑤)", "③ 지식그래프", "④ 검토구간",
          "⑤ 분석 결과", "⑥ 초기사건")  # 화면 index 순
 STEP_ORDER = (0, 1, 4, 5, 6, 7, 2, 3)  # 보기 메뉴 순서

@@ -1129,7 +1129,7 @@ class ReviewScreen(QWidget):
             return None
         self.show_errors([])
         self.app.mark_saved(saved["reviewed_at"])
-        self.app.status_message("검토 저장: v%d — %s" % (saved["review_version"], paths.rel_or_abs(path, self.ctx.store_root)))
+        self.app.status_message("검토 저장: v%d — %s" % (saved["review_version"], paths.plain_rel(path, self.ctx.store_root)))
         self.refresh_table(keep=self.cid)
         return path
 

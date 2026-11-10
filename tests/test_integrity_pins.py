@@ -118,7 +118,7 @@ class TamperedResourceRootTest(unittest.TestCase):
         self.region_path = paths.folder_in(self.work, "regions", os.path.basename(REGION_FILE))
         os.makedirs(os.path.dirname(self.region_path))
         shutil.copyfile(REGION_FILE, self.region_path)
-        gpath = os.path.join(self.work, REGION["graph_ref"]["graph_file"])
+        gpath = paths.resolve_rel(REGION["graph_ref"]["graph_file"], self.work)
         os.makedirs(os.path.dirname(gpath))
         with open(gpath, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(GRAPH, fh, ensure_ascii=False, indent=2)

@@ -72,14 +72,14 @@ def datas_problems(program_root, expect):
     return probs
 
 
-def input_file_problems(input_files, resource_roles, resource_root, program_root, expect):
+def input_file_problems(input_files, resource_roles, resource_root, program_root, expect, resolve=None):
     """실행 기록의 기준 자료가 묶음 안 파일이고 기록 해시·기대 해시와 같은지. 문제 목록."""
     probs, seen = [], set()
     for f in input_files:
         if f.get("role") not in resource_roles:
             continue
         seen.add(f["role"])
-        full = os.path.join(resource_root, *str(f.get("path") or "").split("/"))
+        full = (resolve or (lambda rel, root: os.path.join(root, *rel.split("/"))))(str(f.get("path") or ""), resource_root)
         rel = os.path.relpath(full, program_root).replace("\\", "/") if within(full, program_root) else None
         if rel is None:
             probs.append("%s: 묶음 밖 파일 %s" % (f["role"], full))
@@ -236,7 +236,7 @@ def flow(args, paths, res, ok):
     res["run_dir"] = r.get("run_dir")
     files = (r.get("doc") or {}).get("analysis_run", {}).get("input_files", [])
     res["input_files"] = files
-    probs = input_file_problems(files, paths.RESOURCE_INPUT_ROLES, paths.resource_root(), bundle, expect)
+    probs = input_file_problems(files, paths.RESOURCE_INPUT_ROLES, paths.resource_root(), bundle, expect, paths.resolve_rel)
     guide = paths.resource_file("guide")
     if not within(guide, bundle) or expect.get(guide_rel) != sha_file(guide):
         probs.append("지침서가 묶음 파일이 아니거나 해시 다름: %s" % guide)

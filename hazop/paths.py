@@ -57,7 +57,9 @@ def rel_or_abs(path, root):
     - 저장소 전용 폴더(샘플 도면·APR1400) 아래 파일은 root와 관계없이 OLD_NAMES의 record 줄로 적는다
       (예: '참고자료/P&ID 도면 샘플/<나머지>').
     - 작업 루트 폴더 아래 파일은 0.1.x 이름으로 적는다(예: '자료저장소/<프로젝트>/originals/…', '출력/추출/<이름>/page.svg').
-    resolve_rel이 같은 표로 되돌려 읽는다. 사람에게 보여 줄 경로는 plain_rel을 쓴다."""
+    resolve_rel이 같은 표로 되돌려 읽는다. 사람에게 보여 줄 경로는 plain_rel을 쓴다.
+    root가 작업 루트가 아니어도, 그 아래 첫 폴더 이름이 작업 루트 폴더 이름과 같으면(data, output, store 등) 같은 식으로
+    바꿔 적는다. 작업 루트인지 알 길이 없어서다. 읽는 쪽(resolve_rel)도 같은 root로 되돌리므로 짝은 맞는다."""
     try:
         recorded = _record_path(path)
         if recorded is not None:
@@ -69,8 +71,9 @@ def rel_or_abs(path, root):
 
 
 def record_rel(rel):
-    """작업 루트 기준 상대 경로(디스크 이름, '/' 구분)를 기록 경로로. rel_or_abs가 그 자리의 파일을 적는 글자와 같다."""
-    return _swap_prefix(rel, work_names())
+    """작업 루트 기준 상대 경로(디스크 이름)를 기록 경로로. rel_or_abs가 그 자리의 파일을 적는 글자와 같다.
+    역슬래시, './', 안쪽 '..'는 rel_or_abs처럼 정리한다."""
+    return _swap_prefix(posixpath.normpath(rel.replace("\\", "/")), work_names())
 
 
 def plain_rel(path, root):
@@ -83,13 +86,16 @@ def plain_rel(path, root):
 
 def _swap_prefix(rel, pairs):
     """rel이 pairs의 앞 이름이거나 그 아래면 뒤 이름으로 바꾼다. 긴 이름부터, 대소문자를 가리지 않고 맞춘다."""
-    low = rel.lower()
-    if len(low) != len(rel):
-        return rel
     for src, dst in sorted(pairs, key=lambda p: -len(p[0])):
-        if low == src.lower() or low.startswith(src.lower() + "/"):
+        if _under(rel, src):
             return dst + rel[len(src):]
     return rel
+
+
+def _under(rel, name):
+    """rel('/' 구분)이 name이거나 그 아래인가. 대소문자를 가리지 않는다. 앞 구간만 잘라 견준다: 전체를 소문자로 바꾸면
+    글자 수가 달라지는 이름('İ')이 뒤에 있어도 맞아야 한다."""
+    return rel[:len(name)].lower() == name.lower() and (len(rel) == len(name) or rel[len(name)] == "/")
 
 
 def _record_path(path):
@@ -171,7 +177,39 @@ def resource_root():
     return frozen_bundle_dir() or REPO_ROOT
 
 
-def work_root():
+class OldLayoutError(RuntimeError):
+    """작업 루트가 0.1.x 배치(한글 이름 폴더)인데 아직 옮기지 않았다."""
+
+
+_current_layout = set()  # 0.1.x 폴더가 없다고 확인한 작업 루트(한 번 확인하면 다시 보지 않는다)
+
+
+def old_layout_folders(root):
+    """root에 남아 있는 0.1.x 최상위 폴더 이름(데이터, 기호후보, 자료저장소, 출력 가운데)."""
+    tops = sorted({old.split("/")[0] for old in OLD_WORK_RELS.values()})
+    return [name for name in tops if os.path.isdir(os.path.join(root, name))]
+
+
+def require_current_layout(root):
+    """root가 0.1.x 배치면 OldLayoutError. 옛 폴더가 남은 채로 새 이름 폴더에 쓰기 시작하면, 뒤에 옛 폴더를 옮길 때
+    새 파일과 부딪혀 사람이 한 수정·확정을 잃을 수 있다. 그래서 옮기기 전에는 읽지도 쓰지도 않는다(HZ-GOV-02 §6.6)."""
+    key = os.path.normcase(root)
+    if key in _current_layout:
+        return
+    old = old_layout_folders(root)
+    if old:
+        raise OldLayoutError("작업 루트에 이전 버전(0.1)의 폴더가 남아 있습니다: %s 의 %s. 먼저 새 이름으로 옮기세요: "
+                             "프로그램을 켜서 안내를 따르거나 python scripts/migrate_names.py --work-root \"%s\" --apply"
+                             % (root, ", ".join(old), root))
+    if key == os.path.normcase(DEV_WORK_ROOT) and not os.path.isdir(root) and os.path.isdir(OLD_DEV_WORK_ROOT):
+        raise OldLayoutError("옛 개발 작업 루트가 남아 있습니다: %s. 먼저 옮기세요: python scripts/migrate_names.py "
+                             "--work-root \"%s\" --from-root \"%s\" --apply" % (OLD_DEV_WORK_ROOT, root, OLD_DEV_WORK_ROOT))
+    _current_layout.add(key)
+
+
+def raw_work_root():
+    """작업 루트의 자리만. 배치를 보지 않는다. 옮기는 도구, 시작할 때의 안내, 잠금 파일과 로그처럼 옛·새 배치와
+    무관한 자리에만 쓴다. 자료를 읽고 쓰는 코드는 work_root()를 쓴다."""
     env = os.environ.get(ENV_WORK_ROOT)
     if env:
         return os.path.abspath(env)
@@ -179,6 +217,13 @@ def work_root():
         base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
         return os.path.join(base, "HAZOP")
     return DEV_WORK_ROOT
+
+
+def work_root():
+    """작업 루트. 0.1.x 배치가 남아 있으면 OldLayoutError(require_current_layout)."""
+    root = raw_work_root()
+    require_current_layout(root)
+    return root
 
 
 def resource_path(*parts):
@@ -424,26 +469,42 @@ def _inside(path, root):
 
 
 def resolve_rel(rel, root):
-    """저장된 상대 경로를 실제 경로로. 절대 경로면 그대로, root 아래에 있으면 그것, 없으면 OLD_NAMES로 푼 위치에
-    파일이 있을 때 그것(긴 옛 이름부터 맞춘다). 거기에도 없으면 작업 루트 폴더의 0.1.x 이름을 지금 이름으로 바꾼
-    root 기준 경로(파일이 없어도 이 경로다. 호출한 쪽이 '없음'을 알리고, 새로 쓰는 쪽은 지금 폴더에 쓴다)."""
+    """저장된 상대 경로를 실제 경로로. 절대 경로면 그대로다.
+    - 작업 루트 폴더의 0.1.x 이름으로 적힌 경로('출력/그래프/…', '자료저장소/…'): 지금 이름 폴더에 파일이 있으면 그것,
+      없고 적힌 자리에 있으면 그것, 둘 다 없으면 지금 이름 쪽 경로(호출한 쪽이 '없음'을 알리고, 새로 쓰는 쪽은 지금 폴더에
+      쓴다). 옛 폴더와 새 폴더가 함께 있을 때 옛 파일을 표시 없이 집지 않으려고 지금 이름을 먼저 본다.
+    - 그 밖의 경로: root 아래 적힌 자리에 있으면 그것(저장소 전용 폴더의 사본을 기록 경로 자리에 둔 검사 입력이 여기서
+      잡힌다), 없으면 OLD_NAMES로 푼 위치에 파일이 있을 때 그것(긴 옛 이름부터 맞춘다), 어디에도 없으면 root 기준 경로."""
     if os.path.isabs(rel):
         return rel
     direct = os.path.join(root, rel)
-    if os.path.exists(direct):
-        return direct
     # '.'·'..'를 먼저 정리하고, Windows 파일 이름처럼 대소문자를 가리지 않고 맞춘다(옛 파일에 손으로 적은 경로도 읽는다)
     norm = posixpath.normpath(rel.replace("\\", "/"))
-    low = norm.lower()
-    for row in OLD_NAMES:
-        old = row.old.lower()
-        if len(low) == len(norm) and (low == old or low.startswith(old + "/")):
-            alt = folder(row.name, *row.sub, *[p for p in norm[len(row.old):].split("/") if p])
-            if os.path.exists(alt):
-                return alt
-            return direct  # 저장소·자원 폴더의 옛 이름인데 파일이 없다. 작업 루트 이름으로 풀지 않는다
+    old_resource = next((row for row in OLD_NAMES if _under(norm, row.old)), None)
     now = _swap_prefix(norm, [(old, new) for new, old in work_names()])
-    return os.path.join(root, *now.split("/")) if now != norm else direct
+    if old_resource is None and now != norm:
+        current = os.path.join(root, *now.split("/"))
+        return direct if os.path.exists(direct) and not os.path.exists(current) else current
+    if os.path.exists(direct):
+        return direct
+    if old_resource is not None:
+        alt = folder(old_resource.name, *old_resource.sub, *[p for p in norm[len(old_resource.old):].split("/") if p])
+        if os.path.exists(alt):
+            return alt
+    return direct
+
+
+def resolve_moved(path):
+    """설정 파일에 적힌 절대 경로를 지금 자리로. 그 자리에 있으면 그대로다. 없으면, 0.1.x 작업 폴더 아래 경로일 때
+    (지금 작업 루트의 옛 이름 폴더, 또는 개발 환경의 옛 작업 루트) 0.2.0 자리에 있는지 보고 있으면 그것을 돌려준다."""
+    if not path or not os.path.isabs(path) or os.path.exists(path):
+        return path
+    for old_root in (raw_work_root(), OLD_DEV_WORK_ROOT):
+        if _inside(path, old_root):
+            now = resolve_rel(os.path.relpath(path, old_root).replace("\\", "/"), raw_work_root())
+            if os.path.exists(now):
+                return now
+    return path
 
 
 def is_reference_rel(rel):

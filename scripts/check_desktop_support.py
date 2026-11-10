@@ -75,7 +75,7 @@ def check_split_roots(graph, tmp, failures):
     os.makedirs(paths.folder_in(work, "regions"))
     shutil.copyfile(analyze.DEFAULT_REGION, paths.folder_in(work, "regions", os.path.basename(analyze.DEFAULT_REGION)))
     shutil.copytree(analyze.DEFAULT_FIXED, paths.folder_in(work, "fixed-responses", os.path.basename(analyze.DEFAULT_FIXED)))
-    gpath = os.path.join(work, region["graph_ref"]["graph_file"])
+    gpath = paths.resolve_rel(region["graph_ref"]["graph_file"], work)
     os.makedirs(os.path.dirname(gpath))
     shutil.copyfile(graph, gpath)
     env = {k: v for k, v in os.environ.items() if k not in (paths.ENV_STORE_ROOT, "PYTHONIOENCODING")}

@@ -516,7 +516,7 @@ def export_worksheet(run_dir, store_root, out_root, scope="all", now=None, node=
     for ws, title in zip(sheets, SHEETS):
         ws.title = title
     try:
-        _sheet_info(sheets[0], run, records, scope, now, xlsx_rel)
+        _sheet_info(sheets[0], run, records, scope, now, paths.plain_rel(xlsx_path, paths.work_root()))
         _sheet_candidates(sheets[1], run, records)
         _sheet_worksheet(sheets[2], run, records, ws_rows)
         _sheet_dics(sheets[3], run, records)

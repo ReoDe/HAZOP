@@ -108,7 +108,7 @@ def settings_refs(warnings):
         for v in (r.values() if isinstance(r, dict) else [r]):
             if isinstance(v, str) and v:
                 out.add(v)
-                out.add(os.path.normcase(os.path.abspath(v)))
+                out.add(os.path.normcase(os.path.abspath(paths.resolve_moved(v))))
     return out
 
 

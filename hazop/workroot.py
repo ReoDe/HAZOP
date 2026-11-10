@@ -29,6 +29,7 @@ KEEP_DIR = "_before-" + TO_VERSION
 STAGING_DIR = "_migrating-" + TO_VERSION
 MANIFEST = "manifest.json"
 SPACE_MARGIN = 64 * 1024 * 1024
+CONFLICT_LIST = 10  # 멈춘 까닭에 적는 파일 수
 
 
 class MigrationError(Exception):
@@ -133,7 +134,10 @@ def make_plan(root):
             conflicts.append("옛 폴더 '%s'가 다시 생겼습니다. %s 안에 먼저 옮겨 둔 것이 있습니다." % (old, KEEP_DIR))
         placed = old in step and _placed(root, step[old])
         if not placed and os.path.exists(os.path.join(root, now)) and _has_files(os.path.join(root, now)):
-            conflicts.append("새 폴더 '%s'에 이미 파일이 있습니다. 덮어쓰지 않습니다." % now)
+            there = _walk(root, now)[0]
+            conflicts.append("새 폴더 '%s'에 이미 파일이 %d개 있습니다. 덮어쓰지 않습니다: %s%s"
+                             % (now, len(there), ", ".join(there[:CONFLICT_LIST]),
+                                " 외 %d개" % (len(there) - CONFLICT_LIST) if len(there) > CONFLICT_LIST else ""))
         if placed:
             continue
         found, folders = _walk(root, old)

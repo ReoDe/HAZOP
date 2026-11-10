@@ -9,6 +9,7 @@ API 키와 API 모델은 지금처럼 api_keys.json(apikey.KeyStore)에 둔다. 
 
 import datetime
 
+from hazop import paths
 from hazop.study import claude_cli, claude_http, providers
 
 DEFAULTS = {"ai_method": None, "ai_method_auto": None, "subscription_terms_ack_at": None, "claude_cli_path": None,
@@ -125,7 +126,9 @@ class AiPrefs:
     # ---- 고정 응답
     @property
     def fixed_dir(self):
-        return self._get("fixed_response_dir")
+        """고정 응답 폴더. 0.1.x가 적어 둔 옛 자리(<작업 루트>/데이터/고정응답/…)는 지금 자리로 풀어 준다. 고른 폴더를 다시
+        저장하면(set_fixed_dir) 지금 자리가 적힌다."""
+        return paths.resolve_moved(self._get("fixed_response_dir"))
 
     def set_fixed_dir(self, path):
         self._set(fixed_response_dir=path or None)

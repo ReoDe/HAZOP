@@ -6,6 +6,8 @@ AI를 호출하지 않으며(고정 응답 폴더만), 웹뷰의 외부 네트�
 설정 파일을 읽을 수 없으면(hazop/app/startup.py) 대화형은 한국어 대화상자(백업 후 기본값으로 시작 / 종료), --screenshots는
 stderr 안내와 종료 코드 2.
 대화형은 한 작업 루트에 하나만 띄운다. 이미 실행 중이면 안내 후 종료 코드 3(startup.single_instance).
+작업 루트가 0.1.x 배치(한글 이름 폴더)면 대화형은 복사해 옮길지 묻고(startup.offer_work_root_move), 옮기지 않으면 종료 코드 4로
+끝낸다. --screenshots는 묻지 않고 stderr 안내와 종료 코드 4.
 """
 
 import argparse
@@ -43,9 +45,9 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if os.environ.get(ENV_TEST_EXCEPTHOOK) == "1" and getattr(sys, "_hazop_verify_build", False):
         return _test_excepthook()
-    from hazop.app.startup import check_settings, single_instance
+    from hazop.app.startup import check_settings, offer_work_root_move, single_instance
     if args.screenshots:  # 비대화형: 설정 파일을 읽을 수 없으면 대화상자 없이 stderr 안내, 종료 코드 2
-        rc = check_settings(args.settings, interactive=False)
+        rc = check_settings(args.settings, interactive=False) or offer_work_root_move(interactive=False)
         if rc is not None:
             return rc
     from hazop.app import make_application
@@ -57,6 +59,11 @@ def main(argv=None):
             return rc
         rc = check_settings(args.settings, interactive=True)
         if rc is not None:
+            return rc
+        rc = offer_work_root_move(interactive=True)
+        if rc is not None:
+            if lock is not None:
+                lock.unlock()
             return rc
     from hazop.app.main_window import MainWindow
     if args.screenshots:  # 스크린샷의 확정 예시 저장은 임시 저장 루트에만(자료저장소/를 건드리지 않음)

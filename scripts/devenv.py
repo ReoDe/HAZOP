@@ -87,7 +87,7 @@ def disk_problems(paths=None, need_gb=None):
     """작업 루트·임시 폴더(기본) 드라이브마다 여유가 need_gb보다 적으면 이유 목록을 돌려준다."""
     need = min_free_gb() if need_gb is None else need_gb
     if paths is None:
-        paths = [hp.work_root(), tempfile.gettempdir()]
+        paths = [hp.raw_work_root(), tempfile.gettempdir()]
     seen, bad = set(), []
     for p in paths:
         drive = os.path.splitdrive(os.path.abspath(p))[0].upper() or p
@@ -270,7 +270,7 @@ def old_work_root_warnings(roots=None):
     out = []
     if roots is None:
         local = os.environ.get("LOCALAPPDATA")
-        roots = [hp.work_root(), hp.DEV_WORK_ROOT] + ([os.path.join(local, "HAZOP")] if local else [])
+        roots = [hp.raw_work_root(), hp.DEV_WORK_ROOT] + ([os.path.join(local, "HAZOP")] if local else [])
         if os.path.isdir(hp.OLD_DEV_WORK_ROOT):
             out.append("옛 개발 작업 루트가 남아 있음: %s (scripts/migrate_names.py --work-root %s --from-root … 로 옮길 것)"
                        % (hp.OLD_DEV_WORK_ROOT, hp.DEV_WORK_ROOT))

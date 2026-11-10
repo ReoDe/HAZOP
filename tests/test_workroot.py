@@ -146,6 +146,13 @@ class WorkRootMigrationTest(unittest.TestCase):
         after = tree(self.root)
         self.assertEqual(files_of(self.before), {k: v for k, v in files_of(after).items() if k not in report["left"]})
         self.assertTrue(os.path.isfile(made) and os.path.isfile(changed))
+        # 옛 폴더와 새 파일이 함께 남은 작업 루트: 열리지 않고(옛 파일을 몰래 읽지 않는다), 다시 옮기려 하면 목록을 대고 멈춘다
+        with mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: self.root}), self.assertRaises(paths.OldLayoutError):
+            paths.work_root()
+        plan = workroot.make_plan(self.root)
+        self.assertEqual("conflict", plan.state)
+        self.assertIn("data/regions/region-a.json", " ".join(plan.conflicts))
+        self.assertIn("output/graph/NEW/graph.json", " ".join(plan.conflicts))
 
     def test_stops_without_touching_anything_when_a_new_folder_already_has_files(self):
         taken = os.path.join(self.root, "store", "p9", "x.json")

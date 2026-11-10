@@ -374,6 +374,9 @@ def migrate_work_root(root, from_root=None, apply=False, undo=False, out=print):
             out("되돌림: 옛 폴더 %d개를 제자리로 (%s)" % (len(done["restored"]), ", ".join(done["restored"]) or "없음"))
             for rel in done["left"]:
                 out("남김(옮긴 뒤 생겼거나 바뀐 파일): %s" % rel)
+            if done["left"]:
+                out("주의: 새 이름 폴더에 파일 %d개가 남았다. 옛 폴더와 새 폴더가 함께 있으면 앱이 시작하지 않고 다시 옮길 수도 없다. "
+                    "위 파일을 확인해 다른 곳으로 옮긴 뒤에 쓴다." % len(done["left"]))
             out("작업 루트: %s" % done["root"])
             return 0
         if apply:

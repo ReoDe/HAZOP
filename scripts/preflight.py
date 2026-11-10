@@ -49,7 +49,7 @@ def main(argv=None):
 
     print("인터프리터: %s" % sys.executable)
     print("시험용 venv: %s" % devenv.default_venv_python())
-    print("작업 루트: %s" % paths.work_root())
+    print("작업 루트: %s" % paths.raw_work_root())
     print("임시 폴더: %s" % tempfile.gettempdir())
 
     blocking = devenv.interpreter_problems()

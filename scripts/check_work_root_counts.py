@@ -199,6 +199,15 @@ def collect(work_root):
     return result
 
 
+def old_keys(group):
+    """0.1.x 때 표의 열쇠 → 지금 열쇠. 그때 열쇠는 폴더 이름이었다(작업 데이터 폴더만 '작업데이터', 보관 폴더는 밑줄 없이).
+    한글 열쇠로 적힌 이전 결과와 견줄 때 쓴다."""
+    if group == "output":
+        return {old.lstrip("_"): key for key, old in paths.OLD_OUTPUT_NAMES.items()}
+    top = paths.OLD_WORK_RELS["data"]
+    return dict({old.split("/")[-1]: key for key, old in paths.OLD_WORK_RELS.items()}, **{"작업" + top: "data"})  # 경로문자열-허용: 0.1.x 표의 열쇠 이름
+
+
 def compare(old, new):
     """다른 점 목록. 비어 있으면 같다."""
     diffs = []
@@ -207,9 +216,11 @@ def compare(old, new):
             diffs.append("%s: %r → %r" % (part, old.get(part), new.get(part)))
     for group in ("work", "output"):
         a, b = old["files"][group], new["files"][group]
+        renamed = old_keys(group)
         for key in sorted(a):  # 이전 결과 뒤에 표에 더한 열쇠는 견줄 값이 없다. 그 폴더의 파일은 윗폴더 수에 들어 있다
-            if a[key] != b.get(key):
-                diffs.append("files.%s.%s: %r → %r" % (group, key, a[key], b.get(key)))
+            now = key if key in b else renamed.get(key, key)
+            if a[key] != b.get(now):
+                diffs.append("files.%s.%s: %r → %r" % (group, key, a[key], b.get(now)))
     for key in ("total", "resolved", "unresolved"):
         if old["records"][key] != new["records"][key]:
             diffs.append("records.%s: %r → %r" % (key, old["records"][key], new["records"][key]))
@@ -228,6 +239,8 @@ def main(argv=None):
     ap.add_argument("--compare", help="이전 결과 JSON. 다르면 종료 코드 1")
     ap.add_argument("--compare-key", help="이전 결과 JSON이 여러 사본의 결과를 묶은 파일일 때 견줄 항목의 열쇠(예: dev_work_root)")
     args = ap.parse_args(argv)
+    if args.out and paths._inside(args.out, args.work_root):
+        ap.error("--out은 검사하는 작업 루트 밖에 둔다(안에 쓰면 사본이 바뀐다): %s" % args.out)
     result = collect(args.work_root)
     text = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
     if args.out:

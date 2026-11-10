@@ -205,7 +205,8 @@ class ScriptLoadingTest(unittest.TestCase):
             os.makedirs(os.path.join(b, "scripts"))
             shutil.copy(os.path.join(REPO_ROOT, "scripts", "build_graph.py"), os.path.join(b, "scripts"))
             bundles.append(b)
-        with FrozenMock(bundles[0]):
+        # 작업 루트를 임시 폴더로 돌린다: 묶인 실행의 기본 작업 루트는 이 PC의 실제 배포본 작업 폴더이고 그 배치에 따라 결과가 갈린다
+        with FrozenMock(bundles[0]), mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: os.path.join(self.tmp, "w")}):
             m0 = data.script_module("build_graph")
             self.assertIs(data.script_module("build_graph"), m0)  # 같은 경로는 캐시
             with mock.patch.object(sys, "_MEIPASS", bundles[1]):
@@ -247,7 +248,7 @@ class SplitRootsFlowTest(unittest.TestCase):
         shutil.copyfile(REGION_FILE, self.region_path)
         self.fixed = paths.folder_in(self.work, "fixed-responses", os.path.basename(FIXED_DIR))
         shutil.copytree(FIXED_DIR, self.fixed)
-        gpath = os.path.join(self.work, region["graph_ref"]["graph_file"])
+        gpath = paths.resolve_rel(region["graph_ref"]["graph_file"], self.work)
         os.makedirs(os.path.dirname(gpath))
         with open(gpath, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(GRAPH, fh, ensure_ascii=False, indent=2)

@@ -80,7 +80,7 @@ class PathsTest(unittest.TestCase):
         with mock.patch.dict(os.environ, env, clear=True):
             self.assertEqual(paths.resource_root(), os.path.abspath("C:/r"))
             self.assertEqual(paths.store_root(), paths.folder_in(os.path.abspath("C:/w"), "store"))
-            self.assertEqual(paths.folder("regions"), os.path.join(os.path.abspath("C:/w"), "data", "regions"))  # 작업 루트 배치 계약(배포본과 같음)
+            self.assertEqual(paths.folder("regions"), os.path.join(os.path.abspath("C:/w"), "data", "regions"))  # 경로문자열-허용: 작업 루트 배치 계약(배포본과 같음)
         with mock.patch.dict(os.environ, dict(env, HAZOP_STORE_ROOT="C:/s"), clear=True):
             self.assertEqual(paths.store_root(), "C:/s")  # HAZOP_STORE_ROOT 우선
 
@@ -558,7 +558,7 @@ class SplitRootsTest(TmpCase):
         os.makedirs(paths.folder_in(work, "regions"))
         shutil.copyfile(REGION_FILE, paths.folder_in(work, "regions", os.path.basename(REGION_FILE)))
         shutil.copytree(FIXED_DIR, paths.folder_in(work, "fixed-responses", os.path.basename(FIXED_DIR)))
-        _dump(os.path.join(work, region["graph_ref"]["graph_file"]), GRAPH)
+        _dump(paths.resolve_rel(region["graph_ref"]["graph_file"], work), GRAPH)
         env = dict(_clean_env(), HAZOP_RESOURCE_ROOT=res, HAZOP_WORK_ROOT=work)
         env.pop("PYTHONIOENCODING", None)
         repo_runs = sorted(os.listdir(paths.output_in(paths.DEV_WORK_ROOT, "analysis"))) \

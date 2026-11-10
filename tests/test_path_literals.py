@@ -36,6 +36,7 @@ ALLOW = {
     "tests/test_record_paths.py",
     "tests/test_work_record_paths.py",
     "tests/test_workroot.py",
+    "tests/test_workroot_app.py",
 }
 # 사용자 데이터·배치 계약을 그대로 적어야 하는 줄은 끝에 "# 경로문자열-허용: <이유>"를 단다
 ALLOW_MARK = "# 경로문자열-허용:"
@@ -99,6 +100,20 @@ def join_args(tree):
     return ids
 
 
+def split_layout_args(tree):
+    """os.path.join(root, "output", "graph", …)처럼 지금 작업 루트 배치를 인자로 나눠 적은 호출에서, 그 첫 이름 상수의 id.
+    이어 적은 글자("output/graph")는 PATH_PART가 잡는다."""
+    dev = os.path.basename(paths.DEV_WORK_ROOT)
+    ids = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", None)) == "join":
+            words = [a.value if isinstance(a, ast.Constant) and isinstance(a.value, str) else None for a in node.args]
+            for i in range(len(words) - 1):
+                if (words[i] in WORK_TOPS and words[i + 1] in WORK_INNER) or (words[i] == dev and words[i + 1] in WORK_TOPS):
+                    ids.add(id(node.args[i]))
+    return ids
+
+
 def violations(repo=REPO, pattern=PATH_PART, allow=frozenset(ALLOW), joined=OLD_INNER):
     out = []
     for rel in python_files(repo):
@@ -110,11 +125,11 @@ def violations(repo=REPO, pattern=PATH_PART, allow=frozenset(ALLOW), joined=OLD_
         except SyntaxError as e:
             out.append((rel, e.lineno or 0, "구문 오류"))
             continue
-        skip, in_join = docstring_ids(tree), join_args(tree)
+        skip, in_join, split = docstring_ids(tree), join_args(tree), split_layout_args(tree)
         lines = open(full, encoding="utf-8").read().splitlines()
         for node in ast.walk(tree):
             if (isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip
-                    and (pattern.search(node.value) or (id(node) in in_join and node.value in joined))
+                    and (pattern.search(node.value) or (id(node) in in_join and node.value in joined) or id(node) in split)
                     and ALLOW_MARK not in lines[node.lineno - 1]):
                 out.append((rel, node.lineno, node.value[:80]))
     return sorted(out)
@@ -148,6 +163,17 @@ class PathLiteralTest(unittest.TestCase):
                          'E = "분석"\nF = "분석/x"\nG = label("그래프")\n')
             found = violations(tmp)
         self.assertEqual([("scripts/x.py", 3), ("scripts/x.py", 4), ("scripts/x.py", 8)], [v[:2] for v in found])
+
+    def test_layout_split_into_join_arguments_is_caught(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="hazop-pathlit-") as tmp:
+            os.makedirs(os.path.join(tmp, "scripts"))
+            with open(os.path.join(tmp, "scripts", "x.py"), "w", encoding="utf-8") as fh:
+                fh.write('import os\nA = os.path.join(root, "output", "graph", "x.json")\nB = os.path.join(root, "data", "regions")\n'
+                         'C = os.path.join(repo, "work", "store")\nD = os.path.join(tmp, "output", "x.json")\n'
+                         'E = os.path.join(tmp, "work", "tmp")\nF = os.path.join(tmp, "store")\nG = os.path.join(tmp, "graph", "a")\n')
+            found = violations(tmp)
+        self.assertEqual([("scripts/x.py", 2), ("scripts/x.py", 3), ("scripts/x.py", 4)], [v[:2] for v in found])
 
     def test_guide_location_is_written_once(self):
         """지침서 위치는 paths.FILES["guide"]에만 적는다. 한 곳이라도 따로 적으면 폴더를 옮길 때 그곳만 빠져
