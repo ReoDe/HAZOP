@@ -15,7 +15,7 @@ One command prepares a temp work root, launches the app, runs the scenarios, wri
 %USERPROFILE%\.hazop\venv-py312\Scripts\python.exe scripts/check_user_scenarios.py --out <dir> [--only S1,S3] [--keep-temp]
 ```
 
-- Preparation runs offscreen in a subprocess (`--_prepare`): copies `출력/추출|그래프/SNP-M-102`, `출력/지식그래프`, the sample drawings (`paths.folder("참고", "pid-samples")`, copied to their logical `참고자료/P&ID 도면 샘플/` path), confirms study nodes, fills ⑤ with the fake AI client from `scripts/shoot_results.py`. No network.
+- Preparation runs offscreen in a subprocess (`--_prepare`): copies `output/extract|graph/SNP-M-102`, `output/knowledge-graph`, the sample drawings (`paths.folder("references", "pid-samples")`, copied to their logical `참고자료/P&ID 도면 샘플/` path), confirms study nodes, fills ⑤ with the fake AI client from `scripts/shoot_results.py`. No network.
 - The app under test is `check_user_scenarios.py --_app <settings>`: the same `MainWindow` as `run_app.py` with ⑤'s AI client swapped for a slow fake (`AI_DELAY` seconds per call). Never point a scenario at the real API.
 - S15 switches the AI connection to Claude subscription, runs ⑤ through the fake CLI (`tests/fake_claude_flow.py`, injected only inside `--_app`), cancels mid-run and closes the window with "기다렸다 닫기". It closes the app, so it runs last.
 - Launch sets `HAZOP_WORK_ROOT`, `HAZOP_STORE_ROOT` (temp), `QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9339`, `--settings <temp>/settings.json` with a reviewer name (so no startup dialog).
@@ -34,7 +34,7 @@ One command prepares a temp work root, launches the app, runs the scenarios, wri
 - Webview (②③④): CDP `Runtime.evaluate` over the stdlib WebSocket client in the script. There is no page on ①.
 - Input: Win32 `keybd_event`/`SendInput`/`SetCursorPos`. Text goes as Unicode events (IME-independent). The Hangul/English mode is set with `WM_IME_CONTROL` to `ImmGetDefaultIMEWnd`. An injected `VK_HANGUL` does nothing.
 - Every input goes through `Driver._guard`: the foreground pid must be the app or its child, else it flashes the window and waits `--focus-wait` seconds for a human click, then aborts the scenario.
-- Add a scenario as a function `sN_name(d)` in `SCENARIOS`, using `d.step`, `d.key`, `d.type`, `d.click`, `d.wait`, `d.expect`, `d.shot`, `d.audit`. Verify side effects from saved files (`d.entry_counts()` reads `work/데이터/분석결과`), not just the screen.
+- Add a scenario as a function `sN_name(d)` in `SCENARIOS`, using `d.step`, `d.key`, `d.type`, `d.click`, `d.wait`, `d.expect`, `d.shot`, `d.audit`. Verify side effects from saved files (`d.entry_counts()` reads `work/data/analysis-results`), not just the screen.
 
 ## Evidence
 
