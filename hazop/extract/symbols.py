@@ -301,9 +301,9 @@ class Entry:
 
 
 def bundle_dir(root, name, prefix):
-    """묶음 폴더. 폴더 이름은 묶음 이름(APR1400)이거나 접두(common)다. 묶음 이름이 한글('공통')이어도 폴더는 영어 접두로 둔다.
-    둘 다 없으면 묶음 이름 자리를 돌려준다(새 묶음을 만들 자리)."""
-    for d in (name, prefix):
+    """묶음 폴더. 폴더 이름은 접두(common)이거나 묶음 이름(APR1400)이다. 묶음 이름이 한글('공통')이어도 폴더는 영어 접두로 두므로
+    접두 폴더를 먼저 본다. 둘 다 없으면 묶음 이름 자리를 돌려준다(새 묶음을 만들 자리)."""
+    for d in (prefix, name):
         if os.path.isdir(os.path.join(root, d)):
             return os.path.join(root, d)
     return os.path.join(root, name)

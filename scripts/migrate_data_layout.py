@@ -1,4 +1,7 @@
-"""`데이터/`·`참고자료/` 배치 이전 (docs/2026-11-09-data-consolidation §4, 결정 D1~D9).
+"""`데이터/`·`참고자료/` 배치 이전 (docs/2026-11-09-data-consolidation §4, 결정 D1~D9). 2026-11-09에 끝난 한 번짜리 도구다.
+
+plan·apply는 이제 안내만 찍고 종료 코드 2로 끝난다: 목적지 `자원/`이 2026-11-10에 `resources/`로 옮겨져, 돌리면 옛 폴더가 다시 생긴다.
+manifest·compare·graph-check는 그대로 쓴다. 아래는 그때의 사용법과 규칙이다.
 
     python scripts/migrate_data_layout.py plan --phase 3a|3b         무엇이 어디로 가는지 미리보기(쓰지 않음)
     python scripts/migrate_data_layout.py apply --phase 3a|3b         미리보기만(apply도 기본은 쓰지 않음)
@@ -25,6 +28,8 @@ import subprocess
 import sys
 
 REPO_DEFAULT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FINISHED = ("이 이전(2026-11-09, 데이터/·참고자료/ → 자원/·작업/)은 끝났다. 그 뒤 2026-11-10 이름 이전으로 자원/이 resources/가 되어, "
+            "지금 돌리면 없어진 옛 폴더를 다시 만든다. plan·apply는 돌리지 않는다. 이름 이전은 scripts/migrate_names.py가 한다.")
 LOCK_NAME = ".hazop-app.lock"
 MANIFEST_ROOTS = ("데이터", "참고자료", "출력", "자료저장소", "logs", "자원", "작업")
 
@@ -393,6 +398,9 @@ def main(argv=None):
     sub.add_parser("graph-check")
     args = ap.parse_args(argv)
     repo = os.path.abspath(args.repo)
+    if args.cmd in ("plan", "apply"):
+        print(FINISHED)
+        return 2
     if args.cmd == "plan":
         return cmd_plan(repo, args.phase)
     if args.cmd == "apply":

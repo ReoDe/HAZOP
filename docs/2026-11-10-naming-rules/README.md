@@ -429,17 +429,17 @@ approved: director 2026-11-10
 
 ## 6. 이전 위험과 대책
 
-### 6.1 `hazop/paths.py`의 `FOLDERS`와 `LEGACY_PREFIXES`
+### 6.1 `hazop/paths.py`의 `FOLDERS`와 `OLD_NAMES`
 
 - **위험.** 데이터 폴더 21개가 이 표 하나로 열린다(`paths.folder` 호출 224곳, 파일 87개). 반대로 `출력/` 아래 이름(`그래프`, `분석`, `추출`, `지식그래프` 등)은 표에 없고 각 스크립트와 모듈이 문자열로 적는다. `"출력` 문자열은 파일 55개 209줄, `"그래프`는 80개 179줄에 나온다(`git grep -c -F '"출력' -- '*.py'`). 화면 문구도 섞여 있어 실제 경로 문자열 수는 이보다 적다(미확인).
-- **대책.** 단계 6 앞에 `output_root()`처럼 `FOLDERS`에 출력 하위 폴더 행을 더하는 정리 단위를 먼저 둔다(CLAUDE.md 규칙 4 "두 번 막히면 파일을 나누는 단위를 먼저"). 그다음 이름 바꾸기는 표 한 곳만 고치면 된다. `LEGACY_PREFIXES`에는 옛 한글 접두를 지우지 말고 새로 더한다(`자원/기준/이탈후보/` → `deviations` 등). 사용자 파일에 남은 옛 경로는 계속 읽혀야 한다.
+- **대책.** 단계 6 앞에 `output_root()`처럼 `FOLDERS`에 출력 하위 폴더 행을 더하는 정리 단위를 먼저 둔다(CLAUDE.md 규칙 4 "두 번 막히면 파일을 나누는 단위를 먼저"). 그다음 이름 바꾸기는 표 한 곳만 고치면 된다. 옛 경로를 푸는 표 `paths.OLD_NAMES`(단계 5 전 이름은 `LEGACY_PREFIXES`)에는 옛 한글 접두를 지우지 말고 새로 더한다(`자원/기준/이탈후보/` → `deviations` 등). 사용자 파일에 남은 옛 경로는 계속 읽혀야 한다.
 
 ### 6.2 그래프 판(`graph_version`)과 표본 JSON의 `inputs`
 
 - **위험 1: 그래프 판.** `graph_version`은 추출 결과 전체(JSON)의 해시다(`hazop/graph/build.py:78`). 추출 결과의 `source.file`에는 `참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/…drawio` 같은 기록용 논리 경로가 들어간다(`paths.rel_or_abs`). 샘플 폴더 이름을 `pid-samples`로 바꾸면 이 문자열이 바뀌어 샘플 6장의 그래프 판이 모두 바뀐다. 그러면 구간 JSON의 `graph_ref`가 맞지 않게 되고(`hazop/analysis/run.py:125`), 고정 응답의 `bundle_sha256`도 다시 매겨야 할 수 있다(`scripts/refresh_fixture_hashes.py`).
 - **대책(권장).** 기록용 논리 경로는 폴더 이름이 아니라 **데이터 식별자**로 본다. `paths.rel_or_abs`가 새 폴더 `references/pid-samples/` 아래 파일을 지금처럼 `참고자료/P&ID 도면 샘플/…`로 적게 대응표를 한 줄 둔다. 판이 바뀌지 않으므로 재연결과 해시 재계산이 필요 없다. 다른 길은 §9 질문 3이다.
-- **위험 2: 표본 `inputs`.** `resources/samples/regions/region-SNP-M-102-pzr.json`의 `inputs`는 `데이터/이탈후보/kosha-p86-2017-deviation-chart.json`처럼 옛 경로를 적는다. 읽을 때 `LEGACY_PREFIXES`가 푼다.
-- **대책.** 표본 파일은 고치지 않는다. 고치면 표본을 복사해 만드는 시험 데이터와 고정 응답이 함께 흔들린다. 대신 `LEGACY_PREFIXES`가 새 폴더로 풀게만 한다.
+- **위험 2: 표본 `inputs`.** `resources/samples/regions/region-SNP-M-102-pzr.json`의 `inputs`는 `데이터/이탈후보/kosha-p86-2017-deviation-chart.json`처럼 옛 경로를 적는다. 읽을 때 `paths.OLD_NAMES`가 푼다.
+- **대책.** 표본 파일은 고치지 않는다. 고치면 표본을 복사해 만드는 시험 데이터와 고정 응답이 함께 흔들린다. 대신 `paths.OLD_NAMES`가 새 폴더로 풀게만 한다.
 - **위험 3: 지침서·카탈로그 해시 고정.** `hazop/analysis/integrity.py`는 `기획서/HAZOP기법지침.md`의 SHA-256(`GUIDE_SHA256`)과 카탈로그 JSON 4개의 SHA-256(`PINNED_SHA256`)을 고정해 둔다. 지침서에 문서 머리를 달거나, 카탈로그 JSON 안의 출처 문자열(`"기획서/HAZOP기법지침.md §5.3"`)을 고치면 무결성 검사가 실패한다.
 - **대책.** 지침서 이동·머리 추가와 해시 재고정을 한 커밋에 넣고, 커밋 본문에 새 해시와 이유를 적는다. 카탈로그 JSON 안의 출처 문자열은 '어느 문서에서 왔나'라는 기록이므로 고치지 않는다. 지침서의 옛 이름은 `HZ-PLN-07`로 찾을 수 있게 대응표(§5.2)에 남긴다. `catalog_md.py`가 지침서 표를 파싱하므로, 머리를 단 뒤에도 같은 카탈로그가 나오는지 `tests/test_integrity_pins.py`로 확인한다.
 - **위험 4: 지식그래프 CSV 출처.** `resources/samples/knowledge-graph/SNP-SAMPLE/*.csv`와 `tests/fixtures/kg/*/*.csv`에 `기획서/…` 출처가 들어 있다(`grep -rl 기획서 자원 tests/fixtures`). 이것도 출처 기록이다.
@@ -467,7 +467,7 @@ approved: director 2026-11-10
   1. 이전 도구 `scripts/migrate_names.py`를 만든다. 기존 `scripts/migrate_data_layout.py`처럼 기본은 목록만 보여 주고, `--apply`일 때 **복사**한 뒤 해시를 비교하고 `manifest.json`을 남긴다. 옛 폴더는 지우지 않고 `_before-0.2.0`으로 이름만 바꾼다. `--undo <manifest>`로 되돌린다.
   2. 앱은 `0.2.0`부터 시작할 때 옛 한글 폴더를 찾으면 이전할지 묻는다(§9 질문 4). 거절하면 옛 폴더를 읽기 전용으로 연다.
   3. 설정 파일의 경로는 읽을 때 옛 접두를 새 접두로 바꿔 보고, 저장할 때 새 경로로 쓴다.
-  4. 사용자 파일 안의 상대 경로는 고치지 않고 `LEGACY_PREFIXES`로 읽는다(2026-11-09 정리와 같은 원칙).
+  4. 사용자 파일 안의 상대 경로는 고치지 않고 `paths.OLD_NAMES`로 읽는다(2026-11-09 정리와 같은 원칙).
   5. 개발 환경의 `D:\HAZOP\작업\`도 같은 도구로 옮긴다. `.gitignore`의 `작업/` 줄은 `work/`로 바꾸되, 옛 줄도 한동안 둔다.
 
 ### 6.7 git 이력 추적(`git mv`)
@@ -507,7 +507,7 @@ approved: director 2026-11-10
 | **2. `docs/` 안** | §5.4: evidence 25개, symbol-library CSV 5개와 그림 폴더 2개(299파일), lessons·plan 3개, `screenshots-pdf` 날짜 붙이기, README 없는 3곳에 README | 파일 약 335개 | 그 작업 공간을 쓰는 세션이 없을 때 | 링크 대상 검사(N9), unittest | ①② 커밋 revert |
 | **3. 사람 문서 폴더** | `기획서/`→`specs/`, `flow chart/`→`specs/flows/`, `디자인/`→`design/`(시안 106개 이름 포함), `지식/`→`methodology/`, `메모리/`→`records/`, `packaging/다른PC-점검표.md`, 문서 머리 37개, 결정로그 번호 열, 지침서 해시 재고정, `.claude/` 경로, 링크 480곳. 앞서 지침서 경로를 `FOLDERS`로 모으는 정리 1커밋 | 파일 약 155개 | **다른 세션 0**(문서·`.claude/`를 모두 건드림), 단위 B 완료 뒤 | unittest(특히 `test_integrity_pins`, `test_packaging`), 시안 `build.py` 재실행으로 같은 그림이 나오는지, 배포본 빌드 + `verify_bundle.py`, 링크 검사 | ①② 커밋 revert. 지침서 해시는 ②에 함께 있어 같이 돌아감 |
 | **4. 시험 입력의 한글 이름** | `tests/fixtures/docextract/SNP-DOC-102_가압기압력제어_설계설명서(가상).pdf`(이 파일을 만드는 `make_design_doc.py`와 읽는 시험 함께) | 파일 1개 + 코드 | 돌아도 됨 | 해당 시험, 전체 unittest | revert |
-| **5. `자원/` → `resources/`** | §5.5 전체: 추적 162개, 추적 안 하는 APR1400 원본·도면별·PDF·사진(각 PC에서 손으로), `FOLDERS` resource·repo 행, `LEGACY_PREFIXES` 추가, 샘플 논리 경로 고정(§6.2), `test_path_literals.py` 패턴, `.gitignore`, `devenv.py` 확인 | 추적 162개 + 로컬 약 411MB | **다른 세션 0** | unittest, `check_snp_baseline.py`와 `check_apr1400.py`를 `--update` 없이(점수 그대로여야 함, '맞은 수/분모 @커밋'으로 기록), `refresh_fixture_hashes.py --check`, 배포본 빌드 + `verify_bundle.py`, 앱 S1~S6 시나리오(`check_user_scenarios.py`, 데스크톱 잠금 안에서) | ①② revert. 추적 안 하는 파일은 이동 기록으로 되돌림 |
+| **5. `자원/` → `resources/`** | §5.5 전체: 추적 162개, 추적 안 하는 APR1400 원본·도면별·PDF·사진(각 PC에서 손으로), `FOLDERS` resource·repo 행, `OLD_NAMES` 줄 추가, 샘플 논리 경로 고정(§6.2), `test_path_literals.py` 패턴, `.gitignore`, `devenv.py` 확인 | 추적 162개 + 로컬 약 411MB | **다른 세션 0** | unittest, `check_snp_baseline.py`와 `check_apr1400.py`를 `--update` 없이(점수 그대로여야 함, '맞은 수/분모 @커밋'으로 기록), `refresh_fixture_hashes.py --check`, 배포본 빌드 + `verify_bundle.py`, 앱 S1~S6 시나리오(`check_user_scenarios.py`, 데스크톱 잠금 안에서) | ①② revert. 추적 안 하는 파일은 이동 기록으로 되돌림 |
 | **6. `작업/` → `work/`, 출력 하위 이름** | 앞서 출력 하위 폴더를 `FOLDERS`로 모으는 정리 단위. 그다음 §5.6 전체, `FOLDERS` 키 영어화, `scripts/migrate_names.py`(복사·해시 비교·manifest·undo), 앱 시작 시 옛 폴더 감지, 설정 파일 경로 변환, `APP_VERSION` `0.2.0`과 태그 | 코드 이름 약 30종, 파일 수십 개(정리 단위에서 셈), 사용자 작업 루트 2곳(개발, 이 PC 배포본) | **다른 세션 0** | unittest, 임시 작업 루트에 옛 배치를 만들어 이전 도구 `--apply`·`--undo` 왕복 시험, 기준값 두 개 그대로, 배포본으로 옛 작업 루트 열기(이 PC의 `%LOCALAPPDATA%\HAZOP` 사본으로), 앱 S1~S6 | 코드는 revert. 사용자 데이터는 `migrate_names.py --undo <manifest>`(옛 폴더는 `_before-0.2.0`으로 남아 있음) |
 
 **정리 순서의 이유.** 단계 0~4는 코드가 읽지 않거나 읽는 곳이 몇 군데뿐이다. 실패해도 문서 링크가 깨지는 정도라 되돌리기 쉽다. 단계 5는 저장소 안 데이터 계약을 바꾸고, 단계 6은 저장소 밖 사용자 데이터까지 건드린다. 위험이 큰 것을 뒤에 두면, 앞 단계에서 이전 도구와 링크 검사가 한 번씩 검증된 뒤에 쓰인다.

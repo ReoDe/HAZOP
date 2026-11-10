@@ -35,7 +35,9 @@ EXEMPT = {
         ("N8", "* @ " + NAMING_DOC, "대응표가 옛 이름을 일부러 적는다"),
         ("N9", "docs/2026-11-05-packaging/evidence/w5-* -> HAZOP기법지침.md", "기획서 문장을 인용한 줄 안의 링크"),
         ("N8", "* @ docs/2026-11-10-plan/pstack-advice.md", "단위 NAMING 절이 옮길 이름과 데이터에 남는 옛 출처를 일부러 적는다"),
-        ("N1", "resources/references/*", "샘플 도면 폴더 이름은 기준값의 키이고(§5.5), 기호 카탈로그와 APR1400_DCD는 받은 이름을 그대로 둔다"),
+        ("N1", "resources/references/pid-samples/*", "샘플 도면 폴더 이름은 기준값의 키다(§5.5)"),
+        ("N1", "resources/references/pid-symbol-catalog/*", "받은 기호 카탈로그의 파일 이름을 그대로 둔다"),
+        ("N1", "resources/references/APR1400_DCD/*", "받은 이름을 그대로 둔다(§5.5)"),
         ("N8", "자원/ @ docs/2026-11-09-data-consolidation/README.md", "2026-11-09 정리의 계획이자 기록. 그때 정한 배치를 적었다"),
     ],
     6: [
