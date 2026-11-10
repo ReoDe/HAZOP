@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HAZOP 향후 작업</title>
+<style>
+:root{--bg:#fafaf8;--card:#fff;--line:#dedcd4;--text:#2c2c2a;--muted:#6b6a64;--acc:#3c3489;--acc-bg:#eeedfe;--warn:#854f0b;--warn-bg:#faeeda;--ok:#27500a;--ok-bg:#eaf3de;--stop:#791f1f;--stop-bg:#fcebeb}
+@media (prefers-color-scheme:dark){:root{--bg:#1d1d1b;--card:#262624;--line:#3d3d3a;--text:#e8e6dc;--muted:#a3a19a;--acc:#cecbf6;--acc-bg:#3c3489;--warn:#fac775;--warn-bg:#633806;--ok:#c0dd97;--ok-bg:#27500a;--stop:#f7c1c1;--stop-bg:#791f1f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 "Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+main{max-width:980px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:22px;font-weight:500;margin:0 0 4px}
+.meta{color:var(--muted);font-size:13px;margin:0 0 20px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:0 0 12px}
+h2{font-size:16px;font-weight:500;margin:0 0 2px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.card{border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:14px}
+.card b{font-weight:500}
+.tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:6px;margin:0 4px 6px 0}
+.s{background:var(--acc-bg);color:var(--acc)}.r{background:var(--warn-bg);color:var(--warn)}
+.ok{background:var(--ok-bg);color:var(--ok)}.st{background:var(--stop-bg);color:var(--stop)}
+.f{font-family:Consolas,monospace;font-size:12px;color:var(--muted);margin-top:6px;word-break:break-all}
+ul{margin:6px 0 0;padding-left:18px}
+</style>
+</head>
+<body>
+<main>
+<h1>HAZOP 향후 작업과 하위 세션 배치</h1>
+<p class="meta">작성 2026-11-10 · 기준 브랜치 feat/next-units · 근거: INTENT.md, 메모리/남은작업.md, docs/2026-11-10-plan/pstack-자문.md</p>
+
+<section>
+<h2>0단계 · 바탕 고치기</h2>
+<p class="sub">D 드라이브 이전에서 생긴 경로·백업 결함. 모든 단위가 쓰는 경로 함수라 맨 먼저</p>
+<div class="grid">
+<div class="card"><span class="tag ok">완료 · cf2c9bf</span><span class="tag s">세션 A · poteto-mode</span><br><b>드라이브를 넘는 경로·백업 결함</b><br>백업 세 곳은 새 backup_rel, 그래프 출처는 rel_or_abs. 전체 시험 1,748개 실패 0, SNP 후퇴 0 (QA @cf2c9bf)<div class="f">paths.py · build_graph.py · project_ctx.py · ie/store.py · migrate.py · devenv.py</div></div>
+</div>
+</section>
+
+<section>
+<h2>1단계 · 완성본 다듬기 (병렬)</h2>
+<p class="sub">의도의 최우선 순위인 '쓸 수 있는 완성본 + 패키징'. 파일 주인을 나눠 동시에 진행</p>
+<div class="grid">
+<div class="card"><span class="tag r">검토 지적 수정 중</span><span class="tag s">세션 B · 대</span><br><b>패키징 마무리 (Pretendard 제외)</b><br>배포 검증 스크린샷에 ②편집·④·⑤·⑥ 추가, spec 정리, 빌드본 단일 실행 잠금 확인, 다른 PC 점검표. 고칠 것: 점검표 데이터 삭제 안내, 잠금 검사 거짓 통과, ③ 검증 실패<div class="f">packaging/* · scripts/build_package.py · tokens.py</div></div>
+<div class="card"><span class="tag r">검토 중</span><span class="tag s">세션 C · 중</span><br><b>화면 결함 5건</b><br>한글 입력 상태 A 승인을 고침(43a0cb4). 나머지 4건은 이미 고쳐져 있었고 접근성 이름은 시험으로 고정<div class="f">hazop/app/screens/* · explorer.py</div></div>
+<div class="card"><span class="tag r">검토 중</span><span class="tag s">CI 검토 세션 · 읽기 전용</span><br><b>CI 도입 검토 (비개발자용)</b><br>CI가 막아 줄 사고와 못 막는 것, 비용, 선택지 비교, 권장안<div class="f">docs/2026-11-10-ci-review/README.md</div></div>
+<div class="card"><span class="tag s">총괄 + 사용자 질의</span><br><b>결정 정리 · 문서 범위</b><br>INTENT §7 질문 12개를 위자드로 받고 README·전체기획의 범위 문구와 ①~⑥ 표기를 고침<div class="f">INTENT.md · README.md · 기획서/전체기획.md</div></div>
+</div>
+</section>
+
+<section>
+<h2>2단계 · 실제로 써 보기 (B·C 뒤)</h2>
+<p class="sub">실제 AI 실행과 저장 안정성</p>
+<div class="grid">
+<div class="card"><span class="tag st">사용자 직접</span><span class="tag s">+ QA</span><br><b>구독제·API 소량 실전 확인</b><br>SNP 표본 칸 몇 개만. 칸 상세·Excel 출처, 한도 띠, 창 닫기 때 claude.exe 정리, 동시 2</div>
+<div class="card"><span class="tag s">세션 D · 대</span><br><b>저장 공용화 묶음 B·C·D</b><br>원자적 저장 함수, op_id·S번호 발급기, history 기록 함수 공용화. 저장·ID 경로라 재현 시험 필수<div class="f">study/ · corrections · kg/expect · ie/store</div></div>
+</div>
+</section>
+
+<section>
+<h2>3단계 · 궁극 목표 쪽으로 (D 뒤)</h2>
+<p class="sub">초기사건(IE) 도출 보강. ie/를 D와 같이 고치므로 차례로</p>
+<div class="grid">
+<div class="card"><span class="tag s">세션 E · 대</span><br><b>IE P5 + 품질 경고 5종</b><br>FMEA·MLD 대조, 빠진 품질 경고 3종, 묶음 경미 후속<div class="f">hazop/ie/*</div></div>
+<div class="card"><span class="tag st">사용자 지시로 멈춤</span><br><b>APR1400 재개</b><br>미확인 63,723개 줄이기. 재개 지시가 있을 때만</div>
+</div>
+</section>
+
+<section>
+<h2>보류</h2>
+<p class="sub" style="margin:0">P4 PRA 도구 내보내기(도구 미정) · M6 문서 추출기(표본 없음) · 래스터 도면 · 지식그래프 A6~A11 · 디스코드</p>
+</section>
+
+<section>
+<h2>모든 세션 공통</h2>
+<ul>
+<li>단계 착수 때 pstack 자문 1회(규칙 9). 세션마다 preflight.py와 시험용 venv 지정(규칙 11)</li>
+<li>파일 주인은 위에 적은 단위. 실제 창 조작은 desktop_lease 안에서만(규칙 13). 저장소 밖 기존 파일 덮어쓰기 금지</li>
+<li>검토 1회 → 총괄이 git diff로 확인 → 차단 결함만 고침 → QA → 커밋. 단계 끝마다 기록 담당이 남은작업·결정로그 갱신. 푸시는 요청할 때만</li>
+</ul>
+</section>
+</main>
+</body>
+</html>
