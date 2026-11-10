@@ -32,7 +32,7 @@ if REPO_ROOT not in sys.path:
 from hazop import paths  # noqa: E402  (표준 라이브러리만 쓰는 경로 모듈)
 CDP_PORT = 9339
 WINDOW_SIZE = (1366, 768)
-DRAWIO_SAMPLE = paths.folder("참고", "P&ID 도면 샘플", "SNP-M-201_CVCS", "SNP-M-201_CVCS.drawio")
+DRAWIO_SAMPLE = paths.folder("참고", "pid-samples", "SNP-M-201_CVCS", "SNP-M-201_CVCS.drawio")
 
 # KLM 연산자 시간(초). Card, Moran & Newell(1980) "The Keystroke-Level Model for User Performance Time with Interactive
 # Systems", CACM 23(7):396-410. K는 비전문 평균 타자(40 wpm) 값 0.28(같은 논문 표 1의 범위 0.08~1.2 중).
@@ -1495,7 +1495,8 @@ def prepare(work_root):
     sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
     import shoot_results
     shoot_results.prepare(work_root)
-    shutil.copytree(paths.folder("참고"), paths.logical_reference_dir(work_root))  # ②④ 뷰어 바탕 그림
+    # ②④ 뷰어 바탕 그림: 샘플 도면 사본을 기록 경로 자리에 둔다
+    shutil.copytree(paths.folder("참고", "pid-samples"), paths.logical_dir(work_root, "참고", "pid-samples"))
     from hazop.app import make_application
     from hazop.app.main_window import MainWindow
     from hazop.app.screenshots import wait

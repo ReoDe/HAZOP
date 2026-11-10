@@ -27,7 +27,7 @@ from hazop.graph.build import to_networkx
 SCHEMA_VERSION = "0.1"
 KIND = "hazop_project_graph"
 MANUAL_KIND = "hazop_sheet_links"
-SYSTEM_CODES_FILE = "계통약어.csv"  # APR1400 DCD 계통 약어 → 그림 번호(paths.folder("APR1400") 아래)
+SYSTEM_CODES_FILE = "system-codes.csv"  # APR1400 DCD 계통 약어 → 그림 번호(paths.folder("APR1400") 아래)
 # 등록 경로 밖 도면(project_id 없음: 샘플 실행 등)을 묶는 프로젝트. 샘플 지식(데이터/지식/SNP-SAMPLE)과 같은 이름.
 UNREGISTERED_PROJECT = "SNP-SAMPLE"
 LEGACY_PROJECT_DIR = "no-project"  # 이 규칙 이전 저장본 폴더(읽기 대체 경로)
@@ -467,7 +467,7 @@ def load_with_names(project_id, graph_root=None):
 
 
 def load_system_codes(path):
-    """계통 약어 → {"figure", "confirmed"} 대응표(scripts/build_system_codes.py가 만드는 계통약어.csv). 파일이 없으면 None.
+    """계통 약어 → {"figure", "confirmed"} 대응표(scripts/build_system_codes.py가 만드는 system-codes.csv). 파일이 없으면 None.
     confirmed: 출처가 [문서]이거나 사람이 '확인'한 행. 나머지([추론])는 후보 연결에만 쓴다.
     같은 약어가 여러 행이면 그림 번호가 모두 같고 모든 행이 확정일 때만 확정이다(그림이 다르면 그 약어는 쓰지 않는다)."""
     rows = read_system_code_rows(path)
@@ -488,7 +488,7 @@ def load_system_codes(path):
 
 
 def read_system_code_rows(path):
-    """계통약어.csv의 행 목록. 엑셀로 고쳐 저장하면 cp949가 되므로 그것도 읽는다. 읽을 수 없으면 None."""
+    """system-codes.csv의 행 목록. 엑셀로 고쳐 저장하면 cp949가 되므로 그것도 읽는다. 읽을 수 없으면 None."""
     for enc in ("utf-8-sig", "cp949"):
         try:
             with open(path, encoding=enc) as fh:

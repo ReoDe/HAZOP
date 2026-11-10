@@ -24,7 +24,7 @@ from hazop.extract import corrections  # noqa: E402
 from hazop.extract.adapters import pdf_vector  # noqa: E402
 from hazop.graph import build  # noqa: E402
 
-SAMPLE_GLOB = paths.folder("참고", "P&ID 도면 샘플", "*", "*.pdf")
+SAMPLE_GLOB = paths.folder("참고", "pid-samples", "*", "*.pdf")
 FLOW = "unknown_flow_direction"
 
 

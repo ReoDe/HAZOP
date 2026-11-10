@@ -51,17 +51,32 @@ def long_path(path):
 
 def rel_or_abs(path, root):
     """root 기준 상대 경로('/' 구분). 다른 드라이브 등으로 상대 경로를 만들 수 없으면 절대 경로.
-    저장소 전용 폴더(샘플 도면·APR1400) 아래 파일은 root와 관계없이 옮기기 전 위치의 논리 경로(LEGACY_PREFIXES,
-    예: '참고자료/<나머지>')로 쓴다: 추출 JSON의 source.file·svg_file이 그래프 판(graph_version) 해시에 들어가므로
-    폴더 위치가 바뀌어도 판이 같아야 한다(D9). resolve_rel이 같은 표로 되돌려 읽는다."""
+    저장소 전용 폴더(샘플 도면·APR1400) 아래 파일은 root와 관계없이 옮기기 전 이름의 기록 경로(OLD_NAMES의 record 줄,
+    예: '참고자료/P&ID 도면 샘플/<나머지>')로 쓴다: 추출 JSON의 source.file·svg_file이 그래프 판(graph_version) 해시에
+    들어가므로 폴더 위치나 이름이 바뀌어도 판이 같아야 한다(D9, HZ-GOV-02 §6.2). resolve_rel이 같은 표로 되돌려 읽는다."""
     try:
-        for prefix, name in LEGACY_PREFIXES:
-            if FOLDERS[name].root == "repo" and _inside(path, folder(name)):
-                return prefix + os.path.relpath(os.path.abspath(path), folder(name)).replace("\\", "/")
+        recorded = _record_path(path)
+        if recorded is not None:
+            return recorded
         rel = os.path.relpath(path, root)
     except ValueError:
         rel = os.path.abspath(path)
     return rel.replace("\\", "/")
+
+
+def _record_path(path):
+    """저장소 전용 폴더 아래 path의 기록 경로. 그런 폴더 밖이면 None. 가장 안쪽 폴더의 줄을 쓴다."""
+    best = None
+    for row in OLD_NAMES:
+        if row.record:
+            real = folder(row.name, *row.sub)
+            if _inside(path, real) and (best is None or len(real) > len(best[1])):
+                best = (row, real)
+    if best is None:
+        return None
+    row, real = best
+    rest = os.path.relpath(os.path.abspath(path), real).replace("\\", "/")
+    return row.old if rest == "." and row.sub else row.old + "/" + rest
 
 
 EXTERNAL_BACKUP_DIR = "_외부"
@@ -79,11 +94,11 @@ def backup_rel(path, root):
 
 
 # ---------------------------------------------------------------- 자원 루트·작업 루트 (기획서/인터페이스.md §7.1)
-# 자원 루트(읽기 전용): 기준 자료(자원/기준/이탈후보·기준표·패턴), 기법 지침서. 폴더 위치는 아래 FOLDERS 표가 정한다.
+# 자원 루트(읽기 전용): 기준 자료(resources/library/ 아래 이탈 후보·기준표·패턴·기호 사전), 기법 지침서. 폴더 위치는 아래 FOLDERS 표가 정한다.
 #   뷰어 템플릿은 패키지 안(hazop/viewer/template.html)에 두므로 패키지 위치를 그대로 쓴다.
 # 작업 루트(쓰기): 저장 루트(자료저장소/), 출력/, logs/, 데이터/(구간·고정응답·검토구간·분석결과 등).
 # 기본값: 자원 루트 = 저장소 루트, 작업 루트 = 저장소/작업(DEV_WORK_ROOT, git 제외). 환경변수로 바꿀 수 있고
-# HAZOP_STORE_ROOT는 계속 우선한다. 표본(자원/표본)은 scripts/seed_samples.py로 작업 루트에 채운다.
+# HAZOP_STORE_ROOT는 계속 우선한다. 표본(resources/samples)은 scripts/seed_samples.py로 작업 루트에 채운다.
 # PyInstaller 실행(sys._MEIPASS)은 감지만 한다: 자원 루트 = 묶음 폴더, 작업 루트 = %LOCALAPPDATA%\HAZOP [제안, §7.1].
 # 프로그램 루트(program_root): 화면이 importlib로 읽는 scripts/*.py 위치. 묶음 폴더 또는 저장소 루트(자원 루트 환경변수와 무관).
 # 값은 호출할 때마다 환경변수를 다시 읽는다. 다만 스크립트의 기본 인자(DEFAULT_*)는 가져올 때 한 번 정해진다.
@@ -173,13 +188,13 @@ class Folder(NamedTuple):
 
 
 FOLDERS = {
-    "이탈후보": Folder("resource", ("자원", "기준", "이탈후보")),
-    "기준표": Folder("resource", ("자원", "기준", "기준표")),
-    "패턴": Folder("resource", ("자원", "기준", "패턴")),
-    "기호": Folder("resource", ("자원", "기준", "기호")),
-    "참고": Folder("repo", ("자원", "참고자료")),
-    "APR1400": Folder("repo", ("자원", "참고자료", "APR1400_DCD")),
-    "표본": Folder("repo", ("자원", "표본")),
+    "이탈후보": Folder("resource", ("resources", "library", "deviations")),
+    "기준표": Folder("resource", ("resources", "library", "risk-criteria")),
+    "패턴": Folder("resource", ("resources", "library", "patterns")),
+    "기호": Folder("resource", ("resources", "library", "symbols")),
+    "참고": Folder("repo", ("resources", "references")),
+    "APR1400": Folder("repo", ("resources", "references", "APR1400_DCD")),
+    "표본": Folder("repo", ("resources", "samples")),
     "작업데이터": Folder("work", ("데이터",)),
     "구간": Folder("work", ("데이터", "구간")),
     "고정응답": Folder("work", ("데이터", "고정응답")),
@@ -200,16 +215,64 @@ FOLDERS = {
 FILES = {
     "guide": Folder("resource", ("specs", "hazop-method-guide.md")),  # HAZOP 기법 지침서. 내용 해시는 hazop/analysis/integrity.py가 고정한다
 }
+# 표본 아래 폴더 이름(작업 루트 폴더 이름 → 표본 폴더 이름). 표본을 작업 루트에 채울 때 짝을 맞춘다. 작업 루트 쪽 이름은
+# 단계 6(HZ-GOV-02 §7)에서 같은 영어 이름이 된다.
+SAMPLE_FOLDERS = {"구간": "regions", "고정응답": "fixed-responses", "지식": "knowledge-graph", "평가기준": "evaluation-criteria"}
 REFERENCE_LOGICAL = "참고자료/"  # 참고 폴더 아래 파일의 기록용 접두(rel_or_abs)
-# 사용자 파일(구간 JSON inputs, 추출 JSON source.file·svg_file)에 저장된 옛 상대 경로 접두 → 폴더 이름.
-# 읽을 때만 풀고(resolve_rel) 파일은 고치지 않는다. 긴 접두가 먼저.
-LEGACY_PREFIXES = (
-    ("데이터/참고자료/APR1400_DCD/", "APR1400"),
-    ("데이터/이탈후보/", "이탈후보"),
-    ("데이터/기준표/", "기준표"),
-    ("데이터/패턴/", "패턴"),
-    (REFERENCE_LOGICAL, "참고"),
+
+
+class OldName(NamedTuple):
+    """파일에 적힌 옛 경로 old(폴더 또는 파일)는 지금 FOLDERS[name] 아래 sub에 있다."""
+    old: str
+    name: str
+    sub: tuple
+    record: bool  # True면 rel_or_abs가 그 자리의 파일을 지금도 old로 적는다(그래프 판에 들어가는 기록용 이름)
+
+
+# 사용자 파일(구간 JSON inputs, 추출 JSON source.file·svg_file, 분석 결과 input_files)에 저장된 옛 상대 경로를 푸는 표.
+# 읽을 때만 풀고(resolve_rel) 파일은 고치지 않는다. 옛 줄은 지우지 않고 더하기만 한다(HZ-GOV-02 §6.1).
+# (옛 접두, 폴더 이름, 기록용인가): 2026-11-09 정리 전 이름(데이터/…, 참고자료/…)과 2026-11-10 영어 이름 이전 전 이름(자원/…).
+_OLD_ROOTS = (
+    ("데이터/참고자료/APR1400_DCD", "APR1400", True),
+    ("자원/참고자료/APR1400_DCD", "APR1400", False),
+    ("참고자료/APR1400_DCD", "APR1400", False),
+    ("참고자료", "참고", True),
+    ("자원/참고자료", "참고", False),
+    ("데이터/이탈후보", "이탈후보", False),
+    ("자원/기준/이탈후보", "이탈후보", False),
+    ("데이터/기준표", "기준표", False),
+    ("자원/기준/기준표", "기준표", False),
+    ("데이터/패턴", "패턴", False),
+    ("자원/기준/패턴", "패턴", False),
+    ("자원/기준/기호", "기호", False),
+    ("자원/표본", "표본", False),
 )
+# 폴더 안에서 이름이 바뀐 것(HZ-GOV-02 §5.5): 폴더 이름 → ((옮기기 전 이름, 지금 이름), …)
+_RENAMED_INSIDE = {
+    "참고": (("P&ID 도면 샘플", "pid-samples"), ("P&ID 기호 카탈로그", "pid-symbol-catalog"), ("참고 사진", "photos"),
+           ("HAZOP 기법/P-86-2017 회분식 공정의 위험과 운전분석HAZOP기법에 관한 기술지침.pdf",
+            "hazop-method/kosha-p-86-2017-batch-hazop-guide.pdf"),
+           ("HAZOP 기법", "hazop-method")),
+    "APR1400": (("도면별", "by-drawing"), ("원본", "source"), ("스크립트", "scripts"), ("계통약어.csv", "system-codes.csv"),
+                ("도면목록.csv", "drawing-list.csv"), ("도면목록.md", "drawing-list.md"),
+                ("후보_제외도면.csv", "excluded-drawings.csv"),
+                ("APR1400_DCD_Rev3_PID_전체.pdf", "APR1400_DCD_Rev3_PID_all.pdf")),
+    "기호": (("APR1400/그림", "APR1400/images"), ("공통/그림", "common/images"), ("공통", "common"),
+           ("묶음.json", "bundles.json")),
+    "표본": tuple(SAMPLE_FOLDERS.items()),
+}
+
+
+def _old_names():
+    rows = []
+    for old, name, record in _OLD_ROOTS:
+        rows.append(OldName(old, name, (), record))
+        rows += [OldName(old + "/" + before, name, tuple(now.split("/")), record)
+                 for before, now in _RENAMED_INSIDE.get(name, ())]
+    return tuple(sorted(rows, key=lambda r: -len(r.old)))  # 긴 옛 이름이 먼저
+
+
+OLD_NAMES = _old_names()
 
 
 def folder(name, *parts):
@@ -223,9 +286,10 @@ def folder_in(root, name, *parts):
     return os.path.join(root, *FOLDERS[name].rel, *parts)
 
 
-def logical_reference_dir(root):
-    """root 아래 논리 경로(REFERENCE_LOGICAL) 자리. 참고 폴더 사본을 여기 두면 그 안 파일의 기록 경로가 저장소와 같다."""
-    return os.path.join(root, *REFERENCE_LOGICAL.strip("/").split("/"))
+def logical_dir(root, name, *parts):
+    """저장소 전용 폴더(또는 그 아래 parts)의 사본을 root 아래 둘 자리: 기록 경로와 같은 상대 위치. 사본을 여기 두면
+    그 안 파일을 root 기준으로 적은 경로가 저장소 파일의 기록 경로와 같다(샘플 도면의 그래프 판이 같아진다)."""
+    return os.path.join(root, *_record_path(folder(name, *parts)).split("/"))
 
 
 def file_rel(name):
@@ -257,8 +321,8 @@ def _inside(path, root):
 
 
 def resolve_rel(rel, root):
-    """저장된 상대 경로를 실제 경로로. 절대 경로면 그대로, root 아래에 있으면 그것, 없으면 LEGACY_PREFIXES로 푼 위치에
-    파일이 있을 때 그것. 어디에도 없으면 root 기준 경로(호출한 쪽이 '없음'을 알린다)."""
+    """저장된 상대 경로를 실제 경로로. 절대 경로면 그대로, root 아래에 있으면 그것, 없으면 OLD_NAMES로 푼 위치에
+    파일이 있을 때 그것(긴 옛 이름부터 맞춘다). 어디에도 없으면 root 기준 경로(호출한 쪽이 '없음'을 알린다)."""
     if os.path.isabs(rel):
         return rel
     direct = os.path.join(root, rel)
@@ -267,9 +331,9 @@ def resolve_rel(rel, root):
     norm = rel.replace("\\", "/")
     while norm.startswith("./"):
         norm = norm[2:]
-    for prefix, name in LEGACY_PREFIXES:
-        if norm.startswith(prefix):
-            alt = folder(name, *norm[len(prefix):].split("/"))
+    for row in OLD_NAMES:
+        if norm == row.old or norm.startswith(row.old + "/"):
+            alt = folder(row.name, *row.sub, *[p for p in norm[len(row.old):].split("/") if p])
             if os.path.exists(alt):
                 return alt
     return direct

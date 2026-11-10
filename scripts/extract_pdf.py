@@ -1,7 +1,7 @@
 """벡터 PDF P&ID -> 출력/어댑터/pdf_vector/<도면번호>/extraction.json + validation_report.md (T3 W3)
 
 사용 예:
-  python scripts/extract_pdf.py "참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.pdf"
+  python scripts/extract_pdf.py "resources/references/pid-samples/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.pdf"
   python scripts/extract_pdf.py --samples          # 샘플 6개 PDF 전체
   python scripts/extract_pdf.py 도면.pdf --pages all   # 모든 쪽(또는 --pages 0,2 처럼 0부터 센 쪽 번호)
   python scripts/extract_pdf.py --registration 자료저장소/<프로젝트>/registrations/<자료 ID>/<버전>.json
@@ -30,7 +30,7 @@ from hazop.extract import report, symbols  # noqa: E402
 from hazop.extract.adapters import pdf_svg, pdf_vector  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
-SAMPLE_GLOB = paths.folder("참고", "P&ID 도면 샘플", "*", "*.pdf")
+SAMPLE_GLOB = paths.folder("참고", "pid-samples", "*", "*.pdf")
 DEFAULT_OUT = paths.output_root("어댑터", "pdf_vector")
 SVG_NAME = "page.svg"
 SVG_SOURCE = "rendered_from_pdf"

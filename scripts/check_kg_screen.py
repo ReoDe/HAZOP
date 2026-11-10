@@ -44,7 +44,7 @@ from hazop.graph import build as gbuild  # noqa: E402
 from hazop.kg import build, screen  # noqa: E402
 
 SAMPLE_PROJECT = "SNP-SAMPLE"
-SAMPLE_DIR = paths.folder_in(REPO_ROOT, "표본", "지식", SAMPLE_PROJECT)  # 묶음 검사에서는 REPO_ROOT = 검사 입력 사본
+SAMPLE_DIR = paths.folder_in(REPO_ROOT, "표본", "knowledge-graph", SAMPLE_PROJECT)  # 묶음 검사에서는 REPO_ROOT = 검사 입력 사본
 REGION_FILE = check_kg_algo.REGION_FILE
 DRAWING = "SNP-M-102"
 V1_CASES = (("entity-node-001", (1, 2, 3)), ("entity-node-008", (1, 2, 3)), ("entity-seg-004", (1, 2)),
@@ -60,7 +60,10 @@ _CACHE = {}
 def sample_graph():
     """샘플 도면을 임시 폴더에서 추출·빌드(원본 위치 그대로 읽으므로 graph_version이 샘플 CSV의 기록과 같다)."""
     if "graph" not in _CACHE:
-        drawio = [p for p in glob.glob(paths.folder_in(REPO_ROOT, "참고", "P&ID 도면 샘플", "*", "*.drawio"))
+        # 저장소에서는 참고 폴더, 묶음 검사의 입력 사본(verify_bundle.make_inputs)에서는 기록 경로 자리에 샘플 도면이 있다
+        found = (glob.glob(paths.folder_in(REPO_ROOT, "참고", "pid-samples", "*", "*.drawio"))
+                 or glob.glob(paths.logical_dir(REPO_ROOT, "참고", "pid-samples", "*", "*.drawio")))
+        drawio = [p for p in found
                   if os.path.basename(os.path.dirname(p)).startswith(DRAWING)][0]
         tmp = tempfile.mkdtemp(prefix="kg-screen-graph-")
         try:

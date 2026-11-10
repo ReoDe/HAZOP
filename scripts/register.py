@@ -1,7 +1,7 @@
 """단계 ① draw.io P&ID 원본 1개 등록 -> <저장 루트>/<프로젝트>/registrations/<자료 ID>/<버전>.json
 
 사용 예:
-  python scripts/register.py --project sample-project "참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio"
+  python scripts/register.py --project sample-project "resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio"
   python scripts/register.py --project sample-project 파일.drawio --drawing-number SNP-M-101 --revision 0 --by 홍길동 --reason "표제란 대조"
   python scripts/register.py --project sample-project 파일.drawio --metadata 식별정보.json
 저장 루트 기본값: 환경변수 HAZOP_STORE_ROOT 또는 <작업 루트>/자료저장소/(작업 루트 기본은 저장소 루트, HAZOP_WORK_ROOT로

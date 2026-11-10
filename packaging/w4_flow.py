@@ -158,8 +158,8 @@ def flow(args, paths, res, ok):
     probs = datas_problems(bundle, expect)
     ok("bundle-datas", not probs, "; ".join(probs) or "%d개 해시 일치" % len(expect))
     samples = os.path.abspath(args.samples)
-    # samples = 검사 입력 사본(작은 저장소, verify_bundle.make_inputs): 표본·참고 폴더가 저장소와 같은 자리에 있다
-    with open(paths.folder_in(samples, "표본", "구간", REGION + ".json"), encoding="utf-8") as fh:
+    # samples = 검사 입력 사본(작은 저장소, verify_bundle.make_inputs): 표본은 저장소와 같은 자리, 샘플 도면은 기록 경로 자리에 있다
+    with open(paths.folder_in(samples, "표본", "regions", REGION + ".json"), encoding="utf-8") as fh:
         region_inputs = json.load(fh)["inputs"]
     probs = resource_path_problems(region_inputs, guide_rel, paths.resource_root(), bundle, expect, paths.resolve_rel)
     ok("resource_paths", not probs, "; ".join(probs) or "기준 자료 4종·지침서 = 묶음 파일(분석 전 확인)")
@@ -173,14 +173,15 @@ def flow(args, paths, res, ok):
 
     work = paths.work_root()
     for name in ("구간", "고정응답", "지식"):
-        shutil.copytree(paths.folder_in(samples, "표본", name), paths.folder(name), dirs_exist_ok=True)
-    # 샘플 도면은 논리 경로 자리에 둔다: 추출 JSON이 저장소와 같아야 구간의 그래프 판이 맞는다
-    shutil.copytree(paths.folder_in(samples, "참고"), paths.logical_reference_dir(work), dirs_exist_ok=True)
+        shutil.copytree(paths.folder_in(samples, "표본", paths.SAMPLE_FOLDERS[name]), paths.folder(name), dirs_exist_ok=True)
+    # 샘플 도면은 기록 경로 자리에 둔다: 추출 JSON이 저장소와 같아야 구간의 그래프 판이 맞는다
+    shutil.copytree(paths.logical_dir(samples, "참고", "pid-samples"), paths.logical_dir(work, "참고", "pid-samples"),
+                    dirs_exist_ok=True)
     region_path = paths.folder("구간", REGION + ".json")
     region = data.read_json(region_path)
 
     # ④용 samples 경로 추출·그래프(구간 how_to_build와 같은 방법): 묶음 scripts/의 run_one·build_one
-    drawio_path = [p for p in glob.glob(os.path.join(paths.logical_reference_dir(work), "P&ID 도면 샘플", "*", "*.drawio"))
+    drawio_path = [p for p in glob.glob(paths.logical_dir(work, "참고", "pid-samples", "*", "*.drawio"))
                    if "SNP-M-102" in p][0]
     svg = glob.glob(os.path.join(os.path.dirname(drawio_path), "*.drawio.svg"))
     _, ex_dir = data.script_module("extract_drawio").run_one(drawio_path, paths.output_root("추출"))

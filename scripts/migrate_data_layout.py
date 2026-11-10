@@ -355,7 +355,7 @@ def cmd_graph_check(repo):
     stored_root = paths.output_root("그래프")
     rows, bad = [], 0
     with tempfile.TemporaryDirectory() as tmp:
-        for drawio in sorted(glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))):
+        for drawio in sorted(glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio"))):
             _, ex_dir = extract_drawio.run_one(drawio, os.path.join(tmp, "추출"))
             graph, _ = build_graph.build_one(os.path.join(ex_dir, "extraction.json"), os.path.join(tmp, "그래프"))
             name = os.path.basename(ex_dir)

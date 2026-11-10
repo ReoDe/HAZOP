@@ -1,0 +1,32 @@
+﻿파일,줄,종류,전,후,적용
+CLAUDE.md,41,백틱,자원/기준/기호/,resources/library/symbols/,아니오(총괄 몫)
+README.md,85,백틱,도면목록.md,drawing-list.md,예
+README.md,85,백틱,자원/,resources/,예
+docs/2026-11-09-symbol-library/README.md,8,백틱,자원/참고자료/APR1400_DCD/도면목록.md,resources/references/APR1400_DCD/drawing-list.md,예
+docs/2026-11-09-symbol-library/README.md,43,백틱,자원/기준/기호/,resources/library/symbols/,예
+docs/2026-11-10-ci-review/README.md,43,백틱,자원/참고자료/P&ID 도면 샘플,resources/references/pid-samples,예
+docs/2026-11-10-ci-review/README.md,54,백틱,자원/참고자료/APR1400_DCD,resources/references/APR1400_DCD,예
+docs/2026-11-10-lessons/README.md,34,백틱,계통약어.csv,system-codes.csv,예
+docs/2026-11-10-lessons/d-drive-move.md,33,백틱,계통약어.csv,system-codes.csv,예
+docs/2026-11-10-lessons/d-drive-move.md,33,백틱,자원/참고자료/APR1400_DCD/,resources/references/APR1400_DCD/,예
+docs/2026-11-10-plan/pstack-advice.md,305,백틱,자원/참고자료/APR1400_DCD,resources/references/APR1400_DCD,예
+resources/references/APR1400_DCD/drawing-list.md,6,백틱,APR1400_DCD_Rev3_PID_전체.pdf,APR1400_DCD_Rev3_PID_all.pdf,예
+resources/references/APR1400_DCD/drawing-list.md,7,백틱,도면별/,by-drawing/,예
+resources/references/APR1400_DCD/drawing-list.md,8,백틱,도면목록.csv,drawing-list.csv,예
+resources/references/APR1400_DCD/drawing-list.md,9,백틱,후보_제외도면.csv,excluded-drawings.csv,예
+resources/references/APR1400_DCD/drawing-list.md,10,백틱,원본/ML18228A648.pdf,source/ML18228A648.pdf,예
+resources/references/APR1400_DCD/drawing-list.md,10,백틱,원본/ML18228A666.pdf,source/ML18228A666.pdf,예
+resources/references/APR1400_DCD/drawing-list.md,112,백틱,스크립트/extract_pid.py,scripts/extract_pid.py,예
+resources/references/APR1400_DCD/drawing-list.md,112,백틱,스크립트/make_index.py,scripts/make_index.py,예
+specs/extraction.md,155,백틱,자원/참고자료/P&ID 도면 샘플/,resources/references/pid-samples/,예
+specs/extraction.md,394,백틱,자원/참고자료/P&ID 도면 샘플/,resources/references/pid-samples/,예
+specs/interface.md,482,백틱,자원/기준/기준표/kosha-p86-2017-risk-criteria.json,resources/library/risk-criteria/kosha-p86-2017-risk-criteria.json,예
+specs/interface.md,599,백틱,자원/기준/,resources/library/,예
+specs/pid-symbol-dictionary.md,83,백틱,자원/기준/기호/,resources/library/symbols/,예
+specs/pid-symbol-dictionary.md,285,백틱,자원/기준/기호/,resources/library/symbols/,예
+specs/pid-symbol-dictionary.md,300,백틱,자원/기준/기호/APR1400/*.json,resources/library/symbols/APR1400/*.json,예
+specs/pid-symbol-dictionary.md,300,백틱,자원/기준/기호/묶음.json,resources/library/symbols/bundles.json,예
+specs/pid-symbol-dictionary.md,305,백틱,자원/기준/기호/공통/,resources/library/symbols/common/,예
+specs/pid-symbol-dictionary.md,342,백틱,자원/기준/기호/,resources/library/symbols/,예
+specs/study-node-segmentation.md,416,백틱,자원/참고자료/P&ID 도면 샘플/,resources/references/pid-samples/,예
+tests/fixtures/apr1400/SOURCE.md,8,백틱,자원/참고자료/APR1400_DCD/,resources/references/APR1400_DCD/,예

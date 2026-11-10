@@ -148,7 +148,7 @@ class GraphFromOtherDriveTest(unittest.TestCase):
     def test_extraction_on_other_drive_builds_and_resolves(self):
         from hazop.app import data
         from hazop.contract import chain
-        src = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")) if "SNP-M-102" in p]
+        src = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio")) if "SNP-M-102" in p]
         if not src:
             self.skipTest("샘플 도면 없음")
         work = os.path.join(other_drive_dir(self), "작업")  # 경로문자열-허용: 시험용 가짜 작업 루트 이름

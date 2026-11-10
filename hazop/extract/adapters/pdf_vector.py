@@ -1542,7 +1542,7 @@ ACTUATOR_REACH_RATIO = 2.0  # 밸브 몸통 긴 변 × 비율 안에 구동부 �
 
 
 def symbol_library():
-    """기호 사전(자원/기준/기호). 프로세스마다 한 번 읽는다. 없거나 깨졌으면 SymbolLibraryError로 멈춘다."""
+    """기호 사전(resources/library/symbols). 프로세스마다 한 번 읽는다. 없거나 깨졌으면 SymbolLibraryError로 멈춘다."""
     global _symbol_library
     with _cache_lock:
         if _symbol_library is None:

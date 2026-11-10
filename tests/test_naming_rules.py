@@ -35,11 +35,11 @@ EXEMPT = {
         ("N8", "* @ " + NAMING_DOC, "대응표가 옛 이름을 일부러 적는다"),
         ("N9", "docs/2026-11-05-packaging/evidence/w5-* -> HAZOP기법지침.md", "기획서 문장을 인용한 줄 안의 링크"),
         ("N8", "* @ docs/2026-11-10-plan/pstack-advice.md", "단위 NAMING 절이 옮길 이름과 데이터에 남는 옛 출처를 일부러 적는다"),
+        ("N1", "resources/references/*", "샘플 도면 폴더 이름은 기준값의 키이고(§5.5), 기호 카탈로그와 APR1400_DCD는 받은 이름을 그대로 둔다"),
+        ("N8", "자원/ @ docs/2026-11-09-data-consolidation/README.md", "2026-11-09 정리의 계획이자 기록. 그때 정한 배치를 적었다"),
     ],
-    5: [
-        ("N1", "자원/*", "resources/로 옮긴다"),
-        ("N2", "자원", ""),
-        ("N8", "자원/ @ *", ""),
+    "총괄": [
+        ("N8", "자원/ @ CLAUDE.md", "운영 규칙은 총괄이 고친다(evidence/step5-claude-pending.csv). 고치면 이 줄을 지운다"),
     ],
     6: [
         ("N8", "작업/ @ *", ""),
@@ -495,6 +495,14 @@ class PastViolationTest(unittest.TestCase):
         self.assertEqual([top + where for top in ("flow chart/", "기획서/", "디자인/", "메모리/", "지식/")],
                          [v.subject for v in unexempted(n8_old_korean_paths(docs))])
 
+    def test_n8_is_live_for_the_folder_moved_in_stage_5(self):
+        """단계 5의 넓은 예외(`자원/ @ *`)를 지운 뒤로는 `자원/…`을 백틱이나 링크로 새로 적으면 걸린다. 기록 경로는 걸리지 않는다."""
+        docs = {"docs/2026-11-10-lessons/new.md":
+                "기준 자료는 `자원/기준/기호/묶음.json`에 있다. [샘플](<../../자원/참고자료/P&ID 도면 샘플/>)\n"
+                "기록 경로 `참고자료/P&ID 도면 샘플/a.drawio`와 새 이름 `resources/library/symbols/bundles.json`은 괜찮다.\n"}
+        self.assertEqual(["자원/ @ docs/2026-11-10-lessons/new.md"], [v.subject for v in unexempted(n8_old_korean_paths(docs))])
+        self.assertEqual("줄 1", n8_old_korean_paths(docs)[0].detail)
+
     def test_n9_broken_relative_link(self):
         docs = {"README.md": "[인터페이스](기획서/인터페이스.md) [규격](specs/interface.md#화면) [밖](https://example.com) [닻](#a)\n"
                              "`[코드](없음.md)`\n```\n[울타리](없음.md)\n```\n[폴더](docs/) [위](../밖.md)\n"}
@@ -540,8 +548,8 @@ class PastViolationTest(unittest.TestCase):
             self.assertEqual([], n11_branch(name), name)
 
     def test_exempt_row_is_per_rule(self):
-        self.assertIsNotNone(exempt_row(Violation("N1", "자원/기준/기호/묶음.json", "")))
-        self.assertIsNone(exempt_row(Violation("N7", "자원/참고자료/APR1400_DCD/계통약어_v2.csv", "")))
+        self.assertIsNotNone(exempt_row(Violation("N1", "resources/references/pid-samples/SNP-M-201_CVCS/SNP-M-201_CVCS.drawio", "")))
+        self.assertIsNone(exempt_row(Violation("N7", "resources/references/APR1400_DCD/system-codes_v2.csv", "")))
         self.assertIsNone(exempt_row(Violation("N1", "notes/새문서.md", "")))
 
 

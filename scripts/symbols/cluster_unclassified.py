@@ -5,7 +5,7 @@
 
 1. 쪽마다 지금 추출기(pdf_vector)로 기호를 묶고, 기호마다 kind·상자·상자 안 글자·모양 서명을 `<out>/쪽/<순번>.jsonl`에 남긴다.
    PDF와 추출기·서명 코드가 같으면 다시 계산하지 않는다(다시 돌려도 같은 끝 상태).
-2. kind 없는 기호를 사전(기본: 자원/기준/기호)에 대 보고, 맞음·애매함·후보 없음을 센다.
+2. kind 없는 기호를 사전(기본: resources/library/symbols)에 대 보고, 맞음·애매함·후보 없음을 센다.
 3. 사전에 맞지 않은 미분류를 구성 키가 같고 크기 비 1.25 안이며 8방향 챔퍼 거리 --dist 칸 이하인 것끼리 묶는다.
    대표에 붙이는 탐욕 묶음이라 입력 순서(쪽, 기호 번호)에 대해 결정적이다.
 결과: <out>/요약.json, 묶음.csv, 묶음.json, 그림판.html(+ 그림/c###.png). 기본 <out>은 작업 루트의 기호후보/<묶음>/.
@@ -168,14 +168,14 @@ def main():
     ap.add_argument("--input-dir")
     ap.add_argument("--pages", help="순번 범위(예: 5-143 또는 6,9,12). 기본 전체")
     ap.add_argument("--parity", choices=("all", "odd", "even"), default="all")
-    ap.add_argument("--library", help="사전 폴더(기본: 자원/기준/기호)")
+    ap.add_argument("--library", help="사전 폴더(기본: %s)" % paths.folder_rel("기호"))
     ap.add_argument("--no-library", action="store_true", help="사전에 대 보지 않고 미분류 전부를 묶음")
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 1)))
     ap.add_argument("--top", type=int, default=60, help="그림을 만들 상위 묶음 수")
     ap.add_argument("--dist", type=float, default=0.8)
     ap.add_argument("--out")
     a = ap.parse_args()
-    input_dir = a.input_dir or paths.folder("APR1400", "도면별")
+    input_dir = a.input_dir or paths.folder("APR1400", "by-drawing")
     out = a.out or paths.folder("기호후보", a.set)
     page_dir = os.path.join(out, "쪽")
     os.makedirs(page_dir, exist_ok=True)

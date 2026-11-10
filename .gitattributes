@@ -1,6 +1,6 @@
 # Vendored third-party files are pinned by SHA-256; keep bytes exact.
 hazop/kg/vendor/** -text
 # Knowledge CSV inputs are hashed into kg_version; keep bytes identical across checkouts.
-자원/표본/지식/** -text
+resources/samples/knowledge-graph/** -text
 tests/fixtures/kg/** -text
 tests/fixtures/kg_algo/** -text

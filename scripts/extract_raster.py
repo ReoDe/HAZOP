@@ -1,7 +1,7 @@
 """래스터(PNG·JPG) P&ID -> 출력/어댑터/raster/<도면번호>/extraction.json + validation_report.md (T3 W4)
 
 사용 예:
-  python scripts/extract_raster.py "참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/01_SNP-M-102.png"
+  python scripts/extract_raster.py "resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.png"
   python scripts/extract_raster.py --samples       # 샘플 6개 PNG 전체(.drawio.png 제외, 결정 D1 블라인드)
   python scripts/extract_raster.py --no-ocr 그림.png  # 글자 인식 없이(미확인 ocr_unavailable 기록)
 OpenCV(opencv-python-headless)가 필요하다(결정 D7, packaging/requirements-raster.txt의 별도 venv). 없으면 종료 코드 2.
@@ -25,7 +25,7 @@ from hazop.console import safe_console  # noqa: E402
 from hazop.extract import report  # noqa: E402
 from hazop.extract.adapters import raster  # noqa: E402
 
-SAMPLE_GLOB = paths.folder("참고", "P&ID 도면 샘플", "*", "*.png")
+SAMPLE_GLOB = paths.folder("참고", "pid-samples", "*", "*.png")
 DEFAULT_OUT = paths.output_root("어댑터", "raster")
 
 

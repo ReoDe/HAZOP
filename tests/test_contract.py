@@ -36,14 +36,14 @@ REGION_ID = "region-SNP-M-102-pzr"
 CID = "deviation-p86-d09"
 WHO = "검토자A"
 EXPORT_AT = "2026-11-06T00:00:00Z"
-FIXED_DIR = paths.folder("표본", "고정응답", REGION_ID)
+FIXED_DIR = paths.folder("표본", "fixed-responses", REGION_ID)
 REG_RUN_ID = "analysis-20261106T000000Z-regtst"
 SYNTH_RUN_ID = "analysis-20261106T000000Z-synth0"
 
 
 def sample_drawio():
     """SNP-M-102 샘플 도면 경로. 없으면 준비 오류."""
-    found = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
+    found = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio"))
              if "SNP-M-102" in p]
     if not found:
         raise RuntimeError("준비 오류: 샘플 도면 없음 (참고자료/P&ID 도면 샘플/*/*SNP-M-102*.drawio)")
@@ -132,7 +132,7 @@ def build_sample_chain(base, src_run):
     반환 (work, store, 실행 폴더 이름)."""
     work, store = os.path.join(base, "work"), os.path.join(base, "store")
     os.makedirs(paths.folder_in(work, "구간"))
-    shutil.copy2(paths.folder("표본", "구간", REGION_ID + ".json"), paths.folder_in(work, "구간"))
+    shutil.copy2(paths.folder("표본", "regions", REGION_ID + ".json"), paths.folder_in(work, "구간"))
     if src_run is not None:
         for rel in (("출력", "추출", "SNP-M-102"), ("출력", "그래프", "SNP-M-102")):
             shutil.copytree(os.path.join(paths.DEV_WORK_ROOT, *rel), os.path.join(work, *rel))
@@ -181,7 +181,7 @@ def build_registration_chain(base, out_sub=("출력",)):
         result, ex_dir = extract_drawio.run_one(original, os.path.join(work, *out_sub, "추출"), registration=record,
                                                 registered_svgs=svgs)
         graph, g_dir = build_graph.build_one(os.path.join(ex_dir, "extraction.json"), os.path.join(work, *out_sub, "그래프"))
-        region = read_json(paths.folder("표본", "구간", REGION_ID + ".json"))
+        region = read_json(paths.folder("표본", "regions", REGION_ID + ".json"))
         region["project_id"] = "p-test"
         region["graph_ref"].update(graph_id=graph["graph_id"], graph_version=graph["graph_version"],
                                    graph_source="registration",

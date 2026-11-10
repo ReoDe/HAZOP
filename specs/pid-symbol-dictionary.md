@@ -80,17 +80,17 @@ approved: —
 
 ### 3.1 위치와 묶음
 
-데이터 일원화 안 A에 맞춰 `자원/기준/기호/`에 둔다. `paths.FOLDERS`에 `"기호": Folder("resource", ("자원", "기준", "기호"))` 한 줄을 더하면, `build_package.DATA_DIRS`가 `root == "resource"`인 행을 모두 묶으므로 배포본에 자동으로 들어간다.
+데이터 일원화 안 A에 맞춰 `resources/library/symbols/`에 둔다. `paths.FOLDERS`에 `"기호": Folder("resource", ("resources", "library", "symbols"))` 한 줄을 더하면, `build_package.DATA_DIRS`가 `root == "resource"`인 행을 모두 묶으므로 배포본에 자동으로 들어간다.
 
 ```
-자원/기준/기호/
-├─ 묶음.json              묶음 목록과 판(이름, 출처, 쓰는 순서)
-├─ 공통/                  ISA·일반 P&ID 기호. 지금 코드의 _shape_kind 규칙을 옮긴 것
+resources/library/symbols/
+├─ bundles.json           묶음 목록과 판(이름, 출처, 쓰는 순서)
+├─ common/                묶음 '공통'. ISA·일반 P&ID 기호. 지금 코드의 _shape_kind 규칙을 옮긴 것
 │  └─ <기호>.json
 ├─ SNP/                   합성 샘플 전용 표기
 ├─ APR1400/               APR1400 DCD 범례·도면에서 얻은 기호
 │  ├─ gate_valve.json
-│  └─ 그림/gate_valve.png 예시 그림(긴 변 160px 이하)
+│  └─ images/gate_valve.png 예시 그림(긴 변 160px 이하)
 └─ <새 발전소>/
 ```
 
@@ -282,7 +282,7 @@ JSON이다. 저장소의 다른 사전(`registry.json`)과 같고, 배포본에 
 1. **범례 수집(범례가 있으면).** `python scripts/symbols/harvest_legend.py --set <묶음> --pages <범례 PDF…>` → 작업 루트의 `기호후보/<묶음>/범례.csv`, 잘라 낸 그림, 그림판 HTML. 이 폴더는 S6에서 `paths.FOLDERS`에 `work` 행으로 더한다(git이 보지 않는 작업 산출물).
 2. **미분류 묶기.** `python scripts/symbols/cluster_unclassified.py --set <묶음> --input-dir <도면 폴더>` → 묶음 순위표(CSV)와 그림판 HTML(묶음마다 서로 다른 쪽 예시 8개, 범례 후보 그림 나란히). 상위 묶음이 덮는 비율을 함께 보여 준다.
 3. **사람이 이름 붙이기.** 그림판을 보고 `라벨.csv`에 `순위, 사전 id, 국내 용어, 범주, kind, 글자 조건, 확신`을 적는다. 같은 기호의 여러 묶음은 같은 id로 적는다. 모르면 비워 둔다.
-4. **사전 항목 만들기.** `python scripts/symbols/add_symbols.py --set <묶음> --labels 라벨.csv` → 묶음 표본에서 서로 다른 격자를 빈도순으로 골라 `자원/기준/기호/<묶음>/<id>.json`과 예시 그림을 만든다. 이미 있는 항목이면 견본만 더하고 `revision`을 올린다.
+4. **사전 항목 만들기.** `python scripts/symbols/add_symbols.py --set <묶음> --labels 라벨.csv` → 묶음 표본에서 서로 다른 격자를 빈도순으로 골라 `resources/library/symbols/<묶음>/<id>.json`과 예시 그림을 만든다. 이미 있는 항목이면 견본만 더하고 `revision`을 올린다.
 5. **검사.** `python scripts/check_symbols.py`(형식·충돌), `python scripts/check_snp_baseline.py`(후퇴 0), `python scripts/check_apr1400.py --input-dir …`(후퇴 금지 기준값, `unclassified`·`kind_wrong`·수정 기록 적용 수 포함). 좋아진 값은 `--update`로 기준값을 올린다.
 6. **커밋.** 사전 파일·그림·기준값을 한 커밋으로. 메시지에 묶음, 더한 항목 수, 미분류 변화를 적는다.
 
@@ -297,12 +297,12 @@ U1·U2(`pdf_vector.py`)가 커밋된 뒤에 시작한다. 데이터 일원화의
 | 단위 | 파일 | 완료 기준 |
 | --- | --- | --- |
 | S1 노드별 정답 | `tests/fixtures/apr1400/answer_key/*.json`(노드별 정답 kind·`valve_type`·`normal_position`·구동부·밸브 번호 귀속), `scripts/check_apr1400.py`(`unclassified`를 LOWER에, 노드별 `kind_wrong`, 수정 기록 적용 수), `tests/baselines/apr1400_score.json` | 정답 쪽마다 사전 항목 전부가 한 번 이상 나오게 고름(시제품 눈검사 그림판을 출발점으로). 지금 코드로 기준값을 얼림. 테스트 통과 |
-| S2 사전·매칭 핵심과 검정 밸브 | `hazop/extract/symbols.py`(새: 사전 읽기·서명·매칭), `hazop/extract/adapters/pdf_vector.py`(`_subpaths` 곡선 점, `_classify_primitives` 앞 검정 견본·크기 0 버림, `_classify`에서 기존 규칙이 못 정한 기호에 사전), 노드 id 안정화 또는 수정 기록 이전(D14), `hazop/paths.py`(`"기호"` 행), `자원/기준/기호/묶음.json`, `자원/기준/기호/APR1400/*.json`(기존 kind 항목), `scripts/check_symbols.py`, `packaging/verify_bundle.py`, 테스트 | SNP 추출 JSON·`graph_version` 바이트 동일. APR1400 `unclassified` 감소, 노드별 `kind_wrong` 새로 틀린 노드 0, 수정 기록 적용 수 후퇴 없음, 나머지 기준값 통과. 검정 밸브가 `normal_position=NC` 밸브로 나오고 그 자리 배관이 밸브를 거쳐 이어짐. 배포 실행 파일에서 사전을 읽어 판정하고, 사전이 없거나 깨지면 오류로 멈춤. 판이 바뀐 도면 수 보고 |
+| S2 사전·매칭 핵심과 검정 밸브 | `hazop/extract/symbols.py`(새: 사전 읽기·서명·매칭), `hazop/extract/adapters/pdf_vector.py`(`_subpaths` 곡선 점, `_classify_primitives` 앞 검정 견본·크기 0 버림, `_classify`에서 기존 규칙이 못 정한 기호에 사전), 노드 id 안정화 또는 수정 기록 이전(D14), `hazop/paths.py`(`"기호"` 행), `resources/library/symbols/bundles.json`, `resources/library/symbols/APR1400/*.json`(기존 kind 항목), `scripts/check_symbols.py`, `packaging/verify_bundle.py`, 테스트 | SNP 추출 JSON·`graph_version` 바이트 동일. APR1400 `unclassified` 감소, 노드별 `kind_wrong` 새로 틀린 노드 0, 수정 기록 적용 수 후퇴 없음, 나머지 기준값 통과. 검정 밸브가 `normal_position=NC` 밸브로 나오고 그 자리 배관이 밸브를 거쳐 이어짐. 배포 실행 파일에서 사전을 읽어 판정하고, 사전이 없거나 깨지면 오류로 멈춤. 판이 바뀐 도면 수 보고 |
 | S3 새 kind | `hazop/kg/schema/registry.json`(D4에서 정한 kind), 사전 항목 추가, 문서 `specs/kg-schema-dictionary.md` | 레지스트리 검사·KG 테스트 통과. 시험 쪽 미분류 추가 감소, 새로 틀린 노드 0 |
 | S4 모양 보강 | `pdf_vector.py`(열린 곡선 원을 닫힌 원으로 보는 규칙 등 사전만으로 안 되는 묶기 보강) | 정답 쪽에서 새로 틀린 노드 0, 수정 기록 적용 수 후퇴 없음, 기준값 통과 |
 | S5 부속 합치기 | `pdf_vector.py`(구동부 → 밸브 `actuator_type`·`motive_power`와 범례가 정한 kind만, 번호 원 → 유일·거리 조건을 채운 밸브의 태그 근거) | 정답의 구동부·번호 귀속 기준 새로 틀린 노드 0. `tag_exact` 후퇴 없음. 수정 기록 적용 수 후퇴 없음 |
 | S6 도구와 절차 | `scripts/symbols/harvest_legend.py`, `cluster_unclassified.py`, `add_symbols.py`, 이 문서 §6, README 목차 | 새 묶음 하나(예: 다른 장)로 절차를 끝까지 한 번 돌림 |
-| S7 기존 규칙 이관 | `자원/기준/기호/공통/`, `SNP/`, `pdf_vector.py`의 `_shape_kind`·`EQUIPMENT_WORDS` 삭제 | SNP 추출 JSON·`graph_version` 바이트 동일(S2에서 더한 비교). 옛 분기 삭제 |
+| S7 기존 규칙 이관 | `resources/library/symbols/common/`, `SNP/`, `pdf_vector.py`의 `_shape_kind`·`EQUIPMENT_WORDS` 삭제 | SNP 추출 JSON·`graph_version` 바이트 동일(S2에서 더한 비교). 옛 분기 삭제 |
 
 S2~S5는 모두 `pdf_vector.py`를 고치므로 순서대로 한다. S1은 S2보다 먼저 끝나야 한다(S2의 완료 기준이 S1 정답을 쓴다). S6 중 범례 수집·미분류 묶기 스크립트는 다른 파일이라 S1·S2와 나란히 만들 수 있지만, 사전 항목을 쓰는 `add_symbols.py`는 S2의 형식과 검사기가 정해진 뒤에 끝낼 수 있다.
 
@@ -339,7 +339,7 @@ S2~S5는 모두 `pdf_vector.py`를 고치므로 순서대로 한다. S1은 S2보
 | | 항목 | 선택지 | 권장안 | 이유 |
 | --- | --- | --- | --- | --- |
 | D1 | 형식 | ① JSON 기호마다 파일 ② JSON 묶음마다 한 파일 ③ YAML | ① 채택(2026-11-09) | 저장소 사전이 모두 JSON이고 배포본에 해석기를 더하지 않아도 된다. 파일 하나에 기호 하나라 git 변경과 검토가 쉽다 |
-| D2 | 위치 | ① `자원/기준/기호/` ② `hazop/extract/` 안 패키지 데이터 | ① 채택(2026-11-09) | 데이터 일원화 안 A의 "사람이 고치는 기준 자료" 자리다. 표 한 줄로 배포본에 묶인다 |
+| D2 | 위치 | ① `resources/library/symbols/` ② `hazop/extract/` 안 패키지 데이터 | ① 채택(2026-11-09) | 데이터 일원화 안 A의 "사람이 고치는 기준 자료" 자리다. 표 한 줄로 배포본에 묶인다 |
 | D3 | 출처별 묶음과 쓰는 범위 | ① 공통·SNP·APR1400·새 발전소로 나누고 기본 전체 활성, 겹치면 미확인 ② 등록 때 도면마다 묶음 선택 ③ 한 덩어리 | ① 채택(2026-11-09) | 묶음을 나누면 출처와 판 관리가 분명하다. 등록 때 고르게 하면 사용자가 하나 더 정해야 한다. 묶음끼리 겹치는 모양(공통의 계기 원과 APR1400 번호 원)은 글자 조건으로만 가르고, 검사기가 이런 쌍에 글자 조건이 있는지 본다 |
 | D4 | 새 kind | ① `annotation`(주석), `test_connection`, `damper`를 레지스트리에 더하고 구동부는 노드가 아닌 부속으로 ② 모두 기존 kind에 억지로 대응 ③ 미분류로 둠 | ① 채택(2026-11-09) | 시험 쪽 398개가 새 kind에 걸린다(구동부 332개는 kind가 아니라 밸브 속성). 억지 대응은 틀린 판정이 된다. 구동부를 노드로 두면 HAZOP에서 밸브와 따로 노는 가짜 기기가 생긴다 |
 | D5 | 검정(닫힘) 밸브 | ① 같은 항목에 `normal_position=NC` ② 별도 kind | ① 채택(2026-11-09) | 범례가 같은 밸브의 정상 위치 표기로 정의한다. 레지스트리에 `normal_position`(NO·NC·LO·LC)이 이미 있다 |

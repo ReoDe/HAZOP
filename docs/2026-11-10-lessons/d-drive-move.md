@@ -30,7 +30,7 @@
 
 `git clone`으로는 아래가 따라오지 않는다. 저장소 폴더를 통째로 복사한다.
 
-- `자원/참고자료/APR1400_DCD/`(약 411MB, `원본/`과 `도면별/`, `계통약어.csv` 포함). `check_apr1400.py`는 이제 `계통약어.csv`가 없으면 멈춘다
+- `resources/references/APR1400_DCD/`(약 411MB, `원본/`과 `도면별/`, `system-codes.csv` 포함). `check_apr1400.py`는 이제 `system-codes.csv`가 없으면 멈춘다
 - `작업/`(개발 작업 루트, 약 110MB)
 - `.claude/`(에이전트·스킬은 추적됨. `worktrees/`는 위에서 정리)
 

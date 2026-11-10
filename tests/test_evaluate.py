@@ -27,7 +27,7 @@ from hazop.evaluate.adapters import xlsx_sheet
 from hazop.evaluate.criteria import norm, tag_in_text
 
 REPO = paths.REPO_ROOT
-CRIT_DIR = paths.folder("표본", "평가기준")
+CRIT_DIR = paths.folder("표본", "evaluation-criteria")
 CRIT_JSON = os.path.join(CRIT_DIR, "criteria-SNP-M-102-pzr-sample.json")
 CRIT_XLSX = os.path.join(CRIT_DIR, "criteria-SNP-M-102-pzr-sample.xlsx")
 REAL_RUNS = os.path.join(paths.DEV_WORK_ROOT, "출력", "분석", "region-SNP-M-102-pzr")

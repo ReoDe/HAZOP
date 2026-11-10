@@ -121,7 +121,9 @@ class BaselineGuard(unittest.TestCase):
         self.assertIn("--force", bad[0])
 
     def test_dirty_symbol_dictionary_or_answer_key_blocks_update(self):
-        for out in (" M 자원/기준/기호/APR1400/check_valve_box.json\n", "?? 자원/기준/기호/APR1400/new.json\n",
+        symbols = devenv.hp.folder_rel("기호")
+        self.assertIn(symbols, devenv.SCORING_PATHS)
+        for out in (" M %s/APR1400/check_valve_box.json\n" % symbols, "?? %s/APR1400/new.json\n" % symbols,
                     " M tests/fixtures/apr1400/pairs_key.json\n"):
             with self.fake_git(out):
                 self.assertEqual(len(devenv.baseline_update_problems(self.PATH)), 1, out)

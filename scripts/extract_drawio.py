@@ -1,7 +1,7 @@
 """drawio P&ID -> 출력/추출/<도면번호>/extraction.json + validation_report.md
 
 사용 예:
-  python scripts/extract_drawio.py "참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio"
+  python scripts/extract_drawio.py "resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio"
   python scripts/extract_drawio.py --samples          # 샘플 6개 전체
   python scripts/extract_drawio.py --registration 자료저장소/<프로젝트>/registrations/<자료 ID>/<버전>.json
 옵션 --svg를 생략하면 원본 옆 SVG를 좌표 대응 측정에 쓴다(hazop.extract.svg_align.find_svg, 등록과 같은 규칙):
@@ -29,7 +29,7 @@ from hazop import paths  # noqa: E402
 from hazop.extract import drawio, report, svg_align  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
-SAMPLE_GLOB = paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")
+SAMPLE_GLOB = paths.folder("참고", "pid-samples", "*", "*.drawio")
 DEFAULT_OUT = paths.output_root("추출")
 
 

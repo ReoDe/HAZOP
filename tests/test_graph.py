@@ -19,7 +19,7 @@ from hazop.graph import build  # noqa: E402
 from hazop.graph.query import GraphQuery, QueryError  # noqa: E402
 from hazop.viewer import build as vbuild, check as vcheck  # noqa: E402
 
-SAMPLES = sorted(glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")))
+SAMPLES = sorted(glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio")))
 SAMPLE = {os.path.basename(os.path.dirname(p)).split("_")[0]: p for p in SAMPLES}
 
 

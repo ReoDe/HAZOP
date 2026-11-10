@@ -209,7 +209,7 @@ class TempRoots:
         from tests.run_fixture import fresh_run_dir
         src = fresh_run_dir()
         os.makedirs(paths.folder_in(self.work, "구간"), exist_ok=True)
-        shutil.copy(paths.folder("표본", "구간", REGION + ".json"), paths.folder_in(self.work, "구간"))
+        shutil.copy(paths.folder("표본", "regions", REGION + ".json"), paths.folder_in(self.work, "구간"))
         run_dir = os.path.join(self.work, "출력", "분석", REGION, os.path.basename(src))
         if not os.path.isdir(run_dir):
             shutil.copytree(src, run_dir)
@@ -426,7 +426,7 @@ def _js_value(win, expr, timeout=10.0):
 def sample_drawing_dir():
     """샘플 도면(SNP-M-102) 폴더. 없으면 None."""
     import glob
-    found = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*")) if "SNP-M-102" in p]
+    found = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*")) if "SNP-M-102" in p]
     return found[0] if found else None
 
 

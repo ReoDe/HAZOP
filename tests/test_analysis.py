@@ -30,8 +30,8 @@ from hazop.extract import drawio, svg_align  # noqa: E402
 from hazop.graph import build  # noqa: E402
 from hazop.graph.query import GraphQuery  # noqa: E402
 
-REGION_FILE = paths.folder("표본", "구간", "region-SNP-M-102-pzr.json")
-FIXED_DIR = paths.folder("표본", "고정응답", "region-SNP-M-102-pzr")
+REGION_FILE = paths.folder("표본", "regions", "region-SNP-M-102-pzr.json")
+FIXED_DIR = paths.folder("표본", "fixed-responses", "region-SNP-M-102-pzr")
 BAD_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "analysis", "bad")
 GUIDE = paths.file_in(REPO_ROOT, "guide")
 NOW = "2026-11-04T00:00:00Z"
@@ -55,7 +55,7 @@ def _load(path):
 
 def sample_graph():
     """scripts/extract_drawio.py --samples + build_graph.py 와 같은 방법으로 SNP-M-102 그래프를 만든다."""
-    path = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
+    path = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio"))
             if "SNP-M-102" in p][0]
     result = drawio.extract(path, page=0, repo_root=REPO_ROOT)
     svg = glob.glob(os.path.join(os.path.dirname(path), "*.drawio.svg"))

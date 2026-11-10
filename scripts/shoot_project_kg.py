@@ -31,7 +31,8 @@ def main():
     try:
         import shoot_results
         shoot_results.prepare(os.environ["HAZOP_WORK_ROOT"])
-        shutil.copytree(paths.folder("참고"), paths.logical_reference_dir(os.environ["HAZOP_WORK_ROOT"]))
+        shutil.copytree(paths.folder("참고", "pid-samples"),
+                        paths.logical_dir(os.environ["HAZOP_WORK_ROOT"], "참고", "pid-samples"))
         from hazop.app import make_application
         from hazop.app.main_window import MainWindow
         from hazop.app.screenshots import settle, wait

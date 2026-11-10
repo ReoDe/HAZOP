@@ -413,7 +413,7 @@ S1·S5는 저장 형식과 `propose` 인터페이스가 바뀌므로 구현에 �
 
 ## 7.1 구현 순서(확정, 2026-11-09)
 
-데이터 일원화 이전(③)이 끝나고 마스터가 '구현 시작'을 보내면 이 세션이 차례로 구현합니다. 단위마다 검토는 interrogate·Codex 병렬 1회 → `hazop-qa` → 커밋입니다. 회귀 기준은 SNP 기준값(`tests/baselines/snp_baseline.json`, `scripts/check_snp_baseline.py`)과 APR1400 점수(`tests/baselines/apr1400_score.json`, `scripts/check_apr1400.py`)입니다. 아래 코드 경로는 데이터 이전(③) 뒤인 `9256d7d`에서 다시 확인했고 바뀐 것이 없습니다. 자료 위치만 바뀌었습니다. 검토구간 저장본은 `paths.folder("검토구간")`(작업 루트 `작업/데이터/검토구간/`), SNP 샘플은 `자원/참고자료/P&ID 도면 샘플/`입니다. ⚠ 표시는 U3(⑤ 성능, P1 세션)와 겹칠 수 있는 파일입니다. 그 단위는 U3 커밋 뒤에 시작하거나 U3 세션과 순서를 맞춥니다.
+데이터 일원화 이전(③)이 끝나고 마스터가 '구현 시작'을 보내면 이 세션이 차례로 구현합니다. 단위마다 검토는 interrogate·Codex 병렬 1회 → `hazop-qa` → 커밋입니다. 회귀 기준은 SNP 기준값(`tests/baselines/snp_baseline.json`, `scripts/check_snp_baseline.py`)과 APR1400 점수(`tests/baselines/apr1400_score.json`, `scripts/check_apr1400.py`)입니다. 아래 코드 경로는 데이터 이전(③) 뒤인 `9256d7d`에서 다시 확인했고 바뀐 것이 없습니다. 자료 위치만 바뀌었습니다. 검토구간 저장본은 `paths.folder("검토구간")`(작업 루트 `작업/데이터/검토구간/`), SNP 샘플은 `resources/references/pid-samples/`입니다. ⚠ 표시는 U3(⑤ 성능, P1 세션)와 겹칠 수 있는 파일입니다. 그 단위는 U3 커밋 뒤에 시작하거나 U3 세션과 순서를 맞춥니다.
 
 | 순서 | 단위 | 앞 단위 | 바뀌는 파일 | 시험·검사 |
 | --- | --- | --- | --- | --- |

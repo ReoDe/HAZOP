@@ -40,7 +40,7 @@ GitHub 기계는 매번 새로 깔린 빈 Windows다. 공개 저장소용 표준
 | 대상 | 근거 |
 | --- | --- |
 | unittest 대부분(약 1,750개 중 대부분) | 화면 시험은 이미 offscreen으로 돈다. 가짜 Claude(`tests/fake_claude`)를 쓰므로 키가 필요 없다 |
-| SNP 샘플 도면을 쓰는 시험과 `check_snp_baseline.py` | SNP 샘플 도면(`자원/참고자료/P&ID 도면 샘플`, 49개 파일, 9.6MB)은 git이 추적한다 |
+| SNP 샘플 도면을 쓰는 시험과 `check_snp_baseline.py` | SNP 샘플 도면(`resources/references/pid-samples`, 49개 파일, 9.6MB)은 git이 추적한다 |
 | 경로 문자열 검사 `test_path_literals.py`, 기계 경로 검사 `test_machine_paths.py` | 추적 파일만 읽는다. 오히려 다른 기계에서 돌아야 제 몫을 한다 |
 | 화면 없는 검사 스크립트 | `check_adapter`, `check_analysis`, `check_compare`, `check_contract`, `check_corrections`, `check_expect`, `check_export`, `check_extract`, `check_graph`, `check_kg`, `check_kg_algo`, `check_kg_context`, `check_register`, `check_review`, `check_study_nodes`, `check_symbols`, `check_version_migration`, `check_viewer`, `check_desktop_support` (이름만 보고 분류. 각 스크립트가 실제로 CI에서 통과하는지는 미확인) |
 | offscreen 화면 검사 | `check_app`, `check_edit_screen`, `check_kg_link`, `check_kg_renderer`, `check_kg_screen`, `check_design`. QtWebEngine이 GitHub 기계에서 offscreen으로 뜨는지는 미확인 |
@@ -51,7 +51,7 @@ GitHub 기계는 매번 새로 깔린 빈 Windows다. 공개 저장소용 표준
 | --- | --- |
 | `check_user_scenarios.py`(S1~S6), `desktop_lease.py`, verify-hazop 스킬 | 실제 화면에 창을 띄우고 키보드·마우스로 움직인다 |
 | 한글 IME 시험(오늘 단위 C의 결함 3 같은 것) | 한글 입력기를 켠 실제 데스크톱이 필요하다 |
-| `check_apr1400.py`, `check_project_kg.py` | APR1400 DCD 원본(`자원/참고자료/APR1400_DCD`, 411MB)이 git에 없다 |
+| `check_apr1400.py`, `check_project_kg.py` | APR1400 DCD 원본(`resources/references/APR1400_DCD`, 411MB)이 git에 없다 |
 | `check_cli_live.py`, `check_ai_analysis.py` | 실제 Claude 구독 또는 API 키가 필요하다 |
 | 개발 PC의 작업 루트(`작업/`, 116MB)를 읽는 시험 | git에 없다. 예: `test_study_refs.py`는 실제 분석 결과 파일이 없으면 건너뛴다 |
 | 다른 드라이브 시험(`test_cross_drive.py` 일부) | 임시 폴더와 저장소가 같은 드라이브면 건너뛴다. GitHub Windows 기계에 D: 드라이브가 있는지는 미확인 |

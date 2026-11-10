@@ -39,8 +39,9 @@ from tests import test_naming_rules as rules  # noqa: E402
 MAP_FILE = "docs/2026-11-10-naming-rules/name-map.csv"
 # 운영 규칙 파일. 바뀔 줄을 기록만 하고 총괄이 직접 고친다.
 HANDS_OFF = ("CLAUDE.md", ".claude/")
-# 옛 이름을 일부러 적어 둔 문서. 읽지도 않는다.
-KEEP = (rules.NAMING_DOC,)
+# 옛 이름을 일부러 적어 둔 문서. 읽지도 않는다. 둘째는 2026-11-09 정리의 계획이자 기록이다. 그때 정한 `자원/` 배치와 옮긴 순서를
+# 적은 문서라 새 이름으로 바꾸면 기록이 틀려진다. 지금 이름은 HZ-GOV-02 §5.5 대응표로 찾는다.
+KEEP = (rules.NAMING_DOC, "docs/2026-11-09-data-consolidation/README.md")
 # 옛 이름을 일부러 적은 줄: (문서의 지금 경로, 그 줄에 든 글자)
 KEEP_LINES = (
     ("docs/2026-11-10-plan/pstack-advice.md", "과거 실제 위반에서 실패함을 보인다"),
@@ -50,6 +51,9 @@ KEEP_LINES = (
     ("docs/2026-11-10-plan/pstack-advice.md", "단계 0에 규칙 18을 넣고"),
     ("docs/2026-11-10-plan/pstack-advice.md", "단계 3이 옮긴 뒤"),
     ("docs/2026-11-10-plan/pstack-advice.md", "단계 3 끝(`메모리/`"),
+    ("docs/2026-11-10-plan/pstack-advice.md", "그래프 판이 바뀌면 바로 걸리는 장치가 이미 있다"),
+    # 그때의 폴더 이름에 한글·`&`·공백이 들어 있었다는 말이라 새 이름으로 바꾸면 뜻이 틀어진다
+    ("docs/2026-11-10-plan/pstack-advice.md", "한글·`&`·공백이 든 경로("),
 )
 
 # 기록 문서. 옮기기 전 이름으로 돌려도 같게 다룬다.
@@ -195,8 +199,10 @@ def _new_token(doc, doc_before, token, rows, exists):
 
 
 def _code_tokens(value, rows):
-    """백틱 안 글을 경로 후보 낱말로 나눈다. 공백이 든 옛 이름(`flow chart/…`)은 한 낱말로 묶는다."""
-    spaced = sorted({r.old.split("/")[0] for r in rows if " " in r.old.split("/")[0]}, key=len, reverse=True)
+    """백틱 안 글을 경로 후보 낱말로 나눈다. 공백이 든 옛 이름은 한 낱말로 묶는다. 첫 구성요소에 공백이 있으면(`flow chart/…`)
+    그 이름부터, 안쪽 구성요소에 있으면(`자원/참고자료/P&ID 도면 샘플/…`) 대응표에 적힌 옛 경로 전체부터 묶는다."""
+    spaced = sorted({r.old.split("/")[0] for r in rows if " " in r.old.split("/")[0]} | {r.old for r in rows if " " in r.old},
+                    key=len, reverse=True)
     if not spaced:
         return list(TOKEN.finditer(value))
     whole = re.compile(r"(?:%s*/)?(?:%s)(?:/%s*)?" % (TOKEN_CHARS, "|".join(re.escape(s) for s in spaced), TOKEN_CHARS))

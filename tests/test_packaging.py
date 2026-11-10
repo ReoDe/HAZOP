@@ -41,8 +41,8 @@ from tests.test_analysis import GRAPH  # noqa: E402
 
 TLS_OK = ("qschannelbackend.dll", "qcertonlybackend.dll")
 ENV_KEYS = (paths.ENV_RESOURCE_ROOT, paths.ENV_WORK_ROOT, paths.ENV_STORE_ROOT)
-SAMPLE_DIR = paths.folder("참고", "P&ID 도면 샘플")
-KG_SAMPLE = paths.folder("표본", "지식", "SNP-SAMPLE")
+SAMPLE_DIR = paths.folder("참고", "pid-samples")
+KG_SAMPLE = paths.folder("표본", "knowledge-graph", "SNP-SAMPLE")
 T = "2026-11-05T00:00:00Z"
 
 # W3 착수 시점(ddb9a50) paths.py 공개 API. 이름·인자를 바꾸면 실패한다(새 함수 추가는 허용).
@@ -1654,10 +1654,15 @@ class VerifierTest(unittest.TestCase):
         self.assertEqual(self.vb.fresh_problems(self.tmp, 500, ["01.png"]), [])
 
     def test_kg_work_root_puts_reference_copy_at_logical_path(self):
-        """③ 검사 작업 루트 기준으로 참고 사본의 기록 경로가 저장소와 같은 논리 경로('참고자료/…')가 된다."""
+        """③ 검사 작업 루트 기준으로 샘플 도면 사본의 기록 경로가 저장소 샘플 도면의 기록 경로와 같다."""
+        with self.assertRaises(ValueError):
+            self.vb.kg_work_root(self.tmp)
+        sample = self.vb.SAMPLE_DIR + (self.vb.SAMPLE_DIR[-1] + ".drawio",)
+        drawio = paths.logical_dir(self.tmp, "참고", *sample)
+        os.makedirs(os.path.dirname(drawio))
         work = self.vb.kg_work_root(self.tmp)
-        drawio = paths.folder_in(self.tmp, "참고", "P&ID 도면 샘플", "x", "a.drawio")
-        self.assertEqual(paths.rel_or_abs(drawio, work), paths.REFERENCE_LOGICAL + "P&ID 도면 샘플/x/a.drawio")
+        self.assertEqual(paths.rel_or_abs(drawio, work), paths.rel_or_abs(paths.folder("참고", *sample), work))
+        self.assertTrue(paths.is_reference_rel(paths.rel_or_abs(drawio, work)))
 
     def test_lock_probe_matches_app_titles_and_exit_code(self):
         """lock_probe가 기다리는 주 창 제목·종료 코드·잠금 파일 이름이 앱 정의와 같다."""

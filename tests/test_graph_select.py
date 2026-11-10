@@ -48,7 +48,7 @@ def build_viewer_html(out_dir):
     from hazop.extract import drawio, svg_align
     from hazop.graph import build as gbuild
     from hazop.viewer import build
-    src = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
+    src = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio"))
            if "SNP-M-102" in p][0]
     r = drawio.extract(src, repo_root=REPO_ROOT)
     svg = glob.glob(os.path.join(os.path.dirname(src), "*.drawio.svg"))[0]

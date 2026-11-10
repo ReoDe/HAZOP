@@ -5,7 +5,7 @@
 ## 출처
 
 - U.S. NRC, APR1400 Design Control Document Tier 2 Rev.3(2018-08-13), Figure 1.7-1 "Flow Diagram Symbols and Legend" 1~4/4(DCD 1.7-9~1.7-12쪽, 원본 `ML18228A648.pdf`).
-- 같은 DCD 1·5·6·9·10·11장의 계통 흐름도 139쪽(목록: `자원/참고자료/APR1400_DCD/도면목록.md`).
+- 같은 DCD 1·5·6·9·10·11장의 계통 흐름도 139쪽(목록: `resources/references/APR1400_DCD/drawing-list.md`).
 - NRC 공개 자료다. 여기 그림은 원본 PDF에서 잘라 축소한 것이다.
 - 공개 페이지: https://www.nrc.gov/facilities-safety/new-reactors/large-light-water-reactors/design-certification-applications-for-new-reactors/apr1400/apr1400-design-control-document-and-environmental-report
 
@@ -40,7 +40,7 @@
 - **범례에 없거나 다르게 그린 기호.** 밸브 번호 타원(범례는 원만 보임), 비석형 계기 안의 가로 칸막이, 탱크 무늬 점(크기 0 도형, 버림), 네모 안 X 밸브(c021·c056, 이름 미확인), 네모 안 사선 화살 밸브(c022·c047, 이름 미확인).
 - **범례에서 닫힌 상태를 검게 칠한 밸브.** 범례 VALVE SYMBOLS는 같은 밸브를 "정상 운전 중 열림(흰색)"과 "닫힘(검정)" 두 열로 그린다. 검게 칠한 게이트 밸브는 6×3pt라 추출기가 화살촉(표식)으로 읽고 기호로 만들지 않는다. 설계서 §2.3 참고.
 
-## 사전(`자원/기준/기호/`)을 만든 방법
+## 사전(`resources/library/symbols/`)을 만든 방법
 
 1단계 구현(2026-11-09)에서 시제품 라벨을 저장소 도구로 옮겨 사전을 만들었다.
 

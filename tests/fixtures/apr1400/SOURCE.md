@@ -5,7 +5,7 @@ NRC ADAMS로 누구나 받을 수 있는 공개 문서이며, 비공개 표시�
 
 - 출처 목록: https://www.nrc.gov/facilities-safety/new-reactors/large-light-water-reactors/design-certification-applications-for-new-reactors/apr1400/apr1400-design-control-document-and-environmental-report
 - 원본 묶음: ML18228A648(1장) ~ ML18228A666(19장)
-- 전체 143쪽은 저장소에 넣지 않는다(원본은 git 제외 `자원/참고자료/APR1400_DCD/`). 검사는 `scripts/check_apr1400.py --input-dir <쪽별 폴더>`로 돈다.
+- 전체 143쪽은 저장소에 넣지 않는다(원본은 git 제외 `resources/references/APR1400_DCD/`). 검사는 `scripts/check_apr1400.py --input-dir <쪽별 폴더>`로 돈다.
 
 ## 정답 파일 (`answer_key/`)
 

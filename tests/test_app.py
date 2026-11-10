@@ -174,7 +174,7 @@ class AppTestBase(unittest.TestCase):
         os.environ["HAZOP_STORE_ROOT"] = os.path.join(cls.tmp, "store")
         work = os.environ["HAZOP_WORK_ROOT"]
         os.makedirs(paths.folder_in(work, "구간"))
-        shutil.copy(paths.folder("표본", "구간", REGION + ".json"), paths.folder_in(work, "구간"))
+        shutil.copy(paths.folder("표본", "regions", REGION + ".json"), paths.folder_in(work, "구간"))
         cls.run_dir = os.path.join(work, "출력", "분석", REGION, os.path.basename(cls.src_run))
         shutil.copytree(cls.src_run, cls.run_dir)
         from hazop.app import make_application
@@ -620,7 +620,7 @@ def build_temp_drawing(work, drawing="SNP-M-102"):
     """작업 루트 안으로 샘플 도면을 복사해 추출·그래프를 만든다(뷰어 SVG는 작업 루트·저장 루트 안만 허용).
     반환 (추출 폴더, 그래프). 추출 경로가 달라 graph_version은 분석 실행의 그래프와 다르다."""
     from hazop.app import data
-    src = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*")) if drawing in p][0]
+    src = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*")) if drawing in p][0]
     dst = os.path.join(work, "샘플", os.path.basename(src))
     if not os.path.isdir(dst):
         shutil.copytree(src, dst)
@@ -637,7 +637,7 @@ class GraphOnlyViewerTest(AppTestBase):
         """SVG 없는 추출 결과 → 경고 띠 + 그래프 보기(앱이 만든 그래프 전용 HTML)."""
         from hazop.app import data
         work = os.environ["HAZOP_WORK_ROOT"]
-        src = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
+        src = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio"))
                if "SNP-M-102" in p][0]
         dst = os.path.join(work, "nosvg", "SNP-M-102.drawio")
         os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -675,7 +675,7 @@ class RegisterScreenTest(AppTestBase):
     def test_register_extract_graph(self):
         win = self.make_window()
         scr = win.screens[0]
-        sample = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
+        sample = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio"))
                   if "SNP-M-102" in p][0]
         self.assertFalse(scr.set_files([sample, sample]))            # 여러 개: 아무것도 고르지 않음
         self.assertIn("한 개씩", scr.file_info.text())
@@ -874,7 +874,7 @@ class RegisterScreenTest(AppTestBase):
 
 
 def sample_file(drawing, ext):
-    return [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*." + ext))
+    return [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*." + ext))
             if drawing in p][0]
 
 

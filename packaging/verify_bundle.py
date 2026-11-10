@@ -75,7 +75,7 @@ def _build_package():
 bp = _build_package()
 from hazop import paths  # noqa: E402  (bp가 저장소를 sys.path에 넣었음)
 
-SAMPLE_DIR = ("P&ID 도면 샘플", "SNP-M-102_RCS-pressurizer")  # 참고 폴더 안
+SAMPLE_DIR = ("pid-samples", "SNP-M-102_RCS-pressurizer")  # 참고 폴더 안
 inside = bp.inside  # 드라이브가 다르면 False(ValueError 처리)
 
 
@@ -192,19 +192,21 @@ def fresh_problems(png_dir, since, want):
 
 
 def make_inputs(dest):
-    """검사 입력 사본(작은 저장소: 표본·참고 폴더가 저장소와 같은 자리). hazop/ 은 넣지 않는다(묶음의 hazop만 읽히게)."""
+    """검사 입력 사본(작은 저장소: 표본은 저장소와 같은 자리, 샘플 도면은 기록 경로 자리). hazop/ 은 넣지 않는다(묶음의 hazop만
+    읽히게). 묶인 실행에서는 저장소의 참고 폴더가 없으므로, 샘플 도면이 기록 경로 자리(paths.logical_dir)에 있어야 사본을 작업
+    루트로 삼았을 때 source.file이 저장소와 같게 적히고 그래프 판이 맞는다."""
     os.makedirs(os.path.join(dest, "scripts"))
     for n in CHECK_SCRIPTS:
         shutil.copy2(os.path.join(REPO_ROOT, "scripts", n + ".py"), os.path.join(dest, "scripts"))
     shutil.copy2(os.path.join(REPO_ROOT, "packaging", "w4_flow.py"), os.path.join(dest, "scripts"))
     shutil.copy2(os.path.join(REPO_ROOT, "packaging", "pdf_probe.py"), os.path.join(dest, "scripts"))
-    sdir = paths.folder_in(dest, "참고", *SAMPLE_DIR)
+    sdir = paths.logical_dir(dest, "참고", *SAMPLE_DIR)
     os.makedirs(sdir)
     src = paths.folder("참고", *SAMPLE_DIR)
     for p in glob.glob(os.path.join(src, "*.drawio")) + glob.glob(os.path.join(src, "*.drawio.svg")) + \
             glob.glob(os.path.join(src, "*.pdf")):
         shutil.copy2(p, sdir)
-    for sub in (("구간",), ("고정응답",), ("지식", "SNP-SAMPLE")):
+    for sub in (("regions",), ("fixed-responses",), ("knowledge-graph", "SNP-SAMPLE")):
         shutil.copytree(paths.folder("표본", *sub), paths.folder_in(dest, "표본", *sub))
 
 
@@ -212,14 +214,14 @@ def seed_app_work(work):
     """--app-only 작업 루트 채우기(w4_flow와 같은 방법, 개발 코드로): 표본 구간·고정 응답·지식, 샘플 도면 사본(논리 경로
     자리)과 그 추출·그래프. 이 프로세스의 HAZOP_WORK_ROOT만 잠시 바꾸고 되돌린다."""
     from hazop.app import data
-    sources = {name: paths.folder("표본", name) for name in ("구간", "고정응답", "지식")}
+    sources = {name: paths.folder("표본", paths.SAMPLE_FOLDERS[name]) for name in ("구간", "고정응답", "지식")}
     sample = paths.folder("참고", *SAMPLE_DIR)
     old = os.environ.get(paths.ENV_WORK_ROOT)
     os.environ[paths.ENV_WORK_ROOT] = work
     try:
         for name, src in sources.items():
             shutil.copytree(src, paths.folder(name), dirs_exist_ok=True)
-        dst = os.path.join(paths.logical_reference_dir(work), *SAMPLE_DIR)
+        dst = paths.logical_dir(work, "참고", *SAMPLE_DIR)
         shutil.copytree(sample, dst)
         drawio = glob.glob(os.path.join(dst, "*.drawio"))[0]
         _, ex_dir = data.script_module("extract_drawio").run_one(drawio, paths.output_root("추출"))
@@ -233,15 +235,13 @@ def seed_app_work(work):
 
 
 def kg_work_root(inputs):
-    """3) check_kg_screen의 작업 루트. 검사는 샘플 도면을 <inputs>/<참고 폴더>에서 찾고, 묶인 실행에서는 그 사본이 저장소
-    참고 폴더가 아니어서 source.file을 작업 루트 기준 상대 경로로 적는다. 그 경로가 저장소의 논리 경로('참고자료/…')와
-    같아야 graph_version과 link_candidates의 target_graph_version이 맞는다. 그래서 참고 사본이 논리 경로 자리
-    (logical_reference_dir)에 오도록 작업 루트를 참고 폴더의 부모로 둔다."""
-    ref = paths.folder_in(inputs, "참고")
-    work = os.path.dirname(ref)
-    if os.path.normcase(paths.logical_reference_dir(work)) != os.path.normcase(ref):
-        raise ValueError("참고 폴더 사본이 논리 경로 자리가 아님: %s" % ref)
-    return work
+    """3) check_kg_screen의 작업 루트. 묶인 실행에서는 샘플 도면 사본이 저장소 참고 폴더가 아니어서 source.file을 작업 루트
+    기준 상대 경로로 적는다. 그 경로가 저장소의 기록 경로('참고자료/P&ID 도면 샘플/…')와 같아야 graph_version과
+    link_candidates의 target_graph_version이 맞는다. make_inputs가 샘플 도면을 사본의 기록 경로 자리에 두므로 사본 자체를
+    작업 루트로 쓴다."""
+    if not os.path.isdir(paths.logical_dir(inputs, "참고", *SAMPLE_DIR)):
+        raise ValueError("샘플 도면 사본이 기록 경로 자리에 없음: %s" % inputs)
+    return inputs
 
 
 def expected_datas(repo=REPO_ROOT):
@@ -426,7 +426,7 @@ def steps(args, summary, run_root, out, repo_dirs):
             "lines": [ln.strip() for ln in text.splitlines() if ln.strip().startswith(("[OK]", "[FAIL]", "결과"))]}
         print("check_kg_screen rc=%s %ss" % (rc, sec))
 
-        pdf = paths.folder_in(inputs, "참고", *SAMPLE_DIR, SAMPLE_DIR[-1] + ".pdf")
+        pdf = paths.logical_dir(inputs, "참고", *SAMPLE_DIR, SAMPLE_DIR[-1] + ".pdf")
         pres = os.path.join(out, "pdf_probe.json")
         rc, sec, _ = run([check_exe, os.path.join(scripts, "pdf_probe.py"), "--pdf", pdf, "--result", pres], env, tmp,
                          os.path.join(out, "pdf_probe.log"))

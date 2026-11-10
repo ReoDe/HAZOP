@@ -3,11 +3,11 @@
 미국 NRC에 제출된 APR1400 설계인증 DCD Rev.3(2018-08-13) Tier 2 1~19장에서 계통 흐름도(P&ID 형식) 쪽만 뽑았다. 도구 실험용 참고자료다.
 
 - 그림 63개, 143쪽. 도면이 실린 장은 1·5·6·9·10·11장이다.
-- 통합본: `APR1400_DCD_Rev3_PID_전체.pdf` (그림마다 책갈피가 있다)
-- 쪽별 파일: `도면별/` 아래 `순번_장_그림번호_시트_영문제목.pdf`
-- 표 데이터: `도면목록.csv` (원본 쪽, 통합본 쪽, 텍스트 문자 수 포함)
-- 제외한 도식: `후보_제외도면.csv` (계측 신호 흐름도, 기기 개략도, 통신계통도 등)
-- 원본: `원본/ML18228A648.pdf`(1장) ~ `원본/ML18228A666.pdf`(19장)
+- 통합본: `APR1400_DCD_Rev3_PID_all.pdf` (그림마다 책갈피가 있다)
+- 쪽별 파일: `by-drawing/` 아래 `순번_장_그림번호_시트_영문제목.pdf`
+- 표 데이터: `drawing-list.csv` (원본 쪽, 통합본 쪽, 텍스트 문자 수 포함)
+- 제외한 도식: `excluded-drawings.csv` (계측 신호 흐름도, 기기 개략도, 통신계통도 등)
+- 원본: `source/ML18228A648.pdf`(1장) ~ `source/ML18228A666.pdf`(19장)
 - 모든 도면은 벡터로 되어 있어 기기 태그와 배관 번호를 텍스트로 뽑을 수 있다. 다만 5.4.1-2 한 쪽은 이미지가 섞여 있다.
 - 공개본이라 상세 P&ID보다 단순하다. 비공개 표시가 붙은 도면 쪽은 없다.
 
@@ -109,9 +109,9 @@
 
 ## 다시 만들기
 
-`스크립트/extract_pid.py`로 원본에서 도면 쪽을 뽑고, `스크립트/make_index.py`로 계통명과 이 문서를 만든다.
+`scripts/extract_pid.py`로 원본에서 도면 쪽을 뽑고, `scripts/make_index.py`로 계통명과 이 문서를 만든다.
 
 ```bash
-python -E -P 스크립트/extract_pid.py 원본 .
-python -E -P 스크립트/make_index.py .
+python -E -P scripts/extract_pid.py source .
+python -E -P scripts/make_index.py .
 ```

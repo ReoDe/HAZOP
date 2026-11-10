@@ -1,8 +1,8 @@
 """APR1400 DCD Rev.3 Tier 2 장별 PDF에서 P&ID·계통 흐름도 쪽만 골라낸다.
 
 사용: python -E -P extract_pid.py <원본폴더> <출력폴더>
-출력: <출력>/APR1400_DCD_Rev3_PID_전체.pdf (책갈피 포함)
-      <출력>/도면별/*.pdf, <출력>/도면목록.csv, <출력>/후보_제외도면.csv
+출력: <출력>/APR1400_DCD_Rev3_PID_all.pdf (책갈피 포함)
+      <출력>/by-drawing/*.pdf, <출력>/drawing-list.csv, <출력>/excluded-drawings.csv
 """
 import csv
 import re
@@ -79,7 +79,7 @@ def slug(s, n=60):
 
 def main(src_dir, out_dir):
     src_dir, out_dir = Path(src_dir), Path(out_dir)
-    per_dir = out_dir / "도면별"
+    per_dir = out_dir / "by-drawing"
     per_dir.mkdir(parents=True, exist_ok=True)
     rows, others = [], []
     for ml, ch in sorted(CHAPTERS.items(), key=lambda kv: kv[1]):
@@ -137,16 +137,16 @@ def main(src_dir, out_dir):
         single.save(per_dir / name, garbage=3, deflate=True)
         out_rows.append({"순번": n, **rec, "통합PDF쪽": combined.page_count, "개별파일": name})
     combined.set_toc(toc)
-    combined.save(out_dir / "APR1400_DCD_Rev3_PID_전체.pdf", garbage=3, deflate=True)
+    combined.save(out_dir / "APR1400_DCD_Rev3_PID_all.pdf", garbage=3, deflate=True)
 
     cols = ["순번", "장", "그림번호", "시트", "전체시트", "제목", "절번호", "절제목",
             "원본파일", "원본쪽", "통합PDF쪽", "개별파일", "비공개표시", "텍스트문자수", "이미지수"]
-    with open(out_dir / "도면목록.csv", "w", newline="", encoding="utf-8-sig") as fh:
+    with open(out_dir / "drawing-list.csv", "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.DictWriter(fh, fieldnames=cols)
         w.writeheader()
         w.writerows(out_rows)
     ocols = [c for c in cols if c not in ("순번", "통합PDF쪽", "개별파일")]
-    with open(out_dir / "후보_제외도면.csv", "w", newline="", encoding="utf-8-sig") as fh:
+    with open(out_dir / "excluded-drawings.csv", "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.DictWriter(fh, fieldnames=ocols)
         w.writeheader()
         w.writerows(others)

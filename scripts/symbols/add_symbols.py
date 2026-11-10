@@ -9,7 +9,7 @@
   enabled, legend_ref, note. 새 항목을 만들 때만 읽는다. 이미 있는 항목은 사람이 고친 값을 그대로 둔다.
 - 견본: 라벨 붙은 묶음 구성원 중 서로 다른 격자를 빈도순으로 --per-entry개. 이미 있는 견본과 같은 격자는 더하지 않는다.
   견본이 바뀐 항목만 revision을 올리고 updated를 --date로 바꾼다. 같은 입력으로 다시 돌리면 아무것도 바뀌지 않는다.
-- 예시 그림: 새 항목이면 가장 흔한 격자의 첫 기호를 잘라 <묶음>/그림/<이름>.png(긴 변 160px 이하)로.
+- 예시 그림: 새 항목이면 가장 흔한 격자의 첫 기호를 잘라 <묶음 폴더>/images/<이름>.png(긴 변 160px 이하)로.
 """
 
 import argparse
@@ -130,7 +130,7 @@ def main():
     a = ap.parse_args()
     cand = a.candidates or paths.folder("기호후보", a.set)
     root = a.library or paths.folder("기호")
-    input_dir = a.input_dir or paths.folder("APR1400", "도면별")
+    input_dir = a.input_dir or paths.folder("APR1400", "by-drawing")
     rows = {(r["seq"], r["i"]): r for r in cu.load_rows(os.path.join(cand, "쪽"))}
     clusters = {c["rank"]: c for c in read_json(os.path.join(cand, "묶음.json"))}
     meta = {m["id"]: dict(m, source_set=a.source_note) for m in read_csv(a.meta)}
@@ -159,7 +159,7 @@ def main():
         if bundle is None:
             bundle = a.set if prefix == a.set.lower() else prefix
             man["bundles"].append({"name": bundle, "prefix": prefix, "active": True, "source": a.source_note})
-        folder = os.path.join(root, bundle)
+        folder = symbols.bundle_dir(root, bundle, prefix)
         os.makedirs(folder, exist_ok=True)
         path = os.path.join(folder, name + ".json")
         if os.path.isfile(path):
@@ -185,13 +185,13 @@ def main():
             pages = sorted({r["seq"] for r in members[eid]})
             entry["sources"] = [s for s in entry["sources"] if "pages" not in s] + [
                 {"set": a.source_note, "pages": pages, "symbols": len(members[eid]), "template_parity": a.template_parity}]
-            img_dir = os.path.join(folder, "그림")
+            img_dir = os.path.join(folder, symbols.IMAGE_DIR)
             img = os.path.join(img_dir, name + ".png")
             if not os.path.isfile(img) and ranked and not ranked[0][0]["zero"]:
                 os.makedirs(img_dir, exist_ok=True)
                 crop(input_dir, ranked[0][0], img)
             if os.path.isfile(img):
-                entry["image"] = "그림/%s.png" % name
+                entry["image"] = "%s/%s.png" % (symbols.IMAGE_DIR, name)
             with open(path, "w", encoding="utf-8", newline="\n") as f:
                 json.dump(entry, f, ensure_ascii=False, indent=1)
                 f.write("\n")

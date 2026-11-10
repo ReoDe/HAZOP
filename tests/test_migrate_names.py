@@ -71,6 +71,16 @@ class RewriteText(unittest.TestCase):
         self.assertEqual("흐름도는 `specs/flows/`의 `specs/flows/00-overview.md`, `../flow chart/00-overview.md`다. `flow` `chart`\n", new)
         self.assertEqual(["code"] * 2, [c[2] for c in changes])
 
+    def test_backtick_path_with_a_space_in_an_inner_folder_name(self):
+        rows = [mn.Row("5d", "자원/참고자료/P&ID 도면 샘플", "resources/references/pid-samples"),
+                mn.Row("5d", "자원/참고자료", "resources/references")]
+        there = {"resources/references/pid-samples/SNP-M-102/a.drawio"}
+        new, changes = mn.rewrite_text(
+            "README.md", "샘플은 `자원/참고자료/P&ID 도면 샘플/SNP-M-102/a.drawio`이고 기록은 `참고자료/P&ID 도면 샘플/…`로 남는다.\n", rows,
+            lambda p: p in there or any(t.startswith(p + "/") for t in there))
+        self.assertEqual("샘플은 `resources/references/pid-samples/SNP-M-102/a.drawio`이고 기록은 `참고자료/P&ID 도면 샘플/…`로 남는다.\n", new)
+        self.assertEqual(1, len(changes))
+
     def test_backtick_repo_path_inside_a_moved_folder(self):
         """옮긴 폴더 안의 문서가 저장소 기준 경로를 적으면, 문서 폴더 기준으로 잘못 풀지 않고 저장소 기준으로 푼다."""
         new, _ = rewrite("docs/2026-11-07-screenshots-pdf/README.md",

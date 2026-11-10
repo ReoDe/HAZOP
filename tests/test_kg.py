@@ -25,8 +25,8 @@ from hazop import paths  # noqa: E402
 from hazop.graph import build as gbuild  # noqa: E402
 from hazop.kg import build, inputs  # noqa: E402
 
-SAMPLE_DIR = paths.folder("표본", "지식", "SNP-SAMPLE")
-_DRAWIO = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
+SAMPLE_DIR = paths.folder("표본", "knowledge-graph", "SNP-SAMPLE")
+_DRAWIO = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio"))
            if os.path.basename(os.path.dirname(p)).startswith("SNP-M-102")]
 _GRAPH = None
 

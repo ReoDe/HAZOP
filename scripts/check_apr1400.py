@@ -1,6 +1,6 @@
 """APR1400 DCD 계통 흐름도 점수판과 톱니 검사. 원본 PDF는 저장소에 없으므로 입력 폴더를 인자로 받는다.
 
-  python scripts/check_apr1400.py --input-dir <도면별 폴더> [--catalog <도면목록.csv>] [--jobs 8]
+  python scripts/check_apr1400.py --input-dir <쪽별 PDF 폴더 by-drawing> [--catalog <drawing-list.csv>] [--jobs 8]
   python scripts/check_apr1400.py --input-dir <…> --update     # 점수 기준값을 지금 결과로 바꿈(이유는 커밋 메시지에)
   python scripts/check_apr1400.py --input-dir <…> --pages 6,28 # 몇 쪽만(점수 비교 없이 보기만)
 
@@ -52,7 +52,7 @@ def norm(s):
 
 def default_input_dir():
     from hazop import paths
-    return paths.folder("APR1400", "도면별")
+    return paths.folder("APR1400", "by-drawing")
 
 
 # ---------------------------------------------------------------- 텍스트 층 기준(대리 지표)
@@ -440,8 +440,8 @@ def main(argv=None):
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     from hazop import paths
-    ap.add_argument("--input-dir", default=None, help="쪽별 PDF 폴더(기본: 저장소의 %s/도면별)" % paths.folder_rel("APR1400"))
-    ap.add_argument("--catalog", default=None, help="도면목록.csv(기본: 입력 폴더의 상위 폴더)")
+    ap.add_argument("--input-dir", default=None, help="쪽별 PDF 폴더(기본: 저장소의 %s/by-drawing)" % paths.folder_rel("APR1400"))
+    ap.add_argument("--catalog", default=None, help="drawing-list.csv(기본: 입력 폴더의 상위 폴더)")
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)))
     ap.add_argument("--pages", help="순번 몇 개만(쉼표). 점수 비교·갱신을 하지 않음")
     ap.add_argument("--score", default=SCORE)
@@ -455,7 +455,7 @@ def main(argv=None):
     if args.update:  # 오래 도는 검사라, 끝나고 덮기 전에 다시 본다(다른 세션이 그새 갱신했을 수 있음)
         devenv.require_baseline_update(args.score, args.force)
     input_dir = os.path.abspath(args.input_dir or default_input_dir())
-    catalog = os.path.abspath(args.catalog or os.path.join(os.path.dirname(input_dir), "도면목록.csv"))
+    catalog = os.path.abspath(args.catalog or os.path.join(os.path.dirname(input_dir), "drawing-list.csv"))
     pages = {int(x) for x in args.pages.split(",")} if args.pages else None
     from hazop.graph import project
     codes_file = os.path.join(os.path.dirname(input_dir), project.SYSTEM_CODES_FILE)

@@ -1,6 +1,7 @@
 """경로 문자열 금지 검사(docs/2026-11-09-data-consolidation §4 '이전 뒤 재발 방지 장치').
 
-`hazop/paths.py`와 이전 도구 밖의 .py에서 문자열 상수가 `데이터`·`참고자료`·`자원`·`작업` 경로 구성요소면 실패한다.
+`hazop/paths.py`와 이전 도구 밖의 .py에서 문자열 상수가 아래 경로 구성요소를 담으면 실패한다(HZ-GOV-02 §6.4).
+① 영어로 옮긴 최상위 폴더 이름(`resources`): 문자열 맨 앞이거나 `/` 바로 뒤에 올 때. ② 옮기기 전 한글 폴더 이름.
 모듈·클래스·함수 docstring과 "# 경로문자열-허용: <이유>"를 단 줄은 보지 않는다. f-string 안의 고정 부분도 문자열 상수라 함께 걸린다.
 
     python tests/test_path_literals.py --report   위반 목록
@@ -28,10 +29,23 @@ ALLOW = {
     "scripts/seed_samples.py",
     "tests/test_path_literals.py",
     "tests/test_naming_rules.py",
+    "tests/test_migrate_names.py",
+    "tests/test_record_paths.py",
 }
 # 사용자 데이터·배치 계약을 그대로 적어야 하는 줄은 끝에 "# 경로문자열-허용: <이유>"를 단다
 ALLOW_MARK = "# 경로문자열-허용:"
-PATH_PART = re.compile(r"(?:^|[/\\])(데이터|참고자료|자원|작업)(?:[/\\]|$)")
+# ① 영어로 옮긴 최상위 폴더. 단계 6이 작업 루트를 옮기면 그 이름을 더한다.
+NEW_TOPS = ("resources",)
+# ② 옮기기 전 한글 이름. 한 낱말만 적어도(os.path.join(root, "자원")) 걸린다.
+OLD_NAMES = ("데이터", "참고자료", "자원", "작업")
+# ② 가운데 paths.FOLDERS의 키와 글자가 같은 이름. 키로 쓴 것(paths.folder("표본"))은 두고 `/`가 붙은 것("자원/표본", "표본/구간")만
+# 막는다. 단계 6이 키를 영어로 바꾸면 OLD_NAMES로 올리고, 작업 루트 쪽 이름(출력, 자료저장소 등)도 그때 더한다.
+OLD_NAMES_AS_KEYS = ("기준", "표본")
+SEP = r"[/\\]"
+PATH_PART = re.compile(
+    "(?:^|%s)(?:%s)(?:%s|$)" % (SEP, "|".join(NEW_TOPS + OLD_NAMES), SEP)
+    + "|(?:^|%s)(?:%s)%s" % (SEP, "|".join(OLD_NAMES_AS_KEYS), SEP)
+    + "|%s(?:%s)$" % (SEP, "|".join(OLD_NAMES_AS_KEYS)))
 GUIDE_NAME = re.compile(re.escape(paths.FILES["guide"].rel[-1]))
 
 
@@ -87,6 +101,14 @@ class PathLiteralTest(unittest.TestCase):
     def test_no_data_path_literals_outside_paths(self):
         found = violations()
         self.assertEqual(found, [], "paths.folder()를 쓰세요:\n" + "\n".join("%s:%d %r" % v for v in found[:50]))
+
+    def test_pattern_catches_new_top_folder_and_old_korean_names(self):
+        hits = ("resources", "resources/library", "a/resources/b", "..\\resources", "자원", "자원/기준/기호", "x/참고자료",
+                "작업\\출력", "자원/표본", "표본/구간", "기준/기호", "a/표본")
+        misses = ("resource", "my-resources/x", "resources.json", "표본", "기준", "기준표", "표본검사", "자원 루트", "work",
+                  "library/x")
+        self.assertEqual([], [t for t in hits if not PATH_PART.search(t)])
+        self.assertEqual([], [t for t in misses if PATH_PART.search(t)])
 
     def test_guide_location_is_written_once(self):
         """지침서 위치는 paths.FILES["guide"]에만 적는다. 한 곳이라도 따로 적으면 폴더를 옮길 때 그곳만 빠져

@@ -16,11 +16,17 @@ __pycache__/
 
 
 # 외부 데모 촬영본: 권리·공개 범위가 불분명해 로컬에만 둔다
-자원/참고자료/참고 사진/
+resources/references/photos/
 # 외부 기준 문서 원본 PDF: 요약 지침서(specs/hazop-method-guide.md)만 저장소에 둔다
+resources/references/hazop-method/*.pdf
+# APR1400 DCD 원본과 추출 도면(용량이 커서 로컬에만 둔다). 다시 만드는 법(drawing-list.md·drawing-list.csv·
+# excluded-drawings.csv·scripts/)만 추적한다(결정 D5)
+resources/references/APR1400_DCD/source/
+resources/references/APR1400_DCD/by-drawing/
+resources/references/APR1400_DCD/*.pdf
+# 위 다섯 줄의 2026-11-10 이름 이전 전 자리. 아직 옮기지 않은 PC에서 큰 파일이 추적되지 않게 둔다
+자원/참고자료/참고 사진/
 자원/참고자료/HAZOP 기법/*.pdf
-# APR1400 DCD 원본과 추출 도면(용량이 커서 로컬에만 둔다). 다시 만드는 법(도면목록.md·도면목록.csv·후보_제외도면.csv·
-# 스크립트/)만 추적한다(결정 D5)
 자원/참고자료/APR1400_DCD/원본/
 자원/참고자료/APR1400_DCD/도면별/
 자원/참고자료/APR1400_DCD/*.pdf

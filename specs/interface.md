@@ -479,7 +479,7 @@ UI 강조색은 파랑 하나입니다. 다른 색은 데이터(노드 종류·�
 | `ai_original` | 결정 당시 `analysis.json`의 해당 항목 사본과 해시(정렬한 JSON의 SHA-256). 패턴 원안(`pattern`)과 AI 해석(`ai_interpretation`), 그래프 확인 보호수단(`safeguards`)과 AI 제시 보호수단(`ai_safeguards`)을 구분. 사람이 고치지 않음 |
 | `revised` | `modify`일 때만, 바뀐 필드만 기록. 설계보완 후보의 수정은 권고 문안과 발생 조건 설명만 |
 | `risk_confirmation` (시나리오) | `accept`·`modify`에서 강도·빈도가 모두 있어야 저장 가능. `source`는 `human`(직접 고름) 또는 `ai_proposal_adopted`('AI 제안 가져오기' 버튼). `reject`는 `null`. `defer`는 `null`(미확정, 사용자 결정 2026-11-04). 저장 전 검사는 아래 '위험도 확정 검사' |
-| `criteria_id`, `criteria_version`, `criteria_file_version` | 분석에 쓴 기준표의 값을 그대로 복사. 현재 기준표(`자원/기준/기준표/kosha-p86-2017-risk-criteria.json`)와 `risk_proposal`에서 `criteria_version`은 숫자가 아니라 문자열 "KOSHA P-86-2017 예시(MVP 임시 기준표)"이고, 파일 버전은 `criteria_file_version`(숫자)에 따로 있음. `analysis.json`의 `analysis_run.versions.risk_criteria`(`id`·`version`)와 같아야 함 |
+| `criteria_id`, `criteria_version`, `criteria_file_version` | 분석에 쓴 기준표의 값을 그대로 복사. 현재 기준표(`resources/library/risk-criteria/kosha-p86-2017-risk-criteria.json`)와 `risk_proposal`에서 `criteria_version`은 숫자가 아니라 문자열 "KOSHA P-86-2017 예시(MVP 임시 기준표)"이고, 파일 버전은 `criteria_file_version`(숫자)에 따로 있음. `analysis.json`의 `analysis_run.versions.risk_criteria`(`id`·`version`)와 같아야 함 |
 | `frequency_without_safeguards`, `frequency`, `credited_safeguards` | 보호수단을 반영하지 않은 빈도, 확정에 쓴 빈도, 빈도 감소에 쓴 보호수단 목록. `credited_safeguards`의 각 항목은 `{"node_id", "basis"}`이며, `basis`는 독립성·용량·작동 적정성을 확인한 근거(자료·근거 ID) |
 | `imported_from` | 이전 검토에서 가져온 결정이면 `{"analysis_run_id", "review_version", "scenario_id" 또는 "dic_id"}`. 아니면 `null` |
 | 시각 | UTC ISO 8601. 기존 실행 기록(`run.utc_now()`)과 같은 형식. 화면에는 한국 표준시(KST)로 표시 |
@@ -596,7 +596,7 @@ UI 강조색은 파랑 하나입니다. 다른 색은 데이터(노드 종류·�
 
 | 구분 | 내용 | 개발 실행 | 패키징 실행 [제안] |
 | --- | --- | --- | --- |
-| 프로그램 자원(읽기 전용) | 뷰어 템플릿, 토큰 파일, 이탈 카탈로그·적용 판단·패턴·기준표 | 저장소 안 경로(`자원/기준/`) | 실행 폴더 안 자원 폴더 |
+| 프로그램 자원(읽기 전용) | 뷰어 템플릿, 토큰 파일, 이탈 카탈로그·적용 판단·패턴·기준표 | 저장소 안 경로(`resources/library/`) | 실행 폴더 안 자원 폴더 |
 | 사용자 데이터(쓰기) | 저장 루트(등록 원본·검토 기록), `출력/`, 구간 JSON, 고정 응답 | 저장소 안 `작업/`(git 제외) 아래 `자료저장소/`·`출력/`·`데이터/` | 사용자가 고른 작업 폴더(기본 `%LOCALAPPDATA%\HAZOP\`) |
 | 설정 | 검토자 이름, 작업 폴더, 최근 연 구간·실행 | `%APPDATA%\HAZOP\settings.json` | 같음 |
 

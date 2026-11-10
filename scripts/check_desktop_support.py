@@ -34,7 +34,7 @@ from hazop.graph import build  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
 import json as _json  # noqa: E402
-with open(paths.folder("표본", "구간", "region-SNP-M-102-pzr.json"), encoding="utf-8") as _fh:
+with open(paths.folder("표본", "regions", "region-SNP-M-102-pzr.json"), encoding="utf-8") as _fh:
     GRAPH_VERSION = _json.load(_fh)["graph_ref"]["graph_version"]  # 구간 파일이 고정한 그래프 버전(재고정 시 따라감)
 COUNTS = {"candidates": 44, "scenarios": 14, "risk_proposed": 6, "design_improvement_candidates": 11}
 PYTHON = sys.executable if os.path.isfile(sys.executable) else (shutil.which("python") or sys.executable)

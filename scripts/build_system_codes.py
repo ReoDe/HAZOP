@@ -1,7 +1,7 @@
-"""APR1400 DCD 계통 약어 → 그림 번호 대응표(계통약어.csv)를 만든다. 다른 계통으로 가는 연결 표시('CV:RDT / SHEET 5',
+"""APR1400 DCD 계통 약어 → 그림 번호 대응표(system-codes.csv)를 만든다. 다른 계통으로 가는 연결 표시('CV:RDT / SHEET 5',
 'MS / SHEET 2"A"')를 짝지으려면 약어가 어느 그림인지 알아야 한다.
 
-  python scripts/build_system_codes.py [--input-dir <도면별>] [--catalog <도면목록.csv>] [--out <계통약어.csv>]
+  python scripts/build_system_codes.py [--input-dir <by-drawing>] [--catalog <drawing-list.csv>] [--out <system-codes.csv>]
 
 근거(출처 열):
 - [문서] 도면목록의 계통 이름 괄호 안 약어가 도면에 쓰인 약어와 글자 그대로 같다(예: '계기용 공기계통(IA)' → IA).
@@ -120,9 +120,9 @@ def main(argv=None):
     from hazop.console import safe_console
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--input-dir", default=paths.folder("APR1400", "도면별"))
-    ap.add_argument("--catalog", default=paths.folder("APR1400", "도면목록.csv"))
-    ap.add_argument("--out", default=paths.folder("APR1400", "계통약어.csv"))
+    ap.add_argument("--input-dir", default=paths.folder("APR1400", "by-drawing"))
+    ap.add_argument("--catalog", default=paths.folder("APR1400", "drawing-list.csv"))
+    ap.add_argument("--out", default=paths.folder("APR1400", "system-codes.csv"))
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)))
     args = ap.parse_args(argv)
     old = {}

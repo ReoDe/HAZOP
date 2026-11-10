@@ -31,9 +31,9 @@ import check_kg  # noqa: E402
 from hazop.analysis import ai, run, validate  # noqa: E402
 from hazop.kg import build, context  # noqa: E402
 
-REGION_FILE = paths.folder("표본", "구간", "region-SNP-M-102-pzr.json")
-FIXED_DIR = paths.folder("표본", "고정응답", "region-SNP-M-102-pzr")
-SAMPLE_DIR = paths.folder("표본", "지식", "SNP-SAMPLE")
+REGION_FILE = paths.folder("표본", "regions", "region-SNP-M-102-pzr.json")
+FIXED_DIR = paths.folder("표본", "fixed-responses", "region-SNP-M-102-pzr")
+SAMPLE_DIR = paths.folder("표본", "knowledge-graph", "SNP-SAMPLE")
 FIXTURE_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "kg_context")
 KG_RESPONSES = os.path.join(FIXTURE_DIR, "responses")
 C9_RESPONSES = os.path.join(FIXTURE_DIR, "responses_c9")
