@@ -11,7 +11,7 @@ approved: —
 
 [메모리 운영](README.md) · [MVP와 후속 범위](../specs/overview.md#mvp)
 
-기록일: 2026-11-04, 갱신: 2026-11-10. 아래 항목은 미구현·미결정입니다. 구현과 검증이 확인되면 해당 항목을 삭제합니다.
+기록일: 2026-11-04, 갱신: 2026-11-11. 아래 항목은 미구현·미결정입니다. 구현과 검증이 확인되면 해당 항목을 삭제합니다.
 
 ## 사용자 결정 대기
 
@@ -365,3 +365,17 @@ HEAD d411d15(5028fcd 포함) 재실행 결과(`출력/사용자검증/2026-11-07
 - 1366×768에서 ④ 오른쪽 패널 버튼 줄이 잘림(`stage4-구간-1366x768.png`)
 - 다른 PC·Windows 10 실제 실행은 사용자 확인 대기(`packaging/다른PC-점검표.md`)
 - preflight 임시 폴더 2.2GB 경고
+
+## 이름 이전 N3·N4 검토 경미 후속(2026-11-11)
+
+- 이 PC의 개발 작업 루트 옛 이름 `작업/`(0.1.x 배치, `D:\HAZOP\작업`)은 아직 옮기지 않았다. 옮기기 전에는 기본 작업 루트를 쓰는 스크립트가 안내를 내고 멈춘다. 옮기려면 사용자 확인 뒤에 `python scripts/migrate_names.py --work-root "D:\HAZOP\work" --from-root "D:\HAZOP\작업" --apply`를 실행한다.
+- 저장소 밖 시험 폴더의 옛 이름 사본 33곳은 그대로다. 옛 이름 사본으로 `check_apr1400.py --input-dir`를 돌리려면 `--catalog`를 따로 준다.
+- `scripts/seed_samples.py:98`: 목적지 부모가 정션이면 작업 루트 밖으로 쓸 수 있다(실경로 검사 없음, 재현 안 함).
+- `hazop/workroot.py`: `--from-root`가 `os.rename`뿐이라 다른 드라이브 사이에서는 옮기지 못한다.
+- 이전 도구 시험 공백: 긴 경로·다른 드라이브·잠금 경합 시험이 없다. 배포본으로 `%LOCALAPPDATA%\HAZOP`를 실제로 연 확인, 실제 창의 진행 표시 확인도 없다.
+- N3·N4에서 돌리지 않은 것: `check_user_scenarios.py` S7~S15, `shoot_*` 스크립트 실제 실행. 참고 폴더 통째 복사를 샘플 도면 폴더 복사로 줄인 곳이 4곳이다.
+- `rel_or_abs`는 작업 루트가 아닌 root에서도 첫 폴더 이름이 `data`·`output`·`store`면 옛 이름으로 바꿔 적는다(docstring에 적음, 해시에 닿는 호출 없음).
+- `ai_settings.fixed_response_dir`(절대 경로)는 옛 자리에 폴더가 없을 때만 새 자리에서 찾는다.
+- HZ-GOV-02 §6.5·§5.3·§4.8은 실제로 한 것과 맞게 고쳐야 한다(단계 3 때부터 남은 것).
+- 기호 사전 판 대조는 `core.autocrlf=true`인 이 PC의 분리 작업트리(CRLF)에서 값이 달라 보인다. 주 체크아웃이나 `git -c core.autocrlf=false`로 뽑아 견준다.
+- 흔들리는 시험 `tests.test_ai_run_flow`의 `test_close_now_kills_and_closes`: naming-migrate 전체 실행에서 1회 실패(@a950015). 분리 작업트리 3회는 모두 통과(hazop-reviewer).
