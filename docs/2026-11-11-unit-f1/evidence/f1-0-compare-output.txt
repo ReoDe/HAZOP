@@ -1,0 +1,19 @@
+$ python docs/2026-11-11-unit-f1/evidence/f1-0-split.py check
+최상위 문장 99개 중 글자 그대로 옮겨진 것 99개
+pdf_vector에서 보이는 예전 이름 99/99, 옮긴 이름 40개 중 같은 객체 40개
+결과: 통과
+
+$ python docs/2026-11-11-unit-f1/evidence/f1-0-extract-compare.py compare <시험 폴더>/before <시험 폴더>/after --csv <시험 폴더>/before/apr1400_pages.csv <시험 폴더>/after/apr1400_pages.csv
+snp-hashes.json: 12건 중 다른 것 0
+apr1400-hashes.json: 143건 중 다른 것 0
+SNP JSON 파일: 24개 중 바이트 같음 24
+쪽별 CSV(seconds 열 제외): 143행 중 다른 행 0
+결과: 전후가 같음
+종료 코드 0
+
+$ python scripts/check_snp_baseline.py   (마지막 줄)
+SNP: 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6
+
+$ python scripts/check_apr1400.py --out <시험 폴더>/after/apr1400_pages.csv   (첫 줄, 종료 코드)
+APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63723
+rc=0
