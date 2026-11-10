@@ -18,7 +18,7 @@
   보이는 폭, 줄임표 툴팁 규칙 위반. 실제 DPR이 요청 배율과 다르거나 96 DPI가 아니면 판정하지 않고 2.
 - --scale 1.25(QT_SCALE_FACTOR로 125% 흉내): 125% 작업 영역으로 판정(0/1/2). 그 밖의 배율은 참고치(종료 코드 0).
 - --platform offscreen: 글꼴 대체로 폭이 과대하므로 판정하지 않는다. --baseline <이전 결과 JSON>을 주면 늘어난 값만
-  경고로 알린다(종료 코드 0). 기준 수치는 docs/2026-11-05-design-system/evidence/w3-작업영역125.md에 기록한다.
+  경고로 알린다(종료 코드 0). 기준 수치는 docs/2026-11-05-design-system/evidence/w3-workspace-125.md에 기록한다.
 결과 JSON: 출력/디자인검사/design-<platform>[-s<배율>].json (출력/는 git 제외). --out으로 바꿀 수 있다.
 웹 강조 범례(W10, D16): 샘플 도면·분석 실행으로 ④⑤에 강조를 띄우고 창 LEGEND_WIDTHS(1366·1440) × 그 배율 작업 영역 높이에서
 .hz-legend가 캔버스 안에 있고 보이는 떠 있는 카드(#zoom 줌·맞춤, 검색, 층 등)와 겹치지 않는지 잰다. windows 판정에 포함
@@ -913,7 +913,7 @@ def contrast_check():
 # 우회 차단: 위 두 형식이 아닌 선택자(예: '#graphsvg .gedge', 'g[data-kind=…] > .gedge', '.gedge.unknown', ':not(…)',
 # 컨테이너 #stage·#overlay·#graphsvg·#viewport, SVG 요소 선택자)가 불투명도 < 1을 주면 실패, 인식한 형식이라도 @media 안에서
 # < 1이거나 !important면 실패, 선에 닿는 선택자의 filter: opacity()·선 규칙의 CSS 중첩도 실패, HTML·JS(주석·문자열 내용 밖)가
-# 불투명도를 직접 설정하면 실패. 휴리스틱이라 모든 우회를 막지는 않는다(한계: evidence/w8-반투명선.md §8).
+# 불투명도를 직접 설정하면 실패. 휴리스틱이라 모든 우회를 막지는 않는다(한계: evidence/w8-translucent-lines.md §8).
 STROKE_SELECTORS = (".pipe-line", ".gedge")
 _OPACITY_PROPS = ("stroke-opacity", "opacity")
 _LINE_CLASS = r"\.(?:gedge|pipe-line)(?![\w-])"
@@ -1278,7 +1278,7 @@ def translucent_check():
 # ---------------------------------------------------------------- 앱 코드 색 리터럴(W6, D8).
 # 앱 Python 코드는 색을 tokens.COLORS(정의 파일 hazop/app/tokens.py)에서 읽는다. 대상은 hazop/app/**/*.py(T1 파일 제외)와
 # hazop/viewer/build.py. 주석은 보지 않고(tokenize) 문자열 리터럴(문서 문자열·f-string 포함, 이어 붙인 문자열은 한 덩어리)만 본다.
-# QColor(...)·Qt 전역 색은 ast로 본다. 보고 행 번호는 원본 행이다. 회귀 방지용 휴리스틱이다(한계: evidence/w6-앱색.md §4).
+# QColor(...)·Qt 전역 색은 ast로 본다. 보고 행 번호는 원본 행이다. 회귀 방지용 휴리스틱이다(한계: evidence/w6-app-colors.md §4).
 APP_COLOR_EXCLUDE_BLOCKS = {"hazop/app/tokens.py": ("COLORS",)}  # 토큰 정의 대입문(AST 노드의 시작·끝 위치만 뺀다)
 APP_COLOR_T1 = ("hazop/app/screens/knowledge.py", "hazop/app/webview.py")  # T1 소유(README §8) — 검사 대상에서 뺌
 # 판정할 수 없어 남기는 리터럴: (저장소 기준 경로, 리터럴, 최상위 문장 이름, CSS 선택자 또는 None) → 사유.

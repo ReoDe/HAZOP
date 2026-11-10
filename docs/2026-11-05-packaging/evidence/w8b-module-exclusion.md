@@ -1,8 +1,8 @@
 # W8-B — GPL 전용 Qt 모듈 제외 (T2)
 
 > 1차 2026-11-06 08:20~09:10, 재작업 1회차 09:15~09:40, **재작업 2회차(최종): 09:45~10:10**. 기준 HEAD `5225cc5` + W8-B 미커밋 변경(`scripts/build_package.py`·`tests/test_packaging.py`). 실행 주체: hazop-developer.
-> 근거 결정: D13. ① 사용자 결정(GPL 전용 모듈 제외, [W6 라이선스](w6-라이선스.md) §9-2 (가))과 ② 총괄 판정(Qt5Compat.GraphicalEffects·Qt6SpatialAudio를 의존 관계로 함께 제외)으로 나뉜다.
-> 비교 기준: W8-A 재작업 2회차 묶음(`%TEMP%\hazop-w8r2`, [W8 경로 통제](w8-경로통제.md) §3). §3~§7의 수치는 재작업 2회차 결과이고, 이전 회차는 §9에 있다.
+> 근거 결정: D13. ① 사용자 결정(GPL 전용 모듈 제외, [W6 라이선스](w6-licenses.md) §9-2 (가))과 ② 총괄 판정(Qt5Compat.GraphicalEffects·Qt6SpatialAudio를 의존 관계로 함께 제외)으로 나뉜다.
+> 비교 기준: W8-A 재작업 2회차 묶음(`%TEMP%\hazop-w8r2`, [W8 경로 통제](w8-path-control.md) §3). §3~§7의 수치는 재작업 2회차 결과이고, 이전 회차는 §9에 있다.
 
 ## 1. 왜 묶음에 들어왔나(PyInstaller 6.22.3 원본·빌드 로그)
 

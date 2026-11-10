@@ -89,7 +89,7 @@ PV_LENGTH_KEYS = ("twin_tol", "dash_thick_max", "dash_long_max", "dash_corner_ma
 # 래스터에서 바꾸는 pdf_vector 값(pt 기준): OCR 상자 높이는 줄마다 몇 px씩 달라 글자 크기 차 허용을 넓히고, 몸체 윤곽은
 # 선 두께만큼 떨어져 나오므로(맞댄 삼각형 꼭짓점 등) 몸체 맞닿음·표 칸·축 정렬 허용을 넓힌다. 화살촉은 번짐(안티에일리어싱)으로
 # 벡터보다 1pt 안팎 커서(샘플 6.9~8.0pt) 표식 상한을 넓힌다. 선 끝은 몸체 윤곽선을 빼며 잘리고 뾰족한 꼭짓점(도면 연결
-# 오각형 끝)에서는 구멍이 윤곽보다 안쪽이라 몸체 접속 허용을 3.5pt로 넓힌다(2.5·3.5·4.5 비교, evidence/w4-래스터.md).
+# 오각형 끝)에서는 구멍이 윤곽보다 안쪽이라 몸체 접속 허용을 3.5pt로 넓힌다(2.5·3.5·4.5 비교, evidence/w4-raster.md).
 PV_OVERRIDES = {"line_size_tol": 4.0, "touch_tol": 1.5, "marker_max": 8.5, "attach_tol": 3.5, "axis_rect_tol": 0.6,
                 "table_edge_tol": 1.2}
 

@@ -1,7 +1,7 @@
 # W2 평가 하네스 — 구현·검증 기록
 
 > 기록 일시: 2026-11-05 (재작업 1회차 반영) · 기준 커밋: `b29e5f7`(브랜치 `chore/track-workspaces`, 미커밋 변경) · 작성: hazop-developer
-> 근거 결정: [decisions.md](../decisions.md) D1 · 조사: [w1-조사.md](w1-조사.md) §4·§6
+> 근거 결정: [decisions.md](../decisions.md) D1 · 조사: [w1-survey.md](w1-survey.md) §4·§6
 
 ## 1. 산출물
 

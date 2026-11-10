@@ -12,7 +12,7 @@ D5 열린 항목(허용 목록 2색)을 권고안대로 닫았다. 하드코딩 
 | `aside .warn`(속성 패널 경고 글자, 62행) | `#b45309` | `var(--warn-ink)` `#92400e` | `aside` `--card` `#ffffff` | 5.0216 → 7.0900 | 글자 4.5:1 |
 | `#pathq .res .bad`(경로 질의 경고 글자, 122행) | `#b45309` | `var(--warn-ink)` `#92400e` | `.float` `--card` `#ffffff` | 5.0216 → 7.0900 | 글자 4.5:1 |
 
-- 토큰 선택 근거: `--ok`는 앱 통과 칩 글자(`qss()` `QLabel#chip[state="passed"]`)와 같은 의미이고 [W1 §2](w1-조사.md) 표가 "값 다름(용도 같음)"으로 짝지었다. `--warn-ink`는 앱 경고 칩·경고 띠 글자와 뷰어 `.chip.alignwarn` 글자에 이미 쓰는 경고 글자 토큰이다. 디자인 시안(`디자인/시안/interface-mockup.html:122`, `kg-graph-mockup.html:85`)도 통과 점을 `var(--ok)`로 그린다.
+- 토큰 선택 근거: `--ok`는 앱 통과 칩 글자(`qss()` `QLabel#chip[state="passed"]`)와 같은 의미이고 [W1 §2](w1-survey.md) 표가 "값 다름(용도 같음)"으로 짝지었다. `--warn-ink`는 앱 경고 칩·경고 띠 글자와 뷰어 `.chip.alignwarn` 글자에 이미 쓰는 경고 글자 토큰이다. 디자인 시안(`디자인/시안/interface-mockup.html:122`, `kg-graph-mockup.html:85`)도 통과 점을 `var(--ok)`로 그린다.
 - `:root`에 `--ok: #15803d` 1개를 더했다(`--warn-ink`는 W4부터 있음). D5 ①에 따라 앱 `web_css()` `:root` 값과 같다.
 - 바탕 확인: `aside { background: var(--card) }`(51행), `#pathq`는 `class="float"`(165행)이고 `.float { background: var(--card) }`(33행).
 

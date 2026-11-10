@@ -56,7 +56,7 @@
 - `기획서/AI연결-구독제.md:116`(`claude.exe` 경로 예)
 - `기획서/PID-기호사전.md:207`, `기획서/검토구간-분할설계.md:6`, `docs/2026-11-09-symbol-library/README.md:64`(`HAZOP-trials` 경로)
 - `기획서/초기사건-출력설계.md:173`(세션 임시 폴더 경로)
-- `docs/2026-11-05-input-adapter/evidence/w1-조사.md:25`, `docs/2026-11-05-packaging/evidence/w2-venv.md:21`, `w6-묶음수집목록.md:24-68`, `docs/2026-11-09-data-consolidation/inventory/references.csv:233-235`: 당시 증거 기록이라 고치지 않는다
+- `docs/2026-11-05-input-adapter/evidence/w1-survey.md:25`, `docs/2026-11-05-packaging/evidence/w2-venv.md:21`, `w6-bundle-collect-list.md:24-68`, `docs/2026-11-09-data-consolidation/inventory/references.csv:233-235`: 당시 증거 기록이라 고치지 않는다
 
 ### 저장소 밖
 

@@ -2,7 +2,7 @@
 
 > 대상: `%TEMP%\hazop-w4r2\deploy-build\build\HAZOP\` TOC(읽기 전용), 결과 폴더 `dist\HAZOP\`(3,119개). 2026-11-06 생성.
 > 근거 파일 SHA-256: COLLECT-00.toc `4460fa212a71e7e62408715b5013fd15c5d9b4230656ddf2316874e820125c10`, PKG-00.toc `b1d265b8d5761fcd636ea07fb79e54772d5246cf2ef8020203e0696946f9f059`, PYZ-00.toc `475cb790a2c5b455d20f917b65b1f2ca46deda24f3ca1be62a07b5a3bd3421d3`.
-> 이 빌드는 licenses/ 추가(D9) 전이다. 고지 판정은 [w6-라이선스.md](w6-라이선스.md) §8.
+> 이 빌드는 licenses/ 추가(D9) 전이다. 고지 판정은 [w6-licenses.md](w6-licenses.md) §8.
 
 ## 1. 출처·종류별 개수(COLLECT-00.toc)
 

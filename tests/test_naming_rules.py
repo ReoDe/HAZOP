@@ -35,16 +35,6 @@ EXEMPT = {
         ("N8", "* @ " + NAMING_DOC, "대응표가 옛 이름을 일부러 적는다"),
         ("N9", "docs/2026-11-05-packaging/evidence/w5-* -> HAZOP기법지침.md", "기획서 문장을 인용한 줄 안의 링크"),
     ],
-    2: [
-        ("N1", "docs/2026-11-05-*/evidence/*", "§5.4 근거 문서"),
-        ("N1", "docs/2026-11-09-symbol-library/*", "§5.4 CSV 5개와 그림 폴더"),
-        ("N1", "docs/2026-11-10-lessons/*", "§5.4"),
-        ("N1", "docs/2026-11-10-plan/*", "§5.4"),
-        ("N3", "docs/screenshots-pdf", "날짜 없는 작업 공간"),
-        ("N3", "docs/2026-11-07-drawing-edit", "README 없음"),
-        ("N3", "docs/2026-11-09-dev-framework", "README 없음"),
-        ("N3", "docs/2026-11-10-plan", "README 없음"),
-    ],
     3: [
         ("N1", "기획서/*", "specs/로 옮긴다"),
         ("N1", "flow chart/*", "specs/flows/로 옮긴다"),
@@ -263,6 +253,7 @@ def resolve(doc_path, rel):
 # ---------------------------------------------------------------- N8, N9
 OLD_TOPS = ("기획서", "디자인", "메모리", "지식", "자원", "작업", "flow chart")
 OLD_TOP_IN_CODE = re.compile(r"^(?:\./|(?:\.\./)+|[A-Za-z]:[\\/]HAZOP[\\/])?(%s)[\\/]" % "|".join(OLD_TOPS))
+# 고지 원문과 가져온 파일은 바이트가 SHA-256으로 고정돼 있다(licenses/README.md의 표, .gitattributes). 읽지도 고치지도 않는다.
 THIRD_PARTY = ("licenses/", "hazop/kg/vendor/")
 
 

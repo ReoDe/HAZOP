@@ -21,8 +21,8 @@
 | `netwatch.ps1` | 빌드 중 네트워크 연결 표본 조사(관찰만) |
 | `tls_probe.py` | D10 측정(검증 전용): 검증용 묶음의 `HAZOP-check.exe`로 Qt TLS 백엔드와 로드된 모듈 목록을 기록(`--path-mode user|system`). 네트워크 접속 없음 |
 
-빌드: `<venv python> scripts/build_package.py --out <저장소 밖 폴더> [--with-check] --build` → 배포용 `<out>/dist/HAZOP/`(검증 exe 없음을 빌드 뒤 검사), 검증용 `<out>/dist/HAZOP-verify/`. 출력 폴더가 저장소 안이면 거부한다. 절차·결과는 [W4 빌드](../docs/2026-11-05-packaging/evidence/w4-빌드.md).
-D10([W8 경로 통제](../docs/2026-11-05-packaging/evidence/w8-경로통제.md)) 기준은 다음과 같다.
+빌드: `<venv python> scripts/build_package.py --out <저장소 밖 폴더> [--with-check] --build` → 배포용 `<out>/dist/HAZOP/`(검증 exe 없음을 빌드 뒤 검사), 검증용 `<out>/dist/HAZOP-verify/`. 출력 폴더가 저장소 안이면 거부한다. 절차·결과는 [W4 빌드](../docs/2026-11-05-packaging/evidence/w4-build.md).
+D10([W8 경로 통제](../docs/2026-11-05-packaging/evidence/w8-path-control.md)) 기준은 다음과 같다.
 
 - `--build`는 전용 venv에서만 한다. 다른 인터프리터면 rc=2로 중단하며 `--allow-other-python`으로만 우회한다. 기반 CPython 판(3.12.10)은 `scripts/build_package.py`의 `PYTHON_VERSION`에 고정되어 있으니, 패치 판을 올릴 때 함께 바꾼다.
 - PyInstaller는 PATH를 venv `Scripts`·기반 CPython·`DLLs`·`System32`로만 두고 실행한다.

@@ -22,8 +22,8 @@
 
 | ID | 현재 상태 | 증거 | 다음 행동 |
 |---|---|---|---|
-| `W4` | 구현 완료(검토 대기). 샘플 PNG 6장 blocker 0·그래프 단계 호환, 관계 F1 0.609~0.925(표본 내), 배포 빌드 TOC에 cv2·numpy 없음 확인 | [`evidence/w4-래스터.md`](evidence/w4-래스터.md), [`decisions.md`](decisions.md) D7 | 검토 지적 수정 1회 반영(경계 잘라내기·입력 상한·ID 접두어·하한 102 kind) → 총괄 테스트 확인 후 커밋 |
-| `W5` | 측정 완료(검토 대기). 14조건 × PNG 6장, 어댑터 예외·blocker 0. 하한 미달 시작: 해상도 75%·회전 0.5°(관계·객체), 잡음 σ5·JPEG q75(kind만) | [`evidence/w5-열화.md`](evidence/w5-열화.md) | 검토 → 권고(≥200 dpi 상당, 기울기 < 0.5°, JPEG q95) 반영 여부 결정 |
+| `W4` | 구현 완료(검토 대기). 샘플 PNG 6장 blocker 0·그래프 단계 호환, 관계 F1 0.609~0.925(표본 내), 배포 빌드 TOC에 cv2·numpy 없음 확인 | [`evidence/w4-raster.md`](evidence/w4-raster.md), [`decisions.md`](decisions.md) D7 | 검토 지적 수정 1회 반영(경계 잘라내기·입력 상한·ID 접두어·하한 102 kind) → 총괄 테스트 확인 후 커밋 |
+| `W5` | 측정 완료(검토 대기). 14조건 × PNG 6장, 어댑터 예외·blocker 0. 하한 미달 시작: 해상도 75%·회전 0.5°(관계·객체), 잡음 σ5·JPEG q75(kind만) | [`evidence/w5-degradation.md`](evidence/w5-degradation.md) | 검토 → 권고(≥200 dpi 상당, 기울기 < 0.5°, JPEG q95) 반영 여부 결정 |
 
 ## 3. 완료 결과
 
@@ -48,7 +48,7 @@
 | 일시 | 변경 |
 |---|---|
 | 2026-11-05 17:15 | `W1`을 진행 중으로 등록하고 작업 진행 관리 원장을 생성 |
-| 2026-11-05 17:30 | `W1` 완료: [W1 조사](evidence/w1-조사.md). 권고안 D1 채택, W2~W5 등록 |
+| 2026-11-05 17:30 | `W1` 완료: [W1 조사](evidence/w1-survey.md). 권고안 D1 채택, W2~W5 등록 |
 | 2026-11-05 18:40 | `W2` 완료: 평가 하네스(EVAL_VERSION 0.2.0). 정답지끼리 F1=1·GED=0, 오류 주입·y 반전 등 시나리오 11종 × 샘플 6세트 기대값 일치, test_adapter 24 OK. Codex 반려 → 재작업 1회 → 조건부 승인(동점 규칙 총괄 수정). D3 기록 |
 | 2026-11-05 19:00 | D4: scipy 미설치, GED는 동형 판정만 |
 | 2026-11-05 21:00 | `W3` 구현 완료(검토 대기): [W3 PDF](evidence/w3-pdf.md). 샘플 6세트 blocker 0, 관계 F1 0.870~1.0(표본 내 측정), 정렬 잔차 RMS ≤ 0.0006 canvas_unit. D3 문턱은 측정상 근거 없어 유지 제안. `tests` 501 OK(test_adapter 36), check_adapter rc=0 |
@@ -56,7 +56,7 @@
 | 2026-11-05 22:30 | `W3` 재작업 2회차: 스트로크 점선에 dash 배열·위상 적용(보이는 조각만)과 같은 경로 안 사슬, 정렬 후보 층화 표본, 계기 표기 첫 두 줄 판정 복원, 버전 0.2.0, `(W3 건너뜀)` 시험 이동. 지표 불변. `tests` 512 OK(test_adapter 47), check_adapter rc=0 |
 | 2026-11-05 23:30 | `W3` 재작업 3회차(사용자 허용): 점선 사슬 — 기호 안 흡수 조각에서 끊기, 다른 경로는 끝점끼리 2개 만날 때만 잇기, 채운 점선 이웃에 방향·직선 조건, 보이는 조각 없는 점선 미확인 기록. RULES_VERSION 0.3.0. 지표 불변(QUALITY_FLOORS 통과). `tests` 544 OK(test_adapter 51), check_adapter rc=0 |
 | 2026-11-05 23:45 | `W3` 완료: 재검토 결과 Claude 승인(총괄이 `_dash_intervals` 방어 조건 추가), Codex 반려(합성 점선 경계 사례 4건). 사용자 결정 D6으로 알려진 한계 기록 후 완료. test_adapter 48 OK |
-| 2026-11-06 10:45 | pdfplumber 배포본 포함(사용자 결정, T3 D1): T2 `W9`가 전용 빌드 venv에 pdfplumber 0.11.9와 의존성 7개를 해시 고정 설치하고 배포 묶음에 넣었다. 묶인 실행에서 `pdf_vector` 추출이 개발 실행과 같음을 확인([T2 W9](../2026-11-05-packaging/evidence/w9-고지원문.md)). 화면의 PDF 등록 경로는 D1 열린 결정 그대로 |
-| 2026-11-06 16:00 | `W4` 구현(검토 대기): [W4 래스터](evidence/w4-래스터.md). OpenCV·rapidocr를 별도 venv에 해시 고정 설치(D7). 샘플 PNG 6장 blocker 0, 관계 F1 0.609~0.925·객체 F1 0.815~0.974(표본 내), 품질 하한 등록. 배포 빌드 TOC에 cv2·numpy 0건. 검토 지적 수정 1회(경계 잘라내기 범위, 입력·처리량 상한, ID 접두어 일관화, 102 kind 하한 0.85, `--no-ocr` 사유 분리), 설치 위치는 총괄 승인(D7) |
+| 2026-11-06 10:45 | pdfplumber 배포본 포함(사용자 결정, T3 D1): T2 `W9`가 전용 빌드 venv에 pdfplumber 0.11.9와 의존성 7개를 해시 고정 설치하고 배포 묶음에 넣었다. 묶인 실행에서 `pdf_vector` 추출이 개발 실행과 같음을 확인([T2 W9](../2026-11-05-packaging/evidence/w9-notice-text.md)). 화면의 PDF 등록 경로는 D1 열린 결정 그대로 |
+| 2026-11-06 16:00 | `W4` 구현(검토 대기): [W4 래스터](evidence/w4-raster.md). OpenCV·rapidocr를 별도 venv에 해시 고정 설치(D7). 샘플 PNG 6장 blocker 0, 관계 F1 0.609~0.925·객체 F1 0.815~0.974(표본 내), 품질 하한 등록. 배포 빌드 TOC에 cv2·numpy 0건. 검토 지적 수정 1회(경계 잘라내기 범위, 입력·처리량 상한, ID 접두어 일관화, 102 kind 하한 0.85, `--no-ocr` 사유 분리), 설치 위치는 총괄 승인(D7) |
 | 2026-11-06 22:00 | `W6` PDF 등록 연동: `fileinfo`·`registry`가 `.pdf`를 받고(원본 옆 SVG는 쓰지 않음), `pdf_vector.apply_registration`이 등록 식별 정보를 반영, `scripts/extract_pdf.py`가 PDF에서 그린 `page.svg`를 offset (0, 0)으로 정렬해 ② 배경으로 씀. ①은 PDF 등록 직후 추출하고 ②로 이동. ②에서 그래프 탭 숨김(결정로그 2026-11-06) |
-| 2026-11-06 18:00 | `W5` 측정(검토 대기): [W5 열화](evidence/w5-열화.md). `scripts/degrade_raster.py`로 해상도·잡음·회전·JPEG 단계별 84회 측정, 예외·blocker 0, `raster.py` 수정 없음. W3 PDF는 벡터라 열화 대상 아님 |
+| 2026-11-06 18:00 | `W5` 측정(검토 대기): [W5 열화](evidence/w5-degradation.md). `scripts/degrade_raster.py`로 해상도·잡음·회전·JPEG 단계별 84회 측정, 예외·blocker 0, `raster.py` 수정 없음. W3 PDF는 벡터라 열화 대상 아님 |

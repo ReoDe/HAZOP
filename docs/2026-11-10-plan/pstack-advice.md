@@ -1,6 +1,6 @@
 # pstack 활용 자문: D 드라이브 이전 뒤 단위 A~E
 
-작성 2026-11-10, pstack 자문 세션(읽기 전용). 기준 커밋 `feat/next-units` @ 5f4e6c3. 근거로 읽은 것은 `CLAUDE.md`, `INTENT.md`, `메모리/남은작업.md`, `docs/2026-11-10-lessons/README.md`, `docs/2026-11-10-lessons/D드라이브-이전.md`, `~/.claude/rules/pstack-models.md`, pstack 0.15.36 스킬 설명, 그리고 단위 A의 대상 코드다.
+작성 2026-11-10, pstack 자문 세션(읽기 전용). 기준 커밋 `feat/next-units` @ 5f4e6c3. 근거로 읽은 것은 `CLAUDE.md`, `INTENT.md`, `메모리/남은작업.md`, `docs/2026-11-10-lessons/README.md`, `docs/2026-11-10-lessons/d-drive-move.md`, `~/.claude/rules/pstack-models.md`, pstack 0.15.36 스킬 설명, 그리고 단위 A의 대상 코드다.
 
 ## 공통 사항
 

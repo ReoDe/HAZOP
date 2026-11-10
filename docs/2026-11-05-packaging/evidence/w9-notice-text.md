@@ -2,9 +2,9 @@
 
 > 1차 2026-11-06 10:05~10:45, **재작업 1회차 10:45~11:10**(§10). 기준 HEAD `cd3194d` + W9 미커밋 변경. 실행 주체: hazop-developer.
 > §1~§8은 1차 기록이다. 재작업 1회차의 추가 원문·변경·빌드·verify·테스트 수치는 §10이 현재 값이다.
-> **W9-B(2026-11-06 11:15~11:40, D17)**: VS 2022 사용 조건 .docx, cryptography 안 OpenSSL·Rust 크레이트 원문은 §11이다. §7의 해당 한계 2건은 §11로 해소했다. 빌드·verify 수치는 W10과 함께 [w10-정보창.md](w10-정보창.md) §4에 있다.
+> **W9-B(2026-11-06 11:15~11:40, D17)**: VS 2022 사용 조건 .docx, cryptography 안 OpenSSL·Rust 크레이트 원문은 §11이다. §7의 해당 한계 2건은 §11로 해소했다. 빌드·verify 수치는 W10과 함께 [w10-about-dialog.md](w10-about-dialog.md) §4에 있다.
 > 근거 결정: D15(사용자 결정 2026-11-06 — `메모리/결정로그.md` 마지막 8행 중 고지 원문 동봉·VC++ 런타임 포함·고지 위치·pdfplumber 포함).
-> 비교 기준: W8-B 재작업 2회차 묶음(`%TEMP%\hazop-w8b3`, [W8-B 모듈 제외](w8b-모듈제외.md) §4).
+> 비교 기준: W8-B 재작업 2회차 묶음(`%TEMP%\hazop-w8b3`, [W8-B 모듈 제외](w8b-module-exclusion.md) §4).
 
 ## 1. 내려받기·설치(사용자 승인 목록 A·B)
 
@@ -294,7 +294,7 @@ D10 출처·이름 거부 검사와 W8-B 제외 모듈 검사(이름·폴더 규
 |---|---|
 | `licenses/` | 원문 63개 추가(.docx 1·텍스트 사본 1·OpenSSL 1·크레이트 60). `README.md`: 머리말 갱신 줄·근거 문서 안내(w9 §11), 고지 목록 63행, "내려받은 원문(W9-B)" 표 62행, W9 표의 VS 2022 "받지 못함" 행에 W9-B 안내, [주11]·[주13] 갱신, [주14] 신규 |
 | `tests/test_packaging.py` | `REQUIRED_NOTICES`에 63개(`_CRATES_MIT_APACHE` 25개 × 2 + 개별 10 + .docx·.txt·OpenSSL), `LicenseNoticeTest.test_rust_crates_cover_sbom`(SBOM의 crates.io 크레이트 32개 = 원문 폴더 32개) |
-| `evidence/w6-라이선스.md` §8 | Visual C++ 런타임 행, PDF 어댑터 행 상태를 "있음(W9-B, D17)"으로 |
+| `evidence/w6-licenses.md` §8 | Visual C++ 런타임 행, PDF 어댑터 행 상태를 "있음(W9-B, D17)"으로 |
 
 ### 11.5 남은 한계
 

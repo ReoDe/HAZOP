@@ -9,15 +9,15 @@
   - SC 1.4.11 Non-text Contrast, 수준 AA: UI 구성요소(상태 표시 포함)와 내용 이해에 필요한 그래픽 요소는 인접 색과 3:1.
   - 용어 정의 "relative luminance"·"contrast ratio": L = 0.2126 R + 0.7152 G + 0.0722 B(sRGB 채널을 선형화, 문턱 0.04045 [^1]), 대비 = (L1 + 0.05) / (L2 + 0.05), L1은 밝은 쪽.
   - 이 문서의 SC 내용은 원문을 이번 작업에서 다시 열람하지 않고 쓴 것이다(네트워크 사용 금지) `[일반지식]`. 계산 구현은 알려진 값(#000/#fff = 21:1, #777/#fff ≈ 4.48:1)으로 확인했다(`tests/test_design.ContrastTest`).
-- 적용: 앱 글자는 11~15px(`tokens.FONT_SIZE`)이라 모두 "일반 글자"로 보고 4.5:1을 쓴다([W1 §3](w1-조사.md)). 노드·관계 색, 시나리오 강조, 선택·포커스 테두리는 3:1.
+- 적용: 앱 글자는 11~15px(`tokens.FONT_SIZE`)이라 모두 "일반 글자"로 보고 4.5:1을 쓴다([W1 §3](w1-survey.md)). 노드·관계 색, 시나리오 강조, 선택·포커스 테두리는 3:1.
 
 [^1]: WCAG 2.1 정의문은 0.03928을 적었으나 sRGB 표준값은 0.04045다. 8비트 색에서는 두 문턱 사이에 값이 없어 결과가 같다 `[일반지식]`.
 
 ## 2. 검사 방법
 
 - `scripts/check_design.py`의 `CONTRAST_PAIRS`(67쌍)를 `tokens.COLORS`로 계산한다. 판정은 **불투명 토큰 값 기준**이고 정확값이 기준 이상이면 통과다(반올림하지 않음). `--colors-only`와 기본 실행 모두 뷰어·앱 색 비교 뒤에 이어서 돌고, 미달이 있으면 rc 1, 결과 JSON의 `color_problems`·`verdict`에 합산한다(D5 방식과 같음). 진단 출력은 소수 넷째 자리까지 적는다.
-- 쌍은 [W1 §3](w1-조사.md)의 측정 대상과 실제 쓰는 곳에서 골랐다. 근거 위치는 §3 표의 "근거" 칸에 적었다(행 번호는 W5 작업 트리 기준). 이름은 `COLORS` 키이고, `#`로 시작하는 값은 토큰 밖 리터럴이다(qss의 `#ffffff`·`#dcfce7`, 뷰어 허용 목록 `#b45309`·`#16a34a`).
-- 노드·관계 색이 실제로 그려지는 바탕은 둘이다: 흰 도면(②·독립 뷰어 `#stage` = `--card`, `template.html:30`; `data.graph_only_html`의 `#graphsvg` `#fff`, `data.py:190`)과 ③ 캔버스(`--kg-canvas`, `screen_template.html:38`). `--bg`(`#viewport`, `template.html:28`)는 그리는 바탕이 **아니다**. `--bg` 쌍은 D1이 계측 연결 조정을 확정한 근거([W1 §3.1](w1-조사.md))를 지키려고 남긴 회귀 방지 쌍이며, `measurement_connection` 조정은 이 D1 결정에 따른 것이다(흰 도면·③ 캔버스에서는 전에도 3.19·3.11로 통과).
+- 쌍은 [W1 §3](w1-survey.md)의 측정 대상과 실제 쓰는 곳에서 골랐다. 근거 위치는 §3 표의 "근거" 칸에 적었다(행 번호는 W5 작업 트리 기준). 이름은 `COLORS` 키이고, `#`로 시작하는 값은 토큰 밖 리터럴이다(qss의 `#ffffff`·`#dcfce7`, 뷰어 허용 목록 `#b45309`·`#16a34a`).
+- 노드·관계 색이 실제로 그려지는 바탕은 둘이다: 흰 도면(②·독립 뷰어 `#stage` = `--card`, `template.html:30`; `data.graph_only_html`의 `#graphsvg` `#fff`, `data.py:190`)과 ③ 캔버스(`--kg-canvas`, `screen_template.html:38`). `--bg`(`#viewport`, `template.html:28`)는 그리는 바탕이 **아니다**. `--bg` 쌍은 D1이 계측 연결 조정을 확정한 근거([W1 §3.1](w1-survey.md))를 지키려고 남긴 회귀 방지 쌍이며, `measurement_connection` 조정은 이 D1 결정에 따른 것이다(흰 도면·③ 캔버스에서는 전에도 3.19·3.11로 통과).
 - `ai-hatch-b`(`#e8eaee`)는 정의(`tokens.py:34`) 말고 쓰는 곳이 없어(앱·뷰어·③ 검색) 쌍에 넣지 않았다. `kg-flag-ink`(③ 경고 글자, `warn-ink`와 같은 값)는 T1 소유라 넣지 않았다.
 - 반투명 rgba 허용(D5 ④)을 용도별로 좁혔다: 글자색 `color` 속성에 쓴 반투명 rgba는 실패(`반투명 글자색 …`), 채움·그림자 등은 허용하되 아래 §7.1 합성 대비 보고에 넣는다.
 - 반투명 선·채움을 흰 도면에 합성한 대비는 `translucent_rows`/`translucent_check`가 **보고만** 한다(종료 코드 미반영, §7.1).
@@ -110,7 +110,7 @@
 | `template.html` `:root` | `muted`·`instrument`·`unclassified`·`measurement_connection` | 같은 값으로 바꿈(D5 색 비교 통과). `--risk-cond-line`은 템플릿에 없음 |
 | 범위 밖 하드코딩 | — | `render.py:102,133`·`analysis.py:511,519`·`register.py:241,304`·`viewer/build.py:83,86`의 `#6b7280`, `render.py:146`의 `#9ca3af`는 옛 값 그대로. 편집 허용 범위 밖(W6 대상) |
 
-## 6. W4 관찰 판정([w4 §5.2](w4-토큰.md))
+## 6. W4 관찰 판정([w4 §5.2](w4-tokens.md))
 
 ### 6.1 선택 테두리 `#2563eb`와 설비 `#1d4ed8`
 
@@ -128,7 +128,7 @@
 
 | 항목 | 이유 |
 |---|---|
-| `line`·`line-strong` 테두리(1.26·1.50), `warn-line`·`err-line` 띠 테두리(1.93·1.74) | 띠·칩·패널은 바탕색과 글자로 식별된다. 입력란 테두리(`line-strong` on 흰색 1.50)는 SC 1.4.11 해석이 갈린다([W1 §3.3](w1-조사.md)). 3:1로 올리면 화면 전체 선이 진해져 최소 조정 범위를 넘는다 — 열린 결정으로 남김 |
+| `line`·`line-strong` 테두리(1.26·1.50), `warn-line`·`err-line` 띠 테두리(1.93·1.74) | 띠·칩·패널은 바탕색과 글자로 식별된다. 입력란 테두리(`line-strong` on 흰색 1.50)는 SC 1.4.11 해석이 갈린다([W1 §3.3](w1-survey.md)). 3:1로 올리면 화면 전체 선이 진해져 최소 조정 범위를 넘는다 — 열린 결정으로 남김 |
 | 비활성 버튼 글자(`muted` on `bg`, `QPushButton:disabled`) | SC 1.4.3 예외. 다만 `muted` 조정으로 이 쌍도 4.502가 됨 |
 | 반투명 선·채움(`.pipe-line` `stroke-opacity .75`, `.gedge` `.55`, rgba 채움·그림자) | 판정은 불투명 토큰 값 기준. 합성 대비는 §7.1에 보고만 한다(총괄 판정: 불투명도는 시각 설계라 이번에 바꾸지 않음, PROGRESS §5 열린 항목). 강조 중 흐림(`--hl-dim`)은 보고에도 넣지 않음 |
 | `--kg-*`·`--a1-*`·`--comp-*` | T1 소유(README §8). 값 판정은 T1 |
@@ -148,7 +148,7 @@
 ## 8. 후속 제안 → 반영됨(같은 변경에서 designer·planner가 디자인 문서·시안·인터페이스 §4를 갱신)
 
 - `디자인/지식그래프화면.md` §1.2 표(27행 계장 "약 2.8:1 (3:1 미달, 기존 토큰)")와 40·246행 계장 대비 메모는 W5 뒤 값(`#0d97d6`, 흰 바탕 3.27:1)과 어긋난다. `디자인/시안/*.html` `:root`의 옛 값도 같다. `디자인/`은 다른 담당이 고치고 있어 이번에 고치지 않았다.
-- `기획서/인터페이스.md` §4.1 345~349행의 `--muted` `#6b7280`, `--instrument` `#0ea5e9`, `--unclassified` `#9ca3af`, `--measurement_connection` `#d97706`, `--risk-cond-*` `#d97706`은 W5 값과 다르다. [w4 §5.1](w4-토큰.md)의 "값의 정본은 `hazop/app/tokens.py`" 문구를 반영하면서 값 칸을 지우거나 W5 값으로 바꿀 것을 제안한다.
+- `기획서/인터페이스.md` §4.1 345~349행의 `--muted` `#6b7280`, `--instrument` `#0ea5e9`, `--unclassified` `#9ca3af`, `--measurement_connection` `#d97706`, `--risk-cond-*` `#d97706`은 W5 값과 다르다. [w4 §5.1](w4-tokens.md)의 "값의 정본은 `hazop/app/tokens.py`" 문구를 반영하면서 값 칸을 지우거나 W5 값으로 바꿀 것을 제안한다.
 
 ## 9. 검증 결과(전용 venv `%USERPROFILE%\.hazop\venv-py312`)
 

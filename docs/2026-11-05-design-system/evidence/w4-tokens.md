@@ -4,7 +4,7 @@
 
 ## 1. 방식
 
-- 정본은 `hazop/app/tokens.py`(`COLORS`)다. 앱 안의 ② 뷰어는 `web_css()`가 `:root`와 클릭 선택 채움을 덮어쓰므로 원래 앱 색으로 보였다. 차이는 독립 뷰어(빌드한 HTML을 브라우저로 연 경우)에서만 났다([W1 §2](w1-조사.md)).
+- 정본은 `hazop/app/tokens.py`(`COLORS`)다. 앱 안의 ② 뷰어는 `web_css()`가 `:root`와 클릭 선택 채움을 덮어쓰므로 원래 앱 색으로 보였다. 차이는 독립 뷰어(빌드한 HTML을 브라우저로 연 경우)에서만 났다([W1 §2](w1-survey.md)).
 - `hazop/viewer/build.py`는 편집 허용 범위 밖이라 빌드 때 주입하지 않는다. 템플릿 `:root`를 같은 값으로 맞추고 `scripts/check_design.py` 색 비교로 강제한다(D5).
 
 ## 2. 독립 뷰어 `template.html` 전후
@@ -41,7 +41,7 @@
 ## 5. 남은 일·한계
 
 - 허용 목록 2색(`#16a34a`, `#b45309`)의 통일 여부는 결정 대상이다(D5에 열린 항목으로 기록).
-- 템플릿 JS의 알 수 없는 관계 종류 대체 색(`EDGE_COLOR` 없음 → `undefined`, [W1 §2](w1-조사.md))은 JS라 "색·CSS만" 범위 밖이다. 고치지 않았다.
+- 템플릿 JS의 알 수 없는 관계 종류 대체 색(`EDGE_COLOR` 없음 → `undefined`, [W1 §2](w1-survey.md))은 JS라 "색·CSS만" 범위 밖이다. 고치지 않았다.
 - 글꼴 차이(템플릿 Pretendard 우선)는 T2 글꼴 결정(인터페이스 §9) 대기라 그대로 두었다.
 - 범위 밖 하드코딩(앱 코드 hex 0개는 [PROGRESS](../PROGRESS.md) `W6`으로 넘김):
   - 편집 허용 범위 밖: `hazop/viewer/build.py` 목록 페이지 CSS, `hazop/app/data.py` `#fff` 3곳, `render.py`·`register.py` 인라인 색, `analysis.py`·`review.py` 인라인 색(배치·폭만 허용).
