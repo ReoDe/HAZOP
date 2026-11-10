@@ -16,7 +16,7 @@ from unittest import mock
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from hazop import store_io  # noqa: E402
+from hazop import paths, store_io  # noqa: E402
 from hazop.ie import model as ie_model, store as ie_store  # noqa: E402
 from hazop.study import migrate, node_review, nodes as sn, results as res  # noqa: E402
 from tests.test_study_nodes import synthetic_graph  # noqa: E402
@@ -185,10 +185,10 @@ class BackupTest(WorkRootCase):
                 two = make()
                 self.assertNotEqual(one, two)
                 self.assertEqual((raw(one), raw(two)), (b"first", b"second"), "앞 백업을 덮어쓰지 않음")
-                shutil.rmtree(os.path.join(self.tmp, "data", "backup"))
+                shutil.rmtree(paths.folder("backup"))
 
     def test_different_files_in_the_same_second_share_one_folder(self):
-        a, b = put(os.path.join(self.tmp, "data", "a.json"), b"a"), put(os.path.join(self.tmp, "data", "b.json"), b"b")
+        a, b = put(os.path.join(self.tmp, "a.json"), b"a"), put(os.path.join(self.tmp, "b.json"), b"b")
         one, two = store_io.backup_file(a, "시험", at=AT), store_io.backup_file(b, "시험", at=AT)
         self.assertEqual(os.path.dirname(one), os.path.dirname(two))
         self.assertEqual((raw(one), raw(two)), (b"a", b"b"))
@@ -247,7 +247,7 @@ class OldFilesTest(WorkRootCase):
         for key in ("status", "confirmed_at", "confirmed_by", "nodes", "history"):
             self.assertEqual(loaded[key], old[key], key)
         self.assertEqual(json.loads(raw(path)), loaded)
-        copies = [os.path.join(d, f) for d, _s, fs in os.walk(os.path.join(self.tmp, "data", "backup")) for f in fs]
+        copies = [os.path.join(d, f) for d, _s, fs in os.walk(paths.folder("backup")) for f in fs]
         self.assertEqual([raw(c) for c in copies], [old_bytes(old, False)])
 
     def test_results_round_trip_byte_for_byte(self):
