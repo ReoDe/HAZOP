@@ -89,11 +89,11 @@ def sample_inputs():
 def prepare_work_root(work, inp):
     """임시 작업 루트에 화면 입력을 둔다(inp = sample_inputs(), 작업 루트를 바꾸기 전에 만든 것): 출력/그래프/<도면>/graph.json, 출력/지식그래프/kg-…(write_outputs),
     데이터/지식/<project>/link_candidates.csv, 데이터/구간/<구간>.json."""
-    gdir = os.path.join(work, "출력", "그래프", DRAWING)
+    gdir = paths.output_in(work, "그래프", DRAWING)
     os.makedirs(gdir, exist_ok=True)
     with open(os.path.join(gdir, "graph.json"), "w", encoding="utf-8") as fh:
         json.dump(inp["graph"], fh, ensure_ascii=False)
-    build.write_outputs(os.path.join(work, "출력", "지식그래프", inp["kg"]["kg_id"]), inp["knowledge"], inp["kg"])
+    build.write_outputs(paths.output_in(work, "지식그래프", inp["kg"]["kg_id"]), inp["knowledge"], inp["kg"])
     kdir = paths.folder_in(work, "지식", SAMPLE_PROJECT)
     os.makedirs(kdir, exist_ok=True)
     shutil.copy(os.path.join(SAMPLE_DIR, screen.CANDIDATES_CSV), kdir)
@@ -369,12 +369,12 @@ def s1_window_problem(win):
 def write_synthetic_kg(work, total):
     """합성 그래프·지식그래프(가상)를 임시 작업 루트 출력/ 아래에 둔다(S1 확인용)."""
     graph, kg, regions = synthetic_inputs(total)
-    gdir = os.path.join(work, "출력", "그래프", "SYN-S1")
+    gdir = paths.output_in(work, "그래프", "SYN-S1")
     os.makedirs(gdir, exist_ok=True)
     with open(os.path.join(gdir, "graph.json"), "w", encoding="utf-8") as fh:
         json.dump(graph, fh)
     kg = dict(kg, kg_id="kg-SYN-S1", project_id="SYN-S1", kg_version="v-5e1000000001")  # 포인터 형식(build D10)
-    kg_root = os.path.join(work, "출력", "지식그래프", "kg-SYN-S1")
+    kg_root = paths.output_in(work, "지식그래프", "kg-SYN-S1")
     ver = os.path.join(kg_root, kg["kg_version"])
     os.makedirs(ver, exist_ok=True)
     kb = build.dump_bytes({})

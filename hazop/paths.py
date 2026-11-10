@@ -164,12 +164,33 @@ def work_path(*parts):
 
 def store_root():
     """등록 저장 루트: HAZOP_STORE_ROOT 우선, 없으면 <작업 루트>/자료저장소."""
-    return os.environ.get(ENV_STORE_ROOT) or work_path("자료저장소")
+    return os.environ.get(ENV_STORE_ROOT) or folder("자료저장소")
 
 
 def output_root(*parts):
-    """<작업 루트>/출력[/parts...]"""
-    return work_path("출력", *parts)
+    """<작업 루트>/출력[/<출력 폴더>[/나머지...]]. parts의 첫 칸은 OUTPUT_FOLDERS의 열쇠다(표에 없으면 KeyError)."""
+    return output_in(work_root(), *parts)
+
+
+def output_in(root, *parts):
+    """출력 폴더(또는 그 아래 폴더)가 주어진 작업 루트 root 아래 있을 자리. parts는 output_root와 같다.
+    임시 작업 루트를 꾸미는 시험과 검사가 쓴다."""
+    return folder_in(root, "출력", *_output_parts(parts))
+
+
+def _output_parts(parts):
+    return (output_name(parts[0]),) + tuple(parts[1:]) if parts else ()
+
+
+def output_name(name):
+    """출력 폴더 아래 폴더 이름. 출력 폴더를 인자로 받은 코드가 그 아래 자리를 만들 때 쓴다(os.path.join(out_root, output_name("분석")))."""
+    return OUTPUT_FOLDERS[name]
+
+
+def output_rel(*parts):
+    """작업 루트 기준 상대 경로('/' 구분). parts는 output_root와 같다. 파일에 적는 기록 경로와 같은 꼴이다
+    (예: output_rel("그래프", "<이름>", "graph.json") → '출력/그래프/<이름>/graph.json')."""
+    return "/".join(FOLDERS["출력"].rel + _output_parts(parts))
 
 
 def fixed_test_results_path(project_name, graph_name):
@@ -210,6 +231,30 @@ FOLDERS = {
     "잠재후보": Folder("work", ("데이터", "잠재후보")),
     "캐시": Folder("work", ("데이터", "캐시")),  # 지워도 되는 계산 결과(hazop.app.data 추출 요약)
     "기호후보": Folder("work", ("기호후보",)),
+    "자료저장소": Folder("work", ("자료저장소",)),  # 등록 저장 루트 기본 자리. HAZOP_STORE_ROOT를 주면 그쪽이므로 store_root()로 연다
+    "출력": Folder("work", ("출력",)),  # 이 아래 폴더는 OUTPUT_FOLDERS. output_root()·output_in()으로 연다
+}
+# <작업 루트>/출력 아래 폴더(HZ-GOV-02 §5.6). 열쇠 → 폴더 이름. 다른 모듈은 열쇠만 적고(paths.output_root("그래프")) 폴더 이름은
+# 여기에만 둔다(tests/test_path_literals.py가 막음). 이름을 바꾸려면 값만 고친다. 새 출력 폴더는 여기 한 줄을 더한다.
+OUTPUT_FOLDERS = {
+    "추출": "추출",  # ② 추출 결과 <이름>/extraction.json
+    "그래프": "그래프",  # ② 도면 그래프 <이름>/graph.json
+    "뷰어": "뷰어",
+    "문서지식": "문서지식",  # 설계 문서에서 뽑은 지식 <이름>/document_knowledge.json
+    "지식그래프": "지식그래프",  # ③ <kg_id>/current.json
+    "분석": "분석",  # ④ <region_id>/<analysis_run_id>/analysis.json
+    "근거묶음": "근거묶음",
+    "워크시트": "워크시트",
+    "평가비교": "평가비교",
+    "초기사건": "초기사건",  # ⑥ 인계 묶음 내보내기
+    "내보내기": "내보내기",
+    "어댑터": "어댑터",  # extract_pdf.py·extract_raster.py를 등록 없이 돌린 결과
+    "samples": "samples",  # run_samples.py 결과(그 아래에 추출·그래프·뷰어가 다시 온다)
+    "스크린샷": "스크린샷",
+    "사용자검증": "사용자검증",
+    "디자인검사": "디자인검사",
+    "로그": "로그",
+    "보관": "_보관",  # clean_outputs.py가 옮겨 두는 곳
 }
 # 자원 루트 아래에 낱개로 두는 파일. FOLDERS의 resource 행은 배포본에 통째로 묶는 폴더라서 파일은 따로 적는다.
 # 배포본도 같은 상대 위치에 묶는다(scripts/build_package.py DATA_FILES). 위치를 아는 곳은 이 표 하나다.

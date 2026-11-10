@@ -71,15 +71,15 @@ class PathsTest(unittest.TestCase):
         with mock.patch.dict(os.environ, _clean_env(), clear=True):
             self.assertEqual(paths.resource_root(), REPO_ROOT)
             self.assertEqual(paths.work_root(), os.path.join(REPO_ROOT, "작업"))  # 경로문자열-허용: 개발 작업 루트 기본값(계약)
-            self.assertEqual(paths.store_root(), os.path.join(paths.DEV_WORK_ROOT, "자료저장소"))
-            self.assertEqual(paths.output_root("분석"), os.path.join(paths.DEV_WORK_ROOT, "출력", "분석"))
+            self.assertEqual(paths.store_root(), paths.folder_in(paths.DEV_WORK_ROOT, "자료저장소"))
+            self.assertEqual(paths.output_root("분석"), paths.output_in(paths.DEV_WORK_ROOT, "분석"))
         self.assertEqual(paths.REPO_ROOT, registry.REPO_ROOT)
 
     def test_env_overrides_and_store_priority(self):
         env = dict(_clean_env(), HAZOP_RESOURCE_ROOT="C:/r", HAZOP_WORK_ROOT="C:/w")
         with mock.patch.dict(os.environ, env, clear=True):
             self.assertEqual(paths.resource_root(), os.path.abspath("C:/r"))
-            self.assertEqual(paths.store_root(), os.path.join(os.path.abspath("C:/w"), "자료저장소"))
+            self.assertEqual(paths.store_root(), paths.folder_in(os.path.abspath("C:/w"), "자료저장소"))
             self.assertEqual(paths.folder("구간"), os.path.join(os.path.abspath("C:/w"), "데이터", "구간"))  # 경로문자열-허용: 작업 루트 배치 계약(배포본과 같음)
         with mock.patch.dict(os.environ, dict(env, HAZOP_STORE_ROOT="C:/s"), clear=True):
             self.assertEqual(paths.store_root(), "C:/s")  # HAZOP_STORE_ROOT 우선
@@ -561,12 +561,12 @@ class SplitRootsTest(TmpCase):
         _dump(os.path.join(work, region["graph_ref"]["graph_file"]), GRAPH)
         env = dict(_clean_env(), HAZOP_RESOURCE_ROOT=res, HAZOP_WORK_ROOT=work)
         env.pop("PYTHONIOENCODING", None)
-        repo_runs = sorted(os.listdir(os.path.join(paths.DEV_WORK_ROOT, "출력", "분석"))) \
-            if os.path.isdir(os.path.join(paths.DEV_WORK_ROOT, "출력", "분석")) else []
+        repo_runs = sorted(os.listdir(paths.output_in(paths.DEV_WORK_ROOT, "분석"))) \
+            if os.path.isdir(paths.output_in(paths.DEV_WORK_ROOT, "분석")) else []
 
         rc, out = self.run_cli(env, os.path.join(REPO_ROOT, "scripts", "analyze.py"), "--run-id", "analysis-split")
         self.assertEqual(rc, 0, out)
-        doc = _load(os.path.join(work, "출력", "분석", region["region_id"], "analysis-split", "analysis.json"))
+        doc = _load(paths.output_in(work, "분석", region["region_id"], "analysis-split", "analysis.json"))
         c = doc["validation"]["counts"]
         self.assertEqual((c["candidates"], c["scenarios"], c["risk_proposed"], c["design_improvement_candidates"]),
                          (44, 14, 6, 11))
@@ -579,7 +579,7 @@ class SplitRootsTest(TmpCase):
 
         rc, out = self.run_cli(env, os.path.join(REPO_ROOT, "scripts", "export_bundles.py"))
         self.assertEqual(rc, 0, out)
-        self.assertEqual(len(os.listdir(os.path.join(work, "출력", "근거묶음", region["region_id"]))), 1)
+        self.assertEqual(len(os.listdir(paths.output_in(work, "근거묶음", region["region_id"]))), 1)
 
         drawio = os.path.join(work, "in", "P-1.drawio")
         os.makedirs(os.path.dirname(drawio))
@@ -587,19 +587,19 @@ class SplitRootsTest(TmpCase):
         shutil.copyfile(SVG_101, drawio + ".svg")
         rc, out = self.run_cli(env, os.path.join(REPO_ROOT, "scripts", "register.py"), "--project", "p", drawio)
         self.assertEqual(rc, 0, out)
-        reg_dir = os.path.join(work, "자료저장소", "p", "registrations")
+        reg_dir = paths.folder_in(work, "자료저장소", "p", "registrations")
         mid = os.listdir(reg_dir)[0]
         rc, out = self.run_cli(env, os.path.join(REPO_ROOT, "scripts", "extract_drawio.py"),
                                "--registration", os.path.join(reg_dir, mid, "1.json"))
         self.assertEqual(rc, 0, out)
-        ex = _load(os.path.join(work, "출력", "추출", "p__%s-r1-p0" % mid, "extraction.json"))
+        ex = _load(paths.output_in(work, "추출", "p__%s-r1-p0" % mid, "extraction.json"))
         al = ex["coordinate_system"]["svg_alignment"]
         self.assertEqual((al["source"], al["svg_file"]),
-                         ("registered_derived", "자료저장소/p/originals/%s/1/derived/P-1.drawio.svg" % mid))
+                         ("registered_derived", "%s/p/originals/%s/1/derived/P-1.drawio.svg" % (paths.folder_rel("자료저장소"), mid)))
         self.assertEqual(_load(os.path.join(reg_dir, mid, "1.json"))["input_path"], "in/P-1.drawio")
 
-        now_runs = sorted(os.listdir(os.path.join(paths.DEV_WORK_ROOT, "출력", "분석"))) \
-            if os.path.isdir(os.path.join(paths.DEV_WORK_ROOT, "출력", "분석")) else []
+        now_runs = sorted(os.listdir(paths.output_in(paths.DEV_WORK_ROOT, "분석"))) \
+            if os.path.isdir(paths.output_in(paths.DEV_WORK_ROOT, "분석")) else []
         self.assertEqual(now_runs, repo_runs)  # 저장소 출력/은 건드리지 않음
 
         # 자원 루트에 기준 자료가 없으면 분석하지 않는다(저장소 자료로 몰래 대체하지 않음)
@@ -608,7 +608,7 @@ class SplitRootsTest(TmpCase):
         rc, out = self.run_cli(dict(env, HAZOP_RESOURCE_ROOT=empty),
                                os.path.join(REPO_ROOT, "scripts", "analyze.py"), "--run-id", "analysis-noresource")
         self.assertEqual(rc, 1, out)
-        self.assertFalse(os.path.exists(os.path.join(work, "출력", "분석", region["region_id"], "analysis-noresource")))
+        self.assertFalse(os.path.exists(paths.output_in(work, "분석", region["region_id"], "analysis-noresource")))
 
 
 class SplitRootsViewerTest(TmpCase):
@@ -617,7 +617,7 @@ class SplitRootsViewerTest(TmpCase):
     def test_samples_viewer_with_work_root_outside_repo(self):
         work = os.path.join(self.tmp, "work")
         env = dict(_clean_env(), HAZOP_RESOURCE_ROOT=REPO_ROOT, HAZOP_WORK_ROOT=work)
-        ex_root, v_root = os.path.join(work, "출력", "추출"), os.path.join(work, "출력", "뷰어")
+        ex_root, v_root = paths.output_in(work, "추출"), paths.output_in(work, "뷰어")
         with mock.patch.dict(os.environ, env, clear=True):
             self.assertEqual(extract_drawio.main(["--samples", "--out-root", ex_root]), 0)
             self.assertEqual(build_viewer.main(["--extract-root", ex_root, "--out-root", v_root,

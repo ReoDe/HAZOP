@@ -17,6 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import openpyxl  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from hazop import paths  # noqa: E402
 from hazop.ie import model, store  # noqa: E402
 from hazop.study import results as res  # noqa: E402
 from tests.test_results_project_ui import StubApp  # noqa: E402
@@ -63,7 +64,7 @@ class InitiatingScreenTest(unittest.TestCase):
         os.environ["HAZOP_WORK_ROOT"] = self.tmp
         for g in (sheet("SNP-M-101", cont("C1", "TO SNP-M-102\nL-1")),
                   sheet("SNP-M-102", cont("C1", "FROM SNP-M-101\nL-1"))):
-            d = os.path.join(self.tmp, "출력", "그래프", g["source"]["drawing_number"])
+            d = paths.output_in(self.tmp, "그래프", g["source"]["drawing_number"])
             os.makedirs(d)
             with open(os.path.join(d, "graph.json"), "w", encoding="utf-8") as fh:
                 json.dump(g, fh)

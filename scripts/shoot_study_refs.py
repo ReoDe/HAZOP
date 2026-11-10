@@ -54,7 +54,7 @@ class RefClient:
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "m5"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else paths.output_in(paths.DEV_WORK_ROOT, "스크린샷", "m5"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-m5-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")

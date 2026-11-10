@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -122,6 +123,31 @@ class RecordPaths(unittest.TestCase):
         """기준 자료는 기록용 옛 이름을 쓰지 않는다. 새 기록은 새 폴더 이름으로 적히고 옛 기록은 표로 읽는다."""
         res = paths.resource_root()
         self.assertEqual("resources/library/deviations/x.json", paths.rel_or_abs(paths.folder("이탈후보", "x.json"), res))
+
+
+class OutputFolderTest(unittest.TestCase):
+    """출력 폴더는 열쇠로만 연다. 폴더 이름은 paths.OUTPUT_FOLDERS에만 있어서 이름을 바꿔도 아래가 그대로 성립한다."""
+
+    def test_output_rel_is_what_gets_recorded_for_a_file_under_the_output_folder(self):
+        root = os.path.abspath("w")
+        for key in paths.OUTPUT_FOLDERS:
+            full = paths.output_in(root, key, "x", "graph.json")
+            self.assertEqual(paths.output_rel(key, "x", "graph.json"), paths.rel_or_abs(full, root), key)
+            self.assertEqual(full, os.path.join(paths.folder_in(root, "출력"), paths.output_name(key), "x", "graph.json"))
+        self.assertEqual(paths.folder_rel("출력"), paths.output_rel())
+        self.assertEqual(paths.folder_in(root, "출력"), paths.output_in(root))
+
+    def test_a_name_outside_the_table_is_refused(self):
+        with self.assertRaises(KeyError):
+            paths.output_root("없는-폴더")
+        with self.assertRaises(KeyError):
+            paths.output_in("w", "없는-폴더", "x")
+
+    def test_output_root_follows_the_work_root(self):
+        with mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: os.path.abspath("w")}):
+            self.assertEqual(paths.output_in(os.path.abspath("w"), "분석", "r"), paths.output_root("분석", "r"))
+            os.environ.pop(paths.ENV_STORE_ROOT, None)
+            self.assertEqual(paths.folder_in(os.path.abspath("w"), "자료저장소"), paths.store_root())
 
 
 if __name__ == "__main__":

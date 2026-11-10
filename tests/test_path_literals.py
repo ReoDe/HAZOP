@@ -2,6 +2,8 @@
 
 `hazop/paths.py`와 이전 도구 밖의 .py에서 문자열 상수가 아래 경로 구성요소를 담으면 실패한다(HZ-GOV-02 §6.4).
 ① 영어로 옮긴 최상위 폴더 이름(`resources`): 문자열 맨 앞이거나 `/` 바로 뒤에 올 때. ② 옮기기 전 한글 폴더 이름.
+③ 작업 루트 아래 폴더 이름(`출력`, `자료저장소`, `기호후보`)과 출력 폴더 아래 이름(`그래프`, `분석` 등): `/`가 붙었거나
+os.path.join의 인자로 쓰였을 때. 이 이름들은 `paths.FOLDERS`와 `paths.OUTPUT_FOLDERS`에만 적는다.
 모듈·클래스·함수 docstring과 "# 경로문자열-허용: <이유>"를 단 줄은 보지 않는다. f-string 안의 고정 부분도 문자열 상수라 함께 걸린다.
 
     python tests/test_path_literals.py --report   위반 목록
@@ -39,8 +41,12 @@ NEW_TOPS = ("resources",)
 # ② 옮기기 전 한글 이름. 한 낱말만 적어도(os.path.join(root, "자원")) 걸린다.
 OLD_NAMES = ("데이터", "참고자료", "자원", "작업")
 # ② 가운데 paths.FOLDERS의 키와 글자가 같은 이름. 키로 쓴 것(paths.folder("표본"))은 두고 `/`가 붙은 것("자원/표본", "표본/구간")만
-# 막는다. 단계 6이 키를 영어로 바꾸면 OLD_NAMES로 올리고, 작업 루트 쪽 이름(출력, 자료저장소 등)도 그때 더한다.
-OLD_NAMES_AS_KEYS = ("기준", "표본")
+# 막는다. 단계 6이 키를 영어로 바꾸면 OLD_NAMES로 올린다.
+WORK_KEYS = ("출력", "자료저장소", "기호후보")
+# ③ 출력 폴더 아래 이름(HZ-GOV-02 §5.6의 옮기기 전 이름). 화면 문구("그래프", "분석")와 글자가 같아 한 낱말은 두고 `/`가 붙은 것만 막는다.
+OUTPUT_NAMES = ("그래프", "분석", "추출", "지식그래프", "뷰어", "스크린샷", "사용자검증", "디자인검사", "근거묶음", "워크시트", "평가비교",
+                "내보내기", "문서지식", "어댑터", "로그", "초기사건", "_보관", "_외부")
+OLD_NAMES_AS_KEYS = ("기준", "표본") + WORK_KEYS + OUTPUT_NAMES
 SEP = r"[/\\]"
 PATH_PART = re.compile(
     "(?:^|%s)(?:%s)(?:%s|$)" % (SEP, "|".join(NEW_TOPS + OLD_NAMES), SEP)
@@ -77,7 +83,16 @@ def python_files(repo=REPO, tops=SCAN):
     return sorted(out)
 
 
-def violations(repo=REPO, pattern=PATH_PART, allow=frozenset(ALLOW)):
+def join_args(tree):
+    """os.path.join(…)처럼 이름이 join인 호출의 인자로 바로 적힌 문자열 상수의 id."""
+    ids = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", None)) == "join":
+            ids.update(id(a) for a in node.args if isinstance(a, ast.Constant))
+    return ids
+
+
+def violations(repo=REPO, pattern=PATH_PART, allow=frozenset(ALLOW), joined=WORK_KEYS):
     out = []
     for rel in python_files(repo):
         if rel in allow or "/fake_claude/" in rel:
@@ -88,11 +103,12 @@ def violations(repo=REPO, pattern=PATH_PART, allow=frozenset(ALLOW)):
         except SyntaxError as e:
             out.append((rel, e.lineno or 0, "구문 오류"))
             continue
-        skip = docstring_ids(tree)
+        skip, in_join = docstring_ids(tree), join_args(tree)
         lines = open(full, encoding="utf-8").read().splitlines()
         for node in ast.walk(tree):
             if (isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip
-                    and pattern.search(node.value) and ALLOW_MARK not in lines[node.lineno - 1]):
+                    and (pattern.search(node.value) or (id(node) in in_join and node.value in joined))
+                    and ALLOW_MARK not in lines[node.lineno - 1]):
                 out.append((rel, node.lineno, node.value[:80]))
     return sorted(out)
 
@@ -104,11 +120,24 @@ class PathLiteralTest(unittest.TestCase):
 
     def test_pattern_catches_new_top_folder_and_old_korean_names(self):
         hits = ("resources", "resources/library", "a/resources/b", "..\\resources", "자원", "자원/기준/기호", "x/참고자료",
-                "작업\\출력", "자원/표본", "표본/구간", "기준/기호", "a/표본")
+                "작업\\출력", "자원/표본", "표본/구간", "기준/기호", "a/표본", "출력/그래프/x/graph.json", "출력/samples",
+                "자료저장소/p/originals", "x/자료저장소", "기호후보/a", "분석/region-x", "지식그래프/kg", "_보관/t1", "a\\추출")
         misses = ("resource", "my-resources/x", "resources.json", "표본", "기준", "기준표", "표본검사", "자원 루트", "work",
-                  "library/x")
+                  "library/x", "출력", "자료저장소", "그래프", "분석", "지식그래프", "분석결과", "출력 루트", "추출·그래프 만들기")
         self.assertEqual([], [t for t in hits if not PATH_PART.search(t)])
         self.assertEqual([], [t for t in misses if PATH_PART.search(t)])
+
+    def test_work_folder_name_as_join_argument_is_caught(self):
+        """os.path.join(root, "출력", …)은 한 낱말이라 패턴에 안 걸리므로 join의 인자인지로 잡는다. 열쇠로 쓴 것은 둔다."""
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="hazop-pathlit-") as tmp:
+            os.makedirs(os.path.join(tmp, "scripts"))
+            with open(os.path.join(tmp, "scripts", "x.py"), "w", encoding="utf-8") as fh:
+                fh.write('import os\nfrom hazop import paths\nA = os.path.join("w", "출력", "x")\n'
+                         'B = os.path.join("w", "자료저장소")\nC = paths.folder("출력")\nD = paths.output_root("그래프")\n'
+                         'E = "출력"\nF = "출력/분석"\n')
+            found = violations(tmp)
+        self.assertEqual([("scripts/x.py", 3), ("scripts/x.py", 4), ("scripts/x.py", 8)], [v[:2] for v in found])
 
     def test_guide_location_is_written_once(self):
         """지침서 위치는 paths.FILES["guide"]에만 적는다. 한 곳이라도 따로 적으면 폴더를 옮길 때 그곳만 빠져

@@ -40,7 +40,8 @@ from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 from hazop.kg import build as kg_build  # noqa: E402
 
-ARCHIVE_DIR = "_보관"
+ARCHIVE_DIR = paths.output_name("보관")
+RUN_DIR, KG_DIR, COMPARE_DIR = (paths.output_name(n) for n in ("분석", "지식그래프", "평가비교"))
 MANIFEST = "manifest.json"
 OLD_KG_FILES = (kg_build.KNOWLEDGE_FILE, kg_build.KG_FILE)
 
@@ -74,7 +75,7 @@ def _reviewed(store_root, regions, names):
 def compare_refs(out_root):
     """평가 비교 보고서가 참조하는 (region, run_id). 폴더 이름과 보고서 JSON의 target 둘 다 모은다."""
     refs = set()
-    base = os.path.join(out_root, "평가비교")
+    base = os.path.join(out_root, COMPARE_DIR)
     if not _is_plain_dir(base):
         return refs
     for region in os.listdir(base):
@@ -124,11 +125,11 @@ def _referenced(item, store_root, out_root, cmp_refs=None):
 def plan_analysis(out_root, store_root, keep, warnings):
     """(move, keep_list, skipped, kg_refs). move 항목은 dict(rel, reason, kind, ...), 나머지는 (상대 경로, 사유)."""
     move, kept, skipped, kg_refs = [], [], [], set()
-    base = os.path.join(out_root, "분석")
+    base = os.path.join(out_root, RUN_DIR)
     if not os.path.isdir(base):
         return move, kept, skipped, kg_refs
     if not _is_plain_dir(base):
-        return move, kept, [("분석", "링크·정션 폴더라 건드리지 않음")], kg_refs
+        return move, kept, [(RUN_DIR, "링크·정션 폴더라 건드리지 않음")], kg_refs
     cmp_refs, recent = compare_refs(out_root), settings_refs(warnings)
     for region in sorted(os.listdir(base)):
         rdir = os.path.join(base, region)
@@ -176,11 +177,11 @@ def plan_analysis(out_root, store_root, keep, warnings):
 def plan_kg(out_root, kg_refs, hold_versions=None):
     """hold_versions: 사유 문자열이면 보호되지 않는 버전 폴더도 옮기지 않고 그 사유로 보존한다."""
     move, kept, skipped = [], [], []
-    base = os.path.join(out_root, "지식그래프")
+    base = os.path.join(out_root, KG_DIR)
     if not os.path.isdir(base):
         return move, kept, skipped
     if not _is_plain_dir(base):
-        return move, kept, [("지식그래프", "링크·정션 폴더라 건드리지 않음")]
+        return move, kept, [(KG_DIR, "링크·정션 폴더라 건드리지 않음")]
     for name in sorted(os.listdir(base)):
         kg_root = os.path.join(base, name)
         pointer = os.path.join(kg_root, kg_build.POINTER_FILE)
@@ -271,7 +272,7 @@ def apply_plan(plan, out_root, store_root, stamp):
     if os.path.exists(dest_root):
         raise ValueError("보관 폴더가 이미 있음: %s" % dest_root)
     allowed = []
-    for d in ("분석", "지식그래프"):
+    for d in (RUN_DIR, KG_DIR):
         b = os.path.join(out_root, d)
         if _is_plain_dir(b):
             allowed.append(os.path.realpath(b))
@@ -311,7 +312,7 @@ def main(argv=None):
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--keep", type=int, default=5, help="구간별로 남길 최근 분석 실행 수 (기본 %(default)s)")
-    ap.add_argument("--apply", action="store_true", help="후보를 출력/_보관/<시각>/으로 옮긴다(없으면 dry-run)")
+    ap.add_argument("--apply", action="store_true", help="후보를 %s/<시각>/으로 옮긴다(없으면 dry-run)" % paths.output_rel("보관"))
     ap.add_argument("--out-root", help="출력 루트 (기본 %s). 주면 --store-root도 필수" % paths.output_root())
     ap.add_argument("--store-root", help="검토 기록 저장 루트 (기본 %s)" % paths.store_root())
     ap.add_argument("--no-review-records", action="store_true",

@@ -157,7 +157,7 @@ class GraphFromOtherDriveTest(unittest.TestCase):
             ex = data.script_module("extract_drawio")
             bg = data.script_module("build_graph")
             _, out_dir = ex.run_one(src[0], os.path.join(outside, "추출"))
-            graph, g_dir = bg.build_one(os.path.join(out_dir, "extraction.json"), os.path.join(work, "출력", "그래프"))
+            graph, g_dir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_in(work, "그래프"))
             rec = graph["source"]["extraction_file"]
             self.assertTrue(os.path.isabs(rec), rec)
             self.assertTrue(os.path.samefile(chain._resolve(rec, work), os.path.join(out_dir, "extraction.json")))

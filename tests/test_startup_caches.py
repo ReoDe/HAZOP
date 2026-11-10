@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from hazop import paths
 from hazop.app import data
 from hazop.kg import auto, screen
 
@@ -30,7 +31,7 @@ class ExtractionBriefCacheTest(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.env = mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": self.tmp})
         self.env.start()
-        self.path = os.path.join(self.tmp, "출력", "추출", "D1", "extraction.json")
+        self.path = paths.output_in(self.tmp, "추출", "D1", "extraction.json")
         write(self.path, {"source": {"file": "C:/어딘가/D1.drawio"}, "drawing": {"drawing_number": "101", "title": "급수"},
                           "summary": {"nodes": 3, "relations": 2, "unknowns": 1}})
         self.fresh_process()

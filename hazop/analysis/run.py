@@ -204,7 +204,8 @@ def graph_source_of(graph):
 
 HOW_TO_BUILD = {
     "samples": "python scripts/extract_drawio.py --samples && python scripts/build_graph.py",
-    "registration": "python scripts/run_samples.py (등록 -> 추출 -> 그래프; 다시 고정하려면 --graph 출력/samples/그래프/<이름>/graph.json 지정)",
+    "registration": "python scripts/run_samples.py (등록 -> 추출 -> 그래프; 다시 고정하려면 --graph %s 지정)"
+                    % paths.output_rel("samples", paths.output_name("그래프"), "<이름>", "graph.json"),
 }
 
 

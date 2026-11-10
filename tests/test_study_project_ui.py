@@ -14,6 +14,7 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing --log-level=3")
 
+from hazop import paths  # noqa: E402
 from tests.test_app import tearDownModule  # noqa: E402,F401
 from tests.test_project_graph import cont, sheet  # noqa: E402
 
@@ -33,7 +34,7 @@ def write_drawing(work, dn, graph):
         n["position"] = [40 + 60 * i, 80]
     for sub, doc in (("추출", {"drawing": {"drawing_number": dn}, "coordinate_system": {}, "objects": []}),
                      ("그래프", graph)):
-        folder = os.path.join(work, "출력", sub, dn)
+        folder = paths.output_in(work, sub, dn)
         os.makedirs(folder, exist_ok=True)
         with open(os.path.join(folder, "extraction.json" if sub == "추출" else "graph.json"), "w", encoding="utf-8") as fh:
             json.dump(doc, fh, ensure_ascii=False)

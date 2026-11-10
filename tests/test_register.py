@@ -510,7 +510,7 @@ class PdfRegisterTest(RegisterBase):
             r = self.reg(PDF_101)
             out = data.extract_and_graph(r["registration_file"])
             name = extract_drawio.registered_out_name(r["record"], 0)
-            self.assertEqual(out["extract_dir"], os.path.join(work, "출력", "추출", name))
+            self.assertEqual(out["extract_dir"], paths.output_in(work, "추출", name))
             self.assertTrue(os.path.isfile(os.path.join(out["extract_dir"], "page.svg")))
             with open(os.path.join(out["extract_dir"], "extraction.json"), encoding="utf-8") as fh:
                 al = json.load(fh)["coordinate_system"]["svg_alignment"]
@@ -521,7 +521,7 @@ class PdfRegisterTest(RegisterBase):
             self.assertTrue(info["html"] and os.path.isfile(info["html"]))
             rows = data.list_registrations()
             self.assertEqual([(e["extract_name"], e["extracted"], e["graphed"]) for e in rows], [(name, True, True)])
-        self.assertFalse(os.path.exists(os.path.join(paths.DEV_WORK_ROOT, "출력", "추출", name)))
+        self.assertFalse(os.path.exists(paths.output_in(paths.DEV_WORK_ROOT, "추출", name)))
 
     def test_multi_page_registration_extracts_every_page(self):
         import extract_pdf
@@ -536,12 +536,12 @@ class PdfRegisterTest(RegisterBase):
             out = data.extract_and_graph(r["registration_file"])
             names = [extract_drawio.registered_out_name(r["record"], i) for i in range(3)]
             self.assertEqual([p["extract_dir"] for p in out["pages"]],
-                             [os.path.join(work, "출력", "추출", n) for n in names[:2]])
+                             [paths.output_in(work, "추출", n) for n in names[:2]])
             self.assertEqual([p["extraction"]["drawing"]["title_block_candidates"]["drawing_number"]
                               for p in out["pages"]], ["SNP-M-101", "SNP-M-102"])
             self.assertTrue(all(os.path.isfile(os.path.join(p["graph_dir"], "graph.json")) for p in out["pages"]))
             self.assertEqual([(s["page_id"], "글자" in s["reason"]) for s in out["skipped_pages"]], [("page-3", True)])
-            self.assertTrue(os.path.isfile(os.path.join(work, "출력", "추출", names[2], extract_pdf.NOT_EXTRACTED)))
+            self.assertTrue(os.path.isfile(paths.output_in(work, "추출", names[2], extract_pdf.NOT_EXTRACTED)))
             row = data.list_registrations()[0]
             self.assertEqual((row["extracted"], row["pages"]), (True, {"total": 3, "extracted": 2, "skipped": 1}))
             cli_out = os.path.join(self.tmp, "cli")
@@ -857,7 +857,7 @@ class DesignDocumentRegisterTest(RegisterBase):
             r = self.reg(DESIGN_DOC, material_type="design_document")
             out = data.extract_document(r["registration_file"])
             name = extract_drawio.registered_out_name(r["record"], 0)
-            self.assertEqual(out["path"], os.path.join(work, "출력", "문서지식", name, "document_knowledge.json"))
+            self.assertEqual(out["path"], paths.output_in(work, "문서지식", name, "document_knowledge.json"))
             with open(out["path"], encoding="utf-8") as fh:
                 doc = json.load(fh)
             self.assertEqual((doc["project_id"], doc["material_id"]), ("proj-1", r["record"]["material_id"]))
@@ -866,7 +866,7 @@ class DesignDocumentRegisterTest(RegisterBase):
             self.assertNotIn("kg_error", out)
             rows = data.list_registrations()
             self.assertEqual([(e["extracted"], e["graphed"]) for e in rows], [(True, None)])
-        self.assertFalse(os.path.exists(os.path.join(paths.DEV_WORK_ROOT, "출력", "문서지식", name)))
+        self.assertFalse(os.path.exists(paths.output_in(paths.DEV_WORK_ROOT, "문서지식", name)))
 
 
 if __name__ == "__main__":

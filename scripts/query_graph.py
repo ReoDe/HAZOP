@@ -20,7 +20,7 @@ from hazop.console import safe_console  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.graph.query import GraphQuery, QueryError  # noqa: E402
 
-DEFAULT_GRAPH_ROOT = os.path.join(paths.DEV_WORK_ROOT, "출력", "그래프")
+DEFAULT_GRAPH_ROOT = paths.output_in(paths.DEV_WORK_ROOT, "그래프")
 
 
 def load(drawing, graph_root=DEFAULT_GRAPH_ROOT):
@@ -32,7 +32,7 @@ def load(drawing, graph_root=DEFAULT_GRAPH_ROOT):
 def main(argv=None):
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("drawing", help="도면 번호 (출력/그래프/<도면번호>/graph.json)")
+    ap.add_argument("drawing", help="도면 번호 (%s)" % paths.output_rel("그래프", "<도면번호>", "graph.json"))
     ap.add_argument("command", choices=["neighbors", "path", "components"])
     ap.add_argument("refs", nargs="*")
     ap.add_argument("--mode", default="physical", choices=["physical", "all"])

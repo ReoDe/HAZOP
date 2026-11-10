@@ -256,12 +256,12 @@ class SplitRootsFlowTest(unittest.TestCase):
 
     def test_flow_1_to_5_with_split_roots(self):
         res_before = _tree(self.res)
-        repo_before = {d: _names(os.path.join(paths.DEV_WORK_ROOT, d)) for d in ("출력", "자료저장소")}
+        repo_before = {d: _names(paths.folder_in(paths.DEV_WORK_ROOT, d)) for d in ("출력", "자료저장소")}
         env = _clean_env(HAZOP_RESOURCE_ROOT=self.res, HAZOP_WORK_ROOT=self.work)
         with mock.patch.dict(os.environ, env, clear=True), mock.patch.dict(data._script_cache, {}, clear=True):
             self.assertEqual((paths.resource_root(), paths.work_root()), (self.res, self.work))
             store = paths.store_root()
-            self.assertEqual(store, os.path.join(self.work, "자료저장소"))
+            self.assertEqual(store, paths.folder_in(self.work, "자료저장소"))
 
             # ① 등록 → 추출 → 그래프
             reg = registry.register(self.sample, "p", store_root=store, actor="tester", now=lambda: T,
@@ -270,8 +270,8 @@ class SplitRootsFlowTest(unittest.TestCase):
             rows = data.list_registrations()
             self.assertEqual(len(rows), 1)
             out = data.extract_and_graph(rows[0]["path"])
-            self.assertTrue(out["extract_dir"].startswith(os.path.join(self.work, "출력", "추출")))
-            self.assertTrue(out["graph_dir"].startswith(os.path.join(self.work, "출력", "그래프")))
+            self.assertTrue(out["extract_dir"].startswith(paths.output_in(self.work, "추출")))
+            self.assertTrue(out["graph_dir"].startswith(paths.output_in(self.work, "그래프")))
             al = out["extraction"]["coordinate_system"]["svg_alignment"]
             self.assertEqual(al["source"], "registered_derived")
             row = data.list_registrations()[0]
@@ -282,7 +282,7 @@ class SplitRootsFlowTest(unittest.TestCase):
             self.assertEqual(names, [row["extract_name"]])
             info = data.viewer_html_for(names[0])
             self.assertIsNone(info["error"])
-            self.assertTrue(info["html"].startswith(os.path.join(self.work, "출력", "뷰어")))
+            self.assertTrue(info["html"].startswith(paths.output_in(self.work, "뷰어")))
 
             # ③ 지식그래프: 작업 루트의 지식 입력으로 빌드 → 화면 데이터·HTML(템플릿·vendor는 패키지 안)
             kdir = os.path.join(paths.folder("지식"), "SNP-SAMPLE")
@@ -307,8 +307,7 @@ class SplitRootsFlowTest(unittest.TestCase):
             self.assertEqual(data.list_regions(), [self.region_path])
             res = api.run_analysis(self.region_path, response_dir=self.fixed, run_id="analysis-pkg")
             self.assertEqual(res["status"], "passed", res["blockers"])
-            self.assertEqual(res["run_dir"], os.path.join(self.work, "출력", "분석", self.region["region_id"],
-                                                          "analysis-pkg"))
+            self.assertEqual(res["run_dir"], paths.output_in(self.work, "분석", self.region["region_id"], "analysis-pkg"))
             c = res["doc"]["validation"]["counts"]
             self.assertEqual((c["candidates"], c["scenarios"], c["risk_proposed"],
                               c["design_improvement_candidates"]), (44, 14, 6, 11))
@@ -325,8 +324,7 @@ class SplitRootsFlowTest(unittest.TestCase):
                 with self.assertRaises(run_mod.InputError) as cm:
                     api.run_analysis(self.region_path, response_dir=self.fixed, run_id="analysis-noresource")
             self.assertIn("candidate_catalog 파일 없음", str(cm.exception))
-            self.assertFalse(os.path.exists(os.path.join(self.work, "출력", "분석", self.region["region_id"],
-                                                         "analysis-noresource")))
+            self.assertFalse(os.path.exists(paths.output_in(self.work, "분석", self.region["region_id"], "analysis-noresource")))
 
             # ⑤ 검토 저장(작업 루트 안 저장 루트) → Excel 출력(작업 루트 출력/워크시트)
             run = rv.open_run(res["run_dir"])
@@ -342,11 +340,11 @@ class SplitRootsFlowTest(unittest.TestCase):
             self.assertTrue(path.startswith(store))
             self.assertEqual(saved["review_version"], 1)
             ex = export_worksheet(res["run_dir"], store, paths.output_root("워크시트"), now=T)
-            files = glob.glob(os.path.join(self.work, "출력", "워크시트", "**", "*.xlsx"), recursive=True)
+            files = glob.glob(paths.output_in(self.work, "워크시트", "**", "*.xlsx"), recursive=True)
             self.assertEqual(len(files), 1, ex)
 
         self.assertEqual(_tree(self.res), res_before)  # 자원 루트는 읽기만
-        self.assertEqual({d: _names(os.path.join(paths.DEV_WORK_ROOT, d)) for d in ("출력", "자료저장소")}, repo_before)
+        self.assertEqual({d: _names(paths.folder_in(paths.DEV_WORK_ROOT, d)) for d in ("출력", "자료저장소")}, repo_before)
 
 
 # ---------------------------------------------------------------- 4) W4 spec·datas 목록(빌드하지 않음)

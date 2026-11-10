@@ -30,8 +30,8 @@ SAMPLE_GRAPH = "graph-SNP-M-102"
 
 
 def load_inputs():
-    pg = project.load(PROJECT, os.path.join(paths.DEV_WORK_ROOT, "출력", "그래프"))
-    kg_root = os.path.join(paths.DEV_WORK_ROOT, "출력", "지식그래프", "kg-%s" % PROJECT)
+    pg = project.load(PROJECT, paths.output_in(paths.DEV_WORK_ROOT, "그래프"))
+    kg_root = paths.output_in(paths.DEV_WORK_ROOT, "지식그래프", "kg-%s" % PROJECT)
     kg = build.load_outputs(kg_root)[1] if os.path.isfile(os.path.join(kg_root, build.POINTER_FILE)) else None
     return pg, kg
 
@@ -104,7 +104,7 @@ def exclusion(pg, kg, failures):
     if kg is None:
         print("  지식그래프 없음 — V5 제외 확인 건너뜀")
         return
-    graphs = screen.load_graphs(os.path.join(paths.DEV_WORK_ROOT, "출력", "그래프"))
+    graphs = screen.load_graphs(paths.output_in(paths.DEV_WORK_ROOT, "그래프"))
     hit = next((g for _, g in graphs.values() if g["graph_id"] == SAMPLE_GRAPH), None)
     if hit is None:
         failures.append("%s 그래프 없음" % SAMPLE_GRAPH)

@@ -89,7 +89,7 @@ def check_split_roots(graph, tmp, failures):
         return p.returncode
 
     ok("analyze.py (작업·자원 루트 임시 폴더)", cli("analyze.py", "--run-id", "analysis-split") == 0, failures)
-    run_file = os.path.join(work, "출력", "분석", region["region_id"], "analysis-split", "analysis.json")
+    run_file = paths.output_in(work, "분석", region["region_id"], "analysis-split", "analysis.json")
     if os.path.isfile(run_file):
         doc = _load(run_file)
         c = doc["validation"]["counts"]
@@ -99,20 +99,20 @@ def check_split_roots(graph, tmp, failures):
            == [region["inputs"][r] for r in ("candidate_catalog", "applicability", "patterns", "risk_criteria")],
            failures)
     ok("export_bundles.py (임시 루트)", cli("export_bundles.py") == 0
-       and os.path.isdir(os.path.join(work, "출력", "근거묶음", region["region_id"])), failures)
+       and os.path.isdir(paths.output_in(work, "근거묶음", region["region_id"])), failures)
     sample = [p for p in glob.glob(extract_drawio.SAMPLE_GLOB) if "SNP-M-101" in p][0]
     drawio = os.path.join(work, "in", "P-1.drawio")
     os.makedirs(os.path.dirname(drawio))
     shutil.copyfile(sample, drawio)
     shutil.copyfile(os.path.join(os.path.dirname(sample), "01_SNP-M-101.drawio.svg"), drawio + ".svg")
     ok("register.py (같은 이름 SVG 포함)", cli("register.py", "--project", "p", drawio) == 0, failures)
-    reg_dir = os.path.join(work, "자료저장소", "p", "registrations")
+    reg_dir = paths.folder_in(work, "자료저장소", "p", "registrations")
     mid = os.listdir(reg_dir)[0] if os.path.isdir(reg_dir) else None
     rec = _load(os.path.join(reg_dir, mid, "1.json")) if mid else {}
     ok("derived_files에 SVG 해시 기록", [d["role"] for d in rec.get("derived_files", [])] == ["svg"], failures)
     ok("extract_drawio.py --registration", mid and cli("extract_drawio.py", "--registration",
                                                          os.path.join(reg_dir, mid, "1.json")) == 0, failures)
-    ex_file = os.path.join(work, "출력", "추출", "p__%s-r1-p0" % mid, "extraction.json")
+    ex_file = paths.output_in(work, "추출", "p__%s-r1-p0" % mid, "extraction.json")
     al = _load(ex_file)["coordinate_system"]["svg_alignment"] if os.path.isfile(ex_file) else {}
     ok("추출이 등록된 SVG 사용 (svg_alignment.source=%s)" % al.get("source"),
        al.get("source") == "registered_derived" and al.get("status") == "verified", failures)

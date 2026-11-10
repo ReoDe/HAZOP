@@ -35,7 +35,7 @@ def main(argv=None):
     ap.add_argument("--out-root", default=paths.output_root("samples"),
                     help="결과 루트. 그 아래 추출/·그래프/·뷰어/에 쓴다 (기본 %(default)s)")
     args = ap.parse_args(argv)
-    ex_root, g_root, v_root = (os.path.join(args.out_root, d) for d in ("추출", "그래프", "뷰어"))
+    ex_root, g_root, v_root = (os.path.join(args.out_root, paths.output_name(d)) for d in ("추출", "그래프", "뷰어"))
     print("== 1. 등록")
     reg_files = []
     for path in sorted(glob.glob(extract_drawio.SAMPLE_GLOB)):

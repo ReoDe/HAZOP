@@ -271,7 +271,7 @@ def flow(args, paths, res, ok):
     path, saved = rv.save_review(store, run, rv.build_review(run, cid, "검토자A", "요약", [sdec], [ddec]), now=T)
     ok("5-review", saved["review_version"] == 1, path)
     export_worksheet(r["run_dir"], store, paths.output_root("워크시트"), now=T)
-    xlsx = glob.glob(os.path.join(work, "출력", "워크시트", "**", "*.xlsx"), recursive=True)
+    xlsx = glob.glob(paths.output_in(work, "워크시트", "**", "*.xlsx"), recursive=True)
     ok("5-excel", len(xlsx) == 1, "; ".join(xlsx))
 
 

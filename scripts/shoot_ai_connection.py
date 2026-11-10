@@ -54,7 +54,7 @@ def compose(win, dlg):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("out", nargs="?", default=os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "AI연결"))
+    ap.add_argument("out", nargs="?", default=paths.output_in(paths.DEV_WORK_ROOT, "스크린샷", "AI연결"))
     ap.add_argument("--scale", type=float, default=1.0)
     args = ap.parse_args()
     if args.scale != 1.0:
@@ -134,7 +134,7 @@ def main():
         win.count_label.setText("구간 5 · 칸 30")
         for lab in (win.drawing_label, win.count_label):
             lab.show()
-        win.status_message("AI 분석 멈춤(한도 도달): 4/10 호출 · 2:41 걸림 · 저장: C:\\HAZOP\\자료저장소\\결과\\SNP-M-102.json")
+        win.status_message("AI 분석 멈춤(한도 도달): 4/10 호출 · 2:41 걸림 · 저장: C:\\HAZOP\\자료저장소\\결과\\SNP-M-102.json")  # 경로문자열-허용: 화면에 띄워 찍는 예시 문구
         win.saved_label.setText("● 저장됨 14:20")
         win.saved_label.show()
         win._fit_conn_chip()

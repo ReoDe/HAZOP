@@ -56,7 +56,7 @@ VISIT_CANDIDATES = ("deviation-p86-d09", "deviation-p86-d12")
 REVIEW_CANDIDATE = "deviation-p86-d12"
 REVIEW_KG_CANDIDATE = "deviation-p86-d09"
 TEXT_HEAD = 40
-OUT_DIR = os.path.join(paths.DEV_WORK_ROOT, "출력", "디자인검사")
+OUT_DIR = paths.output_in(paths.DEV_WORK_ROOT, "디자인검사")
 
 
 # ---------------------------------------------------------------- 위젯 측정(순수 함수, Qt 위젯만 받음)
@@ -210,7 +210,7 @@ class TempRoots:
         src = fresh_run_dir()
         os.makedirs(paths.folder_in(self.work, "구간"), exist_ok=True)
         shutil.copy(paths.folder("표본", "regions", REGION + ".json"), paths.folder_in(self.work, "구간"))
-        run_dir = os.path.join(self.work, "출력", "분석", REGION, os.path.basename(src))
+        run_dir = paths.output_in(self.work, "분석", REGION, os.path.basename(src))
         if not os.path.isdir(run_dir):
             shutil.copytree(src, run_dir)
         return run_dir
@@ -293,14 +293,14 @@ def install_kg_runs(roots):
     from hazop.analysis import ai, run
     from hazop.kg import build, context
     graph = kgc.sample_graph()
-    gdir = os.path.join(roots.work, "출력", "그래프", "SNP-M-102")
+    gdir = paths.output_in(roots.work, "그래프", "SNP-M-102")
     os.makedirs(gdir, exist_ok=True)
     graph_path = os.path.join(gdir, "graph.json")
     with open(graph_path, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(graph, fh, ensure_ascii=False)
     knowledge = kgc.sample_knowledge()
     knowledge["kg_id"] = kgc.KG_ID
-    build.write_outputs(os.path.join(roots.work, "출력", "지식그래프", kgc.KG_ID), knowledge,
+    build.write_outputs(paths.output_in(roots.work, "지식그래프", kgc.KG_ID), knowledge,
                         build.build_kg(knowledge, [graph]))
     region = kgc.load(kgc.REGION_FILE)
     region["inputs"]["knowledge_graph"] = kgc.KG_REF
@@ -312,7 +312,7 @@ def install_kg_runs(roots):
         with mock.patch.dict(context.LIMITS, limits):
             ins = run.load_inputs(rp, roots.work, graph_path=graph_path, resource_root=REPO_ROOT)
             _, out[name] = run.execute(ins, ai.FixedResponseClient(kgc.KG_RESPONSES),
-                                       os.path.join(roots.work, "출력", "분석"), run_id="analysis-kg-%s" % name,
+                                       paths.output_in(roots.work, "분석"), run_id="analysis-kg-%s" % name,
                                        now=kgc.now)
     return out
 
@@ -440,9 +440,9 @@ def install_drawing(roots, run_dir):
     if not os.path.isdir(dst):
         shutil.copytree(src, dst)
     drawio = glob.glob(os.path.join(dst, "*.drawio"))[0]
-    _, out_dir = data.script_module("extract_drawio").run_one(drawio, os.path.join(roots.work, "출력", "추출"))
+    _, out_dir = data.script_module("extract_drawio").run_one(drawio, paths.output_in(roots.work, "추출"))
     graph, _ = data.script_module("build_graph").build_one(os.path.join(out_dir, "extraction.json"),
-                                                           os.path.join(roots.work, "출력", "그래프"))
+                                                           paths.output_in(roots.work, "그래프"))
     with open(os.path.join(run_dir, "inputs", "graph.json"), "w", encoding="utf-8", newline="\n") as fh:
         json.dump(graph, fh, ensure_ascii=False)
 
@@ -1523,7 +1523,7 @@ def main(argv=None):
     ap.add_argument("--no-125", action="store_true", help="windows 100%% 판정 뒤 125%% 판정을 이어서 하지 않음")
     ap.add_argument("--top", type=int, default=5, help="가장 넓은 위젯 보고 개수")
     ap.add_argument("--baseline", help="offscreen 회귀 감시용 이전 결과 JSON(늘어나면 경고)")
-    ap.add_argument("--out", help="결과 JSON 경로(기본 출력/디자인검사/design-<platform>[-s<배율>].json)")
+    ap.add_argument("--out", help="결과 JSON 경로(기본 %s/design-<platform>[-s<배율>].json)" % paths.output_rel("디자인검사"))
     ap.add_argument("--colors-only", action="store_true", help="색 검사(뷰어·앱 색 비교·명암비·반투명 관계선·앱 코드 색 리터럴)만 하고 배치 측정은 하지 않음")
     args = ap.parse_args(argv)
     color_bad = color_check() + contrast_check() + translucent_check() + app_color_check()

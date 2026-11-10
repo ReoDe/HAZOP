@@ -387,7 +387,7 @@ def steps(args, summary, run_root, out, repo_dirs):
     png = os.path.join(out, "png")
     target, tmp = os.path.join(run_root, "HAZOP"), os.path.join(run_root, "w4-run")
     summary["target"] = target
-    summary["repo_before"] = {d: tree_hashes(os.path.join(paths.DEV_WORK_ROOT, d)) for d in repo_dirs}
+    summary["repo_before"] = {d: tree_hashes(paths.folder_in(paths.DEV_WORK_ROOT, d)) for d in repo_dirs}
     shutil.copytree(summary["dist"], target)
     os.mkdir(tmp)
     size, count = tree_size(target)
@@ -449,7 +449,7 @@ def steps(args, summary, run_root, out, repo_dirs):
     summary["png"] = sorted(os.path.basename(p) for p in glob.glob(os.path.join(png, "*.png")))
     summary["checks"]["png_fresh_problems"] = fresh_problems(png, start, want)
     print("app rc=%s %ss png=%s, 잘못된 옵션 rc=%s" % (rc, sec, summary["png"], rc2))
-    summary["checks"]["repo_unchanged"] = {d: tree_hashes(os.path.join(paths.DEV_WORK_ROOT, d)) for d in repo_dirs} \
+    summary["checks"]["repo_unchanged"] = {d: tree_hashes(paths.folder_in(paths.DEV_WORK_ROOT, d)) for d in repo_dirs} \
         == summary.pop("repo_before")
 
 

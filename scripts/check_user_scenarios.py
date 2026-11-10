@@ -1222,7 +1222,7 @@ def s5_register_drawio(d):
     d.shot("등록 후")
     if not d.expect(bool(ext), "등록 뒤 '추출·그래프 만들기'가 켜지지 않음"):
         return
-    graphs = os.path.join(os.path.dirname(os.path.dirname(d.data_root)), "출력", "그래프")
+    graphs = paths.output_in(os.path.dirname(os.path.dirname(d.data_root)), "그래프")
 
     def graph_dirs():
         return set(os.listdir(graphs)) if os.path.isdir(graphs) else set()
@@ -1671,7 +1671,7 @@ def run(out_dir, only=None, keep_temp=False, focus_wait=120):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default=os.path.join(paths.DEV_WORK_ROOT, "출력", "사용자검증"), help="결과 폴더")
+    ap.add_argument("--out", default=paths.output_in(paths.DEV_WORK_ROOT, "사용자검증"), help="결과 폴더")
     ap.add_argument("--only", help="돌릴 시나리오 ID(쉼표), 예: S1,S3")
     ap.add_argument("--keep-temp", action="store_true", help="임시 작업 루트를 지우지 않음")
     ap.add_argument("--focus-wait", type=int, default=120, help="창 전환이 막히면 사용자가 창을 클릭하길 기다릴 초")
