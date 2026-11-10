@@ -297,6 +297,18 @@ class RealRepo(unittest.TestCase):
         self.assertEqual(self.FILES["CLAUDE.md"], self.read("CLAUDE.md"))
         self.assertEqual([], mn.rewrite_links(self.rows, self.repo, write=True, only=[".claude"]))
 
+    def test_untracked_folder_moved_by_hand_is_rewritten_once_it_is_on_disk(self):
+        """git이 추적하지 않는 폴더(대응표 stage 5u)는 이 PC에 새 이름으로 옮겨져 있을 때만 문서의 백틱 경로를 바꾼다."""
+        rows = [mn.Row("5u", "big/원본", "big/source")]
+        with open(os.path.join(self.repo, "README.md"), "w", encoding="utf-8", newline="") as f:
+            f.write("원본은 `big/원본/`에 둔다.\n")
+        self.git("add", "README.md")
+        self.assertEqual([], mn.rewrite_links(rows, self.repo, write=True))
+        os.makedirs(os.path.join(self.repo, "big", "source"))
+        self.assertEqual(1, len(mn.rewrite_links(rows, self.repo, write=True)))
+        self.assertEqual("원본은 `big/source/`에 둔다.\n", self.read("README.md"))
+        self.assertEqual([], mn.rewrite_links(rows, self.repo, write=True))
+
     def test_dry_run_writes_nothing(self):
         mn.move(self.rows, self.repo)
         self.git("commit", "-q", "-m", "refactor: 옮김")

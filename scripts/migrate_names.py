@@ -11,6 +11,7 @@
 다음 단계는 대응표에 줄을 더하고 `--stage`만 바꿔 돌린다. `--stage`는 여러 번 줄 수 있다.
 폴더 이름과 그 안의 파일 이름이 함께 바뀌는 단계는 줄을 둘로 나눈다. 파일 줄은 `3`처럼 숫자 stage에 두고 `--move`로 옮긴다.
 폴더 줄은 `3d`에 두고 링크 바꾸기에만 쓴다(`--stage 3 --stage 3d --rewrite-links`). 폴더를 먼저 옮기면 파일 줄의 옛 이름이 없어지기 때문이다.
+git이 추적하지 않는 파일·폴더는 `5u`처럼 따로 두고 손으로 옮긴다(이동 기록 `evidence/step5-moves.csv`). 이 줄도 링크 바꾸기에만 쓴다.
 링크 바꾸기가 고치는 것은 `.md`·`.html`의 상대 링크(대상과, 대상 이름을 그대로 적은 링크 글자)와 백틱(`<code>`) 안의
 경로뿐이다. 본문 문장, 코드 울타리, JSON·CSV·코드는 건드리지 않는다. `HANDS_OFF`의 운영 파일은 바뀔 줄만 기록하고 쓰지 않는다.
 기록 문서(`RECORD_DOCS`: 결정로그, 남은작업)는 링크 대상만 고친다. 거기 적힌 옛 이름은 그 시점의 기록이다(§6.9).
@@ -285,6 +286,11 @@ def rewrite_links(rows, repo=REPO_ROOT, write=False, report=None, only=None):
     tracked = set(paths)
     dirs = {p[:i] for p in paths for i, ch in enumerate(p) if ch == "/"}
     changes = []
+
+    def on_disk(p):
+        # 추적하지 않는 것(대응표 stage 5u: APR1400 원본·쪽별 PDF 등)은 이 PC에 옮겨져 있을 때만 새 이름으로 적는다
+        return p in tracked or p in dirs or os.path.exists(os.path.join(repo, p))
+
     for doc in paths:
         if not rules.is_doc(doc) or doc in KEEP:
             continue
@@ -295,7 +301,7 @@ def rewrite_links(rows, repo=REPO_ROOT, write=False, report=None, only=None):
             continue
         with open(full, encoding="utf-8", newline="") as f:
             old = f.read()
-        new, found = rewrite_text(doc, old, rows, lambda p: p in tracked or p in dirs)
+        new, found = rewrite_text(doc, old, rows, on_disk)
         applied = bool(only) or not doc.startswith(HANDS_OFF)
         changes += [Change(*c, applied=applied) for c in found]
         if write and applied and new != old:

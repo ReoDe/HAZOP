@@ -199,3 +199,191 @@ stage,old,new
 3d,디자인/시안/초기사건,design/mockups/initiating-events
 3d,메모리,records
 3d,지식,methodology
+5,자원/기준/기준표/kosha-p86-2017-risk-criteria.json,resources/library/risk-criteria/kosha-p86-2017-risk-criteria.json
+5,자원/기준/기준표/lwr-generic-ie-categories.json,resources/library/risk-criteria/lwr-generic-ie-categories.json
+5,자원/기준/기호/APR1400/check_valve_box.json,resources/library/symbols/APR1400/check_valve_box.json
+5,자원/기준/기호/APR1400/control_device_box.json,resources/library/symbols/APR1400/control_device_box.json
+5,자원/기준/기호/APR1400/damper_closed.json,resources/library/symbols/APR1400/damper_closed.json
+5,자원/기준/기호/APR1400/damper_open.json,resources/library/symbols/APR1400/damper_open.json
+5,자원/기준/기호/APR1400/diaphragm_operator.json,resources/library/symbols/APR1400/diaphragm_operator.json
+5,자원/기준/기호/APR1400/eh_operator.json,resources/library/symbols/APR1400/eh_operator.json
+5,자원/기준/기호/APR1400/equipment_drain.json,resources/library/symbols/APR1400/equipment_drain.json
+5,자원/기준/기호/APR1400/gate_valve.json,resources/library/symbols/APR1400/gate_valve.json
+5,자원/기준/기호/APR1400/globe_valve.json,resources/library/symbols/APR1400/globe_valve.json
+5,자원/기준/기호/APR1400/hsi_shared_display.json,resources/library/symbols/APR1400/hsi_shared_display.json
+5,자원/기준/기호/APR1400/ident_bubble_circle.json,resources/library/symbols/APR1400/ident_bubble_circle.json
+5,자원/기준/기호/APR1400/ident_bubble_ellipse.json,resources/library/symbols/APR1400/ident_bubble_ellipse.json
+5,자원/기준/기호/APR1400/motor_operator.json,resources/library/symbols/APR1400/motor_operator.json
+5,자원/기준/기호/APR1400/offsheet_continuation.json,resources/library/symbols/APR1400/offsheet_continuation.json
+5,자원/기준/기호/APR1400/plug_valve.json,resources/library/symbols/APR1400/plug_valve.json
+5,자원/기준/기호/APR1400/reducer.json,resources/library/symbols/APR1400/reducer.json
+5,자원/기준/기호/APR1400/sequence_letter.json,resources/library/symbols/APR1400/sequence_letter.json
+5,자원/기준/기호/APR1400/solenoid_operator.json,resources/library/symbols/APR1400/solenoid_operator.json
+5,자원/기준/기호/APR1400/test_connection.json,resources/library/symbols/APR1400/test_connection.json
+5,자원/기준/기호/APR1400/tombstone_instrument.json,resources/library/symbols/APR1400/tombstone_instrument.json
+5,자원/기준/기호/APR1400/그림/check_valve_box.png,resources/library/symbols/APR1400/images/check_valve_box.png
+5,자원/기준/기호/APR1400/그림/control_device_box.png,resources/library/symbols/APR1400/images/control_device_box.png
+5,자원/기준/기호/APR1400/그림/damper_closed.png,resources/library/symbols/APR1400/images/damper_closed.png
+5,자원/기준/기호/APR1400/그림/damper_open.png,resources/library/symbols/APR1400/images/damper_open.png
+5,자원/기준/기호/APR1400/그림/diaphragm_operator.png,resources/library/symbols/APR1400/images/diaphragm_operator.png
+5,자원/기준/기호/APR1400/그림/eh_operator.png,resources/library/symbols/APR1400/images/eh_operator.png
+5,자원/기준/기호/APR1400/그림/equipment_drain.png,resources/library/symbols/APR1400/images/equipment_drain.png
+5,자원/기준/기호/APR1400/그림/gate_valve.png,resources/library/symbols/APR1400/images/gate_valve.png
+5,자원/기준/기호/APR1400/그림/globe_valve.png,resources/library/symbols/APR1400/images/globe_valve.png
+5,자원/기준/기호/APR1400/그림/hsi_shared_display.png,resources/library/symbols/APR1400/images/hsi_shared_display.png
+5,자원/기준/기호/APR1400/그림/ident_bubble_circle.png,resources/library/symbols/APR1400/images/ident_bubble_circle.png
+5,자원/기준/기호/APR1400/그림/ident_bubble_ellipse.png,resources/library/symbols/APR1400/images/ident_bubble_ellipse.png
+5,자원/기준/기호/APR1400/그림/motor_operator.png,resources/library/symbols/APR1400/images/motor_operator.png
+5,자원/기준/기호/APR1400/그림/offsheet_continuation.png,resources/library/symbols/APR1400/images/offsheet_continuation.png
+5,자원/기준/기호/APR1400/그림/plug_valve.png,resources/library/symbols/APR1400/images/plug_valve.png
+5,자원/기준/기호/APR1400/그림/reducer.png,resources/library/symbols/APR1400/images/reducer.png
+5,자원/기준/기호/APR1400/그림/sequence_letter.png,resources/library/symbols/APR1400/images/sequence_letter.png
+5,자원/기준/기호/APR1400/그림/solenoid_operator.png,resources/library/symbols/APR1400/images/solenoid_operator.png
+5,자원/기준/기호/APR1400/그림/test_connection.png,resources/library/symbols/APR1400/images/test_connection.png
+5,자원/기준/기호/APR1400/그림/tombstone_instrument.png,resources/library/symbols/APR1400/images/tombstone_instrument.png
+5,자원/기준/기호/공통/pattern_dot.json,resources/library/symbols/common/pattern_dot.json
+5,자원/기준/기호/공통/그림/pattern_dot.png,resources/library/symbols/common/images/pattern_dot.png
+5,자원/기준/기호/묶음.json,resources/library/symbols/bundles.json
+5,자원/기준/이탈후보/applicability-region-SNP-M-102-pzr.json,resources/library/deviations/applicability-region-SNP-M-102-pzr.json
+5,자원/기준/이탈후보/kosha-p86-2017-deviation-chart.json,resources/library/deviations/kosha-p86-2017-deviation-chart.json
+5,자원/기준/패턴/pressurizer-patterns.json,resources/library/patterns/pressurizer-patterns.json
+5,자원/참고자료/APR1400_DCD/계통약어.csv,resources/references/APR1400_DCD/system-codes.csv
+5,자원/참고자료/APR1400_DCD/도면목록.csv,resources/references/APR1400_DCD/drawing-list.csv
+5,자원/참고자료/APR1400_DCD/도면목록.md,resources/references/APR1400_DCD/drawing-list.md
+5,자원/참고자료/APR1400_DCD/스크립트/extract_pid.py,resources/references/APR1400_DCD/scripts/extract_pid.py
+5,자원/참고자료/APR1400_DCD/스크립트/make_index.py,resources/references/APR1400_DCD/scripts/make_index.py
+5,자원/참고자료/APR1400_DCD/후보_제외도면.csv,resources/references/APR1400_DCD/excluded-drawings.csv
+5,자원/참고자료/P&ID 기호 카탈로그/00_symbol_catalog.pdf,resources/references/pid-symbol-catalog/00_symbol_catalog.pdf
+5,자원/참고자료/P&ID 기호 카탈로그/01_Instruments.png,resources/references/pid-symbol-catalog/01_Instruments.png
+5,자원/참고자료/P&ID 기호 카탈로그/01_Instruments.svg,resources/references/pid-symbol-catalog/01_Instruments.svg
+5,자원/참고자료/P&ID 기호 카탈로그/02_Valves.png,resources/references/pid-symbol-catalog/02_Valves.png
+5,자원/참고자료/P&ID 기호 카탈로그/02_Valves.svg,resources/references/pid-symbol-catalog/02_Valves.svg
+5,자원/참고자료/P&ID 기호 카탈로그/03_Compressors.png,resources/references/pid-symbol-catalog/03_Compressors.png
+5,자원/참고자료/P&ID 기호 카탈로그/03_Compressors.svg,resources/references/pid-symbol-catalog/03_Compressors.svg
+5,자원/참고자료/P&ID 기호 카탈로그/04_Engines.png,resources/references/pid-symbol-catalog/04_Engines.png
+5,자원/참고자료/P&ID 기호 카탈로그/04_Engines.svg,resources/references/pid-symbol-catalog/04_Engines.svg
+5,자원/참고자료/P&ID 기호 카탈로그/05_Filters.png,resources/references/pid-symbol-catalog/05_Filters.png
+5,자원/참고자료/P&ID 기호 카탈로그/05_Filters.svg,resources/references/pid-symbol-catalog/05_Filters.svg
+5,자원/참고자료/P&ID 기호 카탈로그/06_Flow_Sensors.png,resources/references/pid-symbol-catalog/06_Flow_Sensors.png
+5,자원/참고자료/P&ID 기호 카탈로그/06_Flow_Sensors.svg,resources/references/pid-symbol-catalog/06_Flow_Sensors.svg
+5,자원/참고자료/P&ID 기호 카탈로그/07_Piping.png,resources/references/pid-symbol-catalog/07_Piping.png
+5,자원/참고자료/P&ID 기호 카탈로그/07_Piping.svg,resources/references/pid-symbol-catalog/07_Piping.svg
+5,자원/참고자료/P&ID 기호 카탈로그/08_Crushers_Grinding.png,resources/references/pid-symbol-catalog/08_Crushers_Grinding.png
+5,자원/참고자료/P&ID 기호 카탈로그/08_Crushers_Grinding.svg,resources/references/pid-symbol-catalog/08_Crushers_Grinding.svg
+5,자원/참고자료/P&ID 기호 카탈로그/09_Fittings.png,resources/references/pid-symbol-catalog/09_Fittings.png
+5,자원/참고자료/P&ID 기호 카탈로그/09_Fittings.svg,resources/references/pid-symbol-catalog/09_Fittings.svg
+5,자원/참고자료/P&ID 기호 카탈로그/10_Separators.png,resources/references/pid-symbol-catalog/10_Separators.png
+5,자원/참고자료/P&ID 기호 카탈로그/10_Separators.svg,resources/references/pid-symbol-catalog/10_Separators.svg
+5,자원/참고자료/P&ID 기호 카탈로그/11_Misc.png,resources/references/pid-symbol-catalog/11_Misc.png
+5,자원/참고자료/P&ID 기호 카탈로그/11_Misc.svg,resources/references/pid-symbol-catalog/11_Misc.svg
+5,자원/참고자료/P&ID 기호 카탈로그/12_Agitators.png,resources/references/pid-symbol-catalog/12_Agitators.png
+5,자원/참고자료/P&ID 기호 카탈로그/12_Agitators.svg,resources/references/pid-symbol-catalog/12_Agitators.svg
+5,자원/참고자료/P&ID 기호 카탈로그/13_Apparatus_Elements.png,resources/references/pid-symbol-catalog/13_Apparatus_Elements.png
+5,자원/참고자료/P&ID 기호 카탈로그/13_Apparatus_Elements.svg,resources/references/pid-symbol-catalog/13_Apparatus_Elements.svg
+5,자원/참고자료/P&ID 기호 카탈로그/14_Centrifuges.png,resources/references/pid-symbol-catalog/14_Centrifuges.png
+5,자원/참고자료/P&ID 기호 카탈로그/14_Centrifuges.svg,resources/references/pid-symbol-catalog/14_Centrifuges.svg
+5,자원/참고자료/P&ID 기호 카탈로그/15_Compressors_Iso.png,resources/references/pid-symbol-catalog/15_Compressors_Iso.png
+5,자원/참고자료/P&ID 기호 카탈로그/15_Compressors_Iso.svg,resources/references/pid-symbol-catalog/15_Compressors_Iso.svg
+5,자원/참고자료/P&ID 기호 카탈로그/16_Driers.png,resources/references/pid-symbol-catalog/16_Driers.png
+5,자원/참고자료/P&ID 기호 카탈로그/16_Driers.svg,resources/references/pid-symbol-catalog/16_Driers.svg
+5,자원/참고자료/P&ID 기호 카탈로그/17_Feeders.png,resources/references/pid-symbol-catalog/17_Feeders.png
+5,자원/참고자료/P&ID 기호 카탈로그/17_Feeders.svg,resources/references/pid-symbol-catalog/17_Feeders.svg
+5,자원/참고자료/P&ID 기호 카탈로그/18_Heat_Exchangers.png,resources/references/pid-symbol-catalog/18_Heat_Exchangers.png
+5,자원/참고자료/P&ID 기호 카탈로그/18_Heat_Exchangers.svg,resources/references/pid-symbol-catalog/18_Heat_Exchangers.svg
+5,자원/참고자료/P&ID 기호 카탈로그/19_Mixers.png,resources/references/pid-symbol-catalog/19_Mixers.png
+5,자원/참고자료/P&ID 기호 카탈로그/19_Mixers.svg,resources/references/pid-symbol-catalog/19_Mixers.svg
+5,자원/참고자료/P&ID 기호 카탈로그/20_Pumps.png,resources/references/pid-symbol-catalog/20_Pumps.png
+5,자원/참고자료/P&ID 기호 카탈로그/20_Pumps.svg,resources/references/pid-symbol-catalog/20_Pumps.svg
+5,자원/참고자료/P&ID 기호 카탈로그/21_Pumps_Din.png,resources/references/pid-symbol-catalog/21_Pumps_Din.png
+5,자원/참고자료/P&ID 기호 카탈로그/21_Pumps_Din.svg,resources/references/pid-symbol-catalog/21_Pumps_Din.svg
+5,자원/참고자료/P&ID 기호 카탈로그/22_Pumps_Iso.png,resources/references/pid-symbol-catalog/22_Pumps_Iso.png
+5,자원/참고자료/P&ID 기호 카탈로그/22_Pumps_Iso.svg,resources/references/pid-symbol-catalog/22_Pumps_Iso.svg
+5,자원/참고자료/P&ID 기호 카탈로그/23_Shaping_Machines.png,resources/references/pid-symbol-catalog/23_Shaping_Machines.png
+5,자원/참고자료/P&ID 기호 카탈로그/23_Shaping_Machines.svg,resources/references/pid-symbol-catalog/23_Shaping_Machines.svg
+5,자원/참고자료/P&ID 기호 카탈로그/24_Vessels.png,resources/references/pid-symbol-catalog/24_Vessels.png
+5,자원/참고자료/P&ID 기호 카탈로그/24_Vessels.svg,resources/references/pid-symbol-catalog/24_Vessels.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/01_SNP-M-101.drawio.png,resources/references/pid-samples/SNP-M-101_RCS-main-loop/01_SNP-M-101.drawio.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/01_SNP-M-101.drawio.svg,resources/references/pid-samples/SNP-M-101_RCS-main-loop/01_SNP-M-101.drawio.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/01_SNP-M-101.jpg,resources/references/pid-samples/SNP-M-101_RCS-main-loop/01_SNP-M-101.jpg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/01_SNP-M-101.png,resources/references/pid-samples/SNP-M-101_RCS-main-loop/01_SNP-M-101.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/01_SNP-M-101.svg,resources/references/pid-samples/SNP-M-101_RCS-main-loop/01_SNP-M-101.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio,resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.html,resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.html
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.pdf,resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.pdf
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/01_SNP-M-102.drawio.png,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.drawio.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/01_SNP-M-102.drawio.svg,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.drawio.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/01_SNP-M-102.jpg,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.jpg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/01_SNP-M-102.png,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/01_SNP-M-102.svg,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.drawio,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.drawio
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.html,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.html
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.pdf,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.pdf
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/01_SNP-M-201.drawio.png,resources/references/pid-samples/SNP-M-201_CVCS/01_SNP-M-201.drawio.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/01_SNP-M-201.drawio.svg,resources/references/pid-samples/SNP-M-201_CVCS/01_SNP-M-201.drawio.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/01_SNP-M-201.jpg,resources/references/pid-samples/SNP-M-201_CVCS/01_SNP-M-201.jpg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/01_SNP-M-201.png,resources/references/pid-samples/SNP-M-201_CVCS/01_SNP-M-201.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/01_SNP-M-201.svg,resources/references/pid-samples/SNP-M-201_CVCS/01_SNP-M-201.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/SNP-M-201_CVCS.drawio,resources/references/pid-samples/SNP-M-201_CVCS/SNP-M-201_CVCS.drawio
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/SNP-M-201_CVCS.html,resources/references/pid-samples/SNP-M-201_CVCS/SNP-M-201_CVCS.html
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/SNP-M-201_CVCS.pdf,resources/references/pid-samples/SNP-M-201_CVCS/SNP-M-201_CVCS.pdf
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/01_SNP-M-301.drawio.png,resources/references/pid-samples/SNP-M-301_SIS/01_SNP-M-301.drawio.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/01_SNP-M-301.drawio.svg,resources/references/pid-samples/SNP-M-301_SIS/01_SNP-M-301.drawio.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/01_SNP-M-301.jpg,resources/references/pid-samples/SNP-M-301_SIS/01_SNP-M-301.jpg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/01_SNP-M-301.png,resources/references/pid-samples/SNP-M-301_SIS/01_SNP-M-301.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/01_SNP-M-301.svg,resources/references/pid-samples/SNP-M-301_SIS/01_SNP-M-301.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/SNP-M-301_SIS.drawio,resources/references/pid-samples/SNP-M-301_SIS/SNP-M-301_SIS.drawio
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/SNP-M-301_SIS.html,resources/references/pid-samples/SNP-M-301_SIS/SNP-M-301_SIS.html
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/SNP-M-301_SIS.pdf,resources/references/pid-samples/SNP-M-301_SIS/SNP-M-301_SIS.pdf
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/01_SNP-M-401.drawio.png,resources/references/pid-samples/SNP-M-401_CCW/01_SNP-M-401.drawio.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/01_SNP-M-401.drawio.svg,resources/references/pid-samples/SNP-M-401_CCW/01_SNP-M-401.drawio.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/01_SNP-M-401.jpg,resources/references/pid-samples/SNP-M-401_CCW/01_SNP-M-401.jpg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/01_SNP-M-401.png,resources/references/pid-samples/SNP-M-401_CCW/01_SNP-M-401.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/01_SNP-M-401.svg,resources/references/pid-samples/SNP-M-401_CCW/01_SNP-M-401.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/SNP-M-401_CCW.drawio,resources/references/pid-samples/SNP-M-401_CCW/SNP-M-401_CCW.drawio
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/SNP-M-401_CCW.html,resources/references/pid-samples/SNP-M-401_CCW/SNP-M-401_CCW.html
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/SNP-M-401_CCW.pdf,resources/references/pid-samples/SNP-M-401_CCW/SNP-M-401_CCW.pdf
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/01_SNP-M-501.drawio.png,resources/references/pid-samples/SNP-M-501_MS-FW/01_SNP-M-501.drawio.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/01_SNP-M-501.drawio.svg,resources/references/pid-samples/SNP-M-501_MS-FW/01_SNP-M-501.drawio.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/01_SNP-M-501.jpg,resources/references/pid-samples/SNP-M-501_MS-FW/01_SNP-M-501.jpg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/01_SNP-M-501.png,resources/references/pid-samples/SNP-M-501_MS-FW/01_SNP-M-501.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/01_SNP-M-501.svg,resources/references/pid-samples/SNP-M-501_MS-FW/01_SNP-M-501.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/SNP-M-501_MS-FW.drawio,resources/references/pid-samples/SNP-M-501_MS-FW/SNP-M-501_MS-FW.drawio
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/SNP-M-501_MS-FW.html,resources/references/pid-samples/SNP-M-501_MS-FW/SNP-M-501_MS-FW.html
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/SNP-M-501_MS-FW.pdf,resources/references/pid-samples/SNP-M-501_MS-FW/SNP-M-501_MS-FW.pdf
+5,자원/표본/고정응답/region-SNP-M-102-pzr/deviation-p86-d09.json,resources/samples/fixed-responses/region-SNP-M-102-pzr/deviation-p86-d09.json
+5,자원/표본/고정응답/region-SNP-M-102-pzr/deviation-p86-d10.json,resources/samples/fixed-responses/region-SNP-M-102-pzr/deviation-p86-d10.json
+5,자원/표본/고정응답/region-SNP-M-102-pzr/deviation-p86-d12.json,resources/samples/fixed-responses/region-SNP-M-102-pzr/deviation-p86-d12.json
+5,자원/표본/고정응답/region-SNP-M-102-pzr/deviation-p86-d43.json,resources/samples/fixed-responses/region-SNP-M-102-pzr/deviation-p86-d43.json
+5,자원/표본/고정응답/region-SNP-M-102-pzr/deviation-p86-d44.json,resources/samples/fixed-responses/region-SNP-M-102-pzr/deviation-p86-d44.json
+5,자원/표본/구간/region-SNP-M-102-pzr.json,resources/samples/regions/region-SNP-M-102-pzr.json
+5,자원/표본/지식/SNP-SAMPLE/knowledge_links.csv,resources/samples/knowledge-graph/SNP-SAMPLE/knowledge_links.csv
+5,자원/표본/지식/SNP-SAMPLE/knowledge_nodes.csv,resources/samples/knowledge-graph/SNP-SAMPLE/knowledge_nodes.csv
+5,자원/표본/지식/SNP-SAMPLE/link_candidates.csv,resources/samples/knowledge-graph/SNP-SAMPLE/link_candidates.csv
+5,자원/표본/평가기준/criteria-SNP-M-102-pzr-sample.json,resources/samples/evaluation-criteria/criteria-SNP-M-102-pzr-sample.json
+5,자원/표본/평가기준/criteria-SNP-M-102-pzr-sample.xlsx,resources/samples/evaluation-criteria/criteria-SNP-M-102-pzr-sample.xlsx
+5d,자원,resources
+5d,자원/기준,resources/library
+5d,자원/기준/기준표,resources/library/risk-criteria
+5d,자원/기준/기호,resources/library/symbols
+5d,자원/기준/기호/APR1400,resources/library/symbols/APR1400
+5d,자원/기준/기호/APR1400/그림,resources/library/symbols/APR1400/images
+5d,자원/기준/기호/공통,resources/library/symbols/common
+5d,자원/기준/기호/공통/그림,resources/library/symbols/common/images
+5d,자원/기준/이탈후보,resources/library/deviations
+5d,자원/기준/패턴,resources/library/patterns
+5d,자원/참고자료,resources/references
+5d,자원/참고자료/APR1400_DCD,resources/references/APR1400_DCD
+5d,자원/참고자료/APR1400_DCD/스크립트,resources/references/APR1400_DCD/scripts
+5d,자원/참고자료/P&ID 기호 카탈로그,resources/references/pid-symbol-catalog
+5d,자원/참고자료/P&ID 도면 샘플,resources/references/pid-samples
+5d,자원/표본,resources/samples
+5d,자원/표본/고정응답,resources/samples/fixed-responses
+5d,자원/표본/구간,resources/samples/regions
+5d,자원/표본/지식,resources/samples/knowledge-graph
+5d,자원/표본/평가기준,resources/samples/evaluation-criteria
+5u,자원/참고자료/APR1400_DCD/APR1400_DCD_Rev3_PID_전체.pdf,resources/references/APR1400_DCD/APR1400_DCD_Rev3_PID_all.pdf
+5u,자원/참고자료/APR1400_DCD/도면별,resources/references/APR1400_DCD/by-drawing
+5u,자원/참고자료/APR1400_DCD/원본,resources/references/APR1400_DCD/source
+5u,자원/참고자료/HAZOP 기법,resources/references/hazop-method
+5u,자원/참고자료/HAZOP 기법/P-86-2017 회분식 공정의 위험과 운전분석HAZOP기법에 관한 기술지침.pdf,resources/references/hazop-method/kosha-p-86-2017-batch-hazop-guide.pdf
+5u,자원/참고자료/참고 사진,resources/references/photos
