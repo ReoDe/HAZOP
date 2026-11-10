@@ -241,6 +241,8 @@ OLD_TOPS = ("기획서", "디자인", "메모리", "지식", "자원", "작업",
 OLD_TOP_IN_CODE = re.compile(r"^(?:\./|(?:\.\./)+|[A-Za-z]:[\\/]HAZOP[\\/])?(%s)[\\/]" % "|".join(OLD_TOPS))
 # 고지 원문과 가져온 파일은 바이트가 SHA-256으로 고정돼 있다(licenses/README.md의 표, .gitattributes). 읽지도 고치지도 않는다.
 THIRD_PARTY = ("licenses/", "hazop/kg/vendor/")
+# 기록 문서. 본문에 백틱으로 적힌 옛 이름은 그 시점의 기록이라 N8이 보지 않고 이전 도구도 고치지 않는다(§6.9). 링크는 본다.
+RECORD_DOCS = ("records/decision-log.md", "records/backlog.md")
 
 
 def is_doc(path):
@@ -252,6 +254,8 @@ def n8_old_korean_paths(docs):
     for path, text in sorted(docs.items()):
         hits = collections.defaultdict(list)
         for ref in doc_refs(path, text):
+            if ref.kind == "code" and path in RECORD_DOCS:
+                continue
             if ref.kind == "code":
                 m = OLD_TOP_IN_CODE.match(ref.value.strip())
                 top = m.group(1) if m else None
@@ -282,8 +286,10 @@ def n9_broken_links(docs, exists):
 
 # ---------------------------------------------------------------- N10, N11
 COMMIT_SUBJECT = re.compile(r"(feat|fix|docs|test|refactor|perf|build|ci|chore|baseline)(\([a-z0-9-]+\))?!?: \S")
-# git과 GitHub가 스스로 붙이는 제목은 검사하지 않는다: `git revert` 기본 제목, 병합 제목, 스쿼시 병합 기본 제목(`… (#15)`).
-GENERATED_SUBJECT = re.compile(r'Revert "|Merge pull request #\d+|Merge (remote-tracking )?branch |.*\(#\d+\)\Z')
+# git과 GitHub가 스스로 붙이는 제목은 검사하지 않는다: `git revert` 기본 제목, 병합 제목, 그리고 GitHub가 브랜치 이름으로 지은
+# PR 제목에 번호를 붙인 스쿼시 제목(`feat/next-units` -> `Feat/next units (#15)`). 사람이 쓴 PR 제목은 ` (#15)`가 붙어도 검사한다.
+GENERATED_SUBJECT = re.compile(r'Revert "|Merge pull request #\d+|Merge (remote-tracking )?branch '
+                               r"|(Feat|Fix|Docs|Chore|Refactor|Test)/[a-z0-9]+( [a-z0-9]+){0,3} \(#\d+\)\Z")
 HANGUL = re.compile(r"[가-힣]")
 BRANCH = re.compile(r"(feat|fix|docs|chore|refactor|test)/[a-z0-9]+(-[a-z0-9]+){0,3}\Z")
 
@@ -472,12 +478,13 @@ class PastViolationTest(unittest.TestCase):
             ".claude/agents/hazop-planner.md": "기획서는 `기획서/` 아래에 쓴다.\n",
             "README.md": "[인터페이스](기획서/인터페이스.md)와 `D:\\HAZOP\\작업\\출력`\n",
             "docs/2026-11-10-plan/a.md": "[결정로그](../../메모리/결정로그.md)\n",
-            "records/decision-log.md": "기획서/전체기획.md를 고쳤다. 작업 루트의 `데이터/지식/`을 본다.\n",
+            "records/decision-log.md": "기획서/전체기획.md를 고쳤다. `기획서/`를 `specs/`로 옮겼다. 작업 루트의 `데이터/지식/`을 본다.\n",
+            "records/backlog.md": "`메모리/남은작업.md`에 적었다. [인터페이스](../기획서/인터페이스.md)\n",
             "x.html": '<a href="flow chart/00-overview.md">흐름</a> <code>자원/기준/</code>\n',
         }
         self.assertEqual(
             ["기획서/ @ .claude/agents/hazop-planner.md", "기획서/ @ README.md", "작업/ @ README.md",
-             "메모리/ @ docs/2026-11-10-plan/a.md", "flow chart/ @ x.html", "자원/ @ x.html"],
+             "메모리/ @ docs/2026-11-10-plan/a.md", "기획서/ @ records/backlog.md", "flow chart/ @ x.html", "자원/ @ x.html"],
             [v.subject for v in n8_old_korean_paths(docs)])
 
     def test_n8_is_live_for_folders_moved_in_stage_3(self):
@@ -512,7 +519,9 @@ class PastViolationTest(unittest.TestCase):
                      "Merge pull request #15 from ReoDe/feat/next-units", "Merge branch 'main' into feat/next-units",
                      "Merge remote-tracking branch 'origin/main' into feat/next-units", "Feat/next units (#15)"]
         self.assertEqual([], n10_commit_subjects(generated))
-        still_bad = ["Reverted something", "Merge things by hand", "Add a thing (#15) and more"]
+        self.assertEqual([], n10_commit_subjects(["docs(naming): 이름 규칙 확정본을 남긴다 (#16)"]))
+        still_bad = ["Reverted something", "Merge things by hand", "Add a thing (#15) and more", "Add a thing (#15)",
+                     "이름 이전 단계 3 (#16)", "feat/next-units (#15)", "Wip/next units (#15)"]
         self.assertEqual(still_bad, [v.subject for v in n10_commit_subjects(still_bad)])
 
     def test_naming_doc_lists_ci_and_points_to_trial_folder_moves(self):

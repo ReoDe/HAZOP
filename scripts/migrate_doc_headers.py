@@ -57,7 +57,7 @@ DOC_IDS = {
     "packaging/other-pc-checklist.md": "HZ-CHK-01",
 }
 DECISION_LOG = "records/decision-log.md"
-HEADER = "---\ndoc_id: %s\nrev: 0\nstatus: review\nauthor: unknown\nreviewed: —\napproved: —\n---\n\n"
+HEADER = "---\ndoc_id: %s\nrev: 0\nstatus: draft\nauthor: unknown\nreviewed: —\napproved: —\n---\n\n"
 NUMBER_HEAD, NUMBER_RULE = "| 번호 ", "| --- "
 DEC_PREFIX = re.compile(r"\| DEC-\d{4} ")
 RULE_ROW = re.compile(r"\|(\s*:?-+:?\s*\|)+\s*\Z")

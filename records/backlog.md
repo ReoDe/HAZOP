@@ -1,7 +1,7 @@
 ---
 doc_id: HZ-REC-03
 rev: 0
-status: review
+status: draft
 author: unknown
 reviewed: —
 approved: —
@@ -333,7 +333,7 @@ HEAD d411d15(5028fcd 포함) 재실행 결과(`출력/사용자검증/2026-11-07
 ## 데이터·참고자료 정리 ③ 후속(2026-11-09)
 
 - `hazop/study/migrate.py:240` 백업 폴더 이름이 같은 초에 겹치면 앞 백업을 덮어씀(기존 결함. 저장 결함 묶음과 함께 고침)
-- `specs/hazop-method-guide.md` 16행의 원본 위치 `참고자료/HAZOP 기법/`을 `자원/참고자료/HAZOP 기법/`으로 바꿔야 함. 묶음·해시 고정 파일이라 `GUIDE_SHA256` 갱신과 같은 작업 단위에서 함
+- `기획서/HAZOP기법지침.md` 16행의 원본 위치 `참고자료/HAZOP 기법/`을 `자원/참고자료/HAZOP 기법/`으로 바꿔야 함. 묶음·해시 고정 파일이라 `GUIDE_SHA256` 갱신과 같은 작업 단위에서 함
 - 앱 시작 때 옛 위치(저장소 `데이터/`·`출력/`)에 남은 작업 파일 경고 미구현(설계 §4 ③b 7번)
 - 구간별 적용 판단(`applicability-region-*.json`)을 작업 쪽으로 옮길지 결정(D7 후속)
 - 경미: `query_graph` 기본 그래프 위치가 `HAZOP_WORK_ROOT`를 따르지 않고 `DEV_WORK_ROOT`에 고정됨
@@ -363,5 +363,5 @@ HEAD d411d15(5028fcd 포함) 재실행 결과(`출력/사용자검증/2026-11-07
 - 뷰어 template의 Pretendard 우선순위가 문서와 다름
 - lock_probe run-2가 한 번 실패(첫 창 state=other)한 뒤 run-3이 통과함. 재현성 확인 필요. after_kill 뒤 잠금 파일이 남음(재기동은 정상)
 - 1366×768에서 ④ 오른쪽 패널 버튼 줄이 잘림(`stage4-구간-1366x768.png`)
-- 다른 PC·Windows 10 실제 실행은 사용자 확인 대기(`packaging/other-pc-checklist.md`)
+- 다른 PC·Windows 10 실제 실행은 사용자 확인 대기(`packaging/다른PC-점검표.md`)
 - preflight 임시 폴더 2.2GB 경고

@@ -1,7 +1,7 @@
 ---
 doc_id: HZ-DSN-04
 rev: 0
-status: review
+status: draft
 author: unknown
 reviewed: —
 approved: —

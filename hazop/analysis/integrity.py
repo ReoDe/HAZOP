@@ -45,7 +45,7 @@ PINNED_SHA256 = {
     "kosha-p86-2017-risk-example": "2ae1c539db967dc8c77ed3534aec881605940370bd523f3271488f81bc0f49aa",
     "hazop-cause-consequence-patterns": "cd4a05d65162e6bb0b4fba6be2523fc9a263f7fa7d27d7b8fb0bdc7122677f31",
 }
-GUIDE_SHA256 = "6199fbc3bcae50a6cc6002bd7338cf49283991b7c25c24e2fd6b28ca419e039f"
+GUIDE_SHA256 = "8ea801b44800b6bc7f0b2dd8dc87df8fea87230d9bdac869171893b47757e942"
 # 지침서 표 파싱(catalog_md)이 낼 수 있는 예외: 읽기 실패·UTF-8 디코딩 실패(ValueError)·표/구역 없음·형식 오류
 GUIDE_PARSE_ERRORS = (OSError, ValueError, KeyError, IndexError, AttributeError, TypeError)
 

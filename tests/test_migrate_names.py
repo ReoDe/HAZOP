@@ -39,6 +39,22 @@ def rewrite(doc, text):
     return mn.rewrite_text(doc, text, ROWS, exists)
 
 
+def link_spans(doc, text):
+    return [(r.line, r.start, r.end) for r in mn.rules.doc_refs(doc, text) if r.kind == "link"]
+
+
+def link_targets(doc, text):
+    lines = text.splitlines()
+    return [lines[no - 1][s:e] for no, s, e in link_spans(doc, text)]
+
+
+def without_link_targets(doc, text):
+    lines = text.splitlines()
+    for no, s, e in sorted(link_spans(doc, text), reverse=True):
+        lines[no - 1] = lines[no - 1][:s] + lines[no - 1][e:]
+    return lines
+
+
 class RewriteText(unittest.TestCase):
     def test_relative_link(self):
         new, changes = rewrite("메모리/결정로그.md", "근거는 [경로 조사](../docs/2026-11-05-packaging/evidence/w3-경로.md#3-결과)다.\n")
@@ -96,7 +112,7 @@ class RewriteText(unittest.TestCase):
         new, _ = rewrite("docs/2026-11-05-packaging/evidence/w3-paths.md",
                          "`docs/2026-11-05-packaging/evidence/w3-경로.md:25`, `evidence/w3-경로.md` §8, `w3-경로.md:24-68`.\n")
         self.assertEqual("`docs/2026-11-05-packaging/evidence/w3-paths.md:25`, `evidence/w3-paths.md` §8, `w3-paths.md:24-68`.\n", new)
-        new, _ = rewrite("메모리/결정로그.md", "이름을 붙였다(`범례항목.csv`). `README.md`와 `없는이름.csv`는 그대로다.\n")
+        new, _ = rewrite("README.md", "이름을 붙였다(`범례항목.csv`). `README.md`와 `없는이름.csv`는 그대로다.\n")
         self.assertEqual("이름을 붙였다(`legend-items.csv`). `README.md`와 `없는이름.csv`는 그대로다.\n", new)
 
     def test_body_sentences_and_fences_stay(self):
@@ -104,6 +120,31 @@ class RewriteText(unittest.TestCase):
                 "```\npython scripts/x.py docs/screenshots-pdf\n```\n"
                 "이름이 비슷한 `docs/screenshots-pdf-old/`와 `mydocs/screenshots-pdf`는 다른 폴더다.\n")
         self.assertEqual((text, []), rewrite("메모리/결정로그.md", text))
+
+    def test_record_documents_change_link_targets_only(self):
+        """기록 문서에 적힌 옛 이름은 그 시점의 기록이다(§6.9). 링크 대상을 지운 글이 고치기 전과 같아야 한다."""
+        text = ("| DEC-0243 | `flow chart/`→`specs/flows/`로 옮긴다. `기획서/인터페이스.md`를 썼다 | "
+                "[기획서/인터페이스.md](../기획서/인터페이스.md#절) [w3-경로.md](../docs/2026-11-05-packaging/evidence/w3-경로.md) |\n"
+                "- `docs/screenshots-pdf/a.png`는 [그림](../docs/screenshots-pdf/a.png)이다.\n")
+        for doc in ("records/decision-log.md", "records/backlog.md", "메모리/결정로그.md", "메모리/남은작업.md"):
+            new, changes = rewrite(doc, text)
+            self.assertEqual(["link"] * 3, [c[2] for c in changes], doc)
+            self.assertEqual(["../specs/interface.md#절", "../docs/2026-11-05-packaging/evidence/w3-paths.md",
+                              "../docs/2026-11-07-screenshots-pdf/a.png"], link_targets(doc, new), doc)
+            self.assertEqual(without_link_targets(doc, text), without_link_targets(doc, new), doc)
+
+    def test_line_that_already_names_the_new_path_is_left_alone(self):
+        """옮긴 일을 적은 줄에서 옛 이름을 바꾸면 `새`→`새`가 되어 뜻이 사라진다."""
+        text = "`docs/screenshots-pdf/`→`docs/2026-11-07-screenshots-pdf/`, 그림은 [여기](docs/screenshots-pdf/a.png)\n"
+        new, changes = rewrite("README.md", text)
+        self.assertEqual("`docs/screenshots-pdf/`→`docs/2026-11-07-screenshots-pdf/`, 그림은 [여기](docs/2026-11-07-screenshots-pdf/a.png)\n", new)
+        self.assertEqual(["link"], [c[2] for c in changes])
+        other = "`docs/screenshots-pdf/a.png`와 `docs/2026-11-07-screenshots-pdf/`\n"
+        self.assertEqual("`docs/2026-11-07-screenshots-pdf/a.png`와 `docs/2026-11-07-screenshots-pdf/`\n", rewrite("README.md", other)[0])
+
+    def test_quote_that_holds_backticks_is_left_alone(self):
+        text = "임시 문서에 `` `docs/screenshots-pdf/a.png` ``를 적고 검사를 돌렸다.\n"
+        self.assertEqual((text, []), rewrite("docs/2026-11-05-packaging/README.md", text))
 
     def test_moved_document_keeps_its_links_working(self):
         new, _ = rewrite("specs/flows/00-overview.md", "[인터페이스](../기획서/인터페이스.md) [의도](../README.md)\n")
@@ -167,7 +208,8 @@ class RealRepo(unittest.TestCase):
         "docs/2026-11-05-packaging/evidence/w3-경로.md": "[그림](../../screenshots-pdf/a.png)\n",
         "docs/2026-11-05-packaging/README.md": "`evidence/w3-경로.md`\n",
         "docs/2026-11-10-naming-rules/README.md": "| `docs/screenshots-pdf/` | `docs/2026-11-07-screenshots-pdf/` |\n",
-        "메모리/결정로그.md": "docs/screenshots-pdf/를 만들었다. 근거 `docs/screenshots-pdf/a.png`\n",
+        "INTENT.md": "docs/screenshots-pdf/를 만들었다. 근거 `docs/screenshots-pdf/a.png`\n",
+        "메모리/결정로그.md": "`docs/screenshots-pdf/`를 만들었다. 근거 [그림](../docs/screenshots-pdf/a.png)\n",
         "CLAUDE.md": "규칙: `docs/screenshots-pdf/`\n",
         ".claude/agents/a.md": "[그림](../../docs/screenshots-pdf/a.png)\n",
         "data/sample.json": '{"source": "docs/screenshots-pdf/a.png"}\n',
@@ -220,19 +262,20 @@ class RealRepo(unittest.TestCase):
         self.git("commit", "-q", "-m", "refactor: 옮김")
         changes = mn.rewrite_links(self.rows, self.repo, write=True, report=self.report)
         changed = sorted(line[3:] for line in self.git("status", "--porcelain", "-uno").splitlines())
-        self.assertEqual(["docs/2026-11-05-packaging/README.md", "docs/2026-11-05-packaging/evidence/w3-paths.md",
+        self.assertEqual(["INTENT.md", "docs/2026-11-05-packaging/README.md", "docs/2026-11-05-packaging/evidence/w3-paths.md",
                           "메모리/결정로그.md"], changed)
         self.assertEqual("[그림](../../2026-11-07-screenshots-pdf/a.png)\n", self.read("docs/2026-11-05-packaging/evidence/w3-paths.md"))
         self.assertEqual("`evidence/w3-paths.md`\n", self.read("docs/2026-11-05-packaging/README.md"))
-        self.assertEqual("docs/screenshots-pdf/를 만들었다. 근거 `docs/2026-11-07-screenshots-pdf/a.png`\n", self.read("메모리/결정로그.md"))
+        self.assertEqual("docs/screenshots-pdf/를 만들었다. 근거 `docs/2026-11-07-screenshots-pdf/a.png`\n", self.read("INTENT.md"))
+        self.assertEqual("`docs/screenshots-pdf/`를 만들었다. 근거 [그림](../docs/2026-11-07-screenshots-pdf/a.png)\n", self.read("메모리/결정로그.md"))
         for rel in ("data/sample.json", "data/sample.csv", "scripts/x.py", "CLAUDE.md", ".claude/agents/a.md",
                     "docs/2026-11-10-naming-rules/README.md"):
             self.assertEqual(self.FILES[rel], self.read(rel), rel)
-        self.assertEqual(5, len(changes))
+        self.assertEqual(6, len(changes))
 
         with open(self.report, encoding="utf-8-sig", newline="") as f:
             rows = list(csv.DictReader(f))
-        self.assertEqual({"예": 3, "아니오(총괄 몫)": 2},
+        self.assertEqual({"예": 4, "아니오(총괄 몫)": 2},
                          {k: sum(r["적용"] == k for r in rows) for k in {r["적용"] for r in rows}})
         self.assertEqual({"CLAUDE.md", ".claude/agents/a.md"}, {r["파일"] for r in rows if r["적용"] != "예"})
 
@@ -257,7 +300,7 @@ class RealRepo(unittest.TestCase):
     def test_dry_run_writes_nothing(self):
         mn.move(self.rows, self.repo)
         self.git("commit", "-q", "-m", "refactor: 옮김")
-        self.assertEqual(5, len(mn.rewrite_links(self.rows, self.repo, write=False, report=None)))
+        self.assertEqual(6, len(mn.rewrite_links(self.rows, self.repo, write=False, report=None)))
         self.assertEqual("", self.git("status", "--porcelain"))
 
 

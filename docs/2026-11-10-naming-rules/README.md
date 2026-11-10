@@ -533,7 +533,7 @@ approved: director 2026-11-10
 | N7 | 손 버전 이름이 없음(`_v\d`, `_draft`, `_final`, `-new`, `복사본`) | `system-codes_v2.csv` |
 | N8 | `.md`·`.html`·`.claude/` 안에 옛 한글 최상위 경로(`기획서/`, `디자인/`, `메모리/`, `지식/`, `자원/`, `작업/`, `flow chart/`)가 링크나 백틱 경로로 나오지 않음(결정로그·남은작업 본문 문장, 이 문서의 대응표는 예외) | `.claude/agents/hazop-planner.md`의 `기획서/` |
 | N9 | `.md`의 상대 링크 대상이 실제로 있음 | `[인터페이스](기획서/인터페이스.md)` |
-| N10 | 커밋 메시지: 단계 0 커밋(기준 커밋) 이후 `git log <기준>..HEAD`의 제목이 `^(feat\|fix\|docs\|test\|refactor\|perf\|build\|ci\|chore\|baseline)(\([a-z0-9-]+\))?!?: \S`이고 요약에 한글이 있음. 병합 커밋, `git revert` 기본 제목(`Revert "…`), GitHub 병합 제목(`Merge pull request #…`, `Merge branch …`), 스쿼시 병합 기본 제목(`… (#숫자)`로 끝남)은 제외 | `Add the core of …` |
+| N10 | 커밋 메시지: 단계 0 커밋(기준 커밋) 이후 `git log <기준>..HEAD`의 제목이 `^(feat\|fix\|docs\|test\|refactor\|perf\|build\|ci\|chore\|baseline)(\([a-z0-9-]+\))?!?: \S`이고 요약에 한글이 있음. 병합 커밋, `git revert` 기본 제목(`Revert "…`), GitHub 병합 제목(`Merge pull request #…`, `Merge branch …`), GitHub가 브랜치 이름으로 지은 스쿼시 병합 제목(`Feat/next units (#15)`)은 제외. 사람이 쓴 PR 제목은 ` (#숫자)`가 붙어도 검사한다 | `Add the core of …` |
 | N11 | 브랜치: 현재 브랜치 이름이 `^(feat\|fix\|docs\|chore\|refactor\|test)/[a-z0-9]+(-[a-z0-9]+){0,3}$`이거나 `main` | `my-branch` |
 
 N10·N11은 CI(결정로그 237행의 가벼운 CI)에서도 돌린다. 처음 몇 주는 CI 결정대로 실패해도 병합을 막지 않는다.

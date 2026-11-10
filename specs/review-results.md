@@ -1,7 +1,7 @@
 ---
 doc_id: HZ-PLN-06
 rev: 0
-status: review
+status: draft
 author: unknown
 reviewed: —
 approved: —
