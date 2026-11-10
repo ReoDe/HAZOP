@@ -33,7 +33,7 @@ from hazop.graph.query import GraphQuery  # noqa: E402
 REGION_FILE = paths.folder("표본", "구간", "region-SNP-M-102-pzr.json")
 FIXED_DIR = paths.folder("표본", "고정응답", "region-SNP-M-102-pzr")
 BAD_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "analysis", "bad")
-GUIDE = os.path.join(REPO_ROOT, "기획서", "HAZOP기법지침.md")
+GUIDE = paths.file_in(REPO_ROOT, "guide")
 NOW = "2026-11-04T00:00:00Z"
 # 지침서 §6 〈표5〉를 코드와 독립적으로 옮김 (행: 강도, 열: 발생빈도)
 TABLE5 = {4: {3: 5, 2: 5, 1: 3}, 3: {3: 4, 2: 4, 1: 2}, 2: {3: 3, 2: 2, 1: 1}, 1: {3: 2, 2: 1, 1: 1}}

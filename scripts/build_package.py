@@ -71,7 +71,7 @@ DATA_FILES = (
     "hazop/kg/screen_template.html",
     "hazop/kg/schema/registry.json",
     "hazop/kg/schema/expectations.json",
-    "기획서/HAZOP기법지침.md",
+    paths.file_rel("guide"),
     "scripts/extract_drawio.py",
     "scripts/extract_pdf.py",
     "scripts/build_graph.py",

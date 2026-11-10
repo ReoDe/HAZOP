@@ -31,7 +31,7 @@ import extract_drawio  # noqa: E402
 from hazop.analysis import ai, catalog_md, equipment, integrity, risk, run  # noqa: E402
 
 BAD_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "analysis", "bad")
-GUIDE = os.path.join(REPO_ROOT, "기획서", "HAZOP기법지침.md")
+GUIDE = paths.file_in(REPO_ROOT, "guide")
 FIXED_ITEMS = ("p86-d09", "p86-d10", "p86-d12", "p86-d43", "p86-d44")
 
 

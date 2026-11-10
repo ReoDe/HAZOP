@@ -6,6 +6,8 @@
 
 import re
 
+# 카탈로그 JSON에 적는 출처 표기다. 지침서 파일의 위치(hazop.paths.FILES["guide"])가 아니다. 이 글자는 고정 해시
+# (integrity.PINNED_SHA256)에 들어가므로 지침서를 옮겨도 바꾸지 않는다.
 GUIDE_DOC = "기획서/HAZOP기법지침.md"
 SECTION = "### 5.3 기계 판독용 이탈 후보 목록"
 CATALOG_ID = "kosha-p86-2017-deviation-chart"

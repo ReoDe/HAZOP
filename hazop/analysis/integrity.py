@@ -36,7 +36,7 @@ from hazop import paths
 
 from . import catalog_md, risk
 
-GUIDE_PARTS = ("기획서", "HAZOP기법지침.md")  # 자원 루트 기준(hazop/paths.py)
+GUIDE_PARTS = paths.FILES["guide"].rel  # 자원 루트 기준
 GUIDE = paths.resource_path(*GUIDE_PARTS)  # 가져올 때의 값(참고용). 검사는 호출 시점의 자원 루트를 쓴다
 EXPECTED_IDS = ["p86-d%02d" % i for i in range(1, 45)]
 PINNED_SHA256 = {
@@ -91,7 +91,7 @@ def check_patterns(patterns):
 
 
 def check_catalog(catalog, applicability, guide=None):
-    guide = guide or paths.resource_path(*GUIDE_PARTS)
+    guide = guide or paths.resource_file("guide")
     errs = []
     ids = [i.get("item_id") for i in catalog.get("items") or []]
     if ids != EXPECTED_IDS:
@@ -118,7 +118,7 @@ def check_catalog(catalog, applicability, guide=None):
 
 
 def check_criteria(criteria, guide=None):
-    guide = guide or paths.resource_path(*GUIDE_PARTS)
+    guide = guide or paths.resource_file("guide")
     errs = _pin(criteria.get("criteria_id"), criteria, "위험도 기준표")
     try:
         matrix = {int(s): {int(f): v for f, v in row.items()} for s, row in criteria["matrix"].items()}

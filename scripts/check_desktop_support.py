@@ -69,7 +69,7 @@ def check_export(graph_file, tmp, failures):
 def check_split_roots(graph, tmp, failures):
     res, work = os.path.join(tmp, "res"), os.path.join(tmp, "work")
     region = _load(analyze.DEFAULT_REGION)
-    for rel in list(region["inputs"].values()) + ["기획서/HAZOP기법지침.md"]:
+    for rel in list(region["inputs"].values()) + [paths.file_rel("guide")]:
         os.makedirs(os.path.dirname(os.path.join(res, rel)), exist_ok=True)
         shutil.copyfile(paths.resolve_rel(rel, REPO_ROOT), os.path.join(res, rel))
     os.makedirs(paths.folder_in(work, "구간"))

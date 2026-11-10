@@ -233,7 +233,7 @@ class SplitRootsFlowTest(unittest.TestCase):
         self.res, self.work = os.path.join(self.tmp, "res"), os.path.join(self.tmp, "work")
         region = data.read_json(REGION_FILE)
         # 자원 루트: 기준 자료 4종·기법 지침서·샘플 도면(읽기 전용)
-        for rel in list(region["inputs"].values()) + ["기획서/HAZOP기법지침.md"]:
+        for rel in list(region["inputs"].values()) + [paths.file_rel("guide")]:
             os.makedirs(os.path.dirname(os.path.join(self.res, rel)), exist_ok=True)
             shutil.copyfile(paths.resolve_rel(rel, REPO_ROOT), os.path.join(self.res, rel))
         drawio = [p for p in glob.glob(os.path.join(SAMPLE_DIR, "*", "*.drawio")) if "SNP-M-102" in p][0]
@@ -319,9 +319,8 @@ class SplitRootsFlowTest(unittest.TestCase):
             # ④ 음성: 자원 루트에 지침서만 있고 기준 자료 4종이 없으면 저장소 자료로 대체하지 않고 입력 오류로 멈춘다
             #   (run.load_inputs가 resource_root 대신 저장소 루트를 쓰는 회귀를 잡는다)
             partial = os.path.join(self.tmp, "res_guide_only")
-            os.makedirs(os.path.join(partial, "기획서"))
-            shutil.copyfile(os.path.join(self.res, "기획서", "HAZOP기법지침.md"),
-                            os.path.join(partial, "기획서", "HAZOP기법지침.md"))
+            os.makedirs(os.path.dirname(paths.file_in(partial, "guide")))
+            shutil.copyfile(paths.file_in(self.res, "guide"), paths.file_in(partial, "guide"))
             with mock.patch.dict(os.environ, {paths.ENV_RESOURCE_ROOT: partial}):
                 with self.assertRaises(run_mod.InputError) as cm:
                     api.run_analysis(self.region_path, response_dir=self.fixed, run_id="analysis-noresource")
@@ -391,7 +390,7 @@ class BuildSpecTest(unittest.TestCase):
         self.assertFalse([s for s in self.srcs if any(s.startswith(d + "/") for d in self.bp.EXCLUDED_DIRS)])
         self.assertEqual(sorted(s for s in self.srcs if s.endswith(".py")),
                          ["scripts/build_graph.py", "scripts/extract_drawio.py", "scripts/extract_pdf.py"])
-        data = [s for s in self.srcs if not s.startswith(("hazop/", "scripts/", "기획서/"))]
+        data = [s for s in self.srcs if not s.startswith(("hazop/", "scripts/")) and s != paths.file_rel("guide")]
         self.assertTrue(data)
         self.assertEqual({n for n, f in paths.FOLDERS.items()
                           if f.root == "resource" and any(s.startswith(paths.folder_rel(n) + "/") for s in data)},

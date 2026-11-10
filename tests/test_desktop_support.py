@@ -552,7 +552,7 @@ class SplitRootsTest(TmpCase):
     def test_analyze_extract_export_with_split_roots(self):
         res, work = os.path.join(self.tmp, "res"), os.path.join(self.tmp, "work")
         region = _load(REGION_FILE)
-        for rel in list(region["inputs"].values()) + ["기획서/HAZOP기법지침.md"]:
+        for rel in list(region["inputs"].values()) + [paths.file_rel("guide")]:
             os.makedirs(os.path.dirname(os.path.join(res, rel)), exist_ok=True)
             shutil.copyfile(paths.resolve_rel(rel, REPO_ROOT), os.path.join(res, rel))
         os.makedirs(paths.folder_in(work, "구간"))

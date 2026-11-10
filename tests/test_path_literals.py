@@ -15,6 +15,10 @@ import sys
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO)
+
+from hazop import paths  # noqa: E402
+
 SCAN = ("hazop", "scripts", "packaging", "tests")
 ALLOW = {
     "hazop/paths.py",
@@ -28,6 +32,7 @@ ALLOW = {
 # 사용자 데이터·배치 계약을 그대로 적어야 하는 줄은 끝에 "# 경로문자열-허용: <이유>"를 단다
 ALLOW_MARK = "# 경로문자열-허용:"
 PATH_PART = re.compile(r"(?:^|[/\\])(데이터|참고자료|자원|작업)(?:[/\\]|$)")
+GUIDE_NAME = re.compile(re.escape(paths.FILES["guide"].rel[-1]))
 
 
 def docstring_ids(tree):
@@ -58,10 +63,10 @@ def python_files(repo=REPO, tops=SCAN):
     return sorted(out)
 
 
-def violations(repo=REPO):
+def violations(repo=REPO, pattern=PATH_PART, allow=frozenset(ALLOW)):
     out = []
     for rel in python_files(repo):
-        if rel in ALLOW or "/fake_claude/" in rel:
+        if rel in allow or "/fake_claude/" in rel:
             continue
         full = os.path.join(repo, rel)
         try:
@@ -73,7 +78,7 @@ def violations(repo=REPO):
         lines = open(full, encoding="utf-8").read().splitlines()
         for node in ast.walk(tree):
             if (isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip
-                    and PATH_PART.search(node.value) and ALLOW_MARK not in lines[node.lineno - 1]):
+                    and pattern.search(node.value) and ALLOW_MARK not in lines[node.lineno - 1]):
                 out.append((rel, node.lineno, node.value[:80]))
     return sorted(out)
 
@@ -82,6 +87,22 @@ class PathLiteralTest(unittest.TestCase):
     def test_no_data_path_literals_outside_paths(self):
         found = violations()
         self.assertEqual(found, [], "paths.folder()를 쓰세요:\n" + "\n".join("%s:%d %r" % v for v in found[:50]))
+
+    def test_guide_location_is_written_once(self):
+        """지침서 위치는 paths.FILES["guide"]에만 적는다. 한 곳이라도 따로 적으면 폴더를 옮길 때 그곳만 빠져
+        배포본에서만 지침서를 못 찾는다(HZ-GOV-02 §6.5). catalog_md의 같은 글자는 위치가 아니라 카탈로그에 적는 출처다."""
+        found = violations(pattern=GUIDE_NAME, allow=ALLOW | {"hazop/analysis/catalog_md.py"})
+        self.assertEqual(found, [], 'paths.file_rel("guide")를 쓰세요:\n' + "\n".join("%s:%d %r" % v for v in found))
+
+    def test_guide_literal_is_caught(self):
+        import tempfile
+        name = paths.FILES["guide"].rel[-1]
+        with tempfile.TemporaryDirectory(prefix="hazop-pathlit-") as tmp:
+            os.makedirs(os.path.join(tmp, "scripts"))
+            with open(os.path.join(tmp, "scripts", "x.py"), "w", encoding="utf-8") as fh:
+                fh.write('"""문서 %s는 설명글이라 보지 않는다."""\nGUIDE = "a/%s"\n' % (name, name))
+            found = violations(tmp, GUIDE_NAME)
+        self.assertEqual([("scripts/x.py", 2)], [v[:2] for v in found])
 
 
 if __name__ == "__main__":

@@ -23,7 +23,6 @@ import sys
 
 T = "2026-11-05T00:00:00Z"
 REGION = "region-SNP-M-102-pzr"
-GUIDE_REL = "기획서/HAZOP기법지침.md"
 
 
 def norm(p):
@@ -153,6 +152,7 @@ def flow(args, paths, res, ok):
     ok("roots", not probs, "; ".join(probs) or "program=resource=%s work=%s" % (paths.program_root(),
                                                                            paths.work_root()))
     bundle = paths.program_root()
+    guide_rel = paths.file_rel("guide")
     with open(args.expect, encoding="utf-8") as fh:
         expect = json.load(fh)
     probs = datas_problems(bundle, expect)
@@ -161,7 +161,7 @@ def flow(args, paths, res, ok):
     # samples = 검사 입력 사본(작은 저장소, verify_bundle.make_inputs): 표본·참고 폴더가 저장소와 같은 자리에 있다
     with open(paths.folder_in(samples, "표본", "구간", REGION + ".json"), encoding="utf-8") as fh:
         region_inputs = json.load(fh)["inputs"]
-    probs = resource_path_problems(region_inputs, GUIDE_REL, paths.resource_root(), bundle, expect, paths.resolve_rel)
+    probs = resource_path_problems(region_inputs, guide_rel, paths.resource_root(), bundle, expect, paths.resolve_rel)
     ok("resource_paths", not probs, "; ".join(probs) or "기준 자료 4종·지침서 = 묶음 파일(분석 전 확인)")
 
     from hazop import review as rv
@@ -236,13 +236,13 @@ def flow(args, paths, res, ok):
     files = (r.get("doc") or {}).get("analysis_run", {}).get("input_files", [])
     res["input_files"] = files
     probs = input_file_problems(files, paths.RESOURCE_INPUT_ROLES, paths.resource_root(), bundle, expect)
-    guide = paths.resource_path(*integrity.GUIDE_PARTS)
-    if not within(guide, bundle) or expect.get(GUIDE_REL) != sha_file(guide):
+    guide = paths.resource_file("guide")
+    if not within(guide, bundle) or expect.get(guide_rel) != sha_file(guide):
         probs.append("지침서가 묶음 파일이 아니거나 해시 다름: %s" % guide)
     ok("4-resource_reads", not probs, "; ".join(probs) or "기준 자료 4종·지침서 = 묶음 파일, 해시 일치")
 
     # ④ 음성: 묶음 자원을 잠시 치우면 분석이 통과하지 못해야 한다(다른 위치로 대체하지 않음)
-    for label, rel in (("patterns", paths.folder_rel("패턴") + "/pressurizer-patterns.json"), ("guide", GUIDE_REL)):
+    for label, rel in (("patterns", paths.folder_rel("패턴") + "/pressurizer-patterns.json"), ("guide", guide_rel)):
         target = os.path.join(bundle, *rel.split("/"))
         moved = target + ".w4-moved"
         run_id = "analysis-w4-no-" + label

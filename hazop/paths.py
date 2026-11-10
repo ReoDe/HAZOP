@@ -195,6 +195,11 @@ FOLDERS = {
     "캐시": Folder("work", ("데이터", "캐시")),  # 지워도 되는 계산 결과(hazop.app.data 추출 요약)
     "기호후보": Folder("work", ("기호후보",)),
 }
+# 자원 루트 아래에 낱개로 두는 파일. FOLDERS의 resource 행은 배포본에 통째로 묶는 폴더라서 파일은 따로 적는다.
+# 배포본도 같은 상대 위치에 묶는다(scripts/build_package.py DATA_FILES). 위치를 아는 곳은 이 표 하나다.
+FILES = {
+    "guide": Folder("resource", ("기획서", "HAZOP기법지침.md")),  # HAZOP 기법 지침서. 내용 해시는 hazop/analysis/integrity.py가 고정한다
+}
 REFERENCE_LOGICAL = "참고자료/"  # 참고 폴더 아래 파일의 기록용 접두(rel_or_abs)
 # 사용자 파일(구간 JSON inputs, 추출 JSON source.file·svg_file)에 저장된 옛 상대 경로 접두 → 폴더 이름.
 # 읽을 때만 풀고(resolve_rel) 파일은 고치지 않는다. 긴 접두가 먼저.
@@ -221,6 +226,21 @@ def folder_in(root, name, *parts):
 def logical_reference_dir(root):
     """root 아래 논리 경로(REFERENCE_LOGICAL) 자리. 참고 폴더 사본을 여기 두면 그 안 파일의 기록 경로가 저장소와 같다."""
     return os.path.join(root, *REFERENCE_LOGICAL.strip("/").split("/"))
+
+
+def file_rel(name):
+    """FILES 파일의 루트 기준 상대 경로('/' 구분)."""
+    return "/".join(FILES[name].rel)
+
+
+def file_in(root, name):
+    """FILES 파일이 주어진 root 아래 있을 자리. 자원 루트 사본을 꾸미는 시험과 검사가 쓴다."""
+    return os.path.join(root, *FILES[name].rel)
+
+
+def resource_file(name):
+    """FILES 파일의 절대 경로(지금 자원 루트 기준)."""
+    return file_in(resource_root(), name)
 
 
 def folder_rel(name):
