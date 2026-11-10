@@ -32,6 +32,7 @@ import re
 import threading
 
 from hazop import paths
+from hazop.kg.docextract import TAG_RE
 
 from .. import drawio, rules, symbols
 
