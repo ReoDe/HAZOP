@@ -278,6 +278,63 @@ class OldFilesTest(WorkRootCase):
         self.assertEqual(list(json.loads(raw(path))), list(doc), "키 순서도 그대로")
 
 
+class Stored01FilesTest(WorkRootCase):
+    """tests/fixtures/store-0.1/: 0.1.x 코드(d86bd89)의 저장 함수가 쓴 파일 그대로(SOURCE.json).
+    지금 코드로 읽고 다시 저장해도 사람이 고친 내용이 그대로다."""
+
+    def old(self, name):
+        return raw(os.path.join(REPO_ROOT, "tests", "fixtures", "store-0.1", name))
+
+    def test_study_nodes(self):
+        data = self.old("study-nodes.json")
+        path = put(sn.store_path(None, "graph-T"), data)
+        doc, fp = sn.load_fp(self.g)
+        self.assertEqual((doc, raw(path)), (json.loads(data), data), "읽어도 파일을 바꾸지 않음(확정·이름·이력 그대로)")
+        self.assertEqual((doc["status"], doc["confirmed_by"], doc["nodes"][0]["name"]), ("confirmed", "검토자A", "사람이 정한 이름"))
+        sn.save(doc, expect=fp)
+        self.assertEqual(raw(path), data)
+        gone = next(h["detail"]["new_node_id"] for h in doc["history"] if h["op"] == "split")
+        self.assertNotIn(gone, [n["node_id"] for n in doc["nodes"]])
+        big = max(doc["nodes"], key=lambda n: len(n["members"]))
+        again = sn.split(sn.reopen(doc, at=AT), big["node_id"], big["members"][:1], at=AT)
+        self.assertEqual(again["history"][-1]["detail"]["new_node_id"], "S%d" % (int(gone[1:]) + 1), "병합으로 지운 번호 다음")
+
+    def test_analysis_results(self):
+        data = self.old("analysis-results.json")
+        path = put(res.store_path(None, "graph-T"), data)
+        doc, fp = res.load_fp(json.loads(self.old("study-nodes.json")))
+        self.assertEqual(doc, json.loads(data))
+        self.assertEqual(doc["cells"][0]["entries"][0]["status"], "approved")
+        res.save_fp(doc, None, expect=fp)
+        self.assertEqual(raw(path), data)
+
+    def test_initiating_events(self):
+        data = self.old("initiating-events.json")
+        path = put(ie_store.store_path("가상 PWR"), data)
+        doc, fp = ie_store.load("가상 PWR")
+        self.assertEqual(doc, json.loads(data))
+        ie_store.save(doc, expect=fp)
+        self.assertEqual(raw(path), data)
+
+    def test_drawing_edits(self):
+        from hazop.extract import corrections
+        data = self.old("drawing-edits.json")
+        path = put(corrections.store_path("T-1"), data)
+        old, fp = corrections.load_fp("T-1")
+        self.assertEqual(corrections.issued_op_ids("T-1"), {"c-0001", "c-0002"})
+        corrections.save("T-1", old["ops"], "검토자B", expect=fp)
+        new = json.loads(raw(path))
+        self.assertEqual((new["ops"], new["log"][:2], new["drawing_number"]), (old["ops"], old["log"], "T-1"))
+        self.assertEqual((new["log"][2]["added"], new["log"][2]["removed"]), ([], []))
+
+    def test_node_review(self):
+        data = self.old("node-review.json")
+        path = put(node_review.store_path(None, "graph-T"), data)
+        doc, fp = node_review.load_fp(None, "graph-T")
+        node_review.save_fp(doc, fp)
+        self.assertEqual(raw(path).rstrip(b"\n"), data, "끝의 줄바꿈만 더해짐")
+
+
 class HistoryRowTest(unittest.TestCase):
     def test_rows_keep_the_shape_each_file_already_uses(self):
         self.assertEqual(store_io.history_row("rename", {"detail": {"node_id": "S1"}}, AT),

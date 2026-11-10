@@ -1,0 +1,46 @@
+{
+  "basic_events": {},
+  "candidates": {},
+  "counters": {
+    "BE": 0,
+    "ES": 0,
+    "H": 0,
+    "IEC": 0,
+    "IEG": 1
+  },
+  "coverage": {},
+  "end_states": {},
+  "groups": {
+    "IEG-01": {
+      "affected_mitigation": "",
+      "categories": [],
+      "confirmation": null,
+      "definition": "",
+      "end_state_ids": [],
+      "heading_ids": [],
+      "name": "주급수 상실",
+      "origin": "human",
+      "plant_response": "",
+      "representative": null,
+      "representative_reason": "",
+      "rule_key": null,
+      "split_from": null,
+      "split_into": [],
+      "status": "draft",
+      "support_ie": "unknown"
+    }
+  },
+  "headings": {},
+  "history": [
+    {
+      "at": "2026-11-07T00:00:00Z",
+      "ids": [
+        "IEG-01"
+      ],
+      "op": "create_group"
+    }
+  ],
+  "kind": "hazop_ie_groups",
+  "project_id": "가상 PWR",
+  "schema_version": "0.1"
+}

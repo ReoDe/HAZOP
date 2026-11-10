@@ -1,0 +1,185 @@
+{
+  "schema_version": "0.1",
+  "kind": "hazop_study_nodes",
+  "project_id": null,
+  "graph_id": "graph-T",
+  "graph_version": "v-1",
+  "drawing_number": "T-1",
+  "status": "confirmed",
+  "proposer": {
+    "name": "hazop.study.nodes",
+    "version": "0.2.0",
+    "algorithm": "C6",
+    "max_active": 5,
+    "budget": 40,
+    "merge_cap": 60
+  },
+  "nodes": [
+    {
+      "node_id": "S1",
+      "name": "사람이 정한 이름",
+      "origin": "rule",
+      "basis": "용기류 경계: TK-01(tank)",
+      "members": [
+        "n-E1",
+        "n-LI1",
+        "n-LT1"
+      ],
+      "screen": {
+        "status": "keep",
+        "score": 5,
+        "grade": "주요",
+        "rule": null,
+        "by": "rule"
+      },
+      "absorbed": []
+    },
+    {
+      "node_id": "S2",
+      "name": "배관 L-01 (1/2) 외 1",
+      "origin": "merged",
+      "basis": "S2·S5 병합",
+      "members": [
+        "n-P1",
+        "n-TI9",
+        "n-V4",
+        "n-V5",
+        "n-V6",
+        "n-V7",
+        "s-4",
+        "s-5",
+        "s-6",
+        "s-7",
+        "s-8"
+      ],
+      "screen": {
+        "status": "keep",
+        "score": null,
+        "grade": null,
+        "rule": null,
+        "by": "human"
+      },
+      "absorbed": []
+    },
+    {
+      "node_id": "S3",
+      "name": "배관 L-01 (TK-01) (2/2)",
+      "origin": "rule",
+      "basis": "배관 경로를 분할 가중 요소 5개·기본 구성요소 40개 안에서 연결을 지키며 나눔 2/2(분할 가중 요소 3개)",
+      "members": [
+        "n-FT1",
+        "n-V1",
+        "n-V2",
+        "n-V3",
+        "s-1",
+        "s-2",
+        "s-3"
+      ],
+      "screen": {
+        "status": "keep",
+        "score": 7,
+        "grade": "주요",
+        "rule": null,
+        "by": "rule"
+      },
+      "absorbed": []
+    },
+    {
+      "node_id": "S4",
+      "name": "기타",
+      "origin": "rule",
+      "basis": "연결·위치로 붙일 구간이 없는 계기",
+      "members": [
+        "n-TI0"
+      ],
+      "screen": {
+        "status": "keep",
+        "score": 1,
+        "grade": "일반",
+        "rule": null,
+        "by": "rule"
+      },
+      "absorbed": []
+    }
+  ],
+  "confirmed_at": "2026-11-07T00:00:00Z",
+  "confirmed_by": "검토자A",
+  "history": [
+    {
+      "at": "2026-11-07T00:00:00Z",
+      "op": "propose",
+      "detail": {
+        "nodes": 4,
+        "components": 22,
+        "kept": 4,
+        "low": 0,
+        "excluded": 0,
+        "excluded_members": 0
+      }
+    },
+    {
+      "at": "2026-11-07T00:00:00Z",
+      "op": "split",
+      "detail": {
+        "node_id": "S2",
+        "new_node_id": "S5",
+        "members": [
+          "n-P1"
+        ]
+      }
+    },
+    {
+      "at": "2026-11-07T00:00:00Z",
+      "op": "merge",
+      "detail": {
+        "node_ids": [
+          "S2",
+          "S5"
+        ],
+        "into": "S2"
+      }
+    },
+    {
+      "at": "2026-11-07T00:00:00Z",
+      "op": "rename",
+      "detail": {
+        "node_id": "S1",
+        "from": "TK-01",
+        "to": "사람이 정한 이름"
+      }
+    },
+    {
+      "at": "2026-11-07T00:00:00Z",
+      "op": "confirm",
+      "detail": {
+        "reviewer": "검토자A",
+        "nodes": 4
+      }
+    }
+  ],
+  "member_refs": {
+    "n-E1": null,
+    "n-FT1": null,
+    "n-LI1": null,
+    "n-LT1": null,
+    "n-P1": null,
+    "n-TI0": null,
+    "n-TI9": null,
+    "n-V1": null,
+    "n-V2": null,
+    "n-V3": null,
+    "n-V4": null,
+    "n-V5": null,
+    "n-V6": null,
+    "n-V7": null,
+    "s-1": null,
+    "s-2": null,
+    "s-3": null,
+    "s-4": null,
+    "s-5": null,
+    "s-6": null,
+    "s-7": null,
+    "s-8": null
+  },
+  "member_digest": "md2-9d7a7d2e18d953f5"
+}

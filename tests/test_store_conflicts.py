@@ -154,6 +154,21 @@ class WriteFailureTest(WorkRootCase):
                     store_io.write_json(path, {"v": "new"})
         self.assertIn("임시 파일", logs.output[0])
 
+    def test_migration_reports_sharing_a_backup_folder_do_not_overwrite_each_other(self):
+        from hazop.app import project_ctx
+        folder = os.path.join(self.tmp, "백업")
+        project_ctx._write_report(folder, {"project": "A"})
+        project_ctx._write_report(folder, {"project": "B"})
+        docs = [json.loads(raw(os.path.join(folder, n))) for n in sorted(os.listdir(folder))]
+        self.assertEqual(docs, [{"project": "B"}, {"project": "A"}])
+
+    def test_archive_names_in_the_same_second_do_not_collide(self):
+        pattern = os.path.join(self.tmp, "결과.20261107T000000Z%s.bak.json")
+        first = put(store_io.unused_name(pattern), b"1")
+        second = store_io.unused_name(pattern)
+        self.assertEqual((os.path.basename(first), os.path.basename(second)),
+                         ("결과.20261107T000000Z.bak.json", "결과.20261107T000000Z-2.bak.json"))
+
     def test_backup_retries_when_another_writer_takes_the_name_first(self):
         src = put(os.path.join(self.tmp, "a.json"), b"mine")
         real = store_io._copy_new

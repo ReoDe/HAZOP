@@ -258,8 +258,9 @@ def _old_sets(pg):
 
 
 def _write_report(folder, report):
+    """같은 초에 다른 프로젝트의 이전이 같은 백업 폴더를 쓰면 보고 파일 이름에 -2, -3 …을 붙인다(앞 보고를 덮지 않음)."""
     os.makedirs(folder, exist_ok=True)
-    with open(os.path.join(folder, "이전보고.json"), "w", encoding="utf-8", newline="\n") as fh:
+    with open(store_io.unused_name(os.path.join(folder, "이전보고%s.json")), "x", encoding="utf-8", newline="\n") as fh:
         json.dump(report, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
 
@@ -280,7 +281,7 @@ def migrate_sets(pg):
     mapping = span.legacy_map(old_sets, proposal, pg)
     out = span.migrate_set(old_sets, proposal, pg)
     path, fp = sn.save_fp(out)
-    exact =sum(1 for v in mapping.values() if v["exact"])
+    exact = sum(1 for v in mapping.values() if v["exact"])
     confirmed = [o["graph_id"].replace("graph-", "") for o in old_sets if o.get("status") == "confirmed"]
     _write_report(folder, {"kind": "node_set_migration", "at": sn.now_utc(), "written": path,
                            "mapping": mapping, "old_files": files})

@@ -1,0 +1,91 @@
+{
+  "ai_log": [],
+  "cells": [
+    {
+      "deviation_id": "D01",
+      "entries": [
+        {
+          "cause": "사람이 승인한 원인",
+          "entry_id": "e1",
+          "history": [
+            {
+              "at": "2026-11-07T00:00:00Z",
+              "from": "proposed",
+              "op": "status",
+              "to": "approved"
+            }
+          ],
+          "origin": "human",
+          "status": "approved"
+        }
+      ],
+      "node_id": "S1",
+      "state": "analyzed"
+    },
+    {
+      "deviation_id": "D02",
+      "entries": [],
+      "node_id": "S1",
+      "state": "not_analyzed"
+    },
+    {
+      "deviation_id": "D01",
+      "entries": [],
+      "node_id": "S2",
+      "state": "not_analyzed"
+    },
+    {
+      "deviation_id": "D02",
+      "entries": [],
+      "node_id": "S2",
+      "state": "not_analyzed"
+    },
+    {
+      "deviation_id": "D01",
+      "entries": [],
+      "node_id": "S3",
+      "state": "not_analyzed"
+    },
+    {
+      "deviation_id": "D02",
+      "entries": [],
+      "node_id": "S3",
+      "state": "not_analyzed"
+    },
+    {
+      "deviation_id": "D01",
+      "entries": [],
+      "node_id": "S4",
+      "state": "not_analyzed"
+    },
+    {
+      "deviation_id": "D02",
+      "entries": [],
+      "node_id": "S4",
+      "state": "not_analyzed"
+    }
+  ],
+  "deviations": [
+    {
+      "deviation_id": "D01",
+      "guideword": "증가",
+      "item_id": "p86-d01",
+      "label": "유량 증가",
+      "parameter": "유량"
+    },
+    {
+      "deviation_id": "D02",
+      "guideword": "감소",
+      "item_id": "p86-d02",
+      "label": "유량 감소",
+      "parameter": "유량"
+    }
+  ],
+  "graph_id": "graph-T",
+  "kind": "hazop_study_results",
+  "schema_version": "0.1",
+  "study_nodes_ref": {
+    "confirmed_at": "2026-11-07T00:00:00Z",
+    "graph_version": "v-1"
+  }
+}
