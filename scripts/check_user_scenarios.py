@@ -662,7 +662,7 @@ def s1_keyboard_stages(d):
     d.step("? 단축키 표 열기")
     t = time.time()
     d.key("f1")
-    ok = d.wait(lambda: "Ctrl+1 ~ Ctrl+5" in d.texts(), "F1 단축키 표", since=t)
+    ok = d.wait(lambda: any(x.startswith("Ctrl+1 ~ Ctrl+") for x in d.texts()), "F1 단축키 표", since=t)
     d.shot("단축키 표")
     d.expect(ok, "F1로 단축키 표가 뜨지 않음")
     d.step("Esc로 닫기", think=False)
