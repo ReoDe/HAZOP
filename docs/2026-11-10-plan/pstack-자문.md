@@ -224,3 +224,106 @@ A (1세션) ──► B (1세션) ┐
 
 - A가 커밋된 뒤에 B·C를 함께 띄운다. 자동 알림으로 시작한 차례에는 새 세션을 띄울 수 없으니(규칙 10), B·C는 사용자가 시작한 차례에 함께 띄우거나 새 작업 제안 카드로 남긴다.
 - 사용자에게 먼저 물을 것: Pretendard를 배포본에 넣을지(B), P5를 지금 범위에 넣을지(E2).
+
+---
+
+## 단위 CI: 가벼운 CI 도입 (2026-11-10 추가)
+
+기준 커밋 9154143. 근거로 읽은 것은 `docs/2026-11-10-ci-review/README.md`(§2·§4·§5), `docs/2026-11-10-naming-rules/README.md`(초안), `tests/__init__.py`, `scripts/devenv.py`, `scripts/preflight.py`, `packaging/requirements*.txt`, 시험의 건너뛰기 조건, `scripts/check_*.py`의 import다.
+
+### 먼저 확인한 사실 (계획을 바꾸는 것)
+
+1. **세 requirements 파일은 한 venv에 함께 깔리지 않는다.** 검토 보고서 §5의 첫 단계 2번은 `requirements.txt`, `requirements-pdf.txt`, `requirements-raster.txt`를 함께 설치하라고 했다. 그런데 `requirements-pdf.txt`는 `pillow==12.2.0`, `requirements-raster.txt`는 `pillow==13.0.0`을 해시로 고정한다. raster 파일 머리말도 '별도 venv(`venv-raster-py312`)'라고 적는다. 그래서 CI의 기본 작업은 로컬 시험용 venv와 같은 조합(`requirements.txt` + `requirements-pdf.txt`)으로 꾸린다. OpenCV·OCR 시험은 원래 `HAS_CV`로 건너뛰게 되어 있다. raster를 돌리려면 나중에 따로 작업(job)을 하나 더 둔다.
+2. **패키지가 빠져도 시험은 실패하지 않고 조용히 건너뛴다.** `tests/__init__.py`는 인터프리터 종류만 보고 패키지는 보지 않는다. 그리고 pdfplumber 시험 10여 개는 `skipUnless(HAS_PDFPLUMBER)`다. 설치가 반쯤 실패해도 CI는 초록불이 된다. 그러므로 unittest 전에 `scripts/preflight.py --profile test`를 꼭 돌린다. 이 명령은 빠진 패키지가 있으면 rc=2로 멈춘다. 그리고 건너뛴 시험과 이유를 실행 요약에 찍는다.
+3. **APR1400 시험은 CI에서도 돈다.** `test_apr1400_extract`·`test_apr1400_connectors`는 저장소 밖 DCD 원본이 아니라 추적 파일 `tests/fixtures/apr1400/`(7개)를 쓴다. 검토 보고서 §2의 '돌 수 없는 것'에 든 것은 `check_apr1400.py`·`check_project_kg.py`뿐이다.
+4. **`scripts/ci_*.py`는 이름 규칙에 어긋난다.** 엄격안에서 새 스크립트 이름은 `<동사>_<대상>.py`이고, 동사 목록에 `ci`는 없고 `run`은 있다(naming-rules §3 표). 그래서 진입점은 `scripts/run_ci.py`로 짓는다.
+5. **실행이 두 번 겹칠 수 있다.** 총괄이 단위마다 `feat/next-units`로 푸시하고 그 브랜치에 PR #15가 열려 있으면, `push`와 `pull_request` 두 이벤트가 같은 커밋을 두 번 돌린다. 트리거는 `push`(모든 브랜치) + `workflow_dispatch`로 둔다. PR 화면에는 머리 커밋의 push 결과가 그대로 보인다. 남의 저장소에서 온 PR(fork)을 받게 되면 그때 `pull_request`를 더한다.
+6. **비밀값은 필요 없다.** `anthropic` SDK는 requirements에 없어서 `test_analysis`의 SDK 시험은 건너뛴다. 실제 Claude를 부르는 `check_cli_live.py`·`check_ai_analysis.py`는 CI 목록에서 뺀다. 러너에는 `~/.local/bin/claude.exe`가 없으므로 가짜 CLI(`tests/fake_claude`)만 쓰인다.
+
+### 1. 스킬
+
+| 단계 | 스킬 | 이유 |
+| --- | --- | --- |
+| 시작 | `poteto-mode` | 규칙 10 |
+| 설정 모양 | (원칙) `principle-build-the-lever`, `principle-boundary-discipline` | 워크플로 YAML에는 '어디서, 어떤 Python으로, 무엇 하나를 부른다'만 적는다. 무엇을 돌릴지는 `scripts/run_ci.py`가 정한다. 이름 이전이 오면 Python 한 곳만 고치면 된다 |
+| 재발 방지 | `correct` 축소판 | `tests/test_ci_config.py` 하나를 둔다. 워크플로가 가리키는 파일(`scripts/run_ci.py`, requirements 파일)이 있는지, 워크플로에 한글 경로나 `scripts/check_*` 이름이 직접 적혀 있지 않은지, `run_ci.py` 목록의 스크립트가 모두 있는지를 본다. 이름 이전 단위가 경로를 바꾸면 로컬 시험이 먼저 깨진다 |
+| 시간·수치 | `benchmark-checklist` | 설치 시간과 시험 시간을 보고할 때 '어느 실행(run id), 어떤 조건'을 붙인다(규칙 16). 로컬 6분과 러너 시간을 섞지 않는다 |
+| 마무리 | `technical-writing` + `unslop` | 검토 보고서에 '첫 실행 결과' 절을 더하고 커밋 메시지를 쓴다 |
+| 생략 | `arena`, `architect`, `swarm`, `figure-it-out`, `interrogate`, `tdd`, `create-verification-skill` | 설정 파일 하나와 진입점 하나다. 정답 모양이 정해져 있고, 증명은 GitHub의 첫 실행이 한다 |
+
+### 2. 세션 구성과 파일 주인
+
+- **하위 세션 1개.** 이 세션이 첫 실행 뒤 고치는 차례까지 맡는다. 고칠 때 새 세션을 띄우지 말고 같은 세션에 `SendMessage`로 실행 로그를 넘긴다. 맥락이 그 세션에 있다.
+- 파일 주인:
+  - `.github/workflows/tests.yml`(새 파일)
+  - `scripts/run_ci.py`(새 파일)
+  - `tests/test_ci_config.py`(새 파일)
+  - 첫 실행에서 실패한 시험의 **건너뛰기 표시 줄만**. 시험 본문 논리는 고치지 않는다. 앱 코드의 결함이 드러나면 고치지 말고 남은작업으로 넘긴다.
+  - `docs/2026-11-10-ci-review/README.md`의 '첫 실행 결과' 절
+- 손대지 않을 것: `CLAUDE.md`(CI 규칙 문구는 총괄이 쓴다), `메모리/*.md`(hazop-recorder), `packaging/requirements*.txt`(B 소유였다. 판을 바꾸면 배포본에 닿는다).
+- **단위 D와 겹치지 않게 한다.** 건너뛰기 표시가 시험 파일 여러 곳을 건드리므로, D가 시작되기 전에 CI를 끝내거나 D 세션이 아직 손대지 않은 시험만 고친다. 권장 순서는 CI를 먼저 끝내고 D를 시작하는 것이다. 그러면 D부터 CI의 보호를 받는다.
+- **이름 이전은 CI 다음이다.** 이전 단위는 `.github/`와 `scripts/run_ci.py`도 대상에 넣고, `tests/test_ci_config.py`가 통과해야 끝난 것으로 본다. 이 조건을 이전 단위의 작업지시서에 적는다.
+
+### 3. 설정에 넣을 것 (하위 세션 작업지시서용)
+
+- 러너: `windows-2025`처럼 판 번호를 고정한다. `windows-latest`는 쓰지 않는다. 판이 바뀌면 글꼴·드라이브가 말없이 달라진다.
+- 권한: 최상단에 `permissions: contents: read`. 외부 액션(`actions/checkout`, `actions/setup-python`)은 태그가 아니라 커밋 SHA로 고정하고, 옆에 판 번호를 주석으로 단다.
+- 같은 브랜치에 새 푸시가 오면 앞 실행을 취소한다(`concurrency`, `cancel-in-progress: true`). 제한 시간은 `timeout-minutes: 45`.
+- 환경변수: `PYTHONIOENCODING=utf-8`, `PYTHONUTF8=1`, `QT_QPA_PLATFORM=offscreen`, `HAZOP_WORK_ROOT=${{ runner.temp }}\hazop-work`. 작업 루트를 저장소 밖 임시 폴더에 둬야 로컬 `작업/`이 없다는 사실이 그대로 드러난다.
+- 받아오기: 한글·`&`·공백이 든 경로(`자원/참고자료/P&ID 도면 샘플/`)와 긴 경로(`licenses/`)를 위해 `git config --global core.longpaths true`를 먼저 하고 `core.quotepath=false`로 로그를 찍는다.
+- 설치: Python 3.12(로컬 venv와 같은 3.12.x). `pip install -r packaging/requirements.txt`. 그다음 `pip install --require-hashes --no-deps --only-binary=:all: -r packaging/requirements-pdf.txt`로 파일 머리말의 설치 방식을 그대로 쓴다. pip 캐시는 `setup-python`의 `cache: pip`.
+- 단계는 셋이다.
+  1. `python scripts/preflight.py --profile test`
+  2. `python scripts/run_ci.py`. 이 안에서 unittest 전체와 headless 검사 목록을 돌린다
+  3. 진단 출력. 맑은 고딕 파일 유무, `tempfile.gettempdir()`와 작업 디렉터리의 드라이브, Python·PySide6 판, 단계별 걸린 시간을 찍는다
+- `run_ci.py`는 다음을 한다.
+  - 건너뛴 시험 수와 이유별 집계를 `$GITHUB_STEP_SUMMARY`에 쓴다(없으면 표준 출력).
+  - 검사 스크립트마다 rc와 걸린 시간을 표로 남긴다.
+  - 하나가 실패해도 나머지를 끝까지 돌리고, 마지막에 실패가 하나라도 있으면 rc≠0으로 끝낸다.
+- **실패를 감추지 않는다.** `continue-on-error`는 쓰지 않는다. '병합을 막지 않음'은 `main` 보호 규칙을 켜지 않는 것으로 이미 이루어진다. 작업은 실패하면 빨간불로 보여야 알림이 온다(GitHub는 실패하면 푸시한 사람에게 메일을 보낸다).
+
+#### CI에 넣을 `check_*` 목록 (첫 단계)
+
+import를 보고 나눈 것이다. 하위 세션이 아래 '깨끗한 복제 리허설'에서 실제로 통과하는지 확인하고 목록을 확정한다.
+
+| 묶음 | 스크립트 | 비고 |
+| --- | --- | --- |
+| 넣음(화면 없음) | `check_adapter`, `check_analysis`, `check_compare`, `check_corrections`, `check_expect`, `check_export`, `check_extract`, `check_graph`, `check_kg`, `check_kg_context`, `check_register`, `check_review`, `check_study_nodes`, `check_symbols`, `check_version_migration`, `check_viewer`, `check_snp_baseline` | `check_snp_baseline`은 PySide6를 import하지만 offscreen으로 돈다(검토 보고서 §2) |
+| 리허설 뒤 결정 | `check_contract`, `check_kg_algo` | `paths.work_root()` 아래 출력물을 읽는다. 앞 단계가 만들지 않으면 실패하니, 순서를 정하거나 뺀다 |
+| 둘째 단계(QtWebEngine 확인 뒤) | `check_app`, `check_edit_screen`, `check_kg_link`, `check_kg_renderer`, `check_kg_screen`, `check_design` | `check_design`은 하위 프로세스로 렌더한다. 남은작업에 '이 환경에서 PermissionError'가 기록되어 있다 |
+| 뺌 | `check_user_scenarios`, `check_desktop_support`(실제 데스크톱), `check_apr1400`, `check_project_kg`(DCD 원본), `check_cli_live`, `check_ai_analysis`(실제 Claude) | 로컬에서만 돈다 |
+
+#### 건너뛰기 표시 원칙
+
+- **CI라는 이유로 건너뛰지 말고, 없는 것을 이유로 건너뛴다.** 예: `skipUnless(os.path.isfile(MALGUN))`, `skipUnless(CROSS)`. 환경 이름(`if CI`)으로 건너뛰면 로컬에서도 같은 원인을 놓친다.
+- 러너 고유의 한계 때문에 정말 `CI` 조건이 필요하면 `tests/` 안 공용 상수 하나(예: `ON_CI = os.environ.get("GITHUB_ACTIONS") == "true"`)를 쓰고, 이유와 확인한 run id를 줄에 적는다. 이런 표시는 검토 보고서 '첫 실행 결과' 절에 모두 나열한다.
+
+### 4. 완료 기준과 푸시 순서
+
+하위 세션은 푸시하지 않는다. 그래서 '로컬 리허설 → 커밋 → 검토 → 총괄 푸시 → 결과 확인 → 고침 1차 → 다시 푸시'로 나눈다.
+
+1. **로컬 리허설(하위 세션).** 저장소 밖 `D:\HAZOP-trials\ci-rehearsal-20261110\`(README에 주인·목적·지워도 되는 하위 폴더를 적는다. 규칙 14)을 만든다. 거기에 커밋한 HEAD를 `git clone --no-local`로 받아 추적 파일만 있는 상태를 만든다. 새 venv를 만들고 위 설치 단계를 그대로 밟아 설치 시간을 잰다. 그다음 `HAZOP_WORK_ROOT`를 그 폴더 아래 빈 폴더로 두고 `preflight.py --profile test`와 `run_ci.py`를 돌린다. 여기서 `작업/`이나 `자원/참고자료/APR1400_DCD`가 없어서 나는 실패가 대부분 드러난다. 리허설 결과(통과·실패·건너뜀 수, 걸린 시간)를 보고에 적는다.
+2. **로컬 시험(하위 세션).** 평소 venv(`<py>`)로 전체 unittest와 새 `tests/test_ci_config.py`가 통과한다(규칙 11).
+3. **커밋 → 검토 1회.** hazop-reviewer와 hazop-codex-reviewer를 병렬로 한 번 돌린다. 규모는 '대'로 본다(저장소 전체 인프라이고, 공개 저장소의 보안과 닿는다). 저장소가 공개이고 공개 자료만 쓰니 Codex 사용에 규칙 7의 사용자 확인은 필요 없다. 검토 항목은 권한, SHA 고정, 비밀값 0, 로그에 이 PC 경로가 찍히지 않는지다.
+4. **총괄 푸시와 결과 확인.** 총괄이 푸시하면 워크플로가 처음 돈다. PR #15에 묶어 `ccd_pr`의 `get_status`로 결과를 보고, 끝난 뒤 실패한 단계 로그만 `gh run view <run id> --log-failed`로 한 번 받는다. 반복해서 묻거나 깨우기 예약을 걸지 않는다. Auto-fix를 켜면 실패 알림으로 깨어난다. **첫 실행이 GitHub에서 끝까지 돌고 요약에 건너뜀·검사표·진단 줄이 보이면 이 단계는 통과다. 결과가 초록불이 아니어도 된다.**
+5. **고침 1차(같은 하위 세션).** 총괄이 run id와 실패 로그를 하위 세션에 넘긴다. 하위 세션은 러너 고유 원인(글꼴, QtWebEngine, 드라이브, 시간)에 건너뛰기 표시를 하거나 목록에서 빼고, 이유와 run id를 적는다. 앱 결함이면 고치지 말고 남은작업으로 보낸다. 커밋 뒤 총괄이 다시 푸시한다.
+6. **끝.** 두 번째 실행이 초록불이고, 건너뜀 목록과 이유가 검토 보고서에 있으면 끝이다. 실행 시간은 run id와 함께 적는다. 그다음 hazop-recorder가 `ci-deferred` 메모리와 남은작업을 고친다.
+
+**멈춤 기준(규칙 17).** 세는 것은 '러너에서만 실패하는 시험 수'다. 푸시-고침은 2차까지만 한다. 2차 뒤에도 빨간불이면, 남은 실패를 목록으로 만들어 사용자에게 '건너뛰기로 둘지, 더 고칠지'를 묻는다. 시험 시간이 45분 제한에 닿아도 같은 방식으로 멈추고 묻는다.
+
+### 5. 위험과 먼저 확인할 것
+
+| 위험 | 먼저 할 일 |
+| --- | --- |
+| QtWebEngine이 offscreen 러너에서 뜨지 않거나 멈춤 | 첫 단계에서는 WebEngine을 쓰는 검사 스크립트를 빼고 unittest만으로 본다. unittest 안의 WebEngine 시험이 멈추면 제한 시간이 다 쓰이므로, `run_ci.py`가 시험 모듈별 걸린 시간을 찍게 해 어느 모듈인지 바로 보이게 한다. 필요하면 `QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu`, `QT_OPENGL=software`를 시도한다(미확인, 첫 실행으로 확인) |
+| 한글 경로·한글 출력 | `core.longpaths`, `PYTHONUTF8=1`. 셸은 `pwsh`나 `bash` 하나로 고정한다. 리허설에서 한글 경로 복제가 되는지 먼저 본다 |
+| 드라이브가 하나인 환경 | GitHub Windows 러너는 작업 폴더가 보통 `D:\a\…`, 임시 폴더가 `C:\…`라서 `test_cross_drive`는 돌 가능성이 높다(미확인). 진단 줄로 확인한다. 같은 드라이브여도 ValueError 흉내 시험은 돌므로 결함은 계속 잡힌다 |
+| 패키지 누락이 건너뜀으로 숨음 | `preflight.py --profile test`를 앞에 둔다. 건너뜀 수를 요약에 찍는다. 로컬 실행의 건너뜀(단위 A 보고 1,748개 중 20개)보다 크게 늘면 원인을 적는다 |
+| 시험 시간 | 로컬 약 6분(작업지시서 값). 러너는 4코어라 더 걸릴 수 있다. 설치 포함 15~25분은 추정이다. 첫 실행 시간을 run id와 함께 적는다 |
+| Actions 권한 | 저장소 설정은 '모든 액션 허용'이다(검토 보고서 §1). 워크플로 쪽에서 `contents: read`와 SHA 고정으로 좁힌다. 저장소 설정을 바꾸는 일은 사용자 몫이니 권하기만 한다 |
+| 비밀값 | 워크플로에 `secrets.`가 한 번도 나오지 않는지 `tests/test_ci_config.py`가 확인한다. 저장된 비밀값 0개(검토 보고서 §1) |
+| 공개 로그 | 로그는 누구나 본다. 이 PC 경로가 찍히지 않는지 확인한다(러너에는 원래 없다). 시험이 `%USERPROFILE%`를 찍는 곳은 러너 경로라 문제없다 |
+| 맑은 고딕 | 없으면 `test_design`이 건너뛴다. 1366 폭 측정이 다른 글꼴로 될 수 있으니, 글꼴이 없을 때 폭 시험이 통과해도 '확인 아님'으로 보고한다 |
+| 이름 이전과 충돌 | 워크플로에는 `scripts/run_ci.py`와 `packaging/requirements*.txt`만 적는다. 경로 필터(`paths:`)는 쓰지 않는다. `tests/test_ci_config.py`가 이전 단위의 안전망이 된다 |
+| 여러 세션의 커밋이 한 푸시에 섞임 | 단위마다 푸시하므로 실패하면 그 단위의 커밋부터 본다. 원인 커밋을 가리기 어려우면 `workflow_dispatch`로 앞 커밋을 다시 돌린다 |
+
