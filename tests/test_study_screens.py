@@ -511,6 +511,35 @@ class StudyScreensTest(unittest.TestCase):
         self.assertEqual(scr.node_set["status"], "confirmed")
         self.assertIn("저장하지 못", scr.warn.label.text())
 
+    def test_knowledge_index_follows_the_knowledge_graph_files(self):
+        """지식그래프 파일이 바뀌면 ④가 쥔 지식 색인도 바뀐다(그래프 객체가 같아도). 실제 파일을 두 번 써서 본다."""
+        import copy
+        from hazop import paths
+        from hazop.kg import build
+        from hazop.study import ai_cells, node_review as nr
+        from scripts import check_kg_context as chk
+        win = self.window()
+        scr = self.open_study(win)
+        kg_root = paths.output_root(ai_cells.KG_DIR, paths.safe_name("kg-%s" % scr.node_set["project_id"]))
+        self.addCleanup(shutil.rmtree, kg_root, True)
+        knowledge = chk.sample_knowledge()
+
+        def write(text):
+            k = copy.deepcopy(knowledge)
+            next(n for n in k["nodes"] if n["id"] == "req-001")["text"] = text
+            build.write_outputs(kg_root, k, build.build_kg(k, [self.graph]))
+
+        def req_text(kn):
+            node = next(n for n in scr.node_set["nodes"] if any(m in kn["by_entity"] for m in n["members"]))
+            return next(i["text"] for i in nr.node_knowledge(node, kn)[0] if i["knowledge_id"] == "req-001")
+        write("첫 문구")
+        self.assertEqual(req_text(scr._knowledge(force=True)), "첫 문구")
+        scr.review_doc = dict(scr.review_doc, proposals=[{"decision": "open", "knowledge_fp": "x"}])
+        self.assertEqual(req_text(scr._knowledge()), "첫 문구")
+        write("바뀐 문구")
+        self.assertEqual(req_text(scr._knowledge()), "바뀐 문구", "오래됨 판정이 쓰는 색인도 새 지식그래프를 따른다")
+        self.assertEqual(req_text(scr._knowledge(force=True)), "바뀐 문구")
+
     def test_bom_saved_file_loads_unchanged(self):
         from hazop.study import nodes
         path, good, _cases = self._unreadable_cases()

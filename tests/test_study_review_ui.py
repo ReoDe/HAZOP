@@ -238,6 +238,28 @@ class StudyReviewUiTest(unittest.TestCase):
         self.assertEqual(next(p for p in scr2.review_doc["proposals"] if p["id"] == pid)["decision"], "accepted")
         self.assertIn("맞췄", scr2.warn.label.text())
 
+    def test_conflict_on_the_proposal_file_restores_the_set_keeps_the_notice_and_the_issued_number(self):
+        """받아들이는 도중 제안 기록이 충돌하면 구간을 되돌린다. 안내가 남고, 잠깐 디스크에 썼던 S번호를 다시 내지 않는다."""
+        from unittest import mock
+        from hazop import store_io
+        from hazop.study import node_review as nr, nodes
+        win, scr = self.open_study()
+        big = max((n for n in scr.node_set["nodes"] if nodes._status(n) == "keep"), key=lambda n: len(n["members"]))
+        part = {"members": sorted(big["members"][:1]), "name": "떼어 낸 구간"}
+        self.fixed_answers(win, scr, lambda n, b: self.review(n, "split", split_off=[part])
+                           if n["node_id"] == big["node_id"] else self.review(n))
+        self.run_review(scr)
+        pid = scr.review_pending()[big["node_id"]]["id"]
+        before = [n["node_id"] for n in scr.node_set["nodes"]]
+        with mock.patch.object(nr, "save_fp", side_effect=store_io.Conflict("읽은 뒤 저장 파일이 바뀜")):
+            self.assertFalse(scr.accept_review(pid))
+        self.assertIn("바뀌어", scr.msg.text(), "되돌린 뒤에도 왜 받지 못했는지 보임")
+        self.assertEqual([n["node_id"] for n in scr.node_set["nodes"]], before, "구간은 되돌림")
+        taken = "S%d" % (max(int(i[1:]) for i in before) + 1)
+        other = sorted(big["members"])[1:2]
+        self.assertTrue(scr._apply(lambda s: nodes.split(s, big["node_id"], other), done="나눴습니다"))
+        self.assertNotEqual(scr.node_set["history"][-1]["detail"]["new_node_id"], taken)
+
     def test_knowledge_is_read_again_for_each_review_run(self):
         """지식 색인은 그래프 객체로만 기억하지 않는다. 검토를 돌릴 때마다 지식그래프를 다시 읽는다."""
         from unittest import mock

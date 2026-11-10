@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
                                QProgressBar, QPushButton, QSizePolicy, QStackedWidget,
                                QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTabWidget, QVBoxLayout, QWidget)
 
-from hazop import store_io
+from hazop import paths, store_io
 from hazop.app import data, project_ctx, tokens
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text
 from hazop.graph import project
@@ -1251,15 +1251,29 @@ class StudyNodesScreen(QWidget):
 
     def _knowledge(self, force=False):
         """지식 맥락 색인(nr.knowledge_index) 또는 None. 지식그래프를 읽는 일이라 지식 항목을 본 미처리 제안이 있거나
-        (오래됨 판정) 검토를 새로 돌릴 때(force)만 만든다. 검토를 돌릴 때는 늘 다시 읽고, 오래됨 판정은 도면을 연 뒤
-        처음 읽은 것을 쓴다(도면을 다시 열면 _load_review가 버린다)."""
+        (오래됨 판정) 검토를 새로 돌릴 때(force)만 만든다. 검토를 돌릴 때는 늘 다시 읽는다. 오래됨 판정은 읽어 둔
+        색인을 쓰되, 프로젝트 그래프와 지식그래프 포인터 파일이 그대로일 때만이다(③에서 지식그래프를 다시 지으면 다시 읽는다)."""
         if not force and not (self.review_doc and nr.uses_knowledge(self.review_doc)):
             return None
-        if force or self._kn is None or self._kn[0] is not self.graph:
+        key = (self.graph, self._kg_pointer())
+        if force or self._kn is None or self._kn[0][0] is not key[0] or self._kn[0][1] != key[1] or key[1] is None:
             from hazop.study import ai_cells
             kg, _why = ai_cells.load_kg_for(self.node_set)
-            self._kn = (self.graph, nr.knowledge_index(kg, self.graph)[0])
+            self._kn = (key, nr.knowledge_index(kg, self.graph)[0])
         return self._kn[1]
+
+    def _kg_pointer(self):
+        """프로젝트 지식그래프 포인터 파일(current.json: 판과 두 파일의 해시)의 지문. 지식그래프를 다시 지으면 바뀐다.
+        포인터를 정할 수 없으면(프로젝트 없는 집합, 파일 없음·읽기 실패) None이고 그때는 색인을 기억하지 않는다."""
+        from hazop.kg import build as kg_build
+        from hazop.study import ai_cells
+        pid = (self.node_set or {}).get("project_id")
+        if not pid:
+            return None
+        try:
+            return store_io.fingerprint(paths.output_root(ai_cells.KG_DIR, paths.safe_name("kg-%s" % pid), kg_build.POINTER_FILE))
+        except OSError:
+            return None
 
     def review_pending(self):
         """{node_id: 미처리이고 오래되지 않은 제안}."""
@@ -1293,7 +1307,7 @@ class StudyNodesScreen(QWidget):
         head.setStyleSheet("font-weight: 700")
         v.addWidget(head)
         if prop is None:
-            note = QLabel("구간이나 이웃 구간이 바뀌어 이 제안은 받아들일 수 없습니다. 다시 검토하려면 '고른 구간만 AI 검토'를 누르세요.")
+            note = QLabel("구간·이웃 구간이나 이 구간에 붙은 지식 항목이 바뀌어 이 제안은 받아들일 수 없습니다. 다시 검토하려면 '고른 구간만 AI 검토'를 누르세요.")
             note.setWordWrap(True)
             v.addWidget(note)
             self.jump_box.addWidget(box)
@@ -1340,10 +1354,12 @@ class StudyNodesScreen(QWidget):
             return False
         if not self._save_review(new_doc):  # 제안 묶음을 못 쓰면 구간도 되돌린다(두 파일이 어긋나지 않게)
             why = self.msg.text()
-            restored = self._replace(old_set, keep)
+            restored = self._replace(nodes.keep_issued(old_set, new_set), keep)  # 잠깐 썼던 S번호를 다시 내지 않게
             self.review_doc = old_doc
             self._render(keep)
-            if not restored:
+            if restored:
+                self.msg.setText("%s 구간은 받아들이기 전으로 되돌렸습니다." % why)
+            else:
                 self.app.log_error("AI 제안 받아들이기 되돌림 실패", RuntimeError("%s / %s" % (why, self.msg.text())))
                 self.msg.setText("AI 제안 기록을 저장하지 못했고 구간도 되돌리지 못했습니다. 구간 파일은 받아들인 뒤 상태로 "
                                  "남아 있습니다. 도면을 다시 열면 제안 기록을 그에 맞춥니다.")
@@ -1425,7 +1441,7 @@ class StudyNodesScreen(QWidget):
                       and _status(self._node(o)) == _status(self._node(prop["node_id"]))]
             rows = [("%s · %s" % (o, self._node(o)["name"]), o, o in prop["merge_with"])
                     for o in list(prop["merge_with"]) + others if self._node(o) is not None]
-            merge_box = checklist("합칠 구간(제안한 구간과 이웃 구간)", "합칠 구간", rows)
+            merge_box = checklist("합칠 구간: AI가 제안한 구간은 켜 두었고, 그 밖의 이웃 구간은 꺼 두었습니다", "합칠 구간", rows)
         elif prop["verdict"] == "split":
             for part in prop["split_off"]:
                 rows = [(entity_label(self.entities[m]) if m in self.entities else m, m, True) for m in part["members"]]

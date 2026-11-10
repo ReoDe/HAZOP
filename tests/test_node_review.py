@@ -509,7 +509,40 @@ class KnowledgeLimitTest(unittest.TestCase):
         self.assertEqual(self.items(self.kn(1, hangul))[0][0]["text"], "가" * 150)
 
 
+class KnowledgeMarksTest(unittest.TestCase):
+    """검토 지적: 미확인 칸과 충돌 표시를 ⑤ 지식 맥락과 같이 보낸다(미확인은 미확인으로, 충돌은 둘 다)."""
+
+    def test_unknown_fields_and_conflicts_are_sent(self):
+        kn = {"by_entity": {"e1": ["k1", "k2", "k3"]},
+              "nodes": {"k1": {"id": "k1", "node_type": "setpoint", "item": "고압 트립", "value": None, "unit": "bar",
+                               "pressure_basis": None, "conflict_with": ["k2", "k9"]},
+                        "k2": {"id": "k2", "node_type": "setpoint", "item": "고압 트립", "value": "8", "unit": "bar",
+                               "pressure_basis": "gauge", "conflict_with": ["k1"]},
+                        "k3": {"id": "k3", "node_type": "requirement", "text": "문구"}},
+              "drawing_conflicts": {"k2": [{"target": "g#1", "property": "setpoint", "value": "9", "unit": "bar",
+                                            "pressure_basis": "gauge"}]}}
+        items = {i["knowledge_id"]: i for i in nr.node_knowledge({"node_id": "S1", "members": ["e1"]}, kn)[0]}
+        self.assertEqual(items["k1"]["unknown_fields"], ["value", "pressure_basis"])
+        self.assertEqual(items["k1"]["conflict_with"], ["k2", "k9"])
+        self.assertEqual(items["k2"]["conflict_with_drawing"], kn["drawing_conflicts"]["k2"])
+        self.assertEqual(set(items["k3"]), {"knowledge_id", "node_type", "text", "applies_to"}, "표시할 것이 없으면 칸도 없음")
+        self.assertNotIn("unknown_fields", items["k2"])
+
+    def test_the_cut_keeps_a_joined_emoji_whole(self):
+        text = "a" * 198 + "\U0001F469‍\U0001F4BB" + "zz"
+        kn = {"by_entity": {"e1": ["k1"]}, "nodes": {"k1": {"id": "k1", "node_type": "requirement", "text": text}}}
+        self.assertEqual(nr.node_knowledge({"node_id": "S1", "members": ["e1"]}, kn)[0][0]["text"], "a" * 198 + "…")
+
+
 class EditedTargetsTest(Base):
+    def test_an_empty_split_is_refused(self):
+        big = max(self.ns["nodes"], key=lambda n: len(n["members"]))
+        part = {"members": sorted(big["members"][:2]), "name": "떼어 낸 구간"}
+        doc = nr.merge_result(nr.empty("P", self.pg["graph_id"]), self.answer([self.review(big["node_id"], "split", split_off=[part])]))
+        for bad in ([], [{"members": [], "name": "빈 구간"}]):
+            with self.subTest(bad), self.assertRaises(ValueError):
+                nr.accept(self.ns, doc, doc["proposals"][0]["id"], "검토자", self.adj, edited={"split_off": bad}, at=AT)
+
     """교차검증 지적: 고쳐서 받기의 편집값도 허용 대상(제안한 구간과 이웃 구간, 그 구간의 구성요소)만 받는다."""
 
     def setUp(self):
