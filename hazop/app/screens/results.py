@@ -2153,6 +2153,8 @@ class ResultsScreen(QWidget):
                       "".join(f[1] + " · " for f in flags) + ("AI 초안 · " if draft else "") + status)
             for c, v in enumerate(values):
                 it = QTableWidgetItem(v or "-")
+                # 편집 가능 항목이면 Qt가 IME를 켜서 한글 상태의 A·R·E가 조합 글자로 먹힌다. 편집은 대화상자로만 한다
+                it.setFlags(it.flags() & ~Qt.ItemIsEditable)
                 it.setData(Qt.UserRole, e["entry_id"])
                 it.setData(DRAFT_ROLE, draft)
                 t.setItem(r, c, it)
