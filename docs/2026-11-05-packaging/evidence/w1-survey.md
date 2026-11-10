@@ -8,7 +8,7 @@
 | 하지 않은 것 | 패키지 설치, 실행 파일 빌드, 파일 다운로드, 저장소 코드 외부 전송, FAT32·exFAT·네트워크 드라이브 실측 |
 | 표기 | 사실은 출처(저장소 경로 또는 §8 출처 번호 [Sn])를 붙인다. `[추론]` = 근거에서 이끈 판단, `[일반지식]` = 출처 미확인 일반 지식, `[미확인]` = 확인하지 못함 |
 
-읽은 범위: `docs/2026-11-05-packaging/README.md` 전부, `기획서/인터페이스.md` §2.2~2.4·§4.2·§7·§8·§9, `기획서/전체기획.md` 신뢰 경계 절, `hazop/paths.py` 전부, `hazop/app/data.py` 1~35행과 `script_module` 호출부, `scripts/run_app.py` 전부, `hazop/kg/vendor/force-graph-1.52.0/SOURCE.md` 전부, `hazop/review/store.py` `write_exclusive` 부분, `hazop/analysis/integrity.py` 1~70행, `hazop/analysis/ai.py` 175~200행. 그 밖의 파일은 grep 결과만 봤다.
+읽은 범위: `docs/2026-11-05-packaging/README.md` 전부, `specs/interface.md` §2.2~2.4·§4.2·§7·§8·§9, `specs/overview.md` 신뢰 경계 절, `hazop/paths.py` 전부, `hazop/app/data.py` 1~35행과 `script_module` 호출부, `scripts/run_app.py` 전부, `hazop/kg/vendor/force-graph-1.52.0/SOURCE.md` 전부, `hazop/review/store.py` `write_exclusive` 부분, `hazop/analysis/integrity.py` 1~70행, `hazop/analysis/ai.py` 175~200행. 그 밖의 파일은 grep 결과만 봤다.
 
 ## 0. 요약
 
@@ -24,9 +24,9 @@
 
 **사실**
 
-- 전체기획 신뢰 경계 표에서 패턴 라이브러리·구간 정의는 "사람 검토와 버전 관리", 이탈 카탈로그·위험도 기준표는 "내용 해시로 고정하고 지침과 대조"로 대응한다. 고의 변조는 범위 밖이다(`기획서/전체기획.md` 신뢰 경계 절).
+- 전체기획 신뢰 경계 표에서 패턴 라이브러리·구간 정의는 "사람 검토와 버전 관리", 이탈 카탈로그·위험도 기준표는 "내용 해시로 고정하고 지침과 대조"로 대응한다. 고의 변조는 범위 밖이다(`specs/overview.md` 신뢰 경계 절).
 - 인터페이스 §7.1은 구간 JSON·고정 응답을 사용자 데이터(작업 루트)로 분류한다. 자원 루트에 두는 것은 카탈로그·적용 판단·패턴·기준표다. 이 분류는 `hazop/paths.py`의 `RESOURCE_INPUT_ROLES = ("candidate_catalog", "applicability", "patterns", "risk_criteria")`와 일치한다.
-- 이미 고정된 항목: `hazop/analysis/integrity.py`의 `PINNED_SHA256`이 카탈로그·적용 판단(`applicability-region-SNP-M-102-pzr`)·위험도 기준표 3건을 고정한다. 불일치하면 분석이 차단된다. 지침서 `기획서/HAZOP기법지침.md`도 다시 읽어 대조하므로, 지침서 역시 자원 루트에 있어야 한다(`GUIDE_PARTS`).
+- 이미 고정된 항목: `hazop/analysis/integrity.py`의 `PINNED_SHA256`이 카탈로그·적용 판단(`applicability-region-SNP-M-102-pzr`)·위험도 기준표 3건을 고정한다. 불일치하면 분석이 차단된다. 지침서 `specs/hazop-method-guide.md`도 다시 읽어 대조하므로, 지침서 역시 자원 루트에 있어야 한다(`GUIDE_PARTS`).
 - 고정되지 않은 항목: 패턴 라이브러리(`데이터/패턴/pressurizer-patterns.json`)는 `PINNED_SHA256`에 없다. 버전 관리에만 의존하며, 신뢰 경계 절의 "알려진 남은 위험" 첫 줄(패턴 편차 매핑 변경)이 이 항목에 해당한다.
 - 적용 판단 파일은 구간별(`applicability-region-…`)로 만들어지지만 자원 루트에 있다. 새 구간을 추가하면 고정 해시도 코드 상수에 추가해야 하므로, 사용자가 구간을 늘리는 흐름과 충돌한다[추론].
 - one-folder 배포에서 자원은 `_internal/` 아래 일반 파일이므로 사용자가 고칠 수 있다. 설치 위치가 `Program Files`라면 고칠 때 관리자 권한이 필요하다[일반지식].
@@ -146,7 +146,7 @@ Qt for Python 공식 배포 문서의 비교표[S33]: PyInstaller(GPL, Qt6 "part
    - (가) 편집 허용 범위 안: 두 스크립트를 datas로 `scripts/`에 넣고 `hiddenimports`에 `hazop` 하위 모듈 전체(`collect_submodules("hazop")`)를 넣는다. `data.py`는 바꾸지 않거나 경로 결정만 정리한다.
    - (나) 범위 밖: `run_one`·`build_one`·`registered_out_name`을 `hazop/` 패키지로 옮기고 스크립트는 얇은 래퍼로 만든다. `scripts/extract_drawio.py`·`build_graph.py` 편집이 필요해 결정이 필요하다.
    - 권고: W2에서는 (가) [추론]. 근본 정리인 (나)는 별도 결정 사항으로 남긴다.
-3. **비 Python 자원**: 패키지 안 `hazop/viewer/template.html`, `hazop/kg/screen_template.html`, `hazop/kg/vendor/force-graph-1.52.0/*`는 `__file__` 기준으로 읽는다(`hazop/viewer/build.py`, `hazop/kg/screen.py`). 자원 루트 기준으로 읽는 것은 `데이터/이탈후보·기준표·패턴`, `기획서/HAZOP기법지침.md`(`integrity.py`)이고, `참고자료/P&ID 도면 샘플`은 `scripts/extract_drawio.py` `SAMPLE_GLOB`과 등록 화면 파일 대화상자 시작 위치에서 쓴다. 모두 datas로 명시해야 한다. `참고자료/`는 28 MB이고 git 추적 파일이 약 97개다. 배포본에 넣을지는 결정이 필요하다.
+3. **비 Python 자원**: 패키지 안 `hazop/viewer/template.html`, `hazop/kg/screen_template.html`, `hazop/kg/vendor/force-graph-1.52.0/*`는 `__file__` 기준으로 읽는다(`hazop/viewer/build.py`, `hazop/kg/screen.py`). 자원 루트 기준으로 읽는 것은 `데이터/이탈후보·기준표·패턴`, `specs/hazop-method-guide.md`(`integrity.py`)이고, `참고자료/P&ID 도면 샘플`은 `scripts/extract_drawio.py` `SAMPLE_GLOB`과 등록 화면 파일 대화상자 시작 위치에서 쓴다. 모두 datas로 명시해야 한다. `참고자료/`는 28 MB이고 git 추적 파일이 약 97개다. 배포본에 넣을지는 결정이 필요하다.
 4. **작업 루트 초기 내용**: frozen 실행에서 작업 루트는 `%LOCALAPPDATA%\HAZOP`(`paths.work_root`)다. 그런데 구간 JSON(`데이터/구간`)·고정 응답(`데이터/고정응답`)·지식 입력(`데이터/지식`, `scripts/build_kg.py` `DEFAULT_INPUT_ROOT`)은 작업 루트 기준으로 읽는다. 첫 실행 때 샘플을 작업 루트로 복사할지, 비워 둘지 정해야 한다[추론].
 5. **스크립트의 기본 인자**: `paths.py` 주석대로 스크립트의 `DEFAULT_*`는 import 시점에 한 번 정해진다. 환경변수를 import 전에 설정해야 한다.
 6. **네트워크 모듈**: `hazop/analysis/ai.py`는 함수 안에서 `anthropic`을 import한다. PyInstaller는 함수 안 import도 수집하므로[일반지식], venv에 anthropic·httpx가 있으면 묶음에 들어간다. 인터페이스 §8 공통 항목(프로그램 코드가 네트워크 모듈을 쓰지 않음)과 메모리 결정(지금은 실시간 API 없음)을 고려하면, 배포 venv에서 빼거나 `excludes`로 막는 것이 맞다[추론].
@@ -212,7 +212,7 @@ Qt for Python 공식 배포 문서의 비교표[S33]: PyInstaller(GPL, Qt6 "part
 | W6 | 라이선스 고지(결정 2·9 후) | `licenses/`에 PySide6/Qt(LGPLv3·GPL 텍스트, Qt 소스 제공 방법), QtWebEngine 제3자 목록, force-graph와 §2 의존성 전체(ColorBrewer Apache-2.0 포함), networkx·openpyxl·et_xmlfile, (B·C 선택 시) Pretendard OFL이 들어간다. 앱 정보 대화상자에서 안내한다. 누락 검사 스크립트가 통과한다 |
 | W7 | `os.link` 실측과 대응(결정 6 후) | FAT32 또는 exFAT USB와 네트워크 공유 각각에서 `write_exclusive` 동작(성공/오류 코드)을 기록한다. 선택한 대응(대체 경로 또는 거부)이 테스트로 확인되고, NTFS 동작이 바이트 단위로 기존과 같다 |
 
-순서 [추론]: W2 → W3 → W4가 핵심 경로다. W5·W6·W7은 W4 뒤에 서로 독립이므로 같은 파일을 다루지 않는 한 병렬로 할 수 있다. W3·W5는 `hazop/app/data.py`·`기획서/인터페이스.md`를 다루므로 T1·T6와 순차로 진행해야 한다(README §8).
+순서 [추론]: W2 → W3 → W4가 핵심 경로다. W5·W6·W7은 W4 뒤에 서로 독립이므로 같은 파일을 다루지 않는 한 병렬로 할 수 있다. W3·W5는 `hazop/app/data.py`·`specs/interface.md`를 다루므로 T1·T6와 순차로 진행해야 한다(README §8).
 
 ## 8. 출처
 

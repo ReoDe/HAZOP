@@ -31,9 +31,9 @@
 
 | 파일 | 내용 |
 | --- | --- |
-| [결함목록.md](결함목록.md) | 화면별 결함 46건(셸 10, ① 6, ② 6, ③ 7, ④ 7, ⑤ 10). 각 항목에 근거·심각도·개선안 번호 |
-| [개선명세.md](개선명세.md) | 셸 사양, 개선 22건(근거·우선순위·Qt/웹뷰 난이도·건드리는 파일), 구현 순서, 측정값 |
-| [조사요약.md](조사요약.md) | Obsidian·VS Code·Linear·Notion·Figma 패턴 12종, HAZOP 소프트웨어 4종(PHA-Pro·PHAWorks·Open-PHA·Vizop). 모든 항목에 출처 URL |
+| [defect-list.md](defect-list.md) | 화면별 결함 46건(셸 10, ① 6, ② 6, ③ 7, ④ 7, ⑤ 10). 각 항목에 근거·심각도·개선안 번호 |
+| [improvement-spec.md](improvement-spec.md) | 셸 사양, 개선 22건(근거·우선순위·Qt/웹뷰 난이도·건드리는 파일), 구현 순서, 측정값 |
+| [survey-summary.md](survey-summary.md) | Obsidian·VS Code·Linear·Notion·Figma 패턴 12종, HAZOP 소프트웨어 4종(PHA-Pro·PHAWorks·Open-PHA·Vizop). 모든 항목에 출처 URL |
 | `index.html` | 시안 5장을 버튼이나 키보드 1~5로 넘겨 봅니다 |
 | `1-결과-셸` ~ `5-결과-빈상태` `.html` | 시안 HTML |
 | `png/*-1366.png`, `png/*-1920.png` | 1366×768, 1920×1080 스크린샷 10장 |

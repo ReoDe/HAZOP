@@ -50,7 +50,7 @@ flowchart LR
 ## 4. 나는 지금 무엇을 하면 되나
 
 - 지금 할 일: 없음(T1 MVP 완료). ⑤ 관련 지식의 배치·배지 정리는 T6 W3에서 이어 받는다.
-- 확인할 범위: [`README.md`](README.md), [그래프활용 §2·§5.2·§7](../../기획서/그래프활용.md)
+- 확인할 범위: [`README.md`](README.md), [그래프활용 §2·§5.2·§7](../../specs/graph-usage.md)
 - 결과를 남길 곳: [`evidence/`](evidence/README.md)
 - 상세 상태를 갱신할 곳: [`PROGRESS.md`](PROGRESS.md)
 

@@ -198,7 +198,7 @@ FOLDERS = {
 # 자원 루트 아래에 낱개로 두는 파일. FOLDERS의 resource 행은 배포본에 통째로 묶는 폴더라서 파일은 따로 적는다.
 # 배포본도 같은 상대 위치에 묶는다(scripts/build_package.py DATA_FILES). 위치를 아는 곳은 이 표 하나다.
 FILES = {
-    "guide": Folder("resource", ("기획서", "HAZOP기법지침.md")),  # HAZOP 기법 지침서. 내용 해시는 hazop/analysis/integrity.py가 고정한다
+    "guide": Folder("resource", ("specs", "hazop-method-guide.md")),  # HAZOP 기법 지침서. 내용 해시는 hazop/analysis/integrity.py가 고정한다
 }
 REFERENCE_LOGICAL = "참고자료/"  # 참고 폴더 아래 파일의 기록용 접두(rel_or_abs)
 # 사용자 파일(구간 JSON inputs, 추출 JSON source.file·svg_file)에 저장된 옛 상대 경로 접두 → 폴더 이름.

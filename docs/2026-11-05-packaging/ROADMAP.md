@@ -33,7 +33,7 @@
 
 ## 4. 나는 지금 무엇을 하면 되나
 
-- 지금 할 일: `W11` 검토 → QA([W11 최종 빌드](evidence/w11-final-build.md)). `기획서/인터페이스.md` 문안 반영(planner, [W10 §5](evidence/w10-about-dialog.md)) → QA. `W7`은 FAT32/exFAT USB 장비가 있을 때 착수.
+- 지금 할 일: `W11` 검토 → QA([W11 최종 빌드](evidence/w11-final-build.md)). `specs/interface.md` 문안 반영(planner, [W10 §5](evidence/w10-about-dialog.md)) → QA. `W7`은 FAT32/exFAT USB 장비가 있을 때 착수.
 - 확인할 범위: [`README.md`](README.md)
 - 결과를 남길 곳: [`evidence/`](evidence/README.md)
 - 상세 상태를 갱신할 곳: [`PROGRESS.md`](PROGRESS.md)

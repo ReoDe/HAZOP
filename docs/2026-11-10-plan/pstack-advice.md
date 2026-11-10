@@ -1,6 +1,6 @@
 # pstack 활용 자문: D 드라이브 이전 뒤 단위 A~E
 
-작성 2026-11-10, pstack 자문 세션(읽기 전용). 기준 커밋 `feat/next-units` @ 5f4e6c3. 근거로 읽은 것은 `CLAUDE.md`, `INTENT.md`, `메모리/남은작업.md`, `docs/2026-11-10-lessons/README.md`, `docs/2026-11-10-lessons/d-drive-move.md`, `~/.claude/rules/pstack-models.md`, pstack 0.15.36 스킬 설명, 그리고 단위 A의 대상 코드다.
+작성 2026-11-10, pstack 자문 세션(읽기 전용). 기준 커밋 `feat/next-units` @ 5f4e6c3. 근거로 읽은 것은 `CLAUDE.md`, `INTENT.md`, `records/backlog.md`, `docs/2026-11-10-lessons/README.md`, `docs/2026-11-10-lessons/d-drive-move.md`, `~/.claude/rules/pstack-models.md`, pstack 0.15.36 스킬 설명, 그리고 단위 A의 대상 코드다.
 
 ## 공통 사항
 
@@ -25,7 +25,7 @@
 | `hazop/app/screens/*`, `hazop/app/explorer.py` | | 손대지 않음 | 주인 | 이어받음 | 이어받음 |
 | `hazop/study/corrections.py` 등 저장 공용화 대상 | | | | 주인 | |
 | `hazop/ie/*`(store 제외) | | | | | 주인 |
-| `메모리/*.md` | 총괄(hazop-recorder)만 | | | | |
+| `records/*.md` | 총괄(hazop-recorder)만 | | | | |
 
 B와 C가 함께 돌 때 겹칠 수 있는 곳은 `tokens.py`(글꼴)와 `startup.py`(단일 실행 잠금)다. 둘 다 B에 주고 C의 작업지시서에 '건드리지 않음'을 적는다. C가 글꼴 문제를 만나면 B 세션에 메시지로 넘기지 말고 총괄에게 보고한다.
 
@@ -186,7 +186,7 @@ B와 C가 함께 돌 때 겹칠 수 있는 곳은 `tokens.py`(글꼴)와 `startu
 
 이 단위는 성격이 다른 둘을 묶었다. 나누기를 권한다.
 
-- **E1 품질 경고 3종.** 보호설비 고장이 원인 칸에 있음, 구간 경계 결과 끊김, 전기·제어 구간인데 FMEA 없음. 설계서(`기획서/초기사건-출력설계.md` 시트 8)에 정의가 있어 바로 구현할 수 있다. 다만 'FMEA 없음' 경고는 FMEA 입력(P5의 D5)이 없으면 항상 뜬다. E2보다 먼저 넣을지, 문구를 'FMEA 입력 기능 없음'으로 둘지 총괄이 정한다.
+- **E1 품질 경고 3종.** 보호설비 고장이 원인 칸에 있음, 구간 경계 결과 끊김, 전기·제어 구간인데 FMEA 없음. 설계서(`specs/ie-output-design.md` 시트 8)에 정의가 있어 바로 구현할 수 있다. 다만 'FMEA 없음' 경고는 FMEA 입력(P5의 D5)이 없으면 항상 뜬다. E2보다 먼저 넣을지, 문구를 'FMEA 입력 기능 없음'으로 둘지 총괄이 정한다.
 - **E2 P5(FMEA 입력·MLD 가지 대조).** 설계서 §표에서 규모가 '대'다. FMEA 입력 형식(D5)이 아직 정해지지 않았고, MLD 분류는 E9(결정 보류)와 닿는다. 구현 전에 기획 단계(hazop-planner)와 사용자 질의가 필요하다. 그리고 INTENT의 지금 우선순위('쓸 수 있는 완성본과 패키징 먼저')와 맞대어 보면, P5는 새 기능 확장이다. 총괄은 규칙 8에 따라 지금 범위에 넣을지 사용자에게 먼저 묻는다.
 
 ### 1. 스킬
@@ -260,7 +260,7 @@ A (1세션) ──► B (1세션) ┐
   - `tests/test_ci_config.py`(새 파일)
   - 첫 실행에서 실패한 시험의 **건너뛰기 표시 줄만**. 시험 본문 논리는 고치지 않는다. 앱 코드의 결함이 드러나면 고치지 말고 남은작업으로 넘긴다.
   - `docs/2026-11-10-ci-review/README.md`의 '첫 실행 결과' 절
-- 손대지 않을 것: `CLAUDE.md`(CI 규칙 문구는 총괄이 쓴다), `메모리/*.md`(hazop-recorder), `packaging/requirements*.txt`(B 소유였다. 판을 바꾸면 배포본에 닿는다).
+- 손대지 않을 것: `CLAUDE.md`(CI 규칙 문구는 총괄이 쓴다), `records/*.md`(hazop-recorder), `packaging/requirements*.txt`(B 소유였다. 판을 바꾸면 배포본에 닿는다).
 - **단위 D와 겹치지 않게 한다.** 건너뛰기 표시가 시험 파일 여러 곳을 건드리므로, D가 시작되기 전에 CI를 끝내거나 D 세션이 아직 손대지 않은 시험만 고친다. 권장 순서는 CI를 먼저 끝내고 D를 시작하는 것이다. 그러면 D부터 CI의 보호를 받는다.
 - **이름 이전은 CI 다음이다.** 이전 단위는 `.github/`와 `scripts/run_ci.py`도 대상에 넣고, `tests/test_ci_config.py`가 통과해야 끝난 것으로 본다. 이 조건을 이전 단위의 작업지시서에 적는다.
 

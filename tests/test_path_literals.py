@@ -90,8 +90,8 @@ class PathLiteralTest(unittest.TestCase):
 
     def test_guide_location_is_written_once(self):
         """지침서 위치는 paths.FILES["guide"]에만 적는다. 한 곳이라도 따로 적으면 폴더를 옮길 때 그곳만 빠져
-        배포본에서만 지침서를 못 찾는다(HZ-GOV-02 §6.5). catalog_md의 같은 글자는 위치가 아니라 카탈로그에 적는 출처다."""
-        found = violations(pattern=GUIDE_NAME, allow=ALLOW | {"hazop/analysis/catalog_md.py"})
+        배포본에서만 지침서를 못 찾는다(HZ-GOV-02 §6.5). migrate_doc_headers.py의 같은 글자는 문서번호 표의 열쇠라 위치를 읽지 않는다."""
+        found = violations(pattern=GUIDE_NAME, allow=ALLOW | {"scripts/migrate_doc_headers.py"})
         self.assertEqual(found, [], 'paths.file_rel("guide")를 쓰세요:\n' + "\n".join("%s:%d %r" % v for v in found))
 
     def test_guide_literal_is_caught(self):

@@ -1,6 +1,15 @@
+---
+doc_id: HZ-PLN-18
+rev: 0
+status: review
+author: unknown
+reviewed: —
+approved: —
+---
+
 # AI 연결: Claude Code 구독제 기술 설계
 
-작성 2026-11-09. 상태: **결정 확정**(2026-11-09, U1~U12 권장안 채택. 화면 설계 D1~D6도 권장안, D1은 '구독 기본'). 구현 전. 관련 문서: [HAZOP 분석 §모델 연결](HAZOP분석.md#모델-연결), [인터페이스 §2.5](인터페이스.md#25-ai-확장-지점), [화면 설계](../디자인/AI연결-화면설계.md), [INTENT.md §3.5·§7 5번](../INTENT.md).
+작성 2026-11-09. 상태: **결정 확정**(2026-11-09, U1~U12 권장안 채택. 화면 설계 D1~D6도 권장안, D1은 '구독 기본'). 구현 전. 관련 문서: [HAZOP 분석 §모델 연결](hazop-analysis.md#모델-연결), [인터페이스 §2.5](interface.md#25-ai-확장-지점), [화면 설계](../design/ai-connection-screens.md), [INTENT.md §3.5·§7 5번](../INTENT.md).
 
 ④ AI 분석은 지금 Anthropic API 키(`hazop/study/claude_http.py`)로만 돈다. 호출할 때마다 요금이 나간다. 사용자는 구독료를 이미 낸 Claude Code 구독(Pro·Max)을 앱에 직접 연결해 쓰기를 원한다(INTENT §3.5, 2026-11-09). 이 문서는 그 방법을 정하고, API 연결과 화면·기록을 나누며, 지금 무엇으로 연결돼 있는지 늘 보이게 하는 데 필요한 상태값을 정한다.
 
@@ -10,7 +19,7 @@
 
 ## 0. 상태값과 오류 종류 (기준 목록)
 
-이 절의 이름이 기준이다. 화면 설계([디자인/AI연결-화면설계.md](../디자인/AI연결-화면설계.md))는 이 이름을 그대로 쓴다. 화면 설계 §12의 제안 이름은 대부분 그대로 받았고, 바꾼 것은 §0.5에 적었다. 이름을 바꾸려면 이 절을 먼저 고친다.
+이 절의 이름이 기준이다. 화면 설계([design/ai-connection-screens.md](../design/ai-connection-screens.md))는 이 이름을 그대로 쓴다. 화면 설계 §12의 제안 이름은 대부분 그대로 받았고, 바꾼 것은 §0.5에 적었다. 이름을 바꾸려면 이 절을 먼저 고친다.
 
 ### 0.1 연결 방식 `via`
 
@@ -509,7 +518,7 @@ P1에서 `scripts/check_cli_live.py`(새 파일, 표본 구간 1개·호출 2회
 | 단계 | 내용 | 바뀌는 파일 | 규모 | 완료 기준 |
 | --- | --- | --- | --- | --- |
 | P1 클라이언트·기록 | `providers.py` 표, `claude_cli.py`(찾기·확인·호출·분류·인증 출처 검사·초과 사용 감지·Job 객체·시간 초과), `FixedCellsClient`, `ClaudeHttpClient`에 `cost_usd`·`billing`·`check`·`cancel`, `run_unit` 비용 규칙(§5.1), `usage_total` 합계 규칙, `plan_units`의 `group` 인자(§11 3번), `ai_log`·`ai_run`에 `via`·`billing`·`error_kind`·`model_requested`·`limit`, `ai_limits.json` 저장, 가짜 CLI·시험, 실측 스크립트 | 새 `hazop/study/providers.py`, 새 `hazop/study/claude_cli.py`, `hazop/study/ai_cells.py`, `hazop/study/claude_http.py`, 새 `tests/fake_claude/`, 새 `tests/test_claude_cli.py`, `tests/test_app.py`, 새 `scripts/check_cli_live.py` | 중 | §8.1 시나리오 전부 통과, 기존 시험(`test_ai_cells` 143행 포함) 통과, 사용자가 M4~M7 확인 |
-| P2 화면 | 연결 방식 선택(설정 창), 상태 표시줄 상태(§0.2), 확인 창·진행 줄·툴팁·끝 문구의 비용/한도 분기(§0.4), `run_ai`의 키 확인을 연결 방식별 `check()`로 바꿈, 한도 도달·초과 사용 확인 창, 구독 처음 켤 때 약관·학습 설정 안내, 배포본에서 구독 숨김 | `hazop/app/settings_dialog.py`, `hazop/app/main_window.py`, `hazop/app/screens/results.py`(`make_client`·`run_ai`·`estimate`·`request_ai`·`usage_text`·`_progress_text`·`_on_finished`), `hazop/study/apikey.py`(설정에 `ai_method`·`claude_cli_path`·방식별 모델·`allow_overage`) | 중 | [화면 설계](../디자인/AI연결-화면설계.md)의 상태 화면이 가짜 CLI로 모두 재현됨, `verify-hazop`으로 상태 전환 캡처, 구독 실행에서 달러 표시 없음, 키 없는 구독 사용자가 분석을 시작할 수 있음 |
+| P2 화면 | 연결 방식 선택(설정 창), 상태 표시줄 상태(§0.2), 확인 창·진행 줄·툴팁·끝 문구의 비용/한도 분기(§0.4), `run_ai`의 키 확인을 연결 방식별 `check()`로 바꿈, 한도 도달·초과 사용 확인 창, 구독 처음 켤 때 약관·학습 설정 안내, 배포본에서 구독 숨김 | `hazop/app/settings_dialog.py`, `hazop/app/main_window.py`, `hazop/app/screens/results.py`(`make_client`·`run_ai`·`estimate`·`request_ai`·`usage_text`·`_progress_text`·`_on_finished`), `hazop/study/apikey.py`(설정에 `ai_method`·`claude_cli_path`·방식별 모델·`allow_overage`) | 중 | [화면 설계](../design/ai-connection-screens.md)의 상태 화면이 가짜 CLI로 모두 재현됨, `verify-hazop`으로 상태 전환 캡처, 구독 실행에서 달러 표시 없음, 키 없는 구독 사용자가 분석을 시작할 수 있음 |
 | P3 병렬·종료 처리 | `AiRunner`를 작업자 N개 구조로, 동시 수 설정(기본 1, 최대 2), §6.4 상태표대로 취소·창 닫기(기다림 2분/바로 끊음) | `hazop/app/ai_runner.py`, `hazop/app/screens/results.py`(`shutdown`·`cancel_ai`) | 소~중 | 동시 2에서 최종 결과 파일이 동시 1과 같음(칸 순서 무관), 상태표 전이를 시험으로 덮음, M8 통과 |
 | P4 문서·패키징 | HAZOP분석.md 모델 연결 표, 인터페이스.md §2.5, 결정로그, 배포 안내(내부용, 구독 연결 숨김), `packaging/verify_bundle.py`에 CLI 찾기 검사 추가 | 기획서·메모리·`packaging/verify_bundle.py` | 소 | M9 통과 |
 
@@ -540,7 +549,7 @@ P1은 `results.py`를 건드리지 않는다. P2가 `results.py`를 맡고, P3�
 
 ## 11. 화면 설계 §12에 대한 답 (2026-11-09)
 
-[화면 설계 §12](../디자인/AI연결-화면설계.md#12-기술-설계와-맞출-점) 10건에 대한 기술 설계 쪽 답이다. 구현 세션은 이 표를 그대로 따른다.
+[화면 설계 §12](../design/ai-connection-screens.md#12-기술-설계와-맞출-점) 10건에 대한 기술 설계 쪽 답이다. 구현 세션은 이 표를 그대로 따른다.
 
 | 번호 | 항목 | 답 | 반영 위치 |
 | --- | --- | --- | --- |

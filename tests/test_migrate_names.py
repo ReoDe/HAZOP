@@ -68,6 +68,12 @@ class RewriteText(unittest.TestCase):
         new, _ = mn.rewrite_text("README.md", text, rows, exists)
         self.assertEqual("[기획서](specs/interface.md)의 `기획서` 폴더, `specs/` 아래\n", new)
 
+    def test_urls_and_unmoved_siblings_inside_a_moved_folder_are_left_alone(self):
+        text = "`https://example.com/a/`와 `file://`, `ws(s)://`, 같은 폴더의 `a.png`와 `./a.png`\n"
+        new, changes = rewrite("docs/2026-11-07-screenshots-pdf/README.md", text)
+        self.assertEqual(text, new)
+        self.assertEqual([], changes)
+
     def test_backtick_repo_path_and_folder_prefix(self):
         text = ("그림은 `docs/screenshots-pdf/`와 `docs/2026-11-09-symbol-library/그림/범례/L1-001.png`에 있고 "
                 "`python scripts/x.py docs/2026-11-09-symbol-library/범례항목.csv`로 만든다.\n")

@@ -1,9 +1,18 @@
+---
+doc_id: HZ-DSN-04
+rev: 0
+status: review
+author: unknown
+reviewed: —
+approved: —
+---
+
 # AI 연결 화면 설계: API 키와 Claude 구독
 
 - 상태: 사용자 결정 반영(2026-11-09). D1은 '구독 기본', D2~D6은 권장안 ①로 채택했습니다(§11).
-- 기준 문서: 상태값·오류 분류·저장 필드·화면 이름은 [AI 연결 기술 설계](../기획서/AI연결-구독제.md) §0이 기준입니다. 이 문서는 그 값을 화면에 어떻게 보일지 정합니다. 어긋나거나 더 정해야 할 점은 §12에 모았습니다.
-- 기준 화면: 지금의 API 키 설정 창(커밋 62eedba, `hazop/app/settings_dialog.py`), 상태줄 AI 표시(`hazop/app/main_window.py` `_status_bar`), AI 실행 확인·진행 표시(`hazop/app/screens/results.py` `request_ai`·`_progress_text`·`_on_finished`), Excel 표지(`hazop/export/study_xlsx.py` `_summary_sheet`). 그 밖에 [인터페이스 기획](../기획서/인터페이스.md), [INTENT.md](../INTENT.md) §3.5·§3.8, 디자인 토큰 `hazop/app/tokens.py`.
-- 시안: [시안/AI연결/](시안/AI연결/index.html). `python 디자인/시안/AI연결/build.py`로 HTML과 1366·1920 PNG를 다시 만듭니다. 셸 모양은 [완성본 B안](시안/완성본/B-고밀도작업대/)의 CSS를 그대로 읽어 씁니다.
+- 기준 문서: 상태값·오류 분류·저장 필드·화면 이름은 [AI 연결 기술 설계](../specs/ai-subscription.md) §0이 기준입니다. 이 문서는 그 값을 화면에 어떻게 보일지 정합니다. 어긋나거나 더 정해야 할 점은 §12에 모았습니다.
+- 기준 화면: 지금의 API 키 설정 창(커밋 62eedba, `hazop/app/settings_dialog.py`), 상태줄 AI 표시(`hazop/app/main_window.py` `_status_bar`), AI 실행 확인·진행 표시(`hazop/app/screens/results.py` `request_ai`·`_progress_text`·`_on_finished`), Excel 표지(`hazop/export/study_xlsx.py` `_summary_sheet`). 그 밖에 [인터페이스 기획](../specs/interface.md), [INTENT.md](../INTENT.md) §3.5·§3.8, 디자인 토큰 `hazop/app/tokens.py`.
+- 시안: [mockups/ai-connection/](mockups/ai-connection/index.html). `python design/mockups/ai-connection/build.py`로 HTML과 1366·1920 PNG를 다시 만듭니다. 셸 모양은 [완성본 B안](mockups/final/b-dense-workbench/)의 CSS를 그대로 읽어 씁니다.
 - 단위: **호출**은 AI를 한 번 부르는 것이고, **칸**은 구간×편차 한 칸입니다. 호출 하나가 구간 하나의 같은 변수 편차를 묶어 처리하므로(`ai_cells.plan_units`) 호출 수와 칸 수는 다릅니다. 시안의 예는 구간 5개 × 편차 6개(유량 4, 압력 2) = 30칸, 호출 10회입니다.
 
 ## 1. 핵심 결정 요약
@@ -80,7 +89,7 @@
 
 ## 3. AI 연결 설정 대화상자
 
-시안: [1-연결설정-구독](시안/AI연결/1-연결설정-구독.html), [2-연결설정-API키](시안/AI연결/2-연결설정-API키.html), [3-연결설정-실행중](시안/AI연결/3-연결설정-실행중.html), [4-구독처음사용](시안/AI연결/4-구독처음사용.html), [10-배포본](시안/AI연결/10-배포본.html).
+시안: [1-연결설정-구독](mockups/ai-connection/1-settings-subscription.html), [2-연결설정-API키](mockups/ai-connection/2-settings-api-key.html), [3-연결설정-실행중](mockups/ai-connection/3-settings-running.html), [4-구독처음사용](mockups/ai-connection/4-subscription-first-use.html), [10-배포본](mockups/ai-connection/10-bundle.html).
 
 ### 3.1 들어가는 길
 
@@ -151,7 +160,7 @@
 
 ### 3.6 구독 처음 사용(이용 조건 창)
 
-시안: [4-구독처음사용](시안/AI연결/4-구독처음사용.html). 구독으로 처음 AI 분석을 실행할 때, 실행 확인 대화상자보다 먼저 한 번 뜹니다. 설정 창에서 Claude 구독을 고르고 '이 방식으로 사용'을 처음 누를 때도 같은 창이 뜹니다. 기술 설계 §4.3·§7.1과 U11(처음 한 번)의 내용을 화면 문구로 옮긴 것입니다.
+시안: [4-구독처음사용](mockups/ai-connection/4-subscription-first-use.html). 구독으로 처음 AI 분석을 실행할 때, 실행 확인 대화상자보다 먼저 한 번 뜹니다. 설정 창에서 Claude 구독을 고르고 '이 방식으로 사용'을 처음 누를 때도 같은 창이 뜹니다. 기술 설계 §4.3·§7.1과 U11(처음 한 번)의 내용을 화면 문구로 옮긴 것입니다.
 
 > **Claude 구독으로 분석하기 전에**
 >
@@ -177,7 +186,7 @@ AI 분석이 돌고 있으면 오른쪽 상세 맨 위에 안내 띠를 띄우�
 
 ### 3.8 배포본
 
-시안: [10-배포본](시안/AI연결/10-배포본.html). 배포본(설정 파일에 개발자 표시가 없음)에서는 구독을 숨깁니다(기술 설계 U3).
+시안: [10-배포본](mockups/ai-connection/10-bundle.html). 배포본(설정 파일에 개발자 표시가 없음)에서는 구독을 숨깁니다(기술 설계 U3).
 
 - 설정 창은 왼쪽 목록 없이 API 키 상세만 보입니다. 창 제목은 그대로 'AI 연결 설정'이고 폭은 600px로 줄입니다.
 - 상세 맨 위에 회색 한 줄: "이 배포본은 API 키로만 AI에 연결합니다."
@@ -202,7 +211,7 @@ AI 분석이 돌고 있으면 오른쪽 상세 맨 위에 안내 띠를 띄우�
 
 ## 5. 연결 칩(상태줄)
 
-시안: [5-연결칩](시안/AI연결/5-연결칩.html).
+시안: [5-연결칩](mockups/ai-connection/5-connection-chip.html).
 
 ### 5.1 자리와 모양
 
@@ -262,7 +271,7 @@ AI 연결
 
 ## 6. AI 실행 확인 대화상자
 
-시안: [6-실행확인](시안/AI연결/6-실행확인.html).
+시안: [6-실행확인](mockups/ai-connection/6-run-confirm.html).
 
 지금처럼 호출이 2회 이상일 때 띄웁니다. QMessageBox 대신 칸이 정해진 작은 대화상자(폭 460px)로 바꿉니다. 칸 이름이 왼쪽, 값이 오른쪽입니다.
 
@@ -283,7 +292,7 @@ AI 연결
 
 ## 7. 실행 중 표시와 도중 사건
 
-시안: [7-한도도달](시안/AI연결/7-한도도달.html).
+시안: [7-한도도달](mockups/ai-connection/7-limit-reached.html).
 
 ### 7.1 진행 줄
 
@@ -332,7 +341,7 @@ AI 연결
 
 ## 8. 결과 기록에 연결 방식 남기기
 
-시안: [8-결과기록](시안/AI연결/8-결과기록.html).
+시안: [8-결과기록](mockups/ai-connection/8-result-record.html).
 
 ### 8.1 ⑤ 화면
 
@@ -361,7 +370,7 @@ AI 연결
 
 ## 9. 상태별 안내 문구와 해결 동작
 
-시안: [9-상태안내](시안/AI연결/9-상태안내.html).
+시안: [9-상태안내](mockups/ai-connection/9-status-notice.html).
 
 문구는 '무슨 일인지 → 무엇을 하면 되는지' 순서로 씁니다. 단추 이름은 동작을 그대로 적습니다. 같은 띠를 설정 창 상태 칸 아래, 칩 상세 창, 실행 전 안내에 씁니다.
 
@@ -471,7 +480,7 @@ AI 연결
 
 ## 12. 기술 설계와 맞출 점
 
-[AI 연결 기술 설계](../기획서/AI연결-구독제.md)와 대조한 결과입니다. 1~4는 화면이 기술 설계에 더 바라는 것이고, 5~9는 확인이 필요한 것입니다.
+[AI 연결 기술 설계](../specs/ai-subscription.md)와 대조한 결과입니다. 1~4는 화면이 기술 설계에 더 바라는 것이고, 5~9는 확인이 필요한 것입니다.
 
 1. **구독 꺼짐 상태.** 기술 설계 §0.2에는 구독이 설정에서 꺼져 있을 때의 상태가 없습니다. 화면은 목록 항목에 '꺼짐'을 보이므로, 설정 값(`subscription_enabled`)과 켠 시각(이용 조건 확인 시각)을 저장할 자리가 필요합니다. (D1 결정 뒤: '꺼짐'은 없어졌고, 이용 조건 확인 시각과 '사용자가 고른 방식인지 앱이 정한 방식인지' 표시만 저장하면 됩니다. §3.6·§4)
 2. **요청 모델.** 칸 상세에 "Sonnet 5.5(요청 Opus 5.5)"를 보이려면 `ai_run`·`ai_log[]`에 `model_requested`가 필요합니다. 기술 설계 §4.3·M4는 실제 모델 확인까지만 적었습니다.
@@ -488,16 +497,16 @@ AI 연결
 
 | 파일 | 담은 것 |
 | --- | --- |
-| `시안/AI연결/index.html` | 시안 목차 |
-| `1-연결설정-구독.html` | 설정 창, Claude 구독 상세(연결됨, 사용량 앎) |
-| `2-연결설정-API키.html` | 설정 창, API 키 상세(보기만 하는 중, '이 방식으로 사용' 단추) |
-| `3-연결설정-실행중.html` | 설정 창, 실행 중 잠금 띠(모델 선택 비활성) |
-| `4-구독처음사용.html` | 구독으로 처음 분석할 때의 이용 조건 창 |
-| `5-연결칩.html` | 상태줄 칩 상태별(넓은·좁은 형식), 칩 상세 창 |
-| `6-실행확인.html` | 실행 확인 대화상자 API 키·구독(한도 앎·모름)·고정 응답 |
-| `7-한도도달.html` | ⑤ 화면, 한도 도달 띠, '한도로 멈춤'·'분석 전' 칸, 칩, 재설정 토스트 |
-| `8-결과기록.html` | ⑤ 칸 상세 출처 줄, 시험 결과 띠, Excel 표지·워크시트 열 |
-| `9-상태안내.html` | 상태별 해결 띠 |
-| `10-배포본.html` | 배포본 설정 창(API 키만), 칩 |
+| `mockups/ai-connection/index.html` | 시안 목차 |
+| `1-settings-subscription.html` | 설정 창, Claude 구독 상세(연결됨, 사용량 앎) |
+| `2-settings-api-key.html` | 설정 창, API 키 상세(보기만 하는 중, '이 방식으로 사용' 단추) |
+| `3-settings-running.html` | 설정 창, 실행 중 잠금 띠(모델 선택 비활성) |
+| `4-subscription-first-use.html` | 구독으로 처음 분석할 때의 이용 조건 창 |
+| `5-connection-chip.html` | 상태줄 칩 상태별(넓은·좁은 형식), 칩 상세 창 |
+| `6-run-confirm.html` | 실행 확인 대화상자 API 키·구독(한도 앎·모름)·고정 응답 |
+| `7-limit-reached.html` | ⑤ 화면, 한도 도달 띠, '한도로 멈춤'·'분석 전' 칸, 칩, 재설정 토스트 |
+| `8-result-record.html` | ⑤ 칸 상세 출처 줄, 시험 결과 띠, Excel 표지·워크시트 열 |
+| `9-status-notice.html` | 상태별 해결 띠 |
+| `10-bundle.html` | 배포본 설정 창(API 키만), 칩 |
 
 모든 시안의 데이터(사용률, 경로, 비용, 계정)는 가상 예시입니다. 1366·1920 PNG는 `build.py`가 크롬 헤드리스로 찍습니다.

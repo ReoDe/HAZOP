@@ -147,8 +147,8 @@
 
 ## 8. 후속 제안 → 반영됨(같은 변경에서 designer·planner가 디자인 문서·시안·인터페이스 §4를 갱신)
 
-- `디자인/지식그래프화면.md` §1.2 표(27행 계장 "약 2.8:1 (3:1 미달, 기존 토큰)")와 40·246행 계장 대비 메모는 W5 뒤 값(`#0d97d6`, 흰 바탕 3.27:1)과 어긋난다. `디자인/시안/*.html` `:root`의 옛 값도 같다. `디자인/`은 다른 담당이 고치고 있어 이번에 고치지 않았다.
-- `기획서/인터페이스.md` §4.1 345~349행의 `--muted` `#6b7280`, `--instrument` `#0ea5e9`, `--unclassified` `#9ca3af`, `--measurement_connection` `#d97706`, `--risk-cond-*` `#d97706`은 W5 값과 다르다. [w4 §5.1](w4-tokens.md)의 "값의 정본은 `hazop/app/tokens.py`" 문구를 반영하면서 값 칸을 지우거나 W5 값으로 바꿀 것을 제안한다.
+- `design/kg-screen.md` §1.2 표(27행 계장 "약 2.8:1 (3:1 미달, 기존 토큰)")와 40·246행 계장 대비 메모는 W5 뒤 값(`#0d97d6`, 흰 바탕 3.27:1)과 어긋난다. `design/mockups/*.html` `:root`의 옛 값도 같다. `design/`은 다른 담당이 고치고 있어 이번에 고치지 않았다.
+- `specs/interface.md` §4.1 345~349행의 `--muted` `#6b7280`, `--instrument` `#0ea5e9`, `--unclassified` `#9ca3af`, `--measurement_connection` `#d97706`, `--risk-cond-*` `#d97706`은 W5 값과 다르다. [w4 §5.1](w4-tokens.md)의 "값의 정본은 `hazop/app/tokens.py`" 문구를 반영하면서 값 칸을 지우거나 W5 값으로 바꿀 것을 제안한다.
 
 ## 9. 검증 결과(전용 venv `%USERPROFILE%\.hazop\venv-py312`)
 

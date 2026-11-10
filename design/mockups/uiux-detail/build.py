@@ -1,7 +1,7 @@
 """UIUX 디테일 개선 시안 생성기 (B안 고밀도 작업대 + A안 단계 표시 + 옵시디언식 셸).
 
-python 디자인/시안/UIUX-디테일/build.py          HTML만 다시 만든다
-python 디자인/시안/UIUX-디테일/build.py --shoot  Chrome 헤드리스로 1366×768·1920×1080 PNG도 찍는다
+python design/mockups/uiux-detail/build.py          HTML만 다시 만든다
+python design/mockups/uiux-detail/build.py --shoot  Chrome 헤드리스로 1366×768·1920×1080 PNG도 찍는다
 
 색은 hazop/app/tokens.py COLORS를 그대로 읽는다(앱 코드는 고치지 않음). 데이터는 가상 표본이다.
 """
@@ -409,8 +409,8 @@ def screen_empty():
     return page("⑤ 빈 상태", "5", "123", [(False, "④ 구간 · SNP-M-102", False), (True, "⑤ 결과 · SNP-M-102", False)], body, rel, st)
 
 
-SCREENS = [("1-결과-셸", "⑤ 결과 + 셸 전체", screen5), ("2-구간-미리보기", "④ 구간 + 미리보기", screen4),
-           ("3-명령팔레트", "명령 팔레트", screen_palette), ("4-등록-진행오류", "① 진행·오류", screen1), ("5-결과-빈상태", "⑤ 빈 상태", screen_empty)]
+SCREENS = [("1-results-shell", "⑤ 결과 + 셸 전체", screen5), ("2-region-preview", "④ 구간 + 미리보기", screen4),
+           ("3-command-palette", "명령 팔레트", screen_palette), ("4-register-progress-error", "① 진행·오류", screen1), ("5-results-empty", "⑤ 빈 상태", screen_empty)]
 
 
 def build():

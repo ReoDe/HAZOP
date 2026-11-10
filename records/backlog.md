@@ -1,6 +1,15 @@
+---
+doc_id: HZ-REC-03
+rev: 0
+status: review
+author: unknown
+reviewed: —
+approved: —
+---
+
 # 남은 작업
 
-[메모리 운영](README.md) · [MVP와 후속 범위](../기획서/전체기획.md#mvp)
+[메모리 운영](README.md) · [MVP와 후속 범위](../specs/overview.md#mvp)
 
 기록일: 2026-11-04, 갱신: 2026-11-10. 아래 항목은 미구현·미결정입니다. 구현과 검증이 확인되면 해당 항목을 삭제합니다.
 
@@ -37,7 +46,7 @@
 
 ## 사용자 제공 대기
 
-- AI·분석 품질 평가 기준(편차별 정답 원인·결과·보호수단 등). 받으면 [품질 평가](../기획서/HAZOP분석.md) 방법을 확정합니다.
+- AI·분석 품질 평가 기준(편차별 정답 원인·결과·보호수단 등). 받으면 [품질 평가](../specs/hazop-analysis.md) 방법을 확정합니다.
 
 ## 구현 전 결정
 
@@ -77,7 +86,7 @@
 
 - `run_app --screenshots`에 ③ 화면 추가(현재 `check_kg_screen --screenshots`로 촬영): [지식그래프 트랙](../docs/2026-11-05-knowledge-graph/README.md) 소유
 
-- 패키징 남은 항목: Pretendard 글꼴은 넣지 않음으로 결정(2026-11-10)([인터페이스 §9](../기획서/인터페이스.md)): 작업 공간 [docs/2026-11-05-packaging](../docs/2026-11-05-packaging/README.md)
+- 패키징 남은 항목: Pretendard 글꼴은 넣지 않음으로 결정(2026-11-10)([인터페이스 §9](../specs/interface.md)): 작업 공간 [docs/2026-11-05-packaging](../docs/2026-11-05-packaging/README.md)
 - T2 W7 `os.link` 비NTFS 실측(장비 필요): [패키징 트랙](../docs/2026-11-05-packaging/README.md)
 - 다른 PC·Windows 10 실기기 실행 확인: [패키징 트랙](../docs/2026-11-05-packaging/README.md)
 - (완료 2026-11-10, 단위 B) spec의 sys.path 삽입 정리(scripts/ 맨 앞 삽입 후 build_package import): [패키징 트랙](../docs/2026-11-05-packaging/decisions.md) D11
@@ -237,7 +246,7 @@ HEAD d411d15(5028fcd 포함) 재실행 결과(`출력/사용자검증/2026-11-07
 
 ## 초기사건 인계 묶음 구현(2026-11-09)
 
-로그인 계정이 바뀌면서 하위 세션 관리 도구가 끊겼고, 구현 세션은 커밋을 하나도 남기지 못했습니다. 설계와 결정은 끝났으므로 아래 순서로 pstack 세션에서 다시 시작합니다. 근거는 [초기사건 출력 설계](../기획서/초기사건-출력설계.md)(8e01a77)이고, 결정 E1~E10은 확정, E9는 보류입니다.
+로그인 계정이 바뀌면서 하위 세션 관리 도구가 끊겼고, 구현 세션은 커밋을 하나도 남기지 못했습니다. 설계와 결정은 끝났으므로 아래 순서로 pstack 세션에서 다시 시작합니다. 근거는 [초기사건 출력 설계](../specs/ie-output-design.md)(8e01a77)이고, 결정 E1~E10은 확정, E9는 보류입니다.
 
 - (완료 2026-11-09) P1 ⑤ 보강: `safeguards[].actuation`, `cause_kind`, `ie_hint`(`set_ie_hint`로 고치고 승인 상태 유지), `consequence_basis`, 일반 범주 기준표 데이터 파일, AI 프롬프트, 검토 화면 칩, ⑤ Excel 열 5개, 품질 경고 2종(완화 결과로 적힘, 작동 방식 미확인)
 - (완료 2026-11-09) P2 IE 인계 묶음 내보내기: JSON 원본과 Excel(시트 0·1·6·7·8·9부터), 승인 항목만, 위험도 제외
@@ -324,7 +333,7 @@ HEAD d411d15(5028fcd 포함) 재실행 결과(`출력/사용자검증/2026-11-07
 ## 데이터·참고자료 정리 ③ 후속(2026-11-09)
 
 - `hazop/study/migrate.py:240` 백업 폴더 이름이 같은 초에 겹치면 앞 백업을 덮어씀(기존 결함. 저장 결함 묶음과 함께 고침)
-- `기획서/HAZOP기법지침.md` 16행의 원본 위치 `참고자료/HAZOP 기법/`을 `자원/참고자료/HAZOP 기법/`으로 바꿔야 함. 묶음·해시 고정 파일이라 `GUIDE_SHA256` 갱신과 같은 작업 단위에서 함
+- `specs/hazop-method-guide.md` 16행의 원본 위치 `참고자료/HAZOP 기법/`을 `자원/참고자료/HAZOP 기법/`으로 바꿔야 함. 묶음·해시 고정 파일이라 `GUIDE_SHA256` 갱신과 같은 작업 단위에서 함
 - 앱 시작 때 옛 위치(저장소 `데이터/`·`출력/`)에 남은 작업 파일 경고 미구현(설계 §4 ③b 7번)
 - 구간별 적용 판단(`applicability-region-*.json`)을 작업 쪽으로 옮길지 결정(D7 후속)
 - 경미: `query_graph` 기본 그래프 위치가 `HAZOP_WORK_ROOT`를 따르지 않고 `DEV_WORK_ROOT`에 고정됨
@@ -354,5 +363,5 @@ HEAD d411d15(5028fcd 포함) 재실행 결과(`출력/사용자검증/2026-11-07
 - 뷰어 template의 Pretendard 우선순위가 문서와 다름
 - lock_probe run-2가 한 번 실패(첫 창 state=other)한 뒤 run-3이 통과함. 재현성 확인 필요. after_kill 뒤 잠금 파일이 남음(재기동은 정상)
 - 1366×768에서 ④ 오른쪽 패널 버튼 줄이 잘림(`stage4-구간-1366x768.png`)
-- 다른 PC·Windows 10 실제 실행은 사용자 확인 대기(`packaging/다른PC-점검표.md`)
+- 다른 PC·Windows 10 실제 실행은 사용자 확인 대기(`packaging/other-pc-checklist.md`)
 - preflight 임시 폴더 2.2GB 경고

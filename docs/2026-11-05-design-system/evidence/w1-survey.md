@@ -53,7 +53,7 @@
 
 - 분할기는 원인이 아니다. ④ 분할기 최소 416 / ⑤ 592(offscreen)로, 도구줄보다 훨씬 작다. `setSizes([460, 560, 430])`(`analysis.py:276`)·`([330, 380, 660])`(`review.py:774`)는 초기 비율이며 최소 폭을 늘리지 않는다.
 - 칩 문구만 줄였을 때의 계산: "결과 검증 통과" 칩은 128 / 106px이다. ④ 화면 최소 폭은 약 1041 / 987로 줄어든다(1425−512+128, 1282−401+106). [추론] 실제 재배치 뒤 재측정이 필요하다.
-- offscreen과 windows의 차이: offscreen에서 `QFontInfo(QFont("Malgun Gothic")).family()`가 빈 문자열이다. 같은 문구 폭이 572 vs 307px이다(한글 10자는 130 vs 130으로 같고, 라틴·숫자 폭이 크게 다르다). 메모리 `남은작업.md:49`의 1425/1585는 offscreen 값이다.
+- offscreen과 windows의 차이: offscreen에서 `QFontInfo(QFont("Malgun Gothic")).family()`가 빈 문자열이다. 같은 문구 폭이 572 vs 307px이다(한글 10자는 130 vs 130으로 같고, 라틴·숫자 폭이 크게 다르다). 메모리 `backlog.md:49`의 1425/1585는 offscreen 값이다.
 
 ### 1.4 테스트 관련 사실
 
@@ -68,7 +68,7 @@
 
 ## 2. 독립 실행 뷰어와 앱 토큰의 색 차이
 
-기준: 앱 토큰 `hazop/app/tokens.py:11-44`(`COLORS`), `web_css()` `:78-106`, 인터페이스 §4.1(`기획서/인터페이스.md:334-353`). 앱 안에서는 `web_css()`가 `:root`를 덮어써서 아래 차이가 보이지 않는다. 차이는 독립 실행(브라우저로 연 `template.html`)에서만 나타난다.
+기준: 앱 토큰 `hazop/app/tokens.py:11-44`(`COLORS`), `web_css()` `:78-106`, 인터페이스 §4.1(`specs/interface.md:334-353`). 앱 안에서는 `web_css()`가 `:root`를 덮어써서 아래 차이가 보이지 않는다. 차이는 독립 실행(브라우저로 연 `template.html`)에서만 나타난다.
 
 | 이름 | 독립 뷰어 값(위치) | 앱 값(위치) | 용도 | 판정 |
 |---|---|---|---|---|
@@ -104,7 +104,7 @@
 | `--piping_element` | `#6366f1` | 4.47 | 4.09 | 4.36 | 통과 |
 | 그 외 `--equipment` 6.70, `--valve` 5.47, `--signal_connection` 5.70, `--unresolved`·`--hl-cause` 4.83, `--hl-safeguard` 4.71, `--ui` 5.17 | | | | | 통과 |
 
-T1 소유 토큰(값 변경 대상 아님, 참고): `--kg-rel-docpos` 1.48, `--kg-flag` 2.15, `--a1-mixed`·`--comp-4` 3.06(bg 2.81), `--a1-unknown`·`--comp-other` 2.54, `--a1-off` 1.47, `--comp-2` 2.25, `--comp-5` 2.31이 흰색 또는 bg 기준으로 3:1에 미달한다. 이 중 `docpos`·`a1-off`는 의도적으로 옅게 한 색이다(`디자인/지식그래프화면.md:96,115`). 지식그래프화면.md §1.2의 표기값(계장 약 2.8:1 등)은 흰 바탕 계산값과 일치한다.
+T1 소유 토큰(값 변경 대상 아님, 참고): `--kg-rel-docpos` 1.48, `--kg-flag` 2.15, `--a1-mixed`·`--comp-4` 3.06(bg 2.81), `--a1-unknown`·`--comp-other` 2.54, `--a1-off` 1.47, `--comp-2` 2.25, `--comp-5` 2.31이 흰색 또는 bg 기준으로 3:1에 미달한다. 이 중 `docpos`·`a1-off`는 의도적으로 옅게 한 색이다(`design/kg-screen.md:96,115`). 지식그래프화면.md §1.2의 표기값(계장 약 2.8:1 등)은 흰 바탕 계산값과 일치한다.
 
 ### 3.2 글자 쌍(4.5:1)
 
@@ -139,10 +139,10 @@ T1 소유 토큰(값 변경 대상 아님, 참고): `--kg-rel-docpos` 1.48, `--k
 | `hazop/app/screens/register.py:210-344` | `#b91c1c`·`#92400e`·`#6b7280`·`#15803d` 인라인 13줄 | 편집 허용 범위 밖 |
 | `hazop/app/screens/review.py:377,760` | `#b91c1c`, `#fca5a5`(`setStyleSheet`) | T6(배치·폭만 허용 → 색은 범위 밖) |
 | `hazop/kg/screen_template.html:128` | 대체값 `#9ca3af` | T1 |
-| `기획서/인터페이스.md:334-363` §4.1·§4.2 | 토큰 표(일부만: `ink-2`·`line-strong`·`ui-weak`·상태·출처 토큰 없음) | T6(§4만) |
-| `디자인/시안/README.md:50-67` §3 | 토큰 제안 표(간격 `--sp-*`, 모서리 `--r-*`, 그림자, `--mono` 포함) | T6 |
-| `디자인/시안/interface-mockup.html:12-37` | 시안 `:root`(앱 `COLORS`와 값 일치, 간격·모서리 토큰 추가) | T6 |
-| `디자인/지식그래프화면.md:19-40,85-122,198-209`, `디자인/시안/kg-graph-mockup.html` | ③ 토큰 | T1 |
+| `specs/interface.md:334-363` §4.1·§4.2 | 토큰 표(일부만: `ink-2`·`line-strong`·`ui-weak`·상태·출처 토큰 없음) | T6(§4만) |
+| `design/mockups/README.md:50-67` §3 | 토큰 제안 표(간격 `--sp-*`, 모서리 `--r-*`, 그림자, `--mono` 포함) | T6 |
+| `design/mockups/interface-mockup.html:12-37` | 시안 `:root`(앱 `COLORS`와 값 일치, 간격·모서리 토큰 추가) | T6 |
+| `design/kg-screen.md:19-40,85-122,198-209`, `design/mockups/kg-graph-mockup.html` | ③ 토큰 | T1 |
 | `tests/test_app.py:117-130` | 토큰 값 일부 고정(`valve`, `hl-safeguard`, 글꼴) | 편집 허용 범위 밖(T6 검사는 `tests/test_design.py`) |
 
 ### 4.1 단일 출처화 제안 [추론]
@@ -161,10 +161,10 @@ T1 소유 토큰(값 변경 대상 아님, 참고): `--kg-rel-docpos` 1.48, `--k
 | W3 | offscreen 측정 기준 정리 | 테스트에서 글꼴을 고정하는 방법(offscreen에 글꼴 등록 등)을 정하거나, offscreen 값과 windows 값 중 판정 기준을 결정(decisions.md) | `tests/test_design.py` | W2와 함께 결정 |
 | W4 | 토큰 단일 출처 + 검사 | `check_design.py`가 4.1의 (a)(b)를 검사하고 rc=0. `qss()`·`web_css()`·`widgets.py`의 하드코딩 색 0개 | `tokens.py`, `widgets.py`, `scripts/check_design.py` | `tokens.py`는 T1 W7과 순차, `kg-*` 값 불변 |
 | W5 | 독립 뷰어 색 통일 | `template.html` `:root` = `tokens.COLORS`(겹치는 이름), `--selected` = `--ui`, 하드코딩 색은 `var()`. `check_viewer.py`·`check_viewer_paths.js`·`test_template_unchanged_script_count` 통과 | `hazop/viewer/template.html`(색·CSS만) | T1 W7과 순차 |
-| W6 | 대비 개선 | 3.1·3.2 미달 항목별로 값을 바꿀지, 모양 단서로 대체할지 결정을 등록한다. 바꾼 값은 `check_design.py` 대비 검사(3:1/4.5:1)를 통과한다. 후보: `--instrument`, `--unclassified`, `--measurement_connection`(bg), `--muted` on `--bg`, 위험도 제안 칩 글자 | `tokens.py`, `디자인/` | 값 변경은 ②④⑤ 화면과 ③(공유 토큰)에 영향. T1과 협의 |
-| W7 | 인터페이스 §4 정리 | §4.1 표가 `tokens.py`와 일치하거나 정본 위치를 명시. T2 글꼴 결정 반영 | `기획서/인터페이스.md` §4 | T1·T2와 같은 시점 편집 금지 |
+| W6 | 대비 개선 | 3.1·3.2 미달 항목별로 값을 바꿀지, 모양 단서로 대체할지 결정을 등록한다. 바꾼 값은 `check_design.py` 대비 검사(3:1/4.5:1)를 통과한다. 후보: `--instrument`, `--unclassified`, `--measurement_connection`(bg), `--muted` on `--bg`, 위험도 제안 칩 글자 | `tokens.py`, `design/` | 값 변경은 ②④⑤ 화면과 ③(공유 토큰)에 영향. T1과 협의 |
+| W7 | 인터페이스 §4 정리 | §4.1 표가 `tokens.py`와 일치하거나 정본 위치를 명시. T2 글꼴 결정 반영 | `specs/interface.md` §4 | T1·T2와 같은 시점 편집 금지 |
 
-**T1 W7과 순서를 맞춰야 할 파일**: `hazop/app/screens/analysis.py`, `hazop/app/screens/review.py`(W2), `hazop/app/tokens.py`(W4·W6), `hazop/viewer/template.html`(W5), `기획서/인터페이스.md`(W7, T1·T2와도 순차), `디자인/`(W6).
+**T1 W7과 순서를 맞춰야 할 파일**: `hazop/app/screens/analysis.py`, `hazop/app/screens/review.py`(W2), `hazop/app/tokens.py`(W4·W6), `hazop/viewer/template.html`(W5), `specs/interface.md`(W7, T1·T2와도 순차), `design/`(W6).
 
 ## 6. 미확인·한계
 

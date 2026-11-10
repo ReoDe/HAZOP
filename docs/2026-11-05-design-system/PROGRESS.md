@@ -18,7 +18,7 @@
 | `W7` | 완료(D10·D11) | 그래프 노드 선택 표시(권장안 A: 흰 테두리 유지 + 바깥 `--ui` 고리) | 독립 뷰어·앱 내장 그래프에서 설비 노드 선택 시 고리 자리에 `--ui` 화소(offscreen 화소 판정 테스트), 명암비 쌍 `card`/`equipment` 추가 후 check_design rc 0, 경로 강조·도면 선택 회귀 없음 | `W5`·`W6`, 편집 범위 D10 |
 | `W8` | 완료(D13·D14, 재작업 2회 뒤 총괄 직접 수정) | 반투명 관계선 대비(사용자 결정: 색만으로 구분되는 선만 3:1, 모양·범례로도 구분되는 보조 선은 예외. 총괄 판정: has_endpoint 예외 아님) | 선 종류별 판정 표(근거 파일:행), 관계선 모두 흰 도면 합성 3:1 이상(`check_design` 판정으로 강제. 검사가 막는 범위: 기본·종류별 규칙 밖 선택자의 불투명도 < 1, @media 안, !important, 선에 닿는 filter: opacity(), 선 규칙 CSS 중첩, HTML·JS 직접 설정. 휴리스틱 한계는 [w8 §8](evidence/w8-translucent-lines.md)), unittest·check_design windows·check_kg_screen·check_viewer_paths 통과, check_viewer(저장소 기본 경로)는 QA 확인 예정 | `W5`(D7), 사용자 결정 2026-11-06 |
 | `W9` | 완료(D15, 검토 승인) | 독립 뷰어 색 허용 목록 비우기(D5 열린 항목, 2색 통일) | 템플릿 하드코딩 3곳을 앱 토큰 `var()`로, `VIEWER_COLOR_ALLOW` 비움·다시 채우면 테스트 실패, 바꾼 값이 바탕 위 W5 기준(글자 4.5:1·그래픽 3:1) 통과·대비 쌍 등록, check_design windows·check_kg_screen·check_viewer·check_viewer_paths·unittest 통과 | `W4`(D5)·`W5`(D7), 총괄 결정(사용자 위임 2026-11-06) |
-| `W10` | 구현 완료(D16, 검토 대기) | ④⑤ 웹 강조 범례 위치·웹 구조 검증 칩 한국어(`디자인/화면명세.md` §9.2 결함 D2·D3) | 범례가 줌·맞춤 버튼(`#zoom`)과 겹치지 않음 — windows 100%·125%, 창 폭 1366·1440에서 ④⑤ 범례·떠 있는 카드 겹침 0을 `check_design` 판정으로 강제, 웹 칩 값 `통과`/`차단`(매핑은 템플릿 한 곳), 색 토큰 값 무변경, unittest·check_design windows·check_viewer·check_kg_screen·check_viewer_paths 통과 | 총괄 결정(권고안, 사용자 위임 2026-11-06). `webview.py`(T1 소유)는 범례 마크업만 |
+| `W10` | 구현 완료(D16, 검토 대기) | ④⑤ 웹 강조 범례 위치·웹 구조 검증 칩 한국어(`design/screen-spec.md` §9.2 결함 D2·D3) | 범례가 줌·맞춤 버튼(`#zoom`)과 겹치지 않음 — windows 100%·125%, 창 폭 1366·1440에서 ④⑤ 범례·떠 있는 카드 겹침 0을 `check_design` 판정으로 강제, 웹 칩 값 `통과`/`차단`(매핑은 템플릿 한 곳), 색 토큰 값 무변경, unittest·check_design windows·check_viewer·check_kg_screen·check_viewer_paths 통과 | 총괄 결정(권고안, 사용자 위임 2026-11-06). `webview.py`(T1 소유)는 범례 마크업만 |
 
 작업 추가·분할은 [`README.md`](README.md)의 확장 규칙을 따른다. 기존 ID·완료 이력·증거는 보존하고 새 작업에는 관련 결정 ID를 연결한다.
 
@@ -73,7 +73,7 @@
 | 2026-11-05 19:00 | D3: 지원 화면 기준 확정(1366×768 100%, 1920×1080 125%), 작업 영역 높이 기준은 `W3`에서 적용 |
 | 2026-11-05 22:00 | `W3` 구현 완료(검토 대기): ④⑤ 칩·라벨 줄임표·툴팁, `check_design.py` 작업 영역·125% 판정·지식그래프 실행 상태, `test_design.py` 원인 단정 테스트 갱신. D4(안) 등록 |
 | 2026-11-05 22:40 | `W3` 재작업 1회차: ④ 단서 줄바꿈 라벨 분리, 툴팁은 줄였을 때만, 125% DPR 확인·⑤ 폼 판정·작업 영역 크기 측정 추가, 테스트 보강. D4 확정(총괄 승인) |
-| 2026-11-05 22:50 | `W3` 완료: 재작업 1회 뒤 Claude 승인·Codex 승인. 총괄 직접 반영 — D4에 그림 테스트 글꼴 등록 예외 명시, `test_design.real_font`에 offscreen 기본 글꼴 부작용 기록. 인터페이스 §4 제안 문구는 `기획서/인터페이스.md` 담당 순서에 맞춰 후속 반영 |
+| 2026-11-05 22:50 | `W3` 완료: 재작업 1회 뒤 Claude 승인·Codex 승인. 총괄 직접 반영 — D4에 그림 테스트 글꼴 등록 예외 명시, `test_design.real_font`에 offscreen 기본 글꼴 부작용 기록. 인터페이스 §4 제안 문구는 `specs/interface.md` 담당 순서에 맞춰 후속 반영 |
 | 2026-11-05 23:30 | `W4` 구현 완료(검토 대기): 독립 뷰어 `--valve`·`--selected`·선택 채움 통일, 하드코딩 색 `var()`화, `check_design.py` 색 비교·`--colors-only`, `test_design.ViewerColorTest`, `widgets.risk_chip` 토큰 참조. D5(안) 등록 |
 | 2026-11-05 23:55 | `W4` 재작업 1회차(Claude·Codex 조건부 승인): 색 검사를 주석 제거·규칙 단위 파싱, `:root` 단일·재선언 거부, `var()` 공백·대체값·중첩, 템플릿 전체 색 리터럴(hex 3·4·6·8, rgb/rgba/hsl, 이름 색), (선택자·속성·값) 허용 목록으로 보강. 재현 입력 테스트 추가. D5① 문구 정정, `W6` 등록(앱 코드 hex 0개·check_viewer_paths), 인터페이스 §4.1 제안·W5 관찰 기록 |
 | 2026-11-06 01:40 | `W4` 재작업 1회차 이어서(담당 교체): HTML·JS의 이름 색 위치(속성 `fill="…"`, JS 대입·객체 키·`setAttribute`) 검사 추가, 재현 입력 5종(`rgb(1,2,3)`·이름 색 4위치)·W4 이전 템플릿(`2178ddf`) 10건 실패·HTML·JS 정상 문법 통과 테스트 추가. D5 확정(총괄 승인, 권고안), `W6`의 check_viewer_paths 수정 완료 반영 |
@@ -81,7 +81,7 @@
 | 2026-11-06 02:20 | `W4` 완료(D6): 최종 재검토 Claude 승인·Codex 반려(선택 채움 우회 2건). 총괄 직접 수정(클래스 집합 판정, 기준 규칙 fill 중복 금지), test_design 25 OK, check_design --colors-only rc 0 |
 | 2026-11-06 02:30 | `W5` 구현 완료(검토 대기): `check_design.py` 명암비 검사(`CONTRAST_PAIRS` 62쌍, WCAG 2.1 4.5:1·3:1, 결과 JSON·rc 합산), `tokens.py`·`template.html` `:root` 5개(뷰어는 4개) 명도 조정, `test_design.ContrastTest` 4건, D7 기록. unittest 629 OK, check_design windows rc 0 |
 | 2026-11-06 03:00 | `W5` 재작업 1회차(Claude·Codex 조건부 승인): 쌍 5개 추가(67쌍)·근거 파일:행, 반투명 글자색 rgba 실패·채움·그림자 허용, 반투명 합성 대비 보고(rc 미반영), 진단 소수 넷째 자리, test_design 필수 쌍·기준 고정·경계값·미달 쌍 집합·반투명 테스트, evidence `--bg` 근거 정정·여유 유지 근거·미분류/보조 글자 1.49 한계, 열린 항목 2건 등록, D7 문구 갱신 |
-| 2026-11-06 | `기획서/인터페이스.md` §4 반영(W3·W4·W5 후속): §4.1 정본 `tokens.py`(D5)·검사 강제·명암비 D7 명시, 값 칸 삭제, 선택 문구 현재형. §4.2에 줄임표·툴팁·줄바꿈 단서, 지원 화면·작업 영역(D3·D4) 추가 |
+| 2026-11-06 | `specs/interface.md` §4 반영(W3·W4·W5 후속): §4.1 정본 `tokens.py`(D5)·검사 강제·명암비 D7 명시, 값 칸 삭제, 선택 문구 현재형. §4.2에 줄임표·툴팁·줄바꿈 단서, 지원 화면·작업 영역(D3·D4) 추가 |
 | 2026-11-06 05:30 | `W6` 재작업 2회차(Claude 조건부 승인·Codex 반려, 마지막 회차): hex 판정을 기본 색 + 예외(href·src·url, 객체 이름, 선택자 문맥)로, COLORS 제외를 AST 위치(열 포함)로, 허용 목록을 문맥(최상위 문장·선택자)에 묶음, CSS 주석·`url(…)` 오탐 제거, 보고 리터럴 따옴표 정리, D8에 66쌍 기록, 검사 한계 기록. [w6 §4](evidence/w6-app-colors.md) |
 | 2026-11-06 04:30 | `W6` 재작업 1회차(Claude·Codex 조건부 승인): tokens.py `COLORS` 밖 리터럴 정리(`on-fill`·`ok-bg`·`CARD_SHADOW`), 명암비 쌍 토큰 이름화(66쌍), 검사를 tokenize·ast 기반으로(주석 제외·색 문맥·선언 값 전체·여러 줄·원본 행), T1 파일 제외, D8 문구 정정(`render.py:146`), 권장안 A 보완. [w6](evidence/w6-app-colors.md) |
 | 2026-11-06 03:30 | `W6` 구현 완료(검토 대기): D8 편집 범위 확장 등록(README §8 반영), 앱 코드 색 리터럴 41곳 토큰 참조화(`tokens.CARD_SHADOW` 추가), `check_design` 앱 코드 색 리터럴 검사, `test_design.AppColorTest` 6건. [w6-app-colors.md](evidence/w6-app-colors.md) |

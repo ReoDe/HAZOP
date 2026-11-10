@@ -5,7 +5,7 @@
 <title>HAZOP 데스크톱 인터페이스 시안 — SNP-M-102 가압기 구간</title>
 <!--
   클릭 가능한 디자인 시안. 외부 네트워크 의존 없음(CDN·웹 글꼴 없음).
-  기준 문서: 기획서/인터페이스.md(초안). 데이터: 출력/분석/region-SNP-M-102-pzr/analysis-20261104T065638Z-2e14dd/analysis.json 발췌.
+  기준 문서: specs/interface.md(초안). 데이터: 출력/분석/region-SNP-M-102-pzr/analysis-20261104T065638Z-2e14dd/analysis.json 발췌.
   저장·출력·등록·분석은 모두 흉내(토스트)이며 파일을 쓰지 않는다.
 -->
 <style>
@@ -1154,7 +1154,7 @@ function renderEvidence(sc) {
     <button class="link" id="ev-tog">${evOpen ? "접기" : "목록"}</button></div>` +
     (S.mismatch ? '<div class="note" style="color:var(--warn-ink)">그래프 버전 불일치 — 도면 강조를 끄고 모두 미표시로 셉니다</div>' : "") +
     (evOpen ? `<div class="lst">${ev.map(i => `<div><span style="${i.cls === "none" ? "color:var(--muted)" : i.cls === "guess" ? "color:var(--hl-path)" : ""}">${CL[i.cls]}</span><span><span class="chip id">${esc(i.id)}</span> ${esc(i.role)} · ${esc(tagOf(i.id))} <span class="muted">${esc(i.why)}</span></span></div>`).join("")}
-      <div class="note">ID 단위로 한 번씩 셉니다. 분류 기준은 디자인/시안/README.md §5.2 권고안.</div></div>` : "");
+      <div class="note">ID 단위로 한 번씩 셉니다. 분류 기준은 design/mockups/README.md §5.2 권고안.</div></div>` : "");
 }
 $("#f-ev").addEventListener("click", e => { if (e.target.id === "ev-tog") { evOpen = !evOpen; renderEvidence(curScen()); } });
 

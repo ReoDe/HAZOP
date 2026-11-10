@@ -34,18 +34,16 @@ EXEMPT = {
         ("N1", "tests/fixtures/apr1400/*", "DCD 원본 파일 이름이 기준값의 키다"),
         ("N8", "* @ " + NAMING_DOC, "대응표가 옛 이름을 일부러 적는다"),
         ("N9", "docs/2026-11-05-packaging/evidence/w5-* -> HAZOP기법지침.md", "기획서 문장을 인용한 줄 안의 링크"),
+        ("N8", "* @ docs/2026-11-10-plan/pstack-advice.md", "단위 NAMING 절이 옮길 이름과 데이터에 남는 옛 출처를 일부러 적는다"),
     ],
-    3: [
-        ("N1", "기획서/*", "specs/로 옮긴다"),
-        ("N1", "flow chart/*", "specs/flows/로 옮긴다"),
-        ("N1", "디자인/*", "design/으로 옮긴다"),
-        ("N1", "지식/*", "methodology/로 옮긴다"),
-        ("N1", "메모리/*", "records/로 옮긴다"),
-        ("N1", "packaging/다른PC-점검표.md", "other-pc-checklist.md"),
-        ("N2", "기획서", ""), ("N2", "flow chart", ""), ("N2", "디자인", ""), ("N2", "지식", ""), ("N2", "메모리", ""),
-        ("N6", "INTENT.md", "문서 머리는 단계 3에서 단다"),
-        ("N8", "기획서/ @ *", ""), ("N8", "flow chart/ @ *", ""), ("N8", "디자인/ @ *", ""),
-        ("N8", "지식/ @ *", ""), ("N8", "메모리/ @ *", ""),
+    # 운영 파일은 이름 이전 세션이 고치지 않는다(세션 권한 규칙). 단계 3에서 옮긴 폴더를 아직 옛 이름으로 적고 있다.
+    # 총괄이 `migrate_names.py --stage 3 --stage 3d --rewrite-links --only .claude --only CLAUDE.md`로 고치고,
+    # INTENT.md에 머리(HZ-GOV-01)를 단 뒤 이 묶음을 지운다. 바꿀 줄은 evidence/step3-claude-pending.csv에 있다.
+    "총괄": [
+        ("N6", "INTENT.md", "의도 관리 문서라 머리는 총괄이 단다"),
+        ("N8", "기획서/ @ .claude/agents/*", ""), ("N8", "flow chart/ @ .claude/agents/*", ""),
+        ("N8", "디자인/ @ .claude/agents/*", ""), ("N8", "메모리/ @ .claude/agents/*", ""),
+        ("N8", "메모리/ @ CLAUDE.md", ""),
     ],
     5: [
         ("N1", "자원/*", "resources/로 옮긴다"),
@@ -490,6 +488,14 @@ class PastViolationTest(unittest.TestCase):
             ["기획서/ @ .claude/agents/hazop-planner.md", "기획서/ @ README.md", "작업/ @ README.md",
              "메모리/ @ docs/2026-11-10-plan/a.md", "flow chart/ @ x.html", "자원/ @ x.html"],
             [v.subject for v in n8_old_korean_paths(docs)])
+
+    def test_n8_is_live_for_folders_moved_in_stage_3(self):
+        """단계 3의 넓은 예외(`기획서/ @ *` 등)를 지운 뒤로는, 옮긴 폴더의 옛 경로를 문서에 새로 적으면 예외 없이 걸린다."""
+        docs = {"docs/2026-11-10-lessons/new.md":
+                "`기획서/인터페이스.md`와 `디자인/시안/`, `메모리/결정로그.md`, `지식/a.md`, [흐름](<../../flow chart/00-overview.md>)\n"}
+        where = " @ docs/2026-11-10-lessons/new.md"
+        self.assertEqual([top + where for top in ("flow chart/", "기획서/", "디자인/", "메모리/", "지식/")],
+                         [v.subject for v in unexempted(n8_old_korean_paths(docs))])
 
     def test_n9_broken_relative_link(self):
         docs = {"README.md": "[인터페이스](기획서/인터페이스.md) [규격](specs/interface.md#화면) [밖](https://example.com) [닻](#a)\n"

@@ -57,7 +57,7 @@
 
 - 빌드 설정(`scripts/build_package.py` `DATA_FILES`)은 화면이 importlib로 읽는 `extract_drawio.py`·`build_graph.py`만 묶는다(D5). 세 스크립트는 묶음 datas에 없다. 이들이 쓰는 `hazop.contract`·`hazop.evaluate`·`hazop.kg` 모듈은 `collect_submodules("hazop")`로 PYZ에 들어간다.
 - 배포 실행 파일 `HAZOP.exe`는 창 프로그램(①~⑤)이며 임의 스크립트를 실행하는 입구가 없다. 파일 경로로 받은 .py를 실행하는 `HAZOP-check.exe`는 검증 전용이라 배포하지 않는다(`packaging/README.md`). `hazop/app`에는 contract·evaluate를 부르는 코드가 없다.
-- 세 스크립트는 개발·검토용 명령줄 도구다. 예를 들어 `기획서/평가기준비교.md` 342행은 `python scripts/compare_criteria.py …` 명령으로 정의한다. 따라서 앱 사용 범위 ①~⑤에 필요하지 않다.
+- 세 스크립트는 개발·검토용 명령줄 도구다. 예를 들어 `specs/criteria-comparison.md` 342행은 `python scripts/compare_criteria.py …` 명령으로 정의한다. 따라서 앱 사용 범위 ①~⑤에 필요하지 않다.
 - **판단: 묶지 않는 현행 구성을 유지한다.** 배포본에서 이 명령을 쓰려면 별도 입구 exe가 있어야 하며, 이는 새 기능이므로 이번 범위 밖이다.
 
 ## 7. 남은 한계

@@ -165,10 +165,16 @@ def _new_token(doc, doc_before, token, rows, exists):
     loose = None
     while "/" in token:
         hit = _lookup(_forward(rows), posixpath.normpath(posixpath.join(base_before, path)))
-        if hit and exists(hit[0]):
-            return posixpath.relpath(hit[0], base_now or ".") + tail
-        if hit and exists(hit[1]):
-            loose = posixpath.relpath(hit[0], base_now or ".") + tail
+        new = posixpath.relpath(hit[0], base_now or ".") if hit else None
+        # 옮긴 폴더 안의 문서에서는 아무 낱말이나 문서 폴더에 붙이면 옮긴 폴더 아래로 풀린다(`https://…`도). 그렇게 풀린 것은
+        # 되돌려 적으면 같은 글자이므로, 적힌 경로가 실제로 달라지는 풀이만 받는다.
+        if new is not None and posixpath.normpath(new) != posixpath.normpath(path):
+            if exists(hit[0]):
+                return new + tail
+            if exists(hit[1]):
+                loose = new + tail
+        elif new is not None and exists(hit[0]):
+            return None
         if not base_before or not base_now:
             break
         base_before, base_now = posixpath.dirname(base_before), posixpath.dirname(base_now)

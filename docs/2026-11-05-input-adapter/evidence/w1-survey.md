@@ -9,7 +9,7 @@
 | 자료 | 읽은 범위 |
 |---|---|
 | `docs/2026-11-05-input-adapter/README.md`, `PROGRESS.md`, `evidence/README.md` | 전부 |
-| `기획서/정보추출.md`, `기획서/자료등록.md` | 전부 |
+| `specs/extraction.md`, `specs/registration.md` | 전부 |
 | `hazop/extract/drawio.py`, `svg_align.py`, `rules.py`, `scripts/extract_drawio.py` | 전부 |
 | `hazop/register/fileinfo.py` | 전부 / `registry.py`는 함수 목록과 `register()` 앞부분(324~420행)만 |
 | `출력/그래프/SNP-M-102/graph.json`, `entity_mapping.json` | 키·항목 수만(스크립트로 요약) |
@@ -135,7 +135,7 @@
 | `W2` | 정답지 변환과 평가 하네스 | `scripts/check_adapter.py`가 drawio `extraction.json`을 시각 정답지로 바꾸고, drawio 결과 자신을 입력으로 넣었을 때 기호·관계 F1=1.0, 비시각 속성 분리 집계, 결정적 출력(두 번 실행 결과 동일). `tests/test_adapter.py` 통과 | 사용자 결정 1(지표·대응 기준) |
 | `W3` | 벡터 PDF 어댑터 MVP | `hazop/extract/adapters/pdf_vector.py`가 샘플 6쪽에서 같은 스키마의 `extraction.json`을 만들고 구조 검증 통과(blocker 0), 좌표 정렬 잔차 보고. W2 하네스로 6세트 지표 표를 `evidence/`에 기록(목표치는 첫 측정 후 결정) | W2, 사용자 결정 2 |
 | `W4` | 래스터 어댑터 MVP | PNG·JPG 6세트에서 같은 스키마 출력, OCR 미설치 시 문자 항목을 미확인으로 남기며 실패하지 않음. 지표 표 기록 | W2, 사용자 결정 3 |
-| `W5` | 열화 시험과 결과 정리 | Pillow로 만든 변형(JPG 품질·해상도·회전·노이즈) 지표 비교표, 한계와 후속(실제 도면·딥러닝) 권고를 `evidence/`에 기록, `기획서/정보추출.md` 다른 자료형 절 갱신안 | W3, W4 |
+| `W5` | 열화 시험과 결과 정리 | Pillow로 만든 변형(JPG 품질·해상도·회전·노이즈) 지표 비교표, 한계와 후속(실제 도면·딥러닝) 권고를 `evidence/`에 기록, `specs/extraction.md` 다른 자료형 절 갱신안 | W3, W4 |
 
 ## 9. 사용자 결정이 필요한 항목
 

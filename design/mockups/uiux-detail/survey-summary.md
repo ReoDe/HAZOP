@@ -1,6 +1,6 @@
 # 조사 요약: 옵시디언식 UI 패턴과 HAZOP 소프트웨어 (2026-11-07)
 
-[README](README.md) · [결함 목록](결함목록.md) · [개선 명세](개선명세.md)
+[README](README.md) · [결함 목록](defect-list.md) · [개선 명세](improvement-spec.md)
 
 ## 조사 방법과 범위
 

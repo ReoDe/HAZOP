@@ -1,6 +1,6 @@
-"""AI 연결(API·Claude 구독·고정 응답) 화면 시안 생성. 근거: 디자인/AI연결-화면설계.md.
+"""AI 연결(API·Claude 구독·고정 응답) 화면 시안 생성. 근거: design/ai-connection-screens.md.
 
-B안 셸 CSS는 디자인/시안/완성본/B-고밀도작업대/5-요약행렬.html의 <style>을 그대로 읽어 쓴다.
+B안 셸 CSS는 design/mockups/final/b-dense-workbench/5-summary-matrix.html의 <style>을 그대로 읽어 쓴다.
 데이터(계정·사용률·경로·비용)는 모두 가상 예시다. 실행: python build.py → HTML 10개와 PNG(1366·1920).
 """
 
@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent
-BASE = ROOT.parent / "완성본" / "B-고밀도작업대" / "5-요약행렬.html"
+BASE = ROOT.parent / "final" / "b-dense-workbench" / "5-summary-matrix.html"
 
 EXTRA_CSS = """
 .aic{display:inline-flex;align-items:center;gap:5px;padding:1px 8px;border-radius:3px;font-size:11.5px;font-weight:600;
@@ -495,23 +495,23 @@ def page9():
 
 
 PAGES = [
-    ("1-연결설정-구독", page1, "설정 창, Claude 구독 상세(연결됨, 사용량 앎)", False),
-    ("2-연결설정-API키", page2, "설정 창, API 키 상세(보기만 하는 중)", False),
-    ("3-연결설정-실행중", page3, "설정 창, 실행 중 잠금 띠(모델 선택 비활성)", False),
-    ("4-구독처음사용", page4, "구독으로 처음 분석할 때의 이용 조건 창", False),
-    ("5-연결칩", page5, "상태줄 칩 상태별(넓은·좁은 형식), 칩 상세 창", (1060, 1020)),
-    ("6-실행확인", page6, "실행 확인 대화상자 API 키·구독·API 키로 이어서·고정 응답", (1300, 1300)),
-    ("7-한도도달", page7, "⑤ 화면 한도 도달 띠, 한도로 멈춤·분석 전 칸, 칩, 재설정 토스트", False),
-    ("8-결과기록", page8, "⑤ 칸 상세 출처 줄, 시험 결과 띠, Excel 표지·워크시트 열", (820, 820)),
-    ("9-상태안내", page9, "상태별 해결 띠", (1000, 900)),
-    ("10-배포본", page10, "배포본 설정 창(API 키만), 칩", False),
+    ("1-settings-subscription", page1, "설정 창, Claude 구독 상세(연결됨, 사용량 앎)", False),
+    ("2-settings-api-key", page2, "설정 창, API 키 상세(보기만 하는 중)", False),
+    ("3-settings-running", page3, "설정 창, 실행 중 잠금 띠(모델 선택 비활성)", False),
+    ("4-subscription-first-use", page4, "구독으로 처음 분석할 때의 이용 조건 창", False),
+    ("5-connection-chip", page5, "상태줄 칩 상태별(넓은·좁은 형식), 칩 상세 창", (1060, 1020)),
+    ("6-run-confirm", page6, "실행 확인 대화상자 API 키·구독·API 키로 이어서·고정 응답", (1300, 1300)),
+    ("7-limit-reached", page7, "⑤ 화면 한도 도달 띠, 한도로 멈춤·분석 전 칸, 칩, 재설정 토스트", False),
+    ("8-result-record", page8, "⑤ 칸 상세 출처 줄, 시험 결과 띠, Excel 표지·워크시트 열", (820, 820)),
+    ("9-status-notice", page9, "상태별 해결 띠", (1000, 900)),
+    ("10-bundle", page10, "배포본 설정 창(API 키만), 칩", False),
 ]
 
 
 def index():
     items = "".join('<li><a href="%s.html">%s</a> · %s · PNG <a href="%s-1366.png">1366</a> · <a href="%s-1920.png">1920</a></li>'
                     % (n, n, d, n, n) for n, _f, d, _g in PAGES)
-    body = ('<h1>AI 연결 화면 시안</h1><p class="lead">근거: 디자인/AI연결-화면설계.md, 기획서/AI연결-구독제.md. 데이터는 모두 가상 예시입니다.</p>'
+    body = ('<h1>AI 연결 화면 시안</h1><p class="lead">근거: design/ai-connection-screens.md, specs/ai-subscription.md. 데이터는 모두 가상 예시입니다.</p>'
             '<ul class="idx">%s</ul>' % items)
     return page("AI 연결 시안 목차", body, "gal")
 

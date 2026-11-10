@@ -1,3 +1,12 @@
+---
+doc_id: HZ-PLN-08
+rev: 0
+status: review
+author: unknown
+reviewed: —
+approved: —
+---
+
 # 그래프 조사: Obsidian식 화면 + HAZOP용 그래프 알고리즘
 
 작성일 2026-11-05. 조사 도구: `aside-browser` 스킬(Aside CLI 1.26, `aside exec` 4회). WebSearch/WebFetch 대체 사용 없음.
@@ -29,7 +38,7 @@
 
 **부수 사항**: Aside의 fetch 도구가 Mani et al.(CVPRW 2020) PDF를 Aside 세션 임시 폴더에 자동 캐시했다. 실행하지 않았고 리포지토리에는 아무것도 저장하지 않았다.
 
-**저장소 맥락(직접 확인)**: `hazop/graph/build.py`, `query.py`는 이미 `networkx`를 쓴다. JS 그래프 라이브러리는 아직 저장소에 없다. `디자인/출력화면AX-데모분석.md` §2.3은 force-directed 캔버스, 작은 점·옅은 선, 호버 시 이웃만 강조를 목표로 적는다.
+**저장소 맥락(직접 확인)**: `hazop/graph/build.py`, `query.py`는 이미 `networkx`를 쓴다. JS 그래프 라이브러리는 아직 저장소에 없다. `design/output-screen-ax-demo.md` §2.3은 force-directed 캔버스, 작은 점·옅은 선, 호버 시 이웃만 강조를 목표로 적는다.
 
 ---
 

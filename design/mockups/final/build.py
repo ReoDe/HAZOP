@@ -1,7 +1,7 @@
 """완성본 디자인 시안 3안 × 5화면 생성기.
 
-python 디자인/시안/완성본/build.py          HTML·대비표 생성(대비 미달이면 종료 코드 1)
-python 디자인/시안/완성본/build.py --shoot  위 작업 뒤 Chrome 헤드리스로 1366×768·1920×1080 PNG 저장
+python design/mockups/final/build.py          HTML·대비표 생성(대비 미달이면 종료 코드 1)
+python design/mockups/final/build.py --shoot  위 작업 뒤 Chrome 헤드리스로 1366×768·1920×1080 PNG 저장
 표준 라이브러리만 쓴다. 데이터는 모두 가상 샘플이다.
 """
 import html
@@ -26,7 +26,7 @@ COMMON_KINDS_LIGHT = {
 }
 
 VARIANTS = {
-    "A-밝은미니멀": {
+    "a-light-minimal": {
         "name": "A안 · 밝은 미니멀",
         "short": "A",
         "tokens": {
@@ -50,7 +50,7 @@ VARIANTS = {
             "shadow": "0 1px 2px rgba(16,24,40,.04), 0 2px 8px rgba(16,24,40,.05)",
         },
     },
-    "B-고밀도작업대": {
+    "b-dense-workbench": {
         "name": "B안 · 고밀도 작업대",
         "short": "B",
         "tokens": {
@@ -73,7 +73,7 @@ VARIANTS = {
             "btn-pad": "3px 10px", "inp-pad": "3px 8px", "shadow": "none",
         },
     },
-    "C-다크대시보드": {
+    "c-dark-dashboard": {
         "name": "C안 · 다크 대시보드",
         "short": "C",
         "tokens": {
@@ -159,11 +159,11 @@ def contrast_table(tok):
 
 # ---------------------------------------------------------------- 가상 샘플 데이터
 SCREENS = [
-    ("1-자료등록", "자료 등록", "등록"),
-    ("2-도면추출", "도면 추출", "추출"),
-    ("3-지식그래프", "지식그래프", "그래프"),
-    ("4-검토구간", "검토구간", "구간"),
-    ("5-요약행렬", "분석 결과", "결과"),
+    ("1-registration", "자료 등록", "등록"),
+    ("2-drawing-extract", "도면 추출", "추출"),
+    ("3-knowledge-graph", "지식그래프", "그래프"),
+    ("4-study-nodes", "검토구간", "구간"),
+    ("5-summary-matrix", "분석 결과", "결과"),
 ]
 
 SEGMENTS = [
@@ -539,23 +539,23 @@ def screen_matrix():
 
 
 SCREEN_SPEC = {
-    "1-자료등록": dict(title="자료 등록", sub="도면(drawio·PDF)과 문서(PDF)를 등록하고 추출을 실행합니다",
+    "1-registration": dict(title="자료 등록", sub="도면(drawio·PDF)과 문서(PDF)를 등록하고 추출을 실행합니다",
                     actions='<button class="btn">폴더 열기</button><button class="btn primary">파일 등록</button>',
                     kpis=[("등록 자료", "5", ""), ("추출 완료", "3", "ok"), ("보류", "1", "warn"), ("실패", "1", "err")],
                     body=screen_register, cls="reg"),
-    "2-도면추출": dict(title="도면 추출", sub="SNP-M-102 Rev.3 · 추출 결과를 원본 도면 위에서 대조합니다",
+    "2-drawing-extract": dict(title="도면 추출", sub="SNP-M-102 Rev.3 · 추출 결과를 원본 도면 위에서 대조합니다",
                     actions='<button class="btn">추출 결과 선택</button><button class="btn primary">지식그래프 만들기</button>',
                     kpis=[("노드", "22", ""), ("관계", "26", ""), ("미해결", "1", "err"), ("미확인 속성", "2", "warn")],
                     body=screen_extract, cls="ext"),
-    "3-지식그래프": dict(title="지식그래프", sub="도면 추출 결과와 문서 지식을 한 그래프에서 탐색합니다",
+    "3-knowledge-graph": dict(title="지식그래프", sub="도면 추출 결과와 문서 지식을 한 그래프에서 탐색합니다",
                      actions='<button class="btn">버전 v12</button><button class="btn primary">구간 제안 만들기</button>',
                      kpis=[("지식 노드", "148", ""), ("관계", "312", ""), ("출처 문서", "6", ""), ("재확인 필요", "4", "warn")],
                      body=screen_kg, cls="kg"),
-    "4-검토구간": dict(title="검토구간", sub="자동 제안된 구간을 병합·분할해 모든 컴포넌트를 덮도록 확정합니다",
+    "4-study-nodes": dict(title="검토구간", sub="자동 제안된 구간을 병합·분할해 모든 컴포넌트를 덮도록 확정합니다",
                     actions='<button class="btn">다시 제안</button><button class="btn primary" disabled>구간 확정</button>',
                     kpis=[("컴포넌트", "22", ""), ("덮음", "19 · 86%", "ok"), ("미포함", "3", "warn"), ("구간", "5", "")],
                     body=screen_segments, cls="seg"),
-    "5-요약행렬": dict(title="분석 결과", sub="구간 × 편차 요약에서 칸을 눌러 워크시트를 검토합니다. AI 결과는 모두 초안입니다",
+    "5-summary-matrix": dict(title="분석 결과", sub="구간 × 편차 요약에서 칸을 눌러 워크시트를 검토합니다. AI 결과는 모두 초안입니다",
                     actions='<button class="btn">권고 추적</button><button class="btn primary">Excel 내보내기</button>',
                     kpis=[("구간", "5", ""), ("시나리오", "31", ""), ("미검토", "12", "warn"), ("불허 위험", "1", "err")],
                     body=screen_matrix, cls="mat"),
@@ -976,7 +976,7 @@ def build():
         for i, (key, _, _) in enumerate(SCREENS):
             (d / f"{key}.html").write_text(page(vk, i), encoding="utf-8")
         table, fails = contrast_table(v["tokens"])
-        (d / "대비표.md").write_text(
+        (d / "contrast-table.md").write_text(
             f"# {v['name']} 대비 계산\n\n`build.py`가 WCAG 2.1 상대 휘도 공식으로 계산한 값이다. 글자는 4.5:1, 그래픽(테두리·도면 선·구간 색)은 3:1이 기준이다.\n\n{table}",
             encoding="utf-8")
         fails_all += [f"{vk}: {f}" for f in fails]

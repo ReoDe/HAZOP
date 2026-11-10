@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>③ 지식그래프 화면 시안 — HAZOP 검토</title>
 <!-- 단일 HTML 시안. 외부 네트워크·CDN·웹 글꼴 없음. 렌더러는 force-graph 대신 SVG + 간이 힘 계산(시안 전용).
-     규칙 문서: 디자인/지식그래프화면.md. 데이터: 출력/지식그래프/kg-SNP-SAMPLE(v-43034b88b9c9)·algo_result.json·데이터/지식/SNP-SAMPLE/link_candidates.csv 발췌(가상 샘플). -->
+     규칙 문서: design/kg-screen.md. 데이터: 출력/지식그래프/kg-SNP-SAMPLE(v-43034b88b9c9)·algo_result.json·데이터/지식/SNP-SAMPLE/link_candidates.csv 발췌(가상 샘플). -->
 <style>
 :root {
   /* ---- 공통 토큰: interface-mockup.html·hazop/app/tokens.py와 같은 값 (바꾸지 않음) */
@@ -25,7 +25,7 @@
   --mono: "Cascadia Mono", "Consolas", "D2Coding", monospace;
   --shadow: 0 2px 10px rgba(0,0,0,.06);
 
-  /* ---- ③ 신규 토큰 (디자인/지식그래프화면.md §1·§2·§3) */
+  /* ---- ③ 신규 토큰 (design/kg-screen.md §1·§2·§3) */
   /* 지식 층 노드 색: 기존 노드·관계 색과 다른 색상 영역(슬레이트·황토·분홍·연두·적갈) */
   --kg-document: #475569; --kg-doc_chunk: #64748b; --kg-requirement: #a16207;
   --kg-setpoint: #be185d; --kg-condition: #4d7c0f; --kg-analysis_case: #9a3412;
@@ -246,7 +246,7 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   <div class="menubar" id="menubar" data-area="Qt · 메뉴">
     <div class="m">파일<div class="dropdown"><div data-act="toast:지식그래프 열기 (시안: 동작 없음)">지식그래프 열기…</div><div data-act="toast:알고리즘 결과 열기 (시안: 동작 없음)">알고리즘 결과 열기…</div></div></div>
     <div class="m">보기<div class="dropdown"><div data-act="tog-left">좌측 패널 접기/펴기</div><div data-act="tog-right">우측 패널 접기/펴기</div><div data-act="fit">화면에 맞춤</div></div></div>
-    <div class="m">도움말<div class="dropdown"><div data-act="toast:규칙 문서: 디자인/지식그래프화면.md">이 화면의 시각 규칙</div></div></div>
+    <div class="m">도움말<div class="dropdown"><div data-act="toast:규칙 문서: design/kg-screen.md">이 화면의 시각 규칙</div></div></div>
     <div class="m mock">시안 상태 예시 &#9662;<div class="dropdown" style="min-width:380px">
       <div data-act="st:default"><b>기본</b> — passed, 샘플 그대로</div>
       <div data-act="st:v3">전역 노드 수 상한 초과 (V3) — 6,240개 가상</div>

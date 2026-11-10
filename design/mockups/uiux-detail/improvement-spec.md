@@ -1,6 +1,6 @@
 # UI/UX 디테일 개선 명세 (2026-11-07)
 
-[README](README.md) · [결함 목록](결함목록.md) · [조사 요약](조사요약.md) · 시안 `index.html`, `png/`
+[README](README.md) · [결함 목록](defect-list.md) · [조사 요약](survey-summary.md) · 시안 `index.html`, `png/`
 
 ## 기준
 

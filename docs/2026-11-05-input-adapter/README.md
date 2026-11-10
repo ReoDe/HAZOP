@@ -50,7 +50,7 @@ PDF·PNG/JPG 도면을 읽는 2차 입력 어댑터를 만들고, drawio 추출 
 
 ### 상위 정본·선행 자료
 
-초기 조사·참조 대상: `기획서/정보추출.md`, `기획서/자료등록.md`, `hazop/extract/`, `hazop/register/`, `scripts/extract_drawio.py`
+초기 조사·참조 대상: `specs/extraction.md`, `specs/registration.md`, `hazop/extract/`, `hazop/register/`, `scripts/extract_drawio.py`
 
 조사 후 자료별 소유 트랙·역할·정본 위치를 아래 표에 등록한다. 참조 경로라는 이유만으로 상위 정본이나 편집 대상으로 간주하지 않는다.
 
@@ -113,7 +113,7 @@ PDF·PNG/JPG 도면을 읽는 2차 입력 어댑터를 만들고, drawio 추출 
 ### 편집 허용 범위
 
 - 작업 폴더: `docs/2026-11-05-input-adapter/`
-- 추가 편집 허용 범위: `hazop/extract/adapters/`(신규), `scripts/extract_pdf.py`·`scripts/check_adapter.py`, `tests/test_adapter.py`, `tests/fixtures/adapter/`, `기획서/정보추출.md`
+- 추가 편집 허용 범위: `hazop/extract/adapters/`(신규), `scripts/extract_pdf.py`·`scripts/check_adapter.py`, `tests/test_adapter.py`, `tests/fixtures/adapter/`, `specs/extraction.md`
 - 위 편집 허용 범위 밖의 경로는 참조 대상을 포함해 읽기 전용이다.
 - 문서를 추가하면 해당 폴더 README 인덱스와 이 문서의 문서 지도를 필요한 수준으로 갱신한다.
 
@@ -132,9 +132,9 @@ PDF·PNG/JPG 도면을 읽는 2차 입력 어댑터를 만들고, drawio 추출 
 - 에이전트: 허용 범위의 조사·구현·검증·문서 갱신을 수행하고, 정본에 없는 판단을 발견하면 결정 사항으로 제시한다.
 - 별도 담당자·소유 트랙이 생기면 책임 범위와 인계 조건을 이 절에 기록한다.
 - 에이전트 분담은 저장소 루트 `CLAUDE.md`의 총괄 규칙을 따른다: 총괄 → 담당(`hazop-planner`·`hazop-designer`·`hazop-developer`) → 검토(`hazop-reviewer`·`hazop-codex-reviewer`) → `hazop-qa` → `hazop-recorder`. 검토·QA 결과는 `evidence/`에 남긴다.
-- 프로젝트 전체에 걸리는 결정은 `메모리/결정로그.md`에도 기록하고 이 작업의 결정 ID를 함께 적는다.
+- 프로젝트 전체에 걸리는 결정은 `records/decision-log.md`에도 기록하고 이 작업의 결정 ID를 함께 적는다.
 - 다른 트랙과 같은 파일을 다루는 작업은 동시에 진행하지 않는다(저장소 `CLAUDE.md` 총괄 규칙 4).
-- 시험 자료와 픽스처는 가상 도면만 쓴다. 실제 발전소 도면 사용은 데이터 반출 정책 결정(`메모리/남은작업.md` 구현 전 결정) 뒤로 미룬다.
+- 시험 자료와 픽스처는 가상 도면만 쓴다. 실제 발전소 도면 사용은 데이터 반출 정책 결정(`records/backlog.md` 구현 전 결정) 뒤로 미룬다.
 - 팀 규칙은 이 README에 둔다. 에이전트 도구 운용 지침은 로컬 전용 `AGENTS.md`와 이를 참조하는 `CLAUDE.md`에 두며 두 파일은 커밋하지 않는다. 공통 산출물은 Git으로 추적한다.
 
 ### 작업 내용·하위 트랙 확장

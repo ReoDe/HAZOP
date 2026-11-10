@@ -1,7 +1,7 @@
-"""⑥ 초기사건 화면 시안 생성. 근거: 기획서/초기사건-출력설계.md §7.
+"""⑥ 초기사건 화면 시안 생성. 근거: specs/ie-output-design.md §7.
 
-B안 셸 CSS는 디자인/시안/완성본/B-고밀도작업대/5-요약행렬.html의 <style>을 그대로 읽어 쓴다(셸 모양을 맞추려고).
-데이터는 모두 가상 예시다. 실행: python build.py → 6-그룹.html, 6-완전성대조.html, PNG 1366·1920.
+B안 셸 CSS는 design/mockups/final/b-dense-workbench/5-summary-matrix.html의 <style>을 그대로 읽어 쓴다(셸 모양을 맞추려고).
+데이터는 모두 가상 예시다. 실행: python build.py → 6-groups.html, 6-completeness-check.html, PNG 1366·1920.
 """
 
 import pathlib
@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent
-BASE = ROOT.parent / "완성본" / "B-고밀도작업대" / "5-요약행렬.html"
+BASE = ROOT.parent / "final" / "b-dense-workbench" / "5-summary-matrix.html"
 ENTRY_AT = "20261108T061000Z"
 
 EXTRA_CSS = """
@@ -193,7 +193,7 @@ def shoot(name):
 
 
 if __name__ == "__main__":
-    for name, page, tab, sel in (("6-그룹", group_page(), "그룹 6", "IEG-01"),
-                                 ("6-완전성대조", coverage_page(), "완전성 대조", None)):
+    for name, page, tab, sel in (("6-groups", group_page(), "그룹 6", "IEG-01"),
+                                 ("6-completeness-check", coverage_page(), "완전성 대조", None)):
         (ROOT / ("%s.html" % name)).write_text(shell("⑥ 초기사건 · " + tab, explorer(sel), tab, page), encoding="utf-8")
         shoot(name)

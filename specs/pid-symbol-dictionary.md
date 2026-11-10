@@ -1,6 +1,15 @@
+---
+doc_id: HZ-PLN-19
+rev: 0
+status: review
+author: unknown
+reviewed: —
+approved: —
+---
+
 # P&ID 기호 사전 기획
 
-[정보 추출](정보추출.md) · [지식그래프 스키마 사전](지식그래프-스키마-사전.md) · [데이터 일원화 설계](../docs/2026-11-09-data-consolidation/README.md) · [기호 목록 초안](../docs/2026-11-09-symbol-library/README.md)
+[정보 추출](extraction.md) · [지식그래프 스키마 사전](kg-schema-dictionary.md) · [데이터 일원화 설계](../docs/2026-11-09-data-consolidation/README.md) · [기호 목록 초안](../docs/2026-11-09-symbol-library/README.md)
 
 ## 목적과 범위
 
@@ -289,7 +298,7 @@ U1·U2(`pdf_vector.py`)가 커밋된 뒤에 시작한다. 데이터 일원화의
 | --- | --- | --- |
 | S1 노드별 정답 | `tests/fixtures/apr1400/answer_key/*.json`(노드별 정답 kind·`valve_type`·`normal_position`·구동부·밸브 번호 귀속), `scripts/check_apr1400.py`(`unclassified`를 LOWER에, 노드별 `kind_wrong`, 수정 기록 적용 수), `tests/baselines/apr1400_score.json` | 정답 쪽마다 사전 항목 전부가 한 번 이상 나오게 고름(시제품 눈검사 그림판을 출발점으로). 지금 코드로 기준값을 얼림. 테스트 통과 |
 | S2 사전·매칭 핵심과 검정 밸브 | `hazop/extract/symbols.py`(새: 사전 읽기·서명·매칭), `hazop/extract/adapters/pdf_vector.py`(`_subpaths` 곡선 점, `_classify_primitives` 앞 검정 견본·크기 0 버림, `_classify`에서 기존 규칙이 못 정한 기호에 사전), 노드 id 안정화 또는 수정 기록 이전(D14), `hazop/paths.py`(`"기호"` 행), `자원/기준/기호/묶음.json`, `자원/기준/기호/APR1400/*.json`(기존 kind 항목), `scripts/check_symbols.py`, `packaging/verify_bundle.py`, 테스트 | SNP 추출 JSON·`graph_version` 바이트 동일. APR1400 `unclassified` 감소, 노드별 `kind_wrong` 새로 틀린 노드 0, 수정 기록 적용 수 후퇴 없음, 나머지 기준값 통과. 검정 밸브가 `normal_position=NC` 밸브로 나오고 그 자리 배관이 밸브를 거쳐 이어짐. 배포 실행 파일에서 사전을 읽어 판정하고, 사전이 없거나 깨지면 오류로 멈춤. 판이 바뀐 도면 수 보고 |
-| S3 새 kind | `hazop/kg/schema/registry.json`(D4에서 정한 kind), 사전 항목 추가, 문서 `기획서/지식그래프-스키마-사전.md` | 레지스트리 검사·KG 테스트 통과. 시험 쪽 미분류 추가 감소, 새로 틀린 노드 0 |
+| S3 새 kind | `hazop/kg/schema/registry.json`(D4에서 정한 kind), 사전 항목 추가, 문서 `specs/kg-schema-dictionary.md` | 레지스트리 검사·KG 테스트 통과. 시험 쪽 미분류 추가 감소, 새로 틀린 노드 0 |
 | S4 모양 보강 | `pdf_vector.py`(열린 곡선 원을 닫힌 원으로 보는 규칙 등 사전만으로 안 되는 묶기 보강) | 정답 쪽에서 새로 틀린 노드 0, 수정 기록 적용 수 후퇴 없음, 기준값 통과 |
 | S5 부속 합치기 | `pdf_vector.py`(구동부 → 밸브 `actuator_type`·`motive_power`와 범례가 정한 kind만, 번호 원 → 유일·거리 조건을 채운 밸브의 태그 근거) | 정답의 구동부·번호 귀속 기준 새로 틀린 노드 0. `tag_exact` 후퇴 없음. 수정 기록 적용 수 후퇴 없음 |
 | S6 도구와 절차 | `scripts/symbols/harvest_legend.py`, `cluster_unclassified.py`, `add_symbols.py`, 이 문서 §6, README 목차 | 새 묶음 하나(예: 다른 장)로 절차를 끝까지 한 번 돌림 |

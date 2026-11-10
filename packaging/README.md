@@ -16,7 +16,7 @@
 | `w4_flow.py` | 묶인 실행에서 ①~⑤ 함수 흐름·자원 읽기 위치·음성 검사(`HAZOP-check.exe`로 실행) |
 | `verify_bundle.py` | 묶음을 저장소 밖 경로에 복사해 ①~⑤·③ V1·V2·S1·스크린샷(② 편집 모드, 레일 단계 ①~⑥)·앱 로그 확인. 배포용은 `--app-only` |
 | `lock_probe.py` | 빌드한 `HAZOP.exe`를 두 번 띄워 두 번째가 잠금 안내를 띄우고 종료 코드 3으로 끝나는지 확인. 실제 창을 띄우므로 `scripts/desktop_lease.py run` 안에서 돌린다 |
-| `다른PC-점검표.md` | 다른 PC·Windows 10에서 배포본을 사람이 확인하는 절차와 결과 표 |
+| `other-pc-checklist.md` | 다른 PC·Windows 10에서 배포본을 사람이 확인하는 절차와 결과 표 |
 | `make_snapshot.py` | 저장소 밖 빌드용 스냅숏(다른 트랙 진행 중 파일은 HEAD로), `SNAPSHOT.json` 해시 목록 |
 | `netwatch.ps1` | 빌드 중 네트워크 연결 표본 조사(관찰만) |
 | `tls_probe.py` | D10 측정(검증 전용): 검증용 묶음의 `HAZOP-check.exe`로 Qt TLS 백엔드와 로드된 모듈 목록을 기록(`--path-mode user|system`). 네트워크 접속 없음 |
