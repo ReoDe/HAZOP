@@ -41,8 +41,8 @@ from tests.test_analysis import GRAPH  # noqa: E402
 
 TLS_OK = ("qschannelbackend.dll", "qcertonlybackend.dll")
 ENV_KEYS = (paths.ENV_RESOURCE_ROOT, paths.ENV_WORK_ROOT, paths.ENV_STORE_ROOT)
-SAMPLE_DIR = paths.folder("참고", "pid-samples")
-KG_SAMPLE = paths.folder("표본", "knowledge-graph", "SNP-SAMPLE")
+SAMPLE_DIR = paths.folder("references", "pid-samples")
+KG_SAMPLE = paths.folder("samples", "knowledge-graph", "SNP-SAMPLE")
 T = "2026-11-05T00:00:00Z"
 
 # W3 착수 시점(ddb9a50) paths.py 공개 API. 이름·인자를 바꾸면 실패한다(새 함수 추가는 허용).
@@ -242,26 +242,26 @@ class SplitRootsFlowTest(unittest.TestCase):
         shutil.copyfile(drawio, self.sample)
         shutil.copyfile(glob.glob(os.path.join(os.path.dirname(drawio), "*.drawio.svg"))[0], self.sample + ".svg")
         # 작업 루트: 구간 JSON·고정 응답·분석용 그래프·지식 입력(사용자 데이터)
-        self.region_path = paths.folder_in(self.work, "구간", os.path.basename(REGION_FILE))
+        self.region_path = paths.folder_in(self.work, "regions", os.path.basename(REGION_FILE))
         os.makedirs(os.path.dirname(self.region_path))
         shutil.copyfile(REGION_FILE, self.region_path)
-        self.fixed = paths.folder_in(self.work, "고정응답", os.path.basename(FIXED_DIR))
+        self.fixed = paths.folder_in(self.work, "fixed-responses", os.path.basename(FIXED_DIR))
         shutil.copytree(FIXED_DIR, self.fixed)
         gpath = os.path.join(self.work, region["graph_ref"]["graph_file"])
         os.makedirs(os.path.dirname(gpath))
         with open(gpath, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(GRAPH, fh, ensure_ascii=False, indent=2)
-        shutil.copytree(KG_SAMPLE, paths.folder_in(self.work, "지식", "SNP-SAMPLE"))
+        shutil.copytree(KG_SAMPLE, paths.folder_in(self.work, "knowledge-graph", "SNP-SAMPLE"))
         self.region = region
 
     def test_flow_1_to_5_with_split_roots(self):
         res_before = _tree(self.res)
-        repo_before = {d: _names(paths.folder_in(paths.DEV_WORK_ROOT, d)) for d in ("출력", "자료저장소")}
+        repo_before = {d: _names(paths.folder_in(paths.DEV_WORK_ROOT, d)) for d in ("output", "store")}
         env = _clean_env(HAZOP_RESOURCE_ROOT=self.res, HAZOP_WORK_ROOT=self.work)
         with mock.patch.dict(os.environ, env, clear=True), mock.patch.dict(data._script_cache, {}, clear=True):
             self.assertEqual((paths.resource_root(), paths.work_root()), (self.res, self.work))
             store = paths.store_root()
-            self.assertEqual(store, paths.folder_in(self.work, "자료저장소"))
+            self.assertEqual(store, paths.folder_in(self.work, "store"))
 
             # ① 등록 → 추출 → 그래프
             reg = registry.register(self.sample, "p", store_root=store, actor="tester", now=lambda: T,
@@ -270,8 +270,8 @@ class SplitRootsFlowTest(unittest.TestCase):
             rows = data.list_registrations()
             self.assertEqual(len(rows), 1)
             out = data.extract_and_graph(rows[0]["path"])
-            self.assertTrue(out["extract_dir"].startswith(paths.output_in(self.work, "추출")))
-            self.assertTrue(out["graph_dir"].startswith(paths.output_in(self.work, "그래프")))
+            self.assertTrue(out["extract_dir"].startswith(paths.output_in(self.work, "extract")))
+            self.assertTrue(out["graph_dir"].startswith(paths.output_in(self.work, "graph")))
             al = out["extraction"]["coordinate_system"]["svg_alignment"]
             self.assertEqual(al["source"], "registered_derived")
             row = data.list_registrations()[0]
@@ -282,32 +282,32 @@ class SplitRootsFlowTest(unittest.TestCase):
             self.assertEqual(names, [row["extract_name"]])
             info = data.viewer_html_for(names[0])
             self.assertIsNone(info["error"])
-            self.assertTrue(info["html"].startswith(paths.output_in(self.work, "뷰어")))
+            self.assertTrue(info["html"].startswith(paths.output_in(self.work, "viewer")))
 
             # ③ 지식그래프: 작업 루트의 지식 입력으로 빌드 → 화면 데이터·HTML(템플릿·vendor는 패키지 안)
-            kdir = os.path.join(paths.folder("지식"), "SNP-SAMPLE")
+            kdir = os.path.join(paths.folder("knowledge-graph"), "SNP-SAMPLE")
             knowledge = kg_inputs.load_knowledge(os.path.join(kdir, "knowledge_nodes.csv"),
                                                  os.path.join(kdir, "knowledge_links.csv"), "SNP-SAMPLE")
-            graphs = kg_screen.load_graphs(paths.output_root("그래프"))
+            graphs = kg_screen.load_graphs(paths.output_root("graph"))
             kg = kg_build.build_kg(knowledge, [g for _, g in graphs.values()])
-            kg_out = paths.output_root("지식그래프")
+            kg_out = paths.output_root("knowledge-graph")
             kg_build.write_outputs(paths.safe_join(kg_out, paths.safe_name(kg["kg_id"])), knowledge, kg)
             roots = dict(kg_screen.list_kg_roots(kg_out))
             self.assertEqual(sorted(roots), sorted([kg["kg_id"], "kg-p"]))  # kg-p: ① 추출 때 자동 생성(도면 기반)
             _, loaded = kg_build.load_outputs(roots[kg["kg_id"]])
             self.assertEqual(loaded["kg_version"], kg["kg_version"])
             _, graph = next(iter(graphs.values()))
-            sdata = kg_screen.screen_data(loaded, graph, kg_screen.load_regions(paths.folder("구간")),
+            sdata = kg_screen.screen_data(loaded, graph, kg_screen.load_regions(paths.folder("regions")),
                                           kg_screen.read_candidates(kdir))
             self.assertTrue(sdata["nodes"])
-            html = kg_screen.write_html(paths.output_root("뷰어", "kg-test.html"), kg_screen.build_html(sdata))
+            html = kg_screen.write_html(paths.output_root("viewer", "kg-test.html"), kg_screen.build_html(sdata))
             self.assertTrue(html.startswith(self.work))
 
             # ④ 분석(고정 응답): 기준 자료는 자원 루트, 구간·그래프·출력은 작업 루트
             self.assertEqual(data.list_regions(), [self.region_path])
             res = api.run_analysis(self.region_path, response_dir=self.fixed, run_id="analysis-pkg")
             self.assertEqual(res["status"], "passed", res["blockers"])
-            self.assertEqual(res["run_dir"], paths.output_in(self.work, "분석", self.region["region_id"], "analysis-pkg"))
+            self.assertEqual(res["run_dir"], paths.output_in(self.work, "analysis", self.region["region_id"], "analysis-pkg"))
             c = res["doc"]["validation"]["counts"]
             self.assertEqual((c["candidates"], c["scenarios"], c["risk_proposed"],
                               c["design_improvement_candidates"]), (44, 14, 6, 11))
@@ -324,7 +324,7 @@ class SplitRootsFlowTest(unittest.TestCase):
                 with self.assertRaises(run_mod.InputError) as cm:
                     api.run_analysis(self.region_path, response_dir=self.fixed, run_id="analysis-noresource")
             self.assertIn("candidate_catalog 파일 없음", str(cm.exception))
-            self.assertFalse(os.path.exists(paths.output_in(self.work, "분석", self.region["region_id"], "analysis-noresource")))
+            self.assertFalse(os.path.exists(paths.output_in(self.work, "analysis", self.region["region_id"], "analysis-noresource")))
 
             # ⑤ 검토 저장(작업 루트 안 저장 루트) → Excel 출력(작업 루트 출력/워크시트)
             run = rv.open_run(res["run_dir"])
@@ -339,12 +339,12 @@ class SplitRootsFlowTest(unittest.TestCase):
                                          now=T)
             self.assertTrue(path.startswith(store))
             self.assertEqual(saved["review_version"], 1)
-            ex = export_worksheet(res["run_dir"], store, paths.output_root("워크시트"), now=T)
-            files = glob.glob(paths.output_in(self.work, "워크시트", "**", "*.xlsx"), recursive=True)
+            ex = export_worksheet(res["run_dir"], store, paths.output_root("worksheets"), now=T)
+            files = glob.glob(paths.output_in(self.work, "worksheets", "**", "*.xlsx"), recursive=True)
             self.assertEqual(len(files), 1, ex)
 
         self.assertEqual(_tree(self.res), res_before)  # 자원 루트는 읽기만
-        self.assertEqual({d: _names(paths.folder_in(paths.DEV_WORK_ROOT, d)) for d in ("출력", "자료저장소")}, repo_before)
+        self.assertEqual({d: _names(paths.folder_in(paths.DEV_WORK_ROOT, d)) for d in ("output", "store")}, repo_before)
 
 
 # ---------------------------------------------------------------- 4) W4 spec·datas 목록(빌드하지 않음)
@@ -392,7 +392,7 @@ class BuildSpecTest(unittest.TestCase):
         self.assertTrue(data)
         self.assertEqual({n for n, f in paths.FOLDERS.items()
                           if f.root == "resource" and any(s.startswith(paths.folder_rel(n) + "/") for s in data)},
-                         {"이탈후보", "기준표", "패턴", "기호"})
+                         {"deviations", "risk-criteria", "patterns", "symbols"})
         self.assertFalse([s for s in self.srcs if "__pycache__" in s])
 
     def test_spec_text(self):
@@ -444,7 +444,7 @@ class BuildSpecTest(unittest.TestCase):
         self.assertEqual(os.path.basename(spec), "HAZOP.spec")
         listed = data.read_json(os.path.join(tmp, "datas.json"))
         self.assertEqual([tuple(x) for x in listed["datas"]], self.datas)
-        self.assertEqual(listed["excluded_dirs"], [paths.folder_rel(n) for n in ("참고", "APR1400", "표본")])
+        self.assertEqual(listed["excluded_dirs"], [paths.folder_rel(n) for n in ("references", "APR1400", "samples")])
 
     def test_spec_roundtrip_odd_path(self):
         """한글·공백·작은따옴표·백틱이 든 저장소 경로가 spec(JSON 이스케이프)을 거쳐도 그대로다(Windows는 " 금지)."""
@@ -1471,7 +1471,7 @@ class PdfBundleTest(unittest.TestCase):
     @unittest.skipUnless(importlib.util.find_spec("pdfplumber"), "pdfplumber 없음(전용 venv에서 실행)")
     def test_probe_runs_in_dev_venv(self):
         """개발 실행(묶지 않음)에서 pdf_probe가 샘플 PDF를 추출·그리고, 요약이 verify의 기대값(pdf_expected)과 같다."""
-        pdf = paths.folder("참고", *self.vb.SAMPLE_DIR, self.vb.SAMPLE_DIR[-1] + ".pdf")
+        pdf = paths.folder("references", *self.vb.SAMPLE_DIR, self.vb.SAMPLE_DIR[-1] + ".pdf")
         res = os.path.join(self._tmp(), "r.json")
         self.assertEqual(self.probe.main(["--pdf", pdf, "--result", res]), 0)
         got = data.read_json(res)
@@ -1656,10 +1656,10 @@ class VerifierTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.vb.kg_work_root(self.tmp)
         sample = self.vb.SAMPLE_DIR + (self.vb.SAMPLE_DIR[-1] + ".drawio",)
-        drawio = paths.logical_dir(self.tmp, "참고", *sample)
+        drawio = paths.logical_dir(self.tmp, "references", *sample)
         os.makedirs(os.path.dirname(drawio))
         work = self.vb.kg_work_root(self.tmp)
-        self.assertEqual(paths.rel_or_abs(drawio, work), paths.rel_or_abs(paths.folder("참고", *sample), work))
+        self.assertEqual(paths.rel_or_abs(drawio, work), paths.rel_or_abs(paths.folder("references", *sample), work))
         self.assertTrue(paths.is_reference_rel(paths.rel_or_abs(drawio, work)))
 
     def test_lock_probe_matches_app_titles_and_exit_code(self):
@@ -1791,7 +1791,7 @@ class FlowHelperTest(unittest.TestCase):
 
     def test_input_file_problems(self):
         b = os.path.join(self.tmp, "_internal")
-        rel = paths.folder_rel("패턴") + "/p.json"
+        rel = paths.folder_rel("patterns") + "/p.json"
         p = os.path.join(b, *rel.split("/"))
         os.makedirs(os.path.dirname(p))
         with open(p, "w", encoding="utf-8") as fh:
@@ -1810,7 +1810,7 @@ class FlowHelperTest(unittest.TestCase):
 
     def test_resource_path_problems(self):
         b = os.path.join(self.tmp, "_internal")
-        pat = paths.folder_rel("패턴") + "/p.json"
+        pat = paths.folder_rel("patterns") + "/p.json"
         for rel in (pat, "기획서/g.md"):
             p = os.path.join(b, *rel.split("/"))
             os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -1830,7 +1830,7 @@ class FlowHelperTest(unittest.TestCase):
         os.makedirs(work)
         expect, result = os.path.join(self.tmp, "expect.json"), os.path.join(self.tmp, "r.json")
         with open(expect, "w", encoding="utf-8") as fh:
-            json.dump({paths.folder_rel("패턴") + "/없음.json": "0" * 64}, fh)
+            json.dump({paths.folder_rel("patterns") + "/없음.json": "0" * 64}, fh)
         env = _clean_env(HAZOP_WORK_ROOT=work)
         with mock.patch.dict(os.environ, env, clear=True), FrozenMock(bundle):
             rc = self.wf.main(["--samples", os.path.join(self.tmp, "없는-샘플"), "--expect", expect,

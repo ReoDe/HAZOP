@@ -33,13 +33,13 @@ MIN_CANVAS_W = 600  # 1366 폭에서 편집 패널을 연 뒤에도 남아야 �
 def install_sample(work, drawing=DRAWING):
     """샘플 도면을 작업 루트 안으로 복사해 추출·그래프를 만든다(뷰어 SVG는 작업·저장 루트 안만 허용). 추출 폴더 이름."""
     from hazop.app import data
-    src = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*")) if drawing in p][0]
+    src = [p for p in glob.glob(paths.folder("references", "pid-samples", "*")) if drawing in p][0]
     dst = os.path.join(work, "샘플", os.path.basename(src))
     if not os.path.isdir(dst):
         shutil.copytree(src, dst)
     _, out_dir = data.script_module("extract_drawio").run_one(glob.glob(os.path.join(dst, "*.drawio"))[0],
-                                                              paths.output_in(work, "추출"))
-    data.script_module("build_graph").build_one(os.path.join(out_dir, "extraction.json"), paths.output_in(work, "그래프"))
+                                                              paths.output_in(work, "extract"))
+    data.script_module("build_graph").build_one(os.path.join(out_dir, "extraction.json"), paths.output_in(work, "graph"))
     return os.path.basename(out_dir)
 
 
@@ -164,7 +164,7 @@ def main():
     from hazop.console import safe_console
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default=paths.output_in(paths.DEV_WORK_ROOT, "스크린샷"), help="스크린샷 폴더")
+    ap.add_argument("--out", default=paths.output_in(paths.DEV_WORK_ROOT, "screenshots"), help="스크린샷 폴더")
     ap.add_argument("--platform", default="windows" if sys.platform == "win32" else "offscreen",
                     help="Qt 플랫폼. offscreen은 한글 글꼴이 없어 폭 측정·스크린샷이 실제와 다르다")
     args = ap.parse_args()

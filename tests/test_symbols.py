@@ -314,7 +314,7 @@ class PdfVectorLinkTest(unittest.TestCase):
     def test_dictionary_kind_outside_registry_fails_loudly(self):
         tmp = tempfile.mkdtemp()
         try:
-            shutil.copytree(paths.folder("기호"), os.path.join(tmp, "기호"))
+            shutil.copytree(paths.folder("symbols"), os.path.join(tmp, "기호"))
             p = os.path.join(tmp, "기호", "APR1400", "gate_valve.json")
             with open(p, encoding="utf-8") as f:
                 e = json.load(f)
@@ -590,7 +590,7 @@ class IsaBubbleKindTest(unittest.TestCase):
 
 class RepoLibraryTest(unittest.TestCase):
     def test_repo_library_loads_and_checks(self):
-        root = paths.folder("기호")
+        root = paths.folder("symbols")
         lib = symbols.Library.load(root)
         self.assertIn("APR1400", lib.versions)
         spec = importlib.util.spec_from_file_location("check_symbols", os.path.join(REPO_ROOT, "scripts", "check_symbols.py"))

@@ -1,9 +1,10 @@
 """경로 문자열 금지 검사(docs/2026-11-09-data-consolidation §4 '이전 뒤 재발 방지 장치').
 
 `hazop/paths.py`와 이전 도구 밖의 .py에서 문자열 상수가 아래 경로 구성요소를 담으면 실패한다(HZ-GOV-02 §6.4).
-① 영어로 옮긴 최상위 폴더 이름(`resources`): 문자열 맨 앞이거나 `/` 바로 뒤에 올 때. ② 옮기기 전 한글 폴더 이름.
-③ 작업 루트 아래 폴더 이름(`출력`, `자료저장소`, `기호후보`)과 출력 폴더 아래 이름(`그래프`, `분석` 등): `/`가 붙었거나
-os.path.join의 인자로 쓰였을 때. 이 이름들은 `paths.FOLDERS`와 `paths.OUTPUT_FOLDERS`에만 적는다.
+① 영어로 옮긴 최상위 폴더 이름(`resources`): 문자열 맨 앞이거나 `/` 바로 뒤에 올 때. ② 옮기기 전 한글 폴더 이름
+(`데이터`, `자원`, `작업`, `출력`, `자료저장소`, `기호후보` 등). ③ 옮기기 전 작업 루트 안쪽 이름(`그래프`, `분석`, `구간` 등):
+화면 문구와 글자가 같아서 `/`가 붙었거나 os.path.join의 인자로 쓰였을 때만. ④ 지금 작업 루트 배치(`output/graph`,
+`data/regions`, `work/output` 등)를 이어 적은 것. 이 이름들은 `paths.FOLDERS`와 `paths.OUTPUT_FOLDERS`에만 적는다.
 모듈·클래스·함수 docstring과 "# 경로문자열-허용: <이유>"를 단 줄은 보지 않는다. f-string 안의 고정 부분도 문자열 상수라 함께 걸린다.
 
     python tests/test_path_literals.py --report   위반 목록
@@ -34,25 +35,30 @@ ALLOW = {
     "tests/test_migrate_names.py",
     "tests/test_record_paths.py",
     "tests/test_work_record_paths.py",
+    "tests/test_workroot.py",
 }
 # 사용자 데이터·배치 계약을 그대로 적어야 하는 줄은 끝에 "# 경로문자열-허용: <이유>"를 단다
 ALLOW_MARK = "# 경로문자열-허용:"
-# ① 영어로 옮긴 최상위 폴더. 단계 6이 작업 루트를 옮기면 그 이름을 더한다.
+# ① 영어로 옮긴 최상위 폴더. 개발 작업 루트 `work`는 흔한 낱말이라 ④에서 그 아래 폴더와 이어 적은 것만 막는다.
 NEW_TOPS = ("resources",)
 # ② 옮기기 전 한글 이름. 한 낱말만 적어도(os.path.join(root, "자원")) 걸린다.
-OLD_NAMES = ("데이터", "참고자료", "자원", "작업")
-# ② 가운데 paths.FOLDERS의 키와 글자가 같은 이름. 키로 쓴 것(paths.folder("표본"))은 두고 `/`가 붙은 것("자원/표본", "표본/구간")만
-# 막는다. 단계 6이 키를 영어로 바꾸면 OLD_NAMES로 올린다.
-WORK_KEYS = ("출력", "자료저장소", "기호후보")
-# ③ 출력 폴더 아래 이름(HZ-GOV-02 §5.6의 옮기기 전 이름). 화면 문구("그래프", "분석")와 글자가 같아 한 낱말은 두고 `/`가 붙은 것만 막는다.
-OUTPUT_NAMES = ("그래프", "분석", "추출", "지식그래프", "뷰어", "스크린샷", "사용자검증", "디자인검사", "근거묶음", "워크시트", "평가비교",
-                "내보내기", "문서지식", "어댑터", "로그", "초기사건", "_보관", "_외부")
-OLD_NAMES_AS_KEYS = ("기준", "표본") + WORK_KEYS + OUTPUT_NAMES
+OLD_NAMES = ("데이터", "참고자료", "자원", "작업", "출력", "자료저장소", "기호후보")
+# ③ 옮기기 전 작업 루트 안쪽 이름(HZ-GOV-02 §5.6). 화면 문구("그래프", "분석", "구간")와 글자가 같아 한 낱말은 두고,
+# `/`가 붙었거나 os.path.join의 인자일 때만 막는다.
+OLD_INNER = ("기준", "표본", "그래프", "분석", "추출", "지식그래프", "뷰어", "스크린샷", "사용자검증", "디자인검사", "근거묶음", "워크시트",
+             "평가비교", "내보내기", "문서지식", "어댑터", "로그", "초기사건", "_보관", "_외부", "구간", "고정응답", "지식", "검토구간",
+             "분석결과", "분석결과-시험", "백업", "도면수정", "도면연결", "잠재후보", "캐시", "평가기준")
+# ④ 지금 작업 루트 배치. 표에서 읽어 만든다: <작업 루트 최상위>/<그 아래 폴더>, <개발 작업 루트 이름>/<작업 루트 최상위>
+WORK_TOPS = sorted({f.rel[0] for f in paths.FOLDERS.values() if f.root == "work"})
+WORK_INNER = sorted({f.rel[1] for f in paths.FOLDERS.values() if f.root == "work" and len(f.rel) > 1}
+                    | set(paths.OUTPUT_FOLDERS.values()))
 SEP = r"[/\\]"
 PATH_PART = re.compile(
     "(?:^|%s)(?:%s)(?:%s|$)" % (SEP, "|".join(NEW_TOPS + OLD_NAMES), SEP)
-    + "|(?:^|%s)(?:%s)%s" % (SEP, "|".join(OLD_NAMES_AS_KEYS), SEP)
-    + "|%s(?:%s)$" % (SEP, "|".join(OLD_NAMES_AS_KEYS)))
+    + "|(?:^|%s)(?:%s)%s" % (SEP, "|".join(OLD_INNER), SEP)
+    + "|%s(?:%s)$" % (SEP, "|".join(OLD_INNER))
+    + "|(?:^|%s)(?:%s)%s(?:%s)(?:%s|$)" % (SEP, "|".join(WORK_TOPS), SEP, "|".join(WORK_INNER), SEP)
+    + "|(?:^|%s)%s%s(?:%s)(?:%s|$)" % (SEP, os.path.basename(paths.DEV_WORK_ROOT), SEP, "|".join(WORK_TOPS), SEP))
 GUIDE_NAME = re.compile(re.escape(paths.FILES["guide"].rel[-1]))
 
 
@@ -93,7 +99,7 @@ def join_args(tree):
     return ids
 
 
-def violations(repo=REPO, pattern=PATH_PART, allow=frozenset(ALLOW), joined=WORK_KEYS):
+def violations(repo=REPO, pattern=PATH_PART, allow=frozenset(ALLOW), joined=OLD_INNER):
     out = []
     for rel in python_files(repo):
         if rel in allow or "/fake_claude/" in rel:
@@ -122,21 +128,24 @@ class PathLiteralTest(unittest.TestCase):
     def test_pattern_catches_new_top_folder_and_old_korean_names(self):
         hits = ("resources", "resources/library", "a/resources/b", "..\\resources", "자원", "자원/기준/기호", "x/참고자료",
                 "작업\\출력", "자원/표본", "표본/구간", "기준/기호", "a/표본", "출력/그래프/x/graph.json", "출력/samples",
-                "자료저장소/p/originals", "x/자료저장소", "기호후보/a", "분석/region-x", "지식그래프/kg", "_보관/t1", "a\\추출")
+                "자료저장소/p/originals", "x/자료저장소", "기호후보/a", "분석/region-x", "지식그래프/kg", "_보관/t1", "a\\추출",
+                "출력", "자료저장소", "기호후보", "데이터/구간", "구간/region-x.json", "output/graph/x/graph.json", "data/regions",
+                "x/output/_archive", "work/output", "work\\store\\p", "data/backup/t1", "output/samples/extract")
         misses = ("resource", "my-resources/x", "resources.json", "표본", "기준", "기준표", "표본검사", "자원 루트", "work",
-                  "library/x", "출력", "자료저장소", "그래프", "분석", "지식그래프", "분석결과", "출력 루트", "추출·그래프 만들기")
+                  "library/x", "그래프", "분석", "지식그래프", "분석결과", "출력 루트", "추출·그래프 만들기", "구간", "output", "store",
+                  "data", "output/x.json", "data/fixtures", "work/tmp", "graph/SNP-M-102", "tests/fixtures/data/a.json")
         self.assertEqual([], [t for t in hits if not PATH_PART.search(t)])
         self.assertEqual([], [t for t in misses if PATH_PART.search(t)])
 
-    def test_work_folder_name_as_join_argument_is_caught(self):
-        """os.path.join(root, "출력", …)은 한 낱말이라 패턴에 안 걸리므로 join의 인자인지로 잡는다. 열쇠로 쓴 것은 둔다."""
+    def test_old_inner_name_as_join_argument_is_caught(self):
+        """os.path.join(root, "분석", …)은 한 낱말이라 패턴에 안 걸리므로 join의 인자인지로 잡는다. 화면 문구로 쓴 것은 둔다."""
         import tempfile
         with tempfile.TemporaryDirectory(prefix="hazop-pathlit-") as tmp:
             os.makedirs(os.path.join(tmp, "scripts"))
             with open(os.path.join(tmp, "scripts", "x.py"), "w", encoding="utf-8") as fh:
-                fh.write('import os\nfrom hazop import paths\nA = os.path.join("w", "출력", "x")\n'
-                         'B = os.path.join("w", "자료저장소")\nC = paths.folder("출력")\nD = paths.output_root("그래프")\n'
-                         'E = "출력"\nF = "출력/분석"\n')
+                fh.write('import os\nfrom hazop import paths\nA = os.path.join("w", "분석", "x")\n'
+                         'B = os.path.join("w", "구간")\nC = paths.folder("output")\nD = paths.output_root("graph")\n'
+                         'E = "분석"\nF = "분석/x"\nG = label("그래프")\n')
             found = violations(tmp)
         self.assertEqual([("scripts/x.py", 3), ("scripts/x.py", 4), ("scripts/x.py", 8)], [v[:2] for v in found])
 

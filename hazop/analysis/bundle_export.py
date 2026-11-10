@@ -112,7 +112,7 @@ def export_bundles(region_path, out_root=None, graph_path=None, now=run.utc_now)
     inputs = api.load_region_inputs(region_path, graph_path)
     t, selected, bundles = build_export(inputs, now)
     region = inputs["region"]
-    root = out_root or paths.output_root("근거묶음")
+    root = out_root or paths.output_root("evidence-bundles")
     stamp = paths.safe_name(t.replace("-", "").replace(":", ""))
     parent = paths.safe_join(root, paths.safe_name(region["region_id"]))
     export_dir = paths.safe_join(parent, stamp)

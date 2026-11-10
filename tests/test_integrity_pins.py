@@ -115,7 +115,7 @@ class TamperedResourceRootTest(unittest.TestCase):
             dst = os.path.join(self.res, *rel.split("/"))
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(paths.resolve_rel(rel, REPO_ROOT), dst)
-        self.region_path = paths.folder_in(self.work, "구간", os.path.basename(REGION_FILE))
+        self.region_path = paths.folder_in(self.work, "regions", os.path.basename(REGION_FILE))
         os.makedirs(os.path.dirname(self.region_path))
         shutil.copyfile(REGION_FILE, self.region_path)
         gpath = os.path.join(self.work, REGION["graph_ref"]["graph_file"])

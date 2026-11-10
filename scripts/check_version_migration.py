@@ -102,9 +102,9 @@ def main():
     args = ap.parse_args()
     if args.work_root:
         os.environ[paths.ENV_WORK_ROOT] = args.work_root
-    data_root = paths.folder("작업데이터")
+    data_root = paths.folder("data")
     before = digest(data_root)
-    current = sheet_graphs(paths.output_root("그래프"))
+    current = sheet_graphs(paths.output_root("graph"))
     target = {k: bumped(g) for k, g in current.items()} if args.bump else current
     store = sn.store_dir()
     totals = {"stored": {}, "prepared": {}}
@@ -155,7 +155,7 @@ def main():
         print("%s: %s" % (title, " · ".join("%s %d" % (label[k], totals[key].get(k, 0)) for k in label)))
     print("⑤ 결과 이전: 파일 %d개 · 항목 %d건" % (results_moved, entries_moved))
     if digest(data_root) != before:
-        failures.append("%s/ 아래 파일이 바뀜(쓰지 않아야 함)" % paths.folder_rel("작업데이터"))
+        failures.append("%s/ 아래 파일이 바뀜(쓰지 않아야 함)" % paths.folder_rel("data"))
     for f in failures:
         print("실패:", f)
     print("판정:", "통과" if not failures else "실패 %d건" % len(failures))

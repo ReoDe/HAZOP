@@ -29,7 +29,7 @@ class ProjectCtxTest(unittest.TestCase):
             for n in g["nodes"]:
                 if n.get("node_type") == "drawing_object":
                     n["local_id"] = "local-" + n["entity_id"]
-            d = paths.output_in(self.tmp, "그래프", g["source"]["drawing_number"])
+            d = paths.output_in(self.tmp, "graph", g["source"]["drawing_number"])
             os.makedirs(d)
             with open(os.path.join(d, "graph.json"), "w", encoding="utf-8") as fh:
                 json.dump(g, fh)
@@ -39,7 +39,7 @@ class ProjectCtxTest(unittest.TestCase):
     def test_project_graph_is_reused_until_a_graph_file_changes(self):
         first = self.pc.project_graph("P")
         self.assertIs(self.pc.project_graph("P"), first, "입력이 같으면 다시 짓지 않음")
-        p = paths.output_in(self.tmp, "그래프", "SNP-M-102", "graph.json")
+        p = paths.output_in(self.tmp, "graph", "SNP-M-102", "graph.json")
         g = dict(self.b, graph_version="v2")
         with open(p, "w", encoding="utf-8") as fh:
             json.dump(g, fh)
@@ -100,9 +100,9 @@ class ProjectCtxTest(unittest.TestCase):
         self.assertIn("백업", ctx.notice)
         with open(old_path, "rb") as fh:
             self.assertEqual(fh.read(), before)
-        backups = os.listdir(paths.folder_in(self.tmp, "백업"))
+        backups = os.listdir(paths.folder_in(self.tmp, "backup"))
         self.assertEqual(len(backups), 1)
-        self.assertTrue(os.path.isfile(paths.folder_in(self.tmp, "백업", backups[0], *paths.FOLDERS["검토구간"].rel,
+        self.assertTrue(os.path.isfile(paths.folder_in(self.tmp, "backup", backups[0], *paths.FOLDERS["study-nodes"].rel,
                                                     "P", "graph-SNP-M-101.json")))
         again, _ = self.pc.load("SNP-M-101").load_set()  # 두 번째는 저장본을 읽고 다시 옮기지 않음
         self.assertEqual(again, ns)
@@ -137,8 +137,8 @@ class ProjectCtxTest(unittest.TestCase):
         self.assertFalse(os.path.isfile(res.store_path("P", confirmed["graph_id"])), "일부만 옮기지 않음")
 
     def test_older_copy_of_same_sheet_is_blocked(self):
-        old_dir = paths.output_in(self.tmp, "그래프", "SNP-M-101-old")
-        shutil.copytree(paths.output_in(self.tmp, "그래프", "SNP-M-101"), old_dir)
+        old_dir = paths.output_in(self.tmp, "graph", "SNP-M-101-old")
+        shutil.copytree(paths.output_in(self.tmp, "graph", "SNP-M-101"), old_dir)
         os.utime(os.path.join(old_dir, "graph.json"), (1, 1))  # 더 오래된 판: 프로젝트 그래프는 SNP-M-101 쪽을 쓴다
         ctx = self.pc.load("SNP-M-101-old")
         self.assertIsNone(ctx.pg)
@@ -148,7 +148,7 @@ class ProjectCtxTest(unittest.TestCase):
     def test_other_project_with_same_graph_id_not_offered(self):
         q = sheet("SNP-M-102", cont("C1", "FROM SNP-M-101 L-1"))
         q["project_id"] = "Q"
-        d = paths.output_in(self.tmp, "그래프", "Q-SNP-M-102")
+        d = paths.output_in(self.tmp, "graph", "Q-SNP-M-102")
         os.makedirs(d)
         with open(os.path.join(d, "graph.json"), "w", encoding="utf-8") as fh:
             json.dump(q, fh)

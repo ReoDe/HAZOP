@@ -357,10 +357,10 @@ def cmd_graph_check(repo):
     from hazop import paths
     import build_graph
     import extract_drawio
-    stored_root = paths.output_root("그래프")
+    stored_root = paths.output_root("graph")
     rows, bad = [], 0
     with tempfile.TemporaryDirectory() as tmp:
-        for drawio in sorted(glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio"))):
+        for drawio in sorted(glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio"))):
             _, ex_dir = extract_drawio.run_one(drawio, os.path.join(tmp, "추출"))
             graph, _ = build_graph.build_one(os.path.join(ex_dir, "extraction.json"), os.path.join(tmp, "그래프"))
             name = os.path.basename(ex_dir)
@@ -375,7 +375,7 @@ def cmd_graph_check(repo):
     print("|---|---|---|---|---|---|")
     for r in rows:
         print("| %s | %s | %s | %s | %s | %s |" % (r[0], r[1], r[2], r[3], r[4], "예" if r[5] else "아니오"))
-    print("작업 루트 %s, 샘플 %s, 다름 %d" % (paths.work_root(), paths.folder("참고"), bad))
+    print("작업 루트 %s, 샘플 %s, 다름 %d" % (paths.work_root(), paths.folder("references"), bad))
     return 1 if bad or not rows else 0
 
 

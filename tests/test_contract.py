@@ -36,14 +36,14 @@ REGION_ID = "region-SNP-M-102-pzr"
 CID = "deviation-p86-d09"
 WHO = "검토자A"
 EXPORT_AT = "2026-11-06T00:00:00Z"
-FIXED_DIR = paths.folder("표본", "fixed-responses", REGION_ID)
+FIXED_DIR = paths.folder("samples", "fixed-responses", REGION_ID)
 REG_RUN_ID = "analysis-20261106T000000Z-regtst"
 SYNTH_RUN_ID = "analysis-20261106T000000Z-synth0"
 
 
 def sample_drawio():
     """SNP-M-102 샘플 도면 경로. 없으면 준비 오류."""
-    found = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio"))
+    found = [p for p in glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio"))
              if "SNP-M-102" in p]
     if not found:
         raise RuntimeError("준비 오류: 샘플 도면 없음 (참고자료/P&ID 도면 샘플/*/*SNP-M-102*.drawio)")
@@ -51,7 +51,7 @@ def sample_drawio():
 
 
 def latest_repo_run():
-    d = paths.output_in(paths.DEV_WORK_ROOT, "분석", REGION_ID)
+    d = paths.output_in(paths.DEV_WORK_ROOT, "analysis", REGION_ID)
     if not os.path.isdir(d):
         return None
     runs = sorted((x for x in os.listdir(d) if os.path.isfile(os.path.join(d, x, "analysis.json"))),
@@ -105,22 +105,22 @@ def _synth_sample_outputs(work):
     """출력/이 없을 때: 샘플 도면을 등록 없이(project_id null, 샘플 경로) hazop.extract.drawio.extract로 추출하고
     그래프를 만든다. scripts/extract_drawio --samples와 달리 SVG 좌표 대응(svg_alignment)은 하지 않는다(연쇄 검사와 무관).
     구간 JSON을 그 그래프에 맞춘 뒤 고정 응답으로 분석 1회. 실행 폴더 경로를 돌려준다."""
-    with env(work, paths.folder_in(work, "자료저장소")):
+    with env(work, paths.folder_in(work, "store")):
         ext = drawio.extract(sample_drawio(), page=0, repo_root=work)
-        ex_dir = paths.output_in(work, "추출", "SNP-M-102")
-        g_dir = paths.output_in(work, "그래프", "SNP-M-102")
+        ex_dir = paths.output_in(work, "extract", "SNP-M-102")
+        g_dir = paths.output_in(work, "graph", "SNP-M-102")
         os.makedirs(ex_dir)
         os.makedirs(g_dir)
         write_json(os.path.join(ex_dir, "extraction.json"), ext)
-        graph = build.build_graph(ext, extraction_file=paths.output_rel("추출", "SNP-M-102", "extraction.json"))
+        graph = build.build_graph(ext, extraction_file=paths.output_rel("extract", "SNP-M-102", "extraction.json"))
         write_json(os.path.join(g_dir, "graph.json"), graph)
         write_json(os.path.join(g_dir, "entity_mapping.json"), build.entity_mapping_document(graph, ext))
-        region_path = paths.folder_in(work, "구간", REGION_ID + ".json")
+        region_path = paths.folder_in(work, "regions", REGION_ID + ".json")
         region = read_json(region_path)
         region["graph_ref"].update(graph_id=graph["graph_id"], graph_version=graph["graph_version"],
-                                   graph_file=paths.output_rel("그래프", "SNP-M-102", "graph.json"))
+                                   graph_file=paths.output_rel("graph", "SNP-M-102", "graph.json"))
         write_json(region_path, region)
-        out = api.run_analysis(region_path, response_dir=FIXED_DIR, out_root=paths.output_in(work, "분석"),
+        out = api.run_analysis(region_path, response_dir=FIXED_DIR, out_root=paths.output_in(work, "analysis"),
                                run_id=SYNTH_RUN_ID)
     if out["status"] != "passed":
         raise RuntimeError("준비 오류: 합성 샘플 분석 실패 %r" % out.get("blockers"))
@@ -131,22 +131,22 @@ def build_sample_chain(base, src_run):
     """샘플 연쇄 S: 저장소 샘플 결과 복사(없으면 합성) + deviation-p86-d09 검토본 v1·v2(reviewing) + 출력 기록 1개.
     반환 (work, store, 실행 폴더 이름)."""
     work, store = os.path.join(base, "work"), os.path.join(base, "store")
-    os.makedirs(paths.folder_in(work, "구간"))
-    shutil.copy2(paths.folder("표본", "regions", REGION_ID + ".json"), paths.folder_in(work, "구간"))
+    os.makedirs(paths.folder_in(work, "regions"))
+    shutil.copy2(paths.folder("samples", "regions", REGION_ID + ".json"), paths.folder_in(work, "regions"))
     if src_run is not None:
-        for rel in (("추출", "SNP-M-102"), ("그래프", "SNP-M-102")):
+        for rel in (("extract", "SNP-M-102"), ("graph", "SNP-M-102")):
             shutil.copytree(paths.output_in(paths.DEV_WORK_ROOT, *rel), paths.output_in(work, *rel))
-        run_dir = paths.output_in(work, "분석", REGION_ID, os.path.basename(src_run))
+        run_dir = paths.output_in(work, "analysis", REGION_ID, os.path.basename(src_run))
         shutil.copytree(src_run, run_dir)
         # 현재 구간 JSON = 실행 당시 사본(저장소 구간 JSON이 실행 뒤 바뀌었어도 버전을 섞지 않음)
         shutil.copyfile(os.path.join(run_dir, "inputs", "region.json"),
-                        paths.folder_in(work, "구간", REGION_ID + ".json"))
+                        paths.folder_in(work, "regions", REGION_ID + ".json"))
         # 저장소 출력/의 현재 그래프가 이전 빌더 버전으로 만들어졌으면(BUILDER_VERSION 변경 뒤 재생성 전) 복사본의
         # 현재 그래프만 현재 빌더로 다시 만든다(실행 사본은 그대로 — 현재 그래프와 다르면 A7 WARN은 허용).
-        ext = read_json(paths.output_in(work, "추출", "SNP-M-102", "extraction.json"))
-        g_dir = paths.output_in(work, "그래프", "SNP-M-102")
+        ext = read_json(paths.output_in(work, "extract", "SNP-M-102", "extraction.json"))
+        g_dir = paths.output_in(work, "graph", "SNP-M-102")
         if build._graph_version(ext) != read_json(os.path.join(g_dir, "graph.json"))["graph_version"]:
-            graph = build.build_graph(ext, extraction_file=paths.output_rel("추출", "SNP-M-102", "extraction.json"))
+            graph = build.build_graph(ext, extraction_file=paths.output_rel("extract", "SNP-M-102", "extraction.json"))
             write_json(os.path.join(g_dir, "graph.json"), graph)
             write_json(os.path.join(g_dir, "entity_mapping.json"), build.entity_mapping_document(graph, ext))
     else:
@@ -159,7 +159,7 @@ def build_sample_chain(base, src_run):
         d2 = d1 + [rv.scenario_decision(run, sids[1], "reject", "도면 범위 밖", WHO, now="2026-11-06T00:00:03Z")]
         _, rec = rv.save_review(store, run, rv.build_review(run, CID, WHO, "2차 검토", d2), now="2026-11-06T00:00:04Z")
         assert rec["review_status"] == "reviewing", rec["review_status"]
-        out = export_worksheet(run_dir, store, paths.output_in(work, "워크시트"), now=EXPORT_AT)
+        out = export_worksheet(run_dir, store, paths.output_in(work, "worksheets"), now=EXPORT_AT)
     assert out["record"]["target"]["reviews"] == [{"candidate_id": CID, "review_version": 2,
                                                    "review_status": "reviewing"}]
     return work, store, os.path.basename(run_dir)
@@ -171,24 +171,24 @@ def build_registration_chain(base, out_sub=()):
     import build_graph
     import extract_drawio
     work, store = os.path.join(base, "work"), os.path.join(base, "store")
-    os.makedirs(paths.folder_in(work, "구간"))
+    os.makedirs(paths.folder_in(work, "regions"))
     with env(work, store), contextlib.redirect_stdout(io.StringIO()):
         res = registry.register(sample_drawio(), "p-test", store_root=store, actor="tester",
                                 now=lambda: "2026-11-06T00:00:00+00:00")
         assert res["outcome"] == "registered", res
         record, original = registry.load_for_extraction(res["registration_file"])
         svgs = registry.registered_svgs(res["registration_file"], record)
-        result, ex_dir = extract_drawio.run_one(original, os.path.join(paths.output_in(work, *out_sub), paths.output_name("추출")), registration=record,
+        result, ex_dir = extract_drawio.run_one(original, os.path.join(paths.output_in(work, *out_sub), paths.output_name("extract")), registration=record,
                                                 registered_svgs=svgs)
-        graph, g_dir = build_graph.build_one(os.path.join(ex_dir, "extraction.json"), os.path.join(paths.output_in(work, *out_sub), paths.output_name("그래프")))
-        region = read_json(paths.folder("표본", "regions", REGION_ID + ".json"))
+        graph, g_dir = build_graph.build_one(os.path.join(ex_dir, "extraction.json"), os.path.join(paths.output_in(work, *out_sub), paths.output_name("graph")))
+        region = read_json(paths.folder("samples", "regions", REGION_ID + ".json"))
         region["project_id"] = "p-test"
         region["graph_ref"].update(graph_id=graph["graph_id"], graph_version=graph["graph_version"],
                                    graph_source="registration",
                                    graph_file=os.path.relpath(os.path.join(g_dir, "graph.json"), work).replace("\\", "/"))
-        region_path = paths.folder_in(work, "구간", REGION_ID + ".json")
+        region_path = paths.folder_in(work, "regions", REGION_ID + ".json")
         write_json(region_path, region)
-        out = api.run_analysis(region_path, response_dir=FIXED_DIR, out_root=paths.output_in(work, "분석"),
+        out = api.run_analysis(region_path, response_dir=FIXED_DIR, out_root=paths.output_in(work, "analysis"),
                                run_id=REG_RUN_ID)
     assert out["status"] == "passed", out
     return work, store
@@ -229,7 +229,7 @@ class SampleChainTest(_Base):
             raise
 
     def run_dir_of(self, work):
-        return paths.output_in(work, "분석", REGION_ID, self.run_name)
+        return paths.output_in(work, "analysis", REGION_ID, self.run_name)
 
     def review_dir_of(self, store):
         return os.path.join(store, "reviews", REGION_ID, self.run_name)
@@ -264,7 +264,7 @@ class SampleChainTest(_Base):
         """저장소 실제 출력/의 최신 실행(읽기 전용). 검토본·출력 기록은 저장소 자료저장소/에 있으면 함께 본다."""
         if self.src_run is None:
             self.skipTest("저장소 출력/분석 없음(git 제외 폴더) — 실제 실행 판정만 생략, 나머지는 합성 연쇄로 검사")
-        res = self.check(paths.DEV_WORK_ROOT, paths.folder_in(paths.DEV_WORK_ROOT, "자료저장소"), region=REGION_ID)
+        res = self.check(paths.DEV_WORK_ROOT, paths.folder_in(paths.DEV_WORK_ROOT, "store"), region=REGION_ID)
         self.assertEqual(res["chains"][0]["analysis_run_id"], os.path.basename(self.src_run))
         bad = fails(res)
         stale = [x for x in bad if " X2 " in x and "빌더 버전이 그래프 생성 뒤 바뀜" in x]
@@ -274,14 +274,14 @@ class SampleChainTest(_Base):
 
     def test_v6_extraction_node_deleted(self):
         work, store = self.variant()
-        self.edit_json(paths.output_in(work, "추출", "SNP-M-102", "extraction.json"), lambda d: d["nodes"].pop())
+        self.edit_json(paths.output_in(work, "extract", "SNP-M-102", "extraction.json"), lambda d: d["nodes"].pop())
         res = self.check(work, store)
         self.assertIn("FAIL", levels(res, "X2"))
         self.assertIn("FAIL", levels(res, "X3"))
 
     def test_v7_entity_mapping_entry_deleted(self):
         work, store = self.variant()
-        self.edit_json(paths.output_in(work, "그래프", "SNP-M-102", "entity_mapping.json"),
+        self.edit_json(paths.output_in(work, "graph", "SNP-M-102", "entity_mapping.json"),
                        lambda d: d["entity_mapping"].pop(0))
         res = self.check(work, store)
         self.assertIn("FAIL", levels(res, "X4"))
@@ -312,10 +312,10 @@ class SampleChainTest(_Base):
             fh.write(text.replace('pageWidth="1654"', 'pageWidth="1655"', 1))
         with env(work, store):
             ext = drawio.extract(src, page=0, repo_root=work)
-        write_json(paths.output_in(work, "추출", "SNP-M-102", "extraction.json"), ext)
-        graph = build.build_graph(ext, extraction_file=paths.output_rel("추출", "SNP-M-102", "extraction.json"))
-        write_json(paths.output_in(work, "그래프", "SNP-M-102", "graph.json"), graph)
-        write_json(paths.output_in(work, "그래프", "SNP-M-102", "entity_mapping.json"),
+        write_json(paths.output_in(work, "extract", "SNP-M-102", "extraction.json"), ext)
+        graph = build.build_graph(ext, extraction_file=paths.output_rel("extract", "SNP-M-102", "extraction.json"))
+        write_json(paths.output_in(work, "graph", "SNP-M-102", "graph.json"), graph)
+        write_json(paths.output_in(work, "graph", "SNP-M-102", "entity_mapping.json"),
                    build.entity_mapping_document(graph, ext))
         res = self.check(work, store)
         for cid in ("X1", "X2", "X3", "X4", "A2", "A3", "A4", "A5", "A6"):
@@ -344,7 +344,7 @@ class SampleChainTest(_Base):
 
     def test_v13_worksheet_changed_or_deleted(self):
         work, store = self.variant()
-        xlsx = os.path.join(work, read_json(self.export_record_path(store))["file"])
+        xlsx = paths.resolve_rel(read_json(self.export_record_path(store))["file"], work)
         with open(xlsx, "r+b") as fh:
             fh.seek(-1, os.SEEK_END)
             last = fh.read(1)
@@ -362,7 +362,7 @@ class SampleChainTest(_Base):
         def drop(doc):
             doc["validation"]["unknowns"] = [u for u in doc["validation"]["unknowns"]
                                              if not (u["check"] == "not_registered" and u["field"] == "material_id")]
-        self.edit_json(paths.output_in(work, "그래프", "SNP-M-102", "graph.json"), drop)
+        self.edit_json(paths.output_in(work, "graph", "SNP-M-102", "graph.json"), drop)
         res = self.check(work, store)
         self.assertIn("FAIL", levels(res, "K1"))
         self.assertEqual(levels(res, "X2"), ["PASS"])
@@ -376,7 +376,7 @@ class SampleChainTest(_Base):
             doc["validation"]["unknowns"].append({"check": "unknown_flow_direction", "target": rel["local_id"],
                                                   "source_object_id": rel["source_object_id"],
                                                   "field": "flow_direction", "reason": "원본에 흐름 방향 지정 없음"})
-        self.edit_json(paths.output_in(work, "추출", "SNP-M-102", "extraction.json"), edit)
+        self.edit_json(paths.output_in(work, "extract", "SNP-M-102", "extraction.json"), edit)
         res = self.check(work, store)
         for cid in ("K2", "K1", "X2"):
             self.assertIn("FAIL", levels(res, cid), cid)
@@ -384,8 +384,8 @@ class SampleChainTest(_Base):
     def test_k2_check_valve_direction(self):
         """체크밸브 허용 방향(K2 확장): 추출 판정과 같으면 PASS, 그래프에서 입출구를 바꾸면 FAIL."""
         work, store = self.variant()
-        gpath = paths.output_in(work, "그래프", "SNP-M-102", "graph.json")
-        epath = paths.output_in(work, "추출", "SNP-M-102", "extraction.json")
+        gpath = paths.output_in(work, "graph", "SNP-M-102", "graph.json")
+        epath = paths.output_in(work, "extract", "SNP-M-102", "extraction.json")
         graph = read_json(gpath)
         segs = [n for n in graph["nodes"] if n.get("node_type") == "pipe_segment"][:2]
         valve = next(n for n in graph["nodes"] if n.get("category") == "valve")
@@ -442,7 +442,7 @@ class SampleChainTest(_Base):
     def test_v19_run_all_with_old_run_missing_fields(self):
         work, store = self.variant()
         old = "analysis-20261101T000000Z-old000"
-        old_dir = paths.output_in(work, "분석", REGION_ID, old)
+        old_dir = paths.output_in(work, "analysis", REGION_ID, old)
         shutil.copytree(self.run_dir_of(work), old_dir)
 
         def make_old(doc):
@@ -495,13 +495,13 @@ class SampleChainTest(_Base):
     # ---- 재작업 1회차 추가 사례
     def test_x3_unknown_relation_kind_exempt_only_with_one_record(self):
         work, store = self.variant()
-        ex_path = paths.output_in(work, "추출", "SNP-M-102", "extraction.json")
-        g_dir = paths.output_in(work, "그래프", "SNP-M-102")
+        ex_path = paths.output_in(work, "extract", "SNP-M-102", "extraction.json")
+        g_dir = paths.output_in(work, "graph", "SNP-M-102")
         ext = read_json(ex_path)
         rel = next(r for r in ext["relations"] if r["kind"] != "physical_connection")
         rel["kind"] = "unknown_kind_x"  # 빌더는 매핑하지 않고 unknown_relation_kind 1건을 남김
         write_json(ex_path, ext)
-        graph = build.build_graph(ext, extraction_file=paths.output_rel("추출", "SNP-M-102", "extraction.json"))
+        graph = build.build_graph(ext, extraction_file=paths.output_rel("extract", "SNP-M-102", "extraction.json"))
         write_json(os.path.join(g_dir, "graph.json"), graph)
         write_json(os.path.join(g_dir, "entity_mapping.json"), build.entity_mapping_document(graph, ext))
         res = self.check(work, store)
@@ -517,10 +517,10 @@ class SampleChainTest(_Base):
 
     def test_x2_builder_version_change_named_in_message(self):
         work, store = self.variant()
-        ext = read_json(paths.output_in(work, "추출", "SNP-M-102", "extraction.json"))
+        ext = read_json(paths.output_in(work, "extract", "SNP-M-102", "extraction.json"))
         canon = json.dumps(ext, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         old = "v-" + __import__("hashlib").sha256(("0.0.9|" + canon).encode("utf-8")).hexdigest()[:12]
-        self.edit_json(paths.output_in(work, "그래프", "SNP-M-102", "graph.json"),
+        self.edit_json(paths.output_in(work, "graph", "SNP-M-102", "graph.json"),
                        lambda d: (d["builder"].update(version="0.0.9"), d.update(graph_version=old)))
         res = self.check(work, store)
         x2 = [r for r in results(res) if r["id"] == "X2"]
@@ -530,8 +530,8 @@ class SampleChainTest(_Base):
 
     def test_x3_known_relation_kind_not_exempt(self):
         work, store = self.variant()
-        g_path = paths.output_in(work, "그래프", "SNP-M-102", "graph.json")
-        ext = read_json(paths.output_in(work, "추출", "SNP-M-102", "extraction.json"))
+        g_path = paths.output_in(work, "graph", "SNP-M-102", "graph.json")
+        ext = read_json(paths.output_in(work, "extract", "SNP-M-102", "extraction.json"))
         rel = next(r for r in ext["relations"] if r["kind"] == "signal_connection")
 
         def edit(g):
@@ -546,7 +546,7 @@ class SampleChainTest(_Base):
     def test_report_contains_notes(self):
         work, store = self.variant()
         unfinished = "analysis-20991231T000000Z-unfin2"
-        os.makedirs(paths.output_in(work, "분석", REGION_ID, unfinished))
+        os.makedirs(paths.output_in(work, "analysis", REGION_ID, unfinished))
         out = tempfile.mkdtemp(prefix="hazop-contract-report-")
         self.addCleanup(shutil.rmtree, out, True)
         p = contract.write_report(self.check(work, store), os.path.join(out, "r.json"))
@@ -555,7 +555,7 @@ class SampleChainTest(_Base):
     def test_listdir_error_is_execution_error(self):
         work, store = self.variant()
         real = os.listdir
-        target = paths.output_in(work, "분석", REGION_ID)
+        target = paths.output_in(work, "analysis", REGION_ID)
 
         def denied(path="."):
             if os.path.normcase(os.path.abspath(path)) == os.path.normcase(target):
@@ -590,7 +590,7 @@ class SampleChainTest(_Base):
     def test_latest_ignores_unfinished_run_folder(self):
         work, store = self.variant()
         unfinished = "analysis-20991231T000000Z-unfin0"
-        os.makedirs(paths.output_in(work, "분석", REGION_ID, unfinished, "inputs"))
+        os.makedirs(paths.output_in(work, "analysis", REGION_ID, unfinished, "inputs"))
         res = self.check(work, store)
         self.assertEqual([c["analysis_run_id"] for c in res["chains"]], [self.run_name])
         self.assertTrue(any(unfinished in n for n in res["notes"]))
@@ -599,7 +599,7 @@ class SampleChainTest(_Base):
     def test_run_all_skips_unfinished_but_named_run_is_error(self):
         work, store = self.variant()
         unfinished = "analysis-20261101T000000Z-unfin1"
-        os.makedirs(paths.output_in(work, "분석", REGION_ID, unfinished, "inputs"))
+        os.makedirs(paths.output_in(work, "analysis", REGION_ID, unfinished, "inputs"))
         res = self.check(work, store, run="all")
         self.assertEqual([c["analysis_run_id"] for c in res["chains"]], [self.run_name])
         self.assertTrue(any(unfinished in n for n in res["notes"]))
@@ -616,7 +616,7 @@ class SampleChainTest(_Base):
         self.assertTrue(any("JSON 객체가 아님" in e and "analysis.json" in e for e in res["errors"]))
         self.assertEqual(contract.exit_code(res), 2)
         work, store = self.variant()
-        with open(paths.output_in(work, "그래프", "SNP-M-102", "graph.json"), "w", encoding="utf-8") as fh:
+        with open(paths.output_in(work, "graph", "SNP-M-102", "graph.json"), "w", encoding="utf-8") as fh:
             fh.write("[1]")
         res = contract.check(work, store)
         self.assertTrue(any("JSON 객체가 아님" in e and "graph.json" in e for e in res["errors"]))
@@ -653,7 +653,7 @@ class SampleChainTest(_Base):
 
     def test_g2_sample_path_requires_null_project_id(self):
         work, store = self.variant()
-        self.edit_json(paths.output_in(work, "추출", "SNP-M-102", "extraction.json"),
+        self.edit_json(paths.output_in(work, "extract", "SNP-M-102", "extraction.json"),
                        lambda d: d.update(project_id="p-x"))
         res = self.check(work, store)
         g2 = [r for r in results(res) if r["id"] == "G2"]
@@ -662,7 +662,7 @@ class SampleChainTest(_Base):
 
     def test_version_values_normalized_to_int(self):
         work, store = self.variant()
-        region_path = paths.folder_in(work, "구간", REGION_ID + ".json")
+        region_path = paths.folder_in(work, "regions", REGION_ID + ".json")
         # 실행 당시 구간 버전(사본)과 같은 값을 문자열로 둔다(현재 구간이 재고정으로 올라가 있어도 A8 PASS 조건 유지)
         cur = read_json(os.path.join(self.run_dir_of(work), "inputs", "region.json"))["region_version"]
         self.edit_json(region_path, lambda d: d.update(region_version=str(cur)))
@@ -681,7 +681,7 @@ class SampleChainTest(_Base):
     def test_report_path_rules(self):
         res = self.check(self.work, self.store)
         for p in (os.path.join(paths.output_in(self.work), "r.json"), os.path.join(self.store, "r.json"),
-                  paths.folder_in(self.work, "작업데이터", "x", "..", "r.json")):
+                  paths.folder_in(self.work, "data", "x", "..", "r.json")):
             with self.assertRaises(contract.ContractError):
                 contract.write_report(res, p)
             self.assertFalse(os.path.exists(os.path.normpath(p)))
@@ -689,7 +689,7 @@ class SampleChainTest(_Base):
         os.chdir(self.work)
         try:
             with self.assertRaises(contract.ContractError):
-                contract.write_report(res, os.path.join(paths.folder_rel("출력"), "rel.json"))
+                contract.write_report(res, os.path.join(paths.folder_rel("output"), "rel.json"))
         finally:
             os.chdir(cwd)
         self.assertFalse(os.path.exists(os.path.join(paths.output_in(self.work), "rel.json")))
@@ -784,7 +784,7 @@ class RegistrationChainTest(_Base):
 
     def test_v4_extraction_project_id_changed(self):
         work, store = self.variant()
-        p = glob.glob(paths.output_in(work, "추출", "*", "extraction.json"))[0]
+        p = glob.glob(paths.output_in(work, "extract", "*", "extraction.json"))[0]
         doc = read_json(p)
         doc["project_id"] = "p-other"
         write_json(p, doc)
@@ -807,7 +807,7 @@ class RegistrationChainTest(_Base):
 
     def test_registration_version_string_normalized(self):
         work, store = self.variant()
-        p = glob.glob(paths.output_in(work, "추출", "*", "extraction.json"))[0]
+        p = glob.glob(paths.output_in(work, "extract", "*", "extraction.json"))[0]
         doc = read_json(p)
         doc["source"]["registration_version"] = "1"
         write_json(p, doc)
@@ -826,7 +826,7 @@ class RunSamplesLayoutTest(_Base):
 
     def test_graph_found_next_to_extraction(self):
         work, store = self.variant()
-        self.assertFalse(os.path.exists(paths.output_in(work, "그래프")))
+        self.assertFalse(os.path.exists(paths.output_in(work, "graph")))
         res = self.check(work, store)
         self.assertEqual(fails(res), [])
         for cid in ("X1", "X2", "X3", "X4", "X5", "A7", "K1", "K2"):

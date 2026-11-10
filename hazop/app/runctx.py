@@ -42,7 +42,7 @@ class RunContext:
         self.run_graph = self.run["graph"]
         self.region_id = self.doc["region_ref"]["region_id"]
         self.tags = {n["entity_id"]: n.get("tag") for n in (self.run_graph or {}).get("nodes", [])}
-        p = paths.folder("구간", "%s.json" % paths.safe_name(self.region_id))
+        p = paths.folder("regions", "%s.json" % paths.safe_name(self.region_id))
         self.region_path = p if os.path.isfile(p) else None
         run_region = os.path.join(self.run_dir, "inputs", "region.json")
         region = data.read_json(run_region) if os.path.isfile(run_region) else (
@@ -51,7 +51,7 @@ class RunContext:
         self.kg = kg_state(self.doc, region)
         self.viewer = None
         self.viewer_error = None
-        if self.drawing_name and os.path.isfile(os.path.join(paths.output_root("추출"), self.drawing_name,
+        if self.drawing_name and os.path.isfile(os.path.join(paths.output_root("extract"), self.drawing_name,
                                                              "extraction.json")):
             try:
                 self.viewer = data.viewer_html_for(self.drawing_name)

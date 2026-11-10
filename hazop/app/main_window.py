@@ -1368,7 +1368,7 @@ class MainWindow(QMainWindow):
         self._fit_conn_chip()
 
     def _open_region(self):
-        path, _ = QFileDialog.getOpenFileName(self, "구간 JSON", paths.folder("구간"), "JSON (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self, "구간 JSON", paths.folder("regions"), "JSON (*.json)")
         if path:
             scr = self.screens[2]
             i = scr.region_combo.findData(path)
@@ -1379,7 +1379,7 @@ class MainWindow(QMainWindow):
             self.go(2)
 
     def _open_run_dialog(self):
-        d = QFileDialog.getExistingDirectory(self, "분석 실행 폴더", paths.output_root("분석"))
+        d = QFileDialog.getExistingDirectory(self, "분석 실행 폴더", paths.output_root("analysis"))
         if d:
             self.open_run(d)
 

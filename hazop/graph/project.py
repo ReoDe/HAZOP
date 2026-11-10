@@ -174,7 +174,7 @@ def _ref(end):
 # ---------------------------------------------------------------- 사람 지정 기록
 
 def manual_path(project_id):
-    return paths.folder("도면연결", paths.safe_name(project_id) + ".json")
+    return paths.folder("drawing-links", paths.safe_name(project_id) + ".json")
 
 
 def load_manual(project_id):
@@ -439,7 +439,7 @@ def load(project_id, graph_root=None):
 def pick_graphs(project_id, graph_root=None):
     """{graph_id: ((바뀐 시각, 경로), graph, 폴더 이름)} 이 프로젝트의 도면. 같은 graph_id는 가장 최근 것
     (hazop.kg.auto.project_graphs와 같은 규칙). load와 ② 도면 이름표(project_ctx.graph_names)가 함께 쓴다."""
-    root = graph_root or paths.output_root("그래프")
+    root = graph_root or paths.output_root("graph")
     best = {}
     for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
         p = os.path.join(root, name, "graph.json")

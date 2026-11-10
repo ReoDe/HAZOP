@@ -32,7 +32,7 @@ if REPO_ROOT not in sys.path:
 from hazop import paths  # noqa: E402  (표준 라이브러리만 쓰는 경로 모듈)
 CDP_PORT = 9339
 WINDOW_SIZE = (1366, 768)
-DRAWIO_SAMPLE = paths.folder("참고", "pid-samples", "SNP-M-201_CVCS", "SNP-M-201_CVCS.drawio")
+DRAWIO_SAMPLE = paths.folder("references", "pid-samples", "SNP-M-201_CVCS", "SNP-M-201_CVCS.drawio")
 
 # KLM 연산자 시간(초). Card, Moran & Newell(1980) "The Keystroke-Level Model for User Performance Time with Interactive
 # Systems", CACM 23(7):396-410. K는 비전문 평균 타자(40 wpm) 값 0.28(같은 논문 표 1의 범위 0.08~1.2 중).
@@ -1222,7 +1222,7 @@ def s5_register_drawio(d):
     d.shot("등록 후")
     if not d.expect(bool(ext), "등록 뒤 '추출·그래프 만들기'가 켜지지 않음"):
         return
-    graphs = paths.output_in(os.path.dirname(os.path.dirname(d.data_root)), "그래프")
+    graphs = paths.output_in(os.path.dirname(os.path.dirname(d.data_root)), "graph")
 
     def graph_dirs():
         return set(os.listdir(graphs)) if os.path.isdir(graphs) else set()
@@ -1304,7 +1304,7 @@ def s12_excel_export(d):
     파일은 openpyxl로 다시 읽어 시나리오 행 수가 저장된 결과의 항목 수와 같은지 본다. [열기]는 누르지 않는다(Excel 실행)."""
     import openpyxl
     goto_stage(d, 5)
-    out = os.path.join(os.path.dirname(os.path.dirname(d.data_root)), "내보내기", "S12-export.xlsx")
+    out = os.path.join(os.path.dirname(os.path.dirname(d.data_root)), "exports", "S12-export.xlsx")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     d.step("Ctrl+P에서 '>Excel' 실행")
     d.key("ctrl+p")
@@ -1496,7 +1496,7 @@ def prepare(work_root):
     import shoot_results
     shoot_results.prepare(work_root)
     # ②④ 뷰어 바탕 그림: 샘플 도면 사본을 기록 경로 자리에 둔다
-    shutil.copytree(paths.folder("참고", "pid-samples"), paths.logical_dir(work_root, "참고", "pid-samples"))
+    shutil.copytree(paths.folder("references", "pid-samples"), paths.logical_dir(work_root, "references", "pid-samples"))
     from hazop.app import make_application
     from hazop.app.main_window import MainWindow
     from hazop.app.screenshots import wait
@@ -1615,7 +1615,7 @@ def run(out_dir, only=None, keep_temp=False, focus_wait=120):
             print(exc)
             return 2
         w32.resize(hwnd, *WINDOW_SIZE)
-        d = Driver(w32, uia, cdp, pid, hwnd, shots, paths.folder_in(os.path.join(tmp, "work"), "분석결과"))
+        d = Driver(w32, uia, cdp, pid, hwnd, shots, paths.folder_in(os.path.join(tmp, "work"), "analysis-results"))
         d.focus_wait = focus_wait
         w32.activate(hwnd)
         time.sleep(1.0)
@@ -1671,7 +1671,7 @@ def run(out_dir, only=None, keep_temp=False, focus_wait=120):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default=paths.output_in(paths.DEV_WORK_ROOT, "사용자검증"), help="결과 폴더")
+    ap.add_argument("--out", default=paths.output_in(paths.DEV_WORK_ROOT, "user-scenarios"), help="결과 폴더")
     ap.add_argument("--only", help="돌릴 시나리오 ID(쉼표), 예: S1,S3")
     ap.add_argument("--keep-temp", action="store_true", help="임시 작업 루트를 지우지 않음")
     ap.add_argument("--focus-wait", type=int, default=120, help="창 전환이 막히면 사용자가 창을 클릭하길 기다릴 초")

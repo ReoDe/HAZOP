@@ -38,7 +38,7 @@ from hazop.kg import algo, build  # noqa: E402
 
 SAMPLE_PROJECT = "SNP-SAMPLE"
 EXPECTED = os.path.join(REPO_ROOT, "tests", "fixtures", "kg_algo", "expected_SNP-SAMPLE.json")
-REGION_FILE = paths.folder_in(REPO_ROOT, "표본", "regions", "region-SNP-M-102-pzr.json")
+REGION_FILE = paths.folder_in(REPO_ROOT, "samples", "regions", "region-SNP-M-102-pzr.json")
 P1_NODES = 5000  # §7.3 전역 보기 노드 수 상한
 P1_FILE = "p1_performance.json"
 

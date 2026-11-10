@@ -64,7 +64,7 @@ class InitiatingScreenTest(unittest.TestCase):
         os.environ["HAZOP_WORK_ROOT"] = self.tmp
         for g in (sheet("SNP-M-101", cont("C1", "TO SNP-M-102\nL-1")),
                   sheet("SNP-M-102", cont("C1", "FROM SNP-M-101\nL-1"))):
-            d = paths.output_in(self.tmp, "그래프", g["source"]["drawing_number"])
+            d = paths.output_in(self.tmp, "graph", g["source"]["drawing_number"])
             os.makedirs(d)
             with open(os.path.join(d, "graph.json"), "w", encoding="utf-8") as fh:
                 json.dump(g, fh)

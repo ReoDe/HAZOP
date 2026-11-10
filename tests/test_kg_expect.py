@@ -233,7 +233,7 @@ class StoreTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.path = paths.folder_in(self.tmp, "잠재후보", "P.json")
+        self.path = paths.folder_in(self.tmp, "latent-candidates", "P.json")
 
     def judge(self, res, rule, tag, action, **kw):
         rec = expect.apply_action(item(res, rule, tag), action, "검토자", at="2026-11-09T00:00:00Z", **kw)
@@ -392,7 +392,7 @@ class StoreTest(unittest.TestCase):
     def test_store_path_under_work_root(self):
         with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": self.tmp}):
             self.assertEqual(expect.store_path("SNP-SAMPLE"),
-                             paths.folder_in(self.tmp, "잠재후보", "SNP-SAMPLE.json"))
+                             paths.folder_in(self.tmp, "latent-candidates", "SNP-SAMPLE.json"))
 
 
 class ExclusionTest(unittest.TestCase):

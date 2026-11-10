@@ -114,7 +114,7 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(migrate.notice(got), "그래프 판이 바뀌어(v-1 → v-2) 구성요소 %d개를 새 판에 다시 맞췄습니다. 확정은 그대로입니다."
                          % len(g2["nodes"]))
         self.assertEqual(got["history"][:-1], self.ns["history"])
-        self.assertTrue(os.path.isdir(paths.folder_in(self.tmp, "백업")))
+        self.assertTrue(os.path.isdir(paths.folder_in(self.tmp, "backup")))
         with open(sn.store_path(None, "graph-T"), encoding="utf-8") as fh:
             self.assertEqual(json.load(fh), got)
 

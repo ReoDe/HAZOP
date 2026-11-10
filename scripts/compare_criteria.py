@@ -36,7 +36,7 @@ def main(argv=None):
     ap.add_argument("--now", default=None, help="비교 시각 UTC 'YYYY-MM-DDTHH:MM:SSZ' (기본 현재)")
     args = ap.parse_args(argv)
     try:
-        res = run_compare(args.criteria, args.run, args.store_root, paths.output_root("평가비교"),
+        res = run_compare(args.criteria, args.run, args.store_root, paths.output_root("evaluation-compare"),
                           basis=args.basis, export_path=args.export, fmt=args.format, now=args.now)
     except (CompareError, rv.ReviewError) as exc:
         print("비교하지 않음:")

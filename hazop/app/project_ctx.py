@@ -71,7 +71,7 @@ _VIEWS = {}
 
 def _graph_inputs(project_id):
     """project.load가 읽는 파일의 (경로, 바뀐 시각, 크기). 하나라도 바뀌면 프로젝트 그래프를 다시 짓는다."""
-    root = paths.output_root("그래프")
+    root = paths.output_root("graph")
     files = [os.path.join(root, n, "graph.json") for n in sorted(os.listdir(root))] if os.path.isdir(root) else []
     files += [project.manual_path(project_id), paths.folder("APR1400", project.SYSTEM_CODES_FILE)]
     out = []
@@ -229,7 +229,7 @@ def continuation_label(n):
 def load(name):
     """추출 이름 → ProjectContext. 도면 그래프가 없으면 None."""
     from hazop.viewer import build as viewer_build
-    sheet = viewer_build.load_graph(paths.output_root("그래프"), name) if name else None
+    sheet = viewer_build.load_graph(paths.output_root("graph"), name) if name else None
     return ProjectContext(name, sheet) if sheet else None
 
 
@@ -252,7 +252,7 @@ def _old_sets(pg):
 def backup(paths_to_copy, label):
     """파일들을 <작업 루트>/데이터/백업/<시각>-<label>/ 아래 원래 상대 경로 그대로 복사한다. 백업 폴더를 돌려준다."""
     stamp = sn.now_utc().replace(":", "").replace("-", "")
-    root = paths.folder("백업", "%s-%s" % (stamp, label))
+    root = paths.folder("backup", "%s-%s" % (stamp, label))
     for p in paths_to_copy:
         dst = os.path.join(root, paths.backup_rel(p, paths.work_root()))
         os.makedirs(os.path.dirname(dst), exist_ok=True)

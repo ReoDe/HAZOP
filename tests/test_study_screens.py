@@ -338,13 +338,13 @@ class StudyScreensTest(unittest.TestCase):
     @staticmethod
     def _backups(path):
         from hazop import paths
-        root = paths.folder("백업")
+        root = paths.folder("backup")
         return [os.path.join(d, f) for d, _s, fs in os.walk(root) for f in fs if f == os.path.basename(path)]
 
     def test_unreadable_saved_file_is_backed_up_before_overwrite(self):
         from unittest import mock
         from hazop import paths
-        self.addCleanup(shutil.rmtree, paths.folder("백업"), True)
+        self.addCleanup(shutil.rmtree, paths.folder("backup"), True)
         path, _good, cases = self._unreadable_cases()
         for label, raw in cases:
             with self.subTest(label):
@@ -372,12 +372,12 @@ class StudyScreensTest(unittest.TestCase):
                     self.assertTrue(scr.rename_current("한 번 더"))
                 ask.assert_not_called()
                 win.close()
-                shutil.rmtree(paths.folder("백업"), ignore_errors=True)
+                shutil.rmtree(paths.folder("backup"), ignore_errors=True)
 
     def test_repropose_over_unreadable_file_asks(self):
         from unittest import mock
         from hazop import paths
-        self.addCleanup(shutil.rmtree, paths.folder("백업"), True)
+        self.addCleanup(shutil.rmtree, paths.folder("backup"), True)
         path, _good, cases = self._unreadable_cases()
         raw = cases[0][1]
         with open(path, "wb") as fh:

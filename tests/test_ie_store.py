@@ -43,7 +43,7 @@ class StoreTest(unittest.TestCase):
             fh.write(data)
 
     def test_path_is_under_data_folder(self):
-        self.assertEqual(self.path, paths.folder("초기사건", "가상_PWR.json"))
+        self.assertEqual(self.path, paths.folder("initiating-events", "가상_PWR.json"))
 
     def test_missing_file_reads_empty_and_round_trips(self):
         doc, fp = store.load("가상 PWR")
@@ -99,9 +99,9 @@ class StoreTest(unittest.TestCase):
         doc, fp, saved = store.replace_unreadable("가상 PWR")
         with open(saved, "rb") as fh:
             self.assertEqual(fh.read(), b"{broken")
-        rel = os.path.relpath(saved, paths.folder("백업"))
+        rel = os.path.relpath(saved, paths.folder("backup"))
         self.assertTrue(rel.split(os.sep)[0].endswith("-초기사건읽기실패"), rel)
-        self.assertTrue(rel.endswith(os.path.join(*paths.FOLDERS["초기사건"].rel, "가상_PWR.json")), rel)
+        self.assertTrue(rel.endswith(os.path.join(*paths.FOLDERS["initiating-events"].rel, "가상_PWR.json")), rel)
         self.assertEqual(store.load("가상 PWR"), (doc, fp))
 
     def test_change_after_backup_is_not_overwritten(self):

@@ -91,7 +91,7 @@ def run(results, client, jobs, devs, cancel_after=None):
 
 def check(tmp):
     f = []
-    graph = viewer_build.load_graph(paths.output_root("그래프"), DRAWING)
+    graph = viewer_build.load_graph(paths.output_root("graph"), DRAWING)
     ns = sn.confirm(sn.propose(graph, at=AT), graph, "검사", at=AT)
     sn.save(ns)
     devs = sr.load_deviations()
@@ -222,7 +222,7 @@ def main():
     os.environ[paths.ENV_WORK_ROOT] = tmp
     failures = []
     try:
-        for d in ("그래프", "지식그래프"):
+        for d in ("graph", "knowledge-graph"):
             shutil.copytree(paths.output_in(paths.DEV_WORK_ROOT, d), paths.output_in(tmp, d))
         failures = check(tmp)
     finally:

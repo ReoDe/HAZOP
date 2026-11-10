@@ -31,15 +31,15 @@ import check_kg  # noqa: E402
 from hazop.analysis import ai, run, validate  # noqa: E402
 from hazop.kg import build, context  # noqa: E402
 
-REGION_FILE = paths.folder("표본", "regions", "region-SNP-M-102-pzr.json")
-FIXED_DIR = paths.folder("표본", "fixed-responses", "region-SNP-M-102-pzr")
-SAMPLE_DIR = paths.folder("표본", "knowledge-graph", "SNP-SAMPLE")
+REGION_FILE = paths.folder("samples", "regions", "region-SNP-M-102-pzr.json")
+FIXED_DIR = paths.folder("samples", "fixed-responses", "region-SNP-M-102-pzr")
+SAMPLE_DIR = paths.folder("samples", "knowledge-graph", "SNP-SAMPLE")
 FIXTURE_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "kg_context")
 KG_RESPONSES = os.path.join(FIXTURE_DIR, "responses")
 C9_RESPONSES = os.path.join(FIXTURE_DIR, "responses_c9")
 C1_EXPECTED = os.path.join(FIXTURE_DIR, "c1_pre_w7.json")
 KG_ID = "kg-SNP-SAMPLE"
-KG_REF = paths.output_rel("지식그래프", KG_ID)
+KG_REF = paths.output_rel("knowledge-graph", KG_ID)
 NOW = "2026-11-05T00:00:00Z"
 FIXED_FIVE = ("deviation-p86-d09", "deviation-p86-d10", "deviation-p86-d12", "deviation-p86-d43", "deviation-p86-d44")
 PZR, PV101, PT110, PSV101 = "entity-node-001", "entity-node-008", "entity-node-009", "entity-node-014"
@@ -89,14 +89,14 @@ class Env:
         self.graph_path = os.path.join(self.root, "graph.json")
         with open(self.graph_path, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(self.graph, fh, ensure_ascii=False)
-        self.out_root = paths.output_in(self.root, "분석")
+        self.out_root = paths.output_in(self.root, "analysis")
         self.n = 0
 
     def close(self):
         shutil.rmtree(self.root, ignore_errors=True)
 
     def kg_root(self, kg_id=KG_ID):
-        return paths.output_in(self.root, "지식그래프", kg_id)
+        return paths.output_in(self.root, "knowledge-graph", kg_id)
 
     def build_kg(self, knowledge=None, kg_id=KG_ID, mutate=None):
         """지식 입력을 빌드해 버전 폴더·포인터를 쓴다. mutate(kg)로 빌드 결과를 고쳐 쓸 수 있다(차단 픽스처)."""
@@ -277,7 +277,7 @@ def c2_problems(env):
     zero = sample_knowledge()
     zero["links"] = [l for l in zero["links"] if l["kind"] in ("part_of", "specified_in") or l["id"] == "krel-015"]
     env.build_kg(zero, kg_id="kg-ZERO")
-    doc0 = env.analyze(env.region(kg_ref=paths.output_rel("지식그래프", "kg-ZERO")))
+    doc0 = env.analyze(env.region(kg_ref=paths.output_rel("knowledge-graph", "kg-ZERO")))
     k0 = kc(doc0)
     objs = [n for n in bundle(doc0)["allowed_ids"]["node_ids"]
             if next(g for g in env.graph["nodes"] if g["entity_id"] == n)["node_type"] == "drawing_object"]
@@ -493,7 +493,7 @@ def c6_problems(env):
             return
         probs.append("(A) %s: 차단되지 않음" % label)
 
-    expect_input_error("지정 폴더 없음", env.region(kg_ref=paths.output_rel("지식그래프", "kg-NONE")))
+    expect_input_error("지정 폴더 없음", env.region(kg_ref=paths.output_rel("knowledge-graph", "kg-NONE")))
     cases = [("current.json 없음", lambda r: os.remove(os.path.join(r, build.POINTER_FILE))),
              ("포인터 JSON 오류", lambda r: _write_text(os.path.join(r, build.POINTER_FILE), "{")),
              ("파일 해시 불일치", lambda r: _write_pointer(r, knowledge_graph_sha256="0" * 64)),
@@ -509,7 +509,7 @@ def c6_problems(env):
         kg_id = "kg-A%02d" % i
         env.build_kg(kg_id=kg_id)
         breaker(env.kg_root(kg_id))
-        expect_input_error(label, env.region(kg_ref=paths.output_rel("지식그래프", kg_id)))
+        expect_input_error(label, env.region(kg_ref=paths.output_rel("knowledge-graph", kg_id)))
     # (B) 내용 검사
     blocked = sample_knowledge()
     blocked["nodes"].append(dict(node(blocked, "req-003")))  # 중복 ID -> K3 blocked
@@ -523,7 +523,7 @@ def c6_problems(env):
     for i, (label, know, mutate, frag) in enumerate(variants):
         kg_id = "kg-B%02d" % i
         env.build_kg(know, kg_id=kg_id, mutate=mutate)
-        rp = env.region(kg_ref=paths.output_rel("지식그래프", kg_id))
+        rp = env.region(kg_ref=paths.output_rel("knowledge-graph", kg_id))
         ins = env.inputs(rp)
         if not any(frag in b for b in ins["blockers"]):
             probs.append("(B) %s: blockers에 '%s' 없음: %s" % (label, frag, ins["blockers"]))
@@ -573,7 +573,7 @@ def c7_problems(env):
         probs.append("(a) 사본·포인터·기록·input_files 해시가 다름")
     if (rec["id"], rec["version"], rec["graph_refs"]) != (KG_ID, kg1["kg_version"], kg1["graph_refs"]):
         probs.append("(a) versions.knowledge_graph 기록 다름: %s" % rec)
-    if fsha["path"] != "%s/%s/%s" % (KG_REF, kg1["kg_version"], build.KG_FILE):
+    if fsha["path"] != paths.record_rel("%s/%s/%s" % (KG_REF, kg1["kg_version"], build.KG_FILE)):
         probs.append("(a) input_files 경로가 버전 폴더 기준이 아님: %s" % fsha["path"])
     if doc["validation"]["status"] != "passed":
         probs.append("(a) 실행 결과 검증이 passed가 아님")
@@ -710,7 +710,7 @@ def c9_problems(env):
     probs = []
     know = c9_knowledge()
     env.build_kg(know, kg_id="kg-C9")
-    rp = env.region(kg_ref=paths.output_rel("지식그래프", "kg-C9"))
+    rp = env.region(kg_ref=paths.output_rel("knowledge-graph", "kg-C9"))
     ins = env.inputs(rp)
     region_before, graph_before = copy.deepcopy(ins["region"]), copy.deepcopy(ins["graph"])
     doc = run.analyze(ins, ai.FixedResponseClient(C9_RESPONSES), run_id="c9", now=now)
@@ -826,7 +826,7 @@ def c10_problems(env):
     zero = sample_knowledge()
     zero["links"] = [l for l in zero["links"] if l["kind"] in ("part_of", "specified_in") or l["id"] == "krel-015"]
     env.build_kg(zero, kg_id="kg-ZERO")
-    d0 = env.analyze(env.region(kg_ref=paths.output_rel("지식그래프", "kg-ZERO")))
+    d0 = env.analyze(env.region(kg_ref=paths.output_rel("knowledge-graph", "kg-ZERO")))
     s0 = next(s for s in d0["scenarios"] if s["candidate_id"] == "deviation-p86-d09")
     l0 = {n["entity_id"]: n["labels"] for n in app_data.related_knowledge(d0, s0)["nodes"]}
     if PZR not in l0 or any(v != ["지식 입력 없음"] for v in l0.values()):

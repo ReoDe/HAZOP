@@ -30,8 +30,8 @@ from hazop.extract import drawio, svg_align  # noqa: E402
 from hazop.graph import build  # noqa: E402
 from hazop.graph.query import GraphQuery  # noqa: E402
 
-REGION_FILE = paths.folder("표본", "regions", "region-SNP-M-102-pzr.json")
-FIXED_DIR = paths.folder("표본", "fixed-responses", "region-SNP-M-102-pzr")
+REGION_FILE = paths.folder("samples", "regions", "region-SNP-M-102-pzr.json")
+FIXED_DIR = paths.folder("samples", "fixed-responses", "region-SNP-M-102-pzr")
 BAD_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "analysis", "bad")
 GUIDE = paths.file_in(REPO_ROOT, "guide")
 NOW = "2026-11-04T00:00:00Z"
@@ -55,7 +55,7 @@ def _load(path):
 
 def sample_graph():
     """scripts/extract_drawio.py --samples + build_graph.py 와 같은 방법으로 SNP-M-102 그래프를 만든다."""
-    path = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio"))
+    path = [p for p in glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio"))
             if "SNP-M-102" in p][0]
     result = drawio.extract(path, page=0, repo_root=REPO_ROOT)
     svg = glob.glob(os.path.join(os.path.dirname(path), "*.drawio.svg"))
@@ -67,7 +67,7 @@ def sample_graph():
 
 
 GRAPH = sample_graph()
-CRIT = _load(paths.folder("기준표", "kosha-p86-2017-risk-criteria.json"))
+CRIT = _load(paths.folder("risk-criteria", "kosha-p86-2017-risk-criteria.json"))
 
 
 def data_inputs(graph=None, region=None, criteria="default"):
@@ -321,7 +321,7 @@ class PatternTest(unittest.TestCase):
         self.assertEqual(DOC["analysis_run"]["versions"]["patterns"]["version"], 4)
 
     def test_normal_state_not_used_as_cause(self):
-        lib = _load(paths.folder("패턴", "pressurizer-patterns.json"))
+        lib = _load(paths.folder("patterns", "pressurizer-patterns.json"))
         self.assertNotIn("pat-cv-nc-d44-no-flow", {p["pattern_id"] for p in lib["patterns"]})
         self.assertFalse(any(s["cause_equipment"] == [PV101] for s in scen(DOC, "p86-d44")))
 
@@ -560,7 +560,7 @@ class CandidateTest(unittest.TestCase):
         self.assertEqual((counts["selected"], counts["excluded"], counts["deferred"]), (25, 19, 0))
 
     def test_19_excluded_with_reason(self):
-        app = {a["item_id"]: a for a in _load(paths.folder("이탈후보", "applicability-region-SNP-M-102-pzr.json"))["items"]}
+        app = {a["item_id"]: a for a in _load(paths.folder("deviations", "applicability-region-SNP-M-102-pzr.json"))["items"]}
         ex = [c for c in DOC["candidates"] if c["selection_status"] == "excluded"]
         self.assertEqual(len(ex), 19)
         self.assertEqual(sum(c["batch_specific"] for c in ex), 11)
@@ -571,8 +571,8 @@ class CandidateTest(unittest.TestCase):
 
     def test_catalog_matches_guide(self):
         cat, app = catalog_md.rows_to_files(catalog_md.parse_guide_table(GUIDE))
-        self.assertEqual(cat, _load(paths.folder("이탈후보", "kosha-p86-2017-deviation-chart.json")))
-        self.assertEqual(app, _load(paths.folder("이탈후보", "applicability-region-SNP-M-102-pzr.json")))
+        self.assertEqual(cat, _load(paths.folder("deviations", "kosha-p86-2017-deviation-chart.json")))
+        self.assertEqual(app, _load(paths.folder("deviations", "applicability-region-SNP-M-102-pzr.json")))
 
     def test_missing_basis_deferred_and_manual_inputs(self):
         inputs = data_inputs()

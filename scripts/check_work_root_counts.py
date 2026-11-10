@@ -10,6 +10,7 @@
 - seen: hazop.app.data와 탐색기 모듈이 쓰는 함수로 센 수(등록 자료, 추출, 그래프, 지식그래프, 구간, 분석 실행, 검토 기록,
   ④ 검토구간 저장본·확정본, ⑤ 분석 결과, ⑥ 초기사건 그룹).
 - files: paths.FOLDERS의 작업 루트 행과 paths.OUTPUT_FOLDERS 행마다 그 아래 파일 수. 열쇠로 세므로 폴더 이름이 바뀌어도 견줄 수 있다.
+  이전 결과에 없는 열쇠(뒤에 표에 더한 폴더)는 견주지 않는다.
 - records: 사용자 파일에 적힌 상대 경로(구간 inputs·graph_ref.graph_file, 추출 source.file·svg_file, 그래프 source.extraction_file,
   분석 input_files·ai_client.response_dir)를 paths.resolve_rel로 풀어 본 결과. 안 풀린 것은 (종류, 적힌 경로)로 모두 적는다.
 - --compare: seen·files·records의 수가 같고, 안 풀린 경로가 이전 결과에 없던 것이 0이면 종료 코드 0, 아니면 1.
@@ -68,9 +69,9 @@ def count_seen(errors):
     extractions = data.list_extractions()
     seen["extractions"] = len(extractions)
     seen["unregistered_extractions"] = sum(bool(data.extraction_origin(e["path"])) for e in extractions)
-    graphs = kg_screen.load_graphs(paths.output_root("그래프"))
+    graphs = kg_screen.load_graphs(paths.output_root("graph"))
     seen["graphs"] = len(graphs)
-    seen["kg_roots"] = len(kg_screen.list_kg_roots(paths.output_root("지식그래프")))
+    seen["kg_roots"] = len(kg_screen.list_kg_roots(paths.output_root("knowledge-graph")))
 
     regions = data.list_regions()
     seen["regions"] = len(regions)
@@ -205,9 +206,9 @@ def compare(old, new):
             diffs.append("%s: %r → %r" % (part, old.get(part), new.get(part)))
     for group in ("work", "output"):
         a, b = old["files"][group], new["files"][group]
-        for key in sorted(set(a) | set(b)):
-            if a.get(key) != b.get(key):
-                diffs.append("files.%s.%s: %r → %r" % (group, key, a.get(key), b.get(key)))
+        for key in sorted(a):  # 이전 결과 뒤에 표에 더한 열쇠는 견줄 값이 없다. 그 폴더의 파일은 윗폴더 수에 들어 있다
+            if a[key] != b.get(key):
+                diffs.append("files.%s.%s: %r → %r" % (group, key, a[key], b.get(key)))
     for key in ("total", "resolved", "unresolved"):
         if old["records"][key] != new["records"][key]:
             diffs.append("records.%s: %r → %r" % (key, old["records"][key], new["records"][key]))

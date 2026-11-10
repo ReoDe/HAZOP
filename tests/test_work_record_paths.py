@@ -115,8 +115,8 @@ class WorkRecordPathTest(unittest.TestCase):
         self.assertTrue(os.path.samefile(path, paths.resolve_rel(rel, self.root)))
 
 
-SAMPLE_REGION = ("표본", "regions", "region-SNP-M-102-pzr.json")
-OUTPUT_KEY, GRAPH_KEY, EXTRACT_KEY = "출력", "그래프", "추출"
+SAMPLE_REGION = ("samples", "regions", "region-SNP-M-102-pzr.json")
+OUTPUT_KEY, GRAPH_KEY, EXTRACT_KEY = "output", "graph", "extract"
 
 
 class RegisteredMaterialVersionTest(unittest.TestCase):
@@ -128,10 +128,10 @@ class RegisteredMaterialVersionTest(unittest.TestCase):
         self.assertEqual(0, done.returncode, done.stdout.decode("utf-8", "replace"))
 
     def graph_of(self, env, work):
-        sample = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio")) if "SNP-M-201" in p][0]
+        sample = [p for p in glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio")) if "SNP-M-201" in p][0]
         self.run_script(env, "scripts/register.py", "--project", "rich-demo", sample, "--drawing-number", "SNP-M-201",
                         "--revision", "0", "--by", "검토자(예시)", "--reason", "재현 자료")
-        store = env.get(paths.ENV_STORE_ROOT) or paths.folder_in(work, "자료저장소")
+        store = env.get(paths.ENV_STORE_ROOT) or paths.folder_in(work, "store")
         reg = glob.glob(os.path.join(store, "rich-demo", "registrations", "*", "*.json"))
         self.assertEqual(1, len(reg))
         self.run_script(env, "scripts/extract_drawio.py", "--registration", reg[0])
@@ -152,7 +152,7 @@ class RegisteredMaterialVersionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="hazop-workrec-") as tmp:
             work = os.path.join(paths.long_path(tmp), "work")
             extraction, graph = self.graph_of(self.env(work), work)
-        old_store = paths.OLD_WORK_RELS["자료저장소"]
+        old_store = paths.OLD_WORK_RELS["store"]
         self.assertEqual(old_store + "/rich-demo/originals/material-8cb400a20d1d/1/SNP-M-201_CVCS.drawio", extraction["source"]["file"])
         self.assertEqual(old_store + "/rich-demo/originals/material-8cb400a20d1d/1/derived/01_SNP-M-201.drawio.svg",
                          extraction["coordinate_system"]["svg_alignment"]["svg_file"])

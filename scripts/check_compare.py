@@ -34,10 +34,10 @@ import openpyxl  # noqa: E402
 import compare_criteria  # noqa: E402
 from hazop import paths  # noqa: E402
 
-CRIT_DIR = paths.folder("표본", "evaluation-criteria")
+CRIT_DIR = paths.folder("samples", "evaluation-criteria")
 CRIT_JSON = os.path.join(CRIT_DIR, "criteria-SNP-M-102-pzr-sample.json")
 CRIT_XLSX = os.path.join(CRIT_DIR, "criteria-SNP-M-102-pzr-sample.xlsx")
-REAL_RUNS = paths.output_in(paths.DEV_WORK_ROOT, "분석", "region-SNP-M-102-pzr")
+REAL_RUNS = paths.output_in(paths.DEV_WORK_ROOT, "analysis", "region-SNP-M-102-pzr")
 NOTICE = "가상 기준 — MVP 성공 판단에 쓰지 않음"  # 기획 §2.1 고정 문구
 T1, T2 = "2026-11-06T00:00:00Z", "2026-11-06T00:00:01Z"
 
@@ -79,7 +79,7 @@ def harness(tmp, src, failures):
     shutil.copytree(src, run_dir)
     store = os.path.join(tmp, "store")
     os.makedirs(store)
-    out_glob = paths.output_in(os.path.join(tmp, "work"), "평가비교", "*", "*")
+    out_glob = paths.output_in(os.path.join(tmp, "work"), "evaluation-compare", "*", "*")
     base = ["--run", run_dir, "--store-root", store]
     print("입력 실행: %s" % src)
 
@@ -132,7 +132,7 @@ def main():
         print("[FAIL] 검사용 분석 실행을 찾거나 만들지 못함: %r" % e)
         return 1
     src_before = snapshot(src)
-    repo_cmp = paths.output_in(paths.DEV_WORK_ROOT, "평가비교")
+    repo_cmp = paths.output_in(paths.DEV_WORK_ROOT, "evaluation-compare")
     out_existed = os.path.exists(repo_cmp)
     out_before = snapshot(repo_cmp) if out_existed else None
     tmp = tempfile.mkdtemp(prefix="hazop-check-compare-")

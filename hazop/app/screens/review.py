@@ -1148,7 +1148,7 @@ class ReviewScreen(QWidget):
             self.update_excel_state()
             return None
         try:
-            res = export_worksheet(self.ctx.run_dir, self.ctx.store_root, paths.output_root("워크시트"), scope)
+            res = export_worksheet(self.ctx.run_dir, self.ctx.store_root, paths.output_root("worksheets"), scope)
         except (ExportError, rv.ReviewError) as exc:  # ExportError는 ReviewError의 하위 클래스
             self.banner_info.set_messages("Excel 출력 실패 — 파일을 만들지 않음", exc.errors)
             return None

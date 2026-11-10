@@ -25,8 +25,8 @@ from hazop.console import safe_console  # noqa: E402
 from hazop.extract import report  # noqa: E402
 from hazop.extract.adapters import raster  # noqa: E402
 
-SAMPLE_GLOB = paths.folder("참고", "pid-samples", "*", "*.png")
-DEFAULT_OUT = paths.output_root("어댑터", "raster")
+SAMPLE_GLOB = paths.folder("references", "pid-samples", "*", "*.png")
+DEFAULT_OUT = paths.output_root("adapter", "raster")
 
 
 def sample_images():

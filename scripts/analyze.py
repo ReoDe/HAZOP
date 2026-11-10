@@ -30,9 +30,9 @@ from hazop.console import safe_console  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.analysis import ai, api, run  # noqa: E402
 
-DEFAULT_REGION = paths.folder("구간", "region-SNP-M-102-pzr.json")
-DEFAULT_FIXED = paths.folder("고정응답", "region-SNP-M-102-pzr")
-DEFAULT_OUT = paths.output_root("분석")
+DEFAULT_REGION = paths.folder("regions", "region-SNP-M-102-pzr.json")
+DEFAULT_FIXED = paths.folder("fixed-responses", "region-SNP-M-102-pzr")
+DEFAULT_OUT = paths.output_root("analysis")
 
 
 def make_client(args):

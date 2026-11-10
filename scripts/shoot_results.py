@@ -74,7 +74,7 @@ SHEETS = ("SNP-M-101", "SNP-M-102", "SNP-M-201", "SNP-M-301", "SNP-M-401", "SNP-
 
 def prepare(tmp):
     """샘플 6장(추출·그래프)과 지식그래프를 복사하고 프로젝트 전체 검토구간(S1…Sn)을 확정해 둔다."""
-    for sub in [("추출", d) for d in SHEETS] + [("그래프", d) for d in SHEETS] + [("지식그래프",)]:
+    for sub in [("extract", d) for d in SHEETS] + [("graph", d) for d in SHEETS] + [("knowledge-graph",)]:
         shutil.copytree(paths.output_in(paths.DEV_WORK_ROOT, *sub), paths.output_in(tmp, *sub))
     from hazop.graph import project
     from hazop.study import nodes
@@ -109,7 +109,7 @@ def shoot(win, scr, out_dir, w, state, files):
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else paths.output_in(paths.DEV_WORK_ROOT, "스크린샷", "stage4"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else paths.output_in(paths.DEV_WORK_ROOT, "screenshots", "stage4"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-results-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")
@@ -129,7 +129,7 @@ def main():
         win.ai_prefs.choose("api")  # 가짜 API 클라이언트로 돌린다
         win.show()
         for w, h in SIZES:
-            shutil.rmtree(paths.folder("분석결과"), ignore_errors=True)
+            shutil.rmtree(paths.folder("analysis-results"), ignore_errors=True)
             win.showNormal()
             win.resize(w, h)
             win.go(6)

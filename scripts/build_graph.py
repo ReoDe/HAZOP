@@ -18,8 +18,8 @@ from hazop.extract import corrections  # noqa: E402
 from hazop.graph import build  # noqa: E402
 from hazop.graph.query import GraphQuery  # noqa: E402
 
-DEFAULT_EXTRACT = paths.output_root("추출")  # <작업 루트>/출력 (hazop/paths.py)
-DEFAULT_OUT = paths.output_root("그래프")
+DEFAULT_EXTRACT = paths.output_root("extract")  # <작업 루트>/출력 (hazop/paths.py)
+DEFAULT_OUT = paths.output_root("graph")
 
 
 def build_one(extraction_path, out_root):

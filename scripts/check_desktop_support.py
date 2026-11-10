@@ -34,7 +34,7 @@ from hazop.graph import build  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
 import json as _json  # noqa: E402
-with open(paths.folder("표본", "regions", "region-SNP-M-102-pzr.json"), encoding="utf-8") as _fh:
+with open(paths.folder("samples", "regions", "region-SNP-M-102-pzr.json"), encoding="utf-8") as _fh:
     GRAPH_VERSION = _json.load(_fh)["graph_ref"]["graph_version"]  # 구간 파일이 고정한 그래프 버전(재고정 시 따라감)
 COUNTS = {"candidates": 44, "scenarios": 14, "risk_proposed": 6, "design_improvement_candidates": 11}
 PYTHON = sys.executable if os.path.isfile(sys.executable) else (shutil.which("python") or sys.executable)
@@ -53,7 +53,7 @@ def ok(name, cond, failures):
 
 def check_export(graph_file, tmp, failures):
     region_before = open(analyze.DEFAULT_REGION, "rb").read()
-    res = bundle_export.export_bundles(analyze.DEFAULT_REGION, os.path.join(tmp, "근거묶음"), graph_path=graph_file)
+    res = bundle_export.export_bundles(analyze.DEFAULT_REGION, os.path.join(tmp, "evidence-bundles"), graph_path=graph_file)
     m = res["manifest"]
     by_id = {c["candidate_id"]: c["bundle_sha256"] for c in m["candidates"]}
     fixed = sorted(f for f in os.listdir(analyze.DEFAULT_FIXED) if f.endswith(".json"))
@@ -62,7 +62,7 @@ def check_export(graph_file, tmp, failures):
     ok("그래프 버전 %s" % m["graph"]["graph_version"], m["graph"]["graph_version"] == GRAPH_VERSION, failures)
     files = [f for _, _, fs in os.walk(tmp) for f in fs]
     ok("실행 폴더·analysis.json 만들지 않음", "analysis.json" not in files
-       and not os.path.exists(os.path.join(tmp, "분석")), failures)
+       and not os.path.exists(os.path.join(tmp, "analysis")), failures)
     ok("구간 JSON 변경 없음", open(analyze.DEFAULT_REGION, "rb").read() == region_before, failures)
 
 
@@ -72,9 +72,9 @@ def check_split_roots(graph, tmp, failures):
     for rel in list(region["inputs"].values()) + [paths.file_rel("guide")]:
         os.makedirs(os.path.dirname(os.path.join(res, rel)), exist_ok=True)
         shutil.copyfile(paths.resolve_rel(rel, REPO_ROOT), os.path.join(res, rel))
-    os.makedirs(paths.folder_in(work, "구간"))
-    shutil.copyfile(analyze.DEFAULT_REGION, paths.folder_in(work, "구간", os.path.basename(analyze.DEFAULT_REGION)))
-    shutil.copytree(analyze.DEFAULT_FIXED, paths.folder_in(work, "고정응답", os.path.basename(analyze.DEFAULT_FIXED)))
+    os.makedirs(paths.folder_in(work, "regions"))
+    shutil.copyfile(analyze.DEFAULT_REGION, paths.folder_in(work, "regions", os.path.basename(analyze.DEFAULT_REGION)))
+    shutil.copytree(analyze.DEFAULT_FIXED, paths.folder_in(work, "fixed-responses", os.path.basename(analyze.DEFAULT_FIXED)))
     gpath = os.path.join(work, region["graph_ref"]["graph_file"])
     os.makedirs(os.path.dirname(gpath))
     shutil.copyfile(graph, gpath)
@@ -89,7 +89,7 @@ def check_split_roots(graph, tmp, failures):
         return p.returncode
 
     ok("analyze.py (작업·자원 루트 임시 폴더)", cli("analyze.py", "--run-id", "analysis-split") == 0, failures)
-    run_file = paths.output_in(work, "분석", region["region_id"], "analysis-split", "analysis.json")
+    run_file = paths.output_in(work, "analysis", region["region_id"], "analysis-split", "analysis.json")
     if os.path.isfile(run_file):
         doc = _load(run_file)
         c = doc["validation"]["counts"]
@@ -99,20 +99,20 @@ def check_split_roots(graph, tmp, failures):
            == [region["inputs"][r] for r in ("candidate_catalog", "applicability", "patterns", "risk_criteria")],
            failures)
     ok("export_bundles.py (임시 루트)", cli("export_bundles.py") == 0
-       and os.path.isdir(paths.output_in(work, "근거묶음", region["region_id"])), failures)
+       and os.path.isdir(paths.output_in(work, "evidence-bundles", region["region_id"])), failures)
     sample = [p for p in glob.glob(extract_drawio.SAMPLE_GLOB) if "SNP-M-101" in p][0]
     drawio = os.path.join(work, "in", "P-1.drawio")
     os.makedirs(os.path.dirname(drawio))
     shutil.copyfile(sample, drawio)
     shutil.copyfile(os.path.join(os.path.dirname(sample), "01_SNP-M-101.drawio.svg"), drawio + ".svg")
     ok("register.py (같은 이름 SVG 포함)", cli("register.py", "--project", "p", drawio) == 0, failures)
-    reg_dir = paths.folder_in(work, "자료저장소", "p", "registrations")
+    reg_dir = paths.folder_in(work, "store", "p", "registrations")
     mid = os.listdir(reg_dir)[0] if os.path.isdir(reg_dir) else None
     rec = _load(os.path.join(reg_dir, mid, "1.json")) if mid else {}
     ok("derived_files에 SVG 해시 기록", [d["role"] for d in rec.get("derived_files", [])] == ["svg"], failures)
     ok("extract_drawio.py --registration", mid and cli("extract_drawio.py", "--registration",
                                                          os.path.join(reg_dir, mid, "1.json")) == 0, failures)
-    ex_file = paths.output_in(work, "추출", "p__%s-r1-p0" % mid, "extraction.json")
+    ex_file = paths.output_in(work, "extract", "p__%s-r1-p0" % mid, "extraction.json")
     al = _load(ex_file)["coordinate_system"]["svg_alignment"] if os.path.isfile(ex_file) else {}
     ok("추출이 등록된 SVG 사용 (svg_alignment.source=%s)" % al.get("source"),
        al.get("source") == "registered_derived" and al.get("status") == "verified", failures)
@@ -145,7 +145,7 @@ def main():
     failures = []
     tmp = tempfile.mkdtemp(prefix="check_desktop_")
     try:
-        ext, gr = os.path.join(tmp, "추출"), os.path.join(tmp, "그래프")
+        ext, gr = os.path.join(tmp, "extract"), os.path.join(tmp, "graph")
         print("== 1. 샘플 추출·그래프 빌드 (임시 폴더)")
         if extract_drawio.main(["--samples", "--out-root", ext]) != 0 or \
                 build_graph.main(["--extract-root", ext, "--out-root", gr]) != 0:

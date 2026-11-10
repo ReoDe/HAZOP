@@ -68,6 +68,11 @@ def rel_or_abs(path, root):
     return _swap_prefix(rel.replace("\\", "/"), work_names())
 
 
+def record_rel(rel):
+    """작업 루트 기준 상대 경로(디스크 이름, '/' 구분)를 기록 경로로. rel_or_abs가 그 자리의 파일을 적는 글자와 같다."""
+    return _swap_prefix(rel, work_names())
+
+
 def plain_rel(path, root):
     """root 기준 상대 경로('/' 구분)를 디스크에 있는 이름 그대로. 화면·콘솔에 보여 줄 때 쓴다. 파일에 적을 경로는 rel_or_abs."""
     try:
@@ -102,12 +107,12 @@ def _record_path(path):
     return row.old if rest == "." and row.sub else row.old + "/" + rest
 
 
-EXTERNAL_BACKUP_DIR = "_외부"
+EXTERNAL_BACKUP_DIR = "_external"
 
 
 def backup_rel(path, root):
-    """백업 폴더 아래 path를 둘 자리(상대 경로). root 안이면 root 기준 경로, 밖이면(다른 드라이브, '작업2' 같은 형제 폴더)
-    _외부/<드라이브>/<나머지 경로>. 결과에 '..'나 드라이브 표시가 없으므로 os.path.join(백업 폴더, 결과)가 백업 폴더 밖으로
+    """백업 폴더 아래 path를 둘 자리(상대 경로). root 안이면 root 기준 경로, 밖이면(다른 드라이브, 'work2' 같은 형제 폴더)
+    _external/<드라이브>/<나머지 경로>. 결과에 '..'나 드라이브 표시가 없으므로 os.path.join(백업 폴더, 결과)가 백업 폴더 밖으로
     나가거나 원본 자리로 바뀌지 않는다. rel_or_abs는 기록용이라 절대 경로를 돌려줄 수 있어 이 자리에 쓰면 안 된다."""
     path, root = os.path.abspath(path), os.path.abspath(root)
     if _inside(path, root):
@@ -119,15 +124,15 @@ def backup_rel(path, root):
 # ---------------------------------------------------------------- 자원 루트·작업 루트 (기획서/인터페이스.md §7.1)
 # 자원 루트(읽기 전용): 기준 자료(resources/library/ 아래 이탈 후보·기준표·패턴·기호 사전), 기법 지침서. 폴더 위치는 아래 FOLDERS 표가 정한다.
 #   뷰어 템플릿은 패키지 안(hazop/viewer/template.html)에 두므로 패키지 위치를 그대로 쓴다.
-# 작업 루트(쓰기): 저장 루트(자료저장소/), 출력/, logs/, 데이터/(구간·고정응답·검토구간·분석결과 등).
-# 기본값: 자원 루트 = 저장소 루트, 작업 루트 = 저장소/작업(DEV_WORK_ROOT, git 제외). 환경변수로 바꿀 수 있고
+# 작업 루트(쓰기): 저장 루트(store/), output/, logs/, data/(구간·고정 응답·검토구간·분석 결과 등). 폴더 이름은 FOLDERS 표에 있다.
+# 기본값: 자원 루트 = 저장소 루트, 작업 루트 = 저장소/work(DEV_WORK_ROOT, git 제외). 환경변수로 바꿀 수 있고
 # HAZOP_STORE_ROOT는 계속 우선한다. 표본(resources/samples)은 scripts/seed_samples.py로 작업 루트에 채운다.
 # PyInstaller 실행(sys._MEIPASS)은 감지만 한다: 자원 루트 = 묶음 폴더, 작업 루트 = %LOCALAPPDATA%\HAZOP [제안, §7.1].
 # 프로그램 루트(program_root): 화면이 importlib로 읽는 scripts/*.py 위치. 묶음 폴더 또는 저장소 루트(자원 루트 환경변수와 무관).
 # 값은 호출할 때마다 환경변수를 다시 읽는다. 다만 스크립트의 기본 인자(DEFAULT_*)는 가져올 때 한 번 정해진다.
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEV_WORK_ROOT = os.path.join(REPO_ROOT, "작업")  # 개발 환경 작업 루트 기본값(배포본은 %LOCALAPPDATA%\HAZOP)
+DEV_WORK_ROOT = os.path.join(REPO_ROOT, "work")  # 개발 환경 작업 루트 기본값(배포본은 %LOCALAPPDATA%\HAZOP)
 ENV_RESOURCE_ROOT = "HAZOP_RESOURCE_ROOT"
 ENV_WORK_ROOT = "HAZOP_WORK_ROOT"
 ENV_STORE_ROOT = "HAZOP_STORE_ROOT"
@@ -185,19 +190,19 @@ def work_path(*parts):
 
 
 def store_root():
-    """등록 저장 루트: HAZOP_STORE_ROOT 우선, 없으면 <작업 루트>/자료저장소."""
-    return os.environ.get(ENV_STORE_ROOT) or folder("자료저장소")
+    """등록 저장 루트: HAZOP_STORE_ROOT 우선, 없으면 <작업 루트>/store."""
+    return os.environ.get(ENV_STORE_ROOT) or folder("store")
 
 
 def output_root(*parts):
-    """<작업 루트>/출력[/<출력 폴더>[/나머지...]]. parts의 첫 칸은 OUTPUT_FOLDERS의 열쇠다(표에 없으면 KeyError)."""
+    """<작업 루트>/output[/<출력 폴더>[/나머지...]]. parts의 첫 칸은 OUTPUT_FOLDERS의 열쇠다(표에 없으면 KeyError)."""
     return output_in(work_root(), *parts)
 
 
 def output_in(root, *parts):
     """출력 폴더(또는 그 아래 폴더)가 주어진 작업 루트 root 아래 있을 자리. parts는 output_root와 같다.
     임시 작업 루트를 꾸미는 시험과 검사가 쓴다."""
-    return folder_in(root, "출력", *_output_parts(parts))
+    return folder_in(root, "output", *_output_parts(parts))
 
 
 def _output_parts(parts):
@@ -205,19 +210,19 @@ def _output_parts(parts):
 
 
 def output_name(name):
-    """출력 폴더 아래 폴더 이름. 출력 폴더를 인자로 받은 코드가 그 아래 자리를 만들 때 쓴다(os.path.join(out_root, output_name("분석")))."""
+    """출력 폴더 아래 폴더 이름. 출력 폴더를 인자로 받은 코드가 그 아래 자리를 만들 때 쓴다(os.path.join(out_root, output_name("analysis")))."""
     return OUTPUT_FOLDERS[name]
 
 
 def output_rel(*parts):
-    """작업 루트 기준 상대 경로('/' 구분). parts는 output_root와 같다. 파일에 적는 기록 경로와 같은 꼴이다
-    (예: output_rel("그래프", "<이름>", "graph.json") → '출력/그래프/<이름>/graph.json')."""
-    return "/".join(FOLDERS["출력"].rel + _output_parts(parts))
+    """작업 루트 기준 상대 경로('/' 구분)를 디스크에 있는 이름으로. parts는 output_root와 같다. 사용법·안내 글에 쓴다
+    (예: output_rel("graph", "<이름>", "graph.json") → 'output/graph/<이름>/graph.json'). 파일에 적는 경로는 rel_or_abs."""
+    return "/".join(FOLDERS["output"].rel + _output_parts(parts))
 
 
 def fixed_test_results_path(project_name, graph_name):
-    """고정 응답(시험)으로 채운 ⑤ 결과 파일. 실제 결과(데이터/분석결과)와 따로 둔다(화면 설계 D5·§8.3)."""
-    return folder("분석결과-시험", safe_name(project_name), safe_name(graph_name) + ".json")
+    """고정 응답(시험)으로 채운 ⑤ 결과 파일. 실제 결과(data/analysis-results)와 따로 둔다(화면 설계 D5·§8.3)."""
+    return folder("analysis-results-test", safe_name(project_name), safe_name(graph_name) + ".json")
 
 
 # ---------------------------------------------------------------- 폴더 표 (docs/2026-11-09-data-consolidation §3)
@@ -226,83 +231,83 @@ def fixed_test_results_path(project_name, graph_name):
 class Folder(NamedTuple):
     # "resource": 자원 루트(읽기 전용 기준 자료, 배포본에 묶음 = scripts/build_package.py DATA_DIRS)
     # "repo": 저장소에만 있는 개발·검사 입력(샘플 도면, 표본). 배포본에 묶지 않고 자원 루트 환경변수와 무관
-    # "work": 작업 루트(쓰기). 이 아래 배치는 배포본 작업 루트(%LOCALAPPDATA%\HAZOP)와 같아야 한다(바꾸지 않는 계약)
+    # "work": 작업 루트(쓰기). 이 아래 배치는 배포본 작업 루트(%LOCALAPPDATA%\HAZOP)와 같아야 한다. 0.2.0에서 한 번 바꿨고
+    # (옛 이름은 OLD_WORK_RELS), 다시 바꾸려면 옛 작업 폴더를 옮기는 길(hazop.workroot)을 함께 만든다
     root: str
     rel: tuple  # 루트 기준 상대 경로
 
 
 FOLDERS = {
-    "이탈후보": Folder("resource", ("resources", "library", "deviations")),
-    "기준표": Folder("resource", ("resources", "library", "risk-criteria")),
-    "패턴": Folder("resource", ("resources", "library", "patterns")),
-    "기호": Folder("resource", ("resources", "library", "symbols")),
-    "참고": Folder("repo", ("resources", "references")),
+    "deviations": Folder("resource", ("resources", "library", "deviations")),
+    "risk-criteria": Folder("resource", ("resources", "library", "risk-criteria")),
+    "patterns": Folder("resource", ("resources", "library", "patterns")),
+    "symbols": Folder("resource", ("resources", "library", "symbols")),
+    "references": Folder("repo", ("resources", "references")),
     "APR1400": Folder("repo", ("resources", "references", "APR1400_DCD")),
-    "표본": Folder("repo", ("resources", "samples")),
-    "작업데이터": Folder("work", ("데이터",)),
-    "구간": Folder("work", ("데이터", "구간")),
-    "고정응답": Folder("work", ("데이터", "고정응답")),
-    "지식": Folder("work", ("데이터", "지식")),
-    "검토구간": Folder("work", ("데이터", "검토구간")),
-    "분석결과": Folder("work", ("데이터", "분석결과")),
-    "분석결과-시험": Folder("work", ("데이터", "분석결과-시험")),
-    "백업": Folder("work", ("데이터", "백업")),
-    "초기사건": Folder("work", ("데이터", "초기사건")),
-    "도면수정": Folder("work", ("데이터", "도면수정")),
-    "도면연결": Folder("work", ("데이터", "도면연결")),
-    "잠재후보": Folder("work", ("데이터", "잠재후보")),
-    "캐시": Folder("work", ("데이터", "캐시")),  # 지워도 되는 계산 결과(hazop.app.data 추출 요약)
-    "평가기준": Folder("work", ("데이터", "평가기준")),  # 표본 평가 기준을 채우는 자리(scripts/seed_samples.py)
-    "기호후보": Folder("work", ("기호후보",)),
-    "자료저장소": Folder("work", ("자료저장소",)),  # 등록 저장 루트 기본 자리. HAZOP_STORE_ROOT를 주면 그쪽이므로 store_root()로 연다
-    "출력": Folder("work", ("출력",)),  # 이 아래 폴더는 OUTPUT_FOLDERS. output_root()·output_in()으로 연다
+    "samples": Folder("repo", ("resources", "samples")),
+    "data": Folder("work", ("data",)),
+    "regions": Folder("work", ("data", "regions")),
+    "fixed-responses": Folder("work", ("data", "fixed-responses")),
+    "knowledge-graph": Folder("work", ("data", "knowledge-graph")),
+    "study-nodes": Folder("work", ("data", "study-nodes")),
+    "analysis-results": Folder("work", ("data", "analysis-results")),
+    "analysis-results-test": Folder("work", ("data", "analysis-results-test")),
+    "backup": Folder("work", ("data", "backup")),
+    "initiating-events": Folder("work", ("data", "initiating-events")),
+    "drawing-edits": Folder("work", ("data", "drawing-edits")),
+    "drawing-links": Folder("work", ("data", "drawing-links")),
+    "latent-candidates": Folder("work", ("data", "latent-candidates")),
+    "cache": Folder("work", ("data", "cache")),  # 지워도 되는 계산 결과(hazop.app.data 추출 요약)
+    "evaluation-criteria": Folder("work", ("data", "evaluation-criteria")),  # 표본 평가 기준을 채우는 자리(scripts/seed_samples.py)
+    "symbol-candidates": Folder("work", ("symbol-candidates",)),
+    "store": Folder("work", ("store",)),  # 등록 저장 루트 기본 자리. HAZOP_STORE_ROOT를 주면 그쪽이므로 store_root()로 연다
+    "output": Folder("work", ("output",)),  # 이 아래 폴더는 OUTPUT_FOLDERS. output_root()·output_in()으로 연다
 }
-# <작업 루트>/출력 아래 폴더(HZ-GOV-02 §5.6). 열쇠 → 폴더 이름. 다른 모듈은 열쇠만 적고(paths.output_root("그래프")) 폴더 이름은
-# 여기에만 둔다(tests/test_path_literals.py가 막음). 이름을 바꾸려면 값만 고친다. 새 출력 폴더는 여기 한 줄을 더한다.
+# <작업 루트>/output 아래 폴더(HZ-GOV-02 §5.6). 열쇠 → 폴더 이름. 다른 모듈은 열쇠만 적고(paths.output_root("graph")) 폴더 이름은
+# 여기에만 둔다(tests/test_path_literals.py가 막음). 새 출력 폴더는 여기 한 줄을 더한다.
 OUTPUT_FOLDERS = {
-    "추출": "추출",  # ② 추출 결과 <이름>/extraction.json
-    "그래프": "그래프",  # ② 도면 그래프 <이름>/graph.json
-    "뷰어": "뷰어",
-    "문서지식": "문서지식",  # 설계 문서에서 뽑은 지식 <이름>/document_knowledge.json
-    "지식그래프": "지식그래프",  # ③ <kg_id>/current.json
-    "분석": "분석",  # ④ <region_id>/<analysis_run_id>/analysis.json
-    "근거묶음": "근거묶음",
-    "워크시트": "워크시트",
-    "평가비교": "평가비교",
-    "초기사건": "초기사건",  # ⑥ 인계 묶음 내보내기
-    "내보내기": "내보내기",
-    "어댑터": "어댑터",  # extract_pdf.py·extract_raster.py를 등록 없이 돌린 결과
+    "extract": "extract",  # ② 추출 결과 <이름>/extraction.json
+    "graph": "graph",  # ② 도면 그래프 <이름>/graph.json
+    "viewer": "viewer",
+    "document-knowledge": "document-knowledge",  # 설계 문서에서 뽑은 지식 <이름>/document_knowledge.json
+    "knowledge-graph": "knowledge-graph",  # ③ <kg_id>/current.json
+    "analysis": "analysis",  # ④ <region_id>/<analysis_run_id>/analysis.json
+    "evidence-bundles": "evidence-bundles",
+    "worksheets": "worksheets",
+    "evaluation-compare": "evaluation-compare",
+    "initiating-events": "initiating-events",  # ⑥ 인계 묶음 내보내기
+    "exports": "exports",
+    "adapter": "adapter",  # extract_pdf.py·extract_raster.py를 등록 없이 돌린 결과
     "samples": "samples",  # run_samples.py 결과(그 아래에 추출·그래프·뷰어가 다시 온다)
-    "스크린샷": "스크린샷",
-    "사용자검증": "사용자검증",
-    "디자인검사": "디자인검사",
-    "로그": "로그",
-    "보관": "_보관",  # clean_outputs.py가 옮겨 두는 곳
+    "screenshots": "screenshots",
+    "user-scenarios": "user-scenarios",
+    "design-check": "design-check",
+    "logs": "logs",
+    "archive": "_archive",  # clean_outputs.py가 옮겨 두는 곳
 }
 # 자원 루트 아래에 낱개로 두는 파일. FOLDERS의 resource 행은 배포본에 통째로 묶는 폴더라서 파일은 따로 적는다.
 # 배포본도 같은 상대 위치에 묶는다(scripts/build_package.py DATA_FILES). 위치를 아는 곳은 이 표 하나다.
 FILES = {
     "guide": Folder("resource", ("specs", "hazop-method-guide.md")),  # HAZOP 기법 지침서. 내용 해시는 hazop/analysis/integrity.py가 고정한다
 }
-# 표본 아래 폴더 이름(작업 루트 폴더 이름 → 표본 폴더 이름). 표본을 작업 루트에 채울 때 짝을 맞춘다. 작업 루트 쪽 이름은
-# 단계 6(HZ-GOV-02 §7)에서 같은 영어 이름이 된다.
-SAMPLE_FOLDERS = {"구간": "regions", "고정응답": "fixed-responses", "지식": "knowledge-graph", "평가기준": "evaluation-criteria"}
+# 표본(resources/samples) 아래 폴더. 이름이 곧 FOLDERS의 열쇠여서, 표본을 작업 루트에 채울 때 folder(<이름>)에 둔다.
+SAMPLE_FOLDERS = ("regions", "fixed-responses", "knowledge-graph", "evaluation-criteria")
 # 작업 루트 폴더의 0.1.x 이름(HZ-GOV-02 §5.6): FOLDERS 열쇠 → 작업 루트 기준 옛 상대 경로, OUTPUT_FOLDERS 열쇠 → 옛 폴더 이름.
 # 기록 경로(rel_or_abs)는 이 이름으로 적고, 읽을 때(resolve_rel)와 옛 작업 폴더를 옮길 때(hazop.workroot) 지금 이름으로 푼다.
 # 0.1.x가 쓴 사용자 파일이 이 이름을 담고 있으므로 지우거나 고치지 않는다. 0.2.0 뒤에 생긴 폴더는 여기 줄이 없다.
 OLD_WORK_RELS = {
-    "작업데이터": "데이터", "구간": "데이터/구간", "고정응답": "데이터/고정응답", "지식": "데이터/지식", "검토구간": "데이터/검토구간",
-    "분석결과": "데이터/분석결과", "분석결과-시험": "데이터/분석결과-시험", "백업": "데이터/백업", "초기사건": "데이터/초기사건",
-    "도면수정": "데이터/도면수정", "도면연결": "데이터/도면연결", "잠재후보": "데이터/잠재후보", "캐시": "데이터/캐시",
-    "평가기준": "데이터/평가기준", "기호후보": "기호후보", "자료저장소": "자료저장소", "출력": "출력",
+    "data": "데이터", "regions": "데이터/구간", "fixed-responses": "데이터/고정응답", "knowledge-graph": "데이터/지식",
+    "study-nodes": "데이터/검토구간", "analysis-results": "데이터/분석결과", "analysis-results-test": "데이터/분석결과-시험",
+    "backup": "데이터/백업", "initiating-events": "데이터/초기사건", "drawing-edits": "데이터/도면수정",
+    "drawing-links": "데이터/도면연결", "latent-candidates": "데이터/잠재후보", "cache": "데이터/캐시",
+    "evaluation-criteria": "데이터/평가기준", "symbol-candidates": "기호후보", "store": "자료저장소", "output": "출력",
 }
 OLD_OUTPUT_NAMES = {
-    "추출": "추출", "그래프": "그래프", "뷰어": "뷰어", "문서지식": "문서지식", "지식그래프": "지식그래프", "분석": "분석",
-    "근거묶음": "근거묶음", "워크시트": "워크시트", "평가비교": "평가비교", "초기사건": "초기사건", "내보내기": "내보내기",
-    "어댑터": "어댑터", "samples": "samples", "스크린샷": "스크린샷", "사용자검증": "사용자검증", "디자인검사": "디자인검사",
-    "로그": "로그", "보관": "_보관",
+    "extract": "추출", "graph": "그래프", "viewer": "뷰어", "document-knowledge": "문서지식", "knowledge-graph": "지식그래프",
+    "analysis": "분석", "evidence-bundles": "근거묶음", "worksheets": "워크시트", "evaluation-compare": "평가비교",
+    "initiating-events": "초기사건", "exports": "내보내기", "adapter": "어댑터", "samples": "samples", "screenshots": "스크린샷",
+    "user-scenarios": "사용자검증", "design-check": "디자인검사", "logs": "로그", "archive": "_보관",
 }
-OLD_EXTERNAL_BACKUP_DIR = "_외부"
 OLD_DEV_WORK_ROOT = os.path.join(REPO_ROOT, "작업")
 REFERENCE_LOGICAL = "참고자료/"  # 참고 폴더 아래 파일의 기록용 접두(rel_or_abs)
 
@@ -322,20 +327,20 @@ _OLD_ROOTS = (
     ("데이터/참고자료/APR1400_DCD", "APR1400", True),
     ("자원/참고자료/APR1400_DCD", "APR1400", False),
     ("참고자료/APR1400_DCD", "APR1400", False),
-    ("참고자료", "참고", True),
-    ("자원/참고자료", "참고", False),
-    ("데이터/이탈후보", "이탈후보", False),
-    ("자원/기준/이탈후보", "이탈후보", False),
-    ("데이터/기준표", "기준표", False),
-    ("자원/기준/기준표", "기준표", False),
-    ("데이터/패턴", "패턴", False),
-    ("자원/기준/패턴", "패턴", False),
-    ("자원/기준/기호", "기호", False),
-    ("자원/표본", "표본", False),
+    ("참고자료", "references", True),
+    ("자원/참고자료", "references", False),
+    ("데이터/이탈후보", "deviations", False),
+    ("자원/기준/이탈후보", "deviations", False),
+    ("데이터/기준표", "risk-criteria", False),
+    ("자원/기준/기준표", "risk-criteria", False),
+    ("데이터/패턴", "patterns", False),
+    ("자원/기준/패턴", "patterns", False),
+    ("자원/기준/기호", "symbols", False),
+    ("자원/표본", "samples", False),
 )
 # 폴더 안에서 이름이 바뀐 것(HZ-GOV-02 §5.5): 폴더 이름 → ((옮기기 전 이름, 지금 이름), …)
 _RENAMED_INSIDE = {
-    "참고": (("P&ID 도면 샘플", "pid-samples"), ("P&ID 기호 카탈로그", "pid-symbol-catalog"), ("참고 사진", "photos"),
+    "references": (("P&ID 도면 샘플", "pid-samples"), ("P&ID 기호 카탈로그", "pid-symbol-catalog"), ("참고 사진", "photos"),
            ("HAZOP 기법/P-86-2017 회분식 공정의 위험과 운전분석HAZOP기법에 관한 기술지침.pdf",
             "hazop-method/kosha-p-86-2017-batch-hazop-guide.pdf"),
            ("HAZOP 기법", "hazop-method")),
@@ -343,9 +348,9 @@ _RENAMED_INSIDE = {
                 ("도면목록.csv", "drawing-list.csv"), ("도면목록.md", "drawing-list.md"),
                 ("후보_제외도면.csv", "excluded-drawings.csv"),
                 ("APR1400_DCD_Rev3_PID_전체.pdf", "APR1400_DCD_Rev3_PID_all.pdf")),
-    "기호": (("APR1400/그림", "APR1400/images"), ("공통/그림", "common/images"), ("공통", "common"),
+    "symbols": (("APR1400/그림", "APR1400/images"), ("공통/그림", "common/images"), ("공통", "common"),
            ("묶음.json", "bundles.json")),
-    "표본": tuple(SAMPLE_FOLDERS.items()),
+    "samples": (("구간", "regions"), ("고정응답", "fixed-responses"), ("지식", "knowledge-graph"), ("평가기준", "evaluation-criteria")),
 }
 
 
@@ -362,10 +367,10 @@ OLD_NAMES = _old_names()
 
 
 def work_names():
-    """[(지금 상대 경로, 0.1.x 상대 경로)] 작업 루트 기준, '/' 구분. 출력 폴더 아래와, run_samples.py가 출력/samples 아래에
+    """[(지금 상대 경로, 0.1.x 상대 경로)] 작업 루트 기준, '/' 구분. 출력 폴더 아래와, run_samples.py가 output/samples 아래에
     다시 두는 출력 폴더 이름까지 담는다."""
     rows = [("/".join(FOLDERS[name].rel), old) for name, old in OLD_WORK_RELS.items()]
-    out_now, out_old = "/".join(FOLDERS["출력"].rel), OLD_WORK_RELS["출력"]
+    out_now, out_old = "/".join(FOLDERS["output"].rel), OLD_WORK_RELS["output"]
     under = [(OUTPUT_FOLDERS[key], old) for key, old in OLD_OUTPUT_NAMES.items()]
     rows += [(out_now + "/" + now, out_old + "/" + old) for now, old in under]
     samples = (out_now + "/" + OUTPUT_FOLDERS["samples"], out_old + "/" + OLD_OUTPUT_NAMES["samples"])

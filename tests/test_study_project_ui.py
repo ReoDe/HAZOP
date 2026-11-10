@@ -32,11 +32,11 @@ def write_drawing(work, dn, graph):
     for i, n in enumerate(graph["nodes"]):
         n["local_id"] = "L-" + n["entity_id"]
         n["position"] = [40 + 60 * i, 80]
-    for sub, doc in (("추출", {"drawing": {"drawing_number": dn}, "coordinate_system": {}, "objects": []}),
-                     ("그래프", graph)):
+    for sub, doc in (("extract", {"drawing": {"drawing_number": dn}, "coordinate_system": {}, "objects": []}),
+                     ("graph", graph)):
         folder = paths.output_in(work, sub, dn)
         os.makedirs(folder, exist_ok=True)
-        with open(os.path.join(folder, "extraction.json" if sub == "추출" else "graph.json"), "w", encoding="utf-8") as fh:
+        with open(os.path.join(folder, "extraction.json" if sub == "extract" else "graph.json"), "w", encoding="utf-8") as fh:
             json.dump(doc, fh, ensure_ascii=False)
 
 

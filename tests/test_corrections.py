@@ -63,9 +63,9 @@ class CorrectionsTest(unittest.TestCase):
         ext["project_id"] = PROJECT  # 등록 경로를 거친 도면처럼 프로젝트를 붙인다(지식그래프 빌드 대상)
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(ext, fh, ensure_ascii=False, indent=2)
-        shutil.copytree(out_dir, os.path.join(paths.output_root("추출"), COPY))
+        shutil.copytree(out_dir, os.path.join(paths.output_root("extract"), COPY))
         for name in (NAME, COPY):
-            data.script_module("build_graph").build_one(data.extraction_path(name), paths.output_root("그래프"))
+            data.script_module("build_graph").build_one(data.extraction_path(name), paths.output_root("graph"))
         cls.ext = ext
 
     @classmethod
@@ -79,7 +79,7 @@ class CorrectionsTest(unittest.TestCase):
 
     def tearDown(self):
         from hazop import paths
-        for name in ("도면수정", "검토구간", "분석결과"):
+        for name in ("drawing-edits", "study-nodes", "analysis-results"):
             shutil.rmtree(paths.folder(name), ignore_errors=True)
 
     def op(self, ops, base_ext, name, target, value):
@@ -401,10 +401,10 @@ class CorrectionsTest(unittest.TestCase):
         with open(path, "wb") as fh:  # 다시 추출: extraction.json만 새로 써진다
             fh.write(before)
         bg = data.script_module("build_graph")
-        graph, _ = bg.build_one(path, paths.output_root("그래프"))
+        graph, _ = bg.build_one(path, paths.output_root("graph"))
         self.assertIn("RC-PZ55", {n["tag"] for n in graph["nodes"]})
         corrections.save(COPY, [], "검토자")
-        graph, _ = bg.build_one(path, paths.output_root("그래프"))
+        graph, _ = bg.build_one(path, paths.output_root("graph"))
         self.assertNotIn("RC-PZ55", {n["tag"] for n in graph["nodes"]})
 
     def test_tag_conflicts_finds_other_drawing_and_skips_excluded(self):
@@ -427,7 +427,7 @@ class CorrectionsTest(unittest.TestCase):
         from hazop.app import data
         from hazop.study import nodes, results
         bg = data.script_module("build_graph")
-        graph, _ = bg.build_one(data.extraction_path(NAME), paths.output_root("그래프"))
+        graph, _ = bg.build_one(data.extraction_path(NAME), paths.output_root("graph"))
         node_set = nodes.confirm(nodes.propose(graph), graph, "검토자A")
         ns_path = nodes.save(node_set)
         res_path = results.save(results.empty_results(node_set, results.load_deviations()), PROJECT)
@@ -438,9 +438,9 @@ class CorrectionsTest(unittest.TestCase):
         ops = []
         self.op(ops, self.ext, "set_tag", "n1", {"tag": "RC-PZ02"})
         out = data.save_corrections(NAME, ops, "검토자")
-        self.assertEqual(out["path"], os.path.join(paths.folder("도면수정"), NAME + ".json"))
+        self.assertEqual(out["path"], os.path.join(paths.folder("drawing-edits"), NAME + ".json"))
         self.assertNotEqual(out["graph"]["graph_version"], graph["graph_version"])
-        on_disk = data.read_json(os.path.join(paths.output_root("그래프"), NAME, "graph.json"))
+        on_disk = data.read_json(os.path.join(paths.output_root("graph"), NAME, "graph.json"))
         self.assertEqual(on_disk["graph_version"], out["graph"]["graph_version"])
         self.assertNotIn("kg_error", out)
         self.assertIn(out["graph"]["graph_version"], json.dumps(out["kg"]["kg"]["graph_refs"]))

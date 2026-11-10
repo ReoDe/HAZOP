@@ -34,7 +34,7 @@ class RegisterUiTest(base.AppTestBase):
         from PySide6.QtWidgets import QLabel
         texts = " ".join(lab.text() for lab in scr.list_stack.widget(0).findChildren(QLabel))
         self.assertIn("등록된 자료가 없습니다", texts)
-        for internal in (os.sep, paths.folder_rel("자료저장소"), os.environ["HAZOP_STORE_ROOT"]):
+        for internal in (os.sep, paths.folder_rel("store"), os.environ["HAZOP_STORE_ROOT"]):
             self.assertNotIn(internal, texts)
         self.assertTrue(all(label and callable(fn) for label, _, fn in scr.commands()))
         self.assertIn("파일 선택…", [c[0] for c in scr.commands()])

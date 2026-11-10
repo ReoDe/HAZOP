@@ -51,7 +51,7 @@ def js(win, code, timeout=10.0):
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else paths.output_in(paths.DEV_WORK_ROOT, "스크린샷", "uiux"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else paths.output_in(paths.DEV_WORK_ROOT, "screenshots", "uiux"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-uiux-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")
@@ -60,8 +60,8 @@ def main():
     try:
         import shoot_results
         shoot_results.prepare(os.environ["HAZOP_WORK_ROOT"])
-        shutil.copytree(paths.folder("참고", "pid-samples"),
-                        paths.logical_dir(os.environ["HAZOP_WORK_ROOT"], "참고", "pid-samples"))
+        shutil.copytree(paths.folder("references", "pid-samples"),
+                        paths.logical_dir(os.environ["HAZOP_WORK_ROOT"], "references", "pid-samples"))
         from hazop.app import make_application
         from hazop.app.main_window import MainWindow
         from hazop.app.screenshots import settle, wait

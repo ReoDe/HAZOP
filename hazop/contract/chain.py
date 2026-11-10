@@ -160,8 +160,8 @@ class _Chain:
         if self.ext_name:
             name = paths.safe_name(self.ext_name)
             sibling = _join(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(self.extraction_path))),
-                                         paths.output_name("그래프")), name)
-            default = _join(paths.output_in(work_root, "그래프"), name)
+                                         paths.output_name("graph")), name)
+            default = _join(paths.output_in(work_root, "graph"), name)
             self.graph_dir = (sibling if sibling and os.path.isfile(os.path.join(sibling, "graph.json"))
                               else default)
         self.graph = self._json(os.path.join(self.graph_dir, "graph.json")) if self.graph_dir else None
@@ -204,7 +204,7 @@ class _Chain:
                         doc = self._json(os.path.join(exp_dir, fname))
                         if doc is not None:
                             self.exports.append((fname[:-5], doc))
-        cmp_dir = _join(paths.output_in(work_root, "평가비교"), region_id, a.get("analysis_run_id"))
+        cmp_dir = _join(paths.output_in(work_root, "evaluation-compare"), region_id, a.get("analysis_run_id"))
         if cmp_dir and os.path.isdir(cmp_dir):
             for fname in sorted(os.listdir(cmp_dir)):
                 if fname.endswith(".json") and os.path.isfile(os.path.join(cmp_dir, fname)):
@@ -1082,7 +1082,7 @@ def _chain_doc(c):
 # ---------------------------------------------------------------- 연쇄 찾기·실행
 def _region_files(work_root, errors):
     """데이터/구간/*.json → {region_id: 경로}. region_id가 없으면 파일 이름 줄기."""
-    folder = os.path.join(work_root, *paths.FOLDERS["구간"].rel)
+    folder = os.path.join(work_root, *paths.FOLDERS["regions"].rel)
     out = {}
     if not os.path.isdir(folder):
         return out
@@ -1117,10 +1117,10 @@ def check(work_root=None, store_root=None, region=None, run="latest"):
     입력 폴더 없음·지정한 구간/실행 없음은 ContractError(종료 코드 2)."""
     work_root = os.path.abspath(work_root or paths.work_root())
     store_root = os.path.abspath(store_root or os.environ.get(paths.ENV_STORE_ROOT)
-                                 or paths.folder_in(work_root, "자료저장소"))
+                                 or paths.folder_in(work_root, "store"))
     run = run or "latest"
     errors, notes = [], []
-    analysis_root = paths.output_in(work_root, "분석")
+    analysis_root = paths.output_in(work_root, "analysis")
     if not os.path.isdir(analysis_root):
         raise ContractError("입력 폴더 없음: %s" % analysis_root)
     region_files = _region_files(work_root, errors)
@@ -1275,7 +1275,7 @@ def write_report(result, path, checked_at=None):
     link = _link_in_path(path)
     if link:
         raise ContractError("보고 파일 경로에 링크·정션이 있어 거부함: %s (%s)" % (path, link))
-    for folder in (paths.output_in(roots["work_root"]), os.path.join(roots["work_root"], *paths.FOLDERS["작업데이터"].rel),
+    for folder in (paths.output_in(roots["work_root"]), os.path.join(roots["work_root"], *paths.FOLDERS["data"].rel),
                    roots["store_root"]):
         if _inside(path, folder):
             raise ContractError("보고 파일 경로가 입력 폴더 안이라 거부함: %s (입력 폴더 %s)" % (path, folder))

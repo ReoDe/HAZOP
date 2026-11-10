@@ -19,7 +19,7 @@ import clean_outputs  # noqa: E402
 from hazop import paths  # noqa: E402
 
 D_RUN, D_KG, D_EX, D_CMP, D_GRAPH, D_VIEW, D_SAMPLES, D_ARCH = (paths.output_name(n) for n in (
-    "분석", "지식그래프", "추출", "평가비교", "그래프", "뷰어", "samples", "보관"))
+    "analysis", "knowledge-graph", "extract", "evaluation-compare", "graph", "viewer", "samples", "archive"))
 REGION = "region-X"
 V_CUR, V_OLD, V_REF = "v-" + "a" * 12, "v-" + "b" * 12, "v-" + "c" * 12
 
@@ -48,7 +48,7 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.out = paths.output_in(self.tmp)
-        self.store = paths.folder_in(self.tmp, "자료저장소")
+        self.store = paths.folder_in(self.tmp, "store")
         appdata = os.path.join(self.tmp, "appdata")  # 실제 설정 파일을 읽지 않게
         patcher = mock.patch.dict(os.environ, {"APPDATA": appdata})
         patcher.start()

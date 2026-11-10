@@ -34,7 +34,7 @@ class Unreadable(Exception):
 
 
 def store_path(project_id):
-    return paths.folder("초기사건", paths.safe_name(project_id or "프로젝트") + ".json")
+    return paths.folder("initiating-events", paths.safe_name(project_id or "프로젝트") + ".json")
 
 
 def fingerprint(path):
@@ -97,10 +97,10 @@ def backup(project_id, label=BACKUP_LABEL):
     stamp = now_utc().replace(":", "").replace("-", "")
     rel = paths.backup_rel(path, paths.work_root())
     folder, n = "%s-%s" % (stamp, label), 1
-    while os.path.exists(paths.folder("백업", folder)):
+    while os.path.exists(paths.folder("backup", folder)):
         n += 1
         folder = "%s-%s-%d" % (stamp, label, n)
-    dst = paths.folder("백업", folder, rel)
+    dst = paths.folder("backup", folder, rel)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.copy2(path, dst)
     return dst

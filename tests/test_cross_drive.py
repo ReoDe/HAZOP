@@ -105,7 +105,7 @@ class BackupStaysInBackupFolderTest(unittest.TestCase):
 
     def run_case(self, work, src):
         with mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: work}):
-            backup_root = paths.folder("백업")
+            backup_root = paths.folder("backup")
             for name, fn in BACKUPS.items():
                 with self.subTest(name):
                     before = all_files(os.path.dirname(work)) | all_files(os.path.dirname(src))
@@ -148,7 +148,7 @@ class GraphFromOtherDriveTest(unittest.TestCase):
     def test_extraction_on_other_drive_builds_and_resolves(self):
         from hazop.app import data
         from hazop.contract import chain
-        src = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio")) if "SNP-M-102" in p]
+        src = [p for p in glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio")) if "SNP-M-102" in p]
         if not src:
             self.skipTest("샘플 도면 없음")
         work = os.path.join(other_drive_dir(self), "작업")  # 경로문자열-허용: 시험용 가짜 작업 루트 이름
@@ -156,8 +156,8 @@ class GraphFromOtherDriveTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: work}):
             ex = data.script_module("extract_drawio")
             bg = data.script_module("build_graph")
-            _, out_dir = ex.run_one(src[0], os.path.join(outside, "추출"))
-            graph, g_dir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_in(work, "그래프"))
+            _, out_dir = ex.run_one(src[0], os.path.join(outside, "extract"))
+            graph, g_dir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_in(work, "graph"))
             rec = graph["source"]["extraction_file"]
             self.assertTrue(os.path.isabs(rec), rec)
             self.assertTrue(os.path.samefile(chain._resolve(rec, work), os.path.join(out_dir, "extraction.json")))

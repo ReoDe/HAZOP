@@ -44,7 +44,7 @@ from hazop.graph import build as gbuild  # noqa: E402
 from hazop.kg import build, screen  # noqa: E402
 
 SAMPLE_PROJECT = "SNP-SAMPLE"
-SAMPLE_DIR = paths.folder_in(REPO_ROOT, "표본", "knowledge-graph", SAMPLE_PROJECT)  # 묶음 검사에서는 REPO_ROOT = 검사 입력 사본
+SAMPLE_DIR = paths.folder_in(REPO_ROOT, "samples", "knowledge-graph", SAMPLE_PROJECT)  # 묶음 검사에서는 REPO_ROOT = 검사 입력 사본
 REGION_FILE = check_kg_algo.REGION_FILE
 DRAWING = "SNP-M-102"
 V1_CASES = (("entity-node-001", (1, 2, 3)), ("entity-node-008", (1, 2, 3)), ("entity-seg-004", (1, 2)),
@@ -61,8 +61,8 @@ def sample_graph():
     """샘플 도면을 임시 폴더에서 추출·빌드(원본 위치 그대로 읽으므로 graph_version이 샘플 CSV의 기록과 같다)."""
     if "graph" not in _CACHE:
         # 저장소에서는 참고 폴더, 묶음 검사의 입력 사본(verify_bundle.make_inputs)에서는 기록 경로 자리에 샘플 도면이 있다
-        found = (glob.glob(paths.folder_in(REPO_ROOT, "참고", "pid-samples", "*", "*.drawio"))
-                 or glob.glob(paths.logical_dir(REPO_ROOT, "참고", "pid-samples", "*", "*.drawio")))
+        found = (glob.glob(paths.folder_in(REPO_ROOT, "references", "pid-samples", "*", "*.drawio"))
+                 or glob.glob(paths.logical_dir(REPO_ROOT, "references", "pid-samples", "*", "*.drawio")))
         drawio = [p for p in found
                   if os.path.basename(os.path.dirname(p)).startswith(DRAWING)][0]
         tmp = tempfile.mkdtemp(prefix="kg-screen-graph-")
@@ -89,15 +89,15 @@ def sample_inputs():
 def prepare_work_root(work, inp):
     """임시 작업 루트에 화면 입력을 둔다(inp = sample_inputs(), 작업 루트를 바꾸기 전에 만든 것): 출력/그래프/<도면>/graph.json, 출력/지식그래프/kg-…(write_outputs),
     데이터/지식/<project>/link_candidates.csv, 데이터/구간/<구간>.json."""
-    gdir = paths.output_in(work, "그래프", DRAWING)
+    gdir = paths.output_in(work, "graph", DRAWING)
     os.makedirs(gdir, exist_ok=True)
     with open(os.path.join(gdir, "graph.json"), "w", encoding="utf-8") as fh:
         json.dump(inp["graph"], fh, ensure_ascii=False)
-    build.write_outputs(paths.output_in(work, "지식그래프", inp["kg"]["kg_id"]), inp["knowledge"], inp["kg"])
-    kdir = paths.folder_in(work, "지식", SAMPLE_PROJECT)
+    build.write_outputs(paths.output_in(work, "knowledge-graph", inp["kg"]["kg_id"]), inp["knowledge"], inp["kg"])
+    kdir = paths.folder_in(work, "knowledge-graph", SAMPLE_PROJECT)
     os.makedirs(kdir, exist_ok=True)
     shutil.copy(os.path.join(SAMPLE_DIR, screen.CANDIDATES_CSV), kdir)
-    rdir = paths.folder_in(work, "구간")
+    rdir = paths.folder_in(work, "regions")
     os.makedirs(rdir, exist_ok=True)
     shutil.copy(REGION_FILE, rdir)
     return inp
@@ -369,12 +369,12 @@ def s1_window_problem(win):
 def write_synthetic_kg(work, total):
     """합성 그래프·지식그래프(가상)를 임시 작업 루트 출력/ 아래에 둔다(S1 확인용)."""
     graph, kg, regions = synthetic_inputs(total)
-    gdir = paths.output_in(work, "그래프", "SYN-S1")
+    gdir = paths.output_in(work, "graph", "SYN-S1")
     os.makedirs(gdir, exist_ok=True)
     with open(os.path.join(gdir, "graph.json"), "w", encoding="utf-8") as fh:
         json.dump(graph, fh)
     kg = dict(kg, kg_id="kg-SYN-S1", project_id="SYN-S1", kg_version="v-5e1000000001")  # 포인터 형식(build D10)
-    kg_root = paths.output_in(work, "지식그래프", "kg-SYN-S1")
+    kg_root = paths.output_in(work, "knowledge-graph", "kg-SYN-S1")
     ver = os.path.join(kg_root, kg["kg_version"])
     os.makedirs(ver, exist_ok=True)
     kb = build.dump_bytes({})

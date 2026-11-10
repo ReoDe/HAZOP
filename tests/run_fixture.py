@@ -18,8 +18,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 from hazop import paths  # noqa: E402
-REGION_FILE = paths.folder("표본", "regions", "region-SNP-M-102-pzr.json")
-FIXED_DIR = paths.folder("표본", "fixed-responses", "region-SNP-M-102-pzr")
+REGION_FILE = paths.folder("samples", "regions", "region-SNP-M-102-pzr.json")
+FIXED_DIR = paths.folder("samples", "fixed-responses", "region-SNP-M-102-pzr")
 RUN_ID = "analysis-20261104T000000Z-fixture"
 
 _cache = {}
@@ -36,7 +36,7 @@ def _sample_graph():
         sys.path.insert(0, REPO_ROOT)
     from hazop.extract import drawio, svg_align
     from hazop.graph import build
-    path = [p for p in glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio"))
+    path = [p for p in glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio"))
             if "SNP-M-102" in p][0]
     result = drawio.extract(path, page=0, repo_root=REPO_ROOT)
     svg = glob.glob(os.path.join(os.path.dirname(path), "*.drawio.svg"))

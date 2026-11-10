@@ -624,7 +624,7 @@ def apply_action(item, action, by, reason="", evidence="", at=None, found_ref=No
 
 
 def store_path(project_id):
-    return paths.folder("잠재후보", paths.safe_name(project_id, "project") + ".json")
+    return paths.folder("latent-candidates", paths.safe_name(project_id, "project") + ".json")
 
 
 def _check_store(doc, project_id, path):

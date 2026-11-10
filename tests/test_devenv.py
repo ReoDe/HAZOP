@@ -121,7 +121,7 @@ class BaselineGuard(unittest.TestCase):
         self.assertIn("--force", bad[0])
 
     def test_dirty_symbol_dictionary_or_answer_key_blocks_update(self):
-        symbols = devenv.hp.folder_rel("기호")
+        symbols = devenv.hp.folder_rel("symbols")
         self.assertIn(symbols, devenv.SCORING_PATHS)
         for out in (" M %s/APR1400/check_valve_box.json\n" % symbols, "?? %s/APR1400/new.json\n" % symbols,
                     " M tests/fixtures/apr1400/pairs_key.json\n"):

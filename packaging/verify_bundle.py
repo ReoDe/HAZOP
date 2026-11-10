@@ -200,32 +200,32 @@ def make_inputs(dest):
         shutil.copy2(os.path.join(REPO_ROOT, "scripts", n + ".py"), os.path.join(dest, "scripts"))
     shutil.copy2(os.path.join(REPO_ROOT, "packaging", "w4_flow.py"), os.path.join(dest, "scripts"))
     shutil.copy2(os.path.join(REPO_ROOT, "packaging", "pdf_probe.py"), os.path.join(dest, "scripts"))
-    sdir = paths.logical_dir(dest, "참고", *SAMPLE_DIR)
+    sdir = paths.logical_dir(dest, "references", *SAMPLE_DIR)
     os.makedirs(sdir)
-    src = paths.folder("참고", *SAMPLE_DIR)
+    src = paths.folder("references", *SAMPLE_DIR)
     for p in glob.glob(os.path.join(src, "*.drawio")) + glob.glob(os.path.join(src, "*.drawio.svg")) + \
             glob.glob(os.path.join(src, "*.pdf")):
         shutil.copy2(p, sdir)
     for sub in (("regions",), ("fixed-responses",), ("knowledge-graph", "SNP-SAMPLE")):
-        shutil.copytree(paths.folder("표본", *sub), paths.folder_in(dest, "표본", *sub))
+        shutil.copytree(paths.folder("samples", *sub), paths.folder_in(dest, "samples", *sub))
 
 
 def seed_app_work(work):
     """--app-only 작업 루트 채우기(w4_flow와 같은 방법, 개발 코드로): 표본 구간·고정 응답·지식, 샘플 도면 사본(논리 경로
     자리)과 그 추출·그래프. 이 프로세스의 HAZOP_WORK_ROOT만 잠시 바꾸고 되돌린다."""
     from hazop.app import data
-    sources = {name: paths.folder("표본", paths.SAMPLE_FOLDERS[name]) for name in ("구간", "고정응답", "지식")}
-    sample = paths.folder("참고", *SAMPLE_DIR)
+    sources = {name: paths.folder("samples", name) for name in ("regions", "fixed-responses", "knowledge-graph")}
+    sample = paths.folder("references", *SAMPLE_DIR)
     old = os.environ.get(paths.ENV_WORK_ROOT)
     os.environ[paths.ENV_WORK_ROOT] = work
     try:
         for name, src in sources.items():
             shutil.copytree(src, paths.folder(name), dirs_exist_ok=True)
-        dst = paths.logical_dir(work, "참고", *SAMPLE_DIR)
+        dst = paths.logical_dir(work, "references", *SAMPLE_DIR)
         shutil.copytree(sample, dst)
         drawio = glob.glob(os.path.join(dst, "*.drawio"))[0]
-        _, ex_dir = data.script_module("extract_drawio").run_one(drawio, paths.output_root("추출"))
-        data.script_module("build_graph").build_one(os.path.join(ex_dir, "extraction.json"), paths.output_root("그래프"))
+        _, ex_dir = data.script_module("extract_drawio").run_one(drawio, paths.output_root("extract"))
+        data.script_module("build_graph").build_one(os.path.join(ex_dir, "extraction.json"), paths.output_root("graph"))
         return os.path.basename(ex_dir)
     finally:
         if old is None:
@@ -239,7 +239,7 @@ def kg_work_root(inputs):
     기준 상대 경로로 적는다. 그 경로가 저장소의 기록 경로('참고자료/P&ID 도면 샘플/…')와 같아야 graph_version과
     link_candidates의 target_graph_version이 맞는다. make_inputs가 샘플 도면을 사본의 기록 경로 자리에 두므로 사본 자체를
     작업 루트로 쓴다."""
-    if not os.path.isdir(paths.logical_dir(inputs, "참고", *SAMPLE_DIR)):
+    if not os.path.isdir(paths.logical_dir(inputs, "references", *SAMPLE_DIR)):
         raise ValueError("샘플 도면 사본이 기록 경로 자리에 없음: %s" % inputs)
     return inputs
 
@@ -426,7 +426,7 @@ def steps(args, summary, run_root, out, repo_dirs):
             "lines": [ln.strip() for ln in text.splitlines() if ln.strip().startswith(("[OK]", "[FAIL]", "결과"))]}
         print("check_kg_screen rc=%s %ss" % (rc, sec))
 
-        pdf = paths.logical_dir(inputs, "참고", *SAMPLE_DIR, SAMPLE_DIR[-1] + ".pdf")
+        pdf = paths.logical_dir(inputs, "references", *SAMPLE_DIR, SAMPLE_DIR[-1] + ".pdf")
         pres = os.path.join(out, "pdf_probe.json")
         rc, sec, _ = run([check_exe, os.path.join(scripts, "pdf_probe.py"), "--pdf", pdf, "--result", pres], env, tmp,
                          os.path.join(out, "pdf_probe.log"))
@@ -484,7 +484,7 @@ def main(argv=None):
 
     summary = {"dist": dist, "run_root": run_root, "app_only": args.app_only, "steps": {}, "errors": {},
                "checks": {}}
-    repo_dirs = ("출력", "자료저장소")
+    repo_dirs = ("output", "store")
     out = None
     try:
         os.makedirs(out_parent, exist_ok=True)

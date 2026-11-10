@@ -181,7 +181,7 @@ class EditScreenTest(unittest.TestCase):
 
     def setUp(self):
         from hazop.app.main_window import MainWindow
-        shutil.rmtree(paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "도면수정"), ignore_errors=True)
+        shutil.rmtree(paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "drawing-edits"), ignore_errors=True)
         win = MainWindow(settings_path=os.path.join(tempfile.mkdtemp(dir=self.tmp), "settings.json"), ask_reviewer=False)
         win.set_reviewer_name("검토자A")
         win.resize(1440, 860)
@@ -324,7 +324,7 @@ class EditScreenTest(unittest.TestCase):
             self.assertTrue(scr.save())
         self.assertFalse(scr.session.dirty)
         self.assertIn("저장", note.call_args[0][2])
-        saved = paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "도면수정")
+        saved = paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "drawing-edits")
         self.assertTrue(os.listdir(saved))
         self.settle()
         self.assertIn("미확인 %d" % len(scr.info["graph"]["validation"]["unknowns"]), scr.chip_stats.text())

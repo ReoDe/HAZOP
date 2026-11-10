@@ -107,9 +107,9 @@ def _git(*args):
 
 
 # 점수에 닿는 입력: 코드, 기호 사전(pdf_vector가 폴더를 훑어 읽음), APR1400 정답지
-SCORING_PATHS = ("hazop", "scripts", hp.folder_rel("기호"), "tests/fixtures/apr1400")
+SCORING_PATHS = ("hazop", "scripts", hp.folder_rel("symbols"), "tests/fixtures/apr1400")
 # 이 아래는 추적 안 한 새 파일도 읽히므로 그것까지 본다
-SCORING_UNTRACKED = (hp.folder_rel("기호"),)
+SCORING_UNTRACKED = (hp.folder_rel("symbols"),)
 
 
 def baseline_update_problems(path, force=False, code_paths=SCORING_PATHS, untracked_paths=SCORING_UNTRACKED):

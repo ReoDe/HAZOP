@@ -330,7 +330,7 @@ class StoreTest(Base):
         ur = ac.run_unit(FakeClient(completed([answer("D01")])), self.unit("D01"), self.ctx(), self.devs, AT)
         res = ac.apply_unit(sr.empty_results(self.node_set, self.devs), ur)
         path = sr.save(res, self.node_set.get("project_id"))
-        self.assertEqual(path, paths.folder_in(self.tmp, "분석결과", "SNP-SAMPLE", "graph-SNP-M-102.json"))
+        self.assertEqual(path, paths.folder_in(self.tmp, "analysis-results", "SNP-SAMPLE", "graph-SNP-M-102.json"))
         with open(path, encoding="utf-8") as fh:
             self.assertEqual(json.load(fh), res)
         self.assertEqual(sr.load(self.node_set), res)
@@ -351,7 +351,7 @@ class StoreTest(Base):
         kg, why = ac.load_kg_for(self.node_set)
         self.assertIsNone(kg)
         self.assertIn("지식그래프가 없음", why)
-        root = paths.output_root("지식그래프")
+        root = paths.output_root("knowledge-graph")
         build.write_outputs(os.path.join(root, "kg-SNP-SAMPLE"), chk.sample_knowledge(), self.kg)
         kg, why = ac.load_kg_for(self.node_set)
         self.assertEqual((kg["kg_id"], why), (self.kg["kg_id"], None))

@@ -15,9 +15,9 @@ from hazop.console import safe_console  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.viewer import build  # noqa: E402
 
-DEFAULT_EXTRACT = paths.output_root("추출")  # <작업 루트>/출력 (hazop/paths.py)
-DEFAULT_OUT = paths.output_root("뷰어")
-DEFAULT_GRAPH = paths.output_root("그래프")
+DEFAULT_EXTRACT = paths.output_root("extract")  # <작업 루트>/출력 (hazop/paths.py)
+DEFAULT_OUT = paths.output_root("viewer")
+DEFAULT_GRAPH = paths.output_root("graph")
 
 
 def main(argv=None):

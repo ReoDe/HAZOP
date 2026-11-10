@@ -45,7 +45,7 @@ from hazop.viewer import build as viewer_build  # noqa: E402
 from hazop.viewer import check as view_check  # noqa: E402
 
 FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "adapter", "truth_small.json")
-SAMPLE_GLOB = paths.folder("참고", "pid-samples", "*", "*.drawio")
+SAMPLE_GLOB = paths.folder("references", "pid-samples", "*", "*.drawio")
 FAR = (3000.0, 2000.0)  # 페이지 밖으로 옮기는 거리(어떤 정답 bbox와도 겹치지 않음)
 
 

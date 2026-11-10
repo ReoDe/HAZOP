@@ -54,7 +54,7 @@ def compose(win, dlg):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("out", nargs="?", default=paths.output_in(paths.DEV_WORK_ROOT, "스크린샷", "AI연결"))
+    ap.add_argument("out", nargs="?", default=paths.output_in(paths.DEV_WORK_ROOT, "screenshots", "AI연결"))
     ap.add_argument("--scale", type=float, default=1.0)
     args = ap.parse_args()
     if args.scale != 1.0:

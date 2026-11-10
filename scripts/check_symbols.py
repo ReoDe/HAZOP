@@ -86,7 +86,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--library")
     a = ap.parse_args()
-    root = a.library or paths.folder("기호")
+    root = a.library or paths.folder("symbols")
     errors, warnings, lib = check(root)
     if lib is not None:
         print("묶음 %s, 항목 %d(켜짐 %d)" % (lib.versions, len(lib.entries), sum(e.enabled for e in lib.entries.values())))

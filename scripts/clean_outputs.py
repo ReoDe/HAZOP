@@ -40,8 +40,8 @@ from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 from hazop.kg import build as kg_build  # noqa: E402
 
-ARCHIVE_DIR = paths.output_name("보관")
-RUN_DIR, KG_DIR, COMPARE_DIR = (paths.output_name(n) for n in ("분석", "지식그래프", "평가비교"))
+ARCHIVE_DIR = paths.output_name("archive")
+RUN_DIR, KG_DIR, COMPARE_DIR = (paths.output_name(n) for n in ("analysis", "knowledge-graph", "evaluation-compare"))
 MANIFEST = "manifest.json"
 OLD_KG_FILES = (kg_build.KNOWLEDGE_FILE, kg_build.KG_FILE)
 
@@ -312,7 +312,7 @@ def main(argv=None):
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--keep", type=int, default=5, help="구간별로 남길 최근 분석 실행 수 (기본 %(default)s)")
-    ap.add_argument("--apply", action="store_true", help="후보를 %s/<시각>/으로 옮긴다(없으면 dry-run)" % paths.output_rel("보관"))
+    ap.add_argument("--apply", action="store_true", help="후보를 %s/<시각>/으로 옮긴다(없으면 dry-run)" % paths.output_rel("archive"))
     ap.add_argument("--out-root", help="출력 루트 (기본 %s). 주면 --store-root도 필수" % paths.output_root())
     ap.add_argument("--store-root", help="검토 기록 저장 루트 (기본 %s)" % paths.store_root())
     ap.add_argument("--no-review-records", action="store_true",

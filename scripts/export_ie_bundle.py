@@ -50,8 +50,8 @@ def main(argv=None):
     ap.add_argument("--results", required=True, help="⑤ 분석 결과 JSON")
     ap.add_argument("--nodes", required=True, help="확정한 검토구간 집합 JSON")
     ap.add_argument("--graph", required=True, help="프로젝트 그래프 또는 도면 graph.json(원인 위치 태그를 찾는 데 씀)")
-    ap.add_argument("--ie", default=None, help="⑥ 초기사건 저장 파일(%s/<프로젝트>.json). 없으면 빈 문서" % paths.folder_rel("초기사건"))
-    ap.add_argument("--out", default=paths.output_root("초기사건"), help="출력 폴더 (기본 %(default)s)")
+    ap.add_argument("--ie", default=None, help="⑥ 초기사건 저장 파일(%s/<프로젝트>.json). 없으면 빈 문서" % paths.folder_rel("initiating-events"))
+    ap.add_argument("--out", default=paths.output_root("initiating-events"), help="출력 폴더 (기본 %(default)s)")
     ap.add_argument("--now", type=_utc, default=None, help="만든 시각(UTC). 주지 않으면 지금")
     args = ap.parse_args(argv)
     try:

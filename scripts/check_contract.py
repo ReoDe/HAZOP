@@ -23,7 +23,7 @@ from hazop import contract  # noqa: E402
 def main(argv=None):
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--region", help="검사할 구간 ID (기본: 데이터/구간/*.json 전체)")
+    ap.add_argument("--region", help="검사할 구간 ID (기본: 작업 루트 구간 폴더의 *.json 전체)")
     ap.add_argument("--run", default="latest", help="latest(기본, 구간별 최신 실행) | all | <analysis_run_id>")
     ap.add_argument("--work-root", help="작업 루트 (기본 hazop.paths.work_root())")
     ap.add_argument("--store-root", help="저장 루트 (기본 HAZOP_STORE_ROOT 또는 <작업 루트>/자료저장소)")

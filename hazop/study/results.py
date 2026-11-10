@@ -56,7 +56,7 @@ MITIGATED_PHRASES = ("영향 없음", "영향이 없", "영향은 없", "문제 
 
 def load_deviations(path=None):
     """[{deviation_id, item_id, parameter, guideword, label}] 파일 순서대로. deviation_id는 D01부터."""
-    with open(path or paths.folder("이탈후보", DEVIATION_CHART), encoding="utf-8") as fh:
+    with open(path or paths.folder("deviations", DEVIATION_CHART), encoding="utf-8") as fh:
         chart = json.load(fh)
     return [{"deviation_id": "D%02d" % (i + 1), "item_id": item["item_id"], "parameter": item["parameter_ko"],
              "guideword": item["guide_word_ko"], "label": item["deviation_ko"]}
@@ -86,7 +86,7 @@ def _ie_category_table(path):
 
 def ie_category_table(path=None):
     """일반 범주 기준표 문서 {table_id, title, basis, categories} 사본."""
-    return copy.deepcopy(_ie_category_table(path or paths.folder("기준표", IE_CATEGORY_TABLE)))
+    return copy.deepcopy(_ie_category_table(path or paths.folder("risk-criteria", IE_CATEGORY_TABLE)))
 
 
 def ie_categories(path=None):
@@ -325,7 +325,7 @@ def set_ie_hint(results, node_id, deviation_id, entry_id, hint, at=None):
 # ---------------------------------------------------------------- 저장
 
 def store_path(project_id, graph_id):
-    return paths.folder("분석결과", paths.safe_name(project_id or UNREGISTERED_PROJECT),
+    return paths.folder("analysis-results", paths.safe_name(project_id or UNREGISTERED_PROJECT),
                            paths.safe_name(graph_id) + ".json")
 
 
@@ -337,7 +337,7 @@ def test_store_path(project_id, graph_id):
 def _readable_path(project_id, graph_id):
     """저장 경로. 없고 project_id가 없으면 이 규칙 이전 폴더(no-project)의 저장본을 그대로 읽는다(옮기지 않음)."""
     path = store_path(project_id, graph_id)
-    legacy = paths.folder("분석결과", LEGACY_PROJECT_DIR, paths.safe_name(graph_id) + ".json")
+    legacy = paths.folder("analysis-results", LEGACY_PROJECT_DIR, paths.safe_name(graph_id) + ".json")
     return legacy if not project_id and not os.path.isfile(path) and os.path.isfile(legacy) else path
 
 

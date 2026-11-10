@@ -37,5 +37,5 @@ def run_analysis(region_path, response_dir=None, client=None, out_root=None, gra
     inputs = load_region_inputs(region_path, graph_path)
     if inputs["blockers"]:
         return {"status": "input_blocked", "blockers": inputs["blockers"], "doc": None, "run_dir": None}
-    doc, run_dir = run.execute(inputs, client, out_root or paths.output_root("분석"), run_id=run_id, only=only)
+    doc, run_dir = run.execute(inputs, client, out_root or paths.output_root("analysis"), run_id=run_id, only=only)
     return {"status": doc["validation"]["status"], "blockers": [], "doc": doc, "run_dir": run_dir}

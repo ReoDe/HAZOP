@@ -29,7 +29,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", required=True, help="분석 실행 폴더(analysis.json이 있는 곳)")
     ap.add_argument("--store-root", default=paths.store_root(), help="검토 기록 저장 루트 (기본 %(default)s)")
-    ap.add_argument("--out-root", default=paths.output_root("워크시트"), help="워크시트 출력 루트 (기본 %(default)s)")
+    ap.add_argument("--out-root", default=paths.output_root("worksheets"), help="워크시트 출력 루트 (기본 %(default)s)")
     ap.add_argument("--scope", default="all", choices=sorted(SCOPES), help="all=전체(기본), accepted_modified=수용·수정 행만")
     args = ap.parse_args(argv)
     try:

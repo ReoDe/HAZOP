@@ -429,7 +429,7 @@ def reopen(node_set, at=None):
 # ---------------------------------------------------------------- 저장
 
 def store_dir():
-    return paths.folder("검토구간")
+    return paths.folder("study-nodes")
 
 
 def store_path(project_id, graph_id):

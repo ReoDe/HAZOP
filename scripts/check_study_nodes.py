@@ -31,7 +31,7 @@ def build_graphs(tmp):
     import extract_drawio
     out = []
     for path in sorted(glob.glob(extract_drawio.SAMPLE_GLOB)):
-        ex, _ = extract_drawio.run_one(path, os.path.join(tmp, "추출"))
+        ex, _ = extract_drawio.run_one(path, os.path.join(tmp, "extract"))
         out.append(build.build_graph(ex))
     return out
 

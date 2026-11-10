@@ -336,7 +336,7 @@ class Library:
     def load(cls, root=None):
         if root is None:
             from hazop import paths
-            root = paths.folder("기호")
+            root = paths.folder("symbols")
         manifest = os.path.join(root, BUNDLES_FILE)
         if not os.path.isfile(manifest):
             raise SymbolLibraryError("기호 사전 묶음 목록이 없음: %s" % manifest)

@@ -29,8 +29,8 @@ from hazop import paths  # noqa: E402
 from hazop.extract import drawio, report, svg_align  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
-SAMPLE_GLOB = paths.folder("참고", "pid-samples", "*", "*.drawio")
-DEFAULT_OUT = paths.output_root("추출")
+SAMPLE_GLOB = paths.folder("references", "pid-samples", "*", "*.drawio")
+DEFAULT_OUT = paths.output_root("extract")
 
 
 def find_svg(drawio_path, page_index=0, page_name=None, page_count=1):

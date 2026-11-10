@@ -128,8 +128,8 @@ def main():
     ap.add_argument("--date", default=datetime.date.today().isoformat())
     ap.add_argument("--source-note", default="", help="sources에 남길 도면 묶음 이름(예: APR1400 DCD Rev.3)")
     a = ap.parse_args()
-    cand = a.candidates or paths.folder("기호후보", a.set)
-    root = a.library or paths.folder("기호")
+    cand = a.candidates or paths.folder("symbol-candidates", a.set)
+    root = a.library or paths.folder("symbols")
     input_dir = a.input_dir or paths.folder("APR1400", "by-drawing")
     rows = {(r["seq"], r["i"]): r for r in cu.load_rows(os.path.join(cand, "쪽"))}
     clusters = {c["rank"]: c for c in read_json(os.path.join(cand, "묶음.json"))}

@@ -22,7 +22,7 @@ SIZES = ((1366, 768), (1920, 1080))
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else paths.output_in(paths.DEV_WORK_ROOT, "스크린샷", "project-kg"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else paths.output_in(paths.DEV_WORK_ROOT, "screenshots", "project-kg"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-pkg-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")
@@ -31,8 +31,8 @@ def main():
     try:
         import shoot_results
         shoot_results.prepare(os.environ["HAZOP_WORK_ROOT"])
-        shutil.copytree(paths.folder("참고", "pid-samples"),
-                        paths.logical_dir(os.environ["HAZOP_WORK_ROOT"], "참고", "pid-samples"))
+        shutil.copytree(paths.folder("references", "pid-samples"),
+                        paths.logical_dir(os.environ["HAZOP_WORK_ROOT"], "references", "pid-samples"))
         from hazop.app import make_application
         from hazop.app.main_window import MainWindow
         from hazop.app.screenshots import settle, wait

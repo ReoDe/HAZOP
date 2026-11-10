@@ -30,7 +30,7 @@ from hazop.study import results as res  # noqa: E402
 from tests.test_kg import link, pid_graph, sample  # noqa: E402
 from tests.test_study_migrate import AT, OBJECTS, graph, results_for, text_of  # noqa: E402
 
-REAL = paths.folder("분석결과", "no-project", "graph-SNP-M-102.json")
+REAL = paths.folder("analysis-results", "no-project", "graph-SNP-M-102.json")
 GID = "graph-SNP-M-102"
 
 

@@ -134,7 +134,7 @@ def info_tooltip(meta, standalone=None):
 
 
 def kg_root_dir():
-    return paths.output_root("지식그래프")
+    return paths.output_root("knowledge-graph")
 
 
 def standalone_path(kg, graph_id):
@@ -298,7 +298,7 @@ class KnowledgeScreen(QWidget):
     def _build_missing(self):
         """등록·추출 결과는 있는데 지식그래프가 아직 없는 프로젝트를 빌드한다(실패는 기록만, 화면은 계속)."""
         try:
-            pids = auto.project_ids(paths.output_root("그래프"), app_data.doc_root())
+            pids = auto.project_ids(paths.output_root("graph"), app_data.doc_root())
         except OSError as exc:
             self.app.log_error("지식그래프 자동 생성", exc)
             return
@@ -374,22 +374,22 @@ class KnowledgeScreen(QWidget):
                 return
             gid = self.graph_combo.currentData()
             ref_ver = {r["graph_id"]: r["graph_version"] for r in refs}.get(gid)
-            found = screen.graph_for_ref(paths.output_root("그래프"), gid, ref_ver)
+            found = screen.graph_for_ref(paths.output_root("graph"), gid, ref_ver)
             if found is None:
                 self._set_empty("지식그래프 %s가 참조한 도면 그래프가 없습니다: %s. ①에서 추출·그래프를 만드세요."
                                 % (kg.get("kg_id"), ", ".join(r["graph_id"] for r in refs)))
                 self.kg = kg
                 return
             self.graph_dir, self.graph = found
-            self.regions = screen.load_regions(paths.folder("구간"))
-            cands = screen.read_candidates(paths.safe_join(paths.folder("지식"), kg.get("project_id") or ""))
+            self.regions = screen.load_regions(paths.folder("regions"))
+            cands = screen.read_candidates(paths.safe_join(paths.folder("knowledge-graph"), kg.get("project_id") or ""))
             self._load_project()
             self.expect = self._expectations()
             self.data = screen.screen_data(kg, self.graph, self.regions, cands,
                                            standalone_note="이전 버전" if self.showing_prev else None,
                                            expectations=self.expect, study=self._study())
             self.a1_full = None
-            shell = screen.write_html(paths.output_root("뷰어", APP_SHELL), screen.build_html(None))
+            shell = screen.write_html(paths.output_root("viewer", APP_SHELL), screen.build_html(None))
             self.standalone = screen.write_html(standalone_path(kg, gid), screen.build_html(self.data))
         except (OSError, ValueError, KeyError) as exc:
             self.app.log_error("지식그래프 읽기", exc)

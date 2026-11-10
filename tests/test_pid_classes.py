@@ -170,7 +170,7 @@ class PropertyCheckTest(unittest.TestCase):
     def test_samples_have_no_unknown_attribute_warnings(self):
         import glob
         from hazop.extract import drawio
-        for f in sorted(glob.glob(paths.folder("참고", "pid-samples", "*", "*.drawio"))):
+        for f in sorted(glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio"))):
             checks = [u["check"] for u in drawio.extract(f)["validation"]["unknowns"]]
             self.assertNotIn("unknown_attribute", checks, f)
             self.assertFalse([c for c in checks if c.startswith("invalid_")], f)

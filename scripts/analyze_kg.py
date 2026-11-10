@@ -26,7 +26,7 @@ import build_kg  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.kg import algo, build  # noqa: E402
 
-DEFAULT_REGION_DIR = paths.folder("구간")
+DEFAULT_REGION_DIR = paths.folder("regions")
 CANDIDATES_CSV = "link_candidates.csv"
 
 
@@ -87,7 +87,7 @@ def run(project_id, start, radius=2, region=None, graph_id=None, kg_root=None, g
 def main(argv=None):
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("project_id", help="%s/ 아래 프로젝트 폴더 이름(지식그래프 kg-<project_id>)" % paths.folder_rel("지식"))
+    ap.add_argument("project_id", help="%s/ 아래 프로젝트 폴더 이름(지식그래프 kg-<project_id>)" % paths.folder_rel("knowledge-graph"))
     ap.add_argument("--start", required=True, help="선택 노드: P&ID entity_id 또는 지식 노드 ID")
     ap.add_argument("--radius", type=int, default=2, help="A4 ego graph 깊이(실제 홉 수, 기본 2)")
     ap.add_argument("--region", help="A1 검토 구간 JSON(여러 구간에 속할 때 고름)")
