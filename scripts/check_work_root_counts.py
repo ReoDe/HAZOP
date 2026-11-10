@@ -27,7 +27,7 @@ import tempfile
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from hazop import paths  # noqa: E402
+from hazop import paths, workroot  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 
 MAX_JSON_BYTES = 30_000_000
@@ -135,8 +135,9 @@ def recorded_paths(work):
         if isinstance(rel, str) and ("/" in rel or "\\" in rel):  # inputs에는 경로가 아닌 값(kg_id, 해시)도 있다
             found.append((kind, rel, paths.resource_root() if role in paths.RESOURCE_INPUT_ROLES else work))
 
+    kept = tuple(os.path.join(work, d) + os.sep for d in (workroot.KEEP_DIR, workroot.STAGING_DIR))
     for f in sorted(glob.glob(os.path.join(work, "**", "*.json"), recursive=True)):
-        if os.path.getsize(f) > MAX_JSON_BYTES:
+        if os.path.getsize(f) > MAX_JSON_BYTES or f.startswith(kept):  # 옮기고 남겨 둔 옛 폴더는 앱이 읽지 않는다
             continue
         try:
             with open(f, encoding="utf-8-sig") as fh:

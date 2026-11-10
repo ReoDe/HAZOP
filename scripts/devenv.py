@@ -263,6 +263,34 @@ def git_leftover_warnings(main="main"):
     return out
 
 
+def old_work_root_warnings(roots=None):
+    """0.1.x 이름의 작업 폴더가 남은 작업 루트(HZ-GOV-02 §8.2). 읽기만 한다. roots 기본: 지금 작업 루트, 옛 개발 작업 루트,
+    이 PC의 배포본 작업 루트(%LOCALAPPDATA% 아래 HAZOP)."""
+    from hazop import paths as hp, workroot
+    out = []
+    if roots is None:
+        local = os.environ.get("LOCALAPPDATA")
+        roots = [hp.work_root(), hp.DEV_WORK_ROOT] + ([os.path.join(local, "HAZOP")] if local else [])
+        if os.path.isdir(hp.OLD_DEV_WORK_ROOT):
+            out.append("옛 개발 작업 루트가 남아 있음: %s (scripts/migrate_names.py --work-root %s --from-root … 로 옮길 것)"
+                       % (hp.OLD_DEV_WORK_ROOT, hp.DEV_WORK_ROOT))
+    seen = set()
+    for root in roots:
+        key = os.path.normcase(os.path.abspath(root))
+        if key in seen or not os.path.isdir(root):
+            continue
+        seen.add(key)
+        try:
+            plan = workroot.make_plan(root)
+        except OSError as exc:
+            out.append("작업 루트를 읽지 못함: %s (%s)" % (root, exc))
+            continue
+        if plan.tops:
+            out.append("0.1.x 이름의 작업 폴더가 남아 있음: %s 의 %s (scripts/migrate_names.py --work-root 로 옮기거나 앱을 켜서 옮길 것)"
+                       % (root, ", ".join(old for old, _now in plan.tops)))
+    return out
+
+
 def require_baseline_update(path, force=False):
     bad = baseline_update_problems(path, force)
     if bad:

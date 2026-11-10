@@ -71,7 +71,7 @@ def main(argv=None):
                                                                      for d, g in big)))
     for b in sorted(glob.glob(os.path.join(devenv.REPO_ROOT, "tests", "baselines", "*.json"))):
         warn += ["경고: " + x for x in devenv.baseline_update_problems(b)]
-    warn += devenv.trials_warnings() + devenv.git_leftover_warnings()
+    warn += devenv.trials_warnings() + devenv.git_leftover_warnings() + devenv.old_work_root_warnings()
 
     for line in warn:
         print("주의: %s" % line)

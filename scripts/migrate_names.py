@@ -19,6 +19,17 @@ git이 추적하지 않는 파일·폴더는 `5u`처럼 따로 두고 손으로 
 백틱을 품은 인용(`` `옛/이름.md` ``).
 운영 파일은 `--only`로 그 경로를 짚어 줄 때만 고쳐 쓴다.
 두 명령 모두 지금 있는 상태에서 남은 일만 하므로, 중간에 끊겨도 다시 돌리면 같은 결과가 된다.
+
+단계 6의 작업 루트(0.1.x가 쓰던 한글 이름 폴더)는 대응표가 아니라 `hazop.paths`의 옛 이름 표로 옮긴다(`hazop.workroot`).
+
+    python scripts/migrate_names.py --work-root <작업 루트>            옮길 것을 보여 준다(쓰지 않음)
+    python scripts/migrate_names.py --work-root <작업 루트> --apply    복사하고 해시를 견준 뒤 새 이름으로 놓는다
+    python scripts/migrate_names.py --work-root <작업 루트> --undo     되돌린다
+    python scripts/migrate_names.py --work-root D:/HAZOP/work --from-root D:/HAZOP/작업 --apply
+                                                               작업 루트 폴더 이름부터 바꾸고 옮긴다(개발 환경)
+
+옛 폴더는 지우지 않고 `<작업 루트>/_before-0.2.0/`에 둔다. 기록은 그 안의 `manifest.json`이다. 새 이름 폴더에 이미 파일이
+있으면 덮어쓰지 않고 멈춘다. 끊겨도 `--apply`를 다시 돌리면 남은 일만 한다. `--undo`는 옮긴 뒤 생겼거나 바뀐 파일을 남긴다.
 """
 
 import argparse
@@ -333,11 +344,76 @@ def leftovers(rows, repo=REPO_ROOT):
     return out
 
 
+def _app_lock(root):
+    """작업 루트에서 앱과 같은 잠금을 잡아 돌려준다. 앱이 그 작업 루트로 켜져 있으면 MigrateError.
+    폴더가 아직 없으면(이름을 바꾸기 전) None."""
+    from PySide6.QtCore import QLockFile
+    from hazop.app.startup import LOCK_NAME
+    if not os.path.isdir(root):
+        return None
+    lock = QLockFile(os.path.join(root, LOCK_NAME))
+    lock.setStaleLockTime(0)
+    if not lock.tryLock(0):
+        raise MigrateError("앱이 이 작업 루트로 켜져 있다. 앱을 끄고 다시 돌린다: %s" % root)
+    return lock
+
+
+def migrate_work_root(root, from_root=None, apply=False, undo=False, out=print):
+    """작업 루트 옮기기 명령. 종료 코드를 돌려준다: 0 = 됨(또는 할 일 없음), 2 = 멈춤.
+    옮기거나 되돌리는 동안에는 앱이 켜지지 않게 작업 루트의 잠금을 쥔다. 폴더 이름을 바꾸는 순간에는 놓는다
+    (잠금 파일이 열려 있으면 Windows가 폴더 이름을 바꾸지 못한다)."""
+    from hazop import workroot
+    lock = None
+    try:
+        if undo:
+            lock = _app_lock(root)
+            renamed = (workroot.read_manifest(root) or {}).get("root_renamed_from")
+            if lock is not None and renamed:
+                lock.unlock()
+            done = workroot.undo(root)
+            out("되돌림: 옛 폴더 %d개를 제자리로 (%s)" % (len(done["restored"]), ", ".join(done["restored"]) or "없음"))
+            for rel in done["left"]:
+                out("남김(옮긴 뒤 생겼거나 바뀐 파일): %s" % rel)
+            out("작업 루트: %s" % done["root"])
+            return 0
+        if apply:
+            if from_root and os.path.isdir(from_root):
+                held = _app_lock(from_root)
+                if held is not None:
+                    held.unlock()
+                workroot.move_root(from_root, root)
+            lock = _app_lock(root)
+            manifest = workroot.apply(root, from_root=from_root)
+            out("옮김. 기록: %s" % manifest if manifest else "옮길 것이 없다: %s" % os.path.abspath(root))
+            return 0
+        where = from_root if from_root and os.path.isdir(from_root) else root
+        plan = workroot.make_plan(where)
+        out("작업 루트: %s%s" % (plan.root, " → %s" % os.path.abspath(root) if where != root else ""))
+        out("상태: %s" % {"none": "옮길 것이 없다", "todo": "옮길 것이 있다", "resume": "옮기다 끊겼다(--apply로 이어서 한다)",
+                         "done": "이미 옮겼다", "conflict": "멈춤"}[plan.state])
+        for why in plan.conflicts:
+            out("  " + why)
+        for old, now in plan.tops:
+            out("  %s -> %s (옛 폴더는 %s/%s에 둔다)" % (old, now, workroot.KEEP_DIR, old))
+        out("파일 %d개, %.1f MB" % (len(plan.files), plan.size / 1e6))
+        return 2 if plan.state == "conflict" else 0
+    except (workroot.MigrationError, MigrateError, OSError) as e:
+        print("멈춤: %s" % e, file=sys.stderr)
+        return 2
+    finally:
+        if lock is not None:
+            lock.unlock()
+
+
 def main(argv=None):
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--stage", action="append", required=True, help="대응표의 stage 값. 여러 번 줄 수 있다")
+    ap.add_argument("--stage", action="append", help="대응표의 stage 값. 여러 번 줄 수 있다")
+    ap.add_argument("--work-root", help="0.1.x 작업 폴더를 0.2.0 배치로 옮길 작업 루트. --apply가 없으면 보여 주기만 한다")
+    ap.add_argument("--from-root", help="작업 루트 폴더 자체의 옛 자리. 이 폴더의 이름을 --work-root로 바꾸고 시작한다")
+    ap.add_argument("--apply", action="store_true", help="--work-root를 옮긴다")
+    ap.add_argument("--undo", action="store_true", help="--work-root에서 옮긴 것을 되돌린다")
     ap.add_argument("--move", action="store_true", help="git mv를 한다")
     ap.add_argument("--rewrite-links", action="store_true", help="링크와 백틱 경로를 바꿔 쓴다")
     ap.add_argument("--report", help="바꾼 줄 목록을 더해 적을 CSV")
@@ -345,6 +421,10 @@ def main(argv=None):
     ap.add_argument("--leftovers", action="store_true", help="옛 이름이 글자 그대로 남은 줄을 보여 준다")
     ap.add_argument("--repo", default=REPO_ROOT)
     args = ap.parse_args(argv)
+    if args.work_root:
+        return migrate_work_root(args.work_root, args.from_root, args.apply, args.undo)
+    if not args.stage:
+        ap.error("--stage나 --work-root 가운데 하나를 준다")
     try:
         table = load_map(args.repo)
         problems = map_problems(table)
