@@ -313,6 +313,43 @@ class IeBundleTest(unittest.TestCase):
             ix.export(xlsx, self.b)
         self.assertEqual(os.listdir(self.tmp), [])
 
+    def test_when_the_xlsx_cannot_be_put_back_the_old_copy_is_kept_and_named(self):
+        xlsx, js = ix.export(os.path.join(self.tmp, "ie.xlsx"), self.b)
+        old_xlsx, old_json = open(xlsx, "rb").read(), open(js, "rb").read()
+        real = os.replace
+
+        def locked(src, dst):
+            if dst == js or (dst == xlsx and src.endswith(".old")):
+                raise PermissionError(13, "다른 프로그램이 쓰는 중", dst)
+            return real(src, dst)
+        with mock.patch("os.replace", side_effect=locked), self.assertRaises(OSError) as caught:
+            ix.export(xlsx, build(self.r, self.ns, self.pg, LATER))
+        self.assertEqual(open(js, "rb").read(), old_json)
+        kept = [n for n in os.listdir(self.tmp) if n not in ("ie.xlsx", "ie.json")]
+        self.assertEqual(len(kept), 1, "옛 .xlsx 사본 하나만 남음")
+        self.assertEqual(open(os.path.join(self.tmp, kept[0]), "rb").read(), old_xlsx)
+        self.assertIn(kept[0], str(caught.exception))
+        self.assertIn("ie.json", str(caught.exception))
+
+    def test_when_a_new_xlsx_cannot_be_removed_the_error_says_it_has_no_json(self):
+        xlsx = os.path.join(self.tmp, "new.xlsx")
+        real = os.replace
+
+        def locked(src, dst):
+            if dst.endswith("new.json"):
+                raise PermissionError(13, "다른 프로그램이 쓰는 중", dst)
+            return real(src, dst)
+        with mock.patch("os.replace", side_effect=locked), \
+                mock.patch("hazop.ie.bundle_xlsx._discard", side_effect=PermissionError(13, "열려 있음", xlsx)), \
+                self.assertRaises(OSError) as caught:
+            ix.export(xlsx, self.b)
+        self.assertIn("new.xlsx", str(caught.exception))
+        self.assertIn("짝", str(caught.exception))
+
+    def test_free_text_risk_is_named_as_a_limit_in_the_guide(self):
+        guide = dict(ix.guide_rows(self.b))
+        self.assertIn("문장 안에 적힌", guide["HAZOP 위험도"])
+
     def test_keys_of_other_providers_are_masked_too(self):
         r = copy.deepcopy(self.r)
         keys = ["sk-proj-" + "a1B2" * 10, "AIza" + "Sy0_-" * 7, "ghp_" + "Z9" * 18]
@@ -527,11 +564,15 @@ class IeBundleP3Test(unittest.TestCase):
         r = res.set_status(self.r, *self.where(self.r, "b1c"), "revised", at=NOW)
         self.b = build(r, self.ns, self.pg, doc=model.sync(doc, r, at=NOW))
         g = next(x for x in self.b["groups"] if x["group_id"] == gid)
-        self.assertEqual((g["members"], g["held_members"], g["member_count"]), ([iec["c4"]], [iec["b1c"]], 1))
+        self.assertEqual((g["members"], g["held_member_count"], g["member_count"]), ([iec["c4"]], 1, 1))
+        self.assertNotIn("held_members", g)
+        self.assertNotIn('"%s"' % iec["b1c"], ib.dumps(self.b), "승인 해제된 후보의 ID는 묶음에 나가지 않음")
         ws, rows = self.rows("IE 그룹")
         row = next(x for x in rows if x["그룹 ID"] == gid)
         self.assertEqual((row["소속 후보"], row["후보 수"]), (iec["c4"], 1))
-        self.assertEqual(row["정의"], "승인 해제로 빠진 후보: " + iec["b1c"])
+        self.assertEqual(row["정의"], "승인 해제로 빠진 후보 1건")
+        cells = [str(c.value) for sheet in ws.parent.worksheets for r in sheet.iter_rows() for c in r if c.value]
+        self.assertEqual([s for s in cells if iec["b1c"] in s], [])
         self.assertEqual(ws.max_column, len(ix.GROUP_COLUMNS), "예시 Excel 열을 늘리지 않음")
 
     def test_records_without_an_approved_source_are_left_out(self):

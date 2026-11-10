@@ -226,6 +226,31 @@ class FollowupTest(unittest.TestCase):
         self.assertEqual(list(row), ["at", "op", "ids"])
         self.assertEqual(store_io.dump_bytes(dict(row, ids=old["ids"])), store_io.dump_bytes(old))
 
+    def test_move_history_names_the_old_group_and_the_cleared_representative(self):
+        r, _, _, doc = fresh()
+        a, b = sorted((iec(doc, r, "c1"), iec(doc, r, "c4")))
+        doc, old = model.create_group(doc, "옛 그룹", [a, b], at=AT)
+        doc, new = model.create_group(doc, "새 그룹", at=AT)
+        row = model.place(doc, a, new, at=AT)["history"][-1]
+        self.assertEqual((row["from"], row["to"], row["representative_cleared"]), (old, new, [old]))
+        row = model.place(doc, b, new, at=AT)["history"][-1]
+        self.assertEqual((row["from"], row["to"]), (old, new))
+        self.assertNotIn("representative_cleared", row)
+        pulled, made = model.create_group(doc, "데려가는 그룹", [a], at=AT)
+        self.assertEqual(pulled["history"][-1]["representative_cleared"], [old])
+
+    def test_reapproving_the_same_content_between_syncs_keeps_the_confirmation(self):
+        """Codex 지적의 재현: ⑥을 열지 않은 사이 승인을 풀었다가 같은 내용으로 다시 승인하면 확정이 유지되고 ⑥ 이력에
+        강등이 남지 않는다. 확정 지문이 내용만 보기 때문이다. 지금은 이 동작을 그대로 둔다(보고에 남김)."""
+        r, _, _, doc = fresh()
+        doc, gid = model.create_group(doc, "주급수 상실", [iec(doc, r, "c1")], at=AT)
+        doc = model.confirm(doc, gid, r, "김검토", at=AT)
+        r = res.set_status(r, *where(r, "c1"), "revised", at=AT)
+        self.assertEqual(model.effective_status(doc, gid, r), "draft")
+        r = res.set_status(r, *where(r, "c1"), "approved", at=AT)
+        self.assertEqual(model.effective_status(doc, gid, r), "confirmed")
+        self.assertIs(model.sync(doc, r, at=AT), doc)
+
     def test_moving_a_non_representative_keeps_the_old_representative(self):
         r, _, _, doc = fresh()
         a, b = sorted((iec(doc, r, "c1"), iec(doc, r, "c4")))

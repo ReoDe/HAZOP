@@ -157,7 +157,7 @@ def quality_warnings(entry):
     if hit:
         out.append(("mitigated_consequence", "결과에 '%s' 같은 표현이 있어 보호수단이 작동한 뒤의 결과일 수 있습니다. "
                     "보호수단이 모두 실패했다고 보고 썼는지 확인하세요" % hit.strip()))
-    unknown = [s["text"] for s in refs.safeguard_items(entry) if s["actuation"] == "unknown"]
+    unknown = [s["text"] for s in refs.safeguard_items(entry) if s["actuation"] == "unknown" and s["text"].strip()]
     if unknown:
         out.append(("actuation_unknown", "보호수단 %d개(%s)가 자동·운전원·자체작동 가운데 무엇인지 정해지지 않았습니다"
                     % (len(unknown), ", ".join(t or "-" for t in unknown[:3]) + (" 외" if len(unknown) > 3 else ""))))

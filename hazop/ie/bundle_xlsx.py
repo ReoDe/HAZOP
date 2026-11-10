@@ -32,12 +32,16 @@ PSA_FILL = "FDF0D2"
 # 읽는 법 시트에 적는 경고별 한 줄 안내(ib.WARNING_KINDS 순서)
 WARNING_GUIDE = (
     ("safeguard_as_cause", "원인 위치가 안전밸브 같은 보호설비이거나 다른 승인 항목이 보호수단으로 적은 대상입니다. "
-                           "보호설비 고장은 대개 초기사건이 아니라 표제의 실패입니다"),
+                           "보호설비 고장은 대개 초기사건이 아니라 표제의 실패입니다 [추론]. 참조와 기기 종류만 "
+                           "보므로 원인 문장에만 적은 보호설비 고장은 잡지 못하고, 보호설비를 가리키는 고장 아닌 "
+                           "원인에도 붙습니다"),
     ("mitigated_consequence", "결과 문장이 보호수단이 작동한 뒤의 결과로 읽힙니다. 표현으로만 짐작하므로 틀릴 수 있습니다"),
     ("actuation_unknown", "보호수단이 자동·운전원·자체작동 가운데 무엇인지 정해지지 않았습니다"),
-    ("boundary_cut", "결과의 영향 대상이 다른 구간에 있는데 그 구간에 승인 항목이 없어 사건 진행을 이을 수 없습니다"),
-    ("fmea_pending", "계기·제어 구성요소가 든 구간입니다. 이 앱에는 아직 FMEA 입력이 없어 항목마다 띄우지 않고 구간 수만 "
-                     "한 줄로 적습니다"),
+    ("boundary_cut", "결과의 영향 대상이 다른 구간에 있는데 그 구간에 그 대상을 다룬 승인 항목이 없어 사건 진행을 이을 수 "
+                     "없습니다. 대상이 어느 구간에도 없거나 그래프에서 사라진 경우도 여기에 적습니다"),
+    ("fmea_pending", "계기·제어 구성요소나 전동 밸브가 든 구간입니다. 이 앱에는 아직 FMEA 입력이 없어 항목마다 띄우지 않고 "
+                     "구간 수만 한 줄로 적습니다. P&ID에 전동기·전원이 따로 그려지지 않아 전동기만 있는 구간은 세지 "
+                     "못합니다"),
 )
 GUIDE_COLUMNS = (("항목", 22), ("내용", 100))
 CANDIDATE_COLUMNS = (("후보 ID", 9), ("판정", 7), ("정상운전 교란", 8), ("안전기능 도전", 8), ("도전받는 안전기능", 16),
@@ -83,7 +87,7 @@ def candidate_row(c):
 
 
 def group_row(g):
-    held = "승인 해제로 빠진 후보: " + _joined(g["held_members"]) if g["held_members"] else ""
+    held = "승인 해제로 빠진 후보 %d건" % g["held_member_count"] if g["held_member_count"] else ""
     definition = " · ".join(x for x in (g["definition"], held) if x)
     return (g["group_id"], g["name"], definition, "·".join(g["categories"]), g["category_source"],
             g["representative"] or "", g["representative_reason"], _joined(g["members"]), g["member_count"],
@@ -138,7 +142,8 @@ def guide_rows(b):
                % (b["source"]["approved_entries"], confirmed, ref.get("graph_version") or "-")),
         ("넣지 않은 항목", "승인되지 않은 항목 %d건(제안·수정·기각)은 넣지 않았습니다" % b["source"]["left_out_unapproved"]),
         ("빈도", "이 묶음에는 초기사건 빈도·기기 고장확률이 없습니다. 빈도 산정과 정량화는 PSA 도구에서 합니다"),
-        ("HAZOP 위험도", "KOSHA 위험도(강도·빈도 등급)는 정성 등급이라 넣지 않았습니다. 필요하면 ⑤ 워크시트를 보십시오"),
+        ("HAZOP 위험도", "KOSHA 위험도(강도·빈도 등급)는 정성 등급이라 넣지 않았습니다. 필요하면 ⑤ 워크시트를 보십시오. "
+                        "다만 원인·결과 문장 안에 적힌 위험도 숫자나 등급은 걸러 내지 않으니 인계 전에 확인하십시오"),
         ("AI 초안", "'작성' 열이 'AI 초안'인 행(회색 바탕)은 사람이 아직 확정하지 않은 값입니다. 규칙으로 만든 초안도 "
                    "여기에 듭니다"),
         ("그룹 상태", "'확정'은 검토자가 ⑥ 화면에서 확정한 뒤 소속 후보·표제·최종상태가 바뀌지 않은 그룹입니다. ⑤에서 소속 "
@@ -198,11 +203,16 @@ def default_stem(project_id, now):
     return "IE-%s-%s" % (re.sub(r'[\\/:*?"<>|\s]+', "_", project_id or "프로젝트"), sx.kst(now, "%Y%m%d-%H%M"))
 
 
+def _discard(path):
+    os.remove(path)
+
+
 def export(xlsx_path, b):
     """xlsx_path와 같은 이름의 .json을 함께 쓴다. 둘 다 같은 폴더 임시 파일에 먼저 쓰고 둘 다 써진 뒤에 교체하므로, 쓰는
     도중 실패하면 어느 쪽도 바뀌지 않는다. .xlsx를 교체한 뒤 .json 교체가 실패하면(.json이 열려 있는 등) 옛 .xlsx를
     되돌려 놓는다(옛 파일이 없었으면 새 .xlsx를 지운다). 그래서 새 .xlsx와 옛 .json이 짝으로 남지 않는다.
-    오류는 그대로 올린다. (xlsx 경로, json 경로)."""
+    되돌리기까지 실패하면 짝이 맞지 않는 채로 남으므로, 옛 .xlsx 사본을 지우지 않고 그 자리를 오류 글에 적는다.
+    오류는 올린다. (xlsx 경로, json 경로)."""
     json_path = os.path.splitext(xlsx_path)[0] + ".json"
     folder = os.path.dirname(os.path.abspath(xlsx_path))
     tmps = []
@@ -220,11 +230,21 @@ def export(xlsx_path, b):
         os.replace(tmps[0], xlsx_path)
         try:
             os.replace(tmps[1], json_path)
-        except OSError:
-            if had_old:
-                os.replace(tmps[2], xlsx_path)
-            else:
-                os.remove(xlsx_path)
+        except OSError as exc:
+            try:
+                if had_old:
+                    os.replace(tmps[2], xlsx_path)
+                else:
+                    _discard(xlsx_path)
+            except OSError as again:
+                if had_old:
+                    kept = tmps.pop(2)
+                    raise OSError("%s를 바꾸지 못했고(%s) 옛 .xlsx도 되돌리지 못했습니다(%s). 지금 %s는 새 내용, %s는 옛 "
+                                  "내용이라 짝이 맞지 않습니다. 옛 .xlsx 사본은 %s에 남겼습니다"
+                                  % (os.path.basename(json_path), exc, again, os.path.basename(xlsx_path),
+                                     os.path.basename(json_path), kept)) from exc
+                raise OSError("%s를 쓰지 못했고(%s) 새 %s도 지우지 못했습니다(%s). 짝이 되는 .json이 없는 파일이니 "
+                              "지우고 다시 내보내세요" % (os.path.basename(json_path), exc, xlsx_path, again)) from exc
             raise
     finally:
         for tmp in tmps:

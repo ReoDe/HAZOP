@@ -108,6 +108,7 @@ class AiResponseTest(Base):
             self.assertNotIn(k, e)
         self.assertEqual(e["safeguards"], ["보호"])
         self.assertTrue(res.quality_line(*res.quality_warnings(e)[0]).startswith("작동 방식 미확인: 보호수단 1개"))
+        self.assertEqual(res.quality_warnings(dict(e, safeguards=["", "  ", {"text": ""}])), [], "빈 줄은 보호수단이 아님")
 
     def test_saved_and_exported(self):
         _, (e,) = self.run_one(new_scenario(ie_hint=dict(IE, category="NOPE")))

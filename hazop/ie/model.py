@@ -483,36 +483,46 @@ def create_group(doc, name, iecs=(), at=None):
     def apply(o):
         gid = _next_id(o, "IEG")
         o["groups"][gid] = _group_record(name.strip(), "human")
+        cleared = []
         for i in iecs:
-            _leave(o, i)
+            cleared += _leave(o, i)
             o["candidates"][i].update(group_id=gid, placed_by="human")
         if iecs:
             o["groups"][gid]["representative"] = sorted(iecs)[0]
-        return gid
-    out, gid = _change(doc, "create_group", list(iecs), old, at, apply)
+        return gid, cleared
+    out, (gid, cleared) = _change(doc, "create_group", list(iecs), old, at, apply)
     out["history"][-1]["ids"].insert(0, gid)
+    if cleared:
+        out["history"][-1]["representative_cleared"] = cleared
     return out, gid
 
 
 def _leave(o, iec):
-    """후보가 지금 그룹을 떠나기 직전에 부른다. 그 그룹의 대표 후보였으면 대표를 비운다(남겨 두면 옛 그룹 확정이 막힘)."""
-    old = o["groups"].get(o["candidates"][iec]["group_id"])
+    """후보가 지금 그룹을 떠나기 직전에 부른다. 그 그룹의 대표 후보였으면 대표를 비우고 [그 그룹 ID]를 돌려준다
+    (남겨 두면 옛 그룹 확정이 막힘). 아니면 []."""
+    gid = o["candidates"][iec]["group_id"]
+    old = o["groups"].get(gid)
     if old is not None and old["representative"] == iec:
         old["representative"] = None
+        return [gid]
+    return []
 
 
 def place(doc, iec, gid, at=None):
     """후보를 그룹 gid로 옮기거나(gid None이면) 그룹에서 뺀다. 사람이 정한 소속이 된다. 옛 그룹·새 그룹을 모두 건드린다.
-    옛 그룹의 대표 후보였으면 옛 그룹의 대표를 비운다."""
+    옛 그룹의 대표 후보였으면 옛 그룹의 대표를 비운다. history에 옛 그룹(from)과 대표를 비운 그룹을 남긴다."""
     c = _record(doc, ("member", iec))
     if gid is not None:
         _live_group(doc, gid)
 
     def apply(o):
-        if gid != c["group_id"]:
-            _leave(o, iec)
+        cleared = _leave(o, iec) if gid != c["group_id"] else []
         o["candidates"][iec].update(group_id=gid, placed_by="human" if gid else None)
-    return _change(doc, "place", [iec], [c["group_id"], gid], at, apply, to=gid)[0]
+        return cleared
+    out, cleared = _change(doc, "place", [iec], [c["group_id"], gid], at, apply, to=gid, **{"from": c["group_id"]})
+    if cleared:
+        out["history"][-1]["representative_cleared"] = cleared
+    return out
 
 
 def accept(doc, ref, at=None):

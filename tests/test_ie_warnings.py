@@ -76,8 +76,9 @@ class BoundaryCutTest(Case):
         self.e["c1"]["consequence_refs"] = [{"ref": TANK_101}]
         self.assertEqual(self.warnings("boundary_cut"), [])
 
-    def test_consequence_into_a_node_with_approved_entries_is_quiet(self):
+    def test_consequence_into_a_node_whose_approved_entry_covers_the_target_is_quiet(self):
         self.e["c1"]["consequence_refs"] = [{"ref": TANK_102}]
+        self.e["b1c"]["cause_refs"] = [{"ref": TANK_102}]
         self.assertEqual(self.home["b1c"], self.other)
         self.assertEqual(self.warnings("boundary_cut"), [])
 
@@ -96,8 +97,17 @@ class BoundaryCutTest(Case):
         self.assertIn("V-9", w["text"])
         self.assertIn("검토구간 없음", w["text"])
 
-    def test_target_missing_from_the_graph_is_left_to_the_missing_mark(self):
+    def test_target_missing_from_the_graph_is_reported_for_recheck(self):
         self.e["c1"]["consequence_refs"] = [{"ref": "graph-SNP-M-999#X"}]
+        (w,) = self.warnings("boundary_cut")
+        self.assertIn("대상 없음(재확인): graph-SNP-M-999#X", w["text"])
+
+    def test_unrelated_approved_entry_in_the_receiving_node_does_not_silence_it(self):
+        self.e["c1"]["consequence_refs"] = [{"ref": TANK_102}]
+        self.assertEqual((self.home["b1c"], self.e["b1c"]["status"]), (self.other, "approved"))
+        (w,) = self.warnings("boundary_cut")
+        self.assertIn("그 대상을 다룬 승인 항목이 없", w["text"])
+        self.e["b1c"]["consequence_refs"] = [{"ref": TANK_102}]
         self.assertEqual(self.warnings("boundary_cut"), [])
 
 
@@ -113,6 +123,19 @@ class FmeaPendingTest(Case):
         self.assertEqual(w["target"], ", ".join(sorted((self.home["c1"], self.other))))
         self.assertIn("전기·제어 구간 2개: FMEA 대조 전", w["text"])
         self.assertEqual(self.count("fmea_pending"), 2)
+
+    def test_electrically_driven_valve_counts_and_a_spanning_node_counts_once(self):
+        add_node(self.pg, self.ns, "MOV1", "motor_operated_valve", "valve", "MOV-1", self.home["c1"])
+        self.pg["nodes"].append({"entity_id": "graph-SNP-M-101/PT9", "sheet": "graph-SNP-M-101",
+                                 "source_object_id": "PT9", "kind": "transmitter", "category": "instrument",
+                                 "tag": "PT-9"})
+        next(n for n in self.ns["nodes"] if n["node_id"] == self.home["c1"])["members"].append("graph-SNP-M-101/PT9")
+        (w,) = self.warnings("fmea_pending")
+        self.assertEqual((w["target"], self.count("fmea_pending")), (self.home["c1"], 1))
+
+    def test_manual_valves_and_tanks_alone_are_not_electrical(self):
+        add_node(self.pg, self.ns, "V1", "manual_valve", "valve", "V-1", self.home["c1"])
+        self.assertEqual(self.warnings("fmea_pending"), [])
 
     def test_instrument_node_without_approved_entries_is_not_counted(self):
         add_node(self.pg, self.ns, "PT1", "transmitter", "instrument", "PT-1", self.other)
@@ -158,6 +181,18 @@ class SummaryAndGuideTest(Case):
         for label, _ in ib.WARNING_KINDS.values():
             self.assertIn(label, guide["품질 경고 읽는 법"])
         self.assertIn("막지 않", guide["품질 경고 읽는 법"])
+        self.assertIn("원인 문장에만 적은", guide["품질 경고 읽는 법"])
+        self.assertIn("전동기", guide["품질 경고 읽는 법"])
+        psv_warning = next(w["text"] for w in self.b["warnings"] if w["kind"] == "safeguard_as_cause")
+        self.assertIn("[추론]", psv_warning)
+
+    def test_summary_counts_against_hand_counted_values(self):
+        self.assertEqual({s["kind"]: s["count"] for s in self.b["warning_summary"]},
+                         {"safeguard_as_cause": 1, "mitigated_consequence": 1, "actuation_unknown": 3,
+                          "boundary_cut": 1, "fmea_pending": 1})
+        self.assertEqual(ib.warning_summary_text(self.b),
+                         "보호설비 고장이 원인 칸에 있음 1건 · 완화 결과로 적힘 1건 · 작동 방식 미확인 3건 · "
+                         "구간 경계 결과 끊김 1건 · 전기·제어 구간 1개: FMEA 대조 전")
 
     def test_same_input_same_warnings(self):
         self.assertEqual(ib.dumps(build(self.r, self.ns, self.pg)), ib.dumps(self.b))

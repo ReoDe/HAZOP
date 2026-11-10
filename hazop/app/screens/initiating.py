@@ -740,7 +740,7 @@ class InitiatingScreen(QWidget):
                           ("affected_mitigation", g["affected_mitigation"] or "미정"),
                           ("support_ie", model.SUPPORT_IE[g["support_ie"]])):
             self.group_fields[key].setText(text)
-        everyone = g["members"] + g["held_members"]
+        everyone = model.members_of(self.doc, g["group_id"])  # 승인 해제로 묶음에서 빠진 후보도 화면에는 보인다
         rows, origins = [], []
         for m in everyone:
             c = self.by_iec.get(m)
@@ -752,8 +752,8 @@ class InitiatingScreen(QWidget):
             origins.append(self.doc["candidates"][m]["placed_by"])
         _fill(self.member_table, rows, ids=everyone, origins=origins)
         self.members_label.setText("소속 후보 %d · 원인 단위 · ⑤ 승인 항목에서 옴%s" % (
-            g["member_count"], " · 승인 해제로 빠진 후보 %d(묶음에 나가지 않음)" % len(g["held_members"])
-            if g["held_members"] else ""))
+            g["member_count"], " · 승인 해제로 빠진 후보 %d(묶음에 나가지 않음)" % g["held_member_count"]
+            if g["held_member_count"] else ""))
         hs = [h for h in self.view["top_events"] if h["heading_id"] in g["heading_ids"]]
         _fill(self.group_heading_table, [[h["heading_id"], h["name"], _joined(h["targets"]),
                                           refs.ACTUATIONS[h["actuation"]], ix.ORIGINS[h["origin"]]] for h in hs],
@@ -824,7 +824,7 @@ class InitiatingScreen(QWidget):
         self.reopen_btn.setEnabled(stored == "confirmed")
         self.delete_btn.setEnabled(stored == "draft")
         self.edit_group_btn.setEnabled(bool(g))
-        self.split_btn.setEnabled(bool(g) and len(g["members"]) + len(g["held_members"]) >= 2)
+        self.split_btn.setEnabled(bool(g) and g["member_count"] + g["held_member_count"] >= 2)
         for kind in KIND_TABLES:
             has = ready and bool(_selected_ids(getattr(self, kind + "_table")))
             for b in getattr(self, kind + "_btns")[:3]:
