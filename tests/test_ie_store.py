@@ -88,7 +88,7 @@ class StoreTest(unittest.TestCase):
 
     def test_failed_write_keeps_old_file_and_cleans_temp(self):
         fp = store.save(self.doc(), expect=None)
-        with mock.patch("hazop.ie.store.os.replace", side_effect=OSError("disk full")):
+        with mock.patch("os.replace", side_effect=OSError("disk full")):
             with self.assertRaises(OSError):
                 store.save(model.empty("가상 PWR"), expect=fp)
         self.assertEqual(store.load("가상 PWR")[0], self.doc())
@@ -142,7 +142,7 @@ class StoreTest(unittest.TestCase):
 
     def test_no_overwrite_when_backup_fails(self):
         self.write_raw(b"{broken")
-        with mock.patch("hazop.ie.store.shutil.copy2", side_effect=OSError("backup denied")):
+        with mock.patch("shutil.copyfileobj", side_effect=OSError("backup denied")):
             with self.assertRaises(OSError):
                 store.replace_unreadable("가상 PWR")
         with open(self.path, "rb") as fh:

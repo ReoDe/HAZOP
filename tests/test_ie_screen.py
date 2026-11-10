@@ -259,7 +259,7 @@ class InitiatingScreenTest(unittest.TestCase):
         self.assertFalse(self.scr.load("SNP-M-102"))
         self.assertTrue(self.scr.banner.isVisibleTo(self.scr) and self.scr.replace_btn.isVisibleTo(self.scr))
         self.assertIsNone(self.scr.doc)
-        with mock.patch("hazop.ie.store.shutil.copy2", side_effect=OSError("denied")):
+        with mock.patch("shutil.copyfileobj", side_effect=OSError("denied")):
             self.assertFalse(self.scr.replace_unreadable(ask=False))
         with open(path, "rb") as fh:
             self.assertEqual(fh.read(), b"{broken")

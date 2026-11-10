@@ -12,9 +12,8 @@
 import hashlib
 import json
 import os
-import shutil
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.graph import project
 from hazop.study import nodes as sn
 from hazop.study import results as res
@@ -109,6 +108,7 @@ class ProjectContext:
         self.drawing_number = (sheet.get("source") or {}).get("drawing_number") or sheet.get("drawing_number") or name
         self.project_id = project.project_id_of(sheet)
         self.pg, self.error, self.node_set, self.saved, self.notice = None, None, None, False, None
+        self.set_fp = None
         try:
             self.pg = project_graph(self.project_id)
         except (OSError, ValueError) as exc:
@@ -140,14 +140,15 @@ class ProjectContext:
 
     # ---------------------------------------------------------------- 구간 집합
     def load_set(self):
-        """저장본(없으면 이전 또는 새 제안). (node_set, saved). 읽기 실패는 ValueError·OSError 그대로."""
-        saved = sn.load(self.pg)
+        """저장본(없으면 이전 또는 새 제안). (node_set, saved). 읽기 실패는 ValueError·OSError 그대로.
+        set_fp에 읽은 저장 파일의 지문을 둔다(파일이 없으면 None). 화면이 저장할 때 expect로 쓴다."""
+        saved, self.set_fp = sn.load_fp(self.pg)
         if saved is not None:
             self.node_set, self.saved = saved, True
             return saved, True
         migrated = migrate_sets(self.pg)
         if migrated is not None:
-            self.node_set, self.saved, self.notice = migrated[0], True, migrated[1]
+            self.node_set, self.saved, self.notice, self.set_fp = migrated[0], True, migrated[1], migrated[2]
             return self.node_set, True
         sheets, problem = sn.exclusion_for(self.pg)
         if problem:
@@ -249,17 +250,6 @@ def _old_sets(pg):
     return out
 
 
-def backup(paths_to_copy, label):
-    """파일들을 <작업 루트>/data/backup/<시각>-<label>/ 아래 원래 상대 경로 그대로 복사한다. 백업 폴더를 돌려준다."""
-    stamp = sn.now_utc().replace(":", "").replace("-", "")
-    root = paths.folder("backup", "%s-%s" % (stamp, label))
-    for p in paths_to_copy:
-        dst = os.path.join(root, paths.backup_rel(p, paths.work_root()))
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        shutil.copy2(p, dst)
-    return root
-
-
 def _write_report(folder, report):
     os.makedirs(folder, exist_ok=True)
     with open(os.path.join(folder, "이전보고.json"), "w", encoding="utf-8", newline="\n") as fh:
@@ -269,21 +259,21 @@ def _write_report(folder, report):
 
 def migrate_sets(pg):
     """프로젝트 집합 저장본이 없고 옛 도면별 저장본이 있으면 백업 뒤 이전한 집합(제안 상태)을 저장한다.
-    (집합, 알림 글) 또는 None(옮길 것 없음). 옛 파일은 그대로 둔다."""
+    (집합, 알림 글, 쓴 파일의 지문) 또는 None(옮길 것 없음). 옛 파일은 그대로 둔다."""
     olds = _old_sets(pg)
     if not olds or os.path.isfile(sn.store_path(pg["project_id"], pg["graph_id"])):
         return None
     old_sets = [o for _g, o in olds]
     files = [sn._readable_path(g.get("project_id"), g["graph_id"]) for g, _o in olds]
-    folder = backup(files, "검토구간-이전")
+    folder = store_io.backup(files, "검토구간-이전")
     sheets, problem = sn.exclusion_for(pg)
     if problem:
         raise ValueError(problem)  # 이전은 한 번뿐이라, 표시를 못 읽은 채 옮기지 않고 저장본을 읽지 못한 것처럼 알린다
     proposal = sn.propose(pg, exclude_sheets=sheets)
     mapping = span.legacy_map(old_sets, proposal, pg)
     out = span.migrate_set(old_sets, proposal, pg)
-    path = sn.save(out)
-    exact = sum(1 for v in mapping.values() if v["exact"])
+    path, fp = sn.save_fp(out)
+    exact =sum(1 for v in mapping.values() if v["exact"])
     confirmed = [o["graph_id"].replace("graph-", "") for o in old_sets if o.get("status") == "confirmed"]
     _write_report(folder, {"kind": "node_set_migration", "at": sn.now_utc(), "written": path,
                            "mapping": mapping, "old_files": files})
@@ -291,7 +281,7 @@ def migrate_sets(pg):
             "%s프로젝트 구간은 '제안' 상태라 ④에서 다시 확정해야 합니다. 옛 파일은 그대로 두었고 백업: %s"
             % (len(mapping), exact, len(mapping) - exact,
                ("옛 확정본(%s)은 기록으로 남겼고 " % ", ".join(confirmed)) if confirmed else "", folder))
-    return out, text
+    return out, text, fp
 
 
 def migrate_results(pg, node_set):
@@ -318,7 +308,7 @@ def migrate_results(pg, node_set):
                   "to_excluded": "사람 판정 항목이 스크리닝 제외 구간으로 감(④에서 꺼낸 뒤 다시 확정)"}
         return None, "옛 분석 결과를 옮기지 않음: %s. 옛 파일은 그대로 있습니다." % (
             ", ".join("%s %d건" % (labels.get(k, k), len(report[k])) for k in stop))
-    folder = backup(files, "분석결과-이전")
+    folder = store_io.backup(files, "분석결과-이전")
     path = res.save(out, node_set["project_id"])
     _write_report(folder, dict(report, kind="results_migration", at=sn.now_utc(), written=path, old_files=files))
     text = ("옛 도면별 분석 결과 항목 %d건을 프로젝트 구간으로 옮겼습니다(사람 검토 %d건은 상태 그대로, "

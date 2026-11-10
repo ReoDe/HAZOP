@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
                                QProgressBar, QPushButton, QSizePolicy, QStackedWidget,
                                QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTabWidget, QVBoxLayout, QWidget)
 
+from hazop import store_io
 from hazop.app import data, project_ctx, tokens
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text
 from hazop.graph import project
@@ -164,7 +165,7 @@ class StudyNodesScreen(QWidget):
         self.node_set = None
         self.view = None        # node_set의 표기 사본(ctx.view)
         self.saved = False      # node_set이 저장본과 같은가(처음 제안은 False)
-        self.disk_fp = None     # 읽을 때 저장 파일의 nodes.fingerprint. 저장 직전 다르면 다른 창이 먼저 저장한 것
+        self.disk_fp = None     # 읽은 저장 파일의 지문(없던 파일이면 None). 저장 직전 다르면 읽은 뒤 파일이 바뀐 것
         self.unreadable = False  # 저장 파일을 읽지 못했음. 처음 덮어쓰기 전에 묻고 원본을 백업한다
         self.entities = {}      # 프로젝트 ID → 프로젝트 그래프 node
         self.local_map = {}     # 프로젝트 ID → 보는 도면의 data-local-id
@@ -477,14 +478,12 @@ class StudyNodesScreen(QWidget):
         self.unreadable = False
         try:
             self.node_set, self.saved = ctx.load_set()
-        except (OSError, ValueError) as exc:
+            self.disk_fp = ctx.set_fp
+        except (OSError, ValueError) as exc:  # 읽지 못한 파일의 지문은 덮어쓰기를 허락받을 때(_save) 구한다
             sheets, problem = nodes.exclusion_for(self.graph)
             self.node_set, self.saved, self.unreadable = nodes.propose(self.graph, exclude_sheets=sheets), False, True
-            self.warn.set_messages("저장된 검토구간을 읽을 수 없어 새로 제안합니다", [str(exc)] + ([problem] if problem else []))
-        try:
-            self.disk_fp = nodes.fingerprint(self._store_path())
-        except OSError:  # 지금 읽지 못하는 파일이면 저장 때 다시 지문을 구해 보고, 그때 읽히면 다른 값이라 저장하지 않는다
             self.disk_fp = None
+            self.warn.set_messages("저장된 검토구간을 읽을 수 없어 새로 제안합니다", [str(exc)] + ([problem] if problem else []))
         self._load_review()
         if ctx.notice:
             self.notice = ctx.notice
@@ -1008,22 +1007,24 @@ class StudyNodesScreen(QWidget):
 
     def _save(self):
         """디스크에 쓴 경우에만 True. 실패하면 화면은 이전 집합으로 되돌린다(확정이 저장된 것처럼 보이지 않게).
-        읽은 뒤 다른 창이 먼저 저장했으면 쓰지 않는다. 읽지 못한 파일은 사용자가 허락할 때만 백업한 뒤 덮어쓴다."""
+        읽은 뒤 저장 파일이 바뀌었으면 쓰지 않는다. 읽지 못한 파일은 사용자가 허락할 때만 백업한 뒤 덮어쓴다.
+        그때 지문은 백업 직전에 구한다(백업한 바로 그 파일만 덮어쓰게)."""
         path = self._store_path()
         if self.unreadable and os.path.isfile(path):
             if not self.ask_overwrite_unreadable(path):
                 self.msg.setText("저장하지 않았습니다. 읽지 못한 검토구간 파일은 그대로 있습니다.")
                 return False
             try:
-                migrate._backup(path, "읽기실패")
+                self.disk_fp = store_io.fingerprint(path)
+                store_io.backup_file(path, "읽기실패")
             except OSError as exc:
                 self.app.log_error("검토구간 백업 실패", exc)
                 self.msg.setText("원래 파일을 백업하지 못해 저장하지 않았습니다: %s" % exc)
                 return False
         try:
-            nodes.save(self.node_set, expect=self.disk_fp)
+            _path, self.disk_fp = nodes.save_fp(self.node_set, expect=self.disk_fp)
         except nodes.Conflict:
-            self.msg.setText("다른 창에서 이 검토구간을 먼저 저장해서 이번 변경은 저장하지 않았습니다. "
+            self.msg.setText("읽은 뒤 저장 파일이 바뀌어 이번 변경은 저장하지 않았습니다. "
                              "도면을 다시 열어 최신 내용을 불러온 뒤 고치세요.")
             return False
         except OSError as exc:
@@ -1031,7 +1032,6 @@ class StudyNodesScreen(QWidget):
             self.msg.setText("저장 실패 — 변경을 적용하지 않음: %s" % exc)
             return False
         self.unreadable = False
-        self.disk_fp = nodes.fingerprint(path)
         self.saved = True
         self.app.mark_saved(self.node_set["history"][-1]["at"])
         return True
@@ -1160,7 +1160,7 @@ class StudyNodesScreen(QWidget):
             path = self._store_path()
             if os.path.isfile(path):
                 try:
-                    project_ctx.backup([path], "검토구간-다시제안")
+                    store_io.backup([path], "검토구간-다시제안")
                 except OSError as exc:
                     self.app.log_error("검토구간 백업 실패", exc)
                     self.msg.setText("다시 제안하기 전 백업을 하지 못해 바꾸지 않았습니다: %s" % exc)

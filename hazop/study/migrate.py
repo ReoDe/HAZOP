@@ -18,11 +18,9 @@
 import copy
 import hashlib
 import json
-import os
 import re
-import shutil
 
-from hazop import paths
+from hazop import store_io
 
 OP = "migrate_version"
 _PID_ID = re.compile(r"(^|/)(entity|relation)-")
@@ -230,41 +228,35 @@ def notice(node_set):
         d["from"], d["to"], d["matched"])
 
 
-def _backup(path, label="판이전"):
-    """<작업 루트>/data/backup/<시각>-<label>/<작업 루트 기준 경로>에 복사하고 그 경로를 돌려준다."""
-    from hazop.study.nodes import now_utc
-    stamp = now_utc().replace(":", "").replace("-", "")
-    dst = os.path.join(paths.folder("backup", "%s-%s" % (stamp, label)), paths.backup_rel(path, paths.work_root()))
-    os.makedirs(os.path.dirname(dst), exist_ok=True)
-    shutil.copy2(path, dst)
-    return dst
+BACKUP_LABEL = "판이전"
 
 
-def on_load(node_set, graph, path):
-    """nodes.load가 부른다. 참조를 채우거나 판을 이전했으면 옛 파일을 백업한 뒤 읽은 파일 자리에 쓰고,
-    같은 확정본의 ⑤ 결과 파일도 함께 이전한다. 쓸 일이 없으면 아무것도 쓰지 않는다."""
-    from hazop.study import nodes, results as res
+def on_load(node_set, graph, path, fp):
+    """nodes.load_fp가 부른다. fp는 node_set을 읽은 바이트의 지문이다. (집합, 지금 파일의 지문)을 돌려준다.
+    참조를 채우거나 판을 이전했으면 옛 파일을 백업한 뒤 읽은 파일 자리에 쓰고, 같은 확정본의 ⑤ 결과 파일도 함께 이전한다.
+    쓸 일이 없으면 아무것도 쓰지 않는다. 읽은 뒤 파일이 바뀌었으면 쓰지 않는다."""
+    from hazop.study import results as res
     out = with_refs(node_set, graph)
     out, p = migrate_set(out, graph)
     if out is node_set:
-        return node_set
+        return node_set, fp
     try:
-        _backup(path)
-        nodes.write(path, out)
-    except OSError:  # 백업·쓰기를 못 하면 이전하지 않는다. 화면은 지금처럼 재확인 안내와 함께 저장본을 연다
-        return node_set
+        store_io.backup_file(path, BACKUP_LABEL)
+        fp = store_io.write_json(path, out, expect=fp, sort_keys=False)
+    except (OSError, store_io.Conflict):  # 백업·쓰기를 못 하면 이전하지 않는다. 화면은 지금처럼 재확인 안내와 함께 저장본을 연다
+        return node_set, fp
     if p["state"] == "kept":
         rpath = res._readable_path(out.get("project_id"), out["graph_id"])
         try:
-            doc = res.read(rpath)
+            doc, rfp = res.read_fp(rpath)
         except (OSError, ValueError):  # 읽지 못하는 결과는 그대로 두고 화면이 지금처럼 문제로 보여 준다
             doc = None
         if doc is not None and doc.get("graph_id") == out["graph_id"]:
             moved, n = migrate_results(doc, out)
             if n is not None:
                 try:
-                    _backup(rpath)
-                    res.write(rpath, moved)
-                except OSError:  # 결과 파일은 다음에 읽을 때 results.load가 메모리에서 다시 이전한다
+                    store_io.backup_file(rpath, BACKUP_LABEL)
+                    res.write(rpath, moved, expect=rfp)
+                except (OSError, store_io.Conflict):  # 결과 파일은 다음에 읽을 때 results.load가 메모리에서 다시 이전한다
                     pass
-    return out
+    return out, fp

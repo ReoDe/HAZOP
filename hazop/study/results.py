@@ -16,10 +16,9 @@ import functools
 import json
 import os
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.analysis.risk import FREQUENCIES, MATRIX_P86, SEVERITIES
 from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
-from hazop.kg.build import write_json_atomic
 from hazop.study import refs
 from hazop.study.nodes import now_utc
 
@@ -342,24 +341,30 @@ def _readable_path(project_id, graph_id):
 
 
 def save(results, project_id):
-    """임시 파일에 쓴 뒤 os.replace로 교체한다. 쓴 경로를 돌려준다."""
+    """쓴 경로를 돌려준다."""
     return write(store_path(project_id, results["graph_id"]), results)
 
 
-def write(path, results):
-    write_json_atomic(path, results)
+def write(path, results, expect=store_io.ANY):
+    """expect(read_fp의 지문)를 주면 읽은 뒤 바뀐 파일은 쓰지 않고 store_io.Conflict를 낸다."""
+    store_io.write_json(path, results, expect)
     return path
 
 
 def read(path):
     """path의 결과 문서. 없으면 None, 다른 종류면 ValueError."""
-    if not os.path.isfile(path):
-        return None
-    with open(path, encoding="utf-8") as fh:
-        doc = json.load(fh)
+    return read_fp(path)[0]
+
+
+def read_fp(path):
+    """(결과 문서, 읽은 바이트의 지문). 없으면 (None, None)."""
+    data, fp = store_io.read_bytes(path)
+    if data is None:
+        return None, None
+    doc = json.loads(data.decode("utf-8"))
     if not isinstance(doc, dict) or doc.get("kind") != KIND:
         raise ValueError("분석 결과 파일이 아님: %s" % path)
-    return doc
+    return doc, fp
 
 
 def load(node_set):

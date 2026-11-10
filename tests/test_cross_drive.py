@@ -56,9 +56,9 @@ def in_stamp_folder(path, backup_root):
     return len(parts) >= 2 and re.match(r"\d{8}T\d{6}Z-", parts[0]) is not None
 
 
-def backup_project_ctx(path):
-    from hazop.app import project_ctx
-    folder = project_ctx.backup([path], "시험")
+def backup_folder(path):
+    from hazop import store_io
+    folder = store_io.backup([path], "시험")
     return folder, [f for f in all_files(folder)]
 
 
@@ -69,13 +69,13 @@ def backup_ie_store(path):
     return os.path.dirname(dst), [dst]
 
 
-def backup_migrate(path):
-    from hazop.study import migrate
-    dst = migrate._backup(path, "시험")
+def backup_one(path):
+    from hazop import store_io
+    dst = store_io.backup_file(path, "시험")
     return dst, [dst]
 
 
-BACKUPS = {"project_ctx.backup": backup_project_ctx, "ie.store.backup": backup_ie_store, "migrate._backup": backup_migrate}
+BACKUPS = {"store_io.backup": backup_folder, "ie.store.backup": backup_ie_store, "store_io.backup_file": backup_one}
 
 
 class BackupRelTest(unittest.TestCase):

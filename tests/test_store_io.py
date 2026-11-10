@@ -1,0 +1,267 @@
+"""저장 공용 규칙(hazop.store_io)과 그것을 쓰는 저장 파일들의 재현 시험. 실행: python -m unittest tests.test_store_io
+
+records/backlog.md '저장·이력 경미 후속(2026-11-09 재판정)'과 백업 폴더 겹침 결함을 하나씩 재현한다.
+임시 HAZOP_WORK_ROOT만 쓴다. 옛 저장 파일은 0.1.x가 쓰던 직렬화(들여쓰기 2, 줄끝 LF)로 직접 만들어 읽힌다.
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO_ROOT)
+
+from hazop import store_io  # noqa: E402
+from hazop.ie import model as ie_model, store as ie_store  # noqa: E402
+from hazop.study import migrate, node_review, nodes as sn, results as res  # noqa: E402
+from tests.test_study_nodes import synthetic_graph  # noqa: E402
+
+AT = "2026-11-07T00:00:00Z"
+
+KILLED_WRITER = """
+import os, sys
+from hazop import store_io
+if sys.argv[2] == "replace":
+    os.replace = lambda *a: os._exit(9)
+else:
+    os.fsync = lambda fd: os._exit(9)
+store_io.write_json(sys.argv[1], {"v": "new", "pad": "x" * 200000})
+"""
+
+
+def old_bytes(obj, sort_keys):
+    return (json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=sort_keys) + "\n").encode("utf-8")
+
+
+def raw(path):
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def put(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as fh:
+        fh.write(data)
+    return path
+
+
+class WorkRootCase(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="hazop-store-io-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        patcher = mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": self.tmp})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.g = synthetic_graph()
+
+    def confirmed(self):
+        return sn.confirm(sn.propose(self.g, at=AT), self.g, "검토자A", at=AT)
+
+    def results_doc(self):
+        return res.empty_results(self.confirmed(), res.load_deviations())
+
+
+class AtomicWriteTest(WorkRootCase):
+    def test_killed_writer_leaves_old_file_whole_and_its_temp_is_swept_later(self):
+        for stage in ("fsync", "replace"):
+            with self.subTest(stage):
+                folder = tempfile.mkdtemp(dir=self.tmp)
+                path = os.path.join(folder, "기록.json")
+                store_io.write_json(path, {"v": "old"})
+                done = subprocess.run([sys.executable, "-c", KILLED_WRITER, path, stage], cwd=REPO_ROOT)
+                self.assertEqual(done.returncode, 9, "쓰는 도중 죽음")
+                self.assertEqual(json.loads(raw(path)), {"v": "old"}, "옛 파일이 온전함")
+                left = [n for n in os.listdir(folder) if n != "기록.json"]
+                self.assertEqual(len(left), 1, "죽은 프로세스의 임시 파일")
+                store_io.write_json(path, {"v": "next"})
+                self.assertIn(left[0], os.listdir(folder), "방금 생긴 임시 파일은 쓰는 중일 수 있어 두고")
+                os.utime(os.path.join(folder, left[0]), (0, 0))
+                store_io.write_json(path, {"v": "last"})
+                self.assertEqual(os.listdir(folder), ["기록.json"], "오래된 것은 다음 저장이 지움")
+                self.assertEqual(json.loads(raw(path)), {"v": "last"})
+
+    def test_failed_replace_keeps_old_file_and_leaves_no_temp(self):
+        confirmed = self.confirmed()
+        review = node_review.empty(None, "graph-T")
+        writers = {
+            "검토구간": (sn.store_path(None, "graph-T"), lambda: sn.save(sn.reopen(confirmed, at=AT))),
+            "분석 결과": (res.store_path(None, "graph-T"), lambda: res.save(dict(self.results_doc(), ai_log=[{}]), None)),
+            "AI 구간 검토": (node_review.store_path(None, "graph-T"), lambda: node_review.save(dict(review, next_id=9))),
+            "초기사건": (ie_store.store_path("가상 PWR"),
+                     lambda: ie_store.save(ie_model.create_group(ie_model.empty("가상 PWR"), "그룹", at=AT)[0],
+                                           expect=ie_store.fingerprint(ie_store.store_path("가상 PWR")))),
+        }
+        sn.save(confirmed)
+        res.save(self.results_doc(), None)
+        node_review.save(review)
+        ie_store.save(ie_model.empty("가상 PWR"), expect=None)
+        for label, (path, write) in writers.items():
+            with self.subTest(label):
+                before, names = raw(path), sorted(os.listdir(os.path.dirname(path)))
+                with mock.patch("os.replace", side_effect=OSError("디스크 가득")):
+                    with self.assertRaises(OSError):
+                        write()
+                self.assertEqual(raw(path), before)
+                self.assertEqual(sorted(os.listdir(os.path.dirname(path))), names, "임시 파일이 남지 않음")
+
+    def test_conflict_is_checked_against_the_bytes_that_were_read(self):
+        path = os.path.join(self.tmp, "a.json")
+        self.assertEqual(store_io.read_bytes(path), (None, None))
+        fp = store_io.write_json(path, {"n": 1}, expect=None)
+        self.assertEqual(store_io.read_bytes(path), (raw(path), fp))
+        put(path, b"{}")
+        with self.assertRaises(store_io.Conflict):
+            store_io.write_json(path, {"n": 2}, expect=fp)
+        self.assertEqual(raw(path), b"{}")
+        self.assertEqual(os.listdir(self.tmp), ["a.json"])
+        self.assertIs(sn.Conflict, store_io.Conflict)
+        self.assertIs(ie_store.Conflict, store_io.Conflict)
+
+
+class LoadTest(WorkRootCase):
+    def test_version_migration_on_load_does_not_overwrite_a_change_made_after_reading(self):
+        """판 이전은 읽은 파일 자리에 다시 쓴다. 읽은 뒤 바뀐 파일이면 쓰지 않고 읽은 내용만 돌려준다."""
+        old = self.confirmed()
+        for key in ("member_refs", "member_digest"):
+            old.pop(key)
+        path = sn.save(old)
+        outside = old_bytes(dict(old, confirmed_by="바깥에서 고친 사람"), False)
+        real = migrate.with_refs
+
+        def refs_then_outside_edit(node_set, graph):
+            put(path, outside)
+            return real(node_set, graph)
+        with mock.patch.object(migrate, "with_refs", side_effect=refs_then_outside_edit):
+            loaded = sn.load(self.g)
+        self.assertEqual(raw(path), outside, "바깥에서 고친 내용이 그대로")
+        self.assertEqual(loaded["confirmed_by"], "검토자A")
+
+    def test_load_gives_the_fingerprint_of_what_it_read_or_wrote(self):
+        self.assertEqual(sn.load_fp(self.g), (None, None))
+        path = sn.save(sn.propose(self.g, at=AT))
+        self.assertEqual(sn.load_fp(self.g)[1], store_io.fingerprint(path))
+        old = self.confirmed()
+        old.pop("member_refs")
+        sn.save(old)
+        doc, fp = sn.load_fp(self.g)
+        self.assertIn("member_refs", doc)
+        self.assertEqual(fp, store_io.fingerprint(path), "참조를 채워 다시 쓴 파일의 지문")
+        _path, saved_fp = sn.save_fp(sn.reopen(doc, at=AT), expect=fp)
+        self.assertEqual(saved_fp, store_io.fingerprint(path))
+
+    def test_members_of_a_wrong_type_are_a_shape_error(self):
+        for bad in ([{}], [1], [None], [["a"]]):
+            with self.subTest(members=bad):
+                doc = sn.propose(self.g, at=AT)
+                doc["nodes"][0]["members"] = bad
+                put(sn.store_path(None, "graph-T"), old_bytes(doc, False))
+                with self.assertRaises(ValueError):
+                    sn.load(self.g)
+        doc = sn.propose(self.g, at=AT)
+        doc["nodes"][0]["absorbed"] = [{"from": "P1", "members": [{}], "rule": "R2"}]
+        put(sn.store_path(None, "graph-T"), old_bytes(doc, False))
+        with self.assertRaises(ValueError):
+            sn.load(self.g)
+
+
+class BackupTest(WorkRootCase):
+    def test_backups_in_the_same_second_keep_both_copies(self):
+        path = sn.store_path(None, "graph-T")
+        makers = {"파일 하나": lambda: store_io.backup_file(path, "시험"),
+                  "여러 파일": lambda: os.path.join(store_io.backup([path], "시험"), os.path.relpath(path, self.tmp)),
+                  "초기사건": lambda: ie_store.backup("가상 PWR", "시험")}
+        for label, make in makers.items():
+            with self.subTest(label), mock.patch("hazop.store_io.now_utc", return_value=AT), \
+                    mock.patch("hazop.ie.store.now_utc", return_value=AT), \
+                    mock.patch.object(ie_store, "store_path", return_value=path):
+                put(path, b"first")
+                one = make()
+                put(path, b"second")
+                two = make()
+                self.assertNotEqual(one, two)
+                self.assertEqual((raw(one), raw(two)), (b"first", b"second"), "앞 백업을 덮어쓰지 않음")
+                shutil.rmtree(os.path.join(self.tmp, "data", "backup"))
+
+    def test_different_files_in_the_same_second_share_one_folder(self):
+        a, b = put(os.path.join(self.tmp, "data", "a.json"), b"a"), put(os.path.join(self.tmp, "data", "b.json"), b"b")
+        one, two = store_io.backup_file(a, "시험", at=AT), store_io.backup_file(b, "시험", at=AT)
+        self.assertEqual(os.path.dirname(one), os.path.dirname(two))
+        self.assertEqual((raw(one), raw(two)), (b"a", b"b"))
+
+
+class OldFilesTest(WorkRootCase):
+    """0.1.x가 쓴 파일을 지금 코드로 읽고 다시 저장해도 내용이 그대로다."""
+
+    def test_study_nodes_round_trip_byte_for_byte(self):
+        old = sn.propose(self.g, at=AT)
+        for n in old["nodes"]:  # screen 필드가 생기기 전 제안기(0.1.0) 저장본
+            n.pop("screen"), n.pop("absorbed", None), n.pop("parts", None)
+        old["proposer"] = {"name": "hazop.study.nodes", "version": "0.1.0"}
+        path = put(sn.store_path(None, "graph-T"), old_bytes(old, False))
+        loaded, fp = sn.load_fp(self.g)
+        self.assertEqual(loaded, old)
+        sn.save(loaded, expect=fp)
+        self.assertEqual(raw(path), old_bytes(old, False))
+
+    def test_confirmed_set_without_refs_keeps_its_confirmation_and_original_is_backed_up(self):
+        old = self.confirmed()
+        for key in ("member_refs", "member_digest"):
+            old.pop(key)
+        path = put(sn.store_path(None, "graph-T"), old_bytes(old, False))
+        loaded = sn.load(self.g)
+        for key in ("status", "confirmed_at", "confirmed_by", "nodes", "history"):
+            self.assertEqual(loaded[key], old[key], key)
+        self.assertEqual(json.loads(raw(path)), loaded)
+        copies = [os.path.join(d, f) for d, _s, fs in os.walk(os.path.join(self.tmp, "data", "backup")) for f in fs]
+        self.assertEqual([raw(c) for c in copies], [old_bytes(old, False)])
+
+    def test_results_round_trip_byte_for_byte(self):
+        doc = self.results_doc()
+        cell = doc["cells"][0]
+        cell["entries"].append({"entry_id": "e1", "status": "approved", "text": "사람이 승인한 원인",
+                                "history": [{"at": AT, "op": "status", "from": "proposed", "to": "approved"}]})
+        path = put(res.store_path(None, "graph-T"), old_bytes(doc, True))
+        loaded = res.read(path)
+        self.assertEqual(loaded, doc)
+        res.save(loaded, None)
+        self.assertEqual(raw(path), old_bytes(doc, True))
+
+    def test_initiating_events_round_trip_byte_for_byte(self):
+        doc, _ = ie_model.create_group(ie_model.empty("가상 PWR"), "주급수 상실", at=AT)
+        path = put(ie_store.store_path("가상 PWR"), old_bytes(doc, True))
+        loaded, fp = ie_store.load("가상 PWR")
+        self.assertEqual(loaded, doc)
+        self.assertEqual(ie_store.save(loaded, expect=fp), fp)
+        self.assertEqual(raw(path), old_bytes(doc, True))
+
+    def test_review_proposals_round_trip(self):
+        doc = dict(node_review.empty(None, "graph-T"), next_id=7)
+        path = put(node_review.store_path(None, "graph-T"), json.dumps(doc, ensure_ascii=False, indent=2).encode("utf-8"))
+        loaded = node_review.load(None, "graph-T")
+        node_review.save(loaded)
+        self.assertEqual(json.loads(raw(path)), doc)
+        self.assertEqual(list(json.loads(raw(path))), list(doc), "키 순서도 그대로")
+
+
+class HistoryRowTest(unittest.TestCase):
+    def test_rows_keep_the_shape_each_file_already_uses(self):
+        self.assertEqual(store_io.history_row("rename", {"detail": {"node_id": "S1"}}, AT),
+                         {"at": AT, "op": "rename", "detail": {"node_id": "S1"}})
+        self.assertEqual(list(store_io.history_row("status", {"from": "proposed", "to": "approved"}, AT)),
+                         ["at", "op", "from", "to"])
+        row = store_io.history_row("edit")
+        self.assertRegex(row["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+    def test_next_id_counts_only_ids_of_its_own_shape(self):
+        self.assertEqual(store_io.next_id("S%d", []), "S1")
+        self.assertEqual(store_io.next_id("S%d", ["S2", "S10", "Sx", "R0004", None]), "S11")
+        self.assertEqual(store_io.next_id("c-%04d", ["c-0002", "c-0011", "manual-c-0099"]), "c-0012")
+
+
+if __name__ == "__main__":
+    unittest.main()

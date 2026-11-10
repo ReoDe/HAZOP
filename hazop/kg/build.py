@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 
+from hazop import store_io
 from hazop.kg import claims
 from hazop.kg.inputs import SOURCE_COLUMNS, candidate_fields, normalize_tag, normalize_text, text_sha256
 from hazop.kg.schema import PID_ROOT, REGISTRY
@@ -538,19 +539,13 @@ def summary(kg):
 
 def dump_bytes(obj):
     """결정적 직렬화(UTF-8, 키 정렬, 들여쓰기 2, 줄끝 LF). 입력 dict의 키 순서와 무관하게 같은 바이트."""
-    return (json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    return store_io.dump_bytes(obj)
 
 
 def write_json_atomic(path, obj):
-    """임시 파일에 쓴 뒤 os.replace로 교체한다. 쓴 바이트를 돌려준다."""
+    """store_io.write_bytes로 원자적으로 쓴다. 쓴 바이트를 돌려준다."""
     data = dump_bytes(obj)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "wb") as fh:
-        fh.write(data)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, path)
+    store_io.write_bytes(path, data)
     return data
 
 

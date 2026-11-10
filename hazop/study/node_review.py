@@ -13,9 +13,8 @@ import hashlib
 import json
 import math
 import os
-import tempfile
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.graph import project
 from hazop.study import ai_cells, claude_http, nodes, providers
 
@@ -330,16 +329,7 @@ def load(project_id, graph_id):
 
 def save(doc):
     path = store_path(doc["project_id"], doc["graph_id"])
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=".구간AI검토-", suffix=".tmp", dir=os.path.dirname(path))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
-            json.dump(doc, fh, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.remove(tmp)
-        raise
+    store_io.write_json(path, doc, sort_keys=False)
     return path
 
 

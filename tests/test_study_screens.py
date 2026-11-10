@@ -220,7 +220,7 @@ class StudyScreensTest(unittest.TestCase):
         from hazop.study import nodes
         win = self.window()
         scr = self.open_study(win)
-        with mock.patch.object(nodes, "save", side_effect=OSError(28, "디스크 부족")):
+        with mock.patch("os.replace", side_effect=OSError(28, "디스크 부족")):
             self.assertFalse(scr.confirm("검토자A"))
         self.assertEqual(scr.node_set["status"], "proposed", "저장 못 하면 확정으로 보이지 않음")
         self.assertIsNone(nodes.load(self.pg()))
@@ -389,6 +389,37 @@ class StudyScreensTest(unittest.TestCase):
         with open(path, "rb") as fh:
             self.assertEqual(fh.read(), raw, "다시 제안도 묻고, 아니요면 쓰지 않음")
         self.assertIn("저장하지 않았", scr.msg.text())
+
+    def test_file_locked_at_open_is_saved_over_after_one_backup(self):
+        """열 때 OSError(권한·잠금)로 못 읽은 파일이 저장할 때는 읽히면, 한 번 묻고 백업한 뒤 저장한다
+        ('읽은 뒤 바뀜'으로 거절하며 편집마다 다시 묻고 백업을 쌓지 않는다)."""
+        from unittest import mock
+        from hazop import paths
+        self.addCleanup(shutil.rmtree, paths.folder("backup"), True)
+        path, good, _cases = self._unreadable_cases()
+        real = open
+
+        def locked(file, *args, **kwargs):
+            if isinstance(file, str) and os.path.normcase(os.path.abspath(file)) == os.path.normcase(path):
+                raise PermissionError(13, "다른 프로그램이 쓰는 중", file)
+            return real(file, *args, **kwargs)
+        win = self.window()
+        with mock.patch("builtins.open", side_effect=locked):
+            scr = self.open_study(win)
+        self.assertIn("읽을 수 없어", scr.warn.label.text())
+        scr.select_node("S2")
+        with mock.patch.object(scr, "ask_overwrite_unreadable", return_value=True) as ask:
+            self.assertTrue(scr.rename_current("새 이름"), scr.msg.text())
+        ask.assert_called_once()
+        backups = self._backups(path)
+        self.assertEqual(len(backups), 1)
+        with open(backups[0], "rb") as fh:
+            self.assertEqual(fh.read(), good, "확정본 원본이 백업에 남음")
+        with mock.patch.object(scr, "ask_overwrite_unreadable") as ask:
+            self.assertTrue(scr.rename_current("한 번 더"))
+        ask.assert_not_called()
+        self.assertEqual(len(self._backups(path)), 1, "백업이 쌓이지 않음")
+        self.assertEqual(nodes_load(path)["nodes"][1]["name"], "한 번 더")
 
     def test_bom_saved_file_loads_unchanged(self):
         from hazop.study import nodes

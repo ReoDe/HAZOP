@@ -8,15 +8,14 @@
 """
 
 import copy
-import hashlib
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
 from hazop.graph.project import _norm as drawing_key  # 프로젝트 그래프가 같은 도면으로 보는 규칙(공백 무시·대문자)
+from hazop.store_io import ANY, Conflict, fingerprint, now_utc  # noqa: F401  이 모듈 이름으로도 쓴다
 from hazop.study import segment
 
 SCHEMA_VERSION = "0.1"  # 필드를 더하기만 하고 옛 파일은 screen이 없으면 keep으로 읽으므로 올리지 않는다
@@ -25,10 +24,6 @@ PROPOSER = {"name": "hazop.study.nodes", "version": "0.2.0", "algorithm": segmen
             "max_active": segment.MAX_ACTIVE, "budget": segment.BUDGET, "merge_cap": segment.MERGE_CAP}
 STATUSES = ("keep", "low", "excluded")
 OTHER_NAME = segment.OTHER_NAME
-
-
-def now_utc():
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 # ---------------------------------------------------------------- 스크리닝 판정 읽기
@@ -444,70 +439,57 @@ def _readable_path(project_id, graph_id):
     return legacy if not project_id and not os.path.isfile(path) and os.path.isfile(legacy) else path
 
 
-class Conflict(ValueError):
-    """읽은 뒤 다른 창·프로그램이 저장 파일을 바꿔서 저장하지 않음."""
-
-
-ANY = object()
-
-
-def fingerprint(path):
-    """파일 내용의 SHA-256. 파일이 없으면 None."""
-    try:
-        with open(path, "rb") as fh:
-            return hashlib.sha256(fh.read()).hexdigest()
-    except FileNotFoundError:
-        return None
-
-
 def save(node_set, expect=ANY):
-    """임시 파일에 쓴 뒤 os.replace로 교체한다. 쓴 경로를 돌려준다.
-    expect(fingerprint 값)를 주면 지금 파일이 그 값과 다를 때 쓰지 않고 Conflict를 낸다."""
+    """store_io.write_json으로 쓰고 쓴 경로를 돌려준다.
+    expect(읽을 때 지문)를 주면 지금 파일이 그 값과 다를 때 쓰지 않고 Conflict를 낸다."""
+    return save_fp(node_set, expect)[0]
+
+
+def save_fp(node_set, expect=ANY):
+    """save와 같되 (쓴 경로, 새 지문)을 돌려준다. 이어서 저장할 쪽은 이 지문을 다음 expect로 쓴다."""
     path = store_path(node_set.get("project_id"), node_set["graph_id"])
-    if expect is not ANY and fingerprint(path) != expect:
-        raise Conflict("읽은 뒤 저장 파일이 바뀜: %s" % path)
-    return write(path, node_set)
+    return path, store_io.write_json(path, node_set, expect, sort_keys=False)
 
 
 def write(path, node_set):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(node_set, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, path)
+    store_io.write_json(path, node_set, sort_keys=False)
     return path
 
 
 def load(graph):
-    """graph의 저장본. 없으면 None. 판 비교는 is_stale로 한다.
+    """graph의 저장본. 없으면 None. 판 비교는 is_stale로 한다."""
+    return load_fp(graph)[0]
+
+
+def load_fp(graph):
+    """(graph의 저장본, 그 파일의 지문). 없으면 (None, None). 지문은 읽은 바이트에서 구한다.
     확정본은 읽을 때 판 이전(hazop.study.migrate)을 적용한다. 그래프는 등록·수정·화면 열기 등 여러 길에서 다시 만들어지고
-    모두 이 함수로 저장본을 읽으므로, 여기서 한 번 적용하면 어느 길로 판이 바뀌어도 확정 작업이 같은 규칙으로 이어진다."""
+    모두 이 함수로 저장본을 읽으므로, 여기서 한 번 적용하면 어느 길로 판이 바뀌어도 확정 작업이 같은 규칙으로 이어진다.
+    판 이전이 파일을 다시 썼으면 지문은 다시 쓴 파일의 것이다."""
     path = _readable_path(graph.get("project_id"), graph.get("graph_id"))
-    if not os.path.isfile(path):
-        return None
-    with open(path, encoding="utf-8-sig") as fh:  # 메모장 등이 붙인 BOM도 읽는다
-        doc = json.load(fh)
+    data, fp = store_io.read_bytes(path)
+    if data is None:
+        return None, None
+    doc = json.loads(data.decode("utf-8-sig"))  # 메모장 등이 붙인 BOM도 읽는다
     if not isinstance(doc, dict) or doc.get("kind") != KIND:
         raise ValueError("검토구간 파일이 아님: %s" % path)
     _check_shape(doc, path)
     from hazop.study import migrate
-    return migrate.on_load(doc, graph, path)
+    return migrate.on_load(doc, graph, path, fp)
 
 
 def _check_shape(doc, path):
     """판 이전·화면이 가리지 않고 꺼내 쓰는 값이 제 모양인지 본다. 아니면 ValueError(화면은 경고와 함께 새로 제안한다)."""
+    ids_ok = lambda v: isinstance(v, list) and all(isinstance(m, str) for m in v)  # noqa: E731
     ok = (isinstance(doc.get("graph_id"), str) and isinstance(doc.get("status"), str)
           and isinstance(doc.get("history"), list) and isinstance(doc.get("nodes"), list)
           and all(isinstance(n, dict) and isinstance(n.get("node_id"), str) and isinstance(n.get("name"), str)
-                  and isinstance(n.get("members"), list) for n in doc["nodes"]))
+                  and ids_ok(n.get("members")) for n in doc["nodes"]))
     pieces_ok = lambda v: isinstance(v, list) and all(  # noqa: E731
-        isinstance(p, dict) and isinstance(p.get("members"), list) for p in v)
+        isinstance(p, dict) and ids_ok(p.get("members")) for p in v)
     snap_ok = lambda p: (isinstance(p, dict) and isinstance(p.get("study_nodes_ref"), dict)  # noqa: E731
                          and isinstance(p.get("nodes"), list) and all(
-                             isinstance(n, dict) and isinstance(n.get("node_id"), str) and isinstance(n.get("members"), list)
+                             isinstance(n, dict) and isinstance(n.get("node_id"), str) and ids_ok(n.get("members"))
                              for n in p["nodes"]))
     prev = doc.get("previous")
     ok = ok and (prev is None or (isinstance(prev, list) and all(snap_ok(p) for p in prev)))

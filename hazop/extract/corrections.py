@@ -12,10 +12,9 @@ import os
 from dataclasses import dataclass
 from typing import Callable
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.extract import rules
 from hazop.extract.drawio import summarize
-from hazop.kg.build import write_json_atomic
 from hazop.kg.schema import REGISTRY
 from hazop.study.nodes import now_utc
 
@@ -67,7 +66,7 @@ def save(name, ops, by, drawing_number=None, at=None):
             "removed_ops": removed}],
     }
     path = store_path(name)
-    write_json_atomic(path, doc)
+    store_io.write_json(path, doc)
     return path
 
 
