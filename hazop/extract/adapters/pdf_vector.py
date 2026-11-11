@@ -49,7 +49,8 @@ from .pdf_vector_grouping import (
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
 )
-from .pdf_vector_labels import ISA_LABEL_RE, PAREN_TOKEN_RE, _text_blocks, _upright_blocks, _bubble_like, _assign_tags
+from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, VALVE_TAG_RE, _text_blocks, _upright_blocks, _bubble_like,
+                                _assign_tags)
 
 SCHEMA_VERSION = drawio.SCHEMA_VERSION
 SCRIPT_NAME = "hazop.extract.adapters.pdf_vector"
@@ -133,6 +134,14 @@ INSTRUMENT_FUNCTION = {"T": "transmitter", "C": "controller", "I": "indicator", 
 ACTUATED_KIND = {"motor": "motor_operated_valve", "diaphragm": "air_operated_valve"}
 OPERATED_VALVES = frozenset({"motor_operated_valve", "air_operated_valve", "control_valve", "solenoid_valve"})
 VALVE_NUMBER_RE = re.compile(r"\d{2,4}[A-Z]?")  # 범례 1.7-1 1/4 VALVE IDENT. NUMBER(사전 apr1400.ident_bubble_circle)
+# 밸브 옆 위치 약어(범례 1.7-1 1/4·4/4): 정상 위치 NO·NC·LO·LC, 고장 위치 FO·FC·FL·FAI. 'NC,FO'처럼 둘을 함께 쓴다.
+# 태그가 아니라 밸브 속성(속성 사전 normal_position·fail_position)이다
+POSITION_FIELD = {"NO": "normal_position", "NC": "normal_position", "LO": "normal_position", "LC": "normal_position",
+                  "FO": "fail_position", "FC": "fail_position", "FL": "fail_position", "FAI": "fail_position"}
+POSITION_TEXT_RE = re.compile(r"(?:NO|NC|LO|LC|FO|FC|FL|FAI)(?:\s*[,/]?\s*(?:NO|NC|LO|LC|FO|FC|FL|FAI))*")
+POSITION_CODE_RE = re.compile(r"NO|NC|LO|LC|FO|FC|FL|FAI")
+ACTUATOR_MARK_RE = re.compile(r"[A-Z](?: ?/ ?[A-Z])?")  # 밸브 몸통·구동부 안 표기(M, E/H 등)
+POSITION_REFINES = {("NC", "LC"), ("NO", "LO")}  # (기호 모양의 값, 글자 값): 글자가 같은 상태를 더 자세히 쓴 것
 
 
 def _actuated_kind(entries):
@@ -1206,6 +1215,116 @@ def _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, 
     return merge_into, number_ids
 
 
+def _valve_gap(block, sym):
+    return -1.0 if _inside(_center(block["bbox"]), sym.bbox) else _box_gap(block["bbox"], sym.bbox)
+
+
+def _nearest_valve(block, valves, prm):
+    """label_gap_max 안에서 문단에 가장 가까운 밸브. 두 번째 밸브가 확실히 멀 때만(number_reach 규칙과 같은 비율)."""
+    near = sorted((_valve_gap(block, v), k) for k, v in enumerate(valves))
+    near = [(g, k) for g, k in near if g <= prm["label_gap_max"]]
+    if near and (len(near) == 1 or near[1][0] > max(2 * near[0][0], near[0][0] + 1.0)):
+        return valves[near[0][1]]
+    return None
+
+
+def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, marks, drop, prm, circled=()):
+    """밸브 라벨 고르기(F1-5). label_of·taken을 고치고 {밸브 기호 id: [(위치 약어, 문단 번호)]}를 돌려준다.
+    탐욕 배정(가까운 글자부터)은 그대로 두고 밸브만 손본다. 다른 기호의 라벨은 바꾸지 않는다.
+    - 라벨이 없거나 위치 약어(NO·LC·'NC,FO' 등)인 밸브는, 아무 기호의 라벨도 아닌 밸브 번호('V1681', 돌린 글자 포함)가
+      label_gap_max 안에 있고 그 번호에 가장 가까운 밸브가 이 밸브이면 그 번호를 라벨로 삼는다. 위치 약어가 밸브 번호보다
+      가까워 라벨을 뺏던 자리다.
+    - 위치 약어는 태그가 아니라 속성이다. 밸브(또는 그 밸브에 합칠 구동부)의 라벨이었던 약어, 아무 기호의 라벨도 아니고
+      가장 가까운 밸브가 하나로 정해지는 약어를 그 밸브의 정상·고장 위치로 둔다.
+    - 밸브 번호를 태그로 쓸 밸브(→ 두 번째 돌려주는 값, 기호 번호 집합)는 라벨에 밸브 번호 줄이 있고, 그 라벨 문단에 가장
+      가까운 기호가 이 밸브 하나인 것이다. 몸통 안에 구동부 표기(M, E/H) 말고 다른 글자가 든 기호는 밸브 번호를 받지 않는다.
+      APR1400의 품질 등급 마름모('BI|CI')가 나비 규칙으로 밸브가 되어, 옆 밸브의 번호를 가져가던 자리다(063쪽 V751).
+    - 번호 원(VALVE IDENT. NUMBER)이 합쳐질 밸브(circled, 기호 id)는 그 원이 번호다. 밸브 번호 글자를 받지 않는다(016쪽
+      구동 밸브 348이 옆 체크 밸브의 V158을, 025쪽 방출 밸브 1108이 V1110을 가져가던 자리). 가장 가까운 밸브를 셀 때는
+      그대로 넣어, 그 글자가 더 먼 다른 밸브로 가지도 않게 한다."""
+    lettered = {si for si, ms in marks.items() if any(not ACTUATOR_MARK_RE.fullmatch(" ".join(m.split())) for m in ms)}
+    valves = [sy for si, sy in enumerate(syms) if id(sy) in valve_like and si not in lettered]
+    index = {id(sy): si for si, sy in enumerate(syms)}
+    others = [sy for si, sy in enumerate(syms) if si not in drop]
+
+    def owner_of(bi):
+        """문단에 몸체(core)가 가장 가까운 기호(밸브든 아니든). 같은 거리의 기호가 둘이면 None. 기호 상자는 지시선·장식선까지
+        들어가 커지므로(062쪽 V2132 위의 'DE→WM' 화살표) 몸체로 잰다."""
+        box = blocks[bi]["bbox"]
+        near = sorted((-1.0 if _inside(_center(box), sy.core) else _box_gap(box, sy.core), k) for k, sy in enumerate(others))
+        if not near or near[0][0] > prm["label_gap_max"] or (len(near) > 1 and near[1][0] <= near[0][0]):
+            return None
+        return others[near[0][1]]
+
+    def text(bi):
+        return " ".join(blocks[bi]["text"].split())
+    positions = {}
+    for si, bi in label_of.items():
+        owner = plan_into.get(id(syms[si]), syms[si])
+        if id(owner) in valve_like and POSITION_TEXT_RE.fullmatch(text(bi)):
+            positions.setdefault(id(owner), []).extend((c, bi) for c in POSITION_CODE_RE.findall(blocks[bi]["text"]))
+    for bi in range(len(blocks)):
+        if bi in roles or bi in taken or not POSITION_TEXT_RE.fullmatch(text(bi)):
+            continue
+        v = _nearest_valve(blocks[bi], valves, prm)
+        if v is not None:
+            positions.setdefault(id(v), []).extend((c, bi) for c in POSITION_CODE_RE.findall(blocks[bi]["text"]))
+    open_valves = {id(v) for v in valves if id(v) not in circled and (
+                   label_of.get(index[id(v)]) is None or POSITION_TEXT_RE.fullmatch(text(label_of[index[id(v)]])))}
+    pairs = []
+    for bi in range(len(blocks)):
+        if bi in roles or bi in taken or not VALVE_TAG_RE.fullmatch(text(bi)):
+            continue
+        v = _nearest_valve(blocks[bi], valves, prm)
+        if v is not None and id(v) in open_valves and owner_of(bi) is v:
+            pairs.append((round(_valve_gap(blocks[bi], v), 6), bi, index[id(v)]))
+    moved = set()
+    for gap, bi, si in sorted(pairs):
+        if si in moved or bi in taken:
+            continue
+        old = label_of.get(si)
+        if old is not None:
+            taken.discard(old)
+        label_of[si] = bi
+        taken.add(bi)
+        moved.add(si)
+    numbered = {si for si, bi in label_of.items() if id(syms[si]) in valve_like and si not in lettered
+                and id(syms[si]) not in circled
+                and any(VALVE_TAG_RE.fullmatch(" ".join(l.split())) for l in blocks[bi]["text"].splitlines())
+                and owner_of(bi) is syms[si]}
+    return positions, numbered
+
+
+def _apply_positions(syms, node_out, unknowns, local_of, positions, blocks):
+    """밸브 옆 위치 약어를 그 밸브 노드의 normal_position·fail_position으로 둔다. 글자는 evidence.position_text에 남긴다.
+    기호 모양이 정한 값(검게 칠한 몸통의 NC)이 있으면 evidence.position_from_body에 남긴다. 그 옆 글자가 LC면 같은 닫힘을
+    더 자세히 쓴 것이라 LC로 둔다. 그 밖에 이미 있는 값과 다르거나 약어끼리 서로 다르면 속성을 바꾸지 않고 position_conflict 미확인을 남긴다
+    (충돌은 둘 다 보존). 밸브 분류가 아닌 노드(합쳐지지 않은 구동부 등)에는 두지 않는다."""
+    by_local = {nd["local_id"]: nd for nd in node_out}
+    for sy in syms:
+        found = positions.get(id(sy))
+        nd = by_local.get(local_of[id(sy)][0]) if found else None
+        if nd is None or nd["category"] != "valve":
+            continue
+        nd["evidence"]["position_text"] = [" ".join(blocks[bi]["text"].split()) for bi in sorted({bi for _, bi in found})]
+        attrs = dict(nd["attributes"])
+        for field in ("normal_position", "fail_position"):
+            codes = sorted({c for c, _ in found if POSITION_FIELD[c] == field})
+            if not codes:
+                continue
+            have = attrs.get(field)
+            if have is not None:
+                nd["evidence"]["position_from_body"] = have
+            if len(codes) == 1 and (have in (None, codes[0]) or (have, codes[0]) in POSITION_REFINES):
+                attrs[field] = codes[0]
+                continue
+            why = ("기호 모양은 %s, 글자는 %s" % (have, "·".join(codes)) if have
+                   else "옆 글자가 %s로 서로 다름" % "·".join(codes))
+            _issue(unknowns, "position_conflict", "%s: %s(둘 다 남기고 정하지 않음)" % (field, why),
+                   nd["source_object_id"], nd["local_id"], field)
+        nd["attributes"] = attrs
+
+
 # ---------------------------------------------------------------- 조립
 
 
@@ -1418,6 +1537,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         if target is not None:
             numbers_on.setdefault(id(target), []).append((sy, blocks[bi]["text"].strip()))
 
+    positions, numbered = _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, marks, drop, prm,
+                                        set(numbers_on))
     node_out, locations, local_of, instrument_ids, dropped = [], [], {}, set(), []
     for n, s in enumerate(syms, 1):
         local_id = "local-node-%03d" % n
@@ -1494,7 +1615,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                           "unit": UNIT, "bbox": _box_out(s.bbox), "approximate": False})
     merge_into, number_ids = _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, local_of, chains,
                                acts_on, numbers_on)
-    _assign_tags(node_out, unknowns, instrument_ids)
+    _apply_positions(syms, node_out, unknowns, local_of, positions, blocks)
+    _assign_tags(node_out, unknowns, instrument_ids, {local_of[id(syms[si])][0] for si in numbered})
     tee_ids = {}
     for k, (x, y) in enumerate(tees):
         n = len(syms) + k + 1  # 사전이 버린 기호가 있어도 기호 노드 번호와 겹치지 않게

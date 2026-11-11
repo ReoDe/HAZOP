@@ -15,6 +15,8 @@ from .pdf_vector_common import _issue
 
 # ISA 계기 글자(기능 문자 + 번호, 예: 'PT 110'·'PIC 110'). 태그 앞 계통 접두는 글자에 없다.
 ISA_LABEL_RE = re.compile(r"([A-Z]{1,4})[ \-]*(\d{1,5}[A-Z]?)")
+# 수동 밸브 번호(APR1400 'V1681'). 계통 접두는 글자에 없다. 밸브 분류 노드의 라벨 한 줄이 이 꼴이면 그대로 태그로 쓴다
+VALVE_TAG_RE = re.compile(r"V\d{3,5}[A-Z]?")
 PAREN_TOKEN_RE = re.compile(r"\(\d{1,5}[A-Z]?\)")  # 계기 원 옆 다른 계열 번호 '(3057)'·'(3004D)'. 설비 번호 '(FT32A)'는 아님
 
 
@@ -93,13 +95,16 @@ def _bubble_like(node, letters):
     return len(letters) >= 2 and min(g.get("width", 0), g.get("height", 0)) >= 8
 
 
-def _assign_tags(nodes, unknowns, instrument_ids=()):
+def _assign_tags(nodes, unknowns, instrument_ids=(), valve_number_ids=()):
     """기호 노드의 tag를 같은 쪽의 보이는 글자로 정한다.
     (a) 글자가 태그 모양(③ 문서 언급과 같은 hazop.kg.docextract.TAG_RE)으로 시작하면 그 낱말.
     (b) 계기(분류가 계기이거나 instrument_ids의 계기 모양 기호)의 ISA 글자(예: 'PT 110')면 <접두>-<문자><번호>.
         접두는 같은 쪽 (a) 태그 두 개 이상이 함께 쓰는 계통 접두 중 가장 많은 것이다. 글자에 없는 값을 고른 것이라
         근거에 [추론]을 남기고, 가장 많은 접두가 둘 이상이면 정하지 않는다. 가장 많은 접두도 태그 하나뿐이거나
         (a) 태그가 없으면(APR1400 DCD처럼 계기 원에 접두를 쓰지 않는 도면) 원 안 글자 그대로 <문자>-<번호>로 둔다.
+    (c) valve_number_ids의 밸브 노드(라벨 문단에 가장 가까운 기호가 그 밸브인 것, pdf_vector._valve_labels)는 라벨에
+        수동 밸브 번호('V1681') 줄이 하나 있으면 그 번호. 계통 접두는 붙이지 않는다(글자에 없다). (b)의 접두를 셀 때는
+        넣지 않는다.
     같은 tag가 두 노드 이상에 나오면 모두 비우고 duplicate_tag 미확인을 남긴다. 정하지 못한 노드는 missing_tag 미확인."""
     tags, isa = {}, {}
     for i, n in enumerate(nodes):
@@ -110,10 +115,14 @@ def _assign_tags(nodes, unknowns, instrument_ids=()):
             tags[i] = (m.group(0), "label_tag_token")
             continue
         lines = [" ".join(l.split()) for l in n["label_text"].splitlines() if l.strip()]
+        numbers = [l for l in lines if VALVE_TAG_RE.fullmatch(l)]
+        if n["local_id"] in valve_number_ids and n["category"] == "valve" and len(numbers) == 1:
+            tags[i] = (numbers[0], "valve_number")
+            continue
         m = ISA_LABEL_RE.fullmatch(" ".join(lines[:2]))
         if m and (n["category"] == "instrument" or n["local_id"] in instrument_ids and _bubble_like(n, m.group(1))):
             isa[i] = (m.group(1), m.group(2))
-    counts = collections.Counter(t.split("-")[0] for t, _ in tags.values()).most_common(2)
+    counts = collections.Counter(t.split("-")[0] for t, b in tags.values() if b == "label_tag_token").most_common(2)
     tied = len(counts) == 2 and counts[0][1] == counts[1][1]
     prefix = counts[0][0] if counts and not tied and counts[0][1] >= 2 else None
     for i, (letters, number) in isa.items():

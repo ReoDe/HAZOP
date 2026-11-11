@@ -59,7 +59,9 @@ class InstrumentTags(unittest.TestCase):
         self.assertEqual(kinds, {"TEW 106": None, "PT 106": "transmitter", "TEW 107": None, "TEW 108": None})
 
     def test_no_tag_outside_the_text_layer(self):
+        # 라벨로 쓴 글자(밸브 번호 등)는 texts에서 빠지고 노드의 label_text에 있다
         words = {w.replace("-", "") for n in self.ex["texts"] for w in (n.get("text") or "").split()}
+        words |= {w.replace("-", "") for n in self.ex["nodes"] for w in (n.get("label_text") or "").split()}
         bubbles = {it["tag"].replace(" ", "") for it in self.key["instruments"]}
         for n in self.ex["nodes"]:
             if n.get("tag"):
@@ -81,8 +83,9 @@ def within(point, box, slack=0.0):
 
 @unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1)")
 class ClosedValves(unittest.TestCase):
-    """몸통을 검게 칠한 밸브는 정상 운전 중 닫힘이다(DCD 범례 1.7-1 1/4). 그 자리에는 normal_position이 NC인 밸브 노드가
-    있어야 하고, 다른 노드는 NC가 아니어야 한다. 정답은 answer_key의 closed_valves(렌더한 그림을 눈으로 읽음)다."""
+    """몸통을 검게 칠한 밸브는 정상 운전 중 닫힘이다(DCD 범례 1.7-1 1/4). 그 자리에는 normal_position이 닫힘(NC, 옆 글자가
+    'LC'면 LC)인 밸브 노드가 있어야 하고, 몸통 모양으로 닫힘을 읽은 다른 노드는 없어야 한다. 정답은 answer_key의
+    closed_valves(렌더한 그림을 눈으로 읽음)다. 옆 글자만으로 닫힘을 읽은 밸브(F1-5)는 ValveLabels가 본다."""
 
     PAGES = (12, 62)
     SLACK = 3.0  # 정답 상자는 검게 칠한 부분만이다. 노드 상자에는 가운데 점이나 맞닿은 판이 더해질 수 있다
@@ -92,7 +95,9 @@ class ClosedValves(unittest.TestCase):
         cls.pages = {seq: load_page(seq) for seq in cls.PAGES}
 
     def closed_nodes(self, ex):
-        return [n for n in ex["nodes"] if (n.get("attributes") or {}).get("normal_position") == "NC"]
+        """몸통 모양으로 닫힘을 읽은 노드: 옆 글자 없이 NC이거나, 옆 글자가 있을 때 몸통 값이 NC인 것."""
+        return [n for n in ex["nodes"] if n["evidence"].get("position_from_body") == "NC" or
+                ((n.get("attributes") or {}).get("normal_position") == "NC" and not n["evidence"].get("position_text"))]
 
     def test_every_filled_valve_body_is_a_normally_closed_valve(self):
         for seq, (ex, key) in self.pages.items():
@@ -205,6 +210,91 @@ class ClosedValves(unittest.TestCase):
         reducer = node_at(ex, [179.3, 275.0, 183.9, 279.6])  # 418번 밸브 아래에 붙여 그린 3"×2" 축소관
         self.assertIsNotNone(reducer)
         self.assertNotEqual(reducer["kind"], "pipe_cap")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1)")
+class ValveLabels(unittest.TestCase):
+    """밸브 라벨 고르기(F1-5). 수동 밸브 번호('V2131')가 그 밸브의 태그이고, 위치 약어('LC,FC')는 속성이다.
+    정답은 answer_key의 valve_numbers·valve_positions(렌더한 그림을 눈으로 읽음, 사람 확인 전)다."""
+
+    PAGES = (12, 62)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pages = {seq: load_page(seq) for seq in cls.PAGES}
+
+    def test_valves_whose_bodies_are_read_carry_their_number(self):
+        for seq, (ex, key) in self.pages.items():
+            got = {item["tag"]: (node_at(ex, item["bbox"]) or {}).get("tag") for item in key["valve_numbers"] if item["bbox"]}
+            self.assertEqual(got, {t: t for t in got}, "%03d쪽" % seq)
+
+    def test_no_valve_carries_a_number_that_is_not_its_own(self):
+        """밸브 번호 꼴 태그는 정답의 그 번호 자리에만 있어야 한다(옆 밸브의 번호를 가져가지 않는다)."""
+        for seq, (ex, key) in self.pages.items():
+            where = {item["tag"]: item["bbox"] for item in key["valve_numbers"]}
+            wrong = [(n["tag"], [round(v, 1) for v in node_box(n)]) for n in ex["nodes"]
+                     if n["tag"] and n["evidence"].get("tag_basis") == "valve_number"
+                     and not (where.get(n["tag"]) and within(center(node_box(n)), where[n["tag"]], 1.0))]
+            self.assertEqual(wrong, [], "%03d쪽" % seq)
+
+    def test_position_words_become_valve_attributes(self):
+        for seq, (ex, key) in self.pages.items():
+            for item in key["valve_positions"]:
+                node = node_at(ex, item["bbox"])
+                want = {f: item[f] for f in ("normal_position", "fail_position") if f in item}
+                self.assertEqual({f: node["attributes"].get(f) for f in want}, want,
+                                 "%03d쪽 %s" % (seq, item.get("tag") or item.get("number")))
+
+    def test_position_words_are_not_tags_or_labels(self):
+        for seq, (ex, _) in self.pages.items():
+            self.assertEqual([n["label_text"] for n in ex["nodes"]
+                              if n["category"] == "valve" and n["tag"] and n["label_text"].strip() in ("LC", "LC,FC")],
+                             [], seq)
+
+
+PAGE_063 = paths.folder("APR1400", "by-drawing", "063_Ch09_Fig9.3.4-1_s1of7_Chemical_and_Volume_Control_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_063), "pdfplumber 또는 APR1400 063쪽 PDF 없음(저장소 밖 자료)")
+class ValveNumbersNotTakenByNeighbours(unittest.TestCase):
+    """063쪽(9.3.4-1 S1)에서 F1-5 중간 초안이 틀렸던 네 곳: V751·V713·V366은 품질 등급 마름모('BI|CI')가, V714는 옆의 구동
+    밸브가 번호를 가져갔다. 이 번호가 태그로 붙으면 그 노드는 번호 글자 바로 옆(12pt 안)의 글자 없는 몸통이어야 한다."""
+
+    NUMBERS = {"V751": (387.0, 209.8), "V713": (544.5, 625.4), "V714": (497.5, 626.3), "V366": (899.7, 538.7)}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_063, page=0)
+
+    def test_numbers_stay_with_their_own_valves(self):
+        wrong = []
+        for n in self.ex["nodes"]:
+            if n.get("tag") in self.NUMBERS:
+                cx, cy = center(node_box(n))
+                x, y = self.NUMBERS[n["tag"]]
+                if n["evidence"].get("symbol_marks") or abs(cx - x) > 12 or abs(cy - y) > 12:
+                    wrong.append((n["tag"], round(cx, 1), round(cy, 1), n["evidence"].get("symbol_marks")))
+        self.assertEqual(wrong, [])
+
+
+PAGE_016 = paths.folder("APR1400", "by-drawing", "016_Ch06_Fig6.3.2-1_s2of4_Safety_Injection_Shutdown_Cooling_System_Flow_Diagram.pdf")
+PAGE_025 = paths.folder("APR1400", "by-drawing", "025_Ch09_Fig9.2.2-1_s1of4_Component_Cooling_Water_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_016) and os.path.isfile(PAGE_025),
+                     "pdfplumber 또는 APR1400 016·025쪽 PDF 없음(저장소 밖 자료)")
+class CircledValvesKeepTheirCircleNumber(unittest.TestCase):
+    """번호 원이 합쳐진 밸브는 그 원이 번호다. 옆 밸브의 번호 글자를 태그로 가져가면 안 된다(F1-6 뒤 F1-5 적용 때 찾음:
+    016쪽 구동 밸브 348이 V158을, 025쪽 방출 밸브 1108이 V1110을 가져감)."""
+
+    CASES = ((PAGE_016, "V158", "348"), (PAGE_025, "V1110", "1108"))
+
+    def test_circled_valve_does_not_take_a_neighbours_number(self):
+        for path, number, circle in self.CASES:
+            ex = pdf_vector.extract(path, page=0)
+            got = [(n["tag"], n["evidence"].get("ident_number")) for n in ex["nodes"]
+                   if n["evidence"].get("ident_number") == circle]
+            self.assertEqual(got, [(None, circle)], number)
 
 
 PAGE_132 = paths.folder("APR1400", "by-drawing", "132_Ch10_Fig10.4.10-1_s2of3_Auxiliary_Steam_System_Flow_Diagram.pdf")

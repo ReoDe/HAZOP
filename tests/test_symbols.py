@@ -1433,5 +1433,108 @@ class ClosedValveTest(unittest.TestCase):
         self.assertEqual((len(cls["markers"]), [b for b in cls["bodies"] if b.get("solid")], cls["seeds"]), (1, [], {}))
 
 
+def turned_word(text, x0, top, size=3.0):
+    """아래에서 위로 읽는 90도 돌린 낱말(pdf_vector.load_page의 btt). 상자는 세로로 길다."""
+    return {"text": text, "x0": x0, "x1": x0 + size, "top": top, "bottom": top + 0.6 * size * len(text),
+            "size": size, "upright": False, "direction": "btt"}
+
+
+def extract_with_words(prims, words):
+    a = pdf_vector.analyze(400, 300, words, prims)
+    return pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+
+
+def valve_node(ex):
+    (valve,) = [n for n in ex["nodes"] if n["category"] == "valve"]
+    return valve
+
+
+class ValveLabelTest(unittest.TestCase):
+    """밸브 라벨 고르기(F1-5). APR1400은 수동 밸브 번호('V1681')를 밸브 아래·옆에 쓰고, 정상·고장 위치 약어(LO·NC·'LC,FC')를
+    그보다 가까이 쓴다. 약어는 태그가 아니라 속성이고, 밸브 번호가 그 밸브의 태그다."""
+
+    GATE_LINE = [prim(GATE, True), pipe((80, 101.5), (100, 101.5)), pipe((106, 101.5), (126, 101.5))]
+
+    def test_number_further_than_the_position_word_becomes_the_tag(self):
+        """028쪽 V1681처럼 위치 약어가 몸통 바로 위, 번호가 그 아래에 있다."""
+        ex = extract_with_words(self.GATE_LINE, [word("LO", 101.0, 96.0), word("V1681", 98.0, 106.0)])
+        valve = valve_node(ex)
+        self.assertEqual((valve["tag"], valve["label_text"]), ("V1681", "V1681"))
+        self.assertEqual(valve["attributes"].get("normal_position"), "LO")
+        self.assertEqual(valve["evidence"]["position_text"], ["LO"])
+        self.assertNotIn("missing_tag", [u["check"] for u in ex["validation"]["unknowns"] if u["target"] == valve["local_id"]])
+
+    def test_turned_number_beside_a_vertical_valve_becomes_the_tag(self):
+        """세로 배관의 밸브 번호는 돌려 쓴다(062쪽 V1062). 돌린 글자는 다른 기호의 라벨 후보가 아니어도 밸브 번호는 받는다."""
+        body = prim([(100, 100), (103, 106), (100, 106), (103, 100), (100, 100)])
+        lines = [pipe((101.5, 80), (101.5, 100)), pipe((101.5, 106), (101.5, 126))]
+        ex = extract_with_words([body] + lines, [turned_word("V1062", 105.0, 99.0)])
+        self.assertEqual(valve_node(ex)["tag"], "V1062")
+
+    def test_position_words_set_normal_and_fail_position(self):
+        ex = extract_with_words(self.GATE_LINE, [word("NC,FO", 99.0, 96.0)])
+        self.assertEqual({k: v for k, v in valve_node(ex)["attributes"].items() if k.endswith("_position")},
+                         {"normal_position": "NC", "fail_position": "FO"})
+
+    def test_number_nearer_to_another_valve_is_left_to_that_valve(self):
+        """번호는 가장 가까운 밸브의 것이다. 위치 약어 라벨인 밸브가 더 먼 번호를 가져가지 않는다."""
+        other = prim([(150, 100), (156, 103), (156, 100), (150, 103), (150, 100)])
+        words = [word("LO", 101.0, 96.0), word("V2001", 148.0, 105.0)]
+        ex = extract_with_words(self.GATE_LINE + [other, pipe((126, 101.5), (150, 101.5))], words)
+        tags = {round(n["geometry"]["x"]): n["tag"] for n in ex["nodes"] if n["category"] == "valve"}
+        self.assertEqual(tags, {100: None, 150: "V2001"})
+
+    def test_number_nearest_to_an_unread_symbol_is_not_given_to_a_valve(self):
+        """063쪽 V714: 번호에 가장 가까운 기호는 밸브로 읽지 못한 몸통이다. 옆의 밸브가 그 번호를 가져가면 틀린 태그다."""
+        unread = prim([(150, 100), (152, 98), (154, 100), (152, 102), (150, 100)])  # 밸브로 읽지 못하는 작은 마름모 몸통
+        words = [word("LO", 101.0, 96.0), word("V714", 147.0, 104.0)]
+        ex = extract_with_words(self.GATE_LINE + [unread, pipe((126, 101.5), (150, 101.5))], words)
+        self.assertEqual([n["tag"] for n in ex["nodes"] if n["category"] == "valve"], [None])
+
+    def test_lettered_diamond_does_not_take_a_valve_number(self):
+        """품질 등급 마름모('BI|CI')는 삼각형 둘이라 나비 규칙으로 밸브가 된다. 안에 글자가 든 몸통은 밸브 번호를 받지 않는다
+        (063쪽 V751·V713·V366)."""
+        diamond = [prim([(100, 100), (106, 97), (106, 103), (100, 100)]), prim([(112, 100), (106, 97), (106, 103), (112, 100)])]
+        words = [word("B", 102.5, 98.5, 2.0), word("I", 103.7, 98.5, 2.0), word("C", 107.0, 98.5, 2.0),
+                 word("I", 108.2, 98.5, 2.0), word("V751", 101.0, 106.0)]
+        ex = extract_with_words(diamond, words)
+        self.assertEqual([(n["kind"], n["tag"]) for n in ex["nodes"] if n["category"] == "valve"], [("manual_valve", None)])
+
+    def test_labels_of_other_symbols_do_not_change(self):
+        """위치 약어가 다른 기호의 라벨이면 그대로 둔다(밸브만 손본다)."""
+        ring_word = [ring(200, 150, 5.0)]
+        ex = extract_with_words(ring_word, [word("NO", 198.0, 147.0)])
+        (node,) = ex["nodes"]
+        self.assertEqual((node["label_text"], node["attributes"]), ("NO", {}))
+
+    def test_closed_body_and_a_different_position_word_are_both_kept(self):
+        """검게 칠한 몸통(NC) 옆에 'NO'라고 쓰여 있으면 어느 쪽도 버리지 않는다(충돌은 둘 다 보존)."""
+        ex = extract_with_words([filled(BLACK_GATE)] + GATE_PIPES, [word("NO", 101.0, 96.0)])
+        valve = valve_node(ex)
+        self.assertEqual(valve["attributes"]["normal_position"], "NC")
+        self.assertEqual(valve["evidence"]["position_text"], ["NO"])
+        conflicts = [u for u in ex["validation"]["unknowns"] if u["check"] == "position_conflict"]
+        self.assertEqual([(u["target"], u["field"]) for u in conflicts], [(valve["local_id"], "normal_position")])
+
+    def test_locked_closed_word_refines_a_closed_body(self):
+        """검은 몸통(NC) 옆의 'LC'는 같은 닫힘을 더 자세히 쓴 것이다(062쪽 V2132)."""
+        ex = extract_with_words([filled(BLACK_GATE)] + GATE_PIPES, [word("LC", 101.0, 96.0)])
+        valve = valve_node(ex)
+        self.assertEqual((valve["attributes"]["normal_position"], valve["evidence"]["position_from_body"]), ("LC", "NC"))
+        self.assertNotIn("position_conflict", [u["check"] for u in ex["validation"]["unknowns"]])
+
+    def test_valve_numbers_do_not_lend_a_prefix_to_instruments(self):
+        """같은 밸브 번호가 두 밸브에 나와도(둘 다 비움) 계기 태그의 계통 접두로 쓰지 않는다."""
+        nodes = [{"kind": "manual_valve", "category": "valve", "label_text": "V1681", "source_object_id": "s%d" % i,
+                  "local_id": "n%d" % i, "evidence": {}, "geometry": {"x": 0, "y": 0, "width": 6, "height": 3}}
+                 for i in range(2)]
+        nodes.append({"kind": "transmitter", "category": "instrument", "label_text": "PT\n110", "source_object_id": "s2",
+                      "local_id": "n2", "evidence": {}, "geometry": {"x": 0, "y": 0, "width": 12, "height": 12}})
+        unknowns = []
+        pdf_vector._assign_tags(nodes, unknowns, {"n2"}, {"n0", "n1"})
+        self.assertEqual([n["tag"] for n in nodes], [None, None, "PT-110"])
+        self.assertEqual([u["check"] for u in unknowns], ["duplicate_tag", "duplicate_tag"])
+
+
 if __name__ == "__main__":
     unittest.main()
