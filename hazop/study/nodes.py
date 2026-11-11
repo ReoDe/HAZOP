@@ -401,7 +401,7 @@ def add_member(node_set, node_id, entity_id, at=None):
 
 def remove_member(node_set, node_id, entity_id, at=None):
     """구간에서 구성요소 하나를 뺀다(뺀 구성요소는 미포함으로 남는다). 마지막 구성요소를 빼면 구간도 없앤다
-    (구성요소 없는 구간은 두지 않는다. 기록에 node_removed를 적고, 그 번호는 다시 내지 않는다)."""
+    (구성요소 없는 구간은 두지 않는다. 기록에 node_removed와 그 구간의 스크리닝 판정·이유를 적고, 번호는 다시 내지 않는다)."""
     out = _begin(node_set)
     node = _find(out, node_id)
     if entity_id not in node["members"]:
@@ -412,8 +412,15 @@ def remove_member(node_set, node_id, entity_id, at=None):
         _settle(node)
     else:
         out["nodes"] = [n for n in out["nodes"] if n is not node]
-        detail["node_removed"] = True
+        detail.update(node_removed=True, **_screen_note(node))
     return _log(out, "remove", detail, at)
+
+
+def _screen_note(node):
+    """없애는 구간의 스크리닝 판정을 이력에 남길 모양({"screen": {status, by, reason}}). 판정이 없던 구간이면 빈 dict.
+    사람이 이유를 적어 내린 판정이 구간과 함께 사라져도 되짚을 수 있게 한다."""
+    sc = node.get("screen")
+    return {"screen": {k: sc.get(k) for k in ("status", "by", "reason")}} if sc else {}
 
 
 def remove_empty(node_set, node_id, at=None):
@@ -424,7 +431,7 @@ def remove_empty(node_set, node_id, at=None):
     if node["members"]:
         raise ValueError("%s는 구성요소가 있어 지울 수 없음(구성요소를 먼저 빼거나 다른 구간에 병합)" % node_id)
     out["nodes"] = [n for n in out["nodes"] if n is not node]
-    return _log(out, "remove_empty", {"node_id": node_id}, at)
+    return _log(out, "remove_empty", dict({"node_id": node_id}, **_screen_note(node)), at)
 
 
 def confirm(node_set, graph, reviewer, at=None):

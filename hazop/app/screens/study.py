@@ -984,10 +984,12 @@ class StudyNodesScreen(QWidget):
             self.node_set = old
             self._render(keep)
             return False
-        self.msg.setText(self._refresh_failed or "")
-        self._refresh_failed = None
+        failed, self._refresh_failed = self._refresh_failed, None
+        self.msg.setText(failed or "")
         self._render(keep)
-        if done:
+        if failed:  # 저장은 됐지만 다른 화면 갱신이 실패했다. 성공 토스트 대신 상태줄에도 알린다
+            self.app.status_message(failed)
+        elif done:
             self.app.toast(done, undo=self._undo_to(old, keep))
         return True
 
@@ -1080,14 +1082,14 @@ class StudyNodesScreen(QWidget):
         cur, picked = self.current_node_id(), self.selected_members()
         node = self.current_node()
         if node is not None and not node["members"]:
-            return self._apply(lambda s: nodes.remove_empty(s, cur), done="구성요소 없는 구간 %s를 지웠습니다" % cur)
+            return self._apply(lambda s: nodes.remove_empty(s, cur), done="구성요소 없는 %s 구간을 지웠습니다" % cur)
 
         def fn(s):
             for eid in picked:
                 s = nodes.remove_member(s, cur, eid)
             return s
         gone = node is not None and set(node["members"]) <= set(picked)
-        done = ("%s의 구성요소 %d개를 모두 빼 구간을 없앴습니다(뺀 구성요소는 미포함)" if gone
+        done = ("%s 구간의 구성요소 %d개를 모두 빼 구간을 없앴습니다. 뺀 구성요소는 미포함 목록에 있습니다" if gone
                 else "%s에서 구성요소 %d개를 뺐습니다") % (cur, len(picked))
         return self._apply(fn, keep=cur, done=done)
 

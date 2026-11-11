@@ -130,12 +130,26 @@ class EmptyNodeTest(WorkRootCase):
             out = sn.remove_member(out, node["node_id"], m, at=AT)
         self.assertNotIn(node["node_id"], [n["node_id"] for n in out["nodes"]])
         self.assertEqual(out["history"][-1]["detail"], {"node_id": node["node_id"], "entity_id": node["members"][-1],
-                                                        "node_removed": True})
+                                                        "node_removed": True,
+                                                        "screen": {"status": "keep", "by": "human", "reason": None}})
         self.assertEqual(len(s["nodes"][1]["members"]), len(node["members"]), "입력은 그대로")
         top = max(int(n["node_id"][1:]) for n in s["nodes"])
         again = sn.split(out, out["nodes"][0]["node_id"], out["nodes"][0]["members"][:1], at=AT)
         self.assertEqual(again["history"][-1]["detail"]["new_node_id"], "S%d" % (top + 1))
         span.annotate(out, self.g) if self.g.get("sheets") else None
+
+    def test_a_human_screening_decision_is_kept_in_the_history_when_its_node_goes(self):
+        s = sn.propose(self.g, at=AT)
+        node = s["nodes"][1]
+        out = sn.screen_override(s, node["node_id"], "excluded", reason="사람이 적은 이유", at=AT)
+        for m in node["members"]:
+            out = sn.remove_member(out, node["node_id"], m, at=AT)
+        self.assertEqual(out["history"][-1]["detail"]["screen"],
+                         {"status": "excluded", "by": "human", "reason": "사람이 적은 이유"})
+        hollow = sn.screen_override(s, node["node_id"], "excluded", reason="사람이 적은 이유", at=AT)
+        next(n for n in hollow["nodes"] if n["node_id"] == node["node_id"])["members"] = []
+        self.assertEqual(sn.remove_empty(hollow, node["node_id"], at=AT)["history"][-1]["detail"],
+                         {"node_id": node["node_id"], "screen": {"status": "excluded", "by": "human", "reason": "사람이 적은 이유"}})
 
     def test_a_set_that_already_has_an_empty_node_loads_and_can_drop_it(self):
         s = sn.propose(self.g, at=AT)
@@ -146,7 +160,7 @@ class EmptyNodeTest(WorkRootCase):
         self.assertEqual(loaded, s, "빈 구간 때문에 파일 전체를 못 읽지 않음")
         dropped = sn.remove_empty(loaded, empty, at=AT)
         self.assertNotIn(empty, [n["node_id"] for n in dropped["nodes"]])
-        self.assertEqual(dropped["history"][-1], {"at": AT, "op": "remove_empty", "detail": {"node_id": empty}})
+        self.assertEqual((dropped["history"][-1]["op"], dropped["history"][-1]["detail"]["node_id"]), ("remove_empty", empty))
         with self.assertRaises(ValueError):
             sn.remove_empty(loaded, loaded["nodes"][0]["node_id"])
         with self.assertRaises(ValueError):

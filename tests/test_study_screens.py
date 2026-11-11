@@ -606,8 +606,11 @@ class StudyScreensTest(unittest.TestCase):
         win = self.window()
         scr = self.open_study(win)
         scr.select_node("S1")
-        with mock.patch.object(win, "mark_saved", side_effect=RuntimeError("탐색기 갱신 오류")):
+        with mock.patch.object(win, "mark_saved", side_effect=RuntimeError("탐색기 갱신 오류")), \
+                mock.patch.object(win, "toast") as toast, mock.patch.object(win, "status_message") as status:
             self.assertTrue(scr.rename_current("저장은 된 이름"))
+        toast.assert_not_called()
+        self.assertIn("저장했지만", status.call_args[0][0])
         self.assertEqual(nodes.load(self.pg())["nodes"][0]["name"], "저장은 된 이름")
         self.assertEqual(scr.node_set["nodes"][0]["name"], "저장은 된 이름")
         self.assertIn("저장했지만", scr.msg.text())
