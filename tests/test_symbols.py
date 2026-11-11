@@ -408,12 +408,13 @@ def line_types(ex):
     return {r["line_type"] for r in ex["relations"] + ex["unresolved_connectors"]}
 
 
-# APR1400 104쪽 주증기 안전밸브(MSSV) 그대로: 앵글 몸통, 몸통을 지나 모관까지 내려가는 줄기, 방출선, 모관
-MSSV = [prim([(599.81, 148.06), (601.45, 144.81), (604.72, 143.18), (604.72, 146.43), (601.45, 144.81), (603.09, 148.06)]),
+# APR1400 104쪽 (601.4,140.5)의 안전밸브 기호 그대로: 앵글 몸통, 몸통을 지나 모관까지 내려가는 줄기, 방출선, 모관.
+# 같은 쪽의 주증기 안전밸브(MSSV)·주증기 대기방출밸브(MSADV) 기호도 같은 모양이다
+SAFETY_VALVE = [prim([(599.81, 148.06), (601.45, 144.81), (604.72, 143.18), (604.72, 146.43), (601.45, 144.81), (603.09, 148.06)]),
         prim([(601.41, 136.98), (601.44, 156.21)], False),
         prim([(608.81, 144.81), (604.72, 144.81)], False), prim([(608.81, 139.47), (608.81, 144.81)], False),
         prim([(560.0, 156.21), (640.0, 156.21)], False)]
-MSSV_SPRING = [prim([(599.81, 143.39), (603.09, 141.36)], False), prim([(599.81, 141.36), (603.09, 139.33)], False),
+SAFETY_VALVE_SPRING = [prim([(599.81, 143.39), (603.09, 141.36)], False), prim([(599.81, 141.36), (603.09, 139.33)], False),
                prim([(599.81, 139.74), (603.09, 137.70)], False)]
 # APR1400 023쪽 방출 밸브(번호 원 1014) 그대로: 삼각형 몸통, 짧은 줄기(2.65pt), 아래 플랜지 판과 배관
 RELIEF = [prim([(340.05, 542.96), (343.85, 542.96), (343.85, 539.17), (340.05, 542.96)]),
@@ -429,7 +430,7 @@ class SafetyValveSpringTest(unittest.TestCase):
     잃고 줄기는 공압 신호선이 됐다(docs/2026-11-11-unit-f1/README.md F1-4)."""
 
     def test_spring_on_a_long_stem_is_not_removed(self):
-        ex = extract(MSSV + MSSV_SPRING)
+        ex = extract(SAFETY_VALVE + SAFETY_VALVE_SPRING)
         self.assertEqual(ticked(ex), [])
         self.assertNotIn("pdf_pneumatic", line_types(ex))
         self.assertNotIn("pipe_cap", [n["kind"] for n in ex["nodes"]])
@@ -476,6 +477,125 @@ class LoneTickTest(unittest.TestCase):
         strokes = [prim([(x - 1.2, 101.2), (x + 1.2, 98.8)], False) for x in (60.9, 61.7)]
         ex = extract([prim(GATE, True), prim([(60, 100), (62.7, 100)], False)] + strokes)
         self.assertEqual(ticked(ex), [])
+
+
+def slash(x, y=100.0, half=0.6):
+    """가로선 y를 x에서 가로지르는 빗금 하나(ticks_at의 한 줄과 같은 모양)."""
+    return prim([(x - half, y + 1.0), (x + half, y - 1.0)], False)
+
+
+def slanted(x, degrees, y=100.0, length=2.0):
+    """가로선 y를 x에서 degrees 각도로 가로지르는 길이 length인 빗금."""
+    dx = length / 2 * math.cos(math.radians(degrees))
+    dy = length / 2 * math.sin(math.radians(degrees))
+    return prim([(x - dx, y + dy), (x + dx, y - dy)], False)
+
+
+LINE_TO_GATE = [prim(GATE, True), prim([(50, 100), (100, 100)], False)]
+
+
+class LoneTickGuardTest(unittest.TestCase):
+    """외톨이 // 판정이 넘어가면 안 되는 자리(F1-4 검토 지적). 헷갈리면 판정하지 않고 선을 그대로 둔다.
+    스프링선이 하나 덜 읽히거나 둘로 그려져도 안전밸브 줄기가 공압 신호선이 되면 안 된다."""
+
+    def test_stroke_on_a_crossing_of_two_lines_is_not_given_to_either(self):
+        """두 선이 만나는 점 위의 빗금은 두 선에서 똑같이 가깝다. 먼저 그린 선에 붙이면 그리는 순서에 따라 판정이 달라진다."""
+        a, b = prim([(50, 100), (100, 100)], False), prim([(60, 90), (60, 110)], False)
+        strokes = [prim([(59, 101), (61, 99)], False), prim([(60, 101), (62, 99)], False)]
+        results = [extract([prim(GATE, True)] + lines + strokes) for lines in ([a, b], [b, a])]
+        self.assertEqual([len(ticked(ex)) for ex in results], [0, 0])
+        self.assertEqual([("pdf_pneumatic" in line_types(ex)) for ex in results], [False, False])
+
+    def test_strokes_beyond_the_end_of_a_line_do_not_mark_it(self):
+        """선 끝점 밖(연장선 위)을 지나는 빗금은 그 선을 가로지르지 않는다."""
+        ex = extract([prim(GATE, True), prim([(90, 100), (100, 100)], False), slash(89.9), slash(89.2)])
+        self.assertEqual(ticked(ex), [])
+        self.assertNotIn("pdf_pneumatic", line_types(ex))
+
+    def test_third_stroke_a_little_further_along_is_still_a_third_stroke(self):
+        """셋째 빗금이 묶음 거리(3pt)를 살짝 넘어 따로 떨어져도 그 선의 빗금은 셋이다."""
+        ex = extract(LINE_TO_GATE + [slash(60), slash(61), slash(64.01)])
+        self.assertEqual(ticked(ex), [])
+        self.assertNotIn("pdf_pneumatic", line_types(ex))
+
+    def test_third_stroke_too_long_to_be_a_tick_still_counts(self):
+        """셋째 사선이 빗금 길이 상한(4pt)을 넘어 후보에서 빠져도 선 위에 사선이 셋 있는 것은 같다."""
+        ex = extract(LINE_TO_GATE + [slash(60), slash(61), prim([(60.9, 102), (63.1, 98)], False)])
+        self.assertEqual(ticked(ex), [])
+        self.assertNotIn("pdf_pneumatic", line_types(ex))
+
+    def test_third_stroke_at_another_angle_or_only_touching_still_counts(self):
+        for third in (slanted(62, 88), slanted(62, 20), prim([(62.0, 100.0), (63.0, 98.6)], False)):
+            ex = extract(LINE_TO_GATE + [slash(60), slash(61), third])
+            self.assertEqual(ticked(ex), [], third["subpaths"][0][0])
+
+    def test_four_strokes_beside_a_pair_block_it(self):
+        """한 선에 // 한 묶음과 해칭(넷 이상)이 같이 있으면 판정하지 않는다."""
+        hatch = [slash(x) for x in (80, 80.8, 81.6, 82.4)]
+        ex = extract(LINE_TO_GATE + [slash(60), slash(61)] + hatch)
+        self.assertEqual(ticked(ex), [])
+
+    def test_line_joined_at_the_end_of_the_marked_line_does_not_block_it(self):
+        """꺾이는 자리에서 끝을 맞댄 짧은 선은 빗금 비슷한 획이 아니다(솔레노이드 밸브 공기선의 ㄱ자 경로).
+        116쪽처럼 맞댄 끝이 0.07pt 삐져나와 선을 넘어도 같다."""
+        for corner in (prim([(50, 100), (50, 94)], False), prim([(50.06, 100.07), (50.06, 94.5)], False)):
+            ex = extract(LINE_TO_GATE + [corner, slash(60), slash(61)])
+            self.assertEqual(len(ticked(ex)), 2)
+
+    def test_pair_drawn_across_a_corner_of_its_line_is_still_a_mark(self):
+        """120쪽의 꼭짓점과 빗금 그대로(선의 왼쪽만 늘림): ㄱ자로 꺾인 공압선의 꼭짓점에 // 가 걸쳐 있다.
+        한 줄은 꼭짓점 바로 밖을 지나 다음 선분과 만난다."""
+        line = prim([(950.0, 259.26), (962.51, 259.26), (962.51, 252.62)], False)
+        ends = [ring(962.51, 247.62, 5.0), ring(945.0, 259.26, 5.0)]
+        pair = [prim([(963.15, 260.18), (961.85, 258.88)], False), prim([(963.15, 259.54), (961.85, 258.23)], False)]
+        ex = extract(ends + [line] + pair)
+        self.assertEqual(len(ticked(ex)), 2)
+        self.assertEqual(line_types(ex), {"pdf_pneumatic"})
+
+    def test_two_stroke_spring_on_a_safety_valve_stem_is_not_a_mark(self):
+        """스프링선을 둘만 그린 안전밸브: 빗금이 밸브 몸통에 붙어 있으면 스프링 자리다."""
+        ex = extract(SAFETY_VALVE + SAFETY_VALVE_SPRING[:2])
+        self.assertEqual(ticked(ex), [])
+        self.assertNotIn("pdf_pneumatic", line_types(ex))
+        whole = extract(SAFETY_VALVE + SAFETY_VALVE_SPRING)
+        self.assertEqual(len(ex["relations"]) + len(ex["unresolved_connectors"]),
+                         len(whole["relations"]) + len(whole["unresolved_connectors"]) - 2)
+
+    def test_two_stroke_spring_on_a_relief_valve_is_not_a_mark(self):
+        ex = extract(RELIEF + RELIEF_SPRING[:2])
+        self.assertEqual(ticked(ex), [])
+        self.assertNotIn("pdf_pneumatic", line_types(ex))
+
+    def test_two_strokes_drawn_on_top_of_each_other_are_not_a_pair(self):
+        """141쪽 V1008 구동부 그대로: 같은 자리에 겹쳐 그린 줄기 두 줄이 V자 선의 꼭짓점을 지난다.
+        나란히 떨어져 있지 않으면 // 가 아니다."""
+        stems = [prim([(212.21, 276.44), (212.21, 273.41)], False), prim([(212.21, 275.93), (212.21, 273.48)], False)]
+        rest = [prim([(212.21, 270.83), (212.21, 268.38)], False),
+                prim([(214.01, 273.41), (212.21, 274.93), (210.4, 273.41)], False),
+                prim([(208.82, 272.34), (208.82, 270.83), (215.6, 270.83), (215.6, 272.34)], False),
+                prim([(208.82, 272.34), (209.95, 273.48), (211.08, 272.34)], False),
+                prim([(211.08, 272.34), (212.21, 273.48), (213.34, 272.34)], False),
+                prim([(213.34, 272.34), (214.47, 273.48), (215.6, 272.34)], False)]
+        ex = extract(stems + rest)
+        self.assertEqual(ticked(ex), [])
+        self.assertNotIn("pdf_pneumatic", line_types(ex))
+
+
+class TickBoundaryTest(unittest.TestCase):
+    """빗금 판정의 경계값(F1-4 검토): 묶음 거리 3pt, 각도 30~80도는 경계를 포함한다."""
+
+    def marked(self, strokes):
+        return len(ticked(extract(LINE_TO_GATE + strokes)))
+
+    def test_pair_gap_boundary(self):
+        self.assertEqual(self.marked([slash(60), slash(63.0)]), 2)
+        self.assertEqual(self.marked([slash(60), slash(63.01)]), 0)
+
+    def test_angle_boundaries_are_inclusive(self):
+        self.assertEqual(self.marked([slanted(60, 80.0), slanted(61, 80.0)]), 2)
+        self.assertEqual(self.marked([slanted(60, 80.5), slanted(61, 80.5)]), 0)
+        self.assertEqual(self.marked([slanted(60, 30.0), slanted(62, 30.0)]), 2)
+        self.assertEqual(self.marked([slanted(60, 29.5), slanted(62, 29.5)]), 0)
 
 
 def plate(x, y=100.0, half=1.5):

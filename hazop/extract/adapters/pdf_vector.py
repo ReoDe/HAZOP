@@ -415,17 +415,53 @@ def _table_cells(outlines, prm):
 
 
 LONE_TICK_STROKES = 2  # 선에 묶음이 하나뿐일 때 신호 표시로 보는 빗금 수(//). 셋은 안전밸브 스프링선이다
+TICK_TIE = 1e-6        # 빗금 가운데에서 두 선까지의 거리가 이 안에서 같으면 어느 선의 빗금인지 정하지 않는다(pt)
+TICK_SIDE_GAP_MIN = 0.2  # 한 묶음의 두 빗금이 옆으로 떨어진 거리 하한(pt). 같은 자리에 겹쳐 그린 두 선은 // 가 아니다
+SPRING_BODY_GAP = 0.5  # 외톨이 // 가 선이 닿은 작은 각진 몸체에 이 거리 안으로 붙어 있으면 스프링 자리로 본다(pt)
+_EPS = 1e-9            # 각도·교차 위치 경계를 포함하게 하는 부동소수 여유
 
 
 def _poly_length(p):
     return sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in _segs(p["pts"]))
 
 
-def _tick_groups(polys, hosts, prm):
+def _crosses(stroke, pts):
+    """직선 조각 stroke가 꺾은선 pts와 조각의 안쪽에서 만나는가. 꺾은선의 꼭짓점과 끝점 위에서 만나는 것도 센다."""
+    (x0, y0), (x1, y1) = stroke
+    dx, dy = x1 - x0, y1 - y0
+    for a, b in _segs(pts):
+        ex, ey = b[0] - a[0], b[1] - a[1]
+        den = ex * dy - ey * dx
+        if den == 0:
+            continue
+        on_line = ((x0 - a[0]) * dy - (y0 - a[1]) * dx) / den    # 만나는 점의 선분 위 자리(0~1)
+        on_stroke = ((x0 - a[0]) * ey - (y0 - a[1]) * ex) / den  # 만나는 점의 조각 위 자리(0~1)
+        if -_EPS <= on_line <= 1 + _EPS and 0 < on_stroke < 1:
+            return True
+    return False
+
+
+def _beyond_ends(stroke, pts, k):
+    """직선 조각 stroke가 꺾은선 pts의 k번째 선분을 그 꺾은선의 끝점 밖(연장선 위)에서 지나는가.
+    꺾이는 자리(안쪽 꼭짓점) 바로 밖을 지나는 것은 끝점 밖이 아니다."""
+    (x0, y0), (x1, y1) = stroke
+    dx, dy = x1 - x0, y1 - y0
+    a, b = pts[k], pts[k + 1]
+    ex, ey = b[0] - a[0], b[1] - a[1]
+    at = ((x0 - a[0]) * dy - (y0 - a[1]) * dx) / (ex * dy - ey * dx)  # 만나는 점의 선분 위 자리(0~1)
+    return (k == 0 and at < -_EPS) or (k == len(pts) - 2 and at > 1 + _EPS)
+
+
+def _tick_groups(polys, hosts, prm, within_ends=False):
     """빗금 후보를 걸린 선마다 묶는다 → {선 id: [묶음]}, 묶음 = [(빗금 가운데, 빗금 방향, 빗금 조각)].
-    빗금 후보: 4pt 이하 직선 조각이 열린 선(hosts)을 비스듬히(30~80도) 실제로 가로지른다(두 끝이 선의 양쪽에 떨어져
-    있음). 가장 가까운 선 하나에만 딸린다. 서로 가까운 평행 후보 2~3개가 묶음 하나다(4개 이상은 해칭). 선에 한 끝만 닿은
-    짧은 탭·가지는 가로지르지 않으므로 후보가 아니다."""
+    빗금 후보: 4pt 이하 직선 조각이 열린 선(hosts)을 비스듬히(30~80도, 경계 포함) 가로지른다(두 끝이 선의 양쪽에 떨어져
+    있음). 선에 한 끝만 닿은 짧은 탭·가지는 가로지르지 않으므로 후보가 아니다. 각도와 가로지름은 가장 가까운 선분의
+    연장선으로 본다. 꺾이는 자리에 걸친 빗금은 꼭짓점 바로 밖을 지나기 때문이다(032·120·135쪽).
+    within_ends: 선의 끝점 밖(연장선 위)을 지나는 조각을 뺀다. 묶음 하나로 판정하는 외톨이 // 에만 쓴다. 묶음이 여럿인
+    신호선에는 선 끝 바로 밖에 그린 // 가 있다(121·126쪽, 다른 선과 만나는 자리).
+    후보는 가장 가까운 선 하나에만 딸린다. 두 선까지의 거리가 같으면(두 선이 만나는 점 위) 어느 선에도 붙이지 않는다.
+    먼저 그린 선에 붙이면 그리는 순서에 따라 판정이 달라진다.
+    서로 가깝고 평행하며 옆으로 떨어진 후보 2~3개가 묶음 하나다(4개 이상은 해칭)."""
     lo, hi = math.cos(math.radians(prm["tick_angle_max"])), math.cos(math.radians(prm["tick_angle_min"]))
     reach = prm["tick_host_dist"]
     cand = collections.defaultdict(list)
@@ -435,14 +471,14 @@ def _tick_groups(polys, hosts, prm):
             continue
         (x0, y0), (x1, y1) = p["pts"]
         mid, dx, dy = ((x0 + x1) / 2, (y0 + y1) / 2), x1 - x0, y1 - y0
-        best = None  # 가장 가까운 선 하나(교차점 옆 빗금이 배관까지 신호선으로 만들지 않게)
+        crossed = {}  # 가로지른 선 id → (빗금 가운데와의 거리, 선분 번호). 그 선의 선분 가운데 가장 가까운 것
         for q in hosts:
             box = q["bbox"]
             if q is p or not (box[0] - reach <= mid[0] <= box[2] + reach and box[1] - reach <= mid[1] <= box[3] + reach):
                 continue
-            for a, b in _segs(q["pts"]):
+            for k, (a, b) in enumerate(_segs(q["pts"])):
                 d = _seg_dist(mid, a, b)[0]
-                if d > reach or (best is not None and d >= best[0]):
+                if d > reach or (q["id"] in crossed and d >= crossed[q["id"]][0]):
                     continue
                 ex, ey = b[0] - a[0], b[1] - a[1]
                 el = math.hypot(ex, ey)
@@ -451,16 +487,24 @@ def _tick_groups(polys, hosts, prm):
                 cos = abs(dx * ex + dy * ey) / (math.hypot(dx, dy) * el)
                 s0 = (ex * (y0 - a[1]) - ey * (x0 - a[0])) / el  # 두 끝의 선 기준 부호 있는 거리
                 s1 = (ex * (y1 - a[1]) - ey * (x1 - a[0])) / el
-                if lo <= cos <= hi and s0 * s1 < 0 and min(abs(s0), abs(s1)) >= 0.25 * tl:
-                    best = (d, q["id"])
-        if best is not None:
-            cand[best[1]].append((mid, (dx, dy), p))
+                # 30도로 가운데를 지나는 빗금은 두 끝이 선에서 정확히 길이의 1/4만큼 떨어진다(경계가 겹친다)
+                if lo - _EPS <= cos <= hi + _EPS and s0 * s1 < 0 and min(abs(s0), abs(s1)) >= 0.25 * tl - _EPS:
+                    crossed[q["id"]] = (d, k)
+            if within_ends and q["id"] in crossed and _beyond_ends(p["pts"], q["pts"], crossed[q["id"]][1]):
+                del crossed[q["id"]]
+        if crossed:
+            nearest = min(d for d, _ in crossed.values())
+            owners = [h for h, (d, _) in crossed.items() if d <= nearest + TICK_TIE]
+            if len(owners) == 1:
+                cand[owners[0]].append((mid, (dx, dy), p))
     out = {}
     for host, items in cand.items():
         def near(i, j):
             (m, d, _), (m2, d2, _) = items[i], items[j]
-            return (math.hypot(m[0] - m2[0], m[1] - m2[1]) <= prm["tick_pair_gap"]
-                    and abs(d[0] * d2[1] - d[1] * d2[0]) <= 0.2 * math.hypot(*d) * math.hypot(*d2))
+            gap, size = (m2[0] - m[0], m2[1] - m[1]), math.hypot(*d)
+            return (math.hypot(*gap) <= prm["tick_pair_gap"]
+                    and abs(d[0] * d2[1] - d[1] * d2[0]) <= 0.2 * size * math.hypot(*d2)
+                    and abs(gap[0] * d[1] - gap[1] * d[0]) >= TICK_SIDE_GAP_MIN * size)
         out[host] = [[items[i] for i in g] for g in _uf_groups(len(items), near) if 2 <= len(g) <= 3]
     return out
 
@@ -469,12 +513,44 @@ def _group_center(group):
     return (sum(m[0] for m, _, _ in group) / len(group), sum(m[1] for m, _, _ in group) / len(group))
 
 
-def _line_ticks(polys, prm):
+def _crowded(line, pair, polys, prm):
+    """외톨이 // 의 두 빗금 말고도 그 선을 가로지르거나 선에 닿은 짧은 직선 조각이 있는가.
+    셋째 스프링선이 길이·각도·묶음 거리 때문에 빗금 후보에서 빠졌거나, 한 선에 해칭이 같이 있거나, 탭이 닿아 있는
+    자리다. 꺾이는 자리에서 선의 끝에 제 끝을 맞댄 조각은 선의 이어짐이라 세지 않는다(끝이 조금 삐져나와 선을 넘어도)."""
+    reach, longest = prm["tick_host_dist"], 2 * prm["tick_len_max"]
+    box, segs, ends = line["bbox"], list(_segs(line["pts"])), (line["pts"][0], line["pts"][-1])
+    for s in polys:
+        if s is line or any(s is p for p in pair) or len(s["pts"]) != 2 or _poly_length(s) > longest:
+            continue
+        if _box_gap(s["bbox"], box) > reach:
+            continue
+        off = [min(_seg_dist(e, c, d)[0] for c, d in segs) for e in s["pts"]]  # 조각의 두 끝과 선 사이 거리
+        at_end = [any(math.hypot(e[0] - h[0], e[1] - h[1]) <= prm["end_tol"] for h in ends) for e in s["pts"]]
+        if any(o <= reach and not e for o, e in zip(off, at_end)):
+            return True  # 한 끝이 선 가운데에 닿아 있다
+        corner = any(o <= prm["touch_tol"] and e for o, e in zip(off, at_end))
+        if not corner and _crosses(s["pts"], line["pts"]):
+            return True
+    return False
+
+
+def _on_small_body(line, pair, bodies, prm):
+    """외톨이 // 가 그 선이 닿은 작은 각진 몸체(밸브 몸통)에 붙어 있는가. 스프링선은 몸통 바로 위 줄기에 걸리고,
+    공압 신호 표시는 선 가운데에 있다. 스프링선을 둘만 그린 안전밸브의 줄기를 공압 신호선으로 읽지 않으려는 조건이다."""
+    box = _union(pair[0]["bbox"], pair[1]["bbox"])
+    return any(not b.get("curved") and max(_w(b["bbox"]), _h(b["bbox"])) <= prm["pipe_cap_max"]
+               and _box_gap(box, b["bbox"]) <= SPRING_BODY_GAP
+               and _poly_box_dist(line["pts"], b["bbox"]) <= prm["attach_tol"] for b in bodies)
+
+
+def _line_ticks(polys, prm, bodies=()):
     """신호선 빗금(//) 찾기(범례 1.7-1 4/4 공압 신호선). → (빗금 id 집합, {선 id: [빗금 묶음 가운데]}).
     빗금 묶음이 tick_pairs_min개 이상인 tick_host_min 이상 선은 신호선이고, 그 묶음은 모두 빗금이다.
     묶음이 하나뿐인 선(외톨이)은 빗금이 정확히 둘(//)이고 선이 빗금보다 길 때만 신호 표시로 본다. 계기 공기 공급선과
     I/P 변환기~구동부 선처럼 짧은 공압선이 이렇다(선 길이 하한 없음). 빗금 셋은 안전밸브 줄기의 스프링선이라 건드리지
-    않는다(APR1400 104쪽 주증기 안전밸브, docs/2026-11-11-unit-f1/README.md F1-4)."""
+    않는다(APR1400 104쪽 안전밸브, docs/2026-11-11-unit-f1/README.md F1-4). 헷갈리는 자리는 판정하지 않고 선을 그대로
+    둔다: 빗금이 선의 끝점 밖을 지나거나, 그 선에 빗금 비슷한 조각이 더 있거나(_crowded), // 가 밸브 몸통에 붙어
+    있을 때다(_on_small_body)."""
     ticks, marked = set(), {}
     hosts = [p for p in polys if _poly_length(p) >= prm["tick_host_min"]]
     for host, groups in _tick_groups(polys, hosts, prm).items():
@@ -482,13 +558,17 @@ def _line_ticks(polys, prm):
             ticks.update(p["id"] for g in groups for _, _, p in g)
             marked[host] = [_group_center(g) for g in groups]
     rest = [p for p in polys if p["id"] not in ticks]
-    length = {p["id"]: _poly_length(p) for p in rest}
-    for host, groups in _tick_groups(rest, rest, prm).items():
+    by_id = {p["id"]: p for p in rest}
+    for host, groups in _tick_groups(rest, rest, prm, within_ends=True).items():
         if host in marked or len(groups) != 1 or len(groups[0]) != LONE_TICK_STROKES:
             continue
-        if all(length[p["id"]] < length[host] for _, _, p in groups[0]):
-            ticks.update(p["id"] for _, _, p in groups[0])
-            marked[host] = [_group_center(groups[0])]
+        line, pair = by_id[host], [p for _, _, p in groups[0]]
+        if any(_poly_length(p) >= _poly_length(line) for p in pair):
+            continue
+        if _crowded(line, pair, rest, prm) or _on_small_body(line, pair, bodies, prm):
+            continue
+        ticks.update(p["id"] for p in pair)
+        marked[host] = [_group_center(groups[0])]
     return ticks, marked
 
 
@@ -1158,7 +1238,7 @@ def analyze(width, height, words, prims, params=None):
     prm.update(params or {})
     cls = _classify_primitives(width, height, prims, prm)
     _promote_black_symbols(cls, prm)
-    ticks, marked = _line_ticks(cls["polys"], prm)
+    ticks, marked = _line_ticks(cls["polys"], prm, cls["bodies"])
     syms, polys, markers, dashes = _group_symbols(cls, prm)
     # 빗금은 기호 묶기가 끝난 뒤에 남은 선에서만 뺀다. 기호 장식선으로 흡수된 빗금은 그대로 두어 기호 모양과 번호가
     # 빗금 처리 전과 같게 한다(빗금을 먼저 빼면 안전밸브 규칙이 응축기 몸통에 맞는 등 기호 판정이 바뀜). 외톨이 // 도
