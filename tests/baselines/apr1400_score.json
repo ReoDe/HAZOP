@@ -14,13 +14,13 @@
     "connector_bad_target": 0,
     "connectors_detected": 3,
     "continuations": 3,
-    "nodes": 78,
+    "nodes": 72,
     "offpage_labels": 3,
     "tag_exact": 4,
     "tag_not_in_text": 0,
     "tagged": 4,
-    "unclassified": 38,
-    "unknowns": 161
+    "unclassified": 28,
+    "unknowns": 145
    },
    "proxy_bubbles": 4,
    "proxy_bubbles_in_key": 4,
@@ -43,13 +43,13 @@
     "connector_bad_target": 0,
     "connectors_detected": 5,
     "continuations": 7,
-    "nodes": 145,
+    "nodes": 129,
     "offpage_labels": 5,
     "tag_exact": 16,
     "tag_not_in_text": 0,
     "tagged": 16,
     "unclassified": 55,
-    "unknowns": 593
+    "unknowns": 518
    },
    "proxy_bubbles": 16,
    "proxy_bubbles_in_key": 16,
@@ -77,8 +77,8 @@
     "tag_exact": 12,
     "tag_not_in_text": 0,
     "tagged": 12,
-    "unclassified": 110,
-    "unknowns": 888
+    "unclassified": 103,
+    "unknowns": 880
    },
    "proxy_bubbles": 15,
    "proxy_bubbles_in_key": 15,
@@ -685,7 +685,7 @@
   },
   "6": {
    "connector_bad_target": 0,
-   "connectors_detected": 16,
+   "connectors_detected": 17,
    "tag_exact": 28,
    "tag_not_in_text": 0
   },
@@ -951,10 +951,10 @@
  "totals": {
   "bubbles": 1619,
   "connector_bad_target": 0,
-  "connectors_detected": 286,
-  "continuations": 1864,
+  "connectors_detected": 287,
+  "continuations": 1865,
   "failed_pages": 0,
-  "nodes": 24789,
+  "nodes": 23326,
   "offpage_labels": 295,
   "pages": 143,
   "pair_candidates": 10,
@@ -962,11 +962,11 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 279,
-  "seconds": 233,
+  "seconds": 116,
   "tag_exact": 872,
   "tag_not_in_text": 47,
   "tagged": 1083,
-  "unclassified": 7919,
-  "unknowns": 71203
+  "unclassified": 7316,
+  "unknowns": 64387
  }
 }
