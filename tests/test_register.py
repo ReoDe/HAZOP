@@ -748,7 +748,7 @@ class ReviewFix2Test(RegisterBase):
                 self.reg(SAMPLE_101)
         rel = os.path.join("proj-1", "registrations", mid)
         folder = os.path.join(self.store, rel)
-        self.assertEqual(os.listdir(folder), ["1.json.tmp"])
+        self.assertEqual(os.listdir(folder), [])  # 교체에 실패하면 임시 파일을 지운다. 빈 폴더만 남는다
         retry = self.reg(SAMPLE_101)
         self.assertEqual((retry["outcome"], retry["record"]["status"]), ("registered", "registered"))
         self.assertEqual(sorted(os.listdir(folder)), ["1.json"])

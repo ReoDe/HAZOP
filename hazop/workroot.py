@@ -31,7 +31,7 @@ import os
 import shutil
 from typing import NamedTuple
 
-from hazop import paths
+from hazop import paths, store_io
 
 TO_VERSION = "0.2.0"
 KEEP_DIR = "_before-" + TO_VERSION
@@ -81,13 +81,8 @@ def read_manifest(root):
 
 
 def _write_manifest(root, doc):
-    path = manifest_path(root)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(doc, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
-    os.replace(tmp, path)
+    # 지문 충돌 확인은 하지 않는다. 이전 기록은 옮기는 한 프로세스가 작업 루트 잠금을 쥐고 단계마다 고쳐 쓴다
+    store_io.write_json(manifest_path(root), doc, sort_keys=False)
 
 
 def _now():

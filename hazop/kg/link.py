@@ -21,6 +21,7 @@ import io
 import os
 import re
 
+from hazop import store_io
 from hazop.kg.inputs import (CANDIDATE_KEY_FIELDS, LINK_COLUMNS, NODE_COLUMNS, normalize_tag, normalize_text,
                              read_csv, text_sha256)
 
@@ -313,13 +314,9 @@ def _csv_text(columns, rows):
 
 
 def write_atomic(path, text, bom=True):
-    """UTF-8(기본 BOM)로 임시 파일에 쓴 뒤 os.replace로 교체."""
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8-sig" if bom else "utf-8", newline="") as fh:
-        fh.write(text)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, path)
+    """UTF-8(기본 BOM)로 공용 원자적 쓰기(store_io)를 쓴다. 줄끝은 text 그대로다.
+    다시 만들 수 있는 산출물(후보·연결 CSV)이라 지문 충돌 확인은 하지 않는다."""
+    store_io.write_bytes(path, text.encode("utf-8-sig" if bom else "utf-8"))
 
 
 def read_candidates(path):

@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 
+from hazop import store_io
 from hazop.app import tokens
 from hazop.graph.build import node_origin
 from hazop.kg import algo, auto, build, expect, link
@@ -611,11 +612,7 @@ def write_html(path, html):
         with open(path, "rb") as fh:
             if fh.read() == data:
                 return path
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "wb") as fh:
-        fh.write(data)
-    os.replace(tmp, path)
+    store_io.write_bytes(path, data)  # 다시 만들 수 있는 화면 파일이라 지문 충돌 확인은 하지 않는다
     return path
 
 

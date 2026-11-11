@@ -23,7 +23,7 @@ import hashlib
 import json
 import os
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.extract import svg_align
 
 from . import fileinfo
@@ -59,14 +59,11 @@ def _file_sha(path):
 
 
 def _write_json(path, obj):
-    """임시 파일에 쓴 뒤 교체한다(쓰는 도중 실패해도 기존 파일이 깨지지 않게).
-    등록정보 스냅샷은 직접 부르지 말고 _write_snapshot을 쓴다(완료된 버전 불변 확인)."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(obj, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
-    os.replace(tmp, path)
+    """공용 원자적 쓰기(store_io)로 쓴다(쓰는 도중 실패해도 기존 파일이 깨지지 않고 임시 파일이 남지 않는다).
+    등록정보 스냅샷은 직접 부르지 말고 _write_snapshot을 쓴다(완료된 버전 불변 확인).
+    지문 충돌 확인은 넣지 않는다. 등록 완료된 버전 파일은 _write_snapshot이 다시 쓰지 못하게 막고, 사람이 고친 값은 새 버전
+    파일로 들어가며, 다시 쓰이는 것은 등록 완료 전(draft·failed) 스냅샷과 색인뿐이다."""
+    store_io.write_json(path, obj, sort_keys=False)
 
 
 def _read_json(path):
@@ -305,21 +302,22 @@ def _orphan_entry(store, material_id, sha):
 
 def _unfinished_trace_only(store, material_id, sha):
     """registrations/<material_id>/가 없거나, 첫 스냅샷 교체(os.replace) 전에 중단된 이 원본의 흔적
-    (빈 폴더 또는 *.json.tmp만 있고, 읽히는 .tmp는 같은 해시)만 있으면 True. 이어서 등록해도 된다
-    (.tmp는 다음 _write_json이 같은 이름으로 다시 쓴다). 다른 해시의 흔적이나 버전 파일이 있으면 False."""
+    (빈 폴더 또는 임시 파일만 있고, 읽히는 임시 파일은 같은 해시)만 있으면 True. 이어서 등록해도 된다.
+    임시 파일은 공용 쓰기의 '.1.json.<무작위>.tmp'와 0.2.0까지 쓰던 '1.json.tmp' 둘 다다(오래된 것은 다음 쓰기가 지운다).
+    다른 해시의 흔적이나 버전 파일이 있으면 False."""
     folder = os.path.join(store.root, "registrations", material_id)
     if not os.path.exists(folder):
         return True
     if not os.path.isdir(folder):
         return False
     for fname in os.listdir(folder):
-        if not fname.endswith(".json.tmp"):
+        if not fname.endswith(".tmp"):
             return False
         try:
             if _read_json(os.path.join(folder, fname)).get("sha256") != sha:
                 return False
         except (OSError, ValueError):
-            pass  # 쓰다 만(읽을 수 없는) 임시 파일: _write_json만 만드는 이름이므로 이 등록의 미완료 흔적으로 본다
+            pass  # 쓰다 만(읽을 수 없는) 임시 파일: 이 폴더에는 _write_json만 쓰므로 이 등록의 미완료 흔적으로 본다
     return True
 
 
