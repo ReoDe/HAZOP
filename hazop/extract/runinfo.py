@@ -37,11 +37,19 @@ def write(out_dir, extractor, result=None, symbol_versions=None):
 
 def record(out_dir, extractor, result=None, symbol_versions=None, warnings=None):
     """write와 같되 파일을 쓰지 못해도(OSError) 멈추지 않는다. 그때는 경고를 로그에 남기고 warnings(list)에 더한 뒤
-    None을 돌려준다. 전에 쓴 파일이 있었다면 그대로 남는다(그 안의 extraction_run_id가 지금 추출 결과와 다르다)."""
+    None을 돌려준다. 전에 쓴 파일은 지금 추출 결과의 기록처럼 읽히지 않게 지운다. 지우지도 못하면 경고에 적는다
+    (남은 파일의 extraction_run_id가 지금 추출 결과와 다르다)."""
     try:
         return write(out_dir, extractor, result, symbol_versions)
     except OSError as exc:
-        text = "경고: 추출 실행 정보(%s)를 쓰지 못함: %s. 추출 결과는 그대로 둔다" % (os.path.join(out_dir, FILE_NAME), exc)
+        path = os.path.join(out_dir, FILE_NAME)
+        text = "경고: 추출 실행 정보(%s)를 쓰지 못함: %s. 추출 결과는 그대로 둔다" % (path, exc)
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            text += ". 지난 실행의 기록이 그 파일에 남아 있다"
         _log.warning(text)
         if warnings is not None:
             warnings.append(text)

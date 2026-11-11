@@ -709,6 +709,8 @@ class RegisterScreen(QWidget):
         for sk in out.get("skipped_pages") or []:
             h.append("<p style='color:%s'>%d쪽 추출 안 함: %s</p>" % (tokens.c("warn-ink"), sk["page_index"] + 1,
                                                                  esc(sk["reason"])))
+        for text in out.get("warnings") or []:
+            h.append("<p style='color:%s'>%s</p>" % (tokens.c("warn-ink"), esc(text)))
         h.append(kg_line(out))
         self._show_result("".join(h))
         self.refresh()

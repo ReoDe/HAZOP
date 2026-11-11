@@ -164,7 +164,7 @@ def main():
     manifest = os.path.join(root, symbols.BUNDLES_FILE)
     os.makedirs(root, exist_ok=True)
     man = read_json(manifest) if os.path.isfile(manifest) else {"margin": 0.1, "bundles": []}
-    changed = []
+    changed, skipped_attrs = [], []
     for eid in sorted(members):
         prefix, name = eid.split(".", 1)
         bundle = next((b["name"] for b in man["bundles"] if (b.get("prefix") or b["name"].lower()) == prefix), None)
@@ -188,9 +188,14 @@ def main():
         added = 0
         for g in ranked[:a.per_entry]:
             t = template_from(g, a.max_distance, a.size_ratio, a.set_attributes)
-            if not any(same_template(t, old) for old in entry["match"]):
+            twins = [old for old in entry["match"] if same_template(t, old)]
+            if not twins:
                 entry["match"].append(t)
                 added += 1
+            elif any((old.get("set_attributes") or {}) != (t.get("set_attributes") or {}) for old in twins):
+                # 같은 격자의 견본은 더하지 않는다. 속성이 다르면 조용히 넘어가지 않고 알린다(사람이 항목 파일에서 고친다)
+                skipped_attrs.append("%s: 같은 격자의 견본이 이미 있고 속성이 다름(있는 것 %s, 더하려던 것 %s)" % (
+                    eid, [old.get("set_attributes") or {} for old in twins], t.get("set_attributes") or {}))
         if added:
             entry["revision"] += 1
             entry["updated"] = a.date
@@ -217,6 +222,8 @@ def main():
         f.write("\n")
     for eid, added, total in changed:
         print("%s: 견본 +%d (모두 %d)" % (eid, added, total))
+    for text in skipped_attrs:
+        print("경고: %s" % text)
     print("바뀐 항목 %d" % len(changed))
 
 

@@ -37,9 +37,10 @@ SIZE_TOL = 1.25
 
 
 def code_fingerprint():
-    from hazop.extract.adapters import pdf_vector
+    """쪽 캐시가 지금 코드로 만든 것인지 가리는 지문. 기호·검은 채움을 묶는 모듈을 모두 넣는다."""
+    from hazop.extract.adapters import pdf_vector, pdf_vector_common, pdf_vector_grouping
     h = hashlib.sha256()
-    for mod in (pdf_vector, symbols):
+    for mod in (pdf_vector, pdf_vector_common, pdf_vector_grouping, symbols):
         with open(mod.__file__, "rb") as f:
             h.update(f.read())
     return h.hexdigest()[:12]

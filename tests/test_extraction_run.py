@@ -150,6 +150,15 @@ class PdfRunInfoTest(WorkRootCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn(runinfo.FILE_NAME, warnings[0])
 
+    def test_record_of_an_earlier_run_does_not_stay_when_the_new_one_cannot_be_written(self):
+        """쓰기에 실패했는데 지난 실행의 곁 파일이 남으면 지금 추출 결과의 기록처럼 읽힌다."""
+        name = lambda _p: "page"  # noqa: E731
+        extract_pdf.run_pages(self.pdf, self.out, [0], out_name=name)
+        self.assertTrue(os.path.isfile(os.path.join(self.out, "page", runinfo.FILE_NAME)))
+        with record_cannot_be_written(), self.assertLogs(runinfo.__name__, "WARNING"):
+            extract_pdf.run_pages(self.pdf, self.out, [0], out_name=name)
+        self.assertEqual(sorted(os.listdir(os.path.join(self.out, "page"))), ["extraction.json", "validation_report.md"])
+
     def test_unreadable_pages_are_all_marked_when_the_record_cannot_be_written(self):
         name = lambda p: "page-%d" % p  # noqa: E731
         with record_cannot_be_written(), self.assertLogs(runinfo.__name__, "WARNING"),                 mock.patch.object(extract_pdf.pdf_vector, "extract", side_effect=ValueError("읽기 실패")):
