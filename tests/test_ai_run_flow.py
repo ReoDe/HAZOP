@@ -121,7 +121,7 @@ class FlowCase(unittest.TestCase):
     @staticmethod
     def clean_results():
         from hazop import paths
-        for d in ("분석결과", "분석결과-시험"):
+        for d in ("analysis-results", "analysis-results-test"):
             shutil.rmtree(paths.folder(d), ignore_errors=True)
 
     def window(self, method="subscription", scenarios="ok", terms=True, concurrency=1, debug=False, api_client=None):

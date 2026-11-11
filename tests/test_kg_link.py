@@ -1,6 +1,6 @@
 """엔티티 연결 후보·확인 흐름 테스트 (기획서/그래프활용.md §3, §7.2 L1~L4). 실행: python -m unittest discover -s tests -t .
 
-P&ID 그래프는 tests.test_kg.pid_graph()(샘플 도면 SNP-M-102를 임시 폴더에서 추출·빌드)를 쓴다(출력/ 폴더에 의존하지 않음).
+P&ID 그래프는 tests.test_kg.pid_graph()(샘플 도면 SNP-M-102를 임시 폴더에서 추출·빌드)를 쓴다(output/ 폴더에 의존하지 않음).
 """
 
 import contextlib

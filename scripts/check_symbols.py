@@ -58,7 +58,7 @@ def check(root):
                 if spec and spec.get("type") == "enum" and value not in spec.get("values", ()):
                     errors.append("%s: 견본 속성 %s=%r는 허용값 %s 밖" % (e.id, prop, value, spec["values"]))
         img = e.raw.get("image")
-        if img and not os.path.isfile(os.path.join(root, e.bundle, img)):
+        if img and not os.path.isfile(symbols.image_path(symbols.bundle_dir(root, e.bundle, e.id.split(".", 1)[0]), img)):
             errors.append("%s: 예시 그림이 없음(%s)" % (e.id, img))
         if e.kind and e.kind in kinds and e.category != category_label(e.kind):
             errors.append("%s: category %r ≠ 레지스트리 범주 %r" % (e.id, e.category, category_label(e.kind)))
@@ -86,7 +86,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--library")
     a = ap.parse_args()
-    root = a.library or paths.folder("기호")
+    root = a.library or paths.folder("symbols")
     errors, warnings, lib = check(root)
     if lib is not None:
         print("묶음 %s, 항목 %d(켜짐 %d)" % (lib.versions, len(lib.entries), sum(e.enabled for e in lib.entries.values())))

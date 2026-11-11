@@ -2,7 +2,7 @@
 실행: python -m unittest discover -s tests -t .
 
 입력은 저장소 샘플만 쓴다(scripts/check_kg_screen.sample_inputs: 샘플 도면을 임시 폴더에서 추출·빌드, 정상 샘플 CSV).
-창 테스트는 HAZOP_WORK_ROOT·HAZOP_STORE_ROOT를 임시 폴더로 바꿔 출력/·자료저장소/를 건드리지 않는다.
+창 테스트는 HAZOP_WORK_ROOT·HAZOP_STORE_ROOT를 임시 폴더로 바꿔 output/·store/를 건드리지 않는다.
 웹뷰는 QT_QPA_PLATFORM=offscreen. 네트워크 사용 없음.
 """
 
@@ -517,8 +517,8 @@ class KnowledgeTabTest(WindowTestBase):
         win.webview.bridge.fromWeb(json.dumps({"type": "runAlgorithm", "algorithm": "A1", "start": "req-001"}))
         self.assertEqual(scr.data["algo"]["A1"]["start"], "req-001")
         self.assertFalse(scr.data["algo"]["A1"]["active"])
-        # 단독 모드 HTML도 작업 루트 출력/ 아래에 씀
-        self.assertTrue(scr.standalone.startswith(os.path.join(self.roots.work, "출력", "지식그래프")))
+        # 단독 모드 HTML도 작업 루트 output/ 아래에 씀
+        self.assertTrue(scr.standalone.startswith(paths.output_in(self.roots.work, "knowledge-graph")))
         self.assertTrue(os.path.isfile(scr.standalone))
 
     def test_drawing_value_conflict_in_detail(self):
@@ -599,11 +599,11 @@ class KnowledgeTabTest(WindowTestBase):
         scr.kg_combo.setCurrentIndex(scr.kg_combo.findText("kg-SYN-S1"))
         self.assertEqual(ks.s1_window_problem(win), [])
         self.assertTrue(scr.data["algo"]["enabled"])
-        shutil.rmtree(os.path.join(self.roots.work, "출력", "지식그래프", "kg-SYN-S1"))
+        shutil.rmtree(paths.output_in(self.roots.work, "knowledge-graph", "kg-SYN-S1"))
 
     def test_blocked_shows_blockers_and_previous_version(self):
         win = self.open()
-        kg_root = os.path.join(self.roots.work, "출력", "지식그래프", self.inp["kg"]["kg_id"])
+        kg_root = paths.output_in(self.roots.work, "knowledge-graph", self.inp["kg"]["kg_id"])
         ptr = os.path.join(kg_root, build.POINTER_FILE)
         with open(ptr, "rb") as fh:
             old_ptr = fh.read()
@@ -643,7 +643,7 @@ class KnowledgeTabTest(WindowTestBase):
 
     def test_empty_state(self):
         win = self.open()
-        root = os.path.join(self.roots.work, "출력", "지식그래프")
+        root = paths.output_in(self.roots.work, "knowledge-graph")
         hidden = root + "-hidden"
         os.rename(root, hidden)
         self.addCleanup(os.rename, hidden, root)
@@ -674,8 +674,8 @@ class ShowInDrawingTest(unittest.TestCase):
         out_dir, graph = build_temp_drawing(work)
         knowledge = self.base_inp["knowledge"]
         kg = build.build_kg(knowledge, [graph])
-        build.write_outputs(os.path.join(work, "출력", "지식그래프", kg["kg_id"]), knowledge, kg)
-        kdir = paths.folder_in(work, "지식", ks.SAMPLE_PROJECT)
+        build.write_outputs(paths.output_in(work, "knowledge-graph", kg["kg_id"]), knowledge, kg)
+        kdir = paths.folder_in(work, "knowledge-graph", ks.SAMPLE_PROJECT)
         os.makedirs(kdir, exist_ok=True)
         shutil.copy(os.path.join(ks.SAMPLE_DIR, screen.CANDIDATES_CSV), kdir)
         win = ks.open_window(self.roots.tmp)

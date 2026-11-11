@@ -36,7 +36,7 @@ PDF_BETTER = {"unknowns": "lower", "unclassified": "lower", "linked": "higher", 
 
 
 def default_samples_dir():
-    return paths.folder("참고", "P&ID 도면 샘플")
+    return paths.folder("references", "pid-samples")
 
 
 def drawing_summary(extraction, graph, proposal):
@@ -76,7 +76,7 @@ def collect(samples_dir):
             if not files:
                 continue
             if fmt == "drawio":
-                ex, _ = extract_drawio.run_one(files[0], os.path.join(tmp, "추출"))
+                ex, _ = extract_drawio.run_one(files[0], os.path.join(tmp, "extract"))
             else:
                 ex = pdf_vector.extract(files[0], page=0, repo_root=tmp)
             g = build.build_graph(ex)
@@ -146,7 +146,7 @@ def diff(b, n):
 def main(argv=None):
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--samples-dir", default=None, help="SNP 샘플 폴더(기본: 자원 루트의 참고자료/P&ID 도면 샘플)")
+    ap.add_argument("--samples-dir", default=None, help="SNP 샘플 폴더(기본: 저장소의 %s/pid-samples)" % paths.folder_rel("references"))
     ap.add_argument("--baseline", default=BASELINE)
     ap.add_argument("--update", action="store_true", help="기준값을 지금 결과로 바꿈")
     ap.add_argument("--force", action="store_true", help="HEAD와 다른(커밋 안 한) 기준값도 --update로 덮음")

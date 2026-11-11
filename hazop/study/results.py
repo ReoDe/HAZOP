@@ -16,12 +16,10 @@ import functools
 import json
 import os
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.analysis.risk import FREQUENCIES, MATRIX_P86, SEVERITIES
 from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
-from hazop.kg.build import write_json_atomic
 from hazop.study import refs
-from hazop.study.nodes import now_utc
 
 SCHEMA_VERSION = "0.1"
 KIND = "hazop_study_results"
@@ -56,7 +54,7 @@ MITIGATED_PHRASES = ("영향 없음", "영향이 없", "영향은 없", "문제 
 
 def load_deviations(path=None):
     """[{deviation_id, item_id, parameter, guideword, label}] 파일 순서대로. deviation_id는 D01부터."""
-    with open(path or paths.folder("이탈후보", DEVIATION_CHART), encoding="utf-8") as fh:
+    with open(path or paths.folder("deviations", DEVIATION_CHART), encoding="utf-8") as fh:
         chart = json.load(fh)
     return [{"deviation_id": "D%02d" % (i + 1), "item_id": item["item_id"], "parameter": item["parameter_ko"],
              "guideword": item["guide_word_ko"], "label": item["deviation_ko"]}
@@ -86,7 +84,7 @@ def _ie_category_table(path):
 
 def ie_category_table(path=None):
     """일반 범주 기준표 문서 {table_id, title, basis, categories} 사본."""
-    return copy.deepcopy(_ie_category_table(path or paths.folder("기준표", IE_CATEGORY_TABLE)))
+    return copy.deepcopy(_ie_category_table(path or paths.folder("risk-criteria", IE_CATEGORY_TABLE)))
 
 
 def ie_categories(path=None):
@@ -159,7 +157,7 @@ def quality_warnings(entry):
     if hit:
         out.append(("mitigated_consequence", "결과에 '%s' 같은 표현이 있어 보호수단이 작동한 뒤의 결과일 수 있습니다. "
                     "보호수단이 모두 실패했다고 보고 썼는지 확인하세요" % hit.strip()))
-    unknown = [s["text"] for s in refs.safeguard_items(entry) if s["actuation"] == "unknown"]
+    unknown = [s["text"] for s in refs.safeguard_items(entry) if s["actuation"] == "unknown" and s["text"].strip()]
     if unknown:
         out.append(("actuation_unknown", "보호수단 %d개(%s)가 자동·운전원·자체작동 가운데 무엇인지 정해지지 않았습니다"
                     % (len(unknown), ", ".join(t or "-" for t in unknown[:3]) + (" 외" if len(unknown) > 3 else ""))))
@@ -270,7 +268,7 @@ def set_status(results, node_id, deviation_id, entry_id, status, at=None):
     out = copy.deepcopy(results)
     e = _entry(out, node_id, deviation_id, entry_id)
     old, e["status"] = e.get("status"), status
-    e.setdefault("history", []).append({"at": at or now_utc(), "op": "status", "from": old, "to": status})
+    e.setdefault("history", []).append(store_io.history_row("status", {"from": old, "to": status}, at))
     return out
 
 
@@ -295,7 +293,7 @@ def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None):
     e.update(copy.deepcopy(fields))
     e["risk"] = risk_of(e.get("severity"), e.get("frequency"))
     old, e["status"] = e.get("status"), "revised"
-    e.setdefault("history", []).append({"at": at or now_utc(), "op": "edit", "from": old, "before": before})
+    e.setdefault("history", []).append(store_io.history_row("edit", {"from": old, "before": before}, at))
     return out
 
 
@@ -317,15 +315,14 @@ def set_ie_hint(results, node_id, deviation_id, entry_id, hint, at=None):
     e["ie_hint"] = new
     if e.get("status") == "proposed":
         e["status"] = "revised"
-    e.setdefault("history", []).append({"at": at or now_utc(), "op": "ie_hint", "status": e.get("status"),
-                                        "before": before})
+    e.setdefault("history", []).append(store_io.history_row("ie_hint", {"status": e.get("status"), "before": before}, at))
     return out
 
 
 # ---------------------------------------------------------------- 저장
 
 def store_path(project_id, graph_id):
-    return paths.folder("분석결과", paths.safe_name(project_id or UNREGISTERED_PROJECT),
+    return paths.folder("analysis-results", paths.safe_name(project_id or UNREGISTERED_PROJECT),
                            paths.safe_name(graph_id) + ".json")
 
 
@@ -337,42 +334,67 @@ def test_store_path(project_id, graph_id):
 def _readable_path(project_id, graph_id):
     """저장 경로. 없고 project_id가 없으면 이 규칙 이전 폴더(no-project)의 저장본을 그대로 읽는다(옮기지 않음)."""
     path = store_path(project_id, graph_id)
-    legacy = paths.folder("분석결과", LEGACY_PROJECT_DIR, paths.safe_name(graph_id) + ".json")
+    legacy = paths.folder("analysis-results", LEGACY_PROJECT_DIR, paths.safe_name(graph_id) + ".json")
     return legacy if not project_id and not os.path.isfile(path) and os.path.isfile(legacy) else path
 
 
-def save(results, project_id):
-    """임시 파일에 쓴 뒤 os.replace로 교체한다. 쓴 경로를 돌려준다."""
-    return write(store_path(project_id, results["graph_id"]), results)
+def save(results, project_id, expect=store_io.ANY):
+    """쓴 경로를 돌려준다. expect는 save_fp와 같다. 읽어서 고친 결과를 쓸 때는 expect를 꼭 넘긴다
+    (넘기지 않는 것은 방금 만든 결과를 처음 쓰는 검사·시험뿐이다)."""
+    return write(store_path(project_id, results["graph_id"]), results, expect)
 
 
-def write(path, results):
-    write_json_atomic(path, results)
+def save_fp(results, project_id, expect):
+    """(쓴 경로, 새 지문). expect(load_fp의 지문, 없던 파일이면 None)와 지금 파일이 다르면 store_io.Conflict."""
+    path = store_path(project_id, results["graph_id"])
+    return path, store_io.write_json(path, results, expect)
+
+
+def written_fp(results):
+    """results를 쓴 파일의 지문(직렬화가 결정적이라 다시 읽지 않고 안다)."""
+    return store_io.fingerprint_of(store_io.dump_bytes(results))
+
+
+def write(path, results, expect=store_io.ANY):
+    """expect(read_fp의 지문)를 주면 읽은 뒤 바뀐 파일은 쓰지 않고 store_io.Conflict를 낸다."""
+    store_io.write_json(path, results, expect)
     return path
 
 
 def read(path):
     """path의 결과 문서. 없으면 None, 다른 종류면 ValueError."""
-    if not os.path.isfile(path):
-        return None
-    with open(path, encoding="utf-8") as fh:
-        doc = json.load(fh)
+    return read_fp(path)[0]
+
+
+def read_fp(path):
+    """(결과 문서, 읽은 바이트의 지문). 없으면 (None, None)."""
+    data, fp = store_io.read_bytes(path)
+    if data is None:
+        return None, None
+    doc = json.loads(data.decode("utf-8"))
     if not isinstance(doc, dict) or doc.get("kind") != KIND:
         raise ValueError("분석 결과 파일이 아님: %s" % path)
-    return doc
+    return doc, fp
 
 
 def load(node_set):
     """node_set 도면의 저장본. 없으면 None. 다른 종류·다른 도면의 파일이면 ValueError. 판 비교는 is_stale로 한다.
     집합이 판 이전된 뒤 옛 판으로 저장된 결과는 읽을 때 같은 규칙으로 이전한다(파일은 nodes.load가 이전할 때만 씀)."""
+    return load_fp(node_set)[0]
+
+
+def load_fp(node_set):
+    """(load와 같은 문서, save_fp의 expect로 쓸 지문). 없으면 (None, None).
+    옛 자리(no-project)에서 읽었으면 저장할 자리에는 아직 파일이 없으므로 지문은 None이다."""
     from hazop.study import migrate
     path = _readable_path(node_set.get("project_id"), node_set["graph_id"])
-    doc = read(path)
+    doc, fp = read_fp(path)
     if doc is None:
-        return None
+        return None, None
     if doc.get("graph_id") != node_set["graph_id"]:
         raise ValueError("다른 도면의 분석 결과: %s (%s)" % (path, doc.get("graph_id")))
-    return migrate.migrate_results(doc, node_set)[0]
+    same_place = path == store_path(node_set.get("project_id"), node_set["graph_id"])
+    return migrate.migrate_results(doc, node_set)[0], fp if same_place else None
 
 
 def is_stale(results, node_set):

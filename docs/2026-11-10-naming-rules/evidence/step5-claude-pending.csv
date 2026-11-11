@@ -1,0 +1,3 @@
+﻿파일,줄,옛 문자열,새 문자열,적용
+.claude/skills/verify-hazop/SKILL.md,18,"the reference samples (`paths.folder(""참고"")`, copied to the logical `참고자료/` path)","the sample drawings (`paths.folder(""참고"", ""pid-samples"")`, copied to their logical `참고자료/P&ID 도면 샘플/` path)",손으로(본문 문장)
+CLAUDE.md,41,자원/기준/기호/,resources/library/symbols/,도구(migrate_names.py --only)

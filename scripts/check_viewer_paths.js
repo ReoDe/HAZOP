@@ -1,7 +1,7 @@
 // 뷰어 JS 경로 질의와 Python 경로 질의(hazop/graph/query.py)의 결과를 대조한다.
 // 실행: node scripts/check_viewer_paths.js   (하위 프로세스를 쓰지 않음)
-// - 출력/뷰어/<도면>.html 에서 내장 그래프 JSON과 PATH-ENGINE 블록(hazopPathEngine)을 꺼내 실행
-// - 출력/그래프/<도면>/path_expectations.json(Python이 미리 쓴 기대값)과 모든 사례를 비교
+// - output/viewer/<도면>.html 에서 내장 그래프 JSON과 PATH-ENGINE 블록(hazopPathEngine)을 꺼내 실행
+// - output/graph/<도면>/path_expectations.json(Python이 미리 쓴 기대값)과 모든 사례를 비교
 // 종료 코드 0 = 불일치 0, 6개 도면 모두 대조됨.
 "use strict";
 const fs = require("fs");

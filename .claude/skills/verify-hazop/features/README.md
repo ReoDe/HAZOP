@@ -8,7 +8,7 @@ Each row is a scenario in `scripts/check_user_scenarios.py`. The end state is wh
 | Shortcut table | F1 or ? | S1 | text `Ctrl+1 ~ Ctrl+5` in the dialog |
 | Command palette | Ctrl+P, `@` component, `#` node, `>` command | S2, S6 | `palette_list` items, then `header.where` changes on Enter |
 | Related panel | Ctrl+Alt+B, right pane on ⑤ | S2 | `rel_list` items, double-click moves to another stage |
-| ⑤ review keys | J next unreviewed, A approve, R reject, Ctrl+Z undo | S3, S4 | entry `status` counts in `work/데이터/분석결과/**.json` |
+| ⑤ review keys | J next unreviewed, A approve, R reject, Ctrl+Z undo | S3, S4 | entry `status` counts in `work/data/analysis-results/**.json` |
 | ① register + extract | "파일 선택…", file dialog, "등록", "추출·그래프 만들기" | S5 | ② webview has an svg and shows the registered drawing number |
 | Long AI run feedback | ⑤ palette `>실패 칸 다시 실행` (fake client, 4 s per call) | S7 | progress text samples, results file re-saved per call |
 | Operating during a run | explorer Sx click, Ctrl+P, Ctrl+4 then Ctrl+5 while running | S8 | stage unchanged, progress still shown, entry counts not lower |

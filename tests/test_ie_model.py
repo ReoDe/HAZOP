@@ -4,6 +4,7 @@
 실행: python -m unittest tests.test_ie_model
 """
 
+import json
 import os
 import random
 import sys
@@ -11,6 +12,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from hazop import store_io  # noqa: E402
 from hazop.ie import bundle as ib  # noqa: E402
 from hazop.ie import model  # noqa: E402
 from hazop.study import results as res  # noqa: E402
@@ -176,6 +178,87 @@ class RuleTest(unittest.TestCase):
         doc = model.set_coverage(doc, "LOCHS", "out_of_scope", "복수기 도면 미등록", "김검토", at=AT)
         self.assertEqual(doc["coverage"]["LOCHS"]["by"], "김검토")
         self.assertNotIn("LOCHS", model.set_coverage(doc, "LOCHS", None, "", "", at=AT)["coverage"])
+
+
+class FollowupTest(unittest.TestCase):
+    """P3 후속(경미)으로 남겼던 저장·출처 경로 결함의 재현."""
+
+    def test_group_is_not_confirmed_once_every_source_of_its_heading_is_unapproved(self):
+        r, ns, pg, doc = fresh()
+        doc = model.suggest(doc, r, pg, at=AT)
+        h = doc["groups"][doc["candidates"][iec(doc, r, "c1")]["group_id"]]["heading_ids"][0]
+        self.assertEqual([model.entry_of_key(s["key"]) for s in doc["headings"][h]["sources"]], ["c1"])
+        doc = model.accept(doc, ("heading", h), at=AT)
+        doc, gid = model.create_group(doc, "범주 없는 그룹", [iec(doc, r, "c4")], at=AT)
+        doc = model.attach(doc, gid, ("heading", h), at=AT)
+        doc = model.confirm(doc, gid, r, "김검토", at=AT)
+        self.assertEqual(model.effective_status(doc, gid, r), "confirmed")
+        r = res.set_status(r, *where(r, "c1"), "revised", at=AT)
+        self.assertTrue(any(h in p and "승인" in p for p in model.confirm_problems(doc, gid, r)))
+        self.assertEqual(model.effective_status(doc, gid, r), "draft")
+        g = next(x for x in ib.build_bundle(r, ns, pg, model.sync(doc, r, at=AT), AT)["groups"] if x["group_id"] == gid)
+        self.assertEqual((g["status"], g["heading_ids"]), ("draft", []))
+
+    def test_heading_written_by_a_person_without_sources_does_not_block_confirm(self):
+        r, _, _, doc = fresh()
+        doc, gid = model.create_group(doc, "주급수 상실", [iec(doc, r, "c1")], at=AT)
+        doc, _ = model.add_heading(doc, gid, {"name": "운전원 수동 급수"}, at=AT)
+        self.assertEqual(model.confirm_problems(doc, gid, r), [])
+
+    def test_moving_the_representative_out_clears_it_in_the_old_group(self):
+        r, _, _, doc = fresh()
+        a, b = sorted((iec(doc, r, "c1"), iec(doc, r, "c4")))
+        doc, old = model.create_group(doc, "옛 그룹", [a, b], at=AT)
+        self.assertEqual(doc["groups"][old]["representative"], a)
+        doc, new = model.create_group(doc, "새 그룹", at=AT)
+        doc = model.edit(doc, ("group", old), {"representative_reason": "빈도가 가장 높음"}, at=AT)
+        moved = model.place(doc, a, new, at=AT)
+        self.assertEqual((moved["groups"][old]["representative"], moved["groups"][old]["representative_reason"]),
+                         (None, ""), "대표가 비면 선정 이유도 비운다")
+        self.assertEqual(model.confirm_problems(moved, old, r), [])
+        pulled, _ = model.create_group(doc, "후보를 데려가는 그룹", [a], at=AT)
+        self.assertIsNone(pulled["groups"][old]["representative"])
+
+    def test_history_row_has_the_shape_of_the_0_1_file(self):
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "store-0.1",
+                               "initiating-events.json"), encoding="utf-8") as fh:
+            old = next(h for h in json.load(fh)["history"] if h["op"] == "create_group")
+        doc, _ = model.create_group(model.empty("P"), "그룹", at=old["at"])
+        row = doc["history"][-1]
+        self.assertEqual(list(row), ["at", "op", "ids"])
+        self.assertEqual(store_io.dump_bytes(dict(row, ids=old["ids"])), store_io.dump_bytes(old))
+
+    def test_move_history_names_the_old_group_and_the_cleared_representative(self):
+        r, _, _, doc = fresh()
+        a, b = sorted((iec(doc, r, "c1"), iec(doc, r, "c4")))
+        doc, old = model.create_group(doc, "옛 그룹", [a, b], at=AT)
+        doc, new = model.create_group(doc, "새 그룹", at=AT)
+        row = model.place(doc, a, new, at=AT)["history"][-1]
+        self.assertEqual((row["from"], row["to"], row["representative_cleared"]), (old, new, [old]))
+        row = model.place(doc, b, new, at=AT)["history"][-1]
+        self.assertEqual((row["from"], row["to"]), (old, new))
+        self.assertNotIn("representative_cleared", row)
+        pulled, made = model.create_group(doc, "데려가는 그룹", [a], at=AT)
+        self.assertEqual(pulled["history"][-1]["representative_cleared"], [old])
+
+    def test_reapproving_the_same_content_between_syncs_keeps_the_confirmation(self):
+        """Codex 지적의 재현: ⑥을 열지 않은 사이 승인을 풀었다가 같은 내용으로 다시 승인하면 확정이 유지되고 ⑥ 이력에
+        강등이 남지 않는다. 확정 지문이 내용만 보기 때문이다. 지금은 이 동작을 그대로 둔다(보고에 남김)."""
+        r, _, _, doc = fresh()
+        doc, gid = model.create_group(doc, "주급수 상실", [iec(doc, r, "c1")], at=AT)
+        doc = model.confirm(doc, gid, r, "김검토", at=AT)
+        r = res.set_status(r, *where(r, "c1"), "revised", at=AT)
+        self.assertEqual(model.effective_status(doc, gid, r), "draft")
+        r = res.set_status(r, *where(r, "c1"), "approved", at=AT)
+        self.assertEqual(model.effective_status(doc, gid, r), "confirmed")
+        self.assertIs(model.sync(doc, r, at=AT), doc)
+
+    def test_moving_a_non_representative_keeps_the_old_representative(self):
+        r, _, _, doc = fresh()
+        a, b = sorted((iec(doc, r, "c1"), iec(doc, r, "c4")))
+        doc, old = model.create_group(doc, "옛 그룹", [a, b], at=AT)
+        doc, new = model.create_group(doc, "새 그룹", at=AT)
+        self.assertEqual(model.place(doc, b, new, at=AT)["groups"][old]["representative"], a)
 
 
 class IdStabilityTest(unittest.TestCase):

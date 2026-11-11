@@ -23,7 +23,6 @@ import sys
 
 T = "2026-11-05T00:00:00Z"
 REGION = "region-SNP-M-102-pzr"
-GUIDE_REL = "기획서/HAZOP기법지침.md"
 
 
 def norm(p):
@@ -73,14 +72,14 @@ def datas_problems(program_root, expect):
     return probs
 
 
-def input_file_problems(input_files, resource_roles, resource_root, program_root, expect):
+def input_file_problems(input_files, resource_roles, resource_root, program_root, expect, resolve=None):
     """실행 기록의 기준 자료가 묶음 안 파일이고 기록 해시·기대 해시와 같은지. 문제 목록."""
     probs, seen = [], set()
     for f in input_files:
         if f.get("role") not in resource_roles:
             continue
         seen.add(f["role"])
-        full = os.path.join(resource_root, *str(f.get("path") or "").split("/"))
+        full = (resolve or (lambda rel, root: os.path.join(root, *rel.split("/"))))(str(f.get("path") or ""), resource_root)
         rel = os.path.relpath(full, program_root).replace("\\", "/") if within(full, program_root) else None
         if rel is None:
             probs.append("%s: 묶음 밖 파일 %s" % (f["role"], full))
@@ -153,15 +152,16 @@ def flow(args, paths, res, ok):
     ok("roots", not probs, "; ".join(probs) or "program=resource=%s work=%s" % (paths.program_root(),
                                                                            paths.work_root()))
     bundle = paths.program_root()
+    guide_rel = paths.file_rel("guide")
     with open(args.expect, encoding="utf-8") as fh:
         expect = json.load(fh)
     probs = datas_problems(bundle, expect)
     ok("bundle-datas", not probs, "; ".join(probs) or "%d개 해시 일치" % len(expect))
     samples = os.path.abspath(args.samples)
-    # samples = 검사 입력 사본(작은 저장소, verify_bundle.make_inputs): 표본·참고 폴더가 저장소와 같은 자리에 있다
-    with open(paths.folder_in(samples, "표본", "구간", REGION + ".json"), encoding="utf-8") as fh:
+    # samples = 검사 입력 사본(작은 저장소, verify_bundle.make_inputs): 표본은 저장소와 같은 자리, 샘플 도면은 기록 경로 자리에 있다
+    with open(paths.folder_in(samples, "samples", "regions", REGION + ".json"), encoding="utf-8") as fh:
         region_inputs = json.load(fh)["inputs"]
-    probs = resource_path_problems(region_inputs, GUIDE_REL, paths.resource_root(), bundle, expect, paths.resolve_rel)
+    probs = resource_path_problems(region_inputs, guide_rel, paths.resource_root(), bundle, expect, paths.resolve_rel)
     ok("resource_paths", not probs, "; ".join(probs) or "기준 자료 4종·지침서 = 묶음 파일(분석 전 확인)")
 
     from hazop import review as rv
@@ -172,21 +172,22 @@ def flow(args, paths, res, ok):
     from hazop.register import registry
 
     work = paths.work_root()
-    for name in ("구간", "고정응답", "지식"):
-        shutil.copytree(paths.folder_in(samples, "표본", name), paths.folder(name), dirs_exist_ok=True)
-    # 샘플 도면은 논리 경로 자리에 둔다: 추출 JSON이 저장소와 같아야 구간의 그래프 판이 맞는다
-    shutil.copytree(paths.folder_in(samples, "참고"), paths.logical_reference_dir(work), dirs_exist_ok=True)
-    region_path = paths.folder("구간", REGION + ".json")
+    for name in ("regions", "fixed-responses", "knowledge-graph"):
+        shutil.copytree(paths.folder_in(samples, "samples", name), paths.folder(name), dirs_exist_ok=True)
+    # 샘플 도면은 기록 경로 자리에 둔다: 추출 JSON이 저장소와 같아야 구간의 그래프 판이 맞는다
+    shutil.copytree(paths.logical_dir(samples, "references", "pid-samples"), paths.logical_dir(work, "references", "pid-samples"),
+                    dirs_exist_ok=True)
+    region_path = paths.folder("regions", REGION + ".json")
     region = data.read_json(region_path)
 
     # ④용 samples 경로 추출·그래프(구간 how_to_build와 같은 방법): 묶음 scripts/의 run_one·build_one
-    drawio_path = [p for p in glob.glob(os.path.join(paths.logical_reference_dir(work), "P&ID 도면 샘플", "*", "*.drawio"))
+    drawio_path = [p for p in glob.glob(paths.logical_dir(work, "references", "pid-samples", "*", "*.drawio"))
                    if "SNP-M-102" in p][0]
     svg = glob.glob(os.path.join(os.path.dirname(drawio_path), "*.drawio.svg"))
-    _, ex_dir = data.script_module("extract_drawio").run_one(drawio_path, paths.output_root("추출"))
+    _, ex_dir = data.script_module("extract_drawio").run_one(drawio_path, paths.output_root("extract"))
     graph, gdir = data.script_module("build_graph").build_one(os.path.join(ex_dir, "extraction.json"),
-                                                              paths.output_root("그래프"))
-    gpath = os.path.join(work, region["graph_ref"]["graph_file"])
+                                                              paths.output_root("graph"))
+    gpath = paths.resolve_rel(region["graph_ref"]["graph_file"], work)
     ok("graph_version", graph["graph_version"] == region["graph_ref"]["graph_version"]
        and norm(os.path.join(gdir, "graph.json")) == norm(gpath), "%s %s" % (graph["graph_version"], gdir))
 
@@ -213,20 +214,20 @@ def flow(args, paths, res, ok):
     ok("2-viewer", info["error"] is None and os.path.isfile(info["html"]), "%s %s" % (names, info.get("html")))
 
     # ③ 지식그래프(묶음 screen_template.html·vendor)
-    kdir = os.path.join(paths.folder("지식"), "SNP-SAMPLE")
+    kdir = os.path.join(paths.folder("knowledge-graph"), "SNP-SAMPLE")
     knowledge = kg_inputs.load_knowledge(os.path.join(kdir, "knowledge_nodes.csv"),
                                          os.path.join(kdir, "knowledge_links.csv"), "SNP-SAMPLE")
-    graphs = kg_screen.load_graphs(paths.output_root("그래프"))
+    graphs = kg_screen.load_graphs(paths.output_root("graph"))
     kg = kg_build.build_kg(knowledge, [g for _, g in graphs.values()])
-    kg_build.write_outputs(paths.safe_join(paths.output_root("지식그래프"), paths.safe_name(kg["kg_id"])), knowledge, kg)
-    sdata = kg_screen.screen_data(kg, graph, kg_screen.load_regions(paths.folder("구간")),
+    kg_build.write_outputs(paths.safe_join(paths.output_root("knowledge-graph"), paths.safe_name(kg["kg_id"])), knowledge, kg)
+    sdata = kg_screen.screen_data(kg, graph, kg_screen.load_regions(paths.folder("regions")),
                                   kg_screen.read_candidates(kdir))
     html = kg_screen.build_html(sdata)
     ok("3-kg_html", bool(sdata["nodes"]) and "/*@VENDOR@*/" not in html and within(kg_screen.VENDOR_DIR, bundle),
        "노드 %d, HTML %d자, vendor %s" % (len(sdata["nodes"]), len(html), kg_screen.VENDOR_DIR))
 
     # ④ 분석(고정 응답): 기준 자료 4종·지침서는 묶음(자원 루트)
-    fixed = paths.folder("고정응답", REGION)
+    fixed = paths.folder("fixed-responses", REGION)
     r = api.run_analysis(region_path, response_dir=fixed, run_id="analysis-w4")
     c = r["doc"]["validation"]["counts"] if r.get("doc") else {}
     counts = (c.get("candidates"), c.get("scenarios"), c.get("risk_proposed"), c.get("design_improvement_candidates"))
@@ -235,14 +236,14 @@ def flow(args, paths, res, ok):
     res["run_dir"] = r.get("run_dir")
     files = (r.get("doc") or {}).get("analysis_run", {}).get("input_files", [])
     res["input_files"] = files
-    probs = input_file_problems(files, paths.RESOURCE_INPUT_ROLES, paths.resource_root(), bundle, expect)
-    guide = paths.resource_path(*integrity.GUIDE_PARTS)
-    if not within(guide, bundle) or expect.get(GUIDE_REL) != sha_file(guide):
+    probs = input_file_problems(files, paths.RESOURCE_INPUT_ROLES, paths.resource_root(), bundle, expect, paths.resolve_rel)
+    guide = paths.resource_file("guide")
+    if not within(guide, bundle) or expect.get(guide_rel) != sha_file(guide):
         probs.append("지침서가 묶음 파일이 아니거나 해시 다름: %s" % guide)
     ok("4-resource_reads", not probs, "; ".join(probs) or "기준 자료 4종·지침서 = 묶음 파일, 해시 일치")
 
     # ④ 음성: 묶음 자원을 잠시 치우면 분석이 통과하지 못해야 한다(다른 위치로 대체하지 않음)
-    for label, rel in (("patterns", paths.folder_rel("패턴") + "/pressurizer-patterns.json"), ("guide", GUIDE_REL)):
+    for label, rel in (("patterns", paths.folder_rel("patterns") + "/pressurizer-patterns.json"), ("guide", guide_rel)):
         target = os.path.join(bundle, *rel.split("/"))
         moved = target + ".w4-moved"
         run_id = "analysis-w4-no-" + label
@@ -269,8 +270,8 @@ def flow(args, paths, res, ok):
     ddec = rv.dic_decision(run, did, "accept", "권고 필요", "검토자A", recommendation="경보 추가 검토", now=T)
     path, saved = rv.save_review(store, run, rv.build_review(run, cid, "검토자A", "요약", [sdec], [ddec]), now=T)
     ok("5-review", saved["review_version"] == 1, path)
-    export_worksheet(r["run_dir"], store, paths.output_root("워크시트"), now=T)
-    xlsx = glob.glob(os.path.join(work, "출력", "워크시트", "**", "*.xlsx"), recursive=True)
+    export_worksheet(r["run_dir"], store, paths.output_root("worksheets"), now=T)
+    xlsx = glob.glob(paths.output_in(work, "worksheets", "**", "*.xlsx"), recursive=True)
     ok("5-excel", len(xlsx) == 1, "; ".join(xlsx))
 
 

@@ -1,10 +1,10 @@
-"""표본(`자원/표본/`)을 작업 루트의 `데이터/` 아래로 채운다(docs/2026-11-09-data-consolidation §4 ③b 6번).
+"""표본(`resources/samples/`)을 작업 루트의 `data/` 아래로 채운다(docs/2026-11-09-data-consolidation §4 ③b 6번).
 
     python scripts/seed_samples.py [--work-root <폴더>]             없는 파일만 복사, 내용이 다른 파일은 목록만
     python scripts/seed_samples.py [--work-root <폴더>] --refresh   다른 파일을 백업한 뒤 표본으로 덮음
 
-작업 루트 기본값은 hazop.paths.work_root()(HAZOP_WORK_ROOT 우선). 백업은 <작업 루트>/데이터/백업/<UTC 시각>-표본갱신-<번호>/.
-다시 돌려도 결과가 같다.
+작업 루트 기본값은 hazop.paths.work_root()(HAZOP_WORK_ROOT 우선). 백업은 <작업 루트>/data/backup/<UTC 시각>-표본갱신-<번호>/.
+표본 아래 폴더(regions 등)는 작업 루트의 같은 이름 폴더로 간다(hazop.paths.SAMPLE_FOLDERS). 다시 돌려도 결과가 같다.
 """
 
 import argparse
@@ -18,7 +18,17 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
-SAMPLE_ROOT = os.path.join(REPO, "자원", "표본")
+from hazop import paths  # noqa: E402
+
+SAMPLE_ROOT = paths.folder("samples")
+
+
+def work_path(work_root, rel):
+    """표본 상대 경로가 작업 루트에서 놓일 자리. 표본 폴더 이름(regions 등)이 곧 paths.FOLDERS의 열쇠다."""
+    head, sep, rest = rel.replace("\\", "/").partition("/")
+    if sep and head in paths.SAMPLE_FOLDERS:
+        return paths.folder_in(work_root, head, *rest.split("/"))
+    return paths.folder_in(work_root, "data", *rel.replace("\\", "/").split("/"))
 
 
 def sha256(path):
@@ -34,7 +44,7 @@ def plan(work_root):
         for f in sorted(files):
             src = os.path.join(d, f)
             rel = os.path.relpath(src, SAMPLE_ROOT)
-            dst = os.path.join(work_root, "데이터", rel)
+            dst = work_path(work_root, rel)
             state = "copy" if not os.path.exists(dst) else "same" if sha256(dst) == sha256(src) else "differs"
             out.append((rel.replace("\\", "/"), state))
     return out
@@ -42,7 +52,7 @@ def plan(work_root):
 
 def backup_dir(work_root):
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    base = os.path.join(work_root, "데이터", "백업")
+    base = paths.folder_in(work_root, "backup")
     os.makedirs(base, exist_ok=True)
     n = 1
     while True:
@@ -74,8 +84,8 @@ def main(argv=None):
     if args.work_root:
         work_root = os.path.abspath(args.work_root)
     else:
-        from hazop import paths
         work_root = paths.work_root()
+    paths.require_current_layout(work_root)  # --work-root로 받은 곳도 옛 배치면 쓰지 않는다
     locks, why = _migrate().hold_app_locks(REPO, [work_root])
     if locks is None:
         print("멈춤: %s" % why)
@@ -84,7 +94,7 @@ def main(argv=None):
     bdir = None
     for rel, state in items:
         src = os.path.join(SAMPLE_ROOT, rel)
-        dst = os.path.join(work_root, "데이터", rel)
+        dst = work_path(work_root, rel)
         if state == "copy":
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             try:
@@ -95,7 +105,7 @@ def main(argv=None):
                 print("그사이 생긴 파일이라 그대로 둠: %s" % rel)
         elif state == "differs" and args.refresh:
             bdir = bdir or backup_dir(work_root)
-            keep = os.path.join(bdir, "데이터", rel)
+            keep = os.path.join(bdir, paths.backup_rel(dst, work_root))
             os.makedirs(os.path.dirname(keep), exist_ok=True)
             shutil.copy2(dst, keep)
             shutil.copy2(src, dst)

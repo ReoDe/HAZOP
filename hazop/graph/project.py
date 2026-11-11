@@ -8,7 +8,7 @@
   연결점이다. 양쪽 모두 짝이 정확히 하나이고 방향(TO·FROM)이 모순되지 않을 때만 잇는다. 이은 짝은 배관 구간 노드
   하나(sheet_link 구간)와 has_endpoint 관계 둘로 넣는다(흐름 방향: TO 쪽 → FROM 쪽).
 - 잇지 않은 연결점은 사유와 함께 sheet_links에 남긴다: 상대 도면 미등록, 짝 없음, 짝 여럿, 방향 모순, 사람이 끊음.
-- 사람 지정(데이터/도면연결/<project_id>.json)이 자동 매칭보다 먼저다. 연결점은 source_object_id로 가리킨다.
+- 사람 지정(data/drawing-links/<project_id>.json)이 자동 매칭보다 먼저다. 연결점은 source_object_id로 가리킨다.
 - 같은 태그 도면 객체가 여러 도면에 있으면 합치지 않고 duplicate_tags로 남긴다(태그 유일성 규칙 유지, 사람 확인).
 - 같은 입력이면 같은 graph_version·같은 결과(도면 graph_id순, 정렬 고정).
 """
@@ -27,8 +27,8 @@ from hazop.graph.build import to_networkx
 SCHEMA_VERSION = "0.1"
 KIND = "hazop_project_graph"
 MANUAL_KIND = "hazop_sheet_links"
-SYSTEM_CODES_FILE = "계통약어.csv"  # APR1400 DCD 계통 약어 → 그림 번호(paths.folder("APR1400") 아래)
-# 등록 경로 밖 도면(project_id 없음: 샘플 실행 등)을 묶는 프로젝트. 샘플 지식(데이터/지식/SNP-SAMPLE)과 같은 이름.
+SYSTEM_CODES_FILE = "system-codes.csv"  # APR1400 DCD 계통 약어 → 그림 번호(paths.folder("APR1400") 아래)
+# 등록 경로 밖 도면(project_id 없음: 샘플 실행 등)을 묶는 프로젝트. 샘플 지식(data/knowledge-graph/SNP-SAMPLE)과 같은 이름.
 UNREGISTERED_PROJECT = "SNP-SAMPLE"
 LEGACY_PROJECT_DIR = "no-project"  # 이 규칙 이전 저장본 폴더(읽기 대체 경로)
 SEP = "/"
@@ -174,7 +174,7 @@ def _ref(end):
 # ---------------------------------------------------------------- 사람 지정 기록
 
 def manual_path(project_id):
-    return paths.folder("도면연결", paths.safe_name(project_id) + ".json")
+    return paths.folder("drawing-links", paths.safe_name(project_id) + ".json")
 
 
 def load_manual(project_id):
@@ -431,7 +431,7 @@ def build(project_id, graphs, manual_ops=(), system_codes=None):
 
 
 def load(project_id, graph_root=None):
-    """출력/그래프의 프로젝트 도면(project_id_of가 같은 것) + 사람 지정 기록으로 프로젝트 그래프를 만든다.
+    """output/graph의 프로젝트 도면(project_id_of가 같은 것) + 사람 지정 기록으로 프로젝트 그래프를 만든다.
     도면이 없으면 ValueError. 지식그래프 자동 빌드(hazop.kg.auto)의 도면 선택 규칙은 바꾸지 않는다."""
     return load_with_names(project_id, graph_root)[0]
 
@@ -439,7 +439,7 @@ def load(project_id, graph_root=None):
 def pick_graphs(project_id, graph_root=None):
     """{graph_id: ((바뀐 시각, 경로), graph, 폴더 이름)} 이 프로젝트의 도면. 같은 graph_id는 가장 최근 것
     (hazop.kg.auto.project_graphs와 같은 규칙). load와 ② 도면 이름표(project_ctx.graph_names)가 함께 쓴다."""
-    root = graph_root or paths.output_root("그래프")
+    root = graph_root or paths.output_root("graph")
     best = {}
     for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
         p = os.path.join(root, name, "graph.json")
@@ -456,7 +456,7 @@ def pick_graphs(project_id, graph_root=None):
 
 
 def load_with_names(project_id, graph_root=None):
-    """(load와 같은 프로젝트 그래프, {도면 graph_id: 고른 출력/그래프 폴더 이름}). 도면 파일을 한 번만 읽으려고 둔다."""
+    """(load와 같은 프로젝트 그래프, {도면 graph_id: 고른 output/graph 폴더 이름}). 도면 파일을 한 번만 읽으려고 둔다."""
     best = pick_graphs(project_id, graph_root)
     graphs = [best[k][1] for k in sorted(best)]
     if not graphs:
@@ -467,7 +467,7 @@ def load_with_names(project_id, graph_root=None):
 
 
 def load_system_codes(path):
-    """계통 약어 → {"figure", "confirmed"} 대응표(scripts/build_system_codes.py가 만드는 계통약어.csv). 파일이 없으면 None.
+    """계통 약어 → {"figure", "confirmed"} 대응표(scripts/build_system_codes.py가 만드는 system-codes.csv). 파일이 없으면 None.
     confirmed: 출처가 [문서]이거나 사람이 '확인'한 행. 나머지([추론])는 후보 연결에만 쓴다.
     같은 약어가 여러 행이면 그림 번호가 모두 같고 모든 행이 확정일 때만 확정이다(그림이 다르면 그 약어는 쓰지 않는다)."""
     rows = read_system_code_rows(path)
@@ -488,7 +488,7 @@ def load_system_codes(path):
 
 
 def read_system_code_rows(path):
-    """계통약어.csv의 행 목록. 엑셀로 고쳐 저장하면 cp949가 되므로 그것도 읽는다. 읽을 수 없으면 None."""
+    """system-codes.csv의 행 목록. 엑셀로 고쳐 저장하면 cp949가 되므로 그것도 읽는다. 읽을 수 없으면 None."""
     for enc in ("utf-8-sig", "cp949"):
         try:
             with open(path, encoding=enc) as fh:

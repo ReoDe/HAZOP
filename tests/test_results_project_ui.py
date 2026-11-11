@@ -59,7 +59,7 @@ class ResultsProjectUiTest(unittest.TestCase):
         self.a = sheet("SNP-M-101", cont("C1", "TO SNP-M-102\nL-1"), valve=True)
         self.b = sheet("SNP-M-102", cont("C1", "FROM SNP-M-101\nL-1"), valve=True)
         for g in (self.a, self.b):
-            d = os.path.join(self.tmp, "출력", "그래프", g["source"]["drawing_number"])
+            d = paths.output_in(self.tmp, "graph", g["source"]["drawing_number"])
             os.makedirs(d)
             with open(os.path.join(d, "graph.json"), "w", encoding="utf-8") as fh:
                 json.dump(g, fh)
@@ -188,7 +188,7 @@ class ResultsProjectUiTest(unittest.TestCase):
         self.assertIn("범위", status.toolTip())
         with open(old_res_path, "rb") as fh:
             self.assertEqual(fh.read(), before, "옛 결과 파일은 그대로")
-        backups = os.listdir(paths.folder_in(self.tmp, "백업"))
+        backups = os.listdir(paths.folder_in(self.tmp, "backup"))
         self.assertTrue(any(b.endswith("분석결과-이전") for b in backups), backups)
 
         _app, again = self.screen("SNP-M-101")

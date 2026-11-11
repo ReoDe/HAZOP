@@ -144,6 +144,16 @@ class StudyExportTest(unittest.TestCase):
         self.assertEqual(sx.scrub("risk-informed"), "risk-informed")
         self.assertEqual(sx.scrub("C:\\Program Files\\HAZOP\\a.json 확인"), "[가림] 확인")
         self.assertEqual(sx.scrub("키 %s 끝" % KEY), "키 [가림] 끝")
+        for key in ("sk-proj-" + "a1B2" * 10, "sk-" + "Ab3" * 16, "AIza" + "Sy0_-" * 7, "ghp_" + "Z9" * 18,
+                    "github_pat_" + "a1_" * 10, "AKIA" + "ABCD1234" * 2):
+            self.assertEqual(sx.scrub("키 %s 끝" % key), "키 [가림] 끝", key)
+        letters_only = "sk-proj-" + "abcdEFGH" * 5
+        self.assertEqual(sx.scrub("키 %s 끝" % letters_only), "키 [가림] 끝")
+        self.assertEqual(sx.scrub("토큰" + KEY), "토큰[가림]")
+        self.assertEqual(sx.scrub("key" + letters_only + " 끝"), "key[가림] 끝")
+        for plain in ("task-force", "SK-101 밸브", "AIzawa 보고서", "risk-based-inspection-and-maintenance-plan",
+                      "AKIAGE", "ghp_short", "sk-maintenance-plan-2026", "risk-ant-colony-study"):
+            self.assertEqual(sx.scrub(plain), plain)
 
     def test_default_filename(self):
         self.assertEqual(sx.default_filename("P 1", NOW), "HAZOP-P_1-20261108-1200.xlsx")

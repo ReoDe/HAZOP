@@ -2,7 +2,7 @@
 
 근거: 기획서/HAZOP분석.md(MVP 범위, 도면 설비 한정, 설계보완 후보, 정보 부족과 결과 저장, 독립 검증),
 기획서/전체기획.md #data-contract(④ -> ⑤).
-저장: 출력/분석/<구간 ID>/<실행 ID>/analysis.json + inputs/(입력 원본 사본). execute()는 AI 단계 전에 후보·탐색·패턴
+저장: output/analysis/<구간 ID>/<실행 ID>/analysis.json + inputs/(입력 원본 사본). execute()는 AI 단계 전에 후보·탐색·패턴
 결과를 먼저 저장하고, 후보마다 이어 저장한다. 중단·예외가 나도 그때까지의 결과가 남고 resume()으로 AI 단계부터 재시도한다.
 """
 
@@ -204,7 +204,8 @@ def graph_source_of(graph):
 
 HOW_TO_BUILD = {
     "samples": "python scripts/extract_drawio.py --samples && python scripts/build_graph.py",
-    "registration": "python scripts/run_samples.py (등록 -> 추출 -> 그래프; 다시 고정하려면 --graph 출력/samples/그래프/<이름>/graph.json 지정)",
+    "registration": "python scripts/run_samples.py (등록 -> 추출 -> 그래프; 다시 고정하려면 --graph %s 지정)"
+                    % paths.output_rel("samples", paths.output_name("graph"), "<이름>", "graph.json"),
 }
 
 

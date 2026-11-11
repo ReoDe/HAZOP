@@ -69,7 +69,7 @@ ARG_RE = re.compile(r"""^["']\s*,\s*["']([^"']+)["']""")
 # '데이터'는 일반 낱말이기도 하다. 뒤에 경로 구분자가 없으면 따옴표·백틱으로 감싼 낱말일 때만 경로로 센다.
 QUOTED_BEFORE = re.compile(r"""["'`]$""")
 QUOTED_AFTER = re.compile(r"""^["'`]""")
-DOC_TOPS = ("기획서", "디자인", "메모리", "docs", "flow chart")
+DOC_TOPS = ("specs", "design", "records", "docs")
 
 
 def git_lines(repo, *args):

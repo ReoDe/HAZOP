@@ -1,5 +1,5 @@
 """단계 ④ HAZOP 분석 검사를 한 번에 실행한다 (QA용). 하위 프로세스·실제 API 호출을 쓰지 않는다.
-모든 생성물은 임시 폴더에 만들고 끝나면 지운다(출력/ 폴더를 덮어쓰거나 누적하지 않음).
+모든 생성물은 임시 폴더에 만들고 끝나면 지운다(output/ 폴더를 덮어쓰거나 누적하지 않음).
 
 1) 샘플 추출 -> 그래프 빌드(임시 폴더)
 2) 이탈 후보 카탈로그·적용 판단 = 지침서 §5.3 표, 위험도 기준표 = 지침서 §6 〈표5〉~〈표9〉
@@ -31,7 +31,7 @@ import extract_drawio  # noqa: E402
 from hazop.analysis import ai, catalog_md, equipment, integrity, risk, run  # noqa: E402
 
 BAD_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "analysis", "bad")
-GUIDE = os.path.join(REPO_ROOT, "기획서", "HAZOP기법지침.md")
+GUIDE = paths.file_in(REPO_ROOT, "guide")
 FIXED_ITEMS = ("p86-d09", "p86-d10", "p86-d12", "p86-d43", "p86-d44")
 
 

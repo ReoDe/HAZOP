@@ -16,7 +16,7 @@ from hazop import paths  # noqa: E402
 from hazop.extract import drawio, svg_align  # noqa: E402
 from hazop.viewer import build, check, sanitize  # noqa: E402
 
-SAMPLES = sorted(glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")))
+SAMPLES = sorted(glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio")))
 
 
 def extraction_with_svg(path):

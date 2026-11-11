@@ -1,6 +1,6 @@
 """⑥ 초기사건 화면 스크린샷(P3 화면 검토용). 사용: python scripts/shoot_initiating.py <출력 폴더> [폭 높이]
 
-임시 작업 루트에 샘플 도면 6장(출력/추출·출력/그래프)을 복사하고 프로젝트 검토구간을 확정한 뒤, 고정된 가상 ⑤ 결과
+임시 작업 루트에 샘플 도면 6장(output/extract·output/graph)을 복사하고 프로젝트 검토구간을 확정한 뒤, 고정된 가상 ⑤ 결과
 (승인 항목 7건)와 ⑥ 문서(규칙 초안 → 일부 사람 확인·확정, 공백 범주 판정 하나)를 저장하고 세 장면을 찍는다:
 06-initiating-<폭>.png(확정한 그룹), 06-initiating-draft-<폭>.png(규칙 초안 그룹, 빗금),
 06-initiating-coverage-<폭>.png(완전성 대조 탭, LOCHS 공백 행 선택).
@@ -97,7 +97,7 @@ def build_ie(pg, r):
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "초기사건"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else paths.output_in(paths.DEV_WORK_ROOT, "screenshots", "초기사건"))
     w, h = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (1366, 768)
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-ie-")

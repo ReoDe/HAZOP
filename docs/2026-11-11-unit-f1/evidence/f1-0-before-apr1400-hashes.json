@@ -1,0 +1,1146 @@
+{
+ "001 001_Ch01_Fig1.7-1_s1of4_Flow_Diagram_Symbols_and_Legend.pdf": {
+  "extraction_sha256": "665e88bedc6713745df8fb8bc349358d2b428c522a15b30f54db8713cedf53e0",
+  "graph_sha256": "bd2700fb3c268463252a9adb342ac739967916ac59048942c59173278fabf769",
+  "graph_version": "v-7adca763d6d1",
+  "nodes": 352,
+  "relations": 163,
+  "unknowns": 1036
+ },
+ "002 002_Ch01_Fig1.7-1_s2of4_Flow_Diagram_Symbols_and_Legend.pdf": {
+  "extraction_sha256": "93c215eed9e00e6ea7be59521f0b327b7b029d49402e3c704e5e71582df375cd",
+  "graph_sha256": "8eb2f1a3ad5130928d478fc4764b8489af10de9349842524c6ae200da5f85358",
+  "graph_version": "v-8e390fe3a3c1",
+  "nodes": 69,
+  "relations": 33,
+  "unknowns": 190
+ },
+ "003 003_Ch01_Fig1.7-1_s3of4_Flow_Diagram_Symbols_and_Legend.pdf": {
+  "extraction_sha256": "59136cda609ad2d94d3f4621a1f149f1d97bee42d82419fcff2abee926027b8e",
+  "graph_sha256": "1c1d5bffe34a98c92b4a7b1f5fff41517fce9b23b6799fdf1316a851b03f4c08",
+  "graph_version": "v-71efce794018",
+  "nodes": 48,
+  "relations": 35,
+  "unknowns": 192
+ },
+ "004 004_Ch01_Fig1.7-1_s4of4_Flow_Diagram_Symbols_and_Legend.pdf": {
+  "extraction_sha256": "ce5b289935351ff8895cc67aa3b1c92ee698609dabb2ae184ed4c67cf876c54d",
+  "graph_sha256": "cccdabac27cc39afb2c1ad8a62ff303dee9fd30c405199e89ae61aa955011536",
+  "graph_version": "v-b274019706a5",
+  "nodes": 1,
+  "relations": 0,
+  "unknowns": 5
+ },
+ "005 005_Ch05_Fig5.1.1-1_Reactor_Coolant_System_Schematic_Flow_Diagram.pdf": {
+  "extraction_sha256": "80fa629fa46a12a99c3a7a0986fbc9d203b01012f2e9f00386e868a8e0d4b847",
+  "graph_sha256": "b3c248422ee46a7c1958e544c47a0461c4ea77a2ca2a5ba0523f6282bbde89cd",
+  "graph_version": "v-14774147aa27",
+  "nodes": 88,
+  "relations": 95,
+  "unknowns": 300
+ },
+ "006 006_Ch05_Fig5.1.2-1_Reactor_Coolant_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "e8f30ba130ff86ec025e049b1bc7d9ee006087210a39641f2fa15380f9158277",
+  "graph_sha256": "00a1798bab2543c9bce789e43ec7fad3af6dbd353d4b5d9a0941851789bce92f",
+  "graph_version": "v-95ed91a83f28",
+  "nodes": 258,
+  "relations": 310,
+  "unknowns": 662
+ },
+ "007 007_Ch05_Fig5.1.2-2_Reactor_Coolant_Pump_Flow_Diagram.pdf": {
+  "extraction_sha256": "437e9f34ffdf4cb0acaec7aec5ea54633033a9fde8e191f48f05d13fbea8c232",
+  "graph_sha256": "2cb75146c91db9e3220cd942fb56542f6588a9f6dbc4a180e096f274b31ed335",
+  "graph_version": "v-32ab0924e3cc",
+  "nodes": 57,
+  "relations": 77,
+  "unknowns": 250
+ },
+ "008 008_Ch05_Fig5.1.2-3_Pressurizer_and_POSRV_Flow_Diagram.pdf": {
+  "extraction_sha256": "8ba6457f9ee829158da9a43123d85179bf8a8ba899a901d6a80e8ae408f4e01a",
+  "graph_sha256": "e27f4d87bef3d3ab55aff19127ea46dac05e83ca4b3cb243a4a078eb79b4084e",
+  "graph_version": "v-a3f09cbebb24",
+  "nodes": 353,
+  "relations": 377,
+  "unknowns": 857
+ },
+ "009 009_Ch05_Fig5.4.1-2_Flow_Diagram_for_Reactor_Coolant_Pump_Shaft_Seal_System.pdf": {
+  "extraction_sha256": "5fedc4e5a4986a4c4f6639f9c236c5c9e2082c849df720c41230c537abb03867",
+  "graph_sha256": "0c318c9ec0bc9a46ec469fc8854979bfed1974a309e36d1f9bf71a9fc29bdc23",
+  "graph_version": "v-4bf8dd7af176",
+  "nodes": 0,
+  "relations": 0,
+  "unknowns": 4
+ },
+ "010 010_Ch05_Fig5.4.7-3_s1of2_Shutdown_Cooling_System_Flow_Diagram_Shutdown_Cooling_Mode.pdf": {
+  "extraction_sha256": "8d55729ba456902ff79bb3e4b35b5b76b8bf4381383663883fa1002fa0cb8720",
+  "graph_sha256": "5362b8f7c4020d518a24b6ef3eff57cd8156496546c94a3be012bc1a1b297b1d",
+  "graph_version": "v-d53bc148fa6b",
+  "nodes": 31,
+  "relations": 27,
+  "unknowns": 78
+ },
+ "011 011_Ch05_Fig5.4.7-3_s2of2_Shutdown_Cooling_System_Flow_Diagram_Shutdown_Cooling_Mode.pdf": {
+  "extraction_sha256": "108600efc72600dbf91e8726fbeadf3c527ac5245397caa9cc9083ed31bc2047",
+  "graph_sha256": "b9ecf2f3ee809ba94d6467ecbd88d579ed50844e851e1868e707e470b8b1ac68",
+  "graph_version": "v-7c54ecc1492c",
+  "nodes": 37,
+  "relations": 26,
+  "unknowns": 237
+ },
+ "012 012_Ch05_Fig5.4.12-1_Reactor_Coolant_Gas_Vent_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "d4a1b33b017ee66277ef01d535fb4f634c7679baa8490cc19da3dd595bdc94c0",
+  "graph_sha256": "fa9d69f9bcdd5331a77d4229977b473d40189e40329bdcf4c6996f30501c1f8a",
+  "graph_version": "v-eb6ad37a890e",
+  "nodes": 72,
+  "relations": 74,
+  "unknowns": 149
+ },
+ "013 013_Ch06_Fig6.2.2-1_Containment_Spray_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "081fe4b97239c67fc19361dc6af2b283af1102c1773958be4550c66a382bac7a",
+  "graph_sha256": "ae39c58ab4000357fcbfd5957e9caf17c15fc3e649598daf6ad90858900e21da",
+  "graph_version": "v-d1a971bb6868",
+  "nodes": 312,
+  "relations": 253,
+  "unknowns": 1104
+ },
+ "014 014_Ch06_Fig6.3.1-1_Safety_Injection_System_Schematic_Flow_Diagram.pdf": {
+  "extraction_sha256": "c305db7b5ce0c89aae3f84a3c9f6f68549c5b9c66025b1aa11e1f8430cd47b35",
+  "graph_sha256": "b6f8c28a028a94c9c0ca829348ecfad09275c8217c591fd7c28014eb8e766e5d",
+  "graph_version": "v-158dce148214",
+  "nodes": 141,
+  "relations": 123,
+  "unknowns": 470
+ },
+ "015 015_Ch06_Fig6.3.2-1_s1of4_Safety_Injection_Shutdown_Cooling_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "9fe6b3a8d78762ddb9b5b71351e05680bef0c2d4e63e17060755ac1959b25653",
+  "graph_sha256": "0caab5e1f63e58fbefc4ea06570a8c262aab5cda4be99e442a557ecac3e47e2a",
+  "graph_version": "v-e5573a98451a",
+  "nodes": 248,
+  "relations": 246,
+  "unknowns": 633
+ },
+ "016 016_Ch06_Fig6.3.2-1_s2of4_Safety_Injection_Shutdown_Cooling_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "42320c9d9c1e3b29b65db2046f56b182e7d613dc04ca1c64b21ce85dd49c2157",
+  "graph_sha256": "fcf7e37e9aedc40fadcf03b608c998d02184bf05e5cc0c3cd5f49f579adc807e",
+  "graph_version": "v-c3dc625d955f",
+  "nodes": 192,
+  "relations": 188,
+  "unknowns": 738
+ },
+ "017 017_Ch06_Fig6.3.2-1_s3of4_Safety_Injection_Shutdown_Cooling_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "d09da0a55a891307e2c0379266377300f20885c45d51b9a7e6c915c5f3ac073f",
+  "graph_sha256": "1070df3557bf9cf8ab8642875e71e8df8bdd6c3c6e3d8433c442a75b22074f42",
+  "graph_version": "v-d267d8d6758c",
+  "nodes": 219,
+  "relations": 211,
+  "unknowns": 689
+ },
+ "018 018_Ch06_Fig6.3.2-1_s4of4_Safety_Injection_Shutdown_Cooling_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "7cce850019f8ba69385d9f461045f40a4f0743f02c95f30f02ac25d65bf55e4a",
+  "graph_sha256": "5d06138d26a19e4f99028c9d53b2623b0e16278cc8ca3fdb882f14a388ee30ac",
+  "graph_version": "v-d06402016bbd",
+  "nodes": 261,
+  "relations": 251,
+  "unknowns": 920
+ },
+ "019 019_Ch06_Fig6.4-2_Control_Room_HVAC_System_Flow_Diagram_Normal_Mode.pdf": {
+  "extraction_sha256": "82d2733b3d2aeb8271049059425b52be9af945fafaf6f7c1dfbfda29ef3326cf",
+  "graph_sha256": "078debebf26038fcee53fe4fe0a5f13b3df93dac849b7252fedb13701d8acccd",
+  "graph_version": "v-31dbeeaaac18",
+  "nodes": 128,
+  "relations": 102,
+  "unknowns": 253
+ },
+ "020 020_Ch06_Fig6.4-3_Control_Room_HVAC_System_Flow_Diagram_Emergency_Mode.pdf": {
+  "extraction_sha256": "088bfb37105d6d6ebf48a8daaf34f38db388627ca995a7de846a62d4eb633b01",
+  "graph_sha256": "30783154c51ce2d0a6a4565016c45b98819a34c17dae087930bf6d1931c38811",
+  "graph_version": "v-2b2ea92fb3a8",
+  "nodes": 130,
+  "relations": 103,
+  "unknowns": 257
+ },
+ "021 021_Ch06_Fig6.4-4_Control_Room_HVAC_System_Flow_Diagram_Recirculation_Mode.pdf": {
+  "extraction_sha256": "b3864a5fec00713b8e8f525c580c0e126590673df54a5ff91113cfd38645e61d",
+  "graph_sha256": "db0ca28f58e9247ffd387b151c781145411a6800c99168e49ac05c301758dc7e",
+  "graph_version": "v-070faddbb666",
+  "nodes": 132,
+  "relations": 104,
+  "unknowns": 256
+ },
+ "022 022_Ch06_Fig6.8-3_In_containment_Water_Storage_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "a2f94e61709143d1bd3b0289d08613349c2d11c4b226c79a9d411fcf64399f41",
+  "graph_sha256": "4e0c55c0d1f268dbcbb92ed4c848385e61f4a2913c1b3694ff702fb3e8bc2384",
+  "graph_version": "v-263c62491cb4",
+  "nodes": 282,
+  "relations": 324,
+  "unknowns": 760
+ },
+ "023 023_Ch09_Fig9.1.3-1_Spent_Fuel_Pool_Cooling_and_Cleanup_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "4e2568de0937881e06eb2b339cb6fdbcadf9fe0389e5a631724cc03dc3081f0f",
+  "graph_sha256": "703853566f1f96add3dd6521acfe1d0e90b5ef15692b154fc21c3842b8ab4812",
+  "graph_version": "v-9c70898be8f1",
+  "nodes": 293,
+  "relations": 281,
+  "unknowns": 898
+ },
+ "024 024_Ch09_Fig9.2.1-1_Essential_Service_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "990ddd8285a4ee5d8bb3122074c7e4af3fe9ae04fb2e96af5c24a7f9e7c17c4f",
+  "graph_sha256": "40dce9d2a562db673f8edf7d8f76a31f9081be778666b0d4d1e483fd24e13da4",
+  "graph_version": "v-fb246acba7c6",
+  "nodes": 325,
+  "relations": 362,
+  "unknowns": 1029
+ },
+ "025 025_Ch09_Fig9.2.2-1_s1of4_Component_Cooling_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "155cf178171b5f3a7702b16fbcc8ad4a55e236bd2d58df43155cedb711b2b61d",
+  "graph_sha256": "075a364428d26332411c5a179e6b90a138ef8ba36d93ac7e595f1696fca090b7",
+  "graph_version": "v-95c94de87be2",
+  "nodes": 466,
+  "relations": 505,
+  "unknowns": 1312
+ },
+ "026 026_Ch09_Fig9.2.2-1_s2of4_Component_Cooling_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "7ca0a140edd621dc65c342737d7e72b9ecef5a9bd77357daaf3d9d7caf81e69b",
+  "graph_sha256": "9f72b6bf5329e4b969102d0bcd954641472a9011fe64298d8b8cd549ac07b1db",
+  "graph_version": "v-d53d9e60fd7d",
+  "nodes": 189,
+  "relations": 170,
+  "unknowns": 514
+ },
+ "027 027_Ch09_Fig9.2.2-1_s3of4_Component_Cooling_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "d4a975be85ca6427a30cd901679b72b230c43e35b9bf330983aec9f7b34282c7",
+  "graph_sha256": "927770cb071616a563c9afcba2b99c0453cc26e7749ecbd12a8966e94ee109f0",
+  "graph_version": "v-cc6e5a44a2d8",
+  "nodes": 242,
+  "relations": 210,
+  "unknowns": 710
+ },
+ "028 028_Ch09_Fig9.2.2-1_s4of4_Component_Cooling_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "fb0d1daeda2949d777247f5b0faec6947d491505036b05fcb9fbc2f5f1a96c96",
+  "graph_sha256": "603b9bb102e7b155c3ac7520e5dfc04dddb0a928e5684208f226fee6e668a646",
+  "graph_version": "v-944cedc0c95b",
+  "nodes": 585,
+  "relations": 614,
+  "unknowns": 1562
+ },
+ "029 029_Ch09_Fig9.2.4-1_Domestic_Water_and_Sanitary_Systems_Flow_Diagram.pdf": {
+  "extraction_sha256": "1fd08abd092d1cd47e1d40a653c4131f1feee1c7fd106880ae73db026cccc5bb",
+  "graph_sha256": "81f0d089693976f0a149d66dfe920ed588d17d4e31866f3f177b49bbf1ff7a4e",
+  "graph_version": "v-419b5d9d2cae",
+  "nodes": 179,
+  "relations": 225,
+  "unknowns": 528
+ },
+ "030 030_Ch09_Fig9.2.5-1_Ultimate_Heat_Sink_Cooling_Tower_Flow_Diagram.pdf": {
+  "extraction_sha256": "fd4b6bb2a006d4cd2fe8b5f13bb4aa56a6f4af9b1f2bd92962bff57b21332e85",
+  "graph_sha256": "cbe80b3093528d2546a014409898b1ddaf225c298fa996dfa0896cc1b8fe0900",
+  "graph_version": "v-c2169aa71b81",
+  "nodes": 62,
+  "relations": 54,
+  "unknowns": 129
+ },
+ "031 031_Ch09_Fig9.2.6-1_Makeup_Demineralizer_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "a12ceb7c6d22b4016da9230651569513be494a1b8115cf0640dc42330292f9ea",
+  "graph_sha256": "8ca238cee4e4d210a4a099a56f613087fad8a2dec3dac85ab3bea7e19da6c380",
+  "graph_version": "v-c258e2979b0c",
+  "nodes": 98,
+  "relations": 99,
+  "unknowns": 329
+ },
+ "032 032_Ch09_Fig9.2.6-2_Condensate_Storage_and_Transfer_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "b490cc5f78d863c9015912ba692c8a750cd16a65224c3479329b6c5548a21728",
+  "graph_sha256": "e7887bb65bca34b9e251e6f17ee7e8de31e1f50ff66f733c86e400e1ebcd1071",
+  "graph_version": "v-8cb3e007130d",
+  "nodes": 89,
+  "relations": 99,
+  "unknowns": 186
+ },
+ "033 033_Ch09_Fig9.2.7-1_s1of4_Essential_Chilled_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "084112a00c19d170760789582bdf89b2aab0f7ac0e46931a7e0417b97c757e3a",
+  "graph_sha256": "ab296b681b2e943ebbf83d1100d474bba4f0106772253ffd529e6398f33fcaff",
+  "graph_version": "v-d0d2b3349a07",
+  "nodes": 119,
+  "relations": 124,
+  "unknowns": 213
+ },
+ "034 034_Ch09_Fig9.2.7-1_s2of4_Essential_Chilled_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "c7177567a36801e92db49670e66ec196536b5694378a464ce1896266aff729b0",
+  "graph_sha256": "754faf618837597305902bd9c27163201cf9f51d8d4136b4015b20fc2f32b94a",
+  "graph_version": "v-a5523dc627bb",
+  "nodes": 287,
+  "relations": 366,
+  "unknowns": 609
+ },
+ "035 035_Ch09_Fig9.2.7-1_s3of4_Essential_Chilled_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "6a8929b753fb0dcfa87817dc8ff3ccec8e50a96eeb29bda3c43a2939f143be08",
+  "graph_sha256": "fb0254e8b2c4c411177ab5fe705c9c0b2a2af6913241d6e2165cac37214e75f4",
+  "graph_version": "v-d63dd72c6d2f",
+  "nodes": 125,
+  "relations": 127,
+  "unknowns": 249
+ },
+ "036 036_Ch09_Fig9.2.7-1_s4of4_Essential_Chilled_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "037bedd484c282d7de847e0fbfeb9d109341cff75cbcb62f85903414a617fb93",
+  "graph_sha256": "1ec93c5e9833c258171340652914e2f26a7d7651ca920529079b844cd3da0052",
+  "graph_version": "v-0b1a8409b21c",
+  "nodes": 295,
+  "relations": 379,
+  "unknowns": 581
+ },
+ "037 037_Ch09_Fig9.2.7-2_s1of4_Plant_Chilled_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "618d43c3ca7f9020d6b723514c828ea9d89fcad9691a6cfba087b73e1fb5eb31",
+  "graph_sha256": "424823da0ad806d6ab99ba0c62dc0da2d90cfff803ea305e121ab5d70e54eb9b",
+  "graph_version": "v-916550e03d21",
+  "nodes": 224,
+  "relations": 246,
+  "unknowns": 504
+ },
+ "038 038_Ch09_Fig9.2.7-2_s2of4_Plant_Chilled_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "6d81b288d4306ffa5e8adc21d60f343379173902aeb4e6a417f3655bb1139639",
+  "graph_sha256": "75f31d6954835d462eff9c5ce698dbef20fe6449c8b461a0d551e8510d3db02b",
+  "graph_version": "v-64ef97157bea",
+  "nodes": 227,
+  "relations": 300,
+  "unknowns": 465
+ },
+ "039 039_Ch09_Fig9.2.7-2_s3of4_Plant_Chilled_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "3eebc8c53edc2db955e6a0107bb201fe70bc81007d52b80641e3067650477990",
+  "graph_sha256": "7601b2c65fe92461ab88f55aa6a446cc61f4e340cded647aab624297702826b4",
+  "graph_version": "v-ab8285b4c4ef",
+  "nodes": 131,
+  "relations": 120,
+  "unknowns": 291
+ },
+ "040 040_Ch09_Fig9.2.7-2_s4of4_Plant_Chilled_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "9b480c9c2bb12de132fe83916996f160e4e37fffc4a7798881b5c95308661f6e",
+  "graph_sha256": "f9abe19bd980bc5f75937f2f757e625d9349000c2b3959ede1dc5390a7c28d5f",
+  "graph_version": "v-3849738bad16",
+  "nodes": 191,
+  "relations": 231,
+  "unknowns": 422
+ },
+ "041 041_Ch09_Fig9.2.8-1_s1of4_Turbine_Generator_Building_Closed_Cooling_Water_System_Flow.pdf": {
+  "extraction_sha256": "17ff4538f28babd60b7c2717485714fd9a456c811abe8c9caddf72499f723cf1",
+  "graph_sha256": "98da5e699fde3ea23cf26f58edc74abf193e64ff8f85d998b64b2e18e11d5761",
+  "graph_version": "v-54caec77aa93",
+  "nodes": 149,
+  "relations": 158,
+  "unknowns": 410
+ },
+ "042 042_Ch09_Fig9.2.8-1_s2of4_Turbine_Generator_Building_Closed_Cooling_Water_System_Flow.pdf": {
+  "extraction_sha256": "df2001a9ba5ebd1deb39f8c123fd4bf9352d6ee28a7db2f2b032377cc2d4442b",
+  "graph_sha256": "8ed487016de324f7be607adc7938144414b4ab7dd17be5a4db8889df47b7cf04",
+  "graph_version": "v-e113b120a517",
+  "nodes": 134,
+  "relations": 121,
+  "unknowns": 275
+ },
+ "043 043_Ch09_Fig9.2.8-1_s3of4_Turbine_Generator_Building_Closed_Cooling_Water_System_Flow.pdf": {
+  "extraction_sha256": "57cc74616319adc23329543f0c272b0c2499a6b5b033b76a19d7c3d632c07045",
+  "graph_sha256": "eaf17ef98100691aa00c99dd72d518751f1352eb23432fbc7769ac863e3d5e3e",
+  "graph_version": "v-c6e5ee5497f7",
+  "nodes": 339,
+  "relations": 357,
+  "unknowns": 737
+ },
+ "044 044_Ch09_Fig9.2.8-1_s4of4_Turbine_Generator_Building_Closed_Cooling_Water_System_Flow.pdf": {
+  "extraction_sha256": "adbbba74bc62caa644e126688be0e65e12e5b0bcc12bd1aaad82d414817f8b3e",
+  "graph_sha256": "3da7f387f400d3afb8aaa244528cf89a14ba3ca4be4f6adb68ff44250874f6bb",
+  "graph_version": "v-26ab3ccd0150",
+  "nodes": 196,
+  "relations": 211,
+  "unknowns": 392
+ },
+ "045 045_Ch09_Fig9.2.9-1_Turbine_Generator_Building_Open_Cooling_Water_System_Flow_Di.pdf": {
+  "extraction_sha256": "41f47d6e0111c403562bbb55dd85b6f155c811011dbc2d9e9d7463778a07a1fe",
+  "graph_sha256": "a8e8a1ae0117d2ee3afa0a0446dffbabaeac8fd6e55a999fda14aba5c2153dca",
+  "graph_version": "v-09cf088143ec",
+  "nodes": 104,
+  "relations": 91,
+  "unknowns": 242
+ },
+ "046 046_Ch09_Fig9.3.1-1_Instrument_Air_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "db71ec055faa2fc4b1f62ac9a6b566a2c307a4b49b2b231ccebbe276ac0f47a7",
+  "graph_sha256": "bd66dcafb4c3c02655bbb7813c60fcaf9fca598c431f13e3649b55b0dedf4c91",
+  "graph_version": "v-9f940e95c692",
+  "nodes": 152,
+  "relations": 160,
+  "unknowns": 413
+ },
+ "047 047_Ch09_Fig9.3.1-2_Service_Air_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "baefff29739dc165371050c699c4d82baa853ec9a146bc901fc96c208eefddde",
+  "graph_sha256": "f2e5317b75ca562a254f2c8e201946ffa6be5a088a45d82554d9d8dafa0779b0",
+  "graph_version": "v-aae509660b99",
+  "nodes": 96,
+  "relations": 91,
+  "unknowns": 219
+ },
+ "048 048_Ch09_Fig9.3.2-1_s1of2_Process_and_Post_Accident_Sampling_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "d83eae959f3ff477db8e4f973e25bdcd480881e73527fbe5fb95fa1b2d7898ca",
+  "graph_sha256": "72b8f5a1661010c004ad6821a5796ace11424b1f4957d5022ac16ec5cc061814",
+  "graph_version": "v-0009d6c70614",
+  "nodes": 155,
+  "relations": 160,
+  "unknowns": 403
+ },
+ "049 049_Ch09_Fig9.3.2-1_s2of2_Process_and_Post_Accident_Sampling_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "43db27b70119c459a57f59881ae1a3409feb26f53067d854c5a36998ba55f529",
+  "graph_sha256": "812b227810b816f7bf27425e6faf5c5be838d1fdf1ac510c7f13ca823f9d15ec",
+  "graph_version": "v-0f878a0c2364",
+  "nodes": 143,
+  "relations": 142,
+  "unknowns": 554
+ },
+ "050 050_Ch09_Fig9.3.2-2_s1of6_Process_Sampling_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "9bbce3e27ccffef840faf11729bd2c450f1bfb1076e9e9d1b6644acd7ebabbf1",
+  "graph_sha256": "89e351be09ae7193c1094c69f8db88384bcc378a32d205061b66fee7fcc49431",
+  "graph_version": "v-3b66786afec3",
+  "nodes": 55,
+  "relations": 80,
+  "unknowns": 155
+ },
+ "051 051_Ch09_Fig9.3.2-2_s2of6_Process_Sampling_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "6d506b5c967bd89cf448f59681dd4142a8531a02ad43c93f36512d3f678e4f39",
+  "graph_sha256": "9a6c9610ad0744c63adfab6109214fa6d65db4988fac02802d2cc24d67d12f56",
+  "graph_version": "v-8969c9b32f30",
+  "nodes": 327,
+  "relations": 375,
+  "unknowns": 639
+ },
+ "052 052_Ch09_Fig9.3.2-2_s3of6_Process_Sampling_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "39ca4a7a781730c202682f50da8083d5a6759b7458e0d176d64fa8ad32dc8b9d",
+  "graph_sha256": "98e90da3dc39bf6b19b26267984bda297dd8a4da3830d66de787f3ebcc07604b",
+  "graph_version": "v-2f71dfff1d5c",
+  "nodes": 197,
+  "relations": 209,
+  "unknowns": 633
+ },
+ "053 053_Ch09_Fig9.3.2-2_s4of6_Process_Sampling_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "be02569b2c05ef08dcb21367ca970ea1a7e92d8313f6daf2c93751374b017ab1",
+  "graph_sha256": "a77bddd69fc22530399e2a826e1f1da09240594a5f8a110568881174284dc937",
+  "graph_version": "v-d9524a8d2835",
+  "nodes": 35,
+  "relations": 34,
+  "unknowns": 61
+ },
+ "054 054_Ch09_Fig9.3.2-2_s5of6_Process_Sampling_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "ac2446fed6335768f3b6922449a9b9e480d011f111a1c82167aee03973314508",
+  "graph_sha256": "d20e4df546f3cd06eccc791cddc6b65fbf4d7e80c1ec8e3ad2aa73ab6a4ff6ef",
+  "graph_version": "v-b054d6d19359",
+  "nodes": 23,
+  "relations": 29,
+  "unknowns": 45
+ },
+ "055 055_Ch09_Fig9.3.2-2_s6of6_Process_Sampling_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "6cb3837c21c9018ec948027f1dc0a54e9f9c5d2b05b6bace702e2216039e4bc0",
+  "graph_sha256": "77c84aa99438b971d9a2a14dda9439e75a52e41c18d5510b27da2b920b3ae5c4",
+  "graph_version": "v-87ecb1644249",
+  "nodes": 16,
+  "relations": 19,
+  "unknowns": 33
+ },
+ "056 056_Ch09_Fig9.3.3-1_s1of7_Radioactive_Drain_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "d6d8331729948ffd16d1adf1a71c172ecb3ee57fbd676eb33939935319b125e6",
+  "graph_sha256": "91dbc6fda1fa9dd9e08af18cf6f08412b9b99d0c1e88906f66711166ab7e240d",
+  "graph_version": "v-e7a74a7103e4",
+  "nodes": 188,
+  "relations": 158,
+  "unknowns": 554
+ },
+ "057 057_Ch09_Fig9.3.3-1_s2of7_Radioactive_Drain_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "ec05c17b1e76eb5f1fdb7e7698db56672e5590f100eb7048c62c2e1b6989d5d6",
+  "graph_sha256": "33ec7da8d65f59bf2bacf3fe4036bcb24d4735312d7414769ae26185bd831834",
+  "graph_version": "v-fd5d893ae9e3",
+  "nodes": 138,
+  "relations": 92,
+  "unknowns": 446
+ },
+ "058 058_Ch09_Fig9.3.3-1_s3of7_Radioactive_Drain_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "753bcba634a3b363a0634788905a88d27836b2b824919e778b9be9e881f189fc",
+  "graph_sha256": "83d1e337ad00ed77f217dc49c034ea4e6e81cfa045875922d0f8b0c45cffcee7",
+  "graph_version": "v-e076c4bec60c",
+  "nodes": 77,
+  "relations": 59,
+  "unknowns": 232
+ },
+ "059 059_Ch09_Fig9.3.3-1_s4of7_Radioactive_Drain_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "25b00775a24229b89f54cf3cd406657df20aabdeb4534994631ee400c89078cc",
+  "graph_sha256": "2e269f4bd3b097d9f811ddb68b77830beb7371481bf865e163b7e66a0762c1dd",
+  "graph_version": "v-1db2c61c00ec",
+  "nodes": 63,
+  "relations": 45,
+  "unknowns": 201
+ },
+ "060 060_Ch09_Fig9.3.3-1_s5of7_Radioactive_Drain_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "bd465d423d8d7e3f767a5d00d8587311b192ebb71f2740c840724c3f9701620f",
+  "graph_sha256": "c8ee4a81afc38fa7c2c7a60896a09217b388eb6ca935408eac1a5b18e0ee2b94",
+  "graph_version": "v-fb9815633024",
+  "nodes": 144,
+  "relations": 123,
+  "unknowns": 407
+ },
+ "061 061_Ch09_Fig9.3.3-1_s6of7_Radioactive_Drain_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "db10b6d86de759241bd384f9f4951e10273006c626adac203bc60cff12082b99",
+  "graph_sha256": "5eb6e06609ca83409ac6ddddec5387fc995506a31c9e1eb881dbdf75f787fc9a",
+  "graph_version": "v-e571f60b743b",
+  "nodes": 44,
+  "relations": 31,
+  "unknowns": 146
+ },
+ "062 062_Ch09_Fig9.3.3-1_s7of7_Radioactive_Drain_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "324c9250a3a8d2e9ce64faa9eae640cc1cbfcbd537aa593c44f7c23176202ae6",
+  "graph_sha256": "ba6f3907b742fc32c8f17010973ea29c095446dec08e2d923999dcf36b10a373",
+  "graph_version": "v-f099809ac3aa",
+  "nodes": 127,
+  "relations": 90,
+  "unknowns": 513
+ },
+ "063 063_Ch09_Fig9.3.4-1_s1of7_Chemical_and_Volume_Control_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "727587afccbe7dd54552de7088c4fc19403f649cc924e1316a9a7dfb4449f63e",
+  "graph_sha256": "eb65e04bab6360f9d0a3152e0b69c8f4b299261b6c39bf7faf9dbc8f7873d098",
+  "graph_version": "v-772544d9afb7",
+  "nodes": 267,
+  "relations": 282,
+  "unknowns": 836
+ },
+ "064 064_Ch09_Fig9.3.4-1_s2of7_Chemical_and_Volume_Control_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "34295b28149878df0c6d32df978d3c80c99b286cd17ff38478d6256b5f5a2533",
+  "graph_sha256": "a020e0ad3d491a492b2375802471eb579a58fc233816ed8d7f2e8ff1533036ce",
+  "graph_version": "v-a11a92ecf456",
+  "nodes": 336,
+  "relations": 374,
+  "unknowns": 920
+ },
+ "065 065_Ch09_Fig9.3.4-1_s3of7_Chemical_and_Volume_Control_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "20b3c63829b1ab24b2c9481c240e4e9e4101933205cf5287225a8c07b46f7a17",
+  "graph_sha256": "64b4279eb5df05cbb05707ea9b22c485db624616cf0142f8a51354451effb2a7",
+  "graph_version": "v-34942e2a5d20",
+  "nodes": 224,
+  "relations": 222,
+  "unknowns": 529
+ },
+ "066 066_Ch09_Fig9.3.4-1_s4of7_Chemical_and_Volume_Control_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "edabb61bb4403127731570d6e62f0a26a393185562c880ee0ac3a7c3f82d063e",
+  "graph_sha256": "43c67da4a12a6a673869e28843361fdf6082c7be9925932ed6aa9fd484dd4051",
+  "graph_version": "v-d6686244a30d",
+  "nodes": 385,
+  "relations": 381,
+  "unknowns": 1734
+ },
+ "067 067_Ch09_Fig9.3.4-1_s5of7_Chemical_and_Volume_Control_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "5cb25c9bed89ed6def5ac10f6ab22adef9d10509cb3fadd7ae6fb1389d86d499",
+  "graph_sha256": "8ea052ad7133544244ab7f8a0b225111287045d1f991710fffb71d31cccb857c",
+  "graph_version": "v-559840435e15",
+  "nodes": 273,
+  "relations": 280,
+  "unknowns": 603
+ },
+ "068 068_Ch09_Fig9.3.4-1_s6of7_Chemical_and_Volume_Control_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "f0aeae50070d67c41e927e2de1465242b3267a73c6800e4166a1420d0bd2a20f",
+  "graph_sha256": "1079210e7932a8d16521ceab6bf031f109cc54104b89b32469140ab2d723b170",
+  "graph_version": "v-936ff5518734",
+  "nodes": 293,
+  "relations": 295,
+  "unknowns": 694
+ },
+ "069 069_Ch09_Fig9.3.4-1_s7of7_Chemical_and_Volume_Control_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "04b8941705942788b80cd9c9473d27aeb169c06eda68a04b017dcfded3433507",
+  "graph_sha256": "63e0283f101ae593d557d34f734db9de3e7f17291a85d97c905dce84ae8232c5",
+  "graph_version": "v-e61f927887b6",
+  "nodes": 311,
+  "relations": 342,
+  "unknowns": 1057
+ },
+ "070 070_Ch09_Fig9.4.1-1_s1of2_Control_Room_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "0776741a2af4ce9753e625a48ba430fa6ff41896a28a0c3e47504ce927ac794a",
+  "graph_sha256": "b879de2ba84396956883a6b6ff88dfde5c7e6efeda9914f4e291e9258830b38b",
+  "graph_version": "v-80c89c5558af",
+  "nodes": 216,
+  "relations": 231,
+  "unknowns": 360
+ },
+ "071 071_Ch09_Fig9.4.1-1_s2of2_Control_Room_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "d286908e4e528a72d9ae2e264f70ddb727bd7a10db560e3d1436f4dab7a868a2",
+  "graph_sha256": "5914aa7c1f6ea4ac842e54c6d67d53a3168d33d392a38a979b33b981a2fb6f56",
+  "graph_version": "v-774332a44f82",
+  "nodes": 265,
+  "relations": 279,
+  "unknowns": 679
+ },
+ "072 072_Ch09_Fig9.4.2-1_s1of2_Fuel_Handling_Area_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "8f4b7c64f98864199afb8bc8efbffacbbbd68f4ff831e085bc7727be119a2653",
+  "graph_sha256": "9077c92fbb3bae388591b0c75c158c598a4428d86012267bf8143b26b5b44c17",
+  "graph_version": "v-4eabf1adc6d1",
+  "nodes": 180,
+  "relations": 132,
+  "unknowns": 372
+ },
+ "073 073_Ch09_Fig9.4.2-1_s2of2_Fuel_Handling_Area_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "a9df1b581217ec5f7986943a81a317455cb7a96ec79b8d0b5cff97549ce819a7",
+  "graph_sha256": "15eeafb412918bca4a10861c976665b3d6830faa5a4c478e49b12b57a0813191",
+  "graph_version": "v-a760cf521a91",
+  "nodes": 11,
+  "relations": 9,
+  "unknowns": 20
+ },
+ "074 074_Ch09_Fig9.4.3-1_s1of2_Auxiliary_Building_Clean_Area_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "ee5b640224a1452e89feea67232fc97a9730131956b45497cacb3342e830bbed",
+  "graph_sha256": "1a183c798ad02b1d498d48ec3f3d75f5f7778fc10a2955bf70d850557c7d4b03",
+  "graph_version": "v-f8cafa1456e5",
+  "nodes": 174,
+  "relations": 157,
+  "unknowns": 453
+ },
+ "075 075_Ch09_Fig9.4.3-1_s2of2_Auxiliary_Building_Clean_Area_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "f5525fc318bf9399c6966c7f9ceebf0b8860339e57c3eafdb37b1d66473fc940",
+  "graph_sha256": "f32a0c88e9a28a11af415ae1c22dd650b641fb58a95cf4b1544d04aa8cb89a12",
+  "graph_version": "v-40d7f363e649",
+  "nodes": 85,
+  "relations": 71,
+  "unknowns": 224
+ },
+ "076 076_Ch09_Fig9.4.4-1_s1of2_Turbine_Generator_Building_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "3f9c668fa5e8e5f8652beb68c6aca8ec2e7033a9f02f9cc388308866ba1b55df",
+  "graph_sha256": "1386c4731082cbd10a70f5bafc8a035eb52f0dc897814e27f1b7ceae387eda1a",
+  "graph_version": "v-f5eec290aeec",
+  "nodes": 70,
+  "relations": 54,
+  "unknowns": 225
+ },
+ "077 077_Ch09_Fig9.4.4-1_s2of2_Turbine_Generator_Building_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "8cef73b50f656e41b225a0593d8216bbbabb5ff07b22826548e1ab6003f4c6d1",
+  "graph_sha256": "32bbaa7b05018dba9b24c6e186dd2d54578c035d3351d6532e08a9bed0ea44ae",
+  "graph_version": "v-8def178bf314",
+  "nodes": 69,
+  "relations": 59,
+  "unknowns": 197
+ },
+ "078 078_Ch09_Fig9.4.5-1_s1of2_Emergency_Diesel_Generator_Area_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "2efe8f8a52f0b210a49541dbc782c70e94f8e6aca160cd4d8c077d508ce17c25",
+  "graph_sha256": "96fd8e0a21f32f5f7dc14a07fca4dfa33ab7c94e0da5f2577468fd539ff9f31e",
+  "graph_version": "v-7c33a5756817",
+  "nodes": 89,
+  "relations": 74,
+  "unknowns": 252
+ },
+ "079 079_Ch09_Fig9.4.5-1_s2of2_Emergency_Diesel_Generator_Area_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "57d058552bf1a4af70962d0b58db2510ce24cc7f3a9bc86b75d498b44260f7a6",
+  "graph_sha256": "5ca67b4516937c85c3b26949bbc725fa47ab191c0c25ea95ab18a39067995dcc",
+  "graph_version": "v-daeffc632d24",
+  "nodes": 97,
+  "relations": 84,
+  "unknowns": 254
+ },
+ "080 080_Ch09_Fig9.4.5-2_Electrical_and_I_C_Equipment_Areas_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "eb842f41ed28324c172e57e85d2da6098bdac0a8c91185688f272711cde53924",
+  "graph_sha256": "0b9c0e08293fd766f04ace1f9bc9f3bbae0589a5a748c2b4b728175cdf56c4c9",
+  "graph_version": "v-454386b5fe63",
+  "nodes": 65,
+  "relations": 73,
+  "unknowns": 210
+ },
+ "081 081_Ch09_Fig9.4.5-3_s1of3_Auxiliary_Building_Controlled_Area_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "95af6f5dc250ed5587761ddf1f0922b60d87b3a304fa01dab82d64dbcc1eefc9",
+  "graph_sha256": "bc8a8f6fe3effdf2c100a15c6b03069b0e985a54d7a78cf5ebce16cdee2e057b",
+  "graph_version": "v-21dcbec408d0",
+  "nodes": 241,
+  "relations": 111,
+  "unknowns": 473
+ },
+ "082 082_Ch09_Fig9.4.5-3_s2of3_Auxiliary_Building_Controlled_Area_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "b558e7d0d1c4956990f34962c3c8932a45b8046b1240481e491826bc0789f716",
+  "graph_sha256": "feb596c1fd83a502639ff66606968c34d1c659b1f87a022f48a486447921297e",
+  "graph_version": "v-69c11b4f0581",
+  "nodes": 55,
+  "relations": 67,
+  "unknowns": 109
+ },
+ "083 083_Ch09_Fig9.4.5-3_s3of3_Auxiliary_Building_Controlled_Area_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "bb14d615f60988a924dddcfa8aadb524d619e8a747ffefc9dfd289cb00bafc58",
+  "graph_sha256": "928e547e97e202b2121b646e5b300e2cf05286ebe4a2f2fb034d7d21acd67447",
+  "graph_version": "v-e743859dd615",
+  "nodes": 310,
+  "relations": 132,
+  "unknowns": 737
+ },
+ "084 084_Ch09_Fig9.4.6-1_Reactor_Containment_Building_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "c52330107813f4dcb89e39334d87ef71b8bddc75a305b11f68514e13280aa7f0",
+  "graph_sha256": "9f74e508d8121f9778f98427ebf27fc56d5f1fcd6de0d76f00f07fd59746cb14",
+  "graph_version": "v-af97caed336e",
+  "nodes": 169,
+  "relations": 260,
+  "unknowns": 739
+ },
+ "085 085_Ch09_Fig9.4.6-2_Reactor_Containment_Building_Purge_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "9145503232b35c27d4ffc0c662b072acc95c04082ab653f0f521d26867ac852a",
+  "graph_sha256": "24d23a6af774b4f88f4e2e9db0460fbc1381622a429875812d40f0b574099144",
+  "graph_version": "v-e2ed17786769",
+  "nodes": 185,
+  "relations": 154,
+  "unknowns": 488
+ },
+ "086 086_Ch09_Fig9.4.7-1_s1of2_Compound_Building_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "45515fb9f25d0ea83293a90ddf7e4719add7b8543d47dc0e64737c8130ae0593",
+  "graph_sha256": "9297084ac594b537499bd54d5be62b7efa8e338adab33b3625b880bcc3944048",
+  "graph_version": "v-f5b8da13f083",
+  "nodes": 164,
+  "relations": 160,
+  "unknowns": 390
+ },
+ "087 087_Ch09_Fig9.4.7-1_s2of2_Compound_Building_HVAC_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "90c70608558079139cd1b9200f533299a026abd09d9c9f29e8e5970768167bd5",
+  "graph_sha256": "c1493ef2a93a45ac18362c4e73ceef5ce0cb22d99e95daa24c5d4babee583e42",
+  "graph_version": "v-e0edab5d2c33",
+  "nodes": 53,
+  "relations": 67,
+  "unknowns": 93
+ },
+ "088 088_Ch09_Fig9.5.1-1_s1of9_Fire_Protection_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "27c42da5e36a005a2a9c02b57504c481e6354505f7390c5ff0f04d6e2aaa06f7",
+  "graph_sha256": "205db0f70e6f219bd49db4503578f2ac6f5504fe4eccf8c4b385434e9f887813",
+  "graph_version": "v-8d269d0bbeae",
+  "nodes": 246,
+  "relations": 250,
+  "unknowns": 1127
+ },
+ "089 089_Ch09_Fig9.5.1-1_s2of9_Fire_Protection_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "2de37ccc5555319f440208514a8d7b4ebc4fa6f7881af958c98784304fb3dc30",
+  "graph_sha256": "7f0c5e62837a188d75c25cf6f0b2b2a3ef346ed7267fbd4e4b4c4d386a26a93c",
+  "graph_version": "v-821226f89049",
+  "nodes": 9,
+  "relations": 7,
+  "unknowns": 18
+ },
+ "090 090_Ch09_Fig9.5.1-1_s3of9_Fire_Protection_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "0339e9f6d60a9a896f2bf89371f5c14c89fd3cab32ea6b84aebe329742a1f47f",
+  "graph_sha256": "a3b8a74113d5b6c50dca2fd99c4d387dd13209f9f5b88672b09c8ddece51219d",
+  "graph_version": "v-3e1879d10115",
+  "nodes": 120,
+  "relations": 129,
+  "unknowns": 497
+ },
+ "091 091_Ch09_Fig9.5.1-1_s4of9_Fire_Protection_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "f61a3c16e2a07d657564c442825e266c9fea5d7376ff6734d8def023680aec01",
+  "graph_sha256": "4d7b41690597ec8100ee169fa2c8c185aa8aa0ebd9d79eefddd9a20506b87ea0",
+  "graph_version": "v-06695c4d3678",
+  "nodes": 56,
+  "relations": 51,
+  "unknowns": 145
+ },
+ "092 092_Ch09_Fig9.5.1-1_s5of9_Fire_Protection_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "a774a53a03d8272b40642bef46a8f0a464b880368cbbe1eb3b26c5ad89e782da",
+  "graph_sha256": "2fb74cbb1f5767bad257412fd068b5244615936fa17df746e8a5dc3d8d0018ed",
+  "graph_version": "v-a738e01eef2c",
+  "nodes": 84,
+  "relations": 76,
+  "unknowns": 272
+ },
+ "093 093_Ch09_Fig9.5.1-1_s6of9_Fire_Protection_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "18716a2f4bdee05bb43a8ab3c50e1f6efcdfd415be0bbaac3259dc01804099b9",
+  "graph_sha256": "0179cfe1e4786e56564dbc7bfc318adf52b54fe0fba07da08c5caaed0a103082",
+  "graph_version": "v-b25d7ca65991",
+  "nodes": 54,
+  "relations": 50,
+  "unknowns": 159
+ },
+ "094 094_Ch09_Fig9.5.1-1_s7of9_Fire_Protection_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "33b98e661fd1bed8b11f4b4e2b7b0b4fdc0277233aabfadab4565dc9cf39fe4b",
+  "graph_sha256": "e80200c1e804e22a8bad98d260a2228419021346f0669d67962fbb3303743254",
+  "graph_version": "v-35a4a87e1bec",
+  "nodes": 48,
+  "relations": 51,
+  "unknowns": 172
+ },
+ "095 095_Ch09_Fig9.5.1-1_s8of9_Fire_Protection_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "a087ee385111da94e50701271a68c153301fea063c4e002b9f645763eb2ecfe7",
+  "graph_sha256": "9fde8360f281c6c635c14a0b23284acef7b9e21df4da0dd14f27213754199aee",
+  "graph_version": "v-53c387625361",
+  "nodes": 63,
+  "relations": 61,
+  "unknowns": 223
+ },
+ "096 096_Ch09_Fig9.5.1-1_s9of9_Fire_Protection_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "508ac3d3f4e4ccb564a0ce0e0a4065709b3de4a1eedec17fe338ba80a85b843a",
+  "graph_sha256": "4ebf97546ebf4b05d2d0198bc6c864d28a8d7cf59223566d91e2f55a9174672b",
+  "graph_version": "v-400fd10d290e",
+  "nodes": 20,
+  "relations": 12,
+  "unknowns": 54
+ },
+ "097 097_Ch09_Fig9.5.4-1_Diesel_Fuel_Oil_Transfer_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "e5ff6ad331f8d2274c6b18f7effd5a87f611feab5ae2c8572f50ee35276219df",
+  "graph_sha256": "f07f79f0936ed6d9cbe13fe7eebb2a78419ed348d6145bc0779c7103e6d80cc8",
+  "graph_version": "v-ac0d34418aa2",
+  "nodes": 159,
+  "relations": 149,
+  "unknowns": 454
+ },
+ "098 098_Ch09_Fig9.5.5-1_Emergency_Diesel_Engine_Cooling_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "cc1b588418f1b5a3eda24d821c2f80d01c3fef126cb9fe3d67541e3f5210a462",
+  "graph_sha256": "d1ce42cebb567c7e31f5d39e6afeaff521c5ddf5d5f14b0b8f0db0e8e4b2e535",
+  "graph_version": "v-5f1b582f7db9",
+  "nodes": 142,
+  "relations": 155,
+  "unknowns": 337
+ },
+ "099 099_Ch09_Fig9.5.6-1_Emergency_Diesel_Engine_Starting_Air_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "4713fc25806336e432dbe36d8d4c5f24f4c7a893fbc8d5688d22e708ef804fe4",
+  "graph_sha256": "571e003afd9a5fc0bb9e150596bc39ed003cfc723a3d1561279ba6dfa6724679",
+  "graph_version": "v-9df65b69460a",
+  "nodes": 95,
+  "relations": 93,
+  "unknowns": 269
+ },
+ "100 100_Ch09_Fig9.5.7-1_Emergency_Diesel_Engine_Lube_Oil_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "2be2e42634e662dc630e7d14005c5d557681a68478702c7f8cb2b591592953a8",
+  "graph_sha256": "efe091b4b0a88d29bfe0ccf223473e5a67d76db503832306a9681314534b73cd",
+  "graph_version": "v-27e4968e0ff9",
+  "nodes": 93,
+  "relations": 72,
+  "unknowns": 250
+ },
+ "101 101_Ch09_Fig9.5.8-1_Emergency_Diesel_Engine_Air_Intake_and_Exhaust_System_Flow_D.pdf": {
+  "extraction_sha256": "47fa498e261aaec4e9c6515d8965ed68d83483c9568cc8b2b421cd116746cff8",
+  "graph_sha256": "e0122ac2faf3f74356a407407b5ec6cc9df3113c62fffcf82f5ccef0f625f435",
+  "graph_version": "v-d5bdd43fbcbe",
+  "nodes": 45,
+  "relations": 30,
+  "unknowns": 126
+ },
+ "102 102_Ch09_Fig9.5.9-1_s1of2_Gas_Turbine_Generator_Facility_Flow_Diagram.pdf": {
+  "extraction_sha256": "99f5ddd0da0bfc11011a6ce772d96fc910e4e01b220def403c15635692e2c38f",
+  "graph_sha256": "5dfde7146a51be8406d2791c5873e72a045dfb7aab03596b52e9597a37b25a1e",
+  "graph_version": "v-0c496e05d700",
+  "nodes": 55,
+  "relations": 80,
+  "unknowns": 134
+ },
+ "103 103_Ch09_Fig9.5.9-1_s2of2_Gas_Turbine_Generator_Facility_Flow_Diagram.pdf": {
+  "extraction_sha256": "0cb33cddb5f296b22bd3366c4f7502f88ec7d5813a6bb27e551e54b80859615d",
+  "graph_sha256": "2fe9c7ee38ed267f927cf415a8e0bf3ce452f252385be4eabd9a126b102d2a82",
+  "graph_version": "v-1b6c69c2ac55",
+  "nodes": 142,
+  "relations": 122,
+  "unknowns": 374
+ },
+ "104 104_Ch10_Fig10.1-2_Overall_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "7764cb3e9e4b517cd7bba49799eb3855010ed5edc766b0b39564d5ed3c10e676",
+  "graph_sha256": "87768657b0d36a3d9dacbeac70c8d4c126f1e36a6319bf4195da51e8a53ca001",
+  "graph_version": "v-786d6679b5f4",
+  "nodes": 156,
+  "relations": 152,
+  "unknowns": 533
+ },
+ "105 105_Ch10_Fig10.3.2-1_s1of2_Main_Steam_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "a63a3213abe1452eec5a4ca45ab827c12f257ac4998ad93310755d56e9993c32",
+  "graph_sha256": "51faad7e127898b1bb93af5262fe6302cfc530be4180129cf1ecf79bff549b6d",
+  "graph_version": "v-50c975e8ea2c",
+  "nodes": 327,
+  "relations": 313,
+  "unknowns": 1000
+ },
+ "106 106_Ch10_Fig10.3.2-1_s2of2_Main_Steam_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "f748d432b1a349445e1fac9025198a3c7e59702135f6dd5ebd1f34cb79edc701",
+  "graph_sha256": "6740f7b0f4065eaa58d554aa4cb62321eccf2616325ccec02d94c5a0a14b067f",
+  "graph_version": "v-5afbd16fc746",
+  "nodes": 222,
+  "relations": 216,
+  "unknowns": 570
+ },
+ "107 107_Ch10_Fig10.3.2-2_Turbine_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "a774407f5ad440d6bbb0791111c2d6e9f63fa688b039bd7a0c054db30b35f299",
+  "graph_sha256": "823d2eeffc4d6aa99e75b07ded5ada4d4b1506b876fd991bf6a58b77bc84faa8",
+  "graph_version": "v-1add3369524e",
+  "nodes": 203,
+  "relations": 210,
+  "unknowns": 570
+ },
+ "108 108_Ch10_Fig10.4.2-1_s1of2_Condenser_Vacuum_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "0fe5927c01b41207615a84330e4a81179d9c03e46087918dd75168bda5f1c524",
+  "graph_sha256": "749e292d607922b447a3d48334ec652867ad3ea5599df07bfcdc37407e685313",
+  "graph_version": "v-53250b79ebeb",
+  "nodes": 199,
+  "relations": 201,
+  "unknowns": 474
+ },
+ "109 109_Ch10_Fig10.4.2-1_s2of2_Condenser_Vacuum_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "890d42d6f30fede7e91513f707a31a123f50919793818bbfda094e1a77922208",
+  "graph_sha256": "d4b356ec8d877ae9d404aa43568581fe454e54c0c3cba72f56c8b3e33c925fc0",
+  "graph_version": "v-4f68e6ea66fd",
+  "nodes": 47,
+  "relations": 36,
+  "unknowns": 115
+ },
+ "110 110_Ch10_Fig10.4.3-1_Turbine_Steam_Seal_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "eb82490efa7cdadb8cc65fc5a0306179b3e15951a6a099756df8a92d815e8ecc",
+  "graph_sha256": "5e87c1dc3c9cb81b1519e34f9ab97bba955779ef640951b92a2e3f283a8f9aa6",
+  "graph_version": "v-899c251590d7",
+  "nodes": 115,
+  "relations": 124,
+  "unknowns": 240
+ },
+ "111 111_Ch10_Fig10.4.5-1_s1of2_Circulating_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "e3e1a4039106a7cbd3133432e597a23f4a09c746f0519a7977ccff5c9a3fd14d",
+  "graph_sha256": "17b302d73462df47b44f8976bd666dee7609318c88be0f4ccd8482ee48c4498b",
+  "graph_version": "v-d509c46d24d0",
+  "nodes": 120,
+  "relations": 126,
+  "unknowns": 384
+ },
+ "112 112_Ch10_Fig10.4.5-1_s2of2_Circulating_Water_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "a801e3baca60545c99cd1dea0bd7ea2d23bd7bbdc4cc71d276ac622dfb0596bf",
+  "graph_sha256": "2ca53158596c13011560754ce296a98840e6f8a69a4e03d111d7257b47f46865",
+  "graph_version": "v-1d71b1eaa4bc",
+  "nodes": 194,
+  "relations": 218,
+  "unknowns": 471
+ },
+ "113 113_Ch10_Fig10.4.6-1_s1of2_Condensate_Polishing_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "3bb6f9be17f52c1456250a530267f25c68d14db8b3d6addb9c7d01f63ef38934",
+  "graph_sha256": "d33fae31dcaa187cb350df1cdd0b7559133bb653aa53dbc3afa0ab8f16394d11",
+  "graph_version": "v-dc48b118c4f7",
+  "nodes": 209,
+  "relations": 204,
+  "unknowns": 506
+ },
+ "114 114_Ch10_Fig10.4.6-1_s2of2_Condensate_Polishing_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "5731f7c32f3ce95cab3aae02c148a41cf05f45abee4cb7d5890c725181bd08a5",
+  "graph_sha256": "84606159274f4d2c57da2b7aa4f65d63c1dfd2cf0c4ddcc12fc96eb149e1ae59",
+  "graph_version": "v-071ecdd70ff7",
+  "nodes": 71,
+  "relations": 57,
+  "unknowns": 184
+ },
+ "115 115_Ch10_Fig10.4.7-1_s1of11_Condensate_and_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "b6270671df5f97a8f125d26d8d485794f6179924b41320478185377cf3fdfb0a",
+  "graph_sha256": "0cb968697b35c2e3e3af929c1bc664c5198eacccd00de67e53a373b86265822f",
+  "graph_version": "v-c43bef92c6bc",
+  "nodes": 204,
+  "relations": 214,
+  "unknowns": 810
+ },
+ "116 116_Ch10_Fig10.4.7-1_s2of11_Condensate_and_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "b9273392632088d965168c5336e1464288a9328bc781b1f3a4dcc8262f69ebf9",
+  "graph_sha256": "7428d46b4beb538a548fd315d60cce542e872250356bf4525af14e8c0accc9f4",
+  "graph_version": "v-2fe7f4e07829",
+  "nodes": 152,
+  "relations": 169,
+  "unknowns": 345
+ },
+ "117 117_Ch10_Fig10.4.7-1_s3of11_Condensate_and_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "e12d5f21808ec7fa6262047e15ce6246b1597e2bb449e7743f6b3d17060399bc",
+  "graph_sha256": "cb5416b969a916c4e7e8e54d66fa0b980802c68008413a5380553ed2ef98a68a",
+  "graph_version": "v-0a0dfc6c3b56",
+  "nodes": 99,
+  "relations": 122,
+  "unknowns": 221
+ },
+ "118 118_Ch10_Fig10.4.7-1_s4of11_Condensate_and_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "ca878bfa04cb28d8014eae3ac93afe7af15270fbbb86bebc6c73b7cc7d8eac83",
+  "graph_sha256": "329d280b4dd64adf0c3c6188ed9fc3fe1bd235aa3f66b441cea84d77b4af10c8",
+  "graph_version": "v-1edbedc17783",
+  "nodes": 152,
+  "relations": 158,
+  "unknowns": 421
+ },
+ "119 119_Ch10_Fig10.4.7-1_s5of11_Condensate_and_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "c1c11396954d6a9126bba99484d2cff1d7e1e4dce79ff694764f2954d3ea6750",
+  "graph_sha256": "4c6733e4d7e8f44e5086943d233b50686f9a8f978b36ca32252ea4e2a82e56de",
+  "graph_version": "v-17bb9d4f252a",
+  "nodes": 161,
+  "relations": 177,
+  "unknowns": 485
+ },
+ "120 120_Ch10_Fig10.4.7-1_s6of11_Condensate_and_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "d45538fde74dc328ea0a556927895e5d45a6f88900b40c687d43af52a1918fd2",
+  "graph_sha256": "064471e39c46b4a023db5523f90759f496041f2ed6f6954b2f81c83376ed7d17",
+  "graph_version": "v-25c3294d7624",
+  "nodes": 205,
+  "relations": 250,
+  "unknowns": 537
+ },
+ "121 121_Ch10_Fig10.4.7-1_s7of11_Condensate_and_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "db4479c7cae7332998d7f1b6ec70bbcbb825e426cffd141165c3a0d944e473a1",
+  "graph_sha256": "bec01796eafa2760908567f2124f49276509e648450590e909731b1c9743cc02",
+  "graph_version": "v-12b130c56cdf",
+  "nodes": 86,
+  "relations": 107,
+  "unknowns": 232
+ },
+ "122 122_Ch10_Fig10.4.7-1_s8of11_Condensate_and_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "3878354edd5b8ed412dd5d3e9ac29d0820c5caeb2936f29ba758c94d0f7f4c0c",
+  "graph_sha256": "03dbea4175408e8c1f7de3a798c378160a3f4516b5df357d8b1f79ef9b10a8ac",
+  "graph_version": "v-1046fdece5c5",
+  "nodes": 151,
+  "relations": 187,
+  "unknowns": 391
+ },
+ "123 123_Ch10_Fig10.4.7-1_s9of11_Condensate_and_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "9d483232104365bb5a43437cd2333d10b384357a8ba9f531c42f101f986d5e4c",
+  "graph_sha256": "3da141e8237684c67583d811455cb62186c821964ddc80c2f4e4c78477be3315",
+  "graph_version": "v-f2a061337489",
+  "nodes": 155,
+  "relations": 176,
+  "unknowns": 408
+ },
+ "124 124_Ch10_Fig10.4.7-1_s10of11_Condensate_and_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "f44d0c710e83c60f042a123c43846ec2dc63af25b069a1ba51bdfbd4b4ee94f1",
+  "graph_sha256": "93ed6f812d106f7093bfee6502dec7ae5d834ab14fa3f549f8cc44ac3e18fbe2",
+  "graph_version": "v-57dca54b0e41",
+  "nodes": 63,
+  "relations": 62,
+  "unknowns": 143
+ },
+ "125 125_Ch10_Fig10.4.7-1_s11of11_Condensate_and_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "3b46547d709e72c185d1844d49d462263ebd986c57ce8727063efdd315ab6b83",
+  "graph_sha256": "716c99022a2cc6942fe0006a47af8488f21c1c284316ad3c135908db426cc52f",
+  "graph_version": "v-43ccd03fa9cd",
+  "nodes": 229,
+  "relations": 242,
+  "unknowns": 514
+ },
+ "126 126_Ch10_Fig10.4.8-1_s1of2_Steam_Generator_Blowdown_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "fbe5b41c0408c94e9d2f0191f4d13892354d6e99a4cbad5a415297044a32f16b",
+  "graph_sha256": "c98d7928c8778db1d9ab06ae745ecbd291b80c938c339230f0fac0c4ba5c701b",
+  "graph_version": "v-8142dcb445c8",
+  "nodes": 332,
+  "relations": 355,
+  "unknowns": 988
+ },
+ "127 127_Ch10_Fig10.4.8-1_s2of2_Steam_Generator_Blowdown_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "d62c73e7690a6a0e83916664bedb1023dfc71dfc3fa8a1a8289dc3fcd7d67682",
+  "graph_sha256": "46cb43e6f30450eb26a965ed26eeace644fde1052844b65c10a722b10b3890d0",
+  "graph_version": "v-28f631b8338a",
+  "nodes": 207,
+  "relations": 225,
+  "unknowns": 424
+ },
+ "128 128_Ch10_Fig10.4.9-1_s1of3_Auxiliary_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "984a070f9e8180ee40d9a1478e311982403c41aef43de7e233786514f9474764",
+  "graph_sha256": "1217a3449e7532e18e037964988173928ddb5a6c98c99318fce1f4dc77f17c37",
+  "graph_version": "v-9d9ee5e7755a",
+  "nodes": 136,
+  "relations": 133,
+  "unknowns": 232
+ },
+ "129 129_Ch10_Fig10.4.9-1_s2of3_Auxiliary_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "0119c1bf75532476a2f096522b45367fbaea73a16a0d0042fadd20abcf590357",
+  "graph_sha256": "7cb3eecc946a63fbd67bfe472d241fb914df2568f53296718c7371de9fd3cfc0",
+  "graph_version": "v-079901fce17d",
+  "nodes": 215,
+  "relations": 199,
+  "unknowns": 617
+ },
+ "130 130_Ch10_Fig10.4.9-1_s3of3_Auxiliary_Feedwater_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "e74f9c5931075c9e0ef9a169b8eaea57fa92e01628a7b7872fcee9104739f6fc",
+  "graph_sha256": "2b2074f2380c8f8ba83ad9194cdc5e153863bc4f1662bf87b274433d4cae9953",
+  "graph_version": "v-1b6af840bb7f",
+  "nodes": 122,
+  "relations": 117,
+  "unknowns": 369
+ },
+ "131 131_Ch10_Fig10.4.10-1_s1of3_Auxiliary_Steam_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "736d2e2ead98fbc872fe214250edb68beafea794d3c5720580449082675fa777",
+  "graph_sha256": "57e79e14ef7d566f50e474bd3bafffc0b247eac9748a2993b8ad32c7d40afe5c",
+  "graph_version": "v-9be8e03bcc59",
+  "nodes": 189,
+  "relations": 169,
+  "unknowns": 405
+ },
+ "132 132_Ch10_Fig10.4.10-1_s2of3_Auxiliary_Steam_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "fb535867cf59c4bb87453a3b93f16cad2a962eddf4bff8bce7417b86ca85c08f",
+  "graph_sha256": "b3f8adbba49ec48f5c6e04030f555384da8d28bb789597301b367c3f51a82439",
+  "graph_version": "v-4c0b1a1adb43",
+  "nodes": 102,
+  "relations": 101,
+  "unknowns": 296
+ },
+ "133 133_Ch10_Fig10.4.10-1_s3of3_Auxiliary_Steam_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "cb781260a0bb29e0edaf546f3f2df041b17cbc7635ad641d7bdfde66b90e3a29",
+  "graph_sha256": "de381b04edbc0d9b514d059238d43c00d9e786c2aa0b48789b6043f1d343b33a",
+  "graph_version": "v-c99318020c8d",
+  "nodes": 46,
+  "relations": 29,
+  "unknowns": 142
+ },
+ "134 134_Ch11_Fig11.2-1_s1of7_Liquid_Radwaste_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "7d676942768bc4319272dd32c00302f60d4c502089996c58ff08a66d31339a41",
+  "graph_sha256": "eb842bb1c73611c779413adeb5308b52339863a9c38dbda629251762183f60e0",
+  "graph_version": "v-e3ead2e60970",
+  "nodes": 312,
+  "relations": 361,
+  "unknowns": 1037
+ },
+ "135 135_Ch11_Fig11.2-1_s2of7_Liquid_Radwaste_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "848edf299cfe402a73c4f07c32e3809f00277e6b898dbf35d9ab342a163d3fd1",
+  "graph_sha256": "61d3b98749a6578d9da8804c4f7cb7b50b157b4de22bfc73792e64fa7215826f",
+  "graph_version": "v-7a4e9ee43bce",
+  "nodes": 139,
+  "relations": 137,
+  "unknowns": 379
+ },
+ "136 136_Ch11_Fig11.2-1_s3of7_Liquid_Radwaste_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "c05c4fbb58ae7034a259bcdc0269cd7b2520024861eac77bc14e43ce2a1f4fca",
+  "graph_sha256": "58f3ba7f7c26ec4b129d43d7c3e10a8b3e813b36bc8323fbdaa7c341761a2ae1",
+  "graph_version": "v-2fcea1129083",
+  "nodes": 183,
+  "relations": 186,
+  "unknowns": 329
+ },
+ "137 137_Ch11_Fig11.2-1_s4of7_Liquid_Radwaste_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "b6bc11c10a2cd74e153f51b9402bf0ed8e6c2fdfd7559bcbcc3898d2721437fd",
+  "graph_sha256": "3180dd1dba2048cdd8b524de78317affb86edafd481d598321c7bd0308547cea",
+  "graph_version": "v-f7cac551d1a8",
+  "nodes": 242,
+  "relations": 202,
+  "unknowns": 1040
+ },
+ "138 138_Ch11_Fig11.2-1_s5of7_Liquid_Radwaste_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "a40e7bb634731a3b273112cb269e7b2291727133ef40f39a414e81baabdc3f51",
+  "graph_sha256": "f1bad2d0628d2b4cad190e497e1b4972cf3479a2cae79f8f93ae22fe41a11075",
+  "graph_version": "v-a27b1e0424ac",
+  "nodes": 92,
+  "relations": 115,
+  "unknowns": 251
+ },
+ "139 139_Ch11_Fig11.2-1_s6of7_Liquid_Radwaste_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "844d3522fb7c5dfb90da3b01ceac960b10c350a0750d90cdd9edd120ac5b20cf",
+  "graph_sha256": "26823cdfd4975cebcd7e1154ba3a8e703100e8bcd1ac789525b1f85ae0a45863",
+  "graph_version": "v-fd3c1d5aaadf",
+  "nodes": 186,
+  "relations": 186,
+  "unknowns": 491
+ },
+ "140 140_Ch11_Fig11.2-1_s7of7_Liquid_Radwaste_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "a7f5fee3405bae9521f2523b959627fa02dd3ace1dfc48ec8af3c805d4dc41e8",
+  "graph_sha256": "302bc359218f9c2fffeae1ded939be30d4c1b2d5ab386146f1be711f6fb8b421",
+  "graph_version": "v-f9db91041dc8",
+  "nodes": 77,
+  "relations": 79,
+  "unknowns": 171
+ },
+ "141 141_Ch11_Fig11.3-1_Gaseous_Radwaste_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "6c563135cfd6ee7dea3668764f24fb7ca65334db9869148959afe739ab5f06bf",
+  "graph_sha256": "f7e8a449bed4ea609c5312e255b0eaf6d77aeb3c6bb6142af007aaa23f0e6391",
+  "graph_version": "v-dbfcceb3aa15",
+  "nodes": 193,
+  "relations": 187,
+  "unknowns": 486
+ },
+ "142 142_Ch11_Fig11.4-1_s1of2_Solid_Radwaste_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "8a9d1384dee5957433b7e0e70c3c4b03652c2df30c3839bac5b795fd47317003",
+  "graph_sha256": "ab0ef98ba368373eb9bbe4532f628736ea16e04d24fa54cc00c61bf1fb8da789",
+  "graph_version": "v-46ab08e3b7cb",
+  "nodes": 222,
+  "relations": 226,
+  "unknowns": 595
+ },
+ "143 143_Ch11_Fig11.4-1_s2of2_Solid_Radwaste_System_Flow_Diagram.pdf": {
+  "extraction_sha256": "392f040be4ca168d6d19e210092398e85ecb77b70155e144878a333ef16cbdb1",
+  "graph_sha256": "f1bbbd6d3071dae7f36d52e758dc92dd1a38628284b7bd23708ed5a0eb681128",
+  "graph_version": "v-0540323ec1f5",
+  "nodes": 113,
+  "relations": 110,
+  "unknowns": 377
+ }
+}

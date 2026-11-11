@@ -1,6 +1,6 @@
 """UI/UX 디테일 개선(디자인/시안/UIUX-디테일/개선명세.md) 화면 스크린샷과 측정. 사용: python scripts/shoot_uiux.py <출력 폴더>
 
-임시 작업 루트에 샘플 도면 SNP-M-102(출력/추출·그래프·지식그래프 사본)를 두고 검토구간을 확정한 뒤, 가짜 클라이언트로
+임시 작업 루트에 샘플 도면 SNP-M-102(output/extract·그래프·지식그래프 사본)를 두고 검토구간을 확정한 뒤, 가짜 클라이언트로
 ⑤ AI 분석을 채운다(네트워크 없음, scripts/shoot_results.py와 같은 준비). 창 크기 1366×768·1920×1080마다
 ① 등록(빈 상태) ② 추출 ③ 지식그래프 ④ 검토구간 ⑤ 결과 · 명령 팔레트 · ④+⑤ 분할을 찍고, 명세 측정값을 measure.json에 쓴다.
 """
@@ -51,7 +51,7 @@ def js(win, code, timeout=10.0):
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "uiux"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else paths.output_in(paths.DEV_WORK_ROOT, "screenshots", "uiux"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-uiux-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")
@@ -60,7 +60,8 @@ def main():
     try:
         import shoot_results
         shoot_results.prepare(os.environ["HAZOP_WORK_ROOT"])
-        shutil.copytree(paths.folder("참고"), paths.logical_reference_dir(os.environ["HAZOP_WORK_ROOT"]))
+        shutil.copytree(paths.folder("references", "pid-samples"),
+                        paths.logical_dir(os.environ["HAZOP_WORK_ROOT"], "references", "pid-samples"))
         from hazop.app import make_application
         from hazop.app.main_window import MainWindow
         from hazop.app.screenshots import settle, wait

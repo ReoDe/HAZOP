@@ -1,7 +1,7 @@
 """② 도면 편집 모드(drawing-edit-spec.md '화면'). 실행: python -m unittest discover -s tests -t .
 
 순수 부분(EditSession·도구 상태 기계·흐름 요청)은 웹뷰 없이, 화면·브리지는 QT_QPA_PLATFORM=offscreen에서 검사한다.
-작업 루트·저장 루트·설정은 임시 폴더만 쓴다(실제 자료저장소·데이터/ 미사용). 네트워크 사용 없음.
+작업 루트·저장 루트·설정은 임시 폴더만 쓴다(실제 store·data/ 미사용). 네트워크 사용 없음.
 """
 
 import json
@@ -181,7 +181,7 @@ class EditScreenTest(unittest.TestCase):
 
     def setUp(self):
         from hazop.app.main_window import MainWindow
-        shutil.rmtree(paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "도면수정"), ignore_errors=True)
+        shutil.rmtree(paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "drawing-edits"), ignore_errors=True)
         win = MainWindow(settings_path=os.path.join(tempfile.mkdtemp(dir=self.tmp), "settings.json"), ask_reviewer=False)
         win.set_reviewer_name("검토자A")
         win.resize(1440, 860)
@@ -263,6 +263,28 @@ class EditScreenTest(unittest.TestCase):
         self.assertEqual([o["op_id"] for o in doc["ops"]], [second["op_id"]])
         self.assertEqual(doc["log"][-1]["removed_ops"], [first])
 
+    def test_save_refuses_when_the_record_changed_after_it_was_read(self):
+        """편집을 시작한 뒤 수정 기록 파일이 밖에서 바뀌면 덮어쓰지 않는다."""
+        from hazop.extract import corrections
+        scr = self.scr
+        with mock.patch.object(viewer, "notify") as notify:
+            self.assertTrue(scr.commit({"op": "add_node", "target": None, "value": {
+                "category": "equipment", "kind": "pump", "tag": "ZZ-P-300", "bbox": [100, 10, 40, 40]}}))
+            self.settle()
+            path = corrections.store_path(self.name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            outside = json.dumps({"kind": corrections.KIND, "schema_version": "0.1", "extraction_name": self.name,
+                                  "drawing_number": None, "ops": [], "log": [{"at": "2026-11-07T00:00:00Z", "by": "밖",
+                                                                              "action": "save", "added": [], "removed": []}]}
+                                 ).encode("utf-8")
+            with open(path, "wb") as fh:
+                fh.write(outside)
+            self.assertFalse(scr.save())
+        with open(path, "rb") as fh:
+            self.assertEqual(fh.read(), outside)
+        self.assertIn("바뀌", notify.call_args[0][2])
+        self.assertTrue(scr.session.dirty, "작업 중 수정은 화면에 남음")
+
     def test_new_op_does_not_reuse_id_still_on_undo_stack(self):
         """저장하지 않고 되돌린 추가도 실행 취소로 되살아날 수 있으므로, 그 번호를 새 추가에 다시 주지 않는다."""
         scr = self.scr
@@ -324,7 +346,7 @@ class EditScreenTest(unittest.TestCase):
             self.assertTrue(scr.save())
         self.assertFalse(scr.session.dirty)
         self.assertIn("저장", note.call_args[0][2])
-        saved = paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "도면수정")
+        saved = paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "drawing-edits")
         self.assertTrue(os.listdir(saved))
         self.settle()
         self.assertIn("미확인 %d" % len(scr.info["graph"]["validation"]["unknowns"]), scr.chip_stats.text())
@@ -342,7 +364,8 @@ class EditScreenTest(unittest.TestCase):
         scr.edit_btn.setChecked(False)
         self.settle()
         display = "getComputedStyle(document.getElementById('%s')).display"
-        self.assertEqual(self.js(display % "status"), "none")
+        # 편집을 끈 뒤 다시 그리는 동안에는 값이 ''로 온다(CI run 42795547168에서 두 번). 그려질 때까지 기다린다
+        self.assertTrue(wait_for(lambda: self.js(display % "status") == "none", 10))
         self.assertIn("구조 검증", scr.chip_valid.text())
         self.assertEqual(self.js(display % "pathq"), "none")
         self.assertNotEqual(self.js(display % "pq-chip"), "none")

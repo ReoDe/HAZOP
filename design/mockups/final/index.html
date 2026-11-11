@@ -1,0 +1,11 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>완성본 시안 비교</title>
+<style>body{margin:0;font-family:'Malgun Gothic',sans-serif;display:flex;flex-direction:column;height:100vh;background:#e5e7eb}
+nav{display:flex;gap:6px;padding:8px;align-items:center;background:#111827;color:#fff;flex-wrap:wrap}
+button{font:inherit;border:1px solid #6b7280;background:#1f2937;color:#fff;padding:4px 10px;border-radius:6px;cursor:pointer}
+button.on{background:#fff;color:#111827}iframe{flex:1;border:0;background:#fff}span{margin:0 8px;color:#d1d5db}</style></head>
+<body><nav><span>안</span><button data-v="0">A안 · 밝은 미니멀</button><button data-v="1">B안 · 고밀도 작업대</button><button data-v="2">C안 · 다크 대시보드</button><span>화면</span><button data-s="0">1 자료 등록</button><button data-s="1">2 도면 추출</button><button data-s="2">3 지식그래프</button><button data-s="3">4 검토구간</button><button data-s="4">5 분석 결과</button><span>키보드: A·B·C, 1~5</span></nav><iframe id="f"></iframe>
+<script>const V=["a-light-minimal", "b-dense-workbench", "c-dark-dashboard"],S=["1-registration", "2-drawing-extract", "3-knowledge-graph", "4-study-nodes", "5-summary-matrix"];let v=0,s=0;function go(){f.src=encodeURI(V[v]+'/'+S[s]+'.html');
+document.querySelectorAll('[data-v]').forEach(b=>b.classList.toggle('on',+b.dataset.v===v));
+document.querySelectorAll('[data-s]').forEach(b=>b.classList.toggle('on',+b.dataset.s===s));}
+document.onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.v)v=+b.dataset.v;if(b.dataset.s)s=+b.dataset.s;go()};
+document.onkeydown=e=>{const k=e.key.toUpperCase();if('ABC'.includes(k)&&k.length===1){v='ABC'.indexOf(k);go()}if('12345'.includes(e.key)){s=+e.key-1;go()}};go();</script></body></html>

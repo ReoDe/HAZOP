@@ -1,5 +1,5 @@
-"""데이터/지식/<project_id>/knowledge_*.csv + 출력/그래프/*/graph.json
--> 출력/지식그래프/kg-<project_id>/<kg_version>/knowledge.json + knowledge_graph.json, 그 다음 kg-<project_id>/current.json 교체
+"""data/knowledge-graph/<project_id>/knowledge_*.csv + output/graph/*/graph.json
+-> output/knowledge-graph/kg-<project_id>/<kg_version>/knowledge.json + knowledge_graph.json, 그 다음 kg-<project_id>/current.json 교체
 
 근거: 기획서/그래프활용.md §2.6 (CSV -> knowledge.json -> knowledge_graph.json). P&ID 그래프는 읽기만 한다.
 그래프가 없으면 먼저: python scripts/build_graph.py
@@ -19,9 +19,9 @@ from hazop.console import safe_console  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.kg import build, inputs  # noqa: E402
 
-DEFAULT_INPUT_ROOT = paths.folder("지식")
-DEFAULT_GRAPH_ROOT = paths.output_root("그래프")
-DEFAULT_OUT = paths.output_root("지식그래프")
+DEFAULT_INPUT_ROOT = paths.folder("knowledge-graph")
+DEFAULT_GRAPH_ROOT = paths.output_root("graph")
+DEFAULT_OUT = paths.output_root("knowledge-graph")
 NODES_CSV = "knowledge_nodes.csv"
 LINKS_CSV = "knowledge_links.csv"
 
@@ -48,7 +48,7 @@ def build_dir(input_dir, project_id, graphs, out_root):
 def main(argv=None):
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("project_id", help="%s/ 아래 프로젝트 폴더 이름" % paths.folder_rel("지식"))
+    ap.add_argument("project_id", help="%s/ 아래 프로젝트 폴더 이름" % paths.folder_rel("knowledge-graph"))
     ap.add_argument("--input-root", default=DEFAULT_INPUT_ROOT)
     ap.add_argument("--graph-root", default=DEFAULT_GRAPH_ROOT)
     ap.add_argument("--out-root", default=DEFAULT_OUT)

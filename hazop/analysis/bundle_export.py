@@ -2,7 +2,7 @@
 
 판단이 '선택'인 후보마다 근거 묶음(run.build_bundle 결과)과 요청 프롬프트를 폴더로 내보낸다. 사용자는 Claude Code 구독제
 세션에서 이 폴더로 응답을 만들고, 프로그램은 응답 폴더를 고정 응답으로 다시 불러와 분석한다.
-- AI를 호출하지 않고 네트워크를 쓰지 않는다. 분석 실행 폴더(출력/분석/...)와 analysis.json을 만들지 않는다.
+- AI를 호출하지 않고 네트워크를 쓰지 않는다. 분석 실행 폴더(output/analysis/...)와 analysis.json을 만들지 않는다.
 - 근거 묶음은 시각을 담지 않으므로, 입력이 같으면 내보낼 때와 분석할 때의 bundle_sha256이 같다(분석과 같은 run.prepare_doc 사용).
 - 반출: 근거 묶음은 도면 내용을 담는다. 보안 등급이 있는 실제 설계자료는 사용자 확인 뒤에만 내보낸다(HAZOP분석.md 모델 연결).
 
@@ -106,13 +106,13 @@ def _write_export(export_dir, t, inputs, selected, bundles, names):
 
 
 def export_bundles(region_path, out_root=None, graph_path=None, now=run.utc_now):
-    """근거 묶음을 <out_root>/<region_id>/<시각>/에 내보낸다. out_root 기본: <작업 루트>/출력/근거묶음.
+    """근거 묶음을 <out_root>/<region_id>/<시각>/에 내보낸다. out_root 기본: <작업 루트>/output/evidence-bundles.
     같은 폴더가 이미 있으면 덮어쓰지 않고 run.InputError.
     반환: {"export_dir", "response_dir", "manifest_file", "manifest"}"""
     inputs = api.load_region_inputs(region_path, graph_path)
     t, selected, bundles = build_export(inputs, now)
     region = inputs["region"]
-    root = out_root or paths.output_root("근거묶음")
+    root = out_root or paths.output_root("evidence-bundles")
     stamp = paths.safe_name(t.replace("-", "").replace(":", ""))
     parent = paths.safe_join(root, paths.safe_name(region["region_id"]))
     export_dir = paths.safe_join(parent, stamp)

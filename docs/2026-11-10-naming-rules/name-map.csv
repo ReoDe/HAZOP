@@ -1,0 +1,389 @@
+stage,old,new
+2,docs/screenshots-pdf,docs/2026-11-07-screenshots-pdf
+2,docs/2026-11-05-design-system/evidence/w1-조사.md,docs/2026-11-05-design-system/evidence/w1-survey.md
+2,docs/2026-11-05-design-system/evidence/w2-1366기준.md,docs/2026-11-05-design-system/evidence/w2-1366-baseline.md
+2,docs/2026-11-05-design-system/evidence/w3-작업영역125.md,docs/2026-11-05-design-system/evidence/w3-workspace-125.md
+2,docs/2026-11-05-design-system/evidence/w4-토큰.md,docs/2026-11-05-design-system/evidence/w4-tokens.md
+2,docs/2026-11-05-design-system/evidence/w5-명암비.md,docs/2026-11-05-design-system/evidence/w5-contrast.md
+2,docs/2026-11-05-design-system/evidence/w6-앱색.md,docs/2026-11-05-design-system/evidence/w6-app-colors.md
+2,docs/2026-11-05-design-system/evidence/w7-선택표시.md,docs/2026-11-05-design-system/evidence/w7-selection.md
+2,docs/2026-11-05-design-system/evidence/w8-반투명선.md,docs/2026-11-05-design-system/evidence/w8-translucent-lines.md
+2,docs/2026-11-05-design-system/evidence/w9-허용목록.md,docs/2026-11-05-design-system/evidence/w9-allowlist.md
+2,docs/2026-11-05-design-system/evidence/w10-범례칩.md,docs/2026-11-05-design-system/evidence/w10-legend-chips.md
+2,docs/2026-11-05-input-adapter/evidence/w1-조사.md,docs/2026-11-05-input-adapter/evidence/w1-survey.md
+2,docs/2026-11-05-input-adapter/evidence/w2-하네스.md,docs/2026-11-05-input-adapter/evidence/w2-harness.md
+2,docs/2026-11-05-input-adapter/evidence/w4-래스터.md,docs/2026-11-05-input-adapter/evidence/w4-raster.md
+2,docs/2026-11-05-input-adapter/evidence/w5-열화.md,docs/2026-11-05-input-adapter/evidence/w5-degradation.md
+2,docs/2026-11-05-packaging/evidence/w1-조사.md,docs/2026-11-05-packaging/evidence/w1-survey.md
+2,docs/2026-11-05-packaging/evidence/w3-경로.md,docs/2026-11-05-packaging/evidence/w3-paths.md
+2,docs/2026-11-05-packaging/evidence/w4-빌드.md,docs/2026-11-05-packaging/evidence/w4-build.md
+2,docs/2026-11-05-packaging/evidence/w5-신뢰경계.md,docs/2026-11-05-packaging/evidence/w5-trust-boundary.md
+2,docs/2026-11-05-packaging/evidence/w6-라이선스.md,docs/2026-11-05-packaging/evidence/w6-licenses.md
+2,docs/2026-11-05-packaging/evidence/w6-묶음수집목록.md,docs/2026-11-05-packaging/evidence/w6-bundle-collect-list.md
+2,docs/2026-11-05-packaging/evidence/w8-경로통제.md,docs/2026-11-05-packaging/evidence/w8-path-control.md
+2,docs/2026-11-05-packaging/evidence/w8b-모듈제외.md,docs/2026-11-05-packaging/evidence/w8b-module-exclusion.md
+2,docs/2026-11-05-packaging/evidence/w9-고지원문.md,docs/2026-11-05-packaging/evidence/w9-notice-text.md
+2,docs/2026-11-05-packaging/evidence/w10-정보창.md,docs/2026-11-05-packaging/evidence/w10-about-dialog.md
+2,docs/2026-11-05-packaging/evidence/w11-최종빌드.md,docs/2026-11-05-packaging/evidence/w11-final-build.md
+2,docs/2026-11-09-symbol-library/그림/도면,docs/2026-11-09-symbol-library/figures/drawings
+2,docs/2026-11-09-symbol-library/그림/범례,docs/2026-11-09-symbol-library/figures/legend
+2,docs/2026-11-09-symbol-library/도면미분류묶음.csv,docs/2026-11-09-symbol-library/drawing-unclassified-groups.csv
+2,docs/2026-11-09-symbol-library/라벨_APR1400.csv,docs/2026-11-09-symbol-library/labels-apr1400.csv
+2,docs/2026-11-09-symbol-library/범례항목.csv,docs/2026-11-09-symbol-library/legend-items.csv
+2,docs/2026-11-09-symbol-library/사전항목_시제품.csv,docs/2026-11-09-symbol-library/dictionary-items-prototype.csv
+2,docs/2026-11-09-symbol-library/항목정보.csv,docs/2026-11-09-symbol-library/item-info.csv
+2,docs/2026-11-10-lessons/D드라이브-이전.md,docs/2026-11-10-lessons/d-drive-move.md
+2,docs/2026-11-10-plan/pstack-자문.md,docs/2026-11-10-plan/pstack-advice.md
+2,docs/2026-11-10-plan/향후작업-세션배치.html,docs/2026-11-10-plan/session-plan.html
+4,tests/fixtures/docextract/SNP-DOC-102_가압기압력제어_설계설명서(가상).pdf,tests/fixtures/docextract/SNP-DOC-102-pzr-pressure-control-design-description-fictional.pdf
+3,flow chart/00-overview.md,specs/flows/00-overview.md
+3,flow chart/01-registration.md,specs/flows/01-registration.md
+3,flow chart/02-extraction.md,specs/flows/02-extraction.md
+3,flow chart/03-integration.md,specs/flows/03-integration.md
+3,flow chart/04-hazop-analysis.md,specs/flows/04-hazop-analysis.md
+3,flow chart/05-review-results.md,specs/flows/05-review-results.md
+3,packaging/다른PC-점검표.md,packaging/other-pc-checklist.md
+3,기획서/AI연결-구독제.md,specs/ai-subscription.md
+3,기획서/HAZOP기법지침.md,specs/hazop-method-guide.md
+3,기획서/HAZOP분석.md,specs/hazop-analysis.md
+3,기획서/PID-기호사전.md,specs/pid-symbol-dictionary.md
+3,기획서/검토결과관리.md,specs/review-results.md
+3,기획서/검토구간-분할설계.md,specs/study-node-segmentation.md
+3,기획서/그래프조사.md,specs/graph-survey.md
+3,기획서/그래프활용.md,specs/graph-usage.md
+3,기획서/단계연쇄검사.md,specs/stage-chain-check.md
+3,기획서/인터페이스.md,specs/interface.md
+3,기획서/자료등록.md,specs/registration.md
+3,기획서/전체기획.md,specs/overview.md
+3,기획서/정보추출.md,specs/extraction.md
+3,기획서/정보통합관리.md,specs/integration.md
+3,기획서/지식그래프-스키마-사전.md,specs/kg-schema-dictionary.md
+3,기획서/지식그래프-스키마-입력.md,specs/kg-schema-input.md
+3,기획서/지식그래프-스키마.md,specs/kg-schema.md
+3,기획서/초기사건-HAZOP-조사.md,specs/ie-hazop-survey.md
+3,기획서/초기사건-출력설계.md,specs/ie-output-design.md
+3,기획서/평가기준비교.md,specs/criteria-comparison.md
+3,디자인/AI연결-화면설계.md,design/ai-connection-screens.md
+3,디자인/시안/AI연결/1-연결설정-구독-1366.png,design/mockups/ai-connection/1-settings-subscription-1366.png
+3,디자인/시안/AI연결/1-연결설정-구독-1920.png,design/mockups/ai-connection/1-settings-subscription-1920.png
+3,디자인/시안/AI연결/1-연결설정-구독.html,design/mockups/ai-connection/1-settings-subscription.html
+3,디자인/시안/AI연결/10-배포본-1366.png,design/mockups/ai-connection/10-bundle-1366.png
+3,디자인/시안/AI연결/10-배포본-1920.png,design/mockups/ai-connection/10-bundle-1920.png
+3,디자인/시안/AI연결/10-배포본.html,design/mockups/ai-connection/10-bundle.html
+3,디자인/시안/AI연결/2-연결설정-API키-1366.png,design/mockups/ai-connection/2-settings-api-key-1366.png
+3,디자인/시안/AI연결/2-연결설정-API키-1920.png,design/mockups/ai-connection/2-settings-api-key-1920.png
+3,디자인/시안/AI연결/2-연결설정-API키.html,design/mockups/ai-connection/2-settings-api-key.html
+3,디자인/시안/AI연결/3-연결설정-실행중-1366.png,design/mockups/ai-connection/3-settings-running-1366.png
+3,디자인/시안/AI연결/3-연결설정-실행중-1920.png,design/mockups/ai-connection/3-settings-running-1920.png
+3,디자인/시안/AI연결/3-연결설정-실행중.html,design/mockups/ai-connection/3-settings-running.html
+3,디자인/시안/AI연결/4-구독처음사용-1366.png,design/mockups/ai-connection/4-subscription-first-use-1366.png
+3,디자인/시안/AI연결/4-구독처음사용-1920.png,design/mockups/ai-connection/4-subscription-first-use-1920.png
+3,디자인/시안/AI연결/4-구독처음사용.html,design/mockups/ai-connection/4-subscription-first-use.html
+3,디자인/시안/AI연결/5-연결칩-1366.png,design/mockups/ai-connection/5-connection-chip-1366.png
+3,디자인/시안/AI연결/5-연결칩-1920.png,design/mockups/ai-connection/5-connection-chip-1920.png
+3,디자인/시안/AI연결/5-연결칩.html,design/mockups/ai-connection/5-connection-chip.html
+3,디자인/시안/AI연결/6-실행확인-1366.png,design/mockups/ai-connection/6-run-confirm-1366.png
+3,디자인/시안/AI연결/6-실행확인-1920.png,design/mockups/ai-connection/6-run-confirm-1920.png
+3,디자인/시안/AI연결/6-실행확인.html,design/mockups/ai-connection/6-run-confirm.html
+3,디자인/시안/AI연결/7-한도도달-1366.png,design/mockups/ai-connection/7-limit-reached-1366.png
+3,디자인/시안/AI연결/7-한도도달-1920.png,design/mockups/ai-connection/7-limit-reached-1920.png
+3,디자인/시안/AI연결/7-한도도달.html,design/mockups/ai-connection/7-limit-reached.html
+3,디자인/시안/AI연결/8-결과기록-1366.png,design/mockups/ai-connection/8-result-record-1366.png
+3,디자인/시안/AI연결/8-결과기록-1920.png,design/mockups/ai-connection/8-result-record-1920.png
+3,디자인/시안/AI연결/8-결과기록.html,design/mockups/ai-connection/8-result-record.html
+3,디자인/시안/AI연결/9-상태안내-1366.png,design/mockups/ai-connection/9-status-notice-1366.png
+3,디자인/시안/AI연결/9-상태안내-1920.png,design/mockups/ai-connection/9-status-notice-1920.png
+3,디자인/시안/AI연결/9-상태안내.html,design/mockups/ai-connection/9-status-notice.html
+3,디자인/시안/AI연결/build.py,design/mockups/ai-connection/build.py
+3,디자인/시안/AI연결/index.html,design/mockups/ai-connection/index.html
+3,디자인/시안/README.md,design/mockups/README.md
+3,디자인/시안/UIUX-디테일/1-결과-셸.html,design/mockups/uiux-detail/1-results-shell.html
+3,디자인/시안/UIUX-디테일/2-구간-미리보기.html,design/mockups/uiux-detail/2-region-preview.html
+3,디자인/시안/UIUX-디테일/3-명령팔레트.html,design/mockups/uiux-detail/3-command-palette.html
+3,디자인/시안/UIUX-디테일/4-등록-진행오류.html,design/mockups/uiux-detail/4-register-progress-error.html
+3,디자인/시안/UIUX-디테일/5-결과-빈상태.html,design/mockups/uiux-detail/5-results-empty.html
+3,디자인/시안/UIUX-디테일/README.md,design/mockups/uiux-detail/README.md
+3,디자인/시안/UIUX-디테일/build.py,design/mockups/uiux-detail/build.py
+3,디자인/시안/UIUX-디테일/index.html,design/mockups/uiux-detail/index.html
+3,디자인/시안/UIUX-디테일/png/1-결과-셸-1366.png,design/mockups/uiux-detail/png/1-results-shell-1366.png
+3,디자인/시안/UIUX-디테일/png/1-결과-셸-1920.png,design/mockups/uiux-detail/png/1-results-shell-1920.png
+3,디자인/시안/UIUX-디테일/png/2-구간-미리보기-1366.png,design/mockups/uiux-detail/png/2-region-preview-1366.png
+3,디자인/시안/UIUX-디테일/png/2-구간-미리보기-1920.png,design/mockups/uiux-detail/png/2-region-preview-1920.png
+3,디자인/시안/UIUX-디테일/png/3-명령팔레트-1366.png,design/mockups/uiux-detail/png/3-command-palette-1366.png
+3,디자인/시안/UIUX-디테일/png/3-명령팔레트-1920.png,design/mockups/uiux-detail/png/3-command-palette-1920.png
+3,디자인/시안/UIUX-디테일/png/4-등록-진행오류-1366.png,design/mockups/uiux-detail/png/4-register-progress-error-1366.png
+3,디자인/시안/UIUX-디테일/png/4-등록-진행오류-1920.png,design/mockups/uiux-detail/png/4-register-progress-error-1920.png
+3,디자인/시안/UIUX-디테일/png/5-결과-빈상태-1366.png,design/mockups/uiux-detail/png/5-results-empty-1366.png
+3,디자인/시안/UIUX-디테일/png/5-결과-빈상태-1920.png,design/mockups/uiux-detail/png/5-results-empty-1920.png
+3,디자인/시안/UIUX-디테일/개선명세.md,design/mockups/uiux-detail/improvement-spec.md
+3,디자인/시안/UIUX-디테일/결함목록.md,design/mockups/uiux-detail/defect-list.md
+3,디자인/시안/UIUX-디테일/조사요약.md,design/mockups/uiux-detail/survey-summary.md
+3,디자인/시안/interface-mockup.html,design/mockups/interface-mockup.html
+3,디자인/시안/kg-graph-mockup.html,design/mockups/kg-graph-mockup.html
+3,디자인/시안/완성본/A-밝은미니멀/1-자료등록-1366.png,design/mockups/final/a-light-minimal/1-registration-1366.png
+3,디자인/시안/완성본/A-밝은미니멀/1-자료등록-1920.png,design/mockups/final/a-light-minimal/1-registration-1920.png
+3,디자인/시안/완성본/A-밝은미니멀/1-자료등록.html,design/mockups/final/a-light-minimal/1-registration.html
+3,디자인/시안/완성본/A-밝은미니멀/2-도면추출-1366.png,design/mockups/final/a-light-minimal/2-drawing-extract-1366.png
+3,디자인/시안/완성본/A-밝은미니멀/2-도면추출-1920.png,design/mockups/final/a-light-minimal/2-drawing-extract-1920.png
+3,디자인/시안/완성본/A-밝은미니멀/2-도면추출.html,design/mockups/final/a-light-minimal/2-drawing-extract.html
+3,디자인/시안/완성본/A-밝은미니멀/3-지식그래프-1366.png,design/mockups/final/a-light-minimal/3-knowledge-graph-1366.png
+3,디자인/시안/완성본/A-밝은미니멀/3-지식그래프-1920.png,design/mockups/final/a-light-minimal/3-knowledge-graph-1920.png
+3,디자인/시안/완성본/A-밝은미니멀/3-지식그래프.html,design/mockups/final/a-light-minimal/3-knowledge-graph.html
+3,디자인/시안/완성본/A-밝은미니멀/4-검토구간-1366.png,design/mockups/final/a-light-minimal/4-study-nodes-1366.png
+3,디자인/시안/완성본/A-밝은미니멀/4-검토구간-1920.png,design/mockups/final/a-light-minimal/4-study-nodes-1920.png
+3,디자인/시안/완성본/A-밝은미니멀/4-검토구간.html,design/mockups/final/a-light-minimal/4-study-nodes.html
+3,디자인/시안/완성본/A-밝은미니멀/5-요약행렬-1366.png,design/mockups/final/a-light-minimal/5-summary-matrix-1366.png
+3,디자인/시안/완성본/A-밝은미니멀/5-요약행렬-1920.png,design/mockups/final/a-light-minimal/5-summary-matrix-1920.png
+3,디자인/시안/완성본/A-밝은미니멀/5-요약행렬.html,design/mockups/final/a-light-minimal/5-summary-matrix.html
+3,디자인/시안/완성본/A-밝은미니멀/대비표.md,design/mockups/final/a-light-minimal/contrast-table.md
+3,디자인/시안/완성본/B-고밀도작업대/1-자료등록-1366.png,design/mockups/final/b-dense-workbench/1-registration-1366.png
+3,디자인/시안/완성본/B-고밀도작업대/1-자료등록-1920.png,design/mockups/final/b-dense-workbench/1-registration-1920.png
+3,디자인/시안/완성본/B-고밀도작업대/1-자료등록.html,design/mockups/final/b-dense-workbench/1-registration.html
+3,디자인/시안/완성본/B-고밀도작업대/2-도면추출-1366.png,design/mockups/final/b-dense-workbench/2-drawing-extract-1366.png
+3,디자인/시안/완성본/B-고밀도작업대/2-도면추출-1920.png,design/mockups/final/b-dense-workbench/2-drawing-extract-1920.png
+3,디자인/시안/완성본/B-고밀도작업대/2-도면추출.html,design/mockups/final/b-dense-workbench/2-drawing-extract.html
+3,디자인/시안/완성본/B-고밀도작업대/3-지식그래프-1366.png,design/mockups/final/b-dense-workbench/3-knowledge-graph-1366.png
+3,디자인/시안/완성본/B-고밀도작업대/3-지식그래프-1920.png,design/mockups/final/b-dense-workbench/3-knowledge-graph-1920.png
+3,디자인/시안/완성본/B-고밀도작업대/3-지식그래프.html,design/mockups/final/b-dense-workbench/3-knowledge-graph.html
+3,디자인/시안/완성본/B-고밀도작업대/4-검토구간-1366.png,design/mockups/final/b-dense-workbench/4-study-nodes-1366.png
+3,디자인/시안/완성본/B-고밀도작업대/4-검토구간-1920.png,design/mockups/final/b-dense-workbench/4-study-nodes-1920.png
+3,디자인/시안/완성본/B-고밀도작업대/4-검토구간.html,design/mockups/final/b-dense-workbench/4-study-nodes.html
+3,디자인/시안/완성본/B-고밀도작업대/5-요약행렬-1366.png,design/mockups/final/b-dense-workbench/5-summary-matrix-1366.png
+3,디자인/시안/완성본/B-고밀도작업대/5-요약행렬-1920.png,design/mockups/final/b-dense-workbench/5-summary-matrix-1920.png
+3,디자인/시안/완성본/B-고밀도작업대/5-요약행렬.html,design/mockups/final/b-dense-workbench/5-summary-matrix.html
+3,디자인/시안/완성본/B-고밀도작업대/대비표.md,design/mockups/final/b-dense-workbench/contrast-table.md
+3,디자인/시안/완성본/C-다크대시보드/1-자료등록-1366.png,design/mockups/final/c-dark-dashboard/1-registration-1366.png
+3,디자인/시안/완성본/C-다크대시보드/1-자료등록-1920.png,design/mockups/final/c-dark-dashboard/1-registration-1920.png
+3,디자인/시안/완성본/C-다크대시보드/1-자료등록.html,design/mockups/final/c-dark-dashboard/1-registration.html
+3,디자인/시안/완성본/C-다크대시보드/2-도면추출-1366.png,design/mockups/final/c-dark-dashboard/2-drawing-extract-1366.png
+3,디자인/시안/완성본/C-다크대시보드/2-도면추출-1920.png,design/mockups/final/c-dark-dashboard/2-drawing-extract-1920.png
+3,디자인/시안/완성본/C-다크대시보드/2-도면추출.html,design/mockups/final/c-dark-dashboard/2-drawing-extract.html
+3,디자인/시안/완성본/C-다크대시보드/3-지식그래프-1366.png,design/mockups/final/c-dark-dashboard/3-knowledge-graph-1366.png
+3,디자인/시안/완성본/C-다크대시보드/3-지식그래프-1920.png,design/mockups/final/c-dark-dashboard/3-knowledge-graph-1920.png
+3,디자인/시안/완성본/C-다크대시보드/3-지식그래프.html,design/mockups/final/c-dark-dashboard/3-knowledge-graph.html
+3,디자인/시안/완성본/C-다크대시보드/4-검토구간-1366.png,design/mockups/final/c-dark-dashboard/4-study-nodes-1366.png
+3,디자인/시안/완성본/C-다크대시보드/4-검토구간-1920.png,design/mockups/final/c-dark-dashboard/4-study-nodes-1920.png
+3,디자인/시안/완성본/C-다크대시보드/4-검토구간.html,design/mockups/final/c-dark-dashboard/4-study-nodes.html
+3,디자인/시안/완성본/C-다크대시보드/5-요약행렬-1366.png,design/mockups/final/c-dark-dashboard/5-summary-matrix-1366.png
+3,디자인/시안/완성본/C-다크대시보드/5-요약행렬-1920.png,design/mockups/final/c-dark-dashboard/5-summary-matrix-1920.png
+3,디자인/시안/완성본/C-다크대시보드/5-요약행렬.html,design/mockups/final/c-dark-dashboard/5-summary-matrix.html
+3,디자인/시안/완성본/C-다크대시보드/대비표.md,design/mockups/final/c-dark-dashboard/contrast-table.md
+3,디자인/시안/완성본/README.md,design/mockups/final/README.md
+3,디자인/시안/완성본/build.py,design/mockups/final/build.py
+3,디자인/시안/완성본/index.html,design/mockups/final/index.html
+3,디자인/시안/초기사건/6-그룹-1366.png,design/mockups/initiating-events/6-groups-1366.png
+3,디자인/시안/초기사건/6-그룹-1920.png,design/mockups/initiating-events/6-groups-1920.png
+3,디자인/시안/초기사건/6-그룹.html,design/mockups/initiating-events/6-groups.html
+3,디자인/시안/초기사건/6-완전성대조-1366.png,design/mockups/initiating-events/6-completeness-check-1366.png
+3,디자인/시안/초기사건/6-완전성대조-1920.png,design/mockups/initiating-events/6-completeness-check-1920.png
+3,디자인/시안/초기사건/6-완전성대조.html,design/mockups/initiating-events/6-completeness-check.html
+3,디자인/시안/초기사건/build.py,design/mockups/initiating-events/build.py
+3,디자인/지식그래프화면.md,design/kg-screen.md
+3,디자인/출력화면AX-데모분석.md,design/output-screen-ax-demo.md
+3,디자인/화면명세.md,design/screen-spec.md
+3,메모리/README.md,records/README.md
+3,메모리/결정로그.md,records/decision-log.md
+3,메모리/남은작업.md,records/backlog.md
+3,지식/위험도분석-결합방법론.md,methodology/combined-risk-methods.md
+3d,flow chart,specs/flows
+3d,기획서,specs
+3d,디자인,design
+3d,디자인/시안,design/mockups
+3d,디자인/시안/AI연결,design/mockups/ai-connection
+3d,디자인/시안/UIUX-디테일,design/mockups/uiux-detail
+3d,디자인/시안/UIUX-디테일/png,design/mockups/uiux-detail/png
+3d,디자인/시안/완성본,design/mockups/final
+3d,디자인/시안/완성본/A-밝은미니멀,design/mockups/final/a-light-minimal
+3d,디자인/시안/완성본/B-고밀도작업대,design/mockups/final/b-dense-workbench
+3d,디자인/시안/완성본/C-다크대시보드,design/mockups/final/c-dark-dashboard
+3d,디자인/시안/초기사건,design/mockups/initiating-events
+3d,메모리,records
+3d,지식,methodology
+5,자원/기준/기준표/kosha-p86-2017-risk-criteria.json,resources/library/risk-criteria/kosha-p86-2017-risk-criteria.json
+5,자원/기준/기준표/lwr-generic-ie-categories.json,resources/library/risk-criteria/lwr-generic-ie-categories.json
+5,자원/기준/기호/APR1400/check_valve_box.json,resources/library/symbols/APR1400/check_valve_box.json
+5,자원/기준/기호/APR1400/control_device_box.json,resources/library/symbols/APR1400/control_device_box.json
+5,자원/기준/기호/APR1400/damper_closed.json,resources/library/symbols/APR1400/damper_closed.json
+5,자원/기준/기호/APR1400/damper_open.json,resources/library/symbols/APR1400/damper_open.json
+5,자원/기준/기호/APR1400/diaphragm_operator.json,resources/library/symbols/APR1400/diaphragm_operator.json
+5,자원/기준/기호/APR1400/eh_operator.json,resources/library/symbols/APR1400/eh_operator.json
+5,자원/기준/기호/APR1400/equipment_drain.json,resources/library/symbols/APR1400/equipment_drain.json
+5,자원/기준/기호/APR1400/gate_valve.json,resources/library/symbols/APR1400/gate_valve.json
+5,자원/기준/기호/APR1400/globe_valve.json,resources/library/symbols/APR1400/globe_valve.json
+5,자원/기준/기호/APR1400/hsi_shared_display.json,resources/library/symbols/APR1400/hsi_shared_display.json
+5,자원/기준/기호/APR1400/ident_bubble_circle.json,resources/library/symbols/APR1400/ident_bubble_circle.json
+5,자원/기준/기호/APR1400/ident_bubble_ellipse.json,resources/library/symbols/APR1400/ident_bubble_ellipse.json
+5,자원/기준/기호/APR1400/motor_operator.json,resources/library/symbols/APR1400/motor_operator.json
+5,자원/기준/기호/APR1400/offsheet_continuation.json,resources/library/symbols/APR1400/offsheet_continuation.json
+5,자원/기준/기호/APR1400/plug_valve.json,resources/library/symbols/APR1400/plug_valve.json
+5,자원/기준/기호/APR1400/reducer.json,resources/library/symbols/APR1400/reducer.json
+5,자원/기준/기호/APR1400/sequence_letter.json,resources/library/symbols/APR1400/sequence_letter.json
+5,자원/기준/기호/APR1400/solenoid_operator.json,resources/library/symbols/APR1400/solenoid_operator.json
+5,자원/기준/기호/APR1400/test_connection.json,resources/library/symbols/APR1400/test_connection.json
+5,자원/기준/기호/APR1400/tombstone_instrument.json,resources/library/symbols/APR1400/tombstone_instrument.json
+5,자원/기준/기호/APR1400/그림/check_valve_box.png,resources/library/symbols/APR1400/images/check_valve_box.png
+5,자원/기준/기호/APR1400/그림/control_device_box.png,resources/library/symbols/APR1400/images/control_device_box.png
+5,자원/기준/기호/APR1400/그림/damper_closed.png,resources/library/symbols/APR1400/images/damper_closed.png
+5,자원/기준/기호/APR1400/그림/damper_open.png,resources/library/symbols/APR1400/images/damper_open.png
+5,자원/기준/기호/APR1400/그림/diaphragm_operator.png,resources/library/symbols/APR1400/images/diaphragm_operator.png
+5,자원/기준/기호/APR1400/그림/eh_operator.png,resources/library/symbols/APR1400/images/eh_operator.png
+5,자원/기준/기호/APR1400/그림/equipment_drain.png,resources/library/symbols/APR1400/images/equipment_drain.png
+5,자원/기준/기호/APR1400/그림/gate_valve.png,resources/library/symbols/APR1400/images/gate_valve.png
+5,자원/기준/기호/APR1400/그림/globe_valve.png,resources/library/symbols/APR1400/images/globe_valve.png
+5,자원/기준/기호/APR1400/그림/hsi_shared_display.png,resources/library/symbols/APR1400/images/hsi_shared_display.png
+5,자원/기준/기호/APR1400/그림/ident_bubble_circle.png,resources/library/symbols/APR1400/images/ident_bubble_circle.png
+5,자원/기준/기호/APR1400/그림/ident_bubble_ellipse.png,resources/library/symbols/APR1400/images/ident_bubble_ellipse.png
+5,자원/기준/기호/APR1400/그림/motor_operator.png,resources/library/symbols/APR1400/images/motor_operator.png
+5,자원/기준/기호/APR1400/그림/offsheet_continuation.png,resources/library/symbols/APR1400/images/offsheet_continuation.png
+5,자원/기준/기호/APR1400/그림/plug_valve.png,resources/library/symbols/APR1400/images/plug_valve.png
+5,자원/기준/기호/APR1400/그림/reducer.png,resources/library/symbols/APR1400/images/reducer.png
+5,자원/기준/기호/APR1400/그림/sequence_letter.png,resources/library/symbols/APR1400/images/sequence_letter.png
+5,자원/기준/기호/APR1400/그림/solenoid_operator.png,resources/library/symbols/APR1400/images/solenoid_operator.png
+5,자원/기준/기호/APR1400/그림/test_connection.png,resources/library/symbols/APR1400/images/test_connection.png
+5,자원/기준/기호/APR1400/그림/tombstone_instrument.png,resources/library/symbols/APR1400/images/tombstone_instrument.png
+5,자원/기준/기호/공통/pattern_dot.json,resources/library/symbols/common/pattern_dot.json
+5,자원/기준/기호/공통/그림/pattern_dot.png,resources/library/symbols/common/images/pattern_dot.png
+5,자원/기준/기호/묶음.json,resources/library/symbols/bundles.json
+5,자원/기준/이탈후보/applicability-region-SNP-M-102-pzr.json,resources/library/deviations/applicability-region-SNP-M-102-pzr.json
+5,자원/기준/이탈후보/kosha-p86-2017-deviation-chart.json,resources/library/deviations/kosha-p86-2017-deviation-chart.json
+5,자원/기준/패턴/pressurizer-patterns.json,resources/library/patterns/pressurizer-patterns.json
+5,자원/참고자료/APR1400_DCD/계통약어.csv,resources/references/APR1400_DCD/system-codes.csv
+5,자원/참고자료/APR1400_DCD/도면목록.csv,resources/references/APR1400_DCD/drawing-list.csv
+5,자원/참고자료/APR1400_DCD/도면목록.md,resources/references/APR1400_DCD/drawing-list.md
+5,자원/참고자료/APR1400_DCD/스크립트/extract_pid.py,resources/references/APR1400_DCD/scripts/extract_pid.py
+5,자원/참고자료/APR1400_DCD/스크립트/make_index.py,resources/references/APR1400_DCD/scripts/make_index.py
+5,자원/참고자료/APR1400_DCD/후보_제외도면.csv,resources/references/APR1400_DCD/excluded-drawings.csv
+5,자원/참고자료/P&ID 기호 카탈로그/00_symbol_catalog.pdf,resources/references/pid-symbol-catalog/00_symbol_catalog.pdf
+5,자원/참고자료/P&ID 기호 카탈로그/01_Instruments.png,resources/references/pid-symbol-catalog/01_Instruments.png
+5,자원/참고자료/P&ID 기호 카탈로그/01_Instruments.svg,resources/references/pid-symbol-catalog/01_Instruments.svg
+5,자원/참고자료/P&ID 기호 카탈로그/02_Valves.png,resources/references/pid-symbol-catalog/02_Valves.png
+5,자원/참고자료/P&ID 기호 카탈로그/02_Valves.svg,resources/references/pid-symbol-catalog/02_Valves.svg
+5,자원/참고자료/P&ID 기호 카탈로그/03_Compressors.png,resources/references/pid-symbol-catalog/03_Compressors.png
+5,자원/참고자료/P&ID 기호 카탈로그/03_Compressors.svg,resources/references/pid-symbol-catalog/03_Compressors.svg
+5,자원/참고자료/P&ID 기호 카탈로그/04_Engines.png,resources/references/pid-symbol-catalog/04_Engines.png
+5,자원/참고자료/P&ID 기호 카탈로그/04_Engines.svg,resources/references/pid-symbol-catalog/04_Engines.svg
+5,자원/참고자료/P&ID 기호 카탈로그/05_Filters.png,resources/references/pid-symbol-catalog/05_Filters.png
+5,자원/참고자료/P&ID 기호 카탈로그/05_Filters.svg,resources/references/pid-symbol-catalog/05_Filters.svg
+5,자원/참고자료/P&ID 기호 카탈로그/06_Flow_Sensors.png,resources/references/pid-symbol-catalog/06_Flow_Sensors.png
+5,자원/참고자료/P&ID 기호 카탈로그/06_Flow_Sensors.svg,resources/references/pid-symbol-catalog/06_Flow_Sensors.svg
+5,자원/참고자료/P&ID 기호 카탈로그/07_Piping.png,resources/references/pid-symbol-catalog/07_Piping.png
+5,자원/참고자료/P&ID 기호 카탈로그/07_Piping.svg,resources/references/pid-symbol-catalog/07_Piping.svg
+5,자원/참고자료/P&ID 기호 카탈로그/08_Crushers_Grinding.png,resources/references/pid-symbol-catalog/08_Crushers_Grinding.png
+5,자원/참고자료/P&ID 기호 카탈로그/08_Crushers_Grinding.svg,resources/references/pid-symbol-catalog/08_Crushers_Grinding.svg
+5,자원/참고자료/P&ID 기호 카탈로그/09_Fittings.png,resources/references/pid-symbol-catalog/09_Fittings.png
+5,자원/참고자료/P&ID 기호 카탈로그/09_Fittings.svg,resources/references/pid-symbol-catalog/09_Fittings.svg
+5,자원/참고자료/P&ID 기호 카탈로그/10_Separators.png,resources/references/pid-symbol-catalog/10_Separators.png
+5,자원/참고자료/P&ID 기호 카탈로그/10_Separators.svg,resources/references/pid-symbol-catalog/10_Separators.svg
+5,자원/참고자료/P&ID 기호 카탈로그/11_Misc.png,resources/references/pid-symbol-catalog/11_Misc.png
+5,자원/참고자료/P&ID 기호 카탈로그/11_Misc.svg,resources/references/pid-symbol-catalog/11_Misc.svg
+5,자원/참고자료/P&ID 기호 카탈로그/12_Agitators.png,resources/references/pid-symbol-catalog/12_Agitators.png
+5,자원/참고자료/P&ID 기호 카탈로그/12_Agitators.svg,resources/references/pid-symbol-catalog/12_Agitators.svg
+5,자원/참고자료/P&ID 기호 카탈로그/13_Apparatus_Elements.png,resources/references/pid-symbol-catalog/13_Apparatus_Elements.png
+5,자원/참고자료/P&ID 기호 카탈로그/13_Apparatus_Elements.svg,resources/references/pid-symbol-catalog/13_Apparatus_Elements.svg
+5,자원/참고자료/P&ID 기호 카탈로그/14_Centrifuges.png,resources/references/pid-symbol-catalog/14_Centrifuges.png
+5,자원/참고자료/P&ID 기호 카탈로그/14_Centrifuges.svg,resources/references/pid-symbol-catalog/14_Centrifuges.svg
+5,자원/참고자료/P&ID 기호 카탈로그/15_Compressors_Iso.png,resources/references/pid-symbol-catalog/15_Compressors_Iso.png
+5,자원/참고자료/P&ID 기호 카탈로그/15_Compressors_Iso.svg,resources/references/pid-symbol-catalog/15_Compressors_Iso.svg
+5,자원/참고자료/P&ID 기호 카탈로그/16_Driers.png,resources/references/pid-symbol-catalog/16_Driers.png
+5,자원/참고자료/P&ID 기호 카탈로그/16_Driers.svg,resources/references/pid-symbol-catalog/16_Driers.svg
+5,자원/참고자료/P&ID 기호 카탈로그/17_Feeders.png,resources/references/pid-symbol-catalog/17_Feeders.png
+5,자원/참고자료/P&ID 기호 카탈로그/17_Feeders.svg,resources/references/pid-symbol-catalog/17_Feeders.svg
+5,자원/참고자료/P&ID 기호 카탈로그/18_Heat_Exchangers.png,resources/references/pid-symbol-catalog/18_Heat_Exchangers.png
+5,자원/참고자료/P&ID 기호 카탈로그/18_Heat_Exchangers.svg,resources/references/pid-symbol-catalog/18_Heat_Exchangers.svg
+5,자원/참고자료/P&ID 기호 카탈로그/19_Mixers.png,resources/references/pid-symbol-catalog/19_Mixers.png
+5,자원/참고자료/P&ID 기호 카탈로그/19_Mixers.svg,resources/references/pid-symbol-catalog/19_Mixers.svg
+5,자원/참고자료/P&ID 기호 카탈로그/20_Pumps.png,resources/references/pid-symbol-catalog/20_Pumps.png
+5,자원/참고자료/P&ID 기호 카탈로그/20_Pumps.svg,resources/references/pid-symbol-catalog/20_Pumps.svg
+5,자원/참고자료/P&ID 기호 카탈로그/21_Pumps_Din.png,resources/references/pid-symbol-catalog/21_Pumps_Din.png
+5,자원/참고자료/P&ID 기호 카탈로그/21_Pumps_Din.svg,resources/references/pid-symbol-catalog/21_Pumps_Din.svg
+5,자원/참고자료/P&ID 기호 카탈로그/22_Pumps_Iso.png,resources/references/pid-symbol-catalog/22_Pumps_Iso.png
+5,자원/참고자료/P&ID 기호 카탈로그/22_Pumps_Iso.svg,resources/references/pid-symbol-catalog/22_Pumps_Iso.svg
+5,자원/참고자료/P&ID 기호 카탈로그/23_Shaping_Machines.png,resources/references/pid-symbol-catalog/23_Shaping_Machines.png
+5,자원/참고자료/P&ID 기호 카탈로그/23_Shaping_Machines.svg,resources/references/pid-symbol-catalog/23_Shaping_Machines.svg
+5,자원/참고자료/P&ID 기호 카탈로그/24_Vessels.png,resources/references/pid-symbol-catalog/24_Vessels.png
+5,자원/참고자료/P&ID 기호 카탈로그/24_Vessels.svg,resources/references/pid-symbol-catalog/24_Vessels.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/01_SNP-M-101.drawio.png,resources/references/pid-samples/SNP-M-101_RCS-main-loop/01_SNP-M-101.drawio.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/01_SNP-M-101.drawio.svg,resources/references/pid-samples/SNP-M-101_RCS-main-loop/01_SNP-M-101.drawio.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/01_SNP-M-101.jpg,resources/references/pid-samples/SNP-M-101_RCS-main-loop/01_SNP-M-101.jpg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/01_SNP-M-101.png,resources/references/pid-samples/SNP-M-101_RCS-main-loop/01_SNP-M-101.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/01_SNP-M-101.svg,resources/references/pid-samples/SNP-M-101_RCS-main-loop/01_SNP-M-101.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio,resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.html,resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.html
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.pdf,resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.pdf
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/01_SNP-M-102.drawio.png,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.drawio.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/01_SNP-M-102.drawio.svg,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.drawio.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/01_SNP-M-102.jpg,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.jpg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/01_SNP-M-102.png,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/01_SNP-M-102.svg,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.drawio,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.drawio
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.html,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.html
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.pdf,resources/references/pid-samples/SNP-M-102_RCS-pressurizer/SNP-M-102_RCS-pressurizer.pdf
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/01_SNP-M-201.drawio.png,resources/references/pid-samples/SNP-M-201_CVCS/01_SNP-M-201.drawio.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/01_SNP-M-201.drawio.svg,resources/references/pid-samples/SNP-M-201_CVCS/01_SNP-M-201.drawio.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/01_SNP-M-201.jpg,resources/references/pid-samples/SNP-M-201_CVCS/01_SNP-M-201.jpg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/01_SNP-M-201.png,resources/references/pid-samples/SNP-M-201_CVCS/01_SNP-M-201.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/01_SNP-M-201.svg,resources/references/pid-samples/SNP-M-201_CVCS/01_SNP-M-201.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/SNP-M-201_CVCS.drawio,resources/references/pid-samples/SNP-M-201_CVCS/SNP-M-201_CVCS.drawio
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/SNP-M-201_CVCS.html,resources/references/pid-samples/SNP-M-201_CVCS/SNP-M-201_CVCS.html
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-201_CVCS/SNP-M-201_CVCS.pdf,resources/references/pid-samples/SNP-M-201_CVCS/SNP-M-201_CVCS.pdf
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/01_SNP-M-301.drawio.png,resources/references/pid-samples/SNP-M-301_SIS/01_SNP-M-301.drawio.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/01_SNP-M-301.drawio.svg,resources/references/pid-samples/SNP-M-301_SIS/01_SNP-M-301.drawio.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/01_SNP-M-301.jpg,resources/references/pid-samples/SNP-M-301_SIS/01_SNP-M-301.jpg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/01_SNP-M-301.png,resources/references/pid-samples/SNP-M-301_SIS/01_SNP-M-301.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/01_SNP-M-301.svg,resources/references/pid-samples/SNP-M-301_SIS/01_SNP-M-301.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/SNP-M-301_SIS.drawio,resources/references/pid-samples/SNP-M-301_SIS/SNP-M-301_SIS.drawio
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/SNP-M-301_SIS.html,resources/references/pid-samples/SNP-M-301_SIS/SNP-M-301_SIS.html
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-301_SIS/SNP-M-301_SIS.pdf,resources/references/pid-samples/SNP-M-301_SIS/SNP-M-301_SIS.pdf
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/01_SNP-M-401.drawio.png,resources/references/pid-samples/SNP-M-401_CCW/01_SNP-M-401.drawio.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/01_SNP-M-401.drawio.svg,resources/references/pid-samples/SNP-M-401_CCW/01_SNP-M-401.drawio.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/01_SNP-M-401.jpg,resources/references/pid-samples/SNP-M-401_CCW/01_SNP-M-401.jpg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/01_SNP-M-401.png,resources/references/pid-samples/SNP-M-401_CCW/01_SNP-M-401.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/01_SNP-M-401.svg,resources/references/pid-samples/SNP-M-401_CCW/01_SNP-M-401.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/SNP-M-401_CCW.drawio,resources/references/pid-samples/SNP-M-401_CCW/SNP-M-401_CCW.drawio
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/SNP-M-401_CCW.html,resources/references/pid-samples/SNP-M-401_CCW/SNP-M-401_CCW.html
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-401_CCW/SNP-M-401_CCW.pdf,resources/references/pid-samples/SNP-M-401_CCW/SNP-M-401_CCW.pdf
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/01_SNP-M-501.drawio.png,resources/references/pid-samples/SNP-M-501_MS-FW/01_SNP-M-501.drawio.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/01_SNP-M-501.drawio.svg,resources/references/pid-samples/SNP-M-501_MS-FW/01_SNP-M-501.drawio.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/01_SNP-M-501.jpg,resources/references/pid-samples/SNP-M-501_MS-FW/01_SNP-M-501.jpg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/01_SNP-M-501.png,resources/references/pid-samples/SNP-M-501_MS-FW/01_SNP-M-501.png
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/01_SNP-M-501.svg,resources/references/pid-samples/SNP-M-501_MS-FW/01_SNP-M-501.svg
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/SNP-M-501_MS-FW.drawio,resources/references/pid-samples/SNP-M-501_MS-FW/SNP-M-501_MS-FW.drawio
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/SNP-M-501_MS-FW.html,resources/references/pid-samples/SNP-M-501_MS-FW/SNP-M-501_MS-FW.html
+5,자원/참고자료/P&ID 도면 샘플/SNP-M-501_MS-FW/SNP-M-501_MS-FW.pdf,resources/references/pid-samples/SNP-M-501_MS-FW/SNP-M-501_MS-FW.pdf
+5,자원/표본/고정응답/region-SNP-M-102-pzr/deviation-p86-d09.json,resources/samples/fixed-responses/region-SNP-M-102-pzr/deviation-p86-d09.json
+5,자원/표본/고정응답/region-SNP-M-102-pzr/deviation-p86-d10.json,resources/samples/fixed-responses/region-SNP-M-102-pzr/deviation-p86-d10.json
+5,자원/표본/고정응답/region-SNP-M-102-pzr/deviation-p86-d12.json,resources/samples/fixed-responses/region-SNP-M-102-pzr/deviation-p86-d12.json
+5,자원/표본/고정응답/region-SNP-M-102-pzr/deviation-p86-d43.json,resources/samples/fixed-responses/region-SNP-M-102-pzr/deviation-p86-d43.json
+5,자원/표본/고정응답/region-SNP-M-102-pzr/deviation-p86-d44.json,resources/samples/fixed-responses/region-SNP-M-102-pzr/deviation-p86-d44.json
+5,자원/표본/구간/region-SNP-M-102-pzr.json,resources/samples/regions/region-SNP-M-102-pzr.json
+5,자원/표본/지식/SNP-SAMPLE/knowledge_links.csv,resources/samples/knowledge-graph/SNP-SAMPLE/knowledge_links.csv
+5,자원/표본/지식/SNP-SAMPLE/knowledge_nodes.csv,resources/samples/knowledge-graph/SNP-SAMPLE/knowledge_nodes.csv
+5,자원/표본/지식/SNP-SAMPLE/link_candidates.csv,resources/samples/knowledge-graph/SNP-SAMPLE/link_candidates.csv
+5,자원/표본/평가기준/criteria-SNP-M-102-pzr-sample.json,resources/samples/evaluation-criteria/criteria-SNP-M-102-pzr-sample.json
+5,자원/표본/평가기준/criteria-SNP-M-102-pzr-sample.xlsx,resources/samples/evaluation-criteria/criteria-SNP-M-102-pzr-sample.xlsx
+5d,자원,resources
+5d,자원/기준,resources/library
+5d,자원/기준/기준표,resources/library/risk-criteria
+5d,자원/기준/기호,resources/library/symbols
+5d,자원/기준/기호/APR1400,resources/library/symbols/APR1400
+5d,자원/기준/기호/APR1400/그림,resources/library/symbols/APR1400/images
+5d,자원/기준/기호/공통,resources/library/symbols/common
+5d,자원/기준/기호/공통/그림,resources/library/symbols/common/images
+5d,자원/기준/이탈후보,resources/library/deviations
+5d,자원/기준/패턴,resources/library/patterns
+5d,자원/참고자료,resources/references
+5d,자원/참고자료/APR1400_DCD,resources/references/APR1400_DCD
+5d,자원/참고자료/APR1400_DCD/스크립트,resources/references/APR1400_DCD/scripts
+5d,자원/참고자료/P&ID 기호 카탈로그,resources/references/pid-symbol-catalog
+5d,자원/참고자료/P&ID 도면 샘플,resources/references/pid-samples
+5d,자원/표본,resources/samples
+5d,자원/표본/고정응답,resources/samples/fixed-responses
+5d,자원/표본/구간,resources/samples/regions
+5d,자원/표본/지식,resources/samples/knowledge-graph
+5d,자원/표본/평가기준,resources/samples/evaluation-criteria
+5u,자원/참고자료/APR1400_DCD/APR1400_DCD_Rev3_PID_전체.pdf,resources/references/APR1400_DCD/APR1400_DCD_Rev3_PID_all.pdf
+5u,자원/참고자료/APR1400_DCD/도면별,resources/references/APR1400_DCD/by-drawing
+5u,자원/참고자료/APR1400_DCD/원본,resources/references/APR1400_DCD/source
+5u,자원/참고자료/HAZOP 기법,resources/references/hazop-method
+5u,자원/참고자료/HAZOP 기법/P-86-2017 회분식 공정의 위험과 운전분석HAZOP기법에 관한 기술지침.pdf,resources/references/hazop-method/kosha-p-86-2017-batch-hazop-guide.pdf
+5u,자원/참고자료/참고 사진,resources/references/photos

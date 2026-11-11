@@ -1,7 +1,7 @@
 """지식그래프(지식 레이어) 검사 K1~K8을 한 번에 실행한다 (QA용). 하위 프로세스·네트워크를 쓰지 않는다.
 
 근거: 기획서/그래프활용.md §7.1(정상 샘플·차단 픽스처), §7.2(K1~K8).
-1) 정상 샘플 빌드: 데이터/지식/SNP-SAMPLE + 출력/그래프 -> 출력/지식그래프/kg-SNP-SAMPLE/<kg_version>/ + current.json
+1) 정상 샘플 빌드: data/knowledge-graph/SNP-SAMPLE + output/graph -> output/knowledge-graph/kg-SNP-SAMPLE/<kg_version>/ + current.json
    (passed여야 함. 읽기는 포인터를 따라 sha256 검증)
 2) 샘플 결과로 K1~K8 확인
 3) 차단 픽스처(tests/fixtures/kg/*/): 각각 blocked와 expected.json의 blockers(rule·check·target)가 정확히 같음

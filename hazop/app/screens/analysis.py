@@ -573,7 +573,7 @@ class AnalysisScreen(QWidget):
 
     # ------------------------------------------------------------ 동작(대화상자와 검사가 같은 함수를 씀)
     def ask_analyze(self):
-        dlg = AnalysisDialog(self, paths.folder("고정응답", self.region_combo.currentText()))
+        dlg = AnalysisDialog(self, paths.folder("fixed-responses", self.region_combo.currentText()))
         if dlg.exec() == QDialog.Accepted:
             self.start_analysis(dlg.folder.text().strip())
 
@@ -631,7 +631,7 @@ class AnalysisScreen(QWidget):
     def ask_change_decision(self):
         cid = self.current_candidate_id()
         if not cid or not self.ctx or not self.ctx.region_path:
-            QMessageBox.warning(self, "판단 변경", "구간 JSON(데이터/구간)을 찾을 수 없어 판단을 바꿀 수 없음")
+            QMessageBox.warning(self, "판단 변경", "구간 JSON(data/regions)을 찾을 수 없어 판단을 바꿀 수 없음")
             return
         region = data.read_json(self.ctx.region_path)
         dlg = DecisionDialog(self, self.ctx.candidate(cid), region["region_version"])

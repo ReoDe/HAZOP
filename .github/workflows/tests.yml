@@ -1,0 +1,62 @@
+name: tests
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Work root outside the checkout
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "HAZOP_WORK_ROOT=$env:RUNNER_TEMP\hazop-work"
+
+      - name: Git long paths
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12.10"
+          cache: pip
+          cache-dependency-path: packaging/requirements*.txt
+
+      - name: Show commit
+        run: git -c core.quotepath=false log -1 --stat --format=%H
+
+      - name: Install runtime packages
+        run: python -m pip install -r packaging/requirements.txt
+
+      - name: Install PDF packages
+        # block scalar: ':all: -r' has colon+space, invalid in a plain YAML scalar
+        run: |
+          python -m pip install --require-hashes --no-deps --only-binary=:all: -r packaging/requirements-pdf.txt
+
+      - name: Preflight
+        run: python scripts/preflight.py --profile test
+
+      - name: Tests and headless checks
+        run: python scripts/run_ci.py
+
+      - name: Diagnose
+        if: always()
+        run: python scripts/run_ci.py --diagnose

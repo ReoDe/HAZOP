@@ -1,6 +1,6 @@
 """P&ID 기호 사전과 모양 서명 매칭(기획서/PID-기호사전.md §3·§4).
 
-사전은 `자원/기준/기호/<묶음>/<id>.json`(기호 하나에 파일 하나)이고, 묶음 목록은 `자원/기준/기호/묶음.json`이다.
+사전은 `resources/library/symbols/<묶음 폴더>/<id>.json`(기호 하나에 파일 하나)이고, 묶음 목록은 그 폴더의 `bundles.json`이다.
 추출기가 묶은 기호의 구성 요소(몸체·선·표식·점선 조각)에서 서명(구성 키, 크기, 24×24 격자)을 만들고,
 같은 구성 키의 견본과 양방향 평균 챔퍼 거리(칸)로 견준다. 결과는 맞음·애매함·후보 없음 셋 중 하나다.
 배포본에 numpy가 없으므로 순수 파이썬으로 계산한다. 같은 입력과 같은 사전이면 같은 결과를 낸다.
@@ -30,7 +30,9 @@ ROTATION_SETS = {"dihedral8": tuple(n for n, _ in TRANSFORMS), "none": ("r0",)}
 ROLES = ("symbol", "actuator", "annotation", "continuation", "drop")
 DEFAULT_MARGIN = 0.1
 CURVE_SAMPLES = 8
-BUNDLES_FILE = "묶음.json"
+BUNDLES_FILE = "bundles.json"
+IMAGE_DIR = "images"  # 묶음 폴더 아래 예시 그림 폴더
+OLD_IMAGE_DIR = "그림"  # 2026-11-10 이름 이전 전에 만든 항목의 image 값은 '그림/<이름>.png'다. 항목 파일은 고치지 않고 읽을 때 푼다
 
 
 class SymbolLibraryError(ValueError):
@@ -298,6 +300,23 @@ class Entry:
         return self.text_inside is None or any(self.text_inside.search(t) for t in inside_text if t)
 
 
+def bundle_dir(root, name, prefix):
+    """묶음 폴더. 폴더 이름은 접두(common)이거나 묶음 이름(APR1400)이다. 묶음 이름이 한글('공통')이어도 폴더는 영어 접두로 두므로
+    접두 폴더를 먼저 본다. 둘 다 없으면 묶음 이름 자리를 돌려준다(새 묶음을 만들 자리)."""
+    for d in (prefix, name):
+        if os.path.isdir(os.path.join(root, d)):
+            return os.path.join(root, d)
+    return os.path.join(root, name)
+
+
+def image_path(folder, image):
+    """항목의 image 값(묶음 폴더 기준 상대 경로)이 가리키는 파일."""
+    parts = [p for p in image.replace("\\", "/").split("/") if p not in ("", ".")]
+    if parts and parts[0] == OLD_IMAGE_DIR:
+        parts[0] = IMAGE_DIR
+    return os.path.join(folder, *parts)
+
+
 class Library:
     """묶음들의 항목. match()가 기호 하나를 판정한다."""
 
@@ -317,7 +336,7 @@ class Library:
     def load(cls, root=None):
         if root is None:
             from hazop import paths
-            root = paths.folder("기호")
+            root = paths.folder("symbols")
         manifest = os.path.join(root, BUNDLES_FILE)
         if not os.path.isfile(manifest):
             raise SymbolLibraryError("기호 사전 묶음 목록이 없음: %s" % manifest)
@@ -333,7 +352,7 @@ class Library:
             manifest_raw = f.read()
         entries, versions = [], {}
         for name, prefix in bundles:
-            folder = os.path.join(root, name)
+            folder = bundle_dir(root, name, prefix)
             if not os.path.isdir(folder):
                 raise SymbolLibraryError("묶음 폴더가 없음: %s" % folder)
             h = hashlib.sha256(manifest_raw + b"\0")
@@ -354,7 +373,7 @@ class Library:
         dup = sorted(i for i, n in ids.items() if n > 1)
         if dup:
             raise SymbolLibraryError("id 중복: %s" % ", ".join(dup))
-        return cls(entries, versions, _number("묶음.json", "margin", meta.get("margin", DEFAULT_MARGIN), -1e-9))
+        return cls(entries, versions, _number(BUNDLES_FILE, "margin", meta.get("margin", DEFAULT_MARGIN), -1e-9))
 
     def match(self, sig, inside_text=()):
         """Signature와 기호 상자 안 글자 → Match(outcome, entry, distance, rotation, candidates).

@@ -10,14 +10,17 @@
     그 아래 HAZOP/(dist 사본)과 w4-run/(검사 입력 사본·작업 루트·임시)을 둔다. 결과는 --out 아래 새 폴더(run-<시각>-xxxx).
  2) HAZOP-check.exe w4_flow.py: 루트·datas 해시·자원 경로(분석 전) → ①~⑤ 함수 흐름·기준 자료 읽기 위치·음성 검사
  3) HAZOP-check.exe check_kg_screen.py --skip-tests --screenshots: ③ V2·렌더링·V1·S1·③ 탭과 ③ PNG
-    (이 단계만 HAZOP_WORK_ROOT = 입력 사본: 샘플 graph_version이 개발 실행과 같게. QT_QPA_PLATFORM = windows:
-    offscreen은 위젯 한글이 빈 상자로 찍힘)
+    (이 단계만 HAZOP_WORK_ROOT = 입력 사본의 참고 폴더 부모(kg_work_root): 샘플 graph_version이 개발 실행과 같게.
+    QT_QPA_PLATFORM = windows: offscreen은 위젯 한글이 빈 상자로 찍힘)
  3b) PDF 어댑터(W9, D15): HAZOP-check.exe pdf_probe.py로 샘플 PDF 사본(SNP-M-102, 가상 샘플)을 묶음 안 pdf_vector로
     추출하고 pypdfium2로 그린다. 추출 요약이 이 검증기(전용 venv)에서 같은 파일을 추출한 결과와 같고, pdfplumber·pdfminer·
     pypdfium2·pypdfium2_raw·PIL·cryptography·charset_normalizer 모듈(7개 키가 모두 결과에 있어야 함)과 실제로 읽힌 pdfium.dll
     (읽은 모듈 핸들의 경로)이 묶음 안인지 본다.
     --app-only(배포용)는 실행 단계 없이 _internal/pypdfium2_raw/pdfium.dll이 있는지만 본다(앱 PYZ의 모듈은 빌드 뒤 검사).
- 4) HAZOP.exe --screenshots [--run <④ 실행 폴더>]: ①②④⑤ PNG(앱의 --screenshots는 ③을 찍지 않음).
+ 4) HAZOP.exe --screenshots [--run <④ 실행 폴더>]: ①②(편집 모드 02-viewer-edit 포함)·이전 ④⑤ PNG와 레일 단계
+    ①~⑥ × 1366·1920 stages/ PNG(새 ④ 검토구간, 새 ⑤ 분석 결과, ⑥ 초기사건 포함). --app-only는 검증 exe가 없어 1)~3)이
+    작업 루트를 채우지 않으므로, 이 검증기가 개발 코드로 표본 구간·고정 응답·지식과 샘플 도면(SNP-M-102) 추출·그래프를
+    작업 루트에 먼저 넣는다(seed_app_work). 화면이 빈 안내만 찍히지 않게 하려는 것이고, 묶음의 추출 코드는 보지 않는다.
     <작업 루트>/logs/app.log에 시작 기록이 있는지. 잘못된 옵션(--w4-unknown-option)은 종료 코드 2와 사용법 오류(표준 출력
     사본)만 본다: 하위 프로세스로 띄우면 표준 출력 핸들이 있어 로그 파일 연결(핸들이 없을 때만)이 일어나지 않는다.
     손상 설정(W10, D18): JSON 문법 오류 설정 파일 + --screenshots → 종료 코드 2, 출력에 안내, app.log에 기록, 설정 파일은
@@ -25,7 +28,7 @@
     표지 훅(packaging/rthook_verify_build.py)이 있어 앱이 시험용 예외를 sys.excepthook에 넘기고 종료 코드 70, app.log에
     "미처리 예외"와 시험용 메시지(app_log_unhandled). 배포용은 트리거가 꺼져 종료 코드 2, 시험용 메시지 없음
     (app_trigger_off). 단계 4의 실행은 모두 비대화형이라 모달·오류 창이 뜨지 않는다(스크린샷 단계는 비모달 창이 잠깐 뜸)
- 5) 저장소 출력/·자료저장소/ 파일 해시가 전후 같은지, 3)이 입력 사본을 바꾸지 않았는지, PNG가 이번 실행에서 생겼는지
+ 5) 저장소 output/·store/ 파일 해시가 전후 같은지, 3)이 입력 사본을 바꾸지 않았는지, PNG가 이번 실행에서 생겼는지
  6) 제3자 고지(W9, D15): 실행 파일 옆 licenses/의 파일 목록·바이트 해시가 저장소 licenses/와 같은지(빠짐·추가·변경
     없음), 이전 위치 _internal/licenses/가 없는지(scripts/build_package.licenses_problems와 같은 규칙)
 자식 프로세스 환경: PYTHONPATH·PYTHONHOME·HAZOP_* 제거, HAZOP_WORK_ROOT·APPDATA·TEMP = 임시, 작업 폴더 = 임시(저장소 아님).
@@ -52,7 +55,11 @@ import uuid
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECK_SCRIPTS = ("check_kg_screen", "check_kg", "check_kg_algo", "check_kg_renderer", "build_kg", "analyze_kg",
                  "analyze", "extract_drawio", "build_graph")
-APP_PNG = ("01-register.png", "02-viewer.png", "04-analysis.png", "05-review.png")
+# 레일 단계(hazop/app/main_window.STAGES의 번호·짧은 이름)와 크기(hazop/app/screenshots.STAGE_SIZES). 시험이 같은지 본다
+STAGE_NAMES = (("1", "등록"), ("2", "추출"), ("3", "그래프"), ("4", "구간"), ("5", "결과"), ("6", "초기사건"))
+STAGE_SIZES = ((1366, 768), (1920, 1080))
+STAGE_PNG = tuple("stages/stage%s-%s-%dx%d.png" % (n, short, w, h) for w, h in STAGE_SIZES for n, short in STAGE_NAMES)
+APP_PNG = ("01-register.png", "02-viewer.png", "02-viewer-edit.png", "04-analysis.png", "05-review.png") + STAGE_PNG
 FULL_PNG = APP_PNG + ("03-knowledge.png", "03-knowledge-1366.png", "05-review-confirmed.png")
 TIMEOUT = 900
 
@@ -68,7 +75,7 @@ def _build_package():
 bp = _build_package()
 from hazop import paths  # noqa: E402  (bp가 저장소를 sys.path에 넣었음)
 
-SAMPLE_DIR = ("P&ID 도면 샘플", "SNP-M-102_RCS-pressurizer")  # 참고 폴더 안
+SAMPLE_DIR = ("pid-samples", "SNP-M-102_RCS-pressurizer")  # 참고 폴더 안
 inside = bp.inside  # 드라이브가 다르면 False(ValueError 처리)
 
 
@@ -185,20 +192,56 @@ def fresh_problems(png_dir, since, want):
 
 
 def make_inputs(dest):
-    """검사 입력 사본(작은 저장소: 표본·참고 폴더가 저장소와 같은 자리). hazop/ 은 넣지 않는다(묶음의 hazop만 읽히게)."""
+    """검사 입력 사본(작은 저장소: 표본은 저장소와 같은 자리, 샘플 도면은 기록 경로 자리). hazop/ 은 넣지 않는다(묶음의 hazop만
+    읽히게). 묶인 실행에서는 저장소의 참고 폴더가 없으므로, 샘플 도면이 기록 경로 자리(paths.logical_dir)에 있어야 사본을 작업
+    루트로 삼았을 때 source.file이 저장소와 같게 적히고 그래프 판이 맞는다."""
     os.makedirs(os.path.join(dest, "scripts"))
     for n in CHECK_SCRIPTS:
         shutil.copy2(os.path.join(REPO_ROOT, "scripts", n + ".py"), os.path.join(dest, "scripts"))
     shutil.copy2(os.path.join(REPO_ROOT, "packaging", "w4_flow.py"), os.path.join(dest, "scripts"))
     shutil.copy2(os.path.join(REPO_ROOT, "packaging", "pdf_probe.py"), os.path.join(dest, "scripts"))
-    sdir = paths.folder_in(dest, "참고", *SAMPLE_DIR)
+    sdir = paths.logical_dir(dest, "references", *SAMPLE_DIR)
     os.makedirs(sdir)
-    src = paths.folder("참고", *SAMPLE_DIR)
+    src = paths.folder("references", *SAMPLE_DIR)
     for p in glob.glob(os.path.join(src, "*.drawio")) + glob.glob(os.path.join(src, "*.drawio.svg")) + \
             glob.glob(os.path.join(src, "*.pdf")):
         shutil.copy2(p, sdir)
-    for sub in (("구간",), ("고정응답",), ("지식", "SNP-SAMPLE")):
-        shutil.copytree(paths.folder("표본", *sub), paths.folder_in(dest, "표본", *sub))
+    for sub in (("regions",), ("fixed-responses",), ("knowledge-graph", "SNP-SAMPLE")):
+        shutil.copytree(paths.folder("samples", *sub), paths.folder_in(dest, "samples", *sub))
+
+
+def seed_app_work(work):
+    """--app-only 작업 루트 채우기(w4_flow와 같은 방법, 개발 코드로): 표본 구간·고정 응답·지식, 샘플 도면 사본(논리 경로
+    자리)과 그 추출·그래프. 이 프로세스의 HAZOP_WORK_ROOT만 잠시 바꾸고 되돌린다."""
+    from hazop.app import data
+    sources = {name: paths.folder("samples", name) for name in ("regions", "fixed-responses", "knowledge-graph")}
+    sample = paths.folder("references", *SAMPLE_DIR)
+    old = os.environ.get(paths.ENV_WORK_ROOT)
+    os.environ[paths.ENV_WORK_ROOT] = work
+    try:
+        for name, src in sources.items():
+            shutil.copytree(src, paths.folder(name), dirs_exist_ok=True)
+        dst = paths.logical_dir(work, "references", *SAMPLE_DIR)
+        shutil.copytree(sample, dst)
+        drawio = glob.glob(os.path.join(dst, "*.drawio"))[0]
+        _, ex_dir = data.script_module("extract_drawio").run_one(drawio, paths.output_root("extract"))
+        data.script_module("build_graph").build_one(os.path.join(ex_dir, "extraction.json"), paths.output_root("graph"))
+        return os.path.basename(ex_dir)
+    finally:
+        if old is None:
+            os.environ.pop(paths.ENV_WORK_ROOT, None)
+        else:
+            os.environ[paths.ENV_WORK_ROOT] = old
+
+
+def kg_work_root(inputs):
+    """3) check_kg_screen의 작업 루트. 묶인 실행에서는 샘플 도면 사본이 저장소 참고 폴더가 아니어서 source.file을 작업 루트
+    기준 상대 경로로 적는다. 그 경로가 저장소의 기록 경로('참고자료/P&ID 도면 샘플/…')와 같아야 graph_version과
+    link_candidates의 target_graph_version이 맞는다. make_inputs가 샘플 도면을 사본의 기록 경로 자리에 두므로 사본 자체를
+    작업 루트로 쓴다."""
+    if not os.path.isdir(paths.logical_dir(inputs, "references", *SAMPLE_DIR)):
+        raise ValueError("샘플 도면 사본이 기록 경로 자리에 없음: %s" % inputs)
+    return inputs
 
 
 def expected_datas(repo=REPO_ROOT):
@@ -344,7 +387,7 @@ def steps(args, summary, run_root, out, repo_dirs):
     png = os.path.join(out, "png")
     target, tmp = os.path.join(run_root, "HAZOP"), os.path.join(run_root, "w4-run")
     summary["target"] = target
-    summary["repo_before"] = {d: tree_hashes(os.path.join(paths.DEV_WORK_ROOT, d)) for d in repo_dirs}
+    summary["repo_before"] = {d: tree_hashes(paths.folder_in(paths.DEV_WORK_ROOT, d)) for d in repo_dirs}
     shutil.copytree(summary["dist"], target)
     os.mkdir(tmp)
     size, count = tree_size(target)
@@ -373,7 +416,7 @@ def steps(args, summary, run_root, out, repo_dirs):
                                     "lines": [ln.strip() for ln in text.splitlines() if ln.startswith("  [")]}
         print("flow rc=%s %ss" % (rc, sec))
 
-        kenv = dict(env, HAZOP_WORK_ROOT=inputs, QT_QPA_PLATFORM="windows")
+        kenv = dict(env, HAZOP_WORK_ROOT=kg_work_root(inputs), QT_QPA_PLATFORM="windows")
         inputs_before = tree_hashes(inputs)
         rc, sec, text = run([check_exe, os.path.join(scripts, "check_kg_screen.py"), "--skip-tests",
                              "--screenshots", png], kenv, tmp, os.path.join(out, "check_kg_screen.log"))
@@ -383,7 +426,7 @@ def steps(args, summary, run_root, out, repo_dirs):
             "lines": [ln.strip() for ln in text.splitlines() if ln.strip().startswith(("[OK]", "[FAIL]", "결과"))]}
         print("check_kg_screen rc=%s %ss" % (rc, sec))
 
-        pdf = paths.folder_in(inputs, "참고", *SAMPLE_DIR, SAMPLE_DIR[-1] + ".pdf")
+        pdf = paths.logical_dir(inputs, "references", *SAMPLE_DIR, SAMPLE_DIR[-1] + ".pdf")
         pres = os.path.join(out, "pdf_probe.json")
         rc, sec, _ = run([check_exe, os.path.join(scripts, "pdf_probe.py"), "--pdf", pdf, "--result", pres], env, tmp,
                          os.path.join(out, "pdf_probe.log"))
@@ -399,13 +442,14 @@ def steps(args, summary, run_root, out, repo_dirs):
         summary["steps"]["pdf_probe"] = {"rc": "skipped(--app-only)"}
         dll = os.path.join(target, "_internal", *bp.PDFIUM_DLL)
         summary["checks"]["pdf_problems"] = [] if os.path.isfile(dll) else ["pdfium.dll 없음: %s" % dll]
+        summary["steps"]["seed_app_work"] = {"extraction": seed_app_work(env["HAZOP_WORK_ROOT"])}
 
     rc, sec, rc2 = app_steps(os.path.join(target, "HAZOP.exe"), env, tmp, out, png, run_dir, args.app_only, summary)
     want = APP_PNG if args.app_only else FULL_PNG
     summary["png"] = sorted(os.path.basename(p) for p in glob.glob(os.path.join(png, "*.png")))
     summary["checks"]["png_fresh_problems"] = fresh_problems(png, start, want)
     print("app rc=%s %ss png=%s, 잘못된 옵션 rc=%s" % (rc, sec, summary["png"], rc2))
-    summary["checks"]["repo_unchanged"] = {d: tree_hashes(os.path.join(paths.DEV_WORK_ROOT, d)) for d in repo_dirs} \
+    summary["checks"]["repo_unchanged"] = {d: tree_hashes(paths.folder_in(paths.DEV_WORK_ROOT, d)) for d in repo_dirs} \
         == summary.pop("repo_before")
 
 
@@ -440,7 +484,7 @@ def main(argv=None):
 
     summary = {"dist": dist, "run_root": run_root, "app_only": args.app_only, "steps": {}, "errors": {},
                "checks": {}}
-    repo_dirs = ("출력", "자료저장소")
+    repo_dirs = ("output", "store")
     out = None
     try:
         os.makedirs(out_parent, exist_ok=True)

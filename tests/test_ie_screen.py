@@ -17,6 +17,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import openpyxl  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from hazop import paths  # noqa: E402
+from hazop.ie import bundle as ib  # noqa: E402
 from hazop.ie import model, store  # noqa: E402
 from hazop.study import results as res  # noqa: E402
 from tests.test_results_project_ui import StubApp  # noqa: E402
@@ -63,7 +65,7 @@ class InitiatingScreenTest(unittest.TestCase):
         os.environ["HAZOP_WORK_ROOT"] = self.tmp
         for g in (sheet("SNP-M-101", cont("C1", "TO SNP-M-102\nL-1")),
                   sheet("SNP-M-102", cont("C1", "FROM SNP-M-101\nL-1"))):
-            d = os.path.join(self.tmp, "출력", "그래프", g["source"]["drawing_number"])
+            d = paths.output_in(self.tmp, "graph", g["source"]["drawing_number"])
             os.makedirs(d)
             with open(os.path.join(d, "graph.json"), "w", encoding="utf-8") as fh:
                 json.dump(g, fh)
@@ -106,6 +108,8 @@ class InitiatingScreenTest(unittest.TestCase):
         self.assertEqual(self.scr.cand_table.rowCount(), 2)
         self.assertEqual([self.scr.tabs.tabText(i) for i in range(7)],
                          ["후보 2", "그룹 0", "사건수목 표제 0", "최종상태 0", "기본사건 0", "완전성 대조", "품질 경고 0"])
+        self.assertEqual(self.scr.warning_summary.text(), ib.warning_summary_text(self.scr.view))
+        self.assertIn("구간 경계 결과 끊김 0건", self.scr.warning_summary.text())
         self.assertIn("완전성을 뜻하지 않음", self.scr.scope_chip.text())
         self.assertIn("⑤ 결과 기준", self.scr.basis.text())
         fp = self.scr.fp
@@ -212,6 +216,35 @@ class InitiatingScreenTest(unittest.TestCase):
         row = next(r for r in self.scr.view["completeness"] if r["code"] == "LOCHS")
         self.assertTrue(row["note"].startswith("범위 밖: 복수기 도면 미등록"))
 
+    def test_load_tells_when_sync_demoted_a_confirmed_group(self):
+        self.scr.load("SNP-M-102")
+        self.scr.create_group("주급수 상실", [self.iec("E1")])
+        gid = self.scr.view["groups"][0]["group_id"]
+        self.assertTrue(self.scr.confirm_group("김검토"))
+        r = res.edit_entry(self.results, self.results["cells"][0]["node_id"], self.results["cells"][0]["deviation_id"],
+                           "E1", {"consequence": "증기발생기 수위 저하"})
+        r = res.set_status(r, r["cells"][0]["node_id"], r["cells"][0]["deviation_id"], "E1", "approved")
+        self.write_results(r)
+        before = len(self.app.toasts)
+        self.assertTrue(self.scr.load("SNP-M-102"))
+        self.assertEqual(self.stored()["groups"][gid]["status"], "draft")
+        self.assertTrue(any(gid in t and "초안으로 내려갔" in t for t in self.app.toasts[before:]), self.app.toasts[before:])
+
+    def test_coverage_asks_for_the_reviewer_name_when_it_is_not_set(self):
+        self.scr.load("SNP-M-102")
+        self.app.reviewer = ""
+        self.app.set_reviewer_name = lambda name: setattr(self.app, "reviewer", name)
+        with mock.patch("hazop.app.screens.initiating.QInputDialog.getText", return_value=("", False)) as ask:
+            self.assertFalse(self.scr.set_coverage("out_of_scope", "복수기 도면 미등록", code="LOCHS"))
+        ask.assert_called_once()
+        self.assertNotIn("LOCHS", self.stored()["coverage"])
+        with mock.patch("hazop.app.screens.initiating.QInputDialog.getText", return_value=(" 박검토 ", True)):
+            self.assertTrue(self.scr.set_coverage("out_of_scope", "복수기 도면 미등록", code="LOCHS"))
+        self.assertEqual((self.stored()["coverage"]["LOCHS"]["by"], self.app.reviewer), ("박검토", "박검토"))
+        with mock.patch("hazop.app.screens.initiating.QInputDialog.getText") as ask:
+            self.assertTrue(self.scr.set_coverage(None, "", code="LOCHS"), "지울 때는 이름을 묻지 않음")
+        ask.assert_not_called()
+
     def test_export_writes_ten_sheets_and_results_menu_routes_here(self):
         from hazop.app.screens.results import ResultsScreen
         self.scr.load("SNP-M-102")
@@ -258,7 +291,7 @@ class InitiatingScreenTest(unittest.TestCase):
         self.assertFalse(self.scr.load("SNP-M-102"))
         self.assertTrue(self.scr.banner.isVisibleTo(self.scr) and self.scr.replace_btn.isVisibleTo(self.scr))
         self.assertIsNone(self.scr.doc)
-        with mock.patch("hazop.ie.store.shutil.copy2", side_effect=OSError("denied")):
+        with mock.patch("shutil.copyfileobj", side_effect=OSError("denied")):
             self.assertFalse(self.scr.replace_unreadable(ask=False))
         with open(path, "rb") as fh:
             self.assertEqual(fh.read(), b"{broken")

@@ -93,7 +93,7 @@ def load_regions(region_dir):
 
 
 def read_candidates(input_dir):
-    """데이터/지식/<project_id>/link_candidates.csv 행(link.read_candidates). 파일이 없으면 None."""
+    """data/knowledge-graph/<project_id>/link_candidates.csv 행(link.read_candidates). 파일이 없으면 None."""
     path = os.path.join(input_dir, CANDIDATES_CSV)
     return link.read_candidates(path) if os.path.isfile(path) else None
 

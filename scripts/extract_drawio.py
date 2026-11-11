@@ -1,13 +1,13 @@
-"""drawio P&ID -> 출력/추출/<도면번호>/extraction.json + validation_report.md
+"""drawio P&ID -> output/extract/<도면번호>/extraction.json + validation_report.md
 
 사용 예:
-  python scripts/extract_drawio.py "참고자료/P&ID 도면 샘플/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio"
+  python scripts/extract_drawio.py "resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio"
   python scripts/extract_drawio.py --samples          # 샘플 6개 전체
-  python scripts/extract_drawio.py --registration 자료저장소/<프로젝트>/registrations/<자료 ID>/<버전>.json
+  python scripts/extract_drawio.py --registration store/<프로젝트>/registrations/<자료 ID>/<버전>.json
 옵션 --svg를 생략하면 원본 옆 SVG를 좌표 대응 측정에 쓴다(hazop.extract.svg_align.find_svg, 등록과 같은 규칙):
   한 페이지 문서는 같은 이름 <파일명>.svg·<stem>.svg -> <NN>_<페이지 이름>.drawio.svg -> 폴더에 하나뿐인 *.drawio.svg,
   여러 페이지 문서는 <NN>_<페이지 이름>.drawio.svg만. 경로로 해석될 수 있는 페이지 이름·원본 폴더 밖 파일은 쓰지 않는다.
---registration(① 등록 완료 자료)이면 보관 원본을 읽어 출력/추출/<프로젝트>__<자료 ID>-r<등록 버전>-p<페이지>/에 쓴다.
+--registration(① 등록 완료 자료)이면 보관 원본을 읽어 output/extract/<프로젝트>__<자료 ID>-r<등록 버전>-p<페이지>/에 쓴다.
   SVG는 등록정보의 파생 자료(derived_files, role svg)를 먼저 쓰고(svg_alignment.source = registered_derived),
   없을 때만 등록 당시 입력 경로(input_path) 옆에서 찾는다(source = "input_path_sibling, unregistered").
 경로: 출력·입력 표시 경로는 작업 루트(HAZOP_WORK_ROOT, 기본 저장소 루트), 샘플은 자원 루트(HAZOP_RESOURCE_ROOT) 기준.
@@ -29,8 +29,8 @@ from hazop import paths  # noqa: E402
 from hazop.extract import drawio, report, svg_align  # noqa: E402
 from hazop.register import registry  # noqa: E402
 
-SAMPLE_GLOB = paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")
-DEFAULT_OUT = paths.output_root("추출")
+SAMPLE_GLOB = paths.folder("references", "pid-samples", "*", "*.drawio")
+DEFAULT_OUT = paths.output_root("extract")
 
 
 def find_svg(drawio_path, page_index=0, page_name=None, page_count=1):
@@ -67,7 +67,7 @@ def run_one(path, out_root, svg="auto", page=0, registration=None, registered_sv
         elif registration is not None:
             # 한계: 이 등록에는 파생 SVG가 없다. 등록 당시 입력 경로 옆에서 찾으므로
             # 그 SVG가 등록 원본과 같은 판인지 등록 단계가 보증하지 않는다(결과 JSON의 source로 표시).
-            near = os.path.join(root, registration["input_path"])  # 작업 루트 밖이면 절대 경로가 그대로 쓰임
+            near = paths.resolve_rel(registration["input_path"], root)  # 작업 루트 밖이면 절대 경로가 그대로 쓰임
             svg_source = "input_path_sibling, unregistered"
         if svg_source != "registered_derived":
             svg_path = find_svg(near, result["run"]["settings"]["page_index"], result["source_context"]["page_name"],
@@ -130,7 +130,7 @@ def main(argv=None):
               % (result["drawing"]["drawing_number"] or os.path.basename(out_dir), result["validation"]["status"], s["nodes"],
                  s["relations"], s["unresolved_connectors"], s["texts"], s["unknowns"],
                  s["blockers"], al["status"] if al else None, al["offset"] if al else None,
-                 paths.rel_or_abs(out_dir, paths.work_root())))
+                 paths.plain_rel(out_dir, paths.work_root())))
         blocked += result["validation"]["status"] == "blocked"
     return 1 if blocked else 0
 

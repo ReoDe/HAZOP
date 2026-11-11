@@ -23,7 +23,7 @@ STAGES = ((0, "1-register"), (1, "2-extract"), (4, "3-graph"), (5, "4-study"), (
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "stage-explorer"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else paths.output_in(paths.DEV_WORK_ROOT, "screenshots", "stage-explorer"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-explorer-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")
@@ -32,7 +32,8 @@ def main():
     try:
         import shoot_results
         shoot_results.prepare(os.environ["HAZOP_WORK_ROOT"])
-        shutil.copytree(paths.folder("참고"), paths.logical_reference_dir(os.environ["HAZOP_WORK_ROOT"]))
+        shutil.copytree(paths.folder("references", "pid-samples"),
+                        paths.logical_dir(os.environ["HAZOP_WORK_ROOT"], "references", "pid-samples"))
         from hazop.app import make_application
         from hazop.app.main_window import MainWindow
         from hazop.app.screenshots import settle, wait

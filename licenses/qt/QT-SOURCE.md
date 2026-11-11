@@ -14,7 +14,7 @@
 | `pyside6_pdf` | 6.12.0.140 | 위 표기와 같은 문자열 | Qt 모듈 `Qt6Pdf`·`Qt6PdfQuick`(바인딩 .pyd는 없음) |
 | `shiboken6` | 6.12.0 | 위 표기와 같은 문자열 | `shiboken6/` |
 
-휠 메타데이터의 표기는 패키지 전체에 붙은 것이다. Qt 오픈소스판은 모듈마다 라이선스가 다를 수 있다(일부 모듈은 GPL 전용) [일반지식, 확인 필요: `docs/2026-11-05-packaging/evidence/w6-라이선스.md` §9-2].
+휠 메타데이터의 표기는 패키지 전체에 붙은 것이다. Qt 오픈소스판은 모듈마다 라이선스가 다를 수 있다(일부 모듈은 GPL 전용) [일반지식, 확인 필요: `docs/2026-11-05-packaging/evidence/w6-licenses.md` §9-2].
 
 ## 묶음에 들어간 Qt 모듈(`_internal/PySide6/Qt6*.dll`, 휠별)
 
@@ -23,7 +23,7 @@
 - `pyside6_webengine`(4개): WebEngineCore, WebEngineQuick, WebEngineQuickDelegatesQml, WebEngineWidgets
 - `pyside6_pdf`(2개): Pdf, PdfQuick
 
-이 밖에 `plugins/`(imageformats·platforms·tls 등)와 `qml/` 아래 QML 플러그인이 들어 있다. 전체 목록은 `docs/2026-11-05-packaging/evidence/w6-묶음수집목록.md`에 있다.
+이 밖에 `plugins/`(imageformats·platforms·tls 등)와 `qml/` 아래 QML 플러그인이 들어 있다. 전체 목록은 `docs/2026-11-05-packaging/evidence/w6-bundle-collect-list.md`에 있다.
 버전은 전용 venv에서 `PySide6.__version__`, `QtCore.qVersion()`, `QtWebEngineCore.qWebEngineVersion()`, `qWebEngineChromiumVersion()`(140.0.7339.225), `qWebEngineChromiumSecurityPatchVersion()`(152.0.7977.83)으로 읽었다.
 Qt 라이브러리는 개별 DLL 파일로 들어 있다.
 

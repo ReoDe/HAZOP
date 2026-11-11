@@ -5,9 +5,12 @@ build_bundle(results, node_set, pg, ie_doc, now, table) → dict. 파일을 쓰�
 - 후보 ID는 ⑥ 저장 문서(ie_doc, hazop.ie.model)의 대응표에서 읽는다. 그래서 묶음을 다시 만들어도 같은 원인은 같은 ID다.
   ie_doc은 model.sync를 거친 것이어야 한다(IEC가 없는 승인 항목이 있으면 ValueError). 행 순서는 검토구간 × 편차 × 항목.
 - 그룹·사건수목 표제·최종상태·기본사건(시트 2~5)도 ie_doc에서 온다. 그룹 상태는 model.effective_status다.
-  그룹의 members·member_count는 승인 항목만이고 승인이 풀린 소속 후보는 held_members에 둔다. ⑤ 출처가 있는데 그중 승인
+  그룹의 members·member_count는 승인 항목만이다. 승인이 풀린 소속 후보는 ID를 내보내지 않고 수(held_member_count)만
+  적는다. ⑤ 출처가 있는데 그중 승인
   항목이 하나도 없는 표제·최종상태·기본사건은 넣지 않는다(그룹 행·추적표에도 그 ID가 나가지 않음).
 - HAZOP 위험도(강도·빈도·위험도)와 권고는 넣지 않는다(E8: KOSHA 빈도 등급이 PSA 빈도로 오해될 수 있음).
+- 품질 경고(시트 8)는 5종이다(WARNING_KINDS). 항목 하나만 보면 되는 2종은 ⑤와 같은 res.quality_warnings를 쓰고, 다른
+  항목·구간·그래프를 함께 봐야 하는 3종은 여기서 계산한다. 종류별 건수는 warning_summary에 둔다.
 - 값은 영어 키로 두고 한국어 표기는 Excel(hazop.ie.bundle_xlsx)에서 붙인다. 드라이브 경로·API 키처럼 보이는 글자는 가린다.
 - Excel은 이 dict에서 만든다. 원본은 JSON 하나다(§2-6).
 """
@@ -27,6 +30,19 @@ METHOD = "HAZOP"
 SOURCE_LABELS = {"lwr-generic-ie-categories-inl2015": "INL 2015 IE 범주"}
 CATEGORY_TERM = "일반 범주 코드"
 BASIS_UNKNOWN_PREFIX = "[비완화 여부 미확인] "
+# 품질 경고 종류 {키: (이름, 근거)}, 설계 §3.2 시트 8에 적힌 순서. 근거는 조사 문서 §9.2의 출처
+WARNING_KINDS = {
+    "safeguard_as_cause": ("보호설비 고장이 원인 칸에 있음", "IChemE Hazards 26"),
+    "mitigated_consequence": res.QUALITY_KINDS["mitigated_consequence"],
+    "actuation_unknown": res.QUALITY_KINDS["actuation_unknown"],
+    "boundary_cut": ("구간 경계 결과 끊김", "IChemE Hazards 26, PSAM14 383"),
+    "fmea_pending": ("전기·제어 구간 FMEA 대조 전", "PSAM14 383"),
+}
+# 스스로 작동해 압력을 푸는 보호 기기(레지스트리 kind). 원인 위치가 이것이면 보호설비 고장을 원인으로 적은 것으로 본다
+PROTECTIVE_KINDS = frozenset({"psv", "relief_valve", "rupture_disc"})
+CONTROL_CATEGORY = "instrument"
+# 전기로 움직이거나 제어 신호를 받는 밸브. P&ID에 전동기·전원은 따로 그려지지 않아 펌프·팬의 전동기는 세지 못한다 [추론]
+ELECTRIC_KINDS = frozenset({"motor_operated_valve", "solenoid_valve", "control_valve"})
 GLOSSARY = (
     ("초기사건(IE)", "정상운전을 교란해 제어·안전계통에 도전하는 사건", "NUREG-2122 용어집(ASME/ANS 표준 정의 인용)"),
     (CATEGORY_TERM, "경수로 산업 평균 초기사건 범주", None),
@@ -35,6 +51,12 @@ GLOSSARY = (
     ("사건수목 표제", "사건수목 위쪽의 완화 기능·계통", "NRC 용어집, NUREG-2122 Top Event"),
     ("최종상태", "사건 진행 끝의 발전소 상태", "NUREG-2122"),
     ("기본사건", "더 나누지 않는 PSA 모델 요소", "NUREG-2122"),
+    ("초기사건 그룹", "플랜트 응답과 필요한 완화 기능이 같아 PSA에서 한 초기사건으로 다루는 후보의 묶음. 이 묶음의 그룹은 "
+                 "PSA 담당이 고쳐 쓸 제안", "이 앱 정의 [추론]"),
+    ("지원계통 초기사건(SSIE)", "정상운전을 교란하면서 완화계통도 약화하는 지원계통 고장. 'IE 그룹' 시트의 '지원계통 IE' 열",
+     "NUREG-2122, EPRI 1016741"),
+    ("PSA", "확률론적 안전성 평가. 미국 문헌의 PRA와 같은 뜻으로 쓴다. 이 묶음은 평가를 PSA로, 정량화 도구를 PRA 도구로 "
+            "적는다", "[일반지식]"),
     ("작동 방식", "자동 / 운전원 / 자체작동 / 미확인", "이 앱 정의(PSAM14 383 권고 반영)"),
 )
 
@@ -137,17 +159,10 @@ def _completeness(candidates, categories, source_label, groups, coverage):
     return rows
 
 
-def _in_scope(keys, approved):
-    """⑤ 출처가 있는 기록은 출처 중 승인 항목이 하나라도 있어야 묶음에 든다. 출처 없이 사람이 쓴 기록은 든다."""
-    return not keys or any(k in approved for k in keys)
-
-
-def _scope(doc, approved):
-    """{표: 묶음에 드는 live 기록 ID 집합}."""
-    keys = {"headings": lambda r: [s["key"] for s in r["sources"]], "end_states": lambda r: r["source_keys"],
-            "basic_events": lambda r: [s["key"] for s in r["sources"]]}
-    return {t: {rid for rid, r in doc[t].items() if r["status"] == "live" and _in_scope(f(r), approved)}
-            for t, f in keys.items()}
+def _scope(doc, facts):
+    """{표: 묶음에 드는 live 기록 ID 집합}. 드는 기준은 model.in_scope(그룹 확정 여부와 같은 기준)."""
+    return {t: {rid for rid, r in doc[t].items() if r["status"] == "live" and model.in_scope(t, r, facts)}
+            for t in ("headings", "end_states", "basic_events")}
 
 
 def _groups(doc, results, facts, source_label, scope):
@@ -165,7 +180,7 @@ def _groups(doc, results, facts, source_label, scope):
                     "categories": list(g["categories"]),
                     "category_source": source_label if g["categories"] else "",
                     "representative": g["representative"] if g["representative"] in members else None,
-                    "representative_reason": g["representative_reason"], "members": members, "held_members": held,
+                    "representative_reason": g["representative_reason"], "members": members, "held_member_count": len(held),
                     "member_count": len(members), "plant_response": g["plant_response"],
                     "affected_mitigation": g["affected_mitigation"], "support_ie": g["support_ie"],
                     "heading_ids": [h for h in g["heading_ids"] if h in scope["headings"]],
@@ -228,6 +243,117 @@ def _basic_events(doc, approved, iecs, scope):
     return out
 
 
+def _guarded(picked):
+    """{완화 역할 보호수단의 구현 대상 안정 참조: [그 보호수단을 적은 승인 항목 ID]}. 예방 역할(제어 루프 등)의 대상은
+    넣지 않는다. 제어 밸브 고장처럼 그 고장이 곧 전형적인 초기사건 원인이기 때문이다 [추론]."""
+    out = {}
+    for _node_id, _dev, e in picked:
+        for s in refs.safeguard_items(e):
+            if s["role"] != "mitigative":
+                continue
+            for r in s["refs"]:
+                if r.get("ref") and e["entry_id"] not in out.setdefault(r["ref"], []):
+                    out[r["ref"]].append(e["entry_id"])
+    return out
+
+
+def _safeguard_as_cause(e, idx, guarded):
+    """원인 위치가 보호설비인 경우의 경고 글(없으면 None). 보호설비로 보는 것은 자력식 보호 기기(안전밸브·방출밸브·
+    파열판)이거나 묶음 안 다른 승인 항목이 완화 역할 보호수단의 구현 대상으로 적은 대상이다 [추론]."""
+    hits = []
+    for r in e.get("cause_refs") or []:
+        ref = r.get("ref") if isinstance(r, dict) else None
+        if not ref:
+            continue
+        others = [x for x in guarded.get(ref, ()) if x != e["entry_id"]]
+        if (idx.get(ref) or {}).get("kind") in PROTECTIVE_KINDS:
+            hits.append("%s(자력식 보호 기기)" % refs.label(ref, idx))
+        elif others:
+            hits.append("%s(항목 %s의 완화 보호수단 구현 대상)" % (refs.label(ref, idx), ", ".join(others)))
+    if not hits:
+        return None
+    return ("원인 위치가 보호설비입니다: %s. 보호설비 고장은 대개 초기사건이 아니라 사건수목 표제(완화 기능)의 실패로 "
+            "다룹니다 [추론]. 오동작처럼 그 자체가 정상운전을 교란하는 고장이면 그대로 두고, 아니면 원인을 다시 적으세요"
+            % ", ".join(hits))
+
+
+def _boundary_cut(node_id, e, idx, homes, analysed, covered):
+    """결과의 영향 대상이 이 구간 밖인데 받는 쪽에서 이어지지 않는 경우의 경고 글(없으면 None) [추론]. 끊긴 것으로 보는 경우:
+    대상이 그래프에 없음, 어느 검토구간에도 들지 않음, 받는 구간에 승인 항목이 없음, 받는 구간의 승인 항목 가운데
+    그 대상을 가리키는 것이 없음. 묶음에는 영향 대상 열이 없어 사라진 대상도 여기서 알린다."""
+    cuts = []
+    for r in e.get("consequence_refs") or []:
+        ref = r.get("ref") if isinstance(r, dict) else None
+        if not ref:
+            continue
+        node = idx.get(ref)
+        if node is None:
+            cuts.append(refs.label(ref, idx))
+            continue
+        home = homes.get(node["entity_id"], [])
+        if node_id in home or any(h in covered.get(ref, ()) for h in home):
+            continue
+        if not home:
+            where = "검토구간 없음"
+        elif any(h in analysed for h in home):
+            where = "구간 %s(그 대상을 다룬 승인 항목이 없음)" % ", ".join(home)
+        else:
+            where = "구간 %s(승인 항목 없음)" % ", ".join(home)
+        cuts.append("%s → %s" % (refs.label(ref, idx), where))
+    if not cuts:
+        return None
+    return ("결과가 이 구간 밖으로 넘어가는데 받는 쪽에서 이어지지 않습니다(영향 대상 %s). 구간을 넘는 사건 진행이 여기서 "
+            "끊기니, 받는 구간에서 그 대상을 다룬 항목을 승인하거나 이 항목의 결과를 끝까지 적었는지 확인하세요"
+            % "; ".join(cuts))
+
+
+def _fmea_pending(node_set, pg, analysed):
+    """승인 항목이 있는 구간 가운데 계기·제어 구성요소나 전기로 움직이는 밸브가 든 구간 ID(검토구간 순서, 여러 도면에
+    걸친 구간도 한 번). 앱에 FMEA 입력이 아직 없어(P5) 이 구간들은 모두 'FMEA 대조 전'이다. 전기·제어 구간을 이렇게
+    본 것은 [추론]."""
+    control = {n["entity_id"] for n in pg.get("nodes") or []
+               if n.get("category") == CONTROL_CATEGORY or n.get("kind") in ELECTRIC_KINDS}
+    return [n["node_id"] for n in node_set["nodes"] if n["node_id"] in analysed and control & set(n["members"])]
+
+
+def _warnings(picked, node_set, pg, idx):
+    """(품질 경고 행 목록, 종류별 건수 [{kind, count}]). 행은 항목 순서, 한 항목 안에서는 WARNING_KINDS 순서다.
+    'FMEA 대조 전'은 항목마다 띄우지 않고 묶음 끝에 한 줄로 두며, 건수는 구간 수다."""
+    guarded = _guarded(picked)
+    homes = {}
+    for n in node_set["nodes"]:
+        for m in n["members"]:
+            homes.setdefault(m, []).append(n["node_id"])
+    analysed = {node_id for node_id, _dev, _e in picked}
+    covered = {}
+    for node_id, _dev, e in picked:
+        for ref in refs.all_refs(e):
+            covered.setdefault(ref, set()).add(node_id)
+    rows = []
+    for node_id, _dev, e in picked:
+        found = dict(res.quality_warnings(e))
+        found["safeguard_as_cause"] = _safeguard_as_cause(e, idx, guarded)
+        found["boundary_cut"] = _boundary_cut(node_id, e, idx, homes, analysed, covered)
+        rows += [{"kind": k, "target": e["entry_id"], "text": found[k], "basis": WARNING_KINDS[k][1]}
+                 for k in WARNING_KINDS if found.get(k)]
+    pending = _fmea_pending(node_set, pg, analysed)
+    if pending:
+        rows.append({"kind": "fmea_pending", "target": ", ".join(pending), "basis": WARNING_KINDS["fmea_pending"][1],
+                     "text": "전기·제어 구간 %d개: FMEA 대조 전. 계기·제어 구성요소나 전동 밸브가 든 구간은 HAZOP만으로 고장모드를 다 "
+                             "잡기 어렵습니다. 이 묶음은 FMEA와 대조하지 않았습니다" % len(pending)})
+    counts = [{"kind": k, "count": len(pending) if k == "fmea_pending" else sum(w["kind"] == k for w in rows)}
+              for k in WARNING_KINDS]
+    return rows, counts
+
+
+def warning_summary_text(bundle):
+    """'보호설비 고장이 원인 칸에 있음 1건 · … · 전기·제어 구간 2개: FMEA 대조 전'. 읽는 법 시트·화면·명령줄이 같이 쓴다."""
+    by = {s["kind"]: s["count"] for s in bundle["warning_summary"]}
+    parts = ["%s %d건" % (WARNING_KINDS[k][0], by[k]) for k in WARNING_KINDS if k != "fmea_pending"]
+    n = by["fmea_pending"]
+    return " · ".join(parts + ["전기·제어 구간 %d개: FMEA 대조 전" % n if n else "승인된 구간 가운데 전기·제어 구간 없음"])
+
+
 def _scrubbed(x):
     if isinstance(x, str):
         return sx.scrub(x)
@@ -252,10 +378,10 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None):
     unsynced = sorted(approved - set(iecs))
     if unsynced:
         raise ValueError("⑥ 초기사건 문서를 먼저 ⑤ 결과와 맞추세요(IEC 없는 승인 항목 %d건)" % len(unsynced))
-    scope = _scope(ie_doc, approved)
+    scope = _scope(ie_doc, facts)
     groups = _groups(ie_doc, results, facts, source_label, scope)
     by_gid = {g["group_id"]: g for g in groups}
-    candidates, trace, warnings = [], [], []
+    candidates, trace = [], []
     for node_id, dev, e in picked:
         iec = iecs[model.key_of(results["graph_id"], e["entry_id"])]
         c = _candidate(iec, node_id, dev, e, idx)
@@ -263,8 +389,7 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None):
         c["group_id"] = gid if gid in by_gid else None
         candidates.append(c)
         trace.append(_trace(c, e, labels, by_gid.get(c["group_id"])))
-        warnings += [{"kind": k, "target": e["entry_id"], "text": t, "basis": res.QUALITY_KINDS[k][1]}
-                     for k, t in res.quality_warnings(e)]
+    warnings, warning_summary = _warnings(picked, node_set, pg, idx)
     return _scrubbed({
         "kind": KIND,
         "schema_version": SCHEMA_VERSION,
@@ -287,6 +412,7 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None):
         "trace": trace,
         "completeness": _completeness(candidates, table["categories"], source_label, groups, ie_doc["coverage"]),
         "warnings": warnings,
+        "warning_summary": warning_summary,
         "glossary": [{"term": t, "meaning": m, "source": s if s is not None else table.get("basis") or ""}
                      for t, m, s in GLOSSARY],
     })

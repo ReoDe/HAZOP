@@ -39,13 +39,13 @@ class KgReviewBase(unittest.TestCase):
         os.environ["HAZOP_WORK_ROOT"] = cls.work
         os.environ["HAZOP_STORE_ROOT"] = os.path.join(cls.tmp, "store")
         cls.graph = chk.sample_graph()
-        gdir = os.path.join(cls.work, "출력", "그래프", "SNP-M-102")
+        gdir = paths.output_in(cls.work, "graph", "SNP-M-102")
         os.makedirs(gdir)
         cls.graph_path = os.path.join(gdir, "graph.json")
         with open(cls.graph_path, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(cls.graph, fh, ensure_ascii=False)
-        os.makedirs(paths.folder_in(cls.work, "구간"))
-        shutil.copy(chk.REGION_FILE, paths.folder_in(cls.work, "구간"))
+        os.makedirs(paths.folder_in(cls.work, "regions"))
+        shutil.copy(chk.REGION_FILE, paths.folder_in(cls.work, "regions"))
         cls.kg = cls.build_kg(chk.sample_knowledge())
         cls.runs = {"kg": cls.make_run("kg", chk.KG_REF),
                     "nokg": cls.make_run("nokg", None, chk.FIXED_DIR)}
@@ -54,7 +54,7 @@ class KgReviewBase(unittest.TestCase):
         zero = chk.sample_knowledge()
         zero["links"] = [l for l in zero["links"] if l["kind"] in ("part_of", "specified_in") or l["id"] == "krel-015"]
         cls.build_kg(zero, "kg-ZERO")
-        cls.runs["zero"] = cls.make_run("zero", "출력/지식그래프/kg-ZERO")
+        cls.runs["zero"] = cls.make_run("zero", paths.output_rel("knowledge-graph", "kg-ZERO"))
         # 잠긴 실행(결과 검증 blocked → 편집·저장 막힘): kg 실행 사본
         locked = os.path.join(os.path.dirname(cls.runs["kg"]), "analysis-kg-locked")
         shutil.copytree(cls.runs["kg"], locked)
@@ -78,7 +78,7 @@ class KgReviewBase(unittest.TestCase):
     def build_kg(cls, knowledge, kg_id=chk.KG_ID):
         knowledge["kg_id"] = kg_id
         kg = build.build_kg(knowledge, [cls.graph])
-        build.write_outputs(os.path.join(cls.work, "출력", "지식그래프", kg_id), knowledge, kg)
+        build.write_outputs(paths.output_in(cls.work, "knowledge-graph", kg_id), knowledge, kg)
         return kg
 
     @classmethod
@@ -90,7 +90,7 @@ class KgReviewBase(unittest.TestCase):
         with open(rp, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(region, fh, ensure_ascii=False)
         ins = run.load_inputs(rp, cls.work, graph_path=cls.graph_path, resource_root=REPO_ROOT)
-        _, run_dir = run.execute(ins, ai.FixedResponseClient(responses), os.path.join(cls.work, "출력", "분석"),
+        _, run_dir = run.execute(ins, ai.FixedResponseClient(responses), paths.output_in(cls.work, "analysis"),
                                  run_id="analysis-kg-%s" % name, now=chk.now)
         return run_dir
 
@@ -244,7 +244,7 @@ class KnowledgeNavigationTest(KgReviewBase):
 
     def test_3_blocked_latest_goes_to_previous_passed(self):
         """최신 버전이 blocked이고 직전 passed 버전이 기록 kg_version이면 ③ '이전 버전'으로 열고 노드를 선택한다."""
-        root = os.path.join(self.work, "출력", "지식그래프", chk.KG_ID)
+        root = paths.output_in(self.work, "knowledge-graph", chk.KG_ID)
         blocked = chk.sample_knowledge()
         blocked["nodes"].append(dict(chk.node(blocked, "req-003")))  # 중복 ID -> blocked
         bkg = self.build_kg(blocked)
@@ -270,7 +270,7 @@ class KnowledgeNavigationTest(KgReviewBase):
         know = chk.sample_knowledge()
         chk.node(know, "cond-001")["value"] = "7.5"
         kg2 = self.build_kg(know)
-        root = os.path.join(self.work, "출력", "지식그래프", chk.KG_ID)
+        root = paths.output_in(self.work, "knowledge-graph", chk.KG_ID)
         ptr_path = os.path.join(root, build.POINTER_FILE)
         try:
             win, scr = self.open_review()

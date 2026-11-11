@@ -1,13 +1,13 @@
 """④ 기준 데이터 무결성 검사 (로드 시 실행, 위반이면 분석 차단).
 
 - 이탈 후보 카탈로그·적용 판단: p86-d01~d44 44행, ID 고유, 고정 해시(PINNED_SHA256) 일치,
-  지침서(기획서/HAZOP기법지침.md §5.3)를 다시 읽어 변환한 내용과 일치
+  지침서(specs/hazop-method-guide.md §5.3)를 다시 읽어 변환한 내용과 일치
 - 위험도 기준표: 고정 해시 일치, 코드 상수(risk.MATRIX_P86)와 〈표5〉 일치, 지침서 §6 〈표5〉~〈표9〉 파싱 결과와 일치
 - 패턴 라이브러리: library_id별 고정 해시(PINNED_SHA256) 일치(패키징 W5, 신뢰 경계 A안 D1)
 - 지침서: 파일 해시(GUIDE_SHA256) 일치. check_catalog·check_criteria가 표를 파싱하기 전에 각각 검사한다(_guide_errs).
   없음·읽기 실패·해시 불일치·파싱 실패는 예외를 올리지 않고 blocker 사유로 돌려준다(해시가 다르면 파싱하지 않음)(패키징 W5)
 
-주의: 기획서/HAZOP기법지침.md는 문구 한 글자만 고쳐도 모든 분석이 차단된다. 지침서를 고치는 같은 작업 단위에서
+주의: specs/hazop-method-guide.md는 문구 한 글자만 고쳐도 모든 분석이 차단된다. 지침서를 고치는 같은 작업 단위에서
 GUIDE_SHA256을 갱신해야 한다(기획 담당이 고칠 때 개발 담당과 함께).
 
 해시 방식(패키징 W5)
@@ -36,7 +36,7 @@ from hazop import paths
 
 from . import catalog_md, risk
 
-GUIDE_PARTS = ("기획서", "HAZOP기법지침.md")  # 자원 루트 기준(hazop/paths.py)
+GUIDE_PARTS = paths.FILES["guide"].rel  # 자원 루트 기준
 GUIDE = paths.resource_path(*GUIDE_PARTS)  # 가져올 때의 값(참고용). 검사는 호출 시점의 자원 루트를 쓴다
 EXPECTED_IDS = ["p86-d%02d" % i for i in range(1, 45)]
 PINNED_SHA256 = {
@@ -45,7 +45,7 @@ PINNED_SHA256 = {
     "kosha-p86-2017-risk-example": "2ae1c539db967dc8c77ed3534aec881605940370bd523f3271488f81bc0f49aa",
     "hazop-cause-consequence-patterns": "cd4a05d65162e6bb0b4fba6be2523fc9a263f7fa7d27d7b8fb0bdc7122677f31",
 }
-GUIDE_SHA256 = "30dc958af67280efd39bd22b8f4e4b149322f6b03af4b6222445749a0fd7f347"
+GUIDE_SHA256 = "8ea801b44800b6bc7f0b2dd8dc87df8fea87230d9bdac869171893b47757e942"
 # 지침서 표 파싱(catalog_md)이 낼 수 있는 예외: 읽기 실패·UTF-8 디코딩 실패(ValueError)·표/구역 없음·형식 오류
 GUIDE_PARSE_ERRORS = (OSError, ValueError, KeyError, IndexError, AttributeError, TypeError)
 
@@ -91,7 +91,7 @@ def check_patterns(patterns):
 
 
 def check_catalog(catalog, applicability, guide=None):
-    guide = guide or paths.resource_path(*GUIDE_PARTS)
+    guide = guide or paths.resource_file("guide")
     errs = []
     ids = [i.get("item_id") for i in catalog.get("items") or []]
     if ids != EXPECTED_IDS:
@@ -118,7 +118,7 @@ def check_catalog(catalog, applicability, guide=None):
 
 
 def check_criteria(criteria, guide=None):
-    guide = guide or paths.resource_path(*GUIDE_PARTS)
+    guide = guide or paths.resource_file("guide")
     errs = _pin(criteria.get("criteria_id"), criteria, "위험도 기준표")
     try:
         matrix = {int(s): {int(f): v for f, v in row.items()} for s, row in criteria["matrix"].items()}

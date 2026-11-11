@@ -4,7 +4,7 @@
 - 3-expect-legend: 왼쪽 '잠재 후보' 묶음·관계 '기대'·'AI 초안'·'기대 공백' 표시, 기대 공백 강조를 켬
 - 3-expect-detail: 후보 발견 잠재 후보를 골라 상세 패널(규칙·근거 수준·후보·판단 버튼)
 - 3-expect-absent: 기대됨 항목을 임시 폴더에 부재 확정으로 저장한 뒤의 상세 패널
-판단 파일은 임시 작업 루트의 데이터/잠재후보/에만 쓴다.
+판단 파일은 임시 작업 루트의 data/latent-candidates/에만 쓴다.
 """
 
 import os
@@ -25,7 +25,7 @@ SIZES = ((1366, 768), (1920, 1080))
 
 
 def main():
-    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷", "expectations"))
+    out_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else paths.output_in(paths.DEV_WORK_ROOT, "screenshots", "expectations"))
     os.makedirs(out_dir, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="hazop-shoot-expect-")
     os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work")

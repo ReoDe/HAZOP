@@ -1,8 +1,8 @@
-"""단계 ④ 근거 묶음 내보내기 -> 출력/근거묶음/<구간 ID>/<내보낸 시각>/ (기획서/인터페이스.md §2.5)
+"""단계 ④ 근거 묶음 내보내기 -> output/evidence-bundles/<구간 ID>/<내보낸 시각>/ (기획서/인터페이스.md §2.5)
 
 사용 예:
   python scripts/export_bundles.py                                   # 기본 구간(SNP-M-102 가압기)
-  python scripts/export_bundles.py --region 데이터/구간/region-SNP-M-102-pzr.json --out-root <폴더>
+  python scripts/export_bundles.py --region data/regions/region-SNP-M-102-pzr.json --out-root <폴더>
 
 판단이 '선택'인 후보마다 근거 묶음(bundle.json)·요청 프롬프트(user_prompt.txt)와 응답 틀(responses/<candidate_id>.json)을
 만든다. AI를 호출하지 않고 분석 실행 폴더를 만들지 않는다. 응답을 채운 뒤:
@@ -23,8 +23,8 @@ from hazop.console import safe_console  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.analysis import bundle_export, run  # noqa: E402
 
-DEFAULT_REGION = paths.folder("구간", "region-SNP-M-102-pzr.json")
-DEFAULT_OUT = paths.output_root("근거묶음")
+DEFAULT_REGION = paths.folder("regions", "region-SNP-M-102-pzr.json")
+DEFAULT_OUT = paths.output_root("evidence-bundles")
 
 
 def main(argv=None):
@@ -42,10 +42,10 @@ def main(argv=None):
     m = res["manifest"]
     print("%s v%s 그래프 %s: 근거 묶음 %d개 -> %s" % (
         m["region"]["region_id"], m["region"]["region_version"], m["graph"]["graph_version"], len(m["candidates"]),
-        paths.rel_or_abs(res["export_dir"], paths.work_root())))
+        paths.plain_rel(res["export_dir"], paths.work_root())))
     for c in m["candidates"]:
         print("  %s bundle_sha256=%s" % (c["candidate_id"], c["bundle_sha256"]))
-    print("응답 폴더:", paths.rel_or_abs(res["response_dir"], paths.work_root()))
+    print("응답 폴더:", paths.plain_rel(res["response_dir"], paths.work_root()))
     return 0
 
 

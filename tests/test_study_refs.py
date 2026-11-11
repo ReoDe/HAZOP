@@ -1,7 +1,7 @@
 """⑤ 결과 항목의 그래프 참조(M5, 설계안 KD7·§7.1·§7.2·§8.3, U2(가)·U6(가)) 시험.
 실행: python -m unittest tests.test_study_refs
 
-저장은 임시 HAZOP_WORK_ROOT 아래에만 한다. 실제 데이터/분석결과는 읽기만 하고(있을 때만) 사본으로 왕복한다.
+저장은 임시 HAZOP_WORK_ROOT 아래에만 한다. 실제 data/analysis-results는 읽기만 하고(있을 때만) 사본으로 왕복한다.
 AI는 가짜 응답만 쓴다(네트워크 호출 없음).
 """
 
@@ -30,7 +30,7 @@ from hazop.study import results as res  # noqa: E402
 from tests.test_kg import link, pid_graph, sample  # noqa: E402
 from tests.test_study_migrate import AT, OBJECTS, graph, results_for, text_of  # noqa: E402
 
-REAL = paths.folder("분석결과", "no-project", "graph-SNP-M-102.json")
+REAL = paths.folder("analysis-results", "no-project", "graph-SNP-M-102.json")
 GID = "graph-SNP-M-102"
 
 

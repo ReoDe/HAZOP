@@ -5,7 +5,7 @@
 - 캔버스(웹, 공유 웹뷰): hazop/kg/screen_template.html 셸에 loadKnowledge로 데이터를 넘긴다. 좌측 필터도 웹 안에 있다.
 - 우측 상세(Qt): 클릭한 노드·관계의 속성·근거·A1~A3·연결 목록, P&ID 노드면 "도면에서 보기"(② 전환 + focus).
   잠재 후보(hazop.kg.expect)면 규칙·근거 수준·후보와 판단 버튼(후보 확인·후보 기각·부재 확정·무관·판단 되돌리기). 판단은
-  데이터/잠재후보/<project_id>.json에 저장하고 updateExpectations로 캔버스의 잠재 후보만 바꾼다.
+  data/latent-candidates/<project_id>.json에 저장하고 updateExpectations로 캔버스의 잠재 후보만 바꾼다.
 - 계산은 Python(hazop.kg.screen → hazop.kg.algo). runAlgorithm(A1) 요청을 받아 algorithmResult로 돌려준다.
 """
 
@@ -35,7 +35,7 @@ from hazop.kg.schema import REGISTRY
 from hazop.study import nodes as study_nodes
 from hazop.study import results as study_results
 
-APP_SHELL = "kg-screen.html"  # 출력/뷰어/ 아래 앱 셸(데이터 없음, loadKnowledge로 받음)
+APP_SHELL = "kg-screen.html"  # output/viewer/ 아래 앱 셸(데이터 없음, loadKnowledge로 받음)
 TYPE_NAMES = {"equipment": "설비", "valve": "밸브", "inline_component": "배관 부품", "instrument": "계장",
               "piping_element": "배관 요소", "pipe_segment": "배관 구간", "unclassified": "미분류", "document": "문서",
               "doc_chunk": "문서 조각",
@@ -134,11 +134,11 @@ def info_tooltip(meta, standalone=None):
 
 
 def kg_root_dir():
-    return paths.output_root("지식그래프")
+    return paths.output_root("knowledge-graph")
 
 
 def standalone_path(kg, graph_id):
-    """브라우저 단독 모드 HTML: 출력/지식그래프/<kg_id>/screen/<kg_version>/<graph_id>.html."""
+    """브라우저 단독 모드 HTML: output/knowledge-graph/<kg_id>/screen/<kg_version>/<graph_id>.html."""
     base = paths.safe_join(kg_root_dir(), paths.safe_name(kg["kg_id"]))
     return os.path.join(base, "screen", paths.safe_name(kg["kg_version"]), paths.safe_name(graph_id) + ".html")
 
@@ -298,7 +298,7 @@ class KnowledgeScreen(QWidget):
     def _build_missing(self):
         """등록·추출 결과는 있는데 지식그래프가 아직 없는 프로젝트를 빌드한다(실패는 기록만, 화면은 계속)."""
         try:
-            pids = auto.project_ids(paths.output_root("그래프"), app_data.doc_root())
+            pids = auto.project_ids(paths.output_root("graph"), app_data.doc_root())
         except OSError as exc:
             self.app.log_error("지식그래프 자동 생성", exc)
             return
@@ -374,22 +374,22 @@ class KnowledgeScreen(QWidget):
                 return
             gid = self.graph_combo.currentData()
             ref_ver = {r["graph_id"]: r["graph_version"] for r in refs}.get(gid)
-            found = screen.graph_for_ref(paths.output_root("그래프"), gid, ref_ver)
+            found = screen.graph_for_ref(paths.output_root("graph"), gid, ref_ver)
             if found is None:
                 self._set_empty("지식그래프 %s가 참조한 도면 그래프가 없습니다: %s. ①에서 추출·그래프를 만드세요."
                                 % (kg.get("kg_id"), ", ".join(r["graph_id"] for r in refs)))
                 self.kg = kg
                 return
             self.graph_dir, self.graph = found
-            self.regions = screen.load_regions(paths.folder("구간"))
-            cands = screen.read_candidates(paths.safe_join(paths.folder("지식"), kg.get("project_id") or ""))
+            self.regions = screen.load_regions(paths.folder("regions"))
+            cands = screen.read_candidates(paths.safe_join(paths.folder("knowledge-graph"), kg.get("project_id") or ""))
             self._load_project()
             self.expect = self._expectations()
             self.data = screen.screen_data(kg, self.graph, self.regions, cands,
                                            standalone_note="이전 버전" if self.showing_prev else None,
                                            expectations=self.expect, study=self._study())
             self.a1_full = None
-            shell = screen.write_html(paths.output_root("뷰어", APP_SHELL), screen.build_html(None))
+            shell = screen.write_html(paths.output_root("viewer", APP_SHELL), screen.build_html(None))
             self.standalone = screen.write_html(standalone_path(kg, gid), screen.build_html(self.data))
         except (OSError, ValueError, KeyError) as exc:
             self.app.log_error("지식그래프 읽기", exc)

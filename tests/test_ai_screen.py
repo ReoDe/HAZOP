@@ -87,7 +87,7 @@ class AiScreenTest(unittest.TestCase):
 
     def tearDown(self):
         from hazop import paths
-        shutil.rmtree(paths.folder("분석결과"), ignore_errors=True)
+        shutil.rmtree(paths.folder("analysis-results"), ignore_errors=True)
 
     def screen(self, client=None, key=KEY):
         from hazop.app.main_window import MainWindow
@@ -187,7 +187,7 @@ class AiScreenTest(unittest.TestCase):
     def test_finish_message_says_when_save_failed(self):
         from hazop import paths
         # 창을 닫을 때 shutdown이 저장을 다시 시도하므로 정리는 창이 닫힌 뒤(가장 나중)에 한다
-        self.addCleanup(shutil.rmtree, paths.folder("분석결과"), True)
+        self.addCleanup(shutil.rmtree, paths.folder("analysis-results"), True)
         client = FakeClient()
         win, scr = self.screen(client)
         with mock.patch("hazop.app.screens.results.res.save", side_effect=PermissionError("잠김")):
@@ -394,6 +394,18 @@ class AiScreenTest(unittest.TestCase):
         shown = (scr.matrix.viewport().width()) / scr.matrix.columnWidth(0)
         self.assertGreaterEqual(shown, 10.0, "1366에서 편차 열 약 11개(명세 U-20, Qt 여백으로 1열 줄 수 있음)")
         self.assertEqual(scr.matrix.rowHeight(0), 30)
+
+    def test_worksheet_keeps_input_method_off_so_hangul_mode_a_still_approves(self):
+        """한글 입력 상태에서도 A·R·E가 듣게: 워크시트 행에 초점이 있으면 Qt가 IME를 켜지 않아야 한다.
+        IME가 켜지면 A가 키 이벤트가 아니라 조합 글자 'ㅁ'으로 들어와 단축키가 발동하지 않는다(S4)."""
+        from PySide6.QtCore import Qt
+        _win, scr = self.screen(FakeClient())
+        self.run_and_wait(scr)
+        self.assertTrue(scr.next_unreviewed())
+        scr.table.setCurrentCell(0, 1)
+        self.assertFalse(scr.table.testAttribute(Qt.WA_InputMethodEnabled), "워크시트 행에서 IME 꺼짐")
+        scr.matrix.setCurrentIndex(scr.matrix.model().index(0, 1))
+        self.assertFalse(scr.matrix.testAttribute(Qt.WA_InputMethodEnabled), "행렬 칸에서 IME 꺼짐(J)")
 
     def test_review_actions_blocked_while_running(self):
         _win, scr = self.screen(FakeClient())

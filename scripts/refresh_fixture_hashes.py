@@ -9,7 +9,7 @@
   python scripts/refresh_fixture_hashes.py --check      # 불일치만 보고(파일 변경 없음, 불일치 있으면 종료 코드 1)
   python scripts/refresh_fixture_hashes.py              # 해시 갱신
 옵션: --region <구간 JSON>, --graph <그래프 JSON>, --fixed-dir <폴더>(여러 번 지정 가능.
-기본: 데이터/고정응답/<구간 ID>/ 와 tests/fixtures/analysis/bad/)
+기본: data/fixed-responses/<구간 ID>/ 와 tests/fixtures/analysis/bad/)
 """
 
 import argparse
@@ -25,7 +25,7 @@ from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
 from hazop.analysis import ai, run  # noqa: E402
 
-DEFAULT_REGION = paths.folder("표본", "구간", "region-SNP-M-102-pzr.json")
+DEFAULT_REGION = paths.folder("samples", "regions", "region-SNP-M-102-pzr.json")
 BAD_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "analysis", "bad")
 
 
@@ -45,7 +45,7 @@ def main(argv=None):
         return 1
     region_id = inputs["region"]["region_id"]
     doc = run.prepare_doc(inputs, None, "refresh", lambda: "refresh")
-    dirs = args.fixed_dir or [paths.folder("표본", "고정응답", region_id), BAD_DIR]
+    dirs = args.fixed_dir or [paths.folder("samples", "fixed-responses", region_id), BAD_DIR]
     stale = 0
     for d in dirs:
         for path in sorted(glob.glob(os.path.join(d, "*.json"))):

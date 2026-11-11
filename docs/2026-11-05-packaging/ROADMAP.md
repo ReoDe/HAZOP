@@ -12,7 +12,7 @@
 
 | 구분 | 요약 |
 |---|---|
-| 완료 | `W1` 조사([evidence/w1-조사.md](evidence/w1-조사.md)), `W2` 전용 venv([evidence/w2-venv.md](evidence/w2-venv.md)) |
+| 완료 | `W1` 조사([evidence/w1-survey.md](evidence/w1-survey.md)), `W2` 전용 venv([evidence/w2-venv.md](evidence/w2-venv.md)) |
 | 현재 단계 | `W2`~`W6`(W6은 초안)·`W8-A`·`W8-B` 완료, `W9`(고지 원문·pdfplumber·고지 위치) 완료(D16), `W9-B`(남은 고지 원문)·`W10`(정보 창·설정 손상 안내) 완료(D17·D18·D19), `W11`(배포본 최종 빌드·zip) 구현 완료(검토 대기, D20). 남은 것: `W7`(os.link 비NTFS 실측, 장비 필요), W6 사용자 확인 항목 |
 | 막힌 것 | 없음 |
 | 다음 게이트 | `W5`·`W6`·`W7` 각 완료 기준 |
@@ -33,7 +33,7 @@
 
 ## 4. 나는 지금 무엇을 하면 되나
 
-- 지금 할 일: `W11` 검토 → QA([W11 최종 빌드](evidence/w11-최종빌드.md)). `기획서/인터페이스.md` 문안 반영(planner, [W10 §5](evidence/w10-정보창.md)) → QA. `W7`은 FAT32/exFAT USB 장비가 있을 때 착수.
+- 지금 할 일: `W11` 검토 → QA([W11 최종 빌드](evidence/w11-final-build.md)). `specs/interface.md` 문안 반영(planner, [W10 §5](evidence/w10-about-dialog.md)) → QA. `W7`은 FAT32/exFAT USB 장비가 있을 때 착수.
 - 확인할 범위: [`README.md`](README.md)
 - 결과를 남길 곳: [`evidence/`](evidence/README.md)
 - 상세 상태를 갱신할 곳: [`PROGRESS.md`](PROGRESS.md)

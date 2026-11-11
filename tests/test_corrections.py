@@ -63,9 +63,9 @@ class CorrectionsTest(unittest.TestCase):
         ext["project_id"] = PROJECT  # 등록 경로를 거친 도면처럼 프로젝트를 붙인다(지식그래프 빌드 대상)
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(ext, fh, ensure_ascii=False, indent=2)
-        shutil.copytree(out_dir, os.path.join(paths.output_root("추출"), COPY))
+        shutil.copytree(out_dir, os.path.join(paths.output_root("extract"), COPY))
         for name in (NAME, COPY):
-            data.script_module("build_graph").build_one(data.extraction_path(name), paths.output_root("그래프"))
+            data.script_module("build_graph").build_one(data.extraction_path(name), paths.output_root("graph"))
         cls.ext = ext
 
     @classmethod
@@ -79,7 +79,7 @@ class CorrectionsTest(unittest.TestCase):
 
     def tearDown(self):
         from hazop import paths
-        for name in ("도면수정", "검토구간", "분석결과"):
+        for name in ("drawing-edits", "study-nodes", "analysis-results"):
             shutil.rmtree(paths.folder(name), ignore_errors=True)
 
     def op(self, ops, base_ext, name, target, value):
@@ -378,6 +378,44 @@ class CorrectionsTest(unittest.TestCase):
         self.assertEqual(doc["log"][1]["removed_ops"], [first], "지운 사람 수정 내용이 기록에 남음")
         self.assertEqual(corrections.issued_op_ids(NAME), {first["op_id"], again["op_id"]})
 
+    def test_direct_callers_do_not_get_a_removed_number_back(self):
+        """화면을 거치지 않는 스크립트: name을 주면 저장 기록의 번호를 피해 발급하고, 주지 않아 겹친 번호는 저장이 거절한다."""
+        from hazop.extract import corrections
+        value = {"category": "equipment", "kind": "pump", "tag": "RC-P900", "bbox": [500, 500, 20, 20]}
+        first = corrections.make_op(self.ext, "add_node", None, value, "검토자")
+        corrections.save(NAME, [first], "검토자", drawing_number=NAME)
+        corrections.save(NAME, [], "검토자")
+        other = dict(value, tag="RC-P901")
+        fresh = corrections.make_op(self.ext, "add_node", None, other, "스크립트", name=NAME)
+        self.assertEqual(fresh["op_id"], "c-0002")
+        reused = corrections.make_op(self.ext, "add_node", None, other, "스크립트")
+        self.assertEqual(reused["op_id"], first["op_id"], "기록을 모르는 호출은 같은 번호를 받는다")
+        with open(corrections.store_path(NAME), "rb") as fh:
+            before = fh.read()
+        with self.assertRaises(ValueError):
+            corrections.save(NAME, [reused], "스크립트")
+        with open(corrections.store_path(NAME), "rb") as fh:
+            self.assertEqual(fh.read(), before, "manual- ID가 다른 기기를 가리키게 되는 저장은 하지 않음")
+        corrections.save(NAME, [first], "검토자")
+        self.assertEqual(corrections.load(NAME)["ops"], [first], "지운 연산을 그대로 되살리는 저장(실행 취소)은 받는다")
+
+    def test_old_record_keeps_its_ops_and_log_and_numbers_continue(self):
+        """removed_ops가 생기기 전에 쓴 기록: 연산과 옛 log가 그대로 남고, 새 번호는 log에 나온 가장 큰 번호 다음이다."""
+        from hazop.extract import corrections
+        ops = []
+        self.op(ops, self.ext, "set_tag", "n1", {"tag": "RC-PZ99"})
+        old = {"kind": corrections.KIND, "schema_version": "0.1", "extraction_name": NAME, "drawing_number": NAME,
+               "ops": ops, "log": [{"at": "2026-11-07T00:00:00Z", "by": "검토자", "action": "save",
+                                    "added": ["c-0001", "c-0005"], "removed": ["c-0005"]}]}
+        os.makedirs(os.path.dirname(corrections.store_path(NAME)))
+        with open(corrections.store_path(NAME), "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(old, fh, ensure_ascii=False, indent=2, sort_keys=True)
+        new = corrections.make_op(self.ext, "set_tag", "n6", {"tag": "RC-TE99"}, "검토자B", existing_ops=ops, name=NAME)
+        self.assertEqual(new["op_id"], "c-0006")
+        corrections.save(NAME, ops + [new], "검토자B")
+        doc = corrections.load(NAME)
+        self.assertEqual((doc["ops"], doc["log"][0], doc["drawing_number"]), (ops + [new], old["log"][0], NAME))
+
     def test_load_rejects_other_kind(self):
         from hazop.extract import corrections
         os.makedirs(os.path.dirname(corrections.store_path(NAME)))
@@ -401,10 +439,10 @@ class CorrectionsTest(unittest.TestCase):
         with open(path, "wb") as fh:  # 다시 추출: extraction.json만 새로 써진다
             fh.write(before)
         bg = data.script_module("build_graph")
-        graph, _ = bg.build_one(path, paths.output_root("그래프"))
+        graph, _ = bg.build_one(path, paths.output_root("graph"))
         self.assertIn("RC-PZ55", {n["tag"] for n in graph["nodes"]})
         corrections.save(COPY, [], "검토자")
-        graph, _ = bg.build_one(path, paths.output_root("그래프"))
+        graph, _ = bg.build_one(path, paths.output_root("graph"))
         self.assertNotIn("RC-PZ55", {n["tag"] for n in graph["nodes"]})
 
     def test_tag_conflicts_finds_other_drawing_and_skips_excluded(self):
@@ -427,7 +465,7 @@ class CorrectionsTest(unittest.TestCase):
         from hazop.app import data
         from hazop.study import nodes, results
         bg = data.script_module("build_graph")
-        graph, _ = bg.build_one(data.extraction_path(NAME), paths.output_root("그래프"))
+        graph, _ = bg.build_one(data.extraction_path(NAME), paths.output_root("graph"))
         node_set = nodes.confirm(nodes.propose(graph), graph, "검토자A")
         ns_path = nodes.save(node_set)
         res_path = results.save(results.empty_results(node_set, results.load_deviations()), PROJECT)
@@ -438,9 +476,9 @@ class CorrectionsTest(unittest.TestCase):
         ops = []
         self.op(ops, self.ext, "set_tag", "n1", {"tag": "RC-PZ02"})
         out = data.save_corrections(NAME, ops, "검토자")
-        self.assertEqual(out["path"], os.path.join(paths.folder("도면수정"), NAME + ".json"))
+        self.assertEqual(out["path"], os.path.join(paths.folder("drawing-edits"), NAME + ".json"))
         self.assertNotEqual(out["graph"]["graph_version"], graph["graph_version"])
-        on_disk = data.read_json(os.path.join(paths.output_root("그래프"), NAME, "graph.json"))
+        on_disk = data.read_json(os.path.join(paths.output_root("graph"), NAME, "graph.json"))
         self.assertEqual(on_disk["graph_version"], out["graph"]["graph_version"])
         self.assertNotIn("kg_error", out)
         self.assertIn(out["graph"]["graph_version"], json.dumps(out["kg"]["kg"]["graph_refs"]))

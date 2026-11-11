@@ -1,6 +1,6 @@
 """② 도면 사람 수정 기록: 원본 추출은 그대로 두고 수정 기록(연산 목록)을 그 위에 적용한다.
 
-기록 파일: <작업 루트>/데이터/도면수정/<safe_name(추출 폴더 이름)>.json. 연산은 OPS 표(이름 → 대상 종류, 값 검사,
+기록 파일: <작업 루트>/data/drawing-edits/<safe_name(추출 폴더 이름)>.json. 연산은 OPS 표(이름 → 대상 종류, 값 검사,
 적용 함수, 해소하는 미확인)로 적용한다. 대상은 source_object_id(다시 추출해도 안정)로 가리키고, 사람이 추가한 기기·연결의
 id는 "manual-" + op_id다. 적용할 수 없는 연산은 사유와 함께 건너뛰고 나머지는 계속 적용한다.
 """
@@ -8,14 +8,12 @@ id는 "manual-" + op_id다. 적용할 수 없는 연산은 사유와 함께 건�
 import copy
 import json
 import math
-import os
 from dataclasses import dataclass
 from typing import Callable
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.extract import rules
 from hazop.extract.drawio import summarize
-from hazop.kg.build import write_json_atomic
 from hazop.kg.schema import REGISTRY
 from hazop.study.nodes import now_utc
 
@@ -34,28 +32,52 @@ class _Skip(Exception):
 RENAMED_REASONS = {"제어밸브 실패 위치 미확인": "밸브 고장 위치 미확인"}
 
 def store_path(name):
-    return paths.folder("도면수정", paths.safe_name(name) + ".json")
+    return paths.folder("drawing-edits", paths.safe_name(name) + ".json")
 
 
 def load(name):
     """수정 기록 문서. 없으면 None, 다른 종류 파일이면 ValueError."""
+    return load_fp(name)[0]
+
+
+def load_fp(name):
+    """(수정 기록 문서, 읽은 바이트의 지문). 없으면 (None, None), 다른 종류 파일이면 ValueError."""
     path = store_path(name)
-    if not os.path.isfile(path):
-        return None
-    with open(path, encoding="utf-8") as fh:
-        doc = json.load(fh)
+    data, fp = store_io.read_bytes(path)
+    if data is None:
+        return None, None
+    doc = json.loads(data.decode("utf-8"))
     if not isinstance(doc, dict) or doc.get("kind") != KIND:
         raise ValueError("도면 수정 기록 파일이 아님: %s" % path)
-    return doc
+    return doc, fp
 
 
-def save(name, ops, by, drawing_number=None, at=None):
-    """ops 전체를 저장하고 이전 파일과 비교한 op_id 증감을 log에 덧붙인다. 임시 파일에 쓴 뒤 교체. 쓴 경로를 돌려준다.
-    지운 연산은 내용까지 log의 removed_ops에 남긴다(지운 사람 수정도 기록에서 찾을 수 있게)."""
-    prev = load(name) or {}
+def save(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY):
+    """save_fp와 같되 쓴 경로만 돌려준다."""
+    return save_fp(name, ops, by, drawing_number, at, expect)[0]
+
+
+def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY):
+    """ops 전체를 저장하고 이전 파일과 비교한 op_id 증감을 log에 덧붙인다. (쓴 경로, 새 지문)을 돌려준다.
+    지운 연산은 내용까지 log의 removed_ops에 남긴다(지운 사람 수정도 기록에서 찾을 수 있게).
+    expect(ops를 읽을 때의 load_fp 지문)를 주면 그 뒤 파일이 바뀌었을 때 쓰지 않고 store_io.Conflict를 낸다.
+    op_id 하나는 연산 하나만 가리킨다. 저장된 연산이나 지운 연산의 번호를 다른 내용에 쓰면 ValueError다."""
+    prev, fp = load_fp(name)
+    if expect is not store_io.ANY and fp != expect:
+        raise store_io.Conflict("읽은 뒤 저장 파일이 바뀜: %s" % store_path(name))
+    prev = prev or {}
     ops = [dict(o) for o in ops]
-    before = [o["op_id"] for o in prev.get("ops") or []]
+    saved = {o["op_id"]: o for o in prev.get("ops") or []}
+    before = list(saved)
     after = [o["op_id"] for o in ops]
+    gone = _issued(prev) - set(before)
+    kept = [o for e in prev.get("log") or [] for o in e.get("removed_ops") or []]
+    reused = [o["op_id"] for o in ops if o["op_id"] in gone and o not in kept]  # 지운 그대로 되살리는 것(실행 취소)은 된다
+    reused += [i for i, o in zip(after, ops) if i in saved and o != saved[i]]
+    reused += [i for n, i in enumerate(after) if i in after[:n]]
+    if reused:
+        raise ValueError("이미 쓴 연산 번호를 다른 연산에 쓸 수 없음: %s (새 연산은 make_op에 name을 넘겨 번호를 받을 것)"
+                         % ", ".join(dict.fromkeys(reused)))
     removed = [o for o in prev.get("ops") or [] if o["op_id"] not in after]
     doc = {
         "kind": KIND, "schema_version": SCHEMA_VERSION, "extraction_name": name,
@@ -67,13 +89,15 @@ def save(name, ops, by, drawing_number=None, at=None):
             "removed_ops": removed}],
     }
     path = store_path(name)
-    write_json_atomic(path, doc)
-    return path
+    return path, store_io.write_json(path, doc, expect=fp)
 
 
 def issued_op_ids(name):
     """저장 기록에 한 번이라도 나온 op_id(지금 연산과 log의 추가·삭제). 새 op_id는 이 번호들과 겹치지 않게 발급한다."""
-    doc = load(name) or {}
+    return _issued(load(name) or {})
+
+
+def _issued(doc):
     ids = {o.get("op_id") for o in doc.get("ops") or []}
     for entry in doc.get("log") or []:
         ids.update(entry.get("added") or [])
@@ -586,19 +610,20 @@ def apply_saved(extraction, name):
 
 
 def _next_op_id(existing_ops, used_ids=()):
-    ids = [str(o.get("op_id", "")) for o in existing_ops] + [str(i) for i in used_ids]
-    nums = [int(i[2:]) for i in ids if i.startswith("c-") and i[2:].isdigit()]
-    return "c-%04d" % (max(nums, default=0) + 1)
+    return store_io.next_id("c-%04d", [o.get("op_id") for o in existing_ops] + list(used_ids))
 
 
-def make_op(original_extraction, op, target, value, by, at=None, op_id=None, existing_ops=(), used_ids=()):
+def make_op(original_extraction, op, target, value, by, at=None, op_id=None, existing_ops=(), used_ids=(), name=None):
     """검사를 마친 Op dict. base는 원본 추출(수정 전)에서 계산하고 manual 대상이면 None.
-    새 op_id는 existing_ops와 used_ids(issued_op_ids: 저장 기록에 나온 번호)보다 크게 발급한다.
-    지운 연산의 번호를 다시 쓰면 manual- ID가 다른 기기를 가리키게 되기 때문이다.
+    새 op_id는 existing_ops, used_ids, name(추출 이름)의 저장 기록에 나온 번호(issued_op_ids)보다 크게 발급한다.
+    지운 연산의 번호를 다시 쓰면 manual- ID가 다른 기기를 가리키게 되기 때문이다. 저장할 기록이 있는 호출은 name을 넘긴다
+    (넘기지 않아 겹친 번호는 save가 거절한다).
     existing_ops 뒤에 붙여 적용해 볼 때 적용 불가면 ValueError(사유)."""
     if op not in OPS:
         raise ValueError("알 수 없는 수정 연산: %r" % (op,))
     existing_ops = list(existing_ops)
+    if name:
+        used_ids = set(used_ids) | issued_op_ids(name)
     base, fp = None, _fingerprints(original_extraction)
     if target is not None and not str(target).startswith(MANUAL_PREFIX):
         if target not in fp:

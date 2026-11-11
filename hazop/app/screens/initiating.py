@@ -30,7 +30,7 @@ from hazop.ie import model, store
 from hazop.study import nodes, refs
 from hazop.study import results as res
 
-INTRO = "⑤에서 승인한 원인을 초기사건 후보로 삼아 PSA 초기사건 그룹으로 묶습니다. 빈도 산정과 정량화는 PSA 도구에서 합니다."
+INTRO = "⑤에서 승인한 원인을 초기사건 후보로 삼아 PSA 초기사건 그룹으로 묶습니다. 빈도 산정과 정량화는 PRA 도구에서 합니다."
 TABS = ("후보", "그룹", "사건수목 표제", "최종상태", "기본사건", "완전성 대조", "품질 경고")
 TAB_GROUP, TAB_COVERAGE = 1, 5
 ORIGIN_ROLE = Qt.UserRole + 20
@@ -462,7 +462,11 @@ class InitiatingScreen(QWidget):
         w = QWidget()
         v = QVBoxLayout(w)
         v.setContentsMargins(0, 4, 0, 0)
-        self.warning_table = _table((("경고", 130), ("대상", 160), ("내용", 0), ("근거", 120)), "품질 경고 표")
+        self.warning_summary = QLabel("")
+        self.warning_summary.setWordWrap(True)
+        self.warning_summary.setAccessibleName("품질 경고 요약")
+        v.addWidget(self.warning_summary)
+        self.warning_table = _table((("경고", 190), ("대상", 160), ("내용", 0), ("근거", 170)), "품질 경고 표")
         v.addWidget(self.warning_table, 1)
         return w, TABS[6]
 
@@ -548,6 +552,10 @@ class InitiatingScreen(QWidget):
         self.render()
         self.stack.setCurrentIndex(1)
         self.app.update_header()
+        demoted = [h["ids"][0] for h in synced["history"][len(doc["history"]):] if h["op"] == "demote"]
+        if demoted:
+            self.app.toast("⑤ 결과가 바뀌어 확정 그룹 %d개가 초안으로 내려갔습니다: %s. 그룹 탭에서 이유를 보고 다시 확정하세요"
+                           % (len(demoted), ", ".join(demoted)), ms=10000)
         return True
 
     def _empty(self, text):
@@ -565,7 +573,7 @@ class InitiatingScreen(QWidget):
         if self.unreadable is None:
             return False
         if ask and QMessageBox.question(
-                self, "초기사건 저장 파일", "읽지 못한 파일을 데이터/백업 아래에 복사한 뒤 빈 문서로 바꿉니다.\n"
+                self, "초기사건 저장 파일", "읽지 못한 파일을 data/backup 아래에 복사한 뒤 빈 문서로 바꿉니다.\n"
                 "그룹·표제는 다시 묶어야 합니다. 번호는 원본에 있던 가장 큰 번호 다음부터 매기므로 옛 ID를 다시 쓰지 않지만, "
                 "원인마다 받았던 IEC 번호는 이어지지 않습니다. 계속할까요?\n%s" % self.unreadable.path) != QMessageBox.Yes:
             return False
@@ -655,7 +663,8 @@ class InitiatingScreen(QWidget):
             if r["status"] == "gap" and r["code"] not in self.doc["coverage"]:
                 for c in range(self.coverage_table.columnCount()):
                     self.coverage_table.item(row, c).setBackground(QColor(tokens.c("warn-bg")))
-        _fill(self.warning_table, [[res.QUALITY_KINDS[w["kind"]][0], w["target"], w["text"], w["basis"]]
+        self.warning_summary.setText(ib.warning_summary_text(v))
+        _fill(self.warning_table, [[ib.WARNING_KINDS[w["kind"]][0], w["target"], w["text"], w["basis"]]
                                    for w in v["warnings"]])
         self.group_combo.blockSignals(True)
         self.group_combo.clear()
@@ -735,7 +744,7 @@ class InitiatingScreen(QWidget):
                           ("affected_mitigation", g["affected_mitigation"] or "미정"),
                           ("support_ie", model.SUPPORT_IE[g["support_ie"]])):
             self.group_fields[key].setText(text)
-        everyone = g["members"] + g["held_members"]
+        everyone = model.members_of(self.doc, g["group_id"])  # 승인 해제로 묶음에서 빠진 후보도 화면에는 보인다
         rows, origins = [], []
         for m in everyone:
             c = self.by_iec.get(m)
@@ -747,8 +756,8 @@ class InitiatingScreen(QWidget):
             origins.append(self.doc["candidates"][m]["placed_by"])
         _fill(self.member_table, rows, ids=everyone, origins=origins)
         self.members_label.setText("소속 후보 %d · 원인 단위 · ⑤ 승인 항목에서 옴%s" % (
-            g["member_count"], " · 승인 해제로 빠진 후보 %d(묶음에 나가지 않음)" % len(g["held_members"])
-            if g["held_members"] else ""))
+            g["member_count"], " · 승인 해제로 빠진 후보 %d(묶음에 나가지 않음)" % g["held_member_count"]
+            if g["held_member_count"] else ""))
         hs = [h for h in self.view["top_events"] if h["heading_id"] in g["heading_ids"]]
         _fill(self.group_heading_table, [[h["heading_id"], h["name"], _joined(h["targets"]),
                                           refs.ACTUATIONS[h["actuation"]], ix.ORIGINS[h["origin"]]] for h in hs],
@@ -819,7 +828,7 @@ class InitiatingScreen(QWidget):
         self.reopen_btn.setEnabled(stored == "confirmed")
         self.delete_btn.setEnabled(stored == "draft")
         self.edit_group_btn.setEnabled(bool(g))
-        self.split_btn.setEnabled(bool(g) and len(g["members"]) + len(g["held_members"]) >= 2)
+        self.split_btn.setEnabled(bool(g) and g["member_count"] + g["held_member_count"] >= 2)
         for kind in KIND_TABLES:
             has = ready and bool(_selected_ids(getattr(self, kind + "_table")))
             for b in getattr(self, kind + "_btns")[:3]:
@@ -891,18 +900,26 @@ class InitiatingScreen(QWidget):
             fields = dlg.fields()
         return bool(self._apply(lambda d: model.edit(d, ("group", g["group_id"]), fields)))
 
+    def _reviewer(self, why):
+        """설정의 검토자 이름. 없으면 물어서 설정에 저장한다. 취소하거나 비우면 ""."""
+        name = (self.app.reviewer_name() or "").strip()
+        if name:
+            return name
+        name, ok = QInputDialog.getText(self, "검토자 이름", "%s 검토자 이름이 필요합니다(설정에 저장)." % why)
+        if not ok or not name.strip():
+            return ""
+        self.app.set_reviewer_name(name.strip())
+        return name.strip()
+
     def confirm_group(self, reviewer=None):
         g = self.current_group()
         if g is None:
             return False
         if self._reload_if_results_changed("바뀐 내용을 확인한 뒤 다시 확정하세요."):
             return False
-        reviewer = reviewer if reviewer is not None else self.app.reviewer_name()
+        reviewer = reviewer or self._reviewer("확정하려면")
         if not reviewer:
-            reviewer, ok = QInputDialog.getText(self, "검토자 이름", "확정하려면 검토자 이름이 필요합니다(설정에 저장).")
-            if not ok or not reviewer.strip():
-                return False
-            self.app.set_reviewer_name(reviewer.strip())
+            return False
         done = self._apply(lambda d: model.confirm(d, g["group_id"], self.results, reviewer))
         if done:
             self.app.toast("%s 그룹을 확정했습니다 · 검토자 %s" % (g["group_id"], reviewer.strip()))
@@ -997,8 +1014,12 @@ class InitiatingScreen(QWidget):
                 self.app.status_message("처리(범위 밖 · 다른 기법 · 해당 없음)를 고르세요.")
                 return False
         reason = self.coverage_reason.text() if reason is None else reason
-        return bool(self._apply(lambda d: model.set_coverage(d, r["code"], disposition, reason,
-                                                             self.app.reviewer_name() or "")))
+        reviewer = ""
+        if disposition is not None and (reason or "").strip():  # 사유가 비면 이름을 묻기 전에 모델이 이유를 알려 준다
+            reviewer = self._reviewer("공백 판정을 저장하려면")
+            if not reviewer:
+                return False
+        return bool(self._apply(lambda d: model.set_coverage(d, r["code"], disposition, reason, reviewer)))
 
     # ------------------------------------------------------------ 내보내기
     def export_bundle(self, path=None):

@@ -1,9 +1,9 @@
 """잠재 후보(기대 패턴) 검사와 측정 (기획서/지식그래프-스키마.md §8.2 M4 완료 기준). 하위 프로세스·네트워크를 쓰지 않는다.
 
-1) 샘플 SNP-SAMPLE 프로젝트 그래프(출력/그래프 6장, 읽기만) + 지식그래프 kg-SNP-SAMPLE(있으면, 읽기만)로 규칙별
+1) 샘플 SNP-SAMPLE 프로젝트 그래프(output/graph 6장, 읽기만) + 지식그래프 kg-SNP-SAMPLE(있으면, 읽기만)로 규칙별
    대상·후보 발견·미발견 수 표를 낸다.
 2) 임시 폴더에 사람 판단(후보 확인·후보 기각·부재 확정·무관)을 저장하고 다시 계산해 같은 상태인지, 세 번째 계산이 같은지(멱등)
-   확인한다. 데이터/·출력/에는 쓰지 않는다.
+   확인한다. data/·output/에는 쓰지 않는다.
 3) 대상 내용이 바뀐 판에서 확인됨·부재 확정이 재확인 필요로 돌아가는지 확인한다.
 4) 잠재 후보가 계산 뷰(V5)와 ③ 알고리즘 결과에 들어가지 않는지 확인한다.
 5) tests/test_kg_expect.py
@@ -30,8 +30,8 @@ SAMPLE_GRAPH = "graph-SNP-M-102"
 
 
 def load_inputs():
-    pg = project.load(PROJECT, os.path.join(paths.DEV_WORK_ROOT, "출력", "그래프"))
-    kg_root = os.path.join(paths.DEV_WORK_ROOT, "출력", "지식그래프", "kg-%s" % PROJECT)
+    pg = project.load(PROJECT, paths.output_in(paths.DEV_WORK_ROOT, "graph"))
+    kg_root = paths.output_in(paths.DEV_WORK_ROOT, "knowledge-graph", "kg-%s" % PROJECT)
     kg = build.load_outputs(kg_root)[1] if os.path.isfile(os.path.join(kg_root, build.POINTER_FILE)) else None
     return pg, kg
 
@@ -53,7 +53,7 @@ def first(res, rule, state):
 def persistence(pg, kg, failures):
     tmp = tempfile.mkdtemp(prefix="hazop-expect-")
     try:
-        path = os.path.join(tmp, *paths.FOLDERS["잠재후보"].rel, "%s.json" % PROJECT)
+        path = os.path.join(tmp, *paths.FOLDERS["latent-candidates"].rel, "%s.json" % PROJECT)
         res = expect.evaluate(pg, kg)
         plan = [("E01", "candidate_found", "confirm", {}),
                 ("E02", "candidate_found", "reject", {}),
@@ -104,7 +104,7 @@ def exclusion(pg, kg, failures):
     if kg is None:
         print("  지식그래프 없음 — V5 제외 확인 건너뜀")
         return
-    graphs = screen.load_graphs(os.path.join(paths.DEV_WORK_ROOT, "출력", "그래프"))
+    graphs = screen.load_graphs(paths.output_in(paths.DEV_WORK_ROOT, "graph"))
     hit = next((g for _, g in graphs.values() if g["graph_id"] == SAMPLE_GRAPH), None)
     if hit is None:
         failures.append("%s 그래프 없음" % SAMPLE_GRAPH)
@@ -134,7 +134,7 @@ def main():
     persistence(pg, kg, failures)
     print("== 4. 계산 뷰 제외")
     exclusion(pg, kg, failures)
-    store = paths.folder("잠재후보")
+    store = paths.folder("latent-candidates")
     print("  실제 판단 폴더(읽지도 쓰지도 않음): %s" % store)
     print("== 5. unittest tests.test_kg_expect")
     outcome = unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromName("tests.test_kg_expect"))

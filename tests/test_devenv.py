@@ -66,6 +66,48 @@ class TempSweep(unittest.TestCase):
         self.assertTrue(os.path.isdir(new) and os.path.isdir(other))
 
 
+class TrialsFolder(unittest.TestCase):
+    """HZ-GOV-02 §8.2. 2026-11-10의 저장소 밖 시험 폴더에 실제로 있던 모양을 넣는다."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="trials-")
+        self.addCleanup(__import__("shutil").rmtree, self.root, True)
+
+    def folder(self, name, readme=None):
+        os.makedirs(os.path.join(self.root, name))
+        if readme is not None:
+            with open(os.path.join(self.root, name, "README.md"), "w", encoding="utf-8") as f:
+                f.write(readme)
+
+    def test_each_kind_is_reported(self):
+        for name in ("README.md", "u2.diff", "계통약어_v2.csv"):
+            open(os.path.join(self.root, name), "w").close()
+        self.folder("ie-20261109")
+        self.folder("2026-11-10-unit-b-packaging", "주인: 단위 B\n")
+        self.folder("2026-11-09-u5", "- keep_until: 2026-11-23\n")
+        self.folder("2026-11-09-ie-subscription-run", "- `keep_until`: forever\n")
+        self.folder("2026-11-10-unsorted", "keep_until: 2026-11-24\n")
+        found = devenv.trials_warnings(self.root, today="2026-11-24")
+        self.assertEqual(5, len(found), found)
+        self.assertIn("낱개 파일 2개: u2.diff, 계통약어_v2.csv", found[0])
+        self.assertIn("아닌 폴더 1개: ie-20261109", found[1])
+        self.assertIn("README.md가 없는 폴더 1개: ie-20261109", found[2])
+        self.assertIn("keep_until이 없는 폴더 1개: 2026-11-10-unit-b-packaging", found[3])
+        self.assertIn("지난 폴더 1개(지우기는 사람 확인 뒤): 2026-11-09-u5", found[4])
+
+    def test_clean_or_missing_root_is_quiet(self):
+        self.folder("2026-11-10-unsorted", "keep_until: 2026-11-24\n")
+        self.assertEqual([], devenv.trials_warnings(self.root, today="2026-11-10"))
+        self.assertEqual([], devenv.trials_warnings(os.path.join(self.root, "none")))
+
+    def test_root_comes_from_env(self):
+        with mock.patch.dict(os.environ, {devenv.ENV_TRIALS_ROOT: self.root}):
+            self.assertEqual(self.root, devenv.trials_root())
+        with mock.patch.dict(os.environ):
+            os.environ.pop(devenv.ENV_TRIALS_ROOT, None)
+            self.assertEqual(devenv.REPO_ROOT + "-trials", devenv.trials_root())
+
+
 class BaselineGuard(unittest.TestCase):
     PATH = os.path.join(REPO_ROOT, "tests", "baselines", "apr1400_score.json")
 
@@ -79,7 +121,9 @@ class BaselineGuard(unittest.TestCase):
         self.assertIn("--force", bad[0])
 
     def test_dirty_symbol_dictionary_or_answer_key_blocks_update(self):
-        for out in (" M 자원/기준/기호/APR1400/check_valve_box.json\n", "?? 자원/기준/기호/APR1400/new.json\n",
+        symbols = devenv.hp.folder_rel("symbols")
+        self.assertIn(symbols, devenv.SCORING_PATHS)
+        for out in (" M %s/APR1400/check_valve_box.json\n" % symbols, "?? %s/APR1400/new.json\n" % symbols,
                     " M tests/fixtures/apr1400/pairs_key.json\n"):
             with self.fake_git(out):
                 self.assertEqual(len(devenv.baseline_update_problems(self.PATH)), 1, out)

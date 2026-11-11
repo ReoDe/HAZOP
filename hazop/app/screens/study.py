@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
                                QProgressBar, QPushButton, QSizePolicy, QStackedWidget,
                                QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTabWidget, QVBoxLayout, QWidget)
 
+from hazop import paths, store_io
 from hazop.app import data, project_ctx, tokens
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text
 from hazop.graph import project
@@ -164,7 +165,7 @@ class StudyNodesScreen(QWidget):
         self.node_set = None
         self.view = None        # node_set의 표기 사본(ctx.view)
         self.saved = False      # node_set이 저장본과 같은가(처음 제안은 False)
-        self.disk_fp = None     # 읽을 때 저장 파일의 nodes.fingerprint. 저장 직전 다르면 다른 창이 먼저 저장한 것
+        self.disk_fp = None     # 읽은 저장 파일의 지문(없던 파일이면 None). 저장 직전 다르면 읽은 뒤 파일이 바뀐 것
         self.unreadable = False  # 저장 파일을 읽지 못했음. 처음 덮어쓰기 전에 묻고 원본을 백업한다
         self.entities = {}      # 프로젝트 ID → 프로젝트 그래프 node
         self.local_map = {}     # 프로젝트 ID → 보는 도면의 data-local-id
@@ -173,8 +174,10 @@ class StudyNodesScreen(QWidget):
         self.notice = None      # 옛 도면별 저장본을 옮겼다는 알림(이번 실행 동안 띠로 보임)
         self._pending = None    # 도면을 바꾼 뒤 고를 구간(칩으로 건너갈 때)
         self.review_doc = None  # AI 구간 검토 제안 묶음(node_review). 구간 파일과 따로 저장한다
+        self.review_fp = None   # review_doc을 읽은 파일의 지문(없던 파일이면 None)
         self.review_runner = None
         self._review_adj = None
+        self._kn = None         # (그래프, 지식 색인): nr.knowledge_index 결과. 지식 항목을 본 제안이 있을 때만 읽는다
         self._adj_of = None     # _review_adj를 센 집합(같은 객체면 다시 세지 않음)
         self._review_checking = False  # 연결 확인 중(두 번 눌러 실행이 둘 생기지 않게)
         lay = QVBoxLayout(self)
@@ -477,14 +480,14 @@ class StudyNodesScreen(QWidget):
         self.unreadable = False
         try:
             self.node_set, self.saved = ctx.load_set()
-        except (OSError, ValueError) as exc:
+            self.disk_fp = ctx.set_fp
+            if ctx.problem:
+                self.warn.set_messages("검토구간을 지금 그래프 판에 맞춰 저장하지 못했습니다", [ctx.problem])
+        except (OSError, ValueError) as exc:  # 읽지 못한 파일의 지문은 덮어쓰기를 허락받을 때(_save) 구한다
             sheets, problem = nodes.exclusion_for(self.graph)
             self.node_set, self.saved, self.unreadable = nodes.propose(self.graph, exclude_sheets=sheets), False, True
-            self.warn.set_messages("저장된 검토구간을 읽을 수 없어 새로 제안합니다", [str(exc)] + ([problem] if problem else []))
-        try:
-            self.disk_fp = nodes.fingerprint(self._store_path())
-        except OSError:  # 지금 읽지 못하는 파일이면 저장 때 다시 지문을 구해 보고, 그때 읽히면 다른 값이라 저장하지 않는다
             self.disk_fp = None
+            self.warn.set_messages("저장된 검토구간을 읽을 수 없어 새로 제안합니다", [str(exc)] + ([problem] if problem else []))
         self._load_review()
         if ctx.notice:
             self.notice = ctx.notice
@@ -987,15 +990,27 @@ class StudyNodesScreen(QWidget):
     def _undo_to(self, old, keep):
         """확정·확정 해제도 집합 상태가 바뀐 것이므로 같은 길(저장)로 직전 집합을 되살린다.
         토스트가 떠 있는 사이 다른 도면으로 옮겼으면 old만 저장하고 지금 화면은 건드리지 않는다."""
+        new, fp = self.node_set, self.disk_fp
+
         def undo():
             if self.node_set is not None and self.node_set["graph_id"] == old["graph_id"]:
-                self._replace(old, keep)
+                self._replace(nodes.keep_issued(old, self.node_set), keep)
                 return
-            try:
-                nodes.save(old)
-            except OSError as exc:
-                self.app.log_error("검토구간 실행 취소 실패", exc)
+            self._restore_elsewhere(old, new, fp)
         return undo
+
+    def _restore_elsewhere(self, old, new, fp):
+        """다른 도면으로 옮긴 뒤의 실행 취소: 화면은 두고 old만 저장한다. fp는 new를 저장한 직후의 지문이다.
+        그 뒤 파일이 바뀌었으면 되돌리지 않는다(바뀐 내용을 덮어쓰지 않게). 되돌렸으면 True."""
+        try:
+            nodes.save(nodes.keep_issued(old, new), expect=fp)
+        except nodes.Conflict:
+            self.app.status_message("그 뒤 검토구간 파일이 바뀌어 실행 취소하지 않았습니다.")
+            return False
+        except OSError as exc:
+            self.app.log_error("검토구간 실행 취소 실패", exc)
+            return False
+        return True
 
     def _store_path(self):
         return nodes.store_path(self.node_set.get("project_id"), self.node_set["graph_id"])
@@ -1008,22 +1023,24 @@ class StudyNodesScreen(QWidget):
 
     def _save(self):
         """디스크에 쓴 경우에만 True. 실패하면 화면은 이전 집합으로 되돌린다(확정이 저장된 것처럼 보이지 않게).
-        읽은 뒤 다른 창이 먼저 저장했으면 쓰지 않는다. 읽지 못한 파일은 사용자가 허락할 때만 백업한 뒤 덮어쓴다."""
+        읽은 뒤 저장 파일이 바뀌었으면 쓰지 않는다. 읽지 못한 파일은 사용자가 허락할 때만 백업한 뒤 덮어쓴다.
+        그때 지문은 백업 직전에 구한다(백업한 바로 그 파일만 덮어쓰게)."""
         path = self._store_path()
         if self.unreadable and os.path.isfile(path):
             if not self.ask_overwrite_unreadable(path):
                 self.msg.setText("저장하지 않았습니다. 읽지 못한 검토구간 파일은 그대로 있습니다.")
                 return False
             try:
-                migrate._backup(path, "읽기실패")
+                self.disk_fp = store_io.fingerprint(path)
+                store_io.backup_file(path, "읽기실패")
             except OSError as exc:
                 self.app.log_error("검토구간 백업 실패", exc)
                 self.msg.setText("원래 파일을 백업하지 못해 저장하지 않았습니다: %s" % exc)
                 return False
         try:
-            nodes.save(self.node_set, expect=self.disk_fp)
+            _path, self.disk_fp = nodes.save_fp(self.node_set, expect=self.disk_fp)
         except nodes.Conflict:
-            self.msg.setText("다른 창에서 이 검토구간을 먼저 저장해서 이번 변경은 저장하지 않았습니다. "
+            self.msg.setText("읽은 뒤 저장 파일이 바뀌어 이번 변경은 저장하지 않았습니다. "
                              "도면을 다시 열어 최신 내용을 불러온 뒤 고치세요.")
             return False
         except OSError as exc:
@@ -1031,7 +1048,6 @@ class StudyNodesScreen(QWidget):
             self.msg.setText("저장 실패 — 변경을 적용하지 않음: %s" % exc)
             return False
         self.unreadable = False
-        self.disk_fp = nodes.fingerprint(path)
         self.saved = True
         self.app.mark_saved(self.node_set["history"][-1]["at"])
         return True
@@ -1160,7 +1176,7 @@ class StudyNodesScreen(QWidget):
             path = self._store_path()
             if os.path.isfile(path):
                 try:
-                    project_ctx.backup([path], "검토구간-다시제안")
+                    store_io.backup([path], "검토구간-다시제안")
                 except OSError as exc:
                     self.app.log_error("검토구간 백업 실패", exc)
                     self.msg.setText("다시 제안하기 전 백업을 하지 못해 바꾸지 않았습니다: %s" % exc)
@@ -1213,31 +1229,63 @@ class StudyNodesScreen(QWidget):
     # ------------------------------------------------------------ AI 구간 검토(설계 §4.7, 선택 단계)
     def _load_review(self):
         pid, gid = self.node_set.get("project_id"), self.node_set["graph_id"]
+        self._kn = None
         try:
-            self.review_doc = nr.load(pid, gid)
+            self.review_doc, self.review_fp = nr.load_fp(pid, gid)
+            fixed, ids = nr.resync(self.review_doc, self.node_set)
+            if ids and self._save_review(fixed):
+                self.warn.set_messages("AI 제안 기록을 구간 파일에 맞췄습니다", [
+                    "구간 파일에는 받아들인 기록이 있는데 제안 기록에는 미처리로 남아 있던 제안 %d건(%s)을 '받음'으로 "
+                    "맞췄습니다(받아들이는 도중 저장이 끊긴 흔적)." % (len(ids), ", ".join(ids[:5]))])
         except (OSError, ValueError) as exc:
             path = nr.store_path(pid, gid)
             note = [str(exc)]
             try:  # 덮어쓰지 않게 옆으로 옮겨 둔다(받아들임·기각 기록이 남은 파일일 수 있음)
-                kept = "%s.읽기실패-%s.json" % (path[:-5], nodes.now_utc().replace(":", "").replace("-", ""))
+                kept = store_io.unused_name("%s.읽기실패-%s%%s.json" % (path[:-5], nodes.now_utc().replace(":", "").replace("-", "")))
                 os.replace(path, kept)
                 note.append("원래 파일은 %s로 옮겨 두었습니다" % os.path.basename(kept))
             except OSError as move:
                 note.append("원래 파일을 옮기지 못함: %s" % move)
-            self.review_doc = nr.empty(pid, gid)
+            self.review_doc, self.review_fp = nr.empty(pid, gid), None  # 못 옮긴 파일이 남아 있으면 저장이 거절된다
             self.warn.set_messages("AI 구간 검토 제안 파일을 읽을 수 없어 비워 두고 시작합니다", note)
+
+    def _knowledge(self, force=False):
+        """지식 맥락 색인(nr.knowledge_index) 또는 None. 지식그래프를 읽는 일이라 지식 항목을 본 미처리 제안이 있거나
+        (오래됨 판정) 검토를 새로 돌릴 때(force)만 만든다. 검토를 돌릴 때는 늘 다시 읽는다. 오래됨 판정은 읽어 둔
+        색인을 쓰되, 프로젝트 그래프와 지식그래프 포인터 파일이 그대로일 때만이다(③에서 지식그래프를 다시 지으면 다시 읽는다)."""
+        if not force and not (self.review_doc and nr.uses_knowledge(self.review_doc)):
+            return None
+        key = (self.graph, self._kg_pointer())
+        if force or self._kn is None or self._kn[0][0] is not key[0] or self._kn[0][1] != key[1] or key[1] is None:
+            from hazop.study import ai_cells
+            kg, _why = ai_cells.load_kg_for(self.node_set)
+            self._kn = (key, nr.knowledge_index(kg, self.graph)[0])
+        return self._kn[1]
+
+    def _kg_pointer(self):
+        """프로젝트 지식그래프 포인터 파일(current.json: 판과 두 파일의 해시)의 지문. 지식그래프를 다시 지으면 바뀐다.
+        포인터를 정할 수 없으면(프로젝트 없는 집합, 파일 없음·읽기 실패) None이고 그때는 색인을 기억하지 않는다."""
+        from hazop.kg import build as kg_build
+        from hazop.study import ai_cells
+        pid = (self.node_set or {}).get("project_id")
+        if not pid:
+            return None
+        try:
+            return store_io.fingerprint(paths.output_root(ai_cells.KG_DIR, paths.safe_name("kg-%s" % pid), kg_build.POINTER_FILE))
+        except OSError:
+            return None
 
     def review_pending(self):
         """{node_id: 미처리이고 오래되지 않은 제안}."""
         if self.review_doc is None or self.node_set is None or self._review_adj is None:
             return {}
-        return nr.pending(self.review_doc, self.node_set, self._review_adj)
+        return nr.pending(self.review_doc, self.node_set, self._review_adj, self._knowledge())
 
     def review_counts(self):
         """탐색기·확정 알림용 {"total", "open", "stale"}."""
         if self.review_doc is None or self.node_set is None or self._review_adj is None:
             return {"total": 0, "open": 0, "stale": 0}
-        return nr.counts(self.review_doc, self.node_set, self._review_adj)
+        return nr.counts(self.review_doc, self.node_set, self._review_adj, self._knowledge())
 
     def _review_block(self, n):
         """고른 구간 카드 안 'AI 제안': 규칙 판정과 AI 제안을 나란히, 받아들이기·고쳐서 받기·기각."""
@@ -1259,7 +1307,7 @@ class StudyNodesScreen(QWidget):
         head.setStyleSheet("font-weight: 700")
         v.addWidget(head)
         if prop is None:
-            note = QLabel("구간이나 이웃 구간이 바뀌어 이 제안은 받아들일 수 없습니다. 다시 검토하려면 '고른 구간만 AI 검토'를 누르세요.")
+            note = QLabel("구간·이웃 구간이나 이 구간에 붙은 지식 항목이 바뀌어 이 제안은 받아들일 수 없습니다. 다시 검토하려면 '고른 구간만 AI 검토'를 누르세요.")
             note.setWordWrap(True)
             v.addWidget(note)
             self.jump_box.addWidget(box)
@@ -1298,40 +1346,43 @@ class StudyNodesScreen(QWidget):
         keep = self.current_node_id()
         try:
             new_set, new_doc = nr.accept(self.node_set, self.review_doc, proposal_id, self._reviewer(),
-                                         nr.adjacency(self.node_set, self.graph), edited=edited)
+                                         nr.adjacency(self.node_set, self.graph), edited=edited, kn=self._knowledge())
         except ValueError as exc:
             self.msg.setText("할 수 없음: %s" % exc)
             return False
         if not self._replace(new_set, keep):
             return False
         if not self._save_review(new_doc):  # 제안 묶음을 못 쓰면 구간도 되돌린다(두 파일이 어긋나지 않게)
-            if not self._replace(old_set, keep):
-                self.app.log_error("AI 제안 받아들이기 되돌림 실패", RuntimeError(self.msg.text()))
+            why = self.msg.text()
+            restored = self._replace(nodes.keep_issued(old_set, new_set), keep)  # 잠깐 썼던 S번호를 다시 내지 않게
             self.review_doc = old_doc
             self._render(keep)
+            if restored:
+                self.msg.setText("%s 구간은 받아들이기 전으로 되돌렸습니다." % why)
+            else:
+                self.app.log_error("AI 제안 받아들이기 되돌림 실패", RuntimeError("%s / %s" % (why, self.msg.text())))
+                self.msg.setText("AI 제안 기록을 저장하지 못했고 구간도 되돌리지 못했습니다. 구간 파일은 받아들인 뒤 상태로 "
+                                 "남아 있습니다. 도면을 다시 열면 제안 기록을 그에 맞춥니다.")
             return False
         self._render(keep)
         target = (old_set.get("project_id"), old_set["graph_id"])
+        set_fp = self.disk_fp
 
         def undo():
-            if self.node_set is not None and self.node_set["graph_id"] == old_set["graph_id"]:
-                restored = self._replace(old_set, keep)
+            here = self.node_set is not None and (self.node_set.get("project_id"), self.node_set["graph_id"]) == target
+            if here:
+                restored = self._replace(nodes.keep_issued(old_set, self.node_set), keep)
             else:
-                try:
-                    nodes.save(old_set)
-                    restored = True
-                except OSError as exc:
-                    self.app.log_error("검토구간 실행 취소 실패", exc)
-                    restored = False
+                restored = self._restore_elsewhere(old_set, new_set, set_fp)
             if not restored:
                 return
             try:  # 그 제안 하나만 미처리로 돌린다(받아들인 뒤 온 다른 결과는 그대로)
-                doc = nr.undo_decision(nr.load(*target), proposal_id)
-                if self.node_set is not None and (self.node_set.get("project_id"), self.node_set["graph_id"]) == target:
-                    self._save_review(doc)
+                if here:
+                    self._save_review(nr.undo_decision(self.review_doc, proposal_id))
                     self._render(keep)
                 else:
-                    nr.save(doc)
+                    doc, fp = nr.load_fp(*target)
+                    nr.save_fp(nr.undo_decision(doc, proposal_id), fp)
             except (OSError, ValueError) as exc:
                 self.app.log_error("AI 제안 되돌리기 실패", exc)
                 self.msg.setText("구간은 되돌렸지만 AI 제안 기록을 되돌리지 못했습니다: %s" % exc)
@@ -1339,30 +1390,84 @@ class StudyNodesScreen(QWidget):
         return True
 
     def edit_review(self, proposal_id, edited=None):
-        """고쳐서 받기: 설계 의도 초안을 고치고, 구간 연산(병합·분할·판정 변경)을 함께 적용할지 고른다."""
+        """고쳐서 받기: 설계 의도 초안, 합칠 구간·떼어 낼 구성요소를 고치고, 구간 연산을 함께 적용할지 고른다."""
         prop = next(p for p in self.review_doc["proposals"] if p["id"] == proposal_id)
         if edited is None:
-            dlg = QDialog(self)
-            dlg.setWindowTitle("AI 제안 고쳐서 받기")
-            v = QVBoxLayout(dlg)
-            apply_op = QCheckBox("구간 연산도 적용: %s" % nr.compare_text(prop, self._node(prop["node_id"]))[1].split(" · 이유")[0])
-            apply_op.setChecked(prop["verdict"] != "ok")
-            apply_op.setEnabled(prop["verdict"] != "ok")
-            v.addWidget(apply_op)
-            v.addWidget(QLabel("설계 의도(⑤ 워크시트 '설계 의도' 칸의 초안이 됩니다)"))
-            intent = QPlainTextEdit(prop["design_intent"])
-            intent.setAccessibleName("설계 의도")
-            v.addWidget(intent)
-            buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-            buttons.accepted.connect(dlg.accept)
-            buttons.rejected.connect(dlg.reject)
-            v.addWidget(buttons)
+            dlg, read = self._edit_dialog(prop)
             if dlg.exec() != QDialog.Accepted:
                 return False
+            edited = read()
+        if edited.get("verdict", prop["verdict"]) == "merge" and not edited.get("merge_with", prop["merge_with"]):
+            self.msg.setText("할 수 없음: 합칠 구간을 하나 이상 고르세요(합치지 않으려면 '구간 연산도 적용'을 끄세요).")
+            return False
+        if edited.get("verdict", prop["verdict"]) == "split" and not edited.get("split_off", prop["split_off"]):
+            self.msg.setText("할 수 없음: 떼어 낼 구성요소를 하나 이상 고르세요(나누지 않으려면 '구간 연산도 적용'을 끄세요).")
+            return False
+        return self.accept_review(proposal_id, edited=edited)
+
+    def _edit_dialog(self, prop):
+        """(대화상자, 고친 값을 읽는 함수). 병합 제안이면 합칠 구간(제안한 구간은 켜고 다른 이웃 구간은 끈 채),
+        분할 제안이면 떼어 낼 구성요소를 체크 목록으로 보인다. 읽는 함수는 nr.accept의 edited를 돌려준다."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("AI 제안 고쳐서 받기")
+        v = QVBoxLayout(dlg)
+        apply_op = QCheckBox("구간 연산도 적용: %s" % nr.compare_text(prop, self._node(prop["node_id"]))[1].split(" · 이유")[0])
+        apply_op.setChecked(prop["verdict"] != "ok")
+        apply_op.setEnabled(prop["verdict"] != "ok")
+        v.addWidget(apply_op)
+
+        def checklist(title, name, rows):
+            v.addWidget(QLabel(title))
+            box = QListWidget()
+            box.setAccessibleName(name)
+            for text, data, on in rows:
+                it = QListWidgetItem(text)
+                it.setData(Qt.UserRole, data)
+                it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+                it.setCheckState(Qt.Checked if on else Qt.Unchecked)
+                box.addItem(it)
+            box.setMaximumHeight(min(160, 24 * max(2, len(rows)) + 8))
+            apply_op.toggled.connect(box.setEnabled)
+            v.addWidget(box)
+            return box
+
+        def checked(box):
+            return [box.item(i).data(Qt.UserRole) for i in range(box.count()) if box.item(i).checkState() == Qt.Checked]
+
+        merge_box, split_boxes = None, []
+        if prop["verdict"] == "merge":
+            adj = self._review_adj or nr.adjacency(self.node_set, self.graph)
+            others = [o for o in sorted(adj.get(prop["node_id"], {})) if o not in prop["merge_with"]
+                      and _status(self._node(o)) == _status(self._node(prop["node_id"]))]
+            rows = [("%s · %s" % (o, self._node(o)["name"]), o, o in prop["merge_with"])
+                    for o in list(prop["merge_with"]) + others if self._node(o) is not None]
+            merge_box = checklist("합칠 구간: AI가 제안한 구간은 켜 두었고, 그 밖의 이웃 구간은 꺼 두었습니다", "합칠 구간", rows)
+        elif prop["verdict"] == "split":
+            for part in prop["split_off"]:
+                rows = [(entity_label(self.entities[m]) if m in self.entities else m, m, True) for m in part["members"]]
+                title = "떼어 낼 구성요소 · %s" % (part.get("name") or "새 구간")
+                split_boxes.append((part, checklist(title, title, rows)))
+        self.edit_boxes = {"apply": apply_op, "merge": merge_box, "split": [b for _p, b in split_boxes]}  # 시험이 고르는 자리
+
+        v.addWidget(QLabel("설계 의도(⑤ 워크시트 '설계 의도' 칸의 초안이 됩니다)"))
+        intent = QPlainTextEdit(prop["design_intent"])
+        intent.setAccessibleName("설계 의도")
+        v.addWidget(intent)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        v.addWidget(buttons)
+
+        def read():
             edited = {"design_intent": intent.toPlainText().strip()}
             if not apply_op.isChecked():
                 edited["verdict"] = "ok"
-        return self.accept_review(proposal_id, edited=edited)
+            elif merge_box is not None:
+                edited["merge_with"] = checked(merge_box)
+            elif split_boxes:
+                edited["split_off"] = [dict(part, members=checked(box)) for part, box in split_boxes if checked(box)]
+            return edited
+        return dlg, read
 
     def reject_review(self, proposal_id, reason=None):
         if reason is None:
@@ -1381,7 +1486,10 @@ class StudyNodesScreen(QWidget):
 
     def _save_review(self, doc):
         try:
-            nr.save(doc)
+            _path, self.review_fp = nr.save_fp(doc, self.review_fp)
+        except store_io.Conflict:
+            self.msg.setText("읽은 뒤 AI 제안 묶음 파일이 바뀌어 저장하지 않았습니다. 도면을 다시 열어 최신 내용을 불러오세요.")
+            return False
         except OSError as exc:
             self.app.log_error("AI 구간 검토 제안 저장 실패", exc)
             self.msg.setText("AI 제안 묶음을 저장하지 못했습니다: %s" % exc)
@@ -1512,11 +1620,11 @@ class StudyNodesScreen(QWidget):
         from hazop.app.ai_runner import AiRunner
         conn = self.app.ai_conn
         ns, graph = self.node_set, self.graph
-        view, adj = self.ctx.view(ns), nr.adjacency(ns, graph)
+        view, adj, kn = self.ctx.view(ns), nr.adjacency(ns, graph), self._knowledge(force=True)
         client = conn.make_client(method)
         workers = 1 if method == "fixed" else conn.prefs.concurrency
         runner = AiRunner([(b, None) for b in batches], None, client, workers,
-                          run=lambda c, b, _ctx, at: nr.run_batch(c, b, ns, view, graph, adj, at))
+                          run=lambda c, b, _ctx, at: nr.run_batch(c, b, ns, view, graph, adj, at, kn))
         self.review_runner = runner
         self._review_target = (ns.get("project_id"), ns["graph_id"])  # 실행 중 도면을 바꿔도 결과는 시작한 집합의 묶음에 쓴다
         self.review_tally = {"calls": len(batches), "done": 0, "proposals": 0, "dropped": 0, "failed": 0}
@@ -1532,8 +1640,14 @@ class StudyNodesScreen(QWidget):
         t["done"] += 1
         t["failed"] += result["status"] != "ok"
         here = self.node_set is not None and (self.node_set.get("project_id"), self.node_set["graph_id"]) == self._review_target
+        fp = None
         try:
-            doc = self.review_doc if here and self.review_doc is not None else nr.load(*self._review_target)
+            if here and self.review_doc is not None:
+                doc = self.review_doc
+            else:
+                doc, fp = nr.load_fp(*self._review_target)
+                if here:
+                    self.review_fp = fp
         except (OSError, ValueError) as exc:
             self.app.log_error("AI 구간 검토 제안 읽기 실패", exc)
             doc = None
@@ -1544,9 +1658,9 @@ class StudyNodesScreen(QWidget):
                 saved = self._save_review(merged)
             else:
                 try:
-                    nr.save(merged)
+                    nr.save_fp(merged, fp)
                     saved = True
-                except OSError as exc:
+                except (OSError, store_io.Conflict) as exc:
                     self.app.log_error("AI 구간 검토 제안 저장 실패", exc)
         if saved:  # 저장하지 못한 호출의 제안은 세지 않는다(완료 알림이 실제 남은 제안 수와 맞게)
             t["proposals"] += len(result["proposals"])

@@ -139,6 +139,137 @@ class StudyReviewUiTest(unittest.TestCase):
         self.assertEqual(nodes._status(scr._node(target["node_id"])), before, "연산 없이 의도만 받음")
         self.assertEqual(design_intent(scr._node(target["node_id"]), scr.review_doc)[0], "사람이 고친 의도")
 
+    def _trio(self, scr):
+        """(이웃이 둘 이상인 남긴 구간 ID, 그 이웃 둘)."""
+        from hazop.study import node_review as nr, nodes
+        kept = {n["node_id"] for n in scr.node_set["nodes"] if nodes._status(n) == "keep"}
+        for nid, nb in sorted(nr.adjacency(scr.node_set, scr.graph).items()):
+            others = [o for o in sorted(nb) if o in kept]
+            if nid in kept and len(others) >= 2:
+                return nid, others[:2]
+        self.fail("이웃이 둘 이상인 남긴 구간이 없음: %s" % sorted(kept))
+
+    def test_edit_dialog_drops_a_merge_target_and_matches_the_manual_merge(self):
+        """고쳐서 받기에서 합칠 구간 하나를 끄고 받는다: 이력에 제안 ID와 고친 내용이 남고, 결과는 손으로 병합한 것과 같다."""
+        from PySide6.QtCore import Qt
+        from hazop.study import nodes
+        win, scr = self.open_study()
+        target, others = self._trio(scr)
+        self.fixed_answers(win, scr, lambda n, b: self.review(n, "merge", merge_with=others)
+                           if n["node_id"] == target else self.review(n))
+        self.run_review(scr)
+        prop = scr.review_pending()[target]
+        before = scr.node_set
+        scr.select_node(target)
+        dlg, read = scr._edit_dialog(prop)
+        self.addCleanup(dlg.deleteLater)
+        box = scr.edit_boxes["merge"]
+        shown = {box.item(i).data(Qt.UserRole): box.item(i) for i in range(box.count())}
+        self.assertEqual([k for k, it in shown.items() if it.checkState() == Qt.Checked], others)
+        shown[others[1]].setCheckState(Qt.Unchecked)
+        edited = read()
+        self.assertEqual(edited["merge_with"], [others[0]])
+        self.assertTrue(scr.edit_review(prop["id"], edited=edited), scr.msg.text())
+        manual = nodes.merge(before, [target, others[0]])
+        self.assertEqual(scr.node_set["nodes"], manual["nodes"], "같은 병합을 손으로 한 것과 같은 구간")
+        last = scr.node_set["history"][-1]
+        self.assertEqual((last["op"], last["detail"]["proposal_id"], last["detail"]["changes"]),
+                         ("ai_review_accept", prop["id"], {"merge_with": [others[0]]}))
+        self.assertEqual(nodes.load(scr.graph), scr.node_set, "저장본도 같음")
+        self.assertTrue(win.toast_box.run_undo())
+        self.assertEqual(scr.node_set["nodes"], before["nodes"], "실행 취소로 되돌아감")
+
+    def test_edit_dialog_changes_the_split_members(self):
+        from PySide6.QtCore import Qt
+        from hazop.study import nodes
+        win, scr = self.open_study()
+        big = max((n for n in scr.node_set["nodes"] if nodes._status(n) == "keep"), key=lambda n: len(n["members"]))
+        part = {"members": sorted(big["members"][:2]), "name": "떼어 낸 구간"}
+        self.assertGreater(len(big["members"]), 2)
+        self.fixed_answers(win, scr, lambda n, b: self.review(n, "split", split_off=[part])
+                           if n["node_id"] == big["node_id"] else self.review(n))
+        self.run_review(scr)
+        prop = scr.review_pending()[big["node_id"]]
+        before = scr.node_set
+        scr.select_node(big["node_id"])
+        dlg, read = scr._edit_dialog(prop)
+        self.addCleanup(dlg.deleteLater)
+        box = scr.edit_boxes["split"][0]
+        box.item(1).setCheckState(Qt.Unchecked)
+        edited = read()
+        self.assertEqual(edited["split_off"], [{"members": part["members"][:1], "name": "떼어 낸 구간"}])
+        self.assertTrue(scr.edit_review(prop["id"], edited=edited), scr.msg.text())
+        manual = nodes.split(before, big["node_id"], part["members"][:1], name="떼어 낸 구간")
+        self.assertEqual(scr.node_set["nodes"], manual["nodes"])
+        for i in range(box.count()):
+            box.item(i).setCheckState(Qt.Unchecked)
+        self.assertEqual(read().get("split_off"), [])
+        self.assertFalse(scr.edit_review(prop["id"], edited={"split_off": []}))
+        self.assertIn("하나 이상", scr.msg.text())
+
+    def test_accept_cut_between_the_two_files_is_reported_and_resynced_on_reopen(self):
+        """구간 저장 성공 → 제안 묶음 저장 실패 → 구간 복원 실패: 화면이 알리고, 다시 열면 제안을 '받음'으로 맞춘다."""
+        from unittest import mock
+        from hazop.study import node_review as nr, nodes
+        win, scr = self.open_study()
+        target, others = self._trio(scr)
+        self.fixed_answers(win, scr, lambda n, b: self.review(n, "merge", merge_with=others[:1])
+                           if n["node_id"] == target else self.review(n))
+        self.run_review(scr)
+        pid = scr.review_pending()[target]["id"]
+        real, calls = nodes.save_fp, []
+
+        def set_saves_once(*args, **kwargs):
+            calls.append(1)
+            if len(calls) > 1:
+                raise OSError(28, "디스크 부족")
+            return real(*args, **kwargs)
+        with mock.patch.object(nodes, "save_fp", side_effect=set_saves_once), \
+                mock.patch.object(nr, "save_fp", side_effect=OSError(28, "디스크 부족")):
+            self.assertFalse(scr.accept_review(pid))
+        self.assertIn("되돌리지 못", scr.msg.text())
+        on_disk = nodes.load(scr.graph)
+        self.assertEqual(on_disk["history"][-1]["op"], "ai_review_accept", "구간 파일은 받아들인 뒤 상태로 남음")
+        self.assertEqual(nr.load(on_disk.get("project_id"), on_disk["graph_id"])["proposals"][0]["decision"], "open")
+        win.close()
+        _win2, scr2 = self.open_study()
+        saved = nr.load(on_disk.get("project_id"), on_disk["graph_id"])
+        self.assertEqual(next(p for p in saved["proposals"] if p["id"] == pid)["decision"], "accepted")
+        self.assertEqual(next(p for p in scr2.review_doc["proposals"] if p["id"] == pid)["decision"], "accepted")
+        self.assertIn("맞췄", scr2.warn.label.text())
+
+    def test_conflict_on_the_proposal_file_restores_the_set_keeps_the_notice_and_the_issued_number(self):
+        """받아들이는 도중 제안 기록이 충돌하면 구간을 되돌린다. 안내가 남고, 잠깐 디스크에 썼던 S번호를 다시 내지 않는다."""
+        from unittest import mock
+        from hazop import store_io
+        from hazop.study import node_review as nr, nodes
+        win, scr = self.open_study()
+        big = max((n for n in scr.node_set["nodes"] if nodes._status(n) == "keep"), key=lambda n: len(n["members"]))
+        part = {"members": sorted(big["members"][:1]), "name": "떼어 낸 구간"}
+        self.fixed_answers(win, scr, lambda n, b: self.review(n, "split", split_off=[part])
+                           if n["node_id"] == big["node_id"] else self.review(n))
+        self.run_review(scr)
+        pid = scr.review_pending()[big["node_id"]]["id"]
+        before = [n["node_id"] for n in scr.node_set["nodes"]]
+        with mock.patch.object(nr, "save_fp", side_effect=store_io.Conflict("읽은 뒤 저장 파일이 바뀜")):
+            self.assertFalse(scr.accept_review(pid))
+        self.assertIn("바뀌어", scr.msg.text(), "되돌린 뒤에도 왜 받지 못했는지 보임")
+        self.assertEqual([n["node_id"] for n in scr.node_set["nodes"]], before, "구간은 되돌림")
+        taken = "S%d" % (max(int(i[1:]) for i in before) + 1)
+        other = sorted(big["members"])[1:2]
+        self.assertTrue(scr._apply(lambda s: nodes.split(s, big["node_id"], other), done="나눴습니다"))
+        self.assertNotEqual(scr.node_set["history"][-1]["detail"]["new_node_id"], taken)
+
+    def test_knowledge_is_read_again_for_each_review_run(self):
+        """지식 색인은 그래프 객체로만 기억하지 않는다. 검토를 돌릴 때마다 지식그래프를 다시 읽는다."""
+        from unittest import mock
+        from hazop.study import ai_cells
+        _win, scr = self.open_study()
+        with mock.patch.object(ai_cells, "load_kg_for", return_value=(None, "없음")) as load:
+            scr._knowledge(force=True)
+            scr._knowledge(force=True)
+        self.assertEqual(load.call_count, 2)
+
     def test_confirm_dialog_rows_show_calls_time_and_usage(self):
         from hazop.study import node_review as nr
         _win, scr = self.open_study()

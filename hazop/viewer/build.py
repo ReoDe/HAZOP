@@ -110,7 +110,7 @@ def _svg_path(svg_rel, roots):
     """svg_file(첫 루트 기준 상대 경로, 참고 폴더 논리 경로 또는 절대 경로)이 허용 루트(roots와 참고 폴더) 중 하나의
     안에 있을 때만 경로를 돌려준다. 어느 루트 안에도 없으면 ValueError(기존 safe_join 오류)."""
     target = paths.resolve_rel(svg_rel, roots[0])
-    for root in list(roots) + [paths.folder("참고")]:
+    for root in list(roots) + [paths.folder("references")]:
         try:
             return paths.safe_join(root, target)
         except ValueError:

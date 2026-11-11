@@ -6,7 +6,7 @@
 1) 웹 도면에 사람 수정 표시(.edited)가 있고, 다시 그린 경로는 폴리라인(사람이 그린 경로)으로 그려진다.
 2) 다시 읽은 뒤에도 확대·위치가 유지된다.
 3) 1366×768에서 편집 패널이 창 안에 다 들어오고 패널 내용이 가로로 잘리지 않으며 도면 캔버스 폭이 남는다.
-스크린샷: 출력/스크린샷/02-edit-1366.png, 02-edit-1920.png (--out으로 폴더 변경). Windows에서는 실제 글꼴로 재도록
+스크린샷: output/screenshots/02-edit-1366.png, 02-edit-1920.png (--out으로 폴더 변경). Windows에서는 실제 글꼴로 재도록
 기본 플랫폼이 windows(창은 화면에 띄우지 않음)다. 종료 코드 0 = 전부 통과, 1 = 실패.
 """
 
@@ -33,13 +33,13 @@ MIN_CANVAS_W = 600  # 1366 폭에서 편집 패널을 연 뒤에도 남아야 �
 def install_sample(work, drawing=DRAWING):
     """샘플 도면을 작업 루트 안으로 복사해 추출·그래프를 만든다(뷰어 SVG는 작업·저장 루트 안만 허용). 추출 폴더 이름."""
     from hazop.app import data
-    src = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*")) if drawing in p][0]
+    src = [p for p in glob.glob(paths.folder("references", "pid-samples", "*")) if drawing in p][0]
     dst = os.path.join(work, "샘플", os.path.basename(src))
     if not os.path.isdir(dst):
         shutil.copytree(src, dst)
     _, out_dir = data.script_module("extract_drawio").run_one(glob.glob(os.path.join(dst, "*.drawio"))[0],
-                                                              os.path.join(work, "출력", "추출"))
-    data.script_module("build_graph").build_one(os.path.join(out_dir, "extraction.json"), os.path.join(work, "출력", "그래프"))
+                                                              paths.output_in(work, "extract"))
+    data.script_module("build_graph").build_one(os.path.join(out_dir, "extraction.json"), paths.output_in(work, "graph"))
     return os.path.basename(out_dir)
 
 
@@ -164,7 +164,7 @@ def main():
     from hazop.console import safe_console
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default=os.path.join(paths.DEV_WORK_ROOT, "출력", "스크린샷"), help="스크린샷 폴더")
+    ap.add_argument("--out", default=paths.output_in(paths.DEV_WORK_ROOT, "screenshots"), help="스크린샷 폴더")
     ap.add_argument("--platform", default="windows" if sys.platform == "win32" else "offscreen",
                     help="Qt 플랫폼. offscreen은 한글 글꼴이 없어 폭 측정·스크린샷이 실제와 다르다")
     args = ap.parse_args()

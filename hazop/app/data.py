@@ -1,5 +1,5 @@
 """화면이 읽는 데이터 목록·표시 계산. 파일 쓰기는 기존 API(등록·추출·그래프·뷰어 빌드)만 거친다.
-다만 추출 요약 캐시(데이터/캐시/추출요약.json, 지워도 됨)는 여기서 직접 쓴다.
+다만 추출 요약 캐시(data/cache/추출요약.json, 지워도 됨)는 여기서 직접 쓴다.
 
 - 목록: 등록정보, 추출 결과, 구간 JSON, 분석 실행 (경로는 hazop/paths.py)
 - 뷰어 HTML: hazop/viewer/build.build_drawing_html (scripts/build_viewer.py와 같은 함수, 한 도면만)
@@ -11,7 +11,7 @@ import importlib.util
 import json
 import os
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.analysis import ai as ai_mod
 from hazop.extract import corrections
 from hazop.graph import build as graph_build
@@ -87,8 +87,8 @@ def list_registrations(store_root=None):
             e["extracted"] = bool(name) and os.path.isfile(os.path.join(doc_root(), name, auto.DOC_FILE))
             e["graphed"] = None
         else:
-            e["extracted"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("추출"), name, "extraction.json"))
-            e["graphed"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("그래프"), name, "graph.json"))
+            e["extracted"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("extract"), name, "extraction.json"))
+            e["graphed"] = bool(name) and os.path.isfile(os.path.join(paths.output_root("graph"), name, "graph.json"))
             if name and r.get("format") == "pdf":
                 e["pages"] = _pdf_page_state(r)
         rows.append(e)
@@ -100,7 +100,7 @@ def _pdf_page_state(record):
     xp, ex = script_module("extract_pdf"), script_module("extract_drawio")
     out = {"total": 0, "extracted": 0, "skipped": 0}
     for i in xp.registered_pages(record):
-        d = os.path.join(paths.output_root("추출"), ex.registered_out_name(record, i))
+        d = os.path.join(paths.output_root("extract"), ex.registered_out_name(record, i))
         out["total"] += 1
         out["extracted"] += os.path.isfile(os.path.join(d, "extraction.json"))
         out["skipped"] += os.path.isfile(os.path.join(d, xp.NOT_EXTRACTED))
@@ -119,9 +119,9 @@ def extract_and_graph(registration_path):
     if record.get("format") == "pdf":
         return _extract_pdf_pages(record, original, ex, bg)
     reg_svg = registry.registered_svgs(registration_path, record)
-    result, out_dir = ex.run_one(original, paths.output_root("추출"), svg="auto", page=0, registration=record,
+    result, out_dir = ex.run_one(original, paths.output_root("extract"), svg="auto", page=0, registration=record,
                                  registered_svgs=reg_svg)
-    graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("그래프"))
+    graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
     return _with_kg({"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir},
                     record["project_id"])
 
@@ -131,17 +131,17 @@ def _extract_pdf_pages(record, original, ex, bg):
     반환은 extract_and_graph와 같은 키(첫 추출 쪽 기준)에 "pages"(추출한 쪽별 결과)와 "skipped_pages"(추출하지 않은 쪽과
     사유, 그 쪽 출력 폴더의 not_extracted.json에도 남음)를 더한 것. 추출한 쪽이 하나도 없으면 ValueError."""
     xp = script_module("extract_pdf")
-    done, skipped = xp.run_pages(original, paths.output_root("추출"), xp.registered_pages(record), registration=record,
+    done, skipped = xp.run_pages(original, paths.output_root("extract"), xp.registered_pages(record), registration=record,
                                  out_name=lambda i: ex.registered_out_name(record, i))
     for s in skipped:  # 전에 추출했던 쪽이면 남은 그래프가 지식그래프에 섞이지 않게 지운다
-        stale = os.path.join(paths.output_root("그래프"), ex.registered_out_name(record, s["page_index"]), "graph.json")
+        stale = os.path.join(paths.output_root("graph"), ex.registered_out_name(record, s["page_index"]), "graph.json")
         if os.path.isfile(stale):
             os.remove(stale)
     if not done:
         raise ValueError("추출한 쪽이 없음: %s" % "; ".join("%s %s" % (s["page_id"], s["reason"]) for s in skipped))
     pages = []
     for page, result, out_dir in done:
-        graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("그래프"))
+        graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
         pages.append({"page_index": page, "extraction": result, "extract_dir": out_dir, "graph": graph,
                       "graph_dir": gdir})
     out = {k: pages[0][k] for k in ("extraction", "extract_dir", "graph", "graph_dir")}
@@ -151,15 +151,15 @@ def _extract_pdf_pages(record, original, ex, bg):
 
 # ---------------------------------------------------------------- ① 설계 문서 → 문서 지식 → ③ 지식그래프
 def doc_root():
-    """문서 지식 출력 루트 출력/문서지식/<등록 출력 이름>/document_knowledge.json."""
-    return paths.output_root("문서지식")
+    """문서 지식 출력 루트 output/document-knowledge/<등록 출력 이름>/document_knowledge.json."""
+    return paths.output_root("document-knowledge")
 
 
 def build_project_kg(project_id):
     """프로젝트 지식그래프를 도면 그래프·문서 지식·지식 CSV(있으면)로 다시 빌드한다(hazop.kg.auto.build_project).
     반환 {"kg", "dir", "notes"}. 도면도 문서도 없으면 ValueError."""
-    return auto.build_project(project_id, paths.output_root("그래프"), doc_root(), paths.folder("지식"),
-                              paths.output_root("지식그래프"))
+    return auto.build_project(project_id, paths.output_root("graph"), doc_root(), paths.folder("knowledge-graph"),
+                              paths.output_root("knowledge-graph"))
 
 
 def _with_kg(out, project_id):
@@ -184,7 +184,7 @@ def extract_document(registration_path):
 
 # ---------------------------------------------------------------- ② 추출 결과·뷰어
 def list_extractions():
-    root = paths.output_root("추출")
+    root = paths.output_root("extract")
     out = []
     if os.path.isdir(root):
         for name in sorted(os.listdir(root)):
@@ -200,7 +200,7 @@ _DISK = {"file": None, "entries": {}, "dirty": False}
 
 
 def _brief_file():
-    return paths.folder("캐시", "추출요약.json")
+    return paths.folder("cache", "추출요약.json")
 
 
 def _disk_briefs():
@@ -293,18 +293,18 @@ def extraction_origin(path):
 
 
 def unregistered_extractions():
-    """[(도면 이름, 출처 글자)] ① 등록 없이 출력/추출에 있는 도면(샘플 실행 등)."""
+    """[(도면 이름, 출처 글자)] ① 등록 없이 output/extract에 있는 도면(샘플 실행 등)."""
     out = [(e["name"], o) for e in list_extractions() for o in [extraction_origin(e["path"])] if o]
     save_briefs()
     return out
 
 
 def extraction_path(name):
-    return os.path.join(paths.output_root("추출"), name, "extraction.json")
+    return os.path.join(paths.output_root("extract"), name, "extraction.json")
 
 
 def load_extraction(name, ops=None):
-    """(원본, 고친 추출). ops가 None이면 저장된 수정 기록(데이터/도면수정)을, 아니면 주어진 작업 중 ops를 적용한다."""
+    """(원본, 고친 추출). ops가 None이면 저장된 수정 기록(data/drawing-edits)을, 아니면 주어진 작업 중 ops를 적용한다."""
     original = read_json(extraction_path(name))
     corrected = (corrections.apply_saved(original, name) if ops is None
                  else corrections.apply(original, ops))
@@ -312,13 +312,13 @@ def load_extraction(name, ops=None):
 
 
 def viewer_html_for(name, ops=None):
-    """출력/추출/<name>의 뷰어 HTML을 출력/뷰어/<name>.html로 만든다(scripts/build_viewer.py와 같은 빌드 함수).
+    """output/extract/<name>의 뷰어 HTML을 output/viewer/<name>.html로 만든다(scripts/build_viewer.py와 같은 빌드 함수).
     뷰어는 고친 추출로 그린다(ops None: 저장된 수정 기록, 아니면 작업 중 ops와 그 ops로 메모리에서 만든 그래프).
     반환 {"html", "extraction"(고친 추출), "corrected", "original", "graph", "svg"(bool), "error"}.
     SVG가 없으면 html None과 사유."""
     original, extraction = load_extraction(name, ops)
     if ops is None:
-        graph = viewer_build.load_graph(paths.output_root("그래프"), name)
+        graph = viewer_build.load_graph(paths.output_root("graph"), name)
     else:
         graph = graph_build.build_graph(extraction, extraction_file=paths.rel_or_abs(extraction_path(name),
                                                                                    paths.work_root()))
@@ -330,7 +330,7 @@ def viewer_html_for(name, ops=None):
         if graph is None:
             info["error"] += ". 그래프도 없어 표시할 수 없음 — ①에서 그래프를 만드세요"
             return info
-        out_root = paths.output_root("뷰어")
+        out_root = paths.output_root("viewer")
         os.makedirs(out_root, exist_ok=True)
         out = paths.safe_join(out_root, "%s.graph-only.html" % paths.safe_name(name))
         with open(out, "w", encoding="utf-8", newline="\n") as fh:
@@ -346,7 +346,7 @@ def viewer_html_for(name, ops=None):
     except (OSError, ValueError) as exc:
         info["error"] = "뷰어를 만들 수 없음: %s" % exc
         return info
-    out_root = paths.output_root("뷰어")
+    out_root = paths.output_root("viewer")
     os.makedirs(out_root, exist_ok=True)
     out = paths.safe_join(out_root, "%s.html" % paths.safe_name(name))
     with open(out, "w", encoding="utf-8", newline="\n") as fh:
@@ -376,14 +376,15 @@ def tag_conflicts(tag, project_id, exclude=()):
     return out
 
 
-def save_corrections(name, ops, by):
+def save_corrections(name, ops, by, expect=store_io.ANY):
     """수정 기록 저장 → 그 도면 그래프 다시 빌드(scripts/build_graph.build_one이 기록을 적용) → 프로젝트 지식그래프 다시 빌드.
-    반환 {"path", "graph", "kg" 또는 "kg_error", "recheck": [안내 문구]}. ④ 검토구간·⑤ 분석 결과 저장본은 여기서
+    반환 {"path", "fingerprint", "graph", "kg" 또는 "kg_error", "recheck": [안내 문구]}. expect는 corrections.save_fp와 같다
+    (읽은 뒤 바뀐 기록이면 store_io.Conflict). ④ 검토구간·⑤ 분석 결과 저장본은 여기서
     고치지 않는다. 판 이전 조건을 채우면 다음에 읽을 때 study.migrate가 옮기고, 아니면 재확인 안내를 돌려준다."""
     original = read_json(extraction_path(name))
-    path = corrections.save(name, ops, by, drawing_number=original["drawing"].get("drawing_number"))
-    graph, _ = script_module("build_graph").build_one(extraction_path(name), paths.output_root("그래프"))
-    out = {"path": path, "graph": graph}
+    path, fp = corrections.save_fp(name, ops, by, drawing_number=original["drawing"].get("drawing_number"), expect=expect)
+    graph, _ = script_module("build_graph").build_one(extraction_path(name), paths.output_root("graph"))
+    out = {"path": path, "fingerprint": fp, "graph": graph}
     if graph.get("project_id"):
         _with_kg(out, graph["project_id"])
     else:
@@ -465,12 +466,12 @@ def extraction_name_for_graph_file(graph_file):
 
 # ---------------------------------------------------------------- ④ 구간·실행
 def list_regions():
-    root = paths.folder("구간")
+    root = paths.folder("regions")
     return sorted(glob.glob(os.path.join(root, "*.json")))
 
 
 def list_runs(region_id):
-    root = paths.output_root("분석", paths.safe_name(region_id))
+    root = paths.output_root("analysis", paths.safe_name(region_id))
     if not os.path.isdir(root):
         return []
     return sorted((os.path.join(root, n) for n in os.listdir(root)
@@ -482,7 +483,7 @@ def current_graph(region):
     gf = (region.get("graph_ref") or {}).get("graph_file")
     if not gf:
         return None
-    full = gf if os.path.isabs(gf) else paths.work_path(gf)
+    full = paths.resolve_rel(gf, paths.work_root())
     return read_json(full) if os.path.isfile(full) else None
 
 

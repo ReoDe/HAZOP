@@ -9,7 +9,7 @@
   extract_pdf.py·build_graph.py(화면이 importlib로 읽는 파일, hazop/app/data.py SCRIPT_NAMES). 참고자료/ 샘플은 넣지 않는다(D5안).
 - 제3자 고지(W9, D15): licenses/는 datas(_internal/licenses/)가 아니라 빌드 뒤 결과 폴더의 실행 파일 옆 licenses/로
   복사한다(copy_licenses). 빌드 뒤 검사가 실행 파일 옆 사본이 저장소와 같고 _internal/licenses/가 없는지 본다.
-- hiddenimports: collect_submodules("hazop") + 세 스크립트 모듈(스크립트가 가져오는 표준 라이브러리까지 묶이게)
+- hiddenimports: hazop 하위 모듈 정적 목록(hazop_modules, spec은 sys.path를 바꾸지 않음) + 세 스크립트 모듈(스크립트가 가져오는 표준 라이브러리까지 묶이게)
   + PDF 어댑터 모듈 pdfplumber·pypdfium2(W9, D15: pdf_vector가 함수 안에서 지연 import)
   + 함수 안에서만 import하는 라이브러리 LAZY_MODULES(openpyxl·networkx: 시작을 빠르게 하려고 쓸 때만 읽음). 빌드 뒤 검사가
   앱 PYZ에 있는지 본다.
@@ -71,7 +71,7 @@ DATA_FILES = (
     "hazop/kg/screen_template.html",
     "hazop/kg/schema/registry.json",
     "hazop/kg/schema/expectations.json",
-    "기획서/HAZOP기법지침.md",
+    paths.file_rel("guide"),
     "scripts/extract_drawio.py",
     "scripts/extract_pdf.py",
     "scripts/build_graph.py",
@@ -97,7 +97,7 @@ TLS_PLUGIN_DIR = "pyside6/plugins/tls/"
 TLS_ALLOWED = ("qschannelbackend.dll", "qcertonlybackend.dll")
 TLS_EXCLUDED = ("qopensslbackend.dll",)
 # W8-B(D13): 앱이 쓰지 않는 GPL 전용 Qt 모듈과 딸린 파일(DLL·바인딩·qml 폴더·플러그인)은 묶지 않는다. 앱·WebEngine이
-# 링크하는 Qt6Quick·Qt6Qml·Qt6QuickWidgets는 남긴다. 근거(SPDX·PE import): docs/2026-11-05-packaging/evidence/w8b-모듈제외.md
+# 링크하는 Qt6Quick·Qt6Qml·Qt6QuickWidgets는 남긴다. 근거(SPDX·PE import): docs/2026-11-05-packaging/evidence/w8b-module-exclusion.md
 # (모듈, 이름 규칙, 폴더 규칙)
 # - 이름 규칙: 파일 이름 전체(대소문자 무시)로 위치와 관계없이 판정한다. 설치본 PySide6 6.12.0에서 뽑은 모듈 DLL·바인딩·
 #   제외 폴더 안 플러그인 DLL 이름이다. 설치본의 다른 파일과 이름이 겹치지 않는다(겹치는 흔한 이름은 넣지 않는다).
@@ -164,20 +164,37 @@ def datas_list(repo_root=REPO_ROOT):
     return sorted(out)
 
 
+def hazop_modules(repo_root=REPO_ROOT):
+    """hazop 패키지와 하위 모듈 이름 전부(__init__.py가 있는 폴더만 따라감). spec이 collect_submodules('hazop')를 부르려고
+    저장소를 sys.path에 넣지 않아도 되게 spec을 쓸 때 정적으로 뽑는다(D11 후속)."""
+    out = []
+    base = os.path.join(os.path.abspath(repo_root), "hazop")
+    for d, dirs, files in os.walk(base):
+        if "__init__.py" not in files:
+            dirs[:] = []
+            continue
+        dirs[:] = sorted(x for x in dirs if x != "__pycache__")
+        rel = os.path.relpath(d, base)
+        pkg = ".".join(["hazop"] + ([] if rel == "." else rel.split(os.sep)))
+        out.append(pkg)
+        out += [pkg + "." + f[:-3] for f in sorted(files) if f.endswith(".py") and f != "__init__.py"]
+    return sorted(out)
+
+
 def spec_text(repo_root=REPO_ROOT, with_check=False):
     """PyInstaller spec 원문. 경로는 JSON(ASCII 이스케이프) 문자열로 넣어 한글 경로의 인코딩 문제를 피한다."""
     root = os.path.abspath(repo_root)
     datas = [[os.path.join(root, *src.split("/")), dest.replace("/", os.sep)] for src, dest in datas_list(root)]
     lines = [
         "# 자동 생성: scripts/build_package.py (직접 고치지 않음). PyInstaller 6.22, one-folder.",
-        "import json, os, sys",
-        "from PyInstaller.utils.hooks import collect_submodules",
+        "import json, os",
         "REPO = json.loads(%s)" % json.dumps(json.dumps(root)),
-        "sys.path.insert(0, REPO)  # collect_submodules('hazop')가 저장소의 hazop을 찾게",
+        "# hazop 하위 모듈은 spec을 쓸 때 정적으로 뽑는다(hazop_modules). spec은 sys.path를 바꾸지 않는다(D11 후속)",
+        "HAZOP_MODULES = %r" % hazop_modules(root),
         "PATHEX = [REPO, os.path.join(REPO, 'scripts')]",
         "DATAS = [tuple(x) for x in json.loads(%s)]" % json.dumps(json.dumps(datas)),
         "EXCLUDES = %r" % list(EXCLUDES),
-        "HIDDEN = collect_submodules('hazop') + %r" % list(SCRIPT_MODULES + PDF_MODULES + LAZY_MODULES),
+        "HIDDEN = HAZOP_MODULES + %r" % list(SCRIPT_MODULES + PDF_MODULES + LAZY_MODULES),
         "import importlib.util, shutil",
         "# D10 TLS 허용 목록·D13 Qt 모듈 제외(사후 검사와 같은 규칙). scripts/를 sys.path에 넣지 않고 경로로 읽는다(D11 후속)",
         "_BP = importlib.util.spec_from_file_location('build_package', os.path.join(REPO, 'scripts', 'build_package.py'))",
@@ -202,7 +219,7 @@ def spec_text(repo_root=REPO_ROOT, with_check=False):
         lines += [
             "# 검증 전용(배포본 제외): 저장소 밖 사본의 검사 스크립트를 묶인 인터프리터·hazop으로 실행",
             "c = Analysis([os.path.join(REPO, %r)], pathex=PATHEX, datas=DATAS," % CHECK_ENTRY,
-            "             hiddenimports=collect_submodules('hazop') + %r, excludes=EXCLUDES, noarchive=False)"
+            "             hiddenimports=HAZOP_MODULES + %r, excludes=EXCLUDES, noarchive=False)"
             % list(CHECK_MODULES + PDF_MODULES + LAZY_MODULES),
             "keep_warn('check')",
             "c.binaries = drop_binaries(c.binaries)",

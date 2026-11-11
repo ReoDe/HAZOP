@@ -8,15 +8,14 @@
 """
 
 import copy
-import hashlib
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
 from hazop.graph.project import _norm as drawing_key  # 프로젝트 그래프가 같은 도면으로 보는 규칙(공백 무시·대문자)
+from hazop.store_io import ANY, Conflict, fingerprint, now_utc  # noqa: F401  이 모듈 이름으로도 쓴다
 from hazop.study import segment
 
 SCHEMA_VERSION = "0.1"  # 필드를 더하기만 하고 옛 파일은 screen이 없으면 keep으로 읽으므로 올리지 않는다
@@ -25,10 +24,6 @@ PROPOSER = {"name": "hazop.study.nodes", "version": "0.2.0", "algorithm": segmen
             "max_active": segment.MAX_ACTIVE, "budget": segment.BUDGET, "merge_cap": segment.MERGE_CAP}
 STATUSES = ("keep", "low", "excluded")
 OTHER_NAME = segment.OTHER_NAME
-
-
-def now_utc():
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 # ---------------------------------------------------------------- 스크리닝 판정 읽기
@@ -111,11 +106,10 @@ def propose(graph, at=None, exclude_sheets=()):
         "nodes": out_nodes,
         "confirmed_at": None,
         "confirmed_by": None,
-        "history": [{"at": at or now_utc(), "op": "propose",
-                     "detail": {"nodes": len(out_nodes), "components": len(graph.get("nodes", [])),
-                                "kept": count("keep"), "low": count("low"), "excluded": count("excluded"),
-                                "excluded_members": sum(len(n["members"]) for n in out_nodes
-                                                        if n["screen"]["status"] == "excluded")}}],
+        "history": [store_io.history_row("propose", {"detail": {
+            "nodes": len(out_nodes), "components": len(graph.get("nodes", [])),
+            "kept": count("keep"), "low": count("low"), "excluded": count("excluded"),
+            "excluded_members": sum(len(n["members"]) for n in out_nodes if n["screen"]["status"] == "excluded")}}, at)],
     }
 
 
@@ -148,7 +142,7 @@ def _begin(node_set):
 
 
 def _log(node_set, op, detail, at):
-    node_set["history"].append({"at": at or now_utc(), "op": op, "detail": detail})
+    node_set["history"].append(store_io.history_row(op, {"detail": detail}, at))
     return node_set
 
 
@@ -176,9 +170,43 @@ def _status(node):
     return (node.get("screen") or {}).get("status") or "keep"
 
 
+def issued_node_ids(node_set):
+    """이 집합에서 한 번이라도 쓴 구간 ID: 지금 구간과 이력(제안·분할·병합 등)에 나온 구간.
+    다시 제안하면 이력과 함께 S1부터 새로 매긴다."""
+    ids = {n["node_id"] for n in node_set["nodes"]}
+    for h in node_set.get("history") or []:
+        d = h.get("detail") if isinstance(h, dict) else None
+        if not isinstance(d, dict):
+            continue
+        ids.update(d[k] for k in ("node_id", "new_node_id", "into") if isinstance(d.get(k), str))
+        if isinstance(d.get("node_ids"), list):
+            ids.update(x for x in d["node_ids"] if isinstance(x, str))
+        if h.get("op") == "propose" and type(d.get("nodes")) is int:
+            ids.add("S%d" % d["nodes"])
+    if node_set.get("issued_upto"):
+        ids.add("S%d" % node_set["issued_upto"])
+    return ids
+
+
+def _top(node_set):
+    return int(store_io.next_id("S%d", issued_node_ids(node_set))[1:]) - 1
+
+
+def keep_issued(restored, current):
+    """실행 취소로 current를 버리고 restored로 되돌릴 때 쓴다. current가 낸 번호가 restored의 이력에 없으면
+    그 가장 큰 번호를 issued_upto에 적은 사본을 돌려준다(되돌린 분할의 번호를 다른 구성요소에 다시 주지 않게).
+    current가 restored에서 이어 고친 집합이 아니면(다시 제안은 S1부터 새로 매김) 적지 않는다.
+    적을 것이 없으면 restored 그대로."""
+    old = restored.get("history") or []
+    top = _top(current)
+    if (current.get("history") or [])[:len(old)] != old or top <= _top(restored):
+        return restored
+    return dict(restored, issued_upto=top)
+
+
 def _next_id(node_set):
-    used = [int(n["node_id"][1:]) for n in node_set["nodes"] if n["node_id"][1:].isdigit()]
-    return "S%d" % (max(used, default=0) + 1)
+    """병합으로 없어진 구간의 번호도 다시 내지 않는다(이력의 'S5'가 두 구간을 가리키지 않게)."""
+    return store_io.next_id("S%d", issued_node_ids(node_set))
 
 
 def map_members(node_set, rename):
@@ -429,7 +457,7 @@ def reopen(node_set, at=None):
 # ---------------------------------------------------------------- 저장
 
 def store_dir():
-    return paths.folder("검토구간")
+    return paths.folder("study-nodes")
 
 
 def store_path(project_id, graph_id):
@@ -444,71 +472,62 @@ def _readable_path(project_id, graph_id):
     return legacy if not project_id and not os.path.isfile(path) and os.path.isfile(legacy) else path
 
 
-class Conflict(ValueError):
-    """읽은 뒤 다른 창·프로그램이 저장 파일을 바꿔서 저장하지 않음."""
-
-
-ANY = object()
-
-
-def fingerprint(path):
-    """파일 내용의 SHA-256. 파일이 없으면 None."""
-    try:
-        with open(path, "rb") as fh:
-            return hashlib.sha256(fh.read()).hexdigest()
-    except FileNotFoundError:
-        return None
-
-
 def save(node_set, expect=ANY):
-    """임시 파일에 쓴 뒤 os.replace로 교체한다. 쓴 경로를 돌려준다.
-    expect(fingerprint 값)를 주면 지금 파일이 그 값과 다를 때 쓰지 않고 Conflict를 낸다."""
+    """store_io.write_json으로 쓰고 쓴 경로를 돌려준다.
+    expect(읽을 때 지문)를 주면 지금 파일이 그 값과 다를 때 쓰지 않고 Conflict를 낸다."""
+    return save_fp(node_set, expect)[0]
+
+
+def save_fp(node_set, expect=ANY):
+    """save와 같되 (쓴 경로, 새 지문)을 돌려준다. 이어서 저장할 쪽은 이 지문을 다음 expect로 쓴다."""
     path = store_path(node_set.get("project_id"), node_set["graph_id"])
-    if expect is not ANY and fingerprint(path) != expect:
-        raise Conflict("읽은 뒤 저장 파일이 바뀜: %s" % path)
-    return write(path, node_set)
+    return path, store_io.write_json(path, node_set, expect, sort_keys=False)
 
 
 def write(path, node_set):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(node_set, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, path)
+    store_io.write_json(path, node_set, sort_keys=False)
     return path
 
 
 def load(graph):
-    """graph의 저장본. 없으면 None. 판 비교는 is_stale로 한다.
+    """graph의 저장본. 없으면 None. 판 비교는 is_stale로 한다."""
+    return load_fp(graph)[0]
+
+
+def load_fp(graph):
+    """(graph의 저장본, 그 파일의 지문). 없으면 (None, None). 지문은 읽은 바이트에서 구한다.
     확정본은 읽을 때 판 이전(hazop.study.migrate)을 적용한다. 그래프는 등록·수정·화면 열기 등 여러 길에서 다시 만들어지고
-    모두 이 함수로 저장본을 읽으므로, 여기서 한 번 적용하면 어느 길로 판이 바뀌어도 확정 작업이 같은 규칙으로 이어진다."""
+    모두 이 함수로 저장본을 읽으므로, 여기서 한 번 적용하면 어느 길로 판이 바뀌어도 확정 작업이 같은 규칙으로 이어진다.
+    판 이전이 파일을 다시 썼으면 지문은 다시 쓴 파일의 것이다. 지문은 save_fp의 expect로 쓰는 값이다."""
     path = _readable_path(graph.get("project_id"), graph.get("graph_id"))
-    if not os.path.isfile(path):
-        return None
-    with open(path, encoding="utf-8-sig") as fh:  # 메모장 등이 붙인 BOM도 읽는다
-        doc = json.load(fh)
+    data, fp = store_io.read_bytes(path)
+    if data is None:
+        return None, None
+    doc = json.loads(data.decode("utf-8-sig"))  # 메모장 등이 붙인 BOM도 읽는다
     if not isinstance(doc, dict) or doc.get("kind") != KIND:
         raise ValueError("검토구간 파일이 아님: %s" % path)
     _check_shape(doc, path)
     from hazop.study import migrate
-    return migrate.on_load(doc, graph, path)
+    doc, fp = migrate.on_load(doc, graph, path, fp)
+    # 옛 자리(no-project)에서 읽었으면 저장할 자리에는 아직 파일이 없다. 지문은 저장할 자리의 것으로 돌려준다
+    return doc, fp if path == store_path(graph.get("project_id"), graph.get("graph_id")) else None
 
 
 def _check_shape(doc, path):
     """판 이전·화면이 가리지 않고 꺼내 쓰는 값이 제 모양인지 본다. 아니면 ValueError(화면은 경고와 함께 새로 제안한다)."""
+    ids_ok = lambda v: isinstance(v, list) and all(isinstance(m, str) for m in v)  # noqa: E731
     ok = (isinstance(doc.get("graph_id"), str) and isinstance(doc.get("status"), str)
           and isinstance(doc.get("history"), list) and isinstance(doc.get("nodes"), list)
           and all(isinstance(n, dict) and isinstance(n.get("node_id"), str) and isinstance(n.get("name"), str)
-                  and isinstance(n.get("members"), list) for n in doc["nodes"]))
+                  and ids_ok(n.get("members")) for n in doc["nodes"]))
     pieces_ok = lambda v: isinstance(v, list) and all(  # noqa: E731
-        isinstance(p, dict) and isinstance(p.get("members"), list) for p in v)
+        isinstance(p, dict) and ids_ok(p.get("members")) for p in v)
     snap_ok = lambda p: (isinstance(p, dict) and isinstance(p.get("study_nodes_ref"), dict)  # noqa: E731
                          and isinstance(p.get("nodes"), list) and all(
-                             isinstance(n, dict) and isinstance(n.get("node_id"), str) and isinstance(n.get("members"), list)
+                             isinstance(n, dict) and isinstance(n.get("node_id"), str) and ids_ok(n.get("members"))
                              for n in p["nodes"]))
+    upto = doc.get("issued_upto")
+    ok = ok and (upto is None or (type(upto) is int and upto > 0))
     prev = doc.get("previous")
     ok = ok and (prev is None or (isinstance(prev, list) and all(snap_ok(p) for p in prev)))
     opt = lambda v, t: v is None or (isinstance(v, t) and not isinstance(v, bool))  # noqa: E731

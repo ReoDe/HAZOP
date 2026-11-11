@@ -3,8 +3,8 @@
 이 폴더는 HAZOP 배포본(PyInstaller one-folder)에 들어가는 제3자 구성요소의 라이선스 원문과 고지 위치를 모은다.
 빌드할 때 `scripts/build_package.py`가 이 폴더를 결과 폴더의 실행 파일(`HAZOP.exe`) 옆 `licenses/`로 복사한다(T2 D15, 사용자 결정 2026-11-06. 이전에는 `_internal/licenses/`, D9).
 
-- 작성: 2026-11-06, T2 `W6`(고지 초안). 근거와 수집 과정: `docs/2026-11-05-packaging/evidence/w6-라이선스.md`
-- 갱신: 2026-11-06, T2 `W9`(고지 원문 추가·PDF 어댑터 의존성). 근거: `docs/2026-11-05-packaging/evidence/w9-고지원문.md`
+- 작성: 2026-11-06, T2 `W6`(고지 초안). 근거와 수집 과정: `docs/2026-11-05-packaging/evidence/w6-licenses.md`
+- 갱신: 2026-11-06, T2 `W9`(고지 원문 추가·PDF 어댑터 의존성). 근거: `docs/2026-11-05-packaging/evidence/w9-notice-text.md`
 - 갱신: 2026-11-06, T2 `W9-B`(VS 2022 사용 조건 .docx, cryptography 안 OpenSSL·Rust 크레이트 원문). 근거: 같은 문서 §11
 - 버전: Python 패키지·Qt는 빌드에 쓴 전용 venv의 설치 버전(`packaging/requirements*.txt` 고정)이고, force-graph는 `hazop/kg/vendor/force-graph-1.52.0/`의 버전이다. force-graph 간접 의존성의 버전은 확인할 수 없어 추정값이다([주2]).
 - 원문 파일은 출처의 바이트 그대로 복사했다(`.gitattributes`로 줄 끝 변환을 막음). 아래 SHA-256과 다르면 `tests/test_packaging.py`가 실패한다.
@@ -33,7 +33,7 @@
 | PySide6 바인딩·shiboken6·Qt 모듈 | 6.12.0 [주5] | GPL-3.0-only | 미수정(RECORD 대조) | `qt/GPL-3.0.txt` | https://code.qt.io/cgit/qt/qtbase.git/plain/LICENSES/GPL-3.0-only.txt?h=v6.12.0 [주1] | `8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903` |
 | PySide6 바인딩·shiboken6·Qt 모듈 | 6.12.0 [주5] | GPL-2.0-only | 미수정(RECORD 대조) | `qt/GPL-2.0.txt` | https://code.qt.io/cgit/qt/qtbase.git/plain/LICENSES/GPL-2.0-only.txt?h=v6.12.0 | `8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643` |
 | PySide6 바인딩·shiboken6·Qt 모듈 | 6.12.0 [주5] | LicenseRef-Qt-Commercial | 미수정(RECORD 대조) | `qt/LicenseRef-Qt-Commercial.txt` | 전용 venv `site-packages/pyside6-6.12.0.dist-info/licenses/LicenseRef-Qt-Commercial.txt` | `4f54763ac0fe2abd8f7f8d8fe370a94a08ebf84786aa0b91045bd6628deb08a3` |
-| Qt 구성요소·소스 위치 | Qt 6.12.0, Qt WebEngine 6.140.0 | - | - | `qt/QT-SOURCE.md` | 이 저장소 작성 | `313a6d2a6f22930cf0ae4b1be73ad891e25d700c0c7812ba1489ab0524e51013` |
+| Qt 구성요소·소스 위치 | Qt 6.12.0, Qt WebEngine 6.140.0 | - | - | `qt/QT-SOURCE.md` | 이 저장소 작성 | `5e4c755b8fe29ec888ae46dd4e728a2f41facf5705f6c34dc33e361e41777f7e` |
 | Qt WebEngine 제3자(Chromium 140.0.7339.225) | 6.140.0 | 목록 위치 | 미수정(RECORD 대조) | `qt/QTWEBENGINE-THIRD-PARTY.md` | 이 저장소 작성 | `99f342ca4941f737b5b79ac2a2975938221de129f6bdb4e830ce1816a81e0ba9` |
 | CPython | 3.12.10 | PSF-2.0 | 미확인(설치 원본은 해시 일치) [주6] | `python/CPython-LICENSE.txt` | python.org CPython 3.12.10 설치 폴더 `LICENSE.txt`(전용 venv의 기반 인터프리터) | `e502c6b880ff58d614901495a9009c136539cd0b1e2a2abb8fc00b934c203419` |
 | CPython 포함 소프트웨어(OpenSSL·expat·libffi·zlib·libmpdec 등) | 3.12.10 | 구성요소별(파일 안) | 미확인(설치 원본은 해시 일치) [주6] | `python/CPython-license-acknowledgements.rst.txt` | 같은 설치 폴더 `Doc/html/_sources/license.rst.txt` | `40e3623b07603a84c5993c0726c54a523511284110f22e5bb827c005edeb1bd8` |

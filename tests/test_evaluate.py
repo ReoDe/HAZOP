@@ -1,8 +1,8 @@
 """평가 기준 비교 독립 검증 E1–E15 (기획서/평가기준비교.md §7). 실행: python -m unittest tests.test_evaluate
 
-- E1–E12·E15: 고정 비교 입력 뷰(§7.2)와 가상 기준(데이터/평가기준/)만 쓴다. 분석 실행·검토 저장소 없음.
-- E13·E14·E3(파일): 실제 최신 분석 실행(출력/분석/region-SNP-M-102-pzr/ 최신)을 임시 폴더에 복사해 쓴다.
-  출력/에 실행이 없으면 tests/run_fixture.py의 고정 응답 실행을 쓴다. 저장소의 출력/·자료저장소/에는 쓰지 않는다.
+- E1–E12·E15: 고정 비교 입력 뷰(§7.2)와 가상 기준(data/evaluation-criteria/)만 쓴다. 분석 실행·검토 저장소 없음.
+- E13·E14·E3(파일): 실제 최신 분석 실행(output/analysis/region-SNP-M-102-pzr/ 최신)을 임시 폴더에 복사해 쓴다.
+  output/에 실행이 없으면 tests/run_fixture.py의 고정 응답 실행을 쓴다. 저장소의 output/·store/에는 쓰지 않는다.
 - 네트워크·AI 호출 없음. 기대값은 기획 §7.3 표 그대로.
 """
 
@@ -27,10 +27,10 @@ from hazop.evaluate.adapters import xlsx_sheet
 from hazop.evaluate.criteria import norm, tag_in_text
 
 REPO = paths.REPO_ROOT
-CRIT_DIR = paths.folder("표본", "평가기준")
+CRIT_DIR = paths.folder("samples", "evaluation-criteria")
 CRIT_JSON = os.path.join(CRIT_DIR, "criteria-SNP-M-102-pzr-sample.json")
 CRIT_XLSX = os.path.join(CRIT_DIR, "criteria-SNP-M-102-pzr-sample.xlsx")
-REAL_RUNS = os.path.join(paths.DEV_WORK_ROOT, "출력", "분석", "region-SNP-M-102-pzr")
+REAL_RUNS = paths.output_in(paths.DEV_WORK_ROOT, "analysis", "region-SNP-M-102-pzr")
 T1, T2 = "2026-11-06T00:00:00Z", "2026-11-06T00:00:01Z"
 
 
@@ -120,7 +120,7 @@ SAMPLE_ROWS = [
 
 
 def write_sheet(path, meta=META, rows=SAMPLE_ROWS):
-    """§2.2 양식 Excel을 쓴다. 데이터/평가기준/의 샘플 Excel도 이 함수로 만들었다."""
+    """§2.2 양식 Excel을 쓴다. data/evaluation-criteria/의 샘플 Excel도 이 함수로 만들었다."""
     wb = Workbook()
     ws = wb.active
     ws.title = xlsx_sheet.SHEET
@@ -500,7 +500,7 @@ class RunCopyCases(unittest.TestCase):
             from tests.run_fixture import fresh_run_dir
             cls.src = fresh_run_dir()
         cls.before = _snapshot(cls.src)
-        cls.out_existed = os.path.exists(os.path.join(paths.DEV_WORK_ROOT, "출력", "평가비교"))
+        cls.out_existed = os.path.exists(paths.output_in(paths.DEV_WORK_ROOT, "evaluation-compare"))
         cls.tmp = tempfile.mkdtemp(prefix="hazop-evaluate-")
         cls.run_dir = os.path.join(cls.tmp, "runs", os.path.basename(cls.src))
         shutil.copytree(cls.src, cls.run_dir)
@@ -530,7 +530,7 @@ class RunCopyCases(unittest.TestCase):
         self.assertEqual(view["graph_tags"], sorted({norm(n["tag"]) for n in graph["nodes"] if n.get("tag")}))
         self.assertEqual((view["reviews"], view["excluded_by_review"]), ([], 0))
         self.assertEqual(_snapshot(self.src), self.before)  # 원본 실행 폴더는 바뀌지 않음
-        self.assertEqual(os.path.exists(os.path.join(paths.DEV_WORK_ROOT, "출력", "평가비교")), self.out_existed)
+        self.assertEqual(os.path.exists(paths.output_in(paths.DEV_WORK_ROOT, "evaluation-compare")), self.out_existed)
 
     def test_E14_export_hash_mismatch(self):
         from hazop.export import export_worksheet
@@ -562,7 +562,7 @@ class RunCopyCases(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(cli.main(args + ["--now", T1]), 0)
                 self.assertEqual(cli.main(args + ["--now", T2]), 0)
-            files = sorted(glob.glob(os.path.join(work, "출력", "평가비교", "*", "*", "*.json")))
+            files = sorted(glob.glob(paths.output_in(work, "evaluation-compare", "*", "*", "*.json")))
             self.assertEqual(len(files), 2)
             reps = []
             for f in files:
@@ -575,7 +575,7 @@ class RunCopyCases(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(cli.main(args + ["--now", T1]), 1)  # 같은 시각으로 다시 쓰면 실패
             self.assertEqual(os.path.getmtime(files[0]), mtime)
-            self.assertEqual(len(glob.glob(os.path.join(work, "출력", "평가비교", "*", "*", "*"))), 4)
+            self.assertEqual(len(glob.glob(paths.output_in(work, "evaluation-compare", "*", "*", "*"))), 4)
         finally:
             if old is None:
                 os.environ.pop(paths.ENV_WORK_ROOT, None)

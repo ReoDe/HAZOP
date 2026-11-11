@@ -19,7 +19,7 @@ from hazop.app.screens.analysis import fill_candidate_table, make_candidate_tabl
 from hazop.app.widgets import Banner, Chip, badge, empty_label, esc, kst_text, plain_label, risk_chip
 from hazop.export import SCOPES, ExportError, export_worksheet
 
-SAVE_FAIL_NEXT = "다음 조치: 저장 위치(자료저장소)의 쓰기 권한·디스크 공간을 확인한 뒤 다시 저장하세요. 입력 내용은 폼에 남아 있습니다."
+SAVE_FAIL_NEXT = "다음 조치: 저장 위치(작업 폴더의 store)의 쓰기 권한·디스크 공간을 확인한 뒤 다시 저장하세요. 입력 내용은 폼에 남아 있습니다."
 
 
 def confirmed_box():
@@ -1129,7 +1129,7 @@ class ReviewScreen(QWidget):
             return None
         self.show_errors([])
         self.app.mark_saved(saved["reviewed_at"])
-        self.app.status_message("검토 저장: v%d — %s" % (saved["review_version"], paths.rel_or_abs(path, self.ctx.store_root)))
+        self.app.status_message("검토 저장: v%d — %s" % (saved["review_version"], paths.plain_rel(path, self.ctx.store_root)))
         self.refresh_table(keep=self.cid)
         return path
 
@@ -1148,7 +1148,7 @@ class ReviewScreen(QWidget):
             self.update_excel_state()
             return None
         try:
-            res = export_worksheet(self.ctx.run_dir, self.ctx.store_root, paths.output_root("워크시트"), scope)
+            res = export_worksheet(self.ctx.run_dir, self.ctx.store_root, paths.output_root("worksheets"), scope)
         except (ExportError, rv.ReviewError) as exc:  # ExportError는 ReviewError의 하위 클래스
             self.banner_info.set_messages("Excel 출력 실패 — 파일을 만들지 않음", exc.errors)
             return None

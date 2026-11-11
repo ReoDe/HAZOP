@@ -43,12 +43,12 @@ def css_rgb(hex_color):
 
 
 def build_viewer_html(out_dir):
-    """SNP-M-102 추출·그래프로 뷰어 HTML을 만든다(저장소 출력/은 건드리지 않음)."""
+    """SNP-M-102 추출·그래프로 뷰어 HTML을 만든다(저장소 output/은 건드리지 않음)."""
     import glob
     from hazop.extract import drawio, svg_align
     from hazop.graph import build as gbuild
     from hazop.viewer import build
-    src = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
+    src = [p for p in glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio"))
            if "SNP-M-102" in p][0]
     r = drawio.extract(src, repo_root=REPO_ROOT)
     svg = glob.glob(os.path.join(os.path.dirname(src), "*.drawio.svg"))[0]

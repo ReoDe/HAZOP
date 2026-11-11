@@ -1,7 +1,7 @@
 """④→⑤ AI 칸 채우기 검사 (QA용). 근거: 4단계 설계 D2·D4·D5·D6·D7·D8.
 
-저장소의 출력/그래프·출력/지식그래프를 임시 작업 루트로 복사해 실제 샘플 도면(SNP-M-102)과 지식그래프로 확인한다
-(저장소의 출력/·데이터/에 쓰지 않음). 네트워크 대신 가짜 opener를 끼운 ClaudeHttpClient를 쓴다. Qt 없음.
+저장소의 output/graph·output/knowledge-graph를 임시 작업 루트로 복사해 실제 샘플 도면(SNP-M-102)과 지식그래프로 확인한다
+(저장소의 output/·data/에 쓰지 않음). 네트워크 대신 가짜 opener를 끼운 ClaudeHttpClient를 쓴다. Qt 없음.
 가짜 응답은 스키마에 맞고, 도면에 없는 태그 1개와 이어지지 않는 경로 1개를 일부러 넣는다.
 확인: 요청 결정성, 모델별 요청 모양(Haiku는 대체 모델 없음), 다중 키 보관·옛 키 파일 이전, 근거 경고, 위험도(MATRIX_P86), 저장·읽기 왕복, 키가 파일·요청 본문에 없음(헤더에만),
 취소(남은 unit 미호출)·실패 칸 재실행(그 칸만 다시, 나머지 유지).
@@ -91,7 +91,7 @@ def run(results, client, jobs, devs, cancel_after=None):
 
 def check(tmp):
     f = []
-    graph = viewer_build.load_graph(paths.output_root("그래프"), DRAWING)
+    graph = viewer_build.load_graph(paths.output_root("graph"), DRAWING)
     ns = sn.confirm(sn.propose(graph, at=AT), graph, "검사", at=AT)
     sn.save(ns)
     devs = sr.load_deviations()
@@ -222,8 +222,8 @@ def main():
     os.environ[paths.ENV_WORK_ROOT] = tmp
     failures = []
     try:
-        for d in ("그래프", "지식그래프"):
-            shutil.copytree(os.path.join(paths.DEV_WORK_ROOT, "출력", d), os.path.join(tmp, "출력", d))
+        for d in ("graph", "knowledge-graph"):
+            shutil.copytree(paths.output_in(paths.DEV_WORK_ROOT, d), paths.output_in(tmp, d))
         failures = check(tmp)
     finally:
         if old is None:

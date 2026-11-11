@@ -1,7 +1,7 @@
 """데스크톱 인터페이스 테스트 (기획서/인터페이스.md §2·§3·§8). 실행: python -m unittest discover -s tests -t .
 
 QT_QPA_PLATFORM=offscreen으로 창을 만든다. 작업 루트(HAZOP_WORK_ROOT)·저장 루트(HAZOP_STORE_ROOT)·설정 파일은 임시 폴더로
-바꿔 저장소의 출력/·자료저장소/·%APPDATA%를 건드리지 않는다. 분석 실행은 tests/run_fixture.py(고정 응답, 임시 폴더).
+바꿔 저장소의 output/·store/·%APPDATA%를 건드리지 않는다. 분석 실행은 tests/run_fixture.py(고정 응답, 임시 폴더).
 웹뷰는 offscreen에서 실제로 띄워 브리지(ready·highlight·highlightResult)를 확인하고, 브리지 객체 단위 검사도 따로 한다.
 네트워크 사용 없음.
 """
@@ -173,9 +173,9 @@ class AppTestBase(unittest.TestCase):
         os.environ["HAZOP_WORK_ROOT"] = os.path.join(cls.tmp, "work")
         os.environ["HAZOP_STORE_ROOT"] = os.path.join(cls.tmp, "store")
         work = os.environ["HAZOP_WORK_ROOT"]
-        os.makedirs(paths.folder_in(work, "구간"))
-        shutil.copy(paths.folder("표본", "구간", REGION + ".json"), paths.folder_in(work, "구간"))
-        cls.run_dir = os.path.join(work, "출력", "분석", REGION, os.path.basename(cls.src_run))
+        os.makedirs(paths.folder_in(work, "regions"))
+        shutil.copy(paths.folder("samples", "regions", REGION + ".json"), paths.folder_in(work, "regions"))
+        cls.run_dir = paths.output_in(work, "analysis", REGION, os.path.basename(cls.src_run))
         shutil.copytree(cls.src_run, cls.run_dir)
         from hazop.app import make_application
         cls.qapp = make_application(["test"])
@@ -354,8 +354,8 @@ class AnalysisScreenTest(AppTestBase):
         win.open_run(self.run_dir)
         scr = win.screens[2]
         self.assertTrue(scr.btn_decision.isEnabled() and scr.btn_review.isEnabled())
-        other = paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "구간", "region-other.json")
-        region = load(paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "구간", REGION + ".json"))
+        other = paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "regions", "region-other.json")
+        region = load(paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "regions", REGION + ".json"))
         region["region_id"] = "region-other"
         with open(other, "w", encoding="utf-8") as fh:
             json.dump(region, fh, ensure_ascii=False)
@@ -495,7 +495,7 @@ class ReviewScreenTest(AppTestBase):
         self.assertIsNone(scr.save(ask_name=False))
         self.assertFalse(scr.btn_excel.isEnabled())                   # Excel 버튼도 막힘 + 사유
         self.assertTrue(scr.banner_info.messages)
-        pattern = os.path.join(os.environ["HAZOP_WORK_ROOT"], "출력", "워크시트", "**", "*.xlsx")
+        pattern = paths.output_in(os.environ["HAZOP_WORK_ROOT"], "worksheets", "**", "*.xlsx")
         before = len(glob.glob(pattern, recursive=True))
         self.assertIsNone(scr.export_excel("all"))
         self.assertEqual(len(glob.glob(pattern, recursive=True)), before)  # 파일을 만들지 않음
@@ -620,15 +620,15 @@ def build_temp_drawing(work, drawing="SNP-M-102"):
     """작업 루트 안으로 샘플 도면을 복사해 추출·그래프를 만든다(뷰어 SVG는 작업 루트·저장 루트 안만 허용).
     반환 (추출 폴더, 그래프). 추출 경로가 달라 graph_version은 분석 실행의 그래프와 다르다."""
     from hazop.app import data
-    src = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*")) if drawing in p][0]
+    src = [p for p in glob.glob(paths.folder("references", "pid-samples", "*")) if drawing in p][0]
     dst = os.path.join(work, "샘플", os.path.basename(src))
     if not os.path.isdir(dst):
         shutil.copytree(src, dst)
     ex = data.script_module("extract_drawio")
     bg = data.script_module("build_graph")
     drawio = glob.glob(os.path.join(dst, "*.drawio"))[0]
-    _, out_dir = ex.run_one(drawio, os.path.join(work, "출력", "추출"))
-    graph, _ = bg.build_one(os.path.join(out_dir, "extraction.json"), os.path.join(work, "출력", "그래프"))
+    _, out_dir = ex.run_one(drawio, paths.output_in(work, "extract"))
+    graph, _ = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_in(work, "graph"))
     return out_dir, graph
 
 
@@ -637,16 +637,16 @@ class GraphOnlyViewerTest(AppTestBase):
         """SVG 없는 추출 결과 → 경고 띠 + 그래프 보기(앱이 만든 그래프 전용 HTML)."""
         from hazop.app import data
         work = os.environ["HAZOP_WORK_ROOT"]
-        src = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
+        src = [p for p in glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio"))
                if "SNP-M-102" in p][0]
         dst = os.path.join(work, "nosvg", "SNP-M-102.drawio")
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copy(src, dst)                                         # SVG는 복사하지 않음
         ex = data.script_module("extract_drawio")
         bg = data.script_module("build_graph")
-        result, out_dir = ex.run_one(dst, os.path.join(work, "출력", "추출"), svg=None)
+        result, out_dir = ex.run_one(dst, paths.output_in(work, "extract"), svg=None)
         self.assertIsNone(result["coordinate_system"].get("svg_alignment"))
-        graph, _ = bg.build_one(os.path.join(out_dir, "extraction.json"), os.path.join(work, "출력", "그래프"))
+        graph, _ = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_in(work, "graph"))
         win = self.make_window()
         win.show()
         win.go(1)
@@ -675,7 +675,7 @@ class RegisterScreenTest(AppTestBase):
     def test_register_extract_graph(self):
         win = self.make_window()
         scr = win.screens[0]
-        sample = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
+        sample = [p for p in glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio"))
                   if "SNP-M-102" in p][0]
         self.assertFalse(scr.set_files([sample, sample]))            # 여러 개: 아무것도 고르지 않음
         self.assertIn("한 개씩", scr.file_info.text())
@@ -701,9 +701,9 @@ class RegisterScreenTest(AppTestBase):
         self.assertIn("추출·그래프 생성 완료", scr.result.toHtml())
         name = scr.rows[0]["extract_name"]
         work = os.environ["HAZOP_WORK_ROOT"]
-        ex = load(os.path.join(work, "출력", "추출", name, "extraction.json"))
+        ex = load(paths.output_in(work, "extract", name, "extraction.json"))
         self.assertEqual(ex["coordinate_system"]["svg_alignment"]["source"], "registered_derived")
-        self.assertTrue(os.path.isfile(os.path.join(work, "출력", "그래프", name, "graph.json")))
+        self.assertTrue(os.path.isfile(paths.output_in(work, "graph", name, "graph.json")))
         self.assertTrue(scr.rows[0]["extracted"] and scr.rows[0]["graphed"])
         self.assertEqual(win.stack.currentIndex(), 0)                 # drawio는 자동 추출·화면 이동 없음
         win.refresh_stages()  # 레일 단계 표시: ①·② 완료(✓ 배지, 번호는 그대로), ①이 현재, ④ 남음
@@ -730,7 +730,7 @@ class RegisterScreenTest(AppTestBase):
         pump(win, 0.1)
         self.assertEqual(scr.rows[0]["record"]["status"], "registered")
         self.assertFalse(scr.rows[0]["extracted"])
-        self.assertFalse(os.path.isdir(os.path.join(os.environ["HAZOP_WORK_ROOT"], "출력", "추출", scr.rows[0]["extract_name"])))
+        self.assertFalse(os.path.isdir(paths.output_in(os.environ["HAZOP_WORK_ROOT"], "extract", scr.rows[0]["extract_name"])))
         self.assertEqual(win.stack.currentIndex(), 0)
 
     def test_preview_result_of_previous_file_is_dropped(self):
@@ -816,7 +816,7 @@ class RegisterScreenTest(AppTestBase):
         scr.do_extract()
         pump(win, 0.1)
         self.assertIn("지식그래프 kg-X", scr.result.toPlainText())
-        kg_root = os.path.join(os.environ["HAZOP_WORK_ROOT"], "출력", "지식그래프", "kg-X")
+        kg_root = paths.output_in(os.environ["HAZOP_WORK_ROOT"], "knowledge-graph", "kg-X")
         self.assertTrue(os.path.isfile(os.path.join(kg_root, "current.json")))
         win.go(4)
         kscr = win.screens[4]
@@ -860,7 +860,7 @@ class RegisterScreenTest(AppTestBase):
         doc_pdf = glob.glob(os.path.join(REPO_ROOT, "tests", "fixtures", "docextract", "*.pdf"))[0]
         r = registry.register(doc_pdf, "Y", "design_document", os.environ["HAZOP_STORE_ROOT"], None, "tester")
         data.extract_document(r["registration_file"])
-        shutil.rmtree(os.path.join(work, "출력", "지식그래프", "kg-Y"))
+        shutil.rmtree(paths.output_in(work, "knowledge-graph", "kg-Y"))
         win = self.make_window()
         win.go(4)
         kscr = win.screens[4]
@@ -874,7 +874,7 @@ class RegisterScreenTest(AppTestBase):
 
 
 def sample_file(drawing, ext):
-    return [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*." + ext))
+    return [p for p in glob.glob(paths.folder("references", "pid-samples", "*", "*." + ext))
             if drawing in p][0]
 
 

@@ -1,7 +1,7 @@
-"""검사용 분석 실행 만들기. 출력/(git 제외 폴더)의 기존 실행에 의존하지 않는다.
+"""검사용 분석 실행 만들기. output/(git 제외 폴더)의 기존 실행에 의존하지 않는다.
 
 샘플 drawio(참고자료/P&ID 도면 샘플)에서 SNP-M-102 그래프를 임시 폴더에 만들고(tests/test_analysis.py와 같은 방법),
-scripts/analyze.py를 하위 프로세스로 실행해 고정 응답(데이터/고정응답/region-SNP-M-102-pzr)으로 분석한다.
+scripts/analyze.py를 하위 프로세스로 실행해 고정 응답(data/fixed-responses/region-SNP-M-102-pzr)으로 분석한다.
 네트워크·AI 호출 없음(--live를 쓰지 않음). 결과는 프로세스 종료 시 지우는 임시 폴더에 한 번만 만든다.
 """
 
@@ -18,8 +18,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 from hazop import paths  # noqa: E402
-REGION_FILE = paths.folder("표본", "구간", "region-SNP-M-102-pzr.json")
-FIXED_DIR = paths.folder("표본", "고정응답", "region-SNP-M-102-pzr")
+REGION_FILE = paths.folder("samples", "regions", "region-SNP-M-102-pzr.json")
+FIXED_DIR = paths.folder("samples", "fixed-responses", "region-SNP-M-102-pzr")
 RUN_ID = "analysis-20261104T000000Z-fixture"
 
 _cache = {}
@@ -36,7 +36,7 @@ def _sample_graph():
         sys.path.insert(0, REPO_ROOT)
     from hazop.extract import drawio, svg_align
     from hazop.graph import build
-    path = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio"))
+    path = [p for p in glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio"))
             if "SNP-M-102" in p][0]
     result = drawio.extract(path, page=0, repo_root=REPO_ROOT)
     svg = glob.glob(os.path.join(os.path.dirname(path), "*.drawio.svg"))

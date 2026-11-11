@@ -45,7 +45,7 @@ from hazop.viewer import build as viewer_build  # noqa: E402
 from hazop.viewer import check as view_check  # noqa: E402
 
 FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "adapter", "truth_small.json")
-SAMPLE_GLOB = paths.folder("참고", "P&ID 도면 샘플", "*", "*.drawio")
+SAMPLE_GLOB = paths.folder("references", "pid-samples", "*", "*.drawio")
 FAR = (3000.0, 2000.0)  # 페이지 밖으로 옮기는 거리(어떤 정답 bbox와도 겹치지 않음)
 
 
@@ -497,7 +497,7 @@ def run_pdf_checks(out=None):
 # ---------- W4: 래스터(PNG) 어댑터 ----------
 
 # 샘플별 품질 하한(회귀 방지 바닥값, 목표치 아님). 2026-11-06 W4 측정값을 0.05 단위로 내린 뒤 0.05를 더 뺀 값이다
-# (OCR·영상 처리 결과가 실행 환경에 따라 조금 달라질 여지를 둔 보수적 하한, evidence/w4-래스터.md §5).
+# (OCR·영상 처리 결과가 실행 환경에 따라 조금 달라질 여지를 둔 보수적 하한, evidence/w4-raster.md §5).
 RASTER_QUALITY_FLOORS = {
     "SNP-M-101_RCS-main-loop": {"relations_f1": 0.85, "objects_f1": 0.9, "kind_accuracy": 0.8},
     "SNP-M-102_RCS-pressurizer": {"relations_f1": 0.8, "objects_f1": 0.9, "kind_accuracy": 0.85},

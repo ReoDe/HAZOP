@@ -12,8 +12,8 @@ PDF·PNG/JPG 도면을 읽는 2차 입력 어댑터를 만들고, drawio 추출 
 
 | 구분 | 요약 |
 |---|---|
-| 완료 | `W1` 조사([evidence/w1-조사.md](evidence/w1-조사.md)), `W2` 평가 하네스([evidence/w2-하네스.md](evidence/w2-하네스.md)), `W3` 벡터 PDF(D6) |
-| 현재 단계 | `W4` 래스터 어댑터 구현 완료, 검토 대기([evidence/w4-래스터.md](evidence/w4-래스터.md), D7) |
+| 완료 | `W1` 조사([evidence/w1-survey.md](evidence/w1-survey.md)), `W2` 평가 하네스([evidence/w2-harness.md](evidence/w2-harness.md)), `W3` 벡터 PDF(D6) |
+| 현재 단계 | `W4` 래스터 어댑터 구현 완료, 검토 대기([evidence/w4-raster.md](evidence/w4-raster.md), D7) |
 | 막힌 것 | 없음 |
 | 다음 게이트 | `W4` 검토 통과 → `W5` 열화 시험 |
 

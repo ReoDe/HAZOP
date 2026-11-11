@@ -59,7 +59,7 @@ def one(job):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input-dir", help="도면 PDF 폴더(기본: 폴더 표 APR1400의 도면별)")
+    ap.add_argument("--input-dir", help="도면 PDF 폴더(기본: 폴더 표 APR1400의 by-drawing)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--jobs", type=int, default=8)
     a = ap.parse_args()
@@ -67,7 +67,7 @@ def main():
     if a.input_dir is None:
         sys.path.insert(0, REPO_ROOT)
         from hazop import paths
-        a.input_dir = paths.folder("APR1400", "도면별")
+        a.input_dir = paths.folder("APR1400", "by-drawing")
     files = sorted(glob.glob(os.path.join(a.input_dir, "*.pdf")))
     with multiprocessing.Pool(a.jobs) as pool:
         res = pool.map(one, [(REPO_ROOT, f) for f in files], chunksize=1)

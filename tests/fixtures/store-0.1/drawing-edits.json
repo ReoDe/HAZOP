@@ -1,0 +1,72 @@
+{
+  "drawing_number": "T-1",
+  "extraction_name": "T-1",
+  "kind": "hazop_drawing_corrections",
+  "log": [
+    {
+      "action": "save",
+      "added": [
+        "c-0001",
+        "c-0002"
+      ],
+      "at": "2026-11-07T00:00:00Z",
+      "by": "검토자",
+      "removed": [],
+      "removed_ops": []
+    },
+    {
+      "action": "save",
+      "added": [],
+      "at": "2026-11-07T00:00:00Z",
+      "by": "검토자",
+      "removed": [
+        "c-0002"
+      ],
+      "removed_ops": [
+        {
+          "at": "2026-11-07T00:00:00Z",
+          "base": null,
+          "by": "검토자",
+          "op": "add_node",
+          "op_id": "c-0002",
+          "refs": {},
+          "target": null,
+          "value": {
+            "bbox": [
+              0,
+              0,
+              10,
+              10
+            ],
+            "category": "equipment",
+            "kind": "pump",
+            "tag": "P-2"
+          }
+        }
+      ]
+    }
+  ],
+  "ops": [
+    {
+      "at": "2026-11-07T00:00:00Z",
+      "base": null,
+      "by": "검토자",
+      "op": "add_node",
+      "op_id": "c-0001",
+      "refs": {},
+      "target": null,
+      "value": {
+        "bbox": [
+          0,
+          0,
+          10,
+          10
+        ],
+        "category": "equipment",
+        "kind": "pump",
+        "tag": "P-1"
+      }
+    }
+  ],
+  "schema_version": "0.1"
+}

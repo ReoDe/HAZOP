@@ -1,17 +1,17 @@
-"""단계 ④ HAZOP 분석 실행 -> 출력/분석/<구간 ID>/<실행 ID>/analysis.json (+ inputs/ 입력 사본)
+"""단계 ④ HAZOP 분석 실행 -> output/analysis/<구간 ID>/<실행 ID>/analysis.json (+ inputs/ 입력 사본)
 
 사용 예:
   python scripts/analyze.py                                   # 기본 구간(SNP-M-102 가압기), 고정 응답
-  python scripts/analyze.py --region 데이터/구간/region-SNP-M-102-pzr.json --fixed-dir 데이터/고정응답/region-SNP-M-102-pzr
+  python scripts/analyze.py --region data/regions/region-SNP-M-102-pzr.json --fixed-dir data/fixed-responses/region-SNP-M-102-pzr
   python scripts/analyze.py --live --only p86-d09             # 실제 Claude API 호출(명시 옵션, 자격 증명 필요)
-  python scripts/analyze.py --resume 출력/분석/region-SNP-M-102-pzr/<실행 ID> [--live]   # AI 단계부터 재시도
-  python scripts/analyze.py --rebind-graph [--graph 출력/그래프/SNP-M-102/graph.json]      # 그래프 버전 차이 보기
+  python scripts/analyze.py --resume output/analysis/region-SNP-M-102-pzr/<실행 ID> [--live]   # AI 단계부터 재시도
+  python scripts/analyze.py --rebind-graph [--graph output/graph/SNP-M-102/graph.json]      # 그래프 버전 차이 보기
   python scripts/analyze.py --rebind-graph --confirm --by 이름 --reason "사유"              # 확인 후 구간 JSON 갱신(이력 기록)
 
 그래프가 없으면 먼저 구간 JSON graph_ref.how_to_build의 명령을 실행한다.
   samples 경로: python scripts/extract_drawio.py --samples && python scripts/build_graph.py
   등록 경로: python scripts/run_samples.py  (graph_version·project_id가 달라지므로 --rebind-graph로 다시 고정)
-    run_samples 그래프로 다시 고정하려면 --rebind-graph --graph 출력/samples/그래프/<이름>/graph.json 을 지정한다.
+    run_samples 그래프로 다시 고정하려면 --rebind-graph --graph output/samples/graph/<이름>/graph.json 을 지정한다.
 --live 없이 실행하면 실제 API를 호출하지 않는다(고정 응답만). --resume는 원래 실행의 AI 모드를 그대로 쓰며,
 실제 API 실행을 재시도할 때도 --live를 명시해야 한다.
 경로: 구간·그래프·고정 응답·출력은 작업 루트(HAZOP_WORK_ROOT), 카탈로그·적용 판단·패턴·기준표는 자원 루트
@@ -30,9 +30,9 @@ from hazop.console import safe_console  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.analysis import ai, api, run  # noqa: E402
 
-DEFAULT_REGION = paths.folder("구간", "region-SNP-M-102-pzr.json")
-DEFAULT_FIXED = paths.folder("고정응답", "region-SNP-M-102-pzr")
-DEFAULT_OUT = paths.output_root("분석")
+DEFAULT_REGION = paths.folder("regions", "region-SNP-M-102-pzr.json")
+DEFAULT_FIXED = paths.folder("fixed-responses", "region-SNP-M-102-pzr")
+DEFAULT_OUT = paths.output_root("analysis")
 
 
 def make_client(args):
@@ -55,7 +55,7 @@ def resume_client(args):
         return ai.AnthropicClient(model=rec.get("model") or args.model)
     if args.live:
         raise run.InputError("원래 실행은 고정 응답 — --live로 재시도할 수 없음")
-    return ai.FixedResponseClient(os.path.join(paths.work_root(), rec["response_dir"]), repo_root=paths.work_root(),
+    return ai.FixedResponseClient(paths.resolve_rel(rec["response_dir"], paths.work_root()), repo_root=paths.work_root(),
                                   verify_bundle=rec.get("verify_bundle", True))
 
 
@@ -66,7 +66,7 @@ def summary(doc, where):
           "AI 검증 통과 %d·미완료 %d·거부 시나리오 %d 보류 %d -> %s" % (
               doc["analysis_run_id"], v["status"], c["candidates"], c["selected"], c["excluded"], c["deferred"],
               c["scenarios"], c["risk_proposed"], c["design_improvement_candidates"], c["ai_validated"], c["ai_failed"],
-              c["ai_rejected_scenarios"], c["holds_open"], paths.rel_or_abs(where, paths.work_root())))
+              c["ai_rejected_scenarios"], c["holds_open"], paths.plain_rel(where, paths.work_root())))
     for e in v["errors"]:
         print("  오류:", e)
 

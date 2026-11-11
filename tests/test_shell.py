@@ -1,7 +1,7 @@
 """셸(UIUX 개선명세 U-01 명령 팔레트, U-02 단축키, U-04 탐색기, U-05 레일, U-06 상태 표시줄, U-07 토스트,
 U-14 관련 항목) 테스트. 실행: python -m unittest tests.test_shell
 
-작업 루트·저장 루트·설정 파일은 임시 폴더다(자료저장소·출력 폴더를 건드리지 않음). 샘플 도면 SNP-M-102를 임시 작업 루트에
+작업 루트·저장 루트·설정 파일은 임시 폴더다(store·출력 폴더를 건드리지 않음). 샘플 도면 SNP-M-102를 임시 작업 루트에
 추출·그래프로 만들고, 프로젝트 검토구간 확정본과 분석 결과(고정 값)를 임시 저장 루트에 쓴 뒤 창을 연다.
 ProjectExplorerTest는 SNP-M-101·102 두 장을 한 프로젝트로 잇는다. 네트워크·AI 호출 없음.
 """
@@ -284,6 +284,13 @@ class ShellTest(unittest.TestCase):
             pump(win, 0.02)
             scr, w = win.screens[index], win.focusWidget()
             self.assertTrue(w is scr or scr.isAncestorOf(w), "%d: %r" % (index, w))
+
+    def test_shared_inputs_have_accessible_names(self):
+        """화면 읽기 도구가 읽을 이름(2026-11-07 UIA 점검): 탐색기 필터, ②④⑤ 도면 선택."""
+        win = self.window()
+        self.assertTrue(win.explorer_filter.accessibleName())
+        for index in (1, STUDY, RESULTS):
+            self.assertTrue(win.screens[index].combo.accessibleName(), index)
 
     def test_toast_undo_with_ctrl_z(self):
         win = self.window()

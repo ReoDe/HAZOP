@@ -7,7 +7,7 @@
   최소 폭은 모든 화면의 최대값이고 ⑤는 첫 방문 때 문구를 채우므로, 이렇게 해야 최악값이 나온다.
 - 화면마다 최소 폭에 기여하는 가장 넓은 말단 위젯 상위 N개(클래스·objectName·문구 앞부분·폭)를 함께 기록한다.
 - 줄임표 라벨(widgets.ElidedLabel)은 1366×768로 맞춘 창에서 줄여 그려졌는지와 툴팁 = 전체 문구인지 기록한다.
-- 작업·저장 루트(HAZOP_WORK_ROOT·HAZOP_STORE_ROOT)와 설정 파일은 임시 폴더. 실제 자료저장소·출력/ 실행은 쓰지 않는다.
+- 작업·저장 루트(HAZOP_WORK_ROOT·HAZOP_STORE_ROOT)와 설정 파일은 임시 폴더. 실제 store·output/ 실행은 쓰지 않는다.
 
 판정(D1·D3·D4안): 지원 화면 두 가지의 작업 영역(작업 표시줄·제목 표시줄 제외)과 창 최소 크기(논리 px)를 비교한다.
 - 100%: 1366×768 → 작업 영역 1366×689. 125%: 논리 1536×864 → 1536×785. (작업 표시줄 48, 제목 표시줄 31, 논리 px)
@@ -18,8 +18,8 @@
   보이는 폭, 줄임표 툴팁 규칙 위반. 실제 DPR이 요청 배율과 다르거나 96 DPI가 아니면 판정하지 않고 2.
 - --scale 1.25(QT_SCALE_FACTOR로 125% 흉내): 125% 작업 영역으로 판정(0/1/2). 그 밖의 배율은 참고치(종료 코드 0).
 - --platform offscreen: 글꼴 대체로 폭이 과대하므로 판정하지 않는다. --baseline <이전 결과 JSON>을 주면 늘어난 값만
-  경고로 알린다(종료 코드 0). 기준 수치는 docs/2026-11-05-design-system/evidence/w3-작업영역125.md에 기록한다.
-결과 JSON: 출력/디자인검사/design-<platform>[-s<배율>].json (출력/는 git 제외). --out으로 바꿀 수 있다.
+  경고로 알린다(종료 코드 0). 기준 수치는 docs/2026-11-05-design-system/evidence/w3-workspace-125.md에 기록한다.
+결과 JSON: output/design-check/design-<platform>[-s<배율>].json (output/는 git 제외). --out으로 바꿀 수 있다.
 웹 강조 범례(W10, D16): 샘플 도면·분석 실행으로 ④⑤에 강조를 띄우고 창 LEGEND_WIDTHS(1366·1440) × 그 배율 작업 영역 높이에서
 .hz-legend가 캔버스 안에 있고 보이는 떠 있는 카드(#zoom 줌·맞춤, 검색, 층 등)와 겹치지 않는지 잰다. windows 판정에 포함
 (어기면 종료 코드 1), offscreen은 참고만. 결과 JSON의 legend_rows.
@@ -56,7 +56,7 @@ VISIT_CANDIDATES = ("deviation-p86-d09", "deviation-p86-d12")
 REVIEW_CANDIDATE = "deviation-p86-d12"
 REVIEW_KG_CANDIDATE = "deviation-p86-d09"
 TEXT_HEAD = 40
-OUT_DIR = os.path.join(paths.DEV_WORK_ROOT, "출력", "디자인검사")
+OUT_DIR = paths.output_in(paths.DEV_WORK_ROOT, "design-check")
 
 
 # ---------------------------------------------------------------- 위젯 측정(순수 함수, Qt 위젯만 받음)
@@ -208,9 +208,9 @@ class TempRoots:
         """샘플 구간 JSON과 고정 응답 분석 실행을 임시 작업 루트에 복사. 실행 폴더 경로."""
         from tests.run_fixture import fresh_run_dir
         src = fresh_run_dir()
-        os.makedirs(paths.folder_in(self.work, "구간"), exist_ok=True)
-        shutil.copy(paths.folder("표본", "구간", REGION + ".json"), paths.folder_in(self.work, "구간"))
-        run_dir = os.path.join(self.work, "출력", "분석", REGION, os.path.basename(src))
+        os.makedirs(paths.folder_in(self.work, "regions"), exist_ok=True)
+        shutil.copy(paths.folder("samples", "regions", REGION + ".json"), paths.folder_in(self.work, "regions"))
+        run_dir = paths.output_in(self.work, "analysis", REGION, os.path.basename(src))
         if not os.path.isdir(run_dir):
             shutil.copytree(src, run_dir)
         return run_dir
@@ -293,14 +293,14 @@ def install_kg_runs(roots):
     from hazop.analysis import ai, run
     from hazop.kg import build, context
     graph = kgc.sample_graph()
-    gdir = os.path.join(roots.work, "출력", "그래프", "SNP-M-102")
+    gdir = paths.output_in(roots.work, "graph", "SNP-M-102")
     os.makedirs(gdir, exist_ok=True)
     graph_path = os.path.join(gdir, "graph.json")
     with open(graph_path, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(graph, fh, ensure_ascii=False)
     knowledge = kgc.sample_knowledge()
     knowledge["kg_id"] = kgc.KG_ID
-    build.write_outputs(os.path.join(roots.work, "출력", "지식그래프", kgc.KG_ID), knowledge,
+    build.write_outputs(paths.output_in(roots.work, "knowledge-graph", kgc.KG_ID), knowledge,
                         build.build_kg(knowledge, [graph]))
     region = kgc.load(kgc.REGION_FILE)
     region["inputs"]["knowledge_graph"] = kgc.KG_REF
@@ -312,7 +312,7 @@ def install_kg_runs(roots):
         with mock.patch.dict(context.LIMITS, limits):
             ins = run.load_inputs(rp, roots.work, graph_path=graph_path, resource_root=REPO_ROOT)
             _, out[name] = run.execute(ins, ai.FixedResponseClient(kgc.KG_RESPONSES),
-                                       os.path.join(roots.work, "출력", "분석"), run_id="analysis-kg-%s" % name,
+                                       paths.output_in(roots.work, "analysis"), run_id="analysis-kg-%s" % name,
                                        now=kgc.now)
     return out
 
@@ -426,7 +426,7 @@ def _js_value(win, expr, timeout=10.0):
 def sample_drawing_dir():
     """샘플 도면(SNP-M-102) 폴더. 없으면 None."""
     import glob
-    found = [p for p in glob.glob(paths.folder("참고", "P&ID 도면 샘플", "*")) if "SNP-M-102" in p]
+    found = [p for p in glob.glob(paths.folder("references", "pid-samples", "*")) if "SNP-M-102" in p]
     return found[0] if found else None
 
 
@@ -440,9 +440,9 @@ def install_drawing(roots, run_dir):
     if not os.path.isdir(dst):
         shutil.copytree(src, dst)
     drawio = glob.glob(os.path.join(dst, "*.drawio"))[0]
-    _, out_dir = data.script_module("extract_drawio").run_one(drawio, os.path.join(roots.work, "출력", "추출"))
+    _, out_dir = data.script_module("extract_drawio").run_one(drawio, paths.output_in(roots.work, "extract"))
     graph, _ = data.script_module("build_graph").build_one(os.path.join(out_dir, "extraction.json"),
-                                                           os.path.join(roots.work, "출력", "그래프"))
+                                                           paths.output_in(roots.work, "graph"))
     with open(os.path.join(run_dir, "inputs", "graph.json"), "w", encoding="utf-8", newline="\n") as fh:
         json.dump(graph, fh, ensure_ascii=False)
 
@@ -913,7 +913,7 @@ def contrast_check():
 # 우회 차단: 위 두 형식이 아닌 선택자(예: '#graphsvg .gedge', 'g[data-kind=…] > .gedge', '.gedge.unknown', ':not(…)',
 # 컨테이너 #stage·#overlay·#graphsvg·#viewport, SVG 요소 선택자)가 불투명도 < 1을 주면 실패, 인식한 형식이라도 @media 안에서
 # < 1이거나 !important면 실패, 선에 닿는 선택자의 filter: opacity()·선 규칙의 CSS 중첩도 실패, HTML·JS(주석·문자열 내용 밖)가
-# 불투명도를 직접 설정하면 실패. 휴리스틱이라 모든 우회를 막지는 않는다(한계: evidence/w8-반투명선.md §8).
+# 불투명도를 직접 설정하면 실패. 휴리스틱이라 모든 우회를 막지는 않는다(한계: evidence/w8-translucent-lines.md §8).
 STROKE_SELECTORS = (".pipe-line", ".gedge")
 _OPACITY_PROPS = ("stroke-opacity", "opacity")
 _LINE_CLASS = r"\.(?:gedge|pipe-line)(?![\w-])"
@@ -1278,7 +1278,7 @@ def translucent_check():
 # ---------------------------------------------------------------- 앱 코드 색 리터럴(W6, D8).
 # 앱 Python 코드는 색을 tokens.COLORS(정의 파일 hazop/app/tokens.py)에서 읽는다. 대상은 hazop/app/**/*.py(T1 파일 제외)와
 # hazop/viewer/build.py. 주석은 보지 않고(tokenize) 문자열 리터럴(문서 문자열·f-string 포함, 이어 붙인 문자열은 한 덩어리)만 본다.
-# QColor(...)·Qt 전역 색은 ast로 본다. 보고 행 번호는 원본 행이다. 회귀 방지용 휴리스틱이다(한계: evidence/w6-앱색.md §4).
+# QColor(...)·Qt 전역 색은 ast로 본다. 보고 행 번호는 원본 행이다. 회귀 방지용 휴리스틱이다(한계: evidence/w6-app-colors.md §4).
 APP_COLOR_EXCLUDE_BLOCKS = {"hazop/app/tokens.py": ("COLORS",)}  # 토큰 정의 대입문(AST 노드의 시작·끝 위치만 뺀다)
 APP_COLOR_T1 = ("hazop/app/screens/knowledge.py", "hazop/app/webview.py")  # T1 소유(README §8) — 검사 대상에서 뺌
 # 판정할 수 없어 남기는 리터럴: (저장소 기준 경로, 리터럴, 최상위 문장 이름, CSS 선택자 또는 None) → 사유.
@@ -1523,7 +1523,7 @@ def main(argv=None):
     ap.add_argument("--no-125", action="store_true", help="windows 100%% 판정 뒤 125%% 판정을 이어서 하지 않음")
     ap.add_argument("--top", type=int, default=5, help="가장 넓은 위젯 보고 개수")
     ap.add_argument("--baseline", help="offscreen 회귀 감시용 이전 결과 JSON(늘어나면 경고)")
-    ap.add_argument("--out", help="결과 JSON 경로(기본 출력/디자인검사/design-<platform>[-s<배율>].json)")
+    ap.add_argument("--out", help="결과 JSON 경로(기본 %s/design-<platform>[-s<배율>].json)" % paths.output_rel("design-check"))
     ap.add_argument("--colors-only", action="store_true", help="색 검사(뷰어·앱 색 비교·명암비·반투명 관계선·앱 코드 색 리터럴)만 하고 배치 측정은 하지 않음")
     args = ap.parse_args(argv)
     color_bad = color_check() + contrast_check() + translucent_check() + app_color_check()

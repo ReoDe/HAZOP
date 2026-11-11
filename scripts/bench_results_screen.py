@@ -79,7 +79,7 @@ assert paths.work_root().startswith(root) and paths.store_root().startswith(root
 def fill(n_entries):
     """확정 구간 집합마다 모든 칸을 분석됨 + 제안 항목 n개로 채운 결과 파일을 임시 루트에 쓴다(이미 있으면 그대로)."""
     devs = res.load_deviations()
-    folder = paths.folder("검토구간")
+    folder = paths.folder("study-nodes")
     written = 0
     for dirpath, _dirs, files in os.walk(folder):
         for f in files:

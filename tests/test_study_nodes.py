@@ -207,7 +207,7 @@ class StoreTest(unittest.TestCase):
         self.assertFalse(sn.any_confirmed())
         s = sn.propose(g, at=AT)
         path = sn.save(s)
-        self.assertEqual(path, paths.folder_in(self.tmp, "검토구간", "SNP-SAMPLE", "graph-T.json"))
+        self.assertEqual(path, paths.folder_in(self.tmp, "study-nodes", "SNP-SAMPLE", "graph-T.json"))
         self.assertEqual(sn.load(g), s)
         self.assertFalse(sn.any_confirmed())
         sn.save(sn.confirm(s, g, "김검토", at=AT))

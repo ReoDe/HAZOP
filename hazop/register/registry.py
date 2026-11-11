@@ -1,7 +1,7 @@
 """자료 등록: 해시·내부 ID·등록 버전 발급, 원본 보관, 저장 후 해시 확인, 등록정보 JSON 기록.
 
 근거: 기획서/자료등록.md(MVP 등록 절차, 입력과 등록정보, 처리 원칙), 기획서/전체기획.md #data-contract(① -> ②),
-flow chart/01-registration.md. 사용자 결정(2026-11-04): 저장 위치는 저장소 안 '자료저장소/'(인자·환경변수로 변경),
+flow chart/01-registration.md. 사용자 결정(2026-11-04): 저장 위치는 저장소 안 'store/'(인자·환경변수로 변경),
 표제란 값은 자동 후보로만 기록하고 사람이 확정하기 전까지 확정값은 미확인.
 
 저장 구조 (<저장 루트>/<project_id>/):
@@ -36,7 +36,7 @@ META_FIELDS = ("drawing_number", "design_revision", "title")
 META_INPUT_KEYS = set(META_FIELDS) | {"by", "reason"}
 DOCUMENT_ID = "document-001"  # 원본 파일(drawio·PDF) 1개 = 문서 1개
 REPO_ROOT = paths.REPO_ROOT
-DEFAULT_STORE = paths.store_root()  # HAZOP_STORE_ROOT 또는 <작업 루트>/자료저장소 (가져올 때 결정)
+DEFAULT_STORE = paths.store_root()  # HAZOP_STORE_ROOT 또는 <작업 루트>/store (가져올 때 결정)
 SVG_ROLE = "svg"
 NO_SVG_FIELD = "derived_files"
 

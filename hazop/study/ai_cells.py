@@ -32,7 +32,7 @@ from hazop.study import providers
 from hazop.study import refs as srefs
 from hazop.study import results as res
 
-KG_DIR = "지식그래프"
+KG_DIR = "knowledge-graph"
 
 _STR = {"type": "string"}
 _STRS = {"type": "array", "items": _STR}

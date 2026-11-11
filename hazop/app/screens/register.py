@@ -693,11 +693,11 @@ class RegisterScreen(QWidget):
                                                               "완료" if st == "passed" else "— 구조 검증 차단(%s)" % esc(st)),
              "<p>추출 검증: %s · 노드 %d · 관계 %d · 미해결 %d · 미확인 %d<br>%s</p>" % (
                  esc(VALIDATION_LABELS.get(ex["validation"]["status"], ex["validation"]["status"])), s["nodes"], s["relations"], s["unresolved_connectors"], s["unknowns"],
-                 esc(paths.rel_or_abs(out["extract_dir"], paths.work_root()))),
+                 esc(paths.plain_rel(out["extract_dir"], paths.work_root()))),
              "<p>SVG 대응: %s (출처: %s)</p>" % (esc({"verified": "확인됨"}.get(al.get("status"), al.get("status") or "SVG 없음")), esc({"registered_derived": "등록된 파생 SVG", "input_path_sibling, unregistered": "원본 옆 SVG(미등록)", "rendered_from_pdf": "PDF에서 그린 도면(같은 좌표, 기호 %s/%s개 bbox 일치)" % (al.get("consistent_cells"), al.get("compared_cells"))}.get(al.get("source"), al.get("source") or "없음"))),
              "<p>그래프 %s · 버전 %s · 노드 %d · 관계 %d<br>%s</p>" % (
                  esc(g["graph_id"]), esc(g["graph_version"]), g["structure"]["node_count"], g["structure"]["edge_count"],
-                 esc(paths.rel_or_abs(out["graph_dir"], paths.work_root())))]
+                 esc(paths.plain_rel(out["graph_dir"], paths.work_root())))]
         for b in g["validation"].get("blockers") or []:
             h.append("<p style='color:%s'>차단: %s %s</p>" % (tokens.c("err-ink"), esc(b.get("check")), esc(b.get("target"))))
         if not al:
@@ -727,7 +727,7 @@ class RegisterScreen(QWidget):
              "<p>%s %s · 쪽 %s</p>" % (badge("자동 추출 · 사람 확인 전", "ai"),
                                       " · ".join("%s %d" % (label, s.get(k, 0)) for k, label in DOC_COUNT_LABELS),
                                       esc(doc.get("page_count"))),
-             "<p>%s</p>" % esc(paths.rel_or_abs(out["path"], paths.work_root()))]
+             "<p>%s</p>" % esc(paths.plain_rel(out["path"], paths.work_root()))]
         for b in v.get("blockers") or []:
             h.append("<p style='color:%s'>차단: %s — %s</p>" % (tokens.c("err-ink"), esc(b.get("check")), esc(b.get("reason"))))
         h.append(kg_line(out))

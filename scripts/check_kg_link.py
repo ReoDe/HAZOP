@@ -1,8 +1,8 @@
 """엔티티 연결 검사 L1~L4를 한 번에 실행한다 (QA용). 하위 프로세스·네트워크를 쓰지 않는다.
 
 근거: 기획서/그래프활용.md §3(후보 생성·확인 흐름), §7.2 L1~L4.
-정상 샘플(데이터/지식/SNP-SAMPLE)은 읽기만 하고, 쓰기가 필요한 판정은 임시 폴더에 복사해서 한다.
-P&ID 그래프는 출력/그래프/SNP-M-102/graph.json (없으면 먼저 build_graph.py).
+정상 샘플(data/knowledge-graph/SNP-SAMPLE)은 읽기만 하고, 쓰기가 필요한 판정은 임시 폴더에 복사해서 한다.
+P&ID 그래프는 output/graph/SNP-M-102/graph.json (없으면 먼저 build_graph.py).
 L3의 V5·알고리즘 결과 제외는 W5(hazop/kg/algo.py) 범위라 여기서는 V4(compute_view)만 판정한다.
 종료 코드 0 = 전부 통과.
 """

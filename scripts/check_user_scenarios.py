@@ -2,7 +2,7 @@
 
 사용: python scripts/check_user_scenarios.py --out <폴더> [--only S1,S3] [--keep-temp] [--focus-wait 120]
 
-- 임시 작업 루트에 샘플 도면 SNP-M-102(출력/ 사본, 검토구간 확정, 가짜 AI 결과)를 준비한다. 자료저장소/에 쓰지 않는다.
+- 임시 작업 루트에 샘플 도면 SNP-M-102(output/ 사본, 검토구간 확정, 가짜 AI 결과)를 준비한다. store/에 쓰지 않는다.
 - 앱(run_app.py와 같은 창 + 가짜 AI 클라이언트, 호출마다 AI_DELAY초)을 QTWEBENGINE_REMOTE_DEBUGGING으로 띄우고, Qt 위젯은 Windows UI Automation(scripts/uia_server.ps1),
   웹뷰(②③④)는 CDP로 읽는다. 입력은 Win32 SendInput(실제 키보드·마우스 이벤트)으로 보낸다.
 - 입력 전마다 이 실행이 띄운 창이 맨 앞인지 확인하고, 아니면 입력을 보내지 않고 시나리오를 중단한다.
@@ -32,7 +32,7 @@ if REPO_ROOT not in sys.path:
 from hazop import paths  # noqa: E402  (표준 라이브러리만 쓰는 경로 모듈)
 CDP_PORT = 9339
 WINDOW_SIZE = (1366, 768)
-DRAWIO_SAMPLE = paths.folder("참고", "P&ID 도면 샘플", "SNP-M-201_CVCS", "SNP-M-201_CVCS.drawio")
+DRAWIO_SAMPLE = paths.folder("references", "pid-samples", "SNP-M-201_CVCS", "SNP-M-201_CVCS.drawio")
 
 # KLM 연산자 시간(초). Card, Moran & Newell(1980) "The Keystroke-Level Model for User Performance Time with Interactive
 # Systems", CACM 23(7):396-410. K는 비전문 평균 타자(40 wpm) 값 0.28(같은 논문 표 1의 범위 0.08~1.2 중).
@@ -662,7 +662,7 @@ def s1_keyboard_stages(d):
     d.step("? 단축키 표 열기")
     t = time.time()
     d.key("f1")
-    ok = d.wait(lambda: "Ctrl+1 ~ Ctrl+5" in d.texts(), "F1 단축키 표", since=t)
+    ok = d.wait(lambda: any(x.startswith("Ctrl+1 ~ Ctrl+") for x in d.texts()), "F1 단축키 표", since=t)
     d.shot("단축키 표")
     d.expect(ok, "F1로 단축키 표가 뜨지 않음")
     d.step("Esc로 닫기", think=False)
@@ -1222,7 +1222,7 @@ def s5_register_drawio(d):
     d.shot("등록 후")
     if not d.expect(bool(ext), "등록 뒤 '추출·그래프 만들기'가 켜지지 않음"):
         return
-    graphs = os.path.join(os.path.dirname(os.path.dirname(d.data_root)), "출력", "그래프")
+    graphs = paths.output_in(os.path.dirname(os.path.dirname(d.data_root)), "graph")
 
     def graph_dirs():
         return set(os.listdir(graphs)) if os.path.isdir(graphs) else set()
@@ -1233,7 +1233,7 @@ def s5_register_drawio(d):
     def new_graph():
         return [g for g in graph_dirs() - g0
                 if any(f.endswith(".json") for f in os.listdir(os.path.join(graphs, g)))]
-    done = d.wait(new_graph, "추출·그래프 완료(출력/그래프에 새 그래프 파일)", timeout=60, since=t)
+    done = d.wait(new_graph, "추출·그래프 완료(output/graph에 새 그래프 파일)", timeout=60, since=t)
     time.sleep(2.0)
     d.shot("추출 후")
     d.expect(bool(done), "추출·그래프 만들기가 60초 안에 끝나지 않음")
@@ -1304,7 +1304,7 @@ def s12_excel_export(d):
     파일은 openpyxl로 다시 읽어 시나리오 행 수가 저장된 결과의 항목 수와 같은지 본다. [열기]는 누르지 않는다(Excel 실행)."""
     import openpyxl
     goto_stage(d, 5)
-    out = os.path.join(os.path.dirname(os.path.dirname(d.data_root)), "내보내기", "S12-export.xlsx")
+    out = os.path.join(os.path.dirname(os.path.dirname(d.data_root)), "exports", "S12-export.xlsx")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     d.step("Ctrl+P에서 '>Excel' 실행")
     d.key("ctrl+p")
@@ -1495,7 +1495,8 @@ def prepare(work_root):
     sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
     import shoot_results
     shoot_results.prepare(work_root)
-    shutil.copytree(paths.folder("참고"), paths.logical_reference_dir(work_root))  # ②④ 뷰어 바탕 그림
+    # ②④ 뷰어 바탕 그림: 샘플 도면 사본을 기록 경로 자리에 둔다
+    shutil.copytree(paths.folder("references", "pid-samples"), paths.logical_dir(work_root, "references", "pid-samples"))
     from hazop.app import make_application
     from hazop.app.main_window import MainWindow
     from hazop.app.screenshots import wait
@@ -1614,7 +1615,7 @@ def run(out_dir, only=None, keep_temp=False, focus_wait=120):
             print(exc)
             return 2
         w32.resize(hwnd, *WINDOW_SIZE)
-        d = Driver(w32, uia, cdp, pid, hwnd, shots, paths.folder_in(os.path.join(tmp, "work"), "분석결과"))
+        d = Driver(w32, uia, cdp, pid, hwnd, shots, paths.folder_in(os.path.join(tmp, "work"), "analysis-results"))
         d.focus_wait = focus_wait
         w32.activate(hwnd)
         time.sleep(1.0)
@@ -1670,7 +1671,7 @@ def run(out_dir, only=None, keep_temp=False, focus_wait=120):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default=os.path.join(paths.DEV_WORK_ROOT, "출력", "사용자검증"), help="결과 폴더")
+    ap.add_argument("--out", default=paths.output_in(paths.DEV_WORK_ROOT, "user-scenarios"), help="결과 폴더")
     ap.add_argument("--only", help="돌릴 시나리오 ID(쉼표), 예: S1,S3")
     ap.add_argument("--keep-temp", action="store_true", help="임시 작업 루트를 지우지 않음")
     ap.add_argument("--focus-wait", type=int, default=120, help="창 전환이 막히면 사용자가 창을 클릭하길 기다릴 초")

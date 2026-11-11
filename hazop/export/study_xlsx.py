@@ -62,7 +62,15 @@ NODE_COLUMNS = (("구간 ID", 9), ("표시 이름", 30), ("도면 범위", 14), 
 RECOMMENDATION_COLUMNS = (("번호", 6), ("구간", 22), ("편차", 16), ("권고", 50), ("위험도", 13), ("상태", 12),
                           ("담당", 12), ("기한", 12))
 
+# API 키 모양: Anthropic(sk-ant-), OpenAI(sk-proj- 등 접두어가 붙은 것과 sk- 뒤에 영숫자만 이어지는 것), Google(AIza),
+# GitHub(ghp_ 등), AWS(AKIA) [일반지식: 각 사의 공개된 키 접두어]. 낱말·식별자(task-force, sk-maintenance-plan-2026)를
+# 가리지 않게 접두어 뒤 길이를 본다. 접두어가 분명하고 긴 키는 글자 바로 뒤에 붙어 있어도 가린다
 _SECRET = re.compile(r"(?<![A-Za-z0-9])sk-ant-[A-Za-z0-9_-]{8,}"
+                     r"|sk-(?:ant|proj|svcacct|admin)-[A-Za-z0-9_-]{20,}"
+                     r"|(?<![A-Za-z0-9])sk-[A-Za-z0-9]{20,}"
+                     r"|(?<![A-Za-z0-9])AIza[A-Za-z0-9_-]{30,}"
+                     r"|(?<![A-Za-z0-9])(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}"
+                     r"|(?<![A-Za-z0-9])AKIA[A-Z0-9]{16}(?![A-Za-z0-9])"
                      r"|(?<![A-Za-z])[A-Za-z]:[\\/](?:[^\\/\n]*[\\/])*[^\s\\/,;)]*"
                      r"|\\\\(?:[^\\/\n]*[\\/])*[^\s\\/,;)]*")
 _FORMULA_PREFIX = ("=", "+", "-", "@")

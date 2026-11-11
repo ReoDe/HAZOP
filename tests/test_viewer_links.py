@@ -45,7 +45,7 @@ class LinkTestBase(unittest.TestCase):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def setUp(self):
-        shutil.rmtree(paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "작업데이터"), ignore_errors=True)
+        shutil.rmtree(paths.folder_in(os.environ["HAZOP_WORK_ROOT"], "data"), ignore_errors=True)
 
 
 class LinkDataTest(LinkTestBase):

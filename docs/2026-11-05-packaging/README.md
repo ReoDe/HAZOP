@@ -12,7 +12,7 @@
 
 - 착수일: 2026-11-05
 - 착수자: ej
-- 대상·하위 트랙: 트랙 번호 **T2**(프로젝트 트랙 목록은 [`메모리/결정로그.md`](../../메모리/결정로그.md) 2026-11-05 행). 범위: 전용 venv, 실행 파일 빌드(PyInstaller 등 후보), 자원·작업·저장소 루트, importlib 로딩, 신뢰 경계, 글꼴(Pretendard 결정은 T2, 인터페이스 §4.2 반영은 T6에 인계), force-graph 번들 의존성 라이선스, `os.link` 배타적 생성의 NTFS 외 파일시스템 확인.
+- 대상·하위 트랙: 트랙 번호 **T2**(프로젝트 트랙 목록은 [`records/decision-log.md`](../../records/decision-log.md) 2026-11-05 행). 범위: 전용 venv, 실행 파일 빌드(PyInstaller 등 후보), 자원·작업·저장소 루트, importlib 로딩, 신뢰 경계, 글꼴(Pretendard 결정은 T2, 인터페이스 §4.2 반영은 T6에 인계), force-graph 번들 의존성 라이선스, `os.link` 배타적 생성의 NTFS 외 파일시스템 확인.
 - 접근·실행 순서: [ROADMAP.md](ROADMAP.md)
 - 원칙: 확정된 결정과 문서별 정본을 따른다. 증거 없는 상태 변화는 기록하지 않는다.
 
@@ -50,7 +50,7 @@
 
 ### 상위 정본·선행 자료
 
-초기 조사·참조 대상: `기획서/인터페이스.md`(§7·§9), `hazop/paths.py`, `hazop/app/data.py`, `scripts/run_app.py`, `hazop/kg/vendor/`
+초기 조사·참조 대상: `specs/interface.md`(§7·§9), `hazop/paths.py`, `hazop/app/data.py`, `scripts/run_app.py`, `hazop/kg/vendor/`
 
 조사 후 자료별 소유 트랙·역할·정본 위치를 아래 표에 등록한다. 참조 경로라는 이유만으로 상위 정본이나 편집 대상으로 간주하지 않는다.
 
@@ -112,7 +112,7 @@
 ### 편집 허용 범위
 
 - 작업 폴더: `docs/2026-11-05-packaging/`
-- 추가 편집 허용 범위: `packaging/`(신규), `licenses/`(신규, D9), `scripts/build_package.py`, `tests/test_packaging.py`, `hazop/paths.py`, `hazop/app/data.py`(importlib 로딩만), `기획서/인터페이스.md`(§7·§9만), W5(D12): `hazop/analysis/integrity.py`(해시 고정 확대)·`hazop/analysis/run.py`(integrity 호출 연결만)·관련 tests·`기획서/전체기획.md`(신뢰 경계 표·문구만), W10(D18): `hazop/app/`(정보 창·시작 전 설정 확인), `scripts/run_app.py`, `tests/test_app*.py`
+- 추가 편집 허용 범위: `packaging/`(신규), `licenses/`(신규, D9), `scripts/build_package.py`, `tests/test_packaging.py`, `hazop/paths.py`, `hazop/app/data.py`(importlib 로딩만), `specs/interface.md`(§7·§9만), W5(D12): `hazop/analysis/integrity.py`(해시 고정 확대)·`hazop/analysis/run.py`(integrity 호출 연결만)·관련 tests·`specs/overview.md`(신뢰 경계 표·문구만), W10(D18): `hazop/app/`(정보 창·시작 전 설정 확인), `scripts/run_app.py`, `tests/test_app*.py`
 - 위 편집 허용 범위 밖의 경로는 참조 대상을 포함해 읽기 전용이다.
 - 문서를 추가하면 해당 폴더 README 인덱스와 이 문서의 문서 지도를 필요한 수준으로 갱신한다.
 
@@ -131,10 +131,10 @@
 - 에이전트: 허용 범위의 조사·구현·검증·문서 갱신을 수행하고, 정본에 없는 판단을 발견하면 결정 사항으로 제시한다.
 - 별도 담당자·소유 트랙이 생기면 책임 범위와 인계 조건을 이 절에 기록한다.
 - 에이전트 분담은 저장소 루트 `CLAUDE.md`의 총괄 규칙을 따른다: 총괄 → 담당(`hazop-planner`·`hazop-designer`·`hazop-developer`) → 검토(`hazop-reviewer`·`hazop-codex-reviewer`) → `hazop-qa` → `hazop-recorder`. 검토·QA 결과는 `evidence/`에 남긴다.
-- 프로젝트 전체에 걸리는 결정은 `메모리/결정로그.md`에도 기록하고 이 작업의 결정 ID를 함께 적는다.
+- 프로젝트 전체에 걸리는 결정은 `records/decision-log.md`에도 기록하고 이 작업의 결정 ID를 함께 적는다.
 - 다른 트랙과 같은 파일을 다루는 작업은 동시에 진행하지 않는다(저장소 `CLAUDE.md` 총괄 규칙 4).
 - `hazop/paths.py`는 약 30개 모듈이 import하므로 API는 하위 호환을 지킨다(기존 함수 이름·인자 유지, 추가만). `hazop/app/data.py`는 T1 W7(④ 근거 함수)·T6(뷰어 색)과 겹칠 수 있어 순차로 진행한다. `hazop/review/store.py`는 `os.link` 대체 경로가 필요할 때만 결정으로 범위를 넓힌다.
-- `기획서/인터페이스.md`는 T1·T2·T6가 절 단위로 나눠 쓰되(T2는 §7·§9) 같은 시점에 함께 고치지 않는다.
+- `specs/interface.md`는 T1·T2·T6가 절 단위로 나눠 쓰되(T2는 §7·§9) 같은 시점에 함께 고치지 않는다.
 - 팀 규칙은 이 README에 둔다. 에이전트 도구 운용 지침은 로컬 전용 `AGENTS.md`와 이를 참조하는 `CLAUDE.md`에 두며 두 파일은 커밋하지 않는다. 공통 산출물은 Git으로 추적한다.
 
 ### 작업 내용·하위 트랙 확장

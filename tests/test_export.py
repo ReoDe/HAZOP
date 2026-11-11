@@ -52,7 +52,7 @@ class ExportTestBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="hazop-export-")
         self.store = os.path.join(self.tmp, "store")
-        self.out = os.path.join(self.tmp, "워크시트")
+        self.out = os.path.join(self.tmp, "worksheets")
         self.run_dir = os.path.join(self.tmp, "runs", os.path.basename(self.src))
         shutil.copytree(self.src, self.run_dir)
         self.run = rv.open_run(self.run_dir)

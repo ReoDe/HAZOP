@@ -1,6 +1,6 @@
 """패키징 W5: 신뢰 경계 해시 고정(패턴 라이브러리·지침서 추가). 실행: python -m unittest discover -s tests -t .
 
-실제 데이터/·기획서/ 파일은 바꾸지 않는다. 자원 루트(기준 자료 4종·지침서)와 작업 루트(구간 JSON·그래프·고정 응답)를
+실제 data/·기획서/ 파일은 바꾸지 않는다. 자원 루트(기준 자료 4종·지침서)와 작업 루트(구간 JSON·그래프·고정 응답)를
 임시 폴더에 복사하고, 자원 사본의 1바이트를 바꿔 ④ 분석(api.run_analysis)이 입력 차단되고 사유가 표시되는지 본다.
 """
 
@@ -115,10 +115,10 @@ class TamperedResourceRootTest(unittest.TestCase):
             dst = os.path.join(self.res, *rel.split("/"))
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(paths.resolve_rel(rel, REPO_ROOT), dst)
-        self.region_path = paths.folder_in(self.work, "구간", os.path.basename(REGION_FILE))
+        self.region_path = paths.folder_in(self.work, "regions", os.path.basename(REGION_FILE))
         os.makedirs(os.path.dirname(self.region_path))
         shutil.copyfile(REGION_FILE, self.region_path)
-        gpath = os.path.join(self.work, REGION["graph_ref"]["graph_file"])
+        gpath = paths.resolve_rel(REGION["graph_ref"]["graph_file"], self.work)
         os.makedirs(os.path.dirname(gpath))
         with open(gpath, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(GRAPH, fh, ensure_ascii=False, indent=2)

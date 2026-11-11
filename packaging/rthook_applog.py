@@ -47,6 +47,6 @@ if getattr(sys, "frozen", False) and getattr(sys, "_MEIPASS", None):
     try:
         from hazop import paths
 
-        install(os.path.join(paths.work_root(), "logs"))
+        install(os.path.join(paths.raw_work_root(), "logs"))  # 로그는 옛 작업 폴더를 옮기기 전에도 남긴다
     except Exception:  # 로그를 못 남겨도 앱은 띄운다
         pass

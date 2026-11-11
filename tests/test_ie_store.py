@@ -43,7 +43,7 @@ class StoreTest(unittest.TestCase):
             fh.write(data)
 
     def test_path_is_under_data_folder(self):
-        self.assertEqual(self.path, paths.folder("초기사건", "가상_PWR.json"))
+        self.assertEqual(self.path, paths.folder("initiating-events", "가상_PWR.json"))
 
     def test_missing_file_reads_empty_and_round_trips(self):
         doc, fp = store.load("가상 PWR")
@@ -88,7 +88,7 @@ class StoreTest(unittest.TestCase):
 
     def test_failed_write_keeps_old_file_and_cleans_temp(self):
         fp = store.save(self.doc(), expect=None)
-        with mock.patch("hazop.ie.store.os.replace", side_effect=OSError("disk full")):
+        with mock.patch("os.replace", side_effect=OSError("disk full")):
             with self.assertRaises(OSError):
                 store.save(model.empty("가상 PWR"), expect=fp)
         self.assertEqual(store.load("가상 PWR")[0], self.doc())
@@ -99,9 +99,9 @@ class StoreTest(unittest.TestCase):
         doc, fp, saved = store.replace_unreadable("가상 PWR")
         with open(saved, "rb") as fh:
             self.assertEqual(fh.read(), b"{broken")
-        rel = os.path.relpath(saved, paths.folder("백업"))
+        rel = os.path.relpath(saved, paths.folder("backup"))
         self.assertTrue(rel.split(os.sep)[0].endswith("-초기사건읽기실패"), rel)
-        self.assertTrue(rel.endswith(os.path.join(*paths.FOLDERS["초기사건"].rel, "가상_PWR.json")), rel)
+        self.assertTrue(rel.endswith(os.path.join(*paths.FOLDERS["initiating-events"].rel, "가상_PWR.json")), rel)
         self.assertEqual(store.load("가상 PWR"), (doc, fp))
 
     def test_change_after_backup_is_not_overwritten(self):
@@ -142,7 +142,7 @@ class StoreTest(unittest.TestCase):
 
     def test_no_overwrite_when_backup_fails(self):
         self.write_raw(b"{broken")
-        with mock.patch("hazop.ie.store.shutil.copy2", side_effect=OSError("backup denied")):
+        with mock.patch("shutil.copyfileobj", side_effect=OSError("backup denied")):
             with self.assertRaises(OSError):
                 store.replace_unreadable("가상 PWR")
         with open(self.path, "rb") as fh:
