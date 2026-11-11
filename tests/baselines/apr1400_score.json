@@ -962,11 +962,11 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 281,
-  "seconds": 139,
+  "seconds": 198,
   "tag_exact": 872,
   "tag_not_in_text": 47,
   "tagged": 1083,
   "unclassified": 7314,
-  "unknowns": 63813
+  "unknowns": 63818
  }
 }
