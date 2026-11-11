@@ -8,9 +8,13 @@
 - 재현율: tag_exact(계기 원 글자와 정확히 같은 태그가 그 원 위치의 노드에 붙은 수), connectors_detected(연결 표기
   위치에 연결점 노드를 만든 수), paired(프로젝트 그래프에서 짝지은 연결 수)
 - 정밀도(오류 수): tag_not_in_text(글자에 없는 태그. 계기 글자로 만든 태그(근거 isa_label…)는 그 노드 상자 안에 찍힌
-  위아래 두 줄을 이은 글자와 같아야 하고, 나머지 태그는 그 쪽 텍스트 층 낱말에 있어야 한다),
+  위아래 두 줄을 이은 글자와 같아야 하고, 나머지 태그는 그 쪽 텍스트 층 낱말이나, 같은 줄에 빈틈 없이 이어진 글자
+  묶음(char_runs)과 같아야 한다),
   connector_bad_target(짝지은 글자와 계통이 다르거나, 짝이 없는데 계통을 단 연결점)
 독립 정답(tests/fixtures/apr1400/answer_key/*.json, 렌더한 그림을 눈으로 읽어 만든 정답, tests/fixtures/apr1400/SOURCE.md)이 있는 쪽은 정답 대비 값도 낸다.
+정답 쪽 틀린 태그(tagged - tagged_correct)는 계기 정답과 같은 자리·같은 글자인 태그와, 정답지에 valve_numbers가 있으면 그
+번호 자리·같은 번호인 밸브 번호 태그(근거 valve_number)를 맞은 것으로 센다. valve_numbers가 없는 쪽의 밸브 번호 태그는
+정답이 다루지 않으므로 세지 않는다.
 톱니: 재현율 값은 기준값보다 낮아지면, 오류 값은 높아지면 실패(종료 코드 1). 합계·쪽마다·정답 쪽마다 모두 본다.
 쪽 수·계기 원 수·연결 표기 수(입력과 대리 지표)가 기준값과 다르면 비교하지 않고 실패한다.
 """
@@ -104,7 +108,24 @@ def text_layer(path):
     offpage = [(w["text"], OFFPAGE_RE.match(w["text"]).group(1), (w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2)
                for w in labels if OFFPAGE_RE.match(w["text"])]
     tokens = {norm(w["text"]) for w in words} | {norm(a + b) for a, b, _, _ in bubbles}
-    return {"bubbles": bubbles, "offpage": offpage, "tokens": tokens, "chars": chars, "turned": turned, "down": down}
+    runs = char_runs(chars) | char_runs(turned) | char_runs(down)
+    return {"bubbles": bubbles, "offpage": offpage, "tokens": tokens, "runs": runs, "chars": chars, "turned": turned,
+            "down": down}
+
+
+def char_runs(chars, gap=0.5):
+    """같은 줄(위 끝 0.5pt 안)에서 앞 글자 끝과 -0.5~gap pt 안에 붙은 글자를 이은 묶음의 글자 집합(norm).
+    pdfplumber 낱말은 위아래로 3pt 안에 있는 두 줄('LO' 위 'V476')을 섞어 'V'·'L'·'4'·'O'·'76'으로 쪼개고, 글자 사이가
+    2.5pt 떨어진 두 번호('V2008 V2009')는 한 낱말로 잇는다. 묶음은 실제로 붙은 글자만 이으므로 도면에 없는 글자 조합은
+    만들지 않는다. chars 항목: (글자, 중심 x, 중심 y, 위 끝, x0, x1)(돌린 글자는 읽는 방향이 가로가 되게 돌린 좌표)."""
+    runs = []
+    for c in sorted(chars, key=lambda c: (round(c[3], 1), c[4])):
+        last = next((r for r in reversed(runs) if abs(r[-1][3] - c[3]) < 0.5 and -0.5 <= c[4] - r[-1][5] <= gap), None)
+        if last is not None:
+            last.append(c)
+        else:
+            runs.append([c])
+    return {norm("".join(c[0] for c in r)) for r in runs}
 
 
 def join_rotated(words, direction):
@@ -171,7 +192,7 @@ def tag_in_text(node, tl):
             pairs |= {norm(a + b) for up, down in zip(lines, lines[1:]) for a, ax in up for b, bx in down
                       if abs(ax - bx) < 6}
         return norm(node["tag"]) in pairs
-    return norm(node["tag"]) in tl["tokens"]
+    return norm(node["tag"]) in tl["tokens"] or norm(node["tag"]) in tl.get("runs", ())
 
 
 def _box(node, margin):
@@ -268,16 +289,24 @@ def _center(bbox):
     return (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
 
 
+def is_valve_number_tag(node):
+    return (node.get("evidence") or {}).get("tag_basis") == "valve_number"
+
+
 def score_against_key(ex, key):
-    """독립 정답 대비(한 노드는 한 정답에만): 계기(정답 기호 위치에 같은 글자 태그) · 연결 표시(정답 화살표 근처 연결점)."""
-    tagged = [n for n in ex["nodes"] if n.get("tag")]
+    """독립 정답 대비(한 노드는 한 정답에만): 계기(정답 기호 위치에 같은 글자 태그) · 연결 표시(정답 화살표 근처 연결점).
+    밸브 번호 태그는 정답지에 valve_numbers가 있을 때만 센다: 정답 번호 자리(몸통 상자)에 같은 번호면 맞음, 아니면 틀림."""
+    numbers = key.get("valve_numbers")
+    tagged = [n for n in ex["nodes"] if n.get("tag") and (numbers is not None or not is_valve_number_tag(n))]
     conts = [n for n in ex["nodes"] if n.get("kind") == "continuation"]
     inst = match_one_to_one([(norm(i["tag"]),) + _center(i["bbox"]) for i in key["instruments"]], tagged,
                             lambda want, n: norm(n["tag"]) == want, NEAR)
+    valve = match_one_to_one([(norm(i["tag"]),) + _center(i["bbox"]) for i in numbers or () if i.get("bbox")],
+                             [n for n in tagged if is_valve_number_tag(n)], lambda want, n: norm(n["tag"]) == want, NEAR)
     conn = match_one_to_one([(i["label"],) + _center(i["bbox"]) for i in key["connectors"]], conts,
                             lambda k, n: True, CONN_NEAR)
     return {"instruments": len(key["instruments"]), "instrument_hits": len(inst), "tagged": len(tagged),
-            "tagged_correct": len(inst), "connectors": len(key["connectors"]), "connector_hits": len(conn),
+            "tagged_correct": len(inst) + len(valve), "connectors": len(key["connectors"]), "connector_hits": len(conn),
             "continuations": len(conts), "continuations_correct": len(conn)}
 
 

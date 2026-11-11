@@ -175,6 +175,74 @@ class AprTagInText(unittest.TestCase):
         self.assertTrue(ca.tag_in_text(n, self.TL))
 
 
+def chars_of(text, x0, top, width=1.7):
+    """한 줄에 빈틈 없이 붙인 글자들(text_layer의 chars 모양: 글자, 중심 x, 중심 y, 위 끝, x0, x1)."""
+    return [(c, x0 + width * (k + 0.5), top + 1.5, top, x0 + width * k, x0 + width * (k + 1)) for k, c in enumerate(text)]
+
+
+class AprCharRuns(unittest.TestCase):
+    """밸브 번호처럼 기호 밖 글자로 만든 태그는 쪽의 낱말이나, 같은 줄에 붙은 글자 묶음(char_runs)과 같아야 한다(F1-5)."""
+    # 022쪽 'V2026'(글자마다 따로 놓음), 015쪽 'LO' 위 'V476'(3pt 위아래라 pdfplumber 낱말이 섞임),
+    # 056쪽 'V2008'과 'V2009'(2.5pt 떨어짐, pdfplumber는 한 낱말로 이음)
+    CHARS = (chars_of("V2026", 863.2, 458.2) + chars_of("LO", 674.0, 262.6) + chars_of("V476", 672.4, 265.6)
+             + chars_of("V2008", 872.5, 206.6, 2.17) + chars_of("V2009", 886.4, 206.6, 2.17))
+    TL = {"chars": CHARS, "tokens": {"V", "2", "0", "6", "L", "4", "O", "76", "V2008V2009"},
+          "runs": ca.char_runs(CHARS)}
+
+    def tagged(self, tag):
+        return dict(node("v", 0, 0, 6, 3, tag=tag), evidence={"tag_basis": "valve_number"})
+
+    def test_numbers_written_on_the_drawing_are_found(self):
+        for tag in ("V2026", "V476", "V2008", "V2009"):
+            self.assertTrue(ca.tag_in_text(self.tagged(tag), self.TL), tag)
+
+    def test_numbers_not_on_the_drawing_are_still_caught(self):
+        """도면에 없는 번호, 한 글자 다른 번호, 두 묶음에 걸친 번호, 위아래 줄을 섞은 번호는 없는 태그다."""
+        for tag in ("V2027", "V2062", "V20262", "V476L", "LOV476", "V2008V20", "V4", "V2O26"):
+            self.assertFalse(ca.tag_in_text(self.tagged(tag), self.TL), tag)
+
+    def test_runs_do_not_join_lines_or_gaps(self):
+        self.assertEqual(ca.char_runs(self.CHARS), {"V2026", "LO", "V476", "V2008", "V2009"})
+
+
+class AprKeyValveNumbers(unittest.TestCase):
+    """정답 쪽 틀린 태그: 밸브 번호 태그는 정답지에 valve_numbers가 있을 때 그 자리·번호와 맞춘다(F1-5)."""
+    KEY = {"instruments": [{"tag": "PT 106", "bbox": [0, 0, 10, 10]}], "connectors": [],
+           "valve_numbers": [{"tag": "V2131", "bbox": [100, 100, 106, 103]}, {"tag": "V2130", "bbox": None}]}
+
+    def ex(self, *nodes):
+        return {"nodes": list(nodes)}
+
+    def valve(self, tag, x=100):
+        return dict(node("v%s%d" % (tag, x), x, 100, 6, 3, tag=tag), evidence={"tag_basis": "valve_number"})
+
+    def inst(self):
+        return dict(node("i", 0, 0, 10, 10, tag="PT-106"), evidence={"tag_basis": "isa_label"})
+
+    def wrong(self, ex, key):
+        s = ca.score_against_key(ex, key)
+        return s["tagged"] - s["tagged_correct"]
+
+    def test_right_number_at_its_valve_is_correct(self):
+        self.assertEqual(self.wrong(self.ex(self.inst(), self.valve("V2131")), self.KEY), 0)
+
+    def test_wrong_number_or_wrong_place_is_wrong(self):
+        self.assertEqual(self.wrong(self.ex(self.inst(), self.valve("V2132")), self.KEY), 1)
+        self.assertEqual(self.wrong(self.ex(self.inst(), self.valve("V2131", x=300)), self.KEY), 1)
+        self.assertEqual(self.wrong(self.ex(self.inst(), self.valve("V2130", x=200)), self.KEY), 1)  # 정답이 읽지 못한 몸통
+
+    def test_valve_numbers_are_not_scored_where_the_key_has_none(self):
+        key = dict(self.KEY)
+        del key["valve_numbers"]
+        self.assertEqual(self.wrong(self.ex(self.inst(), self.valve("V9999")), key), 0)
+
+    def test_other_wrong_tags_still_count_where_the_key_has_none(self):
+        key = dict(self.KEY)
+        del key["valve_numbers"]
+        other = dict(node("o", 50, 50, 10, 10, tag="PT-999"), evidence={"tag_basis": "isa_label"})
+        self.assertEqual(self.wrong(self.ex(self.inst(), other), key), 1)
+
+
 class AprRatchet(unittest.TestCase):
     def base(self):
         totals = {"pages": 2, "bubbles": 5, "offpage_labels": 3, "failed_pages": 0, "tag_exact": 4, "paired": 0,
