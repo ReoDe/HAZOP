@@ -363,9 +363,7 @@ class LineTickTest(unittest.TestCase):
         self.assertEqual([n for n in ex["nodes"] if n["kind"] == "tee"], [])
         self.assertEqual(sum(1 for o in ex["drawing"]["ignored_objects"] if o.get("reason") == "line_tick"), 4)
 
-    def test_one_pair_or_perpendicular_marks_are_not_ticks(self):
-        one = extract([prim([(50, 100), (100, 100)], False)] + ticks_at((60,)))
-        self.assertFalse(any(r["line_type"] == "pdf_pneumatic" for r in one["relations"] + one["unresolved_connectors"]))
+    def test_perpendicular_marks_are_not_ticks(self):
         plates = [prim([(x, 98), (x, 102)], False) for x in (60, 61, 80, 81)]
         perp = extract([prim([(50, 100), (100, 100)], False)] + plates)
         self.assertFalse(any(o.get("reason") == "line_tick" for o in perp["drawing"]["ignored_objects"]))
@@ -449,6 +447,35 @@ class SafetyValveSpringTest(unittest.TestCase):
         ex = extract([prim(GATE, True), prim([(50, 100), (100, 100)], False)] + three)
         self.assertEqual(ticked(ex), [])
         self.assertNotIn("pdf_pneumatic", line_types(ex))
+
+
+class LoneTickTest(unittest.TestCase):
+    """선에 빗금 묶음이 하나뿐일 때(F1-4): 빗금이 정확히 둘(//)이고 선이 빗금보다 길면 공압 신호 표시다(범례 1.7-1 4/4).
+    계기 공기 공급선, I/P 변환기에서 구동부로 가는 선처럼 짧은 공압선에는 // 가 한 묶음만 들어간다."""
+
+    def test_one_pair_marks_the_line_as_pneumatic(self):
+        ex = extract([prim(GATE, True), prim([(50, 100), (100, 100)], False)] + ticks_at((60,)))
+        self.assertEqual(line_types(ex), {"pdf_pneumatic"})
+        self.assertEqual(len(ticked(ex)), 2)
+        self.assertEqual([n for n in ex["nodes"] if n["kind"] == "tee"], [])
+
+    def test_pair_on_a_line_shorter_than_ten_points_is_a_mark_too(self):
+        """APR1400 028쪽 I/P 변환기(TY 970) 그대로: 계기 원과 구동부 쪽 삼각형을 잇는 6pt 공압선 위 // 한 묶음.
+        신호선 빗금은 10pt 이상 선에서만 찾지만 이 묶음은 남겨 두면 선을 잘라 고리를 만든다."""
+        air_line = [ring(465.28, 287.68, 5.27),
+                    prim([(479.22, 290.32), (479.22, 285.05), (476.58, 287.69), (479.22, 290.32)]),
+                    prim([(476.58, 287.69), (470.55, 287.69)], False)]
+        pair = [prim([(474.46, 287.09), (473.27, 288.28)], False), prim([(473.87, 287.09), (472.67, 288.28)], False)]
+        ex = extract(air_line + pair)
+        self.assertEqual(len(ticked(ex)), 2)
+        self.assertEqual(line_types(ex), {"pdf_pneumatic"})
+        self.assertFalse([u for u in ex["validation"]["unknowns"] if u["check"] == "self_loop"])
+
+    def test_pair_longer_than_the_line_it_crosses_is_not_a_mark(self):
+        """143쪽 증기 트랩 기호: 2.7pt 선을 3.3pt 사선 둘이 가로지른다. 기호의 일부다."""
+        strokes = [prim([(x - 1.2, 101.2), (x + 1.2, 98.8)], False) for x in (60.9, 61.7)]
+        ex = extract([prim(GATE, True), prim([(60, 100), (62.7, 100)], False)] + strokes)
+        self.assertEqual(ticked(ex), [])
 
 
 def plate(x, y=100.0, half=1.5):

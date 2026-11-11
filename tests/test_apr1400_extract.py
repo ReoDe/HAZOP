@@ -308,6 +308,37 @@ class MainSteamSafetyValves(unittest.TestCase):
         self.assertEqual([ends.get(v["local_id"], 0) for v in valves], [4] * 5)
 
 
+PAGE_028 = paths.folder("APR1400", "by-drawing",
+                        "028_Ch09_Fig9.2.2-1_s4of4_Component_Cooling_Water_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_028), "pdfplumber 또는 APR1400 028쪽 PDF 없음(저장소 밖 자료)")
+class LonePneumaticMarks(unittest.TestCase):
+    """028쪽(9.2.2-1 S4)의 I/P 변환기: 계기 공기 공급선과 구동부로 가는 짧은 공압선에 // 가 한 묶음씩 있다."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_028, page=0)
+
+    def test_pair_does_not_cut_its_line_into_loops(self):
+        """TY 960에서 구동부로 가는 13.6pt 선: // 가 선을 잘라 한 분기점에 0 길이 고리 다섯 개가 걸리던 자리.
+        이제 계기와 밸브를 잇는 신호 관계 하나다(구동부가 밸브에 합쳐져 선 종류는 pdf_solid로 남는다)."""
+        loops = {u["target"] for u in self.ex["validation"]["unknowns"] if u["check"] == "self_loop"}
+        here = [r["source_object_id"] for r in self.ex["unresolved_connectors"] if r["local_id"] in loops
+                and all(abs(e["point"][0] - 537.6) <= 3 and abs(e["point"][1] - 272.6) <= 3 for e in r["endpoints"])]
+        self.assertEqual(here, [])
+        self.assertEqual(len(ticks_near(self.ex, (537.6, 272.6), reach=2.0)), 2)
+        line = [r for r in self.ex["relations"] if [e["point"] for e in r["endpoints"]] ==
+                [[544.372, 272.615], [530.813, 272.615]]]
+        self.assertEqual([(r["kind"], [e["status"] for e in r["endpoints"]]) for r in line],
+                         [("signal_connection", ["connected", "connected"])])
+
+    def test_air_supply_stub_is_a_pneumatic_line(self):
+        """TY 960 아래 계기 공기(IA) 공급선: 원에서 IA 물결 표시까지 7.5pt, // 한 묶음."""
+        self.assertEqual(len(ticks_near(self.ex, (518.4, 272.6), reach=2.0)), 2)
+        self.assertEqual(len(pneumatic_through(self.ex, (518.4, 272.6))), 1)
+
+
 class PrefixInference(unittest.TestCase):
     """같은 쪽 태그에서 계통 접두를 빌리는 규칙(_assign_tags (b)): 태그 하나뿐인 접두는 빌리지 않는다(9.2.2-1 시트 4의
     'QIAS-PV1686' 한 개가 계기 18개에 'QIAS-'를 붙인 결함)."""
