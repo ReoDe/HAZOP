@@ -103,6 +103,50 @@ def _black_fill_groups(fills, prm):
     return out
 
 
+def _cut_through(pts, box):
+    """꺾은선 pts가 상자의 긴 축 방향으로 상자를 끊기지 않고 지나가면 들어가는 변과 나가는 변에서 나눈 두 조각.
+    지나가지 않으면 None. 옆으로 가로지르는 선이나 상자 안에서 끝나는 선은 나누지 않는다."""
+    axis = 0 if _w(box) >= _h(box) else 1
+    lo, hi, side_lo, side_hi = box[axis], box[axis + 2], box[1 - axis], box[3 - axis]
+    for k, (a, b) in enumerate(_segs(pts)):
+        if not (min(a[axis], b[axis]) < lo and max(a[axis], b[axis]) > hi):
+            continue
+
+        def at(v):
+            t = (v - a[axis]) / (b[axis] - a[axis])
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        first, second = (at(lo), at(hi)) if a[axis] < b[axis] else (at(hi), at(lo))
+        if all(side_lo <= q[1 - axis] <= side_hi for q in (first, second)):
+            return pts[:k + 1] + [first], [second] + pts[k + 1:]
+    return None
+
+
+def _cut_at_boxes(polys, boxes):
+    """검게 칠한 밸브 몸통(boxes) 밑을 끊지 않고 그린 배관을 몸통 양 끝에서 나눈다. 채움이 선을 덮어 그림으로는 끊긴 것과
+    같지만, 선이 하나면 양쪽 배관이 밸브를 건너 이어지고 밸브 노드에는 배관이 닿지 않는다. 폭과 높이가 거의 같은 몸통은
+    배관 방향을 알 수 없어 나누지 않는다."""
+    boxes = [b for b in boxes if abs(_w(b) - _h(b)) > 0.3]
+    if not boxes:
+        return polys
+    out = []
+    for p in polys:
+        pieces = [p["pts"]]
+        for box in boxes:
+            if _box_gap(p["bbox"], box) > 0:
+                continue
+            cut = []
+            for pts in pieces:
+                halves = _cut_through(pts, box)
+                cut += list(halves) if halves else [pts]
+            pieces = cut
+        if len(pieces) == 1:
+            out.append(p)
+        else:
+            out += [dict(p, pts=pts, bbox=(min(q[0] for q in pts), min(q[1] for q in pts), max(q[0] for q in pts),
+                                           max(q[1] for q in pts))) for pts in pieces]
+    return out
+
+
 def _nearest_sym(p, syms, tol):
     best = None
     for s in syms:
@@ -444,11 +488,11 @@ def _merge_appendages(syms, chains, prm):
     """연결이 하나도 없는 기호가 더 큰 기호 바로 옆(큰 기호 긴 변 × 비율 안)에 있으면 그 기호의 부속(히터 등)으로 합친다."""
     linked = {id(v[1]) for ch in chains for v, _, _ in ch["ends"] if v[0] == "sym"}
     for s in sorted(syms, key=lambda s: _w(s.bbox) * _h(s.bbox)):
-        if id(s) in linked or not s.alive:
-            continue
+        if id(s) in linked or not s.alive or s.seed is not None:
+            continue  # 검정 견본으로 올린 몸통(seed)은 배관이 닿지 않아도 제 기호다. 옆 기호의 부속으로 합치지 않는다
         best = None
         for t in syms:
-            if t is s or not t.alive or _w(t.bbox) * _h(t.bbox) <= _w(s.bbox) * _h(s.bbox):
+            if t is s or not t.alive or t.seed is not None or _w(t.bbox) * _h(t.bbox) <= _w(s.bbox) * _h(s.bbox):
                 continue
             gap = _box_gap(s.bbox, t.bbox)
             if gap <= prm["appendage_gap_ratio"] * max(_w(t.bbox), _h(t.bbox)) and (best is None or gap < best[0]):

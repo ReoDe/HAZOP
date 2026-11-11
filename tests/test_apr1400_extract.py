@@ -13,6 +13,7 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+from hazop import paths  # noqa: E402
 from hazop.extract.adapters import pdf_vector  # noqa: E402
 
 FIX = os.path.join(REPO_ROOT, "tests", "fixtures", "apr1400")
@@ -130,11 +131,56 @@ class ClosedValves(unittest.TestCase):
         self.assertGreaterEqual(len(ends), 2)
         self.assertEqual(valve["attributes"]["valve_type"], "globe")
 
+    def test_each_closed_valve_is_one_node_with_valve_category(self):
+        """정답의 닫힌 밸브 하나에 NC 노드가 정확히 하나이고, 종류를 못 정했어도 분류는 밸브다."""
+        for seq, (ex, key) in self.pages.items():
+            for item in key["closed_valves"]:
+                hits = [n for n in self.closed_nodes(ex) if within(center(node_box(n)), item["bbox"], self.SLACK)]
+                self.assertEqual(len(hits), 1, (seq, item))
+                self.assertEqual(hits[0]["category"], "valve", (seq, item))
+
+    def test_every_closed_valve_stands_on_a_pipe(self):
+        """정답의 닫힌 밸브 15개는 모두 배관 위에 있다. 물리 배관 끝이 둘 이상 닿아야 한다."""
+        for seq, (ex, key) in self.pages.items():
+            loose = []
+            for item in key["closed_valves"]:
+                (valve,) = [n for n in self.closed_nodes(ex) if within(center(node_box(n)), item["bbox"], self.SLACK)]
+                ends = [e for r in ex["relations"] + ex["unresolved_connectors"] if r["kind"] == "physical_connection"
+                        for e in r["endpoints"] if e["node_local_id"] == valve["local_id"]]
+                if len(ends) < 2:
+                    loose.append((item.get("number") or item["tag"], len(ends)))
+            self.assertEqual(loose, [], seq)
+
     def test_reducer_drawn_against_a_closed_valve_is_not_a_pipe_cap(self):
         ex, _ = self.pages[12]
         reducer = node_at(ex, [179.3, 275.0, 183.9, 279.6])  # 418번 밸브 아래에 붙여 그린 3"×2" 축소관
         self.assertIsNotNone(reducer)
         self.assertNotEqual(reducer["kind"], "pipe_cap")
+
+
+PAGE_132 = paths.folder("APR1400", "by-drawing", "132_Ch10_Fig10.4.10-1_s2of3_Auxiliary_Steam_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_132), "pdfplumber 또는 APR1400 132쪽 PDF 없음(저장소 밖 자료)")
+class LargeSymbolRegression(unittest.TestCase):
+    """132쪽(10.4.10-1 S2)은 쪽 절반을 덮는 큰 묶음 기호가 있다. 검은 밸브를 따로 읽게 한 뒤 그 기호에 삼각형이 둘만 남아
+    제어 밸브로 읽혔고, 안쪽 TI·PI 원 3개가 글자를 빼앗겨 종류를 잃었다(F1-3 검토). 2ce16b9의 판정을 고정한다."""
+
+    INDICATORS = {"TI": [206, 418, 221, 433], "PI-1": [593, 470, 608, 485], "PI-2": [425, 474, 440, 489]}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_132, page=0)
+
+    def test_indicators_inside_the_large_symbol_keep_their_kind(self):
+        kinds = {name: node_at(self.ex, box)["kind"] for name, box in self.INDICATORS.items()}
+        self.assertEqual(kinds, {name: "indicator" for name in self.INDICATORS})
+
+    def test_large_symbol_is_not_read_as_a_valve(self):
+        big = max(self.ex["nodes"], key=lambda n: (n.get("geometry") or {}).get("width", 0) *
+                  (n.get("geometry") or {}).get("height", 0))
+        self.assertGreater(big["geometry"]["width"], 400)
+        self.assertIsNone(big["kind"])
 
 
 class PrefixInference(unittest.TestCase):

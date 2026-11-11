@@ -44,7 +44,7 @@ from .pdf_vector_common import (
 )
 from .pdf_vector_grouping import (
     _Sym, _cluster_bodies, _nearest_sym, _end_status, _plate_assemblies, _group_symbols, _merge_appendages,
-    _black_fill_groups,
+    _black_fill_groups, _cut_at_boxes,
 )
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
@@ -496,6 +496,10 @@ def _line_dots(dashes, polys, prm):
 
 def _attach(p, syms, markers, prm):
     s = _nearest_sym(p, syms, prm["attach_tol"])
+    if s is not None and s.seed is None:
+        # 큰 묶음 기호의 상자 안에 닫힌 밸브(seed)가 들어 있으면 상자 거리로는 큰 기호가 이긴다. 선 끝이 그 밸브에
+        # 닿았으면 밸브에 붙인다
+        s = _nearest_sym(p, [t for t in syms if t.seed is not None], prm["end_tol"]) or s
     if s is not None:
         return s, "pdf_path_endpoint"
     for m in markers:
@@ -777,7 +781,10 @@ def _shape_features(sym, prm):
     found = set()
     if getattr(sym, "plate_valve", None):  # 판 사이 원판·공(_plate_assemblies)
         found.add("plate_valve:%s" % sym.plate_valve)
-    if len(tris) == 2:
+    # 나비 몸통의 두 삼각형은 붙어 있다. 사이에 글로브·볼의 점이 끼어도 간격은 삼각형 크기보다 작다. 큰 묶음 기호 안에 멀리
+    # 떨어진 삼각형이 우연히 둘 남은 것은 밸브 몸통이 아니다(APR1400 132쪽, docs/2026-11-11-unit-f1/README.md F1-3 검토)
+    if len(tris) == 2 and _box_gap(tris[0]["bbox"], tris[1]["bbox"]) <= max(
+            max(_w(t["bbox"]), _h(t["bbox"])) for t in tris):
         found.add("bowtie")
         bow = _union(tris[0]["bbox"], tris[1]["bbox"])
         # 몸통 bbox 밖에 중심이 있는 몸체 = 구동부(안쪽 원은 글로브 표시라 구동부가 아니다)
@@ -967,6 +974,8 @@ def _promote_black_symbols(cls, prm):
     cls["bodies"] = [dict(b, seed=seed[id(b)]) if body(b) else b for b in cls["bodies"] if not outline_of_seed(b)] +         [dict(m, solid=True, closed=True, seed=seed[id(m)]) for m in cls["markers"] if body(m)]
     cls["markers"] = tagged(m for m in cls["markers"] if not body(m)) + tagged(d for d in cls["dashes"] if id(d) in seed)
     cls["dashes"] = [d for d in cls["dashes"] if id(d) not in seed]
+    # 기호를 묶기 전에 나눈다. 뒤에 나누면 큰 기호 상자 안을 지나는 선이 그 기호의 내부선으로 먼저 흡수된다
+    cls["polys"] = _cut_at_boxes(cls["polys"], boxes)
 
 
 def _black_fill_signature(group):
@@ -1137,7 +1146,11 @@ def analyze(width, height, words, prims, params=None):
             ch["pneumatic"] = True
     dots = _line_dots(dashes, polys, prm)  # 실선 위 점(매설 배관 무늬)은 점선 조각이 아니다
     cls["dots"] = [d for d in dashes if d["id"] in dots]
-    chains += _build_dashed(syms, [d for d in dashes if d["id"] not in dots], markers, prm)
+    # 점선도 검정 견본으로 올린 몸통(seed) 밑을 끊기지 않고 지나갈 수 있다. 몸통 안의 조각을 빼면 사슬이 거기서 끊겨
+    # 양쪽 끝이 밸브에 붙는다(실선의 _cut_at_boxes와 같은 일)
+    cores = [s.core for s in syms if s.seed is not None]
+    chains += _build_dashed(syms, [d for d in dashes if d["id"] not in dots
+                                   and not any(_inside(_center(d["bbox"]), c) for c in cores)], markers, prm)
     syms = _merge_appendages(syms, chains, prm)
     blocks = _text_blocks(words, prm)
     return {"params": prm, "classified": cls, "symbols": syms, "tees": tees, "chains": chains,
@@ -1304,10 +1317,11 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         text = blocks[bi]["text"] if bi is not None else ""
         kind, basis = _classify(s, text, 0 if id(s) in on_valve else degree.get(id(s), 0), prm, marks.get(n - 1, []))
         symbol_id, symbol_attrs = None, {}
+        valve_body = False  # 몸통이 밸브인 것은 알지만 종류를 정하지 못함
         if getattr(s, "plate_valve", None):
             symbol_attrs = {"valve_type": s.plate_valve}
             if id(s) in stemmed or any(_box_gap(a.bbox, s.bbox) <= prm["attach_tol"] for a in actuators):
-                kind = None  # 사전 몸통과 같이, 구동부가 붙은 몸통은 구동 방식을 정하기 전까지 수동으로 두지 않는다
+                kind, valve_body = None, True  # 사전 몸통과 같이, 구동부가 붙은 몸통은 구동 방식을 정하기 전까지 수동으로 두지 않는다
                 _issue(unknowns, "actuated_valve_pending", "구동부 기호가 붙은 밸브 몸통: 구동 방식은 아직 정하지 않음",
                        sid, local_id, "kind")
         fallback = basis == PIPE_CAP_BASIS  # 끝막음은 형상 규칙이 아니라 뒤처리 규칙: 사전에 후보가 없을 때만 남긴다(§4.2 5번)
@@ -1331,7 +1345,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                     symbol_attrs = {k: v for k, v in sorted(hit.attributes.items()) if k in rules.REGISTRY.properties}
                     reach = ACTUATOR_REACH_RATIO * max(_w(s.bbox), _h(s.bbox))
                     if kind == "manual_valve" and any(_box_gap(a.bbox, s.bbox) <= reach for a in actuators):
-                        kind = None  # 몸통만으로는 수동인지 모른다. 구동부를 밸브에 합치는 단계(S5) 전에는 정하지 않는다
+                        kind, valve_body = None, True  # 몸통만으로는 수동인지 모른다. 구동부를 밸브에 합치는 단계(S5) 전에는 정하지 않는다
                         _issue(unknowns, "actuated_valve_pending", "구동부 기호가 붙은 밸브 몸통: 구동 방식은 아직 정하지 않음",
                                sid, local_id, "kind")
             elif hit.outcome == "ambiguous":
@@ -1342,11 +1356,15 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             # 몸통은 검정 견본에 맞았지만 묶인 기호 전체는 사전에 없다(벨로스 같은 다른 선이 몸통에 붙음). 종류는 비워 두고
             # 검게 칠한 몸통이 뜻하는 정상 위치만 남긴다
             symbol_attrs = {k: v for k, v in sorted(seed.attributes.items()) if k == "normal_position"}
-            basis = "black_body:%s" % seed.entry.id
+            basis, valve_body = "black_body:%s" % seed.entry.id, True
         if rules.KIND_CATEGORY.get(kind) == "instrument" or (kind is None and shape_of[n - 1][0] == "instrument"):
             instrument_ids.add(local_id)  # 측정 연결 판정: 계기로 분류됐거나 원형이고 다른 종류 근거가 없는 기호
         category = rules.KIND_CATEGORY.get(kind)
         classification = "classified" if category else "unclassified"
+        if kind is None and valve_body:
+            # 종류는 못 정했어도 분류는 밸브다. 경로 분석과 검토구간 나누기는 분류로 밸브를 가리므로, 분류까지 비우면 닫힌
+            # 밸브가 있는 길을 정상 유로로 읽는다. 종류 없음 미확인은 그대로 남긴다
+            category = "valve"
         if kind is None:
             _issue(unknowns, "missing_kind", "형상·글자 규칙으로 종류를 정할 근거 없음", sid, local_id, "kind")
         node_out.append({

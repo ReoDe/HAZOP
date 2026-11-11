@@ -127,6 +127,10 @@ def compare(args):
     print("\n같은 자리 기호의 태그 변화(있음 여부 전 → 후)")
     for (t0, t1), n in sorted(tag_change.items(), key=lambda x: -x[1]):
         print("  %s → %s: %d" % ("있음" if t0 else "없음", "있음" if t1 else "없음", n))
+    lost = sum(n for (k0, k1), n in kind_change.items() if k0 is not None and k1 is None)
+    other = sum(n for (k0, k1), n in kind_change.items() if k0 is not None and k1 is not None)
+    print("\n'전'에 종류가 있던 기호: 같은 자리에서 종류를 잃음 %d · 다른 종류가 됨 %d · 같은 자리에 없음 %d"
+          % (lost, other, sum(n for k, n in gone.items() if k is not None)))
     print("\n새로 생긴 기호 노드(종류, 정상 위치): %d" % sum(born.values()))
     for (k, p), n in sorted(born.items(), key=lambda x: -x[1]):
         print("  %s %s: %d" % (k, p or "", n))
@@ -138,6 +142,22 @@ def compare(args):
         print("  %s: %d → %d (%+d)" % (check, unknown_b[check], unknown_a[check], unknown_a[check] - unknown_b[check]))
     print("  합계: %d → %d (%+d)" % (sum(unknown_b.values()), sum(unknown_a.values()),
                                  sum(unknown_a.values()) - sum(unknown_b.values())))
+    closed, ends_on, loose = collections.Counter(), collections.Counter(), collections.Counter()
+    for seq in sorted(after):
+        a = after[seq]
+        ends = collections.Counter(e["node_local_id"] for r in a["relations"] + a["unresolved_connectors"]
+                                   if r["kind"] == "physical_connection" for e in r["endpoints"] if e["node_local_id"])
+        for n in _symbol_nodes(a):
+            if (n.get("attributes") or {}).get("normal_position") == "NC" and n["kind"] != "damper":
+                closed[(n["kind"], n["category"])] += 1
+                ends_on[min(ends.get(n["local_id"], 0), 2)] += 1
+                if not ends.get(n["local_id"]):
+                    loose[seq] += 1
+    print("\n'후'의 NC 밸브 노드(댐퍼 제외) %d개: (종류, 분류)별" % sum(closed.values()))
+    for (k, c), n in sorted(closed.items(), key=lambda x: -x[1]):
+        print("  %s / %s: %d" % (k, c, n))
+    print("  닿은 물리 배관 끝: 0개 %d · 1개 %d · 2개 이상 %d" % (ends_on[0], ends_on[1], ends_on[2]))
+    print("  배관 끝이 하나도 닿지 않은 것의 쪽별 수: %s" % ", ".join("%s쪽 %d" % x for x in sorted(loose.items())))
     if args.csv:
         with open(args.csv, "w", encoding="utf-8-sig", newline="") as fh:
             w = csv.writer(fh)

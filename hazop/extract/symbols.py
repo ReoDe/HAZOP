@@ -53,7 +53,7 @@ WORD_RE = re.compile(r"^[A-Z]+$")
 STRUCTURE_FEATURES = {
     "plate_valve:butterfly": "배관을 가로지르는 두 판 사이에 원판 점(버터플라이 밸브 몸통)",
     "plate_valve:ball": "배관을 가로지르는 두 판 사이에 공(볼 밸브 몸통)",
-    "bowtie": "삼각형 몸체가 정확히 둘(꼭짓점을 맞댄 나비 모양 밸브 몸통)",
+    "bowtie": "삼각형 몸체가 정확히 둘이고 서로 붙어 있음(꼭짓점을 맞댄 나비 모양 밸브 몸통)",
     "outside_circle": "나비 몸통 상자 밖에 가운데가 있는 원(전동 구동부)",
     "outside_body": "나비 몸통 상자 밖에 가운데가 있는 몸체(구동부)",
     "body_with_springs": "몸체가 있고 기울기와 길이가 같은 사선이 둘 이상(스프링)",

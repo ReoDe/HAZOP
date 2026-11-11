@@ -10,8 +10,12 @@ import unittest
 from unittest import mock
 
 from hazop import paths
+from hazop.analysis import explore
 from hazop.extract import symbols
 from hazop.extract.adapters import pdf_vector
+from hazop.graph.build import build_graph
+from hazop.graph.query import GraphQuery
+from hazop.study import segment
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -972,14 +976,63 @@ BLACK_GLOBE = [filled([(181.6, 270.3), (179.3, 265.6), (183.9, 265.6)]),
 GLOBE_PIPES = [pipe((181.6, 250.0), (181.6, 265.6)), pipe((181.6, 274.9), (181.6, 290.0))]
 
 
+# 닫힌 밸브 양옆의 열린 게이트 밸브. 경로 분석의 출발점과 도착점으로 쓴다
+OPEN_LEFT = prim([(60, 100), (66, 103), (66, 100), (60, 103), (60, 100)])
+OPEN_RIGHT = prim([(140, 100), (146, 103), (146, 100), (140, 103), (140, 100)])
+OUTER_PIPES = [pipe((66, 101.5), (100, 101.5)), pipe((106, 101.5), (140, 101.5))]
+
+
 def closed_nodes(ex):
     return [n for n in ex["nodes"] if n["attributes"].get("normal_position") == "NC"]
+
+
+def node_at_x(ex, x):
+    (n,) = [n for n in ex["nodes"] if n["geometry"]["x"] <= x <= n["geometry"]["x"] + n["geometry"]["width"]
+            and "-sym-" in n["source_object_id"]]
+    return n
+
+
+def path_between_open_valves(ex):
+    """왼쪽 열린 밸브에서 오른쪽 열린 밸브까지의 경로 분석 결과(⑤ 분석이 쓰는 hazop.analysis.explore)."""
+    graph = build_graph(ex)
+    query = GraphQuery(graph)
+    start, goal = (query.resolve(node_at_x(ex, x)["local_id"]) for x in (63, 143))
+    members = explore.region_members(graph, [n["entity_id"] for n in graph["nodes"] if n["node_type"] != "pipe_segment"])
+    found = explore.explore(query, start, members, ["has_endpoint"], 20, 100)
+    return next(r for r in found["reached"] if r["entity_id"] == goal), graph
 
 
 def pipe_ends_on(ex, node):
     """이 노드에 닿은 배관 끝. 반대쪽 끝이 뜬 배관은 미해결 연결로 남는다."""
     return [e for r in ex["relations"] + ex["unresolved_connectors"] if r["kind"] == "physical_connection"
             for e in r["endpoints"] if e["node_local_id"] == node["local_id"]]
+
+
+class FarApartTrianglesTest(unittest.TestCase):
+    """나비 구조 규칙(삼각형 몸체 둘 = 밸브 몸통)은 두 삼각형이 붙어 있을 때만 쓴다. 큰 묶음 기호 안에 멀리 떨어진 삼각형이
+    우연히 둘 남으면 그 기호가 밸브가 되고, 밸브 상자 안 글자를 표기로 가져가 안쪽 계기의 글자를 빼앗는다(132쪽)."""
+
+    FRAME = prim([(20, 20), (220, 20), (220, 120), (20, 120), (20, 20)])
+    FAR = [prim([(20, 20), (26, 23), (20, 26), (20, 20)]), prim([(220, 114), (214, 117), (220, 120), (220, 114)])]
+    LETTERS = [word("TI", 118.2, 65.0), word("101", 117.3, 68.5)]
+
+    def run_page(self, prims):
+        a = pdf_vector.analyze(400, 300, self.LETTERS, prims)
+        return pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+
+    def test_two_triangles_far_apart_in_one_large_symbol_are_not_a_valve_body(self):
+        (big,) = self.run_page([self.FRAME] + self.FAR)["nodes"]
+        self.assertIsNone(big["kind"])
+
+    def test_letters_inside_that_symbol_are_not_taken_as_valve_marks(self):
+        """밸브로 읽히면 상자 안 글자가 모두 밸브 표기(symbol_marks)가 되어 다른 기호의 라벨·태그로 쓰이지 못한다."""
+        (big,) = self.run_page([self.FRAME] + self.FAR)["nodes"]
+        self.assertEqual((big["evidence"]["symbol_marks"], big["label_text"].split()), ([], ["TI", "101"]))
+
+    def test_triangles_with_a_ball_between_them_are_still_a_valve_body(self):
+        """글로브·볼 밸브는 두 삼각형 사이에 점이 끼어 꼭짓점이 떨어져 있다. 간격이 삼각형 크기보다 작으면 나비다."""
+        ex = extract([prim([(0, 0), (4, 3), (0, 6), (0, 0)]), prim([(10, 0), (6, 3), (10, 6), (10, 0)]), ring(5, 3, 1.0)])
+        self.assertEqual([n["kind"] for n in ex["nodes"]], ["manual_valve"])
 
 
 class ClosedValveTest(unittest.TestCase):
@@ -1059,6 +1112,96 @@ class ClosedValveTest(unittest.TestCase):
         self.assertNotIn("symbol_id", valve["evidence"])
         self.assertIn("missing_kind", [u["check"] for u in ex["validation"]["unknowns"]
                                        if u["target"] == valve["local_id"]])
+
+    def test_closed_body_of_unknown_kind_still_closes_the_path(self):
+        """종류를 못 정한 닫힌 몸통도 경로 분석에서는 닫힌 밸브다. 아니면 닫힌 밸브가 있는 길이 정상 유로가 된다."""
+        bonnet = [pipe((103, 101.5), (103, 98.5)), pipe((101.5, 98.5), (104.5, 98.5))]
+        ex = extract([OPEN_LEFT, OPEN_RIGHT, filled(BLACK_GATE)] + bonnet + OUTER_PIPES)
+        (valve,) = closed_nodes(ex)
+        self.assertEqual((valve["kind"], valve["category"], valve["classification"]), (None, "valve", "unclassified"))
+        path, graph = path_between_open_valves(ex)
+        self.assertEqual((path["valve_state"], path["normal_operation_flow"]), ("closed_valve_on_path", False))
+        node = next(n for n in graph["nodes"] if n.get("local_id") == valve["local_id"])
+        self.assertEqual(segment.part_of(node), segment.Part.VALVE)
+        self.assertTrue(segment.traits(node).source)
+
+    def test_valve_body_waiting_for_its_actuator_is_still_a_valve(self):
+        """구동부가 붙어 구동 방식을 정하지 못한 몸통(actuated_valve_pending)도 종류만 비고 밸브로 남는다."""
+        motor = ring(103, 94, 1.85)  # 전동 구동부 원이 몸통 가까이 있지만 축으로 이어지지 않았다
+        prims = [OPEN_LEFT, OPEN_RIGHT, filled(BLACK_GATE), motor] + OUTER_PIPES
+        a = pdf_vector.analyze(400, 300, [word("M", 102.4, 93.0, 2.0)], prims)
+        ex = pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+        (valve,) = closed_nodes(ex)
+        self.assertEqual((valve["kind"], valve["category"]), (None, "valve"))
+        self.assertIn("actuated_valve_pending", [u["check"] for u in ex["validation"]["unknowns"]
+                                                 if u["target"] == valve["local_id"]])
+        path, _ = path_between_open_valves(ex)
+        self.assertEqual(path["valve_state"], "closed_valve_on_path")
+
+    def test_pipe_drawn_straight_under_a_closed_valve_is_cut_at_the_valve(self):
+        """검은 몸통 밑으로 배관을 끊지 않고 그린 도면이 있다. 선을 몸통에서 나누지 않으면 양쪽이 밸브를 건너 이어진다."""
+        ex = extract([OPEN_LEFT, OPEN_RIGHT, filled(BLACK_GATE), pipe((66, 101.5), (140, 101.5))])
+        (valve,) = closed_nodes(ex)
+        self.assertEqual(len(pipe_ends_on(ex, valve)), 2)
+        direct = [r for r in ex["relations"]
+                  if {e["node_local_id"] for e in r["endpoints"]} == {node_at_x(ex, 63)["local_id"],
+                                                                     node_at_x(ex, 143)["local_id"]}]
+        self.assertEqual(direct, [])
+        path, _ = path_between_open_valves(ex)
+        self.assertEqual((path["valve_state"], path["normal_operation_flow"]), ("closed_valve_on_path", False))
+
+    def test_dashed_line_drawn_straight_under_a_closed_valve_ends_at_the_valve(self):
+        ex = extract([OPEN_LEFT, OPEN_RIGHT, filled(BLACK_GATE), dashed([(66, 101.5), (140, 101.5)])])
+        (valve,) = closed_nodes(ex)
+        ends = [e for r in ex["relations"] for e in r["endpoints"] if e["node_local_id"] == valve["local_id"]]
+        self.assertEqual(len(ends), 2)
+        self.assertEqual(sorted({e["node_local_id"] for r in ex["relations"] for e in r["endpoints"]}),
+                         sorted(n["local_id"] for n in ex["nodes"]))
+
+    def test_pipe_ends_on_a_closed_valve_inside_a_larger_symbol_attach_to_the_valve(self):
+        """큰 기호의 상자 안에 닫힌 밸브가 있어도, 밸브에 닿은 배관 끝은 큰 기호가 아니라 밸브에 붙는다(023쪽).
+        선 끝이 몸통 변에서 0.01pt 떨어져 있으면 상자 거리로는 선 끝을 품은 큰 기호(거리 0)가 이긴다."""
+        frame = prim([(40, 60), (160, 60), (160, 140), (40, 140), (40, 60)])
+        ex = extract([frame, filled(BLACK_GATE), pipe((40, 101.5), (99.99, 101.5)), pipe((106.01, 101.5), (160, 101.5))])
+        (valve,) = closed_nodes(ex)
+        self.assertEqual(len(pipe_ends_on(ex, valve)), 2)
+
+    def test_pipe_under_a_closed_valve_inside_a_larger_symbol_is_still_cut(self):
+        """큰 기호 상자 안을 지나는 선은 그 기호의 내부선으로 흡수되곤 한다. 밸브 밑을 지나는 배관은 그 전에 나눈다(128쪽)."""
+        frame = prim([(40, 60), (160, 60), (160, 140), (40, 140), (40, 60)])
+        ex = extract([frame, filled(BLACK_GATE), pipe((60, 101.5), (140, 101.5))])
+        (valve,) = closed_nodes(ex)
+        self.assertEqual(len(pipe_ends_on(ex, valve)), 2)
+
+    def test_line_crossing_a_closed_valve_sideways_is_not_cut(self):
+        """몸통을 옆으로 가로지르는 선(다른 배관이 겹쳐 지나감)은 이 밸브의 배관이 아니다."""
+        ex = extract([filled(BLACK_GATE), pipe((103, 80), (103, 120))] + GATE_PIPES)
+        (valve,) = closed_nodes(ex)
+        self.assertEqual(len(pipe_ends_on(ex, valve)), 2)
+
+    def test_closed_valve_inside_a_larger_outline_keeps_its_own_node(self):
+        """배관이 닿지 않은 닫힌 밸브가 큰 외곽 사각형 안에 있어도 그 사각형의 부속으로 합치지 않는다."""
+        frame = prim([(90, 90), (120, 90), (120, 120), (90, 120), (90, 90)])
+        ex = extract([frame, filled(BLACK_GATE)])
+        (valve,) = closed_nodes(ex)
+        self.assertEqual((valve["kind"], round(valve["geometry"]["width"], 1)), ("manual_valve", 6.0))
+
+    def test_body_drawn_as_four_thin_fills_is_left_alone(self):
+        """좌우 삼각형을 다시 반으로 나눠 네 조각으로 칠한 몸통은 조각마다 점선 조각으로 분류돼 견본에 대 보지 않는다.
+        APR1400 143쪽에는 이런 표현이 없다(F1-3 검토). 밸브로 읽지 못한다는 것과, 그 자리를 건너 배관을 잇지도 않는다는
+        것을 고정한다."""
+        quarters = [filled([(100, 100), (103, 101.5), (100, 101.5)]), filled([(100, 101.5), (103, 101.5), (100, 103)]),
+                    filled([(106, 100), (103, 101.5), (106, 101.5)]), filled([(106, 101.5), (103, 101.5), (106, 103)])]
+        ex = extract([OPEN_LEFT, OPEN_RIGHT] + quarters + OUTER_PIPES)
+        self.assertEqual(closed_nodes(ex), [])
+        self.assertEqual(ex["relations"], [])
+
+    def test_two_filled_triangles_meeting_at_a_point_read_as_a_valve_even_if_meant_as_arrowheads(self):
+        """마주 보는 화살촉 둘이 밸브와 같은 크기·비율로 꼭짓점을 맞대면 모양으로는 가를 수 없다. APR1400 143쪽에서 삼각형
+        둘로만 된 묶음 19개는 모두 밸브였다(F1-3 검토). 가는 화살촉(건물 경계 표시)은 위 시험대로 올리지 않는다."""
+        heads = [filled([(100, 100), (103, 101.5), (100, 103)]), filled([(106, 100), (103, 101.5), (106, 103)])]
+        (valve,) = closed_nodes(extract(heads + GATE_PIPES))
+        self.assertEqual(valve["attributes"]["valve_type"], "gate")
 
     def test_template_distance_limit_for_promotion_is_tighter_than_the_template(self):
         """견본의 max_distance가 느슨해도, 검은 채움을 몸체로 올리는 문턱(BLACK_SEED_DISTANCE)을 넘으면 올리지 않는다."""
