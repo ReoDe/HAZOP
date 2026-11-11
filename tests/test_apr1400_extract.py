@@ -151,6 +151,55 @@ class ClosedValves(unittest.TestCase):
                     loose.append((item.get("number") or item["tag"], len(ends)))
             self.assertEqual(loose, [], seq)
 
+    def test_pipe_runs_on_through_the_reducer_drawn_against_a_closed_valve(self):
+        """012쪽 418번 밸브 아래에는 3"×2" 축소관이 붙어 있다. 2ce16b9에서는 밸브와 축소관이 한 기호라 위아래 배관이
+        이어져 있었다. 두 기호로 읽은 뒤에도 위쪽 배관과 아래쪽 배관은 한 연결요소여야 한다."""
+        ex, key = self.pages[12]
+        item = next(i for i in key["closed_valves"] if i["number"] == "418")
+        (valve,) = [n for n in self.closed_nodes(ex) if within(center(node_box(n)), item["bbox"], self.SLACK)]
+        reducer = node_at(ex, [179.3, 275.0, 183.9, 279.6])
+        group = {n["local_id"]: n["local_id"] for n in ex["nodes"]}
+
+        def find(x):
+            while group[x] != x:
+                x = group[x]
+            return x
+        neighbours = {valve["local_id"]: set(), reducer["local_id"]: set()}
+        for r in ex["relations"]:
+            if r["kind"] != "physical_connection":
+                continue
+            a, b = (e["node_local_id"] for e in r["endpoints"])
+            group[find(a)] = find(b)
+            for x, y in ((a, b), (b, a)):
+                if x in neighbours:
+                    neighbours[x].add(y)
+        above = neighbours[valve["local_id"]] - {reducer["local_id"]}
+        below = neighbours[reducer["local_id"]] - {valve["local_id"]}
+        self.assertTrue(above and below, (above, below))
+        self.assertEqual({find(x) for x in above | below}, {find(valve["local_id"])})
+
+    def test_pipe_network_is_not_cut_into_more_pieces_than_before_closed_valves_were_read(self):
+        """닫힌 밸브를 따로 읽기 전(2ce16b9)에 물리 배관으로 이어진 노드 묶음(둘 이상)은 012쪽 2개(큰 것 51노드),
+        062쪽 22개였다. 밸브를 맞닿은 기호와 떼어 놓고 잇지 않으면 012쪽이 5개로 갈라진다(F1-3 검토)."""
+        before = {12: (2, 51), 62: (22, 12)}
+        for seq, (ex, _) in self.pages.items():
+            group = {n["local_id"]: n["local_id"] for n in ex["nodes"]}
+
+            def find(x):
+                while group[x] != x:
+                    x = group[x]
+                return x
+            for r in ex["relations"]:
+                a, b = (e["node_local_id"] for e in r["endpoints"])
+                if r["kind"] == "physical_connection" and a != b:
+                    group[find(a)] = find(b)
+            sizes = {}
+            for x in group:
+                sizes[find(x)] = sizes.get(find(x), 0) + 1
+            joined = [n for n in sizes.values() if n >= 2]
+            self.assertLessEqual(len(joined), before[seq][0], seq)
+            self.assertGreaterEqual(max(joined), before[seq][1], seq)
+
     def test_reducer_drawn_against_a_closed_valve_is_not_a_pipe_cap(self):
         ex, _ = self.pages[12]
         reducer = node_at(ex, [179.3, 275.0, 183.9, 279.6])  # 418번 밸브 아래에 붙여 그린 3"×2" 축소관
@@ -177,10 +226,13 @@ class LargeSymbolRegression(unittest.TestCase):
         self.assertEqual(kinds, {name: "indicator" for name in self.INDICATORS})
 
     def test_large_symbol_is_not_read_as_a_valve(self):
+        """미확인이던 묶음이 제어 밸브로 확정되면 종류 없음 미확인까지 사라진다. 종류 없음과 그 미확인이 함께 남아야 한다."""
         big = max(self.ex["nodes"], key=lambda n: (n.get("geometry") or {}).get("width", 0) *
                   (n.get("geometry") or {}).get("height", 0))
-        self.assertGreater(big["geometry"]["width"], 400)
-        self.assertIsNone(big["kind"])
+        self.assertEqual([round(v) for v in node_box(big)], [85, 184, 644, 528])
+        self.assertEqual((big["kind"], big["category"]), (None, None))
+        self.assertIn("missing_kind", [u["check"] for u in self.ex["validation"]["unknowns"]
+                                       if u["target"] == big["local_id"]])
 
 
 class PrefixInference(unittest.TestCase):

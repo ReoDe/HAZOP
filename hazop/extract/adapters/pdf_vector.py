@@ -44,7 +44,7 @@ from .pdf_vector_common import (
 )
 from .pdf_vector_grouping import (
     _Sym, _cluster_bodies, _nearest_sym, _end_status, _plate_assemblies, _group_symbols, _merge_appendages,
-    _black_fill_groups, _cut_at_boxes,
+    _black_fill_groups, _cut_at_boxes, _contact_chains,
 )
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
@@ -1144,6 +1144,7 @@ def analyze(width, height, words, prims, params=None):
                 _seg_dist(c, a, b)[0] <= prm["tick_host_dist"] for e in ch["evidence"] for c in marked[e]
                 for a, b in _segs(ch["pts"])):
             ch["pneumatic"] = True
+    chains += _contact_chains(syms, prm)
     dots = _line_dots(dashes, polys, prm)  # 실선 위 점(매설 배관 무늬)은 점선 조각이 아니다
     cls["dots"] = [d for d in dashes if d["id"] in dots]
     # 점선도 검정 견본으로 올린 몸통(seed) 밑을 끊기지 않고 지나갈 수 있다. 몸통 안의 조각을 빼면 사슬이 거기서 끊겨
@@ -1447,6 +1448,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             rel_kind, line_type = "measurement_connection", "pdf_solid"
         else:
             rel_kind, line_type = "physical_connection", "pdf_solid"
+        if ch.get("contact") and line_type == "pdf_solid":
+            line_type = "pdf_touching"  # 선 없이 맞닿은 두 기호(_contact_chains)
         if rel_kind in rules.RELATION_KINDS_WITH_FLOW:
             _issue(unknowns, "unknown_flow_direction", "PDF 선에서 흐름 방향을 정하지 않음", sid, local_id,
                    "flow_direction")
@@ -1456,7 +1459,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             "waypoints": [[_num(p[0]), _num(p[1])] for p in ch["pts"][1:-1]] if not ch.get("dashed") else [],
             "label": "", "label_text": "", "label_cells": [], "attributes": {}, "style": None, "parent": None,
             "geometry": None,
-            "evidence": {"classification_basis": "dash_chain" if ch.get("dashed") else "solid_path",
+            "evidence": {"classification_basis": ("dash_chain" if ch.get("dashed") else
+                                                  "touching_bodies" if ch.get("contact") else "solid_path"),
                          "pdf_objects": list(ch["evidence"]),
                          # 선이 지나는 실제 점(양 끝 포함, 점선은 조각 중심). ② 배경 SVG의 관계 경로로 그린다
                          "pdf_path": [[_num(p[0]), _num(p[1])] for p in ch["pts"]]},

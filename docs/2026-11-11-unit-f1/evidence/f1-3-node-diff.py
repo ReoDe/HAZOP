@@ -10,6 +10,11 @@
       '전' 추출의 모든 기호 노드와 관계에 사람 수정(set_tag)을 하나씩 만들고 '후' 추출에 적용해 본다
       (hazop/extract/corrections.py). 적용된 수, 번호가 밀려 자리로 다시 찾은 수, 적용하지 못한 수와 사유를 낸다.
       적용된 수정이 '전'과 다른 자리의 대상에 들어갔는지도 센다(0이어야 한다).
+  python f1-3-node-diff.py links <전 폴더> <후 폴더> [--csv <목록.csv>]
+      배관 이어짐을 견준다. 물리 배관 관계(양 끝이 노드에 붙은 것)로 노드를 연결요소로 나누고,
+      (1) '전'에서 한 연결요소였는데 '후'에서 갈라진 것(같은 자리 노드끼리 견줌),
+      (2) '후'의 NC 밸브 가운데 물리 배관이 몸통 가운데를 지나가는데 그 밸브에 붙지 않은 것(관통),
+      (3) '후'의 NC 밸브가 다른 기호와 맞닿아 있는데(상자 간격 0.5pt 이하) 둘 사이에 관계가 없는 것을 센다.
 
 이 스크립트는 저장소 파일을 고치지 않는다. 쪽별 PDF는 저장소에 없다(resources/references/APR1400_DCD/by-drawing).
 """
@@ -221,6 +226,124 @@ def carry(args):
         print("  %s: %d" % (key, total[key]))
 
 
+def _components(ex):
+    """물리 배관 관계(양 끝이 서로 다른 노드에 붙은 것)로 이은 연결요소 → {노드 local_id: 요소 번호}."""
+    parent = {n["local_id"]: n["local_id"] for n in ex["nodes"]}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    for r in ex["relations"]:
+        if r["kind"] != "physical_connection":
+            continue
+        a, b = (e["node_local_id"] for e in r["endpoints"])
+        if a and b and a != b:
+            parent[find(a)] = find(b)
+    return {x: find(x) for x in parent}
+
+
+def _through(rel, center, tol=0.6):
+    pts = (rel.get("evidence") or {}).get("pdf_path") or []
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        dx, dy = x1 - x0, y1 - y0
+        t = 0.0 if dx == dy == 0 else max(0.0, min(1.0, ((center[0] - x0) * dx + (center[1] - y0) * dy) / (dx * dx + dy * dy)))
+        if ((x0 + dx * t - center[0]) ** 2 + (y0 + dy * t - center[1]) ** 2) ** 0.5 <= tol:
+            return True
+    return False
+
+
+def links(args):
+    before, after = _pages(args.before), _pages(args.after)
+    split_comps, split_nodes, bypass, bypass_before, loose_touch, closed = 0, 0, 0, 0, 0, 0
+    lone, lone_kinds, group_splits, group_nodes = 0, collections.Counter(), 0, 0
+    rows = []
+    for seq in sorted(before):
+        b, a = before[seq], after[seq]
+        comp_b, comp_a = _components(b), _components(a)
+        index = collections.defaultdict(list)
+        for n in a["nodes"]:
+            if n.get("geometry"):
+                index[tuple(round(v) for v in _box(n))].append(n)
+        match = {}
+        for n in b["nodes"]:
+            if not n.get("geometry"):
+                continue
+            box = _box(n)
+            near = [m for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                    for m in index.get((round(box[0]) + dx, round(box[1]) + dy, round(box[2]) + dx, round(box[3]) + dy), ())
+                    if max(abs(p - q) for p, q in zip(box, _box(m))) <= 0.5]
+            if near:
+                match[n["local_id"]] = near[0]["local_id"]
+        groups = collections.defaultdict(lambda: collections.Counter())
+        for nb, na in match.items():
+            groups[comp_b[nb]][comp_a[na]] += 1
+        size_a = collections.Counter(comp_a.values())
+        kind_a = {n["local_id"]: n["kind"] for n in a["nodes"]}
+        for cb, parts in groups.items():
+            if len(parts) > 1:
+                split_comps += 1
+                main = max(parts, key=lambda c: (parts[c], c))
+                lost = sum(parts.values()) - parts[main]
+                split_nodes += lost
+                # 떨어져 나간 조각이 '후'에서 혼자인 노드(배관에서 빠진 기호)인지, 둘 이상이 이어진 배관 토막인지 가른다
+                alone = [c for c in parts if c != main and size_a[c] == 1]
+                pieces = [c for c in parts if c != main and size_a[c] > 1]
+                lone += len(alone)
+                lone_kinds.update(kind_a[c] for c in alone)
+                if pieces:
+                    group_splits += 1
+                    group_nodes += sum(parts[c] for c in pieces)
+                rows.append([seq, "갈라진 연결요소", cb, "같은 자리 노드 %d개가 %d조각으로(혼자 된 노드 %d, 이어진 토막 %d)"
+                             % (sum(parts.values()), len(parts), len(alone), len(pieces)), lost])
+        physical = [r for r in a["relations"] + a["unresolved_connectors"] if r["kind"] == "physical_connection"]
+        physical_b = [r for r in b["relations"] + b["unresolved_connectors"] if r["kind"] == "physical_connection"]
+        linked = collections.defaultdict(set)
+        for r in a["relations"] + a["unresolved_connectors"]:
+            ids = [e["node_local_id"] for e in r["endpoints"] if e["node_local_id"]]
+            for x in ids:
+                linked[x].update(ids)
+        symbols = _symbol_nodes(a)
+        for n in symbols:
+            if (n.get("attributes") or {}).get("normal_position") != "NC" or n["kind"] == "damper":
+                continue
+            closed += 1
+            box = _box(n)
+            center = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+            passing = [r for r in physical if _through(r, center)
+                       and n["local_id"] not in [e["node_local_id"] for e in r["endpoints"]]]
+            if passing:
+                bypass += 1
+                rows.append([seq, "관통", n["local_id"], n["kind"] or "", len(passing)] + [round(v, 1) for v in box])
+            if any(_through(r, center) for r in physical_b):
+                bypass_before += 1
+            for t in symbols:
+                if t is n or t["geometry"]["width"] > 60 or t["geometry"]["height"] > 60:
+                    continue
+                tb = _box(t)
+                if max(box[0] - tb[2], tb[0] - box[2], box[1] - tb[3], tb[1] - box[3]) <= 0.5 \
+                        and t["local_id"] not in linked[n["local_id"]]:
+                    loose_touch += 1
+                    rows.append([seq, "맞닿았는데 관계 없음", n["local_id"], t["local_id"], t["kind"] or ""]
+                                + [round(v, 1) for v in box])
+    print("쪽 %d" % len(before))
+    print("'전'에서 한 연결요소였다가 '후'에서 갈라진 것: 연결요소 %d개, 큰 조각에서 떨어져 나간 같은 자리 노드 %d개"
+          % (split_comps, split_nodes))
+    print("  그 가운데 '후'에서 물리 배관이 하나도 닿지 않게 된 노드: %d개 (종류별 %s)"
+          % (lone, ", ".join("%s %d" % (k, n) for k, n in lone_kinds.most_common())))
+    print("  둘 이상 이어진 배관 토막이 떨어져 나간 연결요소: %d개, 그 토막의 같은 자리 노드 %d개" % (group_splits, group_nodes))
+    print("'후'의 NC 밸브 %d개 가운데 물리 배관이 몸통 가운데를 지나가는데 그 밸브에 붙지 않은 것: %d개" % (closed, bypass))
+    print("  같은 자리를 '전'의 물리 배관이 지나가던 것: %d개" % bypass_before)
+    print("'후'의 NC 밸브가 60pt 이하 기호와 맞닿았는데(간격 0.5pt 이하) 둘 사이에 관계가 없는 것: %d쌍" % loose_touch)
+    if args.csv:
+        with open(args.csv, "w", encoding="utf-8-sig", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["seq", "what", "a", "b", "c", "x0", "y0", "x1", "y1"])
+            w.writerows(rows)
+        print("목록 %d줄 → %s" % (len(rows), args.csv))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -233,12 +356,16 @@ def main():
     c.add_argument("before")
     c.add_argument("after")
     c.add_argument("--csv")
+    li = sub.add_parser("links")
+    li.add_argument("before")
+    li.add_argument("after")
+    li.add_argument("--csv")
     k = sub.add_parser("carry")
     k.add_argument("before")
     k.add_argument("after")
     k.add_argument("--jobs", type=int, default=6)
     args = ap.parse_args()
-    {"dump": dump, "compare": compare, "carry": carry}[args.cmd](args)
+    {"dump": dump, "compare": compare, "carry": carry, "links": links}[args.cmd](args)
 
 
 if __name__ == "__main__":

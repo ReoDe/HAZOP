@@ -147,6 +147,36 @@ def _cut_at_boxes(polys, boxes):
     return out
 
 
+def _contact_chains(syms, prm):
+    """검정 견본으로 올린 몸통(seed)의 배관 방향 끝에 다른 기호가 맞닿아 있으면 두 기호를 잇는 길이 0인 사슬을 만든다.
+    밸브에 축소관을 붙여 그리면 둘 사이에 선이 없다. 올린 몸통은 맞닿은 몸체와 한 기호로 묶지 않으므로, 이 사슬이 없으면
+    배관이 그 자리에서 끊긴다. 몸통 옆에 붙은 기호(구동부 등)와 몸통을 품은 큰 기호는 잇지 않는다. 폭과 높이가 거의
+    같은 몸통은 배관 방향을 알 수 없어 잇지 않는다."""
+    out = []
+    for i, v in enumerate(syms):
+        if v.seed is None or abs(_w(v.core) - _h(v.core)) <= 0.3:
+            continue
+        axis = 0 if _w(v.core) >= _h(v.core) else 1
+        lo, hi = v.core[axis], v.core[axis + 2]
+        for j, t in enumerate(syms):
+            if t is v or (t.seed is not None and j < i) or _box_gap(v.core, t.bbox) > prm["touch_tol"]:
+                continue
+            if t.bbox[axis] >= hi - prm["touch_tol"]:
+                at = hi
+            elif t.bbox[axis + 2] <= lo + prm["touch_tol"]:
+                at = lo
+            else:
+                continue
+            a, b = max(v.core[1 - axis], t.bbox[1 - axis]), min(v.core[3 - axis], t.bbox[3 - axis])
+            if b < a:
+                continue
+            pt = (at, (a + b) / 2) if axis == 0 else ((a + b) / 2, at)
+            out.append({"pts": [pt, pt], "ends": [(("sym", v), pt, "pdf_touching_bodies"),
+                                                  (("sym", t), pt, "pdf_touching_bodies")],
+                        "evidence": sorted({v.evidence()[0], t.evidence()[0]}), "contact": True})
+    return out
+
+
 def _nearest_sym(p, syms, tol):
     best = None
     for s in syms:

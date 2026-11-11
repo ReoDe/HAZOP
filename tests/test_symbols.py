@@ -1089,6 +1089,29 @@ class ClosedValveTest(unittest.TestCase):
         self.assertEqual(len(ex["nodes"]), 2)
         self.assertNotIn("pipe_cap", [n["kind"] for n in ex["nodes"]])  # 밸브에 붙여 그린 축소관은 끝막음이 아니다
 
+    def test_closed_valve_and_the_reducer_drawn_against_it_are_joined(self):
+        """밸브에 축소관을 붙여 그리면 둘 사이에 선이 없다. 두 기호로 읽으면서 관계를 만들지 않으면 배관이 거기서 끊긴다."""
+        reducer = prim([(106, 100.5), (109, 101), (109, 102), (106, 102.5), (106, 100.5)])
+        ex = extract([OPEN_LEFT, OPEN_RIGHT, filled(BLACK_GATE), reducer,
+                      pipe((66, 101.5), (100, 101.5)), pipe((109, 101.5), (140, 101.5))])
+        (valve,) = closed_nodes(ex)
+        other = node_at_x(ex, 108)
+        joint = [r for r in ex["relations"]
+                 if {e["node_local_id"] for e in r["endpoints"]} == {valve["local_id"], other["local_id"]}]
+        self.assertEqual([(r["kind"], r["line_type"], r["evidence"]["classification_basis"]) for r in joint],
+                         [("physical_connection", "pdf_touching", "touching_bodies")])
+        path, _ = path_between_open_valves(ex)
+        self.assertEqual((path["material_flow_path"], path["valve_state"]), (True, "closed_valve_on_path"))
+
+    def test_body_touching_the_side_of_a_closed_valve_is_not_joined_as_pipe(self):
+        """몸통 옆(배관 방향이 아닌 쪽)에 붙은 기호는 구동부 같은 것이다. 배관으로 잇지 않는다."""
+        dome = prim([(101, 96), (105, 96), (105, 100), (101, 100), (101, 96)])
+        ex = extract([filled(BLACK_GATE), dome] + GATE_PIPES)
+        (valve,) = closed_nodes(ex)
+        self.assertEqual([r["line_type"] for r in ex["relations"] + ex["unresolved_connectors"]
+                          if r["line_type"] == "pdf_touching"], [])
+        self.assertEqual(len(pipe_ends_on(ex, valve)), 2)
+
     def test_closed_valve_is_not_swallowed_by_a_large_symbol_whose_line_reaches_it(self):
         """큰 기호 상자 안에서 나온 선이 밸브에 닿아도 밸브는 제 노드로 남는다(115쪽 복수기 옆 밸브)."""
         tank = prim([(20, 60), (90, 60), (90, 140), (20, 140), (20, 60)])
