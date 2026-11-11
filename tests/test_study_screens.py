@@ -540,6 +540,78 @@ class StudyScreensTest(unittest.TestCase):
         self.assertEqual(req_text(scr._knowledge()), "바뀐 문구", "오래됨 판정이 쓰는 색인도 새 지식그래프를 따른다")
         self.assertEqual(req_text(scr._knowledge(force=True)), "바뀐 문구")
 
+    # ---------------------------------------------------------------- 빈 구간(2026-11-11 사용자 실행에서 난 IndexError)
+
+    def _walk_the_app(self, win):
+        """저장 뒤에 도는 화면 갱신과 단계 이동이 예외 없이 도는지 본다(빈 구간이 든 집합에서 span이 죽던 길)."""
+        win._refresh_explorer()
+        win._refresh_status()
+        self.assertIsNotNone(win.index())
+        self.assertTrue(win.go(RESULTS))
+        self.assertTrue(win.go(STUDY))
+
+    def test_removing_every_member_removes_the_node_and_keeps_the_app_running(self):
+        from hazop.study import nodes
+        win = self.window()
+        scr = self.open_study(win)
+        target = scr.node_set["nodes"][1]
+        nid, members = target["node_id"], list(target["members"])
+        top = max(int(n["node_id"][1:]) for n in scr.node_set["nodes"])
+        scr.select_node(nid)
+        scr.member_list.selectAll()
+        self.assertEqual(len(scr.selected_members()), len(members))
+        from unittest import mock
+        with mock.patch.object(win, "toast") as toast:
+            self.assertTrue(scr.remove_selected(), scr.msg.text())
+        self.assertIn("없앴", toast.call_args[0][0])
+        self.assertNotIn(nid, [n["node_id"] for n in scr.node_set["nodes"]], "구성요소가 하나도 없는 구간은 남기지 않음")
+        saved = nodes.load(self.pg())
+        self.assertEqual(saved, scr.node_set)
+        self.assertTrue(all(n["members"] for n in saved["nodes"]))
+        self.assertEqual(sorted(nodes.coverage(saved, self.pg())["uncovered"]), sorted(members), "뺀 구성요소는 미포함으로 남음")
+        self.assertEqual(scr.uncovered_list.count(), len(members))
+        self._walk_the_app(win)
+        first = saved["nodes"][0]
+        again = nodes.split(saved, first["node_id"], first["members"][:1])
+        self.assertEqual(again["history"][-1]["detail"]["new_node_id"], "S%d" % (top + 1), "없앤 구간의 번호를 다시 내지 않음")
+
+    def test_saved_file_with_an_empty_node_opens_and_the_empty_node_can_be_removed(self):
+        """빈 구간이 이미 저장된 파일(고치기 전 판이 쓴 것)도 읽히고, 다른 구간을 잃지 않으며, 빈 구간을 지울 수 있다."""
+        from hazop.study import nodes
+        pg = self.pg()
+        ns = nodes.propose(pg)
+        ns = nodes.rename(ns, ns["nodes"][0]["node_id"], "사람이 정한 이름")
+        empty = ns["nodes"][1]["node_id"]
+        ns["nodes"][1]["members"] = []
+        nodes.save(ns)
+        win = self.window()
+        scr = self.open_study(win)
+        self.assertEqual(scr.stack.currentIndex(), 1)
+        self.assertEqual(scr.node_set["nodes"][0]["name"], "사람이 정한 이름")
+        self.assertNotIn("읽을 수 없어", scr.warn.label.text())
+        self._walk_the_app(win)
+        rows = {scr.node_list.item(i).data(Qt.UserRole): scr.node_list.item(i).text() for i in range(scr.node_list.count())}
+        self.assertIn("구성요소 없음", rows[empty])
+        scr.select_node(empty)
+        self.assertTrue(scr.remove_btn.isEnabled())
+        self.assertEqual(scr.remove_btn.text(), "빈 구간 지우기")
+        self.assertTrue(scr.remove_selected(), scr.msg.text())
+        self.assertNotIn(empty, [n["node_id"] for n in nodes.load(pg)["nodes"]])
+        scr.select_node(scr.node_set["nodes"][0]["node_id"])
+        self.assertEqual(scr.remove_btn.text(), "구간에서 빼기")
+
+    def test_refresh_failure_after_the_file_is_written_is_reported_as_saved(self):
+        from unittest import mock
+        from hazop.study import nodes
+        win = self.window()
+        scr = self.open_study(win)
+        scr.select_node("S1")
+        with mock.patch.object(win, "mark_saved", side_effect=RuntimeError("탐색기 갱신 오류")):
+            self.assertTrue(scr.rename_current("저장은 된 이름"))
+        self.assertEqual(nodes.load(self.pg())["nodes"][0]["name"], "저장은 된 이름")
+        self.assertEqual(scr.node_set["nodes"][0]["name"], "저장은 된 이름")
+        self.assertIn("저장했지만", scr.msg.text())
+
     def test_bom_saved_file_loads_unchanged(self):
         from hazop.study import nodes
         path, good, _cases = self._unreadable_cases()

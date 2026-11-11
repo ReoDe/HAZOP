@@ -161,7 +161,12 @@ class EditTest(unittest.TestCase):
 
     def test_confirm_refuses_uncovered_empty_and_stale(self):
         nid = sn.nodes_of(self.s, "n-TI0")[0]
-        emptied = sn.add_member(sn.remove_member(self.s, nid, "n-TI0", at=AT), sn.nodes_of(self.s, "n-E1")[0], "n-TI0")
+        moved = sn.add_member(sn.remove_member(self.s, nid, "n-TI0", at=AT), sn.nodes_of(self.s, "n-E1")[0], "n-TI0")
+        self.assertNotIn(nid, [n["node_id"] for n in moved["nodes"]], "마지막 구성요소를 빼면 구간도 없앰")
+        self.assertEqual(sn.confirm(moved, self.g, "검토자", at=AT)["status"], "confirmed")
+        import copy
+        emptied = copy.deepcopy(self.s)  # 구간을 없애기 전 판이 저장한 빈 구간
+        next(n for n in emptied["nodes"] if n["node_id"] == nid)["members"] = []
         with self.assertRaisesRegex(ValueError, "빈 구간"):
             sn.confirm(emptied, self.g, "검토자", at=AT)
         pump = sn.nodes_of(self.s, "n-P1")[0]

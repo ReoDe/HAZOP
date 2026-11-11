@@ -400,13 +400,31 @@ def add_member(node_set, node_id, entity_id, at=None):
 
 
 def remove_member(node_set, node_id, entity_id, at=None):
+    """구간에서 구성요소 하나를 뺀다(뺀 구성요소는 미포함으로 남는다). 마지막 구성요소를 빼면 구간도 없앤다
+    (구성요소 없는 구간은 두지 않는다. 기록에 node_removed를 적고, 그 번호는 다시 내지 않는다)."""
     out = _begin(node_set)
     node = _find(out, node_id)
     if entity_id not in node["members"]:
         raise ValueError("%s는 %s에 없음" % (entity_id, node_id))
     node["members"] = [m for m in node["members"] if m != entity_id]
-    _settle(node)
-    return _log(out, "remove", {"node_id": node_id, "entity_id": entity_id}, at)
+    detail = {"node_id": node_id, "entity_id": entity_id}
+    if node["members"]:
+        _settle(node)
+    else:
+        out["nodes"] = [n for n in out["nodes"] if n is not node]
+        detail["node_removed"] = True
+    return _log(out, "remove", detail, at)
+
+
+def remove_empty(node_set, node_id, at=None):
+    """구성요소가 하나도 없는 구간을 없앤다(remove_member가 구간을 없애기 전 판이 저장한 빈 구간을 치우는 길).
+    구성요소가 있는 구간이면 ValueError."""
+    out = _begin(node_set)
+    node = _find(out, node_id)
+    if node["members"]:
+        raise ValueError("%s는 구성요소가 있어 지울 수 없음(구성요소를 먼저 빼거나 다른 구간에 병합)" % node_id)
+    out["nodes"] = [n for n in out["nodes"] if n is not node]
+    return _log(out, "remove_empty", {"node_id": node_id}, at)
 
 
 def confirm(node_set, graph, reviewer, at=None):

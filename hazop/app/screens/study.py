@@ -177,6 +177,7 @@ class StudyNodesScreen(QWidget):
         self.review_fp = None   # review_doc을 읽은 파일의 지문(없던 파일이면 None)
         self.review_runner = None
         self._review_adj = None
+        self._refresh_failed = None  # 저장은 됐는데 저장 뒤 화면 갱신이 실패했을 때 보일 안내
         self._kn = None         # (그래프, 지식 색인): nr.knowledge_index 결과. 지식 항목을 본 제안이 있을 때만 읽는다
         self._adj_of = None     # _review_adj를 센 집합(같은 객체면 다시 세지 않음)
         self._review_checking = False  # 연결 확인 중(두 번 눌러 실행이 둘 생기지 않게)
@@ -794,7 +795,9 @@ class StudyNodesScreen(QWidget):
         self.merge_btn.setEnabled(editable and len(checked) >= 2)
         self.rename_btn.setEnabled(editable and cur is not None)
         self.split_btn.setEnabled(editable and cur is not None and 0 < len(picked) < len(cur["members"]))
-        self.remove_btn.setEnabled(editable and bool(picked))
+        hollow = cur is not None and not cur["members"]  # 구성요소 없는 구간(옛 저장본): 같은 단추로 구간을 지운다
+        self.remove_btn.setText("빈 구간 지우기" if hollow else "구간에서 빼기")
+        self.remove_btn.setEnabled(editable and (bool(picked) or hollow))
         self.add_btn.setEnabled(editable and cur is not None and bool(self.uncovered_list.selectedItems()))
         self.confirm_btn.setEnabled(editable and not cov["uncovered"] and not empties and not stale and bool(ns["nodes"]))
         self.reopen_btn.setEnabled(bool(ns) and ns["status"] == "confirmed")
@@ -981,7 +984,8 @@ class StudyNodesScreen(QWidget):
             self.node_set = old
             self._render(keep)
             return False
-        self.msg.setText("")
+        self.msg.setText(self._refresh_failed or "")
+        self._refresh_failed = None
         self._render(keep)
         if done:
             self.app.toast(done, undo=self._undo_to(old, keep))
@@ -1049,7 +1053,11 @@ class StudyNodesScreen(QWidget):
             return False
         self.unreadable = False
         self.saved = True
-        self.app.mark_saved(self.node_set["history"][-1]["at"])
+        try:
+            self.app.mark_saved(self.node_set["history"][-1]["at"])
+        except Exception as exc:  # 파일은 이미 썼다. 다른 화면 갱신이 실패했다고 저장 실패로 보이면 안 된다
+            self.app.log_error("검토구간 저장 뒤 화면 갱신 실패", exc)
+            self._refresh_failed = "검토구간은 저장했지만 다른 화면을 갱신하다 오류가 났습니다(%s). 도면을 다시 열어 보세요." % type(exc).__name__
         return True
 
     def merge_checked(self):
@@ -1068,13 +1076,20 @@ class StudyNodesScreen(QWidget):
         return ok
 
     def remove_selected(self):
+        """고른 구성요소를 지금 구간에서 뺀다(미포함으로 남는다). 다 빼면 구간도 없앤다. 구성요소 없는 구간에서는 구간을 지운다."""
         cur, picked = self.current_node_id(), self.selected_members()
+        node = self.current_node()
+        if node is not None and not node["members"]:
+            return self._apply(lambda s: nodes.remove_empty(s, cur), done="구성요소 없는 구간 %s를 지웠습니다" % cur)
 
         def fn(s):
             for eid in picked:
                 s = nodes.remove_member(s, cur, eid)
             return s
-        return self._apply(fn, keep=cur, done="%s에서 구성요소 %d개를 뺐습니다" % (cur, len(picked)))
+        gone = node is not None and set(node["members"]) <= set(picked)
+        done = ("%s의 구성요소 %d개를 모두 빼 구간을 없앴습니다(뺀 구성요소는 미포함)" if gone
+                else "%s에서 구성요소 %d개를 뺐습니다") % (cur, len(picked))
+        return self._apply(fn, keep=cur, done=done)
 
     def add_uncovered(self):
         cur = self.current_node_id()

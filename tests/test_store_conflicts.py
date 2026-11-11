@@ -118,6 +118,41 @@ class IssuedAfterUndoTest(WorkRootCase):
             sn.load(self.g)
 
 
+class EmptyNodeTest(WorkRootCase):
+    """구성요소를 다 빼면 구간을 없앤다. 이미 빈 구간이 든 집합도 읽고 표기할 수 있다."""
+
+    def test_removing_the_last_member_removes_the_node(self):
+        from hazop.study import span
+        s = sn.propose(self.g, at=AT)
+        node = s["nodes"][1]
+        out = s
+        for m in node["members"]:
+            out = sn.remove_member(out, node["node_id"], m, at=AT)
+        self.assertNotIn(node["node_id"], [n["node_id"] for n in out["nodes"]])
+        self.assertEqual(out["history"][-1]["detail"], {"node_id": node["node_id"], "entity_id": node["members"][-1],
+                                                        "node_removed": True})
+        self.assertEqual(len(s["nodes"][1]["members"]), len(node["members"]), "입력은 그대로")
+        top = max(int(n["node_id"][1:]) for n in s["nodes"])
+        again = sn.split(out, out["nodes"][0]["node_id"], out["nodes"][0]["members"][:1], at=AT)
+        self.assertEqual(again["history"][-1]["detail"]["new_node_id"], "S%d" % (top + 1))
+        span.annotate(out, self.g) if self.g.get("sheets") else None
+
+    def test_a_set_that_already_has_an_empty_node_loads_and_can_drop_it(self):
+        s = sn.propose(self.g, at=AT)
+        empty = s["nodes"][1]["node_id"]
+        s["nodes"][1]["members"] = []
+        sn.save(s)
+        loaded = sn.load(self.g)
+        self.assertEqual(loaded, s, "빈 구간 때문에 파일 전체를 못 읽지 않음")
+        dropped = sn.remove_empty(loaded, empty, at=AT)
+        self.assertNotIn(empty, [n["node_id"] for n in dropped["nodes"]])
+        self.assertEqual(dropped["history"][-1], {"at": AT, "op": "remove_empty", "detail": {"node_id": empty}})
+        with self.assertRaises(ValueError):
+            sn.remove_empty(loaded, loaded["nodes"][0]["node_id"])
+        with self.assertRaises(ValueError):
+            sn.confirm(loaded, self.g, "검토자A")
+
+
 class WriteFailureTest(WorkRootCase):
     def target(self):
         path = os.path.join(self.tmp, "기록.json")
