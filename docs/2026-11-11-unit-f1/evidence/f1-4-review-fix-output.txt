@@ -1,0 +1,257 @@
+F1-4 검토 지적 수정 (2026-11-11)
+================================
+
+대상: Codex 교차검증(반려, b45cfeb 소스를 모의 실행)과 Claude 측 검토(승인, 143쪽 대조)의 지적.
+시험용 venv, PYTHONIOENCODING=utf-8. 캐시는 f1-4-lone-ticks.py cache로 뜬 143쪽 원시 요소다.
+
+1. 지적이 b45cfeb에서 재현되는지
+--------------------------------
+b45cfeb를 꺼낸 분리 작업트리에 0f68db9의 tests/test_symbols.py를 놓고 새 시험 두 묶음을 돌렸다.
+$ python -m unittest tests.test_symbols.LoneTickGuardTest tests.test_symbols.TickBoundaryTest
+FAIL: test_four_strokes_beside_a_pair_block_it (tests.test_symbols.LoneTickGuardTest.test_four_strokes_beside_a_pair_block_it)
+FAIL: test_stroke_on_a_crossing_of_two_lines_is_not_given_to_either (tests.test_symbols.LoneTickGuardTest.test_stroke_on_a_crossing_of_two_lines_is_not_given_to_either)
+FAIL: test_strokes_beyond_the_end_of_a_line_do_not_mark_it (tests.test_symbols.LoneTickGuardTest.test_strokes_beyond_the_end_of_a_line_do_not_mark_it)
+FAIL: test_third_stroke_a_little_further_along_is_still_a_third_stroke (tests.test_symbols.LoneTickGuardTest.test_third_stroke_a_little_further_along_is_still_a_third_stroke)
+FAIL: test_third_stroke_at_another_angle_or_only_touching_still_counts (tests.test_symbols.LoneTickGuardTest.test_third_stroke_at_another_angle_or_only_touching_still_counts)
+FAIL: test_third_stroke_too_long_to_be_a_tick_still_counts (tests.test_symbols.LoneTickGuardTest.test_third_stroke_too_long_to_be_a_tick_still_counts)
+FAIL: test_two_stroke_spring_on_a_safety_valve_stem_is_not_a_mark (tests.test_symbols.LoneTickGuardTest.test_two_stroke_spring_on_a_safety_valve_stem_is_not_a_mark)
+FAIL: test_two_strokes_drawn_on_top_of_each_other_are_not_a_pair (tests.test_symbols.LoneTickGuardTest.test_two_strokes_drawn_on_top_of_each_other_are_not_a_pair)
+FAIL: test_angle_boundaries_are_inclusive (tests.test_symbols.TickBoundaryTest.test_angle_boundaries_are_inclusive)
+Ran 13 tests in 12.328s
+FAILED (failures=9)
+통과한 넷은 판정이 그대로여야 하는 자리(끝을 맞댄 선, 꺾인 자리의 //, 묶음 거리 경계)와, 스프링선 둘이 기호에
+흡수돼 드러나지 않는 방출 밸브 표본이다. 0f68db9에서는 13건 모두 통과한다.
+
+2. 고친 뒤 b45cfeb와 달라진 쪽 (같은 캐시로 뽑은 143쪽 추출 JSON을 바이트로 견줌)
+--------------------------------------------------------------------------------
+$ f1-4-lone-ticks.py run <cache> --out out-fix      (b45cfeb의 결과는 out-impl)
+$ f1-4-review-probe.py diff out-impl out-fix
+== 141쪽: 노드 211 → 211 · 관계 186 → 186 · 미해결 68 → 70 · 미확인 502 → 507
+  빗금에서 빠짐 pdf-path-0004 (212.2,274.9) 외톨이 묶음(2개) 선 pdf-path-0598
+  빗금에서 빠짐 pdf-path-0006 (212.2,274.7) 외톨이 묶음(2개) 선 pdf-path-0598
+  공압 신호선이 아니게 됨 ['pdf-path-0598'] ((214.0, 273.4), (210.4, 273.4)) → [('physical_connection', 'pdf_solid')]
+{'빗금에서 빠짐': 2, '빗금이 됨': 0}
+다른 쪽은 141쪽 하나다(142쪽은 바이트로 같다). V1008 구동부의 겹쳐 그린 줄기 두 줄(같은 x=212.21)을 V자 선 위의
+// 로 지우던 것이 없어졌다.
+
+고치는 도중에 본 것(같은 방법으로 견줌):
+- '만나는 점이 가장 가까운 선분 안에 있어야 한다'를 두 판정에 모두 넣으면 8쪽이 달라진다(032·116·120·121·126·135·138·141).
+  꺾인 자리의 꼭짓점에 걸친 // 는 한 줄이 꼭짓점 바로 밖(0.2~0.4pt)을 지나기 때문이다.
+- 그래서 선의 끝점 밖만 막고(꺾인 자리는 받음) 외톨이 판정에만 넣었다. 묶음이 여럿인 선에도 넣으면 아래 3절 (4)의
+  세 묶음이 빗금에서 빠진다.
+- '끝을 맞댄 조각'을 가로지름으로 세면 116쪽 (390.4,188.3)의 // 가 막힌다. ㄱ자 경로의 세로선 끝이 가로선을 0.07pt
+  넘어가 있다.
+
+3. 문턱과 조건의 근거, (마)·(바)의 실제 발생 수
+------------------------------------------------
+$ f1-4-review-probe.py guards <cache> out-base out-fix      (out-base는 81bc203, out-fix는 고친 뒤)
+1. 한 묶음 안 이웃한 두 빗금이 옆으로 떨어진 거리(pt). 하한 TICK_SIDE_GAP_MIN = 0.2
+  묶음 여럿: 1488쌍 · 최소 0.41 · 5% 0.43 · 가운데 0.47 · 최대 0.58
+  외톨이: 114쌍 · 최소 0.42 · 5% 0.42 · 가운데 0.46 · 최대 0.77
+
+2. 신호 표시로 읽은 외톨이 // 114묶음과, 그 선이 닿은 작은 각진 몸체 사이 간격(pt). 문턱 SPRING_BODY_GAP = 0.5
+  선이 그런 몸체에 닿지 않음 82 · 닿음 32(간격 최소 1.08)
+    052쪽 (884.1,352.1) 간격 1.08
+    052쪽 (884.1,232.1) 간격 1.11
+    052쪽 (479.1,352.1) 간격 1.14
+    052쪽 (479.1,232.2) 간격 1.17
+    046쪽 (1049.2,483.5) 간격 1.18
+    046쪽 (464.7,575.1) 간격 1.22
+
+3. 외톨이 // 꼴인데 판정하지 않은 것 1
+    132쪽 선 pdf-path-0116 (949.0,414.5) small_body
+
+4. 묶음이 여럿인 선에도 '선 끝점 밖' 조건을 넣으면 빗금에서 빠지는 조각 6
+    120쪽 pdf-path-0558 (969.6,553.6)
+    120쪽 pdf-path-0559 (969.6,553.0)
+    121쪽 pdf-path-0240 (646.9,608.0)
+    121쪽 pdf-path-0241 (646.9,607.3)
+    126쪽 pdf-path-0440 (751.7,191.4)
+    126쪽 pdf-path-0441 (751.7,190.7)
+
+5. (바) 나란한 두 빗금이 서로 다른 두 선에 하나씩 딸려 표시가 빠진 것 9
+    003쪽 선 pdf-path-0066·pdf-path-0069 (284.5,388.5) 끝을 맞댄 두 선
+    003쪽 선 pdf-path-0063·pdf-path-0067 (284.5,388.5) 끝을 맞댄 두 선
+    003쪽 선 pdf-path-0063·pdf-path-0067 (284.6,388.5) 끝을 맞댄 두 선
+    003쪽 선 pdf-path-0074·pdf-path-0077 (284.5,406.9) 끝을 맞댄 두 선
+    003쪽 선 pdf-path-0071·pdf-path-0075 (284.5,406.9) 끝을 맞댄 두 선
+    003쪽 선 pdf-path-0071·pdf-path-0075 (284.6,406.9) 끝을 맞댄 두 선
+    003쪽 선 pdf-path-0077·pdf-path-0082 (287.2,406.9) 끝을 맞댄 두 선
+    003쪽 선 pdf-path-0075·pdf-path-0079 (287.2,406.9) 끝을 맞댄 두 선
+    003쪽 선 pdf-path-0075·pdf-path-0079 (287.3,406.9) 끝을 맞댄 두 선
+
+6. (마) 81bc203에서는 공압 신호선이 아니었다가 공압 신호선이 된 선 72개의 양 끝
+    분기점                — 종류 없는 기호           34
+    종류 없는 기호           — 종류 없는 기호           21
+    분기점                — 분기점                4
+    계기                 — 종류 없는 기호           3
+    밸브(구동부 포함)         — 분기점                3
+    밸브(구동부 포함)         — 종류 없는 기호           2
+    continuation       — 종류 없는 기호           1
+    계기                 — 분기점                1
+    닿지 않음              — 밸브(구동부 포함)         1
+    닿지 않음              — 분기점                1
+    닿지 않음              — 종류 없는 기호           1
+  두 끝이 모두 분기점이거나 종류가 정해진 기기인 선: 4
+
+- (3)의 132쪽 (949.0,414.5)는 솔레노이드 밸브 몸통에 바로 붙여 그린 IA 공급선의 // 다(간격 0.1pt). 실제 공압 표시지만
+  몸통에 붙어 있어 판정하지 않는다. 빗금 둘과 2.7pt 선이 모두 그 기호에 흡수돼 있어 추출 결과는 b45cfeb와 같다.
+- (4)는 선 끝이 다른 선과 만나는 자리에 그린 // 다. 선 끝점에서 0.03~0.99pt 밖을 지난다.
+- (5)의 9건은 모두 003쪽 범례 주석의 별표(＊) 글자 획이다. 계통 도면에서 나뉜 선 위의 // 가 빠진 곳은 0이다.
+- (6)에서 두 끝이 모두 분기점인 4개: 115쪽 (910.1,485.0)~(910.1,492.1) IA 공급선, 119쪽 (589.7,570.3)~(603.7,570.3)과
+  (321.7,559.9)~(334.0,559.9) 배관 둘을 건너는 신호선 토막, 126쪽 (751.7,210.1)~(751.7,193.4) 신호선 토막.
+  Claude 측 검토가 새 공압선을 모두 그림으로 보고 공정 배관이 0임을 확인했다(검토 기준 75개, 이 표는 141쪽을 뺀 뒤
+  근거 선 조각으로 센 72개).
+
+4. 다시 잰 값 (커밋 전 실행, '전'은 81bc203의 추출 결과)
+------------------------------------------------------
+# HEAD 99613cc + 검토 지적 수정(커밋 전), 2026-11-11 17:13:37 +0900
+# HEAD 99613cc · git status --short:
+ M hazop/app/screens/study.py
+ M hazop/extract/adapters/pdf_vector.py
+ M hazop/study/nodes.py
+ M hazop/study/span.py
+ M tests/test_apr1400_extract.py
+ M tests/test_store_conflicts.py
+ M tests/test_study_screens.py
+ M tests/test_symbols.py
+# git diff HEAD -- hazop scripts resources tests sha256: 165668c6e1432485
+$ f1-0-extract-compare.py snp (해시 목록을 f1-0-before-snp-hashes.json과 비교)
+SNP 12건 → <시험 폴더>\f1-4\review-fix\snp\snp-hashes.json
+SNP 해시 목록 바이트 같음
+$ f1-3-node-diff.py dump --repo . --out f1-4/review-fix/nodes
+143쪽 → <시험 폴더>/f1-4/review-fix/nodes (코드: D:\HAZOP)
+$ f1-3-node-diff.py compare <81bc203> <지금>
+쪽 143 · 노드 23348 → 23293 · 관계 23421 → 23313
+
+같은 자리 기호의 종류 변화(전 → 후: 수)
+
+같은 자리 기호의 정상 위치 변화
+
+같은 자리 기호의 태그 변화(있음 여부 전 → 후)
+
+'전'에 종류가 있던 기호: 같은 자리에서 종류를 잃음 0 · 다른 종류가 됨 0 · 같은 자리에 없음 0
+
+새로 생긴 기호 노드(종류, 정상 위치): 0
+
+없어진 기호 노드(종류): 0
+
+미확인 사유별(전 → 후, 차)
+  unknown_flow_direction: 28948 → 28544 (-404)
+  missing_tag: 12221 → 12221 (+0)
+  unconnected_endpoint: 9537 → 9560 (+23)
+  missing_kind: 7314 → 7314 (+0)
+  self_loop: 5601 → 5309 (-292)
+  not_registered: 429 → 429 (+0)
+  actuated_valve_pending: 234 → 234 (+0)
+  missing_drawing_number: 143 → 143 (+0)
+  duplicate_tag: 56 → 56 (+0)
+  dashed_path_no_visible_piece: 8 → 8 (+0)
+  합계: 64491 → 63818 (-673)
+
+'후'의 NC 밸브 노드(댐퍼 제외) 903개: (종류, 분류)별
+  manual_valve / valve: 681
+  None / valve: 130
+  motor_operated_valve / valve: 67
+  air_operated_valve / valve: 25
+  닿은 물리 배관 끝: 0개 29 · 1개 11 · 2개 이상 863
+  배관 끝이 하나도 닿지 않은 것의 쪽별 수: 001쪽 4, 008쪽 7, 029쪽 1, 141쪽 17
+
+노드 변화 목록 0줄 → <시험 폴더>/f1-4/review-fix/node-changes.csv
+rc=0
+$ f1-3-node-diff.py links <81bc203> <지금>
+쪽 143
+'전'에서 한 연결요소였다가 '후'에서 갈라진 것: 연결요소 14개, 큰 조각에서 떨어져 나간 같은 자리 노드 20개
+  그 가운데 '후'에서 물리 배관이 하나도 닿지 않게 된 노드: 16개 (종류별 tee 13, None 3)
+  둘 이상 이어진 배관 토막이 떨어져 나간 연결요소: 1개, 그 토막의 같은 자리 노드 4개
+'후'의 NC 밸브 903개 가운데 물리 배관이 몸통 가운데를 지나가는데 그 밸브에 붙지 않은 것: 1개
+  같은 자리를 '전'의 물리 배관이 지나가던 것: 271개
+'후'의 NC 밸브가 60pt 이하 기호와 맞닿았는데(간격 0.5pt 이하) 둘 사이에 관계가 없는 것: 15쌍
+목록 30줄 → <시험 폴더>/f1-4/review-fix/links.csv
+rc=0
+$ f1-3-node-diff.py carry <81bc203> <지금>
+쪽 143 (수정 적용 코드: D:\HAZOP)
+  node 수정: 15225
+  node 적용: 15225
+  relation 수정: 23421
+  relation 적용: 23105
+  relation 적용 못 함: 대상 없음: 12
+  relation 적용 못 함: 대상이 바뀜(at·ends): 218
+  relation 적용 못 함: 대상이 바뀜(at·ends·kind): 79
+  relation 적용 못 함: 대상이 바뀜(at·kind): 1
+  relation 적용 못 함: 대상이 바뀜(ends): 3
+  relation 적용 못 함: 대상이 바뀜(kind): 3
+  relation 적용(번호가 밀려 자리로 다시 찾음): 3210
+rc=0
+$ check_apr1400.py --out f1-4/review-fix/apr1400_pages.csv
+APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 287/295 · 없는 대상 0 · 짝 281(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63818
+  정답 5.4.12-1-S1: 계기 4/4(태그 4 중 맞음 4) · 연결 3/3(연결점 3 중 맞음 3) · 대리 원 4(정답 안 4)/정답 4 · 대리 연결 표기 3(정답 안 3)/정답 3
+  정답 9.3.3-1-S7: 계기 16/16(태그 16 중 맞음 16) · 연결 7/7(연결점 7 중 맞음 7) · 대리 원 16(정답 안 16)/정답 16 · 대리 연결 표기 5(정답 안 5)/정답 7
+  정답 9.3.4-1-S1: 계기 12/15(태그 12 중 맞음 12) · 연결 17/17(연결점 17 중 맞음 17) · 대리 원 15(정답 안 15)/정답 15 · 대리 연결 표기 4(정답 안 4)/정답 17
+기준값: APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 287/295 · 없는 대상 0 · 짝 281(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63813
+rc=0
+$ check_snp_baseline.py
+나아짐: pdf SNP-M-101_RCS-main-loop unknowns 40 → 31
+나아짐: pdf SNP-M-102_RCS-pressurizer unknowns 19 → 15
+나아짐: pdf SNP-M-201_CVCS unknowns 23 → 20
+나아짐: pdf SNP-M-301_SIS unknowns 24 → 20
+나아짐: pdf SNP-M-401_CCW unknowns 31 → 24
+나아짐: pdf SNP-M-501_MS-FW unknowns 27 → 23
+SNP: 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6
+rc=0
+$ unknowns_breakdown.py --out f1-4/review-fix/unknowns
+# APR1400 미확인 분해
+
+쪽 143, 미확인 63818
+
+## 사유별
+
+| 사유(check) | 수 | 비율 | 많은 쪽(수) |
+| --- | --- | --- | --- |
+| `unknown_flow_direction` | 28544 | 44.7% | 066(724), 028(671), 025(546) |
+| `missing_tag` | 12221 | 19.1% | 028(270), 001(266), 025(244) |
+| `unconnected_endpoint` | 9560 | 15.0% | 066(399), 025(320), 088(320) |
+| `missing_kind` | 7314 | 11.5% | 083(208), 001(207), 081(160) |
+| `self_loop` | 5309 | 8.3% | 066(311), 137(198), 013(193) |
+| `not_registered` | 429 | 0.7% | 001(3), 002(3), 003(3) |
+| `actuated_valve_pending` | 234 | 0.4% | 113(18), 049(14), 048(12) |
+| `missing_drawing_number` | 143 | 0.2% | 001(1), 002(1), 003(1) |
+| `duplicate_tag` | 56 | 0.1% | 006(29), 008(22), 007(5) |
+| `dashed_path_no_visible_piece` | 8 | 0.0% | 090(8) |
+
+## 사유 × 대상 종류 (상위 40)
+
+| 사유 | 대상 | 대상 kind | 사전 항목 | 수 |
+| --- | --- | --- | --- | --- |
+| `unknown_flow_direction` | relations | physical_connection |  | 19793 |
+| `unknown_flow_direction` | unresolved_connectors | physical_connection |  | 8751 |
+| `missing_kind` | node | (kind 없음) |  | 6455 |
+| `missing_tag` | node | (kind 없음) |  | 6234 |
+| `self_loop` | unresolved_connectors | physical_connection |  | 5183 |
+| `unconnected_endpoint` | unresolved_connectors | signal_connection |  | 5131 |
+| `unconnected_endpoint` | unresolved_connectors | physical_connection |  | 4150 |
+| `missing_tag` | node | manual_valve | apr1400.globe_valve | 981 |
+| `missing_tag` | node | manual_valve | apr1400.gate_valve | 779 |
+| `missing_tag` | node | manual_valve |  | 708 |
+| `not_registered` | (대상 없음) | - |  | 429 |
+| `missing_tag` | node | check_valve | apr1400.check_valve_box | 334 |
+| `missing_tag` | node | reducer | apr1400.reducer | 319 |
+| `unconnected_endpoint` | unresolved_connectors | measurement_connection |  | 279 |
+| `missing_tag` | node | indicator |  | 226 |
+| `missing_tag` | node | pipe_cap |  | 224 |
+| `missing_tag` | node | orifice |  | 190 |
+rc=0
+# 끝 17:23:20
+
+5. 커밋 뒤 확인과 기준값 갱신
+----------------------------
+주 체크아웃에는 다른 세션이 고치는 중인 hazop/ 파일이 있어(추출기 밖) --update가 막혔다. 0f68db9를 꺼낸 분리
+작업트리에서 돌렸다.
+$ check_apr1400.py --update --input-dir <주 체크아웃의 by-drawing> --out apr1400_pages_0f68db9.csv   (0f68db9, 깨끗함)
+APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 287/295 · 없는 대상 0 · 짝 281(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63818
+  정답 5.4.12-1-S1: 계기 4/4(태그 4 중 맞음 4) · 연결 3/3(연결점 3 중 맞음 3) · 대리 원 4(정답 안 4)/정답 4 · 대리 연결 표기 3(정답 안 3)/정답 3
+  정답 9.3.3-1-S7: 계기 16/16(태그 16 중 맞음 16) · 연결 7/7(연결점 7 중 맞음 7) · 대리 원 16(정답 안 16)/정답 16 · 대리 연결 표기 5(정답 안 5)/정답 7
+  정답 9.3.4-1-S1: 계기 12/15(태그 12 중 맞음 12) · 연결 17/17(연결점 17 중 맞음 17) · 대리 원 15(정답 안 15)/정답 15 · 대리 연결 표기 4(정답 안 4)/정답 17
+점수 기준값을 썼음: <시험 폴더>\f1-4\wt-0f68db9\tests\baselines\apr1400_score.json
+rc=0
+쪽별 결과(걸린 시간 열 제외)는 커밋 전 실행과 다른 행 0/143, b45cfeb 실행과는 1행(141쪽 미확인 502 → 507)만 다르다.
