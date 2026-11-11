@@ -141,12 +141,59 @@ class KeyStoreWriteTest(unittest.TestCase):
         self.assertEqual(raw(self.path), before)
         self.assertEqual(os.listdir(os.path.dirname(self.path)), ["ai_keys.json"])
 
-    def test_a_file_named_like_the_old_temp_is_left_alone(self):
+    def test_leftover_temp_files_are_removed_at_the_next_save_whatever_their_age(self):
+        """강제 종료로 남은 임시 파일에는 암호문이 들어 있다. 키 저장소는 앱 하나만 쓰므로 다음 저장 때 바로 지운다."""
         os.makedirs(os.path.dirname(self.path))
-        with open(self.path + ".tmp", "wb") as fh:
-            fh.write(b"someone else is writing")
+        for name in ("ai_keys.json.tmp", ".ai_keys.json.k3x9q2.tmp"):
+            with open(os.path.join(os.path.dirname(self.path), name), "wb") as fh:
+                fh.write(b"leftover")
         self.store()
-        self.assertEqual(raw(self.path + ".tmp"), b"someone else is writing")
+        self.assertEqual(os.listdir(os.path.dirname(self.path)), ["ai_keys.json"])
+
+
+class StoreIoEdgeTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="hazop-store-callers-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_a_bare_file_name_is_written_in_the_current_folder(self):
+        here = os.getcwd()
+        os.chdir(self.tmp)
+        self.addCleanup(os.chdir, here)
+        analysis_run._write("analysis.json", DOC)
+        kg_link.write_atomic("links.csv", "a,b\r\n")
+        self.assertEqual(sorted(os.listdir(self.tmp)), ["analysis.json", "links.csv"])
+        self.assertEqual(raw("analysis.json"), pretty(DOC))
+
+    def test_remove_temps_takes_both_names_and_nothing_else(self):
+        from hazop import store_io
+        path = os.path.join(self.tmp, "manifest.json")
+        for name in ("manifest.json", "manifest.json.tmp", ".manifest.json.ab12.tmp", "other.json.tmp", ".other.json.x.tmp"):
+            with open(os.path.join(self.tmp, name), "wb") as fh:
+                fh.write(b"x")
+        store_io.remove_temps(path, older_than=600)
+        self.assertEqual(len(os.listdir(self.tmp)), 5, "방금 만든 것은 나이 조건에 걸리지 않음")
+        store_io.remove_temps(path)
+        self.assertEqual(sorted(os.listdir(self.tmp)), [".other.json.x.tmp", "manifest.json", "other.json.tmp"])
+
+
+class WorkrootRenameTest(unittest.TestCase):
+    """작업 루트 이름을 바꾼 직후 원래 자리를 적는다. 그 기록을 쓰지 못하면 이름만 바뀐 채 남지 않는다."""
+
+    def test_failed_first_record_puts_the_root_name_back(self):
+        tmp = tempfile.mkdtemp(prefix="hazop-store-callers-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        old, new = os.path.join(tmp, "old-root"), os.path.join(tmp, "work")
+        os.makedirs(old)
+        with open(os.path.join(old, "keep.txt"), "w", encoding="utf-8") as fh:
+            fh.write("사람이 만든 파일")
+        with mock.patch("os.replace", side_effect=OSError("디스크 가득")):
+            with self.assertRaises(OSError):
+                workroot.apply(new, from_root=old)
+        self.assertEqual((os.path.isdir(old), os.path.exists(new)), (True, False), "이름을 되돌려 원래 자리에 그대로")
+        self.assertEqual(os.listdir(old), ["keep.txt"])
+        workroot.apply(new, from_root=old)
+        self.assertEqual(workroot.read_manifest(new)["root_renamed_from"], os.path.abspath(old))
 
 
 class RegistryTraceTest(unittest.TestCase):

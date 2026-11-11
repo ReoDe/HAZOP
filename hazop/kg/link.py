@@ -315,7 +315,8 @@ def _csv_text(columns, rows):
 
 def write_atomic(path, text, bom=True):
     """UTF-8(기본 BOM)로 공용 원자적 쓰기(store_io)를 쓴다. 줄끝은 text 그대로다.
-    다시 만들 수 있는 산출물(후보·연결 CSV)이라 지문 충돌 확인은 하지 않는다."""
+    후보·연결 CSV에는 사람이 한 판단(확인 상태·검토자·사유)이 들어 있다. 지문 충돌 확인은 넣지 않았다. 이 파일을 쓰는
+    쪽이 연결 CLI 하나뿐이고, 읽고 고쳐 쓰는 사이에 파일이 바뀌었는지는 아직 보지 않는다(후속)."""
     store_io.write_bytes(path, text.encode("utf-8-sig" if bom else "utf-8"))
 
 

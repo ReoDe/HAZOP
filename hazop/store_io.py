@@ -4,8 +4,11 @@
 직렬화(키 정렬 여부)뿐이고 그것은 각 모듈이 정한다.
 
 - 지문은 읽은 바이트에서 바로 구한다(read_bytes). 읽기와 지문을 따로 하면 그 사이에 바뀐 파일을 읽은 것으로 착각한다.
-- 쓰기는 같은 폴더의 임시 파일에 쓰고 fsync한 뒤 os.replace로 바꾼다. 실패하면 임시 파일을 지우고, 프로세스가 죽어
-  남은 임시 파일은 같은 파일을 다음에 쓸 때 지운다. expect를 주면 바꾸기 직전에 지문을 다시 보고 다르면 Conflict다.
+- 쓰기는 같은 폴더의 임시 파일에 쓰고 fsync한 뒤 os.replace로 바꾼다. 쓰기가 예외로 실패하면 임시 파일을 지운다.
+  프로세스가 강제로 끝나거나 임시 파일 삭제까지 실패하면 임시 파일이 남는다. 남은 것은 같은 파일을 다음에 쓸 때 지우되,
+  쓰는 중인 다른 쓰기를 건드리지 않게 만든 지 10분이 지난 것만 지운다. 쓰는 쪽이 하나뿐인 파일은 remove_temps로
+  나이와 관계없이 지울 수 있다. expect를 주면 바꾸기 직전에 지문을 다시 보고 다르면 Conflict다.
+  Windows에서는 os.replace 뒤 대상 파일의 접근 권한이 폴더에서 물려받은 값이 된다(임시 파일을 새로 만들기 때문).
   지문 확인과 교체 사이의 틈은 남는다. 그 틈에 다른 프로세스가 끼어드는 것은 단일 실행 잠금(app.startup)이 막는다.
 - 백업은 이미 있는 백업 파일을 덮어쓰지 않는다.
 """
@@ -67,9 +70,10 @@ def _temp_prefix(path):
     return ".%s." % os.path.basename(path)
 
 
-def _sweep(path):
-    """이 파일을 쓰다 죽은 프로세스가 남긴 임시 파일을 지운다. 지금 쓰는 중인 것을 건드리지 않게 오래된 것만 지운다."""
-    folder, prefix = os.path.dirname(path), _temp_prefix(path)
+def remove_temps(path, older_than=0):
+    """path를 쓰다 남은 임시 파일(공용 쓰기의 이름과 0.2.0까지 쓰던 '<파일>.tmp')을 지운다. older_than(초)을 주면
+    그보다 오래된 것만 지운다. 기본은 모두다. 쓰는 쪽이 하나뿐일 때만 기본값으로 부른다."""
+    folder, prefix = os.path.dirname(path) or ".", _temp_prefix(path)
     legacy = os.path.basename(path) + ".tmp"  # 0.2.0까지 쓰던 고정 이름
     try:
         names = os.listdir(folder)
@@ -79,7 +83,7 @@ def _sweep(path):
         if name == legacy or (name.startswith(prefix) and name.endswith(".tmp")):
             full = os.path.join(folder, name)
             try:
-                if time.time() - os.path.getmtime(full) > STALE_TEMP_SECONDS:
+                if not older_than or time.time() - os.path.getmtime(full) > older_than:
                     os.remove(full)
             except OSError:
                 pass
@@ -88,9 +92,9 @@ def _sweep(path):
 def write_bytes(path, data, expect=ANY):
     """data를 path에 원자적으로 쓰고 새 지문을 돌려준다. expect(읽을 때 지문, 없던 파일이면 None)를 주면
     지금 파일의 지문이 다를 때 쓰지 않고 Conflict를 낸다."""
-    folder = os.path.dirname(path)
+    folder = os.path.dirname(path) or "."  # 폴더 없이 파일 이름만 받으면 지금 폴더
     os.makedirs(folder, exist_ok=True)
-    _sweep(path)
+    remove_temps(path, STALE_TEMP_SECONDS)
     fd, tmp = tempfile.mkstemp(prefix=_temp_prefix(path), suffix=".tmp", dir=folder)
     try:
         with os.fdopen(fd, "wb") as fh:
@@ -105,7 +109,7 @@ def write_bytes(path, data, expect=ANY):
             os.remove(tmp)
         except FileNotFoundError:
             pass
-        except OSError as exc:  # 다음에 같은 파일을 쓸 때 _sweep이 지운다
+        except OSError as exc:  # 다음에 같은 파일을 쓸 때 remove_temps가 지운다
             _log.warning("임시 파일을 지우지 못함: %s (%s)", tmp, exc)
     return fingerprint_of(data)
 
