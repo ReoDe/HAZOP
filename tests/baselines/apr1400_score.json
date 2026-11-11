@@ -77,8 +77,8 @@
     "tag_exact": 12,
     "tag_not_in_text": 0,
     "tagged": 12,
-    "unclassified": 103,
-    "unknowns": 889
+    "unclassified": 100,
+    "unknowns": 886
    },
    "proxy_bubbles": 15,
    "proxy_bubbles_in_key": 15,
@@ -954,7 +954,7 @@
   "connectors_detected": 287,
   "continuations": 1865,
   "failed_pages": 0,
-  "nodes": 23293,
+  "nodes": 23208,
   "offpage_labels": 295,
   "pages": 143,
   "pair_candidates": 10,
@@ -962,11 +962,11 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 281,
-  "seconds": 198,
+  "seconds": 299,
   "tag_exact": 872,
   "tag_not_in_text": 47,
   "tagged": 1083,
-  "unclassified": 7314,
-  "unknowns": 63818
+  "unclassified": 6975,
+  "unknowns": 63394
  }
 }
