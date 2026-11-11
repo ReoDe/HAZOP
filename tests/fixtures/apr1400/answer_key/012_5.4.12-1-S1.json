@@ -287,5 +287,141 @@
   }
  ],
  "half_filled_valves": [],
- "closed_valves_method": "2026-11-11 단위 F1-3 세션이 PDF를 300dpi로 렌더한 그림에서 눈으로 읽음. 후보는 검은 채움 도형 전부(긴 변 4.5pt 이상인 표식 묶음과 검은 몸체)이고, 그 가운데 몸통 전체를 검게 칠한 밸브만 closed_valves에 넣음(범례 1.7-1 1/4 'CLOSED DURING NORMAL OPERATION'). 몸통 반쪽만 칠한 밸브(LT 표기)는 half_filled_valves에 넣음: 닫힘이 아니다. bbox는 검게 칠한 부분의 상자. number·tag는 그림에서 가장 가까운 밸브 번호 원·글자를 읽은 참고값이고 시험에 쓰지 않음. 글자 'NC'로만 닫힘을 나타낸 밸브(버터플라이 등)는 넣지 않음(한계). 사람 확인 전"
+ "closed_valves_method": "2026-11-11 단위 F1-3 세션이 PDF를 300dpi로 렌더한 그림에서 눈으로 읽음. 후보는 검은 채움 도형 전부(긴 변 4.5pt 이상인 표식 묶음과 검은 몸체)이고, 그 가운데 몸통 전체를 검게 칠한 밸브만 closed_valves에 넣음(범례 1.7-1 1/4 'CLOSED DURING NORMAL OPERATION'). 몸통 반쪽만 칠한 밸브(LT 표기)는 half_filled_valves에 넣음: 닫힘이 아니다. bbox는 검게 칠한 부분의 상자. number·tag는 그림에서 가장 가까운 밸브 번호 원·글자를 읽은 참고값이고 시험에 쓰지 않음. 글자 'NC'로만 닫힘을 나타낸 밸브(버터플라이 등)는 넣지 않음(한계). 사람 확인 전",
+ "valve_numbers": [
+  {
+   "tag": "V1430",
+   "bbox": [
+    520.5,
+    337.8,
+    529.8,
+    342.4
+   ],
+   "note": "흰 게이트 밸브(가운데 점)"
+  }
+ ],
+ "valve_positions": [
+  {
+   "number": "418",
+   "bbox": [
+    179.3,
+    265.6,
+    183.9,
+    274.9
+   ],
+   "normal_position": "LC",
+   "fail_position": "FC"
+  },
+  {
+   "number": "419",
+   "bbox": [
+    235.2,
+    337.8,
+    244.5,
+    342.4
+   ],
+   "normal_position": "LC",
+   "fail_position": "FC"
+  },
+  {
+   "number": "420",
+   "bbox": [
+    235.2,
+    407.6,
+    244.5,
+    412.3
+   ],
+   "normal_position": "LC",
+   "fail_position": "FC"
+  },
+  {
+   "number": "413",
+   "bbox": [
+    392.4,
+    439.7,
+    401.7,
+    444.3
+   ],
+   "normal_position": "LC",
+   "fail_position": "FC"
+  },
+  {
+   "number": "411",
+   "bbox": [
+    500.1,
+    439.7,
+    509.4,
+    444.3
+   ],
+   "normal_position": "LC",
+   "fail_position": "FC"
+  },
+  {
+   "number": "412",
+   "bbox": [
+    357.4,
+    509.5,
+    366.8,
+    514.2
+   ],
+   "normal_position": "LC",
+   "fail_position": "FC"
+  },
+  {
+   "number": "410",
+   "bbox": [
+    450.6,
+    509.5,
+    459.9,
+    514.2
+   ],
+   "normal_position": "LC",
+   "fail_position": "FC"
+  },
+  {
+   "number": "417",
+   "bbox": [
+    398.2,
+    605.6,
+    407.5,
+    610.2
+   ],
+   "normal_position": "LC",
+   "fail_position": "FC"
+  },
+  {
+   "number": "415",
+   "bbox": [
+    505.9,
+    605.6,
+    515.2,
+    610.2
+   ],
+   "normal_position": "LC",
+   "fail_position": "FC"
+  },
+  {
+   "number": "416",
+   "bbox": [
+    363.3,
+    675.4,
+    372.6,
+    680.1
+   ],
+   "normal_position": "LC",
+   "fail_position": "FC"
+  },
+  {
+   "number": "414",
+   "bbox": [
+    456.4,
+    675.4,
+    465.7,
+    680.1
+   ],
+   "normal_position": "LC",
+   "fail_position": "FC"
+  }
+ ],
+ "valve_numbers_method": "2026-11-11 단위 F1-5 세션이 PDF를 300dpi로 렌더한 그림에서 눈으로 읽음. valve_numbers는 쪽의 텍스트 층에서 'V'+숫자 꼴 글자를 모두 찾아 그 자리를 그림으로 보고, 그 번호가 가리키는 밸브와 몸통 상자를 적은 것이다. bbox가 null인 것은 몸통을 밸브로 읽지 못하는 자리(note에 까닭)이고 시험에서 태그를 기대하지 않는다. valve_positions는 밸브 옆 위치 약어(LO·LC·NO·NC, FO·FC·FL)를 그림에서 읽은 것이다. LT는 속성 사전에 없는 값이라 넣지 않음. 사람 확인 전"
 }
