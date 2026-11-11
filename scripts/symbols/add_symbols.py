@@ -2,14 +2,17 @@
 
   python scripts/symbols/add_symbols.py --set APR1400 --labels <라벨.csv> --meta <항목정보.csv>
          [--candidates <cluster_unclassified 결과 폴더>] [--library <사전 폴더>] [--template-parity odd]
-         [--input-dir <도면 폴더>] [--per-entry 8] [--date 2026-11-09]
+         [--input-dir <도면 폴더>] [--per-entry 8] [--date 2026-11-09] [--set-attributes '{"normal_position": "NC"}']
 
 - 라벨.csv: `순위, id` (cluster_unclassified.py의 묶음.json 순위 → 사전 id). 같은 id에 여러 묶음을 붙여도 된다.
 - 항목정보.csv: id, name_en, name_ko, category, role, kind, kind_from, attributes(JSON), text_inside, text_forbid,
   enabled, legend_ref, note. 새 항목을 만들 때만 읽는다. 이미 있는 항목은 사람이 고친 값을 그대로 둔다.
 - 견본: 라벨 붙은 묶음 구성원 중 서로 다른 격자를 빈도순으로 --per-entry개. 이미 있는 견본과 같은 격자는 더하지 않는다.
   견본이 바뀐 항목만 revision을 올리고 updated를 --date로 바꾼다. 같은 입력으로 다시 돌리면 아무것도 바뀌지 않는다.
+  항목의 sources에는 견본을 뽑은 쪽 목록을 남긴다. 기호에서 뽑은 것과 검은 채움 묶음에서 뽑은 것(rows)은 따로 남는다.
 - 예시 그림: 새 항목이면 가장 흔한 격자의 첫 기호를 잘라 <묶음 폴더>/images/<이름>.png(긴 변 160px 이하)로.
+- --set-attributes: 이번에 더하는 견본에 붙일 속성(JSON). 그 견본에 맞은 기호에만 덧붙는다(검게 칠한 닫힌 밸브의
+  normal_position 등). 속성만 다른 같은 격자의 견본이 이미 있으면 더하지 않으므로, 그런 견본은 항목 파일에서 직접 고친다.
 """
 
 import argparse
@@ -67,15 +70,18 @@ def new_entry(meta, date):
     return e
 
 
-def template_from(group, max_distance, size_ratio):
+def template_from(group, max_distance, size_ratio, set_attributes=None):
     r = group[0]
     if r["zero"]:
         return {"shape": "zero_size"}
     shorts = sorted(m["size"][0] for m in group)
     longs = sorted(m["size"][1] for m in group)
-    return {"shape": "grid", "composition": comp_from_key(r["key"]),
-            "size_pt": [shorts[len(shorts) // 2], longs[len(longs) // 2]], "size_ratio": size_ratio,
-            "rotations": "dihedral8", "max_distance": max_distance, "count": len(group), "grid": r["grid"]}
+    t = {"shape": "grid", "composition": comp_from_key(r["key"]),
+         "size_pt": [shorts[len(shorts) // 2], longs[len(longs) // 2]], "size_ratio": size_ratio,
+         "rotations": "dihedral8", "max_distance": max_distance, "count": len(group), "grid": r["grid"]}
+    if set_attributes:
+        t["set_attributes"] = dict(set_attributes)
+    return t
 
 
 def size_bucket(long_side, ratio):
@@ -127,12 +133,18 @@ def main():
     ap.add_argument("--size-ratio", type=float, default=1.25)
     ap.add_argument("--date", default=datetime.date.today().isoformat())
     ap.add_argument("--source-note", default="", help="sources에 남길 도면 묶음 이름(예: APR1400 DCD Rev.3)")
+    ap.add_argument("--set-attributes", type=json.loads, default=None, help="이번에 더하는 견본에 붙일 속성(JSON 객체)")
     a = ap.parse_args()
+    if a.set_attributes is not None and not isinstance(a.set_attributes, dict):
+        sys.exit("--set-attributes는 JSON 객체여야 한다")
     cand = a.candidates or paths.folder("symbol-candidates", a.set)
     root = a.library or paths.folder("symbols")
     input_dir = a.input_dir or paths.folder("APR1400", "by-drawing")
     rows = {(r["seq"], r["i"]): r for r in cu.load_rows(os.path.join(cand, "쪽"))}
     clusters = {c["rank"]: c for c in read_json(os.path.join(cand, "묶음.json"))}
+    # 후보가 기호인지 검은 채움 묶음(cluster_unclassified.py --black-fills)인지. 출처 기록을 종류별로 따로 남긴다
+    summary = os.path.join(cand, "요약.json")
+    rows_kind = read_json(summary).get("rows", "symbols") if os.path.isfile(summary) else "symbols"
     meta = {m["id"]: dict(m, source_set=a.source_note) for m in read_csv(a.meta)}
 
     for eid in meta:
@@ -175,7 +187,7 @@ def main():
         ranked = sorted(groups.values(), key=lambda g: (-len(g), g[0]["seq"], g[0]["i"]))
         added = 0
         for g in ranked[:a.per_entry]:
-            t = template_from(g, a.max_distance, a.size_ratio)
+            t = template_from(g, a.max_distance, a.size_ratio, a.set_attributes)
             if not any(same_template(t, old) for old in entry["match"]):
                 entry["match"].append(t)
                 added += 1
@@ -183,8 +195,12 @@ def main():
             entry["revision"] += 1
             entry["updated"] = a.date
             pages = sorted({r["seq"] for r in members[eid]})
-            entry["sources"] = [s for s in entry["sources"] if "pages" not in s] + [
-                {"set": a.source_note, "pages": pages, "symbols": len(members[eid]), "template_parity": a.template_parity}]
+            source = {"set": a.source_note, "pages": pages, "symbols": len(members[eid]),
+                      "template_parity": a.template_parity}
+            if rows_kind != "symbols":
+                source["rows"] = rows_kind
+            entry["sources"] = [s for s in entry["sources"]
+                                if "pages" not in s or s.get("rows", "symbols") != rows_kind] + [source]
             img_dir = os.path.join(folder, symbols.IMAGE_DIR)
             img = os.path.join(img_dir, name + ".png")
             if not os.path.isfile(img) and ranked and not ranked[0][0]["zero"]:

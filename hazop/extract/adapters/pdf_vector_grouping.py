@@ -60,10 +60,18 @@ class _Sym:
     def deep(self, p, prm):
         if self.stroke_only or self.arrow_only():
             return False  # 화살표 안으로 들어간 배관은 연결이지 화살표의 일부가 아니다
-        return _depth(p, self.core) > max(prm["deep_min"], prm["deep_ratio"] * min(_w(self.core), _h(self.core)))
+        if _depth(p, self.core) <= max(prm["deep_min"], prm["deep_ratio"] * min(_w(self.core), _h(self.core))):
+            return False
+        return self.seed is None  # 검정 견본으로 올린 몸통은 이미 한 기호다. 안으로 들어온 선을 제 일부로 삼지 않는다
 
     def evidence(self):
         return sorted(m["id"] for m in self.bodies + self.strokes + self.markers + self.dashes)
+
+    @property
+    def seed(self):
+        """몸체가 모두 사전의 같은 검정 견본 묶음(pdf_vector._promote_black_symbols)이면 그 번호, 아니면 None."""
+        ids = {b.get("seed") for b in self.bodies}
+        return next(iter(ids)) if len(ids) == 1 else None
 
 
 def _cluster_bodies(bodies, prm):
@@ -71,9 +79,28 @@ def _cluster_bodies(bodies, prm):
         b["kind_"] = "body"
     # 연결 표시 화살표는 맞닿은 밸브·축소관 몸체와 한 기호로 묶지 않는다(묶이면 화살표도 밸브도 종류를 잃는다)
     alone = [_is_chevron(b) for b in bodies]
+    # 사전의 검정 견본에 통째로 맞은 몸체(seed)는 이미 한 기호다. 맞닿은 축소관·구동부 몸체와 묶지 않는다
     groups = _uf_groups(len(bodies), lambda i, j: not (alone[i] or alone[j]) and
+                        bodies[i].get("seed") == bodies[j].get("seed") and
                         _box_gap(bodies[i]["bbox"], bodies[j]["bbox"]) <= prm["touch_tol"])
     return [_Sym([bodies[i] for i in g]) for g in groups]
+
+
+def _black_fill_groups(fills, prm):
+    """검은 채움 도형(표식과 검은 몸체)을 맞닿은 것끼리 묶는다 → [{"straight", "round", "bbox"}], 묶음의 첫 채움 id 순.
+    APR1400은 정상 운전 중 닫힌 밸브를 검게 칠한다(범례 1.7-1 1/4). 몸통은 채운 나비 하나이거나 채운 삼각형 둘이고,
+    글로브는 가운데에 둥근 점이 겹친다. 곧은 변으로 된 채움(straight)이 몸통, 둥근 채움(round)이 그 위의 점이다."""
+    groups = _uf_groups(len(fills), lambda i, j: _box_gap(fills[i]["bbox"], fills[j]["bbox"]) <= prm["touch_tol"])
+    out = []
+    for g in groups:
+        items = sorted((fills[i] for i in g), key=lambda m: m["id"])
+        box = items[0]["bbox"]
+        for m in items[1:]:
+            box = _union(box, m["bbox"])
+        out.append({"straight": [m for m in items if not m["curved"]], "round": [m for m in items if m["curved"]],
+                    "bbox": box, "first": items[0]["id"]})
+    out.sort(key=lambda g: g["first"])
+    return out
 
 
 def _nearest_sym(p, syms, tol):
@@ -329,6 +356,10 @@ def _group_symbols(cls, prm):
             if host is None:
                 rest.append(p)
                 continue
+            reached = [_nearest_sym(e, [s for s in syms if s is not host], prm["attach_tol"]) for e in ends]
+            if any(s is not None and s.seed is not None for s in reached):
+                rest.append(p)  # 검정 견본으로 올린 몸통(seed)에 닿은 선은 연결선이다. 그 몸통을 다른 기호에 합치지 않는다
+                continue
             host.add([p], "strokes")
             for e in ends:
                 other = _nearest_sym(e, [s for s in syms if s is not host], prm["attach_tol"])
@@ -380,9 +411,12 @@ def _group_symbols(cls, prm):
         for bucket, name in ((markers, "markers"), (dashes, "dashes")):
             rest = []
             for m in bucket:
-                host = next((s for s in syms if s.alive and
-                             _inside((m["bbox"][0], m["bbox"][1]), s.bbox, prm["touch_tol"]) and
-                             _inside((m["bbox"][2], m["bbox"][3]), s.bbox, prm["touch_tol"])), None)
+                inside = [s for s in syms if s.alive and
+                          _inside((m["bbox"][0], m["bbox"][1]), s.bbox, prm["touch_tol"]) and
+                          _inside((m["bbox"][2], m["bbox"][3]), s.bbox, prm["touch_tol"])]
+                # 검정 견본으로 올린 몸통 위의 점(seed)은 그 몸통의 기호로 간다. 그 밖에는 상자에 드는 첫 기호
+                own = [s for s in inside if "seed" in m and any(b.get("seed") == m["seed"] for b in s.bodies)]
+                host = (own or inside or [None])[0]
                 if host is not None:
                     host.add([m], name)
                     changed = True

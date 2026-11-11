@@ -1,7 +1,7 @@
 """벡터 PDF 도면의 미분류 기호를 모양별로 묶어 사람이 이름 붙일 후보 목록과 그림판을 만든다(기획서/PID-기호사전.md §6 2번).
 
   python scripts/symbols/cluster_unclassified.py --set APR1400 [--input-dir <도면 폴더>] [--pages 5-143] [--parity odd]
-         [--library <사전 폴더> | --no-library] [--jobs 8] [--top 60] [--out <폴더>]
+         [--library <사전 폴더> | --no-library] [--jobs 8] [--top 60] [--out <폴더>] [--black-fills] [--dist 0.8]
 
 1. 쪽마다 지금 추출기(pdf_vector)로 기호를 묶고, 기호마다 kind·상자·상자 안 글자·모양 서명을 `<out>/쪽/<순번>.jsonl`에 남긴다.
    PDF와 추출기·서명 코드가 같으면 다시 계산하지 않는다(다시 돌려도 같은 끝 상태).
@@ -9,6 +9,11 @@
 3. 사전에 맞지 않은 미분류를 구성 키가 같고 크기 비 1.25 안이며 8방향 챔퍼 거리 --dist 칸 이하인 것끼리 묶는다.
    대표에 붙이는 탐욕 묶음이라 입력 순서(쪽, 기호 번호)에 대해 결정적이다.
 결과: <out>/요약.json, 묶음.csv, 묶음.json, 그림판.html(+ 그림/c###.png). 기본 <out>은 작업 루트의 symbol-candidates/<묶음>/.
+
+--black-fills: 기호 대신 검은 채움 도형(화살촉 같은 표식과 검은 몸체)을 맞닿은 것끼리 묶어 같은 방식으로 센다.
+검게 칠한 닫힌 밸브의 견본을 모으는 데 쓴다(§4.2 1번). 묶음과 서명은 추출기가 검은 채움을 기호 몸체로 올릴지 정할 때 쓰는
+것과 같은 함수(pdf_vector._black_fills, _black_fill_groups, _black_fill_signature)로 만든다. 채움은 속이 차 있어 서로
+다른 기호도 격자가 비슷하다. --dist를 0.1 안팎으로 좁혀 묶는다. 기본 <out>은 symbol-candidates/<묶음>-black-fills/.
 """
 
 import argparse
@@ -48,19 +53,47 @@ def parse_pages(spec):
     return out
 
 
+def black_fill_rows(data):
+    """한 쪽의 검은 채움 묶음 → 행 목록. 사전에 대 보기 전의 후보 전부다."""
+    import io
+    from hazop.extract.adapters import pdf_vector as pv
+    _, width, height, _, prims = pv.load_page(io.BytesIO(data), 0)
+    fills = pv._black_fills(pv._classify_primitives(width, height, prims, pv.PARAMS))
+    rows = []
+    for i, g in enumerate(pv._black_fill_groups(fills, pv.PARAMS)):
+        sig = pv._black_fill_signature(g)
+        rows.append({"i": i, "kind": None, "label": "", "inside": [], "bbox": [round(v, 2) for v in g["bbox"]],
+                     "key": sig.comp_key, "size": list(sig.size), "zero": sig.zero, "grid": symbols.grid_text(sig.cells)})
+    return rows
+
+
+def write_rows(dst, head, rows):
+    tmp = dst + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(head, ensure_ascii=False) + "\n")
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    os.replace(tmp, dst)
+    return dst
+
+
 def scan_page(job):
-    """한 쪽 → 기호 행 목록. 캐시가 맞으면 읽기만 한다."""
-    path, dst, fp = job
+    """한 쪽 → 기호 행 목록(black이면 작은 검은 채움 묶음 행 목록). 캐시가 맞으면 읽기만 한다."""
+    path, dst, fp, black = job
     import pdfplumber
     from hazop.extract.adapters import pdf_vector as pv
     with open(path, "rb") as f:
         data = f.read()
     sha = hashlib.sha256(data).hexdigest()
     head = {"file": os.path.basename(path), "sha256": sha, "code": fp}
+    if black:
+        head["rows"] = "black_fills"
     if os.path.isfile(dst):
         with open(dst, encoding="utf-8") as f:
             if json.loads(f.readline()) == head:
                 return dst
+    if black:
+        return write_rows(dst, head, black_fill_rows(data))
     _, page_count, width, height, analysis = pv.analyze_bytes(data, 0)
     ex = pv.build_extraction(analysis, width, height, page_count, 0, os.path.basename(path), sha)
     syms = analysis["symbols"]
@@ -76,13 +109,7 @@ def scan_page(job):
         rows.append({"i": i, "kind": node["kind"], "label": node["label_text"], "inside": inside,
                      "bbox": [round(v, 2) for v in s.bbox], "key": sig.comp_key, "size": list(sig.size),
                      "zero": sig.zero, "grid": symbols.grid_text(sig.cells)})
-    tmp = dst + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(json.dumps(head, ensure_ascii=False) + "\n")
-        for r in rows:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    os.replace(tmp, dst)
-    return dst
+    return write_rows(dst, head, rows)
 
 
 def load_rows(page_dir):
@@ -151,6 +178,8 @@ def strip(members, input_dir, dst, n=8, res=220, pad=11.0):
             x0, y0, x1, y1 = m["bbox"]
             cx, cy, half = (x0 + x1) / 2, (y0 + y1) / 2, max(x1 - x0, y1 - y0) / 2 + pad
             box = (max(0, cx - half), max(0, cy - half), min(pg.width, cx + half), min(pg.height, cy + half))
+            if box[0] >= box[2] or box[1] >= box[3]:
+                continue  # 쪽 밖에 그린 도형은 예시 그림을 만들 수 없다
             im = pg.crop(box).to_image(resolution=res).original.convert("RGB")
         s = res / 72.0
         ImageDraw.Draw(im).rectangle([(x0 - box[0]) * s - 1, (y0 - box[1]) * s - 1, (x1 - box[0]) * s + 1,
@@ -173,10 +202,12 @@ def main():
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 1)))
     ap.add_argument("--top", type=int, default=60, help="그림을 만들 상위 묶음 수")
     ap.add_argument("--dist", type=float, default=0.8)
+    ap.add_argument("--black-fills", action="store_true",
+                    help="기호 대신 작은 검은 채움 묶음을 센다(검게 칠한 닫힌 밸브 견본 모으기)")
     ap.add_argument("--out")
     a = ap.parse_args()
     input_dir = a.input_dir or paths.folder("APR1400", "by-drawing")
-    out = a.out or paths.folder("symbol-candidates", a.set)
+    out = a.out or paths.folder("symbol-candidates", a.set + ("-black-fills" if a.black_fills else ""))
     page_dir = os.path.join(out, "쪽")
     os.makedirs(page_dir, exist_ok=True)
     files = sorted(glob.glob(os.path.join(input_dir, "*.pdf")))
@@ -189,7 +220,7 @@ def main():
             continue
         if n is not None and a.parity != "all" and (n % 2 == 1) != (a.parity == "odd"):
             continue
-        jobs.append((f, os.path.join(page_dir, seq + ".jsonl"), code_fingerprint()))
+        jobs.append((f, os.path.join(page_dir, seq + ".jsonl"), code_fingerprint(), a.black_fills))
     if not jobs:
         sys.exit("대상 PDF가 없음: %s" % input_dir)
     with multiprocessing.Pool(a.jobs) as pool:
@@ -235,7 +266,8 @@ def main():
     summary = {"set": a.set, "input_dir": input_dir, "pages": len(done), "parity": a.parity, "symbols": len(rows),
                "unclassified": len(unclassified), "library": None if lib is None else lib.versions,
                "library_outcome": dict(outcome), "library_per_entry": dict(per_entry.most_common()),
-               "remaining": len(rest), "clusters": len(clusters), "top_cover": cover}
+               "remaining": len(rest), "clusters": len(clusters), "top_cover": cover,
+               "rows": "black_fills" if a.black_fills else "symbols", "dist": a.dist}
     with open(os.path.join(out, "요약.json"), "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=1)
     rows_html = "\n".join(

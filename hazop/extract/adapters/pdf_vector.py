@@ -44,6 +44,7 @@ from .pdf_vector_common import (
 )
 from .pdf_vector_grouping import (
     _Sym, _cluster_bodies, _nearest_sym, _end_status, _plate_assemblies, _group_symbols, _merge_appendages,
+    _black_fill_groups,
 )
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
@@ -771,7 +772,8 @@ def _shape_features(sym, prm):
     """기호의 구조 특징(이름과 뜻은 symbols.STRUCTURE_FEATURES). 어느 특징이 어느 종류인지와 보는 순서는
     기호 사전 공통 묶음의 구조 규칙 견본이 정한다."""
     circles = [b for b in sym.bodies if _is_circle(b, prm)]
-    tris = [b for b in sym.bodies if _is_triangle(b)]
+    # 검정 견본으로 올린 몸체(seed)는 그 견본이 종류와 정상 위치를 정한다. 삼각형 둘이어도 나비 규칙에 넣지 않는다
+    tris = [b for b in sym.bodies if _is_triangle(b) and "seed" not in b]
     found = set()
     if getattr(sym, "plate_valve", None):  # 판 사이 원판·공(_plate_assemblies)
         found.add("plate_valve:%s" % sym.plate_valve)
@@ -880,6 +882,10 @@ def _isa_bubble_kind(lines, min_side=None):
 
 _symbol_library = None
 PIPE_CAP_BASIS = "small_closed_body_single_connection"
+# 검은 채움을 기호 몸체로 올릴 때의 견본 거리 상한(칸). 견본의 max_distance보다 좁게 본다. 잘못 올리면 화살촉이 밸브가 되어
+# 열린 배관이 닫힌 밸브로 읽힌다. APR1400 143쪽에서 게이트·글로브 묶음은 견본에서 0.06칸 안, 밸브가 아닌 검은 채움(반만 칠한
+# 밸브, 건물 경계 표시, 화살촉 등)은 0.24칸 이상 떨어져 있었다(docs/2026-11-11-unit-f1/README.md F1-3)
+BLACK_SEED_DISTANCE = 0.1
 ACTUATOR_REACH_RATIO = 2.0  # 밸브 몸통 긴 변 × 비율 안에 구동부 기호가 있으면 구동 밸브로 본다(APR1400 축 길이 기준)
 
 
@@ -922,6 +928,54 @@ def _check_against_registry(lib):
         raise symbols.SymbolLibraryError("기호 사전이 레지스트리와 맞지 않음: " + "; ".join(problems))
 
 
+def _black_fills(cls):
+    """검은 채움 도형 전부: 표식(작은 것), 검은 몸체(큰 것), 점선 조각으로 분류된 둥근 점. 글로브 밸브 가운데 점은
+    1.5pt보다 작으면 점선 조각이 된다."""
+    return cls["markers"] + [b for b in cls["bodies"] if b.get("solid")] + [d for d in cls["dashes"] if d["curved"]]
+
+
+def _promote_black_symbols(cls, prm):
+    """검은 채움 묶음이 사전의 검정 견본에 맞으면 그 몸통을 한 기호의 몸체로 표시한다(seed). 표식이던 것은 몸체로 올린다
+    (기획서 §4.2 1번). 표식으로 두면 닫힌 밸브 자리에 밸브 노드 없이 양쪽 배관이 이어진다(_build_solid의 same_marker).
+    가운데 둥근 점은 표식으로 두어, 기호를 묶을 때 같은 seed의 기호에 들어가게 한다. 묶음과 같은 자리에 따로 그린 외곽선은
+    채움과 같은 도형이라 뺀다(_classify_primitives의 twin과 같은 규칙). 견본에 맞지 않거나 애매한 묶음은 그대로 둔다.
+    맞은 결과는 cls["seeds"]({seed 번호: symbols.Match})에 남긴다."""
+    cls["seeds"] = {}
+    groups = [g for g in _black_fill_groups(_black_fills(cls), prm) if g["straight"]]
+    if not groups:
+        return
+    lib = symbol_library()
+    seed, boxes = {}, []
+    for k, g in enumerate(groups):
+        hit = lib.match(_black_fill_signature(g))
+        if hit.outcome == "matched" and hit.entry.role == "symbol" and hit.distance <= BLACK_SEED_DISTANCE:
+            seed.update((id(m), k) for m in g["straight"] + g["round"])
+            boxes.append(g["bbox"])
+            cls["seeds"][k] = hit
+    if not seed:
+        return
+
+    def outline_of_seed(b):
+        return not b.get("solid") and any(max(abs(b["bbox"][j] - box[j]) for j in range(4)) <= prm["twin_tol"]
+                                          for box in boxes)
+
+    def body(m):
+        return id(m) in seed and not m["curved"]
+
+    def tagged(items):
+        return [dict(m, seed=seed[id(m)]) if id(m) in seed else m for m in items]
+    cls["bodies"] = [dict(b, seed=seed[id(b)]) if body(b) else b for b in cls["bodies"] if not outline_of_seed(b)] +         [dict(m, solid=True, closed=True, seed=seed[id(m)]) for m in cls["markers"] if body(m)]
+    cls["markers"] = tagged(m for m in cls["markers"] if not body(m)) + tagged(d for d in cls["dashes"] if id(d) in seed)
+    cls["dashes"] = [d for d in cls["dashes"] if id(d) not in seed]
+
+
+def _black_fill_signature(group):
+    """검은 채움 묶음(_black_fill_groups)의 모양 서명. 곧은 채움은 검은 몸체로, 둥근 점은 표식으로 센다. 몸체로 올린 뒤
+    기호로 묶였을 때의 서명(symbols.sym_signature)과 같아야 같은 견본에 다시 맞는다."""
+    solid = [dict(m, solid=True, closed=True) for m in group["straight"]]
+    return symbols.signature(solid, [], group["round"], [], group["bbox"])
+
+
 def _symbol_match(sym, blocks):
     """기호 상자 안에 가운데가 든 글자 문단을 글자 조건으로 넘겨 사전에 대 본다."""
     x0, y0, x1, y1 = sym.bbox
@@ -942,6 +996,8 @@ def _classify(sym, text, degree, prm, marks=()):
         return kind, basis or "circle_without_isa_letters"
     if shape is not None:
         return shape, sbasis
+    if sym.seed is not None:  # 검정 견본으로 올린 몸통은 사전이 정한다. 라벨의 장비 낱말이나 끝막음 규칙으로 정하지 않는다
+        return None, None
     kind, basis = _kind_from_text(text)
     if kind is not None:
         return kind, basis
@@ -1064,6 +1120,7 @@ def analyze(width, height, words, prims, params=None):
     prm = dict(PARAMS)
     prm.update(params or {})
     cls = _classify_primitives(width, height, prims, prm)
+    _promote_black_symbols(cls, prm)
     ticks, marked = _line_ticks(cls["polys"], prm)
     syms, polys, markers, dashes = _group_symbols(cls, prm)
     # 빗금은 기호 묶기가 끝난 뒤에 남은 선에서만 뺀다. 기호 장식선으로 흡수된 빗금은 그대로 두어 기호 모양과 번호가
@@ -1168,6 +1225,10 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             if any(_box_gap(cb, inner) <= 0 and _poly_box_dist(ch["pts"], inner) == 0.0
                    and all(v[0] != "sym" or v[1] is not sy for v, _, _ in ch["ends"]) for cb, ch in solid):
                 on_valve.add(id(sy))
+    # 검정 견본으로 올린 몸통(seed)에 맞닿은 기호(밸브에 붙여 그린 축소관 등)는 그 몸통에 이어진 것이지 끝막음이 아니다
+    seeded = [sy for sy in syms if sy.seed is not None]
+    on_valve |= {id(sy) for sy in syms if sy.seed is None
+                 and any(_box_gap(sy.bbox, v.bbox) <= prm["touch_tol"] for v in seeded)}
     stemmed = {id(v) for vs in stem_of.values() for v in vs}
     # S5 계획: 사전 구동부를 꺾이지 않은 축으로 이어진(축이 없으면 닿은) 밸브 하나에 합칠 후보로 둔다(D6). 실제로 합칠지는
     # 노드 kind가 정해진 뒤 정한다(아래 _apply_merges). 밸브가 없거나 둘 이상이면 후보가 아니다
@@ -1276,6 +1337,12 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             elif hit.outcome == "ambiguous":
                 _issue(unknowns, "ambiguous_symbol", "기호 사전 후보가 둘 이상이라 정하지 않음: %s"
                        % ", ".join(c for c, _ in hit.candidates[:3]), sid, local_id, "kind")
+        seed = analysis["classified"].get("seeds", {}).get(s.seed)
+        if seed is not None and kind is None and symbol_id is None:
+            # 몸통은 검정 견본에 맞았지만 묶인 기호 전체는 사전에 없다(벨로스 같은 다른 선이 몸통에 붙음). 종류는 비워 두고
+            # 검게 칠한 몸통이 뜻하는 정상 위치만 남긴다
+            symbol_attrs = {k: v for k, v in sorted(seed.attributes.items()) if k == "normal_position"}
+            basis = "black_body:%s" % seed.entry.id
         if rules.KIND_CATEGORY.get(kind) == "instrument" or (kind is None and shape_of[n - 1][0] == "instrument"):
             instrument_ids.add(local_id)  # 측정 연결 판정: 계기로 분류됐거나 원형이고 다른 종류 근거가 없는 기호
         category = rules.KIND_CATEGORY.get(kind)

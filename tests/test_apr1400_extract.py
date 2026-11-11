@@ -65,6 +65,78 @@ class InstrumentTags(unittest.TestCase):
                 self.assertIn(n["tag"].replace("-", ""), words | bubbles, n["tag"])
 
 
+def center(box):
+    return (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+
+
+def node_box(n):
+    g = n["geometry"]
+    return g["x"], g["y"], g["x"] + g["width"], g["y"] + g["height"]
+
+
+def within(point, box, slack=0.0):
+    return box[0] - slack <= point[0] <= box[2] + slack and box[1] - slack <= point[1] <= box[3] + slack
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1)")
+class ClosedValves(unittest.TestCase):
+    """몸통을 검게 칠한 밸브는 정상 운전 중 닫힘이다(DCD 범례 1.7-1 1/4). 그 자리에는 normal_position이 NC인 밸브 노드가
+    있어야 하고, 다른 노드는 NC가 아니어야 한다. 정답은 answer_key의 closed_valves(렌더한 그림을 눈으로 읽음)다."""
+
+    PAGES = (12, 62)
+    SLACK = 3.0  # 정답 상자는 검게 칠한 부분만이다. 노드 상자에는 가운데 점이나 맞닿은 판이 더해질 수 있다
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pages = {seq: load_page(seq) for seq in cls.PAGES}
+
+    def closed_nodes(self, ex):
+        return [n for n in ex["nodes"] if (n.get("attributes") or {}).get("normal_position") == "NC"]
+
+    def test_every_filled_valve_body_is_a_normally_closed_valve(self):
+        for seq, (ex, key) in self.pages.items():
+            closed = self.closed_nodes(ex)
+            missing = [item.get("number") or item["tag"] for item in key["closed_valves"]
+                       if not any(within(center(node_box(n)), item["bbox"], self.SLACK) for n in closed)]
+            self.assertEqual(missing, [], "%03d쪽: 닫힌 밸브로 읽지 못한 것" % seq)
+
+    def test_nothing_else_is_read_as_normally_closed(self):
+        for seq, (ex, key) in self.pages.items():
+            extra = [(n["local_id"], n["kind"], [round(v, 1) for v in node_box(n)]) for n in self.closed_nodes(ex)
+                     if not any(within(center(node_box(n)), item["bbox"], self.SLACK) for item in key["closed_valves"])]
+            self.assertEqual(extra, [], "%03d쪽: 닫힌 밸브가 아닌데 NC로 읽은 것" % seq)
+
+    def test_half_filled_valves_are_not_closed(self):
+        ex, key = self.pages[62]
+        self.assertEqual(len(key["half_filled_valves"]), 8)
+        for item in key["half_filled_valves"]:
+            near = [n for n in self.closed_nodes(ex) if within(center(node_box(n)), item["bbox"], 6.0)]
+            self.assertEqual(near, [], item["tag"])
+
+    def test_closed_valve_kind_is_a_valve_or_left_open(self):
+        """구동부가 붙은 몸통은 구동 방식을 정하기 전까지 종류를 비울 수 있다. 밸브가 아닌 종류가 붙으면 안 된다."""
+        from hazop.extract import rules
+        for seq, (ex, _) in self.pages.items():
+            kinds = {n["kind"] for n in self.closed_nodes(ex)}
+            self.assertEqual({k for k in kinds if k is not None and rules.KIND_CATEGORY.get(k) != "valve"}, set(), seq)
+
+    def test_small_closed_valve_stands_between_its_pipes(self):
+        """012쪽 418번 밸브는 삼각형 둘과 점을 따로 칠한 작은 몸통이다. 화살촉으로 읽으면 위아래 배관이 밸브 없이 이어진다."""
+        ex, key = self.pages[12]
+        item = next(i for i in key["closed_valves"] if i["number"] == "418")
+        (valve,) = [n for n in self.closed_nodes(ex) if within(center(node_box(n)), item["bbox"], self.SLACK)]
+        ends = [e for r in ex["relations"] if r["kind"] == "physical_connection" for e in r["endpoints"]
+                if e["node_local_id"] == valve["local_id"]]
+        self.assertGreaterEqual(len(ends), 2)
+        self.assertEqual(valve["attributes"]["valve_type"], "globe")
+
+    def test_reducer_drawn_against_a_closed_valve_is_not_a_pipe_cap(self):
+        ex, _ = self.pages[12]
+        reducer = node_at(ex, [179.3, 275.0, 183.9, 279.6])  # 418번 밸브 아래에 붙여 그린 3"×2" 축소관
+        self.assertIsNotNone(reducer)
+        self.assertNotEqual(reducer["kind"], "pipe_cap")
+
+
 class PrefixInference(unittest.TestCase):
     """같은 쪽 태그에서 계통 접두를 빌리는 규칙(_assign_tags (b)): 태그 하나뿐인 접두는 빌리지 않는다(9.2.2-1 시트 4의
     'QIAS-PV1686' 한 개가 계기 18개에 'QIAS-'를 붙인 결함)."""

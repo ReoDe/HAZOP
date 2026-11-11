@@ -1,0 +1,197 @@
+# F1-3(검게 칠한 닫힌 밸브) 전후 대조. 실행 조건
+# - '전': 커밋 2ce16b9(작업트리 깨끗함). check_apr1400.py, check_snp_baseline.py, unknowns_breakdown.py는 주 체크아웃에서 돌렸다.
+#   노드 대조용 추출(f1-3-node-diff.py dump)은 2ce16b9를 꺼낸 분리 작업트리(시험 폴더 2026-11-11-unit-f1b 아래 wt-before)에서 돌렸다.
+#   쪽별 PDF는 주 체크아웃의 resources/references/APR1400_DCD/by-drawing, 기호 사전은 그 작업트리의 것이다
+# - '후': 2ce16b9 + F1-3 변경(커밋 전, 주 체크아웃). 그 내용이 그대로 커밋됐다. git diff HEAD의 sha256 앞 16자는 아래 로그에 있다
+#   (문서와 이 파일은 실행 뒤에 더했다. 추출 입력이 아니다)
+# - 인터프리터: 시험용 venv(%USERPROFILE%/.hazop/venv-py312)의 python.exe, PYTHONIOENCODING=utf-8, --update 없음, 기본 --jobs
+# - 수정 기록 이월(carry)은 처음에 글자와 경로가 없는 쪽에서 멈췄다. 스크립트를 고친 뒤 같은 '전'·'후' 추출로 다시 돌린 출력을 넣었다
+# - 아래는 시험 폴더 2026-11-11-unit-f1b/f1-3 의 before/run.log, after/run.log, after/carry.log 에서 git 줄 끝 경고만 뺀 것이다
+
+## 전 (2ce16b9)
+
+# HEAD 2ce16b9, 2026-11-11 11:22:42 +0900
+# git status --short:
+$ check_apr1400.py --out before/apr1400_pages.csv
+APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63723
+  정답 5.4.12-1-S1: 계기 4/4(태그 4 중 맞음 4) · 연결 3/3(연결점 3 중 맞음 3) · 대리 원 4(정답 안 4)/정답 4 · 대리 연결 표기 3(정답 안 3)/정답 3
+  정답 9.3.3-1-S7: 계기 16/16(태그 16 중 맞음 16) · 연결 7/7(연결점 7 중 맞음 7) · 대리 원 16(정답 안 16)/정답 16 · 대리 연결 표기 5(정답 안 5)/정답 7
+  정답 9.3.4-1-S1: 계기 12/15(태그 12 중 맞음 12) · 연결 17/17(연결점 17 중 맞음 17) · 대리 원 15(정답 안 15)/정답 15 · 대리 연결 표기 4(정답 안 4)/정답 17
+기준값: APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 71203
+rc=0
+$ check_snp_baseline.py
+나아짐: pdf SNP-M-101_RCS-main-loop unknowns 40 → 31
+나아짐: pdf SNP-M-102_RCS-pressurizer unknowns 19 → 15
+나아짐: pdf SNP-M-201_CVCS unknowns 23 → 20
+나아짐: pdf SNP-M-301_SIS unknowns 24 → 20
+나아짐: pdf SNP-M-401_CCW unknowns 31 → 24
+나아짐: pdf SNP-M-501_MS-FW unknowns 27 → 23
+SNP: 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6
+rc=0
+$ unknowns_breakdown.py --out before/unknowns
+# APR1400 미확인 분해
+
+쪽 143, 미확인 63723
+
+## 사유별
+
+| 사유(check) | 수 | 비율 | 많은 쪽(수) |
+| --- | --- | --- | --- |
+| `unknown_flow_direction` | 28340 | 44.5% | 066(727), 028(717), 025(536) |
+| `missing_tag` | 11767 | 18.5% | 028(268), 001(257), 083(239) |
+| `unconnected_endpoint` | 9671 | 15.2% | 066(401), 025(348), 088(321) |
+| `missing_kind` | 7499 | 11.8% | 001(211), 083(206), 081(159) |
+| `self_loop` | 5640 | 8.9% | 066(315), 013(204), 137(198) |
+| `not_registered` | 429 | 0.7% | 001(3), 002(3), 003(3) |
+| `actuated_valve_pending` | 170 | 0.3% | 113(18), 025(9), 046(9) |
+| `missing_drawing_number` | 143 | 0.2% | 001(1), 002(1), 003(1) |
+| `duplicate_tag` | 56 | 0.1% | 006(29), 008(22), 007(5) |
+| `dashed_path_no_visible_piece` | 8 | 0.0% | 090(8) |
+
+(사유 × 대상 종류 표는 시험 폴더의 unknowns 폴더에 있다)
+rc=0
+$ f1-0-extract-compare.py apr1400
+APR1400 143쪽(실패 0) → D:\HAZOP-trials\2026-11-11-unit-f1b\f1-3\before\apr1400-hashes.json
+rc=0
+
+## 후 (2ce16b9 + F1-3)
+
+# HEAD 2ce16b9 + F1-3 작업 폴더 변경(커밋 전), 2026-11-11 12:15:01 +0900
+# git status --short:
+ M hazop/extract/adapters/pdf_vector.py
+ M hazop/extract/adapters/pdf_vector_grouping.py
+ M resources/library/symbols/APR1400/gate_valve.json
+ M resources/library/symbols/APR1400/globe_valve.json
+ M scripts/symbols/add_symbols.py
+ M scripts/symbols/cluster_unclassified.py
+ M specs/pid-symbol-dictionary.md
+ M tests/fixtures/apr1400/answer_key/012_5.4.12-1-S1.json
+ M tests/fixtures/apr1400/answer_key/062_9.3.3-1-S7.json
+ M tests/test_apr1400_extract.py
+ M tests/test_symbols.py
+?? docs/2026-11-11-unit-f1/evidence/f1-3-node-diff.py
+# git diff HEAD sha256: 7f6ca83f152fd13e
+$ check_symbols.py (첫 줄)
+묶음 {'APR1400': 'a73ac84f0384', '공통': 'ac25f22101ce'}, 항목 40(켜짐 36)
+$ f1-3-node-diff.py dump --repo . --out after
+143쪽 → D:/HAZOP-trials/2026-11-11-unit-f1b/f1-3/nodes-after (코드: D:\HAZOP)
+rc=0
+$ f1-3-node-diff.py compare before after
+쪽 143 · 노드 23086 → 23326 · 관계 23045 → 23222
+
+같은 자리 기호의 종류 변화(전 → 후: 수)
+  None → manual_valve: 63
+  pipe_cap → None: 26
+  None → motor_operated_valve: 4
+  indicator → None: 3
+  None → pipe_cap: 2
+  vent → manual_valve: 2
+  turbine → None: 2
+  psv → None: 1
+  turbine → manual_valve: 1
+  None → air_operated_valve: 1
+  control_valve → tank: 1
+  None → control_valve: 1
+
+같은 자리 기호의 정상 위치 변화
+  None → NC: 204
+
+같은 자리 기호의 태그 변화(있음 여부 전 → 후)
+
+새로 생긴 기호 노드(종류, 정상 위치): 766
+  manual_valve NC: 470
+  None NC: 112
+  None : 62
+  motor_operated_valve NC: 62
+  air_operated_valve NC: 24
+  reducer : 17
+  manual_valve : 10
+  check_valve : 3
+  drain : 3
+  continuation : 1
+  orifice : 1
+  pump : 1
+
+없어진 기호 노드(종류): 333
+  None: 318
+  manual_valve: 8
+  orifice: 5
+  check_valve: 1
+  control_valve: 1
+
+미확인 사유별(전 → 후, 차)
+  unknown_flow_direction: 28340 → 28803 (+463)
+  missing_tag: 11767 → 12199 (+432)
+  unconnected_endpoint: 9671 → 9531 (-140)
+  missing_kind: 7499 → 7316 (-183)
+  self_loop: 5640 → 5668 (+28)
+  not_registered: 429 → 429 (+0)
+  actuated_valve_pending: 170 → 234 (+64)
+  missing_drawing_number: 143 → 143 (+0)
+  duplicate_tag: 56 → 56 (+0)
+  dashed_path_no_visible_piece: 8 → 8 (+0)
+  합계: 63723 → 64387 (+664)
+
+노드 변화 목록 1338줄 → D:/HAZOP-trials/2026-11-11-unit-f1b/f1-3/node-changes.csv
+rc=0
+$ f1-3-node-diff.py carry before after
+쪽 143 (수정 적용 코드: D:\HAZOP)
+  node 수정: 14770
+  node 적용: 14433
+  node 적용 못 함: 대상 없음: 62
+  node 적용 못 함: 대상이 바뀜(at): 107
+  node 적용 못 함: 대상이 바뀜(at·kind): 150
+  node 적용 못 함: 대상이 바뀜(at·kind·tag): 14
+  node 적용 못 함: 대상이 바뀜(at·tag): 2
+  node 적용 못 함: 대상이 바뀜(kind): 2
+  node 적용(번호가 밀려 자리로 다시 찾음): 6624
+  relation 수정: 23045
+  relation 적용: 21791
+  relation 적용 못 함: 대상 없음: 129
+  relation 적용 못 함: 대상이 바뀜(at): 9
+  relation 적용 못 함: 대상이 바뀜(at·ends): 824
+  relation 적용 못 함: 대상이 바뀜(at·ends·kind): 144
+  relation 적용 못 함: 대상이 바뀜(ends): 118
+  relation 적용 못 함: 대상이 바뀜(ends·kind): 30
+  relation 적용(번호가 밀려 자리로 다시 찾음): 10768
+rc=0
+$ check_apr1400.py --out after/apr1400_pages.csv
+APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 287/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 64387
+  정답 5.4.12-1-S1: 계기 4/4(태그 4 중 맞음 4) · 연결 3/3(연결점 3 중 맞음 3) · 대리 원 4(정답 안 4)/정답 4 · 대리 연결 표기 3(정답 안 3)/정답 3
+  정답 9.3.3-1-S7: 계기 16/16(태그 16 중 맞음 16) · 연결 7/7(연결점 7 중 맞음 7) · 대리 원 16(정답 안 16)/정답 16 · 대리 연결 표기 5(정답 안 5)/정답 7
+  정답 9.3.4-1-S1: 계기 12/15(태그 12 중 맞음 12) · 연결 17/17(연결점 17 중 맞음 17) · 대리 원 15(정답 안 15)/정답 15 · 대리 연결 표기 4(정답 안 4)/정답 17
+기준값: APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 71203
+rc=0
+$ check_snp_baseline.py
+나아짐: pdf SNP-M-101_RCS-main-loop unknowns 40 → 31
+나아짐: pdf SNP-M-102_RCS-pressurizer unknowns 19 → 15
+나아짐: pdf SNP-M-201_CVCS unknowns 23 → 20
+나아짐: pdf SNP-M-301_SIS unknowns 24 → 20
+나아짐: pdf SNP-M-401_CCW unknowns 31 → 24
+나아짐: pdf SNP-M-501_MS-FW unknowns 27 → 23
+SNP: 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6
+rc=0
+$ unknowns_breakdown.py --out after/unknowns
+# APR1400 미확인 분해
+
+쪽 143, 미확인 64387
+
+## 사유별
+
+| 사유(check) | 수 | 비율 | 많은 쪽(수) |
+| --- | --- | --- | --- |
+| `unknown_flow_direction` | 28803 | 44.7% | 066(722), 028(719), 025(545) |
+| `missing_tag` | 12199 | 18.9% | 028(270), 001(266), 025(244) |
+| `unconnected_endpoint` | 9531 | 14.8% | 066(399), 025(320), 088(320) |
+| `missing_kind` | 7316 | 11.4% | 001(207), 083(206), 081(159) |
+| `self_loop` | 5668 | 8.8% | 066(311), 137(198), 013(193) |
+| `not_registered` | 429 | 0.7% | 001(3), 002(3), 003(3) |
+| `actuated_valve_pending` | 234 | 0.4% | 113(18), 049(14), 048(12) |
+| `missing_drawing_number` | 143 | 0.2% | 001(1), 002(1), 003(1) |
+| `duplicate_tag` | 56 | 0.1% | 006(29), 008(22), 007(5) |
+| `dashed_path_no_visible_piece` | 8 | 0.0% | 090(8) |
+
+## 사유 × 대상 종류 (상위 40)
+
+| 사유 | 대상 | 대상 kind | 사전 항목 | 수 |
+rc=0

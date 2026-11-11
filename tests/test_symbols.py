@@ -951,5 +951,125 @@ class ActuatorMergeTest(unittest.TestCase):
                          ["302", "303"])
 
 
+def filled(pts, curved=False):
+    return {"fill": True, "stroke": False, "fill_white": False, "stroke_white": False, "dash": None,
+            "subpaths": [(pts, True, pts, curved)]}
+
+
+def filled_dot(cx, cy, r):
+    return filled([(cx + r * math.cos(t / 16 * math.pi), cy + r * math.sin(t / 16 * math.pi)) for t in range(33)], True)
+
+
+def pipe(a, b):
+    return prim([a, b], False)
+
+
+BLACK_GATE = [(100, 100), (106, 103), (106, 100), (100, 103)]           # 채운 나비 하나(6×3pt): 표식 크기
+GATE_PIPES = [pipe((80, 101.5), (100, 101.5)), pipe((106, 101.5), (126, 101.5))]
+# 012쪽 418번 밸브: 채운 삼각형 둘과 가운데 점
+BLACK_GLOBE = [filled([(181.6, 270.3), (179.3, 265.6), (183.9, 265.6)]),
+               filled([(179.3, 274.9), (181.6, 270.3), (183.9, 274.9)]), filled_dot(181.6, 270.3, 1.2)]
+GLOBE_PIPES = [pipe((181.6, 250.0), (181.6, 265.6)), pipe((181.6, 274.9), (181.6, 290.0))]
+
+
+def closed_nodes(ex):
+    return [n for n in ex["nodes"] if n["attributes"].get("normal_position") == "NC"]
+
+
+def pipe_ends_on(ex, node):
+    """이 노드에 닿은 배관 끝. 반대쪽 끝이 뜬 배관은 미해결 연결로 남는다."""
+    return [e for r in ex["relations"] + ex["unresolved_connectors"] if r["kind"] == "physical_connection"
+            for e in r["endpoints"] if e["node_local_id"] == node["local_id"]]
+
+
+class ClosedValveTest(unittest.TestCase):
+    """검게 칠한 밸브 몸통은 정상 운전 중 닫힘이다(APR1400 범례 1.7-1 1/4). 작은 검은 채움을 화살촉으로만 보면 그 자리에
+    밸브 없이 배관이 이어진다. 사전의 검정 견본에 맞는 묶음만 밸브로 읽고, 그 밖의 검은 채움은 그대로 둔다."""
+
+    def test_small_filled_bowtie_is_a_closed_gate_valve_between_its_pipes(self):
+        ex = extract([filled(BLACK_GATE)] + GATE_PIPES)
+        (valve,) = closed_nodes(ex)
+        self.assertEqual((valve["kind"], valve["attributes"]),
+                         ("manual_valve", {"normal_position": "NC", "valve_type": "gate"}))
+        self.assertEqual(valve["evidence"]["symbol_id"], "apr1400.gate_valve")
+        self.assertEqual(len(pipe_ends_on(ex, valve)), 2)
+        self.assertEqual(len(ex["relations"] + ex["unresolved_connectors"]), 2)  # 밸브를 건너뛰어 이어진 배관이 없다
+
+    def test_two_filled_triangles_with_a_dot_are_a_closed_globe_valve(self):
+        ex = extract(BLACK_GLOBE + GLOBE_PIPES)
+        (valve,) = closed_nodes(ex)
+        self.assertEqual((valve["kind"], valve["attributes"]),
+                         ("manual_valve", {"normal_position": "NC", "valve_type": "globe"}))
+        self.assertEqual(len(pipe_ends_on(ex, valve)), 2)
+
+    def test_outline_drawn_over_the_filled_body_does_not_become_a_second_symbol(self):
+        outline = prim([(179.3, 274.9), (183.9, 274.9), (179.3, 265.6), (183.9, 265.6), (179.3, 274.9)])
+        ex = extract(BLACK_GLOBE + [outline] + GLOBE_PIPES)
+        self.assertEqual([n["kind"] for n in ex["nodes"]], ["manual_valve"])
+        self.assertEqual(len(closed_nodes(ex)), 1)
+
+    def test_arrowhead_between_two_pipe_ends_is_not_a_valve(self):
+        head = filled([(100, 100), (104, 101.5), (100, 103)])
+        ex = extract([head, pipe((80, 101.5), (100, 101.5)), pipe((104, 101.5), (126, 101.5))])
+        self.assertEqual(closed_nodes(ex), [])
+        self.assertEqual([n["kind"] for n in ex["nodes"] if n["category"] == "valve"], [])
+
+    def test_building_transition_arrows_are_not_a_valve(self):
+        """건물 경계 표시(범례 BUILDING TRANSITION)는 가는 화살촉 둘이 꼭짓점을 맞댄 모양이다. 나비 밸브와 닮았지만 납작하다."""
+        thin = [filled([(100, 100), (103, 100.8), (100, 101.6)]), filled([(106, 100), (103, 100.8), (106, 101.6)])]
+        ex = extract(thin + [pipe((80, 100.8), (100, 100.8)), pipe((106, 100.8), (126, 100.8))])
+        self.assertEqual(closed_nodes(ex), [])
+        self.assertEqual([n["kind"] for n in ex["nodes"] if n["category"] == "valve"], [])
+
+    def test_half_filled_valve_is_not_closed(self):
+        """한쪽 삼각형만 칠한 밸브(LT 표기)는 닫힘이 아니다."""
+        half = [filled([(181.6, 270.3), (179.3, 265.6), (183.9, 265.6)]), filled_dot(181.6, 270.3, 1.2),
+                prim([(179.3, 274.9), (181.6, 270.3), (183.9, 274.9), (179.3, 274.9)])]
+        self.assertEqual(closed_nodes(extract(half + GLOBE_PIPES)), [])
+
+    def test_closed_valve_is_not_merged_with_the_body_touching_it(self):
+        reducer = prim([(106, 100.5), (109, 101), (109, 102), (106, 102.5), (106, 100.5)])
+        ex = extract([filled(BLACK_GATE), reducer, pipe((80, 101.5), (100, 101.5)), pipe((109, 101.5), (126, 101.5))])
+        (valve,) = closed_nodes(ex)
+        self.assertEqual(valve["kind"], "manual_valve")
+        self.assertEqual([round(valve["geometry"][k], 1) for k in ("x", "width")], [100.0, 6.0])
+        self.assertEqual(len(ex["nodes"]), 2)
+        self.assertNotIn("pipe_cap", [n["kind"] for n in ex["nodes"]])  # 밸브에 붙여 그린 축소관은 끝막음이 아니다
+
+    def test_closed_valve_is_not_swallowed_by_a_large_symbol_whose_line_reaches_it(self):
+        """큰 기호 상자 안에서 나온 선이 밸브에 닿아도 밸브는 제 노드로 남는다(115쪽 복수기 옆 밸브)."""
+        tank = prim([(20, 60), (90, 60), (90, 140), (20, 140), (20, 60)])
+        ex = extract([tank, filled(BLACK_GATE), pipe((60, 101.5), (100, 101.5)), pipe((106, 101.5), (126, 101.5))])
+        (valve,) = closed_nodes(ex)
+        self.assertEqual(valve["kind"], "manual_valve")
+        self.assertEqual(len(pipe_ends_on(ex, valve)), 2)
+
+    def test_equipment_word_in_the_label_does_not_rename_a_closed_valve(self):
+        a = pdf_vector.analyze(400, 300, [word("PUMP", 100.0, 105.0)], [filled(BLACK_GATE)] + GATE_PIPES)
+        ex = pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+        self.assertEqual([(n["kind"], n["label_text"]) for n in closed_nodes(ex)], [("manual_valve", "PUMP")])
+
+    def test_filled_body_with_other_lines_attached_keeps_closed_but_not_the_kind(self):
+        """몸통에 벨로스 같은 다른 선이 붙으면 기호 전체는 사전에 없다. 종류는 비워 두고 닫힘만 남긴다."""
+        bonnet = [pipe((103, 101.5), (103, 98.5)), pipe((101.5, 98.5), (104.5, 98.5))]
+        ex = extract([filled(BLACK_GATE)] + bonnet + GATE_PIPES)
+        (valve,) = closed_nodes(ex)
+        self.assertEqual((valve["kind"], valve["attributes"]), (None, {"normal_position": "NC"}))
+        self.assertEqual(valve["evidence"]["classification_basis"], "black_body:apr1400.gate_valve")
+        self.assertNotIn("symbol_id", valve["evidence"])
+        self.assertIn("missing_kind", [u["check"] for u in ex["validation"]["unknowns"]
+                                       if u["target"] == valve["local_id"]])
+
+    def test_template_distance_limit_for_promotion_is_tighter_than_the_template(self):
+        """견본의 max_distance가 느슨해도, 검은 채움을 몸체로 올리는 문턱(BLACK_SEED_DISTANCE)을 넘으면 올리지 않는다."""
+        lib = pdf_vector.symbol_library()
+        loose = symbols.Match("matched", lib.entries["apr1400.gate_valve"], pdf_vector.BLACK_SEED_DISTANCE + 0.01,
+                              "symmetric", (), {"valve_type": "gate", "normal_position": "NC"})
+        with mock.patch.object(type(lib), "match", return_value=loose):
+            cls = pdf_vector._classify_primitives(400, 300, [filled(BLACK_GATE)], pdf_vector.PARAMS)
+            pdf_vector._promote_black_symbols(cls, pdf_vector.PARAMS)
+        self.assertEqual((len(cls["markers"]), [b for b in cls["bodies"] if b.get("solid")], cls["seeds"]), (1, [], {}))
+
+
 if __name__ == "__main__":
     unittest.main()
