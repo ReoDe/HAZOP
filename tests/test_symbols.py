@@ -402,6 +402,55 @@ class LineTickTest(unittest.TestCase):
         self.assertFalse([u for u in ex["validation"]["unknowns"] if u["check"] == "missing_tag" and u["target"] in tees])
 
 
+def ticked(ex):
+    return [o["source_object_id"] for o in ex["drawing"]["ignored_objects"] if o.get("reason") == "line_tick"]
+
+
+def line_types(ex):
+    return {r["line_type"] for r in ex["relations"] + ex["unresolved_connectors"]}
+
+
+# APR1400 104쪽 주증기 안전밸브(MSSV) 그대로: 앵글 몸통, 몸통을 지나 모관까지 내려가는 줄기, 방출선, 모관
+MSSV = [prim([(599.81, 148.06), (601.45, 144.81), (604.72, 143.18), (604.72, 146.43), (601.45, 144.81), (603.09, 148.06)]),
+        prim([(601.41, 136.98), (601.44, 156.21)], False),
+        prim([(608.81, 144.81), (604.72, 144.81)], False), prim([(608.81, 139.47), (608.81, 144.81)], False),
+        prim([(560.0, 156.21), (640.0, 156.21)], False)]
+MSSV_SPRING = [prim([(599.81, 143.39), (603.09, 141.36)], False), prim([(599.81, 141.36), (603.09, 139.33)], False),
+               prim([(599.81, 139.74), (603.09, 137.70)], False)]
+# APR1400 023쪽 방출 밸브(번호 원 1014) 그대로: 삼각형 몸통, 짧은 줄기(2.65pt), 아래 플랜지 판과 배관
+RELIEF = [prim([(340.05, 542.96), (343.85, 542.96), (343.85, 539.17), (340.05, 542.96)]),
+          prim([(341.95, 538.41), (341.95, 541.06)], False),
+          prim([(340.43, 544.86), (343.47, 544.86)], False), prim([(341.95, 560.03), (341.95, 544.85)], False)]
+RELIEF_SPRING = [prim([(341.19, 539.88), (342.71, 538.41)], False), prim([(341.19, 540.47), (342.71, 539.0)], False),
+                 prim([(341.19, 541.06), (342.71, 539.59)], False)]
+
+
+class SafetyValveSpringTest(unittest.TestCase):
+    """안전밸브 줄기를 가로지르는 스프링선 셋은 신호선 빗금이 아니다(범례 1.7-1 1/4). 바뀌면 안 되는 표본이다.
+    3f에서 선에 하나뿐인 빗금 묶음을 모두 신호 표시로 지웠을 때 104쪽 안전밸브의 스프링선 둘이 지워졌고, 밸브는 연결을
+    잃고 줄기는 공압 신호선이 됐다(docs/2026-11-11-unit-f1/README.md F1-4)."""
+
+    def test_spring_on_a_long_stem_is_not_removed(self):
+        ex = extract(MSSV + MSSV_SPRING)
+        self.assertEqual(ticked(ex), [])
+        self.assertNotIn("pdf_pneumatic", line_types(ex))
+        self.assertNotIn("pipe_cap", [n["kind"] for n in ex["nodes"]])
+
+    def test_relief_valve_keeps_its_spring_and_kind(self):
+        ex = extract(RELIEF + RELIEF_SPRING)
+        self.assertEqual(ticked(ex), [])
+        valve = max(ex["nodes"], key=lambda n: len(n["evidence"]["pdf_objects"]))
+        self.assertEqual((valve["kind"], valve["evidence"]["classification_basis"]), ("psv", "body+spring"))
+        springs = {"pdf-path-%04d" % i for i in range(len(RELIEF), len(RELIEF) + len(RELIEF_SPRING))}
+        self.assertLessEqual(springs, set(valve["evidence"]["pdf_objects"]))
+
+    def test_three_strokes_on_one_line_are_left_alone(self):
+        three = [prim([(x - 0.6, 101.0), (x + 0.6, 99.0)], False) for x in (60, 61, 62)]
+        ex = extract([prim(GATE, True), prim([(50, 100), (100, 100)], False)] + three)
+        self.assertEqual(ticked(ex), [])
+        self.assertNotIn("pdf_pneumatic", line_types(ex))
+
+
 def plate(x, y=100.0, half=1.5):
     return prim([(x, y - half), (x, y + half)], False)
 

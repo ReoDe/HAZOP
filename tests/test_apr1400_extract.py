@@ -235,6 +235,79 @@ class LargeSymbolRegression(unittest.TestCase):
                                        if u["target"] == big["local_id"]])
 
 
+def ticks_near(ex, point, reach=5.0):
+    """빗금(line_tick)으로 빼 버린 선 가운데 point 둘레 reach 안에 있는 것."""
+    return [o["source_object_id"] for o in ex["drawing"]["ignored_objects"] if o.get("reason") == "line_tick"
+            and abs(o["bbox"][0] + o["bbox"][2] / 2 - point[0]) <= reach
+            and abs(o["bbox"][1] + o["bbox"][3] / 2 - point[1]) <= reach]
+
+
+def pneumatic_through(ex, point, reach=1.0):
+    """공압 신호선으로 읽은 선 가운데 point를 지나가는 것."""
+    out = []
+    for r in ex["relations"] + ex["unresolved_connectors"]:
+        pts = r["evidence"].get("pdf_path") or []
+        if r["line_type"] == "pdf_pneumatic" and any(
+                min(a[0], b[0]) - reach <= point[0] <= max(a[0], b[0]) + reach
+                and min(a[1], b[1]) - reach <= point[1] <= max(a[1], b[1]) + reach for a, b in zip(pts, pts[1:])):
+            out.append(r["source_object_id"])
+    return out
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1)")
+class ReliefValveSpring(unittest.TestCase):
+    """5.4.12-1의 방출 밸브(번호 원 1421): 삼각형 몸통 위 짧은 줄기에 스프링선 셋이 걸려 있다. 선에 하나뿐인 빗금 묶음을
+    신호 표시로 읽는 규칙(F1-4)이 이 선을 빗금으로 지우면 안 된다."""
+
+    SPRING = (810.4, 373.0)
+    BODY = [807.5, 372.1, 813.4, 378.0]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex, _ = load_page(12)
+
+    def test_spring_strokes_are_not_removed_as_line_ticks(self):
+        self.assertEqual(ticks_near(self.ex, self.SPRING), [])
+
+    def test_spring_strokes_stay_in_the_valve_symbol(self):
+        valve = node_at(self.ex, self.BODY)
+        self.assertGreaterEqual(len(valve["evidence"]["pdf_objects"]), 5)  # 몸통, 줄기, 스프링선 셋
+
+
+PAGE_104 = paths.folder("APR1400", "by-drawing", "104_Ch10_Fig10.1-2_Overall_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_104), "pdfplumber 또는 APR1400 104쪽 PDF 없음(저장소 밖 자료)")
+class MainSteamSafetyValves(unittest.TestCase):
+    """104쪽(10.1-2)의 주증기 안전밸브(MSSV)·대기방출밸브(MSADV) 다섯: 몸통을 지나 모관까지 내려가는 긴 줄기에 스프링선
+    셋이 걸려 있다. 3f에서 선에 하나뿐인 빗금 묶음을 모두 지웠을 때 이 스프링선이 지워졌다(81bc203에 같은 규칙을 주면
+    다섯 밸브 모두 스프링선 둘이 지워지고 연결이 4개에서 1개로 줄며 줄기가 공압 신호선이 된다)."""
+
+    SPRINGS = [(601.4, 140.5), (268.7, 168.1), (233.7, 215.9), (268.7, 219.2), (233.7, 164.3)]
+    BODIES = [[599.8, 143.2, 604.7, 148.1], [267.1, 170.8, 272.0, 175.7], [232.0, 218.6, 236.9, 223.5],
+              [267.0, 221.9, 271.9, 226.8], [232.0, 167.0, 236.9, 171.9]]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_104, page=0)
+
+    def test_spring_strokes_are_not_removed_as_line_ticks(self):
+        self.assertEqual({p: ticks_near(self.ex, p) for p in self.SPRINGS}, {p: [] for p in self.SPRINGS})
+
+    def test_valve_stems_are_not_pneumatic_signal_lines(self):
+        self.assertEqual({p: pneumatic_through(self.ex, p) for p in self.SPRINGS}, {p: [] for p in self.SPRINGS})
+
+    def test_valves_keep_their_pipe_connections(self):
+        """스프링선이 지워지면 줄기 토막이 합쳐져 밸브에 닿는 선이 4개에서 1개로 준다."""
+        ends = {}
+        for r in self.ex["relations"] + self.ex["unresolved_connectors"]:
+            for e in r["endpoints"]:
+                ends[e["node_local_id"]] = ends.get(e["node_local_id"], 0) + 1
+        valves = [node_at(self.ex, box) for box in self.BODIES]
+        self.assertNotIn("pipe_cap", [v["kind"] for v in valves])
+        self.assertEqual([ends.get(v["local_id"], 0) for v in valves], [4] * 5)
+
+
 class PrefixInference(unittest.TestCase):
     """같은 쪽 태그에서 계통 접두를 빌리는 규칙(_assign_tags (b)): 태그 하나뿐인 접두는 빌리지 않는다(9.2.2-1 시트 4의
     'QIAS-PV1686' 한 개가 계기 18개에 'QIAS-'를 붙인 결함)."""
