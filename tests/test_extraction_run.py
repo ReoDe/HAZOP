@@ -3,8 +3,10 @@
 추출 단계가 추출 결과 폴더에 기호 사전 판을 남긴다. 그래프는 extraction.json만 읽으므로 이 파일은 graph_version과 무관하다.
 """
 
+import contextlib
 import glob
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -19,7 +21,7 @@ import extract_raster
 
 from hazop import paths
 from hazop.app import data
-from hazop.extract import runinfo
+from hazop.extract import runinfo, symbols
 from hazop.extract.adapters import pdf_vector
 
 SAMPLE = paths.folder("references", "pid-samples", "SNP-M-102_RCS-pressurizer", "SNP-M-102_RCS-pressurizer")
@@ -34,6 +36,24 @@ def read_run(out_dir):
 def read_bytes(path):
     with open(path, "rb") as fh:
         return fh.read()
+
+
+def record_cannot_be_written():
+    """곁 파일만 쓰지 못하게 한다(다른 파일 쓰기는 그대로). 백신·동기화 프로그램이 그 파일을 잡고 있을 때의 꼴이다."""
+    real = runinfo.store_io.write_json
+
+    def write_json(path, *args, **kwargs):
+        if os.path.basename(path) == runinfo.FILE_NAME:
+            raise PermissionError(13, "denied", path)
+        return real(path, *args, **kwargs)
+    return mock.patch.object(runinfo.store_io, "write_json", side_effect=write_json)
+
+
+def run_main(module, argv):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = module.main(argv)
+    return code, out.getvalue()
 
 
 class WorkRootCase(unittest.TestCase):
@@ -120,6 +140,33 @@ class PdfRunInfoTest(WorkRootCase):
         self.assertTrue(graph["graph_version"])
 
 
+    def test_page_stays_extracted_when_the_record_cannot_be_written(self):
+        name = lambda _p: "page"  # noqa: E731
+        warnings = []
+        with record_cannot_be_written(), self.assertLogs(runinfo.__name__, "WARNING"):
+            done, skipped = extract_pdf.run_pages(self.pdf, self.out, [0], out_name=name, warnings=warnings)
+        self.assertEqual((len(done), skipped), (1, []))
+        self.assertEqual(sorted(os.listdir(os.path.join(self.out, "page"))), ["extraction.json", "validation_report.md"])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn(runinfo.FILE_NAME, warnings[0])
+
+    def test_unreadable_pages_are_all_marked_when_the_record_cannot_be_written(self):
+        name = lambda p: "page-%d" % p  # noqa: E731
+        with record_cannot_be_written(), self.assertLogs(runinfo.__name__, "WARNING"),                 mock.patch.object(extract_pdf.pdf_vector, "extract", side_effect=ValueError("읽기 실패")):
+            done, skipped = extract_pdf.run_pages(self.pdf, self.out, [0, 1], out_name=name)
+        self.assertEqual((done, [s["page_index"] for s in skipped]), ([], [0, 1]))
+        for page in (0, 1):
+            self.assertEqual(os.listdir(os.path.join(self.out, "page-%d" % page)), [extract_pdf.NOT_EXTRACTED])
+
+    def test_command_line_reports_the_record_it_could_not_write(self):
+        with record_cannot_be_written(), self.assertLogs(runinfo.__name__, "WARNING"):
+            code, printed = run_main(extract_pdf, [self.pdf, "--out-root", self.out])
+        self.assertEqual(code, 0)
+        self.assertIn("경고", printed)
+        self.assertIn(runinfo.FILE_NAME, printed)
+        self.assertNotIn("미추출", printed)
+
+
 class DrawioRunInfoTest(WorkRootCase):
     def test_extractor_without_a_dictionary_records_no_versions(self):
         result, out_dir = extract_drawio.run_one(SAMPLE + ".drawio", self.out)
@@ -135,6 +182,16 @@ class DrawioRunInfoTest(WorkRootCase):
         self.assertEqual(read_bytes(os.path.join(out_dir, "extraction.json")), with_record)
 
 
+    def test_extraction_stands_when_the_record_cannot_be_written(self):
+        with record_cannot_be_written(), self.assertLogs(runinfo.__name__, "WARNING"):
+            code, printed = run_main(extract_drawio, [SAMPLE + ".drawio", "--out-root", self.out])
+        self.assertEqual(code, 0)
+        self.assertIn("경고", printed)
+        self.assertIn(runinfo.FILE_NAME, printed)
+        (out_dir,) = glob.glob(os.path.join(self.out, "*"))
+        self.assertEqual(sorted(os.listdir(out_dir)), ["extraction.json", "validation_report.md"])
+
+
 class RasterRunInfoTest(WorkRootCase):
     def test_raster_extraction_records_the_dictionary_versions(self):
         """래스터 추출도 pdf_vector.build_extraction으로 기호를 정하므로 사전 판을 남긴다(OpenCV 없이 대역으로 확인)."""
@@ -146,6 +203,22 @@ class RasterRunInfoTest(WorkRootCase):
         self.assertEqual((doc["extractor"], doc["extracted"], doc["extraction_run_id"]),
                          ("raster", True, "extract-raster-x"))
         self.assertEqual(doc["symbol_dictionary_versions"], pdf_vector.symbol_library().versions)
+
+    def test_unusable_dictionary_stops_raster_extraction_before_anything_is_written(self):
+        fake = {"extraction_run_id": "extract-raster-x", "drawing": {"drawing_number": "R-1"}}
+        with mock.patch.object(extract_raster.raster, "extract", return_value=fake),                 mock.patch.object(extract_raster.report, "render", return_value=""),                 mock.patch.object(extract_raster.pdf_vector, "symbol_library",
+                                  side_effect=symbols.SymbolLibraryError("옛 판 사전")):
+            with self.assertRaises(symbols.SymbolLibraryError):
+                extract_raster.run_one(glob.glob(SAMPLE + ".*")[0], self.out)
+        self.assertEqual(glob.glob(os.path.join(self.out, "*", "*")), [])
+
+    def test_raster_extraction_stands_when_the_record_cannot_be_written(self):
+        fake = {"extraction_run_id": "extract-raster-x", "drawing": {"drawing_number": "R-1"}}
+        warnings = []
+        with record_cannot_be_written(), self.assertLogs(runinfo.__name__, "WARNING"),                 mock.patch.object(extract_raster.raster, "extract", return_value=fake),                 mock.patch.object(extract_raster.report, "render", return_value=""):
+            _, out_dir = extract_raster.run_one(glob.glob(SAMPLE + ".*")[0], self.out, warnings=warnings)
+        self.assertEqual(sorted(os.listdir(out_dir)), ["extraction.json", "validation_report.md"])
+        self.assertEqual(len(warnings), 1)
 
 
 if __name__ == "__main__":

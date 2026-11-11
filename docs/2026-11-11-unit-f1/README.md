@@ -262,3 +262,26 @@ F1-1 뒤의 코드는 밸브·계기·설비를 사전의 `structure`·`label_wo
 | `scripts/run_ci.py` | 시험 2091, 실패 0, 오류 0, 건너뜀 20, 검사 스크립트 10개 rc=0 |
 
 시험 수는 `82f9e0e`의 2082에서 9 늘었다(`tests/test_extraction_run.py`).
+
+## F1-2 검토 지적 수정 (경미 셋)
+
+추출 결과는 그대로다. 곁 파일(`extraction_run.json`)은 기록일 뿐인데, 그 파일 쓰기가 추출 결과를 망가뜨리는 길이 셋 있었다.
+
+| 지적 | 고치기 전 | 고친 것 |
+| --- | --- | --- |
+| 곁 파일만 쓰지 못해도 정상 추출된 쪽이 '미추출'이 된다 | `run_pages`의 `except Exception`이 곁 파일 쓰기 실패(`PermissionError`)를 받아 `_skip`으로 넘겼고, `_skip`이 방금 쓴 `extraction.json`을 지웠다. 실패가 이어지면 `_skip` 안의 쓰기도 실패해 예외가 밖으로 나가 남은 쪽을 처리하지 못했다. 앱 경로에서는 옛 `graph.json` 정리(`hazop/app/data.py`의 `_extract_pdf_pages`)를 건너뛰었다 | 추출 단계는 `runinfo.record`로 쓴다. 쓰지 못하면(OSError) 추출 결과를 그대로 두고 경고를 로그(`hazop.extract.runinfo`)에 남기며, 명령줄 추출 요약에도 '경고: …' 줄로 찍는다. drawio·래스터 추출도 같다 |
+| 래스터 추출이 사전을 `extraction.json`을 쓴 뒤에 읽는다 | 옛 판 사전이면 `extraction.json`은 남고 곁 파일 없이 멈췄다 | 사전을 결과를 쓰기 전에 읽는다. 읽지 못하면 아무것도 쓰지 않고 멈춘다 |
+| 옛 판 사전 오류 문구의 경로 | 실제로 읽은 폴더가 아니라 오류를 낼 때 다시 계산한 `paths.folder("symbols")`였다 | `Library.load`가 읽은 폴더를 `Library.root`에 남기고, 문구에 그 값을 적는다 |
+
+- 재현: 검토가 쓴 `D:\HAZOP-trials\2026-11-11-review-f1\r3\scripts\fail_modes.py`(곁 파일 이름에서만 `store_io.write_json`이 `PermissionError`를 내게 함)를 시험으로 옮겼다. `tests/test_extraction_run.py`에 6건, `tests/test_symbols.py`에 1건을 더했고, 고치기 전 코드에서 7건 모두 실패하는 것을 먼저 확인했다.
+- 같은 재현 스크립트를 고친 코드에 돌린 출력(B: 쓰기 실패가 이어짐, B2: 한 번만 실패, B3: 명령줄, C: drawio)은 넷 모두 `extraction.json`과 `validation_report.md`가 남고 종료 코드 0이다. 고치기 전 출력은 검토 폴더의 `r3\fm`에 있다.
+- 남긴 것: 곁 파일을 쓰지 못했는데 전에 쓴 곁 파일이 있으면 그 파일이 그대로 남는다. 그 안의 `extraction_run_id`가 지금 `extraction.json`과 달라 옛 기록임을 알 수 있다. 앱 화면에는 이 경고를 띄우지 않았다(로그에만 남는다).
+
+실행 조건: `5ed8d3b`에 이 수정을 넣은 작업 폴더(커밋 전, 그 내용이 그대로 커밋됐다), 주 체크아웃, 시험용 venv, `--update` 없음. 도는 동안 다른 세션의 문서 커밋 둘(`92453b4`, `9091bce`)이 들어왔다. 코드와 시험은 건드리지 않은 커밋이다.
+
+| 대조 | 결과 |
+| --- | --- |
+| SNP 6장 추출 JSON·그래프 JSON(24개 파일)과 해시 목록 | 바이트 같음 24/24, 해시 목록은 `f1-0-before-snp-hashes.json`과 바이트로 같다 |
+| `scripts/run_ci.py` | 시험 2098, 실패 0, 오류 0, 건너뜀 20, 검사 스크립트 10개 rc=0 |
+
+시험 수는 `5ed8d3b`의 2091에서 7 늘었다. APR1400 143쪽은 이 수정으로 다시 돌리지 않았다(추출기 판정 코드는 오류 문구 한 줄만 바뀌었다). F1-3의 출발점 측정이 이 커밋에서 돈다.

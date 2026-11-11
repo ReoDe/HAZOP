@@ -10,14 +10,18 @@ graph_version에 들어가지 않는다. 사전 판을 extraction.json에 넣으
      "symbol_dictionary_versions": {"APR1400": "2c997ba7e6ce", "공통": "ac25f22101ce"}}
 
 extracted가 false면 extraction_run_id는 null이다. 기호 사전을 쓰지 않는 추출기(drawio)는 symbol_dictionary_versions가 null이다.
+
+이 파일은 기록일 뿐이다. 추출 단계는 record()로 쓰고, 쓰지 못해도 추출 결과를 그대로 둔다.
 """
 
+import logging
 import os
 
 from hazop import store_io
 
 FILE_NAME = "extraction_run.json"
 SCHEMA_VERSION = "1"
+_log = logging.getLogger(__name__)
 
 
 def write(out_dir, extractor, result=None, symbol_versions=None):
@@ -29,4 +33,17 @@ def write(out_dir, extractor, result=None, symbol_versions=None):
            "symbol_dictionary_versions": dict(symbol_versions) if symbol_versions is not None else None}
     store_io.write_json(os.path.join(out_dir, FILE_NAME), doc)
     return doc
+
+
+def record(out_dir, extractor, result=None, symbol_versions=None, warnings=None):
+    """write와 같되 파일을 쓰지 못해도(OSError) 멈추지 않는다. 그때는 경고를 로그에 남기고 warnings(list)에 더한 뒤
+    None을 돌려준다. 전에 쓴 파일이 있었다면 그대로 남는다(그 안의 extraction_run_id가 지금 추출 결과와 다르다)."""
+    try:
+        return write(out_dir, extractor, result, symbol_versions)
+    except OSError as exc:
+        text = "경고: 추출 실행 정보(%s)를 쓰지 못함: %s. 추출 결과는 그대로 둔다" % (os.path.join(out_dir, FILE_NAME), exc)
+        _log.warning(text)
+        if warnings is not None:
+            warnings.append(text)
+        return None
 

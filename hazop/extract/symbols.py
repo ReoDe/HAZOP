@@ -361,7 +361,8 @@ def image_path(folder, image):
 class Library:
     """묶음들의 항목. match()가 기호 하나를 판정한다."""
 
-    def __init__(self, entries, versions, margin=DEFAULT_MARGIN):
+    def __init__(self, entries, versions, margin=DEFAULT_MARGIN, root=None):
+        self.root = root  # 읽은 사전 폴더(load). 직접 만든 사전은 None
         self.entries = {e.id: e for e in entries}
         self.versions = dict(versions)
         self.margin = margin
@@ -451,7 +452,7 @@ class Library:
         dup = sorted(i for i, n in ids.items() if n > 1)
         if dup:
             raise SymbolLibraryError("id 중복: %s" % ", ".join(dup))
-        return cls(entries, versions, _number(BUNDLES_FILE, "margin", meta.get("margin", DEFAULT_MARGIN), -1e-9))
+        return cls(entries, versions, _number(BUNDLES_FILE, "margin", meta.get("margin", DEFAULT_MARGIN), -1e-9), root)
 
     def match(self, sig, inside_text=()):
         """Signature와 기호 상자 안 글자 → Match(outcome, entry, distance, rotation, candidates).

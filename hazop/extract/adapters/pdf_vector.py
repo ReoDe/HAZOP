@@ -902,7 +902,7 @@ def _check_has_rules(lib):
     if missing:
         raise symbols.SymbolLibraryError(
             "기호 사전에 %s 견본이 하나도 없음: %s. 코드보다 옛 판 사전이다(형상 규칙과 장비 이름 낱말을 사전으로 "
-            "옮기기 전). 이 코드와 함께 배포된 사전으로 바꿔야 한다" % ("·".join(missing), paths.folder("symbols")))
+            "옮기기 전). 이 코드와 함께 배포된 사전으로 바꿔야 한다" % ("·".join(missing), lib.root))
 
 
 def _check_against_registry(lib):

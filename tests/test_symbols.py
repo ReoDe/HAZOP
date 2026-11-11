@@ -861,6 +861,14 @@ class OldDictionaryTest(unittest.TestCase):
         self.old_dictionary(("label_words",))
         self.assertIn("label_words", self.failure())
 
+    def test_message_names_the_folder_that_was_read(self):
+        root = os.path.join(self.tmp, "elsewhere")
+        _old_dictionary(root, symbols.RULE_SHAPES)
+        with self.assertRaises(symbols.SymbolLibraryError) as ctx:
+            pdf_vector._check_has_rules(symbols.Library.load(root))
+        self.assertIn(root, str(ctx.exception))
+        self.assertNotIn(paths.folder("symbols"), str(ctx.exception))
+
     def test_multi_page_run_stops_before_touching_previous_results(self):
         self.old_dictionary(symbols.RULE_SHAPES)
         out = os.path.join(self.tmp, "out")

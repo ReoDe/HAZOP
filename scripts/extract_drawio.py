@@ -52,9 +52,10 @@ def registered_out_name(registration, page_index, limit=120):
     return project + "__" + tail
 
 
-def run_one(path, out_root, svg="auto", page=0, registration=None, registered_svgs=None):
+def run_one(path, out_root, svg="auto", page=0, registration=None, registered_svgs=None, warnings=None):
     """registered_svgs: 등록정보의 파생 SVG {페이지 ID: 경로}(registry.registered_svgs, 해시 확인 끝난 것).
-    svg가 auto이고 추출한 페이지의 파생 SVG가 있으면 먼저 쓴다."""
+    svg가 auto이고 추출한 페이지의 파생 SVG가 있으면 먼저 쓴다.
+    warnings(list): 실행 정보를 쓰지 못했을 때의 경고 문구를 여기에 더한다(runinfo.record)."""
     root = paths.work_root()
     result = drawio.extract(path, page=page, repo_root=root, registration=registration)
     svg_path = svg
@@ -91,7 +92,8 @@ def run_one(path, out_root, svg="auto", page=0, registration=None, registered_sv
         fh.write("\n")
     with open(os.path.join(out_dir, "validation_report.md"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(report.render(result))
-    runinfo.write(out_dir, "drawio", result)  # drawio 추출은 기호 사전을 쓰지 않는다. 사전 판 자리는 비운다
+    # drawio 추출은 기호 사전을 쓰지 않는다. 사전 판 자리는 비운다
+    runinfo.record(out_dir, "drawio", result, warnings=warnings)
     return result, out_dir
 
 
@@ -124,7 +126,9 @@ def main(argv=None):
     svg = None if args.svg == "none" else args.svg
     blocked = 0
     for path, record, reg_svg in jobs:
-        result, out_dir = run_one(path, args.out_root, svg=svg, page=page, registration=record, registered_svgs=reg_svg)
+        warnings = []
+        result, out_dir = run_one(path, args.out_root, svg=svg, page=page, registration=record, registered_svgs=reg_svg,
+                                  warnings=warnings)
         s = result["summary"]
         al = result["coordinate_system"]["svg_alignment"]
         print("%s: %s nodes=%d relations=%d unresolved=%d texts=%d unknowns=%d blockers=%d svg=%s %s -> %s"
@@ -132,6 +136,8 @@ def main(argv=None):
                  s["relations"], s["unresolved_connectors"], s["texts"], s["unknowns"],
                  s["blockers"], al["status"] if al else None, al["offset"] if al else None,
                  paths.plain_rel(out_dir, paths.work_root())))
+        for text in warnings:
+            print(text)
         blocked += result["validation"]["status"] == "blocked"
     return 1 if blocked else 0
 
