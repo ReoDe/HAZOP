@@ -125,7 +125,7 @@ W1 §2 대비 정정: `d3-ease`는 ISC가 아니라 **BSD-3-Clause**(Robert Penn
 | `scripts/build_package.py` | `DATA_DIRS`에 `licenses` 추가, 머리말의 datas 설명 갱신 |
 | `packaging/verify_bundle.py` | `licenses_problems()`를 추가했다. 묶음 사본을 만든 직후 `checks.licenses_problems`에 기록하고, 이 목록이 비어 있어야 `passed`가 된다. 머리말 순서 6) 추가 |
 | `tests/test_packaging.py` | `REQUIRED_NOTICES`(원문 경로 42개 → 라이선스 식별자)와 `REQUIRED_DOCS`(안내문 2개) 기준 목록. `LicenseNoticeTest` 4건: spec 포함, 기준·해시·목록 밖 파일, 행·파일 동시 삭제·식별자 변경·해시 변경 검출(사본에서), 버전·"(추정)" 표시. `BundleLicensesTest` 1건: `licenses_problems`의 없음·같음·해시 다름·빠짐·추가 |
-| `units/2026-11-05-packaging/` | decisions D9, README §8 편집 허용 범위·기준일, PROGRESS(W6 상태, W8 후보), ROADMAP, 이 문서, 첨부 [w6-bundle-collect-list.md](w6-bundle-collect-list.md), evidence 인덱스 |
+| `docs/units/2026-11-05-packaging/` | decisions D9, README §8 편집 허용 범위·기준일, PROGRESS(W6 상태, W8 후보), ROADMAP, 이 문서, 첨부 [w6-bundle-collect-list.md](w6-bundle-collect-list.md), evidence 인덱스 |
 
 루트 `.gitattributes`는 편집 범위 밖이다. 그래서 `core.autocrlf=true` 환경에서 원문 바이트를 고정하려고 `licenses/.gitattributes`를 두었다. 이 파일도 묶음에 들어간다(영향 없음 [추론]).
 
@@ -182,7 +182,7 @@ W1 §2 대비 정정: `d3-ease`는 ISC가 아니라 **BSD-3-Clause**(Robert Penn
    - (가) 빌드에서 제외하는 별도 작업을 만든다. 권장안이며, PROGRESS에 T2 후속 단위 `W8`(후보)로 등록했다.
    - (나) GPL 조건을 받아들인다.
    - **2026-11-06 처리**: 사용자 결정(GPL 전용 모듈) — 사용자가 (가)를 선택했다. 목록의 모듈과 그 DLL·바인딩·qml 폴더·플러그인을 빌드에서 빼고 빌드 뒤 검사로 강제한다. 총괄 판정(Qt5Compat.GraphicalEffects·Qt6SpatialAudio, 의존 관계로 함께 제외) — ShaderTools에 링크하는 Qt5Compat.GraphicalEffects(LGPL)와 제외 모듈만 쓰던 Qt6SpatialAudio도 뺀다(D13 ①·②, `W8-B`, [W8-B 모듈 제외](w8b-module-exclusion.md)).
-3. **LGPL 요건 충족과 소스 제공 방식**: 법적 판단이므로 사용자가 정한다. 판단 대상은 one-folder 묶음에서 Qt DLL을 개별 교체할 수 있는지, 그리고 소스 위치 안내로 충분한지 서면 제안이 필요한지다 [일반지식: W1 §3.2 S30·S31, 법적 판단 아님]. **2026-11-06 처리**: 사용자 결정 — 법무 검토 전까지 판단 보류, 그동안 배포본은 내부용으로만 사용(`records/decision-log.md`). 이번 작업에서 바꾼 것은 없다.
+3. **LGPL 요건 충족과 소스 제공 방식**: 법적 판단이므로 사용자가 정한다. 판단 대상은 one-folder 묶음에서 Qt DLL을 개별 교체할 수 있는지, 그리고 소스 위치 안내로 충분한지 서면 제안이 필요한지다 [일반지식: W1 §3.2 S30·S31, 법적 판단 아님]. **2026-11-06 처리**: 사용자 결정 — 법무 검토 전까지 판단 보류, 그동안 배포본은 내부용으로만 사용(`docs/records/decision-log.md`). 이번 작업에서 바꾼 것은 없다.
 4. **PySide6 라이선스 선택지와 원문 판본**: 고지는 LGPL-3.0 선택을 전제로 했고 GPL-2.0 원문은 따로 두지 않았다. LGPL-3.0·GPL-3.0 원문은 Git for Windows 사본이며 판본이 섞여 있다(§2). FSF 원문으로 바꾸거나 대조하려면 다운로드 승인이 필요하다. **2026-11-06 처리**: LGPL-3.0·GPL-3.0 원문을 Qt 6.12.0 qtbase `LICENSES/` 판으로 바꾸고 GPL-2.0 원문을 추가했다(D15, `W9`).
 5. **추정 버전·후대 원문**: force-graph 간접 의존성 버전은 추정값이다(§3). bezier-js LICENSE는 6.1.4 게시 뒤에 추가된 파일이다(§3.1).
 6. **PATH 경유 DLL 수집(새로 발견)**: W4 배포 묶음과 이번 재빌드 모두 DLL 45개를 venv·CPython 밖에서 가져왔다. UCRT 43개는 PATH의 JDK `bin`, OpenSSL `-x64` 2개는 Git for Windows `mingw64\bin`에서 왔다. 빌드한 PC의 PATH에 따라 묶음 구성이 바뀐다는 뜻이다. 고지 이전에 빌드 문제다. 빌드 환경 PATH 정리나 `binaries` 제외로 막을지 결정이 필요하며, 이를 `W8` 후보 범위에 함께 적었다. **2026-11-06 처리**: 빌드 PATH 통제와 출처 검사로 막았다(D10, `W8-A`, [W8 경로 통제](w8-path-control.md)). 묶음의 PATH 경유 DLL은 0개다.

@@ -50,7 +50,7 @@
 
 ### 상위 정본·선행 자료
 
-초기 조사·참조 대상: `design/`, `specs/interface.md`(§4), `hazop/app/tokens.py`, `hazop/viewer/template.html`, `hazop/app/screens/`
+초기 조사·참조 대상: `docs/design/`, `docs/specs/interface.md`(§4), `hazop/app/tokens.py`, `hazop/viewer/template.html`, `hazop/app/screens/`
 
 조사 후 자료별 소유 트랙·역할·정본 위치를 아래 표에 등록한다. 참조 경로라는 이유만으로 상위 정본이나 편집 대상으로 간주하지 않는다.
 
@@ -111,8 +111,8 @@
 
 ### 편집 허용 범위
 
-- 작업 폴더: `units/2026-11-05-design-system/`
-- 추가 편집 허용 범위: `design/`, `hazop/app/tokens.py`, `hazop/app/widgets.py`, `hazop/viewer/template.html`(색·CSS만), `hazop/app/screens/analysis.py`·`review.py`(배치·폭만, T1 W7과 순차. D8: 색 리터럴 치환 추가), `specs/interface.md`(§4만), `scripts/check_design.py`, `tests/test_design.py`
+- 작업 폴더: `docs/units/2026-11-05-design-system/`
+- 추가 편집 허용 범위: `docs/design/`, `hazop/app/tokens.py`, `hazop/app/widgets.py`, `hazop/viewer/template.html`(색·CSS만), `hazop/app/screens/analysis.py`·`review.py`(배치·폭만, T1 W7과 순차. D8: 색 리터럴 치환 추가), `docs/specs/interface.md`(§4만), `scripts/check_design.py`, `tests/test_design.py`
 - D8(`W6`): `hazop/app/render.py`·`hazop/app/data.py`·`hazop/app/screens/register.py`·`hazop/viewer/build.py`는 색 리터럴을 토큰 참조로 바꾸는 변경만 허용(로직 변경 금지)
 - D10(`W7`): `hazop/viewer/template.html`(선택 표시용 CSS·JS 최소), 필요 시 `hazop/app/webview.py`의 고리 그리기 함수(T1 소유, 선택 고리·보호수단 고리 겹침 처리에 한함), `tokens.py`(필요 시 토큰 1개), `tests/test_graph_select.py`(렌더·화소 판정)
 - 위 편집 허용 범위 밖의 경로는 참조 대상을 포함해 읽기 전용이다.
@@ -133,10 +133,10 @@
 - 에이전트: 허용 범위의 조사·구현·검증·문서 갱신을 수행하고, 정본에 없는 판단을 발견하면 결정 사항으로 제시한다.
 - 별도 담당자·소유 트랙이 생기면 책임 범위와 인계 조건을 이 절에 기록한다.
 - 에이전트 분담은 저장소 루트 `CLAUDE.md`의 총괄 규칙을 따른다: 총괄 → 담당(`hazop-planner`·`hazop-designer`·`hazop-developer`) → 검토(`hazop-reviewer`·`hazop-codex-reviewer`) → `hazop-qa` → `hazop-recorder`. 검토·QA 결과는 `evidence/`에 남긴다.
-- 프로젝트 전체에 걸리는 결정은 `records/decision-log.md`에도 기록하고 이 작업의 결정 ID를 함께 적는다.
+- 프로젝트 전체에 걸리는 결정은 `docs/records/decision-log.md`에도 기록하고 이 작업의 결정 ID를 함께 적는다.
 - 다른 트랙과 같은 파일을 다루는 작업은 동시에 진행하지 않는다(저장소 `CLAUDE.md` 총괄 규칙 4). 특히 `hazop/app/screens/analysis.py`·`review.py`는 [T1 W7](../2026-11-05-knowledge-graph/PROGRESS.md)과 순서를 정해 진행하고, ③ 화면 기능은 T1 소유다.
-- `hazop/app/tokens.py`·`hazop/viewer/template.html`·`design/`은 T1 W6이 바꾼 파일이다. `--kg-*` 토큰과 `kg_css_vars()`(③ 화면이 사용)는 T1 소유로 바꾸지 않으며, 이 파일들을 고치는 작업은 T1 W7과 순서를 정해 진행한다.
-- `specs/interface.md`는 T1·T2·T6가 절 단위로 나눠 쓰되(T6는 §4) 같은 시점에 함께 고치지 않는다.
+- `hazop/app/tokens.py`·`hazop/viewer/template.html`·`docs/design/`은 T1 W6이 바꾼 파일이다. `--kg-*` 토큰과 `kg_css_vars()`(③ 화면이 사용)는 T1 소유로 바꾸지 않으며, 이 파일들을 고치는 작업은 T1 W7과 순서를 정해 진행한다.
+- `docs/specs/interface.md`는 T1·T2·T6가 절 단위로 나눠 쓰되(T6는 §4) 같은 시점에 함께 고치지 않는다.
 - 팀 규칙은 이 README에 둔다. 에이전트 도구 운용 지침은 로컬 전용 `AGENTS.md`와 이를 참조하는 `CLAUDE.md`에 두며 두 파일은 커밋하지 않는다. 공통 산출물은 Git으로 추적한다.
 
 ### 작업 내용·하위 트랙 확장

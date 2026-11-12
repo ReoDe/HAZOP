@@ -9,7 +9,7 @@
 
 ### 1.1 도움말 > 버전·데이터 위치(정보 창 보강)
 
-- 기존 메뉴 항목 "버전·데이터 위치"를 보강했다. 이름은 `specs/interface.md` §2.1 메뉴 행("도움말(버전·데이터 위치)")과 맞추려고 바꾸지 않았다(§5 문안 참고).
+- 기존 메뉴 항목 "버전·데이터 위치"를 보강했다. 이름은 `docs/specs/interface.md` §2.1 메뉴 행("도움말(버전·데이터 위치)")과 맞추려고 바꾸지 않았다(§5 문안 참고).
 - 내용: 프로그램 이름·버전(`HAZOP 분석 도구 0.1.0`), 자원·작업·저장 루트, 설정 파일, AI·네트워크 안내(기존) + **제3자 라이선스 고지 위치** + 안내 한 줄 "LGPL 등 제3자 라이선스 의무의 법무 검토 전이므로 내부용으로만 사용하십시오."
 - 고지 위치: `paths.licenses_dir()`(추가 API). 묶인 실행이면 실행 파일 옆 `licenses/`(`dirname(sys.executable)`, D15의 복사 위치), 개발 실행이면 저장소 `licenses/`.
 - 버튼 "라이선스 고지 열기": `QDesktopServices.openUrl(QUrl.fromLocalFile(<폴더>))`로 탐색기에서 연다. 폴더가 없으면 경고 대화상자만 띄운다. 닫기 버튼은 "Close"(Qt 표준 버튼).
@@ -63,7 +63,7 @@
 ## 4. 빌드·verify(W9-B·W10 함께)
 
 - 이전 W9 산출물 `%TEMP%\hazop-w9`·`%TEMP%\hazop-w9-src`를 지웠다(C 드라이브 여유 28 GB → 29 GB). 다른 `hazop-*` 폴더는 건드리지 않았다.
-- 스냅숏 `%TEMP%\hazop-w10-src`: HEAD `3231a54`, 577개(disk 501·head 11·overlay 65), 목록 해시 `7f7c52ad2cd358df47fe7d22d01de8aaf7cd8ac3f29f671a59a04ebbb9b12541`. `--restore-head` 11개는 다른 트랙의 진행 중 파일(`README.md`, `units/2026-11-05-design-system/` 4개, `hazop/viewer/template.html`, `scripts/check_design.py`, `tests/test_design.py`, `specs/` 3개)이다. overlay 65개 = `hazop/app/startup.py`·`tests/test_app_startup.py`·W9-B 원문 63개.
+- 스냅숏 `%TEMP%\hazop-w10-src`: HEAD `3231a54`, 577개(disk 501·head 11·overlay 65), 목록 해시 `7f7c52ad2cd358df47fe7d22d01de8aaf7cd8ac3f29f671a59a04ebbb9b12541`. `--restore-head` 11개는 다른 트랙의 진행 중 파일(`README.md`, `docs/units/2026-11-05-design-system/` 4개, `hazop/viewer/template.html`, `scripts/check_design.py`, `tests/test_design.py`, `docs/specs/` 3개)이다. overlay 65개 = `hazop/app/startup.py`·`tests/test_app_startup.py`·W9-B 원문 63개.
 - 빌드 조건은 W9와 같다(닫힌 포트 프록시 `127.0.0.1:9`, `PIP_NO_INDEX=1`, PATH 통제 D10).
 
 | 빌드 | 결과 | 경고 | 결과 폴더 |
@@ -82,7 +82,7 @@
 
 ## 5. 기획서 문안(planner 반영용, 이 작업에서 고치지 않음)
 
-`specs/interface.md`:
+`docs/specs/interface.md`:
 
 - §2.1 창 구성 표 "메뉴 (Qt)" 행: `도움말(버전·데이터 위치)` → `도움말(버전·데이터 위치: 프로그램 이름·버전, 자원·작업·저장 루트, 설정 파일, 제3자 라이선스 고지 위치와 "라이선스 고지 열기"(탐색기), 법무 검토 전 내부용 안내)`. 메뉴 이름을 "정보"로 바꾸려면 이 행과 함께 바꾼다(코드는 `hazop/app/main_window.py` `_menus`의 한 줄).
 - §7.1 경로 분리 표 아래에 한 줄 추가: `- 설정 파일을 읽을 수 없으면(JSON 문법 오류·JSON 객체 아님·UTF-8 아님) 기본값으로 덮어쓰지 않습니다. 대화형 실행은 경로·원인을 보여 주고 "기존 파일을 백업하고 기본값으로 시작"(settings.json.bad-<시각>.json으로 이름 바꿈) 또는 "종료"를 고르게 하고, --screenshots 실행은 안내를 표준 오류에 쓰고 종료 코드 2로 끝냅니다.`
@@ -137,7 +137,7 @@
 
 ### 7.3 빌드·verify
 
-- 이전 W10 산출물(`%TEMP%\hazop-w10`, `-src`)을 지우고 다시 만들었다. 스냅숏 `%TEMP%\hazop-w10-src`: HEAD `c155845`, 581개(disk 506·head 9·overlay 66), 목록 해시 `7949a3a3eecba687ec873aecfea860bc86d2bfbf4971809065f4d38defabb0a7`. `--restore-head` 9개 = 다른 담당 진행 중 파일(`hazop/analysis/ai.py`·`run.py`, `hazop/export/worksheet.py`, `scripts/run_samples.py`, `tests/test_analysis.py`·`test_export.py`, `specs/extraction.md`, `design/` 2개). 다른 담당의 미추적 파일(`scripts/clean_outputs.py` 등)은 넣지 않았다. HEAD는 1차 기준 `3231a54` 뒤로 다른 담당 커밋 2개(`61a3984` T6 W9, `c155845` 기획서)가 더해졌고 이 작업 파일과 겹치지 않는다.
+- 이전 W10 산출물(`%TEMP%\hazop-w10`, `-src`)을 지우고 다시 만들었다. 스냅숏 `%TEMP%\hazop-w10-src`: HEAD `c155845`, 581개(disk 506·head 9·overlay 66), 목록 해시 `7949a3a3eecba687ec873aecfea860bc86d2bfbf4971809065f4d38defabb0a7`. `--restore-head` 9개 = 다른 담당 진행 중 파일(`hazop/analysis/ai.py`·`run.py`, `hazop/export/worksheet.py`, `scripts/run_samples.py`, `tests/test_analysis.py`·`test_export.py`, `docs/specs/extraction.md`, `docs/design/` 2개). 다른 담당의 미추적 파일(`scripts/clean_outputs.py` 등)은 넣지 않았다. HEAD는 1차 기준 `3231a54` 뒤로 다른 담당 커밋 2개(`61a3984` T6 W9, `c155845` 기획서)가 더해졌고 이 작업 파일과 겹치지 않는다.
 
 | 빌드 | 결과 | 경고 | 결과 폴더 |
 |---|---|---|---|

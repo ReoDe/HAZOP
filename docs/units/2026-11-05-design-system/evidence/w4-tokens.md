@@ -57,7 +57,7 @@
 
 - 인터페이스 §4.1 340행 "아래 값은 `hazop/viewer/template.html`의 `:root`를 기준으로 하고"는 D5와 어긋난다(정본은 `tokens.py`). "값의 정본은 `hazop/app/tokens.py`이며 독립 뷰어 `:root`는 검사로 맞춘다" 취지로 바꿀 것을 제안한다.
 - 인터페이스 §4.1 351행 "클릭 선택은 `--selected`(빨강) 대신 UI 파랑 … `template.html` 수정이 필요합니다"는 이번 작업으로 반영이 끝났다. 현재형("클릭 선택은 UI 파랑(`--selected` = `--ui`)")으로 바꿀 것을 제안한다.
-- 두 문구 모두 `specs/interface.md` 담당 순서(T2 작업 뒤)에 맞춰 반영한다.
+- 두 문구 모두 `docs/specs/interface.md` 담당 순서(T2 작업 뒤)에 맞춰 반영한다.
 
 ### 5.2 W5 검토 항목으로 넘기는 관찰
 

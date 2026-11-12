@@ -77,7 +77,7 @@ D7(묶인 실행 로그를 런타임 훅으로 `<작업 루트>/logs/app.log`에
 | 2026-11-06 02:25 | `W8-A` 재작업 2회차(Codex 1~5, Claude 6·7 반영, 재작업 한도 도달): TLS 플러그인 허용 목록과 출처 긴 파일명 검사(이름 바꾸기·8.3 단축명·junction 별칭 시험), 인터프리터 경로 realpath 비교, 검증기 문구, TLS 측정 스크립트 `packaging/tls_probe.py`와 원본 출력 보존, 완료 기준 문구 정정. 기준 HEAD `dbcc855`(T6 W4 커밋 반영). 재빌드 2종·verify 4회 통과. venv 629 OK(건너뜀 14) |
 | 2026-11-06 02:40 | `W8-A` 완료(D11): 최종 재검토 Claude 승인·Codex 조건부 승인(tls_probe 3건). 총괄 직접 수정·재측정(모듈 72·오류 0·schannel·libssl-3-x64 미로드), test_packaging 48 OK |
 | 2026-11-06 03:30 | `W5` 구현 완료(검토 대기): [W5 신뢰 경계](evidence/w5-trust-boundary.md). D12 등록(확정). `integrity.py`에 패턴 라이브러리·지침서 고정값, `run.prepare`에 패턴 검사 연결, `tests/test_integrity_pins.py` 7건. venv 655 OK(건너뜀 14). 로컬 실행 폴더 resume 영향 없음. 기획서 문안 반영 대기 |
-| 2026-11-06 03:45 | `W5` 기획서 문안 반영(D12, 검토 대기): `specs/overview.md` 신뢰 경계 표 2행·남은 위험 1줄, `specs/interface.md` §7.2 신뢰 경계 행·§9 머리 문장(미결 행 삭제) |
+| 2026-11-06 03:45 | `W5` 기획서 문안 반영(D12, 검토 대기): `docs/specs/overview.md` 신뢰 경계 표 2행·남은 위험 1줄, `docs/specs/interface.md` §7.2 신뢰 경계 행·§9 머리 문장(미결 행 삭제) |
 | 2026-11-06 04:10 | `W5` 재작업 1회차(Claude·Codex 조건부 승인 반영): 지침서 검사를 공통 함수로 묶어 `check_catalog`·`check_criteria` 양쪽에 적용, 해시 불일치 시 파싱 생략, 읽기·파싱 실패를 경로·원인 blocker로, 회귀 테스트 7건 추가(14건), 지침서 수정 시 `GUIDE_SHA256` 동시 갱신 주의(D12·evidence)와 resume 영향 문구 정정, 이력 시간순 정렬(02:40 행). venv 662 OK(건너뜀 14) |
 | 2026-11-06 04:25 | `W5` 완료: 재검토 Claude 승인(조건부, 문서 2건 총괄 정정)·Codex 승인. test_integrity_pins 14 OK, 인터페이스 §7.2 제외 범위·evidence 문구 정정 |
 | 2026-11-06 09:10 | `W8-B` 구현 완료(검토 대기): [W8-B 모듈 제외](evidence/w8b-module-exclusion.md). D13 등록(사용자 결정). `build_package.py` 제외 규칙·spec 필터·빌드 뒤 검사, test_packaging D13 3건(51 OK). 스냅숏 `5225cc5` 재빌드 2종(바이너리 검사 통과), 배포용 3,119→2,235개·564.3→528.1 MiB, ASCII·한글 경로 verify 4회 통과. venv 674 OK(건너뜀 14) |

@@ -63,12 +63,12 @@ GitHub 기계는 매번 새로 깔린 빈 Windows다. 공개 저장소용 표준
 
 ## 3. 지난 2주 사고와 CI가 막았을지
 
-대상: 2026-10-28 이후 커밋 223개, `records/decision-log.md`, `units/2026-11-10-lessons/README.md`, 오늘 단위 A·B·C 보고(세션 공유 노트 폴더).
+대상: 2026-10-28 이후 커밋 223개, `docs/records/decision-log.md`, `docs/units/2026-11-10-lessons/README.md`, 오늘 단위 A·B·C 보고(세션 공유 노트 폴더).
 
 | # | 사고 | 근거 | CI가 막았을까 | 이유 |
 | --- | --- | --- | --- | --- |
 | 1 | 잘못된 인터프리터(LibreOffice Python, 옛 venv)로 시험을 돌려 '순수 HEAD에서도 실패'로 보고 | 교훈 1 | **일부** | CI는 매번 같은 환경에서 깨끗하게 돌리므로 "HEAD에서 정말 실패하는가"의 기준 답을 준다. 다만 이미 `tests/__init__.py`와 `preflight.py`가 잘못된 인터프리터를 바로 멈추게 해 같은 사고는 로컬에서 막힌다 |
-| 2 | 다른 세션의 실패를 원인 없이 '기존 실패'로 넘김 | 교훈 2, `records/backlog.md` 334행("기존 실패: test_claude_cli 8건…") | **예, 푸시한 커밋에 한해** | `main`과 PR의 CI 결과가 남으면 '기존 실패'인지 바로 확인할 수 있다 |
+| 2 | 다른 세션의 실패를 원인 없이 '기존 실패'로 넘김 | 교훈 2, `docs/records/backlog.md` 334행("기존 실패: test_claude_cli 8건…") | **예, 푸시한 커밋에 한해** | `main`과 PR의 CI 결과가 남으면 '기존 실패'인지 바로 확인할 수 있다 |
 | 3 | 섞인 작업트리 코드로 APR1400 기준값을 `--update` | 교훈 3 | **아니오** | APR1400 원본이 CI에 없다. 이미 `devenv.py` 잠금으로 막았다 |
 | 3' | 같은 사고가 SNP 기준값에서 난다면 | — | **예** | CI는 커밋된 코드로 `check_snp_baseline.py`를 돌리므로 기준값과 코드가 어긋나면 실패한다 |
 | 4 | 데스크톱 차례를 메시지로 넘겨 키 입력이 Claude 창으로 샘 | 교훈 5 | **아니오** | CI는 실제 데스크톱을 쓰지 않는다 |
@@ -252,5 +252,5 @@ checkout은 `fetch-depth: 0`으로 전체 이력을 받는다. `tests/test_desig
 - GitHub Docs, "Actions limits", https://docs.github.com/en/actions/reference/limits (2026-11-10 확인)
 - GitHub Docs, "Secure use reference", https://docs.github.com/en/actions/reference/security/secure-use (2026-11-10 확인)
 - GitHub Docs, "Self-hosted runners", https://docs.github.com/en/actions/concepts/runners/self-hosted-runners (2026-11-10 확인)
-- 저장소: `units/2026-11-10-lessons/README.md`, `records/decision-log.md`(103·153·234행), `records/backlog.md`(334행), `INTENT.md` 확인 필요 8·12번, 커밋 977a38a·43a0cb4, 단위 A·B·C 보고(세션 공유 노트 폴더)
+- 저장소: `docs/units/2026-11-10-lessons/README.md`, `docs/records/decision-log.md`(103·153·234행), `docs/records/backlog.md`(334행), `INTENT.md` 확인 필요 8·12번, 커밋 977a38a·43a0cb4, 단위 A·B·C 보고(세션 공유 노트 폴더)
 - 11-05 보류 결정: 에이전트 메모리 `ci-deferred.md`

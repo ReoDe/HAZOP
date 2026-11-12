@@ -19,7 +19,7 @@ approved: —
 
 ## 0. 상태값과 오류 종류 (기준 목록)
 
-이 절의 이름이 기준이다. 화면 설계([design/ai-connection-screens.md](../design/ai-connection-screens.md))는 이 이름을 그대로 쓴다. 화면 설계 §12의 제안 이름은 대부분 그대로 받았고, 바꾼 것은 §0.5에 적었다. 이름을 바꾸려면 이 절을 먼저 고친다.
+이 절의 이름이 기준이다. 화면 설계([docs/design/ai-connection-screens.md](../design/ai-connection-screens.md))는 이 이름을 그대로 쓴다. 화면 설계 §12의 제안 이름은 대부분 그대로 받았고, 바꾼 것은 §0.5에 적었다. 이름을 바꾸려면 이 절을 먼저 고친다.
 
 ### 0.1 연결 방식 `via`
 

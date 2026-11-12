@@ -38,7 +38,7 @@ python packaging/make_snapshot.py --dest %TEMP%\hazop-w4r2-src ^
 | `packaging/make_snapshot.py` | **2회차(1)**: 위 §1의 경로 정규화 |
 | `packaging/netwatch.ps1` | **2회차(8)**: `-PathLike`를 `;`로 구분한 문자열로 받아 나눈다. 프로세스 경로는 `GetFullPath`로 정규화한다(Qt가 `...\PySide6\.\QtWebEngineProcess.exe`로 보고하기 때문). 표본마다 `dt_ms`·`pids`·`tcp_remote`·`udp`를 기록한다 |
 | `tests/test_packaging.py` | 29건(빌드 없음). **2회차(7)** 추가·수정: 스냅숏 탈출(`../`·`./`·중간 `..`·절대·드라이브·빈 조각, 목적지 탈출, main이 복사 전에 거부), 해시 실패 시 즉시 종료(작업 루트에 아무것도 복사하지 않고 단계는 `work_root_env·roots·bundle-datas`까지만), 개발 실행이면 루트에서 종료, 자원 경로가 저장소로 폴백하는 경우, 검증기의 기존 폴더 비삭제(위조 표지가 있는 같은 이름 폴더 → 실패하고 지우지 않음), 첫 단계(`tree_hashes`) 예외와 정리 실패 기록, 로그 쓰기 실패 시 이전 훅 호출 |
-| `specs/interface.md` §7.1 | 화면이 읽는 `scripts/extract_drawio.py`·`build_graph.py`는 프로그램 루트에서 읽는다(1회차) |
+| `docs/specs/interface.md` §7.1 | 화면이 읽는 `scripts/extract_drawio.py`·`build_graph.py`는 프로그램 루트에서 읽는다(1회차) |
 
 ## 3. 빌드(스냅숏 `%TEMP%\hazop-w4r2-src`)
 

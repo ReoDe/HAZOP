@@ -50,7 +50,7 @@
 
 | 무엇 | 전 | 후 |
 | --- | --- | --- |
-| 지침서 경로 | 기획서/HAZOP기법지침.md | `specs/hazop-method-guide.md` |
+| 지침서 경로 | 기획서/HAZOP기법지침.md | `docs/specs/hazop-method-guide.md` |
 | `GUIDE_SHA256` | `30dc958af67280efd39bd22b8f4e4b149322f6b03af4b6222445749a0fd7f347` | `6199fbc3bcae50a6cc6002bd7338cf49283991b7c25c24e2fd6b28ca419e039f` |
 | 카탈로그 내용 해시 | `9fe31d10…368b` (고정값과 같음) | `9fe31d10…368b` (고정값과 같음) |
 | 적용 판단 내용 해시 | `d87b4caf…7cb9` (고정값과 같음) | `d87b4caf…7cb9` (고정값과 같음) |

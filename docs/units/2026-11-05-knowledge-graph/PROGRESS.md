@@ -16,7 +16,7 @@
 | `W3` | 완료 | `WP1` 지식 입력 규격(CSV → `knowledge.json`), 지식 빌더, 샘플. 담당: developer | 정상 샘플이 `passed`, 차단 픽스처가 각각 `blocked`와 기대 `blockers`를 내고 K1~K8을 통과한다. | 없음 |
 | `W4` | 완료 | `WP2` 엔티티 연결 후보 생성과 CSV 확인 흐름. 담당: developer | L1~L4를 통과한다. | `W3`(지식 빌더·샘플) [추론] |
 | `W5` | 완료 | `WP3` 알고리즘 MVP(A1~A5)와 결과 JSON·보고서. 담당: developer | A1~A5가 정답 파일과 같고(§7.1 A2 기대값 포함), A1′(④ 탐색과 일치)를 통과하고, P1(§7.3 상한 규모 합성 그래프의 계산 시간)을 기록한다. | `W3`·`W4`(확인된 관계·계산 제외 규칙) [추론] |
-| `W6` | 완료 | `WP4` 그래프 화면(별도 HTML, vendoring, 브리지 메시지). 담당: designer(색·배치) → developer | V1·V2를 통과한다. D1에 따라 `specs/interface.md`·`specs/overview.md`의 ③ 화면 관련 본문을 갱신한다(planner). | 완료 관문(`W3`~`W5` 완료, K1~K8·L1~L4·A1~A5·A1′ 통과)과 `W2` 결과(렌더러 확정) |
+| `W6` | 완료 | `WP4` 그래프 화면(별도 HTML, vendoring, 브리지 메시지). 담당: designer(색·배치) → developer | V1·V2를 통과한다. D1에 따라 `docs/specs/interface.md`·`docs/specs/overview.md`의 ③ 화면 관련 본문을 갱신한다(planner). | 완료 관문(`W3`~`W5` 완료, K1~K8·L1~L4·A1~A5·A1′ 통과)과 `W2` 결과(렌더러 확정) |
 | `W7` | 완료 | `WP5` ④ 근거 묶음 `knowledge_context`, `kg_version` 고정, ⑤ 관련 지식 표시. 담당: planner(규격) → developer | 산출물 3종을 [그래프활용 §6.4](../../specs/graph-usage.md#64-wp5-상세-규격) 규격대로 반영하고 §7.2 C1~C10을 통과한다. | 완료 관문(`W3`~`W5` 완료, K1~K8·L1~L4·A1~A5·A1′ 통과) |
 | `W8` | 보류(후속) | `WP6` 후속 알고리즘(A6~A11), 여러 도면 통합, 화면에서 연결 확인. 담당: 미정 | 미정(그래프활용 §8.1에서 "후속") | `W2`~`W7` [추론] |
 | `W9` | 완료 | 완성본 2단계: 도면 기반 지식그래프 자동 생성, 설계 문서 PDF 규칙 기반 지식 추출, ① 설계 문서 등록, ③ 안내 문구([그래프활용 §9](../../specs/graph-usage.md#9-지식그래프-자동-생성과-문서-지식-추출)) | 배포본에서 drawio·PDF 도면 등록 → ③ 표시, 가상 설계 문서 등록 → 추출 항목이 근거와 함께 ③ 표시, 전체 unittest·check_kg·check_kg_screen·check_contract·check_app·verify_bundle --app-only 통과 | 1단계(커밋 3dbc515), `W6`, D12 |
@@ -36,7 +36,7 @@
 
 | ID | 결과 | 증거 | 비고 |
 |---|---|---|---|
-| `W1` | 조사·기획 완료. 그래프활용 §8.1의 `WP0`~`WP6`을 `W2`~`W8`로 등록하고 완료 기준·의존성을 연결 | [`specs/graph-usage.md`](../../specs/graph-usage.md), [`specs/graph-survey.md`](../../specs/graph-survey.md), PR ReoDe/HAZOP#5, [`decisions.md`](decisions.md) D1 | 2026-11-05 |
+| `W1` | 조사·기획 완료. 그래프활용 §8.1의 `WP0`~`WP6`을 `W2`~`W8`로 등록하고 완료 기준·의존성을 연결 | [`docs/specs/graph-usage.md`](../../specs/graph-usage.md), [`docs/specs/graph-survey.md`](../../specs/graph-survey.md), PR ReoDe/HAZOP#5, [`decisions.md`](decisions.md) D1 | 2026-11-05 |
 
 ## 4. 보류·재개
 
@@ -65,7 +65,7 @@ P1(성능)은 그래프활용 §8.1에 배정이 없어 총괄 판정으로 `W5`
 
 편집 허용 범위 공백(해소): `W2`는 D4, `W6`과 그래프활용 D2(② 탭 이름)는 D8, `W7`과 그래프활용 D7(신뢰 경계 표)은 D11로 등록했다.
 
-후속 메모: `specs/hazop-analysis.md` 83행의 근거 묶음 구성 표에는 `knowledge_context`가 없다. `W7`에서는 고치지 않고(편집 범위 밖), 후속 문서 정리 때 그래프활용 §6.4를 링크한다.
+후속 메모: `docs/specs/hazop-analysis.md` 83행의 근거 묶음 구성 표에는 `knowledge_context`가 없다. `W7`에서는 고치지 않고(편집 범위 밖), 후속 문서 정리 때 그래프활용 §6.4를 링크한다.
 
 ## 6. 변경 이력
 

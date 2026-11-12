@@ -1,6 +1,6 @@
 ---
 name: hazop-designer
-description: HAZOP 디자인 담당. design/ 아래 화면 설계·화면 분석 문서와 HTML 시안 작성을 맡는다. 총괄이 작업지시서를 넘길 때만 사용한다.
+description: HAZOP 디자인 담당. docs/design/ 아래 화면 설계·화면 분석 문서와 HTML 시안 작성을 맡는다. 총괄이 작업지시서를 넘길 때만 사용한다.
 tools: Read, Grep, Glob, Edit, Write
 model: opus
 effort: medium

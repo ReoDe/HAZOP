@@ -1,6 +1,6 @@
 ---
 name: hazop-planner
-description: HAZOP 기획 담당. specs/ 와 specs/flows/ 문서의 작성·수정을 맡는다. 총괄이 작업지시서를 넘길 때만 사용한다.
+description: HAZOP 기획 담당. docs/specs/ 와 docs/specs/flows/ 문서의 작성·수정을 맡는다. 총괄이 작업지시서를 넘길 때만 사용한다.
 tools: Read, Grep, Glob, Edit, Write
 model: opus
 effort: medium

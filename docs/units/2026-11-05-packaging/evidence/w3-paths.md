@@ -52,7 +52,7 @@ W3 결과는 **경로 선택 검증**이다. 개발 실행과 모의 frozen(`sys
 
 ## 4. W4에서 볼 것
 
-- spec datas: `scripts/extract_drawio.py`·`scripts/build_graph.py` → `scripts/`. `hazop/viewer/template.html`, `hazop/kg/screen_template.html`, `hazop/kg/vendor/**`(패키지 `__file__` 기준). 자원(`데이터/이탈후보·기준표·패턴`, `specs/hazop-method-guide.md`). hiddenimports는 `collect_submodules("hazop")`.
+- spec datas: `scripts/extract_drawio.py`·`scripts/build_graph.py` → `scripts/`. `hazop/viewer/template.html`, `hazop/kg/screen_template.html`, `hazop/kg/vendor/**`(패키지 `__file__` 기준). 자원(`데이터/이탈후보·기준표·패턴`, `docs/specs/hazop-method-guide.md`). hiddenimports는 `collect_submodules("hazop")`.
 - 저장소가 없는 환경(묶음 폴더만 있는 위치)에서 ①~⑤를 실제 번들로 확인한다. W3 모의 검사가 가린 hiddenimports·datas 누락은 여기서 드러난다.
 - 실제 PyInstaller 6.22에서 확인할 것: `hazop/paths.py`의 `__file__`과 `sys._MEIPASS`가 같은 폴더(`_internal`)인지, 묶음 안 `.py`를 `spec_from_file_location`으로 읽을 때 스크립트의 `sys.path.insert(0, REPO_ROOT)`가 문제를 일으키지 않는지.
 - 작업 루트 초기 내용(구간·고정 응답·지식 입력)을 첫 실행 때 어떻게 둘지는 미결이다(W1 §3.4-4).

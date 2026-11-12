@@ -391,28 +391,28 @@ HEAD d411d15(5028fcd 포함) 재실행 결과(`출력/사용자검증/2026-11-07
 
 ## 초기사건 인계 묶음(단위 E) 후속(2026-11-11)
 
-- P5(FMEA 입력·MLD 가지 대조)는 사용자 답 대기: `specs/ie-output-design.md` §8.1 질문 8개(P5 시기, FMEA 입력 형식, FMEA 행의 쓰임, 양식 열, 'FMEA 행' 시트, MLD 자료, 전기·제어 구간 정하는 법, E9)
+- P5(FMEA 입력·MLD 가지 대조)는 사용자 답 대기: `docs/specs/ie-output-design.md` §8.1 질문 8개(P5 시기, FMEA 입력 형식, FMEA 행의 쓰임, 양식 열, 'FMEA 행' 시트, MLD 자료, 전기·제어 구간 정하는 법, E9)
 - 위험도 숫자를 사람이 자유 문장에 적으면 묶음에 그대로 나간다(구조화 필드만 뺀다. '읽는 법' 시트와 설계서에 한계로 적음)
 - 기존 경고 2종의 한계: '완화 결과로 적힘'이 부정 표현("정상 복귀 불가")을 오탐하고 영문 표현을 놓친다
 - 경계 경고: 받는 구간에 무관한 승인 항목이 하나만 있어도 경고가 사라진다. FMEA 요약이 계기가 없는 전기 구간(전원·전동기)을 뺀다. 두 가지 모두 `5c22ab3`·`701a0c6` 커밋 제목으로는 처리 여부를 확인하지 못했다
 - 가림 패턴이 두 경로 사이의 한글까지 가린다(과하게 가리는 쪽)
 - 용어 '초기사건 그룹'의 출처를 NUREG-2122·ASME/ANS 정의와 대조하지 않았다
 - '확률론적안전성평가' 띄어쓰기가 혼용된다
-- `design/mockups/initiating-events/6-groups.html`에 PRA 표기가 남아 있다
+- `docs/design/mockups/initiating-events/6-groups.html`에 PRA 표기가 남아 있다
 - backlog 'P2 후속'의 기준표 basis 원문 노출, 틀 고정 A2, `ai_basis` 경고는 이번에 다루지 않았다
 - `scripts/export_ie_bundle.py`로 실제 SNP 데이터 묶음을 만들어 본 확인이 없다. 실제 Excel이 파일을 연 상태에서의 저장 실패도 확인하지 않았다
 
 ## 문서 범위 문구(단위 DOC) 후속(2026-11-11)
 
-- `specs/interface.md` 화면 목록·단계 탭에 ⑥이 없고 ④⑤ 이름이 앱(④ 검토구간, ⑤ 분석 결과)과 다르다
-- `specs/flows/00-overview.md`에 ⑥이 없다
-- 다른 문서의 ①~⑤ 표기: `design/screen-spec.md`, `packaging/README.md`, `.claude/skills/verify-hazop/features/README.md`, `hazop/app/screens/__init__.py` docstring
+- `docs/specs/interface.md` 화면 목록·단계 탭에 ⑥이 없고 ④⑤ 이름이 앱(④ 검토구간, ⑤ 분석 결과)과 다르다
+- `docs/specs/flows/00-overview.md`에 ⑥이 없다
+- 다른 문서의 ①~⑤ 표기: `docs/design/screen-spec.md`, `packaging/README.md`, `.claude/skills/verify-hazop/features/README.md`, `hazop/app/screens/__init__.py` docstring
 - 판 0.2.0 배포본을 실제로 빌드한 기록이 없다(코드의 판 번호와 빌드 스크립트만 확인)
 - (완료 2026-11-11, 92453b4) README '프로젝트 방향'의 AI 연결 순서는 INTENT §7 5번 답 대기
 
 ## AI 구간 검토(단위 G) 후속(2026-11-11)
 
-- g1 실제 구독 소량 실측(SNP 6장, 호출 3회)은 사용자가 직접 돌린다. 지금 `specs/study-node-segmentation.md` §4.7의 호출당 시간은 ⑤ 칸 분석 값을 빌린 추정이다.
+- g1 실제 구독 소량 실측(SNP 6장, 호출 3회)은 사용자가 직접 돌린다. 지금 `docs/specs/study-node-segmentation.md` §4.7의 호출당 시간은 ⑤ 칸 분석 값을 빌린 추정이다.
 - g4 도면 위 제안 경계 점선, g5 제외 묶음의 조각 경계 보내기는 하지 않았다.
 - 실제 창 확인(`check_user_scenarios.py` S9·S11)은 아직 돌리지 않았다. 이 PC의 개발 작업 루트 `D:\HAZOP\작업`이 옛 배치라 열리지 않으므로 옮긴 뒤 확인한다.
 - 단위 G 뒤의 제안은 `knowledge_fp` 열쇠를 달고 있다. 검토를 돌린 뒤 ④를 처음 열 때 지식그래프를 한 번 읽는다. 여는 시간은 재지 않았다.
@@ -426,7 +426,7 @@ HEAD d411d15(5028fcd 포함) 재실행 결과(`출력/사용자검증/2026-11-07
 - psv의 body+spring 규칙이 `//`를 스프링으로 읽어 I/P 변환기와 솔레노이드 밸브를 psv로 판정한다(028쪽 3곳, 132쪽, 120쪽). 전부터 있던 결함
 - 45° 기울어진 검은 몸통은 닫힌 밸브로 읽지 못한다(실제 발생 수 미확인)
 - APR1400 검정 견본이 묶음을 가리지 않고 모든 PDF에 적용된다. 다른 발전소 도면의 채운 나비가 NC로 읽힐 수 있다
-- 추출 규칙이 바뀌어도 `RULES_VERSION`은 그대로다(`specs/kg-schema.md` M1·M2 결정). 실행 메타데이터만으로는 어느 코드로 뽑았는지 되짚을 수 없다
+- 추출 규칙이 바뀌어도 `RULES_VERSION`은 그대로다(`docs/specs/kg-schema.md` M1·M2 결정). 실행 메타데이터만으로는 어느 코드로 뽑았는지 되짚을 수 없다
 - `extraction_run.json`은 CLI와 앱 경로 모두 쓰지만 ②·탐색기 화면에는 보이지 않는다
 - 104·028쪽 실제 도면 시험은 PDF가 저장소 밖에 있어 CI에서 건너뛴다(CI가 지키는 것은 합성 표본과 012쪽)
 - F1-5(밸브 라벨 고르기), F1-6(사전 항목 추가)은 2026-11-12에 마쳤다(DEC-0285~0289)

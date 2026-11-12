@@ -50,16 +50,16 @@ P&ID 그래프에 비P&ID 성분(문서·요건·설정치 등)을 통합하고,
 
 ### 상위 정본·선행 자료
 
-초기 조사·참조 대상: `specs/graph-usage.md`, `specs/graph-survey.md`, `hazop/graph/`, `hazop/analysis/explore.py`
+초기 조사·참조 대상: `docs/specs/graph-usage.md`, `docs/specs/graph-survey.md`, `hazop/graph/`, `hazop/analysis/explore.py`
 
 조사 후 자료별 소유 트랙·역할·정본 위치를 아래 표에 등록한다. 참조 경로라는 이유만으로 상위 정본이나 편집 대상으로 간주하지 않는다.
 
 | 문서·위치 | 소유 트랙·역할 | 이 작업과의 관계·적용 범위 |
 |---|---|---|
-| [`specs/graph-usage.md`](../../specs/graph-usage.md) | 기획(planner)·정본 | 지식그래프 규격·알고리즘·화면의 정본. `W2`~`W8`의 완료 기준(§7)·작업 묶음(§8.1)·남은 결정(§8.2)의 출처 |
-| [`specs/graph-survey.md`](../../specs/graph-survey.md) | 기획(planner)·근거 자료 | 그래프활용.md의 조사 근거. 정본이 아니며 충돌 시 그래프활용.md를 따른다 |
-| [`specs/interface.md`](../../specs/interface.md) | 기획(planner)·앱 화면 정본 | D1(③ 지식그래프 탭)에 따라 ③ 화면 반영 시(`W6`) 갱신 대상. 그 전까지 읽기 전용 |
-| [`specs/overview.md`](../../specs/overview.md) | 기획(planner)·공통 원칙 정본 | D1에 따라 ③ 화면 반영 시(`W6`) 갱신 대상. 그 밖의 변경(그래프활용 D7 신뢰 경계 표 등)은 편집 허용 범위 밖이며, 필요하면 결정으로 범위를 먼저 넓힌다 |
+| [`docs/specs/graph-usage.md`](../../specs/graph-usage.md) | 기획(planner)·정본 | 지식그래프 규격·알고리즘·화면의 정본. `W2`~`W8`의 완료 기준(§7)·작업 묶음(§8.1)·남은 결정(§8.2)의 출처 |
+| [`docs/specs/graph-survey.md`](../../specs/graph-survey.md) | 기획(planner)·근거 자료 | 그래프활용.md의 조사 근거. 정본이 아니며 충돌 시 그래프활용.md를 따른다 |
+| [`docs/specs/interface.md`](../../specs/interface.md) | 기획(planner)·앱 화면 정본 | D1(③ 지식그래프 탭)에 따라 ③ 화면 반영 시(`W6`) 갱신 대상. 그 전까지 읽기 전용 |
+| [`docs/specs/overview.md`](../../specs/overview.md) | 기획(planner)·공통 원칙 정본 | D1에 따라 ③ 화면 반영 시(`W6`) 갱신 대상. 그 밖의 변경(그래프활용 D7 신뢰 경계 표 등)은 편집 허용 범위 밖이며, 필요하면 결정으로 범위를 먼저 넓힌다 |
 
 이력·대체 문서는 `BASELINE`·`SUPERSEDED` 등 지위를 표시하고 현재 정본을 연결한다. 다른 브랜치에만 남은 자료는 확인한 커밋의 고정 링크로 참조한다.
 
@@ -125,8 +125,8 @@ P&ID 그래프에 비P&ID 성분(문서·요건·설정치 등)을 통합하고,
 
 ### 편집 허용 범위
 
-- 작업 폴더: `units/2026-11-05-knowledge-graph/`
-- 추가 편집 허용 범위: `hazop/kg/`, `scripts/check_kg.py`, `scripts/build_kg.py`(결정 D6), `tests/test_kg.py`, `specs/graph-usage.md`, `specs/interface.md`·`specs/overview.md`(D1에 따른 ③ 화면 반영만, `W6`, 결정 D2), `데이터/지식/`·`tests/fixtures/kg/`(`W3`, 결정 D3), `scripts/check_kg_renderer.py`·`tests/test_kg_renderer.py`(`W2`, 결정 D4), `W4`·`W5` 파일(결정 D7), `W6` 파일(결정 D8), `W7` 파일(결정 D11)
+- 작업 폴더: `docs/units/2026-11-05-knowledge-graph/`
+- 추가 편집 허용 범위: `hazop/kg/`, `scripts/check_kg.py`, `scripts/build_kg.py`(결정 D6), `tests/test_kg.py`, `docs/specs/graph-usage.md`, `docs/specs/interface.md`·`docs/specs/overview.md`(D1에 따른 ③ 화면 반영만, `W6`, 결정 D2), `데이터/지식/`·`tests/fixtures/kg/`(`W3`, 결정 D3), `scripts/check_kg_renderer.py`·`tests/test_kg_renderer.py`(`W2`, 결정 D4), `W4`·`W5` 파일(결정 D7), `W6` 파일(결정 D8), `W7` 파일(결정 D11)
 - 위 편집 허용 범위 밖의 경로는 참조 대상을 포함해 읽기 전용이다.
 - 문서를 추가하면 해당 폴더 README 인덱스와 이 문서의 문서 지도를 필요한 수준으로 갱신한다.
 
@@ -145,7 +145,7 @@ P&ID 그래프에 비P&ID 성분(문서·요건·설정치 등)을 통합하고,
 - 에이전트: 허용 범위의 조사·구현·검증·문서 갱신을 수행하고, 정본에 없는 판단을 발견하면 결정 사항으로 제시한다.
 - 별도 담당자·소유 트랙이 생기면 책임 범위와 인계 조건을 이 절에 기록한다.
 - 에이전트 분담은 저장소 루트 `CLAUDE.md`의 총괄 규칙을 따른다: 총괄 → 담당(`hazop-planner`·`hazop-designer`·`hazop-developer`) → 검토(`hazop-reviewer`·`hazop-codex-reviewer`) → `hazop-qa` → `hazop-recorder`. 검토·QA 결과는 `evidence/`에 남긴다.
-- 프로젝트 전체에 걸리는 결정은 `records/decision-log.md`에도 기록하고 이 작업의 결정 ID를 함께 적는다.
+- 프로젝트 전체에 걸리는 결정은 `docs/records/decision-log.md`에도 기록하고 이 작업의 결정 ID를 함께 적는다.
 - 팀 규칙은 이 README에 둔다. 에이전트 도구 운용 지침은 로컬 전용 `AGENTS.md`와 이를 참조하는 `CLAUDE.md`에 두며 두 파일은 커밋하지 않는다. 공통 산출물은 Git으로 추적한다.
 
 ### 작업 내용·하위 트랙 확장

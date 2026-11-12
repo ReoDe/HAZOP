@@ -1,6 +1,6 @@
 # pstack 활용 자문: D 드라이브 이전 뒤 단위 A~E
 
-작성 2026-11-10, pstack 자문 세션(읽기 전용). 기준 커밋 `feat/next-units` @ 5f4e6c3. 근거로 읽은 것은 `CLAUDE.md`, `INTENT.md`, `records/backlog.md`, `units/2026-11-10-lessons/README.md`, `units/2026-11-10-lessons/d-drive-move.md`, `~/.claude/rules/pstack-models.md`, pstack 0.15.36 스킬 설명, 그리고 단위 A의 대상 코드다.
+작성 2026-11-10, pstack 자문 세션(읽기 전용). 기준 커밋 `feat/next-units` @ 5f4e6c3. 근거로 읽은 것은 `CLAUDE.md`, `INTENT.md`, `docs/records/backlog.md`, `docs/units/2026-11-10-lessons/README.md`, `docs/units/2026-11-10-lessons/d-drive-move.md`, `~/.claude/rules/pstack-models.md`, pstack 0.15.36 스킬 설명, 그리고 단위 A의 대상 코드다.
 
 ## 공통 사항
 
@@ -45,7 +45,7 @@
 | `hazop/app/screens/*`, `hazop/app/explorer.py` | | 손대지 않음 | 주인 | 이어받음 | 이어받음 |
 | `hazop/study/corrections.py` 등 저장 공용화 대상 | | | | 주인 | |
 | `hazop/ie/*`(store 제외) | | | | | 주인 |
-| `records/*.md` | 총괄(hazop-recorder)만 | | | | |
+| `docs/records/*.md` | 총괄(hazop-recorder)만 | | | | |
 
 B와 C가 함께 돌 때 겹칠 수 있는 곳은 `tokens.py`(글꼴)와 `startup.py`(단일 실행 잠금)다. 둘 다 B에 주고 C의 작업지시서에 '건드리지 않음'을 적는다. C가 글꼴 문제를 만나면 B 세션에 메시지로 넘기지 말고 총괄에게 보고한다.
 
@@ -206,7 +206,7 @@ B와 C가 함께 돌 때 겹칠 수 있는 곳은 `tokens.py`(글꼴)와 `startu
 
 이 단위는 성격이 다른 둘을 묶었다. 나누기를 권한다.
 
-- **E1 품질 경고 3종.** 보호설비 고장이 원인 칸에 있음, 구간 경계 결과 끊김, 전기·제어 구간인데 FMEA 없음. 설계서(`specs/ie-output-design.md` 시트 8)에 정의가 있어 바로 구현할 수 있다. 다만 'FMEA 없음' 경고는 FMEA 입력(P5의 D5)이 없으면 항상 뜬다. E2보다 먼저 넣을지, 문구를 'FMEA 입력 기능 없음'으로 둘지 총괄이 정한다.
+- **E1 품질 경고 3종.** 보호설비 고장이 원인 칸에 있음, 구간 경계 결과 끊김, 전기·제어 구간인데 FMEA 없음. 설계서(`docs/specs/ie-output-design.md` 시트 8)에 정의가 있어 바로 구현할 수 있다. 다만 'FMEA 없음' 경고는 FMEA 입력(P5의 D5)이 없으면 항상 뜬다. E2보다 먼저 넣을지, 문구를 'FMEA 입력 기능 없음'으로 둘지 총괄이 정한다.
 - **E2 P5(FMEA 입력·MLD 가지 대조).** 설계서 §표에서 규모가 '대'다. FMEA 입력 형식(D5)이 아직 정해지지 않았고, MLD 분류는 E9(결정 보류)와 닿는다. 구현 전에 기획 단계(hazop-planner)와 사용자 질의가 필요하다. 그리고 INTENT의 지금 우선순위('쓸 수 있는 완성본과 패키징 먼저')와 맞대어 보면, P5는 새 기능 확장이다. 총괄은 규칙 8에 따라 지금 범위에 넣을지 사용자에게 먼저 묻는다.
 
 ### 1. 스킬
@@ -249,7 +249,7 @@ A (1세션) ──► B (1세션) ┐
 
 ## 단위 CI: 가벼운 CI 도입 (2026-11-10 추가)
 
-기준 커밋 9154143. 근거로 읽은 것은 `units/2026-11-10-ci-review/README.md`(§2·§4·§5), `governance/naming-rules/README.md`(초안), `tests/__init__.py`, `scripts/devenv.py`, `scripts/preflight.py`, `packaging/requirements*.txt`, 시험의 건너뛰기 조건, `scripts/check_*.py`의 import다.
+기준 커밋 9154143. 근거로 읽은 것은 `docs/units/2026-11-10-ci-review/README.md`(§2·§4·§5), `docs/governance/naming-rules/README.md`(초안), `tests/__init__.py`, `scripts/devenv.py`, `scripts/preflight.py`, `packaging/requirements*.txt`, 시험의 건너뛰기 조건, `scripts/check_*.py`의 import다.
 
 ### 먼저 확인한 사실 (계획을 바꾸는 것)
 
@@ -279,8 +279,8 @@ A (1세션) ──► B (1세션) ┐
   - `scripts/run_ci.py`(새 파일)
   - `tests/test_ci_config.py`(새 파일)
   - 첫 실행에서 실패한 시험의 **건너뛰기 표시 줄만**. 시험 본문 논리는 고치지 않는다. 앱 코드의 결함이 드러나면 고치지 말고 남은작업으로 넘긴다.
-  - `units/2026-11-10-ci-review/README.md`의 '첫 실행 결과' 절
-- 손대지 않을 것: `CLAUDE.md`(CI 규칙 문구는 총괄이 쓴다), `records/*.md`(hazop-recorder), `packaging/requirements*.txt`(B 소유였다. 판을 바꾸면 배포본에 닿는다).
+  - `docs/units/2026-11-10-ci-review/README.md`의 '첫 실행 결과' 절
+- 손대지 않을 것: `CLAUDE.md`(CI 규칙 문구는 총괄이 쓴다), `docs/records/*.md`(hazop-recorder), `packaging/requirements*.txt`(B 소유였다. 판을 바꾸면 배포본에 닿는다).
 - **단위 D와 겹치지 않게 한다.** 건너뛰기 표시가 시험 파일 여러 곳을 건드리므로, D가 시작되기 전에 CI를 끝내거나 D 세션이 아직 손대지 않은 시험만 고친다. 권장 순서는 CI를 먼저 끝내고 D를 시작하는 것이다. 그러면 D부터 CI의 보호를 받는다.
 - **이름 이전은 CI 다음이다.** 이전 단위는 `.github/`와 `scripts/run_ci.py`도 대상에 넣고, `tests/test_ci_config.py`가 통과해야 끝난 것으로 본다. 이 조건을 이전 단위의 작업지시서에 적는다.
 
@@ -351,7 +351,7 @@ import를 보고 나눈 것이다. 하위 세션이 아래 '깨끗한 복제 리
 
 ## 단위 NAMING: 이름 규칙 이전 (2026-11-10 추가)
 
-기준 커밋 90b9cf6. 근거로 읽은 것은 `governance/naming-rules/README.md`(HZ-GOV-02 개정 1) §5~§9이다. 계획서의 세 약속은 다음 코드와 맞대어 보았다. `hazop/paths.py`(`rel_or_abs`, `resolve_rel`, `LEGACY_PREFIXES`, `backup_rel`), `hazop/graph/build.py:75`, `hazop/analysis/run.py`(`load_inputs`, `build_bundle`), `hazop/analysis/ai.py:115`, `scripts/build_package.py:74,80`, 표본·시험 입력에 고정된 `graph_version`, `.github/workflows/tests.yml`, `scripts/run_ci.py`, 옛 경로가 남은 `.claude/`·운영 문서·사용자 메모리.
+기준 커밋 90b9cf6. 근거로 읽은 것은 `docs/governance/naming-rules/README.md`(HZ-GOV-02 개정 1) §5~§9이다. 계획서의 세 약속은 다음 코드와 맞대어 보았다. `hazop/paths.py`(`rel_or_abs`, `resolve_rel`, `LEGACY_PREFIXES`, `backup_rel`), `hazop/graph/build.py:75`, `hazop/analysis/run.py`(`load_inputs`, `build_bundle`), `hazop/analysis/ai.py:115`, `scripts/build_package.py:74,80`, 표본·시험 입력에 고정된 `graph_version`, `.github/workflows/tests.yml`, `scripts/run_ci.py`, 옛 경로가 남은 `.claude/`·운영 문서·사용자 메모리.
 
 ### 먼저 확인한 사실 (계획을 바꾸거나 보강하는 것)
 
@@ -410,7 +410,7 @@ import를 보고 나눈 것이다. 하위 세션이 아래 '깨끗한 복제 리
 | 0 | `test_naming_rules`가 HEAD에서 통과하고, 일부러 넣은 위반 예에서 실패 | — |
 | 1 | `preflight.py` 경고 0, `git worktree list` 정리, 지운 브랜치 목록과 그 끝 커밋 SHA 기록 | `moves.csv` 역순으로 이름 되돌림. 브랜치는 기록한 SHA로 `git branch <이름> <SHA>` |
 | 2 | 링크 대상 검사(N9) 실패 0, 도구의 바꾼 줄 목록 저장 | — |
-| 3 | `test_integrity_pins`, `test_packaging` 통과. 새 `GUIDE_SHA256`과 이유가 같은 커밋에 있음. 시안 `build.py` 재실행 결과 같은 그림. 배포본 빌드 + `verify_bundle.py` 통과. 묶음 파일 목록·해시 대조(사실 4)에서 대응표 밖 차이 0. `.claude/agents/hazop-recorder.md`가 새 `records/`를 가리킴 | 지침서 해시는 ②에 같이 있어 함께 돌아감 |
+| 3 | `test_integrity_pins`, `test_packaging` 통과. 새 `GUIDE_SHA256`과 이유가 같은 커밋에 있음. 시안 `build.py` 재실행 결과 같은 그림. 배포본 빌드 + `verify_bundle.py` 통과. 묶음 파일 목록·해시 대조(사실 4)에서 대응표 밖 차이 0. `.claude/agents/hazop-recorder.md`가 새 `docs/records/`를 가리킴 | 지침서 해시는 ②에 같이 있어 함께 돌아감 |
 | 4 | 해당 시험 통과, `make_design_doc.py`가 같은 PDF를 만듦(바이트 비교 또는 추출 결과 비교) | — |
 | 5 | (1) 고정 `graph_version`·`bundle_sha256` 파일 수정 0(`git diff --stat`로 보임) (2) `refresh_fixture_hashes.py --check` 차이 0 (3) `check_snp_baseline.py` 후퇴 0과 `check_apr1400.py` 점수 동일(둘 다 `--update` 없이, '맞은 수/분모 @커밋') (4) 배포본 빌드·`verify_bundle.py`·묶음 대조 (5) S1~S6 | 추적 안 하는 APR1400 원본·도면별은 `moves.csv`로 되돌림. 저장소 밖 시험 폴더 사본도 같은 표로 |
 | 6 | (1) 재현 스크립트(아래)에서 이전 전후 화면 데이터 수 동일 (2) `--apply`→`--undo` 왕복 뒤 해시 동일 (3) 같은 작업 루트에 두 번 `--apply`해도 변화 없음 (4) 기준값 두 개 그대로 (5) 이 PC 배포본 작업 루트 **사본**으로 새 배포본을 열어 등록 자료·분석 결과가 보임 (6) S1~S6 | 코드는 revert. 사용자 데이터는 `migrate_names.py --undo <manifest>`. 개발 `작업/`은 시작 전 통째 사본(`D:\HAZOP-trials\<날짜>-naming-n4\work-before\`)으로도 되돌릴 수 있게 한다 |
@@ -467,9 +467,9 @@ import를 보고 나눈 것이다. 하위 세션이 아래 '깨끗한 복제 리
 
 ### 먼저 확인한 사실 (계획을 바꾸는 것)
 
-1. **단위 G의 본체는 이미 들어가 있다.** AI 구간 검토 S6이 S6a(b0d016a), S6b(c15bf52), ④ 속도 정리(4816182)로 커밋되어 있다. `hazop/study/node_review.py`(479줄), ④ '스크리닝' 메뉴의 'AI 구간 검토…', 받아들이기·고쳐서 받기·기각, 가짜 클라이언트와 가짜 CLI(`tests/fake_claude`)로 돌리는 `tests/test_node_review.py`·`tests/test_study_review_ui.py`가 있다. INTENT §3.4 마지막 항목('그래프로 먼저 자르고 AI가 검토, 사람이 확정')은 기능으로는 이미 채워졌다. 남은 것은 `specs/study-node-segmentation.md` §4.7에 '후속(이번에 하지 않음)'으로 적힌 다섯 가지다. G는 새 기능이 아니라 후속을 마무리하는 단위로 다시 잡아야 한다.
+1. **단위 G의 본체는 이미 들어가 있다.** AI 구간 검토 S6이 S6a(b0d016a), S6b(c15bf52), ④ 속도 정리(4816182)로 커밋되어 있다. `hazop/study/node_review.py`(479줄), ④ '스크리닝' 메뉴의 'AI 구간 검토…', 받아들이기·고쳐서 받기·기각, 가짜 클라이언트와 가짜 CLI(`tests/fake_claude`)로 돌리는 `tests/test_node_review.py`·`tests/test_study_review_ui.py`가 있다. INTENT §3.4 마지막 항목('그래프로 먼저 자르고 AI가 검토, 사람이 확정')은 기능으로는 이미 채워졌다. 남은 것은 `docs/specs/study-node-segmentation.md` §4.7에 '후속(이번에 하지 않음)'으로 적힌 다섯 가지다. G는 새 기능이 아니라 후속을 마무리하는 단위로 다시 잡아야 한다.
 2. **성능 계획(§5.4)도 대부분 끝났다.** N2, N3(f9a3b29), N4(ddb9c03), N5가 커밋됐다. §5.6·§5.7 측정으로 ②③④⑤ 화면 전환은 0.35~1.10초, 시작은 2.9~3.8초다. 다른 세션이 CPU를 80% 안팎으로 쓰던 때 번갈아 잰 범위다. 남은 것은 부하 없는 기계에서 5회 중앙값으로 목표(D7)를 다시 재는 일과 gc 수명 관리 후속(§5.7)이다. F 안의 '성능'은 새 최적화가 아니라 재측정과 gc 후속이다.
-3. **기호 사전 계획에서 남은 단위가 있다.** `specs/pid-symbol-dictionary.md` §7의 S7(기존 규칙을 사전으로 옮기고 `_shape_kind`·`EQUIPMENT_WORDS` 삭제)과 D8(사전 판을 등록 기록에 남김)이 아직 안 됐다. 검정(닫힘) 밸브 씨앗(§4.2 1번)도 견본이 없어 미뤄져 있다. 미확인 줄이기의 다음 후보 네 개는 `units/2026-11-10-apr1400-unknowns/README.md` §3 끝에 있다(모두 측정 전 추정).
+3. **기호 사전 계획에서 남은 단위가 있다.** `docs/specs/pid-symbol-dictionary.md` §7의 S7(기존 규칙을 사전으로 옮기고 `_shape_kind`·`EQUIPMENT_WORDS` 삭제)과 D8(사전 판을 등록 기록에 남김)이 아직 안 됐다. 검정(닫힘) 밸브 씨앗(§4.2 1번)도 견본이 없어 미뤄져 있다. 미확인 줄이기의 다음 후보 네 개는 `docs/units/2026-11-10-apr1400-unknowns/README.md` §3 끝에 있다(모두 측정 전 추정).
 4. **`overview.md`와 README 본문에 `출력/…`·`작업/` 같은 작업 루트 경로가 있다**(overview 282행, README 80·102행). N4 단계 6이 이 줄들을 고치므로 DOC는 N4 뒤에 해야 한다.
 5. **INTENT §7 1번은 이미 결정됐다**(DEC-0188의 D7 'README 범위 문구 수정'). 다시 물을 필요가 없다. 5번은 아직 사용자 답이 없다. README '프로젝트 방향' 4번의 AI 순서를 고칠지가 걸려 있다. 권장안(구독제 기본, API는 따로 둔 선택지, 로컬 LLM은 나중)을 자동 채택할지는 총괄이 정한다(메모리 auto-pick-recommended).
 6. **`check_apr1400.py --update` 잠금은 체크아웃 전체를 본다.** `scripts/devenv.py`의 `SCORING_PATHS`는 `hazop`·`scripts`·기호 사전·`tests/fixtures/apr1400`이다. 같은 체크아웃에서 D·E·G 세션이 `hazop/`을 고치고 있으면 F의 기준값 갱신이 막힌다. F는 자기 작업트리에서 돌아야 한다.
@@ -495,11 +495,11 @@ import를 보고 나눈 것이다. 하위 세션이 아래 '깨끗한 복제 리
 | --- | --- | --- |
 | D | `screens/study.py`, `screens/viewer.py`, `screens/initiating.py`, `ie/store.py`, `app/project_ctx.py`, 새 공용 저장 모듈 | G(`study.py`·`viewer.py`), F2(`project_ctx.py`), E(`initiating.py`) |
 | E | `ie/bundle.py`, `ie/bundle_xlsx.py`, `ie/*`, `screens/initiating.py` | D |
-| DOC | `README.md`, `specs/overview.md` | N4(같은 두 파일의 경로 줄) |
-| G | `study/node_review.py`, `screens/study.py`, `screens/viewer.py`(점선을 넣을 때만), `app/explorer.py`(④ 묶음), `specs/study-node-segmentation.md` | D(`study.py`·`viewer.py`) |
+| DOC | `README.md`, `docs/specs/overview.md` | N4(같은 두 파일의 경로 줄) |
+| G | `study/node_review.py`, `screens/study.py`, `screens/viewer.py`(점선을 넣을 때만), `app/explorer.py`(④ 묶음), `docs/specs/study-node-segmentation.md` | D(`study.py`·`viewer.py`) |
 | F1 | `extract/adapters/pdf_vector.py`, `extract/symbols.py`, `resources/library/symbols/`, `kg/schema/registry.json`, `scripts/check_apr1400.py`, `tests/fixtures/apr1400/`, `tests/baselines/apr1400_score.json`, `register/` 실행 정보(D8) | 없음 |
 | F2 | `app/main_window.py`, `app/project_ctx.py`, `graph/project.py` | D(`project_ctx.py`) |
-| 모두 | `records/decision-log.md`, `records/backlog.md` | hazop-recorder 한 명이 차례로 쓴다 |
+| 모두 | `docs/records/decision-log.md`, `docs/records/backlog.md` | hazop-recorder 한 명이 차례로 쓴다 |
 
 `hazop/study/nodes.py`는 세 단위 중 G만 건드릴 수 있다('고쳐서 받기'가 편집 연산을 새로 부를 때). D가 `nodes.py`의 저장 경로를 공용 함수로 옮기므로 G는 D 뒤다. `screens/results.py`는 세 단위 모두 건드리지 않는 것이 맞다. 받아들인 설계 의도는 이미 ⑤에 'AI 초안'으로 보인다.
 
@@ -532,15 +532,15 @@ N4 ──► DOC (1세션, 문서만)
 | 윤문 | `unslop` | 메모리 korean-writing-polish. 커밋 전에 바뀐 문단만 |
 | 생략 | `architect`, `tdd`, `interrogate`, `arena` | 코드가 없다 |
 
-**세션.** 1개. 파일 주인은 `README.md`와 `specs/overview.md`뿐이다. `INTENT.md`는 고치지 않는다. 끝나면 의도 관리 세션에 '§7-1 이행, 5번은 이렇게 반영'을 알린다.
+**세션.** 1개. 파일 주인은 `README.md`와 `docs/specs/overview.md`뿐이다. `INTENT.md`는 고치지 않는다. 끝나면 의도 관리 세션에 '§7-1 이행, 5번은 이렇게 반영'을 알린다.
 
 **고칠 곳(2f769b9에서 찾은 줄).**
-- `specs/overview.md` 17행 "HAZOP 결과를 만드는 것까지를 범위로 하며 … 다른 곳에서 수행합니다(2026-11-03)"를 2026-11-08 결정으로 바꾸고, 바뀐 경위를 한 줄 남긴다.
-- `specs/overview.md` 29~33행 '전체 구성' 1~5번에 6번 '초기사건 인계'(`ie-output-design.md`)를 더한다. 37행 "①~⑤ 화면"을 ①~⑥으로 바꾼다.
+- `docs/specs/overview.md` 17행 "HAZOP 결과를 만드는 것까지를 범위로 하며 … 다른 곳에서 수행합니다(2026-11-03)"를 2026-11-08 결정으로 바꾸고, 바뀐 경위를 한 줄 남긴다.
+- `docs/specs/overview.md` 29~33행 '전체 구성' 1~5번에 6번 '초기사건 인계'(`ie-output-design.md`)를 더한다. 37행 "①~⑤ 화면"을 ①~⑥으로 바꾼다.
 - `README.md` 5행 "IE 도출은 조사 단계", 7행 "현재는 기획 단계이며 … 1차 구현"을 지금 상태로 바꾼다. 25행 "①②④⑤ 화면"도 확인한다.
 - `README.md` 38행 AI 순서는 §7-5 답이 오면 고친다. 답이 없으면 그대로 두고 보고에 적는다.
 - 지난 일을 적은 문장은 고치지 않는다(README 62행, overview 115행의 첫 수직 슬라이스 ①~⑤). `stage-chain-check`의 '①→⑤'는 연쇄 검사가 실제로 ⑥까지 보는지 코드로 확인한 뒤에만 바꾼다.
-- 범위 밖: 다른 문서의 ①~⑤(`design/screen-spec.md`, `packaging/README.md`, `.claude/skills/verify-hazop/features/README.md` 등 7곳)는 목록만 남긴다.
+- 범위 밖: 다른 문서의 ①~⑤(`docs/design/screen-spec.md`, `packaging/README.md`, `.claude/skills/verify-hazop/features/README.md` 등 7곳)는 목록만 남긴다.
 
 **완료 기준.**
 1. 두 파일에서 "다른 곳에서 수행", "조사 단계", "현재는 기획 단계"가 사라지고, 새 문장마다 출처(DEC-0188·DEC-0199)가 있다.
@@ -569,7 +569,7 @@ N4 ──► DOC (1세션, 문서만)
 - 입력 지문에 무엇을 넣을지. `kg_version`을 통째로 넣으면 지식그래프를 다시 지을 때 제안이 모두 '오래됨'이 된다. 권장은 '구간 구성요소에 닿는 지식 노드의 내용 해시만'이다.
 - 근거 `evidence`가 지식 노드 ID를 가리켜도 되게 할지. 지금 검증은 구성요소 ID만 받는다.
 
-정한 것은 `specs/study-node-segmentation.md` §4.7에 몇 줄로 더한다. g3은 이미 있는 `merge`·`split` 연산을 부르는 화면 일이라 설계가 따로 필요 없다.
+정한 것은 `docs/specs/study-node-segmentation.md` §4.7에 몇 줄로 더한다. g3은 이미 있는 `merge`·`split` 연산을 부르는 화면 일이라 설계가 따로 필요 없다.
 
 **고정 응답 시험.** 지금 방식(가짜 클라이언트 + `tests/fake_claude`)을 그대로 넓힌다. 실제 구독 호출은 시험에 넣지 않는다.
 1. 요청 고정본: SNP 표본 구간 하나에 지식 맥락을 붙인 요청 JSON을 `tests/fixtures/`에 두고 바이트로 비교한다. 순서·상한·잘라 내기가 결정적인지 본다.
@@ -578,7 +578,7 @@ N4 ──► DOC (1세션, 문서만)
 4. g3 화면: 오프스크린 Qt에서 '고쳐서 받기'로 병합 대상 하나를 빼고 받으면 `history`에 `ai_review_accept`(제안 ID, 고친 내용)가 남고, 결과가 같은 편집을 손으로 한 것과 같다.
 5. CI: 러너에는 `claude` CLI가 없다. 이 시험들이 CLI를 찾지 않고 가짜만 쓰는지 확인한다.
 
-g1 실측은 `specs/ai-subscription.md` §8.2 방식으로 사용자가 직접 소량 돌린다. 시간은 호출별 로그로 재고, 비용은 구독 사용률 계기로 재지 않는다(규칙 16). 결과는 §4.7 표 옆에 '구간 검토 실측 @커밋, 조건'으로 적는다.
+g1 실측은 `docs/specs/ai-subscription.md` §8.2 방식으로 사용자가 직접 소량 돌린다. 시간은 호출별 로그로 재고, 비용은 구독 사용률 계기로 재지 않는다(규칙 16). 결과는 §4.7 표 옆에 '구간 검토 실측 @커밋, 조건'으로 적는다.
 
 **스킬.** `poteto-mode` + `tdd`, g2 앞에 `architect`. 검토 지적 재현에는 `interrogate`를 쓴다. 받아들이기가 `merge`·`split`과 `history`를 쓰는 저장·ID 경로라 규칙 3이 걸린다. g3 실제 창 확인은 `verify-hazop`를 `desktop_lease.py run` 안에서 쓴다. `arena`·`swarm`은 쓰지 않는다.
 
@@ -690,7 +690,7 @@ F1-0~F1-2는 점수를 바꾸지 않는 정리 단위다. 반복 개선은 F1-3�
 - **F1이 같은 체크아웃에서 돌아 기준값 잠금에 걸리거나 남의 수정으로 점수를 매기는 것.** 자기 작업트리가 필수다.
 - **F1이 끝없이 이어지는 것.** 지난번에 실제로 그랬다. 멈춤 기준을 시작할 때 사용자에게 받고, 걸리면 멈춘다.
 - **DOC가 N4보다 먼저 가는 것.** 같은 두 파일의 경로 줄이 부딪힌다.
-- **`records/*.md` 동시 쓰기.** 세 단위가 모두 결정로그와 남은작업을 고친다. hazop-recorder가 단위가 끝난 순서대로 한 번씩 쓴다(교훈 20).
+- **`docs/records/*.md` 동시 쓰기.** 세 단위가 모두 결정로그와 남은작업을 고친다. hazop-recorder가 단위가 끝난 순서대로 한 번씩 쓴다(교훈 20).
 
 ---
 

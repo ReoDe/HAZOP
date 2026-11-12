@@ -585,7 +585,7 @@ A를 권고합니다. 지식 맥락이 있는 경우의 고정 응답은 새로 
 | 지식 빌더 (최소 변경) | `hazop/kg/build.py`: `load_outputs`의 바이트·버전 경로·포인터를 함께 돌려주는 함수 추가와 포인터 필수 키·자료형 검사만(§6.4.1). `load_outputs`의 반환값과 다른 함수는 바꾸지 않음 |
 | 읽기만 | `hazop/kg/algo.py`, `hazop/kg/screen_template.html`, `hazop/export/worksheet.py`, `data/regions/`, `data/fixed-responses/`, `data/knowledge-graph/` |
 
-- 의존성: T6 W3(④⑤ 긴 칩·라벨 축약, `units/2026-11-05-design-system/PROGRESS.md` 14행)은 같은 ⑤ 화면 파일(`review.py`)을 다루며 "T1 W7과 순차"로 등록되어 있습니다. W7을 먼저 끝내고 T6 W3이 W7이 추가한 ⑤ 요소까지 포함해 1366 폭 기준을 확인합니다. 두 작업을 동시에 돌리지 않습니다.
+- 의존성: T6 W3(④⑤ 긴 칩·라벨 축약, `docs/units/2026-11-05-design-system/PROGRESS.md` 14행)은 같은 ⑤ 화면 파일(`review.py`)을 다루며 "T1 W7과 순차"로 등록되어 있습니다. W7을 먼저 끝내고 T6 W3이 W7이 추가한 ⑤ 요소까지 포함해 1366 폭 기준을 확인합니다. 두 작업을 동시에 돌리지 않습니다.
 - W7의 ⑤ 추가 요소도 기존 화면 폭 검사(`scripts/check_design.py`)를 통과해야 합니다 [제안].
 
 #### 6.4.8 열린 결정 (W7)

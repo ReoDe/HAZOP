@@ -45,7 +45,7 @@
 | `packaging/README.md:37-55`, `packaging/requirements-raster.txt:2` | `%USERPROFILE%\.hazop\venv-py312`, `venv-raster-py312` | venv를 옮기면 문서를 고친다 |
 | `.claude/skills/verify-hazop/SKILL.md` Launch | `%USERPROFILE%\.hazop\venv-py312\Scripts\python.exe` | 같음 |
 | `CLAUDE.md` 규칙 11, `.claude/agents/hazop-developer.md`·`hazop-qa.md`·`hazop-reviewer.md` | 같은 venv 경로 | 같음 |
-| `design/mockups/ai-connection/build.py:520`, `design/mockups/uiux-detail/build.py:430` | Chrome 설치 경로, `~/AppData/Local/Temp/hazop-uiux-shoot-profile` | 시안 촬영용. 이전과 관계없다 |
+| `docs/design/mockups/ai-connection/build.py:520`, `docs/design/mockups/uiux-detail/build.py:430` | Chrome 설치 경로, `~/AppData/Local/Temp/hazop-uiux-shoot-profile` | 시안 촬영용. 이전과 관계없다 |
 | `hazop/study/claude_cli.py:92` | `~/.local/bin/claude.exe` | 홈 기준이라 그대로 동작 |
 | `hazop/paths.py` | 개발 작업 루트 `<저장소>/작업`, 배포본 `%LOCALAPPDATA%\HAZOP`, 설정 `%APPDATA%\HAZOP\settings.json` | 저장소 기준·사용자 폴더 기준이라 그대로 동작 |
 
@@ -53,10 +53,10 @@
 
 ### 문서에만 있음 (급하지 않음)
 
-- `specs/ai-subscription.md:116`(`claude.exe` 경로 예)
-- `specs/pid-symbol-dictionary.md:207`, `specs/study-node-segmentation.md:6`, `units/2026-11-09-symbol-library/README.md:64`(`HAZOP-trials` 경로)
-- `specs/ie-output-design.md:173`(세션 임시 폴더 경로)
-- `units/2026-11-05-input-adapter/evidence/w1-survey.md:25`, `units/2026-11-05-packaging/evidence/w2-venv.md:21`, `w6-bundle-collect-list.md:24-68`, `units/2026-11-09-data-consolidation/inventory/references.csv:233-235`: 당시 증거 기록이라 고치지 않는다
+- `docs/specs/ai-subscription.md:116`(`claude.exe` 경로 예)
+- `docs/specs/pid-symbol-dictionary.md:207`, `docs/specs/study-node-segmentation.md:6`, `docs/units/2026-11-09-symbol-library/README.md:64`(`HAZOP-trials` 경로)
+- `docs/specs/ie-output-design.md:173`(세션 임시 폴더 경로)
+- `docs/units/2026-11-05-input-adapter/evidence/w1-survey.md:25`, `docs/units/2026-11-05-packaging/evidence/w2-venv.md:21`, `w6-bundle-collect-list.md:24-68`, `docs/units/2026-11-09-data-consolidation/inventory/references.csv:233-235`: 당시 증거 기록이라 고치지 않는다
 
 ### 저장소 밖
 

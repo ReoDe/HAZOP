@@ -1,6 +1,6 @@
 # PDF 미확인 사람 확정 시연 (2026-11-07)
 
-명령: `python scripts/check_corrections.py --out units/2026-11-07-drawing-edit/pdf-demo.md` (임시 작업 루트, 실제 데이터/ 미사용).
+명령: `python scripts/check_corrections.py --out docs/units/2026-11-07-drawing-edit/pdf-demo.md` (임시 작업 루트, 실제 데이터/ 미사용).
 
 검토자 동작은 스크립트가 흉내 낸다. 흐름 방향 미확인인 물리 배관마다 끝점 순서(source→target)로 `set_flow` 수정 기록을 만든다. 그래서 미확인 비율이 얼마나 줄어드는지는 보여 주지만, 그 방향이 drawio 정답과 맞는지는 검증하지 않는다.
 

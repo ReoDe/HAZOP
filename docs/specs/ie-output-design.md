@@ -370,7 +370,7 @@ PSAM14 PHA-to-PRA 권고 세 가지(비완화 결과, 보호수단의 자동·�
 
 ## 7. ⑥ 화면 시안
 
-`design/mockups/initiating-events/`의 HTML과 PNG(1366, 1920)입니다. `build.py`가 만들며, 셸은 B안(`design/mockups/final/b-dense-workbench`) CSS를 그대로 읽어 씁니다. 데이터는 모두 가상입니다.
+`docs/design/mockups/initiating-events/`의 HTML과 PNG(1366, 1920)입니다. `build.py`가 만들며, 셸은 B안(`docs/design/mockups/final/b-dense-workbench`) CSS를 그대로 읽어 씁니다. 데이터는 모두 가상입니다.
 
 | 파일 | 보이는 것 |
 | --- | --- |
@@ -380,7 +380,7 @@ PSAM14 PHA-to-PRA 권고 세 가지(비완화 결과, 보호수단의 자동·�
 화면 규칙:
 
 - 탭은 묶음 시트와 같은 순서입니다(후보 · 그룹 · 사건수목 표제 · 최종상태 · 기본사건 · 완전성 대조 · 품질 경고). 화면에서 본 것이 Excel에 그대로 나갑니다.
-- AI·규칙 산출은 빗금, 사람 확정은 흰 바탕 진한 테두리입니다(기존 출처 표현 규칙, `design/mockups/README.md` §2).
+- AI·규칙 산출은 빗금, 사람 확정은 흰 바탕 진한 테두리입니다(기존 출처 표현 규칙, `docs/design/mockups/README.md` §2).
 - 사건수목 표제 후보는 목록으로만 보이고 성공·실패 분기나 순서는 그리지 않습니다(§9 E10 권장안). 앱이 사건수목을 그린 것으로 오해하지 않게 하려는 것입니다.
 - 상태줄의 검증 칩은 "추적 경로 검증 통과 — 완전성을 뜻하지 않음"처럼 검증 범위를 적습니다.
 

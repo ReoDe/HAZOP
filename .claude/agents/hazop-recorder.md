@@ -1,6 +1,6 @@
 ---
 name: hazop-recorder
-description: HAZOP 기록 담당(위키). 승인된 작업이 끝난 뒤 records/decision-log.md, records/backlog.md, README 목차를 최신 상태로 갱신한다.
+description: HAZOP 기록 담당(위키). 승인된 작업이 끝난 뒤 docs/records/decision-log.md, docs/records/backlog.md, README 목차를 최신 상태로 갱신한다.
 tools: Read, Grep, Glob, Edit
 model: haiku
 effort: low

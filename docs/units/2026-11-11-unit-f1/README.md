@@ -1,6 +1,6 @@
 # 단위 F1: 기호 사전·추출 재개 (2026-11-11)
 
-계획은 `units/2026-11-10-plan/pstack-advice.md`의 'F1 기호 사전·추출' 절에 있다. 이 폴더에는 하위 단위마다 남긴 근거를 둔다.
+계획은 `docs/units/2026-11-10-plan/pstack-advice.md`의 'F1 기호 사전·추출' 절에 있다. 이 폴더에는 하위 단위마다 남긴 근거를 둔다.
 
 ## F1-0: `pdf_vector.py` 나누기 (동작 그대로)
 
@@ -165,7 +165,7 @@ F1-1 뒤의 코드는 밸브·계기·설비를 사전의 `structure`·`label_wo
 
 | 지적 | 처리 |
 | --- | --- |
-| 기획서가 새 구조와 어긋남 | `specs/pid-symbol-dictionary.md`에 문장을 더했다. §1(표 아래), §3.1 폴더 그림의 `common/`·`SNP/` 줄, §3.2(견본 종류 넷과 `order`·`requires`·`basis` 규칙), §4.2 2·5번, §4.4(`symbol_id` 예외와 이유), §7 표 아래, §7.1 구현 기록. §8 결정 행과 '결정 상태' 표의 글자는 그대로다. `status`는 `draft` 그대로다. 이 기획서는 고정 해시에 걸려 있지 않다(`GUIDE_SHA256`은 `specs/hazop-method-guide.md`의 것이다) |
+| 기획서가 새 구조와 어긋남 | `docs/specs/pid-symbol-dictionary.md`에 문장을 더했다. §1(표 아래), §3.1 폴더 그림의 `common/`·`SNP/` 줄, §3.2(견본 종류 넷과 `order`·`requires`·`basis` 규칙), §4.2 2·5번, §4.4(`symbol_id` 예외와 이유), §7 표 아래, §7.1 구현 기록. §8 결정 행과 '결정 상태' 표의 글자는 그대로다. `status`는 `draft` 그대로다. 이 기획서는 고정 해시에 걸려 있지 않다(`GUIDE_SHA256`은 `docs/specs/hazop-method-guide.md`의 것이다) |
 | 구조 견본의 `basis`가 겹치면 출처 항목을 되짚을 수 없음 | 켜진 `structure` 견본의 `basis`가 겹치면 사전을 읽을 때 `SymbolLibraryError`로 멈춘다. 시험 `RuleTemplateTest.test_same_basis_twice_fails_loudly`(다른 항목끼리, 한 항목 안, 꺼진 항목은 세지 않음). 지금 사전의 `basis` 11개는 서로 다르다 |
 | 구조 판정과 옛 코드의 일치를 한 경우만 봄 | `OldShapeBranchTest.test_every_old_branch`가 옛 `_shape_kind`의 가지마다 기호를 하나씩 만들어(16가지: 판 2종, 전동, 제어, 나비 몸통 둘, 안전밸브와 그 반례, 체크밸브, 오리피스 둘과 반례, 원, 비석, 화살표, 해당 없음) 추출기와 사전이 함께 내는 (종류, 근거)를 본다. 기대값은 `ddb4c46`의 return 값을 글자로 적었다 |
 | 묶음 검사가 사전을 보지 않음 | `packaging/verify_bundle.py`에 `symbols_problems`를 더했다. 묶음 안 사전이 읽히고 두 규칙 견본이 모두 있는지 보고, 문제가 있으면 결과가 실패다. 시험 `tests/test_packaging.py`의 `BundleSymbolsTest` |
@@ -198,7 +198,7 @@ F1-1 뒤의 코드는 밸브·계기·설비를 사전의 `structure`·`label_wo
 
 ## F1-2: 사전 판을 추출 결과 폴더에 남긴다 (D8)
 
-기획서 D8은 사전 판을 '등록 기록의 실행 정보'에 둔다고 적었는데, 그 자리가 코드에 없었다. 총괄이 추출 결과 폴더의 곁 파일로 정했다(2026-11-11). 기획서에는 `specs/pid-symbol-dictionary.md` §8 표 아래 'D8의 실제 저장 자리'로 적었다(결정 행의 글자는 그대로다).
+기획서 D8은 사전 판을 '등록 기록의 실행 정보'에 둔다고 적었는데, 그 자리가 코드에 없었다. 총괄이 추출 결과 폴더의 곁 파일로 정했다(2026-11-11). 기획서에는 `docs/specs/pid-symbol-dictionary.md` §8 표 아래 'D8의 실제 저장 자리'로 적었다(결정 행의 글자는 그대로다).
 
 ### 정한 것
 
@@ -230,7 +230,7 @@ F1-1 뒤의 코드는 밸브·계기·설비를 사전의 `structure`·`label_wo
 | 근거 묶음 해시(`bundle_sha256`), 분석 묶음 내보내기(`hazop/analysis/bundle_export.py`) | 해시는 구간·그래프에서 만든 묶음 dict로 계산한다. 내보내기는 추출 폴더를 복사하지 않는다. 영향 없음. `tests.test_packaging`·`check_export`가 `run_ci.py`에서 통과했다 |
 | `scripts/clean_outputs.py` | 대상이 `output/analysis`와 `output/knowledge-graph` 둘뿐이다. 추출 폴더는 보지 않는다 |
 | 작업 루트 이전 도구(`hazop/workroot.py`) | 옛 이름 폴더 아래 파일을 이름과 상관없이 모두 옮긴다(`_walk`). 파일 이름 목록이 없어 새 파일도 같이 간다. `tests.test_workroot`·`test_workroot_app`·`test_workroot_review` 71건 통과 |
-| `scripts/check_work_root_counts.py` | 폴더별 파일 수를 세어 같은 사본의 이전 전후를 견준다. 코드에 고정된 기대 수는 없다. 전후 사이에 다시 추출하면 추출 폴더의 파일 수가 폴더당 하나 늘어난 것으로 나온다. `governance/naming-rules/evidence/step6-counts-before.json`은 지난 측정 기록이라 고치지 않았다 |
+| `scripts/check_work_root_counts.py` | 폴더별 파일 수를 세어 같은 사본의 이전 전후를 견준다. 코드에 고정된 기대 수는 없다. 전후 사이에 다시 추출하면 추출 폴더의 파일 수가 폴더당 하나 늘어난 것으로 나온다. `docs/governance/naming-rules/evidence/step6-counts-before.json`은 지난 측정 기록이라 고치지 않았다 |
 | 0.1.x 기록 경로 표(`OLD_OUTPUT_NAMES`) | 폴더 이름 표다. 새 폴더가 없고 새 파일 안에 경로가 없어 더할 줄이 없다 |
 | 추출 폴더의 파일을 세거나 통째로 해시하는 다른 코드 | `hazop/app/data.py`(`list_extractions`, `_pdf_page_state`), `hazop/app/runctx.py`, `hazop/viewer/build.py`, `scripts/build_graph.py`, `check_extract.py`·`check_graph.py`·`check_viewer.py`·`check_register.py`를 읽었다. 모두 `extraction.json`, `not_extracted.json`, `validation_report.md`를 이름으로 찾는다. 통째로 해시하는 곳은 없었다(`git grep`으로 `listdir`·`os.walk`·`copytree` 가운데 추출 폴더에 닿는 곳을 봤다). `verify_bundle.py`의 저장소 `output/`·`store/` 전후 해시는 검증이 임시 작업 루트를 써서 걸리지 않는다 |
 
@@ -619,7 +619,7 @@ Claude 측 검토(`2ce16b9` 대 `c65d90b`, 표본 22쪽)의 차단 A·B와, Code
 
 ### 검토가 더 확인하라고 한 것
 
-- **규칙 판(`RULES_VERSION`)을 올려야 하나.** 올리지 않는 것이 이 저장소의 결정이다. `specs/kg-schema.md`의 구현 차이 표(M1·M2 줄)에 "빌더·규칙 판 번호는 올리지 않음. 내용이 바뀐 도면만 판이 바뀜. 수정 없는 도면까지 재확인으로 보내지 않기 위함"이라고 적혀 있다. `extraction_run_id`는 도면번호·쪽·규칙 판·PDF 해시로 만들기 때문에(`pdf_vector.py`), 규칙이 바뀌어도 같은 PDF면 같은 값이다. 추출 내용이 달라진 도면은 `graph_version`(추출 JSON 내용의 해시)이 달라져 재확인으로 간다. 132쪽도 그렇다. 판을 올리면 `run.rules_version`과 `extraction_run_id`가 모든 PDF 추출 JSON에서 바뀌므로 SNP 추출 JSON 12건과 `graph_version` 12건이 모두 달라지고, 사람이 확정한 자료가 전부 재확인으로 간다. 그래서 올리지 않았다. 남는 빈틈은 '어느 코드로 뽑았나'를 추출 결과에서 되짚을 수 없다는 점이다. 사전 판은 `extraction_run.json`에 남지만 코드 판(`script_version` 0.3.0)은 이 단위들에서 올리지 않았다. 올릴지는 총괄이 정한다.
+- **규칙 판(`RULES_VERSION`)을 올려야 하나.** 올리지 않는 것이 이 저장소의 결정이다. `docs/specs/kg-schema.md`의 구현 차이 표(M1·M2 줄)에 "빌더·규칙 판 번호는 올리지 않음. 내용이 바뀐 도면만 판이 바뀜. 수정 없는 도면까지 재확인으로 보내지 않기 위함"이라고 적혀 있다. `extraction_run_id`는 도면번호·쪽·규칙 판·PDF 해시로 만들기 때문에(`pdf_vector.py`), 규칙이 바뀌어도 같은 PDF면 같은 값이다. 추출 내용이 달라진 도면은 `graph_version`(추출 JSON 내용의 해시)이 달라져 재확인으로 간다. 132쪽도 그렇다. 판을 올리면 `run.rules_version`과 `extraction_run_id`가 모든 PDF 추출 JSON에서 바뀌므로 SNP 추출 JSON 12건과 `graph_version` 12건이 모두 달라지고, 사람이 확정한 자료가 전부 재확인으로 간다. 그래서 올리지 않았다. 남는 빈틈은 '어느 코드로 뽑았나'를 추출 결과에서 되짚을 수 없다는 점이다. 사전 판은 `extraction_run.json`에 남지만 코드 판(`script_version` 0.3.0)은 이 단위들에서 올리지 않았다. 올릴지는 총괄이 정한다.
 - **검정 견본이 모든 PDF에 적용된다.** 맞다. 사전 묶음은 `bundles.json`의 `active`로만 켜고 끄며, 켜진 묶음은 모든 도면에 적용된다(결정 D3 ①: 기본 전체 활성, 등록 때 도면마다 고르는 안 ②는 채택하지 않음). 도면이나 프로젝트별로 묶음을 고르는 길은 코드에 없다. 그래서 다른 발전소 도면에서 APR1400과 같은 모양·크기(견본에서 0.1칸 안)의 채운 나비는 NC로 읽힌다. 검게 칠한 밸브가 닫힘이 아닌 표기 관례를 쓰는 도면 묶음이 들어오면 틀린 판정이 된다. SNP 샘플 6장에는 해당하는 검은 채움이 없다(추출 바이트 그대로). 막으려면 D3를 다시 정해야 한다(등록 때 묶음을 고르게 하거나, 묶음에 적용 대상 조건을 두는 것). 이 단위에서는 바꾸지 않았다.
 
 ### 미확인이 늘어난 까닭 (검토 확인 반영)
@@ -827,7 +827,7 @@ APR1400은 공압 신호선에 빗금 둘(//)을 그린다(범례 1.7-1 4/4). 3a
 | 경계값(Codex 경미) | 삼각함수로 만든 30도 표본이 부동소수 비교에서 빠졌다 | 각도 30·80도와 '가운데를 지남' 경계를 포함하게 여유 1e-9를 둔다 | `TickBoundaryTest` 2건(묶음 거리 3pt, 각도 30·80도) | 없음 |
 | 마. 공정 배관 위의 다른 두 줄 표시(Codex) | - | 고치지 않았다(총괄 판정). 새 공압선의 양 끝 종류를 표로 남긴다(아래) | - | - |
 | 바. 나뉜 공압선 누락(Codex 경미) | - | 고치지 않았다. 143쪽에서 9건이 잡히는데 모두 003쪽 범례 주석의 별표(＊) 글자 획이다. 계통 도면에서는 0이다 | - | - |
-| 규칙 판(Codex 경미) | - | `RULES_VERSION`은 올리지 않았다. `specs/kg-schema.md`의 M1·M2 결정대로다(총괄 확인) | - | - |
+| 규칙 판(Codex 경미) | - | `RULES_VERSION`은 올리지 않았다. `docs/specs/kg-schema.md`의 M1·M2 결정대로다(총괄 확인) | - | - |
 | 사람 수정 기록(Codex 경미) | - | 모의 수정으로 실행해 확인했다(아래 '다시 잰 값') | - | - |
 | 104쪽 밸브 이름(Claude) | - | 다섯을 모두 주증기 안전밸브라고 적은 곳을 바로잡았다(F1-4 절, 근거 글, 시험 설명). MSSV 표기 둘, MSADV 표기 둘, 표기 없는 하나다 | - | - |
 | 코드가 가리키는 문서 절이 `b45cfeb`에 없음(Claude) | - | F1-4 절은 `99613cc`로 들어갔다 | - | - |

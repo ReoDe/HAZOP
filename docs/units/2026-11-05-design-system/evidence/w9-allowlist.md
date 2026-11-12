@@ -12,7 +12,7 @@ D5 열린 항목(허용 목록 2색)을 권고안대로 닫았다. 하드코딩 
 | `aside .warn`(속성 패널 경고 글자, 62행) | `#b45309` | `var(--warn-ink)` `#92400e` | `aside` `--card` `#ffffff` | 5.0216 → 7.0900 | 글자 4.5:1 |
 | `#pathq .res .bad`(경로 질의 경고 글자, 122행) | `#b45309` | `var(--warn-ink)` `#92400e` | `.float` `--card` `#ffffff` | 5.0216 → 7.0900 | 글자 4.5:1 |
 
-- 토큰 선택 근거: `--ok`는 앱 통과 칩 글자(`qss()` `QLabel#chip[state="passed"]`)와 같은 의미이고 [W1 §2](w1-survey.md) 표가 "값 다름(용도 같음)"으로 짝지었다. `--warn-ink`는 앱 경고 칩·경고 띠 글자와 뷰어 `.chip.alignwarn` 글자에 이미 쓰는 경고 글자 토큰이다. 디자인 시안(`design/mockups/interface-mockup.html:122`, `kg-graph-mockup.html:85`)도 통과 점을 `var(--ok)`로 그린다.
+- 토큰 선택 근거: `--ok`는 앱 통과 칩 글자(`qss()` `QLabel#chip[state="passed"]`)와 같은 의미이고 [W1 §2](w1-survey.md) 표가 "값 다름(용도 같음)"으로 짝지었다. `--warn-ink`는 앱 경고 칩·경고 띠 글자와 뷰어 `.chip.alignwarn` 글자에 이미 쓰는 경고 글자 토큰이다. 디자인 시안(`docs/design/mockups/interface-mockup.html:122`, `kg-graph-mockup.html:85`)도 통과 점을 `var(--ok)`로 그린다.
 - `:root`에 `--ok: #15803d` 1개를 더했다(`--warn-ink`는 W4부터 있음). D5 ①에 따라 앱 `web_css()` `:root` 값과 같다.
 - 바탕 확인: `aside { background: var(--card) }`(51행), `#pathq`는 `class="float"`(165행)이고 `.float { background: var(--card) }`(33행).
 
@@ -48,4 +48,4 @@ D5 열린 항목(허용 목록 2색)을 권고안대로 닫았다. 하드코딩 
 - 렌더 화면 비교는 하지 않았다. 색 값·대비는 계산으로 확인했고, 실제 보이는 차이는 [추론]이다.
 - 통과 점(글리프 ●)은 W5와 같이 그래픽 3:1로 판정했다. `ok`/`bg` 4.5978이라 글자 기준 4.5:1도 넘는다.
 - `VIEWER_COLOR_ALLOW` 기능은 지우지 않고 비워 두었다. 다시 채우려면 `test_allow_list_is_empty`를 함께 고쳐야 하므로 결정 없이 허용 목록이 늘어나지 않는다.
-- `specs/interface.md`·`design/`에 고칠 문구는 찾지 못했다(두 곳 모두 `#b45309`·허용 목록 언급 없음, 시안은 이미 `var(--ok)`).
+- `docs/specs/interface.md`·`docs/design/`에 고칠 문구는 찾지 못했다(두 곳 모두 `#b45309`·허용 목록 언급 없음, 시안은 이미 `var(--ok)`).
