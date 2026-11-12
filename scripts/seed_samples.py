@@ -42,6 +42,8 @@ def plan(work_root):
     for d, dirs, files in os.walk(SAMPLE_ROOT):
         dirs.sort()
         for f in sorted(files):
+            if f == "README.md" and os.path.abspath(d) == os.path.abspath(SAMPLE_ROOT):
+                continue  # 폴더 규칙서(HZ-GOV-02 §4.13)는 표본이 아니다
             src = os.path.join(d, f)
             rel = os.path.relpath(src, SAMPLE_ROOT)
             dst = work_path(work_root, rel)

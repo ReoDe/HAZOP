@@ -2,6 +2,27 @@
 
 근거: [`docs/units/2026-11-05-packaging/decisions.md`](../docs/units/2026-11-05-packaging/decisions.md) D1·D2, 검증 기록은 [`evidence/w2-venv.md`](../docs/units/2026-11-05-packaging/evidence/w2-venv.md).
 
+## 무엇을 넣는가
+
+- 배포 도구: 전용 venv 요구 파일(`requirements*.txt`), 묶음 검증(`verify_bundle.py`), 한 가지를 떠보는 `*_probe.py`, 다른 PC 점검표(`other-pc-checklist.md`)
+
+## 넣지 않는 것
+
+- 빌드 준비 명령 `build_package.py`는 `scripts/`에 둔다.
+- 단위 시험은 `tests/`에 둔다.
+
+## 이름 형식
+
+`verify_<대상>.py`(배포본 검사), `<대상>_probe.py`(떠보기), `requirements-<용도>.txt`.
+
+## 주인
+
+구현 담당(`hazop-developer`). 배포본 경로와 해시에 닿는 변경은 높은 강도로 검토하고, 빌드와 `verify_bundle.py` 통과를 확인한 뒤 총괄이 커밋한다.
+
+## 폐기 기준
+
+쓰지 않는 검사와 떠보기는 그것을 부르는 문서와 시험을 옮긴 뒤 지운다. 요구 파일의 버전 고정은 빌드 근거 문서와 함께 바꾼다.
+
 ## 파일
 
 | 파일 | 용도 |
