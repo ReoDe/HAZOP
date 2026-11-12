@@ -279,6 +279,30 @@ class StudyReviewUiTest(unittest.TestCase):
         self.assertIn("%d회" % len(batches), text)
         self.assertIn("7일 사용률", text)
         self.assertIn("초안", lead)
+        e = nr.estimate(len(batches))
+        self.assertIn("약 %d~%d분" % (e["minutes"], e["minutes_slow"]), text, "예상 시간은 범위로 말한다")
+
+    def test_panel_shows_calls_and_elapsed_time_while_the_review_runs(self):
+        """결함 15: 실제 호출은 한 번에 1분 가까이 걸린다. 도는 동안 ④ 패널에 호출 n/m과 지난 시간을 보인다."""
+        win, scr = self.open_study()
+        self.fixed_answers(win, scr, lambda n, b: self.review(n))
+        self.assertTrue(scr.review_row.isHidden(), "실행 전에는 진행 줄이 없다")
+        self.assertTrue(scr.review_ai("all", ask=False))
+        seen, deadline, started = [], time.monotonic() + 20, False
+        while time.monotonic() < deadline:
+            self.qapp.processEvents()
+            if scr.review_runner is not None:
+                started = True
+                if not scr.review_row.isHidden():
+                    seen.append(scr.review_info.text())
+            elif started:
+                break
+            time.sleep(0.02)
+        self.assertTrue(started and scr.review_runner is None, "AI 구간 검토가 끝나지 않음")
+        self.assertTrue(seen, "도는 동안 진행 줄이 보이지 않음")
+        calls = scr.review_tally["calls"]
+        self.assertRegex(seen[0], r"^AI 구간 검토 중 · 호출 \d+/%d 끝 · \d+초 지남 \(예상 약 \d+" % calls)
+        self.assertTrue(scr.review_row.isHidden(), "끝나면 진행 줄을 닫는다")
 
 
 if __name__ == "__main__":

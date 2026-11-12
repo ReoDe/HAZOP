@@ -69,9 +69,11 @@ class PlanTest(Base):
     def test_estimate_uses_the_measured_call_time(self):
         e = nr.estimate(180)
         self.assertEqual(e["calls"], 180)
-        self.assertEqual(e["minutes"], 68)  # 180 × 31.7초 ÷ 1.4 ≈ 68분
+        self.assertEqual((e["minutes"], e["minutes_slow"]), (157, 258))  # 180 × 52.1초, 180 × 86.0초
         self.assertEqual(e["usage_pp"], (2.34, 4.86))
-        self.assertEqual(nr.estimate(14, concurrency=1)["minutes"], 8, "동시 1이면 1.4배를 쓰지 않음")
+        e3 = nr.estimate(3)  # 실측 3회 호출 3분 8초가 범위 안에 든다
+        self.assertTrue(e3["minutes"] <= 188 / 60 <= e3["minutes_slow"], e3)
+        self.assertEqual(nr.estimate(3, concurrency=1)["minutes"], e3["minutes"], "동시 수로 시간을 줄여 잡지 않음")
         self.assertEqual(nr.estimate(0)["minutes"], 0)
 
     def test_request_carries_members_neighbors_and_the_schema(self):

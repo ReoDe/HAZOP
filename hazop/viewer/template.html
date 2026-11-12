@@ -17,8 +17,9 @@ header { height: 56px; display: flex; align-items: center; gap: 14px; padding: 0
 header .logo { width: 28px; height: 28px; border-radius: 50%; background: var(--ui); }
 header .app { font-weight: 700; }
 header .sep { width: 1px; height: 20px; background: var(--line); }
+header .where { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: .3em; min-width: 0; }
 header .where b { font-weight: 700; }
-header .where span { color: var(--muted); }
+header .where #dwgtitle { color: var(--muted); }
 header .spacer { flex: 1; }
 .chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--bg); color: var(--muted); }
 .chip.passed::before { content: "\25CF  "; color: var(--ok); }
@@ -30,7 +31,7 @@ main { position: absolute; top: 56px; left: 0; right: 0; bottom: 0; display: fle
 #stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: var(--card); box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 #stage > svg { display: block; }
 #overlay { position: absolute; left: 0; top: 0; }
-.float { position: absolute; background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+.float { position: absolute; z-index: 2; background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
 /* 떠 있는 칩 줄(U-12): 레이어·범례·경로 질의(오른쪽 위), 구간 색(왼쪽 위)은 한 줄로 접어 도면을 덮지 않는다 */
 .chiprow { display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 8px; font-size: 12px; white-space: nowrap; }
 .lchip { display: inline-flex; align-items: center; border: 1px solid transparent; background: none; font: inherit; font-size: 12px;
@@ -90,7 +91,9 @@ aside .warn { color: var(--warn-ink); }
 .tagbox:hover { fill: rgba(17,24,39,.16); }
 /* 태그 글자가 화면 11px보다 작은 배율: 도면 글자는 숨기고 상자만(U-13). 글자는 확대하거나 마우스를 올리면(툴팁) 보인다 */
 .tagbox.tag-collapsed { fill: var(--bg); }
-#taglabels { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+#taglabels { position: absolute; z-index: 1; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+/* 다른 태그 글자나 떠 있는 칸과 겹치는 태그 글자는 숨긴다(상자는 남고, 마우스를 올리거나 확대하면 보인다) */
+#taglabels span.crowded { display: none; }
 #taglabels span { position: absolute; transform: translate(-50%, -50%); font-size: 11px; line-height: 13px; padding: 0 2px;
   background: var(--card); border: 1px solid var(--tag); border-radius: 2px; color: var(--tag); white-space: nowrap; }
 .unknown { stroke-dasharray: 5 3; }
@@ -177,7 +180,7 @@ body.tab-graph #layers, body.tab-drawing #glegend { display: none; }
   <div class="logo"></div>
   <div class="app">HAZOP 추출 뷰어</div>
   <div class="sep"></div>
-  <div class="where">도면 <b id="dwg"></b> · <span id="dwgtitle"></span></div>
+  <div class="where"><span>도면</span> <b id="dwg"></b> <span>·</span> <span id="dwgtitle"></span></div>
   <div class="spacer"></div>
   <div class="tabs"><button id="tab-drawing" class="on">도면</button><button id="tab-graph">P&amp;ID 구조</button></div>
   <span class="chip alignwarn" id="alignwarn">__ALIGN_WARNING__</span>
@@ -223,6 +226,7 @@ __SVG__
         <span class="sw dash" style="border-color:var(--muted)"></span> 점선 = 미확인 항목 있음<br>
         <span class="sw" style="border-color:var(--human-edit)"></span> 사람 수정<br>
         태그 위치는 근사값. 태그 글자가 화면에서 11px보다 작아지는 배율에서는 태그 상자만 보입니다(확대하거나 마우스를 올리면 보임).
+        이웃 태그 글자나 떠 있는 칸과 겹치는 태그 글자는 숨깁니다.
       </div>
     </div>
     <div class="float" id="zoom">
@@ -532,6 +536,41 @@ function hazopPathEngine(G) {
         r.span.style.top = (r.cy * view.s + view.y) + "px";
       }
     });
+    placeFloats();
+    uncrowdTags();
+  }
+  // 11px로 다시 쓴 태그 글자는 도면 글자보다 커서, 축소하면 이웃 태그 글자나 떠 있는 칸(찾기·칩·확대)과 겹친다.
+  // 고른 태그, 고른 구간 안 태그, 나머지 순으로(같으면 도면 순서) 놓고 앞에 놓인 것과 겹치는 글자는 숨긴다.
+  // 위치를 모두 쓴 뒤 한 번에 읽고 한 번에 쓴다(태그 수만큼 다시 배치하지 않게).
+  function rectHit(a, b) { return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; }
+  function floatRects() {
+    return Array.prototype.map.call(document.querySelectorAll("#viewport > .float"), function (f) {
+      return f.getBoundingClientRect();
+    }).filter(function (r) { return r.width > 0 && r.height > 0; });
+  }
+  function uncrowdTags() {
+    var shown = tagRecs.filter(function (r) { return r.span && r.small; });
+    shown.forEach(function (r) { r.span.classList.remove("crowded"); });
+    var rank = function (r) { return r.box.classList.contains("selected") ? 0 : r.box.classList.contains("hz-seg-in") ? 1 : 2; };
+    var order = shown.map(function (r, i) { return { r: r, i: i, k: rank(r), rect: r.span.getBoundingClientRect() }; });
+    order.sort(function (a, b) { return a.k - b.k || a.i - b.i; });
+    var taken = floatRects(), crowded = [];
+    order.forEach(function (o) {
+      if (taken.some(function (t) { return rectHit(o.rect, t); })) crowded.push(o.r.span);
+      else taken.push(o.rect);
+    });
+    crowded.forEach(function (s) { s.classList.add("crowded"); });
+  }
+  // 찾기 상자가 칩 줄(오른쪽 위)이나 구간 색 줄(왼쪽 위)과 겹치면(도면 칸이 좁을 때) 그 아래로 내린다
+  var searchBox = document.getElementById("search");
+  function placeFloats() {
+    searchBox.style.top = "";
+    var r = searchBox.getBoundingClientRect(), vr = document.getElementById("viewport").getBoundingClientRect(), low = 0;
+    ["layers", "seglegend"].forEach(function (id) {
+      var o = document.getElementById(id).getBoundingClientRect();
+      if (o.width > 0 && o.height > 0 && rectHit(r, o)) low = Math.max(low, o.bottom);
+    });
+    if (low) searchBox.style.top = (low - vr.top + 8) + "px";
   }
   function setLayer(cb, on) {
     cb.checked = on;
@@ -587,6 +626,7 @@ function hazopPathEngine(G) {
       segLegend.appendChild(u);
     }
     document.body.classList.toggle("has-seg", !!(groups.length || uncovered));
+    updateTags();  // 구간 색 줄이 생기거나 길이가 바뀌면 찾기 상자 자리와 태그 글자 겹침을 다시 본다
   };
 
   // ---------- 확대·축소·이동

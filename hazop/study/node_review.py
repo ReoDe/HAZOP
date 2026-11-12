@@ -33,12 +33,13 @@ MAX_KNOWLEDGE_ITEMS = 8
 MAX_KNOWLEDGE_TEXT = 200
 MAX_KNOWLEDGE_APPLIES = 5
 
-# U5 실측(2026-11-09, 기획서/검토구간-분할설계.md §4.7에 옮김): Opus 5.5 effort high, ⑤ 칸 분석 호출.
-# 구간 검토 호출도 프롬프트 크기가 비슷하다고 보고 같은 값으로 미리 알린다(추정, 실측 아님).
-CALL_SECONDS_MEDIAN = 31.7
-CALL_SECONDS_P90 = 76.0
+# 구간 검토 실측(real-window-check 세션, @bd31206): Claude 구독, 호출 3회 46.8·52.1·86.0초, 전체 3분 8초.
+# 전체 시간이 호출 시간의 합(3분 5초)과 거의 같아 동시 실행으로 줄지 않았다. 그래서 동시 수와 관계없이 호출을 하나씩
+# 받는 것으로 셈한다. 표본이 3회뿐이라 범위로 알린다: 짧은 쪽은 중앙값, 긴 쪽은 가장 느린 호출로 셈한다.
+# (전에는 ⑤ 칸 분석 실측 31.7초와 동시 2의 1.4배를 빌려 써서 3회 호출을 '약 2분'으로 알렸다.)
+CALL_SECONDS_MEDIAN = 52.1
+CALL_SECONDS_SLOW = 86.0
 CONCURRENCY = 2
-CONCURRENCY_GAIN = 1.4  # 동시 2의 실효 처리량(동시 1 대비)
 # 호출 1회당 구독 7일 사용률 상승(%p) 범위. 두 실측이 다르고 원인은 확인하지 못함:
 # 초기사건 계통 실행(2026-11-10 총괄 보고) 745회 0.25→0.35, U5 계통 실행(2026-11-09) 150회 0.12→0.16
 USAGE_PER_CALL = (0.013, 0.027)
@@ -208,11 +209,10 @@ def plan_batches(node_set, node_ids=None, batch_size=BATCH_SIZE):
 
 
 def estimate(n_calls, concurrency=CONCURRENCY):
-    """실행 전 알림 값. 시간은 U5 실측(⑤ 칸 분석)으로 본 추정이다. 동시 2 이상이면 실효 처리량 1.4배(실측)로 본다."""
-    gain = CONCURRENCY_GAIN if concurrency >= 2 else 1.0
+    """실행 전 알림 값. 시간은 구간 검토 실측으로 셈한 범위(minutes~minutes_slow)다. 동시 수는 시간에 넣지 않는다."""
     return {"calls": n_calls,
-            "minutes": math.ceil(n_calls * CALL_SECONDS_MEDIAN / gain / 60) if n_calls else 0,
-            "minutes_slow": math.ceil(n_calls * CALL_SECONDS_P90 / gain / 60) if n_calls else 0,
+            "minutes": math.ceil(n_calls * CALL_SECONDS_MEDIAN / 60) if n_calls else 0,
+            "minutes_slow": math.ceil(n_calls * CALL_SECONDS_SLOW / 60) if n_calls else 0,
             "usage_pp": tuple(round(n_calls * u, 2) for u in USAGE_PER_CALL),
             "concurrency": concurrency}
 
