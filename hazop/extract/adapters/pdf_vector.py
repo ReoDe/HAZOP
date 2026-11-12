@@ -1263,7 +1263,13 @@ def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, m
       APR1400의 품질 등급 마름모('BI|CI')가 나비 규칙으로 밸브가 되어, 옆 밸브의 번호를 가져가던 자리다(063쪽 V751).
     - 번호 원(VALVE IDENT. NUMBER)이 합쳐질 밸브(circled, 기호 id)는 그 원이 번호다. 밸브 번호 글자를 받지 않는다(016쪽
       구동 밸브 348이 옆 체크 밸브의 V158을, 025쪽 방출 밸브 1108이 V1110을 가져가던 자리). 가장 가까운 밸브를 셀 때는
-      그대로 넣어, 그 글자가 더 먼 다른 밸브로 가지도 않게 한다."""
+      그대로 넣어, 그 글자가 더 먼 다른 밸브로 가지도 않게 한다.
+    - 밸브에 그 번호 문단보다 더 가까운 다른 밸브 번호 문단이 있으면 번호를 주지 않는다(미확인 missing_tag로 남는다).
+      옆 밸브가 기호로 잡히지 않으면 owner_of가 그 밸브를 보지 못해, 이웃 번호를 받는다(025쪽 V1007~V1010 자리에
+      V1001~V1004, 1pt 옆 V1311·V1312 대신 8.7pt 떨어진 V1309·V1310). 틀린 태그보다 빈 태그가 낫다. 거리는 번호 줄로
+      잰다. 번호와 위치 약어가 한 문단이면 문단 상자는 약어 때문에 밸브에 붙는다(126쪽 'V1106' 아래 'LC', 밸브 번호는 V1134).
+    - 라벨로 붙은 위치 약어도 _nearest_valve와 같은 비율로 다른 밸브보다 확실히 가까울 때만 그 밸브의 것이다. 두 밸브와
+      같은 거리의 'LO'를 한 밸브에 단정하지 않는다."""
     lettered = {si for si, ms in marks.items() if any(not ACTUATOR_MARK_RE.fullmatch(" ".join(m.split())) for m in ms)}
     valves = [sy for si, sy in enumerate(syms) if id(sy) in valve_like and si not in lettered]
     index = {id(sy): si for si, sy in enumerate(syms)}
@@ -1280,10 +1286,35 @@ def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, m
 
     def text(bi):
         return " ".join(blocks[bi]["text"].split())
+
+    def number_lines(bi):
+        """문단 bi의 밸브 번호 줄: [(번호, 줄 상자)]. 번호와 위치 약어가 한 문단('V1106' 아래 'LC')이면 번호 줄만 잰다."""
+        lines = [" ".join(l.split()) for l in blocks[bi]["text"].split("\n")]
+        boxes = blocks[bi].get("line_boxes") or [blocks[bi]["bbox"]] * len(lines)
+        return [(l, box) for l, box in zip(lines, boxes) if VALVE_TAG_RE.fullmatch(l)]
+    numbered_blocks = [(bj, number_lines(bj)) for bj in range(len(blocks)) if number_lines(bj)]
+
+    def gap_to(box, sy):
+        return -1.0 if _inside(_center(box), sy.bbox) else _box_gap(box, sy.bbox)
+
+    def closer_number(bi, sy):
+        """이 밸브에 문단 bi의 번호 줄보다 더 가까운 다른 밸브 번호 줄이 있는가."""
+        mine = number_lines(bi)
+        if not mine:
+            return False
+        own = min(gap_to(box, sy) for _, box in mine)
+        return any(gap_to(box, sy) < own for bj, lines in numbered_blocks if bj != bi
+                   for number, box in lines if number not in {n for n, _ in mine})
+
+    def clearly_of(bi, owner, sy):
+        """문단 bi가 이 밸브(owner, 또는 owner에 합칠 구동부 sy) 몫으로 분명한가(_nearest_valve의 비율)."""
+        own = min(_valve_gap(blocks[bi], owner), _valve_gap(blocks[bi], sy))
+        rival = min((_valve_gap(blocks[bi], v) for v in valves if v is not owner and v is not sy), default=None)
+        return rival is None or rival > max(2 * own, own + 1.0)
     positions = {}
     for si, bi in label_of.items():
         owner = plan_into.get(id(syms[si]), syms[si])
-        if id(owner) in valve_like and POSITION_TEXT_RE.fullmatch(text(bi)):
+        if id(owner) in valve_like and POSITION_TEXT_RE.fullmatch(text(bi)) and clearly_of(bi, owner, syms[si]):
             positions.setdefault(id(owner), []).extend((c, bi) for c in POSITION_CODE_RE.findall(blocks[bi]["text"]))
     for bi in range(len(blocks)):
         if bi in roles or bi in taken or not POSITION_TEXT_RE.fullmatch(text(bi)):
@@ -1298,7 +1329,7 @@ def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, m
         if bi in roles or bi in taken or not VALVE_TAG_RE.fullmatch(text(bi)):
             continue
         v = _nearest_valve(blocks[bi], valves, prm)
-        if v is not None and id(v) in open_valves and owner_of(bi) is v:
+        if v is not None and id(v) in open_valves and owner_of(bi) is v and not closer_number(bi, v):
             pairs.append((round(_valve_gap(blocks[bi], v), 6), bi, index[id(v)]))
     moved = set()
     for gap, bi, si in sorted(pairs):
@@ -1313,15 +1344,19 @@ def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, m
     numbered = {si for si, bi in label_of.items() if id(syms[si]) in valve_like and si not in lettered
                 and id(syms[si]) not in circled
                 and any(VALVE_TAG_RE.fullmatch(" ".join(l.split())) for l in blocks[bi]["text"].splitlines())
-                and owner_of(bi) is syms[si]}
+                and owner_of(bi) is syms[si] and not closer_number(bi, syms[si])}
     return positions, numbered
 
 
 def _apply_positions(syms, node_out, unknowns, local_of, positions, blocks):
     """밸브 옆 위치 약어를 그 밸브 노드의 normal_position·fail_position으로 둔다. 글자는 evidence.position_text에 남긴다.
     기호 모양이 정한 값(검게 칠한 몸통의 NC)이 있으면 evidence.position_from_body에 남긴다. 그 옆 글자가 LC면 같은 닫힘을
-    더 자세히 쓴 것이라 LC로 둔다. 그 밖에 이미 있는 값과 다르거나 약어끼리 서로 다르면 속성을 바꾸지 않고 position_conflict 미확인을 남긴다
-    (충돌은 둘 다 보존). 밸브 분류가 아닌 노드(합쳐지지 않은 구동부 등)에는 두지 않는다."""
+    더 자세히 쓴 것이라 LC로 둔다. 그 밖에 이미 있는 값과 다르거나 약어끼리 서로 다르면 그 속성을 비우고 position_conflict
+    미확인을 남긴다. 몸통 값과 글자는 근거(position_from_body·position_text)에 둘 다 남는다. 비우지 않으면 몸통 값이 확정
+    주장(hazop.kg.claims)으로 넘어가 사람이 볼 일이 없어진다.
+    속성은 레지스트리가 그 종류에 두는 것만 둔다(수동 밸브에는 fail_position이 없다). 종류에 없는 속성의 약어('LC,FC' 옆의
+    수동 밸브)는 종류가 틀렸을 수 있어 position_kind_mismatch 미확인으로 남긴다. 밸브 분류가 아닌 노드(합쳐지지 않은 구동부
+    등)에는 두지 않는다."""
     by_local = {nd["local_id"]: nd for nd in node_out}
     for sy in syms:
         found = positions.get(id(sy))
@@ -1330,9 +1365,15 @@ def _apply_positions(syms, node_out, unknowns, local_of, positions, blocks):
             continue
         nd["evidence"]["position_text"] = [" ".join(blocks[bi]["text"].split()) for bi in sorted({bi for _, bi in found})]
         attrs = dict(nd["attributes"])
+        cid = rules.REGISTRY.kind_class.get(nd["kind"]) or nd["category"]
+        allowed = rules.REGISTRY.class_properties(cid)
         for field in ("normal_position", "fail_position"):
             codes = sorted({c for c, _ in found if POSITION_FIELD[c] == field})
             if not codes:
+                continue
+            if field not in allowed:
+                _issue(unknowns, "position_kind_mismatch", "%s %s: %s 종류에는 없는 속성(종류를 확인할 것)"
+                       % (field, "·".join(codes), nd["kind"] or nd["category"]), nd["source_object_id"], nd["local_id"], "kind")
                 continue
             have = attrs.get(field)
             if have is not None:
@@ -1342,7 +1383,8 @@ def _apply_positions(syms, node_out, unknowns, local_of, positions, blocks):
                 continue
             why = ("기호 모양은 %s, 글자는 %s" % (have, "·".join(codes)) if have
                    else "옆 글자가 %s로 서로 다름" % "·".join(codes))
-            _issue(unknowns, "position_conflict", "%s: %s(둘 다 남기고 정하지 않음)" % (field, why),
+            attrs.pop(field, None)
+            _issue(unknowns, "position_conflict", "%s: %s(둘 다 근거에 남기고 정하지 않음)" % (field, why),
                    nd["source_object_id"], nd["local_id"], field)
         nd["attributes"] = attrs
 

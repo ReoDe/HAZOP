@@ -1471,10 +1471,31 @@ class ValveLabelTest(unittest.TestCase):
         ex = extract_with_words([body] + lines, [turned_word("V1062", 105.0, 99.0)])
         self.assertEqual(valve_node(ex)["tag"], "V1062")
 
-    def test_position_words_set_normal_and_fail_position(self):
+    def test_fail_position_word_beside_a_manual_valve_asks_for_its_kind(self):
+        """수동 밸브에는 고장 위치가 없다(레지스트리 manual_valve). 'NC,FO'의 FO는 두지 않고, 종류가 틀렸을 수 있어
+        position_kind_mismatch 미확인을 남긴다(012쪽 'LC,FC' 밸브 11곳, F1-5 검토)."""
         ex = extract_with_words(self.GATE_LINE, [word("NC,FO", 99.0, 96.0)])
-        self.assertEqual({k: v for k, v in valve_node(ex)["attributes"].items() if k.endswith("_position")},
-                         {"normal_position": "NC", "fail_position": "FO"})
+        valve = valve_node(ex)
+        self.assertEqual({k: v for k, v in valve["attributes"].items() if k.endswith("_position")}, {"normal_position": "NC"})
+        self.assertIn((valve["local_id"], "position_kind_mismatch", "kind"),
+                      [(u["target"], u["check"], u["field"]) for u in ex["validation"]["unknowns"]])
+
+    def test_operated_valve_takes_both_positions(self):
+        """구동 밸브(공기구동 등)는 정상·고장 위치를 둘 다 가진다."""
+        sym = object()
+        node = {"local_id": "n0", "source_object_id": "s0", "kind": "air_operated_valve", "category": "valve",
+                "attributes": {}, "evidence": {}}
+        unknowns = []
+        pdf_vector._apply_positions([sym], [node], unknowns, {id(sym): ("n0",)}, {id(sym): [("NC", 0), ("FO", 0)]},
+                                    [{"text": "NC,FO"}])
+        self.assertEqual((node["attributes"], unknowns), ({"normal_position": "NC", "fail_position": "FO"}, []))
+
+    def test_position_word_as_near_to_two_valves_is_given_to_neither(self):
+        """두 밸브와 같은 거리의 'LO'는 어느 밸브의 것인지 정하지 않는다(_nearest_valve와 같은 비율, F1-5 검토)."""
+        other = [prim([(112, 100), (118, 103), (118, 100), (112, 103), (112, 100)]), pipe((126, 101.5), (140, 101.5))]
+        ex = extract_with_words(self.GATE_LINE[:2] + [pipe((106, 101.5), (112, 101.5))] + other, [word("LO", 107.2, 96.0)])
+        self.assertEqual([n["attributes"].get("normal_position") for n in ex["nodes"] if n["category"] == "valve"],
+                         [None, None])
 
     def test_number_nearer_to_another_valve_is_left_to_that_valve(self):
         """번호는 가장 가까운 밸브의 것이다. 위치 약어 라벨인 밸브가 더 먼 번호를 가져가지 않는다."""
@@ -1483,6 +1504,13 @@ class ValveLabelTest(unittest.TestCase):
         ex = extract_with_words(self.GATE_LINE + [other, pipe((126, 101.5), (150, 101.5))], words)
         tags = {round(n["geometry"]["x"]): n["tag"] for n in ex["nodes"] if n["category"] == "valve"}
         self.assertEqual(tags, {100: None, 150: "V2001"})
+
+    def test_number_further_than_another_number_is_not_given(self):
+        """126쪽: 닫힌 밸브 위에 'V1106'(위 우회관 체크 밸브의 번호)과 'LC'가 한 문단이고, 밸브 번호 V1134는 아래 1.2pt에
+        있다. 문단 상자는 LC 때문에 밸브에 붙지만 번호 줄은 V1134보다 멀다. 더 가까운 다른 번호가 있으면 주지 않는다."""
+        ex = extract_with_words(self.GATE_LINE, [word("V1106", 98.0, 92.0), word("LC", 101.2, 96.5),
+                                                 word("V1134", 98.0, 104.2)])
+        self.assertNotEqual(valve_node(ex)["tag"], "V1106")
 
     def test_number_nearest_to_an_unread_symbol_is_not_given_to_a_valve(self):
         """063쪽 V714: 번호에 가장 가까운 기호는 밸브로 읽지 못한 몸통이다. 옆의 밸브가 그 번호를 가져가면 틀린 태그다."""
@@ -1508,11 +1536,12 @@ class ValveLabelTest(unittest.TestCase):
         self.assertEqual((node["label_text"], node["attributes"]), ("NO", {}))
 
     def test_closed_body_and_a_different_position_word_are_both_kept(self):
-        """검게 칠한 몸통(NC) 옆에 'NO'라고 쓰여 있으면 어느 쪽도 버리지 않는다(충돌은 둘 다 보존)."""
+        """검게 칠한 몸통(NC) 옆에 'NO'라고 쓰여 있으면 어느 쪽도 버리지 않는다. 둘 다 근거에 남기고 속성은 비워, 몸통 값이
+        확정 주장으로 넘어가지 않고 사람이 보게 한다(F1-5 검토)."""
         ex = extract_with_words([filled(BLACK_GATE)] + GATE_PIPES, [word("NO", 101.0, 96.0)])
         valve = valve_node(ex)
-        self.assertEqual(valve["attributes"]["normal_position"], "NC")
-        self.assertEqual(valve["evidence"]["position_text"], ["NO"])
+        self.assertNotIn("normal_position", valve["attributes"])
+        self.assertEqual((valve["evidence"]["position_from_body"], valve["evidence"]["position_text"]), ("NC", ["NO"]))
         conflicts = [u for u in ex["validation"]["unknowns"] if u["check"] == "position_conflict"]
         self.assertEqual([(u["target"], u["field"]) for u in conflicts], [(valve["local_id"], "normal_position")])
 

@@ -14,6 +14,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
 from hazop import paths  # noqa: E402
+from hazop.extract import rules  # noqa: E402
 from hazop.extract.adapters import pdf_vector  # noqa: E402
 
 FIX = os.path.join(REPO_ROOT, "tests", "fixtures", "apr1400")
@@ -249,11 +250,18 @@ class ValveLabels(unittest.TestCase):
             self.assertEqual(wrong, [], "%03d쪽" % seq)
 
     def test_position_words_become_valve_attributes(self):
+        """속성은 그 종류가 가지는 것만 된다. 수동 밸브로 읽은 012쪽 'LC,FC' 밸브 11곳은 고장 위치를 두지 않고, 종류를
+        확인하라는 미확인(position_kind_mismatch)을 남긴다(F1-5 검토)."""
         for seq, (ex, key) in self.pages.items():
+            unknowns = {(u["target"], u["check"]) for u in ex["validation"]["unknowns"]}
             for item in key["valve_positions"]:
                 node = node_at(ex, item["bbox"])
-                want = {f: item[f] for f in ("normal_position", "fail_position") if f in item}
+                allowed = rules.REGISTRY.class_properties(rules.REGISTRY.kind_class.get(node["kind"]) or node["category"])
+                want = {f: item[f] for f in ("normal_position", "fail_position") if f in item and f in allowed}
                 self.assertEqual({f: node["attributes"].get(f) for f in want}, want, "%03d쪽 %s" % (seq, item["label"]))
+                if any(f in item and f not in allowed for f in ("normal_position", "fail_position")):
+                    self.assertNotIn("fail_position", node["attributes"], "%03d쪽 %s" % (seq, item["label"]))
+                    self.assertIn((node["local_id"], "position_kind_mismatch"), unknowns, "%03d쪽 %s" % (seq, item["label"]))
 
     def test_position_words_are_not_tags_or_labels(self):
         for seq, (ex, _) in self.pages.items():
@@ -305,6 +313,21 @@ class CircledValvesKeepTheirCircleNumber(unittest.TestCase):
             got = [(n["tag"], n["evidence"].get("ident_number")) for n in ex["nodes"]
                    if n["evidence"].get("ident_number") == circle]
             self.assertEqual(got, [(None, circle)], number)
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_025), "pdfplumber 또는 APR1400 025쪽 PDF 없음(저장소 밖 자료)")
+class NumbersWithACloserOtherNumberAreLeftEmpty(unittest.TestCase):
+    """025쪽(9.2.2-1 S1): 옆 체크 밸브가 기호로 잡히지 않아, 자기 번호(V1007~V1010)보다 먼 옆 밸브 번호(V1001~V1004)를,
+    1pt 옆 V1311·V1312 대신 8.7pt 떨어진 V1309·V1310을 받던 밸브 여섯(F1-5 검토, 그림으로 확인). 더 가까운 다른 번호
+    글자가 있으면 번호를 주지 않는다(틀린 태그보다 빈 태그)."""
+
+    WRONG = {(644.0, 177.8): "V1001", (636.7, 269.3): "V1003", (644.0, 471.0): "V1002", (636.6, 562.7): "V1004",
+             (405.7, 197.9): "V1309", (405.6, 491.2): "V1310"}
+
+    def test_neighbours_numbers_are_not_taken(self):
+        ex = pdf_vector.extract(PAGE_025, page=0)
+        got = {at: (node_at(ex, [at[0], at[1], at[0], at[1]]) or {}).get("tag") for at in self.WRONG}
+        self.assertEqual([(at, tag) for at, tag in got.items() if tag == self.WRONG[at]], [])
 
 
 PAGE_132 = paths.folder("APR1400", "by-drawing", "132_Ch10_Fig10.4.10-1_s2of3_Auxiliary_Steam_System_Flow_Diagram.pdf")

@@ -21,7 +21,7 @@ PAREN_TOKEN_RE = re.compile(r"\(\d{1,5}[A-Z]?\)")  # 계기 원 옆 다른 계�
 
 
 def _text_blocks(words, prm):
-    """단어 → 줄 → 문단. 반환: [{text, bbox, size}] (위→아래, 왼→오 순).
+    """단어 → 줄 → 문단. 반환: [{text, bbox, size, line_boxes}] (위→아래, 왼→오 순). line_boxes는 줄마다의 상자다.
     90° 돌린 낱말(upright 거짓, 아래→위 또는 위→아래로 읽음)은 읽는 방향이 가로가 되게 좌표를 돌려 같은 규칙으로
     묶은 뒤 되돌린다."""
     upright = [w for w in words if w.get("upright", True)]
@@ -32,10 +32,12 @@ def _text_blocks(words, prm):
     out = _upright_blocks(upright, prm)
     for b in _upright_blocks(up_turn, prm):
         x0, y0, x1, y1 = b["bbox"]
-        out.append(dict(b, bbox=(y0, -x1, y1, -x0), rotated=True))
+        out.append(dict(b, bbox=(y0, -x1, y1, -x0), rotated=True,
+                        line_boxes=[(t, -c, u, -a) for a, t, c, u in b["line_boxes"]]))
     for b in _upright_blocks(down_turn, prm):
         x0, y0, x1, y1 = b["bbox"]
-        out.append(dict(b, bbox=(-y1, x0, -y0, x1), rotated=True))
+        out.append(dict(b, bbox=(-y1, x0, -y0, x1), rotated=True,
+                        line_boxes=[(-u, a, -t, c) for a, t, c, u in b["line_boxes"]]))
     out.sort(key=lambda b: (round(b["bbox"][1], 2), round(b["bbox"][0], 2)))
     return out
 
@@ -81,7 +83,8 @@ def _upright_blocks(words, prm):
         box = (min(l["x0"] for l in b["lines"]), min(l["top"] for l in b["lines"]),
                max(l["x1"] for l in b["lines"]), max(l["bottom"] for l in b["lines"]))
         text = "\n".join("".join(s + w["text"] for s, w in zip(l["seps"], l["words"])) for l in b["lines"])
-        out.append({"text": text, "bbox": box, "size": b["lines"][0]["size"]})
+        out.append({"text": text, "bbox": box, "size": b["lines"][0]["size"],
+                    "line_boxes": [(l["x0"], l["top"], l["x1"], l["bottom"]) for l in b["lines"]]})
     out.sort(key=lambda b: (round(b["bbox"][1], 2), round(b["bbox"][0], 2)))
     return out
 
