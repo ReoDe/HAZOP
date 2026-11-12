@@ -14,6 +14,7 @@
 import argparse
 import collections
 import csv
+import io
 import multiprocessing
 import os
 import re
@@ -131,12 +132,12 @@ def main(argv=None):
         old = {r["계통약어"]: r for r in project.read_system_code_rows(args.out) or () if r.get("계통약어")}
     rows, arrows = arrows_with_codes(args.input_dir, args.catalog, args.jobs)
     table = build(rows, arrows, old)
-    tmp = args.out + ".tmp"
-    with open(tmp, "w", encoding="utf-8-sig", newline="") as fh:
-        w = csv.DictWriter(fh, FIELDS)
-        w.writeheader()
-        w.writerows(table)
-    os.replace(tmp, args.out)  # 쓰다 실패해도 사람이 '확인'한 기존 표는 남는다
+    from hazop import store_io
+    buf = io.StringIO(newline="")
+    w = csv.DictWriter(buf, FIELDS)
+    w.writeheader()
+    w.writerows(table)
+    store_io.write_bytes(args.out, buf.getvalue().encode("utf-8-sig"))  # 쓰다 실패해도 사람이 '확인'한 기존 표는 남는다
     print("약어 %d개 중 대응 %d개([문서] %d, [추론] %d, 확인 %d) → %s" % (
         len({c for _, _, c, _ in arrows}), len(table), sum(t["출처"] == "[문서]" for t in table),
         sum(t["출처"] == "[추론]" for t in table), sum(t["사람 확인"] == "확인" for t in table), args.out))

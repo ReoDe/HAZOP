@@ -554,14 +554,11 @@ def load_settings(path=None):
 
 
 def save_settings(settings, path=None):
-    """설정을 임시 파일에 쓴 뒤 교체한다. 쓴 경로를 돌려준다."""
+    """설정을 공용 원자적 쓰기(store_io)로 쓴다. 쓴 경로를 돌려준다."""
     if not isinstance(settings, dict):
         raise ValueError("설정은 dict여야 함")
+    from hazop import store_io  # store_io가 이 모듈을 가져다 쓰므로 여기서 가져온다
     path = path or settings_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(settings, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
-    os.replace(tmp, path)
+    # 지문 충돌 확인은 하지 않는다. 설정은 앱 하나가 통째로 읽고 쓰며(단일 실행 잠금) 잃어도 다시 고르면 되는 값이다
+    store_io.write_json(path, settings, sort_keys=False)
     return path

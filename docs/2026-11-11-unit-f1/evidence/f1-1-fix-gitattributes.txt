@@ -1,0 +1,46 @@
+# .gitattributes 에 `resources/library/symbols/** -text` 를 더한 뒤 확인 (커밋 9d51869)
+# - 이 PC: core.autocrlf=true. 인터프리터 C:\Users\kim92\.hazop\venv-py312\Scripts\python.exe, PYTHONIOENCODING=utf-8
+# - 시각: 2026-11-11 08:05~08:06 (+0900)
+
+== 1. 더하기 전 (55c1622, 주 체크아웃)
+$ git ls-files --eol resources/library/symbols   (색인/작업 폴더/속성별 개수)
+     21 i/-text w/-text attr/        <- 그림(.png) 21개. 속성은 없지만 git이 내용을 보고 바이너리로 판정해 줄 끝을 바꾸지 않는다
+     41 i/lf w/lf attr/              <- JSON 41개(항목 40 + bundles.json). 색인도 작업 폴더도 LF
+$ git check-attr -a resources/library/symbols/APR1400/images/gate_valve.png resources/library/symbols/common/psv_body.json
+(출력 없음: 걸린 속성이 없다)
+
+== 2. 더한 뒤, 커밋 전 (주 체크아웃)
+$ git status --short
+ M .gitattributes
+$ git add --renormalize resources/library/symbols ; git status --short
+ M .gitattributes                    <- 사전 파일은 색인에서 바뀌지 않는다
+$ git diff --cached --stat ; git diff --stat -- resources/library/symbols
+(출력 없음)
+$ git ls-files --eol resources/library/symbols
+     21 i/-text w/-text attr/-text
+     41 i/lf w/lf attr/-text
+$ git check-attr -a …/gate_valve.png …/psv_body.json
+resources/library/symbols/APR1400/images/gate_valve.png: text: unset
+resources/library/symbols/common/psv_body.json: text: unset
+$ python scripts/check_symbols.py   (첫 줄)
+묶음 {'APR1400': '2c997ba7e6ce', '공통': 'ac25f22101ce'}, 항목 40(켜짐 36)
+
+== 3. 커밋 9d51869 를 새로 뽑은 분리 작업트리
+$ git worktree add --detach D:/HAZOP-trials/2026-11-11-unit-f1/wt-gitattributes HEAD
+HEAD is now at 9d51869
+$ git config core.autocrlf
+true
+$ git ls-files --eol resources/library/symbols
+     21 i/-text w/-text attr/-text
+     41 i/lf w/lf attr/-text         <- 새 사본에서도 JSON이 LF로 풀린다
+$ git ls-files --eol hazop/extract/symbols.py
+i/lf    w/crlf  attr/                <- 다른 파일은 이 사본에서 CRLF로 풀린다(autocrlf가 실제로 걸려 있다)
+$ python scripts/check_symbols.py   (그 작업트리 안에서, 첫 줄)
+묶음 {'APR1400': '2c997ba7e6ce', '공통': 'ac25f22101ce'}, 항목 40(켜짐 36)
+$ git status --short
+(출력 없음)
+$ git worktree remove D:/HAZOP-trials/2026-11-11-unit-f1/wt-gitattributes ; git worktree list
+D:/HAZOP 9d51869 [feat/next-units]
+
+결과: 색인 바이트 그대로, 주 체크아웃과 새 분리 작업트리의 사전 판이 같다(APR1400 2c997ba7e6ce, 공통 ac25f22101ce).
+규칙이 없는 커밋을 새로 뽑았을 때 판이 달라지는 것은 이번에 다시 재 보지 않았다(F1-0 README의 기록).

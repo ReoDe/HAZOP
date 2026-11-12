@@ -14,7 +14,7 @@ import os
 import sys
 import uuid
 
-from hazop import paths
+from hazop import paths, store_io
 
 STORE_FILE_NAME = "api_keys.json"
 LEGACY_FILE_NAME = "api_key.dpapi"
@@ -188,11 +188,13 @@ class KeyStore:
         if not keys and self._model is None and not os.path.isfile(self.path):
             return  # 메모리 키만 쓰는 동안은 파일을 만들지 않는다
         doc = {"version": 1, "active": self._active, "model": self._model, "keys": keys}
-        os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
-        tmp = self.path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(doc, fh, ensure_ascii=False, indent=1)
-        os.replace(tmp, self.path)
+        # 공용 원자적 쓰기: 임시 파일은 같은 폴더에 만들고(폴더 권한을 물려받음) 쓰기가 예외로 실패하면 지운다. 줄끝은
+        # 전처럼 운영체제 것. 강제 종료되면 암호문(DPAPI)이 든 임시 파일이 남을 수 있다(평문은 아니다). 키 저장소는 앱
+        # 하나만 쓰므로 남은 임시 파일을 나이와 관계없이 다음 저장 때 지운다.
+        # 지문 충돌 확인은 하지 않는다. 이 객체가 읽은 항목을 통째로 다시 쓰고 읽지 못한 항목도 보존한다
+        text = json.dumps(doc, ensure_ascii=False, indent=1).replace("\n", os.linesep)
+        store_io.remove_temps(os.path.abspath(self.path))
+        store_io.write_bytes(os.path.abspath(self.path), text.encode("utf-8"))
 
     def _new_entry(self, name, key, persisted):
         kid = uuid.uuid4().hex[:12]

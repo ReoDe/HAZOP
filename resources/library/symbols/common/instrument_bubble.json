@@ -1,0 +1,41 @@
+{
+ "id": "common.instrument_bubble",
+ "revision": 1,
+ "added": "2026-11-11",
+ "updated": "2026-11-11",
+ "name": {
+  "en": "INSTRUMENT BUBBLE",
+  "ko": "계기 원·비석형"
+ },
+ "category": "계기",
+ "role": "symbol",
+ "kind": null,
+ "kind_from": "isa_letters",
+ "attributes": {},
+ "enabled": true,
+ "match": [
+  {
+   "shape": "structure",
+   "requires": [
+    "single_circle"
+   ],
+   "order": 80,
+   "basis": "circle"
+  },
+  {
+   "shape": "structure",
+   "requires": [
+    "single_tombstone"
+   ],
+   "order": 90,
+   "basis": "tombstone"
+  }
+ ],
+ "sources": [
+  {
+   "set": "일반 P&ID 표기",
+   "note": "pdf_vector.py의 형상 규칙(_shape_kind)을 옮긴 것(S7, 2026-11-11). 근거 글자(basis)는 옮기기 전과 같다"
+  }
+ ],
+ "note": "종류는 ISA 글자로 정한다. 글자로 못 정하면 장비 이름 낱말을 보고, 그래도 없으면 격자 견본에 대 본다"
+}

@@ -1,0 +1,198 @@
+F1-4 전후 대조 (2026-11-11)
+==========================
+
+'전'은 81bc203의 추출 결과(F1-3 2차 검토 지적 수정 때 뜬 것, 시험 폴더 fix2/nodes-after), '후'는 주 체크아웃이다.
+시험용 venv(%USERPROFILE%\.hazop\venv-py312), PYTHONIOENCODING=utf-8, --update 없음. 4ceb1de(표본 시험만 더함)의
+추출기 코드는 81bc203과 같다.
+
+1. 커밋 전 실행
+---------------
+# HEAD 4ceb1de + 외톨이 // 규칙(커밋 전), 2026-11-11 15:54:06 +0900
+# HEAD 4ceb1de · git status --short:
+ M hazop/extract/adapters/pdf_vector.py
+ M tests/test_apr1400_extract.py
+ M tests/test_symbols.py
+?? docs/2026-11-11-unit-f1/evidence/f1-4-lone-ticks.py
+# git diff HEAD -- hazop scripts resources tests sha256: c97280ce0e857513
+$ f1-0-extract-compare.py snp (해시 목록을 f1-0-before-snp-hashes.json과 비교)
+SNP 12건 → <시험 폴더>\f1-4\before-commit\snp\snp-hashes.json
+SNP 해시 목록 바이트 같음
+$ f1-3-node-diff.py dump --repo . --out f1-4/before-commit/nodes
+143쪽 → <시험 폴더>/f1-4/before-commit/nodes (코드: D:\HAZOP)
+$ f1-3-node-diff.py compare <81bc203> <지금>
+쪽 143 · 노드 23348 → 23293 · 관계 23421 → 23313
+
+같은 자리 기호의 종류 변화(전 → 후: 수)
+
+같은 자리 기호의 정상 위치 변화
+
+같은 자리 기호의 태그 변화(있음 여부 전 → 후)
+
+'전'에 종류가 있던 기호: 같은 자리에서 종류를 잃음 0 · 다른 종류가 됨 0 · 같은 자리에 없음 0
+
+새로 생긴 기호 노드(종류, 정상 위치): 0
+
+없어진 기호 노드(종류): 0
+
+미확인 사유별(전 → 후, 차)
+  unknown_flow_direction: 28948 → 28541 (-407)
+  missing_tag: 12221 → 12221 (+0)
+  unconnected_endpoint: 9537 → 9560 (+23)
+  missing_kind: 7314 → 7314 (+0)
+  self_loop: 5601 → 5307 (-294)
+  not_registered: 429 → 429 (+0)
+  actuated_valve_pending: 234 → 234 (+0)
+  missing_drawing_number: 143 → 143 (+0)
+  duplicate_tag: 56 → 56 (+0)
+  dashed_path_no_visible_piece: 8 → 8 (+0)
+  합계: 64491 → 63813 (-678)
+
+'후'의 NC 밸브 노드(댐퍼 제외) 903개: (종류, 분류)별
+  manual_valve / valve: 681
+  None / valve: 130
+  motor_operated_valve / valve: 67
+  air_operated_valve / valve: 25
+  닿은 물리 배관 끝: 0개 29 · 1개 11 · 2개 이상 863
+  배관 끝이 하나도 닿지 않은 것의 쪽별 수: 001쪽 4, 008쪽 7, 029쪽 1, 141쪽 17
+
+노드 변화 목록 0줄 → <시험 폴더>/f1-4/before-commit/node-changes.csv
+rc=0
+$ f1-3-node-diff.py links <81bc203> <지금>
+쪽 143
+'전'에서 한 연결요소였다가 '후'에서 갈라진 것: 연결요소 14개, 큰 조각에서 떨어져 나간 같은 자리 노드 20개
+  그 가운데 '후'에서 물리 배관이 하나도 닿지 않게 된 노드: 16개 (종류별 tee 13, None 3)
+  둘 이상 이어진 배관 토막이 떨어져 나간 연결요소: 1개, 그 토막의 같은 자리 노드 4개
+'후'의 NC 밸브 903개 가운데 물리 배관이 몸통 가운데를 지나가는데 그 밸브에 붙지 않은 것: 1개
+  같은 자리를 '전'의 물리 배관이 지나가던 것: 271개
+'후'의 NC 밸브가 60pt 이하 기호와 맞닿았는데(간격 0.5pt 이하) 둘 사이에 관계가 없는 것: 15쌍
+목록 30줄 → <시험 폴더>/f1-4/before-commit/links.csv
+rc=0
+$ f1-3-node-diff.py carry <81bc203> <지금>
+쪽 143 (수정 적용 코드: D:\HAZOP)
+  node 수정: 15225
+  node 적용: 15225
+  relation 수정: 23421
+  relation 적용: 23090
+  relation 적용 못 함: 대상 없음: 12
+  relation 적용 못 함: 대상이 바뀜(at·ends): 233
+  relation 적용 못 함: 대상이 바뀜(at·ends·kind): 79
+  relation 적용 못 함: 대상이 바뀜(at·kind): 1
+  relation 적용 못 함: 대상이 바뀜(ends): 3
+  relation 적용 못 함: 대상이 바뀜(kind): 3
+  relation 적용(번호가 밀려 자리로 다시 찾음): 3377
+rc=0
+$ check_apr1400.py --out f1-4/before-commit/apr1400_pages.csv
+APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 287/295 · 없는 대상 0 · 짝 281(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63813
+  정답 5.4.12-1-S1: 계기 4/4(태그 4 중 맞음 4) · 연결 3/3(연결점 3 중 맞음 3) · 대리 원 4(정답 안 4)/정답 4 · 대리 연결 표기 3(정답 안 3)/정답 3
+  정답 9.3.3-1-S7: 계기 16/16(태그 16 중 맞음 16) · 연결 7/7(연결점 7 중 맞음 7) · 대리 원 16(정답 안 16)/정답 16 · 대리 연결 표기 5(정답 안 5)/정답 7
+  정답 9.3.4-1-S1: 계기 12/15(태그 12 중 맞음 12) · 연결 17/17(연결점 17 중 맞음 17) · 대리 원 15(정답 안 15)/정답 15 · 대리 연결 표기 4(정답 안 4)/정답 17
+기준값: APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 287/295 · 없는 대상 0 · 짝 281(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 64400
+rc=0
+$ check_snp_baseline.py
+나아짐: pdf SNP-M-101_RCS-main-loop unknowns 40 → 31
+나아짐: pdf SNP-M-102_RCS-pressurizer unknowns 19 → 15
+나아짐: pdf SNP-M-201_CVCS unknowns 23 → 20
+나아짐: pdf SNP-M-301_SIS unknowns 24 → 20
+나아짐: pdf SNP-M-401_CCW unknowns 31 → 24
+나아짐: pdf SNP-M-501_MS-FW unknowns 27 → 23
+SNP: 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6
+rc=0
+$ unknowns_breakdown.py --out f1-4/before-commit/unknowns
+# APR1400 미확인 분해
+
+쪽 143, 미확인 63813
+
+## 사유별
+
+| 사유(check) | 수 | 비율 | 많은 쪽(수) |
+| --- | --- | --- | --- |
+| `unknown_flow_direction` | 28541 | 44.7% | 066(724), 028(671), 025(546) |
+| `missing_tag` | 12221 | 19.2% | 028(270), 001(266), 025(244) |
+| `unconnected_endpoint` | 9560 | 15.0% | 066(399), 025(320), 088(320) |
+| `missing_kind` | 7314 | 11.5% | 083(208), 001(207), 081(160) |
+| `self_loop` | 5307 | 8.3% | 066(311), 137(198), 013(193) |
+| `not_registered` | 429 | 0.7% | 001(3), 002(3), 003(3) |
+| `actuated_valve_pending` | 234 | 0.4% | 113(18), 049(14), 048(12) |
+| `missing_drawing_number` | 143 | 0.2% | 001(1), 002(1), 003(1) |
+| `duplicate_tag` | 56 | 0.1% | 006(29), 008(22), 007(5) |
+| `dashed_path_no_visible_piece` | 8 | 0.0% | 090(8) |
+
+## 사유 × 대상 종류 (상위 40)
+
+| 사유 | 대상 | 대상 kind | 사전 항목 | 수 |
+| --- | --- | --- | --- | --- |
+| `unknown_flow_direction` | relations | physical_connection |  | 19793 |
+| `unknown_flow_direction` | unresolved_connectors | physical_connection |  | 8748 |
+| `missing_kind` | node | (kind 없음) |  | 6455 |
+| `missing_tag` | node | (kind 없음) |  | 6234 |
+| `self_loop` | unresolved_connectors | physical_connection |  | 5180 |
+| `unconnected_endpoint` | unresolved_connectors | signal_connection |  | 5131 |
+| `unconnected_endpoint` | unresolved_connectors | physical_connection |  | 4150 |
+| `missing_tag` | node | manual_valve | apr1400.globe_valve | 981 |
+| `missing_tag` | node | manual_valve | apr1400.gate_valve | 779 |
+| `missing_tag` | node | manual_valve |  | 708 |
+| `not_registered` | (대상 없음) | - |  | 429 |
+| `missing_tag` | node | check_valve | apr1400.check_valve_box | 334 |
+| `missing_tag` | node | reducer | apr1400.reducer | 319 |
+| `unconnected_endpoint` | unresolved_connectors | measurement_connection |  | 279 |
+| `missing_tag` | node | indicator |  | 226 |
+| `missing_tag` | node | pipe_cap |  | 224 |
+| `missing_tag` | node | orifice |  | 190 |
+rc=0
+# 끝 16:01:39
+
+2. 배관 이어짐이 끊긴 자리마다 그 선이 무엇이 됐나
+--------------------------------------------------
+$ f1-4-lone-ticks.py splits <81bc203> <지금> --verbose   (요약과, 두 끝이 서로 다른 연결요소가 된 줄·예외 줄만 옮김)
+'전'의 물리 배관 관계 가운데 '후'에 배관으로 이어지지 않는 것 129
+  signal_connection/pdf_pneumatic                      | 끝 노드가 없어짐          | 81
+  (선 없음)                                               | 끝 노드가 없어짐          | 39
+  signal_connection/pdf_pneumatic                      | 두 끝이 다른 연결요소       | 3
+  (선 없음)                                               | 두 끝이 다른 연결요소       | 3
+  physical_connection/pdf_solid, signal_connection/pdf_pneumatic | 끝 노드가 없어짐          | 2
+  signal_connection/pdf_solid                          | 끝 노드가 없어짐          | 1
+  028 pdf-p0-conn-0137 (tee–psv) [465.7, 296.4] 두 끝이 다른 연결요소 → signal_connection/pdf_pneumatic
+  028 pdf-p0-conn-0138 (tee–psv) [465.7, 296.4] 두 끝이 다른 연결요소 → (선 없음) · 선 자체가 새 빗금
+  052 pdf-p0-conn-0124 (tee–None) [883.6, 350.3] 두 끝이 다른 연결요소 → signal_connection/pdf_pneumatic
+  052 pdf-p0-conn-0125 (tee–None) [883.6, 350.3] 두 끝이 다른 연결요소 → (선 없음) · 선 자체가 새 빗금
+  052 pdf-p0-conn-0127 (tee–None) [883.6, 230.3] 두 끝이 다른 연결요소 → signal_connection/pdf_pneumatic
+  052 pdf-p0-conn-0128 (tee–None) [883.6, 230.3] 두 끝이 다른 연결요소 → (선 없음) · 선 자체가 새 빗금
+  069 pdf-p0-conn-0029 (tee–psv) [488.0, 437.2] 끝 노드가 없어짐 → signal_connection/pdf_solid
+  115 pdf-p0-conn-0191 (tee–tee) [909.9, 484.8] 끝 노드가 없어짐 → physical_connection/pdf_solid, signal_connection/pdf_pneumatic
+  115 pdf-p0-conn-0195 (tee–tee) [910.1, 488.3] 끝 노드가 없어짐 → physical_connection/pdf_solid, signal_connection/pdf_pneumatic
+
+- '(선 없음) · 선 자체가 새 빗금': '전'에서는 // 조각이 분기점과 기호를 잇는 배관 관계로 잡혀 있었다.
+- 115쪽 두 줄: IA 공급선 7.5pt 가운데 // 가 걸린 7.1pt는 공압 신호선이 됐고, 분기점 위 0.4pt 토막은 빗금이 없어 전처럼
+  배관으로 남았다(3a의 나뉜 경로 규칙).
+- 069쪽 한 줄: 구동부가 밸브에 합쳐진 선이라 신호 관계이고 선 종류는 pdf_solid다.
+- 116쪽의 '이어진 토막'(같은 자리 노드 4개)은 솔레노이드 밸브 셋을 // 공기선으로 이은 묶음이다. 공정 배관과는 그 공기선으로만
+  이어져 있었다.
+
+3. '전'의 관계 가운데 '후'에 같은 선이 없는 것 (모의 수정이 적용되지 않은 까닭)
+--------------------------------------------------------------------------------
+새로 빗금이 된 외톨이 묶음 82
+'전'의 관계 23421 가운데 '후'에 같은 선(종류·경로·끝 붙음)이 없는 것 184
+  // 묶음이나 그 묶음이 걸린 선                       177
+  // 가 선을 자르던 분기점에 닿아 있던 선                 5
+  // 가 걸린 선과 같은 기호에 닿아 있던 선                1
+  그 밖                                      1
+    ('119', 'pdf-p0-conn-0132', 'physical_connection', [686.0, 570.2])
+
+119쪽 conn-0132((686.0,570.2)~(686.0,583.5))는 // 가 걸린 13.3pt 선이다. 빗금은 큰 기호에 흡수돼 그대로 있지만 선에는 //
+가 걸려 있어 공압 신호선이 됐다(관계의 종류가 physical_connection에서 signal_connection으로).
+모의 수정에서 적용되지 않은 관계 331건 가운데 위 184건을 뺀 147건은 선이 그대로인 관계다. 분기점 55개가 없어져 번호가
+밀린 뒤 같은 자리에 후보가 둘 이상이라 일부러 적용하지 않은 것으로 본다(따로 세지는 않았다). 다른 자리에 적용된 수정은 0이다.
+
+4. 커밋 뒤 확인
+---------------
+# 커밋 뒤 확인 @b45cfeb, 2026-11-11 16:06:14 +0900
+커밋 전 실행과 견줌: run.log는 머리말(git status)만 다르고, check_apr1400.py --out의 쪽별 결과는 걸린 시간 열을 빼면
+다른 행 0/143이다. SNP 해시 목록 바이트 같음.
+
+$ check_apr1400.py --update   (b45cfeb, 작업 폴더 깨끗함. 추적하지 않는 문서 근거 파일만 있음)
+APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 287/295 · 없는 대상 0 · 짝 281(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63813
+  정답 5.4.12-1-S1: 계기 4/4(태그 4 중 맞음 4) · 연결 3/3(연결점 3 중 맞음 3) · 대리 원 4(정답 안 4)/정답 4 · 대리 연결 표기 3(정답 안 3)/정답 3
+  정답 9.3.3-1-S7: 계기 16/16(태그 16 중 맞음 16) · 연결 7/7(연결점 7 중 맞음 7) · 대리 원 16(정답 안 16)/정답 16 · 대리 연결 표기 5(정답 안 5)/정답 7
+  정답 9.3.4-1-S1: 계기 12/15(태그 12 중 맞음 12) · 연결 17/17(연결점 17 중 맞음 17) · 대리 원 15(정답 안 15)/정답 15 · 대리 연결 표기 4(정답 안 4)/정답 17
+점수 기준값을 썼음: tests\baselines\apr1400_score.json
+rc=0

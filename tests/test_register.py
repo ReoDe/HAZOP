@@ -523,6 +523,27 @@ class PdfRegisterTest(RegisterBase):
             self.assertEqual([(e["extract_name"], e["extracted"], e["graphed"]) for e in rows], [(name, True, True)])
         self.assertFalse(os.path.exists(paths.output_in(paths.DEV_WORK_ROOT, "extract", name)))
 
+    def test_app_extraction_returns_the_warning_when_the_run_record_cannot_be_written(self):
+        """추출 실행 정보(extraction_run.json)를 쓰지 못해도 추출·그래프는 그대로 만들고, 경고는 화면이 보여 줄 수 있게
+        결과에 담아 돌려준다."""
+        from hazop.app import data
+        from hazop.extract import runinfo
+        real = runinfo.store_io.write_json
+
+        def write_json(path, *args, **kwargs):
+            if os.path.basename(path) == runinfo.FILE_NAME:
+                raise PermissionError(13, "denied", path)
+            return real(path, *args, **kwargs)
+        work = os.path.join(self.tmp, "work")
+        with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": work, "HAZOP_STORE_ROOT": self.store}), \
+                mock.patch.object(runinfo.store_io, "write_json", side_effect=write_json), \
+                self.assertLogs(runinfo.__name__, "WARNING"):
+            out = data.extract_and_graph(self.reg(PDF_101)["registration_file"])
+            self.assertEqual(out["graph"]["validation"]["status"], "passed")
+            self.assertEqual(len(out["warnings"]), 1)
+            self.assertIn(runinfo.FILE_NAME, out["warnings"][0])
+            self.assertFalse(os.path.exists(os.path.join(out["extract_dir"], runinfo.FILE_NAME)))
+
     def test_multi_page_registration_extracts_every_page(self):
         import extract_pdf
         from hazop.app import data
@@ -727,7 +748,7 @@ class ReviewFix2Test(RegisterBase):
                 self.reg(SAMPLE_101)
         rel = os.path.join("proj-1", "registrations", mid)
         folder = os.path.join(self.store, rel)
-        self.assertEqual(os.listdir(folder), ["1.json.tmp"])
+        self.assertEqual(os.listdir(folder), [])  # 교체에 실패하면 임시 파일을 지운다. 빈 폴더만 남는다
         retry = self.reg(SAMPLE_101)
         self.assertEqual((retry["outcome"], retry["record"]["status"]), ("registered", "registered"))
         self.assertEqual(sorted(os.listdir(folder)), ["1.json"])

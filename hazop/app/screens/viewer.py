@@ -944,10 +944,10 @@ class ViewerScreen(QWidget):
             self.chip_valid.set_state("그래프 없음", "warn")
             self.chip_stats.set_state("노드 %d · 관계 %d · 미확인 %d" % (s["nodes"], s["relations"], s["unknowns"]))
             self.blockers.set_messages(None)
-        if self.session and self.session.dirty:  # 저장 전에는 그래프가 그대로라 고친 추출의 개수를 보인다
-            s = corrected["summary"]
-            self.chip_stats.set_state("노드 %d · 관계 %d · 미확인 %d (저장 전)" % (s["nodes"], s["relations"], s["unknowns"]),
-                                      "warn")
+        if self.session and self.session.dirty and g:  # 편집 중 그래프는 고친 내용으로 만든 것이라 저장본과 같은 기준이다
+            self.chip_stats.set_state("노드 %d · 관계 %d · 미확인 %d (저장 전)" % (
+                g["structure"]["node_count"], g["structure"]["edge_count"], len(g["validation"].get("unknowns") or [])),
+                "warn")
         self.warn.set_messages(info["error"])
         if info["html"]:
             self.stack.setCurrentIndex(1)

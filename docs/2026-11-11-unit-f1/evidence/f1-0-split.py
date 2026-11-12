@@ -5,8 +5,8 @@
 
 나누는 단위는 최상위 문장(함수·클래스·대입)이다. 문장 바로 위에 붙은 주석 줄은 그 문장과 함께 옮긴다.
 문장 원문은 손대지 않고 그대로 옮긴다. 새로 쓰는 것은 모듈 설명글, import 줄, 구획 주석(`# ----…`)뿐이다.
-check는 여기에 더해 pdf_vector 모듈에서 예전 이름이 모두 보이는지, 옮긴 이름이 새 모듈의 것과 같은 객체인지,
-다섯 모듈의 함수가 읽는 전역 이름이 모두 정의돼 있는지(빠뜨린 import) 본다.
+check는 여기에 더해 pdf_vector 모듈에서 예전 이름이 모두 보이는지(import로 들어와 `pdf_vector.이름`으로 보이던 것 포함),
+옮긴 이름이 새 모듈의 것과 같은 객체인지, 다섯 모듈의 함수가 읽는 전역 이름이 모두 정의돼 있는지(빠뜨린 import) 본다.
 """
 
 import argparse
@@ -197,10 +197,8 @@ def build(src):
     main_body = emit([(t, b) for t, b, _ in main])
     used = used_names(main_body)
     new_head = []
-    for ln in head:
+    for ln in head:  # 쓰지 않게 된 `from … import TAG_RE`는 남긴다. 밖에서 pdf_vector.TAG_RE로 보이던 이름이다
         if ln.startswith("import ") and ln.split()[1] in STDLIB and ln.split()[1] not in used:
-            continue
-        if any(ln == line and name not in used for name, line in ABSOLUTE):
             continue
         new_head.append(ln)
     reexport = [REEXPORT_NOTE] + [import_block(m, MOVES[m]) for m in order]
@@ -263,6 +261,9 @@ def check():
     old_names = {nm for k in base for nm in k}
     gone = sorted(nm for nm in old_names if not hasattr(pv, nm))
     bad += ["pdf_vector에서 안 보이는 이름: %s" % nm for nm in gone]
+    visible = module_names(src)
+    lost = sorted(visible - old_names - {nm for nm in visible if hasattr(pv, nm)})
+    bad += ["pdf_vector에서 안 보이는 이름(import로 들어왔던 것): %s" % nm for nm in lost]
     same = 0
     for m, names in MOVES.items():
         mod = importlib.import_module("hazop.extract.adapters." + m)
@@ -273,6 +274,8 @@ def check():
                 bad.append("다른 객체: pdf_vector.%s / %s.%s" % (nm, m, nm))
     print("pdf_vector에서 보이는 예전 이름 %d/%d, 옮긴 이름 %d개 중 같은 객체 %d개"
           % (len(old_names) - len(gone), len(old_names), sum(len(v) for v in MOVES.values()), same))
+    print("기준 커밋에서 모듈 수준으로 보이던 이름(import 포함) %d개 중 지금도 보이는 것 %d개"
+          % (len(visible), len(visible) - len(lost) - len(gone)))
     for m in ["pdf_vector"] + list(MOVES):
         mod = importlib.import_module("hazop.extract.adapters." + m)
         with open(mod.__file__, encoding="utf-8") as fh:
@@ -282,6 +285,20 @@ def check():
         print("문제: %s" % line)
     print("결과: %s" % ("문제 %d건" % len(bad) if bad else "통과"))
     return 1 if bad else 0
+
+
+def module_names(src):
+    """모듈 수준에서 묶이는 이름 전부. 최상위 문장이 정의한 것에 import로 들어온 이름(`pdf_vector.TAG_RE` 등)을 더한다."""
+    out = set()
+    for node in ast.parse(src).body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            out |= {(a.asname or a.name).split(".")[0] for a in node.names}
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            out.add(node.name)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            out |= {n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)}
+    return out
 
 
 def undefined_globals(table, mod):

@@ -63,9 +63,14 @@ def _segment_ends(pg):
     return seg_ends
 
 
+EMPTY_NODE = "구성요소 없음"
+
+
 def _boundaries(node, by_id, drawing_of, node_of, seg_ends, seg_rank, segs_of):
     """(start, end, continuations). 경계 = 구간 밖 주요 기기·미연결 연결점으로 이어지는 배관 구간의 끝.
     seg_ends·seg_rank는 annotate가 한 번 만든 색인이다(구간마다 전체 간선을 다시 훑지 않게). 구간 순서는 간선 순서 그대로."""
+    if not node["members"]:  # 빈 구간(옛 저장본에 있을 수 있다): 경계도 도면 연결도 없다
+        return None, None, []
     members = set(node["members"])
     starts, ends, unknown = [], [], []
 
@@ -157,7 +162,8 @@ def annotate(node_set, pg):
             "drawings": drawings, "drawings_short": [short.get(d, d) for d in drawings],
             "spans_drawings": len(drawings) > 1, "members_by_drawing": dict(sorted(counts.items())),
             "member_count": len(n["members"]),
-            "display_name": "%s %s [%s]" % (n["node_id"], n["name"], " → ".join(short.get(d, d) for d in drawings)),
+            "display_name": "%s %s [%s]" % (n["node_id"], n["name"], " → ".join(short.get(d, d) for d in drawings)
+                                            if n["members"] else EMPTY_NODE),
             "boundary": {"start": start, "end": end}, "continuations": conts,
         })
     out.update({"drawing_numbers": [s["drawing_number"] for s in pg["sheets"]], "drawing_prefix": prefix,

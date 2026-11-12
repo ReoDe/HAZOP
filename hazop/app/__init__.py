@@ -19,4 +19,34 @@ def make_application(argv=None):
         app = QApplication(list(argv if argv is not None else sys.argv))
         app.setApplicationName("HAZOP")
     app.setFont(QFont(tokens.FONT_FAMILY, 10))
+    install_qt_translation(app)
     return app
+
+
+QT_TRANSLATION = "qtbase_ko"  # Qt 기본 대화상자(입력 창 OK/Cancel 등)를 한국어로. 배포본에도 묶인다(packaging/verify_bundle)
+TRANSLATION_FAILED = "Qt 기본 번역(%s)을 읽지 못함: 대화상자 단추가 영어로 보일 수 있음" % QT_TRANSLATION
+
+
+def qt_translation_dirs():
+    """번역 파일을 찾을 폴더: Qt가 아는 번역 폴더, 그다음 PySide6 패키지 안 translations(묶인 실행)."""
+    import os
+
+    import PySide6
+    from PySide6.QtCore import QLibraryInfo
+    return [QLibraryInfo.path(QLibraryInfo.TranslationsPath), os.path.join(os.path.dirname(PySide6.__file__), "translations")]
+
+
+def install_qt_translation(app):
+    """Qt 기본 번역을 한 번만 건다. 걸었으면 True. 못 읽으면 경고만 남기고 영어 단추로 계속 띄운다."""
+    import logging
+
+    from PySide6.QtCore import QTranslator
+    if getattr(app, "_hazop_qt_translator", None) is not None:
+        return True
+    tr = QTranslator(app)
+    if not any(tr.load(QT_TRANSLATION, d) for d in qt_translation_dirs() if d):
+        logging.getLogger("hazop.startup").warning(TRANSLATION_FAILED)
+        return False
+    app.installTranslator(tr)
+    app._hazop_qt_translator = tr
+    return True

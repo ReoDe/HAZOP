@@ -8,3 +8,5 @@ tests/fixtures/kg_algo/** -text
 tests/fixtures/store-0.1/** -text
 # 요청 고정본은 바이트로 견준다.
 tests/fixtures/node-review/** -text
+# 기호 사전 판은 사전 파일 바이트의 해시다. 줄 끝이 체크아웃마다 달라지면 같은 사전이 다른 판으로 적힌다.
+resources/library/symbols/** -text

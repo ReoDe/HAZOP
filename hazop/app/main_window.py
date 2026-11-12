@@ -36,7 +36,9 @@ APP_NAME = "HAZOP 분석 도구"
 APP_VERSION = "0.2.0"
 STEPS = ("① 자료 등록", "② 도면 추출", "고정 응답 분석(이전 ④)", "설계보완·확정(이전 ⑤)", "③ 지식그래프", "④ 검토구간",
          "⑤ 분석 결과", "⑥ 초기사건")  # 화면 index 순
-STEP_ORDER = (0, 1, 4, 5, 6, 7, 2, 3)  # 보기 메뉴 순서
+STEP_ORDER = (0, 1, 4, 5, 6, 7)  # 보기 메뉴 순서(지금 단계만)
+LEGACY_STEPS = (2, 3)  # 이전 MVP 화면(DEC-0123): 보기 > 이전 MVP 하위 메뉴에만 둔다
+RESULTS_INDEX = 6  # ⑤ 분석 결과
 # 레일 단계: (번호, 짧은 이름, 화면 index들). 첫 화면이 레일 클릭 대상이고 그 화면의 is_done()이 완료(✓)를 정한다.
 STAGES = (("1", "등록", (0,)), ("2", "추출", (1,)), ("3", "그래프", (4,)), ("4", "구간", (5,)), ("5", "결과", (6, 2, 3)),
           ("6", "초기사건", (7,)))
@@ -124,6 +126,23 @@ class WhereLabel(QLabel):
         self._tip()
 
 
+class CurrentPageStack(QStackedWidget):
+    """최소·권장 크기를 지금 보이는 화면만으로 정하는 스택(기본 QStackedWidget은 모든 화면 중 가장 넓은 값을 쓴다).
+    그래야 ⑤처럼 관련 항목을 펴 두는 화면이 다른 화면(⑥ 등)의 최소 폭까지 떠안아 1366 창을 넓히지 않는다(결함 8)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.currentChanged.connect(lambda _i: self.updateGeometry())
+
+    def minimumSizeHint(self):  # noqa: N802
+        w = self.currentWidget()
+        return w.minimumSizeHint() if w is not None else super().minimumSizeHint()
+
+    def sizeHint(self):  # noqa: N802
+        w = self.currentWidget()
+        return w.sizeHint() if w is not None else super().sizeHint()
+
+
 class MainWindow(QMainWindow):
     def __init__(self, settings_path=None, ask_reviewer=True, debug=False):
         super().__init__()
@@ -172,7 +191,7 @@ class MainWindow(QMainWindow):
         cv.addWidget(self._tab_row())
         self.panes = QSplitter(Qt.Horizontal)
         self.panes.setChildrenCollapsible(False)
-        self.stack = QStackedWidget()
+        self.stack = CurrentPageStack()
         self.panes.addWidget(self.stack)
         self.right_pane = QWidget()
         self.right_pane.setObjectName("right_pane")
@@ -410,6 +429,7 @@ class MainWindow(QMainWindow):
                     row.setData(0, Qt.UserRole + 1, "info")
                     row.setToolTip(0, tip)
                     grp.addChild(row)
+                    row.setFirstColumnSpanned(True)  # 안내 줄은 개수 열까지 써서 덜 잘린다(결함 9)
                 if g.action is not None:
                     link = QTreeWidgetItem([g.action[0], ""])
                     link.setData(0, Qt.UserRole, g.action[1])
@@ -417,6 +437,7 @@ class MainWindow(QMainWindow):
                     link.setForeground(0, QColor(tokens.c("ui")))
                     link.setToolTip(0, g.action[2])
                     grp.addChild(link)  # 항목이 많아도 펼치면 바로 보이게 목록 위
+                    link.setFirstColumnSpanned(True)
                 for text, target, right, icon, tip in g.items:
                     child = QTreeWidgetItem([text, right])
                     child.setData(0, Qt.UserRole, target)
@@ -437,11 +458,13 @@ class MainWindow(QMainWindow):
                     empty.setData(0, Qt.UserRole + 1, "hint")
                     empty.setToolTip(0, hint)
                     grp.addChild(empty)
+                    empty.setFirstColumnSpanned(True)
                     if button is not None:  # 빈 상태의 다음 할 일
                         row = QTreeWidgetItem([""])
                         row.setFlags(Qt.ItemIsEnabled)
                         row.setData(0, Qt.UserRole + 1, "hint")
                         grp.addChild(row)
+                        row.setFirstColumnSpanned(True)
                         b = QPushButton(button[0])
                         b.setObjectName("explorer_next")
                         b.setToolTip(button[2])
@@ -686,9 +709,7 @@ class MainWindow(QMainWindow):
     def _menus(self):
         m = self.menu_bar
         f = m.addMenu("파일")
-        f.addAction("구간 열기…", self._open_region)
-        f.addAction("실행 열기…", self._open_run_dialog)
-        f.addAction("Excel 내보내기…", lambda: (self.go(3), self.screens[3].ask_excel()))
+        f.addAction("Excel 내보내기…", self.export_results_excel)
         f.addSeparator()
         f.addAction("설정(검토자 이름)…", self._ask_reviewer)
         f.addAction("AI 연결 설정…", self.open_ai_settings)
@@ -699,6 +720,12 @@ class MainWindow(QMainWindow):
         v.addSeparator()
         for i in STEP_ORDER:
             v.addAction(STEPS[i], lambda k=i: self.go(k))
+        legacy = v.addMenu("이전 MVP")
+        for i in LEGACY_STEPS:
+            legacy.addAction(STEPS[i], lambda k=i: self.go(k))
+        legacy.addSeparator()
+        legacy.addAction("구간 열기…", self._open_region)
+        legacy.addAction("실행 열기…", self._open_run_dialog)
         v.addSeparator()
         v.addAction("뒤로\tAlt+←", self.back)
         v.addAction("앞으로\tAlt+→", self.forward)
@@ -711,6 +738,11 @@ class MainWindow(QMainWindow):
         hm = m.addMenu("도움말")
         hm.addAction("단축키\t?", self.show_shortcuts)
         hm.addAction("버전·데이터 위치", self._about)
+
+    def export_results_excel(self):
+        """파일 > Excel 내보내기: 지금 ⑤ 분석 결과(구간 × 편차)를 내보낸다. 이전 ⑤ 화면은 자기 단추로 내보낸다."""
+        if self.go(RESULTS_INDEX):
+            self.screens[RESULTS_INDEX].export_excel()
 
     # ------------------------------------------------------------ 단축키(U-02)·팔레트(U-01)
     def _shortcuts(self):
@@ -976,7 +1008,7 @@ class MainWindow(QMainWindow):
             recent = [i for i in reversed(self.history) if i != cur]
             index = prefer if prefer is not None else (recent[0] if recent else 6)
         if index == cur or (self._has_canvas(self.screens[index]) and self._has_canvas(self.screens[cur])):
-            self.status_message("도면을 쓰는 화면 둘은 함께 나눌 수 없습니다(도면 보기는 하나).")
+            self.screen_notice("도면을 쓰는 화면 둘은 함께 나눌 수 없습니다(도면 보기는 하나).")
             self.split_btn.setChecked(False)
             return False
         scr = self.screens[index]
@@ -984,8 +1016,7 @@ class MainWindow(QMainWindow):
         # (창이 화면 밖으로 넓어지지 않게)
         need = self.stack.currentWidget().minimumSizeHint().width() + scr.minimumSizeHint().width() + 8
         if need > self.width() - RAIL_W:
-            self.status_message("창 폭이 모자라 나누지 않았습니다(가운데 폭 %dpx 이상 필요)." % need)
-            self.split_btn.setChecked(False)
+            self._refuse_split(need)
             return False
         self._split_restore = ((cur, self.related_shown.get(cur, False)), self.explorer_wanted)
         ew = 0 if self.explorer_panel.isHidden() else self.explorer_panel.width()
@@ -1006,10 +1037,35 @@ class MainWindow(QMainWindow):
         self.split_btn.setChecked(True)
         self._sync_drawing_into(scr)
         scr.on_enter()
+        grown = self._split_min_width()
+        if grown > self.width():  # 막이(결함 3): 나눈 화면들의 최소 폭이 창을 넓히려 들면 되돌린다
+            self.unsplit()
+            self._refuse_split(max(need, grown - RAIL_W))
+            return False
         w = self.panes.width()
         self.panes.setSizes([w // 2, w - w // 2])
         self.refresh_stages()
         return True
+
+    def _split_min_width(self):
+        """나눈 상태의 창 최소 폭을 부분 합으로 잰다. 창·분할기의 최소 폭 힌트는 배치가 다시 계산되기 전까지 옛 값이거나
+        접힌 쪽을 빼므로 쓰지 않는다: 레일 + 보이는 탐색기·관련 항목 + 왼쪽 화면 + 오른쪽 칸 + 분할기 손잡이."""
+        def least(w):
+            return max(w.minimumSizeHint().width(), w.minimumWidth())
+        side = sum(least(p) for p in (self.explorer_panel, self.related) if not p.isHidden())
+        handles = self.split.handleWidth() * 2 + self.panes.handleWidth()
+        return RAIL_W + side + least(self.stack.currentWidget()) + least(self.right_pane) + handles
+
+    def _refuse_split(self, need):
+        """필요한 폭은 창 폭 하나로 말한다(레일 + 두 화면 최소 폭, 탐색기·관련 항목은 나눌 때 접힌다)."""
+        self.screen_notice("창 폭이 모자라 두 화면으로 나누지 않았습니다. 이 두 화면을 나누려면 창 폭이 %dpx 이상이어야 "
+                           "합니다(지금 %dpx)." % (need + RAIL_W, self.width()))
+        self.split_btn.setChecked(False)
+
+    def screen_notice(self, text):
+        """지금 화면에서만 뜻이 있는 상태줄 안내. 다른 화면으로 옮기면 지운다(go)."""
+        self._screen_notice = text
+        self.status_message(text)
 
     def unsplit(self):
         if self.split_index is None:
@@ -1156,6 +1212,11 @@ class MainWindow(QMainWindow):
         if index == self.split_index or (self._split_uses_canvas() and self._has_canvas(self.screens[index])):
             self.unsplit()
         self._sync_drawing_into(self.screens[index])
+        notice = getattr(self, "_screen_notice", None)
+        if notice and index != self.stack.currentIndex():
+            if self.msg_label.text() == notice:
+                self.status_message("")
+            self._screen_notice = None
         self.stack.setCurrentIndex(index)
         self.step_buttons[index].setChecked(True)
         scr = self.screens[index]
@@ -1172,6 +1233,7 @@ class MainWindow(QMainWindow):
             self.drawing = scr.combo.currentText()
             self.selection = None
         self.invalidate_index()
+        self._refresh_status()  # 상태줄 개수도 방금 읽은 화면 상태를 따른다(확정 해제 뒤 옛 '미검토'가 남지 않게)
         self._tab_follow(index)
         self.update_header()
         self.refresh_stages()

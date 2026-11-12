@@ -1,0 +1,30 @@
+{
+ "id": "common.name_pump",
+ "revision": 1,
+ "added": "2026-11-11",
+ "updated": "2026-11-11",
+ "name": {
+  "en": "PUMP",
+  "ko": "펌프(이름 낱말)"
+ },
+ "category": "설비",
+ "role": "symbol",
+ "kind": "pump",
+ "attributes": {},
+ "enabled": true,
+ "match": [
+  {
+   "shape": "label_words",
+   "words": [
+    "PUMP"
+   ],
+   "order": 110
+  }
+ ],
+ "sources": [
+  {
+   "set": "일반 P&ID 표기",
+   "note": "pdf_vector.py의 장비 이름 낱말 표(EQUIPMENT_WORDS)를 옮긴 것(S7, 2026-11-11)"
+  }
+ ]
+}

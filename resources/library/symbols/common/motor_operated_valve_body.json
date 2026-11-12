@@ -1,0 +1,32 @@
+{
+ "id": "common.motor_operated_valve_body",
+ "revision": 1,
+ "added": "2026-11-11",
+ "updated": "2026-11-11",
+ "name": {
+  "en": "VALVE BODY WITH CIRCLE ACTUATOR",
+  "ko": "밸브 몸통과 원형 구동부"
+ },
+ "category": "밸브",
+ "role": "symbol",
+ "kind": "motor_operated_valve",
+ "attributes": {},
+ "enabled": true,
+ "match": [
+  {
+   "shape": "structure",
+   "requires": [
+    "bowtie",
+    "outside_circle"
+   ],
+   "order": 20,
+   "basis": "valve_body+circle_actuator"
+  }
+ ],
+ "sources": [
+  {
+   "set": "일반 P&ID 표기",
+   "note": "pdf_vector.py의 형상 규칙(_shape_kind)을 옮긴 것(S7, 2026-11-11). 근거 글자(basis)는 옮기기 전과 같다"
+  }
+ ]
+}

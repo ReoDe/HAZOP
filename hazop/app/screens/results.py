@@ -650,6 +650,21 @@ class CloseWaitBox(QDialog):
         self.hide()
 
 
+EMPTY_TITLE = "아직 볼 분석 결과가 없습니다"
+KEPT_TITLE = "검토구간 확정을 해제해 결과를 숨겼습니다"
+KEPT_TEXT = ("이미 만든 분석 결과는 지우지 않고 보관해 두었습니다. "
+             "④ 검토구간에서 다시 확정하면 같은 구간의 결과가 다시 보입니다.")
+EXPORT_KEPT = ("검토구간 확정을 해제해 분석 결과를 숨긴 상태라 내보낼 수 없습니다. "
+               "결과는 보관해 두었으니 ④에서 다시 확정한 뒤 내보내세요.")
+
+
+def failure_note(info, left):
+    """진행 글자 뒤에 붙는 실패 수. 이번 실행의 실패(info['failed'])와 결과 파일 전체에 남은 실패 칸(left)은
+    서로 다른 수라 섞지 않고 이름을 달리 붙인다. 칸 하나를 돌릴 때 'AI 0/1 호출 · 실패 12'처럼 보이지 않게."""
+    now = len((info or {}).get("failed") or [])
+    return (" · 이번 실패 호출 %d" % now if now else "") + (" · 결과에 남은 실패 칸 %d" % left if left else "")
+
+
 def is_limit_stop(run):
     """구독 한도로 멈춘 칸(실패와 구분, D6)."""
     return (run or {}).get("status") == "failed" and (run or {}).get("error_kind") == "limit_reached"
@@ -714,7 +729,7 @@ class ResultsScreen(QWidget):
         self.combo.setMinimumWidth(140)
         self.combo.currentIndexChanged.connect(self._load)
         bar.addWidget(self.combo)
-        self.kpi = plain_label("", name="muted", elide=Qt.ElideRight, min_chars=10)
+        self.kpi = plain_label("", name="muted", elide=Qt.ElideRight, min_chars=6)  # 줄어도 툴팁에 전체(1366에 맞게)
         bar.addWidget(self.kpi, 1)
         bar.addLayout(self._toolbar())
         lay.addLayout(bar)
@@ -795,7 +810,7 @@ class ResultsScreen(QWidget):
         empty = QWidget()
         el = QVBoxLayout(empty)
         el.addStretch(1)
-        title = QLabel("아직 볼 분석 결과가 없습니다")
+        self.empty_title = title = QLabel(EMPTY_TITLE)
         title.setObjectName("title")
         title.setAlignment(Qt.AlignCenter)
         el.addWidget(title)
@@ -816,7 +831,7 @@ class ResultsScreen(QWidget):
         self.progress = QProgressBar()
         self.progress.setObjectName("thin")
         self.progress.setTextVisible(False)
-        self.progress.setFixedSize(120, 4)
+        self.progress.setFixedSize(80, 4)  # 1366에서 탐색기·관련 항목과 함께 창 안에 들어가게(결함 8)
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
         self.progress_label = QLabel("")
@@ -1076,6 +1091,8 @@ class ResultsScreen(QWidget):
         self.progress.setValue(0)
         self.progress_label.setText("")
         self.banner.set_messages(None)
+        self.empty_title.setText(EMPTY_TITLE)
+        self.results_kept = False  # 확정 해제로 결과를 숨기고 보관 중인지(본문·내보내기 안내가 같은 말을 하게)
         self.ctx = project_ctx.load(name) if name else None
         saved = None
         if self.ctx is not None and self.ctx.pg is None:
@@ -1118,13 +1135,29 @@ class ResultsScreen(QWidget):
             if self.ctx is None:
                 self.empty.setText("이 도면의 그래프가 없습니다. ① 자료 등록에서 '추출·그래프 만들기'를 실행하세요."
                                    if name else "추출 결과가 없습니다. ①·②에서 도면을 등록·추출하세요.")
+            elif saved is not None and not confirmed and self._has_saved_results(saved):
+                self.results_kept = True
+                self.empty_title.setText(KEPT_TITLE)
+                self.empty.setText(KEPT_TEXT)
             elif saved is not None and not confirmed:
                 self.empty.setText("프로젝트 검토구간이 아직 확정되지 않았습니다. ④ 검토구간에서 구간을 확정하세요."
                                    + (" (옛 도면별 검토구간을 옮겨 '제안' 상태로 두었습니다.)" if self.ctx.notice else ""))
+            if (getattr(self.app, "selection", None) or {}).get("kind") == "cell":  # 행렬이 없으면 칸도 없다(관련 항목이 옛 칸을 말하지 않게)
+                self.app.set_selection(None)
             self.kpi.setText("구간 — · 편차 %d" % len(self.deviations))
             self.stack.setCurrentIndex(0)
         self._update_buttons()
         self.app.update_header()
+
+    @staticmethod
+    def _has_saved_results(node_set):
+        """확정 전 집합이라도 같은 프로젝트·그래프의 저장 파일에 실제 분석 결과(항목이 있거나 분석한 칸)가 있는지.
+        확정 해제 뒤 보관 중인 결과를 말할 때만 참이다. 빈 결과 파일만 있으면 거짓."""
+        try:
+            doc = res.read_fp(res.store_path(node_set.get("project_id"), node_set["graph_id"]))[0]
+        except (OSError, KeyError, TypeError, ValueError):
+            return False
+        return any(c.get("entries") or c.get("state") not in (None, "not_analyzed") for c in (doc or {}).get("cells") or [])
 
     def _migrate_results(self, node_set):
         """확정된 프로젝트 집합에 결과가 없고 옛 도면별 결과가 있으면 백업 뒤 옮겨 저장한다(migrate_results는 있는 프로젝트
@@ -1265,7 +1298,8 @@ class ResultsScreen(QWidget):
         """범위 대화상자 → 저장 대화상자 → .xlsx 저장 → 토스트 [열기]·[폴더 열기]. path·scope를 주면 대화상자 없이
         (검사용). 저장한 경로 또는 None."""
         if self.node_set is None or self.results is None:
-            self.app.status_message("내보낼 분석 결과가 없습니다. ④에서 검토구간을 확정하세요.")
+            self.app.status_message(EXPORT_KEPT if getattr(self, "results_kept", False)
+                                    else "내보낼 분석 결과가 없습니다. ④에서 검토구간을 확정하세요.")
             return None
         now = nodes.now_utc()
         if scope is None:
@@ -1550,8 +1584,15 @@ class ResultsScreen(QWidget):
         dlg = RunConfirmDialog(method, lead, rows, RESUME_API_NOTE if override else "", self)
         return dlg.ask()
 
+    def _new_run_info(self, method, override, units, scope):
+        """실행 하나의 집계. failed는 이번 실행에서 실패한 호출만 담는다(결과 파일에 남은 옛 실패와 섞지 않음)."""
+        return {"start": time.monotonic(), "base": ai_cells.usage_total(self.results), "unit": None,
+                "method": method, "override": override, "calls": len(units), "ok_calls": 0, "ok_cells": 0,
+                "limit": None, "failed": [], "scope": scope}
+
     def _start(self, method, units, ctxs, override):
         conn = self.app.ai_conn
+        scope = (self._pending or {}).get("scope")
         self._pending = None
         self._switch_view(method == "fixed")
         self.run_method = method
@@ -1562,15 +1603,14 @@ class ResultsScreen(QWidget):
         self.runner.unit_done.connect(self._on_unit_done)
         self.runner.progress.connect(self._on_progress)
         self.runner.finished.connect(lambda reason, r=self.runner: self._finish_run(r, reason))
-        self.run_info = {"start": time.monotonic(), "base": ai_cells.usage_total(self.results), "unit": None,
-                         "method": method, "override": override, "calls": len(units), "ok_calls": 0, "ok_cells": 0,
-                         "limit": None, "failed": []}
+        self.run_info = self._new_run_info(method, override, units, scope)
         self.run_band.hide()
         self._reset_timer.stop()
         if override:
             self.app.set_run_override(method)
         conn.cancel_handler = self.cancel_ai
-        conn.set_running(True, "AI 분석 실행 중 · 0/%d 호출" % len(units))
+        conn.set_running(True, ("실패 칸 다시 실행 중 · 다시 돌릴 칸 %d" if scope == "failed" else "AI 분석 실행 중 · 0/%d 호출")
+                         % len(units))
         self.progress.setRange(0, len(units))
         self.progress.setValue(0)
         self._progress_text()
@@ -1766,11 +1806,18 @@ class ResultsScreen(QWidget):
                                            % (conn_view.run_usage_line(method, None), self.store_path()))
             self.app.status_message("● 시험 실행 중 · 시험 %d/%d · %s · 고정 응답" % (done, total, now))
             return
-        text = ("시험 %d/%d" if self.fixed_view else "AI %d/%d 호출%s") % ((done, total) if self.fixed_view else (
-            done, total, " · 실패 %d" % failed if failed else ""))
-        if info is None:
-            self.progress_label.setText(text)
+        if info is None:  # 실행 밖: 지난 실행 호출 수와 결과 파일 전체의 실패 칸 수는 다른 수라 따로 이름 붙인다
+            self.progress_label.setText(("시험 %d/%d" if self.fixed_view else "AI %d/%d 호출%s") % (
+                (done, total) if self.fixed_view else (done, total, failure_note(None, failed))))
             return
+        if self.fixed_view:
+            text = "시험 %d/%d" % (done, total)
+        elif info.get("scope") == "failed":  # 다시 돌릴 대상 수와 이번 실행의 실패를 가른다
+            text = "다시 돌릴 칸 %d · %d/%d 호출" % (total, done, total)
+        else:
+            text = "AI %d/%d 호출" % (done, total)
+        if not self.fixed_view:
+            text += failure_note(info, None)
         elapsed = time.monotonic() - info["start"]
         left = "남은 시간 계산 중" if not done else "약 %s 남음" % clock(elapsed / done * (total - done))
         spent = self._spent(info)
@@ -1815,7 +1862,7 @@ class ResultsScreen(QWidget):
             verb = "멈춤(한도 도달)"
         word = "시험" if method == "fixed" else "AI 분석"
         self.app.status_message("%s %s: %d/%d 호출%s · %s 걸림%s · %s" % (
-            word, verb, done, total, " · 실패 칸 %d" % failed if failed else "",
+            word, verb, done, total, failure_note(info, failed),
             clock(time.monotonic() - info["start"]) if info else "-",
             " · " + conn_view.run_usage_line(method, spent) if spent and method != "fixed" else "",
             "저장 실패 — 화면에만 있음(다시 저장을 시도하려면 항목을 고치거나 화면을 다시 여세요)" if self._unsaved

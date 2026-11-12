@@ -11,7 +11,7 @@ import functools
 import html
 import os
 
-from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtCore import QElapsedTimer, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QMenu, QToolButton, QFrame,
                                QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit,
@@ -152,6 +152,20 @@ def _status(node):
     return ((node or {}).get("screen") or {}).get("status") or "keep"
 
 
+def _clock(seconds):
+    """10초 단위로 반올림해 '50초', '1분 30초', '2분'처럼."""
+    m, s = divmod(int(round(seconds / 10.0)) * 10, 60)
+    return "%d분 %d초" % (m, s) if m and s else "%d분" % m if m else "%d초" % s
+
+
+def _minutes_range(e, spoken=False):
+    """node_review.estimate 값을 '약 3~5분'처럼. 두 끝이 같으면 '약 3분'. spoken은 화면 낭독용('약 3분에서 5분')."""
+    low, high = e["minutes"], e["minutes_slow"]
+    if low >= high:
+        return "약 %d분" % high
+    return ("약 %d분에서 %d분" if spoken else "약 %d~%d분") % (low, high)
+
+
 class StudyNodesScreen(QWidget):
     title = "④ 검토구간"
 
@@ -177,6 +191,7 @@ class StudyNodesScreen(QWidget):
         self.review_fp = None   # review_doc을 읽은 파일의 지문(없던 파일이면 None)
         self.review_runner = None
         self._review_adj = None
+        self._refresh_failed = None  # 저장은 됐는데 저장 뒤 화면 갱신이 실패했을 때 보일 안내
         self._kn = None         # (그래프, 지식 색인): nr.knowledge_index 결과. 지식 항목을 본 제안이 있을 때만 읽는다
         self._adj_of = None     # _review_adj를 센 집합(같은 객체면 다시 세지 않음)
         self._review_checking = False  # 연결 확인 중(두 번 눌러 실행이 둘 생기지 않게)
@@ -257,6 +272,25 @@ class StudyNodesScreen(QWidget):
         self.gate.setObjectName("muted")
         self.gate.setWordWrap(True)
         v.addWidget(self.gate)
+        # AI 구간 검토가 도는 동안 호출 수와 지난 시간을 보인다(실제 호출은 한 번에 1분 가까이 걸린다)
+        self.review_row = QFrame()
+        rr = QHBoxLayout(self.review_row)
+        rr.setContentsMargins(0, 0, 0, 0)
+        rr.setSpacing(4)
+        self.review_info = QLabel()
+        self.review_info.setWordWrap(True)
+        self.review_info.setAccessibleName("AI 구간 검토 진행")
+        rr.addWidget(self.review_info, 1)
+        self.review_stop_btn = QPushButton("멈추기")
+        self.review_stop_btn.setToolTip("남은 호출을 부르지 않습니다. 진행 중인 호출은 끝까지 받습니다")
+        self.review_stop_btn.clicked.connect(lambda: self.cancel_review())
+        rr.addWidget(self.review_stop_btn)
+        self.review_row.hide()
+        v.addWidget(self.review_row)
+        self._review_clock = QTimer(self)
+        self._review_clock.setInterval(1000)
+        self._review_clock.timeout.connect(self._show_review_progress)
+        self._review_elapsed = QElapsedTimer()
         self.scope = QComboBox()
         self.scope.addItems(SCOPES)
         self.scope.setAccessibleName("구간 목록 범위")
@@ -313,11 +347,17 @@ class StudyNodesScreen(QWidget):
         self.screen_btn.setToolTip("스크리닝 제외 구간 보기, 꺼내기·떼기·제외로 옮기기, AI 구간 검토")
         self.screen_btn.setPopupMode(QToolButton.InstantPopup)
         self.screen_btn.setMenu(self.screen_menu)
-        for b in (self.merge_btn, self.split_btn, self.rename_btn, self.screen_btn):
+        for b in (self.merge_btn, self.split_btn):
             row.addWidget(b)
         row.addStretch(1)
-        row.addWidget(self.to_results_btn)
         v.addLayout(row)
+        row2 = QHBoxLayout()  # 좁은 패널(1366에서 273px)에서 글자가 잘리지 않게 두 줄로 둔다
+        row2.setSpacing(row.spacing())
+        row2.addWidget(self.rename_btn)
+        row2.addWidget(self.screen_btn)
+        row2.addStretch(1)
+        row2.addWidget(self.to_results_btn)
+        v.addLayout(row2)
         v.addWidget(self._node_card())
 
         self.tabs = QTabWidget()
@@ -794,7 +834,9 @@ class StudyNodesScreen(QWidget):
         self.merge_btn.setEnabled(editable and len(checked) >= 2)
         self.rename_btn.setEnabled(editable and cur is not None)
         self.split_btn.setEnabled(editable and cur is not None and 0 < len(picked) < len(cur["members"]))
-        self.remove_btn.setEnabled(editable and bool(picked))
+        hollow = cur is not None and not cur["members"]  # 구성요소 없는 구간(옛 저장본): 같은 단추로 구간을 지운다
+        self.remove_btn.setText("빈 구간 지우기" if hollow else "구간에서 빼기")
+        self.remove_btn.setEnabled(editable and (bool(picked) or hollow))
         self.add_btn.setEnabled(editable and cur is not None and bool(self.uncovered_list.selectedItems()))
         self.confirm_btn.setEnabled(editable and not cov["uncovered"] and not empties and not stale and bool(ns["nodes"]))
         self.reopen_btn.setEnabled(bool(ns) and ns["status"] == "confirmed")
@@ -981,9 +1023,12 @@ class StudyNodesScreen(QWidget):
             self.node_set = old
             self._render(keep)
             return False
-        self.msg.setText("")
+        failed, self._refresh_failed = self._refresh_failed, None
+        self.msg.setText(failed or "")
         self._render(keep)
-        if done:
+        if failed:  # 저장은 됐지만 다른 화면 갱신이 실패했다. 성공 토스트 대신 상태줄에도 알린다
+            self.app.status_message(failed)
+        elif done:
             self.app.toast(done, undo=self._undo_to(old, keep))
         return True
 
@@ -1049,7 +1094,11 @@ class StudyNodesScreen(QWidget):
             return False
         self.unreadable = False
         self.saved = True
-        self.app.mark_saved(self.node_set["history"][-1]["at"])
+        try:
+            self.app.mark_saved(self.node_set["history"][-1]["at"])
+        except Exception as exc:  # 파일은 이미 썼다. 다른 화면 갱신이 실패했다고 저장 실패로 보이면 안 된다
+            self.app.log_error("검토구간 저장 뒤 화면 갱신 실패", exc)
+            self._refresh_failed = "검토구간은 저장했지만 다른 화면을 갱신하다 오류가 났습니다(%s). 도면을 다시 열어 보세요." % type(exc).__name__
         return True
 
     def merge_checked(self):
@@ -1068,13 +1117,20 @@ class StudyNodesScreen(QWidget):
         return ok
 
     def remove_selected(self):
+        """고른 구성요소를 지금 구간에서 뺀다(미포함으로 남는다). 다 빼면 구간도 없앤다. 구성요소 없는 구간에서는 구간을 지운다."""
         cur, picked = self.current_node_id(), self.selected_members()
+        node = self.current_node()
+        if node is not None and not node["members"]:
+            return self._apply(lambda s: nodes.remove_empty(s, cur), done="구성요소 없는 %s 구간을 지웠습니다" % cur)
 
         def fn(s):
             for eid in picked:
                 s = nodes.remove_member(s, cur, eid)
             return s
-        return self._apply(fn, keep=cur, done="%s에서 구성요소 %d개를 뺐습니다" % (cur, len(picked)))
+        gone = node is not None and set(node["members"]) <= set(picked)
+        done = ("%s 구간의 구성요소 %d개를 모두 빼 구간을 없앴습니다. 뺀 구성요소는 미포함 목록에 있습니다" if gone
+                else "%s에서 구성요소 %d개를 뺐습니다") % (cur, len(picked))
+        return self._apply(fn, keep=cur, done=done)
 
     def add_uncovered(self):
         cur = self.current_node_id()
@@ -1580,10 +1636,13 @@ class StudyNodesScreen(QWidget):
         return box.clickedButton() is go
 
     def review_estimate_rows(self, method, batches):
-        """실행 확인 창의 (lead, rows). 시간·사용량은 U5 실측(⑤ 칸 분석)으로 본 추정이다."""
+        """실행 확인 창의 (lead, rows). 시간은 구간 검토 실측(nr.CALL_SECONDS_*)으로, 사용량은 계통 실행 두 번의
+        실측 범위(nr.USAGE_PER_CALL)로 셈한다."""
         from hazop.app import conn_view
         conn = self.app.ai_conn
-        e = nr.estimate(len(batches), 1 if method == "fixed" else conn.prefs.concurrency)
+        workers = 1 if method == "fixed" else conn.prefs.concurrency
+        e = nr.estimate(len(batches), workers)
+        how = "하나씩 받습니다" if workers < 2 else "동시 %d개씩 부릅니다" % workers
         kept = sum(len(b["node_ids"]) for b in batches if b["kind"] == "nodes")
         dropped = sum(1 for b in batches if b["kind"] == "excluded")
         link = {"subscription": "Claude 구독 · %s" % conn_view.model_name(conn.model(method)),
@@ -1591,8 +1650,9 @@ class StudyNodesScreen(QWidget):
                 "fixed": "고정 응답(시험)"}.get(method, method)
         rows = [("호출", "%d회 (남긴 구간 %d개 ÷ %d개씩 + 제외 구간 %d개)" % (e["calls"], kept, nr.BATCH_SIZE, dropped),
                  "호출 %d회" % e["calls"]),
-                ("예상 시간", "약 %d분, 느린 호출이 많으면 약 %d분 (동시 %d)" % (e["minutes"], e["minutes_slow"], e["concurrency"]),
-                 "예상 시간 약 %d분" % e["minutes"])]
+                ("예상 시간", "%s (호출 하나에 %s~%s쯤 걸리고, %s)" % (
+                    _minutes_range(e), _clock(nr.CALL_SECONDS_MEDIAN), _clock(nr.CALL_SECONDS_SLOW), how),
+                 "예상 시간 %s" % _minutes_range(e, spoken=True))]
         if method == "subscription":
             low, high = e["usage_pp"]
             rows.append(("구독 사용량", "7일 사용률 약 +%.2f~%.2f%%p (호출당 %.3f~%.3f%%p, 실측 두 번의 범위)"
@@ -1632,8 +1692,32 @@ class StudyNodesScreen(QWidget):
         runner.finished.connect(lambda reason, r=runner: self._review_finished(r, reason))
         conn.cancel_handler = self.cancel_review
         conn.set_running(True, "AI 구간 검토 중 · 0/%d 호출" % len(batches))
+        self._review_eta = nr.estimate(len(batches), workers)
+        self._review_stopping = False
+        self._review_elapsed.start()
+        self._review_clock.start()
+        self._show_review_progress()
         self._update_buttons()
         runner.start()
+
+    def _show_review_progress(self):
+        """④ 패널의 진행 줄: 'AI 구간 검토 중 · 호출 3회 중 1회 끝 · 1분 12초 지남 (예상 약 3~5분)'."""
+        t = getattr(self, "review_tally", None)
+        if self.review_runner is None or not t:
+            self._review_clock.stop()
+            self.review_row.hide()
+            return
+        sec = self._review_elapsed.elapsed() // 1000
+        spent = "%d분 %d초" % divmod(sec, 60) if sec >= 60 else "%d초" % sec
+        text = "AI 구간 검토 중 · 호출 %d회 중 %d회 끝 · %s 지남 (예상 %s)" % (
+            t["calls"], t["done"], spent, _minutes_range(self._review_eta))
+        if t["failed"]:
+            text += " · 실패 %d회" % t["failed"]
+        if self._review_stopping:
+            text += " · 진행 중인 호출을 마치면 멈춥니다"
+        self.review_info.setText(text)
+        self.review_stop_btn.setEnabled(not self._review_stopping)
+        self.review_row.show()
 
     def _review_unit_done(self, result):
         t = self.review_tally
@@ -1666,6 +1750,7 @@ class StudyNodesScreen(QWidget):
             t["proposals"] += len(result["proposals"])
             t["dropped"] += len(result["dropped"])
         self.app.ai_conn.set_running(True, "AI 구간 검토 중 · %d/%d 호출" % (t["done"], t["calls"]))
+        self._show_review_progress()
         if self.node_set is not None:
             self._render(self.current_node_id())
 
@@ -1673,6 +1758,7 @@ class StudyNodesScreen(QWidget):
         if runner is not self.review_runner:
             return
         self.review_runner = None
+        self._show_review_progress()  # 진행 줄을 닫는다
         conn = self.app.ai_conn
         conn.set_running(False)
         conn.cancel_handler = None
@@ -1698,6 +1784,8 @@ class StudyNodesScreen(QWidget):
         """남은 호출을 부르지 않는다. 진행 중인 호출은 끝까지 받는다(⑤와 같은 규칙)."""
         if self.review_runner is not None:
             self.review_runner.cancel()
+            self._review_stopping = True
+            self._show_review_progress()
             self.app.status_message("AI 구간 검토 취소 요청: 진행 중인 호출을 마친 뒤 멈춥니다.")
 
     def open_in_results(self):

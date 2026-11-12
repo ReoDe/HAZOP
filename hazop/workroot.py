@@ -31,7 +31,7 @@ import os
 import shutil
 from typing import NamedTuple
 
-from hazop import paths
+from hazop import paths, store_io
 
 TO_VERSION = "0.2.0"
 KEEP_DIR = "_before-" + TO_VERSION
@@ -81,13 +81,8 @@ def read_manifest(root):
 
 
 def _write_manifest(root, doc):
-    path = manifest_path(root)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(doc, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
-    os.replace(tmp, path)
+    # 지문 충돌 확인은 하지 않는다. 이전 기록은 옮기는 한 프로세스가 작업 루트 잠금을 쥐고 단계마다 고쳐 쓴다
+    store_io.write_json(manifest_path(root), doc, sort_keys=False)
 
 
 def _now():
@@ -257,11 +252,23 @@ def apply(root, progress=None, from_root=None):
     progress(끝낸 바이트, 전체 바이트)는 파일 하나를 복사할 때마다 불린다."""
     root = os.path.abspath(root)
     if from_root:
+        renamed_now = os.path.isdir(os.path.abspath(from_root))
         move_root(from_root, root)
         doc = read_manifest(root) or {"to_version": TO_VERSION, "started_at": _now(), "state": "renamed", "tops": [], "files": {}}
         if doc.get("root_renamed_from") != os.path.abspath(from_root) and doc.get("state") != "undoing":
             doc["root_renamed_from"] = os.path.abspath(from_root)
-            _write_manifest(root, doc)  # 뒤에서 멈춰도 되돌리기가 원래 자리를 안다
+            try:
+                _write_manifest(root, doc)  # 뒤에서 멈춰도 되돌리기가 원래 자리를 안다
+            except OSError:
+                # 원래 자리를 적지 못했다. 이름만 바뀐 채 남으면 되돌리기가 원래 자리를 모르므로 방금 바꾼 이름을 되돌린다
+                if renamed_now and not os.path.exists(os.path.abspath(from_root)):
+                    store_io.remove_temps(manifest_path(root))
+                    try:
+                        os.rmdir(os.path.dirname(manifest_path(root)))
+                    except OSError:
+                        pass
+                    os.rename(root, os.path.abspath(from_root))
+                raise
     plan = make_plan(root)
     if plan.state in ("conflict", "undoing"):
         raise MigrationError(" ".join(plan.conflicts))
@@ -402,9 +409,11 @@ def undo(root, before_rename=None):
             raise MigrationError("작업 루트 폴더의 이름을 되돌리지 못했습니다. 되돌리기를 다시 돌리면 이어서 합니다: %s → %s (%s)"
                                  % (root, back, e))
         root = back
-    for path in (manifest_path(root) + ".tmp", manifest_path(root)):  # 기록은 맨 끝에 지운다. 그 앞에서 끊기면 다시 돌려 끝낸다
-        if os.path.exists(path):
-            os.remove(path)
+    # 기록은 맨 끝에 지운다. 그 앞에서 끊기면 다시 돌려 끝낸다. 기록을 쓰다 끊겨 남은 임시 파일도 함께 지운다
+    # (남아 있으면 보관 폴더가 비지 않아 지워지지 않는다). 작업 루트 잠금을 쥔 프로세스 하나만 쓰므로 나이를 보지 않는다
+    store_io.remove_temps(manifest_path(root))
+    if os.path.exists(manifest_path(root)):
+        os.remove(manifest_path(root))
     if not os.listdir(os.path.join(root, KEEP_DIR)):
         os.rmdir(os.path.join(root, KEEP_DIR))
     return {"restored": restored, "left": left, "root": root}

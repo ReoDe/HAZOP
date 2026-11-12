@@ -22,8 +22,8 @@ sys.path.insert(0, REPO_ROOT)
 
 from hazop import paths  # noqa: E402
 from hazop.console import safe_console  # noqa: E402
-from hazop.extract import report  # noqa: E402
-from hazop.extract.adapters import raster  # noqa: E402
+from hazop.extract import report, runinfo  # noqa: E402
+from hazop.extract.adapters import pdf_vector, raster  # noqa: E402
 
 SAMPLE_GLOB = paths.folder("references", "pid-samples", "*", "*.png")
 DEFAULT_OUT = paths.output_root("adapter", "raster")
@@ -34,8 +34,11 @@ def sample_images():
     return [p for p in sorted(glob.glob(SAMPLE_GLOB)) if not p.lower().endswith(".drawio.png")]
 
 
-def run_one(path, out_root, use_ocr=True):
+def run_one(path, out_root, use_ocr=True, warnings=None):
+    """warnings(list): 실행 정보를 쓰지 못했을 때의 경고 문구를 여기에 더한다(runinfo.record)."""
     result = raster.extract(path, repo_root=paths.work_root(), use_ocr=use_ocr)
+    # 래스터 추출도 pdf_vector.build_extraction으로 기호를 정하므로 같은 사전을 읽는다. 읽지 못하면 결과를 쓰기 전에 멈춘다
+    symbol_versions = pdf_vector.symbol_library().versions
     name = paths.safe_name(result["drawing"]["drawing_number"] or os.path.splitext(os.path.basename(path))[0])
     out_dir = paths.safe_join(out_root, name)
     os.makedirs(out_dir, exist_ok=True)
@@ -44,6 +47,7 @@ def run_one(path, out_root, use_ocr=True):
         fh.write("\n")
     with open(os.path.join(out_dir, "validation_report.md"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(report.render(result))
+    runinfo.record(out_dir, "raster", result, symbol_versions, warnings)
     return result, out_dir
 
 
@@ -68,7 +72,8 @@ def main(argv=None):
     blocked = bad_input = 0
     for path in jobs:
         try:
-            result, out_dir = run_one(path, args.out_root, use_ocr=not args.no_ocr)
+            warnings = []
+            result, out_dir = run_one(path, args.out_root, use_ocr=not args.no_ocr, warnings=warnings)
         except (OSError, raster.RasterInputError) as exc:  # 빈·손상·너무 큰 입력: 추출 결과가 아니라 형식 오류
             print("입력 형식 오류: %s: %s" % (os.path.basename(path), exc))
             bad_input += 1
@@ -78,6 +83,8 @@ def main(argv=None):
               % (result["drawing"]["drawing_number"] or os.path.basename(out_dir), result["validation"]["status"],
                  s["nodes"], s["relations"], s["unresolved_connectors"], s["texts"], s["unknowns"], s["blockers"],
                  paths.plain_rel(out_dir, paths.work_root())))
+        for text in warnings:
+            print(text)
         blocked += result["validation"]["status"] == "blocked"
     return 2 if bad_input else (1 if blocked else 0)
 

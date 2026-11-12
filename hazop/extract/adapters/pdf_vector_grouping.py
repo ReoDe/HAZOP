@@ -60,10 +60,18 @@ class _Sym:
     def deep(self, p, prm):
         if self.stroke_only or self.arrow_only():
             return False  # 화살표 안으로 들어간 배관은 연결이지 화살표의 일부가 아니다
-        return _depth(p, self.core) > max(prm["deep_min"], prm["deep_ratio"] * min(_w(self.core), _h(self.core)))
+        if _depth(p, self.core) <= max(prm["deep_min"], prm["deep_ratio"] * min(_w(self.core), _h(self.core))):
+            return False
+        return self.seed is None  # 검정 견본으로 올린 몸통은 이미 한 기호다. 안으로 들어온 선을 제 일부로 삼지 않는다
 
     def evidence(self):
         return sorted(m["id"] for m in self.bodies + self.strokes + self.markers + self.dashes)
+
+    @property
+    def seed(self):
+        """몸체가 모두 사전의 같은 검정 견본 묶음(pdf_vector._promote_black_symbols)이면 그 번호, 아니면 None."""
+        ids = {b.get("seed") for b in self.bodies}
+        return next(iter(ids)) if len(ids) == 1 else None
 
 
 def _cluster_bodies(bodies, prm):
@@ -71,9 +79,102 @@ def _cluster_bodies(bodies, prm):
         b["kind_"] = "body"
     # 연결 표시 화살표는 맞닿은 밸브·축소관 몸체와 한 기호로 묶지 않는다(묶이면 화살표도 밸브도 종류를 잃는다)
     alone = [_is_chevron(b) for b in bodies]
+    # 사전의 검정 견본에 통째로 맞은 몸체(seed)는 이미 한 기호다. 맞닿은 축소관·구동부 몸체와 묶지 않는다
     groups = _uf_groups(len(bodies), lambda i, j: not (alone[i] or alone[j]) and
+                        bodies[i].get("seed") == bodies[j].get("seed") and
                         _box_gap(bodies[i]["bbox"], bodies[j]["bbox"]) <= prm["touch_tol"])
     return [_Sym([bodies[i] for i in g]) for g in groups]
+
+
+def _black_fill_groups(fills, prm):
+    """검은 채움 도형(표식과 검은 몸체)을 맞닿은 것끼리 묶는다 → [{"straight", "round", "bbox"}], 묶음의 첫 채움 id 순.
+    APR1400은 정상 운전 중 닫힌 밸브를 검게 칠한다(범례 1.7-1 1/4). 몸통은 채운 나비 하나이거나 채운 삼각형 둘이고,
+    글로브는 가운데에 둥근 점이 겹친다. 곧은 변으로 된 채움(straight)이 몸통, 둥근 채움(round)이 그 위의 점이다."""
+    groups = _uf_groups(len(fills), lambda i, j: _box_gap(fills[i]["bbox"], fills[j]["bbox"]) <= prm["touch_tol"])
+    out = []
+    for g in groups:
+        items = sorted((fills[i] for i in g), key=lambda m: m["id"])
+        box = items[0]["bbox"]
+        for m in items[1:]:
+            box = _union(box, m["bbox"])
+        out.append({"straight": [m for m in items if not m["curved"]], "round": [m for m in items if m["curved"]],
+                    "bbox": box, "first": items[0]["id"]})
+    out.sort(key=lambda g: g["first"])
+    return out
+
+
+def _cut_through(pts, box):
+    """꺾은선 pts가 상자의 긴 축 방향으로 상자를 끊기지 않고 지나가면 들어가는 변과 나가는 변에서 나눈 두 조각.
+    지나가지 않으면 None. 옆으로 가로지르는 선이나 상자 안에서 끝나는 선은 나누지 않는다."""
+    axis = 0 if _w(box) >= _h(box) else 1
+    lo, hi, side_lo, side_hi = box[axis], box[axis + 2], box[1 - axis], box[3 - axis]
+    for k, (a, b) in enumerate(_segs(pts)):
+        if not (min(a[axis], b[axis]) < lo and max(a[axis], b[axis]) > hi):
+            continue
+
+        def at(v):
+            t = (v - a[axis]) / (b[axis] - a[axis])
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        first, second = (at(lo), at(hi)) if a[axis] < b[axis] else (at(hi), at(lo))
+        if all(side_lo <= q[1 - axis] <= side_hi for q in (first, second)):
+            return pts[:k + 1] + [first], [second] + pts[k + 1:]
+    return None
+
+
+def _cut_at_boxes(polys, boxes):
+    """검게 칠한 밸브 몸통(boxes) 밑을 끊지 않고 그린 배관을 몸통 양 끝에서 나눈다. 채움이 선을 덮어 그림으로는 끊긴 것과
+    같지만, 선이 하나면 양쪽 배관이 밸브를 건너 이어지고 밸브 노드에는 배관이 닿지 않는다. 폭과 높이가 거의 같은 몸통은
+    배관 방향을 알 수 없어 나누지 않는다."""
+    boxes = [b for b in boxes if abs(_w(b) - _h(b)) > 0.3]
+    if not boxes:
+        return polys
+    out = []
+    for p in polys:
+        pieces = [p["pts"]]
+        for box in boxes:
+            if _box_gap(p["bbox"], box) > 0:
+                continue
+            cut = []
+            for pts in pieces:
+                halves = _cut_through(pts, box)
+                cut += list(halves) if halves else [pts]
+            pieces = cut
+        if len(pieces) == 1:
+            out.append(p)
+        else:
+            out += [dict(p, pts=pts, bbox=(min(q[0] for q in pts), min(q[1] for q in pts), max(q[0] for q in pts),
+                                           max(q[1] for q in pts))) for pts in pieces]
+    return out
+
+
+def _contact_chains(syms, prm):
+    """검정 견본으로 올린 몸통(seed)의 배관 방향 끝에 다른 기호가 맞닿아 있으면 두 기호를 잇는 길이 0인 사슬을 만든다.
+    밸브에 축소관을 붙여 그리면 둘 사이에 선이 없다. 올린 몸통은 맞닿은 몸체와 한 기호로 묶지 않으므로, 이 사슬이 없으면
+    배관이 그 자리에서 끊긴다. 몸통 옆에 붙은 기호(구동부 등)와 몸통을 품은 큰 기호는 잇지 않는다. 폭과 높이가 거의
+    같은 몸통은 배관 방향을 알 수 없어 잇지 않는다."""
+    out = []
+    for i, v in enumerate(syms):
+        if v.seed is None or abs(_w(v.core) - _h(v.core)) <= 0.3:
+            continue
+        axis = 0 if _w(v.core) >= _h(v.core) else 1
+        lo, hi = v.core[axis], v.core[axis + 2]
+        for j, t in enumerate(syms):
+            if t is v or (t.seed is not None and j < i) or _box_gap(v.core, t.bbox) > prm["touch_tol"]:
+                continue
+            if t.bbox[axis] >= hi - prm["touch_tol"]:
+                at = hi
+            elif t.bbox[axis + 2] <= lo + prm["touch_tol"]:
+                at = lo
+            else:
+                continue
+            a, b = max(v.core[1 - axis], t.bbox[1 - axis]), min(v.core[3 - axis], t.bbox[3 - axis])
+            if b < a:
+                continue
+            pt = (at, (a + b) / 2) if axis == 0 else ((a + b) / 2, at)
+            out.append({"pts": [pt, pt], "ends": [(("sym", v), pt, "pdf_touching_bodies"),
+                                                  (("sym", t), pt, "pdf_touching_bodies")],
+                        "evidence": sorted({v.evidence()[0], t.evidence()[0]}), "contact": True})
+    return out
 
 
 def _nearest_sym(p, syms, tol):
@@ -329,6 +430,10 @@ def _group_symbols(cls, prm):
             if host is None:
                 rest.append(p)
                 continue
+            reached = [_nearest_sym(e, [s for s in syms if s is not host], prm["attach_tol"]) for e in ends]
+            if any(s is not None and s.seed is not None for s in reached):
+                rest.append(p)  # 검정 견본으로 올린 몸통(seed)에 닿은 선은 연결선이다. 그 몸통을 다른 기호에 합치지 않는다
+                continue
             host.add([p], "strokes")
             for e in ends:
                 other = _nearest_sym(e, [s for s in syms if s is not host], prm["attach_tol"])
@@ -380,9 +485,12 @@ def _group_symbols(cls, prm):
         for bucket, name in ((markers, "markers"), (dashes, "dashes")):
             rest = []
             for m in bucket:
-                host = next((s for s in syms if s.alive and
-                             _inside((m["bbox"][0], m["bbox"][1]), s.bbox, prm["touch_tol"]) and
-                             _inside((m["bbox"][2], m["bbox"][3]), s.bbox, prm["touch_tol"])), None)
+                inside = [s for s in syms if s.alive and
+                          _inside((m["bbox"][0], m["bbox"][1]), s.bbox, prm["touch_tol"]) and
+                          _inside((m["bbox"][2], m["bbox"][3]), s.bbox, prm["touch_tol"])]
+                # 검정 견본으로 올린 몸통 위의 점(seed)은 그 몸통의 기호로 간다. 그 밖에는 상자에 드는 첫 기호
+                own = [s for s in inside if "seed" in m and any(b.get("seed") == m["seed"] for b in s.bodies)]
+                host = (own or inside or [None])[0]
                 if host is not None:
                     host.add([m], name)
                     changed = True
@@ -410,11 +518,11 @@ def _merge_appendages(syms, chains, prm):
     """연결이 하나도 없는 기호가 더 큰 기호 바로 옆(큰 기호 긴 변 × 비율 안)에 있으면 그 기호의 부속(히터 등)으로 합친다."""
     linked = {id(v[1]) for ch in chains for v, _, _ in ch["ends"] if v[0] == "sym"}
     for s in sorted(syms, key=lambda s: _w(s.bbox) * _h(s.bbox)):
-        if id(s) in linked or not s.alive:
-            continue
+        if id(s) in linked or not s.alive or s.seed is not None:
+            continue  # 검정 견본으로 올린 몸통(seed)은 배관이 닿지 않아도 제 기호다. 옆 기호의 부속으로 합치지 않는다
         best = None
         for t in syms:
-            if t is s or not t.alive or _w(t.bbox) * _h(t.bbox) <= _w(s.bbox) * _h(s.bbox):
+            if t is s or not t.alive or t.seed is not None or _w(t.bbox) * _h(t.bbox) <= _w(s.bbox) * _h(s.bbox):
                 continue
             gap = _box_gap(s.bbox, t.bbox)
             if gap <= prm["appendage_gap_ratio"] * max(_w(t.bbox), _h(t.bbox)) and (best is None or gap < best[0]):

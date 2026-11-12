@@ -1,9 +1,30 @@
+# 실행 조건 (2026-11-11 F1-1·F1-2 세션이 덧붙임. 출처를 나눠 적는다)
+#
+# [F1-0 세션의 보고(unit-F1-0-report.md §1·§4)와 시험 폴더의 파일 시각에서 확인한 것]
+# - 인터프리터: C:\Users\kim92\.hazop\venv-py312\Scripts\python.exe, PYTHONIOENCODING=utf-8, 저장소 루트(D:\HAZOP, 주 체크아웃)에서 실행
+# - '전'(before): 커밋 072d5c0, 작업트리 깨끗함
+# - '후'(after): 커밋하기 전 작업 폴더(HEAD 072d5c0 + 나눈 다섯 파일). 그 내용이 그대로 ddb4c46으로 커밋됐다
+#   (after 폴더의 파일 시각 2026-11-11 06:16~06:20, ddb4c46 커밋 시각 06:35)
+# - 커밋한 뒤 ddb4c46에서 다시 돌린 것은 `f1-0-split.py check`와 SNP 대조뿐이다. APR1400 143쪽은 커밋 전 작업 폴더에서만 돌렸다
+# - check_apr1400.py: 143쪽 전체, 기본 --jobs, --update 없음, 입력 resources/references/APR1400_DCD/by-drawing
+# - 아래 출력의 경로는 F1-0 세션이 `<시험 폴더>`로 적어 둔 자리를 실제 폴더로 바꿔 적은 것이다
+#
+# [총괄이 ddb4c46(주 체크아웃, 같은 인터프리터, --update 없음)에서 따로 잰 값. F1-1·F1-2 작업지시서에 적힌 것]
+# - check_apr1400.py 143쪽: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0
+#   · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63723, rc=0
+# - check_snp_baseline.py: 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6
+# - SNP 12건 해시가 f1-0-before-snp-hashes.json과 같음(JSON 24개 바이트 같음)
+# - 그 실행 때 작업트리 상태는 작업지시서에 적혀 있지 않다
+#
+# [아래 `f1-0-split.py check` 출력은 ddb4c46 때의 것이다]
+# 검사를 넓힌 뒤(import로 들어와 pdf_vector.이름으로 보이던 것까지 봄)의 출력은 README의 'F1-0 뒤에 고친 것'에 있다
+
 $ python docs/2026-11-11-unit-f1/evidence/f1-0-split.py check
 최상위 문장 99개 중 글자 그대로 옮겨진 것 99개
 pdf_vector에서 보이는 예전 이름 99/99, 옮긴 이름 40개 중 같은 객체 40개
 결과: 통과
 
-$ python docs/2026-11-11-unit-f1/evidence/f1-0-extract-compare.py compare <시험 폴더>/before <시험 폴더>/after --csv <시험 폴더>/before/apr1400_pages.csv <시험 폴더>/after/apr1400_pages.csv
+$ python docs/2026-11-11-unit-f1/evidence/f1-0-extract-compare.py compare D:/HAZOP-trials/2026-11-11-unit-f1/before D:/HAZOP-trials/2026-11-11-unit-f1/after --csv D:/HAZOP-trials/2026-11-11-unit-f1/before/apr1400_pages.csv D:/HAZOP-trials/2026-11-11-unit-f1/after/apr1400_pages.csv
 snp-hashes.json: 12건 중 다른 것 0
 apr1400-hashes.json: 143건 중 다른 것 0
 SNP JSON 파일: 24개 중 바이트 같음 24
@@ -14,6 +35,6 @@ SNP JSON 파일: 24개 중 바이트 같음 24
 $ python scripts/check_snp_baseline.py   (마지막 줄)
 SNP: 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6
 
-$ python scripts/check_apr1400.py --out <시험 폴더>/after/apr1400_pages.csv   (첫 줄, 종료 코드)
+$ python scripts/check_apr1400.py --out D:/HAZOP-trials/2026-11-11-unit-f1/after/apr1400_pages.csv   (첫 줄, 종료 코드)
 APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 286/295 · 없는 대상 0 · 짝 279(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 63723
 rc=0

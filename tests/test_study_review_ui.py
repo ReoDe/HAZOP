@@ -279,6 +279,58 @@ class StudyReviewUiTest(unittest.TestCase):
         self.assertIn("%d회" % len(batches), text)
         self.assertIn("7일 사용률", text)
         self.assertIn("초안", lead)
+        e = nr.estimate(len(batches))
+        self.assertIn("약 %d~%d분" % (e["minutes"], e["minutes_slow"]), text, "예상 시간은 범위로 말한다")
+
+    def watch_review(self, scr, on_start=None):
+        """review_ai를 부르고 끝날 때까지 돌리며, 도는 동안 보인 진행 줄 글자를 모은다. on_start는 시작 직후 한 번."""
+        self.assertTrue(scr.review_row.isHidden(), "실행 전에는 진행 줄이 없다")
+        seen, show = [], scr._show_review_progress
+
+        def record():  # 진행 줄을 고칠 때마다(호출이 끝날 때, 멈추기, 1초마다) 보인 글자를 남긴다
+            show()
+            if not scr.review_row.isHidden():
+                seen.append(scr.review_info.text())
+        scr._show_review_progress = record
+        self.addCleanup(lambda: scr.__dict__.pop("_show_review_progress", None))
+        self.assertTrue(scr.review_ai("all", ask=False))
+        deadline, started = time.monotonic() + 20, False
+        while time.monotonic() < deadline:
+            self.qapp.processEvents()
+            if scr.review_runner is not None:
+                if not started and on_start:
+                    on_start()
+                started = True
+            elif started:
+                break
+            time.sleep(0.02)
+        self.assertTrue(started and scr.review_runner is None, "AI 구간 검토가 끝나지 않음")
+        self.assertTrue(seen, "도는 동안 진행 줄이 보이지 않음")
+        self.assertTrue(scr.review_row.isHidden(), "끝나면 진행 줄을 닫는다")
+        return seen
+
+    def test_panel_shows_calls_and_elapsed_time_while_the_review_runs(self):
+        """결함 15: 실제 호출은 한 번에 1분 가까이 걸린다. 도는 동안 ④ 패널에 호출 수와 지난 시간을 보인다."""
+        win, scr = self.open_study()
+        self.fixed_answers(win, scr, lambda n, b: self.review(n))
+        seen = self.watch_review(scr)
+        calls = scr.review_tally["calls"]
+        self.assertRegex(seen[0], r"^AI 구간 검토 중 · 호출 %d회 중 \d+회 끝 · \d+초 지남 \(예상 약 \d+" % calls)
+
+    def test_progress_line_says_stopping_and_closes_after_stop(self):
+        win, scr = self.open_study()
+        self.fixed_answers(win, scr, lambda n, b: self.review(n))
+        seen = self.watch_review(scr, on_start=scr.review_stop_btn.click)
+        self.assertTrue(any("진행 중인 호출을 마치면 멈춥니다" in t for t in seen), seen)
+        self.assertFalse(scr.review_stop_btn.isEnabled(), "멈추기를 누른 뒤에는 다시 누를 수 없다")
+
+    def test_progress_line_counts_failures_and_closes_after_a_failed_call(self):
+        win, scr = self.open_study()
+        folder = self.fixed_answers(win, scr, lambda n, b: self.review(n))
+        os.remove(os.path.join(folder, sorted(os.listdir(folder))[0]))  # 호출 하나는 응답 파일이 없어 실패한다
+        seen = self.watch_review(scr)
+        self.assertGreaterEqual(scr.review_tally["failed"], 1)
+        self.assertTrue(any("실패 1회" in t for t in seen), seen)
 
 
 if __name__ == "__main__":

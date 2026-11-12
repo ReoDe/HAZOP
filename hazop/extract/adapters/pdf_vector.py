@@ -16,7 +16,8 @@
 5. 글자: 단어 → 줄 → 문단. 표 안 글자는 표제란, 선 위(흰 바탕 마스크 안이거나 선과 겹침)는 선 라벨(texts),
    나머지는 가장 가까운 기호 하나에 1:1로 붙인다(거리 상한 있음). 붙지 않은 글자는 texts로 남긴다.
 6. 종류: 형상(계기 원, 나비 모양 밸브와 구동부, 스프링, 표식 있는 선 기호) + 일반 P&ID 표기(ISA 계기 문자,
-   장비 이름 낱말, 도면 연결 표기 TO/FROM). 근거가 없으면 kind 없음(unclassified)으로 둔다.
+   장비 이름 낱말, 도면 연결 표기 TO/FROM). 근거가 없으면 kind 없음(unclassified)으로 둔다. 형상과 장비 이름 낱말이
+   어느 종류인지는 기호 사전 공통 묶음(resources/library/symbols/common)이 정하고, 여기서는 구조 특징만 판정한다.
 7. 태그: 보이는 글자로만 정한다(_assign_tags). 관계마다 실제 선 점(evidence.pdf_path)을 남겨 ② 배경 SVG가 그린다.
 
 좌표: PDF 페이지 pt, 원점 왼쪽 위, x 오른쪽·y 아래쪽 증가(pdfplumber top 기준). drawio 좌표로의 변환은
@@ -32,6 +33,7 @@ import re
 import threading
 
 from hazop import paths
+from hazop.kg.docextract import TAG_RE
 
 from .. import drawio, rules, symbols
 
@@ -42,11 +44,13 @@ from .pdf_vector_common import (
 )
 from .pdf_vector_grouping import (
     _Sym, _cluster_bodies, _nearest_sym, _end_status, _plate_assemblies, _group_symbols, _merge_appendages,
+    _black_fill_groups, _cut_at_boxes, _contact_chains,
 )
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
 )
-from .pdf_vector_labels import ISA_LABEL_RE, PAREN_TOKEN_RE, _text_blocks, _upright_blocks, _bubble_like, _assign_tags
+from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, VALVE_TAG_RE, _text_blocks, _upright_blocks, _bubble_like,
+                                _assign_tags)
 
 SCHEMA_VERSION = drawio.SCHEMA_VERSION
 SCRIPT_NAME = "hazop.extract.adapters.pdf_vector"
@@ -103,8 +107,8 @@ PARAMS = {
     "tick_angle_min": 30.0,      # 빗금과 선 사이 각도 범위(도). 직각(오리피스 판)은 빗금으로 보지 않는다
     "tick_angle_max": 80.0,
     "tick_pair_gap": 3.0,        # 같은 선 위 빗금 둘 이상이 이 거리 안에 나란히 있어야 빗금 묶음
-    "tick_host_min": 10.0,       # 빗금이 가로지르는 선의 최소 길이
-    "tick_pairs_min": 2,         # 한 선에 빗금 묶음이 이 수 이상이어야 신호선(교차점 옆 빗금 한 묶음으로 배관을 바꾸지 않게)
+    "tick_host_min": 10.0,       # 빗금 묶음이 여럿인 신호선의 최소 길이(묶음이 하나뿐인 선은 빗금보다 길면 된다)
+    "tick_pairs_min": 2,         # 한 선에 빗금 묶음이 이 수 이상이면 신호선. 하나뿐이면 빗금이 정확히 둘일 때만(_line_ticks)
     "dot_max": 1.5,              # 매설 배관 점(범례 1.7-1 1/4 BURIED PIPE): 작은 채운 점의 긴 변 상한
     "dot_host_dist": 1.0,        # 점 가운데와 그 점이 얹힌 선 사이 거리 상한
     "dots_min": 2,               # 한 선에 점이 이 수 이상이어야 선 장식(외톨이 조각 하나는 지우지 않음)
@@ -123,23 +127,6 @@ PARAMS = {
 VARIABLE_MODIFIERS_ISA = frozenset("DFJKQ")  # hazop.extract.isa.VARIABLE_MODIFIERS와 같은 ISA 변수 수식 문자
 INSTRUMENT_FUNCTION = {"T": "transmitter", "C": "controller", "I": "indicator", "S": "switch",
                        "R": "recorder"}  # ISA 5.1 뒤 글자(기능)
-# 장비 이름 낱말 → kind (일반 P&ID 표기). 순서대로 먼저 맞는 것을 쓴다.
-EQUIPMENT_WORDS = [
-    (("REACTOR", "VESSEL"), "reactor_vessel"),
-    (("STEAM", "GENERATOR"), "steam_generator"),
-    (("PRESSURIZER",), "pressurizer"),
-    (("CONDENSER",), "condenser"),
-    (("TURBINE",), "turbine"),
-    (("DEMINERALIZER",), "demineralizer"),
-    (("FILTER",), "filter"),
-    (("EXCHANGER",), "heat_exchanger"),
-    (("HX",), "heat_exchanger"),
-    (("COOLER",), "heat_exchanger"),
-    (("PUMP",), "pump"),
-    (("TANK",), "tank"),
-    (("VENT",), "vent"),
-    (("ATM",), "vent"),
-]
 # 구동부 사전 항목의 actuator_type → 밸브 kind. 범례 1.7-1이 정한 경우만 합치고 kind를 올린다(기획서/PID-기호사전.md
 # §4.2 4번). 솔레노이드는 다이어프램과 같이 붙을 때만 공기구동 밸브의 파일럿으로 합친다(4/4). 솔레노이드 혼자는 스프링
 # 복귀·복동 실린더 구동부(4/4)의 파일럿일 수 있어 합치지 않는다. 전기유압(1/4)은 kind를 정할 근거가 없어 합치지 않는다.
@@ -147,6 +134,14 @@ EQUIPMENT_WORDS = [
 ACTUATED_KIND = {"motor": "motor_operated_valve", "diaphragm": "air_operated_valve"}
 OPERATED_VALVES = frozenset({"motor_operated_valve", "air_operated_valve", "control_valve", "solenoid_valve"})
 VALVE_NUMBER_RE = re.compile(r"\d{2,4}[A-Z]?")  # 범례 1.7-1 1/4 VALVE IDENT. NUMBER(사전 apr1400.ident_bubble_circle)
+# 밸브 옆 위치 약어(범례 1.7-1 1/4·4/4): 정상 위치 NO·NC·LO·LC, 고장 위치 FO·FC·FL·FAI. 'NC,FO'처럼 둘을 함께 쓴다.
+# 태그가 아니라 밸브 속성(속성 사전 normal_position·fail_position)이다
+POSITION_FIELD = {"NO": "normal_position", "NC": "normal_position", "LO": "normal_position", "LC": "normal_position",
+                  "FO": "fail_position", "FC": "fail_position", "FL": "fail_position", "FAI": "fail_position"}
+POSITION_TEXT_RE = re.compile(r"(?:NO|NC|LO|LC|FO|FC|FL|FAI)(?:\s*[,/]?\s*(?:NO|NC|LO|LC|FO|FC|FL|FAI))*")
+POSITION_CODE_RE = re.compile(r"NO|NC|LO|LC|FO|FC|FL|FAI")
+ACTUATOR_MARK_RE = re.compile(r"[A-Z](?: ?/ ?[A-Z])?")  # 밸브 몸통·구동부 안 표기(M, E/H 등)
+POSITION_REFINES = {("NC", "LC"), ("NO", "LO")}  # (기호 모양의 값, 글자 값): 글자가 같은 상태를 더 자세히 쓴 것
 
 
 def _actuated_kind(entries):
@@ -428,29 +423,71 @@ def _table_cells(outlines, prm):
 # ---------------------------------------------------------------- 2. 선 위 빗금·점 (기호 묶기는 pdf_vector_grouping)
 
 
-def _line_ticks(polys, prm):
-    """신호선 빗금(//) 찾기(범례 1.7-1 4/4 공압 신호선). → (빗금 id 집합, {선 id: [빗금 묶음 가운데]}).
-    빗금: 4pt 이하 직선 조각이 긴 열린 선을 비스듬히(30~80도) 실제로 가로지른다(두 끝이 선의 양쪽에 떨어져 있음).
-    가장 가까운 선 하나에만 딸린다. 서로 가까운 평행 빗금 2~3개가 묶음 하나이고, 묶음이 tick_pairs_min개 이상인 선만
-    신호선 후보다. 선에 한 끝만 닿은 짧은 탭·가지는 가로지르지 않으므로 빗금이 아니다."""
-    def length(p):
-        return sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in _segs(p["pts"]))
-    hosts = [p for p in polys if length(p) >= prm["tick_host_min"]]
+LONE_TICK_STROKES = 2  # 선에 묶음이 하나뿐일 때 신호 표시로 보는 빗금 수(//). 셋은 안전밸브 스프링선이다
+TICK_TIE = 1e-6        # 빗금 가운데에서 두 선까지의 거리가 이 안에서 같으면 어느 선의 빗금인지 정하지 않는다(pt)
+TICK_SIDE_GAP_MIN = 0.2  # 한 묶음의 두 빗금이 옆으로 떨어진 거리 하한(pt). 같은 자리에 겹쳐 그린 두 선은 // 가 아니다
+SPRING_BODY_GAP = 0.5  # 외톨이 // 가 선이 닿은 작은 각진 몸체에 이 거리 안으로 붙어 있으면 스프링 자리로 본다(pt)
+_EPS = 1e-9            # 각도·교차 위치 경계를 포함하게 하는 부동소수 여유
+
+
+def _poly_length(p):
+    return sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in _segs(p["pts"]))
+
+
+def _crosses(stroke, pts):
+    """직선 조각 stroke가 꺾은선 pts와 조각의 안쪽에서 만나는가. 꺾은선의 꼭짓점과 끝점 위에서 만나는 것도 센다."""
+    (x0, y0), (x1, y1) = stroke
+    dx, dy = x1 - x0, y1 - y0
+    for a, b in _segs(pts):
+        ex, ey = b[0] - a[0], b[1] - a[1]
+        den = ex * dy - ey * dx
+        if den == 0:
+            continue
+        on_line = ((x0 - a[0]) * dy - (y0 - a[1]) * dx) / den    # 만나는 점의 선분 위 자리(0~1)
+        on_stroke = ((x0 - a[0]) * ey - (y0 - a[1]) * ex) / den  # 만나는 점의 조각 위 자리(0~1)
+        if -_EPS <= on_line <= 1 + _EPS and 0 < on_stroke < 1:
+            return True
+    return False
+
+
+def _beyond_ends(stroke, pts, k):
+    """직선 조각 stroke가 꺾은선 pts의 k번째 선분을 그 꺾은선의 끝점 밖(연장선 위)에서 지나는가.
+    꺾이는 자리(안쪽 꼭짓점) 바로 밖을 지나는 것은 끝점 밖이 아니다."""
+    (x0, y0), (x1, y1) = stroke
+    dx, dy = x1 - x0, y1 - y0
+    a, b = pts[k], pts[k + 1]
+    ex, ey = b[0] - a[0], b[1] - a[1]
+    at = ((x0 - a[0]) * dy - (y0 - a[1]) * dx) / (ex * dy - ey * dx)  # 만나는 점의 선분 위 자리(0~1)
+    return (k == 0 and at < -_EPS) or (k == len(pts) - 2 and at > 1 + _EPS)
+
+
+def _tick_groups(polys, hosts, prm, within_ends=False):
+    """빗금 후보를 걸린 선마다 묶는다 → {선 id: [묶음]}, 묶음 = [(빗금 가운데, 빗금 방향, 빗금 조각)].
+    빗금 후보: 4pt 이하 직선 조각이 열린 선(hosts)을 비스듬히(30~80도, 경계 포함) 가로지른다(두 끝이 선의 양쪽에 떨어져
+    있음). 선에 한 끝만 닿은 짧은 탭·가지는 가로지르지 않으므로 후보가 아니다. 각도와 가로지름은 가장 가까운 선분의
+    연장선으로 본다. 꺾이는 자리에 걸친 빗금은 꼭짓점 바로 밖을 지나기 때문이다(032·120·135쪽).
+    within_ends: 선의 끝점 밖(연장선 위)을 지나는 조각을 뺀다. 묶음 하나로 판정하는 외톨이 // 에만 쓴다. 묶음이 여럿인
+    신호선에는 선 끝 바로 밖에 그린 // 가 있다(121·126쪽, 다른 선과 만나는 자리).
+    후보는 가장 가까운 선 하나에만 딸린다. 두 선까지의 거리가 같으면(두 선이 만나는 점 위) 어느 선에도 붙이지 않는다.
+    먼저 그린 선에 붙이면 그리는 순서에 따라 판정이 달라진다.
+    서로 가깝고 평행하며 옆으로 떨어진 후보 2~3개가 묶음 하나다(4개 이상은 해칭)."""
     lo, hi = math.cos(math.radians(prm["tick_angle_max"])), math.cos(math.radians(prm["tick_angle_min"]))
-    cand = collections.defaultdict(list)  # 선 id → [(빗금 가운데, 빗금 방향, 빗금 id)]
+    reach = prm["tick_host_dist"]
+    cand = collections.defaultdict(list)
     for p in polys:
-        tl = length(p)
+        tl = _poly_length(p)
         if len(p["pts"]) != 2 or not 0.3 <= tl <= prm["tick_len_max"]:
             continue
         (x0, y0), (x1, y1) = p["pts"]
         mid, dx, dy = ((x0 + x1) / 2, (y0 + y1) / 2), x1 - x0, y1 - y0
-        best = None  # 가장 가까운 선 하나(교차점 옆 빗금이 배관까지 신호선으로 만들지 않게)
+        crossed = {}  # 가로지른 선 id → (빗금 가운데와의 거리, 선분 번호). 그 선의 선분 가운데 가장 가까운 것
         for q in hosts:
-            if q is p:
+            box = q["bbox"]
+            if q is p or not (box[0] - reach <= mid[0] <= box[2] + reach and box[1] - reach <= mid[1] <= box[3] + reach):
                 continue
-            for a, b in _segs(q["pts"]):
+            for k, (a, b) in enumerate(_segs(q["pts"])):
                 d = _seg_dist(mid, a, b)[0]
-                if d > prm["tick_host_dist"] or (best is not None and d >= best[0]):
+                if d > reach or (q["id"] in crossed and d >= crossed[q["id"]][0]):
                     continue
                 ex, ey = b[0] - a[0], b[1] - a[1]
                 el = math.hypot(ex, ey)
@@ -459,22 +496,88 @@ def _line_ticks(polys, prm):
                 cos = abs(dx * ex + dy * ey) / (math.hypot(dx, dy) * el)
                 s0 = (ex * (y0 - a[1]) - ey * (x0 - a[0])) / el  # 두 끝의 선 기준 부호 있는 거리
                 s1 = (ex * (y1 - a[1]) - ey * (x1 - a[0])) / el
-                if lo <= cos <= hi and s0 * s1 < 0 and min(abs(s0), abs(s1)) >= 0.25 * tl:
-                    best = (d, q["id"])
-        if best is not None:
-            cand[best[1]].append((mid, (dx, dy), p["id"]))
-    ticks, marked = set(), {}
+                # 30도로 가운데를 지나는 빗금은 두 끝이 선에서 정확히 길이의 1/4만큼 떨어진다(경계가 겹친다)
+                if lo - _EPS <= cos <= hi + _EPS and s0 * s1 < 0 and min(abs(s0), abs(s1)) >= 0.25 * tl - _EPS:
+                    crossed[q["id"]] = (d, k)
+            if within_ends and q["id"] in crossed and _beyond_ends(p["pts"], q["pts"], crossed[q["id"]][1]):
+                del crossed[q["id"]]
+        if crossed:
+            nearest = min(d for d, _ in crossed.values())
+            owners = [h for h, (d, _) in crossed.items() if d <= nearest + TICK_TIE]
+            if len(owners) == 1:
+                cand[owners[0]].append((mid, (dx, dy), p))
+    out = {}
     for host, items in cand.items():
         def near(i, j):
             (m, d, _), (m2, d2, _) = items[i], items[j]
-            return (math.hypot(m[0] - m2[0], m[1] - m2[1]) <= prm["tick_pair_gap"]
-                    and abs(d[0] * d2[1] - d[1] * d2[0]) <= 0.2 * math.hypot(*d) * math.hypot(*d2))
-        groups = [g for g in _uf_groups(len(items), near) if 2 <= len(g) <= 3]  # 4개 이상 = 빗금이 아닌 해칭
+            gap, size = (m2[0] - m[0], m2[1] - m[1]), math.hypot(*d)
+            return (math.hypot(*gap) <= prm["tick_pair_gap"]
+                    and abs(d[0] * d2[1] - d[1] * d2[0]) <= 0.2 * size * math.hypot(*d2)
+                    and abs(gap[0] * d[1] - gap[1] * d[0]) >= TICK_SIDE_GAP_MIN * size)
+        out[host] = [[items[i] for i in g] for g in _uf_groups(len(items), near) if 2 <= len(g) <= 3]
+    return out
+
+
+def _group_center(group):
+    return (sum(m[0] for m, _, _ in group) / len(group), sum(m[1] for m, _, _ in group) / len(group))
+
+
+def _crowded(line, pair, polys, prm):
+    """외톨이 // 의 두 빗금 말고도 그 선을 가로지르거나 선에 닿은 짧은 직선 조각이 있는가.
+    셋째 스프링선이 길이·각도·묶음 거리 때문에 빗금 후보에서 빠졌거나, 한 선에 해칭이 같이 있거나, 탭이 닿아 있는
+    자리다. 꺾이는 자리에서 선의 끝에 제 끝을 맞댄 조각은 선의 이어짐이라 세지 않는다(끝이 조금 삐져나와 선을 넘어도)."""
+    reach, longest = prm["tick_host_dist"], 2 * prm["tick_len_max"]
+    box, segs, ends = line["bbox"], list(_segs(line["pts"])), (line["pts"][0], line["pts"][-1])
+    for s in polys:
+        if s is line or any(s is p for p in pair) or len(s["pts"]) != 2 or _poly_length(s) > longest:
+            continue
+        if _box_gap(s["bbox"], box) > reach:
+            continue
+        off = [min(_seg_dist(e, c, d)[0] for c, d in segs) for e in s["pts"]]  # 조각의 두 끝과 선 사이 거리
+        at_end = [any(math.hypot(e[0] - h[0], e[1] - h[1]) <= prm["end_tol"] for h in ends) for e in s["pts"]]
+        if any(o <= reach and not e for o, e in zip(off, at_end)):
+            return True  # 한 끝이 선 가운데에 닿아 있다
+        corner = any(o <= prm["touch_tol"] and e for o, e in zip(off, at_end))
+        if not corner and _crosses(s["pts"], line["pts"]):
+            return True
+    return False
+
+
+def _on_small_body(line, pair, bodies, prm):
+    """외톨이 // 가 그 선이 닿은 작은 각진 몸체(밸브 몸통)에 붙어 있는가. 스프링선은 몸통 바로 위 줄기에 걸리고,
+    공압 신호 표시는 선 가운데에 있다. 스프링선을 둘만 그린 안전밸브의 줄기를 공압 신호선으로 읽지 않으려는 조건이다."""
+    box = _union(pair[0]["bbox"], pair[1]["bbox"])
+    return any(not b.get("curved") and max(_w(b["bbox"]), _h(b["bbox"])) <= prm["pipe_cap_max"]
+               and _box_gap(box, b["bbox"]) <= SPRING_BODY_GAP
+               and _poly_box_dist(line["pts"], b["bbox"]) <= prm["attach_tol"] for b in bodies)
+
+
+def _line_ticks(polys, prm, bodies=()):
+    """신호선 빗금(//) 찾기(범례 1.7-1 4/4 공압 신호선). → (빗금 id 집합, {선 id: [빗금 묶음 가운데]}).
+    빗금 묶음이 tick_pairs_min개 이상인 tick_host_min 이상 선은 신호선이고, 그 묶음은 모두 빗금이다.
+    묶음이 하나뿐인 선(외톨이)은 빗금이 정확히 둘(//)이고 선이 빗금보다 길 때만 신호 표시로 본다. 계기 공기 공급선과
+    I/P 변환기~구동부 선처럼 짧은 공압선이 이렇다(선 길이 하한 없음). 빗금 셋은 안전밸브 줄기의 스프링선이라 건드리지
+    않는다(APR1400 104쪽 안전밸브, docs/2026-11-11-unit-f1/README.md F1-4). 헷갈리는 자리는 판정하지 않고 선을 그대로
+    둔다: 빗금이 선의 끝점 밖을 지나거나, 그 선에 빗금 비슷한 조각이 더 있거나(_crowded), // 가 밸브 몸통에 붙어
+    있을 때다(_on_small_body)."""
+    ticks, marked = set(), {}
+    hosts = [p for p in polys if _poly_length(p) >= prm["tick_host_min"]]
+    for host, groups in _tick_groups(polys, hosts, prm).items():
         if len(groups) >= prm["tick_pairs_min"]:
-            for g in groups:
-                ticks.update(items[i][2] for i in g)
-            marked[host] = [(sum(items[i][0][0] for i in g) / len(g), sum(items[i][0][1] for i in g) / len(g))
-                            for g in groups]
+            ticks.update(p["id"] for g in groups for _, _, p in g)
+            marked[host] = [_group_center(g) for g in groups]
+    rest = [p for p in polys if p["id"] not in ticks]
+    by_id = {p["id"]: p for p in rest}
+    for host, groups in _tick_groups(rest, rest, prm, within_ends=True).items():
+        if host in marked or len(groups) != 1 or len(groups[0]) != LONE_TICK_STROKES:
+            continue
+        line, pair = by_id[host], [p for _, _, p in groups[0]]
+        if any(_poly_length(p) >= _poly_length(line) for p in pair):
+            continue
+        if _crowded(line, pair, rest, prm) or _on_small_body(line, pair, bodies, prm):
+            continue
+        ticks.update(p["id"] for p in pair)
+        marked[host] = [_group_center(groups[0])]
     return ticks, marked
 
 
@@ -510,6 +613,10 @@ def _line_dots(dashes, polys, prm):
 
 def _attach(p, syms, markers, prm):
     s = _nearest_sym(p, syms, prm["attach_tol"])
+    if s is not None and s.seed is None:
+        # 큰 묶음 기호의 상자 안에 닫힌 밸브(seed)가 들어 있으면 상자 거리로는 큰 기호가 이긴다. 선 끝이 그 밸브에
+        # 닿았으면 밸브에 붙인다
+        s = _nearest_sym(p, [t for t in syms if t.seed is not None], prm["end_tol"]) or s
     if s is not None:
         return s, "pdf_path_endpoint"
     for m in markers:
@@ -782,53 +889,67 @@ def _build_dashed(syms, dashes, markers, prm):
 # ---------------------------------------------------------------- 6. 종류
 
 
-def _shape_kind(sym, prm):
-    """형상만으로 정하는 종류와 근거. 없으면 (None, None)."""
+def _shape_features(sym, prm):
+    """기호의 구조 특징(이름과 뜻은 symbols.STRUCTURE_FEATURES). 어느 특징이 어느 종류인지와 보는 순서는
+    기호 사전 공통 묶음의 구조 규칙 견본이 정한다."""
     circles = [b for b in sym.bodies if _is_circle(b, prm)]
-    tris = [b for b in sym.bodies if _is_triangle(b)]
-    others = [b for b in sym.bodies if b not in circles and b not in tris]
+    # 검정 견본으로 올린 몸체(seed)는 그 견본이 종류와 정상 위치를 정한다. 삼각형 둘이어도 나비 규칙에 넣지 않는다
+    tris = [b for b in sym.bodies if _is_triangle(b) and "seed" not in b]
+    found = set()
     if getattr(sym, "plate_valve", None):  # 판 사이 원판·공(_plate_assemblies)
-        return "manual_valve", "plates+%s" % sym.plate_valve
-    if len(tris) == 2:  # 나비 모양(두 삼각형이 꼭짓점을 맞댐) = 밸브 몸통
+        found.add("plate_valve:%s" % sym.plate_valve)
+    # 나비 몸통의 두 삼각형은 붙어 있다. 사이에 글로브·볼의 점이 끼어도 간격은 삼각형 크기보다 작다. 큰 묶음 기호 안에 멀리
+    # 떨어진 삼각형이 우연히 둘 남은 것은 밸브 몸통이 아니다(APR1400 132쪽, docs/2026-11-11-unit-f1/README.md F1-3 검토)
+    if len(tris) == 2 and _box_gap(tris[0]["bbox"], tris[1]["bbox"]) <= max(
+            max(_w(t["bbox"]), _h(t["bbox"])) for t in tris):
+        found.add("bowtie")
         bow = _union(tris[0]["bbox"], tris[1]["bbox"])
         # 몸통 bbox 밖에 중심이 있는 몸체 = 구동부(안쪽 원은 글로브 표시라 구동부가 아니다)
         outside = [b for b in sym.bodies if b not in tris and not _inside(_center(b["bbox"]), bow)]
         if any(_is_circle(b, prm) for b in outside):
-            return "motor_operated_valve", "valve_body+circle_actuator"
+            found.add("outside_circle")
         if outside:
-            return "control_valve", "valve_body+diaphragm_actuator"
-        return "manual_valve", "valve_body"
+            found.add("outside_body")
     springs = [s for s in sym.strokes if len(s["pts"]) == 2 and abs(s["pts"][0][0] - s["pts"][1][0]) > 1
                and abs(s["pts"][0][1] - s["pts"][1][1]) > 1]
     if sym.bodies and len(springs) >= 2 and len({(round(s["pts"][0][1] - s["pts"][1][1], 1),
                                                     round(s["pts"][0][0] - s["pts"][1][0], 1)) for s in springs}) == 1:
-        return "psv", "body+spring"
-    if sym.stroke_only and sym.markers:
-        return "check_valve", "lines+marker"
+        found.add("body_with_springs")
+    if sym.stroke_only:
+        found.add("stroke_only")
+    if sym.markers:
+        found.add("markers")
     straight = [s for s in sym.strokes if len(s["pts"]) == 2 and not s.get("curved")]
     if sym.stroke_only and straight and len(straight) == len(sym.strokes):
         vertical = [s for s in straight if abs(s["pts"][0][0] - s["pts"][1][0]) < 0.5]
         horizontal = [s for s in straight if abs(s["pts"][0][1] - s["pts"][1][1]) < 0.5]
-        if max(len(vertical), len(horizontal)) >= 2:  # 축 정렬 평행 판 여러 개 = 오리피스 판
-            return "orifice", "parallel_plates"
-    if len(circles) == 1 and not tris and not others and len(sym.bodies) == 1:
-        return "instrument", "circle"
+        if max(len(vertical), len(horizontal)) >= 2:
+            found.add("parallel_plates")
+    if len(sym.bodies) == 1 and len(circles) == 1 and not tris:
+        found.add("single_circle")
     if len(sym.bodies) == 1 and _is_tombstone(sym.bodies[0]):
-        return "instrument", "tombstone"
+        found.add("single_tombstone")
     if sym.bodies and all(_is_chevron(b) for b in sym.bodies):
-        return "continuation", "chevron_arrow"
-    return None, None
+        found.add("chevrons")
+    return found
+
+
+def _shape_rule(sym, prm):
+    """형상만으로 정하는 종류와 근거. 없으면 (None, None). 계기 모양은 종류 자리에 'instrument'를 돌려준다(종류는 ISA 글자로)."""
+    entry, basis = symbol_library().shape_rule(_shape_features(sym, prm))
+    if entry is None:
+        return None, None
+    return ("instrument" if entry.kind_from == "isa_letters" else entry.kind), basis
 
 
 def _kind_from_text(text):
     up = text.upper()
-    tokens = re.findall(r"[A-Z]+", up)
     if CONTINUATION_RE.match(up.strip()):
         return "continuation", "text_to_from"
-    for words, kind in EQUIPMENT_WORDS:
-        if all(w in tokens for w in words):
-            return kind, "text_word:%s" % "+".join(words)
-    return None, None
+    entry, words = symbol_library().word_rule(re.findall(r"[A-Z]+", up))
+    if entry is None:
+        return None, None
+    return entry.kind, "text_word:%s" % "+".join(words)
 
 
 def _instrument_kind(text, min_side=None):
@@ -885,6 +1006,11 @@ def _isa_bubble_kind(lines, min_side=None):
 
 _symbol_library = None
 PIPE_CAP_BASIS = "small_closed_body_single_connection"
+# 검은 채움을 기호 몸체로 올릴 때의 견본 거리 상한(칸). 견본의 max_distance보다 좁게 본다. 잘못 올리면 화살촉이 밸브가 되어
+# 열린 배관이 닫힌 밸브로 읽힌다. APR1400 143쪽에서 게이트·글로브 묶음은 견본에서 0.06칸 안, 밸브가 아닌 검은 채움(반만 칠한
+# 밸브, 건물 경계 표시, 화살촉 등)은 0.24칸 이상 떨어져 있었다(docs/2026-11-11-unit-f1/README.md F1-3)
+SPRING_KINDS = frozenset({"psv"})  # 사전 격자 견본만으로 정하지 않고 스프링선(_has_spring)을 함께 보는 종류
+BLACK_SEED_DISTANCE = 0.1
 ACTUATOR_REACH_RATIO = 2.0  # 밸브 몸통 긴 변 × 비율 안에 구동부 기호가 있으면 구동 밸브로 본다(APR1400 축 길이 기준)
 
 
@@ -894,9 +1020,20 @@ def symbol_library():
     with _cache_lock:
         if _symbol_library is None:
             lib = symbols.Library.load()
+            _check_has_rules(lib)
             _check_against_registry(lib)
             _symbol_library = lib
         return _symbol_library
+
+
+def _check_has_rules(lib):
+    """형상 규칙과 장비 이름 낱말은 사전에만 있다(S7). 그 견본이 없는 사전은 코드보다 옛 판이고, 그대로 쓰면
+    밸브·계기·설비가 오류 없이 미분류로 나온다. SymbolLibraryError로 멈춘다."""
+    missing = lib.missing_rule_shapes()
+    if missing:
+        raise symbols.SymbolLibraryError(
+            "기호 사전에 %s 견본이 하나도 없음: %s. 코드보다 옛 판 사전이다(형상 규칙과 장비 이름 낱말을 사전으로 "
+            "옮기기 전). 이 코드와 함께 배포된 사전으로 바꿔야 한다" % ("·".join(missing), lib.root))
 
 
 def _check_against_registry(lib):
@@ -916,17 +1053,88 @@ def _check_against_registry(lib):
         raise symbols.SymbolLibraryError("기호 사전이 레지스트리와 맞지 않음: " + "; ".join(problems))
 
 
+def _black_fills(cls):
+    """검은 채움 도형 전부: 표식(작은 것), 검은 몸체(큰 것), 점선 조각으로 분류된 둥근 점. 글로브 밸브 가운데 점은
+    1.5pt보다 작으면 점선 조각이 된다."""
+    return cls["markers"] + [b for b in cls["bodies"] if b.get("solid")] + [d for d in cls["dashes"] if d["curved"]]
+
+
+def _promote_black_symbols(cls, prm):
+    """검은 채움 묶음이 사전의 검정 견본에 맞으면 그 몸통을 한 기호의 몸체로 표시한다(seed). 표식이던 것은 몸체로 올린다
+    (기획서 §4.2 1번). 표식으로 두면 닫힌 밸브 자리에 밸브 노드 없이 양쪽 배관이 이어진다(_build_solid의 same_marker).
+    가운데 둥근 점은 표식으로 두어, 기호를 묶을 때 같은 seed의 기호에 들어가게 한다. 묶음과 같은 자리에 따로 그린 외곽선은
+    채움과 같은 도형이라 뺀다(_classify_primitives의 twin과 같은 규칙). 견본에 맞지 않거나 애매한 묶음은 그대로 둔다.
+    맞은 결과는 cls["seeds"]({seed 번호: symbols.Match})에 남긴다."""
+    cls["seeds"] = {}
+    groups = [g for g in _black_fill_groups(_black_fills(cls), prm) if g["straight"]]
+    if not groups:
+        return
+    lib = symbol_library()
+    seed, boxes = {}, []
+    for k, g in enumerate(groups):
+        hit = lib.match(_black_fill_signature(g))
+        if hit.outcome == "matched" and hit.entry.role == "symbol" and hit.distance <= BLACK_SEED_DISTANCE:
+            seed.update((id(m), k) for m in g["straight"] + g["round"])
+            boxes.append(g["bbox"])
+            cls["seeds"][k] = hit
+    if not seed:
+        return
+
+    def outline_of_seed(b):
+        return not b.get("solid") and any(max(abs(b["bbox"][j] - box[j]) for j in range(4)) <= prm["twin_tol"]
+                                          for box in boxes)
+
+    def body(m):
+        return id(m) in seed and not m["curved"]
+
+    def tagged(items):
+        return [dict(m, seed=seed[id(m)]) if id(m) in seed else m for m in items]
+    cls["bodies"] = [dict(b, seed=seed[id(b)]) if body(b) else b for b in cls["bodies"] if not outline_of_seed(b)] +         [dict(m, solid=True, closed=True, seed=seed[id(m)]) for m in cls["markers"] if body(m)]
+    cls["markers"] = tagged(m for m in cls["markers"] if not body(m)) + tagged(d for d in cls["dashes"] if id(d) in seed)
+    cls["dashes"] = [d for d in cls["dashes"] if id(d) not in seed]
+    # 기호를 묶기 전에 나눈다. 뒤에 나누면 큰 기호 상자 안을 지나는 선이 그 기호의 내부선으로 먼저 흡수된다
+    cls["polys"] = _cut_at_boxes(cls["polys"], boxes)
+
+
+def _black_fill_signature(group):
+    """검은 채움 묶음(_black_fill_groups)의 모양 서명. 곧은 채움은 검은 몸체로, 둥근 점은 표식으로 센다. 몸체로 올린 뒤
+    기호로 묶였을 때의 서명(symbols.sym_signature)과 같아야 같은 견본에 다시 맞는다."""
+    solid = [dict(m, solid=True, closed=True) for m in group["straight"]]
+    return symbols.signature(solid, [], group["round"], [], group["bbox"])
+
+
+def _has_spring(sym):
+    """스프링선: 4pt 이하 직선 조각 둘 이상이 같은 기울기(10도 안)로 비스듬하다(가로·세로 15도 안은 아님).
+    범례 1.7-1 1/4 SELF-ACTUATED VALVES의 안전·방출 밸브 줄기 위 사선이다. 보통 셋이지만 025·033·037·040쪽처럼 둘만 남는
+    방출 밸브가 있다."""
+    slants = []
+    for st in sym.strokes:
+        if len(st["pts"]) != 2:
+            continue
+        (x0, y0), (x1, y1) = st["pts"]
+        if not 0.5 <= math.hypot(x1 - x0, y1 - y0) <= 4.0:
+            continue
+        a = math.degrees(math.atan2(y1 - y0, x1 - x0)) % 180
+        if min(a, 180 - a) > 15 and abs(a - 90) > 15:
+            slants.append(a)
+    return any(sum(1 for b in slants if min(abs(a - b), 180 - abs(a - b)) <= 10) >= 2 for a in slants)
+
+
 def _symbol_match(sym, blocks):
-    """기호 상자 안에 가운데가 든 글자 문단을 글자 조건으로 넘겨 사전에 대 본다."""
+    """기호 상자 안에 가운데가 든 글자 문단을 글자 조건으로 넘겨 사전에 대 본다. 격자 견본은 모양이 비슷한 다른 기호에도
+    맞을 수 있어, 스프링이 뜻인 종류(SPRING_KINDS)는 스프링선이 실제로 있을 때만 맞은 것으로 본다(F1-6 검토)."""
     x0, y0, x1, y1 = sym.bbox
     inside = [b["text"] for b in blocks if x0 <= (b["bbox"][0] + b["bbox"][2]) / 2 <= x1
               and y0 <= (b["bbox"][1] + b["bbox"][3]) / 2 <= y1]
-    return symbol_library().match(symbols.sym_signature(sym), inside)
+    hit = symbol_library().match(symbols.sym_signature(sym), inside)
+    if hit.outcome == "matched" and hit.entry.kind in SPRING_KINDS and not _has_spring(sym):
+        return symbols.Match("none", None, None, None, hit.candidates, None)
+    return hit
 
 
 def _classify(sym, text, degree, prm, marks=()):
     """(kind, basis) — 근거가 없으면 kind None. marks: 기호 안 표기 글자(밸브 구동부의 M 등)."""
-    shape, sbasis = _shape_kind(sym, prm)
+    shape, sbasis = _shape_rule(sym, prm)
     if shape in ("control_valve", "motor_operated_valve") and "M" in [m.strip().upper() for m in marks]:
         return "motor_operated_valve", "valve_body+actuator_mark:M"
     if shape == "instrument":
@@ -936,6 +1144,8 @@ def _classify(sym, text, degree, prm, marks=()):
         return kind, basis or "circle_without_isa_letters"
     if shape is not None:
         return shape, sbasis
+    if sym.seed is not None:  # 검정 견본으로 올린 몸통은 사전이 정한다. 라벨의 장비 낱말이나 끝막음 규칙으로 정하지 않는다
+        return None, None
     kind, basis = _kind_from_text(text)
     if kind is not None:
         return kind, basis
@@ -1027,6 +1237,158 @@ def _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, 
     return merge_into, number_ids
 
 
+def _valve_gap(block, sym):
+    return -1.0 if _inside(_center(block["bbox"]), sym.bbox) else _box_gap(block["bbox"], sym.bbox)
+
+
+def _nearest_valve(block, valves, prm):
+    """label_gap_max 안에서 문단에 가장 가까운 밸브. 두 번째 밸브가 확실히 멀 때만(number_reach 규칙과 같은 비율)."""
+    near = sorted((_valve_gap(block, v), k) for k, v in enumerate(valves))
+    near = [(g, k) for g, k in near if g <= prm["label_gap_max"]]
+    if near and (len(near) == 1 or near[1][0] > max(2 * near[0][0], near[0][0] + 1.0)):
+        return valves[near[0][1]]
+    return None
+
+
+def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, marks, drop, prm, circled=()):
+    """밸브 라벨 고르기(F1-5). label_of·taken을 고치고 {밸브 기호 id: [(위치 약어, 문단 번호)]}를 돌려준다.
+    탐욕 배정(가까운 글자부터)은 그대로 두고 밸브만 손본다. 다른 기호의 라벨은 바꾸지 않는다.
+    - 라벨이 없거나 위치 약어(NO·LC·'NC,FO' 등)인 밸브는, 아무 기호의 라벨도 아닌 밸브 번호('V1681', 돌린 글자 포함)가
+      label_gap_max 안에 있고 그 번호에 가장 가까운 밸브가 이 밸브이면 그 번호를 라벨로 삼는다. 위치 약어가 밸브 번호보다
+      가까워 라벨을 뺏던 자리다.
+    - 위치 약어는 태그가 아니라 속성이다. 밸브(또는 그 밸브에 합칠 구동부)의 라벨이었던 약어, 아무 기호의 라벨도 아니고
+      가장 가까운 밸브가 하나로 정해지는 약어를 그 밸브의 정상·고장 위치로 둔다.
+    - 밸브 번호를 태그로 쓸 밸브(→ 두 번째 돌려주는 값, 기호 번호 집합)는 라벨에 밸브 번호 줄이 있고, 그 라벨 문단에 가장
+      가까운 기호가 이 밸브 하나인 것이다. 몸통 안에 구동부 표기(M, E/H) 말고 다른 글자가 든 기호는 밸브 번호를 받지 않는다.
+      APR1400의 품질 등급 마름모('BI|CI')가 나비 규칙으로 밸브가 되어, 옆 밸브의 번호를 가져가던 자리다(063쪽 V751).
+    - 번호 원(VALVE IDENT. NUMBER)이 합쳐질 밸브(circled, 기호 id)는 그 원이 번호다. 밸브 번호 글자를 받지 않는다(016쪽
+      구동 밸브 348이 옆 체크 밸브의 V158을, 025쪽 방출 밸브 1108이 V1110을 가져가던 자리). 가장 가까운 밸브를 셀 때는
+      그대로 넣어, 그 글자가 더 먼 다른 밸브로 가지도 않게 한다.
+    - 밸브에 그 번호 문단보다 더 가까운 다른 밸브 번호 문단이 있으면 번호를 주지 않는다(미확인 missing_tag로 남는다).
+      옆 밸브가 기호로 잡히지 않으면 owner_of가 그 밸브를 보지 못해, 이웃 번호를 받는다(025쪽 V1007~V1010 자리에
+      V1001~V1004, 1pt 옆 V1311·V1312 대신 8.7pt 떨어진 V1309·V1310). 틀린 태그보다 빈 태그가 낫다. 거리는 번호 줄로
+      잰다. 번호와 위치 약어가 한 문단이면 문단 상자는 약어 때문에 밸브에 붙는다(126쪽 'V1106' 아래 'LC', 밸브 번호는 V1134).
+    - 라벨로 붙은 위치 약어도 _nearest_valve와 같은 비율로 다른 밸브보다 확실히 가까울 때만 그 밸브의 것이다. 두 밸브와
+      같은 거리의 'LO'를 한 밸브에 단정하지 않는다."""
+    lettered = {si for si, ms in marks.items() if any(not ACTUATOR_MARK_RE.fullmatch(" ".join(m.split())) for m in ms)}
+    valves = [sy for si, sy in enumerate(syms) if id(sy) in valve_like and si not in lettered]
+    index = {id(sy): si for si, sy in enumerate(syms)}
+    others = [sy for si, sy in enumerate(syms) if si not in drop]
+
+    def owner_of(bi):
+        """문단에 몸체(core)가 가장 가까운 기호(밸브든 아니든). 같은 거리의 기호가 둘이면 None. 기호 상자는 지시선·장식선까지
+        들어가 커지므로(062쪽 V2132 위의 'DE→WM' 화살표) 몸체로 잰다."""
+        box = blocks[bi]["bbox"]
+        near = sorted((-1.0 if _inside(_center(box), sy.core) else _box_gap(box, sy.core), k) for k, sy in enumerate(others))
+        if not near or near[0][0] > prm["label_gap_max"] or (len(near) > 1 and near[1][0] <= near[0][0]):
+            return None
+        return others[near[0][1]]
+
+    def text(bi):
+        return " ".join(blocks[bi]["text"].split())
+
+    def number_lines(bi):
+        """문단 bi의 밸브 번호 줄: [(번호, 줄 상자)]. 번호와 위치 약어가 한 문단('V1106' 아래 'LC')이면 번호 줄만 잰다."""
+        lines = [" ".join(l.split()) for l in blocks[bi]["text"].split("\n")]
+        boxes = blocks[bi].get("line_boxes") or [blocks[bi]["bbox"]] * len(lines)
+        return [(l, box) for l, box in zip(lines, boxes) if VALVE_TAG_RE.fullmatch(l)]
+    numbered_blocks = [(bj, number_lines(bj)) for bj in range(len(blocks)) if number_lines(bj)]
+
+    def gap_to(box, sy):
+        return -1.0 if _inside(_center(box), sy.bbox) else _box_gap(box, sy.bbox)
+
+    def closer_number(bi, sy):
+        """이 밸브에 문단 bi의 번호 줄보다 더 가까운 다른 밸브 번호 줄이 있는가."""
+        mine = number_lines(bi)
+        if not mine:
+            return False
+        own = min(gap_to(box, sy) for _, box in mine)
+        return any(gap_to(box, sy) < own for bj, lines in numbered_blocks if bj != bi
+                   for number, box in lines if number not in {n for n, _ in mine})
+
+    def clearly_of(bi, owner, sy):
+        """문단 bi가 이 밸브(owner, 또는 owner에 합칠 구동부 sy) 몫으로 분명한가(_nearest_valve의 비율)."""
+        own = min(_valve_gap(blocks[bi], owner), _valve_gap(blocks[bi], sy))
+        rival = min((_valve_gap(blocks[bi], v) for v in valves if v is not owner and v is not sy), default=None)
+        return rival is None or rival > max(2 * own, own + 1.0)
+    positions = {}
+    for si, bi in label_of.items():
+        owner = plan_into.get(id(syms[si]), syms[si])
+        if id(owner) in valve_like and POSITION_TEXT_RE.fullmatch(text(bi)) and clearly_of(bi, owner, syms[si]):
+            positions.setdefault(id(owner), []).extend((c, bi) for c in POSITION_CODE_RE.findall(blocks[bi]["text"]))
+    for bi in range(len(blocks)):
+        if bi in roles or bi in taken or not POSITION_TEXT_RE.fullmatch(text(bi)):
+            continue
+        v = _nearest_valve(blocks[bi], valves, prm)
+        if v is not None:
+            positions.setdefault(id(v), []).extend((c, bi) for c in POSITION_CODE_RE.findall(blocks[bi]["text"]))
+    open_valves = {id(v) for v in valves if id(v) not in circled and (
+                   label_of.get(index[id(v)]) is None or POSITION_TEXT_RE.fullmatch(text(label_of[index[id(v)]])))}
+    pairs = []
+    for bi in range(len(blocks)):
+        if bi in roles or bi in taken or not VALVE_TAG_RE.fullmatch(text(bi)):
+            continue
+        v = _nearest_valve(blocks[bi], valves, prm)
+        if v is not None and id(v) in open_valves and owner_of(bi) is v and not closer_number(bi, v):
+            pairs.append((round(_valve_gap(blocks[bi], v), 6), bi, index[id(v)]))
+    moved = set()
+    for gap, bi, si in sorted(pairs):
+        if si in moved or bi in taken:
+            continue
+        old = label_of.get(si)
+        if old is not None:
+            taken.discard(old)
+        label_of[si] = bi
+        taken.add(bi)
+        moved.add(si)
+    numbered = {si for si, bi in label_of.items() if id(syms[si]) in valve_like and si not in lettered
+                and id(syms[si]) not in circled
+                and any(VALVE_TAG_RE.fullmatch(" ".join(l.split())) for l in blocks[bi]["text"].splitlines())
+                and owner_of(bi) is syms[si] and not closer_number(bi, syms[si])}
+    return positions, numbered
+
+
+def _apply_positions(syms, node_out, unknowns, local_of, positions, blocks):
+    """밸브 옆 위치 약어를 그 밸브 노드의 normal_position·fail_position으로 둔다. 글자는 evidence.position_text에 남긴다.
+    기호 모양이 정한 값(검게 칠한 몸통의 NC)이 있으면 evidence.position_from_body에 남긴다. 그 옆 글자가 LC면 같은 닫힘을
+    더 자세히 쓴 것이라 LC로 둔다. 그 밖에 이미 있는 값과 다르거나 약어끼리 서로 다르면 그 속성을 비우고 position_conflict
+    미확인을 남긴다. 몸통 값과 글자는 근거(position_from_body·position_text)에 둘 다 남는다. 비우지 않으면 몸통 값이 확정
+    주장(hazop.kg.claims)으로 넘어가 사람이 볼 일이 없어진다.
+    속성은 레지스트리가 그 종류에 두는 것만 둔다(수동 밸브에는 fail_position이 없다). 종류에 없는 속성의 약어('LC,FC' 옆의
+    수동 밸브)는 종류가 틀렸을 수 있어 position_kind_mismatch 미확인으로 남긴다. 밸브 분류가 아닌 노드(합쳐지지 않은 구동부
+    등)에는 두지 않는다."""
+    by_local = {nd["local_id"]: nd for nd in node_out}
+    for sy in syms:
+        found = positions.get(id(sy))
+        nd = by_local.get(local_of[id(sy)][0]) if found else None
+        if nd is None or nd["category"] != "valve":
+            continue
+        nd["evidence"]["position_text"] = [" ".join(blocks[bi]["text"].split()) for bi in sorted({bi for _, bi in found})]
+        attrs = dict(nd["attributes"])
+        cid = rules.REGISTRY.kind_class.get(nd["kind"]) or nd["category"]
+        allowed = rules.REGISTRY.class_properties(cid)
+        for field in ("normal_position", "fail_position"):
+            codes = sorted({c for c, _ in found if POSITION_FIELD[c] == field})
+            if not codes:
+                continue
+            if field not in allowed:
+                _issue(unknowns, "position_kind_mismatch", "%s %s: %s 종류에는 없는 속성(종류를 확인할 것)"
+                       % (field, "·".join(codes), nd["kind"] or nd["category"]), nd["source_object_id"], nd["local_id"], "kind")
+                continue
+            have = attrs.get(field)
+            if have is not None:
+                nd["evidence"]["position_from_body"] = have
+            if len(codes) == 1 and (have in (None, codes[0]) or (have, codes[0]) in POSITION_REFINES):
+                attrs[field] = codes[0]
+                continue
+            why = ("기호 모양은 %s, 글자는 %s" % (have, "·".join(codes)) if have
+                   else "옆 글자가 %s로 서로 다름" % "·".join(codes))
+            attrs.pop(field, None)
+            _issue(unknowns, "position_conflict", "%s: %s(둘 다 근거에 남기고 정하지 않음)" % (field, why),
+                   nd["source_object_id"], nd["local_id"], field)
+        nd["attributes"] = attrs
+
+
 # ---------------------------------------------------------------- 조립
 
 
@@ -1058,10 +1420,12 @@ def analyze(width, height, words, prims, params=None):
     prm = dict(PARAMS)
     prm.update(params or {})
     cls = _classify_primitives(width, height, prims, prm)
-    ticks, marked = _line_ticks(cls["polys"], prm)
+    _promote_black_symbols(cls, prm)
+    ticks, marked = _line_ticks(cls["polys"], prm, cls["bodies"])
     syms, polys, markers, dashes = _group_symbols(cls, prm)
     # 빗금은 기호 묶기가 끝난 뒤에 남은 선에서만 뺀다. 기호 장식선으로 흡수된 빗금은 그대로 두어 기호 모양과 번호가
-    # 빗금 처리 전과 같게 한다(빗금을 먼저 빼면 안전밸브 규칙이 응축기 몸통에 맞는 등 기호 판정이 바뀜)
+    # 빗금 처리 전과 같게 한다(빗금을 먼저 빼면 안전밸브 규칙이 응축기 몸통에 맞는 등 기호 판정이 바뀜). 외톨이 // 도
+    # 같다. 먼저 빼면 143쪽에서 기호 묶음이 달라져 새 안전밸브·끝막음 판정이 생겼다(F1-4 후보 비교)
     cls["ticks"] = [p for p in polys if p["id"] in ticks]
     polys = [p for p in polys if p["id"] not in ticks]
     tees, chains = _build_solid(syms, polys, markers, prm, cls["bridges"])
@@ -1072,9 +1436,14 @@ def analyze(width, height, words, prims, params=None):
                 _seg_dist(c, a, b)[0] <= prm["tick_host_dist"] for e in ch["evidence"] for c in marked[e]
                 for a, b in _segs(ch["pts"])):
             ch["pneumatic"] = True
+    chains += _contact_chains(syms, prm)
     dots = _line_dots(dashes, polys, prm)  # 실선 위 점(매설 배관 무늬)은 점선 조각이 아니다
     cls["dots"] = [d for d in dashes if d["id"] in dots]
-    chains += _build_dashed(syms, [d for d in dashes if d["id"] not in dots], markers, prm)
+    # 점선도 검정 견본으로 올린 몸통(seed) 밑을 끊기지 않고 지나갈 수 있다. 몸통 안의 조각을 빼면 사슬이 거기서 끊겨
+    # 양쪽 끝이 밸브에 붙는다(실선의 _cut_at_boxes와 같은 일)
+    cores = [s.core for s in syms if s.seed is not None]
+    chains += _build_dashed(syms, [d for d in dashes if d["id"] not in dots
+                                   and not any(_inside(_center(d["bbox"]), c) for c in cores)], markers, prm)
     syms = _merge_appendages(syms, chains, prm)
     blocks = _text_blocks(words, prm)
     return {"params": prm, "classified": cls, "symbols": syms, "tees": tees, "chains": chains,
@@ -1095,7 +1464,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     # 글자 줄과 같은 방향(가로)으로 글자 위를 지나는 선만 선 라벨 근거로 본다(세로로 가로지르는 선은 우연한 겹침)
     solid_segments = [(a, b) for ch in chains if not ch.get("dashed") for a, b in _segs(ch["pts"])
                       if abs(b[1] - a[1]) <= 0.2 * abs(b[0] - a[0])]
-    shape_of = [_shape_kind(s, prm) for s in syms]
+    shape_of = [_shape_rule(s, prm) for s in syms]
     # 연결 표시 화살표와 겹치는 문단(화살표 안 'SHEET n "X"'까지 한 문단)은 화살표 몫이다. 화살표로 들어가는 배관이
     # 그 문단을 지나도 배관 글자로 보지 않는다
     arrow_boxes = [s.bbox for s, sh in zip(syms, shape_of) if sh[0] == "continuation"]
@@ -1123,7 +1492,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         for v, _, _ in ch["ends"]:
             if v[0] == "sym":
                 degree[id(v[1])] = degree.get(id(v[1]), 0) + 1
-    # 형상 규칙이 못 정한 기호는 사전에 먼저 대 본다. 사전이 연결 표시로 본 기호도 화살표 목록에 넣어야 이웃 화살표의
+    # 구조 규칙이 못 정한 기호는 사전의 격자 견본에 먼저 대 본다. 사전이 연결 표시로 본 기호도 화살표 목록에 넣어야 이웃 화살표의
     # 계통 글자를 가져가지 않는다(_continuation_attributes). 버릴 기호(무늬 점)는 글자를 가져가지 않게 후보에서 뺀다
     hits = {si: _symbol_match(s, blocks) for si, s in enumerate(syms) if shape_of[si][0] in (None, "instrument")}
     drop = {si for si, h in hits.items() if h.outcome == "matched" and h.entry.role == "drop"
@@ -1162,6 +1531,10 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             if any(_box_gap(cb, inner) <= 0 and _poly_box_dist(ch["pts"], inner) == 0.0
                    and all(v[0] != "sym" or v[1] is not sy for v, _, _ in ch["ends"]) for cb, ch in solid):
                 on_valve.add(id(sy))
+    # 검정 견본으로 올린 몸통(seed)에 맞닿은 기호(밸브에 붙여 그린 축소관 등)는 그 몸통에 이어진 것이지 끝막음이 아니다
+    seeded = [sy for sy in syms if sy.seed is not None]
+    on_valve |= {id(sy) for sy in syms if sy.seed is None
+                 and any(_box_gap(sy.bbox, v.bbox) <= prm["touch_tol"] for v in seeded)}
     stemmed = {id(v) for vs in stem_of.values() for v in vs}
     # S5 계획: 사전 구동부를 꺾이지 않은 축으로 이어진(축이 없으면 닿은) 밸브 하나에 합칠 후보로 둔다(D6). 실제로 합칠지는
     # 노드 kind가 정해진 뒤 정한다(아래 _apply_merges). 밸브가 없거나 둘 이상이면 후보가 아니다
@@ -1228,6 +1601,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         if target is not None:
             numbers_on.setdefault(id(target), []).append((sy, blocks[bi]["text"].strip()))
 
+    positions, numbered = _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, marks, drop, prm,
+                                        set(numbers_on))
     node_out, locations, local_of, instrument_ids, dropped = [], [], {}, set(), []
     for n, s in enumerate(syms, 1):
         local_id = "local-node-%03d" % n
@@ -1237,14 +1612,15 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         text = blocks[bi]["text"] if bi is not None else ""
         kind, basis = _classify(s, text, 0 if id(s) in on_valve else degree.get(id(s), 0), prm, marks.get(n - 1, []))
         symbol_id, symbol_attrs = None, {}
+        valve_body = False  # 몸통이 밸브인 것은 알지만 종류를 정하지 못함
         if getattr(s, "plate_valve", None):
             symbol_attrs = {"valve_type": s.plate_valve}
             if id(s) in stemmed or any(_box_gap(a.bbox, s.bbox) <= prm["attach_tol"] for a in actuators):
-                kind = None  # 사전 몸통과 같이, 구동부가 붙은 몸통은 구동 방식을 정하기 전까지 수동으로 두지 않는다
+                kind, valve_body = None, True  # 사전 몸통과 같이, 구동부가 붙은 몸통은 구동 방식을 정하기 전까지 수동으로 두지 않는다
                 _issue(unknowns, "actuated_valve_pending", "구동부 기호가 붙은 밸브 몸통: 구동 방식은 아직 정하지 않음",
                        sid, local_id, "kind")
         fallback = basis == PIPE_CAP_BASIS  # 끝막음은 형상 규칙이 아니라 뒤처리 규칙: 사전에 후보가 없을 때만 남긴다(§4.2 5번)
-        if (kind is None or fallback) and not getattr(s, "plate_valve", None):  # 기존 규칙이 못 정한 기호에만 기호 사전을 쓴다(기획서/PID-기호사전.md §4.2)
+        if (kind is None or fallback) and not getattr(s, "plate_valve", None):  # 구조·글자 규칙이 못 정한 기호만 사전의 격자 견본에 대 본다(기획서/PID-기호사전.md §4.2)
             hit = hits.get(n - 1) or _symbol_match(s, blocks)
             if fallback and hit.outcome != "none":
                 kind, basis = None, None
@@ -1264,16 +1640,26 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                     symbol_attrs = {k: v for k, v in sorted(hit.attributes.items()) if k in rules.REGISTRY.properties}
                     reach = ACTUATOR_REACH_RATIO * max(_w(s.bbox), _h(s.bbox))
                     if kind == "manual_valve" and any(_box_gap(a.bbox, s.bbox) <= reach for a in actuators):
-                        kind = None  # 몸통만으로는 수동인지 모른다. 구동부를 밸브에 합치는 단계(S5) 전에는 정하지 않는다
+                        kind, valve_body = None, True  # 몸통만으로는 수동인지 모른다. 구동부를 밸브에 합치는 단계(S5) 전에는 정하지 않는다
                         _issue(unknowns, "actuated_valve_pending", "구동부 기호가 붙은 밸브 몸통: 구동 방식은 아직 정하지 않음",
                                sid, local_id, "kind")
             elif hit.outcome == "ambiguous":
                 _issue(unknowns, "ambiguous_symbol", "기호 사전 후보가 둘 이상이라 정하지 않음: %s"
                        % ", ".join(c for c, _ in hit.candidates[:3]), sid, local_id, "kind")
+        seed = analysis["classified"].get("seeds", {}).get(s.seed)
+        if seed is not None and kind is None and symbol_id is None:
+            # 몸통은 검정 견본에 맞았지만 묶인 기호 전체는 사전에 없다(벨로스 같은 다른 선이 몸통에 붙음). 종류는 비워 두고
+            # 검게 칠한 몸통이 뜻하는 정상 위치만 남긴다
+            symbol_attrs = {k: v for k, v in sorted(seed.attributes.items()) if k == "normal_position"}
+            basis, valve_body = "black_body:%s" % seed.entry.id, True
         if rules.KIND_CATEGORY.get(kind) == "instrument" or (kind is None and shape_of[n - 1][0] == "instrument"):
             instrument_ids.add(local_id)  # 측정 연결 판정: 계기로 분류됐거나 원형이고 다른 종류 근거가 없는 기호
         category = rules.KIND_CATEGORY.get(kind)
         classification = "classified" if category else "unclassified"
+        if kind is None and valve_body:
+            # 종류는 못 정했어도 분류는 밸브다. 경로 분석과 검토구간 나누기는 분류로 밸브를 가리므로, 분류까지 비우면 닫힌
+            # 밸브가 있는 길을 정상 유로로 읽는다. 종류 없음 미확인은 그대로 남긴다
+            category = "valve"
         if kind is None:
             _issue(unknowns, "missing_kind", "형상·글자 규칙으로 종류를 정할 근거 없음", sid, local_id, "kind")
         node_out.append({
@@ -1293,7 +1679,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                           "unit": UNIT, "bbox": _box_out(s.bbox), "approximate": False})
     merge_into, number_ids = _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, local_of, chains,
                                acts_on, numbers_on)
-    _assign_tags(node_out, unknowns, instrument_ids)
+    _apply_positions(syms, node_out, unknowns, local_of, positions, blocks)
+    _assign_tags(node_out, unknowns, instrument_ids, {local_of[id(syms[si])][0] for si in numbered})
     tee_ids = {}
     for k, (x, y) in enumerate(tees):
         n = len(syms) + k + 1  # 사전이 버린 기호가 있어도 기호 노드 번호와 겹치지 않게
@@ -1356,6 +1743,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             rel_kind, line_type = "measurement_connection", "pdf_solid"
         else:
             rel_kind, line_type = "physical_connection", "pdf_solid"
+        if ch.get("contact") and line_type == "pdf_solid":
+            line_type = "pdf_touching"  # 선 없이 맞닿은 두 기호(_contact_chains)
         if rel_kind in rules.RELATION_KINDS_WITH_FLOW:
             _issue(unknowns, "unknown_flow_direction", "PDF 선에서 흐름 방향을 정하지 않음", sid, local_id,
                    "flow_direction")
@@ -1365,7 +1754,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             "waypoints": [[_num(p[0]), _num(p[1])] for p in ch["pts"][1:-1]] if not ch.get("dashed") else [],
             "label": "", "label_text": "", "label_cells": [], "attributes": {}, "style": None, "parent": None,
             "geometry": None,
-            "evidence": {"classification_basis": "dash_chain" if ch.get("dashed") else "solid_path",
+            "evidence": {"classification_basis": ("dash_chain" if ch.get("dashed") else
+                                                  "touching_bodies" if ch.get("contact") else "solid_path"),
                          "pdf_objects": list(ch["evidence"]),
                          # 선이 지나는 실제 점(양 끝 포함, 점선은 조각 중심). ② 배경 SVG의 관계 경로로 그린다
                          "pdf_path": [[_num(p[0]), _num(p[1])] for p in ch["pts"]]},

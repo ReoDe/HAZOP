@@ -12,7 +12,7 @@ import hashlib
 import json
 import os
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.graph.query import GraphQuery
 from hazop.kg import build as kg_build, context as kg_context
 
@@ -941,11 +941,8 @@ def save(doc, inputs, out_root):
 
 
 def _write(path, doc):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(doc, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
-    os.replace(tmp, path)
+    """실행 폴더마다 새로 쓰는 파일이라 지문 충돌 확인은 하지 않는다(원자적 쓰기만)."""
+    store_io.write_json(path, doc, sort_keys=False)
 
 
 def recorded_ai_mode(run_dir):

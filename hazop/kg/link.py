@@ -21,6 +21,7 @@ import io
 import os
 import re
 
+from hazop import store_io
 from hazop.kg.inputs import (CANDIDATE_KEY_FIELDS, LINK_COLUMNS, NODE_COLUMNS, normalize_tag, normalize_text,
                              read_csv, text_sha256)
 
@@ -313,13 +314,10 @@ def _csv_text(columns, rows):
 
 
 def write_atomic(path, text, bom=True):
-    """UTF-8(기본 BOM)로 임시 파일에 쓴 뒤 os.replace로 교체."""
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8-sig" if bom else "utf-8", newline="") as fh:
-        fh.write(text)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, path)
+    """UTF-8(기본 BOM)로 공용 원자적 쓰기(store_io)를 쓴다. 줄끝은 text 그대로다.
+    후보·연결 CSV에는 사람이 한 판단(확인 상태·검토자·사유)이 들어 있다. 지문 충돌 확인은 넣지 않았다. 이 파일을 쓰는
+    쪽이 연결 CLI 하나뿐이고, 읽고 고쳐 쓰는 사이에 파일이 바뀌었는지는 아직 보지 않는다(후속)."""
+    store_io.write_bytes(path, text.encode("utf-8-sig" if bom else "utf-8"))
 
 
 def read_candidates(path):

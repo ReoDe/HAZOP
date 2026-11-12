@@ -1,0 +1,218 @@
+# F1-3 2차 검토 지적 수정 뒤 다시 잰 값. 실행 조건
+# - '2ce16b9'(부모): 시험 폴더 2026-11-11-unit-f1b/f1-3/nodes-before. 2ce16b9를 꺼낸 분리 작업트리에서 만든 143쪽 추출 JSON
+# - 'c65d90b': f1-3/nodes-after, 'bb80138': fix/nodes-after. 각각 그 커밋이 되기 직전의 작업 폴더에서 만든 추출 JSON이다
+# - '고친 뒤': b336237 + 2차 검토 지적 수정(커밋 전, 주 체크아웃). 그 내용이 그대로 커밋됐다
+# - 인터프리터: 시험용 venv(%USERPROFILE%/.hazop/venv-py312)의 python.exe, PYTHONIOENCODING=utf-8, --update 없음, 기본 --jobs
+# - 아래는 시험 폴더 2026-11-11-unit-f1b/fix2/after/run.log 에서 git 줄 끝 경고만 뺀 것이다
+
+# HEAD b336237 + 2차 검토 지적 수정(커밋 전), 2026-11-11 14:15:59 +0900
+# git status --short:
+ M docs/2026-11-11-unit-f1/evidence/f1-3-node-diff.py
+ M hazop/extract/adapters/pdf_vector.py
+ M hazop/extract/adapters/pdf_vector_grouping.py
+ M tests/test_apr1400_extract.py
+ M tests/test_symbols.py
+# git diff HEAD -- hazop scripts resources tests sha256: e1459dd06f79d368
+$ f1-0-extract-compare.py snp (해시 목록을 f1-0-before-snp-hashes.json과 비교)
+SNP 12건 → D:\HAZOP-trials\2026-11-11-unit-f1b\fix2\after\snp-hashes.json
+SNP 해시 목록 바이트 같음
+$ f1-3-node-diff.py dump --repo . --out fix2/nodes-after
+143쪽 → D:/HAZOP-trials/2026-11-11-unit-f1b/fix2/nodes-after (코드: D:\HAZOP)
+rc=0
+$ f1-3-node-diff.py links <2ce16b9> <c65d90b>
+쪽 143
+'전'에서 한 연결요소였다가 '후'에서 갈라진 것: 연결요소 34개, 큰 조각에서 떨어져 나간 같은 자리 노드 177개
+  그 가운데 '후'에서 물리 배관이 하나도 닿지 않게 된 노드: 8개 (종류별 None 6, tee 1, orifice 1)
+  둘 이상 이어진 배관 토막이 떨어져 나간 연결요소: 30개, 그 토막의 같은 자리 노드 169개
+'후'의 NC 밸브 872개 가운데 물리 배관이 몸통 가운데를 지나가는데 그 밸브에 붙지 않은 것: 39개
+  같은 자리를 '전'의 물리 배관이 지나가던 것: 497개
+'후'의 NC 밸브가 60pt 이하 기호와 맞닿았는데(간격 0.5pt 이하) 둘 사이에 관계가 없는 것: 80쌍
+목록 153줄 → D:/HAZOP-trials/2026-11-11-unit-f1b/fix2/links-c65d90b.csv
+rc=0
+$ f1-3-node-diff.py links <2ce16b9> <bb80138>
+쪽 143
+'전'에서 한 연결요소였다가 '후'에서 갈라진 것: 연결요소 31개, 큰 조각에서 떨어져 나간 같은 자리 노드 174개
+  그 가운데 '후'에서 물리 배관이 하나도 닿지 않게 된 노드: 9개 (종류별 None 7, tee 1, orifice 1)
+  둘 이상 이어진 배관 토막이 떨어져 나간 연결요소: 25개, 그 토막의 같은 자리 노드 165개
+'후'의 NC 밸브 903개 가운데 물리 배관이 몸통 가운데를 지나가는데 그 밸브에 붙지 않은 것: 1개
+  같은 자리를 '전'의 물리 배관이 지나가던 것: 497개
+'후'의 NC 밸브가 60pt 이하 기호와 맞닿았는데(간격 0.5pt 이하) 둘 사이에 관계가 없는 것: 92쌍
+목록 124줄 → D:/HAZOP-trials/2026-11-11-unit-f1b/fix2/links-bb80138.csv
+rc=0
+$ f1-3-node-diff.py links <2ce16b9> <고친-뒤>
+쪽 143
+'전'에서 한 연결요소였다가 '후'에서 갈라진 것: 연결요소 11개, 큰 조각에서 떨어져 나간 같은 자리 노드 49개
+  그 가운데 '후'에서 물리 배관이 하나도 닿지 않게 된 노드: 7개 (종류별 None 5, tee 1, orifice 1)
+  둘 이상 이어진 배관 토막이 떨어져 나간 연결요소: 6개, 그 토막의 같은 자리 노드 42개
+'후'의 NC 밸브 903개 가운데 물리 배관이 몸통 가운데를 지나가는데 그 밸브에 붙지 않은 것: 1개
+  같은 자리를 '전'의 물리 배관이 지나가던 것: 497개
+'후'의 NC 밸브가 60pt 이하 기호와 맞닿았는데(간격 0.5pt 이하) 둘 사이에 관계가 없는 것: 15쌍
+목록 27줄 → D:/HAZOP-trials/2026-11-11-unit-f1b/fix2/links-고친-뒤.csv
+rc=0
+$ f1-3-node-diff.py compare <2ce16b9> <고친 뒤>
+쪽 143 · 노드 23086 → 23348 · 관계 23045 → 23421
+
+같은 자리 기호의 종류 변화(전 → 후: 수)
+  None → manual_valve: 63
+  pipe_cap → None: 26
+  control_valve → None: 11
+  None → pipe_cap: 5
+  motor_operated_valve → None: 4
+  None → motor_operated_valve: 4
+  vent → manual_valve: 2
+  turbine → None: 2
+  psv → None: 1
+  turbine → manual_valve: 1
+  None → air_operated_valve: 1
+
+같은 자리 기호의 정상 위치 변화
+  None → NC: 204
+
+같은 자리 기호의 태그 변화(있음 여부 전 → 후)
+
+'전'에 종류가 있던 기호: 같은 자리에서 종류를 잃음 44 · 다른 종류가 됨 3 · 같은 자리에 없음 17
+
+새로 생긴 기호 노드(종류, 정상 위치): 798
+  manual_valve NC: 501
+  None NC: 112
+  motor_operated_valve NC: 62
+  None : 58
+  air_operated_valve NC: 24
+  reducer : 18
+  manual_valve : 11
+  drain : 4
+  check_valve : 3
+  tank : 2
+  continuation : 1
+  orifice : 1
+  pump : 1
+
+없어진 기호 노드(종류): 343
+  None: 326
+  manual_valve: 8
+  orifice: 5
+  control_valve: 3
+  check_valve: 1
+
+미확인 사유별(전 → 후, 차)
+  unknown_flow_direction: 28340 → 28948 (+608)
+  missing_tag: 11767 → 12221 (+454)
+  unconnected_endpoint: 9671 → 9537 (-134)
+  missing_kind: 7499 → 7314 (-185)
+  self_loop: 5640 → 5601 (-39)
+  not_registered: 429 → 429 (+0)
+  actuated_valve_pending: 170 → 234 (+64)
+  missing_drawing_number: 143 → 143 (+0)
+  duplicate_tag: 56 → 56 (+0)
+  dashed_path_no_visible_piece: 8 → 8 (+0)
+  합계: 63723 → 64491 (+768)
+
+'후'의 NC 밸브 노드(댐퍼 제외) 903개: (종류, 분류)별
+  manual_valve / valve: 681
+  None / valve: 130
+  motor_operated_valve / valve: 67
+  air_operated_valve / valve: 25
+  닿은 물리 배관 끝: 0개 29 · 1개 11 · 2개 이상 863
+  배관 끝이 하나도 닿지 않은 것의 쪽별 수: 001쪽 4, 008쪽 7, 029쪽 1, 141쪽 17
+
+노드 변화 목록 1393줄 → D:/HAZOP-trials/2026-11-11-unit-f1b/fix2/node-changes-vs-parent.csv
+rc=0
+$ f1-3-node-diff.py compare <bb80138> <고친 뒤>
+쪽 143 · 노드 23346 → 23348 · 관계 23328 → 23421
+
+같은 자리 기호의 종류 변화(전 → 후: 수)
+
+같은 자리 기호의 정상 위치 변화
+
+같은 자리 기호의 태그 변화(있음 여부 전 → 후)
+
+'전'에 종류가 있던 기호: 같은 자리에서 종류를 잃음 0 · 다른 종류가 됨 0 · 같은 자리에 없음 0
+
+새로 생긴 기호 노드(종류, 정상 위치): 3
+  reducer : 2
+  None : 1
+
+없어진 기호 노드(종류): 1
+  None: 1
+
+미확인 사유별(전 → 후, 차)
+  unknown_flow_direction: 28859 → 28948 (+89)
+  missing_tag: 12219 → 12221 (+2)
+  unconnected_endpoint: 9537 → 9537 (+0)
+  missing_kind: 7314 → 7314 (+0)
+  self_loop: 5601 → 5601 (+0)
+  not_registered: 429 → 429 (+0)
+  actuated_valve_pending: 234 → 234 (+0)
+  missing_drawing_number: 143 → 143 (+0)
+  duplicate_tag: 56 → 56 (+0)
+  dashed_path_no_visible_piece: 8 → 8 (+0)
+  합계: 64400 → 64491 (+91)
+
+'후'의 NC 밸브 노드(댐퍼 제외) 903개: (종류, 분류)별
+  manual_valve / valve: 681
+  None / valve: 130
+  motor_operated_valve / valve: 67
+  air_operated_valve / valve: 25
+  닿은 물리 배관 끝: 0개 29 · 1개 11 · 2개 이상 863
+  배관 끝이 하나도 닿지 않은 것의 쪽별 수: 001쪽 4, 008쪽 7, 029쪽 1, 141쪽 17
+
+노드 변화 목록 4줄 → D:/HAZOP-trials/2026-11-11-unit-f1b/fix2/node-changes-vs-bb80138.csv
+rc=0
+$ f1-3-node-diff.py carry <2ce16b9> <고친 뒤>
+쪽 143 (수정 적용 코드: D:\HAZOP)
+  node 수정: 14770
+  node 적용: 14424
+  node 적용 못 함: 대상 없음: 67
+  node 적용 못 함: 대상이 바뀜(at): 105
+  node 적용 못 함: 대상이 바뀜(at·kind): 154
+  node 적용 못 함: 대상이 바뀜(at·kind·tag): 15
+  node 적용 못 함: 대상이 바뀜(at·tag): 3
+  node 적용 못 함: 대상이 바뀜(kind): 2
+  node 적용(번호가 밀려 자리로 다시 찾음): 6660
+  relation 수정: 23045
+  relation 적용: 21700
+  relation 적용 못 함: 대상 없음: 130
+  relation 적용 못 함: 대상이 바뀜(at): 9
+  relation 적용 못 함: 대상이 바뀜(at·ends): 919
+  relation 적용 못 함: 대상이 바뀜(at·ends·kind): 155
+  relation 적용 못 함: 대상이 바뀜(ends): 102
+  relation 적용 못 함: 대상이 바뀜(ends·kind): 30
+  relation 적용(번호가 밀려 자리로 다시 찾음): 11399
+rc=0
+$ check_apr1400.py --out fix2/after/apr1400_pages.csv
+APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 287/295 · 없는 대상 0 · 짝 281(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 64491
+  정답 5.4.12-1-S1: 계기 4/4(태그 4 중 맞음 4) · 연결 3/3(연결점 3 중 맞음 3) · 대리 원 4(정답 안 4)/정답 4 · 대리 연결 표기 3(정답 안 3)/정답 3
+  정답 9.3.3-1-S7: 계기 16/16(태그 16 중 맞음 16) · 연결 7/7(연결점 7 중 맞음 7) · 대리 원 16(정답 안 16)/정답 16 · 대리 연결 표기 5(정답 안 5)/정답 7
+  정답 9.3.4-1-S1: 계기 12/15(태그 12 중 맞음 12) · 연결 17/17(연결점 17 중 맞음 17) · 대리 원 15(정답 안 15)/정답 15 · 대리 연결 표기 4(정답 안 4)/정답 17
+기준값: APR1400: 태그 정확 872/1619(원) · 텍스트 층에 없는 태그 47 · 연결 표기 검출 287/295 · 없는 대상 0 · 짝 281(정답 짝 6/6 · 틀린 짝 0 · 후보 10) · 미확인 64400
+rc=0
+$ check_snp_baseline.py
+나아짐: pdf SNP-M-101_RCS-main-loop unknowns 40 → 31
+나아짐: pdf SNP-M-102_RCS-pressurizer unknowns 19 → 15
+나아짐: pdf SNP-M-201_CVCS unknowns 23 → 20
+나아짐: pdf SNP-M-301_SIS unknowns 24 → 20
+나아짐: pdf SNP-M-401_CCW unknowns 31 → 24
+나아짐: pdf SNP-M-501_MS-FW unknowns 27 → 23
+SNP: 후퇴 0 · 나아짐 6 · drawio 짝 12 · 방향 모순 0 · 도면 drawio 6 · pdf 6
+rc=0
+$ unknowns_breakdown.py --out fix2/after/unknowns
+# APR1400 미확인 분해
+
+쪽 143, 미확인 64491
+
+## 사유별
+
+| 사유(check) | 수 | 비율 | 많은 쪽(수) |
+| --- | --- | --- | --- |
+| `unknown_flow_direction` | 28948 | 44.9% | 066(724), 028(719), 025(546) |
+| `missing_tag` | 12221 | 18.9% | 028(270), 001(266), 025(244) |
+| `unconnected_endpoint` | 9537 | 14.8% | 066(399), 025(320), 088(320) |
+| `missing_kind` | 7314 | 11.3% | 083(208), 001(207), 081(160) |
+| `self_loop` | 5601 | 8.7% | 066(311), 137(198), 013(193) |
+| `not_registered` | 429 | 0.7% | 001(3), 002(3), 003(3) |
+| `actuated_valve_pending` | 234 | 0.4% | 113(18), 049(14), 048(12) |
+| `missing_drawing_number` | 143 | 0.2% | 001(1), 002(1), 003(1) |
+| `duplicate_tag` | 56 | 0.1% | 006(29), 008(22), 007(5) |
+| `dashed_path_no_visible_piece` | 8 | 0.0% | 090(8) |
+
+rc=0

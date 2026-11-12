@@ -242,11 +242,8 @@ def make_plan(out_root, store_root, keep):
 
 
 def _write_manifest(path, doc):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(doc, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
-    os.replace(tmp, path)
+    from hazop import store_io
+    store_io.write_json(path, doc, sort_keys=False)
 
 
 def _changed(item, out_root, store_root):

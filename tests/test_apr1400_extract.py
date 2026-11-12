@@ -13,10 +13,19 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+from hazop import paths  # noqa: E402
+from hazop.extract import rules  # noqa: E402
 from hazop.extract.adapters import pdf_vector  # noqa: E402
 
 FIX = os.path.join(REPO_ROOT, "tests", "fixtures", "apr1400")
 HAS_PDFPLUMBER = importlib.util.find_spec("pdfplumber") is not None
+
+
+def check_apr1400():
+    spec = importlib.util.spec_from_file_location("check_apr1400", os.path.join(REPO_ROOT, "scripts", "check_apr1400.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def load_page(seq):
@@ -58,11 +67,400 @@ class InstrumentTags(unittest.TestCase):
         self.assertEqual(kinds, {"TEW 106": None, "PT 106": "transmitter", "TEW 107": None, "TEW 108": None})
 
     def test_no_tag_outside_the_text_layer(self):
-        words = {w.replace("-", "") for n in self.ex["texts"] for w in (n.get("text") or "").split()}
+        """태그는 PDF 텍스트 층에 찍힌 글자다. 추출 결과의 label_text와 견주면 라벨에서 만든 태그는 늘 통과하므로,
+        검사 도구(scripts/check_apr1400.py)가 PDF에서 따로 읽은 낱말·붙은 글자 묶음과 견준다."""
+        ca = check_apr1400()
+        tl = ca.text_layer(os.path.join(FIX, "pdf", self.key["source_file"]))
         bubbles = {it["tag"].replace(" ", "") for it in self.key["instruments"]}
         for n in self.ex["nodes"]:
             if n.get("tag"):
-                self.assertIn(n["tag"].replace("-", ""), words | bubbles, n["tag"])
+                tag = n["tag"].replace("-", "")
+                self.assertTrue(tag in bubbles or ca.tag_in_text(n, tl), n["tag"])
+
+
+def center(box):
+    return (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+
+
+def node_box(n):
+    g = n["geometry"]
+    return g["x"], g["y"], g["x"] + g["width"], g["y"] + g["height"]
+
+
+def within(point, box, slack=0.0):
+    return box[0] - slack <= point[0] <= box[2] + slack and box[1] - slack <= point[1] <= box[3] + slack
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1)")
+class ClosedValves(unittest.TestCase):
+    """몸통을 검게 칠한 밸브는 정상 운전 중 닫힘이다(DCD 범례 1.7-1 1/4). 그 자리에는 normal_position이 닫힘(NC, 옆 글자가
+    'LC'면 LC)인 밸브 노드가 있어야 하고, 몸통 모양으로 닫힘을 읽은 다른 노드는 없어야 한다. 정답은 answer_key의
+    closed_valves(렌더한 그림을 눈으로 읽음)다. 옆 글자만으로 닫힘을 읽은 밸브(F1-5)는 ValveLabels가 본다."""
+
+    PAGES = (12, 62)
+    SLACK = 3.0  # 정답 상자는 검게 칠한 부분만이다. 노드 상자에는 가운데 점이나 맞닿은 판이 더해질 수 있다
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pages = {seq: load_page(seq) for seq in cls.PAGES}
+
+    def closed_nodes(self, ex):
+        """몸통 모양으로 닫힘을 읽은 노드: 옆 글자 없이 NC이거나, 옆 글자가 있을 때 몸통 값이 NC인 것."""
+        return [n for n in ex["nodes"] if n["evidence"].get("position_from_body") == "NC" or
+                ((n.get("attributes") or {}).get("normal_position") == "NC" and not n["evidence"].get("position_text"))]
+
+    def test_every_filled_valve_body_is_a_normally_closed_valve(self):
+        for seq, (ex, key) in self.pages.items():
+            closed = self.closed_nodes(ex)
+            missing = [item.get("number") or item["tag"] for item in key["closed_valves"]
+                       if not any(within(center(node_box(n)), item["bbox"], self.SLACK) for n in closed)]
+            self.assertEqual(missing, [], "%03d쪽: 닫힌 밸브로 읽지 못한 것" % seq)
+
+    def test_nothing_else_is_read_as_normally_closed(self):
+        for seq, (ex, key) in self.pages.items():
+            extra = [(n["local_id"], n["kind"], [round(v, 1) for v in node_box(n)]) for n in self.closed_nodes(ex)
+                     if not any(within(center(node_box(n)), item["bbox"], self.SLACK) for item in key["closed_valves"])]
+            self.assertEqual(extra, [], "%03d쪽: 닫힌 밸브가 아닌데 NC로 읽은 것" % seq)
+
+    def test_half_filled_valves_are_not_closed(self):
+        ex, key = self.pages[62]
+        self.assertEqual(len(key["half_filled_valves"]), 8)
+        for item in key["half_filled_valves"]:
+            near = [n for n in self.closed_nodes(ex) if within(center(node_box(n)), item["bbox"], 6.0)]
+            self.assertEqual(near, [], item["tag"])
+
+    def test_closed_valve_kind_is_a_valve_or_left_open(self):
+        """구동부가 붙은 몸통은 구동 방식을 정하기 전까지 종류를 비울 수 있다. 밸브가 아닌 종류가 붙으면 안 된다."""
+        from hazop.extract import rules
+        for seq, (ex, _) in self.pages.items():
+            kinds = {n["kind"] for n in self.closed_nodes(ex)}
+            self.assertEqual({k for k in kinds if k is not None and rules.KIND_CATEGORY.get(k) != "valve"}, set(), seq)
+
+    def test_small_closed_valve_stands_between_its_pipes(self):
+        """012쪽 418번 밸브는 삼각형 둘과 점을 따로 칠한 작은 몸통이다. 화살촉으로 읽으면 위아래 배관이 밸브 없이 이어진다."""
+        ex, key = self.pages[12]
+        item = next(i for i in key["closed_valves"] if i["number"] == "418")
+        (valve,) = [n for n in self.closed_nodes(ex) if within(center(node_box(n)), item["bbox"], self.SLACK)]
+        ends = [e for r in ex["relations"] if r["kind"] == "physical_connection" for e in r["endpoints"]
+                if e["node_local_id"] == valve["local_id"]]
+        self.assertGreaterEqual(len(ends), 2)
+        self.assertEqual(valve["attributes"]["valve_type"], "globe")
+
+    def test_each_closed_valve_is_one_node_with_valve_category(self):
+        """정답의 닫힌 밸브 하나에 NC 노드가 정확히 하나이고, 종류를 못 정했어도 분류는 밸브다."""
+        for seq, (ex, key) in self.pages.items():
+            for item in key["closed_valves"]:
+                hits = [n for n in self.closed_nodes(ex) if within(center(node_box(n)), item["bbox"], self.SLACK)]
+                self.assertEqual(len(hits), 1, (seq, item))
+                self.assertEqual(hits[0]["category"], "valve", (seq, item))
+
+    def test_every_closed_valve_stands_on_a_pipe(self):
+        """정답의 닫힌 밸브 15개는 모두 배관 위에 있다. 물리 배관 끝이 둘 이상 닿아야 한다."""
+        for seq, (ex, key) in self.pages.items():
+            loose = []
+            for item in key["closed_valves"]:
+                (valve,) = [n for n in self.closed_nodes(ex) if within(center(node_box(n)), item["bbox"], self.SLACK)]
+                ends = [e for r in ex["relations"] + ex["unresolved_connectors"] if r["kind"] == "physical_connection"
+                        for e in r["endpoints"] if e["node_local_id"] == valve["local_id"]]
+                if len(ends) < 2:
+                    loose.append((item.get("number") or item["tag"], len(ends)))
+            self.assertEqual(loose, [], seq)
+
+    def test_pipe_runs_on_through_the_reducer_drawn_against_a_closed_valve(self):
+        """012쪽 418번 밸브 아래에는 3"×2" 축소관이 붙어 있다. 2ce16b9에서는 밸브와 축소관이 한 기호라 위아래 배관이
+        이어져 있었다. 두 기호로 읽은 뒤에도 위쪽 배관과 아래쪽 배관은 한 연결요소여야 한다."""
+        ex, key = self.pages[12]
+        item = next(i for i in key["closed_valves"] if i["number"] == "418")
+        (valve,) = [n for n in self.closed_nodes(ex) if within(center(node_box(n)), item["bbox"], self.SLACK)]
+        reducer = node_at(ex, [179.3, 275.0, 183.9, 279.6])
+        group = {n["local_id"]: n["local_id"] for n in ex["nodes"]}
+
+        def find(x):
+            while group[x] != x:
+                x = group[x]
+            return x
+        neighbours = {valve["local_id"]: set(), reducer["local_id"]: set()}
+        for r in ex["relations"]:
+            if r["kind"] != "physical_connection":
+                continue
+            a, b = (e["node_local_id"] for e in r["endpoints"])
+            group[find(a)] = find(b)
+            for x, y in ((a, b), (b, a)):
+                if x in neighbours:
+                    neighbours[x].add(y)
+        above = neighbours[valve["local_id"]] - {reducer["local_id"]}
+        below = neighbours[reducer["local_id"]] - {valve["local_id"]}
+        self.assertTrue(above and below, (above, below))
+        self.assertEqual({find(x) for x in above | below}, {find(valve["local_id"])})
+
+    def test_pipe_network_is_not_cut_into_more_pieces_than_before_closed_valves_were_read(self):
+        """닫힌 밸브를 따로 읽기 전(2ce16b9)에 물리 배관으로 이어진 노드 묶음(둘 이상)은 012쪽 2개(큰 것 51노드),
+        062쪽 22개였다. 밸브를 맞닿은 기호와 떼어 놓고 잇지 않으면 012쪽이 5개로 갈라진다(F1-3 검토)."""
+        before = {12: (2, 51), 62: (22, 12)}
+        for seq, (ex, _) in self.pages.items():
+            group = {n["local_id"]: n["local_id"] for n in ex["nodes"]}
+
+            def find(x):
+                while group[x] != x:
+                    x = group[x]
+                return x
+            for r in ex["relations"]:
+                a, b = (e["node_local_id"] for e in r["endpoints"])
+                if r["kind"] == "physical_connection" and a != b:
+                    group[find(a)] = find(b)
+            sizes = {}
+            for x in group:
+                sizes[find(x)] = sizes.get(find(x), 0) + 1
+            joined = [n for n in sizes.values() if n >= 2]
+            self.assertLessEqual(len(joined), before[seq][0], seq)
+            self.assertGreaterEqual(max(joined), before[seq][1], seq)
+
+    def test_reducer_drawn_against_a_closed_valve_is_not_a_pipe_cap(self):
+        ex, _ = self.pages[12]
+        reducer = node_at(ex, [179.3, 275.0, 183.9, 279.6])  # 418번 밸브 아래에 붙여 그린 3"×2" 축소관
+        self.assertIsNotNone(reducer)
+        self.assertNotEqual(reducer["kind"], "pipe_cap")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1)")
+class ValveLabels(unittest.TestCase):
+    """밸브 라벨 고르기(F1-5). 수동 밸브 번호('V2131')가 그 밸브의 태그이고, 위치 약어('LC,FC')는 속성이다.
+    정답은 answer_key의 valve_numbers·valve_positions(렌더한 그림을 눈으로 읽음, 사람 확인 전)다."""
+
+    PAGES = (12, 62)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pages = {seq: load_page(seq) for seq in cls.PAGES}
+
+    def test_valves_whose_bodies_are_read_carry_their_number(self):
+        for seq, (ex, key) in self.pages.items():
+            valves = {"nodes": [n for n in ex["nodes"] if n["category"] == "valve"]}  # 같은 자리 축소관 등은 정답이 아니다
+            got = {item["tag"]: (node_at(valves, item["bbox"]) or {}).get("tag") for item in key["valve_numbers"]
+                   if not item.get("extractor_misses")}
+            self.assertEqual(got, {t: t for t in got}, "%03d쪽" % seq)
+
+    def test_no_valve_carries_a_number_that_is_not_its_own(self):
+        """밸브 번호 꼴 태그는 정답의 그 번호 자리에만 있어야 한다(옆 밸브의 번호를 가져가지 않는다)."""
+        for seq, (ex, key) in self.pages.items():
+            where = {item["tag"]: item["bbox"] for item in key["valve_numbers"]}
+            wrong = [(n["tag"], [round(v, 1) for v in node_box(n)]) for n in ex["nodes"]
+                     if n["tag"] and n["evidence"].get("tag_basis") == "valve_number"
+                     and not (where.get(n["tag"]) and within(center(node_box(n)), where[n["tag"]], 1.0))]
+            self.assertEqual(wrong, [], "%03d쪽" % seq)
+
+    def test_position_words_become_valve_attributes(self):
+        """속성은 그 종류가 가지는 것만 된다. 수동 밸브로 읽은 012쪽 'LC,FC' 밸브 11곳은 고장 위치를 두지 않고, 종류를
+        확인하라는 미확인(position_kind_mismatch)을 남긴다(F1-5 검토)."""
+        for seq, (ex, key) in self.pages.items():
+            unknowns = {(u["target"], u["check"]) for u in ex["validation"]["unknowns"]}
+            for item in key["valve_positions"]:
+                node = node_at(ex, item["bbox"])
+                allowed = rules.REGISTRY.class_properties(rules.REGISTRY.kind_class.get(node["kind"]) or node["category"])
+                want = {f: item[f] for f in ("normal_position", "fail_position") if f in item and f in allowed}
+                self.assertEqual({f: node["attributes"].get(f) for f in want}, want, "%03d쪽 %s" % (seq, item["label"]))
+                if any(f in item and f not in allowed for f in ("normal_position", "fail_position")):
+                    self.assertNotIn("fail_position", node["attributes"], "%03d쪽 %s" % (seq, item["label"]))
+                    self.assertIn((node["local_id"], "position_kind_mismatch"), unknowns, "%03d쪽 %s" % (seq, item["label"]))
+
+    def test_position_words_are_not_tags_or_labels(self):
+        for seq, (ex, _) in self.pages.items():
+            self.assertEqual([n["label_text"] for n in ex["nodes"]
+                              if n["category"] == "valve" and n["tag"] and n["label_text"].strip() in ("LC", "LC,FC")],
+                             [], seq)
+
+
+PAGE_063 = paths.folder("APR1400", "by-drawing", "063_Ch09_Fig9.3.4-1_s1of7_Chemical_and_Volume_Control_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_063), "pdfplumber 또는 APR1400 063쪽 PDF 없음(저장소 밖 자료)")
+class ValveNumbersNotTakenByNeighbours(unittest.TestCase):
+    """063쪽(9.3.4-1 S1)에서 F1-5 중간 초안이 틀렸던 네 곳: V751·V713·V366은 품질 등급 마름모('BI|CI')가, V714는 옆의 구동
+    밸브가 번호를 가져갔다. 이 번호가 태그로 붙으면 그 노드는 번호 글자 바로 옆(12pt 안)의 글자 없는 몸통이어야 한다."""
+
+    NUMBERS = {"V751": (387.0, 209.8), "V713": (544.5, 625.4), "V714": (497.5, 626.3), "V366": (899.7, 538.7)}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_063, page=0)
+
+    def test_numbers_stay_with_their_own_valves(self):
+        wrong = []
+        for n in self.ex["nodes"]:
+            if n.get("tag") in self.NUMBERS:
+                cx, cy = center(node_box(n))
+                x, y = self.NUMBERS[n["tag"]]
+                if n["evidence"].get("symbol_marks") or abs(cx - x) > 12 or abs(cy - y) > 12:
+                    wrong.append((n["tag"], round(cx, 1), round(cy, 1), n["evidence"].get("symbol_marks")))
+        self.assertEqual(wrong, [])
+
+
+PAGE_016 = paths.folder("APR1400", "by-drawing", "016_Ch06_Fig6.3.2-1_s2of4_Safety_Injection_Shutdown_Cooling_System_Flow_Diagram.pdf")
+PAGE_025 = paths.folder("APR1400", "by-drawing", "025_Ch09_Fig9.2.2-1_s1of4_Component_Cooling_Water_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_016) and os.path.isfile(PAGE_025),
+                     "pdfplumber 또는 APR1400 016·025쪽 PDF 없음(저장소 밖 자료)")
+class CircledValvesKeepTheirCircleNumber(unittest.TestCase):
+    """번호 원이 합쳐진 밸브는 그 원이 번호다. 옆 밸브의 번호 글자를 태그로 가져가면 안 된다(F1-6 뒤 F1-5 적용 때 찾음:
+    016쪽 구동 밸브 348이 V158을, 025쪽 방출 밸브 1108이 V1110을 가져감)."""
+
+    CASES = ((PAGE_016, "V158", "348"), (PAGE_025, "V1110", "1108"))
+
+    def test_circled_valve_does_not_take_a_neighbours_number(self):
+        for path, number, circle in self.CASES:
+            ex = pdf_vector.extract(path, page=0)
+            got = [(n["tag"], n["evidence"].get("ident_number")) for n in ex["nodes"]
+                   if n["evidence"].get("ident_number") == circle]
+            self.assertEqual(got, [(None, circle)], number)
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_025), "pdfplumber 또는 APR1400 025쪽 PDF 없음(저장소 밖 자료)")
+class NumbersWithACloserOtherNumberAreLeftEmpty(unittest.TestCase):
+    """025쪽(9.2.2-1 S1): 옆 체크 밸브가 기호로 잡히지 않아, 자기 번호(V1007~V1010)보다 먼 옆 밸브 번호(V1001~V1004)를,
+    1pt 옆 V1311·V1312 대신 8.7pt 떨어진 V1309·V1310을 받던 밸브 여섯(F1-5 검토, 그림으로 확인). 더 가까운 다른 번호
+    글자가 있으면 번호를 주지 않는다(틀린 태그보다 빈 태그)."""
+
+    WRONG = {(644.0, 177.8): "V1001", (636.7, 269.3): "V1003", (644.0, 471.0): "V1002", (636.6, 562.7): "V1004",
+             (405.7, 197.9): "V1309", (405.6, 491.2): "V1310"}
+
+    def test_neighbours_numbers_are_not_taken(self):
+        ex = pdf_vector.extract(PAGE_025, page=0)
+        got = {at: (node_at(ex, [at[0], at[1], at[0], at[1]]) or {}).get("tag") for at in self.WRONG}
+        self.assertEqual([(at, tag) for at, tag in got.items() if tag == self.WRONG[at]], [])
+
+
+PAGE_132 = paths.folder("APR1400", "by-drawing", "132_Ch10_Fig10.4.10-1_s2of3_Auxiliary_Steam_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_132), "pdfplumber 또는 APR1400 132쪽 PDF 없음(저장소 밖 자료)")
+class LargeSymbolRegression(unittest.TestCase):
+    """132쪽(10.4.10-1 S2)은 쪽 절반을 덮는 큰 묶음 기호가 있다. 검은 밸브를 따로 읽게 한 뒤 그 기호에 삼각형이 둘만 남아
+    제어 밸브로 읽혔고, 안쪽 TI·PI 원 3개가 글자를 빼앗겨 종류를 잃었다(F1-3 검토). 2ce16b9의 판정을 고정한다."""
+
+    INDICATORS = {"TI": [206, 418, 221, 433], "PI-1": [593, 470, 608, 485], "PI-2": [425, 474, 440, 489]}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_132, page=0)
+
+    def test_indicators_inside_the_large_symbol_keep_their_kind(self):
+        kinds = {name: node_at(self.ex, box)["kind"] for name, box in self.INDICATORS.items()}
+        self.assertEqual(kinds, {name: "indicator" for name in self.INDICATORS})
+
+    def test_large_symbol_is_not_read_as_a_valve(self):
+        """미확인이던 묶음이 제어 밸브로 확정되면 종류 없음 미확인까지 사라진다. 종류 없음과 그 미확인이 함께 남아야 한다."""
+        big = max(self.ex["nodes"], key=lambda n: (n.get("geometry") or {}).get("width", 0) *
+                  (n.get("geometry") or {}).get("height", 0))
+        self.assertEqual([round(v) for v in node_box(big)], [85, 184, 644, 528])
+        self.assertEqual((big["kind"], big["category"]), (None, None))
+        self.assertIn("missing_kind", [u["check"] for u in self.ex["validation"]["unknowns"]
+                                       if u["target"] == big["local_id"]])
+
+
+def ticks_near(ex, point, reach=5.0):
+    """빗금(line_tick)으로 빼 버린 선 가운데 point 둘레 reach 안에 있는 것."""
+    return [o["source_object_id"] for o in ex["drawing"]["ignored_objects"] if o.get("reason") == "line_tick"
+            and abs(o["bbox"][0] + o["bbox"][2] / 2 - point[0]) <= reach
+            and abs(o["bbox"][1] + o["bbox"][3] / 2 - point[1]) <= reach]
+
+
+def pneumatic_through(ex, point, reach=1.0):
+    """공압 신호선으로 읽은 선 가운데 point를 지나가는 것."""
+    out = []
+    for r in ex["relations"] + ex["unresolved_connectors"]:
+        pts = r["evidence"].get("pdf_path") or []
+        if r["line_type"] == "pdf_pneumatic" and any(
+                min(a[0], b[0]) - reach <= point[0] <= max(a[0], b[0]) + reach
+                and min(a[1], b[1]) - reach <= point[1] <= max(a[1], b[1]) + reach for a, b in zip(pts, pts[1:])):
+            out.append(r["source_object_id"])
+    return out
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(결정 D1)")
+class ReliefValveSpring(unittest.TestCase):
+    """5.4.12-1의 방출 밸브(번호 원 1421): 삼각형 몸통 위 짧은 줄기에 스프링선 셋이 걸려 있다. 선에 하나뿐인 빗금 묶음을
+    신호 표시로 읽는 규칙(F1-4)이 이 선을 빗금으로 지우면 안 된다."""
+
+    SPRING = (810.4, 373.0)
+    BODY = [807.5, 372.1, 813.4, 378.0]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex, _ = load_page(12)
+
+    def test_spring_strokes_are_not_removed_as_line_ticks(self):
+        self.assertEqual(ticks_near(self.ex, self.SPRING), [])
+
+    def test_spring_strokes_stay_in_the_valve_symbol(self):
+        valve = node_at(self.ex, self.BODY)
+        self.assertGreaterEqual(len(valve["evidence"]["pdf_objects"]), 5)  # 몸통, 줄기, 스프링선 셋
+
+
+PAGE_104 = paths.folder("APR1400", "by-drawing", "104_Ch10_Fig10.1-2_Overall_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_104), "pdfplumber 또는 APR1400 104쪽 PDF 없음(저장소 밖 자료)")
+class MainSteamSafetyValves(unittest.TestCase):
+    """104쪽(그림 10.1-2)에서 줄기에 스프링선 셋을 그린 밸브 다섯: 'MSSV x 5' 표기 둘(주증기 안전밸브), 'MSADV x 1' 표기
+    둘(주증기 대기방출밸브), 표기 없는 하나(601.4,140.5). 몸통을 지나 모관까지 내려가는 긴 줄기에 스프링선이 걸려 있다.
+    3f에서 선에 하나뿐인 빗금 묶음을 모두 지웠을 때 이 스프링선이 지워졌다(81bc203에 같은 규칙을 주면 다섯 밸브 모두
+    스프링선 둘이 지워지고 연결이 4개에서 1개로 줄며 줄기가 공압 신호선이 된다)."""
+
+    SPRINGS = [(601.4, 140.5), (268.7, 168.1), (233.7, 215.9), (268.7, 219.2), (233.7, 164.3)]
+    BODIES = [[599.8, 143.2, 604.7, 148.1], [267.1, 170.8, 272.0, 175.7], [232.0, 218.6, 236.9, 223.5],
+              [267.0, 221.9, 271.9, 226.8], [232.0, 167.0, 236.9, 171.9]]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_104, page=0)
+
+    def test_spring_strokes_are_not_removed_as_line_ticks(self):
+        self.assertEqual({p: ticks_near(self.ex, p) for p in self.SPRINGS}, {p: [] for p in self.SPRINGS})
+
+    def test_valve_stems_are_not_pneumatic_signal_lines(self):
+        self.assertEqual({p: pneumatic_through(self.ex, p) for p in self.SPRINGS}, {p: [] for p in self.SPRINGS})
+
+    def test_valves_keep_their_pipe_connections(self):
+        """스프링선이 지워지면 줄기 토막이 합쳐져 밸브에 닿는 선이 4개에서 1개로 준다."""
+        ends = {}
+        for r in self.ex["relations"] + self.ex["unresolved_connectors"]:
+            for e in r["endpoints"]:
+                ends[e["node_local_id"]] = ends.get(e["node_local_id"], 0) + 1
+        valves = [node_at(self.ex, box) for box in self.BODIES]
+        self.assertNotIn("pipe_cap", [v["kind"] for v in valves])
+        self.assertEqual([ends.get(v["local_id"], 0) for v in valves], [4] * 5)
+
+
+PAGE_028 = paths.folder("APR1400", "by-drawing",
+                        "028_Ch09_Fig9.2.2-1_s4of4_Component_Cooling_Water_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_028), "pdfplumber 또는 APR1400 028쪽 PDF 없음(저장소 밖 자료)")
+class LonePneumaticMarks(unittest.TestCase):
+    """028쪽(9.2.2-1 S4)의 I/P 변환기: 계기 공기 공급선과 구동부로 가는 짧은 공압선에 // 가 한 묶음씩 있다."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_028, page=0)
+
+    def test_pair_does_not_cut_its_line_into_loops(self):
+        """TY 960에서 구동부로 가는 13.6pt 선: // 가 선을 잘라 한 분기점에 0 길이 고리 다섯 개가 걸리던 자리.
+        이제 계기와 밸브를 잇는 신호 관계 하나다(구동부가 밸브에 합쳐져 선 종류는 pdf_solid로 남는다)."""
+        loops = {u["target"] for u in self.ex["validation"]["unknowns"] if u["check"] == "self_loop"}
+        here = [r["source_object_id"] for r in self.ex["unresolved_connectors"] if r["local_id"] in loops
+                and all(abs(e["point"][0] - 537.6) <= 3 and abs(e["point"][1] - 272.6) <= 3 for e in r["endpoints"])]
+        self.assertEqual(here, [])
+        self.assertEqual(len(ticks_near(self.ex, (537.6, 272.6), reach=2.0)), 2)
+        line = [r for r in self.ex["relations"] if [e["point"] for e in r["endpoints"]] ==
+                [[544.372, 272.615], [530.813, 272.615]]]
+        self.assertEqual([(r["kind"], [e["status"] for e in r["endpoints"]]) for r in line],
+                         [("signal_connection", ["connected", "connected"])])
+
+    def test_air_supply_stub_is_a_pneumatic_line(self):
+        """TY 960 아래 계기 공기(IA) 공급선: 원에서 IA 물결 표시까지 7.5pt, // 한 묶음."""
+        self.assertEqual(len(ticks_near(self.ex, (518.4, 272.6), reach=2.0)), 2)
+        self.assertEqual(len(pneumatic_through(self.ex, (518.4, 272.6))), 1)
 
 
 class PrefixInference(unittest.TestCase):

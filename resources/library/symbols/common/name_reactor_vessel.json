@@ -1,0 +1,31 @@
+{
+ "id": "common.name_reactor_vessel",
+ "revision": 1,
+ "added": "2026-11-11",
+ "updated": "2026-11-11",
+ "name": {
+  "en": "REACTOR VESSEL",
+  "ko": "원자로용기(이름 낱말)"
+ },
+ "category": "설비",
+ "role": "symbol",
+ "kind": "reactor_vessel",
+ "attributes": {},
+ "enabled": true,
+ "match": [
+  {
+   "shape": "label_words",
+   "words": [
+    "REACTOR",
+    "VESSEL"
+   ],
+   "order": 10
+  }
+ ],
+ "sources": [
+  {
+   "set": "일반 P&ID 표기",
+   "note": "pdf_vector.py의 장비 이름 낱말 표(EQUIPMENT_WORDS)를 옮긴 것(S7, 2026-11-11)"
+  }
+ ]
+}
