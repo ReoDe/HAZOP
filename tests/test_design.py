@@ -1,4 +1,4 @@
-"""지원 화면 배치 검사 함수 테스트 (scripts/check_design.py, docs/2026-11-05-design-system D1·D3·D4안, W2·W3).
+"""지원 화면 배치 검사 함수 테스트 (scripts/check_design.py, docs/units/2026-11-05-design-system D1·D3·D4안, W2·W3).
 실행: python -m unittest discover -s tests -t .
 
 offscreen 플랫폼. 작업·저장 루트와 설정 파일은 임시 폴더(scripts/check_design.TempRoots). 네트워크 사용 없음.

@@ -1,0 +1,84 @@
+# W5 신뢰 경계 해시 고정 확대
+
+> 기록 일시: 2026-11-06 03:30 · 기준 `116195b` + W5 작업 트리 · 근거 결정: D1(신뢰 경계 A안), D12(편집 범위)
+> 완료 기준: [W1 조사](w1-survey.md) §7 W5 행(211행)
+
+## 1. 고정 대상
+
+| 대상 | 고정 위치 | 키 | 해시 방식 | 고정 전 상태 |
+|---|---|---|---|---|
+| 이탈 후보 카탈로그 | `PINNED_SHA256` | `kosha-p86-2017-deviation-chart` | `content_sha256` | 고정됨(변경 없음) |
+| 적용 판단(SNP-M-102 구간) | `PINNED_SHA256` | `applicability-region-SNP-M-102-pzr` | `content_sha256` | 고정됨(변경 없음) |
+| 위험도 기준표 | `PINNED_SHA256` | `kosha-p86-2017-risk-example` | `content_sha256` | 고정됨(변경 없음) |
+| 패턴 라이브러리 `데이터/패턴/pressurizer-patterns.json` | `PINNED_SHA256` | `hazop-cause-consequence-patterns`(library_id) | `content_sha256` | **새로 고정**. 전에는 `equipment.validate_library` 구조 검사만 있었음 |
+| 지침서 `docs/specs/hazop-method-guide.md` | `GUIDE_SHA256` | — | `guide_sha256` | **새로 고정**. 전에는 해시 없이 §5.3·§6 표만 파싱해 데이터와 대조했으므로 표 밖 문장 변경은 검출되지 않았음 |
+
+검사 위치: 패턴은 `run.prepare`가 `integrity.check_patterns`를 부른다(run.py 1행 추가). 지침서는 공통 함수 `_guide_errs`를 `check_catalog`·`check_criteria`가 표를 파싱하기 전에 각각 부른다(재작업 1회차, Codex 3). 둘 중 하나만 호출돼도 해시를 검사하며, 사유는 "… — 카탈로그 대조 불가"·"… — 기준표 대조 불가"로 구분된다. 없음·읽기 실패(OSError)·해시 불일치·파싱 실패는 모두 예외가 아닌 blocker 사유(경로·원인 포함)가 된다. 이는 "지침서 없음"을 blocker로 두던 기존 규칙을 따른 것이다(입력 파일 로딩 단계의 InputError는 `load_inputs`의 입력 파일 없음·JSON 오류에 쓴다). 해시가 다르면 파싱하지 않으므로 파싱 예외가 불일치 사유를 가리지 않는다(Codex 1·2).
+
+**주의**: `docs/specs/hazop-method-guide.md`는 문구 한 글자만 고쳐도 모든 분석이 차단된다. 같은 작업 단위에서 `GUIDE_SHA256`을 갱신해야 한다(기획 담당이 고칠 때 개발 담당과 함께).
+
+## 2. 해시 방식과 근거
+
+- JSON 4종: 기존 `content_sha256`(파싱한 문서를 키 정렬·공백 없는 UTF-8 JSON으로 직렬화한 SHA-256)을 그대로 쓴다. 근거: (1) 기존 3건과 같은 방식이라 갱신 절차가 하나다. (2) `prepare`는 파싱한 문서를 받으며, `--resume`도 입력 사본을 파싱해 `prepare`로 다시 검사하므로 파일 경로 없이 같은 검사가 된다. (3) 줄바꿈·들여쓰기와 무관하므로 autocrlf 체크아웃과 상관없다. 값(키·문자·숫자)이 하나라도 바뀌면 검출한다. 의미가 없는 공백·줄바꿈만의 변경은 검출하지 않는다(의도).
+- 지침서(Markdown): `guide_sha256` = 파일 바이트에서 CRLF를 LF로 바꾼 뒤의 SHA-256(디코딩·BOM 제거 없음). 근거: 파싱 대상이 아닌 문서라 바이트 해시가 필요하다. 그러나 저장소는 `core.autocrlf=true`이고 루트 `.gitattributes`에 `docs/specs/`·`데이터/패턴/` 규칙이 없어 Windows 작업 트리는 CRLF, git 저장 내용은 LF다(`git ls-files --eol`: `i/lf w/crlf`, 5개 파일 모두). 순수 바이트 해시는 체크아웃 환경마다 값이 달라진다. CRLF→LF 정규화로 두 환경이 같은 값을 낸다(작업 트리 정규화 값 = `git show HEAD:` 바이트 해시 `30dc958a…`로 확인). 단독 CR·BOM 추가와 그 밖의 1바이트 변경은 검출한다. CRLF↔LF만 바꾼 변경은 검출하지 않는다(의도).
+- `.gitattributes`는 바꾸지 않았다(D12 제외). 위 방식은 `.gitattributes` 없이도 깨지지 않는다.
+
+## 3. 기준 데이터 갱신 절차
+
+`hazop/analysis/integrity.py` 머리 주석에 같은 내용을 적었다.
+
+1. 지침서와 데이터 파일(`데이터/이탈후보`·`기준표`·`패턴`)을 함께 고치고 사람 검토를 받는다. 패턴은 `library_version`을 올린다.
+2. 저장소 루트·전용 venv에서 새 값을 계산한다: JSON은 `integrity.content_sha256(json.load(...))`, 지침서는 `integrity.guide_sha256(integrity.GUIDE)`.
+3. `PINNED_SHA256`(키: catalog_id·applicability_id·criteria_id·library_id) 또는 `GUIDE_SHA256`을 갱신한다.
+4. 전체 테스트와 `scripts/check_analysis.py`를 돌린다. 배포본은 다시 빌드한다.
+5. 실행 폴더 영향: JSON 4종이 바뀌면 예전 실행 폴더는 `--resume`에서 입력 사본(`inputs/`) 검사로 차단되므로 새로 분석한다. 지침서만 바뀐 경우는 차단되지 않는다. 실행 폴더에 지침서 사본이 없고 `input_files`에도 기록되지 않으며, resume의 검사는 현재 자원 루트의 지침서를 새 `GUIDE_SHA256`과 대조하기 때문이다(재작업 1회차, Claude 6).
+
+## 4. 검증
+
+전용 venv `%USERPROFILE%\.hazop\venv-py312`(CPython 3.12.10).
+
+| 검사 | 결과 |
+|---|---|
+| `tests/test_integrity_pins.py`(신규 7건) | 7 OK |
+| 전체 `python -m unittest discover -s tests -t .` | 655 OK(건너뜀 14), 115.6초 |
+| `scripts/check_app.py`·`check_kg_context.py`·`check_desktop_support.py`·`check_analysis.py` | 모두 rc=0 |
+| 재작업 1회차: `tests/test_integrity_pins.py` 14건(7건 추가) | 14 OK |
+| 재작업 1회차: 전체 unittest | 662 OK(건너뜀 14), 116.9초 |
+| 재작업 1회차: check 4종 | 모두 rc=0 |
+
+재작업 1회차 추가 회귀 테스트: 해시 불일치이면서 파싱 불가한 지침서 → 해시 사유 1건만(예외 없음), 파싱 실패 → "지침서 §5.3 표/§6 표 파싱 실패 — 대조 불가: <경로> (ValueError: …)", 읽기 실패(PermissionError)·파싱 직전 삭제(FileNotFoundError) → 경로·원인 사유, `check_criteria` 단독 호출도 지침서 해시 검사, 지침서 BOM·단독 CR → 입력 차단, JSON 키 순서·들여쓰기·CRLF만 다른 패턴 → 통과·문자 하나 바뀐 값 → 차단, 대체 자원 루트(`HAZOP_RESOURCE_ROOT`)의 지침서를 지우면 저장소 지침서로 대체하지 않고 "지침서 없음 — … : <대체 루트 경로>"로 차단.
+
+음성 시험(신규 테스트, 실제 파일은 바꾸지 않고 임시 자원 루트 사본에서 `api.run_analysis` 실행):
+
+- 패턴·카탈로그·적용 판단·기준표 각각 `*_version` 숫자 1바이트 변경 → `status=input_blocked`, `run_dir=None`, 사유 "… 내용 해시가 고정값과 다름(변조 또는 미승인 변경)".
+- 지침서 표 밖 제목 1바이트 변경(`# HAZOP`→`# hAZOP`) → 입력 차단, 사유는 "지침서 파일 해시가 고정값과 다름"(표 대조로는 못 잡는 변경). 재작업 1회차부터는 카탈로그·기준표 검사가 각각 "— 카탈로그 대조 불가"·"— 기준표 대조 불가" 2건을 낸다.
+- 등록되지 않은 library_id → "고정 해시 없음".
+- 양성: 바이트 사본과 CRLF로 바꾼 사본은 `passed`. 지침서 LF·CRLF 사본은 같은 해시, 단독 CR·BOM 추가는 다른 해시.
+- `--resume`: 정상 실행 뒤 패턴 고정값이 달라지면 `run.resume`이 "입력 사본 검사 실패 — 재시도 불가: 패턴 라이브러리 …"로 차단.
+
+묶인 실행(W4): `make_snapshot.py`는 작업 트리 바이트를 그대로 복사하고, 기존 묶음 `%TEMP%\hazop-w8r2\deploy-build\dist\HAZOP\_internal`·`verify-build\dist\HAZOP-verify\_internal`의 기준 자료 4종·지침서는 CRLF 그대로이며 새 고정값 5건과 모두 일치했다(W5 코드로 계산). datas 목록에 5개 파일이 모두 있는지는 기존 `test_packaging.BuildSpecTest.test_datas_cover_runtime_reads`가 확인하고, `SplitRootsFlowTest`가 `copyfile` 사본 자원 루트에서 분석 통과를 확인하므로 `test_packaging`은 고치지 않았다. W5 코드를 넣은 재빌드는 하지 않았다(미확인).
+
+## 5. 기획서 문안(기획 담당 반영, PROGRESS 03:45 행)
+
+개발 담당은 역할 규칙상 `docs/specs/`를 고치지 않으므로 문안만 둔다(D12 주의).
+
+- `docs/specs/overview.md` 신뢰 경계 표: "저장소에서 관리하는 데이터(패턴 라이브러리·구간 정의) | 사람 검토와 버전 관리" 행을 "구간 정의 | 사람 검토와 버전 관리"로 줄인다. "이탈 카탈로그·위험도 기준표 | 내용 해시로 고정하고 지침과 대조" 행을 "이탈 카탈로그·적용 판단·위험도 기준표·패턴 라이브러리, [지침](HAZOP기법지침.md) | 내용 해시로 고정(`hazop/analysis/integrity.py`)하고, 불일치하면 분석 차단. 카탈로그·기준표는 지침과 대조(패키징 W5, D1)"로 바꾼다.
+- 같은 절 "알려진 남은 위험" 첫 줄: "패턴 라이브러리의 편차 매핑을 바꾸면 보호수단 탐색 범위가 함께 바뀝니다" → "패턴 라이브러리를 바꾸려면 고정 해시도 함께 갱신해야 합니다. 편차 매핑 변경이 보호수단 탐색 범위를 바꾸므로 갱신 때 사람 검토가 필요합니다". 위험 개수 "2가지"는 유지.
+- `docs/specs/interface.md` §7.2 표 "신뢰 경계" 행: "기준 자료(카탈로그·적용 판단·기준표·패턴)와 지침서를 자원 루트에 두고 코드에 고정한 해시와 대조한다. 불일치하면 분석을 차단한다(패키징 D1·W5). 바꾸려면 새 배포본이 필요하다".
+- `docs/specs/interface.md` §9 표: "패키징 후 신뢰 경계" 행을 지우고 머리 문장의 확정 목록에 "패키징 후 신뢰 경계는 자원 루트 고정·해시 대조로 확정(패키징 D1·W5)"을 더한다.
+
+## 6. 하위 호환
+
+- 고정 응답(`데이터/고정응답/`): 패턴·지침서를 담지 않아 영향 없음. 전체 테스트(고정 응답 분석 포함) 통과.
+- 실행 폴더 `--resume`: 입력 사본의 패턴이 현재 고정값(library_version 4)과 다르면 차단된다. 로컬 `출력/분석/` 22개 실행을 W5 전(패턴 검사 끔)·후로 `_check_derived`에 넣어 보니 결과가 모두 같았다: 패턴 v1~v3 사본 12개는 W5 전에도 패턴 구조 검사로 차단, v4 사본 중 4개는 W5 전에도 파생 결과 불일치로 차단, 6개는 전후 모두 통과. W5로 새로 막힌 실행은 없다(로컬 `출력/`은 git 추적 밖이라 다른 PC의 실행 폴더는 미확인).
+- 실행 기록 형식·`input_files` 해시·API 반환 형식은 바뀌지 않았다.
+
+## 7. 한계
+
+- 고의 변조는 범위 밖이다(전체기획 신뢰 경계). 고정값은 코드에 있어 코드와 자료를 함께 바꾸면 막지 못한다.
+- 지침서는 문구 한 글자만 고쳐도 모든 분석이 차단된다. 지침서를 고치는 같은 작업 단위에서 `GUIDE_SHA256`을 갱신해야 한다(기획 담당이 고칠 때 개발 담당과 함께).
+- 지침서만 바뀐 경우 예전 실행 폴더의 `--resume`은 차단되지 않는다(§3-5).
+- 새 구간의 적용 판단 파일이나 새 패턴 라이브러리를 추가하려면 코드의 고정값을 늘려야 한다(W1 §1.1 A안 단점).
+- `scripts/check_analysis.py`의 디스크 기준 자료 검사는 `check_patterns`를 직접 부르지 않는다(D12 제외 범위). 분석 실행 경로는 `prepare`에서 검사한다.
+
+- 총괄 정정(최종 재검토): §5 문안의 "실행 폴더"는 반영 시 "자원 루트"로 정정됐다(인터페이스에서 "실행 폴더"는 `출력/분석/...` 실행 결과 폴더를 뜻함). 인터페이스 §7.2 제외 범위는 "파싱한 값이 같은 표기 차이(공백·줄바꿈·키 순서 등)"로 바로잡았다. 남은 참고: `GUIDE_PARSE_ERRORS`가 TypeError·AttributeError까지 입력 차단 사유로 바꾸므로 해시가 맞는 지침서의 파싱 예외(코드 결함)가 가려질 수 있다.

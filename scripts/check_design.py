@@ -1,4 +1,4 @@
-"""지원 화면 배치 검사 (docs/2026-11-05-design-system 결정 D1·D3·D4, 작업 W2·W3). 네트워크·AI 호출 없음.
+"""지원 화면 배치 검사 (docs/units/2026-11-05-design-system 결정 D1·D3·D4, 작업 W2·W3). 네트워크·AI 호출 없음.
 
 메인 창을 화면에 띄우지 않고(WA_DontShowOnScreen) 상태별·화면별로 창 minimumSizeHint 폭·높이를 잰다.
 - 상태: A 데이터 없음 → B 샘플 분석 실행 열림(tests/run_fixture 고정 응답) → C 검토 기록 있음(⑤ d12 저장 뒤 다시 열기)
@@ -18,7 +18,7 @@
   보이는 폭, 줄임표 툴팁 규칙 위반. 실제 DPR이 요청 배율과 다르거나 96 DPI가 아니면 판정하지 않고 2.
 - --scale 1.25(QT_SCALE_FACTOR로 125% 흉내): 125% 작업 영역으로 판정(0/1/2). 그 밖의 배율은 참고치(종료 코드 0).
 - --platform offscreen: 글꼴 대체로 폭이 과대하므로 판정하지 않는다. --baseline <이전 결과 JSON>을 주면 늘어난 값만
-  경고로 알린다(종료 코드 0). 기준 수치는 docs/2026-11-05-design-system/evidence/w3-workspace-125.md에 기록한다.
+  경고로 알린다(종료 코드 0). 기준 수치는 docs/units/2026-11-05-design-system/evidence/w3-workspace-125.md에 기록한다.
 결과 JSON: output/design-check/design-<platform>[-s<배율>].json (output/는 git 제외). --out으로 바꿀 수 있다.
 웹 강조 범례(W10, D16): 샘플 도면·분석 실행으로 ④⑤에 강조를 띄우고 창 LEGEND_WIDTHS(1366·1440) × 그 배율 작업 영역 높이에서
 .hz-legend가 캔버스 안에 있고 보이는 떠 있는 카드(#zoom 줌·맞춤, 검색, 층 등)와 겹치지 않는지 잰다. windows 판정에 포함

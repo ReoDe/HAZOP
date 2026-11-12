@@ -23,7 +23,7 @@ LOG = ("# 결정 로그\n\n[운영](README.md)\n\n| 날짜 | 결정 | 주체 | �
 class Header(unittest.TestCase):
     def test_header_passes_n6_and_keeps_body(self):
         new = mh.add_header("# 전체 기획\n\n본문\n", "HZ-PLN-01")
-        self.assertEqual([], rules.n6_doc_headers({"specs/overview.md": new}))
+        self.assertEqual([], rules.n6_doc_headers({"docs/specs/overview.md": new}))
         self.assertEqual({"doc_id": "HZ-PLN-01", "rev": "0", "status": "draft", "author": "unknown", "reviewed": "—",
                           "approved": "—"}, rules.front_matter(new))
         self.assertTrue(new.endswith("---\n\n# 전체 기획\n\n본문\n"))

@@ -1,4 +1,4 @@
-"""패키징 대비 테스트(docs/2026-11-05-packaging W3, 기획서/인터페이스.md §7.1·§8 '패키징 대비' 행).
+"""패키징 대비 테스트(docs/units/2026-11-05-packaging W3, 기획서/인터페이스.md §7.1·§8 '패키징 대비' 행).
 
 1) hazop/paths.py 공개 API 하위 호환: 기존 이름·인자가 그대로 있다(추가만 허용).
 2) hazop/app/data.py의 scripts/ importlib 로딩 경로: 개발 실행은 저장소, 묶인 실행은 묶음 폴더(sys._MEIPASS).

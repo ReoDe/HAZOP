@@ -427,7 +427,7 @@ RELIEF_SPRING = [prim([(341.19, 539.88), (342.71, 538.41)], False), prim([(341.1
 class SafetyValveSpringTest(unittest.TestCase):
     """안전밸브 줄기를 가로지르는 스프링선 셋은 신호선 빗금이 아니다(범례 1.7-1 1/4). 바뀌면 안 되는 표본이다.
     3f에서 선에 하나뿐인 빗금 묶음을 모두 신호 표시로 지웠을 때 104쪽 안전밸브의 스프링선 둘이 지워졌고, 밸브는 연결을
-    잃고 줄기는 공압 신호선이 됐다(docs/2026-11-11-unit-f1/README.md F1-4)."""
+    잃고 줄기는 공압 신호선이 됐다(docs/units/2026-11-11-unit-f1/README.md F1-4)."""
 
     def test_spring_on_a_long_stem_is_not_removed(self):
         ex = extract(SAFETY_VALVE + SAFETY_VALVE_SPRING)

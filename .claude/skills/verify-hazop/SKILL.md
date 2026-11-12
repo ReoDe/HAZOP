@@ -5,7 +5,7 @@ description: Drive the real HAZOP desktop app (PySide6 + QtWebEngine, Windows) t
 
 # Verify HAZOP as a user
 
-Human usage doc and metric definitions: `docs/2026-11-07-user-scenario-check/README.md`. Read it once.
+Human usage doc and metric definitions: `docs/units/2026-11-07-user-scenario-check/README.md`. Read it once.
 
 ## Launch
 

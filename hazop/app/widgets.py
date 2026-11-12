@@ -39,7 +39,7 @@ def kst_text(utc_iso):
 class ElidedLabel(QLabel):
     """한 줄 라벨. elide(Qt.ElideRight·ElideMiddle)를 주면 자리가 모자랄 때 줄임표로 줄여 그린다. text()와 접근성
     이름은 늘 전체 문구이고, 줄여 그렸을 때만 툴팁에 전체 문구를 띄운다(헤더 WhereLabel과 같은 동작).
-    최소 폭은 앞 min_chars글자 + '…' 폭이다(docs/2026-11-05-design-system W3). elide가 None이면 QLabel과 같다."""
+    최소 폭은 앞 min_chars글자 + '…' 폭이다(docs/units/2026-11-05-design-system W3). elide가 None이면 QLabel과 같다."""
 
     def __init__(self, text="", parent=None, elide=None, min_chars=8):
         super().__init__(text, parent)

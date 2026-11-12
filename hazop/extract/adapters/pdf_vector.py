@@ -557,7 +557,7 @@ def _line_ticks(polys, prm, bodies=()):
     빗금 묶음이 tick_pairs_min개 이상인 tick_host_min 이상 선은 신호선이고, 그 묶음은 모두 빗금이다.
     묶음이 하나뿐인 선(외톨이)은 빗금이 정확히 둘(//)이고 선이 빗금보다 길 때만 신호 표시로 본다. 계기 공기 공급선과
     I/P 변환기~구동부 선처럼 짧은 공압선이 이렇다(선 길이 하한 없음). 빗금 셋은 안전밸브 줄기의 스프링선이라 건드리지
-    않는다(APR1400 104쪽 안전밸브, docs/2026-11-11-unit-f1/README.md F1-4). 헷갈리는 자리는 판정하지 않고 선을 그대로
+    않는다(APR1400 104쪽 안전밸브, docs/units/2026-11-11-unit-f1/README.md F1-4). 헷갈리는 자리는 판정하지 않고 선을 그대로
     둔다: 빗금이 선의 끝점 밖을 지나거나, 그 선에 빗금 비슷한 조각이 더 있거나(_crowded), // 가 밸브 몸통에 붙어
     있을 때다(_on_small_body)."""
     ticks, marked = set(), {}
@@ -899,7 +899,7 @@ def _shape_features(sym, prm):
     if getattr(sym, "plate_valve", None):  # 판 사이 원판·공(_plate_assemblies)
         found.add("plate_valve:%s" % sym.plate_valve)
     # 나비 몸통의 두 삼각형은 붙어 있다. 사이에 글로브·볼의 점이 끼어도 간격은 삼각형 크기보다 작다. 큰 묶음 기호 안에 멀리
-    # 떨어진 삼각형이 우연히 둘 남은 것은 밸브 몸통이 아니다(APR1400 132쪽, docs/2026-11-11-unit-f1/README.md F1-3 검토)
+    # 떨어진 삼각형이 우연히 둘 남은 것은 밸브 몸통이 아니다(APR1400 132쪽, docs/units/2026-11-11-unit-f1/README.md F1-3 검토)
     if len(tris) == 2 and _box_gap(tris[0]["bbox"], tris[1]["bbox"]) <= max(
             max(_w(t["bbox"]), _h(t["bbox"])) for t in tris):
         found.add("bowtie")
@@ -1008,7 +1008,7 @@ _symbol_library = None
 PIPE_CAP_BASIS = "small_closed_body_single_connection"
 # 검은 채움을 기호 몸체로 올릴 때의 견본 거리 상한(칸). 견본의 max_distance보다 좁게 본다. 잘못 올리면 화살촉이 밸브가 되어
 # 열린 배관이 닫힌 밸브로 읽힌다. APR1400 143쪽에서 게이트·글로브 묶음은 견본에서 0.06칸 안, 밸브가 아닌 검은 채움(반만 칠한
-# 밸브, 건물 경계 표시, 화살촉 등)은 0.24칸 이상 떨어져 있었다(docs/2026-11-11-unit-f1/README.md F1-3)
+# 밸브, 건물 경계 표시, 화살촉 등)은 0.24칸 이상 떨어져 있었다(docs/units/2026-11-11-unit-f1/README.md F1-3)
 SPRING_KINDS = frozenset({"psv"})  # 사전 격자 견본만으로 정하지 않고 스프링선(_has_spring)을 함께 보는 종류
 BLACK_SEED_DISTANCE = 0.1
 ACTUATOR_REACH_RATIO = 2.0  # 밸브 몸통 긴 변 × 비율 안에 구동부 기호가 있으면 구동 밸브로 본다(APR1400 축 길이 기준)

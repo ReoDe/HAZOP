@@ -1,4 +1,4 @@
-"""이름 규칙 검사 N1~N11 (docs/2026-11-10-naming-rules/README.md, HZ-GOV-02 §4와 §8.1).
+"""이름 규칙 검사 N1~N12 (이름 규칙 문서 README.md, HZ-GOV-02 §4와 §8.1. 자리는 `NAMING_DIRS`).
 
 git이 추적하는 파일만 본다. 규칙을 들이기 전부터 있던 위반은 `EXEMPT` 표에 이전 단계별로 적어 두었다.
 단계를 마치면 그 단계의 줄을 지운다. 위반이 사라졌는데 줄이 남아 있으면 `test_exempt_rows_still_match`가 실패한다.
@@ -18,7 +18,23 @@ import unittest
 import urllib.parse
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-NAMING_DOC = "docs/2026-11-10-naming-rules/README.md"
+# 이름 규칙 문서 폴더. 단계 7이 옛 자리를 새 자리로 옮긴다. 옮기기 전과 뒤에 모두 읽도록 두 자리를 새 자리 먼저 적고,
+# 이전 도구(scripts/migrate_names.py)와 다른 시험도 경로를 직접 적지 않고 여기서 얻는다.
+NAMING_DIRS = ("docs/governance/naming-rules", "docs/2026-11-10-naming-rules")
+
+
+def naming_dir(repo=REPO):
+    for d in NAMING_DIRS:
+        if os.path.isfile(os.path.join(repo, *d.split("/"), "README.md")):
+            return d
+    return NAMING_DIRS[0]
+
+
+def naming_path(name, repo=REPO):
+    return naming_dir(repo) + "/" + name
+
+
+NAMING_DOC = naming_path("README.md")
 
 # N10은 이 커밋 뒤의 커밋만 본다(§4.10 '단계 0의 커밋부터 적용').
 COMMIT_BASE = "d0a0370"
@@ -32,19 +48,26 @@ EXEMPT = {
         ("N1", "licenses/*", "제3자 고지 원문의 파일 이름을 그대로 둔다"),
         ("N1", "hazop/kg/vendor/*", "가져온 제3자 파일(SHA-256 고정)"),
         ("N1", "tests/fixtures/apr1400/*", "DCD 원본 파일 이름이 기준값의 키다"),
-        ("N8", "* @ " + NAMING_DOC, "대응표가 옛 이름을 일부러 적는다"),
-        ("N9", "docs/2026-11-05-packaging/evidence/w5-* -> HAZOP기법지침.md", "기획서 문장을 인용한 줄 안의 링크"),
-        ("N8", "* @ docs/2026-11-10-plan/pstack-advice.md", "단위 NAMING 절이 옮길 이름과 데이터에 남는 옛 출처를 일부러 적는다"),
+        ("N8", "* @ *naming-rules/README.md", "대응표가 옛 이름을 일부러 적는다(옮기기 전 docs/2026-11-10-naming-rules/, 뒤 docs/governance/naming-rules/)"),
+        ("N9", "docs/units/2026-11-05-packaging/evidence/w5-* -> HAZOP기법지침.md", "기획서 문장을 인용한 줄 안의 링크"),
+        ("N8", "* @ docs/units/2026-11-10-plan/pstack-advice.md", "단위 NAMING 절이 옮길 이름과 데이터에 남는 옛 출처를 일부러 적는다"),
         ("N1", "resources/references/pid-samples/*", "샘플 도면 폴더 이름은 기준값의 키다(§5.5)"),
         ("N1", "resources/references/pid-symbol-catalog/*", "받은 기호 카탈로그의 파일 이름을 그대로 둔다"),
         ("N1", "resources/references/APR1400_DCD/*", "받은 이름을 그대로 둔다(§5.5)"),
-        ("N8", "자원/ @ docs/2026-11-09-data-consolidation/README.md", "2026-11-09 정리의 계획이자 기록. 그때 정한 배치를 적었다"),
-        ("N8", "작업/ @ docs/2026-11-09-data-consolidation/README.md", "같은 문서. 그때의 개발 작업 루트 이름이다"),
-        ("N8", "작업/ @ docs/2026-11-10-ci-review/README.md", "2026-11-10 CI 검토 기록. 그때의 작업 루트 이름을 적었다"),
-        ("N8", "작업/ @ docs/2026-11-10-lessons/d-drive-move.md", "D 드라이브 이전 기록. 그때 옮긴 폴더 이름이다"),
-        ("N8", "작업/ @ design/mockups/README.md", "시안에 넣은 자료를 가져온 그때의 경로다"),
+        ("N8", "자원/ @ docs/units/2026-11-09-data-consolidation/README.md", "2026-11-09 정리의 계획이자 기록. 그때 정한 배치를 적었다"),
+        ("N8", "작업/ @ docs/units/2026-11-09-data-consolidation/README.md", "같은 문서. 그때의 개발 작업 루트 이름이다"),
+        ("N8", "작업/ @ docs/units/2026-11-10-ci-review/README.md", "2026-11-10 CI 검토 기록. 그때의 작업 루트 이름을 적었다"),
+        ("N8", "작업/ @ docs/units/2026-11-10-lessons/d-drive-move.md", "D 드라이브 이전 기록. 그때 옮긴 폴더 이름이다"),
+        ("N8", "specs/ @ docs/units/2026-11-09-data-consolidation/README.md", "2026-11-09 정리 계획. 그때 정한 문서 폴더 이름을 적었다"),
+        ("N8", "methodology/ @ docs/units/2026-11-09-data-consolidation/README.md", "같은 문서"),
+        ("N8", "specs/ @ docs/units/2026-11-12-folder-standard/README.md", "이 이전의 완료 목록. 옮긴 일을 옛 이름으로 말한다"),
+        ("N8", "design/ @ docs/units/2026-11-12-folder-standard/README.md", "이 이전의 완료 목록. 옮긴 일을 옛 이름으로 말한다"),
+        ("N8", "methodology/ @ docs/units/2026-11-12-folder-standard/README.md", "이 이전의 완료 목록. 옮긴 일을 옛 이름으로 말한다"),
+        ("N8", "records/ @ docs/units/2026-11-12-folder-standard/README.md", "이 이전의 완료 목록. 옮긴 일을 옛 이름으로 말한다"),
+        ("N8", "작업/ @ docs/design/mockups/README.md", "시안에 넣은 자료를 가져온 그때의 경로다"),
     ],
 }
+
 
 # ---------------------------------------------------------------- N1, N2
 CONVENTION_FILES = {"README.md", "CLAUDE.md", "AGENTS.md", "INTENT.md", "PROGRESS.md", "ROADMAP.md", "SKILL.md"}
@@ -52,8 +75,8 @@ CONVENTION_FILES = {"README.md", "CLAUDE.md", "AGENTS.md", "INTENT.md", "PROGRES
 PROPER_NOUNS = re.compile(r"APR1400|SNP-[A-Z]+(?:-\d+)?|[LD]\d+-\d+")
 SAFE_CHARS = re.compile(r"[A-Za-z0-9._-]*\Z")
 TOP_LEVEL = {
-    "hazop", "scripts", "tests", "packaging", "licenses", "specs", "design", "methodology", "records", "resources",
-    "work", "docs", "CLAUDE.md", "INTENT.md", "README.md", ".claude", ".github", ".gitignore", ".gitattributes",
+    "hazop", "scripts", "tests", "packaging", "licenses", "resources", "work", "docs",
+    "CLAUDE.md", "INTENT.md", "README.md", ".claude", ".github", ".gitignore", ".gitattributes",
 }
 
 
@@ -93,14 +116,22 @@ HAND_VERSION = re.compile(r"(_v\d+|_draft|_final|-new)(?=[._-]|\Z)|복사본")
 TEST_CASE = re.compile(r"^class\s+\w+\(.*TestCase.*\):", re.MULTILINE)
 
 
+DOCS_CHILDREN = ("specs", "design", "methodology", "records", "units", "governance")
+
+
 def n3_docs_workspaces(paths):
-    spaces = sorted({p.split("/")[1] for p in paths if p.startswith("docs/") and p.count("/") >= 2})
+    """docs/ 바로 아래는 여섯 폴더뿐이고, 작업 단위 기록은 docs/units/<YYYY-MM-DD-slug>/(README.md 필수)에 둔다."""
     out = []
-    for name in spaces:
+    for name in sorted({p.split("/")[1] for p in paths if p.startswith("docs/") and p.count("/") >= 2}):
+        if name not in DOCS_CHILDREN:
+            out.append(Violation("N3", "docs/" + name, "docs/ 바로 아래가 %s가 아니다" % "·".join(DOCS_CHILDREN)))
+    out += [Violation("N3", p, "docs/units/ 바로 아래에는 README.md와 날짜 폴더만 둔다")
+            for p in sorted(paths) if p.startswith("docs/units/") and p.count("/") == 2 and p != "docs/units/README.md"]
+    for name in sorted({p.split("/")[2] for p in paths if p.startswith("docs/units/") and p.count("/") >= 3}):
         if not WORKSPACE.match(name):
-            out.append(Violation("N3", "docs/" + name, "이름이 YYYY-MM-DD-<slug>가 아니다"))
-        if "docs/%s/README.md" % name not in paths:
-            out.append(Violation("N3", "docs/" + name, "README.md가 없다"))
+            out.append(Violation("N3", "docs/units/" + name, "이름이 YYYY-MM-DD-<slug>가 아니다"))
+        if "docs/units/%s/README.md" % name not in paths:
+            out.append(Violation("N3", "docs/units/" + name, "README.md가 없다"))
     return out
 
 
@@ -130,16 +161,23 @@ def n7_hand_versions(paths):
 
 
 # ---------------------------------------------------------------- N6
+# 옮기기 전(`specs/…`)과 옮긴 뒤(`docs/specs/…`)의 자리를 모두 적는다. 폴더 규칙서(README.md)는 N12 양식이라 머리를 달지 않는다.
 HEADER_TARGETS = (
-    "specs/*.md", "specs/flows/*.md", "design/*.md", "methodology/*.md", "records/*.md", "INTENT.md", NAMING_DOC,
+    "specs/*.md", "specs/flows/*.md", "design/*.md", "methodology/*.md", "records/*.md",
+    "docs/specs/*.md", "docs/specs/flows/*.md", "docs/design/*.md", "docs/methodology/*.md", "docs/records/*.md",
+    "INTENT.md", "docs/2026-11-10-naming-rules/README.md", "docs/governance/naming-rules/README.md",
     "packaging/other-pc-checklist.md",
 )
+# `records/README.md`는 지금도 HZ-REC-01이라 옮긴 뒤에도 머리 대상으로 둔다.
+NO_HEADER = ("docs/specs/README.md", "docs/design/README.md", "docs/methodology/README.md", "docs/specs/flows/README.md")
 HEADER_KEYS = ("doc_id", "rev", "status", "author", "reviewed", "approved")
 DOC_ID = re.compile(r"HZ-(PLN|FLW|DSN|MTH|REC|GOV|CHK)-\d{2}\Z")
 STATUSES = {"draft", "review", "approved", "obsolete"}
 
 
 def is_header_target(path):
+    if path in NO_HEADER:
+        return False
     return any(fnmatch.fnmatchcase(path, g) and path.count("/") == g.count("/") for g in HEADER_TARGETS)
 
 
@@ -177,6 +215,54 @@ def n6_doc_headers(docs):
             problems.append("status가 approved인데 approved가 비었다")
         if problems:
             out.append(Violation("N6", path, ", ".join(problems)))
+    return out
+
+
+# ---------------------------------------------------------------- N12
+FOLDER_README_HEADINGS = ("무엇을 넣는가", "넣지 않는 것", "이름 형식", "주인", "폐기 기준")
+UNIT_FOLDER = re.compile(r"\d{4}-\d{2}-\d{2}-")
+
+
+def readme_required(folder):
+    """폴더 규칙서(README.md)를 두어야 하는 폴더인가. 최상위 폴더와 그 바로 아래 한 층, docs/ 아래는 두 층까지다.
+    깊이를 정한 이유: 규칙서가 필요한 것은 사람이 '여기 뭘 넣지?'를 묻는 자리(분류가 갈리는 층)이고, 그보다 깊은 폴더는 윗층 규칙서가
+    이름 형식으로 이미 설명한다. 빼는 것: 점으로 시작하는 도구 폴더, 작업 단위 기록(docs/units/<날짜-slug>/, 옛 자리 docs/<날짜-slug>/ 포함,
+    각자 작업 공간 README가 있다), 시안(mockups, 만든 그림과 자체 README), 시험 입력(tests/fixtures, 폴더를 전부 훑는 시험이 있다),
+    제3자 고지 원문(licenses/<이름>/, 바이트가 해시로 고정돼 있다)."""
+    parts = folder.split("/")
+    if parts[0].startswith(".") or "mockups" in parts or parts[:2] == ["tests", "fixtures"]:
+        return False
+    if parts[0] == "docs":
+        if len(parts) > 1 and (UNIT_FOLDER.match(parts[1]) or (parts[1] == "units" and len(parts) > 2)):
+            return False
+        return len(parts) <= 3
+    if parts[0] == "licenses":
+        return len(parts) == 1
+    return len(parts) <= 2
+
+
+def n12_folder_readmes(paths, texts):
+    """texts는 {README 경로: 글}. 필수 폴더에 README.md가 있고 `##` 제목 다섯 개가 양식 순서대로 한 번씩 있는지 본다."""
+    tracked = set(paths)
+    folders = sorted({p[:i] for p in paths for i, ch in enumerate(p) if ch == "/"})
+    out = []
+    for folder in folders:
+        if not readme_required(folder):
+            continue
+        readme = folder + "/README.md"
+        if readme not in tracked:
+            out.append(Violation("N12", folder, "README.md가 없다"))
+            continue
+        heads, fenced = [], False
+        for line in texts.get(readme, "").splitlines():
+            if FENCE.match(line):
+                fenced = not fenced
+            elif not fenced and line.startswith("## "):
+                heads.append(line[3:].strip())
+        if [h for h in heads if h in FOLDER_README_HEADINGS] != list(FOLDER_README_HEADINGS):
+            wrong = [h for h in FOLDER_README_HEADINGS if heads.count(h) != 1]
+            out.append(Violation("N12", folder, "README.md 제목이 양식(%s)과 다르다: %s" % (
+                " / ".join(FOLDER_README_HEADINGS), (", ".join(wrong) + " 확인") if wrong else "순서")))
     return out
 
 
@@ -242,11 +328,16 @@ OLD_TOP_IN_CODE = re.compile(r"^(?:\./|(?:\.\./)+|[A-Za-z]:[\\/]HAZOP[\\/])?(%s)
 # 고지 원문과 가져온 파일은 바이트가 SHA-256으로 고정돼 있다(licenses/README.md의 표, .gitattributes). 읽지도 고치지도 않는다.
 THIRD_PARTY = ("licenses/", "hazop/kg/vendor/")
 # 기록 문서. 본문에 백틱으로 적힌 옛 이름은 그 시점의 기록이라 N8이 보지 않고 이전 도구도 고치지 않는다(§6.9). 링크는 본다.
-RECORD_DOCS = ("records/decision-log.md", "records/backlog.md")
+RECORD_DOCS = ("records/decision-log.md", "records/backlog.md", "docs/records/decision-log.md", "docs/records/backlog.md")
 
 
 def is_doc(path):
     return path.lower().endswith((".md", ".html")) and not path.startswith(THIRD_PARTY)
+
+
+# 단계 7로 최상위에서 docs/ 아래로 들어간 폴더. `../specs/…`처럼 문서 폴더 기준으로 적은 상대 경로는 맞으므로 접두를 받지 않는다.
+MOVED_TOPS = ("specs", "design", "methodology", "records")
+MOVED_TOP_IN_CODE = re.compile(r"^(?:\./|[A-Za-z]:[\\/]HAZOP[\\/])?(%s)[\\/]" % "|".join(MOVED_TOPS))
 
 
 def n8_old_korean_paths(docs):
@@ -257,7 +348,7 @@ def n8_old_korean_paths(docs):
             if ref.kind == "code" and path in RECORD_DOCS:
                 continue
             if ref.kind == "code":
-                m = OLD_TOP_IN_CODE.match(ref.value.strip())
+                m = OLD_TOP_IN_CODE.match(ref.value.strip()) or MOVED_TOP_IN_CODE.match(ref.value.strip())
                 top = m.group(1) if m else None
             else:
                 target = resolve(path, link_path(ref.value) or "") if link_path(ref.value) else None
@@ -357,10 +448,11 @@ def file_violations(repo=REPO):
     dirs = {p[:i] for p in paths for i, ch in enumerate(p) if ch == "/"}
     docs = read_texts([p for p in paths if is_doc(p)], repo)
     tests_py = read_texts([p for p in paths if p.startswith("tests/") and p.endswith(".py")], repo)
+    readmes = read_texts([p for p in paths if p.endswith("/README.md") and readme_required(posixpath.dirname(p))], repo)
     return (n1_path_chars(paths) + n2_top_level(paths) + n3_docs_workspaces(tracked) + n4_script_verbs(paths)
             + n5_test_files(tests_py) + n6_doc_headers({p: t for p, t in docs.items() if is_header_target(p)})
             + n7_hand_versions(paths) + n8_old_korean_paths(docs)
-            + n9_broken_links(docs, lambda t: t in tracked or t in dirs))
+            + n9_broken_links(docs, lambda t: t in tracked or t in dirs) + n12_folder_readmes(paths, readmes))
 
 
 def exempt_row(violation):
@@ -402,6 +494,32 @@ class RepoTest(unittest.TestCase):
             self.skipTest("기준 커밋 %s이 이 체크아웃의 이력에 없다" % COMMIT_BASE)
         self.assertEqual([], n10_commit_subjects(subjects))
 
+    def test_scripts_under_docs_find_the_repo_root(self):
+        """docs/ 아래 .py가 자기 위치에서 저장소 루트를 세는 방식(dirname 겹침, `..` 단계, parents[n])이 폴더가 한 층 깊어져도 맞는지 본다."""
+        nested = re.compile(r"((?:os\.path\.dirname\()+)os\.path\.abspath\(__file__\)")
+        dots = re.compile(r"os\.path\.join\((?:HERE|os\.path\.dirname\(os\.path\.abspath\(__file__\)\)), ((?:\"\.\.\"(?:, )?)+)\)")
+        parents = re.compile(r"ROOT\.parents\[(\d)\]")
+        checked = 0
+        for path in tracked_files():
+            if not (path.startswith("docs/") and path.endswith(".py")):
+                continue
+            text = read_texts([path])[path]
+            here = os.path.dirname(os.path.join(REPO, *path.split("/")))
+            found = []
+            for m in nested.finditer(text):
+                up = m.group(1).count("dirname(") - 1
+                if up < 2:  # 같은 폴더의 파일을 가리키는 한두 겹은 저장소 루트를 세는 것이 아니다
+                    continue
+                found.append(os.path.normpath(os.path.join(here, *[".."] * up)))
+            for m in dots.finditer(text):
+                found.append(os.path.normpath(os.path.join(here, *[".."] * m.group(1).count(".."))))
+            for m in parents.finditer(text):
+                found.append(os.path.normpath(os.path.join(here, *[".."] * (int(m.group(1)) + 1))))
+            for root in found:
+                checked += 1
+                self.assertEqual(os.path.normcase(os.path.normpath(REPO)), os.path.normcase(root), path)
+        self.assertGreater(checked, 8, "찾는 방식이 바뀌었는지 확인한다")
+
     def test_branch_name(self):
         name = current_branch()
         if name is None:
@@ -426,12 +544,29 @@ class PastViolationTest(unittest.TestCase):
 
     def test_n2_top_level(self):
         self.assertEqual(["notes", "데이터"], [v.subject for v in n2_top_level(["notes/a.md", "데이터/기준표/x.json", "hazop/a.py"])])
+        self.assertEqual([], n2_top_level(["docs/specs/a.md", "work/x", "resources/y", "README.md", ".claude/a.md"]))
+        # 개정 2: 문서 폴더 네 개는 docs/ 아래로 들어갔으므로 최상위에 있으면 걸린다
+        self.assertEqual(["design", "methodology", "records", "specs"],
+                         [v.subject for v in n2_top_level(["specs/a.md", "design/b.md", "methodology/c.md", "records/d.md"])])
 
-    def test_n3_workspace_name_and_readme(self):
-        paths = {"docs/screenshots-pdf/README.md", "docs/2026-11-10-plan/pstack-advice.md",
-                 "docs/2026-11-10-lessons/README.md"}
-        self.assertEqual([("docs/2026-11-10-plan", "README.md가 없다"), ("docs/screenshots-pdf", "이름이 YYYY-MM-DD-<slug>가 아니다")],
+    def test_n3_docs_children_and_unit_folders(self):
+        paths = {"docs/units/2026-11-10-plan/pstack-advice.md", "docs/units/2026-11-10-lessons/README.md",
+                 "docs/units/screenshots-pdf/README.md", "docs/specs/a.md", "docs/governance/naming-rules/README.md",
+                 "docs/2026-11-12-old-place/README.md", "docs/README.md"}
+        self.assertEqual([("docs/2026-11-12-old-place", "docs/ 바로 아래가 specs·design·methodology·records·units·governance가 아니다"),
+                          ("docs/units/2026-11-10-plan", "README.md가 없다"),
+                          ("docs/units/screenshots-pdf", "이름이 YYYY-MM-DD-<slug>가 아니다")],
                          [(v.subject, v.detail) for v in n3_docs_workspaces(paths)])
+
+    def test_n3_loose_files_directly_under_docs_units(self):
+        found = n3_docs_workspaces({"docs/units/README.md", "docs/units/loose.md", "docs/units/2026-11-10-plan/README.md"})
+        self.assertEqual([("docs/units/loose.md", "docs/units/ 바로 아래에는 README.md와 날짜 폴더만 둔다")],
+                         [(v.subject, v.detail) for v in found])
+
+    def test_n3_date_folder_directly_under_docs_is_live_after_the_move(self):
+        found = n3_docs_workspaces({"docs/2026-11-05-packaging/README.md"})
+        self.assertEqual(["docs/2026-11-05-packaging"], [v.subject for v in found])
+        self.assertIsNone(exempt_row(found[0]))
 
     def test_n4_script_verb(self):
         found = n4_script_verbs(["scripts/helper.py", "scripts/check_naming.py", "scripts/devenv.py", "scripts/sub/x.py"])
@@ -465,6 +600,66 @@ class PastViolationTest(unittest.TestCase):
         self.assertTrue(is_header_target("INTENT.md"))
         self.assertFalse(is_header_target("design/mockups/README.md"))
         self.assertFalse(is_header_target("docs/2026-11-05-packaging/README.md"))
+        # 옮긴 뒤의 자리도 같은 대상이다
+        for moved in ("docs/specs/overview.md", "docs/specs/flows/00-overview.md", "docs/design/screen-spec.md",
+                      "docs/methodology/combined-risk-methods.md", "docs/records/backlog.md",
+                      "docs/governance/naming-rules/README.md"):
+            self.assertTrue(is_header_target(moved), moved)
+        for other in ("docs/design/mockups/README.md", "docs/units/2026-11-10-plan/README.md"):
+            self.assertFalse(is_header_target(other), other)
+
+    def test_naming_dir_is_found_before_and_after_the_move(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="hazop-naming-dir-") as repo:
+            self.assertEqual(NAMING_DIRS[0], naming_dir(repo))
+            old = os.path.join(repo, *NAMING_DIRS[1].split("/"))
+            os.makedirs(old)
+            open(os.path.join(old, "README.md"), "w").close()
+            self.assertEqual(NAMING_DIRS[1], naming_dir(repo))
+            self.assertEqual(NAMING_DIRS[1] + "/name-map.csv", naming_path("name-map.csv", repo))
+            new = os.path.join(repo, *NAMING_DIRS[0].split("/"))
+            os.makedirs(new)
+            open(os.path.join(new, "README.md"), "w").close()
+            self.assertEqual(NAMING_DIRS[0], naming_dir(repo))
+        self.assertEqual(naming_dir() + "/README.md", NAMING_DOC)
+        self.assertTrue(os.path.isfile(os.path.join(REPO, NAMING_DOC)))
+
+    def test_n12_folder_readme_form(self):
+        good = "# 이름\n\n## 무엇을 넣는가\n가\n## 넣지 않는 것\n나\n## 이름 형식\n다\n## 주인\n라\n## 폐기 기준\n마\n"
+        paths = ["hazop/a.py", "hazop/app/b.py", "hazop/app/deep/c.py", "hazop/README.md", "hazop/app/README.md",
+                 "tests/fixtures/x/y.json", "licenses/pkg/LICENSE", "docs/units/2026-11-10-plan/evidence/e.md",
+                 "docs/design/mockups/final/a.png", "docs/design/b.md", "docs/specs/flows/00.md", "docs/README.md",
+                 "docs/design/README.md", "docs/specs/README.md", "docs/specs/flows/README.md",
+                 ".claude/agents/a.md", "scripts/x.py"]
+        texts = {"hazop/README.md": good, "hazop/app/README.md": good.replace("## 주인", "## 담당"),
+                 "docs/README.md": good, "docs/design/README.md": good, "docs/specs/README.md": good,
+                 "docs/specs/flows/README.md": good + "## 덧붙임\n"}
+        found = {v.subject: v.detail for v in n12_folder_readmes(paths, texts)}
+        self.assertEqual({"hazop/app", "scripts", "tests", "licenses", "docs/units"}, set(found))
+        self.assertIn("없다", found["scripts"])
+        self.assertIn("주인", found["hazop/app"])
+
+    def test_n12_depth_and_exclusions(self):
+        self.assertTrue(readme_required("hazop"))
+        self.assertTrue(readme_required("hazop/app"))
+        self.assertFalse(readme_required("hazop/app/widgets"))
+        self.assertTrue(readme_required("docs"))
+        self.assertTrue(readme_required("docs/specs"))
+        self.assertTrue(readme_required("docs/specs/flows"))
+        self.assertFalse(readme_required("docs/specs/flows/deep"))
+        self.assertTrue(readme_required("docs/units"))
+        self.assertFalse(readme_required("docs/units/2026-11-10-plan"))
+        self.assertFalse(readme_required("docs/2026-11-10-plan"))
+        self.assertFalse(readme_required("docs/2026-11-10-plan/evidence"))
+        self.assertFalse(readme_required("docs/design/mockups"))
+        self.assertFalse(readme_required("design/mockups/final"))
+        self.assertFalse(readme_required("tests/fixtures"))
+        self.assertFalse(readme_required("tests/fixtures/kg"))
+        self.assertTrue(readme_required("tests/baselines"))
+        self.assertTrue(readme_required("licenses"))
+        self.assertFalse(readme_required("licenses/pkg"))
+        self.assertFalse(readme_required(".claude"))
+        self.assertFalse(readme_required(".github/workflows"))
 
     def test_n7_hand_versions(self):
         bad = ["자원/참고자료/APR1400_DCD/계통약어_v2.csv", "x/계통약어_draft.csv", "x/u1_final.tar", "x/plan-new.md",
@@ -486,6 +681,16 @@ class PastViolationTest(unittest.TestCase):
             ["기획서/ @ .claude/agents/hazop-planner.md", "기획서/ @ README.md", "작업/ @ README.md",
              "메모리/ @ docs/2026-11-10-plan/a.md", "기획서/ @ records/backlog.md", "flow chart/ @ x.html", "자원/ @ x.html"],
             [v.subject for v in n8_old_korean_paths(docs)])
+
+    def test_n8_moved_document_folders_are_live_after_stage_7(self):
+        """단계 7 뒤로 `specs/`·`design/`·`methodology/`·`records/`는 최상위가 아니다. 백틱 경로로 새로 적으면 걸린다.
+        문서 폴더 기준 상대 경로(`../specs/…`)와 `docs/` 아래 경로는 괜찮다. 기록 문서 본문은 보지 않는다."""
+        docs = {"README.md": "`specs/overview.md`와 `docs/specs/overview.md`, `design/mockups/`, `./records/backlog.md`\n",
+                "docs/design/a.md": "`../specs/interface.md`, `mockups/README.md`, `methodology/combined-risk-methods.md`\n",
+                "docs/records/backlog.md": "`specs/overview.md` 본문\n"}
+        self.assertEqual(["design/ @ README.md", "records/ @ README.md", "specs/ @ README.md",
+                          "methodology/ @ docs/design/a.md"],
+                         [v.subject for v in n8_old_korean_paths(docs)])
 
     def test_n8_is_live_for_folders_moved_in_stage_3(self):
         """단계 3의 넓은 예외(`기획서/ @ *` 등)를 지운 뒤로는, 옮긴 폴더의 옛 경로를 문서에 새로 적으면 예외 없이 걸린다."""
@@ -538,7 +743,7 @@ class PastViolationTest(unittest.TestCase):
         self.assertIn("`ci`(CI 설정)", doc)
         self.assertIn(r"build\|ci\|chore", doc)
         self.assertIn("evidence/step1-moves.csv", doc)
-        self.assertIn("docs/2026-11-10-naming-rules/evidence/step1-moves.csv", tracked_files())
+        self.assertIn(naming_path("evidence/step1-moves.csv"), tracked_files())
 
     def test_n11_branch(self):
         for name in ("worktree-agent-a1c5c7a98a4e905b2", "claude/pdf-extract-fix-b525b8", "my-branch",

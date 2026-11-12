@@ -282,7 +282,7 @@ def fixed_test_results_path(project_name, graph_name):
     return folder("analysis-results-test", safe_name(project_name), safe_name(graph_name) + ".json")
 
 
-# ---------------------------------------------------------------- 폴더 표 (docs/2026-11-09-data-consolidation §3)
+# ---------------------------------------------------------------- 폴더 표 (docs/units/2026-11-09-data-consolidation §3)
 # 데이터 폴더는 이 표로만 연다(paths.folder). 다른 모듈에 '데이터'·'참고자료' 경로 문자열을 쓰지 않는다
 # (tests/test_path_literals.py가 막음). 새 기능이 폴더를 더하면 여기 한 줄을 더한다.
 class Folder(NamedTuple):
@@ -345,7 +345,7 @@ OUTPUT_FOLDERS = {
 # 자원 루트 아래에 낱개로 두는 파일. FOLDERS의 resource 행은 배포본에 통째로 묶는 폴더라서 파일은 따로 적는다.
 # 배포본도 같은 상대 위치에 묶는다(scripts/build_package.py DATA_FILES). 위치를 아는 곳은 이 표 하나다.
 FILES = {
-    "guide": Folder("resource", ("specs", "hazop-method-guide.md")),  # HAZOP 기법 지침서. 내용 해시는 hazop/analysis/integrity.py가 고정한다
+    "guide": Folder("resource", ("docs", "specs", "hazop-method-guide.md")),  # HAZOP 기법 지침서. 내용 해시는 hazop/analysis/integrity.py가 고정한다
 }
 # 표본(resources/samples) 아래 폴더. 이름이 곧 FOLDERS의 열쇠여서, 표본을 작업 루트에 채울 때 folder(<이름>)에 둔다.
 SAMPLE_FOLDERS = ("regions", "fixed-responses", "knowledge-graph", "evaluation-criteria")

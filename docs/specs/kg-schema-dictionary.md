@@ -1,0 +1,265 @@
+---
+doc_id: HZ-PLN-14
+rev: 0
+status: review
+author: unknown
+reviewed: doc-status 2026-11-12
+approved: —
+---
+
+# 지식그래프 스키마 부속 1: 노드·관계 사전 (미확정)
+
+[본문](kg-schema.md) · [부속 2: 입력 문서·잠재 후보·추출 갭](kg-schema-input.md)
+
+작성일 2026-11-08. 설계안이며 확정되지 않았습니다. 표기는 다음과 같습니다.
+
+- **출처 열**: `P&ID`(도면 추출), `문서`(문서 규칙 추출), `사람`(직접 입력·수정), `AI`(AI 초안, 사람 확인 전에는 `hypothesis`), `규칙`(기대 규칙).
+- **상태 열**: `유지`(지금 있음), `신설`, `세분`(기존 클래스를 하위 종류로 나눔), `이동`(분류만 바꿈).
+- DEXPI 이름은 DEXPI 2.0.1 HTML 사양(https://dexpi.org/specification/2.0.1/html/, 2026-11-08 확인)에서 가져온 대응 후보이며, 이 앱이 DEXPI를 따른다는 뜻은 아닙니다.
+- 단위는 원문 표기를 보존하고 정규화 값을 따로 둡니다(기존 [자동 통합 원칙](integration.md#자동-통합-원칙) 5). 압력 기준(게이지/절대)은 추정하지 않습니다.
+
+## 1. 공통 필드
+
+### 1.1 모든 노드
+
+| 필드 | 필수 | 내용 |
+| --- | --- | --- |
+| `id` | 필수 | 층별 규칙(§1.3) |
+| `class` | 필수 | 레지스트리 클래스 ID. P&ID 층은 `kind`에서 정해짐 |
+| `layer` | 필수 | `pid` / `knowledge` / `expectation` / `study` |
+| `name`, `tag` | 선택 | 표시 이름, 태그 |
+| `origin` | 필수 | `pid_extract` / `human_edit` / `doc_rule` / `human` / `ai_draft` / `expectation_rule` |
+| `method`, `extractor`, `confidence` | 선택 | 기존 그대로 |
+| `knowledge_status` | 필수(모든 층. P&ID 노드는 `confirmed`, 기대 층은 쓰지 않고 상태 기계를 씀) | `confirmed` / `unknown` / `hypothesis` |
+| `source{material_id, registration_version, document_id, page, locator}` | 조건부 | 기존 그대로. `confirmed`인데 출처가 없으면 차단(검사 K6 유지) |
+| `on_drawing` | 지식 층 '도면 밖 대상'만 | `false`. 도면 노드와 `same_as`가 확인되면 화면에서 함께 보임 |
+| `id_scheme`, `system_code`, `component_code` | 선택 | KKS·EIIS·사업자 고유 식별 값(본문 U4) |
+
+### 1.2 속성 주장 (property claim, 본문 KD4)
+
+P&ID 노드 속성, 데이터시트 값, 문서 값을 같은 형식으로 둡니다. 한 대상·한 속성에 주장이 여럿이면 모두 보존하고, 값·단위·기준이 다르면 충돌입니다(기존 충돌 검사 K7을 설정치·운전조건 밖으로 넓힘).
+
+| 필드 | 내용 | 예 |
+| --- | --- | --- |
+| `target` | 대상 안정 참조(`graph_id#source_object_id` 또는 지식 노드 ID) | `graph-SNP-M-102#v-17` |
+| `property` | 레지스트리 속성 ID | `normal_position` |
+| `value`, `value_min`, `value_max` | 값 또는 범위. 원문 문자열 보존 | `"NC"`, `"17.2"` |
+| `unit`, `unit_normalized`, `value_normalized` | 원문 단위와 정규화 값 | `"kgf/cm2"`, `"MPa"`, `1.687` |
+| `pressure_basis` | `gauge` / `absolute` / `null` | — |
+| `operating_mode` | 운전 모드(정상운전·기동·고온대기 등) | — |
+| `origin`, `method`, `source`, `knowledge_status` | §1.1과 같음 | 도면 속성이면 `pid_extract`·`confirmed` |
+| `display` | `node`(그래프에 노드로 보임: 설정치·운전조건) / `inline`(상세 패널에만) | 정상 위치는 `inline` |
+
+설정치(`setpoint`)와 운전조건(`condition`) 노드는 지금처럼 노드로 남기되, 노드 안의 값 필드가 이 주장 형식을 따릅니다. 따라서 기존 D5(운전조건은 노드) 결정은 바뀌지 않습니다.
+
+### 1.3 ID 규칙
+
+| 층 | 규칙 | 비고 |
+| --- | --- | --- |
+| P&ID | 기존 그대로(`entity-…`, 프로젝트 `<graph_id>/<entity_id>`). **다른 층에서 참조할 때는 `graph_id#source_object_id`** | entity_id는 재추출 때 바뀜 |
+| 지식 | 기존 접두(`doc-`, `chunk-`, `req-`, `setpt-`, `cond-`, `case-`) + 새 접두(§2.2 표) | 결정적 생성(같은 입력이면 같은 ID) |
+| 기대 | `exp-<rule_id>-<sha16(target_ref)>` | 규칙·대상이 같으면 같은 ID. 8자는 실제로 충돌해 16자로 늘림(2026-11-09) |
+| 검토 | 결과 파일 ID를 그대로(`S7`, `entry_id`) 앞에 `st-` | 투영이므로 저장하지 않음 |
+| 관계 | 기존 `krel-` 유지, 기대 층 `xrel-`, 검토 층 `srel-` | — |
+
+## 2. 노드 종류 사전
+
+### 2.1 P&ID 층 (원)
+
+저장은 지금처럼 `drawing_object`(배관 구간만 `pipe_segment`)이고, 클래스는 `kind`로 정해집니다. **굵은 `kind`는 새 값**입니다.
+
+| 상위 클래스 | 클래스 (`kind`) | 한국어 | DEXPI 대응 후보 | 상태 |
+| --- | --- | --- | --- | --- |
+| 설비 `equipment` | `reactor_vessel`, `pressurizer`, `steam_generator`, `vessel`, `tank`, `pump`, `heat_exchanger`, `turbine`, `condenser`, `filter`, `demineralizer`, **`compressor`**, **`fan`**, **`accumulator`** | 원자로용기, 가압기, 증기발생기, 용기, 탱크, 펌프, 열교환기, 터빈, 복수기, 필터, 탈염기, 압축기, 송풍기, 축압기 | `ProcessEquipment` 하위(`Pump`, `Vessel`, `HeatExchanger`, `Turbine`, `Filter`, `Compressor`) | 유지 + 신설 |
+| 밸브 `valve` | `manual_valve`, `motor_operated_valve`, **`air_operated_valve`**, **`solenoid_valve`**, `control_valve`, `check_valve`, `isolation_valve`, `psv`, **`relief_valve`**, **`rupture_disc`**, `damper` | 수동, 전동, 공기구동, 전자, 제어, 체크, 격리, 안전밸브, 방출밸브, 파열판, 댐퍼 | `OperatedValve`, `CheckValve`, `SafetyValveOrFitting`, `RuptureDisc` | 유지 + 신설 |
+| 배관 부품 `inline_component` | `orifice`, `vent`, **`drain`**, **`strainer`**, **`reducer`**, **`flow_element`**, **`blind_flange`**, `test_connection` | 오리피스, 벤트, 드레인, 스트레이너, 리듀서, 유량요소, 맹플랜지, 시험 연결 | `RestrictionOrifice`, `FlowMeasuringElement`, `PipeReducer`, `BlindFlange` | **신설 분류**. `orifice`·`vent`는 설비에서 이동(본문 U9) |
+| 계기 기능 `instrument` | `transmitter`, `controller`, `indicator`, `temperature_element`, **`switch`**, **`recorder`** | 전송기, 제어기, 지시계, 온도소자, 스위치, 기록계 | `ProcessInstrumentationFunction`(태그 단위 기능) | 유지 + 신설 |
+| 배관 요소 `piping_element` | `tee`, `pipe_cap`, `continuation`, **`nozzle`** | 티, 끝막음, 도면 연결점, 노즐 | `PipeTee`, `FlowIn/OutPipeOffPageConnector`, `Nozzle` | 유지 + 신설(노즐은 선택) |
+| 배관 구간 `pipe_segment` | `pipe_segment` | 배관 구간 | `PipingNetworkSegment` | 유지 |
+
+**클래스별 속성** (모두 속성 주장 형식, §1.2)
+
+| 대상 | 필수(없으면 미확인 기록) | 선택 | 단위·허용값 | 주 출처 | HAZOP 쓰임 |
+| --- | --- | --- | --- | --- | --- |
+| 모든 P&ID 노드 | `tag`(연결점 제외) | `system_code`, `safety_class`, `seismic_category`, `quality_group` | 안전 등급 값 목록은 본문 U8 결정 후 | P&ID, 데이터시트 | 노드 식별, 안전 중요도 표시 |
+| 설비(압력 경계가 있는 것) | — | `design_pressure_max/min`, `design_temperature_max/min`, `normal_operating_pressure`, `normal_operating_temperature`, `normal_level` | 압력 MPa·bar·kgf/cm² 등 원문 보존, 압력 기준 필수 기록(모르면 null) | 데이터시트, SDD, 문서 | 압력·온도 증가 편차의 한계 판단 |
+| 펌프 | — | `rated_flow`, `rated_head`, `shutoff_head`, `driver`(motor/turbine), `npsh_required` | m³/h, m 등 | 데이터시트 | 유량 없음·증가, 차단 양정 과압 |
+| 밸브 공통 | `normal_position`(수동·전동·공기구동·전자·제어·격리·안전밸브) | `size`, `valve_type`(gate/globe/ball/butterfly/plug) | `NO`/`NC`/`LO`/`LC` | P&ID | 정상 유로 판단(A1) |
+| 구동 밸브(전동·공기구동·전자·제어) | `fail_position` | `actuator_type`, `motive_power`(air/electric/hydraulic) | `FO`/`FC`/`FL`/`FAI`(fail as is) | P&ID, 데이터시트 | 공기·전원 상실 편차. DEXPI는 고장 동작을 구동기(`ControlledActuator.FailAction`)에 둠 → 도면 밖 대상 `actuator`로 분리 가능(§2.2) |
+| 체크밸브 | `check_direction`(입구·출구) | — | 기존 규칙(A1) | P&ID | 역류 편차 |
+| 안전밸브·방출밸브·파열판 | — | `set_pressure`, `relieving_capacity`, `discharge_to` | 압력 기준 필수 | P&ID, 데이터시트, 설정치 목록 | 과압 보호수단, 기대 규칙 E02·E06 |
+| 계기 기능 | — | `measured_variable`, `functions`, `loop_no`(ISA 태그에서 파싱), `range_min/max`, `channel`, `train` | ISA-5.1 첫 글자 = 측정변수(2차 출처 확인), 원전 고유 문자 허용 | P&ID 태그, 계기 목록 | 편차 변수와 계기 대응, 다중성 |
+| 배관 구간 | `line_no` | `pipe_class`, `nominal_diameter`, `fluid_code`, `design_pressure`, `design_temperature`, `material`, `insulation` | DEXPI는 구간에 설계압력을 두지 않음. 라인 목록·배관 등급표에서 옴 | P&ID 라인 번호, 라인 목록 | 누출·과압 경로 |
+| 도면 연결점 | `to_drawing`, `line_no`, `direction` | `to_object` | `TO`/`FROM` | P&ID | 도면 간 결합(기존) |
+
+### 2.2 지식 층 (각진 도형)
+
+| 상위 클래스 | 클래스 (`node_type`) | 한국어 | ID 접두 | 핵심 속성 | 출처 | HAZOP 쓰임 | 상태 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 문서 | `document` | 문서 | `doc-` | **`doc_class`**(§2.3), 판, 발행일 | 사람(등록) | 근거의 뿌리 | 유지 + 속성 |
+| 문서 | `doc_chunk` | 문서 조각 | `chunk-` | `text`, 위치, `section_no` | 문서 | 인용 단위 | 유지 |
+| 요건 | `requirement` | 요건 | `req-` | `item`(**`design_intent` / `design_basis` / `general`**), `text` | 문서, 사람, AI | 설계의도·판정 기준 | 세분 |
+| 요건 | **`lco`** | 운전제한조건 | `lco-` | LCO 번호, `applicability`(모드), `actions[{condition, required_action, completion_time}]` | 문서(기술지침서) | 보호수단 가용성 전제, 결과 심각도 | 신설 |
+| 요건 | **`surveillance`** | 감시요건 | `sr-` | SR 번호, `frequency`, 대상 LCO | 문서(기술지침서) | 보호수단 감사 가능성(auditable) 근거 | 신설 |
+| 값 | `setpoint` | 설정치 | `setpt-` | **`setpoint_type`**(`alarm` / `trip` / `nominal_trip` / `allowable_value` / `analytical_limit` / `relief_set` / `control`), `direction`(high/low), 값 주장 | 문서, 사람 | 보호수단 작동점, 편차 한계 | 세분 |
+| 값 | `condition` | 운전조건·설계값 | `cond-` | `item`(운전/설계/최대/최소 + 변수), `operating_mode`, 값 주장 | 문서, 사람 | 설계의도 수치, 한계 | 유지 |
+| 논리 | **`logic_function`** | 논리·인터록 | `logic-` | `logic`(AND/OR/2-out-of-4 등 문자열), `action`(open/close/start/trip), `bypass`, 신호 상실 거동 | 문서(논리도), AI, 사람 | 원인(오동작)·보호수단(자동 동작) | 신설 |
+| 운전 | **`alarm`** | 경보 | `alm-` | 경보창 ID, 설정치 참조, 우선순위 | 문서(ARP·설정치 목록) | 운전원 개입 보호수단의 시작점 | 신설 |
+| 운전 | **`operator_action`** | 운전원 조치(절차 단계) | `opa-` | 절차서·단계 번호, `procedure_type`(SOP/AOP/EOP/ARP), 조치 내용, 허용 시간 | 문서(절차서), AI | 수동 보호수단, 인적 오류 원인 | 신설 |
+| 고장 | **`failure_mode`** | 고장 모드 | `fm-` | 코드(예 FTO·FTC·ELP·INL), 이름, 적용 클래스 | 사람(목록 입력), 운전경험 | 원인의 구체화(FMEA 연결) | 신설. 코드 목록은 ISO 14224 2차 출처라 원문 확인 전 사람 입력 |
+| 사례 | `analysis_case` | 해석 사례 | `case-` | **`case_type`**(`accident_analysis` / `prior_hazop` / `operating_experience` / `pra_initiating_event`), 사례 번호(LER 번호 등) | 문서, 사람 | 결과 심각도 참고, 원인 사례 | 세분 |
+| 도면 밖 대상 | **`offdrawing_item`** | 도면 밖 대상 | `odi-` | **`odi_type`**(`actuator` / `power_supply` / `instrument_air` / `cooling_water` / `support` / `system` / `loop` / `train`), `on_drawing: false` | 문서, 사람 | 지원계통 상실 원인, 공통원인, 계통 경계 | 신설 |
+
+- 데모의 '지지물'은 `offdrawing_item`의 `support`로 받습니다. 기존 결정은 "HAZOP 편차 탐색과 관련이 적어 제외"였으나([그래프활용 §2.2](graph-usage.md#22-노드-종류)), 내진·배관 하중 관련 결과(배관 파손) 근거로 쓸 수 있어 클래스만 예약합니다 [추론]. 추출은 하지 않습니다.
+- 데모의 '신호'는 지금처럼 노드가 아니라 관계(`signal_connection`)로 둡니다.
+- '계통'(`system`)과 '루프'(`loop`)는 묶음 노드입니다. 루프는 ISA 태그의 루프 번호가 같은 계기를 사람 확인 후 묶습니다(자동 병합 금지) [추론].
+
+### 2.3 문서 분류 (`doc_class`)
+
+| 값 | 한국어 | 근거 규정·지침 | 비고 |
+| --- | --- | --- | --- |
+| `fsar` | 최종안전성분석보고서(FSAR/UFSAR), 설계인증 DCD Tier 2 | 10 CFR 50.34(b), 50.71(e); Part 52 | 장·절 번호를 `section_no`로 |
+| `tech_spec` | 기술지침서(운영기술지침서)·Bases | 10 CFR 50.36 | LCO 표 형식 |
+| `sdd` | 계통 설계 기술서 | NRC 의무 문서 아님(업계 관행) | 양식이 사업자마다 다름 |
+| `datasheet` | 기기 데이터시트·사양서 | 업계 관행 | 표 |
+| `instrument_index` | 계기 목록 | 업계 관행 | 표 |
+| `setpoint_list` | 설정치 목록·설정치 계산서 | RG 1.105 Rev. 4(ISA-67.04.01-2018 승인) | 표 |
+| `logic_diagram` | 논리도·제어루프도·결선도 | 양식 규정 없음, GDC 20–29 관련 | 도면 |
+| `procedure` | 운전절차서(SOP/AOP/EOP/ARP) | RG 1.33 부록 A, NUREG-0899(EOP) | 단계 구조 |
+| `operating_experience` | LER, NRC Information Notice | 10 CFR 50.73(LER) | 공개 자료 |
+| `pra` | PRA·초기사건 목록 | RG 1.200 | 사업자 내부 |
+| `prior_hazop` | 과거 HAZOP·위험성평가 보고서 | KOSHA C-C-37-2026 | — |
+| `design_report` | 그 밖의 설계 보고서(지금 샘플의 운전조건 보고서 등) | — | 기존 등록 문서의 기본값 |
+
+### 2.4 기대 층 (점선)
+
+| 클래스 | 핵심 속성 | 출처 |
+| --- | --- | --- |
+| `expectation` | `rule_id`, `rule_version`, `target`(대상 안정 참조), `expected`(기대 내용: 클래스·관계·속성), `state`(§2 부속 2), `found`(후보 발견 시 대상 참조), `judged_by`, `judged_at`, `reason`, `evidence`(부재 확정 근거 문서·쪽), `basis_level`(규칙 근거 수준) | 규칙, 사람 판정 |
+
+### 2.5 검토 층 (투영, 마름모 제안)
+
+원본은 ⑤ 결과 파일(`hazop_study_results`)과 검토구간 파일입니다. 그래프는 읽어서 보여 주기만 합니다(본문 KD7).
+
+| 클래스 | 결과 파일 원천 | 한국어 | 표준 용어 |
+| --- | --- | --- | --- |
+| `study_node` | 검토구간 `S#` | 검토구간 | KOSHA 검토구간(node), IEC part |
+| `deviation` | `deviation_id` | 편차 | KOSHA 이탈, IEC deviation |
+| `scenario` | 결과 항목 `entry_id` | 시나리오(원인–결과 쌍, 워크시트 한 행) | KOSHA 6.4(원인마다 결과 기록) |
+| `cause` | `cause` + `cause_refs` | 원인 | KOSHA 원인, LOPA 초기사건(대응만) |
+| `consequence` | `consequence` + `consequence_refs` | 결과 | KOSHA 결과, IEC consequence |
+| `safeguard` | `safeguards[]` | 보호수단 | KOSHA 현재 안전조치, IEC control |
+| `recommendation` | `recommendation` | 권고 | KOSHA 개선권고사항 |
+
+원인·결과·보호수단은 행마다 하나씩 만들고 같은 문장끼리 합치지 않습니다. 같은 원인이 여러 편차에 쓰이는 경우(닫힌 밸브 → 유량 없음 + 상류 압력 증가)는 `cause_refs`가 같은 대상을 가리키는 것으로 드러납니다 [추론].
+
+## 3. 관계 종류 사전
+
+방향은 `from → to`입니다. 허용 쌍은 상위 클래스로 적으며 하위 클래스에 모두 적용합니다. **V4**: 확인된 것만 계산에 포함(기존 규칙), **A2 역할**: '설비 적용'이면 A2 고아·근거 공백 판정에 셈.
+
+### 3.1 P&ID 층 (유지)
+
+| 관계 | 허용 쌍 | 의미 | 범례 묶음 | 비고 |
+| --- | --- | --- | --- | --- |
+| `has_endpoint` | 배관 구간 → P&ID 노드 | 물리 배관 연결 | 물리 연결 | 유지. 데모 TOPO_CONNECTED·PHYS_FLOWS_TO는 계산 시점에 유도(기존) |
+| `measurement_connection` | P&ID 노드 → 계기 | 계측 탭 | 계측 연결 | 유지 |
+| `signal_connection` | 계기·밸브 ↔ 계기·밸브 | 계장 신호 | 신호 연결 | 유지 |
+
+### 3.2 지식 층 — 기존
+
+| 관계 | 허용 쌍 | 의미 | 범례 묶음 | V4 | A2 역할 |
+| --- | --- | --- | --- | --- | --- |
+| `part_of` | 문서 조각 → 문서 | 소속 | 문서 안 위치 | 포함 | 아님 |
+| `specified_in` | 요건·LCO·감시요건·설정치·운전조건·논리·경보·운전원 조치 → 문서 조각 | 원문 위치 | 문서 안 위치 | 포함 | 아님 |
+| `mentions` | 문서 조각 → P&ID 노드·도면 밖 대상 | 언급(사람 확인분만) | 언급 | 포함 | 언급 |
+| `governed_by` | P&ID 노드·도면 밖 대상 → 요건·LCO | 적용 요건 | 설비 적용 | 포함 | 설비 적용 |
+| `has_setpoint` | P&ID 노드 → 설정치 | 설정치 | 설비 적용 | 포함 | 설비 적용 |
+| `has_condition` | P&ID 노드 → 운전조건 | 운전조건·설계값 | 설비 적용 | 포함 | 설비 적용 |
+| `analyzed_in` | P&ID 노드 → 해석 사례 | 다뤄진 해석 사례 | 설비 적용 | 포함 | 설비 적용(근거 공백 판정에는 지금처럼 제외) |
+| `depends_on` | P&ID 노드 → P&ID 노드·도면 밖 대상 | 문서 근거 의존. **`dependency_type`**(`power` / `air` / `cooling` / `control` / `other`) 속성 추가 | 문서 근거 의존 | 포함 | 아님 |
+
+### 3.3 지식 층 — 신설
+
+| 관계 | 허용 쌍 | 의미 | 예 | 범례 묶음 | 대응 |
+| --- | --- | --- | --- | --- | --- |
+| `protects` | 안전밸브·방출밸브·파열판·논리 → 설비·배관 구간 | 과압 등 보호 대상 | PSV-101 → 가압기 | 보호·제어 | 정보통합관리 "보호수단: 보호 대상" |
+| `logic_input` | 계기 → 논리 | 논리의 입력 신호 | PT-110 → 저압 트립 논리 | 보호·제어 | DEXPI 신호 계열 |
+| `logic_actuates` | 논리 → 밸브·설비 | 논리가 움직이는 대상(`action`) | 논리 → 격리밸브 닫힘 | 보호·제어 | — |
+| `in_loop` | 계기·밸브 → 도면 밖 대상(`loop`) | 같은 제어 루프 | FT-045 → 루프 045 | 보호·제어 | DEXPI `InstrumentationLoopFunction` |
+| `actuated_by` | 밸브 → 도면 밖 대상(`actuator`) | 구동기(고장 동작 보유) | CV-110 → 구동기 | 보호·제어 | DEXPI `ControlledActuator` |
+| `part_of_system` | P&ID 노드 → 도면 밖 대상(`system`) | 소속 계통 | — | 정체성 | KKS·EIIS 계통 코드 |
+| `alarm_on` | 경보 → 계기 | 경보를 내는 계기 | — | 운전 | — |
+| `responded_by` | 경보 → 운전원 조치 | 경보 대응 단계 | — | 운전 | ARP |
+| `acts_on` | 운전원 조치 → P&ID 노드 | 조치 대상 | 밸브 수동 개방 | 운전 | — |
+| `has_failure_mode` | P&ID 노드 → 고장 모드 | 적용 가능한 고장 모드 | 제어밸브 → FTC | 설비 적용 | ISO 14224(2차 출처) |
+| `requires` | LCO → P&ID 노드·도면 밖 대상 | LCO가 가용성을 요구하는 대상 | — | 설비 적용 | — |
+| `verifies` | 감시요건 → LCO | 감시요건이 확인하는 LCO | — | 문서 안 위치 | 10 CFR 50.36(c)(3) |
+| `same_as` | P&ID 노드·도면 밖 대상 ↔ 같은 것 | 같은 기능 태그(사람 확인만) | 101 도면 RC-P01 ↔ 102 도면 RC-P01 | 정체성 | 본문 KD8 |
+
+새 관계도 기존과 같이 `link_status`·`knowledge_status`·출처를 가지며, 확인된 것만 V4에 들어갑니다. 설비 적용 묶음(`has_failure_mode`, `requires`)을 A2에 넣을지는 구현 때 정합니다 [제안: 넣지 않음, 지금 A2 결과를 바꾸지 않기 위해].
+
+### 3.4 기대 층
+
+| 관계 | 허용 쌍 | 의미 | V4 |
+| --- | --- | --- | --- |
+| `expects` | P&ID 노드·지식 노드 → 잠재 후보 | 이 대상에 대한 기대 | **항상 제외** |
+| `satisfied_by` | 잠재 후보 → 실제 노드·속성 주장 | 기대를 채운 대상(후보 발견 또는 확인) | 항상 제외 |
+
+### 3.5 검토 층 (투영)
+
+| 관계 | 허용 쌍 | 의미 |
+| --- | --- | --- |
+| `covers` | 검토구간 → P&ID 노드 | 구간 구성요소 |
+| `of_deviation` | 시나리오 → 편차 | — |
+| `in_node` | 시나리오 → 검토구간 | — |
+| `has_cause` / `has_consequence` | 시나리오 → 원인 / 결과 | 워크시트 한 행 |
+| `cause_at` | 원인 → P&ID 노드·도면 밖 대상·운전원 조치 | 원인 위치 |
+| `cause_mode` | 원인 → 고장 모드 | — |
+| `affects` | 결과 → P&ID 노드(다른 구간 허용) | 영향 대상 |
+| `protected_by` | 시나리오 → 보호수단 (`role`, `ipl`) | IPL 여부는 이 관계 속성 |
+| `safeguard_by` | 보호수단 → 안전밸브·논리·경보·운전원 조치·P&ID 노드 | 보호수단 구현 대상 |
+| `addresses` | 권고 → 시나리오 | — |
+| `raised_from` | 시나리오·권고 → 잠재 후보 | 기대 공백에서 나온 항목 |
+| `cites` | 검토 층 항목 → 지식 노드·P&ID 노드 | 근거(기존 `ai_basis.kg_paths`의 끝점) |
+
+### 3.6 데모 관계와의 대응
+
+| 데모 | 이 설계 | 비고 |
+| --- | --- | --- |
+| HAS_ENDPOINT | `has_endpoint` | 같음 |
+| GOVERNED_BY | `governed_by` | 같음 |
+| SPECIFIED_IN | `specified_in` | 같음 |
+| TOPO_CONNECTED | 계산 시점 유도 | 저장 안 함(기존) |
+| PHYS_FLOWS_TO | 계산 시점 유도 | 저장 안 함(기존) |
+| DEPENDS_ON | `depends_on` + `dependency_type` | 속성 추가 |
+
+## 4. 타입 레지스트리 형식
+
+제안 위치 `hazop/kg/schema/registry.json`. 표준 라이브러리 `json`만으로 읽습니다(의존성 추가 없음).
+
+```json
+{
+  "registry_version": "0.2.0",
+  "classes": [
+    {"id": "valve", "parent": "plant_item", "layer": "pid", "label_ko": "밸브", "legend": {"shape": "circle", "token": "kg-valve"}},
+    {"id": "control_valve", "parent": "valve", "kind": "control_valve", "dexpi_class": "OperatedValve",
+     "properties": ["normal_position", "fail_position", "size", "motive_power"],
+     "required": ["normal_position", "fail_position"]},
+    {"id": "offdrawing_item", "parent": "knowledge_item", "layer": "knowledge", "id_prefix": "odi-", "label_ko": "도면 밖 대상"}
+  ],
+  "properties": [
+    {"id": "fail_position", "type": "enum", "values": ["FO", "FC", "FL", "FAI"], "label_ko": "고장 위치"},
+    {"id": "design_pressure_max", "type": "quantity", "dimension": "pressure", "needs_basis": true}
+  ],
+  "relations": [
+    {"id": "has_setpoint", "from": ["plant_item"], "to": ["setpoint"], "group": "apply", "v4": true, "a2_role": "apply"},
+    {"id": "expects", "from": ["plant_item", "knowledge_item"], "to": ["expectation"], "group": "expect", "v4": false}
+  ]
+}
+```
+
+- 루트 클래스는 `plant_item`(P&ID 층 전체), `knowledge_item`(지식 층 전체), `expectation`, `study_item`(검토 층 전체)입니다. 관계의 `group` 값은 범례 묶음 ID입니다: `physical`, `measurement`, `signal`, `mention`, `apply`(설비 적용), `doc_location`, `dependency`, `protect_control`, `operation`, `identity`, `expect`, `study`.
+- 사용자 확장 파일은 같은 형식이고 `classes`·`properties`·`relations`만 더할 수 있습니다. ID는 `x_`로 시작하고, 상위 클래스는 기본 레지스트리에 있어야 합니다.
+- 레지스트리 검사(새 검사 R1~R4 제안): R1 상위 클래스가 존재하고 순환이 없음, R2 관계 허용 쌍이 존재하는 클래스, R3 확장이 기본 ID를 바꾸지 않음, R4 `kind`가 클래스 둘에 겹치지 않음.
+
+> 레지스트리 0.8.0(2026-11-10, 기호 사전 연결): APR1400 범례에서 `damper`(밸브 아래)와 `test_connection`(배관 부품 아래)을 더하고 `valve_type`에 `plug`를 더했다. 근거는 [P&ID 기호 사전](pid-symbol-dictionary.md) §7.1과 D4.

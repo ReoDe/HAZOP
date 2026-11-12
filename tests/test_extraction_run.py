@@ -1,4 +1,4 @@
-"""추출 실행 정보 곁 파일(extraction_run.json, hazop/extract/runinfo.py, 기획서 specs/pid-symbol-dictionary.md D8).
+"""추출 실행 정보 곁 파일(extraction_run.json, hazop/extract/runinfo.py, 기획서 docs/specs/pid-symbol-dictionary.md D8).
 
 추출 단계가 추출 결과 폴더에 기호 사전 판을 남긴다. 그래프는 extraction.json만 읽으므로 이 파일은 graph_version과 무관하다.
 """

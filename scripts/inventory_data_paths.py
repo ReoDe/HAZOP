@@ -1,4 +1,4 @@
-"""`데이터/`·`참고자료/` 경로 참조 목록과 폴더 현황을 만든다(docs/2026-11-09-data-consolidation).
+"""`데이터/`·`참고자료/` 경로 참조 목록과 폴더 현황을 만든다(docs/units/2026-11-09-data-consolidation).
 
     python scripts/inventory_data_paths.py [--repo <저장소>] [--out <출력 폴더>]
 
@@ -51,7 +51,7 @@ FOLDER_CLASS = {
 
 TEXT_EXT = {".py", ".md", ".json", ".csv", ".spec", ".ps1", ".bat", ".cmd", ".txt", ".toml", ".ini", ".cfg",
             ".yml", ".yaml", ".html", ".js"}
-EXCLUDE_PREFIX = ("licenses/", ".claude/worktrees/", "docs/2026-11-09-data-consolidation/",
+EXCLUDE_PREFIX = ("licenses/", ".claude/worktrees/", "docs/units/2026-11-09-data-consolidation/",
                   "scripts/inventory_data_paths.py")
 MAX_BYTES = 2_000_000
 
@@ -69,7 +69,7 @@ ARG_RE = re.compile(r"""^["']\s*,\s*["']([^"']+)["']""")
 # '데이터'는 일반 낱말이기도 하다. 뒤에 경로 구분자가 없으면 따옴표·백틱으로 감싼 낱말일 때만 경로로 센다.
 QUOTED_BEFORE = re.compile(r"""["'`]$""")
 QUOTED_AFTER = re.compile(r"""^["'`]""")
-DOC_TOPS = ("specs", "design", "records", "docs")
+DOC_TOPS = ("docs",)
 
 
 def git_lines(repo, *args):

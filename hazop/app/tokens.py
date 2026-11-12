@@ -2,7 +2,7 @@
 
 Qt 스타일시트(qss)와 내장 웹뷰 CSS(web_css)가 모두 이 값을 읽는다. ② 뷰어에는 실행 시점에 CSS 변수로 주입한다.
 독립 뷰어(hazop/viewer/template.html)의 :root는 같은 값을 직접 적고, scripts/check_design.py 색 비교가 web_css()의
-:root와 같은지 검사한다(docs/2026-11-05-design-system D5). 여기 값을 바꾸면 템플릿 :root도 함께 바꾼다.
+:root와 같은지 검사한다(docs/units/2026-11-05-design-system D5). 여기 값을 바꾸면 템플릿 :root도 함께 바꾼다.
 ③ 지식그래프 HTML(hazop/kg/screen_template.html)은 생성할 때 kg_css_vars()로 같은 값을 넣는다.
 글꼴: Pretendard는 배포본에 넣지 않음(2026-11-10 사용자 결정, §9). 맑은 고딕을 기본으로 쓴다.
 """

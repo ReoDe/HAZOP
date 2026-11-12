@@ -1,4 +1,4 @@
-"""표본(`resources/samples/`)을 작업 루트의 `data/` 아래로 채운다(docs/2026-11-09-data-consolidation §4 ③b 6번).
+"""표본(`resources/samples/`)을 작업 루트의 `data/` 아래로 채운다(docs/units/2026-11-09-data-consolidation §4 ③b 6번).
 
     python scripts/seed_samples.py [--work-root <폴더>]             없는 파일만 복사, 내용이 다른 파일은 목록만
     python scripts/seed_samples.py [--work-root <폴더>] --refresh   다른 파일을 백업한 뒤 표본으로 덮음
@@ -42,6 +42,8 @@ def plan(work_root):
     for d, dirs, files in os.walk(SAMPLE_ROOT):
         dirs.sort()
         for f in sorted(files):
+            if f == "README.md" and os.path.abspath(d) == os.path.abspath(SAMPLE_ROOT):
+                continue  # 폴더 규칙서(HZ-GOV-02 §4.13)는 표본이 아니다
             src = os.path.join(d, f)
             rel = os.path.relpath(src, SAMPLE_ROOT)
             dst = work_path(work_root, rel)

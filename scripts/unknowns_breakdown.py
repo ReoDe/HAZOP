@@ -1,4 +1,4 @@
-"""벡터 PDF 도면 묶음의 미확인을 사유(check)·사유 문구 유형·대상 종류별로 나눈다(docs/2026-11-10-apr1400-unknowns).
+"""벡터 PDF 도면 묶음의 미확인을 사유(check)·사유 문구 유형·대상 종류별로 나눈다(docs/units/2026-11-10-apr1400-unknowns).
 
   python -X utf8 scripts/unknowns_breakdown.py --out <폴더> [--input-dir <도면 폴더>] [--jobs 8]
 결과: <out>/rows.jsonl(쪽마다 미확인 목록), <out>/표.md(사유별 수·대표 쪽), <out>/요약.json

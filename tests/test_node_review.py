@@ -248,7 +248,7 @@ REQUEST_FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "node-review", "r
 
 
 class KnowledgeBase(unittest.TestCase):
-    """지식 맥락(단위 G, specs/study-node-segmentation.md §4.7). SNP 표본 도면 한 장과 표본 지식으로 지은 지식그래프를 쓴다.
+    """지식 맥락(단위 G, docs/specs/study-node-segmentation.md §4.7). SNP 표본 도면 한 장과 표본 지식으로 지은 지식그래프를 쓴다.
     claude CLI는 찾지 않는다(가짜 클라이언트만 쓴다. 찾으면 시험이 실패한다)."""
 
     @classmethod

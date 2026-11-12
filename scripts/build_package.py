@@ -1,4 +1,4 @@
-"""PyInstaller one-folder 빌드 준비·실행 (docs/2026-11-05-packaging W4, T2 결정 D1·D5안).
+"""PyInstaller one-folder 빌드 준비·실행 (docs/units/2026-11-05-packaging W4, T2 결정 D1·D5안).
 
 기본 동작: 저장소 밖 출력 폴더에 spec(HAZOP.spec)과 datas 목록(datas.json)만 쓴다. --build를 주면 빌드한다.
   <전용 venv python> scripts/build_package.py --out %TEMP%\\hazop-w4 [--build] [--with-check]
@@ -97,7 +97,7 @@ TLS_PLUGIN_DIR = "pyside6/plugins/tls/"
 TLS_ALLOWED = ("qschannelbackend.dll", "qcertonlybackend.dll")
 TLS_EXCLUDED = ("qopensslbackend.dll",)
 # W8-B(D13): 앱이 쓰지 않는 GPL 전용 Qt 모듈과 딸린 파일(DLL·바인딩·qml 폴더·플러그인)은 묶지 않는다. 앱·WebEngine이
-# 링크하는 Qt6Quick·Qt6Qml·Qt6QuickWidgets는 남긴다. 근거(SPDX·PE import): docs/2026-11-05-packaging/evidence/w8b-module-exclusion.md
+# 링크하는 Qt6Quick·Qt6Qml·Qt6QuickWidgets는 남긴다. 근거(SPDX·PE import): docs/units/2026-11-05-packaging/evidence/w8b-module-exclusion.md
 # (모듈, 이름 규칙, 폴더 규칙)
 # - 이름 규칙: 파일 이름 전체(대소문자 무시)로 위치와 관계없이 판정한다. 설치본 PySide6 6.12.0에서 뽑은 모듈 DLL·바인딩·
 #   제외 폴더 안 플러그인 DLL 이름이다. 설치본의 다른 파일과 이름이 겹치지 않는다(겹치는 흔한 이름은 넣지 않는다).

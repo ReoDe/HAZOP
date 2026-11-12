@@ -1,4 +1,4 @@
-"""기계적으로 바꿀 수 있는 경로 호출만 `paths.folder()`로 바꾼다(docs/2026-11-09-data-consolidation §3, §4 ③a 1번).
+"""기계적으로 바꿀 수 있는 경로 호출만 `paths.folder()`로 바꾼다(docs/units/2026-11-09-data-consolidation §3, §4 ③a 1번).
 
     python scripts/codemod_data_paths.py            바뀔 내용을 diff로 보여 준다(쓰지 않음)
     python scripts/codemod_data_paths.py --write    파일에 쓴다
