@@ -451,3 +451,11 @@ HEAD d411d15(5028fcd 포함) 재실행 결과(`출력/사용자검증/2026-11-07
 - 동시 2로 AI 구간 검토 시간을 잰 적 없음. 예상 시간의 긴 쪽은 줄여 잡지 않음
 - 실제 창 1366·1920(125%)에서 결함 16건 전후 재확인과 '이전 MVP'의 대화상자 두 항목 확인(재확인이 이 기록 뒤에 이뤄지면 그때 닫음)
 - 배포본에서 Qt 한국어 번역 파일 포함 여부는 다시 빌드할 때 `verify_bundle.py`로 확인
+
+## 폴더 구조 표준화 후속(2026-11-12)
+
+- review 21개 문서의 낡은 문구 정리: `review-results.md` 28·30~35행(검토 화면을 후속으로 적음), `hazop-analysis.md` 결정 표의 AI 모델 순서(DEC-0266 이전), `pid-symbol-dictionary.md` 366행(플러그 밸브, DEC-0285와 어긋남), `ai-subscription.md`·`study-node-segmentation.md` 머리의 '구현 전', `kg-schema-dictionary.md`·`kg-schema-input.md` 제목의 '(미확정)', `screen-spec.md`에 ⑥ 화면 없음. 고친 뒤 approved로 올릴지 총괄이 판정. 근거 `docs/units/2026-11-12-folder-standard/evidence/doc-status.md`
+- 지침서(HZ-PLN-07) 머리 상태: 머리를 고치면 내용 해시가 바뀌므로, 지침서 본문을 고치는 단위에서 `GUIDE_SHA256` 재고정과 함께 approved로 올림
+- HZ-DSN-01(AX 데모 분석)은 참조 자료라 상태 기준이 맞지 않음. '참조 자료' 분류를 둘지 정함
+- 이동 커밋 b681834와 도구 수정 커밋 78b6c95는 그 커밋만 꺼내면 시험이 실패함(문서 수정 커밋 뒤에는 통과). 이분 탐색(bisect) 때 건너뜀
+- 사용자 메모리와 옛 결정로그 본문은 옛 경로(`specs/`, `records/` 등)로 적혀 있음. 기록이라 고치지 않음
