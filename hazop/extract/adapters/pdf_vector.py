@@ -1009,6 +1009,7 @@ PIPE_CAP_BASIS = "small_closed_body_single_connection"
 # 검은 채움을 기호 몸체로 올릴 때의 견본 거리 상한(칸). 견본의 max_distance보다 좁게 본다. 잘못 올리면 화살촉이 밸브가 되어
 # 열린 배관이 닫힌 밸브로 읽힌다. APR1400 143쪽에서 게이트·글로브 묶음은 견본에서 0.06칸 안, 밸브가 아닌 검은 채움(반만 칠한
 # 밸브, 건물 경계 표시, 화살촉 등)은 0.24칸 이상 떨어져 있었다(docs/2026-11-11-unit-f1/README.md F1-3)
+SPRING_KINDS = frozenset({"psv"})  # 사전 격자 견본만으로 정하지 않고 스프링선(_has_spring)을 함께 보는 종류
 BLACK_SEED_DISTANCE = 0.1
 ACTUATOR_REACH_RATIO = 2.0  # 밸브 몸통 긴 변 × 비율 안에 구동부 기호가 있으면 구동 밸브로 본다(APR1400 축 길이 기준)
 
@@ -1102,12 +1103,33 @@ def _black_fill_signature(group):
     return symbols.signature(solid, [], group["round"], [], group["bbox"])
 
 
+def _has_spring(sym):
+    """스프링선: 4pt 이하 직선 조각 둘 이상이 같은 기울기(10도 안)로 비스듬하다(가로·세로 15도 안은 아님).
+    범례 1.7-1 1/4 SELF-ACTUATED VALVES의 안전·방출 밸브 줄기 위 사선이다. 보통 셋이지만 025·033·037·040쪽처럼 둘만 남는
+    방출 밸브가 있다."""
+    slants = []
+    for st in sym.strokes:
+        if len(st["pts"]) != 2:
+            continue
+        (x0, y0), (x1, y1) = st["pts"]
+        if not 0.5 <= math.hypot(x1 - x0, y1 - y0) <= 4.0:
+            continue
+        a = math.degrees(math.atan2(y1 - y0, x1 - x0)) % 180
+        if min(a, 180 - a) > 15 and abs(a - 90) > 15:
+            slants.append(a)
+    return any(sum(1 for b in slants if min(abs(a - b), 180 - abs(a - b)) <= 10) >= 2 for a in slants)
+
+
 def _symbol_match(sym, blocks):
-    """기호 상자 안에 가운데가 든 글자 문단을 글자 조건으로 넘겨 사전에 대 본다."""
+    """기호 상자 안에 가운데가 든 글자 문단을 글자 조건으로 넘겨 사전에 대 본다. 격자 견본은 모양이 비슷한 다른 기호에도
+    맞을 수 있어, 스프링이 뜻인 종류(SPRING_KINDS)는 스프링선이 실제로 있을 때만 맞은 것으로 본다(F1-6 검토)."""
     x0, y0, x1, y1 = sym.bbox
     inside = [b["text"] for b in blocks if x0 <= (b["bbox"][0] + b["bbox"][2]) / 2 <= x1
               and y0 <= (b["bbox"][1] + b["bbox"][3]) / 2 <= y1]
-    return symbol_library().match(symbols.sym_signature(sym), inside)
+    hit = symbol_library().match(symbols.sym_signature(sym), inside)
+    if hit.outcome == "matched" and hit.entry.kind in SPRING_KINDS and not _has_spring(sym):
+        return symbols.Match("none", None, None, None, hit.candidates, None)
+    return hit
 
 
 def _classify(sym, text, degree, prm, marks=()):

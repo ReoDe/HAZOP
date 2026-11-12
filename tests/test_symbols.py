@@ -1536,5 +1536,34 @@ class ValveLabelTest(unittest.TestCase):
         self.assertEqual([u["check"] for u in unknowns], ["duplicate_tag", "duplicate_tag"])
 
 
+# APR1400 043쪽 (702.4,139.0)의 앵글형 방출 밸브 그대로: 삼각형 몸통, 줄기, 줄기 위 스프링선 셋, 방출구, 받침 판
+ANGLE_RELIEF = [prim([(700.6, 140.78), (704.26, 140.78), (704.26, 137.12), (700.6, 140.78)]),
+                pipe((704.26, 140.78), (702.43, 138.95)), pipe((702.43, 136.39), (702.43, 138.95)),
+                pipe((706.09, 140.41), (706.09, 137.48)), pipe((700.97, 142.61), (703.89, 142.61))]
+ANGLE_RELIEF_SPRING = [pipe((701.7, 137.81), (703.16, 136.39)), pipe((701.7, 138.38), (703.16, 136.95)),
+                       pipe((701.7, 138.95), (703.16, 137.52))]
+
+
+def extract_wide(prims):
+    a = pdf_vector.analyze(1224, 792, [], prims)
+    return pdf_vector.build_extraction(a, 1224, 792, 1, 0, "t.pdf", "0" * 64)
+
+
+class DictionaryAdditionTest(unittest.TestCase):
+    """F1-6에서 사전에 더한 앵글형 안전·방출 밸브(apr1400.angle_relief_valve)."""
+
+    def test_angle_relief_valve_is_a_psv(self):
+        (node,) = extract_wide(ANGLE_RELIEF + ANGLE_RELIEF_SPRING)["nodes"]
+        self.assertEqual((node["kind"], node["evidence"].get("symbol_id")), ("psv", "apr1400.angle_relief_valve"))
+
+    def test_angle_shape_without_a_spring_is_not_a_psv(self):
+        """격자 견본은 비슷한 모양에도 맞는다. 스프링선 자리에 가로선을 그은 도형이나 스프링선이 없는 도형은 psv가 아니다
+        (F1-6 Codex 검토)."""
+        level = [pipe((701.7, 137.6 + 0.57 * k), (703.16, 137.6 + 0.57 * k)) for k in range(3)]
+        for prims in (ANGLE_RELIEF, ANGLE_RELIEF + level, ANGLE_RELIEF + ANGLE_RELIEF_SPRING[:1]):
+            self.assertNotIn("psv", [n["kind"] for n in extract_wide(prims)["nodes"]])
+
+
+
 if __name__ == "__main__":
     unittest.main()
