@@ -9,7 +9,7 @@
   enabled, legend_ref, note. 새 항목을 만들 때만 읽는다. 이미 있는 항목은 사람이 고친 값을 그대로 둔다.
 - 견본: 라벨 붙은 묶음 구성원 중 서로 다른 격자를 빈도순으로 --per-entry개. 이미 있는 견본과 같은 격자는 더하지 않는다.
   견본이 바뀐 항목만 revision을 올리고 updated를 --date로 바꾼다. 같은 입력으로 다시 돌리면 아무것도 바뀌지 않는다.
-  항목의 sources에는 견본을 뽑은 쪽 목록을 남긴다. 기호에서 뽑은 것과 검은 채움 묶음에서 뽑은 것(rows)은 따로 남는다.
+  항목의 sources에는 견본을 더할 때마다 그 견본을 뽑은 쪽 목록을 한 줄씩 덧붙인다. 앞서 더한 견본의 출처 줄은 지우지 않는다.
 - 예시 그림: 새 항목이면 가장 흔한 격자의 첫 기호를 잘라 <묶음 폴더>/images/<이름>.png(긴 변 160px 이하)로.
 - --set-attributes: 이번에 더하는 견본에 붙일 속성(JSON). 그 견본에 맞은 기호에만 덧붙는다(검게 칠한 닫힌 밸브의
   normal_position 등). 속성만 다른 같은 격자의 견본이 이미 있으면 더하지 않으므로, 그런 견본은 항목 파일에서 직접 고친다.
@@ -68,6 +68,11 @@ def new_entry(meta, date):
     if meta.get("note"):
         e["note"] = meta["note"]
     return e
+
+
+def add_source(sources, source):
+    """견본을 뽑은 출처 줄을 덧붙인다. 앞 줄은 그 견본들의 출처라 지우지 않고, 같은 줄은 두 번 넣지 않는다."""
+    return list(sources) if source in sources else list(sources) + [source]
 
 
 def template_from(group, max_distance, size_ratio, set_attributes=None):
@@ -204,8 +209,7 @@ def main():
                       "template_parity": a.template_parity}
             if rows_kind != "symbols":
                 source["rows"] = rows_kind
-            entry["sources"] = [s for s in entry["sources"]
-                                if "pages" not in s or s.get("rows", "symbols") != rows_kind] + [source]
+            entry["sources"] = add_source(entry["sources"], source)
             img_dir = os.path.join(folder, symbols.IMAGE_DIR)
             img = os.path.join(img_dir, name + ".png")
             if not os.path.isfile(img) and ranked and not ranked[0][0]["zero"]:

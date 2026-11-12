@@ -1,8 +1,8 @@
 {
  "id": "apr1400.angle_relief_valve",
- "revision": 1,
+ "revision": 2,
  "added": "2026-11-11",
- "updated": "2026-11-11",
+ "updated": "2026-11-12",
  "name": {
   "en": "ANGLE SAFETY OR RELIEF",
   "ko": "앵글형 안전·방출 밸브 [후보·사람 확인 전]"
@@ -25,7 +25,7 @@
    ],
    "size_ratio": 1.25,
    "rotations": "dihedral8",
-   "max_distance": 0.8,
+   "max_distance": 0.3,
    "count": 57,
    "grid": [
     "........#.##............",
@@ -66,7 +66,7 @@
    ],
    "size_ratio": 1.25,
    "rotations": "dihedral8",
-   "max_distance": 0.8,
+   "max_distance": 0.3,
    "count": 12,
    "grid": [
     "........#..#............",
@@ -107,7 +107,7 @@
    ],
    "size_ratio": 1.25,
    "rotations": "dihedral8",
-   "max_distance": 0.8,
+   "max_distance": 0.3,
    "count": 6,
    "grid": [
     "............#..#........",
@@ -148,7 +148,7 @@
    ],
    "size_ratio": 1.25,
    "rotations": "dihedral8",
-   "max_distance": 0.8,
+   "max_distance": 0.3,
    "count": 5,
    "grid": [
     "........#..#............",
@@ -189,7 +189,7 @@
    ],
    "size_ratio": 1.25,
    "rotations": "dihedral8",
-   "max_distance": 0.8,
+   "max_distance": 0.3,
    "count": 4,
    "grid": [
     ".........#.#............",
@@ -230,7 +230,7 @@
    ],
    "size_ratio": 1.25,
    "rotations": "dihedral8",
-   "max_distance": 0.8,
+   "max_distance": 0.3,
    "count": 4,
    "grid": [
     "..####################..",
@@ -271,7 +271,7 @@
    ],
    "size_ratio": 1.25,
    "rotations": "dihedral8",
-   "max_distance": 0.8,
+   "max_distance": 0.3,
    "count": 3,
    "grid": [
     "............##.#........",
@@ -312,7 +312,7 @@
    ],
    "size_ratio": 1.25,
    "rotations": "dihedral8",
-   "max_distance": 0.8,
+   "max_distance": 0.3,
    "count": 3,
    "grid": [
     ".........#..#...........",

@@ -1,8 +1,8 @@
 {
  "id": "apr1400.plug_valve",
- "revision": 3,
+ "revision": 4,
  "added": "2026-11-09",
- "updated": "2026-11-11",
+ "updated": "2026-11-12",
  "name": {
   "en": "PLUG (2-WAY)",
   "ko": "플러그 밸브"
@@ -232,7 +232,7 @@
    ],
    "size_ratio": 1.25,
    "rotations": "dihedral8",
-   "max_distance": 0.8,
+   "max_distance": 0.1,
    "count": 31,
    "grid": [
     "........................",
@@ -276,7 +276,7 @@
    ],
    "size_ratio": 1.25,
    "rotations": "dihedral8",
-   "max_distance": 0.8,
+   "max_distance": 0.1,
    "count": 6,
    "grid": [
     "........................",
@@ -320,7 +320,7 @@
    ],
    "size_ratio": 1.25,
    "rotations": "dihedral8",
-   "max_distance": 0.8,
+   "max_distance": 0.1,
    "count": 3,
    "grid": [
     ".....##############.....",
@@ -357,6 +357,26 @@
   {
    "set": "APR1400 DCD Rev.3",
    "legend": "1.7-1 1/4 VALVE SYMBOLS"
+  },
+  {
+   "set": "APR1400 DCD Rev.3",
+   "pages": [
+    "023",
+    "029",
+    "061",
+    "092",
+    "093",
+    "095",
+    "134",
+    "135",
+    "137",
+    "138",
+    "140",
+    "142",
+    "143"
+   ],
+   "symbols": 57,
+   "template_parity": "all"
   },
   {
    "set": "APR1400 DCD Rev.3",

@@ -1563,6 +1563,68 @@ class DictionaryAdditionTest(unittest.TestCase):
         for prims in (ANGLE_RELIEF, ANGLE_RELIEF + level, ANGLE_RELIEF + ANGLE_RELIEF_SPRING[:1]):
             self.assertNotIn("psv", [n["kind"] for n in extract_wide(prims)["nodes"]])
 
+    def test_each_new_template_matches_its_own_entry(self):
+        """F1-6 견본(검게 칠한 플러그 3개, 앵글형 방출 밸브 8개)은 문턱을 조인 뒤에도 자기 격자에는 맞는다. 플러그는 NC다."""
+        lib = pdf_vector.symbol_library()
+        for eid, first, attrs in (("apr1400.plug_valve", 5, {"normal_position": "NC"}),
+                                  ("apr1400.angle_relief_valve", 0, {})):
+            for t in lib.entries[eid].templates[first:]:
+                cells = t.variants[0][1]
+                hit = lib.match(symbols.Signature(t.comp_key, (t.size, t.size), cells, False))
+                self.assertEqual((hit.outcome, hit.entry.id), ("matched", eid), t.comp_key)
+                for k, v in attrs.items():
+                    self.assertEqual(hit.attributes.get(k), v)
+
+    def test_filled_triangle_with_two_bars_is_not_a_plug_valve(self):
+        """검게 칠한 삼각형 하나와 양끝 막대는 플러그 밸브(검은 마름모)가 아니다. 문턱 0.8에서는 0.3~0.4로 맞았다(F1-6 검토)."""
+        size, half = 7.3, 3.65
+        tri = filled([(100, 100), (100 + size, 100 + half / 2), (100, 100 + half)])
+        bars = [pipe((100, 100), (100, 100 + half)), pipe((100 + size, 100), (100 + size, 100 + half))]
+        pipes = [pipe((80, 100 + half / 2), (100, 100 + half / 2)), pipe((100 + size, 100 + half / 2), (120, 100 + half / 2))]
+        nodes = extract_wide([tri] + bars + pipes)["nodes"]
+        self.assertNotIn("apr1400.plug_valve", [n["evidence"].get("symbol_id") for n in nodes])
+
+    def test_relief_valve_the_size_of_an_end_cap_is_a_psv(self):
+        """044쪽 sym-0059(484.4,300.1): 전에는 끝막음이던 5.9×6.7pt 앵글형 방출 밸브. 같은 쪽 psv와 크기가 같다."""
+        body = [(482.47, 302.54), (486.41, 302.54), (486.41, 298.59), (482.47, 302.54)]
+        prims = [prim(body), pipe((486.41, 302.54), (484.44, 300.57)), pipe((484.44, 297.81), (484.44, 300.57)),
+                 pipe((483.65, 299.34), (485.23, 297.81)), pipe((483.65, 299.95), (485.23, 298.42)),
+                 pipe((483.65, 300.57), (485.23, 299.03)), pipe((488.38, 302.14), (488.38, 298.99)),
+                 pipe((482.86, 304.51), (486.02, 304.51))]
+        (node,) = extract_wide(prims)["nodes"]
+        self.assertEqual((node["kind"], node["evidence"].get("symbol_id")), ("psv", "apr1400.angle_relief_valve"))
+
+    def test_black_fill_alone_is_not_promoted(self):
+        """양끝 막대 없이 검은 마름모만 있으면 밸브로 올리지 않는다. 검정 견본 승격(_promote_black_symbols)에는 플러그
+        견본이 없어서다. 7pt 이하 작은 검은 플러그가 표식으로 남는 한계와 같은 길이다(F1-6 검토, 후속)."""
+        for size in (6.5, 7.28):
+            half = size / 2
+            diamond = filled([(100, 100 + half / 2), (100 + size / 2, 100), (100 + size, 100 + half / 2),
+                              (100 + size / 2, 100 + half)])
+            pipes = [pipe((80, 100 + half / 2), (100, 100 + half / 2)),
+                     pipe((100 + size, 100 + half / 2), (120, 100 + half / 2))]
+            nodes = extract_wide([diamond] + pipes)["nodes"]
+            self.assertEqual([n["kind"] for n in nodes if n["kind"]], [], size)
+
+
+class AddSymbolsSourcesTest(unittest.TestCase):
+    """add_symbols.py는 견본을 더할 때 앞서 더한 견본의 출처 줄을 지우지 않는다(F1-6에서 plug_valve의 13쪽·57기호 줄이
+    새 줄로 바뀌어 견본 5개의 출처가 없어졌다)."""
+
+    def setUp(self):
+        folder = os.path.join(REPO_ROOT, "scripts", "symbols")
+        spec = importlib.util.spec_from_file_location("add_symbols", os.path.join(folder, "add_symbols.py"))
+        self.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.mod)
+
+    def test_earlier_source_lines_are_kept(self):
+        legend = {"set": "APR1400 DCD Rev.3", "legend": "1.7-1 1/4 VALVE SYMBOLS"}
+        first = {"set": "APR1400 DCD Rev.3", "pages": ["023", "029"], "symbols": 57, "template_parity": "all"}
+        second = {"set": "APR1400 DCD Rev.3", "pages": ["061", "127"], "symbols": 42, "template_parity": "all"}
+        sources = self.mod.add_source([legend, first], second)
+        self.assertEqual(sources, [legend, first, second])
+        self.assertEqual(self.mod.add_source(sources, dict(second)), sources)
+
 
 
 if __name__ == "__main__":
