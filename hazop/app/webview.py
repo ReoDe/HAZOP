@@ -345,9 +345,10 @@ BRIDGE_JS = r"""
     function pick(lid, center) {
       // 템플릿 클릭이 남긴 선택 표시(.selected)도 지운다. ④에서 고른 구성요소 표시는 hz-pick 하나뿐이다.
       Array.prototype.forEach.call(document.querySelectorAll(".hz-pick, .selected"), function (e) { e.classList.remove("hz-pick", "selected"); });
-      if (!lid) return;
-      var found = els(lid);
+      var found = lid ? els(lid) : [];
       found.forEach(function (e) { e.classList.add("hz-pick"); });
+      refreshTags();  // 겹쳐서 숨겼던 태그 글자라도 고른 것은 보인다(템플릿이 hz-pick을 먼저 놓는다)
+      if (!lid) return;
       var shown = found.filter(function (e) { var r = e.getBoundingClientRect(); return r.width || r.height; })[0];
       if (!center || !shown || !vp || !window.hzView) return;
       var v = window.hzView.get(), vr = vp.getBoundingClientRect(), b = shown.getBoundingClientRect(), s = Math.max(v.s, 1.5);

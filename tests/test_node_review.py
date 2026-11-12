@@ -71,9 +71,11 @@ class PlanTest(Base):
         self.assertEqual(e["calls"], 180)
         self.assertEqual((e["minutes"], e["minutes_slow"]), (157, 258))  # 180 × 52.1초, 180 × 86.0초
         self.assertEqual(e["usage_pp"], (2.34, 4.86))
-        e3 = nr.estimate(3)  # 실측 3회 호출 3분 8초가 범위 안에 든다
+        e3 = nr.estimate(3)  # 실측(동시 1) 3회 호출 3분 8초가 범위 안에 든다
         self.assertTrue(e3["minutes"] <= 188 / 60 <= e3["minutes_slow"], e3)
-        self.assertEqual(nr.estimate(3, concurrency=1)["minutes"], e3["minutes"], "동시 수로 시간을 줄여 잡지 않음")
+        e2 = nr.estimate(3, concurrency=2)
+        self.assertLess(e2["minutes"], e3["minutes"], "동시 2이면 짧은 쪽을 줄인다")
+        self.assertEqual(e2["minutes_slow"], e3["minutes_slow"], "긴 쪽은 하나씩 받을 때로 둔다(동시 2 구간 검토 실측 없음)")
         self.assertEqual(nr.estimate(0)["minutes"], 0)
 
     def test_request_carries_members_neighbors_and_the_schema(self):

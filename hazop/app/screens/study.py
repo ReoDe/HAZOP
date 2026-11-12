@@ -152,6 +152,12 @@ def _status(node):
     return ((node or {}).get("screen") or {}).get("status") or "keep"
 
 
+def _clock(seconds):
+    """10초 단위로 반올림해 '50초', '1분 30초', '2분'처럼."""
+    m, s = divmod(int(round(seconds / 10.0)) * 10, 60)
+    return "%d분 %d초" % (m, s) if m and s else "%d분" % m if m else "%d초" % s
+
+
 def _minutes_range(e, spoken=False):
     """node_review.estimate 값을 '약 3~5분'처럼. 두 끝이 같으면 '약 3분'. spoken은 화면 낭독용('약 3분에서 5분')."""
     low, high = e["minutes"], e["minutes_slow"]
@@ -1630,10 +1636,13 @@ class StudyNodesScreen(QWidget):
         return box.clickedButton() is go
 
     def review_estimate_rows(self, method, batches):
-        """실행 확인 창의 (lead, rows). 시간·사용량은 U5 실측(⑤ 칸 분석)으로 본 추정이다."""
+        """실행 확인 창의 (lead, rows). 시간은 구간 검토 실측(nr.CALL_SECONDS_*)으로, 사용량은 계통 실행 두 번의
+        실측 범위(nr.USAGE_PER_CALL)로 셈한다."""
         from hazop.app import conn_view
         conn = self.app.ai_conn
-        e = nr.estimate(len(batches), 1 if method == "fixed" else conn.prefs.concurrency)
+        workers = 1 if method == "fixed" else conn.prefs.concurrency
+        e = nr.estimate(len(batches), workers)
+        how = "하나씩 받습니다" if workers < 2 else "동시 %d개씩 부릅니다" % workers
         kept = sum(len(b["node_ids"]) for b in batches if b["kind"] == "nodes")
         dropped = sum(1 for b in batches if b["kind"] == "excluded")
         link = {"subscription": "Claude 구독 · %s" % conn_view.model_name(conn.model(method)),
@@ -1641,7 +1650,8 @@ class StudyNodesScreen(QWidget):
                 "fixed": "고정 응답(시험)"}.get(method, method)
         rows = [("호출", "%d회 (남긴 구간 %d개 ÷ %d개씩 + 제외 구간 %d개)" % (e["calls"], kept, nr.BATCH_SIZE, dropped),
                  "호출 %d회" % e["calls"]),
-                ("예상 시간", "%s (호출 하나에 50초~1분 30초쯤 걸리고, 하나씩 받습니다)" % _minutes_range(e),
+                ("예상 시간", "%s (호출 하나에 %s~%s쯤 걸리고, %s)" % (
+                    _minutes_range(e), _clock(nr.CALL_SECONDS_MEDIAN), _clock(nr.CALL_SECONDS_SLOW), how),
                  "예상 시간 %s" % _minutes_range(e, spoken=True))]
         if method == "subscription":
             low, high = e["usage_pp"]
@@ -1691,7 +1701,7 @@ class StudyNodesScreen(QWidget):
         runner.start()
 
     def _show_review_progress(self):
-        """④ 패널의 진행 줄: 'AI 구간 검토 중 · 호출 1/3 끝 · 1분 12초 지남 (예상 약 3~5분)'."""
+        """④ 패널의 진행 줄: 'AI 구간 검토 중 · 호출 3회 중 1회 끝 · 1분 12초 지남 (예상 약 3~5분)'."""
         t = getattr(self, "review_tally", None)
         if self.review_runner is None or not t:
             self._review_clock.stop()
@@ -1699,8 +1709,8 @@ class StudyNodesScreen(QWidget):
             return
         sec = self._review_elapsed.elapsed() // 1000
         spent = "%d분 %d초" % divmod(sec, 60) if sec >= 60 else "%d초" % sec
-        text = "AI 구간 검토 중 · 호출 %d/%d 끝 · %s 지남 (예상 %s)" % (
-            t["done"], t["calls"], spent, _minutes_range(self._review_eta))
+        text = "AI 구간 검토 중 · 호출 %d회 중 %d회 끝 · %s 지남 (예상 %s)" % (
+            t["calls"], t["done"], spent, _minutes_range(self._review_eta))
         if t["failed"]:
             text += " · 실패 %d회" % t["failed"]
         if self._review_stopping:

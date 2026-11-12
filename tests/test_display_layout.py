@@ -193,6 +193,61 @@ class WebviewLayoutTest(DisplayBase):
                     self.check(win, "④ %s %s" % (name, label))
             win.close()
 
+    CROWDED = "JSON.stringify([...document.querySelectorAll('#taglabels span.crowded')].map(s => s.getAttribute('data-local-id')))"
+
+    def label_state(self, win, lid):
+        # under: 숨김을 잠깐 풀었을 때 글자가 떠 있는 칸(찾기 상자 등) 밑에 놓이는가. 그 자리의 태그 상자도 칸에 가려 있다
+        return json.loads(self.js(win, r"""(() => { const s = document.querySelector('#taglabels span[data-local-id="%s"]');
+          if (!s) return 'null';
+          const crowded = s.classList.contains('crowded'), display = getComputedStyle(s).display;
+          s.classList.remove('crowded'); const r = s.getBoundingClientRect(); if (crowded) s.classList.add('crowded');
+          const under = [...document.querySelectorAll('#viewport > .float')].some(f => { const q = f.getBoundingClientRect();
+            return q.width && q.height && r.left < q.right && q.left < r.right && r.top < q.bottom && q.top < r.bottom; });
+          return JSON.stringify({crowded, display, under}); })()""" % lid))
+
+    def assert_label_shown(self, win, lid, where):
+        """고른 태그 글자가 보이는지 본다. 떠 있는 칸 밑이라 숨긴 것이면 False를 돌려준다(칸이 먼저다)."""
+        got = self.label_state(win, lid)
+        if got["under"]:
+            self.assertTrue(got["crowded"], "%s: %s의 글자가 떠 있는 칸 밑에 깔림" % (where, lid))
+            return False
+        self.assertEqual(got, {"crowded": False, "display": "block", "under": False}, "%s: 고른 %s의 태그 글자가 숨음"
+                         % (where, lid))
+        self.js(win, "window.hzView.set(window.hzView.get()), 1")  # 다시 그려도(이동·확대) 고른 글자는 남는다
+        pump(seconds=0.2)
+        self.assertEqual(self.label_state(win, lid)["crowded"], False, "%s: 다시 그린 뒤 %s의 태그 글자가 숨음" % (where, lid))
+        return True
+
+    def test_picked_tag_label_is_never_hidden_by_crowding(self):
+        """겹쳐 숨긴 태그 글자도 ②에서 누르거나(.selected) ④에서 구성요소를 고르면(.hz-pick) 보인다(1536×864에서 재현)."""
+        tried = 0
+        win = self.window(SIZES["1920x1080 125%"])
+        win.go(EXTRACT)
+        scr = win.screens[EXTRACT]
+        for name in self.names:
+            scr.select_drawing(name)
+            self.settle(win)
+            for lid in json.loads(self.js(win, self.CROWDED))[:2]:
+                self.js(win, r"""(() => { const b = document.querySelector('.tagbox[data-local-id="%s"]'), r = b.getBoundingClientRect();
+                  b.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: r.left + 1, clientY: r.top + 1})); return 1; })()"""
+                        % lid)
+                pump(seconds=0.3)
+                tried += self.assert_label_shown(win, lid, "② %s" % name)
+        win.close()
+        win = self.window(SIZES["1920x1080 125%"])
+        win.go(STUDY)
+        scr = win.screens[STUDY]
+        for name in self.names:
+            scr.select_drawing(name)
+            self.settle(win)
+            scr.select_node(scr.node_set["nodes"][0]["node_id"])
+            pump(seconds=0.4)
+            for lid in json.loads(self.js(win, self.CROWDED))[:3]:
+                win.webview.pick(lid, center=False)
+                pump(seconds=0.3)
+                tried += self.assert_label_shown(win, lid, "④ %s" % name)
+        self.assertGreater(tried, 0, "겹쳐 숨긴 태그 글자가 하나도 없어 시험이 아무것도 보지 않음")
+
     def test_narrow_viewport_moves_the_search_box_below_the_chips(self):
         win = self.window(SIZES["1366x768 100%"])
         win.go(EXTRACT)

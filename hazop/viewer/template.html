@@ -540,7 +540,7 @@ function hazopPathEngine(G) {
     uncrowdTags();
   }
   // 11px로 다시 쓴 태그 글자는 도면 글자보다 커서, 축소하면 이웃 태그 글자나 떠 있는 칸(찾기·칩·확대)과 겹친다.
-  // 고른 태그, 고른 구간 안 태그, 나머지 순으로(같으면 도면 순서) 놓고 앞에 놓인 것과 겹치는 글자는 숨긴다.
+  // 고른 태그(②의 .selected, ④의 .hz-pick), 고른 구간 안 태그, 나머지 순으로(같으면 도면 순서) 놓고 앞에 놓인 것과 겹치는 글자는 숨긴다.
   // 위치를 모두 쓴 뒤 한 번에 읽고 한 번에 쓴다(태그 수만큼 다시 배치하지 않게).
   function rectHit(a, b) { return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; }
   function floatRects() {
@@ -551,7 +551,7 @@ function hazopPathEngine(G) {
   function uncrowdTags() {
     var shown = tagRecs.filter(function (r) { return r.span && r.small; });
     shown.forEach(function (r) { r.span.classList.remove("crowded"); });
-    var rank = function (r) { return r.box.classList.contains("selected") ? 0 : r.box.classList.contains("hz-seg-in") ? 1 : 2; };
+    var rank = function (r) { var c = r.box.classList; return c.contains("selected") || c.contains("hz-pick") ? 0 : c.contains("hz-seg-in") ? 1 : 2; };
     var order = shown.map(function (r, i) { return { r: r, i: i, k: rank(r), rect: r.span.getBoundingClientRect() }; });
     order.sort(function (a, b) { return a.k - b.k || a.i - b.i; });
     var taken = floatRects(), crowded = [];
@@ -732,11 +732,13 @@ function hazopPathEngine(G) {
     selected = it ? id : null;
     if (!it) {  // 없는 ID(null·색인에 없음): 선택을 해제하고 고리를 숨기고 속성 패널(링크 포함)을 빈 상태로 되돌린다
       selMark();
+      uncrowdTags();
       document.getElementById("panel").innerHTML = panelEmpty;
       return;
     }
     it.els.forEach(function (e) { e.classList.add("selected"); });
     selMark();
+    uncrowdTags();  // 겹쳐서 숨겼던 태그 글자라도 고른 것은 보인다
     var d = it.d, h = "";
     if (it.type === "node") {
       h += '<div class="cat">' + esc(CAT[d.category] || "미분류") + "</div><h2>" + esc(d.tag || "(태그 없음)") + "</h2>";
