@@ -1,10 +1,10 @@
 ---
 doc_id: HZ-PLN-01
 rev: 0
-status: draft
+status: approved
 author: unknown
-reviewed: —
-approved: —
+reviewed: doc-status 2026-11-12
+approved: director 2026-11-12
 ---
 
 # 전체 기획
@@ -47,7 +47,7 @@ approved: —
 
 ### 문서 상태
 
-- 모든 기획서·플로우차트는 초안이며 구현 완료를 의미하지 않습니다. 구현 상태와 남은 작업은 [메모리](../records/README.md)에서 관리합니다.
+- 문서마다 상태는 머리의 `status`를 따릅니다(draft·review·approved·obsolete). 구현 상태와 남은 작업은 [메모리](../records/README.md)에서 관리합니다.
 - 결정에는 출처(사용자 결정 또는 제안)를 표시합니다. 표시가 없는 항목은 제안이며 조정할 수 있습니다.
 
 ### 근거와 식별

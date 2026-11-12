@@ -1,10 +1,10 @@
 ---
 doc_id: HZ-PLN-16
 rev: 0
-status: draft
+status: approved
 author: unknown
-reviewed: —
-approved: —
+reviewed: doc-status 2026-11-12
+approved: director 2026-11-12
 ---
 
 # HAZOP 결과로 원자력발전소 초기사건(IE)을 도출하는 방법 조사

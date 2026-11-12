@@ -1,10 +1,10 @@
 ---
 doc_id: HZ-PLN-10
 rev: 0
-status: draft
+status: approved
 author: unknown
-reviewed: —
-approved: —
+reviewed: doc-status 2026-11-12
+approved: director 2026-11-12
 ---
 
 # 데스크톱 인터페이스 기획

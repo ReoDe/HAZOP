@@ -1,10 +1,10 @@
 ---
 doc_id: HZ-FLW-00
 rev: 0
-status: draft
+status: approved
 author: unknown
-reviewed: —
-approved: —
+reviewed: doc-status 2026-11-12
+approved: director 2026-11-12
 ---
 
 # 최상위 플로우차트

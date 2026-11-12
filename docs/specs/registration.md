@@ -1,10 +1,10 @@
 ---
 doc_id: HZ-PLN-03
 rev: 0
-status: draft
+status: approved
 author: unknown
-reviewed: —
-approved: —
+reviewed: doc-status 2026-11-12
+approved: director 2026-11-12
 ---
 
 # 자료 등록 기획

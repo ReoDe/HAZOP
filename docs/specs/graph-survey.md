@@ -1,10 +1,10 @@
 ---
 doc_id: HZ-PLN-08
 rev: 0
-status: draft
+status: approved
 author: unknown
-reviewed: —
-approved: —
+reviewed: doc-status 2026-11-12
+approved: director 2026-11-12
 ---
 
 # 그래프 조사: Obsidian식 화면 + HAZOP용 그래프 알고리즘
