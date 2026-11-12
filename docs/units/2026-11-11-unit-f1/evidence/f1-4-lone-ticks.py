@@ -34,7 +34,7 @@ import pickle
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
+DEFAULT_REPO = os.path.abspath(os.path.join(HERE, "..", "..", "..", ".."))
 
 
 def _load(job):

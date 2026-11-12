@@ -511,7 +511,7 @@ PAGES = [
 def index():
     items = "".join('<li><a href="%s.html">%s</a> · %s · PNG <a href="%s-1366.png">1366</a> · <a href="%s-1920.png">1920</a></li>'
                     % (n, n, d, n, n) for n, _f, d, _g in PAGES)
-    body = ('<h1>AI 연결 화면 시안</h1><p class="lead">근거: design/ai-connection-screens.md, specs/ai-subscription.md. 데이터는 모두 가상 예시입니다.</p>'
+    body = ('<h1>AI 연결 화면 시안</h1><p class="lead">근거: docs/design/ai-connection-screens.md, docs/specs/ai-subscription.md. 데이터는 모두 가상 예시입니다.</p>'
             '<ul class="idx">%s</ul>' % items)
     return page("AI 연결 시안 목차", body, "gal")
 

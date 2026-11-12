@@ -19,7 +19,7 @@ import sys
 import multiprocessing
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
+DEFAULT_REPO = os.path.abspath(os.path.join(HERE, "..", "..", "..", ".."))
 VALVE_NO = re.compile(r"V\d{3,5}[A-Z]?")
 POSITION = re.compile(r"(NO|NC|LO|LC|FO|FC|FL|FAI)(\s*[,/]\s*(NO|NC|LO|LC|FO|FC|FL|FAI))*")
 

@@ -58,11 +58,25 @@ EXEMPT = {
         ("N8", "작업/ @ docs/units/2026-11-09-data-consolidation/README.md", "같은 문서. 그때의 개발 작업 루트 이름이다"),
         ("N8", "작업/ @ docs/units/2026-11-10-ci-review/README.md", "2026-11-10 CI 검토 기록. 그때의 작업 루트 이름을 적었다"),
         ("N8", "작업/ @ docs/units/2026-11-10-lessons/d-drive-move.md", "D 드라이브 이전 기록. 그때 옮긴 폴더 이름이다"),
+        ("N8", "specs/ @ docs/units/2026-11-09-data-consolidation/README.md", "2026-11-09 정리 계획. 그때 정한 문서 폴더 이름을 적었다"),
+        ("N8", "methodology/ @ docs/units/2026-11-09-data-consolidation/README.md", "같은 문서"),
+        ("N8", "specs/ @ docs/units/2026-11-12-folder-standard/README.md", "이 이전의 완료 목록. 옮긴 일을 옛 이름으로 말한다"),
+        ("N8", "design/ @ docs/units/2026-11-12-folder-standard/README.md", "이 이전의 완료 목록. 옮긴 일을 옛 이름으로 말한다"),
+        ("N8", "methodology/ @ docs/units/2026-11-12-folder-standard/README.md", "이 이전의 완료 목록. 옮긴 일을 옛 이름으로 말한다"),
+        ("N8", "records/ @ docs/units/2026-11-12-folder-standard/README.md", "이 이전의 완료 목록. 옮긴 일을 옛 이름으로 말한다"),
         ("N8", "작업/ @ docs/design/mockups/README.md", "시안에 넣은 자료를 가져온 그때의 경로다"),
     ],
     # 단계 7(2026-11-12): 문서 폴더를 docs/ 아래로 모았다(N2·N3 줄은 옮긴 날 지웠다). N12 줄은 3단계(규칙서 쓰기)에서 지운다.
-    # N12 패턴의 앞 `*`는 옮기기 전의 자리(`specs`)와 뒤의 자리(`docs/specs`)를 같은 줄로 받으려던 것이다.
     "7": [
+        ("N12", "docs", "폴더 규칙서를 3단계에서 쓴다"),
+        ("N12", "docs/design", "폴더 규칙서를 3단계에서 쓴다"),
+        ("N12", "docs/governance", "폴더 규칙서를 3단계에서 쓴다"),
+        ("N12", "docs/governance/naming-rules", "폴더 규칙서를 3단계에서 쓴다"),
+        ("N12", "docs/methodology", "폴더 규칙서를 3단계에서 쓴다"),
+        ("N12", "docs/records", "폴더 규칙서를 3단계에서 쓴다"),
+        ("N12", "docs/specs", "폴더 규칙서를 3단계에서 쓴다"),
+        ("N12", "docs/specs/flows", "폴더 규칙서를 3단계에서 쓴다"),
+        ("N12", "docs/units", "폴더 규칙서를 3단계에서 쓴다"),
         ("N12", "hazop", "폴더 규칙서를 3단계에서 쓴다"),
         ("N12", "hazop/analysis", "폴더 규칙서를 3단계에서 쓴다"),
         ("N12", "hazop/app", "폴더 규칙서를 3단계에서 쓴다"),
@@ -88,23 +102,9 @@ EXEMPT = {
         ("N12", "tests", "폴더 규칙서를 3단계에서 쓴다"),
         ("N12", "tests/baselines", "폴더 규칙서를 3단계에서 쓴다"),
         ("N12", "tests/fake_claude", "폴더 규칙서를 3단계에서 쓴다"),
-        ("N12", "docs", "폴더 규칙서를 3단계에서 쓴다"),
-        ("N12", "*specs", "폴더 규칙서를 3단계에서 쓴다(옮긴 뒤 docs/specs도 같은 줄)"),
-        ("N12", "*specs/flows", "폴더 규칙서를 3단계에서 쓴다(옮긴 뒤 docs/specs/flows도 같은 줄)"),
-        ("N12", "*design", "폴더 규칙서를 3단계에서 쓴다(옮긴 뒤 docs/design도 같은 줄)"),
-        ("N12", "*methodology", "폴더 규칙서를 3단계에서 쓴다(옮긴 뒤 docs/methodology도 같은 줄)"),
-        ("N12", "*records", "폴더 규칙서를 3단계에서 쓴다(옮긴 뒤 docs/records도 같은 줄)"),
     ],
 }
 
-# 옮긴 뒤에 새로 생기는 자리의 예외. 지금은 위반이 없으므로 `test_exempt_rows_still_match`가 보지 않는다(EXEMPT와 달리).
-EXEMPT_AFTER_MOVE = {
-    "7": [
-        ("N12", "docs/governance", "폴더 규칙서를 3단계에서 쓴다"),
-        ("N12", "docs/governance/naming-rules", "폴더 규칙서를 3단계에서 쓴다"),
-        ("N12", "docs/units", "폴더 규칙서를 3단계에서 쓴다"),
-    ],
-}
 
 # ---------------------------------------------------------------- N1, N2
 CONVENTION_FILES = {"README.md", "CLAUDE.md", "AGENTS.md", "INTENT.md", "PROGRESS.md", "ROADMAP.md", "SKILL.md"}
@@ -162,6 +162,8 @@ def n3_docs_workspaces(paths):
     for name in sorted({p.split("/")[1] for p in paths if p.startswith("docs/") and p.count("/") >= 2}):
         if name not in DOCS_CHILDREN:
             out.append(Violation("N3", "docs/" + name, "docs/ 바로 아래가 %s가 아니다" % "·".join(DOCS_CHILDREN)))
+    out += [Violation("N3", p, "docs/units/ 바로 아래에는 README.md와 날짜 폴더만 둔다")
+            for p in sorted(paths) if p.startswith("docs/units/") and p.count("/") == 2 and p != "docs/units/README.md"]
     for name in sorted({p.split("/")[2] for p in paths if p.startswith("docs/units/") and p.count("/") >= 3}):
         if not WORKSPACE.match(name):
             out.append(Violation("N3", "docs/units/" + name, "이름이 YYYY-MM-DD-<slug>가 아니다"))
@@ -370,6 +372,11 @@ def is_doc(path):
     return path.lower().endswith((".md", ".html")) and not path.startswith(THIRD_PARTY)
 
 
+# 단계 7로 최상위에서 docs/ 아래로 들어간 폴더. `../specs/…`처럼 문서 폴더 기준으로 적은 상대 경로는 맞으므로 접두를 받지 않는다.
+MOVED_TOPS = ("specs", "design", "methodology", "records")
+MOVED_TOP_IN_CODE = re.compile(r"^(?:\./|[A-Za-z]:[\\/]HAZOP[\\/])?(%s)[\\/]" % "|".join(MOVED_TOPS))
+
+
 def n8_old_korean_paths(docs):
     out = []
     for path, text in sorted(docs.items()):
@@ -378,7 +385,7 @@ def n8_old_korean_paths(docs):
             if ref.kind == "code" and path in RECORD_DOCS:
                 continue
             if ref.kind == "code":
-                m = OLD_TOP_IN_CODE.match(ref.value.strip())
+                m = OLD_TOP_IN_CODE.match(ref.value.strip()) or MOVED_TOP_IN_CODE.match(ref.value.strip())
                 top = m.group(1) if m else None
             else:
                 target = resolve(path, link_path(ref.value) or "") if link_path(ref.value) else None
@@ -486,7 +493,7 @@ def file_violations(repo=REPO):
 
 
 def exempt_row(violation):
-    for stage, rows in list(EXEMPT.items()) + list(EXEMPT_AFTER_MOVE.items()):
+    for stage, rows in EXEMPT.items():
         for rule, pattern, _why in rows:
             if rule == violation.rule and fnmatch.fnmatchcase(violation.subject, pattern):
                 return stage, rule, pattern
@@ -523,6 +530,32 @@ class RepoTest(unittest.TestCase):
         if subjects is None:
             self.skipTest("기준 커밋 %s이 이 체크아웃의 이력에 없다" % COMMIT_BASE)
         self.assertEqual([], n10_commit_subjects(subjects))
+
+    def test_scripts_under_docs_find_the_repo_root(self):
+        """docs/ 아래 .py가 자기 위치에서 저장소 루트를 세는 방식(dirname 겹침, `..` 단계, parents[n])이 폴더가 한 층 깊어져도 맞는지 본다."""
+        nested = re.compile(r"((?:os\.path\.dirname\()+)os\.path\.abspath\(__file__\)")
+        dots = re.compile(r"os\.path\.join\((?:HERE|os\.path\.dirname\(os\.path\.abspath\(__file__\)\)), ((?:\"\.\.\"(?:, )?)+)\)")
+        parents = re.compile(r"ROOT\.parents\[(\d)\]")
+        checked = 0
+        for path in tracked_files():
+            if not (path.startswith("docs/") and path.endswith(".py")):
+                continue
+            text = read_texts([path])[path]
+            here = os.path.dirname(os.path.join(REPO, *path.split("/")))
+            found = []
+            for m in nested.finditer(text):
+                up = m.group(1).count("dirname(") - 1
+                if up < 2:  # 같은 폴더의 파일을 가리키는 한두 겹은 저장소 루트를 세는 것이 아니다
+                    continue
+                found.append(os.path.normpath(os.path.join(here, *[".."] * up)))
+            for m in dots.finditer(text):
+                found.append(os.path.normpath(os.path.join(here, *[".."] * m.group(1).count(".."))))
+            for m in parents.finditer(text):
+                found.append(os.path.normpath(os.path.join(here, *[".."] * (int(m.group(1)) + 1))))
+            for root in found:
+                checked += 1
+                self.assertEqual(os.path.normcase(os.path.normpath(REPO)), os.path.normcase(root), path)
+        self.assertGreater(checked, 8, "찾는 방식이 바뀌었는지 확인한다")
 
     def test_branch_name(self):
         name = current_branch()
@@ -561,6 +594,11 @@ class PastViolationTest(unittest.TestCase):
                           ("docs/units/2026-11-10-plan", "README.md가 없다"),
                           ("docs/units/screenshots-pdf", "이름이 YYYY-MM-DD-<slug>가 아니다")],
                          [(v.subject, v.detail) for v in n3_docs_workspaces(paths)])
+
+    def test_n3_loose_files_directly_under_docs_units(self):
+        found = n3_docs_workspaces({"docs/units/README.md", "docs/units/loose.md", "docs/units/2026-11-10-plan/README.md"})
+        self.assertEqual([("docs/units/loose.md", "docs/units/ 바로 아래에는 README.md와 날짜 폴더만 둔다")],
+                         [(v.subject, v.detail) for v in found])
 
     def test_n3_date_folder_directly_under_docs_is_live_after_the_move(self):
         found = n3_docs_workspaces({"docs/2026-11-05-packaging/README.md"})
@@ -681,6 +719,16 @@ class PastViolationTest(unittest.TestCase):
              "메모리/ @ docs/2026-11-10-plan/a.md", "기획서/ @ records/backlog.md", "flow chart/ @ x.html", "자원/ @ x.html"],
             [v.subject for v in n8_old_korean_paths(docs)])
 
+    def test_n8_moved_document_folders_are_live_after_stage_7(self):
+        """단계 7 뒤로 `specs/`·`design/`·`methodology/`·`records/`는 최상위가 아니다. 백틱 경로로 새로 적으면 걸린다.
+        문서 폴더 기준 상대 경로(`../specs/…`)와 `docs/` 아래 경로는 괜찮다. 기록 문서 본문은 보지 않는다."""
+        docs = {"README.md": "`specs/overview.md`와 `docs/specs/overview.md`, `design/mockups/`, `./records/backlog.md`\n",
+                "docs/design/a.md": "`../specs/interface.md`, `mockups/README.md`, `methodology/combined-risk-methods.md`\n",
+                "docs/records/backlog.md": "`specs/overview.md` 본문\n"}
+        self.assertEqual(["design/ @ README.md", "records/ @ README.md", "specs/ @ README.md",
+                          "methodology/ @ docs/design/a.md"],
+                         [v.subject for v in n8_old_korean_paths(docs)])
+
     def test_n8_is_live_for_folders_moved_in_stage_3(self):
         """단계 3의 넓은 예외(`기획서/ @ *` 등)를 지운 뒤로는, 옮긴 폴더의 옛 경로를 문서에 새로 적으면 예외 없이 걸린다."""
         docs = {"docs/2026-11-10-lessons/new.md":
@@ -745,12 +793,6 @@ class PastViolationTest(unittest.TestCase):
         self.assertIsNotNone(exempt_row(Violation("N1", "resources/references/pid-samples/SNP-M-201_CVCS/SNP-M-201_CVCS.drawio", "")))
         self.assertIsNone(exempt_row(Violation("N7", "resources/references/APR1400_DCD/system-codes_v2.csv", "")))
         self.assertIsNone(exempt_row(Violation("N1", "notes/새문서.md", "")))
-
-    def test_folder_readme_exemptions_cover_the_moved_places_too(self):
-        for folder in ("specs", "docs/specs", "docs/specs/flows", "docs/records", "design", "docs/governance",
-                       "docs/governance/naming-rules", "docs/units"):
-            self.assertIsNotNone(exempt_row(Violation("N12", folder, "")), folder)
-        self.assertIsNone(exempt_row(Violation("N12", "docs/other", "")))
 
 
 class CheckoutShapeTest(unittest.TestCase):

@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT.parents[2]))
+sys.path.insert(0, str(ROOT.parents[3]))
 from hazop.app.tokens import COLORS, FONT_FAMILY  # noqa: E402
 
 SEG = ["seg1", "seg2", "seg3", "seg4", "seg5"]

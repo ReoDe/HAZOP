@@ -74,6 +74,8 @@ KEEP_LINES = (
     ("docs/2026-11-10-plan/pstack-advice.md", "그래프 판이 바뀌면 바로 걸리는 장치가 이미 있다"),
     # 그때의 폴더 이름에 한글·`&`·공백이 들어 있었다는 말이라 새 이름으로 바꾸면 뜻이 틀어진다
     ("docs/2026-11-10-plan/pstack-advice.md", "한글·`&`·공백이 든 경로("),
+    # 이 이전의 완료 목록. 옮긴 일을 말하는 줄이라 새 이름으로 바꾸면 뜻이 틀어진다
+    ("docs/2026-11-12-folder-standard/README.md", "아래로 옮기고, 날짜 폴더를"),
 )
 
 # 기록 문서. 옮기기 전 이름으로 돌려도 같게 다룬다.
@@ -110,10 +112,14 @@ def map_problems(rows):
     out += ["옛 이름이 두 번 나온다: %s" % k for k, n in olds.items() if n > 1]
     out += ["새 이름이 두 번 나온다: %s" % k for k, n in news.items() if n > 1]
     for stage in sorted({r.stage for r in rows}):
-        same = [r for r in rows if r.stage == stage]
-        stage_olds = {r.old for r in same}
-        out += ["새 이름이 같은 단계 다른 줄의 옛 이름이다: %s" % r.new for r in same if r.new in stage_olds]
+        out += chain_problems([r for r in rows if r.stage == stage])
     return out
+
+
+def chain_problems(rows):
+    """한 번에 돌리는 줄 안에서 이어지는 이름. `--stage 3 --stage 7`처럼 단계를 함께 주면 그 줄들 사이도 본다."""
+    olds = {r.old for r in rows}
+    return ["새 이름이 같이 돌리는 다른 줄의 옛 이름이다: %s" % r.new for r in rows if r.new in olds]
 
 
 def _lookup(pairs, path):
@@ -188,6 +194,12 @@ def _new_link(doc, doc_before, value, rows, exists):
     return new + value[len(raw):]
 
 
+def _moved_dir(rows, before_dir):
+    """옮기기 전 폴더가 지금 있는 자리. 옮겨지지 않았으면 그대로. 저장소 루트('')는 늘 루트다."""
+    hit = _lookup(_forward(rows), before_dir) if before_dir else None
+    return hit[0] if hit else before_dir
+
+
 def _new_token(doc, doc_before, token, rows, exists):
     """백틱 안의 낱말 하나가 옮긴 경로면 새 경로를 낸다. 경로는 문서 폴더, 그 위 폴더들, 저장소 루트 순서로 풀어 본다.
     새 경로가 실제로 있는 풀이를 먼저 쓴다. 없으면(`records/*.md`, 지워진 파일) 옮긴 폴더 아래로 풀리는 것 중 루트에 가장 가까운
@@ -213,9 +225,12 @@ def _new_token(doc, doc_before, token, rows, exists):
                 loose = new + tail
         elif new is not None and exists(hit[0]):
             return None
-        if not base_before or not base_now:
+        if not base_before:
             break
-        base_before, base_now = posixpath.dirname(base_before), posixpath.dirname(base_now)
+        # 한 층 위 폴더도 옮겨졌을 수 있다. 옮기기 전 폴더가 지금 어디인지 대응표로 찾는다. 문서 폴더와 한 층씩 함께 올라가면
+        # 폴더가 한 층 깊어지는 이전(`specs/` -> `docs/specs/`)에서 저장소 루트 기준 경로가 `docs/` 기준으로 풀린다.
+        base_before = posixpath.dirname(base_before)
+        base_now = _moved_dir(rows, base_before)
     if loose is not None:
         return loose
     if "/" not in path and "." in path:
@@ -250,10 +265,11 @@ def _path_of(token):
     return posixpath.normpath(TOKEN_TAIL.sub("", token) or ".")
 
 
-def rewrite_text(doc, text, rows, exists, keep_lines=KEEP_LINES):
-    """doc은 문서의 지금 경로다. (바뀐 글, [(문서, 줄, 종류, 전, 후)])를 낸다."""
+def rewrite_text(doc, text, rows, exists, keep_lines=KEEP_LINES, live_lines=()):
+    """doc은 문서의 지금 경로다. (바뀐 글, [(문서, 줄, 종류, 전, 후)])를 낸다.
+    live_lines는 기록 문서 안에서 지금 진행 중인 절의 줄 번호다. 그 줄은 기록이 아니라 현재 안내이므로 백틱 경로도 고친다."""
     needles = [needle for path, needle in keep_lines if path == doc]
-    record = doc in RECORD_DOCS
+    record_doc = doc in RECORD_DOCS
     back = _lookup(_backward(rows), doc)
     doc_before = back[0] if back else doc
     by_line = collections.defaultdict(list)
@@ -266,6 +282,7 @@ def rewrite_text(doc, text, rows, exists, keep_lines=KEEP_LINES):
     for ref in refs:
         if any(n in lines[ref.line - 1] for n in needles):
             continue
+        record = record_doc and ref.line not in live_lines
         if ref.kind == "link":
             new = _new_link(doc, doc_before, ref.value, rows, exists)
             if new is not None and new != ref.value:
@@ -313,8 +330,9 @@ def _merge_report(path, changes):
         w.writerows(sorted(rows, key=lambda r: (r[0], int(r[1]), r[3])))
 
 
-def rewrite_links(rows, repo=REPO_ROOT, write=False, report=None, only=None):
-    """only를 주면 그 경로(폴더는 그 아래 전부)의 문서만 본다. 운영 파일은 only로 짚었을 때만 고쳐 쓴다."""
+def rewrite_links(rows, repo=REPO_ROOT, write=False, report=None, only=None, live=None):
+    """only를 주면 그 경로(폴더는 그 아래 전부)의 문서만 본다. 운영 파일은 only로 짚었을 때만 고쳐 쓴다.
+    live는 {기록 문서: {줄 번호}}. 그 줄은 기록 문서여도 백틱 경로를 고친다."""
     paths = rules.tracked_files(repo)
     tracked = set(paths)
     dirs = {p[:i] for p in paths for i, ch in enumerate(p) if ch == "/"}
@@ -334,7 +352,7 @@ def rewrite_links(rows, repo=REPO_ROOT, write=False, report=None, only=None):
             continue
         with open(full, encoding="utf-8", newline="") as f:
             old = f.read()
-        new, found = rewrite_text(doc, old, rows, on_disk)
+        new, found = rewrite_text(doc, old, rows, on_disk, live_lines=(live or {}).get(doc, ()))
         applied = bool(only) or not doc.startswith(HANDS_OFF)
         changes += [Change(*c, applied=applied) for c in found]
         if write and applied and new != old:
@@ -437,6 +455,8 @@ def main(argv=None):
     ap.add_argument("--rewrite-links", action="store_true", help="링크와 백틱 경로를 바꿔 쓴다")
     ap.add_argument("--report", help="바꾼 줄 목록을 더해 적을 CSV")
     ap.add_argument("--only", action="append", help="이 경로의 문서만 본다. 운영 파일(CLAUDE.md, .claude/)은 여기 적어야 고쳐 쓴다")
+    ap.add_argument("--live-lines", action="append", metavar="문서:줄,줄",
+                    help="기록 문서(결정로그·남은작업) 안에서 지금 진행 중인 절의 줄. 그 줄은 백틱 경로도 고친다")
     ap.add_argument("--leftovers", action="store_true", help="옛 이름이 글자 그대로 남은 줄을 보여 준다")
     ap.add_argument("--repo", default=REPO_ROOT)
     args = ap.parse_args(argv)
@@ -447,6 +467,7 @@ def main(argv=None):
     try:
         table = load_map(args.repo)
         problems = map_problems(table)
+        problems += chain_problems([r for r in table if r.stage in args.stage])
         if problems:
             raise MigrateError("대응표 오류:\n" + "\n".join(problems))
         rows = [r for r in table if r.stage in args.stage]
@@ -464,7 +485,11 @@ def main(argv=None):
                 print("%s:%d %s" % (doc, no, name))
             return 0
         if not args.move:
-            changes = rewrite_links(rows, args.repo, write=args.rewrite_links, report=args.report, only=args.only)
+            live = {}
+            for spec in args.live_lines or ():
+                name, _, nums = spec.rpartition(":")
+                live.setdefault(name, set()).update(int(n) for n in nums.split(",") if n)
+            changes = rewrite_links(rows, args.repo, write=args.rewrite_links, report=args.report, only=args.only, live=live)
             for c in changes:
                 print("%s:%d [%s%s] %s -> %s" % (c.file, c.line, c.kind, "" if c.applied else ", 쓰지 않음", c.before, c.after))
             print("%s %d곳, 파일 %d개" % ("바꿈" if args.rewrite_links else "바뀔 곳", len(changes), len({c.file for c in changes})))

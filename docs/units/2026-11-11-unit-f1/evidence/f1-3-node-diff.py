@@ -214,7 +214,7 @@ def _carry_page(job):
 
 
 def carry(args):
-    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
     seqs = sorted(os.path.basename(f)[:-5] for f in glob.glob(os.path.join(args.before, "[0-9]*.json")))
     jobs = [(repo, s, os.path.join(args.before, s + ".json"), os.path.join(args.after, s + ".json")) for s in seqs]
     total = collections.Counter()

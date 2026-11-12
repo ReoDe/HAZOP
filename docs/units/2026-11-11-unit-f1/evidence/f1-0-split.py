@@ -18,7 +18,7 @@ import subprocess
 import symtable
 import sys
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 BASE_COMMIT = "072d5c0"
 PKG_DIR = "hazop/extract/adapters"
 SOURCE = PKG_DIR + "/pdf_vector.py"

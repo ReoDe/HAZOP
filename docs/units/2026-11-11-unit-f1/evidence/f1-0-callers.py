@@ -18,7 +18,7 @@ import re
 import subprocess
 import sys
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 TARGET = "hazop/extract/adapters/pdf_vector.py"
 MODULE = "pdf_vector"
 STRING_RE = re.compile(r"pdf_vector(?:\.([A-Za-z_][A-Za-z_0-9]*))?")
