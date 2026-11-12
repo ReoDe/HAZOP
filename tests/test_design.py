@@ -1001,10 +1001,8 @@ class WindowMeasureTest(unittest.TestCase):
         self.assertEqual({e["objectName"] for e in rows["⑤"]["elided"]}, {"muted", "chip"})
         self.assertTrue(all(e["tooltip_ok"] for e in rows["⑤"]["elided"] + rows["⑤"]["at_area"]["elided"]))
         self.assertEqual(cd.form_problems(list(rows.values())), [])
-        # 쌓인 화면이라 창 최소 폭은 ④·⑤ 중 큰 쪽 이상. 탐색기·관련 항목은 화면마다 접고 펴므로(U-04·U-14)
-        # 창 최소 폭이 화면마다 같을 필요는 없다
-        for r in rows.values():
-            self.assertGreaterEqual(r["win_min_w"], max(rows["④"]["screen_min_w"], rows["⑤"]["screen_min_w"]))
+        # 창 최소 폭은 지금 보이는 화면만 따른다(H-a 결함 8). 쌓인 화면 전체의 최댓값을 따르면
+        # 좁은 화면에서도 가장 넓은 화면 폭만큼 창이 넓어져 1366 화면 밖으로 밀렸다. 각 화면 폭 이상인지는 위에서 본다
 
     def test_knowledge_run(self):
         """지식그래프 실행(T1 W7): ⑤ 지식 버전 칩도 줄임표 라벨, 관련 지식을 펼쳐도 폼이 가로로 잘리지 않음."""

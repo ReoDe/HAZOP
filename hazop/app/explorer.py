@@ -271,7 +271,7 @@ def results_module(win):
                     d = idx.deviation(c["deviation_id"])
                     text = "%s × %s · %s" % (c["node_id"], d["label"] if d else c["deviation_id"], e["recommendation"])
                     recs.append((text, (6, (c["node_id"], c["deviation_id"])), "", None, text))
-    groups.append(Group("권고", recs, ("AI 분석 후 권고가 모입니다",
+    groups.append(Group("권고", recs, ("분석하면 권고가 모입니다",
                                        ("AI 일괄 분석", cmd("run_ai"), "확정 구간 × 편차 칸을 AI로 분석합니다")
                                        if confirmed and usable and todo != 0 else None)))
     return groups

@@ -33,6 +33,8 @@
     없음), 이전 위치 _internal/licenses/가 없는지(scripts/build_package.licenses_problems와 같은 규칙)
  7) 기호 사전: 묶음 안 사전이 읽히고 구조·이름 낱말 견본이 들어 있는지(symbols_problems). 견본이 없는 옛 판 사전이 묶이면
     추출이 오류로 멈추므로 여기서 먼저 잡는다
+ 8) Qt 기본 번역: _internal/PySide6/translations/qtbase_ko.qm이 묶였고, 4)의 스크린샷 실행 로그에 '번역을 읽지 못함'이
+    없는지(translation_problems). 없으면 입력 창 단추가 영어(OK/Cancel)로 보인다
 자식 프로세스 환경: PYTHONPATH·PYTHONHOME·HAZOP_* 제거, HAZOP_WORK_ROOT·APPDATA·TEMP = 임시, 작업 폴더 = 임시(저장소 아님).
 PATH = Windows System32·Windows 폴더만, QT_*·OPENSSL_*·SSL_CERT_* 제거(D10): 사용자 PATH 경유 탐색을 제한한다
 (JDK·Git 등 PATH에 있는 UCRT·OpenSSL DLL을 찾지 못함). 다른 PC와 같은 조건이라는 보장은 아니다.
@@ -142,6 +144,21 @@ def symbols_problems(bundle_dir):
     except symbols.SymbolLibraryError as e:
         return ["기호 사전을 읽지 못함: %s" % e]
     return ["기호 사전에 %s 견본이 없음(코드보다 옛 판 사전)" % shape for shape in missing]
+
+
+QT_TRANSLATION_FILE = ("PySide6", "translations", "qtbase_ko.qm")  # _internal 아래
+
+
+def translation_problems(bundle_dir, app_log):
+    """Qt 기본 번역 파일이 묶였고 앱이 그것을 읽었는지(읽지 못하면 hazop.app가 TRANSLATION_FAILED를 남긴다). 문제 목록."""
+    from hazop.app import TRANSLATION_FAILED
+    probs = []
+    qm = os.path.join(bundle_dir, "_internal", *QT_TRANSLATION_FILE)
+    if not os.path.isfile(qm):
+        probs.append("Qt 기본 번역 파일 없음: %s" % qm)
+    if TRANSLATION_FAILED in app_log:
+        probs.append("앱 로그: %s" % TRANSLATION_FAILED)
+    return probs
 
 
 def _pdf_probe_module():
@@ -384,6 +401,7 @@ def app_steps(app_exe, env, tmp, out, png, run_dir, app_only, summary):
         shutil.copyfile(log_path, os.path.join(out, "work-logs-app.log"))
     summary["steps"]["app_bad_option"] = {"rc": rc2, "sec": sec2}
     summary["checks"]["app_log_started"] = "시작 pid=" in log1
+    summary["checks"]["translation_problems"] = translation_problems(os.path.dirname(app_exe), log1)
     summary["checks"]["app_bad_option_rc2"] = rc2 == 2 and "unrecognized arguments" in text2
     return rc, sec, rc2
 
@@ -522,6 +540,7 @@ def main(argv=None):
         and not checks.get("png_fresh_problems", ["미실행"])
         and not checks.get("licenses_problems", ["미실행"])
         and not checks.get("symbols_problems", ["미실행"])
+        and not checks.get("translation_problems", ["미실행"])
         and not checks.get("pdf_problems", ["미실행"])
         and checks.get("repo_unchanged") and checks.get("app_log_started") and checks.get("app_bad_option_rc2")
         and checks.get("app_bad_settings")

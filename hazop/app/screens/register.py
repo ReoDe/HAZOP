@@ -36,6 +36,8 @@ KNOWLEDGE_SCREEN = 4  # main_window STEPS 인덱스(③ 지식그래프)
 REGISTER_HINTS = {"none": "파일을 고르면 등록할 수 있습니다", "checking": "파일 확인이 끝나면 등록할 수 있습니다",
                   "many": "파일을 한 개만 고르세요", "error": "파일을 읽을 수 없어 등록할 수 없습니다",
                   "busy": "진행 중인 작업이 끝나면 등록할 수 있습니다"}
+PENDING_FILE_STATES = ("checking", "ready")  # 새 파일을 골라 등록을 기다리는 중: 추출은 그 파일을 등록한 뒤에
+EXTRACT_WAIT_HINT = "고른 파일을 먼저 등록하세요. 등록하면 그 파일을 추출할 수 있습니다"
 JOB_STEPS = {"register": "등록 · 형식 확인·해시·저장", "extract": "선·기호 추출 · 그래프 · 지식그래프",
              "document": "지식 추출 · 지식그래프"}
 
@@ -326,7 +328,9 @@ class RegisterScreen(QWidget):
         """주 버튼은 상태마다 하나(R-3): 등록할 파일 → 등록, 고른 등록 자료 → 추출, 빈 목록 → 파일 선택, 그 밖에는 등록."""
         e = self.selected_registration()
         can_register = self._file_state == "ready" and not self._busy
-        can_extract = bool(e) and e["record"].get("status") == "registered" and not self._busy
+        waiting = self._file_state in PENDING_FILE_STATES  # 고른 파일 대신 목록의 이전 자료를 추출하지 않게
+        can_extract = bool(e) and e["record"].get("status") == "registered" and not self._busy and not waiting
+        self.btn_extract.setToolTip(EXTRACT_WAIT_HINT if waiting and e else "")
         self.btn_register.setEnabled(can_register)
         self.btn_extract.setEnabled(can_extract)
         excluded = self.is_excluded(e)
@@ -666,6 +670,9 @@ class RegisterScreen(QWidget):
         if not registration_path:
             e = self.selected_registration()
             if not e or self._busy or e["record"].get("status") != "registered":
+                return
+            if self._file_state in PENDING_FILE_STATES:
+                self.app.status_message(EXTRACT_WAIT_HINT)
                 return
             registration_path, material_type = e["path"], material_type_of(e["record"])
             name = e["record"].get("original_name") or e["record"].get("material_id")
