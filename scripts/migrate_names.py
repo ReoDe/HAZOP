@@ -1,4 +1,6 @@
-"""이름 이전 도구(HZ-GOV-02 §6.9, §7). 대응표 `docs/2026-11-10-naming-rules/name-map.csv`(열: stage, old, new)를 읽는다.
+"""이름 이전 도구(HZ-GOV-02 §6.9, §7). 이름 규칙 문서 폴더의 대응표 `name-map.csv`(열: stage, old, new)를 읽는다.
+그 폴더는 단계 7 전에는 `docs/2026-11-10-naming-rules/`, 뒤에는 `docs/governance/naming-rules/`다(`tests.test_naming_rules.NAMING_DIRS`).
+어느 쪽이든 지금 있는 자리를 찾아 읽으므로, 단계 7로 폴더를 옮기는 도중에도 도구가 대응표를 잃지 않는다.
 
     python scripts/migrate_names.py --stage 2                  옮길 것과 바뀔 줄을 보여 준다(쓰지 않음)
     python scripts/migrate_names.py --stage 2 --move           대응표대로 `git mv`만 한다(내용 변경 0)
@@ -47,12 +49,19 @@ sys.path.insert(0, REPO_ROOT)
 
 from tests import test_naming_rules as rules  # noqa: E402
 
-MAP_FILE = "docs/2026-11-10-naming-rules/name-map.csv"
+MAP_NAME = "name-map.csv"
 # 운영 규칙 파일. 바뀔 줄을 기록만 하고 총괄이 직접 고친다.
 HANDS_OFF = ("CLAUDE.md", ".claude/")
+def _both(path):
+    """`docs/<날짜>-<slug>/…` 문서는 단계 7 전(`docs/…`)과 뒤(`docs/units/…`)의 자리를 모두 낸다."""
+    if re.match(r"docs/\d{4}-\d{2}-\d{2}-", path):
+        return (path, "docs/units/" + path[len("docs/"):])
+    return (path,)
+
+
 # 옛 이름을 일부러 적어 둔 문서. 읽지도 않는다. 둘째는 2026-11-09 정리의 계획이자 기록이다. 그때 정한 `자원/` 배치와 옮긴 순서를
 # 적은 문서라 새 이름으로 바꾸면 기록이 틀려진다. 지금 이름은 HZ-GOV-02 §5.5 대응표로 찾는다.
-KEEP = (rules.NAMING_DOC, "docs/2026-11-09-data-consolidation/README.md")
+KEEP = tuple(f"{rules.NAMING_DIRS[i]}/README.md" for i in (0, 1)) + _both("docs/2026-11-09-data-consolidation/README.md")
 # 옛 이름을 일부러 적은 줄: (문서의 지금 경로, 그 줄에 든 글자)
 KEEP_LINES = (
     ("docs/2026-11-10-plan/pstack-advice.md", "과거 실제 위반에서 실패함을 보인다"),
@@ -69,6 +78,8 @@ KEEP_LINES = (
 
 # 기록 문서. 옮기기 전 이름으로 돌려도 같게 다룬다.
 RECORD_DOCS = frozenset(rules.RECORD_DOCS) | {"메모리/결정로그.md", "메모리/남은작업.md"}
+# KEEP_LINES는 문서의 옮기기 전 자리로 적혀 있다. 옮긴 뒤에도 같은 줄을 알아보도록 두 자리를 다 넣는다.
+KEEP_LINES = tuple((alt, needle) for path, needle in KEEP_LINES for alt in _both(path))
 
 Row = collections.namedtuple("Row", "stage old new")
 Change = collections.namedtuple("Change", "file line kind before after applied")
@@ -85,18 +96,23 @@ class MigrateError(Exception):
 
 # ---------------------------------------------------------------- 대응표
 def load_map(repo=REPO_ROOT):
-    with open(os.path.join(repo, MAP_FILE), encoding="utf-8-sig", newline="") as f:
+    with open(os.path.join(repo, *rules.naming_path(MAP_NAME, repo).split("/")), encoding="utf-8-sig", newline="") as f:
         return [Row(r["stage"].strip(), r["old"].strip().strip("/"), r["new"].strip().strip("/")) for r in csv.DictReader(f)]
 
 
 def map_problems(rows):
-    """한 이름이 두 번 옮겨지거나 두 이름이 한곳으로 모이는 대응표는 다시 돌렸을 때 결과가 달라진다."""
+    """한 이름이 두 번 옮겨지거나 두 이름이 한곳으로 모이는 대응표는 다시 돌렸을 때 결과가 달라진다.
+    앞 단계의 새 이름을 뒤 단계가 다시 옮기는 것은 막지 않는다(`기획서` → `specs`(3) → `docs/specs`(7)). 단계는 차례로 돌고,
+    한 번에 돌리는 줄(같은 stage)만 서로 이어지면 안 된다."""
     out = []
     olds = collections.Counter(r.old for r in rows)
     news = collections.Counter(r.new for r in rows)
     out += ["옛 이름이 두 번 나온다: %s" % k for k, n in olds.items() if n > 1]
     out += ["새 이름이 두 번 나온다: %s" % k for k, n in news.items() if n > 1]
-    out += ["새 이름이 다른 줄의 옛 이름이다: %s" % r.new for r in rows if r.new in olds]
+    for stage in sorted({r.stage for r in rows}):
+        same = [r for r in rows if r.stage == stage]
+        stage_olds = {r.old for r in same}
+        out += ["새 이름이 같은 단계 다른 줄의 옛 이름이다: %s" % r.new for r in same if r.new in stage_olds]
     return out
 
 

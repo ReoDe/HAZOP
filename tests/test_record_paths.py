@@ -15,6 +15,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
 from hazop import paths  # noqa: E402
+from tests.test_naming_rules import naming_path  # noqa: E402
 
 SAMPLE = ("SNP-M-102_RCS-pressurizer", "SNP-M-102_RCS-pressurizer.drawio")
 # (지금 위치, 기록 경로). 지금 위치는 (FOLDERS 이름, 그 아래 경로…)
@@ -94,7 +95,7 @@ class RecordPaths(unittest.TestCase):
 
     def test_every_tracked_file_moved_in_stage_5_resolves_from_its_old_name(self):
         """대응표(name-map.csv, stage 5)의 옛 이름 전부. 표에 줄이 빠지면 여기서 드러난다."""
-        with open(os.path.join(REPO_ROOT, "docs", "2026-11-10-naming-rules", "name-map.csv"), encoding="utf-8-sig", newline="") as f:
+        with open(os.path.join(REPO_ROOT, *naming_path("name-map.csv").split("/")), encoding="utf-8-sig", newline="") as f:
             rows = [(r["old"], r["new"]) for r in csv.DictReader(f) if r["stage"] == "5"]
         self.assertGreater(len(rows), 100)
         for old, new in rows:

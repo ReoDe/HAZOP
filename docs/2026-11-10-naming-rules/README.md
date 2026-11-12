@@ -1,6 +1,6 @@
 ---
 doc_id: HZ-GOV-02
-rev: 1
+rev: 2
 status: review
 author: 이름 규칙 설계 하위 세션
 reviewed: —
@@ -9,12 +9,14 @@ approved: —
 
 # 작업물 관리·이름 규칙 (확정본)과 이전 계획
 
-작성 2026-11-10. 개정 0(초안, 세 안 비교) → 개정 1(사용자 결정 8개 반영, 이전 계획 추가). 이 문서는 설계만 담는다. 파일을 옮기거나 이름을 바꾸지 않았다. 실제 이전은 §7의 단계마다 별도 작업 단위로 한다.
+작성 2026-11-10. 개정 0(초안, 세 안 비교) → 개정 1(사용자 결정 8개 반영, 이전 계획 추가) → 개정 2(2026-11-12 사용자 결정: 문서 폴더를 `docs/` 아래로 모으고 폴더마다 같은 양식의 규칙서를 둔다. §4.2·§4.6·§4.13·§7 단계 7·§8.1). 이 문서는 설계만 담는다. 파일을 옮기거나 이름을 바꾸지 않았다. 실제 이전은 §7의 단계마다 별도 작업 단위로 한다.
+
+개정 2는 규칙만 고친다. 개정 2를 쓴 시점에는 문서 폴더가 아직 옛 자리(`specs/`, `design/`, `methodology/`, `records/`, `docs/YYYY-MM-DD-<slug>/`)에 있고, 이 문서도 `docs/2026-11-10-naming-rules/`에 있다. 단계 7(2단계 작업)이 `docs/governance/naming-rules/`로 옮긴다. §5의 대응표는 단계 3~6의 기록이라 옛 이름 → 단계 3의 이름 그대로 두고, 단계 7이 더하는 이동은 `name-map.csv`의 `stage` 7 줄이 말한다.
 
 ## 결론
 
 1. 사용자는 **원자력 문서관리식 엄격안(안 C)**과 **전부 영어 이름**을 골랐다(2026-11-10). 저장소 추적 파일 1,261개 중 647개(한글이나 공백이 든 경로)와 코드가 만드는 작업 폴더 이름 약 30종이 바뀐다.
-2. 이전은 **7단계(0~6)**로 나눈다. 코드가 읽지 않는 것(저장소 밖, `docs/` 안 파일, 사람 문서 폴더)을 먼저 옮기고, 코드가 읽는 `자원/`·`작업/`은 마지막에 옮긴다. 단계마다 따로 커밋하고 `git revert` 하나로 되돌릴 수 있게 짠다.
+2. 이전은 **7단계(0~6)**로 나눈다(개정 2가 문서 폴더를 `docs/` 아래로 모으는 단계 7을 더했다). 코드가 읽지 않는 것(저장소 밖, `docs/` 안 파일, 사람 문서 폴더)을 먼저 옮기고, 코드가 읽는 `자원/`·`작업/`은 마지막에 옮긴다. 단계마다 따로 커밋하고 `git revert` 하나로 되돌릴 수 있게 짠다.
 3. 가장 큰 위험은 세 가지다. 이미 깔린 배포본의 사용자 작업 폴더, 그래프 판 해시와 고정 응답·지침서 해시가 줄줄이 바뀌는 문제, 문서 88개 480곳의 경로 언급과 동시에 도는 다른 세션이다. 단계 5·6은 다른 세션이 하나도 돌지 않을 때만 한다.
 
 ---
@@ -145,16 +147,23 @@ approved: —
 | `tests/` | 단위 시험, 시험 입력, 기준값 | `tests/test_<모듈>.py`, `tests/fixtures/<주제>/`, `tests/baselines/` |
 | `packaging/` | 배포 도구 | `verify_*`(배포본 검사), `*_probe`(한 가지 떠보기) |
 | `licenses/` | 제3자 고지 | 지금 그대로 |
-| `specs/` | 제품 규격(옛 `기획서/`) | `specs/<주제>.md`, 흐름도는 `specs/flows/<번호>-<주제>.md` |
-| `design/` | 화면 설계와 시안(옛 `디자인/`) | `design/<주제>.md`, 시안은 `design/mockups/<주제>/<번호>-<화면>[-<폭>].<확장자>` |
-| `methodology/` | 방법론 카드(옛 `지식/`) | `methodology/<주제>.md` |
-| `records/` | 결정로그·남은 작업(옛 `메모리/`) | `records/decision-log.md`, `records/backlog.md` |
 | `resources/` | 읽기 전용 자료(옛 `자원/`) | `library/`(배포본에 묶는 기준 자료), `references/`(참고), `samples/`(표본) |
 | `work/` | 개발 작업 루트(옛 `작업/`, git 제외) | 배포본 작업 루트와 같은 배치: `data/`, `output/`, `store/`, `logs/` |
-| `docs/` | 작업 단위 기록 | `docs/YYYY-MM-DD-<slug>/`, README 필수 |
-| 그 밖 | `CLAUDE.md`, `INTENT.md`, `README.md`, `.claude/`, `.gitignore`, `.gitattributes` | — |
+| `docs/` | 모든 문서 | 바로 아래는 아래 여섯 폴더뿐이다(개정 2) |
+| 그 밖 | `CLAUDE.md`, `INTENT.md`, `README.md`, `.claude/`, `.github/`, `.gitignore`, `.gitattributes` | — |
 
-이 목록에 없는 최상위 폴더를 만들려면 사용자 결정을 받는다.
+`docs/` 바로 아래(개정 2. 단계 3까지 최상위였던 `specs/`·`design/`·`methodology/`·`records/`와 옛 `docs/YYYY-MM-DD-<slug>/`를 모은다):
+
+| 폴더 | 무엇 | 하위 규칙 |
+| --- | --- | --- |
+| `docs/specs/` | 제품 규격(옛 `기획서/`) | `docs/specs/<주제>.md`, 흐름도는 `docs/specs/flows/<번호>-<주제>.md` |
+| `docs/design/` | 화면 설계와 시안(옛 `디자인/`) | `docs/design/<주제>.md`, 시안은 `docs/design/mockups/<주제>/<번호>-<화면>[-<폭>].<확장자>` |
+| `docs/methodology/` | 방법론 카드(옛 `지식/`) | `docs/methodology/<주제>.md` |
+| `docs/records/` | 결정로그·남은 작업(옛 `메모리/`) | `docs/records/decision-log.md`, `docs/records/backlog.md` |
+| `docs/units/` | 작업 단위 기록(옛 `docs/YYYY-MM-DD-<slug>/`) | `docs/units/YYYY-MM-DD-<slug>/`, README 필수 |
+| `docs/governance/` | 이름 규칙 같은 운영 문서 | `docs/governance/<주제>/README.md`와 그 근거(`evidence/`)·대응표. 이름 규칙은 `docs/governance/naming-rules/` |
+
+이 목록에 없는 최상위 폴더를 만들려면 사용자 결정을 받는다. `docs/` 바로 아래에 일곱 번째 폴더를 만드는 일도 같다.
 
 ### 4.3 파일
 
@@ -190,15 +199,15 @@ approved: —
 
 | 약어 | 분류 | 대상 | 지금 수 |
 | --- | --- | --- | --- |
-| `PLN` | 제품 규격 | `specs/*.md` | 20 |
-| `FLW` | 흐름도 | `specs/flows/*.md`. 번호는 파일 앞 번호와 같게(`00`~`05`) | 6 |
-| `DSN` | 화면 설계 | `design/*.md` | 4 |
-| `MTH` | 방법론 | `methodology/*.md` | 1 |
-| `REC` | 기록 | `records/*.md` | 3 |
+| `PLN` | 제품 규격 | `docs/specs/*.md`(단계 7 전 `specs/*.md`) | 20 |
+| `FLW` | 흐름도 | `docs/specs/flows/*.md`. 번호는 파일 앞 번호와 같게(`00`~`05`) | 6 |
+| `DSN` | 화면 설계 | `docs/design/*.md` | 4 |
+| `MTH` | 방법론 | `docs/methodology/*.md` | 1 |
+| `REC` | 기록 | `docs/records/*.md` | 3 |
 | `GOV` | 운영 규칙·목표 | `INTENT.md`(GOV-01), 이 문서(GOV-02) | 2 |
 | `CHK` | 점검표·절차 | `packaging/other-pc-checklist.md` | 1 |
 
-머리를 달지 않는 문서: `README.md`(최상위), `CLAUDE.md`(도구가 읽는 진입 파일), `docs/` 작업 공간 문서(폴더 이름 `YYYY-MM-DD-<slug>`가 식별자), `.claude/` 에이전트·스킬(도구가 읽는 머리가 따로 있음), `licenses/`.
+머리를 달지 않는 문서: `README.md`(최상위), `CLAUDE.md`(도구가 읽는 진입 파일), `docs/` 작업 공간 문서(폴더 이름 `YYYY-MM-DD-<slug>`가 식별자), `.claude/` 에이전트·스킬(도구가 읽는 머리가 따로 있음), `licenses/`, 폴더 규칙서(각 폴더의 `README.md`, §4.13. 단 `INTENT.md`와 이 문서는 위 표대로 머리를 단다).
 
 ### 4.7 문서 머리 양식
 
@@ -278,6 +287,31 @@ approved: director 2026-11-10
 | 시험 폴더 | 단위 종료 + 14일, 비용 큰 결과는 기간 없음 | `preflight.py`가 날짜 지난 폴더를 알림, 지우기는 사람 확인 뒤 |
 | 실행 중 임시 파일 | 실행 끝나면 | `preflight.py --clean-temp` |
 | 병합된 브랜치·작업트리 | 단위가 끝날 때 | `git branch -d`, `git worktree remove` |
+
+### 4.13 폴더 규칙서 (개정 2)
+
+폴더마다 `README.md`를 하나 두고, 다섯 항목을 `##` 제목으로 같은 순서에 한 번씩 적는다. 항목은 ISO 9001 §7.5(문서화된 정보의 식별·승인·개정·보존)에 맞춘 것이다. 문서 머리(§4.7)는 달지 않는다. 폴더 규칙서는 번호를 매겨 개정하는 문서가 아니라 폴더의 현재 규칙이고, 바뀐 내력은 git이 맡는다.
+
+| 제목 | 적을 것 |
+| --- | --- |
+| `## 무엇을 넣는가` | 이 폴더에 두는 것 |
+| `## 넣지 않는 것` | 헷갈리기 쉬운 것과 그것을 둘 곳 |
+| `## 이름 형식` | 파일·하위 폴더 이름 규칙과 예 |
+| `## 주인` | 누가 고치고 누가 승인하는가 |
+| `## 폐기 기준` | 언제 지우거나 `obsolete`로 두는가 |
+
+**적용 범위.** 최상위 폴더와 그 바로 아래 한 층, `docs/` 아래는 두 층까지다(`docs/specs/flows/`까지). 규칙서가 필요한 곳은 '여기 무엇을 넣지'가 갈리는 층이고, 그보다 깊은 폴더는 윗층 규칙서의 '이름 형식'이 설명한다. 깊이로 자르면 폴더가 늘 때 새 규칙서가 얼마나 필요한지 미리 셀 수 있다. 다음은 뺀다.
+
+| 뺀 곳 | 이유 |
+| --- | --- |
+| `.claude/`, `.github/` 같은 점으로 시작하는 도구 폴더 | 도구가 정한 배치다 |
+| `docs/units/<YYYY-MM-DD-slug>/` 안쪽(단계 7 전의 `docs/<YYYY-MM-DD-slug>/` 포함) | 작업 공간마다 §4.3의 7문서가 있다. 그 `README.md`는 작업 단위의 안내라서 이 양식이 아니다 |
+| `docs/design/mockups/` | 만든 시안과 자체 안내(`README.md`)가 있다 |
+| `tests/fixtures/` | 폴더를 통째로 훑는 시험과 기준값이 있다. 파일을 더하면 점수가 흔들릴 수 있다 |
+| `licenses/<이름>/` | 제3자 고지 원문이다. 바이트가 SHA-256으로 고정돼 있다(`licenses/README.md`의 표) |
+| `resources/`의 깊은 폴더, `hazop/` 안 모듈 아래 | 위 깊이 규칙이다 |
+
+양식은 `tests/test_naming_rules.py`의 N12가 지킨다(§8.1).
 
 ---
 
@@ -514,6 +548,14 @@ approved: director 2026-11-10
 | **5. `자원/` → `resources/`** | §5.5 전체: 추적 162개, 추적 안 하는 APR1400 원본·도면별·PDF·사진(각 PC에서 손으로), `FOLDERS` resource·repo 행, `OLD_NAMES` 줄 추가, 샘플 논리 경로 고정(§6.2), `test_path_literals.py` 패턴, `.gitignore`, `devenv.py` 확인 | 추적 162개 + 로컬 약 411MB | **다른 세션 0** | unittest, `check_snp_baseline.py`와 `check_apr1400.py`를 `--update` 없이(점수 그대로여야 함, '맞은 수/분모 @커밋'으로 기록), `refresh_fixture_hashes.py --check`, 배포본 빌드 + `verify_bundle.py`, 앱 S1~S6 시나리오(`check_user_scenarios.py`, 데스크톱 잠금 안에서) | ①② revert. 추적 안 하는 파일은 이동 기록으로 되돌림 |
 | **6. `작업/` → `work/`, 출력 하위 이름** | 앞서 출력 하위 폴더를 `FOLDERS`로 모으는 정리 단위. 그다음 §5.6 전체, `FOLDERS` 키 영어화, `scripts/migrate_names.py`(복사·해시 비교·manifest·undo), 앱 시작 시 옛 폴더 감지, 설정 파일 경로 변환, `APP_VERSION` `0.2.0`과 태그 | 코드 이름 약 30종, 파일 수십 개(정리 단위에서 셈), 사용자 작업 루트 2곳(개발, 이 PC 배포본) | **다른 세션 0** | unittest, 임시 작업 루트에 옛 배치를 만들어 이전 도구 `--apply`·`--undo` 왕복 시험, 기준값 두 개 그대로, 배포본으로 옛 작업 루트 열기(이 PC의 `%LOCALAPPDATA%\HAZOP` 사본으로), 앱 S1~S6 | 코드는 revert. 사용자 데이터는 `migrate_names.py --work-root <작업 루트> --undo`(옛 폴더는 `_before-0.2.0`으로 남아 있음) |
 
+**단계 7 (개정 2, 2026-11-12). 문서 폴더를 `docs/` 아래로.** 단계 0~6이 끝난 뒤 사용자 결정으로 더했다. 대응표 `name-map.csv`의 `stage` 7 줄이 정본이다.
+
+| 단계 | 옮기는 것 | 수 | 다른 세션 | 확인 | 되돌리기 |
+| --- | --- | --- | --- | --- | --- |
+| **7. 문서 폴더를 `docs/`로** | ① 규칙 개정(이 개정. 파일 이동 0). ② `specs/`·`design/`·`methodology/`·`records/` → `docs/` 아래, `docs/YYYY-MM-DD-<slug>/` 17개 → `docs/units/`, 이 문서의 폴더 → `docs/governance/naming-rules/`. `git mv` 커밋과 내용 수정 커밋으로 나눈다. 링크·백틱 경로는 `migrate_names.py --stage 7 --rewrite-links`, `hazop/paths.py`의 `guide`와 배포본 묶음 경로, 지침서 해시 확인. ③ 폴더마다 규칙서(§4.13)를 쓰고 N12의 예외 줄을 지운다 | ② 폴더 22줄(파일 약 690개). ③ 규칙서 약 40개 | **다른 세션 0**(문서·`.claude/`·`CLAUDE.md`를 모두 건드림) | unittest 전체, `test_integrity_pins`, 기준값 두 개 `--update` 없이 그대로, 배포본 빌드 + `verify_bundle.py`, 링크 검사(N9) | ① ② 커밋 revert. 지침서 해시는 내용 수정 커밋에 함께 있다 |
+
+단계 7의 ①은 규칙과 검사만 새 배치를 목표로 바꾼다. 옛 자리는 `tests/test_naming_rules.py`의 `EXEMPT["7"]`에 둔다(N2·N3는 ②에서, N12는 ③에서 지운다). 이름 규칙 문서의 자리는 `NAMING_DIRS`가 옛 자리와 새 자리를 모두 받아, 이전 도구(`migrate_names.py`)와 시험이 옮기는 도중에도 대응표를 잃지 않는다.
+
 **정리 순서의 이유.** 단계 0~4는 코드가 읽지 않거나 읽는 곳이 몇 군데뿐이다. 실패해도 문서 링크가 깨지는 정도라 되돌리기 쉽다. 단계 5는 저장소 안 데이터 계약을 바꾸고, 단계 6은 저장소 밖 사용자 데이터까지 건드린다. 위험이 큰 것을 뒤에 두면, 앞 단계에서 이전 도구와 링크 검사가 한 번씩 검증된 뒤에 쓰인다.
 
 **각 단계의 작업 단위.** 단계마다 `/pstack:poteto-mode` 하위 세션 하나를 쓰고(CLAUDE.md 규칙 10), 검토 1회와 QA를 거쳐 커밋한다. 단계 5·6은 '대' 작업이라 Codex 교차검증을 함께 한다(규칙 7. 공개 자료라 사용자 확인 없이 쓸 수 있음).
@@ -529,8 +571,8 @@ approved: director 2026-11-10
 | # | 검사 | 실패 예 |
 | --- | --- | --- |
 | N1 | 추적 경로의 모든 구성요소가 §4.1 글자 규칙(영어 소문자·숫자·`-`·`_`·`.`, 대문자 예외 목록)을 지킴 | `기획서/전체기획.md`, `P&ID 도면 샘플/` |
-| N2 | 최상위 폴더가 §4.2 목록 안에 있음 | `notes/` |
-| N3 | `docs/` 아래 폴더가 `^\d{4}-\d{2}-\d{2}-[a-z0-9]+(-[a-z0-9]+)*$`이고 `README.md`가 있음 | `docs/screenshots-pdf/` |
+| N2 | 최상위 폴더가 §4.2 목록 안에 있음(개정 2: `hazop`·`scripts`·`tests`·`packaging`·`licenses`·`docs`·`resources`·`work`와 관례 파일) | `notes/`, `specs/` |
+| N3 | `docs/` 바로 아래가 `specs`·`design`·`methodology`·`records`·`units`·`governance`뿐이고, `docs/units/` 아래 폴더가 `^\d{4}-\d{2}-\d{2}-[a-z0-9]+(-[a-z0-9]+)*$`이며 `README.md`가 있음 | `docs/notes/`, `docs/units/screenshots-pdf/` |
 | N4 | 새 `scripts/*.py`의 접두가 §4.4 동사 목록에 있음(예외 7개 제외) | `scripts/helper.py` |
 | N5 | `tests/` 아래 시험 파일이 `test_*.py` | `tests/check_x.py` |
 | N6 | 머리 대상 문서(§4.6)에 `doc_id`·`rev`·`status`·`author`·`reviewed`·`approved`가 있고, `doc_id` 형식이 `^HZ-(PLN\|FLW\|DSN\|MTH\|REC\|GOV\|CHK)-\d{2}$`, 번호가 겹치지 않음, `status`가 네 값 중 하나, `approved`면 `approved:`가 `—`가 아님 | 번호 겹침, `status: done` |
@@ -539,6 +581,9 @@ approved: director 2026-11-10
 | N9 | `.md`의 상대 링크 대상이 실제로 있음 | `[인터페이스](기획서/인터페이스.md)` |
 | N10 | 커밋 메시지: 단계 0 커밋(기준 커밋) 이후 `git log <기준>..HEAD`의 제목이 `^(feat\|fix\|docs\|test\|refactor\|perf\|build\|ci\|chore\|baseline)(\([a-z0-9-]+\))?!?: \S`이고 요약에 한글이 있음. 병합 커밋, `git revert` 기본 제목(`Revert "…`), GitHub 병합 제목(`Merge pull request #…`, `Merge branch …`), GitHub가 브랜치 이름으로 지은 스쿼시 병합 제목(`Feat/next units (#15)`)은 제외. 사람이 쓴 PR 제목은 ` (#숫자)`가 붙어도 검사한다 | `Add the core of …` |
 | N11 | 브랜치: 현재 브랜치 이름이 `^(feat\|fix\|docs\|chore\|refactor\|test)/[a-z0-9]+(-[a-z0-9]+){0,3}$`이거나 `main` | `my-branch` |
+| N12 | 폴더 규칙서(개정 2, §4.13): 적용 범위의 추적 폴더마다 `README.md`가 있고 `##` 제목 다섯 개(`무엇을 넣는가`·`넣지 않는 것`·`이름 형식`·`주인`·`폐기 기준`)가 이 순서로 한 번씩 있음 | `scripts/`에 `README.md` 없음, 제목 `담당` |
+
+N6의 머리 대상(§4.6)은 옮기기 전과 뒤의 자리를 모두 받는다(`specs/*.md`와 `docs/specs/*.md` 등). N8·N9의 기록 문서 예외(`records/decision-log.md`·`records/backlog.md`)도 두 자리를 받는다.
 
 N10·N11은 CI(결정로그 237행의 가벼운 CI)에서도 돌린다. 처음 몇 주는 CI 결정대로 실패해도 병합을 막지 않는다.
 

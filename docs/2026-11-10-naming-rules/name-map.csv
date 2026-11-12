@@ -387,3 +387,24 @@ stage,old,new
 5u,자원/참고자료/HAZOP 기법,resources/references/hazop-method
 5u,자원/참고자료/HAZOP 기법/P-86-2017 회분식 공정의 위험과 운전분석HAZOP기법에 관한 기술지침.pdf,resources/references/hazop-method/kosha-p-86-2017-batch-hazop-guide.pdf
 5u,자원/참고자료/참고 사진,resources/references/photos
+7,specs,docs/specs
+7,design,docs/design
+7,methodology,docs/methodology
+7,records,docs/records
+7,docs/2026-11-05-design-system,docs/units/2026-11-05-design-system
+7,docs/2026-11-05-input-adapter,docs/units/2026-11-05-input-adapter
+7,docs/2026-11-05-knowledge-graph,docs/units/2026-11-05-knowledge-graph
+7,docs/2026-11-05-packaging,docs/units/2026-11-05-packaging
+7,docs/2026-11-07-drawing-edit,docs/units/2026-11-07-drawing-edit
+7,docs/2026-11-07-screenshots-pdf,docs/units/2026-11-07-screenshots-pdf
+7,docs/2026-11-07-user-scenario-check,docs/units/2026-11-07-user-scenario-check
+7,docs/2026-11-09-data-consolidation,docs/units/2026-11-09-data-consolidation
+7,docs/2026-11-09-dev-framework,docs/units/2026-11-09-dev-framework
+7,docs/2026-11-09-symbol-library,docs/units/2026-11-09-symbol-library
+7,docs/2026-11-10-apr1400-unknowns,docs/units/2026-11-10-apr1400-unknowns
+7,docs/2026-11-10-ci-review,docs/units/2026-11-10-ci-review
+7,docs/2026-11-10-lessons,docs/units/2026-11-10-lessons
+7,docs/2026-11-10-plan,docs/units/2026-11-10-plan
+7,docs/2026-11-11-unit-f1,docs/units/2026-11-11-unit-f1
+7,docs/2026-11-12-folder-standard,docs/units/2026-11-12-folder-standard
+7,docs/2026-11-10-naming-rules,docs/governance/naming-rules

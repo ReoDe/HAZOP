@@ -201,13 +201,54 @@ class MapFile(unittest.TestCase):
         return mn.map_problems([mn.Row(*r) for r in rows])
 
     def test_chained_or_duplicate_rows_are_refused(self):
-        self.assertTrue(self.check([("2", "a", "b"), ("3", "b", "c")]))
+        self.assertTrue(self.check([("2", "a", "b"), ("2", "b", "c")]))
+        # 앞 단계의 새 이름을 뒤 단계가 다시 옮기는 것은 허용한다(`기획서` -> `specs`(3) -> `docs/specs`(7))
+        self.assertEqual([], self.check([("3", "a", "b"), ("7", "b", "c")]))
         self.assertTrue(self.check([("2", "a", "b"), ("2", "a", "c")]))
         self.assertTrue(self.check([("2", "a", "c"), ("2", "b", "c")]))
         self.assertEqual([], self.check([("2", "a", "b"), ("2", "a/x.md", "b/y.md")]))
 
     def test_repo_map_is_consistent(self):
         self.assertEqual([], mn.map_problems(mn.load_map()))
+
+    def test_stage_7_rows_move_every_document_folder_under_docs(self):
+        """옮기기 전에도 뒤에도 성립한다: 옛 자리가 있거나 새 자리가 있고, 추적되는 옛 배치 폴더는 모두 줄이 있다."""
+        rows = [r for r in mn.load_map() if r.stage == "7"]
+        self.assertGreater(len(rows), 20)
+        tracked = mn.rules.tracked_files()
+        for r in rows:
+            self.assertTrue(os.path.exists(os.path.join(REPO_ROOT, r.old)) or os.path.exists(os.path.join(REPO_ROOT, r.new)), r)
+            self.assertTrue(r.new.startswith("docs/"), r)
+        olds = {r.old for r in rows}
+        for top in ("specs", "design", "methodology", "records"):
+            self.assertIn(top, olds)
+            self.assertEqual("docs/" + top, next(r.new for r in rows if r.old == top))
+        for child in sorted({p.split("/")[1] for p in tracked if p.startswith("docs/") and p.count("/") >= 2}):
+            if child not in mn.rules.DOCS_CHILDREN:
+                self.assertIn("docs/" + child, olds, child)
+        for r in rows:
+            if r.old.startswith("docs/2026-") and not r.old.endswith("naming-rules"):
+                self.assertEqual("docs/units/" + r.old[len("docs/"):], r.new)
+        self.assertEqual("docs/governance/naming-rules", next(r.new for r in rows if r.old.endswith("naming-rules")))
+
+    def test_the_map_is_read_from_the_old_or_the_new_place_of_the_naming_folder(self):
+        for place in mn.rules.NAMING_DIRS:
+            with tempfile.TemporaryDirectory(prefix="hazop-map-") as repo:
+                folder = os.path.join(repo, *place.split("/"))
+                os.makedirs(folder)
+                open(os.path.join(folder, "README.md"), "w").close()
+                with open(os.path.join(folder, "name-map.csv"), "w", encoding="utf-8", newline="") as f:
+                    f.write("stage,old,new\n7,specs,docs/specs\n")
+                self.assertEqual([mn.Row("7", "specs", "docs/specs")], mn.load_map(repo), place)
+
+    def test_keep_lists_follow_a_document_to_docs_units(self):
+        self.assertIn("docs/units/2026-11-09-data-consolidation/README.md", mn.KEEP)
+        self.assertIn("docs/2026-11-09-data-consolidation/README.md", mn.KEEP)
+        self.assertIn("docs/governance/naming-rules/README.md", mn.KEEP)
+        self.assertIn("docs/2026-11-10-naming-rules/README.md", mn.KEEP)
+        self.assertEqual({"docs/2026-11-10-plan/pstack-advice.md", "docs/units/2026-11-10-plan/pstack-advice.md"},
+                         {p for p, _n in mn.KEEP_LINES})
+        self.assertEqual(("specs/a.md",), mn._both("specs/a.md"))
 
 
 class RealRepo(unittest.TestCase):
