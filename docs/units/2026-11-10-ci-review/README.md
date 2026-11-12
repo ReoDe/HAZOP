@@ -63,7 +63,7 @@ GitHub 기계는 매번 새로 깔린 빈 Windows다. 공개 저장소용 표준
 
 ## 3. 지난 2주 사고와 CI가 막았을지
 
-대상: 2026-10-28 이후 커밋 223개, `records/decision-log.md`, `docs/2026-11-10-lessons/README.md`, 오늘 단위 A·B·C 보고(세션 공유 노트 폴더).
+대상: 2026-10-28 이후 커밋 223개, `records/decision-log.md`, `units/2026-11-10-lessons/README.md`, 오늘 단위 A·B·C 보고(세션 공유 노트 폴더).
 
 | # | 사고 | 근거 | CI가 막았을까 | 이유 |
 | --- | --- | --- | --- | --- |
@@ -252,5 +252,5 @@ checkout은 `fetch-depth: 0`으로 전체 이력을 받는다. `tests/test_desig
 - GitHub Docs, "Actions limits", https://docs.github.com/en/actions/reference/limits (2026-11-10 확인)
 - GitHub Docs, "Secure use reference", https://docs.github.com/en/actions/reference/security/secure-use (2026-11-10 확인)
 - GitHub Docs, "Self-hosted runners", https://docs.github.com/en/actions/concepts/runners/self-hosted-runners (2026-11-10 확인)
-- 저장소: `docs/2026-11-10-lessons/README.md`, `records/decision-log.md`(103·153·234행), `records/backlog.md`(334행), `INTENT.md` 확인 필요 8·12번, 커밋 977a38a·43a0cb4, 단위 A·B·C 보고(세션 공유 노트 폴더)
+- 저장소: `units/2026-11-10-lessons/README.md`, `records/decision-log.md`(103·153·234행), `records/backlog.md`(334행), `INTENT.md` 확인 필요 8·12번, 커밋 977a38a·43a0cb4, 단위 A·B·C 보고(세션 공유 노트 폴더)
 - 11-05 보류 결정: 에이전트 메모리 `ci-deferred.md`

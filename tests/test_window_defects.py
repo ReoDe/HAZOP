@@ -1,4 +1,4 @@
-"""실제 창 검증 결함 후보 단위 H-a(창·메뉴·흐름) 시험. 근거: docs/2026-11-10-plan/pstack-advice.md '단위 H'.
+"""실제 창 검증 결함 후보 단위 H-a(창·메뉴·흐름) 시험. 근거: docs/units/2026-11-10-plan/pstack-advice.md '단위 H'.
 실행: python -m unittest tests.test_window_defects
 
 ShellTest와 같은 임시 작업 루트(샘플 도면 SNP-M-102, 확정 검토구간, 고정 분석 결과)를 쓴다. 네트워크·AI 호출 없음.

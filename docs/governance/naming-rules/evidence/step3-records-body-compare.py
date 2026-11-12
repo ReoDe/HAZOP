@@ -22,7 +22,7 @@ from tests import test_naming_rules as rules  # noqa: E402
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-PAIRS = (("메모리/결정로그.md", "records/decision-log.md"), ("메모리/남은작업.md", "records/backlog.md"))
+PAIRS = (("메모리/결정로그.md", "docs/records/decision-log.md"), ("메모리/남은작업.md", "docs/records/backlog.md"))
 NUMBER_CELL = re.compile(r"\| (?:DEC-\d{4}|번호|---) (?=\|)")
 
 
@@ -79,7 +79,7 @@ for old_path, new_path in PAIRS:
     new_spans = link_spans(new_path, "".join(new_lines))
     differ = 0
     for i, (old, new) in enumerate(zip(old_lines, new_lines), 1):
-        cell = number_cell(new) if new_path == "records/decision-log.md" else ""
+        cell = number_cell(new) if new_path == "docs/records/decision-log.md" else ""
         old_rest, old_targets = pieces(old, old_spans[i])
         new_rest, new_targets = pieces(new[len(cell):], [(s - len(cell), e - len(cell)) for s, e in new_spans[i]])
         if old_rest == new_rest:

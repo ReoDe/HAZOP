@@ -112,7 +112,7 @@ PDF·PNG/JPG 도면을 읽는 2차 입력 어댑터를 만들고, drawio 추출 
 
 ### 편집 허용 범위
 
-- 작업 폴더: `docs/2026-11-05-input-adapter/`
+- 작업 폴더: `units/2026-11-05-input-adapter/`
 - 추가 편집 허용 범위: `hazop/extract/adapters/`(신규), `scripts/extract_pdf.py`·`scripts/check_adapter.py`, `tests/test_adapter.py`, `tests/fixtures/adapter/`, `specs/extraction.md`
 - 위 편집 허용 범위 밖의 경로는 참조 대상을 포함해 읽기 전용이다.
 - 문서를 추가하면 해당 폴더 README 인덱스와 이 문서의 문서 지도를 필요한 수준으로 갱신한다.

@@ -1,7 +1,7 @@
 """완성본 디자인 시안 3안 × 5화면 생성기.
 
-python design/mockups/final/build.py          HTML·대비표 생성(대비 미달이면 종료 코드 1)
-python design/mockups/final/build.py --shoot  위 작업 뒤 Chrome 헤드리스로 1366×768·1920×1080 PNG 저장
+python docs/design/mockups/final/build.py          HTML·대비표 생성(대비 미달이면 종료 코드 1)
+python docs/design/mockups/final/build.py --shoot  위 작업 뒤 Chrome 헤드리스로 1366×768·1920×1080 PNG 저장
 표준 라이브러리만 쓴다. 데이터는 모두 가상 샘플이다.
 """
 import html

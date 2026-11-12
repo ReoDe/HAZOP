@@ -1,6 +1,6 @@
 # 단위 F1: 기호 사전·추출 재개 (2026-11-11)
 
-계획은 `docs/2026-11-10-plan/pstack-advice.md`의 'F1 기호 사전·추출' 절에 있다. 이 폴더에는 하위 단위마다 남긴 근거를 둔다.
+계획은 `units/2026-11-10-plan/pstack-advice.md`의 'F1 기호 사전·추출' 절에 있다. 이 폴더에는 하위 단위마다 남긴 근거를 둔다.
 
 ## F1-0: `pdf_vector.py` 나누기 (동작 그대로)
 
@@ -230,7 +230,7 @@ F1-1 뒤의 코드는 밸브·계기·설비를 사전의 `structure`·`label_wo
 | 근거 묶음 해시(`bundle_sha256`), 분석 묶음 내보내기(`hazop/analysis/bundle_export.py`) | 해시는 구간·그래프에서 만든 묶음 dict로 계산한다. 내보내기는 추출 폴더를 복사하지 않는다. 영향 없음. `tests.test_packaging`·`check_export`가 `run_ci.py`에서 통과했다 |
 | `scripts/clean_outputs.py` | 대상이 `output/analysis`와 `output/knowledge-graph` 둘뿐이다. 추출 폴더는 보지 않는다 |
 | 작업 루트 이전 도구(`hazop/workroot.py`) | 옛 이름 폴더 아래 파일을 이름과 상관없이 모두 옮긴다(`_walk`). 파일 이름 목록이 없어 새 파일도 같이 간다. `tests.test_workroot`·`test_workroot_app`·`test_workroot_review` 71건 통과 |
-| `scripts/check_work_root_counts.py` | 폴더별 파일 수를 세어 같은 사본의 이전 전후를 견준다. 코드에 고정된 기대 수는 없다. 전후 사이에 다시 추출하면 추출 폴더의 파일 수가 폴더당 하나 늘어난 것으로 나온다. `docs/2026-11-10-naming-rules/evidence/step6-counts-before.json`은 지난 측정 기록이라 고치지 않았다 |
+| `scripts/check_work_root_counts.py` | 폴더별 파일 수를 세어 같은 사본의 이전 전후를 견준다. 코드에 고정된 기대 수는 없다. 전후 사이에 다시 추출하면 추출 폴더의 파일 수가 폴더당 하나 늘어난 것으로 나온다. `governance/naming-rules/evidence/step6-counts-before.json`은 지난 측정 기록이라 고치지 않았다 |
 | 0.1.x 기록 경로 표(`OLD_OUTPUT_NAMES`) | 폴더 이름 표다. 새 폴더가 없고 새 파일 안에 경로가 없어 더할 줄이 없다 |
 | 추출 폴더의 파일을 세거나 통째로 해시하는 다른 코드 | `hazop/app/data.py`(`list_extractions`, `_pdf_page_state`), `hazop/app/runctx.py`, `hazop/viewer/build.py`, `scripts/build_graph.py`, `check_extract.py`·`check_graph.py`·`check_viewer.py`·`check_register.py`를 읽었다. 모두 `extraction.json`, `not_extracted.json`, `validation_report.md`를 이름으로 찾는다. 통째로 해시하는 곳은 없었다(`git grep`으로 `listdir`·`os.walk`·`copytree` 가운데 추출 폴더에 닿는 곳을 봤다). `verify_bundle.py`의 저장소 `output/`·`store/` 전후 해시는 검증이 임시 작업 루트를 써서 걸리지 않는다 |
 

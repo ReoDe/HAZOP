@@ -31,7 +31,7 @@ approved: —
 | 저장소 코드 `hazop/kg/`, `hazop/graph/`, `hazop/study/`, `hazop/extract/rules.py`, `corrections.py` | 하위 조사 담당이 전부 읽고 파일:행 목록으로 정리(총괄은 정리본을 읽음). `drawio.py`·`pdf_vector.py`는 노드·관계 생성부만, `hazop/analysis/*`·`hazop/app/*`는 읽지 않음 |
 | 기획서 `graph-usage.md` | §1–§6.4.2, §8, §9 읽음. §6.4.3–§7(WP5 세부·검사 목록)은 제목만 |
 | 기획서 `integration.md`·`extraction.md`·`hazop-method-guide.md` | 정의 초안·작성 규칙·DEXPI 대응·용어 절만 |
-| `records/decision-log.md`, `records/backlog.md`, `docs/2026-11-05-knowledge-graph/decisions.md` | 지식그래프 관련 행만(검색) |
+| `records/decision-log.md`, `records/backlog.md`, `units/2026-11-05-knowledge-graph/decisions.md` | 지식그래프 관련 행만(검색) |
 | 참고 사진 4장 | 2장은 직접 봄, 범례 수치는 기존 [데모 분석](../design/output-screen-ax-demo.md) 54–56행을 씀 |
 | 웹 자료 | 표준(DEXPI 2.0.1 등), HAZOP(IEC 61882, KOSHA C-C-37-2026 등), NRC 문서 체계. 출처와 확인 수준은 부속 문서 §5 |
 
@@ -223,7 +223,7 @@ stateDiagram-v2
 
 ### 8.2 단계별 구현 계획
 
-규모는 [CLAUDE.md](../CLAUDE.md)의 소·중·대 기준입니다. 순서는 "기존 동작을 안 바꾸는 정리 → 데이터 보강 → 새 기능"입니다.
+규모는 [CLAUDE.md](../../CLAUDE.md)의 소·중·대 기준입니다. 순서는 "기존 동작을 안 바꾸는 정리 → 데이터 보강 → 새 기능"입니다.
 
 | 단계 | 내용 | 바뀌는 곳 | 규모 | 완료 기준 |
 | --- | --- | --- | --- | --- |

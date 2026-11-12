@@ -1,6 +1,6 @@
-"""⑥ 초기사건 화면 시안 생성. 근거: specs/ie-output-design.md §7.
+"""⑥ 초기사건 화면 시안 생성. 근거: docs/specs/ie-output-design.md §7.
 
-B안 셸 CSS는 design/mockups/final/b-dense-workbench/5-summary-matrix.html의 <style>을 그대로 읽어 쓴다(셸 모양을 맞추려고).
+B안 셸 CSS는 docs/design/mockups/final/b-dense-workbench/5-summary-matrix.html의 <style>을 그대로 읽어 쓴다(셸 모양을 맞추려고).
 데이터는 모두 가상 예시다. 실행: python build.py → 6-groups.html, 6-completeness-check.html, PNG 1366·1920.
 """
 

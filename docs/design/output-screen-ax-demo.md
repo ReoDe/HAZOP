@@ -9,7 +9,7 @@ approved: —
 
 # '출력화면 AX' 데모 분석
 
-[프로젝트 소개](../README.md) · [검토·결과 관리](../specs/review-results.md) · [결정 로그](../records/decision-log.md)
+[프로젝트 소개](../../README.md) · [검토·결과 관리](../specs/review-results.md) · [결정 로그](../records/decision-log.md)
 
 ## 이 문서의 위치
 

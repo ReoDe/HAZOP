@@ -1,4 +1,4 @@
-"""그래프 노드 선택 표시 렌더 검사 (docs/2026-11-05-design-system W7, D10). 실행: python -m unittest discover -s tests -t .
+"""그래프 노드 선택 표시 렌더 검사 (docs/units/2026-11-05-design-system W7, D10). 실행: python -m unittest discover -s tests -t .
 
 설비 노드(#1d4ed8)는 선택 테두리(#2563eb)와 1.30:1이라 테두리 색만 바꾸면 선택이 보이지 않는다(W5 §6.1).
 W7은 노드 흰 테두리를 그대로 두고 바깥 --ui 고리를 노드 층과 라벨 층 사이에 그린다.

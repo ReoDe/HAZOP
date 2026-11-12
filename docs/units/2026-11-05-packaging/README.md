@@ -111,7 +111,7 @@
 
 ### 편집 허용 범위
 
-- 작업 폴더: `docs/2026-11-05-packaging/`
+- 작업 폴더: `units/2026-11-05-packaging/`
 - 추가 편집 허용 범위: `packaging/`(신규), `licenses/`(신규, D9), `scripts/build_package.py`, `tests/test_packaging.py`, `hazop/paths.py`, `hazop/app/data.py`(importlib 로딩만), `specs/interface.md`(§7·§9만), W5(D12): `hazop/analysis/integrity.py`(해시 고정 확대)·`hazop/analysis/run.py`(integrity 호출 연결만)·관련 tests·`specs/overview.md`(신뢰 경계 표·문구만), W10(D18): `hazop/app/`(정보 창·시작 전 설정 확인), `scripts/run_app.py`, `tests/test_app*.py`
 - 위 편집 허용 범위 밖의 경로는 참조 대상을 포함해 읽기 전용이다.
 - 문서를 추가하면 해당 폴더 README 인덱스와 이 문서의 문서 지도를 필요한 수준으로 갱신한다.

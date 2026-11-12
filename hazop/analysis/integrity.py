@@ -1,13 +1,13 @@
 """④ 기준 데이터 무결성 검사 (로드 시 실행, 위반이면 분석 차단).
 
 - 이탈 후보 카탈로그·적용 판단: p86-d01~d44 44행, ID 고유, 고정 해시(PINNED_SHA256) 일치,
-  지침서(specs/hazop-method-guide.md §5.3)를 다시 읽어 변환한 내용과 일치
+  지침서(docs/specs/hazop-method-guide.md §5.3)를 다시 읽어 변환한 내용과 일치
 - 위험도 기준표: 고정 해시 일치, 코드 상수(risk.MATRIX_P86)와 〈표5〉 일치, 지침서 §6 〈표5〉~〈표9〉 파싱 결과와 일치
 - 패턴 라이브러리: library_id별 고정 해시(PINNED_SHA256) 일치(패키징 W5, 신뢰 경계 A안 D1)
 - 지침서: 파일 해시(GUIDE_SHA256) 일치. check_catalog·check_criteria가 표를 파싱하기 전에 각각 검사한다(_guide_errs).
   없음·읽기 실패·해시 불일치·파싱 실패는 예외를 올리지 않고 blocker 사유로 돌려준다(해시가 다르면 파싱하지 않음)(패키징 W5)
 
-주의: specs/hazop-method-guide.md는 문구 한 글자만 고쳐도 모든 분석이 차단된다. 지침서를 고치는 같은 작업 단위에서
+주의: docs/specs/hazop-method-guide.md는 문구 한 글자만 고쳐도 모든 분석이 차단된다. 지침서를 고치는 같은 작업 단위에서
 GUIDE_SHA256을 갱신해야 한다(기획 담당이 고칠 때 개발 담당과 함께).
 
 해시 방식(패키징 W5)

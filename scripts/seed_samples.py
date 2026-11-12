@@ -1,4 +1,4 @@
-"""표본(`resources/samples/`)을 작업 루트의 `data/` 아래로 채운다(docs/2026-11-09-data-consolidation §4 ③b 6번).
+"""표본(`resources/samples/`)을 작업 루트의 `data/` 아래로 채운다(docs/units/2026-11-09-data-consolidation §4 ③b 6번).
 
     python scripts/seed_samples.py [--work-root <폴더>]             없는 파일만 복사, 내용이 다른 파일은 목록만
     python scripts/seed_samples.py [--work-root <폴더>] --refresh   다른 파일을 백업한 뒤 표본으로 덮음

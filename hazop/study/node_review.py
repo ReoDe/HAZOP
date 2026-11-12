@@ -28,7 +28,7 @@ VERDICTS = ("ok", "merge", "split", "screen_change")
 DECISIONS = ("open", "accepted", "edited", "rejected")
 REJECT_REASONS = ("근거 부족", "설계 의도와 다름", "규칙 판정이 맞음", "기타")
 MAX_MEMBERS_SHOWN = 80  # 구간 하나에서 AI에 보이는 구성요소 수 상한(큰 제외 묶음). 넘으면 수만 알린다
-# 지식 맥락 상한(specs/study-node-segmentation.md §4.7): 구간당 항목 수, 이름·문구 글자 수, 항목당 닿는 구성요소 수
+# 지식 맥락 상한(docs/specs/study-node-segmentation.md §4.7): 구간당 항목 수, 이름·문구 글자 수, 항목당 닿는 구성요소 수
 MAX_KNOWLEDGE_ITEMS = 8
 MAX_KNOWLEDGE_TEXT = 200
 MAX_KNOWLEDGE_APPLIES = 5

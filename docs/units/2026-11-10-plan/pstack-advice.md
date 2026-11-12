@@ -1,6 +1,6 @@
 # pstack 활용 자문: D 드라이브 이전 뒤 단위 A~E
 
-작성 2026-11-10, pstack 자문 세션(읽기 전용). 기준 커밋 `feat/next-units` @ 5f4e6c3. 근거로 읽은 것은 `CLAUDE.md`, `INTENT.md`, `records/backlog.md`, `docs/2026-11-10-lessons/README.md`, `docs/2026-11-10-lessons/d-drive-move.md`, `~/.claude/rules/pstack-models.md`, pstack 0.15.36 스킬 설명, 그리고 단위 A의 대상 코드다.
+작성 2026-11-10, pstack 자문 세션(읽기 전용). 기준 커밋 `feat/next-units` @ 5f4e6c3. 근거로 읽은 것은 `CLAUDE.md`, `INTENT.md`, `records/backlog.md`, `units/2026-11-10-lessons/README.md`, `units/2026-11-10-lessons/d-drive-move.md`, `~/.claude/rules/pstack-models.md`, pstack 0.15.36 스킬 설명, 그리고 단위 A의 대상 코드다.
 
 ## 공통 사항
 
@@ -249,7 +249,7 @@ A (1세션) ──► B (1세션) ┐
 
 ## 단위 CI: 가벼운 CI 도입 (2026-11-10 추가)
 
-기준 커밋 9154143. 근거로 읽은 것은 `docs/2026-11-10-ci-review/README.md`(§2·§4·§5), `docs/2026-11-10-naming-rules/README.md`(초안), `tests/__init__.py`, `scripts/devenv.py`, `scripts/preflight.py`, `packaging/requirements*.txt`, 시험의 건너뛰기 조건, `scripts/check_*.py`의 import다.
+기준 커밋 9154143. 근거로 읽은 것은 `units/2026-11-10-ci-review/README.md`(§2·§4·§5), `governance/naming-rules/README.md`(초안), `tests/__init__.py`, `scripts/devenv.py`, `scripts/preflight.py`, `packaging/requirements*.txt`, 시험의 건너뛰기 조건, `scripts/check_*.py`의 import다.
 
 ### 먼저 확인한 사실 (계획을 바꾸는 것)
 
@@ -279,7 +279,7 @@ A (1세션) ──► B (1세션) ┐
   - `scripts/run_ci.py`(새 파일)
   - `tests/test_ci_config.py`(새 파일)
   - 첫 실행에서 실패한 시험의 **건너뛰기 표시 줄만**. 시험 본문 논리는 고치지 않는다. 앱 코드의 결함이 드러나면 고치지 말고 남은작업으로 넘긴다.
-  - `docs/2026-11-10-ci-review/README.md`의 '첫 실행 결과' 절
+  - `units/2026-11-10-ci-review/README.md`의 '첫 실행 결과' 절
 - 손대지 않을 것: `CLAUDE.md`(CI 규칙 문구는 총괄이 쓴다), `records/*.md`(hazop-recorder), `packaging/requirements*.txt`(B 소유였다. 판을 바꾸면 배포본에 닿는다).
 - **단위 D와 겹치지 않게 한다.** 건너뛰기 표시가 시험 파일 여러 곳을 건드리므로, D가 시작되기 전에 CI를 끝내거나 D 세션이 아직 손대지 않은 시험만 고친다. 권장 순서는 CI를 먼저 끝내고 D를 시작하는 것이다. 그러면 D부터 CI의 보호를 받는다.
 - **이름 이전은 CI 다음이다.** 이전 단위는 `.github/`와 `scripts/run_ci.py`도 대상에 넣고, `tests/test_ci_config.py`가 통과해야 끝난 것으로 본다. 이 조건을 이전 단위의 작업지시서에 적는다.
@@ -351,7 +351,7 @@ import를 보고 나눈 것이다. 하위 세션이 아래 '깨끗한 복제 리
 
 ## 단위 NAMING: 이름 규칙 이전 (2026-11-10 추가)
 
-기준 커밋 90b9cf6. 근거로 읽은 것은 `docs/2026-11-10-naming-rules/README.md`(HZ-GOV-02 개정 1) §5~§9이다. 계획서의 세 약속은 다음 코드와 맞대어 보았다. `hazop/paths.py`(`rel_or_abs`, `resolve_rel`, `LEGACY_PREFIXES`, `backup_rel`), `hazop/graph/build.py:75`, `hazop/analysis/run.py`(`load_inputs`, `build_bundle`), `hazop/analysis/ai.py:115`, `scripts/build_package.py:74,80`, 표본·시험 입력에 고정된 `graph_version`, `.github/workflows/tests.yml`, `scripts/run_ci.py`, 옛 경로가 남은 `.claude/`·운영 문서·사용자 메모리.
+기준 커밋 90b9cf6. 근거로 읽은 것은 `governance/naming-rules/README.md`(HZ-GOV-02 개정 1) §5~§9이다. 계획서의 세 약속은 다음 코드와 맞대어 보았다. `hazop/paths.py`(`rel_or_abs`, `resolve_rel`, `LEGACY_PREFIXES`, `backup_rel`), `hazop/graph/build.py:75`, `hazop/analysis/run.py`(`load_inputs`, `build_bundle`), `hazop/analysis/ai.py:115`, `scripts/build_package.py:74,80`, 표본·시험 입력에 고정된 `graph_version`, `.github/workflows/tests.yml`, `scripts/run_ci.py`, 옛 경로가 남은 `.claude/`·운영 문서·사용자 메모리.
 
 ### 먼저 확인한 사실 (계획을 바꾸거나 보강하는 것)
 
@@ -469,7 +469,7 @@ import를 보고 나눈 것이다. 하위 세션이 아래 '깨끗한 복제 리
 
 1. **단위 G의 본체는 이미 들어가 있다.** AI 구간 검토 S6이 S6a(b0d016a), S6b(c15bf52), ④ 속도 정리(4816182)로 커밋되어 있다. `hazop/study/node_review.py`(479줄), ④ '스크리닝' 메뉴의 'AI 구간 검토…', 받아들이기·고쳐서 받기·기각, 가짜 클라이언트와 가짜 CLI(`tests/fake_claude`)로 돌리는 `tests/test_node_review.py`·`tests/test_study_review_ui.py`가 있다. INTENT §3.4 마지막 항목('그래프로 먼저 자르고 AI가 검토, 사람이 확정')은 기능으로는 이미 채워졌다. 남은 것은 `specs/study-node-segmentation.md` §4.7에 '후속(이번에 하지 않음)'으로 적힌 다섯 가지다. G는 새 기능이 아니라 후속을 마무리하는 단위로 다시 잡아야 한다.
 2. **성능 계획(§5.4)도 대부분 끝났다.** N2, N3(f9a3b29), N4(ddb9c03), N5가 커밋됐다. §5.6·§5.7 측정으로 ②③④⑤ 화면 전환은 0.35~1.10초, 시작은 2.9~3.8초다. 다른 세션이 CPU를 80% 안팎으로 쓰던 때 번갈아 잰 범위다. 남은 것은 부하 없는 기계에서 5회 중앙값으로 목표(D7)를 다시 재는 일과 gc 수명 관리 후속(§5.7)이다. F 안의 '성능'은 새 최적화가 아니라 재측정과 gc 후속이다.
-3. **기호 사전 계획에서 남은 단위가 있다.** `specs/pid-symbol-dictionary.md` §7의 S7(기존 규칙을 사전으로 옮기고 `_shape_kind`·`EQUIPMENT_WORDS` 삭제)과 D8(사전 판을 등록 기록에 남김)이 아직 안 됐다. 검정(닫힘) 밸브 씨앗(§4.2 1번)도 견본이 없어 미뤄져 있다. 미확인 줄이기의 다음 후보 네 개는 `docs/2026-11-10-apr1400-unknowns/README.md` §3 끝에 있다(모두 측정 전 추정).
+3. **기호 사전 계획에서 남은 단위가 있다.** `specs/pid-symbol-dictionary.md` §7의 S7(기존 규칙을 사전으로 옮기고 `_shape_kind`·`EQUIPMENT_WORDS` 삭제)과 D8(사전 판을 등록 기록에 남김)이 아직 안 됐다. 검정(닫힘) 밸브 씨앗(§4.2 1번)도 견본이 없어 미뤄져 있다. 미확인 줄이기의 다음 후보 네 개는 `units/2026-11-10-apr1400-unknowns/README.md` §3 끝에 있다(모두 측정 전 추정).
 4. **`overview.md`와 README 본문에 `출력/…`·`작업/` 같은 작업 루트 경로가 있다**(overview 282행, README 80·102행). N4 단계 6이 이 줄들을 고치므로 DOC는 N4 뒤에 해야 한다.
 5. **INTENT §7 1번은 이미 결정됐다**(DEC-0188의 D7 'README 범위 문구 수정'). 다시 물을 필요가 없다. 5번은 아직 사용자 답이 없다. README '프로젝트 방향' 4번의 AI 순서를 고칠지가 걸려 있다. 권장안(구독제 기본, API는 따로 둔 선택지, 로컬 LLM은 나중)을 자동 채택할지는 총괄이 정한다(메모리 auto-pick-recommended).
 6. **`check_apr1400.py --update` 잠금은 체크아웃 전체를 본다.** `scripts/devenv.py`의 `SCORING_PATHS`는 `hazop`·`scripts`·기호 사전·`tests/fixtures/apr1400`이다. 같은 체크아웃에서 D·E·G 세션이 `hazop/`을 고치고 있으면 F의 기준값 갱신이 막힌다. F는 자기 작업트리에서 돌아야 한다.

@@ -63,7 +63,7 @@
 ## 4. 빌드·verify(W9-B·W10 함께)
 
 - 이전 W9 산출물 `%TEMP%\hazop-w9`·`%TEMP%\hazop-w9-src`를 지웠다(C 드라이브 여유 28 GB → 29 GB). 다른 `hazop-*` 폴더는 건드리지 않았다.
-- 스냅숏 `%TEMP%\hazop-w10-src`: HEAD `3231a54`, 577개(disk 501·head 11·overlay 65), 목록 해시 `7f7c52ad2cd358df47fe7d22d01de8aaf7cd8ac3f29f671a59a04ebbb9b12541`. `--restore-head` 11개는 다른 트랙의 진행 중 파일(`README.md`, `docs/2026-11-05-design-system/` 4개, `hazop/viewer/template.html`, `scripts/check_design.py`, `tests/test_design.py`, `specs/` 3개)이다. overlay 65개 = `hazop/app/startup.py`·`tests/test_app_startup.py`·W9-B 원문 63개.
+- 스냅숏 `%TEMP%\hazop-w10-src`: HEAD `3231a54`, 577개(disk 501·head 11·overlay 65), 목록 해시 `7f7c52ad2cd358df47fe7d22d01de8aaf7cd8ac3f29f671a59a04ebbb9b12541`. `--restore-head` 11개는 다른 트랙의 진행 중 파일(`README.md`, `units/2026-11-05-design-system/` 4개, `hazop/viewer/template.html`, `scripts/check_design.py`, `tests/test_design.py`, `specs/` 3개)이다. overlay 65개 = `hazop/app/startup.py`·`tests/test_app_startup.py`·W9-B 원문 63개.
 - 빌드 조건은 W9와 같다(닫힌 포트 프록시 `127.0.0.1:9`, `PIP_NO_INDEX=1`, PATH 통제 D10).
 
 | 빌드 | 결과 | 경고 | 결과 폴더 |

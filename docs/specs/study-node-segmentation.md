@@ -9,7 +9,7 @@ approved: —
 
 # 검토구간 분할 설계: 그래프 알고리즘, AI 없는 스크리닝, 큰 도면 성능
 
-[HAZOP 분석](hazop-analysis.md) · [그래프 활용](graph-usage.md) · [INTENT §3.4·§3.8·§7 11번](../INTENT.md) · 구현 코드 `hazop/study/nodes.py`
+[HAZOP 분석](hazop-analysis.md) · [그래프 활용](graph-usage.md) · [INTENT §3.4·§3.8·§7 11번](../../INTENT.md) · 구현 코드 `hazop/study/nodes.py`
 
 - 작성일 2026-11-09. 상태는 **설계 확정(D1~D11 권장안 채택, 2026-11-09), 구현 전**입니다. 앱 코드는 고치지 않았습니다.
 - 측정·비교 스크립트와 결과는 저장소 밖 `C:\Users\kim92\HAZOP-trials\node-seg-20261109\`에 있습니다. 코드는 커밋 `cb7d4ac` 기준 worktree(`HAZOP-trials\wt-seg`)에서 돌렸고, U1(계기 태그) 비교는 U1 백업을 적용한 worktree(`HAZOP-trials\wt-seg-u1`)에서 돌렸습니다.

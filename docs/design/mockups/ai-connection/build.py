@@ -1,6 +1,6 @@
-"""AI 연결(API·Claude 구독·고정 응답) 화면 시안 생성. 근거: design/ai-connection-screens.md.
+"""AI 연결(API·Claude 구독·고정 응답) 화면 시안 생성. 근거: docs/design/ai-connection-screens.md.
 
-B안 셸 CSS는 design/mockups/final/b-dense-workbench/5-summary-matrix.html의 <style>을 그대로 읽어 쓴다.
+B안 셸 CSS는 docs/design/mockups/final/b-dense-workbench/5-summary-matrix.html의 <style>을 그대로 읽어 쓴다.
 데이터(계정·사용률·경로·비용)는 모두 가상 예시다. 실행: python build.py → HTML 10개와 PNG(1366·1920).
 """
 

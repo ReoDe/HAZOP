@@ -1,7 +1,7 @@
 """UIUX 디테일 개선 시안 생성기 (B안 고밀도 작업대 + A안 단계 표시 + 옵시디언식 셸).
 
-python design/mockups/uiux-detail/build.py          HTML만 다시 만든다
-python design/mockups/uiux-detail/build.py --shoot  Chrome 헤드리스로 1366×768·1920×1080 PNG도 찍는다
+python docs/design/mockups/uiux-detail/build.py          HTML만 다시 만든다
+python docs/design/mockups/uiux-detail/build.py --shoot  Chrome 헤드리스로 1366×768·1920×1080 PNG도 찍는다
 
 색은 hazop/app/tokens.py COLORS를 그대로 읽는다(앱 코드는 고치지 않음). 데이터는 가상 표본이다.
 """

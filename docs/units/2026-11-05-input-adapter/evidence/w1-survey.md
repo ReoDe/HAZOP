@@ -8,7 +8,7 @@
 
 | 자료 | 읽은 범위 |
 |---|---|
-| `docs/2026-11-05-input-adapter/README.md`, `PROGRESS.md`, `evidence/README.md` | 전부 |
+| `units/2026-11-05-input-adapter/README.md`, `PROGRESS.md`, `evidence/README.md` | 전부 |
 | `specs/extraction.md`, `specs/registration.md` | 전부 |
 | `hazop/extract/drawio.py`, `svg_align.py`, `rules.py`, `scripts/extract_drawio.py` | 전부 |
 | `hazop/register/fileinfo.py` | 전부 / `registry.py`는 함수 목록과 `register()` 앞부분(324~420행)만 |

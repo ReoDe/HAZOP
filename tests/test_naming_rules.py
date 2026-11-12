@@ -49,26 +49,20 @@ EXEMPT = {
         ("N1", "hazop/kg/vendor/*", "가져온 제3자 파일(SHA-256 고정)"),
         ("N1", "tests/fixtures/apr1400/*", "DCD 원본 파일 이름이 기준값의 키다"),
         ("N8", "* @ *naming-rules/README.md", "대응표가 옛 이름을 일부러 적는다(옮기기 전 docs/2026-11-10-naming-rules/, 뒤 docs/governance/naming-rules/)"),
-        ("N9", "*docs/2026-11-05-packaging/evidence/w5-* -> HAZOP기법지침.md", "기획서 문장을 인용한 줄 안의 링크"),
-        ("N8", "* @ *docs/2026-11-10-plan/pstack-advice.md", "단위 NAMING 절이 옮길 이름과 데이터에 남는 옛 출처를 일부러 적는다"),
+        ("N9", "docs/units/2026-11-05-packaging/evidence/w5-* -> HAZOP기법지침.md", "기획서 문장을 인용한 줄 안의 링크"),
+        ("N8", "* @ docs/units/2026-11-10-plan/pstack-advice.md", "단위 NAMING 절이 옮길 이름과 데이터에 남는 옛 출처를 일부러 적는다"),
         ("N1", "resources/references/pid-samples/*", "샘플 도면 폴더 이름은 기준값의 키다(§5.5)"),
         ("N1", "resources/references/pid-symbol-catalog/*", "받은 기호 카탈로그의 파일 이름을 그대로 둔다"),
         ("N1", "resources/references/APR1400_DCD/*", "받은 이름을 그대로 둔다(§5.5)"),
-        ("N8", "자원/ @ *docs/2026-11-09-data-consolidation/README.md", "2026-11-09 정리의 계획이자 기록. 그때 정한 배치를 적었다"),
-        ("N8", "작업/ @ *docs/2026-11-09-data-consolidation/README.md", "같은 문서. 그때의 개발 작업 루트 이름이다"),
-        ("N8", "작업/ @ *docs/2026-11-10-ci-review/README.md", "2026-11-10 CI 검토 기록. 그때의 작업 루트 이름을 적었다"),
-        ("N8", "작업/ @ *docs/2026-11-10-lessons/d-drive-move.md", "D 드라이브 이전 기록. 그때 옮긴 폴더 이름이다"),
-        ("N8", "작업/ @ *design/mockups/README.md", "시안에 넣은 자료를 가져온 그때의 경로다"),
+        ("N8", "자원/ @ docs/units/2026-11-09-data-consolidation/README.md", "2026-11-09 정리의 계획이자 기록. 그때 정한 배치를 적었다"),
+        ("N8", "작업/ @ docs/units/2026-11-09-data-consolidation/README.md", "같은 문서. 그때의 개발 작업 루트 이름이다"),
+        ("N8", "작업/ @ docs/units/2026-11-10-ci-review/README.md", "2026-11-10 CI 검토 기록. 그때의 작업 루트 이름을 적었다"),
+        ("N8", "작업/ @ docs/units/2026-11-10-lessons/d-drive-move.md", "D 드라이브 이전 기록. 그때 옮긴 폴더 이름이다"),
+        ("N8", "작업/ @ docs/design/mockups/README.md", "시안에 넣은 자료를 가져온 그때의 경로다"),
     ],
-    # 단계 7(2026-11-12): 문서 폴더를 docs/ 아래로 모은다. 옮기기 전의 자리를 예외로 둔다.
-    # N2·N3 줄은 2단계(옮기기)에서 지운다. N12 줄은 3단계(규칙서 쓰기)에서 지운다.
-    # N12 패턴의 앞 `*`는 옮긴 뒤의 자리(`docs/specs` 등)도 같은 줄로 받으려는 것이다. 옮긴 날에도 시험이 이어서 통과해야 한다.
+    # 단계 7(2026-11-12): 문서 폴더를 docs/ 아래로 모았다(N2·N3 줄은 옮긴 날 지웠다). N12 줄은 3단계(규칙서 쓰기)에서 지운다.
+    # N12 패턴의 앞 `*`는 옮기기 전의 자리(`specs`)와 뒤의 자리(`docs/specs`)를 같은 줄로 받으려던 것이다.
     "7": [
-        ("N2", "specs", "docs/specs로 옮긴다"),
-        ("N2", "design", "docs/design으로 옮긴다"),
-        ("N2", "methodology", "docs/methodology로 옮긴다"),
-        ("N2", "records", "docs/records로 옮긴다"),
-        ("N3", "docs/[0-9][0-9][0-9][0-9]-*", "docs/units/ 아래로 옮긴다(작업 단위 기록)"),
         ("N12", "hazop", "폴더 규칙서를 3단계에서 쓴다"),
         ("N12", "hazop/analysis", "폴더 규칙서를 3단계에서 쓴다"),
         ("N12", "hazop/app", "폴더 규칙서를 3단계에서 쓴다"),
@@ -568,11 +562,10 @@ class PastViolationTest(unittest.TestCase):
                           ("docs/units/screenshots-pdf", "이름이 YYYY-MM-DD-<slug>가 아니다")],
                          [(v.subject, v.detail) for v in n3_docs_workspaces(paths)])
 
-    def test_n3_old_date_folders_are_exempt_until_they_move(self):
+    def test_n3_date_folder_directly_under_docs_is_live_after_the_move(self):
         found = n3_docs_workspaces({"docs/2026-11-05-packaging/README.md"})
-        self.assertEqual(1, len(found))
-        self.assertIsNotNone(exempt_row(found[0]))
-        self.assertIsNone(exempt_row(Violation("N3", "docs/notes", "")))
+        self.assertEqual(["docs/2026-11-05-packaging"], [v.subject for v in found])
+        self.assertIsNone(exempt_row(found[0]))
 
     def test_n4_script_verb(self):
         found = n4_script_verbs(["scripts/helper.py", "scripts/check_naming.py", "scripts/devenv.py", "scripts/sub/x.py"])

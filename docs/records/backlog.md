@@ -66,11 +66,11 @@ approved: —
 
 ## 디자인
 
-- 참고 화면 일부의 MVP 포함 여부, 질의응답(자유 질문) 기능의 범위 포함 여부, 디자인 토큰 값 결정(토큰 정리는 [디자인 체계 트랙](../docs/2026-11-05-design-system/README.md))
+- 참고 화면 일부의 MVP 포함 여부, 질의응답(자유 질문) 기능의 범위 포함 여부, 디자인 토큰 값 결정(토큰 정리는 [디자인 체계 트랙](../units/2026-11-05-design-system/README.md))
 
 ## 1차 슬라이스 구현 후속
 
-- 2차 입력 어댑터(PDF·PNG/JPG)와 drawio 결과 대비 정확도 평가: 작업 공간 [docs/2026-11-05-input-adapter](../docs/2026-11-05-input-adapter/README.md)에서 관리
+- 2차 입력 어댑터(PDF·PNG/JPG)와 drawio 결과 대비 정확도 평가: 작업 공간 [docs/2026-11-05-input-adapter](../units/2026-11-05-input-adapter/README.md)에서 관리
 - T3 알려진 한계 4건: 합성 점선 경계 사례(T3 D6). W5 또는 실제 도면 확보 뒤 처리
 - 도면 간 continuation 연결: 엔진·데이터 완료(2026-11-07, `hazop/graph/project.py`). 화면 연결은 아래 '프로젝트 그래프 후속'
 - 실제 마우스 조작·Edge 브라우저 수동 확인
@@ -84,16 +84,16 @@ approved: —
 
 ## 데스크톱 인터페이스 후속
 
-- `run_app --screenshots`에 ③ 화면 추가(현재 `check_kg_screen --screenshots`로 촬영): [지식그래프 트랙](../docs/2026-11-05-knowledge-graph/README.md) 소유
+- `run_app --screenshots`에 ③ 화면 추가(현재 `check_kg_screen --screenshots`로 촬영): [지식그래프 트랙](../units/2026-11-05-knowledge-graph/README.md) 소유
 
-- 패키징 남은 항목: Pretendard 글꼴은 넣지 않음으로 결정(2026-11-10)([인터페이스 §9](../specs/interface.md)): 작업 공간 [docs/2026-11-05-packaging](../docs/2026-11-05-packaging/README.md)
-- T2 W7 `os.link` 비NTFS 실측(장비 필요): [패키징 트랙](../docs/2026-11-05-packaging/README.md)
-- 다른 PC·Windows 10 실기기 실행 확인: [패키징 트랙](../docs/2026-11-05-packaging/README.md)
-- (완료 2026-11-10, 단위 B) spec의 sys.path 삽입 정리(scripts/ 맨 앞 삽입 후 build_package import): [패키징 트랙](../docs/2026-11-05-packaging/decisions.md) D11
+- 패키징 남은 항목: Pretendard 글꼴은 넣지 않음으로 결정(2026-11-10)([인터페이스 §9](../specs/interface.md)): 작업 공간 [docs/2026-11-05-packaging](../units/2026-11-05-packaging/README.md)
+- T2 W7 `os.link` 비NTFS 실측(장비 필요): [패키징 트랙](../units/2026-11-05-packaging/README.md)
+- 다른 PC·Windows 10 실기기 실행 확인: [패키징 트랙](../units/2026-11-05-packaging/README.md)
+- (완료 2026-11-10, 단위 B) spec의 sys.path 삽입 정리(scripts/ 맨 앞 삽입 후 build_package import): [패키징 트랙](../units/2026-11-05-packaging/decisions.md) D11
 - 권고 후속 조치 관리는 나중에
-- 그래프 알고리즘(비P&ID 성분 통합, 옵시디언식 그래프 뷰): 작업 공간 [docs/2026-11-05-knowledge-graph](../docs/2026-11-05-knowledge-graph/README.md)에서 관리. W1~W7 완료. W8(후속 알고리즘 A6~A11)은 보류(상세는 [PROGRESS](../docs/2026-11-05-knowledge-graph/PROGRESS.md))
+- 그래프 알고리즘(비P&ID 성분 통합, 옵시디언식 그래프 뷰): 작업 공간 [docs/2026-11-05-knowledge-graph](../units/2026-11-05-knowledge-graph/README.md)에서 관리. W1~W7 완료. W8(후속 알고리즘 A6~A11)은 보류(상세는 [PROGRESS](../units/2026-11-05-knowledge-graph/PROGRESS.md))
 - ⑤ 관련 지식 실화면 육안 확인
-- 실제 windows 플랫폼과 125% 장비에서 렌더 확인: [디자인 체계 트랙](../docs/2026-11-05-design-system/README.md)
+- 실제 windows 플랫폼과 125% 장비에서 렌더 확인: [디자인 체계 트랙](../units/2026-11-05-design-system/README.md)
 
 ## 2026-11-06 검토 후속
 
@@ -104,13 +104,13 @@ approved: —
 
 - 웹 등록 화면(파일 선택·드래그 앤 드롭), 개정 충돌 판정, 메타데이터 수정 이력
 - 선택 구간 재처리, 웹 원본 대조·수동 편집, AI 보정 제안
-- 실제 자료형(PDF·이미지·CAD 등) 읽기 어댑터: PDF·이미지는 [입력 어댑터 트랙](../docs/2026-11-05-input-adapter/README.md), CAD는 후속
+- 실제 자료형(PDF·이미지·CAD 등) 읽기 어댑터: PDF·이미지는 [입력 어댑터 트랙](../units/2026-11-05-input-adapter/README.md), CAD는 후속
 - 여러 도면·문서의 동일 대상 통합과 값 충돌 관리
 - AI 연결 확장: Claude 팀 구독제 활용 방식 확인·구현, 로컬 LLM 연결
 - 후보 판단 화면, 자동 구간 분할, 기동·정지 모드
 - ⑤ 검토 화면, 편차별 확정·이력, 개선 조치·자료 요청 메모, 변경 알림과 구간 전체 재검토(영향 없음 판정 포함)
 
-- 래스터 입력 실사용 전 확인: 해상도 약 200 dpi 이상·기울기 0.5° 미만 권고, 추출 결과를 원본 이미지에 겹쳐 사람이 확인([W5 열화](../docs/2026-11-05-input-adapter/evidence/w5-degradation.md))
+- 래스터 입력 실사용 전 확인: 해상도 약 200 dpi 이상·기울기 0.5° 미만 권고, 추출 결과를 원본 이미지에 겹쳐 사람이 확인([W5 열화](../units/2026-11-05-input-adapter/evidence/w5-degradation.md))
 
 ## 3단계(검토구간·결과 셸) 후속
 

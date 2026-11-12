@@ -126,7 +126,7 @@ python packaging/make_snapshot.py --dest %TEMP%\hazop-w8b3-src ^
 ```
 
 - 스냅숏 결과: HEAD `5225cc5`, 401개(disk 395·head 6), 목록 해시 `4c71d46e5f1a307b53bc8fcd242ee80ad1f77bbfa15b867d67a619289c2674c0`.
-- `--restore-head`는 다른 담당(T6 W8)이 고치는 중인 파일이다. 그 뒤 수정된 `docs/2026-11-05-design-system/ROADMAP.md`는 디스크 내용 그대로 들어갔지만 묶음 datas가 아니다.
+- `--restore-head`는 다른 담당(T6 W8)이 고치는 중인 파일이다. 그 뒤 수정된 `units/2026-11-05-design-system/ROADMAP.md`는 디스크 내용 그대로 들어갔지만 묶음 datas가 아니다.
 - 스냅숏의 `scripts/build_package.py`·`tests/test_packaging.py`는 작업 트리와 같은 바이트다(cmp).
 - 빌드는 Python 실행기(`analysis\run_build3.py`)로 했고 종료 코드를 직접 받았다. 환경은 닫힌 포트 프록시 `127.0.0.1:9`, `PIP_NO_INDEX=1`, PATH 통제(D10)다.
 

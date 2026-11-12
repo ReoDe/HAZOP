@@ -1,0 +1,41 @@
+﻿파일,줄,종류,전,후,적용
+.claude/agents/hazop-designer.md,12,백틱,design/,docs/design/,아니오(총괄 몫)
+.claude/agents/hazop-designer.md,12,백틱,design/,docs/design/,예
+.claude/agents/hazop-designer.md,13,백틱,records/,docs/records/,아니오(총괄 몫)
+.claude/agents/hazop-designer.md,13,백틱,records/,docs/records/,예
+.claude/agents/hazop-designer.md,13,백틱,specs/,docs/specs/,예
+.claude/agents/hazop-designer.md,13,백틱,specs/,docs/specs/,아니오(총괄 몫)
+.claude/agents/hazop-designer.md,13,백틱,specs/flows/,docs/specs/flows/,예
+.claude/agents/hazop-designer.md,13,백틱,specs/flows/,docs/specs/flows/,아니오(총괄 몫)
+.claude/agents/hazop-designer.md,16,백틱,specs/overview.md,docs/specs/overview.md,예
+.claude/agents/hazop-designer.md,16,백틱,specs/overview.md,docs/specs/overview.md,아니오(총괄 몫)
+.claude/agents/hazop-developer.md,13,백틱,design/,docs/design/,아니오(총괄 몫)
+.claude/agents/hazop-developer.md,13,백틱,design/,docs/design/,예
+.claude/agents/hazop-developer.md,13,백틱,records/,docs/records/,아니오(총괄 몫)
+.claude/agents/hazop-developer.md,13,백틱,records/,docs/records/,예
+.claude/agents/hazop-developer.md,13,백틱,specs/,docs/specs/,예
+.claude/agents/hazop-developer.md,13,백틱,specs/,docs/specs/,아니오(총괄 몫)
+.claude/agents/hazop-planner.md,12,백틱,specs/,docs/specs/,아니오(총괄 몫)
+.claude/agents/hazop-planner.md,12,백틱,specs/,docs/specs/,예
+.claude/agents/hazop-planner.md,12,백틱,specs/flows/,docs/specs/flows/,아니오(총괄 몫)
+.claude/agents/hazop-planner.md,12,백틱,specs/flows/,docs/specs/flows/,예
+.claude/agents/hazop-planner.md,13,백틱,design/,docs/design/,아니오(총괄 몫)
+.claude/agents/hazop-planner.md,13,백틱,design/,docs/design/,예
+.claude/agents/hazop-planner.md,13,백틱,records/,docs/records/,아니오(총괄 몫)
+.claude/agents/hazop-planner.md,13,백틱,records/,docs/records/,예
+.claude/agents/hazop-planner.md,17,백틱,specs/overview.md,docs/specs/overview.md,아니오(총괄 몫)
+.claude/agents/hazop-planner.md,17,백틱,specs/overview.md,docs/specs/overview.md,예
+.claude/agents/hazop-recorder.md,12,백틱,records/backlog.md,docs/records/backlog.md,아니오(총괄 몫)
+.claude/agents/hazop-recorder.md,12,백틱,records/backlog.md,docs/records/backlog.md,예
+.claude/agents/hazop-recorder.md,12,백틱,records/decision-log.md,docs/records/decision-log.md,예
+.claude/agents/hazop-recorder.md,12,백틱,records/decision-log.md,docs/records/decision-log.md,아니오(총괄 몫)
+.claude/agents/hazop-recorder.md,19,백틱,records/backlog.md,docs/records/backlog.md,아니오(총괄 몫)
+.claude/agents/hazop-recorder.md,19,백틱,records/backlog.md,docs/records/backlog.md,예
+.claude/agents/hazop-recorder.md,19,백틱,records/decision-log.md,docs/records/decision-log.md,예
+.claude/agents/hazop-recorder.md,19,백틱,records/decision-log.md,docs/records/decision-log.md,아니오(총괄 몫)
+.claude/skills/verify-hazop/SKILL.md,8,백틱,docs/2026-11-07-user-scenario-check/README.md,docs/units/2026-11-07-user-scenario-check/README.md,아니오(총괄 몫)
+.claude/skills/verify-hazop/SKILL.md,8,백틱,docs/2026-11-07-user-scenario-check/README.md,docs/units/2026-11-07-user-scenario-check/README.md,예
+CLAUDE.md,30,백틱,records/*.md,docs/records/*.md,아니오(총괄 몫)
+CLAUDE.md,60,백틱,docs/2026-11-10-lessons/README.md,docs/units/2026-11-10-lessons/README.md,아니오(총괄 몫)
+CLAUDE.md,69,백틱,docs/2026-11-10-naming-rules/README.md,docs/governance/naming-rules/README.md,아니오(총괄 몫)
+CLAUDE.md,69,백틱,docs/2026-11-10-naming-rules/name-map.csv,docs/governance/naming-rules/name-map.csv,아니오(총괄 몫)

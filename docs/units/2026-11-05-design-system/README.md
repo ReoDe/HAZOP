@@ -111,7 +111,7 @@
 
 ### 편집 허용 범위
 
-- 작업 폴더: `docs/2026-11-05-design-system/`
+- 작업 폴더: `units/2026-11-05-design-system/`
 - 추가 편집 허용 범위: `design/`, `hazop/app/tokens.py`, `hazop/app/widgets.py`, `hazop/viewer/template.html`(색·CSS만), `hazop/app/screens/analysis.py`·`review.py`(배치·폭만, T1 W7과 순차. D8: 색 리터럴 치환 추가), `specs/interface.md`(§4만), `scripts/check_design.py`, `tests/test_design.py`
 - D8(`W6`): `hazop/app/render.py`·`hazop/app/data.py`·`hazop/app/screens/register.py`·`hazop/viewer/build.py`는 색 리터럴을 토큰 참조로 바꾸는 변경만 허용(로직 변경 금지)
 - D10(`W7`): `hazop/viewer/template.html`(선택 표시용 CSS·JS 최소), 필요 시 `hazop/app/webview.py`의 고리 그리기 함수(T1 소유, 선택 고리·보호수단 고리 겹침 처리에 한함), `tokens.py`(필요 시 토큰 1개), `tests/test_graph_select.py`(렌더·화소 판정)

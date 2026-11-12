@@ -87,7 +87,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     rows = []
     for rel in tracked():
-        if rel == TARGET or rel.startswith("docs/2026-11-11-unit-f1/"):
+        if rel == TARGET or rel.startswith("docs/units/2026-11-11-unit-f1/"):
             continue
         if rel.endswith(".py"):
             scan_py(rel, rows)

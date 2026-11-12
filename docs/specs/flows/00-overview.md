@@ -9,7 +9,7 @@ approved: —
 
 # 최상위 플로우차트
 
-[프로젝트 소개](../../README.md) · [전체 기획](../overview.md) · [공통 원칙](../overview.md#principles)
+[프로젝트 소개](../../../README.md) · [전체 기획](../overview.md) · [공통 원칙](../overview.md#principles)
 
 단계 사이에 전달되는 데이터와 되돌림 경로를 보여줍니다. 실선은 정상 전달, 점선은 기준 지식의 참조와 보완 요청입니다.
 

@@ -8,7 +8,7 @@
 | 하지 않은 것 | 패키지 설치, 실행 파일 빌드, 파일 다운로드, 저장소 코드 외부 전송, FAT32·exFAT·네트워크 드라이브 실측 |
 | 표기 | 사실은 출처(저장소 경로 또는 §8 출처 번호 [Sn])를 붙인다. `[추론]` = 근거에서 이끈 판단, `[일반지식]` = 출처 미확인 일반 지식, `[미확인]` = 확인하지 못함 |
 
-읽은 범위: `docs/2026-11-05-packaging/README.md` 전부, `specs/interface.md` §2.2~2.4·§4.2·§7·§8·§9, `specs/overview.md` 신뢰 경계 절, `hazop/paths.py` 전부, `hazop/app/data.py` 1~35행과 `script_module` 호출부, `scripts/run_app.py` 전부, `hazop/kg/vendor/force-graph-1.52.0/SOURCE.md` 전부, `hazop/review/store.py` `write_exclusive` 부분, `hazop/analysis/integrity.py` 1~70행, `hazop/analysis/ai.py` 175~200행. 그 밖의 파일은 grep 결과만 봤다.
+읽은 범위: `units/2026-11-05-packaging/README.md` 전부, `specs/interface.md` §2.2~2.4·§4.2·§7·§8·§9, `specs/overview.md` 신뢰 경계 절, `hazop/paths.py` 전부, `hazop/app/data.py` 1~35행과 `script_module` 호출부, `scripts/run_app.py` 전부, `hazop/kg/vendor/force-graph-1.52.0/SOURCE.md` 전부, `hazop/review/store.py` `write_exclusive` 부분, `hazop/analysis/integrity.py` 1~70행, `hazop/analysis/ai.py` 175~200행. 그 밖의 파일은 grep 결과만 봤다.
 
 ## 0. 요약
 

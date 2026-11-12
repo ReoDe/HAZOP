@@ -1,4 +1,4 @@
-"""시안 폴더(design/mockups)의 build.py와 HTML에 적힌 옛 이름을 대응표(name-map.csv, stage 3·3d)대로 바꾼다.
+"""시안 폴더(docs/design/mockups)의 build.py와 HTML에 적힌 옛 이름을 대응표(name-map.csv, stage 3·3d)대로 바꾼다.
     python codemod_mockups.py <저장소> [--apply]
 
 build.py가 이름을 정해 HTML을 찍으므로 둘에 같은 규칙을 쓴다. 바꾸는 것은 세 가지뿐이다.
@@ -16,7 +16,7 @@ import sys
 
 repo = sys.argv[1]
 apply = "--apply" in sys.argv
-ROOT = "design/mockups"
+ROOT = "docs/design/mockups"
 EXTS = ("-1366.png", "-1920.png", ".html", ".md")
 WORD = "0-9A-Za-z가-힣_"
 # 따옴표 안의 폴더 이름은 이 폴더와 그 아래 것만 바꾼다. build.py가 경로 조각으로 쓰는 이름이다.
@@ -24,7 +24,7 @@ WORD = "0-9A-Za-z가-힣_"
 QUOTED_UNDER = "디자인/시안/완성본"
 
 files, dirs, stems, quoted = {}, {}, {}, {}
-with open(os.path.join(repo, "docs/2026-11-10-naming-rules/name-map.csv"), encoding="utf-8-sig", newline="") as f:
+with open(os.path.join(repo, "docs/governance/naming-rules/name-map.csv"), encoding="utf-8-sig", newline="") as f:
     for r in csv.DictReader(f):
         old, new = r["old"], r["new"]
         if r["stage"] == "3d":

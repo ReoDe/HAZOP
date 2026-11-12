@@ -1,7 +1,7 @@
 # 문서 상태 제안표 (specs 20개 + flows 6개 + design 4개 = 30개)
 
 작성 2026-11-12. 제안만 한다. 문서 머리는 고치지 않았고 `approved`로 바꾸는 일은 총괄 몫이다.
-상태 값의 뜻은 `docs/2026-11-10-naming-rules/README.md` §4.7을 따른다.
+상태 값의 뜻은 `governance/naming-rules/README.md` §4.7을 따른다.
 
 ## 요약
 

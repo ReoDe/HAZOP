@@ -9,7 +9,7 @@ approved: —
 
 # AI 연결: Claude Code 구독제 기술 설계
 
-작성 2026-11-09. 상태: **결정 확정**(2026-11-09, U1~U12 권장안 채택. 화면 설계 D1~D6도 권장안, D1은 '구독 기본'). 구현 전. 관련 문서: [HAZOP 분석 §모델 연결](hazop-analysis.md#모델-연결), [인터페이스 §2.5](interface.md#25-ai-확장-지점), [화면 설계](../design/ai-connection-screens.md), [INTENT.md §3.5·§7 5번](../INTENT.md).
+작성 2026-11-09. 상태: **결정 확정**(2026-11-09, U1~U12 권장안 채택. 화면 설계 D1~D6도 권장안, D1은 '구독 기본'). 구현 전. 관련 문서: [HAZOP 분석 §모델 연결](hazop-analysis.md#모델-연결), [인터페이스 §2.5](interface.md#25-ai-확장-지점), [화면 설계](../design/ai-connection-screens.md), [INTENT.md §3.5·§7 5번](../../INTENT.md).
 
 ④ AI 분석은 지금 Anthropic API 키(`hazop/study/claude_http.py`)로만 돈다. 호출할 때마다 요금이 나간다. 사용자는 구독료를 이미 낸 Claude Code 구독(Pro·Max)을 앱에 직접 연결해 쓰기를 원한다(INTENT §3.5, 2026-11-09). 이 문서는 그 방법을 정하고, API 연결과 화면·기록을 나누며, 지금 무엇으로 연결돼 있는지 늘 보이게 하는 데 필요한 상태값을 정한다.
 

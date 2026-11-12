@@ -36,7 +36,7 @@ pstack `reflect` 절차를 따랐다. 대화 원문 23개(11-09 이후)에서 �
 | 12 | 수치에는 출처와 조건을 붙이고, 공용 계기로 단위 비용을 재지 않는다 | 3bbf5c2d 18:06, 19:17 | — | 규칙: CLAUDE.md 16, hazop-reviewer |
 | 13 | 알림으로 시작한 차례에는 새 세션을 못 띄운다 | a7ac8ae1 07:11 | — | 규칙: CLAUDE.md 10, 메모리 |
 | 14 | 저장 경로 지적은 재현 없이 경미로 낮추지 않는다 | 저장 결함 재현(경미 11건 중 차단 3건), P1 보호수단 줄 밀림 | — | 규칙: CLAUDE.md 3, hazop-reviewer |
-| 15 | 멈춤 기준은 미리 정하고, 넘기려면 사용자 결정을 받는다 | `docs/2026-11-10-apr1400-unknowns/README.md` "−1.8%… 총괄 지시로 진행" | — | 규칙: CLAUDE.md 17 |
+| 15 | 멈춤 기준은 미리 정하고, 넘기려면 사용자 결정을 받는다 | `units/2026-11-10-apr1400-unknowns/README.md` "−1.8%… 총괄 지시로 진행" | — | 규칙: CLAUDE.md 17 |
 | 16 | 끝이 열린 목표는 완료 목록으로 바꾼다. 새 목표는 INTENT와 맞대어 본다 | Stop 훅 평가가 보고 속 진단 수치를 미충족 조건으로 다룸(12:24~23:21). INTENT '패키징 먼저'와 미확인 수 줄이기가 부딪힘 | — | 규칙: CLAUDE.md 8 |
 | 17 | 이 컴퓨터에만 있는 경로를 추적 파일에 넣지 않는다 | `tests/test_ie_bundle.py`가 세션 임시 폴더 경로를 기본값으로 둠 | `tests/test_machine_paths.py`. venv 경로는 `HAZOP_VENV`로 바꿀 수 있게 함(`build_package.py`, `test_raster.py`) | 검사 |
 | 18 | 날짜에 따라 갈리는 코드는 시계를 주입받는다 | e9758a0 | — | 규칙: hazop-developer |

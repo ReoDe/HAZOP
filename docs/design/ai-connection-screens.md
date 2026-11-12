@@ -11,7 +11,7 @@ approved: —
 
 - 상태: 사용자 결정 반영(2026-11-09). D1은 '구독 기본', D2~D6은 권장안 ①로 채택했습니다(§11).
 - 기준 문서: 상태값·오류 분류·저장 필드·화면 이름은 [AI 연결 기술 설계](../specs/ai-subscription.md) §0이 기준입니다. 이 문서는 그 값을 화면에 어떻게 보일지 정합니다. 어긋나거나 더 정해야 할 점은 §12에 모았습니다.
-- 기준 화면: 지금의 API 키 설정 창(커밋 62eedba, `hazop/app/settings_dialog.py`), 상태줄 AI 표시(`hazop/app/main_window.py` `_status_bar`), AI 실행 확인·진행 표시(`hazop/app/screens/results.py` `request_ai`·`_progress_text`·`_on_finished`), Excel 표지(`hazop/export/study_xlsx.py` `_summary_sheet`). 그 밖에 [인터페이스 기획](../specs/interface.md), [INTENT.md](../INTENT.md) §3.5·§3.8, 디자인 토큰 `hazop/app/tokens.py`.
+- 기준 화면: 지금의 API 키 설정 창(커밋 62eedba, `hazop/app/settings_dialog.py`), 상태줄 AI 표시(`hazop/app/main_window.py` `_status_bar`), AI 실행 확인·진행 표시(`hazop/app/screens/results.py` `request_ai`·`_progress_text`·`_on_finished`), Excel 표지(`hazop/export/study_xlsx.py` `_summary_sheet`). 그 밖에 [인터페이스 기획](../specs/interface.md), [INTENT.md](../../INTENT.md) §3.5·§3.8, 디자인 토큰 `hazop/app/tokens.py`.
 - 시안: [mockups/ai-connection/](mockups/ai-connection/index.html). `python design/mockups/ai-connection/build.py`로 HTML과 1366·1920 PNG를 다시 만듭니다. 셸 모양은 [완성본 B안](mockups/final/b-dense-workbench/)의 CSS를 그대로 읽어 씁니다.
 - 단위: **호출**은 AI를 한 번 부르는 것이고, **칸**은 구간×편차 한 칸입니다. 호출 하나가 구간 하나의 같은 변수 편차를 묶어 처리하므로(`ai_cells.plan_units`) 호출 수와 칸 수는 다릅니다. 시안의 예는 구간 5개 × 편차 6개(유량 4, 압력 2) = 30칸, 호출 10회입니다.
 

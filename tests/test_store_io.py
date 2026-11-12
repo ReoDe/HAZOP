@@ -1,6 +1,6 @@
 """저장 공용 규칙(hazop.store_io)과 그것을 쓰는 저장 파일들의 재현 시험. 실행: python -m unittest tests.test_store_io
 
-records/backlog.md '저장·이력 경미 후속(2026-11-09 재판정)'과 백업 폴더 겹침 결함을 하나씩 재현한다.
+docs/records/backlog.md '저장·이력 경미 후속(2026-11-09 재판정)'과 백업 폴더 겹침 결함을 하나씩 재현한다.
 임시 HAZOP_WORK_ROOT만 쓴다. 옛 저장 파일은 0.1.x가 쓰던 직렬화(들여쓰기 2, 줄끝 LF)로 직접 만들어 읽힌다.
 """
 

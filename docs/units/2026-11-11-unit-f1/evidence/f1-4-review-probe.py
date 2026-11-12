@@ -26,7 +26,7 @@ sys.path.insert(0, REPO)
 
 def _legacy():
     spec = importlib.util.spec_from_file_location(
-        "f14", os.path.join(REPO, "docs/2026-11-11-unit-f1/evidence/f1-4-lone-ticks.py"))
+        "f14", os.path.join(REPO, "docs/units/2026-11-11-unit-f1/evidence/f1-4-lone-ticks.py"))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

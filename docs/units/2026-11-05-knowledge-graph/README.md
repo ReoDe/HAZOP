@@ -125,7 +125,7 @@ P&ID 그래프에 비P&ID 성분(문서·요건·설정치 등)을 통합하고,
 
 ### 편집 허용 범위
 
-- 작업 폴더: `docs/2026-11-05-knowledge-graph/`
+- 작업 폴더: `units/2026-11-05-knowledge-graph/`
 - 추가 편집 허용 범위: `hazop/kg/`, `scripts/check_kg.py`, `scripts/build_kg.py`(결정 D6), `tests/test_kg.py`, `specs/graph-usage.md`, `specs/interface.md`·`specs/overview.md`(D1에 따른 ③ 화면 반영만, `W6`, 결정 D2), `데이터/지식/`·`tests/fixtures/kg/`(`W3`, 결정 D3), `scripts/check_kg_renderer.py`·`tests/test_kg_renderer.py`(`W2`, 결정 D4), `W4`·`W5` 파일(결정 D7), `W6` 파일(결정 D8), `W7` 파일(결정 D11)
 - 위 편집 허용 범위 밖의 경로는 참조 대상을 포함해 읽기 전용이다.
 - 문서를 추가하면 해당 폴더 README 인덱스와 이 문서의 문서 지도를 필요한 수준으로 갱신한다.

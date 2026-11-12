@@ -11,7 +11,7 @@ approved: —
 
 작성 2026-11-10. 개정 0(초안, 세 안 비교) → 개정 1(사용자 결정 8개 반영, 이전 계획 추가) → 개정 2(2026-11-12 사용자 결정: 문서 폴더를 `docs/` 아래로 모으고 폴더마다 같은 양식의 규칙서를 둔다. §4.2·§4.6·§4.13·§7 단계 7·§8.1). 이 문서는 설계만 담는다. 파일을 옮기거나 이름을 바꾸지 않았다. 실제 이전은 §7의 단계마다 별도 작업 단위로 한다.
 
-개정 2는 규칙만 고친다. 개정 2를 쓴 시점에는 문서 폴더가 아직 옛 자리(`specs/`, `design/`, `methodology/`, `records/`, `docs/YYYY-MM-DD-<slug>/`)에 있고, 이 문서도 `docs/2026-11-10-naming-rules/`에 있다. 단계 7(2단계 작업)이 `docs/governance/naming-rules/`로 옮긴다. §5의 대응표는 단계 3~6의 기록이라 옛 이름 → 단계 3의 이름 그대로 두고, 단계 7이 더하는 이동은 `name-map.csv`의 `stage` 7 줄이 말한다.
+개정 2는 규칙만 고친다. 개정 2를 쓴 시점에는 문서 폴더가 옛 자리(`specs/`, `design/`, `methodology/`, `records/`, `docs/YYYY-MM-DD-<slug>/`)에 있었고, 이 문서도 `docs/2026-11-10-naming-rules/`에 있었다. 단계 7의 이동 커밋이 `docs/governance/naming-rules/`로 옮겼다(2026-11-12). §5의 대응표는 단계 3~6의 기록이라 옛 이름 → 단계 3의 이름 그대로 두고, 단계 7이 더하는 이동은 `name-map.csv`의 `stage` 7 줄이 말한다.
 
 ## 결론
 
@@ -552,7 +552,7 @@ approved: director 2026-11-10
 
 | 단계 | 옮기는 것 | 수 | 다른 세션 | 확인 | 되돌리기 |
 | --- | --- | --- | --- | --- | --- |
-| **7. 문서 폴더를 `docs/`로** | ① 규칙 개정(이 개정. 파일 이동 0). ② `specs/`·`design/`·`methodology/`·`records/` → `docs/` 아래, `docs/YYYY-MM-DD-<slug>/` 17개 → `docs/units/`, 이 문서의 폴더 → `docs/governance/naming-rules/`. `git mv` 커밋과 내용 수정 커밋으로 나눈다. 링크·백틱 경로는 `migrate_names.py --stage 7 --rewrite-links`, `hazop/paths.py`의 `guide`와 배포본 묶음 경로, 지침서 해시 확인. ③ 폴더마다 규칙서(§4.13)를 쓰고 N12의 예외 줄을 지운다 | ② 폴더 22줄(파일 약 690개). ③ 규칙서 약 40개 | **다른 세션 0**(문서·`.claude/`·`CLAUDE.md`를 모두 건드림) | unittest 전체, `test_integrity_pins`, 기준값 두 개 `--update` 없이 그대로, 배포본 빌드 + `verify_bundle.py`, 링크 검사(N9) | ① ② 커밋 revert. 지침서 해시는 내용 수정 커밋에 함께 있다 |
+| **7. 문서 폴더를 `docs/`로** | ① 규칙 개정(이 개정. 파일 이동 0). ② `specs/`·`design/`·`methodology/`·`records/` → `docs/` 아래, `docs/YYYY-MM-DD-<slug>/` 16개 → `docs/units/`, 이 문서의 폴더 → `docs/governance/naming-rules/`. `git mv` 커밋과 내용 수정 커밋으로 나눈다. 링크·백틱 경로는 `migrate_names.py --stage 7 --rewrite-links`, `hazop/paths.py`의 `guide`와 배포본 묶음 경로, 지침서 해시 확인. ③ 폴더마다 규칙서(§4.13)를 쓰고 N12의 예외 줄을 지운다 | ② 폴더 21줄(파일 약 690개). ③ 규칙서 약 40개 | **다른 세션 0**(문서·`.claude/`·`CLAUDE.md`를 모두 건드림) | unittest 전체, `test_integrity_pins`, 기준값 두 개 `--update` 없이 그대로, 배포본 빌드 + `verify_bundle.py`, 링크 검사(N9) | ① ② 커밋 revert. 지침서 해시는 내용 수정 커밋에 함께 있다 |
 
 단계 7의 ①은 규칙과 검사만 새 배치를 목표로 바꾼다. 옛 자리는 `tests/test_naming_rules.py`의 `EXEMPT["7"]`에 둔다(N2·N3는 ②에서, N12는 ③에서 지운다). 이름 규칙 문서의 자리는 `NAMING_DIRS`가 옛 자리와 새 자리를 모두 받아, 이전 도구(`migrate_names.py`)와 시험이 옮기는 도중에도 대응표를 잃지 않는다.
 
@@ -600,7 +600,7 @@ N10·N11은 CI(결정로그 237행의 가벼운 CI)에서도 돌린다. 처음 �
 ### 8.3 작업지시서 머리말 (총괄이 하위 세션에 붙임)
 
 ```
-- 이름·보관 위치는 docs/2026-11-10-naming-rules/README.md(HZ-GOV-02) §4를 따른다.
+- 이름·보관 위치는 docs/governance/naming-rules/README.md(HZ-GOV-02) §4를 따른다.
 - 지금 이전 단계: <n>. 아직 옮기지 않은 옛 이름은 그대로 쓰고, 새로 만드는 것만 영어 이름으로 만든다.
 - 새 문서에는 §4.7 머리를 단다. status는 review까지 올리고, approved는 총괄이 바꾼다.
 - 커밋 제목: <종류>(<범위>): <한국어 요약>. 브랜치: <종류>/<slug>.
@@ -613,7 +613,7 @@ N10·N11은 CI(결정로그 237행의 가벼운 CI)에서도 돌린다. 처음 �
 
 ```
 18. **이름과 보관 위치.** 폴더·파일·문서번호·브랜치·커밋·시험 폴더 이름은
-    docs/2026-11-10-naming-rules/README.md(HZ-GOV-02) §4를 따르고, tests/test_naming_rules.py가 지킨다.
+    docs/governance/naming-rules/README.md(HZ-GOV-02) §4를 따르고, tests/test_naming_rules.py가 지킨다.
     문서 상태를 approved로 바꾸는 일은 총괄 세션이 한다. 이름을 옮기는 단계(§7)는 그 문서의 순서대로만 하고,
     단계 3~6은 다른 세션이 하나도 돌지 않을 때만 한다(규칙 4).
 ```

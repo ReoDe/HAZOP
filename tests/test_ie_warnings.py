@@ -1,4 +1,4 @@
-"""IE 인계 묶음 품질 경고 5종(specs/ie-output-design.md §3.2 시트 8)과 요약. 경고마다 걸리는 예와 안 걸리는 예를 둔다.
+"""IE 인계 묶음 품질 경고 5종(docs/specs/ie-output-design.md §3.2 시트 8)과 요약. 경고마다 걸리는 예와 안 걸리는 예를 둔다.
 두 도면 합성 그래프와 가짜 결과만 쓴다. 실행: python -m unittest tests.test_ie_warnings
 """
 

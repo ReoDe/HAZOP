@@ -1,4 +1,4 @@
-"""추출 실행 정보(extraction_run.json): 추출 결과 폴더에 추출 단계가 남기는 곁 파일(기획서 specs/pid-symbol-dictionary.md D8).
+"""추출 실행 정보(extraction_run.json): 추출 결과 폴더에 추출 단계가 남기는 곁 파일(기획서 docs/specs/pid-symbol-dictionary.md D8).
 
 이 추출 결과가 어느 기호 사전 판으로 나왔는지 되짚는 데 쓴다. 그래프는 extraction.json만 읽으므로 이 파일은
 graph_version에 들어가지 않는다. 사전 판을 extraction.json에 넣으면 사전 항목 하나만 고쳐도 거의 모든 PDF 도면의 판이

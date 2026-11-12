@@ -125,7 +125,7 @@ W1 §2 대비 정정: `d3-ease`는 ISC가 아니라 **BSD-3-Clause**(Robert Penn
 | `scripts/build_package.py` | `DATA_DIRS`에 `licenses` 추가, 머리말의 datas 설명 갱신 |
 | `packaging/verify_bundle.py` | `licenses_problems()`를 추가했다. 묶음 사본을 만든 직후 `checks.licenses_problems`에 기록하고, 이 목록이 비어 있어야 `passed`가 된다. 머리말 순서 6) 추가 |
 | `tests/test_packaging.py` | `REQUIRED_NOTICES`(원문 경로 42개 → 라이선스 식별자)와 `REQUIRED_DOCS`(안내문 2개) 기준 목록. `LicenseNoticeTest` 4건: spec 포함, 기준·해시·목록 밖 파일, 행·파일 동시 삭제·식별자 변경·해시 변경 검출(사본에서), 버전·"(추정)" 표시. `BundleLicensesTest` 1건: `licenses_problems`의 없음·같음·해시 다름·빠짐·추가 |
-| `docs/2026-11-05-packaging/` | decisions D9, README §8 편집 허용 범위·기준일, PROGRESS(W6 상태, W8 후보), ROADMAP, 이 문서, 첨부 [w6-bundle-collect-list.md](w6-bundle-collect-list.md), evidence 인덱스 |
+| `units/2026-11-05-packaging/` | decisions D9, README §8 편집 허용 범위·기준일, PROGRESS(W6 상태, W8 후보), ROADMAP, 이 문서, 첨부 [w6-bundle-collect-list.md](w6-bundle-collect-list.md), evidence 인덱스 |
 
 루트 `.gitattributes`는 편집 범위 밖이다. 그래서 `core.autocrlf=true` 환경에서 원문 바이트를 고정하려고 `licenses/.gitattributes`를 두었다. 이 파일도 묶음에 들어간다(영향 없음 [추론]).
 

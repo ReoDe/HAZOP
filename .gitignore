@@ -17,7 +17,7 @@ __pycache__/
 
 # 외부 데모 촬영본: 권리·공개 범위가 불분명해 로컬에만 둔다
 resources/references/photos/
-# 외부 기준 문서 원본 PDF: 요약 지침서(specs/hazop-method-guide.md)만 저장소에 둔다
+# 외부 기준 문서 원본 PDF: 요약 지침서(docs/specs/hazop-method-guide.md)만 저장소에 둔다
 resources/references/hazop-method/*.pdf
 # APR1400 DCD 원본과 추출 도면(용량이 커서 로컬에만 둔다). 다시 만드는 법(drawing-list.md·drawing-list.csv·
 # excluded-drawings.csv·scripts/)만 추적한다(결정 D5)
