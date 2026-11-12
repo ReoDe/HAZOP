@@ -18,16 +18,16 @@
     "offpage_labels": 3,
     "tag_exact": 4,
     "tag_not_in_text": 0,
-    "tagged": 4,
+    "tagged": 5,
     "unclassified": 28,
-    "unknowns": 150
+    "unknowns": 149
    },
    "proxy_bubbles": 4,
    "proxy_bubbles_in_key": 4,
    "proxy_offpage": 3,
    "proxy_offpage_in_key": 3,
-   "tagged": 4,
-   "tagged_correct": 4
+   "tagged": 5,
+   "tagged_correct": 5
   },
   "9.3.3-1-S7": {
    "connector_hits": 7,
@@ -47,16 +47,16 @@
     "offpage_labels": 5,
     "tag_exact": 16,
     "tag_not_in_text": 0,
-    "tagged": 16,
+    "tagged": 28,
     "unclassified": 55,
-    "unknowns": 523
+    "unknowns": 511
    },
    "proxy_bubbles": 16,
    "proxy_bubbles_in_key": 16,
    "proxy_offpage": 5,
    "proxy_offpage_in_key": 5,
-   "tagged": 16,
-   "tagged_correct": 16
+   "tagged": 28,
+   "tagged_correct": 28
   },
   "9.3.4-1-S1": {
    "connector_hits": 17,
@@ -76,9 +76,9 @@
     "offpage_labels": 4,
     "tag_exact": 12,
     "tag_not_in_text": 0,
-    "tagged": 12,
+    "tagged": 35,
     "unclassified": 100,
-    "unknowns": 886
+    "unknowns": 863
    },
    "proxy_bubbles": 15,
    "proxy_bubbles_in_key": 15,
@@ -962,11 +962,11 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 281,
-  "seconds": 341,
+  "seconds": 307,
   "tag_exact": 872,
   "tag_not_in_text": 47,
-  "tagged": 1083,
+  "tagged": 2240,
   "unclassified": 6975,
-  "unknowns": 63394
+  "unknowns": 62238
  }
 }
