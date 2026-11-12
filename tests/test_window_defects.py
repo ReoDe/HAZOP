@@ -100,13 +100,30 @@ class WindowDefectTest(unittest.TestCase):
         win.go(RESULTS)
         pump(win, 0.05)
         self.assertEqual(scr.stack.currentIndex(), 0, "확정본이 없으면 행렬 대신 빈 상태")
-        self.assertIn("확정을 해제", scr.empty.text())
-        self.assertIn("확정을 해제", scr.empty_title.text(), "제목도 '결과 없음'이 아니라 숨긴 까닭을 말한다")
+        self.assertIn("확정을 해제", scr.empty_title.text(), "제목이 '결과 없음'이 아니라 숨긴 까닭을 말한다")
+        self.assertNotIn("확정을 해제", scr.empty.text(), "본문은 제목을 되풀이하지 않는다")
         self.assertIn("보관", scr.empty.text(), "이미 만든 결과가 남아 있음을 알린다")
         self.assertNotIn("미검토", win.count_label.text(), "상태줄도 결과 개수를 말하지 않는다")
         self.assertIn("(제안)", win.count_label.text())
         self.assertNotEqual((win.selection or {}).get("kind"), "cell", "보이지 않는 칸을 관련 항목 기준으로 두지 않음")
+        # 메뉴 내보내기도 본문과 같은 말을 한다: 결과가 없는 게 아니라 숨겨 둔 것
+        win.export_results_excel()
+        pump(win, 0.05)
+        msg = win.msg_label.text()
+        self.assertIn("숨긴 상태라 내보낼 수 없습니다", msg)
+        self.assertIn("다시 확정", msg)
+        self.assertNotIn("내보낼 분석 결과가 없습니다", msg)
         self.assertEqual(_sha(res_file), before, "결과 파일은 그대로")
+        # 결과 파일이 있어도 분석한 칸이 하나도 없으면 '이미 만든 결과'를 말하지 않는다
+        res.write(res_file, res.empty_results(ns, scr.deviations))
+        win.go(STUDY)
+        win.go(RESULTS)
+        pump(win, 0.05)
+        self.assertNotIn("확정을 해제", scr.empty_title.text())
+        self.assertNotIn("보관", scr.empty.text())
+        win.export_results_excel()
+        pump(win, 0.05)
+        self.assertIn("내보낼 분석 결과가 없습니다", win.msg_label.text())
 
     # 결함 10: 실패 칸 다시 실행을 시작하면 대상 수와 이번 실행의 실패를 가른다
     def _progress(self, scr, scope, done, total, failed_now=0):
@@ -129,7 +146,7 @@ class WindowDefectTest(unittest.TestCase):
         self.assertTrue(start.startswith("다시 돌릴 칸 12 · 0/12 호출"), start)
         self.assertNotIn("실패", start, "시작 때 옛 실패 칸 수를 이번 실패처럼 말하지 않는다")
         self.assertTrue(re.search(r"(\d+)\s*/\s*(\d+)\s*호출", start), "사용자 시나리오의 실행 중 판정과 맞음")
-        self.assertIn("이번 실패 2", self._progress(scr, "failed", 5, 12, failed_now=2))
+        self.assertIn("이번 실패 호출 2", self._progress(scr, "failed", 5, 12, failed_now=2))
         full = self._progress(scr, "all", 0, 30)
         self.assertTrue(full.startswith("AI 0/30 호출"), full)
         self.assertNotIn("실패", full)
@@ -148,7 +165,7 @@ class WindowDefectTest(unittest.TestCase):
         self.assertNotRegex(idle, r"호출 · 실패 \d")
         from hazop.app.screens.results import failure_note
         done_note = failure_note({"failed": [{}]}, left)
-        self.assertEqual(done_note, " · 이번 실패 1 · 결과에 남은 실패 칸 %d" % left, "끝남 알림도 두 수를 가른다")
+        self.assertEqual(done_note, " · 이번 실패 호출 1 · 결과에 남은 실패 칸 %d" % left, "끝남 알림도 두 수를 가른다")
 
     # 결함 12: 분할 거절 문구는 그 화면에서만 보이고, 필요한 폭은 창 폭 하나로 말한다
     def test_split_refusal_names_window_width_and_clears_on_move(self):
@@ -241,8 +258,13 @@ class WindowDefectTest(unittest.TestCase):
     # 결함 5: Qt 입력 창 단추가 한국어다(앱을 만들 때 Qt 기본 번역을 건다)
     def test_input_dialog_buttons_are_korean(self):
         from PySide6.QtWidgets import QInputDialog, QPushButton
-        from hazop import app as app_mod
-        self.assertTrue(app_mod.install_qt_translation(self.qapp), "번역을 걸었다(두 번 불러도 한 번)")
+        from PySide6.QtWidgets import QApplication
+        # 시험이 번역을 직접 걸지 않는다: make_application이 걸었는지만 본다(그 한 줄을 지우면 여기서 실패)
+        app = QApplication.instance()
+        self.assertIs(app, self.qapp, "setUpClass의 make_application이 만든 앱")
+        tr = getattr(app, "_hazop_qt_translator", None)
+        self.assertIsNotNone(tr, "make_application이 Qt 기본 번역을 걸었다")
+        self.assertFalse(tr.isEmpty())
         dlg = QInputDialog()
         self.addCleanup(dlg.deleteLater)
         dlg.setLabelText("이름")
@@ -325,6 +347,27 @@ class RegisterBeforeExtractTest(base.AppTestBase):
             self.assertEqual(b, a, "%s가 그대로(바뀐 파일: %s)" % (label, sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k))))
         self.assertEqual(calls, [], "이전 자료(%s)를 다시 추출하지 않는다" % name)
         self.assertIn("먼저 등록", win.msg_label.text())
+        # 고른 파일을 등록할 수 없는 상태(여러 개를 고름·읽을 수 없는 파일)에서도 추출은 꺼진 채다
+        missing = os.path.join(os.environ["HAZOP_STORE_ROOT"], "없는-파일.drawio")
+        for state, files in (("many", [base.sample_file("SNP-M-102", "drawio")] * 2), ("error", [missing])):
+            scr.table.selectRow(0)
+            self.assertFalse(scr.set_files(files))
+            base.pump(win, 0.05)
+            self.assertEqual(scr._file_state, state)
+            self.assertFalse(scr.btn_extract.isEnabled(), "%s 상태에서 추출 단추가 다시 켜지지 않는다" % state)
+            self.assertIn("파일 선택 지우기", scr.btn_extract.toolTip())
+            with mock.patch.object(register_mod().data, "extract_and_graph", side_effect=lambda p: calls.append(p)):
+                scr.do_extract()
+                base.pump(win, 0.1)
+            self.assertEqual(calls, [], "%s 상태에서 목록의 이전 자료를 추출하지 않는다" % state)
+        self.assertEqual((_tree(store), _tree(edit_dir), _tree(paths.output_root("extract"))), before)
+        # 선택을 비우면 목록에서 고른 등록 자료를 다시 추출할 수 있다
+        clear = next(f for n, _, f in scr.commands() if n == "파일 선택 지우기")
+        clear()
+        scr.table.selectRow(0)
+        self.assertEqual(scr._file_state, "none")
+        self.assertTrue(scr.btn_extract.isEnabled())
+        self.assertEqual(scr.btn_extract.toolTip(), "")
 
 
 def register_mod():

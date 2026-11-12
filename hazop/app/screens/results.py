@@ -652,13 +652,17 @@ class CloseWaitBox(QDialog):
 
 EMPTY_TITLE = "아직 볼 분석 결과가 없습니다"
 KEPT_TITLE = "검토구간 확정을 해제해 결과를 숨겼습니다"
+KEPT_TEXT = ("이미 만든 분석 결과는 지우지 않고 보관해 두었습니다. "
+             "④ 검토구간에서 다시 확정하면 같은 구간의 결과가 다시 보입니다.")
+EXPORT_KEPT = ("검토구간 확정을 해제해 분석 결과를 숨긴 상태라 내보낼 수 없습니다. "
+               "결과는 보관해 두었으니 ④에서 다시 확정한 뒤 내보내세요.")
 
 
 def failure_note(info, left):
     """진행 글자 뒤에 붙는 실패 수. 이번 실행의 실패(info['failed'])와 결과 파일 전체에 남은 실패 칸(left)은
     서로 다른 수라 섞지 않고 이름을 달리 붙인다. 칸 하나를 돌릴 때 'AI 0/1 호출 · 실패 12'처럼 보이지 않게."""
     now = len((info or {}).get("failed") or [])
-    return (" · 이번 실패 %d" % now if now else "") + (" · 결과에 남은 실패 칸 %d" % left if left else "")
+    return (" · 이번 실패 호출 %d" % now if now else "") + (" · 결과에 남은 실패 칸 %d" % left if left else "")
 
 
 def is_limit_stop(run):
@@ -1088,6 +1092,7 @@ class ResultsScreen(QWidget):
         self.progress_label.setText("")
         self.banner.set_messages(None)
         self.empty_title.setText(EMPTY_TITLE)
+        self.results_kept = False  # 확정 해제로 결과를 숨기고 보관 중인지(본문·내보내기 안내가 같은 말을 하게)
         self.ctx = project_ctx.load(name) if name else None
         saved = None
         if self.ctx is not None and self.ctx.pg is None:
@@ -1131,9 +1136,9 @@ class ResultsScreen(QWidget):
                 self.empty.setText("이 도면의 그래프가 없습니다. ① 자료 등록에서 '추출·그래프 만들기'를 실행하세요."
                                    if name else "추출 결과가 없습니다. ①·②에서 도면을 등록·추출하세요.")
             elif saved is not None and not confirmed and self._has_saved_results(saved):
+                self.results_kept = True
                 self.empty_title.setText(KEPT_TITLE)
-                self.empty.setText("④에서 검토구간 확정을 해제해 결과를 숨겼습니다. 이미 만든 분석 결과는 지우지 않고 "
-                                   "보관해 두었고, ④에서 다시 확정하면 같은 구간의 결과가 다시 보입니다.")
+                self.empty.setText(KEPT_TEXT)
             elif saved is not None and not confirmed:
                 self.empty.setText("프로젝트 검토구간이 아직 확정되지 않았습니다. ④ 검토구간에서 구간을 확정하세요."
                                    + (" (옛 도면별 검토구간을 옮겨 '제안' 상태로 두었습니다.)" if self.ctx.notice else ""))
@@ -1146,11 +1151,13 @@ class ResultsScreen(QWidget):
 
     @staticmethod
     def _has_saved_results(node_set):
-        """확정 전 집합이라도 같은 프로젝트·그래프의 저장된 분석 결과 파일이 있는지(확정 해제 뒤 보관 중인 결과)."""
+        """확정 전 집합이라도 같은 프로젝트·그래프의 저장 파일에 실제 분석 결과(항목이 있거나 분석한 칸)가 있는지.
+        확정 해제 뒤 보관 중인 결과를 말할 때만 참이다. 빈 결과 파일만 있으면 거짓."""
         try:
-            return os.path.isfile(res.store_path(node_set.get("project_id"), node_set["graph_id"]))
-        except (KeyError, TypeError, ValueError):
+            doc = res.read_fp(res.store_path(node_set.get("project_id"), node_set["graph_id"]))[0]
+        except (OSError, KeyError, TypeError, ValueError):
             return False
+        return any(c.get("entries") or c.get("state") not in (None, "not_analyzed") for c in (doc or {}).get("cells") or [])
 
     def _migrate_results(self, node_set):
         """확정된 프로젝트 집합에 결과가 없고 옛 도면별 결과가 있으면 백업 뒤 옮겨 저장한다(migrate_results는 있는 프로젝트
@@ -1291,7 +1298,8 @@ class ResultsScreen(QWidget):
         """범위 대화상자 → 저장 대화상자 → .xlsx 저장 → 토스트 [열기]·[폴더 열기]. path·scope를 주면 대화상자 없이
         (검사용). 저장한 경로 또는 None."""
         if self.node_set is None or self.results is None:
-            self.app.status_message("내보낼 분석 결과가 없습니다. ④에서 검토구간을 확정하세요.")
+            self.app.status_message(EXPORT_KEPT if getattr(self, "results_kept", False)
+                                    else "내보낼 분석 결과가 없습니다. ④에서 검토구간을 확정하세요.")
             return None
         now = nodes.now_utc()
         if scope is None:
