@@ -20,7 +20,7 @@
     "tag_not_in_text": 0,
     "tagged": 5,
     "unclassified": 28,
-    "unknowns": 149,
+    "unknowns": 160,
     "valve_number_closer_other": 0
    },
    "proxy_bubbles": 4,
@@ -88,7 +88,7 @@
     "tag_not_in_text": 0,
     "tagged": 35,
     "unclassified": 100,
-    "unknowns": 863,
+    "unknowns": 871,
     "valve_number_closer_other": 0
    },
    "proxy_bubbles": 15,
@@ -319,7 +319,7 @@
    "connectors_detected": 0,
    "tag_exact": 18,
    "tag_not_in_text": 0,
-   "valve_number_closer_other": 1
+   "valve_number_closer_other": 0
   },
   "127": {
    "connector_bad_target": 0,
@@ -452,7 +452,7 @@
    "connectors_detected": 5,
    "tag_exact": 1,
    "tag_not_in_text": 0,
-   "valve_number_closer_other": 1
+   "valve_number_closer_other": 0
   },
   "15": {
    "connector_bad_target": 0,
@@ -515,7 +515,7 @@
    "connectors_detected": 16,
    "tag_exact": 21,
    "tag_not_in_text": 0,
-   "valve_number_closer_other": 1
+   "valve_number_closer_other": 0
   },
   "23": {
    "connector_bad_target": 0,
@@ -536,7 +536,7 @@
    "connectors_detected": 10,
    "tag_exact": 34,
    "tag_not_in_text": 0,
-   "valve_number_closer_other": 6
+   "valve_number_closer_other": 0
   },
   "26": {
    "connector_bad_target": 0,
@@ -1120,12 +1120,12 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 281,
-  "seconds": 263,
+  "seconds": 266,
   "tag_exact": 872,
   "tag_not_in_text": 47,
-  "tagged": 2239,
+  "tagged": 2230,
   "unclassified": 6976,
-  "unknowns": 62240,
-  "valve_number_closer_other": 9
+  "unknowns": 62672,
+  "valve_number_closer_other": 0
  }
 }
