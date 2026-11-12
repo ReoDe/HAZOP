@@ -9,12 +9,15 @@
   위치에 연결점 노드를 만든 수), paired(프로젝트 그래프에서 짝지은 연결 수)
 - 정밀도(오류 수): tag_not_in_text(글자에 없는 태그. 계기 글자로 만든 태그(근거 isa_label…)는 그 노드 상자 안에 찍힌
   위아래 두 줄을 이은 글자와 같아야 하고, 나머지 태그는 그 쪽 텍스트 층 낱말이나, 같은 줄에 빈틈 없이 이어진 글자
-  묶음(char_runs)과 같아야 한다),
-  connector_bad_target(짝지은 글자와 계통이 다르거나, 짝이 없는데 계통을 단 연결점)
+  묶음(char_runs)과 같아야 한다. 낱말이 붙은 글자 묶음 둘 이상을 이은 것('V2008V2009')이면 그 낱말로는 통과하지 않는다),
+  connector_bad_target(짝지은 글자와 계통이 다르거나, 짝이 없는데 계통을 단 연결점),
+  valve_number_closer_other(밸브 번호 태그(근거 valve_number)를 단 밸브 몸통에, 그 번호 글자보다 더 가까운 다른 밸브 번호
+  글자가 있는 수. 옆 밸브의 번호를 받았을 가능성이 큰 자리다. 글자 자리는 텍스트 층의 붙은 글자 묶음으로 잰다)
 독립 정답(tests/fixtures/apr1400/answer_key/*.json, 렌더한 그림을 눈으로 읽어 만든 정답, tests/fixtures/apr1400/SOURCE.md)이 있는 쪽은 정답 대비 값도 낸다.
 정답 쪽 틀린 태그(tagged - tagged_correct)는 계기 정답과 같은 자리·같은 글자인 태그와, 정답지에 valve_numbers가 있으면 그
 번호 자리·같은 번호인 밸브 번호 태그(근거 valve_number)를 맞은 것으로 센다. valve_numbers가 없는 쪽의 밸브 번호 태그는
-정답이 다루지 않으므로 세지 않는다.
+정답이 다루지 않으므로 세지 않고, 그 수를 valve_number_tags_unscored로 따로 낸다. 정답 밸브 번호 가운데 자리(bbox)가 있는
+것의 수(valve_numbers)와 그중 같은 번호 태그가 붙은 수(valve_number_hits)도 내고, 적중 수가 줄면 실패한다.
 톱니: 재현율 값은 기준값보다 낮아지면, 오류 값은 높아지면 실패(종료 코드 1). 합계·쪽마다·정답 쪽마다 모두 본다.
 쪽 수·계기 원 수·연결 표기 수(입력과 대리 지표)가 기준값과 다르면 비교하지 않고 실패한다.
 """
@@ -38,9 +41,12 @@ SCORE = os.path.join(REPO_ROOT, "tests", "baselines", "apr1400_score.json")
 ANSWER_KEY = os.path.join(REPO_ROOT, "tests", "fixtures", "apr1400", "answer_key")
 PAIR_KEY = os.path.join(REPO_ROOT, "tests", "fixtures", "apr1400", "pairs_key.json")
 HIGHER = ("tag_exact", "connectors_detected", "paired", "pair_key_hit")
-LOWER = ("tag_not_in_text", "connector_bad_target", "pair_key_wrong")
+LOWER = ("tag_not_in_text", "connector_bad_target", "pair_key_wrong", "valve_number_closer_other")
 PAGE_HIGHER = ("tag_exact", "connectors_detected")
-PAGE_LOWER = ("tag_not_in_text", "connector_bad_target")
+PAGE_LOWER = ("tag_not_in_text", "connector_bad_target", "valve_number_closer_other")
+KEY_HIGHER = ("instrument_hits", "connector_hits", "valve_number_hits")
+TAG_PIECE_RE = re.compile(r"[A-Z]+\d[A-Z0-9]*")
+VALVE_NUMBER_RE = re.compile(r"V\d{3,5}[A-Z]?")  # 추출기 VALVE_TAG_RE와 같은 꼴(검사는 추출기 코드를 가져오지 않는다)
 OFFPAGE_RE = re.compile(r"^(?:[\d/.]+\")?([A-Z]{2,3}):[A-Z0-9]")  # 'CV:CHARGING'. 배관 크기가 붙은 '4"CV:IRWST'도
 ISA_LETTERS_RE = re.compile(r"^[A-Z]{2,5}$")
 LOOP_NO_RE = re.compile(r"^\d{1,4}[A-Z]?$")  # 루프 번호는 한 자리도 있음(TEW / 8, PDT / 1D)
@@ -107,17 +113,15 @@ def text_layer(path):
         labels += join_rotated([w for w in words if not w["upright"] and w["direction"] == direction], direction)
     offpage = [(w["text"], OFFPAGE_RE.match(w["text"]).group(1), (w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2)
                for w in labels if OFFPAGE_RE.match(w["text"])]
-    tokens = {norm(w["text"]) for w in words} | {norm(a + b) for a, b, _, _ in bubbles}
     runs = char_runs(chars) | char_runs(turned) | char_runs(down)
-    return {"bubbles": bubbles, "offpage": offpage, "tokens": tokens, "runs": runs, "chars": chars, "turned": turned,
-            "down": down}
+    tokens = {norm(w["text"]) for w in words} | {norm(a + b) for a, b, _, _ in bubbles}
+    numbers = [(t, box) for frame, cs in (("up", chars), ("btt", turned), ("ttb", down)) for t, box in run_boxes(cs, frame)
+               if VALVE_NUMBER_RE.fullmatch(t)]
+    return {"bubbles": bubbles, "offpage": offpage, "tokens": tokens, "glued": glued_tokens(tokens, runs), "runs": runs,
+            "chars": chars, "turned": turned, "down": down, "valve_numbers": numbers}
 
 
-def char_runs(chars, gap=0.5):
-    """같은 줄(위 끝 0.5pt 안)에서 앞 글자 끝과 -0.5~gap pt 안에 붙은 글자를 이은 묶음의 글자 집합(norm).
-    pdfplumber 낱말은 위아래로 3pt 안에 있는 두 줄('LO' 위 'V476')을 섞어 'V'·'L'·'4'·'O'·'76'으로 쪼개고, 글자 사이가
-    2.5pt 떨어진 두 번호('V2008 V2009')는 한 낱말로 잇는다. 묶음은 실제로 붙은 글자만 이으므로 도면에 없는 글자 조합은
-    만들지 않는다. chars 항목: (글자, 중심 x, 중심 y, 위 끝, x0, x1)(돌린 글자는 읽는 방향이 가로가 되게 돌린 좌표)."""
+def _runs(chars, gap=0.5):
     runs = []
     for c in sorted(chars, key=lambda c: (round(c[3], 1), c[4])):
         last = next((r for r in reversed(runs) if abs(r[-1][3] - c[3]) < 0.5 and -0.5 <= c[4] - r[-1][5] <= gap), None)
@@ -125,7 +129,63 @@ def char_runs(chars, gap=0.5):
             last.append(c)
         else:
             runs.append([c])
-    return {norm("".join(c[0] for c in r)) for r in runs}
+    return runs
+
+
+def char_runs(chars, gap=0.5):
+    """같은 줄(위 끝 0.5pt 안)에서 앞 글자 끝과 -0.5~gap pt 안에 붙은 글자를 이은 묶음의 글자 집합(norm).
+    pdfplumber 낱말은 위아래로 3pt 안에 있는 두 줄('LO' 위 'V476')을 섞어 'V'·'L'·'4'·'O'·'76'으로 쪼개고, 글자 사이가
+    2.5pt 떨어진 두 번호('V2008 V2009')는 한 낱말로 잇는다. 묶음은 실제로 붙은 글자만 이으므로 도면에 없는 글자 조합은
+    만들지 않는다. chars 항목: (글자, 중심 x, 중심 y, 위 끝, x0, x1)(돌린 글자는 읽는 방향이 가로가 되게 돌린 좌표)."""
+    return {norm("".join(c[0] for c in r)) for r in _runs(chars, gap)}
+
+
+def glued_tokens(tokens, runs):
+    """붙은 글자 묶음에는 없고, 태그 꼴(영문자로 시작하고 숫자가 든) 묶음 둘 이상을 이어야 나오는 낱말(pdfplumber가
+    2.5pt 떨어진 'V2008'과 'V2009'를 이은 'V2008V2009'). 이런 낱말은 도면에 한 덩어리로 찍힌 글자가 아니다.
+    한 번호가 'V2'·'021'로 갈린 묶음(066쪽 V2021, 윗변이 0.1pt 달라 char_runs가 순서를 놓침)은 '021'이 태그 꼴이 아니라
+    거르지 않는다."""
+    def splits(t, start=0, pieces=0):
+        if start == len(t):
+            return pieces >= 2
+        return any(t[start:end] in runs and TAG_PIECE_RE.fullmatch(t[start:end]) and splits(t, end, pieces + 1)
+                   for end in range(start + 2, len(t) + 1))
+    return {t for t in tokens if t not in runs and splits(t)}
+
+
+def _page_box(c, frame):
+    """text_layer의 글자 항목(돌린 좌표일 수 있음) → 쪽 좌표 상자 (x0, top, x1, bottom)."""
+    text, cx, cy, top, x0, x1 = c
+    if frame == "btt":  # x' = -y, y' = x
+        return top, -x1, 2 * cy - top, -x0
+    if frame == "ttb":  # x' = y, y' = -x
+        return -2 * cy + top, x0, -top, x1
+    return x0, top, x1, 2 * cy - top
+
+
+def run_boxes(chars, frame):
+    """붙은 글자 묶음마다 (글자(norm), 쪽 좌표 상자)."""
+    out = []
+    for r in _runs(chars):
+        boxes = [_page_box(c, frame) for c in r]
+        out.append((norm("".join(c[0] for c in r)), (min(b[0] for b in boxes), min(b[1] for b in boxes),
+                                                     max(b[2] for b in boxes), max(b[3] for b in boxes))))
+    return out
+
+
+def _gap(a, b):
+    dx = max(0.0, a[0] - b[2], b[0] - a[2])
+    dy = max(0.0, a[1] - b[3], b[1] - a[3])
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def closer_other_number(node, numbers):
+    """밸브 번호 태그를 단 노드 몸통에, 그 번호 글자(가장 가까운 것)보다 더 가까운 다른 밸브 번호 글자가 있는가.
+    그 번호 글자가 텍스트 층에 없으면 tag_not_in_text가 세므로 여기서는 세지 않는다."""
+    body = _box(node, 0.0)
+    want = norm(node["tag"])
+    own = [_gap(box, body) for t, box in numbers if t == want]
+    return bool(own) and any(_gap(box, body) < min(own) for t, box in numbers if t != want)
 
 
 def join_rotated(words, direction):
@@ -192,7 +252,8 @@ def tag_in_text(node, tl):
             pairs |= {norm(a + b) for up, down in zip(lines, lines[1:]) for a, ax in up for b, bx in down
                       if abs(ax - bx) < 6}
         return norm(node["tag"]) in pairs
-    return norm(node["tag"]) in tl["tokens"] or norm(node["tag"]) in tl.get("runs", ())
+    tag = norm(node["tag"])
+    return tag in tl.get("runs", ()) or (tag in tl["tokens"] and tag not in tl.get("glued", ()))
 
 
 def _box(node, margin):
@@ -281,6 +342,8 @@ def score_page(ex, tl):
     return {"bubbles": len(tl["bubbles"]), "offpage_labels": len(tl["offpage"]), "tagged": len(tagged),
             "tag_exact": len(exact), "tag_not_in_text": sum(1 for n in tagged if not tag_in_text(n, tl)),
             "continuations": len(conts), "connectors_detected": len(pairs), "connector_bad_target": bad,
+            "valve_number_closer_other": sum(1 for n in tagged if is_valve_number_tag(n)
+                                             and closer_other_number(n, tl.get("valve_numbers") or ())),
             "unknowns": ex["summary"]["unknowns"], "nodes": len(nodes),
             "unclassified": sum(1 for n in nodes if not n.get("kind"))}
 
@@ -298,16 +361,21 @@ def score_against_key(ex, key):
     밸브 번호 태그는 정답지에 valve_numbers가 있을 때만 센다: 정답 번호 자리(몸통 상자)에 같은 번호면 맞음, 아니면 틀림."""
     numbers = key.get("valve_numbers")
     tagged = [n for n in ex["nodes"] if n.get("tag") and (numbers is not None or not is_valve_number_tag(n))]
+    placed = [i for i in numbers or () if i.get("bbox")]
     conts = [n for n in ex["nodes"] if n.get("kind") == "continuation"]
     inst = match_one_to_one([(norm(i["tag"]),) + _center(i["bbox"]) for i in key["instruments"]], tagged,
                             lambda want, n: norm(n["tag"]) == want, NEAR)
-    valve = match_one_to_one([(norm(i["tag"]),) + _center(i["bbox"]) for i in numbers or () if i.get("bbox")],
-                             [n for n in tagged if is_valve_number_tag(n)], lambda want, n: norm(n["tag"]) == want, NEAR)
+    valve = match_one_to_one([(norm(i["tag"]),) + _center(i["bbox"]) for i in placed],
+                             [n for n in tagged if is_valve_number_tag(n) and n.get("category") == "valve"],
+                             lambda want, n: norm(n["tag"]) == want, NEAR)
     conn = match_one_to_one([(i["label"],) + _center(i["bbox"]) for i in key["connectors"]], conts,
                             lambda k, n: True, CONN_NEAR)
     return {"instruments": len(key["instruments"]), "instrument_hits": len(inst), "tagged": len(tagged),
             "tagged_correct": len(inst) + len(valve), "connectors": len(key["connectors"]), "connector_hits": len(conn),
-            "continuations": len(conts), "continuations_correct": len(conn)}
+            "continuations": len(conts), "continuations_correct": len(conn),
+            "valve_numbers_keyed": int(numbers is not None), "valve_numbers": len(placed), "valve_number_hits": len(valve),
+            "valve_number_tags_unscored": 0 if numbers is not None else sum(1 for n in ex["nodes"]
+                                                                            if n.get("tag") and is_valve_number_tag(n))}
 
 
 def proxy_against_key(tl, key):
@@ -379,7 +447,8 @@ def run(input_dir, catalog, jobs, pages=None):
     pg = project.summary(built) if built else {"linked": 0}
     totals = {k: sum(p.get(k, 0) for p in per_page) for k in
               ("bubbles", "offpage_labels", "tagged", "tag_exact", "tag_not_in_text", "continuations",
-               "connectors_detected", "connector_bad_target", "unknowns", "nodes", "unclassified")}
+               "connectors_detected", "connector_bad_target", "unknowns", "nodes", "unclassified",
+               "valve_number_closer_other")}
     totals.update(pages=len(per_page), failed_pages=sum(1 for p in per_page if not p["ok"]), paired=pg["linked"])
     totals.update(score_pairs(built, {d["dwg"]: d for d in done if d["ok"]}))
     totals["pair_candidates"] = sum(1 for l in (built or {}).get("sheet_links") or [] if l["reason"] == "system_candidate")
@@ -443,25 +512,28 @@ def ratchet(base, now):
         return bad + ["정답 쪽 집합이 다름: %s → %s" % (sorted(bk), sorted(nk))]
     for dwg in sorted(bk):
         b, n = bk[dwg], nk[dwg]
-        bad += ["정답 %s %s %d → %d (낮아짐)" % (dwg, k, b[k], n[k]) for k in ("instrument_hits", "connector_hits")
-                if n[k] < b[k]]
+        bad += ["정답 %s %s %d → %d (낮아짐)" % (dwg, k, b.get(k, 0), n.get(k, 0)) for k in KEY_HIGHER
+                if n.get(k, 0) < b.get(k, 0)]
         for k, ok in (("tagged", "tagged_correct"), ("continuations", "continuations_correct")):
             if n[k] - n[ok] > b[k] - b[ok]:
                 bad.append("정답 %s 틀린 %s %d → %d (늘어남)" % (dwg, k, b[k] - b[ok], n[k] - n[ok]))
     bp, np_ = base.get("pages") or {}, now.get("pages") or {}
     for seq in sorted(set(bp) & set(np_), key=int):  # 한 쪽의 후퇴가 다른 쪽의 나아짐에 묻히지 않게 쪽마다도 본다
         b, n = bp[seq], np_[seq]
-        bad += ["%s쪽 %s %d → %d (낮아짐)" % (seq, k, b[k], n[k]) for k in PAGE_HIGHER if n.get(k, 0) < b.get(k, 0)]
-        bad += ["%s쪽 %s %d → %d (늘어남)" % (seq, k, b[k], n[k]) for k in PAGE_LOWER if n.get(k, 0) > b.get(k, 0)]
+        bad += ["%s쪽 %s %d → %d (낮아짐)" % (seq, k, b.get(k, 0), n.get(k, 0)) for k in PAGE_HIGHER
+                if n.get(k, 0) < b.get(k, 0)]
+        bad += ["%s쪽 %s %d → %d (늘어남)" % (seq, k, b.get(k, 0), n.get(k, 0)) for k in PAGE_LOWER
+                if n.get(k, 0) > b.get(k, 0)]
     return bad
 
 
 def headline(t):
-    return ("APR1400: 태그 정확 %d/%d(원) · 텍스트 층에 없는 태그 %d · 연결 표기 검출 %d/%d · 없는 대상 %d · 짝 %d"
-            "(정답 짝 %d/%d · 틀린 짝 %d · 후보 %d) · 미확인 %d"
-            % (t["tag_exact"], t["bubbles"], t["tag_not_in_text"], t["connectors_detected"], t["offpage_labels"],
-               t["connector_bad_target"], t["paired"], t.get("pair_key_hit", 0), t.get("pair_key", 0),
-               t.get("pair_key_wrong", 0), t.get("pair_candidates", 0), t["unknowns"]))
+    return ("APR1400: 태그 정확 %d/%d(원) · 텍스트 층에 없는 태그 %d · 더 가까운 다른 밸브 번호 %d · 연결 표기 검출 %d/%d"
+            " · 없는 대상 %d · 짝 %d(정답 짝 %d/%d · 틀린 짝 %d · 후보 %d) · 미확인 %d"
+            % (t["tag_exact"], t["bubbles"], t["tag_not_in_text"], t.get("valve_number_closer_other", 0),
+               t["connectors_detected"], t["offpage_labels"], t["connector_bad_target"], t["paired"],
+               t.get("pair_key_hit", 0), t.get("pair_key", 0), t.get("pair_key_wrong", 0), t.get("pair_candidates", 0),
+               t["unknowns"]))
 
 
 def main(argv=None):
@@ -501,12 +573,19 @@ def main(argv=None):
             w.writerows(res["per_page"])
     print(headline(res["totals"]))
     for dwg, k in res["answer_key"].items():
-        print("  정답 %s: 계기 %d/%d(태그 %d 중 맞음 %d) · 연결 %d/%d(연결점 %d 중 맞음 %d) · 대리 원 %d(정답 안 %d)/정답 %d"
-              " · 대리 연결 표기 %d(정답 안 %d)/정답 %d"
-              % (dwg, k["instrument_hits"], k["instruments"], k["tagged"], k["tagged_correct"], k["connector_hits"],
+        print("  정답 %s: 계기 %d/%d(태그 %d 중 맞음 %d) · 밸브 번호 %s · 연결 %d/%d(연결점 %d 중 맞음 %d)"
+              " · 대리 원 %d(정답 안 %d)/정답 %d · 대리 연결 표기 %d(정답 안 %d)/정답 %d"
+              % (dwg, k["instrument_hits"], k["instruments"], k["tagged"], k["tagged_correct"],
+                 "%d/%d" % (k["valve_number_hits"], k["valve_numbers"]) if k["valve_numbers_keyed"]
+                 else "정답 없음(세지 않은 태그 %d)" % k["valve_number_tags_unscored"], k["connector_hits"],
                  k["connectors"], k["continuations"], k["continuations_correct"], k["proxy_bubbles"],
                  k["proxy_bubbles_in_key"], k["key_instruments"], k["proxy_offpage"], k["proxy_offpage_in_key"],
                  k["key_connectors"]))
+    keyed_numbers = [k for k in res["answer_key"].values() if k["valve_numbers_keyed"]]
+    print("  밸브 번호 정답: %d쪽, %d/%d · 정답지에 밸브 번호가 없어 세지 않은 밸브 번호 태그 %d"
+          % (len(keyed_numbers), sum(k["valve_number_hits"] for k in keyed_numbers),
+             sum(k["valve_numbers"] for k in keyed_numbers),
+             sum(k["valve_number_tags_unscored"] for k in res["answer_key"].values())))
     if pages:
         return 0
     saved = {"totals": res["totals"], "answer_key": res["answer_key"],

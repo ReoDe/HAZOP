@@ -186,8 +186,9 @@ class AprCharRuns(unittest.TestCase):
     # 056쪽 'V2008'과 'V2009'(2.5pt 떨어짐, pdfplumber는 한 낱말로 이음)
     CHARS = (chars_of("V2026", 863.2, 458.2) + chars_of("LO", 674.0, 262.6) + chars_of("V476", 672.4, 265.6)
              + chars_of("V2008", 872.5, 206.6, 2.17) + chars_of("V2009", 886.4, 206.6, 2.17))
-    TL = {"chars": CHARS, "tokens": {"V", "2", "0", "6", "L", "4", "O", "76", "V2008V2009"},
-          "runs": ca.char_runs(CHARS)}
+    RUNS = ca.char_runs(CHARS)
+    TOKENS = {"V", "2", "0", "6", "L", "4", "O", "76", "V2008V2009"}
+    TL = {"chars": CHARS, "tokens": TOKENS, "runs": RUNS, "glued": ca.glued_tokens(TOKENS, RUNS)}
 
     def tagged(self, tag):
         return dict(node("v", 0, 0, 6, 3, tag=tag), evidence={"tag_basis": "valve_number"})
@@ -201,6 +202,25 @@ class AprCharRuns(unittest.TestCase):
         for tag in ("V2027", "V2062", "V20262", "V476L", "LOV476", "V2008V20", "V4", "V2O26"):
             self.assertFalse(ca.tag_in_text(self.tagged(tag), self.TL), tag)
 
+    def test_two_numbers_joined_by_the_word_layer_are_not_a_tag(self):
+        """pdfplumber가 2.5pt 떨어진 두 번호를 이은 낱말 'V2008V2009'는 도면에 한 덩어리로 찍힌 글자가 아니다(F1-5 검토,
+        Codex). 낱말로도 통과하지 않는다."""
+        self.assertEqual(self.TL["glued"], {"V2008V2009"})
+        self.assertFalse(ca.tag_in_text(self.tagged("V2008V2009"), self.TL))
+
+    def test_one_number_split_into_pieces_still_counts(self):
+        """066쪽 V2021: 붙은 글자 묶음이 'V2'·'021'로 갈렸다. '021'은 태그 꼴이 아니라 붙인 낱말로 보지 않는다."""
+        chars = chars_of("V2", 308.9, 564.8) + chars_of("021", 312.3, 564.7)
+        runs = ca.char_runs(chars)
+        tl = {"chars": chars, "tokens": {"V2021"}, "runs": runs, "glued": ca.glued_tokens({"V2021"}, runs)}
+        self.assertEqual((runs, tl["glued"]), ({"V2", "021"}, set()))
+        self.assertTrue(ca.tag_in_text(self.tagged("V2021"), tl))
+
+    def test_a_word_not_made_of_runs_still_counts(self):
+        """붙은 글자 묶음으로 나눌 수 없는 낱말은 그대로 쓴다(낱말 경로를 막지 않는다)."""
+        tl = dict(self.TL, tokens=self.TOKENS | {"FT0110"}, glued=ca.glued_tokens(self.TOKENS | {"FT0110"}, self.RUNS))
+        self.assertTrue(ca.tag_in_text(self.tagged("FT0110"), tl))
+
     def test_runs_do_not_join_lines_or_gaps(self):
         self.assertEqual(ca.char_runs(self.CHARS), {"V2026", "LO", "V476", "V2008", "V2009"})
 
@@ -213,8 +233,9 @@ class AprKeyValveNumbers(unittest.TestCase):
     def ex(self, *nodes):
         return {"nodes": list(nodes)}
 
-    def valve(self, tag, x=100):
-        return dict(node("v%s%d" % (tag, x), x, 100, 6, 3, tag=tag), evidence={"tag_basis": "valve_number"})
+    def valve(self, tag, x=100, category="valve"):
+        return dict(node("v%s%d" % (tag, x), x, 100, 6, 3, tag=tag), evidence={"tag_basis": "valve_number"},
+                    category=category)
 
     def inst(self):
         return dict(node("i", 0, 0, 10, 10, tag="PT-106"), evidence={"tag_basis": "isa_label"})
@@ -236,11 +257,52 @@ class AprKeyValveNumbers(unittest.TestCase):
         del key["valve_numbers"]
         self.assertEqual(self.wrong(self.ex(self.inst(), self.valve("V9999")), key), 0)
 
+    def test_other_kind_at_the_valve_is_not_a_hit(self):
+        """같은 자리·같은 번호라도 밸브가 아닌 노드(축소관 등)는 밸브 번호 정답이 아니다."""
+        s = ca.score_against_key(self.ex(self.inst(), self.valve("V2131", category="inline_component")), self.KEY)
+        self.assertEqual((s["valve_number_hits"], s["tagged"] - s["tagged_correct"]), (0, 1))
+
+    def test_valve_number_hits_are_counted(self):
+        """정답 밸브 번호 가운데 자리가 있는 것의 수와 같은 번호 태그가 붙은 수. 번호를 통째로 빠뜨리면 적중이 준다."""
+        s = ca.score_against_key(self.ex(self.inst(), self.valve("V2131")), self.KEY)
+        self.assertEqual((s["valve_numbers_keyed"], s["valve_numbers"], s["valve_number_hits"]), (1, 1, 1))
+        s = ca.score_against_key(self.ex(self.inst()), self.KEY)
+        self.assertEqual(s["valve_number_hits"], 0)
+
+    def test_unscored_valve_number_tags_are_reported(self):
+        key = dict(self.KEY)
+        del key["valve_numbers"]
+        s = ca.score_against_key(self.ex(self.inst(), self.valve("V9999"), self.valve("V9998", x=200)), key)
+        self.assertEqual((s["valve_numbers_keyed"], s["valve_number_tags_unscored"]), (0, 2))
+
     def test_other_wrong_tags_still_count_where_the_key_has_none(self):
         key = dict(self.KEY)
         del key["valve_numbers"]
         other = dict(node("o", 50, 50, 10, 10, tag="PT-999"), evidence={"tag_basis": "isa_label"})
         self.assertEqual(self.wrong(self.ex(self.inst(), other), key), 1)
+
+
+class AprCloserOtherNumber(unittest.TestCase):
+    """valve_number_closer_other: 밸브 번호 태그를 단 몸통에 그 번호 글자보다 더 가까운 다른 번호 글자가 있으면 센다
+    (025쪽 V1007 자리의 밸브가 V1001을 받던 꼴, F1-5 검토)."""
+
+    def valve(self, tag):
+        return dict(node("v", 100, 100, 6, 3, tag=tag), evidence={"tag_basis": "valve_number"})
+
+    def test_number_further_than_another_number_is_counted(self):
+        numbers = [("V1001", (100, 110, 112, 113)), ("V1007", (100, 104, 112, 107))]
+        self.assertTrue(ca.closer_other_number(self.valve("V1001"), numbers))
+        self.assertFalse(ca.closer_other_number(self.valve("V1007"), numbers))
+
+    def test_number_not_in_the_text_layer_is_left_to_tag_not_in_text(self):
+        self.assertFalse(ca.closer_other_number(self.valve("V9999"), [("V1007", (100, 104, 112, 107))]))
+
+    def test_turned_runs_are_boxed_on_the_page(self):
+        """돌린 글자 묶음의 상자를 쪽 좌표로 되돌린다(아래→위로 읽는 'V1062'가 쪽에서 세로로 길다)."""
+        chars = chars_of("V1062", -110.0, 200.0)  # btt 좌표: x' = -y, y' = x
+        ((text, box),) = ca.run_boxes(chars, "btt")
+        self.assertEqual(text, "V1062")
+        self.assertEqual([round(v, 1) for v in box], [200.0, 101.5, 203.0, 110.0])
 
 
 class AprRatchet(unittest.TestCase):
@@ -265,6 +327,18 @@ class AprRatchet(unittest.TestCase):
     def test_answer_key_drop_fails(self):
         now = self.base()
         now["answer_key"]["D"]["instrument_hits"] = 2
+        self.assertTrue(ca.ratchet(self.base(), now))
+
+    def test_valve_number_hits_drop_fails(self):
+        base = self.base()
+        base["answer_key"]["D"]["valve_number_hits"] = 3
+        now = self.base()
+        now["answer_key"]["D"]["valve_number_hits"] = 0
+        self.assertTrue(ca.ratchet(base, now))
+
+    def test_more_numbers_with_a_closer_other_number_fail(self):
+        now = self.base()
+        now["totals"]["valve_number_closer_other"] = 1
         self.assertTrue(ca.ratchet(self.base(), now))
 
     def test_wrong_tags_on_key_page_fail(self):

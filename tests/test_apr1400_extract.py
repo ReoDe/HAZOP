@@ -20,6 +20,13 @@ FIX = os.path.join(REPO_ROOT, "tests", "fixtures", "apr1400")
 HAS_PDFPLUMBER = importlib.util.find_spec("pdfplumber") is not None
 
 
+def check_apr1400():
+    spec = importlib.util.spec_from_file_location("check_apr1400", os.path.join(REPO_ROOT, "scripts", "check_apr1400.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def load_page(seq):
     key_path = next(os.path.join(FIX, "answer_key", f) for f in os.listdir(os.path.join(FIX, "answer_key"))
                     if f.startswith("%03d_" % seq))
@@ -59,13 +66,15 @@ class InstrumentTags(unittest.TestCase):
         self.assertEqual(kinds, {"TEW 106": None, "PT 106": "transmitter", "TEW 107": None, "TEW 108": None})
 
     def test_no_tag_outside_the_text_layer(self):
-        # 라벨로 쓴 글자(밸브 번호 등)는 texts에서 빠지고 노드의 label_text에 있다
-        words = {w.replace("-", "") for n in self.ex["texts"] for w in (n.get("text") or "").split()}
-        words |= {w.replace("-", "") for n in self.ex["nodes"] for w in (n.get("label_text") or "").split()}
+        """태그는 PDF 텍스트 층에 찍힌 글자다. 추출 결과의 label_text와 견주면 라벨에서 만든 태그는 늘 통과하므로,
+        검사 도구(scripts/check_apr1400.py)가 PDF에서 따로 읽은 낱말·붙은 글자 묶음과 견준다."""
+        ca = check_apr1400()
+        tl = ca.text_layer(os.path.join(FIX, "pdf", self.key["source_file"]))
         bubbles = {it["tag"].replace(" ", "") for it in self.key["instruments"]}
         for n in self.ex["nodes"]:
             if n.get("tag"):
-                self.assertIn(n["tag"].replace("-", ""), words | bubbles, n["tag"])
+                tag = n["tag"].replace("-", "")
+                self.assertTrue(tag in bubbles or ca.tag_in_text(n, tl), n["tag"])
 
 
 def center(box):
@@ -225,7 +234,9 @@ class ValveLabels(unittest.TestCase):
 
     def test_valves_whose_bodies_are_read_carry_their_number(self):
         for seq, (ex, key) in self.pages.items():
-            got = {item["tag"]: (node_at(ex, item["bbox"]) or {}).get("tag") for item in key["valve_numbers"] if item["bbox"]}
+            valves = {"nodes": [n for n in ex["nodes"] if n["category"] == "valve"]}  # 같은 자리 축소관 등은 정답이 아니다
+            got = {item["tag"]: (node_at(valves, item["bbox"]) or {}).get("tag") for item in key["valve_numbers"]
+                   if not item.get("extractor_misses")}
             self.assertEqual(got, {t: t for t in got}, "%03d쪽" % seq)
 
     def test_no_valve_carries_a_number_that_is_not_its_own(self):
@@ -242,8 +253,7 @@ class ValveLabels(unittest.TestCase):
             for item in key["valve_positions"]:
                 node = node_at(ex, item["bbox"])
                 want = {f: item[f] for f in ("normal_position", "fail_position") if f in item}
-                self.assertEqual({f: node["attributes"].get(f) for f in want}, want,
-                                 "%03d쪽 %s" % (seq, item.get("tag") or item.get("number")))
+                self.assertEqual({f: node["attributes"].get(f) for f in want}, want, "%03d쪽 %s" % (seq, item["label"]))
 
     def test_position_words_are_not_tags_or_labels(self):
         for seq, (ex, _) in self.pages.items():

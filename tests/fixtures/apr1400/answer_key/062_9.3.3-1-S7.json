@@ -460,68 +460,140 @@
   },
   {
    "tag": "V1045",
-   "bbox": null,
-   "note": "반만 칠한 LT 밸브(half_filled_valves). 몸통을 밸브로 읽지 못함"
+   "bbox": [
+    945.6,
+    334.3,
+    949.5,
+    342.1
+   ],
+   "note": "반만 칠한 LT 밸브(half_filled_valves). bbox는 삼각형 둘의 상자",
+   "extractor_misses": "몸통을 밸브로 읽지 못함"
   },
   {
    "tag": "V1047",
-   "bbox": null,
-   "note": "반만 칠한 LT 밸브"
+   "bbox": [
+    1028.3,
+    334.3,
+    1032.2,
+    342.1
+   ],
+   "note": "반만 칠한 LT 밸브(half_filled_valves). bbox는 삼각형 둘의 상자",
+   "extractor_misses": "몸통을 밸브로 읽지 못함"
   },
   {
    "tag": "V1063",
-   "bbox": null,
-   "note": "반만 칠한 LT 밸브"
+   "bbox": [
+    184.9,
+    458.3,
+    188.8,
+    466.1
+   ],
+   "note": "반만 칠한 LT 밸브(half_filled_valves). bbox는 삼각형 둘의 상자",
+   "extractor_misses": "몸통을 밸브로 읽지 못함"
   },
   {
    "tag": "V1065",
-   "bbox": null,
-   "note": "반만 칠한 LT 밸브"
+   "bbox": [
+    267.6,
+    460.7,
+    271.5,
+    468.5
+   ],
+   "note": "반만 칠한 LT 밸브(half_filled_valves). bbox는 삼각형 둘의 상자",
+   "extractor_misses": "몸통을 밸브로 읽지 못함"
   },
   {
    "tag": "V1071",
-   "bbox": null,
-   "note": "반만 칠한 LT 밸브"
+   "bbox": [
+    431.8,
+    460.7,
+    435.6,
+    468.5
+   ],
+   "note": "반만 칠한 LT 밸브(half_filled_valves). bbox는 삼각형 둘의 상자",
+   "extractor_misses": "몸통을 밸브로 읽지 못함"
   },
   {
    "tag": "V1073",
-   "bbox": null,
-   "note": "반만 칠한 LT 밸브"
+   "bbox": [
+    514.4,
+    460.7,
+    518.3,
+    468.5
+   ],
+   "note": "반만 칠한 LT 밸브(half_filled_valves). bbox는 삼각형 둘의 상자",
+   "extractor_misses": "몸통을 밸브로 읽지 못함"
   },
   {
    "tag": "V1067",
-   "bbox": null,
-   "note": "반만 칠한 LT 밸브"
+   "bbox": [
+    726.3,
+    460.7,
+    730.2,
+    468.5
+   ],
+   "note": "반만 칠한 LT 밸브(half_filled_valves). bbox는 삼각형 둘의 상자",
+   "extractor_misses": "몸통을 밸브로 읽지 못함"
   },
   {
    "tag": "V1069",
-   "bbox": null,
-   "note": "반만 칠한 LT 밸브"
+   "bbox": [
+    809.0,
+    460.7,
+    812.8,
+    468.5
+   ],
+   "note": "반만 칠한 LT 밸브(half_filled_valves). bbox는 삼각형 둘의 상자",
+   "extractor_misses": "몸통을 밸브로 읽지 못함"
   },
   {
    "tag": "V2126",
-   "bbox": null,
-   "note": "가운데 점이 있는 흰 글로브 밸브와 축소관. 몸통을 밸브로 읽지 못함"
+   "bbox": [
+    751.1,
+    331.4,
+    758.9,
+    335.3
+   ],
+   "note": "가운데 점이 있는 흰 글로브 밸브와 축소관. bbox는 밸브 몸통(삼각형 둘)의 상자",
+   "extractor_misses": "몸통을 밸브로 읽지 못함"
   },
   {
    "tag": "V2125",
-   "bbox": null,
-   "note": "V2126과 같은 모양"
+   "bbox": [
+    751.1,
+    380.0,
+    758.9,
+    383.9
+   ],
+   "note": "가운데 점이 있는 흰 글로브 밸브와 축소관. bbox는 밸브 몸통(삼각형 둘)의 상자",
+   "extractor_misses": "몸통을 밸브로 읽지 못함"
   },
   {
    "tag": "V2130",
-   "bbox": null,
-   "note": "검게 칠한 글로브 밸브(closed_valves). 번호 글자를 옆 축소관이 라벨로 가져감"
+   "bbox": [
+    464.8,
+    399.4,
+    472.6,
+    403.3
+   ],
+   "note": "검게 칠한 글로브 밸브(closed_valves)",
+   "extractor_misses": "번호 글자를 옆 축소관이 라벨로 가져감"
   },
   {
    "tag": "V2120",
-   "bbox": null,
-   "note": "검게 칠한 글로브 밸브(closed_valves). 번호가 축소관 크기 글자와 한 문단으로 묶임"
+   "bbox": [
+    219.0,
+    404.3,
+    226.7,
+    408.2
+   ],
+   "note": "검게 칠한 글로브 밸브(closed_valves)",
+   "extractor_misses": "번호가 축소관 크기 글자와 한 문단으로 묶임"
   }
  ],
  "valve_positions": [
   {
-   "tag": "V2132",
+   "label": "V2132",
    "bbox": [
     536.8,
     423.8,
@@ -531,7 +603,7 @@
    "normal_position": "LC"
   },
   {
-   "tag": "V2122",
+   "label": "V2122",
    "bbox": [
     290.0,
     428.6,
@@ -541,5 +613,5 @@
    "normal_position": "LC"
   }
  ],
- "valve_numbers_method": "2026-11-11 단위 F1-5 세션이 PDF를 300dpi로 렌더한 그림에서 눈으로 읽음. valve_numbers는 쪽의 텍스트 층에서 'V'+숫자 꼴 글자를 모두 찾아 그 자리를 그림으로 보고, 그 번호가 가리키는 밸브와 몸통 상자를 적은 것이다. bbox가 null인 것은 몸통을 밸브로 읽지 못하는 자리(note에 까닭)이고 시험에서 태그를 기대하지 않는다. valve_positions는 밸브 옆 위치 약어(LO·LC·NO·NC, FO·FC·FL)를 그림에서 읽은 것이다. LT는 속성 사전에 없는 값이라 넣지 않음. 사람 확인 전"
+ "valve_numbers_method": "2026-11-11 단위 F1-5 세션이 PDF를 300dpi로 렌더한 그림에서 눈으로 읽음. valve_numbers는 쪽의 텍스트 층에서 'V'+숫자 꼴 글자를 모두 찾아 그 자리를 그림으로 보고, 그 번호가 가리키는 밸브와 몸통 상자를 적은 것이다. bbox는 모두 그림에서 잰 밸브 몸통 상자다(2026-11-12 F1-5 검토로 null이던 12개를 채움). 지금 추출기가 그 번호를 그 밸브에 붙이지 못하는 자리는 extractor_misses에 까닭을 적었다. 정답은 도면 기준이라, 추출기가 고쳐져 번호를 붙이면 그대로 맞은 것이 된다. 시험은 extractor_misses가 없는 것만 태그를 기대한다. valve_positions는 밸브 옆 위치 약어(LO·LC·NO·NC, FO·FC·FL)를 그림에서 읽은 것이다. LT는 속성 사전에 없는 값이라 넣지 않음. 사람 확인 전 valve_positions의 label은 그 밸브를 가리키는 도면 글자(밸브 번호 또는 번호 원의 숫자)다."
 }
