@@ -120,8 +120,13 @@
     375.4,
     294.6
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s008",
@@ -168,7 +173,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s011",
@@ -224,7 +232,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s015",
@@ -381,7 +392,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s026",
@@ -396,7 +410,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s027",
@@ -411,7 +428,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s028",
@@ -442,8 +462,13 @@
     394.4,
     346.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s030",
@@ -490,7 +515,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s033",
@@ -611,8 +639,13 @@
     916.4,
     266.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s041",
@@ -641,7 +674,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s043",
@@ -710,8 +746,13 @@
     502.6,
     400.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s047",
@@ -740,7 +781,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s049",
@@ -761,7 +805,10 @@
    "attributes": {
     "normal_position": "NC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s050",
@@ -876,8 +923,13 @@
     375.4,
     571.2
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s058",
@@ -924,7 +976,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s061",
@@ -950,9 +1005,13 @@
    ],
    "tag": null,
    "attributes": {
-    "fail_position": "FL"
+    "fail_position": "FL",
+    "normal_position": "NC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s063",
@@ -980,7 +1039,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s065",
@@ -992,8 +1054,13 @@
     441.6
    ],
    "tag": null,
-   "attributes": {},
-   "note": "우회관 밸브"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "우회관 밸브",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s066",
@@ -1079,7 +1146,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s072",
@@ -1094,7 +1164,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s073",
@@ -1109,7 +1182,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s074",
@@ -1140,8 +1216,13 @@
     394.4,
     622.4
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s076",
@@ -1201,7 +1282,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s080",
@@ -1303,8 +1387,13 @@
     916.0,
     586.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s087",
@@ -1333,7 +1422,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s089",
@@ -1402,8 +1494,13 @@
     502.6,
     676.8
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s093",
@@ -1451,7 +1548,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s096",
@@ -2486,5 +2586,6 @@
    "target_sheet": "2",
    "target_drawing": null
   }
- ]
+ ],
+ "position_conflicts": []
 }

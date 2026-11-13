@@ -180,7 +180,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s012",
@@ -201,7 +204,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s013",
@@ -261,7 +267,10 @@
     "normal_position": "LO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s016",
@@ -283,7 +292,10 @@
     "normal_position": "LO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s017",
@@ -305,7 +317,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s018",
@@ -327,7 +342,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s019",
@@ -489,7 +507,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s030",
@@ -504,7 +525,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": "불확실: 이름표가 그림에 없음(LO만 적힘, V313으로 추정)"
+   "note": "불확실: 이름표가 그림에 없음(LO만 적힘, V313으로 추정)",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s031",
@@ -564,7 +588,10 @@
     "normal_position": "LO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s034",
@@ -586,7 +613,10 @@
     "normal_position": "LO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s035",
@@ -608,7 +638,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s036",
@@ -630,7 +663,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s037",
@@ -792,7 +828,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s048",
@@ -813,7 +852,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s049",
@@ -873,7 +915,10 @@
     "normal_position": "LO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s052",
@@ -895,7 +940,10 @@
     "normal_position": "LO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s053",
@@ -917,7 +965,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s054",
@@ -939,7 +990,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s055",
@@ -1101,7 +1155,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s066",
@@ -1122,7 +1179,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s067",
@@ -1182,7 +1242,10 @@
     "normal_position": "LO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s070",
@@ -1204,7 +1267,10 @@
     "normal_position": "LO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s071",
@@ -1226,7 +1292,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s072",
@@ -1248,7 +1317,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s073",
@@ -1288,7 +1360,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s075",
@@ -1307,9 +1382,13 @@
     316.4
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s076",
@@ -1381,7 +1460,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s080",
@@ -1400,9 +1482,13 @@
     370.4
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s081",
@@ -2104,7 +2190,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": "불확실: 이름표 넷째 글자에 격자선이 겹침. 왼쪽이 닫힌 곡선이라 V2300으로 읽음. 위치 글자는 LO"
+   "note": "불확실: 이름표 넷째 글자에 격자선이 겹침. 왼쪽이 닫힌 곡선이라 V2300으로 읽음. 위치 글자는 LO",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s130",
@@ -4852,5 +4941,6 @@
    "target_sheet": "1",
    "target_drawing": null
   }
- ]
+ ],
+ "position_conflicts": []
 }

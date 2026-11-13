@@ -52,7 +52,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s003",
@@ -90,9 +93,13 @@
     148.4
    ],
    "attributes": {
-    "fail_position": "FL"
+    "fail_position": "FL",
+    "normal_position": "NC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s005",
@@ -114,7 +121,10 @@
     "normal_position": "LO",
     "fail_position": "FL"
    },
-   "note": "불확실: 몸통 가운데 점이 있음(3방향 여부 확인 못 함)"
+   "note": "불확실: 몸통 가운데 점이 있음(3방향 여부 확인 못 함)",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s006",
@@ -135,7 +145,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠"
+   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s007",
@@ -207,7 +220,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s011",
@@ -228,7 +244,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s012",
@@ -377,7 +396,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s021",
@@ -436,7 +458,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s024",
@@ -476,7 +501,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠"
+   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s026",
@@ -588,7 +616,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s033",
@@ -642,7 +673,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s036",
@@ -740,7 +774,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s042",
@@ -761,7 +798,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s044",
@@ -824,8 +864,13 @@
     772.0,
     367.0
    ],
-   "attributes": {},
-   "note": "불확실: 몸통이 검게 칠해졌으나 LC 등 글자 없음"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 몸통이 검게 칠해졌으나 LC 등 글자 없음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s048",
@@ -846,7 +891,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s049",
@@ -880,7 +928,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s051",
@@ -901,7 +952,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s052",
@@ -941,7 +995,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠"
+   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s055",
@@ -1015,7 +1072,10 @@
     "normal_position": "LO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s060",
@@ -1037,7 +1097,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s061",
@@ -1090,7 +1153,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠"
+   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s065",
@@ -1112,7 +1178,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s066",
@@ -1166,7 +1235,10 @@
     "normal_position": "LO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s069",
@@ -1201,7 +1273,10 @@
     "normal_position": "LO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s071",
@@ -1248,7 +1323,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠"
+   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s074",
@@ -1371,7 +1449,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s081",
@@ -1411,7 +1492,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s083",
@@ -1451,7 +1535,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠"
+   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s086",
@@ -1518,7 +1605,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s090",
@@ -1667,7 +1757,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s099",
@@ -1754,7 +1847,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠"
+   "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s104",
@@ -1789,7 +1885,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s106",
@@ -1912,9 +2011,13 @@
     498.0
    ],
    "attributes": {
-    "fail_position": "FL"
+    "fail_position": "FL",
+    "normal_position": "NC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s113",
@@ -2961,5 +3064,6 @@
    "target_sheet": "3",
    "target_drawing": null
   }
- ]
+ ],
+ "position_conflicts": []
 }

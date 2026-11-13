@@ -79,7 +79,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s009",
@@ -119,7 +122,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s011",
@@ -140,7 +146,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s012",
@@ -158,8 +167,13 @@
     780.0,
     301.5
    ],
-   "attributes": {},
-   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음. 하류는 이동설비용 호스 연결(s501)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음. 하류는 이동설비용 호스 연결(s501)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s013",
@@ -180,7 +194,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s014",
@@ -201,7 +218,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s015",
@@ -222,7 +242,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": "볼 밸브"
+   "note": "볼 밸브",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s016",
@@ -344,8 +367,13 @@
     800.0,
     377.6
    ],
-   "attributes": {},
-   "note": "범례 1.7-1의 자력식 감압 조절기(PRESSURE REDUCING REGULATOR SELF-CONTAINED) 모양. 원 안 번호만 있음"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "범례 1.7-1의 자력식 감압 조절기(PRESSURE REDUCING REGULATOR SELF-CONTAINED) 모양. 원 안 번호만 있음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s024",
@@ -826,8 +854,13 @@
     233.6,
     504.0
    ],
-   "attributes": {},
-   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s056",
@@ -848,7 +881,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s057",
@@ -1015,8 +1051,13 @@
     681.0,
     555.0
    ],
-   "attributes": {},
-   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s068",
@@ -1218,8 +1259,13 @@
     450.4,
     607.0
    ],
-   "attributes": {},
-   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s080",
@@ -2013,5 +2059,6 @@
    "flow": null
   }
  ],
- "continuations": []
+ "continuations": [],
+ "position_conflicts": []
 }

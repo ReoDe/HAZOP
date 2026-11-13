@@ -88,8 +88,13 @@
     399.2
    ],
    "tag": null,
-   "attributes": {},
-   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s006",
@@ -413,8 +418,13 @@
     416.0
    ],
    "tag": null,
-   "attributes": {},
-   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음); 우회 배관"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음); 우회 배관",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s030",
@@ -523,8 +533,13 @@
     594.4
    ],
    "tag": null,
-   "attributes": {},
-   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s038",
@@ -730,8 +745,13 @@
     592.4
    ],
    "tag": null,
-   "attributes": {},
-   "note": "다이어프램 구동기 위 솔레노이드 파일럿(S 상자, IA 공급) 포함. 불확실: AOV/솔레노이드 구분; 본체 검게 칠함"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "다이어프램 구동기 위 솔레노이드 파일럿(S 상자, IA 공급) 포함. 불확실: AOV/솔레노이드 구분; 본체 검게 칠함",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s053",
@@ -861,8 +881,13 @@
     611.2
    ],
    "tag": null,
-   "attributes": {},
-   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음); 우회 배관"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음); 우회 배관",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s063",
@@ -913,8 +938,13 @@
     471.0
    ],
    "tag": null,
-   "attributes": {},
-   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음); 두 계열 연결관"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음); 두 계열 연결관",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s067",
@@ -926,8 +956,13 @@
     443.0
    ],
    "tag": null,
-   "attributes": {},
-   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s068",
@@ -978,8 +1013,13 @@
     553.0
    ],
    "tag": null,
-   "attributes": {},
-   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s072",
@@ -1049,8 +1089,13 @@
     418.6
    ],
    "tag": null,
-   "attributes": {},
-   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s077",
@@ -1062,8 +1107,13 @@
     418.6
    ],
    "tag": null,
-   "attributes": {},
-   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "검게 칠한 밸브(평상시 닫힘으로 보이나 글자 표기 없음)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s078",
@@ -1214,7 +1264,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s090",
@@ -1257,7 +1310,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s093",
@@ -2669,5 +2725,6 @@
    "target_sheet": null,
    "target_drawing": null
   }
- ]
+ ],
+ "position_conflicts": []
 }

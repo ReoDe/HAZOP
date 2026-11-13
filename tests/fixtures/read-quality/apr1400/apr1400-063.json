@@ -92,9 +92,13 @@
     155.7
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s005",
@@ -265,7 +269,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s015",
@@ -389,8 +396,13 @@
     452.0,
     280.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s023",
@@ -408,8 +420,13 @@
     465.0,
     280.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s024",
@@ -427,8 +444,13 @@
     582.0,
     280.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s025",
@@ -468,7 +490,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s027",
@@ -489,7 +514,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s028",
@@ -533,8 +561,13 @@
     529.5,
     305.0
    ],
-   "attributes": {},
-   "note": "불확실: 아래 선이 y≈307 배수선과 점 없이 엇갈림으로 봄(V2023으로 바로 이어짐)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 아래 선이 y≈307 배수선과 점 없이 엇갈림으로 봄(V2023으로 바로 이어짐)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s031",
@@ -552,8 +585,13 @@
     606.6,
     313.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s032",
@@ -584,8 +622,13 @@
     464.5,
     321.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s034",
@@ -603,8 +646,13 @@
     529.5,
     321.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s035",
@@ -651,7 +699,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s038",
@@ -691,7 +742,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s040",
@@ -738,7 +792,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s043",
@@ -756,8 +813,13 @@
     672.6,
     426.6
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s044",
@@ -776,9 +838,13 @@
     415.5
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": "불확실: 다이어프램 구동. 201Q(LETDOWN CONTROL VALVE)와 나란한 짝이라 조절 밸브로 봄"
+   "note": "불확실: 다이어프램 구동. 201Q(LETDOWN CONTROL VALVE)와 나란한 짝이라 조절 밸브로 봄",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s045",
@@ -796,8 +862,13 @@
     731.6,
     426.6
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s046",
@@ -828,8 +899,13 @@
     900.6,
     442.0
    ],
-   "attributes": {},
-   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s048",
@@ -986,7 +1062,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s057",
@@ -1195,8 +1274,13 @@
     875.6,
     500.0
    ],
-   "attributes": {},
-   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s069",
@@ -1214,8 +1298,13 @@
     900.6,
     500.0
    ],
-   "attributes": {},
-   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s070",
@@ -1369,8 +1458,13 @@
     900.6,
     542.0
    ],
-   "attributes": {},
-   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s079",
@@ -1388,8 +1482,13 @@
     832.6,
     578.0
    ],
-   "attributes": {},
-   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s080",
@@ -1420,8 +1519,13 @@
     925.6,
     577.6
    ],
-   "attributes": {},
-   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s082",
@@ -1459,9 +1563,13 @@
     591.5
    ],
    "attributes": {
-    "fail_position": "FL"
+    "fail_position": "FL",
+    "normal_position": "NC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s084",
@@ -1575,8 +1683,13 @@
     875.6,
     602.0
    ],
-   "attributes": {},
-   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s091",
@@ -1594,8 +1707,13 @@
     900.6,
     601.0
    ],
-   "attributes": {},
-   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s092",
@@ -1912,8 +2030,13 @@
     492.6,
     674.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s110",
@@ -1952,8 +2075,13 @@
     557.6,
     674.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s112",
@@ -1972,9 +2100,13 @@
     666.9
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s113",
@@ -1993,9 +2125,13 @@
     666.9
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": "불확실: 다이어프램 구동(S 없음). 조절 밸브인지 그림만으로 모름"
+   "note": "불확실: 다이어프램 구동(S 없음). 조절 밸브인지 그림만으로 모름",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s114",
@@ -2013,8 +2149,13 @@
     878.6,
     678.0
    ],
-   "attributes": {},
-   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s115",
@@ -3068,5 +3209,6 @@
    "target_sheet": "3",
    "target_drawing": null
   }
- ]
+ ],
+ "position_conflicts": []
 }

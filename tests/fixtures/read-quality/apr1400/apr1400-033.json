@@ -245,7 +245,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s016",
@@ -298,7 +301,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s019",
@@ -319,7 +325,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s020",
@@ -410,9 +419,13 @@
     349
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": "불확실: 다이어프램 구동기 + 솔레노이드(S) 파일럿, IA 공급. 조절용인지 확인 못 함"
+   "note": "불확실: 다이어프램 구동기 + 솔레노이드(S) 파일럿, IA 공급. 조절용인지 확인 못 함",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s026",
@@ -433,7 +446,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s027",
@@ -474,7 +490,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s030",
@@ -489,7 +508,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s031",
@@ -542,7 +564,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": "세로 배관, TK02A 위"
+   "note": "세로 배관, TK02A 위",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s034",
@@ -589,7 +614,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": "세로 배관"
+   "note": "세로 배관",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s037",
@@ -629,7 +657,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": "두 계열 토출 사이 연결관(세로)"
+   "note": "두 계열 토출 사이 연결관(세로)",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s039",
@@ -663,7 +694,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s041",
@@ -742,7 +776,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s046",
@@ -770,7 +807,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s048",
@@ -889,7 +929,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s056",
@@ -942,7 +985,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s059",
@@ -963,7 +1009,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s060",
@@ -1010,7 +1059,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s063",
@@ -1058,7 +1110,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s066",
@@ -1089,8 +1144,13 @@
     552.4
    ],
    "tag": null,
-   "attributes": {},
-   "note": "불확실: FILL 아래 검은 원(닫힌 볼 밸브로 읽음)"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: FILL 아래 검은 원(닫힌 볼 밸브로 읽음)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s068",
@@ -1137,7 +1197,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s071",
@@ -1158,7 +1221,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s072",
@@ -1192,7 +1258,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s074",
@@ -1887,5 +1956,6 @@
    "target_sheet": "2",
    "target_drawing": null
   }
- ]
+ ],
+ "position_conflicts": []
 }

@@ -320,6 +320,16 @@ class AnswerKeyFileTest(unittest.TestCase):
                 for s in k["symbols"]:
                     for f, v in (s.get("attributes") or {}).items():
                         self.assertIn(f, rq.SYMBOL_FIELDS, s["id"])
+                    # 위치 속성의 출처(규격 '위치 속성의 출처'): 글자·검게 칠한 몸통·둘 다. 몸통만이면 값은 NC다
+                    for f, src in (s.get("position_sources") or {}).items():
+                        self.assertIn(src, ("text", "shape", "text+shape"), s["id"])
+                        self.assertIn(f, (s.get("attributes") or {}), s["id"])
+                        if src == "shape":
+                            self.assertEqual(s["attributes"][f], "NC", s["id"])
+                for c in k.get("position_conflicts", []):
+                    self.assertIn(c["symbol"], ids)
+                    self.assertEqual(c.get("shape"), "NC")
+                    self.assertIn(c.get("text"), ("NO", "LO", "LT"))
 
 
 if __name__ == "__main__":

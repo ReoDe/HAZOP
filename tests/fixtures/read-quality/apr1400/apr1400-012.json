@@ -66,7 +66,10 @@
     "normal_position": "LC",
     "fail_position": "FC"
    },
-   "note": "몸통 검게 칠함(닫힘), S 구동기"
+   "note": "몸통 검게 칠함(닫힘), S 구동기",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s004",
@@ -101,7 +104,10 @@
     "normal_position": "LC",
     "fail_position": "FC"
    },
-   "note": "몸통 검게 칠함, S 구동기"
+   "note": "몸통 검게 칠함, S 구동기",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s006",
@@ -136,7 +142,10 @@
     "normal_position": "LC",
     "fail_position": "FC"
    },
-   "note": "몸통 검게 칠함, S 구동기"
+   "note": "몸통 검게 칠함, S 구동기",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s008",
@@ -314,7 +323,10 @@
     "normal_position": "LC",
     "fail_position": "FC"
    },
-   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s021",
@@ -336,7 +348,10 @@
     "normal_position": "LC",
     "fail_position": "FC"
    },
-   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s022",
@@ -371,7 +386,10 @@
     "normal_position": "LC",
     "fail_position": "FC"
    },
-   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s024",
@@ -393,7 +411,10 @@
     "normal_position": "LC",
     "fail_position": "FC"
    },
-   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s025",
@@ -441,7 +462,10 @@
     "normal_position": "LC",
     "fail_position": "FC"
    },
-   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s028",
@@ -463,7 +487,10 @@
     "normal_position": "LC",
     "fail_position": "FC"
    },
-   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s029",
@@ -485,7 +512,10 @@
     "normal_position": "LC",
     "fail_position": "FC"
    },
-   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s030",
@@ -507,7 +537,10 @@
     "normal_position": "LC",
     "fail_position": "FC"
    },
-   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s031",
@@ -1197,5 +1230,6 @@
    "target_sheet": "1",
    "target_drawing": null
   }
- ]
+ ],
+ "position_conflicts": []
 }

@@ -109,8 +109,13 @@
     229.0,
     413.0
    ],
-   "attributes": {},
-   "note": "몸통을 검게 칠한 밸브(평상시 닫힘 표시). 위에 손잡이 T와 톱니 모양 덮개가 있는 조작기. 불확실: 조작기 모양이 범례에서 확인되지 않음"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "몸통을 검게 칠한 밸브(평상시 닫힘 표시). 위에 손잡이 T와 톱니 모양 덮개가 있는 조작기. 불확실: 조작기 모양이 범례에서 확인되지 않음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s007",
@@ -164,7 +169,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": "몸통을 검게 칠한 글로브 밸브"
+   "note": "몸통을 검게 칠한 글로브 밸브",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s010",
@@ -204,7 +212,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": "반만 칠한 글로브 밸브"
+   "note": "반만 칠한 글로브 밸브",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s012",
@@ -244,7 +255,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": "반만 칠한 글로브 밸브"
+   "note": "반만 칠한 글로브 밸브",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s014",
@@ -503,8 +517,13 @@
     475.0,
     408.0
    ],
-   "attributes": {},
-   "note": "몸통을 검게 칠한 밸브(평상시 닫힘 표시). 위에 손잡이 T와 톱니 모양 덮개가 있는 조작기. 불확실: 조작기 모양이 범례에서 확인되지 않음"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "몸통을 검게 칠한 밸브(평상시 닫힘 표시). 위에 손잡이 T와 톱니 모양 덮개가 있는 조작기. 불확실: 조작기 모양이 범례에서 확인되지 않음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s030",
@@ -558,7 +577,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": "몸통을 검게 칠한 글로브 밸브"
+   "note": "몸통을 검게 칠한 글로브 밸브",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s033",
@@ -598,7 +620,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": "반만 칠한 글로브 밸브"
+   "note": "반만 칠한 글로브 밸브",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s035",
@@ -638,7 +663,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": "반만 칠한 글로브 밸브"
+   "note": "반만 칠한 글로브 밸브",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s037",
@@ -977,7 +1005,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": "반만 칠한 글로브 밸브"
+   "note": "반만 칠한 글로브 밸브",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s058",
@@ -1017,7 +1048,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": "반만 칠한 글로브 밸브"
+   "note": "반만 칠한 글로브 밸브",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s060",
@@ -1257,7 +1291,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": "반만 칠한 글로브 밸브"
+   "note": "반만 칠한 글로브 밸브",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s074",
@@ -1297,7 +1334,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": "반만 칠한 글로브 밸브"
+   "note": "반만 칠한 글로브 밸브",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s076",
@@ -2326,5 +2366,6 @@
    "target_drawing": null,
    "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
   }
- ]
+ ],
+ "position_conflicts": []
 }

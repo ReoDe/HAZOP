@@ -134,9 +134,9 @@
   },
   "apr1400-008": {
    "attribute": {
-    "correct": 42,
-    "false_pos": 2,
-    "units": 45
+    "correct": 44,
+    "false_pos": 0,
+    "units": 47
    },
    "connection": {
     "correct": 138,
@@ -178,9 +178,9 @@
   },
   "apr1400-016": {
    "attribute": {
-    "correct": 34,
-    "false_pos": 3,
-    "units": 43
+    "correct": 37,
+    "false_pos": 0,
+    "units": 46
    },
    "connection": {
     "correct": 107,
@@ -200,9 +200,9 @@
   },
   "apr1400-025": {
    "attribute": {
-    "correct": 113,
-    "false_pos": 6,
-    "units": 131
+    "correct": 118,
+    "false_pos": 1,
+    "units": 136
    },
    "connection": {
     "correct": 167,
@@ -224,7 +224,7 @@
    "attribute": {
     "correct": 18,
     "false_pos": 0,
-    "units": 21
+    "units": 23
    },
    "connection": {
     "correct": 44,
@@ -244,9 +244,9 @@
   },
   "apr1400-046": {
    "attribute": {
-    "correct": 19,
-    "false_pos": 9,
-    "units": 23
+    "correct": 28,
+    "false_pos": 0,
+    "units": 33
    },
    "connection": {
     "correct": 84,
@@ -266,9 +266,9 @@
   },
   "apr1400-062": {
    "attribute": {
-    "correct": 27,
-    "false_pos": 2,
-    "units": 38
+    "correct": 29,
+    "false_pos": 0,
+    "units": 40
    },
    "connection": {
     "correct": 38,
@@ -288,9 +288,9 @@
   },
   "apr1400-063": {
    "attribute": {
-    "correct": 12,
-    "false_pos": 21,
-    "units": 25
+    "correct": 33,
+    "false_pos": 0,
+    "units": 50
    },
    "connection": {
     "correct": 126,
@@ -332,9 +332,9 @@
   },
   "apr1400-097": {
    "attribute": {
-    "correct": 30,
-    "false_pos": 5,
-    "units": 32
+    "correct": 35,
+    "false_pos": 0,
+    "units": 37
    },
    "connection": {
     "correct": 34,
@@ -354,9 +354,9 @@
   },
   "apr1400-105": {
    "attribute": {
-    "correct": 49,
-    "false_pos": 10,
-    "units": 96
+    "correct": 59,
+    "false_pos": 0,
+    "units": 110
    },
    "connection": {
     "correct": 231,
@@ -376,9 +376,9 @@
   },
   "apr1400-128": {
    "attribute": {
-    "correct": 41,
-    "false_pos": 10,
-    "units": 47
+    "correct": 51,
+    "false_pos": 0,
+    "units": 57
    },
    "connection": {
     "correct": 84,

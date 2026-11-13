@@ -73,7 +73,10 @@
     "normal_position": "NO",
     "fail_position": "FC"
    },
-   "note": "공기 구동(P) 상시 개방 댐퍼"
+   "note": "공기 구동(P) 상시 개방 댐퍼",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s004",
@@ -95,7 +98,10 @@
     "normal_position": "NO",
     "fail_position": "FC"
    },
-   "note": "공기 구동(P) 상시 개방 댐퍼"
+   "note": "공기 구동(P) 상시 개방 댐퍼",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s005",
@@ -527,7 +533,10 @@
     "normal_position": "NO",
     "fail_position": "FC"
    },
-   "note": "공기 구동(P) 상시 개방 댐퍼"
+   "note": "공기 구동(P) 상시 개방 댐퍼",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s036",
@@ -549,7 +558,10 @@
     "normal_position": "NO",
     "fail_position": "FC"
    },
-   "note": "공기 구동(P) 상시 개방 댐퍼"
+   "note": "공기 구동(P) 상시 개방 댐퍼",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s037",
@@ -571,7 +583,10 @@
     "normal_position": "NO",
     "fail_position": "FC"
    },
-   "note": "공기 구동(P) 상시 개방 댐퍼"
+   "note": "공기 구동(P) 상시 개방 댐퍼",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s038",
@@ -807,7 +822,10 @@
     "normal_position": "NC",
     "fail_position": "FC"
    },
-   "note": "전기유압 구동(E/H) 상시 닫힘 댐퍼"
+   "note": "전기유압 구동(E/H) 상시 닫힘 댐퍼",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s054",
@@ -928,7 +946,10 @@
     "normal_position": "NC",
     "fail_position": "FC"
    },
-   "note": "전기유압 구동(E/H) 상시 닫힘 댐퍼"
+   "note": "전기유압 구동(E/H) 상시 닫힘 댐퍼",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s062",
@@ -950,7 +971,10 @@
     "normal_position": "NC",
     "fail_position": "FC"
    },
-   "note": "전기유압 구동(E/H) 상시 닫힘 댐퍼"
+   "note": "전기유압 구동(E/H) 상시 닫힘 댐퍼",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s063",
@@ -1071,7 +1095,10 @@
     "normal_position": "NC",
     "fail_position": "FC"
    },
-   "note": "전기유압 구동(E/H) 상시 닫힘 댐퍼"
+   "note": "전기유압 구동(E/H) 상시 닫힘 댐퍼",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s071",
@@ -2083,5 +2110,6 @@
    "target_sheet": null,
    "target_drawing": null
   }
- ]
+ ],
+ "position_conflicts": []
 }

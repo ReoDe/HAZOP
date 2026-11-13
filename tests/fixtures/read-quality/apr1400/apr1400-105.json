@@ -286,7 +286,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s022",
@@ -305,9 +308,13 @@
     148.9
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": "MAIN STEAM ATMOSPHERIC DUMP VALVE, E/H 구동기 앵글형"
+   "note": "MAIN STEAM ATMOSPHERIC DUMP VALVE, E/H 구동기 앵글형",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s023",
@@ -596,8 +603,13 @@
     661,
     162
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s042",
@@ -718,9 +730,13 @@
     227.5
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": "MSIVBV, 검은 밸브. 불확실: E/H 구동기라 목록 종류를 고르지 못함"
+   "note": "MSIVBV, 검은 밸브. 불확실: E/H 구동기라 목록 종류를 고르지 못함",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s049",
@@ -806,7 +822,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s056",
@@ -825,9 +844,13 @@
     242.5
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": "MAIN STEAM ATMOSPHERIC DUMP VALVE, E/H 구동기 앵글형"
+   "note": "MAIN STEAM ATMOSPHERIC DUMP VALVE, E/H 구동기 앵글형",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s057",
@@ -1116,8 +1139,13 @@
     661,
     255.8
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s076",
@@ -1238,9 +1266,13 @@
     321.3
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": "MSIVBV, 검은 밸브. 불확실: E/H 구동기라 목록 종류를 고르지 못함"
+   "note": "MSIVBV, 검은 밸브. 불확실: E/H 구동기라 목록 종류를 고르지 못함",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s083",
@@ -1313,7 +1345,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s088",
@@ -1332,9 +1367,13 @@
     305.9
    ],
    "attributes": {
-    "fail_position": "FO"
+    "fail_position": "FO",
+    "normal_position": "NC"
    },
-   "note": "AFW PUMP TBN STM SUPPLY V/V"
+   "note": "AFW PUMP TBN STM SUPPLY V/V",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s089",
@@ -1389,7 +1428,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": "불확실: 한쪽이 검게 칠한 밸브. 체크밸브일 수도 있음. 그림 글자는 소문자 'v'"
+   "note": "불확실: 한쪽이 검게 칠한 밸브. 체크밸브일 수도 있음. 그림 글자는 소문자 'v'",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s092",
@@ -1436,7 +1478,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s096",
@@ -1455,9 +1500,13 @@
     395.9
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": "MAIN STEAM ATMOSPHERIC DUMP VALVE, E/H 구동기 앵글형"
+   "note": "MAIN STEAM ATMOSPHERIC DUMP VALVE, E/H 구동기 앵글형",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s097",
@@ -1746,8 +1795,13 @@
     661,
     406.8
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s116",
@@ -1868,9 +1922,13 @@
     472.3
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": "MSIVBV, 검은 밸브. 불확실: E/H 구동기라 목록 종류를 고르지 못함"
+   "note": "MSIVBV, 검은 밸브. 불확실: E/H 구동기라 목록 종류를 고르지 못함",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s123",
@@ -1943,7 +2001,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s128",
@@ -1962,9 +2023,13 @@
     457.5
    ],
    "attributes": {
-    "fail_position": "FO"
+    "fail_position": "FO",
+    "normal_position": "NC"
    },
-   "note": "AFW PUMP TBN STM SUPPLY V/V"
+   "note": "AFW PUMP TBN STM SUPPLY V/V",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s129",
@@ -2019,7 +2084,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": "불확실: 한쪽이 검게 칠한 밸브. 체크밸브일 수도 있음. 그림 글자는 소문자 'v'"
+   "note": "불확실: 한쪽이 검게 칠한 밸브. 체크밸브일 수도 있음. 그림 글자는 소문자 'v'",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s132",
@@ -2066,7 +2134,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s136",
@@ -2085,9 +2156,13 @@
     519.1
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": "MAIN STEAM ATMOSPHERIC DUMP VALVE, E/H 구동기 앵글형"
+   "note": "MAIN STEAM ATMOSPHERIC DUMP VALVE, E/H 구동기 앵글형",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s137",
@@ -2376,8 +2451,13 @@
     661,
     530.4
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s156",
@@ -2498,9 +2578,13 @@
     595.9
    ],
    "attributes": {
-    "fail_position": "FC"
+    "fail_position": "FC",
+    "normal_position": "NC"
    },
-   "note": "MSIVBV, 검은 밸브. 불확실: E/H 구동기라 목록 종류를 고르지 못함"
+   "note": "MSIVBV, 검은 밸브. 불확실: E/H 구동기라 목록 종류를 고르지 못함",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s163",
@@ -5620,5 +5704,6 @@
    "target_sheet": "2",
    "target_drawing": null
   }
- ]
+ ],
+ "position_conflicts": []
 }

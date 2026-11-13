@@ -64,7 +64,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s003",
@@ -85,7 +88,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s004",
@@ -189,7 +195,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s010",
@@ -334,8 +343,13 @@
     401.0,
     222.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s018",
@@ -372,8 +386,13 @@
     422.0,
     215.0
    ],
-   "attributes": {},
-   "note": "불확실: 채운 나비 모양(상시 닫힘 표시로 보임), 상태 글자 없음"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 채운 나비 모양(상시 닫힘 표시로 보임), 상태 글자 없음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s020",
@@ -566,7 +585,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s032",
@@ -588,7 +610,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s033",
@@ -667,7 +692,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s038",
@@ -707,7 +735,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s040",
@@ -760,7 +791,10 @@
    "attributes": {
     "normal_position": "LT"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s043",
@@ -845,7 +879,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s048",
@@ -917,7 +954,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s052",
@@ -1009,7 +1049,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s059",
@@ -1094,7 +1137,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s064",
@@ -1243,8 +1289,13 @@
     605.0,
     334.4
    ],
-   "attributes": {},
-   "note": "불확실: 채운 나비 모양, 상태 글자 없음"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 채운 나비 모양, 상태 글자 없음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s075",
@@ -1275,8 +1326,13 @@
     612.0,
     329.0
    ],
-   "attributes": {},
-   "note": ""
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s077",
@@ -1307,8 +1363,13 @@
     608.4,
     384.0
    ],
-   "attributes": {},
-   "note": "불확실: 채운 나비 모양, 상태 글자 없음"
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 채운 나비 모양, 상태 글자 없음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
   },
   {
    "id": "s079",
@@ -1329,7 +1390,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s080",
@@ -1369,7 +1433,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
   },
   {
    "id": "s082",
@@ -1454,7 +1521,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s087",
@@ -1501,7 +1571,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s090",
@@ -1580,7 +1653,10 @@
     "normal_position": "NO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s094",
@@ -1602,7 +1678,10 @@
     "normal_position": "NC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s095",
@@ -1623,7 +1702,10 @@
    "attributes": {
     "normal_position": "NO"
    },
-   "note": "NO,LT 표기"
+   "note": "NO,LT 표기",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s096",
@@ -1644,7 +1726,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s097",
@@ -1665,7 +1750,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s098",
@@ -1744,7 +1832,10 @@
     "normal_position": "NO",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s102",
@@ -1766,7 +1857,10 @@
     "normal_position": "NC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s103",
@@ -1787,7 +1881,10 @@
    "attributes": {
     "normal_position": "NO"
    },
-   "note": "NO,LT 표기"
+   "note": "NO,LT 표기",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s104",
@@ -1808,7 +1905,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s105",
@@ -1893,7 +1993,10 @@
    "attributes": {
     "normal_position": "LC"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s111",
@@ -1934,7 +2037,10 @@
     "normal_position": "NC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s113",
@@ -1956,7 +2062,10 @@
     "normal_position": "NC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s114",
@@ -1977,7 +2086,10 @@
    "attributes": {
     "normal_position": "NC"
    },
-   "note": "NC,LT 표기"
+   "note": "NC,LT 표기",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s115",
@@ -1998,7 +2110,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s116",
@@ -2046,7 +2161,10 @@
     "normal_position": "NC",
     "fail_position": "FL"
    },
-   "note": "(NOTE 2)"
+   "note": "(NOTE 2)",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s119",
@@ -2068,7 +2186,10 @@
     "normal_position": "NC",
     "fail_position": "FL"
    },
-   "note": "(NOTE 2)"
+   "note": "(NOTE 2)",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s120",
@@ -2116,7 +2237,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s123",
@@ -2138,7 +2262,10 @@
     "normal_position": "LC",
     "fail_position": "FL"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s124",
@@ -2230,7 +2357,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s130",
@@ -2251,7 +2381,10 @@
    "attributes": {
     "normal_position": "LO"
    },
-   "note": ""
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
   },
   {
    "id": "s131",
@@ -4707,5 +4840,6 @@
    "target_sheet": "3",
    "target_drawing": null
   }
- ]
+ ],
+ "position_conflicts": []
 }
