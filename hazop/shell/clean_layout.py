@@ -31,7 +31,7 @@ EPS = 0.5               # 같은 값으로 보는 오차
 INLINE = ("manual_valve", "isolation_valve", "check_valve", "control_valve", "motor_operated_valve", "damper", "reducer", "orifice", "psv",
           "pipe_cap", "vent", "drain", "test_connection")
 INSTRUMENTS = ("transmitter", "indicator", "temperature_element", "controller")     # 원 안에 두 줄을 쓰는 계기: 원이 작으면 표준 크기로 키운다
-INSTR_MIN = 40.0
+INSTR_MIN = 48.0
 FIXED = ("continuation", "annotation")
 BODY_KINDS = ("manual_valve", "isolation_valve", "check_valve", "orifice", "damper", "reducer")      # 대칭 몸통을 가진 인라인 기호(붙은 선이 몸통 가운데를 지나야 한다)      # 크기·자리를 원본대로 두는 기호(오각형 연결 표시 등)
 
