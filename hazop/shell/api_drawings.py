@@ -106,21 +106,6 @@ def _sheet_command(command):
     return handler
 
 
-FILE_SUFFIXES = (".dexpi.xml", ".excluded.json", ".hazop.json")
-
-
-def _existing(out_dir, names):
-    """내보내기가 덮어쓸 파일 이름들(있는 것만, 이름만)."""
-    found = []
-    for n in names:
-        for suf in FILE_SUFFIXES:
-            if os.path.exists(os.path.join(out_dir, n + suf)):
-                found.append(n + suf)
-    if os.path.exists(os.path.join(out_dir, "manifest.json")):
-        found.append("manifest.json")
-    return found
-
-
 def _export(engine, a):
     from hazop.export import dexpi_export
     api = _api()
@@ -139,13 +124,14 @@ def _export(engine, a):
     out_dir = pick("dexpi")
     if not out_dir:
         return {"cancelled": True}
-    existing = _existing(out_dir, [r["name"] for r in rows["drawings"] if r["exportable"] and r["name"] in names])
-    if existing:
-        confirm = engine.hooks.get("confirm_overwrite_files")
-        if confirm is None or not confirm(existing):
-            return {"cancelled": True, "overwrite_refused": True}
     try:
         res = dexpi_export.export_names(names, out_dir)
+        if res.get("status") == "exists":
+            # 엔진이 쓸 파일이 이미 있다고 알려 준 경우에만 묻고, 확인을 받은 뒤에만 덮어쓴다(거절하면 아무것도 쓰지 않았다)
+            confirm = engine.hooks.get("confirm_overwrite_files")
+            if confirm is None or not confirm(list(res.get("existing") or [])):
+                return {"cancelled": True, "overwrite_refused": True}
+            res = dexpi_export.export_names(names, out_dir, overwrite=True)
     except dexpi_export.ExportError as exc:
         raise api.CommandError("failed", "\n".join(exc.reasons)[:900])
     except OSError as exc:
