@@ -157,7 +157,7 @@ class FileTest(TmpRoot):
         g2 = graph("v-2", shift=10)
         ns2 = sn.load(g2)
         moved = res.read(rpath)
-        self.assertEqual(moved["study_nodes_ref"]["graph_version"], "v-2")
+        self.assertEqual(moved["graph_version"], "v-2")
         e = moved["cells"][0]["entries"][0]
         self.assertEqual({k: e[k] for k in ("cause_refs", "consequence_refs", "safeguards", "expectation_refs")},
                          {k: new_entry()[k] for k in ("cause_refs", "consequence_refs", "safeguards", "expectation_refs")})

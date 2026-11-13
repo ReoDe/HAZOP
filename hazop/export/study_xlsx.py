@@ -58,7 +58,7 @@ WORKSHEET_COLUMNS = (
     ("history", "수정 이력 요약", 28), ("ai_origin", "AI 초안 생성", 22),
 )
 NODE_COLUMNS = (("구간 ID", 9), ("표시 이름", 30), ("도면 범위", 14), ("경계 시작", 20), ("경계 끝", 20),
-                ("설계의도", 40), ("구성요소", 50))
+                ("설계의도", 40), ("구성요소", 50), ("확정", 24), ("겹침", 16))
 RECOMMENDATION_COLUMNS = (("번호", 6), ("구간", 22), ("편차", 16), ("권고", 50), ("위험도", 13), ("상태", 12),
                           ("담당", 12), ("기한", 12))
 
@@ -307,7 +307,7 @@ def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, 
     keep = set(node_ids) if scope == "nodes" else {n["node_id"] for n in node_set["nodes"]}
     c = counts(results, keep)
     cells = [x for x in results["cells"] if keep is None or x["node_id"] in keep]
-    ref = results.get("study_nodes_ref") or {}
+    shown = [n for n in node_set["nodes"] if n["node_id"] in keep]
     s = c["by_status"]
     lines = [
         ("HAZOP 분석 결과 (⑤ 구간 × 편차)", None),
@@ -315,8 +315,9 @@ def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, 
     ] + ([("시험 결과", TEST_NOTICE)] if test else []) + [
         ("프로젝트", node_set.get("project_id") or "-"),
         ("도면 목록", ", ".join(view.get("drawing_numbers") or [])),
-        ("그래프 판", ref.get("graph_version") or "-"),
-        ("검토구간 확정 시각", kst(ref["confirmed_at"]) + " KST" if ref.get("confirmed_at") else "-"),
+        ("그래프 판", results.get("graph_version") or (results.get("study_nodes_ref") or {}).get("graph_version")
+         or "-"),
+        ("내보낸 구간", "%d개(잠금 %d)" % (len(shown), sum(1 for n in shown if n.get("state") == "locked"))),
         ("내보낸 시각", kst(now) + " KST"),
         ("검토자", reviewer or ""),
         ("내보낸 범위", SCOPES[scope] + (" (%s)" % ", ".join(node_ids) if scope == "nodes" else "")),
@@ -348,6 +349,10 @@ def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, 
 def _nodes_sheet(ws, view, node_ids, intents, labels):
     header(ws, NODE_COLUMNS)
     r = 1
+    owners = {}
+    for x in view["nodes"]:
+        for m in x["members"]:
+            owners.setdefault(m, []).append(x["node_id"])
     for n in view["nodes"]:
         if node_ids is not None and n["node_id"] not in node_ids:
             continue
@@ -364,8 +369,14 @@ def _nodes_sheet(ws, view, node_ids, intents, labels):
         untagged = len(members) - len([m for m in members if m])
         comp = ", ".join(tagged) + ((" 외 태그 없는 요소 %d" % untagged) if untagged else "")
         intent = (intents or {}).get(n["node_id"]) or ""
+        done = n.get("confirmed") or {}
+        state = ("%s %s KST · %s" % ("잠금" if n.get("state") == "locked" else "확정", kst(done["at"]), done.get("by") or "")
+                 if done.get("at") else "")
+        overlap = sorted({o for m in n["members"] for o in owners.get(m, []) if o != n["node_id"]},
+                         key=lambda x: (len(x), x))
         for c, v in enumerate((n["node_id"], n.get("name") or "", "[%s]" % " → ".join(n.get("drawings_short") or []),
-                               one(b.get("start")), one(b.get("end")), intent, comp), 1):
+                               one(b.get("start")), one(b.get("end")), intent, comp, state,
+                               ("겹침: " + "·".join(overlap)) if overlap else ""), 1):
             put(ws, r, c, v)
     autofilter(ws, len(NODE_COLUMNS), r - 1)
 

@@ -31,7 +31,7 @@ from hazop.app.settings_dialog import ACTION_HELP, ask_terms
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text, plain_label
 from hazop.export import study_xlsx
 from hazop.graph import project
-from hazop.study import ai_cells, claude_cli, claude_http, node_review, nodes, providers, refs, remap, span
+from hazop.study import ai_cells, claude_cli, claude_http, node_review, nodes, providers, refs, span
 from hazop.study import results as res
 
 AI_NOTE = "AI 결과는 모두 초안 · 사람이 수정·승인·기각"
@@ -59,7 +59,12 @@ def design_intent(node, review=None):
     """구간 JSON(data/regions) 중 이 구간의 구성요소(프로젝트 ID)를 모두 포함하는 것의 설계 의도.
     (글, 출처 설명) 또는 None. 구간 JSON은 도면 하나 기준이라 구성요소를 그 도면의 프로젝트 ID로 바꿔 비교한다.
     상위 구간의 설계 의도이므로 화면에 출처와 지식 상태를 함께 적는다.
-    구간 JSON에 없으면 ④ AI 구간 검토에서 사람이 받아들인 설계 의도 초안(review = node_review 묶음)을 쓴다."""
+    구간 JSON에 없으면 ④ AI 구간 검토에서 사람이 받아들인 설계 의도 초안(review = node_review 묶음)을 쓴다.
+    구간 자체에 적은 설계 의도(검토구간 규격 v2 node.design_intent)가 있으면 그것이 먼저다(바뀌면 분석 판이 오름)."""
+    own = node.get("design_intent") or {}
+    if own.get("text"):
+        return own["text"], "이 구간의 설계 의도 · %s가 씀" % {"ai": "AI", "user": "사람", "script": "규칙"}.get(
+            own.get("by"), own.get("by") or "-")
     members = set(node["members"])
     for path in data.list_regions():
         try:
@@ -716,7 +721,6 @@ class ResultsScreen(QWidget):
         self.tick = QTimer(self)
         self.tick.setInterval(1000)
         self.tick.timeout.connect(self._progress_text)
-        self._old_saved = None  # 쓰지 않기로 한 저장본 경로(처음 저장할 때 옆에 보관본으로 옮김)
         self._fps = {}          # {결과 파일 경로: 화면이 읽거나 쓴 내용의 지문}. 저장할 때 그 뒤 바뀐 파일을 덮어쓰지 않게 한다
         self._unsaved = False   # 마지막 저장이 실패해 화면에만 있는 변경이 있음
         lay = QVBoxLayout(self)
@@ -1080,7 +1084,7 @@ class ResultsScreen(QWidget):
         name = self.combo.currentText()
         self.name, self.graph, self.node_set, self.results, self.cell = name or None, None, None, None, None
         self.ctx, self.view = None, {}
-        self.kg, self.kg_reason, self._old_saved = None, None, None
+        self.kg, self.kg_reason = None, None
         self._fps = {}
         self.node_review = None
         self.expectations, self.ref_idx = None, {}
@@ -1107,12 +1111,11 @@ class ResultsScreen(QWidget):
                 self.banner.set_messages("검토구간을 지금 그래프 판에 맞춰 저장하지 못함", [self.ctx.problem])
             if self.ctx.notice:
                 self.banner.set_messages("옛 도면별 검토구간을 옮김", [self.ctx.notice])
-        confirmed = bool(saved) and saved.get("status") == "confirmed"
-        usable = (confirmed and not nodes.is_stale(saved, self.graph)
-                  and not nodes.coverage(saved, self.graph)["uncovered"])
+        confirmed = bool(saved) and bool(nodes.active_nodes(saved))  # 확정·잠금 구간이 하나라도 있으면 연다(구간 밖과 상관없음)
+        usable = confirmed and not nodes.is_stale(saved, self.graph)
         if confirmed and not usable:
-            self.empty.setText("확정된 프로젝트 검토구간이 지금 도면들과 맞지 않습니다(도면이 바뀜 또는 미포함 구성요소). "
-                               "④ 검토구간에서 다시 확정하세요.")
+            self.empty.setText("확정된 프로젝트 검토구간이 지금 도면들과 맞지 않습니다(도면이 바뀜). "
+                               "④ 검토구간에서 다시 확인하세요.")
         if usable:
             self.node_set = saved
             self.view = {n["node_id"]: n for n in self.ctx.view(saved)["nodes"]}
@@ -1176,56 +1179,43 @@ class ResultsScreen(QWidget):
             self.app.toast("옛 도면별 분석 결과를 프로젝트 구간으로 옮겼습니다")
 
     def _saved_results(self, node_set):
-        """저장본이 있고 지금 확정본으로 만든 것이면 그것, 아니면 빈 결과. 쓰지 않은 저장본은 지우지 않고 첫 저장 때
-        보관본으로 옮긴다(사람이 승인·수정한 내용을 덮어쓰지 않음)."""
-        problem = None
+        """저장본(칸마다 판을 맞춘 0.2, results.load_fp)을 돌려준다. 결과 전체를 빈 결과로 바꾸지 않는다(§2.4):
+        칸 문제는 그 칸만 떼어 두고(저장할 때 그대로 다시 씀), 문서 문제나 읽을 수 없는 파일은 읽기 전용으로 연다."""
         path = res.store_path(node_set.get("project_id"), node_set["graph_id"])
         try:
-            doc, self._fps[path] = res.load_fp(node_set)
+            doc, self._fps[path] = res.load_fp(node_set, self.deviations)
         except (OSError, ValueError) as exc:
-            doc, problem = None, "저장된 분석 결과를 읽을 수 없음(%s)" % exc
-        if doc is None and problem is None and not self.fixed_view:  # 옛 결과가 보관본에만 있어도 다시 확정하면 잇는다
-            carried, report = remap.carry_saved(node_set, self.deviations)
-            if carried is not None:
-                self._fps[path] = res.written_fp(carried)
-                self.stale_chip.set_state("이전 확정본 결과를 옮김: 범위 바뀜 %d건(다시 확인) · 옛 파일은 보관본"
-                                          % report["scope_changed_entries"], "warn")
-                self.stale_chip.show()
-                return carried
-        if doc is not None:
-            if res.is_stale(doc, node_set):
-                carried, report = (remap.carry_saved(node_set, self.deviations) if not self.fixed_view
-                                   else remap.carry_results(doc, node_set, self.deviations))
-                if carried is not None:  # 확정 해제 → 다시 확정: 같은 구간은 그대로, 바뀐 구간은 '범위 바뀜'으로 잇는다
-                    if not self.fixed_view:
-                        self._fps[path] = res.written_fp(carried)
-                    self.stale_chip.set_state("이전 확정본 결과를 옮김: 범위 바뀜 %d건(다시 확인) · 옛 파일은 보관본"
-                                              % report["scope_changed_entries"], "warn")
-                    self.stale_chip.show()
-                    return carried
-                problem = "저장된 분석 결과가 이전 검토구간 확정본으로 만든 것"
-                if report.get("to_excluded"):
-                    problem += "(사람이 판정한 항목이 있는 구간 %s이 스크리닝 제외로 감 · ④에서 꺼낸 뒤 다시 확정하면 옮김)" % (
-                        ", ".join(report["to_excluded"][:5]))
-                elif report.get("reason") and remap.latest(node_set):
-                    problem += "(%s)" % report["reason"]
-            else:
-                bad = res.validate(doc, node_set)
-                if bad:
-                    problem = "저장된 분석 결과에 문제 %d건(%s)" % (len(bad), bad[0])
-        if problem:
-            self._old_saved = res.store_path(node_set.get("project_id"), node_set["graph_id"])
-            self.stale_chip.set_state("%s · 빈 결과로 시작(이전 파일은 첫 저장 때 보관본으로 옮김)" % problem, "warn")
+            self.stale_chip.set_state("저장된 분석 결과를 읽을 수 없음(%s) · 읽기 전용(파일은 그대로 둠)" % exc, "warn")
             self.stale_chip.show()
-            return res.empty_results(node_set, self.deviations)
-        self.stale_chip.hide()
-        return doc if doc is not None else self._empty_for(node_set)
+            return dict(self._empty_for(node_set), read_only="저장된 분석 결과를 읽을 수 없음(%s)" % exc)
+        if doc is None:
+            self.stale_chip.hide()
+            return self._empty_for(node_set)
+        doc, problems, cell_problems = res.partition(doc, node_set)
+        notes = []
+        if problems:
+            doc = dict(doc, read_only="분석 결과 파일에 문제 %d건(%s)" % (len(problems), problems[0]))
+            notes.append("%s · 읽기 전용(파일은 그대로 둠)" % doc["read_only"])
+        if cell_problems:
+            notes.append("문제 칸 %d개(따로 둠: %s)" % (len(doc.get("quarantined_cells") or []), cell_problems[0]))
+        if doc.get("archived_cells"):
+            notes.append("옛 결과 %d칸을 보관함 · ④에서 그 구간을 만든 뒤 옮기기" % len(doc["archived_cells"]))
+        changed = sum(1 for c in doc["cells"] if not c.get("hold") for e in c["entries"] if e.get("scope_changed"))
+        if changed:
+            notes.append("범위 바뀜 %d건(다시 확인)" % changed)
+        if notes:
+            self.stale_chip.set_state(" · ".join(notes), "warn")
+            self.stale_chip.show()
+        else:
+            self.stale_chip.hide()
+        return doc
 
     def _empty_for(self, node_set):
         """분석 전 빈 결과. 같은 확정본이면 지난번 것을 그대로 쓴다(1,800구간이면 만드는 데 0.3초, 결과 dict는 고칠 때마다
         새로 만들어지므로 함께 써도 바뀌지 않는다)."""
-        key = (node_set["graph_id"], node_set.get("graph_version"), node_set.get("confirmed_at"),
-               tuple(n["node_id"] for n in node_set["nodes"]), tuple(d["deviation_id"] for d in self.deviations))
+        key = (node_set["graph_id"], node_set.get("graph_version"),
+               tuple((n["node_id"], n.get("rev"), nodes.node_state(n)) for n in node_set["nodes"]),
+               tuple(d["deviation_id"] for d in self.deviations))
         if self._empty[0] != key:
             self._empty = (key, res.empty_results(node_set, self.deviations))
         return self._empty[1]
@@ -1245,16 +1235,10 @@ class ResultsScreen(QWidget):
         """현재 결과를 저장한다. 실패해도 화면의 결과는 유지하고 상태줄·로그에 남긴다."""
         path = self.store_path()
         try:
-            if not self.fixed_view and self._old_saved:
-                if os.path.isfile(self._old_saved):
-                    os.replace(self._old_saved, store_io.unused_name(
-                        "%s.%s%%s.bak.json" % (self._old_saved[:-5], nodes.now_utc().replace(":", ""))))
-                self._fps[self._old_saved] = None
             expect = self._fps.get(path, store_io.ANY)
             if self.fixed_view:  # 시험 값은 시험용 파일에만(실제 결과의 AI 초안을 덮지 않음, D5)
                 res.write(path, self.results, expect)
             else:
-                self._old_saved = None
                 res.save(self.results, self.node_set.get("project_id"), expect)
             self._fps[path] = res.written_fp(self.results)
         except store_io.Conflict:  # 다시 저장해도 같으므로 '저장 실패'로 두지 않는다. 도면을 다시 고르면 최신 결과를 읽는다
@@ -1390,9 +1374,12 @@ class ResultsScreen(QWidget):
             doc, self._fps[path] = res.read_fp(path)
         except (OSError, ValueError):
             doc = None
-        if doc is None or res.is_stale(doc, self.node_set) or res.validate(doc, self.node_set):
-            doc = res.empty_results(self.node_set, self.deviations)
-        return doc
+        if doc is None:
+            return res.empty_results(self.node_set, self.deviations)
+        if doc.get("schema_version") != res.SCHEMA_VERSION:  # 시험 결과는 옛 판이면 다시 만든다(실제 결과가 아님)
+            return res.empty_results(self.node_set, self.deviations)
+        doc, problems, _bad = res.partition(res.reconcile(doc, self.node_set, self.deviations), self.node_set)
+        return res.empty_results(self.node_set, self.deviations) if problems else doc
 
     def store_path(self):
         if not self.node_set:
@@ -2017,10 +2004,11 @@ class ResultsScreen(QWidget):
 
     # ------------------------------------------------------------ 행렬
     def _rows(self):
-        """행렬 행이 되는 구간: 스크리닝 제외 구간은 행이 없고(④에서 확인), 낮음 구간은 맨 아래에 모은다(D6)."""
+        """행렬 행이 되는 구간: 확정·잠금 구간만(적용됨 구간은 ⑤ 행이 없음, §2.2). 스크리닝 제외 구간은 행이 없고(④에서 확인),
+        낮음 구간은 맨 아래에 모은다(D6)."""
         if not self.node_set:
             return []
-        shown = [n for n in self.node_set["nodes"] if _status(n) != "excluded"]
+        shown = [n for n in self.node_set["nodes"] if _status(n) != "excluded" and nodes.is_active(n)]
         return [n for n in shown if _status(n) != "low"] + [n for n in shown if _status(n) == "low"]
 
     def _scope_set(self):
@@ -2343,12 +2331,21 @@ class ResultsScreen(QWidget):
             self.app.status_message(text)
         return e
 
+    def _locked_message(self):
+        """고른 칸을 사람이 고칠 수 없는 이유(잠긴 구간·보관 칸·읽기 전용)를 상태줄에 띄우고 True. 고칠 수 있으면 False."""
+        why = (self.results or {}).get("read_only") or (
+            res.editable_problem(self.results, self.cell[0], self.cell[1], self.node_set) if self.cell else None)
+        if why:
+            self.app.status_message(why)
+        return bool(why)
+
     def set_entry_status(self, status):
         e = self._entry_or_hint(status)
-        if e is None:
+        if e is None or self._locked_message():
             return False
         old, cell = self.results, self.cell
-        self._apply_review(res.set_status(self.results, self.cell[0], self.cell[1], e["entry_id"], status))
+        self._apply_review(res.set_status(self.results, self.cell[0], self.cell[1], e["entry_id"], status,
+                                          node_set=self.node_set))
         dev = next((d["label"] for d in self.deviations if d["deviation_id"] == cell[1]), cell[1])
         self.app.toast("%s × %s 시나리오를 %s했습니다" % (cell[0], dev, STATUS_LABELS[status]), self._undo_to(old, cell))
         return True
@@ -2356,7 +2353,7 @@ class ResultsScreen(QWidget):
     def edit_selected(self, fields=None):
         """fields가 없으면 수정 창을 띄운다. 바뀐 필드가 없으면 저장하지 않는다."""
         e = self._entry_or_hint("edit")
-        if e is None:
+        if e is None or self._locked_message():
             return False
         dlg = None if fields is not None else EntryDialog(e, self, self.ref_context(self.cell[0]) if self.ref_idx else None)
         while True:
@@ -2367,7 +2364,8 @@ class ResultsScreen(QWidget):
             if not fields:
                 return False
             try:
-                new = res.edit_entry(self.results, self.cell[0], self.cell[1], e["entry_id"], fields)
+                new = res.edit_entry(self.results, self.cell[0], self.cell[1], e["entry_id"], fields,
+                                     node_set=self.node_set)
                 break
             except ValueError as exc:
                 self.app.log_error("항목 수정 저장 실패", exc)
@@ -2383,7 +2381,7 @@ class ResultsScreen(QWidget):
     def set_ie_selected(self, hint=None):
         """hint가 없으면 초기사건 판정 창을 띄운다. 항목 상태는 그대로 두고 판정만 사람 확정으로 저장한다."""
         e = self._entry_or_hint("ie")
-        if e is None:
+        if e is None or self._locked_message():
             return False
         if hint is None:
             dlg = IeHintDialog(e, self)
@@ -2391,7 +2389,7 @@ class ResultsScreen(QWidget):
                 return False
             hint = dlg.hint()
         try:
-            new = res.set_ie_hint(self.results, self.cell[0], self.cell[1], e["entry_id"], hint)
+            new = res.set_ie_hint(self.results, self.cell[0], self.cell[1], e["entry_id"], hint, node_set=self.node_set)
         except ValueError as exc:
             self.app.log_error("초기사건 판정 저장 실패", exc)
             QMessageBox.warning(self, "초기사건 판정", "저장할 수 없는 값이 있어 저장하지 않았습니다.")

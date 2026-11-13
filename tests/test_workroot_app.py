@@ -254,7 +254,7 @@ class MovedRootIsReadByTheAppTest(unittest.TestCase):
         return {
             "extractions": sorted(e["name"] for e in data.list_extractions()),
             "regions": sorted(os.path.basename(p) for p in data.list_regions()),
-            "node_set": (idx.node_set["status"], len(idx.node_set["nodes"])),
+            "node_set": (sorted({n["state"] for n in idx.node_set["nodes"]}), len(idx.node_set["nodes"])),
             "entries": sorted(e["cause"] for cell in idx.results["cells"] for e in cell["entries"]),
             "ie_confirmed": sorted(g["name"] for g in doc["groups"].values() if g.get("status") == "confirmed"),
             "ie_groups": len(doc["groups"]),
@@ -272,7 +272,7 @@ class MovedRootIsReadByTheAppTest(unittest.TestCase):
     def test_2_after_the_move_the_app_reads_the_same_content_and_undo_restores(self):
         self.assertEqual(7, len(self.read_before["entries"]))
         self.assertEqual(["주급수 상실"], self.read_before["ie_confirmed"])
-        self.assertEqual("confirmed", self.read_before["node_set"][0])
+        self.assertEqual(["confirmed"], self.read_before["node_set"][0])
         seen = self.counts_before["seen"]
         self.assertEqual((1, 1, 1, 1, 1), (seen["reviews"], seen["study_node_sets_confirmed"], seen["study_results"],
                                            seen["analysis_runs"], seen["regions_with_current_graph"]), seen)

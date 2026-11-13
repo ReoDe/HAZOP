@@ -172,9 +172,9 @@ def annotate(node_set, pg):
 
 
 def continuation_chip(node_id, cont):
-    """화면 칩 문구. 상대 쪽이 같은 구간이면 그 구간 ID, 아니면 상대 구간 ID로 쓴다."""
-    target = cont["to_node_ids"][0] if cont["to_node_ids"] else node_id
-    return "%s → %s에서 계속" % (target, cont["to_drawing"])
+    """화면 칩 문구. 상대 쪽 구간 ID를 모두 적는다(겹친 구간이면 "S7·S9 → 102에서 계속"). 상대가 없으면 이 구간 ID."""
+    targets = cont["to_node_ids"] or [node_id]
+    return "%s → %s에서 계속" % ("·".join(targets), cont["to_drawing"])
 
 
 # ---------------------------------------------------------------- 조회
@@ -185,13 +185,14 @@ def nodes_on_drawing(annotated, drawing_number):
 
 
 def coverage_by_drawing(node_set, pg):
-    """{"project": {covered, total, ratio}, "drawings": {번호: {covered, total, ratio}}}. 도면 연결 구간은 프로젝트에만."""
+    """{"project": {covered, total, ratio, outside}, "drawings": {번호: {…}}}. outside는 구간 밖 구성요소 수(표시용,
+    확정·⑤를 막지 않음). 도면 연결 구간은 프로젝트에만."""
     drawing_of = _sheet_of(pg)
     covered = {m for n in node_set["nodes"] for m in n["members"]}
 
     def cov(ids):
         c = sum(1 for i in ids if i in covered)
-        return {"covered": c, "total": len(ids), "ratio": c / len(ids) if ids else 1.0}
+        return {"covered": c, "total": len(ids), "ratio": c / len(ids) if ids else 1.0, "outside": len(ids) - c}
     every = [n["entity_id"] for n in pg["nodes"]]
     per = {}
     for i in every:
@@ -325,9 +326,15 @@ def migrate_results(old_results, old_sets, project_set, deviations, pg=None):
     excluded = {n["node_id"] for n in project_set["nodes"] if (n.get("screen") or {}).get("status") == "excluded"}
     for old in old_results:
         gid = old["graph_id"]
-        stale = gid not in sets or res.is_stale(old, sets[gid])
+        src = sets.get(gid) or {}
+        if old.get("schema_version") == res.SCHEMA_VERSION:
+            stale = gid not in sets or old.get("graph_version") != src.get("graph_version")
+        else:
+            stale = gid not in sets or old.get("study_nodes_ref") != {"graph_version": src.get("graph_version"),
+                                                                      "confirmed_at": src.get("confirmed_at")}
         old_dev = {d["deviation_id"]: d.get("item_id") for d in old.get("deviations") or []}
-        for c in old["cells"]:
+        kept = [a["cell"] for a in old.get("archived_cells") or [] if isinstance(a, dict) and isinstance(a.get("cell"), dict)]
+        for c in old["cells"] + kept:  # 0.2로 바뀐 도면별 결과의 보관 칸도 옮긴다(승인 항목이 옛 파일에만 남지 않게)
             lid = "%s:%s" % (gid, c["node_id"])
             did = new_dev.get(old_dev.get(c["deviation_id"]))
             if did is None:

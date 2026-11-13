@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hazop.graph import project  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
+from hazop.study import remap  # noqa: E402
 from hazop.study import results as res  # noqa: E402
 from hazop.study import span  # noqa: E402
 from tests.test_project_graph import cont, sheet  # noqa: E402
@@ -62,10 +63,11 @@ class SpanTest(unittest.TestCase):
 
     def test_migration_keeps_human_entries_and_legacy_ids(self):
         a, _, pg, s = two_sheets()
+        s = sn.confirm(s, pg, "검토자", at=AT)  # 도면별 결과는 확정한 프로젝트 집합으로만 옮긴다
         old = sn.propose(a, at=AT)
         entry = {"entry_id": "S1-D01-x", "origin": "ai_draft", "status": "approved", "cause": "c",
                  "ai_basis": {"kg_paths": [["entity-x", "cond-1"]]}}
-        old_res = res.empty_results(old, DEVS)
+        old_res = remap.empty_legacy(old, DEVS)  # 옛 도면별 결과(0.1)
         cell = next(c for c in old_res["cells"] if c["node_id"] == "S1")
         cell.update(state="analyzed", entries=[entry])
         moved = span.migrate_set([old], s)
@@ -83,13 +85,14 @@ class SpanTest(unittest.TestCase):
 
 
     def old_result(self, old, state="analyzed", entries=None):
-        r = res.empty_results(old, DEVS)
+        r = remap.empty_legacy(old, DEVS)
         cell = next(c for c in r["cells"] if c["node_id"] == "S1")
         cell.update(state=state, entries=entries or [])
         return r
 
     def test_stale_source_is_flagged(self):
         a, _, pg, s = two_sheets()
+        s = sn.confirm(s, pg, "검토자", at=AT)  # 도면별 결과는 확정한 프로젝트 집합으로만 옮긴다
         old = sn.propose(a, at=AT)
         r = self.old_result(old, entries=[{"entry_id": "e", "origin": "human", "status": "approved"}])
         r["study_nodes_ref"] = {"graph_version": "v-old", "confirmed_at": None}
@@ -99,6 +102,7 @@ class SpanTest(unittest.TestCase):
 
     def test_deviation_matched_by_item_not_id(self):
         a, _, pg, s = two_sheets()
+        s = sn.confirm(s, pg, "검토자", at=AT)  # 도면별 결과는 확정한 프로젝트 집합으로만 옮긴다
         old = sn.propose(a, at=AT)
         r = self.old_result(old, entries=[{"entry_id": "e", "origin": "human", "status": "approved"}])
         r["deviations"][0]["item_id"] = "other"
@@ -107,9 +111,10 @@ class SpanTest(unittest.TestCase):
 
     def test_widened_scope_does_not_inherit_excluded(self):
         a, _, pg, s = two_sheets()
+        s = sn.confirm(s, pg, "검토자", at=AT)  # 도면별 결과는 확정한 프로젝트 집합으로만 옮긴다
         old = sn.propose(a, at=AT)
         widened = next(k for k, v in span.legacy_map([old], s, pg).items() if not v["exact"])
-        r = res.empty_results(old, DEVS)
+        r = remap.empty_legacy(old, DEVS)
         for c in r["cells"]:
             c["state"] = "excluded"
         out, _ = span.migrate_results([r], [old], s, DEVS, pg)

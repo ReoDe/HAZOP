@@ -164,15 +164,19 @@ class StudyProjectUiTest(unittest.TestCase):
         scr.on_node({"entity_id": "E", "local_id": "L-E"})
         self.assertEqual(scr.picked_entity, "graph-%s/E" % A, "뷰어의 도면 안 ID를 프로젝트 ID로")
 
-    def test_repropose_after_reopen_keeps_the_confirmed_snapshot(self):
-        from hazop.study import nodes
+    def test_repropose_after_reopen_is_refused_while_results_are_held(self):
+        """v2: 확정 해제한 구간의 ⑤ 칸은 구간 ID로 보관되므로, 결과가 있으면 다시 제안(ID를 새로 매김)하지 않는다."""
+        from hazop.study import nodes, results as res
         _win, scr = self.open_study(A)
-        nodes.save(nodes.reopen(nodes.confirm(scr.node_set, scr.graph, "EJ"), at="2026-11-09T00:00:00Z"))
+        first = nodes.confirm(scr.node_set, scr.graph, "EJ")
+        r = res.empty_results(first, res.load_deviations())
+        r["cells"][0].update(state="analyzed", entries=[
+            {"entry_id": "e1", "origin": "ai_draft", "status": "approved", "cause": "c"}])
+        res.save(r, first["project_id"])
+        nodes.save(nodes.reopen(first, at="2026-11-09T00:00:00Z"))
         _win, scr = self.open_study(A)
-        self.assertTrue(scr.repropose(ask=False))
-        prev = nodes.load(scr.graph)["previous"][-1]
-        self.assertTrue(prev["study_nodes_ref"]["confirmed_at"])
-        self.assertTrue(prev["nodes"])
+        self.assertFalse(scr.repropose(ask=False))
+        self.assertIn("보관 중인 ⑤ 결과", scr.msg.text())
 
     def test_confirm_after_reopen_saves_the_carried_results_for_every_screen(self):
         from hazop.study import nodes, results as res
@@ -208,7 +212,7 @@ class StudyProjectUiTest(unittest.TestCase):
         self.assertFalse(scr.exclude_current(" "), "이유 없이 제외로 옮기지 않는다")
         self.assertTrue(scr.exclude_current("검토 범위 밖"))
         self.assertTrue(scr.confirm("EJ", ack=True))
-        self.assertEqual(nodes.load(scr.graph)["status"], "confirmed")
+        self.assertTrue(nodes.all_confirmed(nodes.load(scr.graph)))
 
     def test_screens_do_not_change_the_shared_project_graph(self):
         """프로젝트 그래프는 화면 여럿이 함께 쓴다(캐시). 화면을 돌아도 내용이 그대로여야 한다."""

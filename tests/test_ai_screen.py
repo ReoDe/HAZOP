@@ -475,16 +475,19 @@ class AiScreenTest(unittest.TestCase):
         self.assertFalse(scr.running())
         self.assertIsNone(self.saved())
 
-    def test_stale_saved_results_are_not_shown_and_kept_aside(self):
+    def test_old_01_results_are_converted_and_kept_as_backup(self):
+        """v2: 0.1 결과는 칸 열쇠를 바꿔 이어 쓰고, 덮어쓰기 전에 원본을 .v0.1.bak.json으로 보관한다(결과를 비우지 않음)."""
+        from hazop.study import remap
         from hazop.study import results as res
-        doc = res.empty_results(dict(self.node_set, confirmed_at="2000-01-01T00:00:00Z"), res.load_deviations())
-        path = res.save(doc, self.node_set.get("project_id"))
+        doc = remap.empty_legacy(dict(self.node_set, confirmed_at="2000-01-01T00:00:00Z"), res.load_deviations())
+        path = res.store_path(self.node_set.get("project_id"), self.node_set["graph_id"])
+        res.write(path, doc)
         _win, scr = self.screen(FakeClient())
-        self.assertFalse(scr.stale_chip.isHidden())
         self.assertFalse(res.is_stale(scr.results, self.node_set))
+        self.assertEqual(len(scr.results["cells"]), len(doc["cells"]))
         self.run_and_wait(scr)
         backups = [n for n in os.listdir(os.path.dirname(path)) if n.endswith(".bak.json")]
-        self.assertEqual(len(backups), 1, "이전 저장본은 덮어쓰지 않고 보관")
+        self.assertEqual(len(backups), 1, "옛 저장본은 덮어쓰기 전에 보관")
 
     def test_key_never_written_or_logged(self):
         from hazop.study.claude_http import ClaudeHttpClient

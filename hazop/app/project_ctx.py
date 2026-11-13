@@ -249,7 +249,7 @@ def _old_sets(pg):
         g = {"graph_id": s["graph_id"],
              "project_id": None if pg["project_id"] == project.UNREGISTERED_PROJECT else pg["project_id"]}
         try:
-            old = sn.load(g)
+            old = sn.read_as_is(g)  # 옛 도면별 파일은 0.1 그대로 읽는다(바꾸지 않음)
         except (OSError, ValueError):
             continue
         if old and old.get("graph_id") == s["graph_id"]:
@@ -295,13 +295,15 @@ def migrate_sets(pg):
 def migrate_results(pg, node_set):
     """확정된 프로젝트 집합에 프로젝트 결과가 없고 옛 도면별 결과가 있으면 백업 뒤 옮겨 저장한다.
     (결과, 알림 글) 또는 None. 대응 없는 옛 칸이 있으면 쓰지 않고 (None, 사유)."""
-    if node_set.get("status") != "confirmed" or os.path.isfile(res.store_path(node_set["project_id"], node_set["graph_id"])):
+    if not sn.all_confirmed(node_set) or os.path.isfile(res.store_path(node_set["project_id"], node_set["graph_id"])):
         return None
     olds = _old_sets(pg)
     old_results, files = [], []
     for g, o in olds:
         try:
-            r = res.load(o)
+            r = res.read(res._readable_path(g.get("project_id"), g["graph_id"]))  # 옛 도면별 결과(0.1) 그대로
+            if r is not None and r.get("graph_id") != g["graph_id"]:
+                raise ValueError("다른 도면의 분석 결과")
         except (OSError, ValueError) as exc:  # 일부만 옮기면 남은 결과는 프로젝트 결과가 생긴 뒤 다시 옮길 수 없다
             return None, "옛 분석 결과를 옮기지 않음: %s 결과를 읽을 수 없음(%s). 옛 파일은 그대로 있습니다." % (g["graph_id"], exc)
         if r:

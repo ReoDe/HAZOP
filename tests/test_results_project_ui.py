@@ -207,7 +207,6 @@ class ResultsProjectUiTest(unittest.TestCase):
         sn.save(sn.confirm(sn.reopen(ns, at=AT), pg, "EJ", at="2026-11-10T00:00:00Z"))
         _app, scr = self.screen()
         self.assertEqual([e["status"] for c in scr.results["cells"] for e in c["entries"]], ["approved"])
-        self.assertIn("이전 확정본 결과를 옮김", scr.stale_chip.text())
         saved = res.load(sn.load(pg))
         self.assertFalse(res.is_stale(saved, sn.load(pg)), "옮긴 결과를 바로 저장해 다른 화면도 같은 결과를 읽음")
         self.assertEqual([e["status"] for c in saved["cells"] for e in c["entries"]], ["approved"])

@@ -21,7 +21,8 @@ from hazop.analysis.risk import FREQUENCIES, MATRIX_P86, SEVERITIES
 from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
 from hazop.study import refs
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
+LEGACY_SCHEMA_VERSION = "0.1"
 KIND = "hazop_study_results"
 DEVIATION_CHART = "kosha-p86-2017-deviation-chart.json"  # 이탈후보 폴더
 CELL_STATES = ("not_analyzed", "analyzed", "excluded")
@@ -61,19 +62,99 @@ def load_deviations(path=None):
             for i, item in enumerate(chart["items"])]
 
 
+def _new_cell(node, dev, after_lock=False):
+    cell = {"node_id": node["node_id"], "item_id": dev.get("item_id"), "deviation_id": dev["deviation_id"],
+            "state": "not_analyzed", "entries": [], "node_rev": node.get("rev") or 1, "hold": False}
+    if after_lock:
+        cell["after_lock"] = True
+    return cell
+
+
 def empty_results(node_set, deviations):
-    """모든 칸이 not_analyzed이고 entries가 빈 결과."""
+    """확정·잠금 구간마다 모든 칸이 not_analyzed이고 entries가 빈 결과(0.2). 적용됨 구간은 칸이 없다(§2.4)."""
+    from hazop.study import nodes
     return {
         "schema_version": SCHEMA_VERSION,
         "kind": KIND,
         "graph_id": node_set.get("graph_id"),
-        "study_nodes_ref": {"graph_version": node_set.get("graph_version"),
-                            "confirmed_at": node_set.get("confirmed_at")},
+        "graph_version": node_set.get("graph_version"),
+        "deviation_chart": {"file": DEVIATION_CHART},
         "deviations": [dict(d) for d in deviations],
-        "cells": [{"node_id": n["node_id"], "deviation_id": d["deviation_id"], "state": "not_analyzed", "entries": []}
-                  for n in node_set["nodes"] for d in deviations],
+        "cells": [_new_cell(n, d) for n in node_set["nodes"] if nodes.is_active(n) for d in deviations],
+        "archived_cells": [],
         "ai_log": [],
     }
+
+
+def _touched(cell):
+    return bool(cell.get("entries")) or cell.get("state") not in (None, "not_analyzed")
+
+
+def reconcile(results, node_set, deviations=None, at=None):
+    """0.2 결과를 지금 집합·편차 목록에 맞춘다(같은 입력이면 같은 출력, 할 일이 없으면 results 그대로).
+    - 칸 열쇠는 (node_id, item_id). deviation_id는 지금 편차 목록의 표시 번호로 다시 붙인다(§2.7).
+      지금 목록에 없는 item_id의 칸은 손댄 것만 archived_cells(deviation_removed)로 옮긴다.
+    - 적용됨 구간의 칸은 hold(보관), 확정·잠금 구간의 칸은 hold 해제(§2.4). 집합에 없는 구간의 칸은 그대로 둔다(validate가 칸 문제로 봄).
+    - 확정·잠금 구간의 rev가 칸의 node_rev와 다르면: 표시가 없는 항목에 scope_changed {from_rev, to_rev, at}을 붙이고
+      칸의 node_rev를 지금 rev로 맞춘다(한 번만. 사람이 다시 보면 results.set_status·edit_entry가 표시를 지움).
+    - 확정·잠금 구간에 없는 칸(새 편차, 새로 확정한 구간)을 빈 칸으로 더한다. 잠긴 구간에는 after_lock을 단다."""
+    from hazop.study import nodes
+    devs = deviations if deviations is not None else results.get("deviations") or []
+    by_item = {d["item_id"]: d for d in devs}
+    old_item = {d.get("deviation_id"): d.get("item_id") for d in results.get("deviations") or []}
+    by_node = {n["node_id"]: n for n in node_set["nodes"]}
+    changed = (results.get("schema_version") != SCHEMA_VERSION or "study_nodes_ref" in results
+               or results.get("graph_version") != node_set.get("graph_version")
+               or [d for d in results.get("deviations") or []] != [dict(d) for d in devs]
+               or "archived_cells" not in results)
+    cells, archived, seen = [], list(results.get("archived_cells") or []), set()
+    for cell in results.get("cells") or []:
+        if not isinstance(cell, dict) or not isinstance(cell.get("node_id"), str) \
+                or not isinstance(cell.get("entries", []), list) \
+                or not all(isinstance(e, dict) for e in cell.get("entries", [])):
+            cells.append(cell)  # 형식이 틀린 칸은 그대로 두고 check·partition이 따로 뗀다
+            continue
+        item = cell.get("item_id") or old_item.get(cell.get("deviation_id"))
+        node = by_node.get(cell.get("node_id"))
+        dev = by_item.get(item)
+        if dev is None:
+            changed = True
+            if _touched(cell):
+                archived.append({"cell": dict(cell, item_id=item), "reason": "deviation_removed", "at": at, "by": None})
+            continue
+        new = cell
+        want = {"item_id": item, "deviation_id": dev["deviation_id"]}
+        if node is not None:
+            want["hold"] = not nodes.is_active(node)
+            rev, cur = node.get("rev") or 1, cell.get("node_rev") or 1
+            want["node_rev"] = cur
+            if nodes.is_active(node) and cur != rev:
+                # 그 판으로 맞추는 것은 한 번뿐이다. 그 뒤 사람이 다시 본 항목·새 AI 항목은 다시 표시하지 않는다
+                want["node_rev"] = rev
+                when = at or (node.get("confirmed") or {}).get("at")
+                want["entries"] = [e if e.get("scope_changed") else dict(e, scope_changed={
+                    "from_rev": cur, "to_rev": rev, "at": when}) for e in cell.get("entries") or []]
+        if any(cell.get(k) != v for k, v in want.items()):
+            new = dict(cell, **want)
+            changed = True
+        cells.append(new)
+        seen.add((new["node_id"], item))
+    with_cells = {k[0] for k in seen}
+    for n in node_set["nodes"]:
+        if not nodes.is_active(n):
+            continue
+        had = n["node_id"] in with_cells
+        for d in devs:
+            if (n["node_id"], d["item_id"]) not in seen:
+                cells.append(_new_cell(n, d, after_lock=had and nodes.node_state(n) == "locked"))
+                changed = True
+    if not changed:
+        return results
+    out = {k: v for k, v in results.items() if k != "study_nodes_ref"}
+    out.update(schema_version=SCHEMA_VERSION, graph_version=node_set.get("graph_version"),
+               deviations=[dict(d) for d in devs], cells=cells, archived_cells=archived)
+    out.setdefault("deviation_chart", {"file": DEVIATION_CHART})
+    return out
 
 
 @functools.lru_cache(maxsize=None)
@@ -203,27 +284,49 @@ def matrix_summary(results):
 
 
 def validate(results, node_set=None):
-    """문제 목록(빈 목록이면 통과). node_set을 주면 그 집합에 없는 node_id 참조도 본다."""
-    problems = []
+    """문제 목록(빈 목록이면 통과). node_set을 주면 그 집합에 없는 node_id 참조도 본다(구간 상태는 묻지 않음).
+    문서 문제와 칸 문제를 나눠 받으려면 check를 쓴다."""
+    doc, cells = check(results, node_set)
+    return doc + [p for _i, ps in sorted(cells.items()) for p in ps]
+
+
+def check(results, node_set=None):
+    """(문서 문제 목록, {칸 순번: 칸 문제 목록}) §2.4. 문서 문제는 ⑤를 읽기 전용으로 열 사유이고, 칸 문제는 그 칸만 떼어 둔다."""
+    doc = []
     if results.get("kind") != KIND:
-        problems.append("kind가 %s가 아님" % KIND)
-    deviation_ids = [d.get("deviation_id") for d in results.get("deviations", [])]
-    if len(set(deviation_ids)) != len(deviation_ids):
-        problems.append("deviation_id 중복")
+        doc.append("kind가 %s가 아님" % KIND)
+    devs = results.get("deviations")
+    if not isinstance(devs, list) or not isinstance(results.get("cells"), list):
+        return doc + ["deviations·cells 형식이 맞지 않음"], {}
+    deviation_ids = [d.get("deviation_id") for d in devs if isinstance(d, dict)]
+    if len(set(deviation_ids)) != len(deviation_ids) or len(deviation_ids) != len(devs):
+        doc.append("deviation_id 중복")
+    items = [d.get("item_id") for d in devs if isinstance(d, dict) and d.get("item_id") is not None]
+    if len(set(items)) != len(items):
+        doc.append("편차 목록의 item_id 중복")
+    known = set(deviation_ids)
     node_ids = None if node_set is None else {n["node_id"] for n in node_set["nodes"]}
-    seen_cells, seen_entries = set(), set()
-    for cell in results.get("cells", []):
+    seen_cells, seen_entries, bad = set(), set(), {}
+    for i, cell in enumerate(results["cells"]):
+        problems = []
+        if not isinstance(cell, dict) or not isinstance(cell.get("entries", []), list):
+            bad[i] = ["%d번째 칸: 형식이 맞지 않음" % i]
+            continue
         where = "%s/%s" % (cell.get("node_id"), cell.get("deviation_id"))
-        if (cell.get("node_id"), cell.get("deviation_id")) in seen_cells:
+        key = (cell.get("node_id"), cell.get("item_id") or cell.get("deviation_id"))
+        if key in seen_cells:
             problems.append("%s: 칸 중복" % where)
-        seen_cells.add((cell.get("node_id"), cell.get("deviation_id")))
+        seen_cells.add(key)
         if node_ids is not None and cell.get("node_id") not in node_ids:
             problems.append("%s: 없는 검토구간 참조" % where)
-        if cell.get("deviation_id") not in deviation_ids:
+        if cell.get("deviation_id") not in known:
             problems.append("%s: 없는 편차 참조" % where)
         if cell.get("state") not in CELL_STATES:
             problems.append("%s: state 값 %r" % (where, cell.get("state")))
         for e in cell.get("entries", []):
+            if not isinstance(e, dict):
+                problems.append("%s: 항목 형식이 맞지 않음" % where)
+                continue
             eid = e.get("entry_id")
             if not eid or eid in seen_entries:
                 problems.append("%s: entry_id 없음 또는 중복 %r" % (where, eid))
@@ -246,33 +349,87 @@ def validate(results, node_set=None):
         if run is not None and (not isinstance(run, dict) or run.get("status") not in AI_RUN_STATUSES):
             problems.append("%s: ai_run.status 값 %r" % (where, (run or {}).get("status") if isinstance(run, dict)
                                                          else run))
-    return problems
+        if problems:
+            bad[i] = problems
+    return doc, bad
+
+
+def partition(results, node_set):
+    """(쓸 결과, 문서 문제 목록, 칸 문제 목록). 칸 문제가 있는 칸은 결과의 quarantined_cells로 떼어 두고 나머지 칸을 쓴다.
+    결과 전체를 빈 결과로 바꾸지 않는다(§2.4). 떼어 둔 칸은 저장할 때 그대로 다시 쓴다(write)."""
+    doc, bad = check(results, node_set)
+    if not bad:
+        return results, doc, []
+    out = dict(results)
+    out["cells"] = [c for i, c in enumerate(results["cells"]) if i not in bad]
+    out["quarantined_cells"] = list(results.get("quarantined_cells") or []) + [results["cells"][i] for i in sorted(bad)]
+    return out, doc, [p for i in sorted(bad) for p in bad[i]]
+
+
+def disk_form(results):
+    """파일에 쓸 모양: 떼어 둔 칸(quarantined_cells)을 칸 목록 끝에 그대로 돌려 놓는다."""
+    if not results.get("quarantined_cells"):
+        return {k: v for k, v in results.items() if k != "quarantined_cells"}
+    out = {k: v for k, v in results.items() if k != "quarantined_cells"}
+    out["cells"] = list(results["cells"]) + list(results["quarantined_cells"])
+    return out
 
 
 # ---------------------------------------------------------------- 사람 검토(순수 함수)
 
-def _entry(results, node_id, deviation_id, entry_id):
+def _cell(results, node_id, deviation_id):
     for cell in results["cells"]:
         if cell["node_id"] == node_id and cell["deviation_id"] == deviation_id:
-            for e in cell["entries"]:
-                if e["entry_id"] == entry_id:
-                    return e
-            raise ValueError("없는 항목: %s/%s/%s" % (node_id, deviation_id, entry_id))
+            return cell
     raise ValueError("없는 칸: %s/%s" % (node_id, deviation_id))
 
 
-def set_status(results, node_id, deviation_id, entry_id, status, at=None):
-    """승인(approved)·기각(rejected)·되돌림(revised). proposed로는 바꿀 수 없다(재실행이 덮어쓰게 되므로)."""
+def _entry(results, node_id, deviation_id, entry_id):
+    for e in _cell(results, node_id, deviation_id)["entries"]:
+        if e["entry_id"] == entry_id:
+            return e
+    raise ValueError("없는 항목: %s/%s/%s" % (node_id, deviation_id, entry_id))
+
+
+def editable_problem(results, node_id, deviation_id, node_set=None):
+    """사람이 이 칸의 항목을 고칠 수 없는 이유(없으면 None): 보관 칸(확정 해제한 구간), 잠긴 구간(§5.2)."""
+    if _cell(results, node_id, deviation_id).get("hold"):
+        return "%s는 확정 해제한 구간이라 칸이 보관 중임(④에서 다시 확정한 뒤 고침)" % node_id
+    node = next((n for n in (node_set or {}).get("nodes") or [] if n["node_id"] == node_id), None)
+    if node is not None and node.get("state") == "locked":
+        return "%s는 잠긴 구간이라 항목을 고칠 수 없음(잠금을 먼저 풀 것)" % node_id
+    return None
+
+
+def _guard(results, node_id, deviation_id, node_set):
+    why = editable_problem(results, node_id, deviation_id, node_set)
+    if why:
+        raise ValueError(why)
+
+
+def _clear_scope(out, node_id, deviation_id, e):
+    """사람이 다시 본 항목의 '범위 바뀜'을 지운다."""
+    e.pop("scope_changed", None)
+
+
+def set_status(results, node_id, deviation_id, entry_id, status, at=None, node_set=None):
+    """승인(approved)·기각(rejected)·되돌림(revised). proposed로는 바꿀 수 없다(재실행이 덮어쓰게 되므로).
+    사람이 다시 판정하므로 '범위 바뀜' 표시를 지운다. 보관 칸·잠긴 구간(node_set을 주면)이면 ValueError."""
     if status not in HUMAN_STATUSES:
         raise ValueError("사람이 정할 수 있는 상태가 아님: %r" % status)
+    _guard(results, node_id, deviation_id, node_set)
     out = copy.deepcopy(results)
     e = _entry(out, node_id, deviation_id, entry_id)
     old, e["status"] = e.get("status"), status
-    e.setdefault("history", []).append(store_io.history_row("status", {"from": old, "to": status}, at))
+    row = {"from": old, "to": status}
+    if e.get("scope_changed"):
+        row["scope_changed"] = e["scope_changed"]
+    e.setdefault("history", []).append(store_io.history_row("status", row, at))
+    _clear_scope(out, node_id, deviation_id, e)
     return out
 
 
-def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None):
+def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None, node_set=None):
     """항목 내용을 고친다. 상태는 revised가 된다(승인한 항목을 고치면 다시 승인해야 함).
     severity·frequency를 고치면 risk를 다시 계산한다. history에는 바뀐 필드의 이전 값을 남긴다."""
     unknown = sorted(set(fields) - set(EDITABLE_FIELDS))
@@ -287,6 +444,7 @@ def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None):
     bad = refs.problems(fields) + entry_problems(fields)
     if bad:
         raise ValueError("; ".join(bad))
+    _guard(results, node_id, deviation_id, node_set)
     out = copy.deepcopy(results)
     e = _entry(out, node_id, deviation_id, entry_id)
     before = {k: copy.deepcopy(e.get(k)) for k in sorted(fields) if e.get(k) != fields[k]}
@@ -294,10 +452,11 @@ def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None):
     e["risk"] = risk_of(e.get("severity"), e.get("frequency"))
     old, e["status"] = e.get("status"), "revised"
     e.setdefault("history", []).append(store_io.history_row("edit", {"from": old, "before": before}, at))
+    _clear_scope(out, node_id, deviation_id, e)
     return out
 
 
-def set_ie_hint(results, node_id, deviation_id, entry_id, hint, at=None):
+def set_ie_hint(results, node_id, deviation_id, entry_id, hint, at=None, node_set=None):
     """사람이 초기사건 판정을 정한다. origin human·status confirmed로 저장하고 승인·수정·기각 상태는 그대로 둔다.
     제안(proposed) 항목만 수정(revised)이 된다. 제안 항목은 AI 재실행이 통째로 바꾸므로 사람이 정한 판정이 사라지기 때문이다.
     category는 기준표 코드 또는 None. history에는 op ie_hint, 판정 뒤 항목 상태, 이전 판정을 남긴다."""
@@ -309,6 +468,7 @@ def set_ie_hint(results, node_id, deviation_id, entry_id, hint, at=None):
     bad = ie_hint_problems(new, {c["code"] for c in ie_categories()})
     if bad:
         raise ValueError("; ".join(bad))
+    _guard(results, node_id, deviation_id, node_set)
     out = copy.deepcopy(results)
     e = _entry(out, node_id, deviation_id, entry_id)
     before = copy.deepcopy(e.get("ie_hint"))
@@ -347,17 +507,23 @@ def save(results, project_id, expect=store_io.ANY):
 def save_fp(results, project_id, expect):
     """(쓴 경로, 새 지문). expect(load_fp의 지문, 없던 파일이면 None)와 지금 파일이 다르면 store_io.Conflict."""
     path = store_path(project_id, results["graph_id"])
-    return path, store_io.write_json(path, results, expect)
+    return path, store_io.write_json(path, _writable(results), expect)
 
 
 def written_fp(results):
     """results를 쓴 파일의 지문(직렬화가 결정적이라 다시 읽지 않고 안다)."""
-    return store_io.fingerprint_of(store_io.dump_bytes(results))
+    return store_io.fingerprint_of(store_io.dump_bytes(disk_form(results)))
+
+
+def _writable(results):
+    if results.get("read_only"):
+        raise store_io.Conflict("읽기 전용으로 연 분석 결과라 저장하지 않음: %s" % results["read_only"])
+    return disk_form(results)
 
 
 def write(path, results, expect=store_io.ANY):
     """expect(read_fp의 지문)를 주면 읽은 뒤 바뀐 파일은 쓰지 않고 store_io.Conflict를 낸다."""
-    store_io.write_json(path, results, expect)
+    store_io.write_json(path, _writable(results), expect)
     return path
 
 
@@ -378,15 +544,16 @@ def read_fp(path):
 
 
 def load(node_set):
-    """node_set 도면의 저장본. 없으면 None. 다른 종류·다른 도면의 파일이면 ValueError. 판 비교는 is_stale로 한다.
-    집합이 판 이전된 뒤 옛 판으로 저장된 결과는 읽을 때 같은 규칙으로 이전한다(파일은 nodes.load가 이전할 때만 씀)."""
+    """node_set 도면의 저장본(0.2, reconcile을 거친 것). 없으면 None. 다른 종류·다른 도면의 파일이면 ValueError."""
     return load_fp(node_set)[0]
 
 
-def load_fp(node_set):
+def load_fp(node_set, deviations=None):
     """(load와 같은 문서, save_fp의 expect로 쓸 지문). 없으면 (None, None).
+    0.1 결과는 집합의 legacy로 0.2로 바꾸고(hazop.study.convert), 판 이전 기록이 있으면 kg_paths를 옮기고, reconcile로
+    지금 집합·편차 목록에 맞춘다(메모리에서만. 파일은 사람이 저장할 때 씀).
     옛 자리(no-project)에서 읽었으면 저장할 자리에는 아직 파일이 없으므로 지문은 None이다."""
-    from hazop.study import migrate
+    from hazop.study import convert, migrate
     path = _readable_path(node_set.get("project_id"), node_set["graph_id"])
     doc, fp = read_fp(path)
     if doc is None:
@@ -394,10 +561,24 @@ def load_fp(node_set):
     if doc.get("graph_id") != node_set["graph_id"]:
         raise ValueError("다른 도면의 분석 결과: %s (%s)" % (path, doc.get("graph_id")))
     same_place = path == store_path(node_set.get("project_id"), node_set["graph_id"])
-    return migrate.migrate_results(doc, node_set)[0], fp if same_place else None
+    devs = deviations if deviations is not None else load_deviations()
+    if doc.get("schema_version", LEGACY_SCHEMA_VERSION) == LEGACY_SCHEMA_VERSION:
+        doc = convert.results_from_legacy(doc, node_set, devs)
+        try:  # 0.1 결과를 0.2로 덮어쓰기 전에 원본을 보관한다(§2.5 4단계)
+            convert.keep_original(path)
+        except OSError as exc:
+            doc["read_only"] = "0.1 분석 결과의 원본을 보관하지 못해 저장하지 않음(%s)" % exc
+    elif doc.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("이 앱보다 새 분석 결과 파일(%s)이라 읽지 않음: %s" % (doc.get("schema_version"), path))
+    else:
+        doc = migrate.migrate_results(doc, node_set)[0]
+    doc = reconcile(doc, node_set, devs)
+    if node_set.get("read_only") and not doc.get("read_only"):
+        doc = dict(doc, read_only="검토구간을 읽기 전용으로 열어 분석 결과도 저장하지 않음(%s)" % node_set["read_only"])
+    return doc, fp if same_place else None
 
 
 def is_stale(results, node_set):
-    """결과를 만든 검토구간 확정본(graph_version, confirmed_at)과 현재 확정본이 다르면 True."""
-    return results.get("study_nodes_ref") != {"graph_version": node_set.get("graph_version"),
-                                              "confirmed_at": node_set.get("confirmed_at")}
+    """0.1 결과(집합 확정본 열쇠 study_nodes_ref를 가진 것)면 True. 0.2 결과는 칸마다 node_rev로 판을 보므로(reconcile)
+    결과 전체가 옛것이 되는 일이 없다(§2.4)."""
+    return results.get("schema_version") != SCHEMA_VERSION or "study_nodes_ref" in results

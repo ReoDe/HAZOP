@@ -393,13 +393,19 @@ def save_corrections(name, ops, by, expect=store_io.ANY):
     else:
         out["kg_error"] = "프로젝트에 등록되지 않은 도면이라 지식그래프를 다시 만들지 않음"
     recheck = []
-    node_set = study_nodes.load(graph)
+    try:  # 도면별 저장본은 바꾸지 않고 읽는다(0.1 변환·판 이전은 그 집합을 여는 화면이 함. 옛 도면별 파일을 건드리지 않게)
+        node_set = study_nodes.read_as_is(graph)
+    except ValueError:
+        node_set = None
     if node_set is not None and study_nodes.is_stale(node_set, graph):
-        recheck.append("④ 검토구간 %s이 고치기 전 도면 기준입니다. 재확인이 필요합니다."
-                       % ("확정본" if node_set.get("status") == "confirmed" else "저장본"))
+        confirmed = node_set.get("status") == "confirmed" or study_nodes.active_nodes(
+            node_set if node_set.get("schema_version") == study_nodes.SCHEMA_VERSION else None)
+        recheck.append("④ 검토구간 %s이 고치기 전 도면 기준입니다. 재확인이 필요합니다." % ("확정본" if confirmed else "저장본"))
     res_path = study_results.store_path(graph.get("project_id"), graph["graph_id"])
     if os.path.isfile(res_path):
-        ref = (read_json(res_path).get("study_nodes_ref") or {}).get("graph_version")
+        saved = read_json(res_path)
+        ref = saved.get("graph_version") if "graph_version" in saved else (saved.get("study_nodes_ref") or {}).get(
+            "graph_version")
         if ref != graph["graph_version"]:
             recheck.append("⑤ 분석 결과가 고치기 전 도면 기준입니다. 재확인이 필요합니다.")
     out["recheck"] = recheck

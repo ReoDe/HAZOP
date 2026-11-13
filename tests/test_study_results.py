@@ -35,7 +35,8 @@ class ResultsTest(unittest.TestCase):
         res = sr.empty_results(self.nodes, self.devs)
         self.assertEqual(len(res["cells"]), len(self.nodes["nodes"]) * 44)
         self.assertTrue(all(c["state"] == "not_analyzed" and c["entries"] == [] for c in res["cells"]))
-        self.assertEqual(res["study_nodes_ref"], {"graph_version": "v-1", "confirmed_at": AT})
+        self.assertEqual((res["schema_version"], res["graph_version"]), ("0.2", "v-1"))
+        self.assertTrue(all(c["node_rev"] == 1 and c["hold"] is False and c["item_id"] for c in res["cells"]))
         self.assertEqual(sr.validate(res, self.nodes), [])
         summary = sr.matrix_summary(res)
         self.assertEqual(summary["S1"]["D01"], {"state": "not_analyzed", "scenarios": 0, "max_risk": None,

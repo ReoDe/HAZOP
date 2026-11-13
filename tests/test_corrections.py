@@ -485,7 +485,7 @@ class CorrectionsTest(unittest.TestCase):
         self.assertEqual(len(out["recheck"]), 2)
         self.assertIn("확정본", out["recheck"][0])
         self.assertIn("분석 결과", out["recheck"][1])
-        for p, b in saved.items():
+        for p, b in saved.items():  # 고치기 저장은 저장본을 읽기만 한다
             with open(p, "rb") as fh:
                 self.assertEqual(fh.read(), b, p)
         again = data.save_corrections(NAME, ops, "검토자")
