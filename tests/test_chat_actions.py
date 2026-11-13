@@ -327,7 +327,7 @@ class ApprovalTest(Harness):
         self.assertEqual(self.planner.approve(fresh, "검토자A")["result"], "ok")
         self.assertEqual(self.names_called(), ["nodes.confirm", "kg.rebuild"])
         # 그 사이 대상이 잠기면 다시 띄울 때 거절
-        p = self.plan([self.act("export.excel"), self.act("nodes.unconfirm", node_id="S3")], answer="a-2")
+        p = self.plan([self.act("export.excel"), self.act("nodes.unconfirm", node_ids=["S3"])], answer="a-2")
         self.planner.run(p.run[0])
         self.state.node_set["nodes"][2]["state"] = "locked"
         self.assertEqual(self.planner.reissue(p.confirm[0]).klass, "rejected")
@@ -361,12 +361,12 @@ class ReviewFixTest(Harness):
         def refuse(args, call):
             self.calls.append(("nodes.apply", args, call))
             return {"ok": False, "command": "create", "set_rev": 10, "batch_id": None, "node_ids": [],
-                    "refused": [{"target": "1번째 add", "reason": "도면에 없는 태그: ZZ-999"}]}
+                    "refused": [{"target": "1번째 add", "code": "rule", "reason": "도면에 없는 태그: ZZ-999"}]}
         self.planner.executors["nodes.apply"] = refuse
         p = self.plan([self.act("nodes.apply", set_rev=10, ops=[dict(add_op(1), name="ZZ-999 pump")])])
         out = self.planner.run(p.run[0])
         self.assertEqual((out["result"], out["code"]), ("rejected", "engine_refused"))
-        self.assertEqual(out["refused"], [{"target": "1번째 add", "reason": "도면에 없는 태그: ZZ-999"}])
+        self.assertEqual(out["refused"], [{"target": "1번째 add", "code": "rule", "reason": "도면에 없는 태그: ZZ-999"}])
         self.assertEqual(self.planner.exec_seq, 0)
         self.assertEqual(self.planner.conv_batches, set())
         self.assertIsNone(self.planner.last_add_turn)
@@ -450,10 +450,22 @@ class ReviewFixTest(Harness):
         self.assertEqual(out["item"].klass, A.CONFIRM)
         self.assertEqual(self.calls, [])
 
-    def test_unconfirm_lock_single_node(self):
-        p = self.plan([self.act("nodes.unconfirm", node_id="S3"), self.act("nodes.lock", node_id="S3"),
-                       self.act("nodes.lock", node_ids=["S3"])])
+    def test_unconfirm_lock_take_node_ids(self):
+        """엔진(a9c0193)과 같이 node_ids 목록. 구간 하나(node_id)는 서명 밖이라 거절."""
+        p = self.plan([self.act("nodes.unconfirm", node_ids=["S3"]), self.act("nodes.lock", node_ids=["S3"]),
+                       self.act("nodes.lock", node_id="S3")])
         self.assertEqual((len(p.confirm), len(p.rejected)), (2, 1))
+
+    def test_engine_kwargs(self):
+        """누가 썼나(author)·누가 눌렀나(confirmed_by): 구간 편집은 확인해도 ai, 확정·잠금은 누른 사람이 있으면 user."""
+        call = A.Call("SNP", "q-1", "글", ["k"], "confirm", "검토자A", action="nodes.apply")
+        self.assertEqual({k: v for k, v in call.engine_kwargs().items() if k != "request"},
+                         {"author": "ai", "confirmed_by": "검토자A"})
+        self.assertNotIn("confirmed_by", call.engine_request())
+        self.assertNotIn("author", call.engine_request())
+        for name in ("nodes.confirm", "nodes.unconfirm", "nodes.lock"):
+            self.assertEqual(A.Call("SNP", "q", "", [], "confirm", "검토자A", action=name).engine_author(), "user")
+            self.assertEqual(A.Call("SNP", "q", "", [], "auto", None, action=name).engine_author(), "ai")
 
     def test_tokens_live_only_in_planner(self):
         """웹 화면·모델이 확인 표지나 실행 표를 만들어 낼 수 없다(검토 8)."""
@@ -545,47 +557,137 @@ class InjectionTest(Harness):
 
 
 class RealEngineTest(unittest.TestCase):
-    """R2를 실제 엔진(hazop.study.node_commands.execute)으로: 도면에 없는 태그로 구간을 만들면 엔진이 거절하고, 기록도 거절이다."""
+    """동작 층에 실제 엔진(hazop.study.node_commands.execute)을 node_executors로 잇는다(a9c0193 서명)."""
 
-    def test_r2_real_engine(self):
+    def setUp(self):
         from unittest import mock
-        from tests.test_study_node_tools import snp_graph
-        from hazop.study import node_commands, nodes as sn
-        pg = snp_graph()
-        tmp = tempfile.mkdtemp(prefix="hazop-chat-actions-r2-")
-        records = []
-        try:
-            with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": tmp}):
-                def snap():
-                    s = sn.load(pg) or sn.new_set(pg)
-                    return A.Snapshot("SNP", node_set=s, graph_ids=frozenset(n["entity_id"] for n in pg["nodes"]))
+        from tests.test_study_node_tools import snp_graph, DEVS
+        from hazop.study import node_commands, node_tools, nodes as sn, results as res
+        self.nc, self.nt, self.sn = node_commands, node_tools, sn
+        self.pg = snp_graph()
+        tmp = tempfile.mkdtemp(prefix="hazop-chat-actions-engine-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        for p in (mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": tmp}),
+                  mock.patch.object(res, "load_deviations", lambda path=None: copy.deepcopy(DEVS))):
+            p.start()
+            self.addCleanup(p.stop)
+        self.records = []
+        self.pl = A.ActionPlanner("SNP", self.snap, A.node_executors(self.pg, node_commands.execute),
+                                  record=lambda pid, **kw: self.records.append(kw) or {"status": "written"})
 
-                def create(args, call):   # 새 화면 연결부의 꼴: 출처는 call.origin(늘 ai), 요청은 call.engine_request()
-                    items = [{k: v for k, v in op.items() if k != "op"} for op in args["ops"]]
-                    return node_commands.execute(pg, "create", {"items": items}, by=call.confirmed_by or "AI",
-                                                 set_rev=args["set_rev"], origin=call.origin,
-                                                 request=call.engine_request())
+    def ns(self):
+        return self.sn.load(self.pg) or self.sn.new_set(self.pg)
 
-                pl = A.ActionPlanner("SNP", snap, {"nodes.apply": create},
-                                     record=lambda pid, **kw: records.append(kw) or {"status": "written"})
-                members = sorted(n["entity_id"] for n in pg["nodes"])[:3]
-                p = pl.plan("a-1", [{"action": "nodes.apply", "args": {"set_rev": snap().node_set["set_rev"], "ops": [
-                    {"op": "add", "members": members, "name": "ZZ-999 펌프 구간"}]}}], 1, "q-1", "구간 만들어 줘")
-                out = pl.run(p.run[0])
-                self.assertEqual((out["result"], out["code"]), ("rejected", "engine_refused"), out)
-                self.assertEqual(pl.exec_seq, 0)
-                self.assertEqual(records[-1]["result"], "rejected")
-                self.assertEqual(len((sn.load(pg) or {"nodes": []})["nodes"]), 0)
-                p = pl.plan("a-2", [{"action": "nodes.apply", "args": {"set_rev": snap().node_set["set_rev"], "ops": [
-                    {"op": "add", "members": members, "name": "펌프 구간"}]}}], 2, "q-2", "다시")
-                out = pl.run(p.run[0])
-                self.assertEqual(out["result"], "ok", out)
-                self.assertEqual(pl.exec_seq, 1)
-                saved = sn.load(pg)["nodes"]
-                self.assertEqual([(n["origin"], n["batch_id"]) for n in saved], [("ai", out["batch_id"])])
-                self.assertEqual(records[-1]["batch_id"], out["batch_id"])
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
+    def snap(self):
+        return A.Snapshot("SNP", node_set=self.ns(), graph_ids=frozenset(n["entity_id"] for n in self.pg["nodes"]))
+
+    def node(self, nid):
+        return {n["node_id"]: n for n in self.ns()["nodes"]}[nid]
+
+    def apply(self, answer, turn, ops, text="구간"):
+        return self.pl.plan(answer, [{"action": "nodes.apply", "args": {"set_rev": self.ns()["set_rev"], "ops": ops}}],
+                            turn, turn, text)
+
+    def test_r2_engine_refusal_is_rejected(self):
+        members = sorted(n["entity_id"] for n in self.pg["nodes"])[:3]
+        out = self.pl.run(self.apply("a-1", "q-1", [{"op": "add", "members": members, "name": "ZZ-999 펌프 구간"}]).run[0])
+        self.assertEqual((out["result"], out["code"]), ("rejected", "engine_refused"), out)
+        self.assertEqual(out["refused"][0]["code"], "rule")
+        self.assertEqual((self.pl.exec_seq, self.records[-1]["result"], len(self.ns()["nodes"])), (0, "rejected", 0))
+        out = self.pl.run(self.apply("a-2", "q-2", [{"op": "add", "members": members, "name": "펌프 구간"}]).run[0])
+        self.assertEqual(out["result"], "ok", out)
+        self.assertEqual([(n["origin"], n["batch_id"]) for n in self.ns()["nodes"]], [("ai", out["batch_id"])])
+        self.assertEqual(self.records[-1]["batch_id"], out["batch_id"])
+
+    def test_flow_representative_edit_rest_undo(self):
+        """§9.1 흐름: 대표 구간 5개 → 사람이 하나 고침 → 나머지(확인) → 되돌리기, 그리고 확정·잠금까지 실제 엔진으로."""
+        cands = self.nt.make_candidates(self.pg, self.ns(), granularity="normal", limit=30)["candidates"]
+        self.assertGreaterEqual(len(cands), 12)
+
+        def add(cs):
+            return [{"op": "add", "cand_id": c["cand_id"], "name": "구간 %d" % i} for i, c in enumerate(cs, 1)]
+
+        # 1. 대표 구간 5개: 바로 실행, AI 묶음 하나
+        out = self.pl.run(self.apply("a-1", "q-1", add(cands[:5]), "대표 구간 만들어 줘").run[0])
+        self.assertEqual(out["result"], "ok", out)
+        rep_batch, rep_ids = out["batch_id"], out["targets"]
+        self.assertEqual(len(rep_ids), 5)
+        self.assertEqual(A.pending_ai(self.snap()), self.nt.pending_ai(self.ns()))
+        self.assertEqual(A.pending_ai(self.snap()), 5)
+        # 같은 질문에서 하나 더: 상한을 넘고 같은 사용자 메시지라 '나머지'로도 못 감 → 거절
+        p = self.apply("a-1b", "q-1", add(cands[5:6]))
+        self.assertEqual((len(p.run), len(p.confirm), len(p.rejected)), (0, 0, 1))
+
+        # 2. 사람이 화면에서 하나를 고침(엔진에 author user)
+        human = self.nc.execute(self.pg, "rename", {"node_id": rep_ids[0], "name": "충전펌프 토출"}, author="user",
+                                confirmed_by="홍길동", set_rev=self.ns()["set_rev"])
+        self.assertTrue(human["ok"], human)
+        self.assertEqual(A.pending_ai(self.snap()), self.nt.pending_ai(self.ns()))
+        self.assertEqual(A.pending_ai(self.snap()), 4)
+
+        # 3. 나머지 6개: 4 + 6 > 5라 확인 상자. 사람이 누르면 엔진이 '나머지'로 받고, 글은 여전히 AI 것
+        p = self.apply("a-2", "q-2", add(cands[5:11]), "나머지도 만들어 줘")
+        self.assertEqual((len(p.run), len(p.confirm)), (0, 1))
+        self.assertEqual(p.confirm[0].stage, "rest")
+        out = self.pl.approve(p.confirm[0], "홍길동")
+        self.assertEqual(out["result"], "ok", out)
+        rest_batch, rest_ids = out["batch_id"], out["targets"]
+        self.assertEqual(len(rest_ids), 6)
+        ns = self.ns()
+        self.assertEqual({self.node(i)["origin"] for i in rest_ids}, {"ai"})          # R6: 확인했어도 AI 출처
+        batches = {b["batch_id"]: b for b in ns["batches"]}
+        self.assertEqual(batches[rest_batch]["origin"], "ai")
+        self.assertEqual(batches[rep_batch]["human_seen"]["by"], "홍길동")         # 앞 AI 묶음은 사람이 본 것으로
+        self.assertEqual(A.pending_ai(self.snap()), self.nt.pending_ai(ns))
+        self.assertEqual(self.records[-1]["confirmed_by"], "홍길동")
+
+        # 4. 되돌리기: 이번 대화의 AI 묶음(나머지)은 바로 되돌린다
+        p = self.pl.plan("a-3", [{"action": "nodes.undo", "args": {"batch_id_to_undo": rest_batch,
+                                                                   "set_rev": self.ns()["set_rev"]}}],
+                         "q-3", "q-3", "방금 것 되돌려 줘")
+        self.assertEqual(len(p.run), 1, p)
+        out = self.pl.run(p.run[0])
+        self.assertEqual(out["result"], "ok", out)
+        self.assertEqual(sorted(n["node_id"] for n in self.ns()["nodes"]), sorted(rep_ids))
+        self.assertEqual(self.records[-1]["undo_of"], rest_batch)
+        # 사람이 고친 구간이 든 대표 묶음: 앱이나 엔진이 막는다. 어느 쪽이든 성공으로 기록하지 않고 구간은 그대로
+        p = self.pl.plan("a-4", [{"action": "nodes.undo", "args": {"batch_id_to_undo": rep_batch,
+                                                                   "set_rev": self.ns()["set_rev"]}}],
+                         "q-4", "q-4", "대표도 되돌려 줘")
+        if p.run:
+            self.assertEqual(self.pl.run(p.run[0])["result"], "rejected")
+        elif p.confirm:
+            self.assertEqual(self.pl.approve(p.confirm[0], "홍길동")["result"], "rejected")
+        else:
+            self.assertEqual(len(p.rejected), 1)
+        self.assertEqual(len(self.ns()["nodes"]), 5)
+
+        # 5. 확정은 사람 판단: 확인 상자를 누른 사람이 엔진에 author user로 간다. 잠금은 분석 안 한 칸이 있어 엔진이 거절
+        target = rep_ids[1]
+        p = self.pl.plan("a-5", [{"action": "nodes.confirm", "args": {"node_ids": [target]}},
+                                 {"action": "nodes.lock", "args": {"node_ids": [target]}}],
+                         "q-5", "q-5", "확정하고 잠가 줘")
+        self.assertEqual((len(p.confirm), len(p.rejected)), (1, 1), p)   # 아직 확정 전이라 잠금은 앱이 먼저 거절
+        out = self.pl.approve(p.confirm[0], "홍길동")
+        self.assertEqual(out["result"], "ok", out)
+        self.assertEqual(self.node(target)["confirmed"]["by"], "홍길동")
+        p = self.pl.plan("a-6", [{"action": "nodes.lock", "args": {"node_ids": [target]}}], "q-6", "q-6", "잠가 줘")
+        self.assertEqual(len(p.confirm), 1, p)
+        out = self.pl.approve(p.confirm[0], "홍길동")
+        self.assertEqual((out["result"], out["code"]), ("rejected", "engine_refused"), out)
+        self.assertEqual(A.node_state(self.node(target)), "confirmed")
+
+    def test_mixed_ops_refused_before_engine(self):
+        """엔진에 묶음 하나로 받는 공개 명령이 없는 섞인 ops는 연결부가 거절(unsupported)하고 아무것도 저장하지 않는다."""
+        cands = self.nt.make_candidates(self.pg, self.ns(), granularity="normal", limit=2)["candidates"]
+        out = self.pl.run(self.apply("a-1", "q-1", [{"op": "add", "cand_id": cands[0]["cand_id"], "name": "가"}]).run[0])
+        self.assertEqual(out["result"], "ok", out)
+        nid = out["targets"][0]
+        p = self.apply("a-2", "q-2", [{"op": "add", "cand_id": cands[1]["cand_id"], "name": "나"},
+                                      {"op": "edit", "node_id": nid, "name": "새 이름"}])
+        out = self.pl.run(p.run[0])
+        self.assertEqual((out["result"], out["refused"][0]["code"]), ("rejected", "unsupported"), out)
+        self.assertEqual(len(self.ns()["nodes"]), 1)
 
 
 class EndToEndTest(Harness):

@@ -8,7 +8,7 @@
 4. 같은 `action_key`를 두 번 실행하지 않고, 표시를 뺀 모든 결과를 `hazop.chat.actions_log.record`로 남긴다.
 
 실제 실행은 하지 않는다. 실행 함수는 `executors={동작 이름: fn(args, call) -> dict}`로 주입받는다(새 화면 `hazop/shell/api.py`가
-엔진 함수를 잇는다). 구간 규칙(대표 5개·나머지 30개, AI가 사람 구간을 못 고침, 잠금·확정)은 `hazop.study.node_tools.apply_nodes`·
+엔진 함수를 잇는다. 구간 동작은 `node_executors(pg, node_commands.execute)`가 참고 연결부다). 구간 규칙(대표 5개·나머지 30개, AI가 사람 구간을 못 고침, 잠금·확정)은 `hazop.study.node_tools.apply_nodes`·
 `undo_batch`가 최종으로 지키고, 이 층은 그 앞에서 '바로 / 확인 / 거절'을 가르고 질문을 건너 쌓이는 상한(§4.5)을 센다.
 """
 
@@ -31,6 +31,8 @@ MAX_ACTIONS = 20             # 한 답의 동작 수(§4.1)
 PENDING_LIMIT = 5            # 사람 확인 전 AI 구간 상한(§4.5 대표 단계)
 REST_LIMIT = 30              # '나머지' 단계 한 요청 상한(§4.5)
 APPROVAL_TTL = 600           # 승인 표지 유효 시간(초, §4.6)
+# 엔진이 사람만 받는 구간 상태 동작(node_commands.STATE_COMMANDS 가운데 채팅이 제안할 수 있는 것). 확인 상자로만 실행된다
+STATE_ACTIONS = frozenset(("nodes.confirm", "nodes.unconfirm", "nodes.lock"))
 # 모델이 넣으면 그 동작을 거절하는 키(§4.1, 차단 11). 기록의 신뢰 필드는 앱이 만든다
 FORGED_KEYS = frozenset(("request_id", "answer_id", "action_key", "batch_id", "result", "confirmed_by", "confirmed_at",
                          "approval_digest", "conversation_id", "by", "origin", "reviewer", "accepted_by", "proposed_by",
@@ -171,10 +173,11 @@ ACTIONS = {a.name: a for a in (
            "묶음 {batch}를 되돌립니다."),
     Action("nodes.confirm", CONFIRM, _spec(("node_ids", "ids")), "④", "사람 판단. 실행하면 by에 검토자",
            "구간 {node_ids}을 확정합니다."),
-    # unconfirm·lock은 구간 하나(node_commands와 같은 인자, node-commands.md §2)
-    Action("nodes.unconfirm", CONFIRM, _spec(("node_id", "id")), "④", "사람 판단", "구간 {node_id}의 확정을 해제합니다."),
-    Action("nodes.lock", CONFIRM, _spec(("node_id", "id")), "④", "분석 마침·잠금. 구간 규격 §5.1 조건을 채운 구간만",
-           "구간 {node_id}을 분석 마침으로 잠급니다. 잠금은 ④에서 이유를 적어야만 풀립니다."),
+    # unconfirm·lock은 node_commands와 같이 node_ids 목록(node-commands.md §2, a9c0193)
+    Action("nodes.unconfirm", CONFIRM, _spec(("node_ids", "ids")), "④", "사람 판단",
+           "구간 {node_ids}의 확정을 해제합니다."),
+    Action("nodes.lock", CONFIRM, _spec(("node_ids", "ids")), "④", "분석 마침·잠금. 구간 규격 §5.1 조건을 채운 구간만",
+           "구간 {node_ids}을 분석 마침으로 잠급니다. 잠금은 ④에서 이유를 적어야만 풀립니다."),
     Action("nodes.unlock", NEVER, _spec(), "④", "차단 9", where="④ 검토구간에서 사람이 이유를 적고 푼다"),
     # ⑤
     Action("analysis.run", CONFIRM, _spec(("node_ids", "ids"), cell_ids="ids"), "⑤",
@@ -268,16 +271,28 @@ class Call:
     model: str = None
     author: str = AUTHOR
 
+    action: str = None           # 동작 이름(ACTIONS의 열쇠)
+
     @property
     def origin(self):
-        """엔진 명령의 출처 인자. 늘 "ai"다(사람이 확인했어도 글은 AI가 썼다)."""
+        """글을 쓴 쪽. 늘 "ai"다(사람이 확인했어도 글은 AI가 썼다)."""
+        return self.author
+
+    def engine_author(self):
+        """`node_commands.execute`의 author. 확정·확정 해제·잠금은 글이 없는 사람 판단이라 엔진이 사람만 받는다(node-commands.md
+        §1): 확인 상자를 누른 사람이 있으면 "user". 그 밖의 구간 동작은 사람이 확인했어도 "ai"다(R6)."""
+        if self.action in STATE_ACTIONS and self.confirmed_by:
+            return "user"
         return self.author
 
     def engine_request(self):
-        """`hazop.study.node_commands.execute(..., origin=call.origin, request=call.engine_request())`에 넘길 값."""
+        """`node_commands.execute(..., request=…)`에 넘길 값(AI 동작만 쓰임). 누른 사람은 엔진이 confirmed_by 인자로 받는다."""
         return {"request_id": self.request_id, "request_text": self.request_text, "user_turn": self.user_turn,
-                "confirmed_rest": self.confirmed_rest, "confirmed_by": self.confirmed_by, "author": self.author,
-                "tool": "chat", "model": self.model}
+                "confirmed_rest": self.confirmed_rest, "tool": "chat", "model": self.model}
+
+    def engine_kwargs(self):
+        """`node_commands.execute(pg, 명령, 인자, **call.engine_kwargs(), set_rev=…)`의 서명 인자(a9c0193)."""
+        return {"author": self.engine_author(), "confirmed_by": self.confirmed_by, "request": self.engine_request()}
 
 
 def _digest(obj):
@@ -697,7 +712,8 @@ class ActionPlanner:
                 return _outcome("duplicate")
             fresh = self._recheck(item, self.read_state())
             if fresh.klass == "rejected":
-                return _outcome("rejected", "state_changed", fresh.reason, refused=[{"target": "", "reason": fresh.reason}])
+                return _outcome("rejected", "state_changed", fresh.reason,
+                                refused=[{"target": "", "code": "state_changed", "reason": fresh.reason}])
             if fresh.klass == CONFIRM:
                 self._items.pop(item.token, None)
                 return dict(_outcome("needs_confirm", "state_changed", "그 사이 상태가 바뀌어 확인이 필요함"),
@@ -797,7 +813,8 @@ class ActionPlanner:
         request_id, request_text, turn = self.requests.get(item.key.split("#")[0], ("", "", None))
         klass = "confirm" if confirmed_by else ("candidate" if item.klass == CANDIDATE else "auto")
         call = Call(self.project_id, request_id, request_text, list(item.keys), klass, confirmed_by, item.stage,
-                    item.stage == "rest" and bool(confirmed_by), request_id, self.conversation_id, self.model)
+                    item.stage == "rest" and bool(confirmed_by), request_id, self.conversation_id, self.model,
+                    action=item.action)
         confirmed = bool(confirmed_by)
         if fn is None:
             msg = "이 앱에 실행 함수가 연결되지 않음"
@@ -857,10 +874,11 @@ class ActionPlanner:
 
 
 # 실행 함수가 돌려줄 값의 꼴(검토 1). node_commands.execute의 돌려주는 값과 같다(node-commands.md §1).
-#   {"ok": bool, "refused": [{"target": str, "reason": str}], "batch_id": str|None, "node_ids": [str], "set_rev": int|None,
-#    "error": str(선택, ok가 false이고 refused가 비었을 때의 실패 사유)}
-# ok가 true일 때만 성공이다. ok가 없거나 dict가 아니면 실패(꼴 틀림)로 본다.
-EXECUTOR_RESULT = {"ok": "bool", "refused": "[{target, reason}]", "batch_id": "str|None", "node_ids": "[str]",
+#   {"ok": bool, "refused": [{"target": str, "code": str, "reason": str}], "batch_id": str|None, "node_ids": [str],
+#    "set_rev": int|None, "error": str(선택, ok가 false이고 refused가 비었을 때의 실패 사유)}
+# ok가 true일 때만 성공이다. ok가 없거나 dict가 아니면 실패(꼴 틀림)로 본다. refused의 code(엔진 거절 코드: stale·conflict·
+# rule·bad_actor 등)는 그대로 화면에 넘긴다.
+EXECUTOR_RESULT = {"ok": "bool", "refused": "[{target, code, reason}]", "batch_id": "str|None", "node_ids": "[str]",
                    "set_rev": "int|None", "error": "str?"}
 
 
@@ -868,7 +886,8 @@ def check_result(out):
     """실행 함수의 돌려주는 값 -> (사유 코드 | None, 문구, refused 목록). 코드: engine_refused | engine_failed | bad_result."""
     if not isinstance(out, dict) or not isinstance(out.get("ok"), bool):
         return "bad_result", "실행 함수가 정해진 꼴({ok, refused, …})을 돌려주지 않음", []
-    refused = [{"target": str(r.get("target", "")), "reason": str(r.get("reason", ""))[:300]}
+    refused = [{"target": str(r.get("target", "")), "code": str(r.get("code") or "rule")[:40],
+                "reason": str(r.get("reason", ""))[:300]}
                for r in out.get("refused") or [] if isinstance(r, dict)]
     if out["ok"] is True:
         return None, None, []
@@ -899,3 +918,65 @@ CARD_ACTIONS_SCHEMA = {
                              "args": {"type": "object"},
                              "why": {"type": "string"}}},
 }
+
+
+# ---------------------------------------------------------------- 구간 엔진 연결(참고 연결부)
+
+_EDIT_COMMANDS = (("name", "rename", "name"), ("design_intent", "set_design_intent", "text"),
+                  ("add", "add_members", "members"), ("remove", "remove_members", "members"))
+
+
+def _unsupported(why):
+    return {"ok": False, "refused": [{"target": "ops", "code": "unsupported", "reason": why}], "batch_id": None,
+            "node_ids": [], "set_rev": None}
+
+
+def _ops_to_command(ops):
+    """nodes.apply의 ops -> (명령, 인자) 또는 None. 요청 하나가 묶음 하나여야 하므로(node-commands.md §4) 명령 하나로 옮길 수
+    있을 때만 옮긴다: 모두 add면 create, 아니면 op 하나에 바꿀 것 하나."""
+    if ops and all(o.get("op") == "add" for o in ops):
+        keep = ("cand_id", "members", "name", "design_intent", "basis", "params")
+        return "create", {"items": [{k: o[k] for k in keep if k in o} for o in ops]}
+    if len(ops) != 1:
+        return None
+    op = ops[0]
+    kind = op.get("op")
+    if kind == "edit":
+        fields = [f for f in _EDIT_COMMANDS if f[0] in op]
+        if len(fields) != 1:
+            return None
+        key, cmd, arg = fields[0]
+        return cmd, {"node_id": op.get("node_id"), arg: op[key]}
+    if kind == "merge":
+        return "merge", {"node_ids": list(op.get("node_ids") or [])}
+    if kind == "split":
+        return "split", {"node_id": op.get("node_id"), "members": list(op.get("members") or []), "name": op.get("name")}
+    if kind == "remove":
+        return "remove", {"node_id": op.get("node_id")}   # 보관(archive)은 사람만(엔진이 AI 보관을 막음)
+    return None
+
+
+def node_executors(pg, execute):
+    """구간 동작의 실행 함수 표. `execute`는 `hazop.study.node_commands.execute`(시험은 같은 서명의 가짜).
+
+    새 화면 연결부는 이 표를 `ActionPlanner(executors=…)`에 넣거나 같은 방식으로 잇는다. 서명은 `call.engine_kwargs()`가
+    정한다(누가 썼나 author, 누가 눌렀나 confirmed_by, request). 섞인 ops(add와 edit, edit 여러 개)는 엔진에 묶음 하나로 받는
+    공개 명령이 없어 'unsupported'로 거절한다.
+    """
+    def apply(args, call):
+        found = _ops_to_command(list(args.get("ops") or []))
+        if found is None:
+            return _unsupported("한 요청에 여러 종류의 구간 변경을 섞을 수 없음. 나눠서 다시 요청")
+        cmd, cargs = found
+        return execute(pg, cmd, cargs, set_rev=args.get("set_rev"), **call.engine_kwargs())
+
+    def undo(args, call):
+        return execute(pg, "undo", {"batch_id": args.get("batch_id_to_undo")}, set_rev=args.get("set_rev"),
+                       **call.engine_kwargs())
+
+    def state(cmd):
+        return lambda args, call: execute(pg, cmd, {"node_ids": list(args.get("node_ids") or [])}, set_rev=None,
+                                          **call.engine_kwargs())
+
+    return {"nodes.apply": apply, "nodes.undo": undo, "nodes.confirm": state("confirm"),
+            "nodes.unconfirm": state("unconfirm"), "nodes.lock": state("lock")}
