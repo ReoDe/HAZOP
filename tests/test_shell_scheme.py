@@ -241,11 +241,14 @@ class RoutingTest(RouterBase):
 
 class SchemeFlagsTest(unittest.TestCase):
     def test_flags_follow_the_spec(self):
-        """Syntax.Host와 FetchApiAllowed가 있다(화면·읽기 API는 같은 호스트의 같은 출처). LocalAccessAllowed는 규격과 달리 남겨 둔다(scheme.py 주석: 빼면 틀 창이 안 그려짐)."""
+        """Syntax.Host·FetchApiAllowed가 있고, 로컬 표시(LocalScheme·LocalAccessAllowed)는 없다(규격 §10 1)."""
         import inspect
         src = inspect.getsource(scheme.register)
         self.assertIn("Syntax.Host", src)
         self.assertIn("FetchApiAllowed", src)
+        flags_line = next(x for x in src.splitlines() if "setFlags" in x)
+        self.assertNotIn("LocalAccessAllowed", flags_line)
+        self.assertNotIn("LocalScheme", flags_line)
 
 
 class RealEngineTest(unittest.TestCase):
@@ -335,7 +338,33 @@ class RealEngineTest(unittest.TestCase):
         got = self.result(v, "window.__r && window.__r.fetch && window.__r.xhr ? window.__r : undefined")
         self.assertIsNotNone(got, "m.js가 돌지 않음")
         self.assertNotIn("SECRET", json.dumps(got))
-        self.assertTrue(any(u.startswith("file:") for u in v.interceptor.blocked), "둘째 겹: 가로채기가 file 요청을 막았다")
+        self.assertEqual((got["fetch"], got["xhr"]), ("ERR", "ERR"), "CSP가 없어도 file 읽기는 실패한다(엔진의 로컬 주소 규칙·설정·가로채기)")
+
+    def test_interceptor_blocks_everything_but_the_shell_schemes(self):
+        """둘째 겹 자체: 가로채기는 hazop-app·data·about·blob 밖의 모든 주소(file·qrc·원격·ftp 등)를 막고 기록한다."""
+        from PySide6.QtCore import QUrl
+        from hazop.shell.window import ShellInterceptor
+
+        class Info:
+            def __init__(self, url):
+                self._u, self.blocked = QUrl(url), None
+
+            def requestUrl(self):
+                return self._u
+
+            def block(self, flag):
+                self.blocked = flag
+        ic = ShellInterceptor()
+        for url in ("hazop-app://shell/index.html", "data:text/plain,x", "about:blank", "blob:hazop-app://shell/abc"):
+            info = Info(url)
+            ic.interceptRequest(info)
+            self.assertIsNone(info.blocked, url)
+        for url in ("file:///C:/Windows/win.ini", "file://server/share/a.txt", "qrc:///qtwebchannel/qwebchannel.js", "https://example.com/x",
+                    "http://127.0.0.1:8000/", "ftp://example.com/a", "FILE:///C:/x", "ws://example.com/"):
+            info = Info(url)
+            ic.interceptRequest(info)
+            self.assertTrue(info.blocked, url)
+        self.assertEqual(len(ic.blocked), 8)
 
     def test_meta_csp_blocks_inline_script_and_remote(self):
         """응답 머리는 웹 엔진에 닿지 않으므로 meta CSP가 실제로 걸리는지 본다(인라인 스크립트·원격 연결 차단)."""
