@@ -31,7 +31,7 @@ def _symbols():
 
 TAGGED = ("equipment", "valve", "instrument")        # 태그를 갖는 종류(없으면 '태그 없음')
 TWO_PORT = ("manual_valve", "isolation_valve", "check_valve", "control_valve", "motor_operated_valve", "damper", "reducer", "orifice",
-            "pump", "psv")
+            "pump")      # 두 연결점이 마주 보는 기호만(안전밸브는 입구·출구가 직각이라 끝점이 놓인 축으로 방향을 정할 수 없다)
 DIRECTION = {"east": 0, "south": 90, "west": 180, "north": 270}
 # 정리된 보기가 직접 정한 사유. 그 밖의 사유는 추출의 미확인 기록(validation.unknowns)의 check 코드 그대로다
 REASONS = ("unknown_symbol", "open_end", "missing_tag", "ai_candidate", "unplaced", "unresolved_connector")
@@ -150,6 +150,8 @@ def build(extraction, name=None):
             unconfirmed.append({"id": lid, "reason": "missing_tag"})
         if lid in pending:
             unconfirmed.append({"id": lid, "reason": "ai_candidate"})
+    flow_unknown = {u.get("target") for u in ((extraction.get("validation") or {}).get("unknowns")) or []
+                    if isinstance(u, dict) and u.get("check") == "unknown_flow_direction"}     # 미확인 방향은 화살촉 없이 둔다
     for r in relations:
         lid = r.get("local_id")
         if not isinstance(lid, str):
@@ -165,8 +167,8 @@ def build(extraction, name=None):
                 ends.append({"end": ep.get("end"), "point": sheet_items._pair(ep.get("point"), ox, oy), "status": "connected" if ep.get("status") == "connected" else "open",
                              "node": ep.get("node_local_id")})
         fd = r.get("flow_direction")
-        basis = fd.get("basis") if isinstance(fd, dict) else None
-        flow = basis if basis in ("source_to_target", "target_to_source") else None
+        from_end = fd.get("from_end") if isinstance(fd, dict) else None      # 어댑터·사람 고침 모두 이 꼴. basis는 근거 종류일 뿐 방향이 아니다
+        flow = {"source": "source_to_target", "target": "target_to_source"}.get(from_end) if lid not in flow_unknown else None
         xs, ys = [p[0] for p in line], [p[1] for p in line]
         boxes[lid] = [min(xs), min(ys), max(xs), max(ys)]
         items[lid] = {"line_type": r.get("line_type"), "flow": flow, "ends": ends, "review": "human" if r.get("human_edit") else "script"}

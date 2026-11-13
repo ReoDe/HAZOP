@@ -119,7 +119,8 @@ def picture_changes(items, extras, t):
 
 
 def port_gaps(items, extras, t):
-    """그래프에서 기호(연결점 정의가 있는 것)에 이어진 배관 끝과 그 기호의 가장 가까운 연결점 사이 거리 목록."""
+    """그래프에서 기호(연결점 정의가 있는 것)에 이어진 배관 끝과 그 기호 사이 거리 목록: 가장 가까운 연결점까지, 연결점이 없는 쪽에서 들어온
+    배관(예: 펌프 토출이 흡입보다 높게 그려진 것)은 그려진 겉모양까지 중 가까운 것."""
     kinds = {i["id"]: i for i in items if i["layer"] == "symbol"}
     out = []
     for pid, p in t["pipes"].items():
@@ -131,8 +132,13 @@ def port_gaps(items, extras, t):
             if not d.get("ports") or d.get("fit") == "stretch":
                 continue
             q = p["polyline"][0 if e["end"] == "source" else -1]
-            ports = cl._ports(d, t["symbols"][nid], (extras.get(nid) or {}).get("orient") or R0)
-            out.append((pid, nid, round(min(math.hypot(w[0] - q[0], w[1] - q[1]) for w in ports), 2)))
+            orient = (extras.get(nid) or {}).get("orient") or R0
+            ports = cl._ports(d, t["symbols"][nid], orient)
+            gap = min(math.hypot(w[0] - q[0], w[1] - q[1]) for w in ports)
+            poly = cl._world_outline(d, t["symbols"][nid], orient)
+            if poly:
+                gap = min(gap, min(_seg_dist(q, poly[k], poly[(k + 1) % len(poly)]) for k in range(len(poly))))
+            out.append((pid, nid, round(gap, 2)))
     return out
 
 
@@ -142,14 +148,14 @@ class RuleTest(unittest.TestCase):
         _i, _e, t = run(*parts)
         ys = {round(center(b)[1], 3) for b in t["symbols"].values()}
         self.assertEqual(len(ys), 1)
-        self.assertEqual(t["lint"]["off_axis"], 0)
+        self.assertEqual(t["lint"]["inline_off_center"], 0)
 
     def test_2_nearly_horizontal_and_vertical_lines_become_exact(self):
         _i, _e, t = run(pipe("h", [(0, 100), (100, 102.5)]), pipe("v", [(300, 0), (302, 100)]))
         h, v = t["pipes"]["h"]["polyline"], t["pipes"]["v"]["polyline"]
         self.assertEqual(h[0][1], h[1][1])
         self.assertEqual(v[0][0], v[1][0])
-        self.assertEqual(t["lint"]["non_orthogonal"], 0)
+        self.assertEqual(t["lint"]["off_axis"], 0)
 
     def test_3_valve_sits_on_the_pipe_axis_and_ports_touch_exactly(self):
         # 밸브(가로 흐름) 중심이 배관 축(y=100)에서 4 어긋나 있고, 배관 끝이 연결점에서 3 떨어져 있다
@@ -162,8 +168,8 @@ class RuleTest(unittest.TestCase):
         ports = cl._ports(SYMBOLS["manual_valve"], b, R0)
         self.assertEqual([round(x, 3) for x in t["pipes"]["p1"]["polyline"][-1]], [round(x, 3) for x in min(ports)])
         self.assertEqual([round(x, 3) for x in t["pipes"]["p2"]["polyline"][0]], [round(x, 3) for x in max(ports)])
-        self.assertEqual(t["lint"]["loose_ends"], 0)
-        self.assertEqual(t["lint"]["off_axis"], 0)
+        self.assertEqual(t["lint"]["port_miss"], 0)
+        self.assertEqual(t["lint"]["inline_off_center"], 0)
 
     def test_3_vertical_valve_centers_on_a_vertical_pipe(self):
         valve = sym("v", "manual_valve", (95, 100, 125, 150), rot=90)          # 세로 밸브(direction=south), 중심 x=110
@@ -171,7 +177,7 @@ class RuleTest(unittest.TestCase):
         p2 = pipe("p2", [(108, 153), (108, 300)], "v", None)
         _i, _e, t = run(valve, p1, p2)
         self.assertAlmostEqual(center(t["symbols"]["v"])[0], 108, places=2)
-        self.assertEqual(t["lint"]["loose_ends"], 0)
+        self.assertEqual(t["lint"]["port_miss"], 0)
 
     def test_3_tee_sits_exactly_on_the_crossing_of_its_pipes(self):
         tee = sym("t", "tee", (198, 98, 200, 100), "piping_element")
@@ -187,7 +193,7 @@ class RuleTest(unittest.TestCase):
         p = pipe("p", [(100, 150), (203, 150)], None, "e")                    # 끝이 설비 안으로 3 들어가 있다
         _i, _e, t = run(vessel, p)
         self.assertEqual([round(v, 2) for v in t["pipes"]["p"]["polyline"][-1]], [202.4, 150.0])      # 그려진 겉모양(상자보다 4% 안쪽)에 닿는다
-        self.assertEqual(t["lint"]["loose_ends"], 0)
+        self.assertEqual(t["lint"]["port_miss"], 0)
 
     def test_4_pipe_ends_touch_the_drawn_outline_of_a_shaped_vessel_not_its_box(self):
         # 증기발생기: 아래는 좁은 목이라 상자 아래 가장자리와 그려진 테두리가 다르다. 끝은 상자가 아니라 테두리에 닿아야 한다
@@ -197,10 +203,10 @@ class RuleTest(unittest.TestCase):
         end = t["pipes"]["p"]["polyline"][-1]
         self.assertAlmostEqual(end[0], 250.0, places=2)
         self.assertAlmostEqual(end[1], 294.0, places=1)           # 그림 좌표 y=97 → 100 + 0.97·200
-        self.assertEqual(t["lint"]["loose_ends"], 0)
+        self.assertEqual(t["lint"]["port_miss"], 0)
         bad = copy.deepcopy(t)
         bad["pipes"]["p"]["polyline"][-1] = [250, 299.5]            # 상자 아래 가장자리에는 닿지만 테두리에서는 뜬 끝
-        self.assertEqual(cl.layout_lint(i, e, SYMBOLS, bad)["loose_ends"], 1)
+        self.assertEqual(cl.layout_lint(i, e, SYMBOLS, bad)["port_miss"], 1)
 
     def test_5_continuation_pentagons_all_get_the_same_size_around_their_centers(self):
         parts = [sym("a", "continuation", (100, 100, 220, 134), "piping_element"), sym("b", "continuation", (300, 200, 440, 240), "piping_element")]
@@ -238,18 +244,18 @@ class RuleTest(unittest.TestCase):
     def test_6_overlapping_symbols_are_pushed_apart_within_the_allowed_distance(self):
         parts = [sym("a", "manual_valve", (100, 100, 150, 130)), sym("b", "manual_valve", (144, 100, 194, 130))]
         i, e, t = run(*parts)
-        self.assertEqual(t["lint"]["overlap_symbols"], 0)
-        self.assertLessEqual(t["moved"], cl.MAX_SHIFT)
+        self.assertEqual(t["lint"]["symbol_overlap"], 0)
+        self.assertLessEqual(t["moved"], cl.PUSH_LIMIT)
 
     def test_6_unsolvable_overlap_is_counted_not_hidden(self):
         parts = [sym("a", "manual_valve", (100, 100, 150, 130)), sym("b", "manual_valve", (110, 100, 160, 130))]      # 40 겹침: 허용 범위 안에서 못 푼다
         _i, _e, t = run(*parts)
-        self.assertGreaterEqual(t["lint"]["overlap_symbols"], 1)
+        self.assertGreaterEqual(t["lint"]["symbol_overlap"], 1)
 
     def test_6_pipe_through_a_symbol_it_is_not_connected_to_is_counted(self):
         parts = [sym("v", "manual_valve", (100, 85, 150, 115)), pipe("p", [(0, 100), (300, 100)])]
         _i, _e, t = run(*parts)
-        self.assertEqual(t["lint"]["overlap_pipe_symbol"], 1)
+        self.assertEqual(t["lint"]["pipe_through_symbol"], 1)
 
     def test_9_unconnected_crossing_pipes_get_a_hop_but_connected_ones_do_not(self):
         _i, _e, t = run(pipe("h", [(0, 100), (200, 100)]), pipe("v", [(100, 0), (100, 200)]))
@@ -262,10 +268,10 @@ class RuleTest(unittest.TestCase):
         items, extras, t = run(sym("v", "manual_valve", (100, 85, 150, 115)), pipe("p", [(0, 100), (90, 100)], None, "v"))
         bad = copy.deepcopy(t)
         bad["pipes"]["p"]["polyline"][-1] = [80, 100]          # 연결점에서 떨어진 끝
-        self.assertEqual(cl.layout_lint(items, extras, SYMBOLS, bad)["loose_ends"], 1)
+        self.assertEqual(cl.layout_lint(items, extras, SYMBOLS, bad)["port_miss"], 1)
         bad2 = copy.deepcopy(t)
         bad2["pipes"]["p"]["polyline"] = [[0, 100], [90, 104]]
-        self.assertGreaterEqual(cl.layout_lint(items, extras, SYMBOLS, bad2)["non_orthogonal"], 1)
+        self.assertGreaterEqual(cl.layout_lint(items, extras, SYMBOLS, bad2)["off_axis"], 1)
 
 
 class ReviewDefectTest(unittest.TestCase):
@@ -369,8 +375,9 @@ class SnpTest(unittest.TestCase):
             t = cl.tidy(items, extras, SYMBOLS)
             lint = dict(t["lint"])
             moved = lint.pop("moved")
+            lint.pop("reverted")
             self.assertEqual({k: v for k, v in lint.items() if v}, {}, d)
-            self.assertLessEqual(moved, cl.CENTER_SHIFT, d)
+            self.assertLessEqual(moved, max(cl.MOVE_LIMIT, cl.PUSH_LIMIT), d)
 
     def test_every_connected_end_touches_its_port_and_the_picture_gains_no_contact(self):
         for d, e in self.ex.items():
