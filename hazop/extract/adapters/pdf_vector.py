@@ -1445,17 +1445,25 @@ def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, m
             positions.setdefault(id(v), []).extend((c, bi) for c in POSITION_CODE_RE.findall(blocks[bi]["text"]))
     open_valves = {id(v) for v in valves if id(v) not in circled and (
                    label_of.get(index[id(v)]) is None or POSITION_TEXT_RE.fullmatch(text(label_of[index[id(v)]])))}
+    holder = {bi: si for si, bi in label_of.items()}
+
+    def lent(bi):
+        """밸브 번호 문단이 밸브가 아닌 기호(배관 부속·미분류 조각)의 라벨로 잡혀 있는가. 밸브 번호는 밸브 몫이다."""
+        return bi in holder and id(plan_into.get(id(syms[holder[bi]]), syms[holder[bi]])) not in valve_like
     pairs = []
     for bi in range(len(blocks)):
-        if bi in roles or bi in taken or not VALVE_TAG_RE.fullmatch(text(bi)):
+        if bi in roles or (bi in taken and not lent(bi)) or not VALVE_TAG_RE.fullmatch(text(bi)):
             continue
         v = _nearest_valve(blocks[bi], valves, prm)
         if v is not None and id(v) in open_valves and owner_of(bi) is v and not closer_number(bi, v):
             pairs.append((round(_valve_gap(blocks[bi], v), 6), bi, index[id(v)]))
     moved = set()
     for gap, bi, si in sorted(pairs):
-        if si in moved or bi in taken:
+        if si in moved or (bi in taken and not lent(bi)):
             continue
+        if lent(bi):
+            del label_of[holder.pop(bi)]
+            taken.discard(bi)
         old = label_of.get(si)
         if old is not None:
             taken.discard(old)
