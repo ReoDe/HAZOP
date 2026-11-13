@@ -264,3 +264,30 @@ def single_instance(notify=None, err=None):
     _log.warning("실행 잠금 파일을 만들 수 없음: %s (%s)", path, problem)
     _write(err, "실행 잠금 파일을 만들 수 없어 잠금 없이 시작합니다: %s (%s)\n" % (path, problem))
     return None, None
+
+
+# ---------------------------------------------------------------- 새 웹 화면으로 시작(docs/design/app-shell-web.md §6)
+
+def window_kind(classic=False, screenshots=None, run=None):
+    """어느 창으로 시작할지: 새 웹 화면("shell") 또는 이전 위젯 화면("classic"). 이전 화면은 `--classic`, 스크린샷 찍기(`--screenshots`),
+    분석 실행 폴더 열기(`--run`, 이전 화면만 아는 기능)일 때만 쓴다. 두 창을 함께 열지 않는다(같은 파일을 두 창이 쓰지 않게)."""
+    return "classic" if classic or screenshots or run else "shell"
+
+
+def run_shell(app, settings_path=None, debug=False):
+    """새 틀 창을 열고 이벤트 루프를 돈다. 설정의 '이전 화면 열기'로 닫히면 같은 설정으로 이전 화면을 이어서 연다. 종료 코드를 돌려준다."""
+    from hazop.shell.window import ShellWindow
+    win = ShellWindow(settings_path=settings_path, debug=debug)
+    win.show()
+    win.ai_conn.start()   # 지금 연결 방식만 확인(구독은 작업 스레드에서 check())
+    code = app.exec()
+    switch = win.classic_requested
+    win.close()
+    if switch:
+        from hazop.app.main_window import MainWindow
+        classic = MainWindow(settings_path=settings_path, ask_reviewer=True, debug=debug)
+        classic.show()
+        classic.ai_conn.start()
+        code = app.exec()
+        classic.close()
+    return code

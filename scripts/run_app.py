@@ -47,6 +47,7 @@ def main(argv=None):
     ap.add_argument("--screenshots", help="화면별 스크린샷을 저장할 폴더(저장 후 종료)")
     ap.add_argument("--settings", help="설정 파일 경로(기본: APPDATA 아래 HAZOP/settings.json)")
     ap.add_argument("--debug", action="store_true", help="상태줄에 Python↔웹 메시지 등 개발자 정보를 표시")
+    ap.add_argument("--classic", action="store_true", help="새 웹 화면 대신 이전 위젯 화면으로 연다")
     args = ap.parse_args(argv)
     if os.environ.get(ENV_TEST_EXCEPTHOOK) == "1" and getattr(sys, "_hazop_verify_build", False):
         return _test_excepthook()
@@ -70,6 +71,12 @@ def main(argv=None):
             if lock is not None:
                 lock.unlock()
             return rc
+    from hazop.app import startup
+    if startup.window_kind(args.classic, args.screenshots, args.run) == "shell":   # 기본은 새 웹 화면(docs/design/app-shell-web.md §6)
+        code = startup.run_shell(app, args.settings, args.debug)
+        if lock is not None:
+            lock.unlock()
+        return code
     from hazop.app.main_window import MainWindow
     if args.screenshots:  # 스크린샷의 확정 예시 저장은 임시 저장 루트에만(store/를 건드리지 않음)
         import tempfile

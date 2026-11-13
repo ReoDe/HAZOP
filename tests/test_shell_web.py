@@ -124,7 +124,7 @@ class ShellBase(unittest.TestCase):
                 os.environ[k] = v
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def window(self, size=(1366, 768)):
+    def window(self, size=(1366, 768), reviewer="검토자A"):
         from hazop.shell.window import ShellWindow
         self.sessions = []
 
@@ -133,8 +133,11 @@ class ShellBase(unittest.TestCase):
             self.sessions.append(s)
             return s
         self.env = FakeEnv()
-        win = ShellWindow(settings_path=os.path.join(tempfile.mkdtemp(dir=self.tmp), "settings.json"), size=size, session_factory=factory,
-                          env_provider=lambda: (self.env, small_pg()))
+        settings = os.path.join(tempfile.mkdtemp(dir=self.tmp), "settings.json")
+        if reviewer:
+            with open(settings, "w", encoding="utf-8") as fh:
+                json.dump({"reviewer_name": reviewer}, fh)
+        win = ShellWindow(settings_path=settings, size=size, session_factory=factory, env_provider=lambda: (self.env, small_pg()))
         win.show()
         self.addCleanup(win.deleteLater)
         self.addCleanup(win.close)
@@ -215,15 +218,20 @@ class ShellWindowTest(ShellBase):
         pump(0.3)
         self.assertFalse(self.js(win, "window.__hz.store.get().chatCollapsed"), "Ctrl+K는 접힌 채팅을 편다")
 
+    def test_first_run_without_reviewer_opens_settings(self):
+        win = self.window(reviewer=None)
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "settings")
+        self.assertIn("검토자 이름을 입력하세요", self.text(win))
+
     def test_settings_panel_shows_connection_and_saves_reviewer(self):
         win = self.window()
         self.assertTrue(self.click(win, ".rail button", 2))
         pump(0.5)
         self.assertIn("AI 연결", self.text(win))
-        self.js(win, "(() => { const i = document.getElementById('reviewer'); i.value = '검토자A'; i.dispatchEvent(new Event('input', {bubbles: true})); })()")
+        self.js(win, "(() => { const i = document.getElementById('reviewer'); i.value = '검토자B'; i.dispatchEvent(new Event('input', {bubbles: true})); })()")
         pump(0.2)
         self.assertTrue(self.click(win, ".panel .btn.primary"))
-        self.assertTrue(wait_for(lambda: win.engine.reviewer() == "검토자A", 10))
+        self.assertTrue(wait_for(lambda: win.engine.reviewer() == "검토자B", 10))
 
 
 class ShellChatTest(ShellBase):

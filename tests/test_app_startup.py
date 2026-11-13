@@ -239,13 +239,45 @@ class RunAppStartupTest(unittest.TestCase):
         with mock.patch.object(startup, "ask_dialog", return_value=startup.BACKUP), \
                 mock.patch("hazop.app.make_application", return_value=app), \
                 mock.patch("hazop.app.main_window.MainWindow", side_effect=make_win):
-            self.assertEqual(self.ra.main(["--settings", self.path]), 0)
+            self.assertEqual(self.ra.main(["--classic", "--settings", self.path]), 0)   # 이전 화면은 --classic일 때만
         self.assertEqual(seen["path"], self.path)
         self.assertTrue(seen["ask"])  # 처음 실행처럼 검토자 이름을 묻는다
         self.assertEqual(seen["settings"], paths.DEFAULT_SETTINGS)
         backups = [n for n in os.listdir(self.tmp) if n.startswith("settings.json.bad-")]
         self.assertEqual(len(backups), 1)
 
+
+    def test_default_start_opens_the_new_web_window_not_the_classic_one(self):
+        seen = {}
+
+        def make_shell(settings_path=None, debug=False, **kw):
+            seen.update(path=settings_path, debug=debug)
+            win = mock.Mock()
+            win.classic_requested = False
+            return win
+        app = mock.Mock()
+        app.exec.return_value = 0
+        with mock.patch.object(startup, "ask_dialog", return_value=startup.BACKUP),                 mock.patch("hazop.app.make_application", return_value=app),                 mock.patch("hazop.shell.window.ShellWindow", side_effect=make_shell),                 mock.patch("hazop.app.main_window.MainWindow") as classic:
+            self.assertEqual(self.ra.main(["--settings", self.path]), 0)
+        self.assertEqual(seen["path"], self.path)
+        classic.assert_not_called()
+
+    def test_classic_switch_from_settings_opens_the_old_window_after_the_new_one_closes(self):
+        calls = []
+        shell = mock.Mock()
+        shell.classic_requested = True
+        app = mock.Mock()
+        app.exec.return_value = 0
+        with mock.patch.object(startup, "ask_dialog", return_value=startup.BACKUP),                 mock.patch("hazop.app.make_application", return_value=app),                 mock.patch("hazop.shell.window.ShellWindow", return_value=shell),                 mock.patch("hazop.app.main_window.MainWindow", side_effect=lambda **kw: calls.append(kw) or mock.Mock()):
+            self.assertEqual(self.ra.main(["--settings", self.path]), 0)
+        self.assertEqual(len(calls), 1, "두 창을 함께 열지 않고 새 창이 닫힌 뒤 이전 창을 연다")
+        self.assertEqual(app.exec.call_count, 2)
+
+    def test_window_kind_choice(self):
+        self.assertEqual(startup.window_kind(), "shell")
+        self.assertEqual(startup.window_kind(classic=True), "classic")
+        self.assertEqual(startup.window_kind(screenshots="x"), "classic")
+        self.assertEqual(startup.window_kind(run="r"), "classic")
 
     def test_second_instance_quits_before_window(self):
         """다른 실행이 잠금을 쥐고 있으면 대화형 실행은 안내 후 창을 만들지 않고 끝낸다. --screenshots는 잠금을 보지 않는다."""
