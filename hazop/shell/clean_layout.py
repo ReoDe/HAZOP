@@ -32,6 +32,7 @@ INLINE = ("manual_valve", "isolation_valve", "check_valve", "control_valve", "mo
           "pipe_cap", "vent", "drain", "test_connection")
 INSTRUMENTS = ("transmitter", "indicator", "temperature_element", "controller")     # 원 안에 두 줄을 쓰는 계기: 원이 작으면 표준 크기로 키운다
 INSTR_MIN = 48.0
+CONT_SIZE = (130.0, 36.0)      # 다른 도면 연결 오각형의 표준 크기(원본 글자가 두 줄 들어간다)
 FIXED = ("continuation", "annotation")
 BODY_KINDS = ("manual_valve", "isolation_valve", "check_valve", "orifice", "damper", "reducer")      # 대칭 몸통을 가진 인라인 기호(붙은 선이 몸통 가운데를 지나야 한다)      # 크기·자리를 원본대로 두는 기호(오각형 연결 표시 등)
 
@@ -222,6 +223,11 @@ def tidy(items, extras, symbols):
                 b = sym[i]["bbox"]
                 cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
                 sym[i]["bbox"] = [cx - mw / 2, cy - mh / 2, cx + mw / 2, cy + mh / 2]
+    for i, s in sym.items():                              # 다른 도면 연결 오각형은 모두 같은 크기(가운데는 그대로)
+        if s["kind"] == "continuation":
+            b = s["bbox"]
+            cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+            s["bbox"] = [cx - CONT_SIZE[0] / 2, cy - CONT_SIZE[1] / 2, cx + CONT_SIZE[0] / 2, cy + CONT_SIZE[1] / 2]
     # 2 직각
     for p in pipes.values():
         p["line"] = _orthogonalize(p["line"])

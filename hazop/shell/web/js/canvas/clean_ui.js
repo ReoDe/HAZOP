@@ -21,7 +21,7 @@ export const clean = createStore({
   built: {},         // graph_id → {ms, elements, missingKinds, placeholders}
   bubble: null,      // {id, reason, fragment}
   cursor: -1,        // 다음 미확인 위치
-  overlay: { leftovers: false, original: false },   // 원본에 남은 것 겹치기(L)·원본 겹쳐 보기(30%)
+  overlay: { leftovers: false, original: false, unconfirmed: false },   // 원본에 남은 것 겹치기(L)·원본 겹쳐 보기(30%)
 });
 
 export function useClean(selector) {
@@ -68,6 +68,7 @@ export function closeBubble() { clean.set({ bubble: null }); }
 export function stepUnconfirmed(gid, step = 1) {
   const s = clean.get(), list = (s.data[gid] && s.data[gid].unconfirmed) || [];
   if (!list.length) return null;
+  if (!s.overlay.unconfirmed) clean.set({ overlay: Object.assign({}, s.overlay, { unconfirmed: true }) });     // 미확인을 찾아 가면 속성 미확인 자리도 함께 보인다
   const at = ((s.cursor + step) % list.length + list.length) % list.length, u = list[at];
   clean.set({ cursor: at });
   shell.set((st) => ({ command: { seq: st.command.seq + 1, type: "inspect", id: u.id, reason: u.reason, pad: 4 } }));
@@ -123,6 +124,8 @@ function ViewSwitch({ gid }) {
     ${data ? html`<span class=${"chip " + (fmt === "unknown" ? "warn" : "")} title="읽은 방법">${FORMAT_LABEL[fmt] || fmt}</span>` : null}
     ${data ? html`<button type="button" class=${"chip " + (count ? "warn" : "ok")} title=${"다음 미확인으로 (N)" + (tip ? " · " + tip : "")} aria-label=${"미확인 " + count + "곳. 다음으로 가기"}
       onClick=${() => stepUnconfirmed(gid, 1)}><${Icon} name=${count ? "alert-triangle" : "check"} size=${14} /> 미확인 ${count}곳</button>` : null}
+    ${data && count ? html`<button type="button" class="chip" aria-pressed=${ov.unconfirmed ? "true" : "false"} title="호박색 점선 네모: 읽지 못한 것이 아니라 속성만 확인되지 않은 곳(포트·흐름 방향·고장 위치 등)을 도면에 보입니다. 읽지 못한 기호·열린 끝은 늘 보입니다"
+      onClick=${() => toggleOverlay("unconfirmed")}>속성 미확인 보기</button>` : null}
     ${data && data.counts.unplaced ? html`<span class="chip warn" title="좌표가 없어 도면에 그리지 못한 것. 확정 전에 위치를 주거나 도면에 없음으로 정해야 합니다">위치 없음 ${data.counts.unplaced}</span>` : null}
     ${lo && lo.counted ? html`<button type="button" class=${"chip " + (lo.n ? "warn" : "")} aria-pressed=${ov.leftovers ? "true" : "false"} title="원본에서 어느 구성요소에도 쓰이지 않은 것을 겹쳐 봅니다 (L)"
       onClick=${() => toggleOverlay("leftovers")}>원본에 남은 것 ${lo.n}</button>` : (lo ? html`<span class="chip warn" title="이 읽은 방법에서는 엔진이 원본에 남은 선·글자를 세지 못합니다. 쪽을 확정하기 전에 원본과 견주어야 합니다">원본에 남은 것: 엔진이 세지 않음</span>` : null)}

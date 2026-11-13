@@ -40,6 +40,7 @@ export const tests = [
     const ids = [];
     for (let i = 0; i < 4; i++) { const u = C.stepUnconfirmed("g1", 1); ids.push(u.id); }
     assert.equal(ids, ["a", "b", "c", "a"]);
+    assert.equal(C.clean.get().overlay.unconfirmed, true);          // 미확인을 찾아 가면 속성 미확인 자리도 함께 보인다
     assert.equal(C.stepUnconfirmed("g1", -1).id, "c");                  // 앞으로(Shift+N)
     const cmd = store.get().command;
     assert.equal([cmd.type, cmd.id, cmd.reason, cmd.seq], ["inspect", "c", "missing_tag", 5]);

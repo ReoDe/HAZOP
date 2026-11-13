@@ -5,7 +5,7 @@
 // 보안: 도면·모델에서 온 글(태그, 라벨, 이름)은 textContent로만 넣는다. innerHTML·dangerouslySetInnerHTML을 쓰지 않는다(정적 검사 대상).
 
 import { SpatialIndex, MAX_SELECTION, capSelection, changeSelection, selectionEvent, normRect } from "./index.js";
-import { normalizeMarks, drawAll, buildSegments, legendEntries, uncrowdTags } from "./marks.js";
+import { normalizeMarks, drawAll, buildSegments, legendEntries, uncrowdTags, badgeBoxes } from "./marks.js";
 import { buildBase, recolor, fragmentBox, layoutLabels, labelDescriptor } from "./clean_view.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -98,6 +98,7 @@ export class SheetCore {
     this.ghost = d.createElementNS(SVG_NS, "image"); this.ghost.setAttribute("class", "hz-cv-ghost"); this.ghost.style.display = "none"; this.ghost.style.opacity = "0.3"; this.ghost.setAttribute("pointer-events", "none");   // 원본 겹쳐 보기를 켤 때만 붙인다
     this.marksG = d.createElementNS(SVG_NS, "g"); this.marksG.setAttribute("class", "hz-cv-marks"); this.svg.appendChild(this.marksG);
     this.topG = d.createElementNS(SVG_NS, "g"); this.topG.setAttribute("class", "hz-cv-top"); this.topG.style.display = "none"; this.svg.appendChild(this.topG);
+    this.attrG = d.createElementNS(SVG_NS, "g"); this.attrG.setAttribute("class", "hz-cv-attr"); this.attrG.style.display = "none"; this.svg.appendChild(this.attrG);
     this.leftG = d.createElementNS(SVG_NS, "g"); this.leftG.setAttribute("class", "hz-cv-left"); this.leftG.style.display = "none"; this.svg.appendChild(this.leftG);
     this.tagsDiv = d.createElement("div"); this.tagsDiv.className = "hz-cv-tags"; this.vp.appendChild(this.tagsDiv);
     this.chipsDiv = d.createElement("div"); this.chipsDiv.className = "hz-cv-chips"; this.vp.appendChild(this.chipsDiv);
@@ -214,6 +215,10 @@ export class SheetCore {
     const tf = this.doc.createDocumentFragment();
     for (const n of base.top) { const b = build(n, this.doc); if (b) tf.appendChild(b); }
     this.topG.appendChild(tf);
+    while (this.attrG.firstChild) this.attrG.removeChild(this.attrG.firstChild);   // 속성만 미확인인 자리: 평소에는 숨기고 미확인 칩을 누르면 보인다
+    const af = this.doc.createDocumentFragment();
+    for (const n of base.attr || []) { const b = build(n, this.doc); if (b) af.appendChild(b); }
+    this.attrG.appendChild(af);
     this._cleanBuilt = true;
     this._layoutCleanLabels();
     this.cleanInfo = { ms: performance.now() - t0, elements: base.nodes.length, missingKinds: base.missingKinds, placeholders: base.placeholders };
@@ -238,7 +243,9 @@ export class SheetCore {
   /** 확대 값에 맞춰 글자 크기(화면 픽셀 하한)와 보임(겹치면 숨김)을 정한다. */
   _layoutCleanLabels() {
     if (!this._labels || !this._labelEls) return;
-    const res = layoutLabels(this._labels, this.view.k, this._obstacles);
+    // 경로·구간 표시의 번호 원·꼬리표도 글자가 피할 자리로 본다
+    const extra = this.lastDraw && this.lastDraw.badges ? badgeBoxes(this.lastDraw.badges, this.view.k) : [];
+    const res = layoutLabels(this._labels, this.view.k, extra.length ? this._obstacles.concat(extra) : this._obstacles);
     for (let i = 0; i < res.length; i++) {
       const el = this._labelEls[i], o = res[i];
       if (!el) continue;
@@ -261,6 +268,7 @@ export class SheetCore {
     const o = this.overlays || {};
     const ghost = eff === "clean" && !!o.original && !!(this.data && this.data.svg);
     if (ghost && !this.ghost.parentNode) this.svg.insertBefore(this.ghost, this.marksG);
+    this.attrG.style.display = eff === "clean" && o.unconfirmed ? "" : "none";
     this.ghost.style.display = ghost ? "" : "none";
     if (ghost) { this.ghost.setAttribute("href", this.data.svg); this.ghost.setAttribute("width", this.size[0]); this.ghost.setAttribute("height", this.size[1]); }
     const show = !!o.leftovers && !!(this.clean && this.clean.leftovers && this.clean.leftovers.counted);
@@ -354,7 +362,7 @@ export class SheetCore {
       x0 = Math.min(x0, rec.rect.x0); y0 = Math.min(y0, rec.rect.y0); x1 = Math.max(x1, rec.rect.x1); y1 = Math.max(y1, rec.rect.y1);
     }
     if (!isFinite(x0)) return { x0: 0, y0: 0, x1: this.size[0], y1: this.size[1] };
-    const pad = 30;
+    const pad = 16;
     return { x0: Math.max(0, x0 - pad), y0: Math.max(0, y0 - pad), x1: Math.min(this.size[0], x1 + pad), y1: Math.min(this.size[1], y1 + pad) };
   }
 
@@ -362,9 +370,10 @@ export class SheetCore {
     const r = this._rect();
     if (!r.width || !r.height || !this.data) return;
     const c = this._contentRect(), cw = Math.max(c.x1 - c.x0, 1), ch = Math.max(c.y1 - c.y0, 1);
-    const top = Math.min(68, r.height * 0.1), bottom = Math.min(112, r.height * 0.15);   // 위 보기 단추 줄, 아래 범례·도구 막대가 차지하는 자리를 빼고 맞춘다
+    // 겹치는 화면 요소(위 보기 단추 줄, 아래 도구 막대, 표시가 있을 때의 범례)가 차지하는 자리만 빼고 그려진 내용의 둘레에 맞춘다
+    const top = Math.min(60, r.height * 0.09), bottom = Math.min(this.marks.length ? 108 : 64, r.height * 0.15);
     const availH = Math.max(r.height - top - bottom, 1);
-    const k = Math.min(r.width / cw, availH / ch) * 0.96;
+    const k = Math.min(r.width / cw, availH / ch) * 0.985;
     this.view = { k, x: (r.width - cw * k) / 2 - c.x0 * k, y: top + (availH - ch * k) / 2 - c.y0 * k };
     this._applyView();
     this._viewChanged(true);
@@ -578,6 +587,7 @@ export class SheetCore {
     const frag = this.doc.createDocumentFragment();
     for (const n of out.nodes) { const b = build(n, this.doc); if (b) frag.appendChild(b); }
     g.appendChild(frag);
+    this.lastDraw = out;
     this._legend(seg);
     this._renderTags();
     // 표시 결과 알림: 바뀐(또는 새) 표시만

@@ -107,6 +107,13 @@ class RuleTest(unittest.TestCase):
         bad["pipes"]["p"]["polyline"][-1] = [250, 299.5]            # 상자 아래 가장자리에는 닿지만 테두리에서는 뜬 끝
         self.assertEqual(cl.layout_lint(i, e, SYMBOLS, bad)["loose_ends"], 1)
 
+    def test_5_continuation_pentagons_all_get_the_same_size_around_their_centers(self):
+        parts = [sym("a", "continuation", (100, 100, 220, 134), "piping_element"), sym("b", "continuation", (300, 200, 440, 240), "piping_element")]
+        _i, _e, t = run(*parts)
+        sizes = {(round(b[2] - b[0], 2), round(b[3] - b[1], 2)) for b in t["symbols"].values()}
+        self.assertEqual(sizes, {cl.CONT_SIZE})
+        self.assertEqual(center(t["symbols"]["a"]), (160.0, 117.0))
+
     def test_5_small_instrument_circles_grow_to_the_standard_size(self):
         parts = [sym("a", "indicator", (100, 100, 128, 128), "instrument"), sym("b", "indicator", (300, 100, 330, 130), "instrument")]
         _i, _e, t = run(*parts)

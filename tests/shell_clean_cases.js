@@ -173,6 +173,32 @@ async function body({ CV, MK, SheetCore }, data) {
     t("설비의 단계 번호는 경로 배관이 그 설비에 닿는 점(가운데 맞춤)에", !!bd && bd.center === true && !!q, JSON.stringify(bd && bd.rect));
   } else t("설비의 단계 번호는 경로 배관이 그 설비에 닿는 점에(표본에 닿는 배관이 없음)", true);
 
+  // ---- 속성 미확인은 평소 그리지 않고 칩을 누르면 보임, 다른 도면 연결은 안 두 줄·같은 크기, 경로 표시와 글자 겹침 없음, 큰 화살촉
+  core.update({ overlays: { original: false, leftovers: false, unconfirmed: false } });
+  const attrN = new Set(data.clean.unconfirmed.filter((u) => u.id && !["unknown_symbol", "open_end", "missing_tag", "ai_candidate", "unplaced", "unresolved_connector"].includes(u.reason)).map((u) => u.id)).size;
+  t("속성만 미확인인 자리는 평소에는 숨김(읽지 못한 것은 위 층에 늘 보임)", attrN >= 1 && core.attrG.style.display === "none" && core.attrG.querySelectorAll("rect").length === attrN && core.topG.style.display === "", attrN + " / " + core.attrG.querySelectorAll("rect").length);
+  core.update({ overlays: { original: false, leftovers: false, unconfirmed: true } });
+  t("미확인 칩(overlay.unconfirmed)을 켜면 속성 미확인 자리가 호박색 점선 테두리로 보임", core.attrG.style.display === "" && !!core.attrG.querySelector('rect[stroke-dasharray="4 3"]'));
+  core.update({ overlays: { original: false, leftovers: false, unconfirmed: false } });
+  const conts = items.filter((i) => i.layer === "symbol" && i.kind === "continuation");
+  const contSizes = new Set(conts.map((i) => { const b = (ex[i.id] && ex[i.id].tbox) || i.bbox; return Math.round(b[2] - b[0]) + "x" + Math.round(b[3] - b[1]); }));
+  const contInside = conts.filter((i) => ex[i.id] && ex[i.id].label && ex[i.id].label.length).every((i) => {
+    const b = ex[i.id].tbox, ts = [...core.cleanG.querySelectorAll("text")].filter((x) => ex[i.id].label.includes(x.textContent) && +x.getAttribute("x") > b[0] && +x.getAttribute("x") < b[2] && +x.getAttribute("y") > b[1] && +x.getAttribute("y") < b[3] + 12);
+    return ts.length >= ex[i.id].label.length;
+  });
+  t("다른 도면 연결 오각형은 모두 같은 크기이고 원본 글자가 안에 들어감", conts.length >= 5 && contSizes.size === 1 && contInside, [...contSizes].join(",") + " " + contInside);
+  const pathIds = items.filter((i) => i.layer === "pipe" && ex[i.id] && ex[i.id].flow).slice(0, 3).map((i) => i.id);
+  core.update({ marks: [{ id: "qa", op: "path", steps: items.filter((i) => i.layer === "symbol" && i.kind && symbols[i.kind] && !symbols[i.kind].junction).slice(0, 3).map((i) => ({ id: i.id })).concat(pathIds.map((id) => ({ id, flow: "with" }))), style: "path", numbered: true }] });
+  const bigArrows = [...marksG.querySelectorAll("polygon")].filter((pg) => /-10,/.test(pg.getAttribute("points") || "")).length;
+  t("경로 위 화살촉은 크게(기본의 약 1.7배)", bigArrows >= 1, bigArrows);
+  const bbx = MK.badgeBoxes(core.lastDraw.badges, core.view.k);
+  const badLabels = [...core.cleanG.querySelectorAll("text")].filter((x) => x.style.display !== "none" && x.getAttribute("font-size")).filter((x) => {
+    const r = sheetRect(x);
+    return bbx.some((b) => !(r.x1 <= b.x0 || r.x0 >= b.x1 || r.y1 <= b.y0 || r.y0 >= b.y1));
+  }).filter((x) => !(core._labels[[...core._labelEls].indexOf(x)] || {}).fixed).length;
+  t("경로를 보일 때 글자는 단계 번호 원과 겹치지 않음(번호 원을 장애물로 봄)", bbx.length >= 3 && badLabels === 0, badLabels + "개가 겹침 / 번호 " + bbx.length);
+  core.update({ marks: [] });
+
   // ---- 연결점 잇기: 그래프에서 실제로 이어진 끝만, 8 단위 안만
   const gapSheet = { graph_id: "gap", width: 400, height: 200, svg: "", links: [], items: [
     { id: "v1", layer: "symbol", kind: "manual_valve", category: "valve", tag: "V1", bbox: [100, 80, 150, 110], unknown: false },

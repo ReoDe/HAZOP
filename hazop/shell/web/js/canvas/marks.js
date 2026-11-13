@@ -201,6 +201,15 @@ function arrowEl(a, k) {
  * @param {{marks: Array, seg: object, selection: string[], index: object, k: number, dimOthers: boolean}} s
  * @returns {{nodes: Array, missing: Map<string, string[]>, dim: boolean}}
  */
+/** 번호 원·꼬리표가 차지하는 자리(도면 좌표). 정리된 보기의 글자가 피할 장애물이다. badgeEl과 같은 계산. */
+export function badgeBoxes(badges, k) {
+  return (badges || []).map((b) => {
+    const r = b.rect, h = (b.round ? 22 : 15) / k, w = (b.round ? 22 : Math.max(15, b.text.length * 8 + 8)) / k;
+    const x = b.center ? r.x0 - w / 2 : r.x0 - 4 / k, y = b.center ? r.y0 - h / 2 : r.y0 - h - 3 / k;
+    return { x0: x - 2 / k, y0: y - 2 / k, x1: x + w + 2 / k, y1: y + h + 2 / k, owner: "badge" };
+  });
+}
+
 export function drawAll({ marks, seg, outside, selection, index, k = 1, size, recolor = null, veil = null }) {
   const nodes = [], missing = new Map();
   // 정리된 보기(recolor 있음)에서는 상자를 덧그리지 않고 그 객체의 색을 바꾼다(규격 §10.5). 못 그리는 층(태그 상자)은 그리지 않는다
