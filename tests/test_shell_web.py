@@ -204,6 +204,27 @@ class ShellWindowTest(ShellBase):
         self.assertEqual(win.view.interceptor.blocked, [], "실행 중 원격 요청 0")
         self.assertEqual(win.view.page().blocked_navigation, [])
 
+    def test_the_import_file_dialog_hook_asks_on_the_gui_thread_even_when_a_job_calls_it(self):
+        import threading
+        from unittest import mock
+        from PySide6.QtWidgets import QFileDialog
+        win = self.window()
+        asked = []
+
+        def fake(parent, title, folder, spec):
+            asked.append((threading.current_thread() is threading.main_thread(), title, spec))
+            return (["C:/x/fmea.xlsx"], "")
+        pick = win.engine.hooks["pick_import"]
+        with mock.patch.object(QFileDialog, "getOpenFileNames", staticmethod(fake)):
+            self.assertEqual(pick("fmea", ["FMEA 양식 (*.xlsx)"]), ["C:/x/fmea.xlsx"])
+            out = []
+            worker = threading.Thread(target=lambda: out.append(pick("mld", "MLD 파일 (*.xlsx *.csv)")))
+            worker.start()
+            self.assertTrue(wait_for(lambda: not worker.is_alive(), 10), "작업 스레드가 화면 스레드의 대답을 기다린다")
+            self.assertEqual(out, [["C:/x/fmea.xlsx"]])
+        self.assertEqual(asked[0], (True, "FMEA 양식 고르기", "FMEA 양식 (*.xlsx)"))
+        self.assertEqual(asked[1], (True, "MLD 파일 고르기", "MLD 파일 (*.xlsx *.csv)"), "작업 스레드에서 불러도 창은 화면 스레드에서 열린다")
+
     def test_related_panels_are_tabs_under_one_menu_button(self):
         win = self.window()
         for name, lead, tabs in (("aireview", "도면", ["도면", "표제란", "AI 검토"]), ("docs", "지식그래프", ["지식그래프", "설계 문서"])):

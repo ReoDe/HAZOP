@@ -253,6 +253,7 @@ class ShellWindow(QMainWindow):
         self.engine.hooks["pick_files"] = self._pick_files
         self.engine.hooks["ask_api_key"] = lambda name: key_dialog.ask_key(name, self)      # 키는 웹으로 받지 않고 이 Qt 상자로만 받는다
         self.engine.hooks["pick_doc"] = self._pick_doc
+        self.engine.hooks["pick_import"] = lambda kind, filters=None: self._on_gui(lambda: self._pick_import(kind, filters))      # 초기사건 가져오기(FMEA 양식·MLD): 경로는 Python 안에서만 쓴다
         self.engine.hooks["open_classic"] = self._open_classic
         self.engine.hooks["conn_guide"] = self._conn_guide
         self.engine.hooks["save_path"] = self._save_path
@@ -342,6 +343,16 @@ class ShellWindow(QMainWindow):
         """설계 문서 PDF 고르기(문서 패널). 도면 파일은 보이지 않는다."""
         files, _ = QFileDialog.getOpenFileNames(self, "설계 문서 PDF 고르기", "", "설계 문서 PDF (*.pdf)")
         return files
+
+    IMPORT_TITLES = {"fmea": "FMEA 양식 고르기", "mld": "MLD 파일 고르기"}
+
+    def _pick_import(self, kind, filters=None):
+        """가져올 파일 고르기. kind는 파일 종류(fmea·mld…), filters는 '이름 (*.확장자)' 글 하나 또는 그 목록. 고른 파일 경로 목록, 취소하면 []."""
+        if isinstance(filters, str):
+            filters = [filters]
+        spec = ";;".join(str(f) for f in (filters or [])) or "모든 파일 (*)"
+        files, _ = QFileDialog.getOpenFileNames(self, self.IMPORT_TITLES.get(kind, "가져올 파일 고르기"), "", spec)
+        return list(files)
 
     def _save_path(self, kind, default_name):
         """내보내기 저장 위치를 묻는다(웹은 경로를 보내지 않는다). 취소하면 None."""
