@@ -109,7 +109,7 @@ def summary(engine):
     pg = _pg(engine, strict=False)
     if pg is None:
         return {"available": False, "set_rev": 0, "nodes": [], "batches": [], "outside": {"count": 0, "total": 0}, "stale": False,
-                "read_only": None, "pending_ai": 0, "legacy": False, "ver": "0"}
+                "read_only": None, "pending_ai": 0, "legacy": False, "ver": "0", "project_id": engine.project_id()}
     ns, legacy = _peek(pg)
     fwd, _ = chatview._locals(pg)
     owners = _owners(ns)
@@ -117,7 +117,7 @@ def summary(engine):
     total = len(fwd)
     covered = sum(1 for m in fwd if m in owners)
     return {"available": True, "set_rev": ns.get("set_rev") or 0, "graph_version": ns.get("graph_version"),
-            "stale": bool(ns["nodes"]) and nodes.is_stale(ns, pg), "read_only": ns.get("read_only"), "legacy": legacy, "nodes": rows,
+            "stale": bool(ns["nodes"]) and nodes.is_stale(ns, pg), "read_only": ns.get("read_only"), "legacy": legacy, "project_id": engine.project_id(), "nodes": rows,
             "batches": _batch_rows(ns), "pending_ai": node_tools.pending_ai(ns),
             "outside": {"count": total - covered, "total": total}, "ver": str(ns.get("set_rev") or 0)}
 
@@ -219,6 +219,7 @@ def read(engine, parts, query):
 
 # ---------------------------------------------------------------- 쓰기
 
+PROJECT_TEXT = "프로젝트가 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요."
 STALE_TEXT = "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요."
 SKIP_TEXT = "고른 것 가운데 %d개는 구성요소가 아닌 선(신호선·계측선)이라 뺐습니다."
 EDIT_COMMANDS = ("add_members", "remove_members", "rename", "set_design_intent", "merge", "split", "remove")
@@ -240,6 +241,12 @@ def _error(out, ns, targets, name):
     if name in EDIT_COMMANDS and held:
         return _api().CommandError("locked", text)
     return _api().CommandError("failed", text)
+
+
+def _check_project(eng, a):
+    """화면이 본 프로젝트가 지금 프로젝트와 같아야 쓴다(프로젝트를 바꾼 뒤 낡은 목록으로 다른 프로젝트의 구간을 쓰지 않게)."""
+    if a["project_id"] != eng.project_id():
+        raise _api().CommandError("stale", PROJECT_TEXT)
 
 
 def _wanted(a):
@@ -290,6 +297,7 @@ def _run(name, build):
         by = eng.reviewer()
         if not by:
             raise _api().CommandError("bad_args", "검토자 이름을 먼저 설정에서 입력하세요. 구간 기록에 남습니다.")
+        _check_project(eng, a)
         pg = _pg(eng)
         ns, legacy = _peek(pg)
         if legacy:
@@ -314,6 +322,7 @@ def _run(name, build):
 
 def _migrate(eng, a):
     """0.1 구간 파일을 새 판으로 바꾼다(사용자가 누를 때 한 번. 읽기 API는 바꾸지 않는다)."""
+    _check_project(eng, a)
     pg = _pg(eng)
     try:
         ns = nodes.load(pg)
@@ -328,6 +337,7 @@ def register(commands):
     api = _api()
     C, v_str, v_int, v_list, v_obj, v_enum, v_bool = (api.Command, api.v_str, api.v_int, api.v_list, api.v_obj, api.v_enum, api.v_bool)
     rev = (v_int(0, INT_MAX), True)
+    proj = (v_str(1, 120), True)
     target = v_list(v_obj(node_id=v_str(1, 40), rev=v_int(0, INT_MAX), state=v_enum("applied", "confirmed", "locked")), 100)
     sheet, ids = (v_str(1, 200), True), (v_list(v_str(1, 200), MAX_IDS), True)
     nid, nids = (v_str(1, 40), True), (v_list(v_str(1, 40), 100), True)
@@ -341,7 +351,7 @@ def register(commands):
     cmd_name = {"set_intent": "set_design_intent"}
 
     def add(name, spec_, build, doc, needs_target=True):
-        base = {"set_rev": rev, "targets": (target, needs_target)}
+        base = {"project_id": proj, "set_rev": rev, "targets": (target, needs_target)}
         put(name, dict(base, **spec_), _run(cmd_name.get(name, name), build), doc)
 
     def with_members(extra):
@@ -368,8 +378,11 @@ def register(commands):
     add("unlock", dict(node_ids=nids, reason=(v_str(1, 500), True)), lambda pg, a: ({"node_ids": a["node_ids"], "reason": a["reason"]}, 0),
         "잠금을 푼다(이유를 적어야 함)")
     add("undo", dict(batch_id=(v_str(2, 20), True)), lambda pg, a: ({"batch_id": a["batch_id"]}, 0), "묶음을 되돌린다", needs_target=False)
-    put("suggest", {"sheet": sheet, "ids": ids}, lambda eng, a: suggest(eng, a["sheet"], a["ids"]), "고른 구성요소로 만들 구간의 카드 초안(저장하지 않음)")
-    put("migrate", {}, _migrate, "0.1 구간 파일을 새 판으로 바꾼다(사용자가 누를 때 한 번)")
+    def h_suggest(eng, a):
+        _check_project(eng, a)
+        return suggest(eng, a["sheet"], a["ids"])
+    put("suggest", {"project_id": proj, "sheet": sheet, "ids": ids}, h_suggest, "고른 구성요소로 만들 구간의 카드 초안(저장하지 않음)")
+    put("migrate", {"project_id": proj}, _migrate, "0.1 구간 파일을 새 판으로 바꾼다(사용자가 누를 때 한 번)")
     return commands
 
 

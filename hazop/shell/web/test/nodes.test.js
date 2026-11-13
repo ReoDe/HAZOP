@@ -15,7 +15,7 @@ const tick = async () => { for (let i = 0; i < 600; i++) await Promise.resolve()
 let engine;
 function resetEngine() {
   engine = {
-    list: { available: true, set_rev: 4, graph_version: "v", stale: false, read_only: null, pending_ai: 1, outside: { count: 30, total: 40 }, batches: [
+    list: { project_id: "P", available: true, set_rev: 4, graph_version: "v", stale: false, read_only: null, pending_ai: 1, outside: { count: 30, total: 40 }, batches: [
       { batch_id: "B2", origin: "ai", kind: "apply", at: "2026-11-13T01:00:00Z", request_text: "대표 구간 만들어 줘", undone: false, ops: ["add"], node_ids: ["S2"] },
       { batch_id: "B1", origin: "user", kind: "apply", at: "2026-11-13T00:00:00Z", request_text: null, undone: false, ops: ["add"], node_ids: ["S1"] }], ver: "4",
     nodes: [
@@ -109,7 +109,7 @@ export const tests = [
     window.fetch = orig;
     const m = lastCmd();
     assert.equal(m.name, "nodes.rename");
-    assert.equal(m.args, { set_rev: 4, node_id: "S1", name: "새 이름", targets: [{ node_id: "S1", rev: 2, state: "applied" }] });
+    assert.equal(m.args, { project_id: "P", set_rev: 4, node_id: "S1", name: "새 이름", targets: [{ node_id: "S1", rev: 2, state: "applied" }] });
     assert(r && r.batch_id === "B3", "답");
     assert(reads.includes("/api/nodes") && reads.some((u) => u.startsWith("/api/nodes/sheet/")), "다시 읽음 " + reads.join(","));
     assert(!("by" in m.args) && !("at" in m.args) && !("author" in m.args), "웹은 by·at·author를 보내지 않음");
@@ -226,7 +226,7 @@ export const tests = [
     await tick();
     const m = lastCmd();
     assert.equal(m.name, "nodes.create");
-    assert.equal(m.args, { sheet: "graph-A", ids: ["n1", "n2", "n3"], name: "RC-RV01 → RC-SG01", design_intent: "원자로 출구를 증기발생기로 보냄", set_rev: 4 });
+    assert.equal(m.args, { project_id: "P", sheet: "graph-A", ids: ["n1", "n2", "n3"], name: "RC-RV01 → RC-SG01", design_intent: "원자로 출구를 증기발생기로 보냄", set_rev: 4 });
     assert.equal(N.nodes.get().selection, []);
     assert(!host.querySelector(".newnode"), "카드가 닫힘");
     assert.equal(N.nodes.get().focus, "S4");
@@ -353,4 +353,23 @@ tests.push({ name: "구간 패널: 옛 판(0.1) 파일은 안내와 '새 판으�
   await tick();
   assert.equal(lastCmd().name, "nodes.migrate");
   host.remove();
+} });
+
+
+tests.push({ name: "구간 연결: 프로젝트가 바뀌면 앞 프로젝트의 목록·고른 것·카드를 비우고 새로 읽으며, 쓰기에는 화면이 본 프로젝트 ID를 보낸다", async run(assert) {
+  await setup();
+  store.set({ drawings: Object.assign({}, store.get().drawings, { project_id: "P" }) });
+  N.nodes.set({ focus: "S2", selection: ["n1"], card: { open: true, name: "x", intent: "", suggest: null, busy: false, error: null }, checked: ["S1"] });
+  engine.list = Object.assign({}, engine.list, { project_id: "Q", set_rev: 9, nodes: engine.list.nodes.slice(2) });
+  store.set({ drawings: Object.assign({}, store.get().drawings, { project_id: "Q" }) });      // 위 막대에서 프로젝트를 바꿈
+  const old = N.nodes.get();
+  assert(old.focus === null && old.selection.length === 0 && old.card === null && old.checked.length === 0, "보기 상태를 비움");
+  await tick();
+  const s2 = N.nodes.get();
+  assert.equal([s2.list.project_id, s2.list.set_rev, s2.list.nodes.map((n) => n.node_id)], ["Q", 9, ["S3"]]);
+  await N.confirm(["S3"]);
+  assert.equal([lastCmd().name, lastCmd().args.project_id, lastCmd().args.set_rev], ["nodes.confirm", "Q", 9]);
+  store.set({ drawings: Object.assign({}, store.get().drawings, { project_id: "P" }) });
+  engine.list = Object.assign({}, engine.list, { project_id: "P" });
+  await tick();
 } });

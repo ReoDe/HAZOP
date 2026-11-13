@@ -5,7 +5,7 @@ import { createStore, store as shell } from "../store.js";
 import { cmd, on, onChanged, read } from "../bridge.js";
 import { blankCard, errorText, targetsOf } from "./nodes_logic.js";
 
-const EMPTY_LIST = { available: false, set_rev: 0, nodes: [], batches: [], outside: { count: 0, total: 0 }, stale: false, read_only: null, pending_ai: 0 };
+const EMPTY_LIST = {project_id: null,  available: false, set_rev: 0, nodes: [], batches: [], outside: { count: 0, total: 0 }, stale: false, read_only: null, pending_ai: 0 };
 
 export const nodes = createStore({
   list: EMPTY_LIST,         // GET nodes
@@ -102,7 +102,7 @@ export async function openCard() {
   if (!selection.length || !sheet) return;
   nodes.set({ card: blankCard({ busy: true }) });
   try {
-    const sg = await cmd("nodes.suggest", { sheet, ids: selection });
+    const sg = await cmd("nodes.suggest", { project_id: nodes.get().list.project_id, sheet, ids: selection });
     if (nodes.get().card) nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, suggest: sg, name: s.card.name || sg.name }) }));
   } catch (e) {
     if (nodes.get().card) nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, error: errorText(e) }) }));
@@ -118,7 +118,7 @@ export async function submitCard() {
   if (!card.name.trim()) { editCard({ error: "구간 이름을 입력하세요." }); return null; }
   editCard({ busy: true, error: null });
   try {
-    const r = await cmd("nodes.create", { sheet, ids: selection, name: card.name.trim(), design_intent: card.intent.trim() || undefined, set_rev: list.set_rev });
+    const r = await cmd("nodes.create", { project_id: list.project_id, sheet, ids: selection, name: card.name.trim(), design_intent: card.intent.trim() || undefined, set_rev: list.set_rev });
     nodes.set({ card: null, selection: [], truncated: false, mode: "pan" });
     await refresh();
     if (r.node_ids && r.node_ids[0]) focusNode(r.node_ids[0]);
@@ -141,7 +141,7 @@ export async function run(name, args, targetIds) {
   const { list } = nodes.get();
   nodes.set({ busy: true, error: null, needArchive: null });
   try {
-    const r = await cmd("nodes." + name, Object.assign({ set_rev: list.set_rev }, args, targetIds && targetIds.length ? { targets: targetsOf(list.nodes, targetIds) } : {}));
+    const r = await cmd("nodes." + name, Object.assign({ project_id: list.project_id, set_rev: list.set_rev }, args, targetIds && targetIds.length ? { targets: targetsOf(list.nodes, targetIds) } : {}));
     nodes.set({ busy: false });
     if (r && r.skipped_text) shell.set({ toast: { text: r.skipped_text, kind: "info" } });   // 구성요소가 아니라 뺀 선이 있으면 알린다
     await refresh();
@@ -200,7 +200,7 @@ export async function removeNode(id, archive) {
 export async function migrate() {
   nodes.set({ busy: true, error: null });
   try {
-    await cmd("nodes.migrate", {});
+    await cmd("nodes.migrate", { project_id: nodes.get().list.project_id });
     nodes.set({ busy: false });
     await refresh();
   } catch (e) {
@@ -212,6 +212,13 @@ export function toggleChecked(id) {
   nodes.set((s) => ({ checked: s.checked.includes(id) ? s.checked.filter((x) => x !== id) : s.checked.concat(id) }));
 }
 
+/** 프로젝트가 바뀌었다: 앞 프로젝트의 목록·고른 것·카드를 모두 비우고 새로 읽는다(낡은 판으로 쓰지 않게). */
+export function resetForProject() {
+  seq++;                                  // 아직 오지 않은 앞 읽기의 답은 버린다
+  nodes.set({ list: EMPTY_LIST, sheetView: null, detail: null, selection: [], truncated: false, focus: null, card: null, checked: [], error: null, needArchive: null, busy: false });
+  refresh();
+}
+
 // ---------------------------------------------------------------- 엔진 알림 연결(한 번만)
 let wired = false;
 export function wire() {
@@ -219,8 +226,11 @@ export function wire() {
   wired = true;
   onChanged((topic) => { if (topic === "nodes") refresh(); });
   on("chat.answer", () => { setTimeout(refresh, 150); });   // 채팅이 구간을 만들었을 수 있다
+  let lastProject = shell.get().drawings.project_id;
   let last = null;
   shell.subscribe((s) => {
+    const pid = s.drawings.project_id;
+    if (pid !== lastProject) { lastProject = pid; resetForProject(); }
     if (s.sheet !== last) { last = s.sheet; nodes.set({ selection: [], truncated: false, card: null, sheetView: null }); loadSheet(s.sheet); }
   });
   refresh();

@@ -66,6 +66,7 @@ class Env(unittest.TestCase):
         """웹이 하듯 화면이 본 판(set_rev, 건드리는 구간의 rev·state)을 함께 보낸다. 시험이 따로 정하면 그것을 쓴다."""
         args = dict(args or {})
         args.setdefault("set_rev", self.rev())
+        args.setdefault("project_id", self.engine.project_id())
         wanted = ([args["node_id"]] if args.get("node_id") else []) + list(args.get("node_ids") or [])
         if "targets" not in args and wanted:
             rows = {n["node_id"]: n for n in api_nodes.summary(self.engine)["nodes"]}
@@ -225,7 +226,7 @@ class CommandTest(Env):
         self.create("가", 0, 5)
         eq = [n for n in self.by_sheet[S101] if n.get("category") == "equipment" and n.get("tag")]
         ids = [eq[0]["local_id"], eq[-1]["local_id"], self.by_sheet[S101][0]["local_id"]]
-        r = self.engine.dispatch("nodes.suggest", {"sheet": S101, "ids": ids})
+        r = self.engine.dispatch("nodes.suggest", {"project_id": "SNP", "sheet": S101, "ids": ids})
         self.assertTrue(r["ok"], r)
         d = r["data"]
         self.assertEqual(d["count"], len(set(ids)))
@@ -297,7 +298,7 @@ class RoundTripTest(Env):
         self.assertEqual(after["nodes"], nodes_before)
         self.assertEqual([n["node_id"] for n in after["nodes"]], ["S1", "S2"])
         # 다시 연 뒤에도 같은 판으로 이어서 쓸 수 있다
-        r = engine2.dispatch("nodes.rename", {"node_id": "S2", "name": "나 고침", "set_rev": after["set_rev"],
+        r = engine2.dispatch("nodes.rename", {"project_id": "SNP", "node_id": "S2", "name": "나 고침", "set_rev": after["set_rev"],
                                               "targets": [{"node_id": "S2", "rev": after["nodes"][1]["rev"], "state": "applied"}]})
         self.assertTrue(r["ok"], r)
         self.assertEqual(r["data"]["set_rev"], after["set_rev"] + 1)
@@ -325,6 +326,7 @@ class CommandTableTest(unittest.TestCase):
             for k in names:
                 spec = api.COMMANDS[k].spec
                 self.assertFalse({"by", "at", "author", "origin", "confirmed_by", "request"} & set(spec), k)
+                self.assertTrue(spec["project_id"][1], k)
                 if k not in ("nodes.suggest", "nodes.migrate"):
                     self.assertTrue(spec["set_rev"][1], k)
                     # 구간을 건드리는 명령은 대상의 판(targets)이 필수다(규격 §5.3). 만들기·묶음 되돌리기는 대상 구간이 없다
@@ -379,17 +381,68 @@ class WiringTest(unittest.TestCase):
             self.assertIn('api_nodes.read(self.engine, parts, query)', fh.read())
 
 
+class ProjectSwitchTest(Env):
+    """프로젝트를 바꾼 뒤 낡은 목록으로 보낸 쓰기 명령이 다른 프로젝트의 구간을 쓰지 않는다(3단계 검토 재현)."""
+
+    def setUp(self):
+        super().setUp()
+        from hazop.app import project_ctx
+        self.a = self.pg
+        self.b = copy.deepcopy(self.a)
+        self.b["project_id"] = "OTHER"
+        patcher = mock.patch.object(project_ctx, "project_graph", lambda pid: self.b if pid == "OTHER" else self.a)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def switch(self, pid):
+        self.engine.dispatch("project.set", {"project_id": pid})
+        self.pg = self.b if pid == "OTHER" else self.a
+
+    def test_old_list_of_project_a_cannot_confirm_in_project_b(self):
+        self.create(name="A 구간")
+        self.switch("OTHER")
+        self.create(name="B 구간")
+        self.switch("SNP")
+        web = api_nodes.summary(self.engine)                     # 웹이 A에서 읽어 들고 있는 목록
+        self.assertEqual((web["project_id"], web["nodes"][0]["name"]), ("SNP", "A 구간"))
+        self.switch("OTHER")                                      # 위 막대에서 프로젝트를 바꿈
+        n = web["nodes"][0]
+        r = self.engine.dispatch("nodes.confirm", {"project_id": web["project_id"], "node_ids": [n["node_id"]], "set_rev": web["set_rev"],
+                                                    "targets": [{"node_id": n["node_id"], "rev": n["rev"], "state": n["state"]}]})
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["error"]["code"], "stale")
+        self.assertIn("프로젝트가 바뀌어", r["error"]["message"])
+        self.assertEqual([(x["name"], x["state"]) for x in api_nodes.summary(self.engine)["nodes"]], [("B 구간", "applied")])
+
+    def test_project_id_is_required_on_every_write_and_suggest_and_migrate(self):
+        self.create()
+        for name, args in [("rename", {"node_id": "S1", "name": "x"}), ("confirm", {"node_ids": ["S1"]}), ("undo", {"batch_id": "B1"}),
+                           ("create", {"sheet": S101, "ids": self.local(S101, 0, 2), "name": "x"}), ("suggest", {"sheet": S101, "ids": self.local(S101, 0, 2)}),
+                           ("migrate", {})]:
+            a = dict(args)
+            if name not in ("suggest", "migrate"):
+                a["set_rev"] = self.rev()
+            r = self.engine.dispatch("nodes." + name, a)
+            self.assertEqual(r["error"]["code"], "bad_args", name)
+            self.assertIn("project_id", r["error"]["message"], name)
+        r = self.engine.dispatch("nodes.suggest", {"project_id": "OTHER", "sheet": S101, "ids": self.local(S101, 0, 2)})
+        self.assertEqual(r["error"]["code"], "stale")
+        r = self.engine.dispatch("nodes.migrate", {"project_id": "OTHER"})
+        self.assertEqual(r["error"]["code"], "stale")
+
+
 class ReviewFixTest(Env):
     """총괄 검토(2026-11-13)에서 반려된 점의 재현: 말없이 뺌, 읽기가 쓰기, targets 선택, 문구 대조, 이름 겹침, 묶음 ID."""
 
     def test_targets_are_required_for_node_commands(self):
         self.create()
-        r = self.engine.dispatch("nodes.rename", {"node_id": "S1", "name": "x", "set_rev": self.rev()})
+        pid = self.engine.project_id()
+        r = self.engine.dispatch("nodes.rename", {"project_id": pid, "node_id": "S1", "name": "x", "set_rev": self.rev()})
         self.assertEqual(r["error"]["code"], "bad_args")
         self.assertIn("targets", r["error"]["message"])
-        r = self.engine.dispatch("nodes.rename", {"node_id": "S1", "name": "x", "set_rev": self.rev(), "targets": []})
+        r = self.engine.dispatch("nodes.rename", {"project_id": pid, "node_id": "S1", "name": "x", "set_rev": self.rev(), "targets": []})
         self.assertEqual(r["error"]["code"], "bad_args")      # 건드리는 구간의 판이 빠짐
-        r = self.engine.dispatch("nodes.rename", {"node_id": "S1", "name": "x"})
+        r = self.engine.dispatch("nodes.rename", {"project_id": pid, "node_id": "S1", "name": "x"})
         self.assertEqual(r["error"]["code"], "bad_args")      # set_rev 빠짐
         self.assertEqual(api_nodes.summary(self.engine)["nodes"][0]["name"], "구간 가")
 
@@ -436,7 +489,7 @@ class ReviewFixTest(Env):
         self.assertEqual(r["error"]["code"], "failed")        # 변환 전에는 쓰지 않는다
         self.assertIn("새 판", r["error"]["message"])
         self.assertEqual(_rb(path), before[1])
-        m = self.engine.dispatch("nodes.migrate", {})
+        m = self.engine.dispatch("nodes.migrate", {"project_id": self.engine.project_id()})
         self.assertTrue(m["ok"], m)
         s2 = api_nodes.summary(self.engine)
         self.assertFalse(s2["legacy"])
