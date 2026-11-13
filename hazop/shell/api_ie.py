@@ -126,7 +126,7 @@ def _write(engine, a, fn):
         raise api.CommandError("failed", why)
     pg, ns, doc, ie_doc, ie_fp = ctx
     ver = a.get("ver")
-    if ver not in (None, "none") and ver != ie_fp:
+    if (ver == "none") != (ie_fp is None) or (ie_fp is not None and ver != ie_fp):      # 'none'은 파일이 없었다는 뜻: 지금 있으면 다르다
         raise api.CommandError("stale", "초기사건이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
     base = model.sync(ie_doc, doc, node_set=ns)
     try:

@@ -85,7 +85,7 @@ async function write(name, args) {
   const c = results.get().cell;
   results.set({ busy: true, error: null });
   try {
-    const r = await cmd(name, Object.assign({ ver: c ? c.ver : results.get().summary.ver }, args));
+    const r = await cmd(name, Object.assign({ ver: c ? c.ver : results.get().summary.ver, set_rev: results.get().summary.set_rev }, args));
     results.set({ busy: false });
     await refresh();
     return r;

@@ -449,7 +449,7 @@ class CloseGuardTest(ShellBase):
     def test_cancel_keeps_the_window_and_the_job(self):
         win = self.window()
         asked = []
-        win.confirm_busy = lambda n: asked.append(n) or "cancel"
+        win.confirm_busy = lambda n, kinds=None: asked.append(n) or "cancel"
         gate, steps = self.busy_job(win)
         self.assertFalse(win.close())
         self.assertEqual(asked, [1])
@@ -464,7 +464,7 @@ class CloseGuardTest(ShellBase):
 
     def test_wait_closes_when_the_job_finishes(self):
         win = self.window()
-        win.confirm_busy = lambda n: "wait"
+        win.confirm_busy = lambda n, kinds=None: "wait"
         gate, steps = self.busy_job(win)
         self.assertFalse(win.close())
         self.assertTrue(win.isVisible())
@@ -474,7 +474,7 @@ class CloseGuardTest(ShellBase):
 
     def test_stop_halts_at_the_next_progress_then_closes(self):
         win = self.window()
-        win.confirm_busy = lambda n: "stop"
+        win.confirm_busy = lambda n, kinds=None: "stop"
         gate, steps = self.busy_job(win)
         import threading
         threading.Timer(0.3, gate.set).start()    # 지금 단계(대기)는 끝나고, 다음 진행 알림 자리에서 멈춘다
@@ -485,7 +485,7 @@ class CloseGuardTest(ShellBase):
 
     def test_classic_switch_waits_for_jobs_too(self):
         win = self.window()
-        win.confirm_busy = lambda n: "wait"
+        win.confirm_busy = lambda n, kinds=None: "wait"
         gate, steps = self.busy_job(win)
         r = win.engine.dispatch("app.open_classic", {})
         self.assertEqual(r["data"], {"switched": False})
@@ -493,9 +493,51 @@ class CloseGuardTest(ShellBase):
         gate.set()
         self.assertTrue(wait_for(lambda: not win.isVisible(), 15))
 
+    def test_busy_text_matches_the_running_job(self):
+        from hazop.shell.window import ShellWindow
+        head, info = ShellWindow.busy_text(["analysis"])
+        self.assertIn("AI 분석", head)
+        self.assertNotIn("등록", head + info, "분석 중에 '도면 등록·추출'이라고 하지 않는다")
+        head, _ = ShellWindow.busy_text(["register"])
+        self.assertIn("도면 등록·추출", head)
+        head, _ = ShellWindow.busy_text(["register", "analysis", "analysis"])
+        self.assertTrue("도면 등록·추출" in head and "AI 분석" in head and "3개" in head, head)
+
+    def test_close_guard_text_for_an_analysis_job(self):
+        win = self.window()
+        seen = []
+        win.confirm_busy = lambda n, kinds=None: seen.append(kinds) or "cancel"
+        import threading as th
+        gate = th.Event()
+        win.engine.start_job("AI 분석 실행", lambda progress: gate.wait(20), kind="analysis")
+        self.assertTrue(wait_for(lambda: bool(win.engine.running_jobs()), 5))
+        self.assertFalse(win.close())
+        self.assertEqual(seen, [["analysis"]])
+        gate.set()
+        self.assertTrue(win.engine.wait_jobs(15))
+
+    def test_save_path_asks_before_overwriting_the_path_with_the_extension_added(self):
+        from unittest import mock
+        win = self.window()
+        out = os.path.join(self.tmp, "exists.xlsx")
+        with open(out, "w", encoding="utf-8") as fh:
+            fh.write("x")
+        asked = []
+        with mock.patch("hazop.shell.window.QFileDialog.getSaveFileName", return_value=(os.path.join(self.tmp, "exists"), "")):
+            win.confirm_overwrite = lambda p: asked.append(p) or False
+            self.assertIsNone(win._save_path("excel", "a.xlsx"), "덮어쓰기를 거절하면 저장하지 않는다")
+            self.assertEqual(asked, [out], "확장자를 붙인 경로로 묻는다")
+            win.confirm_overwrite = lambda p: True
+            self.assertEqual(win._save_path("excel", "a.xlsx"), out)
+        with mock.patch("hazop.shell.window.QFileDialog.getSaveFileName", return_value=(os.path.join(self.tmp, "fresh"), "")):
+            win.confirm_overwrite = lambda p: self.fail("없는 파일은 묻지 않는다")
+            self.assertEqual(win._save_path("excel", "a.xlsx"), os.path.join(self.tmp, "fresh.xlsx"))
+        with mock.patch("hazop.shell.window.QFileDialog.getSaveFileName", return_value=("", "")):
+            self.assertIsNone(win._save_path("excel", "a.xlsx"))
+
     def test_no_jobs_closes_without_asking(self):
         win = self.window()
-        win.confirm_busy = lambda n: self.fail("작업이 없으면 묻지 않는다")
+        win.confirm_busy = lambda n, kinds=None: self.fail("작업이 없으면 묻지 않는다")
         self.assertTrue(win.close())
 
 

@@ -50,7 +50,7 @@ def _node_set(pg):
 def _load(ns):
     """(결과 문서, 지문). 파일이 없으면 빈 결과와 None. 읽기 전용(원본 보관·변환 저장 없음)."""
     devs = res.load_deviations()
-    doc, fp = res._load(ns, devs, write=False)
+    doc, fp = res.load_fp(ns, devs)        # 공개 읽기: 파일을 쓰지 않고 지문까지 돌려준다
     if doc is None:
         return res.empty_results(ns, devs), None
     return doc, fp
@@ -60,16 +60,38 @@ def _ver(fp):
     return fp or "none"
 
 
+def _screen_status(n):
+    return ((n or {}).get("screen") or {}).get("status") or "keep"
+
+
+def scope_rows(ns):
+    """행렬 행이 되는 구간 = 이전 화면(results.py _rows)과 같은 규칙: 확정·잠금 구간만, 스크리닝 제외는 뺀다, 낮음은 맨 아래."""
+    shown = [n for n in ns["nodes"] if _screen_status(n) != "excluded" and nodes.is_active(n)]
+    return [n for n in shown if _screen_status(n) != "low"] + [n for n in shown if _screen_status(n) == "low"]
+
+
+def scope_set(ns):
+    """AI 일괄·Excel·권고의 범위 = 행렬 행과 같은 구간(이전 화면 _scope_set)."""
+    return dict(ns, nodes=scope_rows(ns))
+
+
+def check_version(ns, ver):
+    """화면이 읽은 결과 파일 지문(ver)과 지금 파일을 맞춘다. 'none'은 '파일이 없었다'는 뜻이라 지금 파일이 있으면 다르다(없던 것이 생겨도 다름, 규격 §5.3)."""
+    _doc, fp = res.load_fp(ns)
+    if (ver == "none") != (fp is None) or (fp is not None and ver != fp):
+        raise _api().CommandError("stale", "분석 결과가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
+
+
 def _entry_view(e):
     return dict(e, verdict=res.verdict(e))
 
 
 def _rec_rows(doc, ns, only_node=None):
-    by_node = {n["node_id"]: n for n in ns["nodes"]}
+    by_node = {n["node_id"]: n for n in scope_rows(ns)}
     labels = {d["deviation_id"]: d.get("label") or d["deviation_id"] for d in doc.get("deviations") or []}
     rows = []
     for cell in doc["cells"]:
-        if only_node and cell["node_id"] != only_node:
+        if (only_node and cell["node_id"] != only_node) or cell["node_id"] not in by_node:
             continue
         for e in cell["entries"]:
             text = (e.get("recommendation") or "").strip() if isinstance(e.get("recommendation"), str) else ""
@@ -89,7 +111,7 @@ def summary(engine):
     if pg is None:
         return {"available": False, "reason": "프로젝트 그래프가 없습니다. 도면을 먼저 추출하세요."}
     ns, legacy = _node_set(pg)
-    active = [n for n in ns["nodes"] if nodes.is_active(n)]
+    active = scope_rows(ns)
     base = {"available": True, "legacy": legacy, "set_rev": ns.get("set_rev") or 0}
     if legacy or not active:
         return dict(base, empty=True, nodes=[], deviations=[], matrix={}, ver="none", kpi=_kpi(None),
@@ -208,8 +230,8 @@ def _after(engine, out, name):
     if not out["ok"]:
         refused = out.get("refused") or [{"target": "", "reason": "처리하지 못했습니다."}]
         text = "; ".join(str(r.get("reason") or "") for r in refused)[:300]
-        targets = {r.get("target") for r in refused}
-        code = "stale" if targets & {"fingerprint", "file"} else ("locked" if "잠긴" in text or "보관" in text else "failed")
+        codes = {r.get("code") for r in refused}
+        code = ("stale" if codes & {"stale", "conflict"} else "locked" if "read_only" in codes or "잠긴" in text or "보관" in text else "failed")
         raise api.CommandError(code, text)
     engine.changed("results", None)
     return out
@@ -220,10 +242,12 @@ def _execute(engine, name, a, writes=True):
     ns, legacy = _node_set(pg)
     if legacy:
         raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
-    ver = a.get("ver")
     by = _need_reviewer(engine) if writes else engine.reviewer()
-    args = {k: v for k, v in a.items() if k != "ver"}
-    out = result_commands.execute(ns, name, args, by=by, fingerprint=None if ver in (None, "none") else ver, pg=pg)
+    ver = a.get("ver")
+    if writes:
+        check_version(ns, ver)
+    args = {k: v for k, v in a.items() if k not in ("ver", "set_rev")}
+    out = result_commands.execute(pg, name, args, by, None if ver in (None, "none") else ver, set_rev=a.get("set_rev"))
     return _after(engine, out, name), ns, pg
 
 
@@ -267,7 +291,7 @@ def _export_excel(engine, a):
     node_ids = a.get("node_ids") or None
     inputs = excel_inputs(ns, pg)
     try:
-        path, rows = study_xlsx.export(path, doc, ns, pg, doc["deviations"], scope=scope, node_ids=node_ids,
+        path, rows = study_xlsx.export(path, doc, scope_set(ns), pg, doc["deviations"], scope=scope, node_ids=node_ids,
                                        reviewer=engine.reviewer() or "", intents=inputs["intents"], now=now, expectations=inputs["expectations"])
     except (OSError, ValueError) as exc:
         raise _api().CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % str(exc)[:200])
@@ -304,7 +328,7 @@ def _export_ie(engine, a):
         return {"cancelled": True}
     if not path.lower().endswith(".xlsx"):
         path += ".xlsx"
-    out = result_commands.execute(ns, "export_ie_bundle", {"path": path}, by=engine.reviewer(), fingerprint=None, pg=pg)
+    out = result_commands.execute(pg, "export_ie_bundle", {"path": path}, engine.reviewer(), None)
     if not out["ok"]:
         raise _api().CommandError("failed", "; ".join(str(r.get("reason")) for r in out["refused"])[:300])
     return {"path": os.path.basename(out["path"]), "candidates": out["candidates"], "cancelled": False}
@@ -335,6 +359,7 @@ def _plan(engine, a):
     if legacy:
         raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
     doc, _fp = _load(ns)
+    ns = scope_set(ns)                       # 스크리닝 제외 구간은 호출·요금에 들어가지 않는다
     units = analysis_run.plan(ns, doc, a["scope"], a.get("node_id"), a.get("deviation_id"))
     return pg, ns, doc, units
 
@@ -409,7 +434,7 @@ def _run(engine, a):
         engine.changed("results", None)
         engine.changed("results.run", None)
         return summary_
-    job = engine.start_job("AI 분석 실행", work)
+    job = engine.start_job("AI 분석 실행", work, kind="analysis")
     return {"job": job, "calls": len(units)}
 
 
@@ -439,6 +464,7 @@ def register(commands):
     C, v_str, v_int, v_list, v_enum = api.Command, api.v_str, api.v_int, api.v_list, api.v_enum
     where = {"node_id": (v_str(1, 40), True), "deviation_id": (v_str(1, 20), True)}
     ver = (v_str(1, 100), True)
+    rev = (v_int(0, INT_MAX), False)          # 화면이 읽은 구간 집합 판(그 사이 구간이 바뀌면 엔진이 거절)
     entry = {"entry_id": (v_str(1, 80), True)}
 
     def put(name, spec_, handler, doc):
@@ -447,11 +473,11 @@ def register(commands):
             raise ValueError("명령 이름이 겹침: %s" % key)
         commands[key] = C(spec_, handler, doc)
 
-    put("set_status", dict(where, **entry, status=(v_enum(*res.HUMAN_STATUSES), True), reason=(v_str(0, 1000), False), ver=ver), _set_status,
+    put("set_status", dict(where, **entry, status=(v_enum(*res.HUMAN_STATUSES), True), reason=(v_str(0, 1000), False), ver=ver, set_rev=rev), _set_status,
         "항목 판정: 수용·수정(되돌림)·기각·보류. 수정·기각·보류에는 사유가 있어야 한다. 읽은 결과 파일 지문(ver)을 함께 보낸다")
-    put("edit_entry", dict(where, **entry, fields=(_v_fields, True), reason=(v_str(1, 1000), True), ver=ver), _edit_entry,
+    put("edit_entry", dict(where, **entry, fields=(_v_fields, True), reason=(v_str(1, 1000), True), ver=ver, set_rev=rev), _edit_entry,
         "항목 내용 고치기(판정 '수정'). 사유 필수")
-    put("recheck", dict(where, ver=ver), _recheck, "범위가 바뀐 칸의 판정을 다시 확인했다고 적는다")
+    put("recheck", dict(where, ver=ver, set_rev=rev), _recheck, "범위가 바뀐 칸의 판정을 다시 확인했다고 적는다")
     put("export_excel", {"scope": (v_enum("all", "approved", "nodes"), False), "node_ids": (v_list(v_str(1, 40), 500), False)}, _export_excel,
         "Excel로 내보낸다(저장 위치는 창이 대화상자로 묻는다)")
     put("export_ie", {}, _export_ie, "초기사건 인계 묶음을 내보낸다(수용 항목만, 저장 위치는 창이 묻는다)")

@@ -136,6 +136,13 @@ class WriteTest(Base):
         self.assertTrue(r["error"]["message"])
         self.assertEqual(self.read("ie")["groups"][0]["status"], "draft")
 
+    def test_ver_none_is_refused_when_the_file_exists_and_accepted_when_it_does_not(self):
+        r = self.call("ie.suggest", {"ver": "none"})          # 파일이 없을 때: 통과
+        self.assertTrue(r["ok"], r)
+        self.assertNotEqual(self.ver(), "none")
+        r = self.call("ie.suggest", {"ver": "none"})          # 이제 파일이 있다: 낡은 화면의 'none'은 거절
+        self.assertEqual((r["ok"], r["error"]["code"]), (False, "stale"), r)
+
     def test_stale_version_and_missing_reviewer_write_nothing(self):
         gid = self.human_group()
         old = self.ver()

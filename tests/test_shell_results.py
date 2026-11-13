@@ -206,6 +206,31 @@ class WriteTest(Base):
                 self.assertNotIn(key, cmd.spec, "%s는 %s를 받지 않는다" % (name, key))
 
 
+def classic_scope(ns):
+    """이전 화면(ResultsScreen)의 범위 코드를 그대로 불러 같은 구간을 얻는다(_rows·_scope_set은 node_set만 본다)."""
+    import types
+    from hazop.app.screens.results import ResultsScreen
+    obj = types.SimpleNamespace(node_set=ns)
+    obj._rows = lambda: ResultsScreen._rows(obj)
+    return ResultsScreen._scope_set(obj)
+
+
+def classic_intents(ns):
+    from hazop.app.screens.results import design_intent
+    out = {}
+    for n in ns["nodes"]:
+        found = design_intent(n, None)
+        if found:
+            out[n["node_id"]] = found[0]
+    return out
+
+
+def classic_expectations(ns, pg):
+    from hazop.study import ai_cells
+    kg, _reason = ai_cells.load_kg_for(ns)
+    return ai_cells.expectations_for(pg, kg)[0]
+
+
 class ExportTest(Base):
     def setUp(self):
         super().setUp()
@@ -232,20 +257,34 @@ class ExportTest(Base):
         with zipfile.ZipFile(path) as z:
             return {n: z.read(n) for n in z.namelist() if not n.startswith("docProps/")}
 
-    def test_excel_bytes_match_the_direct_engine_call(self):
+    def exclude_last_node(self):
+        """스크리닝 '제외'로 표시한 구간 하나(재현 repro_plan_screened·repro_excel_vs_classic)."""
+        ns = sn.load(self.g)
+        last = [n for n in ns["nodes"] if sn.is_active(n)][-1]
+        last["screen"] = {"status": "excluded"}
+        sn.save(ns)
+        return last["node_id"]
+
+    def test_excel_matches_the_classic_screens_inputs_even_with_an_excluded_node(self):
+        """이전 화면 export_excel과 같은 입력(_scope_set = 이전 화면 코드가 만든 범위, 설계 의도, 잠재 후보, 같은 시각·검토자)으로 낸 파일과 부품이 같다."""
         from hazop.export import study_xlsx
+        excluded = self.exclude_last_node()
         now = "2026-11-13T00:00:00Z"
         self.engine.hooks["save_path"] = self.paths
         with mock.patch.object(sn, "now_utc", lambda: now):
             r = self.call("results.export_excel", {"scope": "all"})
         self.assertTrue(r["ok"] and not r["data"]["cancelled"], r)
-        inputs = api_results.excel_inputs(self.ns, self.g)
-        doc, _fp = res.load_fp(self.ns)
-        want = os.path.join(self.tmp, "direct.xlsx")
-        study_xlsx.export(want, doc, self.ns, self.g, doc["deviations"], scope="all", node_ids=None, reviewer="검토자A",
-                          intents=inputs["intents"], now=now, expectations=inputs["expectations"])
+        ns = sn.load(self.g)
+        doc, _fp = res.load_fp(ns)
+        want = os.path.join(self.tmp, "classic.xlsx")
+        _p, classic_rows = study_xlsx.export(want, doc, classic_scope(ns), self.g, doc["deviations"], scope="all", node_ids=None, reviewer="검토자A",
+                                             intents=classic_intents(ns), now=now, expectations=classic_expectations(ns, self.g))
         self.assertEqual(self.parts(self.save_to), self.parts(want))
-        self.assertEqual(r["data"]["path"], os.path.basename(self.save_to), "웹에는 파일 이름만 돌려준다")
+        self.assertEqual(r["data"]["rows"], classic_rows)
+        full = os.path.join(self.tmp, "all.xlsx")
+        _p, all_rows = study_xlsx.export(full, doc, ns, self.g, doc["deviations"], scope="all", node_ids=None, reviewer="검토자A", now=now)
+        self.assertGreater(all_rows, classic_rows, "제외 구간(%s)을 넣으면 행이 더 많다: 그것이 새 화면에서 빠져야 한다" % excluded)
+        self.assertEqual(self.read("results")["nodes"] and [n["node_id"] for n in self.read("results")["nodes"]], [n["node_id"] for n in classic_scope(ns)["nodes"]])
 
     def test_cancelled_dialog_writes_nothing(self):
         self.engine.hooks["save_path"] = lambda kind, name: None
@@ -272,6 +311,45 @@ def fake_run_unit(kind=None, limit=None):
                 "cost_usd": None, "model": "m", "at": at, "cells": cells, "via": "subscription", "billing": "subscription",
                 "error_kind": kind, "conn_state": None, "model_requested": "m", "api_equiv_usd": None, "limit": limit}
     return run
+
+
+class ScopeAndVersionTest(Base):
+    def setUp(self):
+        super().setUp()
+        self.engine.ai = FakeAi()
+
+    def test_screened_out_node_is_not_in_rows_plan_or_recs(self):
+        before = self.call("results.run_plan", {"scope": "all"})["data"]
+        ns = sn.load(self.g)
+        ns["nodes"][1]["screen"] = {"status": "excluded"}
+        sn.save(ns)
+        after = self.call("results.run_plan", {"scope": "all"})["data"]
+        from hazop.study import ai_cells
+        classic = ai_cells.plan_units(classic_scope(sn.load(self.g)), DEVS)
+        self.assertEqual(after["calls"], len(classic), "이전 화면 범위의 호출 수와 같다")
+        self.assertLess(after["calls"], before["calls"])
+        self.assertEqual([n["node_id"] for n in self.read("results")["nodes"]], ["S1"])
+        self.assertFalse([r for r in self.read("results", "recs")["recs"] if r["node_id"] == "S2"])
+
+    def test_ver_none_is_refused_when_the_file_exists(self):
+        old = self.first_cell()["ver"]
+        self.assertTrue(self.call("results.set_status", self.args(entry_id="e2", status="approved"))["ok"])
+        for ver in (old, "none"):
+            r = self.call("results.set_status", dict(node_id="S1", deviation_id="D01", entry_id="e1", status="rejected", reason="낡은 화면", ver=ver))
+            self.assertEqual((r["ok"], r["error"]["code"]), (False, "stale"), ver)
+        self.assertEqual(self.first_cell()["cell"]["entries"][0]["status"], "proposed")
+
+    def test_ver_none_is_accepted_only_when_no_file_exists(self):
+        os.remove(res.store_path(self.project, self.ns["graph_id"]))
+        s = self.read("results")
+        self.assertEqual(s["ver"], "none")
+        r = self.call("results.set_status", dict(node_id="S1", deviation_id="D01", entry_id="e1", status="approved", ver="none"))
+        self.assertEqual(r["ok"], False, "파일이 없을 때 항목이 없으면 엔진이 거절한다(판 검사는 통과)")
+        self.assertNotEqual((r.get("error") or {}).get("code"), "stale")
+
+    def test_a_stale_set_rev_is_refused_by_the_engine(self):
+        r = self.call("results.set_status", self.args(status="approved", set_rev=999))
+        self.assertEqual((r["ok"], r["error"]["code"]), (False, "stale"), r)
 
 
 class RunTest(Base):

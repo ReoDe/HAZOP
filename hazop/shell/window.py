@@ -254,6 +254,7 @@ class ShellWindow(QMainWindow):
         self.engine.hooks["save_path"] = self._save_path
         self.engine.hooks["jobs_idle"] = self.jobs_idle.emit
         self.jobs_idle.connect(self._on_jobs_idle)
+        self.confirm_overwrite = self._ask_overwrite    # 시험이 모달 창 없이 답을 꽂는 자리: True(덮어씀) | False
         self.confirm_busy = self._ask_busy     # 시험이 모달 창 없이 답을 꽂는 자리: ("stop"|"wait"|"cancel") <- (작업 수)
         self._close_when_idle = False
         self._closing = False
@@ -306,10 +307,29 @@ class ShellWindow(QMainWindow):
         from PySide6.QtCore import QStandardPaths
         folder = getattr(self, "_export_dir", None) or QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
         title = "Excel로 내보내기" if kind == "excel" else "초기사건 인계 묶음 내보내기"
-        path, _ = QFileDialog.getSaveFileName(self, title, os.path.join(folder, default_name), "Excel 통합 문서 (*.xlsx)")
-        if path:
-            self._export_dir = os.path.dirname(path)
-        return path or None
+        # 덮어쓰기는 확장자를 붙인 뒤의 경로로 우리가 묻는다(대화상자가 묻는 것은 붙이기 전 경로라 .xlsx를 덧붙이면 건너뛴다)
+        path, _ = QFileDialog.getSaveFileName(self, title, os.path.join(folder, default_name), "Excel 통합 문서 (*.xlsx)",
+                                              options=QFileDialog.DontConfirmOverwrite)
+        if not path:
+            return None
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
+        if os.path.exists(path) and not self.confirm_overwrite(path):
+            return None
+        self._export_dir = os.path.dirname(path)
+        return path
+
+    def _ask_overwrite(self, path):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("덮어쓸까요?")
+        box.setText("같은 이름의 파일이 이미 있습니다.\n%s" % os.path.basename(path))
+        box.setInformativeText("덮어쓰면 이전 내용은 사라집니다.")
+        yes = box.addButton("덮어쓰기", QMessageBox.DestructiveRole)
+        no = box.addButton("취소", QMessageBox.RejectRole)
+        box.setDefaultButton(no)
+        box.exec()
+        return box.clickedButton() is yes
 
     def _conn_guide(self, name):
         from hazop.app.settings_dialog import ACTION_HELP, show_help
@@ -323,12 +343,24 @@ class ShellWindow(QMainWindow):
             self.classic_requested = False
         return ok
 
-    def _ask_busy(self, n):
+    BUSY_TEXT = {"register": ("도면 등록·추출 작업", "멈추면 지금 단계가 끝나는 자리에서 멈춥니다(등록까지 끝난 도면은 목록에 남습니다)."),
+                 "analysis": ("AI 분석 작업", "멈추면 진행 중인 호출이 끝나는 자리에서 멈춥니다(이미 받은 칸은 저장되어 있습니다).")}
+
+    @classmethod
+    def busy_text(cls, kinds):
+        """도는 작업의 종류에 맞는 확인 글 -> (제목 줄, 설명)."""
+        kinds = list(kinds or ["register"])
+        names = [cls.BUSY_TEXT.get(k, cls.BUSY_TEXT["register"]) for k in dict.fromkeys(kinds)]
+        head = "·".join(n[0] for n in names) + " %d개가 진행 중입니다." % len(kinds)
+        return head, " ".join(n[1] for n in names)
+
+    def _ask_busy(self, n, kinds=None):
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Question)
         box.setWindowTitle("작업이 진행 중입니다")
-        box.setText("도면 등록·추출 작업 %d개가 진행 중입니다." % n)
-        box.setInformativeText("멈추면 지금 단계가 끝나는 자리에서 멈춥니다(등록까지 끝난 도면은 목록에 남습니다).")
+        head, info = self.busy_text(kinds)
+        box.setText(head)
+        box.setInformativeText(info)
         stop = box.addButton("멈추고 닫기", QMessageBox.DestructiveRole)
         wait = box.addButton("끝나면 닫기", QMessageBox.AcceptRole)
         keep = box.addButton("계속 사용", QMessageBox.RejectRole)
@@ -383,7 +415,7 @@ class ShellWindow(QMainWindow):
     def closeEvent(self, event):  # noqa: N802
         running = self.engine.running_jobs()
         if running and not self._closing:
-            choice = self.confirm_busy(len(running))
+            choice = self.confirm_busy(len(running), self.engine.running_kinds())
             if choice == "cancel":
                 event.ignore()
                 return

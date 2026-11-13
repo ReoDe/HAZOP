@@ -272,6 +272,11 @@ class Engine:
         with self._lock:
             return [j for j, v in self._jobs.items() if v["state"] == "running"]
 
+    def running_kinds(self):
+        """도는 작업의 종류 목록(running_jobs와 같은 순서)."""
+        with self._lock:
+            return [v.get("kind") or "register" for v in self._jobs.values() if v["state"] == "running"]
+
     def stop_jobs(self):
         """돌고 있는 작업에 멈추라고 알린다. 작업은 진행을 알리는 자리(등록 -> 추출 -> AI 검토 사이, AI 검토는 도면마다)에서 멈춘다.
         단계 한가운데(추출 호출 하나)는 끊지 않는다: 반쯤 쓰인 자료를 남기지 않으려는 것이다."""
@@ -296,12 +301,13 @@ class Engine:
             if hook is not None:
                 hook()
 
-    def start_job(self, label, fn):
-        """작업을 시작하고 작업 ID를 돌려준다. fn(progress)은 작업 스레드에서 돌고, 진행·끝은 job.* 사건으로 간다."""
+    def start_job(self, label, fn, kind="register"):
+        """작업을 시작하고 작업 ID를 돌려준다. fn(progress)은 작업 스레드에서 돌고, 진행·끝은 job.* 사건으로 간다.
+        kind: 창을 닫을 때 묻는 글에 쓴다(register 도면 등록·추출 · analysis AI 분석)."""
         with self._lock:
             self._job_seq += 1
             job_id = "j%d" % self._job_seq
-            self._jobs[job_id] = {"label": label, "state": "running"}
+            self._jobs[job_id] = {"label": label, "state": "running", "kind": kind}
 
         def run():
             self.emit("job.progress", {"id": job_id, "label": label, "state": "running"})
