@@ -19,15 +19,15 @@
 ## 2. 확정하면 생기는 일
 
 1. 새 등록 버전(`r<n+1>`)을 만듭니다(원본·파생 SVG는 그대로 씀).
-2. 이미 추출한 도면이면 새 버전으로 다시 추출하고 그래프를 다시 만듭니다(`data.extract_and_graph`). 추출 결과 폴더 이름에 등록 버전이 들어가므로(`<프로젝트>__<자료>-r<버전>-p<쪽>`) 새 폴더가 생깁니다.
-3. 앞 버전 이름의 **사람 수정 기록**(`data/drawing-edits/`)과 **AI 후보 기록**(`data/ai-review/`)을 새 이름으로 옮겨 씁니다(`extraction_name`을 새 이름으로, `carried_from`에 앞 이름). 같은 원본이라 사람 수정은 다시 추출해도 그대로 적용됩니다. 앞 파일은 지우지 않습니다. 새 이름에 이미 기록이 있으면 덮지 않습니다.
+2. 이미 추출한 도면이면, 다시 추출하기 **전에** 지금 쪽(쪽마다 추출 결과가 있는 가장 새 등록 버전)의 **사람 수정 기록**(`data/drawing-edits/`)과 **AI 후보 기록**(`data/ai-review/`)을 새 이름으로 옮겨 씁니다(`extraction_name`을 새 이름으로, `carried_from`에 앞 이름). 추출 결과 폴더 이름에 등록 버전이 들어가 새 이름이 생기기 때문입니다(`<프로젝트>__<자료>-r<버전>-p<쪽>`). 같은 원본이라 사람 수정은 다시 추출해도 그대로 적용되고, 옮겨 쓴 뒤 추출하므로 새 그래프에 사람 수정이 들어갑니다. 앞 파일은 지우지 않고, 새 이름에 이미 기록이 있으면 덮지 않습니다.
+3. 앞 버전의 `graph.json`을 같은 폴더의 `graph.superseded.json`으로 비켜 둔 뒤 새 버전으로 다시 추출하고 그래프를 다시 만듭니다(`data.extract_and_graph`). 한 도면이 프로젝트 그래프에 두 번 들어가지 않게 하려는 것입니다. **다시 추출이 실패하면** 비켜 둔 그래프를 되돌리고 `io`로 알립니다. 새 등록 버전은 남지만(등록 버전은 지우지 않음) 지금 쪽은 앞 버전의 추출이라 번호 검사도 앞 쪽 기준으로 계속 돕니다. 행의 `needs_reextract`가 참이 되고, 같은 확정을 다시 하면(값이 같아도) 새 버전 없이 다시 읽기만 합니다.
 4. **쪽 확정 기록은 옮기지 않습니다.** 추출 결과가 바뀌어 어차피 풀리고, 사람이 바뀐 도면을 다시 보고 확정해야 합니다. 풀린 쪽은 결과의 `released_sheet_confirmations`에 적습니다.
 
 **도면 번호가 바뀌는 경우(권장안으로 정함).** 도면 번호는 그래프 ID이고 검토구간·분석 결과의 열쇠입니다(`study-nodes/<프로젝트>/<그래프 ID>`, `analysis-results/…`). 그래프 ID를 옮기는 길은 아직 없으므로:
 
 - 확정·취소로 그래프 ID가 바뀌는데 **앞 ID나 새 ID에 구간·분석 결과가 있으면 막고** 이유를 보입니다(`code: rule`). 확정 전 번호가 없을 때의 그래프 ID는 쪽 이름(drawio 쪽 이름, 보통 도면 번호와 같음)이라, 후보 그대로 확정하면 ID가 바뀌지 않아 막히지 않습니다.
-- **같은 형식의 다른 자료가 같은 번호를 이미 확정해 쓰면 막습니다**(`code: conflict`, 대소문자 무시). 그래프 ID가 겹쳐 한 도면이 가려지기 때문입니다.
-- **다른 형식(drawio·PDF·DEXPI)이면 막지 않고** 등록이 돌려주는 충돌(`hazop.graph.sources`의 길, 0078bc5)을 알립니다. 그래프에 쓸 원본은 도면 패널의 충돌 고르기에서 사람이 고릅니다.
+- 새 그래프 ID의 파일 열쇠(`paths.safe_name` + 대소문자 무시, 검토구간·결과 파일 이름이 이 열쇠다)가 **다른 자료의 그래프 ID**(추출한 쪽의 ID, 확정 전이면 쪽 이름에서 온 ID, 추출 전이면 확정 번호)와 같을 때: 글자가 다르면(대소문자·특수 문자만 다름) 막고(`code: conflict`, 같은 파일을 나눠 쓰게 됨), 글자가 같고 형식도 같으면 막고(그래프 ID가 겹쳐 한 도면이 가려짐), **형식이 다르면(drawio·PDF·DEXPI) 막지 않고** 등록이 돌려주는 충돌(`hazop.graph.sources`의 길, 0078bc5)을 알립니다. 그래프에 쓸 원본은 도면 패널의 충돌 고르기에서 사람이 고릅니다.
+- 값에 보이지 않는 제어 문자(유니코드 Cc·Cf)가 있으면 거절합니다. 공백은 하나로 줄입니다.
 - **여러 쪽 자료(PDF 여러 쪽)는 도면 번호를 확정하지 않습니다.** 등록정보의 번호 하나를 모든 쪽이 나눠 써서 쪽마다 그래프 ID가 겹치기 때문입니다. 쪽별 확정은 후속입니다(개정·제목도 같은 까닭으로 자료 하나에 한 값).
 
 ## 3. 새 화면 명령과 읽기
@@ -39,7 +39,7 @@
 | `titleblock.confirm` | `material_id`, `fields` {`drawing_number`?, `design_revision`?, `title`?: 값}, `reason`?, `ver` | 검사를 바로 하고 막히면 오류 답(`stale`·`bad_args`·`failed`와 사유). 통과하면 이미 추출한 쪽이 있을 때 작업을 시작해 `{changed: true, job}`, 없으면 바로 `{changed: true, row, …}`. 바뀐 값이 없으면 `{changed: false, row}` |
 | `titleblock.unconfirm` | `material_id`, `fields` [항목]?(없으면 셋 다), `reason`?, `ver` | 확정 취소. 답은 위와 같음 |
 
-행: `{material_id, project_id, version, name, format, material_type, status, pages, multi_page, state: "unconfirmed"|"partial"|"confirmed", ver, fields: [{field, label, value, candidate, evidence: {source, page_id, key_object_id, value_object_id, text}, confirmed_by, confirmed_at}], sheets: [{page, name, graph_id, page_name}], review_data: ["구간"?, "분석 결과"?]}`.
+행: `{material_id, project_id, version, name, format, material_type, status, pages, multi_page, state: "unconfirmed"|"partial"|"confirmed", ver, fields: [{field, label, value, candidate, evidence: {source, page_id, key_object_id, value_object_id, text}, confirmed_by, confirmed_at}], sheets: [{page, version, name, graph_id, page_name}], needs_reextract, review_data: ["구간"?, "분석 결과"?]}`. `sheets`는 쪽마다 추출 결과가 있는 가장 새 등록 버전입니다.
 
 - `by`는 설정의 검토자 이름이고 `at`은 엔진이 채웁니다. 검토자 이름이 없으면 거절합니다.
 - `ver`는 최신 등록정보 파일의 지문입니다. 본 뒤 다른 창·채팅이 확정했으면 `stale`.
