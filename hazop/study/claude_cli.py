@@ -92,6 +92,62 @@ def chat_command(model, effort, schema, system_file, mcp_file, allowed_tools):
     return argv
 
 
+class SubscriptionSlots:
+    """구독 동시 호출 자리(규격 chat-panel.md §2.4 '동시', ai-subscription.md §12): 채팅 1 + 분석 1까지.
+
+    - 채팅 질문은 한 번에 하나이고, 분석이 1건 이하로 돌 때 시작한다(분석이 2건이면 하나가 끝날 때까지 기다린다).
+    - 채팅 질문이 돌거나 자리를 기다리는 동안 분석은 1건까지만 새로 시작한다.
+    - 채팅이 없을 때 분석의 동시 수는 여기서 막지 않는다(AiRunner workers, 결정 U8).
+    alive(): 기다리는 쪽이 아직 원하는지. False가 되면 자리를 잡지 않고 False를 돌려준다(취소·멈춤).
+    """
+
+    def __init__(self):
+        self._cond = threading.Condition()
+        self.chat = 0
+        self.chat_waiting = 0
+        self.analysis = 0
+
+    def acquire_chat(self, alive):
+        with self._cond:
+            self.chat_waiting += 1
+            try:
+                while self.chat >= 1 or self.analysis > 1:
+                    if not alive():
+                        return False
+                    self._cond.wait(0.2)
+                if not alive():
+                    return False
+                self.chat += 1
+                return True
+            finally:
+                self.chat_waiting -= 1
+                self._cond.notify_all()
+
+    def release_chat(self):
+        with self._cond:
+            self.chat = max(0, self.chat - 1)
+            self._cond.notify_all()
+
+    def acquire_analysis(self, alive):
+        with self._cond:
+            while (self.chat or self.chat_waiting) and self.analysis >= 1:
+                if not alive():
+                    return False
+                self._cond.wait(0.2)
+            if not alive():
+                return False
+            self.analysis += 1
+            return True
+
+    def release_analysis(self):
+        with self._cond:
+            self.analysis = max(0, self.analysis - 1)
+            self._cond.notify_all()
+
+
+SLOTS = SubscriptionSlots()
+
+
 def spawn_chat(argv, cwd, job_factory=None):
     """채팅 프로세스를 띄운다(stdin을 열어 둠). 채팅 코드(hazop/chat)가 subprocess를 직접 쓰지 않게 여기서만 띄운다."""
     return ProcessTree(argv, cwd, clean_env(), subprocess.PIPE, job_factory or create_job)
@@ -564,6 +620,14 @@ class ClaudeCliClient:
         base, state = self._exe()
         if base is None:
             return fail("not_ready", MESSAGES[state], state)
+        if not SLOTS.acquire_analysis(lambda: self._cancel_gen == gen):
+            return fail("cancelled", MESSAGES["cancelled"])
+        try:
+            return self._analyze(request, base, gen, res, fail)
+        finally:
+            SLOTS.release_analysis()
+
+    def _analyze(self, request, base, gen, res, fail):
         run_dir = _run_dir(self.run_root)
         try:
             system_file = os.path.join(run_dir, "system.txt")

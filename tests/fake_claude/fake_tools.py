@@ -58,12 +58,23 @@ def get_component(ctx, id):
     return _env(dict(COMPONENTS[id], id=id))
 
 
+ROWS = [{"id": "g1/r%03d" % i, "note": "가" * 150} for i in range(120)]
+
+
+def rows(ctx, limit=50, cursor=None):
+    """한 줄이 큰 목록. limit 50이면 8,000자를 넘어 서버가 쪽을 줄여야 한다."""
+    start = int(cursor or 0)
+    page = ROWS[start:start + int(limit)]
+    nxt = start + len(page)
+    return _env({"rows": page}, total=len(ROWS), returned=len(page), cursor=nxt if nxt < len(ROWS) else None)
+
+
 def big(ctx):
     return _env({"blob": "가" * 9000})
 
 
 def boom(ctx):
-    raise RuntimeError("도구 안에서 난 오류")
+    raise RuntimeError("도구 안에서 난 오류: %s sk-ant-api03-SECRETSECRETSECRET" % os.path.expanduser("~"))
 
 
 def _schema(**props):
@@ -78,6 +89,8 @@ REGISTRY = {
                                            cursor="string")},
     "get_component": {"fn": get_component, "description": "객체 하나", "returns": ("component",),
                       "input_schema": _schema(id="string")},
+    "rows": {"fn": rows, "description": "큰 목록", "returns": ("component",),
+             "input_schema": _schema(limit="integer", cursor="string")},
     "big": {"fn": big, "description": "너무 큰 결과", "input_schema": _schema()},
     "boom": {"fn": boom, "description": "예외를 내는 도구", "input_schema": _schema()},
 }

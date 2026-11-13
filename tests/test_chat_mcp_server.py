@@ -85,7 +85,7 @@ class ProtocolTest(ServerCase):
 
     def test_notification_unknown_method(self):
         self.assertIsNone(self.server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}))
-        self.assertEqual(self.rpc("resources/list")["error"]["code"], -32601)
+        self.assertEqual(self.rpc("resources/list")["error"]["code"], -32601)  # 경로문자열-허용: MCP 메서드 이름이지 경로가 아님
         self.assertEqual(self.server.handle({"id": 1, "method": "ping"})["error"]["code"], -32600)
 
     def test_call_text_has_prefix(self):
@@ -196,8 +196,80 @@ class CursorTest(ServerCase):
 
     def test_cursor_table_bounded(self):
         for i in range(mcp_server.CURSOR_TABLE_MAX + 20):
-            self.server._give_cursor(self.server.registry["count"], "q-1", {"cursor": i}, "v1")
+            self.server._give_cursor(self.server.registry["count"], "q-1", "{}", {"cursor": i}, "v1")
         self.assertLessEqual(len(self.server.cursors), mcp_server.CURSOR_TABLE_MAX)
+
+
+class ReviewFixTest(ServerCase):
+    """검토 지적(2026-11-13) 7번·3번."""
+
+    def test_id_args_only_strings(self):
+        for bad in ({"x": 1}, 12, 1.5, True, [{"id": "a"}], ["g1/a", 3]):
+            self.ask("q-%r" % (bad,))
+            self.assertEqual(self.call("probe", id=bad)["error"]["code"], "bad_args", bad)
+        self.assertEqual(self.spy.calls, [])
+
+    def test_id_charset_narrowed(self):
+        for i, bad in enumerate(("a/C:/Windows/win.ini", "a:b", "g1/./x", "g1//x", "g1/", "a b", "가/나")):
+            self.ask("q-n%d" % i)
+            self.assertEqual(self.call("probe", id=bad)["error"]["code"], "bad_args", bad)
+        self.ask("q-ok")
+        for good in ("graph-SNP-M-102/entity-node-001", "S3", "S3/D05/e2", "doc-reg-1#12", "RC-PV101"):
+            self.assertTrue(self.call("probe", id=good)["ok"], good)
+
+    def test_nested_id_keys(self):
+        for i, flt in enumerate(({"in_node": "C:x"}, {"in_node": 3}, {"near": {"id": "a/C:/x"}},
+                                 {"sheets": ["ok", {"a": 1}]}, {"scope": "..\\x"}, {"cut_at": ["g1/a", "a:b"]})):
+            self.ask("q-f%d" % i)
+            self.assertEqual(self.call("probe", filter=flt)["error"]["code"], "bad_args", flt)
+        self.assertEqual(self.spy.calls, [])
+        self.assertIn("in_node", mcp_server.ID_ARGS)
+        self.assertTrue({"scope", "cut_at"} <= mcp_server.ID_ARGS)
+
+    def test_cursor_bound_to_args(self):
+        token = self.call("count", limit=2, group_by="kind")["cursor"]
+        self.assertEqual(self.call("count", limit=2, group_by="sheet", cursor=token)["error"]["code"], "bad_args")
+        self.assertEqual(self.call("count", limit=3, group_by="kind", cursor=token)["error"]["code"], "bad_args")
+        self.assertTrue(self.call("count", limit=2, group_by="kind", cursor=token)["ok"])
+
+    def test_large_result_is_paged_not_dropped(self):
+        env, text = self.server.call_text("rows", {})
+        self.assertTrue(env["ok"])
+        self.assertLessEqual(len(text) - len(mcp_server.PREFIX) - 1, mcp_server.MAX_RESULT_CHARS)
+        self.assertRegex(env["cursor"], r"^c-[0-9a-f]{12}$")
+        first = [r["id"] for r in env["data"]["rows"]]
+        self.assertGreater(len(first), 1)
+        self.assertLess(len(first), 50)
+        nxt = self.server.call("rows", {"cursor": env["cursor"]})
+        self.assertTrue(nxt["ok"])
+        self.assertEqual(nxt["data"]["rows"][0]["id"], "g1/r%03d" % len(first))
+
+    def test_errors_fixed_text_and_masked_log(self):
+        lines = []
+        server = mcp_server.Server(fake_tools.REGISTRY, "p", self.qfile,
+                                   loader=lambda pid: fake_tools.FakeCtx(pid), log=lines.append)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            env, text = server.call_text("boom", {})
+        self.assertEqual(env["error"], {"code": "bad_args", "message": mcp_server.MSG["tool_failed"]})
+        self.assertEqual(stderr.getvalue(), "")
+        home = os.path.expanduser("~")
+        self.assertNotIn(home, text)
+        self.assertNotIn("SECRET", text)
+        self.assertEqual(len(lines), 1)
+        logged = mcp_server.mask(lines[0])
+        self.assertIn("RuntimeError", logged)
+        self.assertNotIn(home, logged)
+        self.assertNotIn("SECRETSECRET", logged)
+        bad = mcp_server.Server(fake_tools.REGISTRY, "p", self.qfile, log=lines.append,
+                                loader=lambda pid: (_ for _ in ()).throw(ValueError("C:\\Users\\someone 없음")))
+        env = bad.call("count", {})
+        self.assertEqual(env["error"], {"code": "no_data", "message": mcp_server.MSG["no_data"]})
+
+    def test_read_lines_caps_size(self):
+        data = b"x" * (mcp_server.MAX_REQUEST_BYTES + 10) + b"\n" + b'{"a":1}\n'
+        got = list(mcp_server.read_lines(io.BytesIO(data)))
+        self.assertEqual(got, [None, b'{"a":1}\n'])
 
 
 class ResultTest(ServerCase):
@@ -285,8 +357,22 @@ class StdioTest(unittest.TestCase):
             proc.stdout.close()
             proc.stderr.close()
 
+    def test_oversized_request_and_quiet_stderr(self):
+        big = {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+               "params": {"name": "count", "arguments": {"filter": {"tag": "x" * (mcp_server.MAX_REQUEST_BYTES + 1)}}}}
+        boom = {"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "boom", "arguments": {}}}
+        env = dict(os.environ, HAZOP_WORK_ROOT=self.tmp)
+        data = "".join(json.dumps(x) + "\n" for x in (INIT, big, boom, {"jsonrpc": "2.0", "id": 7, "method": "ping"}))
+        p = subprocess.run([sys.executable, "-E", "-s", FAKE_TOOLS, "--project", "p", "--question-file", self.qfile],
+                           input=data.encode("utf-8"), capture_output=True, cwd=REPO_ROOT, env=env, timeout=60)
+        out = [json.loads(x) for x in p.stdout.decode("utf-8").splitlines() if x.strip()]
+        self.assertEqual(out[1]["error"]["code"], -32600)
+        self.assertTrue(out[2]["result"]["isError"])
+        self.assertEqual(out[3]["result"], {})
+        self.assertEqual(p.stderr, b"")
+
     def test_dev_entry_script(self):
-        p, out = run_stdio([sys.executable, "-E", "-s", os.path.join(REPO_ROOT, "scripts", "chat_tools_server.py"),
+        p, out = run_stdio([sys.executable, "-E", "-s", os.path.join(REPO_ROOT, "scripts", "run_chat_tools_server.py"),
                             "--project", "p", "--question-file", self.qfile],
                            [INIT, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}])
         self.assertEqual(p.returncode, 0, p.stderr.decode("utf-8", "replace"))
@@ -335,7 +421,7 @@ class StaticTest(unittest.TestCase):
             self.assertFalse(bad, "%s: %s" % (f, sorted(bad)))
 
     def test_server_entry_imports(self):
-        bad = imports(os.path.join(REPO_ROOT, "scripts", "chat_tools_server.py")) & set(FORBIDDEN)
+        bad = imports(os.path.join(REPO_ROOT, "scripts", "run_chat_tools_server.py")) & set(FORBIDDEN)
         self.assertFalse(bad)
 
 

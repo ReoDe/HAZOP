@@ -14,6 +14,7 @@ import queue
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -80,16 +81,20 @@ class SessionCase(unittest.TestCase):
         self.limits = os.path.join(self.tmp, "ai_limits.json")
         self.events = queue.Queue()
         self.sessions = []
+        self.slots = claude_cli.SubscriptionSlots()
 
     def tearDown(self):
         for s in self.sessions:
             s.close()
+        self.assertEqual(self.slots.chat, 0, "채팅 자리를 돌려주지 않음")
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def make(self, turns, **kw):
+    def make(self, turns, script_extra=None, **kw):
         script = self.script = os.path.join(self.tmp, "script-%d.json" % len(self.sessions))
         with open(script, "w", encoding="utf-8") as fh:
-            json.dump({"turns": turns}, fh, ensure_ascii=False)
+            json.dump(dict({"turns": turns}, **(script_extra or {})), fh, ensure_ascii=False)
+        kw.setdefault("slots", self.slots)
+        kw.setdefault("idle_poll", 0.1)
         ev = self.events
         kw.setdefault("registry", fake_tools.REGISTRY)
         s = session.ChatSession(
@@ -474,6 +479,186 @@ class ErrorTest(SessionCase):
         self.assertEqual(got[-1][2]["error_kind"], "other")
 
 
+class ReviewFixTest(SessionCase):
+    """검토 지적(2026-11-13) 1·2·4·5·6·9·10·11번."""
+
+    OVER = {"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "isUsingOverage": True,
+                                                            "overageStatus": "allowed"}}
+
+    def test_halt_blocks_next_question_until_resume(self):
+        s = self.make([{"pre": [self.OVER]}, {}])
+        s.ask("질문")
+        got = self.until("error")
+        self.assertEqual(got[-1][2]["error_kind"], "overage")
+        self.assertTrue(gone(self.call_args()["pid"]))
+        self.assertIsNone(s._tree)
+        self.assertEqual(s.halted["error_kind"], "overage")
+        self.assertEqual(s.state, "failed")
+        s.ask("또")
+        got, last = self.finish()
+        self.assertEqual(last[2]["error_kind"], "overage")
+        self.assertIsNone(s._tree, "멈춘 뒤 새 프로세스를 띄움")
+        self.assertEqual(len(self.messages()), 1)
+        self.assertFalse(s.start())
+        self.finish()
+        s.resume(allow_overage=True)
+        self.assertIsNone(s.halted)
+        s.ask("풀린 뒤")
+        got, last = self.finish()
+        self.assertEqual(last[0], "answer")
+
+    def test_auth_and_guard_failures_halt(self):
+        for turn, kind in (({"init": {"apiKeySource": "ANTHROPIC_API_KEY"}}, "auth_mismatch"),
+                           ({"init": {"tools": ["StructuredOutput", "Bash"] + ALLOWED}}, "tool_guard_failed"),
+                           ({"result": {"is_error": True, "result": "Not logged in", "structured_output": None}},
+                            "not_ready")):
+            s = self.make([turn])
+            s.ask("하나")
+            self.assertEqual(self.finish()[1][2]["error_kind"], kind)
+            self.assertTrue(gone(self.call_args()["pid"]), kind)
+            s.ask("둘")
+            self.assertEqual(self.finish()[1][2]["error_kind"], kind)
+            self.assertIsNone(s._tree)
+
+    def test_blocked_write_times_out_and_stop_does_not_hang(self):
+        fast = dict(session.MODELS, fast=("claude-haiku-5-5", "low", 1))
+        with mock.patch.dict(session.MODELS, fast):
+            s = self.make([{}], script_extra={"no_read": 60})
+            t0 = time.monotonic()
+            s.ask("가" * (4 * 1024 * 1024))
+            self.assertLess(time.monotonic() - t0, 1.0, "ask가 쓰기에 막힘")
+            got, last = self.finish(20)
+        self.assertEqual(last[2]["error_kind"], "timeout")
+        self.assertTrue(gone(self.call_args()["pid"]))
+        s2 = self.make([{}], script_extra={"no_read": 60})
+        s2.ask("나" * (4 * 1024 * 1024))
+        time.sleep(0.5)
+        t0 = time.monotonic()
+        s2.stop()
+        self.assertLess(time.monotonic() - t0, 12)
+        self.assertEqual(self.until("error")[-1][2]["error_kind"], "cancelled")
+
+    def test_callback_exception_does_not_kill_reader(self):
+        def bad_tool(*a):
+            raise RuntimeError("화면 결함")
+        s = self.make([{"calls": PATH_Q}, {}])
+        s.on_tool_event = bad_tool
+        with self.assertLogs("hazop.chat.session", "ERROR"):
+            s.ask("하나")
+            self.assertEqual(self.finish()[1][0], "answer")
+        s.ask("둘")
+        self.assertEqual(self.finish()[1][0], "answer")
+
+    def test_handler_exception_ends_question(self):
+        s = self.make([{"calls": PATH_Q}])
+        with mock.patch.object(session.ChatSession, "_on_user", side_effect=KeyError("x")), \
+                self.assertLogs("hazop.chat.session", "ERROR"):
+            t0 = time.monotonic()
+            s.ask("질문")
+            got, last = self.finish(10)
+        self.assertEqual(last[2]["error_kind"], "other")
+        self.assertLess(time.monotonic() - t0, 8)
+        self.assertFalse(s.busy)
+
+    def test_question_file_error_not_stuck(self):
+        s = self.make([{}])
+        with mock.patch.object(session.ChatSession, "_write_question", side_effect=OSError("disk")):
+            s.ask("하나")
+            self.assertEqual(self.finish()[1][2]["error_kind"], "other")
+        self.assertFalse(s.busy)
+        s.ask("둘")
+        self.assertEqual(self.finish()[1][0], "answer")
+
+    def test_idle_timer_reaps_prestarted_process(self):
+        clock = Clock()
+        s = self.make([{}], clock=clock)
+        self.assertTrue(s.start())
+        pid = s._tree.proc.pid
+        clock.extra = session.IDLE_RENEW + 1
+        got = self.until("state", 5)
+        self.assertEqual(got[-1][1:], ("idle", session.RENEWED_MESSAGE))
+        self.assertTrue(gone(pid))
+        self.assertIsNone(s._tree)
+
+    def test_cli_exits_by_itself(self):
+        s = self.make([{"quit": True}])
+        s.ask("질문")
+        self.assertEqual(self.finish()[1][0], "answer")
+        end = time.monotonic() + 10
+        while True:
+            e = self.until("state", 10)[-1]
+            if e[1] == "idle" or time.monotonic() > end:
+                break
+        self.assertEqual(e[1], "idle")
+        self.assertIsNone(s._tree)
+
+    def test_guard_plugins_skills_hooks(self):
+        for init in ({"plugins": [{"name": "evil", "path": "C:/x", "source": "evil@market"}]},
+                     {"skills": ["deploy"]}, {"slash_commands": ["x"]}, {"additional_directories": ["C:/"]},
+                     {"hooks": {"PreToolUse": ["x"]}}):
+            s = self.make([{"init": init, "calls": PATH_Q}])
+            s.ask("질문")
+            got, last = self.finish()
+            self.assertEqual(last[2]["error_kind"], "tool_guard_failed", init)
+            self.assertFalse([e for e in got if e[0] == "tool"])
+
+    def test_tool_results_before_guard_ignored(self):
+        early = {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_x", "content": [{"type": "text", "text": "{}"}]}]}}
+        s = self.make([{"skip_init": True, "pre": [early], "calls": PATH_Q, "answer": {"text": "검문 전 답"}}])
+        s.ask("질문")
+        got, last = self.finish()
+        self.assertEqual(last[2]["error_kind"], "tool_guard_failed")
+        self.assertFalse([e for e in got if e[0] in ("tool", "answer")])
+
+    def test_chat_waits_for_analysis_slot(self):
+        self.slots.acquire_analysis(lambda: True)
+        self.slots.acquire_analysis(lambda: True)
+        s = self.make([{}])
+        s.ask("질문")
+        time.sleep(1.0)
+        self.assertFalse(os.path.exists(os.path.join(self.log, "messages.jsonl")), "분석 2건 중에 채팅이 보냄")
+        self.slots.release_analysis()
+        self.assertEqual(self.finish()[1][0], "answer")
+        self.slots.release_analysis()
+
+
+class SlotsTest(unittest.TestCase):
+    def test_chat_one_plus_analysis_one(self):
+        slots = claude_cli.SubscriptionSlots()
+        self.assertTrue(slots.acquire_analysis(lambda: True))
+        self.assertTrue(slots.acquire_analysis(lambda: True))  # 채팅이 없으면 막지 않는다(U8)
+        slots.release_analysis()
+        self.assertTrue(slots.acquire_chat(lambda: True))
+        n = {"tries": 0}
+
+        def give_up():
+            n["tries"] += 1
+            return n["tries"] < 3
+        self.assertFalse(slots.acquire_analysis(give_up), "채팅 중 두 번째 분석")
+        self.assertFalse(slots.acquire_chat(lambda: False), "채팅 둘")
+        slots.release_chat()
+        self.assertTrue(slots.acquire_analysis(lambda: True))
+        slots.release_analysis()
+        slots.release_analysis()
+        self.assertEqual((slots.chat, slots.analysis), (0, 0))
+
+    def test_analysis_cancel_while_waiting(self):
+        slots = claude_cli.SubscriptionSlots()
+        slots.acquire_chat(lambda: True)
+        slots.acquire_analysis(lambda: True)
+        client = claude_cli.ClaudeCliClient(argv_prefix=[sys.executable, FAKE, "ok", tempfile.gettempdir()])
+        out = {}
+        with mock.patch.object(claude_cli, "SLOTS", slots):
+            t = threading.Thread(target=lambda: out.setdefault(
+                "r", client.analyze({"schema": {}, "system": "s", "user": "u"})))
+            t.start()
+            time.sleep(0.5)
+            client.cancel()
+            t.join(5)
+        self.assertEqual(out["r"]["error_kind"], "cancelled")
+
+
 class UnitTest(unittest.TestCase):
     def test_halt_kinds_match_providers(self):
         want = {k for k, halt in providers.ERROR_KINDS.items() if halt} - {"cancelled"}
@@ -499,7 +684,7 @@ class UnitTest(unittest.TestCase):
         with mock.patch("hazop.paths.frozen_bundle_dir", return_value=None):
             cmd = session.server_command("p", "q.json")
         self.assertEqual(cmd[1:3], ["-E", "-s"])
-        self.assertTrue(cmd[3].endswith(os.path.join("scripts", "chat_tools_server.py")))
+        self.assertTrue(cmd[3].endswith(os.path.join("scripts", "run_chat_tools_server.py")))
         self.assertNotIn("-I", cmd)
 
     def test_collect_ids(self):
@@ -512,7 +697,9 @@ class UnitTest(unittest.TestCase):
         self.assertEqual(session.collect_ids(dict(env, ok=False), ("component",)), {})
         self.assertEqual(session.collect_ids(env, ()), {})
         both = session.collect_ids({"ok": True, "data": {"items": [{"id": "x", "node_id": "S2"}]}}, ("component", "node"))
-        self.assertEqual(both, {"node": {"S2"}})
+        self.assertEqual(both, {"component": {"x"}, "node": {"S2"}})
+        node = session.collect_ids({"ok": True, "data": {"items": [{"id": "S1"}]}}, ("node",))
+        self.assertEqual(node, {"node": {"S1"}})
 
     def test_parse_tool_text(self):
         text = mcp_server.PREFIX + "\n" + json.dumps({"ok": True})
