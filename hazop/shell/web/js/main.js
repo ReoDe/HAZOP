@@ -117,7 +117,7 @@ function Rail() {
   return html`<nav class="rail" aria-label="메뉴"><div class="logo" aria-hidden="true">HZ</div>
     ${PANELS.filter((p) => p.place !== "bottom").map((p) => html`<${RailButton} key=${p.name} p=${p} on=${panel === p.name} />`)}
     <div class="spacer"></div>
-    <button type="button" class=${panel === "settings" ? "on" : ""} title=${"AI 연결 · " + conn.label} aria-label=${"AI 연결: " + conn.label} onClick=${() => togglePanel("settings")}>
+    <button type="button" class=${panel === "settings" ? "on" : ""} title=${"AI 연결 · " + (conn.chip || conn.label)} aria-label=${"AI 연결: " + (conn.chip || conn.label)} onClick=${() => togglePanel("settings")}>
       <${Icon} name="plug-connected" /><span class=${"conn " + (conn.tone || "plain")}></span></button>
     ${PANELS.filter((p) => p.place === "bottom").map((p) => html`<${RailButton} key=${p.name} p=${p} on=${panel === p.name} />`)}</nav>`;
 }

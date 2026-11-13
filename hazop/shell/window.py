@@ -191,13 +191,8 @@ class AiAdapter:
         self.on_checked = on_checked
 
     def status(self):
-        from hazop.app import conn_view
-        st = self.conn.status("subscription")
-        look = conn_view.look("subscription", st.get("state"))
-        return {"state": st.get("state"), "detail": st.get("detail") or "", "plan": st.get("plan"), "limit": st.get("limit"),
-                "label": look.label, "short": look.short, "tone": look.tone, "title": look.title,
-                "guide": look.guide.replace("{pct}", "").replace("{reset}", "").replace("{detail}", st.get("detail") or "").replace("{count}", ""),
-                "can_start": bool(look.can_start)}
+        from hazop.shell import api_settings
+        return api_settings.adapter_status(self.conn)      # 지금 고른 방식(구독·API 키) 기준의 상태. 키는 지금과 같고 via·method_name·model·chip이 더해진다
 
     def check(self):
         self.conn.check("subscription", done=lambda _st: self.on_checked())
@@ -206,7 +201,7 @@ class AiAdapter:
         return self.conn.make_client()
 
     def terms_acked(self):
-        return self.conn.terms_acked()
+        return self.conn.method != "subscription" or self.conn.terms_acked()      # API 키 경로에는 구독 이용 조건을 요구하지 않는다
 
     def ack_terms(self):
         self.conn.prefs.ack_terms()
@@ -224,6 +219,7 @@ class ShellWindow(QMainWindow):
         from hazop.app.ai_conn import AiConnection
         from hazop.study.ai_settings import AiPrefs
         from hazop.study.apikey import STORE_FILE_NAME, KeyStore
+        from hazop.shell import key_dialog
         self.setWindowTitle("HAZOP 분석 도구")
         self.resize(*size)
         self.setStyleSheet("QMainWindow { background: %s; }" % tokens.SHELL["bg"])
@@ -250,6 +246,7 @@ class ShellWindow(QMainWindow):
         self.engine.chat = self.chat
         self._ctx = None
         self.engine.hooks["pick_files"] = self._pick_files
+        self.engine.hooks["ask_api_key"] = lambda name: key_dialog.ask_key(name, self)      # 키는 웹으로 받지 않고 이 Qt 상자로만 받는다
         self.engine.hooks["pick_doc"] = self._pick_doc
         self.engine.hooks["open_classic"] = self._open_classic
         self.engine.hooks["conn_guide"] = self._conn_guide

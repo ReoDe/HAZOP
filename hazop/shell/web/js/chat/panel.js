@@ -88,7 +88,7 @@ export function ChatPanel({ collapsed, onToggle, onChip, onSheet }) {
           ? html`<button type="button" class="send stop" title="멈추기" aria-label="멈추기" onClick=${() => cmd("chat.stop")}><${Icon} name="player-stop" size=${16} /></button>`
           : html`<button type="button" class="send" title="보내기 (Enter)" aria-label="보내기" disabled=${blocked || !text.trim()} onClick=${send}><${Icon} name="send" size=${16} /></button>`}
       </div>
-      <div class="foot"><span class=${"dot " + (conn.tone || "plain")}></span> 구독 · ${conn.label}
+      <div class="foot"><span class=${"dot " + (conn.tone || "plain")}></span> ${conn.chip || "구독 · " + conn.label}
         <button type="button" class="btn ghost sm" title="모델 바꾸기" aria-label=${"모델: " + NAMES[chat.model]} style="margin-left:auto" onClick=${nextModel}>
           <${Icon} name="cpu" size=${14} />${NAMES[chat.model]}</button></div>
     </div></aside>`;
