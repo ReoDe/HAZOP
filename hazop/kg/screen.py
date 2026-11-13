@@ -679,3 +679,287 @@ def cross_path(pg, a, b):
 def filter_by_drawing(rows, drawing):
     """도면 필터: drawing이 None이면 그대로, 아니면 그 도면을 지나는 행(경로 단계·연결 표)만."""
     return list(rows) if not drawing else [r for r in rows if drawing in r["drawings"]]
+
+
+# ---------------------------------------------------------------- 새 화면 지식그래프 패널(프로젝트 전체, 완료 목록 2 A6)
+# 이전 ③ 화면은 도면 한 장씩 그렸다. 새 화면 패널은 프로젝트 그래프(도면 전체를 이은 망) 하나를 그린다. 계산(V5·A1~A5)은 하지 않고
+# 무엇이 있고 무엇과 이어졌는지만 보인다. 잠재 후보 상태는 hazop.kg.expect가 계산한 값을 그대로 싣는다(화면에서 조건을 다시 세지 않음).
+PANEL_NODE_CAP = 1500        # 한 번에 그리는 노드 수 상한. 넘으면 도면별 묶음 노드로 먼저 그리고 눌러 펼친다
+KN_GROUP = "kn"              # 어느 도면에도 걸리지 않은 지식 노드 묶음
+GROUP_PREFIX = "grp:"
+KN_PREFIX = "kn:"
+EXPECT_SHOWN = tuple(s for s, _, on in EXPECT_STATES if on)
+NEIGHBORS_SHOWN = 30
+ORIGIN_LABELS = {"pid_extract": "도면 추출", "human_edit": "사람 수정", "ai_draft": "AI 초안"}
+EXPECT_NOTE_TEXT = "잠재 후보는 사실이 아닙니다. 규칙상 있어야 할 것을 찾아 보라는 단서이며, 부재 확정은 근거를 본 사람만 합니다."
+
+
+class PanelLimit(ValueError):
+    """펼친 도면의 노드가 상한을 넘음."""
+
+    def __init__(self, count, cap):
+        super().__init__("펼친 도면의 노드 %s개가 상한 %s개를 넘습니다. 다른 도면을 접거나 검색으로 좁히세요."
+                         % (format(count, ","), format(cap, ",")))
+        self.count, self.cap = count, cap
+
+
+def _pid_label(n):
+    if n.get("tag"):
+        return str(n["tag"])
+    if n.get("kind") == "continuation":
+        first = (n.get("label_text") or "").split("\n")[0].strip()
+        if first:
+            return _short(first)
+    return n.get("kind") or n["entity_id"].split("/")[-1]
+
+
+def _kg_end(end, kn_ids, pg_nodes, by_soid):
+    from hazop.graph import project
+    if end.get("layer") == "knowledge":
+        return kn_ids.get(end.get("ref"))
+    if end.get("entity_id") and project.nid(end.get("graph_id"), end["entity_id"]) in pg_nodes:
+        return project.nid(end["graph_id"], end["entity_id"])
+    return by_soid.get((end.get("graph_id"), end.get("source_object_id")))
+
+
+def panel_model(pg, kg=None, expectations=None):
+    """프로젝트 그래프(+ 지식그래프, 잠재 후보) -> 패널 모델. 입력은 바꾸지 않는다.
+
+    - 배관 구간은 끝이 정확히 둘이면 접어 두 끝을 바로 잇는다(관계 kind "pipe"). 끝이 하나거나 셋 이상(분기)이면 작은 노드로 남긴다.
+      도면 연결 구간도 같은 방식이라 도면을 넘는 배관이 두 도면의 연결점을 바로 잇는다(cross=True).
+    - 노드마다 group(도면 graph_id, 또는 도면에 걸리지 않은 지식 노드는 KN_GROUP). 지식 노드와 잠재 후보는 이어진 도면 노드의 도면에 둔다.
+    - 지식그래프 관계 중 기각(rejected)은 넣지 않는다. 끝이 프로젝트 그래프에 없으면 세기만 한다(skipped).
+    - 잠재 후보는 expect.evaluate 결과의 상태·재확인을 그대로 싣는다."""
+    from hazop.graph import project
+    drawing = {s["graph_id"]: s.get("drawing_number") or s["graph_id"] for s in pg.get("sheets") or []}
+    pg_nodes = {n["entity_id"]: n for n in pg["nodes"]}
+    seg_ends = {}
+    for e in pg["edges"]:
+        if e.get("kind") == project.PHYSICAL and len(e.get("nodes") or ()) == 2:
+            seg_ends.setdefault(e["nodes"][0], []).append(e["nodes"][1])
+    nodes, links = {}, []
+
+    def add_link(lid, kind, s, t, **kw):
+        links.append(dict({"id": lid, "kind": kind, "s": s, "t": t}, **kw))
+
+    folded = set()
+    for sid, ends in seg_ends.items():
+        ends = list(dict.fromkeys(ends))
+        seg = pg_nodes.get(sid) or {}
+        if len(ends) == 2 and seg.get("node_type") == "pipe_segment":
+            folded.add(sid)
+            fd = seg.get("flow_direction") if isinstance(seg.get("flow_direction"), dict) else {}
+            flow = [fd.get("from"), fd.get("to")] if set(ends) == {fd.get("from"), fd.get("to")} else None
+            a, b = flow or ends
+            add_link(sid, "pipe", a, b, line=seg.get("line_no") or seg.get("tag"), flow=bool(flow),
+                     cross=seg.get("sheet") is None and bool(seg.get("sheet_link")))
+    for n in pg["nodes"]:
+        nid = n["entity_id"]
+        if nid in folded:
+            continue
+        seg = n.get("node_type") == "pipe_segment"
+        group = n.get("sheet") or next((pg_nodes[x]["sheet"] for x in seg_ends.get(nid, ()) if (pg_nodes.get(x) or {}).get("sheet")), None)
+        nodes[nid] = {"id": nid, "layer": "pid", "type": "pipe_segment" if seg else (n.get("category") or "unclassified"),
+                      "label": "" if seg else _pid_label(n), "group": group or KN_GROUP, "tag": n.get("tag")}
+    for sid, ends in seg_ends.items():
+        if sid not in folded:
+            for x in dict.fromkeys(ends):
+                add_link("%s>%s" % (sid, x), "pipe", sid, x)
+    for e in pg["edges"]:
+        if e.get("kind") != project.PHYSICAL and len(e.get("nodes") or ()) == 2:
+            add_link(e["entity_id"], e["kind"], e["nodes"][0], e["nodes"][1])
+
+    by_soid = {(n.get("sheet"), n.get("source_object_id")): n["entity_id"] for n in pg["nodes"] if n.get("source_object_id")}
+    skipped = {"knowledge_links": 0, "rejected": 0, "expectations": 0}
+    if kg:
+        kn_ids = {}
+        for k in kg.get("nodes") or []:
+            kid = KN_PREFIX + k["id"]
+            kn_ids[k["id"]] = kid
+            nodes[kid] = {"id": kid, "layer": "kn", "type": k.get("node_type") or "unclassified", "label": _label(k), "group": None,
+                          "ks": k.get("knowledge_status") or "confirmed", "ai": build.origin_of(k) == "ai_draft"}
+        for l in kg.get("links") or []:
+            if l.get("link_status") == "rejected":
+                skipped["rejected"] += 1
+                continue
+            ends = [_kg_end((l.get("ends") or {}).get(side) or {}, kn_ids, pg_nodes, by_soid) for side in ("from", "to")]
+            if None in ends or ends[0] not in nodes or ends[1] not in nodes:
+                skipped["knowledge_links"] += 1
+                continue
+            add_link(KN_PREFIX + l["id"], l["kind"], ends[0], ends[1], st=l.get("link_status") or "confirmed")
+        # 지식 노드는 이어진 도면 노드의 도면에 둔다. 지식끼리만 이어진 노드는 이웃 지식 노드의 도면을 한 번 더 따른다
+        for _ in range(2):
+            for l in links:
+                for a, b in ((l["s"], l["t"]), (l["t"], l["s"])):
+                    na, nb = nodes.get(a), nodes.get(b)
+                    if na and nb and na["layer"] == "kn" and na["group"] is None and nb["group"] not in (None, KN_GROUP):
+                        na["group"] = nb["group"]
+        for n in nodes.values():
+            if n["group"] is None:
+                n["group"] = KN_GROUP
+
+    exp_items = {}
+    for it in (expectations or {}).get("items") or []:
+        target = it.get("target_entity")
+        if target not in nodes:
+            skipped["expectations"] += 1
+            continue
+        xid = it["id"]
+        exp_items[xid] = it
+        nodes[xid] = {"id": xid, "layer": "exp", "type": "expectation", "label": _short(it["label"]), "group": nodes[target]["group"],
+                      "xs": it["state"], "recheck": bool(it["recheck"]), "rule": it["rule_id"], "target": target}
+        add_link("xrel-%s-t" % xid, "expects", target, xid)
+        if it["state"] in ("candidate_found", "confirmed_present"):
+            refs = (it.get("judgement") or {}).get("found") if it["state"] == "confirmed_present" else None
+            for ref in sorted(set(refs or [f["ref"] for f in it["found"]])):
+                g, _, soid = ref.partition("#")
+                e = by_soid.get((g, soid))
+                if e is not None and e != target and e in nodes:
+                    add_link("xrel-%s-%s" % (xid, e), "satisfied_by", xid, e)
+
+    groups = {}
+    for gid in [s["graph_id"] for s in pg.get("sheets") or []] + [KN_GROUP]:
+        groups[gid] = {"id": gid, "label": drawing.get(gid) or "도면 밖 지식", "kind": "kn" if gid == KN_GROUP else "sheet",
+                       "count": 0, "gaps": 0}
+    for n in nodes.values():
+        g = groups.setdefault(n["group"], {"id": n["group"], "label": n["group"], "kind": "sheet", "count": 0, "gaps": 0})
+        g["count"] += 1
+        if n["layer"] == "exp" and n["xs"] in expect.GAP_STATES:
+            g["gaps"] += 1
+    order = [g for g in groups if groups[g]["count"]]
+    links = [l for l in links if l["s"] in nodes and l["t"] in nodes]
+    adj = {}
+    for l in links:
+        adj.setdefault(l["s"], []).append(l)
+        adj.setdefault(l["t"], []).append(l)
+    return {"nodes": nodes, "links": links, "groups": groups, "order": order, "adj": adj, "skipped": skipped,
+            "pg_nodes": pg_nodes, "drawing": drawing, "exp_items": exp_items}
+
+
+def panel_graph(model, expand=(), cap=None):
+    """그릴 그래프: 펼친 묶음(expand)의 노드는 그대로, 나머지 묶음은 묶음 노드 하나("grp:<gid>", count)로. 접힌 묶음으로 가는 관계는
+    묶음 노드로 이어 붙이고, 같은 두 끝으로 모이는 관계는 하나로 합쳐 개수(n)를 단다. 펼친 노드 수가 cap을 넘으면 PanelLimit."""
+    cap = PANEL_NODE_CAP if cap is None else cap
+    groups = model["groups"]
+    want = set(expand)
+    opened = [g for g in model["order"] if g in want]
+    total = sum(groups[g]["count"] for g in opened)
+    if total > cap:
+        raise PanelLimit(total, cap)
+    is_open = set(opened)
+    out_nodes = [dict(n) for n in model["nodes"].values() if n["group"] in is_open]
+    for g in model["order"]:
+        if g not in is_open:
+            gr = groups[g]
+            out_nodes.append({"id": GROUP_PREFIX + g, "layer": "group", "type": gr["kind"], "label": gr["label"], "group": g,
+                              "count": gr["count"], "gaps": gr["gaps"]})
+
+    def end(i):
+        n = model["nodes"][i]
+        return i if n["group"] in is_open else GROUP_PREFIX + n["group"]
+    seen, out_links = {}, []
+    for l in model["links"]:
+        s, t = end(l["s"]), end(l["t"])
+        if s == t:
+            continue
+        if s == l["s"] and t == l["t"]:
+            out_links.append(dict(l))
+            continue
+        key = tuple(sorted((s, t)))
+        if key in seen:
+            seen[key]["n"] += 1
+            continue
+        seen[key] = {"id": "agg:%s|%s" % key, "kind": "group", "s": key[0], "t": key[1], "n": 1}
+        out_links.append(seen[key])
+    return {"nodes": out_nodes, "links": out_links, "expanded": opened, "count": len(out_nodes), "cap": cap}
+
+
+def panel_search(model, text, limit=20):
+    """태그·이름·규칙 ID로 찾기(대소문자 무시, 부분 일치). 정확히 같은 것이 먼저, 다음은 도면 노드·지식·잠재 후보 순, 이름순."""
+    q = " ".join(str(text or "").split()).casefold()
+    if not q:
+        return []
+    hits = []
+    for n in model["nodes"].values():
+        keys = [str(x).casefold() for x in (n.get("tag"), n.get("label"), n.get("rule")) if x]
+        if not any(q in k for k in keys):
+            continue
+        rank = (0 if q in keys else 1, {"pid": 0, "kn": 1, "exp": 2}.get(n["layer"], 3), str(n.get("label") or ""), n["id"])
+        hits.append((rank, n))
+    hits.sort(key=lambda x: x[0])
+    return [{"id": n["id"], "label": n.get("label") or n["id"], "layer": n["layer"], "type": n["type"], "group": n["group"],
+             "drawing": model["groups"][n["group"]]["label"]} for _, n in hits[:limit]]
+
+
+def _plain_attrs(d, limit=12):
+    out = []
+    for k, v in sorted((d or {}).items()):
+        if isinstance(v, (str, int, float)) and not isinstance(v, bool) and str(v).strip():
+            out.append([k, _short(v, 80)])
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _expectation_detail(model, it):
+    nodes = model["nodes"]
+    needs = {r[3]: list(r[4]) for r in expect.TRANSITIONS if r[0] == it["state"] and r[2] == "human"}
+    j = it.get("judgement")
+    return {"label": it["label"], "rule_id": it["rule_id"], "rule_version": it["rule_version"], "basis_level": it["basis_label"],
+            "basis": it["basis"], "hazop": it["hazop"], "state": it["state"], "state_label": it["state_label"],
+            "auto_state_label": expect.STATES[it["auto_state"]], "recheck": bool(it["recheck"]),
+            "previous_label": expect.previous_label(it) if it["recheck"] else None, "note": it.get("note"),
+            "target": {"id": it["target_entity"], "label": (nodes.get(it["target_entity"]) or {}).get("label") or it["target_tag"]},
+            "found": [{"ref": f["ref"], "label": f.get("tag") or f["ref"].split("#")[-1]} for f in it["found"]],
+            "judgement": {k: j.get(k) for k in ("state", "action", "by", "at", "reason", "evidence")} if j else None,
+            "actions": [{"action": a, "label": expect.ACTION_LABELS[a], "needs": [[k, expect.NEED_LABELS[k]] for k in needs[a]]}
+                        for a in it["actions"]],
+            "caution": EXPECT_NOTE_TEXT}
+
+
+def panel_node(model, nid, kg=None):
+    """노드 상세 또는 None: 무엇인지(what), 근거(evidence), 속성(attrs), 도면 위치(at: {sheet, local_id} 또는 None), 이웃(최대
+    NEIGHBORS_SHOWN), 이 노드에 걸린 잠재 후보. 잠재 후보 노드면 expectation(규칙·근거·상태·판단 기록·할 수 있는 동작과 필수 입력)."""
+    n = model["nodes"].get(nid)
+    if n is None:
+        return None
+    nodes = model["nodes"]
+    out = {"id": nid, "layer": n["layer"], "type": n["type"], "label": n.get("label"), "group": n["group"],
+           "drawing": model["groups"][n["group"]]["label"], "at": None, "what": [], "evidence": [], "attrs": []}
+    if n["layer"] == "pid":
+        p = model["pg_nodes"][nid]
+        out["what"] = ([["태그", p["tag"]]] if p.get("tag") else []) + [["종류", p.get("kind") or "-"],
+                                                                      ["분류", p.get("category") or p.get("node_type") or "-"]]
+        out["evidence"] = [["도면", model["drawing"].get(p.get("sheet")) or "도면 연결 구간"],
+                           ["만든 곳", ORIGIN_LABELS.get(node_origin(p), node_origin(p))]]
+        if p.get("source_object_id"):
+            out["evidence"].append(["원본 객체", p["source_object_id"]])
+        out["attrs"] = _plain_attrs(p.get("attributes"))
+        if p.get("sheet") and p.get("local_id"):
+            out["at"] = {"sheet": p["sheet"], "local_id": p["local_id"]}
+    elif n["layer"] == "kn":
+        k = next((x for x in (kg or {}).get("nodes") or [] if KN_PREFIX + x["id"] == nid), {})
+        out["what"] = [["종류", k.get("node_type") or "-"], ["상태", k.get("knowledge_status") or "confirmed"]]
+        out["what"] += [[f, _short(k[f], 80)] for f in ("name", "item", "text", "value", "unit") if k.get(f)]
+        src = k.get("source") if isinstance(k.get("source"), dict) else {}
+        out["evidence"] = _plain_attrs(src) or [["출처", "없음(근거 확인 필요)"]]
+        out["evidence"].append(["만든 곳", ORIGIN_LABELS.get(build.origin_of(k), build.origin_of(k) or "-")])
+    else:
+        it = model["exp_items"][nid]
+        t = model["pg_nodes"].get(it["target_entity"]) or {}
+        out["expectation"] = _expectation_detail(model, it)
+        out["what"] = [["잠재 후보", it["label"]], ["규칙", "%s(판 %s)" % (it["rule_id"], it["rule_version"])]]
+        out["evidence"] = [["근거 수준", it["basis_label"]], ["근거", it["basis"]]]
+        if t.get("sheet") and t.get("local_id"):
+            out["at"] = {"sheet": t["sheet"], "local_id": t["local_id"]}
+    around = model["adj"].get(nid, ())
+    out["neighbors"] = []
+    for l in around[:NEIGHBORS_SHOWN]:
+        other = nodes[l["t"] if l["s"] == nid else l["s"]]
+        out["neighbors"].append({"id": other["id"], "label": other.get("label") or other["type"], "layer": other["layer"],
+                                 "type": other["type"], "kind": l["kind"], "drawing": model["groups"][other["group"]]["label"]})
+    out["neighbors_total"] = len(around)
+    out["expectations"] = [{"id": l["t"], "label": nodes[l["t"]]["label"], "xs": nodes[l["t"]]["xs"],
+                            "state_label": expect.STATES[nodes[l["t"]]["xs"]], "recheck": nodes[l["t"]]["recheck"]}
+                           for l in around if l["kind"] == "expects" and l["s"] == nid]
+    return out
