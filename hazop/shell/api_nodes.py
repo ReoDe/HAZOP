@@ -76,7 +76,26 @@ def _owners(ns):
     return owners
 
 
+_SPAN_CACHE = {}
+
+
+def _span_key(ns, pg):
+    members = sum(len(n.get("members") or ()) for n in ns.get("nodes") or ())
+    return (pg.get("project_id"), pg.get("graph_version"), ns.get("set_rev"), len(ns.get("nodes") or ()), members, tuple(n.get("rev") or 1 for n in ns.get("nodes") or ()))
+
+
 def _span_info(ns, pg):
+    """구간 도면 범위 표기. 525구간·구성요소 4만 개에서 계산이 약 1초라, 프로젝트 그래프 판·구간 집합 판이 같으면 지은 것을 그대로 준다(목록·상세가 매번 다시 짓지 않게)."""
+    key = _span_key(ns, pg)
+    hit = _SPAN_CACHE.get("v")
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    out = _span_info_build(ns, pg)
+    _SPAN_CACHE["v"] = (key, out)
+    return out
+
+
+def _span_info_build(ns, pg):
     """구간마다 도면 범위 표기: {node_id: {range, drawings, spans, display_name, by_drawing, continuations}}. hazop.study.span.annotate가 만든 값을 그대로 쓴다
     (이전 화면이 쓰던 '[101 → 102]'와 같은 표기·같은 흐름 순서)."""
     from hazop.study import span

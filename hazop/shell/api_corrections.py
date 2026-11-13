@@ -342,12 +342,25 @@ def _request(op, local_id, value, corrected, original):
     return target, v
 
 
+def _other_sheet_tags(engine, name, key):
+    """다른 도면의 같은 태그. 프로젝트 그래프(메모리)에서 찾는다: 143쪽 추출 결과를 모두 읽어 수정을 적용하는 data.tag_conflicts는 한 번에 10초가 걸렸다.
+    그래프는 저장 뒤마다 다시 만들어지므로 다른 쪽의 마지막 저장까지는 본다."""
+    from hazop.app import project_ctx
+    try:
+        pg = project_ctx.project_graph(engine.project_id())
+    except (OSError, ValueError, KeyError):
+        return []
+    names = engine.graph_names()
+    mine = next((g for g, n in names.items() if n == name), None)
+    return [{"name": names.get(n["sheet"], n["sheet"]), "local_id": n["local_id"]} for n in pg.get("nodes") or []
+            if n.get("sheet") and n["sheet"] != mine and n.get("local_id") and (n.get("tag") or "").strip().casefold() == key]
+
+
 def _tag_conflicts(engine, name, corrected, tag, exclude_local):
-    from hazop.app import data
     key = (tag or "").strip().casefold()
     if not key:
         return []
-    hits = [h for h in data.tag_conflicts(tag, corrected.get("project_id")) if h.get("name") != name]
+    hits = _other_sheet_tags(engine, name, key)
     hits += [{"name": name, "local_id": n["local_id"]} for n in corrected.get("nodes") or []
              if n["local_id"] != exclude_local and (n.get("tag") or "").strip().casefold() == key]
     return hits
@@ -355,13 +368,23 @@ def _tag_conflicts(engine, name, corrected, tag, exclude_local):
 
 # ---------------------------------------------------------------- 쓰기
 
-def _write(engine, graph_id, name, ops, by, src, action, note=None):
-    """연산 목록을 저장하고 그래프를 다시 만든다(도면 잠금 안에서 부른다). 저장 전 쪽 확정 상태를 보아 풀리면 알린다. → 답의 공통 부분."""
+def _announce(engine, graph_id):
+    for topic, rev in (("edit", graph_id), ("sheet", graph_id), ("drawings", None), ("sheetconf", None), ("aireview", None), ("kg", None), ("nodes", None)):
+        engine.changed(topic, rev)
+
+
+def _write(engine, graph_id, name, ops, by, src, action, note=None, defer=False):
+    """연산 목록을 저장하고 그래프를 다시 만든다(도면 잠금 안에서 부른다). 저장 전 쪽 확정 상태를 보아 풀리면 알린다. → 답의 공통 부분.
+    defer=True(웹)면 그래프·지식그래프 다시 만들기를 작업(job)으로 넘기고 바로 답한다: 큰 프로젝트(143쪽)에서 그 일이 10초 넘게 걸려 누른 뒤 반응이 멈추지 않게.
+    그동안 낡은 그래프 표시가 서 있고, 끝나면 changed 알림이 간다. 작업이 못 끝나도 표시가 남아 다음 동작·프로젝트 그래프를 지을 때 다시 만든다."""
     from hazop.extract import confirmation
-    try:
-        before = (confirmation.sheet_confirmation(name) or {}).get("status")
-    except (OSError, ValueError):
-        before = None
+
+    def status():
+        try:
+            return (confirmation.sheet_confirmation(name) or {}).get("status")
+        except (OSError, ValueError):
+            return None
+    before = status()
     corrections.save_fp(name, ops, by, drawing_number=(src["original"].get("drawing") or {}).get("drawing_number"), expect=src["fp"],
                         action=action, note=note)
     # 여기부터는 저장이 끝났다. 어떤 예외도 '저장 안 됨'으로 알리지 않는다
@@ -371,22 +394,30 @@ def _write(engine, graph_id, name, ops, by, src, action, note=None):
         reconciled = ai_review.reconcile(name)
     except Exception:  # noqa: BLE001
         LOG.exception("AI 후보를 수정 기록에 맞추지 못함")
+    after = status()                      # 쪽 확정 판정은 파일 지문만 본다(그래프가 필요 없다)
+    released = before in ("compared", "confirmed") and after not in ("compared", "confirmed")
+    notes = ["이 쪽의 %s이 풀렸습니다. 다시 견주고 확정하세요." % ("확정" if before == "confirmed" else "견줌")] if released else []
+    if defer:
+        sheet_refresh.mark_stale(name, "다시 만드는 중")
+
+        def refresh_job(progress):
+            progress("그래프 다시 만들기", 1, 1)
+            with sheet_refresh.lock(name):
+                sheet_refresh.refresh(name)
+            _announce(engine, graph_id)
+            return {"graph_id": graph_id}
+        engine.start_job("그래프 다시 만들기", refresh_job, kind="graph_refresh")
+        _announce(engine, graph_id)
+        return {"ok": True, "graph_id": graph_id, "ver": sheet_refresh.ver_of(name), "graph_stale": True, "refreshing": True,
+                "notes": ["저장했습니다. 그래프를 다시 만드는 중입니다."] + notes, "recheck": [], "released": released, "reconciled": reconciled}
     try:
-        stale, notes, recheck = sheet_refresh.refresh(name)
+        stale, more, recheck = sheet_refresh.refresh(name)
     except Exception as exc:  # noqa: BLE001
         LOG.exception("그래프 다시 만들기 실패")
-        stale, notes, recheck = True, ["저장했지만 그래프를 다시 만들지 못했습니다(%s)." % type(exc).__name__], []
-    try:
-        after = (confirmation.sheet_confirmation(name) or {}).get("status")
-    except (OSError, ValueError):
-        after = None
-    released = before in ("compared", "confirmed") and after not in ("compared", "confirmed")
-    if released:
-        notes = notes + ["이 쪽의 %s이 풀렸습니다. 다시 견주고 확정하세요." % ("확정" if before == "confirmed" else "견줌")]
-    for topic, rev in (("edit", graph_id), ("sheet", graph_id), ("drawings", None), ("sheetconf", None), ("aireview", None), ("kg", None), ("nodes", None)):
-        engine.changed(topic, rev)
-    return {"ok": True, "graph_id": graph_id, "ver": sheet_refresh.ver_of(name), "graph_stale": stale, "notes": notes, "recheck": recheck,
-            "released": released, "reconciled": reconciled}
+        stale, more, recheck = True, ["저장했지만 그래프를 다시 만들지 못했습니다(%s)." % type(exc).__name__], []
+    _announce(engine, graph_id)
+    return {"ok": True, "graph_id": graph_id, "ver": sheet_refresh.ver_of(name), "graph_stale": stale, "refreshing": False, "notes": more + notes,
+            "recheck": recheck, "released": released, "reconciled": reconciled}
 
 
 def _check_ver(src, ver):
@@ -422,7 +453,7 @@ def _ask(confirm, text, detail=None):
         raise Refused("needs_confirm", text, detail)
 
 
-def apply_edit(engine, graph_id, op, local_id, value, ver, confirm=None, by=None, base=None):
+def apply_edit(engine, graph_id, op, local_id, value, ver, confirm=None, by=None, base=None, defer=False):
     """고침 하나를 저장한다. 지우기와 태그 겹침은 confirm에 엔진이 물은 확인 글을 그대로 보내야 한다.
     base(화면이 본 대상의 지문, item의 base)를 주면 지금 대상과 견줘 다르면 거절한다."""
     def go():
@@ -452,13 +483,13 @@ def apply_edit(engine, graph_id, op, local_id, value, ver, confirm=None, by=None
                 new = corrections.make_op(src["original"], op, target, v, who, existing_ops=src["ops"], name=name)
             except ValueError as exc:
                 raise Refused("bad_args", str(exc))
-            out = _write(engine, graph_id, name, src["ops"] + [new], who, src, "edit")
+            out = _write(engine, graph_id, name, src["ops"] + [new], who, src, "edit", defer=defer)
         made = corrections.MANUAL_PREFIX + new["op_id"] if op in ("add_node", "add_relation") else None
         return dict(out, op_id=new["op_id"], label=OP_LABELS.get(op, op), created=made)
     return _run(go)
 
 
-def undo(engine, graph_id, op_id, ver, by=None, confirm=None):
+def undo(engine, graph_id, op_id, ver, by=None, confirm=None, defer=False):
     """연산 하나를 뺀다. 그 연산이 만든 기기·연결을 뒤 연산이 쓰면 빼지 않는다. AI 검토 패널에서 수락한 연산은 그 패널의 되돌리기로만 뺀다.
     기기·연결을 사라지게 하는 되돌리기(추가를 되돌림)는 지우기와 같은 확인을 받는다. 뺀 연산은 다시 하기로 원래 자리에 되살린다."""
     def go():
@@ -483,12 +514,12 @@ def undo(engine, graph_id, op_id, ver, by=None, confirm=None):
                 impact = _impact(engine, graph_id, name, removed)
                 if impact["nodes"] or impact.get("sheet") in ("compared", "confirmed"):
                     _ask(confirm, _confirm_text("되돌리기", removed, impact), {"impact": impact, "removed": removed})
-            out = _write(engine, graph_id, name, ops[:pos] + ops[pos + 1:], who, src, "undo", note={"index": pos})
+            out = _write(engine, graph_id, name, ops[:pos] + ops[pos + 1:], who, src, "undo", note={"index": pos}, defer=defer)
         return dict(out, op_id=op_id, label=OP_LABELS.get(ops[pos]["op"], ops[pos]["op"]))
     return _run(go)
 
 
-def redo(engine, graph_id, ver, by=None):
+def redo(engine, graph_id, ver, by=None, defer=False):
     """마지막으로 되돌린 연산을 원래 자리에 같은 번호·내용으로 되살린다. 되돌린 뒤 새로 고쳤으면 다시 할 것이 없다."""
     def go():
         name = _name(engine, graph_id)
@@ -507,7 +538,7 @@ def redo(engine, graph_id, ver, by=None):
             why = next((x["reason"] for x in trial["not_applicable"] if x["op_id"] == op["op_id"]), None)
             if why:
                 raise Refused("bad_args", "다시 할 수 없습니다: %s" % why)
-            out = _write(engine, graph_id, name, ops, who, src, "redo")
+            out = _write(engine, graph_id, name, ops, who, src, "redo", defer=defer)
         return dict(out, op_id=op["op_id"], label=OP_LABELS.get(op["op"], op["op"]))
     return _run(go)
 
@@ -550,9 +581,9 @@ def register(commands):
     put("apply", dict(base, op=(v_enum(*corrections.OPS), True), local_id=(v_str(1, 200), False), value=(v_json(20000), False),
                       confirm=(v_str(0, 4000), False), base=(v_str(0, 64), False)),
         lambda engine, a: _unwrap(apply_edit(engine, a["graph_id"], a["op"], a.get("local_id"), a.get("value") or {}, a["ver"], a.get("confirm"),
-                                             base=a.get("base"))),
+                                             base=a.get("base"), defer=True)),
         "도면 고침 하나를 저장하고 그래프를 다시 만든다(지우기·태그 겹침은 엔진이 물은 확인 글을 confirm으로, 화면이 본 대상 지문을 base로)")
     put("undo", dict(base, op_id=(v_str(1, 40), True), confirm=(v_str(0, 4000), False)),
-        lambda engine, a: _unwrap(undo(engine, a["graph_id"], a["op_id"], a["ver"], confirm=a.get("confirm"))),
+        lambda engine, a: _unwrap(undo(engine, a["graph_id"], a["op_id"], a["ver"], confirm=a.get("confirm"), defer=True)),
         "도면 고침 하나를 뺀다(다시 하기로 원래 자리에 되살릴 수 있다. 기기·연결이 사라지면 확인 글을 confirm으로)")
-    put("redo", dict(base), lambda engine, a: _unwrap(redo(engine, a["graph_id"], a["ver"])), "마지막으로 뺀 도면 고침을 되살린다")
+    put("redo", dict(base), lambda engine, a: _unwrap(redo(engine, a["graph_id"], a["ver"], defer=True)), "마지막으로 뺀 도면 고침을 되살린다")

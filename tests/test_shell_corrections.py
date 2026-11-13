@@ -49,7 +49,7 @@ class Base(unittest.TestCase):
             self.addCleanup(p.stop)
         self.name = tpl["name"]
         self.events = Events()
-        self.engine = api.Engine(settings_path=os.path.join(self.tmp, "settings.json"), emit=self.events)
+        self.engine = api.Engine(settings_path=os.path.join(self.tmp, "settings.json"), emit=self.events, run_jobs=lambda job_id, fn: fn())
         self.engine.settings["reviewer_name"] = "검토자A"
         self.gid = {v: k for k, v in self.engine.graph_names().items()}[self.name]
         from hazop.app import data
@@ -184,17 +184,32 @@ class TagKindFlowTest(Base):
         self.assertIsNone(corrections.load(self.name))
         self.assertTrue(self.edit("set_tag", a["local_id"], {"tag": b["tag"]}, confirm=True)["ok"])
 
+    def test_the_web_command_answers_before_the_graph_is_rebuilt_and_the_job_finishes_it(self):
+        n = self.tagged()
+        started = []
+        real = self.engine.start_job
+        self.engine.start_job = lambda label, fn, kind="register": started.append((label, kind)) or "j-held"      # 작업이 아직 안 끝난 때
+        r = self.edit("set_tag", n["local_id"], {"tag": "FAST-1"})
+        self.assertTrue(r["ok"] and r["data"]["refreshing"] and r["data"]["graph_stale"], r)
+        self.assertEqual(started, [("그래프 다시 만들기", "graph_refresh")])
+        self.assertTrue(sheet_refresh.graph_stale(self.name))                              # 표시가 서 있다: 읽는 쪽이 낡은 그래프임을 안다
+        self.assertEqual(len(corrections.load(self.name)["ops"]), 1)
+        self.engine.start_job = real
+        self.assertTrue(self.edit("set_tag", n["local_id"], {"tag": "FAST-2"})["ok"])       # 다음 동작이 먼저 다시 만든다
+        self.assertFalse(sheet_refresh.graph_stale(self.name))
+        self.assertEqual(self.graph_node(n["local_id"])["tag"], "FAST-2")
+
     def test_graph_rebuild_failure_keeps_the_save_and_reports_it_then_recovers(self):
         n = self.tagged()
         with mock.patch.object(sheet_refresh, "rebuild", side_effect=RuntimeError("빌드 실패")):
-            r = self.edit("set_tag", n["local_id"], {"tag": "KEEP-1"})
+            r = self.edit("set_tag", n["local_id"], {"tag": "KEEP-1"})            # 웹 명령: 다시 만들기는 작업으로 넘어간다(여기서는 같은 스레드에서 돌고 실패)
         self.assertTrue(r["ok"], r)
-        self.assertTrue(r["data"]["graph_stale"])
-        self.assertTrue(any("다시 만들지 못했습니다" in t for t in r["data"]["notes"]))
+        self.assertTrue(r["data"]["graph_stale"] and r["data"]["refreshing"])
+        self.assertTrue(sheet_refresh.graph_stale(self.name))
         self.assertEqual(len(corrections.load(self.name)["ops"]), 1)                      # 저장은 남음
         self.assertTrue(AC.view(self.engine, self.gid)["graph_stale"])
         r = self.edit("set_tag", n["local_id"], {"tag": "KEEP-2"})                        # 다음 동작이 다시 만든다
-        self.assertFalse(r["data"]["graph_stale"])
+        self.assertFalse(sheet_refresh.graph_stale(self.name))
         self.assertEqual(self.graph_node(n["local_id"])["tag"], "KEEP-2")
 
     def test_ai_accepted_op_and_human_edit_live_in_one_record(self):
@@ -476,7 +491,7 @@ class RegisteredPathTest(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         self.events = Events()
-        self.engine = api.Engine(settings_path=os.path.join(self.tmp, "settings.json"), emit=self.events)
+        self.engine = api.Engine(settings_path=os.path.join(self.tmp, "settings.json"), emit=self.events, run_jobs=lambda job_id, fn: fn())
         self.engine.settings.update(reviewer_name="검토자A", project_id="REG-P")
         from hazop.shell import register_flow
         folder = [p for p in glob.glob(paths.folder("references", "pid-samples", "*")) if "SNP-M-101" in p][0]
@@ -515,10 +530,10 @@ class RegisteredPathTest(unittest.TestCase):
         self.call_nodes("create", {"sheet": self.gid, "ids": [rel["local_id"]], "name": "확정할 구간"})
         self.call_nodes("confirm", {"node_ids": ["S1"]})
         with mock.patch.object(data, "build_project_kg", wraps=data.build_project_kg) as kg:
-            r = self.edit("set_tag", node_lid, {"tag": "REG-TAG-1"})
+            r = AC.apply_edit(self.engine, self.gid, "set_tag", node_lid, {"tag": "REG-TAG-1"}, AC.view(self.engine, self.gid)["ver"])      # 채팅 길: 같은 스레드에서 끝까지
         self.assertTrue(r["ok"], r)
         self.assertTrue(kg.called, "등록된 도면이면 지식그래프를 다시 만든다")
-        self.assertTrue(any(t.startswith("④ 검토구간이 고치기 전 도면 기준입니다") and "S1" in t for t in r["data"]["recheck"]), r["data"]["recheck"])
+        self.assertTrue(any(t.startswith("④ 검토구간이 고치기 전 도면 기준입니다") and "S1" in t for t in r["recheck"]), r["recheck"])
         d = self.edit("delete_node", node_lid)                                            # 기기와 함께 지워지는 배관이 확정 구간 S1에 든다
         self.assertEqual(d["error"]["code"], "needs_confirm")
         self.assertIn("S1", d["error"]["message"])

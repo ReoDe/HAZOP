@@ -237,5 +237,22 @@ def read(engine, parts, query):
     if not name:
         return None
     from hazop.app import data
-    _original, corrected = data.load_extraction(name)
-    return api._json(build(corrected, name))
+    from hazop.shell import sheet_refresh
+    key = (name, sheet_refresh.ver_of(name), _symbols_stamp())       # 세 파일(추출·수정·AI 후보)과 기호 그림이 같으면 지은 것을 그대로 준다(쪽을 다시 열 때 정돈을 또 하지 않게)
+    hit = _CACHE.get(key)
+    if hit is None:
+        _original, corrected = data.load_extraction(name)
+        hit = api._json(build(corrected, name))
+        _CACHE.clear() if len(_CACHE) >= 24 else None
+        _CACHE[key] = hit
+    return hit
+
+
+_CACHE = {}
+
+
+def _symbols_stamp():
+    try:
+        return os.stat(SYMBOLS_PATH).st_mtime_ns
+    except OSError:
+        return None

@@ -278,7 +278,7 @@ function Strip() {
         title="고친 것 목록">${h.ops.length}${bad ? html` <span class="warn">· 못 얹음 ${bad}</span>` : null}</button>` : null}
       <${Btn} sm=${true} kind="ghost" icon="x" label="고치기 끝내기" title="고치기 끝내기" onClick=${() => setOn(false)} /></div>
     ${tip ? html`<div class="ep-hint">${tip}${s.tool === "path" ? " · 점 " + s.points.length + "개" : ""}</div>` : null}
-    ${h && h.graph_stale ? html`<div class="ep-hint warn">저장한 고침이 그래프에 아직 반영되지 않았습니다. 다음 고침에서 다시 만듭니다.</div>` : null}
+    ${h && h.graph_stale ? html`<div class="ep-hint warn">저장했습니다. 그래프를 다시 만드는 중이거나 다시 만들지 못했습니다(못 만들면 다음 동작에서 다시 만듭니다).</div>` : null}
     ${s.notes.length ? html`<div class=${"ep-hint" + (s.notes.some((t) => t.includes("재확인") || t.includes("풀렸")) ? " warn" : "")}>${s.notes.map((t) => html`<div>${t}</div>`)}</div>` : null}
     ${s.error && !s.item && !s.addAt ? html`<div class="ep-hint err" role="alert">${s.error}</div>` : null}
     ${open && h && h.ops.length ? html`<ol class="ep-log">${h.ops.slice().reverse().slice(0, 30).map((o) => html`<li key=${o.op_id}><b>${o.label}</b> ${o.local_id || ""}

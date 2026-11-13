@@ -267,7 +267,7 @@ class _Sheet:
             if it["layer"] != "pipe" or not it.get("polyline") or len(it["polyline"]) < 2:
                 continue
             ex = extras.get(it["id"]) or {}
-            ends = copy.deepcopy(ex.get("ends") or [])
+            ends = [dict(e) for e in ex.get("ends") or []]               # 끝 사전은 얕은 사본이면 된다(안의 값은 숫자·글자·점 목록이고 점은 아래에서 새 목록으로 바꾼다)
             line = [list(p) for p in it["polyline"]]
             att = {}
             for e in ends:
