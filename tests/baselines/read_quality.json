@@ -134,14 +134,14 @@
   },
   "apr1400-008": {
    "attribute": {
-    "correct": 34,
+    "correct": 35,
     "false_pos": 2,
     "units": 45
    },
    "connection": {
-    "correct": 115,
-    "false_pos": 24,
-    "units": 163
+    "correct": 123,
+    "false_pos": 16,
+    "units": 365
    },
    "kind": {
     "correct": 67,
@@ -161,14 +161,14 @@
     "units": 47
    },
    "connection": {
-    "correct": 42,
+    "correct": 39,
     "false_pos": 1,
-    "units": 47
+    "units": 45
    },
    "kind": {
     "correct": 5,
-    "false_pos": 6,
-    "units": 32
+    "false_pos": 8,
+    "units": 30
    },
    "tag": {
     "correct": 5,
@@ -183,18 +183,18 @@
     "units": 43
    },
    "connection": {
-    "correct": 96,
-    "false_pos": 54,
-    "units": 214
+    "correct": 84,
+    "false_pos": 52,
+    "units": 199
    },
    "kind": {
-    "correct": 79,
-    "false_pos": 4,
-    "units": 120
+    "correct": 75,
+    "false_pos": 8,
+    "units": 116
    },
    "tag": {
-    "correct": 22,
-    "false_pos": 1,
+    "correct": 23,
+    "false_pos": 0,
     "units": 92
    }
   },
@@ -206,17 +206,17 @@
    },
    "connection": {
     "correct": 146,
-    "false_pos": 32,
-    "units": 240
+    "false_pos": 38,
+    "units": 245
    },
    "kind": {
-    "correct": 96,
+    "correct": 98,
     "false_pos": 17,
     "units": 134
    },
    "tag": {
-    "correct": 41,
-    "false_pos": 0,
+    "correct": 37,
+    "false_pos": 4,
     "units": 94
    }
   },
@@ -228,13 +228,13 @@
    },
    "connection": {
     "correct": 40,
-    "false_pos": 35,
+    "false_pos": 36,
     "units": 101
    },
    "kind": {
     "correct": 54,
     "false_pos": 7,
-    "units": 74
+    "units": 75
    },
    "tag": {
     "correct": 31,
@@ -249,19 +249,19 @@
     "units": 23
    },
    "connection": {
-    "correct": 80,
-    "false_pos": 11,
-    "units": 118
+    "correct": 84,
+    "false_pos": 15,
+    "units": 171
    },
    "kind": {
     "correct": 59,
     "false_pos": 1,
-    "units": 93
+    "units": 99
    },
    "tag": {
     "correct": 0,
     "false_pos": 0,
-    "units": 0
+    "units": 6
    }
   },
   "apr1400-062": {
@@ -293,9 +293,9 @@
     "units": 25
    },
    "connection": {
-    "correct": 128,
-    "false_pos": 97,
-    "units": 239
+    "correct": 119,
+    "false_pos": 106,
+    "units": 233
    },
    "kind": {
     "correct": 58,
@@ -337,14 +337,14 @@
     "units": 32
    },
    "connection": {
-    "correct": 42,
-    "false_pos": 55,
-    "units": 97
+    "correct": 33,
+    "false_pos": 40,
+    "units": 87
    },
    "kind": {
     "correct": 32,
-    "false_pos": 12,
-    "units": 80
+    "false_pos": 13,
+    "units": 73
    },
    "tag": {
     "correct": 26,
@@ -359,19 +359,19 @@
     "units": 96
    },
    "connection": {
-    "correct": 188,
-    "false_pos": 113,
-    "units": 432
+    "correct": 192,
+    "false_pos": 107,
+    "units": 404
    },
    "kind": {
     "correct": 37,
     "false_pos": 13,
-    "units": 166
+    "units": 170
    },
    "tag": {
     "correct": 10,
     "false_pos": 0,
-    "units": 80
+    "units": 76
    }
   },
   "apr1400-128": {
@@ -383,10 +383,10 @@
    "connection": {
     "correct": 78,
     "false_pos": 150,
-    "units": 141
+    "units": 142
    },
    "kind": {
-    "correct": 70,
+    "correct": 78,
     "false_pos": 18,
     "units": 96
    },
