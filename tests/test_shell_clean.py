@@ -28,12 +28,8 @@ def file_url(path):
     return "file:///" + os.path.abspath(path).replace("\\", "/")
 
 
-def sample_payload():
-    """SNP-M-101 + 섞은 미확인 → {sheet(items), clean(extras), symbols, svg}. 엔진이 줄 모양과 같다."""
-    from hazop import paths
-    from hazop.shell import clean_items, sheet_items
-    from tests.test_clean_items import snp_extractions
-    ex = snp_extractions()["SNP-M-101"]
+def mix_unknowns(ex):
+    """추출 결과(고친 것)에 미확인 넷을 섞는다: 못 읽은 기호, 그림 없는 kind, 태그 없는 밸브, 열린 끝 배관, HTML처럼 보이는 태그."""
     nodes = ex["nodes"]
     # 섞기: ① 못 읽은 기호 ② 그림 없는 kind ③ 태그 없는 밸브 ④ 한쪽 끝이 열린 배관 ⑤ HTML처럼 보이는 태그. 기존 요소와 겹치지 않는 빈 자리에 놓는다
     taken = []
@@ -71,6 +67,15 @@ def sample_payload():
     x, y = slot(60, 80)
     nodes.append({"local_id": "x-html", "classification": "classified", "category": "equipment", "kind": "tank", "tag": "<img src=x onerror=window.__pwned=1>", "style": "",
                   "geometry": {"x": x, "y": y, "width": 60, "height": 80}})
+    return ex
+
+
+def sample_payload():
+    """SNP-M-101 + 섞은 미확인 → {sheet(items), clean(extras), symbols, svg}. 엔진이 줄 모양과 같다."""
+    from hazop import paths
+    from hazop.shell import clean_items, sheet_items
+    from tests.test_clean_items import snp_extractions
+    ex = mix_unknowns(snp_extractions()["SNP-M-101"])
     built = sheet_items.build_items(ex)
     svg = [p for p in glob.glob(paths.folder("references", "pid-samples", "*", "*.drawio.svg")) if "SNP-M-101" in p][0]
     with open(os.path.join(CANVAS, "symbols.json"), encoding="utf-8") as fh:
