@@ -532,7 +532,8 @@ def trace_path(ctx, start, end, mode="physical", limit=200, cursor=None):
         sides[key] = {"found": True, "length": len(nodes) - 1, "path_ref": ref, "steps": rows,
                       "lines": list(dict.fromkeys(r["tag"] or "" for r in rows if r["kind"] == "pipe_segment" and r["tag"])),
                       "segments_direction_unknown": [r["id"] for r in rows if r["flow"] == "unknown"][:50],
-                      "segments_against_flow": [r["id"] for r in rows if r["flow"] == "against"][:50]}
+                      "segments_against_flow": [r["id"] for r in rows if r["flow"] == "against"][:50],
+                      "check_valves_against": _check_against(idx, [i for i, _f in nodes])[:30]}
     first = sides["path"] if sides["path"]["found"] else sides["flow_path"]
     unc, unc_total = _uncertain(ctx, all_ids, valves=True)
     count_ = max(len(sides["path"]["steps"]), len(sides["flow_path"]["steps"]))
@@ -555,11 +556,11 @@ def _walk(idx, start, direction, stop_kinds, max_depth, include_unknown):
     """흐름 방향을 따라 도달 범위를 BFS로 찾는다. (도달 객체, 경계 객체, 깊이에 막힌 적 있는지)."""
     phys = idx.q.adjacency("physical")
     directed = idx.q.adjacency("directed")
-    flow_adj = directed if direction == "down" else idx.reverse_directed()
-    allowed = {u: {v for v, _e in lst} for u, lst in flow_adj.items()}
+    allowed = idx.allowed(direction)
     seen = {start: (0, False)}
+    parent = {start: None}
     queue = deque([start])
-    reached, boundary, cut = [], [], False
+    reached, boundary, cut, blocked = [], [], False, []
     while queue:
         cur = queue.popleft()
         depth, unk = seen[cur]
@@ -574,18 +575,43 @@ def _walk(idx, start, direction, stop_kinds, max_depth, include_unknown):
                 via = True
             else:
                 continue
+            if _check_blocked(idx, cur, parent[cur], nb, direction):
+                blocked.append(cur)
+                continue
             nd = depth + (0 if _is_seg(idx.nodes[nb]) else 1)
             if nd > max_depth:
                 cut = True
                 continue
             seen[nb] = (nd, unk or via)
+            parent[nb] = cur
             if not _is_seg(idx.nodes[nb]):
                 if stop_kinds and _kind_match(idx.nodes[nb], stop_kinds):
                     boundary.append(nb)
                     continue
                 reached.append(nb)
             queue.append(nb)
-    return reached, boundary, cut, seen
+    return reached, boundary, cut, seen, sorted(set(blocked))
+
+
+def _check_blocked(idx, valve, came_by, leaving_by, direction):
+    """체크밸브는 역류를 막는다: 확정된 허용 방향(입구 -> 출구)을 거스르는 통과는 못 지난다.
+    아래로(down) 갈 때는 출구로 들어와 입구로 나가는 길이, 위로(up) 갈 때는 입구로 들어와 출구로 나가는 길이 막힌다.
+    허용 방향이 미확인(check_direction 없음)이면 막지 않고 direction_unknown으로만 알린다."""
+    cd = idx.check.get(valve)
+    if not cd or came_by is None:
+        return False
+    inlet, outlet = cd
+    return (came_by, leaving_by) == ((outlet, inlet) if direction == "down" else (inlet, outlet))
+
+
+def _check_against(idx, node_ids):
+    """경로를 앞에서 뒤로 갈 때 허용 방향을 거스르는 체크밸브(배관 사이에 낀 것)."""
+    out = []
+    for i in range(1, len(node_ids) - 1):
+        cd = idx.check.get(node_ids[i])
+        if cd and (node_ids[i - 1], node_ids[i + 1]) == (cd[1], cd[0]):
+            out.append(node_ids[i])
+    return out
 
 
 @tool("trace_flow", "시작 객체에서 확인된 흐름 방향으로 내려가(down)거나 거슬러 올라가(up) 닿는 객체. stop_kinds 종류에서 멈추고 그 객체는 boundary에 낸다. "
@@ -597,7 +623,7 @@ def _walk(idx, start, direction, stop_kinds, max_depth, include_unknown):
 def trace_flow(ctx, start, direction, stop_kinds=(), max_depth=30, include_unknown=True, limit=50, cursor=None):
     idx = ctx.index
     s = _resolve(ctx, start)
-    reached, boundary, cut, seen = _walk(idx, s, direction, list(stop_kinds), max_depth, include_unknown)
+    reached, boundary, cut, seen, blocked = _walk(idx, s, direction, list(stop_kinds), max_depth, include_unknown)
     items = [dict(_describe(idx, r), depth=seen[r][0], via_unknown=seen[r][1]) for r in reached]
     ids = [s] + reached + boundary
     seg_unknown = [i for i, (_d, v) in seen.items() if v and _is_seg(idx.nodes[i])]
@@ -605,7 +631,7 @@ def trace_flow(ctx, start, direction, stop_kinds=(), max_depth=30, include_unkno
     return _paged(ctx, items, limit, cursor, lambda part: {
         "start": _describe(idx, s), "direction": direction, "reached": part,
         "boundary": [_describe(idx, b) for b in boundary[:30]], "boundary_count": len(boundary),
-        "capped": cut, "max_depth": max_depth, "segments_direction_unknown": len(seg_unknown)},
+        "capped": cut, "max_depth": max_depth, "check_valves_blocked": blocked[:30], "segments_direction_unknown": len(seg_unknown)},
         sources=_sources(idx, ids), uncertain=unc, **_cap_note(unc_total))
 
 
@@ -673,6 +699,25 @@ def summary(ctx, limit=50, cursor=None):
 
 # ---------------------------------------------------------------- 두 번째 묶음: enclose / search / 검토구간
 
+ENCLOSE_GAPS = ("unknown_symbol", "unknown_tag", "unresolved_connector", "unlinked_sheet")
+
+
+def _enclose_gaps(idx, seen, objects, capped):
+    """범위가 모자랄 수 있는 이유 -> 해당 노드. 범위 안(배관 포함)의 열린 끝이나 불확실한 곳이 하나라도 있으면 완전하다고 하지 않는다.
+    (흐름 방향 미확인은 물리 연결 범위를 바꾸지 않으므로 여기서 세지 않는다. uncertain에는 그대로 나온다.)"""
+    gaps = {}
+    if capped:
+        gaps["capped"] = [objects[-1]] if objects else []
+    adj = idx.q.adjacency("physical")
+    for i in sorted(seen):
+        for r in sorted(idx.uncertain.get(i, ())):
+            if r in ENCLOSE_GAPS:
+                gaps.setdefault(r, []).append(i)
+        if _is_seg(idx.nodes[i]) and len({nb for nb, _e in adj[i]}) < 2:
+            gaps.setdefault("open_end", []).append(i)  # 한쪽 끝이 어디에도 붙지 않은 배관 구간
+    return gaps
+
+
 @tool("enclose", "start에서 물리 배관으로 이어진 범위를 stop_kinds 종류(예: 밸브)에서 멈추며 찾는다(격리 범위 질문용). "
       "범위 객체(objects)와 멈춘 경계 객체(boundary)를 같은 쪽 안에 함께 낸다. 범위가 max_size를 넘으면 거기서 멈추고 data.capped=true. "
       "밸브 정상 위치는 반영하지 않는다.",
@@ -702,11 +747,15 @@ def enclose(ctx, start, stop_kinds=(), max_size=5000, limit=50, cursor=None):
                 objects.append(nb)
             queue.append(nb)
     lines = sorted({idx.nodes[i].get("line_no") for i in seen if _is_seg(idx.nodes[i]) and idx.nodes[i].get("line_no")})
+    gaps = _enclose_gaps(idx, seen, objects, capped)
     rows = [("object", o) for o in objects] + [("boundary", b) for b in boundary]
     unc, unc_total = _uncertain(ctx, objects + boundary, valves=True)
     by_sheet = Counter(idx.nodes[o].get("sheet") for o in objects)
     return _paged(ctx, rows, limit, cursor, lambda part: {
-        "start": _describe(idx, s), "stop_kinds": list(stop_kinds), "capped": capped, "complete": not capped,
+        "start": _describe(idx, s), "stop_kinds": list(stop_kinds), "capped": capped, "complete": not gaps,
+        "incomplete_reasons": [{"reason": r, "count": len(ids), "ids": ids[:10]} for r, ids in gaps.items()],
+        "check_valves": ("체크밸브는 역류만 막으므로 stop_kinds에 check_valve를 넣지 않으면 경계로 보지 않는다. "
+                         "밸브 정상 위치(NC 등)도 반영하지 않는다"),
         "size": len(objects), "boundary_count": len(boundary),
         "objects": [_describe(idx, i) for k, i in part if k == "object"],
         "boundary": [_describe(idx, i) for k, i in part if k == "boundary"],
@@ -730,6 +779,12 @@ def _all_nodes(ctx):
     return [nd for ns in ctx.node_sets or [] for nd in (ns or {}).get("nodes") or []]
 
 
+def _intent(nd):
+    """설계 의도 글. 구간 규격 v2는 design_intent {text, by}, 옛 파일은 intent(글)."""
+    v = nd.get("design_intent", nd.get("intent"))
+    return v.get("text") if isinstance(v, dict) else v
+
+
 def _node_row(idx, nd):
     members = nd.get("members") or []
     return {"node_id": nd.get("node_id"), "name": nd.get("name"), "state": nd.get("state") or nd.get("status"),
@@ -751,7 +806,9 @@ def get_node(ctx, node_id, limit=50, cursor=None):
     known = [m for m in members if m in idx.nodes]
     rows = [_describe(idx, m) for m in known]
     set_rev = next((ns.get("set_rev") for ns in ctx.node_sets or [] if nd in ((ns or {}).get("nodes") or [])), None)
-    head = dict(_node_row(idx, nd), intent=nd.get("intent") or nd.get("design_intent"), locked=nd.get("locked"), set_rev=set_rev,
+    head = dict(_node_row(idx, nd), design_intent=_intent(nd),
+                design_intent_by=(nd.get("design_intent") or {}).get("by") if isinstance(nd.get("design_intent"), dict) else None,
+                locked=nd.get("locked"), batch_id=nd.get("batch_id"), set_rev=set_rev,
                 unknown_members=len(members) - len(known))
     unc, unc_total = _uncertain(ctx, known)
     return _paged(ctx, rows, limit, cursor, lambda part: dict(head, members=part), sources=_sources(idx, known),

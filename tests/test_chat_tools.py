@@ -35,11 +35,12 @@ class ChatToolsBase(unittest.TestCase):
         os.environ["HAZOP_WORK_ROOT"] = os.path.join(cls.tmp, "work")
         os.makedirs(os.environ["HAZOP_WORK_ROOT"])
         import extract_drawio
+        from hazop import paths
         from hazop.graph import build
         from hazop.chat import context, tools
         cls.tools, cls.context = tools, context
         graphs = []
-        for f in sorted(glob.glob(os.path.join(REPO, "resources", "references", "pid-samples", "*", "*.drawio"))):
+        for f in sorted(glob.glob(os.path.join(paths.folder("references", "pid-samples"), "*", "*.drawio"))):
             ex, _ = extract_drawio.run_one(f, os.path.join(cls.tmp, "extract"))
             graphs.append(build.build_graph(ex))
         cls.graphs = graphs
@@ -68,6 +69,24 @@ class ChatToolsBase(unittest.TestCase):
         self.assertFalse(res["ok"])
         self.assertEqual(res["error"]["code"], code, res["error"])
         return res
+
+    def chain_context(self, n):
+        nodes, edges = [], []
+        for i in range(n):
+            nodes.append({"entity_id": "g/o%d" % i, "node_type": "drawing_object", "kind": "tee", "category": "piping_element",
+                          "classification": "classified", "tag": "T-%03d" % i, "sheet": "g", "attributes": {}})
+            if i:
+                seg = "g/s%d" % i
+                nodes.append({"entity_id": seg, "node_type": "pipe_segment", "kind": "pipe_segment", "category": "pipe_segment",
+                              "classification": "classified", "tag": "L-1", "line_no": "L-1", "sheet": "g", "attributes": {},
+                              "flow_direction": {"from": "g/o%d" % (i - 1), "to": "g/o%d" % i, "from_end": "source", "to_end": "target"}})
+                edges += [{"entity_id": seg + "a", "kind": "has_endpoint", "nodes": [seg, "g/o%d" % (i - 1)], "segment": seg,
+                           "node": "g/o%d" % (i - 1), "end": "source"},
+                          {"entity_id": seg + "b", "kind": "has_endpoint", "nodes": [seg, "g/o%d" % i], "segment": seg,
+                           "node": "g/o%d" % i, "end": "target"}]
+        pg = {"project_id": "X", "graph_id": "project-X", "graph_version": "pv-x", "sheets": [{"graph_id": "g", "graph_version": "1",
+              "drawing_number": "G"}], "nodes": nodes, "edges": edges, "sheet_links": [], "duplicate_tags": [], "manual_skipped": []}
+        return self.context.ChatContext(project_id="X", pg=pg)
 
     @staticmethod
     def objs(side):
@@ -335,24 +354,6 @@ class TracePathTest(ChatToolsBase):
             cursor = res["cursor"]
         self.assertEqual(got, 799)
 
-    def chain_context(self, n):
-        nodes, edges = [], []
-        for i in range(n):
-            nodes.append({"entity_id": "g/o%d" % i, "node_type": "drawing_object", "kind": "tee", "category": "piping_element",
-                          "classification": "classified", "tag": "T-%03d" % i, "sheet": "g", "attributes": {}})
-            if i:
-                seg = "g/s%d" % i
-                nodes.append({"entity_id": seg, "node_type": "pipe_segment", "kind": "pipe_segment", "category": "pipe_segment",
-                              "classification": "classified", "tag": "L-1", "line_no": "L-1", "sheet": "g", "attributes": {},
-                              "flow_direction": {"from": "g/o%d" % (i - 1), "to": "g/o%d" % i, "from_end": "source", "to_end": "target"}})
-                edges += [{"entity_id": seg + "a", "kind": "has_endpoint", "nodes": [seg, "g/o%d" % (i - 1)], "segment": seg,
-                           "node": "g/o%d" % (i - 1), "end": "source"},
-                          {"entity_id": seg + "b", "kind": "has_endpoint", "nodes": [seg, "g/o%d" % i], "segment": seg,
-                           "node": "g/o%d" % i, "end": "target"}]
-        pg = {"project_id": "X", "graph_id": "project-X", "graph_version": "pv-x", "sheets": [{"graph_id": "g", "graph_version": "1",
-              "drawing_number": "G"}], "nodes": nodes, "edges": edges, "sheet_links": [], "duplicate_tags": [], "manual_skipped": []}
-        return self.context.ChatContext(project_id="X", pg=pg)
-
     def test_path_steps_raw_matches_trace_path(self):
         d = self.ok("trace_path", start="RC-RV01", end="RC-V001")["data"]
         raw = self.tools.path_steps_raw(self.ctx, d["path"]["path_ref"])
@@ -370,6 +371,62 @@ class TracePathTest(ChatToolsBase):
         for bad in (None, {}, dict(ref, basis="x"), dict(ref, start="NOPE"), dict(ref, mode="x")):
             with self.assertRaises(self.tools.ToolError):
                 self.tools.path_steps_raw(self.ctx, bad)
+
+
+class CheckValveTest(ChatToolsBase):
+    """체크밸브(extraction.md '체크밸브 허용 방향'): 허용 방향은 입구 -> 출구이고 역류는 막힌다.
+    채팅 규격 §3은 체크밸브를 따로 정하지 않으므로, 흐름 추적(trace_flow)에서는 역류 통과를 막고(check_valves_blocked로 알림),
+    경로(trace_path)에서는 거스른 체크밸브를 check_valves_against로 알리며, 격리 범위(enclose)는 stop_kinds에 넣지 않는 한 경계로 보지 않는다."""
+
+    def check_chain(self, direction=True, known_flow=False):
+        """o0 -s1- o1 -s2- V(체크밸브 입구 s2, 출구 s3) -s3- o3 -s4- o4. 배관 흐름 방향은 모르게(known_flow=False) 둔다."""
+        ctx = ChatToolsBase.chain_context(self, 5)
+        for n in ctx.pg["nodes"]:
+            if not known_flow and n["node_type"] == "pipe_segment":
+                n["flow_direction"] = None
+            if n["entity_id"] == "g/o2":
+                n.update(kind="check_valve", category="valve", tag="CV-1",
+                         check_direction={"inlet": "g/s2", "outlet": "g/s3"} if direction else None)
+        ctx._index = None
+        return ctx
+
+    def reached(self, ctx, start, direction):
+        d = self.call("trace_flow", ctx=ctx, start=start, direction=direction)["data"]
+        return [x["tag"] for x in d["reached"]], d
+
+    def test_flow_does_not_cross_a_check_valve_backwards(self):
+        ctx = self.check_chain()
+        down, d = self.reached(ctx, "T-000", "down")    # 입구 쪽에서 출구 쪽으로: 허용
+        self.assertEqual(down, ["T-001", "CV-1", "T-003", "T-004"])
+        self.assertEqual(d["check_valves_blocked"], [])
+        back, d = self.reached(ctx, "T-004", "down")    # 출구 쪽에서 입구 쪽으로 아래로 가는 것은 역류: 막힘
+        self.assertEqual(back, ["T-003", "CV-1"])
+        self.assertEqual(d["check_valves_blocked"], ["g/o2"])
+        up, d = self.reached(ctx, "T-000", "up")        # 위로(상류) 갈 때 입구 -> 출구 통과는 막힘
+        self.assertEqual(up, ["T-001", "CV-1"])
+        self.assertEqual(d["check_valves_blocked"], ["g/o2"])
+        up2, _ = self.reached(ctx, "T-004", "up")       # 출구 쪽에서 상류로: 허용
+        self.assertEqual(up2, ["T-003", "CV-1", "T-001", "T-000"])
+
+    def test_unknown_check_direction_is_not_blocked_but_flagged(self):
+        ctx = self.check_chain(direction=False)
+        back, d = self.reached(ctx, "T-004", "down")
+        self.assertEqual(back, ["T-003", "CV-1", "T-001", "T-000"])
+        self.assertIn(("g/o2", "direction_unknown"), self.reasons(self.call("trace_flow", ctx=ctx, start="T-004", direction="down")))
+
+    def test_path_lists_check_valves_crossed_against(self):
+        ctx = self.check_chain()
+        fwd = self.call("trace_path", ctx=ctx, start="T-000", end="T-004")["data"]["path"]
+        back = self.call("trace_path", ctx=ctx, start="T-004", end="T-000")["data"]["path"]
+        self.assertEqual(fwd["check_valves_against"], [])
+        self.assertEqual(back["check_valves_against"], ["g/o2"])
+
+    def test_enclose_ignores_check_valves_unless_asked(self):
+        ctx = self.check_chain()
+        self.assertEqual(self.call("enclose", ctx=ctx, start="T-000", stop_kinds=["valve"])["data"]["size"], 2)
+        # 체크밸브(category valve가 아니라 kind check_valve)를 stop_kinds로 주면 거기서 멈춘다
+        d = self.call("enclose", ctx=ctx, start="T-000", stop_kinds=["check_valve"])["data"]
+        self.assertEqual([b["tag"] for b in d["boundary"]], ["CV-1"])
 
 
 class CursorTest(ChatToolsBase):
@@ -511,6 +568,33 @@ class SecondTierTest(ChatToolsBase):
         self.assertFalse(d["complete"])
         self.assertEqual(d["size"], 3)
         self.assertFalse(self.ok("enclose", start="RC-PZ01", stop_kinds=["valve"])["data"]["capped"])
+
+    def test_enclose_is_not_complete_next_to_unlinked_connector(self):
+        """SNP-M-401의 ES-L001·ES-L002는 상대 도면이 없어 이어지지 않았다. 그 범위를 '완전'이라고 답하면 안 된다."""
+        d = self.ok("enclose", start=S401 + "/entity-node-023", stop_kinds=["valve"])["data"]
+        self.assertFalse(d["complete"])
+        reasons = {r["reason"]: r for r in d["incomplete_reasons"]}
+        self.assertIn(S401 + "/entity-node-023", reasons["unlinked_sheet"]["ids"])
+        self.assertIn("체크밸브", d["check_valves"])
+
+    def test_enclose_complete_when_closed(self):
+        ctx = self.chain_context(4)
+        d = self.call("enclose", ctx=ctx, start="T-000")["data"]
+        self.assertTrue(d["complete"])
+        self.assertEqual(d["incomplete_reasons"], [])
+        self.assertEqual(d["size"], 4)
+
+    def test_enclose_open_end_and_unresolved_connector(self):
+        ctx = self.chain_context(3)
+        ctx.pg["edges"] = [e for e in ctx.pg["edges"] if e["entity_id"] != "g/s2b"]  # 배관 한쪽 끝이 붙지 않음
+        ctx._index = None
+        d = self.call("enclose", ctx=ctx, start="T-000")["data"]
+        self.assertFalse(d["complete"])
+        self.assertEqual([r["reason"] for r in d["incomplete_reasons"]], ["open_end"])
+        ctx = self.chain_context(3)
+        ctx.unresolved = [{"sheet": "g", "local_id": "x", "line_no": "L-1", "nodes": ["g/o1"], "reason": "x"}]
+        self.assertEqual([r["reason"] for r in self.call("enclose", ctx=ctx, start="T-000")["data"]["incomplete_reasons"]],
+                         ["unresolved_connector"])
 
     def test_enclose_objects_and_boundary_share_pages(self):
         res = self.ok("enclose", start="RC-PZ01", stop_kinds=["valve"], limit=10)

@@ -78,6 +78,7 @@ class Index:
             if n.get("sheet_entity_id"):
                 self.by_entity.setdefault(n["sheet_entity_id"], []).append(n["entity_id"])
         self.drawing_number = {s["graph_id"]: s.get("drawing_number") for s in pg["sheets"]}
+        self.check = self._check_valves()
         self.uncertain = self._uncertain(ctx)
         self.node_of = {}  # 구성요소 ID -> 속한 검토구간 node_id 목록
         for ns in ctx.node_sets or []:
@@ -85,6 +86,7 @@ class Index:
                 for m in nd.get("members") or []:
                     self.node_of.setdefault(m, []).append(nd.get("node_id"))
         self._summary = None
+        self._allowed = {}
         self._reverse = None
         self._kg_view = None
 
@@ -102,6 +104,8 @@ class Index:
                     add(eid, "direction_unknown")
             elif n.get("classification") not in (None, "classified") or n.get("kind") in (None, "unclassified"):
                 add(eid, "unknown_symbol")
+            if n.get("kind") == "check_valve" and not self.check.get(eid):
+                add(eid, "direction_unknown")
             if n.get("kind") == "continuation":
                 link = n.get("sheet_link") or {}
                 if link.get("status") != project.LINKED:
@@ -114,6 +118,23 @@ class Index:
             for eid in r.get("nodes") or []:
                 add(eid, "unresolved_connector")
         return out
+
+    def _check_valves(self):
+        """체크밸브 ID -> (입구 배관 구간, 출구 배관 구간). check_direction이 확정된 것만(그래프의 값은 도면 안 ID라 프로젝트 ID로 옮긴다)."""
+        out = {}
+        for eid, n in self.nodes.items():
+            cd = n.get("check_direction") if n.get("kind") == "check_valve" else None
+            if cd and cd.get("inlet") and cd.get("outlet"):
+                lift = lambda x: x if x in self.nodes else project.nid(n.get("sheet"), x)  # noqa: E731
+                out[eid] = (lift(cd["inlet"]), lift(cd["outlet"]))
+        return out
+
+    def allowed(self, direction):
+        """흐름 방향 탐색용: 노드 -> 갈 수 있는 이웃 집합. 방향마다 한 번만 만든다."""
+        if direction not in self._allowed:
+            adj = self.q.adjacency("directed") if direction == "down" else self.reverse_directed()
+            self._allowed[direction] = {u: {v for v, _e in lst} for u, lst in adj.items()}
+        return self._allowed[direction]
 
     def reverse_directed(self):
         """확인된 흐름 방향 인접 목록의 거꾸로(거슬러 올라가는 탐색용)."""
