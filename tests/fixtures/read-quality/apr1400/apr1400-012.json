@@ -179,7 +179,7 @@
   },
   {
    "id": "s012",
-   "kind": "unlisted",
+   "kind": "sight_glass",
    "kind_text": "sight glass (FG in circle)",
    "bbox": [
     462.0,
@@ -237,7 +237,7 @@
   },
   {
    "id": "s016",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger",
    "bbox": [
     839.6,

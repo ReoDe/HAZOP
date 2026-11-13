@@ -22,7 +22,7 @@
  "symbols": [
   {
    "id": "s001",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     263.0,
     186.0,
@@ -196,7 +196,7 @@
   },
   {
    "id": "s012",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     706.0,
     204.0,
@@ -262,7 +262,7 @@
   },
   {
    "id": "s017",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     810.5,
     336.5,
@@ -276,7 +276,7 @@
   },
   {
    "id": "s018",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     810.5,
     381.5,
@@ -290,7 +290,7 @@
   },
   {
    "id": "s019",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     810.5,
     547.0,
@@ -356,7 +356,7 @@
   },
   {
    "id": "s024",
-   "kind": "unlisted",
+   "kind": "alarm",
    "kind_text": "instrument XAH (alarm, shared HSI)",
    "bbox": [
     577.6,
@@ -422,7 +422,7 @@
   },
   {
    "id": "s029",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     282.0,
     224.0,
@@ -436,7 +436,7 @@
   },
   {
    "id": "s030",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     297.5,
     484.0,
@@ -450,7 +450,7 @@
   },
   {
    "id": "s031",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     313.0,
     569.5,
@@ -613,7 +613,7 @@
   },
   {
    "id": "s040",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     820.5,
     297.0,
@@ -627,7 +627,7 @@
   },
   {
    "id": "s041",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     820.5,
     312.0,
@@ -720,7 +720,7 @@
   },
   {
    "id": "s048",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     282.0,
     374.5,
@@ -734,7 +734,7 @@
   },
   {
    "id": "s049",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     274.5,
     530.0,
@@ -761,7 +761,7 @@
   },
   {
    "id": "s051",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     365.0,
     468.0,
@@ -775,7 +775,7 @@
   },
   {
    "id": "s052",
-   "kind": "unlisted",
+   "kind": "air_flow_arrow",
    "bbox": [
     365.0,
     640.5,
@@ -811,7 +811,7 @@
   },
   {
    "id": "s054",
-   "kind": "unlisted",
+   "kind": "filter",
    "kind_text": "moisture separator (chevron)",
    "bbox": [
     459.0,
@@ -864,7 +864,7 @@
   },
   {
    "id": "s058",
-   "kind": "unlisted",
+   "kind": "filter",
    "kind_text": "carbon adsorber (AD, dotted)",
    "bbox": [
     547.4,
@@ -954,7 +954,7 @@
   },
   {
    "id": "s063",
-   "kind": "unlisted",
+   "kind": "filter",
    "kind_text": "moisture separator (chevron)",
    "bbox": [
     459.0,
@@ -1007,7 +1007,7 @@
   },
   {
    "id": "s067",
-   "kind": "unlisted",
+   "kind": "filter",
    "kind_text": "carbon adsorber (AD, dotted)",
    "bbox": [
     547.4,
@@ -1075,7 +1075,7 @@
   },
   {
    "id": "s071",
-   "kind": "unlisted",
+   "kind": "alarm",
    "kind_text": "instrument PDAH (differential pressure alarm high, shared HSI)",
    "bbox": [
     536.2,
@@ -1102,7 +1102,7 @@
   },
   {
    "id": "s073",
-   "kind": "unlisted",
+   "kind": "alarm",
    "kind_text": "instrument PDAH (differential pressure alarm high, shared HSI)",
    "bbox": [
     458.4,
@@ -1155,7 +1155,7 @@
   },
   {
    "id": "s077",
-   "kind": "unlisted",
+   "kind": "alarm",
    "kind_text": "instrument PDAH (differential pressure alarm high, shared HSI)",
    "bbox": [
     505.0,
@@ -1182,7 +1182,7 @@
   },
   {
    "id": "s079",
-   "kind": "unlisted",
+   "kind": "alarm",
    "kind_text": "instrument PDAH (differential pressure alarm high, shared HSI)",
    "bbox": [
     526.4,
@@ -1235,7 +1235,7 @@
   },
   {
    "id": "s083",
-   "kind": "unlisted",
+   "kind": "alarm",
    "kind_text": "instrument PDAH (differential pressure alarm high, shared HSI)",
    "bbox": [
     571.0,
@@ -1275,7 +1275,7 @@
   },
   {
    "id": "s086",
-   "kind": "unlisted",
+   "kind": "alarm",
    "kind_text": "instrument PDAH (differential pressure alarm high, shared HSI)",
    "bbox": [
     536.2,
@@ -1302,7 +1302,7 @@
   },
   {
    "id": "s088",
-   "kind": "unlisted",
+   "kind": "alarm",
    "kind_text": "instrument PDAH (differential pressure alarm high, shared HSI)",
    "bbox": [
     459.4,
@@ -1355,7 +1355,7 @@
   },
   {
    "id": "s092",
-   "kind": "unlisted",
+   "kind": "alarm",
    "kind_text": "instrument PDAH (differential pressure alarm high, shared HSI)",
    "bbox": [
     505.0,
@@ -1382,7 +1382,7 @@
   },
   {
    "id": "s094",
-   "kind": "unlisted",
+   "kind": "alarm",
    "kind_text": "instrument PDAH (differential pressure alarm high, shared HSI)",
    "bbox": [
     526.4,
@@ -1435,7 +1435,7 @@
   },
   {
    "id": "s098",
-   "kind": "unlisted",
+   "kind": "alarm",
    "kind_text": "instrument PDAH (differential pressure alarm high, shared HSI)",
    "bbox": [
     571.0,

@@ -323,7 +323,7 @@
   },
   {
    "id": "s020",
-   "kind": "unlisted",
+   "kind": "chiller",
    "bbox": [
     715.4,
     304,
@@ -839,7 +839,7 @@
   },
   {
    "id": "s053",
-   "kind": "unlisted",
+   "kind": "chiller",
    "bbox": [
     715,
     480,

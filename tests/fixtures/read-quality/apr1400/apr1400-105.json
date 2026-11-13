@@ -311,7 +311,7 @@
   },
   {
    "id": "s023",
-   "kind": "unlisted",
+   "kind": "expansion_joint",
    "kind_text": "expansion joint / flexible connector",
    "bbox": [
     405,
@@ -325,7 +325,7 @@
   },
   {
    "id": "s024",
-   "kind": "unlisted",
+   "kind": "silencer",
    "kind_text": "silencer",
    "bbox": [
     404,
@@ -358,7 +358,7 @@
   },
   {
    "id": "s026",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     444.9,
@@ -404,7 +404,7 @@
   },
   {
    "id": "s029",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     483.5,
@@ -450,7 +450,7 @@
   },
   {
    "id": "s032",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     520.9,
@@ -496,7 +496,7 @@
   },
   {
    "id": "s035",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     558.5,
@@ -542,7 +542,7 @@
   },
   {
    "id": "s038",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     597.1,
@@ -661,7 +661,7 @@
   },
   {
    "id": "s046",
-   "kind": "unlisted",
+   "kind": "isolation_valve",
    "kind_text": "electro-hydraulic (E/H) operated isolation valve",
    "bbox": [
     738,
@@ -702,7 +702,7 @@
   },
   {
    "id": "s048",
-   "kind": "unlisted",
+   "kind": "isolation_valve",
    "kind_text": "electro-hydraulic (E/H) operated isolation valve",
    "bbox": [
     738.5,
@@ -831,7 +831,7 @@
   },
   {
    "id": "s057",
-   "kind": "unlisted",
+   "kind": "expansion_joint",
    "kind_text": "expansion joint / flexible connector",
    "bbox": [
     405,
@@ -845,7 +845,7 @@
   },
   {
    "id": "s058",
-   "kind": "unlisted",
+   "kind": "silencer",
    "kind_text": "silencer",
    "bbox": [
     404.0,
@@ -878,7 +878,7 @@
   },
   {
    "id": "s060",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     444.9,
@@ -924,7 +924,7 @@
   },
   {
    "id": "s063",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     483.5,
@@ -970,7 +970,7 @@
   },
   {
    "id": "s066",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     520.9,
@@ -1016,7 +1016,7 @@
   },
   {
    "id": "s069",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     558.9,
@@ -1062,7 +1062,7 @@
   },
   {
    "id": "s072",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     597.5,
@@ -1181,7 +1181,7 @@
   },
   {
    "id": "s080",
-   "kind": "unlisted",
+   "kind": "isolation_valve",
    "kind_text": "electro-hydraulic (E/H) operated isolation valve",
    "bbox": [
     738,
@@ -1222,7 +1222,7 @@
   },
   {
    "id": "s082",
-   "kind": "unlisted",
+   "kind": "isolation_valve",
    "kind_text": "electro-hydraulic (E/H) operated isolation valve",
    "bbox": [
     738.5,
@@ -1461,7 +1461,7 @@
   },
   {
    "id": "s097",
-   "kind": "unlisted",
+   "kind": "expansion_joint",
    "kind_text": "expansion joint / flexible connector",
    "bbox": [
     405,
@@ -1475,7 +1475,7 @@
   },
   {
    "id": "s098",
-   "kind": "unlisted",
+   "kind": "silencer",
    "kind_text": "silencer",
    "bbox": [
     404,
@@ -1508,7 +1508,7 @@
   },
   {
    "id": "s100",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     444.9,
@@ -1554,7 +1554,7 @@
   },
   {
    "id": "s103",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     483.5,
@@ -1600,7 +1600,7 @@
   },
   {
    "id": "s106",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     521.5,
@@ -1646,7 +1646,7 @@
   },
   {
    "id": "s109",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     559.1,
@@ -1692,7 +1692,7 @@
   },
   {
    "id": "s112",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     597.1,
@@ -1811,7 +1811,7 @@
   },
   {
    "id": "s120",
-   "kind": "unlisted",
+   "kind": "isolation_valve",
    "kind_text": "electro-hydraulic (E/H) operated isolation valve",
    "bbox": [
     738,
@@ -1852,7 +1852,7 @@
   },
   {
    "id": "s122",
-   "kind": "unlisted",
+   "kind": "isolation_valve",
    "kind_text": "electro-hydraulic (E/H) operated isolation valve",
    "bbox": [
     738.5,
@@ -2091,7 +2091,7 @@
   },
   {
    "id": "s137",
-   "kind": "unlisted",
+   "kind": "expansion_joint",
    "kind_text": "expansion joint / flexible connector",
    "bbox": [
     405,
@@ -2105,7 +2105,7 @@
   },
   {
    "id": "s138",
-   "kind": "unlisted",
+   "kind": "silencer",
    "kind_text": "silencer",
    "bbox": [
     404,
@@ -2138,7 +2138,7 @@
   },
   {
    "id": "s140",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     443.5,
@@ -2184,7 +2184,7 @@
   },
   {
    "id": "s143",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     481.9,
@@ -2230,7 +2230,7 @@
   },
   {
    "id": "s146",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     518.5,
@@ -2276,7 +2276,7 @@
   },
   {
    "id": "s149",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     556.5,
@@ -2322,7 +2322,7 @@
   },
   {
    "id": "s152",
-   "kind": "unlisted",
+   "kind": "slip_joint",
    "kind_text": "drip pan elbow (vent stack inlet)",
    "bbox": [
     594.9,
@@ -2441,7 +2441,7 @@
   },
   {
    "id": "s160",
-   "kind": "unlisted",
+   "kind": "isolation_valve",
    "kind_text": "electro-hydraulic (E/H) operated isolation valve",
    "bbox": [
     738,
@@ -2482,7 +2482,7 @@
   },
   {
    "id": "s162",
-   "kind": "unlisted",
+   "kind": "isolation_valve",
    "kind_text": "electro-hydraulic (E/H) operated isolation valve",
    "bbox": [
     738.5,

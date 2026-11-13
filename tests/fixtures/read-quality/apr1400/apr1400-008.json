@@ -74,7 +74,7 @@
   },
   {
    "id": "s005",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     358.4,
@@ -88,7 +88,7 @@
   },
   {
    "id": "s006",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     214.2,
@@ -102,7 +102,7 @@
   },
   {
    "id": "s007",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     264.0,
@@ -116,7 +116,7 @@
   },
   {
    "id": "s008",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     209.2,
@@ -130,7 +130,7 @@
   },
   {
    "id": "s009",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     259.0,
@@ -383,7 +383,7 @@
   },
   {
    "id": "s023",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     539.4,
@@ -397,7 +397,7 @@
   },
   {
    "id": "s024",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     395.0,
@@ -411,7 +411,7 @@
   },
   {
    "id": "s025",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     445.0,
@@ -425,7 +425,7 @@
   },
   {
    "id": "s026",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     390.0,
@@ -439,7 +439,7 @@
   },
   {
    "id": "s027",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     440.0,
@@ -686,7 +686,7 @@
   },
   {
    "id": "s041",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     717.6,
@@ -700,7 +700,7 @@
   },
   {
    "id": "s042",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     572.6,
@@ -714,7 +714,7 @@
   },
   {
    "id": "s043",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     622.4,
@@ -728,7 +728,7 @@
   },
   {
    "id": "s044",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     566.6,
@@ -742,7 +742,7 @@
   },
   {
    "id": "s045",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     614.0,
@@ -995,7 +995,7 @@
   },
   {
    "id": "s059",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     896.6,
@@ -1009,7 +1009,7 @@
   },
   {
    "id": "s060",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     751.4,
@@ -1023,7 +1023,7 @@
   },
   {
    "id": "s061",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     801.0,
@@ -1037,7 +1037,7 @@
   },
   {
    "id": "s062",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     746.4,
@@ -1051,7 +1051,7 @@
   },
   {
    "id": "s063",
-   "kind": "unlisted",
+   "kind": "pilot_light",
    "kind_text": "position indicating light (ZL, square-framed circle)",
    "bbox": [
     790.4,
@@ -1668,7 +1668,7 @@
   },
   {
    "id": "s097",
-   "kind": "unlisted",
+   "kind": "electric_heater",
    "kind_text": "electric heater bundle (BACK-UP HEATERS)",
    "bbox": [
     461.0,
@@ -1682,7 +1682,7 @@
   },
   {
    "id": "s098",
-   "kind": "unlisted",
+   "kind": "electric_heater",
    "kind_text": "electric heater bundle (PROPORTIONAL HEATERS)",
    "bbox": [
     499.0,
@@ -2261,7 +2261,7 @@
   },
   {
    "id": "s139",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger (bar with 4 triangle nozzles)",
    "bbox": [
     857.5,
@@ -2275,7 +2275,7 @@
   },
   {
    "id": "s140",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger (bar with 4 triangle nozzles)",
    "bbox": [
     869.5,
@@ -2289,7 +2289,7 @@
   },
   {
    "id": "s141",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger (bar with 4 triangle nozzles)",
    "bbox": [
     880.0,
@@ -2303,7 +2303,7 @@
   },
   {
    "id": "s142",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger (bar with 4 triangle nozzles)",
    "bbox": [
     890.6,
@@ -2317,7 +2317,7 @@
   },
   {
    "id": "s143",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger (bar with 4 triangle nozzles)",
    "bbox": [
     901.0,
@@ -2331,7 +2331,7 @@
   },
   {
    "id": "s144",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger (bar with 4 triangle nozzles)",
    "bbox": [
     912.0,
@@ -2345,7 +2345,7 @@
   },
   {
    "id": "s145",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger (bar with 4 triangle nozzles)",
    "bbox": [
     922.6,
@@ -2359,7 +2359,7 @@
   },
   {
    "id": "s146",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger (bar with 4 triangle nozzles)",
    "bbox": [
     933.6,
@@ -2373,7 +2373,7 @@
   },
   {
    "id": "s147",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger (bar with 4 triangle nozzles)",
    "bbox": [
     944.0,
@@ -2387,7 +2387,7 @@
   },
   {
    "id": "s148",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger (bar with 4 triangle nozzles)",
    "bbox": [
     954.6,
@@ -2401,7 +2401,7 @@
   },
   {
    "id": "s149",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger (bar with 4 triangle nozzles)",
    "bbox": [
     965.6,
@@ -2415,7 +2415,7 @@
   },
   {
    "id": "s150",
-   "kind": "unlisted",
+   "kind": "sparger",
    "kind_text": "sparger (bar with 4 triangle nozzles)",
    "bbox": [
     976.0,

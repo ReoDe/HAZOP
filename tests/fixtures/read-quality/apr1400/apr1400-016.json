@@ -1671,7 +1671,7 @@
   },
   {
    "id": "s099",
-   "kind": "unlisted",
+   "kind": "temperature_element",
    "bbox": [
     568.4,
     502.0,
@@ -1704,7 +1704,7 @@
   },
   {
    "id": "s101",
-   "kind": "unlisted",
+   "kind": "temperature_element",
    "bbox": [
     498.4,
     529.6,

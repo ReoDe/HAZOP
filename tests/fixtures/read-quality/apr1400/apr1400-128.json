@@ -616,7 +616,7 @@
   },
   {
    "id": "s041",
-   "kind": "unlisted",
+   "kind": "hose_connection",
    "bbox": [
     937.0,
     255.6,
@@ -715,7 +715,7 @@
   },
   {
    "id": "s047",
-   "kind": "unlisted",
+   "kind": "hose_connection",
    "bbox": [
     524.0,
     389.4,
@@ -1308,7 +1308,7 @@
   },
   {
    "id": "s087",
-   "kind": "unlisted",
+   "kind": "hose_connection",
    "bbox": [
     937.0,
     575.6,
@@ -1407,7 +1407,7 @@
   },
   {
    "id": "s093",
-   "kind": "unlisted",
+   "kind": "hose_connection",
    "bbox": [
     523.6,
     666.0,

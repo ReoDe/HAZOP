@@ -35,7 +35,7 @@
   },
   {
    "id": "s002",
-   "kind": "unlisted",
+   "kind": "flame_arrestor",
    "bbox": [
     658.0,
     190.0,
@@ -283,7 +283,7 @@
   },
   {
    "id": "s019",
-   "kind": "unlisted",
+   "kind": "flexible_hose",
    "bbox": [
     958.0,
     346.5,
@@ -394,7 +394,7 @@
   },
   {
    "id": "s027",
-   "kind": "unlisted",
+   "kind": "alarm",
    "bbox": [
     927.4,
     405.0,
@@ -516,7 +516,7 @@
   },
   {
    "id": "s034",
-   "kind": "unlisted",
+   "kind": "flexible_hose",
    "bbox": [
     958.0,
     424.0,
@@ -568,7 +568,7 @@
   },
   {
    "id": "s038",
-   "kind": "unlisted",
+   "kind": "flexible_hose",
    "bbox": [
     958.0,
     465.0,
@@ -595,7 +595,7 @@
   },
   {
    "id": "s040",
-   "kind": "unlisted",
+   "kind": "flexible_hose",
    "bbox": [
     958.0,
     482.0,
@@ -609,7 +609,7 @@
   },
   {
    "id": "s041",
-   "kind": "unlisted",
+   "kind": "flexible_hose",
    "bbox": [
     958.0,
     505.0,
@@ -681,7 +681,7 @@
   },
   {
    "id": "s047",
-   "kind": "unlisted",
+   "kind": "hose_connection",
    "bbox": [
     672.0,
     463.0,
@@ -752,7 +752,7 @@
   },
   {
    "id": "s051",
-   "kind": "unlisted",
+   "kind": "flame_arrestor",
    "bbox": [
     271.0,
     482.4,
@@ -785,7 +785,7 @@
   },
   {
    "id": "s053",
-   "kind": "unlisted",
+   "kind": "hose_connection",
    "bbox": [
     175.0,
     495.5,
@@ -871,7 +871,7 @@
   },
   {
    "id": "s058",
-   "kind": "unlisted",
+   "kind": "alarm",
    "bbox": [
     450.4,
     523.0,
@@ -1236,7 +1236,7 @@
   },
   {
    "id": "s501",
-   "kind": "unlisted",
+   "kind": "hose_connection",
    "kind_text": "hose connection (coupler)",
    "bbox": [
     808.0,

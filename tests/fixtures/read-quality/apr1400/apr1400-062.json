@@ -54,7 +54,7 @@
   },
   {
    "id": "s003",
-   "kind": "unlisted",
+   "kind": "sample_probe",
    "kind_text": "in-line box on pipe with corner mark, tied to AX circle by thin line",
    "bbox": [
     184.0,
@@ -68,7 +68,7 @@
   },
   {
    "id": "s004",
-   "kind": "unlisted",
+   "kind": "sample_probe",
    "kind_text": "analyzer circle AX",
    "bbox": [
     160.6,
@@ -114,7 +114,7 @@
   },
   {
    "id": "s007",
-   "kind": "unlisted",
+   "kind": "test_connection",
    "kind_text": "hose connection (coupler) pipe end",
    "bbox": [
     243.4,
@@ -344,7 +344,7 @@
   },
   {
    "id": "s020",
-   "kind": "unlisted",
+   "kind": "level_element",
    "kind_text": "level element circle LE",
    "bbox": [
     210.2,
@@ -358,7 +358,7 @@
   },
   {
    "id": "s021",
-   "kind": "unlisted",
+   "kind": "diaphragm_seal",
    "kind_text": "box with wave at sump bottom (diaphragm seal / level sensing element)",
    "bbox": [
     196.6,
@@ -448,7 +448,7 @@
   },
   {
    "id": "s026",
-   "kind": "unlisted",
+   "kind": "sample_probe",
    "kind_text": "in-line box on pipe with corner mark, tied to AX circle by thin line",
    "bbox": [
     431.6,
@@ -462,7 +462,7 @@
   },
   {
    "id": "s027",
-   "kind": "unlisted",
+   "kind": "sample_probe",
    "kind_text": "analyzer circle AX",
    "bbox": [
     407.6,
@@ -508,7 +508,7 @@
   },
   {
    "id": "s030",
-   "kind": "unlisted",
+   "kind": "test_connection",
    "kind_text": "hose connection (coupler) pipe end",
    "bbox": [
     490.6,
@@ -738,7 +738,7 @@
   },
   {
    "id": "s043",
-   "kind": "unlisted",
+   "kind": "level_element",
    "kind_text": "level element circle LE",
    "bbox": [
     457.4,
@@ -752,7 +752,7 @@
   },
   {
    "id": "s044",
-   "kind": "unlisted",
+   "kind": "diaphragm_seal",
    "kind_text": "box with wave at sump bottom (diaphragm seal / level sensing element)",
    "bbox": [
     443.4,
@@ -823,7 +823,7 @@
   },
   {
    "id": "s048",
-   "kind": "unlisted",
+   "kind": "sample_probe",
    "kind_text": "in-line box on pipe with corner mark, tied to AX circle by thin line",
    "bbox": [
     726.0,
@@ -837,7 +837,7 @@
   },
   {
    "id": "s049",
-   "kind": "unlisted",
+   "kind": "sample_probe",
    "kind_text": "analyzer circle AX",
    "bbox": [
     702.0,
@@ -1117,7 +1117,7 @@
   },
   {
    "id": "s066",
-   "kind": "unlisted",
+   "kind": "level_element",
    "kind_text": "level element circle LE",
    "bbox": [
     751.6,
@@ -1131,7 +1131,7 @@
   },
   {
    "id": "s067",
-   "kind": "unlisted",
+   "kind": "diaphragm_seal",
    "kind_text": "box with wave at sump bottom (diaphragm seal / level sensing element)",
    "bbox": [
     737.6,
@@ -1397,7 +1397,7 @@
   },
   {
    "id": "s082",
-   "kind": "unlisted",
+   "kind": "level_element",
    "kind_text": "level element circle LE",
    "bbox": [
     966.4,
@@ -1411,7 +1411,7 @@
   },
   {
    "id": "s083",
-   "kind": "unlisted",
+   "kind": "diaphragm_seal",
    "kind_text": "box with wave at sump bottom (diaphragm seal / level sensing element)",
    "bbox": [
     952.0,
