@@ -24,7 +24,7 @@ LOG = logging.getLogger("hazop.shell.api")
 MAX_UI_STATE_CHARS = 4096
 MAX_FILES = 50
 MAX_PATH_CHARS = 520
-REGISTRABLE_EXT = (".drawio", ".pdf")   # SVG는 같은 이름 drawio와 함께 등록되는 파생 자료라 따로 받지 않는다
+REGISTRABLE_EXT = (".drawio", ".pdf", ".xml")   # .xml은 DEXPI(엔진의 형식 판별이 가린다). SVG는 같은 이름 drawio와 함께 등록되는 파생 자료라 따로 받지 않는다
 CHAT_MODELS = ("fast", "normal", "deep")
 DEFAULT_PROJECT = "sample-project"   # 이전 화면 ①의 프로젝트 ID 입력칸 기본값과 같다
 
@@ -498,7 +498,7 @@ def _h_open_classic(engine, a):
 
 
 # 프로젝트에 묶인 명령의 이름 머리(웹이 보낼 때 프로젝트 ID를 실어야 하는 것)
-PROJECT_BOUND = ("nodes.", "results.", "ie.", "chat.action.")
+PROJECT_BOUND = ("nodes.", "results.", "ie.", "chat.action.", "sheet.", "dexpi.")
 
 COMMANDS = {
     "ui.save": Command({"state": (v_json_text(MAX_UI_STATE_CHARS), True)}, _h_ui_save, "웹의 보기 상태(마지막 도면·채팅 접힘 등)를 맡긴다"),
@@ -537,6 +537,12 @@ try:
 except ImportError:
     LOG.exception("분석 결과 명령 모듈을 읽지 못함: 분석 결과 메뉴가 꺼진다")
     api_results = None
+try:
+    from hazop.shell import api_drawings  # noqa: E402  (도면 쪽 확정·DEXPI 내보내기)
+    api_drawings.register(COMMANDS)
+except ImportError:
+    LOG.exception("도면 쪽 확정 명령 모듈을 읽지 못함: 쪽 확정·DEXPI 내보내기가 꺼진다")
+    api_drawings = None
 try:
     from hazop.shell import api_ie  # noqa: E402  (3단계 ⑥ 초기사건)
     api_ie.register(COMMANDS)
@@ -613,6 +619,8 @@ class ReadApi:
                 LOG.exception("정리된 보기 자료 모듈을 읽지 못함: 정리된 보기가 꺼진다")
                 return None
             return clean_items.read(self.engine, parts, query)
+        if topic in ("sheetconf", "dexpi") and api_drawings is not None:
+            return api_drawings.read(self.engine, parts, query)
         if topic == "results" and api_results is not None:
             return api_results.read(self.engine, parts, query)
         if topic == "ie" and api_ie is not None:

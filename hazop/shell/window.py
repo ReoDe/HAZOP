@@ -252,8 +252,11 @@ class ShellWindow(QMainWindow):
         self.engine.hooks["open_classic"] = self._open_classic
         self.engine.hooks["conn_guide"] = self._conn_guide
         self.engine.hooks["save_path"] = self._save_path
+        self.engine.hooks["save_dir"] = self._save_dir
+        self.engine.hooks["confirm_overwrite_files"] = self._ask_overwrite_files
         self.engine.hooks["jobs_idle"] = self.jobs_idle.emit
         self.jobs_idle.connect(self._on_jobs_idle)
+        self.confirm_overwrite_files = self._ask_overwrite_files_box     # 시험이 모달 창 없이 답을 꽂는 자리: True(덮어씀) | False
         self.confirm_overwrite = self._ask_overwrite    # 시험이 모달 창 없이 답을 꽂는 자리: True(덮어씀) | False
         self.confirm_busy = self._ask_busy     # 시험이 모달 창 없이 답을 꽂는 자리: ("stop"|"wait"|"cancel") <- (작업 수)
         self._close_when_idle = False
@@ -299,7 +302,7 @@ class ShellWindow(QMainWindow):
             LOG.error("웹 화면을 읽지 못함: %s", SHELL_URL)
 
     def _pick_files(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "도면 파일 고르기", "", "도면 (*.drawio *.pdf)")
+        files, _ = QFileDialog.getOpenFileNames(self, "도면 파일 고르기", "", "도면 (*.drawio *.pdf *.xml)")
         return files
 
     def _save_path(self, kind, default_name):
@@ -318,6 +321,32 @@ class ShellWindow(QMainWindow):
             return None
         self._export_dir = os.path.dirname(path)
         return path
+
+    def _save_dir(self, kind):
+        """DEXPI 내보내기 저장 폴더를 묻는다(웹은 경로를 보내지 않는다). 취소하면 None."""
+        from PySide6.QtCore import QStandardPaths
+        start = getattr(self, "_export_dir", None) or QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+        folder = QFileDialog.getExistingDirectory(self, "DEXPI로 내보낼 폴더 고르기", start)
+        if folder:
+            self._export_dir = folder
+        return folder or None
+
+    def _ask_overwrite_files(self, names):
+        """같은 이름의 파일이 있으면 덮어쓸지 묻는다(시험은 seam을 바꿔 끼운다). True면 덮어씀."""
+        return self.confirm_overwrite_files(names)
+
+    def _ask_overwrite_files_box(self, names):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("덮어쓸까요?")
+        box.setText("같은 이름의 파일이 이미 있습니다(%d개)." % len(names))
+        more = "\n…" if len(names) > 8 else ""
+        box.setInformativeText("\n".join(names[:8]) + more + "\n덮어쓰면 이전 내용은 사라집니다.")
+        yes = box.addButton("덮어쓰기", QMessageBox.DestructiveRole)
+        no = box.addButton("취소", QMessageBox.RejectRole)
+        box.setDefaultButton(no)
+        box.exec()
+        return box.clickedButton() is yes
 
     def _ask_overwrite(self, path):
         box = QMessageBox(self)
@@ -404,7 +433,7 @@ class ShellWindow(QMainWindow):
     def drop_files(self, files):
         files = [f for f in files if os.path.splitext(f)[1].lower() in api.REGISTRABLE_EXT]
         if not files:
-            self.bridge.send({"t": "event", "name": "drop.refused", "data": {"text": "도면 파일(.drawio, .pdf)만 받습니다."}})
+            self.bridge.send({"t": "event", "name": "drop.refused", "data": {"text": "도면 파일(.drawio, .pdf, DEXPI .xml)만 받습니다."}})
             return {"ok": False}
         try:
             return dict(self.engine.add_files(files[:api.MAX_FILES]), ok=True)

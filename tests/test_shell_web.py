@@ -400,7 +400,7 @@ class ShellDropTest(ShellBase):
         win = self.window()
         r = win.drop_files([os.path.join(self.tmp, "a.exe")])
         self.assertFalse(r["ok"])
-        self.assertTrue(wait_for(lambda: "도면 파일(.drawio, .pdf)만 받습니다." in self.text(win), 10))
+        self.assertTrue(wait_for(lambda: "도면 파일(.drawio, .pdf, DEXPI .xml)만 받습니다." in self.text(win), 10))
 
 
 class WebUnitTest(ShellBase):

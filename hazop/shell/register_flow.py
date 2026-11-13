@@ -23,7 +23,8 @@ def register_and_extract(engine, path, progress):
     rec = result["record"]
     if rec.get("status") != "registered" or result["outcome"] in ("failed", "on_hold"):
         blockers = (rec.get("validation") or {}).get("blockers") or []
-        cause = (blockers[0].get("reason") if blockers else None) or next(iter(result.get("notes") or []), None) or result["outcome"]
+        reasons = [str(b.get("reason")) for b in blockers[:3] if b.get("reason")]      # 엔진이 주는 사유를 그대로(DEXPI는 형식 판별·안전 검사 사유가 여기 온다)
+        cause = "; ".join(reasons) or next(iter(result.get("notes") or []), None) or result["outcome"]
         raise RuntimeError("등록하지 못함: %s" % cause)
     progress("추출·그래프", 2, 2)
     out = data.extract_and_graph(result["registration_file"])
