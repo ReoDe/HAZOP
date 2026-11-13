@@ -73,6 +73,7 @@ PARAMS = {
     "touch_tol": 0.5,            # 몸체끼리 겹침 판정
     "attach_tol": 2.5,           # 선 끝이 기호 경계에 닿음
     "end_tol": 1.5,              # 선 끝끼리·선 끝과 선 중간이 만남
+    "crossing_gap_max": 12.0,    # 엇갈림 끊김: 다른 선 양쪽에서 마주 보는 두 선 끝 사이 거리 상한(pt)
     "inner_tol_ratio": 0.1,      # 기호 안 선 흡수 여유 = 몸체 긴 변 × 비율 (아래 범위로 자름)
     "inner_tol_min": 2.0,
     "inner_tol_max": 8.0,
@@ -634,6 +635,50 @@ def _attach(p, syms, markers, prm):
     return None, None
 
 
+def _crossing_gaps(pieces, free, prm):
+    """엇갈림 끊김 찾기. 기호에 붙지 않은 선 끝 둘이 같은 제3의 선 한 자리를 사이에 두고 양쪽에서 그 선에 닿고(end_tol 안),
+    두 끝이 서로 마주 보며 한 줄로 놓이고(바깥 방향이 반대, 제3의 선과 거의 수직), 두 끝 거리가 crossing_gap_max 안이면
+    끊어 그린 엇갈림이다. → (분기로 나누지 않을 끝 {(조각, k)}, 이어 줄 끝 점 짝 [(p, q)])."""
+    near = []
+    for i, k, pt in free:
+        pts = pieces[i]["pts"]
+        if len(pts) < 2:
+            continue
+        prev = pts[1] if k == 0 else pts[-2]
+        L = math.hypot(pt[0] - prev[0], pt[1] - prev[1])
+        if L == 0:
+            continue
+        out = ((pt[0] - prev[0]) / L, (pt[1] - prev[1]) / L)
+        for j, pc in enumerate(pieces):
+            if j == i:
+                continue
+            for a, b in _segs(pc["pts"]):
+                d, q = _seg_dist(pt, a, b)
+                if d > prm["end_tol"]:
+                    continue
+                sl = math.hypot(b[0] - a[0], b[1] - a[1])
+                if sl == 0 or min(math.hypot(q[0] - e[0], q[1] - e[1]) for e in (a, b)) <= prm["end_tol"]:
+                    continue
+                u = ((b[0] - a[0]) / sl, (b[1] - a[1]) / sl)
+                if abs(out[0] * u[0] + out[1] * u[1]) > 0.5:
+                    continue
+                side = u[0] * (pt[1] - a[1]) - u[1] * (pt[0] - a[0])
+                near.append((i, k, pt, out, j, q, side))
+                break
+    crossed, pairs = set(), []
+    for n1, (i1, k1, p1, o1, j1, q1, s1) in enumerate(near):
+        for i2, k2, p2, o2, j2, q2, s2 in near[n1 + 1:]:
+            if j1 != j2 or i1 == i2 or s1 * s2 >= 0 or (i1, k1) in crossed or (i2, k2) in crossed:
+                continue
+            if o1[0] * o2[0] + o1[1] * o2[1] > -0.9 or math.hypot(q1[0] - q2[0], q1[1] - q2[1]) > prm["end_tol"] * 2:
+                continue
+            if math.hypot(p1[0] - p2[0], p1[1] - p2[1]) > prm["crossing_gap_max"]:
+                continue
+            crossed.update({(i1, k1), (i2, k2)})
+            pairs.append((p1, p2))
+    return crossed, pairs
+
+
 def _build_solid(syms, polys, markers, prm, bridges=()):
     """→ (tees [(x, y)], chains [{pts, ends:[(vertex, point, basis)], evidence}])."""
     # 선 끝 분류
@@ -649,9 +694,14 @@ def _build_solid(syms, polys, markers, prm, bridges=()):
             att[(i, k)] = (s, basis)
         else:
             free.append((i, k, pt))
+    # 엇갈림 끊김(도면 관례: 한쪽 선을 다른 선 앞뒤에서 끊어 그림)은 분기가 아니라 그 선을 건너 이어지는 배관이다
+    crossed, gap_bridges = _crossing_gaps(pieces, free, prm)
+    bridges = list(bridges) + gap_bridges
     # 선 끝이 다른 선 중간에 닿으면 그 선을 나눈다(분기)
     splits = {}
     for i, k, pt in free:
+        if (i, k) in crossed:
+            continue
         for j, pc in enumerate(pieces):
             if j == i:
                 continue
