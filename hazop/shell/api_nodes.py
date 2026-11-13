@@ -96,7 +96,7 @@ def _span_info(ns, pg):
     return out
 
 
-def _row(n, fwd, owners, info=None):
+def _row(n, fwd, owners, info=None, known=None):
     sheets = collections.OrderedDict()
     shared = collections.Counter()
     for m in n["members"]:
@@ -113,7 +113,8 @@ def _row(n, fwd, owners, info=None):
             "count": len(n["members"]), "sheets": [{"graph_id": g, "n": c} for g, c in sheets.items()],
             "overlaps": [{"node_id": o, "shared": c} for o, c in sorted(shared.items(), key=lambda kv: (-kv[1], kv[0]))],
             "confirmed": n.get("confirmed"), "locked": n.get("locked"),
-            "screen": (n.get("screen") or {}).get("status"), "span": (info or {}).get(n["node_id"])}
+            "screen": (n.get("screen") or {}).get("status"), "span": (info or {}).get(n["node_id"]),
+            "broken": sum(1 for m in n["members"] if known is not None and m not in known)}      # 도면에서 지워진 구성원(도면 고치기·다시 추출 뒤 끊긴 참조)
 
 
 def _batch_rows(ns):
@@ -136,7 +137,8 @@ def summary(engine):
     fwd, _ = chatview._locals(pg)
     owners = _owners(ns)
     info = _span_info(ns, pg)
-    rows = [_row(n, fwd, owners, info) for n in ns["nodes"]]
+    known = {x["entity_id"] for x in pg.get("nodes") or []}
+    rows = [_row(n, fwd, owners, info, known) for n in ns["nodes"]]
     total = len(fwd)
     covered = sum(1 for m in fwd if m in owners)
     return {"available": True, "set_rev": ns.get("set_rev") or 0, "graph_version": ns.get("graph_version"),
@@ -210,7 +212,7 @@ def detail(engine, node_id):
     fwd, _ = chatview._locals(pg)
     owners = _owners(ns)
     info = _describe(pg)
-    row = _row(node, fwd, owners, _span_info(ns, pg))
+    row = _row(node, fwd, owners, _span_info(ns, pg), {x["entity_id"] for x in pg.get("nodes") or []})
     majors, kinds = [], collections.Counter()
     for m in node["members"]:
         d = info.get(m) or {}

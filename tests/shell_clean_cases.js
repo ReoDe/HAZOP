@@ -121,6 +121,10 @@ async function body({ CV, MK, SheetCore }, data) {
   const spotMiss = spots.filter(([x, y]) => !pickAt(x, y).includes(shifted.it.id));
   t("정리 보기: 가장 많이 옮겨진 기호(" + shifted.it.kind + ", " + shifted.d.toFixed(1) + " 단위)는 그려진 몸통 어디를 눌러도 골라짐(읽은 상자 밖 자리 포함)",
     shifted.d >= 10 && offOrig.length >= 1 && spotMiss.length === 0, "빗나감 " + spotMiss.length + " / 읽은 상자 밖 " + offOrig.length);
+  const tc = [(sb0 => (sb0[0] + sb0[2]) / 2)(tbOf(shifted.it)), (sb0 => (sb0[1] + sb0[3]) / 2)(tbOf(shifted.it))];
+  const back = core.origPoint(tc[0], tc[1]);
+  t("정리 보기: 그린 자리를 읽은 좌표로(도면 고치기가 저장하는 점), 가장 많이 옮겨진 기호의 중심은 읽은 상자의 중심으로",
+    Math.abs(back[0] - (ob[0] + ob[2]) / 2) < 0.01 && Math.abs(back[1] - (ob[1] + ob[3]) / 2) < 0.01, JSON.stringify(back));
   core.update({ selection: [shifted.it.id] });
   const selG = core.marksG.querySelector("g[transform]");
   t("정리 보기: 고른 것 강조는 그려진 기호와 같은 자리", !!selG && selG.getAttribute("transform") === clean.querySelector(`g[data-id="${CSS.escape(shifted.it.id)}"]`).getAttribute("transform"));

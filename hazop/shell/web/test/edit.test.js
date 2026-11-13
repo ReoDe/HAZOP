@@ -13,7 +13,7 @@ const HEAD = { ok: true, graph_id: "graph-A", ver: "v1", ops: [{ op_id: "c-0001"
   kinds: [{ kind: "manual_valve", label: "수동 밸브", category: "valve" }, { kind: "check_valve", label: "체크 밸브", category: "valve" }],
   relation_kinds: [{ kind: "physical_connection", label: "공정 배관" }] };
 const NODE = { ok: true, graph_id: "graph-A", local_id: "n1", type: "node", kind: "manual_valve", kind_label: "수동 밸브", tag: "<b>RC-V1</b>", manual: false,
-  human_edit: [], unknowns: [{ check: "missing_kind", reason: "종류 미확인" }], ver: "v1", positions: [], impact: { sheet: "confirmed", nodes: [{ node_id: "S2", state: "locked" }] } };
+  human_edit: [], unknowns: [{ check: "missing_kind", reason: "종류 미확인" }], ver: "v1", base: "fp-n1", positions: [], impact: { sheet: "confirmed", nodes: [{ node_id: "S2", state: "locked" }] } };
 const REL = { ok: true, graph_id: "graph-A", local_id: "p1", type: "relation", kind: "physical_connection", tag: "L1", manual: false, human_edit: [], unknowns: [], ver: "v1",
   impact: { sheet: null, nodes: [] }, relation_kind: "physical_connection", ends: { source: { node: "n1", status: "connected" }, target: { node: "n2", status: "connected" } },
   flow: { from: "n1", to: "n2", basis: "drawio" }, flow_allowed: true };
@@ -72,7 +72,7 @@ export const tests = [
     await E.apply("set_tag", "n1", { tag: "RC-V9" });
     await tick();
     const m = sent.find((x) => x.name === "edit.apply");
-    assert.equal([m.args.graph_id, m.args.ver, m.args.op, m.args.local_id, m.args.value.tag, m.args.confirm], ["graph-A", "v1", "set_tag", "n1", "RC-V9", false]);
+    assert.equal([m.args.graph_id, m.args.ver, m.args.op, m.args.local_id, m.args.value.tag, m.args.confirm, m.args.base], ["graph-A", "v1", "set_tag", "n1", "RC-V9", undefined, "fp-n1"]);
     assert(!("by" in m.args) && !("at" in m.args), "누가·언제는 엔진이 채운다");
     E.setOn(false);
   } },
@@ -87,7 +87,7 @@ export const tests = [
     await ask.run();
     await tick();
     const last = sent.filter((x) => x.name === "edit.apply").pop();
-    assert.equal([last.args.op, last.args.confirm], ["delete_node", true]);
+    assert.equal([last.args.op, last.args.confirm], ["delete_node", "n1을(를) 지웁니다. 확정·잠금 구간 S2"], "확인한 글을 그대로 보낸다(엔진이 지금 글과 견준다)");
     assert.equal(E.edit.get().item, null);
     E.setOn(false);
   } },
@@ -106,13 +106,13 @@ export const tests = [
     const host = mount(html`<${Probe} />`);
     await tick();
     assert.equal(props.editTool, "select");
-    props.onEditPick({ point: [120, 80], id: null, layer: null });
-    assert.equal(E.edit.get().addAt, [120, 80]);
+    props.onEditPick({ point: [120, 80], orig: [100, 70], id: null, layer: null });
+    assert.equal(E.edit.get().addAt, [100, 70], "정리된 보기에서 누른 자리는 읽은 좌표로 저장한다");
     E.setField({ newKind: "check_valve", newTag: "RC-V77" });
     E.addNodeHere();
     await tick();
     let m = sent.filter((x) => x.name === "edit.apply").pop();
-    assert.equal([m.args.op, m.args.local_id, m.args.value.kind, m.args.value.tag, m.args.value.at], ["add_node", null, "check_valve", "RC-V77", [120, 80]]);
+    assert.equal([m.args.op, m.args.local_id, m.args.value.kind, m.args.value.tag, m.args.value.at], ["add_node", null, "check_valve", "RC-V77", [100, 70]]);
     props.onEditPick({ point: [0, 0], id: "n1", layer: "symbol" });
     await tick();
     assert.equal(E.edit.get().item.local_id, "n1");
@@ -131,14 +131,14 @@ export const tests = [
     assert.equal([m.args.op, m.args.local_id, m.args.value.end, m.args.value.node], ["set_endpoint", "p1", "target", "n3"]);
     await E.loadItem("graph-A", "p1");
     E.setTool("path");
-    props.onEditPick({ point: [10, 10], id: null, layer: null });
+    props.onEditPick({ point: [10, 10], orig: [12, 10], id: null, layer: null });
     props.onEditPick({ point: [10, 50.555], id: "n1", layer: "symbol" });
     await tick();
-    assert.equal(props.editPreview.points, [[10, 10], [10, 50.56]]);
+    assert.equal(props.editPreview.points, [[10, 10], [10, 50.56]], "미리 보기는 그린 자리");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     await tick();
     m = sent.filter((x) => x.name === "edit.apply").pop();
-    assert.equal([m.args.op, m.args.local_id, m.args.value.points], ["set_path", "p1", [[10, 10], [10, 50.56]]]);
+    assert.equal([m.args.op, m.args.local_id, m.args.value.points], ["set_path", "p1", [[12, 10], [10, 50.56]]], "저장은 읽은 좌표");
     E.setTool("path");
     props.onEditPick({ point: [1, 1], id: null, layer: null });
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));

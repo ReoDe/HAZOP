@@ -27,6 +27,7 @@ function Row({ n, list, drawings, on, checked }) {
     <button type="button" class="nrow-b" aria-pressed=${on ? "true" : "false"} aria-label=${n.node_id + " " + (n.name || "")} onClick=${() => N.focusNode(n.node_id, { zoom: true })}>
       <span class="seg-dot" style=${"background:" + colorOf(list, n.node_id)}></span>
       <span class="main"><b>${n.node_id} <span class="nm">${n.name || "(이름 없음)"}</span></b><span>${rangeText(n, drawings)}${n.span && n.span.spans ? html` <span class="span-mark" title="여러 도면에 걸친 구간">⇄</span>` : null} · 구성요소 ${n.count}</span></span></button>
+    ${n.broken ? html`<${Chip} kind="warn" icon="alert-triangle" title="도면을 고치거나 다시 추출해 도면에서 사라진 구성원입니다. 구간에서 빼거나 다시 넣으세요">끊긴 구성원 ${n.broken}<//>` : null}
     ${n.overlaps.length ? html`<${Chip} kind="warn" title=${"겹치는 구간: " + n.overlaps.map((o) => o.node_id + "(" + o.shared + ")").join(", ")}>겹침 ${n.overlaps.length}<//>` : null}
     <${Chip} kind=${chip.kind} icon=${chip.icon}>${chip.label}<//></div>`;
 }

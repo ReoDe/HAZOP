@@ -35,7 +35,8 @@ export const edit = createStore({
   addAt: null,             // 빈 곳을 누른 자리: 그 자리에 기기를 놓는 카드
   first: null,             // connect: 첫 기기
   end: null,               // endpoint: source | target
-  points: [],              // path: 찍은 점
+  points: [],              // path: 찍은 점(그린 좌표, 미리 보기용)
+  origPoints: [],          // path: 같은 점의 읽은(원본) 좌표. 정리된 보기에서는 정돈으로 옮긴 만큼 되돌린 값이고, 이것을 저장한다
   newKind: "manual_valve", newTag: "", relKind: "physical_connection",
   busy: false, error: null, notes: [], ask: null,     // ask: {message, run}: 확인을 받아야 하는 고침
   revs: {},                // graph_id → 도면 자료 판: 고침·AI 수락 뒤(changed "sheet") 올려 도면 그림과 정리된 보기 자료를 다시 읽게 한다
@@ -109,7 +110,7 @@ export function wire() {
   });
   let last = null;
   shell.subscribe((s) => {
-    if (s.sheet !== last) { last = s.sheet; edit.set({ item: null, tool: "select", first: null, end: null, points: [], ask: null, error: null }); if (edit.get().on) loadHead(s.sheet); }
+    if (s.sheet !== last) { last = s.sheet; edit.set({ item: null, tool: "select", first: null, end: null, points: [], origPoints: [], ask: null, error: null }); if (edit.get().on) loadHead(s.sheet); }
     if (edit.get().on && s.bubble && s.bubble.sheet === s.sheet && edit.get().tool === "select") {     // 고치기를 켠 채 누른 구성요소는 말풍선 대신 고치기 카드로
       const id = s.bubble.id;
       shell.set({ bubble: null });
@@ -120,11 +121,11 @@ export function wire() {
 
 // ---------------------------------------------------------------- 보기 동작
 export function setOn(on) {
-  edit.set({ on: !!on, tool: "select", first: null, end: null, points: [], item: null, ask: null, error: null, notes: [] });
+  edit.set({ on: !!on, tool: "select", first: null, end: null, points: [], origPoints: [], item: null, ask: null, error: null, notes: [] });
   if (on) loadHead(shell.get().sheet);
 }
-export function setTool(tool) { edit.set({ tool, first: null, end: tool === "endpoint" ? edit.get().end : null, points: [], error: null }); }
-export function cancelTool() { edit.set({ tool: "select", first: null, end: null, points: [] }); }
+export function setTool(tool) { edit.set({ tool, first: null, end: tool === "endpoint" ? edit.get().end : null, points: [], origPoints: [], error: null }); }
+export function cancelTool() { edit.set({ tool: "select", first: null, end: null, points: [], origPoints: [] }); }
 export function closeItem() { edit.set({ item: null, ask: null, error: null }); }
 export function setField(patch) { edit.set(patch); }
 
@@ -147,19 +148,25 @@ async function send(name, args, { reopen = null } = {}) {
     return r;
   } catch (e) {
     edit.set({ busy: false });
-    if (e.code === "stale") { await loadHead(g); edit.set({ error: e.message }); }
+    if (e.code === "needs_confirm") edit.set({ ask: { message: e.message, run: () => send(name, Object.assign({}, args, { confirm: e.message }), { reopen }) } });
+    else if (e.code === "stale") { await loadHead(g); edit.set({ error: e.message }); }
     else edit.set({ error: e.message || "고치지 못했습니다." });
     return null;
   }
 }
 
-/** 고침 하나. 엔진이 확인(needs_confirm)을 물으면 그 글을 카드에 띄우고 '그래도 고치기'를 누르면 confirm으로 다시 보낸다. */
-export async function apply(op, localId, value = {}, { confirm = false, reopen = null } = {}) {
+/** 고침 하나. 엔진이 확인(needs_confirm)을 물으면 그 글을 카드에 띄우고, '그래도 하기'는 그 글을 그대로 confirm으로 보낸다
+ * (엔진이 지금 확인 글과 견줘 걸리는 것이 바뀌었으면 다시 묻는다). 카드에서 본 항목이면 그 지문(base)을 함께 보낸다. */
+export async function apply(op, localId, value = {}, { confirm = null, reopen = null } = {}) {
   const g = shell.get().sheet, head = edit.get().head;
   if (!g || !head) return null;
+  const it = edit.get().item;
   edit.set({ busy: true, error: null });
   try {
-    const r = await cmd("edit.apply", { graph_id: g, ver: head.ver, op, local_id: localId || null, value, confirm });
+    const args = { graph_id: g, ver: head.ver, op, local_id: localId || null, value };
+    if (confirm) args.confirm = confirm;
+    if (it && localId && it.local_id === localId && it.base) args.base = it.base;
+    const r = await cmd("edit.apply", args);
     edit.set({ busy: false, ask: null, notes: [...(r.notes || []), ...(r.recheck || [])] });
     await loadHead(g);
     const id = op.startsWith("delete_") ? null : (r.created || reopen || localId);
@@ -167,7 +174,7 @@ export async function apply(op, localId, value = {}, { confirm = false, reopen =
     return r;
   } catch (e) {
     edit.set({ busy: false });
-    if (e.code === "needs_confirm") edit.set({ ask: { message: e.message, run: () => apply(op, localId, value, { confirm: true, reopen }) } });
+    if (e.code === "needs_confirm") edit.set({ ask: { message: e.message, run: () => apply(op, localId, value, { confirm: e.message, reopen }) } });
     else if (e.code === "stale") { await loadHead(g); edit.set({ error: e.message }); }
     else edit.set({ error: e.message || "고치지 못했습니다." });
     return null;
@@ -183,11 +190,13 @@ export function undoOp(opId) { return send("edit.undo", { op_id: opId }); }
 export function redo() { return send("edit.redo", {}); }
 
 /** 도면을 누름(고치기를 켠 동안): 자리 point(화면 도면 좌표)와 그 자리의 항목 id. */
-export function pick({ point, id, layer }) {
+export function pick({ point, orig, id, layer }) {
   const s = edit.get(), g = shell.get().sheet;
+  const r2 = (q) => [Math.round(q[0] * 100) / 100, Math.round(q[1] * 100) / 100];
+  const saved = r2(orig || point);              // 저장은 읽은(원본) 좌표: 정리된 보기에서는 정돈으로 옮긴 만큼 되돌린 점
   if (s.tool === "select") {
     if (id) { edit.set({ addAt: null, error: null }); loadItem(g, id); }
-    else edit.set({ item: null, addAt: [Math.round(point[0] * 100) / 100, Math.round(point[1] * 100) / 100], error: null, ask: null });
+    else edit.set({ item: null, addAt: saved, error: null, ask: null });
   } else if (s.tool === "connect") {
     if (!id || layer !== "symbol") { edit.set({ error: "기기를 누르세요(빈 곳·연결선은 고를 수 없습니다)." }); return; }
     if (s.first === id) { edit.set({ error: "같은 기기입니다. 다른 기기를 누르세요." }); return; }
@@ -200,7 +209,7 @@ export function pick({ point, id, layer }) {
     edit.set({ tool: "select" });
     apply("set_endpoint", rel, { end: s.end, node: id });
   } else if (s.tool === "path") {
-    edit.set({ points: [...s.points, [Math.round(point[0] * 100) / 100, Math.round(point[1] * 100) / 100]], error: null });
+    edit.set({ points: [...s.points, r2(point)], origPoints: [...s.origPoints, saved], error: null });
   }
 }
 
@@ -222,8 +231,8 @@ export function finishPath() {
   const s = edit.get();
   if (s.tool !== "path" || !s.item) return;
   if (s.points.length < 2) { edit.set({ error: "점을 2개 이상 찍으세요." }); return; }
-  const pts = s.points;
-  edit.set({ tool: "select", points: [] });
+  const pts = s.origPoints.length === s.points.length ? s.origPoints : s.points;
+  edit.set({ tool: "select", points: [], origPoints: [] });
   apply("set_path", s.item.local_id, { points: pts });
 }
 

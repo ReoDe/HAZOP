@@ -87,7 +87,13 @@ def _graph_inputs(project_id):
 
 def project_graph(project_id):
     """프로젝트 그래프. 화면을 옮길 때마다 143쪽을 다시 읽고 짓지 않게, 입력 파일 지문이 같으면 지은 것을 그대로 준다.
-    돌려준 dict는 여러 화면이 함께 쓰므로 고치지 않는다(읽기 전용)."""
+    돌려준 dict는 여러 화면이 함께 쓰므로 고치지 않는다(읽기 전용).
+    먼저 사람 고침·AI 수락 뒤 다시 만들지 못한 도면 그래프(낡은 그래프 표시)를 다시 만들어 본다(쪽 확정·구간·내보내기가 고치기 전 graph.json으로 짓지 않게)."""
+    try:
+        from hazop.shell import sheet_refresh
+        sheet_refresh.ensure_project(project_id)
+    except ImportError:
+        pass
     key = _graph_inputs(project_id)
     hit = _PROJECT_GRAPHS.get(project_id)
     if hit is not None and hit[0] == key:

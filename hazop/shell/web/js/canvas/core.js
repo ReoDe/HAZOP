@@ -501,7 +501,7 @@ export class SheetCore {
     const s = this._toSheet(e.clientX, e.clientY);
     const hit = this.index.hitTest(s.x, s.y, 6 / this.view.k, { layers: this._layerSet() });
     if (this.editTool && this.cb.onEditPick) {               // 도면 고치기 도구(기기 추가·연결·끝 잇기·경로): 누른 자리와 그 자리의 항목을 넘긴다
-      this.cb.onEditPick({ point: [s.x, s.y], id: hit ? hit.id : null, layer: hit ? hit.layer : null });
+      this.cb.onEditPick({ point: [s.x, s.y], orig: this.origPoint(s.x, s.y), id: hit ? hit.id : null, layer: hit ? hit.layer : null });
       return;
     }
     const badge = this.cb.onSegmentClick ? this._badgeAt(s) : null;
@@ -515,6 +515,24 @@ export class SheetCore {
     if (reason) { const rr = this.index.rectOf(hit.id); this.cb.onUnconfirmedClick({ id: hit.id, reason, fragment: this.fragmentOf(hit.id), rect: rr ? this._toScreenRect(rr) : null }); }
     const rect = this.index.rectOf(hit.id), rec = (this.index.byId.get(hit.id) || [])[0];
     if (this.cb.onItemClick) this.cb.onItemClick({ id: hit.id, kind: rec && rec.kind, kind_label: rec && rec.kind_label, tag: rec && rec.tag, link: this._linkOf(hit.id), rect: rect ? this._toScreenRect(rect) : null, via: "click" });
+  }
+
+  /** 그린 자리(정리된 보기는 정돈 좌표)의 점을 읽은(원본) 좌표로. 가장 가까운 기호 중심이나 배관 꼭짓점(60 단위 안)이 정돈으로 옮겨진 만큼 되돌린다.
+   *  원본 보기에서는 그대로다. 저장은 늘 읽은 좌표로 한다. */
+  origPoint(x, y) {
+    if (this._effective() !== "clean" || !this._origIndex) return [x, y];
+    const R = 60, best = { d: Infinity, dx: 0, dy: 0 };
+    const near = (px, py, ox, oy) => { const d = Math.hypot(px - x, py - y); if (d < best.d) Object.assign(best, { d, dx: ox - px, dy: oy - py }); };
+    for (const rec of this.index.items) {
+      const r = rec.rect;
+      if (r.x1 < x - R || r.x0 > x + R || r.y1 < y - R || r.y0 > y + R) continue;
+      const orig = (this._origIndex.byId.get(rec.id) || []).find((o) => o.layer === rec.layer);
+      if (!orig) continue;
+      if (rec.layer === "symbol") near((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2, (orig.rect.x0 + orig.rect.x1) / 2, (orig.rect.y0 + orig.rect.y1) / 2);
+      else if (rec.layer === "pipe" && rec.lines[0] && orig.lines[0] && rec.lines[0].length === orig.lines[0].length)
+        rec.lines[0].forEach((q, i) => near(q[0], q[1], orig.lines[0][i][0], orig.lines[0][i][1]));
+    }
+    return best.d <= R ? [x + best.dx, y + best.dy] : [x, y];
   }
 
   /** 도면 고치기 미리 보기: 찍은 경로 점을 잇는 점선과 점. 화면 굵기는 확대와 상관없이 같다. */

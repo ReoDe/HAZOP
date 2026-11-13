@@ -60,7 +60,7 @@ def save(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY):
 SAVE_ACTIONS = ("save", "edit", "undo", "redo")      # log 한 줄의 action. 새 화면은 연산 하나마다 edit, 되돌리기·다시 하기를 따로 적는다
 
 
-def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY, action="save"):
+def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY, action="save", note=None):
     """ops 전체를 저장하고 이전 파일과 비교한 op_id 증감을 log에 덧붙인다. (쓴 경로, 새 지문)을 돌려준다.
     지운 연산은 내용까지 log의 removed_ops에 남긴다(지운 사람 수정도 기록에서 찾을 수 있게).
     expect(ops를 읽을 때의 load_fp 지문)를 주면 그 뒤 파일이 바뀌었을 때 쓰지 않고 store_io.Conflict를 낸다.
@@ -91,7 +91,7 @@ def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY, ac
         "log": list(prev.get("log") or []) + [{
             "at": at or now_utc(), "by": by, "action": action,
             "added": [i for i in after if i not in before], "removed": [o["op_id"] for o in removed],
-            "removed_ops": removed}],
+            "removed_ops": removed, **(note or {})}],
     }
     path = store_path(name)
     return path, store_io.write_json(path, doc, expect=fp)
