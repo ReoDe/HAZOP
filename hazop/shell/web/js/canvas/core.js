@@ -233,6 +233,13 @@ export class SheetCore {
       if (el.style.display === "none") el.style.display = "";
       const s = String(Math.round(o.size * 100) / 100);
       if (el.getAttribute("font-size") !== s) el.setAttribute("font-size", s);
+      const l = this._labels[i];
+      if (l.place) {                                  // 자리 후보에서 고른 자리를 적용한다
+        el.setAttribute("x", Math.round(o.x * 100) / 100); el.setAttribute("y", Math.round(o.y * 100) / 100);
+        el.setAttribute("text-anchor", o.anchor);
+        if (o.rotate) el.setAttribute("transform", `rotate(${o.rotate} ${Math.round(o.x * 100) / 100} ${Math.round(o.y * 100) / 100})`); else el.removeAttribute("transform");
+      }
+      el.setAttribute("stroke-width", String(Math.round((3 / this.view.k) * 100) / 100));
     }
   }
 
@@ -342,8 +349,10 @@ export class SheetCore {
     const r = this._rect();
     if (!r.width || !r.height || !this.data) return;
     const c = this._contentRect(), cw = Math.max(c.x1 - c.x0, 1), ch = Math.max(c.y1 - c.y0, 1);
-    const k = Math.min(r.width / cw, r.height / ch) * 0.96;
-    this.view = { k, x: (r.width - cw * k) / 2 - c.x0 * k, y: (r.height - ch * k) / 2 - c.y0 * k };
+    const top = Math.min(56, r.height * 0.1), bottom = Math.min(56, r.height * 0.1);     // 위 보기 단추 줄·아래 도구 막대에 가리지 않게 여백을 둔다
+    const availH = Math.max(r.height - top - bottom, 1);
+    const k = Math.min(r.width / cw, availH / ch) * 0.96;
+    this.view = { k, x: (r.width - cw * k) / 2 - c.x0 * k, y: top + (availH - ch * k) / 2 - c.y0 * k };
     this._applyView();
     this._viewChanged(true);
   }

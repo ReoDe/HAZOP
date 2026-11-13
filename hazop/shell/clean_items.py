@@ -91,19 +91,17 @@ def _ai_pending(name):
 
 
 def _leftovers(extraction, fmt, ox, oy):
-    """원본에 남은 것(§10.5). 엔진이 세는 읽은 방법만 counted: drawio는 분류 못 한 셀과 일부러 뺀 셀을 준다. PDF는 남은 선을 추출 결과로
+    """원본에 남은 것(§10.5). 엔진이 세는 읽은 방법만 counted: drawio는 분류 못 한 셀만 준다(일부러 뺀 셀은 `excluded_by_author` 개수만). PDF는 남은 선을 추출 결과로
     넘기지 않아 세지 못한다(counted False): 필요한 값의 꼴은 규격 §10.5 '엔진에 필요한 것'."""
     if fmt != "drawio":
         return {"counted": False, "n": 0, "items": []}
     out = []
-    for c in (extraction.get("drawing") or {}).get("ignored_objects") or []:
-        bb = sheet_items._box((c or {}).get("bbox"), ox, oy) if isinstance(c, dict) else None
-        out.append({"kind": "ignored", "id": (c or {}).get("source_object_id"), "bbox": bb, "text": (c or {}).get("label_text")})
+    ignored = len((extraction.get("drawing") or {}).get("ignored_objects") or [])     # 작성자가 일부러 뺀 셀(표제란·주석 등): 남은 것이 아니라 세지 않는다
     for c in extraction.get("unclassified") or []:
         if isinstance(c, dict):
             bb = sheet_items._box((c.get("label_location") or {}).get("bbox"), ox, oy) or sheet_items._box(c.get("bbox"), ox, oy)
             out.append({"kind": "unclassified", "id": c.get("local_id") or c.get("source_object_id"), "bbox": bb, "text": c.get("label_text")})
-    return {"counted": True, "n": len(out), "items": out[:200]}
+    return {"counted": True, "n": len(out), "items": out[:200], "excluded_by_author": ignored}
 
 
 def build(extraction, name=None):

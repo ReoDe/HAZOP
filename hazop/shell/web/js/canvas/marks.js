@@ -86,7 +86,25 @@ export function resolveMark(mark, index) {
     if (objs.length) {
       const first = objs.find((r) => r.layer === "symbol") || objs[0];
       n++;
-      if (mark.numbered !== false) out.badges.push({ rect: first.rect, text: String(n), color, round: true });
+      if (mark.numbered !== false) {
+        let rect = first.rect, center = false;
+        const w = rect.x1 - rect.x0, h = rect.y1 - rect.y0;
+        if (w > 60 || h > 60) {                            // 큰 설비: 이어진 경로 배관이 그 설비에 닿는 점에 번호를 둔다
+          let best = null;
+          for (const j of [i - 1, i + 1]) {
+            for (const pr of (found[j] || []).filter((r) => r.layer === "pipe")) {
+              const ln = pr.lines && pr.lines[0];
+              if (!ln || ln.length < 2) continue;
+              for (const q of [ln[0], ln[ln.length - 1]]) {
+                const dx = Math.max(rect.x0 - q[0], 0, q[0] - rect.x1), dy = Math.max(rect.y0 - q[1], 0, q[1] - rect.y1), d = Math.hypot(dx, dy);
+                if (!best || d < best.d) best = { d, q };
+              }
+            }
+          }
+          if (best && best.d < 30) { rect = { x0: best.q[0], y0: best.q[1], x1: best.q[0], y1: best.q[1] }; center = true; }
+        } else if (first.kind === "tee") center = true;
+        out.badges.push({ rect, text: String(n), color, round: true, center });
+      }
       if (!startDone) { startDone = true; out.items.push({ id: s.id, rec: first, color: STYLE_COLORS.focus, box: "start" }); }
       else if (unknown) out.items.push({ id: s.id, rec: first, color: STYLE_COLORS.warn, box: "unknown" });
     }
@@ -165,7 +183,7 @@ function shapeOf(item, k, widthPx, extra = {}) {
 
 function badgeEl(b, k) {
   const r = b.rect, h = (b.round ? 22 : 15) / k, w = (b.round ? 22 : Math.max(15, b.text.length * 8 + 8)) / k;
-  const x = r.x0 - 4 / k, y = r.y0 - h - 3 / k;
+  const x = b.center ? r.x0 - w / 2 : r.x0 - 4 / k, y = b.center ? r.y0 - h / 2 : r.y0 - h - 3 / k;
   return el("g", { "pointer-events": "none" }, [
     el("rect", { x, y, width: w, height: h, rx: (b.round ? 11 : 3) / k, fill: b.color, stroke: b.round ? "var(--card, #fff)" : null, "stroke-width": b.round ? 2 : null, "vector-effect": "non-scaling-stroke" }),
     el("text", { x: x + w / 2, y: y + h * 0.75, "text-anchor": "middle", fill: "var(--on-seg, #fff)", "font-size": (b.round ? 13 : 11) / k, "font-weight": 700 }, null, b.text),

@@ -113,6 +113,16 @@ function labelSpec(x, y, text, o = {}) {
     owner: o.owner || null, always: !!o.always, fixed: !!o.fixed, showFrom: o.showFrom || 0, hideFrom: o.hideFrom || 0, baseline: o.baseline || "auto" };
 }
 
+/** 기호 태그: bb 둘레의 자리 후보(순서대로 빈 곳을 고른다). place는 layoutLabels가 글자 크기에 맞춰 계산한다. */
+function tagLabel(text, bb, order, o = {}) {
+  return Object.assign(labelSpec(0, 0, text, o), { place: { t: "tag", bb, order } });
+}
+
+/** 배관 번호: 선 가운데에서 선에 닿지 않게 띄운 위·아래(세로 선이면 왼·오른쪽) 후보. */
+function pipeLabel(text, mx, my, vertical, o = {}) {
+  return Object.assign(labelSpec(mx, my, text, Object.assign({ anchor: "middle" }, o)), { place: { t: "pipe", mx, my, vertical } });
+}
+
 const amberTick = (x, y) => el("line", { x1: r(x - 3), y1: r(y - 3), x2: r(x + 3), y2: r(y + 3), stroke: AMBER, "stroke-width": 1.6, "vector-effect": "non-scaling-stroke", "pointer-events": "none" });
 const attrDot = (x, y) => el("circle", { cx: r(x), cy: r(y), r: 2.5, fill: AMBER, stroke: "var(--card, #fff)", "stroke-width": 0.8, "vector-effect": "non-scaling-stroke", "pointer-events": "none" });
 const PLACEMENT_REASONS = new Set(["unknown_symbol", "open_end", "missing_tag", "ai_candidate", "unplaced", "unresolved_connector"]);
@@ -139,11 +149,12 @@ export function buildBase(ctx) {
     if (rec.layer === "pipe") {
       pipes.push(...pipeShapes(rec, ex, { id: rec.id }));
       const seg = rec.lines && rec.lines[0] ? longest(rec.lines[0]) : null;
+      for (const ln of rec.lines || []) for (let i = 0; i + 1 < ln.length; i++) obstacles.push({ x0: Math.min(ln[i][0], ln[i + 1][0]) - 0.8, y0: Math.min(ln[i][1], ln[i + 1][1]) - 0.8, x1: Math.max(ln[i][0], ln[i + 1][0]) + 0.8, y1: Math.max(ln[i][1], ln[i + 1][1]) + 0.8, owner: rec.id, thin: true });
       for (const e of ex.ends || []) if (e.status === "open" && e.point) top.push(el("circle", { cx: r(e.point[0]), cy: r(e.point[1]), r: 3, fill: "var(--card, #fff)", stroke: AMBER, "stroke-width": 1.4, "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
       if (seg && attrReasons.has(rec.id)) top.push(attrDot((seg.a[0] + seg.b[0]) / 2 + 6, (seg.a[1] + seg.b[1]) / 2 - 6));
       if (rec.tag && seg && tagSeen.get(rec.tag) && tagSeen.get(rec.tag).id === rec.id && seg.len > 24) {
         const mx = (seg.a[0] + seg.b[0]) / 2, my = (seg.a[1] + seg.b[1]) / 2, vertical = Math.abs(seg.b[1] - seg.a[1]) > Math.abs(seg.b[0] - seg.a[0]);
-        labels.push(vertical ? labelSpec(mx - 2, my, rec.tag, { anchor: "middle", rotate: -90, pri: 4, owner: rec.id }) : labelSpec(mx, my - 2, rec.tag, { anchor: "middle", pri: 4, owner: rec.id }));
+        labels.push(pipeLabel(rec.tag, mx, my, vertical, { pri: 4, owner: rec.id }));
       }
       continue;
     }
@@ -180,16 +191,22 @@ export function buildBase(ctx) {
     if (kind === "continuation" && ex.label && ex.label.length) {        // 다른 도면 연결: 오각형 안에 원본 글자(안에 들어갈 만큼 크게 보일 때만)
       const big = Math.max(7 / 5.5, 38 / Math.max(bw, 1));      // 오각형 안 글자가 화면에서 7px 이상이 되는 확대 값부터 안쪽에, 그 전에는 아래에 한 줄(읽을 수 있는 크기)
       ex.label.forEach((t, i) => labels.push(labelSpec(cx, cy + (ex.label.length === 1 ? 2 : i ? 6 : -2), t, { anchor: "middle", size: 5.5, fixed: true, showFrom: big, pri: 3, owner: rec.id })));
-      labels.push(labelSpec(cx, bb[3] + FONT + 1, ex.label[0], { anchor: "middle", pri: 3, owner: rec.id, hideFrom: big }));
+      labels.push(tagLabel(ex.label[0], bb, ["below", "above"], { pri: 3, owner: rec.id, hideFrom: big }));
     } else if (rec.tag) {
       if (rec.category === "instrument") {                // 계기: 원이 화면에서 충분히 크면 원 안 두 줄, 작으면 오른쪽 옆에 한 줄
-        const lines = splitTag(rec.tag), minK = 24 / Math.max(bw, 1);
-        lines.forEach((t, i) => labels.push(labelSpec(cx, cy + (lines.length === 1 ? 3 : i === 0 ? -1 : 8), t, { anchor: "middle", size: 8.5, fixed: true, showFrom: minK, fill: color, pri: 2, owner: rec.id })));
-        labels.push(labelSpec(bb[2] + 2, cy + 3, rec.tag, { fill: color, pri: 2, owner: rec.id, hideFrom: minK }));
+        const lines = splitTag(rec.tag), k1 = 18 / Math.max(bw, 1), k2 = 34 / Math.max(bw, 1), bwid = Math.max(bw, 1);
+        // 원이 화면에서 작으면(18px 미만) 태그 전체를 옆에, 중간(18~34px)이면 기능 글자만 원 안에 크게 쓰고 번호는 옆에, 크면(34px 이상) 두 줄을 원 안에
+        labels.push(tagLabel(rec.tag, bb, ["right", "left", "below", "above"], { fill: color, pri: 2, owner: rec.id, hideFrom: k1 }));
+        labels.push(labelSpec(cx, cy + bwid * 0.14, lines[0], { anchor: "middle", size: bwid * 0.42, fixed: true, showFrom: k1, hideFrom: lines.length > 1 ? k2 : 0, fill: color, pri: 2, owner: rec.id }));
+        if (lines.length > 1) {
+          labels.push(tagLabel(lines.slice(1).join("-"), bb, ["right", "left", "below", "above"], { fill: color, pri: 2, owner: rec.id, showFrom: k1, hideFrom: k2 }));
+          labels.push(labelSpec(cx, cy - bwid * 0.06, lines[0], { anchor: "middle", size: bwid * 0.27, fixed: true, showFrom: k2, fill: color, pri: 2, owner: rec.id }));
+          labels.push(labelSpec(cx, cy + bwid * 0.3, lines.slice(1).join("-"), { anchor: "middle", size: bwid * 0.27, fixed: true, showFrom: k2, fill: color, pri: 2, owner: rec.id }));
+        }
       } else if (rec.category === "equipment") {         // 설비: 설비 바로 옆(오른쪽 위)에 둔다. 원본에서 멀리 떨어진 글자 자리는 따르지 않는다
-        labels.push(labelSpec(bb[2] + 3, bb[1] + FONT + 1, rec.tag, { fill: color, pri: 0, owner: rec.id }));
+        labels.push(tagLabel(rec.tag, bb, ["righttop", "lefttop", "above", "below"], { fill: color, pri: 0, owner: rec.id }));
       } else {
-        labels.push(labelSpec(cx, bb[3] + FONT + 1, rec.tag, { anchor: "middle", fill: color, pri: 1, owner: rec.id }));
+        labels.push(tagLabel(rec.tag, bb, ["below", "above", "right", "left"], { fill: color, pri: 1, owner: rec.id }));
       }
     } else if (TAGGED.includes(rec.category)) {          // 태그 없음: 호박색 점선 밑줄과 글자(늘 보인다)
       placeholders++;
@@ -222,28 +239,54 @@ export function buildBase(ctx) {
 const wide = (ch) => (ch.charCodeAt(0) >= 0x2e80 ? 1 : 0.6);
 const textWidth = (text, size) => { let w = 0; for (const ch of text) w += wide(ch); return w * size; };
 
+/** 글자의 자리 후보를 글자 크기에 맞춰 만든다. 반환: [{x, y, anchor, rotate}] */
+function candidatesOf(l, size) {
+  const p = l.place;
+  if (!p) return [{ x: l.x, y: l.y, anchor: l.anchor, rotate: l.rotate }];
+  if (p.t === "pipe") {
+    return p.vertical
+      ? [{ x: p.mx - size * 0.2 - 3, y: p.my, anchor: "middle", rotate: -90 }, { x: p.mx + size * 0.85 + 3, y: p.my, anchor: "middle", rotate: -90 }]
+      : [{ x: p.mx, y: p.my - size * 0.2 - 3, anchor: "middle", rotate: 0 }, { x: p.mx, y: p.my + size * 0.85 + 3, anchor: "middle", rotate: 0 }];
+  }
+  const bb = p.bb, cx = (bb[0] + bb[2]) / 2, cy = (bb[1] + bb[3]) / 2;
+  const at = {
+    below: { x: cx, y: bb[3] + size * 0.85 + 2, anchor: "middle" }, above: { x: cx, y: bb[1] - size * 0.2 - 2, anchor: "middle" },
+    right: { x: bb[2] + 3, y: cy + size * 0.35, anchor: "start" }, left: { x: bb[0] - 3, y: cy + size * 0.35, anchor: "end" },
+    righttop: { x: bb[2] + 3, y: bb[1] + size, anchor: "start" }, lefttop: { x: bb[0] - 3, y: bb[1] + size, anchor: "end" },
+  };
+  return p.order.map((o) => Object.assign({ rotate: 0 }, at[o]));
+}
+
 /** 글자 자리 정하기(원본 뷰어의 uncrowdTags가 하던 일): 확대 값 k에서 글자 크기를 화면 픽셀 하한(minPx) 이상으로 하고, 먼저 자리를 잡는 글자(설비 → 밸브 →
- *  계기 → 배관 번호)부터 서로·기호 상자(자기 것은 빼고)와 겹치면 그 글자를 숨긴다. 호박색 '태그 없음'·미확인 글자는 늘 보인다.
- *  돌려주는 것: labels와 같은 순서의 [{visible, size}]. 순수 함수라 DOM 없이 시험한다. */
+ *  계기 → 배관 번호)부터 후보 자리(위·아래·옆) 가운데 기호·배관 선·다른 글자와 겹치지 않는 첫 자리를 고른다. 빈 자리가 없으면 숨긴다. 호박색 '태그 없음'·미확인
+ *  글자는 늘 보인다. 돌려주는 것: labels와 같은 순서의 [{visible, size, x, y, anchor, rotate}]. 순수 함수라 DOM 없이 시험한다. */
 export function layoutLabels(labels, k, obstacles, minPx = MIN_LABEL_PX) {
-  const out = labels.map(() => ({ visible: false, size: 0 }));
+  const out = labels.map((l) => ({ visible: false, size: 0, x: l.x, y: l.y, anchor: l.anchor, rotate: l.rotate }));
   const order = labels.map((l, i) => i).sort((a, b) => labels[a].pri - labels[b].pri || a - b);
   const cell = 60, grid = new Map();
   const cells = (b) => { const c = []; for (let x = Math.floor(b.x0 / cell); x <= Math.floor(b.x1 / cell); x++) for (let y = Math.floor(b.y0 / cell); y <= Math.floor(b.y1 / cell); y++) c.push(x + "," + y); return c; };
   const put = (b, tag) => { for (const c of cells(b)) { if (!grid.has(c)) grid.set(c, []); grid.get(c).push(Object.assign({ tag }, b)); } };
   for (const o of obstacles) put(o, o.owner);
   const hit = (b, owner) => { for (const c of cells(b)) for (const o of grid.get(c) || []) if (o.tag !== owner && !(b.x1 <= o.x0 || b.x0 >= o.x1 || b.y1 <= o.y0 || b.y0 >= o.y1)) return true; return false; };
+  const boxOf = (c, text, size) => {
+    const w = textWidth(text, size);
+    if (c.rotate) return { x0: c.x - size * 0.85, y0: c.y - w / 2, x1: c.x + size * 0.2, y1: c.y + w / 2 };
+    const x0 = c.anchor === "middle" ? c.x - w / 2 : c.anchor === "end" ? c.x - w : c.x;
+    return { x0, y0: c.y - size * 0.85, x1: x0 + w, y1: c.y + size * 0.2 };
+  };
   for (const i of order) {
     const l = labels[i];
     if (k < l.showFrom || (l.hideFrom && k >= l.hideFrom)) continue;               // 확대 값 조건(원 안 글자 등)
     const size = l.fixed ? l.size : Math.max(l.size, minPx / k);
-    let w = textWidth(l.text, size), h = size;
-    if (l.rotate) [w, h] = [h, w];
-    const x0 = l.anchor === "middle" ? l.x - w / 2 : l.anchor === "end" ? l.x - w : l.x;
-    const box = l.rotate ? { x0: l.x - w, y0: l.y - h / 2, x1: l.x, y1: l.y + h / 2 } : { x0, y0: l.y - h * 0.85, x1: x0 + w, y1: l.y + h * 0.2 };
-    if (!l.always && !l.fixed && hit(box, l.owner)) continue;
-    out[i] = { visible: true, size };
-    if (!l.fixed) put(box, "label:" + i);
+    const cands = candidatesOf(l, size);
+    let chosen = null;
+    for (const c of cands) {
+      const box = boxOf(c, l.text, size);
+      if (l.always || l.fixed || !hit(box, l.owner)) { chosen = { c, box }; break; }
+    }
+    if (!chosen) continue;
+    out[i] = { visible: true, size, x: chosen.c.x, y: chosen.c.y, anchor: chosen.c.anchor, rotate: chosen.c.rotate };
+    if (!l.fixed) put(chosen.box, "label:" + i);
   }
   return out;
 }
@@ -277,5 +320,7 @@ export function defaultView(sourceFormat, confirmed = false) {
 
 /** 글자 한 줄의 그리기 서술자(글자 크기는 layoutLabels가 정한 값). */
 export function labelDescriptor(l, size) {
-  return textEl(l.x, l.y, l.text, { anchor: l.anchor, size, fill: l.fill, opacity: l.opacity, rotate: l.rotate, baseline: l.baseline });
+  const t = textEl(l.x, l.y, l.text, { anchor: l.anchor, size, fill: l.fill, opacity: l.opacity, rotate: l.rotate, baseline: l.baseline });
+  Object.assign(t.a, { stroke: "var(--card, #fff)", "stroke-width": 3, "stroke-linejoin": "round", "paint-order": "stroke" });   // 글자 뒤 바탕색 테두리: 선이 지나가도 읽힌다
+  return t;
 }

@@ -219,8 +219,9 @@ class ScopeTest(unittest.TestCase):
         e["drawing"] = {"ignored_objects": [{"source_object_id": "i1", "label_text": "표제란", "bbox": [0, 0, 50, 20]}]}
         e["unclassified"] = [{"local_id": "x1", "label_location": {"bbox": [5, 5, 10, 10]}, "label_text": "?"}]
         b = clean_items.build(e)
-        self.assertEqual((b["leftovers"]["counted"], b["leftovers"]["n"]), (True, 2))
-        self.assertEqual(sorted(i["kind"] for i in b["leftovers"]["items"]), ["ignored", "unclassified"])
+        self.assertEqual((b["leftovers"]["counted"], b["leftovers"]["n"]), (True, 1))      # 작성자가 일부러 뺀 셀(표제란 등)은 남은 것이 아니다
+        self.assertEqual([i["kind"] for i in b["leftovers"]["items"]], ["unclassified"])
+        self.assertEqual(b["leftovers"]["excluded_by_author"], 1)
         p = clean_items.build(extraction([node("v", "pump", 10, 10, 20, 20, tag="P", cat="equipment")], [], fmt="pdf"))
         self.assertEqual(p["leftovers"], {"counted": False, "n": 0, "items": []})      # PDF는 남은 선을 넘기지 않아 세지 못한다
 
