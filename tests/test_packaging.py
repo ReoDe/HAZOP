@@ -1055,6 +1055,8 @@ REQUIRED_NOTICES = dict(
        ("force-graph/d3-scale-chromatic-LICENSE", "ISC AND Apache-2.0"),
        ("force-graph/Apache-2.0.txt", "Apache-2.0"),
        ("tabler-icons/LICENSE", "MIT"),
+       ("preact/LICENSE", "MIT"),
+       ("htm/LICENSE", "Apache-2.0"),
        ("qt/LGPL-3.0.txt", "LGPL-3.0-only"),
        ("qt/GPL-3.0.txt", "GPL-3.0-only"),
        ("qt/LicenseRef-Qt-Commercial.txt", "LicenseRef-Qt-Commercial"),
