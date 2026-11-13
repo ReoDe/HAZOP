@@ -23,6 +23,7 @@ from hazop.console import safe_console  # noqa: E402
 # 묶인 실행의 미처리 예외 기록(packaging/rthook_applog.py)만 확인한다. PyInstaller 오류 대화상자는 스크립트가 예외로 끝날 때
 # 부트로더가 띄우므로, 예외를 잡아 직접 넘기면 뜨지 않는다. 검증용 빌드 표지(sys._hazop_verify_build, 런타임 훅
 # packaging/rthook_verify_build.py — 검증용 HAZOP.exe에만 들어감)가 있을 때만 켜진다. 배포용·개발 실행에서는 무시한다.
+CHAT_TOOLS_FLAG = "--chat-tools"  # 첫 인자일 때만. HAZOP.exe --chat-tools --project <id> --question-file <파일>
 ENV_TEST_EXCEPTHOOK = "HAZOP_TEST_EXCEPTHOOK"
 EXIT_TEST_EXCEPTHOOK = 70
 
@@ -36,6 +37,10 @@ def _test_excepthook():
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == [CHAT_TOOLS_FLAG]:  # 채팅 도구 서버(규격 docs/specs/chat-panel.md §2.4): Qt·창·잠금 없이 서버만 돈다
+        from hazop.chat import mcp_server
+        return mcp_server.main(argv[1:])
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", help="시작할 때 열 분석 실행 폴더")

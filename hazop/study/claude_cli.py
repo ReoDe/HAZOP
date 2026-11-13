@@ -61,7 +61,48 @@ MESSAGES = {
     "refused": "AI가 응답을 거부함.",
     "truncated": "AI 응답이 길이 제한으로 잘림.",
     "error": "Claude Code 확인 중 오류가 남.",
+    "tool_guard_failed": "채팅 도구 목록이 앱이 허용한 것과 달라 대화를 끊음(도구 검문).",
+    "tool_limit": "질문 하나에서 도구를 너무 많이 불러 멈춤(%d회).",
 }
+
+# ---------------------------------------------------------------- 채팅 프로세스 명령 (규격 chat-panel.md §2.4)
+
+CHAT_MAX_TURNS = 200  # 실측 2026-11-13(CLI 2.1.323): 받아지고, 질문마다 따로 센다. 실제 상한은 앱·서버가 센다
+
+
+def chat_command(model, effort, schema, system_file, mcp_file, allowed_tools):
+    """채팅 프로세스 인자. 내장 도구는 끄고(--tools ""), 앱의 MCP 서버 하나와 그 도구 이름만 하나하나 허용한다.
+
+    allowed_tools: `mcp__hazop__<이름>` 목록(와일드카드 없음). 비면 --allowedTools를 넣지 않고 MCP 도구도 모두 막는다.
+    """
+    for name in allowed_tools:
+        if not re.match(r"^mcp__hazop__[a-z][a-z0-9_]{0,63}$", name):
+            raise ValueError("허용 목록에 넣을 수 없는 도구 이름: %r" % name)
+    argv = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+            "--json-schema", json.dumps(schema, ensure_ascii=False, separators=(",", ":")),
+            "--system-prompt-file", system_file,
+            "--model", model, "--effort", effort,
+            "--tools", ""]
+    argv += ["--allowedTools", ",".join(allowed_tools)] if allowed_tools else ["--disallowedTools", "mcp__*"]
+    argv += ["--strict-mcp-config", "--mcp-config", mcp_file,
+             "--setting-sources", "",
+             "--disable-slash-commands",
+             "--permission-mode", "dontAsk", "--permission-prompts", "none",
+             "--max-turns", str(CHAT_MAX_TURNS), "--no-session-persistence"]
+    return argv
+
+
+def spawn_chat(argv, cwd, job_factory=None):
+    """채팅 프로세스를 띄운다(stdin을 열어 둠). 채팅 코드(hazop/chat)가 subprocess를 직접 쓰지 않게 여기서만 띄운다."""
+    return ProcessTree(argv, cwd, clean_env(), subprocess.PIPE, job_factory or create_job)
+
+
+def wait_quietly(proc, seconds):
+    """끝나기를 잠시 기다린다. 시간이 넘어도 예외를 내지 않는다 -> 종료 코드 또는 None."""
+    try:
+        return proc.wait(seconds)
+    except subprocess.TimeoutExpired:
+        return None
 
 
 def now_kst():

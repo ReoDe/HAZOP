@@ -17,7 +17,9 @@ BILLING = {"subscription": "plan", "api": "per_call", "fixed": "none"}
 # error_kind -> 남은 호출을 멈추는지(설계 §0.3). 같은 종류가 STREAK_LIMIT회 이어져도 멈춘다.
 ERROR_KINDS = {"not_ready": True, "auth_mismatch": True, "limit_reached": True, "overage": True,
                "rate_limited": False, "transient": False, "timeout": False, "bad_output": False, "refused": False,
-               "cancelled": True, "other": False}
+               "cancelled": True, "other": False,
+               # 채팅(규격 chat-panel.md §2.4): 도구 검문 실패는 경계가 틀린 것이라 멈추고, 도구 과다는 그 질문만 끊는다
+               "tool_guard_failed": True, "tool_limit": False}
 STREAK_LIMIT = 3
 
 
