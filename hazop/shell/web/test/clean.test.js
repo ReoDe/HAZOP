@@ -93,4 +93,21 @@ export const tests = [
     assert.equal([s.sx, s.sy], [-0.4, 0.8]);
     assert.equal(V.fragmentBox([10, 10, 30, 30], [100, 100]), { x: 0, y: 0, w: 54, h: 54 });
   } },
+  { name: "정리된 보기: 자료가 늦게 와도 <Sheet>에 줄 view가 바뀜(선택 함수가 처음 도면 ID를 붙들지 않음)", async run(assert) {
+    reset();
+    let cc = null;
+    function Probe() { cc = C.useCleanCanvas("g1"); return html`<i></i>`; }
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    render(html`<${Probe} />`, host);
+    await tick();
+    assert.equal(cc.props.view, "orig");
+    C.onClean("g1", data("drawio"));
+    await tick();
+    assert.equal(cc.props.view, "clean");
+    C.toggleView("g1");
+    await tick();
+    assert.equal(cc.props.view, "orig");
+    host.remove();
+  } },
 ];

@@ -2,7 +2,7 @@
 // 보기 선택은 앱을 닫을 때까지만 기억한다(프로젝트 파일에 저장하지 않음). SheetHost가 `useCleanCanvas(sheet)`의 props를 <Sheet>에 펼치고
 // `<CleanOverlay />`를 도면 자리 안에 그린다. 도면·모델에서 온 글(태그)은 htm이 이스케이프하는 텍스트로만 넣는다.
 import { html } from "../ui/html.js";
-import { useEffect, useLayoutEffect, useState } from "../../vendor/hooks.module.js";
+import { useEffect, useLayoutEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { createStore, store as shell, useStore } from "../store.js";
 import { Icon } from "../ui/icon.js";
 import { Chip } from "../ui/parts.js";
@@ -25,11 +25,14 @@ export const clean = createStore({
 
 export function useClean(selector) {
   const [value, setValue] = useState(() => selector(clean.get()));
+  const latest = useRef(selector);
+  latest.current = selector;               // 선택 함수가 도면 ID 같은 값을 붙들고 있어도 늘 최신 것으로 고른다
   useLayoutEffect(() => {
-    const sync = (s) => { const next = selector(s); setValue((prev) => (Object.is(prev, next) ? prev : next)); };
+    const sync = (s) => { const next = latest.current(s); setValue((prev) => (Object.is(prev, next) ? prev : next)); };
     sync(clean.get());
     return clean.subscribe(sync);
   }, []);
+  useLayoutEffect(() => { const next = selector(clean.get()); setValue((prev) => (Object.is(prev, next) ? prev : next)); });   // 선택 함수가 바뀌면(도면을 바꾸면) 바로 다시 고른다
   return value;
 }
 
