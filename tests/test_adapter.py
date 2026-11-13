@@ -440,6 +440,15 @@ class PdfVectorRuleTest(unittest.TestCase):
                        for r in ext["relations"] if r.get("flow_direction"))
         self.assertEqual(flows, [("-", "continuation"), ("continuation", "-")])
 
+    def test_valve_number_and_position_stacked_are_tag_and_attribute(self):
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        ext = pdf_run(bowtie(100, 100) + [line((40, 111), (100, 111)), line((136, 111), (200, 111))],
+                      [word("V310", 140, 92), word("LO", 140, 99)])
+        valve = [n for n in ext["nodes"] if n["kind"] == "manual_valve"][0]
+        self.assertEqual((valve["tag"], valve["attributes"].get("normal_position")), ("V310", "LO"))
+
     def test_size_text_beside_valve_goes_to_pipe(self):
         def bowtie(x, y):
             return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),

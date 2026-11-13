@@ -19,6 +19,9 @@ ISA_LABEL_RE = re.compile(r"([A-Z]{1,4})[ \-]*(\d{1,5}[A-Z]?)")
 # 수동 밸브 번호(APR1400 'V1681'). 계통 접두는 글자에 없다. 밸브 분류 노드의 라벨 한 줄이 이 꼴이면 그대로 태그로 쓴다
 VALVE_TAG_RE = re.compile(r"V\d{3,5}[A-Z]?")
 PAREN_TOKEN_RE = re.compile(r"\(\d{1,5}[A-Z]?\)")  # 계기 원 옆 다른 계열 번호 '(3057)'·'(3004D)'. 설비 번호 '(FT32A)'는 아님
+# 밸브 옆 위치 약어(범례 1.7-1 1/4·4/4, 속성 normal_position·fail_position). 'NC,FO'처럼 둘을 함께 쓴다
+POSITION_TEXT_RE = re.compile(r"(?:NO|NC|LO|LC|LT|FO|FC|FL|FAI)(?:\s*[,/]?\s*(?:NO|NC|LO|LC|LT|FO|FC|FL|FAI))*")
+POSITION_CODE_RE = re.compile(r"NO|NC|LO|LC|LT|FO|FC|FL|FAI")
 
 
 def _text_blocks(words, prm):
@@ -43,6 +46,15 @@ def _text_blocks(words, prm):
     return out
 
 
+def _number_and_position(a, b):
+    """밸브 번호와 위치 약어가 한 줄에 나란히 찍힌 것('V310 LO', 'LO V751'). 번호는 태그, 약어는 속성이라 따로 둔다."""
+    return any(VALVE_TAG_RE.fullmatch(x) and POSITION_TEXT_RE.fullmatch(y) for x, y in ((a, b), (b, a)))
+
+
+def _line_text(ln):
+    return "".join(s + w["text"] for s, w in zip(ln["seps"], ln["words"]))
+
+
 def _upright_blocks(words, prm):
     """가로 글자 단어 → 줄 → 문단."""
     # 글자 크기가 조금씩 다르면 pdfplumber가 'SHEET 3"A"'를 한 자씩 끊는다. 그런 조각은 윗변이 조금씩 달라 윗변 순으로
@@ -55,7 +67,8 @@ def _upright_blocks(words, prm):
         reach = (prm["word_join_ratio"] if PAREN_TOKEN_RE.fullmatch(w["text"]) else prm["word_gap_ratio"]) * w["size"]
         fits = [ln for ln in lines if abs(ln["size"] - w["size"]) <= prm["line_size_tol"] and
                 abs(ln["top"] - w["top"]) <= prm["line_top_ratio"] * w["size"] and
-                -prm["word_overlap_ratio"] * w["size"] <= w["x0"] - ln["x1"] < reach]
+                -prm["word_overlap_ratio"] * w["size"] <= w["x0"] - ln["x1"] < reach and
+                not _number_and_position(ln["words"][-1]["text"], w["text"])]
         if fits:
             ln = min(fits, key=lambda ln: (abs(ln["top"] - w["top"]), w["x0"] - ln["x1"]))
             gap = w["x0"] - ln["x1"]
@@ -74,7 +87,8 @@ def _upright_blocks(words, prm):
             gap = ln["top"] - last["bottom"]
             overlap = min(ln["x1"], last["x1"]) - max(ln["x0"], last["x0"])
             if abs(last["size"] - ln["size"]) <= prm["line_size_tol"] and overlap > 0 and \
-                    prm["block_gap_min_ratio"] * ln["size"] <= gap <= prm["block_gap_max_ratio"] * ln["size"]:
+                    prm["block_gap_min_ratio"] * ln["size"] <= gap <= prm["block_gap_max_ratio"] * ln["size"] and \
+                    not _number_and_position(_line_text(last), _line_text(ln)):
                 b["lines"].append(ln)
                 break
         else:
@@ -83,7 +97,7 @@ def _upright_blocks(words, prm):
     for b in blocks:
         box = (min(l["x0"] for l in b["lines"]), min(l["top"] for l in b["lines"]),
                max(l["x1"] for l in b["lines"]), max(l["bottom"] for l in b["lines"]))
-        text = "\n".join("".join(s + w["text"] for s, w in zip(l["seps"], l["words"])) for l in b["lines"])
+        text = "\n".join(_line_text(l) for l in b["lines"])
         out.append({"text": text, "bbox": box, "size": b["lines"][0]["size"],
                     "line_boxes": [(l["x0"], l["top"], l["x1"], l["bottom"]) for l in b["lines"]]})
     out.sort(key=lambda b: (round(b["bbox"][1], 2), round(b["bbox"][0], 2)))

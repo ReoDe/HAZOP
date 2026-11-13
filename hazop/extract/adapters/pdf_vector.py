@@ -51,8 +51,8 @@ from .pdf_vector_connectors import (
 )
 from .pdf_vector_flow import _chain_flow, _propagate_flows, continuation_flow
 from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels, parse_label
-from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, VALVE_TAG_RE, _text_blocks, _upright_blocks, _bubble_like,
-                                _assign_tags)
+from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, POSITION_CODE_RE, POSITION_TEXT_RE, VALVE_TAG_RE,
+                                _text_blocks, _upright_blocks, _bubble_like, _assign_tags)
 
 SCHEMA_VERSION = drawio.SCHEMA_VERSION
 SCRIPT_NAME = "hazop.extract.adapters.pdf_vector"
@@ -143,8 +143,6 @@ VALVE_NUMBER_RE = re.compile(r"\d{2,4}[A-Z]?")  # 범례 1.7-1 1/4 VALVE IDENT. 
 # 태그가 아니라 밸브 속성(속성 사전 normal_position·fail_position)이다
 POSITION_FIELD = {"NO": "normal_position", "NC": "normal_position", "LO": "normal_position", "LC": "normal_position",
                   "LT": "normal_position", "FO": "fail_position", "FC": "fail_position", "FL": "fail_position", "FAI": "fail_position"}
-POSITION_TEXT_RE = re.compile(r"(?:NO|NC|LO|LC|LT|FO|FC|FL|FAI)(?:\s*[,/]?\s*(?:NO|NC|LO|LC|LT|FO|FC|FL|FAI))*")
-POSITION_CODE_RE = re.compile(r"NO|NC|LO|LC|LT|FO|FC|FL|FAI")
 ACTUATOR_MARK_RE = re.compile(r"[A-Z](?: ?/ ?[A-Z])?")  # 밸브 몸통·구동부 안 표기(M, E/H 등)
 POSITION_REFINES = {("NC", "LC"), ("NO", "LO")}  # (기호 모양의 값, 글자 값): 글자가 같은 상태를 더 자세히 쓴 것
 
