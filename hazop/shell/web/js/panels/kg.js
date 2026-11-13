@@ -193,7 +193,8 @@ function drawNode(n, ctx, scale, selected, hover, near) {
   } else { ctx.fillStyle = colorOf(n); ctx.fill(); }
   if (n.recheck) { ctx.lineWidth = 1; ctx.setLineDash([1.5, 1.5]); ctx.strokeStyle = C.gap; ctx.beginPath(); ctx.arc(n.x, n.y, r + 2.5, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]); }
   if (n.id === selected) { ctx.lineWidth = 2 / Math.max(scale, 0.5); ctx.strokeStyle = C.sel; ctx.beginPath(); ctx.arc(n.x, n.y, r + 3, 0, 2 * Math.PI); ctx.stroke(); }
-  const show = n.layer === "group" || n.id === selected || n.id === hover || (near.size && near.has(n.id)) || scale > 2.2;
+  // 큰 노드(설비)는 맞춤 배율에서도 이름을 보인다. 나머지는 고르거나 가리키거나 확대하면 나온다
+  const show = n.layer === "group" || n.type === "equipment" || n.id === selected || n.id === hover || (near.size && near.has(n.id)) || scale > 2.2;
   if (show && n.label) {
     const fs = Math.max(9 / scale, n.layer === "group" ? 4.5 : 3);
     ctx.font = (n.layer === "group" || n.id === selected ? "600 " : "") + fs + "px " + "Malgun Gothic, sans-serif";

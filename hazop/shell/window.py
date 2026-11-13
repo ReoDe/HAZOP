@@ -207,13 +207,17 @@ class AiAdapter:
         self.conn.prefs.ack_terms()
 
 
+MIN_SIZE = (1000, 620)        # 이보다 작게는 줄이지 않는다(1366×768 노트북까지 도면·패널이 잘리지 않는 크기)
+PREFERRED_SIZE = (1440, 860)
+
+
 class ShellWindow(QMainWindow):
     """새 화면의 창. 설정 파일 경로를 받아 엔진·연결·채팅을 만들고 웹 화면을 연다."""
 
     gui_call = Signal(object)   # 작업 스레드가 화면 스레드에서 해야 하는 일(대화상자)을 맡기고 끝나기를 기다린다(막는 큐 연결)
     jobs_idle = Signal()   # 작업 스레드에서 마지막 작업이 끝났을 때(큐 연결로 화면 스레드가 받는다)
 
-    def __init__(self, settings_path=None, ask_reviewer=True, debug=False, size=(1440, 860), session_factory=None, env_provider=None):
+    def __init__(self, settings_path=None, ask_reviewer=True, debug=False, size=None, session_factory=None, env_provider=None):
         super().__init__()
         from hazop.app import tokens
         from hazop.app.ai_conn import AiConnection
@@ -221,7 +225,8 @@ class ShellWindow(QMainWindow):
         from hazop.study.apikey import STORE_FILE_NAME, KeyStore
         from hazop.shell import key_dialog
         self.setWindowTitle("HAZOP 분석 도구")
-        self.resize(*size)
+        self.setMinimumSize(*MIN_SIZE)
+        self.resize(*(size or self._default_size()))
         self.setStyleSheet("QMainWindow { background: %s; }" % tokens.SHELL["bg"])
         self._debug = debug or bool(os.environ.get("HAZOP_DEBUG"))
         self.engine = api.Engine(settings_path=settings_path)
@@ -300,6 +305,16 @@ class ShellWindow(QMainWindow):
     def _loaded(self, ok):
         if not ok:
             LOG.error("웹 화면을 읽지 못함: %s", SHELL_URL)
+
+    @staticmethod
+    def _default_size():
+        """처음 열 창 크기: 쓰는 화면의 작업 영역보다 크지 않게(1366×768 노트북에서는 작업 표시줄을 뺀 화면에 맞춘다)."""
+        from PySide6.QtGui import QGuiApplication
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return PREFERRED_SIZE
+        geo = screen.availableGeometry()
+        return (max(MIN_SIZE[0], min(PREFERRED_SIZE[0], int(geo.width() * 0.97))), max(MIN_SIZE[1], min(PREFERRED_SIZE[1], int(geo.height() * 0.95))))
 
     def _run_gui_call(self, job):
         fn, box = job

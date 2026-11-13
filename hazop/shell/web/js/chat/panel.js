@@ -69,6 +69,7 @@ export function ChatPanel({ collapsed, onToggle, onChip, onSheet }) {
     <div class="chat-h"><${Icon} name="message-circle" /><b>채팅</b>
       <span class="acts">
         <${Btn} kind="ghost" sm=${true} icon="message-plus" label="새 대화" title="지금까지의 대화를 지우고 새로 시작합니다" onClick=${() => cmd("chat.new")} />
+        <${Btn} kind="ghost" sm=${true} icon="file-text" label="AI 실행 기록" title="AI가 실행한 일의 기록" onClick=${() => store.set((s) => ({ panel: s.panel === "actionlog" ? null : "actionlog", backTo: null }))} />
         <${Btn} kind="ghost" sm=${true} icon="layout-sidebar-right-collapse" label="채팅 접기" title="채팅 접기 (Ctrl+Alt+K)" onClick=${onToggle} /></span></div>
     <div class="msgs" ref=${list}>
       ${empty ? html`<div class="muted">도면과 문서에 대해 물어보세요. 아래 질문을 눌러 시작할 수도 있습니다.</div>` : null}

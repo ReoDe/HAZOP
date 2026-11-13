@@ -3,6 +3,8 @@
 //   name: store.panel에 들어가는 이름 · icon: 메뉴 아이콘 · label: 단추 이름(key가 있으면 " (Ctrl+key)"가 붙는다)
 //   key: Ctrl+<key>로 열고 닫음(선택) · component: 패널 컴포넌트({ onClose, onOpen }를 받는다) · css: 전용 CSS(이 폴더 안, 선택)
 //   badge: (공용 store 상태) => 숫자|null(선택) · place: "bottom"이면 메뉴 아래쪽(선택)
+//   group: 다른 항목의 name. 이 항목은 메뉴에 따로 나오지 않고 그 항목의 화면 위쪽 탭으로 열린다(관련 화면을 한 메뉴로 묶는다)
+//   hidden: true면 메뉴 단추 없이 store.panel로만 연다(예: 채팅 머리의 단추) · hint·dot: 메뉴 단추의 보조 글·점(공용 store 상태 => 글|톤)
 import { DrawingsPanel } from "./drawings.js";
 import { NodesPanel } from "./nodes.js";
 import { ResultsPanel } from "./results.js";
@@ -21,12 +23,23 @@ export const PANELS = [
   { name: "results", icon: "table", label: "분석 결과", key: "3", component: ResultsPanel, css: "results.css" },
   { name: "ie", icon: "route", label: "초기사건", key: "4", component: IePanel, css: "ie.css" },
   { name: "kg", icon: "topology-star-3", label: "지식그래프", key: "5", component: KgPanel },
-  { name: "docs", icon: "file-text", label: "설계 문서", key: "6", component: DocsPanel },
-  { name: "titleblock", icon: "file-text", label: "표제란", component: TitleblockPanel, css: "titleblock.css" },
-  { name: "aireview", icon: "sparkles", label: "AI 검토", key: "7", component: AiReviewPanel, css: "aireview.css" },
-  { name: "actionlog", icon: "file-text", label: "AI 실행 기록", component: ActionLogPanel, css: "actionlog.css", place: "bottom" },
-  { name: "settings", icon: "settings", label: "설정", component: SettingsPanel, css: "settings.css", place: "bottom" },
+  { name: "docs", group: "kg", label: "설계 문서", key: "6", component: DocsPanel },
+  { name: "titleblock", group: "drawings", label: "표제란", component: TitleblockPanel, css: "titleblock.css" },
+  { name: "aireview", group: "drawings", label: "AI 검토", key: "7", component: AiReviewPanel, css: "aireview.css" },
+  { name: "actionlog", hidden: true, label: "AI 실행 기록", component: ActionLogPanel, css: "actionlog.css" },
+  { name: "settings", icon: "settings", label: "설정", component: SettingsPanel, css: "settings.css", place: "bottom",
+    hint: (s) => "AI 연결: " + (s.conn.chip || s.conn.label), dot: (s) => s.conn.tone || "plain" },
 ];
+
+export const byName = (name) => PANELS.find((p) => p.name === name) || null;
+/** 메뉴 단추가 가리키는 항목의 이름: 묶인 화면은 묶음의 첫 항목. */
+export const leadOf = (p) => (p ? p.group || p.name : null);
+/** 한 묶음의 탭 목록(묶음이 아니면 빈 목록). */
+export function tabsOf(name) {
+  const lead = leadOf(byName(name));
+  const rows = lead ? PANELS.filter((q) => leadOf(q) === lead) : [];
+  return rows.length > 1 ? rows : [];
+}
 
 /** 단추 이름: 단축키가 있으면 뒤에 붙인다. */
 export function panelLabel(p) { return p.key ? p.label + " (Ctrl+" + p.key + ")" : p.label; }

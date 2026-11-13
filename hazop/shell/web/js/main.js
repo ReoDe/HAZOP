@@ -8,7 +8,7 @@ import { Icon, loadIcons } from "./ui/icon.js";
 import { Btn } from "./ui/parts.js";
 import { ChatPanel, loadChat, pushMsg, setChat } from "./chat/panel.js";
 import { addActions, updateAction } from "./chat/actions.js";
-import { PANELS, loadPanelCss, panelLabel } from "./panels/index.js";
+import { PANELS, byName, leadOf, loadPanelCss, panelLabel, tabsOf } from "./panels/index.js";
 import { resetAreas } from "./areas.js";
 import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
@@ -20,7 +20,9 @@ const toast = (text, kind) => store.set({ toast: { text, kind } });
 export async function loadState() {
   const s = await read("state");
   setProject(s.project_id);        // 이후 모든 명령에 이 프로젝트 ID를 실어 보낸다
-  store.set((cur) => ({ app: Object.assign({}, cur.app, s), chatCollapsed: !!(s.ui && s.ui.chat_collapsed) }));
+  // 채팅은 사람이 접거나 편 적이 있으면 그대로, 처음이면 좁은 창(1280 미만)에서만 접은 채로 연다
+  const saved = s.ui && typeof s.ui.chat_collapsed === "boolean" ? s.ui.chat_collapsed : window.innerWidth < 1280;
+  store.set((cur) => ({ app: Object.assign({}, cur.app, s), chatCollapsed: saved }));
   setChat({ model: s.chat_model });
   return s;
 }
@@ -113,21 +115,31 @@ function wireEvents() {
 // ---------------------------------------------------------------- 화면
 function Rail() {
   const panel = useStore((s) => s.panel);
-  const conn = useStore((s) => s.conn);
+  const here = leadOf(byName(panel));          // 묶음 안의 어느 화면이 열려 있어도 그 묶음의 단추가 켜진다
+  const shown = (p) => !p.group && !p.hidden;
   return html`<nav class="rail" aria-label="메뉴"><div class="logo" aria-hidden="true">HZ</div>
-    ${PANELS.filter((p) => p.place !== "bottom").map((p) => html`<${RailButton} key=${p.name} p=${p} on=${panel === p.name} />`)}
+    ${PANELS.filter((p) => shown(p) && p.place !== "bottom").map((p) => html`<${RailButton} key=${p.name} p=${p} on=${here === p.name} />`)}
     <div class="spacer"></div>
-    <button type="button" class=${panel === "settings" ? "on" : ""} title=${"AI 연결 · " + (conn.chip || conn.label)} aria-label=${"AI 연결: " + (conn.chip || conn.label)} onClick=${() => togglePanel("settings")}>
-      <${Icon} name="plug-connected" /><span class=${"conn " + (conn.tone || "plain")}></span></button>
-    ${PANELS.filter((p) => p.place === "bottom").map((p) => html`<${RailButton} key=${p.name} p=${p} on=${panel === p.name} />`)}</nav>`;
+    ${PANELS.filter((p) => shown(p) && p.place === "bottom").map((p) => html`<${RailButton} key=${p.name} p=${p} on=${here === p.name} />`)}</nav>`;
 }
 
-/** 메뉴 단추 하나: panels/index.js의 항목에서 이름·아이콘·숫자(badge)를 읽는다. */
+/** 메뉴 단추 하나: panels/index.js의 항목에서 이름·아이콘·숫자(badge)·보조 글(hint)·점(dot)을 읽는다. 묶음에 속한 화면이 열려 있으면 누르면 닫는다. */
 function RailButton({ p, on }) {
   const badge = useStore(p.badge || nothing);
-  const label = panelLabel(p);
-  return html`<button type="button" class=${on ? "on" : ""} title=${label} aria-label=${label} onClick=${() => togglePanel(p.name)}>
-    <${Icon} name=${p.icon} />${badge ? html`<span class="badge">${badge}</span>` : null}</button>`;
+  const hint = useStore(p.hint || nothing);
+  const dot = useStore(p.dot || nothing);
+  const label = panelLabel(p) + (hint ? " · " + hint : "");
+  const press = () => { if (on) store.set({ panel: null, backTo: null }); else togglePanel(p.name); };
+  return html`<button type="button" class=${on ? "on" : ""} title=${label} aria-label=${label} onClick=${press}>
+    <${Icon} name=${p.icon} />${badge ? html`<span class="badge">${badge}</span>` : null}${dot ? html`<span class=${"conn " + dot}></span>` : null}</button>`;
+}
+
+/** 한 묶음의 화면을 오가는 탭(예: 도면 · 표제란 · AI 검토). 묶음이 아니면 아무것도 그리지 않는다. */
+function PanelTabs({ panel }) {
+  const rows = tabsOf(panel);
+  if (!rows.length) return null;
+  return html`<div class="ptabs" role="tablist" aria-label="같은 메뉴의 화면">${rows.map((p) => html`<button type="button" role="tab" key=${p.name} class=${p.name === panel ? "on" : ""} aria-label=${p.label}
+    aria-selected=${p.name === panel ? "true" : "false"} onClick=${() => store.set({ panel: p.name, backTo: null })}>${p.label}</button>`)}</div>`;
 }
 const nothing = () => null;
 
@@ -191,7 +203,7 @@ function App() {
   return html`<div class=${"app" + (collapsed ? " chat-collapsed" : "")}>
     <${Rail} />
     <main class="center"><${TopBar} /><${SheetHost} />
-      ${PANELS.map((p) => (panel === p.name ? html`<${p.component} key=${p.name} onOpen=${openSheet} onClose=${closePanel} />` : null))}
+      ${PANELS.map((p) => (panel === p.name ? html`<div class="pwrap" key=${p.name}><${PanelTabs} panel=${p.name} /><${p.component} onOpen=${openSheet} onClose=${closePanel} /></div>` : null))}
       <${Toast} /></main>
     <${ChatPanel} collapsed=${collapsed} onToggle=${toggleChat} onChip=${onChip} onSheet=${onSheet} />
   </div>`;

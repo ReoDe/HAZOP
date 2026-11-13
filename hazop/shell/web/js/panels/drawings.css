@@ -2,3 +2,7 @@
 .dexpi-card .list .row { align-items: flex-start; }
 .src-card .list .row { align-items: flex-start; }
 .src-row .acts { display: flex; gap: 4px; flex-wrap: wrap; }
+/* 도면 목록 행: 빈 작은 그림 자리는 빼고, 좁은 패널에서는 줄을 바꿔 이름이 한 글자씩 접히지 않게 한다 */
+.drow { flex-wrap: wrap; }
+.drow .main { flex: 1 1 140px; min-width: 0; }
+.drow .thumb { display: none; }

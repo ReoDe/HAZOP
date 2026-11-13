@@ -102,7 +102,7 @@ export function DrawingsPanel({ onOpen, onClose }) {
         ${app.ai_review && !conn.can_start ? html`<${Notice} kind="warn" icon="alert-triangle">AI 연결이 준비되지 않아 검토는 건너뜁니다.<//>` : null}</div>
       <div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">도면 ${data.drawings.length}장${data.project_id ? " · 프로젝트 " + data.project_id : ""}</div>
         ${data.drawings.length === 0 ? html`<${Notice}>등록된 도면이 없습니다. 위 자리에 도면 파일을 끌어 놓으면 등록하고 읽습니다.<//>` : html`<div class="list">
-          ${data.drawings.map((d) => html`<div class=${"row" + (d.graph_id === sheet ? " on" : "")} key=${d.graph_id}>
+          ${data.drawings.map((d) => html`<div class=${"row drow" + (d.graph_id === sheet ? " on" : "")} key=${d.graph_id}>
             <div class="thumb" aria-hidden="true"></div>
             <div class="main"><b>${d.drawing_number || d.name}</b><span>${d.title || "표제란 확인 전"}</span></div>
             ${d.unknowns ? html`<${Chip} kind="warn" title="추출에서 읽지 못한 항목">미확인 ${d.unknowns}<//>` : html`<${Chip} kind="ok" icon="check">읽음<//>`}

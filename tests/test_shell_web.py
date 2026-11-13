@@ -204,6 +204,52 @@ class ShellWindowTest(ShellBase):
         self.assertEqual(win.view.interceptor.blocked, [], "실행 중 원격 요청 0")
         self.assertEqual(win.view.page().blocked_navigation, [])
 
+    def test_related_panels_are_tabs_under_one_menu_button(self):
+        win = self.window()
+        for name, lead, tabs in (("aireview", "도면", ["도면", "표제란", "AI 검토"]), ("docs", "지식그래프", ["지식그래프", "설계 문서"])):
+            self.js(win, "window.__hz.store.set({panel: %s})" % json.dumps(name))
+            self.assertTrue(wait_for(lambda: self.jsj(win, "[...document.querySelectorAll('.ptabs button')].map(b => b.textContent)") == tabs, 10), name)
+            self.assertEqual(self.jsj(win, "document.querySelector('.rail button.on').getAttribute('aria-label')").split(" (")[0], lead, "묶음의 메뉴 단추가 켜진다")
+        self.js(win, "window.__hz.store.set({panel: 'aireview'})")
+        pump(0.4)
+        self.assertTrue(self.click(win, ".ptabs button", 1))
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "titleblock", 10))
+        self.assertEqual(self.js(win, "document.querySelector('.ptabs button.on').textContent"), "표제란")
+        self.assertTrue(self.click(win, ".rail button.on"))
+        self.assertTrue(wait_for(lambda: not self.js(win, "window.__hz.store.get().panel"), 10), "켜진 메뉴 단추를 누르면 닫힌다")
+        self.js(win, "window.__hz.store.set({panel: 'results'})")
+        pump(0.3)
+        self.assertEqual(self.js(win, "document.querySelector('.ptabs') === null"), True, "묶음이 아니면 탭이 없다")
+
+    def test_the_action_log_opens_from_the_chat_header_not_the_menu(self):
+        win = self.window()
+        labels = self.jsj(win, "[...document.querySelectorAll('.rail button')].map(b => b.getAttribute('aria-label'))")
+        self.assertFalse(any("실행 기록" in x for x in labels), labels)
+        self.assertTrue(self.click(win, ".chat-h button[aria-label='AI 실행 기록']"))
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "actionlog", 10))
+        self.assertTrue(self.click(win, ".chat-h button[aria-label='AI 실행 기록']"))
+        self.assertTrue(wait_for(lambda: not self.js(win, "window.__hz.store.get().panel"), 10))
+
+    def test_the_connection_dot_sits_on_the_settings_button(self):
+        win = self.window()
+        label = self.js(win, "[...document.querySelectorAll('.rail button')].pop().getAttribute('aria-label')")
+        self.assertTrue(label.startswith("설정") and "AI 연결" in label, label)
+        self.assertEqual(self.js(win, "[...document.querySelectorAll('.rail button')].pop().querySelector('.conn') !== null"), True)
+
+    def test_the_window_opens_to_fit_the_screen_and_the_chat_starts_folded_only_in_a_narrow_window(self):
+        from hazop.shell import window as shell_window
+        w, h = shell_window.ShellWindow._default_size()
+        self.assertTrue(shell_window.MIN_SIZE[0] <= w <= shell_window.PREFERRED_SIZE[0] and shell_window.MIN_SIZE[1] <= h <= shell_window.PREFERRED_SIZE[1], (w, h))
+        wide = self.window(size=(1366, 768))
+        self.assertEqual(self.js(wide, "window.__hz.store.get().chatCollapsed"), False, "1366에서는 채팅을 편 채로 연다(폭만 줄인다)")
+        self.assertEqual(self.js(wide, "document.documentElement.scrollWidth <= window.innerWidth"), True, "가로로 잘리지 않는다")
+        state = os.path.join(os.environ["HAZOP_WORK_ROOT"], "data", "ui-state.json")      # 앞 시험의 창이 남긴 보기 상태를 지운다(사람이 접은 적이 없는 처음 실행)
+        if os.path.exists(state):
+            os.remove(state)
+        narrow = self.window(size=(1100, 700))
+        self.assertEqual(self.js(narrow, "window.__hz.store.get().chatCollapsed"), True, "1280 미만 창에서는 처음에 채팅을 접는다")
+        self.assertGreaterEqual(narrow.minimumWidth(), shell_window.MIN_SIZE[0])
+
     def test_frame_has_rail_chat_and_drawings_panel_first(self):
         win = self.window()
         t = self.text(win)
@@ -211,7 +257,7 @@ class ShellWindowTest(ShellBase):
         self.assertIn("도면 파일을 여기에 끌어 놓으세요", t)       # 열 도면이 여럿이면 도면 패널을 먼저 보인다
         self.assertIn("SNP-M-101", t)
         self.assertIn("SNP-M-102", t)
-        self.assertEqual(self.js(win, "document.querySelectorAll('.rail button').length"), 11)       # 도면·구간·분석 결과·초기사건·지식그래프·설계 문서·표제란·AI 검토·AI 연결·AI 실행 기록·설정
+        self.assertEqual(self.js(win, "document.querySelectorAll('.rail button').length"), 6)       # 도면(+표제란·AI 검토 탭)·구간·분석 결과·초기사건·지식그래프(+설계 문서 탭)·설정(연결 점 포함)
         self.assertEqual(self.js(win, "document.querySelectorAll('button:not([aria-label]):not([title])').length"), 0, "접근 이름 없는 단추")
 
     def test_icons_are_inline_svg_elements(self):
@@ -263,7 +309,7 @@ class ShellWindowTest(ShellBase):
 
     def test_settings_has_the_start_screen_switch(self):
         win = self.window()
-        self.assertTrue(self.click(win, ".rail button", 8))
+        self.assertTrue(self.click(win, ".rail button", 5))
         pump(0.4)
         self.assertIn("시작할 때 새 화면 쓰기", self.text(win))
         self.assertEqual(self.js(win, "document.querySelector(\"button[aria-label='시작할 때 새 화면 쓰기']\").getAttribute('aria-checked')"), "true", "기본은 켜짐")
@@ -272,7 +318,7 @@ class ShellWindowTest(ShellBase):
 
     def test_settings_panel_shows_connection_and_saves_reviewer(self):
         win = self.window()
-        self.assertTrue(self.click(win, ".rail button", 8))
+        self.assertTrue(self.click(win, ".rail button", 5))
         pump(0.5)
         self.assertIn("AI 연결", self.text(win))
         self.js(win, "(() => { const i = document.getElementById('reviewer'); i.value = '검토자B'; i.dispatchEvent(new Event('input', {bubbles: true})); })()")
