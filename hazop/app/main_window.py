@@ -841,7 +841,8 @@ class MainWindow(QMainWindow):
             from hazop.chat.session import ChatSession
         except ImportError as exc:
             raise ValueError("이 설치에는 채팅 부품이 없습니다(%s)." % exc) from exc
-        return ChatSession(pid, model=model, **callbacks)
+        from hazop.chat import card as chatcard
+        return ChatSession(pid, model=model, schema=chatcard.CARD_SCHEMA, system_prompt=chatcard.SYSTEM_PROMPT, **callbacks)
 
     def _chat_view_dict(self):
         sel = self.selection or {}

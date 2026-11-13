@@ -259,7 +259,7 @@ class CardWidget(QFrame):
             lab = QLabel("도면별")
             fl.addWidget(lab)
             for sheet, n in path.sheets:
-                b = QPushButton("%s · %d" % (sheet, n))
+                b = QPushButton("%s · %d" % (path.sheet_labels.get(sheet, sheet), n))
                 b.setObjectName("chat_sheet")
                 b.setToolTip("이 도면을 열고 경로를 표시합니다")
                 b.clicked.connect(lambda _=False, s=sheet, i=index: self.sheetClicked.emit(i, s))
@@ -267,7 +267,7 @@ class CardWidget(QFrame):
             v.addWidget(row)
         elif path.sheets:
             sheet = path.sheets[0][0]
-            b = QPushButton("%s · %d" % (sheet, path.sheets[0][1]))
+            b = QPushButton("%s · %d" % (path.sheet_labels.get(sheet, sheet), path.sheets[0][1]))
             b.setObjectName("chat_sheet")
             b.clicked.connect(lambda _=False, s=sheet, i=index: self.sheetClicked.emit(i, s))
             v.addWidget(b, 0, Qt.AlignLeft)
@@ -371,7 +371,8 @@ class ChatPanel(QWidget):
             self.model_combo.addItem(name)
         self.model_combo.setCurrentText(MODEL_NAME[self._model])
         self.model_combo.currentIndexChanged.connect(self._model_changed)
-        self.model_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.model_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.model_combo.setMinimumContentsLength(3)
         head.addWidget(self.model_combo)
         head.addStretch(1)
         self.new_button = QPushButton("새 대화")
@@ -563,7 +564,8 @@ class ChatPanel(QWidget):
             env, pg = (self._env_provider() if self._env_provider else None) or (_NoEnv(), {"nodes": []})
         except Exception:  # noqa: BLE001 - 자료를 못 읽어도 답 글은 보여 준다
             env, pg = _NoEnv(), {"nodes": []}
-        card = cardmod.build_card(answer, tool_ids, env, path_refs=self._log.path_refs(qid))
+        card = cardmod.build_card(answer, tool_ids, env, path_refs=self._log.path_refs(qid),
+                                  tool_names=self._log.tool_names(qid))
         footer = {"tools": self._log.tool_count(qid), "model": MODEL_NAME[self._model], "seconds": seconds,
                   "calls": self._log.tool_calls(qid)}
         widget = CardWidget(card, footer)

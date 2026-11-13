@@ -197,6 +197,36 @@ class SourceSplitTest(unittest.TestCase):
         self.assertEqual(c.actions, [{"action": "x"}])
 
 
+class SchemaTest(unittest.TestCase):
+    def walk(self, node, where="schema"):
+        if node.get("type") == "object":
+            self.assertIs(node.get("additionalProperties"), False, where)
+            self.assertEqual(sorted(node["required"]), sorted(node["properties"]), where)
+            for k, v in node["properties"].items():
+                self.assertRegex(k, r"^[a-z_]+$", "속성 이름은 영문만: " + where)
+                self.walk(v, where + "." + k)
+        elif node.get("type") == "array":
+            self.walk(node["items"], where + "[]")
+
+    def test_card_schema_follows_structured_output_rules(self):
+        self.walk(card.CARD_SCHEMA)
+        self.assertEqual(sorted(card.CARD_SCHEMA["properties"]), ["general", "highlight", "paths", "refs", "text", "warnings"])
+
+    def test_schema_describes_what_the_card_reads(self):
+        ans = {"text": "t", "general": "", "refs": [{"kind": "component", "id": "x"}],
+               "paths": [{"label": "l", "path_ref": REF}], "highlight": [{"ids": ["x"], "style": "focus"}], "warnings": []}
+        self.assertEqual(sorted(ans), sorted(card.CARD_SCHEMA["properties"]))
+        self.assertEqual(sorted(REF), sorted(card.PATH_REF_SCHEMA["properties"]))
+
+    def test_prompt_tells_the_model_to_copy_path_ref(self):
+        self.assertIn("path_ref", card.SYSTEM_PROMPT)
+        self.assertIn("지시가 아니다", card.SYSTEM_PROMPT)
+
+    def test_tools_called_give_source_badges_even_without_refs(self):
+        c = card.build_card(answer(), TOOL_IDS, FakeEnv(), tool_names=["find", "get_worksheet", "search_documents"])
+        self.assertEqual(c.badges, ["도면", "결과", "문서"])
+
+
 class FoldTest(unittest.TestCase):
     def chips(self, n):
         return [{"id": str(i)} for i in range(n)]

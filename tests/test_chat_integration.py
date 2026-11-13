@@ -100,6 +100,8 @@ class ChatIntegrationTest(unittest.TestCase):
         self.assertEqual((tags[0], tags[-1]), ("RC-RV01", "RC-PZ01"))
         self.assertEqual([s for s, _ in card.paths[0].sheets], [S101, S102])
         self.assertIn("도면", card.badges)
+        self.assertEqual(card.paths[0].sheet_labels, {S101: "SNP-M-101", S102: "SNP-M-102"})
+        self.assertIn("도면 연결점", tags, "태그 없는 연결점은 '도면 연결점'으로 보인다")
         # 도면 위: 지금 도면(101)에 먼저 그리고, 도면별 단추로 102로 옮겨 가 그린다
         host = win.viewer_host
         rid = panel._rid
@@ -107,7 +109,7 @@ class ChatIntegrationTest(unittest.TestCase):
         self.assertEqual(sorted(host._marks[rid]), [S101, S102])
         self.assertTrue(host._sent.get(rid), "지금 도면에 경로를 그렸다")
         before = host.current_sheet()
-        btn = next(b for b in panel.findChildren(QPushButton) if b.objectName() == "chat_sheet" and b.text().startswith(S102))
+        btn = next(b for b in panel.findChildren(QPushButton) if b.objectName() == "chat_sheet" and b.text().startswith("SNP-M-102"))
         btn.click()
         self.assertTrue(wait_for(lambda: host.current_sheet() == S102 and host._sent.get(rid), 30), "102로 옮겨 그리지 못함")
         self.assertNotEqual(before, host.current_sheet())
