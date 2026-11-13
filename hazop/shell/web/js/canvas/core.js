@@ -134,7 +134,9 @@ export class SheetCore {
   setData(data) {
     this.data = data;
     this.size = [Number(data.width) || 1, Number(data.height) || 1];
-    this.index = new SpatialIndex(Array.isArray(data.items) ? data.items : []);
+    this._origIndex = new SpatialIndex(Array.isArray(data.items) ? data.items : []);
+    this._ctxFor = null;
+    this._syncIndex();
     this._unconf = null;
     this.svg.setAttribute("width", this.size[0]); this.svg.setAttribute("height", this.size[1]);
     this.svg.setAttribute("viewBox", `0 0 ${this.size[0]} ${this.size[1]}`);
@@ -166,27 +168,30 @@ export class SheetCore {
     if (!this._ctx || this._ctxFor !== this.clean) {
       this._ctxFor = this.clean;
       const extras = (this.clean && this.clean.items) || {};
-      // 정돈한 좌표(tbox·tline)가 있으면 그것으로 그린다(원본 위치와 같은 자리, 작은 어긋남만 바로잡음). 누르기·고르기는 원본 좌표 색인을 그대로 쓴다
-      const tidyMap = new Map(), items = this.index.items.map((rec) => {
-        const ex = extras[rec.id];
-        let t = rec;
-        if (ex && rec.layer === "symbol" && ex.tbox) t = Object.assign({}, rec, { rect: { x0: ex.tbox[0], y0: ex.tbox[1], x1: ex.tbox[2], y1: ex.tbox[3] } });
-        else if (ex && rec.layer === "pipe" && ex.tline && ex.tline.length >= 2) {
-          const xs = ex.tline.map((q) => q[0]), ys = ex.tline.map((q) => q[1]);
-          t = Object.assign({}, rec, { lines: [ex.tline], rect: { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) } });
-        }
-        if (t !== rec) tidyMap.set(rec.layer + ":" + rec.id, t);
-        return t;
+      // 정리된 보기는 정돈한 좌표(tbox·tline)로 그리고, 누르기·고르기·표시도 같은 좌표의 색인을 쓴다(그린 자리와 누르는 자리가 같게)
+      const raw = (this.data && Array.isArray(this.data.items) ? this.data.items : []).map((it) => {
+        const ex = it && extras[it.id];
+        if (ex && it.layer === "symbol" && ex.tbox) return Object.assign({}, it, { bbox: ex.tbox });
+        if (ex && it.layer === "pipe" && ex.tline && ex.tline.length >= 2) return Object.assign({}, it, { polyline: ex.tline, polylines: null });
+        return it;
       });
+      const index = new SpatialIndex(raw), tidyMap = new Map();
+      for (const rec of index.items) tidyMap.set(rec.layer + ":" + rec.id, rec);
       this._ctx = { symbols: this.symbols, extras, width: this.size[0], height: this.size[1], textItems: (this.clean && this.clean.text_items) || [],
-        items, tidyMap, hops: (this.clean && this.clean.hops) || [], unconfirmed: (this.clean && this.clean.unconfirmed) || [] };
+        items: index.items, index, tidyMap, hops: (this.clean && this.clean.hops) || [], unconfirmed: (this.clean && this.clean.unconfirmed) || [] };
     }
     return this._ctx;
+  }
+
+  /** 보기에 맞는 색인: 정리된 보기는 정돈 좌표, 원본 보기는 읽은 좌표. */
+  _syncIndex() {
+    this.index = this._effective() === "clean" ? this._cleanCtx().index : (this._origIndex || this.index);
   }
 
   /** 보기(원본·정리)를 바꾼다. 같은 viewBox·같은 이동·확대 값을 쓰므로 화면이 움직이지 않는다. 정리된 그림은 처음 필요할 때 한 번 만든다. */
   _applyViewMode() {
     const eff = this._effective();
+    this._syncIndex();
     if (eff === "clean" && !this._cleanBuilt) this._buildClean();
     this.image.style.display = eff === "clean" ? "none" : "";
     this.cleanG.style.display = eff === "clean" ? "" : "none";
@@ -286,7 +291,7 @@ export class SheetCore {
 
   /** 못 읽은 곳의 원본 조각: 같은 도면 SVG 주소와 잘라 보일 viewBox. 자료가 없으면 null. */
   fragmentOf(id) {
-    const r = this.index.rectOf(id);
+    const r = (this._origIndex || this.index).rectOf(id);         // 원본 조각은 늘 읽은 좌표로 자른다
     if (!r || !this.data || !this.data.svg) return null;
     return { href: this.data.svg, size: this.size.slice(), box: fragmentBox([r.x0, r.y0, r.x1, r.y1], this.size) };
   }

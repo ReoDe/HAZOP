@@ -86,7 +86,7 @@ async function body({ CV, MK, SheetCore }, data) {
   const symRects = items.filter((i) => i.layer === "symbol" && i.kind && symbols[i.kind] && !symbols[i.kind].junction).map((i) => (ex[i.id] && ex[i.id].tbox) || i.bbox);
   const arrowsInSymbols = [...clean.querySelectorAll("polygon")].filter((pg) => { const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(pg.getAttribute("transform") || ""); return m && symRects.some((b) => +m[1] > b[0] - 4 && +m[1] < b[2] + 4 && +m[2] > b[1] - 4 && +m[2] < b[3] + 4); }).length;
   t("흐름 화살촉은 기호 둘레와 겹치지 않음", clean.querySelectorAll("polygon").length >= 5 && arrowsInSymbols === 0, arrowsInSymbols);
-  t("정돈 품질: 서버가 센 정돈 결과가 0(겹침·축·연결점·직각·크기)", !!data.clean.layout_lint && ["overlap_symbols", "overlap_pipe_symbol", "off_axis", "loose_ends", "non_orthogonal", "size_mismatch"].every((k) => data.clean.layout_lint[k] === 0), JSON.stringify(data.clean.layout_lint));
+  t("정돈 품질: 서버가 센 정돈 결과가 0(이어짐·이동·직각·축·크기·연결점·겹침)", !!data.clean.layout_lint && ["topology_changed", "moved_too_far", "off_axis", "inline_off_center", "size_mismatch", "port_miss", "symbol_overlap", "pipe_through_symbol", "pipe_overlap", "crossing_without_hop"].every((k) => data.clean.layout_lint[k] === 0), JSON.stringify(data.clean.layout_lint));
 
   // ---- 누르기: 미확인 자리 → 원본 조각
   core.update({ mode: "pan" });
@@ -104,6 +104,31 @@ async function body({ CV, MK, SheetCore }, data) {
   const nk = items.find((i) => i.kind === "pump"), nb = nk.bbox;
   click((nb[0] + nb[2]) / 2, (nb[1] + nb[3]) / 2);
   t("읽은 기호를 누르면 미확인 신호는 없음", ev.unconf.length === nBefore);
+
+  // ---- 누르기·표시는 그린 자리(정돈 좌표)에서: 그려진 기호의 가운데를 누르면 그 기호가 골라진다
+  core.update({ mode: "pick" });
+  const pickAt = (x, y) => { core.update({ selection: [] }); click(x, y); return core.sel.slice(); };
+  const tbOf = (it) => (ex[it.id] && ex[it.id].tbox) || it.bbox;
+  const wrongPick = drawn.filter((it) => { const b = tbOf(it); return !pickAt((b[0] + b[2]) / 2, (b[1] + b[3]) / 2).includes(it.id); });
+  t("정리 보기: 그려진 기호 " + drawn.length + "개 모두 그 가운데를 누르면 그 기호가 골라짐", wrongPick.length === 0, wrongPick.slice(0, 5).map((i) => i.id).join(","));
+  const shifted = drawn.map((it) => ({ it, b: tbOf(it), d: Math.hypot((tbOf(it)[0] + tbOf(it)[2] - it.bbox[0] - it.bbox[2]) / 2, (tbOf(it)[1] + tbOf(it)[3] - it.bbox[1] - it.bbox[3]) / 2) }))
+    .sort((a, b) => b.d - a.d)[0];
+  const ob = shifted.it.bbox, inOrig = (x, y) => x >= ob[0] && x <= ob[2] && y >= ob[1] && y <= ob[3];
+  const spots = [];
+  const body = sheetRect(clean.querySelector(`g[data-id="${CSS.escape(shifted.it.id)}"]`));        // 그려진 몸통의 자리
+  for (const fx of [0.2, 0.5, 0.8]) for (const fy of [0.2, 0.5, 0.8]) spots.push([body.x0 + (body.x1 - body.x0) * fx, body.y0 + (body.y1 - body.y0) * fy]);
+  const offOrig = spots.filter(([x, y]) => !inOrig(x, y));
+  const spotMiss = spots.filter(([x, y]) => !pickAt(x, y).includes(shifted.it.id));
+  t("정리 보기: 가장 많이 옮겨진 기호(" + shifted.it.kind + ", " + shifted.d.toFixed(1) + " 단위)는 그려진 몸통 어디를 눌러도 골라짐(읽은 상자 밖 자리 포함)",
+    shifted.d >= 10 && offOrig.length >= 1 && spotMiss.length === 0, "빗나감 " + spotMiss.length + " / 읽은 상자 밖 " + offOrig.length);
+  core.update({ selection: [shifted.it.id] });
+  const selG = core.marksG.querySelector("g[transform]");
+  t("정리 보기: 고른 것 강조는 그려진 기호와 같은 자리", !!selG && selG.getAttribute("transform") === clean.querySelector(`g[data-id="${CSS.escape(shifted.it.id)}"]`).getAttribute("transform"));
+  core.update({ view: "orig", selection: [] });
+  const [qx, qy] = offOrig[0];
+  t("원본 보기로 바꾸면 누르기는 읽은 좌표: 읽은 상자 가운데는 골라지고, 정돈한 자리만인 곳은 아님",
+    pickAt((ob[0] + ob[2]) / 2, (ob[1] + ob[3]) / 2).includes(shifted.it.id) && !pickAt(qx, qy).includes(shifted.it.id));
+  core.update({ view: "clean", selection: [], mode: "pan" });
 
   // ---- 표시: 정리된 보기에서는 상자를 덧그리지 않고 그 객체의 색을 바꾼다
   const symIds = drawn.slice(0, 4).map((i) => i.id), pipeIds = pipes.slice(0, 3).map((p) => p.id);
@@ -166,7 +191,8 @@ async function body({ CV, MK, SheetCore }, data) {
   const vessel = items.find((i) => i.kind === "reactor_vessel");
   const pipeNear = items.filter((i) => i.layer === "pipe" && i.polyline).find((p) => [p.polyline[0], p.polyline[p.polyline.length - 1]].some((q) => q[0] >= vessel.bbox[0] - 3 && q[0] <= vessel.bbox[2] + 3 && q[1] >= vessel.bbox[1] - 3 && q[1] <= vessel.bbox[3] + 3));
   if (pipeNear) {
-    const ends = [pipeNear.polyline[0], pipeNear.polyline[pipeNear.polyline.length - 1]];
+    const drawnLine = (ex[pipeNear.id] && ex[pipeNear.id].tline) || pipeNear.polyline;          // 정리 보기의 색인은 정돈한 길
+    const ends = [drawnLine[0], drawnLine[drawnLine.length - 1]];
     const res = MK.resolveMark({ id: "pv", op: "path", steps: [{ id: pipeNear.id }, { id: vessel.id }], style: "path", numbered: true }, core.index);
     const bd = res.badges.find((b) => b.text === "1");
     const q = ends.find((e) => Math.abs(e[0] - bd.rect.x0) < 0.01 && Math.abs(e[1] - bd.rect.y0) < 0.01);
