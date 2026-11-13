@@ -1,4 +1,4 @@
-// 아이콘(Tabler outline, 선 두께 1.75). 엔진이 준 도형 목록(hazop-app://api/icons)으로 SVG 요소를 만든다. HTML 문자열을 넣지 않는다.
+// 아이콘(Tabler outline, 선 두께 1.75). 엔진이 준 도형 목록(hazop-app://shell/api/icons)으로 SVG 요소를 만든다. HTML 문자열을 넣지 않는다.
 import { h } from "./html.js";
 import { store } from "../store.js";
 

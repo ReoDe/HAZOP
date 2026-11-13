@@ -1,5 +1,5 @@
 // 엔진과 잇기(규격 §5.2). 웹 → 엔진은 명령(cmd)과 답(reply), 엔진 → 웹은 바뀜(changed)과 사건(event).
-// 큰 자료는 신호로 받지 않고 hazop-app://api/…로 읽는다. 브릿지가 없으면(브라우저·시험) 아무 일도 하지 않는 대역을 둔다.
+// 큰 자료는 신호로 받지 않고 hazop-app://shell/api/…로 읽는다. 브릿지가 없으면(브라우저·시험) 아무 일도 하지 않는 대역을 둔다.
 const pending = new Map();
 const listeners = new Map();
 const changedListeners = new Set();
@@ -52,7 +52,7 @@ export function on(name, fn) {
 
 export function onChanged(fn) { changedListeners.add(fn); return () => changedListeners.delete(fn); }
 
-/** hazop-app://api/<경로>를 읽어 JSON으로 돌려준다. */
+/** hazop-app://shell/api/<경로>를 읽어 JSON으로 돌려준다. */
 export async function read(path) {
   const r = await fetch("/api/" + path);
   if (!r.ok) throw Object.assign(new Error("읽지 못했습니다: " + path), { code: "http_" + r.status });

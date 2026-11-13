@@ -265,10 +265,9 @@ class ReadApiTest(EngineBase):
 
     def test_through_the_router_cors_and_no_write(self):
         router = scheme.Router(os.path.join(REPO, "hazop", "shell", "web"), api=api.ReadApi(self.e))
-        r = router.resolve("hazop-app://api/state")
+        r = router.resolve("hazop-app://shell/api/state")
         self.assertEqual(r.status, 200)
-        self.assertEqual(r.headers.get("Access-Control-Allow-Origin"), "hazop-app://shell")
-        self.assertEqual(router.resolve("hazop-app://api/state", "POST").status, 405)
+        self.assertEqual(router.resolve("hazop-app://shell/api/state", "POST").status, 405)
 
     def test_connection(self):
         self.assertEqual(self.body(["connection"])["state"], "ok")

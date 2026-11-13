@@ -2,8 +2,8 @@
 
 Chromium은 `file://`에서 ES 모듈을 막으므로(출처가 null이라 CORS 검사를 통과하지 못함) 새 화면은 맞춤 주소 체계로 읽는다.
 - `hazop-app://shell/<경로>`: 정해진 폴더(`hazop/shell/web/`)의 파일만. 확장자 표에 있는 것만 돌려준다.
-- `hazop-app://api/<…>`: 읽기 API(`hazop.shell.api.ReadApi`). GET만이다. 쓰기는 이 길로 받지 않는다(명령 길은 따로).
-- `hazop-app://icons/<이름>.svg`: 아이콘 목록(manifest)에 있는 이름만.
+- `hazop-app://shell/api/<…>`: 읽기 API(`hazop.shell.api.ReadApi`). GET만이다. 쓰기는 이 길로 받지 않는다(명령 길은 따로).
+- `hazop-app://shell/icons/<이름>.svg`: 아이콘 목록(manifest)에 있는 이름만.
 
 경로 검사는 채팅 도구와 같은 방식이다(`realpath`·`commonpath`). 그 앞에 주소 문자열 단계의 검사가 있다: 이중 인코딩, 역슬래시, 드라이브·
 대체 스트림(`:`), 제어 문자, `.`·`..` 조각, 빈 조각, 끝점·끝 공백, Windows 예약 이름, 너무 긴 경로. 링크·정션이 폴더 밖을 가리키면
@@ -21,14 +21,15 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 
 LOG = logging.getLogger("hazop.shell.scheme")
 SCHEME = "hazop-app"
-HOST_SHELL, HOST_API, HOST_ICONS = "shell", "api", "icons"
+HOST_SHELL = "shell"   # 화면·정적 파일·읽기 API·아이콘이 모두 이 한 호스트(한 출처)다. 읽기 API는 /api/…, 아이콘은 /icons/…
 ORIGIN = "%s://%s" % (SCHEME, HOST_SHELL)
 MAX_PARTS = 32
 MAX_PART_CHARS = 255
 MIME = {".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
         ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png"}
-CSP = ("default-src 'none'; script-src hazop-app:; style-src hazop-app: 'unsafe-inline'; img-src hazop-app: data:; "
-       "connect-src hazop-app:; font-src 'none'")
+# 스크립트·연결·그림은 자기 출처만(주소 체계 전체가 아니다). base-uri·form-action은 막는다.
+CSP = ("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'none'; "
+       "base-uri 'none'; form-action 'none'")
 _RESERVED = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])$", re.IGNORECASE)
 _BAD_CHARS = re.compile(r"[\x00-\x1f\x7f\\:*?\"<>|]")
 _METHODS = ("GET", "HEAD")
@@ -78,13 +79,25 @@ def split_path(raw_path, directory_ok=False):
 
 
 class Router:
-    def __init__(self, web_root, api=None, icons_dir=None, icon_names=()):
+    """allow_test: web/test/(웹 단위 시험)를 내줄지. 실행 중에는 시험 모드(HAZOP_DEBUG)일 때만 켜고 배포본에는 그 폴더가 없다."""
+
+    def __init__(self, web_root, api=None, icons_dir=None, icon_names=(), allow_test=False):
         self.web_root = os.path.realpath(web_root)
         self.api = api
         self.icons_dir = os.path.realpath(icons_dir) if icons_dir else None
         self.icon_names = frozenset(icon_names)
+        self.allow_test = allow_test
 
     # ------------------------------------------------------------ 진입
+    @staticmethod
+    def is_api(url):
+        """읽기 API 요청인지(Qt 처리기가 작업 스레드로 돌릴지 정한다)."""
+        try:
+            parts = urlsplit(url)
+            return parts.scheme.lower() == SCHEME and (parts.hostname or "").lower() == HOST_SHELL and parts.path.startswith("/api/")
+        except ValueError:
+            return False
+
     def resolve(self, url, method="GET"):
         if not isinstance(url, str):
             return _error(400, "잘못된 주소")
@@ -100,27 +113,23 @@ class Router:
             return _error(400, "잘못된 주소")
         if str(method).upper() not in _METHODS:
             return _error(405, "읽기만 받음")
-        host = (host or "").lower()
-        if host not in (HOST_SHELL, HOST_API, HOST_ICONS):
+        if (host or "").lower() != HOST_SHELL:
             return _error(404, "없는 자리")
+        path = parts_url.path
         try:
-            alias = parts_url.path if host == HOST_SHELL else None
-            if alias and alias.startswith("/api/"):
-                host, parts_url = HOST_API, parts_url._replace(path=alias[len("/api"):])   # 같은 출처로 읽는 별칭(CORS가 필요 없다)
-            elif alias and alias.startswith("/icons/"):
-                host, parts_url = HOST_ICONS, parts_url._replace(path=alias[len("/icons"):])
-            if host == HOST_SHELL:
-                resp = self._static(parts_url.path)
-            elif host == HOST_API:
-                resp = self._api(parts_url.path, parts_url.query)
+            if path.startswith("/api/"):
+                resp = self._api(path[len("/api"):], parts_url.query)
+            elif path.startswith("/icons/"):
+                resp = self._icon(path[len("/icons"):])
+            elif path.startswith("/test/") and not self.allow_test:
+                return _error(404, "시험 모드에서만 열림")
             else:
-                resp = self._icon(parts_url.path)
+                resp = self._static(path)
         except ValueError:
             return _error(400, "잘못된 경로")
+        # 머리는 Qt 처리기가 웹 엔진에 싣지 못한다(PySide가 머리 사전을 잘못 풀어 값이 깨짐, 실측). CSP는 index.html의 meta가, nosniff는 확장자 MIME 표가 맡는다.
         resp.headers.setdefault("Cache-Control", "no-cache")
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-        if host == HOST_API:
-            resp.headers.setdefault("Access-Control-Allow-Origin", ORIGIN)
         if str(method).upper() == "HEAD":
             resp = Response(resp.status, resp.mime, b"", resp.headers)
         return resp
@@ -208,26 +217,60 @@ def register():
 
 
 def _handler_class():
-    from PySide6.QtCore import QBuffer, QByteArray, QIODevice
+    from concurrent.futures import ThreadPoolExecutor
+
+    import shiboken6
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, Signal
     from PySide6.QtWebEngineCore import QWebEngineUrlRequestJob, QWebEngineUrlSchemeHandler
 
+    class _Relay(QObject):
+        done = Signal(object, object)    # (요청 객체, Future): 작업 스레드에서 내보내고 화면 스레드가 받는다(큐 연결)
+
     class AppSchemeHandler(QWebEngineUrlSchemeHandler):
+        """정적 파일은 화면 스레드에서 바로 답하고, 읽기 API(/api/…)는 작업 스레드에서 돌려 화면이 멈추지 않게 한다(규격 §5.4).
+        요청 객체를 붙잡아 두었다가 끝나면 reply, 웹이 버렸으면(destroyed) 아무것도 하지 않는다."""
+
         def __init__(self, router, parent=None):
             super().__init__(parent)
             self.router = router
+            self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="hazop-api")
+            self._live = set()
+            self._relay = _Relay(self)
+            self._relay.done.connect(self._finish)
 
         def requestStarted(self, job):  # noqa: N802 (Qt 이름)
             url = job.requestUrl().toString()
-            resp = self.router.resolve(url, bytes(job.requestMethod()).decode("ascii", "replace"))
+            method = bytes(job.requestMethod()).decode("ascii", "replace")
+            if not Router.is_api(url):
+                self._reply(job, self.router.resolve(url, method))
+                return
+            self._live.add(job)
+            job.destroyed.connect(lambda *_a, j=job: self._live.discard(j))
+            self._pool.submit(self.router.resolve, url, method).add_done_callback(lambda fut, j=job: self._relay.done.emit(j, fut))
+
+        def _finish(self, job, fut):
+            if job not in self._live or not shiboken6.isValid(job):
+                return
+            self._live.discard(job)
+            try:
+                resp = fut.result()
+            except Exception:  # noqa: BLE001 - 안쪽 오류 글은 웹에 보내지 않는다
+                LOG.exception("읽기 API 작업 오류")
+                resp = Response(500, "application/json", b'{"error":"internal"}')
+            self._reply(job, resp)
+
+        @staticmethod
+        def _reply(job, resp):
             if resp.status != 200:
                 job.fail({404: QWebEngineUrlRequestJob.Error.UrlNotFound}.get(resp.status, QWebEngineUrlRequestJob.Error.RequestDenied))
                 return
             buf = QBuffer(job)
             buf.setData(QByteArray(resp.body))
             buf.open(QIODevice.OpenModeFlag.ReadOnly)
-            # 응답 머리(CSP·ACAO)는 Qt에 싣지 않는다: PySide가 머리 사전을 잘못 풀어 CSP가 글자 단위로 깨진다. CSP는 index.html의 meta가 맡고,
-            # 읽기 API는 같은 출처(hazop-app://shell/api/…)로 불러 CORS가 필요 없다.
             job.reply(QByteArray(resp.mime.encode("ascii")), buf)
+
+        def shutdown(self):
+            self._pool.shutdown(wait=False, cancel_futures=True)
 
     return AppSchemeHandler
 

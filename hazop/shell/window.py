@@ -14,7 +14,7 @@ import os
 
 from PySide6.QtCore import QEvent, QObject, QUrl, Qt, Signal, Slot
 from PySide6.QtWebChannel import QWebChannel
-from PySide6.QtWebEngineCore import QWebEngineScript, QWebEngineSettings
+from PySide6.QtWebEngineCore import QWebEngineScript, QWebEngineSettings, QWebEngineUrlRequestInterceptor
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QFileDialog, QMainWindow
 
@@ -116,13 +116,35 @@ class ShellPage(webview.LocalPage):
         return ok
 
 
-class ShellView(QWebEngineView):
-    def __init__(self, bridge, parent=None):
+# 새 화면 웹뷰가 요청할 수 있는 주소 체계. file·qrc·원격은 없다(이전 화면의 webview.ALLOWED_SCHEMES와 따로, 규격 §5.1 '새 화면 웹뷰의 허용 체계')
+SHELL_SCHEMES = frozenset({"hazop-app", "data", "about", "blob"})
+
+
+class ShellInterceptor(QWebEngineUrlRequestInterceptor):
+    """새 화면 전용 요청 가로채기: SHELL_SCHEMES 밖의 요청(file://·원격 주소 등)은 막고 blocked에 남긴다. meta CSP와 별개인 둘째 겹이다."""
+
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.profile = webview.QWebEngineProfile.defaultProfile()
+        self.blocked = []
+
+    def interceptRequest(self, info):  # noqa: N802 (Qt 이름)
+        url = info.requestUrl()
+        if url.scheme().lower() not in SHELL_SCHEMES:
+            self.blocked.append(url.toString())
+            info.block(True)
+
+
+class ShellView(QWebEngineView):
+    def __init__(self, bridge, router=None, parent=None):
+        super().__init__(parent)
+        # 새 화면은 전용 프로필(디스크에 저장하지 않는 off-the-record)을 쓴다: 이전 화면의 가로채기·처리기와 섞이지 않는다.
+        # 종료 때 페이지를 먼저 지우도록 dispose()가 순서를 지킨다.
+        self.profile = webview.QWebEngineProfile(self)
         self.profile.setHttpCacheType(webview.QWebEngineProfile.MemoryHttpCache)
         self.profile.setPersistentCookiesPolicy(webview.QWebEngineProfile.NoPersistentCookies)
-        self.interceptor = webview._shared_interceptor(self.profile)
+        self.interceptor = ShellInterceptor(self.profile)
+        self.profile.setUrlRequestInterceptor(self.interceptor)
+        self.handler = scheme.install(self.profile, router) if router is not None else None
         page = ShellPage(self.profile, self)
         self.setPage(page)
         s = page.settings()
@@ -149,12 +171,16 @@ class ShellView(QWebEngineView):
             page.scripts().insert(sc)
 
     def dispose(self):
-        """종료 전에 페이지를 먼저 지운다(웹 렌더 프로세스가 남은 채 인터프리터가 끝나면 비정상 종료될 수 있음)."""
+        """종료 전에 페이지를 먼저 지우고 그다음 프로필을 지운다(페이지보다 프로필이 먼저 지워지면 비정상 종료될 수 있음)."""
         import shiboken6
+        if self.handler is not None and shiboken6.isValid(self.handler):
+            self.handler.shutdown()
         page = self.page()
         self.setPage(None)
         if page is not None and shiboken6.isValid(page):
             page.deleteLater()
+        if shiboken6.isValid(self.profile):
+            self.profile.deleteLater()
 
 
 class AiAdapter:
@@ -197,8 +223,8 @@ class ShellWindow(QMainWindow):
         self.bridge = ShellBridge(self.engine, self)
         self.engine._emit = self.bridge.send
         self.api = api.ReadApi(self.engine)
-        scheme.install(webview.QWebEngineProfile.defaultProfile(), scheme.Router(
-            WEB_ROOT, api=self.api, icons_dir=paths.folder("icons", "tabler"), icon_names=icons.names()))
+        self.router = scheme.Router(WEB_ROOT, api=self.api, icons_dir=paths.folder("icons", "tabler"), icon_names=icons.names(),
+                                    allow_test=self._debug)   # web/test/는 시험 모드(HAZOP_DEBUG)일 때만 내준다
         keys = KeyStore(os.path.join(os.path.dirname(settings_path or paths.settings_path()), STORE_FILE_NAME))
         prefs = AiPrefs(self.engine.settings, lambda s: paths.save_settings(s, settings_path))
         self.ai_conn = AiConnection(prefs, keys, debug=self._debug, parent=self)
@@ -212,7 +238,7 @@ class ShellWindow(QMainWindow):
         self.engine.hooks["open_classic"] = self._open_classic
         self.engine.hooks["conn_guide"] = self._conn_guide
         self.classic_requested = False
-        self.view = ShellView(self.bridge, self)
+        self.view = ShellView(self.bridge, self.router, self)
         self.setCentralWidget(self.view)
         self.setAcceptDrops(True)
         self._drop_targets = []

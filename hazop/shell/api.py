@@ -1,6 +1,6 @@
 """새 웹 화면과 엔진 사이의 길(docs/design/app-shell-web.md §5.2·§5.3). Qt를 import하지 않는다.
 
-- **읽기 API** `ReadApi`: 웹이 `hazop-app://api/<자료>`로 읽어 간다. 저장된 자료를 읽기만 한다(쓰기 없음).
+- **읽기 API** `ReadApi`: 웹이 `hazop-app://shell/api/<자료>`로 읽어 간다. 저장된 자료를 읽기만 한다(쓰기 없음).
     state · drawings · sheet/<graph_id> · sheet/<graph_id>.svg · connection
 - **명령 길** `COMMANDS` 표 + `Engine.dispatch(name, args)`: 웹이 보내는 `{"t":"cmd","id","name","args"}`가 이 표에 있는 이름만 받고
   인자 형·길이를 검사한다. 잘못되면 처리 함수를 부르지 않고 `{"ok":false,"error":{"code","message"}}`를 돌려준다.

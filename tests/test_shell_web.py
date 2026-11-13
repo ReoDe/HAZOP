@@ -408,7 +408,7 @@ class WebUnitTest(ShellBase):
         class LogPage(QWebEnginePage):
             def javaScriptConsoleMessage(self, level, message, line, source):  # noqa: N802
                 logs.append((message, line, source))
-        p2 = LogPage(webview.QWebEngineProfile.defaultProfile())
+        p2 = LogPage(win.view.profile)   # 틀 창의 전용 프로필(처리기가 붙어 있다)
         out = []
         p2.load(QUrl("hazop-app://shell/test/run.html"))
         end = time.monotonic() + 30
