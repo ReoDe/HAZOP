@@ -102,9 +102,13 @@ export function pipeShapes(rec, extra, style = {}) {
   return out;
 }
 
+/** 계기 태그를 원 안 두 줄(기능 글자 / 번호)로 나눈다: 'RC-TI101' → ['TI', '101'](계통 접두는 뺀다). 모양이 아니면 하이픈 앞뒤로. */
 function splitTag(tag) {
-  const m = String(tag).split(/[-\s]/).filter(Boolean);
-  return m.length > 1 ? [m[0], m.slice(1).join("-")] : [String(tag)];
+  const text = String(tag), last = text.split(/[-\s]/).filter(Boolean).pop() || text;
+  const m = /^([A-Za-z]{1,4})(\d.*)$/.exec(last);
+  if (m) return [m[1], m[2]];
+  const parts = text.split(/[-\s]/).filter(Boolean);
+  return parts.length > 1 ? [parts[0], parts.slice(1).join("-")] : [text];
 }
 
 /** 글자 한 줄의 자리 후보. 보이는 글자 크기는 화면 확대 값에 따라 layoutLabels가 정한다(화면 픽셀 하한). pri: 작을수록 먼저 자리를 잡는다. */
