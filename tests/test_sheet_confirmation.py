@@ -286,5 +286,43 @@ class StateTest(Base):
             cf.sheet_confirmation("없는-쪽")
 
 
+class RecordAndCountFixTest(Base):
+    """검토 2026-11-14: 값이 틀린 기록, 대상 없는 AI 후보, 원본에 남은 것의 frame."""
+
+    def test_bad_record_is_reported_and_unconfirm_starts_a_new_one(self):
+        self.clean()
+        p = cf.store_path(self.name)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump({"kind": cf.KIND, "schema_version": cf.SCHEMA_VERSION, "rev": 1, "compared": "x", "confirmed": None,
+                       "log": []}, fh)
+        st = cf.execute(self.name, "status")
+        self.assertTrue(st["ok"], st)
+        self.assertEqual(st["status"]["state"], "ready")
+        self.assertIn("compared", st["status"]["record_error"])
+        bad = self.run_cmd("compare")
+        self.assertEqual(bad["refused"][0]["code"], "unreadable")
+        fixed = self.run_cmd("unconfirm", {"reason": "깨진 기록 정리"})
+        self.assertTrue(fixed["ok"] and fixed["changed"], fixed)
+        self.assertIsNone(fixed["status"]["record_error"])
+        self.confirm_all()
+
+    def test_untargeted_ai_candidates_are_counted_one_by_one(self):
+        ai = {"candidates": [{"cand_id": "a1", "status": "proposed"}, {"cand_id": "a2", "status": "proposed"},
+                             {"cand_id": "a3", "status": "accepted"}]}
+        out = cf.check({"source": {"format": "drawio"}}, ai)
+        self.assertEqual([(u["id"], u["reason"], u["detail"]) for u in out["unconfirmed"]],
+                         [(None, "ai_candidate", "a1"), (None, "ai_candidate", "a2")])
+        self.assertEqual(out["counts"]["ai_candidate"], 2)
+
+    def test_frame_leftovers_are_not_counted(self):
+        lo = cf.leftovers({"source": {"format": "pdf_vector"},
+                           "leftovers": {"paths": [{"kind": "line"}, {"kind": "frame"}], "texts": ["t1"]}})
+        self.assertEqual((lo["paths"], lo["texts"], lo["total"], lo["frame"]), (1, 1, 2, 1))
+        lo = cf.leftovers({"source": {"format": "drawio"}, "unclassified": [{"local_id": "u"}],
+                           "drawing": {"ignored_objects": [{"id": "title"}, {"id": "border"}]}})
+        self.assertEqual((lo["total"], lo["frame"]), (1, 2))
+
+
 if __name__ == "__main__":
     unittest.main()

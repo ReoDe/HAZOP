@@ -646,6 +646,146 @@ class QuantityTest(unittest.TestCase):
             self.assertIsNone(de.quantity_to_dexpi(text), text)
 
 
+class ConfirmedExportTest(unittest.TestCase):
+    """쪽 확정 → 내보내기를 가짜 주입 없이 끝까지 잇는다(검토 R1·R2·R3·R4, 2026-11-14). 실제 작업 루트 배치(임시)에
+    가상 도면 SNP-M-101을 추출하고, 사람 수정·확정은 엔진 함수(corrections, hazop.extract.confirmation)로 한다."""
+
+    def setUp(self):
+        from scripts.check_edit_screen import install_sample
+        from hazop.extract import confirmation as cf
+        from tests.test_sheet_confirmation import make_clean
+        self.cf = cf
+        self.tmp = tempfile.mkdtemp(prefix="hazop-dexpi-conf-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        env = mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": os.path.join(self.tmp, "work"),
+                                           "HAZOP_STORE_ROOT": os.path.join(self.tmp, "store")})
+        env.start()
+        self.addCleanup(env.stop)
+        os.makedirs(os.environ["HAZOP_WORK_ROOT"])
+        self.name = install_sample(os.environ["HAZOP_WORK_ROOT"], "SNP-M-101")
+        with open(cf.extraction_path(self.name), encoding="utf-8") as fh:
+            self.ex = make_clean(json.load(fh))
+        self.ex["drawing"]["identification_basis"] = "registration_confirmed"
+        self.out = os.path.join(self.tmp, "out")
+
+    def save_extraction(self):
+        import build_graph
+        with open(self.cf.extraction_path(self.name), "w", encoding="utf-8") as fh:
+            json.dump(self.ex, fh, ensure_ascii=False)
+        build_graph.build_one(self.cf.extraction_path(self.name), paths.output_root("graph"))
+
+    def save_ops(self, *ops):
+        from hazop.extract import corrections
+        made = []
+        for op, target, value in ops:
+            made.append(corrections.make_op(self.ex, op, target, value, "검토자", existing_ops=made, name=self.name))
+        corrections.save_fp(self.name, made, "검토자")  # ai_review.accept와 같은 저장(그래프를 다시 만들지 않음)
+
+    def confirm(self):
+        self.assertTrue(self.cf.execute(self.name, "compare", {"mode": "side_by_side"}, by="검토자")["ok"])
+        self.assertTrue(self.cf.execute(self.name, "confirm", by="검토자")["ok"])
+        self.assertEqual(self.cf.sheet_confirmation(self.name)["state"], "confirmed")
+
+    def read_out(self, suffix):
+        with open(os.path.join(self.out, self.name + suffix), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_r1_export_uses_the_confirmed_sources_not_a_stale_graph(self):
+        valve = next(n for n in self.ex["nodes"] if n.get("category") == "valve" and n.get("tag"))
+        valve["tag"] = ""
+        self.save_extraction()                      # graph.json에는 태그가 비어 있음
+        self.save_ops(("set_tag", valve["source_object_id"], {"tag": "AI-ACCEPTED-1"}))
+        self.confirm()
+        res = de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn("AI-ACCEPTED-1", self.read_out(".dexpi.xml"), "확정한 세 파일로 만든 그래프를 내보냄")
+        d = res["drawings"][0]
+        self.assertTrue(d["graph_rebuilt"], "디스크의 graph.json과 달라 다시 만듦")
+        self.assertEqual(d["source_fingerprint"], self.cf.sheet_confirmation(self.name)["fingerprint"])
+        with open(res["manifest"], encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["confirmation"], "sheet_confirmation")
+
+    def test_r1_sheet_that_changes_before_writing_is_not_exported(self):
+        self.save_extraction()
+        self.confirm()
+        real = self.cf.sheet_confirmation
+        calls = []
+
+        def later(name):
+            calls.append(name)
+            if len(calls) == 1:
+                self.save_ops(("confirm", self.ex["nodes"][0]["source_object_id"],
+                               {"items": [{"check": "missing_tag", "reason": "그대로"}]}))
+            return real(name)
+        with mock.patch.object(self.cf, "sheet_confirmation", side_effect=later):
+            with mock.patch.object(de, "default_confirmation", return_value=self.cf.sheet_confirmation):
+                with self.assertRaises(de.ExportError):
+                    de.export_names([self.name], self.out, confirmation="auto")
+        self.assertFalse(os.path.exists(os.path.join(self.out, self.name + ".dexpi.xml")))
+
+    def test_r2_acknowledged_unknown_symbol_is_left_out_and_cut_pipes_are_counted(self):
+        valve = next(n for n in self.ex["nodes"] if n.get("category") == "valve"
+                     and sum(1 for r in self.ex["relations"] for e in r["endpoints"] if e.get("node_local_id") == n["local_id"]) >= 2)
+        valve["kind"], valve["classification"] = None, "unclassified"
+        self.save_extraction()
+        self.save_ops(("confirm", valve["source_object_id"], {"items": [{"check": "unknown_symbol", "reason": "원본과 견주어 그대로 둠"}]}))
+        self.confirm()
+        res = de.export_names([self.name], self.out, confirmation="auto")
+        exc = json.loads(self.read_out(".excluded.json"))
+        cut = [c for c in exc["excluded_connections"] if c["reason"] == "endpoint_excluded" and "excluded_ends" in c]
+        self.assertGreaterEqual(len(cut), 2)
+        self.assertEqual(exc["cut_by_excluded"]["pipes"], len(cut))
+        self.assertEqual(res["drawings"][0]["stats"]["cut_pipes"], len(cut))
+
+    def test_r3_names_that_differ_only_by_case_clash(self):
+        self.save_extraction()
+        groot = paths.output_root("graph")
+        with open(os.path.join(groot, self.name, "graph.json"), encoding="utf-8") as fh:
+            g = json.load(fh)
+        for folder, dwg in (("A", "SNP-M-101"), ("B", "snp-m-101")):
+            os.makedirs(os.path.join(groot, folder))
+            with open(os.path.join(groot, folder, "graph.json"), "w", encoding="utf-8") as fh:
+                json.dump(dict(g, source=dict(g["source"], drawing_number=dwg)), fh, ensure_ascii=False)
+        with self.assertRaises(de.ExportError) as cm:
+            de.export_names(["A", "B"], self.out, require_confirmed_number=False, confirmation="assume")
+        self.assertIn("겹침", cm.exception.reasons[0])
+        self.assertFalse(os.path.exists(self.out))
+
+    def test_r4_existing_files_are_reported_and_a_failed_overwrite_keeps_them(self):
+        self.save_extraction()
+        first = de.export_names([self.name], self.out, require_confirmed_number=False, confirmation="assume")
+        self.assertEqual(first["status"], "written")
+        before = {f: open(os.path.join(self.out, f), "rb").read() for f in os.listdir(self.out)}
+        again = de.export_names([self.name], self.out, require_confirmed_number=False, confirmation="assume",
+                                now="2027-01-01T00:00:00+00:00")
+        self.assertEqual(again["status"], "exists")
+        self.assertEqual(sorted(again["existing"]), sorted(before))
+        with mock.patch.object(de.store_io, "write_json", side_effect=OSError(28, "No space left on device")):
+            with self.assertRaises(OSError):
+                de.export_names([self.name], self.out, require_confirmed_number=False, confirmation="assume",
+                                overwrite=True, now="2027-01-01T00:00:00+00:00")
+        self.assertEqual({f: open(os.path.join(self.out, f), "rb").read() for f in os.listdir(self.out)}, before,
+                         "앞 내보내기 파일이 그대로(임시 파일도 남지 않음)")
+        ok = de.export_names([self.name], self.out, require_confirmed_number=False, confirmation="assume", overwrite=True,
+                             now="2027-01-01T00:00:00+00:00")
+        self.assertEqual(ok["status"], "written")
+        self.assertEqual(sorted(os.listdir(self.out)), sorted(before))
+        with open(ok["manifest"], encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["exported_at"], "2027-01-01T00:00:00+00:00")
+
+    def test_broken_confirmation_record_does_not_stop_the_export_of_others(self):
+        self.save_extraction()
+        p = self.cf.store_path(self.name)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump({"kind": self.cf.KIND, "schema_version": self.cf.SCHEMA_VERSION, "rev": 1, "compared": "x",
+                       "confirmed": None, "log": []}, fh)
+        with self.assertRaises(de.ExportError) as cm:
+            de.export_names(None, self.out, confirmation="auto")
+        self.assertIn("확정된 쪽이 하나도 없어", cm.exception.reasons[0])
+        rows = de.list_exportable(confirmation="auto")
+        self.assertNotEqual(rows[0]["state"], "confirmed")
+
+
 @unittest.skipUnless(SAMPLES and os.path.isdir(SAMPLES), "HAZOP_DEXPI_SAMPLES(공개 예제 폴더)가 없어 건너뜀")
 class PublicSamplesTest(unittest.TestCase):
 

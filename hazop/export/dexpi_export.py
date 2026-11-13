@@ -14,6 +14,8 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import tempfile
 import xml.etree.ElementTree as ET
 
 from hazop import paths, store_io
@@ -807,14 +809,18 @@ class _Builder:
                    "entities": entities, "pipes": flows, "check_directions": self.check_dirs,
                    "unknowns": self.g["validation"]["unknowns"]}
         flow_n = sum(1 for f in flows if f["flow_direction"])
+        # '이대로 확인'으로 확정한 미분류 기호처럼 뺀 구성요소 때문에 끊긴 배관·계장선(INTENT §3.2: 빼고 내보내며 수를 적는다)
+        cut = {"pipes": sum(1 for c in self.excl_conn if c["reason"] == "endpoint_excluded" and "excluded_ends" in c),
+               "signal_lines": sum(1 for c in self.excl_conn if c["reason"] == "endpoint_excluded" and "excluded_ends" not in c)}
         excluded = {"schema": EXCLUDED_SCHEMA, "drawing_number": self.g["source"]["drawing_number"],
                     "graph_version": self.g["graph_version"], "dexpi_version": dexpi_map.DEXPI_VERSION,
                     "excluded_components": self.excl_nodes, "excluded_connections": self.excl_conn,
-                    "excluded_attributes": self.excl_attrs, "approximations": self.approx,
+                    "excluded_attributes": self.excl_attrs, "approximations": self.approx, "cut_by_excluded": cut,
                     "notes": ([{"reason": "flow_direction_has_no_dexpi_slot", "count": flow_n}] if flow_n else [])}
         stats = {"components": len(exported), "connections": len(pipes), "excluded_components": len(self.excl_nodes),
                  "excluded_connections": len(self.excl_conn), "excluded_attributes": len(self.excl_attrs),
-                 "approximations": len(self.approx), "bytes": len(xml), "dexpi_sha256": sha}
+                 "approximations": len(self.approx), "cut_pipes": cut["pipes"], "cut_signal_lines": cut["signal_lines"],
+                 "bytes": len(xml), "dexpi_sha256": sha}
         return Export(self.name, xml, excluded, sidecar, stats)
 
 
@@ -833,7 +839,8 @@ def _loads(text):
 
 # ---------------------------------------------------------------- 파일 쓰기와 묶음
 def write_drawing(export, out_dir):
-    """한 도면의 파일 셋을 쓴다. 쓰다가 실패하면 이미 쓴 것을 지운다. 반환 {종류: 경로}."""
+    """한 도면의 파일 셋을 out_dir에 바로 쓴다. 쓰다가 실패하면 이미 쓴 것을 지운다. 반환 {종류: 경로}.
+    export_names는 이것으로 임시 폴더에 쓴 뒤 바꿔 넣는다(앞 내보내기를 잃지 않게)."""
     os.makedirs(out_dir, exist_ok=True)
     written = {}
     try:
@@ -870,6 +877,15 @@ def _gate(confirmation):
     return confirmation, "injected"
 
 
+def _engine(gate):
+    """gate가 엔진의 sheet_confirmation이면 그 모듈(hazop.extract.confirmation), 아니면 None(주입한 함수·assume)."""
+    try:
+        from hazop.extract import confirmation
+    except ImportError:
+        return None
+    return confirmation if gate is not None and gate is getattr(confirmation, "sheet_confirmation", None) else None
+
+
 def _state(gate, name):
     """쪽 확정 상태와 남은 미확인 수. 추출 결과가 없거나 깨진 파일이면 상태 'error'(내보내지 않음)."""
     try:
@@ -877,6 +893,27 @@ def _state(gate, name):
     except (OSError, ValueError):  # sheet_confirmation: 추출 결과 없음(FileNotFoundError)·깨진 파일(ValueError)
         return "error", 0
     return res.get("state"), len(res.get("unconfirmed") or []) + len(res.get("unplaced") or [])
+
+
+def _confirmed_graph(cf, name, disk_graph):
+    """엔진의 쪽 확정으로 내보낼 때: 확정을 판정한 바로 그 세 파일 바이트(추출 결과·사람 수정·AI 후보)로 그래프를 만든다.
+    디스크의 graph.json은 AI 후보 수락처럼 그래프를 다시 만들지 않는 저장 뒤에 낡을 수 있어 내용으로 쓰지 않는다.
+    반환 (상태, 남은 미확인 수, 그래프 또는 None, 원본 추출 결과, 지문, 사유, 디스크 graph.json과 달라 다시 만들었는가).
+    그래프를 만들 수 없으면 상태 'graph_error'."""
+    from hazop.graph import build
+    try:
+        st, original, corrected = cf.load_sheet(name)
+    except (OSError, ValueError):
+        return "error", 0, None, None, None, None, False
+    left = len(st.get("unconfirmed") or []) + len(st.get("unplaced") or [])
+    if st["state"] != "confirmed":
+        return st["state"], left, None, None, None, None, False
+    try:
+        graph = build.build_graph(corrected, extraction_file=paths.rel_or_abs(cf.extraction_path(name), paths.work_root()))
+    except Exception as exc:  # noqa: BLE001 - 어떤 이유로든 다시 만들 수 없으면 그 쪽만 내보내지 않고 사유를 적는다
+        return "graph_error", left, None, None, st["fingerprint"], "확정한 자료로 그래프를 다시 만들 수 없음(%s)" % exc, False
+    rebuilt = disk_graph is None or disk_graph.get("graph_version") != graph.get("graph_version")
+    return "confirmed", left, graph, original, st["fingerprint"], None, rebuilt
 
 
 def list_exportable(graph_root=None, extract_root=None, confirmation="auto"):
@@ -924,75 +961,133 @@ def list_exportable(graph_root=None, extract_root=None, confirmation="auto"):
 
 
 def export_names(names, out_dir, graph_root=None, extract_root=None, require_confirmed_number=True, now=None,
-                 confirmation="auto"):
+                 confirmation="auto", overwrite=False):
     """화면이 부를 진입 함수. output/graph 아래 도면 이름들 가운데 **쪽 확정이 `confirmed`인 것만** 내보내 out_dir에 쓴다
     (HZ-PLN-22 §6.1). 확정 전 쪽은 쓰지 않고 `manifest.json`의 `not_exported`에 상태와 남은 미확인 수를 적는다. 확정된 쪽이 하나도
     없거나, 확정된 쪽 하나라도 검사(§6.5)에 걸리면 아무 파일도 쓰지 않고 ExportError(reasons에 도면별 사유)를 던진다.
     names가 None이면 graph_root 아래 graph.json이 있는 모든 도면. confirmation: 'auto'(V3의 sheet_confirmation, 없으면 ExportError),
     'assume'(개발·시험용으로 모두 확정으로 봄), 또는 함수(name) -> {"state", "unconfirmed", "unplaced"}.
-    반환: {"manifest": 경로, "drawings": [{name, drawing_number, files, graph_version, stats}], "not_exported": [...]}."""
+    'auto'(엔진의 쪽 확정)이면 내보내는 그래프는 디스크의 graph.json이 아니라 확정을 판정한 세 파일로 그 자리에서 만든 것이고,
+    쓰기 직전에 세 파일 지문이 그대로인지 다시 본다(바뀌었으면 그 쪽은 not_exported).
+    쓸 파일이 out_dir에 이미 있으면 overwrite가 참일 때만 덮는다(아니면 쓰지 않고 status 'exists'와 그 파일 목록을 돌려줌).
+    파일은 out_dir 안 임시 폴더에 모두 쓴 뒤 바꿔 넣는다. 쓰기·바꿔 넣기가 실패하면 앞 내보내기 파일을 되돌려 두고 OSError.
+    반환: {"status": "written"|"exists", "manifest": 경로 또는 None, "existing": [파일 이름], "drawings": [{name, drawing_number,
+    files, graph_version, graph_rebuilt, source_fingerprint, stats}], "not_exported": [{name, drawing_number, state, unconfirmed,
+    reason?}]}."""
     graph_root = graph_root or paths.output_root("graph")
     extract_root = extract_root or paths.output_root("extract")
     gate, gate_name = _gate(confirmation)
     if gate is None:
         raise ExportError(["쪽 확정 함수(sheet_confirmation, 화면 규격 V3)가 아직 없어 내보내지 못함"])
+    cf = _engine(gate)
     if names is None:
         names = sorted(d for d in os.listdir(graph_root) if os.path.isfile(os.path.join(graph_root, d, "graph.json")))
-    exports, errors, not_exported = [], [], []
+    exports, errors, not_exported, sources = [], [], [], {}
     for name in names:
-        state, left = _state(gate, name)
-        graph = _read_json(os.path.join(graph_root, name, "graph.json"))
+        gp = os.path.join(graph_root, name, "graph.json")
+        disk = _read_json(gp) if os.path.isfile(gp) or cf is None else None
+        dwg = (disk or {}).get("source", {}).get("drawing_number")
+        if cf is not None:
+            state, left, graph, extraction, fp, why, rebuilt = _confirmed_graph(cf, name, disk)
+        else:
+            (state, left), graph, fp, why, rebuilt = _state(gate, name), disk, None, None, False
+            ex_path = os.path.join(extract_root, name, "extraction.json")
+            extraction = _read_json(ex_path) if state == "confirmed" and os.path.isfile(ex_path) else None
         if state != "confirmed":
-            not_exported.append({"name": name, "drawing_number": graph.get("source", {}).get("drawing_number"),
-                                 "state": state, "unconfirmed": left})
+            row = {"name": name, "drawing_number": dwg, "state": state, "unconfirmed": left}
+            if why:
+                row["reason"] = why
+            not_exported.append(row)
             continue
-        extraction = None
-        ex_path = os.path.join(extract_root, name, "extraction.json")
-        if os.path.isfile(ex_path):
-            extraction = _read_json(ex_path)
         try:
-            exports.append((name, export_drawing(graph, extraction, require_confirmed_number=require_confirmed_number)))
+            ex = export_drawing(graph, extraction, require_confirmed_number=require_confirmed_number)
         except ExportError as exc:
             errors.append("%s: %s" % (name, "; ".join(exc.reasons)))
+            continue
+        exports.append((name, ex))
+        sources[name] = (fp, rebuilt)
     if errors:
         raise ExportError(errors)
     if not exports:
         raise ExportError(["확정된 쪽이 하나도 없어 내보낼 것이 없음: " + ", ".join(
             "%s(%s, 남은 미확인 %d)" % (x["name"], x["state"], x["unconfirmed"]) for x in not_exported)])
-    for name, ex in list(exports):  # 쓰기 직전에 다시 확인한다(그 사이 추출 결과가 바뀌면 확정이 풀린다)
-        state, left = _state(gate, name)
+    for name, ex in list(exports):  # 쓰기 직전에 다시 확인한다(그 사이 세 파일이 바뀌면 확정이 풀린다)
+        if cf is not None:
+            try:
+                st = cf.sheet_confirmation(name)
+                state, left = st["state"], len(st.get("unconfirmed") or []) + len(st.get("unplaced") or [])
+                if state == "confirmed" and st["fingerprint"] != sources[name][0]:
+                    state = "changed"
+            except (OSError, ValueError):
+                state, left = "error", 0
+        else:
+            state, left = _state(gate, name)
         if state != "confirmed":
             exports.remove((name, ex))
             not_exported.append({"name": name, "drawing_number": ex.sidecar["drawing_number"], "state": state, "unconfirmed": left})
     if not exports:
         raise ExportError(["내보내기 직전에 쪽 확정이 모두 풀려 내보낼 것이 없음"])
-    used = set()
-    for _, ex in exports:  # 도면 번호가 같은 이름이 되면 파일이 겹친다
-        if ex.name in used:
-            raise ExportError(["파일 이름이 겹침: %s" % ex.name])
-        used.add(ex.name)
+    used = {}
+    for name, ex in exports:  # 도면 번호가 같은 이름이 되면 파일이 겹친다. Windows 파일 이름은 대소문자를 가리지 않는다
+        key = ex.name.casefold()
+        if key in used:
+            raise ExportError(["파일 이름이 겹침: %s(%s)와 %s(%s)" % (used[key][1], used[key][0], ex.name, name)])
+        used[key] = (name, ex.name)
+    fnames = [f for _, ex in exports for f in sorted(ex.files)] + ["manifest.json"]
+    existing = [f for f in fnames if os.path.lexists(os.path.join(out_dir, f))]
+    if existing and not overwrite:
+        return {"status": "exists", "manifest": None, "existing": existing, "drawings": [], "not_exported": not_exported}
     drawings = []
-    written_all = []
+    for name, ex in exports:
+        fp, rebuilt = sources[name]
+        drawings.append({"name": name, "drawing_number": ex.sidecar["drawing_number"], "files": sorted(ex.files),
+                         "graph_version": ex.sidecar["graph_version"], "graph_rebuilt": rebuilt, "source_fingerprint": fp,
+                         "stats": ex.stats})
+    manifest = {"schema": MANIFEST_SCHEMA, "exporter_version": EXPORTER_VERSION, "dexpi_version": dexpi_map.DEXPI_VERSION,
+                "attribution": dexpi_map.ATTRIBUTION, "exported_at": now or store_io.now_utc(), "confirmation": gate_name,
+                "drawings": drawings, "not_exported": not_exported}
+    os.makedirs(out_dir, exist_ok=True)
+    stage = tempfile.mkdtemp(prefix=".hazop-dexpi-new-", dir=out_dir)
     try:
-        for name, ex in exports:
-            files = write_drawing(ex, out_dir)
-            written_all += list(files.values())
-            drawings.append({"name": name, "drawing_number": ex.sidecar["drawing_number"], "files": sorted(os.path.basename(p) for p in files.values()),
-                             "graph_version": ex.sidecar["graph_version"], "stats": ex.stats})
-        manifest = {"schema": MANIFEST_SCHEMA, "exporter_version": EXPORTER_VERSION, "dexpi_version": dexpi_map.DEXPI_VERSION,
-                    "attribution": dexpi_map.ATTRIBUTION, "exported_at": now or store_io.now_utc(), "confirmation": gate_name,
-                    "drawings": drawings, "not_exported": not_exported}
-        path = os.path.join(out_dir, "manifest.json")
-        store_io.write_json(path, manifest)
-        written_all.append(path)
+        for _name, ex in exports:
+            write_drawing(ex, stage)
+        store_io.write_json(os.path.join(stage, "manifest.json"), manifest)
+        _swap_in(stage, out_dir, fnames)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+    return {"status": "written", "manifest": os.path.join(out_dir, "manifest.json"), "existing": existing,
+            "drawings": drawings, "not_exported": not_exported}
+
+
+def _swap_in(stage, out_dir, fnames):
+    """stage에 다 쓴 파일들을 out_dir로 옮긴다. 있던 파일은 먼저 옆 임시 폴더로 비켜 두고, 하나라도 옮기지 못하면 새 파일을 지우고
+    비켜 둔 파일을 제자리로 돌린 뒤 OSError를 올린다(앞 내보내기를 잃지 않음)."""
+    old = tempfile.mkdtemp(prefix=".hazop-dexpi-old-", dir=out_dir)
+    moved_old, moved_new = [], []
+    restored = True
+    try:
+        for f in fnames:
+            if os.path.lexists(os.path.join(out_dir, f)):
+                os.replace(os.path.join(out_dir, f), os.path.join(old, f))
+                moved_old.append(f)
+        for f in fnames:
+            os.replace(os.path.join(stage, f), os.path.join(out_dir, f))
+            moved_new.append(f)
     except OSError:
-        for p in written_all:
+        for f in moved_new:
             try:
-                os.remove(p)
+                os.remove(os.path.join(out_dir, f))
             except OSError:
                 pass
+        for f in moved_old:
+            try:
+                os.replace(os.path.join(old, f), os.path.join(out_dir, f))
+            except OSError:
+                restored = False
         raise
-    return {"manifest": path, "drawings": drawings, "not_exported": not_exported}
+    finally:
+        if restored:
+            shutil.rmtree(old, ignore_errors=True)
 
 
 def _read_json(path):

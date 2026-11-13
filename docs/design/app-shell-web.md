@@ -748,9 +748,9 @@ hazop/shell/                 새 틀(Python)
 | UW15 | PDF 쪽을 확정 전에 정리된 보기로 볼 수 있나 | 언제든 볼 수 있다. 그때는 '확정 전 도면' 꼬리표가 늘 보인다. 확정되면 처음 열 때도 정리. 사람이 바꾼 보기는 앱을 닫을 때까지 쪽마다 기억 | 자리표가 있는 정리된 보기는 미확인을 고치는 데 쓸모가 있다. '확정되면 바꿀 수 있다'는 기본값 규칙으로 읽었다. 꼬리표로 원본과 헷갈리지 않게 한다 |
 | UW16 | 확정 조건 함수의 자리 | 엔진 `hazop/extract/confirmation.py`(제안). `dexpi-exchange.md`가 다른 자리를 정하면 그쪽. 확정 기록은 `data/sheet-confirmations/` | 화면과 DEXPI 내보내기가 같은 답을 써야 하므로 화면 코드 밖에 둔다. 확정 기록을 지문 대상 파일 밖에 두어야 스스로 풀리지 않는다 |
 | UW17 | 정리된 바탕을 누가 그리나 | 구현(b8135bc)대로 웹이 그리고, §10.9 측정에서 목표를 넘으면 엔진 SVG로 바꾼다 | rev 2는 엔진 SVG를 정했으나 구현이 먼저 웹으로 그렸다. 목표값으로 판정하는 편이 다시 만드는 것보다 싸다 |
-| UW18 | 미확인을 '고치지 않고' 끝내는 법 | '이대로 확인' + 사유를 사람 수정 기록에 남김(`acknowledge`) | 미확인 전체로 넓히면 SNP의 `missing_port` 16건처럼 고칠 값이 없는 것도 있다. 사유를 남기면 감사할 수 있다 |
+| UW18 | 미확인을 '고치지 않고' 끝내는 법 | '이대로 확인' + 사유를 사람 수정 기록에 남김(사람 수정 기록의 `confirm` 연산(`items[].check`)) | 미확인 전체로 넓히면 SNP의 `missing_port` 16건처럼 고칠 값이 없는 것도 있다. 사유를 남기면 감사할 수 있다 |
 | UW19 | 원본에 남은 것이 0이 아니어도 확정할 수 있나 | 할 수 있다. 다만 견주기 화면에서 남은 것 목록을 끝까지 보고 체크 상자를 켜야 하고, 엔진이 남은 수를 세지 못한 추출이면 확정할 수 없다 | 도면 주석·장식처럼 늘 남는 선과 글자가 있어 0을 조건으로 하면 확정이 막힌다. 놓친 구성요소를 막는 일은 견주기가 맡는다 |
-| UW20 | 연결점과 배관 끝을 잇는 거리 상한 | 8 단위. 넘으면 잇지 않고 `port_gap` 미확인 | 원본에서 배관 끝은 대개 기호 테두리 0~2 단위 안에 있다. 넉넉히 잡되, 넘는 것은 기호 맞추기가 틀렸다는 신호로 본다 |
+| UW20 | 연결점과 배관 끝을 잇는 거리 상한 | 8 단위. 넘으면 잇지 않고 `port_gap` 표시(정리된 보기의 그리기 표시. 쪽 확정 조건에는 들지 않음, §10.4) | 원본에서 배관 끝은 대개 기호 테두리 0~2 단위 안에 있다. 넉넉히 잡되, 넘는 것은 기호 맞추기가 틀렸다는 신호로 본다 |
 | UW21 | 정돈 허용 범위 | 기호 중심·배관 꺾임점 하나당 6 단위, 겹침을 풀 때만 24 단위. 넘으면 옮기지 않고 `overlap`·`moved_too_far`로 센다 | 원본과 정리된 보기를 바꿀 때 사람이 같은 자리로 알아볼 만큼만 움직인다. SNP 도면 격자(10 단위)의 절반 남짓 |
 | UW22 | 엇갈리는 배관의 표시 | 위계가 낮은 선(신호 < 계측 < 보조 공정 < 공정)이 반원(지름 8px)으로 넘는다. 같으면 세로 선이 넘는다 | 이어진 분기점(검은 점)과 헷갈리지 않게. 한 도면 안에서 늘 같은 규칙 |
 
@@ -901,10 +901,10 @@ hazop/shell/                 새 틀(Python)
 | 태그 없음 | 태그를 갖는 종류(설비·밸브·계기)인데 태그가 비어 있음 | 번호를 못 붙인 밸브 |
 | 수락 전 AI 후보 | AI 검토 기록에서 `accepted`·`rejected`가 아닌 후보 | 제안 상태 후보 |
 | 위치 없음 | `unplaced`(§10.1) | 좌표 없는 노드·관계 |
-| 연결점 어긋남 | `port_gap`(§10.2) | 맞춘 기호의 연결점과 이어진 배관 끝이 8 단위 넘게 떨어짐 |
+| 연결점 어긋남 | `port_gap`(§10.2). **정리된 보기에서만 세고 쪽 확정 조건(`sheet_confirmation`)에는 넣지 않는다**(2026-11-14 결정): 기호를 맞춘 그리기에서 생기는 틈이라 그래프·DEXPI 자료를 바꾸지 않고, 엔진은 기호 그림의 연결점을 모른다 | 맞춘 기호의 연결점과 이어진 배관 끝이 8 단위 넘게 떨어짐 |
 
 - **같은 대상의 여러 사유는 따로 센다.** '미확인 n곳'의 n은 사유 건수의 합이다. 칩 말풍선에 사유별 수를 보인다.
-- **사람이 끝내는 법은 두 가지다.** 값을 고치거나(종류 고르기, 태그 입력, 이을 곳 고르기, 방향·고장 시 위치 정하기, 후보 수락·거절, 위치 주기), '이대로 확인'을 누르고 사유를 적는다(예: '이 펌프에는 포트 구분이 없다'). '이대로 확인'은 사람 수정 기록(`drawing-edits`)에 `{op: "acknowledge", target, check, reason, by, at}`으로 남고, 그 미확인을 목록에서 뺀다. 엔진이 `by`·`at`을 채운다(§5.2).
+- **사람이 끝내는 법은 두 가지다.** 값을 고치거나(종류 고르기, 태그 입력, 이을 곳 고르기, 방향·고장 시 위치 정하기, 후보 수락·거절, 위치 주기), '이대로 확인'을 누르고 사유를 적는다(예: '이 펌프에는 포트 구분이 없다'). '이대로 확인'은 사람 수정 기록(`drawing-edits`)의 기존 `confirm` 연산 `{op: "confirm", target, value: {items: [{check, reason}]}, by, at}`으로 남고(연산 이름은 코드 그대로 `confirm`), 그 미확인을 목록에서 뺀다. 추출의 미확인 기록은 `check`와 `reason`이 맞는 것을, 엔진이 정하는 사유(`unknown_symbol`·`missing_tag`·`open_end`·`unresolved_connector`·`unplaced`)는 `check`가 그 코드인 것을 뺀다. 수락 전 AI 후보는 수락·거절로만 끝나고, 대상이 없는 쪽 전체 미확인은 연산이 대상을 요구하므로 값을 고쳐야 한다. 엔진이 `by`·`at`을 채운다(§5.2).
 - **수만 세지 않고 목록으로 보인다.** 미확인 칩을 누르면 사유별로 묶인 목록이 뜬다. 위치 없는 것은 도면에 자리가 없으므로 이 목록에서만 고칠 수 있다.
 
 **도면에서 보이는 모습**
@@ -941,14 +941,14 @@ hazop/shell/                 새 틀(Python)
 - PDF 추출 결과에 `leftovers`를 더한다: `{"paths": [{"bbox", "pts" 또는 "d", "kind": "line|curve|rect|marker"}], "texts": [local_id …]}`.
   - `paths`는 원본 쪽의 벡터 경로 가운데 기호 몸통·장식선, 배관 사슬, 분기점, 표제란·표 칸, 빗금·점 무늬, 흐름 화살촉 어디에도 쓰이지 않은 것이다. 추출 코드는 경로마다 '쓰인 곳'을 표시하고, 표시가 없는 것을 모은다.
   - `texts`는 `texts` 가운데 `note`가 '소속 대상 미확정'인 것의 ID다(선 라벨 후보는 뺀다).
-  - 도면 테두리·표제란 칸처럼 늘 남는 것은 `kind: "frame"`로 따로 표시해 수에서 뺀다.
-- drawio는 `unclassified`와 일부러 뺀 셀(`ignored`)을 같은 꼴로 `leftovers`에 넣는다.
+  - 도면 테두리·표제란 칸처럼 늘 남는 것은 `kind: "frame"`로 따로 표시해 수에서 뺀다(엔진 답의 `frame`에 따로 셈).
+- drawio는 분류하지 못한 셀(`unclassified`)을 남은 것으로 센다. 작성자가 일부러 뺀 셀(`drawing.ignored_objects`, 표제란·주석 등)은 `frame`과 같이 따로 세고 수에서 뺀다(구현 `confirmation.leftovers`, 정리된 보기와 같음).
 - 기준값에 닿는다. `pdf_vector.py`를 고치므로 `check_apr1400.py`·`check_snp_baseline.py`가 그대로인지 커밋 전에 확인한다(CLAUDE.md 규칙 12). 점수 입력은 바꾸지 않고 필드만 더한다.
 
 **화면**
 
 - 미확인 칩 옆에 '원본에 남은 것 n'(선 n₁ · 글자 n₂)을 보인다. `leftovers`가 없는 추출(필드를 더하기 전의 결과)이면 '원본에 남은 것: 엔진이 세지 않음'으로 보이고, 그 쪽은 확정할 수 없다(§10.7).
-- '남은 것 겹쳐 보기'(키 L)를 켜면 정리된 보기 위에 남은 선을 호박색 반투명(40%)으로, 남은 글자 자리를 호박색 점선 네모로 겹쳐 그린다. 누르면 원본 조각과 '구성요소로 만들기'(→ 미확인 기호로 더함)·'구성요소 아님'(→ `acknowledge`)을 보인다.
+- '남은 것 겹쳐 보기'(키 L)를 켜면 정리된 보기 위에 남은 선을 호박색 반투명(40%)으로, 남은 글자 자리를 호박색 점선 네모로 겹쳐 그린다. 누르면 원본 조각과 '구성요소로 만들기'(→ 미확인 기호로 더함)·'구성요소 아님'을 보인다. '구성요소 아님'을 기록할 자리는 아직 없다(사람 수정의 `confirm` 연산은 구성요소·관계만 대상으로 받음).
 - 원본 전체를 옅게(30%) 겹쳐 보는 '원본 겹쳐 보기'도 같은 자리에 둔다(엔진 값이 없어도 된다). 정리된 그림과 원본이 어긋나는 곳이 눈에 띈다.
 
 ### 10.6 보기 바꾸기와 표시
@@ -995,9 +995,9 @@ hazop/shell/                 새 틀(Python)
 
 ```python
 sheet_confirmation(name) -> {
-    "unconfirmed": [{"id" | None, "reason", "check"}],          # §10.4 정의 전체(acknowledge된 것은 뺌)
+    "unconfirmed": [{"id" | None, "reason", "detail"}],         # §10.4 정의 전체('이대로 확인'한 것은 뺌). reason = 사유 코드
     "unplaced": [...],                                            # 위치 없음(§10.1)
-    "leftovers": {"paths": n1, "texts": n2} | None,               # None = 엔진이 세지 않음(§10.5)
+    "leftovers": {"paths": n1, "texts": n2, "total", "frame"} | None,  # None = 엔진이 세지 않음(§10.5)
     "fingerprint": "<세 파일 지문>",                               # 아래
     "compared": {"by", "at", "fingerprint", "mode"} | None,       # 원본과 견준 기록
     "confirmed": {"by", "at", "fingerprint", "leftovers_seen"} | None,
@@ -1017,7 +1017,7 @@ sheet_confirmation(name) -> {
 
 `state`는 1이 아니면 `open`, 1은 되었으나 2·3이 아니면 `ready`, 셋 다면 `confirmed`다.
 
-**지문은 세 파일이다.** 각 파일의 `크기:mtime_ns`(없으면 `-`)를 `|`로 이은 것이다. 셋 가운데 하나라도 바뀌면 견준 기록과 확정이 함께 풀린다.
+**지문은 세 파일이다.** 각 파일 내용의 `sha256`(없으면 `-`)을 `열쇠=값`으로 `|`로 이어 다시 `sha256`한 것이다(파일별 값은 `files`). 셋 가운데 하나라도 바뀌면 견준 기록과 확정이 함께 풀린다. 처음 안의 `크기:mtime_ns`를 내용 지문으로 바꾼 것은 Windows 파일 시각이 갱신되는 간격(약 15ms) 안에 크기가 같은 변경이 생기면 놓치기 때문이다(2026-11-14, 구현 c0e2f4c).
 
 | 파일 | 경로(작업 루트 기준) | 바뀌는 때 |
 | --- | --- | --- |
@@ -1073,7 +1073,7 @@ sheet_confirmation(name) -> {
 | **V1 그리기 자료** | 고침: `hazop/shell/sheet_items.py`, `hazop/shell/clean_items.py`(§10.1 필드, `unplaced`, `read_method`). 시험: `tests/test_clean_items.py` | SNP 6장과 APR1400 표본 2쪽에서 필드가 채워진다. 좌표 없는 노드·관계를 넣으면 `unplaced`와 `no_position`이 생긴다(재현 시험). 빈·모르는 `read_method`는 `unknown`이다. 기존 `items` 필드는 바뀌지 않는다 | Sonnet 5.5 medium | V2와 나란히 |
 | **V1b 원본에 남은 것(엔진)** | 고침: `hazop/extract/adapters/pdf_vector.py`(경로의 쓰인 곳 표시와 `leftovers`), `hazop/extract/drawio.py`(`leftovers`). 시험: `tests/test_extract_leftovers.py` | SNP 6장 PDF와 APR1400 표본 쪽에서 `leftovers`가 나온다. 정답지 구성요소 하나를 일부러 지운 결과(기호 사전 견본을 빼 미분류로 떨어뜨리는 식)에서 그 기호의 선이 `leftovers`에 나타난다. `check_apr1400.py`·`check_snp_baseline.py` 점수가 그대로 | Opus 5.5 high(추출 알고리즘) | V1 뒤 |
 | **V2 기호 한 벌** | `resources/library/drawing-symbols/`, `scripts/build_drawing_symbols.py`, `hazop/shell/web/js/canvas/symbols.json`, `tests/test_drawing_symbols.py` | c5dc4f4로 됨. 사전의 `kind`가 늘면 같은 날 그림을 더한다 | Sonnet 5.5 medium | 됨 |
-| **V3 확정 조건** | 새: `hazop/extract/confirmation.py`(자리는 DEXPI 규격과 맞춤), `data/sheet-confirmations/` 저장, `acknowledge` 수정 연산(`hazop/extract/corrections.py`), '견줌'·'쪽 확정' 명령(`api_drawings.py`, V5 주인에게 요청하거나 V5보다 먼저면 V3이 새로 만든다). 시험: `tests/test_sheet_confirmation.py` | §10.4 미확인 전체를 센다(체크밸브 방향·고장 시 위치·포트 포함). 미확인 0이어도 견줌 기록 없이 확정되지 않는다. `leftovers`가 없으면 확정되지 않는다. 세 파일 가운데 하나가 바뀌면 견줌·확정이 풀린다(재현 스크립트, 파일마다). 확정 기록이 세 파일 지문을 바꾸지 않는다. 다시 열어도 확정이 남는다. DEXPI 내보내기 세션과 함수 서명을 맞춘 기록 | Opus 5.5 high(판정 경로·저장) | V1·V1b 뒤. DEXPI X2와 차례 조정 |
+| **V3 확정 조건** | 새: `hazop/extract/confirmation.py`(자리는 DEXPI 규격과 맞춤), `data/sheet-confirmations/` 저장, '이대로 확인'은 기존 `confirm` 수정 연산(`hazop/extract/corrections.py`), '견줌'·'쪽 확정' 명령(`api_drawings.py`, V5 주인에게 요청하거나 V5보다 먼저면 V3이 새로 만든다). 시험: `tests/test_sheet_confirmation.py` | §10.4 미확인 전체를 센다(체크밸브 방향·고장 시 위치·포트 포함). 미확인 0이어도 견줌 기록 없이 확정되지 않는다. `leftovers`가 없으면 확정되지 않는다. 세 파일 가운데 하나가 바뀌면 견줌·확정이 풀린다(재현 스크립트, 파일마다). 확정 기록이 세 파일 지문을 바꾸지 않는다. 다시 열어도 확정이 남는다. DEXPI 내보내기 세션과 함수 서명을 맞춘 기록 | Opus 5.5 high(판정 경로·저장) | V1·V1b 뒤. DEXPI X2와 차례 조정 |
 | **V4 정리된 보기 화면** | 고침: `hazop/shell/web/js/canvas/clean_view.js`·`clean_ui.js`·`sheet.js`·`marks.js`·`core.js`, `web/js/canvas/README.md`. 새: 견주기 화면(`web/js/canvas/compare.js`). 시험: `tests/test_shell_clean.py`, `hazop/shell/web/test/clean.test.js` | §10.2~§10.6대로 그려진다. 연결점 잇기 세 조건(§10.2), 불확실 표시가 흐리기 위에 남음(§10.6), DEXPI 쪽 원본 단추 숨김, 읽은 방법 꼬리표, 위치 없음·원본에 남은 것 칩과 L 키, 견주기 화면. 같은 쪽에서 원본·정리를 바꿔 찍은 두 캡처의 기호 중심이 2 단위 안에서 겹친다. §10.9 목표값을 잰 기록. 원격 요청 0 | Sonnet 5.5 medium | V3 뒤(확정 단추만. 나머지는 V1 뒤 바로) |
 | **V5 도면 패널의 내보내기와 DEXPI 화면 자리** | 새로 만듦: `hazop/shell/api_drawings.py`(아직 없다). 고침: `hazop/shell/web/js/panels/drawings.js`. 시험: `tests/test_clean_export.py`, `tests/test_shell_drawings.py` | 정리된 도면 SVG·PDF 내보내기(§10.6 꼬리표 포함). DEXPI 받기 칩·'변환(DEXPI …)' 표시·DEXPI 내보내기 단추(엔진은 DEXPI X2)를 같은 단위가 붙인다 | Sonnet 5.5 medium | V4 뒤, DEXPI X2 뒤 |
 | **V6 정돈과 정돈 검사** | 새: `hazop/shell/clean_layout.py`(정돈, §10.11), `hazop/shell/layout_lint.py`(정돈 검사), `scripts/check_layout.py`(검사 실행·보고). 고침: `hazop/shell/clean_items.py`(`layout`을 `api/clean`에 실음), `web/js/canvas/clean_view.js`(`layout` 좌표로 그림, 건너뜀 표시, 글자 자리 검사 함수 `labelLint`). 시험: `tests/test_clean_layout.py`, `tests/test_layout_lint.py`, `hazop/shell/web/test/clean.test.js` | **가상 도면 SNP 6장에서 `layout_lint`의 모든 항목이 0**(아래 표). `topology_changed`는 어떤 도면에서도 0(APR1400 표본 12쪽 포함). APR1400 표본 12쪽의 항목별 수를 기록(0이 아니어도 된다. 기준값으로 두고 늘면 실패). 같은 입력에서 정돈 결과가 늘 같다(두 번 돌려 바이트 비교) | Opus 5.5 high(배치 알고리즘) | V1 뒤. V4와 `clean_view.js`를 나눠 쓰므로 V4 다음에 이어서 |
@@ -1096,7 +1096,7 @@ sheet_confirmation(name) -> {
 | 3 | 오와 열 | 수직 선분의 x, 수평 선분의 y, 기호 중심의 x·y를 모아, 서로 6 단위 안인 값은 하나로 맞춘다. 맞출 값은 그 묶음에서 가장 긴 배관 선분의 값이다(없으면 평균을 2 단위 격자로 반올림). 한 줄에 놓인 기기는 중심이 같은 선 위에 온다 | `near_miss_align`(0보다 크고 6 단위 이하로 어긋난 쌍) |
 | 4 | 인라인 기기는 배관 축의 정중앙 | 두 구멍 기호(밸브·오리피스·축소관·펌프 등)는 중심을 그 배관 축 위에 둔다. 들어오는 배관과 나가는 배관이 한 축이면 그 축에, 꺾여 있으면 각각의 축이 만나는 점에 둔다 | `inline_off_center`(축에서 0.5 단위 넘게 벗어남) |
 | 5 | 같은 `kind`는 같은 크기 | `keep` 기호는 기호 목록의 표준 크기(`manifest.json`의 `size`, 도면 단위)로 그린다. 읽은 상자 크기는 쓰지 않는다. `stretch` 설비는 읽은 크기를 2 단위 격자로 반올림 | `size_mismatch` |
-| 6 | 배관 끝은 기호 연결점에 정확히 | 그래프에서 기호에 이어진 배관 끝(`status: connected`, `node` = 그 기호)은 정돈한 기호의 연결점으로 옮긴다(규칙 1 안에서). 옮긴 끝의 마지막 선분은 규칙 2를 다시 지킨다(필요하면 꺾임점 하나를 더한다). `stretch` 설비는 연결점이 정해져 있지 않으므로, 배관 끝에서 외곽선까지 짧은 노즐 선을 그려 정확히 닿게 한다. §10.2의 '짧은 선으로 잇기'는 정돈한 뒤에도 남은 틈에만 쓴다 | `port_miss`(이어진 끝과 연결점 사이 0.5 단위 초과), 틈이 8 단위를 넘으면 `port_gap` 미확인(§10.4) |
+| 6 | 배관 끝은 기호 연결점에 정확히 | 그래프에서 기호에 이어진 배관 끝(`status: connected`, `node` = 그 기호)은 정돈한 기호의 연결점으로 옮긴다(규칙 1 안에서). 옮긴 끝의 마지막 선분은 규칙 2를 다시 지킨다(필요하면 꺾임점 하나를 더한다). `stretch` 설비는 연결점이 정해져 있지 않으므로, 배관 끝에서 외곽선까지 짧은 노즐 선을 그려 정확히 닿게 한다. §10.2의 '짧은 선으로 잇기'는 정돈한 뒤에도 남은 틈에만 쓴다 | `port_miss`(이어진 끝과 연결점 사이 0.5 단위 초과), 틈이 8 단위를 넘으면 `port_gap` 표시(§10.4, 쪽 확정 조건에는 들지 않음) |
 | 7 | 겹침 없음 | 기호끼리 4 단위 안으로 붙거나 겹치지 않는다. 배관은 자기 연결점이 아닌 기호를 지나지 않는다. 같은 줄에 놓인 두 배관 선분이 겹치지 않는다(평행이면 6 단위 이상 띄움). 풀려면 더 작은 쪽을 규칙 1의 24 단위 안에서 옮긴다 | 옮기지 않고 그대로 그린다. 도구 막대에 '겹침 n' 칩, 누르면 그 자리로. `symbol_overlap`·`pipe_through_symbol`·`pipe_overlap` |
 | 8 | 엇갈림은 건너뜀으로 | 이어지지 않은 두 배관이 엇갈리면 위계가 낮은 선이 반원(지름 8px)으로 넘는다(신호 < 계측 < 보조 공정 < 공정, 같으면 세로 선이 넘음, §8 UW22). 분기점 점은 실제로 이어진 곳에만 | `crossing_without_hop` |
 | 9 | 글자 자리 | 글자 하나마다 후보 자리(기호 위·아래·오른쪽·왼쪽·오른쪽 위·왼쪽 위, 배관 번호는 선분 양옆)를 정해진 순서로 보고, 기호·배관 선·다른 글자와 겹치지 않는 첫 자리에 둔다. 자리를 먼저 잡는 순서는 설비 → 밸브 → 계기 → 배관 번호 → 독립 글자다. 글자 뒤에는 바탕색 테두리 3px. 빈 자리가 없으면 그 확대 값에서는 숨기고, 더 확대하면 다시 본다. 호박색 '태그 없음'·미확인 글자는 숨기지 않는다 | `label_overlap`, `label_hidden` |
@@ -1178,8 +1178,8 @@ sheet_confirmation(name) -> {
 | --- | --- | --- | --- |
 | 1 놓친 것을 막는 장치 | §10 머리, 새 §10.5, §10.6 단추 자리·기본 보기 표·내보내기, §10.7 전체, §10.8 앱 층 (3), §10.10 V1b·V3 | '원본에 남은 것'(엔진이 세는 쓰이지 않은 선·글자)을 칩·겹쳐 보기(L)로 보인다. 지금 PDF 어댑터는 남은 글자(`texts`)만 결과로 넘기고 남은 선은 넘기지 않음을 확인했다. 그래서 '엔진에 필요한 것'으로 `leftovers`를 적었다(V1b). 확정은 '미확인 0' + '원본과 견줌'(나란히·겹쳐 견주는 화면, 남은 것 목록 끝까지, 체크 상자) + 사람의 누름이다. 미확인은 추출 미확인 목록 전체로 넓혔다(체크밸브 방향, 고장 시 위치, 포트, 흐름 방향, 미확정 연결, 쪽 전체 미확인 포함). 확정된 PDF 쪽도 원본 단추와 '읽은 도면 · PDF · 사람 확정' 꼬리표를 늘 두고, 내보내기에 '원본 도면이 아님'을 찍는다 | `clean_items.py`: `REASONS` 네 가지 대신 `validation.unknowns`·`unresolved_connectors` 전체를 센다(또는 V3의 `sheet_confirmation`을 부른다). `clean_ui.js`: '미확인 0 · 쪽 확정하기'가 바로 확정하지 않고 견주기 화면을 연다. '원본에 남은 것' 칩과 L 키, '엔진이 세지 않음' 상태. 읽은 방법 꼬리표 |
 | 2 좌표 없는 구성요소 | §10.1 '위치 없는 구성요소를 버리지 않는다', §10.4 사유표·도면 표 '위치 없음', §10.7 조건 1 | 좌표 없는 노드·관계는 `unplaced`에 넣고 `no_position`으로 센다. '위치 없음 n' 칩과 목록, '위치 주기'. 남아 있으면 확정할 수 없다 | `sheet_items.build_items`·`clean_items.build`: `bbox is None`·`len(line) < 2`에서 `continue`하지 말고 `unplaced`에 넣는다. 재현 시험(분류 안 된 노드, 태그 없는 밸브, 열린 배관을 좌표 없이 넣으면 `unplaced` 3, 미확인 3 이상, 확정 불가)을 `tests/test_clean_items.py`에 더한다 |
-| 3 연결점 잇는 선의 조건 | §10.2 '기호 연결점과 배관 끝' 줄, §10.4 도면 표 '연결점 어긋남', §8 UW20 | 끝 `status`가 `connected`이고 그 끝의 `node`가 그 기호이며 8 단위 이하일 때만 잇는다. 연결이 없으면 열린 끝, 이어졌는데 멀면 잇지 않고 `port_gap` 미확인 | `clean_view.js`: `STUB_GAP` 거리만 보고 잇는 곳에 `ends[].status === "connected"`·`ends[].node === 기호 id` 검사와 상한 8을 넣는다. 넘으면 눈금을 그리고 `port_gap`을 엔진에서 받는다 |
-| 4 지문의 파일 | §10.7 '지문은 세 파일이다' 표, 확정 기록 자리 | 추출 결과 `extraction.json`, 사람 수정 기록 `data/drawing-edits/<이름>.json`, AI 후보 기록 `data/ai-review/<이름>.json` 셋의 `크기:mtime_ns`. 하나라도 바뀌면 견줌·확정이 풀린다. 확정 기록은 `data/sheet-confirmations/<이름>.json`(세 파일 밖) | 아직 확정 저장이 없으면 해당 없음. 있으면 V3 함수로 옮긴다 |
+| 3 연결점 잇는 선의 조건 | §10.2 '기호 연결점과 배관 끝' 줄, §10.4 도면 표 '연결점 어긋남', §8 UW20 | 끝 `status`가 `connected`이고 그 끝의 `node`가 그 기호이며 8 단위 이하일 때만 잇는다. 연결이 없으면 열린 끝, 이어졌는데 멀면 잇지 않고 `port_gap` 미확인 | `clean_view.js`: `STUB_GAP` 거리만 보고 잇는 곳에 `ends[].status === "connected"`·`ends[].node === 기호 id` 검사와 상한 8을 넣는다. 넘으면 눈금을 그리고 `port_gap`을 정리된 보기에서 센다(엔진의 쪽 확정 조건에는 넣지 않음) |
+| 4 지문의 파일 | §10.7 '지문은 세 파일이다' 표, 확정 기록 자리 | 추출 결과 `extraction.json`, 사람 수정 기록 `data/drawing-edits/<이름>.json`, AI 후보 기록 `data/ai-review/<이름>.json` 셋의 내용 `sha256`. 하나라도 바뀌면 견줌·확정이 풀린다. 확정 기록은 `data/sheet-confirmations/<이름>.json`(세 파일 밖) | 아직 확정 저장이 없으면 해당 없음. 있으면 V3 함수로 옮긴다 |
 | 5 표시와 자리표 | §10.6 '표시가 있어도 불확실한 곳은 흐려지지 않는다', 표시 표 '출발·확인 못 한 곳' | 자리표·`?`·`AI` 꼬리표·열린 끝·눈금·태그 없음·남은 것 겹침을 흐리기와 흰 막 위에 그린다. 표시된 객체가 미확인이면 표시 색 위에 자리표를 다시 얹는다. 확인 못 한 곳은 원본 보기의 `ov-warn`과 같은 굵기 | `marks.js`·`clean_view.js`: 그리는 층 순서를 바탕 → 흰 막 → 표시 객체 → 불확실 표시로. 불확실 표시에 흐리기 회색을 쓰지 않는다 |
 | 6 DEXPI 도면의 원본 | §10.6 기본 보기 표의 `dexpi` 줄·'DEXPI 쪽의 원본 조각', §10.7 2번, §10.1 `read_method` 줄과 '읽은 방법을 모르면 엄격한 쪽으로' | DEXPI 쪽은 원본 단추를 숨기고 '원본 그림 없음 · DEXPI 변환'을 쓴다. 원본 조각 자리에 DEXPI 원문 요약을 글로. 견주기는 DEXPI 원문 목록과 견준다. 형식 이름은 `dexpi-exchange.md` §4 5번의 `read_method`(그 문서가 한 표로 정하면 그 표) | `clean_items.py` 34–38행 `source_format`: 모르는 값을 그대로 돌려주지 말고, 빈 값을 `drawio`로 보지 말고, 둘 다 `unknown`으로. 이름을 `read_method`로 바꾸고 추출 실행 정보·그래프 `source`의 `read_method`를 먼저 읽는다. `sheet.js`·`clean_ui.js`: `dexpi`면 원본 단추 숨김, `unknown`이면 원본이 기본 |
 | 7 파일 주인 | §10.10 단위표 V3·V5, '파일 주인' 문단 | `api_drawings.py`는 아직 없으므로 '새로 만듦'. 이 파일과 `panels/drawings.js`의 주인은 V5 하나. DEXPI X3의 화면 몫은 V5가 맡는다(`dexpi-exchange.md` §8.1 X3을 'V5에 합침'으로 고치는 일은 그 문서 주인 `d-node-v2`가 한다) | — |

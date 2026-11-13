@@ -22,23 +22,30 @@
 
 ## 2. DEXPI 내보내기
 
-내보내기는 **'쪽 확정'이 `confirmed`인 쪽만** 합니다(규격 §6.1). 그 함수 `hazop.extract.confirmation.sheet_confirmation(name)`(화면 규격 §10.7, 단위 V3)는 아직 저장소에 없습니다. 그래서 내보내기 코드는 그 함수를 `default_confirmation()`으로 찾고, **없으면 내보내지 않고 사유를 보입니다**. V3가 들어오면 같은 서명(`name -> {"state": "open"|"ready"|"confirmed", "unconfirmed": [...], "unplaced": [...]}`)으로 그대로 이어집니다. 개발·시험에서는 `confirmation="assume"`(또는 명령줄 `--assume-confirmed`)이 모두 확정으로 봅니다.
+내보내기는 **'쪽 확정'이 `confirmed`인 쪽만** 합니다(규격 §6.1). 그 함수는 `hazop.extract.confirmation.sheet_confirmation(name)`(화면 규격 §10.7, c0e2f4c, 명령 표 [sheet-commands.md](sheet-commands.md))이고, 내보내기는 `default_confirmation()`으로 찾습니다(없으면 내보내지 않고 사유를 보임). 개발·시험에서는 `confirmation="assume"`(또는 명령줄 `--assume-confirmed`)이 모두 확정으로 봅니다.
+
+**확정한 자료 그대로 내보냅니다(2026-11-14 검토 R1).** `confirmation="auto"`(엔진의 쪽 확정)이면 디스크의 `output/graph/<이름>/graph.json`을 내용으로 쓰지 않습니다. AI 후보 수락처럼 그래프를 다시 만들지 않는 저장 뒤에는 그 파일이 낡을 수 있기 때문입니다. 대신 `confirmation.load_sheet(name)`이 확정을 판정한 바로 그 세 파일 바이트(추출 결과·사람 수정 기록·AI 후보 기록)로 그래프를 그 자리에서 만들어(`hazop.graph.build.build_graph`, `build_graph.build_one`과 같은 입력) 내보냅니다. 디스크 그래프와 판(`graph_version`)이 다르면 `drawings[].graph_rebuilt`가 `true`입니다. 디스크 파일은 고치지 않습니다. 그래프를 만들 수 없으면 그 쪽은 `not_exported`에 `state: "graph_error"`와 `reason`으로 적습니다. 쓰기 직전에 세 파일 지문을 다시 보고, 바뀌었으면 그 쪽을 `not_exported`(`state: "changed"`)로 옮깁니다. `graph_version`의 뜻은 바꾸지 않았습니다(지문은 `drawings[].source_fingerprint`, 그래프 밖).
 
 | 하는 일 | 함수 | 인자 | 돌려주는 값 |
 | --- | --- | --- | --- |
 | 내보낼 수 있는 도면 목록(파일을 쓰지 않음) | `hazop.export.dexpi_export.list_exportable(graph_root=None, extract_root=None, confirmation="auto")` | 없음(기본은 작업 루트의 `output/graph`·`output/extract`) | `[{"name", "drawing_number", "confirmed"(도면 번호를 등록에서 사람이 확정했는가), "graph_ok", "state"(쪽 확정 상태, 함수가 없으면 `None`), "unconfirmed"(남은 미확인 수), "exportable", "why": [문장]}]` |
-| 내보내기 실행 | `hazop.export.dexpi_export.export_names(names, out_dir, graph_root=None, extract_root=None, require_confirmed_number=True, now=None, confirmation="auto")` | `names`: 도면 이름 목록(`None`이면 그래프가 있는 모든 도면), `out_dir`: Qt 저장 대화상자가 정한 폴더 | `{"manifest": 경로, "drawings": [{"name", "drawing_number", "files", "graph_version", "stats"}], "not_exported": [{"name", "drawing_number", "state", "unconfirmed"}]}` |
+| 내보내기 실행 | `hazop.export.dexpi_export.export_names(names, out_dir, graph_root=None, extract_root=None, require_confirmed_number=True, now=None, confirmation="auto", overwrite=False)` | `names`: 도면 이름 목록(`None`이면 그래프가 있는 모든 도면), `out_dir`: Qt 저장 대화상자가 정한 폴더, `overwrite`: 이미 있는 파일을 덮을지(사용자가 확인한 뒤에만 `True`) | `{"status": "written" \| "exists", "manifest": 경로 또는 null, "existing": [파일 이름], "drawings": [{"name", "drawing_number", "files", "graph_version", "graph_rebuilt", "source_fingerprint", "stats"}], "not_exported": [{"name", "drawing_number", "state", "unconfirmed", "reason"?}]}` |
 | 내보내지 못함 | 위 함수가 던짐 | — | `hazop.export.dexpi_export.ExportError`. `exc.reasons`가 사람이 읽을 문장 목록(도면별 사유, `<이름>: …`). **아무 파일도 쓰지 않은 상태**입니다. 확정된 쪽이 하나도 없을 때, 확정된 쪽이 검사(§6.5)에 걸릴 때, 확정 함수가 없을 때 |
 | 한 도면만 메모리에서 | `export_drawing(graph, extraction=None, require_confirmed_number=True, name=None)` | `build_graph` 결과와 그 추출 결과 | `Export`(`.xml` 바이트, `.excluded`·`.sidecar` dict, `.stats`, `.files`) |
-| 쓰기 | `write_drawing(export, out_dir)` | — | `{종류: 경로}` |
-| 명령줄 | `python scripts/export_dexpi.py --out <폴더> [도면 이름…]` | `--assume-confirmed`는 개발·시험용 | 성공 0 / 실패 1 |
+| 쓰기 | `write_drawing(export, out_dir)` | — | `{종류: 경로}`(바로 씀. `export_names`는 임시 폴더에 쓴 뒤 바꿔 넣음) |
+| 명령줄 | `python scripts/export_dexpi.py --out <폴더> [도면 이름…]` | `--assume-confirmed`는 개발·시험용, `--overwrite`는 이미 있는 파일을 덮음 | 성공 0 / 실패·이미 있음 1 |
+
+- **이미 있는 파일(R4).** 쓸 파일(도면별 세 파일과 `manifest.json`)이 `out_dir`에 하나라도 있고 `overwrite`가 거짓이면 아무것도 쓰지 않고 `{"status": "exists", "existing": [...]}`를 돌려줍니다. 화면은 그 목록을 보여 주고 사용자가 덮기를 고르면 `overwrite=True`로 다시 부릅니다. 그때 `status: "written"`이고 `existing`에 덮은 파일이 있습니다. `ExportError`(검사 실패 등)는 이 확인보다 먼저 나옵니다.
+- **쓰기 실패.** 모든 파일을 `out_dir` 안 임시 폴더(`.hazop-dexpi-new-…`)에 다 쓴 뒤, 있던 파일을 옆 임시 폴더로 비켜 두고 새 파일을 옮겨 넣습니다. 쓰기나 옮기기가 실패하면 새 파일을 지우고 비켜 둔 파일을 제자리로 돌린 뒤 `OSError`를 올립니다. 앞 내보내기는 그대로 남습니다.
+- **파일 이름 겹침(R3).** 도면 이름이 대소문자만 다르면(Windows에서 같은 파일) 겹침으로 보고 `ExportError`(`파일 이름이 겹침: …`)를 던집니다.
+- **끊긴 배관 수(R2).** '이대로 확인'으로 확정한 미분류 기호처럼 뺀 구성요소 때문에 내지 못한 연결 수를 `excluded.json`의 `cut_by_excluded: {"pipes", "signal_lines"}`와 `drawings[].stats`의 `cut_pipes`·`cut_signal_lines`에 적습니다.
 
 - **쓰는 파일(도면 하나당).** `<도면 이름>.dexpi.xml`(DEXPI XML 2.0.1), `<도면 이름>.excluded.json`(뺀 구성요소·연결·속성과 근사 목록), `<도면 이름>.hazop.json`(곁 파일). 폴더에는 묶음 목록 `manifest.json`(도면 목록, 앱 판, 내보낸 시각, 그래프 판, DEXPI 판, 출처 표시 문구 `DEXPI Specification 2.0.1, DEXPI e.V., CC BY 4.0`, 확정 함수 이름 `confirmation`, **`not_exported`**)도 씁니다.
-- **쪽 확정이 풀리는 때.** 함수를 한 번 부른 뒤 쓰기 직전에 다시 부릅니다. 그 사이 확정이 풀린 쪽은 `not_exported`로 옮깁니다.
+- **쪽 확정이 풀리는 때.** 함수를 한 번 부른 뒤 쓰기 직전에 다시 부릅니다. 그 사이 확정이 풀렸거나 세 파일 지문이 바뀐 쪽은 `not_exported`로 옮깁니다. 확정 기록이 깨진 쪽(`record_error`)은 확정되지 않은 쪽으로 봅니다.
 - **도면 번호.** 등록에서 사람이 확정한 번호(`extraction["drawing"]["identification_basis"] == "registration_confirmed"`)만 내보냅니다(`require_confirmed_number`). 도면 사이 참조를 쓰려면 번호가 확정이어야 하기 때문입니다.
 - **ID(§6.6).** DEXPI에서 가져온 객체는 `id`가 글자 규칙에 맞으면 그대로, 그 밖에는 `HZ_` + 엔터티 ID(또는 Proteus ID)의 규칙 밖 글자를 `_`로 바꾼 값, 겹치면 `_2`, `_3`…. 새로 만드는 노즐은 `HZ_<부모 id>_N<번호>`. 원래 ID와의 대응은 곁 파일의 `entities`·`pipes`에 있습니다.
 - **흐름.** 확인된 흐름이 있는 연결은 흐름 순서(상류가 Source)로 적고, 그 연결들은 `FlowDirection=SingleFlowPipingNetworkSegment` 구간에 모읍니다(양방향이었던 것은 `Dual…`). 향하는 쪽 자체는 DEXPI에 자리가 없어 곁 파일에 두고 `excluded.json`의 `notes`에 개수를 적습니다. 체크밸브는 입구 연결이 밸브를 Target으로, 출구 연결이 Source로 쓰게 맞춥니다(흐름 순서보다 먼저).
-- **화면 안내 문구 자료.** 구성요소가 불확실한 것(분류 못 함, 끝이 미확정인 연결)은 빠지고(쪽 확정을 막으므로 확정된 쪽에는 원래 없어야 합니다), 구성요소는 확실하고 속성만 없는 것은 그 속성만 빠집니다. 근거·미확인·HAZOP 결과 등은 DEXPI에 자리가 없어 곁 파일에만 있고, 같은 앱이 다시 가져올 때만 되붙습니다. `excluded.json`의 이유 코드:
+- **화면 안내 문구 자료.** 구성요소가 불확실한 것(분류 못 함, 끝이 미확정인 연결)은 빠집니다. 쪽 확정은 이것들을 막으므로, 확정된 쪽에 남은 것은 사람이 '이대로 확인'한 것뿐이고, 내보내기는 멈추지 않고 빼고 냅니다(규격 §6.2 rev 2). 구성요소는 확실하고 속성만 없는 것은 그 속성만 빠집니다. 근거·미확인·HAZOP 결과 등은 DEXPI에 자리가 없어 곁 파일에만 있고, 같은 앱이 다시 가져올 때만 되붙습니다. `excluded.json`의 이유 코드:
 
 | 목록 | `reason` 코드 | 뜻 |
 | --- | --- | --- |
@@ -83,7 +90,7 @@
 ## 3. 이번 단위에서 닫지 못한 것
 
 - **규격 §4.2 (가) 개정판 수정 기록 복사·재적용**은 하지 않았습니다(`corrections.py`를 고치는 일). 같은 자료의 새 등록 버전이나 새 DEXPI 파일이 들어오면 수정 기록이 새 추출 이름에 붙지 않습니다. (나) 이중 등록의 '쓰는 원본'은 §2.5로 닫았습니다.
-- **쪽 확정 함수(`sheet_confirmation`).** 화면 규격 V3가 만들 때까지 내보내기는 실제 앱에서 거절합니다(`ExportError`). 서명은 이 문서 §2와 같습니다.
+- **쪽 확정 함수(`sheet_confirmation`).** c0e2f4c로 들어왔습니다(§2).
 - 등록 하나에 도면(Diagram)이 둘 이상인 2.0 파일은 첫 도면 기준으로만 추출합니다(미확인 `dexpi_multiple_diagrams`). 쪽 목록(`pages`)은 도면 수만큼 만들지만 둘째 쪽 추출은 없습니다.
 - 흐름 화살표는 모양이 이등변 삼각형 윤곽일 때만 방향으로 읽고(2.0.1 Reference P&ID의 두 모양이 그렇다), 연결에 맞는 것(코사인 0.7 이상)만 `declared`로 씁니다.
 - 내보낸 파일의 그림은 노드 위치(`PipingNodePosition`)와 테두리뿐입니다. 기호 모양(`ShapeUsage`)·글자·선은 내보내지 않으므로 CAD에서 열면 위치 점만 보입니다. 가져오기 위치가 없던(drawio·PDF) 도면은 도면 크기를 A3(420×297mm)에 맞춰 줄인 위치(`scale`은 곁 파일에 있음)입니다.

@@ -132,20 +132,24 @@ def ai_pending(ai_doc):
 
 def leftovers(extraction):
     """원본에 남은 것(§10.5) {paths, texts, total, source}. 엔진이 세지 못하는 쪽이면 None(그 쪽은 확정할 수 없음).
-    - 추출 결과에 leftovers({"paths": [...], "texts": [...]})가 있으면 그것(PDF 추출이 이 필드를 더한 뒤).
-    - drawio: 분류하지 못한 셀(unclassified). 작성자가 일부러 뺀 셀(drawing.ignored_objects)은 세지 않는다(정리된 보기와 같음).
+    - 추출 결과에 leftovers({"paths": [...], "texts": [...]})가 있으면 그것(PDF 추출이 이 필드를 더한 뒤). 늘 남는 도면 테두리·
+      표제란 칸(kind "frame")은 total에서 빼고 frame에 따로 센다.
+    - drawio: 분류하지 못한 셀(unclassified). 작성자가 일부러 뺀 셀(drawing.ignored_objects)은 frame으로 따로 세고 total에서 뺀다.
     - DEXPI: 원본 그림이 없고, 대응표에 없는 클래스도 미분류 노드로 들어와 미확인으로 세므로 남은 것은 없다(0).
     - PDF(leftovers 없음)·래스터·모르는 형식: None."""
     lo = extraction.get("leftovers")
     if isinstance(lo, dict):
-        p, t = len(lo.get("paths") or []), len(lo.get("texts") or [])
-        return {"paths": p, "texts": t, "total": p + t, "source": "extraction"}
+        paths_ = [x for x in lo.get("paths") or []]
+        frame = sum(1 for x in paths_ if isinstance(x, dict) and x.get("kind") == "frame")
+        p, t = len(paths_) - frame, len(lo.get("texts") or [])
+        return {"paths": p, "texts": t, "total": p + t, "frame": frame, "source": "extraction"}
     fmt = source_format(extraction)
     if fmt == "drawio":
         n = sum(1 for c in extraction.get("unclassified") or [] if isinstance(c, dict))
-        return {"paths": n, "texts": 0, "total": n, "source": "drawio_unclassified"}
+        frame = len((extraction.get("drawing") or {}).get("ignored_objects") or [])
+        return {"paths": n, "texts": 0, "total": n, "frame": frame, "source": "drawio_unclassified"}
     if fmt == "dexpi":
-        return {"paths": 0, "texts": 0, "total": 0, "source": "dexpi_no_drawing"}
+        return {"paths": 0, "texts": 0, "total": 0, "frame": 0, "source": "dexpi_no_drawing"}
     return None
 
 
@@ -207,7 +211,7 @@ def check(extraction, ai_doc=None, ops=()):
 
     seen, out = set(), []
     for u in rows:
-        key = (u["id"], u["reason"])
+        key = (u["id"], u["reason"], u["detail"] if u["id"] is None and u["reason"] == "ai_candidate" else None)
         if key not in seen:
             seen.add(key)
             out.append(u)
@@ -266,30 +270,60 @@ def _read_sources(name):
         if doc is not None and (not isinstance(doc, dict) or doc.get("kind") != kind):
             raise ValueError("%s 파일이 아님" % what)
     ops = (edits or {}).get("ops") or []
-    return corrections.apply(original, ops), ai_doc, ops, files
+    return corrections.apply(original, ops), ai_doc, ops, files, original
+
+
+def _empty_record(name):
+    return {"kind": KIND, "schema_version": SCHEMA_VERSION, "extraction_name": name, "rev": 0,
+            "compared": None, "confirmed": None, "log": []}
+
+
+def _record_problem(doc):
+    """맞는 종류·판인 기록의 값이 틀렸으면 그 사유, 아니면 None."""
+    if type(doc.get("rev", 0)) is not int:
+        return "rev가 정수가 아님"
+    if not isinstance(doc.get("log", []), list):
+        return "log가 목록이 아님"
+    for what in ("compared", "confirmed"):
+        rec = doc.get(what)
+        if rec is None:
+            continue
+        if not isinstance(rec, dict) or not isinstance(rec.get("fingerprint"), str) or not isinstance(rec.get("files"), dict):
+            return "%s 기록의 모양이 틀림" % what
+    return None
 
 
 def _read_record(name):
-    """(기록 문서, 지문). 없으면 (빈 기록, None)."""
+    """(기록 문서, 지문, 문제). 없으면 (빈 기록, None, None). JSON이 깨졌거나 값이 틀린 기록은 문제(사유)를 돌려주고
+    빈 기록으로 다룬다(그 쪽은 확정되지 않은 것으로 보고, 확정 해제로 새 기록을 쓸 수 있음). 다른 종류이거나 이 앱이 모르는
+    판의 파일은 덮지 않도록 ValueError."""
     path = store_path(name)
     data, fp = store_io.read_bytes(path)
     if data is None:
-        return {"kind": KIND, "schema_version": SCHEMA_VERSION, "extraction_name": name, "rev": 0,
-                "compared": None, "confirmed": None, "log": []}, None
-    doc = json.loads(data.decode("utf-8"))
-    if not isinstance(doc, dict) or doc.get("kind") != KIND:
+        return _empty_record(name), None, None
+    try:
+        doc = json.loads(data.decode("utf-8"))
+    except ValueError as exc:
+        return _empty_record(name), fp, "쪽 확정 기록을 읽을 수 없음(%s)" % exc
+    if not isinstance(doc, dict):
+        return _empty_record(name), fp, "쪽 확정 기록이 객체가 아님"
+    if doc.get("kind") != KIND:
         raise ValueError("쪽 확정 기록 파일이 아님: %s" % path)
     if doc.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("이 앱이 모르는 판(%s)의 쪽 확정 기록이라 읽지 않음: %s" % (doc.get("schema_version"), path))
-    return doc, fp
+    problem = _record_problem(doc)
+    if problem:
+        log = doc.get("log") if isinstance(doc.get("log"), list) else []
+        return dict(_empty_record(name), log=log), fp, "쪽 확정 기록의 값이 틀림(%s)" % problem
+    return doc, fp, None
 
 
 def _changed(record_files, files):
     return [k for k in FILES if (record_files or {}).get(k) != files.get(k)]
 
 
-def _status(name, record, sources):
-    ex, ai_doc, ops, files = sources
+def _status(name, record, sources, problem=None):
+    ex, ai_doc, ops, files = sources[:4]
     out = check(ex, ai_doc, ops)
     fp = _combined(files)
     ready = not out["unconfirmed"] and not out["unplaced"] and out["leftovers"] is not None
@@ -306,7 +340,7 @@ def _status(name, record, sources):
     state = "open" if not ready else ("confirmed" if valid["compared"] and valid["confirmed"] else "ready")
     out.update(name=name, state=state, fingerprint=fp, files=files, compared=valid["compared"],
                confirmed=valid["confirmed"] if state == "confirmed" else None, released=released,
-               rev=record.get("rev", 0), default_view=default_view(out["read_method"], state))
+               rev=record.get("rev", 0), default_view=default_view(out["read_method"], state), record_error=problem)
     return out
 
 
@@ -314,8 +348,17 @@ def sheet_confirmation(name):
     """쪽 이름(추출 폴더 이름) → check의 답 + {name, state, fingerprint, files, compared, confirmed, released, rev,
     default_view}. state: open(미확인·위치 없음이 있거나 원본에 남은 것을 세지 못함), ready(그 셋은 되었으나 원본과 견줌·
     사람의 확정이 아직), confirmed. compared·confirmed는 지금 지문과 같은 기록만, released는 세 파일이 바뀌어 풀린 기록
-    (changed: 바뀐 파일). 파일을 쓰지 않는다. 추출 결과가 없으면 FileNotFoundError, 파일이 깨졌으면 ValueError."""
-    return _status(name, _read_record(name)[0], _read_sources(name))
+    (changed: 바뀐 파일), record_error(확정 기록이 깨졌으면 그 사유. 그 쪽은 확정되지 않은 것으로 봄). 파일을 쓰지 않는다.
+    추출 결과가 없으면 FileNotFoundError, 파일이 깨졌으면 ValueError."""
+    return load_sheet(name)[0]
+
+
+def load_sheet(name):
+    """(sheet_confirmation의 답, 원본 추출 결과, 사람 수정을 반영한 추출 결과). 판정과 두 추출 결과가 같은 바이트에서 나온다.
+    내보내기는 이 추출 결과로 그래프를 만들어, 확정한 지문과 내보내는 내용이 어긋나지 않게 한다."""
+    record, _fp, problem = _read_record(name)
+    src = _read_sources(name)
+    return _status(name, record, src, problem), src[4], src[0]
 
 
 # ---------------------------------------------------------------- 명령
@@ -360,12 +403,14 @@ def execute(name, command, args=None, by=None, fingerprint=None, rev=None):
     if command != "status" and not who:
         return _refused(command, [("by", "bad_actor", "사람 이름이 있어야 함(확정 기록에 남음)")])
     try:
-        record, record_fp = _read_record(name)
-        st = _status(name, record, _read_sources(name))
+        record, record_fp, problem = _read_record(name)
+        st = _status(name, record, _read_sources(name), problem)
     except (OSError, ValueError) as exc:
         return _refused(command, [("sheet", "unreadable", "쪽 자료를 읽을 수 없음(%s)" % exc)])
     if command == "status":
         return _ok(command, False, st)
+    if problem and command != "unconfirm":
+        return _refused(command, [("record", "unreadable", "%s. 확정 해제로 새 기록을 시작할 것" % problem)], st, st["rev"])
     if fingerprint is not None and fingerprint != st["fingerprint"]:
         return _refused(command, [("fingerprint", "stale", "본 뒤 도면 자료(추출 결과·사람 수정·AI 후보)가 바뀜. 다시 보고 할 것")],
                         st, st["rev"])
@@ -374,8 +419,10 @@ def execute(name, command, args=None, by=None, fingerprint=None, rev=None):
     at = now_utc()
     entry = {"at": at, "by": who, "action": command, "fingerprint": st["fingerprint"]}
     if command == "unconfirm":
-        if not record.get("compared") and not record.get("confirmed"):
+        if not record.get("compared") and not record.get("confirmed") and not problem:
             return _ok(command, False, st)
+        if problem:
+            entry["reset_bad_record"] = problem
         if (a.get("reason") or "").strip():
             entry["reason"] = a["reason"].strip()
         new = dict(record, compared=None, confirmed=None)
