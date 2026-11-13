@@ -61,10 +61,11 @@ class InstrumentTags(unittest.TestCase):
         self.assertEqual(got, want)
 
     def test_instrument_symbol_kinds(self):
-        """PT는 전송기. TEW(보호관, DCD 범례 1.7-1에서 TE와 다름)는 맞는 종류가 레지스트리에 없어 종류를 비우고
-        계기 모양으로만 태그를 붙인다."""
+        """PT는 전송기. TEW(보호관 온도 측정점, DCD 범례 1.7-1 TEW THERMOWELL)는 레지스트리에 보호관 종류가 없어
+        온도 측정점인 temperature_element로 본다(R3 개선 4, 2026-11-13. 3e에서는 종류를 비웠다)."""
         kinds = {item["tag"]: node_at(self.ex, item["bbox"])["kind"] for item in self.key["instruments"]}
-        self.assertEqual(kinds, {"TEW 106": None, "PT 106": "transmitter", "TEW 107": None, "TEW 108": None})
+        self.assertEqual(kinds, {"TEW 106": "temperature_element", "PT 106": "transmitter",
+                                 "TEW 107": "temperature_element", "TEW 108": "temperature_element"})
 
     def test_no_tag_outside_the_text_layer(self):
         """태그는 PDF 텍스트 층에 찍힌 글자다. 추출 결과의 label_text와 견주면 라벨에서 만든 태그는 늘 통과하므로,

@@ -776,9 +776,14 @@ class IsaBubbleKindTest(unittest.TestCase):
         for text, kind in cases.items():
             self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], kind, text)
 
-    def test_thermowell_alarm_and_annotation_get_no_kind(self):
+    def test_thermowell_is_a_temperature_element(self):
+        # TEW(보호관 온도 측정점)는 온도 측정점으로 본다(R3 개선 4, 2026-11-13. 3e에서는 종류를 비웠다)
+        for text in ("TEW\n4", "TEWIS\n1", "TEW 38A"):
+            self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], "temperature_element", text)
+
+    def test_alarm_and_annotation_get_no_kind(self):
         # FE(원 안 검출부)는 배관 부품 kind로 두지 않는다. V(밸브)·설비 번호(RCP 1A)·PSE(파열판)도 계기 kind가 아니다(3e 검토)
-        for text in ("TEW\n4", "TEWIS\n1", "PDAH\n032", "LL", "HHL", "NO", "SY\n019", "RE\n073A", "FE\n341A",
+        for text in ("PDAH\n032", "LL", "HHL", "NO", "SY\n019", "RE\n073A", "FE\n341A",
                      "PSV\n101", "PSE\n101", "PCV\n101", "FCV\n101", "RCP\n1A"):
             self.assertIsNone(pdf_vector._instrument_kind(text, 12.0)[0], text)
 

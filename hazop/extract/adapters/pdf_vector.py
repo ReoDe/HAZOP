@@ -968,6 +968,10 @@ def _instrument_kind(text, min_side=None):
     letters = m.group(1)
     if len(letters) >= 2 and letters[-1] == "E" and letters[0] == "T":
         return "temperature_element", "isa_letters:%s" % letters
+    if letters.startswith("TEW"):
+        # 보호관 온도 측정점(범례 1.7-1 TEW THERMOWELL, 뒤에 경보·지시 글자가 붙기도 함: TEWIS). 레지스트리에 보호관 종류가 없어
+        # 온도 측정점을 뜻하는 temperature_element로 본다(R3 개선 4, 2026-11-13. 3e에서는 종류를 비웠다)
+        return "temperature_element", "isa_letters:%s" % letters
     if len(letters) >= 2 and letters[-1] in INSTRUMENT_FUNCTION:
         return INSTRUMENT_FUNCTION[letters[-1]], "isa_letters:%s" % letters
     return _isa_bubble_kind(lines, min_side)
@@ -992,8 +996,10 @@ def _isa_bubble_kind(lines, min_side=None):
     if not m:
         return None, None
     letters = m.group(1)
+    if letters.startswith("TEW"):
+        return "temperature_element", "isa_function:%s" % letters  # 보호관 온도 측정점(TEWIS 등, _instrument_kind와 같음)
     if "W" in letters or "V" in letters:
-        return None, None  # W 보호관(DCD 범례 1.7-1의 TEW), V 밸브(PSV·PCV): 계기 kind가 아니다
+        return None, None  # V 밸브(PSV·PCV)와 W가 든 다른 글자: 계기 kind가 아니다(TEW는 위 _instrument_kind에서 정함)
     rest = letters[1:]
     if rest[:1] in VARIABLE_MODIFIERS_ISA and len(rest) > 1:
         rest = rest[1:]  # 변수 수식 문자(D 차압 등)
