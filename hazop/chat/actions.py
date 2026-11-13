@@ -183,10 +183,18 @@ ACTIONS = {a.name: a for a in (
     Action("analysis.run", CONFIRM, _spec(("node_ids", "ids"), cell_ids="ids"), "⑤",
            "구독 한도를 쓴다. 사람이 쓴 항목은 바꾸지 않음",
            "구간 {node_ids}을 AI로 분석합니다(구독 한도를 씁니다). 사람이 쓴 항목은 바꾸지 않습니다."),
-    Action("results.set_status", CONFIRM, _spec(("cell_id", "id"), ("status", "str")), "⑤", "사람 판단. 잠긴 구간의 칸은 거절",
-           "칸 {cell_id}의 상태를 {status}(으)로 바꿉니다."),
-    Action("results.edit", CONFIRM, _spec(("cell_id", "id"), ("fields", "obj")), "⑤", "사람 판단. 잠긴 구간의 칸은 거절",
-           "칸 {cell_id}의 내용을 고칩니다."),
+    # 결과 판정(수용·수정·기각·보류)은 사람 판단이라 늘 확인(UC1). 인자는 result_commands와 같다(results-commands.md §4).
+    # 사유(reason)는 모델 글이라 확인 문구에 넣지 않는다. 화면은 사유를 'AI가 제안한 사유' 원문으로 따로 보인다
+    Action("results.set_status", CONFIRM,
+           _spec(("node_id", "id"), ("deviation_id", "id"), ("entry_id", "id"), ("status", "str"), reason="str"), "⑤",
+           "사람 판단. 수정·기각·보류는 사유 필수. 잠긴 구간의 칸은 거절",
+           "구간 {node_id} 편차 {deviation_id}의 항목 {entry_id}을 {status_label}(으)로 판정합니다. "
+           "아래 사유가 확인한 사람 이름으로 함께 저장됩니다."),
+    Action("results.edit", CONFIRM,
+           _spec(("node_id", "id"), ("deviation_id", "id"), ("entry_id", "id"), ("fields", "obj"), ("reason", "str")),
+           "⑤", "사람 판단(판정 '수정'). 사유 필수. 잠긴 구간의 칸은 거절",
+           "구간 {node_id} 편차 {deviation_id}의 항목 {entry_id} 내용을 고칩니다({field_names}). 판정은 '수정'이 되고 "
+           "아래 사유가 확인한 사람 이름으로 함께 저장됩니다."),
     Action("export.excel", AUTO, _spec(), "⑤", "이름에 시각을 붙인 새 파일"),
     Action("export.ie_bundle", AUTO, _spec(), "⑤", "이름에 시각을 붙인 새 파일"),
     # ⑥
@@ -202,7 +210,13 @@ ACTIONS = {a.name: a for a in (
     Action("files.delete", NEVER, _spec(), "공통", "파일·폴더 지우기", where="탐색기에서 사람이 한다"),
 )}
 
-RESULT_STATUSES = ("approved", "rejected", "pending")
+# 사람이 정하는 판정(results-commands.md §1). proposed(AI 초안)는 사람이 정할 수 없는 값이라 받지 않는다
+RESULT_STATUSES = ("approved", "revised", "rejected", "on_hold")
+STATUS_LABELS = {"approved": "수용", "revised": "수정", "rejected": "기각", "on_hold": "보류"}
+REASON_REQUIRED = ("revised", "rejected", "on_hold")
+# results.edit로 고칠 수 있는 필드(hazop.study.results.EDITABLE_FIELDS와 같음. 시험이 대조)
+EDIT_FIELDS = ("cause", "consequence", "safeguards", "recommendation", "severity", "frequency",
+               "cause_refs", "consequence_refs", "expectation_refs", "cause_kind", "consequence_basis")
 SUGGEST_FIELDS = ("tag", "kind", "flow_direction", "unknown_confirm", "connect", "pair")
 
 
@@ -514,30 +528,46 @@ class ActionPlanner:
     def _check_analysis_run(self, item, snap):
         self._need_nodes(item, snap)
 
-    def _cell(self, item, snap):
-        cid = item.args["cell_id"]
-        parts = cid.split("/")
-        if len(parts) < 2:
-            raise _Reject("칸 ID 형식이 아님(<node_id>/<deviation_id>[/<entry_id>])")
-        n = _nodes(snap).get(parts[0])
+    def _entry(self, item, snap):
+        a = item.args
+        n = _nodes(snap).get(a["node_id"])
         if n is None:
             raise _Reject("없는 구간의 칸")
         if node_state(n) == "locked":
             raise _Reject("잠긴 구간의 칸은 바꾸지 않음(④에서 사람이 이유를 적고 풀어야 함)")
-        cell = next((c for c in _cells(snap, parts[0]) if c.get("deviation_id") == parts[1]), None)
+        cell = next((c for c in _cells(snap, a["node_id"]) if c.get("deviation_id") == a["deviation_id"]), None)
         if cell is None:
             raise _Reject("없는 칸")
-        if len(parts) > 2 and not any(e.get("entry_id") == parts[2] for e in cell.get("entries") or []):
+        if not any(e.get("entry_id") == a["entry_id"] for e in cell.get("entries") or []):
             raise _Reject("없는 항목")
-        item.targets = [cid]
+        item.targets = ["%s/%s/%s" % (a["node_id"], a["deviation_id"], a["entry_id"])]
+
+    @staticmethod
+    def _reason(item, required):
+        reason = (item.args.get("reason") or "").strip()
+        if required and not reason:
+            raise _Reject("수정·기각·보류에는 사유가 있어야 함")
+        if "reason" in item.args:
+            item.args["reason"] = reason
 
     def _check_results_set_status(self, item, snap):
-        if item.args["status"] not in RESULT_STATUSES:
-            raise _Reject("상태는 %s 중 하나" % ", ".join(RESULT_STATUSES))
-        self._cell(item, snap)
+        status = item.args["status"]
+        if status not in RESULT_STATUSES:
+            raise _Reject("판정은 %s 중 하나" % ", ".join(RESULT_STATUSES))
+        self._reason(item, status in REASON_REQUIRED)
+        self._entry(item, snap)
+        item.confirm_text = _fill(ACTIONS["results.set_status"].confirm_text,
+                                  dict(item.args, status_label=STATUS_LABELS[status]))
 
     def _check_results_edit(self, item, snap):
-        self._cell(item, snap)
+        fields = item.args["fields"]
+        bad = sorted(k for k in fields if k not in EDIT_FIELDS)
+        if not fields or bad:
+            raise _Reject("고칠 수 없는 필드: %s" % ", ".join(bad) if bad else "고칠 필드가 없음")
+        self._reason(item, True)
+        self._entry(item, snap)
+        item.confirm_text = _fill(ACTIONS["results.edit"].confirm_text,
+                                  dict(item.args, field_names=sorted(fields)))
 
     def _check_nodes_undo(self, item, snap):
         bid = item.args["batch_id_to_undo"]

@@ -178,10 +178,40 @@ class RoutingTest(Harness):
         p = self.plan([self.act("ie.draft_rules")])
         self.assertEqual(p.confirm[0].action, "ie.draft_rules")
 
+    def test_result_verdicts_need_reason(self):
+        """판정(수용·수정·기각·보류)은 늘 확인. 수정·기각·보류에 사유가 없으면 계획 단계에서 거절, 옛 pending·AI 초안은 거절."""
+        def verdict(status, **kw):
+            return self.act("results.set_status", node_id="S5", deviation_id="D01", entry_id="e1", status=status, **kw)
+        p = self.plan([verdict("approved"), verdict("on_hold", reason="절차서 확인 뒤 판단"),
+                       verdict("revised", reason="  빈도 고침 "), verdict("rejected", reason="같은 원인 중복")])
+        self.assertEqual((len(p.run), len(p.confirm), len(p.rejected)), (0, 4, 0), p)
+        self.assertEqual(p.confirm[2].args["reason"], "빈도 고침")
+        self.assertIn("보류", p.confirm[1].confirm_text)
+        self.assertNotIn("절차서", p.confirm[1].confirm_text)   # 사유(모델 글)는 확인 문구에 넣지 않음
+        p = self.plan([verdict("on_hold"), verdict("rejected", reason="   "), verdict("revised"),
+                       verdict("pending", reason="x"), verdict("proposed")], answer="a-2")
+        self.assertEqual((len(p.confirm), len(p.rejected)), (0, 5))
+        self.assertIn("사유", p.rejected[0].reason)
+        p = self.plan([self.act("results.edit", node_id="S5", deviation_id="D01", entry_id="e1", fields={"cause": "x"}),
+                       self.act("results.edit", node_id="S5", deviation_id="D01", entry_id="e1",
+                                fields={"status": "approved"}, reason="x"),
+                       self.act("results.edit", node_id="S5", deviation_id="D01", entry_id="e9", fields={"cause": "x"},
+                                reason="x"),
+                       self.act("results.edit", node_id="S5", deviation_id="D01", entry_id="e1",
+                                fields={"severity": 3, "cause_refs": []}, reason="강도 고침")], answer="a-3")
+        self.assertEqual((len(p.confirm), len(p.rejected)), (1, 3))
+        self.assertIn("cause_refs, severity", p.confirm[0].confirm_text)
+
+    def test_edit_fields_match_engine(self):
+        from hazop.study import results
+        self.assertEqual(set(A.EDIT_FIELDS), set(results.EDITABLE_FIELDS))
+
     def test_results_locked_rejected(self):
-        p = self.plan([self.act("results.set_status", cell_id="S4/D01/e1", status="approved"),
-                       self.act("results.set_status", cell_id="S5/D01/e1", status="rejected"),
-                       self.act("results.edit", cell_id="S5/D09", fields={"cause": "x"})])
+        p = self.plan([self.act("results.set_status", node_id="S4", deviation_id="D01", entry_id="e1", status="approved"),
+                       self.act("results.set_status", node_id="S5", deviation_id="D01", entry_id="e1", status="rejected",
+                                reason="보호수단이 이미 있음"),
+                       self.act("results.edit", node_id="S5", deviation_id="D09", entry_id="e1", fields={"cause": "x"},
+                                reason="원인 고침")])
         self.assertEqual(len(p.confirm), 1)
         self.assertEqual(len(p.rejected), 2)
 
@@ -424,7 +454,8 @@ class ReviewFixTest(Harness):
     def test_text_args_not_path_checked(self):
         p = self.plan([self.act("extract.suggest", sheet="g1", target="g1/e01", field="kind", value="개도 50%~100% 범위",
                                 reason="C:\\ 표기는 도면 글자"),
-                       self.act("results.edit", cell_id="S1/D02", fields={"cause": "유량 50%~100%"}),
+                       self.act("results.edit", node_id="S5", deviation_id="D01", entry_id="e1",
+                                fields={"cause": "유량 50%~100%"}, reason="범위 50%~100%로 고침"),
                        self.act("extract.suggest", sheet="g1", target="g1/e01", field="kind", value="a\x00b"),
                        self.act("extract.suggest", sheet="g1", target="C:/Windows", field="kind", value="x")])
         self.assertEqual((len(p.run), len(p.confirm), len(p.rejected)), (1, 1, 2))
