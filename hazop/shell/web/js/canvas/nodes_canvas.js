@@ -40,7 +40,7 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
   return {
     props: {
       mode, selection, segments, outside,
-      onSelection: (d) => N.setSelection(d.selected),
+      onSelection: (d) => N.setSelection(d.selected, d.truncated),
       onSegmentClick: (d) => { N.focusNode(d.node_id); N.openPanel(); },
       onEsc: () => {
         const s = N.nodes.get(), step = escStep({ card: !!s.card, focus: s.focus, mode: s.mode, selection: s.selection });
@@ -68,11 +68,13 @@ function SelectionBar() {
   const list = N.useNodes((s) => s.list.nodes);
   const card = N.useNodes((s) => s.card);
   const busy = N.useNodes((s) => s.busy);
+  const truncated = N.useNodes((s) => s.truncated);
   if (!selection.length || card) return null;
   const node = list.find((n) => n.node_id === focus);
   const edit = canEdit(node);
   return html`<div class="float selbar" role="group" aria-label="고른 것">
     <span class="count">${selection.length}개 고름</span>
+    ${truncated ? html`<${Chip} kind="warn" icon="alert-triangle" title="한 번에 고르는 수의 상한입니다. 네모를 나누어 고르세요.">앞 ${selection.length}개만 골랐습니다<//>` : null}
     <span class="hint">끌기: 더하기 · Alt+끌기: 빼기 · 클릭: 넣고 빼기 · Esc: 비우기</span>
     ${node ? html`<${Chip} kind="accent" title="강조한 구간"><span class="seg-dot" style=${"background:" + colorOf(list, node.node_id)}></span> ${node.node_id}<//>` : null}
     ${node && edit ? html`<${Btn} sm=${true} disabled=${busy} label=${node.node_id + "에 더하기"} onClick=${() => N.addSelectionTo(node.node_id)}>${node.node_id}에 더하기<//>

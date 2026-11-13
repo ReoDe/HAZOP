@@ -8,7 +8,8 @@ import { NodesPanel } from "../js/panels/nodes.js";
 import { NodeOverlay, useNodeCanvas } from "../js/canvas/nodes_canvas.js";
 
 const sent = [];
-const tick = (ms = 200) => new Promise((r) => setTimeout(r, ms));
+// 숨은 페이지는 타이머를 1초 간격으로 늦추므로 기다림은 마이크로태스크로 한다(Preact의 다시 그리기·가짜 엔진 답이 모두 마이크로태스크다)
+const tick = async () => { for (let i = 0; i < 600; i++) await Promise.resolve(); };
 
 // ---- 엔진 대역: 읽기(fetch)와 명령(hazopBridge)
 let engine;
@@ -44,7 +45,7 @@ function installStubs() {
       if (m.t !== "cmd") return;
       sent.push(m);
       const r = engine.reply(m.name, m.args);
-      setTimeout(() => deliver(JSON.stringify(Object.assign({ t: "reply", id: m.id }, r))), 0);
+      Promise.resolve().then(() => deliver(JSON.stringify(Object.assign({ t: "reply", id: m.id }, r))));
     },
     setHandler() {},
   };
@@ -149,13 +150,13 @@ export const tests = [
     const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
     await tick();
     host.querySelectorAll(".nrow-b")[1].click();         // S2
-    await tick(220);
+    await tick();
     assert.equal(N.nodes.get().focus, "S2");
     const det = host.querySelector(".ndetail");
     assert(det && det.textContent.includes("AI 초안"), "AI 초안 표시");
     assert(det.textContent.includes("RC-RV01") && det.textContent.includes("겹침"), "경계·겹침");
     host.querySelectorAll(".nrow-b")[2].click();         // S3 확정
-    await tick(220);
+    await tick();
     const edit = [...host.querySelectorAll(".ndetail button")].find((b) => b.getAttribute("aria-label") === "이름 고치기");
     assert(edit && edit.disabled, "확정 구간은 이름 고치기가 꺼짐");
     assert(host.textContent.includes("확정 해제") && host.textContent.includes("분석 마침"), "확정 구간 동작");
@@ -166,7 +167,7 @@ export const tests = [
     const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
     await tick();
     host.querySelectorAll(".nrow-b")[0].click();
-    await tick(220);
+    await tick();
     const by = (label) => [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === label);
     by("이름 고치기").click();
     await tick();
@@ -175,16 +176,17 @@ export const tests = [
     input.dispatchEvent(new Event("input", { bubbles: true }));
     await tick();
     by("이름 저장").click();
-    await tick(220);
+    await tick();
     assert.equal([lastCmd().name, lastCmd().args.name], ["nodes.rename", "고친 이름"]);
-    engine.reply = () => ({ ok: false, error: { code: "rejected", message: "S1: 분석 칸에 판정이 있어 지울 수 없음(보관을 고를 것)" } });
+    engine.reply = () => ({ ok: true, data: { set_rev: 4, batch_id: null, node_ids: ["S1"], needs_archive: true, skipped: 0 } });   // 엔진이 코드로 알림: 아무것도 지우지 않음
     by("S1 지우기").click();
-    await tick(220);
-    assert(host.textContent.includes("분석 칸에 판정이 있어 지울 수 없음"), "사유 표시");
+    await tick();
+    assert(host.textContent.includes("분석 칸에 판정이 있습니다"), "보관 안내");
     assert(!!by("보관하고 지우기"), "보관 선택지");
+    assert(host.querySelectorAll(".nrow").length === 2, "아직 지우지 않음");
     engine.reply = () => ({ ok: true, data: { set_rev: 6, batch_id: "B4", node_ids: ["S1"] } });
     by("보관하고 지우기").click();
-    await tick(220);
+    await tick();
     assert.equal([lastCmd().name, lastCmd().args.archive], ["nodes.remove", true]);
     host.remove();
   } },
@@ -194,11 +196,11 @@ export const tests = [
     await tick();
     const by = (label) => [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === label);
     by("B2 되돌리기").click();
-    await tick(220);
+    await tick();
     assert.equal([lastCmd().name, lastCmd().args.batch_id], ["nodes.undo", "B2"]);
     assert(!("targets" in lastCmd().args), "묶음 되돌리기는 대상 판 없이 set_rev만");
     by("나머지도 나누기").click();
-    await tick(220);
+    await tick();
     assert.equal(lastCmd().name, "chat.ask");
     host.remove();
   } },
@@ -212,7 +214,7 @@ export const tests = [
     await tick();
     assert(host.textContent.includes("3개 고름"), "막대");
     [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "구간 만들기").click();
-    await tick(220);
+    await tick();
     assert.equal(lastCmd().name, "nodes.suggest");
     const card = host.querySelector(".newnode");
     assert(card && card.textContent.includes("새 구간 S4") && card.textContent.includes("S1 구간과 1개가 겹칩니다") && card.querySelector("#nn-name").value === "RC-RV01 → RC-SG01", "카드 " + (card && card.textContent));
@@ -221,7 +223,7 @@ export const tests = [
     intent.dispatchEvent(new Event("input", { bubbles: true }));
     await tick();
     [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "만들기").click();
-    await tick(260);
+    await tick();
     const m = lastCmd();
     assert.equal(m.name, "nodes.create");
     assert.equal(m.args, { sheet: "graph-A", ids: ["n1", "n2", "n3"], name: "RC-RV01 → RC-SG01", design_intent: "원자로 출구를 증기발생기로 보냄", set_rev: 4 });
@@ -239,7 +241,7 @@ export const tests = [
     const labels = () => [...host.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"));
     assert(labels().includes("S1에 더하기") && labels().includes("S1에서 빼기"));
     [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "S1에 더하기").click();
-    await tick(220);
+    await tick();
     assert.equal([lastCmd().name, lastCmd().args.node_id, lastCmd().args.ids, lastCmd().args.sheet], ["nodes.add_members", "S1", ["n9"], "graph-A"]);
     N.nodes.set({ focus: "S3" });
     N.setSelection(["n9"]);
@@ -274,13 +276,13 @@ export const tests = [
     await setup();
     engine.list = Object.assign({}, engine.list, { set_rev: 9, nodes: engine.list.nodes.slice(0, 1) });
     deliver(JSON.stringify({ t: "changed", topic: "nodes", rev: 9 }));
-    await tick(220);
+    await tick();
     assert.equal([N.nodes.get().list.set_rev, N.nodes.get().list.nodes.length], [9, 1]);
   } },
 ];
 
 // 525구간 목록 시간(규격 §5.4 방식: 측정값은 window.__nodesTiming에 남기고, 상한은 넉넉히 둔다)
-tests.push({ name: "구간 패널: 525구간 목록을 그리고 구간을 바꿔 누르는 시간", async run(assert) {
+tests.push({ get name() { return "구간 패널: 525구간 목록을 그리고 구간을 바꿔 누르는 시간" + (window.__nodesTiming ? " [525행 · 그리기 " + window.__nodesTiming.render_ms + "ms · 구간 바꿔 누르기 " + window.__nodesTiming.focus_ms.join("/") + "ms · 오프스크린 QtWebEngine, 가상 스크롤 없음]" : ""); }, async run(assert) {
   await setup();
   const many = [];
   for (let k = 0; k < 525; k++) many.push({ node_id: "S" + (k + 1), name: "구간 " + (k + 1), state: k % 7 === 0 ? "confirmed" : "applied", origin: k % 3 ? "user" : "ai", name_by: "user", rev: 1, basis: "x", batch_id: "B1",
@@ -303,5 +305,52 @@ tests.push({ name: "구간 패널: 525구간 목록을 그리고 구간을 바�
   window.__nodesTiming = { render_ms: Math.round(render), focus_ms: times.map(Math.round) };
   assert(host.querySelectorAll(".nrow").length === 525, "525행");
   assert(render < 3000 && Math.max(...times) < 1500, JSON.stringify(window.__nodesTiming));
+  host.remove();
+} });
+
+
+tests.push({ name: "구간 연결: 문구가 아니라 엔진 코드로 판단한다(거절 문장이 달라도 보관 선택지는 답의 needs_archive로만 뜬다)", async run(assert) {
+  await setup();
+  engine.reply = () => ({ ok: false, error: { code: "failed", message: "분석 칸에 판정이 있어 지울 수 없음 보관" } });
+  await N.removeNode("S1", false);
+  assert.equal(N.nodes.get().needArchive, null);                // 오류 문장에 '판정·보관'이 있어도 선택지를 만들지 않는다
+  engine.reply = () => ({ ok: true, data: { set_rev: 4, batch_id: null, node_ids: ["S1"], needs_archive: true } });
+  await N.removeNode("S1", false);
+  assert.equal(N.nodes.get().needArchive, "S1");
+} });
+
+tests.push({ name: "고르기: 2,000개를 넘겨 잘렸다는 사실을 막대에 보이고, 비우면 사라짐", async run(assert) {
+  await setup();
+  const host = mount(html`<${NodeOverlay} />`);
+  N.setSelection(["n1", "n2"], true);
+  await tick();
+  assert(host.textContent.includes("앞 2개만 골랐습니다"), host.textContent.slice(0, 200));
+  N.setSelection(["n1"], false);
+  await tick();
+  assert(!host.textContent.includes("만 골랐습니다"));
+  N.clearSelection();
+  host.remove();
+} });
+
+tests.push({ name: "구간 연결: 뺀 선(신호선·계측선)이 있으면 답의 문장을 알림으로 보인다", async run(assert) {
+  await setup();
+  store.set({ toast: null });
+  engine.reply = () => ({ ok: true, data: { set_rev: 5, batch_id: "B3", node_ids: ["S1"], skipped: 2, skipped_text: "고른 것 가운데 2개는 구성요소가 아닌 선(신호선·계측선)이라 뺐습니다." } });
+  await N.run("add_members", { node_id: "S1", sheet: "graph-A", ids: ["n1", "n2", "s1", "s2"] }, ["S1"]);
+  assert.equal(store.get().toast && store.get().toast.text, "고른 것 가운데 2개는 구성요소가 아닌 선(신호선·계측선)이라 뺐습니다.");
+  store.set({ toast: null });
+} });
+
+tests.push({ name: "구간 패널: 옛 판(0.1) 파일은 안내와 '새 판으로 바꾸기'를 보이고 누르면 nodes.migrate", async run(assert) {
+  await setup();
+  engine.list = Object.assign({}, engine.list, { legacy: true, nodes: [] });
+  await N.refresh();
+  const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+  await tick();
+  assert(host.textContent.includes("옛 판(0.1) 구간 파일"), "안내");
+  engine.reply = () => ({ ok: true, data: { set_rev: 1, read_only: null } });
+  [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "새 판으로 바꾸기").click();
+  await tick();
+  assert.equal(lastCmd().name, "nodes.migrate");
   host.remove();
 } });

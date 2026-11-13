@@ -24,6 +24,11 @@ from tests.test_study_node_tools import DEVS, snp_graph  # noqa: E402
 S101, S102 = "graph-SNP-M-101", "graph-SNP-M-102"
 
 
+def _rb(path):
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
 class Env(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="hazop-shellnodes-")
@@ -34,7 +39,6 @@ class Env(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
         os.makedirs(os.environ["HAZOP_WORK_ROOT"])
-        api_nodes.register(api.COMMANDS)
         self.pg = snp_graph()
         from hazop.app import project_ctx
         patcher = mock.patch.object(project_ctx, "project_graph", lambda pid: self.pg)
@@ -59,8 +63,13 @@ class Env(unittest.TestCase):
         return api_nodes.summary(self.engine)["set_rev"]
 
     def call(self, name, args=None, **kw):
+        """웹이 하듯 화면이 본 판(set_rev, 건드리는 구간의 rev·state)을 함께 보낸다. 시험이 따로 정하면 그것을 쓴다."""
         args = dict(args or {})
         args.setdefault("set_rev", self.rev())
+        wanted = ([args["node_id"]] if args.get("node_id") else []) + list(args.get("node_ids") or [])
+        if "targets" not in args and wanted:
+            rows = {n["node_id"]: n for n in api_nodes.summary(self.engine)["nodes"]}
+            args["targets"] = [{"node_id": i, "rev": rows[i]["rev"], "state": rows[i]["state"]} for i in wanted if i in rows]
         return self.engine.dispatch("nodes." + name, dict(args, **kw))
 
     def create(self, name="구간 가", a=0, b=6, sheet=S101, **kw):
@@ -115,7 +124,7 @@ class CommandTest(Env):
         self.assertEqual(r["error"]["code"], "stale")
         r = self.call("rename", {"node_id": "S1", "name": "새 이름", "targets": [{"node_id": "S1", "rev": n["rev"], "state": "confirmed"}]})
         self.assertEqual(r["error"]["code"], "stale")
-        r = self.call("rename", {"node_id": "S1", "name": "새 이름", "targets": [{"node_id": "S9", "rev": 1, "state": "applied"}]})
+        r = self.call("rename", {"node_id": "S1", "name": "새 이름", "targets": [{"node_id": "S1", "rev": n["rev"], "state": "applied"}, {"node_id": "S9", "rev": 1, "state": "applied"}]})
         self.assertEqual(r["error"]["code"], "not_found")
         self.assertEqual(api_nodes.summary(self.engine)["nodes"][0]["name"], "구간 가")
 
@@ -138,6 +147,7 @@ class CommandTest(Env):
         mixed = self.local(S101, 0, 3) + ["신호선-id"]        # 그래프 구성요소가 아닌 선은 빼고 나머지로 만든다
         r = self.call("create", {"sheet": S101, "ids": mixed, "name": "섞음"})
         self.assertTrue(r["ok"], r)
+        self.assertEqual((r["data"]["skipped"], "1개는" in r["data"]["skipped_text"]), (1, True))
         self.assertEqual(api_nodes.summary(self.engine)["nodes"][0]["count"], 3)
         self.assertTrue(self.call("remove", {"node_id": "S1"})["ok"])
         r = self.call("create", {"sheet": S101, "ids": self.local(S101, 0, 2), "name": ""})
@@ -265,6 +275,8 @@ class ReadTest(Env):
         self.assertEqual(body["segments"][0]["node_id"], "S1")
         self.assertIsNone(api_nodes.read(self.engine, ["nodes", "node", "S9"], {}))
         self.assertIsNone(api_nodes.read(self.engine, ["nodes", "zzz"], {}))
+        self.assertIsNone(api_nodes.read(self.engine, ["nodes", "sheet", "../../x"], {}))
+        self.assertIsNone(api_nodes.read(self.engine, ["nodes", "sheet", "graph-없는-도면"], {}))
 
 
 class RoundTripTest(Env):
@@ -305,17 +317,18 @@ class RoundTripTest(Env):
 
 class CommandTableTest(unittest.TestCase):
     def test_all_commands_registered_with_set_rev_and_no_who_keys(self):
-        with mock.patch.dict(api.COMMANDS):
-            api_nodes.register(api.COMMANDS)
+        if True:
             names = sorted(k for k in api.COMMANDS if k.startswith("nodes."))
             self.assertEqual(names, ["nodes." + x for x in sorted(
                 ["create", "add_members", "remove_members", "rename", "set_intent", "merge", "split", "remove", "confirm", "unconfirm",
-                 "lock", "unlock", "undo", "suggest"])])
+                 "lock", "unlock", "undo", "suggest", "migrate"])])
             for k in names:
                 spec = api.COMMANDS[k].spec
                 self.assertFalse({"by", "at", "author", "origin", "confirmed_by", "request"} & set(spec), k)
-                if k != "nodes.suggest":
-                    self.assertIn("set_rev", spec, k)
+                if k not in ("nodes.suggest", "nodes.migrate"):
+                    self.assertTrue(spec["set_rev"][1], k)
+                    # 구간을 건드리는 명령은 대상의 판(targets)이 필수다(규격 §5.3). 만들기·묶음 되돌리기는 대상 구간이 없다
+                    self.assertEqual(spec["targets"][1], k not in ("nodes.create", "nodes.undo"), k)
 
 
 class BigSetTimingTest(Env):
@@ -333,7 +346,7 @@ class BigSetTimingTest(Env):
         ns["graph_member_refs"] = {}
         self.pg = pg
         nodes.write(nodes.store_path("BIG", None), ns) if False else None
-        with mock.patch.object(nodes, "load", lambda g: copy.deepcopy(ns)):
+        with mock.patch.object(nodes, "read_as_is", lambda g: copy.deepcopy(ns)):
             t0 = time.perf_counter()
             s = api_nodes.summary(self.engine)
             t1 = time.perf_counter()
@@ -364,3 +377,112 @@ class WiringTest(unittest.TestCase):
         self.assertEqual(out.splitlines()[-1], "True", out)
         with open(api.__file__, encoding="utf-8") as fh:
             self.assertIn('api_nodes.read(self.engine, parts, query)', fh.read())
+
+
+class ReviewFixTest(Env):
+    """총괄 검토(2026-11-13)에서 반려된 점의 재현: 말없이 뺌, 읽기가 쓰기, targets 선택, 문구 대조, 이름 겹침, 묶음 ID."""
+
+    def test_targets_are_required_for_node_commands(self):
+        self.create()
+        r = self.engine.dispatch("nodes.rename", {"node_id": "S1", "name": "x", "set_rev": self.rev()})
+        self.assertEqual(r["error"]["code"], "bad_args")
+        self.assertIn("targets", r["error"]["message"])
+        r = self.engine.dispatch("nodes.rename", {"node_id": "S1", "name": "x", "set_rev": self.rev(), "targets": []})
+        self.assertEqual(r["error"]["code"], "bad_args")      # 건드리는 구간의 판이 빠짐
+        r = self.engine.dispatch("nodes.rename", {"node_id": "S1", "name": "x"})
+        self.assertEqual(r["error"]["code"], "bad_args")      # set_rev 빠짐
+        self.assertEqual(api_nodes.summary(self.engine)["nodes"][0]["name"], "구간 가")
+
+    def test_dropped_ids_are_counted_and_worded_in_the_answer(self):
+        self.create(a=0, b=3)
+        ids = self.local(S101, 3, 5) + ["sig-a", "sig-b"]
+        for name in ("add_members", "remove_members"):
+            r = self.call(name, {"node_id": "S1", "sheet": S101, "ids": ids})
+            self.assertTrue(r["ok"], r)
+            self.assertEqual(r["data"]["skipped"], 2, name)
+            self.assertIn("2개는 구성요소가 아닌 선", r["data"]["skipped_text"])
+        r = self.call("split", {"node_id": "S1", "sheet": S101, "ids": self.local(S101, 0, 1) + ["sig-x"]})
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["data"]["skipped"], 1)
+        r = self.call("rename", {"node_id": "S2", "name": "나눈 구간"})
+        self.assertEqual(r["data"]["skipped"], 0)
+        self.assertNotIn("skipped_text", r["data"])
+
+    def test_noop_edit_returns_no_batch_id(self):
+        self.create("가", 0, 3)
+        self.create("나", 3, 6)
+        r = self.call("remove_members", {"node_id": "S1", "sheet": S101, "ids": self.local(S101, 3, 6)})   # S1에 없는 것을 뺌
+        self.assertTrue(r["ok"], r)
+        self.assertIsNone(r["data"]["batch_id"])
+
+    def test_read_never_writes_and_legacy_is_converted_only_on_request(self):
+        pg = self.pg
+        path = nodes.store_path(pg.get("project_id"), pg.get("graph_id"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        mem = [n["entity_id"] for n in self.by_sheet[S101][:5]]
+        doc = {"schema_version": "0.1", "kind": "hazop_study_nodes", "project_id": pg.get("project_id"), "graph_id": pg["graph_id"],
+               "graph_version": pg.get("graph_version"), "status": "confirmed", "confirmed_at": "2026-01-01T00:00:00Z",
+               "confirmed_by": "hong", "nodes": [{"node_id": "S1", "name": "옛 구간", "origin": "rule", "members": mem}], "history": []}
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, ensure_ascii=False)
+        before = (sorted(os.listdir(os.path.dirname(path))), _rb(path))
+        s = api_nodes.summary(self.engine)
+        api_nodes.sheet_view(self.engine, S101)
+        api_nodes.detail(self.engine, "S1")
+        self.assertEqual((sorted(os.listdir(os.path.dirname(path))), _rb(path)), before)   # 읽기는 파일을 바꾸지 않는다
+        self.assertTrue(s["legacy"])
+        self.assertEqual(s["nodes"], [])
+        r = self.create()
+        self.assertEqual(r["error"]["code"], "failed")        # 변환 전에는 쓰지 않는다
+        self.assertIn("새 판", r["error"]["message"])
+        self.assertEqual(_rb(path), before[1])
+        m = self.engine.dispatch("nodes.migrate", {})
+        self.assertTrue(m["ok"], m)
+        s2 = api_nodes.summary(self.engine)
+        self.assertFalse(s2["legacy"])
+        self.assertEqual([n["node_id"] for n in s2["nodes"]], ["S1"])
+        self.assertEqual(json.loads(_rb(path).decode("utf-8"))["schema_version"], "0.2")
+
+    def test_locked_is_decided_by_state_not_by_wording(self):
+        self.create()
+        self.call("confirm", {"node_ids": ["S1"]})
+        with mock.patch.object(node_commands, "execute", lambda *a, **k: {"ok": False, "refused": [{"target": "x", "code": "rule", "reason": "전혀 다른 문장"}]}):
+            r = self.call("rename", {"node_id": "S1", "name": "x"})
+            self.assertEqual(r["error"]["code"], "locked")
+            self.assertEqual(r["error"]["message"], "전혀 다른 문장")
+        self.call("unconfirm", {"node_ids": ["S1"]})
+        with mock.patch.object(node_commands, "execute", lambda *a, **k: {"ok": False, "refused": [{"target": "x", "code": "rule", "reason": "확정 구간은 이렇게 적혀도"}]}):
+            r = self.call("rename", {"node_id": "S1", "name": "x"})
+            self.assertEqual(r["error"]["code"], "failed")     # 문구에 '확정'이 있어도 적용됨 구간이면 locked가 아니다
+        with mock.patch.object(node_commands, "execute", lambda *a, **k: {"ok": False, "refused": [{"target": "x", "code": "conflict", "reason": "x"}]}):
+            self.assertEqual(self.call("rename", {"node_id": "S1", "name": "x"})["error"]["code"], "stale")
+
+    def test_remove_with_judged_cells_asks_for_archive_and_saves_nothing(self):
+        self.create("가", 0, 4)
+        self.create("나", 4, 8)
+        self.assertTrue(self.call("confirm", {"node_ids": ["S1"]})["ok"])
+        ns = nodes.load(self.pg)
+        doc, fp = res.load_fp(ns)
+        if doc is None:
+            doc = res.empty_results(ns, res.load_deviations())
+        cells = [c for c in doc.get("cells") or [] if c.get("node_id") == "S1"]
+        self.assertTrue(cells)
+        cells[0].setdefault("entries", []).append({"entry_id": "E1", "status": "accepted", "by": "hong", "origin": "user", "cause": "x"})
+        cells[0]["state"] = "analyzed"
+        res.save_fp(doc, ns.get("project_id"), expect=fp)
+        self.assertTrue(self.call("unconfirm", {"node_ids": ["S1"]})["ok"])
+        before = api_nodes.summary(self.engine)
+        r = self.call("remove", {"node_id": "S1"})
+        self.assertTrue(r["ok"], r)
+        self.assertEqual((r["data"]["needs_archive"], r["data"]["batch_id"]), (True, None))
+        self.assertEqual(api_nodes.summary(self.engine)["set_rev"], before["set_rev"])
+        r = self.call("remove", {"node_id": "S1", "archive": True})
+        self.assertTrue(r["ok"], r)
+        self.assertEqual([n["node_id"] for n in api_nodes.summary(self.engine)["nodes"]], ["S2"])
+
+    def test_register_refuses_a_name_that_exists(self):
+        table = {}
+        api_nodes.register(table)
+        with self.assertRaises(ValueError) as cm:
+            api_nodes.register(table)
+        self.assertIn("nodes.create", str(cm.exception))

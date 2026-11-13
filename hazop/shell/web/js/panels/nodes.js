@@ -114,6 +114,8 @@ export function NodesPanel({ onClose }) {
       <span class="acts"><${Btn} kind="ghost" icon="x" label="패널 닫기" title="닫기 (Esc)" onClick=${onClose} /></span></div>
     <div class="panel-b">
       ${error ? html`<${Notice} kind="err" icon="alert-triangle"><span class="errtext">${error}</span> <button type="button" class="linkbtn" onClick=${N.dismissError}>닫기</button><//>` : null}
+      ${list.legacy ? html`<${Notice} kind="warn" icon="alert-triangle">이 도면은 옛 판(0.1) 구간 파일입니다. 읽기만 해서는 바꾸지 않습니다. 새 판으로 바꾸면 한 번 저장합니다.
+        <div class="acts-row"><${Btn} sm=${true} label="새 판으로 바꾸기" disabled=${busy} onClick=${N.migrate}>새 판으로 바꾸기<//></div><//>` : null}
       ${list.read_only ? html`<${Notice} kind="warn" icon="lock">이 구간 파일은 읽기 전용이라 고칠 수 없습니다: ${list.read_only}<//>` : null}
       ${list.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면 그래프가 바뀌어 저장된 구간과 어긋날 수 있습니다. 확정하기 전에 구성요소를 확인하세요.<//>` : null}
       ${!list.available ? html`<${Notice}>프로젝트 그래프가 아직 없습니다. 도면을 추출하면 구간을 만들 수 있습니다.<//>` : null}

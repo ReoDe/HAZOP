@@ -13,6 +13,7 @@ export const nodes = createStore({
   detail: null,             // GET nodes/node/<id>
   mode: "pan",              // "pan" | "pick"
   selection: [],            // 지금 도면에서 고른 local_id
+  truncated: false,         // 2,000개를 넘겨 골라 앞 2,000개만 남았음
   focus: null,              // 강조한 구간 ID
   card: null,               // 새 구간 카드
   scope: "sheet",           // 목록 범위: "sheet"(이 도면) | "all"
@@ -71,8 +72,8 @@ export async function refresh() {
 
 // ---------------------------------------------------------------- 보기 동작
 export function setMode(mode) { nodes.set({ mode: mode === "pick" ? "pick" : "pan" }); }
-export function setSelection(ids) { nodes.set({ selection: ids }); }
-export function clearSelection() { nodes.set({ selection: [] }); }
+export function setSelection(ids, truncated = false) { nodes.set({ selection: ids, truncated: !!truncated }); }
+export function clearSelection() { nodes.set({ selection: [], truncated: false }); }
 
 export function focusNode(id, { zoom = false } = {}) {
   const same = nodes.get().focus === id;
@@ -118,7 +119,7 @@ export async function submitCard() {
   editCard({ busy: true, error: null });
   try {
     const r = await cmd("nodes.create", { sheet, ids: selection, name: card.name.trim(), design_intent: card.intent.trim() || undefined, set_rev: list.set_rev });
-    nodes.set({ card: null, selection: [], mode: "pan" });
+    nodes.set({ card: null, selection: [], truncated: false, mode: "pan" });
     await refresh();
     if (r.node_ids && r.node_ids[0]) focusNode(r.node_ids[0]);
     return r;
@@ -142,6 +143,7 @@ export async function run(name, args, targetIds) {
   try {
     const r = await cmd("nodes." + name, Object.assign({ set_rev: list.set_rev }, args, targetIds && targetIds.length ? { targets: targetsOf(list.nodes, targetIds) } : {}));
     nodes.set({ busy: false });
+    if (r && r.skipped_text) shell.set({ toast: { text: r.skipped_text, kind: "info" } });   // 구성요소가 아니라 뺀 선이 있으면 알린다
     await refresh();
     return r;
   } catch (e) {
@@ -189,9 +191,21 @@ export async function splitSelection(id, name) {
 
 export async function removeNode(id, archive) {
   const r = await run("remove", archive ? { node_id: id, archive: true } : { node_id: id }, [id]);
+  if (r && r.needs_archive) { nodes.set({ needArchive: id }); return null; }   // 엔진이 코드로 알림: 분석 칸에 판정이 있어 아무것도 지우지 않았다
   if (r) nodes.set({ focus: null, detail: null });
-  else if (!archive && /칸|판정|보관/.test(nodes.get().error || "")) nodes.set({ needArchive: id });
   return r;
+}
+
+/** 0.1 구간 파일을 새 판으로 바꾼다(읽기는 파일을 바꾸지 않으므로 사용자가 눌렀을 때 한 번). */
+export async function migrate() {
+  nodes.set({ busy: true, error: null });
+  try {
+    await cmd("nodes.migrate", {});
+    nodes.set({ busy: false });
+    await refresh();
+  } catch (e) {
+    await afterError(e);
+  }
 }
 
 export function toggleChecked(id) {
@@ -207,7 +221,7 @@ export function wire() {
   on("chat.answer", () => { setTimeout(refresh, 150); });   // 채팅이 구간을 만들었을 수 있다
   let last = null;
   shell.subscribe((s) => {
-    if (s.sheet !== last) { last = s.sheet; nodes.set({ selection: [], card: null, sheetView: null }); loadSheet(s.sheet); }
+    if (s.sheet !== last) { last = s.sheet; nodes.set({ selection: [], truncated: false, card: null, sheetView: null }); loadSheet(s.sheet); }
   });
   refresh();
 }
