@@ -507,7 +507,7 @@ export class SheetCore {
     const reason = this.cb.onUnconfirmedClick ? this._unconfirmedAt(hit.id) : null;
     if (reason) { const rr = this.index.rectOf(hit.id); this.cb.onUnconfirmedClick({ id: hit.id, reason, fragment: this.fragmentOf(hit.id), rect: rr ? this._toScreenRect(rr) : null }); }
     const rect = this.index.rectOf(hit.id), rec = (this.index.byId.get(hit.id) || [])[0];
-    if (this.cb.onItemClick) this.cb.onItemClick({ id: hit.id, kind: rec && rec.kind, tag: rec && rec.tag, rect: rect ? this._toScreenRect(rect) : null, via: "click" });
+    if (this.cb.onItemClick) this.cb.onItemClick({ id: hit.id, kind: rec && rec.kind, kind_label: rec && rec.kind_label, tag: rec && rec.tag, rect: rect ? this._toScreenRect(rect) : null, via: "click" });
   }
 
   _linkOf(id) {

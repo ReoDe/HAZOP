@@ -73,9 +73,18 @@ def _points(r, ox, oy):
     return src + way + dst
 
 
+def kind_label(kind):
+    """종류 사전의 한글 이름(없으면 None). 화면은 한글을 크게, 영문 kind를 작게 함께 적는다."""
+    if not kind:
+        return None
+    from hazop.kg.schema import REGISTRY
+    name = REGISTRY.label(REGISTRY.kind_class.get(kind), None)
+    return name if name and name != kind else None
+
+
 def build_items(extraction):
     """추출 결과 -> {"width","height","items":[…]}. 각 item: id(local_id), kind, category, tag, layer(symbol|pipe), bbox, polyline,
-    classification, unknown, label_bbox(구성요소의 글자 자리)."""
+    classification, unknown, label_bbox(구성요소의 글자 자리), kind_label(기호만, 종류의 한글 이름)."""
     ox, oy = _offset(extraction)
     items = []
     for n in extraction.get("nodes") or []:
@@ -85,7 +94,7 @@ def build_items(extraction):
         if bbox is None:
             continue
         cls = n.get("classification")
-        items.append({"id": n["local_id"], "kind": n.get("kind"), "category": n.get("category"), "tag": n.get("tag"), "layer": "symbol",
+        items.append({"id": n["local_id"], "kind": n.get("kind"), "kind_label": kind_label(n.get("kind")), "category": n.get("category"), "tag": n.get("tag"), "layer": "symbol",
                       "bbox": bbox, "polyline": None, "classification": cls, "unknown": cls not in (None, "classified") or not n.get("kind"),
                       "label_bbox": _box((n.get("label_location") or {}).get("bbox"), ox, oy)})
     for r in extraction.get("relations") or []:

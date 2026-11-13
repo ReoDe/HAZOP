@@ -210,7 +210,8 @@ export function buildBase(ctx) {
       ex.label.forEach((t, i) => labels.push(labelSpec(cx, cy + (ex.label.length === 1 ? sz * 0.35 : i ? sz * 1.05 : -sz * 0.35), t, { anchor: "middle", size: sz, fixed: true, pri: 3, owner: rec.id })));
     } else if (rec.tag) {
       if (rec.category === "instrument") {                // 계기: 원 안 두 줄(기능 글자 / 번호). 원이 화면에서 34px 미만이면 기능 글자만 크게, 번호는 확대하면 나타난다
-        const lines = splitTag(rec.tag), bwid = Math.max(bw, 1), kBig = 34 / bwid;
+        // 글자는 원 안에 맞춘다: 네모 안 원(controller, 원 반지름 34)은 다른 계기 원(반지름 48)보다 작다
+        const lines = splitTag(rec.tag), bwid = Math.max(bw, 1) * (rec.kind === "controller" ? 34 / 48 : 1), kBig = 34 / bwid;
         // 모든 계기에서 기능 글자는 같은 높이(원의 위쪽 반)에 둔다. 가로줄이 있는 계기(indicator)도 글자는 줄 위, 번호는 줄 아래다
         const fy = cy - bwid * 0.1, ny = cy + bwid * 0.32;
         if (lines.length > 1) {

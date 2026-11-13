@@ -118,6 +118,11 @@ class SnpTest(unittest.TestCase):
             c = self.built[d]["counts"]
             self.assertEqual(c["total"], sum(v for k, v in c.items() if k != "total"))
 
+    def test_symbol_items_carry_the_korean_kind_name_from_the_dictionary(self):
+        items = {i["id"]: i for i in sheet_items.build_items(self.ex["SNP-M-102"])["items"]}
+        self.assertEqual(items["local-node-008"]["kind_label"], "제어 밸브")
+        self.assertIsNone(sheet_items.kind_label("no_such_kind"))
+
     def test_extraction_is_not_changed_and_build_items_is_unchanged(self):
         e = self.ex["SNP-M-101"]
         before, items = copy.deepcopy(e), sheet_items.build_items(e)
