@@ -1,0 +1,9 @@
+/* 설계 문서 패널(완료 목록 2 A7). 토큰은 tokens.css를 쓴다. */
+.docs .panel-b { gap: var(--sp-3); }
+.docs-head { flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+.docs-kind { height: 30px; border: 1px solid var(--line-input); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); font: inherit; margin-left: 6px; }
+.docs-doc { display: flex; flex-direction: column; gap: var(--sp-2); flex: none; }
+.docs-name { overflow-wrap: anywhere; }
+.docs-counts { flex-wrap: wrap; gap: 6px; }
+.docs-item { align-items: flex-start; gap: var(--sp-2); }
+.docs-item .main span { overflow-wrap: anywhere; }
