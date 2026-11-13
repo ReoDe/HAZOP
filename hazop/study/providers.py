@@ -1,6 +1,6 @@
 """AI 연결 방식(via) 표: 구독·API·고정 응답 클라이언트를 한 곳에서 고른다(기획서/AI연결-구독제.md §0·§5.1). Qt 의존 없음.
 
-배포본(PyInstaller)에서는 법무 검토 전까지 구독을 고를 수 없다(결정 U3). 개발자 PC의 기본은 구독이다(U5, 확인 통과 시).
+내부용 배포본(PyInstaller)에서도 구독을 고를 수 있다(U3 2026-11-13 개정, DEC-0306). 기본은 구독 확인이 통과하면 구독이다(U5).
 """
 
 import hashlib
@@ -24,8 +24,9 @@ STREAK_LIMIT = 3
 
 
 def available_methods():
-    """고를 수 있는 연결 방식. 배포본은 API만(구독 숨김 U3, 고정 응답은 시험용이라 숨김)."""
-    return ("api",) if paths.frozen_bundle_dir() else METHODS
+    """고를 수 있는 연결 방식. 배포본은 구독·API(U3 2026-11-13 개정, DEC-0306: 내부용 배포본에도 구독 연결을 넣음).
+    고정 응답은 시험용이라 배포본에서 숨긴다. 배포본은 CLI를 싣지 않고, 사용자가 설치·로그인한 claude.exe를 찾는다."""
+    return ("subscription", "api") if paths.frozen_bundle_dir() else METHODS
 
 
 def default_method(cli_state):

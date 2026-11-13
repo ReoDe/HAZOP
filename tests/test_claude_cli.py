@@ -297,12 +297,15 @@ class FindTest(unittest.TestCase):
 
 
 class ProvidersTest(unittest.TestCase):
-    def test_frozen_hides_subscription(self):
+    def test_frozen_offers_subscription(self):
+        """U3 2026-11-13 개정(DEC-0306): 배포본도 구독을 고를 수 있고, 확인이 통과하면 기본이 구독이다. 고정 응답은 숨긴다."""
         with mock.patch("hazop.paths.frozen_bundle_dir", return_value="C:/bundle"):
-            self.assertEqual(providers.available_methods(), ("api",))
-            self.assertEqual(providers.default_method("ok"), "api")
+            self.assertEqual(providers.available_methods(), ("subscription", "api"))
+            self.assertEqual(providers.default_method("ok"), "subscription")
+            self.assertEqual(providers.default_method("not_installed"), "api")
+            self.assertIsInstance(providers.make_client("subscription"), claude_cli.ClaudeCliClient)
             with self.assertRaises(ValueError):
-                providers.make_client("subscription")
+                providers.make_client("fixed", response_dir="x")
         with mock.patch("hazop.paths.frozen_bundle_dir", return_value=None):
             self.assertEqual(providers.default_method("ok"), "subscription")
             self.assertEqual(providers.default_method("login_required"), "api")

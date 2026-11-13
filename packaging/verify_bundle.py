@@ -28,6 +28,9 @@
     표지 훅(packaging/rthook_verify_build.py)이 있어 앱이 시험용 예외를 sys.excepthook에 넘기고 종료 코드 70, app.log에
     "미처리 예외"와 시험용 메시지(app_log_unhandled). 배포용은 트리거가 꺼져 종료 코드 2, 시험용 메시지 없음
     (app_trigger_off). 단계 4의 실행은 모두 비대화형이라 모달·오류 창이 뜨지 않는다(스크린샷 단계는 비모달 창이 잠깐 뜸)
+ 4b) 채팅 도구 서버(규격 chat-panel.md §2.4): HAZOP.exe --chat-tools를 파이프로 띄워 initialize·tools/list·tools/call·ping을
+    직접 보낸다. 창 프로그램이 표준입출력으로 응답하고 표준 출력에 프로토콜 줄만 쓰는지, 핵심 도구 7개가 목록에 있는지,
+    경로 인자를 bad_args로 거절하는지, stdin이 닫히면 끝나는지(chat_tools_problems). 실제 구독·CLI는 부르지 않는다
  5) 저장소 output/·store/ 파일 해시가 전후 같은지, 3)이 입력 사본을 바꾸지 않았는지, PNG가 이번 실행에서 생겼는지
  6) 제3자 고지(W9, D15): 실행 파일 옆 licenses/의 파일 목록·바이트 해시가 저장소 licenses/와 같은지(빠짐·추가·변경
     없음), 이전 위치 _internal/licenses/가 없는지(scripts/build_package.licenses_problems와 같은 규칙)
@@ -355,6 +358,78 @@ def run(cmd, env, cwd, log, timeout=TIMEOUT):
     return rc, round(time.monotonic() - t0, 1), text
 
 
+CHAT_CORE_TOOLS = ("find", "get_component", "trace_path", "trace_flow", "neighbors", "count", "summary")  # 규격 §3.4
+CHAT_REQUESTS = (
+    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                                                                   "clientInfo": {"name": "verify-bundle", "version": "0"}}},
+    {"jsonrpc": "2.0", "method": "notifications/initialized"},
+    {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+    {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "summary", "arguments": {}}},
+    {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "get_component",
+                                                                   "arguments": {"id": "..\\..\\Windows\\win.ini"}}},
+    {"jsonrpc": "2.0", "id": 5, "method": "ping"},
+)
+
+
+def chat_tools_problems(rc, stdout, stderr):
+    """HAZOP.exe --chat-tools(채팅 MCP 서버, 규격 chat-panel.md §2.4) 응답 검사. 문제 목록(빈 목록 = 통과).
+
+    창 프로그램(콘솔 없음)이 파이프로 받은 표준입출력으로 JSON-RPC를 주고받고, 표준 출력에 프로토콜 줄만 쓰고,
+    stdin이 닫히면 종료 코드 0으로 끝나는지 본다(창 앱이 떴다면 stdin이 닫혀도 끝나지 않아 시간 초과가 된다). 경로 인자는
+    bad_args로 거절되어야 한다. 앱 로그의 '시작 pid=' 줄은 런타임 훅(rthook_applog)이 모든 묶인 실행에 남기므로 보지 않는다."""
+    probs = []
+    if rc != 0:
+        probs.append("종료 코드 %r" % (rc,))
+    try:
+        replies = [json.loads(ln) for ln in decode(stdout).splitlines() if ln.strip()]
+    except ValueError:
+        return probs + ["표준 출력에 JSON이 아닌 줄이 있음: %r" % decode(stdout)[:200]]
+    by_id = {r.get("id"): r for r in replies if isinstance(r, dict)}
+    if sorted(by_id) != [1, 2, 3, 4, 5]:
+        probs.append("응답 id가 1~5가 아님: %s" % sorted(map(str, by_id)))
+        return probs
+    if (by_id[1].get("result") or {}).get("serverInfo", {}).get("name") != "hazop":
+        probs.append("initialize 응답이 hazop 서버가 아님")
+    names = [t.get("name") for t in (by_id[2].get("result") or {}).get("tools") or []]
+    missing = [n for n in CHAT_CORE_TOOLS if n not in names]
+    if missing:
+        probs.append("도구 목록에 없음: %s (받은 것 %s)" % (missing, names))
+    text = ((by_id[3].get("result") or {}).get("content") or [{}])[0].get("text", "")
+    if not text.startswith("도면·문서에서 온 자료다."):
+        probs.append("tools/call 결과에 머리말이 없음")
+    bad = ((by_id[4].get("result") or {}).get("content") or [{}])[0].get("text", "")
+    if '"bad_args"' not in bad:
+        probs.append("경로 인자가 bad_args로 거절되지 않음: %r" % bad[:200])
+    if by_id[5].get("result") != {}:
+        probs.append("ping 응답 이상")
+    return probs
+
+
+def chat_tools_step(app_exe, env, tmp, out, summary):
+    """단계 4b: HAZOP.exe --chat-tools를 파이프로 띄워 MCP 요청을 직접 보낸다(실제 구독·CLI 호출 없음)."""
+    qfile = os.path.join(tmp, "chat-question.json")
+    with open(qfile, "w", encoding="utf-8") as fh:
+        json.dump({"question_id": "q-verify"}, fh)
+    data = "".join(json.dumps(m, ensure_ascii=False) + "\n" for m in CHAT_REQUESTS).encode("utf-8")
+    t0 = time.monotonic()
+    try:
+        proc = subprocess.run([app_exe, "--chat-tools", "--project", "verify", "--question-file", qfile], input=data,
+                              env=env, cwd=tmp, capture_output=True, timeout=120)
+        rc, stdout, stderr = proc.returncode, proc.stdout, proc.stderr
+    except subprocess.TimeoutExpired:
+        rc, stdout, stderr = "timeout", b"", b""
+    except OSError as e:
+        rc, stdout, stderr = "error: %s" % e, b"", b""
+    sec = round(time.monotonic() - t0, 1)
+    with open(os.path.join(out, "chat-tools.out"), "wb") as fh:
+        fh.write(stdout)
+    with open(os.path.join(out, "chat-tools.err"), "wb") as fh:
+        fh.write(stderr)
+    summary["steps"]["chat_tools"] = {"rc": rc, "sec": sec}
+    summary["checks"]["chat_tools_problems"] = chat_tools_problems(rc, stdout, stderr)
+    print("chat-tools rc=%s %ss 문제 %s" % (rc, sec, summary["checks"]["chat_tools_problems"] or "없음"))
+
+
 BAD_SETTINGS = b"{ not json"  # JSON 문법 오류(W10, D18)
 
 
@@ -501,6 +576,7 @@ def steps(args, summary, run_root, out, repo_dirs):
         summary["steps"]["seed_app_work"] = {"extraction": seed_app_work(env["HAZOP_WORK_ROOT"])}
 
     rc, sec, rc2 = app_steps(os.path.join(target, "HAZOP.exe"), env, tmp, out, png, run_dir, args.app_only, summary)
+    chat_tools_step(os.path.join(target, "HAZOP.exe"), env, tmp, out, summary)
     want = APP_PNG if args.app_only else FULL_PNG
     summary["png"] = sorted(os.path.basename(p) for p in glob.glob(os.path.join(png, "*.png")))
     summary["checks"]["png_fresh_problems"] = fresh_problems(png, start, want)
@@ -567,6 +643,7 @@ def main(argv=None):
         and not checks.get("icons_problems", ["미실행"])
         and not checks.get("translation_problems", ["미실행"])
         and not checks.get("pdf_problems", ["미실행"])
+        and not checks.get("chat_tools_problems", ["미실행"])
         and checks.get("repo_unchanged") and checks.get("app_log_started") and checks.get("app_bad_option_rc2")
         and checks.get("app_bad_settings")
         and checks.get("app_trigger_off" if args.app_only else "app_log_unhandled")
