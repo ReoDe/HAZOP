@@ -179,6 +179,100 @@ class WorksheetTest(C3Base):
         self.err("get_worksheet", "bad_args", node_id="S1", deviation_id="D02", limit=2, cursor=res["cursor"])
 
 
+def results_doc_v3():
+    """결과 파일 0.3(보류·사유). 판정 이력은 results.set_status가 남기는 모양({op: status, from, to, reason, by, at})."""
+    doc = results_doc()
+    doc["schema_version"] = "0.3"
+    cells = doc["cells"]
+    cells[0]["entries"] = [
+        entry("e1", "on_hold", "ai_draft", 3, 2, "PV-101 개방 고착", history=[
+            {"at": "2026-11-13T10:00:00Z", "op": "status", "from": "proposed", "to": "on_hold", "reason": "운전 절차서 확인 뒤 판단", "by": "홍길동"}]),
+        entry("e2", "approved", "human", 4, 3, "히터 과열", history=[
+            {"at": "2026-11-13T10:05:00Z", "op": "status", "from": "proposed", "to": "approved", "by": "홍길동"}]),
+        entry("e3", "rejected", "ai_draft", 1, 1, "무관한 원인", history=[
+            {"at": "2026-11-13T10:06:00Z", "op": "status", "from": "proposed", "to": "rejected", "reason": "도면에 없는 기기", "by": "홍길동"}]),
+        entry("e4", "revised", "human", 2, 1, "고친 원인", history=[
+            {"at": "2026-11-13T10:07:00Z", "op": "edit", "from": "proposed", "before": {"cause": "x"}, "reason": "표현을 바로잡음", "by": "홍길동"}]),
+        entry("e5", "proposed", "ai_draft", 2, 2, "아직 안 본 원인")]
+    return doc
+
+
+class HoldAndReasonTest(C3Base):
+    """결과 항목의 보류(on_hold)와 판정 사유. 새 판(0.3)과 옛 판(0.2·0.1)을 모두 읽는다."""
+
+    def ctx_with(self, doc):
+        c = copy.copy(self.full)
+        c.results = {S102: doc}
+        c._cell_key = None
+        return c
+
+    def test_new_file_returns_status_and_reason(self):
+        ctx = self.ctx_with(results_doc_v3())
+        res = self.call("get_worksheet", ctx=ctx, node_id="S1", deviation_id="D01")
+        self.assertTrue(res["ok"], res["error"])
+        rows = {r["entry_id"]: r for r in res["data"]["rows"]}
+        self.assertEqual(rows["e1"]["status"], "on_hold")
+        self.assertEqual(rows["e1"]["verdict"], {"status": "on_hold", "reason": "운전 절차서 확인 뒤 판단", "by": "홍길동",
+                                                 "at": "2026-11-13T10:00:00Z"})
+        self.assertEqual(rows["e3"]["verdict"]["reason"], "도면에 없는 기기")
+        self.assertEqual(rows["e4"]["verdict"]["reason"], "표현을 바로잡음")           # 수정 사유는 edit 기록에서
+        self.assertEqual((rows["e2"]["verdict"]["status"], rows["e2"]["verdict"]["reason"]), ("approved", None))   # 수용은 사유 선택
+        self.assertEqual(rows["e5"]["verdict"], {"status": "proposed", "reason": None, "by": None, "at": None})
+        self.assertEqual(res["data"]["cells"]["entry_statuses"], {"approved": 1, "on_hold": 1, "proposed": 1, "rejected": 1, "revised": 1})
+        self.assertEqual(res["data"]["cells"]["undecided"], 2)    # 제안 1 + 보류 1
+
+    def test_status_filter_accepts_on_hold(self):
+        ctx = self.ctx_with(results_doc_v3())
+        res = self.call("get_worksheet", ctx=ctx, node_id="S1", status="on_hold")
+        self.assertEqual([r["result_id"] for r in res["data"]["rows"]], ["S1/D01/e1"])
+        self.assertIn("on_hold", tools.REGISTRY["get_worksheet"]["input_schema"]["properties"]["status"]["enum"])
+        self.assertIn("on_hold", tools.REGISTRY["get_worksheet"]["description"])
+        self.err("get_worksheet", "bad_args", ctx=ctx, node_id="S1", status="pending")   # 옛 이름은 받지 않는다
+
+    def test_old_files_still_read(self):
+        old = results_doc()                       # 0.2: 판정 이력에 reason·by 없음
+        old["cells"][0]["entries"][1]["history"] = [{"at": "2026-11-01T00:00:00Z", "op": "status", "from": "proposed", "to": "approved"}]
+        row = next(r for r in self.call("get_worksheet", ctx=self.ctx_with(old), node_id="S1", deviation_id="D01")["data"]["rows"]
+                   if r["entry_id"] == "e2")
+        self.assertEqual(row["verdict"], {"status": "approved", "reason": None, "by": None, "at": "2026-11-01T00:00:00Z"})
+        v01 = {"kind": "hazop_study_results", "schema_version": "0.1", "graph_id": S102, "cells": [
+            {"node_id": "N-007", "deviation_id": "D01", "state": "analyzed", "entries": [
+                {"entry_id": "e1", "status": "rejected", "cause": "옛", "severity": 1, "frequency": 1}]}]}
+        row = self.call("get_worksheet", ctx=self.ctx_with(v01), node_id="N-007")["data"]["rows"][0]   # 이력도 판정 시각도 없는 가장 옛 모양
+        self.assertEqual(row["verdict"], {"status": "rejected", "reason": None, "by": None, "at": None})
+
+    def test_files_of_each_version_load_from_disk(self):
+        from hazop.study import results as res
+        tmp = tempfile.mkdtemp(prefix="hazop-hold-load-")
+        env = os.environ.get("HAZOP_WORK_ROOT")
+        os.environ["HAZOP_WORK_ROOT"] = os.path.join(tmp, "work-folder-with-long-name")
+        os.makedirs(os.environ["HAZOP_WORK_ROOT"])
+        try:
+            for doc in (results_doc(), results_doc_v3()):
+                path = res.store_path("P1", S102)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump(doc, fh)
+                got = context.load_results("P1", [S102], context.roots_of("P1"))
+                self.assertEqual(got[S102]["schema_version"], doc["schema_version"])   # 읽기만 하고 판을 바꾸지 않는다
+                with open(path, encoding="utf-8") as fh:
+                    self.assertEqual(json.load(fh)["schema_version"], doc["schema_version"])
+        finally:
+            if env is None:
+                os.environ.pop("HAZOP_WORK_ROOT", None)
+            else:
+                os.environ["HAZOP_WORK_ROOT"] = env
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_long_reason_is_clipped_and_card_check_knows_the_cell(self):
+        doc = results_doc_v3()
+        doc["cells"][0]["entries"][0]["history"][0]["reason"] = "사" * 900
+        ctx = self.ctx_with(doc)
+        row = self.call("get_worksheet", ctx=ctx, node_id="S1", status="on_hold")["data"]["rows"][0]
+        self.assertLess(len(row["verdict"]["reason"]), 400)
+        self.assertTrue(ctx.has_cell(row["result_id"]))
+
+
 class DocumentsTest(C3Base):
     def test_search_finds_design_intent(self):
         res = self.ok("search_documents", query="설계 의도")
