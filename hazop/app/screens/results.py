@@ -16,7 +16,8 @@ from datetime import datetime, timezone
 from PySide6.QtCore import QEvent, QSize, QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-                               QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget,
+                               QListWidgetItem,
                                QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
                                QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -35,7 +36,7 @@ from hazop.study import ai_cells, claude_cli, claude_http, node_review, nodes, p
 from hazop.study import results as res
 
 AI_NOTE = "AI 결과는 모두 초안 · 사람이 수정·승인·기각"
-STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각"}
+STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각", "on_hold": "보류"}
 BAND_LABELS = {"ok": "수용", "cond": "조건부 수용", "deny": "불허"}  # tokens.risk_band 구분
 SHEET_COLUMNS = ("원인", "결과(보호수단 실패 가정)", "보호수단", "권고", "위험도", "AI 근거", "상태")
 CONSEQUENCE_TIP = ("비완화 결과: 보호수단이 하나도 작동하지 않는다고 보고 쓴 결과입니다. "
@@ -2360,19 +2361,33 @@ class ResultsScreen(QWidget):
             self.app.status_message(why)
         return bool(why)
 
-    def set_entry_status(self, status):
+    def ask_reason(self, what):
+        """판정 사유를 묻는다(기각·보류·수정은 필수, 결과 판정 규칙 hazop.study.results.REASON_REQUIRED). 취소하면 None."""
+        text, ok = QInputDialog.getText(self, "%s 사유" % what, "%s 사유(필수)" % what)
+        return text.strip() if ok and text.strip() else None
+
+    def _reviewer_name(self):
+        name = getattr(self.app, "reviewer_name", None)
+        return (name() if callable(name) else "") or None
+
+    def set_entry_status(self, status, reason=None):
         e = self._entry_or_hint(status)
         if e is None or self._locked_message():
             return False
+        if reason is None and status in res.REASON_REQUIRED:
+            reason = self.ask_reason(STATUS_LABELS[status])
+            if reason is None:
+                self.app.status_message("사유가 없어 %s하지 않았습니다." % STATUS_LABELS[status])
+                return False
         old, cell = self.results, self.cell
         self._apply_review(res.set_status(self.results, self.cell[0], self.cell[1], e["entry_id"], status,
-                                          node_set=self.node_set))
+                                          node_set=self.node_set, by=self._reviewer_name(), reason=reason))
         dev = next((d["label"] for d in self.deviations if d["deviation_id"] == cell[1]), cell[1])
         self.app.toast("%s × %s 시나리오를 %s했습니다" % (cell[0], dev, STATUS_LABELS[status]), self._undo_to(old, cell))
         return True
 
-    def edit_selected(self, fields=None):
-        """fields가 없으면 수정 창을 띄운다. 바뀐 필드가 없으면 저장하지 않는다."""
+    def edit_selected(self, fields=None, reason=None):
+        """fields가 없으면 수정 창을 띄운다. 바뀐 필드가 없으면 저장하지 않는다. 사유(reason)가 없으면 묻는다(수정은 사유 필수)."""
         e = self._entry_or_hint("edit")
         if e is None or self._locked_message():
             return False
@@ -2384,9 +2399,14 @@ class ResultsScreen(QWidget):
                 fields = dlg.changed()
             if not fields:
                 return False
+            if reason is None:
+                reason = self.ask_reason("수정")
+                if reason is None:
+                    self.app.status_message("사유가 없어 수정하지 않았습니다.")
+                    return False
             try:
                 new = res.edit_entry(self.results, self.cell[0], self.cell[1], e["entry_id"], fields,
-                                     node_set=self.node_set)
+                                     node_set=self.node_set, by=self._reviewer_name(), reason=reason)
                 break
             except ValueError as exc:
                 self.app.log_error("항목 수정 저장 실패", exc)

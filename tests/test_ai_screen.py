@@ -318,10 +318,10 @@ class AiScreenTest(unittest.TestCase):
         self.assertEqual(scr.table.item(0, 6).text(), "승인")
         scr.open_cell(nid, d2)
         scr.select_entry(0)
-        self.assertTrue(scr.set_entry_status("rejected"))
+        self.assertTrue(scr.set_entry_status("rejected", reason="중복 시나리오"))
         scr.open_cell(nid, d3)
         scr.select_entry(0)
-        self.assertTrue(scr.edit_selected({"cause": "사람이 고친 원인", "severity": 4}))
+        self.assertTrue(scr.edit_selected({"cause": "사람이 고친 원인", "severity": 4}, reason="원인 바로잡음"))
         self.assertEqual(scr.table.item(0, 6).text(), "AI 초안 · 수정")
 
         saved = self.saved()
@@ -386,7 +386,8 @@ class AiScreenTest(unittest.TestCase):
         self.assertEqual(self.cell(self.saved(), *scr.cell)["entries"][0]["status"], "approved",
                          "그 사이 결과가 바뀌면 실행 취소가 통째로 되돌리지 않음")
         scr.select_entry(0)
-        scr.keys["R"].activated.emit()
+        with mock.patch.object(scr, "ask_reason", return_value="키 R로 기각"):  # 기각은 사유 필수(사유 창)
+            scr.keys["R"].activated.emit()
         self.assertEqual(self.cell(self.saved(), *scr.cell)["entries"][0]["status"], "rejected")
 
         win.resize(1366, 768)
@@ -424,7 +425,7 @@ class AiScreenTest(unittest.TestCase):
         self.assertTrue(scr.run_ai("all"))
         scr.select_entry(0)
         seen["buttons"] = (scr.approve_btn.isEnabled(), scr.reject_btn.isEnabled(), scr.edit_btn.isEnabled())
-        seen["edit"] = scr.edit_selected({"cause": "실행 중 수정"})
+        seen["edit"] = scr.edit_selected({"cause": "실행 중 수정"}, reason="실행 중 수정")
         seen["approve"] = scr.set_entry_status("approved")
         gate.set()
         scr.runner.cancel()

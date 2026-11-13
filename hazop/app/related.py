@@ -157,7 +157,7 @@ class DrawingIndex:
         return rows
 
 
-STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각"}
+STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각", "on_hold": "보류"}
 OP_LABELS = {"propose": "제안", "status": "상태", "edit": "수정", "merge": "병합", "split": "분할", "rename": "이름",
              "confirm": "확정", "reopen": "확정 해제", "add": "넣기", "remove": "빼기",
              "ie_hint": "초기사건 판정"}

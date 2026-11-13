@@ -313,7 +313,7 @@ class Stored01FilesTest(WorkRootCase):
         with mock.patch.object(res, "load_deviations", lambda path=None: old["deviations"]):
             doc, fp = res.load_fp(sn.load(self.g))
             res.save_fp(doc, None, expect=fp)
-        self.assertEqual(doc["schema_version"], "0.2")
+        self.assertEqual(doc["schema_version"], res.SCHEMA_VERSION)
         self.assertEqual(doc["cells"][0]["entries"], old["cells"][0]["entries"])
         self.assertEqual([(c["node_id"], c["deviation_id"], c["state"]) for c in doc["cells"]],
                          [(c["node_id"], c["deviation_id"], c["state"]) for c in old["cells"]])

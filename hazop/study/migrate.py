@@ -293,7 +293,7 @@ def _steps(results, node_set):
 def migrate_results(results, node_set, at=None):
     """(결과, 바꾼 kg_paths ID 수 또는 None). 0.2 결과의 판과 kg_paths ID를 판 이전 기록대로 지금 판으로 바꾼 사본.
     판이 같거나 이어지는 기록이 없으면 입력 그대로와 None. 0.1 결과는 legacy_migrate_results로."""
-    if results.get("schema_version") != "0.2":
+    if results.get("schema_version") not in ("0.2", "0.3"):  # results.CELL_SCHEMA_VERSIONS(순환 import를 피해 값으로)
         return legacy_migrate_results(results, node_set, at)
     steps = _steps(results, node_set)
     if steps is None:
@@ -357,7 +357,7 @@ def on_load(node_set, graph, path, fp):
             doc, rfp = res.read_fp(rpath)
         except (OSError, ValueError):  # 읽지 못하는 결과는 그대로 두고 화면이 지금처럼 문제로 보여 준다
             doc = None
-        if doc is not None and doc.get("graph_id") == out["graph_id"] and doc.get("schema_version") == "0.2":
+        if doc is not None and doc.get("graph_id") == out["graph_id"] and doc.get("schema_version") in ("0.2", "0.3"):
             moved, n = migrate_results(doc, out)
             if n is not None:
                 try:

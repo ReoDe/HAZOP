@@ -550,7 +550,7 @@ class IeBundleP3Test(unittest.TestCase):
         self.assertEqual(next(g for g in build(self.r, self.ns, self.pg, doc=doc)["groups"]
                               if g["group_id"] == self.gid)["status"], "confirmed")
         r = res.edit_entry(self.r, *next((c["node_id"], c["deviation_id"], "c1") for c in self.b["candidates"]
-                                         if c["entry_id"] == "c1"), {"cause": "바뀐 원인"}, at=NOW)
+                                         if c["entry_id"] == "c1"), {"cause": "바뀐 원인"}, at=NOW, reason="시험 사유")
         r = res.set_status(r, *next((c["node_id"], c["deviation_id"], "c1") for c in self.b["candidates"]
                                     if c["entry_id"] == "c1"), "approved", at=NOW)
         g = next(g for g in build(r, self.ns, self.pg, doc=doc)["groups"] if g["group_id"] == self.gid)
@@ -563,7 +563,7 @@ class IeBundleP3Test(unittest.TestCase):
     def test_unapproved_member_is_held_out_of_members_and_noted(self):
         iec = {model.entry_of_key(c["key"]): i for i, c in self.doc["candidates"].items()}
         doc, gid = model.create_group(self.doc, "사람 그룹", [iec["c4"], iec["b1c"]], at=NOW)
-        r = res.set_status(self.r, *self.where(self.r, "b1c"), "revised", at=NOW)
+        r = res.set_status(self.r, *self.where(self.r, "b1c"), "revised", reason="시험 사유", at=NOW)
         self.b = build(r, self.ns, self.pg, doc=model.sync(doc, r, at=NOW))
         g = next(x for x in self.b["groups"] if x["group_id"] == gid)
         self.assertEqual((g["members"], g["held_member_count"], g["member_count"]), ([iec["c4"]], 1, 1))
@@ -579,7 +579,7 @@ class IeBundleP3Test(unittest.TestCase):
 
     def test_records_without_an_approved_source_are_left_out(self):
         doc, hid = model.add_heading(self.doc, self.gid, {"name": "운전원 수동 급수"}, at=NOW)
-        r = res.set_status(self.r, *self.where(self.r, "c1"), "revised", at=NOW)
+        r = res.set_status(self.r, *self.where(self.r, "c1"), "revised", reason="시험 사유", at=NOW)
         b = build(r, self.ns, self.pg, doc=model.sync(doc, r, at=NOW))
         self.assertEqual(([h["heading_id"] for h in b["top_events"]], b["end_states"], b["basic_events"]),
                          ([hid], [], []), "출처 없이 사람이 쓴 표제만 남음")

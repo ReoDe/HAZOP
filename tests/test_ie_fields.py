@@ -179,22 +179,22 @@ class EditTest(unittest.TestCase):
 
     def test_ie_hint_not_editable_via_edit_entry(self):
         with self.assertRaises(ValueError):
-            res.edit_entry(self.r, *self.key, {"ie_hint": dict(IE)})
+            res.edit_entry(self.r, *self.key, {"ie_hint": dict(IE)}, reason="시험 사유")
 
     def test_cause_kind_and_basis_edit_marks_revised(self):
-        out = res.edit_entry(copy.deepcopy(self.r), *self.key, {"cause_kind": "human", "consequence_basis": "unmitigated"})
+        out = res.edit_entry(copy.deepcopy(self.r), *self.key, {"cause_kind": "human", "consequence_basis": "unmitigated"}, reason="시험 사유")
         e = self.entry(out)
         self.assertEqual((e["cause_kind"], e["consequence_basis"], e["status"]), ("human", "unmitigated", "revised"))
         with self.assertRaises(ValueError):
-            res.edit_entry(self.r, *self.key, {"cause_kind": "weather"})
+            res.edit_entry(self.r, *self.key, {"cause_kind": "weather"}, reason="시험 사유")
 
     def test_actuation_validated(self):
         with self.assertRaises(ValueError):
             res.edit_entry(self.r, *self.key, {"safeguards": [{"text": "a", "role": "unknown", "actuation": "x",
-                                                                "refs": [], "ipl": None}]})
+                                                                "refs": [], "ipl": None}]}, reason="시험 사유")
         out = res.edit_entry(self.r, *self.key, {"safeguards": [{"text": "PSV", "role": "mitigative",
                                                                   "actuation": "passive", "refs": [], "ipl": None,
-                                                                  "origin": "human"}]})
+                                                                  "origin": "human"}]}, reason="시험 사유")
         self.assertEqual(res.quality_warnings(self.entry(out)), [])
 
 

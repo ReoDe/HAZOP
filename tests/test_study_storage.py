@@ -311,7 +311,7 @@ class CellTest(WorkRoot):
         self.assertEqual(res.validate(doc, ns), [], "보관 칸은 문제가 아님(재현 4b)")
         self.assertEqual(sum(len(c["entries"]) for c in doc["cells"]), 2, "결과 전체가 비지 않음")
         with self.assertRaises(ValueError):
-            res.set_status(doc, "S1", "D01", "e1", "rejected", node_set=ns)
+            res.set_status(doc, "S1", "D01", "e1", "rejected", reason="시험 사유", node_set=ns)
 
     def test_9_one_bad_cell_is_quarantined_and_written_back(self):
         bad = copy.deepcopy(self.doc)
@@ -567,7 +567,7 @@ class EditTest(WorkRoot):
         self.assertEqual(ai_cells.plan_units(ns, DEVS, [("S1", "D01"), ("S2", "D01")]),
                          [{"unit_id": "S2/D01", "node_id": "S2", "deviation_ids": ["D01"]}])
         with self.assertRaises(ValueError):
-            res.set_status(doc, "S1", "D01", "LI1", "rejected", node_set=ns)
+            res.set_status(doc, "S1", "D01", "LI1", "rejected", reason="시험 사유", node_set=ns)
         with self.assertRaises(ValueError):
             nt.apply_nodes(ns, doc, self.g, [{"op": "edit", "node_id": "S1", "name": "x"}], {}, "user", ns["set_rev"])
         with self.assertRaises(ValueError):

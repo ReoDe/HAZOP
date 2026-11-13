@@ -32,7 +32,7 @@ from hazop.study import span
 
 SCOPES = {"all": "전체", "approved": "승인만", "nodes": "선택한 구간만"}
 SHEETS = ("표지·요약", "구간 목록", "워크시트", "권고 목록")
-STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각"}
+STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각", "on_hold": "보류"}
 BAND_LABELS = {"ok": "수용", "cond": "조건부 수용", "deny": "불허"}
 FIELD_LABELS = {"cause": "원인", "consequence": "결과", "safeguards": "보호수단", "recommendation": "권고",
                 "severity": "강도", "frequency": "빈도", "cause_refs": "원인 위치", "consequence_refs": "영향 대상",
@@ -53,7 +53,7 @@ WORKSHEET_COLUMNS = (
     ("consequence", "결과(보호수단 실패 가정)", 34), ("consequence_basis", "결과 기준", 12), ("safeguards", "보호수단", 30),
     ("severity", "강도", 6), ("frequency", "빈도", 6), ("risk", "위험도", 13), ("recommendation", "권고", 32),
     ("basis", "AI 근거(KG 경로·출처 문서)", 34), ("refs", "그래프 참조", 34),
-    ("warnings", "근거 경고", 22), ("status", "상태", 14),
+    ("warnings", "근거 경고", 22), ("status", "상태", 14), ("status_reason", "판정 사유", 24),
     ("ie_judgement", "초기사건 판정", 28), ("ie_category", "일반 범주", 18), ("ie_origin", "판정 작성", 11),
     ("history", "수정 이력 요약", 28), ("ai_origin", "AI 초안 생성", 22),
 )
@@ -229,7 +229,8 @@ def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, ex
                                  risk=risk_text(e.get("risk")), recommendation=tagged(e.get("recommendation")),
                                  basis=_basis_text(e, labels), refs=_refs_text(e, idx, dn, expectations),
                                  warnings=_warnings_text(e),
-                                 status=_status_text(e), history=_history_text(e),
+                                 status=_status_text(e), status_reason=res.verdict(e)["reason"] or "",
+                                 history=_history_text(e),
                                  ai_origin=provenance(run, excel=True) if e.get("origin") == "ai_draft" else ""))
             if scope == "approved":
                 continue
@@ -247,7 +248,7 @@ def counts(results, node_ids=None):
     cells = [c for c in results["cells"] if keep(c)]
     entries = [e for c in cells for e in c["entries"]]
     by_status = {s: sum(e.get("status") == s for e in entries) for s in res.ENTRY_STATUSES}
-    unreviewed = sum(e.get("status") == "proposed" or (res.is_ai_draft(e) and e.get("status") != "rejected")
+    unreviewed = sum(e.get("status") in res.UNDECIDED_STATUSES or (res.is_ai_draft(e) and e.get("status") != "rejected")
                      for e in entries)
     return {"nodes": len({c["node_id"] for c in cells}), "deviations": len({c["deviation_id"] for c in cells}),
             "scenarios": len(entries), "by_status": by_status, "unreviewed": unreviewed,
@@ -323,7 +324,7 @@ def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, 
         ("내보낸 범위", SCOPES[scope] + (" (%s)" % ", ".join(node_ids) if scope == "nodes" else "")),
         ("구간 수", c["nodes"]), ("편차 수", c["deviations"]), ("시나리오 수", c["scenarios"]),
         ("상태별: 제안", s["proposed"]), ("상태별: 수정", s["revised"]), ("상태별: 승인", s["approved"]),
-        ("상태별: 기각", s["rejected"]), ("미검토 시나리오", c["unreviewed"]), ("실패 칸", c["failed_cells"]),
+        ("상태별: 기각", s["rejected"]), ("상태별: 보류", s["on_hold"]), ("미검토 시나리오", c["unreviewed"]), ("실패 칸", c["failed_cells"]),
         ("분석 전 칸(워크시트에 행 없음)", c["not_analyzed_cells"]), ("워크시트 행 수", n_rows),
         ("AI 초안 생성", drafted_cells(cells)),
         ("AI 사용 요금(API 키 호출분)", "$%.2f" % api_cost(results.get("ai_log"))),

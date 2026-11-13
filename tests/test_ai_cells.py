@@ -235,9 +235,9 @@ class ApplyTest(Base):
         r1 = self.apply(self.res, completed([answer("D01", four)]), AT, "D01")
         self.assertEqual(self.res["cells"], sr.empty_results(self.node_set, self.devs)["cells"], "입력 불변")
         ids = [e["entry_id"] for e in self.cell(r1, "D01")["entries"]]
-        r1 = sr.edit_entry(r1, self.nid, "D01", ids[0], {"cause": "고친 원인"}, at=AT)
+        r1 = sr.edit_entry(r1, self.nid, "D01", ids[0], {"cause": "고친 원인"}, at=AT, reason="시험 사유")
         r1 = sr.set_status(r1, self.nid, "D01", ids[1], "approved", at=AT)
-        r1 = sr.set_status(r1, self.nid, "D01", ids[2], "rejected", at=AT)
+        r1 = sr.set_status(r1, self.nid, "D01", ids[2], "rejected", reason="시험 사유", at=AT)
         r2 = self.apply(r1, completed([answer("D01", [scenario(cause="새 원인")])]), AT2, "D01")
         got = [(e["cause"], e["status"]) for e in self.cell(r2, "D01")["entries"]]
         self.assertEqual(got, [("고친 원인", "revised"), ("원인1", "approved"), ("원인2", "rejected"),
@@ -288,7 +288,7 @@ class ReviewEditTest(Base):
 
     def test_edit_after_approve_returns_to_revised_and_recomputes_risk(self):
         approved = sr.set_status(self.res, self.nid, "D01", self.eid, "approved", at=AT)
-        edited = sr.edit_entry(approved, self.nid, "D01", self.eid, {"severity": 4, "frequency": 3}, at=AT2)
+        edited = sr.edit_entry(approved, self.nid, "D01", self.eid, {"severity": 4, "frequency": 3}, at=AT2, reason="시험 사유")
         e = self.entry(edited)
         self.assertEqual((e["status"], e["risk"], e["origin"]), ("revised", 5, "ai_draft"))
         self.assertEqual([h["op"] for h in e["history"]], ["status", "edit"])
@@ -302,7 +302,7 @@ class ReviewEditTest(Base):
                 sr.set_status(self.res, self.nid, "D01", self.eid, *args)
         for fields in ({"severity": 5}, {"frequency": 0}, {"risk": 1}, {"safeguards": "문자열"}):
             with self.assertRaises(ValueError):
-                sr.edit_entry(self.res, self.nid, "D01", self.eid, fields)
+                sr.edit_entry(self.res, self.nid, "D01", self.eid, fields, reason="시험 사유")
         with self.assertRaises(ValueError):
             sr.set_status(self.res, self.nid, "D01", "no-such-entry", "approved")
 

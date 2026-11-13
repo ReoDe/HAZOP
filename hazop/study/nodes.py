@@ -714,6 +714,9 @@ def lock_problems(node_set, node_id, results):
     drafts = sum(1 for c in cells for e in c.get("entries") or [] if e.get("status") == "proposed")
     if drafts:
         out.append("사람이 보지 않은 AI 초안 항목 %d개" % drafts)
+    held = sum(1 for c in cells for e in c.get("entries") or [] if e.get("status") == "on_hold")
+    if held:
+        out.append("보류 항목 %d개(결론을 낸 뒤 잠금)" % held)
     from hazop.study import results as res
     again = res.scope_problems(results, node_id)
     if again:

@@ -21,14 +21,17 @@ from hazop.analysis.risk import FREQUENCIES, MATRIX_P86, SEVERITIES
 from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
 from hazop.study import refs
 
-SCHEMA_VERSION = "0.2"
+SCHEMA_VERSION = "0.3"           # 0.3: 항목 상태 보류(on_hold)와 판정 사유(이력의 reason·by)
 LEGACY_SCHEMA_VERSION = "0.1"
+CELL_SCHEMA_VERSIONS = ("0.2", "0.3")  # 칸 열쇠·node_rev 모양(0.2부터). 0.2 파일은 그대로 읽고 처음 저장 전에 원본을 보관
 KIND = "hazop_study_results"
 DEVIATION_CHART = "kosha-p86-2017-deviation-chart.json"  # 이탈후보 폴더
 CELL_STATES = ("not_analyzed", "analyzed", "excluded")
 ENTRY_ORIGINS = ("ai_draft", "human")
-ENTRY_STATUSES = ("proposed", "revised", "approved", "rejected")
-HUMAN_STATUSES = ("revised", "approved", "rejected")  # proposed는 AI만 쓴다(재실행이 덮어쓰는 상태)
+ENTRY_STATUSES = ("proposed", "revised", "approved", "rejected", "on_hold")
+HUMAN_STATUSES = ("revised", "approved", "rejected", "on_hold")  # proposed는 AI만 쓴다(재실행이 덮어쓰는 상태)
+REASON_REQUIRED = ("revised", "rejected", "on_hold")  # 수정·기각·보류는 사유 필수, 수용(승인)은 선택(웹 화면 규격 §8 UW11)
+UNDECIDED_STATUSES = ("proposed", "on_hold")         # 사람이 아직 결론을 내지 않은 항목(미검토로 셈, 잠금을 막음)
 AI_RUN_STATUSES = ("ok", "failed")
 EDITABLE_FIELDS = ("cause", "consequence", "safeguards", "recommendation", "severity", "frequency",
                    "cause_refs", "consequence_refs", "expectation_refs",  # 참조 필드: hazop.study.refs
@@ -268,7 +271,7 @@ def is_ai_draft(entry):
 
 def matrix_summary(results):
     """{node_id: {deviation_id: {state, scenarios, max_risk, unreviewed}}}. scenarios는 기각되지 않은 항목 수.
-    unreviewed는 제안 상태 항목과, 사람이 고쳤어도 승인 전인 AI 초안(revised)을 함께 센다."""
+    unreviewed는 제안·보류 항목과, 사람이 고쳤어도 승인 전인 AI 초안(revised)을 함께 센다."""
     out = {}
     for cell in results["cells"]:
         if not cell["entries"]:  # 대부분의 칸(분석 전)은 셀 것이 없다
@@ -281,7 +284,7 @@ def matrix_summary(results):
             "state": cell["state"],
             "scenarios": len(live),
             "max_risk": max(risks) if risks else None,
-            "unreviewed": sum(e.get("status") == "proposed" or (is_ai_draft(e) and e.get("status") != "rejected")
+            "unreviewed": sum(e.get("status") in UNDECIDED_STATUSES or (is_ai_draft(e) and e.get("status") != "rejected")
                               for e in cell["entries"]),
         }
     return out
@@ -446,16 +449,43 @@ def _clear_scope(out, node_id, deviation_id, e):
     e.pop("scope_changed", None)
 
 
-def set_status(results, node_id, deviation_id, entry_id, status, at=None, node_set=None):
-    """승인(approved)·기각(rejected)·되돌림(revised). proposed로는 바꿀 수 없다(재실행이 덮어쓰게 되므로).
+def _reason(status, reason):
+    """판정 사유(앞뒤 공백 정리). 수정·기각·보류인데 비었으면 ValueError."""
+    text = (reason or "").strip() if isinstance(reason, str) or reason is None else None
+    if text is None:
+        raise ValueError("사유는 글이어야 함")
+    if status in REASON_REQUIRED and not text:
+        raise ValueError("%s에는 사유가 있어야 함" % {"revised": "수정", "rejected": "기각", "on_hold": "보류"}[status])
+    return text or None
+
+
+def _who(row, reason, by):
+    if reason:
+        row["reason"] = reason
+    if (by or "").strip():
+        row["by"] = by.strip()
+    return row
+
+
+def verdict(entry):
+    """항목의 지금 판정 {status, reason, by, at}: 마지막 상태·수정 기록에서 읽는다(옛 기록은 reason·by가 None)."""
+    last = next((h for h in reversed(entry.get("history") or [])
+                 if isinstance(h, dict) and h.get("op") in ("status", "edit")), {})
+    return {"status": entry.get("status"), "reason": last.get("reason"), "by": last.get("by"), "at": last.get("at")}
+
+
+def set_status(results, node_id, deviation_id, entry_id, status, at=None, node_set=None, by=None, reason=None):
+    """수용(approved)·기각(rejected)·보류(on_hold)·되돌림(revised). proposed로는 바꿀 수 없다(재실행이 덮어쓰게 되므로).
+    기각·보류·되돌림은 사유(reason)가 있어야 하고 수용은 선택이다. 기록에 from·to·reason·by(검토자)가 남는다.
     사람이 다시 판정하므로 '범위 바뀜' 표시를 지운다. 보관 칸·잠긴 구간(node_set을 주면)이면 ValueError."""
     if status not in HUMAN_STATUSES:
         raise ValueError("사람이 정할 수 있는 상태가 아님: %r" % status)
+    reason = _reason(status, reason)
     _guard(results, node_id, deviation_id, node_set)
     out = copy.deepcopy(results)
     e = _entry(out, node_id, deviation_id, entry_id)
     old, e["status"] = e.get("status"), status
-    row = {"from": old, "to": status}
+    row = _who({"from": old, "to": status}, reason, by)
     if e.get("scope_changed"):
         row["scope_changed"] = e["scope_changed"]
     e.setdefault("history", []).append(store_io.history_row("status", row, at))
@@ -463,9 +493,10 @@ def set_status(results, node_id, deviation_id, entry_id, status, at=None, node_s
     return out
 
 
-def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None, node_set=None):
-    """항목 내용을 고친다. 상태는 revised가 된다(승인한 항목을 고치면 다시 승인해야 함).
-    severity·frequency를 고치면 risk를 다시 계산한다. history에는 바뀐 필드의 이전 값을 남긴다."""
+def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None, node_set=None, by=None, reason=None):
+    """항목 내용을 고친다(판정 '수정'). 상태는 revised가 되고 사유(reason)가 있어야 한다(승인한 항목을 고치면 다시 승인).
+    severity·frequency를 고치면 risk를 다시 계산한다. history에는 바뀐 필드의 이전 값과 reason·by를 남긴다."""
+    reason = _reason("revised", reason)
     unknown = sorted(set(fields) - set(EDITABLE_FIELDS))
     if unknown:
         raise ValueError("고칠 수 없는 필드: %s" % ", ".join(unknown))
@@ -485,7 +516,7 @@ def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None, node_s
     e.update(copy.deepcopy(fields))
     e["risk"] = risk_of(e.get("severity"), e.get("frequency"))
     old, e["status"] = e.get("status"), "revised"
-    e.setdefault("history", []).append(store_io.history_row("edit", {"from": old, "before": before}, at))
+    e.setdefault("history", []).append(store_io.history_row("edit", _who({"from": old, "before": before}, reason, by), at))
     _clear_scope(out, node_id, deviation_id, e)
     return out
 
@@ -596,16 +627,22 @@ def load_fp(node_set, deviations=None):
         raise ValueError("다른 도면의 분석 결과: %s (%s)" % (path, doc.get("graph_id")))
     same_place = path == store_path(node_set.get("project_id"), node_set["graph_id"])
     devs = deviations if deviations is not None else load_deviations()
-    if doc.get("schema_version", LEGACY_SCHEMA_VERSION) == LEGACY_SCHEMA_VERSION:
+    version = doc.get("schema_version", LEGACY_SCHEMA_VERSION)
+    if version == LEGACY_SCHEMA_VERSION:
         doc = convert.results_from_legacy(doc, node_set, devs)
         try:  # 0.1 결과를 0.2로 덮어쓰기 전에 원본을 보관한다(§2.5 4단계)
             convert.keep_original(path)
         except OSError as exc:
             doc["read_only"] = "0.1 분석 결과의 원본을 보관하지 못해 저장하지 않음(%s)" % exc
-    elif doc.get("schema_version") != SCHEMA_VERSION:
-        raise ValueError("이 앱보다 새 분석 결과 파일(%s)이라 읽지 않음: %s" % (doc.get("schema_version"), path))
+    elif version not in CELL_SCHEMA_VERSIONS:
+        raise ValueError("이 앱보다 새 분석 결과 파일(%s)이라 읽지 않음: %s" % (version, path))
     else:
         doc = migrate.migrate_results(doc, node_set)[0]
+        if version != SCHEMA_VERSION:  # 0.2 → 0.3은 내용이 같다. 옛 앱이 보류를 모르므로 원본을 먼저 보관하고 판을 올린다
+            try:
+                convert.keep_original(path, ".v%s.bak.json" % version)
+            except OSError as exc:
+                doc = dict(doc, read_only="%s 분석 결과의 원본을 보관하지 못해 저장하지 않음(%s)" % (version, exc))
     doc = reconcile(doc, node_set, devs)
     if node_set.get("read_only") and not doc.get("read_only"):
         doc = dict(doc, read_only="검토구간을 읽기 전용으로 열어 분석 결과도 저장하지 않음(%s)" % node_set["read_only"])
@@ -615,4 +652,4 @@ def load_fp(node_set, deviations=None):
 def is_stale(results, node_set):
     """0.1 결과(집합 확정본 열쇠 study_nodes_ref를 가진 것)면 True. 0.2 결과는 칸마다 node_rev로 판을 보므로(reconcile)
     결과 전체가 옛것이 되는 일이 없다(§2.4)."""
-    return results.get("schema_version") != SCHEMA_VERSION or "study_nodes_ref" in results
+    return results.get("schema_version") not in CELL_SCHEMA_VERSIONS or "study_nodes_ref" in results

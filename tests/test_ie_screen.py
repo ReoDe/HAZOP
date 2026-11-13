@@ -140,7 +140,7 @@ class InitiatingScreenTest(unittest.TestCase):
         gid = self.scr.create_group("주급수 상실", [self.iec("E1")])
         self.assertTrue(self.scr.confirm_group())
         r = res.edit_entry(self.results, self.results["cells"][0]["node_id"], self.results["cells"][0]["deviation_id"],
-                           "E1", {"cause": "주급수 조절밸브 닫힘"}, at=AT)
+                           "E1", {"cause": "주급수 조절밸브 닫힘"}, at=AT, reason="시험 사유")
         self.write_results(res.set_status(r, r["cells"][0]["node_id"], r["cells"][0]["deviation_id"], "E1", "approved",
                                           at=AT))
         self.scr.load("SNP-M-102")
@@ -150,7 +150,7 @@ class InitiatingScreenTest(unittest.TestCase):
 
     def unapprove_on_disk(self, eid):
         cell = self.results["cells"][0]
-        self.write_results(res.set_status(self.results, cell["node_id"], cell["deviation_id"], eid, "revised", at=AT))
+        self.write_results(res.set_status(self.results, cell["node_id"], cell["deviation_id"], eid, "revised", reason="시험 사유", at=AT))
 
     def test_export_rereads_results_saved_in_five_after_entering_six(self):
         self.scr.load("SNP-M-102")
@@ -222,7 +222,7 @@ class InitiatingScreenTest(unittest.TestCase):
         gid = self.scr.view["groups"][0]["group_id"]
         self.assertTrue(self.scr.confirm_group("김검토"))
         r = res.edit_entry(self.results, self.results["cells"][0]["node_id"], self.results["cells"][0]["deviation_id"],
-                           "E1", {"consequence": "증기발생기 수위 저하"})
+                           "E1", {"consequence": "증기발생기 수위 저하"}, reason="시험 사유")
         r = res.set_status(r, r["cells"][0]["node_id"], r["cells"][0]["deviation_id"], "E1", "approved")
         self.write_results(r)
         before = len(self.app.toasts)

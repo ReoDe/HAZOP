@@ -26,8 +26,8 @@ LEGACY_ORIGINS = {"rule": "script"}  # 그 밖(merged·split·AI 검토 받아�
 _log = logging.getLogger(__name__)
 
 
-def backup_path(path):
-    return path[:-5] + BACKUP_SUFFIX if path.endswith(".json") else path + BACKUP_SUFFIX
+def backup_path(path, suffix=BACKUP_SUFFIX):
+    return path[:-5] + suffix if path.endswith(".json") else path + suffix
 
 
 def _touched(cell):
@@ -173,9 +173,9 @@ def _conversion_id(fp):
     return "cv-" + hashlib.sha256(str(fp).encode("utf-8")).hexdigest()[:12]
 
 
-def _write_backup(path, data):
-    """원본 바이트를 <이름>.v0.1.bak.json에 쓴다. 같은 내용이 이미 있으면 그대로 두고, 다른 내용이면 새 이름을 쓴다."""
-    target = backup_path(path)
+def _write_backup(path, data, suffix=BACKUP_SUFFIX):
+    """원본 바이트를 <이름><suffix>(기본 .v0.1.bak.json)에 쓴다. 같은 내용이 이미 있으면 그대로 두고, 다르면 새 이름을 쓴다."""
+    target = backup_path(path, suffix)
     if os.path.isfile(target):
         with open(target, "rb") as fh:
             if fh.read() == data:
@@ -185,11 +185,11 @@ def _write_backup(path, data):
     return target
 
 
-def keep_original(path):
-    """path 파일의 지금 바이트를 <이름>.v0.1.bak.json에 보관한다(같은 내용이 있으면 그대로)."""
+def keep_original(path, suffix=BACKUP_SUFFIX):
+    """path 파일의 지금 바이트를 <이름><suffix>에 보관한다(같은 내용이 있으면 그대로)."""
     data, _fp = store_io.read_bytes(path)
     if data is not None:
-        _write_backup(path, data)
+        _write_backup(path, data, suffix)
 
 
 def _read_only(set02, why):
@@ -209,7 +209,7 @@ def on_load(set01, data, graph, path, fp, deviations=None, at=None):
     except ValueError as exc:
         set02 = upgrade_set(set01, (), at)
         return _read_only(set02, "분석 결과 파일을 읽지 못해 변환하지 않음(%s)" % exc)
-    if r_doc is not None and r_doc.get("schema_version") == res.SCHEMA_VERSION:
+    if r_doc is not None and r_doc.get("schema_version") in res.CELL_SCHEMA_VERSIONS:
         if (r_doc.get("conversion") or {}).get("source_set_fp") != fp:
             set02 = upgrade_set(set01, (), at)
             return _read_only(set02, "분석 결과는 이미 0.2로 바뀌었는데 그 뒤 검토구간 파일이 바뀜(옛 앱이 고친 것으로 보임). "

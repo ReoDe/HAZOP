@@ -133,7 +133,7 @@ class FileTest(TmpRoot):
                              {"cause_refs": [{"ref": "graph-T#V1", "origin": "human"}],
                               "safeguards": [{"text": "LT 저액위 경보", "role": "preventive",
                                               "refs": [{"ref": "graph-T#LT", "origin": "human"}], "ipl": None,
-                                              "origin": "human"}]}, at=AT)
+                                              "origin": "human"}]}, at=AT, reason="시험 사유")
         e = out["cells"][0]["entries"][0]
         self.assertEqual(e["status"], "revised")
         self.assertEqual(e["history"][:1], before[0]["history"])
@@ -144,7 +144,7 @@ class FileTest(TmpRoot):
         self.assertEqual(res.read(path), out)
         self.assertEqual(res.validate(res.read(path), ns), [])
         with self.assertRaises(ValueError):
-            res.edit_entry(doc, doc["cells"][0]["node_id"], "D01", "e1", {"cause_refs": [{"ref": "entity-node-001"}]})
+            res.edit_entry(doc, doc["cells"][0]["node_id"], "D01", "e1", {"cause_refs": [{"ref": "entity-node-001"}]}, reason="시험 사유")
 
     def test_stable_refs_survive_version_migration(self):
         """판이 바뀌어 entity_id가 밀려도 안정 참조는 그대로이고 새 판에서 같은 대상을 찾는다(이전이 필요 없음)."""
@@ -497,7 +497,7 @@ class EditGuardTest(unittest.TestCase):
         before = copy.deepcopy(self.scr.results)
         with mock.patch.object(rs, "EntryDialog", FakeDialog), \
                 mock.patch.object(rs.QMessageBox, "warning") as warn:
-            self.assertTrue(self.scr.edit_selected())
+            self.assertTrue(self.scr.edit_selected(reason="참조 바로잡음"))
         self.assertEqual(FakeDialog.runs, 2, "오류 뒤 같은 창을 다시 연다")
         self.assertEqual(warn.call_count, 1)
         self.assertIn("창에 그대로 남아", warn.call_args[0][2])
@@ -506,7 +506,7 @@ class EditGuardTest(unittest.TestCase):
             self.scr.set_results(before)
             self.scr.open_cell(self.node["node_id"], self.scr.deviations[0]["deviation_id"])
             self.scr.select_entry(0)
-            self.assertFalse(self.scr.edit_selected(bad))
+            self.assertFalse(self.scr.edit_selected(bad, reason="참조 바로잡음"))
         self.assertEqual(warn.call_count, 1)
         self.assertEqual(self.scr.results, before, "저장할 수 없는 값이면 아무것도 바꾸지 않는다")
 

@@ -327,7 +327,7 @@ def migrate_results(old_results, old_sets, project_set, deviations, pg=None):
     for old in old_results:
         gid = old["graph_id"]
         src = sets.get(gid) or {}
-        if old.get("schema_version") == res.SCHEMA_VERSION:
+        if old.get("schema_version") in res.CELL_SCHEMA_VERSIONS:
             stale = gid not in sets or old.get("graph_version") != src.get("graph_version")
         else:
             stale = gid not in sets or old.get("study_nodes_ref") != {"graph_version": src.get("graph_version"),
