@@ -416,6 +416,17 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(valve["attributes"].get("normal_position"), "LT")
         self.assertEqual(valve["tag"], "V1321")
 
+    def test_safety_class_diamond_is_not_valve(self):
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        ext = pdf_run(bowtie(100, 100) + [line((118, 100), (118, 122)), line((40, 111), (100, 111)),
+                                          line((136, 111), (200, 111))],
+                      [word("CI", 103, 107), word("DII", 122, 107)])
+        body = [n for n in ext["nodes"] if n["geometry"]["x"] == 100][0]
+        self.assertIsNone(body["kind"])
+        self.assertEqual(body["evidence"]["classification_basis"], "safety_class_boundary")
+
     def test_labels_line_label_and_title_block(self):
         ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (300, 130)),
                        rect(400, 300, 450, 315), rect(450, 300, 550, 315)],

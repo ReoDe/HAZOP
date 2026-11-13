@@ -1094,6 +1094,10 @@ def _isa_bubble_kind(lines, min_side=None):
 
 _symbol_library = None
 PIPE_CAP_BASIS = "small_closed_body_single_connection"
+# 범례 1.7-1 1/4 QUALITY GROUP/SAFETY CLASS/SEISMIC CATEGORY 경계: 마름모를 세로선으로 가르고 양쪽에 등급('CI|DII')을 적는다.
+# 나비 규칙에 밸브로 걸리지만 공정 기호가 아니라 경계 표시다
+SAFETY_CLASS_BASIS = "safety_class_boundary"
+SAFETY_CLASS_RE = re.compile(r"(?:[A-G](?:I{1,3}|Ⅰ|Ⅱ|Ⅲ)){2}")
 # 검은 채움을 기호 몸체로 올릴 때의 견본 거리 상한(칸). 견본의 max_distance보다 좁게 본다. 잘못 올리면 화살촉이 밸브가 되어
 # 열린 배관이 닫힌 밸브로 읽힌다. APR1400 143쪽에서 게이트·글로브 묶음은 견본에서 0.06칸 안, 밸브가 아닌 검은 채움(반만 칠한
 # 밸브, 건물 경계 표시, 화살촉 등)은 0.24칸 이상 떨어져 있었다(docs/units/2026-11-11-unit-f1/README.md F1-3)
@@ -1702,6 +1706,10 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         bi = label_of.get(n - 1)
         text = blocks[bi]["text"] if bi is not None else ""
         kind, basis = _classify(s, text, 0 if id(s) in on_valve else degree.get(id(s), 0), prm, marks.get(n - 1, []))
+        mark_lines = ["".join(m.partition("\n")[0].split()) for m in marks.get(n - 1, [])]
+        class_mark = basis == "valve_body" and any(SAFETY_CLASS_RE.fullmatch(t) for t in mark_lines + ["".join(mark_lines)])
+        if class_mark:
+            kind, basis = None, SAFETY_CLASS_BASIS
         symbol_id, symbol_attrs = None, {}
         valve_body = False  # 몸통이 밸브인 것은 알지만 종류를 정하지 못함
         if getattr(s, "plate_valve", None):
@@ -1711,7 +1719,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                 _issue(unknowns, "actuated_valve_pending", "구동부 기호가 붙은 밸브 몸통: 구동 방식은 아직 정하지 않음",
                        sid, local_id, "kind")
         fallback = basis == PIPE_CAP_BASIS  # 끝막음은 형상 규칙이 아니라 뒤처리 규칙: 사전에 후보가 없을 때만 남긴다(§4.2 5번)
-        if (kind is None or fallback) and not getattr(s, "plate_valve", None):  # 구조·글자 규칙이 못 정한 기호만 사전의 격자 견본에 대 본다(기획서/PID-기호사전.md §4.2)
+        if (kind is None or fallback) and not getattr(s, "plate_valve", None) and not class_mark:  # 구조·글자 규칙이 못 정한 기호만 사전의 격자 견본에 대 본다(기획서/PID-기호사전.md §4.2)
             hit = hits.get(n - 1) or _symbol_match(s, blocks)
             if fallback and hit.outcome != "none":
                 kind, basis = None, None
@@ -1738,7 +1746,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                 _issue(unknowns, "ambiguous_symbol", "기호 사전 후보가 둘 이상이라 정하지 않음: %s"
                        % ", ".join(c for c, _ in hit.candidates[:3]), sid, local_id, "kind")
         seed = analysis["classified"].get("seeds", {}).get(s.seed)
-        if seed is not None and kind is None and symbol_id is None:
+        if seed is not None and kind is None and symbol_id is None and not class_mark:
             # 몸통은 검정 견본에 맞았지만 묶인 기호 전체는 사전에 없다(벨로스 같은 다른 선이 몸통에 붙음). 종류는 비워 두고
             # 검게 칠한 몸통이 뜻하는 정상 위치만 남긴다
             symbol_attrs = {k: v for k, v in sorted(seed.attributes.items()) if k == "normal_position"}
@@ -1751,7 +1759,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             # 종류는 못 정했어도 분류는 밸브다. 경로 분석과 검토구간 나누기는 분류로 밸브를 가리므로, 분류까지 비우면 닫힌
             # 밸브가 있는 길을 정상 유로로 읽는다. 종류 없음 미확인은 그대로 남긴다
             category = "valve"
-        if kind is None:
+        if kind is None and not class_mark:
             _issue(unknowns, "missing_kind", "형상·글자 규칙으로 종류를 정할 근거 없음", sid, local_id, "kind")
         node_out.append({
             "local_id": local_id, "source_object_id": sid, "classification": classification,
