@@ -30,6 +30,7 @@ CHECKS = (
     "check_symbols",
     "check_version_migration",
     "check_snp_baseline",
+    "check_layout",        # 정리된 보기 정돈: SNP 6장 모두 0, APR1400 표본 2쪽 이어짐·겹침
     "check_read_quality",  # DCD 원본이 없는 CI에서는 SNP 쪽만 잰다
 )
 

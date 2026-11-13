@@ -275,7 +275,7 @@ class RuleTest(unittest.TestCase):
 
 
 class ReviewDefectTest(unittest.TestCase):
-    """2026-11-14 검토 반려(재현 D:/HAZOP-trials/2026-11-14-review-clean-view)의 결함을 실제 추출 결과 꼴로 다시 만든다."""
+    """2026-11-14 검토 반려(검토 재현 폴더 2026-11-14-review-clean-view)의 결함을 실제 추출 결과 꼴로 다시 만든다."""
 
     def test_control_valve_stays_on_its_process_pipe_and_the_signal_line_meets_the_actuator(self):
         # SNP-M-102 RC-PV101(local-node-008)의 좌표: 구동부 신호선이 몸통 가운데 위에서 내려온다
