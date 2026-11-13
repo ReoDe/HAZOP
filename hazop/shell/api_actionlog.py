@@ -80,6 +80,30 @@ class Resolver:
         return {"id": t, "kind": "other", "label": t}
 
 
+# 오류 글 속 로컬 전체 경로(드라이브·UNC·POSIX)를 파일 이름만 남긴다(화면에 사용자 폴더 이름을 싣지 않는다)
+_PATH = re.compile(r"""(?:[A-Za-z]:[\\/]|\\\\)[^'"\s<>|]*|(?<![\w.])/(?:[^/'"\s]+/)+[^/'"\s]*""")
+
+
+def strip_paths(text):
+    """'C:\\Users\\x\\a.xlsx' -> 'a.xlsx'(UNC·POSIX 절대 경로도)."""
+    if not isinstance(text, str):
+        return text
+    return _PATH.sub(lambda m: re.split(r"[\\/]", m.group(0).rstrip("\\/"))[-1] or "(경로)", text)
+
+
+def well_formed(row):
+    """화면 줄로 바꿀 수 있는 꼴인지(JSON으로는 읽혀도 값의 형태가 틀린 줄은 건너뛰고 센다)."""
+    prop = row.get("model_proposal")
+    if not isinstance(prop, dict) or not isinstance(prop.get("action"), str):
+        return False
+    if prop.get("args") is not None and not isinstance(prop.get("args"), dict):
+        return False
+    if not isinstance(row.get("targets", []), list):
+        return False
+    return all(row.get(k) is None or isinstance(row.get(k), str)
+               for k in ("at", "action_key", "result", "class", "error", "confirmed_by", "confirmed_at", "batch_id", "undo_of"))
+
+
 def screen_row(row, resolver):
     """기록 한 줄 -> 화면 줄. 질문 원문·승인 표지·대화 ID는 싣지 않는다."""
     prop = row.get("model_proposal") or {}
@@ -91,7 +115,7 @@ def screen_row(row, resolver):
             "class": row.get("class"), "class_label": CLASS_LABELS.get(row.get("class"), row.get("class") or ""),
             "result": row.get("result"), "result_label": RESULT_LABELS.get(row.get("result"), row.get("result") or ""),
             "by": "채팅 AI", "confirmed_by": row.get("confirmed_by"), "confirmed_at": row.get("confirmed_at"),
-            "why": str(prop.get("why") or "")[:300], "error": row.get("error"), "targets": targets,
+            "why": str(prop.get("why") or "")[:300], "error": strip_paths(row.get("error")), "targets": targets,
             "targets_total": len(row.get("targets") or []), "batch_id": row.get("batch_id"), "undo_of": row.get("undo_of"),
             "model": row.get("model"), "via": row.get("via")}
 
@@ -112,6 +136,9 @@ def one_day(engine, day):
 
 def _answer(engine, pid, rows, bad, **extra):
     resolver = Resolver(engine)
+    good = [r for r in rows if well_formed(r)]
+    bad += len(rows) - len(good)
+    rows = good
     shown = [screen_row(r, resolver) for r in rows[:MAX_ROWS]]
     counts = {}
     for r in rows:

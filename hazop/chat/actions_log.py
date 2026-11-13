@@ -207,8 +207,10 @@ def record(project_id, *, answer_id, index, request_id, request_text, proposal, 
 
 
 def read_day(project_id, day):
-    """그날 기록(파일 순서) -> (줄 목록, 깨진 줄 수)."""
-    return _parse(store_io.read_bytes(day_path(project_id, day))[0])
+    """그날 기록(파일 순서) -> (줄 목록, 깨진 줄 수). 폴더 이름은 safe_name(project_id)라 다른 프로젝트('P A'와 'P_A')가 같은 폴더를
+    쓸 수 있으므로, 줄의 project_id가 이 프로젝트인 것만 돌려준다(다른 프로젝트 줄은 깨진 줄로 세지 않는다)."""
+    rows, bad = _parse(store_io.read_bytes(day_path(project_id, day))[0])
+    return [r for r in rows if r.get("project_id") == project_id], bad
 
 
 def read_recent(project_id, days=7, today=None):

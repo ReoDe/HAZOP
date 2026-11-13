@@ -115,6 +115,36 @@ class ActionLogTest(unittest.TestCase):
         row = api_actionlog.recent(self.engine, today=NOW)["rows"][0]
         self.assertEqual((row["title"], row["batch_id"]), ("구간 2개 만들기", "B3"))
 
+    # ---- A12 검토 반영(재현 repro_review.py B1b·B2·B3)
+    def test_B1b_wrong_typed_rows_are_skipped_and_counted(self):
+        self.rec("a-1", "export.excel", "ok")
+        path = actions_log.day_path("SNP", NOW)
+        with open(path, "a", encoding="utf-8") as fh:
+            for line in ('{"model_proposal":"x"}', '{"targets":5}', '{"model_proposal":{"action":"nodes.apply","args":[1]}}',
+                         '{"model_proposal":{"action":"x"},"targets":[],"error":["a"]}'):
+                fh.write(line[:-1] + ',"project_id":"SNP"}\n')
+        out = api_actionlog.recent(self.engine, today=NOW)
+        self.assertEqual((len(out["rows"]), out["bad"]), (1, 4))
+
+    def test_B2_error_shows_file_names_not_local_paths(self):
+        perm = "[Errno 13] Permission denied: '" + "C:\\Users\\someone\\x.xlsx" + "'"
+        self.rec("a-9", "export.excel", "failed", error="save failed. " + perm)
+        err = api_actionlog.recent(self.engine, today=NOW)["rows"][0]["error"]
+        self.assertEqual(err, "save failed. [Errno 13] Permission denied: 'x.xlsx'")
+        s = api_actionlog.strip_paths
+        self.assertEqual(s("unc \\\\srv\\share\\d\\f.json end"), "unc f.json end")
+        self.assertEqual(s("posix /home/u/w/data/x.json!"), "posix x.json!")
+        self.assertEqual(s("D:/HAZOP/work/out.xlsx"), "out.xlsx")
+        self.assertEqual(s("50%~100% a/b 구간"), "50%~100% a/b 구간", "경로가 아닌 글은 그대로")
+
+    def test_B3_rows_of_a_project_with_the_same_folder_name_are_not_shown(self):
+        actions_log.record("P A", answer_id="a-1", index=0, request_id="q-1", request_text="x", proposal={"action": "export.excel"},
+                           klass="auto", result="ok", now=NOW)
+        self.assertEqual(actions_log.day_path("P A", NOW), actions_log.day_path("P_A", NOW), "폴더가 같다(safe_name)")
+        self.engine.settings["project_id"] = "P_A"
+        self.assertEqual(api_actionlog.recent(self.engine, today=NOW)["rows"], [])
+        self.assertEqual(len(actions_log.read_day("P A", NOW)[0]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
