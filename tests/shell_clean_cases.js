@@ -116,7 +116,7 @@ async function body({ CV, MK, SheetCore }, data) {
   core.update({ marks: [{ id: "q3", op: "mark", groups: [{ ids: ["x-unknown", symIds[0]], style: "cause" }], dim_others: true }] });
   t("표시(정리): 미확인 자리표는 표시 색으로 다시 칠하지 않고 위 층에 그대로", !!core.topG.querySelector('rect[data-id="x-unknown"]') && !marksG.querySelector("rect[stroke-dasharray='4 3']") && core.topG.style.display === "");
   const veil = marksG.querySelector("rect[fill-opacity]");
-  t("정리 보기의 흐림막은 옅게(원본 보기의 84%보다 낮음)", !!veil && +veil.getAttribute("fill-opacity") <= 0.55 && +veil.getAttribute("fill-opacity") > 0.2, veil && veil.getAttribute("fill-opacity"));
+  t("정리 보기의 흐림막은 옅게(원본 보기의 84%보다 낮음)", !!veil && +veil.getAttribute("fill-opacity") <= 0.65 && +veil.getAttribute("fill-opacity") > 0.2, veil && veil.getAttribute("fill-opacity"));
   const near = items.filter((i) => i.layer === "symbol" && i.kind && symbols[i.kind] && !symbols[i.kind].junction)[0];
   core.update({ marks: [{ id: "q4", op: "path", steps: [near, near, near, near].map((n) => ({ id: n.id, flow: null })), style: "path", numbered: true }] });
   const circles = [...marksG.querySelectorAll("rect[rx]")].map((r) => r.getAttribute("x") + "," + r.getAttribute("y"));

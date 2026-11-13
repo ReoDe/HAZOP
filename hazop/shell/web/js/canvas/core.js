@@ -550,7 +550,7 @@ export class SheetCore {
     const seg = this.segments.length ? buildSegments(this.segments, this.index) : null;
     const ctx = this._effective() === "clean" ? this._cleanCtx() : null;
     const out = drawAll({ marks: this.marks, seg, outside: this.outside, selection: this.sel, index: this.index, k: this.view.k, size: this.size,
-      recolor: ctx ? (rec, color, width, opts) => recolor(ctx, rec, color, width, opts) : null, veil: ctx ? 0.5 : null });
+      recolor: ctx ? (rec, color, width, opts) => recolor(ctx, rec, color, width, opts) : null, veil: ctx ? 0.62 : null });
     const g = this.marksG;
     while (g.firstChild) g.removeChild(g.firstChild);
     const frag = this.doc.createDocumentFragment();
