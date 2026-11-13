@@ -462,6 +462,15 @@ class WriteTest(unittest.TestCase):
         with open(res["manifest"], encoding="utf-8") as fh:
             self.assertEqual(json.load(fh)["not_exported"][0]["name"], "SNP-M-102")
 
+    def test_a_page_whose_confirmation_cannot_be_read_is_not_exported(self):
+        def gate(name):
+            if name == "SNP-M-102":
+                raise FileNotFoundError("추출 결과 없음")
+            return {"state": "confirmed", "unconfirmed": [], "unplaced": []}
+        res = self.export(confirmation=gate)
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-101"])
+        self.assertEqual([(x["name"], x["state"]) for x in res["not_exported"]], [("SNP-M-102", "error")])
+
     def test_no_confirmed_page_writes_nothing(self):
         with self.assertRaises(de.ExportError) as cm:
             self.export(confirmation=self.gate({"SNP-M-101": "open", "SNP-M-102": "ready"}))
@@ -476,18 +485,15 @@ class WriteTest(unittest.TestCase):
         self.assertEqual(calls, ["SNP-M-101", "SNP-M-102", "SNP-M-101", "SNP-M-102"])
 
     def test_without_the_sheet_confirmation_function_nothing_is_exported(self):
-        with mock.patch.dict(sys.modules, {"hazop.extract.confirmation": None}):
-            self.assertIsNone(de.default_confirmation())
+        with mock.patch.object(de, "default_confirmation", return_value=None):  # 화면 규격 V3의 함수가 없는 상태
             with self.assertRaises(de.ExportError) as cm:
                 de.export_names(None, self.out, graph_root=self.graph_root, extract_root=self.extract_root, confirmation="auto")
         self.assertIn("V3", cm.exception.reasons[0])
         self.assertFalse(os.path.exists(self.out))
 
     def test_auto_uses_the_sheet_confirmation_of_the_engine_when_it_exists(self):
-        import types
-        fake = types.ModuleType("hazop.extract.confirmation")
-        fake.sheet_confirmation = self.gate({"SNP-M-101": "confirmed", "SNP-M-102": "open"})
-        with mock.patch.dict(sys.modules, {"hazop.extract.confirmation": fake}):
+        fake = self.gate({"SNP-M-101": "confirmed", "SNP-M-102": "open"})
+        with mock.patch.object(de, "default_confirmation", return_value=fake):
             res = self.export(confirmation="auto")
         self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-101"])
 
@@ -549,7 +555,7 @@ class WriteTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertTrue(os.path.isfile(os.path.join(self.out, "manifest.json")))
         self.assertTrue(pr.called)
-        with mock.patch.dict(sys.modules, {"hazop.extract.confirmation": None}), mock.patch("builtins.print"):
+        with mock.patch.object(de, "default_confirmation", return_value=None), mock.patch("builtins.print"):
             self.assertEqual(export_dexpi.main(["--graph-root", self.graph_root, "--extract-root", self.extract_root,
                                                 "--out", os.path.join(self.tmp, "out2")]), 1)
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "out2")))

@@ -871,7 +871,11 @@ def _gate(confirmation):
 
 
 def _state(gate, name):
-    res = gate(name) or {}
+    """쪽 확정 상태와 남은 미확인 수. 추출 결과가 없거나 깨진 파일이면 상태 'error'(내보내지 않음)."""
+    try:
+        res = gate(name) or {}
+    except (OSError, ValueError):  # sheet_confirmation: 추출 결과 없음(FileNotFoundError)·깨진 파일(ValueError)
+        return "error", 0
     return res.get("state"), len(res.get("unconfirmed") or []) + len(res.get("unplaced") or [])
 
 
