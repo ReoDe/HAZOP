@@ -16,9 +16,9 @@
    625.0
   ]
  ],
- "method": "overview.png로 도면 영역(위·아래 두 계열이 대칭)을 잡고, 도면이 있는 타일 약 16장(y280·y420·y560 줄 전부와 x880-y140)을 5배(1pt=5px) 그림에서 위 왼쪽부터 읽음. 아래 계열은 위 계열과 같은 배치(약 +195.2pt)임을 타일로 확인한 뒤 좌표를 적음. 글자도 그림에서 읽음. 연결은 overview와 타일로 배관을 따라가 분기점마다 기호 쌍을 만듦.",
- "verified": "2026-11-13 Claude 정답지 세션 초안. 사람 확인 전",
- "limits": "계기 원·비석이 배관에 실선 짧은 줄로 붙은 것(PI·PIT·FE)은 배관 연결로 적었고, 압축기에 붙은 VET·F 상자는 연결에서 뺌. 계기 태그에 루프 번호가 없어 기능 문자만 적음. 압축기 냉각수 고리의 'CLCS' 글자와 화살표는 오각형이 아니어서 continuation으로 적지 않음. 릴리프 밸브 아래 'T' 표시는 기호로 적지 않음. 'TGB SUPPLY (RING)' 상자는 unlisted로 적고 분기 기호로 다룸. 건물 경계 표시(TGB/UCT/AB/CB/YARD/RCB)는 기호가 아니어서 뺌. 흐름 화살표가 배관에 없어 flow는 모두 null(체크 밸브 방향은 반영 안 함). 솔레노이드 파일럿은 주 밸브에 합쳐 하나로 적음.",
+ "method": "overview.png로 도면 영역(위·아래 두 계열이 대칭)을 잡고, 도면이 있는 타일 약 16장(y280·y420·y560 줄 전부와 x880-y140)을 5배(1pt=5px) 그림에서 위 왼쪽부터 읽음. 아래 계열은 위 계열과 같은 배치(약 +195.2pt)임을 타일로 확인한 뒤 좌표를 적음. 글자도 그림에서 읽음. 연결은 overview와 타일로 배관을 따라가 분기점마다 기호 쌍을 만듦. / 판정: 같은 영역을 독립으로 쓴 B와 견준 dispute 97건을 compare 조각·타일(5배)·범례(tiles/001)로 판정. 'TGB SUPPLY (RING)'은 굵은 4\" 배관 고리(아래 변에 4\" 구경 글자)라 기호에서 빼고 통과시켜 하류 13개 기호를 한 분기점으로 묶음.",
+ "verified": "2026-11-13 독립 두 판(A·B)을 견주고 어긋난 항목을 그림으로 판정. 사람 확인 전",
+ "limits": "계기 원·비석이 배관에 실선 짧은 줄로 붙은 것(PI·PIT·FE)은 배관 연결로 적었고, 압축기에 붙은 VET·F 상자는 연결에서 뺌. 계기 태그에 루프 번호가 없어 기능 문자만 적음. 압축기 냉각수 고리의 'CLCS' 글자와 화살표는 오각형이 아니어서 continuation으로 적지 않음. 릴리프 밸브 아래 'T' 표시는 기호로 적지 않음. 'TGB SUPPLY (RING)' 상자는 unlisted로 적고 분기 기호로 다룸. 건물 경계 표시(TGB/UCT/AB/CB/YARD/RCB)는 기호가 아니어서 뺌. 흐름 화살표가 배관에 없어 flow는 모두 null(체크 밸브 방향은 반영 안 함). 솔레노이드 파일럿은 주 밸브에 합쳐 하나로 적음. / 판정 뒤: RING 사각형은 배관 고리로 보아 기호에서 뺌. FE 원은 배관 안 요소 없이 줄기로 붙은 계기 원이라 연결에서 뺌. CLCS 화살표 4개는 오각형이 없지만 도면 밖 계통(CLCS)으로 오가는 선이라 continuation으로 넣음(불확실).",
  "symbols": [
   {
    "id": "s001",
@@ -55,13 +55,19 @@
     191.6,
     407.4
    ],
-   "tag": null,
+   "tag": "AIR COMPRESSOR 01",
    "attributes": {},
-   "note": "이름: AIR COMPRESSOR 01"
+   "note": "이름: AIR COMPRESSOR 01",
+   "tag_bbox": [
+    141,
+    375,
+    182,
+    381
+   ]
   },
   {
    "id": "s004",
-   "kind": "air_operated_valve",
+   "kind": "control_valve",
    "bbox": [
     107.6,
     365.6,
@@ -70,7 +76,7 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 다이어프램+사각 상자 구동기, 압축기 냉각수(CLCS) 고리 위"
+   "note": "다이어프램 위로 몸체 감지선이 이어진 자력식 조절 밸브(s028과 같은 모양). 압축기 냉각수 조절"
   },
   {
    "id": "s005",
@@ -133,9 +139,15 @@
     314.6,
     415.6
    ],
-   "tag": null,
+   "tag": "AIR RECEIVER 01",
    "attributes": {},
-   "note": "이름: AIR RECEIVER 01"
+   "note": "이름: AIR RECEIVER 01",
+   "tag_bbox": [
+    285,
+    372,
+    306,
+    392
+   ]
   },
   {
    "id": "s010",
@@ -322,7 +334,7 @@
     605.0,
     412.0
    ],
-   "tag": null,
+   "tag": "INSTRUMENT AIR DRYER 01",
    "attributes": {},
    "note": "이름: INSTRUMENT AIR DRYER 01"
   },
@@ -478,13 +490,19 @@
     191.6,
     602.6
    ],
-   "tag": null,
+   "tag": "AIR COMPRESSOR 02",
    "attributes": {},
-   "note": "이름: AIR COMPRESSOR 02"
+   "note": "이름: AIR COMPRESSOR 02",
+   "tag_bbox": [
+    141,
+    570.2,
+    182,
+    576.2
+   ]
   },
   {
    "id": "s036",
-   "kind": "air_operated_valve",
+   "kind": "control_valve",
    "bbox": [
     107.6,
     560.8,
@@ -493,7 +511,7 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 다이어프램+사각 상자 구동기, 압축기 냉각수(CLCS) 고리 위"
+   "note": "다이어프램 위로 몸체 감지선이 이어진 자력식 조절 밸브(s028과 같은 모양). 압축기 냉각수 조절"
   },
   {
    "id": "s037",
@@ -569,9 +587,15 @@
     314.6,
     610.8
    ],
-   "tag": null,
+   "tag": "AIR RECEIVER 02",
    "attributes": {},
-   "note": "이름: AIR RECEIVER 02"
+   "note": "이름: AIR RECEIVER 02",
+   "tag_bbox": [
+    285,
+    567.2,
+    306,
+    587.2
+   ]
   },
   {
    "id": "s043",
@@ -758,7 +782,7 @@
     605.0,
     607.2
    ],
-   "tag": null,
+   "tag": "INSTRUMENT AIR DRYER 02",
    "attributes": {},
    "note": "이름: INSTRUMENT AIR DRYER 02"
   },
@@ -1074,20 +1098,6 @@
    "note": "대기 방출 화살표"
   },
   {
-   "id": "s080",
-   "kind": "unlisted",
-   "kind_text": "supply ring header box",
-   "bbox": [
-    887.0,
-    358.6,
-    978.0,
-    432.0
-   ],
-   "tag": null,
-   "attributes": {},
-   "note": "불확실: 'TGB SUPPLY (RING)' 큰 사각형. 건물 안 고리 공급 헤더를 상자로 그린 것"
-  },
-  {
    "id": "s081",
    "kind": "pipe_cap",
    "bbox": [
@@ -1261,6 +1271,97 @@
    "tag": "RCB SUPPLY",
    "attributes": {},
    "note": ""
+  },
+  {
+   "id": "s501",
+   "kind": "continuation",
+   "bbox": [
+    116,
+    414,
+    135.5,
+    420
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 화살표와 'CLCS' 글자로 끝나는 냉각수 복귀선(오각형 없음). 도면 밖 계통으로 가므로 continuation으로 봄"
+  },
+  {
+   "id": "s502",
+   "kind": "continuation",
+   "bbox": [
+    98.5,
+    414,
+    103,
+    420
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 'CLCS'에서 오는 냉각수 공급선 화살표(오각형 없음). 도면 밖 계통에서 오므로 continuation으로 봄"
+  },
+  {
+   "id": "s503",
+   "kind": "continuation",
+   "bbox": [
+    116,
+    609.2,
+    135.5,
+    615.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 화살표와 'CLCS' 글자로 끝나는 냉각수 복귀선(오각형 없음). 도면 밖 계통으로 가므로 continuation으로 봄"
+  },
+  {
+   "id": "s504",
+   "kind": "continuation",
+   "bbox": [
+    98.5,
+    609.2,
+    103,
+    615.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 'CLCS'에서 오는 냉각수 공급선 화살표(오각형 없음). 도면 밖 계통에서 오므로 continuation으로 봄"
+  },
+  {
+   "id": "s505",
+   "kind": "solenoid_valve",
+   "bbox": [
+    461,
+    381,
+    480,
+    386.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "구동기 공기 공급선(IA) 위 3방 솔레노이드 밸브(S 구동기). 공정 배관이 아니라 연결 없음"
+  },
+  {
+   "id": "s506",
+   "kind": "solenoid_valve",
+   "bbox": [
+    461,
+    576.2,
+    480,
+    581.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "구동기 공기 공급선(IA) 위 3방 솔레노이드 밸브(S 구동기). 공정 배관이 아니라 연결 없음"
+  },
+  {
+   "id": "s507",
+   "kind": "solenoid_valve",
+   "bbox": [
+    1037.6,
+    484,
+    1051.4,
+    490
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "구동기 공기 공급선(IA) 위 3방 솔레노이드 밸브(S 구동기). 공정 배관이 아니라 연결 없음"
   }
  ],
  "lines": [
@@ -1623,26 +1724,11 @@
   },
   {
    "a": "s016",
-   "b": "s017",
-   "flow": null
-  },
-  {
-   "a": "s016",
    "b": "s019",
    "flow": null
   },
   {
    "a": "s016",
-   "b": "s067",
-   "flow": null
-  },
-  {
-   "a": "s017",
-   "b": "s019",
-   "flow": null
-  },
-  {
-   "a": "s017",
    "b": "s067",
    "flow": null
   },
@@ -1823,26 +1909,11 @@
   },
   {
    "a": "s049",
-   "b": "s050",
-   "flow": null
-  },
-  {
-   "a": "s049",
    "b": "s052",
    "flow": null
   },
   {
    "a": "s049",
-   "b": "s071",
-   "flow": null
-  },
-  {
-   "a": "s050",
-   "b": "s052",
-   "flow": null
-  },
-  {
-   "a": "s050",
    "b": "s071",
    "flow": null
   },
@@ -2082,11 +2153,6 @@
    "flow": null
   },
   {
-   "a": "s032",
-   "b": "s080",
-   "flow": null
-  },
-  {
    "a": "s065",
    "b": "s073",
    "flow": null
@@ -2107,11 +2173,6 @@
    "flow": null
   },
   {
-   "a": "s065",
-   "b": "s080",
-   "flow": null
-  },
-  {
    "a": "s073",
    "b": "s074",
    "flow": null
@@ -2127,11 +2188,6 @@
    "flow": null
   },
   {
-   "a": "s073",
-   "b": "s080",
-   "flow": null
-  },
-  {
    "a": "s074",
    "b": "s076",
    "flow": null
@@ -2142,23 +2198,8 @@
    "flow": null
   },
   {
-   "a": "s074",
-   "b": "s080",
-   "flow": null
-  },
-  {
    "a": "s076",
    "b": "s077",
-   "flow": null
-  },
-  {
-   "a": "s076",
-   "b": "s080",
-   "flow": null
-  },
-  {
-   "a": "s077",
-   "b": "s080",
    "flow": null
   },
   {
@@ -2179,26 +2220,6 @@
   {
    "a": "s078",
    "b": "s079",
-   "flow": null
-  },
-  {
-   "a": "s080",
-   "b": "s081",
-   "flow": null
-  },
-  {
-   "a": "s080",
-   "b": "s082",
-   "flow": null
-  },
-  {
-   "a": "s080",
-   "b": "s083",
-   "flow": null
-  },
-  {
-   "a": "s080",
-   "b": "s084",
    "flow": null
   },
   {
@@ -2229,21 +2250,6 @@
   {
    "a": "s083",
    "b": "s084",
-   "flow": null
-  },
-  {
-   "a": "s080",
-   "b": "s085",
-   "flow": null
-  },
-  {
-   "a": "s080",
-   "b": "s086",
-   "flow": null
-  },
-  {
-   "a": "s080",
-   "b": "s089",
    "flow": null
   },
   {
@@ -2279,6 +2285,316 @@
   {
    "a": "s092",
    "b": "s093",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s083",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s084",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s083",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s084",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s083",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s084",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s083",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s084",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s083",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s084",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s083",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s084",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s082",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s082",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s082",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s083",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s083",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s083",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s084",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s084",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s084",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s502",
+   "b": "s004",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s502",
+   "b": "s005",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s003",
+   "b": "s501",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s504",
+   "b": "s036",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s504",
+   "b": "s037",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s035",
+   "b": "s503",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s001",
+   "b": "s003",
+   "flow": null
+  },
+  {
+   "a": "s033",
+   "b": "s035",
    "flow": null
   }
  ],
@@ -2321,6 +2637,34 @@
   {
    "symbol": "s093",
    "label": "RCB SUPPLY",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s501",
+   "label": "CLCS",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s502",
+   "label": "CLCS",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s503",
+   "label": "CLCS",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s504",
+   "label": "CLCS",
    "target_system": null,
    "target_sheet": null,
    "target_drawing": null

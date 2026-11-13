@@ -16,13 +16,13 @@
    662.0
   ]
  ],
- "method": "overview.png로 계통(급기 AHU HV01, 상시 배기 ACU AU01, 비상 배기 ACU AU02A·AU02B, 시트 2 연결)을 먼저 파악했다. 그다음 도면이 걸친 타일 12장(x0000~x0880, y0140~y0560, 5배 그림)을 위 왼쪽부터 읽고, 범례 1.7-1(2 of 4) 타일 2장으로 HVAC 기호(필터·코일·흡착기·수분분리기·댐퍼)를 맞췄다. 기호를 다 적은 뒤 덕트를 따라가며 연결과 흐름을 적었다. 기호가 100개라 영역은 도면 전체다.",
- "verified": "2026-11-13 Claude 정답지 세션 초안. 사람 확인 전",
- "limits": "(1) 공기조화기·공기정화기 함체 안 구성품(필터·코일·흡착기·수분분리기·송풍기)을 하나씩 기호로 적고 함체 안 공기 경로 순서대로 이었다. 함체 태그(HV01, AU01, AU02A, AU02B)는 송풍기에 붙였다. (2) 덕트 개방 끝(굵은 막대+화살표) 14곳을 vent로 적었고 모두 불확실로 표시했다. (3) Y1202A·Y1201A·Y1201B의 사각형 속 마름모 기호는 범례에서 찾지 못해 damper로 적었다. (4) HV01 냉각 코일 냉수관의 이중 막대(플랜지나 유연 이음으로 보임)는 적지 않았고, 환수관 밸브 형식은 확신이 낮다. (5) 계기에서 덕트로 내려간 가는 선은 감지선으로 보아 연결에 넣지 않았다. (6) 'GI EII' 마름모 표시와 P·E/H 구동기 원은 기호로 적지 않았다. (7) 흐름은 덕트 끝 화살표와 구간 화살표로 정했고, 같은 분기망 안 배출구끼리나 흡입구끼리는 null로 두었다. 비상 배기 두 줄이 만나 Y0004B 하류로 합류하는 망(Y0004B·Y1201A·Y1201B·Y0007A·Y0008B)은 Y0008B 쪽 구간 화살표만 반영했다. (8) 덕트 구경 글자가 없어 lines는 비어 있다.",
+ "method": "overview.png로 계통(급기 AHU HV01, 상시 배기 ACU AU01, 비상 배기 ACU AU02A·AU02B, 시트 2 연결)을 먼저 파악했다. 그다음 도면이 걸친 타일 12장(x0000~x0880, y0140~y0560, 5배 그림)을 위 왼쪽부터 읽고, 범례 1.7-1(2 of 4) 타일 2장으로 HVAC 기호(필터·코일·흡착기·수분분리기·댐퍼)를 맞췄다. 기호를 다 적은 뒤 덕트를 따라가며 연결과 흐름을 적었다. 기호가 100개라 영역은 도면 전체다. / 판정: 독립 두 번째 판 B와 견준 어긋남 19건(모두 kind)을 그림 조각·타일·범례(1.7-1 2·3 of 4)로 판정해 A에 반영했다(덕트 끝 공기 흐름 표시 14건 vent→unlisted, FICKS·TICKS 5건 switch→controller).",
+ "verified": "2026-11-13 독립 두 판(A·B)을 견주고 어긋난 항목을 그림으로 판정. 사람 확인 전",
+ "limits": "(1) 공기조화기·공기정화기 함체 안 구성품(필터·코일·흡착기·수분분리기·송풍기)을 하나씩 기호로 적고 함체 안 공기 경로 순서대로 이었다. 함체 태그(HV01, AU01, AU02A, AU02B)는 송풍기에 붙였다. (2) 덕트 개방 끝(굵은 막대+화살표) 14곳을 vent로 적었고 모두 불확실로 표시했다. (3) Y1202A·Y1201A·Y1201B의 사각형 속 마름모 기호는 범례에서 찾지 못해 damper로 적었다. (4) HV01 냉각 코일 냉수관의 이중 막대(플랜지나 유연 이음으로 보임)는 적지 않았고, 환수관 밸브 형식은 확신이 낮다. (5) 계기에서 덕트로 내려간 가는 선은 감지선으로 보아 연결에 넣지 않았다. (6) 'GI EII' 마름모 표시와 P·E/H 구동기 원은 기호로 적지 않았다. (7) 흐름은 덕트 끝 화살표와 구간 화살표로 정했고, 같은 분기망 안 배출구끼리나 흡입구끼리는 null로 두었다. 비상 배기 두 줄이 만나 Y0004B 하류로 합류하는 망(Y0004B·Y1201A·Y1201B·Y0007A·Y0008B)은 Y0008B 쪽 구간 화살표만 반영했다. (8) 덕트 구경 글자가 없어 lines는 비어 있다. (판정 뒤 덧붙임) (2)의 덕트 끝 14개는 판정으로 unlisted(덕트 공기 흐름 표시)로 바꿨다.",
  "symbols": [
   {
    "id": "s001",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     263.0,
     186.0,
@@ -31,7 +31,8 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음. 비덕트 공기 흐름(물결 화살표)으로 HVAC CHASE에서 흡입"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "non-ducted air flow into duct (zigzag arrow + bar, outside air from HVAC chase)"
   },
   {
    "id": "s002",
@@ -195,7 +196,7 @@
   },
   {
    "id": "s012",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     706.0,
     204.0,
@@ -204,7 +205,8 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음. 급기 AHU실로 급기"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s013",
@@ -260,7 +262,7 @@
   },
   {
    "id": "s017",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     810.5,
     336.5,
@@ -269,11 +271,12 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s018",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     810.5,
     381.5,
@@ -282,11 +285,12 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s019",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     810.5,
     547.0,
@@ -295,7 +299,8 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s020",
@@ -325,7 +330,7 @@
   },
   {
    "id": "s022",
-   "kind": "switch",
+   "kind": "controller",
    "bbox": [
     499.0,
     158.4,
@@ -334,11 +339,11 @@
    ],
    "tag": "TICKS 3046",
    "attributes": {},
-   "note": "공유 HSI(사각형 속 원)"
+   "note": "공유 HSI(사각형 속 원); 판정(A·B 대조): 범례 1.7-1(3 of 4) 기능 문자: IC=지시 조절기, K=조작 스테이션, S=스위치. 주기능이 지시 조절(IC)이므로 controller"
   },
   {
    "id": "s023",
-   "kind": "switch",
+   "kind": "controller",
    "bbox": [
     523.0,
     158.4,
@@ -347,7 +352,7 @@
    ],
    "tag": "TICKS 3048",
    "attributes": {},
-   "note": "공유 HSI(사각형 속 원)"
+   "note": "공유 HSI(사각형 속 원); 판정(A·B 대조): 범례 1.7-1(3 of 4) 기능 문자: IC=지시 조절기, K=조작 스테이션, S=스위치. 주기능이 지시 조절(IC)이므로 controller"
   },
   {
    "id": "s024",
@@ -417,7 +422,7 @@
   },
   {
    "id": "s029",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     282.0,
     224.0,
@@ -426,11 +431,12 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음. 급기 AHU실에서 흡입"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s030",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     297.5,
     484.0,
@@ -439,11 +445,12 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s031",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     313.0,
     569.5,
@@ -452,7 +459,8 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s032",
@@ -605,7 +613,7 @@
   },
   {
    "id": "s040",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     820.5,
     297.0,
@@ -614,11 +622,12 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음. HVAC CHASE로 배출"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s041",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     820.5,
     312.0,
@@ -627,7 +636,8 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음. HVAC CHASE로 배출"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s042",
@@ -670,7 +680,7 @@
   },
   {
    "id": "s045",
-   "kind": "switch",
+   "kind": "controller",
    "bbox": [
     577.6,
     270.4,
@@ -679,7 +689,7 @@
    ],
    "tag": "FICKS 031",
    "attributes": {},
-   "note": "공유 HSI(사각형 속 원)"
+   "note": "공유 HSI(사각형 속 원); 판정(A·B 대조): 범례 1.7-1(3 of 4) 기능 문자: IC=지시 조절기, K=조작 스테이션, S=스위치. 주기능이 지시 조절(IC)이므로 controller"
   },
   {
    "id": "s046",
@@ -710,7 +720,7 @@
   },
   {
    "id": "s048",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     282.0,
     374.5,
@@ -719,11 +729,12 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s049",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     274.5,
     530.0,
@@ -732,7 +743,8 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s050",
@@ -749,7 +761,7 @@
   },
   {
    "id": "s051",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     365.0,
     468.0,
@@ -758,11 +770,12 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s052",
-   "kind": "vent",
+   "kind": "unlisted",
    "bbox": [
     365.0,
     640.5,
@@ -771,7 +784,8 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: 덕트 개방 끝(굵은 막대+화살표, 실내나 HVAC CHASE로 열린 급배기구)을 vent로 적음"
+   "note": "판정(A·B 대조): 범례 1.7-1(2 of 4)의 HVAC 공기 흐름 표시(DUCTED/NON-DUCTED AIR FLOW)가 덕트 끝 굵은 막대에 붙은 것이다. 배관 벤트 끝이 아니고 목록에 맞는 kind가 없어 unlisted. 사람 확인 전",
+   "kind_text": "duct opening (thick bar + air-flow arrow, duct open end to room)"
   },
   {
    "id": "s053",
@@ -1248,7 +1262,7 @@
   },
   {
    "id": "s085",
-   "kind": "switch",
+   "kind": "controller",
    "bbox": [
     625.6,
     419.6,
@@ -1257,7 +1271,7 @@
    ],
    "tag": "FICKS 033A",
    "attributes": {},
-   "note": ""
+   "note": "판정(A·B 대조): 범례 1.7-1(3 of 4) 기능 문자: IC=지시 조절기, K=조작 스테이션, S=스위치. 주기능이 지시 조절(IC)이므로 controller"
   },
   {
    "id": "s086",
@@ -1448,7 +1462,7 @@
   },
   {
    "id": "s100",
-   "kind": "switch",
+   "kind": "controller",
    "bbox": [
     625.6,
     593.0,
@@ -1457,7 +1471,7 @@
    ],
    "tag": "FICKS 034B",
    "attributes": {},
-   "note": ""
+   "note": "판정(A·B 대조): 범례 1.7-1(3 of 4) 기능 문자: IC=지시 조절기, K=조작 스테이션, S=스위치. 주기능이 지시 조절(IC)이므로 controller"
   }
  ],
  "lines": [],

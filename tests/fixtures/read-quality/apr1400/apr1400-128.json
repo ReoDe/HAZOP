@@ -16,8 +16,8 @@
    693.0
   ]
  ],
- "method": "overview.png로 도면 영역(탱크 계열 A·B 두 벌)을 파악한 뒤, 도면이 걸친 타일 16장(x0220~x0880, y0000~y0560, 5배 그림)을 위 왼쪽부터 읽음. 배관 교차·접속 여부와 작은 기호는 타일을 잘라 2~3배로 다시 키워 확인함. 기호가 96개로 180개에 못 미쳐 도면 전체를 영역으로 잡음. 범례는 tiles/001 overview와 배관 부속 칸 타일로 확인함. 추출 코드·추출 결과·PDF 텍스트 층은 보지 않음.",
- "verified": "2026-11-13 Claude 정답지 세션 초안. 사람 확인 전",
+ "method": "overview.png로 도면 영역(탱크 계열 A·B 두 벌)을 파악한 뒤, 도면이 걸친 타일 16장(x0220~x0880, y0000~y0560, 5배 그림)을 위 왼쪽부터 읽음. 배관 교차·접속 여부와 작은 기호는 타일을 잘라 2~3배로 다시 키워 확인함. 기호가 96개로 180개에 못 미쳐 도면 전체를 영역으로 잡음. 범례는 tiles/001 overview와 배관 부속 칸 타일로 확인함. 추출 코드·추출 결과·PDF 텍스트 층은 보지 않음. / 판정: A(첫 판)와 B(독립 두 번째 판)의 어긋난 19건을 compare 조각과 tiles\\128 타일(5배, 필요한 곳 이어 붙여 확대)·범례 tiles\\001로 다시 보고 A를 바탕으로 고침",
+ "verified": "2026-11-13 독립 두 판(A·B)을 견주고 어긋난 항목을 그림으로 판정. 사람 확인 전",
  "limits": "(1) 계기 비석(TEWIS·LTI)과 탱크를 잇는 가는 실선, FT 020과 FE 사이 이중선은 계측 연결(충격선)로 보고 connections에서 뺌. 공정 연결로 본다면 탱크와의 연결 10쌍이 빠진 것임. (2) CI/DII·DIII/DII 마름모(품질등급 경계)와 TGB|AB, AB|YARD 건물 경계 표시는 기호로 보지 않아 적지 않음. (3) x≈589 탱크 간 연결관은 양 끝 화살표 방향이 서로 반대라 flow를 null로 둠. x≈589·636.6 세로관은 가로 배관과 만나는 곳마다 끊김 표시가 있어 교차(비접속)로 봄. (4) AB/YARD 쪽 반원 끝 기호 4개는 범례에서 찾지 못해 unlisted로 둠. (5) LTI를 transmitter로, TEWIS를 temperature_element로 정한 종류 판단은 불확실함. (6) SHEET 2 \"B\"로 가는 8\" 선은 끝 화살촉이 분명하지 않아 flow를 null로 둠. (7) 'CCW MAKEUP PIPE (TRAIN A)'와 'SHEET 2 \"G\"' 글자는 빨간색(개정 표시로 보임).",
  "symbols": [
   {
@@ -54,7 +54,7 @@
   },
   {
    "id": "s003",
-   "kind": "transmitter",
+   "kind": "indicator",
    "bbox": [
     336.6,
     175.4,
@@ -63,11 +63,11 @@
    ],
    "tag": "LTI 003A",
    "attributes": {},
-   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+   "note": "판정: LTI 끝 글자 I → indicator(A transmitter, B indicator)"
   },
   {
    "id": "s004",
-   "kind": "transmitter",
+   "kind": "indicator",
    "bbox": [
     336.6,
     200.0,
@@ -76,11 +76,11 @@
    ],
    "tag": "LTI 006B",
    "attributes": {},
-   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+   "note": "판정: LTI 끝 글자 I → indicator(A transmitter, B indicator)"
   },
   {
    "id": "s005",
-   "kind": "transmitter",
+   "kind": "indicator",
    "bbox": [
     336.6,
     224.6,
@@ -89,11 +89,11 @@
    ],
    "tag": "LTI 006C",
    "attributes": {},
-   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+   "note": "판정: LTI 끝 글자 I → indicator(A transmitter, B indicator)"
   },
   {
    "id": "s006",
-   "kind": "transmitter",
+   "kind": "indicator",
    "bbox": [
     336.6,
     250.4,
@@ -102,7 +102,7 @@
    ],
    "tag": "LTI 006D",
    "attributes": {},
-   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+   "note": "판정: LTI 끝 글자 I → indicator(A transmitter, B indicator)"
   },
   {
    "id": "s007",
@@ -134,7 +134,7 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: '[' 모양 배관 끝. 용접 캡/호스 연결 구분 어려움"
+   "note": "불확실: '[' 모양 끝단. 범례 호스 커플러는 등이 배관에 붙고 입이 바깥을 보는데, 여기는 입이 배관 쪽을 보고 배관이 입에서 끝나 캡으로 둠"
   },
   {
    "id": "s009",
@@ -810,7 +810,7 @@
   },
   {
    "id": "s053",
-   "kind": "transmitter",
+   "kind": "indicator",
    "bbox": [
     336.6,
     451.6,
@@ -819,11 +819,11 @@
    ],
    "tag": "LTI 004B",
    "attributes": {},
-   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+   "note": "판정: LTI 끝 글자 I → indicator(A transmitter, B indicator)"
   },
   {
    "id": "s054",
-   "kind": "transmitter",
+   "kind": "indicator",
    "bbox": [
     336.6,
     477.4,
@@ -832,11 +832,11 @@
    ],
    "tag": "LTI 005A",
    "attributes": {},
-   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+   "note": "판정: LTI 끝 글자 I → indicator(A transmitter, B indicator)"
   },
   {
    "id": "s055",
-   "kind": "transmitter",
+   "kind": "indicator",
    "bbox": [
     336.6,
     501.0,
@@ -845,11 +845,11 @@
    ],
    "tag": "LTI 005C",
    "attributes": {},
-   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+   "note": "판정: LTI 끝 글자 I → indicator(A transmitter, B indicator)"
   },
   {
    "id": "s056",
-   "kind": "transmitter",
+   "kind": "indicator",
    "bbox": [
     336.6,
     527.0,
@@ -858,7 +858,7 @@
    ],
    "tag": "LTI 005D",
    "attributes": {},
-   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+   "note": "판정: LTI 끝 글자 I → indicator(A transmitter, B indicator)"
   },
   {
    "id": "s057",
@@ -890,7 +890,7 @@
    ],
    "tag": null,
    "attributes": {},
-   "note": "불확실: '[' 모양 배관 끝. 용접 캡/호스 연결 구분 어려움"
+   "note": "불확실: '[' 모양 끝단. 범례 호스 커플러는 등이 배관에 붙고 입이 바깥을 보는데, 여기는 입이 배관 쪽을 보고 배관이 입에서 끝나 캡으로 둠"
   },
   {
    "id": "s059",
@@ -1480,7 +1480,8 @@
     435.0,
     136.0
    ],
-   "size": "6\""
+   "size": "6\"",
+   "note": "불확실: 세운 글자가 6\"로 보임(B판은 10\"). TK01B 같은 자리 벤트는 10\""
   },
   {
    "id": "l002",
@@ -1980,7 +1981,7 @@
   {
    "a": "s001",
    "b": "s027",
-   "flow": "a_to_b"
+   "flow": null
   },
   {
    "a": "s027",
@@ -2040,7 +2041,7 @@
   {
    "a": "s036",
    "b": "s038",
-   "flow": null
+   "flow": "a_to_b"
   },
   {
    "a": "s039",
@@ -2115,7 +2116,7 @@
   {
    "a": "s048",
    "b": "s080",
-   "flow": null
+   "flow": "a_to_b"
   },
   {
    "a": "s096",
@@ -2130,7 +2131,7 @@
   {
    "a": "s034",
    "b": "s080",
-   "flow": null
+   "flow": "a_to_b"
   },
   {
    "a": "s094",
@@ -2245,7 +2246,7 @@
   {
    "a": "s051",
    "b": "s073",
-   "flow": "a_to_b"
+   "flow": null
   },
   {
    "a": "s073",
@@ -2481,7 +2482,7 @@
   {
    "symbol": "s094",
    "label": "CT / SHEET 2 \"A\"",
-   "target_system": null,
+   "target_system": "CT",
    "target_sheet": "2",
    "target_drawing": null
   }

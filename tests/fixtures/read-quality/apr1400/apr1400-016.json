@@ -16,9 +16,9 @@
    682.0
   ]
  ],
- "method": "overview.png로 도면 영역(x 220~1000, y 105~682)과 계통 흐름을 잡고, 도면이 걸친 타일 15장(x0220~x0880, y0140~y0560)을 위 왼쪽부터 5배(1pt=5px)로 읽음. 배관 교차부·오리피스·특이 밸브는 타일을 잘라 15~20배로 다시 확인. 범례는 001쪽 overview와 구동기 부분을 참고. 기호를 다 적은 뒤 배관을 따라 분기점 묶음별로 connections를 적음",
- "verified": "2026-11-13 Claude 정답지 세션 초안. 사람 확인 전",
- "limits": "배관 구경·배관 번호 글자가 쪽에 보이지 않아 lines는 비움. 손잡이+기어형 구동부+옆 화살표가 붙은 밸브 7개(V402·V478·V420·V107·V131·V447·V579)는 범례 이름을 확정하지 못해 manual_valve로 둠. 수직 미니플로 복귀관(x≈620)은 세 펌프 토출관과 끊긴 선으로 교차해 연결로 보지 않음. PT·PI·LT·TEW·FT·FIS·TW와 FE 307·FE 309는 계기 연결선으로만 붙어 connections에 넣지 않음(FE 305B만 배관 안 요소로 봄). 열교환기 HE01B·HE02B의 CCW 출입(점선+화살표)과 품질등급 마름모(BI CI 등)는 적지 않음. A·B는 같은 쪽 안 연결 문자로 continuation에 넣음. OR02B/OR17B·OR20B의 판 경계가 흐림. flow는 화살표가 두 기호 사이 배관에 있는 경우만 적음",
+ "method": "overview.png로 도면 영역(x 220~1000, y 105~682)과 계통 흐름을 잡고, 도면이 걸친 타일 15장(x0220~x0880, y0140~y0560)을 위 왼쪽부터 5배(1pt=5px)로 읽음. 배관 교차부·오리피스·특이 밸브는 타일을 잘라 15~20배로 다시 확인. 범례는 001쪽 overview와 구동기 부분을 참고. 기호를 다 적은 뒤 배관을 따라 분기점 묶음별로 connections를 적음 / 판정: A(첫 판)와 B(독립 두 번째 판, KEY-GUIDE-B)를 check_read_quality compare로 견준 어긋남 51건을 조각 그림과 타일(5배 확대 잘라 보기)로 하나씩 판정해 A에 반영",
+ "verified": "2026-11-13 독립 두 판(A·B)을 견주고 어긋난 항목을 그림으로 판정. 사람 확인 전",
+ "limits": "배관 구경·배관 번호 글자가 쪽에 보이지 않아 lines는 비움. 손잡이+기어형 구동부+옆 화살표가 붙은 밸브 7개(V402·V478·V420·V107·V131·V447·V579)는 범례 이름을 확정하지 못해 manual_valve로 둠. 수직 미니플로 복귀관(x≈620)은 세 펌프 토출관과 끊긴 선으로 교차해 연결로 보지 않음. PT·PI·LT·TEW·FT·FIS·TW와 FE 307·FE 309는 배관 안 요소 없이 짧은 선으로만 붙어(판정에서 확대해 확인) connections에 넣지 않음(FE 305B만 배관 안 요소로 봄). 열교환기 HE01B·HE02B의 CCW 출입(점선+화살표)과 품질등급 마름모(BI CI 등)는 적지 않음. 같은 쪽 안 연결 깃발 A·B(x716 y335·y408, x378 y517, x688 y600)는 KEY-GUIDE-B에 따라 기호로 적지 않았고, 깃발을 건너는 연결(V707→A→V447 쪽, B→SDC 흡입관)도 적지 않음. OR02B/OR17B·OR20B의 판 경계가 흐림. flow는 화살표가 두 기호 사이 배관에 있는 경우만 적음",
  "symbols": [
   {
    "id": "s001",
@@ -764,19 +764,6 @@
    "note": ""
   },
   {
-   "id": "s043",
-   "kind": "continuation",
-   "bbox": [
-    714.4,
-    335.0,
-    720.4,
-    354.0
-   ],
-   "tag": null,
-   "attributes": {},
-   "note": "같은 쪽 안 연결 문자 B"
-  },
-  {
    "id": "s044",
    "kind": "transmitter",
    "bbox": [
@@ -936,19 +923,6 @@
    "note": ""
   },
   {
-   "id": "s053",
-   "kind": "continuation",
-   "bbox": [
-    713.0,
-    407.6,
-    719.6,
-    426.0
-   ],
-   "tag": null,
-   "attributes": {},
-   "note": "같은 쪽 안 연결 문자 A"
-  },
-  {
    "id": "s054",
    "kind": "manual_valve",
    "bbox": [
@@ -1096,19 +1070,6 @@
    "tag": null,
    "attributes": {},
    "note": ""
-  },
-  {
-   "id": "s063",
-   "kind": "continuation",
-   "bbox": [
-    369.6,
-    513.6,
-    388.0,
-    520.0
-   ],
-   "tag": null,
-   "attributes": {},
-   "note": "같은 쪽 안 연결 문자 B"
   },
   {
    "id": "s064",
@@ -1491,19 +1452,6 @@
     "normal_position": "LO"
    },
    "note": "불확실: 손잡이(T)+기어형 구동부+옆 화살표가 붙은 밸브. 범례에서 정확한 이름을 못 찾아 수동 밸브로 둠"
-  },
-  {
-   "id": "s085",
-   "kind": "continuation",
-   "bbox": [
-    685.6,
-    592.0,
-    691.0,
-    610.4
-   ],
-   "tag": null,
-   "attributes": {},
-   "note": "같은 쪽 안 연결 문자 A"
   },
   {
    "id": "s086",
@@ -1998,10 +1946,10 @@
    "id": "s115",
    "kind": "flow_element",
    "bbox": [
-    866.5,
+    864.0,
     495.5,
-    870.5,
-    501.0
+    873.0,
+    518.0
    ],
    "tag": "FE 305B",
    "tag_bbox": [
@@ -2011,7 +1959,7 @@
     518.4
    ],
    "attributes": {},
-   "note": ""
+   "note": "배관 안 요소(y499.4의 짧은 눈금 두 개와 좁아지는 관)와 아래 이름표 원을 한 상자로 묶음"
   },
   {
    "id": "s116",
@@ -2276,12 +2224,12 @@
   {
    "a": "s013",
    "b": "s023",
-   "flow": null
+   "flow": "b_to_a"
   },
   {
    "a": "s013",
    "b": "s082",
-   "flow": null
+   "flow": "b_to_a"
   },
   {
    "a": "s023",
@@ -2455,11 +2403,6 @@
   },
   {
    "a": "s042",
-   "b": "s043",
-   "flow": null
-  },
-  {
-   "a": "s042",
    "b": "s050",
    "flow": null
   },
@@ -2470,21 +2413,6 @@
   },
   {
    "a": "s042",
-   "b": "s047",
-   "flow": null
-  },
-  {
-   "a": "s043",
-   "b": "s050",
-   "flow": null
-  },
-  {
-   "a": "s043",
-   "b": "s045",
-   "flow": null
-  },
-  {
-   "a": "s043",
    "b": "s047",
    "flow": null
   },
@@ -2544,22 +2472,12 @@
    "flow": null
   },
   {
-   "a": "s052",
-   "b": "s053",
-   "flow": null
-  },
-  {
    "a": "s061",
    "b": "s062",
    "flow": null
   },
   {
    "a": "s061",
-   "b": "s063",
-   "flow": null
-  },
-  {
-   "a": "s061",
    "b": "s064",
    "flow": null
   },
@@ -2570,26 +2488,11 @@
   },
   {
    "a": "s062",
-   "b": "s063",
-   "flow": null
-  },
-  {
-   "a": "s062",
    "b": "s064",
    "flow": null
   },
   {
    "a": "s062",
-   "b": "s065",
-   "flow": null
-  },
-  {
-   "a": "s063",
-   "b": "s064",
-   "flow": null
-  },
-  {
-   "a": "s063",
    "b": "s065",
    "flow": null
   },
@@ -2735,11 +2638,6 @@
   },
   {
    "a": "s084",
-   "b": "s085",
-   "flow": "b_to_a"
-  },
-  {
-   "a": "s084",
    "b": "s086",
    "flow": null
   },
@@ -2750,11 +2648,6 @@
   },
   {
    "a": "s089",
-   "b": "s085",
-   "flow": "b_to_a"
-  },
-  {
-   "a": "s089",
    "b": "s086",
    "flow": null
   },
@@ -2762,16 +2655,6 @@
    "a": "s089",
    "b": "s088",
    "flow": null
-  },
-  {
-   "a": "s085",
-   "b": "s086",
-   "flow": "a_to_b"
-  },
-  {
-   "a": "s085",
-   "b": "s088",
-   "flow": "a_to_b"
   },
   {
    "a": "s086",
@@ -2846,12 +2729,12 @@
   {
    "a": "s105",
    "b": "s107",
-   "flow": null
+   "flow": "a_to_b"
   },
   {
    "a": "s105",
    "b": "s108",
-   "flow": null
+   "flow": "a_to_b"
   },
   {
    "a": "s107",
@@ -2866,12 +2749,12 @@
   {
    "a": "s107",
    "b": "s110",
-   "flow": null
+   "flow": "a_to_b"
   },
   {
    "a": "s107",
    "b": "s112",
-   "flow": null
+   "flow": "a_to_b"
   },
   {
    "a": "s110",
@@ -2981,13 +2864,6 @@
    "target_drawing": null
   },
   {
-   "symbol": "s043",
-   "label": "B",
-   "target_system": null,
-   "target_sheet": null,
-   "target_drawing": null
-  },
-  {
    "symbol": "s046",
    "label": "CV:EDT / SHEET 6",
    "target_system": "CV",
@@ -2999,13 +2875,6 @@
    "label": "SHEET 1",
    "target_system": null,
    "target_sheet": "1",
-   "target_drawing": null
-  },
-  {
-   "symbol": "s053",
-   "label": "A",
-   "target_system": null,
-   "target_sheet": null,
    "target_drawing": null
   },
   {
@@ -3030,13 +2899,6 @@
    "target_drawing": null
   },
   {
-   "symbol": "s063",
-   "label": "B",
-   "target_system": null,
-   "target_sheet": null,
-   "target_drawing": null
-  },
-  {
    "symbol": "s067",
    "label": "CS:CONTAINMENT SPRAY PUMP 2 / SHEET 1",
    "target_system": "CS",
@@ -3048,13 +2910,6 @@
    "label": "IW:IRWST / SHEET 1",
    "target_system": "IW",
    "target_sheet": "1",
-   "target_drawing": null
-  },
-  {
-   "symbol": "s085",
-   "label": "A",
-   "target_system": null,
-   "target_sheet": null,
    "target_drawing": null
   },
   {

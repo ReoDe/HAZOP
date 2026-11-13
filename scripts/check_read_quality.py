@@ -7,6 +7,8 @@
   python scripts/check_read_quality.py tiles <쪽.pdf> <출력 폴더>   # 정답지 쓰기용 격자 타일(추출 결과를 쓰지 않음)
   python scripts/check_read_quality.py sample <출력 폴더> [--per-page 20] [--seed 20261113]
       사용자 확인용 무작위 표본: 쪽마다 정답 단위 N건과 그림 조각, 확인 목록(md)
+  python scripts/check_read_quality.py compare <B 폴더> <출력 폴더> [--crops]
+      같은 쪽을 따로 쓴 정답지 B와 저장소 정답지를 견줘 항목별 일치율과 어긋난 항목(그림 조각)을 씀
 
 정답지: tests/fixtures/read-quality/apr1400/*.json(쪽 그림만 보고 씀), SNP 가상 도면은 같은 도면의 drawio가 정답이다
 (사람이 그린 원본이라 순환 채점이 아니다). APR1400 쪽 PDF는 저장소 밖(resources/references/APR1400_DCD/by-drawing)에
@@ -381,6 +383,116 @@ def score_page(key, ex):
             "matched": len(m)}
 
 
+# ---------------------------------------------------------------- 두 정답지 견주기(독립 두 판의 일치율)
+
+def _as_nodes(symbols):
+    return [{"local_id": s["id"], "kind": s["kind"] or "?", "tag": s.get("tag"), "attributes": s.get("attributes") or {},
+             "geometry": {"x": s["bbox"][0], "y": s["bbox"][1], "width": s["bbox"][2] - s["bbox"][0],
+                          "height": s["bbox"][3] - s["bbox"][1]}} for s in symbols]
+
+
+def compare_keys(a, b):
+    """같은 쪽을 따로 쓴 정답지 A·B를 견준다. 기호는 위치로 짝짓는다(채점과 같은 허용 오차).
+    → {agree: {항목: 수}, disagree: {항목: 수}, disputes: [{item, a, b, bbox}], map: {A id: B id}}.
+    항목: symbol(한쪽에만 있는 기호), kind, tag, attribute(기호 위치 속성과 배관 글자), connection(쌍·흐름·도면 밖 연결)."""
+    items = ("symbol", "kind", "tag", "attribute", "connection")
+    agree, disagree, disputes = dict.fromkeys(items, 0), dict.fromkeys(items, 0), []
+    sa, sb = {s["id"]: s for s in a["symbols"]}, {s["id"]: s for s in b["symbols"]}
+
+    def dispute(item, va, vb, box, **extra):
+        disagree[item] += 1
+        disputes.append(dict({"item": item, "a": va, "b": vb, "bbox": [round(v, 1) for v in box]}, **extra))
+
+    m = {aid: n["local_id"] for aid, n in match_symbols(a["symbols"], _as_nodes(b["symbols"])).items()}
+    back = {v: k for k, v in m.items()}
+    agree["symbol"] = len(m)
+    for s in a["symbols"]:
+        if s["id"] not in m:
+            dispute("symbol", _describe(s), None, s["bbox"], a_id=s["id"])
+    for s in b["symbols"]:
+        if s["id"] not in back:
+            dispute("symbol", None, _describe(s), s["bbox"], b_id=s["id"])
+    for aid, bid in m.items():
+        x, y = sa[aid], sb[bid]
+        box = _union(x["bbox"], y["bbox"])
+        if same_kind(x["kind"], y["kind"]):  # unlisted끼리는 kind_text 글이 달라도 같은 판단으로 본다
+            agree["kind"] += 1
+        else:
+            dispute("kind", _describe(x), _describe(y), box, a_id=aid, b_id=bid)
+        if is_tag(x.get("tag")) or is_tag(y.get("tag")):
+            if same_tag(x.get("tag"), y.get("tag")) or same_tag(y.get("tag"), x.get("tag")):
+                agree["tag"] += 1
+            else:
+                dispute("tag", x.get("tag"), y.get("tag"), box, a_id=aid, b_id=bid)
+        for f in SYMBOL_FIELDS:
+            va, vb = (x.get("attributes") or {}).get(f), (y.get("attributes") or {}).get(f)
+            if va or vb:
+                if _same_value(f, va, vb):
+                    agree["attribute"] += 1
+                else:
+                    dispute("attribute", "%s=%s" % (f, va), "%s=%s" % (f, vb), box, a_id=aid, b_id=bid)
+    used = set()
+    for la in a["lines"]:
+        lb = min((l for l in b["lines"] if l["id"] not in used and math.dist(l["at"], la["at"]) <= 2 * LINE_NEAR),
+                 key=lambda l: math.dist(l["at"], la["at"]), default=None)
+        if lb:
+            used.add(lb["id"])
+        for f in LINE_FIELDS:
+            va, vb = la.get(f), (lb or {}).get(f)
+            if va or vb:
+                if _same_value(f, va, vb):
+                    agree["attribute"] += 1
+                else:
+                    x, y = la["at"]
+                    dispute("attribute", "배관 %s=%s" % (f, va), "배관 %s=%s" % (f, vb), [x - 6, y - 6, x + 6, y + 6],
+                            a_line=la["id"], b_line=(lb or {}).get("id"))
+    for lb in b["lines"]:
+        if lb["id"] not in used:
+            for f in LINE_FIELDS:
+                if lb.get(f):
+                    x, y = lb["at"]
+                    dispute("attribute", None, "배관 %s=%s" % (f, lb[f]), [x - 6, y - 6, x + 6, y + 6], b_line=lb["id"])
+    ca = {frozenset((c["a"], c["b"])): c for c in process_connections(a)}
+    cb = {}
+    for c in process_connections(b):
+        ends = (back.get(c["a"], "B:" + c["a"]), back.get(c["b"], "B:" + c["b"]))
+        flow = c.get("flow")
+        cb[frozenset(ends)] = {"a": ends[0], "b": ends[1], "flow": flow}
+
+    def ends_box(ends):
+        boxes = [sa[e]["bbox"] if e in sa else sb[e[2:]]["bbox"] for e in ends]
+        return _union(*boxes)
+
+    def desc(e):
+        return _describe(sa[e]) if e in sa else "B만: " + _describe(sb[e[2:]])
+
+    for p in set(ca) | set(cb):
+        ends = sorted(p)
+        if p in ca and p in cb:
+            agree["connection"] += 1
+            fa = ca[p].get("flow") and ((ca[p]["a"], ca[p]["b"]) if ca[p]["flow"] == "a_to_b" else (ca[p]["b"], ca[p]["a"]))
+            fb = cb[p].get("flow") and ((cb[p]["a"], cb[p]["b"]) if cb[p]["flow"] == "a_to_b" else (cb[p]["b"], cb[p]["a"]))
+            if fa or fb:
+                if fa == fb:
+                    agree["connection"] += 1
+                else:
+                    dispute("connection", "흐름 %s" % (fa and " → ".join(desc(e) for e in fa)),
+                            "흐름 %s" % (fb and " → ".join(desc(e) for e in fb)), ends_box(ends), pair=ends)
+        else:
+            text = " ↔ ".join(desc(e) for e in ends)
+            dispute("connection", text if p in ca else None, text if p in cb else None, ends_box(ends), pair=ends)
+    cona = {c["symbol"]: c for c in a["continuations"]}
+    conb = {back.get(c["symbol"]): c for c in b["continuations"] if c["symbol"] in back}
+    for sid in set(cona) | set(k for k in conb if k):
+        x, y = cona.get(sid), conb.get(sid)
+        key_of = lambda c: c and (norm(c.get("target_system")), norm(c.get("target_sheet")), norm(c.get("target_drawing")))
+        if x and y and key_of(x) == key_of(y):
+            agree["connection"] += 1
+        elif sid in sa:
+            dispute("connection", "도면 밖 %s" % (key_of(x),), "도면 밖 %s" % (key_of(y),), sa[sid]["bbox"], a_id=sid)
+    return {"agree": agree, "disagree": disagree, "disputes": disputes, "map": m}
+
+
 # ---------------------------------------------------------------- AI 후보(규격 '스크립트 + AI 후보')
 
 def apply_candidates(ex, cands):
@@ -733,10 +845,49 @@ def cmd_sample(args):
     return 0
 
 
+def cmd_compare(args):
+    """저장소 정답지(A)와 독립으로 쓴 정답지(B, 같은 파일 이름)를 견줘 쪽·항목별 일치율과 어긋난 항목 목록·그림 조각을 쓴다."""
+    input_dir = os.path.abspath(args.input_dir or default_input_dir())
+    out = os.path.abspath(args.out)
+    os.makedirs(os.path.join(out, "crops"), exist_ok=True)
+    summary = {}
+    for name, a in load_keys():
+        path_b = os.path.join(args.key_b, name + ".json")
+        if not os.path.isfile(path_b):
+            print("B 없음: %s" % name)
+            continue
+        with open(path_b, encoding="utf-8") as fh:
+            b = json.load(fh)
+        b.setdefault("lines", [])
+        b.setdefault("continuations", [])
+        r = compare_keys(a, b)
+        img = render_page(apr_pdf(input_dir, a["seq"]), 4.0)[0] if args.crops else None
+        for i, d in enumerate(r["disputes"], 1):
+            d["no"] = i
+            if img is not None:
+                d["crop"] = os.path.join(out, "crops", "%s-%03d.png" % (name, i))
+                write_crop(img, 4.0, d, d["crop"])
+        with open(os.path.join(out, name + ".json"), "w", encoding="utf-8") as fh:
+            json.dump(r, fh, ensure_ascii=False, indent=1)
+        summary[name] = {"agree": r["agree"], "disagree": r["disagree"]}
+        print("%-12s " % name + " · ".join("%s %d/%d" % (it, r["agree"][it], r["agree"][it] + r["disagree"][it])
+                                           for it in r["agree"]))
+    with open(os.path.join(out, "summary.json"), "w", encoding="utf-8") as fh:
+        json.dump(summary, fh, ensure_ascii=False, indent=1)
+    return 0
+
+
 def main(argv=None):
     from hazop.console import safe_console
     safe_console()
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["compare"]:
+        ap = argparse.ArgumentParser(prog="check_read_quality.py compare")
+        ap.add_argument("key_b", help="독립으로 쓴 정답지 폴더(파일 이름이 저장소 정답지와 같음)")
+        ap.add_argument("out")
+        ap.add_argument("--input-dir")
+        ap.add_argument("--crops", action="store_true", help="어긋난 항목마다 그림 조각을 쓴다")
+        return cmd_compare(ap.parse_args(argv[1:]))
     if argv[:1] == ["tiles"]:
         ap = argparse.ArgumentParser(prog="check_read_quality.py tiles")
         ap.add_argument("pdf")

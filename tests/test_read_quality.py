@@ -234,6 +234,27 @@ class SampleTest(unittest.TestCase):
         self.assertEqual(len(rq.sample_units(units[:5], 20, seed=1)), 5)
 
 
+class CompareKeysTest(unittest.TestCase):
+    def test_agreement_and_disputes(self):
+        a = key([sym(1, "manual_valve", (100, 100, 110, 108), tag="V1", normal_position="LO"),
+                 sym(2, "check_valve", (200, 100, 210, 108)), sym(3, "pump", (300, 90, 330, 120), tag="PP01")],
+                connections=[{"a": "s001", "b": "s002", "flow": "a_to_b"}, {"a": "s002", "b": "s003", "flow": None}],
+                lines=[{"id": "l001", "at": [150, 104], "size": "2\""}])
+        b = key([sym(7, "manual_valve", (101, 100, 111, 108), tag="V1", normal_position="LC"),
+                 sym(8, "globe_wrong", (201, 100, 211, 108)), sym(9, "tank", (600, 600, 640, 640))],
+                connections=[{"a": "s007", "b": "s008", "flow": "a_to_b"}],
+                lines=[{"id": "l001", "at": [152, 104], "size": "2"}])
+        r = rq.compare_keys(a, b)
+        self.assertEqual(r["agree"]["symbol"], 2)          # 1↔7, 2↔8
+        self.assertEqual(r["disagree"]["symbol"], 2)       # A만 pump, B만 tank
+        self.assertEqual((r["agree"]["kind"], r["disagree"]["kind"]), (1, 1))
+        self.assertEqual((r["agree"]["tag"], r["disagree"]["tag"]), (1, 0))   # PP01은 짝 없는 기호라 symbol에서 셈
+        self.assertEqual((r["agree"]["attribute"], r["disagree"]["attribute"]), (1, 1))  # LO≠LC, 구경 2"=2
+        self.assertEqual((r["agree"]["connection"], r["disagree"]["connection"]), (2, 1))  # 쌍 1, 흐름 1 같음 / s2-s3
+        kinds = {d["item"] for d in r["disputes"]}
+        self.assertEqual(kinds, {"symbol", "kind", "attribute", "connection"})
+
+
 class AnswerKeyFileTest(unittest.TestCase):
     """저장소의 APR1400 정답지가 채점기가 읽는 꼴을 지키는가."""
 

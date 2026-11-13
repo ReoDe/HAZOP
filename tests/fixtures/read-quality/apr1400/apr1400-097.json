@@ -16,9 +16,9 @@
    620.0
   ]
  ],
- "method": "overview.png로 계통 흐름과 영역을 잡고, 도면이 있는 타일 9장(x0220~x0880, y0140~y0560)을 5px/pt로 위 왼쪽부터 읽음. 작은 기호와 이름표는 타일을 이어 붙여 2~4배로 잘라 확인(FILL 끝, V2001A, PP22A 주변, ST02A, V4103A·V4019A, HS 3011A, V4011A). 범례 1.7-1(001쪽)로 호스 연결, 바스켓 스트레이너, 유연 호스, 화염 방지기, 같은 그림 연속 화살표 모양을 대조. 기호를 다 적은 뒤 배관을 따라 connections를 적음",
- "verified": "2026-11-13 Claude 정답지 세션 초안. 사람 확인 전",
- "limits": "기호 수가 적어 도면 영역 전체를 영역으로 잡음(오른쪽 위 이동설비 표와 아래 주석은 뺌). 품질등급·안전등급 마름모(CI, DII 등), INDOORS/OUTDOORS 경계, 기울기 쐐기, 플랜지 쌍은 기호로 보지 않음. 엔진 쪽 세로선(x≈951)은 공급 범위 경계로 보고 적지 않음. PP22A 둘레 1점쇄선을 공급자 배관으로 보고 릴리프 밸브 4353A의 연결을 적었으나 확신이 낮음. 계기 뿌리 밸브(V2009A, V2013A, V2014A)는 공정 배관 쪽 연결만 적고 계기 원 쪽은 충격선으로 보고 뺌. 4035A와 4037A는 원 안 번호만 있는 다이어프램 밸브라 air_operated_valve로 적음. HS 3011A와 ST02A는 도면에 같은 글자가 두 곳씩 적혀 있어 그대로 둠. V2001A 하류는 이동설비용 열린 끝이라 연결 상대가 없음. 흐름 화살표는 펌프 흡입, 엔진 필터 입구 2\", 분사펌프 토출 1\", 필터 세척 반환 ½\" 배관에만 있음. A·C·D 연속 화살표는 같은 그림 안 짝이라 target 값을 비움",
+ "method": "overview.png로 계통 흐름과 영역을 잡고, 도면이 있는 타일 9장(x0220~x0880, y0140~y0560)을 5px/pt로 위 왼쪽부터 읽음. 작은 기호와 이름표는 타일을 이어 붙여 2~4배로 잘라 확인(FILL 끝, V2001A, PP22A 주변, ST02A, V4103A·V4019A, HS 3011A, V4011A). 범례 1.7-1(001쪽)로 호스 연결, 바스켓 스트레이너, 유연 호스, 화염 방지기, 같은 그림 연속 화살표 모양을 대조. 기호를 다 적은 뒤 배관을 따라 connections를 적음 / 판정: 독립 두 번째 판 B와 견준 36건을 compare 그림 조각·타일·범례 1.7-1로 판정해 A를 고침(같은 쪽 안 깃발 A·C·D와 신호 오각형 제거 후 깃발 양쪽을 바로 이음, 4035A·4037A를 control_valve로, 이동설비 끝 호스 연결 추가)",
+ "verified": "2026-11-13 독립 두 판(A·B)을 견주고 어긋난 항목을 그림으로 판정. 사람 확인 전",
+ "limits": "기호 수가 적어 도면 영역 전체를 영역으로 잡음(오른쪽 위 이동설비 표와 아래 주석은 뺌). 품질등급·안전등급 마름모(CI, DII 등), INDOORS/OUTDOORS 경계, 기울기 쐐기, 플랜지 쌍은 기호로 보지 않음. 엔진 쪽 세로선(x≈951)은 공급 범위 경계로 보고 적지 않음. PP22A 둘레 1점쇄선을 공급자 배관으로 보고 릴리프 밸브 4353A의 연결을 적었으나 확신이 낮음. 계기 뿌리 밸브(V2009A, V2013A, V2014A)는 공정 배관 쪽 연결만 적고 계기 원 쪽은 충격선으로 보고 뺌. 4035A와 4037A는 범례의 자력식 감압 조절기 모양이라 control_valve로 적음. HS 3011A와 ST02A는 도면에 같은 글자가 두 곳씩 적혀 있어 그대로 둠. V2001A 하류는 이동설비용 호스 연결(s501). 흐름 화살표는 펌프 흡입, 엔진 필터 입구 2\", 분사펌프 토출 1\", 필터 세척 반환 ½\" 배관에만 있음. 같은 그림 안 연결 깃발 A·C·D는 기호로 보지 않고 깃발 양쪽 기호를 바로 이음(깃발 방향은 흐름으로 치지 않음). 제어 신호 오각형 두 개는 배관 기호가 아니라 뺌. 4035A-유연호스(필터 입구), 유연호스(세척 반환)-V4102A는 화살표가 분기점 너머에 있어 흐름을 비움",
  "symbols": [
   {
    "id": "s001",
@@ -46,64 +46,6 @@
    "kind_text": "flame arrestor",
    "attributes": {},
    "note": "이름표 없음, 상자 안 FA는 기호 표기"
-  },
-  {
-   "id": "s003",
-   "kind": "continuation",
-   "bbox": [
-    800.0,
-    164.4,
-    825.0,
-    172.4
-   ],
-   "tag": "D",
-   "attributes": {},
-   "note": ""
-  },
-  {
-   "id": "s004",
-   "kind": "continuation",
-   "bbox": [
-    800.0,
-    180.0,
-    825.0,
-    188.0
-   ],
-   "tag": "C",
-   "attributes": {},
-   "note": ""
-  },
-  {
-   "id": "s005",
-   "kind": "continuation",
-   "bbox": [
-    563.0,
-    210.4,
-    587.4,
-    218.0
-   ],
-   "tag": "A",
-   "attributes": {},
-   "note": ""
-  },
-  {
-   "id": "s006",
-   "kind": "continuation",
-   "bbox": [
-    800.6,
-    205.0,
-    856.0,
-    214.4
-   ],
-   "tag": null,
-   "tag_bbox": [
-    800.6,
-    195.0,
-    857.0,
-    204.0
-   ],
-   "attributes": {},
-   "note": "신호 연속 오각형(LEVEL LOW/HIGH DFOT PUMP START/STOP). 공정 배관 아님"
   },
   {
    "id": "s007",
@@ -217,7 +159,7 @@
     301.5
    ],
    "attributes": {},
-   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음. 하류는 이동설비용 열린 끝(기호 없음)"
+   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음. 하류는 이동설비용 호스 연결(s501)"
   },
   {
    "id": "s013",
@@ -388,7 +330,7 @@
   },
   {
    "id": "s022",
-   "kind": "air_operated_valve",
+   "kind": "control_valve",
    "bbox": [
     804.0,
     372.0,
@@ -403,20 +345,7 @@
     377.6
    ],
    "attributes": {},
-   "note": "불확실: 다이어프램 구동기 밸브, 원 안 번호만 있음(기능 문자 없음). 몸통 검게 칠함"
-  },
-  {
-   "id": "s023",
-   "kind": "continuation",
-   "bbox": [
-    724.0,
-    378.6,
-    748.4,
-    386.4
-   ],
-   "tag": "C",
-   "attributes": {},
-   "note": ""
+   "note": "범례 1.7-1의 자력식 감압 조절기(PRESSURE REDUCING REGULATOR SELF-CONTAINED) 모양. 원 안 번호만 있음"
   },
   {
    "id": "s024",
@@ -601,7 +530,7 @@
   },
   {
    "id": "s035",
-   "kind": "air_operated_valve",
+   "kind": "control_valve",
    "bbox": [
     925.0,
     439.0,
@@ -616,20 +545,7 @@
     444.0
    ],
    "attributes": {},
-   "note": "불확실: 다이어프램 구동기 밸브, 원 안 번호만 있음"
-  },
-  {
-   "id": "s036",
-   "kind": "continuation",
-   "bbox": [
-    846.4,
-    464.0,
-    871.0,
-    472.4
-   ],
-   "tag": "D",
-   "attributes": {},
-   "note": ""
+   "note": "범례 1.7-1의 자력식 감압 조절기(PRESSURE REDUCING REGULATOR SELF-CONTAINED) 모양. 원 안 번호만 있음"
   },
   {
    "id": "s037",
@@ -704,25 +620,6 @@
    "kind_text": "flexible hose",
    "attributes": {},
    "note": "FUEL OIL FILTER CLEANING ARM RETURN 쪽"
-  },
-  {
-   "id": "s042",
-   "kind": "continuation",
-   "bbox": [
-    432.0,
-    451.6,
-    470.0,
-    459.6
-   ],
-   "tag": null,
-   "tag_bbox": [
-    432.0,
-    442.0,
-    467.0,
-    451.0
-   ],
-   "attributes": {},
-   "note": "신호 연속 오각형(DAY TANK \"A\" LEVEL LOW/HIGH). 공정 배관 아님"
   },
   {
    "id": "s043",
@@ -1198,19 +1095,6 @@
    "note": "배관 위 플랜지 쌍. 원 안 글자가 'FE 031'과 '031FE'로 겹쳐 찍힘"
   },
   {
-   "id": "s072",
-   "kind": "continuation",
-   "bbox": [
-    695.6,
-    558.0,
-    720.0,
-    566.0
-   ],
-   "tag": "A",
-   "attributes": {},
-   "note": ""
-  },
-  {
    "id": "s073",
    "kind": "manual_valve",
    "bbox": [
@@ -1349,6 +1233,20 @@
    "tag": "TI 003",
    "attributes": {},
    "note": ""
+  },
+  {
+   "id": "s501",
+   "kind": "unlisted",
+   "kind_text": "hose connection (coupler)",
+   "bbox": [
+    808.0,
+    291.0,
+    813.0,
+    299.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: FOR MOBILE EQUIPMENT 배관 끝. 범례 HOSE CONNECTION(COUPLER) 모양(V2010A 쪽 OUTDOORS 끝과 같은 모양)"
   }
  ],
  "lines": [
@@ -1705,23 +1603,8 @@
  ],
  "connections": [
   {
-   "a": "s005",
-   "b": "s008",
-   "flow": null
-  },
-  {
    "a": "s008",
    "b": "s009",
-   "flow": null
-  },
-  {
-   "a": "s009",
-   "b": "s003",
-   "flow": null
-  },
-  {
-   "a": "s009",
-   "b": "s004",
    "flow": null
   },
   {
@@ -1875,11 +1758,6 @@
    "flow": null
   },
   {
-   "a": "s022",
-   "b": "s023",
-   "flow": null
-  },
-  {
    "a": "s034",
    "b": "s020",
    "flow": null
@@ -1912,16 +1790,6 @@
   {
    "a": "s037",
    "b": "s035",
-   "flow": null
-  },
-  {
-   "a": "s037",
-   "b": "s036",
-   "flow": null
-  },
-  {
-   "a": "s035",
-   "b": "s036",
    "flow": null
   },
   {
@@ -2105,16 +1973,6 @@
    "flow": null
   },
   {
-   "a": "s071",
-   "b": "s072",
-   "flow": null
-  },
-  {
-   "a": "s067",
-   "b": "s072",
-   "flow": null
-  },
-  {
    "a": "s067",
    "b": "s059",
    "flow": null
@@ -2123,72 +1981,37 @@
    "a": "s059",
    "b": "s047",
    "flow": null
+  },
+  {
+   "a": "s012",
+   "b": "s501",
+   "flow": null
+  },
+  {
+   "a": "s008",
+   "b": "s067",
+   "flow": null
+  },
+  {
+   "a": "s008",
+   "b": "s071",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s037",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s035",
+   "flow": null
   }
  ],
- "continuations": [
-  {
-   "symbol": "s003",
-   "label": "D",
-   "target_system": null,
-   "target_sheet": null,
-   "target_drawing": null,
-   "note": "같은 그림 안 연속 화살표(범례 SAME FIGURE SHEET). 짝은 같은 글자 D"
-  },
-  {
-   "symbol": "s004",
-   "label": "C",
-   "target_system": null,
-   "target_sheet": null,
-   "target_drawing": null,
-   "note": "같은 그림 안 연속 화살표(범례 SAME FIGURE SHEET). 짝은 같은 글자 C"
-  },
-  {
-   "symbol": "s005",
-   "label": "A",
-   "target_system": null,
-   "target_sheet": null,
-   "target_drawing": null,
-   "note": "같은 그림 안 연속 화살표(범례 SAME FIGURE SHEET). 짝은 같은 글자 A"
-  },
-  {
-   "symbol": "s023",
-   "label": "C",
-   "target_system": null,
-   "target_sheet": null,
-   "target_drawing": null,
-   "note": "같은 그림 안 연속 화살표(범례 SAME FIGURE SHEET). 짝은 같은 글자 C"
-  },
-  {
-   "symbol": "s036",
-   "label": "D",
-   "target_system": null,
-   "target_sheet": null,
-   "target_drawing": null,
-   "note": "같은 그림 안 연속 화살표(범례 SAME FIGURE SHEET). 짝은 같은 글자 D"
-  },
-  {
-   "symbol": "s072",
-   "label": "A",
-   "target_system": null,
-   "target_sheet": null,
-   "target_drawing": null,
-   "note": "같은 그림 안 연속 화살표(범례 SAME FIGURE SHEET). 짝은 같은 글자 A"
-  },
-  {
-   "symbol": "s006",
-   "label": "LEVEL LOW/HIGH DFOT PUMP START/STOP",
-   "target_system": null,
-   "target_sheet": null,
-   "target_drawing": null,
-   "note": "제어 신호 연속(오각형)"
-  },
-  {
-   "symbol": "s042",
-   "label": "DAY TANK \"A\" LEVEL LOW/HIGH",
-   "target_system": null,
-   "target_sheet": null,
-   "target_drawing": null,
-   "note": "제어 신호 연속(오각형)"
-  }
- ]
+ "continuations": []
 }
