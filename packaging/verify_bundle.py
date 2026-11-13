@@ -28,6 +28,11 @@
     표지 훅(packaging/rthook_verify_build.py)이 있어 앱이 시험용 예외를 sys.excepthook에 넘기고 종료 코드 70, app.log에
     "미처리 예외"와 시험용 메시지(app_log_unhandled). 배포용은 트리거가 꺼져 종료 코드 2, 시험용 메시지 없음
     (app_trigger_off). 단계 4의 실행은 모두 비대화형이라 모달·오류 창이 뜨지 않는다(스크린샷 단계는 비모달 창이 잠깐 뜸)
+ 4c) 새 웹 화면(docs/design/app-shell-web.md, 기본 창): HAZOP.exe --shell을 화면 밖(QT_QPA_PLATFORM=offscreen)으로 띄우고
+    QTWEBENGINE_REMOTE_DEBUGGING(127.0.0.1, 빈 포트)에 표준 라이브러리 CDP 클라이언트로 붙어 본다: hazop-app://shell/index.html이
+    떠서 왼쪽 메뉴가 그려지고, 묶음 안 vendor 라이브러리·아이콘(/api/icons)·기호 그림(js/canvas/symbols.json)을 읽고, 메뉴의
+    패널 단추를 하나씩 눌러 패널이 열리며, 그동안 스크립트 예외가 없는지(shell_problems). 4)의 --screenshots는 이전 화면만
+    찍으므로 새 화면이 묶음에서 뜨는지는 여기서만 본다. 끝나면 그 프로세스를 끝낸다
  4b) 채팅 도구 서버(규격 chat-panel.md §2.4): HAZOP.exe --chat-tools를 파이프로 띄워 initialize·tools/list·tools/call·ping을
     직접 보낸다. 창 프로그램이 표준입출력으로 응답하고 표준 출력에 프로토콜 줄만 쓰는지, 핵심 도구 7개가 목록에 있는지,
     경로 인자를 bad_args로 거절하는지, stdin이 닫히면 끝나는지(chat_tools_problems). 실제 구독·CLI는 부르지 않는다
@@ -47,16 +52,20 @@ PATH = Windows System32·Windows 폴더만, QT_*·OPENSSL_*·SSL_CERT_* 제거(D
 """
 
 import argparse
+import base64
 import glob
 import hashlib
 import importlib.util
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
+import urllib.request
 import uuid
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -489,6 +498,248 @@ def chat_tools_step(app_exe, env, tmp, out, summary):
     print("chat-tools rc=%s %ss 문제 %s" % (rc, sec, summary["checks"]["chat_tools_problems"] or "없음"))
 
 
+# ---------------------------------------------------------------- 4c) 새 웹 화면
+SHELL_PAGE = "hazop-app://shell/"
+SHELL_ASSETS = ("vendor/preact.module.js", "vendor/htm.module.js", "vendor/hooks.module.js", "tokens.css", "app.css")
+SHELL_MIN_ICONS = 20      # /api/icons가 돌려주는 아이콘 이름 수 하한(묶음에 아이콘 폴더가 빠지면 0)
+SHELL_MIN_SYMBOLS = 20    # symbols.json의 기호 수 하한(정리된 보기가 그리는 표준 기호)
+SHELL_NOT_PANELS = ("AI 연결",)   # 메뉴에 있지만 패널이 아닌 단추(연결 상태 칩)
+
+
+class Cdp:
+    """Chrome DevTools Protocol 최소 클라이언트(표준 라이브러리 소켓 + WebSocket 틀). 검증기 venv에 websocket 꾸러미가 없어
+    직접 둔다. 텍스트 틀만 다루고, 서버의 ping에는 pong으로 답한다."""
+
+    def __init__(self, ws_url, timeout=30):
+        u = urllib.parse.urlparse(ws_url)
+        self.sock = socket.create_connection((u.hostname, u.port), timeout=timeout)
+        key = base64.b64encode(os.urandom(16)).decode("ascii")
+        self.sock.sendall(("GET %s HTTP/1.1\r\nHost: %s:%d\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                           "Sec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n"
+                           % (u.path, u.hostname, u.port, key)).encode("ascii"))
+        head = b""
+        while b"\r\n\r\n" not in head:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                raise OSError("CDP 연결이 끊김(핸드셰이크)")
+            head += chunk
+        if b" 101 " not in head.split(b"\r\n", 1)[0]:
+            raise OSError("CDP 핸드셰이크 실패: %r" % head[:80])
+        self.buf = head.split(b"\r\n\r\n", 1)[1]
+        self.seq = 0
+        self.events = []
+
+    def _read(self, n):
+        while len(self.buf) < n:
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise OSError("CDP 연결이 끊김")
+            self.buf += chunk
+        out, self.buf = self.buf[:n], self.buf[n:]
+        return out
+
+    def _frame(self, opcode, payload):
+        mask = os.urandom(4)
+        n = len(payload)
+        head = bytes([0x80 | opcode])
+        if n < 126:
+            head += bytes([0x80 | n])
+        elif n < 65536:
+            head += bytes([0x80 | 126]) + n.to_bytes(2, "big")
+        else:
+            head += bytes([0x80 | 127]) + n.to_bytes(8, "big")
+        self.sock.sendall(head + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
+
+    def _message(self):
+        parts = []
+        while True:
+            b0, b1 = self._read(2)
+            n = b1 & 0x7F
+            if n == 126:
+                n = int.from_bytes(self._read(2), "big")
+            elif n == 127:
+                n = int.from_bytes(self._read(8), "big")
+            mask = self._read(4) if b1 & 0x80 else None
+            data = self._read(n)
+            if mask:
+                data = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+            op = b0 & 0x0F
+            if op == 0x9:
+                self._frame(0xA, data)
+                continue
+            if op == 0x8:
+                raise OSError("CDP 연결이 닫힘")
+            parts.append(data)
+            if b0 & 0x80:
+                return json.loads(b"".join(parts).decode("utf-8"))
+
+    def call(self, method, params=None):
+        self.seq += 1
+        self._frame(0x1, json.dumps({"id": self.seq, "method": method, "params": params or {}}).encode("utf-8"))
+        while True:
+            m = self._message()
+            if m.get("id") == self.seq:
+                if "error" in m:
+                    raise OSError("%s: %s" % (method, m["error"]))
+                return m.get("result") or {}
+            self.events.append(m)
+
+    def evaluate(self, expr):
+        r = self.call("Runtime.evaluate", {"expression": expr, "awaitPromise": True, "returnByValue": True})
+        if r.get("exceptionDetails"):
+            raise OSError("평가 오류: %s" % (r["exceptionDetails"].get("exception") or {}).get("description"))
+        return (r.get("result") or {}).get("value")
+
+    def close(self):
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+def _free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _shell_target(port, proc, deadline):
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))   # 사용자 프록시 설정을 타지 않게
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            return None
+        try:
+            with opener.open("http://127.0.0.1:%d/json" % port, timeout=2) as r:
+                pages = json.loads(r.read().decode("utf-8"))
+            page = next((p for p in pages if p.get("type") == "page" and str(p.get("url", "")).startswith(SHELL_PAGE)), None)
+            if page:
+                return page
+        except (OSError, ValueError):
+            pass
+        time.sleep(0.5)
+    return None
+
+
+def _wait_eval(cdp, expr, deadline):
+    while time.monotonic() < deadline:
+        if cdp.evaluate(expr):
+            return True
+        time.sleep(0.25)
+    return False
+
+
+SHELL_ASSET_JS = r"""(async () => {
+  const size = async (u) => { try { const r = await fetch(u); return r.ok ? (await r.text()).length : -r.status; } catch (e) { return String(e); } };
+  const out = {};
+  for (const u of %s) out[u] = await size(u);
+  let icons = -1, symbols = -1;
+  try { icons = Object.keys(((await (await fetch('/api/icons')).json()).names) || {}).length; } catch (e) { icons = String(e); }
+  try { const s = await (await fetch('js/canvas/symbols.json')).json(); symbols = Object.keys(s.symbols || s).length; } catch (e) { symbols = String(e); }
+  return { assets: out, icons, symbols };
+})()"""
+
+SHELL_PANELS_JS = r"""(async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const skip = %s;
+  const res = {};
+  const buttons = [...document.querySelectorAll('.rail button[aria-label]')];
+  for (const label of buttons.map((b) => b.getAttribute('aria-label'))) {
+    if (skip.some((x) => label.startsWith(x))) continue;
+    const find = () => [...document.querySelectorAll('.rail button[aria-label]')].find((x) => x.getAttribute('aria-label') === label);
+    let title = null;
+    for (let tries = 0; tries < 2 && !title; tries++) {   // 메뉴 단추는 여닫기다: 이미 열려 있던 패널이면 첫 누름에 닫히므로 한 번 더 누른다
+      find().click();
+      for (let i = 0; i < 20 && !title; i++) { await sleep(100); const h = document.querySelector('section.panel h2'); title = h && h.textContent; }
+    }
+    res[label] = title;
+  }
+  return res;
+})()"""
+
+
+def shell_problems(result):
+    """4c 결과 검사. 문제 목록(빈 목록 = 통과)."""
+    if not isinstance(result, dict):
+        return ["새 화면 점검 결과 없음"]
+    probs = list(result.get("errors_run") or [])
+    if not result.get("booted"):
+        return probs + ["새 화면(%s)이 뜨지 않음: %s" % (SHELL_PAGE, result.get("boot_text") or "왼쪽 메뉴 없음")]
+    for name, size in (result.get("assets") or {}).items():
+        if not isinstance(size, int) or size <= 0:
+            probs.append("웹 자원을 읽지 못함: %s (%s)" % (name, size))
+    if not isinstance(result.get("icons"), int) or result["icons"] < SHELL_MIN_ICONS:
+        probs.append("아이콘 이름이 %s개(%d개 이상이어야 함)" % (result.get("icons"), SHELL_MIN_ICONS))
+    if not isinstance(result.get("symbols"), int) or result["symbols"] < SHELL_MIN_SYMBOLS:
+        probs.append("기호 그림이 %s개(%d개 이상이어야 함)" % (result.get("symbols"), SHELL_MIN_SYMBOLS))
+    panels = result.get("panels") or {}
+    if not panels:
+        probs.append("메뉴에 패널 단추가 없음")
+    probs += ["패널이 열리지 않음: %s" % k for k, v in panels.items() if not v]
+    probs += ["스크립트 오류: %s" % e for e in result.get("script_errors") or []]
+    return probs
+
+
+def _script_errors(events):
+    out = []
+    for m in events:
+        p = m.get("params") or {}
+        if m.get("method") == "Runtime.exceptionThrown":
+            d = p.get("exceptionDetails") or {}
+            out.append(((d.get("exception") or {}).get("description") or d.get("text") or "?")[:200])
+        elif m.get("method") == "Runtime.consoleAPICalled" and p.get("type") == "error":
+            out.append(" ".join(str(a.get("value", a.get("description", ""))) for a in p.get("args") or [])[:200])
+    return out
+
+
+def shell_step(app_exe, env, tmp, out, summary, timeout=120):
+    """단계 4c: 새 웹 화면을 화면 밖으로 띄워 CDP로 본다(실제 구독·CLI 호출 없음). 끝나면 프로세스를 끝낸다."""
+    settings = os.path.join(tmp, "shell-settings.json")
+    with open(settings, "w", encoding="utf-8") as fh:
+        json.dump({"reviewer_name": "검증"}, fh, ensure_ascii=False)
+    port = _free_port()
+    senv = dict(env, QT_QPA_PLATFORM="offscreen", QTWEBENGINE_REMOTE_DEBUGGING="127.0.0.1:%d" % port)
+    result = {"errors_run": []}
+    t0 = time.monotonic()
+    deadline = t0 + timeout
+    log = open(os.path.join(out, "app-shell.log"), "wb")
+    proc = subprocess.Popen([app_exe, "--shell", "--settings", settings], env=senv, cwd=tmp, stdout=log, stderr=subprocess.STDOUT)
+    cdp = None
+    try:
+        page = _shell_target(port, proc, deadline)
+        if page is None:
+            result["errors_run"].append("새 화면 페이지를 찾지 못함(종료 코드 %r)" % (proc.poll(),))
+        else:
+            cdp = Cdp(page["webSocketDebuggerUrl"])
+            cdp.call("Runtime.enable")
+            result["booted"] = _wait_eval(cdp, "!!document.querySelector('.rail button')", deadline)
+            result["boot_text"] = cdp.evaluate("(document.getElementById('app') || document.body).innerText.slice(0, 200)")
+            if result["booted"]:
+                result.update(cdp.evaluate(SHELL_ASSET_JS % json.dumps(list(SHELL_ASSETS))))
+                result["panels"] = cdp.evaluate(SHELL_PANELS_JS % json.dumps(list(SHELL_NOT_PANELS)))
+                shot = cdp.call("Page.captureScreenshot", {"format": "png"})
+                with open(os.path.join(out, "shell.png"), "wb") as fh:
+                    fh.write(base64.b64decode(shot.get("data") or ""))
+            cdp.call("Runtime.evaluate", {"expression": "1"})
+            result["script_errors"] = _script_errors(cdp.events)
+    except OSError as e:
+        result["errors_run"].append("CDP: %s" % e)
+    finally:
+        if cdp is not None:
+            cdp.close()
+        proc.kill()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            result["errors_run"].append("새 화면 프로세스가 끝나지 않음")
+        log.close()
+    sec = round(time.monotonic() - t0, 1)
+    with open(os.path.join(out, "shell.json"), "w", encoding="utf-8") as fh:
+        json.dump(result, fh, ensure_ascii=False, indent=2)
+    summary["steps"]["shell"] = {"rc": 0 if result.get("booted") else "not_booted", "sec": sec}
+    summary["checks"]["shell_problems"] = shell_problems(result)
+    print("shell %ss 패널 %d개 문제 %s" % (sec, len(result.get("panels") or {}), summary["checks"]["shell_problems"] or "없음"))
+
+
 BAD_SETTINGS = b"{ not json"  # JSON 문법 오류(W10, D18)
 
 
@@ -638,6 +889,7 @@ def steps(args, summary, run_root, out, repo_dirs):
 
     rc, sec, rc2 = app_steps(os.path.join(target, "HAZOP.exe"), env, tmp, out, png, run_dir, args.app_only, summary)
     chat_tools_step(os.path.join(target, "HAZOP.exe"), env, tmp, out, summary)
+    shell_step(os.path.join(target, "HAZOP.exe"), env, tmp, out, summary)
     want = APP_PNG if args.app_only else FULL_PNG
     summary["png"] = sorted(os.path.basename(p) for p in glob.glob(os.path.join(png, "*.png")))
     summary["checks"]["png_fresh_problems"] = fresh_problems(png, start, want)
@@ -707,6 +959,7 @@ def main(argv=None):
         and not checks.get("translation_problems", ["미실행"])
         and not checks.get("pdf_problems", ["미실행"])
         and not checks.get("chat_tools_problems", ["미실행"])
+        and not checks.get("shell_problems", ["미실행"])
         and checks.get("repo_unchanged") and checks.get("app_log_started") and checks.get("app_bad_option_rc2")
         and checks.get("app_bad_settings")
         and checks.get("app_trigger_off" if args.app_only else "app_log_unhandled")
