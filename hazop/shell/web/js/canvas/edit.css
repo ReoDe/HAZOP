@@ -9,7 +9,7 @@
 .edit-pill .ep-log { margin: 2px 0 4px; padding-left: 22px; max-height: 180px; overflow: auto; font-size: var(--fs-sm); }
 .edit-pill .linkish { border: 0; background: none; color: var(--ui, #0a5fc2); cursor: pointer; padding: 0; font: inherit; font-size: var(--fs-sm); text-decoration: underline; }
 .edit-card { right: 12px; top: 56px; z-index: 7; width: 280px; max-height: calc(100% - 180px); overflow: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
-.edit-card select { font: inherit; font-size: var(--fs-sm); max-width: 100%; }
+.edit-card select { max-width: 100%; }
 .edit-card .ec-h { display: flex; align-items: center; gap: 6px; }
 .edit-card .ec-h .btn { margin-left: auto; }
 .edit-card .ec-unk { margin: 2px 0 4px; padding-left: 18px; font-size: var(--fs-sm); }

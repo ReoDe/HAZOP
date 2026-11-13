@@ -13,4 +13,15 @@
 .cleanpop .cp-frag svg { display: block; max-height: 200px; }
 .cleanpop kbd { margin-left: 4px; font-size: 10.5px; }
 .viewswitch .chip[aria-pressed="true"] { outline: 2px solid var(--accent); }
+.viewswitch { flex-wrap: nowrap; }
+.vm-btn { all: unset; position: relative; display: inline-flex; align-items: center; gap: 2px; padding: 3px 8px; font-size: var(--fs-sm); border-radius: var(--r-sm); cursor: pointer; }
+.vm-btn:hover, .vm-btn[aria-expanded="true"] { background: var(--surface-2, #f2f4f7); }
+.vm-btn:focus-visible { outline: 2px solid var(--accent); }
+.vm-dot { position: absolute; top: 2px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.vm-dot.warn { background: var(--warn, #d97706); }
+.viewmenu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 220px; padding: 6px; display: flex; flex-direction: column; gap: 2px; z-index: 6; }
+.viewmenu .vm-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: var(--r-sm); font-size: var(--fs-sm); cursor: pointer; }
+.viewmenu .vm-row:hover { background: var(--surface-2, #f2f4f7); }
+.viewmenu .vm-info { padding: 4px 6px; font-size: var(--fs-sm); color: var(--muted); }
+.viewmenu .vm-info.warn { color: var(--warn-ink, #8a5a00); }
 .hz-cv[data-view="clean"] { background: #eef0f3; }

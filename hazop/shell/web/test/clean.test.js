@@ -125,6 +125,9 @@ export const tests = [
     assert(!labels.includes("원본") && host.textContent.includes("원본 그림 없음 · DEXPI 변환"), host.textContent);
     C.onClean("g1", data("unknown"));
     await tick();
+    assert(host.querySelector(".vm-dot.warn"), "읽은 방법 모름은 '보기' 단추에 호박색 점");
+    host.querySelector(".vm-btn").click();
+    await tick();
     assert(host.textContent.includes("읽은 방법 모름") && [...host.querySelectorAll("button")].some((b) => b.textContent.trim() === "원본"), "모르는 방법은 원본 단추가 있고 꼬리표가 호박색");
     render(null, host); host.remove();
   } },
@@ -137,6 +140,11 @@ export const tests = [
     const host = document.createElement("div");
     document.body.appendChild(host);
     render(html`<${C.CleanOverlay} />`, host);
+    await tick();
+    const top = [...host.querySelector(".viewswitch").children].filter((n) => !n.classList.contains("viewmenu")).map((n) => n.textContent.trim());
+    assert.equal(top.length, 3, "위 줄은 원본|정리, 미확인, 보기 셋: " + top.join(" / "));
+    assert(!host.textContent.includes("위치 없음 2") && host.querySelector(".vm-dot.warn"), "접힌 메뉴 안의 알릴 것은 점으로");
+    host.querySelector(".vm-btn").click();
     await tick();
     assert(host.textContent.includes("위치 없음 2") && host.textContent.includes("원본에 남은 것: 엔진이 세지 않음"), host.textContent);
     const d2 = data("drawio", []);
@@ -153,9 +161,10 @@ export const tests = [
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "l", bubbles: true }));
     await tick();
     assert.equal(cc.props.overlays.leftovers, true);
-    [...host.querySelectorAll("button")].find((b) => b.textContent.trim() === "원본 겹쳐 보기").click();
+    [...host.querySelectorAll(".vm-row")].find((b) => b.textContent.trim() === "원본 겹쳐 보기").querySelector("input").click();
     await tick();
     assert.equal(cc.props.overlays.original, true);
+    assert(host.querySelector(".vm-dot:not(.warn)"), "켜 둔 겹쳐 보기는 '보기' 단추에 점");
     render(null, h2); h2.remove(); render(null, host); host.remove();
   } },
 ];

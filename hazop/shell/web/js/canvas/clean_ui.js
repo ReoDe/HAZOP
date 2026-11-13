@@ -112,24 +112,33 @@ function ViewSwitch({ gid }) {
   const data = useClean((s) => s.data[gid]);
   const built = useClean((s) => s.built[gid]);
   const ov = useClean((s) => s.overlay);
+  const [open, setOpen] = useState(false);
   const count = data ? data.counts.total : 0, fmt = data ? data.source_format : null;
   const dexpi = fmt === "dexpi";
   const tip = built && built.missingKinds.length ? "그림이 없는 종류 " + built.missingKinds.length + "개: " + built.missingKinds.join(", ") : "";
   const seg = (v, label) => html`<button type="button" class=${view === v ? "on" : ""} aria-pressed=${view === v ? "true" : "false"} disabled=${v === "clean" && !data}
     title=${v === "clean" && !data ? "정리된 보기 자료를 읽지 못했습니다" : label + " 보기 (O)"} onClick=${() => setView(gid, v)}>${label}</button>`;
   const lo = data && data.leftovers;
+  const unplaced = data ? data.counts.unplaced : 0;
+  const lit = ov.unconfirmed || ov.leftovers || ov.original;              // 켜 둔 겹쳐 보기가 있으면 '보기' 단추에 점
+  const warn = fmt === "unknown" || unplaced > 0;                          // 알아야 할 것(읽은 방법 모름·위치 없음)이 메뉴 안에 있으면 호박색 점
+  const check = (on, label, title, onClick) => html`<label class="vm-row" title=${title}>
+    <input type="checkbox" checked=${on} onChange=${onClick} /> <span>${label}</span></label>`;
   return html`<div class="float viewswitch" role="group" aria-label="도면 보기">
     ${dexpi ? html`<span class="muted small" title="DEXPI에는 원본 도면 그림이 없습니다">원본 그림 없음 · DEXPI 변환</span>`
       : html`<div class="clean-toggle" role="group" aria-label="원본 또는 정리">${seg("orig", "원본")}${seg("clean", "정리")}</div>`}
-    ${data ? html`<span class=${"chip " + (fmt === "unknown" ? "warn" : "")} title="읽은 방법">${FORMAT_LABEL[fmt] || fmt}</span>` : null}
     ${data ? html`<button type="button" class=${"chip " + (count ? "warn" : "ok")} title=${"다음 미확인으로 (N)" + (tip ? " · " + tip : "")} aria-label=${"미확인 " + count + "곳. 다음으로 가기"}
       onClick=${() => stepUnconfirmed(gid, 1)}><${Icon} name=${count ? "alert-triangle" : "check"} size=${14} /> 미확인 ${count}곳</button>` : null}
-    ${data && count ? html`<button type="button" class="chip" aria-pressed=${ov.unconfirmed ? "true" : "false"} title="호박색 점선 네모: 읽지 못한 것이 아니라 속성만 확인되지 않은 곳(포트·흐름 방향·고장 위치 등)을 도면에 보입니다. 읽지 못한 기호·열린 끝은 늘 보입니다"
-      onClick=${() => toggleOverlay("unconfirmed")}>속성 미확인 보기</button>` : null}
-    ${data && data.counts.unplaced ? html`<span class="chip warn" title="좌표가 없어 도면에 그리지 못한 것. 확정 전에 위치를 주거나 도면에 없음으로 정해야 합니다">위치 없음 ${data.counts.unplaced}</span>` : null}
-    ${lo && lo.counted ? html`<button type="button" class=${"chip " + (lo.n ? "warn" : "")} aria-pressed=${ov.leftovers ? "true" : "false"} title="원본에서 어느 구성요소에도 쓰이지 않은 것을 겹쳐 봅니다 (L)"
-      onClick=${() => toggleOverlay("leftovers")}>원본에 남은 것 ${lo.n}</button>` : (lo ? html`<span class="chip warn" title="이 읽은 방법에서는 엔진이 원본에 남은 선·글자를 세지 못합니다. 쪽을 확정하기 전에 원본과 견주어야 합니다">원본에 남은 것: 엔진이 세지 않음</span>` : null)}
-    ${data && !dexpi ? html`<button type="button" class="chip" aria-pressed=${ov.original ? "true" : "false"} title="원본 도면을 옅게(30%) 겹쳐 어긋난 곳을 찾습니다" onClick=${() => toggleOverlay("original")}>원본 겹쳐 보기</button>` : null}</div>`;
+    ${data ? html`<button type="button" class="vm-btn" aria-expanded=${open ? "true" : "false"} aria-haspopup="true" title="보기 설정: 읽은 방법, 겹쳐 보기"
+      onClick=${() => setOpen(!open)}>보기 <${Icon} name="chevron-down" size=${14} />${lit || warn ? html`<span class=${"vm-dot" + (warn ? " warn" : "")} aria-label=${warn ? "알릴 것이 있음" : "켜 둔 겹쳐 보기가 있음"}></span>` : null}</button>` : null}
+    ${open && data ? html`<div class="float viewmenu" role="menu" aria-label="보기 설정">
+      <div class=${"vm-info" + (fmt === "unknown" ? " warn" : "")} title="읽은 방법">${FORMAT_LABEL[fmt] || fmt}</div>
+      ${unplaced ? html`<div class="vm-info warn" title="좌표가 없어 도면에 그리지 못한 것. 확정 전에 위치를 주거나 도면에 없음으로 정해야 합니다">위치 없음 ${unplaced}</div>` : null}
+      ${count ? check(ov.unconfirmed, "속성 미확인 보기", "호박색 점선 네모: 읽지 못한 것이 아니라 속성만 확인되지 않은 곳(포트·흐름 방향·고장 위치 등)을 도면에 보입니다. 읽지 못한 기호·열린 끝은 늘 보입니다",
+        () => toggleOverlay("unconfirmed")) : null}
+      ${lo && lo.counted ? check(ov.leftovers, "원본에 남은 것 " + lo.n, "원본에서 어느 구성요소에도 쓰이지 않은 것을 겹쳐 봅니다 (L)", () => toggleOverlay("leftovers"))
+        : (lo ? html`<div class="vm-info warn" title="이 읽은 방법에서는 엔진이 원본에 남은 선·글자를 세지 못합니다. 쪽을 확정하기 전에 원본과 견주어야 합니다">원본에 남은 것: 엔진이 세지 않음</div>` : null)}
+      ${!dexpi ? check(ov.original, "원본 겹쳐 보기", "원본 도면을 옅게(30%) 겹쳐 어긋난 곳을 찾습니다", () => toggleOverlay("original")) : null}</div>` : null}</div>`;
 }
 
 function Bubble({ gid }) {
