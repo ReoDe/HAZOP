@@ -153,13 +153,17 @@ def cause_key(entry):
 
 def entry_facts(results, node_set=None):
     """{key: {approved, ie_human, judgement, category, fp, entry, node_id, deviation_id, scope_changed, held,
-    cause_key, cause_inside}} 결과 칸 순서대로. node_set을 주면 cause_inside(원인 위치가 모두 그 구간 구성요소)와
+    cause_key, cause_inside}} 결과 칸 순서대로. node_set을 주면 cause_inside(원인 위치의 안정 참조가 모두 그 구간
+    구성요소의 안정 참조, 집합의 graph_member_refs로 바꿈)와
     칸 판이 지금 구간 판과 같은지를 본다. 없으면 cause_inside는 True로 둔다(쌍둥이 검사를 넓게)."""
     out = {}
     if not results:
         return out
     gid = results.get("graph_id")
-    members = {n["node_id"]: set(n["members"]) for n in (node_set or {}).get("nodes") or []}
+    to_ref = (node_set or {}).get("graph_member_refs") or {}
+    # 원인 위치(cause_refs[].ref)는 안정 참조(graph_id#source_object_id, refs.py)라 구성요소도 안정 참조로 바꿔 비교한다
+    members = {n["node_id"]: {to_ref.get(m) or m for m in n["members"]} | set(n["members"])
+               for n in (node_set or {}).get("nodes") or []}
     revs = {n["node_id"]: n.get("rev") or 1 for n in (node_set or {}).get("nodes") or []}
     for cell in results["cells"]:
         rev_now = revs.get(cell["node_id"])
@@ -179,6 +183,7 @@ def entry_facts(results, node_set=None):
                 "cause_inside": True if mine is None or ck is None else all(r in mine for r, _m in ck),
                 "fp": _sha(dict({k: e.get(k) for k in MEMBER_FIELDS}, scope_changed=e.get("scope_changed"),
                                 cell={"state": cell.get("state"), "hold": bool(cell.get("hold")),
+                                      "scope_changed": cell.get("scope_changed"),
                                       "node_rev": cell.get("node_rev"), "current": current})),
                 "entry": e, "node_id": cell["node_id"], "deviation_id": cell["deviation_id"]}
     return out

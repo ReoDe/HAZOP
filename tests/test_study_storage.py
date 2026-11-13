@@ -1,6 +1,6 @@
 """검토구간 저장 규격 v2(docs/specs/study-node-segmentation.md rev 2, N1) 시험. 저장은 임시 HAZOP_WORK_ROOT 아래에만 한다.
 번호 ①~㉗은 규격 §9 N1 표의 '시험해야 할 경우', 재현 1·4·5·8은 §12.1이다.
-실행: python -m unittest tests.test_study_nodes_v2
+실행: python -m unittest tests.test_study_storage
 """
 
 import copy
@@ -19,7 +19,7 @@ sys.path.insert(0, REPO_ROOT)
 from hazop import store_io  # noqa: E402
 from hazop.ie import bundle as ib  # noqa: E402
 from hazop.ie import model  # noqa: E402
-from hazop.study import ai_cells, convert, migrate, node_tools as nt, remap  # noqa: E402
+from hazop.study import ai_cells, convert, migrate, node_tools as nt, refs, remap  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 from hazop.study import results as res  # noqa: E402
 from tests.test_study_migrate import graph  # noqa: E402
@@ -34,6 +34,11 @@ HINT = {"candidate": "yes", "disturbs": "yes", "challenges": "yes", "safety_func
 def ids(g, *soids):
     by = {n["source_object_id"]: n["entity_id"] for n in g["nodes"]}
     return [by[s] for s in soids]
+
+
+def sref(g, soid):
+    """앱이 cause_refs에 넣는 실제 형식의 안정 참조(graph_id#source_object_id, hazop.study.refs)."""
+    return migrate.ref_of(next(n for n in g["nodes"] if n["source_object_id"] == soid), g["graph_id"])
 
 
 def build(g, groups, confirm=True):
@@ -354,9 +359,11 @@ class IeTest(WorkRoot):
         self.doc = res.empty_results(self.ns, DEVS)
 
     def cause(self, eid, ref_soid="V1", mode="FTC", **kw):
-        ref = ids(self.g, ref_soid)[0]
-        return entry(eid, cause="밸브 고착", cause_refs=[{"ref": ref, "failure_mode": mode} if mode else {"ref": ref}],
-                     consequence=kw.pop("consequence", "급수 상실"), ie_hint=dict(HINT), **kw)
+        ref = sref(self.g, ref_soid)
+        e = entry(eid, cause="밸브 고착", cause_refs=[{"ref": ref, "failure_mode": mode} if mode else {"ref": ref}],
+                  consequence=kw.pop("consequence", "급수 상실"), ie_hint=dict(HINT), **kw)
+        self.assertEqual(refs.problems(e), [], "앱이 쓰는 형식의 참조")
+        return e
 
     def bundle(self, doc=None, ie_doc=None):
         doc = doc or self.doc
@@ -633,7 +640,7 @@ class AdversaryTest(WorkRoot):
     def test_duplicate_resolves_twins_transitively_and_groups_point_at_bundle_candidates(self):
         ns = build(self.g, [("A", ["TK", "V1"]), ("B", ["V1", "V2"]), ("C", ["V1", "PP"])])
         doc = res.empty_results(ns, DEVS)
-        cause = lambda eid: entry(eid, cause_refs=[{"ref": ids(self.g, "V1")[0], "failure_mode": "FTC"}],  # noqa: E731
+        cause = lambda eid: entry(eid, cause_refs=[{"ref": sref(self.g, "V1"), "failure_mode": "FTC"}],  # noqa: E731
                                   ie_hint=dict(HINT))
         for nid in ("S1", "S2", "S3"):
             put_entries(doc, nid, "I1", [cause("e" + nid)])
@@ -658,7 +665,7 @@ class AdversaryTest(WorkRoot):
         doc = res.empty_results(ns, DEVS)
         for cell in doc["cells"]:
             cell.update(state="analyzed", entries=[entry("L" + cell["item_id"], cause_refs=[
-                {"ref": ids(self.g, "TK")[0], "failure_mode": "FTR"}], ie_hint=dict(HINT))])
+                {"ref": sref(self.g, "TK"), "failure_mode": "FTR"}], ie_hint=dict(HINT))])
         ns = sn.lock_node(ns, "S1", "검토자", doc, at=AT)
         g2 = graph("v2")
         g2["nodes"][0]["tag"] = "TK-NEW"
@@ -708,6 +715,92 @@ class AdversaryStoreTest(WorkRoot):
         res.save_fp(doc, None, expect=fp)
         with open(convert.backup_path(rpath), "rb") as fh:
             self.assertEqual(fh.read(), rdata)
+
+
+class ReviewFixTest(WorkRoot):
+    """총괄 검토(2026-11-13) 재현 R2·R3·R5·R6을 실제 형식의 데이터로."""
+
+    def test_r2_edits_that_drop_a_judged_node_are_refused_and_merge_moves_entries(self):
+        ns = build(self.g, [("A", ["TK", "V1"]), ("B", ["V2", "PP"])])
+        doc = put_entries(res.empty_results(ns, DEVS), "S2", "I1", [entry("e1", cause="펌프 정지", ie_hint=dict(HINT))])
+        opened = sn.reopen(ns, at=AT)
+        doc = res.reconcile(doc, opened, DEVS)
+        with self.assertRaises(ValueError):  # 결과를 옮기지 않는 옛 길은 확정한 적 있는 구간을 없애지 않음
+            sn.merge(opened, ["S1", "S2"], at=AT)
+        members = list(sn._find(opened, "S2")["members"])
+        one_left = sn.remove_member(opened, "S2", members[0], at=AT)
+        with self.assertRaises(ValueError):  # 마지막 구성요소를 빼면 구간이 없어지므로 거절
+            sn.remove_member(one_left, "S2", members[1], at=AT)
+        fresh = build(self.g, [("A", ["TK"]), ("B", ["V1"])], confirm=False)  # 확정한 적 없는 구간은 그대로 됨
+        self.assertEqual(len(sn.merge(fresh, ["S1", "S2"], at=AT)["nodes"]), 1)
+        gone = dict(opened, nodes=[n for n in opened["nodes"] if n["node_id"] != "S2"])
+        self.assertEqual([nid for nid, _w in nt.dropped_problems(opened, gone, doc)], ["S2"], "화면이 저장 전에 쓰는 검사")
+        moved, mdoc, _b = nt.apply_nodes(opened, doc, self.g, [{"op": "merge", "node_ids": ["S1", "S2"]}], {}, "user",
+                                         opened["set_rev"], at=AT)
+        self.assertEqual(nt.dropped_problems(opened, moved, mdoc), [])
+        again = sn.confirm(moved, self.g, "검토자", at=AT)
+        picked, _left = ib.approved_entries(res.reconcile(mdoc, again, DEVS), again)
+        self.assertEqual([e["entry_id"] for _n, _d, e in picked], [], "옮긴 항목은 범위 바뀜이라 다시 확인 전에는 인계 안 됨")
+        used, problems, bad = res.partition(res.reconcile(mdoc, again, DEVS), again)
+        self.assertEqual((problems, bad), ([], []))
+        self.assertEqual([e["entry_id"] for c in used["cells"] if c["node_id"] == "S1" for e in c["entries"]], ["e1"])
+
+    def test_r3_judged_cells_without_entries_are_flagged_and_block_lock(self):
+        ns = build(self.g, [("A", ["TK"])])
+        doc = put_entries(res.empty_results(ns, DEVS), "S1", "I1", [entry("e9")])
+        for c in doc["cells"]:
+            if c["item_id"] == "I2":
+                c["state"] = "excluded"  # 해당 없음
+        ns2 = sn.confirm(sn.add_member(sn.reopen(ns, at=AT), "S1", ids(self.g, "V1")[0], at=AT), self.g, "검토자", at=AT)
+        doc2 = res.reconcile(doc, ns2, DEVS)
+        cell = next(c for c in doc2["cells"] if c["item_id"] == "I2")
+        self.assertEqual((cell["scope_changed"]["from_rev"], cell["scope_changed"]["to_rev"]), (1, 2))
+        doc3 = res.set_status(doc2, "S1", "D01", "e9", "approved", at=AT, node_set=ns2)
+        self.assertTrue(sn.lock_problems(ns2, "S1", doc3), "칸 판정을 다시 보기 전에는 잠글 수 없음")
+        doc4 = res.recheck_cell(doc3, "S1", cell["deviation_id"], "검토자", at=AT, node_set=ns2)
+        self.assertEqual(sn.lock_problems(ns2, "S1", doc4), [])
+        self.assertIs(res.reconcile(doc4, ns2, DEVS), doc4, "다시 확인한 뒤에는 표시가 되살아나지 않음")
+
+    def test_r7_judged_cells_without_entries_mark_the_node_and_removal_needs_archive(self):
+        ns = build(self.g, [("A", ["TK", "V1"]), ("B", ["V2"])])
+        doc = res.empty_results(ns, DEVS)
+        for c in doc["cells"]:
+            if c["node_id"] == "S1":
+                c["state"] = "excluded"  # 해당 없음(항목 없음)
+        self.assertEqual(nt.judged_nodes(doc), ["S1"], "다시 제안(ID 새로 매김)을 막을 근거")
+        opened = sn.reopen(ns, at=AT)
+        doc = res.reconcile(doc, opened, DEVS)
+        with self.assertRaises(nt.Refused):
+            nt.apply_nodes(opened, doc, self.g, [{"op": "remove", "node_id": "S1"}], {}, "user", opened["set_rev"], at=AT)
+        kept, kdoc, _b = nt.apply_nodes(opened, doc, self.g, [{"op": "remove", "node_id": "S1", "archive": True}], {},
+                                        "user", opened["set_rev"], at=AT)
+        self.assertEqual({a["cell"]["state"] for a in kdoc["archived_cells"]}, {"excluded"})
+
+    def test_r5_any_confirmed_follows_the_01_set_status(self):
+        path = os.path.join(sn.store_dir(), "P", "project-x.json")
+        write(path, {"schema_version": "0.1", "kind": sn.KIND, "graph_id": "project-x", "status": "proposed",
+                     "history": [], "nodes": [{"node_id": "S1", "name": "a", "members": ["m"]}]})
+        self.assertFalse(sn.any_confirmed(project_only=True))
+        write(path, {"schema_version": "0.1", "kind": sn.KIND, "graph_id": "project-x", "status": "confirmed",
+                     "history": [], "nodes": [{"node_id": "S1", "name": "a", "members": ["m"]}]})
+        self.assertTrue(sn.any_confirmed(project_only=True))
+
+    def test_r6_archived_cells_keep_their_item_id(self):
+        old = [DEVS[0], DEVS[1]]
+        new = [{"deviation_id": "D01", "item_id": "I0", "parameter": "온도", "guideword": "높음", "label": "온도 높음"}] + [
+            dict(d, deviation_id="D%02d" % (i + 2)) for i, d in enumerate(old)]
+        set_01 = {"schema_version": "0.1", "kind": "hazop_study_nodes", "graph_id": "g", "graph_version": "v1",
+                  "status": "confirmed", "confirmed_at": "T2", "confirmed_by": "a", "history": [],
+                  "previous": [{"study_nodes_ref": {"graph_version": "v1", "confirmed_at": "T1"},
+                                "nodes": [{"node_id": "S1", "members": ["x"]}, {"node_id": "S2", "members": ["gone"]}]}],
+                  "nodes": [{"node_id": "S1", "name": "a", "members": ["x"]}]}
+        res_01 = {"schema_version": "0.1", "kind": "hazop_study_results", "graph_id": "g",
+                  "study_nodes_ref": {"graph_version": "v1", "confirmed_at": "T1"}, "deviations": old, "ai_log": [],
+                  "cells": [{"node_id": "S2", "deviation_id": "D01", "state": "analyzed", "entries": [entry("e1")]},
+                            {"node_id": "S1", "deviation_id": "D02", "state": "analyzed", "entries": [entry("e2")]}]}
+        _set, res_02, _rep = convert.convert(set_01, res_01, new, at="T3")
+        self.assertEqual([(a["cell"]["node_id"], a["cell"]["item_id"]) for a in res_02["archived_cells"]], [("S2", "I1")])
+        self.assertEqual([(c["deviation_id"], c["item_id"]) for c in res_02["cells"] if c["entries"]], [("D03", "I2")])
 
 
 # ---------------------------------------------------------------- 재현 스크립트(§12.1)를 고친 동작으로
