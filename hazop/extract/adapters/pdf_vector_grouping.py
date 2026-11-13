@@ -276,6 +276,27 @@ def _bar_fed_strokes(polys, prm):
     return found, rest
 
 
+ORIFICE_BOX_RATIO = 1.5  # 오리피스 상자: 두 판 사이 간격 상한 = 판 길이 × 비율(판과 간격이 비슷한 네모꼴)
+
+
+def _orifice_box(a, sep, lines, dots, bodies, crossing, prm):
+    """판 a와 축 방향으로 sep 떨어진 짝 판 사이 칸이 오리피스 상자('|-|' 가운데 짧은 선, APR1400 OR01B 등)인지.
+    칸 안에 판과 나란하고 판보다 짧은 직선 하나만 칸 가운데에 있어야 한다. 점·몸체·가로지르는 선이 있으면 아니다."""
+    if dots or bodies or crossing or len(lines) != 1 or abs(sep) > ORIFICE_BOX_RATIO * a["L"]:
+        return False
+    q = lines[0]
+    if len(q["pts"]) != 2 or q.get("curved"):
+        return False
+    (x0, y0), (x1, y1) = q["pts"]
+    length = math.hypot(x1 - x0, y1 - y0)
+    if not 0 < length < a["L"] or abs((x1 - x0) * a["u"][1] - (y1 - y0) * a["u"][0]) / length > prm["plate_par_tol"]:
+        return False
+    m = ((x0 + x1) / 2 - a["c"][0], (y0 + y1) / 2 - a["c"][1])
+    along = m[0] * -a["u"][1] + m[1] * a["u"][0]  # 배관 축 방향 위치(sep과 같은 부호)
+    side = m[0] * a["u"][0] + m[1] * a["u"][1]
+    return abs(side) <= prm["plate_align_tol"] and 0.25 <= along / sep <= 0.75
+
+
 def _plate_assemblies(syms, polys, markers, dashes, prm):
     """배관을 가로지르는 짧은 판(범례 1.7-1 1/4 FLANGED CONNECTION '—| |—', 1.7-1 VALVE SYMBOLS의 BUTTERFLY '|\\●|'·
     BALL '|○|'·'|●|') 찾기 → (밸브 기호 [_Sym], 남은 선, 남은 표식, 플랜지 [(판, 판, (점, 점))]).
@@ -285,7 +306,11 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
       먼저 지우면 판에 닿아 있던 배관 끝이 떠 보여 장식선으로 흡수된다.
     - 두 판 사이에 둥근 점 하나와 그 점을 지나는 빗금이 있으면 버터플라이, 빗금 없이 점이나 원 하나만 있으면 볼 밸브다.
       바로 바깥의 플랜지 판까지 한 기호로 묶는다.
-    판 사이에 다른 것(오리피스의 짧은 선, 플러그 밸브의 마름모)이 있으면 건드리지 않는다."""
+    - 두 판 사이 가운데에 판보다 짧은 나란한 선 하나만 있고 두 판 가운데에 바깥에서 배관 끝이 하나씩 닿으면 오리피스
+      상자(_orifice_box, 범례 1.7-1 1/4 RESTRICTION ORIFICE)다. 두 판과 가운데 선을 한 선 기호로 묶는다(판 길이가 짧아
+      선 기호 최소 크기에 못 미친다). 판 가운데 말고 다른 자리(판 끝·상자 귀퉁이)에 다른 선이 닿으면 묶지 않는다
+      (차압 탭선이 달린 유량 측정 상자, 판 끝에 이어지는 엇갈림 끊긴 배관).
+    판 사이에 그 밖의 것(플러그 밸브의 마름모 등)이 있으면 건드리지 않는다."""
     plates = []
     for p in polys:
         if len(p["pts"]) != 2 or p.get("curved"):
@@ -368,11 +393,13 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
                         hits.append((q, e))
         return hits[0] if len(hits) == 1 else None
 
-    def touched(a, allow):
-        """판 a에 (allow 말고) 다른 선이 닿는지. 오리피스 탭선·계기 지시선이 닿은 판은 플랜지로 보지 않는다."""
+    def touched(a, allow, branch_ok=False):
+        """판 a에 (allow 말고) 다른 선이 닿는지. 오리피스 탭선·계기 지시선이 닿은 판은 플랜지로 보지 않는다.
+        branch_ok면 끝이 판 가운데(배관 끝이 닿는 자리)에 닿는 선은 그 자리의 배관 분기로 보고 세지 않는다."""
         seg = a["p"]["pts"]
-        return any(q is not None and q not in allow and _poly_dist(q["pts"], seg) <= tol
-                   for q in others)
+        return any(q is not None and q not in allow and _poly_dist(q["pts"], seg) <= tol and not (
+            branch_ok and any(math.hypot(e[0] - a["c"][0], e[1] - a["c"][1]) <= prm["plate_touch_tol"]
+                              for e in (q["pts"][0], q["pts"][-1]))) for q in others)
 
     def round_dot(m):
         w, h = _w(m["bbox"]), _h(m["bbox"])
@@ -447,9 +474,18 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
             removed_lines.update(id(q) for q in lines)
             removed_marks.update(id(m) for m in dots)
             continue
+        ea, eb = pipe_end(a, False), pipe_end(b, True)
+        # 판 가운데 말고 다른 자리에 선이 닿으면(상자 귀퉁이의 차압 탭선, 판 끝에 이어지는 엇갈림 끊긴 배관) 상자로 보지
+        # 않는다. 탭선이 달린 상자는 FE 원과 묶이는 유량 요소이고, 판 끝에 닿은 선은 그 판이 배관 끝인지 흐리게 한다
+        if _orifice_box(a, sep, lines, dots, bodies, crossing, prm) and ea and eb and \
+                not any(touched(t, (ea[0], eb[0], lines[0]), branch_ok=True) for t in (a, b)):
+            used.update((i, j))
+            members = [dict(q, kind_="poly") for q in (a["p"], b["p"], lines[0])]
+            valves.append(_Sym(members, stroke_only=True))
+            removed_lines.update(id(q) for q in (a["p"], b["p"], lines[0]))
+            continue
         if lines or dots or bodies or crossing or sep > prm["flange_gap_max"]:
             continue
-        ea, eb = pipe_end(a, False), pipe_end(b, True)
         if ea is None or eb is None or touched(a, (ea[0],)) or touched(b, (eb[0],)):
             continue
         used.update((i, j))

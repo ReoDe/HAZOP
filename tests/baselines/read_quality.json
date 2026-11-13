@@ -139,12 +139,12 @@
     "units": 47
    },
    "connection": {
-    "correct": 137,
-    "false_pos": 12,
+    "correct": 143,
+    "false_pos": 9,
     "units": 376
    },
    "kind": {
-    "correct": 102,
+    "correct": 109,
     "false_pos": 15,
     "units": 162
    },
@@ -178,22 +178,22 @@
   },
   "apr1400-016": {
    "attribute": {
-    "correct": 37,
+    "correct": 38,
     "false_pos": 0,
     "units": 46
    },
    "connection": {
-    "correct": 107,
-    "false_pos": 21,
+    "correct": 135,
+    "false_pos": 4,
     "units": 199
    },
    "kind": {
-    "correct": 91,
+    "correct": 103,
     "false_pos": 4,
     "units": 116
    },
    "tag": {
-    "correct": 56,
+    "correct": 58,
     "false_pos": 0,
     "units": 92
    }
@@ -205,12 +205,12 @@
     "units": 136
    },
    "connection": {
-    "correct": 167,
-    "false_pos": 6,
+    "correct": 171,
+    "false_pos": 3,
     "units": 244
    },
    "kind": {
-    "correct": 112,
+    "correct": 113,
     "false_pos": 7,
     "units": 134
    },
@@ -293,12 +293,12 @@
     "units": 50
    },
    "connection": {
-    "correct": 126,
-    "false_pos": 52,
+    "correct": 157,
+    "false_pos": 57,
     "units": 233
    },
    "kind": {
-    "correct": 62,
+    "correct": 73,
     "false_pos": 3,
     "units": 115
    },
@@ -337,12 +337,12 @@
     "units": 37
    },
    "connection": {
-    "correct": 34,
-    "false_pos": 34,
+    "correct": 38,
+    "false_pos": 35,
     "units": 87
    },
    "kind": {
-    "correct": 41,
+    "correct": 42,
     "false_pos": 5,
     "units": 73
    },
@@ -359,12 +359,12 @@
     "units": 110
    },
    "connection": {
-    "correct": 231,
+    "correct": 234,
     "false_pos": 109,
     "units": 404
    },
    "kind": {
-    "correct": 76,
+    "correct": 78,
     "false_pos": 0,
     "units": 170
    },

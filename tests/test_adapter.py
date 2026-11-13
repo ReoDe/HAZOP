@@ -498,6 +498,30 @@ class PdfVectorRuleTest(unittest.TestCase):
                        for r in ext["relations"] if r.get("flow_direction"))
         self.assertEqual(flows, [("-", "continuation"), ("continuation", "-")])
 
+    def test_orifice_box_between_pipes(self):
+        # 범례 1.7-1 1/4 RESTRICTION ORIFICE '|ı|'(16쪽 OR01B와 같은 치수): 판 2.9pt 둘 사이 가운데에 짧은 선. 판이 짧아
+        # 선 기호 최소 크기(4pt)에 못 미쳐 예전에는 배관 조각으로 남았다. 가운데 선이 없으면 플랜지라 기호가 아니다
+        def body(x):
+            return [line((x, 108.15), (x, 111.05)), line((x + 2.9, 108.15), (x + 2.9, 111.05))]
+        ext = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), line((140, 109.6), (220, 109.6)),
+                       *body(220), line((221.45, 108.875), (221.45, 110.325)), line((222.9, 109.6), (300, 109.6))])
+        box = [n for n in ext["nodes"] if 215 < n["geometry"]["x"] < 225]
+        self.assertEqual([n["kind"] for n in box], ["orifice"])
+        self.assertEqual(len(ext["relations"]), 2)
+        flange = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), line((140, 109.6), (220, 109.6)),
+                          *body(220), line((222.9, 109.6), (300, 109.6))])
+        self.assertNotIn("orifice", [n["kind"] for n in flange["nodes"]])
+        # 판 가운데(배관 끝 자리)에서 갈라지는 선은 배관 분기라 상자를 그대로 본다(8쪽 OR 아래 AI|BI 지시선)
+        branch = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), rect(212, 150, 232, 170),
+                          line((140, 109.6), (220, 109.6)), *body(220), line((221.45, 108.875), (221.45, 110.325)),
+                          line((222.9, 109.6), (300, 109.6)), line((222.9, 109.6), (222.9, 150))])
+        self.assertIn("orifice", [n["kind"] for n in branch["nodes"]])
+        # 판 끝(상자 귀퉁이)에 차압 탭선이 닿으면 FE 원과 묶이는 유량 요소라 오리피스 상자로 보지 않는다(63쪽 FE 202)
+        tapped = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), rect(200, 40, 216, 56),
+                          line((140, 109.6), (220, 109.6)), *body(220), line((221.45, 108.875), (221.45, 110.325)),
+                          line((222.9, 109.6), (300, 109.6)), line((220, 108.15), (208, 56)), line((222.9, 108.15), (212, 56))])
+        self.assertNotIn("orifice", [n["kind"] for n in tapped["nodes"]])
+
     def test_alarm_box_words_are_not_equipment(self):
         ext = pdf_run([rect(100, 100, 180, 120), rect(300, 100, 380, 120)],
                       [word("PUMP", 105, 104), word("START/STOP", 120.5, 104), word("PUMP", 305, 104), word("P-01", 320.5, 104)])
