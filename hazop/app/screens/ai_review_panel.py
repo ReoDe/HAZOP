@@ -172,22 +172,15 @@ class AiReviewBar(QWidget):
         self.progress_box.show()
         self.toggle.setEnabled(False)
 
+        est = ai_review.estimate_pages(pages, cap=cap)
+        self.progress_text.setText("AI 검토 준비 중 · %d개 도면 · 예상 호출 %d회%s" % (
+            len(pages), est["calls"], "(실행 상한 %d회에 닿음)" % ai_review.RUN_CAP if est["capped"] else ""))
+
         def work():
-            done = []
             try:
-                for name, ex in pages:
-                    if self._stop.is_set():
-                        break
-                    result = ai_review.run(ex, client, cap=cap,
-                                           on_progress=lambda d, t, left, n=name: self.sig.progress.emit(n, d, t, left),
-                                           should_stop=self._stop.is_set)
-                    doc = ai_review.load_doc(name) or ai_review.new_doc(name, ex)
-                    desc = client.describe() if hasattr(client, "describe") else {}
-                    ai_review.merge_run(doc, result, via=desc.get("via"), model=desc.get("model"))
-                    ai_review.save_doc(doc)
-                    done.append((name, len(result["candidates"]), result["stats"]))
-                    if result["stats"]["halted"]:
-                        break
+                # 실행 상한·사람 수정 제외·저장 충돌 재시도는 로직(run_many)이 맡는다
+                done = ai_review.run_many(pages, client, cap=cap, on_progress=self.sig.progress.emit,
+                                          should_stop=self._stop.is_set)
                 self.sig.finished.emit(done)
             except Exception as exc:  # 스레드 안 예외는 화면에 사유로 보인다
                 self.sig.failed.emit("%s: %s" % (type(exc).__name__, exc))
@@ -226,6 +219,9 @@ def summary_text(done):
     left = sum(st["left"] for _, _, st in done)
     calls = sum(st["calls"] for _, _, st in done)
     halt = [k for _, _, st in done if st["halted"] for k in st["error_kinds"][-1:]]
+    refused = next((st["refused"] for _, _, st in done if st.get("refused")), None)
+    if refused:
+        return refused
     text = "AI 후보 %d건 · 호출 %d회" % (cands, calls)
     if left:
         text += " · 미확인으로 남은 곳 %d" % left
@@ -249,6 +245,9 @@ class AiReviewDialog(QDialog):
         self.resize(900, 520)
         self.original = extraction_of(name)
         self.doc = ai_review.load_doc(name) or ai_review.new_doc(name, self.original)
+        # 지금 값은 사람 수정을 적용한 값으로 보인다(②에서 고친 태그가 '없음'으로 보이지 않게)
+        from hazop.extract import corrections
+        self.shown = corrections.apply_saved(self.original, name)
         lay = QVBoxLayout(self)
         self.head = QLabel("")
         self.head.setWordWrap(True)
@@ -321,7 +320,7 @@ class AiReviewDialog(QDialog):
     def _current(self, c):
         if c["field"] == "connection":
             return "열린 끝"
-        node = next((n for n in self.original["nodes"] if n["source_object_id"] == c["target"]), None)
+        node = next((n for n in self.shown["nodes"] if n["source_object_id"] == c["target"]), None)
         if node is None:
             return ""
         if c["field"] in ("kind", "tag"):

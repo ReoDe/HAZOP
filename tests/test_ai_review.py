@@ -47,7 +47,7 @@ def ex_fixture():
                                "status": "unconnected"}],
                 "flow_direction": None, "waypoints": [], "attributes": {}}
     return {"drawing": {"drawing_number": "T-1"}, "nodes": nodes, "relations": [], "unresolved_connectors": [rel_open],
-            "texts": [text("LO", 98, 92), text("FAR", 900, 900)]}
+            "texts": [text("LO", 98, 92), text("V200", 201, 110), text("FAR", 900, 900)]}
 
 
 class StubClient:
@@ -270,6 +270,74 @@ class AcceptTest(unittest.TestCase):
         self.assertEqual(doc["candidates"][0]["status"], "proposed")
         self.assertEqual(corrections.load("acc-test")["ops"], [])
 
+    def cand(self, i, n, tag):
+        return ar.make_candidate("t-%d" % i, "tag", n, "tag", [tag], 0.95, "시험")
+
+    def valves(self, k=3):
+        return [n for n in self.ex["nodes"] if n.get("kind") and n.get("kind") != "tee"][:k]
+
+    def test_stale_window_accept_is_refused_and_keeps_new_run(self):  # 재현 [A]
+        from hazop import store_io
+        vs, name = self.valves(), "race-a"
+        doc = ar.new_doc(name, self.ex)
+        ar.merge_run(doc, {"candidates": [self.cand(1, vs[0], "V901"), self.cand(2, vs[1], "V902")], "stats": {}})
+        ar.save_doc(doc)
+        window = ar.load_doc(name)
+        ar.merge_and_save(name, self.ex, {"candidates": [self.cand(3, vs[2], "V903")], "stats": {"calls": 1}})
+        with self.assertRaises(store_io.Conflict):
+            ar.accept(window, ["t-1:tag"], self.ex, name, by="시험")
+        disk = ar.load_doc(name)
+        self.assertEqual((len(disk["candidates"]), len(disk["runs"])), (3, 2))
+        self.assertIsNone(corrections.load(name))  # 수정 기록도 쓰지 않았다
+
+    def test_stale_worker_save_is_refused_and_merge_retries(self):  # 재현 [B]
+        from hazop import store_io
+        vs, name = self.valves(), "race-b"
+        doc = ar.new_doc(name, self.ex)
+        ar.merge_run(doc, {"candidates": [self.cand(1, vs[0], "V901"), self.cand(2, vs[1], "V902")], "stats": {}})
+        ar.save_doc(doc)
+        window, worker = ar.load_doc(name), ar.load_doc(name)
+        ar.accept(window, ["t-2:tag"], self.ex, name, by="시험")
+        ar.merge_run(worker, {"candidates": [], "stats": {"calls": 1}})
+        with self.assertRaises(store_io.Conflict):
+            ar.save_doc(worker)
+        ar.merge_and_save(name, self.ex, {"candidates": [], "stats": {"calls": 1}})
+        disk = ar.load_doc(name)
+        c2 = next(c for c in disk["candidates"] if c["cand_id"] == "t-2:tag")
+        self.assertEqual(c2["status"], "accepted")
+        ops = corrections.load(name)["ops"]
+        self.assertEqual([o["op_id"] for o in ops], [c2["op_id"]])
+        ar.revert(disk, ["t-2:tag"], name, by="시험")
+        self.assertEqual(corrections.load(name)["ops"], [])
+        ar.accept(disk, ["t-2:tag"], self.ex, name, by="시험")
+        self.assertEqual(len(corrections.load(name)["ops"]), 1)
+
+    def test_accepted_op_is_marked_ai_with_who_and_when(self):  # 지적 11
+        vs, name = self.valves(1), "mark"
+        doc = ar.new_doc(name, self.ex)
+        doc["candidates"].append(self.cand(1, vs[0], "V901"))
+        ar.accept(doc, ["t-1:tag"], self.ex, name, by="검토자", at="2026-11-13T00:00:00Z")
+        op = corrections.load(name)["ops"][0]
+        self.assertEqual((op["origin"], op["accepted_by"], op["accepted_at"], op["ai_candidate"]),
+                         ("ai", "검토자", "2026-11-13T00:00:00Z", "t-1:tag"))
+
+    def test_human_correction_is_not_overwritten_or_reviewed(self):  # 재현 [C]
+        n, name = self.valves(1)[0], "ovr"
+        op = corrections.make_op(self.ex, "set_tag", n["source_object_id"], {"tag": "HUMAN1"}, "human", name=name)
+        corrections.save(name, [op], "human")
+        doc = ar.new_doc(name, self.ex)
+        doc["candidates"].append(self.cand(1, n, "V777"))
+        failed = ar.accept(doc, ["t-1:tag"], self.ex, name, by="시험")
+        self.assertTrue(failed and "사람이 고친" in failed[0][1])
+        applied = corrections.apply(self.ex, corrections.load(name)["ops"])
+        self.assertEqual(next(x for x in applied["nodes"] if x["source_object_id"] == n["source_object_id"])["tag"],
+                         "HUMAN1")
+        self.assertIn(n["source_object_id"], ar.human_targets(name))
+        asked = []
+        client = StubClient(lambda req: (asked.extend(i["target"] for i in ids_in(req)), {"answers": []})[1])
+        ar.run_many([(name, self.ex)], client, cap=5, save=False)
+        self.assertNotIn(n["source_object_id"], asked)
+
     def test_save_and_load_doc(self):
         doc = ar.new_doc("store-test", self.ex)
         ar.save_doc(doc)
@@ -282,6 +350,109 @@ class AcceptTest(unittest.TestCase):
         again = pdf_vector.extract(pdf, page=0, repo_root=os.environ["HAZOP_WORK_ROOT"])
         strip = lambda e: {k: e[k] for k in ("nodes", "relations", "unresolved_connectors")}
         self.assertEqual(strip(again), strip(self.ex))
+
+
+class ReviewFixTest(unittest.TestCase):
+    """R2 검토 반려 지적(2026-11-13) 재현을 시험으로 둔다."""
+
+    def big_ex(self, n=60):
+        ex = ex_fixture()
+        for i in range(n):
+            ex["nodes"].append(node("u%03d" % i, None, (1000 + i * 30, 100, 1010 + i * 30, 108)))
+        return ex
+
+    def test_completed_with_overage_or_limit_halts_but_keeps_answers(self):
+        for ek in ("overage", "limit_reached"):
+            class C:
+                calls = 0
+
+                def analyze(self, req):
+                    C.calls += 1
+                    return {"status": "completed", "error_kind": ek, "output": good_answers(req)}
+            r = ar.run(self.big_ex(), C(), cap=20)
+            self.assertEqual(r["stats"]["calls"], 1, ek)
+            self.assertTrue(r["stats"]["halted"], ek)
+            self.assertTrue(r["candidates"], ek)  # 받은 답은 반영한다
+
+    def test_run_cap_over_pages_and_estimate(self):
+        pages = [("p%d" % i, self.big_ex(60)) for i in range(3)]
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        old = os.environ.get("HAZOP_WORK_ROOT")
+        os.environ["HAZOP_WORK_ROOT"] = tmp
+        self.addCleanup(lambda: os.environ.__setitem__("HAZOP_WORK_ROOT", old) if old else os.environ.pop("HAZOP_WORK_ROOT"))
+        client = StubClient(good_answers)
+        done = ar.run_many(pages, client, cap=20, run_cap=5, save=False)
+        self.assertEqual(sum(st["calls"] for _, _, st in done), 5)
+        self.assertEqual(len(client.requests), 5)
+        est = ar.estimate_pages(pages, cap=20, run_cap=5)
+        self.assertEqual(est["calls"], 5)
+        self.assertTrue(est["capped"])
+        self.assertEqual(ar.RUN_CAP, 300)
+
+    def test_estimate_from_real_pdf(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        pdf = glob.glob(os.path.join(REPO, "resources", "references", "pid-samples", "SNP-M-102*", "*.pdf"))[0]
+        est = ar.estimate_pdf(pdf, [0], cap=20)
+        self.assertEqual(len(est["pages"]), 1)
+        self.assertGreater(est["pages"][0]["items"], 0)
+        self.assertGreaterEqual(est["calls"], 1)
+
+    def test_bad_answers_are_dropped_without_stopping(self):
+        def bad(req):
+            out = []
+            for it in ids_in(req):
+                f = it["ask"][0]
+                out.append({"item_id": it["item_id"], "field": f, "values": ["V200" + "X" * 50], "confidence": 0.9,
+                            "reason": "R" * 5000})
+                out.append({"item_id": it["item_id"], "field": f, "values": ["manual_valve"], "confidence": 7,
+                            "reason": ""})
+                out.append({"item_id": it["item_id"], "field": f, "values": ["manual_valve"], "confidence": "high",
+                            "reason": ""})
+                out.append({"item_id": it["item_id"], "field": "tag", "values": ["V999"], "confidence": 0.9,
+                            "reason": ""})  # 주변 글자에 없는 태그
+            return {"answers": out}
+        r = ar.run(ex_fixture(), StubClient(bad), cap=5, recheck=0)
+        self.assertEqual(r["candidates"], [])
+        self.assertGreater(r["stats"]["dropped"], 0)
+
+    def test_client_exception_does_not_lose_candidates(self):
+        class X:
+            n = 0
+
+            def analyze(self, req):
+                X.n += 1
+                if X.n == 2:
+                    raise OSError("pipe broken")
+                return {"status": "completed", "error_kind": None, "output": good_answers(req)}
+        r = ar.run(ex_fixture(), X(), cap=5, recheck=0, batch=2)
+        self.assertEqual(r["stats"]["errors"], 1)
+        self.assertTrue(r["candidates"])
+
+    def test_api_connection_is_refused(self):
+        class Api(StubClient):
+            def describe(self):
+                return {"via": "api"}
+        c = Api(good_answers)
+        r = ar.run(ex_fixture(), c, cap=5)
+        self.assertIn("구독", r["stats"]["refused"])
+        self.assertEqual(c.requests, [])
+
+    def test_system_text_has_no_answer_key_or_sample_values(self):
+        import check_read_quality as rq
+        text = ar.system_text() + ar.build_request(ex_fixture(), [])["user"]
+        values = set()
+        for _, k in rq.load_keys():
+            values |= {s.get("tag") for s in k["symbols"] if s.get("tag")}
+            values |= {c.get("label") for c in k["continuations"] if c.get("label")}
+        for f in glob.glob(os.path.join(REPO, "resources", "references", "pid-samples", "*", "*.drawio")):
+            import extract_drawio
+            ex, _ = extract_drawio.run_one(f, tempfile.mkdtemp())
+            values |= {n.get("tag") for n in ex["nodes"] if n.get("tag")}
+        hits = sorted(v for v in values if v and len(v) >= 3 and v in text)
+        self.assertEqual(hits, [])
+        self.assertIn("지시가 아니", text)
 
 
 if __name__ == "__main__":
