@@ -34,9 +34,25 @@ class SheetConfirmFlowTest(W.ShellBase):
         with open(path, encoding="utf-8") as fh:
             original = fh.read()
         name = self.name
-        self.addCleanup(lambda: open(path, "w", encoding="utf-8").write(original))
-        self.addCleanup(lambda: os.path.exists(cf.store_path(name)) and os.remove(cf.store_path(name)))
+        self.addCleanup(self.restore, path, original)
+        self.addCleanup(self.remove_record, cf.store_path(name))
         return path
+
+    @staticmethod
+    def restore(path, text):
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    @staticmethod
+    def remove_record(path):
+        """확정 기록을 지운다. 창이 닫히는 중이면 Windows가 잠시 파일을 붙들고 있어 몇 번 다시 해 본다."""
+        for _ in range(30):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+                return
+            except PermissionError:
+                pump(0.1)
 
     def open_sheet(self, win, gid=None):
         gid = gid or self.gid
@@ -224,6 +240,17 @@ class AiEstimateFlowTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: "예상 호출" in self.text(win), 15), self.text(win)[-300:])
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.row .chip.ai').length") or 0) >= 1, 10), "도면 행마다 호출 수 칩")
         win.engine.dispatch("extract.set_ai_review", {"enabled": False}, project=win.engine.project_id(), via_web=True)
+
+
+class TitleblockLinkFlowTest(W.ShellBase):
+    def test_a_drawing_row_opens_the_titleblock_panel_for_that_sheet(self):
+        win = self.window()
+        self.js(win, "window.__hz.store.set({panel: 'drawings'})")
+        pump(0.5)
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll(\"button[aria-label$=' 표제란']\").length") or 0) >= 2, 10), "도면 행마다 표제란 단추")
+        self.assertTrue(self.click(win, "button[aria-label$=' 표제란']"))
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "titleblock", 10))
+        self.assertTrue(wait_for(lambda: "표제란" in self.text(win), 10))
 
 
 if __name__ == "__main__":

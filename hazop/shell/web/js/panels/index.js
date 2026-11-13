@@ -9,6 +9,7 @@ import { ResultsPanel } from "./results.js";
 import { IePanel } from "./ie.js";
 import { KgPanel } from "./kg.js";
 import { DocsPanel } from "./docs.js";
+import { TitleblockPanel } from "./titleblock.js";
 import { AiReviewPanel } from "./aireview.js";
 import { ActionLogPanel } from "./actionlog.js";
 import { SettingsPanel } from "./settings.js";
@@ -21,6 +22,7 @@ export const PANELS = [
   { name: "ie", icon: "route", label: "초기사건", key: "4", component: IePanel, css: "ie.css" },
   { name: "kg", icon: "topology-star-3", label: "지식그래프", key: "5", component: KgPanel },
   { name: "docs", icon: "file-text", label: "설계 문서", key: "6", component: DocsPanel },
+  { name: "titleblock", icon: "file-text", label: "표제란", component: TitleblockPanel, css: "titleblock.css" },
   { name: "aireview", icon: "sparkles", label: "AI 검토", key: "7", component: AiReviewPanel, css: "aireview.css" },
   { name: "actionlog", icon: "file-text", label: "AI 실행 기록", component: ActionLogPanel, css: "actionlog.css", place: "bottom" },
   { name: "settings", icon: "settings", label: "설정", component: SettingsPanel, css: "settings.css", place: "bottom" },

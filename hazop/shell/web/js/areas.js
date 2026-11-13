@@ -7,6 +7,7 @@ import { clean } from "./canvas/clean_ui.js";
 import * as SC from "./sheet_confirm.js";
 import { reset as resetActionLog } from "./panels/actionlog.js";
 import { reset as resetAiReview } from "./panels/aireview_state.js";
+import { reset as resetTitleblock } from "./panels/titleblock.js";
 
 const EMPTY_NODES = { available: false, set_rev: 0, nodes: [], batches: [], outside: { count: 0, total: 0 }, stale: false, read_only: null, pending_ai: 0 };
 
@@ -16,6 +17,7 @@ export function resetAreas() {
   SC.reset();
   resetActionLog();
   resetAiReview();
+  resetTitleblock();
   R.reset();
   I.reset();
   N.refresh();

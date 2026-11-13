@@ -6,6 +6,7 @@ import { cmd, onChanged, read } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice, Switch } from "../ui/parts.js";
 import { SourceConflicts } from "./drawings_sources.js";
+import { focusSheet as openTitleblock } from "./titleblock.js";
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
@@ -106,6 +107,7 @@ export function DrawingsPanel({ onOpen, onClose }) {
             <div class="main"><b>${d.drawing_number || d.name}</b><span>${d.title || "표제란 확인 전"}</span></div>
             ${d.unknowns ? html`<${Chip} kind="warn" title="추출에서 읽지 못한 항목">미확인 ${d.unknowns}<//>` : html`<${Chip} kind="ok" icon="check">읽음<//>`}
             ${estOf(d.graph_id) ? html`<${Chip} kind="ai" title="AI 검토를 돌리면 이 도면에서 부를 호출 수(예상)">호출 ${estOf(d.graph_id).calls}<//>` : null}
+            <${Btn} sm=${true} kind="ghost" label=${(d.drawing_number || d.name) + " 표제란"} title=${d.title ? "표제란 확정·고치기" : "표제란을 확인해 도면 번호와 제목을 확정합니다"} onClick=${() => openTitleblock(d.graph_id)}>표제란<//>
             <${Btn} sm=${true} label=${(d.drawing_number || d.name) + " 열기"} onClick=${() => onOpen(d.graph_id)}>열기<//></div>`)}</div>`}</div>
       <${SourceConflicts} />
       <${DexpiExport} />
