@@ -33,3 +33,6 @@ textarea.textbox { resize: vertical; min-height: 64px; }
 .newnode .nn-h .btn { margin-left: auto; }
 .selbar kbd, .newnode kbd, .ndetail kbd { margin-left: 4px; font-size: 10.5px; color: inherit; background: transparent; border-color: currentColor; opacity: .8; }
 .selbar { flex-wrap: wrap; max-width: calc(100% - 2 * var(--sp-4)); white-space: normal; }
+
+/* 패널 본문은 세로 flex라 목록·카드가 내용보다 작게 줄지 않게 한다 */
+.panel-b > .list, .panel-b > .card, .panel-b > .notice, .panel-b > .acts-row { flex: none; }
