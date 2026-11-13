@@ -150,10 +150,45 @@ Segment = Union[Kept, Excluded]
 
 # ---------------------------------------------------------------- 공개 함수
 
-def cut(graph: Mapping, exclude_sheets: Iterable[str] = ()) -> tuple[Segment, ...]:
+# 크기 조절(검토구간 규격 §7.1). 경계가 되는 몫·kind와 구성요소 예산·합치기 상한.
+COARSE_VESSELS = frozenset({"reactor_vessel", "steam_generator", "pressurizer", "tank", "condenser"})
+FINE_VALVE_WORDS = ("control", "relief", "safety")
+GRANULARITY = {"coarse": (80, 120), "normal": (BUDGET, MERGE_CAP), "fine": (20, 30)}
+
+
+@dataclass(frozen=True)
+class Params:
+    """cut의 매개변수. 기본값(granularity=None)은 0.1 제안기와 같은 규칙(용기류만 경계, 예산 40·상한 60)이다.
+    granularity는 coarse·normal·fine(§7.1). extra_boundaries는 경계로 볼 구성요소, cut_at은 경로를 끊을 구성요소
+    (그 구성요소를 경계로 둠 [추론: 끊는 자리를 혼자 남기는 것이 가장 단순한 끊기])."""
+    granularity: str | None = None
+    extra_boundaries: frozenset = frozenset()
+    cut_at: frozenset = frozenset()
+
+    def sizes(self):
+        return GRANULARITY[self.granularity] if self.granularity else (BUDGET, MERGE_CAP)
+
+    def is_boundary(self, node: Mapping, part: Part) -> bool:
+        eid = node["entity_id"]
+        if eid in self.extra_boundaries or eid in self.cut_at:
+            return True
+        g = self.granularity
+        if g is None:
+            return TRAITS[part].boundary
+        kind = node.get("kind") or ""
+        if g == "coarse":
+            return part is Part.VESSEL and kind in COARSE_VESSELS
+        if part is Part.VESSEL or kind in ("turbine", "compressor"):
+            return True
+        return g == "fine" and (part in (Part.PUMP, Part.FILTER) or (
+            part is Part.VALVE and any(w in kind for w in FINE_VALVE_WORDS)))
+
+
+def cut(graph: Mapping, exclude_sheets: Iterable[str] = (), params: Params | None = None) -> tuple[Segment, ...]:
     """그래프를 구간으로 나눈다. 순서: Kept(머리 조각 순, '기타'는 Kept 맨 뒤) → Excluded((도면, 규칙) 순).
-    exclude_sheets는 사람이 '구간 분석에서 뺌'으로 표시한 도면 graph_id(R0). 그래프에 없는 ID는 무시한다."""
-    ix = _index(graph)
+    exclude_sheets는 사람이 '구간 분석에서 뺌'으로 표시한 도면 graph_id(R0). 그래프에 없는 ID는 무시한다.
+    params(Params)를 주면 경계·예산을 바꾼다(AI 구간 도구 make_candidates의 크기 조절)."""
+    ix = _index(graph, params or Params())
     pieces = _pieces(ix, _cores(ix))
     segs = _screen(ix, pieces, frozenset(exclude_sheets))
     _check(ix, segs)
@@ -187,6 +222,9 @@ class _Index:
     links: Mapping[str, tuple[str, ...]]
     sheet: Mapping[str, str]
     drawing: Mapping[str, str]
+    bound: frozenset = frozenset()       # 경계 구성요소(Params.is_boundary)
+    budget: int = BUDGET
+    merge_cap: int = MERGE_CAP
 
 
 def _adjacency(graph, kinds):
@@ -202,14 +240,20 @@ def _adjacency(graph, kinds):
     return {k: tuple(sorted(v)) for k, v in adj.items()}
 
 
-def _index(graph):
+def _index(graph, params=None):
+    params = params or Params()
     nodes = {n["entity_id"]: n for n in graph.get("nodes", [])}
     gid = graph.get("graph_id") or ""
     drawing = {s["graph_id"]: s.get("drawing_number") or s["graph_id"] for s in graph.get("sheets") or []}
     drawing.setdefault(gid, (graph.get("source") or {}).get("drawing_number") or gid)
-    return _Index(nodes=nodes, part={e: part_of(n) for e, n in nodes.items()},
+    part = {e: part_of(n) for e, n in nodes.items()}
+    budget, cap = params.sizes()
+    return _Index(nodes=nodes, part=part,
                   phys=_adjacency(graph, PHYSICAL_EDGES), links=_adjacency(graph, PHYSICAL_EDGES + INSTRUMENT_EDGES),
-                  sheet={e: n.get("sheet") or gid for e, n in nodes.items()}, drawing=drawing)
+                  sheet={e: n.get("sheet") or gid for e, n in nodes.items()}, drawing=drawing,
+                  bound=frozenset(e for e, n in nodes.items() if part[e] is not Part.INSTRUMENT
+                                  and params.is_boundary(n, part[e])),
+                  budget=budget, merge_cap=cap)
 
 
 def _comps(ids, adj):
@@ -266,7 +310,7 @@ def _path_name(core, ix):
     lines = sorted({nodes[e].get("line_no") for e in core if nodes[e].get("line_no")})
     names = lines or sorted({nodes[e]["tag"] for e in core if nodes[e].get("tag")}) or [core[0]]
     name = "배관 " + names[0] + (" 외 %d" % (len(names) - 1) if len(names) > 1 else "")
-    bounds = sorted({_label(nodes[n]) for e in core for n in ix.phys.get(e, ()) if TRAITS[ix.part[n]].boundary})
+    bounds = sorted({_label(nodes[n]) for e in core for n in ix.phys.get(e, ()) if n in ix.bound})
     if bounds:
         name += " (%s)" % "·".join(bounds[:2] + (["외 %d" % (len(bounds) - 2)] if len(bounds) > 2 else []))
     return name
@@ -303,13 +347,13 @@ def _split_big(core, ix):
     junction = {e for e in cs if sum(1 for x in phys.get(e, ()) if x in cs) >= 3}
     chains = []
     for c in _comps(cs - junction, phys) + [[j] for j in sorted(junction)]:
-        if len(c) <= BUDGET:
+        if len(c) <= ix.budget:
             chains.append(c)
             continue
         cset = set(c)
         ends = [e for e in c if sum(1 for x in phys.get(e, ()) if x in cset) <= 1]
         order = _walk((ends or c)[0], phys, cset)
-        chains += [order[k:k + BUDGET] for k in range(0, len(order), BUDGET)]
+        chains += [order[k:k + ix.budget] for k in range(0, len(order), ix.budget)]
     owner = {e: i for i, c in enumerate(chains) for e in c}
     cadj = {i: set() for i in range(len(chains))}
     for e in cs:
@@ -324,7 +368,7 @@ def _split_big(core, ix):
         done.add(start)
         frontier = cadj[start] - done
         while frontier:
-            fit = sorted((j for j in frontier if size + len(chains[j]) <= BUDGET), key=key)
+            fit = sorted((j for j in frontier if size + len(chains[j]) <= ix.budget), key=key)
             if not fit:
                 break
             j = fit[0]
@@ -341,14 +385,15 @@ def _cores(ix):
     nodes, part = ix.nodes, ix.part
     out = []
     for eid in sorted(nodes):
-        if TRAITS[part[eid]].boundary:
+        if eid in ix.bound:
             n = nodes[eid]
-            out.append(((eid,), _label(n), "용기류 경계: %s(%s)" % (_label(n), n.get("kind") or "-")))
-    path = {e for e in nodes if part[e] is not Part.INSTRUMENT and not TRAITS[part[e]].boundary}
+            what = "용기류 경계" if part[eid] is Part.VESSEL else "주요 장비 경계"
+            out.append(((eid,), _label(n), "%s: %s(%s)" % (what, _label(n), n.get("kind") or "-")))
+    path = {e for e in nodes if part[e] is not Part.INSTRUMENT and e not in ix.bound}
     for comp in _comps(path, ix.phys):
         chunks = []
         for c in _grow_by_active(comp, ix):
-            chunks += [(c, "big")] if len(c) <= BUDGET else [(s, "budget") for s in _split_big(c, ix)]
+            chunks += [(c, "big")] if len(c) <= ix.budget else [(s, "budget") for s in _split_big(c, ix)]
         for i, (c, _how) in enumerate(chunks):
             weighted = sum(TRAITS[part[e]].weighted for e in c)
             name = _path_name(c, ix)
@@ -357,7 +402,7 @@ def _cores(ix):
             else:
                 name = "%s (%d/%d)" % (name, i + 1, len(chunks))
                 basis = ("배관 경로를 분할 가중 요소 %d개·기본 구성요소 %d개 안에서 연결을 지키며 나눔 %d/%d(분할 가중 요소 %d개)"
-                         % (MAX_ACTIVE, BUDGET, i + 1, len(chunks), weighted))
+                         % (MAX_ACTIVE, ix.budget, i + 1, len(chunks), weighted))
             out.append((tuple(c), name, basis))
     return out
 
@@ -482,7 +527,7 @@ def _screen(ix, pieces, exclude_sheets):
             if i in owner:
                 continue
             cands = Counter(owner[j] for j in nb[i] if j in owner)
-            fits = [o for o in cands if size[o] + size[i] <= MERGE_CAP]
+            fits = [o for o in cands if size[o] + size[i] <= ix.merge_cap]
             if not fits:
                 continue
             o = sorted(fits, key=lambda o: (-_upstream(ix, pieces[i].members, region[o]), -cands[o], -size[o], o))[0]
@@ -520,7 +565,7 @@ def _screen(ix, pieces, exclude_sheets):
             absorbed[head] = []
             frontier = {j for j in nb[head] if j in left}
             while frontier:
-                ok = sorted(j for j in frontier if size[head] + size[j] <= MERGE_CAP)
+                ok = sorted(j for j in frontier if size[head] + size[j] <= ix.merge_cap)
                 if not ok:
                     break
                 j = ok[0]

@@ -5,17 +5,34 @@
 - undo_batch: 묶음 하나를 되돌린다. op마다 '구간 삭제'(add 되돌림)·'편집 복원'(edit 되돌림)·'되살림'(remove 되돌림)을
   구분하고, 그 사이 바뀐 구간·확정 구간·사람 판정이 있는 칸·AI가 사람 묶음을 되돌리는 경우를 막는다. 되돌리기도 새 묶음이다.
 - 두 함수 모두 ⑤ 결과를 받는다(병합·삭제의 칸 처리와 되돌리기의 칸 검사). 결과가 없으면 None을 넘긴다(칸이 없는 상태).
-- AI가 부르는 읽기 도구(find_major_equipment·make_candidates·outside_components)는 N3에서 이 파일에 더한다.
+- AI가 부르는 읽기 도구(§6.2, 채팅 규격 §3.2): find_major_equipment·make_candidates·outside_components. 집합을 바꾸지
+  않고, 결과에 상한과 쪽 나누기(cursor)가 있다. make_candidates는 분할 스크립트(segment.cut)를 크기 매개변수(§7)로 돌린
+  후보이고, cand_id는 (그래프 판, 매개변수 지문, 구성요소 집합)의 해시라 같은 입력이면 같다. 같은 (판, 매개변수, 범위)면
+  분할 결과를 캐시해 쪽을 넘길 때 다시 자르지 않는다.
+- 구간 만들기의 누적 상한(채팅 규격 §4.5): 사람이 아직 확인하지 않은 AI 구간(pending_ai)과 이번 요청의 새 구간을 합쳐
+  5개까지는 바로 적용(대표 단계). 넘으면 '나머지' 단계로, 대표 구간을 만든 메시지와 다른 새 사용자 메시지(user_turn)에서
+  사람이 확인 상자를 눌렀을 때(confirmed_rest)만 한 요청 30개까지 적용하고, 그때 앞의 AI 묶음은 확인된 것(human_seen)이 된다.
+  요청 하나는 묶음 하나다(같은 request_id로 두 번 적용하지 않음).
 """
 
 import copy
+import hashlib
+import json
 
-from hazop.study import nodes
+from hazop.study import nodes, segment
 from hazop.study import results as res
 from hazop.study.node_review import TAG_LIKE, drawing_tags
 
-STAGE_LIMITS = {"representative": 5, "rest": 30, None: 5}
+REPRESENTATIVE_LIMIT = 5
+REST_LIMIT = 30
+CANDIDATE_LIMIT = 30       # make_candidates 한 쪽 상한
+LIST_LIMIT = 200           # find_major_equipment·outside_components 한 쪽 상한
+GRANULARITIES = ("coarse", "normal", "fine")
+SKIP_OVERLAP = 0.8         # skip_existing: 후보 구성요소의 80%를 넘게 품은 구간이 있으면 뺌
+GRADE_ORDER = {"주요": 0, "일반": 1, "낮음": 2, None: 3}
 OPS = ("add", "edit", "merge", "split", "remove")
+_CACHE = {}
+_CACHE_SIZE = 8
 
 
 class Refused(ValueError):
@@ -24,6 +41,239 @@ class Refused(ValueError):
     def __init__(self, reasons):
         self.reasons = list(reasons)
         super().__init__("; ".join("%s: %s" % r for r in self.reasons))
+
+
+# ---------------------------------------------------------------- 읽기 도구
+
+def clear_cache():
+    _CACHE.clear()
+
+
+def _page(items, limit, cursor, cap):
+    limit = max(1, min(int(limit or cap), cap))
+    start = int(cursor or 0)
+    chunk = items[start:start + limit]
+    return chunk, (str(start + limit) if start + limit < len(items) else None)
+
+
+def _params(granularity, extra_boundaries=(), cut_at=()):
+    if granularity not in GRANULARITIES:
+        raise ValueError("granularity는 %s 가운데 하나" % "·".join(GRANULARITIES))
+    return segment.Params(granularity=granularity, extra_boundaries=frozenset(extra_boundaries or ()),
+                          cut_at=frozenset(cut_at or ()))
+
+
+def _digest(obj):
+    return hashlib.sha256(json.dumps(obj, ensure_ascii=False, sort_keys=True, default=sorted).encode("utf-8")).hexdigest()
+
+
+def _drawing_of(pg):
+    by_sheet = {s["graph_id"]: s.get("drawing_number") or s["graph_id"] for s in pg.get("sheets") or []}
+    fallback = (pg.get("source") or {}).get("drawing_number") or pg.get("graph_id")
+    return lambda n: by_sheet.get(n.get("sheet")) or (fallback if not by_sheet else None)
+
+
+def scope_ids(pg, node_set, scope):
+    """scope(§6.2)가 고르는 구성요소 ID 집합. None이면 None(전체). 모르는 키면 ValueError.
+    {"drawings": [도면번호]}, {"system": 태그·배관 번호 접두}, {"around": entity_id, "hops": n}, {"node_ids": [..]}."""
+    if not scope:
+        return None
+    if not isinstance(scope, dict) or len(scope) - ("hops" in scope) != 1:
+        raise ValueError("scope는 drawings·system·around(+hops)·node_ids 가운데 하나")
+    by_id = {n["entity_id"]: n for n in pg["nodes"]}
+    if "drawings" in scope:
+        want = {project_key(d) for d in scope["drawings"]}
+        draw = _drawing_of(pg)
+        return {e for e, n in by_id.items() if project_key(draw(n)) in want}
+    if "system" in scope:
+        head = str(scope["system"]).strip().upper()
+        return {e for e, n in by_id.items()
+                if any(str(n.get(k) or "").upper().startswith(head) for k in ("tag", "line_no"))}
+    if "around" in scope:
+        start, hops = scope["around"], int(scope.get("hops") or 2)
+        if start not in by_id:
+            raise ValueError("그래프에 없는 구성요소: %s" % start)
+        adj = {}
+        for e in pg.get("edges", []):
+            ends = e.get("nodes") or []
+            if len(ends) == 2:
+                adj.setdefault(ends[0], set()).add(ends[1])
+                adj.setdefault(ends[1], set()).add(ends[0])
+        seen, frontier = {start}, {start}
+        for _ in range(max(0, hops)):
+            frontier = {y for x in frontier for y in adj.get(x, ())} - seen
+            seen |= frontier
+        return seen
+    if "node_ids" in scope:
+        want = set(scope["node_ids"])
+        return {m for n in (node_set or {}).get("nodes") or [] if n["node_id"] in want for m in n["members"]}
+    raise ValueError("모르는 scope: %s" % ", ".join(sorted(scope)))
+
+
+def project_key(text):
+    from hazop.study.nodes import drawing_key
+    return drawing_key(text)
+
+
+def _subgraph(pg, ids):
+    if ids is None:
+        return pg
+    return dict(pg, nodes=[n for n in pg["nodes"] if n["entity_id"] in ids],
+                edges=[e for e in pg.get("edges", []) if all(x in ids for x in e.get("nodes") or [])])
+
+
+def _item(n, draw):
+    return {"entity_id": n["entity_id"], "tag": n.get("tag") or None, "kind": n.get("kind"), "drawing": draw(n)}
+
+
+def find_major_equipment(pg, scope=None, granularity="normal", extra_boundaries=(), limit=100, cursor=None):
+    """주요 장비(§7.1). {"items": [{entity_id, tag, kind, part, drawing}], "unrecognized_equipment": int,
+    "total", "truncated", "next_cursor"}. unrecognized_equipment는 기기 분류인데 kind를 몰라 경계가 안 되는 수."""
+    params = _params(granularity, extra_boundaries)
+    ids = scope_ids(pg, None, scope)
+    draw = _drawing_of(pg)
+    found, unknown = [], 0
+    for n in sorted(pg["nodes"], key=lambda n: n["entity_id"]):
+        if ids is not None and n["entity_id"] not in ids:
+            continue
+        part = segment.part_of(n)
+        if part is segment.Part.INSTRUMENT:
+            continue
+        if params.is_boundary(n, part):
+            found.append(dict(_item(n, draw), part=part.value))
+        elif n.get("category") == "equipment" and (n.get("kind") or "") not in segment.EQUIPMENT_PART:
+            unknown += 1
+    items, nxt = _page(found, limit, cursor, LIST_LIMIT)
+    return {"items": items, "unrecognized_equipment": unknown, "total": len(found), "truncated": nxt is not None,
+            "next_cursor": nxt}
+
+
+def _all_candidates(pg, scope, params):
+    """[후보(겹침·건너뛰기 전)]와 params_digest. 같은 (판, 매개변수, 범위)면 캐시."""
+    sheets, _problem = nodes.exclusion_for(pg)
+    digest = _digest({"granularity": params.granularity, "extra": sorted(params.extra_boundaries),
+                      "cut_at": sorted(params.cut_at), "scope": scope, "excluded": sorted(sheets)})[:16]
+    key = (pg.get("graph_id"), pg.get("graph_version"), digest)
+    if key in _CACHE:
+        return _CACHE[key], digest
+    ids = scope_ids(pg, None, scope) if not (scope or {}).get("node_ids") else None
+    sub = _subgraph(pg, ids)
+    by_id = {n["entity_id"]: n for n in pg["nodes"]}
+    draw = _drawing_of(pg)
+    bound = {e for e, n in by_id.items() if segment.part_of(n) is not segment.Part.INSTRUMENT
+             and params.is_boundary(n, segment.part_of(n))}
+    adj = {}
+    for e in pg.get("edges", []):
+        if e.get("kind") in segment.PHYSICAL_EDGES and len(e.get("nodes") or []) == 2:
+            a, b = e["nodes"]
+            adj.setdefault(a, set()).add(b)
+            adj.setdefault(b, set()).add(a)
+    out = []
+    for s in segment.cut(sub, sheets, params):
+        if not isinstance(s, segment.Kept):
+            continue
+        members = list(s.members)
+        majors = sorted({x for m in members for x in ({m} | adj.get(m, set())) if x in bound},
+                        key=lambda x: (by_id[x].get("tag") or "", x))
+        ends = [{"tag": by_id[x].get("tag"), "entity_id": x} for x in majors]
+        parts = [segment.part_of(by_id[m]) for m in members]
+        out.append({
+            "cand_id": "c-" + _digest([pg.get("graph_version"), digest, sorted(members)])[:16],
+            "member_count": len(members), "members": members,
+            "start": ends[0] if ends else None, "end": ends[-1] if ends else None,
+            "majors": [by_id[x].get("tag") or by_id[x].get("kind") for x in majors],
+            "valves": sum(p is segment.Part.VALVE for p in parts),
+            "instruments": sum(p is segment.Part.INSTRUMENT for p in parts),
+            "drawings": sorted({draw(by_id[m]) for m in members if draw(by_id[m])}),
+            "grade": s.grade, "score": s.score, "basis": s.head.basis, "name": s.head.name})
+    out.sort(key=lambda c: (GRADE_ORDER.get(c["grade"], 3), -(c["score"] or 0), c["members"][0]))
+    if len(_CACHE) >= _CACHE_SIZE:
+        _CACHE.pop(next(iter(_CACHE)))
+    _CACHE[key] = out
+    return out, digest
+
+
+def _candidate_list(pg, node_set, scope, params, skip_existing):
+    every, digest = _all_candidates(pg, scope, params)
+    want = scope_ids(pg, node_set, scope) if (scope or {}).get("node_ids") else None
+    existing = [(n["node_id"], set(n["members"])) for n in (node_set or {}).get("nodes") or []]
+    out = []
+    for c in every:
+        if want is not None and not set(c["members"]) <= want:
+            continue
+        mine = set(c["members"])
+        overlaps = [{"node_id": nid, "shared": len(mine & ms)} for nid, ms in existing if mine & ms]
+        if skip_existing and any(o["shared"] / len(mine) > SKIP_OVERLAP for o in overlaps):
+            continue
+        out.append(dict(c, overlaps=overlaps))
+    return out, digest
+
+
+def make_candidates(pg, node_set, scope=None, granularity="normal", extra_boundaries=(), cut_at=(),
+                    skip_existing=True, limit=CANDIDATE_LIMIT, cursor=None):
+    """주요 장비에서 주요 장비까지 후보 구간(§6.2). 등급 순(주요 → 일반 → 낮음), 같은 등급은 점수 순.
+    {"candidates": [{cand_id, member_count, start, end, majors, valves, instruments, drawings, grade, score, overlaps,
+    basis}], "outside": {"count", "sources"}, "total", "next_cursor", "params_digest", "set_rev"}."""
+    params = _params(granularity, extra_boundaries, cut_at)
+    cands, digest = _candidate_list(pg, node_set, scope, params, skip_existing)
+    page, nxt = _page(cands, limit, cursor, CANDIDATE_LIMIT)
+    keys = ("cand_id", "member_count", "start", "end", "majors", "valves", "instruments", "drawings", "grade",
+            "score", "overlaps", "basis")
+    outside = outside_components(pg, node_set, scope, only_sources=False, limit=1)
+    return {"candidates": [{k: c[k] for k in keys} for c in page],
+            "outside": {"count": outside["count"], "sources": outside["sources"]}, "total": len(cands),
+            "next_cursor": nxt, "params_digest": digest, "set_rev": (node_set or {}).get("set_rev")}
+
+
+def resolve_candidate(pg, node_set, cand_id, params=None):
+    """cand_id의 구성요소와 후보(이름·basis). 캐시에 같은 판의 후보가 있으면 그것, 없으면 params로 다시 만든다.
+    찾지 못하면 None(그래프 판이 바뀌었거나 매개변수가 다름)."""
+    for (gid, ver, _d), cands in list(_CACHE.items()):
+        if gid == pg.get("graph_id") and ver == pg.get("graph_version"):
+            hit = next((c for c in cands if c["cand_id"] == cand_id), None)
+            if hit is not None:
+                return hit
+    if params:
+        p = _params(params.get("granularity", "normal"), params.get("extra_boundaries"), params.get("cut_at"))
+        cands, _d = _all_candidates(pg, params.get("scope"), p)
+        return next((c for c in cands if c["cand_id"] == cand_id), None)
+    return None
+
+
+def outside_components(pg, node_set, scope=None, only_sources=True, limit=100, cursor=None):
+    """구간 밖 구성요소(어느 구간에도 들지 않음). {"items": [{entity_id, tag, kind, drawing}], "count", "sources",
+    "next_cursor"}. sources는 그 가운데 편차원(기기·밸브·인라인·계기) 수."""
+    ids = scope_ids(pg, node_set, scope)
+    inside = {m for n in (node_set or {}).get("nodes") or [] for m in n["members"]}
+    draw = _drawing_of(pg)
+    left = [n for n in sorted(pg["nodes"], key=lambda n: n["entity_id"])
+            if n["entity_id"] not in inside and (ids is None or n["entity_id"] in ids)]
+    sources = [n for n in left if segment.is_source(n)]
+    shown = sources if only_sources else left
+    items, nxt = _page([_item(n, draw) for n in shown], limit, cursor, LIST_LIMIT)
+    return {"items": items, "count": len(shown), "sources": len(sources), "next_cursor": nxt}
+
+
+# ---------------------------------------------------------------- 누적 상한(채팅 규격 §4.5)
+
+def pending_ai(node_set):
+    """사람이 아직 확인하지 않은 AI 구간 수: origin ai·적용됨이고, 지금 구간을 만든 묶음이 AI 묶음이며 human_seen이 아님.
+    사람이 고치면 구간의 batch_id가 사람 묶음으로 바뀌어 빠지고, 확정하면 적용됨이 아니라 빠진다."""
+    batches = {b["batch_id"]: b for b in node_set.get("batches") or []}
+    out = 0
+    for n in node_set["nodes"]:
+        b = batches.get(n.get("batch_id"))
+        if n.get("origin") == "ai" and nodes.node_state(n) == "applied" and b and b.get("origin") == "ai" \
+                and not b.get("human_seen"):
+            out += 1
+    return out
+
+
+def _pending_turns(node_set):
+    batches = {b["batch_id"]: b for b in node_set.get("batches") or []}
+    return {batches[n["batch_id"]].get("user_turn") for n in node_set["nodes"]
+            if n.get("origin") == "ai" and nodes.node_state(n) == "applied" and n.get("batch_id") in batches
+            and batches[n["batch_id"]].get("origin") == "ai" and not batches[n["batch_id"]].get("human_seen")}
 
 
 def _node(ns, nid):
@@ -147,18 +397,25 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
                 why.append((label, bad))
                 continue
         if kind == "add":
+            cand = None
             if op.get("cand_id"):
-                why.append((label, "후보 ID(cand_id)로 적용하는 길은 아직 없음(N3 도구 뒤). members로 적용"))
-                continue
-            members = sorted(set(op.get("members") or []))
+                cand = resolve_candidate(pg, node_set, op["cand_id"], op.get("params") or request.get("params"))
+                if cand is None:
+                    why.append((label, "후보 %s를 다시 만들 수 없음(그래프 판이나 매개변수가 바뀜. 후보를 다시 찾을 것)"
+                                % op["cand_id"]))
+                    continue
+            members = sorted(set(cand["members"] if cand else op.get("members") or []))
             if not members_ok(label, members):
                 continue
             name = (op.get("name") or "").strip()
             if not name:
                 why.append((label, "이름 없음"))
                 continue
-            node = dict({"node_id": nodes._next_id(out), "name": name, "basis": op.get("basis"), "members": members},
+            node = dict({"node_id": nodes._next_id(out), "name": name,
+                         "basis": op.get("basis") or (cand or {}).get("basis"), "members": members},
                         **nodes._v2_fields(origin))
+            if cand:
+                node["cand_id"] = op["cand_id"]
             if (op.get("design_intent") or "").strip():
                 node["design_intent"] = {"text": op["design_intent"].strip(), "by": origin}
             out["nodes"].append(node)
@@ -230,11 +487,24 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
             elif out_res is not None and _cells_of(out_res, n["node_id"]):
                 out_res = dict(out_res, cells=[c for c in out_res["cells"] if c.get("node_id") != n["node_id"]])
             out["nodes"] = [x for x in out["nodes"] if x is not n]
-    limit = STAGE_LIMITS.get(request.get("stage"), STAGE_LIMITS[None])
     adds = len({n["node_id"] for n in out["nodes"]} - {n["node_id"] for n in node_set["nodes"]})  # 분할로 생긴 구간도 셈
-    if ai and adds > limit:
-        why.append(("요청", "한 요청에서 만들 수 있는 구간은 %d개(%s 단계), 요청은 %d개" % (limit, request.get("stage")
-                                                                         or "대표", adds)))
+    seen_rest = False
+    if ai:
+        rid = request.get("request_id")
+        if rid and any(b.get("request_id") == rid for b in node_set.get("batches") or []):
+            why.append(("요청", "요청 하나는 묶음 하나(같은 요청 %s로 이미 적용함)" % rid))
+        pending = pending_ai(node_set)
+        if adds and pending + adds > REPRESENTATIVE_LIMIT:
+            turn = request.get("user_turn")
+            if not request.get("confirmed_rest"):
+                why.append(("요청", "확인하지 않은 AI 구간 %d개 + 이번 %d개가 %d개를 넘음: 사람이 확인 상자를 눌러야 함"
+                            % (pending, adds, REPRESENTATIVE_LIMIT)))
+            elif not turn or turn in _pending_turns(node_set):
+                why.append(("요청", "'나머지'는 대표 구간을 본 뒤의 새 사용자 메시지에서만 함(같은 메시지 안에서 이어 만들지 않음)"))
+            elif adds > REST_LIMIT:
+                why.append(("요청", "한 요청에서 만들 수 있는 구간은 %d개, 요청은 %d개" % (REST_LIMIT, adds)))
+            else:
+                seen_rest = True
     seen = {}
     for n in out["nodes"]:
         key = frozenset(n["members"])
@@ -243,6 +513,10 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
         seen.setdefault(key, n["node_id"])
     if why:
         raise Refused(why)
+    if seen_rest:  # 확인 상자를 눌렀으므로 앞의 AI 묶음은 사람이 본 것
+        for b in out.get("batches") or []:
+            if b.get("origin") == "ai" and not b.get("human_seen"):
+                b["human_seen"] = {"at": at, "by": request.get("confirmed_by") or "확인 상자"}
     out = nodes._record_batch(node_set, out, "apply", origin, at, request=request,
                               tool=request.get("tool"), model=request.get("model"))
     out["history"].append(nodes.store_io.history_row("apply", {"detail": {

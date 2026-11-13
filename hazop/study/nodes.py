@@ -294,7 +294,8 @@ def _record_batch(before, after, op, origin, at, request=None, tool=None, model=
     after.setdefault("batches", []).append({
         "batch_id": bid, "origin": origin, "at": at or now_utc(), "kind": op,
         "request_id": req.get("request_id"), "request_text": (req.get("request_text") or "")[:500] or None,
-        "stage": req.get("stage"), "tool": tool, "model": model, "ops": ops, "undone": None})
+        "stage": req.get("stage"), "user_turn": req.get("user_turn"), "tool": tool, "model": model, "ops": ops,
+        "undone": None})
     while len(after["batches"]) > BATCH_KEEP:
         old = after["batches"].pop(0)
         after["history"].append(store_io.history_row("batch_summarized", {"detail": {
