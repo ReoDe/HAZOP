@@ -257,7 +257,9 @@ class ItemBubbleFlowTest(W.ShellBase):
     def test_the_component_card_shows_the_korean_kind_name_first_and_the_english_one_small(self):
         win = self.window()
         gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
-        bubble = {"sheet": gid, "id": "x1", "tag": "RC-V001", "kind": "control_valve", "kind_label": "제어 밸브", "rect": {"x": 200, "y": 200, "w": 20, "h": 20}}
+        from hazop.shell import api
+        item = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"][0]["id"]      # 고치기가 읽을 수 있는 실제 구성요소
+        bubble = {"sheet": gid, "id": item, "tag": "RC-V001", "kind": "control_valve", "kind_label": "제어 밸브", "rect": {"x": 200, "y": 200, "w": 20, "h": 20}}
         self.js(win, "window.__hz.store.set({sheet: %s, panel: null, bubble: %s})" % (json.dumps(gid), json.dumps(bubble)))
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble') !== null") is True, 15))
         text = self.js(win, "document.querySelector('.bubble div').textContent")
@@ -268,6 +270,9 @@ class ItemBubbleFlowTest(W.ShellBase):
         self.js(win, "window.__hz.store.set({bubble: %s})" % json.dumps(dict(bubble, kind_label=None)))      # 사전에 없는 종류는 영문만
         self.assertTrue(wait_for(lambda: "제어 밸브" not in (self.js(win, "document.querySelector('.bubble div').textContent") or ""), 10))
         self.assertIn("control_valve", self.js(win, "document.querySelector('.bubble div').textContent"))
+        self.assertTrue(self.click(win, ".bubble button[aria-label='고치기']"), "말풍선에서 바로 고치기로 간다")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble') === null") is True, 10), "말풍선은 닫히고 고치기 카드로 넘어간다(카드 모양은 s-viewer의 시험이 본다)")
+        self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
 
 
 if __name__ == "__main__":
