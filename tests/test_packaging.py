@@ -393,7 +393,7 @@ class BuildSpecTest(unittest.TestCase):
         self.assertTrue(data)
         self.assertEqual({n for n, f in paths.FOLDERS.items()
                           if f.root == "resource" and any(s.startswith(paths.folder_rel(n) + "/") for s in data)},
-                         {"deviations", "risk-criteria", "patterns", "symbols"})
+                         {"deviations", "risk-criteria", "patterns", "symbols", "icons"})
         self.assertFalse([s for s in self.srcs if "__pycache__" in s])
 
     def test_spec_text(self):
@@ -1054,6 +1054,7 @@ REQUIRED_NOTICES = dict(
     + [("force-graph/d3-ease-LICENSE", "BSD-3-Clause"),
        ("force-graph/d3-scale-chromatic-LICENSE", "ISC AND Apache-2.0"),
        ("force-graph/Apache-2.0.txt", "Apache-2.0"),
+       ("tabler-icons/LICENSE", "MIT"),
        ("qt/LGPL-3.0.txt", "LGPL-3.0-only"),
        ("qt/GPL-3.0.txt", "GPL-3.0-only"),
        ("qt/LicenseRef-Qt-Commercial.txt", "LicenseRef-Qt-Commercial"),

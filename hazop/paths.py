@@ -300,6 +300,7 @@ FOLDERS = {
     "patterns": Folder("resource", ("resources", "library", "patterns")),
     "symbols": Folder("resource", ("resources", "library", "symbols")),
     "icons": Folder("resource", ("resources", "library", "icons")),  # 화면 아이콘(Tabler, hazop/app/icons.py)
+    "icons": Folder("resource", ("resources", "library", "icons")),  # 화면 아이콘(Tabler, hazop/app/icons.py)
     "references": Folder("repo", ("resources", "references")),
     "APR1400": Folder("repo", ("resources", "references", "APR1400_DCD")),
     "samples": Folder("repo", ("resources", "samples")),

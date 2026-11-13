@@ -146,6 +146,29 @@ def symbols_problems(bundle_dir):
     return ["기호 사전에 %s 견본이 없음(코드보다 옛 판 사전)" % shape for shape in missing]
 
 
+def icons_problems(bundle_dir, repo=REPO_ROOT):
+    """묶음 안 화면 아이콘 폴더(_internal 아래, 저장소와 같은 상대 위치)가 저장소의 manifest.json 목록과 바이트까지 같은지.
+    빠짐·다름·목록 밖 파일이 있으면 문제다(아이콘이 없으면 버튼이 빈 그림으로 뜬다). 문제 목록."""
+    import hashlib
+    src = os.path.join(repo, *paths.FOLDERS["icons"].rel, "tabler")
+    dest = paths.folder_in(os.path.join(bundle_dir, "_internal"), "icons", "tabler")
+    if not os.path.isdir(dest):
+        return ["묶음에 아이콘 폴더가 없음"]
+    with open(os.path.join(src, "manifest.json"), encoding="utf-8") as fh:
+        listed = json.load(fh)["icons"]
+    probs = []
+    for name, row in sorted(listed.items()):
+        p = os.path.join(dest, name + ".svg")
+        if not os.path.isfile(p):
+            probs.append("아이콘 빠짐: %s.svg" % name)
+            continue
+        with open(p, "rb") as fh:
+            if hashlib.sha256(fh.read()).hexdigest() != row["sha256"]:
+                probs.append("아이콘 바이트 다름: %s.svg" % name)
+    probs += ["목록 밖 아이콘: %s" % f for f in sorted(os.listdir(dest)) if f.endswith(".svg") and f[:-4] not in listed]
+    return probs
+
+
 QT_TRANSLATION_FILE = ("PySide6", "translations", "qtbase_ko.qm")  # _internal 아래
 
 
@@ -428,6 +451,7 @@ def steps(args, summary, run_root, out, repo_dirs):
                    has_check_exe=os.path.isfile(os.path.join(target, "HAZOP-check.exe")))
     summary["checks"]["licenses_problems"] = licenses_problems(target)
     summary["checks"]["symbols_problems"] = symbols_problems(target)
+    summary["checks"]["icons_problems"] = icons_problems(target)
     env = child_env(tmp)
     summary["child_path"] = env["PATH"]
     start = time.time()
@@ -540,6 +564,7 @@ def main(argv=None):
         and not checks.get("png_fresh_problems", ["미실행"])
         and not checks.get("licenses_problems", ["미실행"])
         and not checks.get("symbols_problems", ["미실행"])
+        and not checks.get("icons_problems", ["미실행"])
         and not checks.get("translation_problems", ["미실행"])
         and not checks.get("pdf_problems", ["미실행"])
         and checks.get("repo_unchanged") and checks.get("app_log_started") and checks.get("app_bad_option_rc2")

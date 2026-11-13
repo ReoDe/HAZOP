@@ -24,7 +24,7 @@ from PySide6.QtWebEngineCore import (QWebEnginePage, QWebEngineProfile, QWebEngi
                                      QWebEngineUrlRequestInterceptor)
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
-from hazop.app import tokens
+from hazop.app import icons, tokens
 
 ALLOWED_SCHEMES = frozenset({"file", "qrc", "data", "blob", "about"})
 MAX_MESSAGE_CHARS = 64 * 1024   # 웹 → Python 메시지 길이 상한(웹 내용은 신뢰하지 않음)
@@ -237,6 +237,7 @@ BRIDGE_JS = r"""
   "use strict";
   if (!window.qt || !window.qt.webChannelTransport || !window.QWebChannel) return;  // 단독 모드
   var CSS = %(css)s;
+  var ICONS = %(icons)s;  /* 화면 아이콘(hazop/app/icons.py svg_inline, 글자색을 따름) */
   new QWebChannel(qt.webChannelTransport, function (ch) {
     var b = ch.objects.bridge;
     function send(o) { b.fromWeb(JSON.stringify(o)); }
@@ -248,6 +249,11 @@ BRIDGE_JS = r"""
     }
     var st = document.createElement("style"); st.textContent = CSS; document.head.appendChild(st);
     document.body.classList.add("hz-embedded");
+    [["zout", "zoom-out"], ["zin", "zoom-in"], ["zfit", "arrows-maximize"]].forEach(function (p) {  // 확대·축소·맞춤 단추를 아이콘으로(이름은 title·aria-label 그대로)
+      var b = document.getElementById(p[0]); if (!b || !ICONS[p[1]]) return;
+      b.setAttribute("aria-label", b.getAttribute("title") || b.textContent);
+      b.innerHTML = ICONS[p[1]] + (p[0] === "zfit" ? '<span class="hz-ilabel">맞춤</span>' : "");
+    });
     var vp = document.getElementById("viewport");
     var legend = document.createElement("div"); legend.className = "hz-legend";
     // 범례는 줌·맞춤 버튼(#zoom) 바로 위 왼쪽에 둔다(design-system W10, D16). 항목 단위로만 줄을 바꾼다.
@@ -766,6 +772,8 @@ body.hz-segfocus #overlay .sym:not(.hz-seg-in), body.hz-segfocus #overlay .tagbo
 body.hz-segfocus #overlay .pipe-line:not(.hz-seg-in), body.hz-segfocus #graphsvg .gnode:not(.hz-seg-in),
 body.hz-segfocus #graphsvg .gedge:not(.hz-seg-in), body.hz-segfocus #graphsvg .glabel,
 body.hz-segfocus #taglabels span:not(.hz-seg-in), body.hz-segfocus .segchip:not(.active) { opacity: var(--hl-dim); }
+#zoom button svg { vertical-align: middle; }
+#zoom .hz-ilabel { margin-left: 4px; vertical-align: middle; }
 .hz-chip { cursor: pointer; opacity: 1 !important; }
 .hz-chip rect { fill: var(--card); stroke: var(--ui); }
 .hz-chip text { fill: var(--ui); font-weight: 700; }
@@ -798,8 +806,13 @@ body.hz-selmode #viewport { cursor: crosshair; }
 """
 
 
+WEB_ICONS = ("zoom-in", "zoom-out", "arrows-maximize")   # 뷰어 확대·축소·맞춤 단추에 넣는 아이콘
+
+
 def bridge_js():
-    return BRIDGE_JS % {"css": json.dumps(tokens.web_css() + VIEWER_CSS, ensure_ascii=False)}
+    web_icons = {n: icons.svg_inline(n, size=16) for n in WEB_ICONS}
+    return BRIDGE_JS % {"css": json.dumps(tokens.web_css() + VIEWER_CSS, ensure_ascii=False),
+                        "icons": json.dumps(web_icons, ensure_ascii=False)}
 
 
 class HazopWebView(QWebEngineView):

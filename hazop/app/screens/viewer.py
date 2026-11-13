@@ -13,14 +13,14 @@ EditSession(작업 중 ops·실행 취소/다시 실행)과 tool_pick(여러 번
 import uuid
 from dataclasses import dataclass, replace
 
-from PySide6.QtCore import QObject, Qt
+from PySide6.QtCore import QObject, QSize, Qt
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QFrame,
                                QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMessageBox, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from hazop import store_io
-from hazop.app import data, project_ctx, tokens
+from hazop.app import data, icons, project_ctx, tokens
 from hazop.app.widgets import VALIDATION_LABELS, Banner, Chip, empty_label, esc, kst_text
 from hazop.extract import corrections
 from hazop.extract.rules import KIND_CATEGORY
@@ -425,6 +425,18 @@ def notify(parent, title, text, warn=False):
     (QMessageBox.warning if warn else QMessageBox.information)(parent, title, text)
 
 
+# 편집 도구 → 아이콘 이름(resources/library/icons/tabler, 쓰는 곳 표는 그 폴더 README)
+TOOL_ICONS = {"select": "pointer", "add_node": "plus", "connect": "link", "endpoint": "map-pin", "path": "route"}
+
+
+def _ibtn(text, icon_name, color=None):
+    """아이콘과 글자가 함께 있는 단추. 글자는 그대로 두어 이름(접근성)과 시험이 바뀌지 않는다."""
+    b = QPushButton(text)
+    b.setIcon(icons.icon(icon_name, color=color, size=16))
+    b.setIconSize(QSize(16, 16))
+    return b
+
+
 def _section(text):
     lab = QLabel(text)
     lab.setObjectName("section")
@@ -537,7 +549,7 @@ class ViewerScreen(QWidget):
         bar.addWidget(self.chip_valid)
         bar.addWidget(self.chip_stats)
         bar.addStretch(1)
-        self.edit_btn = QPushButton("편집")
+        self.edit_btn = _ibtn("편집", "pencil")
         self.edit_btn.setCheckable(True)
         self.edit_btn.setObjectName("tool")
         self.edit_btn.toggled.connect(self.set_editing)
@@ -586,10 +598,10 @@ class ViewerScreen(QWidget):
         self.link_list.itemDoubleClicked.connect(lambda it: self.open_pair(it.data(Qt.UserRole)))
         v.addWidget(self.link_list, 1)
         row = QHBoxLayout()
-        self.pair_btn = QPushButton("짝 지정…")
+        self.pair_btn = _ibtn("짝 지정…", "link")
         self.pair_btn.setToolTip("고른 연결점의 짝을 다른 도면의 연결점에서 사람이 고릅니다")
         self.pair_btn.clicked.connect(lambda: self.open_pair())
-        self.unlink_btn = QPushButton("연결 끊기")
+        self.unlink_btn = _ibtn("연결 끊기", "link-off")
         self.unlink_btn.setToolTip("고른 연결점을 '연결하지 않음'으로 지정합니다")
         self.unlink_btn.clicked.connect(lambda: self.unlink())
         row.addWidget(self.pair_btn)
@@ -778,7 +790,7 @@ class ViewerScreen(QWidget):
         self.tool_group = QButtonGroup(self)
         self.tool_btns = {}
         for i, (key, label) in enumerate(TOOLS):
-            b = QPushButton(label)
+            b = _ibtn(label, TOOL_ICONS[key])
             b.setObjectName("tool")
             b.setCheckable(True)
             b.clicked.connect(lambda _=False, k=key: self.set_tool(k))
@@ -801,10 +813,10 @@ class ViewerScreen(QWidget):
         self.path_row = QWidget()
         pr = QHBoxLayout(self.path_row)
         pr.setContentsMargins(0, 0, 0, 0)
-        self.path_done = QPushButton("경로 완료")
+        self.path_done = _ibtn("경로 완료", "check", "on-fill")
         self.path_done.setObjectName("primary")
         self.path_done.clicked.connect(self._finish_path)
-        self.path_cancel = QPushButton("취소")
+        self.path_cancel = _ibtn("취소", "x")
         self.path_cancel.clicked.connect(lambda: self.set_tool("select"))
         pr.addWidget(self.path_done)
         pr.addWidget(self.path_cancel)
@@ -902,10 +914,10 @@ class ViewerScreen(QWidget):
         self.unknown_list.setMaximumHeight(96)
         v.addWidget(self.unknown_list)
         ub = QHBoxLayout()
-        self.confirm_btn = QPushButton("미확인 확정")
+        self.confirm_btn = _ibtn("미확인 확정", "check")
         self.confirm_btn.setToolTip("목록에서 고른 미확인만, 고르지 않으면 이 항목의 미확인 전부를 '이대로 맞음'으로 확정합니다")
         self.confirm_btn.clicked.connect(self._confirm)
-        self.delete_btn = QPushButton("삭제")
+        self.delete_btn = _ibtn("삭제", "trash")
         self.delete_btn.clicked.connect(self._delete)
         ub.addWidget(self.confirm_btn)
         ub.addWidget(self.delete_btn)
@@ -914,14 +926,14 @@ class ViewerScreen(QWidget):
         v.addWidget(_section("수정 기록"))
         hb = QGridLayout()
         hb.setSpacing(4)
-        self.undo_btn = QPushButton("실행 취소")
+        self.undo_btn = _ibtn("실행 취소", "arrow-back-up")
         self.undo_btn.clicked.connect(self.undo)
-        self.redo_btn = QPushButton("다시 실행")
+        self.redo_btn = _ibtn("다시 실행", "arrow-forward-up")
         self.redo_btn.clicked.connect(self.redo)
-        self.save_btn = QPushButton("저장")
+        self.save_btn = _ibtn("저장", "device-floppy", "on-fill")
         self.save_btn.setObjectName("primary")
         self.save_btn.clicked.connect(self.save)
-        self.revert_btn = QPushButton("저장본으로 되돌리기")
+        self.revert_btn = _ibtn("저장본으로 되돌리기", "refresh")
         self.revert_btn.clicked.connect(self.revert)
         hb.addWidget(self.undo_btn, 0, 0)
         hb.addWidget(self.redo_btn, 0, 1)
