@@ -134,6 +134,10 @@ def reconcile(results, node_set, deviations=None, at=None):
                 when = at or (node.get("confirmed") or {}).get("at")
                 want["entries"] = [e if e.get("scope_changed") else dict(e, scope_changed={
                     "from_rev": cur, "to_rev": rev, "at": when}) for e in cell.get("entries") or []]
+                if cell.get("state") not in (None, "not_analyzed") and not cell.get("entries")                         and not cell.get("scope_changed"):
+                    # 항목 없이 판정한 칸('해당 없음' 등)도 범위가 바뀌었으니 다시 확인해야 한다(§2.4). 항목이 있는 칸은
+                    # 항목마다 다시 확인하는 것이 칸을 다시 보는 것이다
+                    want["scope_changed"] = {"from_rev": cur, "to_rev": rev, "at": when}
         if any(cell.get(k) != v for k, v in want.items()):
             new = dict(cell, **want)
             changed = True
@@ -389,6 +393,36 @@ def _entry(results, node_id, deviation_id, entry_id):
         if e["entry_id"] == entry_id:
             return e
     raise ValueError("없는 항목: %s/%s/%s" % (node_id, deviation_id, entry_id))
+
+
+def recheck_cell(results, node_id, deviation_id, by, at=None, node_set=None):
+    """사람이 범위가 바뀐 칸의 판정(칸 상태)을 다시 확인했다고 적는다. 칸의 scope_changed를 지우고 이력에 남긴다.
+    칸 안 항목의 '범위 바뀜'은 항목마다 승인·수정으로 지운다. 보관 칸·잠긴 구간이면 ValueError."""
+    by = (by or "").strip()
+    if not by:
+        raise ValueError("다시 확인한 사람 이름 필요")
+    _guard(results, node_id, deviation_id, node_set)
+    out = copy.deepcopy(results)
+    cell = _cell(out, node_id, deviation_id)
+    sc = cell.pop("scope_changed", None)
+    if sc is None:
+        return results
+    cell.setdefault("history", []).append(store_io.history_row("recheck", {"by": by, "scope_changed": sc}, at))
+    return out
+
+
+def scope_problems(results, node_id):
+    """잠그기 전에 다시 확인해야 할 것: 범위가 바뀐 칸 판정·항목 [문구]."""
+    out = []
+    for c in (results or {}).get("cells") or []:
+        if not isinstance(c, dict) or c.get("node_id") != node_id:
+            continue
+        if c.get("scope_changed"):
+            out.append("%s: 범위가 바뀐 뒤 칸 판정(%s)을 다시 확인하지 않음" % (c.get("deviation_id"), c.get("state")))
+        n = sum(1 for e in c.get("entries") or [] if isinstance(e, dict) and e.get("scope_changed"))
+        if n:
+            out.append("%s: 범위 바뀜 항목 %d개를 다시 확인하지 않음" % (c.get("deviation_id"), n))
+    return out
 
 
 def editable_problem(results, node_id, deviation_id, node_set=None):

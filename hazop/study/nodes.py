@@ -211,6 +211,27 @@ def _begin(node_set, targets=()):
     return copy.deepcopy(node_set)
 
 
+def ever_confirmed(node_set, node_id):
+    """이 구간을 한 번이라도 확정한 적이 있는지(⑤ 칸이 있을 수 있음). 0.1에서 바꾼 확정본도 본다."""
+    for h in node_set.get("history") or []:
+        d = h.get("detail") if isinstance(h, dict) else None
+        if h.get("op") == "confirm" and isinstance(d, dict) and node_id in (d.get("node_ids") or []):
+            return True
+    return ((node_set.get("legacy") or {}).get("status") == "confirmed"
+            or any(node_id == n.get("node_id") for p in (node_set.get("legacy") or {}).get("previous") or []
+                   for n in p.get("nodes") or []))
+
+
+def _refuse_drop(node_set, node_ids, what):
+    """결과를 받지 않는 옛 편집 길(④ nodes.merge·remove_member·remove_empty, AI 제안 받아들이기)이 확정한 적 있는 구간을
+    없애지 못하게 한다. 그 구간의 ⑤ 칸(보관 칸 포함)이 '없는 검토구간 참조'로 떨어지기 때문이다(규격 §4.4, 총괄 검토 R2).
+    결과를 함께 옮기거나 보관하는 길은 hazop.study.node_tools.apply_nodes다."""
+    hit = [nid for nid in node_ids if ever_confirmed(node_set, nid)]
+    if hit:
+        raise ValueError("%s는 확정한 적이 있어 ⑤ 칸이 있을 수 있음: %s는 결과를 함께 옮기는 길(apply_nodes)로만 함"
+                         % (", ".join(hit), what))
+
+
 def _log(node_set, op, detail, at, before=None, origin="user", request=None, tool=None):
     """history에 한 줄을 남긴다. before(편집 전 집합)를 주면 구간 차이를 묶음 하나로 적고 rev를 올린다."""
     node_set["history"].append(store_io.history_row(op, {"detail": detail}, at))
@@ -378,6 +399,7 @@ def map_members(node_set, rename):
 def merge(node_set, node_ids, at=None):
     """여러 구간을 하나로 합친다. 집합 안 순서로 첫 구간의 node_id를 남긴다."""
     out = _begin(node_set, [nid for nid in dict.fromkeys(node_ids)])
+    _refuse_drop(node_set, [nid for nid in dict.fromkeys(node_ids)][1:], "병합")
     wanted = set(node_ids)
     if len(wanted) < 2:
         raise ValueError("병합에는 서로 다른 구간 2개 이상 필요")
@@ -572,6 +594,8 @@ def remove_member(node_set, node_id, entity_id, at=None):
     if entity_id not in node["members"]:
         raise ValueError("%s는 %s에 없음" % (entity_id, node_id))
     node["members"] = [m for m in node["members"] if m != entity_id]
+    if not node["members"]:
+        _refuse_drop(node_set, [node_id], "마지막 구성요소 빼기(구간 삭제)")
     detail = {"node_id": node_id, "entity_id": entity_id}
     if node["members"]:
         _settle(node)
@@ -595,6 +619,7 @@ def remove_empty(node_set, node_id, at=None):
     node = _find(out, node_id)
     if node["members"]:
         raise ValueError("%s는 구성요소가 있어 지울 수 없음(구성요소를 먼저 빼거나 다른 구간에 병합)" % node_id)
+    _refuse_drop(node_set, [node_id], "빈 구간 지우기")
     out["nodes"] = [n for n in out["nodes"] if n is not node]
     return _log(out, "remove_empty", dict({"node_id": node_id}, **_screen_note(node)), at, before=node_set)
 
@@ -688,6 +713,10 @@ def lock_problems(node_set, node_id, results):
     drafts = sum(1 for c in cells for e in c.get("entries") or [] if e.get("status") == "proposed")
     if drafts:
         out.append("사람이 보지 않은 AI 초안 항목 %d개" % drafts)
+    from hazop.study import results as res
+    again = res.scope_problems(results, node_id)
+    if again:
+        out.append("범위 바뀜을 다시 확인하지 않음 %d건(%s)" % (len(again), again[0]))
     return out
 
 
@@ -958,8 +987,11 @@ def any_confirmed(project_only=False):
                 continue
             if project_only and not str(doc.get("graph_id") or "").startswith("project-"):
                 continue
-            if isinstance(doc, dict) and doc.get("kind") == KIND and (
-                    doc.get("status") == "confirmed"
-                    or any(isinstance(n, dict) and is_active(n) for n in doc.get("nodes") or [])):
+            if not isinstance(doc, dict) or doc.get("kind") != KIND:
+                continue
+            if (doc.get("schema_version") or LEGACY_SCHEMA_VERSION) == LEGACY_SCHEMA_VERSION:
+                if doc.get("status") == "confirmed":  # 0.1: 확정은 집합 status(구간에 state가 없음)
+                    return True
+            elif any(isinstance(n, dict) and n.get("state") in ACTIVE_STATES for n in doc.get("nodes") or []):
                 return True
     return False

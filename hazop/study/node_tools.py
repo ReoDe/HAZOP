@@ -222,9 +222,9 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
             n = changeable(op.get("node_id"), "삭제", label)
             if n is None:
                 continue
-            if _has_entries(out_res, n["node_id"]):
+            if judged(out_res, n["node_id"]):
                 if ai or not op.get("archive"):
-                    why.append((label, "칸에 항목이 있는 구간은 지울 수 없음(옮길 구간을 고르거나 '보관'을 고를 것, 사람만)"))
+                    why.append((label, "칸에 판정이 있는 구간은 지울 수 없음(옮길 구간을 고르거나 '보관'을 고를 것, 사람만)"))
                     continue
                 out_res = _archive_cells(out_res, n["node_id"], "node_removed", by, at)
             elif out_res is not None and _cells_of(out_res, n["node_id"]):
@@ -250,6 +250,29 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
     return out, out_res, out["batches"][-1]["batch_id"]
 
 
+def judged(results, nid):
+    """그 구간 칸 가운데 사람·AI 판정이 남은 것이 있는지(항목이 있거나 칸 상태가 분석 전이 아님)."""
+    return any(c.get("entries") or c.get("state") not in (None, "not_analyzed") for c in _cells_of(results, nid))
+
+
+def judged_nodes(results):
+    """⑤ 결과에서 판정이 남은 칸이 있는 구간 ID(정렬). 다시 제안(S1부터 새로 매김)을 막을지 정할 때 쓴다: 판정은 구간 ID로
+    붙어 있어, ID를 새로 매기면 '해당 없음' 같은 판정이 구성요소가 다른 새 구간에 붙는다(총괄 검토 R7)."""
+    return sorted({c.get("node_id") for c in (results or {}).get("cells") or []
+                   if isinstance(c, dict) and (c.get("entries") or c.get("state") not in (None, "not_analyzed"))},
+                  key=lambda x: (len(str(x)), str(x)))
+
+
+def dropped_problems(before, after, results):
+    """편집(before → after)으로 사라진 구간 가운데 ⑤ 칸에 판정이 있는 것 [(구간, 이유)]. 결과를 옮기지 않는 편집 경로
+    (④의 nodes.merge·remove_member·remove_empty, AI 제안 받아들이기, 다시 제안)가 저장 전에 부른다(규격 §4.4).
+    results가 None이면 확인할 수 없으므로 사라진 구간마다 문제로 본다."""
+    gone = [n["node_id"] for n in before["nodes"] if n["node_id"] not in {x["node_id"] for x in after["nodes"]}]
+    if results is None:
+        return [(nid, "⑤ 결과를 읽지 못해 칸을 확인할 수 없음") for nid in gone]
+    return [(nid, "⑤ 칸에 판정이 있음(병합은 결과를 옮기는 길로, 삭제는 보관을 골라야 함)") for nid in gone if judged(results, nid)]
+
+
 def undo_problems(node_set, results, batch_id, requested_by):
     """묶음을 되돌릴 수 없는 이유 [(구간, 이유)] (§2.3). 빈 목록이면 되돌릴 수 있다."""
     b = next((x for x in node_set.get("batches") or [] if x["batch_id"] == batch_id), None)
@@ -270,8 +293,8 @@ def undo_problems(node_set, results, batch_id, requested_by):
         if (cur is None) != (expect is None) or (cur is not None and cur != expect):
             out.append((nid, "그 사이 바뀜(뒤 묶음이나 사람이 고침. 뒤 묶음부터 되돌릴 것)"))
             continue
-        if o["op"] == "add" and _has_entries(results, nid):
-            out.append((nid, "구간 삭제인데 칸에 항목이 있음(옮길 곳 또는 보관을 사람이 고를 것)"))
+        if o["op"] == "add" and judged(results, nid):
+            out.append((nid, "구간 삭제인데 칸에 판정이 있음(옮길 곳 또는 보관을 사람이 고를 것)"))
         elif o["op"] == "edit" and nodes.analysis_input(o["before"]) != nodes.analysis_input(cur) \
                 and _has_human(results, nid):
             out.append((nid, "편집 복원으로 분석 판이 바뀌는데 칸에 사람 판정 항목이 있음"))

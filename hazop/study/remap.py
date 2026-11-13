@@ -137,7 +137,9 @@ def carry_results(old_results, node_set, deviations, partial=False):
         if not partial:
             return None, dict(report, reason=why)
         out = empty_legacy(node_set, deviations)
-        out["archived_cells"] = [{"cell": copy.deepcopy(c), "reason": "legacy_unmapped", "note": why}
+        item_of = {d.get("deviation_id"): d.get("item_id") for d in old_results.get("deviations") or []}
+        out["archived_cells"] = [{"cell": dict(copy.deepcopy(c), item_id=c.get("item_id") or item_of.get(c["deviation_id"])),
+                                  "reason": "legacy_unmapped", "note": why}
                                  for c in old_results.get("cells") or [] if c.get("entries")
                                  or c.get("state") != "not_analyzed"]
         out["ai_log"] = list(old_results.get("ai_log") or [])
@@ -162,13 +164,14 @@ def carry_results(old_results, node_set, deviations, partial=False):
             if touched:
                 report["unmapped_deviations" if did is None else "unmapped"].append(
                     {"node_id": c["node_id"], "deviation_id": c["deviation_id"]})
-                archived.append({"cell": copy.deepcopy(c),
+                archived.append({"cell": dict(copy.deepcopy(c), item_id=old_dev.get(c["deviation_id"])),
                                  "reason": "deviation_removed" if did is None else "legacy_unmapped"})
             continue
         if target["to_excluded"] and not target["exact"] and any(
                 e.get("status") in res.HUMAN_STATUSES for e in c["entries"]):
             report["to_excluded"].append(c["node_id"])
-            archived.append({"cell": copy.deepcopy(c), "reason": "to_excluded"})
+            archived.append({"cell": dict(copy.deepcopy(c), item_id=old_dev.get(c["deviation_id"])),
+                             "reason": "to_excluded"})
             continue
         cell = cells[(target["node_id"], did)]
         if target["exact"]:

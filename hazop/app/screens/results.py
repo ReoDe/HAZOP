@@ -1001,6 +1001,7 @@ class ResultsScreen(QWidget):
                 ("항목 기각", "R", lambda: self.set_entry_status("rejected")),
                 ("항목 수정…", "E", lambda: self.edit_selected()),
                 ("초기사건 판정…", "I", lambda: self.set_ie_selected()),
+                ("칸 판정 다시 확인함", "", lambda: self.recheck_cell()),
                 ("Excel로 내보내기…", "", lambda: self.export_excel()),
                 ("IE 인계 묶음 내보내기…", "", lambda: self.export_ie_bundle()),
                 ("이전 고정 응답 분석 열기", "", lambda: self.app.go(2))]
@@ -1199,10 +1200,12 @@ class ResultsScreen(QWidget):
         if cell_problems:
             notes.append("문제 칸 %d개(따로 둠: %s)" % (len(doc.get("quarantined_cells") or []), cell_problems[0]))
         if doc.get("archived_cells"):
-            notes.append("옛 결과 %d칸을 보관함 · ④에서 그 구간을 만든 뒤 옮기기" % len(doc["archived_cells"]))
+            notes.append("옛 결과 %d칸은 갈 구간이 없어 결과 파일의 보관 칸으로 둠(지우지 않음 · ⑤에서 옮기는 기능은 아직 없음)"
+                         % len(doc["archived_cells"]))
         changed = sum(1 for c in doc["cells"] if not c.get("hold") for e in c["entries"] if e.get("scope_changed"))
-        if changed:
-            notes.append("범위 바뀜 %d건(다시 확인)" % changed)
+        judged = sum(1 for c in doc["cells"] if not c.get("hold") and c.get("scope_changed"))
+        if changed or judged:
+            notes.append("범위 바뀜 항목 %d건 · 칸 판정 %d칸(다시 확인)" % (changed, judged))
         if notes:
             self.stale_chip.set_state(" · ".join(notes), "warn")
             self.stale_chip.show()
@@ -2330,6 +2333,24 @@ class ResultsScreen(QWidget):
                 text = "%s 항목 행을 먼저 고르세요 (↑↓ 또는 클릭)." % NEED_ROW[action]
             self.app.status_message(text)
         return e
+
+    def recheck_cell(self, by=None):
+        """범위가 바뀐 칸의 판정을 사람이 다시 확인했다고 적는다(칸에 '범위 바뀜'이 없으면 할 일 없음)."""
+        if self.cell is None or self._locked_message():
+            return False
+        by = by or getattr(self.app, "reviewer_name", lambda: "")() or "검토자"
+        try:
+            new = res.recheck_cell(self.results, self.cell[0], self.cell[1], by, node_set=self.node_set)
+        except ValueError as exc:
+            self.app.status_message(str(exc))
+            return False
+        if new is self.results:
+            self.app.status_message("이 칸에는 다시 확인할 범위 바뀜이 없습니다.")
+            return False
+        old, cell = self.results, self.cell
+        self._apply_review(new)
+        self.app.toast("%s 칸 판정을 다시 확인했습니다" % cell[0], self._undo_to(old, cell))
+        return True
 
     def _locked_message(self):
         """고른 칸을 사람이 고칠 수 없는 이유(잠긴 구간·보관 칸·읽기 전용)를 상태줄에 띄우고 True. 고칠 수 있으면 False."""
