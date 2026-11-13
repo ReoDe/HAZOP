@@ -113,7 +113,7 @@ class SnpTest(unittest.TestCase):
         for d in SNP:
             self.assertEqual(self.built[d]["source_format"], "drawio")
             c = self.built[d]["counts"]
-            self.assertEqual(c["total"], sum(c[r] for r in clean_items.REASONS))
+            self.assertEqual(c["total"], sum(v for k, v in c.items() if k != "total"))
 
     def test_extraction_is_not_changed_and_build_items_is_unchanged(self):
         e = self.ex["SNP-M-101"]
@@ -151,7 +151,7 @@ class RuleTest(unittest.TestCase):
             b = clean_items.build(e, "x")
         self.assertEqual([(u["id"], u["reason"]) for u in b["unconfirmed"]],
                          [("open", "open_end"), ("u", "unknown_symbol"), ("t", "missing_tag"), ("a", "ai_candidate")])   # 위→아래, 왼→오른
-        self.assertEqual(b["counts"], {"unknown_symbol": 1, "open_end": 1, "missing_tag": 1, "ai_candidate": 1, "total": 4})
+        self.assertEqual({k: v for k, v in b["counts"].items() if v}, {"unknown_symbol": 1, "open_end": 1, "missing_tag": 1, "ai_candidate": 1, "total": 4})
         self.assertEqual(b["items"]["a"]["review"], "ai_candidate")
         ends = {e["end"]: e["status"] for e in b["items"]["open"]["ends"]}
         self.assertEqual(ends, {"source": "connected", "target": "open"})      # 어느 끝이 열렸는지 안다
@@ -175,6 +175,54 @@ class RuleTest(unittest.TestCase):
         e["texts"] = [{"text": "N", "bbox": [119, 119, 10, 10]}]
         self.assertEqual(clean_items.build(e)["text_items"][0]["bbox"], [100, 100, 110, 110])
         self.assertEqual(sheet_items.build_items(e)["items"][0]["bbox"], [100, 100, 130, 150])
+
+
+class ScopeTest(unittest.TestCase):
+    """총괄 검토(2026-11-14): 좌표 없는 것을 버리지 않고, 미확인은 추출의 미확인 목록 전체이며, 읽은 방법을 모르면 조심스러운 쪽으로 본다."""
+
+    def test_nodes_and_relations_without_coordinates_are_counted_not_dropped(self):
+        e = extraction([{"local_id": "u", "classification": "unclassified", "category": None, "kind": None, "tag": ""},          # 좌표 없는 분류 안 된 노드
+                        {"local_id": "t", "classification": "classified", "category": "valve", "kind": "manual_valve", "tag": ""},    # 좌표 없는 태그 없는 밸브
+                        node("ok", "pump", 10, 10, 30, 30, tag="P1", cat="equipment")],
+                       [{"local_id": "r", "kind": "physical_connection", "endpoints": [{"end": "source", "point": None, "status": "unknown"}]}])
+        b = clean_items.build(e)
+        self.assertEqual(b["counts"]["unplaced"], 3)
+        self.assertEqual(b["counts"]["total"], 3)                      # '미확인 0'이 되지 않는다
+        self.assertEqual({u["id"] for u in b["unconfirmed"]}, {"u", "t", "r"})
+        self.assertEqual(sorted((x["kind"], x["id"]) for x in b["unplaced"]), [("node", "t"), ("node", "u"), ("relation", "r")])
+        self.assertNotIn("u", b["items"])                               # 도면에는 그리지 않는다
+        self.assertEqual(clean_items.build(extraction([node("ok", "pump", 1, 1, 9, 9, tag="P", cat="equipment")], []))["counts"]["total"], 0)
+
+    def test_whole_validation_unknown_list_and_unresolved_connectors_are_counted(self):
+        e = extraction([node("v", "check_valve", 100, 100, 50, 30, tag="V1"), node("p", "pump", 300, 100, 40, 40, tag="P1", cat="equipment")], [])
+        e["validation"] = {"unknowns": [{"check": "unknown_check_valve_direction", "target": "v", "reason": "체크밸브 방향"},
+                                        {"check": "missing_fail_position", "target": "v", "reason": "고장 시 위치"},
+                                        {"check": "missing_drawing_number", "target": None, "reason": "도면 번호 없음"},
+                                        {"check": "missing_fail_position", "target": "v", "reason": "중복"}]}
+        e["unresolved_connectors"] = [{"local_id": "uc", "endpoints": [{"point": [200, 200]}, {"point": [250, 200]}]}]
+        b = clean_items.build(e)
+        reasons = sorted((u["id"], u["reason"]) for u in b["unconfirmed"] if u["id"])
+        self.assertEqual(reasons, [("uc", "unresolved_connector"), ("v", "missing_fail_position"), ("v", "unknown_check_valve_direction")])
+        self.assertEqual([u["reason"] for u in b["unconfirmed"] if u["id"] is None], ["missing_drawing_number"])
+        self.assertEqual(b["unconfirmed"][-1]["id"], None)              # 쪽 전체 미확인은 순서 끝
+        self.assertEqual(b["counts"]["total"], 4)
+        self.assertEqual(b["counts"]["missing_fail_position"], 1)       # 같은 대상·같은 사유는 한 번
+
+    def test_unknown_or_empty_format_is_the_careful_one_and_known_formats_pass(self):
+        for fmt, want in (("drawio", "drawio"), ("dexpi", "dexpi"), ("pdf", "pdf_vector"), ("pdf_vector", "pdf_vector"), ("raster", "raster"),
+                          ("", "unknown"), (None, "unknown"), ("visio", "unknown"), (" DrawIO ", "drawio")):
+            self.assertEqual(clean_items.source_format({"source": {"format": fmt}}), want, repr(fmt))
+        self.assertEqual(clean_items.source_format({}), "unknown")
+
+    def test_leftovers_are_counted_for_drawio_only(self):
+        e = extraction([node("v", "pump", 10, 10, 20, 20, tag="P", cat="equipment")], [])
+        e["drawing"] = {"ignored_objects": [{"source_object_id": "i1", "label_text": "표제란", "bbox": [0, 0, 50, 20]}]}
+        e["unclassified"] = [{"local_id": "x1", "label_location": {"bbox": [5, 5, 10, 10]}, "label_text": "?"}]
+        b = clean_items.build(e)
+        self.assertEqual((b["leftovers"]["counted"], b["leftovers"]["n"]), (True, 2))
+        self.assertEqual(sorted(i["kind"] for i in b["leftovers"]["items"]), ["ignored", "unclassified"])
+        p = clean_items.build(extraction([node("v", "pump", 10, 10, 20, 20, tag="P", cat="equipment")], [], fmt="pdf"))
+        self.assertEqual(p["leftovers"], {"counted": False, "n": 0, "items": []})      # PDF는 남은 선을 넘기지 않아 세지 못한다
 
 
 class ReadRouteTest(unittest.TestCase):
