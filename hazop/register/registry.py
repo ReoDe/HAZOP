@@ -147,8 +147,8 @@ def _unknowns(record):
             reason = ("사람 확정 전. 표제란 자동 후보 %r" % cand["value"] if cand
                       else "미확인(표제란 자동 후보 없음, 사람 입력 없음)")
             out.append({"field": field, "reason": reason})
-    if record.get("format") == "pdf":
-        return out  # PDF는 원본에서 도면 SVG를 그리므로(추출 단계) 원본 옆 SVG를 찾지 않는다
+    if record.get("format") in fileinfo.NO_SVG_FORMATS:
+        return out  # PDF는 원본에서 도면 SVG를 그리고(추출 단계) DEXPI는 그림이 파일 안에 있어 원본 옆 SVG를 찾지 않는다
     pages = [pid for d in record.get("documents") or [] for pid in d.get("page_ids") or []]
     covered = {pid for e in _svg_entries(record) for pid in e.get("page_ids") or []}
     missing = [pid for pid in pages if pid not in covered]
@@ -367,7 +367,7 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
         return _result(rec, "failed")
     try:
         # PDF는 원본 옆 SVG를 파생 자료로 등록하지 않는다(같은 폴더의 drawio SVG를 잘못 붙이지 않게)
-        svgs = [] if info["format"] == "pdf" else _read_svgs(source_path, info["pages"])
+        svgs = [] if info["format"] in fileinfo.NO_SVG_FORMATS else _read_svgs(source_path, info["pages"])
     except OSError as exc:
         rec = _on_hold(project_id, material_type, source_path,
                        [_problem("unreadable", "원본 옆 SVG를 읽을 수 없음: %s" % exc, NO_SVG_FIELD)])["record"]
@@ -517,6 +517,8 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
         "history": [{"at": at, "by": actor, "action": "register", "reason": None}],
         "validation": {"status": "passed", "blockers": [], "unknowns": []},
     }
+    if info.get("dexpi_flavor"):  # DEXPI 파일: 2.0 이후 DEXPI XML(dexpi_xml)인지 Proteus 1.x(proteus)인지(HZ-PLN-22 §4.1)
+        record["dexpi_flavor"] = info["dexpi_flavor"]
     record["derived_files"] = _derived_entries(record, svgs)
     _apply_meta(record, metadata, actor, at)
     record["validation"]["unknowns"] = _unknowns(record)

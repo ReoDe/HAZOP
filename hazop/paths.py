@@ -300,7 +300,7 @@ FOLDERS = {
     "patterns": Folder("resource", ("resources", "library", "patterns")),
     "symbols": Folder("resource", ("resources", "library", "symbols")),
     "icons": Folder("resource", ("resources", "library", "icons")),  # 화면 아이콘(Tabler, hazop/app/icons.py)
-    "icons": Folder("resource", ("resources", "library", "icons")),  # 화면 아이콘(Tabler, hazop/app/icons.py)
+    "dexpi-schema": Folder("resource", ("resources", "library", "dexpi-schema")),  # DEXPI 클래스 목록(HZ-PLN-22)
     "drawing-symbols": Folder("resource", ("resources", "library", "drawing-symbols")),  # 정리된 보기가 그리는 표준 기호(scripts/build_drawing_symbols.py)
     "references": Folder("repo", ("resources", "references")),
     "APR1400": Folder("repo", ("resources", "references", "APR1400_DCD")),

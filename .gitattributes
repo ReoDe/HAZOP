@@ -14,3 +14,4 @@ resources/library/symbols/** -text
 hazop/shell/web/vendor/** -text
 licenses/preact/** -text
 licenses/htm/** -text
+licenses/dexpi/** -text

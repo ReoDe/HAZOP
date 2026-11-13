@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 손으로 만든 시험용 Proteus XML(DEXPI 1.3) 파일. small-pid-dexpi2.xml과 같은 도면이다. y는 위로 커진다(도면 높이 297). -->
+<PlantModel>
+  <PlantInformation Application="Dexpi" ApplicationVersion="1.3.1" Discipline="PID" SchemaVersion="4.1.1" Units="mm"/>
+  <MetaData ID="Meta-1" ComponentClass="MetaData">
+    <GenericAttributes Set="DexpiAttributes" Number="2">
+      <GenericAttribute Name="DrawingNameAssignmentClass" Format="string" Value="Small test P&amp;ID"/>
+      <GenericAttribute Name="DrawingNumberAssignmentClass" Format="string" Value="TEST-1"/>
+    </GenericAttributes>
+  </MetaData>
+  <Equipment ID="Pump-1" ComponentClass="CentrifugalPump">
+    <Position><Location X="60" Y="177" Z="0"/><Axis X="0" Y="0" Z="1"/><Reference X="1" Y="0" Z="0"/></Position>
+    <GenericAttributes Set="DexpiAttributes" Number="1">
+      <GenericAttribute Name="TagNameAssignmentClass" Format="string" Value="P-101"/>
+    </GenericAttributes>
+    <Nozzle ID="Pump-N1" ComponentClass="Nozzle">
+      <ConnectionPoints NumPoints="1"><Node ID="Nd1"><Position><Location X="50" Y="177" Z="0"/></Position></Node></ConnectionPoints>
+      <GenericAttributes Set="DexpiAttributes" Number="1"><GenericAttribute Name="SubTagNameAssignmentClass" Format="string" Value="N1"/></GenericAttributes>
+    </Nozzle>
+    <Nozzle ID="Pump-N2" ComponentClass="Nozzle">
+      <ConnectionPoints NumPoints="1"><Node ID="Nd2"><Position><Location X="70" Y="177" Z="0"/></Position></Node></ConnectionPoints>
+      <GenericAttributes Set="DexpiAttributes" Number="1"><GenericAttribute Name="SubTagNameAssignmentClass" Format="string" Value="N2"/></GenericAttributes>
+    </Nozzle>
+    <Equipment ID="Pump-Chamber-1" ComponentClass="Chamber">
+      <GenericAttributes Set="DexpiAttributes" Number="1">
+        <GenericAttribute Name="UpperLimitDesignPressure" Format="double" Value="16.0" Units="Bar"/>
+      </GenericAttributes>
+    </Equipment>
+  </Equipment>
+  <Equipment ID="Tank-1" ComponentClass="Tank">
+    <Position><Location X="190" Y="177" Z="0"/><Axis X="0" Y="0" Z="1"/><Reference X="1" Y="0" Z="0"/></Position>
+    <GenericAttributes Set="DexpiAttributes" Number="1">
+      <GenericAttribute Name="TagNameAssignmentClass" Format="string" Value="T-101"/>
+    </GenericAttributes>
+    <Nozzle ID="Tank-N1" ComponentClass="Nozzle">
+      <ConnectionPoints NumPoints="1"><Node ID="Nd3"><Position><Location X="180" Y="177" Z="0"/></Position></Node></ConnectionPoints>
+      <GenericAttributes Set="DexpiAttributes" Number="1"><GenericAttribute Name="SubTagNameAssignmentClass" Format="string" Value="N1"/></GenericAttributes>
+    </Nozzle>
+    <Nozzle ID="Tank-N2" ComponentClass="Nozzle">
+      <ConnectionPoints NumPoints="1"><Node ID="Nd4"><Position><Location X="200" Y="177" Z="0"/></Position></Node></ConnectionPoints>
+      <GenericAttributes Set="DexpiAttributes" Number="1"><GenericAttribute Name="SubTagNameAssignmentClass" Format="string" Value="N2"/></GenericAttributes>
+    </Nozzle>
+  </Equipment>
+  <Equipment ID="Mixer-1" ComponentClass="Mixer">
+    <Position><Location X="240" Y="177" Z="0"/><Axis X="0" Y="0" Z="1"/><Reference X="1" Y="0" Z="0"/></Position>
+    <GenericAttributes Set="DexpiAttributes" Number="1">
+      <GenericAttribute Name="TagNameAssignmentClass" Format="string" Value="M-101"/>
+    </GenericAttributes>
+    <Nozzle ID="Mixer-N1" ComponentClass="Nozzle">
+      <ConnectionPoints NumPoints="1"><Node ID="Nd5"><Position><Location X="230" Y="177" Z="0"/></Position></Node></ConnectionPoints>
+      <GenericAttributes Set="DexpiAttributes" Number="1"><GenericAttribute Name="SubTagNameAssignmentClass" Format="string" Value="N1"/></GenericAttributes>
+    </Nozzle>
+  </Equipment>
+  <PipingNetworkSystem ID="Sys-1" ComponentClass="PipingNetworkSystem">
+    <GenericAttributes Set="DexpiAttributes" Number="3">
+      <GenericAttribute Name="FluidCodeAssignmentClass" Format="string" Value="W"/>
+      <GenericAttribute Name="LineNumberAssignmentClass" Format="string" Value="L-100"/>
+      <GenericAttribute Name="PipingClassCodeAssignmentClass" Format="string" Value="A1"/>
+    </GenericAttributes>
+    <PipingNetworkSegment ID="Seg-1" ComponentClass="PipingNetworkSegment">
+      <GenericAttributes Set="DexpiAttributes" Number="1">
+        <GenericAttribute Name="NominalDiameterRepresentationAssignmentClass" Format="string" Value="DN 80"/>
+      </GenericAttributes>
+      <PipingComponent ID="Valve-1" ComponentClass="BallValve">
+        <ConnectionPoints FlowIn="1" FlowOut="2" NumPoints="2">
+          <Node ID="NV1"><Position><Location X="95" Y="177" Z="0"/></Position></Node>
+          <Node ID="NV2"><Position><Location X="105" Y="177" Z="0"/></Position></Node>
+        </ConnectionPoints>
+        <Position><Location X="100" Y="177" Z="0"/><Axis X="0" Y="0" Z="1"/><Reference X="1" Y="0" Z="0"/></Position>
+        <GenericAttributes Set="DexpiAttributes" Number="1"><GenericAttribute Name="PipingComponentNumberAssignmentClass" Format="string" Value="V-101"/></GenericAttributes>
+      </PipingComponent>
+      <PipingComponent ID="Tee-1" ComponentClass="PipeTee">
+        <ConnectionPoints NumPoints="3">
+          <Node ID="NT1"><Position><Location X="135" Y="177" Z="0"/></Position></Node>
+          <Node ID="NT2"><Position><Location X="145" Y="177" Z="0"/></Position></Node>
+          <Node ID="NT3"><Position><Location X="140" Y="197" Z="0"/></Position></Node>
+        </ConnectionPoints>
+        <Position><Location X="140" Y="177" Z="0"/><Axis X="0" Y="0" Z="1"/><Reference X="1" Y="0" Z="0"/></Position>
+      </PipingComponent>
+      <PipeOffPageConnector ID="OffOut-1" ComponentClass="FlowOutPipeOffPageConnector">
+        <ConnectionPoints FlowIn="1" NumPoints="1"><Node ID="NC1"><Position><Location X="140" Y="217" Z="0"/></Position></Node></ConnectionPoints>
+        <Position><Location X="140" Y="217" Z="0"/><Axis X="0" Y="0" Z="1"/><Reference X="1" Y="0" Z="0"/></Position>
+        <GenericAttributes Set="DexpiAttributes" Number="2">
+          <GenericAttribute Name="ReferencedDrawingNumber" Format="string" Value="DWG-2"/>
+          <GenericAttribute Name="ReferencedConnectorNumber" Format="string" Value="OC-9"/>
+        </GenericAttributes>
+      </PipeOffPageConnector>
+      <PipeFlowArrow ID="Arrow-1" ComponentName="DIRECTION_OF_FLOW_SHAPE_FOR_PRIMARY_SEGMENT">
+        <Position><Location X="82" Y="177" Z="0"/><Axis X="0" Y="0" Z="1"/><Reference X="1" Y="0" Z="0"/></Position>
+        <Scale X="1" Y="1"/>
+      </PipeFlowArrow>
+      <Connection FromID="Pump-N2" FromNode="1" ToID="Valve-1" ToNode="1"/>
+      <Connection FromID="Valve-1" FromNode="2" ToID="Tee-1" ToNode="1"/>
+      <Connection FromID="Tee-1" FromNode="2" ToID="Tank-N1" ToNode="1"/>
+      <Connection FromID="Tee-1" FromNode="3" ToID="OffOut-1" ToNode="1"/>
+    </PipingNetworkSegment>
+  </PipingNetworkSystem>
+  <PipingNetworkSystem ID="Sys-2" ComponentClass="PipingNetworkSystem">
+    <GenericAttributes Set="DexpiAttributes" Number="1"><GenericAttribute Name="LineNumberAssignmentClass" Format="string" Value="L-200"/></GenericAttributes>
+    <PipingNetworkSegment ID="Seg-2" ComponentClass="PipingNetworkSegment">
+      <Connection FromID="Mixer-N1" FromNode="1" ToID="Tank-N2" ToNode="1"/>
+    </PipingNetworkSegment>
+  </PipingNetworkSystem>
+  <ActuatingSystem ID="AS-1" ComponentClass="ActuatingSystem">
+    <GenericAttributes Set="DexpiAttributes" Number="1"><GenericAttribute Name="ActuatingSystemNumberAssignmentClass" Format="string" Value="PV-101"/></GenericAttributes>
+    <ActuatingSystemComponent ID="CA-1" ComponentClass="ControlledActuator">
+      <GenericAttributes Set="DexpiAttributes" Number="1"><GenericAttribute Name="FailActionSpecialization" Format="anyURI" Value="FailClose"/></GenericAttributes>
+    </ActuatingSystemComponent>
+    <ActuatingSystemComponent ID="OVR-1" ComponentClass="OperatedValveReference">
+      <Association Type="refers to" ItemID="Valve-1"/>
+    </ActuatingSystemComponent>
+    <ActuatingFunction ID="AF-1" ComponentClass="ActuatingFunction"/>
+  </ActuatingSystem>
+  <ProcessInstrumentationFunction ID="PIF-1" ComponentClass="ProcessInstrumentationFunction">
+    <Position><Location X="150" Y="237" Z="0"/><Axis X="0" Y="0" Z="1"/><Reference X="1" Y="0" Z="0"/></Position>
+    <GenericAttributes Set="DexpiAttributes" Number="3">
+      <GenericAttribute Name="ProcessInstrumentationFunctionCategoryAssignmentClass" Format="string" Value="P"/>
+      <GenericAttribute Name="ProcessInstrumentationFunctionNumberAssignmentClass" Format="string" Value="101"/>
+      <GenericAttribute Name="ProcessInstrumentationFunctionsAssignmentClass" Format="string" Value="IC"/>
+    </GenericAttributes>
+    <ProcessSignalGeneratingFunction ID="PSGF-1" ComponentClass="ProcessSignalGeneratingFunction">
+      <Association Type="is located in" ItemID="Tee-1"/>
+    </ProcessSignalGeneratingFunction>
+    <InformationFlow ID="ML-1" ComponentClass="MeasuringLineFunction">
+      <Association Type="has logical start" ItemID="PSGF-1"/>
+      <Association Type="has logical end" ItemID="PIF-1"/>
+    </InformationFlow>
+    <InformationFlow ID="SC-1" ComponentClass="SignalConveyingFunction">
+      <Association Type="has logical start" ItemID="PIF-1"/>
+      <Association Type="has logical end" ItemID="AF-1"/>
+    </InformationFlow>
+  </ProcessInstrumentationFunction>
+  <Drawing Name="Small"><Extent><Min X="0" Y="0"/><Max X="420" Y="297"/></Extent></Drawing>
+</PlantModel>

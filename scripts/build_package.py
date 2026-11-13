@@ -74,6 +74,7 @@ DATA_FILES = (
     paths.file_rel("guide"),
     "scripts/extract_drawio.py",
     "scripts/extract_pdf.py",
+    "scripts/extract_dexpi.py",
     "scripts/build_graph.py",
 )
 # 자원 폴더는 hazop.paths.FOLDERS의 resource 행에서 만든다(묶음 안에서도 같은 상대 위치)
@@ -81,7 +82,7 @@ DATA_DIRS = ("hazop/kg/vendor", "hazop/shell/web") + tuple(paths.folder_rel(n) f
 # 패키징 D5안: 저장소에만 있는 자료(샘플 도면·표본)는 넣지 않는다
 EXCLUDED_DIRS = tuple(paths.folder_rel(n) for n, f in paths.FOLDERS.items() if f.root == "repo")
 EXCLUDES = ("anthropic", "httpx")
-SCRIPT_MODULES = ("extract_drawio", "extract_pdf", "build_graph")
+SCRIPT_MODULES = ("extract_drawio", "extract_pdf", "extract_dexpi", "build_graph")
 # W9(D15): 제3자 고지는 실행 파일 옆 licenses/에 둔다(D9의 _internal/licenses/를 대체, 사용자 결정 2026-11-06)
 LICENSES_DIR = "licenses"
 # W9(D15): PDF 어댑터. pdf_vector가 pdfplumber를 함수 안에서 import하므로 명시적으로 묶는다.

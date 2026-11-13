@@ -25,7 +25,7 @@ from hazop.viewer import build as viewer_build
 
 # 참고값(이름만 남김): 가져올 때의 scripts/ 위치. 로딩에는 쓰지 않으며 script_module은 호출 시점 경로를 쓴다
 SCRIPTS_DIR = paths.program_path("scripts")
-SCRIPT_NAMES = ("extract_drawio", "extract_pdf", "build_graph")  # 화면이 읽는 스크립트(허용 목록, 묶음 datas 대상)
+SCRIPT_NAMES = ("extract_drawio", "extract_pdf", "extract_dexpi", "build_graph")  # 화면이 읽는 스크립트(허용 목록, 묶음 datas 대상)
 _script_cache = {}  # 키: 정규화한 파일 경로(루트가 바뀌면 새로 읽음)
 
 
@@ -119,6 +119,13 @@ def extract_and_graph(registration_path):
     record, original = registry.load_for_extraction(registration_path)
     if record.get("format") == "pdf":
         return _extract_pdf_pages(record, original, ex, bg)
+    if record.get("format") == "dexpi":  # DEXPI 변환(HZ-PLN-22): 원본 옆 SVG 없음, 추출 결과의 source.format이 dexpi
+        warnings = []
+        result, out_dir = script_module("extract_dexpi").run_one(original, paths.output_root("extract"),
+                                                                 registration=record, warnings=warnings)
+        graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
+        return _with_kg({"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir,
+                         "warnings": warnings}, record["project_id"])
     reg_svg = registry.registered_svgs(registration_path, record)
     warnings = []
     result, out_dir = ex.run_one(original, paths.output_root("extract"), svg="auto", page=0, registration=record,

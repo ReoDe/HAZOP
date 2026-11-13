@@ -8,14 +8,19 @@ draw.io는 도면 객체를 추출하지 않는다. PDF는 표제란 판독을 �
 """
 
 import os
-import xml.etree.ElementTree as ET
 
 from hazop.extract import drawio, rules
+from hazop.extract.adapters import dexpi_read
 
 DRAWIO_EXTENSIONS = (".drawio",)
 PDF_EXTENSIONS = (".pdf",)
+DEXPI_EXTENSIONS = (".xml",)  # DEXPI 2.0 이후와 Proteus 1.x는 둘 다 .xml이라 확장자로 구분하지 않는다(HZ-PLN-22 §4)
+DEXPI_FORMATS = ("dexpi",)  # 등록의 format 값. 두 갈래(2.0 이후 DEXPI XML, Proteus 1.x)는 dexpi_flavor로 구분한다(HZ-PLN-22 §4.1)
 # P&ID 등록 대상 확장자 -> 기대하는 실제 형식(자료 종류별 표는 파일 끝 MATERIAL_FORMATS)
-EXPECTED_FORMAT = dict([(e, "drawio") for e in DRAWIO_EXTENSIONS] + [(e, "pdf") for e in PDF_EXTENSIONS])
+EXPECTED_FORMAT = dict([(e, "drawio") for e in DRAWIO_EXTENSIONS] + [(e, "pdf") for e in PDF_EXTENSIONS]
+                       + [(e, "dexpi") for e in DEXPI_EXTENSIONS])
+# 원본 옆 SVG를 찾지 않는 형식(그림이 파일 안에 있거나 원본에서 그린다)
+NO_SVG_FORMATS = ("pdf",) + DEXPI_FORMATS
 # 실제 형식 판별용 파일 시작 바이트
 MAGIC = [(b"%PDF", "pdf"), (b"\x89PNG", "png"), (b"\xff\xd8\xff", "jpeg"), (b"PK\x03\x04", "zip")]
 # 표제란 키 -> 등록정보 필드 (추출 규칙의 표제란 키를 그대로 쓴다)
@@ -29,18 +34,29 @@ def _problem(check, reason, field=None):
 
 
 def detect_format(data):
-    """바이트 내용으로 실제 형식을 판별한다: drawio / xml / broken_xml / pdf / png / jpeg / zip / unknown."""
+    """바이트 내용으로 실제 형식을 판별한다: drawio / dexpi / xml / unsafe_xml / broken_xml / pdf / png / jpeg / zip / unknown.
+    unsafe_xml은 DTD·개체 선언이 있거나 한도(크기·요소 수·깊이)를 넘는 XML이다(dexpi_read.parse_safely, HZ-PLN-22 §5.1)."""
     for magic, name in MAGIC:
         if data.startswith(magic):
             return name
-    # XML 여부는 파서로 판정한다(UTF-8·UTF-16 BOM 등 인코딩 감지는 파서에 맡김).
+    # XML 여부는 안전한 파서로 판정한다(UTF-8·UTF-16 BOM 등 인코딩 감지는 파서에 맡김).
     try:
-        root = ET.fromstring(data)
-    except Exception:  # ParseError, 알 수 없는 인코딩(LookupError) 등 파서 예외는 모두 읽기 실패로 판정
-        head = data.lstrip(b"\xef\xbb\xbf \t\r\n")
-        looks_xml = head.startswith(b"<") or data.startswith((b"\xff\xfe", b"\xfe\xff"))
-        return "broken_xml" if looks_xml else "unknown"
-    return "drawio" if root.tag in ("mxfile", "mxGraphModel") else "xml"
+        root = dexpi_read.parse_safely(data)
+    except dexpi_read.DexpiError as exc:
+        if exc.code in ("dexpi_doctype_forbidden", "dexpi_too_large"):
+            return "unsafe_xml"
+        return _unreadable_kind(data)
+    except Exception:  # 그 밖의 파서 예외는 모두 읽기 실패로 판정
+        return _unreadable_kind(data)
+    if root.tag in ("mxfile", "mxGraphModel"):
+        return "drawio"
+    return "dexpi" if dexpi_read.detect(root) else "xml"
+
+
+def _unreadable_kind(data):
+    head = data.lstrip(b"\xef\xbb\xbf \t\r\n")
+    looks_xml = head.startswith(b"<") or data.startswith((b"\xff\xfe", b"\xfe\xff"))
+    return "broken_xml" if looks_xml else "unknown"
 
 
 def _title_block_candidates(pages):
@@ -112,6 +128,28 @@ def _inspect_pdf(path, data, info):
                                               "value_object_id": cell.get("value_object_id")}
 
 
+def _inspect_dexpi(path, data, info):
+    """DEXPI 파일: 안전한 읽기와 구조 검사, 도면(쪽) 목록, 도면 번호·이름 자동 후보. 도면 번호는 사람이 확정하기 전에는 후보다."""
+    try:
+        model = dexpi_read.read(data)
+    except dexpi_read.DexpiError as exc:
+        info["blockers"].append(_problem(exc.code, exc.reason))
+        return
+    info["dexpi_flavor"] = model.fmt
+    if model.fmt == dexpi_read.FMT_DEXPI:
+        problems = dexpi_read.check_structure(dexpi_read.parse_safely(data), limit=5)
+        if problems:
+            info["blockers"].append(_problem("dexpi_schema_invalid", "DEXPI XML 구조 검사에 걸림: %s" % "; ".join(problems)))
+            return
+    count = max(1, model.diagram_count)
+    info["pages"] = [{"page_id": "page-%d" % i, "page_name": model.drawing["name"] if i == 1 else None,
+                      "compressed": False} for i in range(1, count + 1)]
+    for field, value in (("drawing_number", model.drawing["number"]), ("title", model.drawing["name"])):
+        if value:
+            info["auto_candidates"][field] = {"value": value, "source": "dexpi_meta", "page_id": "page-1",
+                                              "key_object_id": None, "value_object_id": None}
+
+
 def _inspect_text_pdf(path, data, info):
     """설계 문서 PDF: 쪽마다 글자를 읽을 수 있는지(hazop.kg.docextract.read_pages, 추출과 같은 읽기)와 쪽 목록.
     벡터 도면 분석(pdf_vector)·표제란 후보는 하지 않는다(글 문서에는 도면이 없음)."""
@@ -147,12 +185,20 @@ def inspect(path, data, material_type="P&ID"):
     if expected is None:
         blockers.append(_problem("unsupported_extension", "확장자 %r 는 %s 등록 대상(%s)이 아님"
                                  % (ext, material_type, "·".join(kind["formats"]))))
-    if actual not in ("drawio", "pdf"):
+    if actual == "unsafe_xml":
+        blockers.append(_problem("dexpi_unsafe_xml", "DTD·개체 선언이 있거나 크기·요소 수·깊이 한도를 넘는 XML이라 읽지 않음"))
+        return info
+    if actual not in ("drawio", "pdf") + DEXPI_FORMATS:
         if expected == "drawio" and actual in ("broken_xml", "unknown"):
             blockers.append(_problem("unreadable", "draw.io XML로 읽을 수 없음(손상 또는 알 수 없는 형식: %s)"
                                      % actual))
+        elif expected == "dexpi" and actual in ("broken_xml", "unknown"):
+            blockers.append(_problem("unreadable", "XML로 읽을 수 없음(손상 또는 알 수 없는 형식: %s)" % actual))
         elif expected is not None:
             blockers.append(_problem("format_mismatch", "확장자는 %s인데 실제 형식은 %s" % (ext, actual)))
+        return info
+    if expected == "dexpi" and actual in DEXPI_FORMATS:
+        _inspect_dexpi(path, data, info)
         return info
     if expected != actual:
         blockers.append(_problem("format_mismatch", "실제 형식은 %s인데 확장자가 %r" % (actual, ext)))

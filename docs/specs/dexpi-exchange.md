@@ -250,7 +250,8 @@ DEXPI 파일은 밖에서 온 파일입니다. 읽기 전에 아래를 모두 �
 ### 5.3 좌표
 
 - 그림 쪽(2.0의 `Core/Diagram.*`, Proteus의 `Position`·`Extent`)을 읽어 노드 `bbox`·`position`과 관계 `waypoints`를 채웁니다. 이 값이 정리된 보기와 원본 보기의 위치가 됩니다.
-- 좌표계는 `coordinate_system = {"coordinate_space": "dexpi_diagram", "unit": "mm", "origin": "top_left", "source_origin": …}`로 적습니다. **Y축 방향은 사양 문장으로 확인하지 못했습니다**(F15). 그래서 구현 첫 작업으로 2.0.1 Reference P&ID의 공식 SVG 그림(사양 부록에 있음)과 읽은 좌표를 겹쳐 보고 방향을 정해 이 절을 고칩니다. 화면은 위가 0인 좌표를 쓰므로 필요하면 `y' = 도면 높이 − y`로 뒤집고, 원래 값은 `attributes["dexpi:position"]`에 둡니다.
+- 좌표계는 `coordinate_system = {"coordinate_space": "dexpi_diagram", "unit": "mm", "origin": "top_left", "source_origin": …}`로 적습니다.
+- **Y축 방향(2026-11-14 구현에서 확인).** 사양 문장은 찾지 못했고 예제 파일로 정했습니다. (가) 2.0.1 Reference P&ID에서 표제란 글자(도면 번호)는 y 291, 칸 글자 A는 y 21, H는 y 274에 있어(도면 높이 297) 위가 0이고 아래로 커집니다. (나) 같은 도면의 Proteus 판(TrainingTestCases C01)에서 같은 노드의 y는 2.0 판과 합이 297(예 154 ↔ 143)이라 **Proteus는 y가 위로 커집니다**. (다) 2.0.1의 흐름 화살표(회전 θ)는 방향이 (cos θ, sin θ)일 때 연결의 Source→Target 방향과 맞는 연결에서 흐름 방향이 일관됩니다. 그래서 가져올 때 2.0은 그대로, Proteus는 `y' = 도면 높이 − y`로 뒤집고(`source_origin`에 `top_left`·`bottom_left`를 적음), 화면은 위가 0인 좌표를 그대로 씁니다. 원래 값은 되돌릴 수 있으므로 따로 두지 않습니다. 확인에 쓴 근거는 `docs/units/2026-11-13-drawing-knowledge/evidence/dexpi-commands.md`에 있습니다.
 - 위치 정보가 없는 객체(그림 없이 모델만 있는 파일, 그림 쪽에서 `Represents`가 가리키지 않는 객체)는 버리지 않고 `bbox: null`로 둡니다. 그리고 미확인 `dexpi_no_position`(target=그 노드나 관계, field=`bbox`, reason '그림 위치 없음(DEXPI 파일에 그림 정보가 없음)')을 남깁니다. 이 미확인은 사람이 위치를 정하거나(사람 수정의 이동) '위치 없이 둠'으로 확정해야 풀립니다. 그래서 위치 없는 구성요소가 남은 쪽은 '쪽 확정'을 할 수 없고 내보내지도 않습니다(§6.1). 화면이 이 미확인을 어떻게 세고 그리는지는 `d-chat`이 화면 규격에서 고칩니다(`sheet_confirmation`의 `unconfirmed` 사유에 `no_position`을 더하는 것을 권장).
 - 노드 크기는 `ShapeUsage`가 쓰는 `Shape`의 테두리 × `ScaleX/Y`, 회전은 `Rotation`(도)으로 셉니다. 계산이 안 되면 위치만 두고 크기는 '확인 못 함'.
 
@@ -463,7 +464,7 @@ drawio·PDF에서 읽은 도면을 내보내고 다시 가져왔을 때:
 
 ## 11. 확인하지 못한 것
 
-- Y축 방향(F15). X1 첫 작업에서 정합니다.
+- (닫힘 2026-11-14) Y축 방향(F15)은 §5.3에 적은 대로 예제 파일로 정했습니다. 공식 SVG 그림과 겹쳐 보지는 않았습니다.
 - DEXPI XML 스키마 파일 단위의 라이선스 명시(F7), Proteus 스키마 이용 조건(F8), 'DEXPI' 이름 사용 조건(F10), 인증 신청 자격(F11).
 - 2.0 형식을 내보내는 CAD 도구가 있는지.
 - `set_pressure`·구동 방식에 맞는 DEXPI 속성 이름. CAD가 판을 바꿀 때 `id`나 `PersistentIdentifier`를 유지하는지(§4.2).
