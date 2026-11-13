@@ -205,6 +205,12 @@ class AiAdapter:
     def make_client(self):
         return self.conn.make_client()
 
+    def terms_acked(self):
+        return self.conn.terms_acked()
+
+    def ack_terms(self):
+        self.conn.prefs.ack_terms()
+
 
 class ShellWindow(QMainWindow):
     """새 화면의 창. 설정 파일 경로를 받아 엔진·연결·채팅을 만들고 웹 화면을 연다."""
@@ -245,6 +251,7 @@ class ShellWindow(QMainWindow):
         self.engine.hooks["pick_files"] = self._pick_files
         self.engine.hooks["open_classic"] = self._open_classic
         self.engine.hooks["conn_guide"] = self._conn_guide
+        self.engine.hooks["save_path"] = self._save_path
         self.engine.hooks["jobs_idle"] = self.jobs_idle.emit
         self.jobs_idle.connect(self._on_jobs_idle)
         self.confirm_busy = self._ask_busy     # 시험이 모달 창 없이 답을 꽂는 자리: ("stop"|"wait"|"cancel") <- (작업 수)
@@ -293,6 +300,16 @@ class ShellWindow(QMainWindow):
     def _pick_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "도면 파일 고르기", "", "도면 (*.drawio *.pdf)")
         return files
+
+    def _save_path(self, kind, default_name):
+        """내보내기 저장 위치를 묻는다(웹은 경로를 보내지 않는다). 취소하면 None."""
+        from PySide6.QtCore import QStandardPaths
+        folder = getattr(self, "_export_dir", None) or QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+        title = "Excel로 내보내기" if kind == "excel" else "초기사건 인계 묶음 내보내기"
+        path, _ = QFileDialog.getSaveFileName(self, title, os.path.join(folder, default_name), "Excel 통합 문서 (*.xlsx)")
+        if path:
+            self._export_dir = os.path.dirname(path)
+        return path or None
 
     def _conn_guide(self, name):
         from hazop.app.settings_dialog import ACTION_HELP, show_help

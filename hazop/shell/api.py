@@ -160,6 +160,7 @@ class Engine:
         self._lock = threading.Lock()
         self._stop = threading.Event()   # 창을 닫거나 화면을 바꾸려고 작업을 멈추라고 할 때
         self._threads = []
+        self._analysis = None
 
     # ------------------------------------------------------------ 보내기
     def emit(self, name, data=None):
@@ -256,6 +257,14 @@ class Engine:
         self._threads.append(t)
         t.start()
         return t
+
+    @property
+    def analysis(self):
+        """⑤ 분석 실행 하나의 상태(hazop/shell/api_results.py)."""
+        if self._analysis is None:
+            from hazop.shell import api_results
+            self._analysis = api_results.AnalysisRun()
+        return self._analysis
 
     # ------------------------------------------------------------ 진행 중인 작업(창 닫기·화면 바꾸기 전에 묻는다)
     def running_jobs(self):
@@ -498,9 +507,19 @@ COMMANDS = {
 }
 
 
-# 2단계 구간 명령(hazop/shell/api_nodes.py, s-viewer 몫)을 같은 표에 올린다
-from hazop.shell import api_nodes  # noqa: E402
-api_nodes.register(COMMANDS)
+# 영역별 명령 모듈을 같은 표에 올린다. 한 모듈이 없거나 깨져도 새 화면은 뜨고 그 메뉴만 꺼진다(이름이 겹치면 ValueError로 바로 알린다).
+try:
+    from hazop.shell import api_nodes  # noqa: E402  (2단계 구간, s-viewer 몫)
+    api_nodes.register(COMMANDS)
+except ImportError:
+    LOG.exception("구간 명령 모듈을 읽지 못함: 구간 메뉴가 꺼진다")
+    api_nodes = None
+try:
+    from hazop.shell import api_results  # noqa: E402  (3단계 ⑤ 분석 결과)
+    api_results.register(COMMANDS)
+except ImportError:
+    LOG.exception("분석 결과 명령 모듈을 읽지 못함: 분석 결과 메뉴가 꺼진다")
+    api_results = None
 
 
 # ---------------------------------------------------------------- 읽기 API
@@ -560,8 +579,10 @@ class ReadApi:
         if topic == "chat" and len(parts) == 1:
             chat = self.engine.chat
             return _json(chat.snapshot() if chat is not None else {"busy": False, "model": "fast", "availability": {"blocked": True, "text": "채팅을 쓸 수 없습니다.", "button": None}})
-        if topic == "nodes":
+        if topic == "nodes" and api_nodes is not None:
             return api_nodes.read(self.engine, parts, query)
+        if topic == "results" and api_results is not None:
+            return api_results.read(self.engine, parts, query)
         if topic == "icons" and len(parts) == 1:
             return _json(icon_shapes())
         if topic == "examples" and len(parts) == 1:
