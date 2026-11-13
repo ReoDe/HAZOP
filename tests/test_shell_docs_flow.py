@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from hazop.shell import api, api_docs
-from tests.test_shell_web import ShellBase, pump, wait_for
+from tests.test_shell_web import ShellBase, pump, wait_for, shell_teardown as tearDownModule  # noqa: F401
 
 DOC_PDF = glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "docextract", "*.pdf"))[0]
 BASE = "document.baseURI"

@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -25,6 +26,36 @@ from scripts import check_work_root_counts as counts  # noqa: E402
 from tests.test_workroot import make_old_root, tree  # noqa: E402
 
 NEW_TOPS = sorted(now for _old, now in workroot.top_names())
+APP_DEADLINE_S = 90      # 앱을 띄우는 시험의 시간 한도. 새 화면이 기본이 된 뒤 창이 떠서 이벤트 루프가 안 끝나면 시험 전체(run_ci)가 멈추던 일을 막는다
+
+
+class app_deadline:
+    """with 블록 안에서 앱의 이벤트 루프가 한도를 넘게 돌면 루프를 끝내고 블록 뒤에서 시험을 실패시킨다(자식 웹 엔진 프로세스는 앱이 끝나며 정리된다)."""
+
+    def __init__(self, case, seconds=APP_DEADLINE_S):
+        self.case, self.seconds, self.hit = case, seconds, False
+
+    def _fire(self):
+        self.hit = True
+        try:
+            from PySide6.QtCore import QCoreApplication, QMetaObject, Qt
+            app = QCoreApplication.instance()
+            if app is not None:
+                QMetaObject.invokeMethod(app, "quit", Qt.QueuedConnection)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def __enter__(self):
+        self.timer = threading.Timer(self.seconds, self._fire)
+        self.timer.daemon = True
+        self.timer.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.timer.cancel()
+        if self.hit and exc[0] is None:
+            self.case.fail("앱이 %d초 안에 끝나지 않아 이벤트 루프를 끝냈다(창이 떠서 닫히지 않는 것으로 본다)" % self.seconds)
+        return False
 
 
 def to_old_layout(root):
@@ -126,6 +157,17 @@ class OfferTest(unittest.TestCase):
         self.assertIn("디스크 여유", self.told[-1][1])
 
 
+class AppDeadlineTest(unittest.TestCase):
+    def test_an_event_loop_that_never_ends_is_stopped_and_fails_the_test(self):
+        """창이 떠서 닫히지 않는 일(검토 2026-11-14: run_ci가 이 모듈에서 멈췄다)이 다시 생기면 시험이 영원히 멈추지 않고 실패로 끝난다."""
+        from hazop.app import make_application
+        app = make_application(["test"])
+        with self.assertRaises(AssertionError):
+            with app_deadline(self, 0.3) as deadline:
+                while not deadline.hit:          # 앞 시험이 남긴 quit이 있으면 exec가 바로 돌아오니 한도가 날 때까지 다시 돈다
+                    app.exec()
+
+
 class RunAppOldLayoutTest(unittest.TestCase):
     """scripts/run_app.main: 옛 배치 작업 루트에서는 옮기기 전에 창을 만들지 않고, 새 이름 폴더에 파일을 하나도 만들지 않는다."""
 
@@ -150,10 +192,11 @@ class RunAppOldLayoutTest(unittest.TestCase):
         told = []
         with mock.patch.object(startup, "ask_move_dialog", return_value=False) as ask, \
                 mock.patch.object(startup, "notify_running", lambda title, text: told.append(text)), \
-                mock.patch("hazop.app.main_window.MainWindow") as win:
+                mock.patch("hazop.app.main_window.MainWindow") as win, mock.patch("hazop.shell.window.ShellWindow") as shell_win, app_deadline(self):
             self.assertEqual(startup.EXIT_OLD_LAYOUT, self.ra.main(["--settings", self.settings]))
         ask.assert_called_once()
         win.assert_not_called()
+        shell_win.assert_not_called()
         self.assertEqual(1, len(told))
         self.assertEqual([], new_layout_files(self.root))
         self.assertEqual(self.before, {k: v for k, v in tree(self.root).items() if k in self.before})
@@ -179,7 +222,8 @@ class RunAppOldLayoutTest(unittest.TestCase):
         with mock.patch.object(startup, "ask_move_dialog", return_value=True), \
                 mock.patch.object(startup, "run_move_dialog", moved), \
                 mock.patch.object(startup, "notify_running", lambda title, text: order.append("told")), \
-                mock.patch("hazop.app.main_window.MainWindow", side_effect=lambda *a, **kw: order.append("window") or self.fail_window()):
+                mock.patch("hazop.shell.window.ShellWindow", side_effect=lambda *a, **kw: order.append("window") or self.fail_window()), \
+                app_deadline(self):          # 기본 시작은 새 웹 화면이다. 진짜 창을 띄우면 이벤트 루프가 끝나지 않으니 창을 만드는 자리까지만 본다
             with self.assertRaises(StopIteration):
                 self.ra.main(["--settings", self.settings])
         self.assertEqual(["move", "told", "window"], order)

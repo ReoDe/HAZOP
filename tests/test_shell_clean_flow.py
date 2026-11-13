@@ -15,6 +15,7 @@ import tests.test_shell_web as W  # noqa: E402
 from hazop.shell import api  # noqa: E402
 
 pump, wait_for = W.pump, W.wait_for
+tearDownModule = W.shell_teardown
 S1 = W.S1
 
 

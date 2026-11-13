@@ -22,6 +22,7 @@ from tests.test_shell_results import FakeAi, fake_run_unit  # noqa: E402
 from tests.test_study_export import DEVS as XDEVS, sample  # noqa: E402
 
 pump, wait_for = W.pump, W.wait_for
+tearDownModule = W.shell_teardown
 
 
 class ResultsPanelTest(W.ShellBase):

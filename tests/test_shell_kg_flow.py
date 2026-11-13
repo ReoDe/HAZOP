@@ -12,7 +12,7 @@ from unittest import mock
 
 from hazop.kg import expect
 from hazop.shell import api, api_kg
-from tests.test_shell_web import ShellBase, pump, wait_for
+from tests.test_shell_web import ShellBase, pump, wait_for, shell_teardown as tearDownModule  # noqa: F401
 
 MOUNT = """(async () => {
   if (!document.querySelector('.kg')) {

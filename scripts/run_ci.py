@@ -4,16 +4,20 @@
   python scripts/run_ci.py --diagnose   # 러너 진단 줄(글꼴, 드라이브, 판 번호)만 찍는다
 
 하나가 실패해도 끝까지 돌리고, 실패가 하나라도 있으면 종료 코드 1이다.
+시험 모듈 하나가 한도(MODULE_TIMEOUT_S, 환경변수 HAZOP_CI_MODULE_TIMEOUT_S)를 넘기면 멈춘 것으로 보고 모든 스레드의 호출 자리를 적은 뒤 앱 이벤트 루프를 끝내
+그 모듈을 실패로 적고 다음으로 간다. 그래도 풀리지 않으면(60초) 지금까지의 요약을 적고 검사 스크립트 단계만 따로 돌린 뒤 이 프로세스와 자식을 정리하고 끝낸다.
 요약 표는 $GITHUB_STEP_SUMMARY에 덧붙인다. 그 변수가 없으면 표준 출력에 찍는다.
 """
 
 import argparse
 import collections
+import faulthandler
 import os
 import platform
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -60,6 +64,8 @@ NOT_IN_CI = {
 }
 
 CHECK_TIMEOUT_S = 900
+MODULE_TIMEOUT_S = int(os.environ.get("HAZOP_CI_MODULE_TIMEOUT_S") or 1200)      # 시험 모듈 하나의 한도(가장 오래 걸리는 모듈이 약 5분이다)
+MODULE_GRACE_S = 60                                                                # 한도 뒤 이벤트 루프를 끝낸 다음 풀리기를 기다리는 시간
 MALGUN = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "malgun.ttf")
 
 
@@ -69,6 +75,90 @@ def check_path(name):
 
 def _cell(text):
     return str(text).replace("|", "\\|").replace("\n", " ")
+
+
+def _quit_qt():
+    """앱 이벤트 루프를 어느 스레드에서든 안전하게 끝낸다(창이 떠서 닫히지 않는 시험이 run_ci 전체를 세우던 일을 푼다)."""
+    try:
+        from PySide6.QtCore import QCoreApplication, QMetaObject, Qt
+        app = QCoreApplication.instance()
+        if app is not None:
+            QMetaObject.invokeMethod(app, "quit", Qt.QueuedConnection)
+    except Exception:  # noqa: BLE001 - 끝내지 못해도 다음 단계(강제 종료)가 있다
+        pass
+
+
+def _timeout_failure(result, name, limit):
+    """시간 초과를 이름 있는 실패 시험 하나로 남긴다."""
+    class ModuleTimeout(unittest.TestCase):
+        def runTest(self):
+            pass
+    case = ModuleTimeout()
+    case.id = lambda: "%s.모듈 시간 초과" % name
+    result.addFailure(case, (AssertionError, AssertionError("시험 모듈이 %d초를 넘겨 멈춘 것으로 보고 끝냈다" % limit), None))
+
+
+class ModuleWatch:
+    """시험 모듈 하나의 시간 한도. 넘기면 호출 자리를 적고 이벤트 루프를 끝내며, 그래도 안 풀리면 force(name)를 부른다.
+    모듈이 끝나 cancel()을 부른 뒤에는 어느 타이머도 더는 아무것도 하지 않는다(끝나는 순간과 한도가 겹쳐도 강제 종료가 뒤늦게 나가지 않게 잠금으로 막는다)."""
+
+    def __init__(self, name, limit, force, grace=None):
+        self.name, self.limit, self.force = name, limit, force
+        self.grace = MODULE_GRACE_S if grace is None else grace
+        self.fired = False
+        self._cancelled = False
+        self._lock = threading.Lock()
+        self._timers = []
+
+    def _start(self, seconds, fn):
+        with self._lock:
+            if self._cancelled:
+                return
+            timer = threading.Timer(seconds, fn)
+            timer.daemon = True
+            self._timers.append(timer)
+            timer.start()
+
+    def start(self):
+        self._start(self.limit, self._fire)
+        return self
+
+    def _fire(self):
+        with self._lock:
+            if self._cancelled:
+                return
+            self.fired = True
+        print("\n[모듈 시간 초과] %s: %d초를 넘겨 멈춘 것으로 보고 앱 이벤트 루프를 끝낸다. 아래는 그때 모든 스레드의 호출 자리다." % (self.name, self.limit), flush=True)
+        faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+        self._start(self.grace, self._force)          # 이벤트 루프를 끝내기 전에 둘째 타이머를 건다
+        _quit_qt()
+
+    def _force(self):
+        with self._lock:
+            if self._cancelled:
+                return
+        self.force(self.name)
+
+    def cancel(self):
+        with self._lock:
+            self._cancelled = True
+            for timer in self._timers:
+                timer.cancel()
+
+
+def _force_finish(name, result, modules, limit):
+    """이벤트 루프를 끝내도 풀리지 않을 때: 지금까지의 요약을 적고 검사 스크립트 단계만 따로 돌린 뒤 이 프로세스와 자식을 정리하고 끝낸다."""
+    print("\n[모듈 강제 종료] %s: 풀리지 않아 지금까지의 결과를 적고 검사 스크립트만 따로 돌린 뒤 끝낸다." % name, flush=True)
+    _timeout_failure(result, name, limit)
+    modules.append((name, 0, 1, 0, float(limit)))
+    rc = subprocess.run([sys.executable, os.path.abspath(__file__), "--checks-only"], cwd=REPO_ROOT).returncode
+    write_summary(summary_markdown(result, modules, [], [("unittest", float(limit)), ("검사 스크립트(따로)", 0.0)]))
+    print("검사 스크립트 단계 종료 코드 %s. 멈춘 모듈이 있어 실패로 끝낸다." % rc, flush=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(os.getpid())], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os._exit(1)
 
 
 def run_unittests():
@@ -83,7 +173,13 @@ def run_unittests():
         print("\n[모듈 시작] %s" % name, flush=True)
         before = (result.testsRun, len(result.failures) + len(result.errors), len(result.skipped))
         start = time.perf_counter()
-        module_suite.run(result)
+        watch = ModuleWatch(name, MODULE_TIMEOUT_S, lambda n: _force_finish(n, result, modules, MODULE_TIMEOUT_S)).start()
+        try:
+            module_suite.run(result)
+        finally:
+            watch.cancel()
+        if watch.fired:                    # 이벤트 루프를 끝내서 풀린 경우: 그 모듈을 실패로 적고 다음으로 간다
+            _timeout_failure(result, name, MODULE_TIMEOUT_S)
         took = time.perf_counter() - start
         after = (result.testsRun, len(result.failures) + len(result.errors), len(result.skipped))
         row = (name, after[0] - before[0], after[1] - before[1], after[2] - before[2], took)
@@ -167,11 +263,15 @@ def write_summary(text):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--diagnose", action="store_true", help="진단 줄만 찍고 끝낸다")
+    ap.add_argument("--checks-only", action="store_true", help="시험은 건너뛰고 검사 스크립트만 돌린다(멈춘 모듈 뒤에 이어 돌리는 길)")
     args = ap.parse_args(argv)
     if args.diagnose:
         print("\n".join(diagnose_lines()))
         return 0
     os.chdir(REPO_ROOT)
+    if args.checks_only:
+        checks = run_checks()
+        return 1 if any(rc != 0 for _, rc, _ in checks) else 0
     start = time.perf_counter()
     result, modules = run_unittests()
     unit_s = time.perf_counter() - start

@@ -85,7 +85,7 @@ class SheetConfirmFlowTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: self.enabled(win, "견주기 화면 열기") is True, 10), self.text(win)[-300:])
         self.assertTrue(self.click(win, "button[aria-label='견주기 화면 열기']"))
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.cmpcard') !== null") is True, 10), "견주기 화면이 열리지 않음")
-        self.assertTrue(wait_for(lambda: "원본에 남은" in self.text(win) or "남은 것이 없습니다" in self.text(win), 15), self.text(win)[-300:])
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.cmpcard .cmp-step, .cmpcard [role=status]') !== null") is True, 15), self.text(win)[-300:])      # 남은 것 넘기기 또는 '남은 것이 없습니다' 줄
 
     def test_chip_shows_the_remaining_conditions_and_the_buttons_explain_why_they_are_off(self):
         win = self.window()
