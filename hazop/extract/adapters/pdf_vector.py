@@ -50,6 +50,7 @@ from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
 )
 from .pdf_vector_flow import _chain_flow, _propagate_flows
+from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels
 from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, VALVE_TAG_RE, _text_blocks, _upright_blocks, _bubble_like,
                                 _assign_tags)
 
@@ -1779,6 +1780,10 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     if _propagate_flows(relations, {n["local_id"]: n.get("kind") for n in node_out}):
         filled = {r["local_id"] for r in relations if r.get("flow_direction")} - before
         unknowns[:] = [u for u in unknowns if not (u.get("check") == "unknown_flow_direction" and u.get("target") in filled)]
+    # 배관 글자(구경·배관 번호)를 가장 가까운 물리 배관 속성으로(pdf_vector_lines). 붙인 글자는 남은 글자 목록에서 뺀다
+    taken |= attach_line_labels(blocks, [bi for bi in range(len(blocks)) if bi not in taken
+                                         and roles.get(bi) not in ("title_block", "symbol_mark")], relations + unresolved)
+    attach_continuation_line_numbers(node_out, relations + unresolved)
 
     text_out = []
     for bi, b in enumerate(blocks):
