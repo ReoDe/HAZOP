@@ -198,8 +198,15 @@ class ReadApiTest(EngineBase):
         gid = next(x["graph_id"] for x in self.body(["drawings"])["drawings"] if x["drawing_number"] == "SNP-M-102")
         s = self.body(["sheet", gid])
         self.assertEqual(s["graph_id"], gid)
-        self.assertIn("nodes", s["extraction"])
-        self.assertIn("nodes", s["graph"])
+        self.assertGreater(len(s["items"]), 20)
+        self.assertGreater(s["width"], 1000)
+        self.assertEqual({i["layer"] for i in s["items"]}, {"symbol", "pipe"})
+        pz = [i for i in s["items"] if i["tag"] == "RC-PZ01"][0]
+        self.assertEqual(pz["id"], "local-node-001")
+        self.assertEqual(pz["bbox"], [500 - 19, 250 - 19, 500 + 120 - 19, 250 + 300 - 19], "추출 좌표에서 정렬 offset을 뺀 SVG 좌표")
+        pipe = [i for i in s["items"] if i["layer"] == "pipe"][0]
+        self.assertGreaterEqual(len(pipe["polyline"]), 2)
+        self.assertEqual(pipe["bbox"][0], min(p[0] for p in pipe["polyline"]))
         self.assertTrue(s["svg"].startswith("/api/sheet/"))
         svg = self.read(["sheet", gid + ".svg"], {})
         self.assertEqual((svg.status, svg.mime), (200, "image/svg+xml"))

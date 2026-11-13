@@ -524,17 +524,20 @@ class ReadApi:
         return name
 
     def sheet(self, graph_id):
-        """도면 한 장의 그리기 자료: 고친 추출 + 그래프 + 도면 SVG 주소. 구성요소(items)는 웹의 도면 부품이 추출 자료에서 만든다."""
+        """도면 한 장의 그리기 자료: 고친 추출에서 만든 구성요소·배관 목록(items, SVG 좌표)과 도면 SVG 주소(canvas/README.md)."""
         from hazop.app import data
         name = self._sheet_name(graph_id)
         if not name:
             return None
+        from hazop.shell import sheet_items
         _original, corrected = data.load_extraction(name)
         graph = data.viewer_build.load_graph(paths.output_root("graph"), name)
+        built = sheet_items.build_items(corrected)
         svg_ok = bool(((corrected.get("coordinate_system") or {}).get("svg_alignment") or {}).get("svg_file"))
         rev = _fingerprint(data.extraction_path(name), os.path.join(paths.output_root("graph"), name, "graph.json"))
-        return _json({"graph_id": graph_id, "name": name, "rev": rev, "svg": "/api/sheet/%s.svg" % graph_id
-                      if svg_ok else None, "extraction": corrected, "graph": graph})
+        return _json({"graph_id": graph_id, "name": name, "rev": rev, "svg": "/api/sheet/%s.svg" % graph_id if svg_ok else None,
+                      "width": built["width"], "height": built["height"], "items": built["items"],
+                      "unknowns": (corrected.get("summary") or {}).get("unknowns"), "has_graph": graph is not None})
 
     def sheet_svg(self, graph_id):
         from hazop.app import data
