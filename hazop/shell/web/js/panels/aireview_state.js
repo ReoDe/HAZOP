@@ -76,7 +76,7 @@ async function write(name, args, notice) {
     const r = await cmd(name, Object.assign({ graph_id: ai.get().graphId, ver: ai.get().view.ver }, args));
     const failed = (r && r.failed) || [];
     ai.set({ busy: false, notice: notice(r) + (failed.length ? " 하지 못한 후보 " + failed.length + "건: " + failed.slice(0, 3).map((f) => f.reason).join(" · ") : "")
-      + ((r && r.notes && r.notes.length) ? " " + r.notes.join(" ") : "") });
+      + ((r && r.notes && r.notes.length) ? " " + r.notes.join(" ") : "") + ((r && r.recheck && r.recheck.length) ? " " + r.recheck.join(" ") : "") });
     await refresh();
     return r;
   } catch (e) {

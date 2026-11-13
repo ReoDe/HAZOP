@@ -33,7 +33,7 @@ function Bulk({ v }) {
         <${Btn} sm=${true} kind="primary" label=${b.label + " " + b.count + "건 수락"} disabled=${busy} onClick=${() => A.acceptBulk(b.task)}>수락<//>
         <${Btn} sm=${true} kind="ghost" label="취소" onClick=${() => A.ask(null)}>취소<//></div>`
     : html`<${Btn} key=${b.task} sm=${true} icon="circle-check" label=${"확신 높은 " + b.label + " " + b.count + "건 묶어 수락"} disabled=${busy} onClick=${() => A.ask(b.task)}>${b.label} ${b.count}건 묶어 수락<//>`)}
-    <span class="muted small">확신도 ${v.threshold} 이상(기호 종류는 ${v.kind_threshold} 이상이고 이웃 기호에 붙지 않은 것)만 묶습니다.</span></div>`;
+    <span class="muted small">확신도 ${v.threshold} 이상인 태그·속성·연결만 묶습니다. 기호 종류와 다시 확인은 하나씩 확정합니다.</span></div>`;
 }
 
 function Row({ r }) {
@@ -72,6 +72,7 @@ export function AiReviewPanel({ onClose }) {
         ${v.available ? html`<${Chip} kind="ai">남은 ${c.proposed || 0}<//><${Chip} kind="ok">수락 ${c.accepted || 0}<//><${Chip}>거절 ${c.rejected || 0}<//>` : null}</div>
       ${last ? html`<div class="muted small">마지막 실행: 호출 ${last.calls ?? "-"}회 · 묻지 못한 곳 ${last.left ?? "-"}${last.not_symbol ? " · 기호 아님 " + last.not_symbol : ""}${last.halted ? " · 오류로 멈춤" : last.stopped ? " · 중지함" : ""}</div>` : null}
       <div class="muted small">후보는 추출 결과를 바꾸지 않습니다. 수락한 것만 도면 수정 기록에 들어가 그래프에 바로 반영되고, 되돌릴 수 있습니다.</div>
+      ${v.graph_stale ? html`<${Notice} kind="warn" icon="alert-triangle">수락·되돌리기는 저장됐지만 그래프를 아직 다시 만들지 못해 도면·그래프가 고치기 전 상태입니다. 패널을 다시 열거나 다음 결정을 하면 다시 만듭니다.<//>` : null}
       ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${A.dismiss}>닫기<//><//>` : null}
       ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice}<//>` : null}
       <${Estimate} />

@@ -12,9 +12,11 @@
 
 import hashlib
 import logging
+import os
 
 from hazop import paths, store_io
 from hazop.extract import ai_review, corrections
+from hazop.study.nodes import now_utc
 
 LOG = logging.getLogger("hazop.shell.api_aireview")
 TOPICS = ("aireview",)
@@ -51,10 +53,44 @@ def _original(name):
 
 
 def ver_of(name):
-    """후보 파일과 사람 수정 기록의 지문을 묶은 판. 둘 중 하나라도 바뀌면 달라진다."""
-    ai_fp = store_io.fingerprint(ai_review.store_path(name))
-    corr_fp = corrections.load_fp(name)[1]
-    return hashlib.sha256(("%s|%s" % (ai_fp, corr_fp)).encode("utf-8")).hexdigest()[:16]
+    """읽은 판: 쪽 확정과 같은 세 파일(추출 결과·사람 수정 기록·AI 후보, confirmation.file_paths)의 지문을 묶은 값.
+    다시 추출해 추출 결과가 바뀌어도 달라진다(검토 2)."""
+    from hazop.extract import confirmation
+    files = confirmation.file_paths(name)
+    text = "|".join("%s=%s" % (k, store_io.fingerprint(files[k]) or "-") for k in sorted(files))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def stale_path(name):
+    """그래프가 수정 기록보다 낡았다는 표시 파일(수락·되돌리기는 저장됐는데 그래프 다시 만들기가 실패했을 때 남긴다)."""
+    return paths.folder("ai-review", paths.safe_name(name) + ".graph-stale.json")
+
+
+def _mark_stale(name, why):
+    try:
+        store_io.write_json(stale_path(name), {"name": name, "at": now_utc(), "reason": str(why)[:200]})
+    except OSError:
+        LOG.exception("낡은 그래프 표시를 남기지 못함")
+
+
+def graph_stale(name):
+    return os.path.isfile(stale_path(name))
+
+
+def _ensure_graph(name):
+    """낡은 그래프 표시가 있으면 다시 만들어 본다(다음에 열 때·다음 동작 때). → (아직 낡았는지, 알림 글, 재확인 안내)."""
+    if not graph_stale(name):
+        return False, [], []
+    try:
+        notes, recheck = _rebuild(name)
+    except Exception as exc:  # noqa: BLE001 - 다시 만들기 실패는 표시로 남기고 화면은 뜬다
+        LOG.exception("낡은 그래프 다시 만들기 실패")
+        return True, ["그래프가 수정 기록보다 낡았습니다. 다시 만들지 못했습니다(%s)." % type(exc).__name__], []
+    try:
+        os.remove(stale_path(name))
+    except OSError:
+        pass
+    return False, notes, recheck
 
 
 def _current(shown, c):
@@ -90,13 +126,14 @@ def candidates(engine, graph_id):
     """한 도면의 후보(채팅·웹 공용). → {ok, available, graph_id, drawing_number, ver, counts, groups, bulk, last_run} 또는 {ok: False, code, message}."""
     try:
         name = _name(engine, graph_id)
+        stale, stale_notes, _recheck = _ensure_graph(name)
         doc, original = _load(name)
     except Refused as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
     except (OSError, ValueError) as exc:
         return {"ok": False, "code": "failed", "message": "AI 후보를 읽을 수 없습니다(%s)." % str(exc)[:120]}
     base = {"ok": True, "graph_id": graph_id, "drawing_number": (original.get("drawing") or {}).get("drawing_number") or name,
-            "ver": ver_of(name)}
+            "ver": ver_of(name), "graph_stale": stale, "graph_notes": stale_notes}
     if doc is None:
         return dict(base, available=False, reason="이 도면에는 AI 후보가 없습니다. AI 검토를 실행하면 생깁니다.", counts={}, groups=[], bulk=[],
                     last_run=None)
@@ -114,7 +151,6 @@ def candidates(engine, graph_id):
     runs = doc.get("runs") or []
     last = runs[-1] if runs else {}
     return dict(base, available=True, counts=counts, groups=groups, bulk=bulk, threshold=ai_review.DEFAULT_THRESHOLD,
-                kind_threshold=ai_review.KIND_THRESHOLD,
                 last_run={k: last.get(k) for k in ("at", "calls", "left", "needed_calls", "halted", "stopped", "not_symbol")} if last else None)
 
 
@@ -172,8 +208,11 @@ def read(engine, parts, query):
 # ---------------------------------------------------------------- 쓰기
 
 def _rebuild(name):
-    """그 도면의 그래프와 프로젝트 지식그래프를 다시 만든다(hazop.app.data.save_corrections와 같은 길). → 알림 글 목록."""
+    """그 도면의 그래프와 프로젝트 지식그래프를 다시 만든다(hazop.app.data.save_corrections와 같은 길).
+    → (알림 글 목록, ④ 검토구간·⑤ 분석 결과 재확인 안내 목록 — data.save_corrections와 같은 규칙)."""
     from hazop.app import data
+    from hazop.study import nodes as study_nodes
+    from hazop.study import results as study_results
     notes = []
     graph, _ = data.script_module("build_graph").build_one(data.extraction_path(name), paths.output_root("graph"))
     if graph.get("project_id"):
@@ -181,18 +220,40 @@ def _rebuild(name):
             data.build_project_kg(graph["project_id"])
         except (OSError, ValueError, KeyError) as exc:
             notes.append("지식그래프를 다시 만들지 못했습니다(%s)." % str(exc)[:120])
-    return notes
+    recheck = []
+    try:
+        node_set = study_nodes.read_as_is(graph)
+    except ValueError:
+        node_set = None
+    if node_set is not None and study_nodes.is_stale(node_set, graph):
+        confirmed = node_set.get("status") == "confirmed" or study_nodes.active_nodes(
+            node_set if node_set.get("schema_version") == study_nodes.SCHEMA_VERSION else None)
+        recheck.append("④ 검토구간 %s이 고치기 전 도면 기준입니다. 재확인이 필요합니다." % ("확정본" if confirmed else "저장본"))
+    res_path = study_results.store_path(graph.get("project_id"), graph["graph_id"])
+    if os.path.isfile(res_path):
+        saved = data.read_json(res_path)
+        ref = saved.get("graph_version") if "graph_version" in saved else (saved.get("study_nodes_ref") or {}).get("graph_version")
+        if ref != graph["graph_version"]:
+            recheck.append("⑤ 분석 결과가 고치기 전 도면 기준입니다. 재확인이 필요합니다.")
+    return notes, recheck
 
 
-def _decide(engine, graph_id, cand_ids, action, ver=None, by=None):
-    """낱개 결정의 공통 길. → {ok, changed, failed, ver, notes} 또는 {ok: False, code, message}."""
+STALE_TEXT = "AI 후보나 도면 수정이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요."
+
+
+def _decide(engine, graph_id, cand_ids, action, ver, by=None):
+    """낱개 결정의 공통 길. ver(읽은 판)는 꼭 있어야 한다(채팅도 같다, 검토 5).
+    → {ok, changed, failed, ver, notes, recheck, graph_stale} 또는 {ok: False, code, message}.
+    저장한 뒤의 실패(그래프 다시 만들기)는 오류가 아니라 '저장됨, 그래프 갱신 실패'로 돌려주고 낡은 그래프 표시를 남긴다(검토 3·4)."""
+    stale_before, notes, recheck = False, [], []
     try:
         name = _name(engine, graph_id)
+        stale_before, notes, recheck = _ensure_graph(name)          # 앞에서 실패한 다시 만들기를 이번 동작에서 다시 해 본다
         by = by or engine.reviewer()
         if not by:
             raise Refused("bad_args", "검토자 이름을 먼저 설정에서 입력하세요. 수락·거절한 사람으로 남습니다.")
-        if ver is not None and ver != ver_of(name):
-            raise Refused("stale", "AI 후보나 도면 수정이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
+        if not ver or ver != ver_of(name):
+            raise Refused("stale", STALE_TEXT if ver else "읽은 판(ver)이 없어 저장하지 않았습니다. 후보 목록을 먼저 읽으세요.")
         doc, original = _load(name)
         if doc is None:
             raise Refused("not_found", "이 도면에는 AI 후보가 없습니다.")
@@ -212,41 +273,54 @@ def _decide(engine, graph_id, cand_ids, action, ver=None, by=None):
     except Refused as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
     except store_io.Conflict:
-        return {"ok": False, "code": "stale", "message": "AI 후보나 도면 수정이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요."}
+        return {"ok": False, "code": "stale", "message": STALE_TEXT}
     except (OSError, ValueError) as exc:
         LOG.exception("AI 후보 %s 실패", action)
         return {"ok": False, "code": "failed", "message": "저장하지 못했습니다(%s)." % str(exc)[:160]}
+    # 여기부터는 저장이 끝났다. 어떤 예외도 '저장 안 됨'으로 알리지 않는다
     after = {c["cand_id"]: c["status"] for c in doc["candidates"]}
     changed = [i for i in ids if after.get(i) != before[i]]
-    notes = []
+    stale = stale_before
     if changed and action in ("accept", "revert"):
         try:
-            notes = _rebuild(name)
-        except (OSError, ValueError, KeyError) as exc:
+            more, recheck = _rebuild(name)
+            notes = notes + more
+            stale = False
+            if stale_before:
+                try:
+                    os.remove(stale_path(name))
+                except OSError:
+                    pass
+        except Exception as exc:  # noqa: BLE001 - 저장 뒤의 실패
             LOG.exception("그래프 다시 만들기 실패")
-            notes = ["그래프를 다시 만들지 못했습니다(%s). 수정 기록은 저장됐습니다." % str(exc)[:120]]
-    if changed:
+            _mark_stale(name, type(exc).__name__)
+            stale = True
+            notes = notes + ["저장했습니다. 그래프를 다시 만들지 못해 도면·그래프가 아직 고치기 전 상태입니다(%s). 다음에 열 때 다시 만듭니다."
+                             % type(exc).__name__]
+    if changed or stale_before != stale:
         engine.changed("aireview", None)
-        if action in ("accept", "revert"):
-            engine.changed("drawings", None)
+        engine.changed("drawings", None)
+        engine.changed("sheetconf", None)                         # 쪽 확정 카드의 AI 후보 수(검토 6)
+        if action in ("accept", "revert") or stale_before != stale:
             engine.changed("sheet", graph_id)
             engine.changed("kg", None)
-    return {"ok": True, "graph_id": graph_id, "changed": changed, "failed": failed, "ver": ver_of(name), "notes": notes}
+    return {"ok": True, "graph_id": graph_id, "changed": changed, "failed": failed, "ver": ver_of(name), "notes": notes,
+            "recheck": recheck, "graph_stale": stale}
 
 
-def accept(engine, graph_id, cand_ids, ver=None, by=None):
+def accept(engine, graph_id, cand_ids, ver, by=None):
     return _decide(engine, graph_id, cand_ids, "accept", ver, by)
 
 
-def reject(engine, graph_id, cand_ids, ver=None, by=None):
+def reject(engine, graph_id, cand_ids, ver, by=None):
     return _decide(engine, graph_id, cand_ids, "reject", ver, by)
 
 
-def revert(engine, graph_id, cand_ids, ver=None, by=None):
+def revert(engine, graph_id, cand_ids, ver, by=None):
     return _decide(engine, graph_id, cand_ids, "revert", ver, by)
 
 
-def accept_bulk(engine, graph_id, task, ver=None, by=None):
+def accept_bulk(engine, graph_id, task, ver, by=None):
     """확신 높은 묶음(ai_review.bulk_groups, 할 일별)을 한 번에 수락한다. 묶음은 엔진이 다시 세므로 웹이 고른 ID를 믿지 않는다."""
     try:
         name = _name(engine, graph_id)
@@ -255,6 +329,8 @@ def accept_bulk(engine, graph_id, task, ver=None, by=None):
         return {"ok": False, "code": exc.code, "message": exc.message}
     except (OSError, ValueError) as exc:
         return {"ok": False, "code": "failed", "message": "AI 후보를 읽을 수 없습니다(%s)." % str(exc)[:120]}
+    if not ver or ver != ver_of(name):
+        return {"ok": False, "code": "stale", "message": STALE_TEXT if ver else "읽은 판(ver)이 없어 저장하지 않았습니다. 후보 목록을 먼저 읽으세요."}
     ids = ai_review.bulk_groups(doc, by="task").get(task) if doc else None
     if not ids:
         return {"ok": False, "code": "not_found", "message": "묶어 수락할 후보가 없습니다."}

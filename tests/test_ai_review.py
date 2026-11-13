@@ -195,11 +195,39 @@ class RunTest(unittest.TestCase):
         doc = ar.run(ex_fixture(), StubClient(good_answers), cap=5, recheck=0)
         low = next(c for c in doc["candidates"] if c["field"] == "tag")
         low["confidence"] = 0.4
-        next(c for c in doc["candidates"] if c["field"] == "kind")["confidence"] = 0.97
+        next(c for c in doc["candidates"] if c["field"] == "kind")["confidence"] = 0.99
         groups = ar.bulk_groups(doc, threshold=0.8)
         self.assertNotIn(low["cand_id"], [c for v in groups.values() for c in v])
-        self.assertIn("kind", groups)
+        self.assertNotIn("kind", groups)                  # 기호 종류는 확신과 관계없이 하나씩 확정(검토 차단 1)
+        self.assertIn("normal_position", groups)
         self.assertNotIn("tag", groups)
+
+
+CUT = os.path.join(REPO, "tests", "fixtures", "ai-review", "apr1400-063-cut.json")
+
+
+class RealCutTest(unittest.TestCase):
+    """실제 추출 형식(APR1400 063쪽 조각, 공개 자료). 검토 차단 1: 스크립트가 일부러 종류를 비운 노드(안전등급 경계 마름모,
+    classification_basis safety_class_boundary, missing_kind 미확인 없음)에는 종류를 묻지 않는다."""
+
+    def ex(self):
+        with open(CUT, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def test_kind_asked_only_where_missing_kind(self):
+        ex = self.ex()
+        kinds = {i["local_id"] for i in ar.collect_items(ex, recheck=0) if i["task"] == "kind"}
+        self.assertEqual(kinds, {"local-node-001", "local-node-144"})
+        self.assertNotIn("local-node-010", kinds)                     # 안전등급 경계: 스크립트가 무엇인지 안다
+
+    def test_no_bulk_kind_on_real_cut(self):
+        ex = self.ex()
+        def answers(req):
+            return {"answers": [{"item_id": it["item_id"], "field": it["ask"][0], "values": ["blind_flange"], "confidence": 0.99,
+                                 "reason": "시험"} for it in ids_in(req) if it["ask"][0] == "kind"]}
+        doc = ar.run(ex, StubClient(answers), cap=5, recheck=0)
+        self.assertEqual({c["local_id"] for c in doc["candidates"]}, {"local-node-001", "local-node-144"})
+        self.assertEqual(ar.bulk_groups(doc), {})
 
 
 class BulkSafetyTest(unittest.TestCase):
@@ -227,23 +255,27 @@ class BulkSafetyTest(unittest.TestCase):
         self.assertEqual(doc["stats"]["not_symbol"], 1)
         self.assertIn("not_symbol", ar.system_text())
 
-    def test_kind_bulk_needs_high_confidence_and_free_box(self):
+    def test_kind_is_never_bulk(self):
         doc = ar.run(self.ex(), StubClient(good_answers), cap=5, recheck=0)
         kinds = {c["target"]: c for c in doc["candidates"] if c["field"] == "kind"}
         self.assertEqual(kinds["n7"]["near_symbol"], "motor_operated_valve")
         for c in kinds.values():
-            c["confidence"] = 0.9
-        self.assertNotIn("kind", ar.bulk_groups(doc))                 # 0.9 < 0.95
-        self.assertIn("tag", ar.bulk_groups(doc))                     # 태그는 0.85 그대로
-        for c in kinds.values():
-            c["confidence"] = 0.99
-        self.assertEqual(ar.bulk_groups(doc)["kind"], [kinds["n1"]["cand_id"]])   # 붙은 상자 n7은 빠짐
+            c["confidence"] = 1.0
+        self.assertNotIn("kind", ar.bulk_groups(doc))
+        self.assertNotIn("kind", ar.bulk_groups(doc, by="task"))
+        self.assertIn("하나씩", ar.bulk_block(kinds["n1"]))
         self.assertIn("이웃 기호", ar.bulk_block(kinds["n7"]))
-        self.assertEqual(ar.bulk_groups(doc, by="task")["kind"], [kinds["n1"]["cand_id"]])
+        self.assertIn("tag", ar.bulk_groups(doc))                     # 태그는 0.85 그대로
 
     def test_recheck_disagreement_is_not_bulk(self):
         c = ar.make_candidate("r-n4", "recheck", node("n4", "pump", (0, 0, 9, 9), tag="PP01"), "tag", ["PP02"], 0.99, "")
         self.assertIn("다시 확인", ar.bulk_block(c))
+
+    def test_validation_without_missing_kind_asks_nothing(self):
+        ex = self.ex()
+        ex["validation"] = {"unknowns": [{"check": "missing_kind", "target": "Ln1"}]}
+        kinds = {i["target"] for i in ar.collect_items(ex, recheck=0) if i["task"] == "kind"}
+        self.assertEqual(kinds, {"n1"})                              # n7은 missing_kind 미확인이 없음
 
     def test_annotate_fills_old_candidates(self):
         ex = self.ex()
@@ -329,6 +361,23 @@ class AcceptTest(unittest.TestCase):
 
     def valves(self, k=3):
         return [n for n in self.ex["nodes"] if n.get("kind") and n.get("kind") != "tee"][:k]
+
+    def test_decided_places_are_not_asked_again(self):  # 검토 8: 수락·거절한 자리는 다시 묻지 않는다
+        name = "decided"
+        items = [i for i in ar.collect_items(self.ex) if i["task"] in ("tag", "kind")][:2]
+        self.assertEqual(len(items), 2)
+        vals = {"kind": "manual_valve", "tag": "V990", "normal_position": "NO", "fail_position": "FC"}
+        cands = [ar.make_candidate(i["item_id"], i["task"], i, i["ask"][0], [vals[i["ask"][0]]], 0.9, "") for i in items]
+        doc = ar.new_doc(name, self.ex)
+        ar.merge_run(doc, {"candidates": cands, "stats": {}})
+        ar.save_doc(doc)
+        before = ar.estimate_pages([(name, self.ex)])["pages"][0]["items"]
+        ar.accept(doc, [cands[0]["cand_id"]], self.ex, name, by="시험")
+        ar.reject(doc, [cands[1]["cand_id"]], by="시험")
+        self.assertEqual(ar.decided_targets(name), {items[0]["target"], items[1]["target"]})
+        self.assertEqual(ar.estimate_pages([(name, self.ex)])["pages"][0]["items"], before - 2)
+        ar.revert(doc, [cands[1]["cand_id"]], name, by="시험")          # 되돌린 거절은 다시 물을 수 있다
+        self.assertEqual(ar.decided_targets(name), {items[0]["target"]})
 
     def test_stale_window_accept_is_refused_and_keeps_new_run(self):  # 재현 [A]
         from hazop import store_io

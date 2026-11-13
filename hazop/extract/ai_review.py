@@ -37,7 +37,6 @@ DEFAULT_CAP = 20          # 도면당 호출 수 기본 상한(규격 'AI 검토
 DEFAULT_BATCH = 20        # 호출 하나에 넣는 항목 수(b)
 DEFAULT_RECHECK = 5       # 다시 확인 표본 수
 DEFAULT_THRESHOLD = 0.85  # 묶어 수락하는 확신도 하한
-KIND_THRESHOLD = 0.95     # 기호 종류 제안을 묶어 수락하는 확신도 하한(오검출이 가장 많은 필드라 더 높게)
 NEAR_PART = 8.0           # 이 거리(pt) 안에 종류가 정해진 기호가 있으면 그 기호의 일부(구동부 머리·번호 원·태그판)일 수 있다
 NOT_SYMBOL = "not_symbol"  # 종류 답 가운데 '기호가 아님(다른 기호의 일부·글자 상자·선 조각)'. 후보를 만들지 않는다
 TASK_LABELS = {"kind": "못 읽은 기호의 종류", "tag": "태그·속성", "connection": "끊긴 연결", "recheck": "다시 확인"}
@@ -80,8 +79,9 @@ def _has_target(n):
 
 def near_symbol(ex, obj, reach=NEAR_PART):
     """obj 상자에서 reach 안에 있는, 종류가 정해진 다른 기호의 종류(가장 가까운 것). 없으면 None.
-    읽기 품질 기록(@1731277, APR1400 012·063쪽): AI 종류 후보의 오검출 35건 가운데 16건이 이런 자리(밸브 위 'S' 상자,
-    번호 원, 태그판)였고 맞은 39건 가운데는 5건이었다. 그래서 이런 후보는 묶음 수락에서 빼고 하나씩 보게 한다."""
+    화면에서 '이웃 기호의 일부일 수 있음'을 알리는 데 쓴다(밸브 위 'S' 상자, 번호 원, 태그판 같은 자리).
+    출처: A4 보고(2026-11-14) — @1731277 저장 후보(APR1400 012·063쪽)를 정답지와 다시 짝지었을 때 이 표지가 종류 후보 오검출
+    35건 가운데 16건, 맞은 39건 가운데 5건에 걸렸다(그 뒤 검토 차단 1로 종류 후보는 묶음 수락에서 모두 뺐다)."""
     b = _box(obj)
     if b is None:
         return None
@@ -96,6 +96,24 @@ def near_symbol(ex, obj, reach=NEAR_PART):
         if d <= reach and (best is None or d < best[0]):
             best = (d, n.get("kind"))
     return best[1] if best else None
+
+
+def missing_kind_targets(ex):
+    """추출 결과의 missing_kind 미확인 대상 local_id 집합. 추출 결과에 미확인 목록(validation.unknowns)이 없으면 None."""
+    unknowns = (ex.get("validation") or {}).get("unknowns")
+    if unknowns is None:
+        return None
+    return {u.get("target") for u in unknowns if u.get("check") == "missing_kind"}
+
+
+def asks_kind(n, missing):
+    """종류를 물을 노드인가. 종류가 비어 있어도 스크립트가 무엇인지 아는 표시(안전등급 경계 마름모처럼 evidence.classification_basis가
+    있고 missing_kind 미확인이 없는 것)는 묻지 않는다(검토 차단 1). 미확인 목록이 없는 옛 추출은 classification_basis만 본다."""
+    if n.get("kind") is not None:
+        return False
+    if missing is not None:
+        return n.get("local_id") in missing
+    return not (n.get("evidence") or {}).get("classification_basis")
 
 
 def _item(task, obj, ask, item_id=None, **more):
@@ -127,12 +145,14 @@ def _partners(ex, rel, open_end):
 def collect_items(ex, recheck=DEFAULT_RECHECK):
     """AI에게 물을 항목 목록(우선순위 순서는 plan이 정한다)."""
     items = []
+    missing = missing_kind_targets(ex)
     for n in ex["nodes"]:
         if _box(n) is None or n.get("kind") == "tee":
             continue
         kind = n.get("kind")
         if kind is None:
-            items.append(_item("kind", n, ["kind"], near_symbol=near_symbol(ex, n)))
+            if asks_kind(n, missing):
+                items.append(_item("kind", n, ["kind"], near_symbol=near_symbol(ex, n)))
             continue
         cat = rules.KIND_CATEGORY.get(kind)
         if cat in NEED_TAG and not n.get("tag"):
@@ -433,12 +453,26 @@ def human_targets(name):
     return {o.get("target") for o in (rec or {}).get("ops") or [] if o.get("origin") != "ai" and o.get("target")}
 
 
+def decided_targets(name):
+    """다시 묻지 않을 대상: 사람이 고친 자리, AI 후보를 수락해 들어간 자리, 사람이 거절한 후보의 자리(검토 8).
+    되돌린 후보(제안 상태로 돌아감)는 다시 물을 수 있다."""
+    rec = corrections.load(name)
+    out = {o.get("target") for o in (rec or {}).get("ops") or [] if o.get("target")}
+    try:
+        doc = load_doc(name)
+    except ValueError:
+        doc = None
+    out |= {c.get("target") for c in (doc or {}).get("candidates") or [] if c.get("status") in ("accepted", "rejected")}
+    out.discard(None)
+    return out
+
+
 def estimate_pages(pages, cap=DEFAULT_CAP, run_cap=RUN_CAP, batch=DEFAULT_BATCH, recheck=DEFAULT_RECHECK):
     """pages [(이름, extraction)] → {pages: [{name, items, calls, needed}], calls, needed, seconds, capped}.
     도면마다 cap, 실행 전체는 run_cap까지 센다(run_many와 같은 규칙)."""
     out, left = [], run_cap
     for name, ex in pages:
-        exclude = human_targets(name) if name else set()
+        exclude = decided_targets(name) if name else set()
         items = [i for i in collect_items(ex, recheck) if i["target"] not in exclude]
         p = plan(items, max(0, min(cap, left)), batch)
         left -= len(p["calls"])
@@ -467,7 +501,7 @@ def run_many(pages, client, cap=DEFAULT_CAP, run_cap=RUN_CAP, on_progress=None, 
     for name, ex in pages:
         if should_stop and should_stop():
             break
-        result = run(ex, client, cap=cap, budget=run_cap - used, exclude=human_targets(name),
+        result = run(ex, client, cap=cap, budget=run_cap - used, exclude=decided_targets(name),
                      on_progress=(lambda d, t, left, n=name: on_progress(n, d, t, left)) if on_progress else None,
                      should_stop=should_stop)
         used += result["stats"]["calls"]
@@ -485,7 +519,7 @@ def run_many(pages, client, cap=DEFAULT_CAP, run_cap=RUN_CAP, on_progress=None, 
 def bulk_block(c, threshold=DEFAULT_THRESHOLD):
     """묶어 수락하지 않을 까닭(글) 또는 None. 낱개로는 여전히 수락할 수 있다.
     - 제안 상태가 아님, 확신도가 threshold 아래
-    - 기호 종류: 확신도 KIND_THRESHOLD 아래이거나, 종류가 정해진 이웃 기호에 붙어 있음(그 기호의 일부일 수 있음)
+    - 기호 종류: 확신과 관계없이 늘 하나씩 확정한다(검토 차단 1: 미분류 조각·이웃 기호의 일부에 붙인 종류가 오검출의 대부분)
     - 다시 확인: 스크립트가 읽은 값과 AI 값이 다른 것(어느 쪽이 맞는지 사람이 봐야 함)"""
     if c["status"] != "proposed":
         return "이미 정함"
@@ -494,10 +528,9 @@ def bulk_block(c, threshold=DEFAULT_THRESHOLD):
     if c["task"] == "recheck":
         return "다시 확인에서 스크립트와 다른 값이 나와 하나씩 봄"
     if c["field"] == "kind":
-        if c["confidence"] < max(threshold, KIND_THRESHOLD):
-            return "기호 종류는 확신도 %.2f 이상만 묶음" % max(threshold, KIND_THRESHOLD)
         if c.get("near_symbol"):
-            return "이웃 기호(%s)에 붙어 있어 그 기호의 일부일 수 있음" % c["near_symbol"]
+            return "기호 종류는 하나씩 확정함. 이웃 기호(%s)에 붙어 있어 그 기호의 일부일 수 있음" % c["near_symbol"]
+        return "기호 종류는 하나씩 확정함"
     return None
 
 
