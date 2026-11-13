@@ -754,7 +754,9 @@ class MainWindow(QMainWindow):
     def _apply_chat_limits(self):
         col = self.chat_column
         if self._col_on:
-            col.setMinimumWidth(self._col_min())
+            # 최소 폭은 Qt의 하드 최소로 두지 않는다. 화면 힌트가 일시적으로 낡은 값일 때 창 최소 폭이 부풀어 창이 넓어지기 때문이다.
+            # 대신 plan_columns·_size_panels가 가운데 폭을 지키고, 끌어서 줄이는 것은 _chat_dragged가 최소로 되돌린다.
+            col.setMinimumWidth(0)
             col.setMaximumWidth(CHAT_MAX)
         else:
             col.setFixedWidth(CHAT_STRIP)
@@ -859,6 +861,10 @@ class MainWindow(QMainWindow):
     def _chat_dragged(self, _pos, _index):
         """가운데와 오른쪽 열 사이 손잡이를 끌면 새 폭을 기억한다."""
         if not self._col_on or not self.chat_column.isVisible():
+            return
+        low = self._col_min()
+        if self.chat_column.width() < low:
+            self._size_panels()  # 최소보다 좁게 끌었으면 최소로 되돌린다
             return
         w = max(CHAT_MIN, min(CHAT_MAX, self.chat_column.width()))
         if w != self._chat_w:

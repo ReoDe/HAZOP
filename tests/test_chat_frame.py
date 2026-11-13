@@ -176,7 +176,7 @@ class ChatFrameTest(unittest.TestCase):
                 if rel:
                     win.open_related()
                 pump(win, 0.05)
-                tag = "화면 %d 관련 항목 %s" % (idx, rel)
+                tag = "화면 %d 관련 항목 %s [mw %d min %d stack %d colon %s ex %s col %d/%d]" % (idx, rel, win.minimumWidth(), win.minimumSizeHint().width(), win.stack.minimumSizeHint().width(), win._col_on, win.explorer_panel.isVisible(), win.chat_column.width(), win.chat_column.minimumWidth())
                 self.assertEqual(win.width(), 1366, tag + " 창 폭")
                 self.assertLessEqual(win.minimumSizeHint().width(), 1366, tag + " 최소 폭")
                 self.assertGreaterEqual(win.stack.width(), CENTER_MIN, tag + " 가운데")
