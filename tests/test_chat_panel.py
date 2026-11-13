@@ -160,7 +160,7 @@ class InputTest(PanelBase):
         self.assertEqual(self.sessions[-1].stopped, 1)
         self.assertFalse(p.busy())
         self.assertEqual(p.send_button.text(), "보내기")
-        self.assertIn("그 대화는 사라", self.texts(p))
+        self.assertIn("지금까지의 대화는 지워지고", self.texts(p))
 
     def test_cannot_send_second_question_while_busy(self):
         p = self.panel()
@@ -207,6 +207,190 @@ class KeyboardTest(PanelBase):
         p2.set_availability("not_installed")
         p2.focus_input()
         self.assertFalse(p2.input.hasFocus())
+
+
+class ReviewFixTest(PanelBase):
+    """검토 반려 지적(2026-11-13) 재현 A·B와 프로젝트 전환, 표시 문구."""
+
+    def error(self, kind, **extra):
+        return dict({"error_kind": kind, "conn_state": kind, "message": "멈춤 " + kind, "limit": None}, **extra)
+
+    def test_A_halt_error_after_a_good_answer_still_blocks_input(self):
+        # ChatSession._on_result 순서: on_answer -> on_state(ready) -> on_error(overage) -> on_state(failed)
+        p = self.panel(host=FakeHost())
+        p.ask("첫 질문")
+        s = self.sessions[-1]
+
+        def run():
+            s.cb["on_answer"]("q1", answer(), TOOL_IDS)
+            s.cb["on_state"]("ready", "")
+            s.cb["on_error"]("q1", self.error("overage"))
+            s.cb["on_state"]("failed", "초과 사용")
+        t = threading.Thread(target=run)
+        t.start()
+        t.join()
+        pump(seconds=0.2)
+        self.assertFalse(p.input.isEnabled())
+        self.assertFalse(p.ask("둘째 질문"))
+        self.assertEqual(len(s.asked), 1, "초과 사용 뒤 다음 질문이 나가지 않는다")
+
+    def test_A2_error_of_an_older_finished_question_is_ignored(self):
+        p = self.panel(host=FakeHost())
+        p.ask("하나")
+        s = self.sessions[-1]
+        s.cb["on_answer"]("q1", answer(), TOOL_IDS)
+        pump(seconds=0.1)
+        p.ask("둘")
+        s.cb["on_error"]("q9", self.error("timeout", message="다른 질문의 시간 초과"))
+        pump(seconds=0.1)
+        self.assertTrue(p.busy(), "지금 질문과 방금 끝난 질문이 아닌 오류는 지금 질문을 끝내지 않는다")
+
+    def test_B_availability_refresh_does_not_release_a_halt(self):
+        p = self.panel()
+        p.ask("q")
+        s = self.sessions[-1]
+        s.cb["on_error"]("q1", self.error("limit_reached"))
+        pump(seconds=0.1)
+        self.assertTrue(p._avail["blocked"])
+        p.set_availability("ok", "")           # ai_conn.changed: 다른 AI 작업의 시작·끝, 확인, 모델 변경마다 온다
+        self.assertTrue(p._avail["blocked"])
+        self.assertFalse(p.ask("다시"))
+
+    def test_B2_halt_is_released_by_a_user_recheck(self):
+        p = self.panel()
+        p.ask("q")
+        self.sessions[-1].cb["on_error"]("q1", self.error("limit_reached"))
+        pump(seconds=0.1)
+        p.set_availability("ok", "", user_check=True)
+        self.assertFalse(p._avail["blocked"])
+        self.assertTrue(p.input.isEnabled())
+
+    def test_B3_limit_halt_is_released_after_the_reset_time(self):
+        import time as _t
+        p = self.panel()
+        p.ask("q")
+        self.sessions[-1].cb["on_error"]("q1", self.error("limit_reached", limit={"resets_at": _t.time() + 3600}))
+        pump(seconds=0.1)
+        p.set_availability("ok", "")
+        self.assertTrue(p._avail["blocked"], "재설정 시각 전")
+        p2 = self.panel()
+        p2.ask("q")
+        self.sessions[-1].cb["on_error"]("q1", self.error("limit_reached", limit={"resets_at": _t.time() - 5}))
+        pump(seconds=0.1)
+        p2.set_availability("ok", "")
+        self.assertFalse(p2._avail["blocked"], "재설정 시각이 지남")
+
+    def test_C_project_switch_ends_the_conversation(self):
+        cur = {"pid": "A"}
+        from hazop.app.chat_panel import ChatPanel
+        made = []
+
+        def factory(model, cb):
+            s = FakeSession(model, cb)
+            made.append(s)
+            return s
+        p = ChatPanel(factory, env_provider=lambda: (FakeEnv(), small_pg()), view_fn=lambda: {}, project_fn=lambda: cur["pid"])
+        p.resize(420, 700)
+        p.show()
+        self.addCleanup(p.deleteLater)
+        p.ask("A 질문")
+        made[0].cb["on_answer"]("q1", answer(), TOOL_IDS)
+        pump(seconds=0.1)
+        cur["pid"] = "B"
+        self.assertTrue(p.ask("B 질문"))
+        self.assertEqual(len(made), 2, "프로젝트가 바뀌면 새 세션")
+        self.assertTrue(made[0].closed, "옛 세션은 닫는다")
+        self.assertEqual(len(p.cards()), 0, "옛 대화는 지운다")
+        self.assertIn("프로젝트가 바뀌어", self.texts(p))
+
+    def test_C2_answer_from_the_old_project_gets_no_grounding(self):
+        cur = {"pid": "A"}
+        from hazop.app.chat_panel import ChatPanel
+        made = []
+
+        def factory(model, cb):
+            s = FakeSession(model, cb)
+            made.append(s)
+            return s
+        p = ChatPanel(factory, env_provider=lambda: (FakeEnv(), small_pg()), view_fn=lambda: {}, project_fn=lambda: cur["pid"])
+        p.resize(420, 700)
+        p.show()
+        self.addCleanup(p.deleteLater)
+        p.ask("S3 구간에 뭐가 있어?")
+        cur["pid"] = "B"     # 질문 중에 프로젝트가 바뀌었다
+        made[0].cb["on_answer"]("q1", answer(text="S3에는 펌프가 있습니다.", refs=[{"kind": "node", "id": "S3"}]),
+                                {"node": {"S3"}})
+        pump(seconds=0.1)
+        c = p.cards()[-1].card
+        self.assertEqual(c.refs, [])
+        self.assertEqual(c.ungrounded, 1)
+        self.assertEqual(c.badges, [])
+
+    def test_empty_qid_error_does_not_end_the_running_question(self):
+        p = self.panel()
+        p.ask("q")
+        self.sessions[-1].cb["on_error"](None, self.error("transient", message="미리 띄우기 실패"))
+        pump(seconds=0.1)
+        self.assertTrue(p.busy())
+        self.assertIn("미리 띄우기 실패", self.texts(p))
+
+    def test_empty_qid_halt_blocks_input_without_ending_a_question(self):
+        p = self.panel()
+        self.sessions.clear()
+        p.prewarm()
+        self.assertTrue(wait_for(lambda: bool(self.sessions), 3))
+        self.sessions[-1].cb["on_error"](None, self.error("login_required"))
+        pump(seconds=0.1)
+        self.assertTrue(p._avail["blocked"])
+
+    def test_warning_without_path_has_no_path_wording_and_expands(self):
+        p = self.panel(host=FakeHost())
+        p.ask("q")
+        self.deliver(p, ans=answer(highlight=[{"ids": [comp(S1, 9)], "style": "focus"}]),
+                     tool_ids={"component": {comp(S1, 9)}})
+        t = self.texts(p)
+        self.assertIn("못 읽은 기호 1개", t)
+        self.assertNotIn("경로에 못 읽은", t)
+        from PySide6.QtWidgets import QLabel
+        detail = next(b for b in p.findChildren(QPushButton) if b.objectName() == "chat_warn_toggle")
+        self.assertFalse(any(l.objectName() == "chat_warn_targets" and l.isVisible() for l in p.findChildren(QLabel)))
+        detail.click()
+        pump(seconds=0.05)
+        shown = [l.text() for l in p.findChildren(QLabel) if l.objectName() == "chat_warn_targets" and l.isVisible()]
+        self.assertEqual(len(shown), 1)
+        self.assertIn(comp(S1, 9), shown[0])
+
+    def test_every_label_and_tooltip_is_plain_text(self):
+        from PySide6.QtWidgets import QLabel
+        env = FakeEnv()
+        env.items[comp(S1, 1)]["tag"] = "<img src='file:///C:/x.png'>RC"
+        p = self.panel(host=FakeHost())
+        p._env_provider = lambda: (env, small_pg())
+        p.ask("<b>질문</b>")
+        self.deliver(p, ans=answer(text="<b>굵게</b>", general="<i>일반</i>", warnings=["<u>주의</u>"],
+                                   paths=[{"label": "<b>경로</b>", "path_ref": REF}]))
+        for lab in p.findChildren(QLabel):
+            self.assertEqual(lab.textFormat(), Qt.PlainText, lab.text()[:30])
+        for w in p.findChildren(QPushButton):
+            self.assertNotIn("<img", w.toolTip(), "툴팁에 도면 글자가 리치 텍스트로 들어가지 않는다")
+
+    def test_alt_down_goes_to_the_first_chip_of_the_last_card(self):
+        p = self.panel(host=FakeHost())
+        p.ask("q")
+        self.deliver(p)
+        p.input.setFocus()
+        QTest.keyClick(p.input, Qt.Key_Down, Qt.AltModifier)
+        pump(seconds=0.05)
+        focus = QApplication.focusWidget()
+        self.assertIsNotNone(focus)
+        self.assertEqual(focus.objectName(), "chat_chip")
+        self.assertEqual(focus.text(), "RC-PZ01")
+
+    def test_stop_notice_wording(self):
+        p = self.panel()
+        p.ask("q")
+        p.send_button.click()
+        self.assertIn("지금까지의 대화는 지워지고", self.texts(p))
 
 
 class ModelTest(PanelBase):
@@ -259,7 +443,7 @@ class AnswerTest(PanelBase):
     def test_general_only_answer_shows_no_evidence_header(self):
         p = self.panel()
         p.ask("q")
-        self.deliver(p, ans=answer(text="", general="그냥 일반 지식"), tool_ids={})
+        self.deliver(p, ans=answer(text="", general="그냥 일반 지식"), tool_ids={}, tools=0)
         self.assertIn("도면·문서에서 확인한 내용 없음", self.texts(p))
 
     def test_text_is_plain_not_html(self):

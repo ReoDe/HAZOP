@@ -180,7 +180,7 @@ class SourceSplitTest(unittest.TestCase):
         self.assertEqual(c.badges, [])
 
     def test_text_with_general_keeps_both(self):
-        c = card.build_card(answer(general="일반 지식"), TOOL_IDS, FakeEnv())
+        c = card.build_card(answer(general="일반 지식"), TOOL_IDS, FakeEnv(), tool_names=["find"])
         self.assertFalse(c.no_evidence)
         self.assertEqual(c.general, "일반 지식")
 
@@ -387,6 +387,78 @@ class ContextEnvTest(unittest.TestCase):
 
     def test_stale_graph_version_gives_no_steps(self):
         self.assertIsNone(self.env().path_steps(dict(REF, graph_version="v0")))
+
+
+class ReviewFixCardTest(unittest.TestCase):
+    def test_no_grounded_id_and_no_tools_means_no_evidence_even_with_text(self):
+        c = card.build_card(answer(text="그냥 아는 글", general=""), {}, FakeEnv())
+        self.assertTrue(c.no_evidence)
+        self.assertEqual(c.badges, [])
+
+    def test_any_tool_call_counts_as_evidence(self):
+        c = card.build_card(answer(), TOOL_IDS, FakeEnv(), tool_names=["count"])
+        self.assertFalse(c.no_evidence)
+
+    def test_grounded_ref_counts_as_evidence(self):
+        c = card.build_card(answer(refs=[{"kind": "component", "id": comp(S1, 1)}]), TOOL_IDS, FakeEnv())
+        self.assertFalse(c.no_evidence)
+
+    def test_warning_scope_path_or_highlight(self):
+        env = FakeEnv()
+        c = card.build_card(answer(paths=[{"label": "x", "path_ref": REF}],
+                                   highlight=[{"ids": [comp(S1, 9)], "style": "focus"}]), TOOL_IDS, env, path_refs=(REF,))
+        scopes = {w["reason"]: w["scope"] for w in c.warnings}
+        self.assertEqual(scopes["direction_unknown"], "path")
+        self.assertEqual(scopes["unknown_symbol"], "highlight")
+        c2 = card.build_card(answer(highlight=[{"ids": [comp(S1, 9)], "style": "focus"}]), TOOL_IDS, env)
+        self.assertEqual([w["scope"] for w in c2.warnings], ["highlight"])
+
+    def test_warning_carries_target_labels(self):
+        c = card.build_card(answer(highlight=[{"ids": [comp(S1, 9)], "style": "focus"}]), TOOL_IDS, FakeEnv())
+        self.assertEqual(c.warnings[0]["ids"], [comp(S1, 9)])
+        self.assertIn("labels", c.warnings[0])
+
+    def test_source_kinds_make_badges_including_knowledge(self):
+        c = card.build_card(answer(), TOOL_IDS, FakeEnv(), source_kinds=["knowledge", "drawing", "document", "result"])
+        self.assertEqual(c.badges, ["도면", "결과", "문서", "지식"])
+
+    def test_path_ref_wording_is_not_shown_to_users(self):
+        c = card.build_card(answer(paths=[{"label": "x", "ids": ["a"]}]), TOOL_IDS, FakeEnv())
+        self.assertFalse(any("path_ref" in n for n in c.path_notes))
+
+    def test_query_log_takes_path_ref_only_from_successful_trace_path(self):
+        seen = view.QuestionLog()
+        seen.tool_event("q1", "find", {}, {"ok": True, "data": {"path_ref": REF}})
+        seen.tool_event("q1", "trace_path", {}, {"ok": False, "data": {"path_ref": REF}, "error": {"code": "x"}})
+        seen.tool_event("q2", "trace_path", {}, {"ok": True, "data": {"path": {"path_ref": REF}}})
+        self.assertEqual(seen.path_refs("q1"), [])
+        self.assertEqual(seen.path_refs("q2"), [REF])
+
+    def test_query_log_collects_source_kinds(self):
+        seen = view.QuestionLog()
+        seen.tool_event("q1", "get_component", {}, {"ok": True, "sources": [{"kind": "drawing"}, {"kind": "knowledge"}]})
+        seen.tool_event("q1", "find", {}, {"ok": False, "sources": [{"kind": "document"}]})
+        self.assertEqual(seen.source_kinds("q1"), ["drawing", "knowledge"])
+
+
+class ReviewFixViewTest(unittest.TestCase):
+    def test_josa_by_final_sound(self):
+        self.assertEqual(view.topic("RC-RV01"), "RC-RV01은")   # 일
+        self.assertEqual(view.topic("RC-PZ02"), "RC-PZ02는")   # 이
+        self.assertEqual(view.topic("RC-PM"), "RC-PM은")       # 엠
+        self.assertEqual(view.topic("RC-PT"), "RC-PT는")       # 티
+        self.assertEqual(view.topic("가압기"), "가압기는")
+        self.assertEqual(view.topic("원자로"), "원자로는")
+        self.assertEqual(view.topic("펌프"), "펌프는")
+        self.assertEqual(view.topic("탱크"), "탱크는")
+        self.assertEqual(view.topic("밸브"), "밸브는")
+        self.assertEqual(view.topic("RC-V30"), "RC-V30은")     # 삼십은 받침 있음(0=영)
+
+    def test_example_questions_use_polite_speech(self):
+        pg = {"nodes": [dict(entity_id="a", tag="RC-RV01", kind="vessel"), dict(entity_id="b", tag="RC-PZ02", kind="vessel")]}
+        qs = [q for _, group in view.examples(pg) for q in group]
+        self.assertTrue(all(q.endswith(("요?", "요.")) for q in qs), qs)
+        self.assertIn("RC-RV01은 어디에 이어져 있나요?", qs)
 
 
 if __name__ == "__main__":

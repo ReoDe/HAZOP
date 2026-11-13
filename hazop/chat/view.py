@@ -101,10 +101,17 @@ class QuestionLog:
         self._tools = {}
         self._calls = {}
         self._refs = {}
+        self._kinds = {}
 
     def tool_event(self, qid, name, args, result):
-        refs = _find_path_refs(result.get("data") if isinstance(result, dict) else None)
+        ok = isinstance(result, dict) and result.get("ok") is True
+        # path_ref는 trace_path의 성공 결과에서만 받는다(다른 도구나 실패 결과의 path_ref는 이번 질문의 경로가 아니다)
+        refs = _find_path_refs(result.get("data")) if ok and name == "trace_path" else []
+        kinds = [str(x.get("kind")) for x in (result.get("sources") or []) if isinstance(x, dict)] if ok else []
         with self._lock:
+            for kind in kinds:
+                if kind not in self._kinds.setdefault(qid, []):
+                    self._kinds[qid].append(kind)
             self._calls.setdefault(qid, []).append((str(name), args if isinstance(args, dict) else {}))
             self._tools.setdefault(qid, []).append(str(name))
             for ref in refs:
@@ -121,6 +128,10 @@ class QuestionLog:
         """[(도구 이름, 인자)] — 카드 바닥 '근거 보기'에 보인다."""
         return list(self._calls.get(qid, ()))
 
+    def source_kinds(self, qid):
+        """이번 질문의 성공한 도구 결과에서 모은 sources.kind(drawing·document·result·knowledge)."""
+        return list(self._kinds.get(qid, ()))
+
     def path_refs(self, qid):
         return list(self._refs.get(qid, ()))
 
@@ -128,6 +139,7 @@ class QuestionLog:
         with self._lock:
             self._tools.pop(qid, None)
             self._calls.pop(qid, None)
+            self._kinds.pop(qid, None)
             self._refs.pop(qid, None)
 
 
@@ -162,6 +174,23 @@ def availability(conn_state, message="", reset_text=None):
 
 # ---------------------------------------------------------------- 예시 질문(§7: 종류별, 태그는 지금 프로젝트에서)
 
+def topic(word):
+    """단어 뒤에 붙는 은/는. 한글은 받침으로, 숫자·영문 대문자는 읽는 소리(영·일·삼…, 엘·엠·엔·알)의 끝소리로 가른다."""
+    word = str(word)
+    last = word[-1:] if word else ""
+    if "가" <= last <= "힣":
+        has = (ord(last) - 0xAC00) % 28 != 0
+    elif last.isdigit():
+        has = last in "013678"
+    elif last.upper() in "LMNR":
+        has = True
+    elif last.isalpha() and last.isascii():
+        has = False
+    else:
+        return word + "은(는)"
+    return word + ("은" if has else "는")
+
+
 def examples(pg, limit=2):
     """프로젝트 그래프에서 태그를 골라 종류별 예시 질문을 만든다. -> [(묶음 이름, [질문])]. 그래프가 없으면 태그 없는 질문."""
     tags = []
@@ -170,8 +199,8 @@ def examples(pg, limit=2):
             tags.append(str(n["tag"]))
     a = tags[0] if tags else None
     b = tags[-1] if len(tags) > 1 else None
-    out = [("찾기", ["%s는 어디에 이어져 있어?" % a] if a else ["도면에 어떤 기기가 있어?"]),
-           ("경로", ["%s에서 %s까지 배관 경로와 밸브를 알려줘." % (a, b)] if b else ["두 기기 사이 배관 경로를 알려줘."]),
-           ("개수", ["도면 전체에 제어밸브는 몇 개이고 태그는 뭐야?"]),
-           ("확인할 곳", ["못 읽은 기호나 끊긴 연결이 있는 곳을 알려줘."])]
+    out = [("찾기", ["%s 어디에 이어져 있나요?" % topic(a)] if a else ["도면에 어떤 기기가 있나요?"]),
+           ("경로", ["%s에서 %s까지 배관 경로와 밸브를 알려 주세요." % (a, b)] if b else ["두 기기 사이 배관 경로를 알려 주세요."]),
+           ("개수", ["도면 전체에 제어밸브는 몇 개이고 태그는 무엇인가요?"]),
+           ("확인할 곳", ["못 읽은 기호나 끊긴 연결이 있는 곳을 알려 주세요."])]
     return [(name, qs[:limit]) for name, qs in out]

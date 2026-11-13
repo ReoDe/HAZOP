@@ -789,10 +789,12 @@ class MainWindow(QMainWindow):
         self._chat_ctx = None
         self.viewer_host = ViewerHost(self.webview, self._chat_names, self._chat_switch, parent=self)
         self.chat_panel = ChatPanel(self._chat_session, env_provider=self._chat_env, host=self.viewer_host,
-                                    view_fn=self._chat_view_dict, model=self.settings.get("chat_model") or "fast", parent=self)
+                                    view_fn=self._chat_view_dict, model=self.settings.get("chat_model") or "fast", parent=self,
+                                    project_fn=self._chat_project_id)
         self.chat_panel.modelChanged.connect(self._chat_model_saved)
         self.chat_panel.guideRequested.connect(self._chat_guide)
         self.chat_panel.answered.connect(self._chat_answered)
+        self.drawing_changed.connect(lambda _d: self.chat_panel.check_project())  # 프로젝트가 바뀌면 대화를 끝낸다
         self.chat_panel.escaped.connect(lambda: self._focus_main(self.current_screen()))
         self.ai_conn.changed.connect(self._chat_availability)
         self.set_chat_widget(self.chat_panel)
@@ -861,9 +863,11 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
 
-    def _chat_availability(self):
+    def _chat_availability(self, user_check=False):
+        """연결 상태를 채팅 창에 알린다. 채팅이 스스로 건 막힘은 ai_conn.changed(다른 AI 작업·확인·모델 변경마다 옴)로 풀지 않고
+        사용자가 연결을 다시 확인한 결과(user_check)나 한도 재설정 시각으로만 푼다."""
         st = self.ai_conn.status("subscription")
-        self.chat_panel.set_availability(st.get("state"), st.get("detail") or "")
+        self.chat_panel.set_availability(st.get("state"), st.get("detail") or "", user_check=user_check)
 
     def _chat_guide(self, name):
         if name == "install":
@@ -1072,7 +1076,7 @@ class MainWindow(QMainWindow):
     def conn_action(self, name, method=None):
         """칩 상세 창·해결 안내의 동작. method를 주면 그 방식에 대해 한다(없으면 지금 방식)."""
         if name == "check":
-            self.ai_conn.check(method)
+            self.ai_conn.check(method, done=lambda _st: self._chat_availability(user_check=True))
         elif name == "to_api":
             self.open_ai_settings("api")
         elif name in ACTION_HELP:
@@ -1081,7 +1085,7 @@ class MainWindow(QMainWindow):
             self.open_ai_settings(method)
 
     def recheck_ai(self):
-        self.ai_conn.check()
+        self.ai_conn.check(done=lambda _st: self._chat_availability(user_check=True))
 
     def _refresh_status(self):
         """왼쪽은 지금 도면과 개수, 오른쪽은 메시지·진행·저장·단축키 안내. 값이 없는 칸은 숨긴다."""

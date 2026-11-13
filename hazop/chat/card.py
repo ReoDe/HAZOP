@@ -27,6 +27,8 @@ REASON_TEXT = {
 STYLES = ("focus", "path", "cause", "safeguard", "warn", "muted")
 KINDS = ("component", "node", "cell", "chunk")
 BADGE = {"component": "도면", "node": "도면", "cell": "결과", "chunk": "문서"}
+BADGE_ORDER = ("도면", "결과", "문서", "지식")
+SOURCE_BADGE = {"drawing": "도면", "result": "결과", "document": "문서", "knowledge": "지식"}  # 도구 결과 sources.kind
 PIPE_KIND = "pipe_segment"
 KIND_LABEL = {"continuation": "도면 연결점", "unclassified": "못 읽은 기호"}  # 태그가 없는 객체의 칩 글자
 FOLD_LIMIT, FOLD_HEAD, FOLD_TAIL = 12, 5, 5
@@ -139,17 +141,17 @@ def _list(v):
     return v if isinstance(v, list) else []
 
 
-def build_card(answer, tool_ids, env, path_refs=(), tool_names=()):
+def build_card(answer, tool_ids, env, path_refs=(), tool_names=(), source_kinds=()):
     """모델 답 -> Card. answer가 이상한 모양이어도 깨지지 않는다."""
     answer = answer if isinstance(answer, dict) else {}
     tool_ids = tool_ids or {}
     card = Card(text=_text(answer.get("text")), general=_text(answer.get("general")),
                 model_warnings=[w for w in _list(answer.get("warnings")) if isinstance(w, str)],
                 actions=[a for a in _list(answer.get("actions")) if isinstance(a, dict)])
-    card.no_evidence = not card.text.strip() and bool(card.general.strip())
     seen = {path_key(r) for r in path_refs}
     kinds_used = []
     warn_ids = {}
+    warn_scope = {}
 
     def check(kind, ref):
         """-> 확인한 프로젝트 ID 또는 None. 없으면 dropped, 근거 없으면 ungrounded를 센다."""
@@ -185,6 +187,7 @@ def build_card(answer, tool_ids, env, path_refs=(), tool_names=()):
             for i in ids:
                 for reason in env.reasons(i):
                     warn_ids.setdefault(reason, []).append(i)
+                    warn_scope.setdefault(reason, "highlight")
 
     for p in _list(answer.get("paths")):
         path = _path(p, env, seen, card)
@@ -201,23 +204,33 @@ def build_card(answer, tool_ids, env, path_refs=(), tool_names=()):
                 reasons.add("flow_against")
             for reason in reasons:
                 warn_ids.setdefault(reason, []).append(step["id"])
+                warn_scope[reason] = "path"
         _mark_chips(path, env)
 
     for name in tool_names:  # 부른 도구도 출처다(근거 ID를 안 적어도 어느 자료를 봤는지 보인다)
         badge = TOOL_BADGE.get(name, "도면")
         if badge not in kinds_used:
             kinds_used.append(badge)
-    card.badges = [b for b in ("도면", "결과", "문서") if b in kinds_used] if card.text.strip() else []
+    for kind in source_kinds:
+        badge = SOURCE_BADGE.get(kind)
+        if badge and badge not in kinds_used:
+            kinds_used.append(badge)
+    # 근거가 하나도 없는 답(확인한 ID도, 경로도, 부른 도구도 없음)은 글이 있어도 '확인한 내용 없음'으로 일반 지식과 구분한다
+    evidence = bool(card.refs or card.highlight or card.paths or tool_names or source_kinds)
+    card.no_evidence = not evidence and bool(card.text.strip() or card.general.strip())
+    card.badges = [b for b in BADGE_ORDER if b in kinds_used] if card.text.strip() and evidence else []
     for reason in REASON_ORDER:
         ids = list(dict.fromkeys(warn_ids.get(reason, ())))
         if ids:
-            card.warnings.append({"reason": reason, "text": REASON_TEXT[reason] % len(ids), "ids": ids})
+            labels = [(env.describe(i) or {}).get("tag") or i for i in ids]
+            card.warnings.append({"reason": reason, "text": REASON_TEXT[reason] % len(ids), "ids": ids,
+                                  "labels": labels, "scope": warn_scope.get(reason, "path")})
     return card
 
 
 def _path(p, env, seen, card):
     if not isinstance(p, dict) or not isinstance(p.get("path_ref"), dict):
-        card.path_notes.append("경로는 path_ref로만 받습니다. ID 목록으로 낸 경로는 그리지 않았습니다.")
+        card.path_notes.append("도구가 찾은 경로 정보 없이 낸 경로는 그리지 않았습니다.")
         return None
     ref, label = p["path_ref"], _text(p.get("label")) or "경로"
     if path_key(ref) not in seen:

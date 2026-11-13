@@ -115,7 +115,7 @@ class WrapButton(QPushButton):
         self.label.setTextFormat(Qt.PlainText)
         lay.addWidget(self.label)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        self.setToolTip(text)
+        self.setToolTip(_tip(text))
 
     def text(self):  # noqa: A003
         return self._text
@@ -128,6 +128,18 @@ class WrapButton(QPushButton):
 
     def minimumSizeHint(self):  # noqa: N802
         return QSize(60, self.label.minimumSizeHint().height() + 8)
+
+
+def _tip(text):
+    """툴팁은 Qt가 리치 텍스트로 자동 판별하므로, 도면 태그·오류 글이 들어가면 이스케이프한 한 덩어리로 보낸다."""
+    plain = str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return "<span>%s</span>" % plain
+
+
+def _plain_all(widget):
+    """위젯 안의 모든 라벨을 일반 글로 고정한다(모델·도면·오류에서 온 글이 리치 텍스트로 해석되지 않게)."""
+    for lab in widget.findChildren(QLabel):
+        lab.setTextFormat(Qt.PlainText)
 
 
 def _label(text, name=None, wrap=True):
@@ -190,9 +202,20 @@ class CardWidget(QFrame):
             wl.setContentsMargins(8, 4, 8, 4)
             wl.setSpacing(2)
             for w in card.warnings:
-                line = _label("⚠ 경로에 " + w["text"] if w["reason"] != "valve_position_ignored" else "⚠ " + w["text"], "chat_warn_line")
-                line.setToolTip(", ".join(w["ids"][:20]))
-                wl.addWidget(line)
+                row = QHBoxLayout()
+                row.setSpacing(4)
+                text = "⚠ 경로에 " + w["text"] if w.get("scope") == "path" and w["reason"] != "valve_position_ignored" else "⚠ " + w["text"]
+                line = _label(text, "chat_warn_line")
+                row.addWidget(line, 1)
+                toggle = QPushButton("대상 ▾")
+                toggle.setObjectName("chat_warn_toggle")
+                toggle.setFlat(True)
+                targets = _label(", ".join(w.get("labels") or w["ids"]), "chat_warn_targets")
+                targets.hide()
+                toggle.clicked.connect(lambda _=False, t=targets, b=toggle: self._toggle_targets(t, b))
+                row.addWidget(toggle)
+                wl.addLayout(row)
+                wl.addWidget(targets)
             lay.addWidget(warn)
         for w in card.model_warnings:
             lab = _label("AI가 덧붙인 주의: " + w, "chat_model_warn")
@@ -211,6 +234,12 @@ class CardWidget(QFrame):
             lay.addWidget(box)
         self.details = None
         self._footer(lay, footer)
+        _plain_all(self)
+
+    @staticmethod
+    def _toggle_targets(label, button):
+        label.setVisible(not label.isVisible())
+        button.setText("대상 ▴" if label.isVisible() else "대상 ▾")
 
     # ------------------------------------------------------------ 경로
     def _fill_path(self, index, path):
@@ -247,12 +276,13 @@ class CardWidget(QFrame):
             b = QPushButton(text)
             b.setObjectName("chat_chip")
             tip = ("%s 배관을 지나 " % item["via"] if item.get("via") else "") + "%s (%s)" % (item["tag"], item.get("sheet") or "-")
-            b.setToolTip(tip)
+            b.setToolTip(_tip(tip))
             b.setAccessibleName("경로 칩 " + item["tag"])
             if item["warn"]:
                 b.setStyleSheet("border: 1.5px solid %s;" % tokens.c("warn-line"))
             b.clicked.connect(lambda _=False, it=item: self.chipClicked.emit(it["id"], it.get("sheet") or ""))
             flow.addWidget(b)
+        _plain_all(box)
         if len(path.sheets) > 1:
             row = QWidget()
             fl = FlowLayout(row)
@@ -315,8 +345,12 @@ class CardWidget(QFrame):
 class ChatInput(QPlainTextEdit):
     submitted = Signal()
     escaped = Signal()
+    enterCards = Signal()
 
     def keyPressEvent(self, event):  # noqa: N802
+        if event.key() == Qt.Key_Down and event.modifiers() & Qt.AltModifier:
+            self.enterCards.emit()  # Alt+↓: 마지막 카드의 첫 칩으로(화면 명세 §5.3 키보드)
+            return
         if event.key() == Qt.Key_Escape:
             self.escaped.emit()  # 입력칸에서 Esc: 가운데 작업면으로 돌아간다(화면 명세 §12.1)
             return
@@ -337,7 +371,7 @@ class ChatPanel(QWidget):
     _tool = Signal(str, str)
     _state = Signal(str, str)
 
-    def __init__(self, session_factory, env_provider=None, host=None, view_fn=None, model="fast", parent=None):
+    def __init__(self, session_factory, env_provider=None, host=None, view_fn=None, model="fast", parent=None, project_fn=None):
         super().__init__(parent)
         self.setObjectName("chat_panel")
         self._factory = session_factory
@@ -345,6 +379,10 @@ class ChatPanel(QWidget):
         self._host = host
         self._view_fn = view_fn
         self._session = None
+        self._project_fn = project_fn
+        self._session_project = None
+        self._halt = None        # 한도·인증·초과 사용으로 채팅이 스스로 건 막힘. 연결 상태 갱신으로는 풀지 않는다
+        self._last_qid = None
         self._model = model if model in MODEL_NAME else "fast"
         self._log = chatview.QuestionLog()
         self._busy = False
@@ -376,7 +414,7 @@ class ChatPanel(QWidget):
         head.addWidget(self.model_combo)
         head.addStretch(1)
         self.new_button = QPushButton("새 대화")
-        self.new_button.setToolTip("지금 대화를 지우고 새로 시작합니다")
+        self.new_button.setToolTip("지금까지의 대화를 지우고 새로 시작합니다")
         self.new_button.clicked.connect(self.new_conversation)
         head.addWidget(self.new_button)
         root.addLayout(head)
@@ -416,6 +454,7 @@ class ChatPanel(QWidget):
         self.input.setAccessibleName("채팅 질문")
         self.input.submitted.connect(self._submit)
         self.input.escaped.connect(self.escaped)
+        self.input.enterCards.connect(self._enter_cards)
         self.input.textChanged.connect(self._typing)
         row.addWidget(self.input, 1)
         self.send_button = QPushButton("보내기")
@@ -438,6 +477,7 @@ class ChatPanel(QWidget):
         gl.addStretch(1)
         self.pages.addWidget(self.guide_page)
         self._fill_examples(None)
+        _plain_all(self)
 
     def minimumSizeHint(self):  # noqa: N802
         """안쪽 글·단추의 일시적인 긴 최소 폭이 창을 넓히지 않게 한다. 좁아지면 글은 줄을 바꾸고 칩은 다음 줄로 넘어간다."""
@@ -461,10 +501,36 @@ class ChatPanel(QWidget):
     def set_host(self, host):
         self._host = host
 
-    def set_availability(self, conn_state, message="", reset_text=None):
-        """§8: conn_state에 따라 입력칸 대신 안내만 보이거나 입력을 막는다."""
-        self._avail = chatview.availability(conn_state, message, reset_text)
+    def set_availability(self, conn_state, message="", reset_text=None, user_check=False):
+        """§8: conn_state에 따라 입력칸 대신 안내만 보이거나 입력을 막는다. 채팅이 스스로 건 막힘(한도·인증·초과 사용)은
+        연결 상태가 정상으로 돌아와도 곧바로 풀지 않는다. 사용자가 연결을 다시 확인해 정상이 됐거나(user_check) 한도 재설정
+        시각이 지났을 때만 푼다."""
+        a = chatview.availability(conn_state, message, reset_text)
+        if self._halt is not None:
+            if a["blocked"]:
+                self._halt = None          # 연결 쪽 막힘이 이제 직접 말한다
+            elif user_check or self._halt_expired():
+                self._halt = None
+            else:
+                return
+        self._avail = a
         self._apply_availability(conn_state)
+
+    def _halt_expired(self):
+        at = (self._halt or {}).get("resets_at")
+        return bool(at) and time.time() >= at
+
+    def _block(self, state, message, limit):
+        """세션이 보낸 막는 오류: 화면도 입력을 막고, 풀리는 조건(재설정 시각)을 기억한다."""
+        limit = limit or {}
+        at = limit.get("resets_at")
+        self._halt = {"state": state, "resets_at": at if isinstance(at, (int, float)) and not isinstance(at, bool) else None}
+        reset = limit.get("resets_at_text") or limit.get("reset_text")
+        if not reset and self._halt["resets_at"]:
+            import datetime
+            reset = datetime.datetime.fromtimestamp(self._halt["resets_at"]).strftime("%m-%d %H:%M")
+        self._avail = chatview.availability(state, message, reset)
+        self._apply_availability(state)
 
     def prewarm(self):
         """채팅 창을 펼칠 때 프로세스를 미리 띄운다(첫 질문의 시작 비용을 숨김, §2.4). 막힌 상태에서는 하지 않는다."""
@@ -478,8 +544,13 @@ class ChatPanel(QWidget):
 
     def ask(self, text):
         text = (text or "").strip()
+        if self._halt is not None and self._halt_expired():
+            self._halt = None
+            self._avail = chatview.availability("ok")
+            self._apply_availability("ok")
         if not text or self._busy or self._avail["blocked"]:
             return False
+        self.check_project()
         session = self._ensure_session()
         if session is None:
             return False
@@ -492,6 +563,26 @@ class ChatPanel(QWidget):
         self._update_send()
         view = dict(self._view_fn() if self._view_fn else {})
         self._qid = session.ask(text, view)
+        return True
+
+    def _project_changed(self):
+        if self._project_fn is None or self._session is None:
+            return False
+        try:
+            return self._project_fn() != self._session_project
+        except Exception:  # noqa: BLE001 - 프로젝트를 못 알아내면 바뀌었다고 보지 않는다
+            return False
+
+    def check_project(self):
+        """프로젝트가 바뀌었으면 대화를 끝낸다(세션은 만들 때의 프로젝트에 묶여 있다, 규격 §2.4)."""
+        if not self._project_changed():
+            return False
+        old, self._session = self._session, None
+        self._prewarmed = False
+        if old is not None:
+            old.close()
+        self.new_conversation()
+        self._add_notice("프로젝트가 바뀌어 대화를 새로 시작했습니다. 지금까지의 대화는 지워졌습니다.")
         return True
 
     def new_conversation(self):
@@ -524,6 +615,7 @@ class ChatPanel(QWidget):
                   "on_state": self._cb_state}
             try:
                 self._session = self._factory(self._model, cb)
+                self._session_project = self._project_fn() if self._project_fn else None
             except Exception as exc:  # noqa: BLE001 - 프로젝트가 없거나 채팅 부품이 없을 때: 앱은 계속 돈다
                 self._add_notice(str(exc) or "채팅을 시작하지 못했습니다.")
                 self._session = None
@@ -559,13 +651,19 @@ class ChatPanel(QWidget):
             return
         seconds = time.monotonic() - self._started
         self._busy, self._qid = False, None
+        self._last_qid = qid
         self._remove_progress()
+        stale = self._project_changed()   # 질문 중에 프로젝트가 바뀌었다: 옛 프로젝트 도구에서 받은 근거는 새 프로젝트의 근거가 아니다
         try:
             env, pg = (self._env_provider() if self._env_provider else None) or (_NoEnv(), {"nodes": []})
         except Exception:  # noqa: BLE001 - 자료를 못 읽어도 답 글은 보여 준다
             env, pg = _NoEnv(), {"nodes": []}
-        card = cardmod.build_card(answer, tool_ids, env, path_refs=self._log.path_refs(qid),
-                                  tool_names=self._log.tool_names(qid))
+        if stale:
+            card = cardmod.build_card(answer, {}, env)
+            self._add_notice("질문하는 동안 프로젝트가 바뀌어 이 답의 근거는 확인하지 않았습니다.")
+        else:
+            card = cardmod.build_card(answer, tool_ids, env, path_refs=self._log.path_refs(qid),
+                                      tool_names=self._log.tool_names(qid), source_kinds=self._log.source_kinds(qid))
         footer = {"tools": self._log.tool_count(qid), "model": MODEL_NAME[self._model], "seconds": seconds,
                   "calls": self._log.tool_calls(qid)}
         widget = CardWidget(card, footer)
@@ -579,10 +677,14 @@ class ChatPanel(QWidget):
         self.answered.emit()
 
     def _on_error(self, qid, error):
-        if not self._mine(qid):
-            return
-        self._busy, self._qid = False, None
-        self._remove_progress()
+        qid = qid or ""
+        mine = bool(qid) and self._mine(qid)
+        late = bool(qid) and not mine and qid == self._last_qid  # 답이 정상으로 온 뒤 이어지는 한도·초과 사용 오류
+        if qid and not (mine or late):
+            return                                           # 다른 질문의 오류
+        if mine:
+            self._busy, self._qid = False, None
+            self._remove_progress()
         error = error or {}
         message = error.get("message") or "오류가 났습니다."
         state = error.get("conn_state") or error.get("error_kind")
@@ -591,10 +693,9 @@ class ChatPanel(QWidget):
                              "login_expired", "disabled", "auth_mismatch", "not_ready", "tool_guard_failed", "not_subscription",
                              "account_blocked")
         if blocking:
-            limit = error.get("limit") or {}
-            self.set_availability(state, message, limit.get("resets_at_text") or limit.get("reset_text"))
+            self._block(state, message, error.get("limit"))
         else:
-            self._add_notice(message)
+            self._add_notice(message)   # 질문 ID가 없는 세션 오류(미리 띄우기 실패 등)는 진행 중인 질문을 끝내지 않는다
         self._update_send()
 
     # ------------------------------------------------------------ 도면
@@ -701,13 +802,23 @@ class ChatPanel(QWidget):
         else:
             self._submit()
 
+    def _enter_cards(self):
+        """Alt+↓: 마지막 카드의 첫 칩(없으면 첫 단추)으로 초점을 옮긴다."""
+        if not self._cards:
+            return
+        buttons = [b for b in self._cards[-1].findChildren(QPushButton) if b.isVisible()]
+        chips = [b for b in buttons if b.objectName() == "chat_chip"]
+        target = (chips or buttons or [None])[0]
+        if target is not None:
+            target.setFocus()
+
     def _stop(self):
         qid = self._qid
         if self._session is not None:
             self._busy, self._qid = False, None  # 세션이 보내는 cancelled 오류는 무시한다
             self._session.stop()
         self._remove_progress()
-        self._add_notice("질문을 멈췄습니다. 그 대화는 사라지고 다음 질문은 새 대화로 시작합니다.")
+        self._add_notice("질문을 멈췄습니다. 지금까지의 대화는 지워지고 다음 질문은 새 대화로 시작합니다.")
         if qid:
             self._log.forget(qid)
         self._update_send()
