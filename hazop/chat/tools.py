@@ -1127,7 +1127,7 @@ def find_major_equipment(ctx, scope=None, granularity="normal", extra_boundaries
 
 @tool("make_candidates", "주요 장비에서 주요 장비까지의 후보 구간을 만든다(집합은 바꾸지 않음). 등급 순(주요 → 일반 → 낮음)이고 "
       "candidates는 [{cand_id, member_count, start, end, majors, valves, instruments, drawings, grade, score, overlaps, basis}], "
-      "set_rev는 제안 동작(nodes.apply)에 그대로 넘긴다. cand_id는 같은 도면 판·같은 매개변수에서만 쓸 수 있다. " + NODE_PROCEDURE,
+      "set_rev는 제안 동작(nodes.apply)에 그대로 넘긴다. cand_id(c-<16자>-<12자>)는 같은 도면 판에서만 쓸 수 있고, 다른 프로세스에서도 다시 풀린다. " + NODE_PROCEDURE,
       {"scope": SCOPE_SCHEMA, "granularity": GRANULARITY, "extra_boundaries": BOUNDARY_LIST, "cut_at": BOUNDARY_LIST,
        "skip_existing": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 30}, "cursor": CURSOR},
       tier="more", returns=("component",))

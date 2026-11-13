@@ -52,7 +52,7 @@ class ReadToolsTest(NodeToolsBase):
         self.assertEqual(d["set_rev"], None)        # 구간이 아직 없는 프로젝트
         self.assertRegex(d["params_digest"], r"^[0-9a-f]{16}$")
         c = d["candidates"][0]
-        self.assertRegex(c["cand_id"], r"^c-[0-9a-f]{16}$")
+        self.assertRegex(c["cand_id"], r"^c-[0-9a-f]{16}-[0-9a-f]{12}$")
         self.assertEqual(set(c) - {"overlap_count"}, {"cand_id", "member_count", "start", "end", "majors", "valves", "instruments",
                                                       "drawings", "grade", "score", "overlaps", "basis"})
         grades = [x["grade"] for x in d["candidates"]]
