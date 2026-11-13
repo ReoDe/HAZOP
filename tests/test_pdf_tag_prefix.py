@@ -38,6 +38,26 @@ class TiedPrefixTest(unittest.TestCase):
         self.assertEqual(nodes[2]["tag"], "RC-PT110")
 
 
+class IdentNumberTagTest(unittest.TestCase):
+    """R3 개선 6: 지시선으로 밸브에 붙은 번호 원(evidence.ident_number)은 태그가 없는 밸브의 태그가 된다."""
+
+    def test_ident_number_becomes_valve_tag(self):
+        v = node(1, "motor_operated_valve", "valve", 0, "")
+        v["evidence"]["ident_number"] = "021"
+        w = node(2, "manual_valve", "valve", 100, "V1143")
+        w["evidence"]["ident_number"] = "022"  # 글자 번호가 있으면 그쪽이 먼저
+        pl._assign_tags([v, w], [], valve_number_ids={"n2"})
+        self.assertEqual((v["tag"], v["evidence"]["tag_basis"]), ("021", "valve_ident_number"))
+        self.assertEqual(w["tag"], "V1143")
+
+    def test_same_ident_number_twice_is_left_empty(self):
+        a, b = node(1, "manual_valve", "valve", 0, ""), node(2, "manual_valve", "valve", 50, "")
+        a["evidence"]["ident_number"] = b["evidence"]["ident_number"] = "021"
+        unknowns = []
+        pl._assign_tags([a, b], unknowns)
+        self.assertEqual((a["tag"], b["tag"]), (None, None))
+
+
 class SnpTwoSystemsTest(unittest.TestCase):
     def test_two_system_page_instruments_get_tags(self):
         pdf = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-501*", "*.pdf"))[0]

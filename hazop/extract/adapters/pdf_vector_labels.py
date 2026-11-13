@@ -118,6 +118,7 @@ def _assign_tags(nodes, unknowns, instrument_ids=(), valve_number_ids=()):
         접두는 같은 쪽 (a) 태그 두 개 이상이 함께 쓰는 계통 접두 중 가장 많은 것이다. 글자에 없는 값을 고른 것이라
         근거에 [추론]을 남기고, 가장 많은 접두가 둘 이상이면 정하지 않는다. 가장 많은 접두도 태그 하나뿐이거나
         (a) 태그가 없으면(APR1400 DCD처럼 계기 원에 접두를 쓰지 않는 도면) 원 안 글자 그대로 <문자>-<번호>로 둔다.
+    (d) 위 (c)가 없고 지시선으로 번호 원이 붙은 밸브(evidence.ident_number)는 그 번호('021').
     (c) valve_number_ids의 밸브 노드(라벨 문단에 가장 가까운 기호가 그 밸브인 것, pdf_vector._valve_labels)는 라벨에
         수동 밸브 번호('V1681') 줄이 하나 있으면 그 번호. 계통 접두는 붙이지 않는다(글자에 없다). (b)의 접두를 셀 때는
         넣지 않는다.
@@ -134,6 +135,11 @@ def _assign_tags(nodes, unknowns, instrument_ids=(), valve_number_ids=()):
         numbers = [l for l in lines if VALVE_TAG_RE.fullmatch(l)]
         if n["local_id"] in valve_number_ids and n["category"] == "valve" and len(numbers) == 1:
             tags[i] = (numbers[0], "valve_number")
+            continue
+        ident = (n.get("evidence") or {}).get("ident_number")
+        if ident and n["category"] == "valve" and n["kind"]:  # 종류를 못 정한 몸통 조각(일부만 잡힌 조절기 등)에는 붙이지 않는다
+            # (d) 지시선으로 이 밸브에 붙은 번호 원(_apply_merges의 ident_number). 도면에 찍힌 번호 그대로(계통 접두 없음)
+            tags[i] = (ident, "valve_ident_number")
             continue
         m = ISA_LABEL_RE.fullmatch(" ".join(lines[:2]))
         if m and (n["category"] == "instrument" or n["local_id"] in instrument_ids and _bubble_like(n, m.group(1))):
