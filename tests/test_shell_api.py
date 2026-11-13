@@ -270,6 +270,60 @@ class RegisterFlowTest(EngineBase):
         self.assertNotIn(self.tmp, json.dumps(self.events.of("job.failed"), ensure_ascii=False)[:0] or "")
 
 
+class AiReviewFlowTest(EngineBase):
+    """추출 뒤 AI 검토 토글·호출 상한(규격 §2.3 ① 줄). run_many는 대역으로 바꿔 호출 인자만 본다(실제 구독 호출 없음)."""
+
+    def pages(self):
+        return [("p0", {"nodes": []})]
+
+    def flow(self, enabled, can_start=True, cap=None, via="subscription", error=None):
+        from unittest import mock
+        from hazop.shell import register_flow
+
+        class Ai:
+            def status(self):
+                return {"state": "ok", "can_start": can_start}
+
+            def make_client(self):
+                c = mock.Mock()
+                c.describe.return_value = {"via": via}
+                return c
+        e = self.engine(ai=Ai())
+        e.settings["extract_ai_review"] = enabled
+        if cap:
+            e.settings["extract_ai_cap"] = cap
+        progress = mock.Mock()
+        with mock.patch("hazop.extract.ai_review.run_many", side_effect=error, return_value=[("p0", 3, {"calls": 2})]) as run:
+            res = register_flow.review_if_wanted(e, self.pages(), progress)
+        return res, run, progress
+
+    def test_off_by_default_does_not_call_the_ai(self):
+        res, run, _ = self.flow(False)
+        self.assertEqual(res, {"ran": False, "candidates": 0, "skipped": "off"})
+        run.assert_not_called()
+
+    def test_on_runs_with_the_cap(self):
+        res, run, _ = self.flow(True, cap=7)
+        self.assertEqual((res["ran"], res["candidates"]), (True, 3))
+        self.assertEqual(run.call_args.kwargs["cap"], 7)
+        self.assertEqual(run.call_args.args[0][0][0], "p0")
+
+    def test_no_connection_and_api_connection_are_skipped(self):
+        res, run, _ = self.flow(True, can_start=False)
+        self.assertEqual(res["skipped"], "no_connection")
+        res, run2, _ = self.flow(True, via="api")
+        self.assertFalse(res["ran"])
+        self.assertIn("구독", res["skipped"])
+        run.assert_not_called()
+        run2.assert_not_called()
+
+    def test_ai_error_does_not_fail_the_registration(self):
+        res, _run, _ = self.flow(True, error=RuntimeError("C:\비밀 sk-ant-xxx"))
+        self.assertEqual(res["ran"], False)
+        self.assertEqual(res["skipped"], "error: RuntimeError")
+        self.assertNotIn("비밀", json.dumps(res, ensure_ascii=False))
+
+
 # ---------------------------------------------------------------- 채팅 조종기
 
 class FakeSession:

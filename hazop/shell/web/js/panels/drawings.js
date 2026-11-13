@@ -28,7 +28,8 @@ export function DrawingsPanel({ onOpen, onClose }) {
         <${Icon} name="upload" size=${22} /><div><b>도면 파일을 여기에 끌어 놓으세요</b><br /><span>.drawio, .pdf 여러 개 · 눌러서 고르기</span></div></div>
       ${running.map(([id, j]) => html`<div class="card" key=${id}>
         <div class="kv"><div class="k"><b>${j.label}</b><span>${j.state === "failed" ? j.message : (j.text || "준비 중")}${j.total ? " (" + j.done + "/" + j.total + ")" : ""}</span></div>
-          ${j.state === "running" ? html`<${Icon} name="loader-2" cls="spin" />` : j.state === "done" ? html`<${Chip} kind="ok" icon="check">완료<//>` : html`<${Chip} kind="err" icon="alert-triangle">실패<//>`}</div></div>`)}
+          ${j.state === "running" ? html`<${Icon} name="loader-2" cls="spin" />` : j.state === "done" ? html`<${Chip} kind="ok" icon="check">완료<//>` : html`<${Chip} kind="err" icon="alert-triangle">실패<//>`}</div>
+          ${j.state === "done" && j.result && j.result.ai_review && j.result.ai_review.ran ? html`<${Chip} kind="ai" icon="sparkles">AI 후보 ${j.result.ai_review.candidates}개<//>` : null}</div>`)}
       <div class="card"><h3>추출 설정</h3>
         <div class="kv"><div class="k"><b>AI 검토</b><span>추출 뒤 AI가 미확인 항목의 후보를 제안합니다(구독 한도를 씁니다). 처음 값은 꺼짐입니다.</span></div>
           <${Switch} on=${app.ai_review} label="AI 검토" onChange=${(v) => setReview({ enabled: v })} /></div>
