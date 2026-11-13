@@ -241,7 +241,7 @@ class AcceptTest(unittest.TestCase):
         os.environ["HAZOP_WORK_ROOT"] = os.path.join(cls.tmp, "work")
         os.makedirs(os.environ["HAZOP_WORK_ROOT"])
         from hazop.extract.adapters import pdf_vector
-        pdf = glob.glob(os.path.join(REPO, "resources", "references", "pid-samples", "SNP-M-102*", "*.pdf"))[0]
+        pdf = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-102*", "*.pdf"))[0]
         cls.ex = pdf_vector.extract(pdf, page=0, repo_root=os.environ["HAZOP_WORK_ROOT"])
 
     @classmethod
@@ -346,7 +346,7 @@ class AcceptTest(unittest.TestCase):
 
     def test_rerun_without_ai_gives_same_script_result(self):
         from hazop.extract.adapters import pdf_vector
-        pdf = glob.glob(os.path.join(REPO, "resources", "references", "pid-samples", "SNP-M-102*", "*.pdf"))[0]
+        pdf = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-102*", "*.pdf"))[0]
         again = pdf_vector.extract(pdf, page=0, repo_root=os.environ["HAZOP_WORK_ROOT"])
         strip = lambda e: {k: e[k] for k in ("nodes", "relations", "unresolved_connectors")}
         self.assertEqual(strip(again), strip(self.ex))
@@ -393,7 +393,7 @@ class ReviewFixTest(unittest.TestCase):
     def test_estimate_from_real_pdf(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, True)
-        pdf = glob.glob(os.path.join(REPO, "resources", "references", "pid-samples", "SNP-M-102*", "*.pdf"))[0]
+        pdf = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-102*", "*.pdf"))[0]
         est = ar.estimate_pdf(pdf, [0], cap=20)
         self.assertEqual(len(est["pages"]), 1)
         self.assertGreater(est["pages"][0]["items"], 0)
@@ -446,7 +446,7 @@ class ReviewFixTest(unittest.TestCase):
         for _, k in rq.load_keys():
             values |= {s.get("tag") for s in k["symbols"] if s.get("tag")}
             values |= {c.get("label") for c in k["continuations"] if c.get("label")}
-        for f in glob.glob(os.path.join(REPO, "resources", "references", "pid-samples", "*", "*.drawio")):
+        for f in glob.glob(os.path.join(paths.folder("references", "pid-samples"), "*", "*.drawio")):
             import extract_drawio
             ex, _ = extract_drawio.run_one(f, tempfile.mkdtemp())
             values |= {n.get("tag") for n in ex["nodes"] if n.get("tag")}

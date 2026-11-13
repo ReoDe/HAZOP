@@ -8,6 +8,7 @@ import os
 import tempfile
 import unittest
 
+from hazop import paths
 from hazop.extract.adapters import pdf_vector as pv
 from hazop.extract.adapters import pdf_vector_labels as pl
 
@@ -39,7 +40,7 @@ class TiedPrefixTest(unittest.TestCase):
 
 class SnpTwoSystemsTest(unittest.TestCase):
     def test_two_system_page_instruments_get_tags(self):
-        pdf = glob.glob(os.path.join(REPO, "resources", "references", "pid-samples", "SNP-M-501*", "*.pdf"))[0]
+        pdf = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-501*", "*.pdf"))[0]
         ex = pv.extract(pdf, page=0, repo_root=tempfile.mkdtemp())
         tags = {n["tag"] for n in ex["nodes"] if n.get("category") == "instrument" and n.get("tag")}
         self.assertTrue({"MS-PT501", "FW-FT503"} <= tags, tags)

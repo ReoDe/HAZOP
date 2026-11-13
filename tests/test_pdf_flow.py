@@ -7,6 +7,7 @@ import glob
 import os
 import unittest
 
+from hazop import paths
 from hazop.extract.adapters import pdf_vector as pv
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -87,7 +88,7 @@ class SnpFlowTest(unittest.TestCase):
 
     def test_snp_extraction_has_flow_directions(self):
         import tempfile
-        pdf = glob.glob(os.path.join(REPO, "resources", "references", "pid-samples", "SNP-M-102*", "*.pdf"))[0]
+        pdf = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-102*", "*.pdf"))[0]
         ex = pv.extract(pdf, page=0, repo_root=tempfile.mkdtemp())
         flows = [r for r in ex["relations"] if r.get("flow_direction")]
         self.assertGreaterEqual(len(flows), 5)

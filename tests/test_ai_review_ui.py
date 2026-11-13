@@ -96,7 +96,7 @@ class AiReviewDialogTest(base.AppTestBase):
         from hazop.extract.adapters import pdf_vector
         from hazop.app.screens.ai_review_panel import AiReviewDialog
         win = self.make_window()
-        pdf = glob.glob(os.path.join(REPO, "resources", "references", "pid-samples", "SNP-M-102*", "*.pdf"))[0]
+        pdf = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-102*", "*.pdf"))[0]
         name = "ui-dialog"
         ex = pdf_vector.extract(pdf, page=0, repo_root=os.environ["HAZOP_WORK_ROOT"])
         os.makedirs(paths.output_root("extract", name), exist_ok=True)

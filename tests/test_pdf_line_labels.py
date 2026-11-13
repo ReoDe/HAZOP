@@ -8,6 +8,7 @@ import os
 import tempfile
 import unittest
 
+from hazop import paths
 from hazop.extract.adapters import pdf_vector as pv
 from hazop.extract.adapters import pdf_vector_lines as pl
 
@@ -61,7 +62,7 @@ class AttachTest(unittest.TestCase):
 
 class SnpLineNumberTest(unittest.TestCase):
     def test_snp_relations_carry_printed_line_numbers(self):
-        pdf = glob.glob(os.path.join(REPO, "resources", "references", "pid-samples", "SNP-M-102*", "*.pdf"))[0]
+        pdf = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-102*", "*.pdf"))[0]
         ex = pv.extract(pdf, page=0, repo_root=tempfile.mkdtemp())
         got = {r["line_no"] for r in ex["relations"] + ex["unresolved_connectors"] if r.get("line_no")}
         self.assertTrue({"RC-L010", "RC-L011"} <= got, got)
