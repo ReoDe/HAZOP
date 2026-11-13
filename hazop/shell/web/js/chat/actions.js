@@ -3,13 +3,67 @@
 // 모델이 쓴 글(구간 이름 등)은 ${}로만 넣는다.
 import { html } from "../ui/html.js";
 import { useState } from "../../vendor/hooks.module.js";
-import { cmd } from "../bridge.js";
+import { cmd, on } from "../bridge.js";
 import { store } from "../store.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Notice } from "../ui/parts.js";
 import * as N from "../panels/nodes_state.js";
+import * as R from "../panels/results_state.js";
 
 export const REST_QUESTION = "방금 만든 대표 구간을 참고해서 나머지 구간도 나눠 주세요.";
+
+// ---------------------------------------------------------------- 표시 동작(chat.display)
+// 엔진(hazop/shell/chat_actions.py display_item)이 모델의 show·goto·select·layer·fit을 이미 검사해 도면 ID·도면 안 local_id·패널 이름으로 풀어 보낸다.
+// 여기서는 그 값대로 도면을 열고 표시·확대·패널 열기·층 켜기를 한다. 데이터는 바꾸지 않는다.
+const ZOOM_RETRY_MS = [350, 900, 1800];    // 다른 도면을 연 뒤에는 그 도면을 다 읽어야 확대가 먹는다. 준비 신호가 저장소에 없어 몇 번 다시 보낸다
+
+function bump(command) { store.set((s) => ({ command: Object.assign({ seq: s.command.seq + 1 }, command) })); }
+
+function openSheet(gid) {
+  if (!gid || store.get().sheet === gid) return false;
+  store.set({ sheet: gid, panel: null });
+  cmd("sheet.open", { graph_id: gid }).catch(() => {});
+  return true;
+}
+
+function later(command, opened) {
+  if (!opened) { bump(command); return; }
+  // 도면 부품이 준비를 알리면(readySheet) 바로, 아니면 정해진 간격으로 다시 보낸다
+  let done = false;
+  const gid = store.get().sheet;
+  const stop = store.subscribe((s) => { if (!done && s.readySheet === gid) { done = true; stop(); bump(command); } });
+  ZOOM_RETRY_MS.forEach((ms, i) => setTimeout(() => { if (done || store.get().sheet !== gid) return; if (i === ZOOM_RETRY_MS.length - 1) { done = true; stop(); } bump(command); }, ms));
+}
+
+function note(text) {
+  store.set((s) => ({ chat: Object.assign({}, s.chat, { msgs: [...s.chat.msgs, { key: "disp:" + s.chat.msgs.length + ":" + Date.now(), kind: "notice", text }] }) }));
+}
+
+export function applyDisplay(it, rid) {
+  if (!it || !it.ok) return;
+  if (it.op === "show") {
+    const opened = openSheet(it.sheet);
+    store.set({ marks: { rid, bySheet: it.marks || {} } });
+    later({ type: "zoomTo", ids: (it.ids || []).slice(0, 400), pad: 0.6 }, opened);
+  } else if (it.op === "open") {
+    later({ type: "fit" }, openSheet(it.sheet));
+  } else if (it.op === "fit") {
+    later({ type: "fit" }, openSheet(it.sheet));
+  } else if (it.op === "layer") {
+    store.set((s) => ({ layers: Object.assign({ symbol: true, pipe: true, tag: true }, s.layers, { [it.layer]: !!it.on }) }));
+  } else if (it.op === "panel") {
+    store.set({ panel: it.panel, backTo: null });
+    if (it.node_id && N.nodes.get().focus !== it.node_id) N.focusNode(it.node_id, { zoom: true });
+    if (it.cell) R.openCell(it.cell[0], it.cell[1]);
+  }
+}
+
+on("chat.display", (d) => {
+  const items = (d && d.items) || [];
+  items.forEach((it, i) => { try { applyDisplay(it, "disp:" + d.answer_id + (i ? "#" + i : "")); } catch (e) { /* 보이지 못해도 대화는 이어진다 */ } });
+  items.forEach((it) => { if (it && it.text) note(it.text); });
+  if (store.get().chatCollapsed) store.set((s) => ({ chat: Object.assign({}, s.chat, { unread: true }) }));
+});
 
 /** 항목 목록을 메시지로 받는다(chat.actions 사건). */
 export function addActions(setChat, d) {

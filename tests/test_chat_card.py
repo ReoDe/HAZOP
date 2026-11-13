@@ -192,6 +192,19 @@ class SourceSplitTest(unittest.TestCase):
         c = card.build_card({"text": None, "refs": "x", "paths": [None, 3], "highlight": [{"ids": "a"}]}, {}, FakeEnv())
         self.assertEqual((c.text, c.refs, c.paths), ("", [], []))
 
+    def test_args_json_is_parsed_into_args(self):
+        c = card.build_card(answer(actions=[{"action": "show", "args_json": "{\"ids\": [\"RC-PP01\"]}", "why": "보여 달라고 함"},
+                                            {"action": "fit", "args_json": "", "why": ""},
+                                            {"action": "fit", "args_json": "{깨진", "why": ""}]), TOOL_IDS, FakeEnv())
+        self.assertEqual(c.actions[0], {"action": "show", "args": {"ids": ["RC-PP01"]}, "why": "보여 달라고 함"})
+        self.assertEqual(c.actions[1]["args"], {})
+        self.assertEqual(c.actions[2]["args"], "{깨진")       # 풀지 못한 글은 그대로 두어 동작 층이 거절한다
+
+    def test_prompt_lists_the_actions_the_app_can_run_now(self):
+        for name in ("show", "analysis.run", "results.set_status", "export.excel", "sheet.confirm", "dexpi.export"):
+            self.assertIn(name + "(", card.SYSTEM_PROMPT)
+        self.assertIn("아직 채팅으로 할 수 없다", card.SYSTEM_PROMPT)
+
     def test_actions_pass_through_for_later_unit(self):
         c = card.build_card(answer(actions=[{"action": "x"}]), TOOL_IDS, FakeEnv())
         self.assertEqual(c.actions, [{"action": "x"}])
@@ -210,11 +223,12 @@ class SchemaTest(unittest.TestCase):
 
     def test_card_schema_follows_structured_output_rules(self):
         self.walk(card.CARD_SCHEMA)
-        self.assertEqual(sorted(card.CARD_SCHEMA["properties"]), ["general", "highlight", "paths", "refs", "text", "warnings"])
+        self.assertEqual(sorted(card.CARD_SCHEMA["properties"]), ["actions", "general", "highlight", "paths", "refs", "text", "warnings"])
 
     def test_schema_describes_what_the_card_reads(self):
         ans = {"text": "t", "general": "", "refs": [{"kind": "component", "id": "x"}],
-               "paths": [{"label": "l", "path_ref": REF}], "highlight": [{"ids": ["x"], "style": "focus"}], "warnings": []}
+               "paths": [{"label": "l", "path_ref": REF}], "highlight": [{"ids": ["x"], "style": "focus"}], "warnings": [],
+               "actions": [{"action": "show", "args_json": "{}", "why": ""}]}
         self.assertEqual(sorted(ans), sorted(card.CARD_SCHEMA["properties"]))
         self.assertEqual(sorted(REF), sorted(card.PATH_REF_SCHEMA["properties"]))
 

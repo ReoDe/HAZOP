@@ -26,7 +26,9 @@ from hazop.chat import actions_log
 # ---------------------------------------------------------------- 분류
 
 DISPLAY, AUTO, CANDIDATE, CONFIRM, NEVER = "display", "auto", "candidate", "confirm", "never"
-CLASS_NAMES = {DISPLAY: "표시", AUTO: "바로", CANDIDATE: "후보", CONFIRM: "확인", NEVER: "안 함"}
+LATER = "later"              # 아직 화면이 없어 채팅으로 할 수 없는 동작(A11 2차에 잇는다). 거절하되 '아직'이라고 분명히 답한다
+CLASS_NAMES = {DISPLAY: "표시", AUTO: "바로", CANDIDATE: "후보", CONFIRM: "확인", NEVER: "안 함", LATER: "아직"}
+NOT_YET = "아직 채팅으로 할 수 없는 동작입니다(화면이 생기면 잇습니다)"
 MAX_ACTIONS = 20             # 한 답의 동작 수(§4.1)
 PENDING_LIMIT = 5            # 사람 확인 전 AI 구간 상한(§4.5 대표 단계)
 REST_LIMIT = 30              # '나머지' 단계 한 요청 상한(§4.5)
@@ -59,6 +61,8 @@ class Snapshot:
     files: dict = field(default_factory=dict)
     ie_draft_by_human: bool = False
     results_fp: str = None       # ⑤ 결과 파일 지문(hazop.study.results.load_fp의 둘째 값). 결과 판정의 낡은 판 대조에 쓴다
+    # 도면 쪽: graph_id -> {"state": open|ready|confirmed, "fingerprint", "rev", "reason"}(hazop.extract.confirmation.sheet_confirmation)
+    sheets: dict = field(default_factory=dict)
 
 
 def _nodes(snap):
@@ -198,6 +202,11 @@ ACTIONS = {a.name: a for a in (
            "아래 사유가 확인한 사람 이름으로 함께 저장됩니다."),
     Action("export.excel", AUTO, _spec(), "⑤", "이름에 시각을 붙인 새 파일"),
     Action("export.ie_bundle", AUTO, _spec(), "⑤", "이름에 시각을 붙인 새 파일"),
+    # ② 도면 쪽 확정과 DEXPI 내보내기(sheet-commands.md·dexpi-commands.md). 확정은 사람 판단이라 늘 확인. '원본과 견줌'은 화면에서 사람이 본다
+    Action("sheet.confirm", CONFIRM, _spec(("graph_id", "id")), "②", "미확인 0·위치 없음 0·원본과 견줌을 마친 쪽만(엔진이 센다)",
+           "도면 {graph_id}을(를) 확정합니다. 확정자로 검토자 이름이 남고, 이 쪽은 DEXPI로 내보낼 수 있게 됩니다."),
+    Action("sheet.compare", NEVER, _spec(), "②", "원본과 견줌", where="도면 화면에서 원본과 겹쳐 보고 사람이 누른다"),
+    Action("dexpi.export", AUTO, _spec(("graph_ids", "ids")), "②", "확정된 쪽만. 시각을 붙인 새 폴더에 써서 덮어쓰지 않는다"),
     # ⑥
     Action("ie.draft_rules", AUTO, _spec(), "⑥", "초안. 기존 초안을 사람이 고쳤으면 확인",
            "사람이 고친 초기사건 규칙 초안을 새 초안으로 바꿉니다."),
@@ -209,6 +218,12 @@ ACTIONS = {a.name: a for a in (
     Action("settings.work_root", NEVER, _spec(), "공통", "작업 루트", where="설정 창에서 한다"),
     Action("settings.reviewer", NEVER, _spec(), "공통", "검토자 이름", where="설정 창에서 한다"),
     Action("files.delete", NEVER, _spec(), "공통", "파일·폴더 지우기", where="탐색기에서 사람이 한다"),
+    # 아직 화면이 없는 기능(A11 2차). 모델이 내면 '아직 채팅으로 할 수 없음'으로 답한다
+    Action("kg.judge", LATER, _spec(), "③", "지식그래프 판단(언급 수락·기각)", where="지식그래프 화면이 생기면 잇는다"),
+    Action("titleblock.confirm", LATER, _spec(), "②", "표제란 확정", where="표제란 확정 화면이 생기면 잇는다"),
+    Action("ie.edit", LATER, _spec(), "⑥", "초기사건 편집", where="⑥ 초기사건 패널에서 사람이 한다"),
+    Action("drawing.edit", LATER, _spec(), "②", "도면 고치기(태그·종류·연결)", where="도면 고치기 화면이 생기면 잇는다"),
+    Action("extract.accept", LATER, _spec(), "②", "AI 후보 수락·거절", where="도면의 AI 후보 목록에서 사람이 한다"),
 )}
 
 # 사람이 정하는 판정(results-commands.md §1). proposed(AI 초안)는 사람이 정할 수 없는 값이라 받지 않는다
@@ -382,10 +397,12 @@ class ActionPlanner:
     """
 
     def __init__(self, project_id, read_state, executors, record=actions_log.record, conversation_id=None, model=None,
-                 via="subscription", app_version=None, clock=time.time):
+                 via="subscription", app_version=None, clock=time.time, not_yet=None):
         self.project_id = project_id
         self.read_state = read_state
         self.executors = dict(executors or {})
+        # 동작 표에는 있으나 이 화면에 아직 잇지 않은 동작 -> 사람이 할 곳. 판정 때 '아직'으로 거절한다(실행 함수 없음으로 실패시키지 않는다)
+        self.not_yet = dict(not_yet or {})
         self._record = record
         self.conversation_id = conversation_id or actions_log.new_id("conv")
         self.model, self.via, self.app_version = model, via, app_version
@@ -455,6 +472,10 @@ class ActionPlanner:
             raise _Reject("동작 표에 없는 동작(채팅으로 할 수 없음)")
         if action.klass == NEVER:
             raise _Reject("채팅으로 하지 않는 동작", action.where)
+        if action.klass == LATER:
+            raise _Reject(NOT_YET, action.where)
+        if action.name in self.not_yet:
+            raise _Reject(NOT_YET, self.not_yet[action.name] or action.where or None)
         bad = _forged(item.args)
         if bad:
             raise _Reject("앱이 정하는 값(%s)을 모델이 넣음" % bad)
@@ -507,6 +528,27 @@ class ActionPlanner:
 
     def _check_ie_reset(self, item, snap):
         item.targets = ["ie"]
+
+    def _check_sheet_confirm(self, item, snap):
+        gid = item.args["graph_id"]
+        sheet = snap.sheets.get(gid)
+        if sheet is None:
+            raise _Reject("지금 프로젝트에 없는 도면")
+        if sheet.get("state") == "confirmed":
+            raise _Reject("이미 확정한 쪽")
+        if sheet.get("state") != "ready":
+            raise _Reject("아직 확정할 수 없는 쪽(%s)" % (sheet.get("reason") or "미확인이 남았거나 원본과 견주지 않음"),
+                          "도면 화면에서 미확인을 끝내고 원본과 견준 뒤 다시 요청")
+        item.targets = [gid]
+
+    def _check_dexpi_export(self, item, snap):
+        ids = item.args["graph_ids"]
+        missing = [g for g in ids if g not in snap.sheets]
+        if missing:
+            raise _Reject("지금 프로젝트에 없는 도면: %s" % ", ".join(missing[:5]))
+        if not any(snap.sheets[g].get("state") == "confirmed" for g in ids):
+            raise _Reject("확정된 쪽이 하나도 없어 내보낼 것이 없음", "도면에서 '쪽 확정'을 마친 쪽만 내보낸다")
+        item.targets = list(ids)
 
     def _need_nodes(self, item, snap, allow=("applied", "confirmed")):
         nodes = _nodes(snap)
@@ -709,6 +751,8 @@ class ActionPlanner:
                 entry["file"] = dict(snap.files[t])
             if t in snap.registrations:
                 entry["registration"] = dict(snap.registrations[t])
+            if t in snap.sheets:
+                entry["sheet"] = {k: snap.sheets[t].get(k) for k in ("state", "fingerprint", "rev")}
             targets.append(entry)
         return {"project_id": snap.project_id, "action": item.action, "args_digest": _digest(item.args),
                 "targets": targets, "set_rev": (snap.node_set or {}).get("set_rev"),
@@ -881,7 +925,8 @@ class ActionPlanner:
         rec = self._write(item, result, batch_id=batch, targets=targets, confirmed=confirmed, confirmed_by=confirmed_by,
                           approval_digest=approval_digest,
                           undo_of=item.args.get("batch_id_to_undo") if item.action == "nodes.undo" else None)
-        return dict(_outcome(result), batch_id=batch, set_rev=out.get("set_rev"), targets=list(targets), record=rec)
+        return dict(_outcome(result), batch_id=batch, set_rev=out.get("set_rev"), targets=list(targets), record=rec,
+                    message=str(out.get("message") or "")[:300] or None, topics=_topics(out))
 
     def _write(self, item, result, error=None, batch_id=None, targets=None, confirmed=False, confirmed_by=None,
                approval_digest=None, undo_of=None):
@@ -915,7 +960,14 @@ class ActionPlanner:
 # ok가 true일 때만 성공이다. ok가 없거나 dict가 아니면 실패(꼴 틀림)로 본다. refused의 code(엔진 거절 코드: stale·conflict·
 # rule·bad_actor 등)는 그대로 화면에 넘긴다.
 EXECUTOR_RESULT = {"ok": "bool", "refused": "[{target, code, reason}]", "batch_id": "str|None", "node_ids": "[str]",
-                   "set_rev": "int|None", "error": "str?"}
+                   "set_rev": "int|None", "error": "str?", "message": "str?(성공 글, 앱이 만든 것)",
+                   "topics": "[str]?(바뀐 자료 이름: nodes·results·drawings 등)"}
+
+
+def _topics(out):
+    """실행 함수가 알린 '바뀐 자료 이름' 목록(글만). 없거나 꼴이 다르면 빈 목록."""
+    t = out.get("topics")
+    return [x for x in t if isinstance(x, str)][:10] if isinstance(t, list) else []
 
 
 def check_result(out):
@@ -954,6 +1006,25 @@ CARD_ACTIONS_SCHEMA = {
                              "args": {"type": "object"},
                              "why": {"type": "string"}}},
 }
+# 구조화 출력(모든 객체 additionalProperties false·required 전부)에 맞춘 꼴: 인자는 JSON 글(args_json)로 받아 앱이 푼다(hazop.chat.card).
+CARD_ACTIONS_MODEL_SCHEMA = {
+    "type": "array",
+    "items": {"type": "object", "additionalProperties": False, "required": ["action", "args_json", "why"],
+              "properties": {"action": {"type": "string", "enum": sorted(n for n, a in ACTIONS.items() if a.klass != NEVER)},
+                             "args_json": {"type": "string"},
+                             "why": {"type": "string"}}},
+}
+
+
+def signature_text(names=None):
+    """모델 안내에 넣는 동작 서명: 'nodes.confirm(node_ids: ids)'를 '; '로 이음. names가 없으면 안 함·아직을 뺀 모든 동작."""
+    out = []
+    for a in ACTIONS.values():
+        if (names is None and a.klass in (NEVER, LATER)) or (names is not None and a.name not in names):
+            continue
+        args = ", ".join("%s%s: %s" % (k, "" if req else "?", kind) for k, (kind, req) in a.args.items())
+        out.append("%s(%s)" % (a.name, args))
+    return "; ".join(out)
 
 
 # ---------------------------------------------------------------- 구간 엔진 연결(참고 연결부)

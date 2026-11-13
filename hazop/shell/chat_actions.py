@@ -12,6 +12,7 @@ status: applied(적용함) · candidate(후보 목록에 넣음) · confirm(확�
 """
 
 import logging
+import os
 import threading
 
 from hazop.chat import actions as A
@@ -19,6 +20,27 @@ from hazop.chat import actions_log
 
 LOG = logging.getLogger("hazop.shell.chat_actions")
 NODE_ACTIONS = ("nodes.apply", "nodes.undo", "nodes.confirm", "nodes.unconfirm", "nodes.lock")
+# A11 1차: 화면·엔진에 이미 있는 기능을 잇는 실행 동작(엔진 함수는 api_results·api_drawings·data를 부르기만 한다)
+RUN_ACTIONS = ("analysis.run", "results.set_status", "results.edit", "export.excel", "export.ie_bundle",
+               "register.extract", "register.reextract", "sheet.confirm", "dexpi.export")
+DISPLAY_ACTIONS = ("show", "goto", "select", "layer", "fit")
+# 동작 표에는 있으나 아직 새 화면이 없는 동작(2차) -> 사람이 할 곳
+NOT_YET = {
+    "register.exclude": "도면 패널에 '분석에서 빼기'가 생기면 잇는다",
+    "extract.suggest": "도면의 AI 후보 목록에서 사람이 한다",
+    "kg.algorithm": "지식그래프 화면이 생기면 잇는다",
+    "kg.rebuild": "지식그래프 화면이 생기면 잇는다",
+    "ie.draft_rules": "⑥ 초기사건 패널의 '규칙 초안'에서 사람이 한다",
+    "ie.reset": "⑥ 초기사건 패널에서 사람이 한다",
+}
+PANELS = {"drawings": "도면", "nodes": "구간", "results": "분석 결과", "ie": "초기사건", "settings": "설정"}
+PANEL_ALIASES = {"①": "drawings", "②": "drawings", "도면": "drawings", "register": "drawings", "extract": "drawings",
+                 "④": "nodes", "구간": "nodes", "검토구간": "nodes", "⑤": "results", "결과": "results", "분석 결과": "results",
+                 "analysis": "results", "⑥": "ie", "초기사건": "ie", "설정": "settings"}
+LAYERS = {"symbol": "symbol", "symbols": "symbol", "기호": "symbol", "pipe": "pipe", "pipes": "pipe", "배관": "pipe",
+          "tag": "tag", "tags": "tag", "태그": "tag", "글자": "tag"}
+LAYER_NAMES = {"symbol": "기호", "pipe": "배관", "tag": "태그"}
+MAX_DISPLAY_IDS = 400
 MAX_TEXT = 300
 MAX_CONFIRM_TEXT = 1500      # 확인 상자 글(앱이 틀에 검사한 값을 채운 글)의 한도. 넘으면 잘렸다고 표시한다
 MAX_TARGETS = 200            # 한 상자에 보내는 대상 수 한도. 넘으면 전체 개수와 함께 잘렸다고 표시한다
@@ -45,7 +67,10 @@ class ChatActions:
     """project_fn() -> 프로젝트 ID. pg_fn() -> 프로젝트 그래프. reviewer_fn() -> 검토자 이름 또는 None.
     changed(topic, rev) -> 웹에 '이 자료가 바뀜'을 알린다. model_fn() -> 모델 이름(기록용)."""
 
-    def __init__(self, emit, project_fn, pg_fn, reviewer_fn, changed, model_fn=None, record=actions_log.record, planner_factory=None):
+    def __init__(self, emit, project_fn, pg_fn, reviewer_fn, changed, model_fn=None, record=actions_log.record, planner_factory=None,
+                 engine=None):
+        # engine: hazop.shell.api.Engine(분석 실행·내보내기·쪽 확정이 부르는 창구). 창이 넘기지 않으면 project_fn이 엔진의 메서드일 때 그 엔진을 쓴다
+        self._engine = engine if engine is not None else _engine_of(project_fn)
         self._emit = emit
         self._project_fn = project_fn
         self._pg_fn = pg_fn
@@ -86,7 +111,15 @@ class ChatActions:
     def _make(self, project):
         if self._planner_factory is not None:
             return self._planner_factory(project, self.read_state, self._executors())
-        return A.ActionPlanner(project, self.read_state, self._executors(), record=self._record, model=self._model_fn(), via="subscription")
+        return A.ActionPlanner(project, self.read_state, self._executors(), record=self._record, model=self._model_fn(), via="subscription",
+                               not_yet=self._not_yet())
+
+    def _not_yet(self):
+        """2차 동작과, 엔진이 없어 이을 수 없는 실행 동작 -> 사람이 할 곳."""
+        out = dict(NOT_YET)
+        if self._engine is None:
+            out.update({name: "이 창에서는 채팅으로 실행할 수 없습니다" for name in RUN_ACTIONS})
+        return out
 
     def _executors(self):
         from hazop.study import node_commands
@@ -95,7 +128,10 @@ class ChatActions:
             def run(args, call):
                 return A.node_executors(self._pg_fn(), node_commands.execute)[name](args, call)
             return run
-        return {name: make(name) for name in NODE_ACTIONS}
+        out = {name: make(name) for name in NODE_ACTIONS}
+        if self._engine is not None:
+            out.update(RunExecutors(self._engine, self._pg_fn, lambda: self._registrations(self._project_fn())).table())
+        return out
 
     def read_state(self):
         """plan·approve 직전마다 새로 읽는 프로젝트 상태(저장본을 읽기만 한다)."""
@@ -103,15 +139,76 @@ class ChatActions:
         from hazop.study import results as res
         pg = self._pg_fn()
         project = self._project_fn()
+        regs, sheets = self._registrations(project), _Sheets(self._engine)
         if not pg:
-            return A.Snapshot(project)
+            return A.Snapshot(project, registrations=regs, sheets=sheets)
         ns = sn.read_as_is(pg) or sn.new_set(pg)
-        results = None
+        results, fp = None, None
         try:
-            results, _fp = res.load_fp(ns)
+            results, fp = res.load_fp(ns)
         except (OSError, ValueError):
             results = None
-        return A.Snapshot(project, node_set=ns, results=results, graph_ids=frozenset(n["entity_id"] for n in pg.get("nodes") or []))
+        return A.Snapshot(project, node_set=ns, results=results, graph_ids=frozenset(n["entity_id"] for n in pg.get("nodes") or []),
+                          registrations=regs, sheets=sheets, results_fp=fp)
+
+    def _registrations(self, project):
+        """등록 자료 ID(material_id)와 그 추출 이름·도면 ID -> {has_result, excluded, path}. 엔진이 없으면 빈 표."""
+        if self._engine is None:
+            return {}
+        try:
+            from hazop.app import data
+            rows = data.list_registrations()
+        except Exception:  # noqa: BLE001 - 등록을 못 읽어도 다른 동작은 판정한다
+            LOG.exception("등록 목록을 읽지 못함")
+            return {}
+        try:
+            by_name = {v: k for k, v in self._engine.graph_names().items()}
+        except Exception:  # noqa: BLE001
+            by_name = {}
+        out = {}
+        for e in rows:
+            rec = e.get("record") or {}
+            if rec.get("project_id") not in (project, None) or rec.get("status") != "registered":
+                continue
+            entry = {"has_result": bool(e.get("extracted")), "excluded": False, "path": e.get("path")}
+            for key in (rec.get("material_id"), e.get("extract_name"), by_name.get(e.get("extract_name"))):
+                if isinstance(key, str) and key:
+                    out.setdefault(key, entry)
+        return out
+
+    # ------------------------------------------------------------ 표시 동작(데이터를 바꾸지 않음)
+    def show(self, items, answer_id):
+        """plan.display를 도면·패널에 보일 항목으로 풀어 웹에 보낸다(chat.display). 기록하지 않는다(표시는 실행 기록 대상이 아님)."""
+        if not items:
+            return []
+        try:
+            pg = self._pg_fn() or {"nodes": []}
+        except Exception:  # noqa: BLE001
+            pg = {"nodes": []}
+        names = {}
+        if self._engine is not None:
+            try:
+                names = self._engine.graph_names()
+            except Exception:  # noqa: BLE001
+                names = {}
+        out = []
+        for it in items:
+            try:
+                out.append(display_item(it.action, it.args or {}, pg, names, self._node_ids))
+            except Exception:  # noqa: BLE001 - 하나가 깨져도 나머지는 보인다
+                LOG.exception("표시 동작을 풀지 못함")
+                out.append({"op": "none", "ok": False, "text": "보이지 못했습니다."})
+        self._emit("chat.display", {"answer_id": answer_id, "items": out})
+        return out
+
+    def _node_ids(self):
+        from hazop.study import nodes as sn
+        try:
+            pg = self._pg_fn()
+            ns = (sn.read_as_is(pg) if pg else None) or {}
+            return {n.get("node_id") for n in ns.get("nodes") or []}
+        except Exception:  # noqa: BLE001
+            return set()
 
     # ------------------------------------------------------------ 답 하나
     def handle(self, actions, turn, request_text):
@@ -127,13 +224,17 @@ class ChatActions:
         request_id = actions_log.new_id("q")
         items = []
         changed_rev = None
+        topics = []
         try:
             plan = planner.plan(answer_id, actions, turn, request_id, request_text or "")
+            self.show(plan.display, answer_id)
             for it in plan.run:
                 out = planner.run(it)
                 entry, rev = self._run_entry(planner, it, out)
                 items.append(entry)
                 changed_rev = rev if rev is not None else changed_rev
+                if entry["status"] in ("applied", "candidate"):
+                    topics += [t for t in out.get("topics") or [] if t not in topics]
             confirms = list(plan.confirm)
             shown_confirms = 0
             for it in confirms:
@@ -151,8 +252,10 @@ class ChatActions:
                           "text": "", "token": None, "batch_id": None, "node_ids": [], "reason": "internal", "where": None, "waiting": False})
         if items:
             self._emit("chat.actions", {"answer_id": answer_id, "items": items})
-        if any(e["status"] == "applied" for e in items):
+        if any(e["status"] == "applied" and e["action"] in NODE_ACTIONS for e in items):
             self._changed("nodes", changed_rev)
+        for topic in topics:
+            self._changed(topic, None)
         return items
 
     # ------------------------------------------------------------ 확인 상자
@@ -169,8 +272,11 @@ class ChatActions:
         entry, rev = self._run_entry(planner, item, out) if item is not None else (None, None)
         if entry is not None:
             self._emit("chat.action.result", {"token": token, "item": entry})
-            if entry["status"] == "applied":
+            if entry["status"] == "applied" and entry["action"] in NODE_ACTIONS:
                 self._changed("nodes", rev)
+            if entry["status"] == "applied":
+                for topic in out.get("topics") or []:
+                    self._changed(topic, None)
         self._next(shown)
         return {"ok": True, "result": out.get("result"), "item": entry}
 
@@ -259,8 +365,9 @@ class ChatActions:
                 return self._rejected_entry(fresh), None
             return self._confirm_entry(fresh, waiting=False), None     # 새 표지를 등록해 눌렀을 때 실행·결과 사건·바뀜 알림이 나가게 한다
         if result in ("ok", "candidate"):
-            e.update(status="applied" if result == "ok" else "candidate", batch_id=out.get("batch_id"), node_ids=list(out.get("targets") or []))
-            e["text"] = _done_text(item, out)
+            e.update(status="applied" if result == "ok" else "candidate", batch_id=out.get("batch_id"),
+                     node_ids=list(out.get("targets") or []) if item.action in NODE_ACTIONS else [])
+            e["text"] = _clip(out.get("message")) if out.get("message") and item.action not in NODE_ACTIONS else _done_text(item, out)
             return e, out.get("set_rev")
         if result == "duplicate":
             e.update(status="duplicate", text="이미 처리한 동작입니다.")
@@ -284,8 +391,13 @@ def _title(item):
         if kinds == {"remove"}:
             return "구간 %d개 지우기" % len(ops)
         return "구간 고치기"
-    return {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정", "nodes.unconfirm": "구간 확정 해제",
-            "nodes.lock": "분석 마침 · 잠금"}.get(name, name or "동작")
+    return TITLES.get(name, name or "동작")
+
+
+TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정", "nodes.unconfirm": "구간 확정 해제", "nodes.lock": "분석 마침 · 잠금",
+          "analysis.run": "AI 분석 실행", "results.set_status": "결과 판정", "results.edit": "결과 항목 고치기",
+          "export.excel": "Excel로 내보내기", "export.ie_bundle": "초기사건 인계 묶음 내보내기", "register.extract": "추출",
+          "register.reextract": "다시 추출", "sheet.confirm": "도면 쪽 확정", "dexpi.export": "DEXPI로 내보내기"}
 
 
 def _done_text(item, out):
@@ -346,3 +458,341 @@ def _op_lines(item, names):
         elif kind == "split":
             out.append("나누기: %s" % _label(op.get("node_id"), names)["label"])
     return out[:MAX_TARGETS]
+
+
+# ================================================================ 엔진 창구·쪽 상태
+
+def _engine_of(fn):
+    """창이 엔진을 따로 넘기지 않았을 때: project_fn이 엔진의 메서드(engine.project_id)면 그 엔진."""
+    eng = getattr(fn, "__self__", None)
+    return eng if eng is not None and hasattr(eng, "dispatch") and hasattr(eng, "hooks") else None
+
+
+def sheet_state(name):
+    """추출 이름 하나의 쪽 확정 상태(파일을 쓰지 않음). 채팅으로 확정할 수 있는 것은 'ready'이고 지금 지문으로 원본과 견준 쪽뿐이다."""
+    from hazop.extract import confirmation
+    try:
+        st = confirmation.sheet_confirmation(name)
+    except FileNotFoundError:
+        return {"state": "open", "fingerprint": None, "rev": 0, "reason": "추출 결과가 없음"}
+    except (OSError, ValueError):
+        return {"state": "open", "fingerprint": None, "rev": 0, "reason": "쪽 자료를 읽을 수 없음"}
+    fp = st.get("fingerprint")
+    counts = st.get("counts") or {}
+    compared = st.get("compared") or {}
+    state = st.get("state")
+    reasons = []
+    if counts.get("total"):
+        reasons.append("미확인 %d곳" % counts["total"])
+    if counts.get("unplaced"):
+        reasons.append("위치 없는 것 %d개" % counts["unplaced"])
+    if st.get("leftovers") is None and state != "confirmed":
+        reasons.append("원본에 남은 것을 셀 수 없는 읽기 방식")
+    if state == "ready" and compared.get("fingerprint") != fp:
+        state = "open"
+        reasons.append("원본과 견주지 않음")
+    return {"state": state, "fingerprint": fp, "rev": st.get("rev") or 0, "reason": ", ".join(reasons) or None}
+
+
+class _Sheets:
+    """graph_id -> 쪽 확정 상태. 도면이 수백 장이어도 판정마다 모두 읽지 않게, 물을 때만 읽는다(Snapshot.sheets 자리)."""
+
+    def __init__(self, engine):
+        self._engine = engine
+        self._names = None
+        self._cache = {}
+
+    def _all(self):
+        if self._names is None:
+            try:
+                self._names = dict(self._engine.graph_names()) if self._engine is not None else {}
+            except Exception:  # noqa: BLE001
+                self._names = {}
+        return self._names
+
+    def __contains__(self, gid):
+        return isinstance(gid, str) and gid in self._all()
+
+    def get(self, gid, default=None):
+        if gid not in self:
+            return default
+        if gid not in self._cache:
+            self._cache[gid] = sheet_state(self._all()[gid])
+        return self._cache[gid]
+
+    def __getitem__(self, gid):
+        found = self.get(gid)
+        if found is None:
+            raise KeyError(gid)
+        return found
+
+
+# ================================================================ 실행 동작(A11 1차)
+
+def _ok(message, topics=(), **extra):
+    return dict({"ok": True, "refused": [], "batch_id": None, "node_ids": [], "set_rev": None, "message": message,
+                 "topics": list(topics)}, **extra)
+
+
+def _refused(reason, code="rule", target=""):
+    return {"ok": False, "refused": [{"target": target, "code": code, "reason": str(reason)[:300]}], "batch_id": None,
+            "node_ids": [], "set_rev": None}
+
+
+def _unique(folder, name):
+    """folder 안에서 아직 없는 이름(이미 있으면 '-2', '-3'…을 붙인다). 내보내기가 남의 파일을 덮어쓰지 않게 한다."""
+    stem, ext = os.path.splitext(name)
+    candidate, n = name, 1
+    while os.path.exists(os.path.join(folder, candidate)):
+        n += 1
+        candidate = "%s-%d%s" % (stem, n, ext)
+    return os.path.join(folder, candidate)
+
+
+class _AutoSave:
+    """엔진을 감싸 저장 위치 묻기(대화상자)를 정해 둔 곳으로 바꾼다. 채팅 내보내기는 작업 루트 output/exports에 시각을 붙인 새 이름으로 쓰고
+    덮어쓰지 않는다(이미 있으면 번호를 붙이고, 그래도 겹치면 덮어쓰기를 거절한다). 나머지 속성은 엔진 것을 그대로 쓴다."""
+
+    def __init__(self, engine, folder):
+        self._engine = engine
+        self.folder = folder
+        self.saved = None
+        self.hooks = dict(engine.hooks, save_path=self._save_path, save_dir=self._save_dir,
+                          confirm_overwrite_files=lambda names: False)
+
+    def __getattr__(self, name):
+        return getattr(self._engine, name)
+
+    def _save_path(self, kind, default_name):
+        os.makedirs(self.folder, exist_ok=True)
+        self.saved = _unique(self.folder, default_name)
+        return self.saved
+
+    def _save_dir(self, kind):
+        stamp = actions_log.now_kst().strftime("%Y%m%d-%H%M")
+        self.saved = _unique(self.folder, "DEXPI-%s-%s" % (self._engine.project_id(), stamp))
+        os.makedirs(self.saved)
+        return self.saved
+
+
+class RunExecutors:
+    """실행 동작의 실행 함수 표. 엔진 함수(api_results·api_drawings·data)를 부르기만 하고, 그 함수가 내는 CommandError는 엔진 거절로 바꾼다.
+    돌려주는 꼴은 actions.EXECUTOR_RESULT(성공 글 message와 바뀐 자료 changed 포함)."""
+
+    def __init__(self, engine, pg_fn, regs_fn=None):
+        self.engine = engine
+        self.pg_fn = pg_fn
+        self.regs_fn = regs_fn
+
+    def table(self):
+        g = self._guard
+        return {"analysis.run": g(self.analysis), "results.set_status": g(self.result("set_status")),
+                "results.edit": g(self.result("edit_entry")), "export.excel": g(self.excel), "export.ie_bundle": g(self.ie_bundle),
+                "register.extract": g(self.extract), "register.reextract": g(self.extract), "sheet.confirm": g(self.sheet_confirm),
+                "dexpi.export": g(self.dexpi)}
+
+    def _guard(self, fn):
+        def run(args, call):
+            from hazop.shell import api
+            try:
+                return fn(args, call)
+            except api.CommandError as exc:
+                return _refused(exc.message, exc.code)
+        return run
+
+    def _exports(self):
+        from hazop import paths
+        return paths.output_root("exports")
+
+    # ---- ⑤
+    def analysis(self, args, call):
+        from hazop.shell import api_results
+        ids = list(args.get("node_ids") or [])
+        if len(ids) != 1:
+            return _refused("한 번에 한 구간씩 분석합니다. 여러 구간은 ⑤ 분석 결과의 '전체 분석'으로 하세요.")
+        a = {"scope": "node", "node_id": ids[0]}
+        cells = [c for c in args.get("cell_ids") or [] if isinstance(c, str)]
+        if len(cells) == 1:
+            a = {"scope": "cell", "node_id": ids[0], "deviation_id": cells[0].split("/")[-1]}
+        out = api_results._run(self.engine, a)
+        return _ok("구간 %s의 AI 분석을 시작했습니다(호출 %d회). 진행은 ⑤ 분석 결과에 보입니다." % (ids[0], out.get("calls") or 0),
+                   topics=["results.run"])
+
+    def result(self, cmd):
+        def fn(args, call):
+            from hazop.study import result_commands
+            out = A.result_executors(self.pg_fn(), result_commands.execute)["results." + ("edit" if cmd == "edit_entry" else cmd)](args, call)
+            if not (isinstance(out, dict) and out.get("ok") is True):
+                return out
+            where = "구간 %s 편차 %s 항목 %s" % (args.get("node_id"), args.get("deviation_id"), args.get("entry_id"))
+            if cmd == "set_status":
+                text = "%s을(를) %s(으)로 판정했습니다." % (where, A.STATUS_LABELS.get(args.get("status"), args.get("status")))
+            else:
+                text = "%s의 내용을 고쳤습니다(판정 '수정')." % where
+            return dict(out, message=text, topics=["results"])
+        return fn
+
+    def excel(self, args, call):
+        from hazop.shell import api_results
+        proxy = _AutoSave(self.engine, self._exports())
+        out = api_results._export_excel(proxy, {})
+        if out.get("cancelled"):
+            return _refused("저장하지 못했습니다.")
+        rows = out.get("rows")
+        count = " · 행 %d개" % rows if isinstance(rows, int) else ""
+        return _ok("Excel로 내보냈습니다: %s%s (작업 루트의 output/exports)." % (out.get("path"), count))
+
+    def ie_bundle(self, args, call):
+        from hazop.shell import api_results
+        proxy = _AutoSave(self.engine, self._exports())
+        out = api_results._export_ie(proxy, {})
+        if out.get("cancelled"):
+            return _refused("저장하지 못했습니다.")
+        cands = out.get("candidates")
+        count = " · 후보 %d건" % (len(cands) if isinstance(cands, list) else cands) if isinstance(cands, (int, list)) else ""
+        return _ok("초기사건 인계 묶음을 내보냈습니다: %s%s (작업 루트의 output/exports)." % (out.get("path"), count))
+
+    # ---- ①·②
+    def extract(self, args, call):
+        rid = args.get("registration_id")
+        reg = (self.regs_fn() if self.regs_fn else {}).get(rid) or {}
+        path = reg.get("path")
+        if not path:
+            return _refused("지금 프로젝트에 없는 등록 자료", target=str(rid))
+
+        def work(progress):
+            from hazop.app import data
+            progress("추출·그래프", 1, 1)
+            out = data.extract_and_graph(path)
+            return {"pages": len(out.get("pages") or [out])}
+        job = self.engine.start_job("다시 추출: %s" % rid, work, kind="register")
+        return _ok("%s 추출을 시작했습니다(작업 %s). 끝나면 도면 목록이 새로 고쳐집니다." % (rid, job))
+
+    def sheet_confirm(self, args, call):
+        from hazop.shell import api_drawings
+        gid = args.get("graph_id")
+        st = api_drawings.status(self.engine, gid)
+        if not st or not st.get("available"):
+            return _refused((st or {}).get("reason") or "없는 도면", target=str(gid))
+        out = api_drawings._sheet_command("confirm")(self.engine, {"graph_id": gid, "ver": st["ver"], "rev": st.get("rev") or 0})
+        name = self.engine.graph_names().get(gid) or gid
+        return _ok("도면 %s 쪽을 확정했습니다." % name if out.get("changed") else "도면 %s은(는) 이미 확정한 쪽입니다." % name)
+
+    def dexpi(self, args, call):
+        from hazop.shell import api_drawings
+        proxy = _AutoSave(self.engine, self._exports())
+        out = api_drawings._export(proxy, {"graph_ids": list(args.get("graph_ids") or [])})
+        if out.get("cancelled"):
+            return _refused("덮어쓸 파일이 있어 내보내지 않았습니다." if out.get("overwrite_refused") else "내보내지 못했습니다.")
+        done, skipped = out.get("drawings") or [], out.get("not_exported") or []
+        tail = " · 확정 안 된 쪽 %d장은 뺐습니다" % len(skipped) if skipped else ""
+        return _ok("DEXPI로 내보냈습니다: 도면 %d장, 폴더 %s (작업 루트의 output/exports)%s." % (len(done), out.get("folder"), tail))
+
+
+# ================================================================ 표시 동작 풀기
+
+def _sheet_id(raw, names):
+    """모델이 적은 도면(graph_id, 추출 이름, 도면 번호 일부) -> graph_id 또는 None. 여럿이 맞으면 None(넘겨짚지 않는다)."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    raw = raw.strip()
+    if raw in names:
+        return raw
+    low = raw.lower()
+    exact = [g for g, n in names.items() if str(n).lower() == low]
+    if len(exact) == 1:
+        return exact[0]
+    part = [g for g, n in names.items() if low in str(n).lower() or low in g.lower()]
+    return part[0] if len(part) == 1 else None
+
+
+def _resolve(pg, ids):
+    """구성요소 ID 또는 태그(대소문자 무시) -> (프로젝트 ID 목록, 못 찾은 것 목록)."""
+    by_id = {n.get("entity_id"): n for n in pg.get("nodes") or [] if n.get("entity_id")}
+    by_tag = {}
+    for eid, n in by_id.items():
+        tag = str(n.get("tag") or "").strip().lower()
+        if tag:
+            by_tag.setdefault(tag, []).append(eid)
+    found, missing = [], []
+    for raw in ids or []:
+        if not isinstance(raw, str):
+            continue
+        hits = [raw] if raw in by_id else by_tag.get(raw.strip().lower()) or []
+        if hits:
+            found += [h for h in hits if h not in found]
+        else:
+            missing.append(raw)
+    labels = [str(by_id[i].get("tag") or i) for i in found]
+    return found, missing, labels
+
+
+def _names_text(labels, n=5):
+    labels = list(dict.fromkeys(labels))
+    return ", ".join(labels[:n]) + (" 외 %d개" % (len(labels) - n) if len(labels) > n else "")
+
+
+def display_item(action, args, pg, names, node_ids_fn=lambda: set()):
+    """표시 동작 하나 -> 웹이 그대로 따를 항목 {op, ok, text, sheet?, ids?(도면 안 local_id), marks?, panel?, node_id?, cell?, layer?, on?}.
+    op: show(도면 열고 표시·확대) · open(도면만 열기) · fit · panel · layer · none(보일 수 없음, text에 까닭)."""
+    from hazop.chat import card as cardmod
+    from hazop.chat import view as chatview
+    if action in ("show", "select"):
+        sheet = _sheet_id(args.get("sheet"), names) if args.get("sheet") else None
+        if args.get("sheet") and sheet is None:
+            return {"op": "none", "ok": False, "text": "도면을 찾지 못했습니다: %s" % _short(args.get("sheet"))}
+        ids = args.get("ids") or []
+        if not ids:
+            if sheet:
+                return {"op": "open", "ok": True, "sheet": sheet, "text": "도면 %s을(를) 열었습니다." % names.get(sheet, sheet)}
+            return {"op": "none", "ok": False, "text": "보일 대상이 없습니다."}
+        found, missing, labels = _resolve(pg, ids)
+        groups = chatview.split_by_sheet(pg, found)
+        if not groups:
+            return {"op": "none", "ok": False, "text": "도면에서 찾지 못했습니다: %s" % _names_text(missing or ids)}
+        target = sheet if sheet in groups else next(iter(groups))
+        style = args.get("style") if args.get("style") in cardmod.STYLES else "focus"
+        marks = {g: [{"op": "mark", "groups": [{"ids": l[:MAX_DISPLAY_IDS], "style": style, "label": None}],
+                      "dim_others": action == "show", "center": False}] for g, l in groups.items()}
+        verb = "골랐습니다" if action == "select" else "보였습니다"
+        text = "도면 %s에서 %s을(를) %s." % (names.get(target, target), _names_text(labels), verb)
+        if len(groups) > 1:
+            text += " 다른 도면 %d장에도 있습니다." % (len(groups) - 1)
+        if missing:
+            text += " 찾지 못한 것: %s." % _names_text(missing)
+        return {"op": "show", "ok": True, "sheet": target, "ids": groups[target][:MAX_DISPLAY_IDS], "marks": marks, "text": text}
+    if action == "fit":
+        sheet = _sheet_id(args.get("sheet"), names) if args.get("sheet") else None
+        if args.get("sheet") and sheet is None:
+            return {"op": "none", "ok": False, "text": "도면을 찾지 못했습니다: %s" % _short(args.get("sheet"))}
+        return {"op": "fit", "ok": True, "sheet": sheet, "text": "도면 전체가 보이게 맞췄습니다."}
+    if action == "layer":
+        layer = LAYERS.get(str(args.get("name") or "").strip().lower())
+        if layer is None:
+            return {"op": "none", "ok": False, "text": "모르는 층입니다(기호·배관·태그 가운데 하나)."}
+        on = args.get("on") if isinstance(args.get("on"), bool) else True
+        return {"op": "layer", "ok": True, "layer": layer, "on": on,
+                "text": "%s 층을 %s." % (LAYER_NAMES[layer], "켰습니다" if on else "껐습니다")}
+    if action == "goto":
+        raw = str(args.get("target") or "").strip()
+        if raw.lower() in ("③", "kg", "knowledge_graph", "지식그래프"):
+            return {"op": "none", "ok": False, "text": "지식그래프 화면은 아직 없습니다."}
+        panel = raw.lower() if raw.lower() in PANELS else PANEL_ALIASES.get(raw)
+        if panel is None:
+            return {"op": "none", "ok": False, "text": "갈 곳을 알 수 없습니다: %s" % _short(raw)}
+        ident = args.get("id")
+        if panel == "drawings" and ident:
+            sheet = _sheet_id(ident, names)
+            if sheet is None:
+                return {"op": "none", "ok": False, "text": "도면을 찾지 못했습니다: %s" % _short(ident)}
+            return {"op": "open", "ok": True, "sheet": sheet, "text": "도면 %s을(를) 열었습니다." % names.get(sheet, sheet)}
+        if panel == "nodes" and ident:
+            if ident not in node_ids_fn():
+                return {"op": "none", "ok": False, "text": "구간을 찾지 못했습니다: %s" % _short(ident)}
+            return {"op": "panel", "ok": True, "panel": "nodes", "node_id": ident, "text": "구간 %s을(를) 열었습니다." % ident}
+        if panel == "results" and ident and "/" in ident:
+            node_id, dev = ident.split("/")[:2]
+            return {"op": "panel", "ok": True, "panel": "results", "cell": [node_id, dev],
+                    "text": "분석 결과에서 구간 %s 편차 %s 칸을 열었습니다." % (node_id, dev)}
+        return {"op": "panel", "ok": True, "panel": panel, "text": "%s 패널을 열었습니다." % PANELS[panel]}
+    return {"op": "none", "ok": False, "text": "보일 수 없는 동작입니다."}
