@@ -440,6 +440,15 @@ class PdfVectorRuleTest(unittest.TestCase):
                        for r in ext["relations"] if r.get("flow_direction"))
         self.assertEqual(flows, [("-", "continuation"), ("continuation", "-")])
 
+    def test_size_text_beside_valve_goes_to_pipe(self):
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        ext = pdf_run(bowtie(100, 100) + [rect(300, 90, 340, 132), line((136, 111), (300, 111))],
+                      [word("¾\"", 140, 104)])
+        self.assertEqual([(r["attributes"] or {}).get("size") for r in ext["relations"]], ['3/4"'])
+        self.assertEqual([n["label_text"] for n in ext["nodes"]], ["", ""])
+
     def test_labels_line_label_and_title_block(self):
         ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (300, 130)),
                        rect(400, 300, 450, 315), rect(450, 300, 550, 315)],

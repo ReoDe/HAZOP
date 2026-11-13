@@ -50,7 +50,7 @@ from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
 )
 from .pdf_vector_flow import _chain_flow, _propagate_flows, continuation_flow
-from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels
+from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels, parse_label
 from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, VALVE_TAG_RE, _text_blocks, _upright_blocks, _bubble_like,
                                 _assign_tags)
 
@@ -1682,6 +1682,11 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             plan_into[id(a)] = v
             acts_on.setdefault(id(v), []).append((a, h.entry))
     cand = []
+    is_size = [(parse_label(b["text"]) or ("",))[0] == "size" for b in blocks]
+    is_position = [bool(POSITION_TEXT_RE.fullmatch(" ".join(b["text"].split()))) for b in blocks]
+    valve_syms = [v for v in syms if id(v) in valve_like]
+    valve_piece = {si for si, s in enumerate(syms) if id(plan_into.get(id(s), s)) not in valve_like
+                   and any(_box_gap(s.bbox, v.bbox) <= prm["attach_tol"] for v in valve_syms)}
     for bi, b in enumerate(blocks):
         if bi in roles:
             continue
@@ -1691,6 +1696,10 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             if b.get("rotated") and shape_of[si][0] not in ("instrument", "continuation"):
                 continue  # 돌린 글자는 대개 행선지·위치 설명이라 다른 기호의 종류를 정하는 글자로 쓰지 않는다
             inside = _inside(_center(b["bbox"]), s.bbox)
+            if not inside and is_size[bi]:
+                continue  # 구경 글자('¾"')는 기호 이름이 아니라 배관 속성이다(attach_line_labels가 배관에 붙인다)
+            if not inside and is_position[bi] and si in valve_piece:
+                continue  # 위치 약어('LC,FC')는 밸브 속성이다. 밸브 몸통에 붙은 미분류 조각이 가져가면 밸브가 잃는다(012쪽 419)
             gap = -1.0 if inside else _box_gap(b["bbox"], s.bbox)
             if gap <= prm["label_gap_max"]:
                 cand.append((round(gap, 6), bi, si))
