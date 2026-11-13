@@ -179,7 +179,8 @@ class CanvasWebTest(unittest.TestCase):
         print("\n[큰 도면 항목 %(items)d개(기호 %(symbols)d·배관 %(pipes)d) | 오프스크린 QtWebEngine 1000x700, 1회 실행] 자료 넣기 %(setData_ms).0fms · "
               "전체 네모 질의 %(queryBox_all_ms).1fms · 작은 네모 질의 %(queryBox_small_ms).3fms · 누르기 판정 평균 %(hitTest_avg_ms).4fms · "
               "표시 3,000개 %(mark_3000_ms).0fms · 경로 600단계 %(path_600_ms).0fms · 구간 3겹 칠하기 %(segments_3overlap_ms).0fms · "
-              "전체 네모 고르기(이벤트부터 고른 2,000개 그리기까지) %(boxSelect_all_ms).0fms" % t)
+              "전체 네모 고르기(이벤트부터 고른 2,000개 그리기까지) %(boxSelect_all_ms).0fms · "
+              "525구간 칠하기 %(segments_525_ms).0fms · 구간 하나 강조 %(segments_focus_ms).0fms · 구간 밖 5,000개 흐리게 %(outside_5000_ms).0fms" % t)
         self.assertLess(t["queryBox_all_ms"], 100)
         self.assertLess(t["queryBox_small_ms"], 5)
         self.assertLess(t["hitTest_avg_ms"], 2)

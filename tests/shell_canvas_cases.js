@@ -328,6 +328,18 @@ export async function run(hz, data, big) {
     t0 = performance.now();
     cb2.update({ segments: [{ node_id: "S1", ids: allIds }, { node_id: "S2", ids: allIds.filter((_, i) => i % 2 === 0) }, { node_id: "S3", ids: allIds.filter((_, i) => i % 3 === 0) }] });
     timings.segments_3overlap_ms = performance.now() - t0;
+    // 525구간 × 구성요소 5,800개(구간마다 11개): 전부 칠하기, 구간 하나 강조, 구간 밖 흐리게
+    const segs525 = []; for (let k = 0; k < 525; k++) segs525.push({ node_id: "S" + (k + 1), ids: Array.from({ length: 11 }, (_, j) => allIds[(k * 11 + j) % allIds.length]) });
+    t0 = performance.now();
+    cb2.update({ marks: [], segments: segs525 });
+    timings.segments_525_ms = performance.now() - t0;
+    t0 = performance.now();
+    cb2.update({ segments: segs525.map((s, i) => Object.assign({}, s, { active: i === 300 })) });
+    timings.segments_focus_ms = performance.now() - t0;
+    t0 = performance.now();
+    cb2.update({ outside: allIds.slice(0, 5000) });
+    timings.outside_5000_ms = performance.now() - t0;
+    cb2.update({ outside: [] });
     cb2.update({ marks: [], segments: [] });
     // 전체를 덮는 네모 고르기(포인터 이벤트부터 알림까지)
     const r2 = hb.querySelector(".hz-cv-vp").getBoundingClientRect();

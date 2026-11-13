@@ -278,3 +278,30 @@ export const tests = [
     assert.equal([N.nodes.get().list.set_rev, N.nodes.get().list.nodes.length], [9, 1]);
   } },
 ];
+
+// 525구간 목록 시간(규격 §5.4 방식: 측정값은 window.__nodesTiming에 남기고, 상한은 넉넉히 둔다)
+tests.push({ name: "구간 패널: 525구간 목록을 그리고 구간을 바꿔 누르는 시간", async run(assert) {
+  await setup();
+  const many = [];
+  for (let k = 0; k < 525; k++) many.push({ node_id: "S" + (k + 1), name: "구간 " + (k + 1), state: k % 7 === 0 ? "confirmed" : "applied", origin: k % 3 ? "user" : "ai", name_by: "user", rev: 1, basis: "x", batch_id: "B1",
+    design_intent: null, count: 11, sheets: [{ graph_id: "graph-A", n: 11 }], overlaps: k % 5 === 0 ? [{ node_id: "S" + (k + 2), shared: 1 }] : [], confirmed: null, locked: null, screen: null });
+  engine.list = Object.assign({}, engine.list, { nodes: many });
+  await N.refresh();
+  const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+  let t0 = performance.now();
+  N.nodes.set({ scope: "all", checked: [] });
+  const until = async (cond) => { for (let i = 0; i < 20000 && !cond(); i++) await Promise.resolve(); };
+  await until(() => host.querySelectorAll(".nrow").length === 525);
+  const render = performance.now() - t0;
+  const times = [];
+  for (const k of [10, 200, 400]) {
+    t0 = performance.now();
+    host.querySelectorAll(".nrow-b")[k].click();
+    await until(() => !!host.querySelector(".ndetail") && host.querySelector(".ndetail .nd-h b").textContent === "S" + (k + 1));
+    times.push(performance.now() - t0);
+  }
+  window.__nodesTiming = { render_ms: Math.round(render), focus_ms: times.map(Math.round) };
+  assert(host.querySelectorAll(".nrow").length === 525, "525행");
+  assert(render < 3000 && Math.max(...times) < 1500, JSON.stringify(window.__nodesTiming));
+  host.remove();
+} });
