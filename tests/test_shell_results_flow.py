@@ -148,3 +148,88 @@ class ResultsPanelTest(W.ShellBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResultsToSheetTest(W.ShellBase):
+    """'도면에서 보기'와 도면 말풍선의 '분석 결과 추적'(INTENT §3.6): SNP 표본 그래프에서 구간을 만들어 확정하고 분석 칸 하나를 채운 뒤 실제 창에서 따라간다."""
+
+    S101 = "graph-SNP-M-101"
+
+    def setUp(self):
+        from hazop.app import project_ctx
+        from hazop.shell import api_nodes
+        from tests.test_study_node_tools import DEVS, snp_graph
+        self.pg = snp_graph()
+        for p in (mock.patch.object(project_ctx, "project_graph", lambda pid: self.pg),
+                  mock.patch.object(res, "load_deviations", lambda path=None: copy.deepcopy(DEVS)),
+                  mock.patch.object(W, "small_pg", lambda: self.pg)):
+            p.start()
+            self.addCleanup(p.stop)
+        self.api_nodes = api_nodes
+        self.DEVS = DEVS
+        shutil_rm = os.path.join(sn.store_dir(), "SNP")
+        import shutil
+        shutil.rmtree(shutil_rm, ignore_errors=True)
+
+    def make_confirmed_node_with_a_recommendation(self, win):
+        eng = win.engine
+        local = [n["local_id"] for n in self.pg["nodes"] if n.get("sheet") == self.S101][:6]
+        rev = self.api_nodes.summary(eng)["set_rev"]
+        r = eng.dispatch("nodes.create", {"project_id": "SNP", "set_rev": rev, "sheet": self.S101, "ids": local, "name": "구간 가"})
+        self.assertTrue(r["ok"], r)
+        row = self.api_nodes.summary(eng)["nodes"][0]
+        c = eng.dispatch("nodes.confirm", {"project_id": "SNP", "node_ids": [row["node_id"]], "set_rev": self.api_nodes.summary(eng)["set_rev"],
+                                           "targets": [{"node_id": row["node_id"], "rev": row["rev"], "state": row["state"]}]})
+        self.assertTrue(c["ok"], c)
+        ns = sn.load(self.pg)
+        doc, fp = res.load_fp(ns)
+        doc = doc or res.empty_results(ns, self.DEVS)
+        cell = next(x for x in doc["cells"] if x["node_id"] == row["node_id"] and x["deviation_id"] == "D01")
+        cell.update(state="analyzed", entries=[{"entry_id": "e1", "origin": "ai_draft", "status": "proposed", "cause": "원인", "consequence": "결과", "safeguards": [],
+                                                "recommendation": "밸브 점검", "severity": 2, "frequency": 2, "risk": 2}])
+        res.save_fp(doc, ns.get("project_id"), expect=fp if fp else __import__("hazop.store_io", fromlist=["ANY"]).ANY)
+        return row["node_id"], local
+
+    def test_view_on_sheet_closes_the_panel_shows_a_back_chip_and_returns(self):
+        win = self.window()
+        self.switch_project(win, "SNP")
+        node, _local = self.make_confirmed_node_with_a_recommendation(win)
+        self.assertTrue(self.click(win, ".rail button", 2))
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.res-matrix .vg-cell').length") or 0) > 0, 15), self.text(win)[-300:])
+        self.js(win, "(() => { const e = document.querySelector('.vg-cell[style*=\"top: 0px; left: 0px\"]'); if (e) e.click(); })()")
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.worksheet').length") or 0) == 1, 10), self.text(win)[-300:])
+        self.assertTrue(self.click(win, "button[aria-label='도면에서 보기']"))
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.panel').length") or 0) == 0, 10), "패널이 닫힌다")
+        self.assertTrue(wait_for(lambda: "분석 결과로 돌아가기" in self.text(win), 10), self.text(win)[:300])
+        self.assertEqual(self.js(win, "window.__hz.store.get().sheet"), self.S101, "구간의 구성요소가 놓인 도면이 열린다")
+        self.assertTrue(self.click(win, "button[aria-label='분석 결과로 돌아가기']"))
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.panel.results').length") or 0) == 1, 10))
+        self.assertEqual(self.js(win, "window.__hz.store.get().backTo === null"), True)
+
+    def test_bubble_button_traces_from_a_sheet_component_to_its_recommendation(self):
+        win = self.window()
+        self.switch_project(win, "SNP")
+        node, local = self.make_confirmed_node_with_a_recommendation(win)
+        self.js(win, "window.__hz.store.set({sheet: %s})" % json.dumps(self.S101))
+        pump(0.5)
+        self.js(win, "window.__hz.store.set({bubble: {sheet: %s, id: %s, tag: 'RC-X', kind: 'valve', rect: {x: 100, y: 100, w: 20, h: 20}}})" % (json.dumps(self.S101), json.dumps(local[0])))
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.bubble').length") or 0) == 1, 10))
+        self.assertTrue(self.click(win, "button[aria-label='분석 결과 추적']"))
+        self.assertTrue(wait_for(lambda: "밸브 점검" in self.text(win), 15), self.text(win)[-400:])
+        self.assertIn(node, self.text(win))
+        self.assertEqual(self.js(win, "document.querySelectorAll('.bubble').length"), 0)
+
+    def test_trace_box_finds_a_component_by_its_tag(self):
+        win = self.window()
+        self.switch_project(win, "SNP")
+        node, local = self.make_confirmed_node_with_a_recommendation(win)
+        member = next(n for n in self.pg["nodes"] if n.get("local_id") == local[0])
+        tag = member.get("tag") or member["entity_id"]
+        self.assertTrue(self.click(win, ".rail button", 2))
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.res-matrix .vg-cell').length") or 0) > 0, 15))
+        self.assertTrue(self.click(win, "button[aria-label^='권고']"))
+        self.assertTrue(wait_for(lambda: bool(self.js(win, "document.getElementById('trace-q') !== null")), 10))
+        self.js(win, "(() => { const i = document.getElementById('trace-q'); i.value = %s; i.dispatchEvent(new Event('input', {bubbles: true})); })()" % json.dumps(tag))
+        pump(0.3)
+        self.assertTrue(self.click(win, "button[aria-label='추적']"))
+        self.assertTrue(wait_for(lambda: node in self.text(win) and "구성요소" in self.text(win), 15), self.text(win)[-400:])

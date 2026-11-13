@@ -148,7 +148,8 @@ function Worksheet() {
     <div class="nd-h"><b>${c.node.node_id}</b> ${c.node.name || ""} <span class="muted">›</span> <b>${c.deviation.label || c.deviation.deviation_id}</b>
       <${Chip}>${cell.state === "analyzed" ? "분석함" : cell.state === "excluded" ? "제외" : "분석 전"}<//>
       ${cell.scope_changed ? html`<${Chip} kind="warn" title="구간 범위가 바뀐 뒤 아직 다시 확인하지 않은 칸">범위 바뀜<//>` : null}
-      <span class="acts"><${Btn} sm=${true} kind="ghost" icon="x" label="워크시트 닫기" onClick=${() => R.results.set({ active: null, cell: null })} /></span></div>
+      <span class="acts"><${Btn} sm=${true} label="도면에서 보기" title="패널을 닫고 이 구간을 도면에서 봅니다" onClick=${() => R.viewOnSheet(c.node.node_id)}>도면에서 보기<//>
+        <${Btn} sm=${true} kind="ghost" icon="x" label="워크시트 닫기" onClick=${() => R.results.set({ active: null, cell: null })} /></span></div>
     ${!c.editable ? html`<${Notice} kind="info">${c.not_editable_reason || "이 칸은 고칠 수 없습니다."}<//>` : null}
     ${cell.ai_run && cell.ai_run.status === "failed" ? html`<${Notice} kind="warn" icon="alert-triangle">마지막 AI 실행이 이 칸에서 실패했습니다: ${cell.ai_run.error}<//>` : null}
     ${cell.ai_run && cell.ai_run.note ? html`<div class="muted small">${cell.ai_run.note}</div>` : null}
@@ -165,11 +166,20 @@ function Worksheet() {
 }
 
 // ---------------------------------------------------------------- 권고·추적
+function TraceBox() {
+  const [text, setText] = useState("");
+  const go = () => { if (text.trim()) R.loadTrace(text); };
+  return html`<div class="acts-row tracebox"><label for="trace-q" class="small muted">구성요소 추적</label>
+    <input id="trace-q" class="textbox" maxlength="120" placeholder="태그 또는 구성요소 ID" value=${text} onInput=${(e) => setText(e.target.value)}
+      onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); go(); } }} />
+    <${Btn} sm=${true} label="추적" disabled=${!text.trim()} onClick=${go}>추적<//></div>`;
+}
+
 function Recs() {
   const recs = R.useResults((x) => x.recs);
   const trace = R.useResults((x) => x.trace);
-  return html`<div class="res-recs">
-    ${trace ? html`<${Notice} kind="info" icon="route">구성요소 <b>${trace.entity}</b> → ${trace.nodes.length ? trace.nodes.map((n) => n.node_id + " " + (n.name || "")).join(", ") : "소속 구간 없음"}
+  return html`<div class="res-recs"><${TraceBox} />
+    ${trace ? html`<${Notice} kind="info" icon="route">구성요소 <b>${trace.entity || "?"}</b> → ${trace.nodes.length ? trace.nodes.map((n) => n.node_id + " " + (n.name || "")).join(", ") : (trace.entities && trace.entities.length ? "분석 범위의 소속 구간 없음" : "프로젝트에서 찾지 못함")}
       <${Btn} sm=${true} kind="ghost" label="추적 끄기" onClick=${() => R.results.set({ trace: null })}>추적 끄기<//><//>` : null}
     ${trace && trace.nodes.length ? trace.nodes.map((n) => html`<div class="card" key=${n.node_id}><b>${n.node_id}</b> ${n.name || ""}
       ${n.cells.length ? n.cells.map((c) => html`<div key=${c.deviation_id}><span class="muted">${c.deviation}</span>${c.recs.map((r) => html`<div class="rec" key=${r.entry_id}>

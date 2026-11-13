@@ -1,7 +1,7 @@
 // 분석 결과(3단계 ⑤)의 화면 상태와 엔진 잇기. 저장하는 자료는 엔진만 쓴다: 여기는 읽어 온 판(summary·cell)과 보기 상태(고른 칸·보기)만 들고,
 // 쓰기는 명령으로 보낸 뒤 엔진 답과 `changed("results")`로 다시 읽는다(낙관적 갱신 없음, 규격 §5.3). 쓰기 명령은 읽은 결과 파일 지문(ver)을 들고 간다.
 import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
-import { createStore } from "../store.js";
+import { createStore, store } from "../store.js";
 import { cmd, on, onChanged, read } from "../bridge.js";
 
 const EMPTY = { available: false, empty: true, nodes: [], deviations: [], matrix: {}, ver: "none", kpi: null, run: { running: false }, reason: "" };
@@ -79,12 +79,36 @@ export async function loadRecs() {
   try { results.set({ recs: (await read("results/recs")).recs }); } catch (e) { results.set({ recs: [] }); }
 }
 
-export async function loadTrace(entity) {
-  if (!entity) { results.set({ trace: null }); return null; }
+/** 구성요소 -> 소속 구간 -> 칸 -> 권고(INTENT §3.6). query: 태그·ID 글, 또는 {sheet, local}(도면에서 누른 구성요소). */
+export async function loadTrace(query) {
+  const q = typeof query === "string" ? { entity: query.trim() } : query;
+  if (!q || !(q.entity || (q.sheet && q.local))) { results.set({ trace: null }); return null; }
+  const qs = q.entity ? "entity=" + encodeURIComponent(q.entity) : "sheet=" + encodeURIComponent(q.sheet) + "&local=" + encodeURIComponent(q.local);
   let t = null;
-  try { t = await read("results/trace?entity=" + encodeURIComponent(entity)); } catch (e) { t = null; }
-  results.set({ trace: t, view: "recs" });
+  try { t = await read("results/trace?" + qs); } catch (e) { t = null; }
+  results.set({ trace: t, view: "recs", error: t ? null : "추적하지 못했습니다." });
+  loadRecs();
   return t;
+}
+
+// ---------------------------------------------------------------- 도면에서 보기 · 돌아가기
+let openSheetFn = null;
+export function setOpenSheet(fn) { openSheetFn = fn; }
+
+/** 고른 칸의 구간을 도면에서 보인다: 패널을 닫고(위 막대에 '분석 결과로 돌아가기' 칩) 그 구간을 강조·확대한다. 구간의 구성요소가 놓인 도면이 지금 도면이 아니면 그 도면을 연다. */
+export async function viewOnSheet(nodeId) {
+  const N = await import("./nodes_state.js");
+  const row = N.nodes.get().list.nodes.find((n) => n.node_id === nodeId);
+  const sheets = (row && row.sheets) || [];
+  if (!sheets.length) { results.set({ error: "이 구간의 구성요소가 놓인 도면을 찾지 못했습니다." }); return false; }
+  const cur = store.get().sheet;
+  const target = sheets.some((s) => s.graph_id === cur) ? cur : sheets[0].graph_id;
+  if (target !== cur && openSheetFn) openSheetFn(target);
+  store.set({ panel: null, backTo: "results" });
+  N.nodes.set({ focus: null, detail: null });
+  await N.loadSheet(target);
+  N.focusNode(nodeId, { zoom: true });
+  return true;
 }
 
 export async function refresh() {

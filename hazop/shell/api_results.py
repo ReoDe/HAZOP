@@ -188,21 +188,39 @@ def cell_view(engine, node_id, deviation_id):
             "severities": list(SEVERITIES), "frequencies": list(FREQUENCIES)}
 
 
-def trace(engine, entity):
+def _entities(pg, query):
+    """추적을 시작할 프로젝트 구성요소 ID와 보일 이름. query: entity(프로젝트 ID 또는 태그) 또는 sheet+local(도면에서 누른 구성요소)."""
+    from hazop.chat import view as chatview
+    by_id = {n.get("entity_id"): n for n in pg.get("nodes") or [] if n.get("entity_id")}
+    if query.get("sheet") and query.get("local"):
+        ids = chatview.lift(pg, query["sheet"], [query["local"]])
+    else:
+        ent = (query.get("entity") or "").strip()
+        if ent in by_id:
+            ids = [ent]
+        else:                                                        # 태그로도 찾는다(같은 태그가 여럿이면 모두)
+            low = ent.lower()
+            ids = [i for i, n in by_id.items() if low and str(n.get("tag") or "").lower() == low]
+    label = ", ".join(sorted({str((by_id.get(i) or {}).get("tag") or i) for i in ids}))
+    return ids, label or (query.get("entity") or "")
+
+
+def trace(engine, query):
     pg = _pg(engine, strict=False)
-    if pg is None or not entity:
-        return {"entity": entity, "nodes": []}
+    if pg is None or not (query.get("entity") or (query.get("sheet") and query.get("local"))):
+        return {"entity": (query or {}).get("entity", ""), "entities": [], "nodes": []}
+    ids, label = _entities(pg, query)
     ns, _legacy = _node_set(pg)
     doc, _fp = _load(ns)
     out = []
-    for n in ns["nodes"]:
-        if entity not in (n.get("members") or []):
+    for n in scope_rows(ns):
+        if not set(ids) & set(n.get("members") or []):
             continue
         cells = {}
         for r in _rec_rows(doc, ns, only_node=n["node_id"]):
             cells.setdefault(r["deviation_id"], {"deviation_id": r["deviation_id"], "deviation": r["deviation"], "recs": []})["recs"].append(r)
         out.append({"node_id": n["node_id"], "name": n.get("name"), "state": nodes.node_state(n), "cells": list(cells.values())})
-    return {"entity": entity, "nodes": out}
+    return {"entity": label, "entities": ids, "nodes": out}
 
 
 def read(engine, parts, query):
@@ -223,7 +241,7 @@ def read(engine, parts, query):
         doc, _fp = _load(ns)
         return api._json({"recs": _rec_rows(doc, ns)})
     if len(parts) == 2 and parts[1] == "trace":
-        return api._json(trace(engine, (query or {}).get("entity", "")))
+        return api._json(trace(engine, dict(query or {})))
     return None
 
 

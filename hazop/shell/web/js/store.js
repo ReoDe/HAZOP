@@ -28,6 +28,8 @@ export const store = createStore({
   command: { seq: 0 },    // 도면 부품에 한 번 하는 명령(zoomTo·fit·clearMarks)
   toast: null,
   dropOver: false,
+  backTo: null,           // '분석 결과로 돌아가기' 칩: 도면에서 보기로 패널을 닫았을 때 "results"
+  bubble: null,           // 도면에서 누른 구성요소 말풍선 {sheet, id, tag, kind, rect}
   iconsReady: false,
   canvasReady: false,
 });

@@ -13,6 +13,7 @@ import { NodesPanel } from "./panels/nodes.js";
 import { ResultsPanel } from "./panels/results.js";
 import { IePanel } from "./panels/ie.js";
 import { resetAreas } from "./areas.js";
+import { setOpenSheet } from "./panels/results_state.js";
 import { SettingsPanel } from "./panels/settings.js";
 import { SheetHost } from "./sheet_host.js";
 
@@ -48,8 +49,10 @@ export function openSheet(graphId) {
 }
 
 export function togglePanel(name) {
-  store.set((s) => ({ panel: s.panel === name ? null : name }));
+  store.set((s) => ({ panel: s.panel === name ? null : name, backTo: null }));
 }
+
+setOpenSheet(openSheet);      // 분석 결과의 '도면에서 보기'가 도면을 바꿀 때 쓴다
 
 export function toggleChat() {
   store.set((s) => ({ chatCollapsed: !s.chatCollapsed, chat: Object.assign({}, s.chat, { unread: false }) }));
@@ -146,10 +149,12 @@ function ProjectBox({ id }) {
 function TopBar() {
   const sheet = useStore((s) => s.sheet);
   const d = useStore((s) => s.drawings);
+  const backTo = useStore((s) => s.backTo);
   const row = d.drawings.find((x) => x.graph_id === sheet);
   return html`<header class="topbar"><div class="crumb"><${ProjectBox} id=${d.project_id} /><span class="muted">›</span>
     <button type="button" class="sheet" aria-label="도면 바꾸기" onClick=${() => togglePanel("drawings")}>${row ? (row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
-    ${row && row.title ? html`<span class="title">${row.title}</span>` : null}</div></header>`;
+    ${row && row.title ? html`<span class="title">${row.title}</span>` : null}
+    ${backTo === "results" ? html`<button type="button" class="chip accent" aria-label="분석 결과로 돌아가기" onClick=${() => store.set({ panel: "results", backTo: null })}><${Icon} name="table" size=${14} /> 분석 결과로 돌아가기</button>` : null}</div></header>`;
 }
 
 function Toast() {

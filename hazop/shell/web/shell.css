@@ -89,3 +89,5 @@ ul.tight { margin: 0; padding-left: 16px; }
 @media (max-width: 1100px) { .ie-cols { grid-template-columns: 1fr; } }
 .warnline { color: var(--warn); }
 .tgts { margin: var(--sp-1) 0 var(--sp-2); }
+.bubble { position: absolute; z-index: 4; padding: var(--sp-2) var(--sp-3); min-width: 160px; }
+.tracebox input { flex: 1; min-width: 160px; height: 28px; }

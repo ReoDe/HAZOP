@@ -313,6 +313,61 @@ def fake_run_unit(kind=None, limit=None):
     return run
 
 
+class TraceTest(Base):
+    """구성요소 -> 소속 구간 -> 칸 -> 권고(INTENT §3.6): 태그·ID·도면에서 누른 구성요소(sheet+local) 어느 쪽으로 시작해도 같은 길이 나온다."""
+
+    def setUp(self):
+        super().setUp()
+        from hazop.app import project_ctx
+        from tests.test_study_export import DEVS as XDEVS, sample
+        r, ns, pg, self.span, self.single = sample()
+        for p in (mock.patch.object(res, "load_deviations", lambda path=None: copy.deepcopy(XDEVS)),
+                  mock.patch.object(project_ctx, "project_graph", lambda pid: pg)):
+            p.start()
+            self.addCleanup(p.stop)
+        self.ns, self.g = ns, pg
+        sn.save(ns)
+        res.save(r, ns.get("project_id"))
+        self.engine.settings["project_id"] = ns.get("project_id")
+        # 이 표본 그래프에는 도면 local_id가 없어 대응표를 대신 꽂는다(local_id = "L-" + 프로젝트 ID, 도면 = 구성요소가 놓인 도면)
+        self.back = {(n.get("sheet") or "sheet-1", "L-" + n["entity_id"]): n["entity_id"] for n in pg["nodes"] if n.get("entity_id")}
+        p = mock.patch("hazop.chat.view._locals", lambda graph: ({}, self.back))
+        p.start()
+        self.addCleanup(p.stop)
+
+    def pick(self):
+        """첫 구간의 구성요소 하나: (프로젝트 ID, 태그, 도면, local_id)."""
+        node = next(n for n in self.ns["nodes"] if n["node_id"] == self.span)
+        by_entity = {v: k for k, v in self.back.items()}
+        for m in node["members"]:
+            if m in by_entity:
+                tag = next((n.get("tag") for n in self.g["nodes"] if n.get("entity_id") == m), None)
+                return m, tag, by_entity[m][0], by_entity[m][1]
+        self.fail("구간의 구성요소가 대응표에 없음")
+
+    def test_entity_tag_and_sheet_local_reach_the_same_node_and_recommendations(self):
+        ent, tag, sheet, local = self.pick()
+        by_id = self.read("results", "trace", entity=ent)
+        self.assertIn(self.span, [n["node_id"] for n in by_id["nodes"]], by_id)
+        self.assertTrue(any(c["recs"] for n in by_id["nodes"] for c in n["cells"]), "권고까지 이어진다")
+        by_local = self.read("results", "trace", sheet=sheet, local=local)
+        self.assertEqual([n["node_id"] for n in by_local["nodes"]], [n["node_id"] for n in by_id["nodes"]])
+        if tag:
+            by_tag = self.read("results", "trace", entity=tag.lower())
+            self.assertIn(self.span, [n["node_id"] for n in by_tag["nodes"]], "태그(대소문자 무관)로도 찾는다")
+            self.assertEqual(by_local["entity"], tag)
+
+    def test_unknown_component_and_excluded_node_give_no_nodes(self):
+        self.assertEqual(self.read("results", "trace", entity="없는-태그")["nodes"], [])
+        ent, _tag, _sheet, _local = self.pick()
+        ns = sn.load(self.g)
+        for n in ns["nodes"]:
+            if n["node_id"] == self.span:
+                n["screen"] = {"status": "excluded"}
+        sn.save(ns)
+        self.assertEqual(self.read("results", "trace", entity=ent)["nodes"], [], "스크리닝 제외 구간은 분석 범위가 아니다")
+
+
 class ScopeAndVersionTest(Base):
     def setUp(self):
         super().setUp()

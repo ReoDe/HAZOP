@@ -5,6 +5,8 @@ import { useEffect, useState } from "../vendor/hooks.module.js";
 import { store, useStore } from "./store.js";
 import { ui } from "./bridge.js";
 import { Icon } from "./ui/icon.js";
+import { Btn } from "./ui/parts.js";
+import * as R from "./panels/results_state.js";
 import { NodeOverlay, useNodeCanvas } from "./canvas/nodes_canvas.js";
 
 let SheetComponent = null;
@@ -28,6 +30,19 @@ function Fallback({ sheet }) {
     <div class="float chipbar"><span class="muted" style="font-size:var(--fs-sm)">도면 구성요소를 준비 중이라 그림만 보입니다.</span></div></div>`;
 }
 
+/** 도면에서 구성요소를 누르면 뜨는 말풍선: 태그와 종류, 그 구성요소의 소속 구간 -> 칸 -> 권고 추적(INTENT §3.6)으로 가는 단추. */
+function ItemBubble() {
+  const b = useStore((s) => s.bubble);
+  if (!b) return null;
+  const r = b.rect || {};
+  const style = "left:" + Math.max(8, Math.round((r.x || 0) + (r.w || r.width || 0) + 8)) + "px;top:" + Math.max(8, Math.round(r.y || 0)) + "px";
+  const trace = () => { store.set({ bubble: null, panel: "results" }); R.loadTrace({ sheet: b.sheet, local: b.id }); };
+  return html`<div class="float bubble" role="dialog" aria-label="구성요소" style=${style}>
+    <div><b>${b.tag || b.id}</b>${b.kind ? html` <span class="muted small">${b.kind}</span>` : null}</div>
+    <div class="acts-row"><${Btn} sm=${true} label="분석 결과 추적" title="소속 구간, 그 구간의 칸과 권고를 따라갑니다" onClick=${trace}>분석 결과 추적<//>
+      <${Btn} sm=${true} kind="ghost" icon="x" label="말풍선 닫기" onClick=${() => store.set({ bubble: null })} /></div></div>`;
+}
+
 export function SheetHost() {
   const sheet = useStore((s) => s.sheet);
   const marks = useStore((s) => s.marks);
@@ -42,5 +57,5 @@ export function SheetHost() {
   if (!Comp) return html`<${Fallback} sheet=${sheet} />`;
   const items = (marks.bySheet && marks.bySheet[sheet]) || [];
   return html`<div class="canvas"><${Comp} sheet=${{ graph_id: sheet }} ...${nc.props} marks=${items.map((m, i) => Object.assign({ id: (marks.rid || "m") + (i ? "#" + i : "") }, m))}
-    command=${command} onItemClick=${(d) => ui("itemClick", { id: d.id })} /><${NodeOverlay} /></div>`;
+    command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, rect: d.rect } }); }} /><${NodeOverlay} /><${ItemBubble} /></div>`;
 }
