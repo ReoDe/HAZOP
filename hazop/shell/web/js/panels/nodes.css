@@ -1,0 +1,35 @@
+/* 구간 패널과 도면 위 고르기 막대·새 구간 카드(2단계). 토큰은 tokens.css를 쓴다. */
+.textbox { width: 100%; border: 1px solid var(--line-input); border-radius: var(--r-sm); padding: 6px 10px; background: var(--surface); color: var(--ink); font: inherit; }
+.textbox:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+textarea.textbox { resize: vertical; min-height: 64px; }
+.small { font-size: var(--fs-sm); }
+.acts-col { display: flex; flex-direction: column; gap: 6px; }
+
+.nrow { padding: 6px var(--sp-3); gap: var(--sp-2); }
+.nrow-b { all: unset; flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; cursor: pointer; border-radius: var(--r-sm); padding: 2px 4px; }
+.nrow-b:hover { background: var(--surface-2); }
+.nrow-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.nrow .nm { font-weight: 600; }
+.nrow .main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ndetail { display: flex; flex-direction: column; gap: var(--sp-3); }
+.nd-h { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nd-r { margin-left: auto; font-size: var(--fs-sm); }
+.ndetail .val { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.ndetail .val.draft { padding: 4px 8px; border-radius: var(--r-sm); background: repeating-linear-gradient(135deg, var(--ai-a) 0 5px, var(--ai-b) 5px 10px); border: 1px dashed var(--ai-line); }
+.memlist { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 6px; max-height: 140px; overflow: auto; }
+.ndetail summary { cursor: pointer; color: var(--ink-2); }
+
+.seg-toggle { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-sm); overflow: hidden; }
+.seg-toggle button { all: unset; padding: 4px 12px; font-size: var(--fs-sm); cursor: pointer; background: var(--surface); }
+.seg-toggle button.on { background: var(--accent-weak); color: var(--accent-ink); font-weight: 700; }
+.seg-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.linkbtn { all: unset; cursor: pointer; text-decoration: underline; font-weight: 700; margin-left: 6px; }
+
+/* 도면 위: 새 구간 카드(시안 3) */
+.newnode { right: var(--sp-4); top: var(--sp-4); width: min(380px, calc(100% - 2 * var(--sp-4))); padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); z-index: 5; }
+.newnode .nn-h { display: flex; align-items: center; gap: 8px; }
+.newnode .nn-h b { font-size: var(--fs-lg); }
+.newnode .nn-h .btn { margin-left: auto; }
+.selbar kbd, .newnode kbd, .ndetail kbd { margin-left: 4px; font-size: 10.5px; color: inherit; background: transparent; border-color: currentColor; opacity: .8; }
+.selbar { flex-wrap: wrap; max-width: calc(100% - 2 * var(--sp-4)); white-space: normal; }

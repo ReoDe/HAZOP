@@ -3,8 +3,9 @@
 import { tests as storeTests } from "./store.test.js";
 import { tests as bridgeTests } from "./bridge.test.js";
 import { tests as cardTests } from "./card.test.js";
+import { tests as nodesTests } from "./nodes.test.js";
 
-const all = [...storeTests, ...bridgeTests, ...cardTests];
+const all = [...storeTests, ...bridgeTests, ...cardTests, ...nodesTests];
 const results = [];
 
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assert 실패"); }
