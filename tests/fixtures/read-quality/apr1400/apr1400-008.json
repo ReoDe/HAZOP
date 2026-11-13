@@ -2534,6 +2534,149 @@
    ],
    "attributes": {},
    "note": "점선 경계, 라벨 IRWST(설비 태그 아님)"
+  },
+  {
+   "id": "s600",
+   "kind": "orifice",
+   "bbox": [
+    449.2,
+    404.5,
+    452.2,
+    407.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro01)"
+  },
+  {
+   "id": "s601",
+   "kind": "orifice",
+   "bbox": [
+    449.2,
+    434.8,
+    452.2,
+    437.7
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro02)"
+  },
+  {
+   "id": "s602",
+   "kind": "orifice",
+   "bbox": [
+    449.2,
+    461.5,
+    452.2,
+    464.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro03)"
+  },
+  {
+   "id": "s603",
+   "kind": "orifice",
+   "bbox": [
+    449.2,
+    502.3,
+    452.2,
+    505.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro04)"
+  },
+  {
+   "id": "s604",
+   "kind": "orifice",
+   "bbox": [
+    530.8,
+    404.5,
+    533.8,
+    407.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro05)"
+  },
+  {
+   "id": "s605",
+   "kind": "orifice",
+   "bbox": [
+    530.8,
+    434.8,
+    533.8,
+    437.7
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro06)"
+  },
+  {
+   "id": "s606",
+   "kind": "orifice",
+   "bbox": [
+    530.8,
+    461.5,
+    533.8,
+    464.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro07)"
+  },
+  {
+   "id": "s607",
+   "kind": "orifice",
+   "bbox": [
+    530.8,
+    486.3,
+    533.8,
+    489.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro08)"
+  },
+  {
+   "id": "s608",
+   "kind": "orifice",
+   "bbox": [
+    530.8,
+    511.2,
+    533.8,
+    514.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro09)"
+  },
+  {
+   "id": "s609",
+   "kind": "orifice",
+   "bbox": [
+    511.3,
+    605.3,
+    514.3,
+    608.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro10)"
+  },
+  {
+   "id": "s610",
+   "kind": "orifice",
+   "bbox": [
+    941.0,
+    163.0,
+    944.0,
+    165.8
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro11)"
   }
  ],
  "lines": [],
@@ -3108,12 +3251,6 @@
    "flow": null
   },
   {
-   "a": "s129",
-   "b": "s130",
-   "flow": null,
-   "note": "불확실: 두 평행선이 RG 쪽에서 티로 만난다고 봄"
-  },
-  {
    "a": "s084",
    "b": "s130",
    "flow": null,
@@ -3231,11 +3368,6 @@
   },
   {
    "a": "s095",
-   "b": "s090",
-   "flow": null
-  },
-  {
-   "a": "s095",
    "b": "s127",
    "flow": null
   },
@@ -3265,24 +3397,6 @@
    "b": "s095",
    "flow": null,
    "note": "불확실: 가압기 몸체로 바로 가는 TEW 선을 공정 연결로 봄"
-  },
-  {
-   "a": "s109",
-   "b": "s095",
-   "flow": null,
-   "note": "불확실: 계기 탭관 위 TEW. 탭관을 공정 배관으로 봄"
-  },
-  {
-   "a": "s118",
-   "b": "s095",
-   "flow": null,
-   "note": "불확실: 계기 탭관 위 TEW. 탭관을 공정 배관으로 봄"
-  },
-  {
-   "a": "s123",
-   "b": "s095",
-   "flow": null,
-   "note": "불확실: 계기 탭관 위 TEW. 탭관을 공정 배관으로 봄"
   },
   {
    "a": "s131",
@@ -4860,6 +4974,56 @@
   {
    "a": "s080",
    "b": "s083",
+   "flow": null
+  },
+  {
+   "a": "s109",
+   "b": "s602",
+   "flow": null
+  },
+  {
+   "a": "s602",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s118",
+   "b": "s606",
+   "flow": null
+  },
+  {
+   "a": "s606",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s123",
+   "b": "s607",
+   "flow": null
+  },
+  {
+   "a": "s607",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s609",
+   "flow": null
+  },
+  {
+   "a": "s609",
+   "b": "s090",
+   "flow": null
+  },
+  {
+   "a": "s129",
+   "b": "s610",
+   "flow": null
+  },
+  {
+   "a": "s610",
+   "b": "s130",
    "flow": null
   }
  ],
