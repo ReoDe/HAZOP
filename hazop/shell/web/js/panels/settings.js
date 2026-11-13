@@ -1,15 +1,15 @@
-// 설정 패널: AI 연결(지금 쓰는 경로 · Claude 구독 화면 · API 키 화면을 따로), 분석 모델·채팅 모델, 검토자 이름, 프로젝트, 시작 화면, 정보.
-// AI 연결은 hazop/shell/api_settings.py(aisettings 읽기, aiconn.* 명령). 화면 설계 docs/design/ai-connection-screens.md §3을 웹으로 옮긴 것이다:
-// 화면을 보는 것과 방식을 바꾸는 일을 나눈다('이 방식으로 사용'), API 키로 바꿀 때만 요금 확인, 구독은 처음 한 번 이용 조건.
+// 설정 패널: AI 연결, 검토자 이름, 프로젝트, 시작 화면, 정보.
+// AI 연결은 hazop/shell/api_settings.py(aisettings 읽기, aiconn.* 명령). 사용자 방침(2026-11-14): 이전 대화상자 모양을 옮기지 않고 단순하게 —
+// 맨 위 한 줄에 '지금 무엇으로 연결돼 있는지', 그 아래 Claude 구독 / API 키 두 카드, 카드마다 모델 드롭다운 하나와 '이 방식으로 사용'.
+// 안전장치만 이전 화면에서 가져온다: API 키로 바꿀 때 요금 확인, 구독은 처음 한 번 이용 조건, 키 지우기 확인, 연결 시험.
 // **API 키는 웹에서 받지 않는다**: '키 추가'는 창이 Python 쪽 입력 상자를 연다. 웹은 키 이름과 끝 네 자리만 본다.
 import { html } from "../ui/html.js";
 import { useEffect, useState } from "../../vendor/hooks.module.js";
 import { store, useStore } from "../store.js";
 import { cmd, on, onChanged, read } from "../bridge.js";
-import { Btn, Chip, Notice, Switch } from "../ui/parts.js";
+import { Btn, Chip, Switch } from "../ui/parts.js";
 
 const TONE = (t) => (t === "ok" || t === "warn" || t === "err" ? t : "");
-const usd = (v) => "$" + Number(v || 0).toFixed(2);
 
 function useAiSettings() {
   const [v, setV] = useState(null);
@@ -24,112 +24,80 @@ function useAiSettings() {
   return [v, setV];
 }
 
-function ModelSelect({ id, label, value, models, disabled, onPick }) {
-  return html`<div class="field set-model"><label for=${id}>${label}</label>
-    <select id=${id} value=${value} disabled=${disabled} onChange=${(e) => onPick(e.target.value)}>
-      ${models.map((m) => html`<option key=${m.id} value=${m.id}>${m.label}</option>`)}</select></div>`;
+/** 확인 줄(요금 확인·이용 조건·키 지우기): 카드 안에 한 줄로 끼운다. */
+function Ask({ text, yes, onYes, onNo, children }) {
+  return html`<div class="set-ask" role="alertdialog" aria-label=${yes}><span>${text}</span>${children}
+    <span class="set-ask-b"><${Btn} sm=${true} kind="primary" label=${yes} disabled=${!onYes} onClick=${onYes}>${yes}<//><${Btn} sm=${true} kind="ghost" label="취소" onClick=${onNo}>취소<//></span></div>`;
 }
 
-function Current({ c }) {
-  return html`<div class=${"set-current " + (TONE(c.tone) || "plain")} role="status" aria-label=${"지금 AI 연결: " + c.chip}>
-    <b>지금 분석에 쓰는 연결</b> <span>${c.method_name}${c.model_name ? " · " + c.model_name : ""}</span> <${Chip} kind=${TONE(c.tone)}>${c.label}<//>
-    ${c.can_start ? null : html`<div class="small">${c.guide}</div>`}</div>`;
-}
-
-function SubscriptionView({ v, act, busy }) {
-  const s = v.subscription;
-  const inUse = v.current.via === "subscription";
-  return html`<div class="set-view" aria-label="Claude 구독">
-    <div class="muted small">${s.cost}</div>
-    <div class="kv"><div class="k"><b>상태</b><span>${s.title}${s.plan ? " · " + s.plan : ""}${s.checked_at ? " · " + s.checked_at.slice(11, 16) + " 확인" : ""}</span></div>
-      <${Chip} kind=${TONE(s.tone)}>${s.label}<//></div>
-    ${s.can_start ? null : html`<${Notice} kind="warn" icon="alert-triangle">${s.guide}<//>`}
-    <${ModelSelect} id="sub-model" label="분석 모델" value=${s.model} models=${v.models.map((m) => ({ id: m.id, label: m.label }))} disabled=${busy || v.running}
-      onPick=${(m) => act("aiconn.set_model", { method: "subscription", model: m }, "구독 분석 모델을 바꿨습니다.")} />
-    <p class="muted small">구독 한도는 claude.ai와 Claude Code에서 쓰는 양과 함께 셉니다. claude.ai 개인정보 설정에서 '모델 개선'이 켜져 있으면 보낸 도면 정보가 학습에 쓰일 수 있습니다.</p>
-    <div class="acts-row">
-      <${Btn} sm=${true} icon="refresh" label="구독 연결 확인" disabled=${busy} onClick=${() => act("aiconn.check", { method: "subscription" }, "구독 연결을 확인하는 중입니다.")}>연결 확인<//>
-      <${Btn} sm=${true} kind="primary" label=${inUse ? "사용 중" : "구독으로 사용"} disabled=${busy || inUse || v.running} onClick=${() => act("aiconn.use", { method: "subscription" })}>${inUse ? "사용 중" : "이 방식으로 사용"}<//></div></div>`;
-}
-
-function ApiView({ v, act, busy }) {
-  const a = v.api;
-  const inUse = v.current.via === "api";
-  const [asking, setAsking] = useState(null);       // 지울 키 ID
-  const [renaming, setRenaming] = useState(null);   // [키 ID, 새 이름]
-  return html`<div class="set-view" aria-label="API 키">
-    <div class="muted small">${a.cost}</div>
-    <div class="kv"><div class="k"><b>상태</b><span>${a.title}</span></div><${Chip} kind=${TONE(a.tone)}>${a.label}<//></div>
-    ${a.can_start ? null : html`<${Notice} kind="warn" icon="alert-triangle">${a.guide}<//>`}
-    ${a.load_error ? html`<${Notice} kind="err" icon="alert-triangle">저장된 키 일부를 읽지 못했습니다. 키를 다시 추가하세요.<//>` : null}
-    <div class="list" role="list" aria-label="API 키 목록">${a.keys.length ? a.keys.map((k) => html`<div class=${"row" + (k.active ? " on" : "")} role="listitem" key=${k.id}>
-      <div class="main"><b>${k.name} <span class="muted">${k.hint}</span></b>
-        <span>${k.persisted ? "이 PC에 저장(암호화)" : "이번 실행에만"}${k.last_test ? " · 마지막 시험 " + (k.last_test.ok ? "성공" : "실패") : " · 시험 안 함"}</span></div>
-      ${renaming && renaming[0] === k.id ? html`<input type="text" class="set-rename" maxlength="40" aria-label="새 키 이름" value=${renaming[1]} onInput=${(e) => setRenaming([k.id, e.target.value])} />
-          <${Btn} sm=${true} kind="primary" label="이름 저장" disabled=${!renaming[1].trim()} onClick=${() => { act("aiconn.rename_key", { key_id: k.id, name: renaming[1].trim() }, "이름을 바꿨습니다."); setRenaming(null); }}>저장<//>
-          <${Btn} sm=${true} kind="ghost" label="이름 바꾸기 취소" onClick=${() => setRenaming(null)}>취소<//>`
-        : asking === k.id ? html`<span class="set-ask">'${k.name}'(${k.hint}) 키를 지울까요? 이 PC에 저장한 암호화 사본도 지워지며 되돌릴 수 없습니다.</span>
-          <${Btn} sm=${true} kind="primary" label=${k.name + " 지우기 확인"} onClick=${() => { act("aiconn.remove_key", { key_id: k.id, confirmed: true }, "키를 지웠습니다."); setAsking(null); }}>지우기<//>
-          <${Btn} sm=${true} kind="ghost" label="지우기 취소" onClick=${() => setAsking(null)}>취소<//>`
-        : html`<span class="acts">
-          ${k.active ? html`<${Chip} kind="ok">사용 키<//>` : html`<${Btn} sm=${true} label=${k.name + " 사용"} disabled=${busy || v.running} onClick=${() => act("aiconn.select_key", { key_id: k.id }, "사용할 키를 바꿨습니다.")}>사용<//>`}
-          <${Btn} sm=${true} kind="ghost" label=${k.name + " 이름 바꾸기"} onClick=${() => setRenaming([k.id, k.name])}>이름<//>
-          <${Btn} sm=${true} kind="ghost" label=${k.name + " 지우기"} disabled=${v.running} onClick=${() => setAsking(k.id)}>지우기<//></span>`}</div>`)
-      : html`<div class="muted">키가 없습니다. 'API 키 추가'를 누르면 키를 넣는 창이 열립니다.</div>`}</div>
-    <${ModelSelect} id="api-model" label="분석 모델" value=${a.model} models=${v.models.map((m) => ({ id: m.id, label: m.label + " · 구간당 약 " + usd(m.section_usd) }))}
-      disabled=${busy || v.running} onPick=${(m) => act("aiconn.set_model", { method: "api", model: m }, "API 분석 모델을 바꿨습니다. 새 모델로 연결 시험을 해 보세요.")} />
-    <div class="acts-row">
-      <${Btn} sm=${true} icon="plus" label="API 키 추가" disabled=${busy} onClick=${() => act("aiconn.add_key", {}, null)}>API 키 추가<//>
-      <${Btn} sm=${true} icon="refresh" label="API 연결 시험" disabled=${busy || !a.keys.length} onClick=${() => act("aiconn.check", { method: "api" }, "연결 시험 중입니다(요금 없음).")}>연결 시험<//>
-      <${Btn} sm=${true} kind="primary" label=${inUse ? "사용 중" : "API 키로 사용"} disabled=${busy || inUse || v.running} onClick=${() => act("aiconn.use", { method: "api" })}>${inUse ? "사용 중" : "이 방식으로 사용"}<//></div></div>`;
+function MethodCard({ name, st, inUse, model, models, busy, running, onModel, onUse, onCheck, checkLabel, children }) {
+  return html`<div class=${"set-card" + (inUse ? " on" : "")} aria-label=${name}>
+    <div class="set-card-h"><b>${name}</b>${inUse ? html`<span class="set-inuse">사용 중</span>` : null}<${Chip} kind=${TONE(st.tone)}>${st.label}<//></div>
+    ${st.can_start ? null : html`<div class="small set-why">${st.title}</div>`}
+    ${children}
+    <select class="set-model" aria-label=${name + " 분석 모델"} value=${model} disabled=${busy || running} onChange=${(e) => onModel(e.target.value)}>
+      ${models.map((m) => html`<option key=${m.id} value=${m.id}>${m.label}</option>`)}</select>
+    <div class="set-card-b">
+      <${Btn} sm=${true} kind="ghost" icon="refresh" label=${checkLabel} disabled=${busy} onClick=${onCheck}>${checkLabel}<//>
+      ${inUse ? null : html`<${Btn} sm=${true} kind="primary" label=${name + "로 사용"} disabled=${busy || running} onClick=${onUse}>이 방식으로 사용<//>`}</div></div>`;
 }
 
 function AiConnection() {
   const [v, setV] = useAiSettings();
-  const [tab, setTab] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState(null);           // {text, kind}
-  const [confirm, setConfirm] = useState(null);   // API 요금 확인 글
-  const [terms, setTerms] = useState(false);      // 구독 이용 조건 보이기
+  const [msg, setMsg] = useState(null);          // {text, err}
+  const [ask, setAsk] = useState(null);          // {kind: "api"|"terms"|"remove", text, key}
   const [checked, setChecked] = useState(false);
   if (!v) return html`<div class="card"><h3>AI 연결</h3><div class="muted">읽는 중…</div></div>`;
-  if (!v.available) return html`<div class="card"><h3>AI 연결</h3><${Current} c=${v.current} /></div>`;
-  const view = tab || v.current.via || "subscription";
+  const c = v.current;
+  const now = html`<div class=${"set-now " + (TONE(c.tone) || "plain")} role="status" aria-label=${"지금 AI 연결: " + (c.chip || c.label)}>
+    <span class="dot"></span><b>${c.method_name}${c.model_name ? " · " + c.model_name : ""}</b><span>${c.label}</span></div>`;
+  if (!v.available) return html`<div class="card"><h3>AI 연결</h3>${now}<div class="small muted">${c.guide}</div></div>`;
   async function act(name, args, done) {
     setBusy(true); setMsg(null);
     try {
       const r = await cmd(name, args);
-      if (r && r.need_confirm) setConfirm(r.text);
-      else if (r && r.need_terms) setTerms(true);
+      if (r && r.need_confirm) setAsk({ kind: "api", text: r.text });
+      else if (r && r.need_terms) { setChecked(false); setAsk({ kind: "terms" }); }
       else {
         if (r && r.view) setV(r.view);
-        const text = done !== undefined ? done : (r && r.changed ? "연결 방식을 바꿨습니다. 연결을 확인하는 중입니다." : null);
-        if (name === "aiconn.add_key") setMsg(r && r.added ? { text: "키 '" + r.key.name + "'(" + r.key.hint + ")를 추가했습니다. 연결 시험 중입니다." } : null);
-        else if (text) setMsg({ text });
+        if (name === "aiconn.add_key") setMsg(r && r.added ? { text: "키 " + r.key.hint + "를 추가했습니다. 연결을 시험하는 중입니다." } : null);
+        else if (done) setMsg({ text: done });
       }
-    } catch (e) { setMsg({ text: e.message || "처리하지 못했습니다.", kind: "err" }); }
+    } catch (e) { setMsg({ text: e.message || "처리하지 못했습니다.", err: true }); }
     setBusy(false);
   }
-  const tabBtn = (m, label) => html`<button type="button" role="tab" class=${"set-tab" + (view === m ? " on" : "")} aria-selected=${view === m ? "true" : "false"}
-    onClick=${() => setTab(m)}>${label}${v.current.via === m ? html` <span class="set-inuse">사용 중</span>` : null}</button>`;
+  const models = v.models.map((m) => ({ id: m.id, label: m.label }));
+  const s = v.subscription, a = v.api;
+  const key = a && a.keys.find((k) => k.active);
   return html`<div class="card ai-settings"><h3>AI 연결</h3>
-    <${Current} c=${v.current} />
-    ${v.running ? html`<${Notice} kind="warn" icon="alert-triangle">AI 분석이 돌고 있어 연결 방식과 모델을 바꿀 수 없습니다. 실행이 끝나거나 멈춘 뒤 바꾸세요.<//>` : null}
-    <div class="set-tabs" role="tablist" aria-label="연결 방식">${v.subscription ? tabBtn("subscription", "Claude 구독") : null}${v.api ? tabBtn("api", "API 키") : null}</div>
-    ${confirm ? html`<div class="set-confirm" role="alertdialog" aria-label="API 키로 바꾸기"><span>${confirm}</span>
-        <${Btn} sm=${true} kind="primary" label="API 키로 바꾸기" onClick=${() => { setConfirm(null); act("aiconn.use", { method: "api", confirmed: true }); }}>API 키로 바꾸기<//>
-        <${Btn} sm=${true} kind="ghost" label="취소" onClick=${() => setConfirm(null)}>취소<//></div>` : null}
-    ${terms ? html`<div class="set-confirm" role="alertdialog" aria-label="Claude 구독으로 분석하기 전에"><b>Claude 구독으로 분석하기 전에</b>
-        <ul class="tight"><li>이 PC에 설치하고 본인 계정으로 로그인한 Claude Code를 거쳐 본인 구독 사용량으로 분석합니다. 다른 사람의 계정이나 공용 계정으로 쓰지 마세요.</li>
-          <li>Claude 구독은 소비자 약관을 따릅니다. '모델 개선'이 켜져 있으면 보낸 도면 정보가 학습에 쓰일 수 있습니다. 보안 등급이 있는 자료 전에 확인하세요.</li>
-          <li>앱은 로그인 정보를 읽거나 저장하지 않습니다.</li></ul>
-        <label class="small"><input type="checkbox" checked=${checked} onChange=${(e) => setChecked(e.target.checked)} /> 위 내용을 확인했습니다</label>
-        <span class="acts-row"><${Btn} sm=${true} kind="primary" label="확인하고 구독으로 사용" disabled=${!checked} onClick=${async () => { setTerms(false); await cmd("aiconn.ack_terms").catch(() => {}); act("aiconn.use", { method: "subscription" }); }}>확인하고 계속<//>
-          <${Btn} sm=${true} kind="ghost" label="취소" onClick=${() => setTerms(false)}>취소<//></span></div>` : null}
-    ${view === "api" && v.api ? html`<${ApiView} v=${v} act=${act} busy=${busy} />` : html`<${SubscriptionView} v=${v} act=${act} busy=${busy} />`}
-    ${msg ? html`<div class=${"set-msg" + (msg.kind === "err" ? " err" : "")} role="status">${msg.text}</div>` : null}
-    <${ModelSelect} id="chat-model" label="채팅 모델(구독 연결로 돕니다)" value=${v.chat.model} models=${v.chat.models} disabled=${busy}
-      onPick=${(m) => cmd("chat.set_model", { model: m }).then(() => setV(Object.assign({}, v, { chat: Object.assign({}, v.chat, { model: m }) }))).catch((e) => setMsg({ text: e.message, kind: "err" }))} />
+    ${now}
+    ${v.running ? html`<div class="small set-why">AI 분석이 도는 동안에는 연결과 모델을 바꿀 수 없습니다.</div>` : null}
+    ${ask && ask.kind === "api" ? html`<${Ask} text=${ask.text} yes="API 키로 바꾸기" onYes=${() => { setAsk(null); act("aiconn.use", { method: "api", confirmed: true }, "API 키로 바꿨습니다."); }} onNo=${() => setAsk(null)} />` : null}
+    ${ask && ask.kind === "terms" ? html`<${Ask} text="Claude 구독은 이 PC에 로그인한 본인 계정의 사용량으로 분석합니다. claude.ai 설정에서 '모델 개선'이 켜져 있으면 보낸 도면 정보가 학습에 쓰일 수 있습니다."
+        yes="확인하고 구독으로 사용" onYes=${checked ? async () => { setAsk(null); await cmd("aiconn.ack_terms").catch(() => {}); act("aiconn.use", { method: "subscription" }, "Claude 구독으로 바꿨습니다."); } : null} onNo=${() => setAsk(null)}>
+        <label class="small"><input type="checkbox" checked=${checked} onChange=${(e) => setChecked(e.target.checked)} /> 확인했습니다</label><//>` : null}
+    <div class="set-cards">
+      ${s ? html`<${MethodCard} name="Claude 구독" st=${s} inUse=${c.via === "subscription"} model=${s.model} models=${models} busy=${busy} running=${v.running}
+          checkLabel="연결 확인" onCheck=${() => act("aiconn.check", { method: "subscription" }, "구독 연결을 확인하는 중입니다.")}
+          onUse=${() => act("aiconn.use", { method: "subscription" }, "Claude 구독으로 바꿨습니다.")}
+          onModel=${(m) => act("aiconn.set_model", { method: "subscription", model: m }, "구독 모델을 바꿨습니다.")}>
+          <div class="small muted">건별 요금 없음 · 구독 한도에서 빠짐${s.plan ? " · " + s.plan : ""}</div><//>` : null}
+      ${a ? html`<${MethodCard} name="API 키" st=${a} inUse=${c.via === "api"} model=${a.model} models=${models} busy=${busy} running=${v.running}
+          checkLabel="연결 시험" onCheck=${() => (key ? act("aiconn.check", { method: "api" }, "연결을 시험하는 중입니다(요금 없음).") : setMsg({ text: "시험할 키가 없습니다. 키를 먼저 추가하세요.", err: true }))}
+          onUse=${() => act("aiconn.use", { method: "api" })}
+          onModel=${(m) => act("aiconn.set_model", { method: "api", model: m }, "API 모델을 바꿨습니다. 연결 시험을 해 보세요.")}>
+          <div class="small muted">호출마다 요금 · 구간당 약 $${Number(a.section_usd).toFixed(2)}</div>
+          <div class="set-key">
+            ${a.keys.length > 1 ? html`<select aria-label="사용할 API 키" value=${key ? key.id : ""} disabled=${busy || v.running} onChange=${(e) => act("aiconn.select_key", { key_id: e.target.value }, "사용할 키를 바꿨습니다.")}>
+                ${a.keys.map((k) => html`<option key=${k.id} value=${k.id}>${k.name} ${k.hint}</option>`)}</select>`
+              : html`<span>${key ? key.name + " " + key.hint : "키 없음"}</span>`}
+            <${Btn} sm=${true} kind="ghost" icon="plus" label="API 키 추가" disabled=${busy} onClick=${() => act("aiconn.add_key", {})}>추가<//>
+            ${key ? html`<${Btn} sm=${true} kind="ghost" label=${key.name + " 지우기"} disabled=${busy || v.running} onClick=${() => setAsk({ kind: "remove", key })}>지우기<//>` : null}</div>
+          ${ask && ask.kind === "remove" ? html`<${Ask} text=${"'" + ask.key.name + "'(" + ask.key.hint + ") 키를 지울까요? 이 PC에 저장한 사본도 지워집니다."} yes="지우기"
+              onYes=${() => { const k = ask.key; setAsk(null); act("aiconn.remove_key", { key_id: k.id, confirmed: true }, "키를 지웠습니다."); }} onNo=${() => setAsk(null)} />` : null}<//>` : null}
+    </div>
+    ${msg ? html`<div class=${"small set-msg" + (msg.err ? " err" : "")} role="status">${msg.text}</div>` : null}
   </div>`;
 }
 
