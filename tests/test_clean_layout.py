@@ -91,8 +91,28 @@ class RuleTest(unittest.TestCase):
         vessel = sym("e", "tank", (200, 100, 260, 200), "equipment")
         p = pipe("p", [(100, 150), (203, 150)], None, "e")                    # 끝이 설비 안으로 3 들어가 있다
         _i, _e, t = run(vessel, p)
-        self.assertEqual(t["pipes"]["p"]["polyline"][-1], [200.0, 150.0])
+        self.assertEqual([round(v, 2) for v in t["pipes"]["p"]["polyline"][-1]], [202.4, 150.0])      # 그려진 겉모양(상자보다 4% 안쪽)에 닿는다
         self.assertEqual(t["lint"]["loose_ends"], 0)
+
+    def test_4_pipe_ends_touch_the_drawn_outline_of_a_shaped_vessel_not_its_box(self):
+        # 증기발생기: 아래는 좁은 목이라 상자 아래 가장자리와 그려진 테두리가 다르다. 끝은 상자가 아니라 테두리에 닿아야 한다
+        sg = sym("g", "steam_generator", (200, 100, 300, 300), "equipment")
+        p = pipe("p", [(250, 400), (250, 305)], None, "g")
+        i, e, t = run(sg, p)
+        end = t["pipes"]["p"]["polyline"][-1]
+        self.assertAlmostEqual(end[0], 250.0, places=2)
+        self.assertAlmostEqual(end[1], 294.0, places=1)           # 그림 좌표 y=97 → 100 + 0.97·200
+        self.assertEqual(t["lint"]["loose_ends"], 0)
+        bad = copy.deepcopy(t)
+        bad["pipes"]["p"]["polyline"][-1] = [250, 299.5]            # 상자 아래 가장자리에는 닿지만 테두리에서는 뜬 끝
+        self.assertEqual(cl.layout_lint(i, e, SYMBOLS, bad)["loose_ends"], 1)
+
+    def test_5_small_instrument_circles_grow_to_the_standard_size(self):
+        parts = [sym("a", "indicator", (100, 100, 128, 128), "instrument"), sym("b", "indicator", (300, 100, 330, 130), "instrument")]
+        _i, _e, t = run(*parts)
+        for b in t["symbols"].values():
+            self.assertGreaterEqual(b[2] - b[0], cl.INSTR_MIN)
+            self.assertGreaterEqual(b[3] - b[1], cl.INSTR_MIN)
 
     def test_4_open_ends_are_not_connected_by_tidying(self):
         valve = sym("v", "manual_valve", (100, 85, 150, 115))

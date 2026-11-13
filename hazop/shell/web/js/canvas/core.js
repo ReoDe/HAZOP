@@ -362,7 +362,7 @@ export class SheetCore {
     const r = this._rect();
     if (!r.width || !r.height || !this.data) return;
     const c = this._contentRect(), cw = Math.max(c.x1 - c.x0, 1), ch = Math.max(c.y1 - c.y0, 1);
-    const top = Math.min(56, r.height * 0.1), bottom = Math.min(56, r.height * 0.1);     // 위 보기 단추 줄·아래 도구 막대에 가리지 않게 여백을 둔다
+    const top = Math.min(68, r.height * 0.1), bottom = Math.min(112, r.height * 0.15);   // 위 보기 단추 줄, 아래 범례·도구 막대가 차지하는 자리를 빼고 맞춘다
     const availH = Math.max(r.height - top - bottom, 1);
     const k = Math.min(r.width / cw, availH / ch) * 0.96;
     this.view = { k, x: (r.width - cw * k) / 2 - c.x0 * k, y: top + (availH - ch * k) / 2 - c.y0 * k };

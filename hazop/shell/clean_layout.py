@@ -20,6 +20,7 @@ Qt를 import하지 않는다. 순수 함수라 시험하기 쉽다.
 
 import copy
 import math
+import re
 import statistics
 
 AXIS_TOL = 6.0          # 이 안의 x·y 차이는 하나로 합친다(도면 단위)
@@ -29,7 +30,10 @@ CENTER_SHIFT = 48.0     # 기호를 붙은 선의 축에 맞추려고 옮기는 
 EPS = 0.5               # 같은 값으로 보는 오차
 INLINE = ("manual_valve", "isolation_valve", "check_valve", "control_valve", "motor_operated_valve", "damper", "reducer", "orifice", "psv",
           "pipe_cap", "vent", "drain", "test_connection")
-FIXED = ("continuation", "annotation")      # 크기·자리를 원본대로 두는 기호(오각형 연결 표시 등)
+INSTRUMENTS = ("transmitter", "indicator", "temperature_element", "controller")     # 원 안에 두 줄을 쓰는 계기: 원이 작으면 표준 크기로 키운다
+INSTR_MIN = 40.0
+FIXED = ("continuation", "annotation")
+BODY_KINDS = ("manual_valve", "isolation_valve", "check_valve", "orifice", "damper", "reducer")      # 대칭 몸통을 가진 인라인 기호(붙은 선이 몸통 가운데를 지나야 한다)      # 크기·자리를 원본대로 두는 기호(오각형 연결 표시 등)
 
 
 def _rot90(rot):
@@ -56,6 +60,76 @@ def to_world(p, x, y):
     a = math.radians(p["rot"])
     c, s = math.cos(a), math.sin(a)
     return [p["cx"] + lx * c - ly * s, p["cy"] + lx * s + ly * c]
+
+
+def outline(sym):
+    """큰 설비(연결점 정의가 없는 stretch 그림)의 겉모양: 첫 도형을 그림 좌표의 다각형으로 어림한다(사각형·원·M/L/Q/Z 경로). 못 읽으면 None."""
+    if not sym or not sym.get("shapes"):
+        return None
+    tag, a = sym["shapes"][0]
+    if tag == "rect":
+        x, y, w, h = float(a["x"]), float(a["y"]), float(a["width"]), float(a["height"])
+        return [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
+    if tag == "circle":
+        cx, cy, r = float(a["cx"]), float(a["cy"]), float(a["r"])
+        return [(cx + r * math.cos(t * math.pi / 16), cy + r * math.sin(t * math.pi / 16)) for t in range(32)]
+    if tag == "polygon":
+        nums = [float(v) for v in re.findall(r"-?\d+\.?\d*", a["points"])]
+        return list(zip(nums[0::2], nums[1::2]))
+    if tag == "path":
+        pts, cur = [], None
+        for cmd, args in re.findall(r"([MLQZ])([^MLQZ]*)", a["d"]):
+            nums = [float(v) for v in re.findall(r"-?\d+\.?\d*", args)]
+            if cmd in "ML" and len(nums) >= 2:
+                cur = (nums[0], nums[1])
+                pts.append(cur)
+            elif cmd == "Q" and len(nums) >= 4 and cur:
+                c, e = (nums[0], nums[1]), (nums[2], nums[3])
+                for i in range(1, 9):
+                    t = i / 8
+                    pts.append(((1 - t) ** 2 * cur[0] + 2 * (1 - t) * t * c[0] + t * t * e[0], (1 - t) ** 2 * cur[1] + 2 * (1 - t) * t * c[1] + t * t * e[1]))
+                cur = e
+        return pts if len(pts) >= 3 else None
+    return None
+
+
+def _world_outline(sym, bbox, orient):
+    poly = outline(sym)
+    if not poly:
+        return None
+    p = placement(sym, bbox, orient)
+    return [to_world(p, x, y) for x, y in poly]
+
+
+def _nearest_on_polygon(poly, q):
+    """다각형 둘레에서 q에 가장 가까운 점과 거리."""
+    best = (None, 1e18)
+    for i in range(len(poly)):
+        a, b = poly[i], poly[(i + 1) % len(poly)]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L2 = dx * dx + dy * dy
+        t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2))
+        c = (a[0] + t * dx, a[1] + t * dy)
+        d = math.hypot(c[0] - q[0], c[1] - q[1])
+        if d < best[1]:
+            best = (c, d)
+    return best
+
+
+def _ray_hits(poly, o, v):
+    """점 o에서 방향 v(양쪽)로 뻗은 직선이 다각형 둘레와 만나는 점들."""
+    hits = []
+    for i in range(len(poly)):
+        a, b = poly[i], poly[(i + 1) % len(poly)]
+        ex, ey = b[0] - a[0], b[1] - a[1]
+        den = v[0] * ey - v[1] * ex
+        if abs(den) < 1e-9:
+            continue
+        t = ((a[0] - o[0]) * ey - (a[1] - o[1]) * ex) / den
+        u = ((a[0] - o[0]) * v[1] - (a[1] - o[1]) * v[0]) / den
+        if 0 <= u <= 1:
+            hits.append((o[0] + v[0] * t, o[1] + v[1] * t))
+    return hits
 
 
 def _ports(sym, bbox, orient):
@@ -139,9 +213,11 @@ def tidy(items, extras, symbols):
                 cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
                 w, h = max(10, round((b[2] - b[0]) / 10) * 10), max(10, round((b[3] - b[1]) / 10) * 10)
                 sym[i]["bbox"] = [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2]
-        elif len(ids) > 1:
+        elif len(ids) > 1 or kind in INSTRUMENTS:
             mw = statistics.median(sym[i]["bbox"][2] - sym[i]["bbox"][0] for i in ids)
             mh = statistics.median(sym[i]["bbox"][3] - sym[i]["bbox"][1] for i in ids)
+            if kind in INSTRUMENTS:                                    # 원이 작아 두 줄이 안 들어가면 표준 크기로 키운다
+                mw, mh = max(mw, INSTR_MIN), max(mh, INSTR_MIN)
             for i in ids:
                 b = sym[i]["bbox"]
                 cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
@@ -221,14 +297,24 @@ def tidy(items, extras, symbols):
                 target = min(ports, key=lambda w: math.hypot(w[0] - q[0], w[1] - q[1]))
                 if math.hypot(target[0] - q[0], target[1] - q[1]) > 20:
                     continue
-            else:                                           # 연결점 정의가 없는 설비: 가장자리로
+            else:                                           # 연결점 정의가 없는 큰 설비: 그려진 겉모양(테두리) 위에서 배관이 닿는 점
                 b = s["bbox"]
-                tx, ty = min(max(q[0], b[0]), b[2]), min(max(q[1], b[1]), b[3])
-                if b[0] < q[0] < b[2] and b[1] < q[1] < b[3]:
-                    d4 = [(q[0] - b[0], "l"), (b[2] - q[0], "r"), (q[1] - b[1], "t"), (b[3] - q[1], "b")]
-                    _, side = min(d4)
-                    tx, ty = {"l": (b[0], q[1]), "r": (b[2], q[1]), "t": (q[0], b[1]), "b": (q[0], b[3])}[side]
-                target = [tx, ty]
+                nb0 = line[1] if idx == 0 else line[-2]
+                poly = _world_outline(s["def"], b, s["orient"])
+                target = None
+                if poly:
+                    v = (q[0] - nb0[0], q[1] - nb0[1])
+                    n = math.hypot(v[0], v[1])
+                    if n > 1e-6:                                # 배관이 오던 축(끝 선분의 직선) 위에서 테두리와 만나는 가장 가까운 점
+                        cand = _ray_hits(poly, q, (v[0] / n, v[1] / n))
+                        if cand:
+                            target = list(min(cand, key=lambda c: math.hypot(c[0] - q[0], c[1] - q[1])))
+                    if target is None or math.hypot(target[0] - q[0], target[1] - q[1]) > 60:
+                        c, dist = _nearest_on_polygon(poly, q)
+                        target = list(c) if dist <= 60 else None
+                if target is None:
+                    tx, ty = min(max(q[0], b[0]), b[2]), min(max(q[1], b[1]), b[3])
+                    target = [tx, ty]
             nb_i = 1 if idx == 0 else len(line) - 2
             nb = line[nb_i]
             horizontal = abs(nb[1] - q[1]) <= abs(nb[0] - q[0])
@@ -394,8 +480,13 @@ def layout_lint(items, extras, symbols, tidied):
                 ok = min(math.hypot(w[0] - q[0], w[1] - q[1]) for w in _ports(d, b, s["orient"])) <= 1.0 or \
                     min(math.hypot(w[0] - q[0], w[1] - q[1]) for w in _ports(d, b, s["orient"])) > 20       # 20 넘게 먼 것은 같은 기호의 연결이 아니다(규격: 8 단위 넘으면 port_gap)
             else:
-                ok = (b[0] - 1 <= q[0] <= b[2] + 1 and b[1] - 1 <= q[1] <= b[3] + 1) and \
-                    (_near(q[0], b[0], 1) or _near(q[0], b[2], 1) or _near(q[1], b[1], 1) or _near(q[1], b[3], 1))
+                poly = _world_outline(d, b, s["orient"]) if d else None
+                if poly:                                    # 큰 설비: 그려진 겉모양 둘레에 닿아야 한다(60 넘게 먼 것은 같은 설비의 연결이 아니다)
+                    dist = _nearest_on_polygon(poly, q)[1]
+                    ok = dist <= 1.0 or dist > 60
+                else:
+                    ok = (b[0] - 1 <= q[0] <= b[2] + 1 and b[1] - 1 <= q[1] <= b[3] + 1) and \
+                        (_near(q[0], b[0], 1) or _near(q[0], b[2], 1) or _near(q[1], b[1], 1) or _near(q[1], b[3], 1))
             if not ok:
                 lint["loose_ends"] += 1
         for i, s in sym.items():
@@ -424,6 +515,28 @@ def layout_lint(items, extras, symbols, tidied):
             if math.hypot(w[0] - q[0], w[1] - q[1]) <= 20 and ((ax == "v" and not _near(q[0], w[0], 1.0)) or (ax == "h" and not _near(q[1], w[1], 1.0))):
                 lint["off_axis"] += 1
                 break
+    lint["visual_off_axis"] = 0
+    for i, a in att.items():                       # 그려진 몸통의 가운데가 붙은 배관 축에 놓였는가(인라인 몸통 그림만)
+        s = sym[i]
+        d = s["def"] or {}
+        if s["kind"] not in BODY_KINDS or not d.get("shapes"):
+            continue
+        p = placement(d, s["bbox"], s["orient"])
+        pts = []
+        for tag, at in d["shapes"]:
+            if tag in ("line",):
+                pts += [(float(at["x1"]), float(at["y1"])), (float(at["x2"]), float(at["y2"]))]
+            elif tag in ("polygon", "polyline"):
+                nums = [float(v) for v in re.findall(r"-?\d+\.?\d*", at["points"])]
+                pts += list(zip(nums[0::2], nums[1::2]))
+            elif tag == "rect":
+                pts += [(float(at["x"]), float(at["y"])), (float(at["x"]) + float(at["width"]), float(at["y"]) + float(at["height"]))]
+        if not pts:
+            continue
+        wp = [to_world(p, x, y) for x, y in pts]
+        vcx, vcy = (min(q[0] for q in wp) + max(q[0] for q in wp)) / 2, (min(q[1] for q in wp) + max(q[1] for q in wp)) / 2
+        if any((ax == "v" and abs(q[0] - vcx) > 1.5) or (ax == "h" and abs(q[1] - vcy) > 1.5) for ax, q in a):
+            lint["visual_off_axis"] += 1
     by = {}
     for i, s in sym.items():
         if s["kind"] in FIXED or (s["def"] or {}).get("junction") or (s["def"] or {}).get("fit") == "stretch":

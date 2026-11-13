@@ -139,7 +139,7 @@ function pipeLabel(text, mx, my, vertical, o = {}) {
 }
 
 const amberTick = (x, y) => el("line", { x1: r(x - 3), y1: r(y - 3), x2: r(x + 3), y2: r(y + 3), stroke: AMBER, "stroke-width": 1.6, "vector-effect": "non-scaling-stroke", "pointer-events": "none" });
-const attrDot = (x, y) => el("circle", { cx: r(x), cy: r(y), r: 2.5, fill: AMBER, stroke: "var(--card, #fff)", "stroke-width": 0.8, "vector-effect": "non-scaling-stroke", "pointer-events": "none" });
+const attrBox = (x0, y0, x1, y1) => el("rect", { x: r(x0 - 3), y: r(y0 - 3), width: r(x1 - x0 + 6), height: r(y1 - y0 + 6), rx: 3, fill: "none", stroke: AMBER, "stroke-width": 1.2, "stroke-dasharray": "4 3", "vector-effect": "non-scaling-stroke", "pointer-events": "none" });
 const PLACEMENT_REASONS = new Set(["unknown_symbol", "open_end", "missing_tag", "ai_candidate", "unplaced", "unresolved_connector"]);
 
 /** 정리된 도면 전체(원본 SVG 없이). ctx: {symbols, width, height, items(recs 배열), extras(id → 그리기 자료), unconfirmed([{id, reason}]), textItems}.
@@ -168,7 +168,7 @@ export function buildBase(ctx) {
       const seg = rec.lines && rec.lines[0] ? longest(rec.lines[0]) : null;
       for (const ln of rec.lines || []) for (let i = 0; i + 1 < ln.length; i++) obstacles.push({ x0: Math.min(ln[i][0], ln[i + 1][0]) - 0.8, y0: Math.min(ln[i][1], ln[i + 1][1]) - 0.8, x1: Math.max(ln[i][0], ln[i + 1][0]) + 0.8, y1: Math.max(ln[i][1], ln[i + 1][1]) + 0.8, owner: rec.id, thin: true });
       for (const e of ex.ends || []) if (e.status === "open" && e.point) top.push(el("circle", { cx: r(e.point[0]), cy: r(e.point[1]), r: 3, fill: "var(--card, #fff)", stroke: AMBER, "stroke-width": 1.4, "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
-      if (seg && attrReasons.has(rec.id)) top.push(attrDot((seg.a[0] + seg.b[0]) / 2 + 6, (seg.a[1] + seg.b[1]) / 2 - 6));
+      if (seg && attrReasons.has(rec.id)) top.push(attrBox((seg.a[0] + seg.b[0]) / 2 - 8, (seg.a[1] + seg.b[1]) / 2 - 8, (seg.a[0] + seg.b[0]) / 2 + 8, (seg.a[1] + seg.b[1]) / 2 + 8));
       if (rec.tag && seg && tagSeen.get(rec.tag) && tagSeen.get(rec.tag).id === rec.id && seg.len > 24) {
         const mx = (seg.a[0] + seg.b[0]) / 2, my = (seg.a[1] + seg.b[1]) / 2, vertical = Math.abs(seg.b[1] - seg.a[1]) > Math.abs(seg.b[0] - seg.a[0]);
         labels.push(pipeLabel(rec.tag, mx, my, vertical, { pri: 4, owner: rec.id }));
@@ -198,7 +198,7 @@ export function buildBase(ctx) {
     symbolsOut.push(...symbolShapes(use, bb, ex.orient, style));
     if (!sym) top.push(textEl((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, String(kind || "?")[0].toUpperCase(), { anchor: "middle", baseline: "central", fill: FAINT, size: Math.min(14, Math.max(8, (bb[3] - bb[1]) * 0.5)) }));
     if (ai) top.push(textEl(bb[2], bb[1] - 2, "AI", { anchor: "end", size: 7, fill: AI_LINE }));
-    if (attrReasons.has(rec.id)) top.push(attrDot(bb[2] + 3, bb[1] - 3));     // 속성만 미확인(흐름·체크밸브 방향·고장 시 위치·포트 등)
+    if (attrReasons.has(rec.id)) top.push(attrBox(bb[0], bb[1], bb[2], bb[3]));     // 속성만 미확인(흐름·체크밸브 방향·고장 시 위치·포트 등): 범례와 같은 호박색 점선 테두리
     if (use.ports && use.ports.length && ex.orient) {
       const p = placement(use, bb, ex.orient);
       portsByNode.set(rec.id, use.ports.map(([x, y]) => toWorld(p, x, y)));
@@ -210,18 +210,13 @@ export function buildBase(ctx) {
       ex.label.forEach((t, i) => labels.push(labelSpec(cx, cy + (ex.label.length === 1 ? 2 : i ? 6 : -2), t, { anchor: "middle", size: 5.5, fixed: true, showFrom: big, pri: 3, owner: rec.id })));
       labels.push(tagLabel(ex.label[0], bb, ["below", "above"], { pri: 3, owner: rec.id, hideFrom: big }));
     } else if (rec.tag) {
-      if (rec.category === "instrument") {                // 계기: 원이 화면에서 충분히 크면 원 안 두 줄, 작으면 오른쪽 옆에 한 줄
-        const lines = splitTag(rec.tag), k1 = 18 / Math.max(bw, 1), k2 = 34 / Math.max(bw, 1), bwid = Math.max(bw, 1);
-        // 원이 화면에서 작으면(18px 미만) 태그 전체를 옆에, 중간(18~34px)이면 기능 글자만 원 안에 크게 쓰고 번호는 옆에, 크면(34px 이상) 두 줄을 원 안에
-        labels.push(tagLabel(rec.tag, bb, ["right", "left", "below", "above"], { fill: color, pri: 2, owner: rec.id, hideFrom: k1 }));
-        labels.push(labelSpec(cx, cy + bwid * 0.14, lines[0], { anchor: "middle", size: bwid * 0.42, fixed: true, showFrom: k1, hideFrom: lines.length > 1 ? k2 : 0, fill: color, pri: 2, owner: rec.id }));
-        if (lines.length > 1) {
-          labels.push(tagLabel(lines.slice(1).join("-"), bb, ["right", "left", "below", "above"], { fill: color, pri: 2, owner: rec.id, showFrom: k1, hideFrom: k2 }));
-          labels.push(labelSpec(cx, cy - bwid * 0.06, lines[0], { anchor: "middle", size: bwid * 0.27, fixed: true, showFrom: k2, fill: color, pri: 2, owner: rec.id }));
-          labels.push(labelSpec(cx, cy + bwid * 0.3, lines.slice(1).join("-"), { anchor: "middle", size: bwid * 0.27, fixed: true, showFrom: k2, fill: color, pri: 2, owner: rec.id }));
-        }
+      if (rec.category === "instrument") {                // 계기: 항상 원 안 두 줄(기능 글자 / 번호). 원이 작으면 정돈 단계가 표준 크기로 키운다
+        const lines = splitTag(rec.tag), bwid = Math.max(bw, 1), sz = bwid * (lines.length > 1 ? 0.27 : 0.3);
+        const bar = rec.kind === "indicator";            // 가로줄이 있는 계기(계기반 설치 표시): 기능 글자는 줄 위쪽 반에, 번호는 아래쪽 반에
+        labels.push(labelSpec(cx, cy + (lines.length > 1 ? (bar ? -bwid * 0.12 : -bwid * 0.04) : bwid * 0.1), lines[0], { anchor: "middle", size: sz, fixed: true, fill: color, pri: 2, owner: rec.id }));
+        if (lines.length > 1) labels.push(labelSpec(cx, cy + (bar ? bwid * 0.33 : bwid * 0.31), lines.slice(1).join("-"), { anchor: "middle", size: sz, fixed: true, fill: color, pri: 2, owner: rec.id }));
       } else if (rec.category === "equipment") {         // 설비: 설비 바로 옆(오른쪽 위)에 둔다. 원본에서 멀리 떨어진 글자 자리는 따르지 않는다
-        labels.push(tagLabel(rec.tag, bb, ["righttop", "lefttop", "above", "below"], { fill: color, pri: 0, owner: rec.id }));
+        labels.push(tagLabel(rec.tag, bb, ["right", "left", "above", "below"], { fill: color, pri: 0, owner: rec.id }));      // 모든 설비가 같은 규칙: 오른쪽 옆 가운데(막히면 왼쪽·위·아래)
       } else {
         labels.push(tagLabel(rec.tag, bb, ["below", "above", "right", "left"], { fill: color, pri: 1, owner: rec.id }));
       }

@@ -136,7 +136,7 @@ async function body({ CV, MK, SheetCore }, data) {
   t("맞춤 배율에서 보이는 태그·번호 글자는 대부분 화면에서 11px 이상(원 안 글자는 따로)", lt.length >= 10 && minOk >= lt.length * 0.8, minOk + "/" + lt.length + " k=" + core.view.k.toFixed(2));
   const eq = items.find((i) => i.layer === "symbol" && i.category === "equipment" && i.tag && i.kind === "reactor_vessel");
   const eqText = [...core.cleanG.querySelectorAll("text")].find((x) => x.textContent === eq.tag);
-  t("설비 태그는 설비 바로 옆(오른쪽)에 있음", !!eqText && +eqText.getAttribute("x") >= eq.bbox[2] && +eqText.getAttribute("x") <= eq.bbox[2] + 10 && +eqText.getAttribute("y") >= eq.bbox[1] && +eqText.getAttribute("y") <= eq.bbox[1] + 40, eqText && eqText.getAttribute("x") + "," + eqText.getAttribute("y") + " bbox " + eq.bbox.map(Math.round));
+  t("설비 태그는 설비 바로 옆 오른쪽 가운데에 있음(모든 설비 같은 규칙)", !!eqText && +eqText.getAttribute("x") >= eq.bbox[2] - 12 && +eqText.getAttribute("x") <= eq.bbox[2] + 14 && Math.abs(+eqText.getAttribute("y") - (eq.bbox[1] + eq.bbox[3]) / 2) <= 25, eqText && eqText.getAttribute("x") + "," + eqText.getAttribute("y") + " bbox " + eq.bbox.map(Math.round));
   const L = (o) => Object.assign({ x: 0, y: 10, text: "X", anchor: "start", size: 9, rotate: 0, pri: 0 }, o);
   const layout = CV.layoutLabels([L({ text: "AAAAAAAA", owner: "a" }), L({ x: 5, text: "BBBBBBBB", pri: 1, owner: "b" }), L({ x: 5, text: "태그 없음", size: 7, pri: 9, always: true, owner: "c" }), L({ x: 200, text: "작게", pri: 2, owner: "d" })], 1, []);
   t("글자 자리: 먼저 자리를 잡은 글자가 이기고 겹친 것은 숨김, 늘 보이는 글자는 남음", layout[0].visible && !layout[1].visible && layout[2].visible && layout[3].visible, JSON.stringify(layout.map((l) => l.visible)));
