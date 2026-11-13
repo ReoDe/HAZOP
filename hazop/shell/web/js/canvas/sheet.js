@@ -8,6 +8,25 @@ import { useEffect, useRef } from "../../vendor/hooks.module.js";
 import { SheetCore } from "./core.js";
 
 export const SHEET_API = "/api/sheet/"; // 같은 출처 상대 경로(다른 호스트면 CORS로 막힌다)
+export const CLEAN_API = "/api/clean/";   // 정리된 보기용 추가 자료(방향·선 종류·열린 끝·미확인)
+const SYMBOLS_URL = new URL("symbols.json", import.meta.url).href;
+let symbolsPromise = null;
+
+/** 기호 도형 자료(저장소의 symbols.json)를 한 번만 읽는다. */
+export function loadSymbols(fetchImpl = fetch) {
+  if (!symbolsPromise) symbolsPromise = fetchImpl(SYMBOLS_URL).then((r) => { if (!r.ok) throw new Error("기호 자료를 읽지 못함"); return r.json(); }).then((d) => d.symbols).catch(() => { symbolsPromise = null; return null; });
+  return symbolsPromise;
+}
+
+/** 정리된 보기용 자료. 없거나 못 읽으면 null(원본 보기만 된다). */
+export async function fetchClean(graphId, fetchImpl = fetch) {
+  try {
+    const res = await fetchImpl(CLEAN_API + encodeURIComponent(graphId));
+    return res.ok ? await res.json() : null;
+  } catch (e) {
+    return null;
+  }
+}
 
 /** 도면 자료를 읽는다. 시험에서 바꿀 수 있게 따로 둔다. */
 export async function fetchSheet(graphId, rev, fetchImpl = fetch) {
@@ -27,7 +46,7 @@ export function Sheet(props) {
   // 콜백은 늘 최신 props의 것을 부른다(마운트는 한 번이라 옛 props를 붙들지 않게)
   const callbacks = () => {
     const call = (name) => (...a) => { const f = latest.current[name]; return f ? f(...a) : undefined; };
-    return ["onReady", "onItemClick", "onItemDblClick", "onHover", "onSelection", "onViewport", "onMarkResult", "onEsc", "onLinkClick", "onClearMarks"]
+    return ["onReady", "onItemClick", "onItemDblClick", "onHover", "onSelection", "onViewport", "onMarkResult", "onEsc", "onLinkClick", "onClearMarks", "onSegmentClick", "onUnconfirmedClick", "onCleanBuilt"]
       .reduce((o, n) => { o[n] = call(n); return o; }, {});
   };
 
@@ -37,16 +56,25 @@ export function Sheet(props) {
   }, []);
 
   const gid = props.sheet && props.sheet.graph_id, rev = props.sheet && props.sheet.rev;
+  const extra = useRef({ clean: undefined, symbols: undefined });
   useEffect(() => {
     if (!gid) return undefined;
     let alive = true;
+    extra.current = { clean: null, symbols: extra.current.symbols };
     fetchSheet(gid, rev, props.fetchImpl || fetch)
-      .then((data) => { if (alive && core.current) { core.current.setData(data); core.current.update(latest.current); } })
+      .then((data) => { if (alive && core.current) { core.current.setData(data); core.current.update(Object.assign({}, latest.current, extra.current)); } })
       .catch((err) => { if (alive && latest.current.onError) latest.current.onError(err); });
+    // 정리된 보기 자료는 도면이 뜬 뒤에 따로 읽는다(원본 그리기를 늦추지 않는다)
+    Promise.all([fetchClean(gid, props.fetchImpl || fetch), loadSymbols(props.fetchImpl || fetch)]).then(([clean, symbols]) => {
+      if (!alive || !core.current) return;
+      extra.current = { clean, symbols };
+      if (latest.current.onClean) latest.current.onClean(gid, clean);
+      core.current.update(Object.assign({}, latest.current, extra.current));
+    });
     return () => { alive = false; };
   }, [gid, rev]);
 
-  useEffect(() => { if (core.current) core.current.update(props); });
+  useEffect(() => { if (core.current) core.current.update(Object.assign({}, props, extra.current)); });
 
   return h("div", { class: "hz-sheet" + (props.class ? " " + props.class : ""), ref: host, style: "width:100%;height:100%" });
 }

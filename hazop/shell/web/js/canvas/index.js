@@ -70,7 +70,8 @@ export class SpatialIndex {
     const rect = boundsOf(it);
     if (!rect || !it || typeof it.id !== "string") return;
     const rec = { id: it.id, layer: it.layer || "symbol", rect: normRect(rect), lines: it.layer === "pipe" ? linesOf(it) : [], order: this.items.length,
-                  kind: it.kind || null, tag: it.tag || null, unknown: !!it.unknown };
+                  kind: it.kind || null, tag: it.tag || null, unknown: !!it.unknown, category: it.category || null,
+                  labelRect: it.layer === "symbol" && Array.isArray(it.label_bbox) && it.label_bbox.length === 4 ? { x0: it.label_bbox[0], y0: it.label_bbox[1], x1: it.label_bbox[2], y1: it.label_bbox[3] } : null };
     this.items.push(rec);
     if (!this.byId.has(rec.id)) this.byId.set(rec.id, []);
     this.byId.get(rec.id).push(rec);

@@ -6,6 +6,7 @@
 
 import { SpatialIndex, MAX_SELECTION, capSelection, changeSelection, selectionEvent, normRect } from "./index.js";
 import { normalizeMarks, drawAll, buildSegments, legendEntries, uncrowdTags } from "./marks.js";
+import { buildBase, recolor, fragmentBox } from "./clean_view.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const K_MIN = 0.05, K_MAX = 12;
@@ -50,7 +51,7 @@ function build(desc, doc) {
 export class SheetCore {
   /**
    * @param {HTMLElement} host 마운트할 상자
-   * @param {object} cb 콜백: onReady, onItemClick, onItemDblClick, onHover, onSelection, onViewport, onMarkResult, onEsc, onLinkClick, onClearMarks, onSegmentClick
+   * @param {object} cb 콜백: onReady, onItemClick, onItemDblClick, onHover, onSelection, onViewport, onMarkResult, onEsc, onLinkClick, onClearMarks, onSegmentClick, onUnconfirmedClick, onCleanBuilt
    */
   constructor(host, cb = {}) {
     this.host = host;
@@ -64,6 +65,11 @@ export class SheetCore {
     this.marks = [];
     this.segments = [];
     this.outside = [];
+    this.viewWanted = "orig";        // 'orig' | 'clean'(정리된 보기). 정리된 자료·기호가 아직 없으면 원본으로 그린다
+    this.clean = null;               // /api/clean 자료 {items, text_items, unconfirmed, ...}
+    this.symbols = null;             // symbols.json의 symbols
+    this._cleanBuilt = false;
+    this.cleanInfo = null;
     this.layers = { symbol: true, pipe: true, tag: true };
     this.lastCmd = null;
     this.size = [1, 1];
@@ -88,6 +94,7 @@ export class SheetCore {
     this.world = d.createElement("div"); this.world.className = "hz-cv-world"; this.vp.appendChild(this.world);
     this.svg = d.createElementNS(SVG_NS, "svg"); this.svg.setAttribute("class", "hz-cv-svg"); this.world.appendChild(this.svg);
     this.image = d.createElementNS(SVG_NS, "image"); this.svg.appendChild(this.image);
+    this.cleanG = d.createElementNS(SVG_NS, "g"); this.cleanG.setAttribute("class", "hz-cv-clean"); this.cleanG.style.display = "none"; this.svg.appendChild(this.cleanG);
     this.marksG = d.createElementNS(SVG_NS, "g"); this.marksG.setAttribute("class", "hz-cv-marks"); this.svg.appendChild(this.marksG);
     this.tagsDiv = d.createElement("div"); this.tagsDiv.className = "hz-cv-tags"; this.vp.appendChild(this.tagsDiv);
     this.chipsDiv = d.createElement("div"); this.chipsDiv.className = "hz-cv-chips"; this.vp.appendChild(this.chipsDiv);
@@ -124,11 +131,13 @@ export class SheetCore {
     this.data = data;
     this.size = [Number(data.width) || 1, Number(data.height) || 1];
     this.index = new SpatialIndex(Array.isArray(data.items) ? data.items : []);
+    this._unconf = null;
     this.svg.setAttribute("width", this.size[0]); this.svg.setAttribute("height", this.size[1]);
     this.svg.setAttribute("viewBox", `0 0 ${this.size[0]} ${this.size[1]}`);
     this.world.style.width = this.size[0] + "px"; this.world.style.height = this.size[1] + "px";
     this.image.setAttribute("width", this.size[0]); this.image.setAttribute("height", this.size[1]);
     this.sel = this.sel.filter((id) => this.index.has(id));
+    this._cleanBuilt = false;        // 새 도면: 정리된 그림은 다시 만든다(자료는 update의 props로 새로 들어온다)
     const finish = () => { this._viewChanged(true); this._renderMarks(); if (this.cb.onReady) this.cb.onReady(data.graph_id); };
     const href = typeof data.svg === "string" ? data.svg : "";
     let done = false;
@@ -144,10 +153,64 @@ export class SheetCore {
 
   _resized() { if (this.data && !this._viewGiven) this.fit(); else this._scheduleSettle(); }
 
+  // ------------------------------------------------------------ 정리된 보기
+  /** 실제로 그리는 보기: 정리를 원해도 자료·기호가 아직 없으면 원본. */
+  _effective() { return this.viewWanted === "clean" && this.clean && this.symbols && this.data ? "clean" : "orig"; }
+
+  _cleanCtx() {
+    if (!this._ctx || this._ctxFor !== this.clean) {
+      this._ctxFor = this.clean;
+      this._ctx = { symbols: this.symbols, extras: (this.clean && this.clean.items) || {}, width: this.size[0], height: this.size[1], textItems: (this.clean && this.clean.text_items) || [],
+        items: this.index.items };
+    }
+    return this._ctx;
+  }
+
+  /** 보기(원본·정리)를 바꾼다. 같은 viewBox·같은 이동·확대 값을 쓰므로 화면이 움직이지 않는다. 정리된 그림은 처음 필요할 때 한 번 만든다. */
+  _applyViewMode() {
+    const eff = this._effective();
+    if (eff === "clean" && !this._cleanBuilt) this._buildClean();
+    this.image.style.display = eff === "clean" ? "none" : "";
+    this.cleanG.style.display = eff === "clean" ? "" : "none";
+    this.tagsDiv.style.display = eff === "clean" ? "none" : "";
+    this.host.setAttribute("data-view", eff);
+    this._unconf = null;
+  }
+
+  _buildClean() {
+    const t0 = performance.now();
+    this._ctxFor = null;
+    const ctx = this._cleanCtx();
+    const base = buildBase(ctx);
+    while (this.cleanG.firstChild) this.cleanG.removeChild(this.cleanG.firstChild);
+    const frag = this.doc.createDocumentFragment();
+    for (const n of base.nodes) { const b = build(n, this.doc); if (b) frag.appendChild(b); }
+    this.cleanG.appendChild(frag);
+    this._cleanBuilt = true;
+    this.cleanInfo = { ms: performance.now() - t0, elements: base.nodes.length, missingKinds: base.missingKinds, placeholders: base.placeholders };
+    if (this.cb.onCleanBuilt) this.cb.onCleanBuilt(this.cleanInfo);
+  }
+
+  /** 못 읽은 곳의 원본 조각: 같은 도면 SVG 주소와 잘라 보일 viewBox. 자료가 없으면 null. */
+  fragmentOf(id) {
+    const r = this.index.rectOf(id);
+    if (!r || !this.data || !this.data.svg) return null;
+    return { href: this.data.svg, size: this.size.slice(), box: fragmentBox([r.x0, r.y0, r.x1, r.y1], this.size) };
+  }
+
+  _unconfirmedAt(id) {
+    if (!this._unconf) this._unconf = new Map(((this.clean && this.clean.unconfirmed) || []).map((u) => [u.id, u.reason]));
+    return this._unconf.get(id) || null;
+  }
+
   // ------------------------------------------------------------ 입력(props)
   update(p) {
     let marksDirty = false;
     if (p.mode && p.mode !== this.mode) { this.mode = p.mode === "pick" ? "pick" : "pan"; this.host.setAttribute("data-mode", this.mode); }
+    if (p.symbols && p.symbols !== this._symProp) { this._symProp = p.symbols; this.symbols = p.symbols; this._cleanBuilt = false; marksDirty = true; }
+    if (p.clean !== undefined && p.clean !== this._cleanProp) { this._cleanProp = p.clean; this.clean = p.clean; this._cleanBuilt = false; marksDirty = true; }
+    if (p.view && p.view !== this.viewWanted) { this.viewWanted = p.view === "clean" ? "clean" : "orig"; marksDirty = true; }
+    if (marksDirty) this._applyViewMode();
     if (p.layers && p.layers !== this._layersProp) {
       this._layersProp = p.layers;
       this.layers = Object.assign({ symbol: true, pipe: true, tag: true }, p.layers);
@@ -184,6 +247,10 @@ export class SheetCore {
 
   _command(c) {
     if (c.type === "zoomTo") this.zoomTo(c.ids || [], c.pad);
+    else if (c.type === "inspect") {          // 미확인 자리로 가서 원본 조각 말풍선을 연다(N 키)
+      this.zoomTo([c.id], c.pad);
+      if (this.cb.onUnconfirmedClick) this.cb.onUnconfirmedClick({ id: c.id, reason: this._unconfirmedAt(c.id) || c.reason, fragment: this.fragmentOf(c.id), rect: null });
+    }
     else if (c.type === "fit") this.fit();
     else if (c.type === "clearMarks") {
       this.marks = c.id == null ? [] : this.marks.filter((m) => String(m.id).split("#")[0] !== String(c.id).split("#")[0]);
@@ -318,6 +385,8 @@ export class SheetCore {
       return;
     }
     if (!hit) return;
+    const reason = this.cb.onUnconfirmedClick ? this._unconfirmedAt(hit.id) : null;
+    if (reason) { const rr = this.index.rectOf(hit.id); this.cb.onUnconfirmedClick({ id: hit.id, reason, fragment: this.fragmentOf(hit.id), rect: rr ? this._toScreenRect(rr) : null }); }
     const rect = this.index.rectOf(hit.id), rec = (this.index.byId.get(hit.id) || [])[0];
     if (this.cb.onItemClick) this.cb.onItemClick({ id: hit.id, kind: rec && rec.kind, tag: rec && rec.tag, rect: rect ? this._toScreenRect(rect) : null, via: "click" });
   }
@@ -399,7 +468,9 @@ export class SheetCore {
   _renderMarks() {
     if (!this.data) return;
     const seg = this.segments.length ? buildSegments(this.segments, this.index) : null;
-    const out = drawAll({ marks: this.marks, seg, outside: this.outside, selection: this.sel, index: this.index, k: this.view.k, size: this.size });
+    const ctx = this._effective() === "clean" ? this._cleanCtx() : null;
+    const out = drawAll({ marks: this.marks, seg, outside: this.outside, selection: this.sel, index: this.index, k: this.view.k, size: this.size,
+      recolor: ctx ? (rec, color, width, opts) => recolor(ctx, rec, color, width, opts) : null });
     const g = this.marksG;
     while (g.firstChild) g.removeChild(g.firstChild);
     const frag = this.doc.createDocumentFragment();
@@ -436,6 +507,7 @@ export class SheetCore {
 
   /** 도면 글자가 11px보다 작게 보이면(확대 전) 겹치지 않게 11px 태그 글자를 얹는다. 글자는 textContent로만. */
   _renderTags() {
+    if (this._effective() === "clean") { while (this.tagsDiv.firstChild) this.tagsDiv.removeChild(this.tagsDiv.firstChild); return; }
     const box = this.tagsDiv;
     box.textContent = "";
     if (!this.data || !this.layers.tag) return;

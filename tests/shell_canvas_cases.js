@@ -271,7 +271,7 @@ export async function run(hz, data, big) {
     const { Sheet, SHEET_API, fetchSheet } = hz.SheetMod, H = hz.HooksStub;
     const seen = [], got = { ready: [] };
     const h4 = mount();
-    const props = { sheet: { graph_id: "graph-SNP-M-102", rev: 3 }, mode: "pan", selection: [], marks: [], fetchImpl: async (url) => { seen.push(url); return { ok: true, json: async () => data }; },
+    const props = { sheet: { graph_id: "graph-SNP-M-102", rev: 3 }, mode: "pan", selection: [], marks: [], fetchImpl: async (url) => { seen.push(url); return String(url).includes("/api/sheet/") ? { ok: true, json: async () => data } : { ok: false, status: 404, json: async () => null }; },
       onReady: (g) => got.ready.push(g), class: "extra" };
     H.begin();
     const vnode = Sheet(props);
@@ -279,7 +279,7 @@ export async function run(hz, data, big) {
     vnode.props.ref.current = h4;
     H.flush();
     await sleep(400);
-    t("Sheet: 도면 자료를 /api/sheet/<id>?rev= 로 읽음(같은 출처)", seen.length === 1 && seen[0] === SHEET_API + "graph-SNP-M-102?rev=3" && SHEET_API === "/api/sheet/", JSON.stringify(seen));
+    t("Sheet: 도면 자료를 /api/sheet/<id>?rev= 로 읽음(같은 출처)", seen.filter((u) => u.includes("/api/sheet/")).length === 1 && seen[0] === SHEET_API + "graph-SNP-M-102?rev=3" && SHEET_API === "/api/sheet/", JSON.stringify(seen));
     t("Sheet: 읽은 뒤 SheetCore가 그리고 onReady(최신 props의 콜백)", got.ready.length >= 1 && h4.classList.contains("hz-cv"), JSON.stringify(got.ready));
     try { await fetchSheet("x", null, async () => ({ ok: false, status: 404 })); t("Sheet: 못 읽으면 오류", false, "던지지 않음"); }
     catch (e) { t("Sheet: 못 읽으면 오류", String(e.message).includes("404")); }

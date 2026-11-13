@@ -183,8 +183,15 @@ function arrowEl(a, k) {
  * @param {{marks: Array, seg: object, selection: string[], index: object, k: number, dimOthers: boolean}} s
  * @returns {{nodes: Array, missing: Map<string, string[]>, dim: boolean}}
  */
-export function drawAll({ marks, seg, outside, selection, index, k = 1, size }) {
+export function drawAll({ marks, seg, outside, selection, index, k = 1, size, recolor = null }) {
   const nodes = [], missing = new Map();
+  // 정리된 보기(recolor 있음)에서는 상자를 덧그리지 않고 그 객체의 색을 바꾼다(규격 §10.5). 못 그리는 층(태그 상자)은 그리지 않는다
+  const mk = (item, w, extra, fillOpacity) => {
+    if (!recolor) return shapeOf(item, k, w, extra);
+    if (item.rec.layer === "tag") return [];
+    const got = recolor(item.rec, item.color, w, { dashed: !!(extra && extra["stroke-dasharray"]) || !!item.dashed, fill: fillOpacity ? item.color : null, fillOpacity });
+    return got || shapeOf(item, k, w, extra);
+  };
   const resolved = (marks || []).map((m) => resolveMark(m, index));
   const dimByMark = resolved.some((m) => m.dim);
   const dim = dimByMark || !!(seg && seg.focused);
@@ -201,9 +208,9 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size }) 
   if (seg) {
     for (const [id, owners] of seg.byItem) {
       for (const rec of recsOf(index, id)) {
-        nodes.push(...shapeOf({ rec, color: owners[0].color, dashed: false }, k, seg.focused ? 3 : 2.2));
+        nodes.push(...mk({ rec, color: owners[0].color, dashed: false }, seg.focused ? 3 : 2.2, null, 0.12));
         for (let i = 1; i < owners.length; i++)   // 겹침: 둘째 구간 색 줄무늬
-          nodes.push(...shapeOf({ rec, color: owners[i].color, dashed: false }, k, seg.focused ? 3 : 2.2, { "stroke-dasharray": "6 6", "stroke-dashoffset": 6 }));
+          nodes.push(...mk({ rec, color: owners[i].color, dashed: false }, seg.focused ? 3 : 2.2, { "stroke-dasharray": "6 6", "stroke-dashoffset": 6 }));
       }
     }
     badges.push(...seg.badges.map((b) => Object.assign({ node_id: b.text }, b)));
@@ -217,11 +224,13 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size }) 
   for (const m of resolved) {
     if (m.missing.length) missing.set(m.id, m.missing);
     for (const it of m.items) {
-      if (it.box) {
+      if (it.box && recolor) {
+        nodes.push(...mk({ rec: it.rec, color: it.color, dashed: it.box === "unknown" }, 2.6, null));
+      } else if (it.box) {
         const r = it.rec.rect, pad = 5 / k;
         nodes.push(el("rect", { x: r.x0 - pad, y: r.y0 - pad, width: r.x1 - r.x0 + 2 * pad, height: r.y1 - r.y0 + 2 * pad, rx: 3 / k, fill: "none", stroke: it.color,
           "stroke-width": 2.2, "vector-effect": "non-scaling-stroke", "stroke-dasharray": it.box === "unknown" ? "6 4" : null, "pointer-events": "none" }));
-      } else nodes.push(...shapeOf(it, k, it.rec.layer === "pipe" ? 4 : 2.6));
+      } else nodes.push(...mk(it, it.rec.layer === "pipe" ? 4 : 2.6, null));
     }
     badges.push(...m.badges);
     arrows.push(...m.arrows);
@@ -231,7 +240,7 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size }) 
   for (const id of selection || []) {
     if (seen.has(id)) continue;
     seen.add(id);
-    for (const rec of recsOf(index, id)) nodes.push(...shapeOf({ rec, color: STYLE_COLORS.focus, dashed: false }, k, 3));
+    for (const rec of recsOf(index, id)) nodes.push(...mk({ rec, color: STYLE_COLORS.focus, dashed: false }, 3, null, 0.14));
   }
   for (const a of arrows) nodes.push(arrowEl(a, k));
   for (const b of badges) nodes.push(badgeEl(b, k));
