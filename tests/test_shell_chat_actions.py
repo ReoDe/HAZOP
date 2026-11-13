@@ -127,7 +127,7 @@ class ApplyAndUndoTest(Base):
     def test_user_undo_of_the_batch_goes_through_the_node_command(self):
         out = self.ask([self.apply(self.candidates(3))])
         batch = out["items"][0]["batch_id"]
-        r = self.engine.dispatch("nodes.undo", {"batch_id": batch, "set_rev": self.ns()["set_rev"]})
+        r = self.engine.dispatch("nodes.undo", {"project_id": "SNP", "batch_id": batch, "set_rev": self.ns()["set_rev"]})
         self.assertTrue(r["ok"], r)
         self.assertEqual(self.ns()["nodes"], [], "묶음의 구간이 모두 사라진다")
 
@@ -197,7 +197,7 @@ class ConfirmTest(Base):
 
     def test_target_changed_after_the_box_was_shown_is_stale(self):
         item = self.confirm_item()
-        human = self.engine.dispatch("nodes.rename", {"node_id": self.target, "name": "사람이 고침", "set_rev": self.ns()["set_rev"],
+        human = self.engine.dispatch("nodes.rename", {"project_id": "SNP", "node_id": self.target, "name": "사람이 고침", "set_rev": self.ns()["set_rev"],
                                                       "targets": [{"node_id": self.target, "rev": 1, "state": "applied"}]})
         self.assertTrue(human["ok"], human)
         r = self.engine.dispatch("chat.action.approve", {"token": item["token"]})
@@ -216,6 +216,82 @@ class ConfirmTest(Base):
         item = out["items"][0]
         self.assertEqual(item["status"], "rejected", item)
         self.assertTrue(item["reason"])
+
+
+class ConfirmBoxTargetsTest(Base):
+    """검토 반려 4·6: 확인 상자는 앱이 실제 인자에서 만든 대상을 모두 보이고, 보여 줄 대상이 없는 동작은 실행하지 않으며, 판정 뒤 확인으로 바뀐 동작도 눌러서 실행·알림이 간다."""
+
+    def make_nodes(self):
+        out = self.ask([self.apply(self.candidates(3), {0: "가압기 압력 제어", 1: "충전 펌프", 2: "안전밸브"})])
+        return out["items"][0]["node_ids"]
+
+    def test_removing_a_node_of_an_earlier_conversation_shows_the_target_and_removes_it_on_approve(self):
+        ids = self.make_nodes()
+        self.chat.new_conversation()                      # 앞 대화의 AI 묶음은 이제 사람 확인이 필요하다
+        target = ids[0]
+        ns = self.ns()
+        out = self.ask([{"action": "nodes.apply", "args": {"set_rev": ns["set_rev"], "ops": [{"op": "remove", "node_id": target}]}, "why": "정리"}],
+                       "구간 정리해 줘")
+        it = out["items"][0]
+        self.assertEqual(it["status"], "confirm", it)
+        self.assertEqual([t["id"] for t in it["targets"]], [target], "대상 구간이 목록에 보인다")
+        self.assertIn("가압기 압력 제어", it["targets"][0]["label"], "이름도 보인다")
+        self.assertTrue(any(target in o for o in it["ops"]), it["ops"])
+        r = self.engine.dispatch("chat.action.approve", {"token": it["token"]})
+        self.assertTrue(r["ok"], r)
+        self.assertNotIn(target, {n["node_id"] for n in self.ns()["nodes"]})
+
+    def fake_item(self, n, action="nodes.lock", text=None):
+        import types
+        ids = ["S%03d" % i for i in range(1, n + 1)]
+        text = text or ("구간 %s을 분석 마침으로 잠급니다." % ", ".join(ids))
+        return types.SimpleNamespace(key="a-1#0", keys=["a-1#0"], action=action, args={"node_ids": ids}, targets=ids, confirm_text=text, token="t-x", klass="confirm",
+                                     reason=None, where=None)
+
+    def test_sixty_targets_are_all_listed_and_a_cut_text_says_so(self):
+        e = self.actions._confirm_entry(self.fake_item(60), waiting=False)
+        self.assertEqual((e["status"], e["targets_total"], len(e["targets"])), ("confirm", 60, 60), "60개가 모두 대상 목록에 있다")
+        self.assertEqual([t["id"] for t in e["targets"]][-1], "S060")
+        big = self.actions._confirm_entry(self.fake_item(300), waiting=False)
+        self.assertEqual((big["targets_total"], len(big["targets"])), (300, 200), "너무 많으면 전체 수를 함께 준다")
+        self.assertTrue(big["text"].endswith("…(이하 생략)"), "자른 글은 잘렸다고 표시한다")
+        self.assertFalse(e["text"].endswith("…(이하 생략)"))
+
+    def test_an_action_with_no_visible_target_is_not_approvable(self):
+        import types
+        item = types.SimpleNamespace(key="a-2#0", keys=["a-2#0"], action="nodes.confirm", args={"node_ids": []}, targets=[], confirm_text="구간 을 확정합니다.",
+                                     token="t-none", klass="confirm", reason=None, where=None)
+        e = self.actions._confirm_entry(item, waiting=False)
+        self.assertEqual(e["status"], "rejected")
+        self.assertIn("대상", e["reason"])
+        self.assertIsNone(e["token"])
+        self.assertNotIn("t-none", self.actions._items)
+
+    def test_a_node_action_that_turns_into_a_confirmation_after_the_plan_is_approvable_with_events(self):
+        from unittest import mock
+        from hazop.chat import actions as A
+        ids = self.make_nodes()
+        original = A.ActionPlanner._recheck
+
+        def forced(planner, item, snap):
+            fresh = original(planner, item, snap)
+            if fresh.action == "nodes.undo" and fresh.klass != "rejected":
+                fresh.klass = A.CONFIRM
+                fresh.confirm_text = "묶음을 되돌립니다."
+            return fresh
+        batch = self.ns()["nodes"][0]["batch_id"]
+        before = len(self.events.of("chat.action.result"))
+        with mock.patch.object(A.ActionPlanner, "_recheck", forced):
+            out = self.ask([{"action": "nodes.undo", "args": {"batch_id_to_undo": batch, "set_rev": self.ns()["set_rev"]}, "why": "되돌림"}], "되돌려 줘")
+            it = out["items"][0]
+            self.assertEqual(it["status"], "confirm", it)
+            self.assertTrue(it["token"] and it["token"] in self.actions._items, "새 표지가 등록되어 있다")
+            r = self.engine.dispatch("chat.action.approve", {"token": it["token"]})
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(self.ns()["nodes"], [], "실행됨")
+        self.assertEqual(len(self.events.of("chat.action.result")), before + 1, "결과 사건이 나간다")
+        self.assertTrue(self.events.changes("nodes"), "바뀜 알림이 나간다")
+        self.assertEqual(len(ids), 3)
 
 
 if __name__ == "__main__":

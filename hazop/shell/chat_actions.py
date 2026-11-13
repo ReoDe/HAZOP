@@ -20,11 +20,25 @@ from hazop.chat import actions_log
 LOG = logging.getLogger("hazop.shell.chat_actions")
 NODE_ACTIONS = ("nodes.apply", "nodes.undo", "nodes.confirm", "nodes.unconfirm", "nodes.lock")
 MAX_TEXT = 300
+MAX_CONFIRM_TEXT = 1500      # 확인 상자 글(앱이 틀에 검사한 값을 채운 글)의 한도. 넘으면 잘렸다고 표시한다
+MAX_TARGETS = 200            # 한 상자에 보내는 대상 수 한도. 넘으면 전체 개수와 함께 잘렸다고 표시한다
+NAME_CHARS = 60
 
 
 def _clip(text):
     text = " ".join(str(text or "").split())
     return text[:MAX_TEXT]
+
+
+def _clip_long(text, limit=MAX_CONFIRM_TEXT):
+    """글을 자르되 잘렸으면 눈에 보이게 표시한다(잘린 줄 모르고 확인하지 않게)."""
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= limit else text[:limit].rstrip() + " …(이하 생략)"
+
+
+def _short(text, n=NAME_CHARS):
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= n else text[:n] + "…"
 
 
 class ChatActions:
@@ -121,11 +135,14 @@ class ChatActions:
                 items.append(entry)
                 changed_rev = rev if rev is not None else changed_rev
             confirms = list(plan.confirm)
-            for i, it in enumerate(confirms):
-                entry = self._confirm_entry(it, waiting=i > 0)
+            shown_confirms = 0
+            for it in confirms:
+                entry = self._confirm_entry(it, waiting=shown_confirms > 0)
                 items.append(entry)
-                if i > 0:
-                    self._queue.setdefault(answer_id, []).append(it.token)
+                if entry["status"] == "confirm":
+                    if shown_confirms > 0:
+                        self._queue.setdefault(answer_id, []).append(it.token)
+                    shown_confirms += 1
             for it in plan.rejected:
                 items.append(self._rejected_entry(it))
         except Exception:  # noqa: BLE001 - 동작 층 오류가 대화를 깨지 않게 한다
@@ -196,11 +213,29 @@ class ChatActions:
     # ------------------------------------------------------------ 항목 만들기
     def _base(self, item):
         return {"key": item.key, "action": item.action, "status": None, "title": "", "text": "", "token": None, "batch_id": None,
-                "node_ids": [], "reason": None, "where": None, "waiting": False}
+                "node_ids": [], "reason": None, "where": None, "waiting": False, "targets": [], "targets_total": 0, "ops": []}
+
+    def _names(self):
+        """구간 ID -> 이름(지금 저장본). 못 읽으면 빈 표."""
+        try:
+            snap = self.read_state()
+            return {n.get("node_id"): n.get("name") or "" for n in ((snap.node_set or {}).get("nodes") or [])}
+        except Exception:  # noqa: BLE001
+            return {}
 
     def _confirm_entry(self, item, waiting):
+        """확인 상자 항목. 상자의 대상 목록과 변경 줄은 모델이 쓴 글이 아니라 앱이 검사한 실제 인자(item.args·item.targets)에서 만든다.
+        보여 줄 대상이 하나도 없는 동작은 확인을 받지 않고 거절로 돌린다(보지 못한 것을 승인하게 하지 않는다)."""
+        names = self._names()
+        targets = _targets_of(item, names)
+        ops = _op_lines(item, names)
+        if not targets["items"] and not ops:
+            e = self._rejected_entry(item)
+            e["reason"] = "실행할 대상을 확인할 수 없어 실행하지 않습니다."
+            return e
         e = self._base(item)
-        e.update(status="confirm", title=_title(item), text=_clip(item.confirm_text), token=item.token, waiting=waiting)
+        e.update(status="confirm", title=_title(item), text=_clip_long(item.confirm_text), token=item.token, waiting=waiting,
+                 targets=targets["items"], targets_total=targets["total"], ops=ops)
         self._items[item.token] = item
         self._shown[item.token] = e
         return e
@@ -216,9 +251,13 @@ class ChatActions:
         result = out.get("result")
         e["title"] = _title(item)
         if result == "needs_confirm":                       # 그 사이 상태가 바뀌어 확인이 필요해짐
-            fresh = out.get("item")
-            e.update(status="confirm", token=fresh.token if fresh else None, text=_clip(fresh.confirm_text if fresh else ""))
-            return e, None
+            fresh = planner.reissue(out.get("item")) if out.get("item") is not None else None   # 지금 상태로 다시 검사해 승인 표지를 단다
+            if fresh is None:
+                e.update(status="rejected", reason="확인 상자를 만들 수 없어 실행하지 않습니다.")
+                return e, None
+            if fresh.klass == "rejected":
+                return self._rejected_entry(fresh), None
+            return self._confirm_entry(fresh, waiting=False), None     # 새 표지를 등록해 눌렀을 때 실행·결과 사건·바뀜 알림이 나가게 한다
         if result in ("ok", "candidate"):
             e.update(status="applied" if result == "ok" else "candidate", batch_id=out.get("batch_id"), node_ids=list(out.get("targets") or []))
             e["text"] = _done_text(item, out)
@@ -265,3 +304,45 @@ def _done_text(item, out):
         label = (": " + ", ".join(str(n) for n in names[:6]) + (" …" if len(names) > 6 else "")) if names and kinds == {"add"} else ""
         return _clip(head + label + tail + ".")
     return {"nodes.confirm": "확정했습니다.", "nodes.unconfirm": "확정을 풀었습니다.", "nodes.lock": "잠갔습니다."}.get(name, "처리했습니다.")
+
+
+def _label(node_id, names):
+    name = names.get(node_id)
+    return {"id": node_id, "label": "%s %s" % (node_id, _short(name)) if name else node_id}
+
+
+def _targets_of(item, names):
+    """확인 상자에 보일 실제 대상: 동작 층이 판정한 item.targets(구간 ID·칸·파일 열쇠)와, 구간 동작의 인자에 든 구간 ID. 많으면 MAX_TARGETS까지만 보내고 전체 수를 함께 준다."""
+    seen, out = set(), []
+    args = getattr(item, "args", None) or {}
+    ids = list(getattr(item, "targets", None) or [])
+    ids += [x for x in (args.get("node_ids") or []) if isinstance(x, str)]
+    for op in args.get("ops") or []:
+        if isinstance(op, dict):
+            ids += [x for x in ([op.get("node_id")] + list(op.get("node_ids") or [])) if isinstance(x, str)]
+    for x in ids:
+        if isinstance(x, str) and x not in seen:
+            seen.add(x)
+            out.append(_label(x, names))
+    return {"items": out[:MAX_TARGETS], "total": len(out)}
+
+
+def _op_lines(item, names):
+    """nodes.apply의 변경 줄: 무엇을 어느 구간에 하는지(앱이 검사한 인자에서 만든다). 새 구간은 이름만(모델 글이라 짧게 자르고 텍스트로만 보인다)."""
+    out = []
+    for op in (getattr(item, "args", None) or {}).get("ops") or []:
+        if not isinstance(op, dict):
+            continue
+        kind = op.get("op")
+        if kind == "add":
+            out.append("새 구간 만들기: %s" % (_short(op.get("name")) or "(이름 없음)"))
+        elif kind == "remove":
+            out.append("지우기: %s" % _label(op.get("node_id"), names)["label"])
+        elif kind == "edit":
+            what = [w for w, k in (("이름", "name"), ("설계 의도", "design_intent"), ("구성요소", "members")) if k in op]
+            out.append("고치기: %s (%s)" % (_label(op.get("node_id"), names)["label"], "·".join(what) or "내용"))
+        elif kind == "merge":
+            out.append("합치기: %s" % ", ".join(_label(i, names)["label"] for i in (op.get("node_ids") or [])))
+        elif kind == "split":
+            out.append("나누기: %s" % _label(op.get("node_id"), names)["label"])
+    return out[:MAX_TARGETS]

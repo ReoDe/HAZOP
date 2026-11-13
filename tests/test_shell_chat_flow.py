@@ -116,6 +116,22 @@ class ChatToPanelTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.actbox.confirm').length") or 0) == 0, 10))
         self.assertFalse(next(n for n in self.ns()["nodes"] if n["node_id"] == target).get("confirmed"))
 
+    def test_confirm_box_lists_the_real_targets_and_expands_many(self):
+        win = self.window()
+        self.switch_project(win, "SNP")
+        self.propose(win, [self.apply_action(self.cands(3))])
+        ids = [n["node_id"] for n in self.ns()["nodes"]]
+        win.chat.new_conversation()                      # 앞 대화의 AI 묶음 -> 지우려면 사람 확인
+        pump(0.4)
+        remove = {"action": "nodes.apply", "args": {"set_rev": self.ns()["set_rev"], "ops": [{"op": "remove", "node_id": i} for i in ids]}, "why": "정리"}
+        self.propose(win, [remove], "구간 정리해 줘")
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.actbox.confirm').length") or 0) == 1, 10), self.text(win)[-400:])
+        text = self.text(win)
+        self.assertIn("대상 3개", text)
+        for i in ids[:3]:
+            self.assertIn(i, text, "지울 구간이 상자에 보인다")
+        self.assertEqual(len(self.ns()["nodes"]), 3, "확인 전에는 지우지 않는다")
+
     def test_model_text_in_names_is_never_html(self):
         win = self.window()
         self.switch_project(win, "SNP")

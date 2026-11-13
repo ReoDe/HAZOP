@@ -25,6 +25,21 @@ export function updateAction(setChat, d) {
 const ICON = { applied: "circle-check", candidate: "circle-check", confirm: "alert-triangle", rejected: "alert-triangle", failed: "alert-triangle",
   stale: "alert-triangle", declined: "x", duplicate: "info-circle" };
 
+const SHOWN = 6;      // 대상 목록은 처음 이만큼만 보이고 '모두 보기'로 펼친다
+
+function Targets({ it }) {
+  const [all, setAll] = useState(false);
+  const list = it.targets || [];
+  if (!list.length) return null;
+  const rows = all ? list : list.slice(0, SHOWN);
+  const cut = it.targets_total > list.length;      // 엔진이 보낼 수 있는 수를 넘어 잘렸다
+  return html`<div class="tgts" aria-label=${"대상 " + it.targets_total + "개"}>
+    <div class="muted small">대상 ${it.targets_total}개</div>
+    <ul class="tight">${rows.map((t) => html`<li key=${t.id}>${t.label}</li>`)}</ul>
+    ${list.length > SHOWN ? html`<${Btn} sm=${true} kind="ghost" label=${all ? "접기" : "대상 모두 보기"} onClick=${() => setAll(!all)}>${all ? "접기" : "외 " + (list.length - SHOWN) + "개 모두 보기"}<//>` : null}
+    ${cut ? html`<div class="small warnline">대상이 너무 많아 처음 ${list.length}개만 보입니다(전체 ${it.targets_total}개를 실행합니다).</div>` : null}</div>`;
+}
+
 function ConfirmBox({ it }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -35,6 +50,8 @@ function ConfirmBox({ it }) {
   return html`<div class="actbox confirm" role="group" aria-label=${"확인: " + it.title}>
     <div class="actbox-h"><${Icon} name="alert-triangle" size=${15} /><b>${it.title}</b></div>
     <p>${it.text}</p>
+    ${(it.ops || []).length ? html`<ul class="tight" aria-label="바꿀 내용">${it.ops.map((o, i) => html`<li key=${i}>${o}</li>`)}</ul>` : null}
+    <${Targets} it=${it} />
     ${it.waiting ? html`<div class="muted" style="font-size:var(--fs-xs)">앞의 확인이 끝나면 이어서 묻습니다.</div>` : html`
       <div class="acts-row">
         <${Btn} kind="primary" sm=${true} disabled=${busy} label="실행" onClick=${() => press("chat.action.approve")}>실행<//>
