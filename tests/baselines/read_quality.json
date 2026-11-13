@@ -26,7 +26,7 @@
    "attribute": {
     "correct": 0,
     "false_pos": 0,
-    "units": 3
+    "units": 6
    },
    "connection": {
     "correct": 18,
@@ -48,7 +48,7 @@
    "attribute": {
     "correct": 0,
     "false_pos": 0,
-    "units": 5
+    "units": 7
    },
    "connection": {
     "correct": 32,
@@ -70,7 +70,7 @@
    "attribute": {
     "correct": 0,
     "false_pos": 0,
-    "units": 7
+    "units": 8
    },
    "connection": {
     "correct": 32,
@@ -114,7 +114,7 @@
    "attribute": {
     "correct": 0,
     "false_pos": 0,
-    "units": 5
+    "units": 7
    },
    "connection": {
     "correct": 22,

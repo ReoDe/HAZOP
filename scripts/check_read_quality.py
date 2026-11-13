@@ -52,9 +52,17 @@ def norm(s):
     return re.sub(r"[^A-Z0-9]", "", (s or "").upper())
 
 
+FRACTIONS = {"¼": "1/4", "½": "1/2", "¾": "3/4", "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8"}
+
+
 def norm_size(s):
-    """배관 구경 글자: '3/4"'·'3/4 IN'·'0.75' 따위를 '3/4'꼴로. 숫자와 /·.만 남긴다."""
-    return re.sub(r"[^0-9/.]", "", s or "")
+    """배관 구경 글자: '3/4"'·'¾"'·'1½"'·'1-1/2"' 따위를 숫자와 /·.·X만 남긴 꼴로('1½"' = '1-1/2"' → '1 1/2' 꼴 비교).
+    유니코드 분수는 앞 숫자와 띄어 ASCII로 바꾼다. 리듀서 표기(36"X24")의 X는 남겨 두 구경을 가른다."""
+    t = (s or "").upper()
+    for k, v in FRACTIONS.items():
+        t = re.sub(r"(\d)%s" % k, r"\g<1> %s" % v, t).replace(k, v)
+    t = re.sub(r"(\d)[ -](\d+/\d+)", r"\g<1> \g<2>", t)
+    return re.sub(r"[^0-9/. X]", "", t).strip()
 
 
 # ---------------------------------------------------------------- 정답지 쓰기용 타일(추출 결과를 쓰지 않는다)
@@ -328,6 +336,14 @@ def _seg_dist(p, a, b):
         return math.dist(p, a)
     t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)))
     return math.dist(p, (a[0] + t * dx, a[1] + t * dy))
+
+
+def _seg_foot(p, a, b):
+    """점 p에서 선분 ab까지 거리와 선분 위 가장 가까운 점."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    t = 0.0 if dx == dy == 0 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)))
+    foot = (a[0] + t * dx, a[1] + t * dy)
+    return math.dist(p, foot), foot
 
 
 def _rel_points(r):
@@ -649,15 +665,26 @@ def snp_key(dio, pdf_path, name):
     continuations = [{"symbol": by_local[n["local_id"]], "label": n.get("label_text") or "", "target_system": None,
                       "target_sheet": None, "target_drawing": (n.get("attributes") or {}).get("to_drawing")}
                      for n in dio["nodes"] if n.get("kind") == "continuation" and n["local_id"] in by_local]
-    lines, seen = [], set()
+    # 배관 번호: 번호 하나에 단위 하나. 자리는 PDF에 찍힌 그 번호 글자에서 가장 가까운, 같은 번호를 가진 배관 토막 위의 점
+    # (사람이 글자를 보고 그 옆 배관에 붙여 읽는 자리). 한 배관이 밸브로 여러 토막이면 글자 옆 토막이 정답 자리다
+    by_no = {}
     for r in dio["relations"]:
         no = r.get("line_no") or (r.get("attributes") or {}).get("line_no")
-        pts = _rel_points(r)
-        if r.get("kind") != "physical_connection" or not no or norm(no) not in tokens or len(pts) < 2 or no in seen:
-            continue
-        seen.add(no)  # 배관 번호는 한 번만 센다
-        a, b = pts[len(pts) // 2 - 1], pts[len(pts) // 2]
-        lines.append({"id": "l%03d" % (len(lines) + 1), "at": pt(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)), "line_no": no})
+        pts = [tuple(pt(p)) for p in _rel_points(r)]
+        if r.get("kind") == "physical_connection" and no and norm(no) in tokens and len(pts) >= 2:
+            by_no.setdefault(no, []).append(pts)
+    # 찍힌 번호 글자 하나에 단위 하나(APR1400 정답지와 같은 규칙). 같은 번호가 배관 옆과 도면 밖 연결 상자 안에 두 번
+    # 찍혔으면 두 단위이고, 자리는 각 글자에서 가장 가까운 그 번호의 배관 토막 위 점이다
+    lines = []
+    for no in sorted(by_no):
+        for w in sorted(words, key=lambda w: (w["top"], w["x0"])):
+            if norm(w["text"]) != norm(no):
+                continue
+            c = ((w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2)
+            best = min((_seg_foot(c, p, q) for pts in by_no[no] for p, q in zip(pts, pts[1:])), key=lambda t: t[0])
+            at = [round(best[1][0], 1), round(best[1][1], 1)]
+            if not any(ln["line_no"] == no and math.dist(ln["at"], at) <= LINE_NEAR for ln in lines):
+                lines.append({"id": "l%03d" % (len(lines) + 1), "at": at, "line_no": no})
     return {"schema": "hazop_read_quality_key", "version": 1, "drawing": name, "page_size": size,
             "regions": [[0, 0, size[0], size[1]]],
             "method": "drawio 원본(사람이 그린 정답)을 PDF 좌표로 옮김. 배율 %.4f, 이동 (%.1f, %.1f), 맞춘 짝 %d"

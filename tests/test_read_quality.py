@@ -172,6 +172,15 @@ class AttributeTest(unittest.TestCase):
         self.assertEqual((s["correct"], s["units"], s["false_pos"]), (2, 4, 1))
 
 
+class SizeNormTest(unittest.TestCase):
+    def test_fraction_spellings_match(self):
+        self.assertEqual(rq.norm_size('¾"'), rq.norm_size('3/4"'))
+        self.assertEqual(rq.norm_size('1½"'), rq.norm_size('1-1/2"'))
+        self.assertEqual(rq.norm_size('1 1/2"'), rq.norm_size('1-1/2"'))
+        self.assertNotEqual(rq.norm_size('11/2"'), rq.norm_size('1-1/2"'))
+        self.assertNotEqual(rq.norm_size('36"X24"'), rq.norm_size('36"'))
+
+
 class AiCandidateTest(unittest.TestCase):
     def test_first_candidate_replaces_script_value(self):
         k = key([sym(1, "manual_valve", (100, 100, 110, 108)), sym(2, "check_valve", (200, 100, 210, 108))])
