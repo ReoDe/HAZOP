@@ -253,5 +253,22 @@ class TitleblockLinkFlowTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: "표제란" in self.text(win), 10))
 
 
+class ItemBubbleFlowTest(W.ShellBase):
+    def test_the_component_card_shows_the_korean_kind_name_first_and_the_english_one_small(self):
+        win = self.window()
+        gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
+        bubble = {"sheet": gid, "id": "x1", "tag": "RC-V001", "kind": "control_valve", "kind_label": "제어 밸브", "rect": {"x": 200, "y": 200, "w": 20, "h": 20}}
+        self.js(win, "window.__hz.store.set({sheet: %s, panel: null, bubble: %s})" % (json.dumps(gid), json.dumps(bubble)))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble') !== null") is True, 15))
+        text = self.js(win, "document.querySelector('.bubble div').textContent")
+        self.assertIn("RC-V001", text)
+        self.assertIn("제어 밸브", text)
+        self.assertIn("control_valve", text)
+        self.assertLess(text.index("제어 밸브"), text.index("control_valve"), "한글이 먼저")
+        self.js(win, "window.__hz.store.set({bubble: %s})" % json.dumps(dict(bubble, kind_label=None)))      # 사전에 없는 종류는 영문만
+        self.assertTrue(wait_for(lambda: "제어 밸브" not in (self.js(win, "document.querySelector('.bubble div').textContent") or ""), 10))
+        self.assertIn("control_valve", self.js(win, "document.querySelector('.bubble div').textContent"))
+
+
 if __name__ == "__main__":
     unittest.main()
