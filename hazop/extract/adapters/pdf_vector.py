@@ -49,6 +49,7 @@ from .pdf_vector_grouping import (
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
 )
+from .pdf_vector_flow import _chain_flow, _propagate_flows
 from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, VALVE_TAG_RE, _text_blocks, _upright_blocks, _bubble_like,
                                 _assign_tags)
 
@@ -1445,6 +1446,9 @@ def analyze(width, height, words, prims, params=None):
     chains += _build_dashed(syms, [d for d in dashes if d["id"] not in dots
                                    and not any(_inside(_center(d["bbox"]), c) for c in cores)], markers, prm)
     syms = _merge_appendages(syms, chains, prm)
+    for ch in chains:  # 흐름 방향: 사슬 위·끝에 남은 화살촉(pdf_vector_flow)
+        if not ch.get("dashed"):
+            ch["flow"] = _chain_flow(ch, markers, prm)
     blocks = _text_blocks(words, prm)
     return {"params": prm, "classified": cls, "symbols": syms, "tees": tees, "chains": chains,
             "blocks": blocks, "leftover_markers": markers}
@@ -1745,12 +1749,17 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             rel_kind, line_type = "physical_connection", "pdf_solid"
         if ch.get("contact") and line_type == "pdf_solid":
             line_type = "pdf_touching"  # 선 없이 맞닿은 두 기호(_contact_chains)
-        if rel_kind in rules.RELATION_KINDS_WITH_FLOW:
+        flow = None
+        if rel_kind in rules.RELATION_KINDS_WITH_FLOW and resolved and ch.get("flow"):
+            a, b = (ids[0], ids[1]) if ch["flow"] > 0 else (ids[1], ids[0])
+            ends = {ids[0]: "source", ids[1]: "target"}
+            flow = {"from": a, "to": b, "from_end": ends[a], "to_end": ends[b], "basis": "pdf_arrowhead"}
+        elif rel_kind in rules.RELATION_KINDS_WITH_FLOW:
             _issue(unknowns, "unknown_flow_direction", "PDF 선에서 흐름 방향을 정하지 않음", sid, local_id,
                    "flow_direction")
         record = {
             "local_id": local_id, "source_object_id": sid, "kind": rel_kind, "line_type": line_type,
-            "line_no": None, "endpoints": endpoints, "flow_direction": None,
+            "line_no": None, "endpoints": endpoints, "flow_direction": flow,
             "waypoints": [[_num(p[0]), _num(p[1])] for p in ch["pts"][1:-1]] if not ch.get("dashed") else [],
             "label": "", "label_text": "", "label_cells": [], "attributes": {}, "style": None, "parent": None,
             "geometry": None,
@@ -1765,6 +1774,11 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         locations.append({"object_id": sid, "local_id": local_id, "coordinate_space": COORDINATE_SPACE,
                           "unit": UNIT, "bbox": _box_out(_bbox_pts(pts)), "approximate": True,
                           "method": "pdf_path_points"})
+    # 흐름 보존으로 방향 넓히기(2포트 배관 기호·분기점). 정한 관계는 방향 미확인에서 뺀다
+    before = {r["local_id"] for r in relations if r.get("flow_direction")}
+    if _propagate_flows(relations, {n["local_id"]: n.get("kind") for n in node_out}):
+        filled = {r["local_id"] for r in relations if r.get("flow_direction")} - before
+        unknowns[:] = [u for u in unknowns if not (u.get("check") == "unknown_flow_direction" and u.get("target") in filled)]
 
     text_out = []
     for bi, b in enumerate(blocks):
