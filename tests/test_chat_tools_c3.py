@@ -10,10 +10,13 @@ import datetime as dt
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 
+from hazop import paths
 from hazop.chat import actions_log, context, mcp_server, registry, tools
 from tests.test_chat_tools import S101, S102, ChatToolsBase
 
@@ -129,6 +132,35 @@ class WorksheetTest(C3Base):
         row = self.call("get_worksheet", ctx=ctx, node_id="S1")["data"]["rows"][0]
         self.assertEqual((row["cause"], row["risk"], row["deviation"], row["ai_draft"]), ("옛 항목", None, None, False))
 
+    def test_has_cell(self):
+        c = self.full
+        for good in ("S1/D01/e1", "S1/D01/e3", "S1/D02", "S2/D01/e1", "S9/D01/e1"):   # 보관 칸(S9)도 센다
+            self.assertTrue(c.has_cell(good), good)
+        for bad in ("S1/D01/e9", "S1/D77/e1", "S99/D01/e1", "S1", "", "S1//e1", "S1/D01/e1/x", "../x", None, 5):
+            self.assertFalse(c.has_cell(bad), bad)
+        self.assertFalse(context.ChatContext(project_id="X", pg=c.pg).has_cell("S1/D01/e1"))
+        rows = self.ok("get_worksheet", node_id="S1", deviation_id="D01")["data"]["rows"]
+        self.assertTrue(all(c.has_cell(r["result_id"]) for r in rows))   # 도구가 낸 result_id는 카드 검사를 통과한다
+
+    def test_results_saved_before_the_node_store_change_are_still_readable(self):
+        """0.1 판 결과(집합의 확정본 열쇠 study_nodes_ref, 구간 번호가 옛것)를 구간 번호로 조회한다. 저장본을 바꾸지 않는다."""
+        old = {"kind": "hazop_study_results", "schema_version": "0.1", "graph_id": S102,
+               "study_nodes_ref": {"graph_version": "g-old", "confirmed_at": "2026-11-01T00:00:00Z"},
+               "cells": [{"node_id": "N-007", "deviation_id": "D01", "state": "analyzed", "entries": [
+                   {"entry_id": "e1", "origin": "ai_draft", "status": "approved", "cause": "옛 원인", "consequence": "옛 결과",
+                    "safeguards": ["수동 밸브"], "severity": 2, "frequency": 2}]}]}
+        ctx = copy.copy(self.full)
+        ctx.results = {S102: old}
+        ctx._cell_key = None
+        before = copy.deepcopy(old)
+        res = self.call("get_worksheet", ctx=ctx, node_id="N-007")
+        self.assertTrue(res["ok"], res["error"])
+        row = res["data"]["rows"][0]
+        self.assertEqual((row["result_id"], row["cause"], row["risk"], row["safeguards"]), ("N-007/D01/e1", "옛 원인", 2, ["수동 밸브"]))
+        self.assertIsNone(res["data"]["node"])   # 지금 집합에는 없는 번호
+        self.assertTrue(ctx.has_cell("N-007/D01/e1"))
+        self.assertEqual(old, before)
+
     def test_errors(self):
         self.err("get_worksheet", "not_found", node_id="S99")
         self.err("get_worksheet", "not_found", node_id="S1", deviation_id="D77")
@@ -190,6 +222,46 @@ class DocumentsTest(C3Base):
         self.assertEqual(got, self.full.docs["chunk-2-p2-01"]["text"])
         self.err("get_document", "bad_args", chunk_id="chunk-1-p1-03", cursor=first["cursor"])
 
+    def test_many_extracted_items_continue_on_later_pages(self):
+        """본문 4,000자에 추출 항목 20개(300자씩)가 붙어도 첫 쪽이 8,000자를 넘지 않고, 나머지는 cursor로 이어진다."""
+        docs = documents()
+        items = [{"id": "set-%d" % i, "node_type": "setpoint", "item": "경보 설정치 %d" % i, "value": str(i), "unit": "MPa",
+                  "text": "항" * 300, "source": {"locator": "2쪽 · '2. 긴 절' · 줄 1–9"}} for i in range(25)]
+        docs[1]["nodes"] += items
+        ctx = context.ChatContext(project_id="SNP-SAMPLE", pg=self.full.pg, docs=context.docs_from_documents(docs))
+        first = self.call("get_document", ctx=ctx, chunk_id="chunk-2-p2-01")
+        self.assertTrue(first["ok"], first["error"])
+        self.assertEqual((len(first["data"]["text"]), len(first["data"]["extracted"])), (4000, 3))
+        got, cursor, pages = list(first["data"]["extracted"]), first["cursor"], 1
+        text = first["data"]["text"]
+        while cursor:
+            nxt = self.call("get_document", ctx=ctx, chunk_id="chunk-2-p2-01", cursor=cursor)
+            self.assertTrue(nxt["ok"], nxt["error"])
+            text += nxt["data"]["text"]
+            got += nxt["data"].get("extracted", [])
+            cursor, pages = nxt["cursor"], pages + 1
+        self.assertEqual(text, ctx.docs["chunk-2-p2-01"]["text"])
+        self.assertEqual([x["value"] for x in got], [str(i) for i in range(20)])   # 항목은 20개까지
+        self.assertEqual(first["data"]["extracted_total"], 20)
+
+    def test_same_chunk_id_with_same_document_id_is_told_apart_by_material(self):
+        """docextract가 문서 ID를 문서마다 같은 값으로 줘도(등록 흐름이 넘기는 상수) 자료 ID로 구분해 서로 덮어쓰지 않는다."""
+        docs = documents()
+        docs[1]["document_id"] = docs[0]["document_id"]
+        docs[1]["nodes"][0]["id"] = "chunk-1-p1-02"
+        recs = context.docs_from_documents(docs)
+        a, b = recs["mat-1:chunk-1-p1-02"], recs["mat-2:chunk-1-p1-02"]
+        self.assertNotEqual(a["text"], b["text"])
+        self.assertNotIn("chunk-1-p1-02", recs)
+        ctx = context.ChatContext(project_id="SNP-SAMPLE", pg=self.full.pg, docs=recs)
+        hits = self.call("search_documents", ctx=ctx, query="정상 운전")
+        ids = [c["chunk_id"] for c in hits["data"]["chunks"]]
+        self.assertIn("mat-1:chunk-1-p1-02", ids)
+        self.assertIn("mat-2:chunk-1-p1-02", ids)
+        self.assertEqual({s["material_id"] for s in hits["sources"]}, {"mat-1", "mat-2"})
+        self.assertIn("정상 운전 범위", self.call("get_document", ctx=ctx, chunk_id="mat-1:chunk-1-p1-02")["data"]["text"])
+        self.assertIn("정상 운전 절차", self.call("get_document", ctx=ctx, chunk_id="mat-2:chunk-1-p1-02")["data"]["text"])
+
     def test_document_text_is_data_not_instruction(self):
         res = self.ok("get_document", chunk_id="chunk-2-p1-01")
         self.assertIn(INJECTION.split(".")[0], res["data"]["text"])        # 글은 그대로 두되
@@ -216,8 +288,8 @@ class DocumentsTest(C3Base):
         docs = documents()
         docs[1]["nodes"][0]["id"] = "chunk-1-p1-02"  # 첫 문서의 조각과 같은 ID
         recs = context.docs_from_documents(docs)
-        self.assertIn("doc-1:chunk-1-p1-02", recs)
-        self.assertIn("doc-2:chunk-1-p1-02", recs)
+        self.assertIn("mat-1:chunk-1-p1-02", recs)
+        self.assertIn("mat-2:chunk-1-p1-02", recs)
         self.assertNotIn("chunk-1-p1-02", recs)
 
 
@@ -281,14 +353,31 @@ class ServerQuestionsTest(C3Base):
         self.assertEqual(self.rpc("delete_all_nodes")["error"]["code"], "not_found")
 
 
+def _short(path):
+    """8.3 단축 이름(tests/test_short_path_names.py와 같은 방식). 만들 수 없는 볼륨이면 그대로."""
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(32768)
+        n = ctypes.windll.kernel32.GetShortPathNameW(path, buf, 32768)
+    except (AttributeError, ImportError):
+        return path
+    return buf.value if 0 < n < 32768 else path
+
+
 class LoadersTest(unittest.TestCase):
     """저장본에서 읽는 길(load_results·load_docs)과 열기 직전 검사."""
+    SHORT = False
 
     def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="hazop-c3-load-")
+        self.tmp = tempfile.mkdtemp(prefix="hazop-c3-load-long-name-")
         self._env = os.environ.get("HAZOP_WORK_ROOT")
-        os.environ["HAZOP_WORK_ROOT"] = os.path.join(self.tmp, "work")
-        os.makedirs(os.environ["HAZOP_WORK_ROOT"])
+        work = os.path.join(self.tmp, "work-folder-with-long-name")
+        os.makedirs(work)
+        if self.SHORT:
+            work = _short(work)
+            if os.path.normcase(work) == os.path.normcase(os.path.join(self.tmp, "work-folder-with-long-name")):
+                self.skipTest("이 볼륨은 8.3 단축 이름을 만들지 않음")
+        os.environ["HAZOP_WORK_ROOT"] = work
 
     def tearDown(self):
         if self._env is None:
@@ -337,6 +426,14 @@ class LoadersTest(unittest.TestCase):
         self.assertNotEqual(a, context._fingerprint("P1"))
 
 
+class ShortNameLoadersTest(LoadersTest):
+    """작업 루트가 8.3 단축 이름(GitHub Windows 러너의 TEMP, 한글 계정 PC)으로 들어와도 링크로 오해해 막지 않는다."""
+    SHORT = True
+
+    def test_work_root_really_is_short(self):
+        self.assertIn("~", os.environ["HAZOP_WORK_ROOT"])
+
+
 class ActionsLogTest(unittest.TestCase):
     NOW = dt.datetime(2026, 11, 13, 15, 20, 41, tzinfo=actions_log.KST)
 
@@ -364,7 +461,7 @@ class ActionsLogTest(unittest.TestCase):
     def test_path_and_line_format(self):
         row, written = self.rec()
         self.assertTrue(written)
-        path = os.path.join(os.environ["HAZOP_WORK_ROOT"], "data", "chat-actions", "SNP-SAMPLE", "2026-11-13.jsonl")
+        path = os.path.join(paths.folder("chat-actions"), "SNP-SAMPLE", "2026-11-13.jsonl")
         self.assertEqual(os.path.normcase(actions_log.day_path("SNP-SAMPLE", "2026-11-13")), os.path.normcase(path))
         with open(path, "rb") as fh:
             raw = fh.read()
@@ -393,12 +490,12 @@ class ActionsLogTest(unittest.TestCase):
         self.assertEqual(again, first)
         self.assertEqual(len(actions_log.read_day("SNP-SAMPLE", "2026-11-13")[0]), 1)
         # 같은 동작의 다른 결과(후보 -> 실행 -> 되돌림)는 각각 한 줄
-        self.assertTrue(self.rec(result="candidate")[1])
-        self.assertTrue(self.rec(result="undone", undo_of="B7")[1])
-        self.assertFalse(self.rec(result="undone", undo_of="B7")[1])
+        self.assertTrue(self.rec(result="candidate").written)
+        self.assertTrue(self.rec(result="undone", undo_of="B7").written)
+        self.assertEqual(self.rec(result="undone", undo_of="B7").status, "duplicate")
         self.assertEqual(len(actions_log.read_day("SNP-SAMPLE", "2026-11-13")[0]), 3)
         # 답 안의 다른 동작은 별개
-        self.assertTrue(self.rec(index=1)[1])
+        self.assertTrue(self.rec(index=1).written)
 
     def test_duplicate_is_found_across_midnight(self):
         self.rec(now=dt.datetime(2026, 11, 13, 23, 59, 50, tzinfo=actions_log.KST))
@@ -465,7 +562,7 @@ class ActionsLogTest(unittest.TestCase):
         for i in range(5):
             self.rec(index=i)
         left = os.listdir(os.path.dirname(actions_log.day_path("SNP-SAMPLE", "2026-11-13")))
-        self.assertEqual(left, ["2026-11-13.jsonl"])
+        self.assertEqual(sorted(left), [".lock", "2026-11-13.jsonl"])   # 임시 파일이 남지 않는다(.lock은 프로세스 간 잠금용)
 
     def test_threads_do_not_lose_lines(self):
         errors = []
@@ -484,6 +581,54 @@ class ActionsLogTest(unittest.TestCase):
         rows, bad = actions_log.read_day("SNP-SAMPLE", "2026-11-13")
         self.assertEqual((len(rows), bad, len({r["action_key"] for r in rows})), (20, 0, 20))
 
+    def test_processes_do_not_lose_lines(self):
+        """앱 창을 둘 띄운 것처럼 프로세스 4개가 같은 파일에 15줄씩 동시에 쓴다: 60줄이 모두 남고 실패가 없다."""
+        code = ("import sys, datetime as dt; sys.path.insert(0, %r)\n"
+                "from hazop.chat import actions_log as a\n"
+                "for i in range(15):\n"
+                "    r = a.record('SNP-SAMPLE', answer_id='a-p' + sys.argv[1], index=i, request_id='q-1', request_text='x',\n"
+                "                 proposal={'action': 'show'}, klass='auto', result='ok', now=dt.datetime(2026, 11, 13, 12, tzinfo=a.KST))\n"
+                "    assert r.status == 'written', (r.status, r.error)\n") % os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        env = dict(os.environ, PYTHONIOENCODING="utf-8")
+        procs = [subprocess.Popen([sys.executable, "-c", code, str(k)], env=env, stderr=subprocess.PIPE) for k in range(4)]
+        errs = [p.communicate(timeout=120)[1].decode("utf-8", "replace") for p in procs]
+        self.assertEqual([p.returncode for p in procs], [0] * 4, errs)
+        rows, bad = actions_log.read_day("SNP-SAMPLE", "2026-11-13")
+        self.assertEqual((len(rows), bad, len({r["action_key"] for r in rows})), (60, 0, 60))
+
+    def test_write_failure_is_returned_not_raised(self):
+        path = actions_log.day_path("SNP-SAMPLE", "2026-11-13")
+        os.makedirs(path)   # 파일 자리에 폴더가 있어 읽기도 쓰기도 못 한다
+        old = (actions_log.RETRY_PAUSE, actions_log.LOCK_SECONDS)
+        actions_log.RETRY_PAUSE, actions_log.LOCK_SECONDS = 0.01, 0.2
+        self.addCleanup(lambda: setattr(actions_log, "RETRY_PAUSE", old[0]) or setattr(actions_log, "LOCK_SECONDS", old[1]))
+        res = self.rec()
+        self.assertEqual(res.status, "failed")
+        self.assertFalse(res.written)
+        self.assertFalse(res.ok)
+        self.assertTrue(res.error)
+        self.assertEqual(res.row["action_key"], "a-1#0")   # 부른 쪽이 '기록하지 못함'을 알릴 수 있게 줄은 돌려준다
+
+    def test_lock_timeout_is_a_failed_status(self):
+        old = (actions_log.RETRY_PAUSE, actions_log.LOCK_SECONDS)
+        actions_log.RETRY_PAUSE, actions_log.LOCK_SECONDS = 0.01, 0.1
+        self.addCleanup(lambda: setattr(actions_log, "RETRY_PAUSE", old[0]) or setattr(actions_log, "LOCK_SECONDS", old[1]))
+        holder = ("import sys, time; sys.path.insert(0, %r)\n"
+                  "from hazop.chat import actions_log as a\n"
+                  "with a._file_lock(sys.argv[1], 30):\n"
+                  "    print('locked', flush=True); time.sleep(4)\n") % os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = actions_log.day_path("SNP-SAMPLE", "2026-11-13")
+        p = subprocess.Popen([sys.executable, "-c", holder, path], stdout=subprocess.PIPE, env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+        try:
+            self.assertEqual(p.stdout.readline().strip(), b"locked")
+            res = self.rec()
+            self.assertEqual(res.status, "failed")
+            self.assertIn("잠금", res.error)
+        finally:
+            p.kill()
+            p.wait()
+        self.assertTrue(self.rec(index=2).written)   # 잠금이 풀리면 다시 쓰인다
+
     def test_append_only_keeps_earlier_lines_byte_for_byte(self):
         self.rec()
         path = actions_log.day_path("SNP-SAMPLE", "2026-11-13")
@@ -497,7 +642,7 @@ class ActionsLogTest(unittest.TestCase):
         row, _ = actions_log.record("../evil", answer_id="a-1", index=0, request_id="q-1", request_text="x",
                                     proposal={"action": "show"}, klass="auto", result="ok", now=self.NOW)
         folder = os.path.dirname(actions_log.day_path("../evil", "2026-11-13"))
-        self.assertEqual(os.path.dirname(folder), os.path.join(os.environ["HAZOP_WORK_ROOT"], "data", "chat-actions"))
+        self.assertEqual(os.path.dirname(folder), paths.folder("chat-actions"))
         self.assertTrue(os.path.isfile(actions_log.day_path("../evil", "2026-11-13")))
         self.assertEqual(row["project_id"], "../evil")   # 기록의 project_id는 그대로, 파일 이름만 안전하게 바꾼다
 

@@ -8,18 +8,29 @@
 - 같은 동작을 두 번 쓰지 않는다: 열쇠는 (`action_key`, `result`, `undo_of`)이다. 같은 열쇠가 오늘이나 어제 파일에 있으면
   쓰지 않고 이미 있는 줄을 돌려준다. `action_key`는 답 하나 안의 동작 번호(`<answer_id>#<번호>`)라서, 같은 동작의 '후보' → '실행' →
   '되돌림'은 `result`가 달라 각각 한 줄씩 남는다.
-- 쓰기는 `hazop.store_io.write_bytes`(같은 폴더 임시 파일 + fsync + os.replace)로 파일 전체를 바꾼다. 읽은 뒤 파일이 바뀌었으면
-  Conflict가 나므로 다시 읽어 붙인다.
+- 쓰기는 `hazop.store_io.write_bytes`(같은 폴더 임시 파일 + fsync + os.replace)로 파일 전체를 바꾼다. 프로세스 간 잠금(프로젝트 폴더의
+  .lock)과 지문 확인(expect)을 함께 쓰고, 잠금 시간 초과·접근 거부·Conflict는 짧게 쉬며 다시 시도한다. 그래도 안 되면 예외 대신
+  status=failed를 돌려줘서, 기록 실패가 동작 실행을 막거나 화면을 깨지 않는다(부른 쪽이 알린다).
 """
 
+import contextlib
 import hashlib
 import json
+import os
 import re
 import secrets
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from hazop import paths, store_io
+
+try:
+    import msvcrt
+    fcntl = None
+except ImportError:  # Windows가 아닌 환경
+    msvcrt = None
+    import fcntl
 
 SCHEMA = "hazop_chat_action/1"
 KST = timezone(timedelta(hours=9))
@@ -30,6 +41,9 @@ WHY_MAX = 300
 ERROR_MAX = 300
 ARGS_MAX_CHARS = 8000
 RETRIES = 5
+RETRY_PAUSE = 0.05   # 다시 시도 사이에 쉬는 시간(초, 시도 번호를 곱한다)
+LOCK_SECONDS = 3     # 프로세스 간 잠금을 기다리는 시간
+LOCK_NAME = ".lock"
 NL = b"\n"
 _LOCK = threading.Lock()
 _KEY_RE = re.compile(r"^[A-Za-z0-9_.:#-]{1,100}$")
@@ -85,6 +99,63 @@ def _parse(data):
     return rows, bad
 
 
+class Recorded:
+    """record의 돌려주는 값. status: written(새로 씀) | duplicate(같은 열쇠가 이미 있음) | failed(쓰지 못함, error에 이유).
+    `row, written = record(...)`처럼 둘로 풀어 쓸 수도 있다. 쓰기 실패는 예외가 아니라 status로 알린다: 기록이 안 된다고 이미
+    끝난 동작을 되돌리거나 화면을 깨지 않고, 부른 쪽이 '기록하지 못함'을 사용자에게 보인다."""
+
+    def __init__(self, row, status, error=None):
+        self.row, self.status, self.error = row, status, error
+
+    @property
+    def written(self):
+        return self.status == "written"
+
+    @property
+    def ok(self):
+        return self.status != "failed"
+
+    def __iter__(self):
+        yield self.row
+        yield self.written
+
+    def __repr__(self):
+        return "Recorded(%s)" % self.status
+
+
+@contextlib.contextmanager
+def _file_lock(path, timeout=None):
+    """프로젝트 폴더의 .lock 파일에 건 프로세스 간 잠금. 못 잡으면 TimeoutError(OSError)."""
+    folder = os.path.dirname(path)
+    os.makedirs(folder, exist_ok=True)
+    fh = open(os.path.join(folder, LOCK_NAME), "a+b")
+    timeout = LOCK_SECONDS if timeout is None else timeout
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                fh.seek(0)
+                if msvcrt is not None:
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise TimeoutError("실행 기록 잠금을 %d초 안에 잡지 못함" % timeout)
+                time.sleep(0.02)
+        try:
+            yield
+        finally:
+            fh.seek(0)
+            if msvcrt is not None:
+                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+    finally:
+        fh.close()
+
+
 def _same(row, key, result, undo_of):
     return row.get("action_key") == key and row.get("result") == result and row.get("undo_of") == undo_of
 
@@ -92,8 +163,8 @@ def _same(row, key, result, undo_of):
 def record(project_id, *, answer_id, index, request_id, request_text, proposal, klass, result, error=None, targets=(),
            batch_id=None, undo_of=None, confirmed_by=None, confirmed_at=None, approval_digest=None, conversation_id=None,
            model=None, via=None, app_version=None, now=None):
-    """한 줄을 덧붙인다 -> (줄, 새로 썼는지). 같은 (action_key, result, undo_of)가 이미 있으면 (이미 있는 줄, False).
-    잘못된 값(result·class 밖, 확인 아닌 동작에 확인자)은 ValueError."""
+    """한 줄을 덧붙인다 -> Recorded. 같은 (action_key, result, undo_of)가 이미 있으면 status=duplicate와 이미 있는 줄.
+    잘못된 값(result·class 밖, 확인 아닌 동작에 확인자)은 ValueError, 파일을 쓰지 못한 것은 status=failed(예외 아님)."""
     if result not in RESULTS:
         raise ValueError("result는 %s 중 하나: %r" % (", ".join(RESULTS), result))
     if klass not in CLASSES:
@@ -113,23 +184,26 @@ def record(project_id, *, answer_id, index, request_id, request_text, proposal, 
            "model": model, "via": via, "app_version": app_version}
     path = day_path(project_id, when)
     before = day_path(project_id, when - timedelta(days=1))
+    last = None
     with _LOCK:
-        for _ in range(RETRIES):
-            seen = _parse(store_io.read_bytes(before)[0])[0]
-            existing, fp = store_io.read_bytes(path)  # 읽기와 지문은 한 번에(그 사이에 바뀐 파일을 읽은 것으로 착각하지 않게)
-            dup = next((r for r in _parse(existing)[0] + seen if _same(r, key, result, undo_of)), None)
-            if dup is not None:
-                return dup, False
-            body = existing or b""
-            if body and not body.endswith(NL):
-                body += NL  # 앞 쓰기가 끊겼어도 새 줄은 줄 첫머리에서 시작한다
-            body += json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8") + NL
+        for attempt in range(RETRIES):
             try:
-                store_io.write_bytes(path, body, expect=fp)
-                return row, True
-            except store_io.Conflict:
-                continue
-    raise store_io.Conflict("실행 기록 파일이 계속 바뀌어 쓰지 못함: %s" % path)
+                with _file_lock(path):   # 앱 창을 둘 띄워도(프로세스가 둘이어도) 한 번에 하나만 읽고 쓴다
+                    seen = _parse(store_io.read_bytes(before)[0])[0]
+                    existing, fp = store_io.read_bytes(path)  # 읽기와 지문은 한 번에(그 사이에 바뀐 파일을 읽은 것으로 착각하지 않게)
+                    dup = next((r for r in _parse(existing)[0] + seen if _same(r, key, result, undo_of)), None)
+                    if dup is not None:
+                        return Recorded(dup, "duplicate")
+                    body = existing or b""
+                    if body and not body.endswith(NL):
+                        body += NL  # 앞 쓰기가 끊겼어도 새 줄은 줄 첫머리에서 시작한다
+                    body += json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8") + NL
+                    store_io.write_bytes(path, body, expect=fp)
+                    return Recorded(row, "written")
+            except (store_io.Conflict, OSError) as exc:   # 잠금 시간 초과·교체 중 접근 거부·그 사이 바뀐 파일: 짧게 쉬고 다시
+                last = exc
+                time.sleep(RETRY_PAUSE * (attempt + 1))
+    return Recorded(row, "failed", "%s: %s" % (type(last).__name__, str(last)[:200]))   # 동작 실행을 막지 않는다. 부른 쪽이 알린다
 
 
 def read_day(project_id, day):

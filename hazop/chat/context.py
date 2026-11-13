@@ -9,6 +9,7 @@
 
 import json
 import os
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 
@@ -61,6 +62,27 @@ class ChatContext:
     cursors: dict = field(default_factory=dict, repr=False, compare=False)  # 서버가 낸 cursor 표(질문 하나 동안, 200개까지)
     _call: tuple = field(default=None, repr=False, compare=False)
     _index: object = field(default=None, repr=False, compare=False)
+
+    def has_cell(self, result_id):
+        """결과 칸 ID(`<node_id>/<deviation_id>/<entry_id>`)가 분석 결과에 있는가. 항목 없이 `<node_id>/<deviation_id>`만 줘도
+        그 칸이 있으면 True. 보관 칸도 센다. 답 카드 검사가 근거 ID를 확인하는 데 쓴다."""
+        if not isinstance(result_id, str) or not self.results:
+            return False
+        parts = result_id.split("/")
+        if len(parts) not in (2, 3) or not all(parts):
+            return False
+        key = id(self.results)
+        if getattr(self, "_cell_key", None) != key:
+            cells = set()
+            for doc in self.results.values():
+                for name in ("cells", "archived_cells"):
+                    for c in (doc or {}).get(name) or []:
+                        if isinstance(c, dict):
+                            cells.add((str(c.get("node_id")), str(c.get("deviation_id"))))
+                            cells.update((str(c.get("node_id")), str(c.get("deviation_id")), str(e.get("entry_id")))
+                                         for e in c.get("entries") or [] if isinstance(e, dict))
+            self._cell_set, self._cell_key = cells, key
+        return tuple(parts) in self._cell_set
 
     @property
     def index(self):
@@ -259,18 +281,24 @@ def roots_of(project_id):
             paths.output_root(DOC_DIR), os.path.join(paths.store_root(), pid)]
 
 
+def _plain(path):
+    """비교용 모양: 8.3 단축 이름을 긴 이름으로 펴고(링크는 풀지 않는다) 대소문자·구분자를 맞춘다."""
+    return os.path.normcase(paths.long_path(os.path.abspath(path)))
+
+
 def inside_roots(path, roots):
-    """열기 직전 검사: realpath로 푼 경로가 roots 중 한 곳 안이고, 푼 경로가 원래 경로와 같아야(링크·정션이 아니어야) 한다."""
+    """열기 직전 검사. realpath로 푼 경로가 roots 중 한 곳 안이고, 푼 경로가 원래 경로와 같아야(링크·정션이 아니어야) 한다.
+    두 쪽을 같은 방식(_plain)으로 고쳐 비교한다: 작업 루트가 8.3 단축 이름(러너 TEMP, 한글 계정 PC)으로 들어와도 링크로 오해하지 않는다."""
     try:
-        real = os.path.realpath(path)
-        if os.path.normcase(real) != os.path.normcase(os.path.abspath(path)):
+        real = _plain(os.path.realpath(path))
+        if real != _plain(path):
             return False
         for root in roots:
-            base = os.path.realpath(root)
-            if os.path.normcase(os.path.abspath(root)) != os.path.normcase(base):
+            base = _plain(os.path.realpath(root))
+            if base != _plain(root):
                 continue  # 루트 자체가 링크이면 쓰지 않는다
             try:
-                if os.path.commonpath([os.path.normcase(base), os.path.normcase(real)]) == os.path.normcase(base):
+                if os.path.commonpath([base, real]) == base:
                     return True
             except ValueError:  # 다른 드라이브
                 continue
@@ -316,30 +344,36 @@ def load_docs(project_id, roots):
     return docs_from_documents([latest[k] for k in sorted(latest, key=str)])
 
 
+def _safe_part(text):
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", str(text))[:60] or "x"
+
+
 def docs_from_documents(documents):
     """문서 지식 목록(docextract.extract 결과 모양) -> {chunk_id: 기록}. 같은 절의 설정치·운전조건·요건은 조각에 붙인다.
-    chunk_id는 노드 ID이고, 다른 문서와 겹치면 '<document_id>:<노드 ID>'로 구분한다."""
-    seen, dup = set(), set()
-    for d in documents:
-        for n in d.get("nodes") or []:
-            if n.get("node_type") == "doc_chunk":
-                (dup if n["id"] in seen else seen).add(n["id"])
+    chunk_id는 노드 ID이고, 다른 문서와 겹치면 '<자료 ID(material_id)>:<노드 ID>'로 구분한다. docextract가 문서 ID를 문서마다
+    같은 값으로 줄 수 있어서(등록 흐름이 넘긴 상수) 문서 ID로는 구분하지 못한다. 그래도 겹치면 '#2'처럼 번호를 붙여 덮어쓰지 않는다."""
+    count = Counter(n["id"] for d in documents for n in d.get("nodes") or [] if n.get("node_type") == "doc_chunk")
     out = {}
-    for d in documents:
+    for pos, d in enumerate(documents):
         items = {}
         for n in d.get("nodes") or []:
             if n.get("node_type") in ("setpoint", "condition", "requirement"):
                 items.setdefault((n.get("source") or {}).get("locator"), []).append(n)
+        owner = d.get("material_id") if d.get("material_id") is not None else "d%d" % pos
         for n in d.get("nodes") or []:
             if n.get("node_type") != "doc_chunk":
                 continue
             src = n.get("source") or {}
-            cid = n["id"] if n["id"] not in dup else "%s:%s" % (d.get("document_id"), n["id"])
+            cid = n["id"] if count[n["id"]] == 1 else "%s:%s" % (_safe_part(owner), n["id"])
+            base, k = cid, 1
+            while cid in out:
+                k += 1
+                cid = "%s#%d" % (base, k)
             out[cid] = {"chunk_id": cid, "document_id": d.get("document_id"), "material_id": d.get("material_id"),
                         "registration_version": d.get("registration_version"), "title": d.get("title"),
                         "section": n.get("name"), "page": src.get("page"), "locator": src.get("locator"),
                         "text": n.get("text") or "",
-                        "items": [{k: i.get(k) for k in ("node_type", "item", "value", "unit", "pressure_basis", "operating_mode", "text")}
+                        "items": [{k2: i.get(k2) for k2 in ("node_type", "item", "value", "unit", "pressure_basis", "operating_mode", "text")}
                                   for i in items.get(src.get("locator"), [])]}
     return out
 
