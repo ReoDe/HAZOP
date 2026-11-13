@@ -3,12 +3,15 @@
 하는 일
 - resources/references/pid-samples의 SNP-M-101·102 SVG를 assets/로 복사하면서 바깥 링크(<a href="https://...">)를 지운다.
 - 시안에 쓰는 Tabler 아이콘(3.51.0, MIT)을 원본 폴더에서 assets/icons/로 복사하고 HTML 본문에 넣는다.
-- HTML 시안 6장과 index.html을 쓰고, Chrome headless로 PNG를 찍는다(1920×1080 = 1536×864 CSS 픽셀 × 125%, 1366×768 × 100%).
+- HTML 시안 8장과 index.html을 쓰고, Chrome headless로 PNG를 찍는다(1920×1080 = 1536×864 CSS 픽셀 × 125%, 1366×768 × 100%).
 
 도면 위 표시 좌표는 SNP 표본 추출 결과(extraction.json)의 drawio 좌표에서 19를 뺀 SVG 좌표다
 (coordinate_system.svg_alignment.offset [19, 19]). 분석 결과·구간 이름·대화 문장은 화면 표현을 보이기 위한 예시 값이다.
 
-실행: <venv>/python.exe docs/design/mockups/app-shell-web/build.py [--no-png]
+시안 7·8(정리된 보기)은 SNP-M-101 drawio를 hazop.extract.drawio로 읽어 다시 그린다. 읽은 값은 assets/snp-m-101-clean.json에 남기고,
+엔진을 못 부르는 환경에서는 그 파일을 쓴다. 기호 그림은 시안용이고 HZ-DSN-05 §10.3의 기호 한 벌이 아니다.
+
+실행: <venv>/python.exe docs/design/mockups/app-shell-web/build.py [--no-png] [--only 7-clean-view,8-clean-unknown]
 아이콘 원본 폴더는 환경변수 HAZOP_TABLER_OUTLINE으로 바꿀 수 있다. 없으면 resources/library/icons/tabler에 있는 것만 쓴다.
 """
 
@@ -360,6 +363,298 @@ def page6():
     return page("6 AI 연결 없는 PC", shell("", center, chat(msgs, examples=False, placeholder="AI 연결이 없어 질문을 보낼 수 없습니다", conn_ok=False)))
 
 
+# ── 정리된 보기(시안 7·8, HZ-DSN-05 §10) ─────────────────────────────────
+
+CLEAN_JSON = ASSETS / "snp-m-101-clean.json"
+DRAWIO_101 = REPO / "resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio"
+
+
+def clean_data():
+    """SNP-M-101 drawio 추출 결과에서 정리된 보기에 쓰는 값만 뽑는다(SVG 좌표). 엔진을 못 부르면 저장해 둔 JSON을 쓴다."""
+    import json
+    try:
+        sys.path.insert(0, str(REPO))
+        from hazop.extract import drawio
+    except Exception:
+        return json.loads(CLEAN_JSON.read_text(encoding="utf-8"))
+    r = drawio.extract(str(DRAWIO_101))
+    nodes, pipes = [], []
+    for n in r["nodes"]:
+        g = n["geometry"]
+        st = dict(kv.split("=", 1) for kv in (n.get("style") or "").split(";") if "=" in kv)
+        rot = {"south": 90, "west": 180, "north": 270}.get(st.get("direction"), 0) + float(st.get("rotation", 0) or 0)
+        lb = (n.get("label_location") or {}).get("bbox")
+        nodes.append({"id": n["local_id"], "kind": n["kind"], "tag": n["tag"], "text": n.get("label_text"),
+                      "bbox": [g["x"] - OFF, g["y"] - OFF, g["width"], g["height"]], "rot": rot % 360,
+                      "flip_h": st.get("flipH") == "1", "label": [lb[0] - OFF, lb[1] - OFF, lb[2], lb[3]] if lb else None})
+    for e in r["relations"]:
+        src = [ep["point"] for ep in e["endpoints"] if ep["end"] == "source"]
+        dst = [ep["point"] for ep in e["endpoints"] if ep["end"] == "target"]
+        pts = [[x - OFF, y - OFF] for x, y in src + (e.get("waypoints") or []) + dst]
+        pipes.append({"id": e["local_id"], "line_type": e.get("line_type"), "line_no": e.get("line_no"),
+                      "flow": bool(e.get("flow_direction")), "points": pts})
+    data = {"source": "hazop.extract.drawio.extract(%s)" % DRAWIO_101.name, "nodes": nodes, "pipes": pipes}
+    CLEAN_JSON.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    return data
+
+
+SW = 'vector-effect="non-scaling-stroke"'
+
+
+def _valve(n, cls):
+    """밸브 그림 좌표: 가로 40 × 세로 20, 연결점 (0,10)·(40,10). 회전한 뒤 bbox에 가로세로 비를 지켜 맞춘다."""
+    x, y, w, h = n["bbox"]
+    cx, cy, rot = x + w / 2, y + h / 2, n["rot"]
+    bw, bh = (h, w) if rot in (90, 270) else (w, h)
+    k = min(bw / 40.0, bh / 20.0)
+    body = '<path d="M0 0 L40 20 V0 L0 20 Z" %s/>' % SW
+    if n["kind"] == "check_valve":
+        body = '<path d="M0 0 L20 10 L0 20 Z" %s/><path class="fill" d="M40 0 L20 10 L40 20 Z" %s/>' % (SW, SW)
+    if n["kind"] == "motor_operated_valve":
+        body += ('<line x1="20" y1="10" x2="20" y2="-4" %s/><circle cx="20" cy="-10" r="6" %s/>'
+                 '<text class="ct-in" x="20" y="-10" style="font-size:7px">M</text>' % (SW, SW))
+    t = "translate(%g %g) rotate(%g) scale(%g) translate(-20 -10)" % (cx, cy, rot, k)
+    return '<g class="%s" transform="%s">%s</g>' % (cls, t, body)
+
+
+def _sym(n, cls):
+    """kind별 시안용 기호(V2 기호 한 벌이 아니다)."""
+    x, y, w, h = n["bbox"]
+    cx, cy = x + w / 2, y + h / 2
+    kind = n["kind"]
+    if kind in ("reactor_vessel", "steam_generator"):
+        s = '<rect x="%g" y="%g" width="%g" height="%g" rx="%g" %s/>' % (x, y, w, h, w / 2, SW)
+        if kind == "steam_generator":
+            s += ('<path d="M%g %g V%g A%g %g 0 0 0 %g %g V%g" fill="none" %s/>'
+                  % (cx - w * .18, y + h * .35, y + h * .78, w * .18, w * .18, cx + w * .18, y + h * .78, y + h * .35, SW))
+            s += '<line x1="%g" y1="%g" x2="%g" y2="%g" %s/>' % (x, y + h * .3, x + w, y + h * .3, SW)
+        else:
+            s += '<line x1="%g" y1="%g" x2="%g" y2="%g" %s/>' % (x + 6, y + h * .22, x + w - 6, y + h * .22, SW)
+        return '<g class="%s">%s</g>' % (cls, s)
+    if kind == "pump":
+        r = min(w, h) * .32
+        pcx, pcy = x + w * .45, y + h * .5
+        s = '<circle cx="%g" cy="%g" r="%g" %s/>' % (pcx, pcy, r, SW)
+        s += '<path d="M%g %g H%g" fill="none" %s/>' % (pcx, pcy - r, x + w, SW)
+        s += '<path d="M%g %g L%g %g L%g %g" fill="none" %s/>' % (pcx - r * .9, y + h, pcx - r * .55, pcy + r * .8, pcx - r * .9, y + h, SW)
+        s += '<path d="M%g %g H%g L%g %g" fill="none" %s/>' % (pcx - r * .9, y + h, pcx + r * .9, pcx + r * .55, pcy + r * .8, SW)
+        return '<g class="%s">%s</g>' % (cls, s)
+    if kind in ("transmitter", "indicator", "temperature_element"):
+        r = min(w, h) / 2
+        m = re.match(r"(?:[A-Z]+-)?([A-Z]+)(\d+)$", n["tag"] or "")
+        a, b = (m.group(1), m.group(2)) if m else ("", "")
+        s = '<circle cx="%g" cy="%g" r="%g" %s/>' % (cx, cy, r, SW)
+        s += '<line x1="%g" y1="%g" x2="%g" y2="%g" %s/>' % (cx - r, cy, cx + r, cy, SW)
+        s += ('<text class="ct-in" x="%g" y="%g">%s</text><text class="ct-in" x="%g" y="%g">%s</text>'
+              % (cx, cy - r * .42, a, cx, cy + r * .45, b))
+        return '<g class="%s">%s</g>' % (cls, s)
+    if kind in ("manual_valve", "check_valve", "motor_operated_valve"):
+        return _valve(n, cls)
+    if kind == "pipe_cap":
+        return '<g class="%s"><rect x="%g" y="%g" width="%g" height="%g" %s/></g>' % (cls, x + w * .15, y + h * .15, w * .7, h * .7, SW)
+    if kind == "continuation":
+        tip = 14
+        if n["flip_h"]:
+            d = "M%g %g H%g V%g H%g L%g %g Z" % (x + tip, y, x + w, y + h, x + tip, x, y + h / 2)
+            tx0 = x + tip + (w - tip) / 2
+        else:
+            d = "M%g %g H%g L%g %g L%g %g H%g Z" % (x, y, x + w - tip, x + w, y + h / 2, x + w - tip, y + h, x)
+            tx0 = x + (w - tip) / 2
+        lines = (n["text"] or "").split("\n")
+        tx = "".join('<text class="ct-cont" x="%g" y="%g">%s</text>' % (tx0, y + h / 2 + (i - (len(lines) - 1) / 2) * 10, s)
+                     for i, s in enumerate(lines))
+        return '<g class="%s"><path d="%s" %s/>%s</g>' % (cls, d, SW, tx)
+    return '<g class="%s"><rect x="%g" y="%g" width="%g" height="%g" rx="4" %s/></g>' % (cls, x, y, w, h, SW)
+
+
+PIPE_CLS = {"process": "cp-proc", "process_secondary": "cp-sec", "instrument_tap": "cp-tap", "signal_electric": "cp-sig"}
+
+
+def _pipe(p, cls=""):
+    return '<polyline class="%s %s" points="%s" %s/>' % (PIPE_CLS.get(p["line_type"] or "", "cp-proc"), cls,
+                                                          " ".join("%g,%g" % tuple(q) for q in p["points"]), SW)
+
+
+def _seglen(a, b):
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+
+def _line_labels(pipes, dim_ids):
+    best = {}
+    for p in pipes:
+        if not p["line_no"]:
+            continue
+        for a, b in zip(p["points"], p["points"][1:]):
+            if _seglen(a, b) > best.get(p["line_no"], (0,))[0]:
+                best[p["line_no"]] = (_seglen(a, b), a, b, p["id"])
+    out = ""
+    for no, (_L, a, b, pid) in best.items():
+        mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+        cls = "ct-line" + (" dim" if pid in dim_ids else "")
+        if abs(a[0] - b[0]) < 1:
+            out += '<text class="%s" transform="translate(%g %g) rotate(-90)">%s</text>' % (cls, mx - 5, my + 30, no)
+        else:
+            out += '<text class="%s" x="%g" y="%g">%s</text>' % (cls, mx + 30, my - 5, no)
+    return out
+
+
+def _flow_arrows(pipes, dim_ids):
+    import math
+    out = ""
+    for p in pipes:
+        if not p["flow"] or p["line_type"] not in ("process", "process_secondary"):
+            continue
+        a, b = max(zip(p["points"], p["points"][1:]), key=lambda s: _seglen(*s))
+        if _seglen(a, b) < 60:
+            continue
+        ang = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0]))
+        out += ('<path class="ct-arrow%s" d="M-5 -4 L5 0 L-5 4 Z" transform="translate(%g %g) rotate(%g)"/>'
+                % (" dim" if p["id"] in dim_ids else "", (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, ang))
+    return out
+
+
+def _tag(n, cls="ct-tag"):
+    t = n["tag"]
+    if not t or n["kind"] in ("tee", "continuation", "transmitter", "indicator", "temperature_element", "pipe_cap"):
+        return ""
+    if n["label"]:
+        x, y, w, h = n["label"]
+        return '<text class="%s" x="%g" y="%g" style="text-anchor:start">%s</text>' % (cls, x, y + 9, t)
+    x, y, w, h = n["bbox"]
+    return '<text class="%s" x="%g" y="%g">%s</text>' % (cls, x + w / 2, y + h + 12, t)
+
+
+def clean_sheet(data, crop, marks=None, unknown=None, extra=""):
+    """정리된 도면 한 장. marks {"path","start","warn": set(local_id)}는 그 객체의 색을 바꾼다(겹쳐 그리는 띠·상자 없음).
+    unknown {"symbol","notag","ai": set, "open": {pipe_id: "source"|"target"}}는 자리표로 그린다(§10.4)."""
+    marks = marks or {}
+    unknown = unknown or {"symbol": set(), "notag": set(), "ai": set(), "open": {}}
+    marked = set().union(*marks.values()) if marks else set()
+    every = {p["id"] for p in data["pipes"]} | {n["id"] for n in data["nodes"]}
+    dim_ids = (every - marked) if marks else set()
+    d = lambda i: " dim" if i in dim_ids else ""
+    s = '<rect class="ct-paper" x="0" y="0" width="%d" height="%d"/><rect class="ct-frame" x="8" y="8" width="%d" height="%d"/>' % (
+        VIEW_W, VIEW_H, VIEW_W - 16, VIEW_H - 16)
+    tx, ty = VIEW_W - 400, VIEW_H - 92
+    s += ('<g class="ct-title"><rect x="%g" y="%g" width="384" height="76"/><line x1="%g" y1="%g" x2="%g" y2="%g"/>'
+          '<text class="t1" x="%g" y="%g">SNP-M-101 · REV. 0</text><text class="t2" x="%g" y="%g">REACTOR COOLANT SYSTEM - MAIN LOOP</text></g>'
+          % (tx, ty, tx, ty + 34, tx + 384, ty + 34, tx + 12, ty + 22, tx + 12, ty + 58))
+    for p in data["pipes"]:
+        if p["id"] not in marked:
+            s += _pipe(p, d(p["id"]).strip())
+    for n in data["nodes"]:
+        if n["kind"] == "tee":
+            x, y, w, h = n["bbox"]
+            s += '<circle class="ct-dot%s" cx="%g" cy="%g" r="2.6"/>' % (d(n["id"]), x + w / 2, y + h / 2)
+    s += _flow_arrows(data["pipes"], dim_ids) + _line_labels(data["pipes"], dim_ids)
+    for n in data["nodes"]:
+        if n["kind"] == "tee" or n["id"] in marked:
+            continue
+        x, y, w, h = n["bbox"]
+        if n["id"] in unknown["symbol"]:
+            s += ('<g class="cu-ph"><rect x="%g" y="%g" width="%g" height="%g" rx="3"/><text x="%g" y="%g">?</text></g>'
+                  % (x - 3, y - 3, w + 6, h + 6, x + w / 2, y + h / 2)) + _tag(n, "ct-tag faint")
+        elif n["id"] in unknown["ai"]:
+            s += _sym(n, "cu-ai") + _tag(n, "ct-tag ai")
+            s += ('<g class="cu-ai-tag"><rect x="%g" y="%g" width="20" height="12" rx="3"/><text x="%g" y="%g">AI</text></g>'
+                  % (x + w + 2, y - 14, x + w + 12, y - 8))
+        else:
+            s += _sym(n, "cs" + d(n["id"]))
+            if n["id"] in unknown["notag"]:
+                s += ('<g class="cu-notag"><line x1="%g" y1="%g" x2="%g" y2="%g"/><text x="%g" y="%g">태그 없음</text></g>'
+                      % (x - 8, y + h + 16, x + w + 8, y + h + 16, x + w / 2, y + h + 12))
+            else:
+                s += _tag(n, "ct-tag" + d(n["id"]))
+    for pid, end in unknown["open"].items():
+        p = next(q for q in data["pipes"] if q["id"] == pid)
+        s += '<circle class="cu-open" cx="%g" cy="%g" r="4.5"/>' % tuple(p["points"][0 if end == "source" else -1])
+    for k in ("path", "warn", "start"):            # 표시 걸린 객체를 같은 자리에 그 색으로(정리된 보기의 '객체 색 바꾸기')
+        for p in data["pipes"]:
+            if p["id"] in marks.get(k, ()):
+                s += _pipe(p, "cs-" + k)
+        for n in data["nodes"]:
+            if n["id"] in marks.get(k, ()):
+                if n["kind"] == "tee":
+                    x, y, w, h = n["bbox"]
+                    s += '<circle class="ct-dot cs-%s-f" cx="%g" cy="%g" r="3.4"/>' % (k, x + w / 2, y + h / 2)
+                else:
+                    s += _sym(n, "cs-" + k) + _tag(n, "ct-tag cs-%s-t" % k)
+    x, y, w, h = crop
+    return ('<svg class="sheet clean" viewBox="%g %g %g %g" preserveAspectRatio="xMidYMid meet" role="img" aria-label="정리된 도면 SNP-M-101">%s%s</svg>'
+            % (x - OFF, y - OFF, w, h, s, extra))
+
+
+def view_switch(view, n_unknown, confirmed=False):
+    if confirmed:
+        chip = '<span class="unk ok">%s 미확인 0 · 쪽 확정됨</span>' % ic("circle-check", "sm")
+    else:
+        chip = '<button class="unk" title="다음 미확인 (N)" aria-label="다음 미확인">%s 미확인 %d곳 <kbd>N</kbd></button>' % (ic("alert-triangle", "sm"), n_unknown)
+    return ('<div class="float viewsw" role="group" aria-label="도면 보기"><div class="seg2">'
+            '<button class="%s" title="원본 보기 (O)" aria-label="원본 보기">원본</button>'
+            '<button class="%s" title="정리된 보기 (O)" aria-label="정리된 보기">정리</button></div>%s</div>'
+            % ("on" if view == "original" else "", "on" if view == "clean" else "", chip))
+
+
+def _ids(data, tags=(), line_nos=(), cont=()):
+    return ({n["id"] for n in data["nodes"] if n["tag"] in tags}
+            | {n["id"] for n in data["nodes"] if n["kind"] == "continuation" and any(c in (n["text"] or "") for c in cont)}
+            | {p["id"] for p in data["pipes"] if p["line_no"] in line_nos})
+
+
+def page7():
+    data = clean_data()
+    tees = ("RC-L003-T18", "RC-L003-T19", "RC-L003-T20", "RC-L003-T21", "RC-L003-T22")
+    marks = {"path": _ids(data, tees + ("RC-RV01", "RC-FT101", "RC-TE102", "RC-V020"), ("RC-L003",)),
+             "start": _ids(data, ("RC-PP01",)),
+             "warn": _ids(data, ("RC-V010",), cont=("CV-L001",))}
+    steps = "".join('<g class="ov-step"><circle cx="%g" cy="%g" r="13"/><text x="%g" y="%g">%d</text></g>'
+                    % (x - OFF, y - OFF, x - OFF, y - OFF, k) for k, (x, y) in STEPS)
+    svg = clean_sheet(data, CROP_MAIN, marks, extra=steps)
+    legend = ('<div class="float legend"><div><i style="border-color:var(--path)"></i>경로 (7단계)</div>'
+              '<div><i style="border-color:var(--accent)"></i>출발</div><div><i style="border-color:var(--warn-line)"></i>확인 못 한 곳</div>'
+              '<div><i style="border-color:#c3c9d1"></i>경로 밖</div>'
+              '<div class="x"><span class="muted">채팅 답 #2</span><button class="btn ghost sm">%s 지우기</button></div></div>' % ic("x", "sm"))
+    center = topbar() + '<div class="canvas clean-bg">%s%s%s%s</div>' % (svg, view_switch("clean", 0, confirmed=True), legend, toolbar())
+    return page("7 정리된 보기", shell("", center, chat(path_answer())))
+
+
+UNK = {"symbol": ("RC-V002",), "notag": ("RC-TE102",), "ai": ("RC-V010",), "open": {"local-edge-032": "target"}}
+
+
+def page8():
+    data = clean_data()
+    by_tag = {n["tag"]: n for n in data["nodes"] if n["tag"]}
+    unk = {"symbol": {by_tag[t]["id"] for t in UNK["symbol"]}, "notag": {by_tag[t]["id"] for t in UNK["notag"]},
+           "ai": {by_tag[t]["id"] for t in UNK["ai"]}, "open": UNK["open"]}
+    x, y, w, h = by_tag["RC-V002"]["bbox"]
+    sel = '<rect class="ov-sel" x="%g" y="%g" width="%g" height="%g" rx="4" style="fill:none"/>' % (x - 8, y - 8, w + 16, h + 16)
+    svg = clean_sheet(data, (300, 520, 760, 550), unknown=unk, extra=sel)
+    crop_svg = ('<svg class="orig-crop" viewBox="%g %g %g %g" role="img" aria-label="원본 조각">'
+                '<image href="assets/snp-m-101.svg" x="0" y="0" width="%d" height="%d"/>'
+                '<rect x="%g" y="%g" width="%g" height="%g" fill="none" stroke="#d9a23a" stroke-width="1.5" stroke-dasharray="4 3"/></svg>'
+                % (x - 24, y - 24, w + 48, h + 48, VIEW_W, VIEW_H, x - 3, y - 3, w + 6, h + 6))
+    pop = ('<div class="float pop" style="left:63%%;top:15%%;width:300px"><h4>%s 미확인 기호</h4>'
+           '<div class="muted">붙은 글자 RC-V002 · 종류를 읽지 못함</div><div class="crop-lbl">원본 조각 (사방 24 단위)</div>%s'
+           '<dl><dt>배관</dt><dd class="mono">RC-L021</dd><dt>사전 후보</dt><dd>수동 밸브 · 체크 밸브</dd></dl>'
+           '<div class="acts"><button class="btn sm primary">종류 고르기</button><button class="btn sm">%s AI에 묻기</button>'
+           '<button class="btn ghost sm">도면에 없음</button></div></div>' % (ic("help-circle", "sm"), crop_svg, ic("sparkles", "sm")))
+    legend = ('<div class="float legend"><div><i style="border-color:var(--warn-line);border-top-style:dashed"></i>미확인 기호 · 태그 없음</div>'
+              '<div><i style="border-color:var(--warn-line);width:6px;height:6px;border:2px solid var(--warn-line);border-radius:50%"></i>끊긴 연결(열린 끝)</div>'
+              '<div><i style="border-color:var(--ai-line);border-top-style:dashed"></i>AI 후보(수락 전)</div></div>')
+    msgs = ('<div class="q">이 쪽에서 확인할 곳 알려 줘</div><div class="ans"><div class="src"><div class="lbl">%s 도면에서 확인</div>'
+            '<p>SNP-M-101에 미확인이 4곳 있습니다. 도구 막대의 <b>미확인 4곳</b>이나 <kbd>N</kbd>으로 차례로 볼 수 있습니다.</p></div>'
+            '<ol class="steps"><li><span class="n">1</span>%s<span class="muted">종류를 읽지 못한 기호</span></li>'
+            '<li><span class="n">2</span>%s<span class="muted">AI 후보 · 전동 밸브, 수락 전</span></li>'
+            '<li><span class="n">3</span>%s<span class="muted">온도 측정점 · 태그를 읽지 못함</span></li>'
+            '<li><span class="n">4</span>%s<span class="muted">계측 연결 끝이 열림</span></li></ol>'
+            '<div class="warnline">%s<span>미확인이 남아 있어 이 쪽은 아직 확정할 수 없습니다. DEXPI 내보내기도 같은 조건을 씁니다.</span></div>'
+            '<div class="meta">%s 도구 1회 · 0.9초</div></div>'
+            % (ic("circle-check", "sm"), idchip("RC-V002"), idchip("RC-V010"), idchip("local-node-032"), idchip("local-edge-032"),
+               ic("alert-triangle", "sm"), ic("info-circle", "sm")))
+    center = topbar() + '<div class="canvas clean-bg">%s%s%s%s%s</div>' % (svg, view_switch("clean", 4), pop, legend, toolbar(zoom="140%"))
+    return page("8 미확인이 섞인 정리된 보기", shell("", center, chat(msgs, examples=False)))
+
+
 PAGES = [
     ("1-home", page1, "기본 화면", "도면과 채팅. 경로 질문의 답 카드(근거·단계·경고·일반 지식 구분)와 도면 위 경로 표시.", 1536),
     ("2-drawings-panel", page2, "도면 목록·등록 패널", "왼쪽 메뉴의 '도면'. 파일 끌어 놓기, 표제란 후보, AI 검토 토글과 호출 상한.", 1536),
@@ -367,6 +662,8 @@ PAGES = [
     ("4-results-panel", page4, "분석 결과 패널", "구간×편차 표와 고른 칸의 워크시트, 수용·수정·기각·보류.", 1536),
     ("5-home-narrow", page5, "1366 폭 기본 화면", "메뉴·채팅이 좁아진 배치. 구성요소를 누른 속성 말풍선.", 1366),
     ("6-no-ai", page6, "AI 연결 없는 PC", "구독이 없을 때 채팅 자리의 안내와 스크립트로 되는 일.", 1536),
+    ("7-clean-view", page7, "정리된 보기", "SNP-M-101을 읽은 결과로 다시 그린 도면. 시안 1과 같은 경로 답을 객체 색으로 보인다.", 1536),
+    ("8-clean-unknown", page8, "미확인이 섞인 정리된 보기", "점선 자리표, 열린 끝, 태그 없음, AI 후보와 원본 조각 말풍선. 미확인은 예시로 섞은 것.", 1536),
 ]
 
 
@@ -385,6 +682,15 @@ def index():
             '<ul><li>단계 레일(①~⑥)과 단계별 왼쪽 목록 → 왼쪽 얇은 메뉴 5개(도면·구간·분석 결과·초기사건·지식그래프)와 여닫는 패널</li>'
             '<li>도면 연결점 목록·속성 칸·관련 항목 탭(늘 떠 있음) → 구성요소를 누르면 뜨는 말풍선, 채팅 답 카드</li>'
             '<li>모드 단추(분할·편집·경로 질의·층 토글 여러 개) → 도면 아래 도구 막대 하나(이동·네모로 고르기·확대·층)</li></ul></section>'
+            '<section><h2>원본 ↔ 정리 (같은 도면, 같은 자리)</h2><div class="cmp">'
+            '<figure><a href="1-home.html"><img src="1-home-1920.png" alt="원본 보기"></a><figcaption><b>원본 보기 (시안 1)</b>'
+            '원본 도면 SVG 위에 경로 띠와 상자를 얹는다.</figcaption></figure>'
+            '<figure><a href="7-clean-view.html"><img src="7-clean-view-1920.png" alt="정리된 보기"></a><figcaption><b>정리된 보기 (시안 7)</b>'
+            '읽은 결과로 같은 좌표에 다시 그리고, 경로에 든 객체의 색을 바꾼다. 경로 밖은 회색.</figcaption></figure>'
+            '<figure><a href="5-home-narrow.html"><img src="5-home-narrow-1366.png" alt="원본 확대"></a><figcaption><b>원본 보기 확대 (시안 5)</b>'
+            '같은 부분의 원본.</figcaption></figure>'
+            '<figure><a href="8-clean-unknown.html"><img src="8-clean-unknown-1920.png" alt="미확인이 섞인 정리된 보기"></a><figcaption><b>미확인이 섞인 정리된 보기 (시안 8)</b>'
+            '못 읽은 곳은 점선 자리표로 남기고, 누르면 원본 조각을 보인다.</figcaption></figure></div></section>'
             '<section><h2>시안</h2><div class="shots">%s</div></section></div>' % (cur, shots))
     return ('<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>도면 중심 웹 화면 시안</title>'
             '<link rel="stylesheet" href="assets/app-shell.css"></head><body class="gallery">%s</body></html>' % body)
@@ -406,10 +712,14 @@ if __name__ == "__main__":
     copy_sheets()
     if CURRENT_SHOT.exists():
         shutil.copyfile(CURRENT_SHOT, ROOT / "0-current-1920.png")
+    only = sys.argv[sys.argv.index("--only") + 1].split(",") if "--only" in sys.argv else None
     for name, fn, _t, _d, w in PAGES:
+        if only and name not in only:
+            continue
         (ROOT / ("%s.html" % name)).write_text(fn(), encoding="utf-8")
     (ROOT / "index.html").write_text(index(), encoding="utf-8")
     if "--no-png" not in sys.argv:
         for name, _f, _t, _d, w in PAGES:
-            shoot(name, w)
+            if not only or name in only:
+                shoot(name, w)
     print("ok:", ", ".join(p[0] for p in PAGES), "icons:", len(_icons))
