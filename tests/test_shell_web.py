@@ -100,6 +100,28 @@ class StaticTest(unittest.TestCase):
             self.assertIn(digest, text, name)
 
 
+def shell_teardown():
+    """남은 새 화면 창·웹 페이지를 인터프리터 종료 전에 정리한다(페이지·프로필이 남은 채 끝나면 시험이 통과한 뒤 Segmentation fault로 끝난다).
+    창이 있는 시험 모듈은 `tearDownModule = W.shell_teardown`으로 쓴다."""
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+    from hazop.shell.window import ShellView
+    app = QApplication.instance()
+    if app is None:
+        return
+    for w in app.allWidgets():
+        if isinstance(w, ShellView):
+            w.dispose()
+    for w in app.topLevelWidgets():
+        w.close()
+        w.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    QCoreApplication.processEvents()
+
+
+tearDownModule = shell_teardown
+
+
 class ShellBase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

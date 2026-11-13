@@ -24,6 +24,7 @@ from tests.test_chat_card import answer  # noqa: E402
 from tests.test_study_node_tools import DEVS, snp_graph  # noqa: E402
 
 pump, wait_for = W.pump, W.wait_for
+tearDownModule = W.shell_teardown
 
 
 class ChatToPanelTest(W.ShellBase):

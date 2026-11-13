@@ -20,6 +20,7 @@ from tests.test_ie_bundle import ie_sample  # noqa: E402
 from tests.test_study_export import DEVS as XDEVS  # noqa: E402
 
 pump, wait_for = W.pump, W.wait_for
+tearDownModule = W.shell_teardown
 
 
 class IePanelTest(W.ShellBase):

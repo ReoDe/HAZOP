@@ -9,21 +9,31 @@ import { SourceConflicts } from "./drawings_sources.js";
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
-const STATE_TEXT = { open: "확정 조건 남음", ready: "확정만 남음", confirmed: "확정됨" };
+const STATE_TEXT = { open: "확정 조건 남음", ready: "확정만 남음", confirmed: "확정됨", changed: "내보내는 사이 도면 자료가 바뀜", error: "쪽 확정 기록을 읽지 못함" };
+/** 내보내지 않은 쪽 한 줄: 엔진이 준 사유가 있으면 그것, 없으면 확정 상태의 한글 이름. */
+const whyNot = (x) => x.reason || (STATE_TEXT[x.state] || x.state) + (x.unconfirmed ? ", 남은 미확인 " + x.unconfirmed : "");
 
 /** DEXPI 내보내기(앱 틀 규격 V5, DEXPI 규격 §6.1): 확정된 쪽만 낸다. 저장 폴더는 창이 대화상자로 묻고 웹은 경로를 보내지 않는다. 확정된 쪽이 없으면 단추 대신 안내를 보인다. */
 function DexpiExport() {
   const [info, setInfo] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [jobId, setJobId] = useState(null);
+  const jobs = useStore((s) => s.jobs);          // 선택 함수가 jobId를 붙들면 낡은 값을 보므로 전체를 받아 고른다
+  const job = jobId ? jobs[jobId] : null;
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const reload = () => read("dexpi").then(setInfo).catch(() => setInfo({ drawings: [], any: false }));
   useEffect(() => { reload(); return onChanged((t) => { if (t === "sheetconf" || t === "drawings") reload(); }); }, []);
+  // 내보내기는 작업으로 돈다(저장 폴더·덮어쓰기는 창이 묻고, 결과는 job.done으로 온다). 내보낼 수 있는 쪽만 보낸다: 하나가 막혀도 나머지는 나간다.
+  useEffect(() => {
+    if (!job) return;
+    if (job.state === "done") { setBusy(false); setResult(job.result); setJobId(null); reload(); }
+    else if (job.state === "failed") { setBusy(false); setError(job.message || "내보내지 못했습니다."); setJobId(null); reload(); }
+  }, [job && job.state]);
   async function run() {
     setBusy(true); setError(""); setResult(null);
-    try { setResult(await cmd("dexpi.export", { graph_ids: info.drawings.map((d) => d.graph_id) })); } catch (e) { setError(e.message || "내보내지 못했습니다."); }
-    setBusy(false);
-    reload();
+    try { const r = await cmd("dexpi.export", { graph_ids: info.drawings.filter((d) => d.exportable).map((d) => d.graph_id) }); setJobId(r.job); }
+    catch (e) { setError(e.message || "내보내지 못했습니다."); setBusy(false); reload(); }
   }
   if (!info) return null;
   const label = (d) => d.drawing_number || d.name;
@@ -38,8 +48,9 @@ function DexpiExport() {
     ${result && result.cancelled ? html`<${Notice} kind="info">${result.overwrite_refused ? "덮어쓰기를 취소해 내보내지 않았습니다." : "저장 위치를 고르지 않아 내보내지 않았습니다."}<//>` : null}
     ${result && !result.cancelled ? html`<div class="card" aria-label="내보내기 결과"><b>${result.drawings.length}쪽을 내보냈습니다</b> <span class="muted small">폴더 ${result.folder}</span>
       <ul class="tight">${result.drawings.map((d) => html`<li key=${d.graph_id}>${d.drawing_number || d.graph_id}: ${d.files.join(", ")}
-        ${d.stats && (d.stats.excluded_components || d.stats.excluded_connections || d.stats.excluded_attributes) ? html`<span class="muted small"> · 뺀 구성요소 ${d.stats.excluded_components || 0} · 연결 ${d.stats.excluded_connections || 0} · 속성 ${d.stats.excluded_attributes || 0}</span>` : null}</li>`)}</ul>
-      ${result.not_exported.length ? html`<div class="muted small">내보내지 않은 쪽: ${result.not_exported.map((x) => (x.drawing_number || x.graph_id) + "(" + (STATE_TEXT[x.state] || x.state) + ", 남은 미확인 " + x.unconfirmed + ")").join(" · ")}</div>` : null}</div>` : null}</div>`;
+        ${d.stats && (d.stats.excluded_components || d.stats.excluded_connections || d.stats.excluded_attributes) ? html`<span class="muted small"> · 뺀 구성요소 ${d.stats.excluded_components || 0} · 연결 ${d.stats.excluded_connections || 0} · 속성 ${d.stats.excluded_attributes || 0}</span>` : null}
+        ${d.stats && (d.stats.cut_pipes || d.stats.cut_signal_lines) ? html`<span class="warnline small" title="빠진 구성요소에 이어져 있어 내지 못한 연결"> · 끊긴 배관 ${d.stats.cut_pipes || 0} · 신호선 ${d.stats.cut_signal_lines || 0}</span>` : null}</li>`)}</ul>
+      ${result.not_exported.length ? html`<div class="muted small">내보내지 않은 쪽: <ul class="tight" aria-label="내보내지 않은 쪽">${result.not_exported.map((x) => html`<li key=${x.graph_id || x.drawing_number}>${x.drawing_number || x.graph_id}: ${whyNot(x)}</li>`)}</ul></div>` : null}</div>` : null}</div>`;
 }
 
 /** AI 검토를 켰을 때 도면별 예상 호출 수(엔진이 사람이 고친 자리를 뺀 미확인 항목으로 센다). 꺼져 있으면 읽지 않는다. */

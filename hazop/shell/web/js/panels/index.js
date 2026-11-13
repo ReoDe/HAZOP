@@ -18,8 +18,8 @@ export const PANELS = [
   { name: "nodes", icon: "vector-triangle", label: "구간", key: "2", component: NodesPanel },
   { name: "results", icon: "table", label: "분석 결과", key: "3", component: ResultsPanel, css: "results.css" },
   { name: "ie", icon: "route", label: "초기사건", key: "4", component: IePanel, css: "ie.css" },
-  { name: "aireview", icon: "sparkles", label: "AI 검토", key: "7", component: AiReviewPanel, css: "aireview.css" },
   { name: "kg", icon: "topology-star-3", label: "지식그래프", key: "5", component: KgPanel },
+  { name: "aireview", icon: "sparkles", label: "AI 검토", key: "7", component: AiReviewPanel, css: "aireview.css" },
   { name: "actionlog", icon: "file-text", label: "AI 실행 기록", component: ActionLogPanel, css: "actionlog.css", place: "bottom" },
   { name: "settings", icon: "settings", label: "설정", component: SettingsPanel, place: "bottom" },
 ];

@@ -12,7 +12,7 @@ import json
 import logging
 import os
 
-from PySide6.QtCore import QEvent, QObject, QUrl, Qt, Signal, Slot
+from PySide6.QtCore import QEvent, QObject, QThread, QUrl, Qt, Signal, Slot
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEngineScript, QWebEngineSettings, QWebEngineUrlRequestInterceptor
 from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -215,6 +215,7 @@ class AiAdapter:
 class ShellWindow(QMainWindow):
     """새 화면의 창. 설정 파일 경로를 받아 엔진·연결·채팅을 만들고 웹 화면을 연다."""
 
+    gui_call = Signal(object)   # 작업 스레드가 화면 스레드에서 해야 하는 일(대화상자)을 맡기고 끝나기를 기다린다(막는 큐 연결)
     jobs_idle = Signal()   # 작업 스레드에서 마지막 작업이 끝났을 때(큐 연결로 화면 스레드가 받는다)
 
     def __init__(self, settings_path=None, ask_reviewer=True, debug=False, size=(1440, 860), session_factory=None, env_provider=None):
@@ -253,8 +254,9 @@ class ShellWindow(QMainWindow):
         self.engine.hooks["open_classic"] = self._open_classic
         self.engine.hooks["conn_guide"] = self._conn_guide
         self.engine.hooks["save_path"] = self._save_path
-        self.engine.hooks["save_dir"] = self._save_dir
-        self.engine.hooks["confirm_overwrite_files"] = self._ask_overwrite_files
+        self.gui_call.connect(self._run_gui_call, Qt.BlockingQueuedConnection)
+        self.engine.hooks["save_dir"] = lambda kind: self._on_gui(lambda: self._save_dir(kind))      # 내보내기는 작업 스레드에서 도니 대화상자는 화면 스레드에서 연다
+        self.engine.hooks["confirm_overwrite_files"] = lambda names: self._on_gui(lambda: self._ask_overwrite_files(names))
         self.engine.hooks["jobs_idle"] = self.jobs_idle.emit
         self.jobs_idle.connect(self._on_jobs_idle)
         self.confirm_overwrite_files = self._ask_overwrite_files_box     # 시험이 모달 창 없이 답을 꽂는 자리: True(덮어씀) | False
@@ -301,6 +303,24 @@ class ShellWindow(QMainWindow):
     def _loaded(self, ok):
         if not ok:
             LOG.error("웹 화면을 읽지 못함: %s", SHELL_URL)
+
+    def _run_gui_call(self, job):
+        fn, box = job
+        try:
+            box.append(("ok", fn()))
+        except BaseException as exc:  # noqa: BLE001 - 부른 스레드로 그대로 올린다
+            box.append(("err", exc))
+
+    def _on_gui(self, fn):
+        """fn을 화면 스레드에서 돌려 값을 돌려준다(작업 스레드에서 부르면 끝날 때까지 기다린다)."""
+        if QThread.currentThread() is self.thread():
+            return fn()
+        box = []
+        self.gui_call.emit((fn, box))
+        kind, value = box[0]
+        if kind == "err":
+            raise value
+        return value
 
     def _pick_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "도면 파일 고르기", "", "도면 (*.drawio *.pdf *.xml)")
@@ -378,7 +398,8 @@ class ShellWindow(QMainWindow):
             self.classic_requested = False
         return ok
 
-    BUSY_TEXT = {"register": ("도면 등록·추출 작업", "멈추면 지금 단계가 끝나는 자리에서 멈춥니다(등록까지 끝난 도면은 목록에 남습니다)."),
+    BUSY_TEXT = {"export": ("DEXPI 내보내기 작업", "파일을 쓰는 중에는 멈추지 않고 쓰던 파일을 마무리합니다(중간에 끊긴 파일은 남지 않습니다)."),
+                 "register": ("도면 등록·추출 작업", "멈추면 지금 단계가 끝나는 자리에서 멈춥니다(등록까지 끝난 도면은 목록에 남습니다)."),
                  "analysis": ("AI 분석 작업", "멈추면 진행 중인 호출이 끝나는 자리에서 멈춥니다(이미 받은 칸은 저장되어 있습니다).")}
 
     @classmethod

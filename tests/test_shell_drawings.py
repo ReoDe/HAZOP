@@ -82,6 +82,20 @@ class Base(unittest.TestCase):
     def call(self, name, args=None):
         return self.engine.dispatch(name, args or {})
 
+    def export(self, ids):
+        """웹의 dexpi.export는 작업을 시작하고 job.done(result)·job.failed로 끝난다. 작업이 끝나기를 기다려 예전 답의 꼴({ok, data|error})로 돌려준다."""
+        r = self.call("dexpi.export", {"graph_ids": ids})
+        if not r["ok"]:
+            return r
+        self.assertTrue(self.engine.wait_jobs(60))
+        job = r["data"]["job"]
+        done = [e for e in self.events.items if e.get("name") in ("job.done", "job.failed") and (e.get("data") or {}).get("id") == job]
+        self.assertEqual(len(done), 1, self.events.items[-3:])
+        d = done[0]["data"]
+        if done[0]["name"] == "job.failed":
+            return {"ok": False, "error": {"code": "failed", "message": d["message"]}}
+        return {"ok": True, "data": d["result"]}
+
     def status(self):
         return self.read("sheetconf", self.gid)
 
@@ -181,21 +195,38 @@ class SheetConfirmationTest(Base):
             self.assertEqual((r["ok"], r["error"]["code"]), (False, "wrong_project"), name)
 
 
+    def test_a_broken_confirmation_record_is_shown_and_unconfirm_starts_a_new_one(self):
+        self.make_clean()
+        sp = cf.store_path(self.name)
+        os.makedirs(os.path.dirname(sp), exist_ok=True)
+        with open(sp, "w", encoding="utf-8") as fh:
+            fh.write("{깨진 json")
+        st = self.status()
+        self.assertTrue(st["record_error"], "카드가 보일 사유(엔진 값 그대로)")
+        r = self.sheet("compare")
+        self.assertFalse(r["ok"], "깨진 기록 위에는 견줌을 쓰지 않는다")
+        r = self.sheet("unconfirm")
+        self.assertTrue(r["ok"], r)
+        self.assertFalse(self.status().get("record_error"), "확정 해제가 새 기록을 시작한다")
+        self.assertTrue(self.sheet("compare")["ok"])
+
+
 class DexpiExportTest(Base):
     def test_no_confirmed_page_gives_guidance_and_writes_nothing(self):
         rows = self.read("dexpi")
         self.assertFalse(rows["any"])
         self.assertEqual([r["state"] for r in rows["drawings"]], ["open"])
         self.assertTrue(rows["drawings"][0]["why"])
-        r = self.call("dexpi.export", {"graph_ids": [self.gid]})
+        r = self.export([self.gid])
         self.assertEqual((r["ok"], r["error"]["code"]), (False, "failed"), r)
-        self.assertIn("확정된 쪽이 하나도 없어", r["error"]["message"])
+        self.assertIn("내보낼 수 있는 쪽이 없습니다", r["error"]["message"])
+        self.assertIn("확정되지 않음", r["error"]["message"], "쪽별 사유")
         self.assertEqual(os.listdir(self.out), [])
 
     def test_only_the_confirmed_page_is_exported_and_the_summary_lists_the_rest(self):
         self.confirm_page()
         self.mark_number_confirmed()
-        r = self.call("dexpi.export", {"graph_ids": [self.gid]})
+        r = self.export([self.gid])
         self.assertTrue(r["ok"], r)
         d = r["data"]
         self.assertFalse(d["cancelled"])
@@ -221,20 +252,20 @@ class DexpiExportTest(Base):
     def test_overwriting_existing_files_asks_and_a_refusal_writes_nothing(self):
         self.confirm_page()
         self.mark_number_confirmed()
-        self.assertTrue(self.call("dexpi.export", {"graph_ids": [self.gid]})["ok"])
+        self.assertTrue(self.export([self.gid])["ok"])
         self.asked.clear()
         marker = os.path.join(self.out, self.name + ".dexpi.xml")
         with open(marker, "w", encoding="utf-8") as fh:
             fh.write("<keep/>")
         self.answer = False
-        r = self.call("dexpi.export", {"graph_ids": [self.gid]})
+        r = self.export([self.gid])
         self.assertTrue(r["ok"] and r["data"]["cancelled"] and r["data"]["overwrite_refused"], r)
         self.assertEqual(len(self.asked), 1)
         self.assertIn(self.name + ".dexpi.xml", self.asked[0])
         with open(marker, encoding="utf-8") as fh:
             self.assertEqual(fh.read(), "<keep/>", "거절하면 덮어쓰지 않는다")
         self.answer = True
-        r = self.call("dexpi.export", {"graph_ids": [self.gid]})
+        r = self.export([self.gid])
         self.assertTrue(r["ok"] and not r["data"]["cancelled"], r)
         with open(marker, encoding="utf-8") as fh:
             self.assertNotEqual(fh.read(), "<keep/>")
@@ -243,7 +274,7 @@ class DexpiExportTest(Base):
         self.confirm_page()
         self.mark_number_confirmed()
         self.engine.hooks["save_dir"] = lambda kind: None
-        r = self.call("dexpi.export", {"graph_ids": [self.gid]})
+        r = self.export([self.gid])
         self.assertEqual(r["data"], {"cancelled": True})
         self.assertEqual(os.listdir(self.out), [])
 
@@ -252,7 +283,70 @@ class DexpiExportTest(Base):
         self.confirm_page()
         self.mark_number_confirmed()
         del self.engine.hooks["save_dir"]
-        self.assertFalse(self.call("dexpi.export", {"graph_ids": [self.gid]})["ok"])
+        self.assertFalse(self.export([self.gid])["ok"])
+
+
+class DexpiExportMixTest(Base):
+    """쪽 확정은 됐지만 도면 번호가 등록에서 확정되지 않은 쪽이 섞여도(검토 지적 3) 내보낼 수 있는 쪽은 나가고, 나가지 못한 쪽은 쪽별 사유로 보인다."""
+
+    def setUp(self):
+        super().setUp()
+        from scripts.check_edit_screen import install_sample
+        self.name2 = install_sample(os.environ["HAZOP_WORK_ROOT"], "SNP-M-102")
+        names = {v: k for k, v in self.engine.graph_names().items()}
+        self.gid2 = names[self.name2]
+
+    def prep(self, name, gid, number_confirmed):
+        path = cf.extraction_path(name)
+        with open(path, encoding="utf-8") as fh:
+            ex = make_clean(json.load(fh))
+        ex.setdefault("drawing", {})["identification_basis"] = "registration_confirmed" if number_confirmed else "title_block_candidate"
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(ex, fh, ensure_ascii=False)
+        for command in ("compare", "confirm"):
+            st = cf.sheet_confirmation(name)
+            r = self.call("sheet." + command, {"graph_id": gid, "ver": st["fingerprint"], "rev": st["rev"]})
+            self.assertTrue(r["ok"], r)
+
+    def test_a_sheet_with_an_unconfirmed_number_does_not_block_the_others(self):
+        self.prep(self.name, self.gid, True)
+        self.prep(self.name2, self.gid2, False)
+        rows = {r["graph_id"]: r for r in self.read("dexpi")["drawings"]}
+        self.assertTrue(rows[self.gid]["exportable"])
+        self.assertFalse(rows[self.gid2]["exportable"])
+        self.assertTrue(rows[self.gid2]["why"], "쪽별 사유")
+        r = self.export([self.gid, self.gid2])           # 화면이 목록을 모두 보내도 막히지 않는다
+        self.assertTrue(r["ok"], r)
+        d = r["data"]
+        self.assertEqual([x["graph_id"] for x in d["drawings"]], [self.gid])
+        self.assertEqual([x["graph_id"] for x in d["not_exported"]], [self.gid2])
+        self.assertTrue(d["not_exported"][0]["reason"], "나가지 못한 쪽의 사유")
+        self.assertTrue(os.path.isfile(os.path.join(self.out, self.name + ".dexpi.xml")))
+        self.assertFalse(os.path.isfile(os.path.join(self.out, self.name2 + ".dexpi.xml")))
+        self.assertIn("stats", d["drawings"][0])
+
+    def test_when_nothing_can_go_out_each_blocked_sheet_gets_its_own_reason(self):
+        self.prep(self.name2, self.gid2, False)
+        r = self.export([self.gid2, self.gid])
+        self.assertEqual((r["ok"], r["error"]["code"]), (False, "failed"))
+        self.assertIn("내보낼 수 있는 쪽이 없습니다", r["error"]["message"])
+        self.assertNotIn("확정된 쪽이 하나도 없어", r["error"]["message"], "확정된 쪽이 있는데 하나도 없다고 안내하지 않는다")
+        self.assertEqual(os.listdir(self.out), [])
+
+    def test_the_export_runs_off_the_calling_thread(self):
+        import threading
+        from hazop.export import dexpi_export
+        self.prep(self.name, self.gid, True)
+        seen = []
+        real = dexpi_export.export_names
+
+        def spy(*a, **k):
+            seen.append(threading.current_thread())
+            return real(*a, **k)
+        with mock.patch.object(dexpi_export, "export_names", spy):
+            r = self.export([self.gid])
+        self.assertTrue(r["ok"], r)
+        self.assertTrue(seen and all(t is not threading.main_thread() for t in seen), "작업 스레드에서 돈다")
 
 
 class DexpiImportTest(Base):

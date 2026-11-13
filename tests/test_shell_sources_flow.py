@@ -17,6 +17,7 @@ from hazop import paths  # noqa: E402
 from hazop.graph import build, sources  # noqa: E402
 
 pump, wait_for = W.pump, W.wait_for
+tearDownModule = W.shell_teardown
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEXPI = os.path.join(REPO, "tests", "fixtures", "dexpi", "small-pid-dexpi2.xml")
 

@@ -6,8 +6,9 @@ import { createStore, store, useStore } from "./store.js";
 import { cmd, onChanged, read } from "./bridge.js";
 import { Icon } from "./ui/icon.js";
 import { Btn, Notice } from "./ui/parts.js";
+import { openCompare } from "./compare.js";
 
-export const conf = createStore({ byGraph: {}, open: false, busy: false, error: null, agreed: false });
+export const conf = createStore({ byGraph: {}, open: false, busy: false, error: null });
 
 const REASON = { unknown_symbol: "종류를 못 읽은 기호", open_end: "끊긴 연결(열린 끝)", missing_tag: "태그가 없음", ai_candidate: "AI 후보(수락 전)", unresolved_connector: "이어지지 않은 연결",
   unplaced: "위치 없음", no_position: "위치 없음" };
@@ -31,7 +32,7 @@ export async function load(gid) {
   return st;
 }
 
-export function reset() { seq++; conf.set({ byGraph: {}, open: false, busy: false, error: null, agreed: false }); }
+export function reset() { seq++; conf.set({ byGraph: {}, open: false, busy: false, error: null }); }
 
 async function run(command, gid, extra) {
   const st = conf.get().byGraph[gid];
@@ -63,6 +64,7 @@ export function wire() {
 export function chipOf(st) {
   if (!st) return { label: "쪽 확정 확인 중", kind: "plain", left: 0 };
   if (!st.available) return { label: "쪽 확정 상태 없음", kind: "plain", left: 0 };
+  if (st.record_error) return { label: "확정 기록 깨짐", kind: "warn", left: 1 };
   if (st.state === "confirmed") return { label: "쪽 확정됨", kind: "ok", left: 0 };
   const left = (st.unconfirmed_total || 0) + (st.unplaced_total || 0) + (st.leftovers === null ? 1 : 0);
   if (st.state === "ready" || (!left && st.state !== "confirmed")) return { label: st.compared ? "확정만 남음" : "원본과 견줌 남음", kind: "accent", left: 0 };
@@ -83,25 +85,21 @@ function Conditions({ st }) {
 function Card({ gid, st }) {
   const busy = useConf((s) => s.busy);
   const error = useConf((s) => s.error);
-  const agreed = useConf((s) => s.agreed);
   const conditions = (st.unconfirmed_total || 0) + (st.unplaced_total || 0) + (st.leftovers === null ? 1 : 0);
-  const mode = st.read_method === "dexpi" ? "dexpi_list" : "side_by_side";
-  const why = st.state === "confirmed" ? null : conditions ? "남은 조건을 모두 채워야 합니다." : (!st.compared ? "원본과 견준 뒤에 확정할 수 있습니다." : null);
+  const why = st.state === "confirmed" ? null : st.record_error ? "확정 기록이 깨져 있습니다. 먼저 '확정 해제'로 새 기록을 시작하세요." : conditions ? "남은 조건을 모두 채워야 합니다." : (!st.compared ? "견주기 화면에서 원본과 견준 뒤에 확정할 수 있습니다." : null);
   return html`<div class="float confcard" role="dialog" aria-label="쪽 확정">
     <div class="nd-h"><b>쪽 확정</b><span class="muted small">${METHOD[st.read_method] || st.read_method}</span>
       <span class="acts"><${Btn} sm=${true} kind="ghost" icon="x" label="쪽 확정 닫기" onClick=${() => conf.set({ open: false })} /></span></div>
     ${st.state === "confirmed" ? html`<${Notice} kind="info" icon="circle-check">${st.confirmed.by}가 확정했습니다. 도면 자료가 바뀌면 확정이 풀립니다.<//>` : null}
     ${(st.released || []).length ? html`<${Notice} kind="warn" icon="alert-triangle">도면 자료가 바뀌어 이전 견줌·확정이 풀렸습니다.<//>` : null}
     <${Conditions} st=${st} />
-    ${st.state !== "confirmed" ? html`<div class="field">
-      <label class="check"><input type="checkbox" checked=${agreed} disabled=${conditions > 0 || !!st.compared} onChange=${(e) => conf.set({ agreed: e.target.checked })} />
-        빠진 구성요소가 없음을 원본과 견주어 확인했습니다</label></div>` : null}
+    ${st.record_error ? html`<${Notice} kind="err" icon="alert-triangle"><span style="white-space:pre-wrap">확정 기록을 읽을 수 없습니다: ${st.record_error}</span><br />'확정 해제'를 누르면 깨진 기록을 버리고 새 기록을 시작합니다. 견줌·확정은 그 뒤에 다시 합니다.<//>` : null}
     ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error}<//>` : null}
     <div class="acts-row">
       ${st.state === "confirmed" ? html`<${Btn} sm=${true} label="확정 취소" disabled=${busy} onClick=${() => unconfirm(gid)}>확정 취소<//>` : html`
-        <${Btn} sm=${true} label="원본과 견주기" disabled=${busy || conditions > 0 || !!st.compared || !agreed} title=${conditions ? "남은 조건을 먼저 채우세요" : !agreed ? "체크 상자를 켜야 합니다" : "원본과 견줌 기록"} onClick=${() => compare(gid, mode)}>원본과 견주기<//>
+        <${Btn} sm=${true} label="견주기 화면 열기" disabled=${busy || conditions > 0 || !!st.compared || !!st.record_error} title=${st.record_error ? "깨진 확정 기록부터 해제하세요" : conditions ? "남은 조건을 먼저 채우세요" : st.compared ? "이미 견줌을 기록했습니다" : "원본과 정리된 보기를 나란히 보고 견줍니다"} onClick=${() => { conf.set({ open: false }); openCompare(gid, st.read_method); }}>견주기 화면 열기<//>
         <${Btn} sm=${true} kind="primary" label="이 쪽 확정" disabled=${busy || !!why} title=${why || "이 쪽 확정"} onClick=${() => confirm(gid)}>이 쪽 확정<//>
-        ${st.compared ? html`<${Btn} sm=${true} kind="ghost" label="견줌 취소" disabled=${busy} onClick=${() => unconfirm(gid)}>견줌 취소<//>` : null}`}</div>
+        ${st.compared || st.record_error ? html`<${Btn} sm=${true} kind="ghost" label=${st.record_error ? "확정 해제" : "견줌 취소"} disabled=${busy} onClick=${() => unconfirm(gid)}>${st.record_error ? "확정 해제" : "견줌 취소"}<//>` : null}`}</div>
     ${why && st.state !== "confirmed" ? html`<div class="muted small" role="status">${why}</div>` : null}</div>`;
 }
 
