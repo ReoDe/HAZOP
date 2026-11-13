@@ -227,6 +227,10 @@ def _aireview_execute(engine, action):
             text += " 하지 못한 것 %d건: %s." % (len(out["failed"]), "; ".join("%s %s" % (f["cand_id"], f["reason"]) for f in out["failed"][:3]))
         if out.get("notes"):
             text += " " + " ".join(out["notes"][:2])
+        if out.get("graph_stale") and not out.get("notes"):     # 저장은 됐다(ok). 그래프만 고치기 전 상태
+            text += " 저장했지만 그래프를 다시 만들지 못해 도면·그래프는 아직 고치기 전 상태입니다."
+        if out.get("recheck"):
+            text += " " + " ".join(str(r) for r in out["recheck"][:3])
         return _ok(text, topics=[])
     return run
 

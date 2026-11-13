@@ -156,6 +156,17 @@ class AiReviewTest(AiReviewBase):
             self.approve(self.one("aireview.accept", graph_id="graph-SNP-M-101", cand_ids=["c1"]))
         self.assertEqual(self.last_record("aireview.accept")["result"], "rejected")
 
+    def test_graph_stale_and_recheck_are_told(self):
+        """730cbd7: 저장은 됐지만 그래프를 다시 만들지 못함(graph_stale)과 ④·⑤ 재확인 안내(recheck)를 답에 싣는다."""
+        out = {"ok": True, "changed": ["c1"], "failed": [], "notes": [], "graph_stale": True,
+               "recheck": ["④ 검토구간 확정본이 고치기 전 도면 기준입니다. 재확인이 필요합니다."]}
+        with mock.patch("hazop.shell.api_aireview.accept", lambda *a, **k: out):
+            self.approve(self.one("aireview.accept", graph_id="graph-SNP-M-101", cand_ids=["c1"]))
+        done = self.events.of("chat.action.result")[-1]["item"]
+        self.assertEqual(done["status"], "applied")
+        self.assertIn("그래프를 다시 만들지 못해", done["text"])
+        self.assertIn("재확인이 필요합니다", done["text"])
+
     def test_goto_aireview_with_a_drawing(self):
         self.answers.append(self.answer([self.act("goto", target="aireview", id="SNP-M-101"), self.act("goto", target="actionlog")]))
         self.assertTrue(self.chat.ask("AI 후보 보여 줘"))
