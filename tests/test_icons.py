@@ -18,7 +18,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from hazop import paths  # noqa: E402
 
-SOURCE_SVGS = os.path.join("D:\\", "HAZOP-trials", "2026-11-13-icons", "pkg", "package", "icons", "outline")  # 있을 때만 대조
+SOURCE_SVGS = os.environ.get("HAZOP_TABLER_SOURCE")   # 받은 원본의 icons/outline 폴더. 환경변수로 줄 때만 원본과 대조한다
 TGZ_SHA256 = "b30108713d3fa60aee862c2a133225da8e0f309be0708fe2925763ff810c766c"
 LICENSE_SHA256 = "b740a1d46122672da62833e97f7e7c8a13fa85cbc7445b584b297cc00dde93db"
 
@@ -57,7 +57,7 @@ class FilesTest(unittest.TestCase):
             self.assertRegex(name, r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
     def test_files_are_the_original_bytes(self):
-        if not os.path.isdir(SOURCE_SVGS):
+        if not SOURCE_SVGS or not os.path.isdir(SOURCE_SVGS):
             self.skipTest("받은 원본 폴더가 없음(다시 받을 수 있음)")
         for name in manifest()["icons"]:
             self.assertEqual(sha(os.path.join(icon_dir(), name + ".svg")), sha(os.path.join(SOURCE_SVGS, name + ".svg")), name)
