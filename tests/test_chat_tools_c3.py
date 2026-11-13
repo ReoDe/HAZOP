@@ -502,6 +502,27 @@ class LoadersTest(unittest.TestCase):
         for r in recs.values():
             self.assertNotIn("path", " ".join(r))   # 기록에 파일 경로를 남기지 않는다
 
+    def test_documents_replaced_by_a_newer_revision_are_left_out(self):
+        """새 판이 대신한 옛 판 문서의 조각은 싣지 않는다(50ed3ab doc_revisions). 대신한 새 판이 목록에 없으면 옛 판을 둔다."""
+        from hazop import paths
+        from hazop.kg import doc_revisions
+        roots = context.roots_of("P1")
+        base = documents()[0]
+        for i, mid in enumerate(("M-OLD", "M-NEW", "M-GONE")):
+            d = json.loads(json.dumps(base))
+            d.update(project_id="P1", material_id=mid, document_id="doc-%s" % mid)
+            folder = os.path.join(paths.output_root("document-knowledge"), "r%d" % i)
+            os.makedirs(folder)
+            with open(os.path.join(folder, "document_knowledge.json"), "w", encoding="utf-8") as fh:
+                json.dump(d, fh)
+        p = doc_revisions.path("P1")
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump({"kind": doc_revisions.KIND, "schema_version": doc_revisions.SCHEMA_VERSION, "project_id": "P1", "pending": {},
+                       "replaced": {"M-OLD": {"by": "M-NEW"}, "M-GONE": {"by": "M-NOT-REGISTERED"}}}, fh)
+        docs = {r["document_id"] for r in context.load_docs("P1", roots).values()}
+        self.assertEqual(docs, {"doc-M-NEW", "doc-M-GONE"})
+
     def test_inside_roots(self):
         roots = context.roots_of("P1")
         inside = os.path.join(roots[0], "a.json")

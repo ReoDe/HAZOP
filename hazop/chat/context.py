@@ -341,6 +341,14 @@ def load_docs(project_id, roots):
     latest = {}
     for d in sorted(documents, key=lambda d: (str(d.get("material_id")), d.get("registration_version") or 0)):
         latest[d.get("material_id")] = d  # 자료마다 최신 등록 버전(auto.project_documents와 같은 규칙)
+    # 같은 문서의 새 판이 대신한 옛 판은 뺀다(auto.split_documents와 같은 규칙: 대신한 새 판이 목록에 없으면 옛 판을 그대로 둔다)
+    try:
+        from hazop.kg import doc_revisions
+        replaced = doc_revisions.load(project_id)["replaced"]
+    except (OSError, ValueError, KeyError, ImportError):
+        replaced = {}
+    for mid in [m for m in latest if m in replaced and (replaced[m] or {}).get("by") in latest]:
+        del latest[mid]
     return docs_from_documents([latest[k] for k in sorted(latest, key=str)])
 
 
