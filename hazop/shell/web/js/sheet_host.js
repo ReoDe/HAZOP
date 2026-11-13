@@ -5,6 +5,7 @@ import { useEffect, useState } from "../vendor/hooks.module.js";
 import { store, useStore } from "./store.js";
 import { ui } from "./bridge.js";
 import { Icon } from "./ui/icon.js";
+import { NodeOverlay, useNodeCanvas } from "./canvas/nodes_canvas.js";
 
 let SheetComponent = null;
 let tried = false;
@@ -32,6 +33,7 @@ export function SheetHost() {
   const marks = useStore((s) => s.marks);
   const command = useStore((s) => s.command);
   const [Comp, setComp] = useState(() => SheetComponent);
+  const nc = useNodeCanvas(sheet, { onEsc: () => store.set({ marks: { rid: null, bySheet: {} } }) });
   useEffect(() => { loadCanvas().then((c) => { if (c) setComp(() => c); store.set({ canvasReady: !!c }); }); }, []);
   if (!sheet) {
     return html`<div class="canvas"><div class="center-empty" style="position:absolute;inset:0;display:grid;place-items:center;color:var(--muted)">
@@ -39,6 +41,6 @@ export function SheetHost() {
   }
   if (!Comp) return html`<${Fallback} sheet=${sheet} />`;
   const items = (marks.bySheet && marks.bySheet[sheet]) || [];
-  return html`<${Comp} sheet=${{ graph_id: sheet }} mode="pan" selection=${[]} marks=${items.map((m, i) => Object.assign({ id: (marks.rid || "m") + (i ? "#" + i : "") }, m))}
-    command=${command} onSelection=${(d) => ui("selectionChanged", d)} onItemClick=${(d) => ui("itemClick", { id: d.id })} onEsc=${() => store.set({ marks: { rid: null, bySheet: {} } })} />`;
+  return html`<div class="canvas"><${Comp} sheet=${{ graph_id: sheet }} ...${nc.props} marks=${items.map((m, i) => Object.assign({ id: (marks.rid || "m") + (i ? "#" + i : "") }, m))}
+    command=${command} onItemClick=${(d) => ui("itemClick", { id: d.id })} /><${NodeOverlay} /></div>`;
 }

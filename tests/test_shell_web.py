@@ -182,7 +182,7 @@ class ShellWindowTest(ShellBase):
         self.assertIn("도면 파일을 여기에 끌어 놓으세요", t)       # 열 도면이 여럿이면 도면 패널을 먼저 보인다
         self.assertIn("SNP-M-101", t)
         self.assertIn("SNP-M-102", t)
-        self.assertEqual(self.js(win, "document.querySelectorAll('.rail button').length"), 3)
+        self.assertEqual(self.js(win, "document.querySelectorAll('.rail button').length"), 4)       # 도면·구간·AI 연결·설정
         self.assertEqual(self.js(win, "document.querySelectorAll('button:not([aria-label]):not([title])').length"), 0, "접근 이름 없는 단추")
 
     def test_icons_are_inline_svg_elements(self):
