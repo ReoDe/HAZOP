@@ -244,8 +244,9 @@ class ShellWindowTest(ShellBase):
         self.assertTrue(self.click(win, ".rail button", 4))
         pump(0.4)
         self.assertIn("시작할 때 새 화면 쓰기", self.text(win))
+        self.assertEqual(self.js(win, "document.querySelector(\"button[aria-label='시작할 때 새 화면 쓰기']\").getAttribute('aria-checked')"), "true", "기본은 켜짐")
         self.assertTrue(self.click(win, "button[aria-label='시작할 때 새 화면 쓰기']"))
-        self.assertTrue(wait_for(lambda: win.engine.settings.get("ui_shell") is True, 10))
+        self.assertTrue(wait_for(lambda: win.engine.settings.get("ui_shell") is False, 10), "끄면 설정에 False로 남는다")
 
     def test_settings_panel_shows_connection_and_saves_reviewer(self):
         win = self.window()

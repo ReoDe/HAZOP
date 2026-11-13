@@ -629,7 +629,7 @@ class ReadApi:
         return {"version": APP_VERSION, "reviewer": e.reviewer(), "project_id": e.project_id(), "current_sheet": e.current_sheet,
                 "ui": e.ui_state(), "chat_model": s.get("chat_model") or "fast", "ai_review": bool(s.get("extract_ai_review")),
                 "ai_review_cap": s.get("extract_ai_cap") or ai_review.DEFAULT_CAP, "ai_review_run_cap": ai_review.RUN_CAP,
-                "ui_shell": s.get("ui_shell") is True, "debug": bool(os.environ.get("HAZOP_DEBUG"))}
+                "ui_shell": s.get("ui_shell") is not False, "debug": bool(os.environ.get("HAZOP_DEBUG"))}
 
     def examples(self):
         """채팅 예시 질문(종류별). 태그는 지금 프로젝트에서 채운다. 프로젝트 그래프가 없으면 태그 없는 질문."""

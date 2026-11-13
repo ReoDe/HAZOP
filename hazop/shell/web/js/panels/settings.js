@@ -26,7 +26,7 @@ export function SettingsPanel({ onClose }) {
         <div class="acts-row" style="margin-top:8px"><${Btn} sm=${true} kind="primary" disabled=${!name.trim()} onClick=${saveName}>저장<//></div></div>
       <div class="card"><h3>프로젝트</h3><div class="kv"><div class="k"><b>${data.project_id || "프로젝트 없음"}</b><span>도면 ${data.drawings.length}장 · 등록 자료 ${data.documents.length}건</span></div></div></div>
       <div class="card"><h3>시작 화면</h3>
-        <div class="kv"><div class="k"><b>시작할 때 새 화면 쓰기</b><span>3단계가 끝나기 전에는 이전 화면이 기본입니다. 켜면 다음 실행부터 이 화면으로 열립니다.</span></div>
+        <div class="kv"><div class="k"><b>시작할 때 새 화면 쓰기</b><span>새 화면이 기본입니다. 끄면 다음 실행부터 이전 화면으로 열립니다. 아래 '이전 화면 열기'는 언제나 쓸 수 있습니다.</span></div>
           <${Switch} on=${app.ui_shell} label="시작할 때 새 화면 쓰기" onChange=${(v) => cmd("settings.set_default_shell", { enabled: v }).then(() => store.set((s) => ({ app: Object.assign({}, s.app, { ui_shell: v }) }))).catch(fail)} /></div></div>
       <div class="card"><h3>정보</h3><p class="muted" style="margin:0">HAZOP 분석 도구 ${app.version}</p>
         <div class="acts-row" style="margin-top:8px"><${Btn} sm=${true} onClick=${() => cmd("app.open_classic").catch(fail)}>이전 화면 열기<//></div></div>

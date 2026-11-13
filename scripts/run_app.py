@@ -47,8 +47,8 @@ def main(argv=None):
     ap.add_argument("--screenshots", help="화면별 스크린샷을 저장할 폴더(저장 후 종료)")
     ap.add_argument("--settings", help="설정 파일 경로(기본: APPDATA 아래 HAZOP/settings.json)")
     ap.add_argument("--debug", action="store_true", help="상태줄에 Python↔웹 메시지 등 개발자 정보를 표시")
-    ap.add_argument("--shell", action="store_true", help="새 웹 화면으로 연다(3단계가 끝날 때까지 기본은 이전 위젯 화면). 설정 ui_shell로도 켠다")
-    ap.add_argument("--classic", action="store_true", help="이전 위젯 화면으로 연다(설정 ui_shell이 켜져 있어도)")
+    ap.add_argument("--shell", action="store_true", help="새 웹 화면으로 연다(기본). 설정 ui_shell이 꺼져 있어도 이 창으로 연다")
+    ap.add_argument("--classic", action="store_true", help="이전 위젯 화면으로 연다(새 화면이 기본이어도)")
     args = ap.parse_args(argv)
     if os.environ.get(ENV_TEST_EXCEPTHOOK) == "1" and getattr(sys, "_hazop_verify_build", False):
         return _test_excepthook()

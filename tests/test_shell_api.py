@@ -159,7 +159,10 @@ class CommandCheckTest(EngineBase):
     def test_state_has_run_cap(self):
         s = api.ReadApi(self.engine()).state()
         self.assertEqual(s["ai_review_run_cap"], 300)
-        self.assertEqual(s["ui_shell"], False)
+        self.assertEqual(s["ui_shell"], True, "정하지 않았으면 새 화면이 기본")
+        e = self.engine()
+        e.dispatch("settings.set_default_shell", {"enabled": False})
+        self.assertEqual(api.ReadApi(e).state()["ui_shell"], False)
 
     def test_command_table_has_a_doc_for_each(self):
         for name, cmd in api.COMMANDS.items():
