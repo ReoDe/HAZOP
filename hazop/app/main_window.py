@@ -6,7 +6,7 @@
 
 import os
 
-from PySide6.QtCore import QRectF, QSize, Qt, QUrl, Signal
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QComboBox, QDialog, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
                                QLineEdit, QMainWindow, QMenuBar, QMessageBox, QPushButton, QSplitter, QStackedWidget,
@@ -23,7 +23,8 @@ from hazop.app.screens.register import RegisterScreen
 from hazop.app.screens.results import ResultsScreen
 from hazop.app.screens.review import ReviewScreen
 from hazop.app.screens.study import StudyNodesScreen
-from hazop.app.screens.viewer import ViewerScreen
+from hazop.app.chat_panel import ChatPanel
+from hazop.app.screens.viewer import ViewerHost, ViewerScreen
 from hazop.app.ai_conn import AiConnection
 from hazop.app.conn_widgets import ConnChip, ConnPopup
 from hazop.app.settings_dialog import ACTION_HELP, SettingsDialog, show_help
@@ -376,6 +377,7 @@ class MainWindow(QMainWindow):
                                                             ms=10000))
         self._menus()
         self._shortcuts()
+        self._chat_setup()
         self.toast_box = Toast(central)
         self._size_panels()
         self.go(0)
@@ -773,6 +775,88 @@ class MainWindow(QMainWindow):
         끼운 위젯의 소유는 호출한 쪽이 이어 간다(이 틀은 떼기만 한다)."""
         self.chat_column.set_widget(widget)
 
+    # 채팅 창 내용물(C2): 세션·프로젝트 자료·뷰어를 이어 준다. 부품(hazop.chat.*)이 없어도 앱은 뜬다.
+    def _chat_setup(self):
+        self._chat_ctx = None
+        self.viewer_host = ViewerHost(self.webview, self._chat_names, self._chat_switch, parent=self)
+        self.chat_panel = ChatPanel(self._chat_session, env_provider=self._chat_env, host=self.viewer_host,
+                                    view_fn=self._chat_view_dict, model=self.settings.get("chat_model") or "fast", parent=self)
+        self.chat_panel.modelChanged.connect(self._chat_model_saved)
+        self.chat_panel.guideRequested.connect(self._chat_guide)
+        self.chat_panel.escaped.connect(lambda: self._focus_main(self.current_screen()))
+        self.ai_conn.changed.connect(self._chat_availability)
+        self.set_chat_widget(self.chat_panel)
+        self._chat_availability()
+
+    def _chat_project_id(self):
+        names = [self.drawing] if self.drawing else []
+        names += [e["name"] for e in data.list_extractions() if e["name"] not in names]
+        for name in names[:1]:
+            try:
+                ctx = project_ctx.load(name)
+            except (OSError, ValueError, KeyError):
+                return None
+            return ctx.project_id if ctx and not ctx.error else None
+        return None
+
+    def _chat_names(self):
+        pid = self._chat_project_id()
+        return project_ctx.graph_names(pid) if pid else {}
+
+    def _chat_switch(self, name):
+        if not self._has_canvas(self.current_screen()):
+            self.go(1)
+        scr = self.canvas_screen()
+        h = getattr(scr, "select_drawing", None)
+        if h:
+            h(name)
+
+    def _chat_env(self):
+        """-> (CardEnv, 프로젝트 그래프) 또는 None. 같은 프로젝트면 파일 지문이 같을 때 읽은 묶음을 다시 쓴다."""
+        pid = self._chat_project_id()
+        if not pid:
+            return None
+        from hazop.chat import card as chatcard
+        from hazop.chat import context as chatcontext
+        ctx = self._chat_ctx
+        ctx = chatcontext.refresh(ctx) if ctx is not None and ctx.project_id == pid else chatcontext.load_context(pid)
+        self._chat_ctx = ctx
+        return chatcard.ContextEnv(ctx), ctx.pg
+
+    def _chat_session(self, model, callbacks):
+        pid = self._chat_project_id()
+        if not pid:
+            raise ValueError("프로젝트가 없습니다. 먼저 도면을 등록하고 추출하세요.")
+        try:
+            from hazop.chat.session import ChatSession
+        except ImportError as exc:
+            raise ValueError("이 설치에는 채팅 부품이 없습니다(%s)." % exc) from exc
+        return ChatSession(pid, model=model, **callbacks)
+
+    def _chat_view_dict(self):
+        sel = self.selection or {}
+        picked = [sel[k] for k in ("entity_id", "node_id") if sel.get(k)]
+        return {"stage": STAGE_GLYPHS[self.stage_of(self.stack.currentIndex())], "sheet": self.drawing, "selected": picked}
+
+    def _chat_model_saved(self, model):
+        self.settings["chat_model"] = model
+        try:
+            paths.save_settings(self.settings, self.settings_path)
+        except OSError:
+            pass
+
+    def _chat_availability(self):
+        st = self.ai_conn.status("subscription")
+        self.chat_panel.set_availability(st.get("state"), st.get("detail") or "")
+
+    def _chat_guide(self, name):
+        if name == "install":
+            self.conn_action("install_help", "subscription")
+        elif name == "login":
+            self.conn_action("terminal_login", "subscription")
+        else:
+            self.open_ai_settings("subscription")
+
     def chat_view(self):
         """채팅이 알아야 할 지금 화면: 화면 index, 단계 번호(0~5), 지금 도면."""
         idx = self.stack.currentIndex()
@@ -797,10 +881,13 @@ class MainWindow(QMainWindow):
             pass  # 창 배치 기억을 못 써도 앱은 계속 쓴다
 
     def _refit(self, remember=False):
+        was = self._col_on
         self._fit_explorer()
         self._size_panels()
         if remember:
             self._save_chat_pref()
+        if self._col_on and not was and hasattr(self, "chat_panel"):
+            QTimer.singleShot(0, self.chat_panel.refresh_examples)  # 펼칠 때 예시 질문의 태그를 지금 프로젝트에서 채운다
 
     def _make_room(self):
         """사용자가 오른쪽 열을 직접 열 때 자리가 모자라면 왼쪽 목록이 비켜 준다(창을 줄일 때의 순서와는 따로).
@@ -1661,6 +1748,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.screens[5].kill_review()  # ④ AI 구간 검토: 받은 호출은 이미 저장했다. 남은 호출은 끊는다
+        self.chat_panel.shutdown()  # 채팅은 결과 파일을 쓰지 않으므로 진행 중 질문도 묻지 않고 끊는다
         self.tasks.wait(30000)
         self.webview.dispose()
         super().closeEvent(event)

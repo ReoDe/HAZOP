@@ -111,8 +111,7 @@ class ChatFrameTest(unittest.TestCase):
 
     def test_set_chat_widget_replaces_placeholder(self):
         win = self.window(1920)
-        first = win.chat_widget()
-        self.assertIn("준비 중", first.text() if isinstance(first, QLabel) else first.findChild(QLabel).text())
+        self.assertIs(win.chat_widget(), win.chat_panel, "처음에는 채팅 창(C2)이 들어 있다")
         mine = QLabel("내용물")
         win.set_chat_widget(mine)
         self.assertIs(win.chat_widget(), mine)
@@ -226,6 +225,40 @@ class ChatFrameTest(unittest.TestCase):
         win.resize(1920, 768)
         pump(win, 0.1)
         self.assertTrue(win.chat_column.body.isVisible())
+
+    def test_panel_in_frame_at_1366_keeps_center_and_does_not_overflow(self):
+        from tests.test_chat_card import REF, TOOL_IDS, FakeEnv, answer, small_pg
+        from tests.test_chat_panel import FakeSession
+        win = self.window(1366)
+        win.toggle_chat()
+        pump(win, 0.1)
+        sessions = []
+        win.chat_panel._factory = lambda model, cb: sessions.append(FakeSession(model, cb)) or sessions[-1]
+        env = FakeEnv()
+        win.chat_panel._env_provider = lambda: (env, small_pg())
+        win.chat_panel.ask("경로 알려줘")
+        sessions[0].cb["on_tool_event"]("q1", "trace_path", {}, {"data": {"path_ref": REF}})
+        sessions[0].cb["on_answer"]("q1", answer(general="일반 " * 40, paths=[{"label": "경로", "path_ref": REF}]), TOOL_IDS)
+        pump(win, 0.2)
+        self.assertEqual(win.chat_panel.scroll.horizontalScrollBar().maximum(), 0)
+        self.assertGreaterEqual(win.stack.width(), win.stack.minimumSizeHint().width())
+        self.assertTrue(win.chat_panel.cards())
+
+    def test_closing_the_window_closes_the_chat_session(self):
+        from tests.test_chat_panel import FakeSession
+        win = self.window(1920)
+        sessions = []
+        win.chat_panel._factory = lambda model, cb: sessions.append(FakeSession(model, cb)) or sessions[-1]
+        win.chat_panel.ask("질문")
+        win.close()
+        self.assertTrue(sessions[0].closed)
+
+    def test_model_choice_is_saved_to_settings(self):
+        win = self.window(1920)
+        win.chat_panel.model_combo.setCurrentText("깊게")
+        self.assertEqual(self.saved().get("chat_model"), "deep")
+        again = self.window(1920, settings=self.saved())
+        self.assertEqual(again.chat_panel.model(), "deep")
 
 
 if __name__ == "__main__":
