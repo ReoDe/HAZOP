@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QComboBox, QDialog, Q
                                QVBoxLayout, QWidget)
 
 from hazop import paths
-from hazop.app import conn_view, data, explorer, palette, project_ctx, related, tokens
+from hazop.app import conn_view, data, explorer, icons, palette, project_ctx, related, tokens
 from hazop.app.related_panel import RelatedPanel
 from hazop.app.screens.analysis import AnalysisScreen
 from hazop.app.screens.initiating import InitiatingScreen
@@ -183,19 +183,22 @@ class ChatColumn(QWidget):
         sl = QVBoxLayout(self.strip)
         sl.setContentsMargins(2, 6, 2, 6)
         sl.setSpacing(4)
-        self.strip_chat = QPushButton("채팅")
+        self.strip_chat = QPushButton()
         self.strip_chat.setObjectName("chat_strip_chat")
         self.strip_chat.setToolTip("채팅 창 펴기 (Ctrl+K)")
         self.strip_chat.setAccessibleName("채팅 창 펴기")
         self.strip_chat.clicked.connect(main.open_chat)
         self.unread = False
-        self.strip_related = QPushButton("관련")
+        self.strip_related = QPushButton()
         self.strip_related.setObjectName("chat_strip_related")
         self.strip_related.setToolTip("관련 항목 펴기 (Ctrl+Alt+B)")
         self.strip_related.setAccessibleName("관련 항목 펴기")
         self.strip_related.clicked.connect(main.open_related)
+        self.strip_chat.setIcon(icons.icon("message-circle", size=20))
+        self.strip_related.setIcon(icons.icon("link", size=20))
         for b in (self.strip_chat, self.strip_related):
-            b.setFixedWidth(CHAT_STRIP - 4)
+            b.setIconSize(QSize(20, 20))
+            b.setFixedSize(CHAT_STRIP - 4, 32)
             b.setFocusPolicy(Qt.TabFocus)
             sl.addWidget(b)
         sl.addStretch(1)
@@ -211,6 +214,8 @@ class ChatColumn(QWidget):
         hl.setSpacing(4)
         self.tab_chat = QPushButton("채팅")
         self.tab_related = QPushButton("관련 항목")
+        self.tab_chat.setIcon(icons.icon("message-circle", size=14))
+        self.tab_related.setIcon(icons.icon("link", size=14))
         for b in (self.tab_chat, self.tab_related):
             b.setCheckable(True)
             b.setObjectName("chat_tab")
@@ -218,9 +223,10 @@ class ChatColumn(QWidget):
         self.tab_chat.clicked.connect(main.open_chat)
         self.tab_related.clicked.connect(main.open_related)
         hl.addStretch(1)
-        self.fold = QPushButton("▶")
+        self.fold = QPushButton()
+        self.fold.setIcon(icons.icon("layout-sidebar-right-collapse", size=18))
         self.fold.setObjectName("chat_fold")
-        self.fold.setFixedWidth(28)
+        self.fold.setFixedWidth(30)
         self.fold.setToolTip("오른쪽 열 접기 (Ctrl+Alt+K)")
         self.fold.setAccessibleName("오른쪽 열 접기")
         self.fold.clicked.connect(main.toggle_chat)
@@ -239,7 +245,9 @@ class ChatColumn(QWidget):
     def set_unread(self, unread):
         """접힌 띠의 채팅 단추에 '새 답' 점을 찍거나 지운다."""
         self.unread = bool(unread)
-        self.strip_chat.setText("채팅" + chr(10) + "●" if self.unread else "채팅")
+        # 새 답이 있으면 채팅 아이콘이 강조색으로 바뀐다(글자 점 대신 아이콘)
+        self.strip_chat.setIcon(icons.icon("message-circle", color="warn-line" if self.unread else None, size=20))
+        self.strip_chat.setToolTip("채팅 창 펴기 (Ctrl+K)" + (" · 새 답이 있습니다" if self.unread else ""))
         self.strip_chat.setAccessibleName("채팅 창 펴기, 새 답 있음" if self.unread else "채팅 창 펴기")
 
     def attach_related(self, panel):

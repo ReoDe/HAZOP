@@ -13,7 +13,7 @@ from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLayout, QPlainTextEdit, QPushButton, QScrollArea,
                                QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
-from hazop.app import tokens
+from hazop.app import icons, tokens
 from hazop.chat import card as cardmod
 from hazop.chat import view as chatview
 
@@ -130,6 +130,15 @@ class WrapButton(QPushButton):
         return QSize(60, self.label.minimumSizeHint().height() + 8)
 
 
+def _icon_label(name, color=None, size=14):
+    """아이콘을 그린 작은 라벨(글자 기호 대신)."""
+    lab = QLabel()
+    lab.setPixmap(icons.icon(name, color=color, size=size).pixmap(size, size))
+    lab.setFixedSize(size + 2, size + 2)
+    lab.setAccessibleName("")
+    return lab
+
+
 def _tip(text):
     """툴팁은 Qt가 리치 텍스트로 자동 판별하므로, 도면 태그·오류 글이 들어가면 이스케이프한 한 덩어리로 보낸다."""
     plain = str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -204,10 +213,12 @@ class CardWidget(QFrame):
             for w in card.warnings:
                 row = QHBoxLayout()
                 row.setSpacing(4)
-                text = "⚠ 경로에 " + w["text"] if w.get("scope") == "path" and w["reason"] != "valve_position_ignored" else "⚠ " + w["text"]
+                text = "경로에 " + w["text"] if w.get("scope") == "path" and w["reason"] != "valve_position_ignored" else w["text"]
                 line = _label(text, "chat_warn_line")
+                row.addWidget(_icon_label("alert-triangle", color="warn-ink", size=14), 0, Qt.AlignTop)
                 row.addWidget(line, 1)
-                toggle = QPushButton("대상 ▾")
+                toggle = QPushButton("대상")
+                toggle.setIcon(icons.icon("chevron-down", color="warn-ink", size=12))
                 toggle.setObjectName("chat_warn_toggle")
                 toggle.setFlat(True)
                 targets = _label(", ".join(w.get("labels") or w["ids"]), "chat_warn_targets")
@@ -239,7 +250,7 @@ class CardWidget(QFrame):
     @staticmethod
     def _toggle_targets(label, button):
         label.setVisible(not label.isVisible())
-        button.setText("대상 ▴" if label.isVisible() else "대상 ▾")
+        button.setIcon(icons.icon("chevron-up" if label.isVisible() else "chevron-down", color="warn-ink", size=12))
 
     # ------------------------------------------------------------ 경로
     def _fill_path(self, index, path):
@@ -316,7 +327,8 @@ class CardWidget(QFrame):
         lab.setStyleSheet("color: %s; font-size: 11px;" % tokens.c("muted"))
         bar.addWidget(lab, 1)
         if footer["calls"]:
-            self.toggle = QPushButton("근거 보기 ▾")
+            self.toggle = QPushButton("근거 보기")
+            self.toggle.setIcon(icons.icon("chevron-down", size=12))
             self.toggle.setObjectName("chat_evidence")
             self.toggle.setFlat(True)
             self.toggle.clicked.connect(self._toggle_details)
@@ -336,10 +348,12 @@ class CardWidget(QFrame):
             self.details = _label("\n".join(lines), "chat_details")
             self.details.setStyleSheet("color: %s; font-size: 11px;" % tokens.c("muted"))
             self.layout().addWidget(self.details)
-            self.toggle.setText("근거 접기 ▴")
+            self.toggle.setText("근거 접기")
+            self.toggle.setIcon(icons.icon("chevron-up", size=12))
         else:
             self.details.setVisible(not self.details.isVisible())
-            self.toggle.setText("근거 접기 ▴" if self.details.isVisible() else "근거 보기 ▾")
+            self.toggle.setText("근거 접기" if self.details.isVisible() else "근거 보기")
+            self.toggle.setIcon(icons.icon("chevron-up" if self.details.isVisible() else "chevron-down", size=12))
 
 
 class ChatInput(QPlainTextEdit):
@@ -414,6 +428,7 @@ class ChatPanel(QWidget):
         head.addWidget(self.model_combo)
         head.addStretch(1)
         self.new_button = QPushButton("새 대화")
+        self.new_button.setIcon(icons.icon("message-plus", size=14))
         self.new_button.setToolTip("지금까지의 대화를 지우고 새로 시작합니다")
         self.new_button.clicked.connect(self.new_conversation)
         head.addWidget(self.new_button)
@@ -458,6 +473,7 @@ class ChatPanel(QWidget):
         self.input.textChanged.connect(self._typing)
         row.addWidget(self.input, 1)
         self.send_button = QPushButton("보내기")
+        self.send_button.setIcon(icons.icon("send", size=14))
         self.send_button.clicked.connect(self._send_clicked)
         row.addWidget(self.send_button)
         cp.addLayout(row)
@@ -825,6 +841,7 @@ class ChatPanel(QWidget):
 
     def _update_send(self):
         self.send_button.setText("멈추기" if self._busy else "보내기")
+        self.send_button.setIcon(icons.icon("player-stop" if self._busy else "send", size=14))
         self.send_button.setEnabled(not self._avail["blocked"] or self._busy)
 
     def _model_changed(self, _i):

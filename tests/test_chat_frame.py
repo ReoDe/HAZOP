@@ -272,11 +272,21 @@ class ChatFrameTest(unittest.TestCase):
         sessions[0].cb["on_answer"]("q1", answer(), TOOL_IDS)
         pump(win, 0.2)
         self.assertTrue(win.chat_column.unread)
-        self.assertIn("●", win.chat_column.strip_chat.text())
+        self.assertIn("새 답", win.chat_column.strip_chat.accessibleName())
+        self.assertFalse(win.chat_column.strip_chat.icon().isNull(), "글자 점이 아니라 아이콘으로 표시한다")
+        unread_key = win.chat_column.strip_chat.icon().cacheKey()
         win.open_chat()
         pump(win, 0.1)
         self.assertFalse(win.chat_column.unread)
-        self.assertNotIn("●", win.chat_column.strip_chat.text())
+        self.assertNotEqual(win.chat_column.strip_chat.icon().cacheKey(), unread_key, "읽으면 아이콘 색이 돌아온다")
+
+    def test_right_column_buttons_use_icons_not_glyphs(self):
+        win = self.window(1366)
+        col = win.chat_column
+        for b in (col.strip_chat, col.strip_related, col.fold, col.tab_chat, col.tab_related):
+            self.assertFalse(b.icon().isNull(), b.objectName() or b.accessibleName())
+        for glyph in ("▶", "◀", "●", "▾", "▴"):
+            self.assertNotIn(glyph, col.fold.text() + col.strip_chat.text() + col.strip_related.text())
 
     def test_answer_while_open_leaves_no_dot(self):
         from tests.test_chat_card import TOOL_IDS, answer

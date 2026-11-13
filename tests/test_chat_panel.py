@@ -393,6 +393,28 @@ class ReviewFixTest(PanelBase):
         self.assertIn("지금까지의 대화는 지워지고", self.texts(p))
 
 
+class IconTest(PanelBase):
+    def test_buttons_use_icons(self):
+        p = self.panel()
+        self.assertFalse(p.send_button.icon().isNull())
+        self.assertFalse(p.new_button.icon().isNull())
+        before = p.send_button.icon().cacheKey()
+        p.ask("q")
+        self.assertEqual(p.send_button.text(), "멈추기")
+        self.assertNotEqual(p.send_button.icon().cacheKey(), before, "멈추기는 멈춤 아이콘")
+
+    def test_warning_and_toggles_use_icons_not_glyphs(self):
+        p = self.panel(host=FakeHost())
+        p.ask("q")
+        self.deliver(p)
+        texts = self.texts(p) + " ".join(b.text() for b in p.findChildren(QPushButton))
+        for glyph in ("⚠", "▾", "▴"):
+            self.assertNotIn(glyph, texts)
+        toggles = [b for b in p.findChildren(QPushButton) if b.objectName() in ("chat_warn_toggle", "chat_evidence")]
+        self.assertTrue(toggles)
+        self.assertTrue(all(not b.icon().isNull() for b in toggles))
+
+
 class ModelTest(PanelBase):
     def test_default_is_fast_and_change_goes_to_session(self):
         p = self.panel()
