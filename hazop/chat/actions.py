@@ -1,0 +1,778 @@
+"""채팅 답 카드의 '제안 동작'을 앱이 검사·분류·실행하는 층(규격 docs/specs/chat-panel.md §4, §2.6). Qt를 import하지 않는다.
+
+모델이 쓸 수 있는 것은 `action`·`args`·`why`뿐이다(§4.1). 이 모듈은
+1. 동작 표(ACTIONS)로 이름·인자 서명·분류(표시·바로·후보·확인·안 함)를 정하고,
+2. 지금 프로젝트 상태(Snapshot, 부르는 쪽이 읽어 넘김)로 대상·잠금·확정·개정을 검사해 `plan()`이 [바로 실행할 것, 확인 받을 것,
+   거절한 것과 사유, 표시]로 나누고,
+3. 확인 동작에는 승인 표지(§4.6)를 만들어 실행 직전에 다시 대조하며,
+4. 같은 `action_key`를 두 번 실행하지 않고, 표시를 뺀 모든 결과를 `hazop.chat.actions_log.record`로 남긴다.
+
+실제 실행은 하지 않는다. 실행 함수는 `executors={동작 이름: fn(args, call) -> dict}`로 주입받는다(새 화면 `hazop/shell/api.py`가
+엔진 함수를 잇는다). 구간 규칙(대표 5개·나머지 30개, AI가 사람 구간을 못 고침, 잠금·확정)은 `hazop.study.node_tools.apply_nodes`·
+`undo_batch`가 최종으로 지키고, 이 층은 그 앞에서 '바로 / 확인 / 거절'을 가르고 질문을 건너 쌓이는 상한(§4.5)을 센다.
+"""
+
+import copy
+import hashlib
+import json
+import re
+import threading
+import time
+from dataclasses import dataclass, field
+
+from hazop.chat import actions_log
+
+# ---------------------------------------------------------------- 분류
+
+DISPLAY, AUTO, CANDIDATE, CONFIRM, NEVER = "display", "auto", "candidate", "confirm", "never"
+CLASS_NAMES = {DISPLAY: "표시", AUTO: "바로", CANDIDATE: "후보", CONFIRM: "확인", NEVER: "안 함"}
+MAX_ACTIONS = 20             # 한 답의 동작 수(§4.1)
+PENDING_LIMIT = 5            # 사람 확인 전 AI 구간 상한(§4.5 대표 단계)
+REST_LIMIT = 30              # '나머지' 단계 한 요청 상한(§4.5)
+APPROVAL_TTL = 600           # 승인 표지 유효 시간(초, §4.6)
+# 모델이 넣으면 그 동작을 거절하는 키(§4.1, 차단 11). 기록의 신뢰 필드는 앱이 만든다
+FORGED_KEYS = frozenset(("request_id", "answer_id", "action_key", "batch_id", "result", "confirmed_by", "confirmed_at",
+                         "approval_digest", "conversation_id", "by", "origin", "reviewer", "accepted_by", "proposed_by",
+                         "at", "class", "undo_of"))
+_PATHLIKE = re.compile(r"(^|[/\\])\.\.([/\\]|$)|\\|^[A-Za-z]:|^[/~]|%[^%\s]+%|^file:", re.I)
+_ID = re.compile(r"^[A-Za-z0-9_.#-]+(/[A-Za-z0-9_.#-]+)*$")
+
+
+# ---------------------------------------------------------------- 상태(부르는 쪽이 읽어 넘김)
+
+@dataclass
+class Snapshot:
+    """지금 프로젝트 상태. plan()과 approve() 직전에 부르는 쪽이 새로 읽어 넘긴다(read_state).
+
+    files: 대상 열쇠 -> {"path", "size", "mtime"}. 열쇠는 등록 ID(추출 결과), "kg"(지식그래프), "ie"(초기사건 문서).
+    """
+    project_id: str
+    node_set: dict = None
+    results: dict = None
+    graph_ids: frozenset = frozenset()
+    registrations: dict = field(default_factory=dict)   # reg_id -> {"has_result": bool, "excluded": bool}
+    files: dict = field(default_factory=dict)
+    ie_draft_by_human: bool = False
+
+
+def _nodes(snap):
+    return {n.get("node_id"): n for n in ((snap.node_set or {}).get("nodes") or [])}
+
+
+def node_state(n):
+    if n.get("state") in ("applied", "confirmed", "locked"):
+        return n["state"]
+    return "locked" if n.get("locked") else ("confirmed" if n.get("confirmed") else "applied")
+
+
+def _cells(snap, nid):
+    return [c for c in ((snap.results or {}).get("cells") or []) if c.get("node_id") == nid]
+
+
+def has_cells(snap, nid):
+    """⑤ 칸에 항목이나 판정이 남은 구간(§4.3 마지막 줄)."""
+    return any(c.get("entries") or c.get("state") not in (None, "not_analyzed") for c in _cells(snap, nid))
+
+
+def _batch(snap, bid):
+    return next((b for b in ((snap.node_set or {}).get("batches") or []) if b.get("batch_id") == bid), None)
+
+
+def human_touched(n):
+    return n.get("name_by") == "user" or (n.get("design_intent") or {}).get("by") == "user"
+
+
+def pending_ai(snap):
+    """사람 확인 전 AI 구간 수(§4.5-1): origin ai·applied이고, 그 구간의 마지막 묶음이 AI 묶음이며 human_seen이 아니고,
+    사람이 이름·설계 의도를 고친 적 없는 구간. 묶음의 human_seen은 구간 규격 묶음 필드(N1)이고, 없으면 아직 안 본 것으로 센다."""
+    count = 0
+    for n in _nodes(snap).values():
+        if n.get("origin") != "ai" or node_state(n) != "applied" or human_touched(n):
+            continue
+        b = _batch(snap, n.get("batch_id"))
+        if b is not None and (b.get("origin") != "ai" or b.get("human_seen")):
+            continue
+        count += 1
+    return count
+
+
+# ---------------------------------------------------------------- 인자 서명
+
+def _is_id(v):
+    return isinstance(v, str) and 0 < len(v) <= 200 and bool(_ID.match(v)) and ".." not in v.split("/")
+
+
+def _ids(v, limit=200):
+    return isinstance(v, list) and 0 < len(v) <= limit and all(_is_id(x) for x in v)
+
+
+TYPES = {
+    "str": lambda v: isinstance(v, str) and 0 < len(v) <= 500,
+    "text": lambda v: isinstance(v, str) and len(v) <= 2000,
+    "id": _is_id,
+    "ids": _ids,
+    "int": lambda v: isinstance(v, int) and not isinstance(v, bool),
+    "bool": lambda v: isinstance(v, bool),
+    "obj": lambda v: isinstance(v, dict) and len(v) <= 50,
+    "list": lambda v: isinstance(v, list) and len(v) <= 200,
+}
+
+
+def _spec(*required, **optional):
+    """_spec(("node_ids", "ids"), stage=("str",)) 형태: 필수는 (이름, 형) 튜플, 선택은 이름=형."""
+    out = {name: (kind, True) for name, kind in required}
+    out.update({name: (kind, False) for name, kind in optional.items()})
+    return out
+
+
+@dataclass(frozen=True)
+class Action:
+    name: str
+    klass: str                   # 기본 분류. nodes.apply·nodes.undo 등은 check가 상태에 따라 바꾼다
+    args: dict                   # 인자 이름 -> (형, 필수)
+    stage: str                   # 단계(공통·①~⑥)
+    note: str = ""               # 보존되는 것·비고(§4.2 표의 넷째 칸)
+    confirm_text: str = ""       # 확인 상자 문구 틀(앱이 검사한 값만 넣음)
+    where: str = ""              # 안 함 동작: 사람이 할 곳
+
+
+ACTIONS = {a.name: a for a in (
+    # 공통 · 표시(데이터를 바꾸지 않음, 기록하지 않음)
+    Action("show", DISPLAY, _spec(sheet="id", ids="ids", path_ref="obj", style="str"), "공통", "도면 이동·강조·경로 표시"),
+    Action("goto", DISPLAY, _spec(("target", "str"), id="id"), "공통", "단계·탭 이동, 항목 열기"),
+    Action("select", DISPLAY, _spec(("ids", "ids")), "공통", "구성요소·구간·칸 고르기"),
+    Action("layer", DISPLAY, _spec(("name", "str"), on="bool"), "공통", "도면 층 켜기·끄기"),
+    Action("fit", DISPLAY, _spec(sheet="id"), "공통", "도면 맞춤"),
+    # ①
+    Action("register.extract", AUTO, _spec(("registration_id", "id")), "①",
+           "결과가 없을 때만. 파일 고르기 창을 열지 않고 경로를 채팅으로 받지 않는다"),
+    Action("register.reextract", CONFIRM, _spec(("registration_id", "id")), "①",
+           "추출 결과를 새로 쓴다. 사람 수정 기록은 쓰지 않고 새 결과 위에 다시 얹는다",
+           "등록 자료 {registration_id}를 다시 추출합니다. 추출 결과는 새로 쓰고, 사람 수정 기록은 새 결과 위에 다시 얹습니다."),
+    Action("register.exclude", CONFIRM, _spec(("registration_id", "id")), "①", "등록 기록은 지우지 않음",
+           "등록 자료 {registration_id}를 구간 분석에서 뺍니다. 등록 기록은 지우지 않습니다."),
+    # ②
+    Action("extract.suggest", CANDIDATE, _spec(("sheet", "id"), ("target", "id"), ("field", "str"), value="text",
+                                               reason="text"), "②",
+           "태그·종류·흐름 방향·미확인 확정·끊긴 연결·짝 지정의 후보만. 사람이 받아들일 때만 반영(origin: ai)"),
+    Action("extract.edit", NEVER, _spec(), "②", "편집 저장·객체 지우기·연결 끊기", where="② 도면 추출 화면에서 사람이 한다"),
+    # ③
+    Action("kg.algorithm", AUTO, _spec(("name", "str"), params="obj"), "③", "결과는 내용 ID 폴더에 새로 씀(덮지 않음)"),
+    Action("kg.rebuild", CONFIRM, _spec(), "③", "사람 지식 CSV와 언급 판단 파일은 쓰지 않음",
+           "지식그래프를 다시 만듭니다. 사람 지식과 언급 판단 파일은 그대로 두고, 판이 바뀐 사람 확인은 후보로 돌아갑니다."),
+    # ④
+    Action("nodes.apply", AUTO, _spec(("set_rev", "int"), ("ops", "list"), graph_id="id"), "④",
+           "§4.3 표·§4.5 상한. 구간 규격 apply_nodes",
+           "AI가 만든 구간 {pending}개를 아직 확인하지 않았습니다. 이 요청으로 {adds}개를 더 만들고 {edits}개를 바꿉니다."),
+    Action("nodes.undo", AUTO, _spec(("batch_id_to_undo", "id"), ("set_rev", "int")), "④", "§4.3 표. 구간 규격 undo_batch",
+           "묶음 {batch}를 되돌립니다."),
+    Action("nodes.confirm", CONFIRM, _spec(("node_ids", "ids")), "④", "사람 판단. 실행하면 by에 검토자",
+           "구간 {node_ids}을 확정합니다."),
+    Action("nodes.unconfirm", CONFIRM, _spec(("node_ids", "ids")), "④", "사람 판단", "구간 {node_ids}의 확정을 해제합니다."),
+    Action("nodes.lock", CONFIRM, _spec(("node_ids", "ids")), "④", "분석 마침·잠금. 구간 규격 §5.1 조건을 채운 구간만",
+           "구간 {node_ids}을 분석 마침으로 잠급니다. 잠금은 ④에서 이유를 적어야만 풀립니다."),
+    Action("nodes.unlock", NEVER, _spec(), "④", "차단 9", where="④ 검토구간에서 사람이 이유를 적고 푼다"),
+    # ⑤
+    Action("analysis.run", CONFIRM, _spec(("node_ids", "ids"), cell_ids="ids"), "⑤",
+           "구독 한도를 쓴다. 사람이 쓴 항목은 바꾸지 않음",
+           "구간 {node_ids}을 AI로 분석합니다(구독 한도를 씁니다). 사람이 쓴 항목은 바꾸지 않습니다."),
+    Action("results.set_status", CONFIRM, _spec(("cell_id", "id"), ("status", "str")), "⑤", "사람 판단. 잠긴 구간의 칸은 거절",
+           "칸 {cell_id}의 상태를 {status}(으)로 바꿉니다."),
+    Action("results.edit", CONFIRM, _spec(("cell_id", "id"), ("fields", "obj")), "⑤", "사람 판단. 잠긴 구간의 칸은 거절",
+           "칸 {cell_id}의 내용을 고칩니다."),
+    Action("export.excel", AUTO, _spec(), "⑤", "이름에 시각을 붙인 새 파일"),
+    Action("export.ie_bundle", AUTO, _spec(), "⑤", "이름에 시각을 붙인 새 파일"),
+    # ⑥
+    Action("ie.draft_rules", AUTO, _spec(), "⑥", "초안. 기존 초안을 사람이 고쳤으면 확인",
+           "사람이 고친 초기사건 규칙 초안을 새 초안으로 바꿉니다."),
+    Action("ie.reset", CONFIRM, _spec(), "⑥", "원본은 백업 파일로 남음",
+           "초기사건 문서를 백업한 뒤 빈 문서로 새로 시작합니다. 원본은 백업 파일로 남습니다."),
+    # 공통 · 안 함
+    Action("settings.change", NEVER, _spec(), "공통", "AI 연결 방식·초과 사용 허용·모델", where="설정 창에서 한다"),
+    Action("settings.api_key", NEVER, _spec(), "공통", "API 키", where="설정 창에서 한다"),
+    Action("settings.work_root", NEVER, _spec(), "공통", "작업 루트", where="설정 창에서 한다"),
+    Action("settings.reviewer", NEVER, _spec(), "공통", "검토자 이름", where="설정 창에서 한다"),
+    Action("files.delete", NEVER, _spec(), "공통", "파일·폴더 지우기", where="탐색기에서 사람이 한다"),
+)}
+
+RESULT_STATUSES = ("approved", "rejected", "pending")
+SUGGEST_FIELDS = ("tag", "kind", "flow_direction", "unknown_confirm", "connect", "pair")
+
+
+def table_rows():
+    """동작 표(§4.2)를 행 목록으로: [{name, class, class_name, stage, note, args, where}]. 문서·시험·화면이 같은 표를 읽는다."""
+    return [{"name": a.name, "class": a.klass, "class_name": CLASS_NAMES[a.klass], "stage": a.stage, "note": a.note,
+             "args": {k: v[0] + ("" if v[1] else "?") for k, v in a.args.items()}, "where": a.where}
+            for a in ACTIONS.values()]
+
+
+# ---------------------------------------------------------------- 계획
+
+@dataclass
+class Item:
+    """한 동작의 판정. keys: 이 판정에 묶인 action_key 목록(같은 답의 nodes.apply는 하나로 합친다)."""
+    keys: list
+    indexes: list
+    action: str
+    args: dict
+    why: str
+    klass: str
+    reason: str = None           # 거절 사유(klass == "rejected"일 때)
+    where: str = None            # 사람이 할 곳(안 함)
+    confirm_text: str = None
+    approval: dict = None        # 확인 동작의 승인 표지
+    stage: str = None            # nodes.apply: "representative" | "rest"
+    targets: list = field(default_factory=list)
+    proposals: list = field(default_factory=list)
+
+    @property
+    def key(self):
+        return self.keys[0]
+
+
+@dataclass
+class Plan:
+    answer_id: str
+    run: list = field(default_factory=list)        # 바로·후보: run()으로 실행
+    confirm: list = field(default_factory=list)    # 확인: 사람이 누르면 approve(), 거절하면 decline()
+    rejected: list = field(default_factory=list)   # 앱 검사에서 거절(이미 기록함)
+    display: list = field(default_factory=list)    # 표시: 화면이 바로 그림(기록 없음)
+
+
+@dataclass
+class Call:
+    """실행 함수에 넘기는 앱 값. 모델 값은 args뿐이다."""
+    project_id: str
+    request_id: str
+    request_text: str
+    action_keys: list
+    origin: str                  # "ai"(바로·후보) | "user"(사람이 확인 상자에서 누름)
+    confirmed_by: str = None
+    stage: str = None            # nodes.apply: representative | rest
+    mark_seen: bool = False      # '나머지' 확인: 그때까지의 AI 묶음을 모두 human_seen으로
+    conversation_id: str = None
+    model: str = None
+
+
+def _digest(obj):
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+
+
+def _forged(args, depth=0):
+    if depth > 4:
+        return None
+    if isinstance(args, dict):
+        for k, v in args.items():
+            if k in FORGED_KEYS:
+                return k
+            bad = _forged(v, depth + 1)
+            if bad:
+                return bad
+    elif isinstance(args, list):
+        for v in args:
+            bad = _forged(v, depth + 1)
+            if bad:
+                return bad
+    return None
+
+
+def _pathlike(args, depth=0):
+    if isinstance(args, str):
+        return bool(_PATHLIKE.search(args))
+    if isinstance(args, dict):
+        return depth < 5 and any(_pathlike(k, depth + 1) or _pathlike(v, depth + 1) for k, v in args.items())
+    if isinstance(args, list):
+        return depth < 5 and any(_pathlike(v, depth + 1) for v in args)
+    return False
+
+
+def check_signature(action, args):
+    """-> None 또는 거절 사유."""
+    if not isinstance(args, dict):
+        return "인자는 객체여야 함"
+    extra = sorted(k for k in args if k not in action.args)
+    if extra:
+        return "서명에 없는 인자: %s" % ", ".join(extra[:5])
+    for name, (kind, required) in action.args.items():
+        if name not in args or args[name] is None:
+            if required:
+                return "필수 인자 없음: %s" % name
+            continue
+        if not TYPES[kind](args[name]):
+            return "인자 형이 맞지 않음: %s" % name
+    if _pathlike(args):
+        return "경로처럼 생긴 값은 받지 않음"
+    return None
+
+
+class _Reject(Exception):
+    def __init__(self, reason, where=None):
+        super().__init__(reason)
+        self.reason, self.where = reason, where
+
+
+class ActionPlanner:
+    """대화 하나(채팅 프로세스 하나) 동안의 동작 판정·실행·기록.
+
+    read_state() -> Snapshot: plan()·approve() 때마다 새로 읽는다.
+    executors: {동작 이름: fn(args, call: Call) -> dict}. 돌려주는 dict의 "targets"·"batch_id"를 기록에 쓴다. 예외는 failed.
+    record: actions_log.record와 같은 서명(시험은 가짜를 넘긴다).
+    """
+
+    def __init__(self, project_id, read_state, executors, record=actions_log.record, conversation_id=None, model=None,
+                 via="subscription", app_version=None, clock=time.time):
+        self.project_id = project_id
+        self.read_state = read_state
+        self.executors = dict(executors or {})
+        self._record = record
+        self.conversation_id = conversation_id or actions_log.new_id("conv")
+        self.model, self.via, self.app_version = model, via, app_version
+        self.clock = clock
+        self._lock = threading.RLock()
+        self.done_keys = set()           # 실행(또는 결론)한 action_key: 두 번 실행하지 않는다
+        self.conv_batches = set()        # 이번 대화에서 AI가 만든 묶음
+        self.last_add_turn = None        # 마지막으로 AI 구간을 바로 적용한 사용자 질문 번호
+        self.exec_seq = 0                # 실행한 동작 수(표지 사이에 다른 동작이 실행됐는지)
+        self.requests = {}               # answer_id -> (request_id, request_text, turn)
+        self.closed = False
+        self.log = []                    # 기록 결과(시험·화면 알림)
+
+    # ---- 계획
+
+    def plan(self, answer_id, actions, turn, request_id, request_text=""):
+        """답 하나의 동작 목록 -> Plan. 거절은 여기서 기록한다. turn: 이 대화에서 사용자가 보낸 질문 번호(1부터)."""
+        snap = self.read_state()
+        out = Plan(answer_id)
+        with self._lock:
+            self.requests[answer_id] = (request_id, request_text, turn)
+            actions = actions if isinstance(actions, list) else []
+            node_items = []
+            for i, raw in enumerate(actions):
+                key = actions_log.action_key(answer_id, i)
+                prop = raw if isinstance(raw, dict) else {}
+                name = prop.get("action") if isinstance(prop.get("action"), str) else ""
+                item = Item([key], [i], name[:100], copy.deepcopy(prop.get("args")) if isinstance(prop.get("args"), dict)
+                            else prop.get("args"), str(prop.get("why") or "")[:300], NEVER,
+                            proposals=[{"action": name[:100] or "?", "args": prop.get("args"), "why": prop.get("why")}])
+                try:
+                    if i >= MAX_ACTIONS:
+                        raise _Reject("한 답의 동작은 %d개까지" % MAX_ACTIONS)
+                    self._check(item, snap)
+                except _Reject as rej:
+                    item.klass, item.reason, item.where = "rejected", rej.reason, rej.where
+                if item.klass == "rejected":
+                    out.rejected.append(item)
+                elif item.action == "nodes.apply":
+                    node_items.append(item)
+                else:
+                    self._route(out, item, snap)
+            if node_items:
+                merged = self._merge_nodes(node_items, snap, turn)
+                if merged.klass == "rejected":
+                    out.rejected.append(merged)
+                else:
+                    self._route(out, merged, snap)
+            for item in out.rejected:
+                self._write(item, "rejected", error=item.reason)
+        return out
+
+    def _route(self, out, item, snap):
+        if item.klass == DISPLAY:
+            out.display.append(item)
+        elif item.klass in (AUTO, CANDIDATE):
+            out.run.append(item)
+        elif item.klass == CONFIRM:
+            item.approval = self._approval(item, snap)
+            out.confirm.append(item)
+
+    def _check(self, item, snap):
+        action = ACTIONS.get(item.action)
+        if action is None:
+            raise _Reject("동작 표에 없는 동작(채팅으로 할 수 없음)")
+        if action.klass == NEVER:
+            raise _Reject("채팅으로 하지 않는 동작", action.where)
+        bad = _forged(item.args)
+        if bad:
+            raise _Reject("앱이 정하는 값(%s)을 모델이 넣음" % bad)
+        bad = check_signature(action, item.args)
+        if bad:
+            raise _Reject(bad)
+        item.klass = action.klass
+        check = getattr(self, "_check_" + item.action.replace(".", "_"), None)
+        if check is not None:
+            check(item, snap)
+        if item.klass == CONFIRM and action.confirm_text and not item.confirm_text:
+            item.confirm_text = _fill(action.confirm_text, item.args)
+
+    # ---- 동작별 검사
+
+    def _reg(self, item, snap):
+        rid = item.args["registration_id"]
+        reg = snap.registrations.get(rid)
+        if reg is None:
+            raise _Reject("지금 프로젝트에 없는 등록 자료")
+        item.targets = [rid]
+        return reg
+
+    def _check_register_extract(self, item, snap):
+        if self._reg(item, snap).get("has_result"):
+            raise _Reject("이미 추출 결과가 있음(다시 추출은 register.reextract, 확인 필요)")
+
+    def _check_register_reextract(self, item, snap):
+        self._reg(item, snap)
+
+    def _check_register_exclude(self, item, snap):
+        if self._reg(item, snap).get("excluded"):
+            raise _Reject("이미 구간 분석에서 뺀 자료")
+
+    def _check_extract_suggest(self, item, snap):
+        a = item.args
+        if a["field"] not in SUGGEST_FIELDS:
+            raise _Reject("고칠 수 있는 항목이 아님(%s)" % ", ".join(SUGGEST_FIELDS))
+        if snap.graph_ids and a["target"] not in snap.graph_ids:
+            raise _Reject("지금 프로젝트 그래프에 없는 대상")
+        item.targets = [a["target"]]
+
+    def _check_kg_rebuild(self, item, snap):
+        item.targets = ["kg"]
+
+    def _check_ie_draft_rules(self, item, snap):
+        if snap.ie_draft_by_human:
+            item.klass = CONFIRM
+            item.targets = ["ie"]
+
+    def _check_ie_reset(self, item, snap):
+        item.targets = ["ie"]
+
+    def _need_nodes(self, item, snap, allow=("applied", "confirmed")):
+        nodes = _nodes(snap)
+        for nid in item.args["node_ids"]:
+            n = nodes.get(nid)
+            if n is None:
+                raise _Reject("없는 구간: %s" % nid)
+            if node_state(n) not in allow:
+                raise _Reject("%s 구간은 이 동작을 할 수 없음: %s" % (node_state(n), nid))
+        item.targets = list(item.args["node_ids"])
+
+    def _check_nodes_confirm(self, item, snap):
+        self._need_nodes(item, snap, ("applied",))
+
+    def _check_nodes_unconfirm(self, item, snap):
+        self._need_nodes(item, snap, ("confirmed",))
+
+    def _check_nodes_lock(self, item, snap):
+        self._need_nodes(item, snap, ("confirmed",))
+
+    def _check_analysis_run(self, item, snap):
+        self._need_nodes(item, snap)
+
+    def _cell(self, item, snap):
+        cid = item.args["cell_id"]
+        parts = cid.split("/")
+        if len(parts) < 2:
+            raise _Reject("칸 ID 형식이 아님(<node_id>/<deviation_id>[/<entry_id>])")
+        n = _nodes(snap).get(parts[0])
+        if n is None:
+            raise _Reject("없는 구간의 칸")
+        if node_state(n) == "locked":
+            raise _Reject("잠긴 구간의 칸은 바꾸지 않음(④에서 사람이 이유를 적고 풀어야 함)")
+        cell = next((c for c in _cells(snap, parts[0]) if c.get("deviation_id") == parts[1]), None)
+        if cell is None:
+            raise _Reject("없는 칸")
+        if len(parts) > 2 and not any(e.get("entry_id") == parts[2] for e in cell.get("entries") or []):
+            raise _Reject("없는 항목")
+        item.targets = [cid]
+
+    def _check_results_set_status(self, item, snap):
+        if item.args["status"] not in RESULT_STATUSES:
+            raise _Reject("상태는 %s 중 하나" % ", ".join(RESULT_STATUSES))
+        self._cell(item, snap)
+
+    def _check_results_edit(self, item, snap):
+        self._cell(item, snap)
+
+    def _check_nodes_undo(self, item, snap):
+        bid = item.args["batch_id_to_undo"]
+        b = _batch(snap, bid)
+        if b is None:
+            raise _Reject("없는 묶음(되돌릴 수 있는 최근 묶음 밖)")
+        if b.get("undone"):
+            raise _Reject("이미 되돌린 묶음")
+        if item.args["set_rev"] != (snap.node_set or {}).get("set_rev"):
+            raise _Reject("구간이 그 사이 바뀜(set_rev)")
+        if b.get("origin") != "ai":
+            raise _Reject("사람 묶음은 채팅으로 되돌리지 않음", "④ 검토구간에서 사람이 되돌린다")
+        nodes = _nodes(snap)
+        for o in b.get("ops") or []:
+            n = nodes.get(o.get("node_id"))
+            if n is not None and node_state(n) in ("confirmed", "locked"):
+                raise _Reject("확정·잠금 구간이 든 묶음(%s)" % n["node_id"], "④에서 확정 해제 뒤 다시 요청")
+            if n is not None and has_cells(snap, n["node_id"]):
+                raise _Reject("⑤ 칸이 있는 구간이 든 묶음(%s)" % n["node_id"])
+        item.targets = sorted({o.get("node_id") for o in b.get("ops") or []})
+        item.klass = AUTO if bid in self.conv_batches else CONFIRM
+        item.confirm_text = _fill(ACTIONS["nodes.undo"].confirm_text, {"batch": bid})
+
+    def _merge_nodes(self, items, snap, turn):
+        """같은 답의 nodes.apply를 묶음 하나로 합치고 §4.3·§4.5로 분류한다."""
+        keys = [k for it in items for k in it.keys]
+        merged = Item(keys, [i for it in items for i in it.indexes], "nodes.apply",
+                      {"set_rev": items[0].args["set_rev"], "ops": [o for it in items for o in it.args["ops"]]},
+                      " / ".join(it.why for it in items if it.why)[:300], AUTO,
+                      proposals=[p for it in items for p in it.proposals])
+        if items[0].args.get("graph_id"):
+            merged.args["graph_id"] = items[0].args["graph_id"]
+        try:
+            if any(it.args["set_rev"] != merged.args["set_rev"] for it in items):
+                raise _Reject("같은 답의 구간 동작이 서로 다른 set_rev를 씀")
+            if merged.args["set_rev"] != (snap.node_set or {}).get("set_rev"):
+                raise _Reject("구간이 그 사이 바뀜(set_rev %s, 지금 %s)" % (merged.args["set_rev"],
+                                                                     (snap.node_set or {}).get("set_rev")))
+            self._classify_ops(merged, snap, turn)
+        except _Reject as rej:
+            merged.klass, merged.reason, merged.where = "rejected", rej.reason, rej.where
+        return merged
+
+    def _classify_ops(self, item, snap, turn):
+        nodes = _nodes(snap)
+        adds, edits, klass, targets = 0, 0, AUTO, []
+        for i, op in enumerate(item.args["ops"]):
+            if not isinstance(op, dict) or op.get("op") not in ("add", "edit", "merge", "split", "remove"):
+                raise _Reject("%d번째 op가 구간 동작이 아님" % (i + 1))
+            if op["op"] == "add":
+                if not (op.get("cand_id") or op.get("members")):
+                    raise _Reject("%d번째 add에 cand_id나 members가 없음" % (i + 1))
+                if op.get("members") is not None and not (_ids(op["members"], 2000) and
+                                                           (not snap.graph_ids or set(op["members"]) <= snap.graph_ids)):
+                    raise _Reject("%d번째 add의 구성요소가 지금 그래프에 없음" % (i + 1))
+                adds += 1
+                continue
+            ids = op.get("node_ids") if op["op"] == "merge" else [op.get("node_id")]
+            if not ids or not all(_is_id(x) for x in ids):
+                raise _Reject("%d번째 %s에 구간 ID가 없음" % (i + 1, op["op"]))
+            for nid in ids:
+                n = nodes.get(nid)
+                if n is None:
+                    raise _Reject("없는 구간: %s" % nid)
+                k = self._node_class(n, op, snap)
+                targets.append(nid)
+                if k == "rejected":
+                    raise _Reject(self._node_reason(n, op, snap), "④ 검토구간에서 사람이 한다")
+                if k == CONFIRM:
+                    klass = CONFIRM
+            edits += 1
+        pending = pending_ai(snap)
+        stage = "representative"
+        if adds:
+            if pending + adds > PENDING_LIMIT:
+                if self.last_add_turn is not None and turn <= self.last_add_turn:
+                    raise _Reject("대표 구간 확인 전에는 같은 질문에서 구간을 더 만들지 않음(새 질문 뒤 확인을 받아 진행)")
+                if pending == 0 and adds > PENDING_LIMIT and self.last_add_turn is None:
+                    raise _Reject("대표 구간은 한 번에 %d개까지(먼저 대표 구간을 만들고 사람이 확인)" % PENDING_LIMIT)
+                if adds > REST_LIMIT:
+                    raise _Reject("한 요청에서 만들 수 있는 구간은 %d개" % REST_LIMIT)
+                stage, klass = "rest", CONFIRM
+        item.stage, item.klass, item.targets = stage, klass, sorted(set(targets))
+        if klass == CONFIRM:
+            item.confirm_text = _fill(ACTIONS["nodes.apply"].confirm_text,
+                                      {"pending": pending, "adds": adds, "edits": edits})
+
+    def _node_class(self, n, op, snap):
+        """§4.3 표 한 칸: AUTO | CONFIRM | "rejected"."""
+        state = node_state(n)
+        if state in ("confirmed", "locked"):
+            return "rejected"
+        members_change = op["op"] in ("merge", "split", "remove") or bool(op.get("add") or op.get("remove"))
+        if has_cells(snap, n["node_id"]):
+            return "rejected" if members_change else CONFIRM
+        if n.get("origin") == "ai" and n.get("batch_id") in self.conv_batches and not human_touched(n):
+            return AUTO
+        return CONFIRM
+
+    @staticmethod
+    def _node_reason(n, op, snap):
+        state = node_state(n)
+        if state == "locked":
+            return "잠긴 구간(%s)은 채팅으로 바꾸지 않음. ④에서 사람이 이유를 적고 풀어야 함" % n["node_id"]
+        if state == "confirmed":
+            return "확정 구간(%s)은 사람이 확정을 해제한 뒤에 바꿀 수 있음" % n["node_id"]
+        return "⑤ 칸이 있는 구간(%s)의 구성요소는 채팅으로 바꾸지 않음" % n["node_id"]
+
+    # ---- 승인 표지(§4.6)
+
+    def _fingerprint(self, item, snap):
+        nodes = _nodes(snap)
+        targets = []
+        for t in item.targets:
+            n = nodes.get(t.split("/")[0]) if t not in snap.files else None
+            entry = {"id": t}
+            if n is not None:
+                entry.update(rev=n.get("rev"), state=node_state(n), locked=node_state(n) == "locked",
+                             batch_id=n.get("batch_id"))
+                if "/" in t:
+                    entry["cell"] = _digest([c for c in _cells(snap, n["node_id"])
+                                             if c.get("deviation_id") == t.split("/")[1]])
+            if t in snap.files:
+                entry["file"] = dict(snap.files[t])
+            if t in snap.registrations:
+                entry["registration"] = dict(snap.registrations[t])
+            targets.append(entry)
+        return {"project_id": snap.project_id, "action": item.action, "args_digest": _digest(item.args),
+                "targets": targets, "set_rev": (snap.node_set or {}).get("set_rev"),
+                "pending_ai": pending_ai(snap) if item.action == "nodes.apply" else None}
+
+    def _approval(self, item, snap):
+        body = self._fingerprint(item, snap)
+        return dict(body, issued_at=self.clock(), action_key=item.key, exec_seq=self.exec_seq,
+                    digest=_digest(body))
+
+    # ---- 실행
+
+    def run(self, item):
+        """바로·후보 동작을 실행한다 -> {"result", "error", "batch_id", "record"}. 같은 키는 한 번만."""
+        if item.klass not in (AUTO, CANDIDATE):
+            return {"result": "rejected", "error": "바로·후보 동작이 아님"}
+        return self._execute(item, origin="ai")
+
+    def approve(self, item, confirmed_by):
+        """확인 상자에서 사람이 누름. 표지를 다시 만들어 대조하고 같을 때만 실행한다."""
+        if item.klass != CONFIRM or not item.approval:
+            return {"result": "rejected", "error": "확인 동작이 아님"}
+        if not confirmed_by:
+            return {"result": "rejected", "error": "확인한 사람 이름이 없음"}
+        with self._lock:
+            if self._seen(item):
+                return {"result": "duplicate", "error": None}
+            ap = item.approval
+            why = None
+            if self.closed:
+                why = "대화가 끝나 표지를 버림"
+            elif self.clock() - ap["issued_at"] > APPROVAL_TTL:
+                why = "확인 시간(%d분)이 지남" % (APPROVAL_TTL // 60)
+            elif ap["exec_seq"] != self.exec_seq:
+                why = "확인 상자를 띄운 뒤 다른 동작이 실행됨"
+            else:
+                now = self._fingerprint(item, self.read_state())
+                if _digest(now) != ap["digest"]:
+                    why = "확인한 뒤 대상이 바뀌어 실행하지 않았습니다"
+            if why:
+                self.done_keys.update(item.keys)
+                rec = self._write(item, "stale", error=why, approval_digest=ap["digest"])
+                return {"result": "stale", "error": why, "record": rec}
+            return self._execute(item, origin="user", confirmed_by=confirmed_by, approval_digest=ap["digest"])
+
+    def reissue(self, item):
+        """같은 답의 다음 확인 동작을 띄울 때(§4.6: 한 번에 하나, 앞 동작이 실행되면 표지를 버림) 지금 상태로 다시 검사하고
+        새 표지를 단 Item을 돌려준다. 이제 거절할 동작이면 거절을 기록하고 klass="rejected"인 Item을 돌려준다."""
+        snap = self.read_state()
+        with self._lock:
+            if self._seen(item) or self.closed:
+                return item
+            fresh = Item(list(item.keys), list(item.indexes), item.action, copy.deepcopy(item.args), item.why, NEVER,
+                         proposals=item.proposals)
+            turn = self.requests.get(item.key.split("#")[0], (None, None, None))[2]
+            try:
+                if fresh.action == "nodes.apply":
+                    if fresh.args["set_rev"] != (snap.node_set or {}).get("set_rev"):
+                        raise _Reject("구간이 그 사이 바뀜(set_rev)")
+                    self._classify_ops(fresh, snap, turn)
+                else:
+                    self._check(fresh, snap)
+            except _Reject as rej:
+                fresh.klass, fresh.reason, fresh.where = "rejected", rej.reason, rej.where
+                self.done_keys.update(fresh.keys)
+                self._write(fresh, "rejected", error=rej.reason)
+                return fresh
+            if fresh.klass == CONFIRM:
+                fresh.approval = self._approval(fresh, snap)
+            return fresh
+
+    def decline(self, item):
+        with self._lock:
+            if self._seen(item):
+                return {"result": "duplicate", "error": None}
+            self.done_keys.update(item.keys)
+            return {"result": "declined", "record": self._write(item, "declined")}
+
+    def end_conversation(self):
+        """대화가 끝남: 남은 승인 표지를 버린다(§4.6). 실행한 키는 이 객체와 함께 사라진다."""
+        with self._lock:
+            self.closed = True
+
+    def _seen(self, item):
+        return any(k in self.done_keys for k in item.keys)
+
+    def _execute(self, item, origin, confirmed_by=None, approval_digest=None):
+        with self._lock:
+            if self.closed:
+                return {"result": "rejected", "error": "대화가 끝났음"}
+            if self._seen(item):
+                return {"result": "duplicate", "error": None}
+            self.done_keys.update(item.keys)
+            fn = self.executors.get(item.action)
+            request_id, request_text, turn = self.requests.get(item.key.split("#")[0], ("", "", None))
+            call = Call(self.project_id, request_id, request_text, list(item.keys), origin, confirmed_by, item.stage,
+                        item.stage == "rest" and origin == "user", self.conversation_id, self.model)
+            if fn is None:
+                rec = self._write(item, "failed", error="이 앱에 실행 함수가 연결되지 않음", confirmed_by=confirmed_by,
+                                  approval_digest=approval_digest)
+                return {"result": "failed", "error": "실행 함수 없음", "record": rec}
+            try:
+                out = fn(copy.deepcopy(item.args), call) or {}
+            except Exception as exc:  # 엔진이 거절(Refused 등)하거나 실패해도 기록은 남긴다
+                msg = "%s: %s" % (type(exc).__name__, str(exc)[:250])
+                rec = self._write(item, "failed", error=msg, confirmed_by=confirmed_by, approval_digest=approval_digest)
+                return {"result": "failed", "error": msg, "record": rec}
+            self.exec_seq += 1
+            batch = out.get("batch_id") if isinstance(out, dict) else None
+            if item.action == "nodes.apply" and batch:
+                self.conv_batches.add(batch)
+                if any(isinstance(o, dict) and o.get("op") == "add" for o in item.args["ops"]):
+                    self.last_add_turn = turn
+            targets = out.get("targets") if isinstance(out, dict) and out.get("targets") else item.targets
+            result = "candidate" if item.klass == CANDIDATE else "ok"
+            rec = self._write(item, result, batch_id=batch, targets=targets, confirmed_by=confirmed_by,
+                              approval_digest=approval_digest,
+                              undo_of=item.args.get("batch_id_to_undo") if item.action == "nodes.undo" else None)
+            return {"result": result, "error": None, "batch_id": batch, "record": rec}
+
+    def _write(self, item, result, error=None, batch_id=None, targets=None, confirmed_by=None, approval_digest=None,
+               undo_of=None):
+        """action_key마다 한 줄. 기록 실패는 실행을 막지 않는다(결과에 담아 돌려줌)."""
+        request_id, request_text, _turn = self.requests.get(item.key.split("#")[0], ("", "", None))
+        klass = "confirm" if item.klass == CONFIRM or confirmed_by else "auto"
+        out = []
+        for key, prop in zip(item.keys, item.proposals or [{"action": item.action, "args": item.args, "why": item.why}]):
+            answer_id, index = key.rsplit("#", 1)
+            try:
+                rec = self._record(self.project_id, answer_id=answer_id, index=int(index), request_id=request_id or "q-none",
+                                   request_text=request_text, proposal=prop, klass=klass, result=result, error=error,
+                                   targets=targets if targets is not None else item.targets, batch_id=batch_id,
+                                   undo_of=undo_of, confirmed_by=confirmed_by,
+                                   confirmed_at=actions_log.now_kst().isoformat() if confirmed_by else None,
+                                   approval_digest=approval_digest, conversation_id=self.conversation_id,
+                                   model=self.model, via=self.via, app_version=self.app_version)
+            except ValueError as exc:
+                rec = {"status": "failed", "error": str(exc)}
+            out.append(rec)
+            self.log.append((key, result, rec))
+        return out
+
+
+def _fill(template, values):
+    """확인 문구 틀에 앱이 검사한 값만 넣는다. 목록은 쉼표로 잇고, 모델 글(why 등)은 넣지 않는다."""
+    safe = {k: (", ".join(map(str, v)) if isinstance(v, list) else v) for k, v in values.items()
+            if isinstance(v, (str, int, list)) and k not in ("why",)}
+    try:
+        return template.format(**safe)
+    except (KeyError, IndexError, ValueError):
+        return template
+
+
+CARD_ACTIONS_SCHEMA = {
+    "type": "array", "maxItems": MAX_ACTIONS,
+    "items": {"type": "object", "additionalProperties": False, "required": ["action", "args"],
+              "properties": {"action": {"type": "string", "enum": sorted(n for n, a in ACTIONS.items() if a.klass != NEVER)},
+                             "args": {"type": "object"},
+                             "why": {"type": "string"}}},
+}
