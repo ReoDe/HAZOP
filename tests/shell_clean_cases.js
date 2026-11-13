@@ -69,11 +69,12 @@ async function body({ CV, MK, SheetCore }, data) {
   t("흐름이 있는 배관에 화살촉(polygon)", clean.querySelectorAll("polygon").length >= 5, clean.querySelectorAll("polygon").length);
 
   // ---- 못 읽은 곳
-  const unk = clean.querySelector('rect[data-id="x-unknown"]');
-  t("미확인 기호: 호박색 점선 네모 '4 3'와 가운데 ?", !!unk && unk.getAttribute("stroke-dasharray") === "4 3" && unk.getAttribute("stroke").includes("warn") && [...clean.querySelectorAll("text")].some((x) => x.textContent === "?"));
-  t("끊긴 연결: 열린 끝에 호박색 빈 원(지름 6), 배관은 읽은 데까지", clean.querySelectorAll('circle[r="3"]').length === 1 && !!clean.querySelector('polyline[data-id="x-open"]'));
+  const top = core.topG;
+  const unk = top.querySelector('rect[data-id="x-unknown"]');
+  t("미확인 기호: 호박색 점선 네모 '4 3'와 가운데 ?", !!unk && unk.getAttribute("stroke-dasharray") === "4 3" && unk.getAttribute("stroke").includes("warn") && [...top.querySelectorAll("text")].some((x) => x.textContent === "?"));
+  t("끊긴 연결: 열린 끝에 호박색 빈 원(지름 6), 배관은 읽은 데까지", top.querySelectorAll('circle[r="3"]').length === 1 && !!clean.querySelector('polyline[data-id="x-open"]'));
   t("태그 없음: 호박색 점선 밑줄과 '태그 없음' 글자", [...clean.querySelectorAll("text")].filter((x) => x.textContent === "태그 없음").length === data.clean.counts.missing_tag && data.clean.counts.missing_tag >= 1, data.clean.counts.missing_tag);
-  t("그림 없는 kind: generic 자리표와 머리글자, 알림 목록", ev.built[0].missingKinds.join() === "weird_kind" && !!clean.querySelector('g[data-id="x-weird"]') && [...clean.querySelectorAll("text")].some((x) => x.textContent === "W"), ev.built[0].missingKinds.join());
+  t("그림 없는 kind: generic 자리표와 머리글자, 알림 목록", ev.built[0].missingKinds.join() === "weird_kind" && !!clean.querySelector('g[data-id="x-weird"]') && [...top.querySelectorAll("text")].some((x) => x.textContent === "W"), ev.built[0].missingKinds.join());
   t("미확인 수가 자료의 counts와 같음", data.clean.counts.total === data.clean.unconfirmed.length && data.clean.counts.unknown_symbol >= 1 && data.clean.counts.open_end === 1, JSON.stringify(data.clean.counts));
 
   // ---- 도면에서 온 글은 텍스트로만
@@ -110,6 +111,60 @@ async function body({ CV, MK, SheetCore }, data) {
   core.update({ selection: [], segments: [{ node_id: "S1", ids: symIds.concat(pipeIds), color: null }] });
   t("구간 색(정리): 구간에 든 기호·배관을 그 색으로", marksG.innerHTML.includes("--seg1") && marksG.querySelectorAll("polyline").length >= pipeIds.length && marksG.querySelectorAll("text").length >= 1);
   core.update({ segments: [] });
+
+  // ---- 불확실한 것은 표시·흐리기 위에 그대로 남음, 흐리기는 옅게, 번호 원은 겹치지 않음
+  core.update({ marks: [{ id: "q3", op: "mark", groups: [{ ids: ["x-unknown", symIds[0]], style: "cause" }], dim_others: true }] });
+  t("표시(정리): 미확인 자리표는 표시 색으로 다시 칠하지 않고 위 층에 그대로", !!core.topG.querySelector('rect[data-id="x-unknown"]') && !marksG.querySelector("rect[stroke-dasharray='4 3']") && core.topG.style.display === "");
+  const veil = marksG.querySelector("rect[fill-opacity]");
+  t("정리 보기의 흐림막은 옅게(원본 보기의 84%보다 낮음)", !!veil && +veil.getAttribute("fill-opacity") <= 0.55 && +veil.getAttribute("fill-opacity") > 0.2, veil && veil.getAttribute("fill-opacity"));
+  const near = items.filter((i) => i.layer === "symbol" && i.kind && symbols[i.kind] && !symbols[i.kind].junction)[0];
+  core.update({ marks: [{ id: "q4", op: "path", steps: [near, near, near, near].map((n) => ({ id: n.id, flow: null })), style: "path", numbered: true }] });
+  const circles = [...marksG.querySelectorAll("rect[rx]")].map((r) => r.getAttribute("x") + "," + r.getAttribute("y"));
+  t("같은 자리의 단계 번호 원은 옆으로 비켜 겹치지 않음", new Set(circles).size === circles.length && circles.length >= 4, circles.join(" "));
+  core.update({ marks: [] });
+
+  // ---- 글자: 화면 픽셀 하한, 겹침 숨김, 설비 태그는 설비 옆
+  const lt = [...core.cleanG.querySelectorAll("text")].filter((x) => x.style.display !== "none" && x.getAttribute("font-size"));
+  const minOk = lt.filter((x) => +x.getAttribute("font-size") * core.view.k >= 8.9 || +x.getAttribute("font-size") <= 7).length;
+  t("맞춤 배율에서 보이는 태그·번호 글자는 화면에서 9px 이상(원 안 글자는 따로)", lt.length >= 10 && minOk === lt.length, minOk + "/" + lt.length + " k=" + core.view.k.toFixed(2));
+  const eq = items.find((i) => i.layer === "symbol" && i.category === "equipment" && i.tag && i.kind === "reactor_vessel");
+  const eqText = [...core.cleanG.querySelectorAll("text")].find((x) => x.textContent === eq.tag);
+  t("설비 태그는 설비 바로 옆(오른쪽)에 있음", !!eqText && +eqText.getAttribute("x") >= eq.bbox[2] && +eqText.getAttribute("x") <= eq.bbox[2] + 10 && +eqText.getAttribute("y") >= eq.bbox[1] && +eqText.getAttribute("y") <= eq.bbox[1] + 40, eqText && eqText.getAttribute("x") + "," + eqText.getAttribute("y") + " bbox " + eq.bbox.map(Math.round));
+  const L = (o) => Object.assign({ x: 0, y: 10, text: "X", anchor: "start", size: 9, rotate: 0, pri: 0 }, o);
+  const layout = CV.layoutLabels([L({ text: "AAAAAAAA", owner: "a" }), L({ x: 5, text: "BBBBBBBB", pri: 1, owner: "b" }), L({ x: 5, text: "태그 없음", size: 7, pri: 9, always: true, owner: "c" }), L({ x: 200, text: "작게", pri: 2, owner: "d" })], 1, []);
+  t("글자 자리: 먼저 자리를 잡은 글자가 이기고 겹친 것은 숨김, 늘 보이는 글자는 남음", layout[0].visible && !layout[1].visible && layout[2].visible && layout[3].visible, JSON.stringify(layout.map((l) => l.visible)));
+  t("글자 자리: 작게 보일수록 화면 하한(9px)으로 키움", CV.layoutLabels([L({})], 0.5, [])[0].size === 18 && CV.layoutLabels([L({})], 3, [])[0].size === 9);
+  const cond = [L({ size: 6, fixed: true, showFrom: 1 }), L({ hideFrom: 1 })];
+  t("글자 자리: 확대 값 조건(원 안 글자는 크게 보일 때만, 옆 글자는 작게 보일 때만)", CV.layoutLabels(cond, 0.5, []).map((l) => l.visible).join() === "false,true" && CV.layoutLabels(cond, 2, []).map((l) => l.visible).join() === "true,false");
+
+  // ---- 연결점 잇기: 그래프에서 실제로 이어진 끝만, 8 단위 안만
+  const gapSheet = { graph_id: "gap", width: 400, height: 200, svg: "", links: [], items: [
+    { id: "v1", layer: "symbol", kind: "manual_valve", category: "valve", tag: "V1", bbox: [100, 80, 150, 110], unknown: false },
+    { id: "pa", layer: "pipe", kind: "physical_connection", polyline: [[40, 95], [94, 95]], bbox: [40, 95, 94, 95] },
+    { id: "pb", layer: "pipe", kind: "physical_connection", polyline: [[210, 95], [165, 95]], bbox: [165, 95, 210, 95] },
+    { id: "pc", layer: "pipe", kind: "physical_connection", polyline: [[40, 60], [90, 60]], bbox: [40, 60, 90, 60] }] };
+  const gapClean = { source_format: "drawio", unconfirmed: [], counts: { total: 0 }, text_items: [], leftovers: { counted: false, n: 0, items: [] }, items: {
+    v1: { orient: { rot: 0, flip_h: false, flip_v: false, basis: "none" }, review: "script" },
+    pa: { line_type: "process", flow: null, ends: [{ end: "source", point: [40, 95], status: "open", node: null }, { end: "target", point: [94, 95], status: "connected", node: "v1" }] },
+    pb: { line_type: "process", flow: null, ends: [{ end: "source", point: [210, 95], status: "open", node: null }, { end: "target", point: [165, 95], status: "connected", node: "v1" }] },
+    pc: { line_type: "process", flow: null, ends: [{ end: "source", point: [40, 60], status: "open", node: null }, { end: "target", point: [90, 60], status: "open", node: null }] } } };
+  const gh = mount();
+  const gc = new SheetCore(gh, {});
+  gc.setData(gapSheet); await sleep(80);
+  gc.update({ clean: gapClean, symbols, view: "clean" });
+  const stubs = [...gc.cleanG.querySelectorAll("line")].filter((l) => !l.getAttribute("stroke-dasharray") && +l.getAttribute("x1") === 100 && +l.getAttribute("x2") === 94);
+  t("연결점 잇기: 이어진 끝이 4~8 단위 떨어져 있으면 짧은 선으로 잇는다", stubs.length === 1, stubs.length);
+  const ticks = [...gc.topG.querySelectorAll("line")].filter((l) => l.getAttribute("stroke").includes("warn"));
+  t("연결점이 8 단위를 넘게 떨어지면 잇지 않고 호박색 눈금(port_gap), 열린 끝은 빈 원", ticks.length === 1 && gc.topG.querySelectorAll('circle[r="3"]').length === 4, ticks.length + " / 열린 끝 " + gc.topG.querySelectorAll('circle[r="3"]').length);
+  gc.destroy(); gh.remove();
+
+  // ---- 겹쳐 보기: 원본 30%, 원본에 남은 것(엔진이 센 읽은 방법만)
+  core.update({ view: "clean", overlays: { original: true, leftovers: false } });
+  t("원본 겹쳐 보기: 정리 위에 원본 그림이 30%로 얹힘", core.ghost.style.display === "" && core.ghost.style.opacity === "0.3" && core.ghost.getAttribute("href") === data.sheet.svg);
+  core.update({ overlays: { original: false, leftovers: true } });
+  const lo = data.clean.leftovers;
+  t("원본에 남은 것 겹치기: 센 읽은 방법에서만 호박색 상자로", core.ghost.style.display === "none" && (lo.counted ? core.leftG.querySelectorAll("rect").length === lo.items.filter((i) => i.bbox).length : core.leftG.style.display === "none"), JSON.stringify({ counted: lo.counted, n: lo.n }));
+  core.update({ overlays: { original: false, leftovers: false } });
 
   // ---- 보기 바꾸기를 오가도 표시·고른 것은 그대로, 원본에서는 상자
   core.update({ view: "orig", marks: [{ id: "q2", op: "mark", groups: [{ ids: symIds, style: "focus" }] }] });

@@ -6,7 +6,7 @@
 
 import { SpatialIndex, MAX_SELECTION, capSelection, changeSelection, selectionEvent, normRect } from "./index.js";
 import { normalizeMarks, drawAll, buildSegments, legendEntries, uncrowdTags } from "./marks.js";
-import { buildBase, recolor, fragmentBox } from "./clean_view.js";
+import { buildBase, recolor, fragmentBox, layoutLabels, labelDescriptor } from "./clean_view.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const K_MIN = 0.05, K_MAX = 12;
@@ -95,7 +95,10 @@ export class SheetCore {
     this.svg = d.createElementNS(SVG_NS, "svg"); this.svg.setAttribute("class", "hz-cv-svg"); this.world.appendChild(this.svg);
     this.image = d.createElementNS(SVG_NS, "image"); this.svg.appendChild(this.image);
     this.cleanG = d.createElementNS(SVG_NS, "g"); this.cleanG.setAttribute("class", "hz-cv-clean"); this.cleanG.style.display = "none"; this.svg.appendChild(this.cleanG);
+    this.ghost = d.createElementNS(SVG_NS, "image"); this.ghost.setAttribute("class", "hz-cv-ghost"); this.ghost.style.display = "none"; this.ghost.style.opacity = "0.3"; this.ghost.setAttribute("pointer-events", "none"); this.svg.appendChild(this.ghost);
     this.marksG = d.createElementNS(SVG_NS, "g"); this.marksG.setAttribute("class", "hz-cv-marks"); this.svg.appendChild(this.marksG);
+    this.topG = d.createElementNS(SVG_NS, "g"); this.topG.setAttribute("class", "hz-cv-top"); this.topG.style.display = "none"; this.svg.appendChild(this.topG);
+    this.leftG = d.createElementNS(SVG_NS, "g"); this.leftG.setAttribute("class", "hz-cv-left"); this.leftG.style.display = "none"; this.svg.appendChild(this.leftG);
     this.tagsDiv = d.createElement("div"); this.tagsDiv.className = "hz-cv-tags"; this.vp.appendChild(this.tagsDiv);
     this.chipsDiv = d.createElement("div"); this.chipsDiv.className = "hz-cv-chips"; this.vp.appendChild(this.chipsDiv);
     this.legendDiv = d.createElement("div"); this.legendDiv.className = "hz-cv-legend"; h.appendChild(this.legendDiv);
@@ -138,6 +141,7 @@ export class SheetCore {
     this.image.setAttribute("width", this.size[0]); this.image.setAttribute("height", this.size[1]);
     this.sel = this.sel.filter((id) => this.index.has(id));
     this._cleanBuilt = false;        // 새 도면: 정리된 그림은 다시 만든다(자료는 update의 props로 새로 들어온다)
+    this._leftBuilt = false;
     const finish = () => { this._viewChanged(true); this._renderMarks(); if (this.cb.onReady) this.cb.onReady(data.graph_id); };
     const href = typeof data.svg === "string" ? data.svg : "";
     let done = false;
@@ -161,7 +165,7 @@ export class SheetCore {
     if (!this._ctx || this._ctxFor !== this.clean) {
       this._ctxFor = this.clean;
       this._ctx = { symbols: this.symbols, extras: (this.clean && this.clean.items) || {}, width: this.size[0], height: this.size[1], textItems: (this.clean && this.clean.text_items) || [],
-        items: this.index.items };
+        items: this.index.items, unconfirmed: (this.clean && this.clean.unconfirmed) || [] };
     }
     return this._ctx;
   }
@@ -172,6 +176,8 @@ export class SheetCore {
     if (eff === "clean" && !this._cleanBuilt) this._buildClean();
     this.image.style.display = eff === "clean" ? "none" : "";
     this.cleanG.style.display = eff === "clean" ? "" : "none";
+    this.topG.style.display = eff === "clean" ? "" : "none";
+    this._applyOverlays(eff);
     this.tagsDiv.style.display = eff === "clean" ? "none" : "";
     this.host.setAttribute("data-view", eff);
     this._unconf = null;
@@ -186,9 +192,52 @@ export class SheetCore {
     const frag = this.doc.createDocumentFragment();
     for (const n of base.nodes) { const b = build(n, this.doc); if (b) frag.appendChild(b); }
     this.cleanG.appendChild(frag);
+    this._labels = base.labels; this._obstacles = base.obstacles;
+    this._labelEls = base.labels.map((l) => build(labelDescriptor(l, l.size), this.doc));   // 글자는 한 번 만들고 확대 값마다 크기·보임만 바꾼다
+    const lf = this.doc.createDocumentFragment();
+    for (const e of this._labelEls) lf.appendChild(e);
+    this.cleanG.appendChild(lf);
+    while (this.topG.firstChild) this.topG.removeChild(this.topG.firstChild);
+    const tf = this.doc.createDocumentFragment();
+    for (const n of base.top) { const b = build(n, this.doc); if (b) tf.appendChild(b); }
+    this.topG.appendChild(tf);
     this._cleanBuilt = true;
+    this._layoutCleanLabels();
     this.cleanInfo = { ms: performance.now() - t0, elements: base.nodes.length, missingKinds: base.missingKinds, placeholders: base.placeholders };
     if (this.cb.onCleanBuilt) this.cb.onCleanBuilt(this.cleanInfo);
+  }
+
+  /** 확대 값에 맞춰 글자 크기(화면 픽셀 하한)와 보임(겹치면 숨김)을 정한다. */
+  _layoutCleanLabels() {
+    if (!this._labels || !this._labelEls) return;
+    const res = layoutLabels(this._labels, this.view.k, this._obstacles);
+    for (let i = 0; i < res.length; i++) {
+      const el = this._labelEls[i], o = res[i];
+      if (!el) continue;
+      if (!o.visible) { if (el.style.display !== "none") el.style.display = "none"; continue; }
+      if (el.style.display === "none") el.style.display = "";
+      const s = String(Math.round(o.size * 100) / 100);
+      if (el.getAttribute("font-size") !== s) el.setAttribute("font-size", s);
+    }
+  }
+
+  /** 원본 겹쳐 보기(30%)·원본에 남은 것 겹치기: 정리된 보기 위에 옅게 얹는다(엔진 값이 없어도 원본 겹쳐 보기는 된다). */
+  _applyOverlays(eff) {
+    const o = this.overlays || {};
+    const ghost = eff === "clean" && !!o.original && !!(this.data && this.data.svg);
+    this.ghost.style.display = ghost ? "" : "none";
+    if (ghost) { this.ghost.setAttribute("href", this.data.svg); this.ghost.setAttribute("width", this.size[0]); this.ghost.setAttribute("height", this.size[1]); }
+    const show = !!o.leftovers && !!(this.clean && this.clean.leftovers && this.clean.leftovers.counted);
+    this.leftG.style.display = show ? "" : "none";
+    if (show && !this._leftBuilt) {
+      this._leftBuilt = true;
+      for (const it of this.clean.leftovers.items) {
+        if (!it.bbox) continue;
+        const b = build({ t: "rect", a: { x: it.bbox[0], y: it.bbox[1], width: Math.max(it.bbox[2] - it.bbox[0], 4), height: Math.max(it.bbox[3] - it.bbox[1], 4), fill: "var(--warn-line, #a8740d)", "fill-opacity": 0.4,
+          stroke: "var(--warn-line, #a8740d)", "stroke-dasharray": "4 3", "vector-effect": "non-scaling-stroke", "pointer-events": "none" } }, this.doc);
+        this.leftG.appendChild(b);
+      }
+    }
   }
 
   /** 못 읽은 곳의 원본 조각: 같은 도면 SVG 주소와 잘라 보일 viewBox. 자료가 없으면 null. */
@@ -209,6 +258,7 @@ export class SheetCore {
     if (p.mode && p.mode !== this.mode) { this.mode = p.mode === "pick" ? "pick" : "pan"; this.host.setAttribute("data-mode", this.mode); }
     if (p.symbols && p.symbols !== this._symProp) { this._symProp = p.symbols; this.symbols = p.symbols; this._cleanBuilt = false; marksDirty = true; }
     if (p.clean !== undefined && p.clean !== this._cleanProp) { this._cleanProp = p.clean; this.clean = p.clean; this._cleanBuilt = false; marksDirty = true; }
+    if (p.overlays && p.overlays !== this._ovProp) { this._ovProp = p.overlays; this.overlays = p.overlays; this._leftBuilt = false; while (this.leftG.firstChild) this.leftG.removeChild(this.leftG.firstChild); marksDirty = true; }
     if (p.view && p.view !== this.viewWanted) { this.viewWanted = p.view === "clean" ? "clean" : "orig"; marksDirty = true; }
     if (marksDirty) this._applyViewMode();
     if (p.layers && p.layers !== this._layersProp) {
@@ -470,7 +520,7 @@ export class SheetCore {
     const seg = this.segments.length ? buildSegments(this.segments, this.index) : null;
     const ctx = this._effective() === "clean" ? this._cleanCtx() : null;
     const out = drawAll({ marks: this.marks, seg, outside: this.outside, selection: this.sel, index: this.index, k: this.view.k, size: this.size,
-      recolor: ctx ? (rec, color, width, opts) => recolor(ctx, rec, color, width, opts) : null });
+      recolor: ctx ? (rec, color, width, opts) => recolor(ctx, rec, color, width, opts) : null, veil: ctx ? 0.5 : null });
     const g = this.marksG;
     while (g.firstChild) g.removeChild(g.firstChild);
     const frag = this.doc.createDocumentFragment();
@@ -507,7 +557,7 @@ export class SheetCore {
 
   /** 도면 글자가 11px보다 작게 보이면(확대 전) 겹치지 않게 11px 태그 글자를 얹는다. 글자는 textContent로만. */
   _renderTags() {
-    if (this._effective() === "clean") { while (this.tagsDiv.firstChild) this.tagsDiv.removeChild(this.tagsDiv.firstChild); return; }
+    if (this._effective() === "clean") { while (this.tagsDiv.firstChild) this.tagsDiv.removeChild(this.tagsDiv.firstChild); this._layoutCleanLabels(); return; }
     const box = this.tagsDiv;
     box.textContent = "";
     if (!this.data || !this.layers.tag) return;

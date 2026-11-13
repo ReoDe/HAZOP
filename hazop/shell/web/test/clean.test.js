@@ -58,7 +58,7 @@ export const tests = [
     assert.equal(C.clean.get().bubble.reason, "unknown_symbol");
     assert.equal(cc.closeIfOpen(), true);
     assert.equal(C.clean.get().bubble, null);
-    host.remove();
+    render(null, host); host.remove();
   } },
   { name: "정리된 보기: 단추는 자료가 없으면 '정리'가 꺼지고, 칩은 '미확인 n곳'이며 도면에서 온 글은 텍스트로만", async run(assert) {
     reset();
@@ -79,7 +79,7 @@ export const tests = [
     await tick();
     assert(host.textContent.includes("태그가 없음") && !!host.querySelector(".cleanpop svg image"), "원본 조각 말풍선");
     assert(host.querySelector(".cleanpop svg image").getAttribute("href") === "/api/sheet/g1.svg");
-    host.remove();
+    render(null, host); host.remove();
   } },
   { name: "정리된 보기: 기호 맞추기 계산(keep·stretch·회전·뒤집기·연결점)", run(assert) {
     const keep = { vb: [100, 60], fit: "keep" }, stretch = { vb: [100, 100], fit: "stretch" };
@@ -108,6 +108,53 @@ export const tests = [
     C.toggleView("g1");
     await tick();
     assert.equal(cc.props.view, "orig");
-    host.remove();
+    render(null, host); host.remove();
+  } },
+  { name: "정리된 보기: 모르는 읽은 방법·raster는 원본이 기본, DEXPI는 원본 단추를 숨기고 '원본 그림 없음'", async run(assert) {
+    assert.equal([V.defaultView("unknown"), V.defaultView("raster"), V.defaultView("unknown", true), V.defaultView(undefined)], ["orig", "orig", "clean", "orig"]);
+    reset();
+    C.onClean("g1", data("dexpi"));
+    C.setView("g1", "orig");                                          // 원본을 고르려 해도 원본 그림이 없다
+    assert.equal(C.viewOf(C.clean.get(), "g1"), "clean");
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    render(html`<${C.CleanOverlay} />`, host);
+    await tick();
+    const labels = [...host.querySelectorAll("button")].map((b) => b.textContent.trim());
+    assert(!labels.includes("원본") && host.textContent.includes("원본 그림 없음 · DEXPI 변환"), host.textContent);
+    C.onClean("g1", data("unknown"));
+    await tick();
+    assert(host.textContent.includes("읽은 방법 모름") && [...host.querySelectorAll("button")].some((b) => b.textContent.trim() === "원본"), "모르는 방법은 원본 단추가 있고 꼬리표가 호박색");
+    render(null, host); host.remove();
+  } },
+  { name: "정리된 보기: 위치 없음·원본에 남은 것 칩, L 키로 겹치기, 원본 겹쳐 보기", async run(assert) {
+    reset();
+    const d = data("pdf_vector", U);
+    d.counts.unplaced = 2;
+    d.leftovers = { counted: false, n: 0, items: [] };
+    C.onClean("g1", d);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    render(html`<${C.CleanOverlay} />`, host);
+    await tick();
+    assert(host.textContent.includes("위치 없음 2") && host.textContent.includes("원본에 남은 것: 엔진이 세지 않음"), host.textContent);
+    const d2 = data("drawio", []);
+    d2.leftovers = { counted: true, n: 3, items: [] };
+    C.onClean("g1", d2);
+    await tick();
+    assert(host.textContent.includes("원본에 남은 것 3"), "센 읽은 방법은 개수");
+    let cc = null;
+    function Probe() { cc = C.useCleanCanvas("g1"); return html`<i></i>`; }
+    const h2 = document.createElement("div");
+    document.body.appendChild(h2);
+    render(html`<${Probe} />`, h2);
+    await tick();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "l", bubbles: true }));
+    await tick();
+    assert.equal(cc.props.overlays.leftovers, true);
+    [...host.querySelectorAll("button")].find((b) => b.textContent.trim() === "원본 겹쳐 보기").click();
+    await tick();
+    assert.equal(cc.props.overlays.original, true);
+    render(null, h2); h2.remove(); render(null, host); host.remove();
   } },
 ];

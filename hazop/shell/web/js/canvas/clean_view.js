@@ -14,6 +14,8 @@ const FONT = 9;                                   // 태그·번호 글자 크�
 const SYMBOL_W = 1.4;                             // 기호 선 굵기(화면 픽셀, 확대해도 같게)
 const PIPE_W = { process: 1.6, process_secondary: 1.2, instrument_tap: 1.0, signal_electric: 1.0 };
 const PIPE_DASH = { instrument_tap: "6 3", signal_electric: "2 2" };
+const MIN_LABEL_PX = 9;                           // 글자 크기의 화면 픽셀 하한(맞춤 배율에서도 읽히게)
+const PORT_GAP = 8;                               // 연결점과 배관 끝을 잇는 거리 상한(넘으면 잇지 않고 port_gap 눈금)
 const STUB_GAP = 4;                               // 기호 연결점과 배관 끝이 이보다 멀면 짧은 선으로 잇는다
 const TAGGED = ["equipment", "valve", "instrument"];
 
@@ -94,29 +96,43 @@ function splitTag(tag) {
   return m.length > 1 ? [m[0], m.slice(1).join("-")] : [String(tag)];
 }
 
-/** 정리된 도면 전체(원본 SVG 없이). ctx: {symbols, width, height, items(recs 배열), extras(id → 그리기 자료), unconfirmed(Set), textItems}.
- *  돌려주는 것: {nodes: 서술자 배열, missingKinds: 그림이 없어 generic으로 그린 kind 목록, placeholders: 자리표 수}. */
+/** 글자 한 줄의 자리 후보. 보이는 글자 크기는 화면 확대 값에 따라 layoutLabels가 정한다(화면 픽셀 하한). pri: 작을수록 먼저 자리를 잡는다. */
+function labelSpec(x, y, text, o = {}) {
+  return { x, y, text: String(text), anchor: o.anchor || "start", size: o.size || FONT, rotate: o.rotate || 0, fill: o.fill || INK, opacity: o.opacity, pri: o.pri == null ? 5 : o.pri,
+    owner: o.owner || null, always: !!o.always, fixed: !!o.fixed, showFrom: o.showFrom || 0, hideFrom: o.hideFrom || 0, baseline: o.baseline || "auto" };
+}
+
+const amberTick = (x, y) => el("line", { x1: r(x - 3), y1: r(y - 3), x2: r(x + 3), y2: r(y + 3), stroke: AMBER, "stroke-width": 1.6, "vector-effect": "non-scaling-stroke", "pointer-events": "none" });
+const attrDot = (x, y) => el("circle", { cx: r(x), cy: r(y), r: 2.5, fill: AMBER, stroke: "var(--card, #fff)", "stroke-width": 0.8, "vector-effect": "non-scaling-stroke", "pointer-events": "none" });
+const PLACEMENT_REASONS = new Set(["unknown_symbol", "open_end", "missing_tag", "ai_candidate", "unplaced", "unresolved_connector"]);
+
+/** 정리된 도면 전체(원본 SVG 없이). ctx: {symbols, width, height, items(recs 배열), extras(id → 그리기 자료), unconfirmed([{id, reason}]), textItems}.
+ *  돌려주는 것: {nodes: 바탕 서술자, top: 불확실 표시(흐리기·표시 위에 그린다), labels: 글자 자리 후보, obstacles: 글자가 피할 기호 상자,
+ *  missingKinds: 그림이 없어 generic으로 그린 kind, placeholders: 자리표 수}. */
 export function buildBase(ctx) {
   const { symbols, width, height } = ctx, generic = symbols.generic;
-  const nodes = [], missing = new Set();
+  const nodes = [], top = [], missing = new Set(), labels = [], obstacles = [];
   let placeholders = 0;
   nodes.push(el("rect", { x: 0, y: 0, width, height, fill: "var(--card, #fff)", "pointer-events": "none" }));
   nodes.push(el("rect", { x: 8, y: 8, width: width - 16, height: height - 16, fill: "none", stroke: FRAME, "stroke-width": 1, "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
-  const portsByNode = new Map(), tagSeen = new Map();
+  const portsByNode = new Map(), tagSeen = new Map(), attrReasons = new Map();
+  for (const u of ctx.unconfirmed || []) if (u.id && !PLACEMENT_REASONS.has(u.reason)) { if (!attrReasons.has(u.id)) attrReasons.set(u.id, []); attrReasons.get(u.id).push(u.reason); }
   for (const rec of ctx.items) {                      // 배관 번호는 같은 번호의 가장 긴 조각 하나에만 쓴다
     if (rec.layer !== "pipe" || !rec.tag) continue;
     const seg = rec.lines && rec.lines[0] ? longest(rec.lines[0]) : null;
     if (seg && (!tagSeen.has(rec.tag) || tagSeen.get(rec.tag).len < seg.len)) tagSeen.set(rec.tag, { id: rec.id, len: seg.len });
   }
-  const pipes = [], symbolsOut = [], labels = [];
+  const pipes = [], symbolsOut = [];
   for (const rec of ctx.items) {
     const ex = ctx.extras[rec.id] || {};
     if (rec.layer === "pipe") {
       pipes.push(...pipeShapes(rec, ex, { id: rec.id }));
       const seg = rec.lines && rec.lines[0] ? longest(rec.lines[0]) : null;
+      for (const e of ex.ends || []) if (e.status === "open" && e.point) top.push(el("circle", { cx: r(e.point[0]), cy: r(e.point[1]), r: 3, fill: "var(--card, #fff)", stroke: AMBER, "stroke-width": 1.4, "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
+      if (seg && attrReasons.has(rec.id)) top.push(attrDot((seg.a[0] + seg.b[0]) / 2 + 6, (seg.a[1] + seg.b[1]) / 2 - 6));
       if (rec.tag && seg && tagSeen.get(rec.tag) && tagSeen.get(rec.tag).id === rec.id && seg.len > 24) {
         const mx = (seg.a[0] + seg.b[0]) / 2, my = (seg.a[1] + seg.b[1]) / 2, vertical = Math.abs(seg.b[1] - seg.a[1]) > Math.abs(seg.b[0] - seg.a[0]);
-        labels.push(vertical ? textEl(mx - 2, my, rec.tag, { anchor: "middle", rotate: -90 }) : textEl(mx, my - 2, rec.tag, { anchor: "middle" }));
+        labels.push(vertical ? labelSpec(mx - 2, my, rec.tag, { anchor: "middle", rotate: -90, pri: 4, owner: rec.id }) : labelSpec(mx, my - 2, rec.tag, { anchor: "middle", pri: 4, owner: rec.id }));
       }
       continue;
     }
@@ -124,11 +140,12 @@ export function buildBase(ctx) {
     const bb = [rec.rect.x0, rec.rect.y0, rec.rect.x1, rec.rect.y1], kind = rec.kind;
     const unknown = !kind || rec.unknown;
     const ai = ex.review === "ai_candidate";
-    if (unknown && !ai) {                              // 미확인 기호: 호박색 점선 자리표 + 가운데 ?
+    obstacles.push({ x0: bb[0], y0: bb[1], x1: bb[2], y1: bb[3], owner: rec.id });
+    if (unknown && !ai) {                              // 미확인 기호: 호박색 점선 자리표 + 가운데 ? (흐리기 위에 그린다)
       placeholders++;
-      symbolsOut.push(el("rect", { "data-id": rec.id, x: r(bb[0]), y: r(bb[1]), width: r(Math.max(bb[2] - bb[0], 6)), height: r(Math.max(bb[3] - bb[1], 6)), fill: "none", stroke: AMBER, "stroke-width": 1.4, "stroke-dasharray": "4 3", "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
-      symbolsOut.push(textEl((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, "?", { anchor: "middle", baseline: "central", fill: AMBER, size: Math.min(14, Math.max(8, (bb[3] - bb[1]) * 0.6)) }));
-      if (rec.tag) labels.push(textEl(bb[0], bb[3] + FONT + 1, rec.tag, { fill: FAINT, opacity: 0.8 }));
+      top.push(el("rect", { "data-id": rec.id, x: r(bb[0]), y: r(bb[1]), width: r(Math.max(bb[2] - bb[0], 6)), height: r(Math.max(bb[3] - bb[1], 6)), fill: "var(--card, #fff)", "fill-opacity": 0.6, stroke: AMBER, "stroke-width": 1.4, "stroke-dasharray": "4 3", "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
+      top.push(textEl((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, "?", { anchor: "middle", baseline: "central", fill: AMBER, size: Math.min(14, Math.max(8, (bb[3] - bb[1]) * 0.6)) }));
+      if (rec.tag) labels.push(labelSpec(bb[0], bb[3] + FONT + 1, rec.tag, { fill: AMBER, opacity: 0.85, pri: 0, owner: rec.id, always: true }));
       continue;
     }
     const sym = symbols[kind];
@@ -137,57 +154,85 @@ export function buildBase(ctx) {
       continue;
     }
     const use = sym || generic;
-    if (!sym) {
-      missing.add(kind);
-      placeholders++;
-    }
+    if (!sym) { missing.add(kind); placeholders++; }
     const style = ai ? { color: AI_LINE, dash: "3 2", id: rec.id } : { id: rec.id };
     symbolsOut.push(...symbolShapes(use, bb, ex.orient, style));
-    if (!sym) symbolsOut.push(textEl((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, String(kind || "?")[0].toUpperCase(), { anchor: "middle", baseline: "central", fill: FAINT, size: Math.min(14, Math.max(8, (bb[3] - bb[1]) * 0.5)) }));
-    if (ai) symbolsOut.push(textEl(bb[2], bb[1] - 2, "AI", { anchor: "end", size: 7, fill: AI_LINE }));
+    if (!sym) top.push(textEl((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, String(kind || "?")[0].toUpperCase(), { anchor: "middle", baseline: "central", fill: FAINT, size: Math.min(14, Math.max(8, (bb[3] - bb[1]) * 0.5)) }));
+    if (ai) top.push(textEl(bb[2], bb[1] - 2, "AI", { anchor: "end", size: 7, fill: AI_LINE }));
+    if (attrReasons.has(rec.id)) top.push(attrDot(bb[2] + 3, bb[1] - 3));     // 속성만 미확인(흐름·체크밸브 방향·고장 시 위치·포트 등)
     if (use.ports && use.ports.length && ex.orient) {
       const p = placement(use, bb, ex.orient);
       portsByNode.set(rec.id, use.ports.map(([x, y]) => toWorld(p, x, y)));
     }
-    // 태그: 계기는 원 안 두 줄, 나머지는 label_bbox 왼쪽 위, 없으면 기호 아래 가운데
-    const category = rec.category;
-    if (kind === "continuation" && ex.label && ex.label.length) {
-      ex.label.forEach((t, i) => labels.push(textEl((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2 + (ex.label.length === 1 ? 2 : i ? 6 : -2), t, { anchor: "middle", size: 5.5 })));
+    const cx = (bb[0] + bb[2]) / 2, cy = (bb[1] + bb[3]) / 2, bw = bb[2] - bb[0], bh = bb[3] - bb[1];
+    const color = ai ? AI_LINE : INK;
+    if (kind === "continuation" && ex.label && ex.label.length) {        // 다른 도면 연결: 오각형 안에 원본 글자(안에 들어갈 만큼 크게 보일 때만)
+      ex.label.forEach((t, i) => labels.push(labelSpec(cx, cy + (ex.label.length === 1 ? 2 : i ? 6 : -2), t, { anchor: "middle", size: 5.5, fixed: true, showFrom: 38 / Math.max(bw, 1), pri: 3, owner: rec.id })));
     } else if (rec.tag) {
-      const color = ai ? AI_LINE : INK;
-      if (category === "instrument") {
-        const lines = splitTag(rec.tag), cy = (bb[1] + bb[3]) / 2, cx = (bb[0] + bb[2]) / 2;
-        lines.forEach((t, i) => labels.push(textEl(cx, cy + (lines.length === 1 ? 3 : i === 0 ? -1 : 8), t, { anchor: "middle", size: 6.5, fill: color })));
-      } else if (rec.labelRect) {
-        labels.push(textEl(rec.labelRect.x0, rec.labelRect.y0 + FONT, rec.tag, { fill: color }));
-      } else if (kind === "continuation") {
-        String(rec.tag).split("\n").slice(0, 2).forEach((t, i) => labels.push(textEl((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2 + (i ? 7 : -1), t, { anchor: "middle", size: 6.5, fill: color })));
+      if (rec.category === "instrument") {                // 계기: 원이 화면에서 충분히 크면 원 안 두 줄, 작으면 오른쪽 옆에 한 줄
+        const lines = splitTag(rec.tag), minK = 26 / Math.max(bw, 1);
+        lines.forEach((t, i) => labels.push(labelSpec(cx, cy + (lines.length === 1 ? 2 : i === 0 ? -1 : 6), t, { anchor: "middle", size: 6, fixed: true, showFrom: minK, fill: color, pri: 2, owner: rec.id })));
+        labels.push(labelSpec(bb[2] + 2, cy + 3, rec.tag, { fill: color, pri: 2, owner: rec.id, hideFrom: minK }));
+      } else if (rec.category === "equipment") {         // 설비: 설비 바로 옆(오른쪽 위)에 둔다. 원본에서 멀리 떨어진 글자 자리는 따르지 않는다
+        labels.push(labelSpec(bb[2] + 3, bb[1] + FONT + 1, rec.tag, { fill: color, pri: 0, owner: rec.id }));
       } else {
-        labels.push(textEl((bb[0] + bb[2]) / 2, bb[3] + FONT + 1, rec.tag, { anchor: "middle", fill: color }));
+        labels.push(labelSpec(cx, bb[3] + FONT + 1, rec.tag, { anchor: "middle", fill: color, pri: 1, owner: rec.id }));
       }
-    } else if (TAGGED.includes(rec.category)) {        // 태그 없음: 호박색 점선 밑줄과 글자
+    } else if (TAGGED.includes(rec.category)) {          // 태그 없음: 호박색 점선 밑줄과 글자(늘 보인다)
       placeholders++;
-      const y = bb[3] + FONT + 3, cx = (bb[0] + bb[2]) / 2;
-      labels.push(el("line", { x1: r(cx - 20), y1: r(y + 2), x2: r(cx + 20), y2: r(y + 2), stroke: AMBER, "stroke-width": 1, "stroke-dasharray": "3 2", "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
-      labels.push(textEl(cx, y, "태그 없음", { anchor: "middle", fill: AMBER, size: 7 }));
+      const y = bb[3] + FONT + 3;
+      top.push(el("line", { x1: r(cx - 20), y1: r(y + 2), x2: r(cx + 20), y2: r(y + 2), stroke: AMBER, "stroke-width": 1, "stroke-dasharray": "3 2", "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
+      labels.push(labelSpec(cx, y, "태그 없음", { anchor: "middle", fill: AMBER, size: 7, pri: 0, always: true, owner: rec.id }));
     }
   }
-  // 기호 연결점과 배관 끝이 4 단위보다 멀면 같은 굵기의 짧은 선으로 잇는다(배관을 옮기지 않는다)
+  // 기호 연결점과 배관 끝: 그 배관 끝이 그 기호에 실제로 이어져 있고(그래프 연결) 8 단위 안이면 같은 굵기의 짧은 선으로 잇는다. 8 단위를 넘으면 잇지 않고
+  // 호박색 눈금(port_gap)을 둔다. 이어지지 않은 끝은 위에서 열린 끝 원으로 그린다(이어진 것처럼 보이게 하지 않는다)
   const stubs = [];
   for (const rec of ctx.items) {
     if (rec.layer !== "pipe") continue;
     const ex = ctx.extras[rec.id] || {}, w = PIPE_W[ex.line_type] || 1.4;
     for (const e of ex.ends || []) {
-      const ports = e.node && portsByNode.get(e.node);
+      const ports = e.status === "connected" && e.node && portsByNode.get(e.node);
       if (!ports || !e.point) continue;
       let best = null;
       for (const q of ports) { const d = Math.hypot(q[0] - e.point[0], q[1] - e.point[1]); if (!best || d < best.d) best = { q, d }; }
-      if (best && best.d > STUB_GAP && best.d < 40) stubs.push(el("line", Object.assign({ x1: r(best.q[0]), y1: r(best.q[1]), x2: r(e.point[0]), y2: r(e.point[1]) }, strokeAttrs(INK, w, {}))));
+      if (!best || best.d <= STUB_GAP) continue;
+      if (best.d <= PORT_GAP) stubs.push(el("line", Object.assign({ x1: r(best.q[0]), y1: r(best.q[1]), x2: r(e.point[0]), y2: r(e.point[1]) }, strokeAttrs(INK, w, {}))));
+      else top.push(amberTick(e.point[0], e.point[1]));
     }
   }
-  for (const t of ctx.textItems || []) labels.push(textEl(t.bbox[0], t.bbox[1] + FONT, t.text));
-  nodes.push(...pipes, ...stubs, ...symbolsOut, ...labels);
-  return { nodes, missingKinds: [...missing].sort(), placeholders };
+  for (const t of ctx.textItems || []) labels.push(labelSpec(t.bbox[0], t.bbox[1] + FONT, t.text, { pri: 5 }));
+  nodes.push(...pipes, ...stubs, ...symbolsOut);
+  return { nodes, top, labels, obstacles, missingKinds: [...missing].sort(), placeholders };
+}
+
+const wide = (ch) => (ch.charCodeAt(0) >= 0x2e80 ? 1 : 0.6);
+const textWidth = (text, size) => { let w = 0; for (const ch of text) w += wide(ch); return w * size; };
+
+/** 글자 자리 정하기(원본 뷰어의 uncrowdTags가 하던 일): 확대 값 k에서 글자 크기를 화면 픽셀 하한(minPx) 이상으로 하고, 먼저 자리를 잡는 글자(설비 → 밸브 →
+ *  계기 → 배관 번호)부터 서로·기호 상자(자기 것은 빼고)와 겹치면 그 글자를 숨긴다. 호박색 '태그 없음'·미확인 글자는 늘 보인다.
+ *  돌려주는 것: labels와 같은 순서의 [{visible, size}]. 순수 함수라 DOM 없이 시험한다. */
+export function layoutLabels(labels, k, obstacles, minPx = MIN_LABEL_PX) {
+  const out = labels.map(() => ({ visible: false, size: 0 }));
+  const order = labels.map((l, i) => i).sort((a, b) => labels[a].pri - labels[b].pri || a - b);
+  const cell = 60, grid = new Map();
+  const cells = (b) => { const c = []; for (let x = Math.floor(b.x0 / cell); x <= Math.floor(b.x1 / cell); x++) for (let y = Math.floor(b.y0 / cell); y <= Math.floor(b.y1 / cell); y++) c.push(x + "," + y); return c; };
+  const put = (b, tag) => { for (const c of cells(b)) { if (!grid.has(c)) grid.set(c, []); grid.get(c).push(Object.assign({ tag }, b)); } };
+  for (const o of obstacles) put(o, o.owner);
+  const hit = (b, owner) => { for (const c of cells(b)) for (const o of grid.get(c) || []) if (o.tag !== owner && !(b.x1 <= o.x0 || b.x0 >= o.x1 || b.y1 <= o.y0 || b.y0 >= o.y1)) return true; return false; };
+  for (const i of order) {
+    const l = labels[i];
+    if (k < l.showFrom || (l.hideFrom && k >= l.hideFrom)) continue;               // 확대 값 조건(원 안 글자 등)
+    const size = l.fixed ? l.size : Math.max(l.size, minPx / k);
+    let w = textWidth(l.text, size), h = size;
+    if (l.rotate) [w, h] = [h, w];
+    const x0 = l.anchor === "middle" ? l.x - w / 2 : l.anchor === "end" ? l.x - w : l.x;
+    const box = l.rotate ? { x0: l.x - w, y0: l.y - h / 2, x1: l.x, y1: l.y + h / 2 } : { x0, y0: l.y - h * 0.85, x1: x0 + w, y1: l.y + h * 0.2 };
+    if (!l.always && !l.fixed && hit(box, l.owner)) continue;
+    out[i] = { visible: true, size };
+    if (!l.fixed) put(box, "label:" + i);
+  }
+  return out;
 }
 
 /** 표시가 걸린 객체를 그 색으로 다시 그린다(정리된 보기에서 '객체의 색을 바꾼다', 규격 §10.5). 못 그리면 null. */
@@ -196,9 +241,8 @@ export function recolor(ctx, rec, color, width, opts = {}) {
   if (rec.layer === "pipe") return pipeShapes(rec, ex, { color, width: Math.max(width || 2.2, 1.6), recolor: true, dash: opts.dashed ? "6 4" : null });
   if (rec.layer !== "symbol") return null;
   const bb = [rec.rect.x0, rec.rect.y0, rec.rect.x1, rec.rect.y1], sym = ctx.symbols[rec.kind];
-  if (!rec.kind || rec.unknown) {
-    return [el("rect", { x: r(bb[0]), y: r(bb[1]), width: r(bb[2] - bb[0]), height: r(bb[3] - bb[1]), fill: "none", stroke: color, "stroke-width": width, "stroke-dasharray": "4 3", "vector-effect": "non-scaling-stroke", "pointer-events": "none" })];
-  }
+  if (!rec.kind || rec.unknown) return [];          // 미확인 자리표는 표시 색으로 바꾸지 않는다(점선 네모·?가 그대로 위에 보인다)
+  if (ex.review === "ai_candidate") return [];
   if (sym && sym.junction) return [el("circle", { cx: r((bb[0] + bb[2]) / 2), cy: r((bb[1] + bb[3]) / 2), r: 2.5, fill: color, "pointer-events": "none" })];
   return symbolShapes(sym || ctx.symbols.generic, bb, ex.orient, { color, width: Math.max(width || 2.2, 1.8), fill: opts.fill || null, fillOpacity: opts.fillOpacity, dash: opts.dashed ? "4 3" : null });
 }
@@ -212,6 +256,11 @@ export function fragmentBox(bbox, size, pad = 24) {
 
 /** 기본 보기(규격 §10.5): drawio·dexpi는 정리, pdf_vector는 원본. 쪽이 확정되면 정리. */
 export function defaultView(sourceFormat, confirmed = false) {
-  if (confirmed) return "clean";
-  return sourceFormat === "pdf_vector" ? "orig" : "clean";
+  if (sourceFormat === "drawio" || sourceFormat === "dexpi") return "clean";
+  return confirmed ? "clean" : "orig";               // PDF·raster·모르는 값은 원본이 기본(확정된 쪽만 정리)
+}
+
+/** 글자 한 줄의 그리기 서술자(글자 크기는 layoutLabels가 정한 값). */
+export function labelDescriptor(l, size) {
+  return textEl(l.x, l.y, l.text, { anchor: l.anchor, size, fill: l.fill, opacity: l.opacity, rotate: l.rotate, baseline: l.baseline });
 }

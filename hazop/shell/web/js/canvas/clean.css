@@ -1,5 +1,5 @@
 /* 정리된 보기의 도면 위 부품: 원본|정리 단추와 미확인 칩, 원본 조각 말풍선 */
-.viewswitch { right: var(--sp-4); bottom: var(--sp-4); display: flex; align-items: center; gap: var(--sp-2); padding: 4px 8px 4px 4px; z-index: 3; }
+.viewswitch { right: var(--sp-4); bottom: var(--sp-4); display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); padding: 4px 8px 4px 4px; z-index: 3; max-width: calc(100% - 2 * var(--sp-4)); }
 .clean-toggle { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-sm); overflow: hidden; }
 .clean-toggle button { all: unset; padding: 4px 12px; font-size: var(--fs-sm); cursor: pointer; background: var(--surface); }
 .clean-toggle button.on { background: var(--accent-weak); color: var(--accent-ink); font-weight: 700; }
@@ -12,3 +12,4 @@
 .cleanpop .cp-frag { border: 1px solid var(--line); border-radius: var(--r-sm); background: #fff; padding: 4px; }
 .cleanpop .cp-frag svg { display: block; max-height: 200px; }
 .cleanpop kbd { margin-left: 4px; font-size: 10.5px; }
+.viewswitch .chip[aria-pressed="true"] { outline: 2px solid var(--accent); }

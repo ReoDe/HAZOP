@@ -21,6 +21,7 @@ export const clean = createStore({
   built: {},         // graph_id → {ms, elements, missingKinds, placeholders}
   bubble: null,      // {id, reason, fragment}
   cursor: -1,        // 다음 미확인 위치
+  overlay: { leftovers: false, original: false },   // 원본에 남은 것 겹치기(L)·원본 겹쳐 보기(30%)
 });
 
 export function useClean(selector) {
@@ -44,8 +45,11 @@ export const REASON_TEXT = {
 export function viewOf(state, gid) {
   const data = state.data[gid];
   if (!data) return "orig";
+  if (data.source_format === "dexpi") return "clean";        // 원본 그림이 없다
   return state.choice[gid] || defaultView(data.source_format, !!(data.confirmed && data.confirmed.state === "confirmed"));
 }
+
+export function toggleOverlay(name) { clean.set((s) => ({ overlay: Object.assign({}, s.overlay, { [name]: !s.overlay[name] }) })); }
 
 export function setView(gid, view) { clean.set((s) => ({ choice: Object.assign({}, s.choice, { [gid]: view }) })); }
 
@@ -73,7 +77,8 @@ export function stepUnconfirmed(gid, step = 1) {
 /** <Sheet>에 펼칠 props와 키(O·N). */
 export function useCleanCanvas(sheet) {
   const view = useClean((s) => (sheet ? viewOf(s, sheet) : "orig"));
-  useEffect(() => {
+  const overlays = useClean((s) => s.overlay);
+  useLayoutEffect(() => {
     function key(e) {
       const t = e.target, tag = (t && t.tagName) || "";
       if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || (t && t.isContentEditable) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -82,6 +87,7 @@ export function useCleanCanvas(sheet) {
       const k = (e.key || "").toLowerCase();
       if (k === "o") { e.preventDefault(); toggleView(g); }
       else if (k === "n") { e.preventDefault(); stepUnconfirmed(g, e.shiftKey ? -1 : 1); }
+      else if (k === "l") { e.preventDefault(); toggleOverlay("leftovers"); }
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
@@ -90,7 +96,7 @@ export function useCleanCanvas(sheet) {
     /** Esc: 열린 말풍선을 닫으면 true(그러면 다른 Esc 동작은 하지 않는다). */
     closeIfOpen: () => { if (!clean.get().bubble) return false; closeBubble(); return true; },
     props: {
-      view,
+      view, overlays,
       onClean: (gid, data) => onClean(gid, data),
       onUnconfirmedClick: (d) => openBubble(d),
       onCleanBuilt: (info) => { const g = shell.get().sheet; if (g) clean.set((s) => ({ built: Object.assign({}, s.built, { [g]: info }) })); },
@@ -98,18 +104,29 @@ export function useCleanCanvas(sheet) {
   };
 }
 
+const FORMAT_LABEL = { drawio: "읽은 도면 · drawio", dexpi: "변환 도면 · DEXPI", pdf_vector: "PDF에서 읽어 다시 그림", raster: "이미지에서 읽어 다시 그림", unknown: "읽은 방법 모름" };
+
 function ViewSwitch({ gid }) {
   const view = useClean((s) => viewOf(s, gid));
   const data = useClean((s) => s.data[gid]);
   const built = useClean((s) => s.built[gid]);
-  const count = data ? data.counts.total : 0;
+  const ov = useClean((s) => s.overlay);
+  const count = data ? data.counts.total : 0, fmt = data ? data.source_format : null;
+  const dexpi = fmt === "dexpi";
   const tip = built && built.missingKinds.length ? "그림이 없는 종류 " + built.missingKinds.length + "개: " + built.missingKinds.join(", ") : "";
   const seg = (v, label) => html`<button type="button" class=${view === v ? "on" : ""} aria-pressed=${view === v ? "true" : "false"} disabled=${v === "clean" && !data}
     title=${v === "clean" && !data ? "정리된 보기 자료를 읽지 못했습니다" : label + " 보기 (O)"} onClick=${() => setView(gid, v)}>${label}</button>`;
+  const lo = data && data.leftovers;
   return html`<div class="float viewswitch" role="group" aria-label="도면 보기">
-    <div class="clean-toggle" role="group" aria-label="원본 또는 정리">${seg("orig", "원본")}${seg("clean", "정리")}</div>
+    ${dexpi ? html`<span class="muted small" title="DEXPI에는 원본 도면 그림이 없습니다">원본 그림 없음 · DEXPI 변환</span>`
+      : html`<div class="clean-toggle" role="group" aria-label="원본 또는 정리">${seg("orig", "원본")}${seg("clean", "정리")}</div>`}
+    ${data ? html`<span class=${"chip " + (fmt === "unknown" ? "warn" : "")} title="읽은 방법">${FORMAT_LABEL[fmt] || fmt}</span>` : null}
     ${data ? html`<button type="button" class=${"chip " + (count ? "warn" : "ok")} title=${"다음 미확인으로 (N)" + (tip ? " · " + tip : "")} aria-label=${"미확인 " + count + "곳. 다음으로 가기"}
-      onClick=${() => stepUnconfirmed(gid, 1)}><${Icon} name=${count ? "alert-triangle" : "check"} size=${14} /> 미확인 ${count}곳</button>` : null}</div>`;
+      onClick=${() => stepUnconfirmed(gid, 1)}><${Icon} name=${count ? "alert-triangle" : "check"} size=${14} /> 미확인 ${count}곳</button>` : null}
+    ${data && data.counts.unplaced ? html`<span class="chip warn" title="좌표가 없어 도면에 그리지 못한 것. 확정 전에 위치를 주거나 도면에 없음으로 정해야 합니다">위치 없음 ${data.counts.unplaced}</span>` : null}
+    ${lo && lo.counted ? html`<button type="button" class=${"chip " + (lo.n ? "warn" : "")} aria-pressed=${ov.leftovers ? "true" : "false"} title="원본에서 어느 구성요소에도 쓰이지 않은 것을 겹쳐 봅니다 (L)"
+      onClick=${() => toggleOverlay("leftovers")}>원본에 남은 것 ${lo.n}</button>` : (lo ? html`<span class="chip warn" title="이 읽은 방법에서는 엔진이 원본에 남은 선·글자를 세지 못합니다. 쪽을 확정하기 전에 원본과 견주어야 합니다">원본에 남은 것: 엔진이 세지 않음</span>` : null)}
+    ${data && !dexpi ? html`<button type="button" class="chip" aria-pressed=${ov.original ? "true" : "false"} title="원본 도면을 옅게(30%) 겹쳐 어긋난 곳을 찾습니다" onClick=${() => toggleOverlay("original")}>원본 겹쳐 보기</button>` : null}</div>`;
 }
 
 function Bubble({ gid }) {

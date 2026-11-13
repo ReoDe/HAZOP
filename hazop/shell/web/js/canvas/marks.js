@@ -183,7 +183,7 @@ function arrowEl(a, k) {
  * @param {{marks: Array, seg: object, selection: string[], index: object, k: number, dimOthers: boolean}} s
  * @returns {{nodes: Array, missing: Map<string, string[]>, dim: boolean}}
  */
-export function drawAll({ marks, seg, outside, selection, index, k = 1, size, recolor = null }) {
+export function drawAll({ marks, seg, outside, selection, index, k = 1, size, recolor = null, veil = null }) {
   const nodes = [], missing = new Map();
   // 정리된 보기(recolor 있음)에서는 상자를 덧그리지 않고 그 객체의 색을 바꾼다(규격 §10.5). 못 그리는 층(태그 상자)은 그리지 않는다
   const mk = (item, w, extra, fillOpacity) => {
@@ -195,7 +195,7 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size, re
   const resolved = (marks || []).map((m) => resolveMark(m, index));
   const dimByMark = resolved.some((m) => m.dim);
   const dim = dimByMark || !!(seg && seg.focused);
-  if (dim && size) nodes.push(el("rect", { x: 0, y: 0, width: size[0], height: size[1], fill: "var(--bg, #f4f5f7)", "fill-opacity": 1 - DIM_OPACITY, "pointer-events": "none" }));
+  if (dim && size) nodes.push(el("rect", { x: 0, y: 0, width: size[0], height: size[1], fill: "var(--bg, #f4f5f7)", "fill-opacity": veil == null ? 1 - DIM_OPACITY : veil, "pointer-events": "none" }));
   const badges = [], arrows = [];
   // 구간 밖 구성요소: 바탕색을 얹어 흐리게(구간 안의 것과 구별)
   for (const id of outside || []) {
@@ -243,6 +243,18 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size, re
     for (const rec of recsOf(index, id)) nodes.push(...mk({ rec, color: STYLE_COLORS.focus, dashed: false }, 3, null, 0.14));
   }
   for (const a of arrows) nodes.push(arrowEl(a, k));
+  // 같은 자리에 겹치는 번호 원은 옆으로 비켜 놓는다(이어진 단계의 번호가 서로 가리지 않게)
+  const taken = new Set(), step = 16 / k;
+  for (const b of badges) {
+    if (!b.round) continue;
+    let dx = 0;
+    for (let tries = 0; tries < 8; tries++) {
+      const key = Math.round((b.rect.x0 + dx) / step) + "," + Math.round(b.rect.y0 / step);
+      if (!taken.has(key)) { taken.add(key); break; }
+      dx += step;
+    }
+    if (dx) b.rect = { x0: b.rect.x0 + dx, y0: b.rect.y0, x1: b.rect.x1 + dx, y1: b.rect.y1 };
+  }
   for (const b of badges) nodes.push(badgeEl(b, k));
   return { nodes, missing, dim, badges };
 }
