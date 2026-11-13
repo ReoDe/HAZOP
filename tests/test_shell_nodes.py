@@ -370,15 +370,14 @@ if __name__ == "__main__":
 
 class WiringTest(unittest.TestCase):
     def test_api_module_registers_nodes_commands_and_read_route_by_itself(self):
-        """api.py를 새 프로세스에서 불러 register 호출과 읽기 길이 이어졌는지 본다(시험 쪽에서 register를 부르지 않는다)."""
+        """api.py를 새 프로세스에서 불러 register 호출과 읽기 길(TOPIC_OWNER)이 이어졌는지 본다(시험 쪽에서 register를 부르지 않는다)."""
         import subprocess
         code = ("from hazop.shell import api; e = api.Engine(); "
-                "print('nodes.create' in api.COMMANDS and 'nodes.suggest' in api.COMMANDS)")
+                "print('nodes.create' in api.COMMANDS and 'nodes.suggest' in api.COMMANDS and "
+                "api.TOPIC_OWNER.get('nodes').__name__ == 'hazop.shell.api_nodes')")
         out = subprocess.run([sys.executable, "-c", code], cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                              capture_output=True, text=True, env=dict(os.environ, PYTHONIOENCODING="utf-8")).stdout.strip()
         self.assertEqual(out.splitlines()[-1], "True", out)
-        with open(api.__file__, encoding="utf-8") as fh:
-            self.assertIn('api_nodes.read(self.engine, parts, query)', fh.read())
 
 
 class ProjectSwitchTest(Env):

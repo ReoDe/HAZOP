@@ -16,6 +16,8 @@ from hazop.extract import confirmation
 
 LOG = logging.getLogger("hazop.shell.api_drawings")
 MAX_ROWS = 200
+TOPICS = ("sheetconf", "dexpi")                 # api.py가 읽기 길을 이 모듈로 잇는다(register와 함께 hazop/shell/README.md의 등록 규약)
+PROJECT_PREFIXES = ("sheet.", "dexpi.")           # 쪽 확정·내보내기 명령은 프로젝트 ID를 실어야 한다
 
 
 def _api():

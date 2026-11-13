@@ -389,7 +389,7 @@ def _h_set_project(engine, a):
         engine.chat.check_project()      # 프로젝트가 바뀌면 대화를 끝낸다
     engine.current_sheet = None
     engine.emit("project.changed", {"project_id": pid})      # 웹이 구간·결과·초기사건 상태를 모두 비우고 다시 읽는다
-    for topic in ("drawings", "state", "nodes", "results", "ie"):
+    for topic in ("drawings", "state") + tuple(TOPIC_OWNER):      # 등록된 영역 모두(구간·결과·초기사건 …)
         engine.changed(topic)
     return {"project_id": pid}
 
@@ -497,9 +497,6 @@ def _h_open_classic(engine, a):
     return {"switched": bool(hook())}   # 작업이 도는 중이면 창이 묻는다: 닫히지 않으면 False
 
 
-# 프로젝트에 묶인 명령의 이름 머리(웹이 보낼 때 프로젝트 ID를 실어야 하는 것)
-PROJECT_BOUND = ("nodes.", "results.", "ie.", "chat.action.", "sheet.", "dexpi.")
-
 COMMANDS = {
     "ui.save": Command({"state": (v_json_text(MAX_UI_STATE_CHARS), True)}, _h_ui_save, "웹의 보기 상태(마지막 도면·채팅 접힘 등)를 맡긴다"),
     "sheet.open": Command({"graph_id": (v_str(1, 200), True)}, _h_open_sheet, "보는 도면이 바뀌었음을 알린다(채팅의 지금 화면 문맥)"),
@@ -524,31 +521,54 @@ COMMANDS = {
 }
 
 
-# 영역별 명령 모듈을 같은 표에 올린다. 한 모듈이 없거나 깨져도 새 화면은 뜨고 그 메뉴만 꺼진다(이름이 겹치면 ValueError로 바로 알린다).
-try:
-    from hazop.shell import api_nodes  # noqa: E402  (2단계 구간, s-viewer 몫)
-    api_nodes.register(COMMANDS)
-except ImportError:
-    LOG.exception("구간 명령 모듈을 읽지 못함: 구간 메뉴가 꺼진다")
-    api_nodes = None
-try:
-    from hazop.shell import api_results  # noqa: E402  (3단계 ⑤ 분석 결과)
-    api_results.register(COMMANDS)
-except ImportError:
-    LOG.exception("분석 결과 명령 모듈을 읽지 못함: 분석 결과 메뉴가 꺼진다")
-    api_results = None
-try:
-    from hazop.shell import api_drawings  # noqa: E402  (도면 쪽 확정·DEXPI 내보내기)
-    api_drawings.register(COMMANDS)
-except ImportError:
-    LOG.exception("도면 쪽 확정 명령 모듈을 읽지 못함: 쪽 확정·DEXPI 내보내기가 꺼진다")
-    api_drawings = None
-try:
-    from hazop.shell import api_ie  # noqa: E402  (3단계 ⑥ 초기사건)
-    api_ie.register(COMMANDS)
-except ImportError:
-    LOG.exception("초기사건 명령 모듈을 읽지 못함: 초기사건 메뉴가 꺼진다")
-    api_ie = None
+# 프로젝트에 묶인 명령의 이름 머리(웹이 보낼 때 프로젝트 ID를 실어야 하는 것). 영역 모듈의 몫은 _load_modules가 더한다.
+CORE_TOPICS = ("state", "drawings", "connection", "chat", "icons", "examples", "sheet")
+PROJECT_BOUND_CORE = ("chat.action.", "sheet.")
+
+# 영역별 모듈(등록 규약은 hazop/shell/README.md). 새 영역은 이 튜플에 모듈 이름 하나를 더하는 것이 전부다.
+MODULES = ("api_nodes", "api_results", "api_drawings", "api_ie", "clean_items")
+
+TOPIC_OWNER = {}          # 토픽 -> 읽기 모듈
+LOADED = {}               # 모듈 이름 -> 모듈 (읽지 못한 것은 없다)
+
+
+def _topics_of(name, mod):
+    topics = getattr(mod, "TOPICS", None)
+    if topics:
+        return tuple(topics)
+    base = name
+    if base.startswith("api_"):
+        base = base[len("api_"):]
+    if base.endswith("_items"):
+        base = base[:-len("_items")]
+    return (base,)
+
+
+def _load_modules():
+    """MODULES를 읽어 명령 표(COMMANDS)·읽기 토픽(TOPIC_OWNER)·프로젝트 묶음(PROJECT_BOUND)에 올린다.
+    한 모듈이 없거나 깨져도(ImportError) 새 화면은 뜨고 그 영역만 꺼진다. 명령·토픽 이름이 겹치면 ValueError로 바로 알린다."""
+    import importlib
+    bound = list(PROJECT_BOUND_CORE)
+    for name in MODULES:
+        try:
+            mod = importlib.import_module("hazop.shell." + name)
+            if hasattr(mod, "register"):
+                mod.register(COMMANDS)
+        except ImportError:
+            LOG.exception("영역 모듈을 읽지 못함: %s (그 영역만 꺼진다)", name)
+            continue
+        topics = _topics_of(name, mod)
+        for t in topics:
+            if t in TOPIC_OWNER or t in CORE_TOPICS:
+                raise ValueError("읽기 토픽 이름이 겹침: %s (%s)" % (t, name))
+            TOPIC_OWNER[t] = mod
+        prefixes = getattr(mod, "PROJECT_PREFIXES", None)
+        bound.extend(prefixes if prefixes is not None else tuple(t + "." for t in topics))
+        LOADED[name] = mod
+    return tuple(dict.fromkeys(bound))
+
+
+PROJECT_BOUND = _load_modules()
 
 
 # ---------------------------------------------------------------- 읽기 API
@@ -608,23 +628,9 @@ class ReadApi:
         if topic == "chat" and len(parts) == 1:
             chat = self.engine.chat
             return _json(chat.snapshot() if chat is not None else {"busy": False, "model": "fast", "availability": {"blocked": True, "text": "채팅을 쓸 수 없습니다.", "button": None}})
-        if topic == "nodes" and api_nodes is not None:
-            return api_nodes.read(self.engine, parts, query)
-        if topic == "clean" and len(parts) == 2:
-            # 정리된 보기용 추가 자료(읽은 결과로 다시 그리는 데 필요한 방향·선 종류·열린 끝·미확인, clean_items.py = s-viewer 몫). 도면 ID로만 읽고
-            # 프로젝트의 도면이 아니면 404다. 모듈이 깨져도 새 화면은 뜨고 정리된 보기만 꺼진다(웹은 자료가 없으면 원본으로 둔다).
-            try:
-                from hazop.shell import clean_items
-            except ImportError:
-                LOG.exception("정리된 보기 자료 모듈을 읽지 못함: 정리된 보기가 꺼진다")
-                return None
-            return clean_items.read(self.engine, parts, query)
-        if topic in ("sheetconf", "dexpi") and api_drawings is not None:
-            return api_drawings.read(self.engine, parts, query)
-        if topic == "results" and api_results is not None:
-            return api_results.read(self.engine, parts, query)
-        if topic == "ie" and api_ie is not None:
-            return api_ie.read(self.engine, parts, query)
+        owner = TOPIC_OWNER.get(topic)
+        if owner is not None:
+            return owner.read(self.engine, parts, query)
         if topic == "icons" and len(parts) == 1:
             return _json(icon_shapes())
         if topic == "examples" and len(parts) == 1:

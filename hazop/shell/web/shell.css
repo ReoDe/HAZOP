@@ -41,14 +41,16 @@ input[type="text"]:focus, input[type="number"]:focus { border-color: var(--accen
 .actbox.confirm { border-color: var(--warn-line); background: var(--warn-bg); }
 .actbox.confirm .actbox-h .ic { color: var(--warn); }
 
-/* 분석 결과 패널(3단계): 구간×편차 행렬(가상 스크롤), 워크시트, 권고 */
-.results .panel-b { gap: var(--sp-3); }
-.res-head { justify-content: space-between; flex-wrap: wrap; }
-.res-head .acts { display: flex; gap: 4px; flex-wrap: wrap; }
-.runmenu { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-2); }
-.runplan { border-color: var(--accent); }
-.res-hint { padding: var(--sp-3); }
-.res-matrix { flex: none; }
+/* 둘 이상의 영역이 함께 쓰는 공통 규칙(채팅 카드·구간·분석 결과·지식그래프). 영역 전용 규칙은 panels/<이름>.css */
+.faint { color: var(--faint); }
+.lbl { font-size: var(--fs-xs); color: var(--muted); margin-bottom: 2px; }
+.reason { color: var(--muted); white-space: pre-wrap; }
+ul.tight { margin: 0; padding-left: 16px; }
+.warnline { color: var(--warn); }
+.tgts { margin: var(--sp-1) 0 var(--sp-2); }
+.bubble { position: absolute; z-index: 4; padding: var(--sp-2) var(--sp-3); min-width: 160px; }
+
+/* 가상 스크롤 표(ui/table.js): 분석 결과 말고도 쓸 수 있는 공통 구성요소 */
 .vgrid { position: relative; height: 100%; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--surface); font-size: var(--fs-sm); }
 .vg-corner { position: absolute; left: 0; top: 0; z-index: 3; background: var(--surface-2, var(--surface)); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 8px; box-sizing: border-box; }
 .vg-colheads { position: absolute; top: 0; right: 0; overflow: hidden; z-index: 2; background: var(--surface-2, var(--surface)); border-bottom: 1px solid var(--line); }
@@ -62,35 +64,6 @@ input[type="text"]:focus, input[type="number"]:focus { border-color: var(--accen
 .vg-cell { position: absolute; box-sizing: border-box; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .vg-cell:hover { background: var(--accent-weak); }
 .vg-cell.on { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-weak); z-index: 1; }
-.rc { display: inline-flex; align-items: baseline; gap: 4px; padding: 1px 6px; border-radius: var(--r-sm); position: relative; }
-.rc small { color: var(--muted); font-size: var(--fs-xs); }
-.rc.risk-1 { background: var(--ok-bg); }
-.rc.risk-2 { background: var(--accent-weak); }
-.rc.risk-3 { background: var(--warn-bg); }
-.rc.risk-4, .rc.risk-5 { background: var(--err-bg); }
-.dot-un { position: absolute; top: -3px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn-line); }
-.faint { color: var(--faint); }
-.worksheet .ent { border-top: 1px solid var(--line); padding: var(--sp-2) 0; }
-.entgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-2) var(--sp-3); }
-.lbl { font-size: var(--fs-xs); color: var(--muted); margin-bottom: 2px; }
-.reason { color: var(--muted); white-space: pre-wrap; }
-.ent-acts { margin-top: var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-2); }
-.editgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-2); }
-.editgrid label { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-xs); color: var(--muted); }
-ul.tight { margin: 0; padding-left: 16px; }
-.linkish { background: none; border: 0; padding: 0; color: var(--accent-ink); cursor: pointer; text-align: left; font: inherit; }
-.rec .linkish { text-decoration: underline; }
-
-/* 초기사건 패널(3단계) */
-.ie-cols { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(300px, 1.4fr); gap: var(--sp-4); align-items: start; }
-.ie-cols h3 { margin: 0 0 var(--sp-2); font-size: var(--fs-md); }
-.ie .cand .main { flex: 1; min-width: 0; }
-.ie h4 { margin: var(--sp-2) 0 2px; font-size: var(--fs-sm); color: var(--muted); }
-@media (max-width: 1100px) { .ie-cols { grid-template-columns: 1fr; } }
-.warnline { color: var(--warn); }
-.tgts { margin: var(--sp-1) 0 var(--sp-2); }
-.bubble { position: absolute; z-index: 4; padding: var(--sp-2) var(--sp-3); min-width: 160px; }
-.tracebox input { flex: 1; min-width: 160px; height: 28px; }
 
 /* 도면 쪽 확정 칩과 카드 */
 .confbar { position: absolute; left: 12px; top: 10px; z-index: 3; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
@@ -100,5 +73,4 @@ ul.tight { margin: 0; padding-left: 16px; }
 .conf-list li.good::before { content: "✓ "; color: var(--ok); }
 .conf-list li.bad::before { content: "! "; color: var(--warn); font-weight: bold; }
 .check { display: flex; gap: 6px; align-items: flex-start; font-size: var(--fs-sm); }
-.dexpi-card .list .row { align-items: flex-start; }
 .btn:disabled { opacity: .45; cursor: default; }

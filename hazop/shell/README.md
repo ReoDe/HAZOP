@@ -36,7 +36,7 @@
 - 웹은 **파일 경로를 보내지도 받지도 않는다**. ID만 쓴다. 저장 위치는 Python이 창으로 묻는다(`engine.hooks`).
 - 오래 걸리는 일은 `engine.start_job(label, fn, kind)`로 돌린다. 바뀐 것은 `engine.changed(토픽, rev)`로 웹에 알린다.
 - 모듈이 깨져도(ImportError) 새 화면은 뜨고 그 영역만 꺼진다.
-- 등록 줄은 `api.py` 맨 위 `MODULES` 튜플에 모듈 이름 하나(`"api_kg"`)를 더하는 것이 전부다.
+- 등록 줄은 `api.py`의 `MODULES` 튜플에 모듈 이름 하나(`"api_kg"`)를 더하는 것이 전부다.
 
 ### 2. 웹 쪽: `web/js/panels/<이름>.js`
 

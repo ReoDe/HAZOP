@@ -8,14 +8,10 @@ import { Icon, loadIcons } from "./ui/icon.js";
 import { Btn } from "./ui/parts.js";
 import { ChatPanel, loadChat, pushMsg, setChat } from "./chat/panel.js";
 import { addActions, updateAction } from "./chat/actions.js";
-import { DrawingsPanel } from "./panels/drawings.js";
-import { NodesPanel } from "./panels/nodes.js";
-import { ResultsPanel } from "./panels/results.js";
-import { IePanel } from "./panels/ie.js";
+import { PANELS, loadPanelCss, panelLabel } from "./panels/index.js";
 import { resetAreas } from "./areas.js";
 import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
-import { SettingsPanel } from "./panels/settings.js";
 import { SheetHost } from "./sheet_host.js";
 
 const toast = (text, kind) => store.set({ toast: { text, kind } });
@@ -54,6 +50,8 @@ export function togglePanel(name) {
 }
 
 setOpenSheet(openSheet);      // 분석 결과의 '도면에서 보기'가 도면을 바꿀 때 쓴다
+
+const closePanel = () => store.set({ panel: null });
 
 export function toggleChat() {
   store.set((s) => ({ chatCollapsed: !s.chatCollapsed, chat: Object.assign({}, s.chat, { unread: false }) }));
@@ -112,19 +110,22 @@ function wireEvents() {
 function Rail() {
   const panel = useStore((s) => s.panel);
   const conn = useStore((s) => s.conn);
-  const b = (name, icon, label, badge) => html`<button type="button" class=${panel === name ? "on" : ""} title=${label} aria-label=${label} onClick=${() => togglePanel(name)}>
-    <${Icon} name=${icon} />${badge ? html`<span class="badge">${badge}</span>` : null}</button>`;
-  const unknowns = useStore((s) => s.drawings.drawings.reduce((n, d) => n + (d.unknowns || 0), 0));
   return html`<nav class="rail" aria-label="메뉴"><div class="logo" aria-hidden="true">HZ</div>
-    ${b("drawings", "files", "도면 (Ctrl+1)", unknowns || null)}
-    ${b("nodes", "vector-triangle", "구간 (Ctrl+2)", null)}
-    ${b("results", "table", "분석 결과 (Ctrl+3)", null)}
-    ${b("ie", "route", "초기사건 (Ctrl+4)", null)}
+    ${PANELS.filter((p) => p.place !== "bottom").map((p) => html`<${RailButton} key=${p.name} p=${p} on=${panel === p.name} />`)}
     <div class="spacer"></div>
     <button type="button" class=${panel === "settings" ? "on" : ""} title=${"AI 연결 · " + conn.label} aria-label=${"AI 연결: " + conn.label} onClick=${() => togglePanel("settings")}>
       <${Icon} name="plug-connected" /><span class=${"conn " + (conn.tone || "plain")}></span></button>
-    ${b("settings", "settings", "설정")}</nav>`;
+    ${PANELS.filter((p) => p.place === "bottom").map((p) => html`<${RailButton} key=${p.name} p=${p} on=${panel === p.name} />`)}</nav>`;
 }
+
+/** 메뉴 단추 하나: panels/index.js의 항목에서 이름·아이콘·숫자(badge)를 읽는다. */
+function RailButton({ p, on }) {
+  const badge = useStore(p.badge || nothing);
+  const label = panelLabel(p);
+  return html`<button type="button" class=${on ? "on" : ""} title=${label} aria-label=${label} onClick=${() => togglePanel(p.name)}>
+    <${Icon} name=${p.icon} />${badge ? html`<span class="badge">${badge}</span>` : null}</button>`;
+}
+const nothing = () => null;
 
 function ProjectBox({ id }) {
   const [editing, setEditing] = useState(false);
@@ -177,10 +178,7 @@ function App() {
         e.preventDefault();
         if (store.get().chatCollapsed) toggleChat();
         setTimeout(() => { const el = document.querySelector(".chat-input"); if (el) el.focus(); }, 0);
-      } else if (e.ctrlKey && e.key === "1") { e.preventDefault(); togglePanel("drawings"); }
-      else if (e.ctrlKey && e.key === "2") { e.preventDefault(); togglePanel("nodes"); }
-      else if (e.ctrlKey && e.key === "3") { e.preventDefault(); togglePanel("results"); }
-      else if (e.ctrlKey && e.key === "4") { e.preventDefault(); togglePanel("ie"); }
+      } else if (e.ctrlKey && PANELS.some((p) => p.key === e.key)) { e.preventDefault(); togglePanel(PANELS.find((p) => p.key === e.key).name); }
       else if ((e.ctrlKey && e.key === "0") || (e.key === "Escape" && !typing)) { if (store.get().panel) { e.preventDefault(); store.set({ panel: null }); } }
     }
     window.addEventListener("keydown", key);
@@ -189,11 +187,7 @@ function App() {
   return html`<div class=${"app" + (collapsed ? " chat-collapsed" : "")}>
     <${Rail} />
     <main class="center"><${TopBar} /><${SheetHost} />
-      ${panel === "drawings" ? html`<${DrawingsPanel} onOpen=${openSheet} onClose=${() => store.set({ panel: null })} />` : null}
-      ${panel === "nodes" ? html`<${NodesPanel} onClose=${() => store.set({ panel: null })} />` : null}
-      ${panel === "results" ? html`<${ResultsPanel} onClose=${() => store.set({ panel: null })} />` : null}
-      ${panel === "ie" ? html`<${IePanel} onClose=${() => store.set({ panel: null })} />` : null}
-      ${panel === "settings" ? html`<${SettingsPanel} onClose=${() => store.set({ panel: null })} />` : null}
+      ${PANELS.map((p) => (panel === p.name ? html`<${p.component} key=${p.name} onOpen=${openSheet} onClose=${closePanel} />` : null))}
       <${Toast} /></main>
     <${ChatPanel} collapsed=${collapsed} onToggle=${toggleChat} onChip=${onChip} onSheet=${onSheet} />
   </div>`;
@@ -203,6 +197,7 @@ async function boot() {
   connect();
   wireEvents();
   render(html`<${App} />`, document.getElementById("app"));
+  loadPanelCss();
   await loadIcons();
   const [s, d] = await Promise.all([loadState(), loadDrawings()]);
   await Promise.all([loadConn(), loadChat()]);
