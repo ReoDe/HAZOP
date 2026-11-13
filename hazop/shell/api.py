@@ -526,7 +526,7 @@ CORE_TOPICS = ("state", "drawings", "connection", "chat", "icons", "examples", "
 PROJECT_BOUND_CORE = ("chat.action.", "sheet.")
 
 # 영역별 모듈(등록 규약은 hazop/shell/README.md). 새 영역은 이 튜플에 모듈 이름 하나를 더하는 것이 전부다.
-MODULES = ("api_nodes", "api_results", "api_drawings", "api_ie", "api_kg", "api_actionlog", "api_aireview", "api_docs", "api_titleblock", "api_settings", "clean_items")
+MODULES = ("api_nodes", "api_results", "api_drawings", "api_ie", "api_kg", "api_actionlog", "api_aireview", "api_docs", "api_titleblock", "api_settings", "api_corrections", "clean_items")
 
 TOPIC_OWNER = {}          # 토픽 -> 읽기 모듈
 LOADED = {}               # 모듈 이름 -> 모듈 (읽지 못한 것은 없다)
