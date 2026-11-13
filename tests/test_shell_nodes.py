@@ -259,6 +259,15 @@ class ReadTest(Env):
         self.assertEqual(rows["S2"]["span"]["by_drawing"], {"SNP-M-101": 50, "SNP-M-102": 30})
         self.assertEqual(api_nodes.detail(self.engine, "S2")["span"]["range"], "[101 → 102]")
 
+    def test_a_failed_range_text_is_logged_and_the_list_still_shows(self):
+        from hazop.study import span
+        self.create("가", 0, 5)
+        with mock.patch.object(span, "annotate", side_effect=RuntimeError("표기 실패")), self.assertLogs("hazop.shell.api_nodes", "ERROR") as logs:
+            rows = api_nodes.summary(self.engine)["nodes"]
+        self.assertEqual([r["node_id"] for r in rows], ["S1"])
+        self.assertIsNone(rows[0]["span"])
+        self.assertIn("표기를 만들지 못함", " ".join(logs.output))
+
     def test_sheet_view_lists_the_continuation_pentagons_with_their_counterpart(self):
         self.create("가", 0, 40)
         v101 = api_nodes.sheet_view(self.engine, S101)["links"]

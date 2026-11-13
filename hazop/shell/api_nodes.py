@@ -10,10 +10,12 @@
 """
 
 import collections
+import logging
 
 from hazop.chat import view as chatview
 from hazop.study import node_commands, node_tools, nodes
 
+LOG = logging.getLogger("hazop.shell.api_nodes")
 MEMBERS_SHOWN = 200        # 상세에 보이는 구성요소 수(나머지는 개수만)
 BATCHES_SHOWN = 12         # 목록 머리에 보이는 최근 묶음
 MAJORS_SHOWN = 8
@@ -81,7 +83,8 @@ def _span_info(ns, pg):
     out = {}
     try:
         ann = span.annotate(ns, pg)
-    except Exception:  # noqa: BLE001 - 표기를 못 만들어도 구간 목록은 보인다
+    except Exception:  # noqa: BLE001 - 표기를 못 만들어도 구간 목록은 보인다(옛 '101 외 1장'). 까닭은 기록에 남긴다
+        LOG.exception("구간 도면 범위 표기를 만들지 못함")
         return out
     for n in ann["nodes"]:
         short = n.get("drawings_short") or []

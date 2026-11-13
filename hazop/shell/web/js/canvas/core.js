@@ -511,12 +511,10 @@ export class SheetCore {
       return;
     }
     if (!hit) return;
-    const lk = this.cb.onLinkClick && hit.layer === "symbol" ? this._linkOf(hit.id) : null;       // 다른 도면 연결(오각형) 자체를 눌러도 맞은편으로 간다
-    if (lk && lk.status === "linked") { this.cb.onLinkClick(lk); return; }
     const reason = this.cb.onUnconfirmedClick ? this._unconfirmedAt(hit.id) : null;
     if (reason) { const rr = this.index.rectOf(hit.id); this.cb.onUnconfirmedClick({ id: hit.id, reason, fragment: this.fragmentOf(hit.id), rect: rr ? this._toScreenRect(rr) : null }); }
     const rect = this.index.rectOf(hit.id), rec = (this.index.byId.get(hit.id) || [])[0];
-    if (this.cb.onItemClick) this.cb.onItemClick({ id: hit.id, kind: rec && rec.kind, kind_label: rec && rec.kind_label, tag: rec && rec.tag, rect: rect ? this._toScreenRect(rect) : null, via: "click" });
+    if (this.cb.onItemClick) this.cb.onItemClick({ id: hit.id, kind: rec && rec.kind, kind_label: rec && rec.kind_label, tag: rec && rec.tag, link: this._linkOf(hit.id), rect: rect ? this._toScreenRect(rect) : null, via: "click" });
   }
 
   /** 도면 고치기 미리 보기: 찍은 경로 점을 잇는 점선과 점. 화면 굵기는 확대와 상관없이 같다. */
@@ -546,6 +544,8 @@ export class SheetCore {
     const s = this._toSheet(e.clientX, e.clientY);
     const hit = this.index.hitTest(s.x, s.y, 6 / this.view.k, { layers: this._layerSet() });
     if (!hit) return;
+    const lk = this.cb.onLinkClick && hit.layer === "symbol" ? this._linkOf(hit.id) : null;       // 이어진 다른 도면 연결(오각형)은 두 번 누르면 맞은편으로(한 번은 고르기·말풍선)
+    if (lk && lk.status === "linked") { this.cb.onLinkClick(lk); return; }
     this.zoomTo([hit.id], 1.5);
     if (this.cb.onItemDblClick) this.cb.onItemDblClick({ id: hit.id });
   }

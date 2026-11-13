@@ -1,7 +1,9 @@
 // 도면 고치기(INTENT §3.2, 완료 목록 2 A5, 규격 §2.3 '도면 고치기'). 원본 보기·정리된 보기 모두에서 쓴다.
-// - 고치기 띠: '도면 고치기'를 켜면 도구(고르기·기기 추가·연결 추가)와 되돌리기·다시 하기가 보인다.
-// - 고치기 카드: 고치기를 켠 채 구성요소를 누르면 그 항목의 고침(태그·종류·위치·흐름 방향·끝 잇기/끊기·경로 다시 그리기·미확인 확정·지우기)이 보인다.
-// - 경로 다시 그리기: 배관 카드에서 '경로 다시 그리기'를 누르고 꺾이는 점을 차례로 찍은 뒤 Enter(마침), Esc(그만두기).
+// 늘 떠 있는 것은 작은 '고치기' 단추 하나다(사용자 방침 2026-11-14: 이전 화면의 도구 띠를 옮기지 않고, 고른 것에 맞는 동작만 작은 카드로).
+// - 켜면 그 단추가 되돌리기·다시 하기·고친 것 수를 가진 작은 알약이 된다(Ctrl+Z·Ctrl+Shift+Z).
+// - 구성요소를 누르면 그 항목의 고치기 카드(태그·종류·위치·흐름 방향·끝 잇기/끊기·연결 추가·경로 다시 그리기·미확인 확정·지우기).
+// - 빈 곳을 누르면 그 자리에 기기를 놓는 작은 카드.
+// - 여러 번 눌러야 하는 고침(연결 추가·끝 잇기·경로)만 카드 단추로 시작하고, 안내 한 줄과 Esc(그만두기)·Enter(경로 마침)를 쓴다.
 // 저장은 엔진(edit.apply·undo·redo, hazop/shell/api_corrections.py)만 한다. 화면이 본 판(ver)을 함께 보내고, 지우기·태그 겹침은 확인을 받는다.
 // 도면·모델에서 온 글(태그·사유)은 htm이 이스케이프하는 텍스트로만 넣는다.
 import { html } from "../ui/html.js";
@@ -18,20 +20,19 @@ if (typeof document !== "undefined" && !document.querySelector("link[data-edit-c
 }
 
 const HINT = {
-  select: "고칠 구성요소를 누르세요.",
-  add_node: "기기를 놓을 자리를 누르세요.",
-  connect: "연결을 시작할 기기를 누르세요.",
-  connect_b: "연결할 다른 기기를 누르세요.",
-  endpoint: "그 끝을 이을 기기를 누르세요.",
+  select: "",
+  connect_b: "연결할 다른 기기를 누르세요. Esc: 그만두기",
+  endpoint: "그 끝을 이을 기기를 누르세요. Esc: 그만두기",
   path: "꺾이는 점을 차례로 누르고 Enter로 마칩니다(Esc: 그만두기). 첫 점과 끝 점이 배관의 양 끝이 됩니다.",
 };
 
 export const edit = createStore({
   on: false,
-  tool: "select",          // select | add_node | connect | endpoint | path
+  tool: "select",          // select | connect | endpoint | path (connect·endpoint·path는 카드 단추로 시작)
   gid: null,
   head: null,              // GET edit/<gid>: {ver, ops, undoable, redo, graph_stale, kinds, relation_kinds}
   item: null,              // GET edit/<gid>/item/<local_id>
+  addAt: null,             // 빈 곳을 누른 자리: 그 자리에 기기를 놓는 카드
   first: null,             // connect: 첫 기기
   end: null,               // endpoint: source | target
   points: [],              // path: 찍은 점
@@ -77,6 +78,26 @@ let wired = false;
 export function wire() {
   if (wired) return;
   wired = true;
+  if (typeof window !== "undefined") {          // 키는 한 번만 단다(도면 부품이 여러 번 그려져도 Ctrl+Z가 한 번만 되돌리게)
+    function key(e) {
+      const s = edit.get();
+      if (!s.on) return;
+      const t = e.target, tag = (t && t.tagName) || "";
+      if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return;
+      if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z" || e.key === "y")) {
+        e.preventDefault(); e.stopPropagation();
+        if (e.key === "y" || e.shiftKey) redo(); else undoLast();
+        return;
+      }
+      if (s.tool === "select") {
+        if (e.key === "Escape" && (s.item || s.addAt)) { e.preventDefault(); e.stopPropagation(); edit.set({ item: null, addAt: null, ask: null }); }
+        return;
+      }
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelTool(); }
+      else if (e.key === "Enter" && s.tool === "path") { e.preventDefault(); e.stopPropagation(); finishPath(); }
+    }
+    window.addEventListener("keydown", key, true);            // 도면의 Esc(고른 것 비우기)보다 먼저 받는다
+  }
   onChanged((topic, rev) => {
     if (topic === "sheet" && rev) edit.set((st) => ({ revs: Object.assign({}, st.revs, { [rev]: (st.revs[rev] || 0) + 1 }) }));
     if (topic !== "edit" && topic !== "aireview") return;
@@ -161,15 +182,14 @@ export function undoLast() {
 export function undoOp(opId) { return send("edit.undo", { op_id: opId }); }
 export function redo() { return send("edit.redo", {}); }
 
-/** 도면을 누름(도구가 있을 때): 자리 point(화면 도면 좌표)와 그 자리의 항목 id. */
+/** 도면을 누름(고치기를 켠 동안): 자리 point(화면 도면 좌표)와 그 자리의 항목 id. */
 export function pick({ point, id, layer }) {
-  const s = edit.get();
-  if (s.tool === "add_node") {
-    apply("add_node", null, { kind: s.newKind, tag: s.newTag.trim(), at: point });
-    edit.set({ newTag: "" });
+  const s = edit.get(), g = shell.get().sheet;
+  if (s.tool === "select") {
+    if (id) { edit.set({ addAt: null, error: null }); loadItem(g, id); }
+    else edit.set({ item: null, addAt: [Math.round(point[0] * 100) / 100, Math.round(point[1] * 100) / 100], error: null, ask: null });
   } else if (s.tool === "connect") {
     if (!id || layer !== "symbol") { edit.set({ error: "기기를 누르세요(빈 곳·연결선은 고를 수 없습니다)." }); return; }
-    if (!s.first) { edit.set({ first: id, error: null }); return; }
     if (s.first === id) { edit.set({ error: "같은 기기입니다. 다른 기기를 누르세요." }); return; }
     const from = s.first;
     edit.set({ first: null, tool: "select" });
@@ -183,6 +203,20 @@ export function pick({ point, id, layer }) {
     edit.set({ points: [...s.points, [Math.round(point[0] * 100) / 100, Math.round(point[1] * 100) / 100]], error: null });
   }
 }
+
+/** 빈 곳 카드의 '여기에 놓기'. */
+export function addNodeHere() {
+  const s = edit.get();
+  if (!s.addAt) return null;
+  const at = s.addAt;
+  edit.set({ addAt: null });
+  const r = apply("add_node", null, { kind: s.newKind, tag: s.newTag.trim(), at });
+  edit.set({ newTag: "" });
+  return r;
+}
+
+/** 기기 카드의 '연결 추가': 이 기기에서 시작해 다른 기기를 누르면 잇는다. */
+export function startConnect(fromId) { edit.set({ tool: "connect", first: fromId, error: null }); }
 
 export function finishPath() {
   const s = edit.get();
@@ -202,19 +236,7 @@ export function useEditCanvas(sheet) {
   const points = useEdit((s) => s.points);
   const first = useEdit((s) => s.first);
   const rev = useEdit((s) => (sheet ? s.revs[sheet] || 0 : 0));
-  useLayoutEffect(() => {
-    function key(e) {
-      const s = edit.get();
-      if (!s.on || s.tool === "select") return;
-      const t = e.target, tag = (t && t.tagName) || "";
-      if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return;
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelTool(); }
-      else if (e.key === "Enter" && s.tool === "path") { e.preventDefault(); e.stopPropagation(); finishPath(); }
-    }
-    window.addEventListener("keydown", key, true);            // 도면의 Esc(고른 것 비우기)보다 먼저 받는다
-    return () => window.removeEventListener("keydown", key, true);
-  }, []);
-  const active = on && tool !== "select" && !!sheet;
+  const active = on && !!sheet;                // 켜 둔 동안은 누르기를 고치기로(구성요소 → 카드, 빈 곳 → 기기 놓기 카드)
   return {
     ...(rev ? { sheet: { graph_id: sheet, rev } } : {}),        // 바뀐 뒤에만 판을 실어 SheetHost의 sheet를 덮는다(처음 읽기는 그대로)
     editTool: active ? tool : null,
@@ -227,38 +249,48 @@ export function useEditCanvas(sheet) {
 function Strip() {
   const s = useEdit((x) => x);
   const gid = useStore((x) => x.sheet);
+  const [open, setOpen] = useState(false);
   if (!gid) return null;
   if (!s.on) {
-    return html`<div class="float edit-strip off"><${Btn} sm=${true} icon="pencil" label="도면 고치기" title="도면 고치기: 태그·종류·흐름 방향·연결·기기·배관 경로를 고칩니다"
-      onClick=${() => setOn(true)}>도면 고치기<//></div>`;
+    return html`<div class="float edit-pill off"><${Btn} sm=${true} kind="ghost" icon="pencil" label="도면 고치기" title="도면 고치기: 구성요소를 누르면 고칠 수 있는 것이 카드로 나옵니다"
+      onClick=${() => setOn(true)}>고치기<//></div>`;
   }
   const h = s.head;
-  const tool = (t, icon, label) => html`<button type="button" class=${"tbtn" + (s.tool === t ? " on" : "")} aria-pressed=${s.tool === t ? "true" : "false"}
-    onClick=${() => setTool(t)} title=${label}>${label}</button>`;
   const lastOp = h && h.undoable && h.undoable.length ? h.ops.find((o) => o.op_id === h.undoable[h.undoable.length - 1]) : null;
-  return html`<div class="float edit-strip" role="toolbar" aria-label="도면 고치기">
-    <div class="es-row"><b>도면 고치기</b>
-      ${tool("select", "pointer", "고르기")}${tool("add_node", "plus", "기기 추가")}${tool("connect", "link", "연결 추가")}
-      <span class="sep"></span>
-      <${Btn} sm=${true} icon="arrow-back-up" label="되돌리기" title=${lastOp ? "되돌리기: " + lastOp.label + " (" + (lastOp.local_id || "") + ")" : "되돌릴 고침이 없습니다"}
-        disabled=${s.busy || !lastOp} onClick=${undoLast}>되돌리기<//>
-      <${Btn} sm=${true} icon="arrow-forward-up" label="다시 하기" title=${h && h.redo ? "다시 하기: " + h.redo.label : "다시 할 고침이 없습니다"}
-        disabled=${s.busy || !(h && h.redo)} onClick=${redo}>다시 하기<//>
-      <${Btn} sm=${true} kind="ghost" icon="x" label="도면 고치기 끄기" title="도면 고치기 끄기" onClick=${() => setOn(false)} /></div>
-    ${s.tool === "add_node" ? html`<div class="es-row"><label>종류 <select aria-label="새 기기 종류" value=${s.newKind} onChange=${(e) => setField({ newKind: e.target.value })}>
-        ${(h ? h.kinds : []).map((k) => html`<option value=${k.kind}>${k.label}</option>`)}</select></label>
-      <label>태그 <input class="textbox" aria-label="새 기기 태그" maxlength="80" value=${s.newTag} onInput=${(e) => setField({ newTag: e.target.value })} /></label></div>` : null}
-    ${s.tool === "connect" ? html`<div class="es-row"><label>연결 종류 <select aria-label="새 연결 종류" value=${s.relKind} onChange=${(e) => setField({ relKind: e.target.value })}>
-        ${(h ? h.relation_kinds : []).map((k) => html`<option value=${k.kind}>${k.label}</option>`)}</select></label>${s.first ? html`<${Chip} kind="accent">첫 기기 ${s.first}<//>` : null}</div>` : null}
-    <div class="es-hint muted small">${hint(s)}${s.tool === "path" ? " · 점 " + s.points.length + "개" : ""}</div>
-    ${h && h.graph_stale ? html`<${Notice} kind="warn" icon="alert-triangle">저장한 고침이 그래프에 아직 반영되지 않았습니다. 다음 고침에서 다시 만듭니다.<//>` : null}
-    ${s.notes.length ? html`<${Notice} kind=${s.notes.some((t) => t.includes("재확인") || t.includes("풀렸")) ? "warn" : "info"}>${s.notes.map((t) => html`<div>${t}</div>`)}<//>` : null}
-    ${s.error && !s.item ? html`<${Notice} kind="err" icon="alert-triangle">${s.error}<//>` : null}
-    ${h && h.ops.length ? html`<details class="es-log"><summary>고친 것 ${h.ops.length}개${h.ops.some((o) => o.status !== "applied") ? " · 적용 못 함 " + h.ops.filter((o) => o.status !== "applied").length : ""}</summary>
-      <ol>${h.ops.slice().reverse().slice(0, 30).map((o) => html`<li key=${o.op_id}><b>${o.label}</b> ${o.local_id || ""} <span class="muted small">${o.by || ""}</span>
-        ${o.status !== "applied" ? html` <${Chip} kind="warn" title=${o.reason || ""}>적용 못 함: ${o.reason || ""}<//>` : null}
-        ${h.undoable.includes(o.op_id) ? html` <button type="button" class="linkish" onClick=${() => undoOp(o.op_id)}>되돌리기</button>` : null}</li>`)}</ol></details>` : null}
+  const bad = h ? h.ops.filter((o) => o.status !== "applied").length : 0;
+  const tip = hint(s);
+  return html`<div class="float edit-pill" role="toolbar" aria-label="도면 고치기">
+    <div class="ep-row"><span class="ep-on">고치는 중</span>
+      <${Btn} sm=${true} kind="ghost" icon="arrow-back-up" label="되돌리기" title=${lastOp ? "되돌리기(Ctrl+Z): " + lastOp.label + " " + (lastOp.local_id || "") : "되돌릴 고침이 없습니다"}
+        disabled=${s.busy || !lastOp} onClick=${undoLast} />
+      <${Btn} sm=${true} kind="ghost" icon="arrow-forward-up" label="다시 하기" title=${h && h.redo ? "다시 하기(Ctrl+Shift+Z): " + h.redo.label : "다시 할 고침이 없습니다"}
+        disabled=${s.busy || !(h && h.redo)} onClick=${redo} />
+      ${h && h.ops.length ? html`<button type="button" class="ep-count" aria-expanded=${open ? "true" : "false"} onClick=${() => setOpen(!open)}
+        title="고친 것 목록">${h.ops.length}${bad ? html` <span class="warn">· 못 얹음 ${bad}</span>` : null}</button>` : null}
+      <${Btn} sm=${true} kind="ghost" icon="x" label="고치기 끝내기" title="고치기 끝내기" onClick=${() => setOn(false)} /></div>
+    ${tip ? html`<div class="ep-hint">${tip}${s.tool === "path" ? " · 점 " + s.points.length + "개" : ""}</div>` : null}
+    ${h && h.graph_stale ? html`<div class="ep-hint warn">저장한 고침이 그래프에 아직 반영되지 않았습니다. 다음 고침에서 다시 만듭니다.</div>` : null}
+    ${s.notes.length ? html`<div class=${"ep-hint" + (s.notes.some((t) => t.includes("재확인") || t.includes("풀렸")) ? " warn" : "")}>${s.notes.map((t) => html`<div>${t}</div>`)}</div>` : null}
+    ${s.error && !s.item && !s.addAt ? html`<div class="ep-hint err" role="alert">${s.error}</div>` : null}
+    ${open && h && h.ops.length ? html`<ol class="ep-log">${h.ops.slice().reverse().slice(0, 30).map((o) => html`<li key=${o.op_id}><b>${o.label}</b> ${o.local_id || ""}
+        ${o.status !== "applied" ? html` <span class="warn" title=${o.reason || ""}>못 얹음: ${o.reason || ""}</span>` : null}
+        ${h.undoable.includes(o.op_id) ? html` <button type="button" class="linkish" onClick=${() => undoOp(o.op_id)}>되돌리기</button>` : null}</li>`)}</ol>` : null}
   </div>`;
+}
+
+function AddCard() {
+  const s = useEdit((x) => x);
+  if (!s.on || !s.addAt || s.item) return null;
+  const h = s.head;
+  return html`<div class="float edit-card add" role="dialog" aria-label="여기에 기기 놓기">
+    <div class="ec-h"><b>여기에 기기 놓기</b><${Btn} sm=${true} kind="ghost" icon="x" label="닫기" onClick=${() => setField({ addAt: null })} /></div>
+    <div class="field"><label for="ec-newkind">종류</label><select id="ec-newkind" value=${s.newKind} onChange=${(e) => setField({ newKind: e.target.value })}>
+      ${(h ? h.kinds : []).map((k) => html`<option value=${k.kind}>${k.label}</option>`)}</select></div>
+    <div class="field"><label for="ec-newtag">태그</label><input id="ec-newtag" class="textbox" maxlength="80" value=${s.newTag}
+      onInput=${(e) => setField({ newTag: e.target.value })} onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addNodeHere(); } }} /></div>
+    ${s.ask ? html`<${Notice} kind="warn" icon="alert-triangle">${s.ask.message}<div class="acts-row"><${Btn} sm=${true} label="그래도 하기" onClick=${s.ask.run}>그래도 하기<//></div><//>` : null}
+    ${s.error ? html`<${Notice} kind="err" icon="alert-triangle">${s.error}<//>` : null}
+    <div class="acts-row"><${Btn} sm=${true} kind="primary" icon="plus" label="여기에 놓기" disabled=${s.busy} onClick=${addNodeHere}>놓기 <kbd>Enter</kbd><//></div></div>`;
 }
 
 function ItemCard() {
@@ -284,6 +316,8 @@ function ItemCard() {
       <select id="ec-kind" value=${it.kind || ""} disabled=${s.busy} onChange=${(e) => apply("set_kind", it.local_id, { kind: e.target.value })}>
         ${it.kind && !(head && head.kinds.some((k) => k.kind === it.kind)) ? html`<option value=${it.kind}>${it.kind}</option>` : null}
         ${(head ? head.kinds : []).map((k) => html`<option value=${k.kind}>${k.label} (${k.kind})</option>`)}</select></div>
+      <div class="acts-row"><${Btn} sm=${true} icon="link" label="이 기기에서 연결 추가" title="이 기기에서 시작해 다른 기기를 누르면 공정 배관으로 잇습니다" disabled=${s.busy}
+        onClick=${() => startConnect(it.local_id)}>연결 추가<//></div>
       ${(it.positions || []).map((p) => html`<div class="field"><label>${p.label}</label>
         <select aria-label=${p.label} value=${p.value || ""} disabled=${s.busy} onChange=${(e) => e.target.value && apply(p.op, it.local_id, { value: e.target.value })}>
           <option value="">(미확인)</option>${p.values.map((v) => html`<option value=${v}>${v}</option>`)}</select></div>`)}` : null}
@@ -309,5 +343,5 @@ function ItemCard() {
 }
 
 export function EditOverlay() {
-  return html`<${Strip} /><${ItemCard} />`;
+  return html`<${Strip} /><${ItemCard} /><${AddCard} />`;
 }

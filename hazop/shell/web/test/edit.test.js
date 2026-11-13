@@ -62,7 +62,7 @@ export const tests = [
     const card = host.querySelector(".edit-card");
     assert(card && card.querySelector("#ec-tag").value === "<b>RC-V1</b>" && !card.querySelector(".ec-h b b"), "태그는 글자로만");
     assert(card.textContent.includes("확정 상태입니다") && card.textContent.includes("S2"), card.textContent.slice(0, 200));
-    assert(host.querySelector(".edit-strip").textContent.includes("되돌리기"));
+    assert(host.querySelector(".edit-pill") && !host.querySelector(".edit-pill .tbtn"), "늘 떠 있는 것은 작은 알약 하나");
     host.remove();
     E.setOn(false);
   } },
@@ -99,24 +99,26 @@ export const tests = [
     assert(E.edit.get().error.includes("바뀌어"));
     E.setOn(false);
   } },
-  { name: "도면 고치기: 도구 흐름(기기 추가·연결 추가·끝 잇기·경로 다시 그리기 Enter/Esc), 도구가 있을 때만 누르기를 고치기로 돌림", async run(assert) {
+  { name: "도면 고치기: 켜 둔 동안 누르기는 고치기로(구성요소 → 카드, 빈 곳 → 기기 놓기 카드), 연결 추가·끝 잇기·경로 다시 그리기 Enter/Esc", async run(assert) {
     await setup();
     let props = null;
     function Probe() { props = E.useEditCanvas("graph-A"); return html`<i></i>`; }
     const host = mount(html`<${Probe} />`);
     await tick();
-    assert.equal(props.editTool, null);
-    E.setTool("add_node"); E.setField({ newKind: "check_valve", newTag: "RC-V77" });
-    await tick();
-    assert.equal(props.editTool, "add_node");
+    assert.equal(props.editTool, "select");
     props.onEditPick({ point: [120, 80], id: null, layer: null });
+    assert.equal(E.edit.get().addAt, [120, 80]);
+    E.setField({ newKind: "check_valve", newTag: "RC-V77" });
+    E.addNodeHere();
     await tick();
     let m = sent.filter((x) => x.name === "edit.apply").pop();
     assert.equal([m.args.op, m.args.local_id, m.args.value.kind, m.args.value.tag, m.args.value.at], ["add_node", null, "check_valve", "RC-V77", [120, 80]]);
-    E.setTool("connect");
+    props.onEditPick({ point: [0, 0], id: "n1", layer: "symbol" });
+    await tick();
+    assert.equal(E.edit.get().item.local_id, "n1");
+    E.startConnect("n1");
     props.onEditPick({ point: [0, 0], id: "p1", layer: "pipe" });
     assert(E.edit.get().error.includes("기기를 누르세요"));
-    props.onEditPick({ point: [0, 0], id: "n1", layer: "symbol" });
     props.onEditPick({ point: [0, 0], id: "n2", layer: "symbol" });
     await tick();
     m = sent.filter((x) => x.name === "edit.apply").pop();
@@ -142,6 +144,10 @@ export const tests = [
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await tick();
     assert.equal([E.edit.get().tool, E.edit.get().points], ["select", []]);
+    const undos = sent.filter((x) => x.name === "edit.undo").length;
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true }));
+    await tick();
+    assert.equal(sent.filter((x) => x.name === "edit.undo").length, undos + 1, "Ctrl+Z는 되돌리기");
     host.remove();
     E.setOn(false);
   } },
