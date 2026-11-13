@@ -422,17 +422,22 @@
    "pipes": 20,
    "proposed_nodes": 3,
    "tags": [
+    "FW-FIC503",
+    "FW-FT503",
     "FW-FV501",
     "FW-PP01",
     "FW-PP02",
     "FW-V502",
     "MS-CD01",
+    "MS-FT502",
     "MS-PSV501",
+    "MS-PT501",
+    "MS-PT503",
     "MS-TB01",
     "MS-V501"
    ],
    "unclassified": 0,
-   "unknowns": 10
+   "unknowns": 5
   }
  },
  "project": {
