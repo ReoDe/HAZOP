@@ -8,6 +8,7 @@ import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { escStep, keyAction, canEdit, colorOf, sheetSegments } from "../panels/nodes_logic.js";
 import * as N from "../panels/nodes_state.js";
+import { EditOverlay, useEditCanvas } from "./edit.js";
 
 /** <Sheet>에 펼칠 props와 키 처리. 상태는 nodes_state의 저장소에 있다. */
 export function useNodeCanvas(sheet, { onEsc } = {}) {
@@ -38,8 +39,10 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
     return () => window.removeEventListener("keydown", key);
   }, []);
 
+  const ec = useEditCanvas(sheet);           // 도면 고치기(edit.js): 도구가 있을 때 누르기를 고치기로 돌린다
   return {
     props: {
+      ...ec,
       mode, selection, segments, outside, links,
       onLinkClick: (link) => N.followLink(link),
       onSelection: (d) => N.setSelection(d.selected, d.truncated),
@@ -120,5 +123,5 @@ function OutsideChip() {
 
 export function NodeOverlay() {
   N.wire();
-  return html`<${OutsideChip} /><${SelectionBar} /><${NewNodeCard} /><${Toolbar} />`;
+  return html`<${OutsideChip} /><${SelectionBar} /><${NewNodeCard} /><${Toolbar} /><${EditOverlay} />`;
 }

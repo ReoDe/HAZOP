@@ -97,6 +97,8 @@ export class SheetCore {
     this.cleanG = d.createElementNS(SVG_NS, "g"); this.cleanG.setAttribute("class", "hz-cv-clean"); this.cleanG.style.display = "none"; this.svg.appendChild(this.cleanG);
     this.ghost = d.createElementNS(SVG_NS, "image"); this.ghost.setAttribute("class", "hz-cv-ghost"); this.ghost.style.display = "none"; this.ghost.style.opacity = "0.3"; this.ghost.setAttribute("pointer-events", "none");   // 원본 겹쳐 보기를 켤 때만 붙인다
     this.marksG = d.createElementNS(SVG_NS, "g"); this.marksG.setAttribute("class", "hz-cv-marks"); this.svg.appendChild(this.marksG);
+    this.editG = d.createElementNS(SVG_NS, "g"); this.editG.setAttribute("class", "hz-cv-edit"); this.svg.appendChild(this.editG);   // 도면 고치기 미리 보기(경로 점)
+    this.editTool = null;
     this.topG = d.createElementNS(SVG_NS, "g"); this.topG.setAttribute("class", "hz-cv-top"); this.topG.style.display = "none"; this.svg.appendChild(this.topG);
     this.attrG = d.createElementNS(SVG_NS, "g"); this.attrG.setAttribute("class", "hz-cv-attr"); this.attrG.style.display = "none"; this.svg.appendChild(this.attrG);
     this.leftG = d.createElementNS(SVG_NS, "g"); this.leftG.setAttribute("class", "hz-cv-left"); this.leftG.style.display = "none"; this.svg.appendChild(this.leftG);
@@ -132,6 +134,7 @@ export class SheetCore {
   // ------------------------------------------------------------ 자료
   /** 도면 자료(JSON)를 넣는다. 그리기를 마치면 onReady(graph_id). */
   setData(data) {
+    const again = !!(this.data && data && this.data.graph_id === data.graph_id);      // 같은 도면을 고친 뒤 다시 읽음: 보던 자리·확대를 지킨다
     this.data = data;
     this.size = [Number(data.width) || 1, Number(data.height) || 1];
     this._origIndex = new SpatialIndex(Array.isArray(data.items) ? data.items : []);
@@ -152,7 +155,7 @@ export class SheetCore {
     this.image.addEventListener("load", once, { once: true });
     this.image.addEventListener("error", once, { once: true });
     if (href) this.image.setAttribute("href", href); else once();
-    if (!this._viewGiven) this.fit();
+    if (!this._viewGiven && !again) this.fit();
     this._renderChips();
   }
 
@@ -310,6 +313,8 @@ export class SheetCore {
     if (p.overlays && p.overlays !== this._ovProp) { this._ovProp = p.overlays; this.overlays = p.overlays; this._leftBuilt = false; while (this.leftG.firstChild) this.leftG.removeChild(this.leftG.firstChild); marksDirty = true; }
     if (p.view && p.view !== this.viewWanted) { this.viewWanted = p.view === "clean" ? "clean" : "orig"; marksDirty = true; }
     if (marksDirty) this._applyViewMode();
+    if (p.editTool !== undefined) { this.editTool = p.editTool || null; this.host.setAttribute("data-edit", this.editTool || ""); }
+    if (p.editPreview !== undefined && p.editPreview !== this._previewProp) { this._previewProp = p.editPreview; this._renderPreview(); }
     if (p.links !== undefined && p.links !== this._linksProp) { this._linksProp = p.links; this._links = Array.isArray(p.links) ? p.links : null; this._renderChips(); }
     if (p.layers && p.layers !== this._layersProp) {
       this._layersProp = p.layers;
@@ -494,9 +499,13 @@ export class SheetCore {
 
   _click(e) {
     const s = this._toSheet(e.clientX, e.clientY);
+    const hit = this.index.hitTest(s.x, s.y, 6 / this.view.k, { layers: this._layerSet() });
+    if (this.editTool && this.cb.onEditPick) {               // 도면 고치기 도구(기기 추가·연결·끝 잇기·경로): 누른 자리와 그 자리의 항목을 넘긴다
+      this.cb.onEditPick({ point: [s.x, s.y], id: hit ? hit.id : null, layer: hit ? hit.layer : null });
+      return;
+    }
     const badge = this.cb.onSegmentClick ? this._badgeAt(s) : null;
     if (badge) { this.cb.onSegmentClick({ node_id: badge.node_id }); return; }
-    const hit = this.index.hitTest(s.x, s.y, 6 / this.view.k, { layers: this._layerSet() });
     if (this.mode === "pick") {
       if (hit) this._change([hit.id], "toggle", "click");
       return;
@@ -508,6 +517,24 @@ export class SheetCore {
     if (reason) { const rr = this.index.rectOf(hit.id); this.cb.onUnconfirmedClick({ id: hit.id, reason, fragment: this.fragmentOf(hit.id), rect: rr ? this._toScreenRect(rr) : null }); }
     const rect = this.index.rectOf(hit.id), rec = (this.index.byId.get(hit.id) || [])[0];
     if (this.cb.onItemClick) this.cb.onItemClick({ id: hit.id, kind: rec && rec.kind, kind_label: rec && rec.kind_label, tag: rec && rec.tag, rect: rect ? this._toScreenRect(rect) : null, via: "click" });
+  }
+
+  /** 도면 고치기 미리 보기: 찍은 경로 점을 잇는 점선과 점. 화면 굵기는 확대와 상관없이 같다. */
+  _renderPreview() {
+    const g = this.editG;
+    while (g.firstChild) g.removeChild(g.firstChild);
+    const pts = (this._previewProp && this._previewProp.points) || [];
+    if (!pts.length) return;
+    const line = this.doc.createElementNS(SVG_NS, "polyline");
+    line.setAttribute("points", pts.map((q) => q[0] + "," + q[1]).join(" "));
+    for (const [k, v] of [["fill", "none"], ["stroke", "var(--ui, #0a5fc2)"], ["stroke-width", "2"], ["stroke-dasharray", "6 4"], ["vector-effect", "non-scaling-stroke"], ["pointer-events", "none"]]) line.setAttribute(k, v);
+    g.appendChild(line);
+    for (const q of pts) {
+      const c = this.doc.createElementNS(SVG_NS, "circle");
+      c.setAttribute("cx", q[0]); c.setAttribute("cy", q[1]); c.setAttribute("r", 3 / Math.max(this.view.k, 0.01));
+      c.setAttribute("fill", "var(--ui, #0a5fc2)"); c.setAttribute("pointer-events", "none");
+      g.appendChild(c);
+    }
   }
 
   _linkOf(id) {

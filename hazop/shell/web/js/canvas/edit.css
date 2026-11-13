@@ -1,0 +1,17 @@
+/* 도면 고치기 띠와 카드(edit.js). 색·간격은 앱 토큰을 쓴다. */
+.edit-strip { left: 12px; top: 56px; z-index: 6; padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; max-width: min(560px, calc(100% - 24px)); }
+.edit-strip.off { padding: 4px; }
+.edit-strip .es-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.edit-strip .tbtn { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-md, 6px); padding: 3px 8px; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.edit-strip .tbtn.on { background: var(--ui-weak, #e7f0fb); border-color: var(--ui, #0a5fc2); color: var(--ui, #0a5fc2); }
+.edit-strip .sep { width: 1px; align-self: stretch; background: var(--line); }
+.edit-strip select, .edit-card select { font: inherit; font-size: var(--fs-sm); max-width: 260px; }
+.edit-strip .es-log ol { margin: 4px 0 0; padding-left: 18px; max-height: 180px; overflow: auto; font-size: var(--fs-sm); }
+.edit-strip .linkish { border: 0; background: none; color: var(--ui, #0a5fc2); cursor: pointer; padding: 0; font: inherit; font-size: var(--fs-sm); text-decoration: underline; }
+.edit-card { right: 12px; top: 56px; z-index: 7; width: 300px; max-height: calc(100% - 140px); overflow: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.edit-card .ec-h { display: flex; align-items: center; gap: 6px; }
+.edit-card .ec-h .btn { margin-left: auto; }
+.edit-card .ec-unk { margin: 2px 0 4px; padding-left: 18px; font-size: var(--fs-sm); }
+.edit-card .ec-foot { justify-content: space-between; }
+.hz-cv[data-edit="add_node"] .hz-cv-vp, .hz-cv[data-edit="path"] .hz-cv-vp { cursor: crosshair; }
+.hz-cv[data-edit="connect"] .hz-cv-vp, .hz-cv[data-edit="endpoint"] .hz-cv-vp { cursor: pointer; }

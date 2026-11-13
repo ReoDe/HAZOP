@@ -46,7 +46,7 @@ export function Sheet(props) {
   // 콜백은 늘 최신 props의 것을 부른다(마운트는 한 번이라 옛 props를 붙들지 않게)
   const callbacks = () => {
     const call = (name) => (...a) => { const f = latest.current[name]; return f ? f(...a) : undefined; };
-    return ["onReady", "onItemClick", "onItemDblClick", "onHover", "onSelection", "onViewport", "onMarkResult", "onEsc", "onLinkClick", "onClearMarks", "onSegmentClick", "onUnconfirmedClick", "onCleanBuilt"]
+    return ["onReady", "onItemClick", "onItemDblClick", "onHover", "onSelection", "onViewport", "onMarkResult", "onEsc", "onLinkClick", "onClearMarks", "onSegmentClick", "onUnconfirmedClick", "onCleanBuilt", "onEditPick"]
       .reduce((o, n) => { o[n] = call(n); return o; }, {});
   };
 

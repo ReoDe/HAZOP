@@ -6,8 +6,9 @@ import { tests as cardTests } from "./card.test.js";
 import { tests as nodesTests } from "./nodes.test.js";
 import { tests as cleanTests } from "./clean.test.js";
 import { tests as tableTests } from "./table.test.js";
+import { tests as editTests } from "./edit.test.js";
 
-const all = [...storeTests, ...bridgeTests, ...cardTests, ...nodesTests, ...tableTests, ...cleanTests];
+const all = [...storeTests, ...bridgeTests, ...cardTests, ...nodesTests, ...tableTests, ...cleanTests, ...editTests];
 const results = [];
 
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assert 실패"); }
