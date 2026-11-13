@@ -6,6 +6,7 @@ pdf_vector.py에서 그대로 옮겼다(F1-0). 예전 이름은 pdf_vector에서
 """
 
 import collections
+import math
 import re
 
 from hazop.kg.docextract import TAG_RE
@@ -98,6 +99,18 @@ def _bubble_like(node, letters):
     return len(letters) >= 2 and min(g.get("width", 0), g.get("height", 0)) >= 8
 
 
+def _nearest_prefix(node, tagged):
+    """tagged [(노드, 태그)] 가운데 node 가운데에서 가장 가까운 노드의 태그 접두. 가장 가까운 거리에 접두가 둘이면 None."""
+    def center(n):
+        g = n.get("geometry") or {}
+        return (g.get("x", 0) + g.get("width", 0) / 2.0, g.get("y", 0) + g.get("height", 0) / 2.0)
+    c = center(node)
+    ranked = sorted((math.dist(c, center(n)), t.split("-")[0]) for n, t in tagged)
+    if not ranked or (len(ranked) > 1 and abs(ranked[0][0] - ranked[1][0]) < 1e-6 and ranked[0][1] != ranked[1][1]):
+        return None
+    return ranked[0][1]
+
+
 def _assign_tags(nodes, unknowns, instrument_ids=(), valve_number_ids=()):
     """기호 노드의 tag를 같은 쪽의 보이는 글자로 정한다.
     (a) 글자가 태그 모양(③ 문서 언급과 같은 hazop.kg.docextract.TAG_RE)으로 시작하면 그 낱말.
@@ -128,9 +141,16 @@ def _assign_tags(nodes, unknowns, instrument_ids=(), valve_number_ids=()):
     counts = collections.Counter(t.split("-")[0] for t, b in tags.values() if b == "label_tag_token").most_common(2)
     tied = len(counts) == 2 and counts[0][1] == counts[1][1]
     prefix = counts[0][0] if counts and not tied and counts[0][1] >= 2 else None
+    top = {c for c, k in counts if k == counts[0][1]} if tied and counts[0][1] >= 2 else set()
     for i, (letters, number) in isa.items():
         if prefix:
             tags[i] = ("%s-%s%s" % (prefix, letters, number), "isa_label+page_prefix:%s [추론]" % prefix)
+        elif top:
+            # 쪽에서 가장 많은 접두가 둘 이상 같은 수면(두 계통이 한 쪽에) 이 계기에서 가장 가까운 글자 태그의 접두를 쓴다
+            near = _nearest_prefix(nodes[i], [(nodes[j], t) for j, (t, b) in tags.items()
+                                              if b == "label_tag_token" and t.split("-")[0] in top])
+            if near:
+                tags[i] = ("%s-%s%s" % (near, letters, number), "isa_label+near_prefix:%s [추론]" % near)
         elif not tied:
             tags[i] = ("%s-%s" % (letters, number), "isa_label")
     seen = collections.Counter(t.casefold() for t, _ in tags.values())
