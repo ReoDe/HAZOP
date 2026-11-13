@@ -13,3 +13,4 @@
 .cleanpop .cp-frag svg { display: block; max-height: 200px; }
 .cleanpop kbd { margin-left: 4px; font-size: 10.5px; }
 .viewswitch .chip[aria-pressed="true"] { outline: 2px solid var(--accent); }
+.hz-cv[data-view="clean"] { background: #eef0f3; }

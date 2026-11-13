@@ -109,7 +109,9 @@ export async function run(hz, data, big) {
   t("도면: 자료를 읽고 onReady(graph_id)", ev.ready.length >= 1 && ev.ready[0] === data.graph_id, JSON.stringify(ev.ready));
   const vpEl = host.querySelector(".hz-cv-vp");
   const rect = vpEl.getBoundingClientRect();
-  t("도면: 맞춤 — 도면 전체가 보임", core.view.k > 0 && core.view.k * data.width <= rect.width + 1 && core.view.k * data.height <= rect.height + 1, JSON.stringify(core.view));
+  const content = data.items.filter((i) => i.layer !== "tag").reduce((c, i) => ({ x0: Math.min(c.x0, i.bbox[0]), y0: Math.min(c.y0, i.bbox[1]), x1: Math.max(c.x1, i.bbox[2]), y1: Math.max(c.y1, i.bbox[3]) }), { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 });
+  t("도면: 맞춤 — 그려진 내용(기호·배관)이 화면을 채우고 모두 보임", core.view.k > 0 && content.x0 * core.view.k + core.view.x >= -1 && content.y0 * core.view.k + core.view.y >= -1 && content.x1 * core.view.k + core.view.x <= rect.width + 1 && content.y1 * core.view.k + core.view.y <= rect.height + 1
+    && ((content.x1 - content.x0) * core.view.k > rect.width * 0.8 || (content.y1 - content.y0) * core.view.k > rect.height * 0.8), JSON.stringify(core.view));
   t("도면: 바탕 SVG는 <image> 하나(구성요소마다 DOM 없음)", host.querySelectorAll("image").length === 1 && host.querySelectorAll("rect.sym, .sym").length === 0);
   const pe = (type, x, y, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, clientX: rect.left + x, clientY: rect.top + y, button: 0, pointerId: 1, isPrimary: true }, extra));
   const toScreen = (sx, sy) => ({ x: sx * core.view.k + core.view.x, y: sy * core.view.k + core.view.y });

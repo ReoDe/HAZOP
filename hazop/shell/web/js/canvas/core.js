@@ -95,7 +95,7 @@ export class SheetCore {
     this.svg = d.createElementNS(SVG_NS, "svg"); this.svg.setAttribute("class", "hz-cv-svg"); this.world.appendChild(this.svg);
     this.image = d.createElementNS(SVG_NS, "image"); this.svg.appendChild(this.image);
     this.cleanG = d.createElementNS(SVG_NS, "g"); this.cleanG.setAttribute("class", "hz-cv-clean"); this.cleanG.style.display = "none"; this.svg.appendChild(this.cleanG);
-    this.ghost = d.createElementNS(SVG_NS, "image"); this.ghost.setAttribute("class", "hz-cv-ghost"); this.ghost.style.display = "none"; this.ghost.style.opacity = "0.3"; this.ghost.setAttribute("pointer-events", "none"); this.svg.appendChild(this.ghost);
+    this.ghost = d.createElementNS(SVG_NS, "image"); this.ghost.setAttribute("class", "hz-cv-ghost"); this.ghost.style.display = "none"; this.ghost.style.opacity = "0.3"; this.ghost.setAttribute("pointer-events", "none");   // 원본 겹쳐 보기를 켤 때만 붙인다
     this.marksG = d.createElementNS(SVG_NS, "g"); this.marksG.setAttribute("class", "hz-cv-marks"); this.svg.appendChild(this.marksG);
     this.topG = d.createElementNS(SVG_NS, "g"); this.topG.setAttribute("class", "hz-cv-top"); this.topG.style.display = "none"; this.svg.appendChild(this.topG);
     this.leftG = d.createElementNS(SVG_NS, "g"); this.leftG.setAttribute("class", "hz-cv-left"); this.leftG.style.display = "none"; this.svg.appendChild(this.leftG);
@@ -207,6 +207,21 @@ export class SheetCore {
     if (this.cb.onCleanBuilt) this.cb.onCleanBuilt(this.cleanInfo);
   }
 
+  /** 새로 온 경로(path) 표시가 화면 밖에 걸치면 경로가 들어오게 맞춘다(같은 경로는 한 번만). */
+  _fitNewPath() {
+    this._pathSeen = this._pathSeen || new Set();
+    for (const m of this.marks) {
+      if (m.op !== "path" || this._pathSeen.has(m.id)) continue;
+      this._pathSeen.add(m.id);
+      const ids = (m.steps || []).map((s) => s.id).filter((id) => this.index.has(id));
+      const b = ids.length ? this.index.bounds(ids) : null, r = this._rect();
+      if (!b || !r.width) continue;
+      const k = this.view.k, vx0 = -this.view.x / k, vy0 = -this.view.y / k, vx1 = vx0 + r.width / k, vy1 = vy0 + r.height / k;
+      const inside = b.x0 >= vx0 && b.y0 >= vy0 && b.x1 <= vx1 && b.y1 <= vy1;
+      if (!inside) this.zoomTo(ids, 0.15);
+    }
+  }
+
   /** 확대 값에 맞춰 글자 크기(화면 픽셀 하한)와 보임(겹치면 숨김)을 정한다. */
   _layoutCleanLabels() {
     if (!this._labels || !this._labelEls) return;
@@ -225,6 +240,7 @@ export class SheetCore {
   _applyOverlays(eff) {
     const o = this.overlays || {};
     const ghost = eff === "clean" && !!o.original && !!(this.data && this.data.svg);
+    if (ghost && !this.ghost.parentNode) this.svg.insertBefore(this.ghost, this.marksG);
     this.ghost.style.display = ghost ? "" : "none";
     if (ghost) { this.ghost.setAttribute("href", this.data.svg); this.ghost.setAttribute("width", this.size[0]); this.ghost.setAttribute("height", this.size[1]); }
     const show = !!o.leftovers && !!(this.clean && this.clean.leftovers && this.clean.leftovers.counted);
@@ -275,6 +291,7 @@ export class SheetCore {
       this._marksProp = p.marks;
       this.marks = normalizeMarks(p.marks);
       marksDirty = true;
+      this._fitNewPath();
     }
     if (p.outside && p.outside !== this._outProp) { this._outProp = p.outside; this.outside = p.outside; marksDirty = true; }
     if (p.segments && p.segments !== this._segProp) { this._segProp = p.segments; this.segments = p.segments; marksDirty = true; }
@@ -309,11 +326,24 @@ export class SheetCore {
   }
 
   // ------------------------------------------------------------ 보기(이동·확대)
+  /** 그려진 내용(기호·배관)의 범위 + 여백. 도면 용지의 여백이 커도 내용이 화면을 채우게 맞추는 기준이다. 내용이 없으면 도면 전체. */
+  _contentRect() {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const rec of this.index.items) {
+      if (rec.layer === "tag") continue;
+      x0 = Math.min(x0, rec.rect.x0); y0 = Math.min(y0, rec.rect.y0); x1 = Math.max(x1, rec.rect.x1); y1 = Math.max(y1, rec.rect.y1);
+    }
+    if (!isFinite(x0)) return { x0: 0, y0: 0, x1: this.size[0], y1: this.size[1] };
+    const pad = 30;
+    return { x0: Math.max(0, x0 - pad), y0: Math.max(0, y0 - pad), x1: Math.min(this.size[0], x1 + pad), y1: Math.min(this.size[1], y1 + pad) };
+  }
+
   fit() {
     const r = this._rect();
     if (!r.width || !r.height || !this.data) return;
-    const k = Math.min(r.width / this.size[0], r.height / this.size[1]) * 0.95;
-    this.view = { k, x: (r.width - this.size[0] * k) / 2, y: (r.height - this.size[1] * k) / 2 };
+    const c = this._contentRect(), cw = Math.max(c.x1 - c.x0, 1), ch = Math.max(c.y1 - c.y0, 1);
+    const k = Math.min(r.width / cw, r.height / ch) * 0.96;
+    this.view = { k, x: (r.width - cw * k) / 2 - c.x0 * k, y: (r.height - ch * k) / 2 - c.y0 * k };
     this._applyView();
     this._viewChanged(true);
   }

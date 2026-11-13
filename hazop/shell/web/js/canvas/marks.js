@@ -164,11 +164,11 @@ function shapeOf(item, k, widthPx, extra = {}) {
 }
 
 function badgeEl(b, k) {
-  const r = b.rect, h = 15 / k, w = (b.round ? 15 : Math.max(15, b.text.length * 8 + 8)) / k;
+  const r = b.rect, h = (b.round ? 22 : 15) / k, w = (b.round ? 22 : Math.max(15, b.text.length * 8 + 8)) / k;
   const x = r.x0 - 4 / k, y = r.y0 - h - 3 / k;
   return el("g", { "pointer-events": "none" }, [
-    el("rect", { x, y, width: w, height: h, rx: (b.round ? 7.5 : 3) / k, fill: b.color }),
-    el("text", { x: x + w / 2, y: y + h * 0.75, "text-anchor": "middle", fill: "var(--on-seg, #fff)", "font-size": 11 / k, "font-weight": 700 }, null, b.text),
+    el("rect", { x, y, width: w, height: h, rx: (b.round ? 11 : 3) / k, fill: b.color, stroke: b.round ? "var(--card, #fff)" : null, "stroke-width": b.round ? 2 : null, "vector-effect": "non-scaling-stroke" }),
+    el("text", { x: x + w / 2, y: y + h * 0.75, "text-anchor": "middle", fill: "var(--on-seg, #fff)", "font-size": (b.round ? 13 : 11) / k, "font-weight": 700 }, null, b.text),
   ]);
 }
 

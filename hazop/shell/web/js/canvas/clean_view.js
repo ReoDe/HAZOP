@@ -11,10 +11,10 @@ export const FAINT = "var(--faint, #8a929c)";
 export const FRAME = "var(--line-strong, #b8bec6)";
 const MONO = "var(--mono, 'Cascadia Mono', Consolas, monospace)";
 const FONT = 9;                                   // 태그·번호 글자 크기(도면 단위)
-const SYMBOL_W = 1.4;                             // 기호 선 굵기(화면 픽셀, 확대해도 같게)
-const PIPE_W = { process: 1.6, process_secondary: 1.2, instrument_tap: 1.0, signal_electric: 1.0 };
+const SYMBOL_W = 1.8;                             // 기호 선 굵기(화면 픽셀, 확대해도 같게)
+const PIPE_W = { process: 2.0, process_secondary: 1.6, instrument_tap: 1.2, signal_electric: 1.2 };   // 화면 픽셀(확대해도 같게)
 const PIPE_DASH = { instrument_tap: "6 3", signal_electric: "2 2" };
-const MIN_LABEL_PX = 9;                           // 글자 크기의 화면 픽셀 하한(맞춤 배율에서도 읽히게)
+const MIN_LABEL_PX = 11;                          // 글자 크기의 화면 픽셀 하한(맞춤 배율에서도 읽히게)
 const PORT_GAP = 8;                               // 연결점과 배관 끝을 잇는 거리 상한(넘으면 잇지 않고 port_gap 눈금)
 const STUB_GAP = 4;                               // 기호 연결점과 배관 끝이 이보다 멀면 짧은 선으로 잇는다
 const TAGGED = ["equipment", "valve", "instrument"];
@@ -68,10 +68,22 @@ function longest(line) {
   return best;
 }
 
-function arrow(seg, forward, color) {
-  const [a, b] = forward ? [seg.a, seg.b] : [seg.b, seg.a];
-  const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI, s = 4;
-  return el("polygon", { points: `${-s},${-s * 0.7} ${s},0 ${-s},${s * 0.7}`, transform: `translate(${r(mx)} ${r(my)}) rotate(${r(ang)})`, fill: color, stroke: "none", "pointer-events": "none" });
+function arrowAt(a, b, t, color) {
+  const x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t, ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI, s = 5;
+  return el("polygon", { points: `${-s},${-s * 0.7} ${s},0 ${-s},${s * 0.7}`, transform: `translate(${r(x)} ${r(y)}) rotate(${r(ang)})`, fill: color, stroke: "none", "pointer-events": "none" });
+}
+
+/** 흐름 화살촉: 40 단위 넘는 선분마다 가운데에, 긴 선분은 110 단위 간격으로 더 둔다(시안 7번처럼 일정 간격). */
+function arrowsAlong(line, forward, color) {
+  const out = [];
+  for (let i = 0; i + 1 < line.length; i++) {
+    const [a, b] = forward ? [line[i], line[i + 1]] : [line[line.length - 1 - i], line[line.length - 2 - i]];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 40) continue;
+    const n = Math.max(1, Math.round(len / 110));
+    for (let j = 0; j < n; j++) out.push(arrowAt(a, b, (j + 0.5) / n, color));
+  }
+  return out;
 }
 
 /** 배관 하나: 길 그대로(종류별 굵기·점선) + 흐름 화살촉 + 열린 끝 빈 원. */
@@ -81,9 +93,8 @@ export function pipeShapes(rec, extra, style = {}) {
   const type = (extra && extra.line_type) || "process";
   const color = style.color || INK, width = style.width || PIPE_W[type] || 1.4;
   const out = [el("polyline", Object.assign({ points: line.map((p) => r(p[0]) + "," + r(p[1])).join(" "), fill: "none", "data-id": style.id || null }, strokeAttrs(color, width, { "stroke-dasharray": style.dash || PIPE_DASH[type] || null })))];
+  if (extra && extra.flow) out.push(...arrowsAlong(line, extra.flow === "source_to_target", color));   // 경로 위에서는 경로 색
   if (!style.recolor) {
-    const seg = longest(line);
-    if (extra && extra.flow && seg && seg.len > 14) out.push(arrow(seg, extra.flow === "source_to_target", color));
     for (const e of (extra && extra.ends) || []) {
       if (e.status === "open" && e.point) out.push(el("circle", { cx: r(e.point[0]), cy: r(e.point[1]), r: 3, fill: "var(--card, #fff)", stroke: AMBER, "stroke-width": 1.4, "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
     }
@@ -172,8 +183,8 @@ export function buildBase(ctx) {
       labels.push(labelSpec(cx, bb[3] + FONT + 1, ex.label[0], { anchor: "middle", pri: 3, owner: rec.id, hideFrom: big }));
     } else if (rec.tag) {
       if (rec.category === "instrument") {                // 계기: 원이 화면에서 충분히 크면 원 안 두 줄, 작으면 오른쪽 옆에 한 줄
-        const lines = splitTag(rec.tag), minK = 26 / Math.max(bw, 1);
-        lines.forEach((t, i) => labels.push(labelSpec(cx, cy + (lines.length === 1 ? 2 : i === 0 ? -1 : 6), t, { anchor: "middle", size: 6, fixed: true, showFrom: minK, fill: color, pri: 2, owner: rec.id })));
+        const lines = splitTag(rec.tag), minK = 24 / Math.max(bw, 1);
+        lines.forEach((t, i) => labels.push(labelSpec(cx, cy + (lines.length === 1 ? 3 : i === 0 ? -1 : 8), t, { anchor: "middle", size: 8.5, fixed: true, showFrom: minK, fill: color, pri: 2, owner: rec.id })));
         labels.push(labelSpec(bb[2] + 2, cy + 3, rec.tag, { fill: color, pri: 2, owner: rec.id, hideFrom: minK }));
       } else if (rec.category === "equipment") {         // 설비: 설비 바로 옆(오른쪽 위)에 둔다. 원본에서 멀리 떨어진 글자 자리는 따르지 않는다
         labels.push(labelSpec(bb[2] + 3, bb[1] + FONT + 1, rec.tag, { fill: color, pri: 0, owner: rec.id }));
@@ -246,7 +257,9 @@ export function recolor(ctx, rec, color, width, opts = {}) {
   if (!rec.kind || rec.unknown) return [];          // 미확인 자리표는 표시 색으로 바꾸지 않는다(점선 네모·?가 그대로 위에 보인다)
   if (ex.review === "ai_candidate") return [];
   if (sym && sym.junction) return [el("circle", { cx: r((bb[0] + bb[2]) / 2), cy: r((bb[1] + bb[3]) / 2), r: 2.5, fill: color, "pointer-events": "none" })];
-  return symbolShapes(sym || ctx.symbols.generic, bb, ex.orient, { color, width: Math.max(width || 2.2, 1.8), fill: opts.fill || null, fillOpacity: opts.fillOpacity, dash: opts.dashed ? "4 3" : null });
+  // 경로·표시에 든 밸브는 몸통을 채워 눈에 띄게 한다(시안 7번)
+  const filled = !opts.fill && rec.category === "valve" && (width || 0) >= 2.6;
+  return symbolShapes(sym || ctx.symbols.generic, bb, ex.orient, { color, width: Math.max(width || 2.2, 2.4), fill: filled ? color : (opts.fill || null), fillOpacity: filled ? 0.9 : opts.fillOpacity, dash: opts.dashed ? "4 3" : null });
 }
 
 /** 못 읽은 곳의 원본 조각: bbox를 사방 24 단위 넓힌 viewBox(도면 크기 안으로 자른다). 같은 원본 SVG를 <image>로 넣어 그 부분만 보인다(규격 §10.4). */

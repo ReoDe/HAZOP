@@ -125,15 +125,15 @@ async function body({ CV, MK, SheetCore }, data) {
 
   // ---- 글자: 화면 픽셀 하한, 겹침 숨김, 설비 태그는 설비 옆
   const lt = [...core.cleanG.querySelectorAll("text")].filter((x) => x.style.display !== "none" && x.getAttribute("font-size"));
-  const minOk = lt.filter((x) => +x.getAttribute("font-size") * core.view.k >= 8.9 || +x.getAttribute("font-size") <= 7).length;
-  t("맞춤 배율에서 보이는 태그·번호 글자는 화면에서 9px 이상(원 안 글자는 따로)", lt.length >= 10 && minOk === lt.length, minOk + "/" + lt.length + " k=" + core.view.k.toFixed(2));
+  const minOk = lt.filter((x) => +x.getAttribute("font-size") * core.view.k >= 10.9 || +x.getAttribute("font-size") <= 9).length;
+  t("맞춤 배율에서 보이는 태그·번호 글자는 화면에서 11px 이상(원 안 글자는 따로)", lt.length >= 10 && minOk === lt.length, minOk + "/" + lt.length + " k=" + core.view.k.toFixed(2));
   const eq = items.find((i) => i.layer === "symbol" && i.category === "equipment" && i.tag && i.kind === "reactor_vessel");
   const eqText = [...core.cleanG.querySelectorAll("text")].find((x) => x.textContent === eq.tag);
   t("설비 태그는 설비 바로 옆(오른쪽)에 있음", !!eqText && +eqText.getAttribute("x") >= eq.bbox[2] && +eqText.getAttribute("x") <= eq.bbox[2] + 10 && +eqText.getAttribute("y") >= eq.bbox[1] && +eqText.getAttribute("y") <= eq.bbox[1] + 40, eqText && eqText.getAttribute("x") + "," + eqText.getAttribute("y") + " bbox " + eq.bbox.map(Math.round));
   const L = (o) => Object.assign({ x: 0, y: 10, text: "X", anchor: "start", size: 9, rotate: 0, pri: 0 }, o);
   const layout = CV.layoutLabels([L({ text: "AAAAAAAA", owner: "a" }), L({ x: 5, text: "BBBBBBBB", pri: 1, owner: "b" }), L({ x: 5, text: "태그 없음", size: 7, pri: 9, always: true, owner: "c" }), L({ x: 200, text: "작게", pri: 2, owner: "d" })], 1, []);
   t("글자 자리: 먼저 자리를 잡은 글자가 이기고 겹친 것은 숨김, 늘 보이는 글자는 남음", layout[0].visible && !layout[1].visible && layout[2].visible && layout[3].visible, JSON.stringify(layout.map((l) => l.visible)));
-  t("글자 자리: 작게 보일수록 화면 하한(9px)으로 키움", CV.layoutLabels([L({})], 0.5, [])[0].size === 18 && CV.layoutLabels([L({})], 3, [])[0].size === 9);
+  t("글자 자리: 작게 보일수록 화면 하한(11px)으로 키움", CV.layoutLabels([L({})], 0.5, [])[0].size === 22 && CV.layoutLabels([L({})], 3, [])[0].size === 9);
   const cond = [L({ size: 6, fixed: true, showFrom: 1 }), L({ hideFrom: 1 })];
   t("글자 자리: 확대 값 조건(원 안 글자는 크게 보일 때만, 옆 글자는 작게 보일 때만)", CV.layoutLabels(cond, 0.5, []).map((l) => l.visible).join() === "false,true" && CV.layoutLabels(cond, 2, []).map((l) => l.visible).join() === "true,false");
 
