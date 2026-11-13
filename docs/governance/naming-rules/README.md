@@ -379,6 +379,7 @@ approved: director 2026-11-10
 | `기획서/PID-기호사전.md` | `specs/pid-symbol-dictionary.md` | HZ-PLN-19 |
 | `기획서/검토구간-분할설계.md` | `specs/study-node-segmentation.md` | HZ-PLN-20 |
 | (새 문서, 2026-11-13) | `specs/chat-panel.md` | HZ-PLN-21 |
+| (새 문서, 2026-11-13) | `specs/dexpi-exchange.md` | HZ-PLN-22 |
 | (새 문서, 2026-11-13) | `design/app-shell-web.md` | HZ-DSN-05 |
 | `기획서/.gitkeep` | 지움 | 폴더에 파일이 있으므로 필요 없음 |
 | `flow chart/00-overview.md` ~ `05-review-results.md` | `specs/flows/00-overview.md` ~ `05-review-results.md` | HZ-FLW-00 ~ 05 |
