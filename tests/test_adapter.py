@@ -25,6 +25,7 @@ from hazop.extract import drawio, runinfo  # noqa: E402
 from hazop.extract.adapters import align  # noqa: E402
 from hazop.extract.adapters import evaluation as ev  # noqa: E402
 from hazop.extract.adapters import pdf_vector  # noqa: E402
+from hazop.extract.adapters import pdf_vector_grouping  # noqa: E402
 
 TRUTH = check_adapter.load_json(check_adapter.FIXTURE)
 
@@ -485,6 +486,30 @@ class PdfVectorRuleTest(unittest.TestCase):
         mv = [n for n in ext["nodes"] if n["label_text"] == "MV-1"][0]
         self.assertEqual(mv["evidence"]["symbol_marks"], ["M"])
         self.assertEqual(len(ext["relations"]), 2)
+
+    def test_box_check_valve_between_pipes(self):
+        # APR1400 상자형 체크밸브 '|\|'(16쪽 V405와 같은 치수): 세로 막대 2.9pt 가운데에 배관 끝이 닿아 막대 끝과 배관 끝이
+        # 1.45pt로 end_tol 안이다. 예전에는 배관 조각으로 이어져 노드가 없었다
+        def dot(cx, cy, r=0.36):
+            pts = [(cx + r, cy), (cx, cy - r), (cx - r, cy), (cx, cy + r), (cx + r, cy)]
+            return prim(pts, fill=True, curved=True)
+        n_shape = line((223.88, 113.05), (223.88, 110.15), (229.68, 113.05), (229.68, 110.15))
+        ext = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), line((140, 111.6), (223.88, 111.6)),
+                       n_shape, dot(223.88, 110.15), line((229.68, 111.6), (300, 111.6))])
+        cv = [n for n in ext["nodes"] if n["geometry"]["x"] > 200 and n["geometry"]["x"] < 230]
+        self.assertEqual([n["kind"] for n in cv], ["check_valve"])
+        self.assertEqual(len(ext["relations"]), 2)  # 탱크—체크밸브—탱크(밸브를 건너뛰는 한 줄이 아니다)
+        # 한쪽 막대에만 배관이 닿거나, 배관이 막대와 같은 줄로 겹치면 이 규칙으로 세우지 않는다
+        def polys(*shapes):
+            return [{"id": "p%d" % i, "pts": s["subpaths"][0][0], "bbox": pdf_vector._bbox_pts(s["subpaths"][0][0])}
+                    for i, s in enumerate(shapes)]
+        prm = dict(pdf_vector.PARAMS)
+        both = polys(line((140, 111.6), (223.88, 111.6)), n_shape, line((229.68, 111.6), (300, 111.6)))
+        self.assertEqual(len(pdf_vector_grouping._bar_fed_strokes(both, prm)[0]), 1)
+        one = polys(line((140, 111.6), (223.88, 111.6)), n_shape)
+        self.assertEqual(pdf_vector_grouping._bar_fed_strokes(one, prm)[0], [])
+        along = polys(line((223.88, 111.6), (223.88, 140)), n_shape, line((229.68, 111.6), (300, 111.6)))
+        self.assertEqual(pdf_vector_grouping._bar_fed_strokes(along, prm)[0], [])
 
     def test_no_content_is_blocked(self):
         ext = pdf_run([])

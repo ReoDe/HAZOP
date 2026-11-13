@@ -210,6 +210,58 @@ def _end_status(poly, k, polys, syms, markers, prm):
     return None
 
 
+BAR_MID_LO, BAR_MID_HI = 0.25, 0.75  # 막대 길이의 이 비율 구간에 선 끝이 얹히면 막대 가운데에 닿은 것(_lands_mid_bar)
+BAR_ON_TOL = 0.2                       # 선 끝이 막대 위에 있다고 보는 거리(pt)
+BAR_CROSS_SIN = 0.5                    # 선이 막대에 이 사인값(30도) 이상 비스듬히 들어와야 가운데에 닿은 것으로 본다
+
+
+def _lands_mid_bar(q, bar):
+    """선 q의 한 끝이 선분 bar의 가운데 구간에 비스듬히 정확히 얹혔으면 q의 다음 점(배관이 뻗는 쪽), 아니면 None.
+    같은 줄 위에 겹쳐 그린 두 선은 해당하지 않는다."""
+    a, b = bar
+    length = math.hypot(b[0] - a[0], b[1] - a[1])
+    if length == 0:
+        return None
+    for k in (0, -1):
+        e, nxt = q["pts"][k], q["pts"][1 if k == 0 else -2]
+        d, near = _seg_dist(e, a, b)
+        run = math.hypot(nxt[0] - e[0], nxt[1] - e[1])
+        if d > BAR_ON_TOL or run == 0 or \
+                not BAR_MID_LO <= math.hypot(near[0] - a[0], near[1] - a[1]) / length <= BAR_MID_HI:
+            continue
+        if abs((b[0] - a[0]) * (nxt[1] - e[1]) - (b[1] - a[1]) * (nxt[0] - e[0])) / (length * run) >= BAR_CROSS_SIN:
+            return nxt
+    return None
+
+
+def _bar_fed_strokes(polys, prm):
+    """한 번에 그린 열린 선 기호(APR1400 상자형 체크밸브 '|\\|': 세로 막대, 빗변, 세로 막대)를 찾아 기호로 세운다 →
+    (기호 [_Sym], 남은 선). 선의 첫 토막과 끝 토막이 막대이고, 두 막대 가운데에 서로 다른 배관 끝이 바깥에서 하나씩
+    닿으면 배관 사이에 낀 기호다. 막대가 짧으면(길이의 반이 end_tol 이하) 선 끝과 배관 끝이 서로 가까워 그대로 두면
+    배관 조각으로 이어지고(_end_status가 두 끝을 모두 '붙음'으로 본다) 기호가 생기지 않는다."""
+    found, rest = [], []
+    for p in polys:
+        pts = p["pts"]
+        if len(pts) < 3 or p.get("curved") or not \
+                prm["stroke_symbol_min"] <= max(_w(p["bbox"]), _h(p["bbox"])) <= prm["stroke_symbol_max"]:
+            rest.append(p)
+            continue
+        feeders = []
+        near = [q for q in polys if q is not p and _box_gap(q["bbox"], p["bbox"]) <= BAR_ON_TOL]
+        for bar in ((pts[0], pts[1]), (pts[-1], pts[-2])):
+            hits = []
+            for q in near:
+                nxt = _lands_mid_bar(q, bar)
+                if nxt is not None and not _inside(nxt, p["bbox"]):  # 배관은 기호 바깥으로 뻗는다
+                    hits.append(q)
+            feeders.append(hits[0] if len(hits) == 1 else None)
+        if feeders[0] is not None and feeders[1] is not None and feeders[0] is not feeders[1]:
+            found.append(_Sym([dict(p, kind_="poly")], stroke_only=True))
+        else:
+            rest.append(p)
+    return found, rest
+
+
 def _plate_assemblies(syms, polys, markers, dashes, prm):
     """배관을 가로지르는 짧은 판(범례 1.7-1 1/4 FLANGED CONNECTION '—| |—', 1.7-1 VALVE SYMBOLS의 BUTTERFLY '|\\●|'·
     BALL '|○|'·'|●|') 찾기 → (밸브 기호 [_Sym], 남은 선, 남은 표식, 플랜지 [(판, 판, (점, 점))]).
@@ -396,7 +448,8 @@ def _group_symbols(cls, prm):
     syms = _cluster_bodies(cls["bodies"], prm)
     valves, polys, markers, flange_pairs = _plate_assemblies(syms, list(cls["polys"]), list(cls["markers"]),
                                                              cls["dashes"], prm)
-    syms = [s for s in syms if s.alive] + valves
+    fed, polys = _bar_fed_strokes(polys, prm)
+    syms = [s for s in syms if s.alive] + valves + fed
     for p in polys:
         p["kind_"] = "poly"
     dashes = list(cls["dashes"])
