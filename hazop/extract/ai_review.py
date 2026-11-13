@@ -695,6 +695,37 @@ def reject(doc, cand_ids, by, at=None):
     _commit(doc, work, None, None, None, by, at)
 
 
+RECONCILED_BY = "도면 수정 기록에 맞춤"
+
+
+def reconcile(name, at=None):
+    """후보 상태를 사람 수정 기록에 맞춘다(A5 검토 R2: 연산이 있는 후보의 '수락'은 수정 기록이 정한다).
+    - 수락 후보의 연산(op_id)이 기록에서 빠졌으면(사람이 도면 고치기에서 되돌림) 제안으로 돌린다.
+    - 제안 후보를 가리키는 AI 연산(ai_candidate)이 기록에 있으면(다시 하기) 수락으로 둔다.
+    연산이 없는 필드(to_system)와 거절은 건드리지 않는다. 바뀐 것이 없으면 쓰지 않는다. 도면별 잠금(sheet_refresh.lock) 안에서 부른다.
+    → 바뀐 cand_id 목록. 후보 파일이 그새 바뀌었으면 store_io.Conflict(아무것도 쓰지 않음)."""
+    doc = load_doc(name)
+    if doc is None:
+        return []
+    rec = corrections.load(name)
+    ops = (rec or {}).get("ops") or []
+    have = {o.get("op_id") for o in ops}
+    by_cand = {o.get("ai_candidate"): o for o in ops if o.get("origin") == "ai" and o.get("ai_candidate")}
+    at = at or now_utc()
+    changed = []
+    for c in doc["candidates"]:
+        if c["status"] == "accepted" and c.get("op_id") and c["op_id"] not in have:
+            c.update(status="proposed", op_id=None, decided_at=at, decided_by=RECONCILED_BY)
+            changed.append(c["cand_id"])
+        elif c["status"] == "proposed" and c["cand_id"] in by_cand:
+            o = by_cand[c["cand_id"]]
+            c.update(status="accepted", op_id=o.get("op_id"), decided_at=at, decided_by=o.get("accepted_by") or RECONCILED_BY)
+            changed.append(c["cand_id"])
+    if changed:
+        save_doc(doc)
+    return changed
+
+
 def revert(doc, cand_ids, name, by, at=None):
     """수락·거절을 되돌린다. 수락으로 넣은 연산은 사람 수정 기록에서 지운다(후보 문서와 함께)."""
     at = at or now_utc()

@@ -379,6 +379,24 @@ class AcceptTest(unittest.TestCase):
         ar.revert(doc, [cands[1]["cand_id"]], name, by="시험")          # 되돌린 거절은 다시 물을 수 있다
         self.assertEqual(ar.decided_targets(name), {items[0]["target"]})
 
+    def test_reconcile_follows_the_edit_record(self):  # A5 검토 R2: 사람이 도면 고치기에서 AI 연산을 되돌림·다시 함
+        name, target = "reconcile", self.valves(1)[0]
+        doc = ar.new_doc(name, self.ex)
+        doc["candidates"].append(self.cand(1, target, "V951"))
+        ar.save_doc(doc)
+        ar.accept(doc, ["t-1:tag"], self.ex, name, by="시험")
+        accepted = corrections.load(name)["ops"]
+        corrections.save(name, [], "사람")                                # 도면 고치기의 되돌리기가 AI 연산을 뺌
+        self.assertEqual(ar.reconcile(name), ["t-1:tag"])
+        c = ar.load_doc(name)["candidates"][0]
+        self.assertEqual((c["status"], c["op_id"], c["decided_by"]), ("proposed", None, ar.RECONCILED_BY))
+        self.assertEqual(ar.reconcile(name), [])                         # 두 번째는 쓰지 않음
+        corrections.save(name, accepted, "사람")                          # 다시 하기가 그 연산을 되살림
+        self.assertEqual(ar.reconcile(name), ["t-1:tag"])
+        c = ar.load_doc(name)["candidates"][0]
+        self.assertEqual((c["status"], c["op_id"]), ("accepted", accepted[0]["op_id"]))
+        self.assertEqual(ar.reconcile("no-such-doc"), [])
+
     def test_stale_window_accept_is_refused_and_keeps_new_run(self):  # 재현 [A]
         from hazop import store_io
         vs, name = self.valves(), "race-a"
