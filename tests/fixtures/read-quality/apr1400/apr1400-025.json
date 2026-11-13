@@ -1,0 +1,4662 @@
+{
+ "schema": "hazop_read_quality_key",
+ "version": 1,
+ "seq": 25,
+ "drawing": "9.2.2-1-S1",
+ "source_file": "025_Ch09_Fig9.2.2-1_s1of4_Component_Cooling_Water_System_Flow_Diagram.pdf",
+ "page_size": [
+  1224.0,
+  792.0
+ ],
+ "regions": [
+  [
+   185.0,
+   95.0,
+   700.0,
+   413.0
+  ],
+  [
+   700.0,
+   95.0,
+   876.5,
+   396.0
+  ],
+  [
+   876.5,
+   95.0,
+   1015.0,
+   402.0
+  ]
+ ],
+ "method": "tiles/025의 overview.png로 흐름과 영역을 잡은 뒤 5배 타일 15장(x0000~x0880, y0000~y0280)을 위 왼쪽부터 차례로 읽고, 빽빽한 곳(밸브 V1133 두 개, 화학첨가탱크 A 주변, 공급 헤더 오른쪽, 수위 탱크 아래, RE/RT 화살표 글자)은 타일을 이어 붙여 8~14배로 키워 다시 읽음. 기호를 다 적은 뒤 배관을 따라가며 기호 사이 배관 묶음(분기점 포함)을 정하고, 묶음 안의 모든 쌍을 connections로 적음. 영역은 A 계열(위쪽 절반) 세 직사각형. 글자는 모두 그림에서 읽음(PDF 텍스트 층·추출 결과 안 봄).",
+ "verified": "2026-11-13 Claude 정답지 세션 초안. 사람 확인 전",
+ "limits": "계기(전송기·지시계·온도요소·액위계·FE 원)는 충격선·인출선으로만 붙어 있다고 보고 연결에서 뺌. FE는 계기 원(태그 있음)과 배관 위 본체(태그 null)를 따로 적음. DII-CI 마름모(등급 경계), 건물 경계(CCW HX BLDG/YARD/TUNNEL/AB/EDG BLDG), ESF-SIAS 신호 표지와 같은 쪽 안 문자 표지(C, A, B), ESSENTIAL SERVICE WATER 점선 화살표, 플랜지 쌍은 기호로 적지 않음. V1133이 도면에 두 번 적혀 있어 둘 다 그대로 적음. 화학첨가탱크 A 안전밸브의 이름표 원은 비어 있음. PT 053C 아래 ¾\" 수평선은 빨간 격자선에 가려 확인이 약함. 탱크 TK01A 위 플랜지 선의 y는 ±5pt 정도 흔들릴 수 있음. 영역 밖(B 계열)으로 이어지는 MOV 939·938의 바깥쪽 연결은 적지 않음.",
+ "symbols": [
+  {
+   "id": "s001",
+   "kind": "continuation",
+   "bbox": [
+    192.6,
+    130.8,
+    222.0,
+    137.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s002",
+   "kind": "manual_valve",
+   "bbox": [
+    241.0,
+    132.2,
+    247.0,
+    135.0
+   ],
+   "tag": "V1323",
+   "tag_bbox": [
+    239.6,
+    136.0,
+    249.0,
+    138.8
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s003",
+   "kind": "manual_valve",
+   "bbox": [
+    256.0,
+    132.0,
+    261.6,
+    135.0
+   ],
+   "tag": "V1321",
+   "tag_bbox": [
+    254.4,
+    136.0,
+    263.0,
+    138.8
+   ],
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": ""
+  },
+  {
+   "id": "s004",
+   "kind": "continuation",
+   "bbox": [
+    321.0,
+    138.0,
+    350.4,
+    144.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s005",
+   "kind": "check_valve",
+   "bbox": [
+    377.0,
+    139.2,
+    383.0,
+    142.5
+   ],
+   "tag": "V1317",
+   "tag_bbox": [
+    375.5,
+    143.3,
+    384.0,
+    146.5
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s006",
+   "kind": "check_valve",
+   "bbox": [
+    388.0,
+    139.2,
+    394.0,
+    142.5
+   ],
+   "tag": "V1319",
+   "tag_bbox": [
+    386.5,
+    143.3,
+    395.5,
+    146.5
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s007",
+   "kind": "orifice",
+   "bbox": [
+    396.0,
+    157.0,
+    400.0,
+    160.0
+   ],
+   "tag": "OR01A",
+   "tag_bbox": [
+    400.0,
+    154.0,
+    403.0,
+    164.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s008",
+   "kind": "continuation",
+   "bbox": [
+    237.0,
+    154.4,
+    266.4,
+    159.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s009",
+   "kind": "manual_valve",
+   "bbox": [
+    230.0,
+    190.4,
+    236.0,
+    193.6
+   ],
+   "tag": "V1301",
+   "tag_bbox": [
+    228.4,
+    194.4,
+    237.4,
+    197.2
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s010",
+   "kind": "pump",
+   "bbox": [
+    266.0,
+    184.4,
+    280.0,
+    201.0
+   ],
+   "tag": "PP03A",
+   "tag_bbox": [
+    270.4,
+    211.0,
+    280.0,
+    213.6
+   ],
+   "attributes": {},
+   "note": "CCW MAKEUP PUMP A"
+  },
+  {
+   "id": "s011",
+   "kind": "check_valve",
+   "bbox": [
+    306.0,
+    164.0,
+    310.0,
+    176.0
+   ],
+   "tag": "V1325",
+   "tag_bbox": [
+    310.4,
+    168.0,
+    313.6,
+    177.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s012",
+   "kind": "check_valve",
+   "bbox": [
+    309.4,
+    187.0,
+    317.4,
+    190.0
+   ],
+   "tag": "V1303",
+   "tag_bbox": [
+    309.0,
+    191.6,
+    318.4,
+    195.2
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s013",
+   "kind": "manual_valve",
+   "bbox": [
+    326.0,
+    187.0,
+    332.0,
+    190.4
+   ],
+   "tag": "V1305",
+   "tag_bbox": [
+    324.0,
+    191.6,
+    333.0,
+    195.2
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s014",
+   "kind": "continuation",
+   "bbox": [
+    321.0,
+    171.6,
+    350.4,
+    177.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s015",
+   "kind": "check_valve",
+   "bbox": [
+    387.0,
+    187.0,
+    395.0,
+    190.0
+   ],
+   "tag": "V1309",
+   "tag_bbox": [
+    386.0,
+    191.6,
+    396.0,
+    195.2
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s016",
+   "kind": "manual_valve",
+   "bbox": [
+    404.0,
+    194.0,
+    407.0,
+    201.0
+   ],
+   "tag": "V1311",
+   "tag_bbox": [
+    408.0,
+    192.0,
+    411.0,
+    200.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s017",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    396.0,
+    208.0,
+    407.0,
+    213.6
+   ],
+   "tag": "011",
+   "tag_bbox": [
+    392.4,
+    215.0,
+    401.0,
+    222.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s018",
+   "kind": "manual_valve",
+   "bbox": [
+    404.0,
+    220.0,
+    407.0,
+    227.6
+   ],
+   "tag": "V1313",
+   "tag_bbox": [
+    408.0,
+    219.0,
+    411.0,
+    228.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s019",
+   "kind": "manual_valve",
+   "bbox": [
+    415.0,
+    207.6,
+    418.0,
+    214.0
+   ],
+   "tag": "V1315",
+   "tag_bbox": [
+    419.0,
+    205.0,
+    422.0,
+    215.0
+   ],
+   "attributes": {},
+   "note": "불확실: 채운 나비 모양(상시 닫힘 표시로 보임), 상태 글자 없음"
+  },
+  {
+   "id": "s020",
+   "kind": "flow_element",
+   "bbox": [
+    419.0,
+    240.0,
+    421.0,
+    247.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "FE 003 원과 이어진 배관 위 본체"
+  },
+  {
+   "id": "s021",
+   "kind": "transmitter",
+   "bbox": [
+    389.0,
+    239.0,
+    404.0,
+    256.0
+   ],
+   "tag": "FT 003",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s022",
+   "kind": "flow_element",
+   "bbox": [
+    408.0,
+    256.0,
+    418.0,
+    266.0
+   ],
+   "tag": "FE 003",
+   "attributes": {},
+   "note": "계기 원(본체는 배관 위 상자)"
+  },
+  {
+   "id": "s023",
+   "kind": "continuation",
+   "bbox": [
+    192.6,
+    236.0,
+    222.0,
+    243.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s024",
+   "kind": "manual_valve",
+   "bbox": [
+    255.6,
+    238.4,
+    261.6,
+    241.0
+   ],
+   "tag": "V1105",
+   "tag_bbox": [
+    254.0,
+    242.0,
+    262.6,
+    245.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s025",
+   "kind": "control_valve",
+   "bbox": [
+    270.0,
+    231.0,
+    278.0,
+    241.0
+   ],
+   "tag": "005",
+   "tag_bbox": [
+    260.4,
+    227.4,
+    269.0,
+    235.0
+   ],
+   "attributes": {},
+   "note": "불확실: 자력식 압력조절밸브 모양"
+  },
+  {
+   "id": "s026",
+   "kind": "check_valve",
+   "bbox": [
+    317.0,
+    238.0,
+    325.0,
+    241.0
+   ],
+   "tag": "V1109",
+   "tag_bbox": [
+    316.6,
+    242.0,
+    325.0,
+    245.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s027",
+   "kind": "manual_valve",
+   "bbox": [
+    349.0,
+    251.0,
+    352.0,
+    258.0
+   ],
+   "tag": "V1327",
+   "tag_bbox": [
+    345.0,
+    250.0,
+    348.0,
+    259.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s028",
+   "kind": "relief_valve",
+   "bbox": [
+    263.0,
+    256.0,
+    269.0,
+    262.0
+   ],
+   "tag": "1111",
+   "tag_bbox": [
+    272.4,
+    248.0,
+    281.4,
+    256.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s029",
+   "kind": "relief_valve",
+   "bbox": [
+    327.0,
+    255.0,
+    331.0,
+    261.0
+   ],
+   "tag": "1107",
+   "tag_bbox": [
+    334.6,
+    248.0,
+    343.6,
+    256.0
+   ],
+   "attributes": {},
+   "note": "불확실: 탱크 진공 해제용으로 보임"
+  },
+  {
+   "id": "s030",
+   "kind": "vent",
+   "bbox": [
+    358.0,
+    258.0,
+    362.0,
+    262.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s031",
+   "kind": "manual_valve",
+   "bbox": [
+    360.0,
+    264.0,
+    363.0,
+    270.0
+   ],
+   "tag": "V2377",
+   "tag_bbox": [
+    362.0,
+    265.0,
+    364.4,
+    275.0
+   ],
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s032",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    436.0,
+    221.0,
+    446.0,
+    232.0
+   ],
+   "tag": "939",
+   "tag_bbox": [
+    446.0,
+    218.0,
+    454.0,
+    226.0
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s033",
+   "kind": "tank",
+   "bbox": [
+    343.0,
+    293.0,
+    380.0,
+    341.0
+   ],
+   "tag": "TK01A",
+   "tag_bbox": [
+    356.6,
+    324.6,
+    366.6,
+    327.4
+   ],
+   "attributes": {},
+   "note": "COMPONENT COOLING WATER SURGE TANK A"
+  },
+  {
+   "id": "s034",
+   "kind": "indicator",
+   "bbox": [
+    306.4,
+    311.0,
+    321.6,
+    326.0
+   ],
+   "tag": "LTI 009C",
+   "attributes": {},
+   "note": "SAHL"
+  },
+  {
+   "id": "s035",
+   "kind": "transmitter",
+   "bbox": [
+    401.6,
+    311.0,
+    417.0,
+    326.0
+   ],
+   "tag": "LT 011A",
+   "attributes": {},
+   "note": "ISAHL"
+  },
+  {
+   "id": "s036",
+   "kind": "continuation",
+   "bbox": [
+    251.4,
+    333.0,
+    281.0,
+    339.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 계측 신호선(점선)에 붙은 도면 밖 화살표"
+  },
+  {
+   "id": "s037",
+   "kind": "manual_valve",
+   "bbox": [
+    332.6,
+    348.4,
+    339.0,
+    351.6
+   ],
+   "tag": "V2061",
+   "tag_bbox": [
+    331.0,
+    352.6,
+    340.4,
+    355.6
+   ],
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s038",
+   "kind": "drain",
+   "bbox": [
+    306.0,
+    357.0,
+    315.0,
+    364.0
+   ],
+   "tag": "DE",
+   "tag_bbox": [
+    317.0,
+    361.0,
+    322.0,
+    364.0
+   ],
+   "attributes": {},
+   "note": "DE로 가는 드레인 깔때기"
+  },
+  {
+   "id": "s039",
+   "kind": "manual_valve",
+   "bbox": [
+    387.6,
+    348.4,
+    393.6,
+    351.6
+   ],
+   "tag": "V1127",
+   "tag_bbox": [
+    386.0,
+    352.6,
+    395.4,
+    355.6
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s040",
+   "kind": "continuation",
+   "bbox": [
+    361.6,
+    386.6,
+    391.0,
+    392.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s041",
+   "kind": "manual_valve",
+   "bbox": [
+    419.0,
+    388.0,
+    425.0,
+    391.2
+   ],
+   "tag": "V1209",
+   "tag_bbox": [
+    417.6,
+    392.6,
+    427.0,
+    395.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s042",
+   "kind": "manual_valve",
+   "bbox": [
+    574.4,
+    106.6,
+    580.0,
+    109.4
+   ],
+   "tag": "V1169",
+   "tag_bbox": [
+    572.6,
+    110.0,
+    582.0,
+    113.0
+   ],
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": ""
+  },
+  {
+   "id": "s043",
+   "kind": "check_valve",
+   "bbox": [
+    620.4,
+    130.0,
+    623.6,
+    142.0
+   ],
+   "tag": "V1133",
+   "tag_bbox": [
+    624.4,
+    131.0,
+    627.4,
+    140.0
+   ],
+   "attributes": {},
+   "note": "도면에 V1133이 두 번 적힘(위쪽, 펌프 1A 토출 쪽)"
+  },
+  {
+   "id": "s044",
+   "kind": "check_valve",
+   "bbox": [
+    609.6,
+    194.0,
+    612.6,
+    206.0
+   ],
+   "tag": "V1133",
+   "tag_bbox": [
+    613.0,
+    195.0,
+    616.0,
+    205.0
+   ],
+   "attributes": {},
+   "note": "불확실: 도면에 V1133이 두 번 적힘(아래쪽, 펌프 2A 토출 쪽). 오기로 보임"
+  },
+  {
+   "id": "s045",
+   "kind": "continuation",
+   "bbox": [
+    465.0,
+    133.0,
+    471.0,
+    162.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s046",
+   "kind": "reducer",
+   "bbox": [
+    470.0,
+    201.0,
+    473.0,
+    205.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s047",
+   "kind": "manual_valve",
+   "bbox": [
+    481.6,
+    179.6,
+    490.4,
+    183.2
+   ],
+   "tag": "V1121",
+   "tag_bbox": [
+    481.0,
+    183.6,
+    490.4,
+    186.6
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s048",
+   "kind": "pump",
+   "bbox": [
+    542.4,
+    174.0,
+    560.0,
+    189.0
+   ],
+   "tag": "PP01A",
+   "tag_bbox": [
+    551.0,
+    203.6,
+    561.0,
+    206.4
+   ],
+   "attributes": {},
+   "note": "COMPONENT COOLING WATER PUMP 1A"
+  },
+  {
+   "id": "s049",
+   "kind": "temperature_element",
+   "bbox": [
+    578.0,
+    151.0,
+    593.0,
+    166.0
+   ],
+   "tag": "TE 3231",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s050",
+   "kind": "check_valve",
+   "bbox": [
+    625.0,
+    175.6,
+    632.0,
+    179.0
+   ],
+   "tag": "V1001",
+   "tag_bbox": [
+    624.0,
+    180.6,
+    632.4,
+    183.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s051",
+   "kind": "manual_valve",
+   "bbox": [
+    640.0,
+    176.0,
+    648.0,
+    179.0
+   ],
+   "tag": "V1007",
+   "tag_bbox": [
+    639.4,
+    180.6,
+    648.4,
+    183.6
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s052",
+   "kind": "flow_element",
+   "bbox": [
+    652.0,
+    175.6,
+    658.0,
+    179.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "FE 047 원과 이어진 배관 위 본체"
+  },
+  {
+   "id": "s053",
+   "kind": "transmitter",
+   "bbox": [
+    648.0,
+    143.0,
+    662.0,
+    159.0
+   ],
+   "tag": "FT 047A",
+   "attributes": {},
+   "note": "ISAL"
+  },
+  {
+   "id": "s054",
+   "kind": "flow_element",
+   "bbox": [
+    650.0,
+    187.0,
+    659.0,
+    197.0
+   ],
+   "tag": "FE 047",
+   "attributes": {},
+   "note": "계기 원"
+  },
+  {
+   "id": "s055",
+   "kind": "reducer",
+   "bbox": [
+    660.6,
+    249.0,
+    663.4,
+    252.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s056",
+   "kind": "continuation",
+   "bbox": [
+    487.6,
+    233.6,
+    517.0,
+    239.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s057",
+   "kind": "continuation",
+   "bbox": [
+    487.6,
+    259.0,
+    517.0,
+    265.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s058",
+   "kind": "manual_valve",
+   "bbox": [
+    481.6,
+    271.0,
+    490.4,
+    274.4
+   ],
+   "tag": "V1123",
+   "tag_bbox": [
+    481.0,
+    275.0,
+    490.4,
+    278.4
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s059",
+   "kind": "pump",
+   "bbox": [
+    542.4,
+    266.0,
+    560.0,
+    281.0
+   ],
+   "tag": "PP02A",
+   "tag_bbox": [
+    551.0,
+    295.0,
+    561.0,
+    298.0
+   ],
+   "attributes": {},
+   "note": "COMPONENT COOLING WATER PUMP 2A"
+  },
+  {
+   "id": "s060",
+   "kind": "temperature_element",
+   "bbox": [
+    578.0,
+    242.0,
+    593.0,
+    258.0
+   ],
+   "tag": "TE 3233",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s061",
+   "kind": "transmitter",
+   "bbox": [
+    548.6,
+    210.0,
+    563.6,
+    226.0
+   ],
+   "tag": "VET 3263",
+   "attributes": {},
+   "note": "IAH, 진동 전송기"
+  },
+  {
+   "id": "s062",
+   "kind": "check_valve",
+   "bbox": [
+    618.0,
+    267.6,
+    625.0,
+    271.0
+   ],
+   "tag": "V1003",
+   "tag_bbox": [
+    617.0,
+    264.0,
+    627.0,
+    267.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s063",
+   "kind": "manual_valve",
+   "bbox": [
+    632.0,
+    267.6,
+    640.0,
+    271.0
+   ],
+   "tag": "V1009",
+   "tag_bbox": [
+    632.4,
+    271.4,
+    641.4,
+    274.4
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s064",
+   "kind": "flow_element",
+   "bbox": [
+    648.0,
+    267.6,
+    653.0,
+    271.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "FE 049 원과 이어진 배관 위 본체"
+  },
+  {
+   "id": "s065",
+   "kind": "transmitter",
+   "bbox": [
+    643.6,
+    235.0,
+    658.0,
+    251.0
+   ],
+   "tag": "FT 049C",
+   "attributes": {},
+   "note": "ISAL"
+  },
+  {
+   "id": "s066",
+   "kind": "flow_element",
+   "bbox": [
+    646.0,
+    278.0,
+    655.0,
+    288.0
+   ],
+   "tag": "FE 049",
+   "attributes": {},
+   "note": "계기 원"
+  },
+  {
+   "id": "s067",
+   "kind": "reducer",
+   "bbox": [
+    470.0,
+    282.0,
+    473.0,
+    286.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s068",
+   "kind": "continuation",
+   "bbox": [
+    493.6,
+    329.0,
+    523.0,
+    334.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 계측 신호선(점선)에 붙은 도면 밖 화살표"
+  },
+  {
+   "id": "s069",
+   "kind": "continuation",
+   "bbox": [
+    493.6,
+    343.6,
+    523.0,
+    349.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 계측 신호선(점선)에 붙은 도면 밖 화살표"
+  },
+  {
+   "id": "s070",
+   "kind": "transmitter",
+   "bbox": [
+    548.6,
+    305.0,
+    563.6,
+    322.4
+   ],
+   "tag": "VET 3283",
+   "attributes": {},
+   "note": "IAH, 진동 전송기"
+  },
+  {
+   "id": "s071",
+   "kind": "tank",
+   "bbox": [
+    596.0,
+    335.6,
+    626.0,
+    363.6
+   ],
+   "tag": "TK02A",
+   "tag_bbox": [
+    605.6,
+    353.6,
+    616.4,
+    356.6
+   ],
+   "attributes": {},
+   "note": "CHEMICAL ADDITION TANK A"
+  },
+  {
+   "id": "s072",
+   "kind": "unlisted",
+   "bbox": [
+    578.4,
+    344.0,
+    588.4,
+    354.4
+   ],
+   "tag": "LG 015",
+   "attributes": {},
+   "kind_text": "level gauge(액위 유리)",
+   "note": "kind_text: level gauge(액위 유리)"
+  },
+  {
+   "id": "s073",
+   "kind": "vent",
+   "bbox": [
+    597.0,
+    320.0,
+    601.0,
+    323.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s074",
+   "kind": "manual_valve",
+   "bbox": [
+    598.0,
+    327.0,
+    602.0,
+    333.6
+   ],
+   "tag": "V1115",
+   "tag_bbox": [
+    602.4,
+    325.0,
+    605.0,
+    334.4
+   ],
+   "attributes": {},
+   "note": "불확실: 채운 나비 모양, 상태 글자 없음"
+  },
+  {
+   "id": "s075",
+   "kind": "unlisted",
+   "bbox": [
+    603.0,
+    304.0,
+    608.0,
+    312.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "kind_text": "굽은 주입구(gooseneck)",
+   "note": "kind_text: 굽은 주입구(gooseneck). 불확실"
+  },
+  {
+   "id": "s076",
+   "kind": "manual_valve",
+   "bbox": [
+    606.0,
+    321.0,
+    609.0,
+    327.6
+   ],
+   "tag": "V2073",
+   "tag_bbox": [
+    609.6,
+    319.0,
+    612.0,
+    329.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s077",
+   "kind": "relief_valve",
+   "bbox": [
+    619.0,
+    309.0,
+    624.0,
+    314.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 이름표 원이 비어 있음"
+  },
+  {
+   "id": "s078",
+   "kind": "manual_valve",
+   "bbox": [
+    609.0,
+    375.6,
+    612.4,
+    382.4
+   ],
+   "tag": "V2079",
+   "tag_bbox": [
+    606.0,
+    375.0,
+    608.4,
+    384.0
+   ],
+   "attributes": {},
+   "note": "불확실: 채운 나비 모양, 상태 글자 없음"
+  },
+  {
+   "id": "s079",
+   "kind": "manual_valve",
+   "bbox": [
+    626.0,
+    370.4,
+    633.0,
+    373.6
+   ],
+   "tag": "V1113",
+   "tag_bbox": [
+    626.4,
+    374.6,
+    635.4,
+    377.6
+   ],
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s080",
+   "kind": "strainer",
+   "bbox": [
+    570.0,
+    370.4,
+    578.0,
+    374.0
+   ],
+   "tag": "ST04A",
+   "tag_bbox": [
+    570.0,
+    379.4,
+    579.4,
+    382.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s081",
+   "kind": "manual_valve",
+   "bbox": [
+    542.0,
+    370.4,
+    548.4,
+    373.6
+   ],
+   "tag": "V1119",
+   "tag_bbox": [
+    540.0,
+    374.6,
+    549.4,
+    377.6
+   ],
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s082",
+   "kind": "continuation",
+   "bbox": [
+    523.0,
+    399.0,
+    552.4,
+    405.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s083",
+   "kind": "drain",
+   "bbox": [
+    647.0,
+    403.8,
+    655.6,
+    407.5
+   ],
+   "tag": "DE",
+   "tag_bbox": [
+    658.0,
+    409.4,
+    662.5,
+    412.0
+   ],
+   "attributes": {},
+   "note": "DE로 가는 드레인 깔때기"
+  },
+  {
+   "id": "s084",
+   "kind": "transmitter",
+   "bbox": [
+    673.0,
+    313.0,
+    688.0,
+    330.0
+   ],
+   "tag": "PT 053C",
+   "attributes": {},
+   "note": "ISAL"
+  },
+  {
+   "id": "s085",
+   "kind": "manual_valve",
+   "bbox": [
+    671.0,
+    359.4,
+    677.0,
+    362.5
+   ],
+   "tag": "V1207",
+   "tag_bbox": [
+    667.0,
+    363.5,
+    676.0,
+    367.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s086",
+   "kind": "manual_valve",
+   "bbox": [
+    680.0,
+    392.5,
+    689.0,
+    395.6
+   ],
+   "tag": "V1013",
+   "tag_bbox": [
+    680.0,
+    396.0,
+    690.0,
+    399.0
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s087",
+   "kind": "reducer",
+   "bbox": [
+    708.6,
+    184.0,
+    711.4,
+    187.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s088",
+   "kind": "reducer",
+   "bbox": [
+    708.6,
+    231.0,
+    711.4,
+    234.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s089",
+   "kind": "manual_valve",
+   "bbox": [
+    712.4,
+    140.0,
+    722.4,
+    143.0
+   ],
+   "tag": "V1141",
+   "tag_bbox": [
+    713.0,
+    143.4,
+    722.0,
+    146.4
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s090",
+   "kind": "heat_exchanger",
+   "bbox": [
+    759.4,
+    137.6,
+    782.0,
+    152.0
+   ],
+   "tag": "HE01A",
+   "tag_bbox": [
+    765.4,
+    159.0,
+    775.6,
+    162.0
+   ],
+   "attributes": {},
+   "note": "COMPONENT COOLING WATER HX. 1A"
+  },
+  {
+   "id": "s091",
+   "kind": "relief_valve",
+   "bbox": [
+    749.0,
+    109.0,
+    754.0,
+    114.0
+   ],
+   "tag": "1031",
+   "tag_bbox": [
+    737.0,
+    98.4,
+    745.6,
+    107.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s092",
+   "kind": "drain",
+   "bbox": [
+    748.0,
+    125.0,
+    756.0,
+    130.0
+   ],
+   "tag": "ED",
+   "tag_bbox": [
+    759.4,
+    129.4,
+    763.4,
+    132.4
+   ],
+   "attributes": {},
+   "note": "ED로 가는 드레인 깔때기"
+  },
+  {
+   "id": "s093",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    830.4,
+    155.4,
+    840.0,
+    166.4
+   ],
+   "tag": "021",
+   "tag_bbox": [
+    821.0,
+    153.4,
+    829.6,
+    161.6
+   ],
+   "attributes": {
+    "normal_position": "NO",
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s094",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    830.4,
+    183.6,
+    840.0,
+    194.4
+   ],
+   "tag": "031",
+   "tag_bbox": [
+    822.4,
+    183.0,
+    831.0,
+    191.6
+   ],
+   "attributes": {
+    "normal_position": "NC",
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s095",
+   "kind": "manual_valve",
+   "bbox": [
+    830.4,
+    204.6,
+    840.0,
+    208.0
+   ],
+   "tag": "V1041",
+   "tag_bbox": [
+    831.4,
+    208.6,
+    840.0,
+    211.4
+   ],
+   "attributes": {
+    "normal_position": "NO"
+   },
+   "note": "NO,LT 표기"
+  },
+  {
+   "id": "s096",
+   "kind": "manual_valve",
+   "bbox": [
+    863.0,
+    163.0,
+    873.0,
+    166.4
+   ],
+   "tag": "V1147",
+   "tag_bbox": [
+    863.4,
+    167.0,
+    872.4,
+    170.0
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s097",
+   "kind": "manual_valve",
+   "bbox": [
+    712.4,
+    208.0,
+    722.4,
+    211.4
+   ],
+   "tag": "V1143",
+   "tag_bbox": [
+    712.4,
+    212.6,
+    722.0,
+    215.6
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s098",
+   "kind": "heat_exchanger",
+   "bbox": [
+    759.4,
+    206.0,
+    782.0,
+    221.0
+   ],
+   "tag": "HE02A",
+   "tag_bbox": [
+    765.4,
+    228.6,
+    775.6,
+    231.4
+   ],
+   "attributes": {},
+   "note": "COMPONENT COOLING WATER HX. 2A"
+  },
+  {
+   "id": "s099",
+   "kind": "relief_valve",
+   "bbox": [
+    749.0,
+    180.0,
+    754.0,
+    185.0
+   ],
+   "tag": "1033",
+   "tag_bbox": [
+    738.6,
+    169.0,
+    747.0,
+    178.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s100",
+   "kind": "drain",
+   "bbox": [
+    748.0,
+    192.0,
+    756.0,
+    200.0
+   ],
+   "tag": "ED",
+   "tag_bbox": [
+    759.4,
+    199.4,
+    763.4,
+    202.0
+   ],
+   "attributes": {},
+   "note": "ED로 가는 드레인 깔때기"
+  },
+  {
+   "id": "s101",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    830.4,
+    234.0,
+    840.0,
+    245.6
+   ],
+   "tag": "023",
+   "tag_bbox": [
+    823.0,
+    231.0,
+    831.6,
+    239.6
+   ],
+   "attributes": {
+    "normal_position": "NO",
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s102",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    830.4,
+    262.4,
+    840.0,
+    273.0
+   ],
+   "tag": "033",
+   "tag_bbox": [
+    822.4,
+    261.6,
+    831.0,
+    270.0
+   ],
+   "attributes": {
+    "normal_position": "NC",
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s103",
+   "kind": "manual_valve",
+   "bbox": [
+    830.4,
+    284.6,
+    840.0,
+    288.0
+   ],
+   "tag": "V1043",
+   "tag_bbox": [
+    831.4,
+    289.0,
+    840.0,
+    292.0
+   ],
+   "attributes": {
+    "normal_position": "NO"
+   },
+   "note": "NO,LT 표기"
+  },
+  {
+   "id": "s104",
+   "kind": "manual_valve",
+   "bbox": [
+    863.0,
+    242.4,
+    873.0,
+    245.6
+   ],
+   "tag": "V1149",
+   "tag_bbox": [
+    863.4,
+    246.6,
+    872.4,
+    249.6
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s105",
+   "kind": "reducer",
+   "bbox": [
+    874.0,
+    218.0,
+    876.4,
+    222.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s106",
+   "kind": "flow_element",
+   "bbox": [
+    884.0,
+    176.0,
+    893.0,
+    185.0
+   ],
+   "tag": "FE 071",
+   "attributes": {},
+   "note": "계기 원"
+  },
+  {
+   "id": "s107",
+   "kind": "transmitter",
+   "bbox": [
+    877.2,
+    148.7,
+    889.7,
+    162.5
+   ],
+   "tag": "FT 073C",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s108",
+   "kind": "relief_valve",
+   "bbox": [
+    749.0,
+    258.0,
+    754.0,
+    263.0
+   ],
+   "tag": "1035",
+   "tag_bbox": [
+    738.6,
+    248.6,
+    747.0,
+    257.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s109",
+   "kind": "drain",
+   "bbox": [
+    748.0,
+    271.0,
+    756.0,
+    279.0
+   ],
+   "tag": "ED",
+   "tag_bbox": [
+    759.4,
+    277.4,
+    763.4,
+    280.0
+   ],
+   "attributes": {},
+   "note": "ED로 가는 드레인 깔때기"
+  },
+  {
+   "id": "s110",
+   "kind": "manual_valve",
+   "bbox": [
+    712.4,
+    286.0,
+    722.4,
+    289.4
+   ],
+   "tag": "V1145",
+   "tag_bbox": [
+    712.4,
+    290.6,
+    722.0,
+    293.6
+   ],
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s111",
+   "kind": "heat_exchanger",
+   "bbox": [
+    759.4,
+    284.0,
+    782.0,
+    298.0
+   ],
+   "tag": "HE03A",
+   "tag_bbox": [
+    765.4,
+    306.0,
+    775.6,
+    309.0
+   ],
+   "attributes": {},
+   "note": "COMPONENT COOLING WATER HX. 3A"
+  },
+  {
+   "id": "s112",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    830.4,
+    311.0,
+    840.0,
+    322.4
+   ],
+   "tag": "025",
+   "tag_bbox": [
+    822.4,
+    310.0,
+    831.0,
+    319.0
+   ],
+   "attributes": {
+    "normal_position": "NC",
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s113",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    830.4,
+    339.0,
+    840.0,
+    350.0
+   ],
+   "tag": "035",
+   "tag_bbox": [
+    822.4,
+    338.4,
+    831.0,
+    347.0
+   ],
+   "attributes": {
+    "normal_position": "NC",
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s114",
+   "kind": "manual_valve",
+   "bbox": [
+    830.4,
+    361.0,
+    840.0,
+    364.0
+   ],
+   "tag": "V1045",
+   "tag_bbox": [
+    831.4,
+    365.0,
+    840.0,
+    368.0
+   ],
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "NC,LT 표기"
+  },
+  {
+   "id": "s115",
+   "kind": "manual_valve",
+   "bbox": [
+    863.0,
+    319.0,
+    873.0,
+    322.4
+   ],
+   "tag": "V1151",
+   "tag_bbox": [
+    863.4,
+    323.0,
+    872.4,
+    326.0
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s116",
+   "kind": "reducer",
+   "bbox": [
+    873.6,
+    297.0,
+    876.4,
+    300.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s117",
+   "kind": "temperature_element",
+   "bbox": [
+    702.6,
+    326.6,
+    717.6,
+    343.6
+   ],
+   "tag": "TEW 055",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s118",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    742.0,
+    371.0,
+    752.0,
+    381.6
+   ],
+   "tag": "027",
+   "tag_bbox": [
+    733.6,
+    369.6,
+    742.0,
+    378.4
+   ],
+   "attributes": {
+    "normal_position": "NC",
+    "fail_position": "FL"
+   },
+   "note": "(NOTE 2)"
+  },
+  {
+   "id": "s119",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    782.0,
+    371.0,
+    792.0,
+    381.6
+   ],
+   "tag": "037",
+   "tag_bbox": [
+    773.6,
+    369.6,
+    782.4,
+    378.4
+   ],
+   "attributes": {
+    "normal_position": "NC",
+    "fail_position": "FL"
+   },
+   "note": "(NOTE 2)"
+  },
+  {
+   "id": "s120",
+   "kind": "continuation",
+   "bbox": [
+    192.6,
+    190.0,
+    222.0,
+    195.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s121",
+   "kind": "continuation",
+   "bbox": [
+    688.6,
+    269.3,
+    694.9,
+    300.7
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s122",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    891.0,
+    264.0,
+    901.6,
+    273.0
+   ],
+   "tag": "937",
+   "tag_bbox": [
+    898.0,
+    256.0,
+    906.6,
+    264.0
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s123",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    891.0,
+    389.0,
+    901.6,
+    399.0
+   ],
+   "tag": "938",
+   "tag_bbox": [
+    898.0,
+    381.0,
+    906.6,
+    389.0
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s124",
+   "kind": "flow_element",
+   "bbox": [
+    898.3,
+    187.0,
+    903.7,
+    190.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "FE 071 원과 이어진 배관 위 본체"
+  },
+  {
+   "id": "s125",
+   "kind": "transmitter",
+   "bbox": [
+    893.8,
+    148.7,
+    908.8,
+    162.5
+   ],
+   "tag": "FT 071A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s126",
+   "kind": "temperature_element",
+   "bbox": [
+    909.7,
+    148.7,
+    922.0,
+    162.5
+   ],
+   "tag": "TEW 069",
+   "attributes": {},
+   "note": "ISAHL"
+  },
+  {
+   "id": "s127",
+   "kind": "temperature_element",
+   "bbox": [
+    911.3,
+    212.5,
+    926.2,
+    227.5
+   ],
+   "tag": "TEW 071",
+   "attributes": {},
+   "note": "ISAHL"
+  },
+  {
+   "id": "s128",
+   "kind": "reducer",
+   "bbox": [
+    945.8,
+    187.0,
+    949.2,
+    190.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s129",
+   "kind": "manual_valve",
+   "bbox": [
+    965.0,
+    135.8,
+    975.8,
+    138.3
+   ],
+   "tag": "V1019",
+   "tag_bbox": [
+    965.8,
+    139.5,
+    975.0,
+    142.2
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s130",
+   "kind": "manual_valve",
+   "bbox": [
+    968.3,
+    187.0,
+    979.2,
+    190.0
+   ],
+   "tag": "V1017",
+   "tag_bbox": [
+    970.0,
+    190.8,
+    978.7,
+    193.7
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s131",
+   "kind": "continuation",
+   "bbox": [
+    981.7,
+    134.5,
+    1010.8,
+    139.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s132",
+   "kind": "continuation",
+   "bbox": [
+    981.7,
+    149.2,
+    1010.8,
+    154.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s133",
+   "kind": "continuation",
+   "bbox": [
+    981.7,
+    186.3,
+    1010.8,
+    191.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s134",
+   "kind": "continuation",
+   "bbox": [
+    981.7,
+    208.3,
+    1010.8,
+    213.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  }
+ ],
+ "lines": [
+  {
+   "id": "l001",
+   "at": [
+    295.0,
+    133.6
+   ],
+   "text_bbox": [
+    290.4,
+    130.4,
+    299.6,
+    133.4
+   ],
+   "size": "1½\""
+  },
+  {
+   "id": "l002",
+   "at": [
+    364.0,
+    141.0
+   ],
+   "text_bbox": [
+    361.6,
+    137.6,
+    365.6,
+    140.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l003",
+   "at": [
+    398.0,
+    178.0
+   ],
+   "text_bbox": [
+    395.0,
+    176.0,
+    397.4,
+    179.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l004",
+   "at": [
+    226.0,
+    167.0
+   ],
+   "text_bbox": [
+    222.4,
+    165.0,
+    225.4,
+    170.0
+   ],
+   "size": "1½\""
+  },
+  {
+   "id": "l005",
+   "at": [
+    362.0,
+    174.0
+   ],
+   "text_bbox": [
+    356.4,
+    170.4,
+    360.0,
+    173.4
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l006",
+   "at": [
+    417.0,
+    200.0
+   ],
+   "text_bbox": [
+    413.0,
+    198.0,
+    415.0,
+    201.0
+   ],
+   "size": "4\""
+  },
+  {
+   "id": "l007",
+   "at": [
+    390.0,
+    273.0
+   ],
+   "text_bbox": [
+    389.0,
+    270.0,
+    392.4,
+    272.4
+   ],
+   "size": "4\""
+  },
+  {
+   "id": "l008",
+   "at": [
+    237.0,
+    240.0
+   ],
+   "text_bbox": [
+    235.0,
+    236.4,
+    239.0,
+    239.0
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l009",
+   "at": [
+    292.0,
+    240.0
+   ],
+   "text_bbox": [
+    290.0,
+    237.0,
+    294.0,
+    239.4
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l010",
+   "at": [
+    340.0,
+    240.0
+   ],
+   "text_bbox": [
+    337.6,
+    237.0,
+    341.6,
+    239.4
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l011",
+   "at": [
+    250.0,
+    258.4
+   ],
+   "text_bbox": [
+    248.0,
+    255.0,
+    251.4,
+    257.6
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l012",
+   "at": [
+    314.0,
+    268.0
+   ],
+   "text_bbox": [
+    312.4,
+    266.0,
+    315.6,
+    268.6
+   ],
+   "size": "4\""
+  },
+  {
+   "id": "l013",
+   "at": [
+    340.0,
+    265.0
+   ],
+   "text_bbox": [
+    338.0,
+    262.4,
+    341.0,
+    265.2
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l014",
+   "at": [
+    361.0,
+    277.0
+   ],
+   "text_bbox": [
+    358.0,
+    275.0,
+    360.0,
+    278.0
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l015",
+   "at": [
+    321.0,
+    350.0
+   ],
+   "text_bbox": [
+    320.0,
+    346.6,
+    323.0,
+    349.4
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l016",
+   "at": [
+    350.0,
+    350.0
+   ],
+   "text_bbox": [
+    349.0,
+    346.6,
+    352.0,
+    349.4
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l017",
+   "at": [
+    411.0,
+    350.0
+   ],
+   "text_bbox": [
+    408.6,
+    346.6,
+    413.6,
+    349.4
+   ],
+   "size": "10\""
+  },
+  {
+   "id": "l018",
+   "at": [
+    406.0,
+    390.0
+   ],
+   "text_bbox": [
+    403.6,
+    387.0,
+    407.6,
+    389.4
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l019",
+   "at": [
+    450.0,
+    390.0
+   ],
+   "text_bbox": [
+    447.6,
+    387.0,
+    451.6,
+    389.4
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l020",
+   "at": [
+    432.0,
+    404.0
+   ],
+   "text_bbox": [
+    428.0,
+    401.0,
+    431.0,
+    406.0
+   ],
+   "size": "32\""
+  },
+  {
+   "id": "l021",
+   "at": [
+    534.0,
+    108.0
+   ],
+   "text_bbox": [
+    532.4,
+    104.4,
+    535.6,
+    107.2
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l022",
+   "at": [
+    611.0,
+    126.0
+   ],
+   "text_bbox": [
+    608.0,
+    124.0,
+    610.4,
+    127.4
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l023",
+   "at": [
+    467.4,
+    180.0
+   ],
+   "text_bbox": [
+    464.0,
+    177.0,
+    466.6,
+    182.0
+   ],
+   "size": "28\""
+  },
+  {
+   "id": "l024",
+   "at": [
+    471.4,
+    203.0
+   ],
+   "text_bbox": [
+    473.0,
+    197.0,
+    476.0,
+    209.0
+   ],
+   "size": "36\"X30\""
+  },
+  {
+   "id": "l025",
+   "at": [
+    507.0,
+    181.4
+   ],
+   "text_bbox": [
+    505.0,
+    177.4,
+    510.0,
+    180.0
+   ],
+   "size": "30\""
+  },
+  {
+   "id": "l026",
+   "at": [
+    583.0,
+    177.4
+   ],
+   "text_bbox": [
+    580.0,
+    174.0,
+    585.0,
+    177.0
+   ],
+   "size": "30\""
+  },
+  {
+   "id": "l027",
+   "at": [
+    662.0,
+    251.0
+   ],
+   "text_bbox": [
+    664.0,
+    245.0,
+    667.0,
+    257.0
+   ],
+   "size": "36\"X30\""
+  },
+  {
+   "id": "l028",
+   "at": [
+    480.0,
+    236.4
+   ],
+   "text_bbox": [
+    478.0,
+    232.6,
+    482.6,
+    235.4
+   ],
+   "size": "10\""
+  },
+  {
+   "id": "l029",
+   "at": [
+    480.0,
+    262.0
+   ],
+   "text_bbox": [
+    478.0,
+    258.4,
+    482.6,
+    261.0
+   ],
+   "size": "10\""
+  },
+  {
+   "id": "l030",
+   "at": [
+    471.4,
+    248.0
+   ],
+   "text_bbox": [
+    468.0,
+    245.0,
+    471.0,
+    250.0
+   ],
+   "size": "36\""
+  },
+  {
+   "id": "l031",
+   "at": [
+    502.0,
+    273.0
+   ],
+   "text_bbox": [
+    499.0,
+    269.0,
+    504.0,
+    272.0
+   ],
+   "size": "30\""
+  },
+  {
+   "id": "l032",
+   "at": [
+    582.0,
+    269.6
+   ],
+   "text_bbox": [
+    579.0,
+    266.0,
+    584.4,
+    269.0
+   ],
+   "size": "30\""
+  },
+  {
+   "id": "l033",
+   "at": [
+    471.4,
+    284.0
+   ],
+   "text_bbox": [
+    474.0,
+    279.0,
+    477.0,
+    290.0
+   ],
+   "size": "26\"X36\""
+  },
+  {
+   "id": "l034",
+   "at": [
+    600.0,
+    318.0
+   ],
+   "text_bbox": [
+    597.0,
+    316.0,
+    599.4,
+    318.4
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l035",
+   "at": [
+    607.0,
+    313.0
+   ],
+   "text_bbox": [
+    604.0,
+    311.0,
+    606.4,
+    314.4
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l036",
+   "at": [
+    622.0,
+    328.0
+   ],
+   "text_bbox": [
+    622.4,
+    326.0,
+    625.0,
+    330.0
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l037",
+   "at": [
+    644.0,
+    315.0
+   ],
+   "text_bbox": [
+    641.0,
+    313.0,
+    643.4,
+    317.0
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l038",
+   "at": [
+    625.0,
+    397.5
+   ],
+   "text_bbox": [
+    624.0,
+    394.4,
+    627.4,
+    397.0
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l039",
+   "at": [
+    618.0,
+    372.0
+   ],
+   "text_bbox": [
+    617.0,
+    368.6,
+    620.0,
+    371.4
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l040",
+   "at": [
+    651.0,
+    350.0
+   ],
+   "text_bbox": [
+    647.5,
+    348.7,
+    650.0,
+    351.3
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l041",
+   "at": [
+    556.0,
+    372.0
+   ],
+   "text_bbox": [
+    554.6,
+    369.6,
+    557.6,
+    372.4
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l042",
+   "at": [
+    494.0,
+    372.0
+   ],
+   "text_bbox": [
+    492.4,
+    368.6,
+    495.6,
+    371.4
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l043",
+   "at": [
+    492.0,
+    401.6
+   ],
+   "text_bbox": [
+    489.6,
+    397.6,
+    494.6,
+    400.4
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l044",
+   "at": [
+    673.0,
+    350.0
+   ],
+   "text_bbox": [
+    671.0,
+    347.0,
+    675.0,
+    349.0
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l045",
+   "at": [
+    691.6,
+    346.0
+   ],
+   "text_bbox": [
+    688.7,
+    344.0,
+    691.0,
+    348.0
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l046",
+   "at": [
+    667.0,
+    361.0
+   ],
+   "text_bbox": [
+    665.0,
+    358.0,
+    668.7,
+    359.4
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l047",
+   "at": [
+    699.0,
+    355.0
+   ],
+   "text_bbox": [
+    695.6,
+    352.0,
+    698.7,
+    357.5
+   ],
+   "size": "36\""
+  },
+  {
+   "id": "l048",
+   "at": [
+    699.0,
+    380.0
+   ],
+   "text_bbox": [
+    696.0,
+    377.0,
+    699.0,
+    383.0
+   ],
+   "size": "36\""
+  },
+  {
+   "id": "l049",
+   "at": [
+    698.0,
+    233.0
+   ],
+   "text_bbox": [
+    695.6,
+    230.0,
+    699.0,
+    235.0
+   ],
+   "size": "36\""
+  },
+  {
+   "id": "l050",
+   "at": [
+    710.0,
+    185.5
+   ],
+   "text_bbox": [
+    712.0,
+    179.0,
+    715.0,
+    191.0
+   ],
+   "size": "36\"X24\""
+  },
+  {
+   "id": "l051",
+   "at": [
+    710.0,
+    232.5
+   ],
+   "text_bbox": [
+    712.0,
+    227.0,
+    715.0,
+    239.0
+   ],
+   "size": "24\"X36\""
+  },
+  {
+   "id": "l052",
+   "at": [
+    744.0,
+    141.4
+   ],
+   "text_bbox": [
+    741.4,
+    137.0,
+    746.4,
+    140.0
+   ],
+   "size": "24\""
+  },
+  {
+   "id": "l053",
+   "at": [
+    735.6,
+    125.0
+   ],
+   "text_bbox": [
+    731.0,
+    122.0,
+    735.0,
+    125.0
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l054",
+   "at": [
+    752.0,
+    120.0
+   ],
+   "text_bbox": [
+    748.4,
+    118.0,
+    751.6,
+    121.0
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l055",
+   "at": [
+    802.0,
+    164.6
+   ],
+   "text_bbox": [
+    799.4,
+    161.2,
+    804.0,
+    164.0
+   ],
+   "size": "24\""
+  },
+  {
+   "id": "l056",
+   "at": [
+    848.0,
+    192.6
+   ],
+   "text_bbox": [
+    846.0,
+    189.0,
+    851.0,
+    191.6
+   ],
+   "size": "24\""
+  },
+  {
+   "id": "l057",
+   "at": [
+    820.0,
+    206.0
+   ],
+   "text_bbox": [
+    818.6,
+    203.0,
+    821.6,
+    205.6
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l058",
+   "at": [
+    744.0,
+    209.6
+   ],
+   "text_bbox": [
+    742.0,
+    205.6,
+    746.6,
+    208.4
+   ],
+   "size": "24\""
+  },
+  {
+   "id": "l059",
+   "at": [
+    735.6,
+    200.0
+   ],
+   "text_bbox": [
+    730.4,
+    197.0,
+    734.4,
+    200.0
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l060",
+   "at": [
+    752.0,
+    190.0
+   ],
+   "text_bbox": [
+    748.0,
+    188.0,
+    751.0,
+    191.0
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l061",
+   "at": [
+    780.0,
+    244.0
+   ],
+   "text_bbox": [
+    777.6,
+    239.6,
+    782.4,
+    242.4
+   ],
+   "size": "24\""
+  },
+  {
+   "id": "l062",
+   "at": [
+    848.0,
+    271.4
+   ],
+   "text_bbox": [
+    846.0,
+    268.0,
+    851.0,
+    271.0
+   ],
+   "size": "24\""
+  },
+  {
+   "id": "l063",
+   "at": [
+    820.0,
+    286.0
+   ],
+   "text_bbox": [
+    818.6,
+    282.4,
+    821.6,
+    285.2
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l064",
+   "at": [
+    882.0,
+    207.0
+   ],
+   "text_bbox": [
+    879.0,
+    204.0,
+    882.0,
+    209.0
+   ],
+   "size": "36\""
+  },
+  {
+   "id": "l065",
+   "at": [
+    875.0,
+    220.0
+   ],
+   "text_bbox": [
+    871.0,
+    212.0,
+    874.0,
+    226.0
+   ],
+   "size": "36\"X24\""
+  },
+  {
+   "id": "l066",
+   "at": [
+    735.6,
+    280.0
+   ],
+   "text_bbox": [
+    730.4,
+    275.6,
+    734.4,
+    278.4
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l067",
+   "at": [
+    752.0,
+    268.0
+   ],
+   "text_bbox": [
+    748.0,
+    267.0,
+    751.0,
+    269.6
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l068",
+   "at": [
+    744.0,
+    288.0
+   ],
+   "text_bbox": [
+    742.0,
+    284.0,
+    746.6,
+    287.0
+   ],
+   "size": "24\""
+  },
+  {
+   "id": "l069",
+   "at": [
+    780.0,
+    320.6
+   ],
+   "text_bbox": [
+    778.0,
+    316.4,
+    783.0,
+    319.4
+   ],
+   "size": "24\""
+  },
+  {
+   "id": "l070",
+   "at": [
+    848.0,
+    348.4
+   ],
+   "text_bbox": [
+    846.0,
+    344.6,
+    851.0,
+    347.4
+   ],
+   "size": "24\""
+  },
+  {
+   "id": "l071",
+   "at": [
+    820.0,
+    362.6
+   ],
+   "text_bbox": [
+    818.6,
+    359.0,
+    821.6,
+    361.6
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l072",
+   "at": [
+    875.0,
+    298.7
+   ],
+   "text_bbox": [
+    871.0,
+    293.0,
+    874.4,
+    305.0
+   ],
+   "size": "24\"X36\""
+  },
+  {
+   "id": "l073",
+   "at": [
+    768.0,
+    380.0
+   ],
+   "text_bbox": [
+    766.0,
+    376.6,
+    771.0,
+    379.6
+   ],
+   "size": "32\""
+  },
+  {
+   "id": "l074",
+   "at": [
+    842.0,
+    380.0
+   ],
+   "text_bbox": [
+    840.0,
+    376.6,
+    845.0,
+    379.6
+   ],
+   "size": "32\""
+  },
+  {
+   "id": "l075",
+   "at": [
+    937.0,
+    188.3
+   ],
+   "text_bbox": [
+    934.0,
+    186.0,
+    940.0,
+    188.3
+   ],
+   "size": "36\""
+  },
+  {
+   "id": "l076",
+   "at": [
+    947.5,
+    188.5
+   ],
+   "text_bbox": [
+    941.7,
+    183.7,
+    955.0,
+    186.3
+   ],
+   "size": "36\"X28\""
+  },
+  {
+   "id": "l077",
+   "at": [
+    954.7,
+    194.0
+   ],
+   "text_bbox": [
+    949.0,
+    189.6,
+    954.0,
+    192.6
+   ],
+   "size": "28\"",
+   "note": "불확실: 가리키는 배관이 분명하지 않음"
+  },
+  {
+   "id": "l078",
+   "at": [
+    964.0,
+    188.3
+   ],
+   "text_bbox": [
+    960.0,
+    185.3,
+    967.5,
+    188.0
+   ],
+   "size": "28\""
+  },
+  {
+   "id": "l079",
+   "at": [
+    941.0,
+    145.0
+   ],
+   "text_bbox": [
+    938.3,
+    142.5,
+    940.8,
+    146.7
+   ],
+   "size": "28\""
+  },
+  {
+   "id": "l080",
+   "at": [
+    941.0,
+    175.0
+   ],
+   "text_bbox": [
+    938.3,
+    172.5,
+    940.8,
+    177.5
+   ],
+   "size": "28\""
+  },
+  {
+   "id": "l081",
+   "at": [
+    963.0,
+    151.7
+   ],
+   "text_bbox": [
+    960.8,
+    148.7,
+    965.8,
+    151.3
+   ],
+   "size": "10\""
+  },
+  {
+   "id": "l082",
+   "at": [
+    954.7,
+    207.0
+   ],
+   "text_bbox": [
+    950.4,
+    205.0,
+    953.4,
+    210.0
+   ],
+   "size": "10\""
+  },
+  {
+   "id": "l083",
+   "at": [
+    972.0,
+    210.6
+   ],
+   "text_bbox": [
+    969.0,
+    212.0,
+    974.0,
+    215.0
+   ],
+   "size": "10\""
+  },
+  {
+   "id": "l084",
+   "at": [
+    893.4,
+    324.0
+   ],
+   "text_bbox": [
+    895.0,
+    321.0,
+    898.4,
+    327.0
+   ],
+   "size": "32\""
+  }
+ ],
+ "connections": [
+  {
+   "a": "s001",
+   "b": "s002",
+   "flow": null
+  },
+  {
+   "a": "s002",
+   "b": "s003",
+   "flow": null
+  },
+  {
+   "a": "s003",
+   "b": "s011",
+   "flow": null
+  },
+  {
+   "a": "s120",
+   "b": "s008",
+   "flow": null
+  },
+  {
+   "a": "s120",
+   "b": "s009",
+   "flow": null
+  },
+  {
+   "a": "s008",
+   "b": "s009",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s010",
+   "flow": null
+  },
+  {
+   "a": "s010",
+   "b": "s011",
+   "flow": null
+  },
+  {
+   "a": "s010",
+   "b": "s012",
+   "flow": null
+  },
+  {
+   "a": "s011",
+   "b": "s012",
+   "flow": null
+  },
+  {
+   "a": "s012",
+   "b": "s013",
+   "flow": null
+  },
+  {
+   "a": "s013",
+   "b": "s014",
+   "flow": null
+  },
+  {
+   "a": "s013",
+   "b": "s015",
+   "flow": null
+  },
+  {
+   "a": "s014",
+   "b": "s015",
+   "flow": null
+  },
+  {
+   "a": "s004",
+   "b": "s005",
+   "flow": null
+  },
+  {
+   "a": "s005",
+   "b": "s006",
+   "flow": null
+  },
+  {
+   "a": "s006",
+   "b": "s007",
+   "flow": null
+  },
+  {
+   "a": "s015",
+   "b": "s007",
+   "flow": null
+  },
+  {
+   "a": "s015",
+   "b": "s016",
+   "flow": null
+  },
+  {
+   "a": "s015",
+   "b": "s019",
+   "flow": null
+  },
+  {
+   "a": "s007",
+   "b": "s016",
+   "flow": null
+  },
+  {
+   "a": "s007",
+   "b": "s019",
+   "flow": null
+  },
+  {
+   "a": "s016",
+   "b": "s019",
+   "flow": null
+  },
+  {
+   "a": "s016",
+   "b": "s017",
+   "flow": null
+  },
+  {
+   "a": "s017",
+   "b": "s018",
+   "flow": null
+  },
+  {
+   "a": "s018",
+   "b": "s019",
+   "flow": null
+  },
+  {
+   "a": "s018",
+   "b": "s020",
+   "flow": null
+  },
+  {
+   "a": "s019",
+   "b": "s020",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s033",
+   "flow": null
+  },
+  {
+   "a": "s023",
+   "b": "s024",
+   "flow": null
+  },
+  {
+   "a": "s024",
+   "b": "s025",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s026",
+   "flow": null
+  },
+  {
+   "a": "s026",
+   "b": "s027",
+   "flow": null
+  },
+  {
+   "a": "s027",
+   "b": "s033",
+   "flow": null
+  },
+  {
+   "a": "s033",
+   "b": "s028",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s037",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s038",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s037",
+   "b": "s038",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s037",
+   "b": "s033",
+   "flow": null
+  },
+  {
+   "a": "s033",
+   "b": "s029",
+   "flow": null
+  },
+  {
+   "a": "s033",
+   "b": "s031",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s030",
+   "flow": null
+  },
+  {
+   "a": "s033",
+   "b": "s039",
+   "flow": null
+  },
+  {
+   "a": "s033",
+   "b": "s042",
+   "flow": null
+  },
+  {
+   "a": "s042",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s042",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s043",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s045",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s056",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s057",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s032",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s039",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s058",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s067",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s056",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s057",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s032",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s039",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s058",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s067",
+   "flow": null
+  },
+  {
+   "a": "s056",
+   "b": "s057",
+   "flow": null
+  },
+  {
+   "a": "s056",
+   "b": "s032",
+   "flow": null
+  },
+  {
+   "a": "s056",
+   "b": "s039",
+   "flow": null
+  },
+  {
+   "a": "s056",
+   "b": "s058",
+   "flow": null
+  },
+  {
+   "a": "s056",
+   "b": "s067",
+   "flow": null
+  },
+  {
+   "a": "s057",
+   "b": "s032",
+   "flow": null
+  },
+  {
+   "a": "s057",
+   "b": "s039",
+   "flow": null
+  },
+  {
+   "a": "s057",
+   "b": "s058",
+   "flow": null
+  },
+  {
+   "a": "s057",
+   "b": "s067",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s039",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s058",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s067",
+   "flow": null
+  },
+  {
+   "a": "s039",
+   "b": "s058",
+   "flow": null
+  },
+  {
+   "a": "s039",
+   "b": "s067",
+   "flow": null
+  },
+  {
+   "a": "s058",
+   "b": "s067",
+   "flow": null
+  },
+  {
+   "a": "s067",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s067",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s067",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s041",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s047",
+   "flow": null
+  },
+  {
+   "a": "s047",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s058",
+   "b": "s059",
+   "flow": null
+  },
+  {
+   "a": "s048",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s048",
+   "b": "s050",
+   "flow": null
+  },
+  {
+   "a": "s043",
+   "b": "s050",
+   "flow": null
+  },
+  {
+   "a": "s050",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s051",
+   "b": "s052",
+   "flow": null
+  },
+  {
+   "a": "s052",
+   "b": "s055",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s059",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s062",
+   "flow": null
+  },
+  {
+   "a": "s044",
+   "b": "s062",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s063",
+   "flow": null
+  },
+  {
+   "a": "s063",
+   "b": "s064",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s064",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s079",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s055",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s064",
+   "b": "s079",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s064",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s064",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s079",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s079",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s085",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s079",
+   "b": "s071",
+   "flow": null
+  },
+  {
+   "a": "s079",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s078",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s078",
+   "b": "s083",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s077",
+   "b": "s083",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s071",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s073",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s076",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s081",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s085",
+   "b": "s121",
+   "flow": null
+  },
+  {
+   "a": "s040",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s086",
+   "b": "s118",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s086",
+   "b": "s097",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s086",
+   "b": "s087",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s086",
+   "b": "s088",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s118",
+   "b": "s097",
+   "flow": null
+  },
+  {
+   "a": "s118",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s118",
+   "b": "s088",
+   "flow": null
+  },
+  {
+   "a": "s097",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s097",
+   "b": "s088",
+   "flow": null
+  },
+  {
+   "a": "s087",
+   "b": "s088",
+   "flow": null
+  },
+  {
+   "a": "s087",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s088",
+   "b": "s110",
+   "flow": null
+  },
+  {
+   "a": "s089",
+   "b": "s090",
+   "flow": null
+  },
+  {
+   "a": "s089",
+   "b": "s091",
+   "flow": null
+  },
+  {
+   "a": "s090",
+   "b": "s091",
+   "flow": null
+  },
+  {
+   "a": "s091",
+   "b": "s092",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s097",
+   "b": "s098",
+   "flow": null
+  },
+  {
+   "a": "s097",
+   "b": "s099",
+   "flow": null
+  },
+  {
+   "a": "s098",
+   "b": "s099",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s100",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s110",
+   "b": "s111",
+   "flow": null
+  },
+  {
+   "a": "s110",
+   "b": "s108",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s108",
+   "flow": null
+  },
+  {
+   "a": "s108",
+   "b": "s109",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s090",
+   "b": "s093",
+   "flow": null
+  },
+  {
+   "a": "s090",
+   "b": "s094",
+   "flow": null
+  },
+  {
+   "a": "s090",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s093",
+   "b": "s094",
+   "flow": null
+  },
+  {
+   "a": "s093",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s093",
+   "b": "s096",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s096",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s096",
+   "flow": null
+  },
+  {
+   "a": "s098",
+   "b": "s101",
+   "flow": null
+  },
+  {
+   "a": "s098",
+   "b": "s102",
+   "flow": null
+  },
+  {
+   "a": "s098",
+   "b": "s103",
+   "flow": null
+  },
+  {
+   "a": "s101",
+   "b": "s102",
+   "flow": null
+  },
+  {
+   "a": "s101",
+   "b": "s103",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s103",
+   "flow": null
+  },
+  {
+   "a": "s101",
+   "b": "s104",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s104",
+   "flow": null
+  },
+  {
+   "a": "s103",
+   "b": "s104",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s112",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s113",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s112",
+   "b": "s113",
+   "flow": null
+  },
+  {
+   "a": "s112",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s113",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s112",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s113",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s114",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s118",
+   "b": "s119",
+   "flow": null
+  },
+  {
+   "a": "s096",
+   "b": "s105",
+   "flow": null
+  },
+  {
+   "a": "s116",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s104",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s116",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s119",
+   "flow": "b_to_a"
+  },
+  {
+   "a": "s105",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s124",
+   "flow": null
+  },
+  {
+   "a": "s104",
+   "b": "s116",
+   "flow": null
+  },
+  {
+   "a": "s104",
+   "b": "s119",
+   "flow": "b_to_a"
+  },
+  {
+   "a": "s104",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s104",
+   "b": "s124",
+   "flow": null
+  },
+  {
+   "a": "s116",
+   "b": "s119",
+   "flow": "b_to_a"
+  },
+  {
+   "a": "s116",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s116",
+   "b": "s124",
+   "flow": null
+  },
+  {
+   "a": "s119",
+   "b": "s122",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s119",
+   "b": "s124",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s122",
+   "b": "s124",
+   "flow": null
+  },
+  {
+   "a": "s122",
+   "b": "s123",
+   "flow": null
+  },
+  {
+   "a": "s124",
+   "b": "s128",
+   "flow": null
+  },
+  {
+   "a": "s124",
+   "b": "s129",
+   "flow": null
+  },
+  {
+   "a": "s124",
+   "b": "s132",
+   "flow": null
+  },
+  {
+   "a": "s128",
+   "b": "s129",
+   "flow": null
+  },
+  {
+   "a": "s128",
+   "b": "s132",
+   "flow": null
+  },
+  {
+   "a": "s129",
+   "b": "s132",
+   "flow": null
+  },
+  {
+   "a": "s128",
+   "b": "s130",
+   "flow": null
+  },
+  {
+   "a": "s128",
+   "b": "s134",
+   "flow": null
+  },
+  {
+   "a": "s130",
+   "b": "s134",
+   "flow": null
+  },
+  {
+   "a": "s130",
+   "b": "s133",
+   "flow": null
+  },
+  {
+   "a": "s129",
+   "b": "s131",
+   "flow": null
+  }
+ ],
+ "continuations": [
+  {
+   "symbol": "s001",
+   "label": "AF:AUXILIARY FEED WATER STORGE TANK A / SHEET 1",
+   "target_system": "AF",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s120",
+   "label": "AF:AUXILIARY FEED WATER STORGE TANK A / SHEET 1",
+   "target_system": "AF",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s008",
+   "label": "WO:ESSENTIAL CHILLED WATER MAKEUP PUMP / SHEET 1",
+   "target_system": "WO",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s023",
+   "label": "NITROGEN SUPPLY",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s004",
+   "label": "DEMIN. WATER MAKE-UP",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s014",
+   "label": "FC: SPENT FUEL POOL / SHEET 1",
+   "target_system": "FC",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s036",
+   "label": "V-145 / V-147 / SHEET 2\"C\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null,
+   "note": "계측 신호선 화살표"
+  },
+  {
+   "symbol": "s068",
+   "label": "V-231 / V-250 / SHEET 4 \"E\"",
+   "target_system": null,
+   "target_sheet": "4",
+   "target_drawing": null,
+   "note": "계측 신호선 화살표"
+  },
+  {
+   "symbol": "s069",
+   "label": "V-143 / V-149 / SHEET 2 \"A\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null,
+   "note": "계측 신호선 화살표"
+  },
+  {
+   "symbol": "s045",
+   "label": "FROM QUADRANT A RETURN HEADER / SHEET 3\"A\"",
+   "target_system": null,
+   "target_sheet": "3",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s056",
+   "label": "FROM TRAIN A ESSENTIAL CHILLER CONDENSER 2A / SHEET 2\"O\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s057",
+   "label": "FROM TRAIN A ESSENTIAL CHILLER CONDENSER 1A / SHEET 3\"M\"",
+   "target_system": null,
+   "target_sheet": "3",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s082",
+   "label": "FROM QUADRANT C RETURN HEADER / SHEET 2\"C\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s040",
+   "label": "FR:RE/RT-111",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null,
+   "note": "불확실: FR은 FROM 뜻으로 보아 계통 약어로 두지 않음"
+  },
+  {
+   "symbol": "s121",
+   "label": "PR:RE/RT-111",
+   "target_system": "PR",
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s131",
+   "label": "QUADRANT C SUPPLY HEADER / SHEET 2\"G\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s132",
+   "label": "EMERGENCY D/G C / SHEET 2\"K\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s133",
+   "label": "QUADRANT A SUPPLY HEADER / SHEET 3\"E\"",
+   "target_system": null,
+   "target_sheet": "3",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s134",
+   "label": "EMERGENCY D/G A SUPPLY HEADER / SHEET 3\"I\"",
+   "target_system": null,
+   "target_sheet": "3",
+   "target_drawing": null
+  }
+ ]
+}

@@ -30,6 +30,7 @@ CHECKS = (
     "check_symbols",
     "check_version_migration",
     "check_snp_baseline",
+    "check_read_quality",  # DCD 원본이 없는 CI에서는 SNP 쪽만 잰다
 )
 
 NOT_IN_CI = {

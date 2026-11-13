@@ -1,0 +1,2330 @@
+{
+ "schema": "hazop_read_quality_key",
+ "version": 1,
+ "seq": 62,
+ "drawing": "9.3.3-1-S7",
+ "source_file": "062_Ch09_Fig9.3.3-1_s7of7_Radioactive_Drain_System_Flow_Diagram.pdf",
+ "page_size": [
+  1224.0,
+  792.0
+ ],
+ "regions": [
+  [
+   80.0,
+   245.0,
+   1130.0,
+   635.0
+  ]
+ ],
+ "method": "overview.png로 네 묶음(섬프·펌프 4곳)과 도면 영역을 잡고, 배관이 있는 타일 17장(y0140~y0560 줄, 5배 렌더, 10pt 격자)을 왼쪽 묶음부터 보며 기호·이름표·구경 글자를 적은 뒤 배관을 따라 연결과 흐름 화살표를 적음. V2120·V2130 조작기는 타일을 4배 더 키워 보고, 호스 연결·벤트 모양은 범례 tiles/001과 대조함. 기존 정답지(answer_key/062)의 계기·밸브 번호·상자 값을 그림과 대조해 맞으면 씀. 추출 코드·추출 결과·PDF 텍스트 층은 보지 않음.",
+ "verified": "2026-11-13 Claude 정답지 세션 초안. 사람 확인 전",
+ "limits": "(1) 펌프 토출관의 플랜지 쌍(관마다 1~2개, 섬프 윗선 가까이와 체크 밸브 아래)은 지침 목록에 없어 기호로 넣지 않음. 넣으면 펌프-체크 밸브 연결이 나뉨. (2) 섬프 안 펌프 토출관과 벤트관은 점선으로 그려져 있음. 공정 배관(섬프 안·배관 도면 소관, 주석 1)으로 보고 연결에 넣음. 펌프와 섬프 사이(흡입)는 선이 없어 넣지 않음. (3) LE 원과 섬프 윗선 사이 짧은 선, LI 원 아래 x 표시 선(모세관), AX 원과 배관 위 상자 사이 가는 선, PDI 001로 가는 3/8\" 계측 배관은 계측선으로 보고 연결에 넣지 않음. (4) 물결 끊김 기호 6개(COMPOUND BLDG. DRAIN 3, SPENT RESIN…ROOM DRAIN, HOT MACHINE SHOP AREA DRAIN, DETERGENT DRAIN)는 화살표·오각형은 아니지만 도면 밖에서 들어오는 관이라 continuation으로 넣음. (5) DE/WM 글자와 화살표 세로선은 계통 경계 표시로 보고 기호·lines에 넣지 않음. 호스 연결 옆 G 상자는 뜻을 몰라 tag로 쓰지 않음. 063-P26 같은 네모 번호는 방 번호로 보고 뺌. (6) V2120·V2130 위 조작기(손잡이 T + 톱니 덮개)는 범례에서 찾지 못해 manual_valve로 둠. (7) 섬프 4곳은 tank로, 펌프 bbox는 전동기 네모까지 포함.",
+ "symbols": [
+  {
+   "id": "s001",
+   "kind": "continuation",
+   "bbox": [
+    183.0,
+    279.6,
+    190.8,
+    318.8
+   ],
+   "tag": null,
+   "tag_bbox": [
+    173.0,
+    287.0,
+    182.0,
+    318.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s002",
+   "kind": "reducer",
+   "bbox": [
+    184.6,
+    384.0,
+    189.4,
+    389.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "3\"X4\""
+  },
+  {
+   "id": "s003",
+   "kind": "unlisted",
+   "kind_text": "in-line box on pipe with corner mark, tied to AX circle by thin line",
+   "bbox": [
+    184.0,
+    402.0,
+    189.4,
+    410.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: AX 134에 딸린 배관 위 검출부로 봄"
+  },
+  {
+   "id": "s004",
+   "kind": "unlisted",
+   "kind_text": "analyzer circle AX",
+   "bbox": [
+    160.6,
+    399.4,
+    174.4,
+    413.0
+   ],
+   "tag": "AX 134",
+   "attributes": {},
+   "note": "가는 선으로만 s003에 붙음(신호선으로 봄)"
+  },
+  {
+   "id": "s005",
+   "kind": "reducer",
+   "bbox": [
+    215.0,
+    404.0,
+    219.0,
+    408.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "3/8\"X3/4\""
+  },
+  {
+   "id": "s006",
+   "kind": "manual_valve",
+   "bbox": [
+    219.0,
+    404.0,
+    227.0,
+    408.0
+   ],
+   "tag": "V2120",
+   "tag_bbox": [
+    220.0,
+    409.6,
+    229.0,
+    413.0
+   ],
+   "attributes": {},
+   "note": "몸통을 검게 칠한 밸브(평상시 닫힘 표시). 위에 손잡이 T와 톱니 모양 덮개가 있는 조작기. 불확실: 조작기 모양이 범례에서 확인되지 않음"
+  },
+  {
+   "id": "s007",
+   "kind": "unlisted",
+   "kind_text": "hose connection (coupler) pipe end",
+   "bbox": [
+    243.4,
+    402.0,
+    246.4,
+    410.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "옆에 G 글자 상자가 지시선으로 붙음"
+  },
+  {
+   "id": "s008",
+   "kind": "check_valve",
+   "bbox": [
+    270.0,
+    428.0,
+    279.0,
+    432.0
+   ],
+   "tag": "V2121",
+   "tag_bbox": [
+    269.0,
+    433.0,
+    280.0,
+    437.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s009",
+   "kind": "manual_valve",
+   "bbox": [
+    290.0,
+    428.4,
+    298.0,
+    432.0
+   ],
+   "tag": "V2122",
+   "tag_bbox": [
+    288.0,
+    433.0,
+    300.0,
+    437.0
+   ],
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": "몸통을 검게 칠한 글로브 밸브"
+  },
+  {
+   "id": "s010",
+   "kind": "continuation",
+   "bbox": [
+    313.0,
+    426.6,
+    352.0,
+    434.6
+   ],
+   "tag": null,
+   "tag_bbox": [
+    318.0,
+    417.0,
+    349.0,
+    425.0
+   ],
+   "attributes": {},
+   "note": "왼쪽(도면 안)을 가리키는 들어오는 오각형"
+  },
+  {
+   "id": "s011",
+   "kind": "manual_valve",
+   "bbox": [
+    185.0,
+    458.0,
+    189.0,
+    466.0
+   ],
+   "tag": "V1063",
+   "tag_bbox": [
+    190.0,
+    456.0,
+    193.6,
+    468.0
+   ],
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": "반만 칠한 글로브 밸브"
+  },
+  {
+   "id": "s012",
+   "kind": "check_valve",
+   "bbox": [
+    184.0,
+    489.0,
+    189.0,
+    498.4
+   ],
+   "tag": "V1062",
+   "tag_bbox": [
+    190.0,
+    488.0,
+    193.6,
+    499.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s013",
+   "kind": "manual_valve",
+   "bbox": [
+    267.0,
+    460.0,
+    271.6,
+    468.0
+   ],
+   "tag": "V1065",
+   "tag_bbox": [
+    272.4,
+    459.0,
+    276.4,
+    470.4
+   ],
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": "반만 칠한 글로브 밸브"
+  },
+  {
+   "id": "s014",
+   "kind": "check_valve",
+   "bbox": [
+    266.0,
+    489.0,
+    271.0,
+    498.4
+   ],
+   "tag": "V1064",
+   "tag_bbox": [
+    272.4,
+    488.0,
+    276.4,
+    499.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s015",
+   "kind": "pump",
+   "bbox": [
+    154.0,
+    562.0,
+    175.6,
+    615.4
+   ],
+   "tag": "PP35",
+   "tag_bbox": [
+    160.0,
+    616.6,
+    170.0,
+    620.0
+   ],
+   "attributes": {},
+   "note": "섬프 펌프. bbox는 위 전동기 네모부터 아래 둥근 몸통까지"
+  },
+  {
+   "id": "s016",
+   "kind": "pump",
+   "bbox": [
+    236.4,
+    562.0,
+    258.0,
+    615.4
+   ],
+   "tag": "PP36",
+   "tag_bbox": [
+    242.0,
+    616.6,
+    252.0,
+    620.0
+   ],
+   "attributes": {},
+   "note": "섬프 펌프. bbox는 위 전동기 네모부터 아래 둥근 몸통까지. overview(작은 그림)에서는 PP33처럼 보이나 5배 타일에서 PP36"
+  },
+  {
+   "id": "s017",
+   "kind": "tank",
+   "bbox": [
+    131.0,
+    583.0,
+    298.6,
+    630.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "섬프(COMPOUND BLDG. NORMAL SUMP & PUMPS, 063-P26). 태그 없음"
+  },
+  {
+   "id": "s018",
+   "kind": "indicator",
+   "bbox": [
+    194.6,
+    557.4,
+    208.2,
+    571.0
+   ],
+   "tag": "LI 057",
+   "attributes": {},
+   "note": "아래 x 표시 선(모세관)으로 s021에 이어짐"
+  },
+  {
+   "id": "s019",
+   "kind": "switch",
+   "bbox": [
+    210.2,
+    550.2,
+    223.8,
+    563.8
+   ],
+   "tag": "LIS 058",
+   "attributes": {},
+   "note": "옆 글자 BB, HHL, HL, LL(경보 설정점)"
+  },
+  {
+   "id": "s020",
+   "kind": "unlisted",
+   "kind_text": "level element circle LE",
+   "bbox": [
+    210.2,
+    567.2,
+    223.8,
+    580.9
+   ],
+   "tag": "LE 058",
+   "attributes": {},
+   "note": "아래 짧은 선으로 섬프 윗선에 붙음(공정 연결로 치지 않음)"
+  },
+  {
+   "id": "s021",
+   "kind": "unlisted",
+   "kind_text": "box with wave at sump bottom (diaphragm seal / level sensing element)",
+   "bbox": [
+    196.6,
+    625.0,
+    206.4,
+    629.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 범례의 다이어프램 실과 닮음"
+  },
+  {
+   "id": "s022",
+   "kind": "vent",
+   "bbox": [
+    289.0,
+    556.6,
+    295.0,
+    560.0
+   ],
+   "tag": null,
+   "tag_bbox": [
+    290.4,
+    552.0,
+    293.6,
+    555.6
+   ],
+   "attributes": {},
+   "note": "V 글자와 갈고리 모양 대기 벤트. 섬프 위로 점선 배관"
+  },
+  {
+   "id": "s023",
+   "kind": "continuation",
+   "bbox": [
+    86.0,
+    532.0,
+    93.0,
+    537.0
+   ],
+   "tag": null,
+   "tag_bbox": [
+    85.0,
+    504.0,
+    94.0,
+    529.0
+   ],
+   "attributes": {},
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "id": "s024",
+   "kind": "continuation",
+   "bbox": [
+    300.0,
+    544.0,
+    307.0,
+    549.6
+   ],
+   "tag": null,
+   "tag_bbox": [
+    299.0,
+    518.0,
+    308.0,
+    542.0
+   ],
+   "attributes": {},
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "id": "s025",
+   "kind": "continuation",
+   "bbox": [
+    429.6,
+    250.4,
+    437.6,
+    289.6
+   ],
+   "tag": null,
+   "tag_bbox": [
+    420.0,
+    257.0,
+    429.6,
+    289.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s026",
+   "kind": "unlisted",
+   "kind_text": "in-line box on pipe with corner mark, tied to AX circle by thin line",
+   "bbox": [
+    431.6,
+    397.0,
+    436.4,
+    405.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: AX 136에 딸린 배관 위 검출부로 봄"
+  },
+  {
+   "id": "s027",
+   "kind": "unlisted",
+   "kind_text": "analyzer circle AX",
+   "bbox": [
+    407.6,
+    394.8,
+    421.2,
+    408.4
+   ],
+   "tag": "AX 136",
+   "attributes": {},
+   "note": "가는 선으로만 붙음(신호선으로 봄)"
+  },
+  {
+   "id": "s028",
+   "kind": "reducer",
+   "bbox": [
+    461.0,
+    399.6,
+    464.4,
+    403.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "3/8\"X3/4\""
+  },
+  {
+   "id": "s029",
+   "kind": "manual_valve",
+   "bbox": [
+    464.4,
+    399.4,
+    472.4,
+    403.0
+   ],
+   "tag": "V2130",
+   "tag_bbox": [
+    462.4,
+    404.4,
+    475.0,
+    408.0
+   ],
+   "attributes": {},
+   "note": "몸통을 검게 칠한 밸브(평상시 닫힘 표시). 위에 손잡이 T와 톱니 모양 덮개가 있는 조작기. 불확실: 조작기 모양이 범례에서 확인되지 않음"
+  },
+  {
+   "id": "s030",
+   "kind": "unlisted",
+   "kind_text": "hose connection (coupler) pipe end",
+   "bbox": [
+    490.6,
+    399.4,
+    493.4,
+    403.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "옆에 G 글자 상자가 지시선으로 붙음"
+  },
+  {
+   "id": "s031",
+   "kind": "check_valve",
+   "bbox": [
+    517.0,
+    423.0,
+    526.0,
+    427.0
+   ],
+   "tag": "V2131",
+   "tag_bbox": [
+    515.6,
+    428.0,
+    527.0,
+    432.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s032",
+   "kind": "manual_valve",
+   "bbox": [
+    536.6,
+    423.4,
+    544.6,
+    427.0
+   ],
+   "tag": "V2132",
+   "tag_bbox": [
+    534.6,
+    428.0,
+    546.6,
+    432.0
+   ],
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": "몸통을 검게 칠한 글로브 밸브"
+  },
+  {
+   "id": "s033",
+   "kind": "continuation",
+   "bbox": [
+    560.0,
+    421.4,
+    599.4,
+    429.6
+   ],
+   "tag": null,
+   "tag_bbox": [
+    565.0,
+    412.0,
+    596.0,
+    420.0
+   ],
+   "attributes": {},
+   "note": "왼쪽(도면 안)을 가리키는 들어오는 오각형"
+  },
+  {
+   "id": "s034",
+   "kind": "manual_valve",
+   "bbox": [
+    431.6,
+    460.0,
+    436.0,
+    468.4
+   ],
+   "tag": "V1071",
+   "tag_bbox": [
+    437.0,
+    459.0,
+    440.0,
+    470.4
+   ],
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": "반만 칠한 글로브 밸브"
+  },
+  {
+   "id": "s035",
+   "kind": "check_valve",
+   "bbox": [
+    431.0,
+    489.0,
+    436.0,
+    498.4
+   ],
+   "tag": "V1070",
+   "tag_bbox": [
+    437.0,
+    488.0,
+    440.4,
+    499.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s036",
+   "kind": "manual_valve",
+   "bbox": [
+    514.0,
+    460.0,
+    518.0,
+    468.4
+   ],
+   "tag": "V1073",
+   "tag_bbox": [
+    519.4,
+    459.0,
+    522.4,
+    470.4
+   ],
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": "반만 칠한 글로브 밸브"
+  },
+  {
+   "id": "s037",
+   "kind": "check_valve",
+   "bbox": [
+    513.6,
+    489.0,
+    518.4,
+    498.4
+   ],
+   "tag": "V1072",
+   "tag_bbox": [
+    519.4,
+    488.0,
+    522.4,
+    499.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s038",
+   "kind": "pump",
+   "bbox": [
+    401.0,
+    562.0,
+    422.4,
+    615.4
+   ],
+   "tag": "PP37",
+   "tag_bbox": [
+    407.0,
+    616.6,
+    417.0,
+    620.0
+   ],
+   "attributes": {},
+   "note": "섬프 펌프. bbox는 위 전동기 네모부터 아래 둥근 몸통까지"
+  },
+  {
+   "id": "s039",
+   "kind": "pump",
+   "bbox": [
+    483.4,
+    562.0,
+    505.0,
+    615.4
+   ],
+   "tag": "PP38",
+   "tag_bbox": [
+    489.0,
+    616.6,
+    499.6,
+    620.0
+   ],
+   "attributes": {},
+   "note": "섬프 펌프. bbox는 위 전동기 네모부터 아래 둥근 몸통까지"
+  },
+  {
+   "id": "s040",
+   "kind": "tank",
+   "bbox": [
+    378.0,
+    583.0,
+    545.6,
+    630.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "섬프(SPENT RESIN LONG TERM STORAGE TANK ROOM SUMP & PUMPS, 063-P39). 태그 없음"
+  },
+  {
+   "id": "s041",
+   "kind": "indicator",
+   "bbox": [
+    441.4,
+    557.4,
+    455.0,
+    571.0
+   ],
+   "tag": "LI 067",
+   "attributes": {},
+   "note": "아래 x 표시 선(모세관)으로 다이어프램 실 모양에 이어짐"
+  },
+  {
+   "id": "s042",
+   "kind": "switch",
+   "bbox": [
+    457.4,
+    550.2,
+    470.9,
+    563.8
+   ],
+   "tag": "LIS 068",
+   "attributes": {},
+   "note": "옆 글자 BB, HHL, HL, LL(경보 설정점)"
+  },
+  {
+   "id": "s043",
+   "kind": "unlisted",
+   "kind_text": "level element circle LE",
+   "bbox": [
+    457.4,
+    567.2,
+    470.9,
+    580.9
+   ],
+   "tag": "LE 068",
+   "attributes": {},
+   "note": "아래 짧은 선으로 섬프 윗선에 붙음(공정 연결로 치지 않음)"
+  },
+  {
+   "id": "s044",
+   "kind": "unlisted",
+   "kind_text": "box with wave at sump bottom (diaphragm seal / level sensing element)",
+   "bbox": [
+    443.4,
+    625.0,
+    453.0,
+    629.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 범례의 다이어프램 실과 닮음"
+  },
+  {
+   "id": "s045",
+   "kind": "vent",
+   "bbox": [
+    535.6,
+    556.6,
+    542.0,
+    560.0
+   ],
+   "tag": null,
+   "tag_bbox": [
+    537.4,
+    552.0,
+    540.0,
+    555.6
+   ],
+   "attributes": {},
+   "note": "V 글자와 갈고리 모양 대기 벤트. 섬프 위로 점선 배관"
+  },
+  {
+   "id": "s046",
+   "kind": "continuation",
+   "bbox": [
+    576.0,
+    544.4,
+    583.0,
+    549.6
+   ],
+   "tag": null,
+   "tag_bbox": [
+    575.0,
+    474.0,
+    584.0,
+    542.4
+   ],
+   "attributes": {},
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "id": "s047",
+   "kind": "continuation",
+   "bbox": [
+    724.0,
+    250.4,
+    732.0,
+    289.6
+   ],
+   "tag": null,
+   "tag_bbox": [
+    715.0,
+    250.0,
+    724.0,
+    289.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s048",
+   "kind": "unlisted",
+   "kind_text": "in-line box on pipe with corner mark, tied to AX circle by thin line",
+   "bbox": [
+    726.0,
+    305.0,
+    732.0,
+    313.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: AX 135에 딸린 배관 위 검출부로 봄"
+  },
+  {
+   "id": "s049",
+   "kind": "unlisted",
+   "kind_text": "analyzer circle AX",
+   "bbox": [
+    702.0,
+    302.4,
+    715.6,
+    316.0
+   ],
+   "tag": "AX 135",
+   "attributes": {},
+   "note": "가는 선으로만 붙음(신호선으로 봄)"
+  },
+  {
+   "id": "s050",
+   "kind": "manual_valve",
+   "bbox": [
+    751.0,
+    331.4,
+    759.0,
+    335.0
+   ],
+   "tag": "V2126",
+   "tag_bbox": [
+    749.0,
+    336.0,
+    761.0,
+    339.6
+   ],
+   "attributes": {},
+   "note": "가운데 점이 있는 흰 글로브 밸브"
+  },
+  {
+   "id": "s051",
+   "kind": "reducer",
+   "bbox": [
+    759.0,
+    331.0,
+    763.0,
+    335.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "3/4\"X3/8\""
+  },
+  {
+   "id": "s052",
+   "kind": "strainer",
+   "bbox": [
+    726.0,
+    350.4,
+    731.0,
+    363.6
+   ],
+   "tag": "ST01",
+   "tag_bbox": [
+    733.0,
+    353.0,
+    737.0,
+    362.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s053",
+   "kind": "manual_valve",
+   "bbox": [
+    751.0,
+    380.0,
+    759.0,
+    383.6
+   ],
+   "tag": "V2125",
+   "tag_bbox": [
+    749.0,
+    384.6,
+    761.0,
+    388.4
+   ],
+   "attributes": {},
+   "note": "가운데 점이 있는 흰 글로브 밸브"
+  },
+  {
+   "id": "s054",
+   "kind": "reducer",
+   "bbox": [
+    759.0,
+    380.0,
+    763.0,
+    384.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "3/4\"X3/8\""
+  },
+  {
+   "id": "s055",
+   "kind": "indicator",
+   "bbox": [
+    770.2,
+    350.4,
+    783.8,
+    364.0
+   ],
+   "tag": "PDI 001",
+   "attributes": {},
+   "note": "스트레이너 앞뒤 차압. s051·s054 축소관에서 오는 3/8\" 계측 배관(충격선)으로만 붙어 연결에 넣지 않음"
+  },
+  {
+   "id": "s056",
+   "kind": "reducer",
+   "bbox": [
+    726.0,
+    438.4,
+    730.0,
+    442.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "2\"X3\""
+  },
+  {
+   "id": "s057",
+   "kind": "manual_valve",
+   "bbox": [
+    726.0,
+    460.0,
+    730.0,
+    468.4
+   ],
+   "tag": "V1067",
+   "tag_bbox": [
+    731.4,
+    459.0,
+    734.4,
+    470.4
+   ],
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": "반만 칠한 글로브 밸브"
+  },
+  {
+   "id": "s058",
+   "kind": "check_valve",
+   "bbox": [
+    725.6,
+    489.0,
+    730.4,
+    498.4
+   ],
+   "tag": "V1066",
+   "tag_bbox": [
+    731.4,
+    488.0,
+    734.4,
+    499.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s059",
+   "kind": "manual_valve",
+   "bbox": [
+    809.0,
+    460.0,
+    813.0,
+    468.4
+   ],
+   "tag": "V1069",
+   "tag_bbox": [
+    814.0,
+    459.0,
+    817.0,
+    470.4
+   ],
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": "반만 칠한 글로브 밸브"
+  },
+  {
+   "id": "s060",
+   "kind": "check_valve",
+   "bbox": [
+    808.4,
+    489.0,
+    813.4,
+    498.4
+   ],
+   "tag": "V1068",
+   "tag_bbox": [
+    814.0,
+    488.0,
+    817.0,
+    499.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s061",
+   "kind": "pump",
+   "bbox": [
+    695.6,
+    562.0,
+    717.0,
+    615.4
+   ],
+   "tag": "PP39",
+   "tag_bbox": [
+    701.4,
+    616.6,
+    711.0,
+    620.0
+   ],
+   "attributes": {},
+   "note": "섬프 펌프. bbox는 위 전동기 네모부터 아래 둥근 몸통까지"
+  },
+  {
+   "id": "s062",
+   "kind": "pump",
+   "bbox": [
+    778.0,
+    562.0,
+    799.4,
+    615.4
+   ],
+   "tag": "PP40",
+   "tag_bbox": [
+    783.4,
+    616.6,
+    793.4,
+    620.0
+   ],
+   "attributes": {},
+   "note": "섬프 펌프. bbox는 위 전동기 네모부터 아래 둥근 몸통까지"
+  },
+  {
+   "id": "s063",
+   "kind": "tank",
+   "bbox": [
+    672.0,
+    583.0,
+    840.0,
+    630.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "섬프(COMPOUND BLDG. CHEMICAL DRAIN SUMP & PUMPS, 063-P36). 태그 없음"
+  },
+  {
+   "id": "s064",
+   "kind": "indicator",
+   "bbox": [
+    736.0,
+    557.5,
+    749.6,
+    571.1
+   ],
+   "tag": "LI 062",
+   "attributes": {},
+   "note": "아래 x 표시 선(모세관)으로 다이어프램 실 모양에 이어짐"
+  },
+  {
+   "id": "s065",
+   "kind": "switch",
+   "bbox": [
+    751.6,
+    550.2,
+    765.2,
+    563.8
+   ],
+   "tag": "LIS 063",
+   "attributes": {},
+   "note": "옆 글자 BB, HHL, HL, LL(경보 설정점)"
+  },
+  {
+   "id": "s066",
+   "kind": "unlisted",
+   "kind_text": "level element circle LE",
+   "bbox": [
+    751.6,
+    567.2,
+    765.2,
+    580.9
+   ],
+   "tag": "LE 063",
+   "attributes": {},
+   "note": "아래 짧은 선으로 섬프 윗선에 붙음(공정 연결로 치지 않음)"
+  },
+  {
+   "id": "s067",
+   "kind": "unlisted",
+   "kind_text": "box with wave at sump bottom (diaphragm seal / level sensing element)",
+   "bbox": [
+    737.6,
+    625.0,
+    747.6,
+    629.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 범례의 다이어프램 실과 닮음"
+  },
+  {
+   "id": "s068",
+   "kind": "vent",
+   "bbox": [
+    830.0,
+    556.6,
+    836.0,
+    560.0
+   ],
+   "tag": null,
+   "tag_bbox": [
+    831.6,
+    552.0,
+    834.6,
+    555.6
+   ],
+   "attributes": {},
+   "note": "V 글자와 갈고리 모양 대기 벤트. 섬프 위로 점선 배관"
+  },
+  {
+   "id": "s069",
+   "kind": "continuation",
+   "bbox": [
+    659.0,
+    544.4,
+    666.0,
+    549.6
+   ],
+   "tag": null,
+   "tag_bbox": [
+    660.0,
+    474.0,
+    664.0,
+    542.4
+   ],
+   "attributes": {},
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "id": "s070",
+   "kind": "continuation",
+   "bbox": [
+    668.0,
+    606.4,
+    672.0,
+    614.4
+   ],
+   "tag": null,
+   "tag_bbox": [
+    640.6,
+    606.0,
+    667.0,
+    614.4
+   ],
+   "attributes": {},
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "id": "s071",
+   "kind": "continuation",
+   "bbox": [
+    1086.7,
+    293.0,
+    1125.6,
+    301.0
+   ],
+   "tag": null,
+   "tag_bbox": [
+    1088.0,
+    283.0,
+    1124.0,
+    291.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s072",
+   "kind": "continuation",
+   "bbox": [
+    1086.7,
+    261.0,
+    1125.6,
+    269.0
+   ],
+   "tag": null,
+   "tag_bbox": [
+    1088.0,
+    251.0,
+    1124.0,
+    259.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s073",
+   "kind": "manual_valve",
+   "bbox": [
+    945.0,
+    334.0,
+    950.0,
+    342.0
+   ],
+   "tag": "V1045",
+   "tag_bbox": [
+    951.0,
+    332.0,
+    954.4,
+    344.0
+   ],
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": "반만 칠한 글로브 밸브"
+  },
+  {
+   "id": "s074",
+   "kind": "check_valve",
+   "bbox": [
+    945.0,
+    426.0,
+    950.0,
+    435.0
+   ],
+   "tag": "V1044",
+   "tag_bbox": [
+    951.0,
+    425.0,
+    955.0,
+    436.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s075",
+   "kind": "manual_valve",
+   "bbox": [
+    1028.0,
+    334.0,
+    1032.4,
+    342.0
+   ],
+   "tag": "V1047",
+   "tag_bbox": [
+    1033.0,
+    332.0,
+    1036.4,
+    344.0
+   ],
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": "반만 칠한 글로브 밸브"
+  },
+  {
+   "id": "s076",
+   "kind": "check_valve",
+   "bbox": [
+    1028.0,
+    426.0,
+    1032.0,
+    435.0
+   ],
+   "tag": "V1046",
+   "tag_bbox": [
+    1033.0,
+    425.0,
+    1037.0,
+    436.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s077",
+   "kind": "pump",
+   "bbox": [
+    913.0,
+    557.0,
+    934.4,
+    610.6
+   ],
+   "tag": "PP41",
+   "tag_bbox": [
+    918.6,
+    611.6,
+    928.6,
+    615.0
+   ],
+   "attributes": {},
+   "note": "섬프 펌프. bbox는 위 전동기 네모부터 아래 둥근 몸통까지"
+  },
+  {
+   "id": "s078",
+   "kind": "pump",
+   "bbox": [
+    995.4,
+    557.0,
+    1016.6,
+    610.6
+   ],
+   "tag": "PP42",
+   "tag_bbox": [
+    1001.0,
+    611.6,
+    1011.0,
+    615.0
+   ],
+   "attributes": {},
+   "note": "섬프 펌프. bbox는 위 전동기 네모부터 아래 둥근 몸통까지"
+  },
+  {
+   "id": "s079",
+   "kind": "tank",
+   "bbox": [
+    891.6,
+    583.0,
+    1059.4,
+    630.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "섬프(DWS DRAIN SUMP & PUMPS, 063-P32). 태그 없음"
+  },
+  {
+   "id": "s080",
+   "kind": "indicator",
+   "bbox": [
+    950.4,
+    557.2,
+    964.0,
+    570.8
+   ],
+   "tag": "LI 072",
+   "attributes": {},
+   "note": "아래 x 표시 선(모세관)으로 다이어프램 실 모양에 이어짐"
+  },
+  {
+   "id": "s081",
+   "kind": "switch",
+   "bbox": [
+    966.4,
+    550.2,
+    980.1,
+    563.8
+   ],
+   "tag": "LIS 073",
+   "attributes": {},
+   "note": "옆 글자 BB, HHL, HL, LL(경보 설정점)"
+  },
+  {
+   "id": "s082",
+   "kind": "unlisted",
+   "kind_text": "level element circle LE",
+   "bbox": [
+    966.4,
+    567.2,
+    980.1,
+    580.9
+   ],
+   "tag": "LE 073",
+   "attributes": {},
+   "note": "아래 짧은 선으로 섬프 윗선에 붙음(공정 연결로 치지 않음)"
+  },
+  {
+   "id": "s083",
+   "kind": "unlisted",
+   "kind_text": "box with wave at sump bottom (diaphragm seal / level sensing element)",
+   "bbox": [
+    952.0,
+    625.0,
+    962.0,
+    629.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 범례의 다이어프램 실과 닮음"
+  },
+  {
+   "id": "s084",
+   "kind": "vent",
+   "bbox": [
+    1049.6,
+    556.6,
+    1055.6,
+    560.0
+   ],
+   "tag": null,
+   "tag_bbox": [
+    1051.0,
+    551.0,
+    1056.0,
+    555.0
+   ],
+   "attributes": {},
+   "note": "V 글자와 갈고리 모양 대기 벤트. 섬프 위로 점선 배관"
+  },
+  {
+   "id": "s085",
+   "kind": "continuation",
+   "bbox": [
+    887.0,
+    617.0,
+    891.0,
+    623.6
+   ],
+   "tag": null,
+   "tag_bbox": [
+    845.4,
+    617.6,
+    885.0,
+    622.0
+   ],
+   "attributes": {},
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  }
+ ],
+ "lines": [
+  {
+   "id": "l001",
+   "at": [
+    187.4,
+    368.6
+   ],
+   "text_bbox": [
+    183.6,
+    366.0,
+    187.0,
+    371.0
+   ],
+   "size": "4\""
+  },
+  {
+   "id": "l002",
+   "at": [
+    187.4,
+    386.6
+   ],
+   "text_bbox": [
+    180.0,
+    381.0,
+    184.0,
+    392.0
+   ],
+   "size": "3\"X4\""
+  },
+  {
+   "id": "l003",
+   "at": [
+    201.0,
+    406.0
+   ],
+   "text_bbox": [
+    199.0,
+    401.0,
+    204.0,
+    404.0
+   ],
+   "size": "3/8\""
+  },
+  {
+   "id": "l004",
+   "at": [
+    217.0,
+    406.0
+   ],
+   "text_bbox": [
+    200.6,
+    409.6,
+    215.0,
+    413.0
+   ],
+   "size": "3/8\"X3/4\""
+  },
+  {
+   "id": "l005",
+   "at": [
+    237.0,
+    406.0
+   ],
+   "text_bbox": [
+    235.0,
+    401.0,
+    240.0,
+    404.0
+   ],
+   "size": "3/4\""
+  },
+  {
+   "id": "l006",
+   "at": [
+    187.4,
+    438.0
+   ],
+   "text_bbox": [
+    182.0,
+    436.0,
+    186.0,
+    440.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l007",
+   "at": [
+    226.0,
+    450.0
+   ],
+   "text_bbox": [
+    224.0,
+    445.6,
+    228.0,
+    449.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l008",
+   "at": [
+    252.0,
+    430.0
+   ],
+   "text_bbox": [
+    250.0,
+    426.0,
+    255.6,
+    430.0
+   ],
+   "size": "3/4\""
+  },
+  {
+   "id": "l009",
+   "at": [
+    305.0,
+    430.0
+   ],
+   "text_bbox": [
+    302.0,
+    426.4,
+    309.0,
+    430.0
+   ],
+   "size": "3/4\""
+  },
+  {
+   "id": "l010",
+   "at": [
+    447.0,
+    401.0
+   ],
+   "text_bbox": [
+    443.6,
+    396.6,
+    450.0,
+    399.6
+   ],
+   "size": "3/8\""
+  },
+  {
+   "id": "l011",
+   "at": [
+    462.0,
+    401.0
+   ],
+   "text_bbox": [
+    446.0,
+    405.0,
+    460.0,
+    409.0
+   ],
+   "size": "3/8\"X3/4\""
+  },
+  {
+   "id": "l012",
+   "at": [
+    482.0,
+    401.0
+   ],
+   "text_bbox": [
+    480.0,
+    396.6,
+    485.0,
+    399.6
+   ],
+   "size": "3/4\""
+  },
+  {
+   "id": "l013",
+   "at": [
+    434.0,
+    428.0
+   ],
+   "text_bbox": [
+    429.0,
+    426.0,
+    432.0,
+    431.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l014",
+   "at": [
+    475.0,
+    450.0
+   ],
+   "text_bbox": [
+    473.0,
+    445.6,
+    477.0,
+    449.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l015",
+   "at": [
+    499.0,
+    425.6
+   ],
+   "text_bbox": [
+    497.0,
+    422.0,
+    502.0,
+    425.0
+   ],
+   "size": "3/4\""
+  },
+  {
+   "id": "l016",
+   "at": [
+    553.0,
+    425.6
+   ],
+   "text_bbox": [
+    550.6,
+    421.0,
+    555.6,
+    424.4
+   ],
+   "size": "3/4\""
+  },
+  {
+   "id": "l017",
+   "at": [
+    560.6,
+    620.0
+   ],
+   "text_bbox": [
+    559.6,
+    616.0,
+    561.6,
+    619.4
+   ],
+   "size": "6",
+   "note": "불확실: 인치 표시 없이 '6'만 보임"
+  },
+  {
+   "id": "l018",
+   "at": [
+    740.0,
+    333.0
+   ],
+   "text_bbox": [
+    738.0,
+    328.0,
+    743.0,
+    331.0
+   ],
+   "size": "3/4\""
+  },
+  {
+   "id": "l019",
+   "at": [
+    761.0,
+    333.0
+   ],
+   "text_bbox": [
+    757.4,
+    327.0,
+    771.4,
+    330.4
+   ],
+   "size": "3/4\"X3/8\""
+  },
+  {
+   "id": "l020",
+   "at": [
+    740.0,
+    382.0
+   ],
+   "text_bbox": [
+    737.6,
+    377.4,
+    742.6,
+    380.4
+   ],
+   "size": "3/4\""
+  },
+  {
+   "id": "l021",
+   "at": [
+    761.0,
+    382.0
+   ],
+   "text_bbox": [
+    765.0,
+    384.6,
+    781.0,
+    388.4
+   ],
+   "size": "3/4\"X3/8\""
+  },
+  {
+   "id": "l022",
+   "at": [
+    728.6,
+    399.0
+   ],
+   "text_bbox": [
+    723.0,
+    397.0,
+    726.0,
+    401.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l023",
+   "at": [
+    728.6,
+    440.0
+   ],
+   "text_bbox": [
+    731.4,
+    435.0,
+    735.4,
+    445.6
+   ],
+   "size": "2\"X3\""
+  },
+  {
+   "id": "l024",
+   "at": [
+    728.6,
+    452.0
+   ],
+   "text_bbox": [
+    723.6,
+    450.0,
+    727.0,
+    454.0
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l025",
+   "at": [
+    769.0,
+    450.0
+   ],
+   "text_bbox": [
+    767.4,
+    445.6,
+    771.4,
+    449.0
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l026",
+   "at": [
+    1008.0,
+    297.0
+   ],
+   "text_bbox": [
+    1006.0,
+    292.0,
+    1011.0,
+    295.6
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l027",
+   "at": [
+    1030.0,
+    318.0
+   ],
+   "text_bbox": [
+    1026.0,
+    316.0,
+    1029.0,
+    321.0
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l028",
+   "at": [
+    1072.0,
+    280.0
+   ],
+   "text_bbox": [
+    1068.0,
+    278.0,
+    1071.0,
+    282.0
+   ],
+   "size": "2\""
+  }
+ ],
+ "connections": [
+  {
+   "a": "s002",
+   "b": "s001",
+   "flow": "a_to_b",
+   "note": "오각형 아래 배관 끝에 위쪽 화살촉"
+  },
+  {
+   "a": "s003",
+   "b": "s002",
+   "flow": null
+  },
+  {
+   "a": "s003",
+   "b": "s011",
+   "flow": null
+  },
+  {
+   "a": "s013",
+   "b": "s003",
+   "flow": "a_to_b",
+   "note": "분기점의 헤더 쪽 화살표가 수직관을 가리킴"
+  },
+  {
+   "a": "s011",
+   "b": "s013",
+   "flow": null,
+   "note": "불확실: 두 갈래가 만나는 분기점이라 흐름 방향을 정하지 않음"
+  },
+  {
+   "a": "s011",
+   "b": "s012",
+   "flow": null
+  },
+  {
+   "a": "s015",
+   "b": "s012",
+   "flow": "a_to_b",
+   "note": "점선 배관 구간을 지나는 연결(섬프 안 배관으로 봄), 위쪽 화살표"
+  },
+  {
+   "a": "s013",
+   "b": "s014",
+   "flow": null
+  },
+  {
+   "a": "s016",
+   "b": "s014",
+   "flow": "a_to_b",
+   "note": "점선 배관 구간을 지나는 연결(섬프 안 배관으로 봄), 위쪽 화살표"
+  },
+  {
+   "a": "s003",
+   "b": "s005",
+   "flow": null,
+   "note": "불확실: 3/8\" 관이 배관 위 상자에서 바로 나옴"
+  },
+  {
+   "a": "s005",
+   "b": "s006",
+   "flow": null
+  },
+  {
+   "a": "s006",
+   "b": "s007",
+   "flow": null
+  },
+  {
+   "a": "s006",
+   "b": "s008",
+   "flow": null
+  },
+  {
+   "a": "s007",
+   "b": "s008",
+   "flow": null
+  },
+  {
+   "a": "s008",
+   "b": "s009",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s010",
+   "flow": null,
+   "note": "사이에 DE/WM 계통 경계 표시"
+  },
+  {
+   "a": "s023",
+   "b": "s017",
+   "flow": "a_to_b",
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "a": "s024",
+   "b": "s017",
+   "flow": "a_to_b",
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "a": "s022",
+   "b": "s017",
+   "flow": null,
+   "note": "불확실: 점선 벤트관"
+  },
+  {
+   "a": "s026",
+   "b": "s025",
+   "flow": "a_to_b",
+   "note": "오각형 아래 배관 끝에 위쪽 화살촉"
+  },
+  {
+   "a": "s026",
+   "b": "s034",
+   "flow": null
+  },
+  {
+   "a": "s036",
+   "b": "s026",
+   "flow": "a_to_b",
+   "note": "분기점의 헤더 쪽 화살표가 수직관을 가리킴"
+  },
+  {
+   "a": "s034",
+   "b": "s036",
+   "flow": null,
+   "note": "불확실: 두 갈래가 만나는 분기점이라 흐름 방향을 정하지 않음"
+  },
+  {
+   "a": "s034",
+   "b": "s035",
+   "flow": null
+  },
+  {
+   "a": "s038",
+   "b": "s035",
+   "flow": "a_to_b",
+   "note": "점선 배관 구간을 지나는 연결(섬프 안 배관으로 봄), 위쪽 화살표"
+  },
+  {
+   "a": "s036",
+   "b": "s037",
+   "flow": null
+  },
+  {
+   "a": "s039",
+   "b": "s037",
+   "flow": "a_to_b",
+   "note": "점선 배관 구간을 지나는 연결(섬프 안 배관으로 봄), 위쪽 화살표"
+  },
+  {
+   "a": "s026",
+   "b": "s028",
+   "flow": null,
+   "note": "불확실: 3/8\" 관이 배관 위 상자에서 바로 나옴"
+  },
+  {
+   "a": "s028",
+   "b": "s029",
+   "flow": null
+  },
+  {
+   "a": "s029",
+   "b": "s030",
+   "flow": null
+  },
+  {
+   "a": "s029",
+   "b": "s031",
+   "flow": null
+  },
+  {
+   "a": "s030",
+   "b": "s031",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s032",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s033",
+   "flow": null,
+   "note": "사이에 DE/WM 계통 경계 표시"
+  },
+  {
+   "a": "s046",
+   "b": "s040",
+   "flow": "a_to_b",
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "a": "s045",
+   "b": "s040",
+   "flow": null,
+   "note": "불확실: 점선 벤트관"
+  },
+  {
+   "a": "s048",
+   "b": "s047",
+   "flow": "a_to_b",
+   "note": "오각형 아래 배관 끝에 위쪽 화살촉"
+  },
+  {
+   "a": "s048",
+   "b": "s050",
+   "flow": null
+  },
+  {
+   "a": "s048",
+   "b": "s052",
+   "flow": null
+  },
+  {
+   "a": "s050",
+   "b": "s052",
+   "flow": null
+  },
+  {
+   "a": "s050",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s052",
+   "b": "s053",
+   "flow": null
+  },
+  {
+   "a": "s052",
+   "b": "s056",
+   "flow": null
+  },
+  {
+   "a": "s053",
+   "b": "s056",
+   "flow": null
+  },
+  {
+   "a": "s053",
+   "b": "s054",
+   "flow": null
+  },
+  {
+   "a": "s056",
+   "b": "s057",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s056",
+   "flow": "a_to_b",
+   "note": "분기점의 헤더 쪽 화살표가 수직관을 가리킴"
+  },
+  {
+   "a": "s057",
+   "b": "s059",
+   "flow": null,
+   "note": "불확실: 두 갈래가 만나는 분기점이라 흐름 방향을 정하지 않음"
+  },
+  {
+   "a": "s057",
+   "b": "s058",
+   "flow": null
+  },
+  {
+   "a": "s061",
+   "b": "s058",
+   "flow": "a_to_b",
+   "note": "점선 배관 구간을 지나는 연결(섬프 안 배관으로 봄), 위쪽 화살표"
+  },
+  {
+   "a": "s059",
+   "b": "s060",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s060",
+   "flow": "a_to_b",
+   "note": "점선 배관 구간을 지나는 연결(섬프 안 배관으로 봄), 위쪽 화살표"
+  },
+  {
+   "a": "s069",
+   "b": "s063",
+   "flow": "a_to_b",
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "a": "s070",
+   "b": "s063",
+   "flow": "a_to_b",
+   "note": "불확실: 물결 끊김 기호에서 온 관의 화살촉이 PP39 몸통 왼쪽에 닿음. 섬프로 들어가는 것으로 봄"
+  },
+  {
+   "a": "s068",
+   "b": "s063",
+   "flow": null,
+   "note": "불확실: 점선 벤트관"
+  },
+  {
+   "a": "s073",
+   "b": "s075",
+   "flow": null,
+   "note": "불확실: 헤더에서 만나는 두 갈래"
+  },
+  {
+   "a": "s073",
+   "b": "s071",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s072",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s071",
+   "flow": "a_to_b",
+   "note": "V1047 수직관이 헤더와 만나는 곳에 위쪽 화살표"
+  },
+  {
+   "a": "s075",
+   "b": "s072",
+   "flow": "a_to_b",
+   "note": "V1047 수직관이 헤더와 만나는 곳에 위쪽 화살표"
+  },
+  {
+   "a": "s071",
+   "b": "s072",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s074",
+   "flow": "a_to_b",
+   "note": "점선 배관 구간을 지나는 연결(섬프 안 배관으로 봄), 위쪽 화살표"
+  },
+  {
+   "a": "s075",
+   "b": "s076",
+   "flow": null
+  },
+  {
+   "a": "s078",
+   "b": "s076",
+   "flow": "a_to_b",
+   "note": "점선 배관 구간을 지나는 연결(섬프 안 배관으로 봄), 위쪽 화살표"
+  },
+  {
+   "a": "s085",
+   "b": "s079",
+   "flow": "a_to_b",
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "a": "s084",
+   "b": "s079",
+   "flow": null,
+   "note": "불확실: 점선 벤트관"
+  }
+ ],
+ "continuations": [
+  {
+   "symbol": "s001",
+   "label": "WV:LRS FLOOR DRAIN TANK / SHEET 1",
+   "target_system": "WV",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s010",
+   "label": "MAKE-UP DEMIN. WATER",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s023",
+   "label": "COMPOUND BLDG. DRAIN",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null,
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "symbol": "s024",
+   "label": "COMPOUND BLDG. DRAIN",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null,
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "symbol": "s025",
+   "label": "WV:LRS FLOOR DRAIN TANK / SHEET 1",
+   "target_system": "WV",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s033",
+   "label": "MAKE-UP DEMIN. WATER",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s046",
+   "label": "SPENT RESIN LONG TERM STORAGE TANK ROOM DRAIN",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null,
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "symbol": "s047",
+   "label": "WV:LRS CHEMICAL WASTE TANK / SHEET 2",
+   "target_system": "WV",
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s069",
+   "label": "HOT MACHINE SHOP AREA DRAIN",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null,
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "symbol": "s070",
+   "label": "COMPOUND BLDG. DRAIN",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null,
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  },
+  {
+   "symbol": "s071",
+   "label": "WV:DETERGENT WASTE TANK A / SHEET 7",
+   "target_system": "WV",
+   "target_sheet": "7",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s072",
+   "label": "WV:DETERGENT WASTE TANK B / SHEET 7",
+   "target_system": "WV",
+   "target_sheet": "7",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s085",
+   "label": "DETERGENT DRAIN",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null,
+   "note": "불확실: 화살표·오각형이 아닌 물결 끊김 기호. 도면 밖에서 들어오는 배수관으로 보고 continuation으로 넣음"
+  }
+ ]
+}

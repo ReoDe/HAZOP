@@ -1,0 +1,3132 @@
+{
+ "schema": "hazop_read_quality_key",
+ "version": 1,
+ "seq": 63,
+ "drawing": "9.3.4-1-S1",
+ "source_file": "063_Ch09_Fig9.3.4-1_s1of7_Chemical_and_Volume_Control_System_Flow_Diagram.pdf",
+ "page_size": [
+  1224.0,
+  792.0
+ ],
+ "regions": [
+  [
+   170.0,
+   95.0,
+   1060.0,
+   700.0
+  ]
+ ],
+ "method": "overview.png로 계통 흐름을 잡고, 도면이 걸친 타일 25장(x 0~880, y 0~560, 5px/pt)을 왼쪽 위부터 차례로 읽음. 빽빽한 곳(정화 필터 주변, 오리피스 묶음, 재생 열교환기 배수선)은 타일을 이어 붙여 다시 확대해 배관을 따라감. 범례 1.7-1(001쪽)로 플랜지(두 줄)와 벨로즈 밸브 모양을 확인함. 기존 정답지의 계기·밸브 번호 원·도면 밖 연결 상자를 그림과 맞춰 보고, 같으면 그 값을 씀. 기호가 115개라 180개를 넘지 않아 도면 전체를 적음(영역은 도면 전체).",
+ "verified": "2026-11-13 Claude 정답지 세션 초안. 사람 확인 전",
+ "limits": "(1) 이름표 없는 플랜지(두 줄 표시), 배관 등급 경계 마름모(AI/BI 등), 격납건물 관통 표시는 기호로 적지 않음. (2) 계기(TEW·TW·PT·PTI·FTI·FT·PDT)의 짧은 연결선은 충격선·계측선으로 보고 연결에 넣지 않음. PDT 6이 그려진 y≈259 선도 충격선으로 봄. 반면 PDIS 202와 V356·V357이 있는 y≈645 선은 밸브가 있어 공정 배관으로 넣음(불확실). (3) FE 202·FE 212B는 배관 위 오리피스판과 FE 원을 한 기호로 묶고 상자는 원에 둠. (4) 재생 열교환기 동체를 가로지르는 y≈219 배수선을 동체에 붙은 것으로 보고 V2001·V2004를 열교환기와 이음(불확실). (5) V2003 아래 선과 V2002 아래 선이 y≈307 배수선과 점 없이 엇갈려 이어지지 않은 것으로 봄. (6) 흐름 방향은 배관 위 화살표(재생 열교환기 앞, V880 복귀선, V341 아래, 필터 배수선)와 도면 밖 연결 오각형의 방향으로 매김. 분기점 너머는 방향이 분명한 쌍만 매기고 나머지는 null. (7) 이 쪽에는 구경·배관 번호 글자가 없어 lines는 비어 있음. (8) 검은 칠(평상시 닫힘) 밸브는 글자가 없어 normal_position을 넣지 않음.",
+ "symbols": [
+  {
+   "id": "s001",
+   "kind": "continuation",
+   "bbox": [
+    182.1,
+    115.5,
+    215.7,
+    122.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "RC:LETDOWN LINE FROM RC LOOP 1B"
+  },
+  {
+   "id": "s002",
+   "kind": "air_operated_valve",
+   "bbox": [
+    279.4,
+    103.5,
+    286.6,
+    121.5
+   ],
+   "tag": "515",
+   "tag_bbox": [
+    287.8,
+    103.7,
+    297.9,
+    113.8
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "다이어프램+솔레노이드(S) 파일럿, IA"
+  },
+  {
+   "id": "s003",
+   "kind": "air_operated_valve",
+   "bbox": [
+    396.6,
+    103.5,
+    403.4,
+    121.5
+   ],
+   "tag": "516",
+   "tag_bbox": [
+    405.2,
+    103.7,
+    415.3,
+    113.8
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "다이어프램+솔레노이드(S) 파일럿, IA"
+  },
+  {
+   "id": "s004",
+   "kind": "solenoid_valve",
+   "bbox": [
+    673.4,
+    150.4,
+    680.0,
+    162.4
+   ],
+   "tag": "203",
+   "tag_bbox": [
+    682.0,
+    145.6,
+    692.1,
+    155.7
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s005",
+   "kind": "check_valve",
+   "bbox": [
+    807.4,
+    157.6,
+    815.0,
+    163.4
+   ],
+   "tag": "V431",
+   "tag_bbox": [
+    807.0,
+    163.8,
+    815.4,
+    166.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s006",
+   "kind": "continuation",
+   "bbox": [
+    844.8,
+    157.4,
+    878.3,
+    164.1
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "PRESSURIZER AUXILIARY SPRAY (쪽 번호 없음)"
+  },
+  {
+   "id": "s007",
+   "kind": "relief_valve",
+   "bbox": [
+    396.0,
+    169.0,
+    402.4,
+    178.0
+   ],
+   "tag": "302",
+   "tag_bbox": [
+    405.2,
+    160.3,
+    415.3,
+    170.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s008",
+   "kind": "continuation",
+   "bbox": [
+    345.7,
+    169.9,
+    379.2,
+    176.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s009",
+   "kind": "unlisted",
+   "bbox": [
+    444.7,
+    180.0,
+    456.4,
+    191.7
+   ],
+   "tag": "TW 214",
+   "kind_text": "thermowell (TW)",
+   "attributes": {},
+   "note": "써모웰(TW), 배관에 짧은 선으로 붙음"
+  },
+  {
+   "id": "s010",
+   "kind": "temperature_element",
+   "bbox": [
+    576.3,
+    168.1,
+    593.1,
+    186.9
+   ],
+   "tag": "TEW 5",
+   "attributes": {},
+   "note": "I"
+  },
+  {
+   "id": "s011",
+   "kind": "orifice",
+   "bbox": [
+    610.0,
+    175.4,
+    614.0,
+    179.6
+   ],
+   "tag": "OR23",
+   "tag_bbox": [
+    614.0,
+    170.0,
+    617.6,
+    182.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s012",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    203.6,
+    192.6,
+    210.6,
+    204.4
+   ],
+   "tag": "524",
+   "tag_bbox": [
+    192.2,
+    187.5,
+    202.2,
+    197.6
+   ],
+   "attributes": {
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s013",
+   "kind": "check_valve",
+   "bbox": [
+    329.6,
+    199.0,
+    336.4,
+    205.4
+   ],
+   "tag": "V747",
+   "tag_bbox": [
+    328.6,
+    205.4,
+    337.6,
+    208.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s014",
+   "kind": "manual_valve",
+   "bbox": [
+    383.6,
+    196.0,
+    390.4,
+    204.6
+   ],
+   "tag": "V751",
+   "tag_bbox": [
+    383.0,
+    207.4,
+    391.6,
+    210.6
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s015",
+   "kind": "air_operated_valve",
+   "bbox": [
+    732.0,
+    189.0,
+    739.4,
+    204.4
+   ],
+   "tag": "240",
+   "tag_bbox": [
+    720.6,
+    187.5,
+    730.7,
+    197.6
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "다이어프램+솔레노이드(S) 파일럿"
+  },
+  {
+   "id": "s016",
+   "kind": "check_valve",
+   "bbox": [
+    807.4,
+    199.6,
+    815.0,
+    205.4
+   ],
+   "tag": "V433",
+   "tag_bbox": [
+    807.0,
+    205.6,
+    815.4,
+    208.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s017",
+   "kind": "continuation",
+   "bbox": [
+    844.8,
+    199.3,
+    878.3,
+    206.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "RC:CHARGING LINE TO RC LOOP 1A"
+  },
+  {
+   "id": "s018",
+   "kind": "heat_exchanger",
+   "bbox": [
+    492.0,
+    190.0,
+    509.5,
+    249.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "REGENERATIVE HEAT EXCHANGER(이름표 코드 없음). 불확실: y≈219 배수선이 동체를 가로질러 그려져 동체에 붙은 것으로 봄"
+  },
+  {
+   "id": "s019",
+   "kind": "unlisted",
+   "bbox": [
+    469.8,
+    234.5,
+    481.6,
+    246.2
+   ],
+   "tag": "TW 022",
+   "kind_text": "thermowell (TW)",
+   "attributes": {},
+   "note": "써모웰(TW)"
+  },
+  {
+   "id": "s020",
+   "kind": "transmitter",
+   "bbox": [
+    685.4,
+    243.5,
+    702.2,
+    262.3
+   ],
+   "tag": "PDT 6",
+   "attributes": {},
+   "note": "ICKSAHL. 240 앞뒤 충격선(y≈259) 위에 그려짐, 연결 없음으로 봄"
+  },
+  {
+   "id": "s021",
+   "kind": "temperature_element",
+   "bbox": [
+    417.0,
+    251.9,
+    433.7,
+    270.7
+   ],
+   "tag": "TEW 4",
+   "attributes": {},
+   "note": "ISAH"
+  },
+  {
+   "id": "s022",
+   "kind": "manual_valve",
+   "bbox": [
+    444.5,
+    270.0,
+    448.0,
+    278.0
+   ],
+   "tag": "V2001",
+   "tag_bbox": [
+    448.8,
+    268.8,
+    452.0,
+    280.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s023",
+   "kind": "manual_valve",
+   "bbox": [
+    457.5,
+    270.0,
+    461.0,
+    278.0
+   ],
+   "tag": "V2002",
+   "tag_bbox": [
+    461.5,
+    268.8,
+    465.0,
+    280.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s024",
+   "kind": "manual_valve",
+   "bbox": [
+    574.5,
+    270.0,
+    578.0,
+    278.0
+   ],
+   "tag": "V2004",
+   "tag_bbox": [
+    578.6,
+    268.8,
+    582.0,
+    280.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s025",
+   "kind": "check_valve",
+   "bbox": [
+    730.0,
+    275.0,
+    740.0,
+    281.0
+   ],
+   "tag": "V435",
+   "tag_bbox": [
+    731.0,
+    281.0,
+    740.0,
+    284.0
+   ],
+   "attributes": {},
+   "note": "양쪽 플랜지 사이 체크 밸브"
+  },
+  {
+   "id": "s026",
+   "kind": "manual_valve",
+   "bbox": [
+    763.0,
+    274.0,
+    773.0,
+    280.0
+   ],
+   "tag": "V434",
+   "tag_bbox": [
+    765.0,
+    282.4,
+    773.4,
+    285.6
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s027",
+   "kind": "manual_valve",
+   "bbox": [
+    393.6,
+    283.0,
+    407.0,
+    289.0
+   ],
+   "tag": "V396",
+   "tag_bbox": [
+    396.0,
+    292.4,
+    404.4,
+    295.6
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s028",
+   "kind": "heat_exchanger",
+   "bbox": [
+    308.0,
+    299.0,
+    366.6,
+    315.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "LETDOWN HEAT EXCHANGER(이름표 코드 없음)"
+  },
+  {
+   "id": "s029",
+   "kind": "temperature_element",
+   "bbox": [
+    257.6,
+    293.8,
+    274.4,
+    312.6
+   ],
+   "tag": "TEW 7",
+   "attributes": {},
+   "note": "IC"
+  },
+  {
+   "id": "s030",
+   "kind": "manual_valve",
+   "bbox": [
+    522.0,
+    296.0,
+    525.5,
+    304.0
+   ],
+   "tag": "V2003",
+   "tag_bbox": [
+    526.0,
+    293.0,
+    529.5,
+    305.0
+   ],
+   "attributes": {},
+   "note": "불확실: 아래 선이 y≈307 배수선과 점 없이 엇갈림으로 봄(V2023으로 바로 이어짐)"
+  },
+  {
+   "id": "s031",
+   "kind": "manual_valve",
+   "bbox": [
+    598.0,
+    305.6,
+    605.0,
+    309.0
+   ],
+   "tag": "V2005",
+   "tag_bbox": [
+    596.0,
+    309.6,
+    606.6,
+    313.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s032",
+   "kind": "continuation",
+   "bbox": [
+    630.9,
+    304.0,
+    664.4,
+    310.7
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "REACTOR DRAIN HEADER"
+  },
+  {
+   "id": "s033",
+   "kind": "manual_valve",
+   "bbox": [
+    457.0,
+    312.5,
+    460.5,
+    320.0
+   ],
+   "tag": "V2019",
+   "tag_bbox": [
+    461.0,
+    309.0,
+    464.5,
+    321.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s034",
+   "kind": "manual_valve",
+   "bbox": [
+    522.0,
+    312.5,
+    525.5,
+    320.0
+   ],
+   "tag": "V2023",
+   "tag_bbox": [
+    526.0,
+    309.0,
+    529.5,
+    321.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s035",
+   "kind": "continuation",
+   "bbox": [
+    471.5,
+    320.8,
+    505.0,
+    327.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "REACTOR DRAIN HEADER"
+  },
+  {
+   "id": "s036",
+   "kind": "continuation",
+   "bbox": [
+    534.4,
+    320.8,
+    568.0,
+    327.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "REACTOR DRAIN HEADER"
+  },
+  {
+   "id": "s037",
+   "kind": "manual_valve",
+   "bbox": [
+    604.0,
+    328.0,
+    613.0,
+    339.2
+   ],
+   "tag": "V880",
+   "tag_bbox": [
+    605.6,
+    342.4,
+    614.4,
+    346.0
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s038",
+   "kind": "check_valve",
+   "bbox": [
+    690.0,
+    333.0,
+    697.6,
+    339.0
+   ],
+   "tag": "V363",
+   "tag_bbox": [
+    689.6,
+    339.6,
+    698.0,
+    342.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s039",
+   "kind": "manual_valve",
+   "bbox": [
+    782.4,
+    333.6,
+    789.6,
+    339.6
+   ],
+   "tag": "V362",
+   "tag_bbox": [
+    782.0,
+    342.0,
+    790.4,
+    345.6
+   ],
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s040",
+   "kind": "continuation",
+   "bbox": [
+    878.3,
+    333.4,
+    911.9,
+    340.1
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s041",
+   "kind": "continuation",
+   "bbox": [
+    878.3,
+    358.5,
+    911.9,
+    365.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s042",
+   "kind": "manual_valve",
+   "bbox": [
+    795.2,
+    377.0,
+    802.0,
+    383.0
+   ],
+   "tag": "V340",
+   "tag_bbox": [
+    794.6,
+    386.4,
+    803.6,
+    389.4
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s043",
+   "kind": "manual_valve",
+   "bbox": [
+    665.0,
+    418.0,
+    672.4,
+    422.4
+   ],
+   "tag": "V348",
+   "tag_bbox": [
+    664.6,
+    423.0,
+    672.6,
+    426.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s044",
+   "kind": "control_valve",
+   "bbox": [
+    692.0,
+    412.0,
+    702.0,
+    422.4
+   ],
+   "tag": "201P",
+   "tag_bbox": [
+    703.0,
+    405.4,
+    713.1,
+    415.5
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "불확실: 다이어프램 구동. 201Q(LETDOWN CONTROL VALVE)와 나란한 짝이라 조절 밸브로 봄"
+  },
+  {
+   "id": "s045",
+   "kind": "manual_valve",
+   "bbox": [
+    722.0,
+    412.0,
+    733.0,
+    422.4
+   ],
+   "tag": "V350",
+   "tag_bbox": [
+    723.0,
+    423.0,
+    731.6,
+    426.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s046",
+   "kind": "vent",
+   "bbox": [
+    910.0,
+    416.5,
+    926.0,
+    420.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 'ROOM VENT' 양쪽 화살표 배관 끝. vent로 봄"
+  },
+  {
+   "id": "s047",
+   "kind": "manual_valve",
+   "bbox": [
+    893.0,
+    434.0,
+    897.0,
+    441.0
+   ],
+   "tag": "V359",
+   "tag_bbox": [
+    897.6,
+    434.0,
+    900.6,
+    442.0
+   ],
+   "attributes": {},
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+  },
+  {
+   "id": "s048",
+   "kind": "indicator",
+   "bbox": [
+    609.9,
+    431.0,
+    626.7,
+    449.8
+   ],
+   "tag": "PTI 9",
+   "attributes": {},
+   "note": "불확실: PTI(전송+지시), 끝 글자 I로 indicator. ICKSAHL"
+  },
+  {
+   "id": "s049",
+   "kind": "transmitter",
+   "bbox": [
+    748.3,
+    431.0,
+    765.1,
+    449.8
+   ],
+   "tag": "PT 10",
+   "attributes": {},
+   "note": "SIAHL"
+  },
+  {
+   "id": "s050",
+   "kind": "indicator",
+   "bbox": [
+    981.1,
+    433.1,
+    997.9,
+    451.9
+   ],
+   "tag": "FTI 11",
+   "attributes": {},
+   "note": "불확실: FTI(전송+지시), 끝 글자 I로 indicator. SIAH. 충격선 두 가닥으로 FE 202에 붙음"
+  },
+  {
+   "id": "s051",
+   "kind": "check_valve",
+   "bbox": [
+    573.6,
+    444.0,
+    578.0,
+    452.0
+   ],
+   "tag": "V341",
+   "tag_bbox": [
+    579.0,
+    443.6,
+    582.4,
+    452.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s052",
+   "kind": "orifice",
+   "bbox": [
+    241.0,
+    468.0,
+    244.4,
+    473.4
+   ],
+   "tag": "OR01A",
+   "tag_bbox": [
+    237.0,
+    473.6,
+    249.0,
+    478.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s053",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    258.4,
+    461.0,
+    265.6,
+    472.4
+   ],
+   "tag": "110X",
+   "tag_bbox": [
+    246.7,
+    455.7,
+    256.8,
+    465.8
+   ],
+   "attributes": {
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s054",
+   "kind": "orifice",
+   "bbox": [
+    306.0,
+    468.0,
+    309.4,
+    473.4
+   ],
+   "tag": "OR01B",
+   "tag_bbox": [
+    302.0,
+    473.6,
+    314.0,
+    478.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s055",
+   "kind": "orifice",
+   "bbox": [
+    323.0,
+    468.0,
+    326.4,
+    473.4
+   ],
+   "tag": "OR01C",
+   "tag_bbox": [
+    319.0,
+    473.6,
+    331.0,
+    478.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s056",
+   "kind": "manual_valve",
+   "bbox": [
+    358.6,
+    462.0,
+    366.0,
+    473.4
+   ],
+   "tag": "V388",
+   "tag_bbox": [
+    358.6,
+    481.0,
+    367.6,
+    485.2
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s057",
+   "kind": "air_operated_valve",
+   "bbox": [
+    405.0,
+    452.0,
+    412.0,
+    472.4
+   ],
+   "tag": "522",
+   "tag_bbox": [
+    393.5,
+    455.7,
+    403.6,
+    465.8
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "다이어프램+솔레노이드(S) 파일럿, IA"
+  },
+  {
+   "id": "s058",
+   "kind": "air_operated_valve",
+   "bbox": [
+    497.4,
+    452.0,
+    504.4,
+    472.4
+   ],
+   "tag": "523",
+   "tag_bbox": [
+    485.8,
+    455.7,
+    495.8,
+    465.8
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "다이어프램+솔레노이드(S) 파일럿, IA"
+  },
+  {
+   "id": "s059",
+   "kind": "manual_valve",
+   "bbox": [
+    648.0,
+    467.6,
+    655.0,
+    473.6
+   ],
+   "tag": "V347",
+   "tag_bbox": [
+    647.6,
+    474.0,
+    656.6,
+    477.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s060",
+   "kind": "control_valve",
+   "bbox": [
+    692.0,
+    462.0,
+    702.0,
+    472.4
+   ],
+   "tag": "201Q",
+   "tag_bbox": [
+    703.0,
+    455.7,
+    713.1,
+    465.8
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "LETDOWN CONTROL VALVE"
+  },
+  {
+   "id": "s061",
+   "kind": "manual_valve",
+   "bbox": [
+    721.0,
+    462.0,
+    734.0,
+    472.4
+   ],
+   "tag": "V349",
+   "tag_bbox": [
+    722.6,
+    474.0,
+    731.6,
+    477.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s062",
+   "kind": "manual_valve",
+   "bbox": [
+    819.0,
+    460.0,
+    830.0,
+    472.4
+   ],
+   "tag": "V358",
+   "tag_bbox": [
+    819.6,
+    474.0,
+    828.6,
+    477.6
+   ],
+   "attributes": {},
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+  },
+  {
+   "id": "s063",
+   "kind": "filter",
+   "bbox": [
+    890.4,
+    467.4,
+    899.4,
+    474.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "PURIFICATION FILTER 1(이름표 코드 없음)"
+  },
+  {
+   "id": "s064",
+   "kind": "manual_valve",
+   "bbox": [
+    925.0,
+    460.0,
+    935.0,
+    472.4
+   ],
+   "tag": "V360",
+   "tag_bbox": [
+    924.6,
+    473.6,
+    933.6,
+    477.6
+   ],
+   "attributes": {},
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+  },
+  {
+   "id": "s065",
+   "kind": "flow_element",
+   "bbox": [
+    983.6,
+    481.5,
+    995.3,
+    493.3
+   ],
+   "tag": "FE 202",
+   "attributes": {},
+   "note": "상자는 FE 원. 배관 위 오리피스판(x≈987~992, y≈467~474)과 한 기호로 봄"
+  },
+  {
+   "id": "s066",
+   "kind": "continuation",
+   "bbox": [
+    1016.7,
+    467.4,
+    1050.3,
+    474.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "PURIFICATION ION EXCHANGER"
+  },
+  {
+   "id": "s067",
+   "kind": "temperature_element",
+   "bbox": [
+    576.3,
+    482.3,
+    593.1,
+    501.2
+   ],
+   "tag": "TEW 8",
+   "attributes": {},
+   "note": "ISAH"
+  },
+  {
+   "id": "s068",
+   "kind": "manual_valve",
+   "bbox": [
+    868.0,
+    492.0,
+    872.0,
+    499.0
+   ],
+   "tag": "V361",
+   "tag_bbox": [
+    872.6,
+    492.0,
+    875.6,
+    500.0
+   ],
+   "attributes": {},
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+  },
+  {
+   "id": "s069",
+   "kind": "manual_valve",
+   "bbox": [
+    893.0,
+    492.0,
+    897.0,
+    499.0
+   ],
+   "tag": "V2081",
+   "tag_bbox": [
+    897.6,
+    492.0,
+    900.6,
+    500.0
+   ],
+   "attributes": {},
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+  },
+  {
+   "id": "s070",
+   "kind": "relief_valve",
+   "bbox": [
+    736.0,
+    514.0,
+    743.0,
+    524.0
+   ],
+   "tag": "354",
+   "tag_bbox": [
+    746.0,
+    502.9,
+    756.1,
+    512.9
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s071",
+   "kind": "continuation",
+   "bbox": [
+    681.2,
+    513.5,
+    714.8,
+    520.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "EQUIPMENT DRAIN RELIEF HEADER"
+  },
+  {
+   "id": "s072",
+   "kind": "continuation",
+   "bbox": [
+    815.4,
+    513.5,
+    849.0,
+    520.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "RECYCLE DRAIN HEADER"
+  },
+  {
+   "id": "s073",
+   "kind": "vent",
+   "bbox": [
+    911.0,
+    517.5,
+    926.0,
+    521.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 'ROOM VENT' 양쪽 화살표 배관 끝. vent로 봄"
+  },
+  {
+   "id": "s074",
+   "kind": "orifice",
+   "bbox": [
+    241.0,
+    531.0,
+    244.4,
+    536.4
+   ],
+   "tag": "OR02A",
+   "tag_bbox": [
+    237.0,
+    536.6,
+    249.0,
+    541.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s075",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    258.4,
+    524.0,
+    265.6,
+    535.6
+   ],
+   "tag": "110Y",
+   "tag_bbox": [
+    246.7,
+    518.6,
+    256.8,
+    528.6
+   ],
+   "attributes": {
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s076",
+   "kind": "orifice",
+   "bbox": [
+    306.0,
+    531.0,
+    309.4,
+    536.4
+   ],
+   "tag": "OR02B",
+   "tag_bbox": [
+    302.0,
+    536.6,
+    314.0,
+    541.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s077",
+   "kind": "orifice",
+   "bbox": [
+    323.0,
+    531.0,
+    326.4,
+    536.4
+   ],
+   "tag": "OR02C",
+   "tag_bbox": [
+    319.0,
+    536.6,
+    331.0,
+    541.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s078",
+   "kind": "manual_valve",
+   "bbox": [
+    893.0,
+    534.0,
+    897.0,
+    541.0
+   ],
+   "tag": "V366",
+   "tag_bbox": [
+    897.6,
+    534.0,
+    900.6,
+    542.0
+   ],
+   "attributes": {},
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+  },
+  {
+   "id": "s079",
+   "kind": "manual_valve",
+   "bbox": [
+    822.0,
+    561.0,
+    830.0,
+    573.0
+   ],
+   "tag": "V373",
+   "tag_bbox": [
+    823.6,
+    574.0,
+    832.6,
+    578.0
+   ],
+   "attributes": {},
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+  },
+  {
+   "id": "s080",
+   "kind": "filter",
+   "bbox": [
+    890.4,
+    568.0,
+    899.4,
+    574.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "PURIFICATION FILTER 2(이름표 코드 없음)"
+  },
+  {
+   "id": "s081",
+   "kind": "manual_valve",
+   "bbox": [
+    917.0,
+    560.0,
+    924.0,
+    573.0
+   ],
+   "tag": "V376",
+   "tag_bbox": [
+    916.0,
+    574.0,
+    925.6,
+    577.6
+   ],
+   "attributes": {},
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+  },
+  {
+   "id": "s082",
+   "kind": "orifice",
+   "bbox": [
+    241.0,
+    594.0,
+    244.4,
+    599.4
+   ],
+   "tag": "OR03A",
+   "tag_bbox": [
+    237.0,
+    599.6,
+    249.0,
+    604.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s083",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    258.4,
+    587.0,
+    265.6,
+    598.6
+   ],
+   "tag": "110Z",
+   "tag_bbox": [
+    246.7,
+    581.4,
+    256.8,
+    591.5
+   ],
+   "attributes": {
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s084",
+   "kind": "orifice",
+   "bbox": [
+    306.0,
+    594.0,
+    309.4,
+    599.4
+   ],
+   "tag": "OR03B",
+   "tag_bbox": [
+    302.0,
+    599.6,
+    314.0,
+    604.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s085",
+   "kind": "orifice",
+   "bbox": [
+    323.0,
+    594.0,
+    326.4,
+    599.4
+   ],
+   "tag": "OR03C",
+   "tag_bbox": [
+    319.0,
+    599.6,
+    331.0,
+    604.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s086",
+   "kind": "transmitter",
+   "bbox": [
+    408.6,
+    588.1,
+    425.4,
+    607.0
+   ],
+   "tag": "PT 1",
+   "attributes": {},
+   "note": "SIAL"
+  },
+  {
+   "id": "s087",
+   "kind": "transmitter",
+   "bbox": [
+    429.8,
+    588.1,
+    446.5,
+    607.0
+   ],
+   "tag": "FT 2",
+   "attributes": {},
+   "note": "SIAHL. 충격선 두 가닥으로 FE 212B에 붙음"
+  },
+  {
+   "id": "s088",
+   "kind": "relief_valve",
+   "bbox": [
+    450.0,
+    598.0,
+    456.0,
+    607.0
+   ],
+   "tag": "125",
+   "tag_bbox": [
+    468.5,
+    606.6,
+    478.6,
+    616.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s089",
+   "kind": "continuation",
+   "bbox": [
+    472.3,
+    599.2,
+    505.9,
+    605.9
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s090",
+   "kind": "manual_valve",
+   "bbox": [
+    868.0,
+    593.0,
+    872.0,
+    600.0
+   ],
+   "tag": "V375",
+   "tag_bbox": [
+    872.6,
+    592.0,
+    875.6,
+    602.0
+   ],
+   "attributes": {},
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+  },
+  {
+   "id": "s091",
+   "kind": "manual_valve",
+   "bbox": [
+    893.0,
+    593.0,
+    897.0,
+    600.0
+   ],
+   "tag": "V2082",
+   "tag_bbox": [
+    897.6,
+    590.0,
+    900.6,
+    601.0
+   ],
+   "attributes": {},
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+  },
+  {
+   "id": "s092",
+   "kind": "continuation",
+   "bbox": [
+    819.6,
+    614.1,
+    853.2,
+    620.8
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "RECYCLE DRAIN HEADER"
+  },
+  {
+   "id": "s093",
+   "kind": "manual_valve",
+   "bbox": [
+    491.0,
+    613.0,
+    500.0,
+    624.0
+   ],
+   "tag": "V714",
+   "tag_bbox": [
+    488.0,
+    624.6,
+    497.6,
+    628.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s094",
+   "kind": "control_valve",
+   "bbox": [
+    514.0,
+    613.0,
+    521.0,
+    624.0
+   ],
+   "tag": "212P",
+   "tag_bbox": [
+    504.2,
+    609.1,
+    514.3,
+    619.1
+   ],
+   "attributes": {
+    "fail_position": "FO"
+   },
+   "note": "CHARGING FLOW CONTROL VALVES"
+  },
+  {
+   "id": "s095",
+   "kind": "manual_valve",
+   "bbox": [
+    539.6,
+    613.0,
+    546.4,
+    624.0
+   ],
+   "tag": "V713",
+   "tag_bbox": [
+    540.0,
+    623.6,
+    549.0,
+    628.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s096",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    623.6,
+    611.0,
+    629.6,
+    624.0
+   ],
+   "tag": "577",
+   "tag_bbox": [
+    611.6,
+    606.6,
+    621.6,
+    616.6
+   ],
+   "attributes": {
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s097",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    698.0,
+    611.0,
+    706.0,
+    624.0
+   ],
+   "tag": "576",
+   "tag_bbox": [
+    687.1,
+    606.6,
+    697.1,
+    616.6
+   ],
+   "attributes": {
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s098",
+   "kind": "continuation",
+   "bbox": [
+    760.9,
+    618.3,
+    794.4,
+    625.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "CHARGING PUMPS"
+  },
+  {
+   "id": "s099",
+   "kind": "flow_element",
+   "bbox": [
+    432.3,
+    632.4,
+    444.0,
+    644.1
+   ],
+   "tag": "FE 212B",
+   "attributes": {},
+   "note": "상자는 FE 원. 배관 위 오리피스판(x≈437~440, y≈619~624)과 한 기호로 봄"
+  },
+  {
+   "id": "s100",
+   "kind": "manual_valve",
+   "bbox": [
+    671.0,
+    639.0,
+    674.0,
+    646.0
+   ],
+   "tag": "V575",
+   "tag_bbox": [
+    675.0,
+    638.0,
+    678.6,
+    646.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s101",
+   "kind": "switch",
+   "bbox": [
+    868.3,
+    640.9,
+    880.0,
+    652.7
+   ],
+   "tag": "PDIS 202",
+   "attributes": {},
+   "note": "BB, HL. 필터 앞뒤를 잇는 선(V356~V357) 위에 그려짐. 불확실: 이 선을 공정 배관으로 봄"
+  },
+  {
+   "id": "s102",
+   "kind": "manual_valve",
+   "bbox": [
+    837.0,
+    645.0,
+    844.0,
+    649.0
+   ],
+   "tag": "V356",
+   "tag_bbox": [
+    836.6,
+    649.6,
+    845.6,
+    653.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s103",
+   "kind": "manual_valve",
+   "bbox": [
+    904.0,
+    645.0,
+    911.0,
+    649.0
+   ],
+   "tag": "V357",
+   "tag_bbox": [
+    903.6,
+    649.6,
+    912.0,
+    653.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s104",
+   "kind": "continuation",
+   "bbox": [
+    370.8,
+    651.8,
+    404.4,
+    658.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "SEAL INJECTION"
+  },
+  {
+   "id": "s105",
+   "kind": "orifice",
+   "bbox": [
+    616.0,
+    657.0,
+    620.0,
+    661.0
+   ],
+   "tag": "OR05B",
+   "tag_bbox": [
+    612.0,
+    661.6,
+    622.0,
+    666.0
+   ],
+   "attributes": {},
+   "note": "CHARGING RESTRICTING ORIFICE NO.2"
+  },
+  {
+   "id": "s106",
+   "kind": "orifice",
+   "bbox": [
+    651.0,
+    657.0,
+    654.4,
+    661.0
+   ],
+   "tag": "OR05A",
+   "tag_bbox": [
+    646.0,
+    661.6,
+    656.0,
+    666.0
+   ],
+   "attributes": {},
+   "note": "CHARGING RESTRICTING ORIFICE NO.2"
+  },
+  {
+   "id": "s107",
+   "kind": "orifice",
+   "bbox": [
+    688.0,
+    657.0,
+    691.0,
+    661.0
+   ],
+   "tag": "OR04B",
+   "tag_bbox": [
+    684.0,
+    661.6,
+    696.0,
+    666.0
+   ],
+   "attributes": {},
+   "note": "CHARGING RESTRICTING ORIFICE NO.1"
+  },
+  {
+   "id": "s108",
+   "kind": "orifice",
+   "bbox": [
+    727.0,
+    657.0,
+    730.0,
+    661.0
+   ],
+   "tag": "OR04A",
+   "tag_bbox": [
+    722.0,
+    661.6,
+    734.0,
+    666.0
+   ],
+   "attributes": {},
+   "note": "CHARGING RESTRICTING ORIFICE NO.1"
+  },
+  {
+   "id": "s109",
+   "kind": "manual_valve",
+   "bbox": [
+    483.6,
+    657.0,
+    491.0,
+    669.0
+   ],
+   "tag": "V716",
+   "tag_bbox": [
+    484.0,
+    670.0,
+    492.6,
+    674.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s110",
+   "kind": "control_valve",
+   "bbox": [
+    514.0,
+    657.0,
+    521.0,
+    669.0
+   ],
+   "tag": "212Q",
+   "tag_bbox": [
+    502.5,
+    652.6,
+    512.6,
+    662.7
+   ],
+   "attributes": {
+    "fail_position": "FO"
+   },
+   "note": "CHARGING FLOW CONTROL VALVES"
+  },
+  {
+   "id": "s111",
+   "kind": "manual_valve",
+   "bbox": [
+    545.0,
+    657.0,
+    552.0,
+    669.0
+   ],
+   "tag": "V715",
+   "tag_bbox": [
+    548.6,
+    670.0,
+    557.6,
+    674.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s112",
+   "kind": "solenoid_valve",
+   "bbox": [
+    241.6,
+    662.0,
+    248.4,
+    673.0
+   ],
+   "tag": "202",
+   "tag_bbox": [
+    229.9,
+    656.8,
+    240.0,
+    666.9
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s113",
+   "kind": "air_operated_valve",
+   "bbox": [
+    304.4,
+    663.0,
+    312.0,
+    673.0
+   ],
+   "tag": "200",
+   "tag_bbox": [
+    292.8,
+    656.8,
+    302.9,
+    666.9
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "불확실: 다이어프램 구동(S 없음). 조절 밸브인지 그림만으로 모름"
+  },
+  {
+   "id": "s114",
+   "kind": "manual_valve",
+   "bbox": [
+    870.0,
+    661.0,
+    878.0,
+    673.0
+   ],
+   "tag": "V355",
+   "tag_bbox": [
+    869.6,
+    675.0,
+    878.6,
+    678.0
+   ],
+   "attributes": {},
+   "note": "벨로즈 봉인 수동 밸브(손잡이+주름 표시)"
+  },
+  {
+   "id": "s115",
+   "kind": "continuation",
+   "bbox": [
+    568.0,
+    686.2,
+    601.5,
+    692.9
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "AUXILIARY CHARGING PUMP"
+  }
+ ],
+ "lines": [],
+ "connections": [
+  {
+   "a": "s001",
+   "b": "s002",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s002",
+   "b": "s003",
+   "flow": null
+  },
+  {
+   "a": "s003",
+   "b": "s023",
+   "flow": null
+  },
+  {
+   "a": "s003",
+   "b": "s018",
+   "flow": null
+  },
+  {
+   "a": "s023",
+   "b": "s018",
+   "flow": null
+  },
+  {
+   "a": "s023",
+   "b": "s033",
+   "flow": null
+  },
+  {
+   "a": "s033",
+   "b": "s035",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s037",
+   "b": "s018",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s037",
+   "b": "s030",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s037",
+   "b": "s027",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s018",
+   "b": "s030",
+   "flow": null
+  },
+  {
+   "a": "s018",
+   "b": "s027",
+   "flow": null
+  },
+  {
+   "a": "s030",
+   "b": "s027",
+   "flow": null
+  },
+  {
+   "a": "s030",
+   "b": "s034",
+   "flow": null
+  },
+  {
+   "a": "s034",
+   "b": "s036",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s027",
+   "b": "s028",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s052",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s112",
+   "flow": null
+  },
+  {
+   "a": "s052",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s052",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s052",
+   "b": "s112",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s112",
+   "flow": null
+  },
+  {
+   "a": "s082",
+   "b": "s112",
+   "flow": null
+  },
+  {
+   "a": "s052",
+   "b": "s053",
+   "flow": null
+  },
+  {
+   "a": "s053",
+   "b": "s054",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s076",
+   "flow": null
+  },
+  {
+   "a": "s082",
+   "b": "s083",
+   "flow": null
+  },
+  {
+   "a": "s083",
+   "b": "s084",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s055",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s084",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s112",
+   "b": "s113",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s113",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s056",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s113",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s056",
+   "flow": null
+  },
+  {
+   "a": "s085",
+   "b": "s113",
+   "flow": null
+  },
+  {
+   "a": "s085",
+   "b": "s056",
+   "flow": null
+  },
+  {
+   "a": "s113",
+   "b": "s056",
+   "flow": null
+  },
+  {
+   "a": "s056",
+   "b": "s057",
+   "flow": null
+  },
+  {
+   "a": "s057",
+   "b": "s058",
+   "flow": null
+  },
+  {
+   "a": "s051",
+   "b": "s058",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s051",
+   "b": "s059",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s051",
+   "b": "s043",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s058",
+   "b": "s059",
+   "flow": null
+  },
+  {
+   "a": "s058",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s043",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s044",
+   "b": "s045",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s060",
+   "flow": null
+  },
+  {
+   "a": "s060",
+   "b": "s061",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s061",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s070",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s062",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s102",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s061",
+   "b": "s070",
+   "flow": null
+  },
+  {
+   "a": "s061",
+   "b": "s062",
+   "flow": null
+  },
+  {
+   "a": "s061",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s061",
+   "b": "s102",
+   "flow": null
+  },
+  {
+   "a": "s061",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s070",
+   "b": "s062",
+   "flow": null
+  },
+  {
+   "a": "s070",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s070",
+   "b": "s102",
+   "flow": null
+  },
+  {
+   "a": "s070",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s102",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s079",
+   "b": "s102",
+   "flow": null
+  },
+  {
+   "a": "s079",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s070",
+   "b": "s071",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s062",
+   "b": "s068",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s063",
+   "flow": null
+  },
+  {
+   "a": "s068",
+   "b": "s063",
+   "flow": null
+  },
+  {
+   "a": "s063",
+   "b": "s064",
+   "flow": null
+  },
+  {
+   "a": "s063",
+   "b": "s047",
+   "flow": null
+  },
+  {
+   "a": "s063",
+   "b": "s069",
+   "flow": null
+  },
+  {
+   "a": "s064",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s064",
+   "b": "s103",
+   "flow": null
+  },
+  {
+   "a": "s064",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s064",
+   "b": "s065",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s103",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s065",
+   "flow": null
+  },
+  {
+   "a": "s103",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s103",
+   "b": "s065",
+   "flow": null
+  },
+  {
+   "a": "s114",
+   "b": "s065",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s066",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s079",
+   "b": "s090",
+   "flow": null
+  },
+  {
+   "a": "s079",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s090",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s091",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s101",
+   "flow": null
+  },
+  {
+   "a": "s101",
+   "b": "s103",
+   "flow": null
+  },
+  {
+   "a": "s069",
+   "b": "s072",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s069",
+   "b": "s068",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s047",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s047",
+   "b": "s072",
+   "flow": null
+  },
+  {
+   "a": "s047",
+   "b": "s068",
+   "flow": null
+  },
+  {
+   "a": "s047",
+   "b": "s069",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s072",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s068",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s069",
+   "flow": null
+  },
+  {
+   "a": "s072",
+   "b": "s068",
+   "flow": null
+  },
+  {
+   "a": "s091",
+   "b": "s092",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s091",
+   "b": "s090",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s078",
+   "b": "s073",
+   "flow": null
+  },
+  {
+   "a": "s078",
+   "b": "s092",
+   "flow": null
+  },
+  {
+   "a": "s078",
+   "b": "s090",
+   "flow": null
+  },
+  {
+   "a": "s078",
+   "b": "s091",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s092",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s090",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s091",
+   "flow": null
+  },
+  {
+   "a": "s092",
+   "b": "s090",
+   "flow": null
+  },
+  {
+   "a": "s040",
+   "b": "s039",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s041",
+   "b": "s039",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s040",
+   "b": "s042",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s041",
+   "b": "s042",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s040",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s039",
+   "b": "s042",
+   "flow": null
+  },
+  {
+   "a": "s039",
+   "b": "s038",
+   "flow": null
+  },
+  {
+   "a": "s038",
+   "b": "s037",
+   "flow": null
+  },
+  {
+   "a": "s042",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s098",
+   "b": "s097",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s098",
+   "b": "s108",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s108",
+   "b": "s097",
+   "flow": null
+  },
+  {
+   "a": "s108",
+   "b": "s107",
+   "flow": null
+  },
+  {
+   "a": "s100",
+   "b": "s106",
+   "flow": null
+  },
+  {
+   "a": "s100",
+   "b": "s107",
+   "flow": null
+  },
+  {
+   "a": "s106",
+   "b": "s107",
+   "flow": null
+  },
+  {
+   "a": "s106",
+   "b": "s105",
+   "flow": null
+  },
+  {
+   "a": "s097",
+   "b": "s096",
+   "flow": null
+  },
+  {
+   "a": "s097",
+   "b": "s100",
+   "flow": null
+  },
+  {
+   "a": "s096",
+   "b": "s100",
+   "flow": null
+  },
+  {
+   "a": "s096",
+   "b": "s105",
+   "flow": null
+  },
+  {
+   "a": "s096",
+   "b": "s111",
+   "flow": null
+  },
+  {
+   "a": "s096",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s111",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s094",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s093",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s110",
+   "flow": null
+  },
+  {
+   "a": "s110",
+   "b": "s109",
+   "flow": null
+  },
+  {
+   "a": "s115",
+   "b": "s099",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s093",
+   "b": "s109",
+   "flow": null
+  },
+  {
+   "a": "s093",
+   "b": "s088",
+   "flow": null
+  },
+  {
+   "a": "s093",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s093",
+   "b": "s099",
+   "flow": null
+  },
+  {
+   "a": "s109",
+   "b": "s088",
+   "flow": null
+  },
+  {
+   "a": "s109",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s109",
+   "b": "s099",
+   "flow": null
+  },
+  {
+   "a": "s088",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s088",
+   "b": "s099",
+   "flow": null
+  },
+  {
+   "a": "s088",
+   "b": "s089",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s099",
+   "b": "s104",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s099",
+   "b": "s012",
+   "flow": null
+  },
+  {
+   "a": "s104",
+   "b": "s012",
+   "flow": null
+  },
+  {
+   "a": "s012",
+   "b": "s013",
+   "flow": null
+  },
+  {
+   "a": "s013",
+   "b": "s014",
+   "flow": null
+  },
+  {
+   "a": "s014",
+   "b": "s018",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s014",
+   "b": "s007",
+   "flow": null
+  },
+  {
+   "a": "s007",
+   "b": "s018",
+   "flow": null
+  },
+  {
+   "a": "s007",
+   "b": "s008",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s018",
+   "b": "s011",
+   "flow": null
+  },
+  {
+   "a": "s018",
+   "b": "s025",
+   "flow": null
+  },
+  {
+   "a": "s018",
+   "b": "s015",
+   "flow": null
+  },
+  {
+   "a": "s011",
+   "b": "s025",
+   "flow": null
+  },
+  {
+   "a": "s011",
+   "b": "s015",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s015",
+   "flow": null
+  },
+  {
+   "a": "s011",
+   "b": "s004",
+   "flow": null
+  },
+  {
+   "a": "s004",
+   "b": "s005",
+   "flow": null
+  },
+  {
+   "a": "s005",
+   "b": "s006",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s025",
+   "b": "s026",
+   "flow": null
+  },
+  {
+   "a": "s015",
+   "b": "s026",
+   "flow": null
+  },
+  {
+   "a": "s015",
+   "b": "s016",
+   "flow": null
+  },
+  {
+   "a": "s026",
+   "b": "s016",
+   "flow": null
+  },
+  {
+   "a": "s016",
+   "b": "s017",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s018",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s018",
+   "b": "s024",
+   "flow": null
+  },
+  {
+   "a": "s022",
+   "b": "s024",
+   "flow": null
+  },
+  {
+   "a": "s022",
+   "b": "s031",
+   "flow": null
+  },
+  {
+   "a": "s024",
+   "b": "s031",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s032",
+   "flow": "a_to_b"
+  }
+ ],
+ "continuations": [
+  {
+   "symbol": "s001",
+   "label": "RC:LETDOWN LINE FROM RC LOOP 1B / SHEET 1",
+   "target_system": "RC",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s008",
+   "label": "RDT / SHEET 5\"RC\"",
+   "target_system": null,
+   "target_sheet": "5",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s006",
+   "label": "PRESSURIZER AUXILIARY SPRAY",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s017",
+   "label": "RC:CHARGING LINE TO RC LOOP 1A / SHEET 1",
+   "target_system": "RC",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s032",
+   "label": "REACTOR DRAIN HEADER / SHEET 5\"RE\"",
+   "target_system": null,
+   "target_sheet": "5",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s035",
+   "label": "REACTOR DRAIN HEADER / SHEET 5\"RD\"",
+   "target_system": null,
+   "target_sheet": "5",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s036",
+   "label": "REACTOR DRAIN HEADER / SHEET 5\"RB\"",
+   "target_system": null,
+   "target_sheet": "5",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s040",
+   "label": "SI:SHUTDOWN COOLING HEAT EXCHANGER 1 / SHEET 1",
+   "target_system": "SI",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s041",
+   "label": "SI:SHUTDOWN COOLING HEAT EXCHANGER 2 / SHEET 2",
+   "target_system": "SI",
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s066",
+   "label": "PURIFICATION ION EXCHANGER / SHEET 2\"A\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s071",
+   "label": "EQUIPMENT DRAIN RELIEF HEADER / SHEET 6\"ED\"",
+   "target_system": null,
+   "target_sheet": "6",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s072",
+   "label": "RECYCLE DRAIN HEADER / SHEET 6\"YG\"",
+   "target_system": null,
+   "target_sheet": "6",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s089",
+   "label": "EDT / SHEET 6\"EB\"",
+   "target_system": null,
+   "target_sheet": "6",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s092",
+   "label": "RECYCLE DRAIN HEADER / SHEET 6\"YF\"",
+   "target_system": null,
+   "target_sheet": "6",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s098",
+   "label": "CHARGING PUMPS / SHEET 3\"C\"",
+   "target_system": null,
+   "target_sheet": "3",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s104",
+   "label": "SEAL INJECTION / SHEET 2\"D\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s115",
+   "label": "AUXILIARY CHARGING PUMP / SHEET 3\"E\"",
+   "target_system": null,
+   "target_sheet": "3",
+   "target_drawing": null
+  }
+ ]
+}

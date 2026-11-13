@@ -1,0 +1,6018 @@
+{
+ "schema": "hazop_read_quality_key",
+ "version": 1,
+ "seq": 105,
+ "drawing": "10.3.2-1-S1",
+ "source_file": "105_Ch10_Fig10.3.2-1_s1of2_Main_Steam_System_Flow_Diagram.pdf",
+ "page_size": [
+  1224.0,
+  792.0
+ ],
+ "regions": [
+  [
+   205.0,
+   100.0,
+   885.0,
+   690.0
+  ]
+ ],
+ "method": "overview.png로 4개 주증기관(A~D)과 증기발생기 2기를 파악한 뒤 도면 영역 타일 20장(x220~880, y0~560, x0 열의 증기발생기 계기)을 5배(1pt=5px)로 위 왼쪽부터 읽음. 기호가 약 170개라 영역을 나누지 않고 도면 전체를 적음. 네 주증기관은 같은 배치라 A관을 자세히 재고, B~D관은 타일에서 다시 잰 값(안전밸브·방출관 x, 태그 원, 계기, 사판)을 넣고 나머지는 A관 좌표에 관 사이 y 간격(93.8, 244.8, 368.4pt)을 더해 적은 뒤 타일과 대조함. 연결은 주배관을 따라 티로 이어진 기호를 묶어 쌍으로 적음(MSIV 앞 묶음, MSIV 뒤 묶음).",
+ "verified": "2026-11-13 Claude 정답지 세션 초안. 사람 확인 전",
+ "limits": "관 사이 간격을 더해 적은 B~D관 좌표는 ±3pt를 넘을 수 있음. 주증기관 MSIV·MSIVBV는 E/H 구동기라 unlisted로 적음. 격납건물 경계의 'PC 06xx' 상자, 16\" 배관의 둥근 이음, 안전밸브 배출관의 'ㄷ' 받침(drip pan)은 기호인지 확신이 낮음. 드레인 포트 위 끝 'U' 모양과 주배관 위 쐐기(경사 표시), BI/DII 마름모(등급 경계), MSVH/TGB 경계 표시는 기호로 보지 않아 빼냄. 증기발생기 둘레 FT·PT와 주배관 PT는 얇은 계기선(충격선)으로 보고 연결에서 뺌. TEW는 배관에 바로 붙은 온도계 우물로 보고 연결에 넣음. 흐름 화살표는 배관 위에 없어 flow는 모두 null. 'SET @ … PSIG'와 ESF-MSIS 등 신호 글자는 속성 목록에 없어 적지 않음.",
+ "symbols": [
+  {
+   "id": "s001",
+   "kind": "steam_generator",
+   "bbox": [
+    241,
+    307,
+    268,
+    383.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "이름표 없음, 글자 'STEAM GENERATOR 1'"
+  },
+  {
+   "id": "s002",
+   "kind": "steam_generator",
+   "bbox": [
+    243.6,
+    605,
+    271,
+    680
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "이름표 없음, 글자 'STEAM GENERATOR 2'"
+  },
+  {
+   "id": "s003",
+   "kind": "transmitter",
+   "bbox": [
+    216,
+    281,
+    227.4,
+    293
+   ],
+   "tag": "FT 1011X",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s004",
+   "kind": "transmitter",
+   "bbox": [
+    216,
+    295,
+    227.4,
+    307.6
+   ],
+   "tag": "FT 1011Y",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s005",
+   "kind": "transmitter",
+   "bbox": [
+    215.4,
+    309.6,
+    227,
+    322
+   ],
+   "tag": "PT 1013A",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s006",
+   "kind": "transmitter",
+   "bbox": [
+    215.6,
+    323.4,
+    227.4,
+    336
+   ],
+   "tag": "PT 1013C",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s007",
+   "kind": "transmitter",
+   "bbox": [
+    283.6,
+    281,
+    295,
+    293
+   ],
+   "tag": "FT 1012X",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s008",
+   "kind": "transmitter",
+   "bbox": [
+    283.6,
+    295.6,
+    295,
+    307.6
+   ],
+   "tag": "FT 1012Y",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s009",
+   "kind": "transmitter",
+   "bbox": [
+    283.2,
+    309,
+    295,
+    321
+   ],
+   "tag": "PT 1013D",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s010",
+   "kind": "transmitter",
+   "bbox": [
+    283.2,
+    322.4,
+    295,
+    335
+   ],
+   "tag": "PT 1013B",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s011",
+   "kind": "transmitter",
+   "bbox": [
+    218,
+    577.4,
+    229.6,
+    589.6
+   ],
+   "tag": "FT 1021X",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s012",
+   "kind": "transmitter",
+   "bbox": [
+    218,
+    592,
+    229.6,
+    604.6
+   ],
+   "tag": "FT 1021Y",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s013",
+   "kind": "transmitter",
+   "bbox": [
+    217.6,
+    605.6,
+    229.6,
+    618.6
+   ],
+   "tag": "PT 1023A",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s014",
+   "kind": "transmitter",
+   "bbox": [
+    218,
+    620,
+    230,
+    633.4
+   ],
+   "tag": "PT 1023C",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s015",
+   "kind": "transmitter",
+   "bbox": [
+    286,
+    577.4,
+    298,
+    589.6
+   ],
+   "tag": "FT 1022X",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s016",
+   "kind": "transmitter",
+   "bbox": [
+    286,
+    592,
+    298,
+    604.6
+   ],
+   "tag": "FT 1022Y",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s017",
+   "kind": "transmitter",
+   "bbox": [
+    286,
+    605.6,
+    298,
+    618.4
+   ],
+   "tag": "PT 1023D",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s018",
+   "kind": "transmitter",
+   "bbox": [
+    286.6,
+    619.6,
+    298,
+    632.8
+   ],
+   "tag": "PT 1023B",
+   "attributes": {},
+   "note": "비석 아래 칸 'IRU'. 계기선으로만 이어져 연결 없음"
+  },
+  {
+   "id": "s019",
+   "kind": "flow_element",
+   "bbox": [
+    246,
+    299.6,
+    252,
+    308.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "증기발생기 출구 노즐의 유량 제한기(벤추리)로 읽음. 불확실: 기호 종류"
+  },
+  {
+   "id": "s020",
+   "kind": "unlisted",
+   "kind_text": "rectangular box 'PC' on pipe at containment boundary",
+   "bbox": [
+    323.6,
+    179,
+    333.6,
+    189
+   ],
+   "tag": "PC 0611",
+   "attributes": {},
+   "note": "불확실: 격납건물 관통부 표시로 보임. 기호인지 확인 필요"
+  },
+  {
+   "id": "s021",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    361.5,
+    170.0,
+    374,
+    178.5
+   ],
+   "tag": "106",
+   "tag_bbox": [
+    374.9,
+    160.9,
+    383.9,
+    169.9
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s022",
+   "kind": "control_valve",
+   "bbox": [
+    360.5,
+    148.0,
+    376,
+    159.0
+   ],
+   "tag": "102",
+   "tag_bbox": [
+    374.9,
+    139.9,
+    383.9,
+    148.9
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "MAIN STEAM ATMOSPHERIC DUMP VALVE, E/H 구동기 앵글형"
+  },
+  {
+   "id": "s023",
+   "kind": "unlisted",
+   "kind_text": "expansion joint / flexible connector",
+   "bbox": [
+    405,
+    147.6,
+    409.6,
+    150.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 16\" 배관 위 둥근 이음 모양"
+  },
+  {
+   "id": "s024",
+   "kind": "unlisted",
+   "kind_text": "silencer",
+   "bbox": [
+    404,
+    115.6,
+    410.4,
+    129
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "글자 'SILENCER'"
+  },
+  {
+   "id": "s025",
+   "kind": "relief_valve",
+   "bbox": [
+    429.6,
+    158.5,
+    436.1,
+    165.5
+   ],
+   "tag": "1302",
+   "tag_bbox": [
+    420.9,
+    149.1,
+    429.9,
+    158.1
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s026",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    444.9,
+    151.6,
+    453.9,
+    157
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s027",
+   "kind": "vent",
+   "bbox": [
+    447.9,
+    126.5,
+    450.9,
+    132
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s028",
+   "kind": "relief_valve",
+   "bbox": [
+    468.8,
+    158.5,
+    475.3,
+    165.5
+   ],
+   "tag": "1304",
+   "tag_bbox": [
+    458.5,
+    148.9,
+    467.5,
+    157.9
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s029",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    483.5,
+    151.6,
+    492.5,
+    157
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s030",
+   "kind": "vent",
+   "bbox": [
+    486.5,
+    126.5,
+    489.5,
+    132
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s031",
+   "kind": "relief_valve",
+   "bbox": [
+    505.6,
+    158.5,
+    512.1,
+    165.5
+   ],
+   "tag": "1306",
+   "tag_bbox": [
+    495.9,
+    148.9,
+    504.9,
+    157.9
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s032",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    520.9,
+    151.6,
+    529.9,
+    157
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s033",
+   "kind": "vent",
+   "bbox": [
+    523.9,
+    126.5,
+    526.9,
+    132
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s034",
+   "kind": "relief_valve",
+   "bbox": [
+    543,
+    158.5,
+    549.5,
+    165.5
+   ],
+   "tag": "1308",
+   "tag_bbox": [
+    534.1,
+    148.9,
+    543.1,
+    157.9
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s035",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    558.5,
+    151.6,
+    567.5,
+    157
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s036",
+   "kind": "vent",
+   "bbox": [
+    561.5,
+    126.5,
+    564.5,
+    132
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s037",
+   "kind": "relief_valve",
+   "bbox": [
+    581.4,
+    158.5,
+    587.9,
+    165.5
+   ],
+   "tag": "1310",
+   "tag_bbox": [
+    572.7,
+    148.9,
+    581.7,
+    157.9
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s038",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    597.1,
+    151.6,
+    606.1,
+    157
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s039",
+   "kind": "vent",
+   "bbox": [
+    600.1,
+    126.5,
+    603.1,
+    132
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s040",
+   "kind": "temperature_element",
+   "bbox": [
+    635,
+    164,
+    647,
+    177
+   ],
+   "tag": "TEW 001",
+   "attributes": {},
+   "note": "온도계 우물로 배관에 바로 붙음"
+  },
+  {
+   "id": "s041",
+   "kind": "manual_valve",
+   "bbox": [
+    653,
+    153,
+    657.6,
+    159.4
+   ],
+   "tag": "V1257",
+   "tag_bbox": [
+    658,
+    151,
+    661,
+    162
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s042",
+   "kind": "continuation",
+   "bbox": [
+    674,
+    143.5,
+    703,
+    151.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s043",
+   "kind": "pipe_cap",
+   "bbox": [
+    660.5,
+    218.5,
+    664.5,
+    221.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "12\" 드레인 포트 아래 끝. 위 끝(주배관 바로 아래 'U' 모양)은 적지 않음"
+  },
+  {
+   "id": "s044",
+   "kind": "air_operated_valve",
+   "bbox": [
+    667.5,
+    202,
+    674.5,
+    211
+   ],
+   "tag": "091",
+   "tag_bbox": [
+    675.1,
+    195.9,
+    684.1,
+    204.9
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s045",
+   "kind": "continuation",
+   "bbox": [
+    690,
+    206.6,
+    719,
+    211.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s046",
+   "kind": "unlisted",
+   "kind_text": "electro-hydraulic (E/H) operated isolation valve",
+   "bbox": [
+    738,
+    180,
+    744.5,
+    187
+   ],
+   "tag": "012",
+   "tag_bbox": [
+    727.5,
+    170.5,
+    736.5,
+    179.5
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "MAIN STEAM ISOLATION VALVE. 불확실: E/H 구동기라 목록 종류를 고르지 못함"
+  },
+  {
+   "id": "s047",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    754.5,
+    199.5,
+    765,
+    206.5
+   ],
+   "tag": "020",
+   "tag_bbox": [
+    743.9,
+    189.5,
+    752.9,
+    198.5
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s048",
+   "kind": "unlisted",
+   "kind_text": "electro-hydraulic (E/H) operated isolation valve",
+   "bbox": [
+    738.5,
+    205,
+    744,
+    217.5
+   ],
+   "tag": "016",
+   "tag_bbox": [
+    745.5,
+    218.5,
+    754.5,
+    227.5
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "MSIVBV, 검은 밸브. 불확실: E/H 구동기라 목록 종류를 고르지 못함"
+  },
+  {
+   "id": "s049",
+   "kind": "transmitter",
+   "bbox": [
+    808,
+    164,
+    821,
+    177.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "비석 글자 'PT / IRU', 루프번호 없음. 계기선으로만 붙어 연결 없음"
+  },
+  {
+   "id": "s050",
+   "kind": "pipe_cap",
+   "bbox": [
+    802,
+    218.5,
+    806,
+    221.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "12\" 드레인 포트 아래 끝"
+  },
+  {
+   "id": "s051",
+   "kind": "continuation",
+   "bbox": [
+    849,
+    206.6,
+    877,
+    211.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s052",
+   "kind": "continuation",
+   "bbox": [
+    849,
+    181.6,
+    877,
+    186.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s053",
+   "kind": "flow_element",
+   "bbox": [
+    259.6,
+    299.6,
+    265.6,
+    308.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "증기발생기 출구 노즐의 유량 제한기(벤추리)로 읽음. 불확실: 기호 종류"
+  },
+  {
+   "id": "s054",
+   "kind": "unlisted",
+   "kind_text": "rectangular box 'PC' on pipe at containment boundary",
+   "bbox": [
+    323.6,
+    272.6,
+    333.6,
+    282.4
+   ],
+   "tag": "PC 0612",
+   "attributes": {},
+   "note": "불확실: 격납건물 관통부 표시로 보임. 기호인지 확인 필요"
+  },
+  {
+   "id": "s055",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    361.5,
+    263.0,
+    374,
+    271.5
+   ],
+   "tag": "105",
+   "tag_bbox": [
+    374.9,
+    253.9,
+    383.9,
+    262.9
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s056",
+   "kind": "control_valve",
+   "bbox": [
+    360.5,
+    241.6,
+    376,
+    252.6
+   ],
+   "tag": "101",
+   "tag_bbox": [
+    374.5,
+    233.5,
+    383.5,
+    242.5
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "MAIN STEAM ATMOSPHERIC DUMP VALVE, E/H 구동기 앵글형"
+  },
+  {
+   "id": "s057",
+   "kind": "unlisted",
+   "kind_text": "expansion joint / flexible connector",
+   "bbox": [
+    405,
+    241.6,
+    409.6,
+    244.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 16\" 배관 위 둥근 이음 모양"
+  },
+  {
+   "id": "s058",
+   "kind": "unlisted",
+   "kind_text": "silencer",
+   "bbox": [
+    404,
+    214,
+    410.4,
+    226
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "글자 'SILENCER'"
+  },
+  {
+   "id": "s059",
+   "kind": "relief_valve",
+   "bbox": [
+    429.6,
+    252.5,
+    436.1,
+    259
+   ],
+   "tag": "1301",
+   "tag_bbox": [
+    419.9,
+    242.1,
+    428.9,
+    251.1
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s060",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    444.9,
+    245,
+    453.9,
+    250.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s061",
+   "kind": "vent",
+   "bbox": [
+    447.9,
+    220.1,
+    450.9,
+    225.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s062",
+   "kind": "relief_valve",
+   "bbox": [
+    469,
+    252.5,
+    475.5,
+    259
+   ],
+   "tag": "1303",
+   "tag_bbox": [
+    458.9,
+    242.1,
+    467.9,
+    251.1
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s063",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    483.5,
+    245,
+    492.5,
+    250.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s064",
+   "kind": "vent",
+   "bbox": [
+    486.5,
+    220.1,
+    489.5,
+    225.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s065",
+   "kind": "relief_valve",
+   "bbox": [
+    506,
+    252.5,
+    512.5,
+    259
+   ],
+   "tag": "1305",
+   "tag_bbox": [
+    495.9,
+    241.9,
+    504.9,
+    250.9
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s066",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    520.9,
+    245,
+    529.9,
+    250.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s067",
+   "kind": "vent",
+   "bbox": [
+    523.9,
+    220.1,
+    526.9,
+    225.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s068",
+   "kind": "relief_valve",
+   "bbox": [
+    544,
+    252.5,
+    550.5,
+    259
+   ],
+   "tag": "1307",
+   "tag_bbox": [
+    534.1,
+    241.9,
+    543.1,
+    250.9
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s069",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    558.9,
+    245,
+    567.9,
+    250.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s070",
+   "kind": "vent",
+   "bbox": [
+    561.9,
+    220.1,
+    564.9,
+    225.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s071",
+   "kind": "relief_valve",
+   "bbox": [
+    582.4,
+    252.5,
+    588.9,
+    259
+   ],
+   "tag": "1309",
+   "tag_bbox": [
+    572.7,
+    242.1,
+    581.7,
+    251.1
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s072",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    597.5,
+    245,
+    606.5,
+    250.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s073",
+   "kind": "vent",
+   "bbox": [
+    600.5,
+    220.1,
+    603.5,
+    225.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s074",
+   "kind": "temperature_element",
+   "bbox": [
+    635,
+    257.8,
+    647,
+    270.8
+   ],
+   "tag": "TEW 002",
+   "attributes": {},
+   "note": "온도계 우물로 배관에 바로 붙음"
+  },
+  {
+   "id": "s075",
+   "kind": "manual_valve",
+   "bbox": [
+    653,
+    246.8,
+    657.6,
+    253.2
+   ],
+   "tag": "V1030",
+   "tag_bbox": [
+    658,
+    244.8,
+    661,
+    255.8
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s076",
+   "kind": "continuation",
+   "bbox": [
+    674,
+    237.3,
+    703,
+    245.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s077",
+   "kind": "pipe_cap",
+   "bbox": [
+    660.5,
+    312.3,
+    664.5,
+    315.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "12\" 드레인 포트 아래 끝. 위 끝(주배관 바로 아래 'U' 모양)은 적지 않음"
+  },
+  {
+   "id": "s078",
+   "kind": "air_operated_valve",
+   "bbox": [
+    667.5,
+    295.8,
+    674.5,
+    304.8
+   ],
+   "tag": "090",
+   "tag_bbox": [
+    675.1,
+    289.7,
+    684.1,
+    298.7
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s079",
+   "kind": "continuation",
+   "bbox": [
+    690,
+    300.4,
+    719,
+    305.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s080",
+   "kind": "unlisted",
+   "kind_text": "electro-hydraulic (E/H) operated isolation valve",
+   "bbox": [
+    738,
+    273.8,
+    744.5,
+    280.8
+   ],
+   "tag": "011",
+   "tag_bbox": [
+    727.5,
+    264.3,
+    736.5,
+    273.3
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "MAIN STEAM ISOLATION VALVE. 불확실: E/H 구동기라 목록 종류를 고르지 못함"
+  },
+  {
+   "id": "s081",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    754.5,
+    293.3,
+    765,
+    300.3
+   ],
+   "tag": "019",
+   "tag_bbox": [
+    743.9,
+    283.3,
+    752.9,
+    292.3
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s082",
+   "kind": "unlisted",
+   "kind_text": "electro-hydraulic (E/H) operated isolation valve",
+   "bbox": [
+    738.5,
+    298.8,
+    744,
+    311.3
+   ],
+   "tag": "015",
+   "tag_bbox": [
+    745.5,
+    312.3,
+    754.5,
+    321.3
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "MSIVBV, 검은 밸브. 불확실: E/H 구동기라 목록 종류를 고르지 못함"
+  },
+  {
+   "id": "s083",
+   "kind": "transmitter",
+   "bbox": [
+    811,
+    260,
+    823,
+    272
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "비석 글자 'PT / IRU', 루프번호 없음. 계기선으로만 붙어 연결 없음"
+  },
+  {
+   "id": "s084",
+   "kind": "pipe_cap",
+   "bbox": [
+    802,
+    312.3,
+    806,
+    315.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "12\" 드레인 포트 아래 끝"
+  },
+  {
+   "id": "s085",
+   "kind": "continuation",
+   "bbox": [
+    849,
+    300.4,
+    877,
+    305.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s086",
+   "kind": "continuation",
+   "bbox": [
+    849,
+    275,
+    877,
+    280
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s087",
+   "kind": "manual_valve",
+   "bbox": [
+    433.6,
+    308,
+    441.6,
+    313
+   ],
+   "tag": "V1151",
+   "tag_bbox": [
+    433,
+    312.4,
+    441.6,
+    315
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s088",
+   "kind": "air_operated_valve",
+   "bbox": [
+    493.6,
+    303,
+    501,
+    313
+   ],
+   "tag": "110",
+   "tag_bbox": [
+    501.1,
+    296.9,
+    510.1,
+    305.9
+   ],
+   "attributes": {
+    "fail_position": "FO"
+   },
+   "note": "AFW PUMP TBN STM SUPPLY V/V"
+  },
+  {
+   "id": "s089",
+   "kind": "air_operated_valve",
+   "bbox": [
+    494.5,
+    320,
+    500.5,
+    329.5
+   ],
+   "tag": "112",
+   "tag_bbox": [
+    501.5,
+    314.5,
+    510.5,
+    323.5
+   ],
+   "attributes": {
+    "fail_position": "FO"
+   },
+   "note": "AFW PUMP TBN WARMUP V/V"
+  },
+  {
+   "id": "s090",
+   "kind": "orifice",
+   "bbox": [
+    529.6,
+    325.5,
+    533.4,
+    329.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 1\" 배관 위 두 줄 표시. 오리피스 또는 플랜지 쌍"
+  },
+  {
+   "id": "s091",
+   "kind": "manual_valve",
+   "bbox": [
+    539,
+    325.5,
+    545.5,
+    329.5
+   ],
+   "tag": "V1153",
+   "tag_bbox": [
+    538,
+    329.6,
+    546.6,
+    332.4
+   ],
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": "불확실: 한쪽이 검게 칠한 밸브. 체크밸브일 수도 있음. 그림 글자는 소문자 'v'"
+  },
+  {
+   "id": "s092",
+   "kind": "continuation",
+   "bbox": [
+    603,
+    307.6,
+    632,
+    313
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s093",
+   "kind": "flow_element",
+   "bbox": [
+    248,
+    596.6,
+    254,
+    605.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "증기발생기 출구 노즐의 유량 제한기(벤추리)로 읽음. 불확실: 기호 종류"
+  },
+  {
+   "id": "s094",
+   "kind": "unlisted",
+   "kind_text": "rectangular box 'PC' on pipe at containment boundary",
+   "bbox": [
+    323.6,
+    423.6,
+    333.6,
+    433.2
+   ],
+   "tag": "PC 0622",
+   "attributes": {},
+   "note": "불확실: 격납건물 관통부 표시로 보임. 기호인지 확인 필요"
+  },
+  {
+   "id": "s095",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    361.5,
+    416.6,
+    374,
+    425.1
+   ],
+   "tag": "108",
+   "tag_bbox": [
+    374.9,
+    407.5,
+    383.9,
+    416.5
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s096",
+   "kind": "control_valve",
+   "bbox": [
+    360.5,
+    395.0,
+    376,
+    406.0
+   ],
+   "tag": "104",
+   "tag_bbox": [
+    374.5,
+    386.9,
+    383.5,
+    395.9
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "MAIN STEAM ATMOSPHERIC DUMP VALVE, E/H 구동기 앵글형"
+  },
+  {
+   "id": "s097",
+   "kind": "unlisted",
+   "kind_text": "expansion joint / flexible connector",
+   "bbox": [
+    405,
+    392.6,
+    409.6,
+    395.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 16\" 배관 위 둥근 이음 모양"
+  },
+  {
+   "id": "s098",
+   "kind": "unlisted",
+   "kind_text": "silencer",
+   "bbox": [
+    404,
+    364.4,
+    410.4,
+    378
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "글자 'SILENCER'"
+  },
+  {
+   "id": "s099",
+   "kind": "relief_valve",
+   "bbox": [
+    429.6,
+    402.5,
+    436.1,
+    409
+   ],
+   "tag": "1312",
+   "tag_bbox": [
+    419.9,
+    393.5,
+    428.9,
+    402.5
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s100",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    444.9,
+    397,
+    453.9,
+    402.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s101",
+   "kind": "vent",
+   "bbox": [
+    447.9,
+    371.9,
+    450.9,
+    377.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s102",
+   "kind": "relief_valve",
+   "bbox": [
+    469,
+    402.5,
+    475.5,
+    409
+   ],
+   "tag": "1314",
+   "tag_bbox": [
+    458.9,
+    393.1,
+    467.9,
+    402.1
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s103",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    483.5,
+    397,
+    492.5,
+    402.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s104",
+   "kind": "vent",
+   "bbox": [
+    486.5,
+    371.9,
+    489.5,
+    377.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s105",
+   "kind": "relief_valve",
+   "bbox": [
+    506,
+    402.5,
+    512.5,
+    409
+   ],
+   "tag": "1316",
+   "tag_bbox": [
+    495.9,
+    392.9,
+    504.9,
+    401.9
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s106",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    521.5,
+    397,
+    530.5,
+    402.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s107",
+   "kind": "vent",
+   "bbox": [
+    524.5,
+    371.9,
+    527.5,
+    377.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s108",
+   "kind": "relief_valve",
+   "bbox": [
+    543.6,
+    402.5,
+    550.1,
+    409
+   ],
+   "tag": "1318",
+   "tag_bbox": [
+    534.1,
+    392.9,
+    543.1,
+    401.9
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s109",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    559.1,
+    397,
+    568.1,
+    402.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s110",
+   "kind": "vent",
+   "bbox": [
+    562.1,
+    371.9,
+    565.1,
+    377.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s111",
+   "kind": "relief_valve",
+   "bbox": [
+    582,
+    402.5,
+    588.5,
+    409
+   ],
+   "tag": "1320",
+   "tag_bbox": [
+    572.7,
+    393.1,
+    581.7,
+    402.1
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s112",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    597.1,
+    397,
+    606.1,
+    402.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s113",
+   "kind": "vent",
+   "bbox": [
+    600.1,
+    371.9,
+    603.1,
+    377.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s114",
+   "kind": "temperature_element",
+   "bbox": [
+    635,
+    408.8,
+    647,
+    421.8
+   ],
+   "tag": "TEW 003",
+   "attributes": {},
+   "note": "온도계 우물로 배관에 바로 붙음"
+  },
+  {
+   "id": "s115",
+   "kind": "manual_valve",
+   "bbox": [
+    653,
+    397.8,
+    657.6,
+    404.2
+   ],
+   "tag": "V1051",
+   "tag_bbox": [
+    658,
+    395.8,
+    661,
+    406.8
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s116",
+   "kind": "continuation",
+   "bbox": [
+    674,
+    388.3,
+    703,
+    396.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s117",
+   "kind": "pipe_cap",
+   "bbox": [
+    660.5,
+    463.3,
+    664.5,
+    466.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "12\" 드레인 포트 아래 끝. 위 끝(주배관 바로 아래 'U' 모양)은 적지 않음"
+  },
+  {
+   "id": "s118",
+   "kind": "air_operated_valve",
+   "bbox": [
+    667.5,
+    446.8,
+    674.5,
+    455.8
+   ],
+   "tag": "093",
+   "tag_bbox": [
+    675.1,
+    440.7,
+    684.1,
+    449.7
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s119",
+   "kind": "continuation",
+   "bbox": [
+    690,
+    451.4,
+    719,
+    456.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s120",
+   "kind": "unlisted",
+   "kind_text": "electro-hydraulic (E/H) operated isolation valve",
+   "bbox": [
+    738,
+    424.8,
+    744.5,
+    431.8
+   ],
+   "tag": "014",
+   "tag_bbox": [
+    727.5,
+    415.3,
+    736.5,
+    424.3
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "MAIN STEAM ISOLATION VALVE. 불확실: E/H 구동기라 목록 종류를 고르지 못함"
+  },
+  {
+   "id": "s121",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    754.5,
+    444.3,
+    765,
+    451.3
+   ],
+   "tag": "022",
+   "tag_bbox": [
+    743.9,
+    434.3,
+    752.9,
+    443.3
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s122",
+   "kind": "unlisted",
+   "kind_text": "electro-hydraulic (E/H) operated isolation valve",
+   "bbox": [
+    738.5,
+    449.8,
+    744,
+    462.3
+   ],
+   "tag": "018",
+   "tag_bbox": [
+    745.5,
+    463.3,
+    754.5,
+    472.3
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "MSIVBV, 검은 밸브. 불확실: E/H 구동기라 목록 종류를 고르지 못함"
+  },
+  {
+   "id": "s123",
+   "kind": "transmitter",
+   "bbox": [
+    815,
+    406,
+    827,
+    419
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "비석 글자 'PT / IRU', 루프번호 없음. 계기선으로만 붙어 연결 없음"
+  },
+  {
+   "id": "s124",
+   "kind": "pipe_cap",
+   "bbox": [
+    802,
+    460.3,
+    806,
+    463.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "12\" 드레인 포트 아래 끝"
+  },
+  {
+   "id": "s125",
+   "kind": "continuation",
+   "bbox": [
+    849,
+    448.4,
+    877,
+    453.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s126",
+   "kind": "continuation",
+   "bbox": [
+    849,
+    426,
+    877,
+    431
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s127",
+   "kind": "manual_valve",
+   "bbox": [
+    433,
+    459.5,
+    441.5,
+    464
+   ],
+   "tag": "V1152",
+   "tag_bbox": [
+    432,
+    463.6,
+    440.6,
+    466.4
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s128",
+   "kind": "air_operated_valve",
+   "bbox": [
+    494.5,
+    455,
+    501.5,
+    464
+   ],
+   "tag": "109",
+   "tag_bbox": [
+    502.1,
+    448.5,
+    511.1,
+    457.5
+   ],
+   "attributes": {
+    "fail_position": "FO"
+   },
+   "note": "AFW PUMP TBN STM SUPPLY V/V"
+  },
+  {
+   "id": "s129",
+   "kind": "air_operated_valve",
+   "bbox": [
+    494.5,
+    471,
+    500.5,
+    480.5
+   ],
+   "tag": "111",
+   "tag_bbox": [
+    501.5,
+    465.5,
+    510.5,
+    474.5
+   ],
+   "attributes": {
+    "fail_position": "FO"
+   },
+   "note": "AFW PUMP TBN WARMUP V/V"
+  },
+  {
+   "id": "s130",
+   "kind": "orifice",
+   "bbox": [
+    529.4,
+    476.5,
+    533,
+    480
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 1\" 배관 위 두 줄 표시. 오리피스 또는 플랜지 쌍"
+  },
+  {
+   "id": "s131",
+   "kind": "manual_valve",
+   "bbox": [
+    539.5,
+    476.4,
+    546.5,
+    480
+   ],
+   "tag": "V1154",
+   "tag_bbox": [
+    538.6,
+    480,
+    547.4,
+    483
+   ],
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": "불확실: 한쪽이 검게 칠한 밸브. 체크밸브일 수도 있음. 그림 글자는 소문자 'v'"
+  },
+  {
+   "id": "s132",
+   "kind": "continuation",
+   "bbox": [
+    599,
+    459,
+    628,
+    464.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s133",
+   "kind": "flow_element",
+   "bbox": [
+    261.4,
+    596.6,
+    267.4,
+    605.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "증기발생기 출구 노즐의 유량 제한기(벤추리)로 읽음. 불확실: 기호 종류"
+  },
+  {
+   "id": "s134",
+   "kind": "unlisted",
+   "kind_text": "rectangular box 'PC' on pipe at containment boundary",
+   "bbox": [
+    323.6,
+    547.4,
+    333.6,
+    557
+   ],
+   "tag": "PC 0621",
+   "attributes": {},
+   "note": "불확실: 격납건물 관통부 표시로 보임. 기호인지 확인 필요"
+  },
+  {
+   "id": "s135",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    361.5,
+    540.0,
+    374,
+    548.5
+   ],
+   "tag": "107",
+   "tag_bbox": [
+    373.5,
+    530.9,
+    382.5,
+    539.9
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s136",
+   "kind": "control_valve",
+   "bbox": [
+    360.5,
+    518.2,
+    376,
+    529.2
+   ],
+   "tag": "103",
+   "tag_bbox": [
+    373.5,
+    510.1,
+    382.5,
+    519.1
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "MAIN STEAM ATMOSPHERIC DUMP VALVE, E/H 구동기 앵글형"
+  },
+  {
+   "id": "s137",
+   "kind": "unlisted",
+   "kind_text": "expansion joint / flexible connector",
+   "bbox": [
+    405,
+    516,
+    409.6,
+    519
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 16\" 배관 위 둥근 이음 모양"
+  },
+  {
+   "id": "s138",
+   "kind": "unlisted",
+   "kind_text": "silencer",
+   "bbox": [
+    404,
+    484,
+    410.4,
+    497
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "글자 'SILENCER'"
+  },
+  {
+   "id": "s139",
+   "kind": "relief_valve",
+   "bbox": [
+    428,
+    526.5,
+    434.5,
+    533
+   ],
+   "tag": "1311",
+   "tag_bbox": [
+    419.5,
+    517.9,
+    428.5,
+    526.9
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s140",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    443.5,
+    520,
+    452.5,
+    526
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s141",
+   "kind": "vent",
+   "bbox": [
+    446.5,
+    498.1,
+    449.5,
+    503.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s142",
+   "kind": "relief_valve",
+   "bbox": [
+    467,
+    526.5,
+    473.5,
+    533
+   ],
+   "tag": "1313",
+   "tag_bbox": [
+    458.1,
+    517.1,
+    467.1,
+    526.1
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s143",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    481.9,
+    520,
+    490.9,
+    526
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s144",
+   "kind": "vent",
+   "bbox": [
+    484.9,
+    498.1,
+    487.9,
+    503.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s145",
+   "kind": "relief_valve",
+   "bbox": [
+    503.6,
+    526.5,
+    510.1,
+    533
+   ],
+   "tag": "1315",
+   "tag_bbox": [
+    494.9,
+    516.9,
+    503.9,
+    525.9
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s146",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    518.5,
+    520,
+    527.5,
+    526
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s147",
+   "kind": "vent",
+   "bbox": [
+    521.5,
+    498.1,
+    524.5,
+    503.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s148",
+   "kind": "relief_valve",
+   "bbox": [
+    541.6,
+    526.5,
+    548.1,
+    533
+   ],
+   "tag": "1317",
+   "tag_bbox": [
+    533.5,
+    516.9,
+    542.5,
+    525.9
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s149",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    556.5,
+    520,
+    565.5,
+    526
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s150",
+   "kind": "vent",
+   "bbox": [
+    559.5,
+    498.1,
+    562.5,
+    503.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s151",
+   "kind": "relief_valve",
+   "bbox": [
+    580,
+    526.5,
+    586.5,
+    533
+   ],
+   "tag": "1319",
+   "tag_bbox": [
+    571.9,
+    517.9,
+    580.9,
+    526.9
+   ],
+   "attributes": {},
+   "note": "MAIN STEAM SAFETY VALVE, SET 글자는 속성 목록에 없어 생략"
+  },
+  {
+   "id": "s152",
+   "kind": "unlisted",
+   "kind_text": "drip pan elbow (vent stack inlet)",
+   "bbox": [
+    594.9,
+    520,
+    603.9,
+    526
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 안전밸브 배출관 끝 'ㄷ' 모양 받침"
+  },
+  {
+   "id": "s153",
+   "kind": "vent",
+   "bbox": [
+    597.9,
+    498.1,
+    600.9,
+    503.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "ROOF 위 대기 방출 화살표"
+  },
+  {
+   "id": "s154",
+   "kind": "temperature_element",
+   "bbox": [
+    635,
+    532.4,
+    647,
+    545.4
+   ],
+   "tag": "TEW 004",
+   "attributes": {},
+   "note": "온도계 우물로 배관에 바로 붙음"
+  },
+  {
+   "id": "s155",
+   "kind": "manual_valve",
+   "bbox": [
+    653,
+    521.4,
+    657.6,
+    527.8
+   ],
+   "tag": "V1073",
+   "tag_bbox": [
+    658,
+    519.4,
+    661,
+    530.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s156",
+   "kind": "continuation",
+   "bbox": [
+    674,
+    511.9,
+    703,
+    519.9
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s157",
+   "kind": "pipe_cap",
+   "bbox": [
+    660.5,
+    586.9,
+    664.5,
+    589.9
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "12\" 드레인 포트 아래 끝. 위 끝(주배관 바로 아래 'U' 모양)은 적지 않음"
+  },
+  {
+   "id": "s158",
+   "kind": "air_operated_valve",
+   "bbox": [
+    667.5,
+    570.4,
+    674.5,
+    579.4
+   ],
+   "tag": "092",
+   "tag_bbox": [
+    675.1,
+    564.3,
+    684.1,
+    573.3
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s159",
+   "kind": "continuation",
+   "bbox": [
+    690,
+    575.0,
+    719,
+    580.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s160",
+   "kind": "unlisted",
+   "kind_text": "electro-hydraulic (E/H) operated isolation valve",
+   "bbox": [
+    738,
+    548.4,
+    744.5,
+    555.4
+   ],
+   "tag": "013",
+   "tag_bbox": [
+    727.5,
+    538.9,
+    736.5,
+    547.9
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "MAIN STEAM ISOLATION VALVE. 불확실: E/H 구동기라 목록 종류를 고르지 못함"
+  },
+  {
+   "id": "s161",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    754.5,
+    567.9,
+    765,
+    574.9
+   ],
+   "tag": "021",
+   "tag_bbox": [
+    743.9,
+    557.9,
+    752.9,
+    566.9
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s162",
+   "kind": "unlisted",
+   "kind_text": "electro-hydraulic (E/H) operated isolation valve",
+   "bbox": [
+    738.5,
+    573.4,
+    744,
+    585.9
+   ],
+   "tag": "017",
+   "tag_bbox": [
+    745.5,
+    586.9,
+    754.5,
+    595.9
+   ],
+   "attributes": {
+    "fail_position": "FC"
+   },
+   "note": "MSIVBV, 검은 밸브. 불확실: E/H 구동기라 목록 종류를 고르지 못함"
+  },
+  {
+   "id": "s163",
+   "kind": "transmitter",
+   "bbox": [
+    808,
+    532,
+    820,
+    545
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "비석 글자 'PT / IRU', 루프번호 없음. 계기선으로만 붙어 연결 없음"
+  },
+  {
+   "id": "s164",
+   "kind": "pipe_cap",
+   "bbox": [
+    802,
+    586.9,
+    806,
+    589.9
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "12\" 드레인 포트 아래 끝"
+  },
+  {
+   "id": "s165",
+   "kind": "continuation",
+   "bbox": [
+    849,
+    575.0,
+    877,
+    580.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s166",
+   "kind": "continuation",
+   "bbox": [
+    852,
+    549.6,
+    880,
+    554.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  }
+ ],
+ "lines": [
+  {
+   "id": "l001",
+   "at": [
+    285,
+    183.6
+   ],
+   "text_bbox": [
+    280,
+    180,
+    290.4,
+    182.4
+   ],
+   "size": "30.907\""
+  },
+  {
+   "id": "l002",
+   "at": [
+    350,
+    183.6
+   ],
+   "text_bbox": [
+    344.4,
+    178,
+    355.2,
+    180.4
+   ],
+   "size": "32.311\""
+  },
+  {
+   "id": "l003",
+   "at": [
+    371.4,
+    164.1
+   ],
+   "text_bbox": [
+    367,
+    161.6,
+    369.6,
+    166.6
+   ],
+   "size": "20\""
+  },
+  {
+   "id": "l004",
+   "at": [
+    393,
+    153.6
+   ],
+   "text_bbox": [
+    390.6,
+    150.4,
+    395.6,
+    152.8
+   ],
+   "size": "16\""
+  },
+  {
+   "id": "l005",
+   "at": [
+    449.4,
+    145.2
+   ],
+   "text_bbox": [
+    446.0,
+    142.4,
+    449.0,
+    148
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l006",
+   "at": [
+    488,
+    145.2
+   ],
+   "text_bbox": [
+    484.6,
+    142.4,
+    487.6,
+    148
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l007",
+   "at": [
+    525.4,
+    145.2
+   ],
+   "text_bbox": [
+    522.0,
+    142.4,
+    525.0,
+    148
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l008",
+   "at": [
+    563,
+    145.2
+   ],
+   "text_bbox": [
+    559.6,
+    142.4,
+    562.6,
+    148
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l009",
+   "at": [
+    601.6,
+    145.2
+   ],
+   "text_bbox": [
+    598.2,
+    142.4,
+    601.2,
+    148
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l010",
+   "at": [
+    662.4,
+    202.5
+   ],
+   "text_bbox": [
+    659.5,
+    200,
+    662,
+    205
+   ],
+   "size": "12\""
+  },
+  {
+   "id": "l011",
+   "at": [
+    684,
+    209
+   ],
+   "text_bbox": [
+    682.4,
+    200.4,
+    685.6,
+    202.8
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l012",
+   "at": [
+    724,
+    192
+   ],
+   "text_bbox": [
+    725,
+    190,
+    727.5,
+    194
+   ],
+   "size": "4\""
+  },
+  {
+   "id": "l013",
+   "at": [
+    782,
+    183.6
+   ],
+   "text_bbox": [
+    776.6,
+    178.5,
+    787,
+    182.5
+   ],
+   "size": "30.907\""
+  },
+  {
+   "id": "l014",
+   "at": [
+    799,
+    183.6
+   ],
+   "text_bbox": [
+    793,
+    178.5,
+    805,
+    182.5
+   ],
+   "size": "31.607\""
+  },
+  {
+   "id": "l015",
+   "at": [
+    803.6,
+    202.5
+   ],
+   "text_bbox": [
+    799.5,
+    200,
+    802.5,
+    205
+   ],
+   "size": "12\""
+  },
+  {
+   "id": "l016",
+   "at": [
+    816.6,
+    209
+   ],
+   "text_bbox": [
+    815,
+    205,
+    818,
+    207.6
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l017",
+   "at": [
+    415,
+    310.4
+   ],
+   "text_bbox": [
+    413.6,
+    306.6,
+    417,
+    309.4
+   ],
+   "size": "8\""
+  },
+  {
+   "id": "l018",
+   "at": [
+    460.5,
+    327.6
+   ],
+   "text_bbox": [
+    459,
+    325,
+    462,
+    327.4
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l019",
+   "at": [
+    285,
+    277.4
+   ],
+   "text_bbox": [
+    280,
+    274.4,
+    290.4,
+    276.8
+   ],
+   "size": "30.907\""
+  },
+  {
+   "id": "l020",
+   "at": [
+    350,
+    277.4
+   ],
+   "text_bbox": [
+    344.4,
+    272,
+    355.2,
+    274.4
+   ],
+   "size": "32.311\""
+  },
+  {
+   "id": "l021",
+   "at": [
+    371.4,
+    258.1
+   ],
+   "text_bbox": [
+    367,
+    255.6,
+    369.6,
+    260.6
+   ],
+   "size": "20\""
+  },
+  {
+   "id": "l022",
+   "at": [
+    393,
+    248
+   ],
+   "text_bbox": [
+    390.6,
+    244,
+    395.6,
+    246.4
+   ],
+   "size": "16\""
+  },
+  {
+   "id": "l023",
+   "at": [
+    449.4,
+    238.0
+   ],
+   "text_bbox": [
+    446.0,
+    236,
+    449.0,
+    240
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l024",
+   "at": [
+    488,
+    238.0
+   ],
+   "text_bbox": [
+    484.6,
+    236,
+    487.6,
+    240
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l025",
+   "at": [
+    525.4,
+    238.0
+   ],
+   "text_bbox": [
+    522.0,
+    236,
+    525.0,
+    240
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l026",
+   "at": [
+    563.4,
+    238.0
+   ],
+   "text_bbox": [
+    560.0,
+    236,
+    563.0,
+    240
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l027",
+   "at": [
+    602,
+    238.0
+   ],
+   "text_bbox": [
+    598.6,
+    236,
+    601.6,
+    240
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l028",
+   "at": [
+    662.4,
+    296.3
+   ],
+   "text_bbox": [
+    659.5,
+    293.8,
+    662,
+    298.8
+   ],
+   "size": "12\""
+  },
+  {
+   "id": "l029",
+   "at": [
+    684,
+    302.8
+   ],
+   "text_bbox": [
+    682.4,
+    294.2,
+    685.6,
+    296.6
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l030",
+   "at": [
+    724,
+    285.8
+   ],
+   "text_bbox": [
+    725,
+    283.8,
+    727.5,
+    287.8
+   ],
+   "size": "4\""
+  },
+  {
+   "id": "l031",
+   "at": [
+    782,
+    277.4
+   ],
+   "text_bbox": [
+    776.6,
+    272.3,
+    787,
+    276.3
+   ],
+   "size": "30.907\""
+  },
+  {
+   "id": "l032",
+   "at": [
+    799,
+    277.4
+   ],
+   "text_bbox": [
+    793,
+    272.3,
+    805,
+    276.3
+   ],
+   "size": "31.607\""
+  },
+  {
+   "id": "l033",
+   "at": [
+    803.6,
+    296.3
+   ],
+   "text_bbox": [
+    799.5,
+    293.8,
+    802.5,
+    298.8
+   ],
+   "size": "12\""
+  },
+  {
+   "id": "l034",
+   "at": [
+    816.6,
+    302.8
+   ],
+   "text_bbox": [
+    815,
+    298.8,
+    818,
+    301.4
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l035",
+   "at": [
+    415,
+    461.6
+   ],
+   "text_bbox": [
+    413,
+    458.6,
+    417,
+    461
+   ],
+   "size": "8\""
+  },
+  {
+   "id": "l036",
+   "at": [
+    458.5,
+    478.4
+   ],
+   "text_bbox": [
+    457,
+    474.4,
+    460,
+    477
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l037",
+   "at": [
+    285,
+    428.4
+   ],
+   "text_bbox": [
+    277,
+    425.6,
+    287.6,
+    428
+   ],
+   "size": "30.907\""
+  },
+  {
+   "id": "l038",
+   "at": [
+    350,
+    428.4
+   ],
+   "text_bbox": [
+    341.4,
+    425,
+    352,
+    427.4
+   ],
+   "size": "32.311\""
+  },
+  {
+   "id": "l039",
+   "at": [
+    371.4,
+    409.5
+   ],
+   "text_bbox": [
+    367,
+    407,
+    369.6,
+    412
+   ],
+   "size": "20\""
+  },
+  {
+   "id": "l040",
+   "at": [
+    393,
+    399.4
+   ],
+   "text_bbox": [
+    389.6,
+    395,
+    394.6,
+    397.6
+   ],
+   "size": "16\""
+  },
+  {
+   "id": "l041",
+   "at": [
+    449.4,
+    389.8
+   ],
+   "text_bbox": [
+    446.0,
+    387.6,
+    449.0,
+    392
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l042",
+   "at": [
+    488,
+    389.8
+   ],
+   "text_bbox": [
+    484.6,
+    387.6,
+    487.6,
+    392
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l043",
+   "at": [
+    526,
+    389.8
+   ],
+   "text_bbox": [
+    522.6,
+    387.6,
+    525.6,
+    392
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l044",
+   "at": [
+    563.6,
+    389.8
+   ],
+   "text_bbox": [
+    560.2,
+    387.6,
+    563.2,
+    392
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l045",
+   "at": [
+    601.6,
+    389.8
+   ],
+   "text_bbox": [
+    598.2,
+    387.6,
+    601.2,
+    392
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l046",
+   "at": [
+    662.4,
+    447.3
+   ],
+   "text_bbox": [
+    659.5,
+    444.8,
+    662,
+    449.8
+   ],
+   "size": "12\""
+  },
+  {
+   "id": "l047",
+   "at": [
+    684,
+    453.8
+   ],
+   "text_bbox": [
+    682.4,
+    445.2,
+    685.6,
+    447.6
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l048",
+   "at": [
+    724,
+    436.8
+   ],
+   "text_bbox": [
+    725,
+    434.8,
+    727.5,
+    438.8
+   ],
+   "size": "4\""
+  },
+  {
+   "id": "l049",
+   "at": [
+    782,
+    428.4
+   ],
+   "text_bbox": [
+    776.6,
+    423.3,
+    787,
+    427.3
+   ],
+   "size": "30.907\""
+  },
+  {
+   "id": "l050",
+   "at": [
+    799,
+    428.4
+   ],
+   "text_bbox": [
+    793,
+    423.3,
+    805,
+    427.3
+   ],
+   "size": "31.607\""
+  },
+  {
+   "id": "l051",
+   "at": [
+    803.6,
+    444.3
+   ],
+   "text_bbox": [
+    799.5,
+    441.8,
+    802.5,
+    446.8
+   ],
+   "size": "12\""
+  },
+  {
+   "id": "l052",
+   "at": [
+    816.6,
+    450.8
+   ],
+   "text_bbox": [
+    815,
+    446.8,
+    818,
+    449.4
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l053",
+   "at": [
+    285,
+    552.0
+   ],
+   "text_bbox": [
+    277,
+    549,
+    287.6,
+    551.4
+   ],
+   "size": "30.907\""
+  },
+  {
+   "id": "l054",
+   "at": [
+    350,
+    552.0
+   ],
+   "text_bbox": [
+    341.6,
+    548.6,
+    351.2,
+    551
+   ],
+   "size": "32.311\""
+  },
+  {
+   "id": "l055",
+   "at": [
+    371.4,
+    533.3
+   ],
+   "text_bbox": [
+    367,
+    530.6,
+    369.6,
+    536
+   ],
+   "size": "20\""
+  },
+  {
+   "id": "l056",
+   "at": [
+    393,
+    522.4
+   ],
+   "text_bbox": [
+    389,
+    519,
+    394,
+    521.4
+   ],
+   "size": "16\""
+  },
+  {
+   "id": "l057",
+   "at": [
+    448,
+    512.5
+   ],
+   "text_bbox": [
+    444.6,
+    510,
+    447.6,
+    515
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l058",
+   "at": [
+    486.4,
+    512.5
+   ],
+   "text_bbox": [
+    483.0,
+    510,
+    486.0,
+    515
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l059",
+   "at": [
+    523,
+    512.5
+   ],
+   "text_bbox": [
+    519.6,
+    510,
+    522.6,
+    515
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l060",
+   "at": [
+    561,
+    512.5
+   ],
+   "text_bbox": [
+    557.6,
+    510,
+    560.6,
+    515
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l061",
+   "at": [
+    599.4,
+    512.5
+   ],
+   "text_bbox": [
+    596.0,
+    510,
+    599.0,
+    515
+   ],
+   "size": "26\""
+  },
+  {
+   "id": "l062",
+   "at": [
+    662.4,
+    570.9
+   ],
+   "text_bbox": [
+    659.5,
+    568.4,
+    662,
+    573.4
+   ],
+   "size": "12\""
+  },
+  {
+   "id": "l063",
+   "at": [
+    684,
+    577.4
+   ],
+   "text_bbox": [
+    682.4,
+    568.8,
+    685.6,
+    571.2
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l064",
+   "at": [
+    724,
+    560.4
+   ],
+   "text_bbox": [
+    725,
+    558.4,
+    727.5,
+    562.4
+   ],
+   "size": "4\""
+  },
+  {
+   "id": "l065",
+   "at": [
+    782,
+    552.0
+   ],
+   "text_bbox": [
+    776.6,
+    546.9,
+    787,
+    550.9
+   ],
+   "size": "30.907\""
+  },
+  {
+   "id": "l066",
+   "at": [
+    799,
+    552.0
+   ],
+   "text_bbox": [
+    793,
+    546.9,
+    805,
+    550.9
+   ],
+   "size": "31.607\""
+  },
+  {
+   "id": "l067",
+   "at": [
+    803.6,
+    570.9
+   ],
+   "text_bbox": [
+    799.5,
+    568.4,
+    802.5,
+    573.4
+   ],
+   "size": "12\""
+  },
+  {
+   "id": "l068",
+   "at": [
+    816.6,
+    577.4
+   ],
+   "text_bbox": [
+    815,
+    573.4,
+    818,
+    576.0
+   ],
+   "size": "2\""
+  }
+ ],
+ "connections": [
+  {
+   "a": "s001",
+   "b": "s019",
+   "flow": null
+  },
+  {
+   "a": "s019",
+   "b": "s020",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s021",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s025",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s028",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s031",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s034",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s037",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s040",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s025",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s028",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s031",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s034",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s037",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s040",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s028",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s031",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s034",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s037",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s040",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s031",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s034",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s037",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s040",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s034",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s037",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s040",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s034",
+   "b": "s037",
+   "flow": null
+  },
+  {
+   "a": "s034",
+   "b": "s040",
+   "flow": null
+  },
+  {
+   "a": "s034",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s034",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s034",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s034",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s034",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s037",
+   "b": "s040",
+   "flow": null
+  },
+  {
+   "a": "s037",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s037",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s037",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s037",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s037",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s040",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s040",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s040",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s040",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s040",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s041",
+   "b": "s043",
+   "flow": null
+  },
+  {
+   "a": "s041",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s041",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s041",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s043",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s043",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s043",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s044",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s044",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s022",
+   "b": "s023",
+   "flow": null
+  },
+  {
+   "a": "s023",
+   "b": "s024",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s026",
+   "flow": null
+  },
+  {
+   "a": "s026",
+   "b": "s027",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s029",
+   "flow": null
+  },
+  {
+   "a": "s029",
+   "b": "s030",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s032",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s033",
+   "flow": null
+  },
+  {
+   "a": "s034",
+   "b": "s035",
+   "flow": null
+  },
+  {
+   "a": "s035",
+   "b": "s036",
+   "flow": null
+  },
+  {
+   "a": "s037",
+   "b": "s038",
+   "flow": null
+  },
+  {
+   "a": "s038",
+   "b": "s039",
+   "flow": null
+  },
+  {
+   "a": "s041",
+   "b": "s042",
+   "flow": null
+  },
+  {
+   "a": "s044",
+   "b": "s045",
+   "flow": null
+  },
+  {
+   "a": "s048",
+   "b": "s047",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s047",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s050",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s052",
+   "flow": null
+  },
+  {
+   "a": "s047",
+   "b": "s050",
+   "flow": null
+  },
+  {
+   "a": "s047",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s047",
+   "b": "s052",
+   "flow": null
+  },
+  {
+   "a": "s050",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s050",
+   "b": "s052",
+   "flow": null
+  },
+  {
+   "a": "s051",
+   "b": "s052",
+   "flow": null
+  },
+  {
+   "a": "s001",
+   "b": "s053",
+   "flow": null
+  },
+  {
+   "a": "s053",
+   "b": "s054",
+   "flow": null
+  },
+  {
+   "a": "s087",
+   "b": "s088",
+   "flow": null
+  },
+  {
+   "a": "s087",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s089",
+   "b": "s090",
+   "flow": null
+  },
+  {
+   "a": "s090",
+   "b": "s091",
+   "flow": null
+  },
+  {
+   "a": "s088",
+   "b": "s091",
+   "flow": null
+  },
+  {
+   "a": "s088",
+   "b": "s092",
+   "flow": null
+  },
+  {
+   "a": "s091",
+   "b": "s092",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s055",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s059",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s062",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s065",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s068",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s071",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s059",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s062",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s065",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s068",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s071",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s062",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s065",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s068",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s071",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s065",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s068",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s071",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s068",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s071",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s068",
+   "b": "s071",
+   "flow": null
+  },
+  {
+   "a": "s068",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s068",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s068",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s068",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s068",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s068",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s068",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s078",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s078",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s078",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s082",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s056",
+   "flow": null
+  },
+  {
+   "a": "s056",
+   "b": "s057",
+   "flow": null
+  },
+  {
+   "a": "s057",
+   "b": "s058",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s060",
+   "flow": null
+  },
+  {
+   "a": "s060",
+   "b": "s061",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s063",
+   "flow": null
+  },
+  {
+   "a": "s063",
+   "b": "s064",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s066",
+   "flow": null
+  },
+  {
+   "a": "s066",
+   "b": "s067",
+   "flow": null
+  },
+  {
+   "a": "s068",
+   "b": "s069",
+   "flow": null
+  },
+  {
+   "a": "s069",
+   "b": "s070",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s072",
+   "flow": null
+  },
+  {
+   "a": "s072",
+   "b": "s073",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s076",
+   "flow": null
+  },
+  {
+   "a": "s078",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s082",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s084",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s084",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s084",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s084",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s085",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s002",
+   "b": "s093",
+   "flow": null
+  },
+  {
+   "a": "s093",
+   "b": "s094",
+   "flow": null
+  },
+  {
+   "a": "s127",
+   "b": "s128",
+   "flow": null
+  },
+  {
+   "a": "s127",
+   "b": "s129",
+   "flow": null
+  },
+  {
+   "a": "s129",
+   "b": "s130",
+   "flow": null
+  },
+  {
+   "a": "s130",
+   "b": "s131",
+   "flow": null
+  },
+  {
+   "a": "s128",
+   "b": "s131",
+   "flow": null
+  },
+  {
+   "a": "s128",
+   "b": "s132",
+   "flow": null
+  },
+  {
+   "a": "s131",
+   "b": "s132",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s099",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s102",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s105",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s108",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s111",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s117",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s118",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s120",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s099",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s102",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s105",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s108",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s111",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s117",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s118",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s120",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s102",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s105",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s108",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s111",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s117",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s118",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s120",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s105",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s108",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s111",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s117",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s118",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s120",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s108",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s111",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s117",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s118",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s120",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s108",
+   "b": "s111",
+   "flow": null
+  },
+  {
+   "a": "s108",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s108",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s108",
+   "b": "s117",
+   "flow": null
+  },
+  {
+   "a": "s108",
+   "b": "s118",
+   "flow": null
+  },
+  {
+   "a": "s108",
+   "b": "s120",
+   "flow": null
+  },
+  {
+   "a": "s108",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s108",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s114",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s117",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s118",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s120",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s114",
+   "b": "s115",
+   "flow": null
+  },
+  {
+   "a": "s114",
+   "b": "s117",
+   "flow": null
+  },
+  {
+   "a": "s114",
+   "b": "s118",
+   "flow": null
+  },
+  {
+   "a": "s114",
+   "b": "s120",
+   "flow": null
+  },
+  {
+   "a": "s114",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s114",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s115",
+   "b": "s117",
+   "flow": null
+  },
+  {
+   "a": "s115",
+   "b": "s118",
+   "flow": null
+  },
+  {
+   "a": "s115",
+   "b": "s120",
+   "flow": null
+  },
+  {
+   "a": "s115",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s115",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s117",
+   "b": "s118",
+   "flow": null
+  },
+  {
+   "a": "s117",
+   "b": "s120",
+   "flow": null
+  },
+  {
+   "a": "s117",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s117",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s118",
+   "b": "s120",
+   "flow": null
+  },
+  {
+   "a": "s118",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s118",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s120",
+   "b": "s122",
+   "flow": null
+  },
+  {
+   "a": "s120",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s122",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s096",
+   "flow": null
+  },
+  {
+   "a": "s096",
+   "b": "s097",
+   "flow": null
+  },
+  {
+   "a": "s097",
+   "b": "s098",
+   "flow": null
+  },
+  {
+   "a": "s099",
+   "b": "s100",
+   "flow": null
+  },
+  {
+   "a": "s100",
+   "b": "s101",
+   "flow": null
+  },
+  {
+   "a": "s102",
+   "b": "s103",
+   "flow": null
+  },
+  {
+   "a": "s103",
+   "b": "s104",
+   "flow": null
+  },
+  {
+   "a": "s105",
+   "b": "s106",
+   "flow": null
+  },
+  {
+   "a": "s106",
+   "b": "s107",
+   "flow": null
+  },
+  {
+   "a": "s108",
+   "b": "s109",
+   "flow": null
+  },
+  {
+   "a": "s109",
+   "b": "s110",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s112",
+   "flow": null
+  },
+  {
+   "a": "s112",
+   "b": "s113",
+   "flow": null
+  },
+  {
+   "a": "s115",
+   "b": "s116",
+   "flow": null
+  },
+  {
+   "a": "s118",
+   "b": "s119",
+   "flow": null
+  },
+  {
+   "a": "s122",
+   "b": "s121",
+   "flow": null
+  },
+  {
+   "a": "s120",
+   "b": "s121",
+   "flow": null
+  },
+  {
+   "a": "s120",
+   "b": "s124",
+   "flow": null
+  },
+  {
+   "a": "s120",
+   "b": "s125",
+   "flow": null
+  },
+  {
+   "a": "s120",
+   "b": "s126",
+   "flow": null
+  },
+  {
+   "a": "s121",
+   "b": "s124",
+   "flow": null
+  },
+  {
+   "a": "s121",
+   "b": "s125",
+   "flow": null
+  },
+  {
+   "a": "s121",
+   "b": "s126",
+   "flow": null
+  },
+  {
+   "a": "s124",
+   "b": "s125",
+   "flow": null
+  },
+  {
+   "a": "s124",
+   "b": "s126",
+   "flow": null
+  },
+  {
+   "a": "s125",
+   "b": "s126",
+   "flow": null
+  },
+  {
+   "a": "s002",
+   "b": "s133",
+   "flow": null
+  },
+  {
+   "a": "s133",
+   "b": "s134",
+   "flow": null
+  },
+  {
+   "a": "s134",
+   "b": "s135",
+   "flow": null
+  },
+  {
+   "a": "s134",
+   "b": "s139",
+   "flow": null
+  },
+  {
+   "a": "s134",
+   "b": "s142",
+   "flow": null
+  },
+  {
+   "a": "s134",
+   "b": "s145",
+   "flow": null
+  },
+  {
+   "a": "s134",
+   "b": "s148",
+   "flow": null
+  },
+  {
+   "a": "s134",
+   "b": "s151",
+   "flow": null
+  },
+  {
+   "a": "s134",
+   "b": "s154",
+   "flow": null
+  },
+  {
+   "a": "s134",
+   "b": "s155",
+   "flow": null
+  },
+  {
+   "a": "s134",
+   "b": "s157",
+   "flow": null
+  },
+  {
+   "a": "s134",
+   "b": "s158",
+   "flow": null
+  },
+  {
+   "a": "s134",
+   "b": "s160",
+   "flow": null
+  },
+  {
+   "a": "s134",
+   "b": "s162",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s139",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s142",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s145",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s148",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s151",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s154",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s155",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s157",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s158",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s160",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s162",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s142",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s145",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s148",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s151",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s154",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s155",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s157",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s158",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s160",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s162",
+   "flow": null
+  },
+  {
+   "a": "s142",
+   "b": "s145",
+   "flow": null
+  },
+  {
+   "a": "s142",
+   "b": "s148",
+   "flow": null
+  },
+  {
+   "a": "s142",
+   "b": "s151",
+   "flow": null
+  },
+  {
+   "a": "s142",
+   "b": "s154",
+   "flow": null
+  },
+  {
+   "a": "s142",
+   "b": "s155",
+   "flow": null
+  },
+  {
+   "a": "s142",
+   "b": "s157",
+   "flow": null
+  },
+  {
+   "a": "s142",
+   "b": "s158",
+   "flow": null
+  },
+  {
+   "a": "s142",
+   "b": "s160",
+   "flow": null
+  },
+  {
+   "a": "s142",
+   "b": "s162",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s148",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s151",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s154",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s155",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s157",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s158",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s160",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s162",
+   "flow": null
+  },
+  {
+   "a": "s148",
+   "b": "s151",
+   "flow": null
+  },
+  {
+   "a": "s148",
+   "b": "s154",
+   "flow": null
+  },
+  {
+   "a": "s148",
+   "b": "s155",
+   "flow": null
+  },
+  {
+   "a": "s148",
+   "b": "s157",
+   "flow": null
+  },
+  {
+   "a": "s148",
+   "b": "s158",
+   "flow": null
+  },
+  {
+   "a": "s148",
+   "b": "s160",
+   "flow": null
+  },
+  {
+   "a": "s148",
+   "b": "s162",
+   "flow": null
+  },
+  {
+   "a": "s151",
+   "b": "s154",
+   "flow": null
+  },
+  {
+   "a": "s151",
+   "b": "s155",
+   "flow": null
+  },
+  {
+   "a": "s151",
+   "b": "s157",
+   "flow": null
+  },
+  {
+   "a": "s151",
+   "b": "s158",
+   "flow": null
+  },
+  {
+   "a": "s151",
+   "b": "s160",
+   "flow": null
+  },
+  {
+   "a": "s151",
+   "b": "s162",
+   "flow": null
+  },
+  {
+   "a": "s154",
+   "b": "s155",
+   "flow": null
+  },
+  {
+   "a": "s154",
+   "b": "s157",
+   "flow": null
+  },
+  {
+   "a": "s154",
+   "b": "s158",
+   "flow": null
+  },
+  {
+   "a": "s154",
+   "b": "s160",
+   "flow": null
+  },
+  {
+   "a": "s154",
+   "b": "s162",
+   "flow": null
+  },
+  {
+   "a": "s155",
+   "b": "s157",
+   "flow": null
+  },
+  {
+   "a": "s155",
+   "b": "s158",
+   "flow": null
+  },
+  {
+   "a": "s155",
+   "b": "s160",
+   "flow": null
+  },
+  {
+   "a": "s155",
+   "b": "s162",
+   "flow": null
+  },
+  {
+   "a": "s157",
+   "b": "s158",
+   "flow": null
+  },
+  {
+   "a": "s157",
+   "b": "s160",
+   "flow": null
+  },
+  {
+   "a": "s157",
+   "b": "s162",
+   "flow": null
+  },
+  {
+   "a": "s158",
+   "b": "s160",
+   "flow": null
+  },
+  {
+   "a": "s158",
+   "b": "s162",
+   "flow": null
+  },
+  {
+   "a": "s160",
+   "b": "s162",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s136",
+   "flow": null
+  },
+  {
+   "a": "s136",
+   "b": "s137",
+   "flow": null
+  },
+  {
+   "a": "s137",
+   "b": "s138",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s140",
+   "flow": null
+  },
+  {
+   "a": "s140",
+   "b": "s141",
+   "flow": null
+  },
+  {
+   "a": "s142",
+   "b": "s143",
+   "flow": null
+  },
+  {
+   "a": "s143",
+   "b": "s144",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s146",
+   "flow": null
+  },
+  {
+   "a": "s146",
+   "b": "s147",
+   "flow": null
+  },
+  {
+   "a": "s148",
+   "b": "s149",
+   "flow": null
+  },
+  {
+   "a": "s149",
+   "b": "s150",
+   "flow": null
+  },
+  {
+   "a": "s151",
+   "b": "s152",
+   "flow": null
+  },
+  {
+   "a": "s152",
+   "b": "s153",
+   "flow": null
+  },
+  {
+   "a": "s155",
+   "b": "s156",
+   "flow": null
+  },
+  {
+   "a": "s158",
+   "b": "s159",
+   "flow": null
+  },
+  {
+   "a": "s162",
+   "b": "s161",
+   "flow": null
+  },
+  {
+   "a": "s160",
+   "b": "s161",
+   "flow": null
+  },
+  {
+   "a": "s160",
+   "b": "s164",
+   "flow": null
+  },
+  {
+   "a": "s160",
+   "b": "s165",
+   "flow": null
+  },
+  {
+   "a": "s160",
+   "b": "s166",
+   "flow": null
+  },
+  {
+   "a": "s161",
+   "b": "s164",
+   "flow": null
+  },
+  {
+   "a": "s161",
+   "b": "s165",
+   "flow": null
+  },
+  {
+   "a": "s161",
+   "b": "s166",
+   "flow": null
+  },
+  {
+   "a": "s164",
+   "b": "s165",
+   "flow": null
+  },
+  {
+   "a": "s164",
+   "b": "s166",
+   "flow": null
+  },
+  {
+   "a": "s165",
+   "b": "s166",
+   "flow": null
+  }
+ ],
+ "continuations": [
+  {
+   "symbol": "s042",
+   "label": "NT NITROGEN SUPPLY",
+   "target_system": "NT",
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s045",
+   "label": "DRAIN TO DRAIN HEADER A / SHEET 2 \"E\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s051",
+   "label": "DRAIN TO DRAIN HEADER B / SHEET 2 \"F\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s052",
+   "label": "SHEET 2 \"A\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s076",
+   "label": "NT NITROGEN SUPPLY",
+   "target_system": "NT",
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s079",
+   "label": "DRAIN TO DRAIN HEADER C / SHEET 2 \"G\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s085",
+   "label": "DRAIN TO DRAIN HEADER D / SHEET 2 \"H\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s086",
+   "label": "SHEET 2 \"B\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s092",
+   "label": "AT AUXILIARY FW PUMP TURBINE A",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s116",
+   "label": "NT NITROGEN SUPPLY",
+   "target_system": "NT",
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s119",
+   "label": "DRAIN TO DRAIN HEADER E / SHEET 2 \"I\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s125",
+   "label": "DRAIN TO DRAIN HEADER F / SHEET 2 \"J\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s126",
+   "label": "SHEET 2 \"C\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s132",
+   "label": "AT AUXILIARY FW PUMP TURBINE B",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s156",
+   "label": "NT NITROGEN SUPPLY",
+   "target_system": "NT",
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s159",
+   "label": "DRAIN TO DRAIN HEADER G / SHEET 2 \"K\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s165",
+   "label": "DRAIN TO DRAIN HEADER H / SHEET 2 \"L\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s166",
+   "label": "SHEET 2 \"D\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  }
+ ]
+}

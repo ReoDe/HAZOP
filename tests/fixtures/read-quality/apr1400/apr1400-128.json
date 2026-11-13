@@ -1,0 +1,2489 @@
+{
+ "schema": "hazop_read_quality_key",
+ "version": 1,
+ "seq": 128,
+ "drawing": "10.4.9-1-S1",
+ "source_file": "128_Ch10_Fig10.4.9-1_s1of3_Auxiliary_Feedwater_System_Flow_Diagram.pdf",
+ "page_size": [
+  1224.0,
+  792.0
+ ],
+ "regions": [
+  [
+   265.0,
+   95.0,
+   955.0,
+   693.0
+  ]
+ ],
+ "method": "overview.png로 도면 영역(탱크 계열 A·B 두 벌)을 파악한 뒤, 도면이 걸친 타일 16장(x0220~x0880, y0000~y0560, 5배 그림)을 위 왼쪽부터 읽음. 배관 교차·접속 여부와 작은 기호는 타일을 잘라 2~3배로 다시 키워 확인함. 기호가 96개로 180개에 못 미쳐 도면 전체를 영역으로 잡음. 범례는 tiles/001 overview와 배관 부속 칸 타일로 확인함. 추출 코드·추출 결과·PDF 텍스트 층은 보지 않음.",
+ "verified": "2026-11-13 Claude 정답지 세션 초안. 사람 확인 전",
+ "limits": "(1) 계기 비석(TEWIS·LTI)과 탱크를 잇는 가는 실선, FT 020과 FE 사이 이중선은 계측 연결(충격선)로 보고 connections에서 뺌. 공정 연결로 본다면 탱크와의 연결 10쌍이 빠진 것임. (2) CI/DII·DIII/DII 마름모(품질등급 경계)와 TGB|AB, AB|YARD 건물 경계 표시는 기호로 보지 않아 적지 않음. (3) x≈589 탱크 간 연결관은 양 끝 화살표 방향이 서로 반대라 flow를 null로 둠. x≈589·636.6 세로관은 가로 배관과 만나는 곳마다 끊김 표시가 있어 교차(비접속)로 봄. (4) AB/YARD 쪽 반원 끝 기호 4개는 범례에서 찾지 못해 unlisted로 둠. (5) LTI를 transmitter로, TEWIS를 temperature_element로 정한 종류 판단은 불확실함. (6) SHEET 2 \"B\"로 가는 8\" 선은 끝 화살촉이 분명하지 않아 flow를 null로 둠. (7) 'CCW MAKEUP PIPE (TRAIN A)'와 'SHEET 2 \"G\"' 글자는 빨간색(개정 표시로 보임).",
+ "symbols": [
+  {
+   "id": "s001",
+   "kind": "tank",
+   "bbox": [
+    386.0,
+    150.4,
+    489.6,
+    297.0
+   ],
+   "tag": "TK01A",
+   "tag_bbox": [
+    432.0,
+    226.0,
+    443.6,
+    229.4
+   ],
+   "attributes": {},
+   "note": "AFWST A. 아래 작은 상자(섬프)는 탱크 일부로 봄"
+  },
+  {
+   "id": "s002",
+   "kind": "temperature_element",
+   "bbox": [
+    336.6,
+    148.6,
+    353.8,
+    168.0
+   ],
+   "tag": "TEWIS 001",
+   "attributes": {},
+   "note": "불확실: TEWIS는 목록에 없어 temperature_element(TEW)로 둠"
+  },
+  {
+   "id": "s003",
+   "kind": "transmitter",
+   "bbox": [
+    336.6,
+    175.4,
+    353.8,
+    194.6
+   ],
+   "tag": "LTI 003A",
+   "attributes": {},
+   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+  },
+  {
+   "id": "s004",
+   "kind": "transmitter",
+   "bbox": [
+    336.6,
+    200.0,
+    353.8,
+    219.6
+   ],
+   "tag": "LTI 006B",
+   "attributes": {},
+   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+  },
+  {
+   "id": "s005",
+   "kind": "transmitter",
+   "bbox": [
+    336.6,
+    224.6,
+    353.8,
+    244.0
+   ],
+   "tag": "LTI 006C",
+   "attributes": {},
+   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+  },
+  {
+   "id": "s006",
+   "kind": "transmitter",
+   "bbox": [
+    336.6,
+    250.4,
+    353.8,
+    269.6
+   ],
+   "tag": "LTI 006D",
+   "attributes": {},
+   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+  },
+  {
+   "id": "s007",
+   "kind": "manual_valve",
+   "bbox": [
+    366.0,
+    287.0,
+    373.6,
+    290.4
+   ],
+   "tag": "V2642",
+   "tag_bbox": [
+    364.4,
+    291.0,
+    375.4,
+    294.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s008",
+   "kind": "pipe_cap",
+   "bbox": [
+    348.6,
+    286.8,
+    351.4,
+    290.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: '[' 모양 배관 끝. 용접 캡/호스 연결 구분 어려움"
+  },
+  {
+   "id": "s009",
+   "kind": "vent",
+   "bbox": [
+    437.0,
+    107.6,
+    446.6,
+    112.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "탱크 위 거위목 벤트"
+  },
+  {
+   "id": "s010",
+   "kind": "manual_valve",
+   "bbox": [
+    512.0,
+    166.0,
+    519.6,
+    169.4
+   ],
+   "tag": "V1605",
+   "tag_bbox": [
+    510.4,
+    170.0,
+    521.0,
+    173.4
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s011",
+   "kind": "manual_valve",
+   "bbox": [
+    590.0,
+    148.6,
+    597.0,
+    152.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s012",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    607.0,
+    140.0,
+    614.0,
+    152.0
+   ],
+   "tag": null,
+   "attributes": {
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s013",
+   "kind": "switch",
+   "bbox": [
+    604.4,
+    103.4,
+    616.8,
+    115.6
+   ],
+   "tag": "HS 015",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s014",
+   "kind": "manual_valve",
+   "bbox": [
+    628.0,
+    148.6,
+    635.6,
+    152.0
+   ],
+   "tag": null,
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": ""
+  },
+  {
+   "id": "s015",
+   "kind": "manual_valve",
+   "bbox": [
+    607.0,
+    161.6,
+    614.0,
+    165.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "우회관 밸브"
+  },
+  {
+   "id": "s016",
+   "kind": "transmitter",
+   "bbox": [
+    781.4,
+    98.4,
+    798.6,
+    118.0
+   ],
+   "tag": "FT 020",
+   "attributes": {},
+   "note": "아래 칸 QI"
+  },
+  {
+   "id": "s017",
+   "kind": "flow_element",
+   "bbox": [
+    784.0,
+    147.0,
+    796.0,
+    171.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "원 안 'FE'만 있고 번호 없음(FT 020 루프로 보임)"
+  },
+  {
+   "id": "s018",
+   "kind": "check_valve",
+   "bbox": [
+    857.0,
+    148.0,
+    864.4,
+    151.6
+   ],
+   "tag": "V1600",
+   "tag_bbox": [
+    855.0,
+    153.0,
+    866.0,
+    156.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s019",
+   "kind": "continuation",
+   "bbox": [
+    901.6,
+    147.0,
+    936.6,
+    154.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s020",
+   "kind": "continuation",
+   "bbox": [
+    715.4,
+    177.6,
+    750.0,
+    184.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s021",
+   "kind": "manual_valve",
+   "bbox": [
+    508.0,
+    209.0,
+    515.0,
+    212.4
+   ],
+   "tag": "V1607",
+   "tag_bbox": [
+    506.0,
+    213.6,
+    516.6,
+    217.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s022",
+   "kind": "continuation",
+   "bbox": [
+    550.0,
+    207.4,
+    584.4,
+    214.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s023",
+   "kind": "continuation",
+   "bbox": [
+    749.4,
+    220.6,
+    784.0,
+    227.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s024",
+   "kind": "continuation",
+   "bbox": [
+    749.4,
+    233.6,
+    784.0,
+    240.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s025",
+   "kind": "manual_valve",
+   "bbox": [
+    509.0,
+    267.4,
+    513.0,
+    275.0
+   ],
+   "tag": null,
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s026",
+   "kind": "manual_valve",
+   "bbox": [
+    527.0,
+    289.4,
+    530.6,
+    296.6
+   ],
+   "tag": null,
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s027",
+   "kind": "manual_valve",
+   "bbox": [
+    456.0,
+    338.6,
+    463.0,
+    342.0
+   ],
+   "tag": null,
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s028",
+   "kind": "switch",
+   "bbox": [
+    466.0,
+    322.6,
+    478.6,
+    334.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "번호 없는 ZS"
+  },
+  {
+   "id": "s029",
+   "kind": "manual_valve",
+   "bbox": [
+    385.6,
+    338.0,
+    393.0,
+    341.0
+   ],
+   "tag": "V2641",
+   "tag_bbox": [
+    383.6,
+    342.4,
+    394.4,
+    346.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s030",
+   "kind": "continuation",
+   "bbox": [
+    272.4,
+    336.4,
+    307.0,
+    343.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s031",
+   "kind": "switch",
+   "bbox": [
+    609.0,
+    274.0,
+    621.0,
+    286.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "번호 없는 ZS"
+  },
+  {
+   "id": "s032",
+   "kind": "manual_valve",
+   "bbox": [
+    635.0,
+    288.0,
+    638.6,
+    293.0
+   ],
+   "tag": "V1623",
+   "tag_bbox": [
+    639.0,
+    287.0,
+    642.4,
+    298.0
+   ],
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s033",
+   "kind": "reducer",
+   "bbox": [
+    634.6,
+    294.6,
+    639.0,
+    300.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "12\"→10\""
+  },
+  {
+   "id": "s034",
+   "kind": "check_valve",
+   "bbox": [
+    634.0,
+    315.0,
+    638.6,
+    323.0
+   ],
+   "tag": "V1628",
+   "tag_bbox": [
+    639.4,
+    314.0,
+    642.4,
+    325.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s035",
+   "kind": "reducer",
+   "bbox": [
+    859.4,
+    248.0,
+    863.0,
+    252.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s036",
+   "kind": "reducer",
+   "bbox": [
+    859.4,
+    265.0,
+    863.0,
+    269.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s037",
+   "kind": "continuation",
+   "bbox": [
+    913.0,
+    233.4,
+    947.6,
+    240.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s038",
+   "kind": "continuation",
+   "bbox": [
+    913.0,
+    276.4,
+    947.6,
+    283.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s039",
+   "kind": "check_valve",
+   "bbox": [
+    886.0,
+    257.6,
+    895.0,
+    261.4
+   ],
+   "tag": "V2678A",
+   "tag_bbox": [
+    884.0,
+    262.4,
+    897.6,
+    266.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s040",
+   "kind": "manual_valve",
+   "bbox": [
+    905.6,
+    258.6,
+    913.0,
+    261.6
+   ],
+   "tag": "V2679A",
+   "tag_bbox": [
+    902.6,
+    262.4,
+    916.4,
+    266.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s041",
+   "kind": "unlisted",
+   "bbox": [
+    937.0,
+    255.6,
+    942.0,
+    265.0
+   ],
+   "tag": null,
+   "kind_text": "반원에 짧은 방사선이 붙은 배관 끝(AB/YARD 경계 밖 트럭·호스 연결구로 보임)",
+   "attributes": {},
+   "note": "불확실: 기호 종류"
+  },
+  {
+   "id": "s042",
+   "kind": "manual_valve",
+   "bbox": [
+    477.0,
+    365.0,
+    484.4,
+    368.0
+   ],
+   "tag": null,
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s043",
+   "kind": "switch",
+   "bbox": [
+    492.0,
+    347.4,
+    504.6,
+    359.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "번호 없는 ZS"
+  },
+  {
+   "id": "s044",
+   "kind": "manual_valve",
+   "bbox": [
+    458.0,
+    373.0,
+    462.0,
+    380.0
+   ],
+   "tag": "V2779A",
+   "tag_bbox": [
+    462.6,
+    371.0,
+    466.0,
+    383.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s045",
+   "kind": "check_valve",
+   "bbox": [
+    473.6,
+    392.0,
+    482.0,
+    395.6
+   ],
+   "tag": "V2778A",
+   "tag_bbox": [
+    471.0,
+    396.4,
+    484.4,
+    400.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s046",
+   "kind": "manual_valve",
+   "bbox": [
+    492.4,
+    392.6,
+    499.6,
+    395.6
+   ],
+   "tag": "V2780A",
+   "tag_bbox": [
+    489.4,
+    396.4,
+    502.6,
+    400.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s047",
+   "kind": "unlisted",
+   "bbox": [
+    524.0,
+    389.4,
+    529.0,
+    399.0
+   ],
+   "tag": null,
+   "kind_text": "반원에 짧은 방사선이 붙은 배관 끝(AB/YARD 경계 밖 트럭·호스 연결구로 보임)",
+   "attributes": {},
+   "note": "불확실: 기호 종류"
+  },
+  {
+   "id": "s048",
+   "kind": "manual_valve",
+   "bbox": [
+    667.4,
+    365.0,
+    674.6,
+    368.0
+   ],
+   "tag": null,
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s049",
+   "kind": "manual_valve",
+   "bbox": [
+    857.0,
+    365.0,
+    864.0,
+    368.0
+   ],
+   "tag": "V1208",
+   "tag_bbox": [
+    855.0,
+    369.0,
+    866.0,
+    372.4
+   ],
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s050",
+   "kind": "continuation",
+   "bbox": [
+    910.0,
+    363.0,
+    944.4,
+    370.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s051",
+   "kind": "tank",
+   "bbox": [
+    386.0,
+    427.0,
+    489.6,
+    574.0
+   ],
+   "tag": "TK01B",
+   "tag_bbox": [
+    432.0,
+    502.0,
+    443.6,
+    505.4
+   ],
+   "attributes": {},
+   "note": "AFWST B. 아래 작은 상자(섬프)는 탱크 일부로 봄"
+  },
+  {
+   "id": "s052",
+   "kind": "temperature_element",
+   "bbox": [
+    336.6,
+    427.4,
+    353.8,
+    446.4
+   ],
+   "tag": "TEWIS 002",
+   "attributes": {},
+   "note": "불확실: TEWIS는 목록에 없어 temperature_element(TEW)로 둠"
+  },
+  {
+   "id": "s053",
+   "kind": "transmitter",
+   "bbox": [
+    336.6,
+    451.6,
+    353.8,
+    471.0
+   ],
+   "tag": "LTI 004B",
+   "attributes": {},
+   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+  },
+  {
+   "id": "s054",
+   "kind": "transmitter",
+   "bbox": [
+    336.6,
+    477.4,
+    353.8,
+    496.8
+   ],
+   "tag": "LTI 005A",
+   "attributes": {},
+   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+  },
+  {
+   "id": "s055",
+   "kind": "transmitter",
+   "bbox": [
+    336.6,
+    501.0,
+    353.8,
+    520.4
+   ],
+   "tag": "LTI 005C",
+   "attributes": {},
+   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+  },
+  {
+   "id": "s056",
+   "kind": "transmitter",
+   "bbox": [
+    336.6,
+    527.0,
+    353.8,
+    546.4
+   ],
+   "tag": "LTI 005D",
+   "attributes": {},
+   "note": "불확실: LTI는 전송+지시 기능이라 transmitter로 둠(indicator일 수도 있음)"
+  },
+  {
+   "id": "s057",
+   "kind": "manual_valve",
+   "bbox": [
+    366.0,
+    563.4,
+    373.6,
+    567.0
+   ],
+   "tag": "V2644",
+   "tag_bbox": [
+    364.4,
+    567.6,
+    375.4,
+    571.2
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s058",
+   "kind": "pipe_cap",
+   "bbox": [
+    349.0,
+    563.4,
+    352.0,
+    567.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: '[' 모양 배관 끝. 용접 캡/호스 연결 구분 어려움"
+  },
+  {
+   "id": "s059",
+   "kind": "vent",
+   "bbox": [
+    437.0,
+    384.4,
+    446.4,
+    389.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "탱크 위 거위목 벤트"
+  },
+  {
+   "id": "s060",
+   "kind": "manual_valve",
+   "bbox": [
+    512.0,
+    442.6,
+    519.4,
+    446.0
+   ],
+   "tag": "V1606",
+   "tag_bbox": [
+    510.0,
+    447.0,
+    521.0,
+    450.4
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s061",
+   "kind": "manual_valve",
+   "bbox": [
+    654.4,
+    425.6,
+    662.0,
+    429.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s062",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    671.0,
+    416.6,
+    680.0,
+    429.0
+   ],
+   "tag": null,
+   "attributes": {
+    "fail_position": "FL"
+   },
+   "note": ""
+  },
+  {
+   "id": "s063",
+   "kind": "switch",
+   "bbox": [
+    669.0,
+    380.0,
+    682.0,
+    392.4
+   ],
+   "tag": "HS 016",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s064",
+   "kind": "manual_valve",
+   "bbox": [
+    693.0,
+    425.4,
+    701.0,
+    429.0
+   ],
+   "tag": null,
+   "attributes": {
+    "normal_position": "LT"
+   },
+   "note": ""
+  },
+  {
+   "id": "s065",
+   "kind": "manual_valve",
+   "bbox": [
+    672.0,
+    438.4,
+    679.0,
+    441.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "우회관 밸브"
+  },
+  {
+   "id": "s066",
+   "kind": "continuation",
+   "bbox": [
+    718.6,
+    423.4,
+    753.0,
+    430.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s067",
+   "kind": "manual_valve",
+   "bbox": [
+    507.6,
+    486.0,
+    515.0,
+    489.4
+   ],
+   "tag": "V1608",
+   "tag_bbox": [
+    506.0,
+    490.0,
+    516.6,
+    493.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s068",
+   "kind": "continuation",
+   "bbox": [
+    594.0,
+    484.0,
+    629.0,
+    491.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s069",
+   "kind": "continuation",
+   "bbox": [
+    750.0,
+    497.4,
+    784.4,
+    504.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s070",
+   "kind": "continuation",
+   "bbox": [
+    749.0,
+    510.0,
+    783.4,
+    517.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s071",
+   "kind": "manual_valve",
+   "bbox": [
+    509.0,
+    544.0,
+    513.0,
+    551.4
+   ],
+   "tag": null,
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s072",
+   "kind": "manual_valve",
+   "bbox": [
+    527.0,
+    566.0,
+    530.4,
+    573.4
+   ],
+   "tag": null,
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s073",
+   "kind": "manual_valve",
+   "bbox": [
+    456.0,
+    615.0,
+    463.0,
+    619.0
+   ],
+   "tag": null,
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": ""
+  },
+  {
+   "id": "s074",
+   "kind": "switch",
+   "bbox": [
+    466.0,
+    597.0,
+    478.6,
+    609.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "번호 없는 ZS"
+  },
+  {
+   "id": "s075",
+   "kind": "manual_valve",
+   "bbox": [
+    385.6,
+    614.6,
+    393.0,
+    618.0
+   ],
+   "tag": "V2643",
+   "tag_bbox": [
+    383.6,
+    618.6,
+    394.4,
+    622.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s076",
+   "kind": "continuation",
+   "bbox": [
+    275.6,
+    588.4,
+    310.4,
+    595.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s077",
+   "kind": "continuation",
+   "bbox": [
+    272.6,
+    613.0,
+    307.4,
+    620.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s078",
+   "kind": "switch",
+   "bbox": [
+    608.6,
+    551.0,
+    621.0,
+    563.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "번호 없는 ZS"
+  },
+  {
+   "id": "s079",
+   "kind": "manual_valve",
+   "bbox": [
+    647.6,
+    565.6,
+    651.6,
+    574.0
+   ],
+   "tag": "V1624",
+   "tag_bbox": [
+    652.0,
+    564.0,
+    655.4,
+    575.0
+   ],
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s080",
+   "kind": "check_valve",
+   "bbox": [
+    647.0,
+    591.0,
+    651.0,
+    599.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "이름표 없음"
+  },
+  {
+   "id": "s081",
+   "kind": "reducer",
+   "bbox": [
+    859.4,
+    523.6,
+    863.0,
+    528.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s082",
+   "kind": "reducer",
+   "bbox": [
+    859.4,
+    540.6,
+    863.0,
+    545.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s083",
+   "kind": "continuation",
+   "bbox": [
+    913.0,
+    510.0,
+    948.0,
+    517.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s084",
+   "kind": "continuation",
+   "bbox": [
+    913.6,
+    553.0,
+    948.4,
+    560.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s085",
+   "kind": "check_valve",
+   "bbox": [
+    886.6,
+    577.6,
+    895.0,
+    581.6
+   ],
+   "tag": "V2678B",
+   "tag_bbox": [
+    884.0,
+    582.4,
+    897.6,
+    586.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s086",
+   "kind": "manual_valve",
+   "bbox": [
+    905.6,
+    578.4,
+    913.0,
+    581.4
+   ],
+   "tag": "V2679B",
+   "tag_bbox": [
+    902.6,
+    582.4,
+    916.0,
+    586.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s087",
+   "kind": "unlisted",
+   "bbox": [
+    937.0,
+    575.6,
+    942.4,
+    585.0
+   ],
+   "tag": null,
+   "kind_text": "반원에 짧은 방사선이 붙은 배관 끝(AB/YARD 경계 밖 트럭·호스 연결구로 보임)",
+   "attributes": {},
+   "note": "불확실: 기호 종류"
+  },
+  {
+   "id": "s088",
+   "kind": "manual_valve",
+   "bbox": [
+    477.0,
+    641.4,
+    484.4,
+    644.4
+   ],
+   "tag": null,
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s089",
+   "kind": "switch",
+   "bbox": [
+    492.0,
+    620.4,
+    504.6,
+    632.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "번호 없는 ZS"
+  },
+  {
+   "id": "s090",
+   "kind": "manual_valve",
+   "bbox": [
+    458.0,
+    650.0,
+    462.0,
+    657.4
+   ],
+   "tag": "V2779B",
+   "tag_bbox": [
+    462.6,
+    647.0,
+    466.0,
+    660.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s091",
+   "kind": "check_valve",
+   "bbox": [
+    473.6,
+    668.6,
+    482.0,
+    672.0
+   ],
+   "tag": "V2778B",
+   "tag_bbox": [
+    471.0,
+    673.4,
+    484.4,
+    676.8
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s092",
+   "kind": "manual_valve",
+   "bbox": [
+    492.4,
+    669.0,
+    499.6,
+    672.0
+   ],
+   "tag": "V2780B",
+   "tag_bbox": [
+    489.4,
+    673.4,
+    502.6,
+    676.8
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s093",
+   "kind": "unlisted",
+   "bbox": [
+    523.6,
+    666.0,
+    529.0,
+    675.6
+   ],
+   "tag": null,
+   "kind_text": "반원에 짧은 방사선이 붙은 배관 끝(AB/YARD 경계 밖 트럭·호스 연결구로 보임)",
+   "attributes": {},
+   "note": "불확실: 기호 종류"
+  },
+  {
+   "id": "s094",
+   "kind": "continuation",
+   "bbox": [
+    455.0,
+    683.0,
+    489.6,
+    690.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s095",
+   "kind": "manual_valve",
+   "bbox": [
+    537.6,
+    684.6,
+    545.0,
+    688.0
+   ],
+   "tag": "V1627",
+   "tag_bbox": [
+    536.0,
+    689.0,
+    547.0,
+    692.4
+   ],
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": ""
+  },
+  {
+   "id": "s096",
+   "kind": "check_valve",
+   "bbox": [
+    598.0,
+    684.0,
+    605.6,
+    688.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "이름표 없음"
+  }
+ ],
+ "lines": [
+  {
+   "id": "l001",
+   "at": [
+    437.6,
+    132.0
+   ],
+   "text_bbox": [
+    433.0,
+    128.0,
+    435.0,
+    136.0
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l002",
+   "at": [
+    497.0,
+    210.6
+   ],
+   "text_bbox": [
+    495.6,
+    207.0,
+    499.2,
+    210.0
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l003",
+   "at": [
+    545.0,
+    224.0
+   ],
+   "text_bbox": [
+    543.0,
+    220.0,
+    547.0,
+    223.0
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l004",
+   "at": [
+    547.0,
+    237.0
+   ],
+   "text_bbox": [
+    545.0,
+    233.0,
+    549.0,
+    236.0
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l005",
+   "at": [
+    671.0,
+    150.4
+   ],
+   "text_bbox": [
+    669.4,
+    146.4,
+    673.0,
+    149.4
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l006",
+   "at": [
+    767.0,
+    181.0
+   ],
+   "text_bbox": [
+    765.0,
+    174.4,
+    769.0,
+    177.6
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l007",
+   "at": [
+    636.6,
+    274.0
+   ],
+   "text_bbox": [
+    631.0,
+    271.0,
+    634.4,
+    277.0
+   ],
+   "size": "12\""
+  },
+  {
+   "id": "l008",
+   "at": [
+    687.0,
+    258.4
+   ],
+   "text_bbox": [
+    685.0,
+    253.6,
+    689.6,
+    256.6
+   ],
+   "size": "12\""
+  },
+  {
+   "id": "l009",
+   "at": [
+    873.6,
+    246.0
+   ],
+   "text_bbox": [
+    870.0,
+    244.0,
+    873.0,
+    248.0
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l010",
+   "at": [
+    882.0,
+    237.0
+   ],
+   "text_bbox": [
+    880.0,
+    232.4,
+    884.0,
+    235.6
+   ],
+   "size": "8\""
+  },
+  {
+   "id": "l011",
+   "at": [
+    883.0,
+    279.6
+   ],
+   "text_bbox": [
+    881.0,
+    276.0,
+    885.0,
+    279.4
+   ],
+   "size": "8\""
+  },
+  {
+   "id": "l012",
+   "at": [
+    460.0,
+    389.0
+   ],
+   "text_bbox": [
+    457.0,
+    387.0,
+    460.0,
+    391.0
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l013",
+   "at": [
+    730.0,
+    366.4
+   ],
+   "text_bbox": [
+    727.6,
+    362.4,
+    733.0,
+    365.6
+   ],
+   "size": "10\""
+  },
+  {
+   "id": "l014",
+   "at": [
+    437.6,
+    406.0
+   ],
+   "text_bbox": [
+    433.6,
+    404.0,
+    437.0,
+    409.0
+   ],
+   "size": "10\""
+  },
+  {
+   "id": "l015",
+   "at": [
+    589.0,
+    407.0
+   ],
+   "text_bbox": [
+    585.6,
+    405.0,
+    589.0,
+    410.0
+   ],
+   "size": "10\""
+  },
+  {
+   "id": "l016",
+   "at": [
+    636.6,
+    407.0
+   ],
+   "text_bbox": [
+    632.6,
+    405.0,
+    636.0,
+    410.0
+   ],
+   "size": "10\""
+  },
+  {
+   "id": "l017",
+   "at": [
+    612.0,
+    427.4
+   ],
+   "text_bbox": [
+    610.0,
+    423.0,
+    614.0,
+    426.0
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l018",
+   "at": [
+    696.0,
+    439.6
+   ],
+   "text_bbox": [
+    694.0,
+    436.0,
+    698.0,
+    439.4
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l019",
+   "at": [
+    498.0,
+    487.6
+   ],
+   "text_bbox": [
+    496.6,
+    483.6,
+    500.0,
+    486.6
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l020",
+   "at": [
+    548.0,
+    500.6
+   ],
+   "text_bbox": [
+    546.0,
+    496.4,
+    550.0,
+    499.6
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l021",
+   "at": [
+    548.0,
+    513.4
+   ],
+   "text_bbox": [
+    546.0,
+    509.6,
+    550.0,
+    512.6
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l022",
+   "at": [
+    710.0,
+    535.0
+   ],
+   "text_bbox": [
+    707.4,
+    531.4,
+    712.6,
+    534.4
+   ],
+   "size": "12\""
+  },
+  {
+   "id": "l023",
+   "at": [
+    886.0,
+    513.4
+   ],
+   "text_bbox": [
+    884.4,
+    509.6,
+    888.0,
+    512.4
+   ],
+   "size": "8\""
+  },
+  {
+   "id": "l024",
+   "at": [
+    888.0,
+    557.0
+   ],
+   "text_bbox": [
+    886.4,
+    552.6,
+    890.0,
+    556.0
+   ],
+   "size": "8\""
+  },
+  {
+   "id": "l025",
+   "at": [
+    873.6,
+    566.0
+   ],
+   "text_bbox": [
+    870.0,
+    564.0,
+    873.0,
+    568.0
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l026",
+   "at": [
+    460.0,
+    665.0
+   ],
+   "text_bbox": [
+    457.0,
+    663.6,
+    460.0,
+    667.4
+   ],
+   "size": "6\""
+  },
+  {
+   "id": "l027",
+   "at": [
+    579.0,
+    686.4
+   ],
+   "text_bbox": [
+    576.6,
+    682.4,
+    582.0,
+    685.6
+   ],
+   "size": "10\""
+  },
+  {
+   "id": "l028",
+   "at": [
+    649.6,
+    643.0
+   ],
+   "text_bbox": [
+    646.0,
+    640.0,
+    649.0,
+    646.0
+   ],
+   "size": "10\""
+  }
+ ],
+ "connections": [
+  {
+   "a": "s007",
+   "b": "s001",
+   "flow": null
+  },
+  {
+   "a": "s007",
+   "b": "s008",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s001",
+   "flow": null
+  },
+  {
+   "a": "s010",
+   "b": "s001",
+   "flow": null
+  },
+  {
+   "a": "s010",
+   "b": "s011",
+   "flow": "b_to_a"
+  },
+  {
+   "a": "s010",
+   "b": "s015",
+   "flow": "b_to_a"
+  },
+  {
+   "a": "s011",
+   "b": "s015",
+   "flow": null
+  },
+  {
+   "a": "s011",
+   "b": "s012",
+   "flow": null
+  },
+  {
+   "a": "s012",
+   "b": "s014",
+   "flow": null
+  },
+  {
+   "a": "s014",
+   "b": "s015",
+   "flow": null
+  },
+  {
+   "a": "s014",
+   "b": "s020",
+   "flow": null
+  },
+  {
+   "a": "s014",
+   "b": "s017",
+   "flow": null
+  },
+  {
+   "a": "s015",
+   "b": "s020",
+   "flow": null
+  },
+  {
+   "a": "s015",
+   "b": "s017",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s017",
+   "flow": null
+  },
+  {
+   "a": "s017",
+   "b": "s018",
+   "flow": null
+  },
+  {
+   "a": "s018",
+   "b": "s019",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s001",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s023",
+   "b": "s025",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s025",
+   "b": "s001",
+   "flow": null
+  },
+  {
+   "a": "s024",
+   "b": "s026",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s026",
+   "b": "s001",
+   "flow": null
+  },
+  {
+   "a": "s001",
+   "b": "s027",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s027",
+   "b": "s032",
+   "flow": null
+  },
+  {
+   "a": "s027",
+   "b": "s035",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s027",
+   "b": "s036",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s032",
+   "b": "s035",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s032",
+   "b": "s036",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s035",
+   "b": "s036",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s033",
+   "flow": null
+  },
+  {
+   "a": "s033",
+   "b": "s034",
+   "flow": null
+  },
+  {
+   "a": "s035",
+   "b": "s037",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s035",
+   "b": "s039",
+   "flow": null
+  },
+  {
+   "a": "s037",
+   "b": "s039",
+   "flow": null
+  },
+  {
+   "a": "s036",
+   "b": "s038",
+   "flow": null
+  },
+  {
+   "a": "s039",
+   "b": "s040",
+   "flow": null
+  },
+  {
+   "a": "s040",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s001",
+   "b": "s029",
+   "flow": null
+  },
+  {
+   "a": "s029",
+   "b": "s030",
+   "flow": null
+  },
+  {
+   "a": "s001",
+   "b": "s042",
+   "flow": null
+  },
+  {
+   "a": "s001",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s042",
+   "b": "s044",
+   "flow": null
+  },
+  {
+   "a": "s044",
+   "b": "s045",
+   "flow": null
+  },
+  {
+   "a": "s045",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s047",
+   "flow": null
+  },
+  {
+   "a": "s050",
+   "b": "s049",
+   "flow": null
+  },
+  {
+   "a": "s049",
+   "b": "s048",
+   "flow": null
+  },
+  {
+   "a": "s048",
+   "b": "s034",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s048",
+   "b": "s096",
+   "flow": null
+  },
+  {
+   "a": "s048",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s096",
+   "b": "s034",
+   "flow": null
+  },
+  {
+   "a": "s096",
+   "b": "s080",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s034",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s094",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s096",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s042",
+   "b": "s088",
+   "flow": null
+  },
+  {
+   "a": "s057",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s057",
+   "b": "s058",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s060",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s060",
+   "b": "s061",
+   "flow": "b_to_a"
+  },
+  {
+   "a": "s060",
+   "b": "s065",
+   "flow": "b_to_a"
+  },
+  {
+   "a": "s061",
+   "b": "s065",
+   "flow": null
+  },
+  {
+   "a": "s061",
+   "b": "s062",
+   "flow": null
+  },
+  {
+   "a": "s062",
+   "b": "s064",
+   "flow": null
+  },
+  {
+   "a": "s064",
+   "b": "s065",
+   "flow": null
+  },
+  {
+   "a": "s064",
+   "b": "s066",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s066",
+   "flow": null
+  },
+  {
+   "a": "s067",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s067",
+   "b": "s068",
+   "flow": null
+  },
+  {
+   "a": "s069",
+   "b": "s071",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s071",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s070",
+   "b": "s072",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s072",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s051",
+   "b": "s073",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s073",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s081",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s073",
+   "b": "s082",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s079",
+   "b": "s081",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s079",
+   "b": "s082",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s081",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s083",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s082",
+   "b": "s084",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s082",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s084",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s085",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s086",
+   "b": "s087",
+   "flow": null
+  },
+  {
+   "a": "s051",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s076",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s077",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s051",
+   "b": "s088",
+   "flow": null
+  },
+  {
+   "a": "s051",
+   "b": "s090",
+   "flow": null
+  },
+  {
+   "a": "s088",
+   "b": "s090",
+   "flow": null
+  },
+  {
+   "a": "s090",
+   "b": "s091",
+   "flow": null
+  },
+  {
+   "a": "s091",
+   "b": "s092",
+   "flow": null
+  },
+  {
+   "a": "s092",
+   "b": "s093",
+   "flow": null
+  }
+ ],
+ "continuations": [
+  {
+   "symbol": "s019",
+   "label": "DEMINERALIZED WATER",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s020",
+   "label": "TO AFWST B",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s022",
+   "label": "CCW MAKEUP PIPE (TRAIN A)",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s023",
+   "label": "AFW RECIRCULATION / SHEET 2 \"E\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s024",
+   "label": "AFW RECIRCULATION / SHEET 2 \"F\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s030",
+   "label": "SHEET 1 \"A\"",
+   "target_system": null,
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s037",
+   "label": "SHEET 2 \"A\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s038",
+   "label": "SHEET 2 \"B\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s050",
+   "label": "RAW WATER",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s066",
+   "label": "FROM MAKEUP DEMINERALIZED WATER",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s068",
+   "label": "CCW MAKEUP (TRAIN B)",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s069",
+   "label": "AFW RECIRCULATION / SHEET 2 \"G\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s070",
+   "label": "AFW RECIRCULATION / SHEET 2 \"H\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s076",
+   "label": "SHEET 1 \"A\"",
+   "target_system": null,
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s077",
+   "label": "SUMP",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s083",
+   "label": "SHEET 2 \"C\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s084",
+   "label": "SHEET 2 \"D\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s094",
+   "label": "CT / SHEET 2 \"A\"",
+   "target_system": null,
+   "target_sheet": "2",
+   "target_drawing": null
+  }
+ ]
+}

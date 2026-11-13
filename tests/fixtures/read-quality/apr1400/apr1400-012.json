@@ -1,0 +1,1239 @@
+{
+ "schema": "hazop_read_quality_key",
+ "version": 1,
+ "seq": 12,
+ "drawing": "5.4.12-1-S1",
+ "source_file": "012_Ch05_Fig5.4.12-1_Reactor_Coolant_Gas_Vent_System_Flow_Diagram.pdf",
+ "page_size": [
+  1224.0,
+  792.0
+ ],
+ "regions": [
+  [
+   150.0,
+   150.0,
+   960.0,
+   690.0
+  ]
+ ],
+ "method": "overview.png로 계통 흐름과 도면 영역을 잡고, 배관이 있는 타일 12장(x0000~x0880, y0140~y0560, 5배 렌더, 10pt 격자)을 위 왼쪽부터 보며 기호·이름표·구경 글자를 적은 뒤 배관을 따라 연결을 적음. 빈 타일은 overview로만 확인. 기존 정답지(answer_key/012)의 계기·번호 원·밸브 상자 값을 그림과 대조해 맞으면 그대로 씀. 추출 코드·추출 결과·PDF 텍스트 층은 보지 않음.",
+ "verified": "2026-11-13 Claude 정답지 세션 초안. 사람 확인 전",
+ "limits": "(1) 밸브 아래·옆 마름모(BI DII, BI AI, D II CI)는 배관 위 기호가 아닌 논리·연동 표시로 보고 넣지 않음. (2) TEW 106·107·108은 가는 실선으로 배관에 붙어 있어 공정 연결(온도계 웰)로 보고 연결에 넣음. 신호선으로 본다면 s002·s009·s010이 든 연결 10쌍은 빠져야 함. (3) 제거 스풀의 플랜지 쌍 2개와 사이트 글라스(FG, SY01)는 목록에 없어 unlisted로 넣음. 플랜지를 기호로 치지 않으면 s011·s013이 빠지고 연결이 바뀜. (4) 1421 기호는 빗금 삼각형과 오른쪽 흡기 화살표로 진공 차단(릴리프) 밸브로 읽었으나 확신 낮음. (5) IRWST 탱크와 스파저 사이, 탱크 벽을 지나는 배관은 기호 간 배관 연결로 보지 않아 IRWST(s017)는 연결이 없음. (6) 배관 위 흐름 화살표가 없어 flow는 모두 null. (7) 표제·그림 제목·NOTES 글자는 영역 밖.",
+ "symbols": [
+  {
+   "id": "s001",
+   "kind": "continuation",
+   "bbox": [
+    176.9,
+    159.7,
+    186.3,
+    206.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "세로로 놓인 오각형, 글자 'CV:RDT / SHEET 5'"
+  },
+  {
+   "id": "s002",
+   "kind": "temperature_element",
+   "bbox": [
+    196.2,
+    193.1,
+    219.4,
+    219.3
+   ],
+   "tag": "TEW 106",
+   "attributes": {},
+   "note": "비석 아래 칸 IAH"
+  },
+  {
+   "id": "s003",
+   "kind": "solenoid_valve",
+   "bbox": [
+    179.4,
+    264.0,
+    184.2,
+    275.0
+   ],
+   "tag": "418",
+   "tag_bbox": [
+    160.7,
+    249.3,
+    174.6,
+    263.3
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FC"
+   },
+   "note": "몸통 검게 칠함(닫힘), S 구동기"
+  },
+  {
+   "id": "s004",
+   "kind": "reducer",
+   "bbox": [
+    179.6,
+    275.0,
+    184.0,
+    279.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "3\"X2\""
+  },
+  {
+   "id": "s005",
+   "kind": "solenoid_valve",
+   "bbox": [
+    235.0,
+    337.8,
+    244.6,
+    342.4
+   ],
+   "tag": "419",
+   "tag_bbox": [
+    218.9,
+    319.2,
+    232.8,
+    333.1
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FC"
+   },
+   "note": "몸통 검게 칠함, S 구동기"
+  },
+  {
+   "id": "s006",
+   "kind": "reducer",
+   "bbox": [
+    244.6,
+    337.6,
+    249.4,
+    342.6
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "3\"X4\""
+  },
+  {
+   "id": "s007",
+   "kind": "solenoid_valve",
+   "bbox": [
+    235.0,
+    407.6,
+    244.6,
+    412.4
+   ],
+   "tag": "420",
+   "tag_bbox": [
+    246.8,
+    389.0,
+    260.8,
+    403.0
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FC"
+   },
+   "note": "몸통 검게 칠함, S 구동기"
+  },
+  {
+   "id": "s008",
+   "kind": "reducer",
+   "bbox": [
+    244.6,
+    407.6,
+    249.4,
+    412.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "3\"X4\""
+  },
+  {
+   "id": "s009",
+   "kind": "temperature_element",
+   "bbox": [
+    321.4,
+    293.6,
+    344.6,
+    319.8
+   ],
+   "tag": "TEW 107",
+   "attributes": {},
+   "note": "비석 아래 칸 IAH"
+  },
+  {
+   "id": "s010",
+   "kind": "temperature_element",
+   "bbox": [
+    321.4,
+    363.4,
+    344.6,
+    389.6
+   ],
+   "tag": "TEW 108",
+   "attributes": {},
+   "note": "비석 아래 칸 IAH"
+  },
+  {
+   "id": "s011",
+   "kind": "unlisted",
+   "kind_text": "flange pair (removal spool)",
+   "bbox": [
+    441.0,
+    337.0,
+    445.0,
+    343.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 제거 스풀 왼쪽 플랜지 한 쌍. 기호로 칠지 판단이 필요"
+  },
+  {
+   "id": "s012",
+   "kind": "unlisted",
+   "kind_text": "sight glass (FG in circle)",
+   "bbox": [
+    462.0,
+    336.0,
+    471.4,
+    344.4
+   ],
+   "tag": "SY01",
+   "tag_bbox": [
+    461.0,
+    344.4,
+    472.4,
+    349.4
+   ],
+   "attributes": {},
+   "note": "불확실: 원 안 'FG'(사이트 글라스), 아래 굵은 글자 SY01을 태그로 봄. 위 글자 REMOVAL SPOOL (NOTE 1)"
+  },
+  {
+   "id": "s013",
+   "kind": "unlisted",
+   "kind_text": "flange pair (removal spool)",
+   "bbox": [
+    494.4,
+    337.0,
+    498.0,
+    343.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 제거 스풀 오른쪽 플랜지 한 쌍"
+  },
+  {
+   "id": "s014",
+   "kind": "manual_valve",
+   "bbox": [
+    520.4,
+    338.0,
+    529.6,
+    342.2
+   ],
+   "tag": "V1430",
+   "tag_bbox": [
+    518.0,
+    343.6,
+    532.4,
+    348.0
+   ],
+   "attributes": {},
+   "note": "흰 몸통, 가운데 검은 점"
+  },
+  {
+   "id": "s015",
+   "kind": "relief_valve",
+   "bbox": [
+    807.6,
+    370.8,
+    813.6,
+    378.2
+   ],
+   "tag": "1421",
+   "tag_bbox": [
+    816.9,
+    354.7,
+    830.8,
+    368.6
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금 붙은 삼각형과 오른쪽에서 들어오는 화살표. 진공 차단(흡기) 밸브로 보임. 아래 짧은 가로 막대에서 1½\" 배관이 시작"
+  },
+  {
+   "id": "s016",
+   "kind": "unlisted",
+   "kind_text": "sparger",
+   "bbox": [
+    839.6,
+    582.0,
+    874.4,
+    588.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "이름 글자 'RCGVS SPARGER'(태그로 보지 않음). IRWST 안에 있음"
+  },
+  {
+   "id": "s017",
+   "kind": "tank",
+   "bbox": [
+    758.0,
+    526.4,
+    950.0,
+    677.6
+   ],
+   "tag": "IRWST",
+   "tag_bbox": [
+    842.4,
+    655.6,
+    871.0,
+    663.6
+   ],
+   "attributes": {},
+   "note": "회색 가는 선 사각형"
+  },
+  {
+   "id": "s018",
+   "kind": "transmitter",
+   "bbox": [
+    239.8,
+    472.5,
+    263.1,
+    498.7
+   ],
+   "tag": "PT 106",
+   "attributes": {},
+   "note": "비석 아래 칸 ISAH, ¾\" 배관으로 연결"
+  },
+  {
+   "id": "s019",
+   "kind": "reducer",
+   "bbox": [
+    387.6,
+    439.8,
+    392.4,
+    444.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "3\"X2\""
+  },
+  {
+   "id": "s020",
+   "kind": "solenoid_valve",
+   "bbox": [
+    392.4,
+    439.7,
+    401.7,
+    444.3
+   ],
+   "tag": "413",
+   "tag_bbox": [
+    404.0,
+    421.0,
+    418.0,
+    435.0
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FC"
+   },
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+  },
+  {
+   "id": "s021",
+   "kind": "solenoid_valve",
+   "bbox": [
+    500.1,
+    439.7,
+    509.4,
+    444.3
+   ],
+   "tag": "411",
+   "tag_bbox": [
+    511.8,
+    421.0,
+    525.7,
+    435.0
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FC"
+   },
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+  },
+  {
+   "id": "s022",
+   "kind": "reducer",
+   "bbox": [
+    353.0,
+    509.6,
+    357.6,
+    514.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "3\"X2\""
+  },
+  {
+   "id": "s023",
+   "kind": "solenoid_valve",
+   "bbox": [
+    357.4,
+    509.5,
+    366.8,
+    514.2
+   ],
+   "tag": "412",
+   "tag_bbox": [
+    341.1,
+    490.9,
+    355.1,
+    504.9
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FC"
+   },
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+  },
+  {
+   "id": "s024",
+   "kind": "solenoid_valve",
+   "bbox": [
+    450.6,
+    509.5,
+    459.9,
+    514.2
+   ],
+   "tag": "410",
+   "tag_bbox": [
+    434.3,
+    490.9,
+    448.3,
+    504.9
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FC"
+   },
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+  },
+  {
+   "id": "s025",
+   "kind": "continuation",
+   "bbox": [
+    629.9,
+    507.2,
+    676.5,
+    516.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "글자 'RC:PRESSURIZER / SHEET 3'"
+  },
+  {
+   "id": "s026",
+   "kind": "reducer",
+   "bbox": [
+    208.6,
+    614.0,
+    212.6,
+    619.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "1\"X3\""
+  },
+  {
+   "id": "s027",
+   "kind": "solenoid_valve",
+   "bbox": [
+    398.2,
+    605.6,
+    407.5,
+    610.2
+   ],
+   "tag": "417",
+   "tag_bbox": [
+    381.9,
+    586.9,
+    395.9,
+    600.9
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FC"
+   },
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+  },
+  {
+   "id": "s028",
+   "kind": "solenoid_valve",
+   "bbox": [
+    505.9,
+    605.6,
+    515.2,
+    610.2
+   ],
+   "tag": "415",
+   "tag_bbox": [
+    489.6,
+    586.9,
+    503.6,
+    600.9
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FC"
+   },
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+  },
+  {
+   "id": "s029",
+   "kind": "solenoid_valve",
+   "bbox": [
+    363.3,
+    675.4,
+    372.6,
+    680.1
+   ],
+   "tag": "416",
+   "tag_bbox": [
+    347.0,
+    656.8,
+    360.9,
+    670.8
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FC"
+   },
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+  },
+  {
+   "id": "s030",
+   "kind": "solenoid_valve",
+   "bbox": [
+    456.4,
+    675.4,
+    465.7,
+    680.1
+   ],
+   "tag": "414",
+   "tag_bbox": [
+    468.1,
+    656.8,
+    482.0,
+    670.8
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FC"
+   },
+   "note": "몸통 검게 칠함, 가운데 점, S 구동기"
+  },
+  {
+   "id": "s031",
+   "kind": "reducer",
+   "bbox": [
+    587.0,
+    675.4,
+    592.0,
+    680.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "1\"X¾\""
+  },
+  {
+   "id": "s032",
+   "kind": "continuation",
+   "bbox": [
+    682.3,
+    673.1,
+    728.9,
+    682.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "글자 'RC:REACTOR VESSEL VENT / SHEET 1'"
+  }
+ ],
+ "lines": [
+  {
+   "id": "l001",
+   "at": [
+    181.5,
+    277.0
+   ],
+   "text_bbox": [
+    173.0,
+    276.0,
+    178.0,
+    289.0
+   ],
+   "size": "3\"X2\""
+  },
+  {
+   "id": "l002",
+   "at": [
+    201.5,
+    340.0
+   ],
+   "text_bbox": [
+    199.0,
+    334.4,
+    204.0,
+    339.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l003",
+   "at": [
+    204.6,
+    381.0
+   ],
+   "text_bbox": [
+    199.6,
+    379.0,
+    204.0,
+    384.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l004",
+   "at": [
+    247.0,
+    340.0
+   ],
+   "text_bbox": [
+    249.6,
+    342.0,
+    263.0,
+    346.4
+   ],
+   "size": "3\"X4\""
+  },
+  {
+   "id": "l005",
+   "at": [
+    247.0,
+    410.0
+   ],
+   "text_bbox": [
+    247.0,
+    413.6,
+    260.4,
+    418.0
+   ],
+   "size": "3\"X4\""
+  },
+  {
+   "id": "l006",
+   "at": [
+    393.0,
+    340.0
+   ],
+   "text_bbox": [
+    390.4,
+    335.2,
+    396.0,
+    339.2
+   ],
+   "size": "4\""
+  },
+  {
+   "id": "l007",
+   "at": [
+    356.4,
+    375.0
+   ],
+   "text_bbox": [
+    351.0,
+    372.4,
+    355.6,
+    377.6
+   ],
+   "size": "4\""
+  },
+  {
+   "id": "l008",
+   "at": [
+    778.6,
+    398.0
+   ],
+   "text_bbox": [
+    773.0,
+    395.0,
+    777.4,
+    401.0
+   ],
+   "size": "4\""
+  },
+  {
+   "id": "l009",
+   "at": [
+    810.4,
+    415.0
+   ],
+   "text_bbox": [
+    806.0,
+    410.4,
+    809.6,
+    419.4
+   ],
+   "size": "1½\""
+  },
+  {
+   "id": "l010",
+   "at": [
+    857.0,
+    553.0
+   ],
+   "text_bbox": [
+    851.6,
+    550.4,
+    855.6,
+    555.0
+   ],
+   "size": "4\""
+  },
+  {
+   "id": "l011",
+   "at": [
+    196.0,
+    491.4
+   ],
+   "text_bbox": [
+    193.0,
+    486.0,
+    199.4,
+    490.4
+   ],
+   "size": "¾\""
+  },
+  {
+   "id": "l012",
+   "at": [
+    251.5,
+    511.8
+   ],
+   "text_bbox": [
+    249.0,
+    507.0,
+    254.0,
+    511.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l013",
+   "at": [
+    350.0,
+    442.0
+   ],
+   "text_bbox": [
+    348.0,
+    436.0,
+    353.0,
+    440.4
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l014",
+   "at": [
+    388.0,
+    442.0
+   ],
+   "text_bbox": [
+    375.4,
+    436.4,
+    388.6,
+    440.8
+   ],
+   "size": "3\"X2\""
+  },
+  {
+   "id": "l015",
+   "at": [
+    455.0,
+    442.0
+   ],
+   "text_bbox": [
+    452.0,
+    436.0,
+    458.0,
+    440.4
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l016",
+   "at": [
+    355.0,
+    511.8
+   ],
+   "text_bbox": [
+    342.4,
+    514.0,
+    356.0,
+    519.4
+   ],
+   "size": "3\"X2\""
+  },
+  {
+   "id": "l017",
+   "at": [
+    408.5,
+    511.8
+   ],
+   "text_bbox": [
+    406.0,
+    506.4,
+    411.0,
+    511.0
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l018",
+   "at": [
+    210.6,
+    570.0
+   ],
+   "text_bbox": [
+    205.0,
+    567.6,
+    209.0,
+    572.4
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l019",
+   "at": [
+    210.6,
+    616.0
+   ],
+   "text_bbox": [
+    214.0,
+    609.6,
+    219.0,
+    622.4
+   ],
+   "size": "1\"X3\""
+  },
+  {
+   "id": "l020",
+   "at": [
+    262.5,
+    677.6
+   ],
+   "text_bbox": [
+    260.0,
+    672.0,
+    265.0,
+    676.0
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l021",
+   "at": [
+    356.5,
+    607.8
+   ],
+   "text_bbox": [
+    354.0,
+    602.0,
+    359.0,
+    606.4
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l022",
+   "at": [
+    461.5,
+    607.8
+   ],
+   "text_bbox": [
+    459.0,
+    602.0,
+    464.0,
+    606.4
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l023",
+   "at": [
+    414.5,
+    677.6
+   ],
+   "text_bbox": [
+    412.0,
+    672.4,
+    417.0,
+    676.4
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l024",
+   "at": [
+    589.5,
+    677.6
+   ],
+   "text_bbox": [
+    582.0,
+    680.6,
+    597.0,
+    685.6
+   ],
+   "size": "1\"X¾\""
+  },
+  {
+   "id": "l025",
+   "at": [
+    641.5,
+    677.6
+   ],
+   "text_bbox": [
+    638.0,
+    672.6,
+    645.0,
+    676.4
+   ],
+   "size": "¾\""
+  }
+ ],
+ "connections": [
+  {
+   "a": "s001",
+   "b": "s002",
+   "flow": null
+  },
+  {
+   "a": "s001",
+   "b": "s003",
+   "flow": null
+  },
+  {
+   "a": "s002",
+   "b": "s003",
+   "flow": null
+  },
+  {
+   "a": "s003",
+   "b": "s004",
+   "flow": null
+  },
+  {
+   "a": "s004",
+   "b": "s005",
+   "flow": null
+  },
+  {
+   "a": "s004",
+   "b": "s007",
+   "flow": null
+  },
+  {
+   "a": "s004",
+   "b": "s018",
+   "flow": null
+  },
+  {
+   "a": "s004",
+   "b": "s026",
+   "flow": null
+  },
+  {
+   "a": "s004",
+   "b": "s019",
+   "flow": null
+  },
+  {
+   "a": "s004",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s005",
+   "b": "s007",
+   "flow": null
+  },
+  {
+   "a": "s005",
+   "b": "s018",
+   "flow": null
+  },
+  {
+   "a": "s005",
+   "b": "s026",
+   "flow": null
+  },
+  {
+   "a": "s005",
+   "b": "s019",
+   "flow": null
+  },
+  {
+   "a": "s005",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s007",
+   "b": "s018",
+   "flow": null
+  },
+  {
+   "a": "s007",
+   "b": "s026",
+   "flow": null
+  },
+  {
+   "a": "s007",
+   "b": "s019",
+   "flow": null
+  },
+  {
+   "a": "s007",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s018",
+   "b": "s026",
+   "flow": null
+  },
+  {
+   "a": "s018",
+   "b": "s019",
+   "flow": null
+  },
+  {
+   "a": "s018",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s026",
+   "b": "s019",
+   "flow": null
+  },
+  {
+   "a": "s026",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s019",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s005",
+   "b": "s006",
+   "flow": null
+  },
+  {
+   "a": "s007",
+   "b": "s008",
+   "flow": null
+  },
+  {
+   "a": "s006",
+   "b": "s008",
+   "flow": null
+  },
+  {
+   "a": "s006",
+   "b": "s009",
+   "flow": null
+  },
+  {
+   "a": "s006",
+   "b": "s010",
+   "flow": null
+  },
+  {
+   "a": "s006",
+   "b": "s011",
+   "flow": null
+  },
+  {
+   "a": "s008",
+   "b": "s009",
+   "flow": null
+  },
+  {
+   "a": "s008",
+   "b": "s010",
+   "flow": null
+  },
+  {
+   "a": "s008",
+   "b": "s011",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s010",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s011",
+   "flow": null
+  },
+  {
+   "a": "s010",
+   "b": "s011",
+   "flow": null
+  },
+  {
+   "a": "s011",
+   "b": "s012",
+   "flow": null
+  },
+  {
+   "a": "s012",
+   "b": "s013",
+   "flow": null
+  },
+  {
+   "a": "s013",
+   "b": "s014",
+   "flow": null
+  },
+  {
+   "a": "s014",
+   "b": "s015",
+   "flow": null
+  },
+  {
+   "a": "s014",
+   "b": "s016",
+   "flow": null
+  },
+  {
+   "a": "s015",
+   "b": "s016",
+   "flow": null
+  },
+  {
+   "a": "s019",
+   "b": "s020",
+   "flow": null
+  },
+  {
+   "a": "s020",
+   "b": "s021",
+   "flow": null
+  },
+  {
+   "a": "s022",
+   "b": "s023",
+   "flow": null
+  },
+  {
+   "a": "s023",
+   "b": "s024",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s024",
+   "flow": null
+  },
+  {
+   "a": "s021",
+   "b": "s025",
+   "flow": null
+  },
+  {
+   "a": "s024",
+   "b": "s025",
+   "flow": null
+  },
+  {
+   "a": "s026",
+   "b": "s027",
+   "flow": null
+  },
+  {
+   "a": "s026",
+   "b": "s029",
+   "flow": null
+  },
+  {
+   "a": "s027",
+   "b": "s029",
+   "flow": null
+  },
+  {
+   "a": "s027",
+   "b": "s028",
+   "flow": null
+  },
+  {
+   "a": "s029",
+   "b": "s030",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s030",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s031",
+   "flow": null
+  },
+  {
+   "a": "s030",
+   "b": "s031",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s032",
+   "flow": null
+  }
+ ],
+ "continuations": [
+  {
+   "symbol": "s001",
+   "label": "CV:RDT / SHEET 5",
+   "target_system": "CV",
+   "target_sheet": "5",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s025",
+   "label": "RC:PRESSURIZER / SHEET 3",
+   "target_system": "RC",
+   "target_sheet": "3",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s032",
+   "label": "RC:REACTOR VESSEL VENT / SHEET 1",
+   "target_system": "RC",
+   "target_sheet": "1",
+   "target_drawing": null
+  }
+ ]
+}
