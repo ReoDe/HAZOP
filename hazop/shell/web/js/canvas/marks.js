@@ -101,7 +101,12 @@ export function resolveMark(mark, index) {
               }
             }
           }
-          if (best && best.d < 30) { rect = { x0: best.q[0], y0: best.q[1], x1: best.q[0], y1: best.q[1] }; center = true; }
+          if (best && best.d < 30) {
+            const cx0 = (first.rect.x0 + first.rect.x1) / 2, cy0 = (first.rect.y0 + first.rect.y1) / 2;
+            // 설비 중심에서 닿는 점으로 향하는 쪽(배관 쪽)으로 번호 원 반지름만큼 밖에 둔다. 테두리에 걸치지 않게(위치는 badgeEl이 k로 계산)
+            const dx = best.q[0] - cx0, dy = best.q[1] - cy0, n = Math.hypot(dx, dy) || 1;
+            rect = { x0: best.q[0], y0: best.q[1], x1: best.q[0], y1: best.q[1], out: [dx / n, dy / n] }; center = true;
+          }
         } else if (first.kind === "tee") center = true;
         out.badges.push({ rect, text: String(n), color, round: true, center });
       }
@@ -183,7 +188,8 @@ function shapeOf(item, k, widthPx, extra = {}) {
 
 function badgeEl(b, k) {
   const r = b.rect, h = (b.round ? 22 : 15) / k, w = (b.round ? 22 : Math.max(15, b.text.length * 8 + 8)) / k;
-  const x = b.center ? r.x0 - w / 2 : r.x0 - 4 / k, y = b.center ? r.y0 - h / 2 : r.y0 - h - 3 / k;
+  const ox = b.center && r.out ? r.out[0] * (w / 2 + 2 / k) : 0, oy = b.center && r.out ? r.out[1] * (h / 2 + 2 / k) : 0;
+  const x = b.center ? r.x0 - w / 2 + ox : r.x0 - 4 / k, y = b.center ? r.y0 - h / 2 + oy : r.y0 - h - 3 / k;
   return el("g", { "pointer-events": "none" }, [
     el("rect", { x, y, width: w, height: h, rx: (b.round ? 11 : 3) / k, fill: b.color, stroke: b.round ? "var(--card, #fff)" : null, "stroke-width": b.round ? 2 : null, "vector-effect": "non-scaling-stroke" }),
     el("text", { x: x + w / 2, y: y + h * 0.75, "text-anchor": "middle", fill: "var(--on-seg, #fff)", "font-size": (b.round ? 13 : 11) / k, "font-weight": 700 }, null, b.text),
@@ -205,7 +211,8 @@ function arrowEl(a, k) {
 export function badgeBoxes(badges, k) {
   return (badges || []).map((b) => {
     const r = b.rect, h = (b.round ? 22 : 15) / k, w = (b.round ? 22 : Math.max(15, b.text.length * 8 + 8)) / k;
-    const x = b.center ? r.x0 - w / 2 : r.x0 - 4 / k, y = b.center ? r.y0 - h / 2 : r.y0 - h - 3 / k;
+    const ox = b.center && r.out ? r.out[0] * (w / 2 + 2 / k) : 0, oy = b.center && r.out ? r.out[1] * (h / 2 + 2 / k) : 0;
+  const x = b.center ? r.x0 - w / 2 + ox : r.x0 - 4 / k, y = b.center ? r.y0 - h / 2 + oy : r.y0 - h - 3 / k;
     return { x0: x - 2 / k, y0: y - 2 / k, x1: x + w + 2 / k, y1: y + h + 2 / k, owner: "badge" };
   });
 }
@@ -280,7 +287,7 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size, re
       if (!taken.has(key)) { taken.add(key); break; }
       dx += step;
     }
-    if (dx) b.rect = { x0: b.rect.x0 + dx, y0: b.rect.y0, x1: b.rect.x1 + dx, y1: b.rect.y1 };
+    if (dx) b.rect = { x0: b.rect.x0 + dx, y0: b.rect.y0, x1: b.rect.x1 + dx, y1: b.rect.y1, out: b.rect.out };
   }
   for (const b of badges) nodes.push(badgeEl(b, k));
   return { nodes, missing, dim, badges };

@@ -32,7 +32,7 @@ INLINE = ("manual_valve", "isolation_valve", "check_valve", "control_valve", "mo
           "pipe_cap", "vent", "drain", "test_connection")
 INSTRUMENTS = ("transmitter", "indicator", "temperature_element", "controller")     # 원 안에 두 줄을 쓰는 계기: 원이 작으면 표준 크기로 키운다
 INSTR_MIN = 48.0
-CONT_SIZE = (130.0, 36.0)      # 다른 도면 연결 오각형의 표준 크기(원본 글자가 두 줄 들어간다)
+CONT_SIZE = (160.0, 44.0)      # 다른 도면 연결 오각형의 표준 크기(원본 글자가 두 줄 들어간다)
 FIXED = ("continuation", "annotation")
 BODY_KINDS = ("manual_valve", "isolation_valve", "check_valve", "orifice", "damper", "reducer")      # 대칭 몸통을 가진 인라인 기호(붙은 선이 몸통 가운데를 지나야 한다)      # 크기·자리를 원본대로 두는 기호(오각형 연결 표시 등)
 
@@ -285,69 +285,73 @@ def tidy(items, extras, symbols):
             if not _hits_other_pipe(nb, i, pipes):
                 s["bbox"] = nb
                 break
-    # 4 선이 기기에 정확히 닿음
-    for pid, p in pipes.items():
-        line = p["line"]
-        for e in p["ends"]:
-            s = sym.get(e.get("node"))
-            if not s or e.get("status") != "connected":
-                continue
-            idx = _end_index(e, line)
-            q = line[idx]
-            d = s["def"] or {}
-            if d.get("junction"):
-                b = s["bbox"]
-                target = [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]
-            elif d.get("ports"):
-                ports = _ports(d, s["bbox"], s["orient"])
-                target = min(ports, key=lambda w: math.hypot(w[0] - q[0], w[1] - q[1]))
-                if math.hypot(target[0] - q[0], target[1] - q[1]) > 20:
+    def snap_ends():
+        """4 선이 기기에 정확히 닿음: 연결된 배관 끝을 기호 연결점·겉모양에 붙인다(기호를 옮긴 뒤에도 다시 부른다)."""
+        for pid, p in pipes.items():
+            line = p["line"]
+            for e in p["ends"]:
+                s = sym.get(e.get("node"))
+                if not s or e.get("status") != "connected":
                     continue
-            else:                                           # 연결점 정의가 없는 큰 설비: 그려진 겉모양(테두리) 위에서 배관이 닿는 점
-                b = s["bbox"]
-                nb0 = line[1] if idx == 0 else line[-2]
-                poly = _world_outline(s["def"], b, s["orient"])
-                target = None
-                if poly:
-                    v = (q[0] - nb0[0], q[1] - nb0[1])
-                    n = math.hypot(v[0], v[1])
-                    if n > 1e-6:                                # 배관이 오던 축(끝 선분의 직선) 위에서 테두리와 만나는 가장 가까운 점
-                        cand = _ray_hits(poly, q, (v[0] / n, v[1] / n))
-                        if cand:
-                            target = list(min(cand, key=lambda c: math.hypot(c[0] - q[0], c[1] - q[1])))
-                    if target is None or math.hypot(target[0] - q[0], target[1] - q[1]) > 60:
-                        c, dist = _nearest_on_polygon(poly, q)
-                        target = list(c) if dist <= 60 else None
-                if target is None:
-                    tx, ty = min(max(q[0], b[0]), b[2]), min(max(q[1], b[1]), b[3])
-                    target = [tx, ty]
-            nb_i = 1 if idx == 0 else len(line) - 2
-            nb = line[nb_i]
-            horizontal = abs(nb[1] - q[1]) <= abs(nb[0] - q[0])
-            line[idx] = [target[0], target[1]]
-            if len(line) > 2 or nb_i not in (0, len(line) - 1):
-                if horizontal:
-                    nb[1] = target[1]
-                else:
-                    nb[0] = target[0]
-    # 2 개 끝이 모두 붙은 두 점 선이 어긋나면 꺾임을 하나 넣어 직각을 지킨다(다른 기호를 지나게 되면 넣지 않고 그대로 둔다)
-    for pid, p in pipes.items():
-        line = p["line"]
-        if len(line) != 2:
-            continue
-        a, b = line
-        if not (abs(a[0] - b[0]) > EPS and abs(a[1] - b[1]) > EPS and (abs(a[0] - b[0]) <= 24 or abs(a[1] - b[1]) <= 24)):
-            continue
-        mine = {e.get("node") for e in p["ends"] if e.get("node")}
-        mxp, myp = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
-        cands = [[a, [mxp, a[1]], [mxp, b[1]], b], [a, [a[0], myp], [b[0], myp], b]]
-        if abs(b[0] - a[0]) < abs(b[1] - a[1]):
-            cands.reverse()
-        for c in cands:
-            if not any(_seg_hits_box(u, v, [s["bbox"][0] + 2, s["bbox"][1] + 2, s["bbox"][2] - 2, s["bbox"][3] - 2])
-                       for i, s in sym.items() if i not in mine and not (s["def"] or {}).get("junction") for u, v in _segments(c)):
-                p["line"] = c
-                break
+                idx = _end_index(e, line)
+                q = line[idx]
+                d = s["def"] or {}
+                if d.get("junction"):
+                    b = s["bbox"]
+                    target = [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]
+                elif d.get("ports"):
+                    ports = _ports(d, s["bbox"], s["orient"])
+                    target = min(ports, key=lambda w: math.hypot(w[0] - q[0], w[1] - q[1]))
+                    if math.hypot(target[0] - q[0], target[1] - q[1]) > 20:
+                        continue
+                else:                                           # 연결점 정의가 없는 큰 설비: 그려진 겉모양(테두리) 위에서 배관이 닿는 점
+                    b = s["bbox"]
+                    nb0 = line[1] if idx == 0 else line[-2]
+                    poly = _world_outline(s["def"], b, s["orient"])
+                    target = None
+                    if poly:
+                        v = (q[0] - nb0[0], q[1] - nb0[1])
+                        n = math.hypot(v[0], v[1])
+                        if n > 1e-6:                                # 배관이 오던 축(끝 선분의 직선) 위에서 테두리와 만나는 가장 가까운 점
+                            cand = _ray_hits(poly, q, (v[0] / n, v[1] / n))
+                            if cand:
+                                target = list(min(cand, key=lambda c: math.hypot(c[0] - q[0], c[1] - q[1])))
+                        if target is None or math.hypot(target[0] - q[0], target[1] - q[1]) > 60:
+                            c, dist = _nearest_on_polygon(poly, q)
+                            target = list(c) if dist <= 60 else None
+                    if target is None:
+                        tx, ty = min(max(q[0], b[0]), b[2]), min(max(q[1], b[1]), b[3])
+                        target = [tx, ty]
+                nb_i = 1 if idx == 0 else len(line) - 2
+                nb = line[nb_i]
+                horizontal = abs(nb[1] - q[1]) <= abs(nb[0] - q[0])
+                line[idx] = [target[0], target[1]]
+                if len(line) > 2 or nb_i not in (0, len(line) - 1):
+                    if horizontal:
+                        nb[1] = target[1]
+                    else:
+                        nb[0] = target[0]
+    snap_ends()
+    def add_elbows():
+        """개 끝이 모두 붙은 두 점 선이 어긋나면 꺾임을 하나 넣어 직각을 지킨다(다른 기호를 지나게 되면 넣지 않고 그대로 둔다)."""
+        for pid, p in pipes.items():
+            line = p["line"]
+            if len(line) != 2:
+                continue
+            a, b = line
+            if not (abs(a[0] - b[0]) > EPS and abs(a[1] - b[1]) > EPS and (abs(a[0] - b[0]) <= 24 or abs(a[1] - b[1]) <= 24)):
+                continue
+            mine = {e.get("node") for e in p["ends"] if e.get("node")}
+            mxp, myp = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+            cands = [[a, [mxp, a[1]], [mxp, b[1]], b], [a, [a[0], myp], [b[0], myp], b]]
+            if abs(b[0] - a[0]) < abs(b[1] - a[1]):
+                cands.reverse()
+            for c in cands:
+                if not any(_seg_hits_box(u, v, [s["bbox"][0] + 2, s["bbox"][1] + 2, s["bbox"][2] - 2, s["bbox"][3] - 2])
+                           for i, s in sym.items() if i not in mine and not (s["def"] or {}).get("junction") for u, v in _segments(c)):
+                    p["line"] = c
+                    break
+    add_elbows()
     # 6 기호끼리 겹침: 작은 쪽을 정돈 범위 안에서 밀어낸다
     ids = sorted(sym)
     for _ in range(3):
@@ -368,6 +372,8 @@ def tidy(items, extras, symbols):
                 elif oy <= MAX_SHIFT:
                     d = oy if (small["bbox"][1] + small["bbox"][3]) / 2 >= (big["bbox"][1] + big["bbox"][3]) / 2 else -oy
                     small["bbox"] = [small["bbox"][0], small["bbox"][1] + d, small["bbox"][2], small["bbox"][3] + d]
+    snap_ends()                                          # 밀려난 기호에 이어진 배관 끝을 다시 붙인다
+    add_elbows()
     # 9 교차(건너뜀 자리)
     hops = _hops(pipes)
     moved = max([math.hypot(((s["bbox"][0] + s["bbox"][2]) / 2) - original_centers[i][0], ((s["bbox"][1] + s["bbox"][3]) / 2) - original_centers[i][1])

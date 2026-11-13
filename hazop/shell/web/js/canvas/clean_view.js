@@ -77,13 +77,13 @@ function arrowAt(a, b, t, color, s = 6) {
 function arrowsAlong(line, forward, color, avoid, size = 6) {
   const out = [];
   const blocked = (x, y) => {
-    if (line.some((q) => Math.hypot(q[0] - x, q[1] - y) < 8)) return true;                          // 꺾임·분기점
+    if (line.some((q) => Math.hypot(q[0] - x, q[1] - y) < size * 2.2)) return true;                    // 꺾임·분기점 앞뒤
     return (avoid || []).some((o) => x > o.x0 - 5 && x < o.x1 + 5 && y > o.y0 - 5 && y < o.y1 + 5);   // 기호 둘레
   };
   for (let i = 0; i + 1 < line.length; i++) {
     const [a, b] = forward ? [line[i], line[i + 1]] : [line[line.length - 1 - i], line[line.length - 2 - i]];
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    if (len < 40) continue;
+    if (len < size * 6) continue;                                      // 화살촉 길이(2·size)의 세 배보다 짧은 선분에는 넣지 않는다
     const n = Math.max(1, Math.round(len / 110));
     for (let j = 0; j < n; j++) {
       let t = (j + 0.5) / n, ok = false;
@@ -206,17 +206,18 @@ export function buildBase(ctx) {
     const cx = (bb[0] + bb[2]) / 2, cy = (bb[1] + bb[3]) / 2, bw = bb[2] - bb[0], bh = bb[3] - bb[1];
     const color = ai ? AI_LINE : INK;
     if (kind === "continuation" && ex.label && ex.label.length) {        // 다른 도면 연결: 오각형 안에 원본 글자 두 줄(오각형에 들어가는 크기로)
-      const longest = Math.max(...ex.label.map((t) => String(t).length), 6), sz = Math.min(9, (bw * 0.78) / (0.6 * longest));
+      const longest = Math.max(...ex.label.map((t) => String(t).length), 6), sz = Math.min(11, (bw * 0.8) / (0.6 * longest));
       ex.label.forEach((t, i) => labels.push(labelSpec(cx, cy + (ex.label.length === 1 ? sz * 0.35 : i ? sz * 1.05 : -sz * 0.35), t, { anchor: "middle", size: sz, fixed: true, pri: 3, owner: rec.id })));
     } else if (rec.tag) {
       if (rec.category === "instrument") {                // 계기: 원 안 두 줄(기능 글자 / 번호). 원이 화면에서 34px 미만이면 기능 글자만 크게, 번호는 확대하면 나타난다
         const lines = splitTag(rec.tag), bwid = Math.max(bw, 1), kBig = 34 / bwid;
-        const bar = rec.kind === "indicator";            // 가로줄이 있는 계기(계기반 설치 표시): 기능 글자는 줄 위쪽 반에, 번호는 아래쪽 반에
+        // 모든 계기에서 기능 글자는 같은 높이(원의 위쪽 반)에 둔다. 가로줄이 있는 계기(indicator)도 글자는 줄 위, 번호는 줄 아래다
+        const fy = cy - bwid * 0.1, ny = cy + bwid * 0.32;
         if (lines.length > 1) {
-          labels.push(labelSpec(cx, cy + (bar ? -bwid * 0.12 : -bwid * 0.04), lines[0], { anchor: "middle", size: bwid * 0.27, fixed: true, showFrom: kBig, fill: color, pri: 2, owner: rec.id }));
-          labels.push(labelSpec(cx, cy + (bar ? bwid * 0.33 : bwid * 0.31), lines.slice(1).join("-"), { anchor: "middle", size: bwid * 0.27, fixed: true, showFrom: kBig, fill: color, pri: 2, owner: rec.id }));
-          labels.push(labelSpec(cx, cy + (bar ? -bwid * 0.04 : bwid * 0.14), lines[0], { anchor: "middle", size: bwid * 0.4, fixed: true, hideFrom: kBig, fill: color, pri: 2, owner: rec.id }));
-        } else labels.push(labelSpec(cx, cy + bwid * 0.1, lines[0], { anchor: "middle", size: bwid * 0.3, fixed: true, fill: color, pri: 2, owner: rec.id }));
+          labels.push(labelSpec(cx, fy, lines[0], { anchor: "middle", size: bwid * 0.27, fixed: true, showFrom: kBig, fill: color, pri: 2, owner: rec.id }));
+          labels.push(labelSpec(cx, ny, lines.slice(1).join("-"), { anchor: "middle", size: bwid * 0.27, fixed: true, showFrom: kBig, fill: color, pri: 2, owner: rec.id }));
+          labels.push(labelSpec(cx, fy + bwid * 0.04, lines[0], { anchor: "middle", size: bwid * 0.36, fixed: true, hideFrom: kBig, fill: color, pri: 2, owner: rec.id }));
+        } else labels.push(labelSpec(cx, fy + bwid * 0.04, lines[0], { anchor: "middle", size: bwid * 0.32, fixed: true, fill: color, pri: 2, owner: rec.id }));
       } else if (rec.category === "equipment") {         // 설비: 설비 바로 옆(오른쪽 위)에 둔다. 원본에서 멀리 떨어진 글자 자리는 따르지 않는다
         labels.push(tagLabel(rec.tag, bb, ["right", "left", "above", "below"], { fill: color, pri: 0, owner: rec.id }));      // 모든 설비가 같은 규칙: 오른쪽 옆 가운데(막히면 왼쪽·위·아래)
       } else {
