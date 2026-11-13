@@ -1,0 +1,310 @@
+"""새 웹 화면의 구간 명령과 읽기(2단계, docs/design/app-shell-web.md §2.1·§5.2·§5.3). Qt를 import하지 않는다.
+
+- **명령 `nodes.*`**: 웹이 보내는 것은 구간 ID·도면 안 local_id·이름·`set_rev`·대상의 `{node_id, rev, state}`뿐이다. 프로젝트 구성요소 ID로의
+  변환(`hazop.chat.view.lift`)과 `by`(검토자 이름 = 설정)·`at`(시각)·`author`(`user`)는 여기서 채운다. 웹이 `by`·`at`·`author`·`origin`을
+  보내면 인자 검사가 `bad_args`로 거절한다(채팅 규격 §4.7과 같은 규칙).
+- 처리는 `hazop.study.node_commands.execute`가 한다(채팅의 쓰기와 같은 길). 판 검사(§5.3): `set_rev`는 엔진이, 대상 구간의 `rev`·`state`는
+  여기서 대조한다. 엔진이 거절하면 아무것도 저장하지 않고 `reason`(한국어 문장)을 오류 글로 돌려준다.
+- **읽기 `nodes`**(`ReadApi`가 부른다): `nodes`(목록·묶음), `nodes/sheet/<graph_id>`(도면 한 장의 구간별 local_id), `nodes/node/<node_id>`(상세).
+- 영역 모듈이라 `api.py`는 `register(COMMANDS)` 한 줄로만 이 모듈을 부른다(§6 '파일 주인').
+"""
+
+import collections
+
+from hazop.chat import view as chatview
+from hazop.study import node_commands, node_tools, nodes
+
+MEMBERS_SHOWN = 200        # 상세에 보이는 구성요소 수(나머지는 개수만)
+BATCHES_SHOWN = 12         # 목록 머리에 보이는 최근 묶음
+MAJORS_SHOWN = 8
+MAX_IDS = 2000             # 한 번에 보내는 local_id 수(도면 고르기 상한과 같다)
+INT_MAX = 10 ** 9
+
+
+# ---------------------------------------------------------------- 엔진 접근
+
+def _api():
+    from hazop.shell import api
+    return api
+
+
+def _pg(engine, strict=True):
+    """프로젝트 그래프. 만들 수 없으면 읽기는 None, 명령은 오류."""
+    from hazop.app import project_ctx
+    try:
+        return project_ctx.project_graph(engine.project_id())
+    except (OSError, ValueError, KeyError):
+        if strict:
+            raise _api().CommandError("failed", "프로젝트 그래프를 만들 수 없습니다. 도면을 먼저 추출하세요.")
+        return None
+
+
+def _load(pg):
+    try:
+        ns = nodes.load(pg)
+    except (OSError, ValueError) as exc:
+        raise _api().CommandError("failed", "검토구간 파일을 읽을 수 없습니다(%s)." % str(exc)[:120])
+    return ns if ns is not None else nodes.new_set(pg)
+
+
+# ---------------------------------------------------------------- 읽기
+
+def _by_sheet(pg, members):
+    fwd, _ = chatview._locals(pg)
+    out = collections.OrderedDict()
+    for m in members:
+        hit = fwd.get(m)
+        if hit:
+            out.setdefault(hit[0], []).append(hit[1])
+    return out
+
+
+def _owners(ns):
+    """구성요소 -> 그것을 품은 구간 ID 목록."""
+    owners = {}
+    for n in ns["nodes"]:
+        for m in n["members"]:
+            owners.setdefault(m, []).append(n["node_id"])
+    return owners
+
+
+def _row(n, fwd, owners):
+    sheets = collections.OrderedDict()
+    shared = collections.Counter()
+    for m in n["members"]:
+        hit = fwd.get(m)
+        if hit:
+            sheets[hit[0]] = sheets.get(hit[0], 0) + 1
+        for other in owners.get(m, ()):
+            if other != n["node_id"]:
+                shared[other] += 1
+    intent = n.get("design_intent") or None
+    return {"node_id": n["node_id"], "name": n.get("name"), "state": nodes.node_state(n), "origin": n.get("origin"),
+            "name_by": n.get("name_by"), "rev": n.get("rev") or 1, "basis": n.get("basis"), "batch_id": n.get("batch_id"),
+            "design_intent": {"text": intent.get("text"), "by": intent.get("by")} if intent else None,
+            "count": len(n["members"]), "sheets": [{"graph_id": g, "n": c} for g, c in sheets.items()],
+            "overlaps": [{"node_id": o, "shared": c} for o, c in sorted(shared.items(), key=lambda kv: (-kv[1], kv[0]))],
+            "confirmed": n.get("confirmed"), "locked": n.get("locked"),
+            "screen": (n.get("screen") or {}).get("status")}
+
+
+def _batch_rows(ns):
+    rows = []
+    for b in reversed((ns.get("batches") or [])[-BATCHES_SHOWN:]):
+        rows.append({"batch_id": b["batch_id"], "origin": b.get("origin"), "kind": b.get("kind"), "at": b.get("at"),
+                     "request_text": b.get("request_text"), "undone": bool(b.get("undone")),
+                     "ops": sorted({o["op"] for o in b.get("ops") or []}),
+                     "node_ids": sorted({o["node_id"] for o in b.get("ops") or []}, key=lambda x: (len(x), x))})
+    return rows
+
+
+def summary(engine):
+    """구간 목록 머리: 집합 판, 구간 행, 최근 묶음, 구간 밖 개수."""
+    pg = _pg(engine, strict=False)
+    if pg is None:
+        return {"available": False, "set_rev": 0, "nodes": [], "batches": [], "outside": {"count": 0, "total": 0}, "stale": False,
+                "read_only": None, "pending_ai": 0, "ver": "0"}
+    ns = _load(pg)
+    fwd, _ = chatview._locals(pg)
+    owners = _owners(ns)
+    rows = [_row(n, fwd, owners) for n in ns["nodes"]]
+    total = len(fwd)
+    covered = sum(1 for m in fwd if m in owners)
+    return {"available": True, "set_rev": ns.get("set_rev") or 0, "graph_version": ns.get("graph_version"),
+            "stale": bool(ns["nodes"]) and nodes.is_stale(ns, pg), "read_only": ns.get("read_only"), "nodes": rows,
+            "batches": _batch_rows(ns), "pending_ai": node_tools.pending_ai(ns),
+            "outside": {"count": total - covered, "total": total}, "ver": str(ns.get("set_rev") or 0)}
+
+
+def sheet_view(engine, graph_id):
+    """도면 한 장 위의 구간: 구간마다 그 도면의 local_id, 어느 구간에도 속하지 않은 local_id."""
+    pg = _pg(engine, strict=False)
+    if pg is None:
+        return None
+    ns = _load(pg)
+    fwd, _ = chatview._locals(pg)
+    owners = _owners(ns)
+    segments = []
+    for n in ns["nodes"]:
+        ids = _by_sheet(pg, n["members"]).get(graph_id)
+        if ids:
+            segments.append({"node_id": n["node_id"], "name": n.get("name"), "state": nodes.node_state(n), "ids": ids})
+    outside = [local for ent, (sheet, local) in fwd.items() if sheet == graph_id and ent not in owners]
+    return {"graph_id": graph_id, "set_rev": ns.get("set_rev") or 0, "segments": segments, "outside_ids": outside}
+
+
+def _describe(pg):
+    return {n["entity_id"]: n for n in pg.get("nodes") or []}
+
+
+def detail(engine, node_id):
+    """고른 구간의 상세: 행, 경계(주요 기기), 구성요소 앞 200개, 이 구간을 건드린 묶음."""
+    pg = _pg(engine, strict=False)
+    if pg is None:
+        return None
+    ns = _load(pg)
+    node = node_tools._node(ns, node_id)
+    if node is None:
+        return None
+    fwd, _ = chatview._locals(pg)
+    owners = _owners(ns)
+    info = _describe(pg)
+    row = _row(node, fwd, owners)
+    majors, kinds = [], collections.Counter()
+    for m in node["members"]:
+        d = info.get(m) or {}
+        kinds[d.get("kind") or "?"] += 1
+        if d.get("category") == "equipment" and d.get("tag") and d["tag"] not in majors:
+            majors.append(d["tag"])
+    members = []
+    for m in node["members"][:MEMBERS_SHOWN]:
+        d, hit = info.get(m) or {}, fwd.get(m)
+        if hit:
+            members.append({"sheet": hit[0], "id": hit[1], "tag": d.get("tag"), "kind": d.get("kind"), "category": d.get("category"),
+                            "shared": [o for o in owners.get(m, ()) if o != node_id]})
+    history = [{"batch_id": b["batch_id"], "origin": b.get("origin"), "kind": b.get("kind"), "at": b.get("at"),
+                "undone": bool(b.get("undone")), "ops": sorted({o["op"] for o in b["ops"] if o["node_id"] == node_id})}
+               for b in ns.get("batches") or [] if any(o["node_id"] == node_id for o in b.get("ops") or [])]
+    return dict(row, set_rev=ns.get("set_rev") or 0, majors=majors[:MAJORS_SHOWN], majors_total=len(majors),
+                boundary=[majors[0], majors[-1]] if len(majors) >= 2 else majors[:1], kinds=dict(kinds.most_common(8)),
+                members=members, members_total=len(node["members"]), history=history)
+
+
+def suggest(engine, sheet, ids):
+    """도면에서 고른 구성요소로 만들 구간의 카드 초안(저장하지 않음): 이름 제안, 경계, 겹치는 구간."""
+    pg = _pg(engine)
+    ns = _load(pg)
+    members = list(dict.fromkeys(chatview.lift(pg, sheet, ids)))
+    info = _describe(pg)
+    majors = []
+    for m in members:
+        d = info.get(m) or {}
+        if d.get("category") == "equipment" and d.get("tag") and d["tag"] not in majors:
+            majors.append(d["tag"])
+    if len(majors) >= 2:
+        name = "%s → %s" % (majors[0], majors[-1])
+    elif majors:
+        name = "%s 주변" % majors[0]
+    else:
+        name = "%s 구간" % sheet.replace("graph-", "", 1)
+    owners = _owners(ns)
+    shared = collections.Counter(o for m in members for o in owners.get(m, ()))
+    return {"count": len(members), "asked": len(ids), "name": name, "majors": majors[:MAJORS_SHOWN],
+            "boundary": [majors[0], majors[-1]] if len(majors) >= 2 else majors[:1],
+            "overlaps": [{"node_id": o, "shared": c} for o, c in sorted(shared.items(), key=lambda kv: (-kv[1], kv[0]))],
+            "set_rev": ns.get("set_rev") or 0}
+
+
+def read(engine, parts, query):
+    """ReadApi가 부르는 길: parts[0] == 'nodes'. 없는 자료는 None(404)."""
+    api = _api()
+    if len(parts) == 1:
+        return api._json(summary(engine))
+    if len(parts) == 3 and parts[1] == "sheet":
+        data = sheet_view(engine, parts[2])
+        return api._json(data) if data is not None else None
+    if len(parts) == 3 and parts[1] == "node":
+        data = detail(engine, parts[2])
+        return api._json(data) if data is not None else None
+    return None
+
+
+# ---------------------------------------------------------------- 쓰기
+
+def _error(out):
+    """엔진의 거절을 오류 답으로. 글은 엔진이 쓴 한국어 사유를 그대로 잇는다."""
+    reasons = out.get("refused") or [{"code": "rule", "reason": "처리하지 못했습니다."}]
+    text = " ".join(r["reason"] for r in reasons[:3])
+    codes = {r.get("code") for r in reasons}
+    if codes & {"stale", "conflict"}:
+        code = "stale"
+        text = "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요."
+    elif codes & {"unreadable", "read_only"}:
+        code = "failed"
+    elif "bad_actor" in codes or "unknown_command" in codes:
+        code = "bad_args"
+    elif "잠긴" in text or "확정 구간" in text or "이미 확정" in text:
+        code = "locked"
+    else:
+        code = "rejected"
+    return _api().CommandError(code, text)
+
+
+def _check_targets(pg, a):
+    ns = _load(pg)
+    if a["set_rev"] != (ns.get("set_rev") or 0):
+        raise _api().CommandError("stale", "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
+    for t in a.get("targets") or []:
+        node = node_tools._node(ns, t["node_id"])
+        if node is None:
+            raise _api().CommandError("not_found", "%s 구간이 이미 없습니다." % t["node_id"])
+        if (node.get("rev") or 1) != t["rev"] or nodes.node_state(node) != t["state"]:
+            raise _api().CommandError("stale", "%s 구간이 다른 곳에서 바뀌어 저장하지 않았습니다." % t["node_id"])
+
+
+def _members(pg, a):
+    members = chatview.lift(pg, a["sheet"], a["ids"])
+    if len(members) != len(set(a["ids"])):
+        raise _api().CommandError("bad_args", "이 도면에 없는 구성요소가 있습니다.")
+    return list(dict.fromkeys(members))
+
+
+def _run(name, build):
+    """build(pg, a) -> node_commands 인자. 같은 길: 검토자 이름 확인 → 판 검사 → execute → 바뀜 알림."""
+    def handler(eng, a):
+        by = eng.reviewer()
+        if not by:
+            raise _api().CommandError("bad_args", "검토자 이름을 먼저 설정에서 입력하세요. 구간 기록에 남습니다.")
+        pg = _pg(eng)
+        _check_targets(pg, a)
+        out = node_commands.execute(pg, name, build(pg, a), author="user", confirmed_by=by, set_rev=a["set_rev"])
+        if not out["ok"]:
+            raise _error(out)
+        eng.changed("nodes", out["set_rev"])
+        return {"set_rev": out["set_rev"], "batch_id": out["batch_id"], "node_ids": out["node_ids"]}
+    return handler
+
+
+def register(commands):
+    """api.COMMANDS에 nodes.* 명령을 올린다."""
+    api = _api()
+    C, v_str, v_int, v_list, v_obj, v_enum, v_bool = (api.Command, api.v_str, api.v_int, api.v_list, api.v_obj, api.v_enum, api.v_bool)
+    rev = (v_int(0, INT_MAX), True)
+    targets = (v_list(v_obj(node_id=v_str(1, 40), rev=v_int(0, INT_MAX), state=v_enum("applied", "confirmed", "locked")), 100), False)
+    sheet, ids = (v_str(1, 200), True), (v_list(v_str(1, 200), MAX_IDS), True)
+    nid, nids = (v_str(1, 40), True), (v_list(v_str(1, 40), 100), True)
+    base = {"set_rev": rev, "targets": targets}
+
+    def spec(**extra):
+        return dict(base, **extra)
+
+    def add(name, spec_, build, doc):
+        commands["nodes." + name] = C(spec_, _run(_cmd_name.get(name, name), build), doc)
+
+    _cmd_name = {"set_intent": "set_design_intent"}
+    add("create", spec(sheet=sheet, ids=ids, name=(v_str(1, 120), True), design_intent=(v_str(0, 2000), False)),
+        lambda pg, a: {"items": [{"members": _members(pg, a), "name": a["name"].strip(), "design_intent": a.get("design_intent") or None,
+                                  "basis": "사람이 도면에서 고른 구성요소"}]}, "고른 구성요소로 구간을 만든다")
+    add("add_members", spec(node_id=nid, sheet=sheet, ids=ids), lambda pg, a: {"node_id": a["node_id"], "members": _members(pg, a)},
+        "구간에 구성요소를 더한다")
+    add("remove_members", spec(node_id=nid, sheet=sheet, ids=ids), lambda pg, a: {"node_id": a["node_id"], "members": _members(pg, a)},
+        "구간에서 구성요소를 뺀다")
+    add("rename", spec(node_id=nid, name=(v_str(1, 120), True)), lambda pg, a: {"node_id": a["node_id"], "name": a["name"]}, "구간 이름을 고친다")
+    add("set_intent", spec(node_id=nid, text=(v_str(0, 2000), True)), lambda pg, a: {"node_id": a["node_id"], "text": a["text"]},
+        "설계 의도를 고친다(빈 글이면 지움)")
+    add("merge", spec(node_ids=(v_list(v_str(1, 40), 20), True)), lambda pg, a: {"node_ids": a["node_ids"]}, "구간을 합친다(첫 구간이 남음)")
+    add("split", spec(node_id=nid, sheet=sheet, ids=ids, name=(v_str(1, 120), False)),
+        lambda pg, a: {"node_id": a["node_id"], "members": _members(pg, a), "name": a.get("name")}, "고른 구성요소를 떼어 새 구간으로 나눈다")
+    add("remove", spec(node_id=nid, archive=(v_bool(), False)), lambda pg, a: {"node_id": a["node_id"], "archive": bool(a.get("archive"))},
+        "구간을 지운다")
+    add("confirm", spec(node_ids=nids), lambda pg, a: {"node_ids": a["node_ids"]}, "구간을 확정한다")
+    add("unconfirm", spec(node_ids=nids), lambda pg, a: {"node_ids": a["node_ids"]}, "구간 확정을 푼다")
+    add("lock", spec(node_ids=nids), lambda pg, a: {"node_ids": a["node_ids"]}, "분석을 마치고 구간을 잠근다")
+    add("unlock", spec(node_ids=nids, reason=(v_str(1, 500), True)), lambda pg, a: {"node_ids": a["node_ids"], "reason": a["reason"]},
+        "잠금을 푼다(이유를 적어야 함)")
+    add("undo", spec(batch_id=(v_str(2, 20), True)), lambda pg, a: {"batch_id": a["batch_id"]}, "묶음을 되돌린다")
+
+    def h_suggest(eng, a):
+        return suggest(eng, a["sheet"], a["ids"])
+    commands["nodes.suggest"] = C({"sheet": sheet, "ids": ids}, h_suggest, "고른 구성요소로 만들 구간의 카드 초안(저장하지 않음)")
+    return commands
