@@ -6,7 +6,7 @@
   AI 검토 실행). 쓰기는 읽은 판(`ver` = 후보 파일과 사람 수정 기록의 지문)을 대조해 어긋나면 stale로 거절한다. 결정한 사람은 설정의 검토자 이름이다.
 - **수락·되돌리기 뒤 그래프를 바로 다시 만든다.** 수락은 사람 수정 기록(hazop.extract.corrections)에 연산으로 들어가므로, 이전 화면처럼 '다시 열면
   반영'이 아니라 그 도면의 그래프(scripts/build_graph.build_one이 기록을 적용)와 프로젝트 지식그래프를 이 자리에서 다시 만든다(hazop.app.data와 같은 길).
-- 채팅(d-chat)이 부를 실행 함수: `candidates`, `accept`, `accept_bulk`, `reject`, `revert`. 모두 {"ok", ...} 사전을 돌려주고 예외를 올리지 않는다.
+- 채팅(d-chat)이 부를 실행 함수: `candidates`, `bulk_ids`(묶음 수락이 고를 ID, 읽기만), `accept`, `accept_bulk`, `reject`, `revert`. 모두 {"ok", ...} 사전을 돌려주고 예외를 올리지 않는다.
   웹 명령은 이 함수들을 감싼 것이다. 웹과 채팅 모두 경로를 주고받지 않고 도면 ID·후보 ID만 쓴다.
 """
 
@@ -320,6 +320,19 @@ def revert(engine, graph_id, cand_ids, ver, by=None):
     return _decide(engine, graph_id, cand_ids, "revert", ver, by)
 
 
+def _bulk(doc, task):
+    return list(ai_review.bulk_groups(doc, by="task").get(task) or []) if doc else []
+
+
+def bulk_ids(engine, graph_id, task):
+    """묶음 수락이 고를 후보 ID(accept_bulk와 같은 규칙, 파일을 쓰지 않음). 채팅 확인 상자에 보일 목록. 없는 도면·후보면 []."""
+    try:
+        doc, _original_ex = _load(_name(engine, graph_id))
+    except (Refused, OSError, ValueError):
+        return []
+    return _bulk(doc, task)
+
+
 def accept_bulk(engine, graph_id, task, ver, by=None):
     """확신 높은 묶음(ai_review.bulk_groups, 할 일별)을 한 번에 수락한다. 묶음은 엔진이 다시 세므로 웹이 고른 ID를 믿지 않는다."""
     try:
@@ -331,7 +344,7 @@ def accept_bulk(engine, graph_id, task, ver, by=None):
         return {"ok": False, "code": "failed", "message": "AI 후보를 읽을 수 없습니다(%s)." % str(exc)[:120]}
     if not ver or ver != ver_of(name):
         return {"ok": False, "code": "stale", "message": STALE_TEXT if ver else "읽은 판(ver)이 없어 저장하지 않았습니다. 후보 목록을 먼저 읽으세요."}
-    ids = ai_review.bulk_groups(doc, by="task").get(task) if doc else None
+    ids = _bulk(doc, task)
     if not ids:
         return {"ok": False, "code": "not_found", "message": "묶어 수락할 후보가 없습니다."}
     return accept(engine, graph_id, ids, ver, by)

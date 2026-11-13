@@ -332,7 +332,12 @@ class ReadTest(Base):
         self.seed([self.tag(1, self.valves[0], "V901")])
         ver = AR.candidates(self.engine, self.gid)["ver"]
         self.assertEqual(AR.reject(self.engine, self.gid, ["nope"], ver)["code"], "not_found")
-        self.assertTrue(AR.accept_bulk(self.engine, self.gid, "tag", ver, by="채팅 검토자")["ok"])
+        self.assertEqual(AR.bulk_ids(self.engine, self.gid, "tag"), ["t-1:tag"])
+        self.assertEqual(AR.bulk_ids(self.engine, self.gid, "kind"), [])
+        self.assertEqual(AR.bulk_ids(self.engine, "no-such", "tag"), [])
+        out = AR.accept_bulk(self.engine, self.gid, "tag", ver, by="채팅 검토자")
+        self.assertEqual(out["changed"], ["t-1:tag"])                       # bulk_ids와 같은 것을 수락
+        self.assertEqual(AR.bulk_ids(self.engine, self.gid, "tag"), [])
         self.assertEqual(self.ops()[0]["accepted_by"], "채팅 검토자")
 
 
