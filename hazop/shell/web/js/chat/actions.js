@@ -94,6 +94,28 @@ function Targets({ it }) {
     ${cut ? html`<div class="small warnline">대상이 너무 많아 처음 ${list.length}개만 보입니다(전체 ${it.targets_total}개를 실행합니다).</div>` : null}</div>`;
 }
 
+// 확인 상자 줄의 모양(채팅 모듈 전용. 공용 shell.css를 건드리지 않으려고 여기서 한 번 붙인다)
+if (typeof document !== "undefined" && !document.getElementById("chat-actions-css")) {
+  const st = document.createElement("style");
+  st.id = "chat-actions-css";
+  st.textContent = ".act-details{margin:6px 0;display:grid;gap:4px}.act-detail{display:grid;grid-template-columns:minmax(72px,auto) 1fr;gap:6px}"
+    + ".act-detail dt{color:var(--muted);font-size:var(--fs-xs)}.act-detail dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}"
+    + ".act-detail .before{color:var(--muted);text-decoration:line-through}.act-detail .after{font-weight:600}";
+  document.head.appendChild(st);
+}
+
+/** 확인 상자의 '저장될 값': 엔진이 지금 상태에서 만든 줄(판정, AI가 쓴 사유 전문, 필드별 앞값 → 새값). 자르지 않고 글자 그대로 보인다. */
+function Details({ rows }) {
+  if (!rows || !rows.length) return null;
+  return html`<dl class="act-details" aria-label="저장될 값">${rows.map((r, i) => html`<div key=${i} class="act-detail">
+    <dt>${r.label}</dt>
+    <dd>${r.before !== undefined && r.before !== null ? html`<span class="before" aria-label=${"앞값 " + r.before}>${r.before}</span> <span aria-hidden="true">→</span> ` : null}<span class="after">${r.after}</span></dd></div>`)}</dl>`;
+}
+
+function LogError({ it }) {
+  return it.log_error ? html`<div class="small warnline" role="alert">${it.log_error}</div>` : null;
+}
+
 function ConfirmBox({ it }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -105,11 +127,13 @@ function ConfirmBox({ it }) {
     <div class="actbox-h"><${Icon} name="alert-triangle" size=${15} /><b>${it.title}</b></div>
     <p>${it.text}</p>
     ${(it.ops || []).length ? html`<ul class="tight" aria-label="바꿀 내용">${it.ops.map((o, i) => html`<li key=${i}>${o}</li>`)}</ul>` : null}
+    <${Details} rows=${it.details} />
     <${Targets} it=${it} />
     ${it.waiting ? html`<div class="muted" style="font-size:var(--fs-xs)">앞의 확인이 끝나면 이어서 묻습니다.</div>` : html`
       <div class="acts-row">
         <${Btn} kind="primary" sm=${true} disabled=${busy} label="실행" onClick=${() => press("chat.action.approve")}>실행<//>
         <${Btn} sm=${true} disabled=${busy} label="하지 않음" onClick=${() => press("chat.action.decline")}>하지 않음<//></div>`}
+    <${LogError} it=${it} />
     ${err ? html`<${Notice} kind="err" icon="alert-triangle">${err}<//>` : null}</div>`;
 }
 
@@ -131,6 +155,7 @@ function AppliedBox({ it, onAsk }) {
       ${it.node_ids.length ? html`<${Btn} sm=${true} label="구간 보기" onClick=${() => { store.set({ panel: "nodes" }); N.focusNode(it.node_ids[0], { zoom: true }); }}>구간 보기<//>` : null}
       ${canUndo ? html`<${Btn} sm=${true} label="이 요청 되돌리기" onClick=${undo}>이 요청 되돌리기<//>` : null}
       ${added ? html`<${Btn} sm=${true} label="나머지도 나누기" onClick=${() => onAsk(REST_QUESTION)}>나머지도 나누기<//>` : null}</div>`}
+    <${LogError} it=${it} />
     ${err ? html`<${Notice} kind="err" icon="alert-triangle">${err}<//>` : null}</div>`;
 }
 
@@ -138,7 +163,7 @@ function PlainBox({ it }) {
   const kind = it.status === "declined" || it.status === "duplicate" ? "info" : "warn";
   const head = { rejected: "하지 않았습니다", failed: "실행하지 못했습니다", stale: "실행하지 않았습니다", declined: "실행하지 않았습니다", duplicate: "이미 처리했습니다" }[it.status] || it.title;
   return html`<${Notice} kind=${kind} icon=${ICON[it.status] || "info-circle"}><b>${it.title}</b> — ${head}${it.reason ? ". " + it.reason : (it.text ? ". " + it.text : "")}
-    ${it.where ? html`<div class="muted">${it.where}</div>` : null}<//>`;
+    ${it.where ? html`<div class="muted">${it.where}</div>` : null}${it.log_error ? html`<div class="small warnline" role="alert">${it.log_error}</div>` : null}<//>`;
 }
 
 export function ActionItems({ items, onAsk }) {

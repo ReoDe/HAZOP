@@ -34,7 +34,7 @@ except ImportError:  # Windows가 아닌 환경
 
 SCHEMA = "hazop_chat_action/1"
 KST = timezone(timedelta(hours=9))
-RESULTS = ("ok", "failed", "candidate", "declined", "rejected", "stale", "undone")
+RESULTS = ("ok", "failed", "candidate", "declined", "rejected", "stale", "undone", "done")  # done: 뒤에서 돈 작업(분석·추출)이 끝남
 CLASSES = ("auto", "confirm")  # 표시 동작은 기록하지 않는다. 안 함 동작은 앱이 거절한 것이므로 result=rejected로 남긴다
 REQUEST_TEXT_MAX = 500
 WHY_MAX = 300

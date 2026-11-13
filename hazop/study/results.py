@@ -459,11 +459,19 @@ def _reason(status, reason):
     return text or None
 
 
-def _who(row, reason, by):
+AUTHORS = ("ai",)   # 기록에 남기는 글쓴이. 없으면 사람(by)이 직접 쓴 것
+
+
+def _who(row, reason, by, author=None):
+    """기록 줄의 사유·누른 사람(by). author="ai"면 글(사유·고친 값)은 AI가 썼고 by는 그 글을 확인하고 누른 사람이다."""
     if reason:
         row["reason"] = reason
     if (by or "").strip():
         row["by"] = by.strip()
+    if author is not None:
+        if author not in AUTHORS:
+            raise ValueError("모르는 글쓴이: %r" % (author,))
+        row["author"] = author
     return row
 
 
@@ -471,10 +479,13 @@ def verdict(entry):
     """항목의 지금 판정 {status, reason, by, at}: 마지막 상태·수정 기록에서 읽는다(옛 기록은 reason·by가 None)."""
     last = next((h for h in reversed(entry.get("history") or [])
                  if isinstance(h, dict) and h.get("op") in ("status", "edit")), {})
-    return {"status": entry.get("status"), "reason": last.get("reason"), "by": last.get("by"), "at": last.get("at")}
+    out = {"status": entry.get("status"), "reason": last.get("reason"), "by": last.get("by"), "at": last.get("at")}
+    if last.get("author"):           # AI가 쓴 글을 사람이 확인해 저장했을 때만(그 밖의 판정 꼴은 그대로)
+        out["author"] = last["author"]
+    return out
 
 
-def set_status(results, node_id, deviation_id, entry_id, status, at=None, node_set=None, by=None, reason=None):
+def set_status(results, node_id, deviation_id, entry_id, status, at=None, node_set=None, by=None, reason=None, author=None):
     """수용(approved)·기각(rejected)·보류(on_hold)·되돌림(revised). proposed로는 바꿀 수 없다(재실행이 덮어쓰게 되므로).
     기각·보류·되돌림은 사유(reason)가 있어야 하고 수용은 선택이다. 기록에 from·to·reason·by(검토자)가 남는다.
     사람이 다시 판정하므로 '범위 바뀜' 표시를 지운다. 보관 칸·잠긴 구간(node_set을 주면)이면 ValueError."""
@@ -485,7 +496,7 @@ def set_status(results, node_id, deviation_id, entry_id, status, at=None, node_s
     out = copy.deepcopy(results)
     e = _entry(out, node_id, deviation_id, entry_id)
     old, e["status"] = e.get("status"), status
-    row = _who({"from": old, "to": status}, reason, by)
+    row = _who({"from": old, "to": status}, reason, by, author)
     if e.get("scope_changed"):
         row["scope_changed"] = e["scope_changed"]
     e.setdefault("history", []).append(store_io.history_row("status", row, at))
@@ -493,7 +504,7 @@ def set_status(results, node_id, deviation_id, entry_id, status, at=None, node_s
     return out
 
 
-def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None, node_set=None, by=None, reason=None):
+def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None, node_set=None, by=None, reason=None, author=None):
     """항목 내용을 고친다(판정 '수정'). 상태는 revised가 되고 사유(reason)가 있어야 한다(승인한 항목을 고치면 다시 승인).
     보류(on_hold) 항목은 고쳐도 보류로 둔다. 보류는 사람이 판정(set_status)을 바꿀 때만 풀린다.
     severity·frequency를 고치면 risk를 다시 계산한다. history에는 바뀐 필드의 이전 값과 reason·by를 남긴다."""
@@ -518,7 +529,7 @@ def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None, node_s
     e["risk"] = risk_of(e.get("severity"), e.get("frequency"))
     old = e.get("status")
     e["status"] = old if old == "on_hold" else "revised"
-    e.setdefault("history", []).append(store_io.history_row("edit", _who({"from": old, "before": before}, reason, by), at))
+    e.setdefault("history", []).append(store_io.history_row("edit", _who({"from": old, "before": before}, reason, by, author), at))
     _clear_scope(out, node_id, deviation_id, e)
     return out
 

@@ -157,9 +157,11 @@ class AnalysisRunTest(RunBase):
 
     def test_one_node_at_a_time_and_cells(self):
         item = self.one("analysis.run", node_ids=["S1", "S2"])
-        self.approve(item)
+        self.assertEqual((item["status"], item["token"]), ("rejected", None), "여러 구간은 확인 상자를 띄우기 전에 거절")
+        self.assertIn("한 구간씩", item["reason"])
         self.assertEqual(self.calls, [])
-        self.assertEqual(self.events.of("chat.action.result")[-1]["item"]["status"], "rejected")
+        item = self.one("analysis.run", node_ids=["S1"], cell_ids=["S1/D01", "S1/D02"])
+        self.assertEqual(item["status"], "rejected")
         item = self.one("analysis.run", node_ids=["S1"], cell_ids=["S1/D01"])
         self.approve(item)
         self.assertEqual(self.calls, [{"scope": "cell", "node_id": "S1", "deviation_id": "D01"}])

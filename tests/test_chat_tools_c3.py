@@ -614,7 +614,7 @@ class ActionsLogTest(unittest.TestCase):
 
     def test_invalid_values_are_refused(self):
         with self.assertRaises(ValueError):
-            self.rec(result="done")
+            self.rec(result="finished")   # done은 뒤 작업 끝 기록으로 쓰는 값(A11 검토 반영)
         with self.assertRaises(ValueError):
             self.rec(klass="none")
         with self.assertRaises(ValueError):

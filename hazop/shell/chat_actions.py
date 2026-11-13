@@ -112,7 +112,22 @@ class ChatActions:
         if self._planner_factory is not None:
             return self._planner_factory(project, self.read_state, self._executors())
         return A.ActionPlanner(project, self.read_state, self._executors(), record=self._record, model=self._model_fn(), via="subscription",
-                               not_yet=self._not_yet())
+                               not_yet=self._not_yet(), extra_checks=self._extra_checks(), detail_fns=self._detail_fns())
+
+    def _extra_checks(self):
+        """확인 상자를 띄우기 전에 거절할 것(이 화면의 실행 함수가 못 하는 것)."""
+        def analysis(item, snap):
+            if len(item.args.get("node_ids") or []) != 1:
+                return "한 번에 한 구간씩 분석합니다. 여러 구간은 ⑤ 분석 결과의 '전체 분석'으로 하세요."
+            if len(item.args.get("cell_ids") or []) > 1:
+                return "칸은 한 번에 하나만 다시 분석합니다."
+            return None
+        return {"analysis.run": analysis}
+
+    def _detail_fns(self):
+        """확인 상자 줄(규격 §4.2): 분석 실행은 호출 수 어림, 다시 추출은 다시 얹을 사람 수정 수와 풀리는 쪽 확정."""
+        return {"analysis.run": lambda item, snap: analysis_details(item, snap),
+                "register.reextract": lambda item, snap: reextract_details(snap.registrations.get(item.args["registration_id"]) or {})}
 
     def _not_yet(self):
         """2차 동작과, 엔진이 없어 이을 수 없는 실행 동작 -> 사람이 할 곳."""
@@ -130,7 +145,9 @@ class ChatActions:
             return run
         out = {name: make(name) for name in NODE_ACTIONS}
         if self._engine is not None:
-            out.update(RunExecutors(self._engine, self._pg_fn, lambda: self._registrations(self._project_fn())).table())
+            self.runner = RunExecutors(self._engine, self._pg_fn, lambda: self._registrations(self._project_fn()),
+                                       record=self._record_outcome)
+            out.update(self.runner.table())
         return out
 
     def read_state(self):
@@ -168,9 +185,11 @@ class ChatActions:
         out = {}
         for e in rows:
             rec = e.get("record") or {}
-            if rec.get("project_id") not in (project, None) or rec.get("status") != "registered":
+            if rec.get("project_id") != project or rec.get("status") != "registered":
                 continue
-            entry = {"has_result": bool(e.get("extracted")), "excluded": False, "path": e.get("path")}
+            names = page_names(rec, e.get("extract_name"))
+            entry = {"has_result": bool(e.get("extracted")) or any(_has_output(n) for n in names), "excluded": False,
+                     "path": e.get("path"), "names": names}
             for key in (rec.get("material_id"), e.get("extract_name"), by_name.get(e.get("extract_name"))):
                 if isinstance(key, str) and key:
                     out.setdefault(key, entry)
@@ -286,7 +305,8 @@ class ChatActions:
         if planner is None or shown is None:
             return {"ok": False, "error": "closed", "message": "대화가 끝나 확인이 만료되었습니다."}
         out = planner.decline(token)
-        entry = dict(shown, status="declined", token=None, title="실행하지 않았습니다", text=_clip(shown.get("text")), waiting=False)
+        entry = dict(shown, status="declined", token=None, title="실행하지 않았습니다", text=_clip(shown.get("text")), waiting=False,
+                     log_error=_log_error(out))
         self._emit("chat.action.result", {"token": token, "item": entry})
         self._next(shown)
         return {"ok": True, "result": out.get("result"), "item": entry}
@@ -341,7 +361,7 @@ class ChatActions:
             return e
         e = self._base(item)
         e.update(status="confirm", title=_title(item), text=_clip_long(item.confirm_text), token=item.token, waiting=waiting,
-                 targets=targets["items"], targets_total=targets["total"], ops=ops)
+                 targets=targets["items"], targets_total=targets["total"], ops=ops, details=list(getattr(item, "details", None) or []))
         self._items[item.token] = item
         self._shown[item.token] = e
         return e
@@ -349,7 +369,35 @@ class ChatActions:
     def _rejected_entry(self, item):
         e = self._base(item)
         e.update(status="rejected", title=_title(item), text="", reason=_clip(item.reason), where=_clip(item.where) or None)
+        e["log_error"] = self._log_error_of(item.keys)
         return e
+
+    def _log_error_of(self, keys):
+        """이 동작의 기록 쓰기가 실패했으면 그 까닭(화면에 알린다). 동작 층이 남긴 기록 결과(planner.log)에서 찾는다."""
+        planner = self._current()
+        for key, _result, rec in list(getattr(planner, "log", None) or []):
+            if key in keys and _rec_failed(rec):
+                return "실행 기록을 남기지 못했습니다(%s)." % _clip(_rec_error(rec))
+        return None
+
+    def _record_outcome(self, call, result, error=None, targets=()):
+        """뒤에서 도는 작업(분석·추출)이 끝났을 때의 결과를 같은 동작 열쇠로 한 줄 더 남긴다(result: done | failed)."""
+        try:
+            key = (call.action_keys or [""])[0]
+            answer_id, index = key.rsplit("#", 1)
+            klass = "confirm" if call.confirmed_by else "auto"
+            prop = {"action": call.action or "", "args": {}, "why": "작업이 끝남"}
+            rec = self._record(call.project_id, answer_id=answer_id, index=int(index), request_id=call.request_id or "q-none",
+                               request_text="", proposal=prop, klass=klass, result=result, error=error, targets=list(targets),
+                               confirmed_by=call.confirmed_by if klass == "confirm" else None,
+                               confirmed_at=actions_log.now_kst().isoformat() if klass == "confirm" else None,
+                               conversation_id=call.conversation_id, model=call.model, via="subscription")
+        except Exception as exc:  # noqa: BLE001 - 끝난 기록을 못 남겨도 작업은 이미 끝났다. 화면에 알린다
+            LOG.exception("작업 끝 기록을 남기지 못함")
+            rec = {"status": "failed", "error": str(exc)}
+        if _rec_failed(rec):
+            self._emit("chat.notice", {"text": "작업 끝 기록을 남기지 못했습니다(%s)." % _clip(_rec_error(rec))})
+        return rec
 
     def _run_entry(self, planner, item, out):
         """실행 결과(out)를 항목으로. -> (항목, 구간 판 번호 또는 None)."""
@@ -368,6 +416,7 @@ class ChatActions:
             e.update(status="applied" if result == "ok" else "candidate", batch_id=out.get("batch_id"),
                      node_ids=list(out.get("targets") or []) if item.action in NODE_ACTIONS else [])
             e["text"] = _clip(out.get("message")) if out.get("message") and item.action not in NODE_ACTIONS else _done_text(item, out)
+            e["log_error"] = _log_error(out)
             return e, out.get("set_rev")
         if result == "duplicate":
             e.update(status="duplicate", text="이미 처리한 동작입니다.")
@@ -378,6 +427,7 @@ class ChatActions:
             reason = "; ".join(str(r.get("reason") or "") for r in refused if isinstance(r, dict))
         e.update(status={"stale": "stale", "failed": "failed"}.get(result, "rejected"), reason=_clip(reason),
                  text=_clip(reason))
+        e["log_error"] = _log_error(out)
         return e, None
 
 
@@ -465,6 +515,92 @@ def _op_lines(item, names):
         elif kind == "split":
             out.append("나누기: %s" % _label(op.get("node_id"), names)["label"])
     return out[:MAX_TARGETS]
+
+
+# ================================================================ 등록 쪽·확인 상자 줄·기록 결과
+
+def page_names(record, extract_name=None):
+    """등록 하나가 만드는 추출 이름들. PDF는 등록된 쪽마다, 그 밖은 하나."""
+    try:
+        from hazop.app import data
+        if record.get("format") == "pdf":
+            xp, ex = data.script_module("extract_pdf"), data.script_module("extract_drawio")
+            return [ex.registered_out_name(record, i) for i in xp.registered_pages(record)]
+    except Exception:  # noqa: BLE001
+        LOG.exception("등록 쪽 이름을 만들지 못함")
+    return [extract_name] if extract_name else []
+
+
+def _has_output(name):
+    """추출 폴더에 결과(extraction.json)나 건너뛴 표시(not_extracted.json)가 있는지."""
+    from hazop import paths
+    d = os.path.join(paths.output_root("extract"), name)
+    return os.path.isfile(os.path.join(d, "extraction.json")) or os.path.isfile(os.path.join(d, "not_extracted.json"))
+
+
+def reextract_details(reg):
+    """다시 추출 확인 상자 줄: 다시 얹을 사람 수정 수, 풀리는 쪽 확정 수(규격 §4.2)."""
+    from hazop.extract import confirmation, corrections
+    names = list(reg.get("names") or [])
+    edits, confirmed = 0, []
+    for name in names:
+        try:
+            doc = corrections.load(name) or {}
+            edits += len([o for o in doc.get("ops") or [] if isinstance(o, dict)])
+        except (OSError, ValueError):
+            pass
+        try:
+            if confirmation.sheet_confirmation(name).get("state") == "confirmed":
+                confirmed.append(name)
+        except (OSError, ValueError):
+            pass
+    rows = [{"label": "다시 추출할 쪽", "after": "%d쪽" % len(names)},
+            {"label": "사람 수정", "after": "%d건을 새 결과 위에 다시 얹습니다. 대상이 사라진 수정은 얹지 못하며, 끝난 뒤 그 목록을 보입니다." % edits}]
+    if confirmed:
+        rows.append({"label": "쪽 확정", "after": "확정한 %d쪽(%s)의 확정이 풀립니다. 다시 견주고 확정해야 DEXPI로 내보낼 수 있습니다."
+                     % (len(confirmed), ", ".join(confirmed[:5]) + (" 외" if len(confirmed) > 5 else ""))})
+    return rows
+
+
+def analysis_details(item, snap):
+    """분석 실행 확인 상자 줄: 호출 수 어림(규격 §4.2·§2.6). 확정 구간만 분석한다."""
+    from hazop.shell import analysis_run
+    ns = snap.node_set or {}
+    ids = item.args.get("node_ids") or []
+    cells = item.args.get("cell_ids") or []
+    if not ns or len(ids) != 1:
+        return []
+    try:
+        from hazop.shell import api_results
+        doc = snap.results
+        scope = "cell" if len(cells) == 1 else "node"
+        units = analysis_run.plan(api_results.scope_set(ns), doc or {"cells": []}, scope, ids[0],
+                                  cells[0].split("/")[-1] if cells else None)
+        n = len(units)
+    except Exception:  # noqa: BLE001
+        LOG.exception("호출 수 어림을 만들지 못함")
+        return [{"label": "호출 수 어림", "after": "셀 수 없음"}]
+    if not n:
+        return [{"label": "호출 수 어림", "after": "0회(분석할 칸이 없음: 확정한 구간만 분석합니다)"}]
+    return [{"label": "호출 수 어림", "after": "약 %d회(구독 한도를 씁니다)" % n}]
+
+
+def _rec_failed(rec):
+    if isinstance(rec, list):
+        return any(_rec_failed(r) for r in rec)
+    status = getattr(rec, "status", None) if not isinstance(rec, dict) else rec.get("status")
+    return status == "failed"
+
+
+def _rec_error(rec):
+    if isinstance(rec, list):
+        return next((_rec_error(r) for r in rec if _rec_failed(r)), "")
+    return (getattr(rec, "error", None) if not isinstance(rec, dict) else rec.get("error")) or "까닭 모름"
+
+
+def _log_error(out):
+    rec = (out or {}).get("record")
+    return "실행 기록을 남기지 못했습니다(%s)." % _clip(_rec_error(rec)) if rec is not None and _rec_failed(rec) else None
 
 
 # ================================================================ 엔진 창구·쪽 상태
@@ -586,10 +722,15 @@ class RunExecutors:
     """실행 동작의 실행 함수 표. 엔진 함수(api_results·api_drawings·data)를 부르기만 하고, 그 함수가 내는 CommandError는 엔진 거절로 바꾼다.
     돌려주는 꼴은 actions.EXECUTOR_RESULT(성공 글 message와 바뀐 자료 changed 포함)."""
 
-    def __init__(self, engine, pg_fn, regs_fn=None):
+    def __init__(self, engine, pg_fn, regs_fn=None, record=None, watch=True):
         self.engine = engine
         self.pg_fn = pg_fn
         self.regs_fn = regs_fn
+        self.record = record          # 뒤 작업이 끝났을 때 결과를 남기는 함수(call, result, error, targets)
+        self.watch = watch            # 분석 작업의 끝을 지켜볼 스레드를 띄울지(시험은 끄고 watch_job을 직접 부른다)
+        self._lock = threading.Lock()
+        self._extracting = set()      # 지금 추출 작업이 도는 등록 자료(같은 자료를 겹쳐 추출하지 않는다)
+        self.watchers = []
 
     def table(self):
         g = self._guard
@@ -622,8 +763,34 @@ class RunExecutors:
         if len(cells) == 1:
             a = {"scope": "cell", "node_id": ids[0], "deviation_id": cells[0].split("/")[-1]}
         out = api_results._run(self.engine, a)
+        job = out.get("job")
+        if job and self.record is not None:
+            if self.watch:
+                t = threading.Thread(target=self.watch_job, args=(job, call, ids), daemon=True)
+                self.watchers.append(t)
+                t.start()
         return _ok("구간 %s의 AI 분석을 시작했습니다(호출 %d회). 진행은 ⑤ 분석 결과에 보입니다." % (ids[0], out.get("calls") or 0),
                    topics=["results.run"])
+
+    def watch_job(self, job, call, targets, poll=1.0, timeout=6 * 3600):
+        """엔진 작업 하나가 끝나기를 기다려 끝난 결과를 기록에 남긴다(done | failed). 엔진이 모르는 작업이면 남기지 않는다."""
+        import time
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            state = ((getattr(self.engine, "_jobs", None) or {}).get(job) or {}).get("state")
+            if state is None:
+                return None
+            if state != "running":
+                last = (getattr(getattr(self.engine, "analysis", None), "last", None) or {}) if call.action == "analysis.run" else {}
+                failed = state != "done" or bool(isinstance(last, dict) and (last.get("failed") or last.get("halted")))
+                error = None
+                if failed:
+                    error = "작업이 %s(으)로 끝남" % {"stopped": "중지", "failed": "실패"}.get(state, state)
+                    if isinstance(last, dict) and last.get("failed"):
+                        error += " · 실패 칸 %s" % last.get("failed")
+                return self.record(call, "failed" if failed else "done", error, targets)
+            time.sleep(poll)
+        return None
 
     def result(self, cmd):
         def fn(args, call):
@@ -666,22 +833,47 @@ class RunExecutors:
         path = reg.get("path")
         if not path:
             return _refused("지금 프로젝트에 없는 등록 자료", target=str(rid))
+        again = call.action == "register.reextract"
+        if not again and reg.get("has_result"):         # 계획 뒤에 결과가 생겼으면 확인 없이 덮지 않는다
+            return _refused("이미 추출 결과가 있는 자료입니다(다시 추출은 확인을 받습니다).", target=str(rid))
+        with self._lock:
+            if path in self._extracting:
+                return _refused("이 자료의 추출 작업이 이미 돌고 있습니다.", "busy", str(rid))
+            self._extracting.add(path)
+        record = self.record
 
         def work(progress):
             from hazop.app import data
-            progress("추출·그래프", 1, 1)
-            out = data.extract_and_graph(path)
-            return {"pages": len(out.get("pages") or [out])}
-        job = self.engine.start_job("다시 추출: %s" % rid, work, kind="register")
-        return _ok("%s 추출을 시작했습니다(작업 %s). 끝나면 도면 목록이 새로 고쳐집니다." % (rid, job))
+            try:
+                progress("추출·그래프", 1, 1)
+                out = data.extract_and_graph(path)
+                result = {"pages": len(out.get("pages") or [out])}
+            except Exception as exc:
+                if record is not None:
+                    record(call, "failed", "%s: %s" % (type(exc).__name__, str(exc)[:200]), [rid])
+                raise
+            finally:
+                with self._lock:
+                    self._extracting.discard(path)
+            if record is not None:
+                record(call, "done", None, [rid])
+            return result
+        try:
+            job = self.engine.start_job(("다시 추출: %s" if again else "추출: %s") % rid, work, kind="register")
+        except Exception:
+            with self._lock:
+                self._extracting.discard(path)
+            raise
+        return _ok("%s %s을 시작했습니다(작업 %s). 끝나면 도면 목록이 새로 고쳐집니다." % (rid, "다시 추출" if again else "추출", job))
 
     def sheet_confirm(self, args, call):
         from hazop.shell import api_drawings
         gid = args.get("graph_id")
-        st = api_drawings.status(self.engine, gid)
-        if not st or not st.get("available"):
-            return _refused((st or {}).get("reason") or "없는 도면", target=str(gid))
-        out = api_drawings._sheet_command("confirm")(self.engine, {"graph_id": gid, "ver": st["ver"], "rev": st.get("rev") or 0})
+        basis = call.basis or {}
+        if not basis.get("fingerprint"):
+            return _refused("확인 상자에서 본 쪽의 지문이 없어 확정하지 않았습니다.", "stale", str(gid))
+        # 계획 때(사람이 확인 상자에서 본) 지문과 판을 그대로 넘긴다. 그 사이 쪽이 바뀌었으면 엔진이 stale로 거절한다
+        out = api_drawings._sheet_command("confirm")(self.engine, {"graph_id": gid, "ver": basis["fingerprint"], "rev": basis.get("rev") or 0})
         name = self.engine.graph_names().get(gid) or gid
         return _ok("도면 %s 쪽을 확정했습니다." % name if out.get("changed") else "도면 %s은(는) 이미 확정한 쪽입니다." % name)
 

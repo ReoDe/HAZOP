@@ -8,6 +8,7 @@ execute(pg, name, args, by, fingerprint, set_rev=None)는 검토구간 집합과
 - fingerprint(화면이 읽은 결과 파일 지문)가 None이 아니면 지금 결과 파일 지문과 대조하고,
 대상 구간의 잠금·보관 칸은 지금 집합으로 막는다. 읽기는 파일을 쓰지 않는다.
 돌려주는 값: {"ok", "command", "fingerprint", "set_rev", "refused": [{"target", "code", "reason"}], …명령별 값}.
+판정·고치기의 args에 author="ai"가 있으면 기록 줄에 글쓴이 AI를 남기고 by는 그 글을 확인한 사람이다(채팅 동작, results.AUTHORS).
 분석 실행·멈춤은 구독 연결의 실행기(hazop/app/ai_runner)가 맡아 여기 두지 않는다(명령 표 참고).
 """
 
@@ -54,12 +55,12 @@ def _get_cell(ns, doc, a, by, pg):
 
 def _set_status(ns, doc, a, by, pg):
     return {}, res.set_status(doc, *_where(a), a.get("entry_id"), a.get("status"), node_set=ns, by=by,
-                              reason=a.get("reason"))
+                              reason=a.get("reason"), author=a.get("author"))
 
 
 def _edit_entry(ns, doc, a, by, pg):
     return {}, res.edit_entry(doc, *_where(a), a.get("entry_id"), dict(a.get("fields") or {}), node_set=ns, by=by,
-                              reason=a.get("reason"))
+                              reason=a.get("reason"), author=a.get("author"))
 
 
 def _recheck_cell(ns, doc, a, by, pg):

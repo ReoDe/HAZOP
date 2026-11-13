@@ -194,12 +194,12 @@ ACTIONS = {a.name: a for a in (
            _spec(("node_id", "id"), ("deviation_id", "id"), ("entry_id", "id"), ("status", "str"), reason="str"), "⑤",
            "사람 판단. 수정·기각·보류는 사유 필수. 잠긴 구간의 칸은 거절",
            "구간 {node_id} 편차 {deviation_id}의 항목 {entry_id}을 {status_label}(으)로 판정합니다. "
-           "아래 사유가 확인한 사람 이름으로 함께 저장됩니다."),
+           "아래 판정과 사유는 AI가 쓴 글이며, 확인한 사람 이름과 함께 그대로 저장됩니다."),
     Action("results.edit", CONFIRM,
            _spec(("node_id", "id"), ("deviation_id", "id"), ("entry_id", "id"), ("fields", "obj"), ("reason", "str")),
            "⑤", "사람 판단(판정 '수정'). 사유 필수. 잠긴 구간의 칸은 거절",
            "구간 {node_id} 편차 {deviation_id}의 항목 {entry_id} 내용을 고칩니다({field_names}). 판정은 '수정'이 되고 "
-           "아래 사유가 확인한 사람 이름으로 함께 저장됩니다."),
+           "아래 새 값과 사유는 AI가 쓴 글이며, 확인한 사람 이름과 함께 그대로 저장됩니다."),
     Action("export.excel", AUTO, _spec(), "⑤", "이름에 시각을 붙인 새 파일"),
     Action("export.ie_bundle", AUTO, _spec(), "⑤", "이름에 시각을 붙인 새 파일"),
     # ② 도면 쪽 확정과 DEXPI 내보내기(sheet-commands.md·dexpi-commands.md). 확정은 사람 판단이라 늘 확인. '원본과 견줌'은 화면에서 사람이 본다
@@ -263,6 +263,8 @@ class Item:
     proposals: list = field(default_factory=list)
     token: str = None            # planner가 낸 무작위 표(run·approve·decline에 넘김). 화면은 이 값만 들고 있으면 된다
     basis: dict = None           # 결과 판정: 계획 때 읽은 {set_rev, node_rev, fingerprint}. 엔진이 실행 직전에 대조한다
+    # 확인 상자에 보일 '저장될 값'(앱이 지금 상태에서 만든 줄 [{label, before?, after}]). 승인 표지에 들어가 실행 직전에 다시 대조한다
+    details: list = field(default_factory=list)
 
     @property
     def key(self):
@@ -397,12 +399,15 @@ class ActionPlanner:
     """
 
     def __init__(self, project_id, read_state, executors, record=actions_log.record, conversation_id=None, model=None,
-                 via="subscription", app_version=None, clock=time.time, not_yet=None):
+                 via="subscription", app_version=None, clock=time.time, not_yet=None, extra_checks=None, detail_fns=None):
         self.project_id = project_id
         self.read_state = read_state
         self.executors = dict(executors or {})
         # 동작 표에는 있으나 이 화면에 아직 잇지 않은 동작 -> 사람이 할 곳. 판정 때 '아직'으로 거절한다(실행 함수 없음으로 실패시키지 않는다)
         self.not_yet = dict(not_yet or {})
+        # 화면 연결부가 더하는 검사 {동작: fn(item, snap) -> 거절 사유 또는 None}와 확인 상자 줄 {동작: fn(item, snap) -> [줄]}
+        self.extra_checks = dict(extra_checks or {})
+        self.detail_fns = dict(DETAIL_FNS, **(detail_fns or {}))
         self._record = record
         self.conversation_id = conversation_id or actions_log.new_id("conv")
         self.model, self.via, self.app_version = model, via, app_version
@@ -488,6 +493,22 @@ class ActionPlanner:
             check(item, snap)
         if item.klass == CONFIRM and action.confirm_text and not item.confirm_text:
             item.confirm_text = _fill(action.confirm_text, item.args)
+        extra = self.extra_checks.get(item.action)
+        if extra is not None:
+            why = extra(item, snap)
+            if why:
+                raise _Reject(why)
+        item.details = self._details(item, snap)
+
+    def _details(self, item, snap):
+        """확인 상자에 보일 저장될 값. 계획 때와 승인 직전에 같은 함수로 지금 상태에서 다시 만든다(글자 하나라도 다르면 표지가 어긋남)."""
+        fn = self.detail_fns.get(item.action)
+        if fn is None:
+            return []
+        try:
+            return list(fn(item, snap) or [])
+        except Exception:  # noqa: BLE001 - 줄을 못 만들면 그렇다고 보인다(빈 줄로 승인시키지 않음)
+            return [{"label": "오류", "after": "저장될 값을 읽지 못함"}]
 
     # ---- 동작별 검사
 
@@ -540,6 +561,7 @@ class ActionPlanner:
             raise _Reject("아직 확정할 수 없는 쪽(%s)" % (sheet.get("reason") or "미확인이 남았거나 원본과 견주지 않음"),
                           "도면 화면에서 미확인을 끝내고 원본과 견준 뒤 다시 요청")
         item.targets = [gid]
+        item.basis = {"fingerprint": sheet.get("fingerprint"), "rev": sheet.get("rev") or 0}
 
     def _check_dexpi_export(self, item, snap):
         ids = item.args["graph_ids"]
@@ -757,7 +779,8 @@ class ActionPlanner:
         return {"project_id": snap.project_id, "action": item.action, "args_digest": _digest(item.args),
                 "targets": targets, "set_rev": (snap.node_set or {}).get("set_rev"),
                 "pending_ai": pending_ai(snap) if item.action == "nodes.apply" else None,
-                "results_fp": snap.results_fp if item.action.startswith("results.") else None}
+                "results_fp": snap.results_fp if item.action.startswith("results.") else None,
+                "details": _digest(self._details(item, snap))}
 
     def _approval(self, item, snap):
         """승인 표지. 재료에 이 planner만 아는 비밀(_secret)을 섞어, 웹 화면이나 모델이 같은 표지를 만들어 낼 수 없다(검토 8)."""
@@ -954,6 +977,51 @@ class ActionPlanner:
         return out
 
 
+# ---------------------------------------------------------------- 확인 상자 줄(저장될 값)
+
+FIELD_LABELS = {"cause": "원인", "consequence": "결과", "safeguards": "보호수단", "recommendation": "권고", "severity": "심각도",
+                "frequency": "빈도", "cause_refs": "원인 근거", "consequence_refs": "결과 근거", "expectation_refs": "기대 근거",
+                "cause_kind": "원인 종류", "consequence_basis": "결과 근거 종류"}
+
+
+def show_value(v):
+    """저장될 값을 글자 그대로(자르지 않는다). 없으면 '(비어 있음)'."""
+    if v is None or v == "" or v == []:
+        return "(비어 있음)"
+    if isinstance(v, str):
+        return v
+    return json.dumps(v, ensure_ascii=False, sort_keys=True)
+
+
+def _entry_now(snap, a):
+    cell = next((c for c in _cells(snap, a.get("node_id")) if c.get("deviation_id") == a.get("deviation_id")), None)
+    return next((e for e in (cell or {}).get("entries") or [] if e.get("entry_id") == a.get("entry_id")), None)
+
+
+def _status_details(item, snap):
+    a = item.args
+    e = _entry_now(snap, a) or {}
+    old = e.get("status")
+    return [{"label": "판정", "before": STATUS_LABELS.get(old, old or "(없음)"), "after": STATUS_LABELS.get(a["status"], a["status"])},
+            {"label": "사유(AI가 씀)", "after": show_value(a.get("reason"))},
+            {"label": "항목 원인", "after": show_value(e.get("cause"))}]
+
+
+def _edit_details(item, snap):
+    a = item.args
+    e = _entry_now(snap, a) or {}
+    rows = [{"label": "%s(AI가 씀)" % FIELD_LABELS.get(k, k), "before": show_value(e.get(k)), "after": show_value(v)}
+            for k, v in sorted(a["fields"].items())]
+    old = e.get("status")
+    rows.append({"label": "판정", "before": STATUS_LABELS.get(old, old or "(없음)"),
+                 "after": STATUS_LABELS["on_hold"] if old == "on_hold" else STATUS_LABELS["revised"]})
+    rows.append({"label": "사유(AI가 씀)", "after": show_value(a.get("reason"))})
+    return rows
+
+
+DETAIL_FNS = {"results.set_status": _status_details, "results.edit": _edit_details}
+
+
 # 실행 함수가 돌려줄 값의 꼴(검토 1). node_commands.execute의 돌려주는 값과 같다(node-commands.md §1).
 #   {"ok": bool, "refused": [{"target": str, "code": str, "reason": str}], "batch_id": str|None, "node_ids": [str],
 #    "set_rev": int|None, "error": str(선택, ok가 false이고 refused가 비었을 때의 실패 사유)}
@@ -1098,7 +1166,7 @@ def result_executors(pg, execute):
     def run(cmd):
         def fn(args, call):
             basis = call.basis or {}
-            cargs = dict(args)
+            cargs = dict(args, author="ai")     # 글은 AI가 썼고 by(누른 사람)는 확인한 사람이다(results 기록의 author·by)
             if basis.get("node_rev") is not None:
                 cargs["node_rev"] = basis["node_rev"]
             return execute(pg, cmd, cargs, call.confirmed_by, basis.get("fingerprint"), set_rev=basis.get("set_rev"))

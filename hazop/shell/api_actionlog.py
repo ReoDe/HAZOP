@@ -20,7 +20,7 @@ MAX_ROWS = 500
 MAX_TARGETS = 20
 
 RESULT_LABELS = {"ok": "실행함", "candidate": "후보로 올림", "declined": "사람이 하지 않음", "rejected": "앱이 거절",
-                 "stale": "바뀌어 실행 안 함", "failed": "실패", "undone": "되돌림"}
+                 "stale": "바뀌어 실행 안 함", "failed": "실패", "undone": "되돌림", "done": "작업 끝남"}
 CLASS_LABELS = {"auto": "바로 실행", "confirm": "사람 확인 뒤"}
 
 
