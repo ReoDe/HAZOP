@@ -167,7 +167,9 @@ export function buildBase(ctx) {
     const cx = (bb[0] + bb[2]) / 2, cy = (bb[1] + bb[3]) / 2, bw = bb[2] - bb[0], bh = bb[3] - bb[1];
     const color = ai ? AI_LINE : INK;
     if (kind === "continuation" && ex.label && ex.label.length) {        // 다른 도면 연결: 오각형 안에 원본 글자(안에 들어갈 만큼 크게 보일 때만)
-      ex.label.forEach((t, i) => labels.push(labelSpec(cx, cy + (ex.label.length === 1 ? 2 : i ? 6 : -2), t, { anchor: "middle", size: 5.5, fixed: true, showFrom: 38 / Math.max(bw, 1), pri: 3, owner: rec.id })));
+      const big = Math.max(7 / 5.5, 38 / Math.max(bw, 1));      // 오각형 안 글자가 화면에서 7px 이상이 되는 확대 값부터 안쪽에, 그 전에는 아래에 한 줄(읽을 수 있는 크기)
+      ex.label.forEach((t, i) => labels.push(labelSpec(cx, cy + (ex.label.length === 1 ? 2 : i ? 6 : -2), t, { anchor: "middle", size: 5.5, fixed: true, showFrom: big, pri: 3, owner: rec.id })));
+      labels.push(labelSpec(cx, bb[3] + FONT + 1, ex.label[0], { anchor: "middle", pri: 3, owner: rec.id, hideFrom: big }));
     } else if (rec.tag) {
       if (rec.category === "instrument") {                // 계기: 원이 화면에서 충분히 크면 원 안 두 줄, 작으면 오른쪽 옆에 한 줄
         const lines = splitTag(rec.tag), minK = 26 / Math.max(bw, 1);
