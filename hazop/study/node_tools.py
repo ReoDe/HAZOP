@@ -400,7 +400,8 @@ def _tag_problems(texts, tags):
 
 
 def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, by=None):
-    """(새 집합, 새 결과, batch_id). ops 형식은 §6.2. request: {request_id, request_text, stage}. origin: "ai"|"user".
+    """(새 집합, 새 결과, batch_id). 바뀐 것이 없으면(빼려는 구성요소가 없음, 같은 이름 등) (받은 집합, 받은 결과, None).
+    ops 형식은 §6.2. request: {request_id, request_text, stage}. origin: "ai"|"user".
     거절하면 Refused(ValueError). 결과(results)는 바꾸지 않으면 받은 것 그대로 돌려준다."""
     if origin not in ("ai", "user"):
         raise Refused([("origin", "ai 또는 user")])
@@ -495,13 +496,15 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
                 if ai and n.get("name_by") == "user" and not confirmed_by:
                     why.append((label, "사람이 쓴 이름은 AI가 바꾸지 못함"))
                     continue
-                n["name"], n["name_by"] = op["name"].strip(), origin
+                if op["name"].strip() != n["name"]:  # 같은 이름이면 고친 것이 아님(쓴 쪽도 그대로)
+                    n["name"], n["name_by"] = op["name"].strip(), origin
             if op.get("design_intent") is not None:
                 if ai and (n.get("design_intent") or {}).get("by") == "user" and not confirmed_by:
                     why.append((label, "사람이 쓴 설계 의도는 AI가 바꾸지 못함"))
                     continue
                 text = op["design_intent"].strip()
-                n["design_intent"] = {"text": text, "by": origin} if text else None
+                if text != (nodes.intent_text(n) or ""):
+                    n["design_intent"] = {"text": text, "by": origin} if text else None
             members = sorted((set(n["members"]) | set(op.get("add") or [])) - set(op.get("remove") or []))
             if not members_ok(label, members):
                 continue
@@ -577,6 +580,8 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
         seen.setdefault(key, n["node_id"])
     if why:
         raise Refused(why)
+    if not nodes.batch_ops(node_set, out):  # 바뀐 것이 없음: 묶음·판(set_rev)·이력을 건드리지 않고 묶음 ID 없이 돌려줌
+        return node_set, results, None
     if seen_rest:  # 확인 상자를 눌렀으므로 앞의 AI 묶음은 사람이 본 것
         for b in out.get("batches") or []:
             if b.get("origin") == "ai" and not b.get("human_seen"):

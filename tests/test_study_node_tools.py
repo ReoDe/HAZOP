@@ -329,6 +329,44 @@ class CommandTest(Base):
         self.assertIn(start, nt.scope_ids(self.pg, None, {"around": start, "hops": nt.MAX_HOPS}))
 
 
+class NoChangeTest(Base):
+    """바뀐 것이 없는 편집은 묶음·판·이력을 건드리지 않고 묶음 ID 없이 돌려준다(새 화면 2단계 검토 재현)."""
+
+    def test_no_op_edits_return_no_batch(self):
+        cands = nt.make_candidates(self.pg, self.ns, limit=5)["candidates"]
+        ns, doc, b1 = nt.apply_nodes(self.ns, res.empty_results(self.ns, DEVS), self.pg,
+                                     [{"op": "add", "cand_id": cands[0]["cand_id"], "name": "가압기"},
+                                      {"op": "add", "cand_id": cands[1]["cand_id"], "name": "충전"}], {}, "user",
+                                     self.ns["set_rev"], at=AT)
+        other = cands[1]
+        outside = [m for m in nt.resolve_candidate(self.pg, None, other["cand_id"])["members"]]
+        for ops in ([{"op": "edit", "node_id": "S1", "remove": outside}],
+                    [{"op": "edit", "node_id": "S1", "name": "가압기 "}],
+                    [{"op": "edit", "node_id": "S1", "design_intent": ""}]):
+            with self.subTest(ops):
+                same, same_doc, bid = nt.apply_nodes(ns, doc, self.pg, ops, {}, "user", ns["set_rev"], at=AT)
+                self.assertEqual((same is ns, same_doc is doc, bid), (True, True, None))
+        bare = dict(ns, batches=[])  # 묶음이 하나도 없음(0.1에서 바꾼 집합, 묶음을 다 줄인 집합)
+        self.assertIsNone(nt.apply_nodes(bare, doc, self.pg, [{"op": "edit", "node_id": "S1", "name": "가압기"}], {},
+                                         "user", bare["set_rev"], at=AT)[2])
+        renamed, _d, b2 = nt.apply_nodes(bare, doc, self.pg, [{"op": "edit", "node_id": "S1", "name": "새"}], {}, "user",
+                                         bare["set_rev"], at=AT)
+        self.assertEqual((b2, renamed["batches"][-1]["batch_id"]), ("B2", "B2"), "묶음 번호는 batch_seq로 이어짐")
+
+    def test_no_op_command_writes_nothing(self):
+        cands = nt.make_candidates(self.pg, self.ns, limit=5)["candidates"]
+        made = cmd.execute(self.pg, "create", {"items": [{"cand_id": cands[0]["cand_id"], "name": "가압기"}]},
+                           author="user", confirmed_by="검토자")
+        path = sn.store_path(self.pg.get("project_id"), self.pg["graph_id"])
+        with open(path, "rb") as fh:
+            before = fh.read()
+        out = cmd.execute(self.pg, "rename", {"node_id": made["node_ids"][0], "name": "가압기"}, author="user",
+                          confirmed_by="검토자", set_rev=made["set_rev"])
+        self.assertEqual((out["ok"], out["changed"], out["batch_id"], out["set_rev"]), (True, False, None, made["set_rev"]))
+        with open(path, "rb") as fh:
+            self.assertEqual(fh.read(), before)
+
+
 class CrossProcessTest(Base):
     def test_r3_cand_id_made_in_another_process_applies_here(self):
         import subprocess

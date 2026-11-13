@@ -29,7 +29,8 @@ node_commands.recover(pg)   # 화면을 열 때 한 번: 끊긴 명령의 ⑤ �
 | `ok` | 실행하고 저장했으면 `true` |
 | `command` | 명령 이름 |
 | `set_rev` | 실행 뒤 집합 판(거절이면 지금 판). 다음 명령에 넘깁니다 |
-| `batch_id` | 만든 묶음 `B<번호>`(확정·잠금 계열은 `null`) |
+| `changed` | 저장한 것이 있으면 `true`. 바뀐 것이 없는 편집(구간에 없는 구성요소 빼기, 같은 이름·같은 설계 의도)은 `ok: true`, `changed: false`이고 아무 파일도 쓰지 않음(묶음·`set_rev`·이력 그대로) |
+| `batch_id` | 만든 묶음 `B<번호>`(확정·잠금 계열과 바뀐 것이 없는 편집은 `null`). 앞 묶음 ID를 돌려주는 일은 없음 |
 | `node_ids` | 새로 생긴 구간 ID, 없으면 대상 구간 ID |
 | `refused` | 거절 사유 `[{target, code, reason}]`. `code`로 갈래를 나누고 `reason`(한국어 문장)은 화면에 그대로 보임 |
 
@@ -44,6 +45,17 @@ node_commands.recover(pg)   # 화면을 열 때 한 번: 끊긴 명령의 ⑤ �
 | `unreadable` | 검토구간·⑤ 결과 파일을 읽을 수 없음 | 파일 문제 안내 |
 | `read_only` | 0.1 변환을 저장하지 못해 읽기 전용 | 안내만 |
 | `rule` | 규칙에 걸림(아래 표의 사유) | `reason`을 그대로 보임 |
+
+### 읽기와 열기
+
+| 함수 | 쓰는가 | 하는 일 |
+| --- | --- | --- |
+| `nodes.load_view(pg)` → `(집합 또는 None, {needs_open, reason, notice})` | 아무것도 쓰지 않음 | 보기 전용. 0.1 파일은 메모리에서 0.2로 바꾸고, 0.2 파일은 판 이전·참조 채우기를 메모리에서만 적용한다. 그런 일이 있으면 `needs_open: true`, 집합에 `read_only`, `notice`는 판 이전 안내(`migrate.notice`) |
+| `results.load_view(node_set)` → 결과 또는 None | 아무것도 쓰지 않음 | 보기 전용 ⑤ 결과. 옛 판(0.1·0.2)이면 `read_only`(열면 바꿈) |
+| `nodes.load_fp(pg)` → `(집합, 지문)` | 변환·판 이전을 쓰고 원본을 보관 | 편집용 열기. `node_commands.execute`가 안에서 부름 |
+| `results.load_fp(node_set)` → `(결과, 지문)` | 옛 판이면 원본 보관(`.v0.1.bak.json`·`.v0.2.bak.json`) | 편집용 열기 |
+
+새 화면은 목록·도면을 그릴 때 `load_view`를 쓰고, `needs_open`이면 `notice`(또는 `reason`)를 보인 뒤 사용자가 고치려 할 때(또는 '열기'를 누를 때) `load_fp`로 한 번 연다.
 
 ## 2. 명령 표
 

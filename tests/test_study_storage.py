@@ -253,6 +253,59 @@ class ConvertTest(WorkRoot):
         self.assertIn("S2", sn.issued_node_ids(ns), "숨긴 구간 번호도 다시 내지 않음")
 
 
+class ViewTest(WorkRoot):
+    """보기 전용 읽기(load_view)는 파일을 쓰지 않고, 편집용 열기(load_fp)가 변환·판 이전을 쓴다."""
+
+    def files(self):
+        return sorted(os.path.relpath(os.path.join(d, f), self.tmp) for d, _s, fs in os.walk(self.tmp) for f in fs)
+
+    def test_01_file_is_converted_only_in_memory(self):
+        old = set01(self.g, [("S1", ["TK", "V1"])])
+        spath, rpath = sn.store_path(None, self.g["graph_id"]), res.store_path(None, self.g["graph_id"])
+        sdata = write(spath, old)
+        write(rpath, results01(old, "t1", [("S1", "D01", "e1")]))
+        before = self.files()
+        ns, info = sn.load_view(self.g)
+        self.assertEqual((ns["schema_version"], info["needs_open"], bool(ns.get("read_only"))), ("0.2", True, True))
+        doc = res.load_view(ns)
+        self.assertEqual(doc["cells"][0]["entries"][0]["entry_id"], "e1")
+        self.assertTrue(doc.get("read_only"))
+        self.assertEqual(self.files(), before, "읽기만 해서는 아무 파일도 생기거나 바뀌지 않음")
+        with open(spath, "rb") as fh:
+            self.assertEqual(fh.read(), sdata)
+        opened, fp = sn.load_fp(self.g)
+        self.assertIsNotNone(fp)
+        self.assertFalse(opened.get("read_only"))
+        self.assertTrue(os.path.isfile(convert.backup_path(spath)), "열 때 변환하고 원본 보관")
+
+    def test_version_change_is_shown_then_written_on_open(self):
+        ns = build(self.g, [("A", ["TK"])])
+        sn.save(ns)
+        g2 = graph("v2", shift=10)
+        before = self.files()
+        view, info = sn.load_view(g2)
+        self.assertTrue(info["needs_open"])
+        self.assertIn("v1 → v2", info["notice"])
+        self.assertEqual(view["graph_version"], "v2")
+        self.assertEqual(self.files(), before)
+        self.assertEqual(sn.load(g2)["graph_version"], "v2")
+        again, info2 = sn.load_view(g2)
+        self.assertEqual((info2["needs_open"], again.get("read_only")), (False, None))
+
+    def test_02_results_view_writes_no_backup(self):
+        ns = build(self.g, [("A", ["TK"])])
+        sn.save(ns)
+        doc = dict(put_entries(res.empty_results(ns, DEVS), "S1", "I1", [entry("e1")]), schema_version="0.2")
+        rpath = res.store_path(None, self.g["graph_id"])
+        write(rpath, doc)
+        before = self.files()
+        view = res.load_view(ns)
+        self.assertTrue(view.get("read_only"))
+        self.assertEqual(self.files(), before)
+        res.load_fp(ns)
+        self.assertTrue(os.path.isfile(convert.backup_path(rpath, ".v0.2.bak.json")))
+
+
 class RoundTripTest(WorkRoot):
     """저장소 표본 tests/fixtures/store-0.1(0.1.x 코드가 쓴 파일)을 새 판으로 열고 닫아도 확정본·분석 결과·권고가 그대로."""
 

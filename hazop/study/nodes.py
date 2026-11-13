@@ -842,6 +842,43 @@ def read_as_is(graph):
     return doc
 
 
+def load_view(graph):
+    """보기 전용 읽기: (집합 또는 None, 안내 {"needs_open", "reason", "notice"}). 파일을 하나도 쓰지 않는다.
+    0.1 파일은 메모리에서 0.2로 바꾸고(결과는 읽기만), 0.2 파일은 판 이전·참조 채우기를 메모리에서만 적용한다. 그런 일이
+    있었으면 needs_open이 참이고 집합에 read_only(열면 바꿈)를 붙인다. 화면은 notice(판 이전 안내)를 보인 뒤 사용자가
+    고치려 할 때 load_fp(편집용 열기, 변환·판 이전을 쓰고 원본을 보관)로 연다."""
+    from hazop.study import convert, migrate
+    from hazop.study import results as res
+    info = {"needs_open": False, "reason": None, "notice": None}
+    path = _readable_path(graph.get("project_id"), graph.get("graph_id"))
+    data, _fp = store_io.read_bytes(path)
+    if data is None:
+        return None, info
+    doc = json.loads(data.decode("utf-8-sig"))
+    if not isinstance(doc, dict) or doc.get("kind") != KIND:
+        raise ValueError("검토구간 파일이 아님: %s" % path)
+    version = doc.get("schema_version") or LEGACY_SCHEMA_VERSION
+    if version == LEGACY_SCHEMA_VERSION:
+        check_legacy_shape(doc, path)
+        try:
+            r_doc = res.read(res._readable_path(doc.get("project_id"), doc["graph_id"]))
+        except (OSError, ValueError):
+            r_doc = None
+        doc = convert.convert(doc, r_doc if r_doc and r_doc.get("schema_version", "0.1") == "0.1" else None,
+                              res.load_deviations())[0]
+        reason = "옛 판(0.1) 검토구간 파일: 열면 0.2로 바꿈(원본은 .v0.1.bak.json으로 보관)"
+        return dict(doc, read_only=reason), dict(info, needs_open=True, reason=reason)
+    if version != SCHEMA_VERSION:
+        raise ValueError("이 앱보다 새 검토구간 파일(%s)이라 읽지 않음: %s" % (version, path))
+    _check_shape(doc, path)
+    out, _plan = migrate.migrate_set(migrate.with_refs(doc, graph), graph)
+    if out is doc:
+        return doc, info
+    notice = migrate.notice(out)
+    reason = "그래프 판이 바뀌었거나 참조를 채워야 함: 열면 판 이전을 저장함"
+    return dict(out, read_only=reason), dict(info, needs_open=True, reason=reason, notice=notice)
+
+
 def _ids_ok(v):
     return isinstance(v, list) and all(isinstance(m, str) for m in v)
 

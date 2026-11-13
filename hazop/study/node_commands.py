@@ -10,7 +10,7 @@ execute(pg, name, args, author=…, confirmed_by=…, set_rev=…)는 저장본�
 - 저장 순서(두 파일이 어긋나지 않게): 바뀐 ⑤ 결과를 먼저 옆 파일(<결과>.pending.json)에 '이 집합 판(지문)을 위한 것'으로
   적고, 집합을 지문 대조로 쓰고, 그다음 결과를 지문 대조로 쓴다. 집합 쓰기가 막히면 결과는 바뀌지 않는다. 집합을 쓴 뒤
   결과를 쓰기 전에 꺼지면, 다음 명령이나 recover(pg)가 옆 파일을 보고(집합 지문과 옛 결과 지문이 모두 맞을 때만) 결과를 마저 쓴다.
-돌려주는 값: {"ok", "command", "set_rev", "batch_id", "node_ids", "refused": [{"target", "code", "reason"}]}.
+돌려주는 값: {"ok", "command", "changed", "set_rev", "batch_id", "node_ids", "refused": [{"target", "code", "reason"}]}.
 """
 
 import json
@@ -159,6 +159,9 @@ def execute(pg, name, args, *, author, confirmed_by=None, set_rev=None, request=
         return _refused(name, exc.reasons, ns.get("set_rev"))
     except ValueError as exc:
         return _refused(name, [(name, exc)], ns.get("set_rev"))
+    if new is ns and new_doc is base:  # 바뀐 것 없음: 아무것도 쓰지 않음
+        return {"ok": True, "command": name, "changed": False, "set_rev": ns["set_rev"], "batch_id": None,
+                "node_ids": [], "refused": []}
     write_results = new_doc is not base and (doc is not None or any(c.get("entries") for c in new_doc.get("cells") or []))
     try:
         if write_results:
@@ -175,4 +178,5 @@ def execute(pg, name, args, *, author, confirmed_by=None, set_rev=None, request=
     made = [n["node_id"] for n in new["nodes"] if n["node_id"] not in before]
     a = args or {}
     touched = made or [x for x in a.get("node_ids") or [a.get("node_id")] if x]
-    return {"ok": True, "command": name, "set_rev": new["set_rev"], "batch_id": bid, "node_ids": touched, "refused": []}
+    return {"ok": True, "command": name, "changed": True, "set_rev": new["set_rev"], "batch_id": bid, "node_ids": touched,
+            "refused": []}

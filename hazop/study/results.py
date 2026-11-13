@@ -613,7 +613,18 @@ def load(node_set):
     return load_fp(node_set)[0]
 
 
+def load_view(node_set, deviations=None):
+    """보기 전용 읽기: load_fp와 같은 문서를 돌려주되 파일을 하나도 쓰지 않는다(원본 보관도 하지 않음). 옛 판(0.1·0.2)
+    파일이면 메모리에서 바꾼 문서에 read_only(열면 바꿈)를 붙인다. 고치려면 load_fp로 연다."""
+    return _load(node_set, deviations, write=False)[0]
+
+
 def load_fp(node_set, deviations=None):
+    """편집용 열기. 옛 판이면 처음 저장 전에 원본을 보관한다. (문서, 지문)."""
+    return _load(node_set, deviations, write=True)
+
+
+def _load(node_set, deviations=None, write=True):
     """(load와 같은 문서, save_fp의 expect로 쓸 지문). 없으면 (None, None).
     0.1 결과는 집합의 legacy로 0.2로 바꾸고(hazop.study.convert), 판 이전 기록이 있으면 kg_paths를 옮기고, reconcile로
     지금 집합·편차 목록에 맞춘다(메모리에서만. 파일은 사람이 저장할 때 씀).
@@ -631,7 +642,10 @@ def load_fp(node_set, deviations=None):
     if version == LEGACY_SCHEMA_VERSION:
         doc = convert.results_from_legacy(doc, node_set, devs)
         try:  # 0.1 결과를 0.2로 덮어쓰기 전에 원본을 보관한다(§2.5 4단계)
-            convert.keep_original(path)
+            if write:
+                convert.keep_original(path)
+            else:
+                doc["read_only"] = "옛 판(0.1) 분석 결과: 열면 바꿈(원본은 .v0.1.bak.json으로 보관)"
         except OSError as exc:
             doc["read_only"] = "0.1 분석 결과의 원본을 보관하지 못해 저장하지 않음(%s)" % exc
     elif version not in CELL_SCHEMA_VERSIONS:
@@ -640,7 +654,11 @@ def load_fp(node_set, deviations=None):
         doc = migrate.migrate_results(doc, node_set)[0]
         if version != SCHEMA_VERSION:  # 0.2 → 0.3은 내용이 같다. 옛 앱이 보류를 모르므로 원본을 먼저 보관하고 판을 올린다
             try:
-                convert.keep_original(path, ".v%s.bak.json" % version)
+                if write:
+                    convert.keep_original(path, ".v%s.bak.json" % version)
+                else:
+                    doc = dict(doc, read_only="옛 판(%s) 분석 결과: 열면 판을 올림(원본은 .v%s.bak.json으로 보관)"
+                               % (version, version))
             except OSError as exc:
                 doc = dict(doc, read_only="%s 분석 결과의 원본을 보관하지 못해 저장하지 않음(%s)" % (version, exc))
     doc = reconcile(doc, node_set, devs)
