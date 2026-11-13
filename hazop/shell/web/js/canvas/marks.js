@@ -183,13 +183,20 @@ function arrowEl(a, k) {
  * @param {{marks: Array, seg: object, selection: string[], index: object, k: number, dimOthers: boolean}} s
  * @returns {{nodes: Array, missing: Map<string, string[]>, dim: boolean}}
  */
-export function drawAll({ marks, seg, selection, index, k = 1, size }) {
+export function drawAll({ marks, seg, outside, selection, index, k = 1, size }) {
   const nodes = [], missing = new Map();
   const resolved = (marks || []).map((m) => resolveMark(m, index));
   const dimByMark = resolved.some((m) => m.dim);
   const dim = dimByMark || !!(seg && seg.focused);
   if (dim && size) nodes.push(el("rect", { x: 0, y: 0, width: size[0], height: size[1], fill: "var(--bg, #f4f5f7)", "fill-opacity": 1 - DIM_OPACITY, "pointer-events": "none" }));
   const badges = [], arrows = [];
+  // 구간 밖 구성요소: 바탕색을 얹어 흐리게(구간 안의 것과 구별)
+  for (const id of outside || []) {
+    for (const rec of recsOf(index, id)) {
+      if (rec.layer === "tag") continue;
+      nodes.push(...shapeOf({ rec, color: "var(--bg, #f4f5f7)", dashed: false }, k, rec.layer === "pipe" ? 3.5 : 1, { fill: "var(--bg, #f4f5f7)", "stroke-opacity": 0.65, "fill-opacity": 0.6 }));
+    }
+  }
   // 구간 색
   if (seg) {
     for (const [id, owners] of seg.byItem) {
@@ -199,7 +206,7 @@ export function drawAll({ marks, seg, selection, index, k = 1, size }) {
           nodes.push(...shapeOf({ rec, color: owners[i].color, dashed: false }, k, seg.focused ? 3 : 2.2, { "stroke-dasharray": "6 6", "stroke-dashoffset": 6 }));
       }
     }
-    badges.push(...seg.badges);
+    badges.push(...seg.badges.map((b) => Object.assign({ node_id: b.text }, b)));
     for (const [id, owners] of seg.byItem) {
       if (owners.length < 2) continue;
       const rec = recsOf(index, id).find((r) => r.layer === "symbol");
@@ -228,7 +235,7 @@ export function drawAll({ marks, seg, selection, index, k = 1, size }) {
   }
   for (const a of arrows) nodes.push(arrowEl(a, k));
   for (const b of badges) nodes.push(badgeEl(b, k));
-  return { nodes, missing, dim };
+  return { nodes, missing, dim, badges };
 }
 
 /** 범례 항목. 표시가 없으면 빈 목록. */

@@ -97,10 +97,10 @@ export async function run(hz, data, big) {
     document.body.appendChild(host);
     return host;
   };
-  const ev = { ready: [], click: [], dbl: [], hover: [], sel: [], view: [], mark: [], esc: 0, link: [] };
+  const ev = { ready: [], click: [], dbl: [], hover: [], sel: [], view: [], mark: [], esc: 0, link: [], seg: [] };
   const cb = {
     onReady: (g) => ev.ready.push(g), onItemClick: (e) => ev.click.push(e), onItemDblClick: (e) => ev.dbl.push(e), onHover: (e) => ev.hover.push(e),
-    onSelection: (e) => ev.sel.push(e), onViewport: (e) => ev.view.push(e), onMarkResult: (e) => ev.mark.push(e), onEsc: () => { ev.esc++; }, onLinkClick: (l) => ev.link.push(l),
+    onSelection: (e) => ev.sel.push(e), onViewport: (e) => ev.view.push(e), onMarkResult: (e) => ev.mark.push(e), onEsc: () => { ev.esc++; }, onLinkClick: (l) => ev.link.push(l), onSegmentClick: (d) => ev.seg.push(d),
   };
   const host = mount();
   const core = new hz.SheetCore(host, cb);
@@ -210,6 +210,17 @@ export async function run(hz, data, big) {
   core.update({ command: { seq: 1, type: "clearMarks" } });
   core.update({ segments: [{ node_id: "S1", ids: [ids[0], ids[1]], active: true }, { node_id: "S2", ids: [ids[1], ids[3]] }] });
   t("구간 하나만 강조: 나머지는 흐림막, 꼬리표는 그 구간만", marksG.querySelectorAll("text").length === 1 && !!marksG.querySelector("rect[fill-opacity]"));
+  // 구간 꼬리표를 누르면 onSegmentClick, 구간 밖은 흐리게
+  core.update({ segments: [{ node_id: "S1", ids: [ids[0], ids[1]] }], outside: [ids[2], ids[3]] });
+  t("구간 밖: 흐리게 칠한 요소가 구간 칠하기와 따로 그려짐", marksG.querySelectorAll('[fill="var(--bg, #f4f5f7)"]').length >= 2, marksG.querySelectorAll('[fill="var(--bg, #f4f5f7)"]').length);
+  const bd = core.lastDraw.badges.find((b) => b.node_id === "S1"), kk = core.view.k;
+  const bc = toScreen(bd.rect.x0 + 2 / kk, bd.rect.y0 - 8 / kk);
+  if (bc) {
+    vpEl.dispatchEvent(pe("pointerdown", bc.x, bc.y));
+    vpEl.dispatchEvent(pe("pointerup", bc.x, bc.y));
+  }
+  t("구간 꼬리표 누르기: onSegmentClick({node_id})", ev.seg.length === 1 && ev.seg[0].node_id === "S1", JSON.stringify(ev.seg));
+  core.update({ outside: [] });
   core.update({ segments: [], selection: [] });
   core.update({ command: { seq: 2, type: "zoomTo", ids: [ids[0]], pad: 0.5 } });
   t("명령 zoomTo: 그 구성요소를 가운데로", (() => {

@@ -50,7 +50,7 @@ function build(desc, doc) {
 export class SheetCore {
   /**
    * @param {HTMLElement} host 마운트할 상자
-   * @param {object} cb 콜백: onReady, onItemClick, onItemDblClick, onHover, onSelection, onViewport, onMarkResult, onEsc, onLinkClick, onClearMarks
+   * @param {object} cb 콜백: onReady, onItemClick, onItemDblClick, onHover, onSelection, onViewport, onMarkResult, onEsc, onLinkClick, onClearMarks, onSegmentClick
    */
   constructor(host, cb = {}) {
     this.host = host;
@@ -63,6 +63,7 @@ export class SheetCore {
     this.sel = [];
     this.marks = [];
     this.segments = [];
+    this.outside = [];
     this.layers = { symbol: true, pipe: true, tag: true };
     this.lastCmd = null;
     this.size = [1, 1];
@@ -162,6 +163,7 @@ export class SheetCore {
       this.marks = normalizeMarks(p.marks);
       marksDirty = true;
     }
+    if (p.outside && p.outside !== this._outProp) { this._outProp = p.outside; this.outside = p.outside; marksDirty = true; }
     if (p.segments && p.segments !== this._segProp) { this._segProp = p.segments; this.segments = p.segments; marksDirty = true; }
     if (p.viewport && p.viewport !== this._vpProp) {
       this._vpProp = p.viewport;
@@ -295,8 +297,21 @@ export class SheetCore {
 
   _cancel() { this.pointer = null; this.vp.classList.remove("moving"); this._clearRubber(); }
 
+  /** 구간 꼬리표(S1 등)를 눌렀는가: 꼬리표 자리는 marks.js의 badgeEl과 같은 계산이다. */
+  _badgeAt(s) {
+    const k = this.view.k;
+    for (const b of (this.lastDraw && this.lastDraw.badges) || []) {
+      if (!b.node_id) continue;
+      const h = 15 / k, w = Math.max(15, b.text.length * 8 + 8) / k, x = b.rect.x0 - 4 / k, y = b.rect.y0 - h - 3 / k;
+      if (s.x >= x && s.x <= x + w && s.y >= y && s.y <= y + h) return b;
+    }
+    return null;
+  }
+
   _click(e) {
     const s = this._toSheet(e.clientX, e.clientY);
+    const badge = this.cb.onSegmentClick ? this._badgeAt(s) : null;
+    if (badge) { this.cb.onSegmentClick({ node_id: badge.node_id }); return; }
     const hit = this.index.hitTest(s.x, s.y, 6 / this.view.k, { layers: this._layerSet() });
     if (this.mode === "pick") {
       if (hit) this._change([hit.id], "toggle", "click");
@@ -384,7 +399,7 @@ export class SheetCore {
   _renderMarks() {
     if (!this.data) return;
     const seg = this.segments.length ? buildSegments(this.segments, this.index) : null;
-    const out = drawAll({ marks: this.marks, seg, selection: this.sel, index: this.index, k: this.view.k, size: this.size });
+    const out = drawAll({ marks: this.marks, seg, outside: this.outside, selection: this.sel, index: this.index, k: this.view.k, size: this.size });
     const g = this.marksG;
     while (g.firstChild) g.removeChild(g.firstChild);
     const frag = this.doc.createDocumentFragment();
