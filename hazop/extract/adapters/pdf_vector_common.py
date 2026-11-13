@@ -140,6 +140,13 @@ def _is_circle(body, prm):
     return body["closed"] and bool(body.get("curved")) and w > 0 and abs(w - h) <= prm["circle_aspect_tol"] * max(w, h)
 
 
+def _pt_circle_dist(p, body):
+    """점과 원 몸체 사이 거리(원 안이면 0). 원은 상자 네 귀퉁이가 비어 있어 상자 거리보다 멀다."""
+    b = body["bbox"]
+    c, r = _center(b), (_w(b) + _h(b)) / 4
+    return max(0.0, math.hypot(p[0] - c[0], p[1] - c[1]) - r)
+
+
 def _is_tombstone(body):
     """비석 모양 계기 기호(APR1400 DCD 범례 그림 1.7-1): 위는 반원, 아래는 네모. 닫힌 곡선 하나로 그려지고
     아래 두 모서리가 상자 아래 모서리에, 반원 꼭대기가 상자 위 가운데에 있다. 높이/폭 0.95~1.45."""

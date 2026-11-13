@@ -10,7 +10,7 @@ import math
 
 from .pdf_vector_common import (
     _union, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist, _poly_box_dist,
-    _uf_groups, _center, _is_circle, _is_chevron,
+    _uf_groups, _center, _is_circle, _is_chevron, _pt_circle_dist,
 )
 
 
@@ -79,9 +79,11 @@ def _cluster_bodies(bodies, prm):
         b["kind_"] = "body"
     # 연결 표시 화살표는 맞닿은 밸브·축소관 몸체와 한 기호로 묶지 않는다(묶이면 화살표도 밸브도 종류를 잃는다)
     alone = [_is_chevron(b) for b in bodies]
-    # 사전의 검정 견본에 통째로 맞은 몸체(seed)는 이미 한 기호다. 맞닿은 축소관·구동부 몸체와 묶지 않는다
+    # 사전의 검정 견본에 통째로 맞은 몸체(seed)는 이미 한 기호다. 맞닿은 축소관·구동부 몸체와 묶지 않는다.
+    # 안전등급 경계 마름모(class_mark, _mark_class_boundaries)도 그 두 삼각형끼리만 묶는다
     groups = _uf_groups(len(bodies), lambda i, j: not (alone[i] or alone[j]) and
                         bodies[i].get("seed") == bodies[j].get("seed") and
+                        bodies[i].get("class_mark") == bodies[j].get("class_mark") and
                         _box_gap(bodies[i]["bbox"], bodies[j]["bbox"]) <= prm["touch_tol"])
     return [_Sym([bodies[i] for i in g]) for g in groups]
 
@@ -177,12 +179,24 @@ def _contact_chains(syms, prm):
     return out
 
 
-def _nearest_sym(p, syms, tol):
+def _sym_dist(p, s, prm=None):
+    """점과 기호 사이 거리. 몸체가 원 하나뿐인 기호(밸브 번호·계기 원)는 상자 귀퉁이가 비어 있어 원 모양 그대로 잰다.
+    상자로 재면 밸브 번호 원 귀퉁이 옆에 그린 안전밸브 스프링 빗금이 그 원에 닿은 연결선으로 읽혀 밸브에 들지
+    못한다(APR1400 008쪽 POSRV 파일럿 밸브). prm이 없으면 상자 거리다."""
+    if prm is not None and len(s.bodies) == 1 and _is_circle(s.bodies[0], prm):
+        d = _pt_circle_dist(p, s.bodies[0])
+        for m in s.strokes + s.markers + s.dashes:
+            d = min(d, _pt_box_dist(p, m["bbox"]))
+        return d
+    return _pt_box_dist(p, s.bbox)
+
+
+def _nearest_sym(p, syms, tol, prm=None):
     best = None
     for s in syms:
         if not s.alive:
             continue
-        d = _pt_box_dist(p, s.bbox)
+        d = _sym_dist(p, s, prm)
         if d <= tol:
             key = (d, _w(s.bbox) * _h(s.bbox))
             if best is None or key < best[0]:
@@ -467,7 +481,7 @@ def _group_symbols(cls, prm):
             if host is not None:
                 ends = (p["pts"][0], p["pts"][-1])
                 if any(_inside(e, m["bbox"], prm["end_tol"]) for e in ends for m in markers) or \
-                        any(_nearest_sym(e, [t for t in live if t is not host], prm["attach_tol"]) for e in ends):
+                        any(_nearest_sym(e, [t for t in live if t is not host], prm["attach_tol"], prm) for e in ends):
                     host = None
             if host is not None:
                 host.add([p], "strokes")
@@ -538,9 +552,14 @@ def _group_symbols(cls, prm):
         for bucket, name in ((markers, "markers"), (dashes, "dashes")):
             rest = []
             for m in bucket:
+                # 스트로크 점선 경로가 한 끝은 기호 상자 안, 다른 끝은 밖이면 그 기호에서 끝나는 점선 배관이다. 그 끝
+                # 조각은 기호의 일부가 아니다. 기호에 넣으면 상자가 조각만큼 자라 옆 조각까지 끌어들이고, 모양 서명에
+                # 점선 조각이 섞여 사전 견본에 맞지 않는다(APR1400 008쪽 POSRV 파일럿 안전밸브). 두 끝이 다 밖인 경로
+                # (기호를 꿰뚫는 점선)의 안쪽 조각은 그대로 기호에 넣어 그 자리에서 사슬을 끊는다(_stroke_chains)
                 inside = [s for s in syms if s.alive and
                           _inside((m["bbox"][0], m["bbox"][1]), s.bbox, prm["touch_tol"]) and
-                          _inside((m["bbox"][2], m["bbox"][3]), s.bbox, prm["touch_tol"])]
+                          _inside((m["bbox"][2], m["bbox"][3]), s.bbox, prm["touch_tol"]) and
+                          len({_inside(e, s.bbox, prm["touch_tol"]) for e in m.get("path_ends", ())}) < 2]
                 # 검정 견본으로 올린 몸통 위의 점(seed)은 그 몸통의 기호로 간다. 그 밖에는 상자에 드는 첫 기호
                 own = [s for s in inside if "seed" in m and any(b.get("seed") == m["seed"] for b in s.bodies)]
                 host = (own or inside or [None])[0]

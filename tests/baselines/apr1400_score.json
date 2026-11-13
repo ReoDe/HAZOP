@@ -453,7 +453,7 @@
   "143": {
    "connector_bad_target": 0,
    "connectors_detected": 5,
-   "tag_exact": 1,
+   "tag_exact": 2,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -467,7 +467,7 @@
   "16": {
    "connector_bad_target": 0,
    "connectors_detected": 16,
-   "tag_exact": 18,
+   "tag_exact": 19,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -894,7 +894,7 @@
   "71": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 2,
+   "tag_exact": 6,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -985,7 +985,7 @@
   "83": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 30,
+   "tag_exact": 31,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -1090,7 +1090,7 @@
   "97": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 6,
+   "tag_exact": 9,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -1113,9 +1113,9 @@
   "bubbles": 1619,
   "connector_bad_target": 0,
   "connectors_detected": 287,
-  "continuations": 1866,
+  "continuations": 1888,
   "failed_pages": 0,
-  "nodes": 22827,
+  "nodes": 23022,
   "offpage_labels": 295,
   "pages": 143,
   "pair_candidates": 10,
@@ -1123,12 +1123,12 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 282,
-  "seconds": 220,
-  "tag_exact": 938,
+  "seconds": 163,
+  "tag_exact": 948,
   "tag_not_in_text": 46,
-  "tagged": 2974,
-  "unclassified": 6905,
-  "unknowns": 55881,
+  "tagged": 3017,
+  "unclassified": 6912,
+  "unknowns": 56401,
   "valve_number_closer_other": 0
  }
 }

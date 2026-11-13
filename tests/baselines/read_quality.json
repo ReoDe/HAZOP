@@ -134,22 +134,22 @@
   },
   "apr1400-008": {
    "attribute": {
-    "correct": 40,
+    "correct": 42,
     "false_pos": 2,
     "units": 45
    },
    "connection": {
-    "correct": 135,
+    "correct": 138,
     "false_pos": 8,
     "units": 365
    },
    "kind": {
-    "correct": 93,
+    "correct": 102,
     "false_pos": 15,
     "units": 151
    },
    "tag": {
-    "correct": 53,
+    "correct": 62,
     "false_pos": 0,
     "units": 119
    }
@@ -183,39 +183,39 @@
     "units": 43
    },
    "connection": {
-    "correct": 106,
+    "correct": 107,
     "false_pos": 21,
     "units": 199
    },
    "kind": {
-    "correct": 88,
+    "correct": 91,
     "false_pos": 4,
     "units": 116
    },
    "tag": {
-    "correct": 54,
+    "correct": 56,
     "false_pos": 0,
     "units": 92
    }
   },
   "apr1400-025": {
    "attribute": {
-    "correct": 111,
+    "correct": 113,
     "false_pos": 6,
     "units": 131
    },
    "connection": {
-    "correct": 164,
+    "correct": 167,
     "false_pos": 6,
     "units": 245
    },
    "kind": {
-    "correct": 110,
-    "false_pos": 6,
+    "correct": 111,
+    "false_pos": 7,
     "units": 134
    },
    "tag": {
-    "correct": 63,
+    "correct": 64,
     "false_pos": 4,
     "units": 94
    }
@@ -337,17 +337,17 @@
     "units": 32
    },
    "connection": {
-    "correct": 33,
-    "false_pos": 40,
+    "correct": 34,
+    "false_pos": 34,
     "units": 87
    },
    "kind": {
-    "correct": 32,
+    "correct": 41,
     "false_pos": 5,
     "units": 73
    },
    "tag": {
-    "correct": 27,
+    "correct": 31,
     "false_pos": 0,
     "units": 56
    }
@@ -359,17 +359,17 @@
     "units": 96
    },
    "connection": {
-    "correct": 192,
-    "false_pos": 107,
+    "correct": 231,
+    "false_pos": 109,
     "units": 404
    },
    "kind": {
-    "correct": 57,
+    "correct": 76,
     "false_pos": 0,
     "units": 170
    },
    "tag": {
-    "correct": 40,
+    "correct": 59,
     "false_pos": 0,
     "units": 76
    }
@@ -382,11 +382,11 @@
    },
    "connection": {
     "correct": 84,
-    "false_pos": 13,
+    "false_pos": 11,
     "units": 142
    },
    "kind": {
-    "correct": 82,
+    "correct": 84,
     "false_pos": 6,
     "units": 96
    },
