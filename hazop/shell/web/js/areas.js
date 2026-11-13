@@ -3,11 +3,13 @@
 import * as N from "./panels/nodes_state.js";
 import * as R from "./panels/results_state.js";
 import * as I from "./panels/ie_state.js";
+import { clean } from "./canvas/clean_ui.js";
 
 const EMPTY_NODES = { available: false, set_rev: 0, nodes: [], batches: [], outside: { count: 0, total: 0 }, stale: false, read_only: null, pending_ai: 0 };
 
 export function resetAreas() {
   N.nodes.set({ list: EMPTY_NODES, sheetView: null, detail: null, focus: null, selection: [], card: null, checked: [], busy: false, error: null, needArchive: null });
+  clean.set({ choice: {}, data: {}, built: {}, bubble: null, cursor: -1 });      // 정리된 보기 자료·고른 보기도 앞 프로젝트의 것이다
   R.reset();
   I.reset();
   N.refresh();

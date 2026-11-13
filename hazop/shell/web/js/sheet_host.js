@@ -8,6 +8,7 @@ import { Icon } from "./ui/icon.js";
 import { Btn } from "./ui/parts.js";
 import * as R from "./panels/results_state.js";
 import { NodeOverlay, useNodeCanvas } from "./canvas/nodes_canvas.js";
+import { CleanOverlay, useCleanCanvas } from "./canvas/clean_ui.js";
 
 let SheetComponent = null;
 let tried = false;
@@ -48,7 +49,8 @@ export function SheetHost() {
   const marks = useStore((s) => s.marks);
   const command = useStore((s) => s.command);
   const [Comp, setComp] = useState(() => SheetComponent);
-  const nc = useNodeCanvas(sheet, { onEsc: () => store.set({ marks: { rid: null, bySheet: {} } }) });
+  const cc = useCleanCanvas(sheet);          // 원본·정리 보기, 미확인 칩, 못 읽은 곳 말풍선(s-viewer의 clean_ui.js)
+  const nc = useNodeCanvas(sheet, { onEsc: () => { if (!cc.closeIfOpen()) store.set({ marks: { rid: null, bySheet: {} } }); } });
   useEffect(() => { loadCanvas().then((c) => { if (c) setComp(() => c); store.set({ canvasReady: !!c }); }); }, []);
   if (!sheet) {
     return html`<div class="canvas"><div class="center-empty" style="position:absolute;inset:0;display:grid;place-items:center;color:var(--muted)">
@@ -56,6 +58,6 @@ export function SheetHost() {
   }
   if (!Comp) return html`<${Fallback} sheet=${sheet} />`;
   const items = (marks.bySheet && marks.bySheet[sheet]) || [];
-  return html`<div class="canvas"><${Comp} sheet=${{ graph_id: sheet }} ...${nc.props} marks=${items.map((m, i) => Object.assign({ id: (marks.rid || "m") + (i ? "#" + i : "") }, m))}
-    command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, rect: d.rect } }); }} /><${NodeOverlay} /><${ItemBubble} /></div>`;
+  return html`<div class="canvas"><${Comp} sheet=${{ graph_id: sheet }} ...${nc.props} ...${cc.props} marks=${items.map((m, i) => Object.assign({ id: (marks.rid || "m") + (i ? "#" + i : "") }, m))}
+    command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, rect: d.rect } }); }} /><${NodeOverlay} /><${CleanOverlay} /><${ItemBubble} /></div>`;
 }

@@ -604,6 +604,15 @@ class ReadApi:
             return _json(chat.snapshot() if chat is not None else {"busy": False, "model": "fast", "availability": {"blocked": True, "text": "채팅을 쓸 수 없습니다.", "button": None}})
         if topic == "nodes" and api_nodes is not None:
             return api_nodes.read(self.engine, parts, query)
+        if topic == "clean" and len(parts) == 2:
+            # 정리된 보기용 추가 자료(읽은 결과로 다시 그리는 데 필요한 방향·선 종류·열린 끝·미확인, clean_items.py = s-viewer 몫). 도면 ID로만 읽고
+            # 프로젝트의 도면이 아니면 404다. 모듈이 깨져도 새 화면은 뜨고 정리된 보기만 꺼진다(웹은 자료가 없으면 원본으로 둔다).
+            try:
+                from hazop.shell import clean_items
+            except ImportError:
+                LOG.exception("정리된 보기 자료 모듈을 읽지 못함: 정리된 보기가 꺼진다")
+                return None
+            return clean_items.read(self.engine, parts, query)
         if topic == "results" and api_results is not None:
             return api_results.read(self.engine, parts, query)
         if topic == "ie" and api_ie is not None:

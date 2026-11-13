@@ -13,6 +13,7 @@ import { NodesPanel } from "./panels/nodes.js";
 import { ResultsPanel } from "./panels/results.js";
 import { IePanel } from "./panels/ie.js";
 import { resetAreas } from "./areas.js";
+import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
 import { SettingsPanel } from "./panels/settings.js";
 import { SheetHost } from "./sheet_host.js";
@@ -210,7 +211,7 @@ async function boot() {
   else if (d.drawings.length === 1) openSheet(d.drawings[0].graph_id);
   else store.set({ panel: "drawings" });   // 열 도면이 없거나 여럿이면 도면 패널을 먼저 보인다
   if (!s.reviewer) { store.set({ panel: "settings" }); toast("검토자 이름을 입력하세요. 승인·확정 기록에 남습니다."); }   // 처음 실행할 때 묻는 것은 그대로
-  if (s.debug) window.__hz = { store, cmd, read, ui };
+  if (s.debug) window.__hz = { store, cmd, read, ui, clean };
 }
 
 boot().catch((e) => { document.getElementById("app").textContent = "화면을 시작하지 못했습니다: " + (e && e.message); });
