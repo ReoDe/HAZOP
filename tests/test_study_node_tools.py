@@ -61,7 +61,8 @@ class Base(unittest.TestCase):
 
     def ai(self, ns, ops, rid, turn, rest=False, doc=None):
         return nt.apply_nodes(ns, doc if doc is not None else res.empty_results(ns, DEVS), self.pg, ops,
-                              {"request_id": rid, "user_turn": turn, "confirmed_rest": rest, "request_text": "구간 나눠 줘"},
+                              {"request_id": rid, "user_turn": turn, "confirmed_rest": rest, "request_text": "구간 나눠 줘",
+                               "confirmed_by": "검토자" if rest else None},
                               "ai", ns["set_rev"], at=AT)
 
     def adds(self, cands, n):
@@ -210,32 +211,149 @@ class ApplyTest(Base):
 class CommandTest(Base):
     """구간 명령(node_commands.execute): 파일을 읽어 실행하고 결과·집합을 지문 대조로 저장한다."""
 
+    def run_cmd(self, name, args, author="user", confirmed_by="검토자", set_rev="now", request=None):
+        rev = (sn.load(self.pg) or self.ns)["set_rev"] if set_rev == "now" else set_rev
+        return cmd.execute(self.pg, name, args, author=author, confirmed_by=confirmed_by, set_rev=rev, request=request)
+
     def test_commands_round_trip_on_disk(self):
         cands = nt.make_candidates(self.pg, self.ns, limit=5)["candidates"]
-        out = cmd.execute(self.pg, "create", {"items": [{"cand_id": cands[0]["cand_id"], "name": "가압기 계통"}]},
-                          by="검토자", set_rev=None)
+        out = self.run_cmd("create", {"items": [{"cand_id": cands[0]["cand_id"], "name": "가압기 계통"}]}, set_rev=None)
         self.assertTrue(out["ok"], out)
         nid = out["node_ids"][0]
         self.assertEqual(sn.load(self.pg)["nodes"][0]["origin"], "user")
-        stale = cmd.execute(self.pg, "rename", {"node_id": nid, "name": "다른 이름"}, by="검토자", set_rev=0)
-        self.assertEqual((stale["ok"], stale["refused"][0]["reason"][:5]), (False, "구간이 그"))
+        stale = self.run_cmd("rename", {"node_id": nid, "name": "다른 이름"}, set_rev=0)
+        self.assertEqual((stale["ok"], stale["refused"][0]["code"]), (False, "stale"))
         for name, args in (("rename", {"node_id": nid, "name": "새 이름"}),
                            ("set_design_intent", {"node_id": nid, "text": "가압기 압력 유지"}),
-                           ("confirm", {"node_ids": [nid]}), ("unconfirm", {"node_id": nid})):
-            out = cmd.execute(self.pg, name, args, by="검토자", set_rev=sn.load(self.pg)["set_rev"])
+                           ("confirm", {"node_ids": [nid]}), ("unconfirm", {"node_ids": [nid]})):
+            out = self.run_cmd(name, args)
             self.assertTrue(out["ok"], (name, out))
         node = sn.load(self.pg)["nodes"][0]
         self.assertEqual((node["name"], node["design_intent"]["by"], node["state"]), ("새 이름", "user", "applied"))
-        undo = cmd.execute(self.pg, "undo", {"batch_id": out_batch(self.pg, "set_design_intent")}, by="검토자",
-                           set_rev=sn.load(self.pg)["set_rev"])
+        undo = self.run_cmd("undo", {"batch_id": out_batch(self.pg, "set_design_intent")})
         self.assertTrue(undo["ok"], undo)
-        lock = cmd.execute(self.pg, "lock", {"node_id": nid}, by="검토자", set_rev=sn.load(self.pg)["set_rev"])
-        self.assertFalse(lock["ok"])
+        lock = self.run_cmd("lock", {"node_ids": [nid]})
+        self.assertEqual((lock["ok"], lock["refused"][0]["code"]), (False, "rule"))
         self.assertEqual(sorted(cmd.COMMANDS), sorted(["create", "add_members", "remove_members", "rename",
                                                        "set_design_intent", "merge", "split", "remove", "confirm",
                                                        "unconfirm", "lock", "unlock", "undo"]))
-        bad = cmd.execute(self.pg, "explode", {}, by="검토자", set_rev=None)
-        self.assertFalse(bad["ok"])
+        self.assertEqual(self.run_cmd("explode", {})["refused"][0]["code"], "unknown_command")
+        with self.assertRaises(TypeError):
+            cmd.execute(self.pg, "rename", {"node_id": nid, "name": "x"}, confirmed_by="검토자")  # author 기본값 없음
+        self.assertEqual(self.run_cmd("rename", {"node_id": nid, "name": "x"}, author="robot")["refused"][0]["code"],
+                         "bad_actor")
+        self.assertEqual(self.run_cmd("rename", {"node_id": nid, "name": "x"}, confirmed_by=None)["refused"][0]["code"],
+                         "bad_actor")
+        self.assertEqual(self.run_cmd("confirm", {"node_ids": [nid]}, author="ai")["refused"][0]["code"], "bad_actor")
+
+    def make_judged_pair(self):
+        """사람이 확정했다가 해제한 S1·S2. S2 칸에 사람 승인 항목."""
+        cands = nt.make_candidates(self.pg, self.ns, limit=5)["candidates"]
+        self.assertTrue(self.run_cmd("create", {"items": [{"cand_id": cands[0]["cand_id"], "name": "A"},
+                                                          {"cand_id": cands[1]["cand_id"], "name": "B"}]})["ok"])
+        self.assertTrue(self.run_cmd("confirm", {"node_ids": ["S1", "S2"]})["ok"])
+        ns, _fp = sn.load_fp(self.pg)
+        doc, rfp = res.load_fp(ns)
+        doc = doc or res.empty_results(ns, DEVS)
+        next(c for c in doc["cells"] if c["node_id"] == "S2").update(state="analyzed", entries=[
+            {"entry_id": "e1", "origin": "human", "status": "approved", "cause": "c", "consequence": "q", "safeguards": []}])
+        res.save_fp(doc, ns.get("project_id"), expect=rfp)
+        self.assertTrue(self.run_cmd("unconfirm", {"node_ids": ["S1", "S2"]})["ok"])
+
+    def raw_entries(self):
+        ns = sn.load(self.pg)
+        raw = res.read(res.store_path(ns.get("project_id"), ns["graph_id"]))
+        return {c["node_id"]: [e["entry_id"] for e in c["entries"]] for c in raw["cells"] if c["entries"]}
+
+    def test_r1_set_conflict_leaves_results_untouched(self):
+        self.make_judged_pair()
+        real = sn.load_fp
+
+        def racing(graph):
+            got = real(graph)
+            sn.save_fp(sn.rename(got[0], "S1", "다른 창"), expect=got[1])
+            return got
+        with mock.patch.object(cmd.nodes, "load_fp", racing):
+            out = self.run_cmd("merge", {"node_ids": ["S1", "S2"]}, set_rev=None)
+        self.assertEqual((out["ok"], out["refused"][0]["code"]), (False, "conflict"))
+        self.assertEqual([n["node_id"] for n in sn.load(self.pg)["nodes"]], ["S1", "S2"])
+        self.assertEqual(self.raw_entries(), {"S2": ["e1"]}, "결과 파일은 그대로(항목이 다른 구간에 붙지 않음)")
+
+    def test_r1_crash_between_writes_is_recovered(self):
+        self.make_judged_pair()
+        with mock.patch.object(cmd.res, "save_fp", side_effect=OSError("꺼짐")):
+            out = self.run_cmd("merge", {"node_ids": ["S1", "S2"]})
+        self.assertFalse(out["ok"])
+        self.assertEqual([n["node_id"] for n in sn.load(self.pg)["nodes"]], ["S1"], "집합은 이미 씀")
+        self.assertEqual(self.raw_entries(), {"S2": ["e1"]}, "결과는 아직")
+        self.assertTrue(cmd.recover(self.pg))
+        self.assertEqual(self.raw_entries(), {"S1": ["e1"]}, "다음에 열 때 마저 씀")
+        self.assertFalse(cmd.recover(self.pg), "두 번 쓰지 않음")
+
+    def test_r6_ai_authored_stays_ai_even_when_a_person_confirms(self):
+        cands = nt.make_candidates(self.pg, self.ns, limit=30)["candidates"]
+        self.assertTrue(self.run_cmd("create", {"items": [{"cand_id": cands[0]["cand_id"], "name": "사람 구간"}]})["ok"])
+        items = [{"cand_id": c["cand_id"], "name": "AI %d" % i} for i, c in enumerate(cands[1:6])]
+        req = {"request_id": "q-1", "user_turn": "u-1"}
+        refused = self.run_cmd("rename", {"node_id": "S1", "name": "AI가 바꿈"}, author="ai", confirmed_by=None,
+                               request=dict(req, request_id="q-0"))
+        self.assertFalse(refused["ok"], "사람 구간을 AI가 바꾸려면 사람 확인이 필요")
+        ok = self.run_cmd("rename", {"node_id": "S1", "name": "AI가 바꿈"}, author="ai", confirmed_by="검토자",
+                          request=dict(req, request_id="q-00"))
+        self.assertTrue(ok["ok"], ok)
+        made = self.run_cmd("create", {"items": items}, author="ai", confirmed_by="검토자", request=req)
+        self.assertTrue(made["ok"], made)
+        ns = sn.load(self.pg)
+        self.assertEqual({(n["origin"], n["name_by"]) for n in ns["nodes"] if n["node_id"] in made["node_ids"]},
+                         {("ai", "ai")})
+        self.assertEqual(nt.pending_ai(ns), 5, "사람이 확인 상자를 눌러도 AI 상한에 셈")
+        more = self.run_cmd("create", {"items": [{"cand_id": cands[7]["cand_id"], "name": "AI 6"}]}, author="ai",
+                            confirmed_by="검토자", request={"request_id": "q-2", "user_turn": "u-1", "confirmed_rest": True})
+        self.assertFalse(more["ok"], "같은 질문 안에서 6번째는 거절")
+
+    def test_r5_ai_cannot_undo_a_batch_a_person_confirmed(self):
+        cands = nt.make_candidates(self.pg, self.ns, limit=5)["candidates"]
+        made = self.run_cmd("create", {"items": [{"cand_id": cands[0]["cand_id"], "name": "AI"}]}, author="ai",
+                            confirmed_by=None, request={"request_id": "q-5", "user_turn": "u-5"})
+        nid = made["node_ids"][0]
+        self.assertTrue(self.run_cmd("confirm", {"node_ids": [nid]})["ok"])
+        self.assertTrue(self.run_cmd("unconfirm", {"node_ids": [nid]})["ok"])
+        undo = self.run_cmd("undo", {"batch_id": made["batch_id"]}, author="ai", confirmed_by=None)
+        self.assertFalse(undo["ok"])
+        self.assertIn("확정한 적", undo["refused"][0]["reason"])
+
+    def test_hops_have_a_cap(self):
+        start = self.pg["nodes"][0]["entity_id"]
+        with self.assertRaises(ValueError):
+            nt.scope_ids(self.pg, None, {"around": start, "hops": 2000000})
+        self.assertIn(start, nt.scope_ids(self.pg, None, {"around": start, "hops": nt.MAX_HOPS}))
+
+
+class CrossProcessTest(Base):
+    def test_r3_cand_id_made_in_another_process_applies_here(self):
+        import subprocess
+        code = ("import os, sys, json; sys.path.insert(0, %r); sys.path.insert(0, %r);\n"
+                "from tests.test_study_node_tools import snp_graph;\n"
+                "from hazop.study import node_tools as nt, nodes as sn;\n"
+                "pg = snp_graph(); out = nt.make_candidates(pg, sn.new_set(pg), limit=3);\n"
+                "print(json.dumps([c['cand_id'] for c in out['candidates']]))"
+                % (REPO_ROOT, os.path.join(REPO_ROOT, "scripts")))
+        env = dict(os.environ, HAZOP_WORK_ROOT=self.tmp, PYTHONIOENCODING="utf-8")
+        done = subprocess.run([sys.executable, "-c", code], capture_output=True, env=env, cwd=REPO_ROOT)
+        self.assertEqual(done.returncode, 0, done.stderr.decode("utf-8", "replace"))
+        import json
+        ids = json.loads(done.stdout.decode("utf-8").strip().splitlines()[-1])
+        nt.clear_cache()
+        ns, _r, _b = nt.apply_nodes(self.ns, res.empty_results(self.ns, DEVS), self.pg,
+                                    [{"op": "add", "cand_id": ids[0], "name": "다른 프로세스 후보"}],
+                                    {"request_id": "q", "user_turn": "u"}, "ai", self.ns["set_rev"], at=AT)
+        self.assertEqual(ns["nodes"][0]["cand_id"], ids[0])
+        nt.clear_cache()
+        with mock.patch.object(nt.time, "time", lambda: 10 ** 11):  # 기록이 지나면 다시 찾게 함
+            with self.assertRaises(nt.Refused):
+                nt.apply_nodes(self.ns, res.empty_results(self.ns, DEVS), self.pg,
+                               [{"op": "add", "cand_id": ids[1], "name": "지난 후보"}],
+                               {"request_id": "q2", "user_turn": "u"}, "ai", self.ns["set_rev"], at=AT)
 
 
 class OldScreenPathTest(unittest.TestCase):

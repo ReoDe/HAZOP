@@ -18,7 +18,10 @@
 import copy
 import hashlib
 import json
+import os
+import time
 
+from hazop import paths, store_io
 from hazop.study import nodes, segment
 from hazop.study import results as res
 from hazop.study.node_review import TAG_LIKE, drawing_tags
@@ -33,6 +36,8 @@ GRADE_ORDER = {"주요": 0, "일반": 1, "낮음": 2, None: 3}
 OPS = ("add", "edit", "merge", "split", "remove")
 _CACHE = {}
 _CACHE_SIZE = 8
+MAX_HOPS = 30              # scope around의 hops 상한
+CAND_PARAMS_TTL = 24 * 3600  # 후보 매개변수 기록을 믿는 시간(초). 지나면 후보를 다시 찾게 한다
 
 
 class Refused(ValueError):
@@ -91,6 +96,8 @@ def scope_ids(pg, node_set, scope):
                 if any(str(n.get(k) or "").upper().startswith(head) for k in ("tag", "line_no"))}
     if "around" in scope:
         start, hops = scope["around"], int(scope.get("hops") or 2)
+        if not 0 <= hops <= MAX_HOPS:
+            raise ValueError("hops는 0~%d" % MAX_HOPS)
         if start not in by_id:
             raise ValueError("그래프에 없는 구성요소: %s" % start)
         adj = {}
@@ -148,11 +155,46 @@ def find_major_equipment(pg, scope=None, granularity="normal", extra_boundaries=
             "next_cursor": nxt}
 
 
+def _params_path(pg, digest):
+    """후보 매개변수 기록 자리: <작업 루트>/data/study-nodes/<프로젝트>/candidates/<digest>.json."""
+    from hazop.graph.project import UNREGISTERED_PROJECT
+    return os.path.join(nodes.store_dir(), paths.safe_name(pg.get("project_id") or UNREGISTERED_PROJECT),
+                        "candidates", digest + ".json")
+
+
+def _remember_params(pg, digest, scope, params):
+    """후보를 만든 매개변수를 작업 루트에 남긴다(후보를 만든 프로세스와 적용하는 프로세스가 달라도 cand_id로 다시 만들게).
+    원자적으로 쓰고, 같은 내용이면 다시 쓰지 않는다. 쓰지 못해도 후보는 돌려준다(같은 프로세스 캐시로는 풀림)."""
+    record = {"kind": "hazop_node_candidate_params", "graph_id": pg.get("graph_id"),
+              "graph_version": pg.get("graph_version"), "digest": digest, "at": time.time(), "scope": scope,
+              "params": {"granularity": params.granularity, "extra_boundaries": sorted(params.extra_boundaries),
+                         "cut_at": sorted(params.cut_at)}}
+    path = _params_path(pg, digest)
+    try:
+        old = _read_params(path)
+        if old and {k: v for k, v in old.items() if k != "at"} == {k: v for k, v in record.items() if k != "at"} \
+                and time.time() - old.get("at", 0) < CAND_PARAMS_TTL / 2:
+            return
+        store_io.write_json(path, record)
+    except OSError:
+        pass
+
+
+def _read_params(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) and doc.get("kind") == "hazop_node_candidate_params" else None
+
+
 def _all_candidates(pg, scope, params):
     """[후보(겹침·건너뛰기 전)]와 params_digest. 같은 (판, 매개변수, 범위)면 캐시."""
     sheets, _problem = nodes.exclusion_for(pg)
     digest = _digest({"granularity": params.granularity, "extra": sorted(params.extra_boundaries),
                       "cut_at": sorted(params.cut_at), "scope": scope, "excluded": sorted(sheets)})[:16]
+    _remember_params(pg, digest, scope, params)
     key = (pg.get("graph_id"), pg.get("graph_version"), digest)
     if key in _CACHE:
         return _CACHE[key], digest
@@ -178,7 +220,7 @@ def _all_candidates(pg, scope, params):
         ends = [{"tag": by_id[x].get("tag"), "entity_id": x} for x in majors]
         parts = [segment.part_of(by_id[m]) for m in members]
         out.append({
-            "cand_id": "c-" + _digest([pg.get("graph_version"), digest, sorted(members)])[:16],
+            "cand_id": "c-%s-%s" % (digest, _digest([pg.get("graph_version"), digest, sorted(members)])[:12]),
             "member_count": len(members), "members": members,
             "start": ends[0] if ends else None, "end": ends[-1] if ends else None,
             "majors": [by_id[x].get("tag") or by_id[x].get("kind") for x in majors],
@@ -196,13 +238,22 @@ def _all_candidates(pg, scope, params):
 def _candidate_list(pg, node_set, scope, params, skip_existing):
     every, digest = _all_candidates(pg, scope, params)
     want = scope_ids(pg, node_set, scope) if (scope or {}).get("node_ids") else None
-    existing = [(n["node_id"], set(n["members"])) for n in (node_set or {}).get("nodes") or []]
+    owners = {}
+    order = {}
+    for i, n in enumerate((node_set or {}).get("nodes") or []):
+        order[n["node_id"]] = i
+        for m in n["members"]:
+            owners.setdefault(m, []).append(n["node_id"])
     out = []
     for c in every:
         if want is not None and not set(c["members"]) <= want:
             continue
         mine = set(c["members"])
-        overlaps = [{"node_id": nid, "shared": len(mine & ms)} for nid, ms in existing if mine & ms]
+        shared = {}
+        for m in mine:  # 구성요소 → 구간 색인으로 센다(구간이 많아도 후보 크기만큼만 돎)
+            for nid in owners.get(m, ()):
+                shared[nid] = shared.get(nid, 0) + 1
+        overlaps = [{"node_id": nid, "shared": k} for nid, k in sorted(shared.items(), key=lambda x: order[x[0]])]
         if skip_existing and any(o["shared"] / len(mine) > SKIP_OVERLAP for o in overlaps):
             continue
         out.append(dict(c, overlaps=overlaps))
@@ -226,10 +277,22 @@ def make_candidates(pg, node_set, scope=None, granularity="normal", extra_bounda
 
 
 def resolve_candidate(pg, node_set, cand_id, params=None):
-    """cand_id의 구성요소와 후보(이름·basis). 캐시에 같은 판의 후보가 있으면 그것, 없으면 params로 다시 만든다.
-    찾지 못하면 None(그래프 판이 바뀌었거나 매개변수가 다름)."""
+    """cand_id의 구성요소와 후보(이름·basis). 순서: 이 프로세스의 캐시 → cand_id에 든 매개변수 지문으로 작업 루트의
+    기록(다른 프로세스가 만든 후보, 같은 그래프 판·24시간 안)을 읽어 다시 만듦 → params로 다시 만듦.
+    찾지 못하면 None(그래프 판이 바뀌었거나 매개변수가 다르거나 기록이 지남)."""
     for (gid, ver, _d), cands in list(_CACHE.items()):
         if gid == pg.get("graph_id") and ver == pg.get("graph_version"):
+            hit = next((c for c in cands if c["cand_id"] == cand_id), None)
+            if hit is not None:
+                return hit
+    parts = str(cand_id).split("-")
+    if len(parts) == 3 and parts[0] == "c":
+        rec = _read_params(_params_path(pg, parts[1]))
+        if rec and rec.get("graph_id") == pg.get("graph_id") and rec.get("graph_version") == pg.get("graph_version") \
+                and time.time() - float(rec.get("at") or 0) < CAND_PARAMS_TTL:
+            p = rec["params"]
+            cands, _d = _all_candidates(pg, rec.get("scope"), _params(p["granularity"], p.get("extra_boundaries"),
+                                                                       p.get("cut_at")))
             hit = next((c for c in cands if c["cand_id"] == cand_id), None)
             if hit is not None:
                 return hit
@@ -348,6 +411,7 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
     at = at or nodes.now_utc()
     request = dict(request or {})
     ai = origin == "ai"
+    confirmed_by = (request.get("confirmed_by") or "").strip() if ai else None  # AI가 쓴 동작을 사람이 확인 상자로 눌렀는가
     graph_ids = {n["entity_id"] for n in pg.get("nodes", [])}
     tags = drawing_tags(pg) if ai else None
     out = copy.deepcopy(node_set)
@@ -367,8 +431,8 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
         if nodes.is_active(n):
             why.append((label, "확정 구간은 %s할 수 없음(사람이 확정을 해제한 뒤)" % kind))
             return None
-        if ai and n.get("origin") != "ai":
-            why.append((label, "AI는 AI가 만든 적용됨 구간만 %s함(사람·옛 규칙 구간은 node_review 제안으로)" % kind))
+        if ai and n.get("origin") != "ai" and not confirmed_by:
+            why.append((label, "AI가 사람·옛 규칙 구간을 %s하려면 사람이 확인해야 함(채팅 규격 §4.3)" % kind))
             return None
         return n
 
@@ -428,12 +492,12 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
                 if not op["name"].strip():
                     why.append((label, "빈 이름"))
                     continue
-                if ai and n.get("name_by") == "user":
+                if ai and n.get("name_by") == "user" and not confirmed_by:
                     why.append((label, "사람이 쓴 이름은 AI가 바꾸지 못함"))
                     continue
                 n["name"], n["name_by"] = op["name"].strip(), origin
             if op.get("design_intent") is not None:
-                if ai and (n.get("design_intent") or {}).get("by") == "user":
+                if ai and (n.get("design_intent") or {}).get("by") == "user" and not confirmed_by:
                     why.append((label, "사람이 쓴 설계 의도는 AI가 바꾸지 못함"))
                     continue
                 text = op["design_intent"].strip()
@@ -496,7 +560,7 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
         pending = pending_ai(node_set)
         if adds and pending + adds > REPRESENTATIVE_LIMIT:
             turn = request.get("user_turn")
-            if not request.get("confirmed_rest"):
+            if not (request.get("confirmed_rest") and confirmed_by):
                 why.append(("요청", "확인하지 않은 AI 구간 %d개 + 이번 %d개가 %d개를 넘음: 사람이 확인 상자를 눌러야 함"
                             % (pending, adds, REPRESENTATIVE_LIMIT)))
             elif not turn or turn in _pending_turns(node_set):
@@ -516,7 +580,7 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
     if seen_rest:  # 확인 상자를 눌렀으므로 앞의 AI 묶음은 사람이 본 것
         for b in out.get("batches") or []:
             if b.get("origin") == "ai" and not b.get("human_seen"):
-                b["human_seen"] = {"at": at, "by": request.get("confirmed_by") or "확인 상자"}
+                b["human_seen"] = {"at": at, "by": confirmed_by}
     out = nodes._record_batch(node_set, out, "apply", origin, at, request=request,
                               tool=request.get("tool"), model=request.get("model"))
     out["history"].append(nodes.store_io.history_row("apply", {"detail": {
@@ -561,6 +625,9 @@ def undo_problems(node_set, results, batch_id, requested_by):
         nid = o["node_id"]
         cur = _node(node_set, nid)
         expect = o["after"]
+        if requested_by == "ai" and nodes.ever_confirmed(node_set, nid):
+            out.append((nid, "사람이 확정한 적 있는 구간이라 AI 되돌리기로 지우거나 바꾸지 않음(사람이 ④에서 되돌림)"))
+            continue
         if cur is not None and nodes.is_active(cur):
             out.append((nid, "확정·잠금 구간(사람이 확정을 먼저 해제해야 함)"))
             continue
