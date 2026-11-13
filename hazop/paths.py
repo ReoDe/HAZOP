@@ -317,6 +317,7 @@ FOLDERS = {
     "initiating-events": Folder("work", ("data", "initiating-events")),
     "drawing-edits": Folder("work", ("data", "drawing-edits")),
     "ai-review": Folder("work", ("data", "ai-review")),  # 추출 뒤 AI 검토 후보(hazop.extract.ai_review)
+    "sheet-confirmations": Folder("work", ("data", "sheet-confirmations")),  # 쪽 확정 기록(hazop.extract.confirmation)
     "drawing-links": Folder("work", ("data", "drawing-links")),
     "latent-candidates": Folder("work", ("data", "latent-candidates")),
     "cache": Folder("work", ("data", "cache")),  # 지워도 되는 계산 결과(hazop.app.data 추출 요약)
