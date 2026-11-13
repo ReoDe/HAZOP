@@ -396,6 +396,16 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(by_kind, ["measurement_connection", "signal_connection"])
         self.assertEqual(ext["unresolved_connectors"], [])
 
+    def test_dashed_line_through_valve_axis_is_pipe(self):
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        along = [rect(x, 110.65, x + 4, 111.35, fill=True) for x in range(40, 96, 6)]
+        side = [rect(217.65, y, 218.35, y + 4, fill=True) for y in range(44, 96, 6)]
+        ext = pdf_run(bowtie(0, 100) + bowtie(100, 100) + along + bowtie(200, 100) + [rect(208, 20, 228, 40)] + side)
+        kinds = sorted((r["kind"], r["line_type"]) for r in ext["relations"])
+        self.assertEqual(kinds, [("physical_connection", "pdf_dashed"), ("signal_connection", "pdf_dashed")])
+
     def test_labels_line_label_and_title_block(self):
         ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (300, 130)),
                        rect(400, 300, 450, 315), rect(450, 300, 550, 315)],

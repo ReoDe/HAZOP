@@ -85,6 +85,8 @@ PARAMS = {
     "stroke_symbol_max": 60.0,   # 선 기호 최대 크기(넘으면 끊긴 배관으로 본다)
     "dash_gap_max": 3.0,         # 점선 조각 사이 간격 상한
     "dash_attach_tol": 8.0,      # 점선 끝 조각과 기호 사이 거리 상한(점선 끝 빈칸·구동부 여백 포함)
+    "dash_pipe_straight_tol": 1.0,  # 점선 배관: 조각 중심이 한 줄에 놓였다고 보는 폭
+    "dash_pipe_axis_ratio": 1.5,    # 점선 배관: 밸브 몸통의 긴 변/짧은 변이 이만큼은 돼야 흐름 축을 안다
     "label_gap_max": 15.0,       # 글자 문단과 기호 사이 거리 상한
     "bare_code_gap_max": 5.0,    # 쌍점 없는 두 글자 계통 약어를 연결 표시 글자로 볼 거리 상한(바로 옆만)
     "appendage_gap_ratio": 0.1,  # 연결 없는 작은 기호를 옆 큰 기호에 합치는 거리 = 큰 기호 긴 변 × 비율
@@ -938,6 +940,34 @@ def _build_dashed(syms, dashes, markers, prm):
     return out
 
 
+def _dashed_pipe(ch, nodes, ids, instrument_ids, prm):
+    """점선이지만 배관인가. 곧은 점선이 밸브 몸통에 그 몸통의 긴 축(흐름 방향)을 따라 들어가면 배관이다. 신호선은 밸브의
+    구동부나 몸통 옆으로 닿고, 몸통을 흐름 방향으로 꿰지 않는다(APR1400 가압기 안전밸브 묶음처럼 점선으로 그린 배관).
+    계기에 닿은 점선은 신호·측정선으로 둔다."""
+    if any(i in instrument_ids for i in ids):
+        return False
+    xs, ys = [p[0] for p in ch["pts"]], [p[1] for p in ch["pts"]]
+    tol = prm["dash_pipe_straight_tol"]
+    if max(xs) - min(xs) <= tol:
+        vertical = True
+    elif max(ys) - min(ys) <= tol:
+        vertical = False
+    else:
+        return False
+    valves = 0
+    for (v, pt, _), nid in zip(ch["ends"], ids):
+        if v[0] != "sym" or nodes[nid]["category"] != "valve":
+            continue
+        b = v[1].bbox
+        if max(_w(b), _h(b)) < prm["dash_pipe_axis_ratio"] * min(_w(b), _h(b)) or (_h(b) > _w(b)) != vertical:
+            return False
+        c = _center(b)
+        if abs(pt[0] - c[0] if vertical else pt[1] - c[1]) > 0.5 * min(_w(b), _h(b)):
+            return False
+        valves += 1
+    return valves > 0
+
+
 # ---------------------------------------------------------------- 6. 종류
 
 
@@ -1770,6 +1800,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
 
     ordered = sorted(chains, key=lambda c: (bool(c.get("dashed")), c["evidence"][0]))
     relations, unresolved = [], []
+    node_by_local = {nd["local_id"]: nd for nd in node_out}
     for n, ch in enumerate(ordered, 1):
         local_id, sid = "local-edge-%03d" % n, "pdf-p%d-conn-%04d" % (page, n)
         why = _merged_line(ch, merge_into, number_ids)
@@ -1794,7 +1825,9 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         if resolved and ids[0] == ids[1]:
             resolved = False
             _issue(unknowns, "self_loop", "양 끝이 같은 기호에 닿음(기호 내부선일 수 있음)", sid, local_id)
-        if ch.get("dashed"):
+        if ch.get("dashed") and resolved and not moved and _dashed_pipe(ch, node_by_local, ids, instrument_ids, prm):
+            rel_kind, line_type = "physical_connection", "pdf_dashed"
+        elif ch.get("dashed"):
             rel_kind, line_type = "signal_connection", "pdf_dashed"
         elif moved:  # 합친 구동부로 들어가던 선은 구동 신호다(배관 분기로 보지 않는다)
             rel_kind, line_type = "signal_connection", "pdf_solid"
