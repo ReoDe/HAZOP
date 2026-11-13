@@ -200,7 +200,8 @@ ACTIONS = {a.name: a for a in (
            "⑤", "사람 판단(판정 '수정'). 사유 필수. 잠긴 구간의 칸은 거절",
            "구간 {node_id} 편차 {deviation_id}의 항목 {entry_id} 내용을 고칩니다({field_names}). 판정은 '수정'이 되고 "
            "아래 새 값과 사유는 AI가 쓴 글이며, 확인한 사람 이름과 함께 그대로 저장됩니다."),
-    Action("export.excel", AUTO, _spec(), "⑤", "이름에 시각을 붙인 새 파일"),
+    Action("export.excel", AUTO, _spec(scope="str", node_ids="ids"), "⑤",
+           "이름에 시각을 붙인 새 파일. 범위 scope: all(전체)·approved(승인 항목만)·nodes(고른 구간만, node_ids 필요)"),
     Action("export.ie_bundle", AUTO, _spec(), "⑤", "이름에 시각을 붙인 새 파일"),
     # ② 도면 쪽 확정과 DEXPI 내보내기(sheet-commands.md·dexpi-commands.md). 확정은 사람 판단이라 늘 확인. '원본과 견줌'은 화면에서 사람이 본다
     Action("sheet.confirm", CONFIRM, _spec(("graph_id", "id")), "②", "미확인 0·위치 없음 0·원본과 견줌을 마친 쪽만(엔진이 센다)",
@@ -218,18 +219,37 @@ ACTIONS = {a.name: a for a in (
     Action("settings.work_root", NEVER, _spec(), "공통", "작업 루트", where="설정 창에서 한다"),
     Action("settings.reviewer", NEVER, _spec(), "공통", "검토자 이름", where="설정 창에서 한다"),
     Action("files.delete", NEVER, _spec(), "공통", "파일·폴더 지우기", where="탐색기에서 사람이 한다"),
-    # 아직 화면이 없는 기능(A11 2차). 모델이 내면 '아직 채팅으로 할 수 없음'으로 답한다
-    Action("kg.judge", LATER, _spec(), "③", "지식그래프 판단(언급 수락·기각)", where="지식그래프 화면이 생기면 잇는다"),
+    # A11 2차: 새 화면 영역(지식그래프 A6·AI 검토 후보 A4·원본 선택)의 실행 함수를 잇는 동작. 사람 판단을 저장하므로 확인을 받고,
+    # 화면이 하는 대조(잠재 후보는 항목 digest·상태·판, AI 후보는 후보 ID와 판)를 확인 상자에서 본 값 그대로 넘긴다(hazop/shell/chat_screens.py)
+    Action("kg.find", DISPLAY, _spec(("text", "str")), "③", "지식그래프 패널을 열고 태그·이름·규칙 ID로 찾은 노드를 고른다"),
+    Action("kg.judge", CONFIRM, _spec(("id", "str"), ("judgement", "str"), reason="text", evidence="str"), "③",
+           "잠재 후보 판단: confirm(후보 확인)·reject(후보 기각)·absent(부재 확정)·not_applicable(무관)·undo(판단 되돌리기)",
+           "잠재 후보 {id}을(를) 판단합니다. 아래 사유·근거는 AI가 쓴 글이며, 확인한 사람 이름이 판단한 사람으로 남습니다."),
+    Action("aireview.accept", CONFIRM, _spec(("graph_id", "id"), ("cand_ids", "ids")), "②",
+           "AI 후보 수락: 사람 수정 기록에 연산으로 들어가고 그래프를 다시 만든다. 되돌릴 수 있다",
+           "도면 {graph_id}의 AI 후보 {cand_ids}을(를) 수락합니다. 아래 값이 도면 수정 기록에 들어가고 그래프를 다시 만듭니다."),
+    Action("aireview.reject", CONFIRM, _spec(("graph_id", "id"), ("cand_ids", "ids")), "②", "AI 후보 거절",
+           "도면 {graph_id}의 AI 후보 {cand_ids}을(를) 거절합니다."),
+    Action("aireview.revert", CONFIRM, _spec(("graph_id", "id"), ("cand_ids", "ids")), "②",
+           "수락·거절 되돌리기(수락한 연산은 수정 기록에서 빠지고 그래프를 다시 만든다)",
+           "도면 {graph_id}의 AI 후보 {cand_ids}의 수락·거절을 되돌립니다."),
+    Action("aireview.accept_bulk", CONFIRM, _spec(("graph_id", "id"), ("task", "str")), "②",
+           "확신 높은 묶음 수락. 확인 상자에 보인 후보 ID만 수락한다",
+           "도면 {graph_id}의 확신 높은 AI 후보 묶음을 한 번에 수락합니다. 아래 후보만 수락합니다."),
+    Action("sources.choose", CONFIRM, _spec(("drawing_number", "str"), ("format", "str")), "②",
+           "같은 도면 번호의 원본이 형식 둘 이상일 때 프로젝트 그래프에 쓸 형식을 고른다(사람 수정·추출 결과는 그대로)",
+           "도면 {drawing_number}에 {format} 원본을 쓰도록 고릅니다. 프로젝트 그래프가 그 원본으로 다시 만들어집니다."),
+    # 아직 화면이 없는 기능. 모델이 내면 '아직 채팅으로 할 수 없음'으로 답한다
     Action("titleblock.confirm", LATER, _spec(), "②", "표제란 확정", where="표제란 확정 화면이 생기면 잇는다"),
     Action("ie.edit", LATER, _spec(), "⑥", "초기사건 편집", where="⑥ 초기사건 패널에서 사람이 한다"),
     Action("drawing.edit", LATER, _spec(), "②", "도면 고치기(태그·종류·연결)", where="도면 고치기 화면이 생기면 잇는다"),
-    Action("extract.accept", LATER, _spec(), "②", "AI 후보 수락·거절", where="도면의 AI 후보 목록에서 사람이 한다"),
 )}
 
 # 사람이 정하는 판정(results-commands.md §1). proposed(AI 초안)는 사람이 정할 수 없는 값이라 받지 않는다
 RESULT_STATUSES = ("approved", "revised", "rejected", "on_hold")
 STATUS_LABELS = {"approved": "수용", "revised": "수정", "rejected": "기각", "on_hold": "보류"}
 REASON_REQUIRED = ("revised", "rejected", "on_hold")
+EXCEL_SCOPES = ("all", "approved", "nodes")     # api_results results.export_excel의 범위(0f6a554)
 # results.edit로 고칠 수 있는 필드(hazop.study.results.EDITABLE_FIELDS와 같음. 시험이 대조)
 EDIT_FIELDS = ("cause", "consequence", "safeguards", "recommendation", "severity", "frequency",
                "cause_refs", "consequence_refs", "expectation_refs", "cause_kind", "consequence_basis")
@@ -538,6 +558,20 @@ class ActionPlanner:
         if snap.graph_ids and a["target"] not in snap.graph_ids:
             raise _Reject("지금 프로젝트 그래프에 없는 대상")
         item.targets = [a["target"]]
+
+    def _check_export_excel(self, item, snap):
+        scope = item.args.get("scope") or "all"
+        ids = item.args.get("node_ids") or []
+        if scope not in EXCEL_SCOPES:
+            raise _Reject("내보내기 범위는 %s 가운데 하나" % ", ".join(EXCEL_SCOPES))
+        if scope == "nodes" and not ids:
+            raise _Reject("'고른 구간만'에는 구간 ID(node_ids)가 있어야 함")
+        if scope != "nodes" and ids:
+            raise _Reject("구간 ID는 범위 nodes(고른 구간만)에서만 씀")
+        missing = [i for i in ids if i not in _nodes(snap)]
+        if missing:
+            raise _Reject("없는 구간: %s" % ", ".join(missing[:5]))
+        item.targets = list(ids)
 
     def _check_kg_rebuild(self, item, snap):
         item.targets = ["kg"]

@@ -55,6 +55,7 @@ export function applyDisplay(it, rid) {
     store.set({ panel: it.panel, backTo: null });
     if (it.node_id && N.nodes.get().focus !== it.node_id) N.focusNode(it.node_id, { zoom: true });
     if (it.cell) R.openCell(it.cell[0], it.cell[1]);
+    if (it.panel === "aireview" && it.sheet) import("../panels/aireview_state.js").then((A) => A.pickDrawing(it.sheet)).catch(() => {});
   }
 }
 

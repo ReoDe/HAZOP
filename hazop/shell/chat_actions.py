@@ -17,26 +17,31 @@ import threading
 
 from hazop.chat import actions as A
 from hazop.chat import actions_log
+from hazop.shell import chat_screens
 
 LOG = logging.getLogger("hazop.shell.chat_actions")
 NODE_ACTIONS = ("nodes.apply", "nodes.undo", "nodes.confirm", "nodes.unconfirm", "nodes.lock")
 # A11 1차: 화면·엔진에 이미 있는 기능을 잇는 실행 동작(엔진 함수는 api_results·api_drawings·data를 부르기만 한다)
 RUN_ACTIONS = ("analysis.run", "results.set_status", "results.edit", "export.excel", "export.ie_bundle",
                "register.extract", "register.reextract", "sheet.confirm", "dexpi.export")
-DISPLAY_ACTIONS = ("show", "goto", "select", "layer", "fit")
+RUN_ACTIONS = RUN_ACTIONS + chat_screens.RUN_ACTIONS     # A11 2차: 지식그래프 판단·AI 후보·원본 고르기(hazop/shell/chat_screens.py)
+DISPLAY_ACTIONS = ("show", "goto", "select", "layer", "fit", "kg.find")
 # 동작 표에는 있으나 아직 새 화면이 없는 동작(2차) -> 사람이 할 곳
 NOT_YET = {
     "register.exclude": "도면 패널에 '분석에서 빼기'가 생기면 잇는다",
-    "extract.suggest": "도면의 AI 후보 목록에서 사람이 한다",
-    "kg.algorithm": "지식그래프 화면이 생기면 잇는다",
-    "kg.rebuild": "지식그래프 화면이 생기면 잇는다",
+    "extract.suggest": "AI 후보는 AI 검토 패널의 'AI 검토 실행'으로 만든다(만든 후보의 수락·거절은 채팅으로 할 수 있다)",
+    "kg.algorithm": "지식그래프 패널에 알고리즘 실행이 생기면 잇는다",
+    "kg.rebuild": "지식그래프 패널에 다시 만들기가 생기면 잇는다",
     "ie.draft_rules": "⑥ 초기사건 패널의 '규칙 초안'에서 사람이 한다",
     "ie.reset": "⑥ 초기사건 패널에서 사람이 한다",
 }
-PANELS = {"drawings": "도면", "nodes": "구간", "results": "분석 결과", "ie": "초기사건", "settings": "설정"}
+PANELS = {"drawings": "도면", "nodes": "구간", "results": "분석 결과", "ie": "초기사건", "settings": "설정", "kg": "지식그래프",
+          "aireview": "AI 검토", "actionlog": "AI 실행 기록"}
 PANEL_ALIASES = {"①": "drawings", "②": "drawings", "도면": "drawings", "register": "drawings", "extract": "drawings",
                  "④": "nodes", "구간": "nodes", "검토구간": "nodes", "⑤": "results", "결과": "results", "분석 결과": "results",
-                 "analysis": "results", "⑥": "ie", "초기사건": "ie", "설정": "settings"}
+                 "analysis": "results", "⑥": "ie", "초기사건": "ie", "설정": "settings", "③": "kg", "지식그래프": "kg",
+                 "knowledge_graph": "kg", "ai검토": "aireview", "AI 검토": "aireview", "AI 후보": "aireview", "실행 기록": "actionlog",
+                 "AI 실행 기록": "actionlog", "log": "actionlog"}
 LAYERS = {"symbol": "symbol", "symbols": "symbol", "기호": "symbol", "pipe": "pipe", "pipes": "pipe", "배관": "pipe",
           "tag": "tag", "tags": "tag", "태그": "tag", "글자": "tag"}
 LAYER_NAMES = {"symbol": "기호", "pipe": "배관", "tag": "태그"}
@@ -122,12 +127,18 @@ class ChatActions:
             if len(item.args.get("cell_ids") or []) > 1:
                 return "칸은 한 번에 하나만 다시 분석합니다."
             return None
-        return {"analysis.run": analysis}
+        out = {"analysis.run": analysis}
+        if self._engine is not None:
+            out.update(chat_screens.checks(self._engine))
+        return out
 
     def _detail_fns(self):
         """확인 상자 줄(규격 §4.2): 분석 실행은 호출 수 어림, 다시 추출은 다시 얹을 사람 수정 수와 풀리는 쪽 확정."""
-        return {"analysis.run": lambda item, snap: analysis_details(item, snap),
-                "register.reextract": lambda item, snap: reextract_details(snap.registrations.get(item.args["registration_id"]) or {})}
+        out = {"analysis.run": lambda item, snap: analysis_details(item, snap),
+               "register.reextract": lambda item, snap: reextract_details(snap.registrations.get(item.args["registration_id"]) or {})}
+        if self._engine is not None:
+            out.update(chat_screens.details(self._engine))
+        return out
 
     def _not_yet(self):
         """2차 동작과, 엔진이 없어 이을 수 없는 실행 동작 -> 사람이 할 곳."""
@@ -148,6 +159,7 @@ class ChatActions:
             self.runner = RunExecutors(self._engine, self._pg_fn, lambda: self._registrations(self._project_fn()),
                                        record=self._record_outcome)
             out.update(self.runner.table())
+            out.update(chat_screens.executors(self._engine))
         return out
 
     def read_state(self):
@@ -213,12 +225,28 @@ class ChatActions:
         out = []
         for it in items:
             try:
+                kg = self._kg_display(it)
+                if kg is not None:
+                    out.append(kg)
+                    continue
                 out.append(display_item(it.action, it.args or {}, pg, names, self._node_ids))
             except Exception:  # noqa: BLE001 - 하나가 깨져도 나머지는 보인다
                 LOG.exception("표시 동작을 풀지 못함")
                 out.append({"op": "none", "ok": False, "text": "보이지 못했습니다."})
         self._emit("chat.display", {"answer_id": answer_id, "items": out})
         return out
+
+    def _kg_display(self, it):
+        """지식그래프 찾기(kg.find)와 goto kg(+id): 엔진이 kg.open 사건을 보내 패널이 열리고 노드를 고른다. 해당하지 않으면 None."""
+        args = it.args or {}
+        if it.action == "kg.find":
+            if self._engine is None:
+                return {"op": "none", "ok": False, "text": "이 창에서는 지식그래프를 열 수 없습니다."}
+            return chat_screens.kg_display(self._engine, args.get("text"))
+        target = str(args.get("target") or "").strip()
+        if it.action == "goto" and (PANEL_ALIASES.get(target) == "kg" or target.lower() in ("kg", "③")) and args.get("id") and self._engine is not None:
+            return chat_screens.kg_display(self._engine, args.get("id"))
+        return None
 
     def _node_ids(self):
         from hazop.study import nodes as sn
@@ -448,11 +476,13 @@ TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정",
           "analysis.run": "AI 분석 실행", "results.set_status": "결과 판정", "results.edit": "결과 항목 고치기",
           "export.excel": "Excel로 내보내기", "export.ie_bundle": "초기사건 인계 묶음 내보내기", "register.extract": "추출",
           "register.reextract": "다시 추출", "sheet.confirm": "도면 쪽 확정", "dexpi.export": "DEXPI로 내보내기",
+          "kg.judge": "잠재 후보 판단", "aireview.accept": "AI 후보 수락", "aireview.reject": "AI 후보 거절",
+          "aireview.revert": "AI 후보 되돌리기", "aireview.accept_bulk": "AI 후보 묶음 수락", "sources.choose": "원본 형식 고르기",
           # 아직 잇지 않았거나 채팅으로 하지 않는 동작(거절 줄의 이름)
           "register.exclude": "분석에서 빼기", "extract.suggest": "추출 값 후보", "kg.algorithm": "지식그래프 알고리즘",
           "kg.rebuild": "지식그래프 다시 만들기", "ie.draft_rules": "초기사건 규칙 초안", "ie.reset": "초기사건 새로 시작",
-          "kg.judge": "지식그래프 판단", "titleblock.confirm": "표제란 확정", "ie.edit": "초기사건 편집", "drawing.edit": "도면 고치기",
-          "extract.accept": "AI 후보 수락", "extract.edit": "추출 편집", "nodes.unlock": "잠금 풀기", "sheet.compare": "원본과 견줌",
+          "titleblock.confirm": "표제란 확정", "ie.edit": "초기사건 편집", "drawing.edit": "도면 고치기",
+          "extract.edit": "추출 편집", "nodes.unlock": "잠금 풀기", "sheet.compare": "원본과 견줌",
           "settings.change": "설정 바꾸기", "settings.api_key": "API 키", "settings.work_root": "작업 루트", "settings.reviewer": "검토자 이름",
           "files.delete": "파일 지우기"}
 
@@ -809,12 +839,14 @@ class RunExecutors:
     def excel(self, args, call):
         from hazop.shell import api_results
         proxy = _AutoSave(self.engine, self._exports())
-        out = api_results._export_excel(proxy, {})
+        scope = args.get("scope") or "all"
+        out = api_results._export_excel(proxy, {"scope": scope, "node_ids": list(args.get("node_ids") or []) or None})
         if out.get("cancelled"):
             return _refused("저장하지 못했습니다.")
         rows = out.get("rows")
         count = " · 행 %d개" % rows if isinstance(rows, int) else ""
-        return _ok("Excel로 내보냈습니다: %s%s (작업 루트의 output/exports)." % (out.get("path"), count))
+        label = {"all": "전체", "approved": "승인 항목만", "nodes": "고른 구간 %s" % ", ".join(args.get("node_ids") or [])}.get(scope, scope)
+        return _ok("Excel로 내보냈습니다(%s): %s%s (작업 루트의 output/exports)." % (label, out.get("path"), count))
 
     def ie_bundle(self, args, call):
         from hazop.shell import api_results
@@ -971,11 +1003,9 @@ def display_item(action, args, pg, names, node_ids_fn=lambda: set()):
             return {"op": "none", "ok": False, "text": "모르는 층입니다(기호·배관·태그 가운데 하나)."}
         on = args.get("on") if isinstance(args.get("on"), bool) else True
         return {"op": "layer", "ok": True, "layer": layer, "on": on,
-                "text": "%s 층을 %s." % (LAYER_NAMES[layer], "켰습니다" if on else "껐습니다")}
+                "text": "%s 층을 %s. 지금은 도면에서 누르고 고르는 대상에만 반영되고, 그림은 그대로 보입니다." % (LAYER_NAMES[layer], "켰습니다" if on else "껐습니다")}
     if action == "goto":
         raw = str(args.get("target") or "").strip()
-        if raw.lower() in ("③", "kg", "knowledge_graph", "지식그래프"):
-            return {"op": "none", "ok": False, "text": "지식그래프 화면은 아직 없습니다."}
         panel = raw.lower() if raw.lower() in PANELS else PANEL_ALIASES.get(raw)
         if panel is None:
             return {"op": "none", "ok": False, "text": "갈 곳을 알 수 없습니다: %s" % _short(raw)}
@@ -989,6 +1019,11 @@ def display_item(action, args, pg, names, node_ids_fn=lambda: set()):
             if ident not in node_ids_fn():
                 return {"op": "none", "ok": False, "text": "구간을 찾지 못했습니다: %s" % _short(ident)}
             return {"op": "panel", "ok": True, "panel": "nodes", "node_id": ident, "text": "구간 %s을(를) 열었습니다." % ident}
+        if panel == "aireview" and ident:
+            sheet = _sheet_id(ident, names)
+            if sheet is None:
+                return {"op": "none", "ok": False, "text": "도면을 찾지 못했습니다: %s" % _short(ident)}
+            return {"op": "panel", "ok": True, "panel": "aireview", "sheet": sheet, "text": "AI 검토에서 도면 %s의 후보를 열었습니다." % names.get(sheet, sheet)}
         if panel == "results" and ident and "/" in ident:
             node_id, dev = ident.split("/")[:2]
             return {"op": "panel", "ok": True, "panel": "results", "cell": [node_id, dev],

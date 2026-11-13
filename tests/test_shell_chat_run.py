@@ -112,7 +112,7 @@ class DisplayTest(RunBase):
         self.assertEqual((items[1]["op"], items[1]["panel"]), ("panel", "results"))
         self.assertEqual(items[2]["cell"], ["S1", "D01"])
         self.assertEqual((items[3]["op"], items[3]["sheet"]), ("open", "graph-SNP-M-102"))
-        self.assertEqual((items[4]["op"], items[4]["text"]), ("none", "지식그래프 화면은 아직 없습니다."))
+        self.assertEqual((items[4]["op"], items[4]["panel"]), ("panel", "kg"))
         self.assertEqual(items[5]["op"], "none")
         self.assertEqual((items[6]["op"], items[6]["marks"]["graph-SNP-M-101"][0]["dim_others"]), ("show", False))
         self.assertEqual((items[7]["op"], items[7]["layer"], items[7]["on"]), ("layer", "pipe", False))
@@ -327,8 +327,7 @@ class ReextractTest(RunBase):
 class NotYetTest(RunBase):
     def test_phase_two_actions_answer_not_yet(self):
         for name, args in (("kg.rebuild", {}), ("ie.reset", {}), ("register.exclude", {"registration_id": "M-101"}),
-                           ("kg.judge", {}), ("titleblock.confirm", {}), ("drawing.edit", {}), ("extract.accept", {}),
-                           ("ie.edit", {})):
+                           ("titleblock.confirm", {}), ("drawing.edit", {}), ("ie.edit", {}), ("kg.algorithm", {"name": "x"})):
             with self.subTest(name):
                 item = self.one(name, **args)
                 self.assertEqual(item["status"], "rejected")
