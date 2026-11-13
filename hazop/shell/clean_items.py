@@ -104,6 +104,9 @@ def build(extraction, name=None):
         orient = orient or {"rot": 0, "flip_h": False, "flip_v": False, "basis": "none"}
         review = "ai_candidate" if lid in pending else ("human" if n.get("human_edit") else ("ai_accepted" if n.get("origin") == "ai" else "script"))
         items[lid] = {"orient": orient, "review": review}
+        if n.get("kind") == "continuation":      # 다른 도면 연결: 오각형 안에 원본 글자 그대로(최대 두 줄)
+            raw = str(n.get("label_text") or n.get("tag") or "")
+            items[lid]["label"] = [ln.strip()[:40] for ln in raw.splitlines() if ln.strip()][:2]
         cls = n.get("classification")
         if cls not in (None, "classified") or not n.get("kind"):
             unconfirmed.append({"id": lid, "reason": "unknown_symbol"})

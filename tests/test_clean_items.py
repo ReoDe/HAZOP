@@ -164,6 +164,11 @@ class RuleTest(unittest.TestCase):
         self.assertEqual((b["items"]["h"]["review"], b["items"]["g"]["review"]), ("human", "ai_accepted"))
         self.assertEqual(b["text_items"], [{"text": "NOTE 1", "bbox": [5, 5, 45, 15]}])
 
+    def test_continuation_keeps_its_original_text_up_to_two_lines(self):
+        n = node("c", "continuation", 0, 0, 120, 34, tag="", cat="piping_element")
+        n["label_text"] = "\n".join(["TO SNP-M-102", "RC-L010 SURGE LINE", "세 번째 줄"])
+        self.assertEqual(clean_items.build(extraction([n], []))["items"]["c"]["label"], ["TO SNP-M-102", "RC-L010 SURGE LINE"])
+
     def test_offset_is_subtracted_like_the_original_items(self):
         e = extraction([node("v", "manual_valve", 119, 119, 30, 50)], [])
         e["coordinate_system"]["svg_alignment"]["offset"] = [19, 19]

@@ -151,9 +151,11 @@ export function buildBase(ctx) {
     }
     // 태그: 계기는 원 안 두 줄, 나머지는 label_bbox 왼쪽 위, 없으면 기호 아래 가운데
     const category = rec.category;
-    if (rec.tag) {
+    if (kind === "continuation" && ex.label && ex.label.length) {
+      ex.label.forEach((t, i) => labels.push(textEl((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2 + (ex.label.length === 1 ? 2 : i ? 6 : -2), t, { anchor: "middle", size: 5.5 })));
+    } else if (rec.tag) {
       const color = ai ? AI_LINE : INK;
-      if (category === "instrument" && !rec.labelRect) {
+      if (category === "instrument") {
         const lines = splitTag(rec.tag), cy = (bb[1] + bb[3]) / 2, cx = (bb[0] + bb[2]) / 2;
         lines.forEach((t, i) => labels.push(textEl(cx, cy + (lines.length === 1 ? 3 : i === 0 ? -1 : 8), t, { anchor: "middle", size: 6.5, fill: color })));
       } else if (rec.labelRect) {
