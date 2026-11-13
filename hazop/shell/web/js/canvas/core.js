@@ -310,6 +310,7 @@ export class SheetCore {
     if (p.overlays && p.overlays !== this._ovProp) { this._ovProp = p.overlays; this.overlays = p.overlays; this._leftBuilt = false; while (this.leftG.firstChild) this.leftG.removeChild(this.leftG.firstChild); marksDirty = true; }
     if (p.view && p.view !== this.viewWanted) { this.viewWanted = p.view === "clean" ? "clean" : "orig"; marksDirty = true; }
     if (marksDirty) this._applyViewMode();
+    if (p.links !== undefined && p.links !== this._linksProp) { this._linksProp = p.links; this._links = Array.isArray(p.links) ? p.links : null; this._renderChips(); }
     if (p.layers && p.layers !== this._layersProp) {
       this._layersProp = p.layers;
       this.layers = Object.assign({ symbol: true, pipe: true, tag: true }, p.layers);
@@ -501,10 +502,17 @@ export class SheetCore {
       return;
     }
     if (!hit) return;
+    const lk = this.cb.onLinkClick && hit.layer === "symbol" ? this._linkOf(hit.id) : null;       // 다른 도면 연결(오각형) 자체를 눌러도 맞은편으로 간다
+    if (lk && lk.status === "linked") { this.cb.onLinkClick(lk); return; }
     const reason = this.cb.onUnconfirmedClick ? this._unconfirmedAt(hit.id) : null;
     if (reason) { const rr = this.index.rectOf(hit.id); this.cb.onUnconfirmedClick({ id: hit.id, reason, fragment: this.fragmentOf(hit.id), rect: rr ? this._toScreenRect(rr) : null }); }
     const rect = this.index.rectOf(hit.id), rec = (this.index.byId.get(hit.id) || [])[0];
     if (this.cb.onItemClick) this.cb.onItemClick({ id: hit.id, kind: rec && rec.kind, tag: rec && rec.tag, rect: rect ? this._toScreenRect(rect) : null, via: "click" });
+  }
+
+  _linkOf(id) {
+    const all = this._links && this._links.length ? this._links : (this.data && Array.isArray(this.data.links) ? this.data.links : []);
+    return all.find((l) => l && l.id === id) || null;
   }
 
   _dbl(e) {
@@ -655,9 +663,10 @@ export class SheetCore {
   _renderChips() {
     const box = this.chipsDiv;
     box.textContent = "";
-    if (!this.data || !Array.isArray(this.data.links)) return;
+    const all = this._links && this._links.length ? this._links : (this.data && Array.isArray(this.data.links) ? this.data.links : null);   // 도면 자료의 links 또는 구간 화면이 주는 links
+    if (!this.data || !all) return;
     const rows = new Map();
-    for (const link of this.data.links) {
+    for (const link of all) {
       if (!link || typeof link.id !== "string") continue;
       const rect = this.index.rectOf(link.id);
       if (!rect) continue;

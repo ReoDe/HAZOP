@@ -130,7 +130,7 @@ function Matrix({ s }) {
     label=${"구간×편차 행렬 " + rows.length + "행 " + cols.length + "열"}
     active=${ai >= 0 && ci >= 0 ? { r: ai, c: ci } : null} onActive=${open} onOpen=${open}
     corner=${html`<span class="muted small">구간 \\ 편차</span>`}
-    renderRowHead=${(r) => html`<span class="vg-rh-in"><b>${rows[r].node_id}</b> ${rows[r].name || ""}</span>`}
+    renderRowHead=${(r) => html`<span class="vg-rh-in"><b>${rows[r].node_id}</b> ${rows[r].name || ""}${rows[r].range ? html` <span class="muted small">${rows[r].range}${rows[r].spans ? " ⇄" : ""}</span>` : null}</span>`}
     renderColHead=${(c) => html`<span class="vg-ch-in" title=${withEn(cols[c].label, cols[c].label_en)} aria-label=${withEn(cols[c].label, cols[c].label_en)}>${cols[c].label}</span>`}
     renderCell=${(r, c) => {
       const cell = (s.matrix[rows[r].node_id] || {})[cols[c].deviation_id];

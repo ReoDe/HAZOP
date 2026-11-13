@@ -3,6 +3,7 @@
 import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
 import { createStore, store as shell } from "../store.js";
 import { cmd, on, onChanged, read } from "../bridge.js";
+import { openSheet as openSheetVia } from "./results_state.js";
 import { blankCard, errorText, targetsOf } from "./nodes_logic.js";
 
 const EMPTY_LIST = {project_id: null,  available: false, set_rev: 0, nodes: [], batches: [], outside: { count: 0, total: 0 }, stale: false, read_only: null, pending_ai: 0 };
@@ -93,6 +94,30 @@ export function zoomToIds(ids) {
 }
 
 export function openPanel() { shell.set({ panel: "nodes" }); }
+
+/** 다른 도면으로 가서 그 도면의 구간을 읽고, ids(맞은편 연결·구간)로 확대한다. 도면을 바꾸는 길은 분석 결과의 '도면에서 보기'와 같다. */
+export async function goToSheet(graphId, { ids = null, node = null } = {}) {
+  if (!graphId) return false;
+  if (shell.get().sheet !== graphId) {
+    if (!openSheetVia(graphId)) return false;
+  }
+  await loadSheet(graphId);
+  const v = nodes.get().sheetView;
+  const target = ids || (node && v && v.segments.find((s) => s.node_id === node) ? v.segments.find((s) => s.node_id === node).ids : null);
+  if (target && target.length) {
+    const go = () => shell.set((s) => ({ command: { seq: s.command.seq + 1, type: "zoomTo", ids: target.slice(0, 400), pad: ids ? 0.6 : 0.1 } }));
+    go();
+    setTimeout(go, 500);                      // 새 도면의 그림이 자리 잡은 뒤에도 한 번 더(처음 명령이 도면 자료보다 빠를 수 있다)
+  }
+  return true;
+}
+
+/** 다른 도면 연결(오각형)을 누름: 이어진 연결이면 맞은편 도면의 맞은편 연결로 간다. */
+export function followLink(link) {
+  if (!link || link.status !== "linked" || !link.peer_graph_id) return false;
+  goToSheet(link.peer_graph_id, { ids: link.peer_id ? [link.peer_id] : null });
+  return true;
+}
 
 export function dismissError() { nodes.set({ error: null, needArchive: null }); }
 

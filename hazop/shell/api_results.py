@@ -178,7 +178,10 @@ def summary(engine):
     except (OSError, ValueError) as exc:
         return dict(base, empty=True, nodes=[], deviations=[], matrix={}, ver="none", kpi=_kpi(None),
                     reason="분석 결과 파일을 읽을 수 없습니다(%s)." % str(exc)[:120])
-    rows = [{"node_id": n["node_id"], "name": n.get("name"), "state": nodes.node_state(n), "rev": n.get("rev") or 1} for n in active]
+    from hazop.shell import api_nodes
+    info = api_nodes._span_info(ns, pg)
+    rows = [{"node_id": n["node_id"], "name": n.get("name"), "state": nodes.node_state(n), "rev": n.get("rev") or 1,
+             "range": (info.get(n["node_id"]) or {}).get("range"), "spans": bool((info.get(n["node_id"]) or {}).get("spans"))} for n in active]
     en = deviation_names_en()
     return dict(base, empty=False, nodes=rows, deviations=[{"deviation_id": d["deviation_id"], "parameter": d["parameter"],
                                                              "guideword": d["guideword"], "label": d.get("label"),

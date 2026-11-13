@@ -74,7 +74,26 @@ def _owners(ns):
     return owners
 
 
-def _row(n, fwd, owners):
+def _span_info(ns, pg):
+    """구간마다 도면 범위 표기: {node_id: {range, drawings, spans, display_name, by_drawing, continuations}}. hazop.study.span.annotate가 만든 값을 그대로 쓴다
+    (이전 화면이 쓰던 '[101 → 102]'와 같은 표기·같은 흐름 순서)."""
+    from hazop.study import span
+    out = {}
+    try:
+        ann = span.annotate(ns, pg)
+    except Exception:  # noqa: BLE001 - 표기를 못 만들어도 구간 목록은 보인다
+        return out
+    for n in ann["nodes"]:
+        short = n.get("drawings_short") or []
+        out[n["node_id"]] = {
+            "range": "[%s]" % " → ".join(short) if short else None, "drawings": short, "spans": bool(n.get("spans_drawings")),
+            "display_name": n.get("display_name"), "by_drawing": n.get("members_by_drawing") or {}, "count": n.get("member_count") or 0,
+            "continuations": [{"entity_id": c["entity_id"], "drawing": c.get("drawing"), "to_drawing": c.get("to_drawing"), "to_node_ids": c.get("to_node_ids") or [],
+                               "chip": span.continuation_chip(n["node_id"], c)} for c in n.get("continuations") or []]}
+    return out
+
+
+def _row(n, fwd, owners, info=None):
     sheets = collections.OrderedDict()
     shared = collections.Counter()
     for m in n["members"]:
@@ -91,7 +110,7 @@ def _row(n, fwd, owners):
             "count": len(n["members"]), "sheets": [{"graph_id": g, "n": c} for g, c in sheets.items()],
             "overlaps": [{"node_id": o, "shared": c} for o, c in sorted(shared.items(), key=lambda kv: (-kv[1], kv[0]))],
             "confirmed": n.get("confirmed"), "locked": n.get("locked"),
-            "screen": (n.get("screen") or {}).get("status")}
+            "screen": (n.get("screen") or {}).get("status"), "span": (info or {}).get(n["node_id"])}
 
 
 def _batch_rows(ns):
@@ -113,7 +132,8 @@ def summary(engine):
     ns, legacy = _peek(pg)
     fwd, _ = chatview._locals(pg)
     owners = _owners(ns)
-    rows = [_row(n, fwd, owners) for n in ns["nodes"]]
+    info = _span_info(ns, pg)
+    rows = [_row(n, fwd, owners, info) for n in ns["nodes"]]
     total = len(fwd)
     covered = sum(1 for m in fwd if m in owners)
     return {"available": True, "set_rev": ns.get("set_rev") or 0, "graph_version": ns.get("graph_version"),
@@ -138,7 +158,37 @@ def sheet_view(engine, graph_id):
         if ids:
             segments.append({"node_id": n["node_id"], "name": n.get("name"), "state": nodes.node_state(n), "ids": ids})
     outside = [local for ent, (sheet, local) in fwd.items() if sheet == graph_id and ent not in owners]
-    return {"graph_id": graph_id, "set_rev": ns.get("set_rev") or 0, "segments": segments, "outside_ids": outside}
+    return {"graph_id": graph_id, "set_rev": ns.get("set_rev") or 0, "segments": segments, "outside_ids": outside, "links": sheet_links(pg, graph_id, ns)}
+
+
+def sheet_links(pg, graph_id, ns):
+    """이 도면 위 다른 도면 연결(오각형) 목록: {id(도면 안 local_id), status, label(맞은편 도면 번호), peer_graph_id, peer_id(맞은편 local_id), reason, nodes(이 연결이 든 구간 ID)}.
+    이어지지 않은 연결은 사유와 함께 싣는다(이전 화면의 '미연결' 표시와 같다)."""
+    from hazop.graph import project
+    fwd, _ = chatview._locals(pg)
+    nums = {s["graph_id"]: s.get("drawing_number") for s in pg.get("sheets") or []}
+    owners = _owners(ns)
+    reasons = {}
+    for l in pg.get("sheet_links") or []:
+        if l.get("status") != "linked":
+            for side in ("from", "to"):
+                ref = l.get(side) or {}
+                if ref.get("entity_id"):
+                    reasons[project.nid(ref["graph_id"], ref["entity_id"])] = l.get("detail") or l.get("reason")
+    out = []
+    for n in pg.get("nodes") or []:
+        if n.get("sheet") != graph_id or n.get("kind") != "continuation" or not n.get("local_id"):
+            continue
+        link = n.get("sheet_link") or {}
+        peer = link.get("peer")
+        hit = fwd.get(peer) if peer else None
+        row = {"id": n["local_id"], "status": link.get("status") or "unlinked", "nodes": owners.get(n["entity_id"], [])}
+        if link.get("status") == "linked" and hit:
+            row.update(peer_graph_id=hit[0], peer_id=hit[1], label=nums.get(hit[0]) or hit[0].replace("graph-", "", 1))
+        else:
+            row["reason"] = reasons.get(n["entity_id"]) or link.get("reason")
+        out.append(row)
+    return sorted(out, key=lambda r: r["id"])
 
 
 def _describe(pg):
@@ -157,7 +207,7 @@ def detail(engine, node_id):
     fwd, _ = chatview._locals(pg)
     owners = _owners(ns)
     info = _describe(pg)
-    row = _row(node, fwd, owners)
+    row = _row(node, fwd, owners, _span_info(ns, pg))
     majors, kinds = [], collections.Counter()
     for m in node["members"]:
         d = info.get(m) or {}

@@ -248,6 +248,46 @@ class ReadTest(Env):
         self.assertEqual(other["segments"], [])
         self.assertEqual(len(other["outside_ids"]), len(self.by_sheet[S102]))
 
+    def test_rows_carry_the_old_screens_range_text_and_span_flag(self):
+        self.create("한 장", 0, 5)
+        self.create("두 장", 0, 50)
+        self.assertTrue(self.call("add_members", {"node_id": "S2", "sheet": S102, "ids": self.local(S102, 0, 50)})["ok"])
+        rows = {n["node_id"]: n for n in api_nodes.summary(self.engine)["nodes"]}
+        self.assertEqual((rows["S1"]["span"]["range"], rows["S1"]["span"]["spans"]), ("[101]", False))
+        self.assertEqual((rows["S2"]["span"]["range"], rows["S2"]["span"]["spans"], rows["S2"]["span"]["drawings"]), ("[101 → 102]", True, ["101", "102"]))
+        self.assertEqual(rows["S2"]["span"]["display_name"], "S2 두 장 [101 → 102]")
+        self.assertEqual(rows["S2"]["span"]["by_drawing"], {"SNP-M-101": 50, "SNP-M-102": 30})
+        self.assertEqual(api_nodes.detail(self.engine, "S2")["span"]["range"], "[101 → 102]")
+
+    def test_sheet_view_lists_the_continuation_pentagons_with_their_counterpart(self):
+        self.create("가", 0, 40)
+        v101 = api_nodes.sheet_view(self.engine, S101)["links"]
+        to102 = [l for l in v101 if l.get("peer_graph_id") == S102]
+        self.assertTrue(to102 and all(l["status"] == "linked" and l["label"] == "SNP-M-102" for l in to102))
+        v102 = {l["id"]: l for l in api_nodes.sheet_view(self.engine, S102)["links"]}
+        for l in to102:                      # 맞은편은 서로를 가리킨다
+            self.assertEqual(v102[l["peer_id"]]["peer_id"], l["id"])
+            self.assertEqual(v102[l["peer_id"]]["peer_graph_id"], S101)
+        self.assertTrue(all(isinstance(l["nodes"], list) for l in v101))
+
+    def test_unlinked_pentagon_carries_its_reason(self):
+        import copy as _c
+        from hazop.graph import project
+        pg = _c.deepcopy(self.pg)
+        link = next(l for l in pg["sheet_links"] if l["status"] == "linked")
+        victim = link["to"]
+        link["status"], link["reason"], link["detail"] = "unlinked", "no_counterpart", "짝 없음"
+        local = None
+        for n in pg["nodes"]:
+            if n["entity_id"] == project.nid(victim["graph_id"], victim["entity_id"]):
+                n["sheet_link"] = {"link_id": link["link_id"], "status": "unlinked", "peer": None}
+                local = n["local_id"]
+        self.pg = pg
+        links = {l["id"]: l for l in api_nodes.sheet_view(self.engine, victim["graph_id"])["links"]}
+        self.assertEqual(links[local]["status"], "unlinked")
+        self.assertEqual(links[local].get("reason"), "짝 없음")
+        self.assertNotIn("peer_graph_id", links[local])
+
     def test_summary_outside_count_and_empty_state(self):
         s = api_nodes.summary(self.engine)
         self.assertEqual((s["set_rev"], s["nodes"], s["batches"], s["stale"]), (0, [], [], False))

@@ -26,8 +26,14 @@ export function sheetSegments(sheetView, list, focus) {
 }
 
 /** 도면 범위 글: 도면 번호와 그 도면의 구성요소 수. drawings는 도면 목록(graph_id, drawing_number, name). */
+export function sheetName(g, drawings) {
+  const d = (drawings || []).find((x) => x.graph_id === g);
+  return (d && (d.drawing_number || d.name)) || g.replace(/^graph-/, "");
+}
+
 export function rangeText(n, drawings) {
-  const name = (g) => { const d = drawings.find((x) => x.graph_id === g); return (d && (d.drawing_number || d.name)) || g.replace(/^graph-/, ""); };
+  if (n.span && n.span.range) return n.span.range;               // 엔진이 만든 이전 화면과 같은 표기: "[101 → 102]"(흐름 순서, 공통 접두 뺌)
+  const name = (g) => sheetName(g, drawings);
   const sh = n.sheets || [];
   if (!sh.length) return "도면 없음";
   if (sh.length === 1) return name(sh[0].graph_id);

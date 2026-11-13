@@ -19,6 +19,7 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
   const focus = N.useNodes((s) => s.focus);
   const showOutside = N.useNodes((s) => s.showOutside);
   const segments = useMemo(() => (sheetView && sheetView.graph_id === sheet ? sheetSegments(sheetView, list, focus) : []), [sheetView, list, focus, sheet]);
+  const links = useMemo(() => (sheetView && sheetView.graph_id === sheet && Array.isArray(sheetView.links) ? sheetView.links : []), [sheetView, sheet]);
   const outside = useMemo(() => (showOutside && sheetView && sheetView.graph_id === sheet && sheetView.segments.length ? sheetView.outside_ids : []), [sheetView, showOutside, sheet]);
 
   useEffect(() => {
@@ -39,7 +40,8 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
 
   return {
     props: {
-      mode, selection, segments, outside,
+      mode, selection, segments, outside, links,
+      onLinkClick: (link) => N.followLink(link),
       onSelection: (d) => N.setSelection(d.selected, d.truncated),
       onSegmentClick: (d) => { N.focusNode(d.node_id); N.openPanel(); },
       onEsc: () => {

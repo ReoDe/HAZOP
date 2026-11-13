@@ -94,6 +94,8 @@ export async function loadTrace(query) {
 // ---------------------------------------------------------------- 도면에서 보기 · 돌아가기
 let openSheetFn = null;
 export function setOpenSheet(fn) { openSheetFn = fn; }
+/** 도면을 연다(다른 화면이 도면을 바꿀 때 같은 길을 쓰게). 길이 아직 잇지 않았으면 false. */
+export function openSheet(graphId) { if (!openSheetFn) return false; openSheetFn(graphId); return true; }
 
 /** 고른 칸의 구간을 도면에서 보인다: 패널을 닫고(위 막대에 '분석 결과로 돌아가기' 칩) 그 구간을 강조·확대한다. 구간의 구성요소가 놓인 도면이 지금 도면이 아니면 그 도면을 연다. */
 export async function viewOnSheet(nodeId) {

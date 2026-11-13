@@ -22,7 +22,9 @@ function resetEngine() {
       { node_id: "S1", name: "저온관 <b>RC-L003</b>", state: "applied", origin: "user", name_by: "user", rev: 2, basis: "x", batch_id: "B1", design_intent: { text: "냉각재를 보냄", by: "user" }, count: 6,
         sheets: [{ graph_id: "graph-A", n: 6 }], overlaps: [{ node_id: "S2", shared: 2 }], confirmed: null, locked: null, screen: null },
       { node_id: "S2", name: "교차관", state: "applied", origin: "ai", name_by: "ai", rev: 1, basis: "y", batch_id: "B2", design_intent: { text: "초안 의도", by: "ai" }, count: 5,
-        sheets: [{ graph_id: "graph-A", n: 3 }, { graph_id: "graph-B", n: 2 }], overlaps: [{ node_id: "S1", shared: 2 }], confirmed: null, locked: null, screen: null },
+        sheets: [{ graph_id: "graph-A", n: 3 }, { graph_id: "graph-B", n: 2 }], overlaps: [{ node_id: "S1", shared: 2 }], confirmed: null, locked: null, screen: null,
+        span: { range: "[101 → 102]", drawings: ["101", "102"], spans: true, display_name: "S2 교차관 [101 → 102]", by_drawing: { "SNP-M-101": 3, "SNP-M-102": 2 }, count: 5,
+          continuations: [{ entity_id: "e1", drawing: "SNP-M-101", to_drawing: "SNP-M-102", to_node_ids: ["S3"], chip: "S3 → SNP-M-102에서 계속" }] } },
       { node_id: "S3", name: "확정된 구간", state: "confirmed", origin: "user", name_by: "user", rev: 3, basis: "z", batch_id: "B1", design_intent: null, count: 2,
         sheets: [{ graph_id: "graph-B", n: 2 }], overlaps: [], confirmed: { by: "홍길동", at: "2026-11-13T02:00:00Z", rev: 3 }, locked: null, screen: null }] },
     sheet: { graph_id: "graph-A", set_rev: 4, segments: [{ node_id: "S1", name: "a", state: "applied", ids: ["n1", "n2"] }, { node_id: "S2", name: "b", state: "applied", ids: ["n2", "n3"] }], outside_ids: ["n4", "n5"] },
@@ -136,12 +138,61 @@ export const tests = [
     const rows = host.querySelectorAll(".nrow");
     assert.equal(rows.length, 2);                       // 이 도면(graph-A)의 S1·S2, S3은 graph-B
     const text = host.textContent;
-    assert(text.includes("AI 적용됨") && text.includes("겹침 1") && text.includes("SNP-M-101 외 1장") && text.includes("구간 밖 30"), text.slice(0, 300));
+    assert(text.includes("AI 적용됨") && text.includes("겹침 1") && text.includes("[101 → 102]") && text.includes("구간 밖 30"), text.slice(0, 300));
     assert(text.includes("<b>RC-L003</b>") && !host.querySelector(".nrow b b"), "이름의 태그가 HTML로 해석되지 않음");
     assert(text.includes("채팅이 만든 구간 1개가 아직 확인 전"), "AI 구간 안내");
     N.nodes.set({ scope: "all" });
     await tick();
     assert.equal(host.querySelectorAll(".nrow").length, 3);
+    host.remove();
+  } },
+  { name: "여러 도면 구간: 목록은 '[101 → 102]'와 ⇄, 상세는 도면별 칩·이어짐 칩, 칩을 누르면 그 도면을 열고 그 구간으로 확대", async run(assert) {
+    await setup();
+    N.nodes.set({ scope: "all" });
+    const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+    await tick();
+    const text = host.textContent;
+    assert(text.includes("[101 → 102]") && !text.includes("SNP-M-101 외 1장"), text.slice(0, 300));
+    assert.equal(host.querySelectorAll(".span-mark").length, 1);
+    N.focusNode("S2");
+    await tick();
+    const chips = [...host.querySelectorAll('[aria-label="도면별로 보기"] button')];
+    assert.equal(chips.map((c) => c.textContent.trim()), ["SNP-M-101 · 3", "SNP-M-102 · 2"]);
+    assert(host.textContent.includes("S3 → SNP-M-102에서 계속"), "이어짐 칩");
+    const opened = [];
+    const R = await import("../js/panels/results_state.js");
+    R.setOpenSheet((g) => { opened.push(g); store.set({ sheet: g }); });
+    const cmds = [];
+    const seq0 = store.get().command.seq;
+    chips[1].click();
+    await tick();
+    assert.equal(opened, ["graph-B"]);
+    assert(store.get().command.seq > seq0 && store.get().command.type === "zoomTo", "구간으로 확대 명령");
+    host.remove();
+  } },
+  { name: "다른 도면 연결: 이어진 연결을 따라가면 맞은편 도면을 열고 맞은편 연결로 확대, 미이어짐은 가지 않음", async run(assert) {
+    await setup();
+    const opened = [];
+    const R = await import("../js/panels/results_state.js");
+    R.setOpenSheet((g) => { opened.push(g); store.set({ sheet: g }); });
+    store.set({ sheet: "graph-A" });
+    assert.equal(N.followLink({ id: "c1", status: "unlinked", reason: "짝 없음" }), false);
+    assert.equal(N.followLink({ id: "c1", status: "linked", peer_graph_id: "graph-B", peer_id: "p9", label: "SNP-M-102" }), true);
+    await tick();
+    assert.equal(opened, ["graph-B"]);
+    const c = store.get().command;
+    assert(c.type === "zoomTo" && c.ids.join() === "p9", JSON.stringify(c));
+    let props = null;
+    engine.sheet = Object.assign({}, engine.sheet, { graph_id: "graph-A", links: [{ id: "c1", status: "linked", peer_graph_id: "graph-B", peer_id: "p9", label: "SNP-M-102" }] });
+    store.set({ sheet: "graph-A" });
+    await N.loadSheet("graph-A");
+    function Probe() { props = useNodeCanvas("graph-A").props; return html`<i></i>`; }
+    const host = mount(html`<${Probe} />`);
+    await tick();
+    assert.equal(props.links.map((l) => l.id), ["c1"]);
+    props.onLinkClick(props.links[0]);
+    await tick();
+    assert.equal(opened.length, 2);
     host.remove();
   } },
   { name: "구간 패널: 구간을 누르면 강조·상세, 확정 구간은 고치기가 막힘, AI 초안 표시", async run(assert) {
