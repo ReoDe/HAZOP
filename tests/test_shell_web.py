@@ -427,5 +427,77 @@ class WebUnitTest(ShellBase):
         p2.deleteLater()
 
 
+class CloseGuardTest(ShellBase):
+    """등록·추출이 도는 동안 창을 닫거나 '이전 화면 열기'를 하면 묻는다(멈추고 닫기 / 끝나면 닫기 / 계속 사용). 묻기 전에는 닫히지 않는다."""
+
+    def busy_job(self, win):
+        import threading
+        gate = threading.Event()
+        steps = []
+
+        def work(progress):
+            progress("등록 중", 1, 3)
+            gate.wait(20)
+            steps.append("after-gate")
+            progress("추출·그래프", 2, 3)      # 멈추라고 했으면 여기서 멈춘다
+            steps.append("extracted")
+            return {}
+        win.engine.start_job("x.drawio", work)
+        self.assertTrue(wait_for(lambda: bool(win.engine.running_jobs()), 5))
+        return gate, steps
+
+    def test_cancel_keeps_the_window_and_the_job(self):
+        win = self.window()
+        asked = []
+        win.confirm_busy = lambda n: asked.append(n) or "cancel"
+        gate, steps = self.busy_job(win)
+        self.assertFalse(win.close())
+        self.assertEqual(asked, [1])
+        self.assertTrue(win.isVisible())
+        self.assertEqual(len(win.engine.running_jobs()), 1)
+        r = win.engine.dispatch("app.open_classic", {})
+        self.assertEqual(r["data"], {"switched": False}, "이전 화면으로도 바뀌지 않는다")
+        self.assertFalse(win.classic_requested, "취소하면 이전 화면 요청을 거둔다")
+        self.assertEqual(asked, [1, 1])
+        gate.set()
+        self.assertTrue(win.engine.wait_jobs(15))
+
+    def test_wait_closes_when_the_job_finishes(self):
+        win = self.window()
+        win.confirm_busy = lambda n: "wait"
+        gate, steps = self.busy_job(win)
+        self.assertFalse(win.close())
+        self.assertTrue(win.isVisible())
+        gate.set()
+        self.assertTrue(wait_for(lambda: not win.isVisible(), 15), "작업이 끝나면 닫힌다")
+        self.assertEqual(steps, ["after-gate", "extracted"], "기다리면 작업은 끝까지 간다")
+
+    def test_stop_halts_at_the_next_progress_then_closes(self):
+        win = self.window()
+        win.confirm_busy = lambda n: "stop"
+        gate, steps = self.busy_job(win)
+        import threading
+        threading.Timer(0.3, gate.set).start()    # 지금 단계(대기)는 끝나고, 다음 진행 알림 자리에서 멈춘다
+        self.assertTrue(win.close())
+        self.assertFalse(win.isVisible())
+        self.assertEqual(steps, ["after-gate"], "다음 단계로 가지 않고 멈춘다")
+        self.assertEqual(win.engine.running_jobs(), [])
+
+    def test_classic_switch_waits_for_jobs_too(self):
+        win = self.window()
+        win.confirm_busy = lambda n: "wait"
+        gate, steps = self.busy_job(win)
+        r = win.engine.dispatch("app.open_classic", {})
+        self.assertEqual(r["data"], {"switched": False})
+        self.assertTrue(win.classic_requested, "끝나면 닫기를 골랐으니 요청은 남는다")
+        gate.set()
+        self.assertTrue(wait_for(lambda: not win.isVisible(), 15))
+
+    def test_no_jobs_closes_without_asking(self):
+        win = self.window()
+        win.confirm_busy = lambda n: self.fail("작업이 없으면 묻지 않는다")
+        self.assertTrue(win.close())
+
+
 if __name__ == "__main__":
     unittest.main()

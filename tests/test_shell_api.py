@@ -569,5 +569,51 @@ class ChatRulesTest(ChatBase):
         self.assertFalse(e.dispatch("chat.ask", {"text": "또"})["data"]["accepted"])
 
 
+class JobStopTest(EngineBase):
+    """창을 닫거나 화면을 바꾸기 전에 도는 작업을 세고(running_jobs), 멈추라고 하면(stop_jobs) 진행 알림 자리에서 멈춘다."""
+
+    def threaded(self):
+        self.events = Events()
+        settings = os.path.join(tempfile.mkdtemp(dir=self.tmp), "settings.json")
+        e = api.Engine(settings_path=settings, emit=self.events)
+        self.idle = []
+        e.hooks["jobs_idle"] = lambda: self.idle.append(1)
+        return e
+
+    def test_running_jobs_stop_at_the_next_progress_and_report_idle(self):
+        import threading
+        e = self.threaded()
+        started, go = threading.Event(), threading.Event()
+        after = []
+
+        def work(progress):
+            progress("1단계", 1, 3)
+            started.set()
+            go.wait(10)
+            progress("2단계", 2, 3)      # 멈추라고 했으면 여기서 JobStopped
+            after.append("not reached")
+            return {}
+        job = e.start_job("a.drawio", work)
+        self.assertTrue(started.wait(10))
+        self.assertEqual(e.running_jobs(), [job])
+        e.stop_jobs()
+        go.set()
+        self.assertTrue(e.wait_jobs(10))
+        self.assertEqual(e.running_jobs(), [])
+        self.assertEqual(after, [])
+        failed = self.events.of("job.failed")
+        self.assertEqual((failed[0]["id"], failed[0].get("stopped")), (job, True), failed)
+        self.assertEqual(self.idle, [1], "마지막 작업이 끝나면 한 번 알린다")
+        # 멈춤 표시는 다음 작업에 남지 않는다
+        job2 = e.start_job("b.drawio", lambda progress: progress("ok", 1, 1) or {"done": True})
+        self.assertTrue(e.wait_jobs(10))
+        self.assertTrue([d for d in self.events.of("job.done") if d["id"] == job2], self.events.items)
+
+    def test_open_classic_reports_whether_the_window_switched(self):
+        e = self.threaded()
+        e.hooks["open_classic"] = lambda: False
+        self.assertEqual(e.dispatch("app.open_classic", {}), {"ok": True, "data": {"switched": False}})
+
+
 if __name__ == "__main__":
     unittest.main()

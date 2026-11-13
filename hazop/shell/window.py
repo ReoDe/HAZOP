@@ -16,7 +16,7 @@ from PySide6.QtCore import QEvent, QObject, QUrl, Qt, Signal, Slot
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEngineScript, QWebEngineSettings, QWebEngineUrlRequestInterceptor
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWidgets import QFileDialog, QMainWindow
+from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox
 
 from hazop import paths
 from hazop.app import icons, webview
@@ -209,6 +209,8 @@ class AiAdapter:
 class ShellWindow(QMainWindow):
     """새 화면의 창. 설정 파일 경로를 받아 엔진·연결·채팅을 만들고 웹 화면을 연다."""
 
+    jobs_idle = Signal()   # 작업 스레드에서 마지막 작업이 끝났을 때(큐 연결로 화면 스레드가 받는다)
+
     def __init__(self, settings_path=None, ask_reviewer=True, debug=False, size=(1440, 860), session_factory=None, env_provider=None):
         super().__init__()
         from hazop.app import tokens
@@ -237,6 +239,11 @@ class ShellWindow(QMainWindow):
         self.engine.hooks["pick_files"] = self._pick_files
         self.engine.hooks["open_classic"] = self._open_classic
         self.engine.hooks["conn_guide"] = self._conn_guide
+        self.engine.hooks["jobs_idle"] = self.jobs_idle.emit
+        self.jobs_idle.connect(self._on_jobs_idle)
+        self.confirm_busy = self._ask_busy     # 시험이 모달 창 없이 답을 꽂는 자리: ("stop"|"wait"|"cancel") <- (작업 수)
+        self._close_when_idle = False
+        self._closing = False
         self.classic_requested = False
         self.view = ShellView(self.bridge, self.router, self)
         self.setCentralWidget(self.view)
@@ -286,8 +293,31 @@ class ShellWindow(QMainWindow):
         show_help(self, ACTION_HELP["install_help" if name == "install" else "terminal_login"])
 
     def _open_classic(self):
+        """이전 화면으로 바꾼다 -> 창이 닫히면 True. 등록·추출이 도는 중이면 closeEvent가 묻고, 닫히지 않으면 이전 화면 요청을 거둔다."""
         self.classic_requested = True
-        self.close()
+        ok = self.close()
+        if not ok and not self._close_when_idle:
+            self.classic_requested = False
+        return ok
+
+    def _ask_busy(self, n):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("작업이 진행 중입니다")
+        box.setText("도면 등록·추출 작업 %d개가 진행 중입니다." % n)
+        box.setInformativeText("멈추면 지금 단계가 끝나는 자리에서 멈춥니다(등록까지 끝난 도면은 목록에 남습니다).")
+        stop = box.addButton("멈추고 닫기", QMessageBox.DestructiveRole)
+        wait = box.addButton("끝나면 닫기", QMessageBox.AcceptRole)
+        keep = box.addButton("계속 사용", QMessageBox.RejectRole)
+        box.setDefaultButton(keep)
+        box.exec()
+        clicked = box.clickedButton()
+        return "stop" if clicked is stop else "wait" if clicked is wait else "cancel"
+
+    def _on_jobs_idle(self):
+        if self._close_when_idle and not self.engine.running_jobs():
+            self._close_when_idle = False
+            self.close()
 
     def _local_files(self, mime):
         out = []
@@ -328,6 +358,21 @@ class ShellWindow(QMainWindow):
             return {"ok": False}
 
     def closeEvent(self, event):  # noqa: N802
+        running = self.engine.running_jobs()
+        if running and not self._closing:
+            choice = self.confirm_busy(len(running))
+            if choice == "cancel":
+                event.ignore()
+                return
+            if choice == "stop":
+                self.engine.stop_jobs()
+                self.engine.wait_jobs(30)               # 추출 호출 하나가 길면 끝나기를 기다렸다 닫는다
+            if self.engine.running_jobs():
+                self._close_when_idle = True
+                self.bridge.send({"t": "event", "name": "app.notice", "data": {"text": "진행 중인 작업이 끝나면 창을 닫습니다."}})
+                event.ignore()
+                return
+        self._closing = True
         self.chat.shutdown()
         self.view.dispose()
         super().closeEvent(event)

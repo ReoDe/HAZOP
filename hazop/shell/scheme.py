@@ -235,6 +235,7 @@ def _handler_class():
             self.router = router
             self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="hazop-api")
             self._live = set()
+            self._down = False
             self._relay = _Relay(self)
             self._relay.done.connect(self._finish)
 
@@ -243,6 +244,9 @@ def _handler_class():
             method = bytes(job.requestMethod()).decode("ascii", "replace")
             if not Router.is_api(url):
                 self._reply(job, self.router.resolve(url, method))
+                return
+            if self._down:   # 창이 닫히는 중: 새 읽기는 받지 않는다
+                job.fail(QWebEngineUrlRequestJob.Error.RequestAborted)
                 return
             self._live.add(job)
             job.destroyed.connect(lambda *_a, j=job: self._live.discard(j))
@@ -270,6 +274,8 @@ def _handler_class():
             job.reply(QByteArray(resp.mime.encode("ascii")), buf)
 
         def shutdown(self):
+            self._down = True
+            self._live.clear()
             self._pool.shutdown(wait=False, cancel_futures=True)
 
     return AppSchemeHandler

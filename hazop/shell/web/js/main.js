@@ -84,6 +84,7 @@ function wireEvents() {
   on("conn.changed", (d) => store.set({ conn: d }));
   on("drop.hover", (d) => store.set({ dropOver: !!d.over }));
   on("drop.refused", (d) => toast(d.text, "err"));
+  on("app.notice", (d) => toast(d.text));
   const job = (state) => (d) => store.set((s) => ({ jobs: Object.assign({}, s.jobs, { [d.id]: Object.assign({}, s.jobs[d.id], d, { state }) }) }));
   on("job.progress", job("running"));
   on("job.done", (d) => { job("done")(d); loadDrawings().then((x) => { if (!store.get().sheet && x.drawings.length === 1) openSheet(x.drawings[0].graph_id); }); });

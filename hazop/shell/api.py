@@ -158,6 +158,8 @@ class Engine:
         self._jobs = {}
         self._job_seq = 0
         self._lock = threading.Lock()
+        self._stop = threading.Event()   # 창을 닫거나 화면을 바꾸려고 작업을 멈추라고 할 때
+        self._threads = []
 
     # ------------------------------------------------------------ 보내기
     def emit(self, name, data=None):
@@ -251,8 +253,36 @@ class Engine:
 
     def _thread_jobs(self, job_id, fn):
         t = threading.Thread(target=fn, name="hazop-job-%s" % job_id, daemon=True)
+        self._threads.append(t)
         t.start()
         return t
+
+    # ------------------------------------------------------------ 진행 중인 작업(창 닫기·화면 바꾸기 전에 묻는다)
+    def running_jobs(self):
+        """아직 도는 작업의 ID 목록."""
+        with self._lock:
+            return [j for j, v in self._jobs.items() if v["state"] == "running"]
+
+    def stop_jobs(self):
+        """돌고 있는 작업에 멈추라고 알린다. 작업은 진행을 알리는 자리(등록 -> 추출 -> AI 검토 사이, AI 검토는 도면마다)에서 멈춘다.
+        단계 한가운데(추출 호출 하나)는 끊지 않는다: 반쯤 쓰인 자료를 남기지 않으려는 것이다."""
+        self._stop.set()
+
+    def wait_jobs(self, timeout):
+        """도는 작업 스레드가 끝나기를 기다린다 -> 모두 끝났으면 True."""
+        import time
+        end = time.monotonic() + timeout
+        for t in list(self._threads):
+            t.join(max(0.0, end - time.monotonic()))
+        self._threads = [t for t in self._threads if t.is_alive()]
+        return not self.running_jobs()
+
+    def _job_ended(self):
+        if not self.running_jobs():
+            self._stop.clear()
+            hook = self.hooks.get("jobs_idle")
+            if hook is not None:
+                hook()
 
     def start_job(self, label, fn):
         """작업을 시작하고 작업 ID를 돌려준다. fn(progress)은 작업 스레드에서 돌고, 진행·끝은 job.* 사건으로 간다."""
@@ -263,18 +293,31 @@ class Engine:
 
         def run():
             self.emit("job.progress", {"id": job_id, "label": label, "state": "running"})
+            def progress(text, done=None, total=None):
+                if self._stop.is_set():
+                    raise JobStopped("중지했습니다")
+                self.emit("job.progress", {"id": job_id, "label": label, "state": "running", "text": text, "done": done, "total": total})
             try:
-                result = fn(lambda text, done=None, total=None: self.emit(
-                    "job.progress", {"id": job_id, "label": label, "state": "running", "text": text, "done": done, "total": total}))
+                result = fn(progress)
                 self._jobs[job_id]["state"] = "done"
                 self.emit("job.done", {"id": job_id, "label": label, "result": result})
                 self.changed("drawings")
+            except JobStopped as exc:
+                self._jobs[job_id]["state"] = "stopped"
+                self.emit("job.failed", {"id": job_id, "label": label, "message": _one_line(exc), "stopped": True})
+                self.changed("drawings")   # 등록까지 된 도면은 목록에 보여야 한다
             except Exception as exc:  # noqa: BLE001
                 LOG.exception("작업 오류: %s", label)
                 self._jobs[job_id]["state"] = "failed"
                 self.emit("job.failed", {"id": job_id, "label": label, "message": _one_line(exc)})
+            finally:
+                self._job_ended()
         self._run_jobs(job_id, run)
         return job_id
+
+
+class JobStopped(Exception):
+    """창을 닫거나 화면을 바꾸려고 작업을 멈추라고 했을 때 진행 알림 자리에서 올리는 신호."""
 
 
 def _one_line(exc):
@@ -402,8 +445,7 @@ def _h_open_classic(engine, a):
     hook = engine.hooks.get("open_classic")
     if hook is None:
         raise CommandError("failed", "이전 화면을 열 수 없음")
-    hook()
-    return {}
+    return {"switched": bool(hook())}   # 작업이 도는 중이면 창이 묻는다: 닫히지 않으면 False
 
 
 COMMANDS = {
