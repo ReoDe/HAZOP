@@ -140,6 +140,93 @@ class ChatFrameTest(unittest.TestCase):
         self.assertEqual(drawings, ["SNP-M-101"])
         self.assertEqual(win.chat_view(), {"index": 5, "stage": 3, "drawing": "SNP-M-101"})
 
+    # ---- 검토 반려 수정(1366 폭에서 창이 넓어지는 결함, 접는 순서, 관련 항목 탭, 폭 값, 첫 창 크기)
+    def test_widths_follow_the_spec(self):
+        from hazop.app import main_window as mw
+        self.assertEqual((mw.CHAT_DEFAULT, mw.CHAT_MIN, mw.CHAT_MAX, mw.CHAT_STRIP), (360, 320, 480, 36))
+        self.assertEqual(mw.CENTER_MIN, 640)
+
+    def test_plan_columns_collapses_right_column_before_left_list(self):
+        from hazop.app.main_window import CHAT_MIN, CHAT_STRIP, EXPLORER_MIN, plan_columns
+        cmin = 640
+        wide = cmin + EXPLORER_MIN + CHAT_MIN
+        self.assertEqual(plan_columns(wide, cmin, True, True), (True, True))
+        self.assertEqual(plan_columns(wide - 1, cmin, True, True), (True, False), "오른쪽 열이 먼저 접힌다")
+        self.assertEqual(plan_columns(cmin + EXPLORER_MIN + CHAT_STRIP, cmin, True, True), (True, False))
+        self.assertEqual(plan_columns(cmin + EXPLORER_MIN + CHAT_STRIP - 1, cmin, True, True), (False, False), "그다음 왼쪽 목록")
+        self.assertEqual(plan_columns(wide - 1, cmin, True, False), (True, False))
+        self.assertEqual(plan_columns(cmin + CHAT_MIN, cmin, False, True), (False, True))
+
+    def test_start_size_opens_chat_on_wide_screens(self):
+        from hazop.app.main_window import CHAT_OPEN_FROM, start_size
+        self.assertEqual(start_size(1366, 728), (1440, 860))
+        self.assertEqual(start_size(CHAT_OPEN_FROM - 1, 900), (1440, 860))
+        self.assertEqual(start_size(1920, 1040), (1600, 860))
+        self.assertGreaterEqual(start_size(1536, 800)[0], CHAT_OPEN_FROM)
+        self.assertEqual(start_size(1536, 800), (1536, 800))
+
+    def test_all_screens_keep_1366_with_chat_and_related_open(self):
+        from hazop.app.main_window import CENTER_MIN, STEPS
+        for idx in range(len(STEPS)):
+            for rel in (False, True):
+                win = self.window(1366)
+                win.go(idx)
+                win.related_shown[idx] = rel
+                win.open_chat()
+                if rel:
+                    win.open_related()
+                pump(win, 0.05)
+                tag = "화면 %d 관련 항목 %s" % (idx, rel)
+                self.assertEqual(win.width(), 1366, tag + " 창 폭")
+                self.assertLessEqual(win.minimumSizeHint().width(), 1366, tag + " 최소 폭")
+                self.assertGreaterEqual(win.stack.width(), CENTER_MIN, tag + " 가운데")
+
+    def test_related_is_second_tab_of_the_right_column(self):
+        win = self.window(1366)
+        self.assertIs(win.related.parentWidget().parentWidget(), win.chat_column.body)
+        win.toggle_related()
+        pump(win, 0.05)
+        self.assertTrue(win.related.isVisible())
+        self.assertTrue(win.chat_column.tab_related.isChecked())
+        win.chat_column.tab_chat.click()
+        pump(win, 0.05)
+        self.assertFalse(win.related.isVisible())
+        self.assertFalse(win.chat_collapsed())
+        self.assertTrue(win.chat_column.tab_chat.isChecked())
+        win.chat_column.tab_related.click()
+        pump(win, 0.05)
+        self.assertTrue(win.related.isVisible())
+
+    def test_strip_has_chat_and_related_buttons(self):
+        win = self.window(1366)
+        self.assertTrue(win.chat_column.strip.isVisible())
+        win.chat_column.strip_related.click()
+        pump(win, 0.05)
+        self.assertTrue(win.related.isVisible())
+        win.toggle_chat()  # 오른쪽 열 접기: 관련 항목도 함께 접힌다
+        pump(win, 0.05)
+        self.assertFalse(win.related.isVisible())
+        win.chat_column.strip_chat.click()
+        pump(win, 0.05)
+        self.assertTrue(win.chat_column.body.isVisible())
+
+    def test_shrinking_window_collapses_column_first(self):
+        from hazop.app.main_window import CHAT_MIN, CHAT_STRIP, EXPLORER_MIN, RAIL_W
+        win = self.window(1920)
+        self.assertFalse(win.chat_collapsed())
+        cmin = max(640, win.stack.minimumSizeHint().width())
+        w = RAIL_W + cmin + EXPLORER_MIN + CHAT_MIN - 30
+        win.resize(w, 768)
+        pump(win, 0.1)
+        if win.width() != w:
+            self.skipTest("창 최소 폭이 더 커서 이 폭으로 줄이지 못함")
+        self.assertTrue(win.explorer_panel.isVisible(), "왼쪽 목록은 남는다")
+        self.assertFalse(win.chat_column.body.isVisible(), "오른쪽 열이 먼저 접힌다")
+        self.assertFalse(win.chat_collapsed(), "사용자 선택은 그대로(자리가 생기면 다시 펴짐)")
+        win.resize(1920, 768)
+        pump(win, 0.1)
+        self.assertTrue(win.chat_column.body.isVisible())
+
 
 if __name__ == "__main__":
     unittest.main()
