@@ -299,6 +299,7 @@ FOLDERS = {
     "risk-criteria": Folder("resource", ("resources", "library", "risk-criteria")),
     "patterns": Folder("resource", ("resources", "library", "patterns")),
     "symbols": Folder("resource", ("resources", "library", "symbols")),
+    "icons": Folder("resource", ("resources", "library", "icons")),  # 화면 아이콘(Tabler, hazop/app/icons.py)
     "references": Folder("repo", ("resources", "references")),
     "APR1400": Folder("repo", ("resources", "references", "APR1400_DCD")),
     "samples": Folder("repo", ("resources", "samples")),
@@ -309,6 +310,7 @@ FOLDERS = {
     "study-nodes": Folder("work", ("data", "study-nodes")),
     "analysis-results": Folder("work", ("data", "analysis-results")),
     "analysis-results-test": Folder("work", ("data", "analysis-results-test")),
+    "chat-actions": Folder("work", ("data", "chat-actions")),  # 채팅이 실행한 동작 기록(hazop.chat.actions_log)
     "backup": Folder("work", ("data", "backup")),
     "initiating-events": Folder("work", ("data", "initiating-events")),
     "drawing-edits": Folder("work", ("data", "drawing-edits")),
