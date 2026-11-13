@@ -58,6 +58,7 @@ class Snapshot:
     registrations: dict = field(default_factory=dict)   # reg_id -> {"has_result": bool, "excluded": bool}
     files: dict = field(default_factory=dict)
     ie_draft_by_human: bool = False
+    results_fp: str = None       # ⑤ 결과 파일 지문(hazop.study.results.load_fp의 둘째 값). 결과 판정의 낡은 판 대조에 쓴다
 
 
 def _nodes(snap):
@@ -246,6 +247,7 @@ class Item:
     targets: list = field(default_factory=list)
     proposals: list = field(default_factory=list)
     token: str = None            # planner가 낸 무작위 표(run·approve·decline에 넘김). 화면은 이 값만 들고 있으면 된다
+    basis: dict = None           # 결과 판정: 계획 때 읽은 {set_rev, node_rev, fingerprint}. 엔진이 실행 직전에 대조한다
 
     @property
     def key(self):
@@ -286,6 +288,7 @@ class Call:
     author: str = AUTHOR
 
     action: str = None           # 동작 이름(ACTIONS의 열쇠)
+    basis: dict = None           # 결과 판정: 사람이 확인 상자에서 본 판 {set_rev, node_rev, fingerprint}(Item.basis)
 
     @property
     def origin(self):
@@ -541,6 +544,8 @@ class ActionPlanner:
         if not any(e.get("entry_id") == a["entry_id"] for e in cell.get("entries") or []):
             raise _Reject("없는 항목")
         item.targets = ["%s/%s/%s" % (a["node_id"], a["deviation_id"], a["entry_id"])]
+        item.basis = {"set_rev": (snap.node_set or {}).get("set_rev"), "node_rev": n.get("rev"),
+                      "fingerprint": snap.results_fp}
 
     @staticmethod
     def _reason(item, required):
@@ -707,7 +712,8 @@ class ActionPlanner:
             targets.append(entry)
         return {"project_id": snap.project_id, "action": item.action, "args_digest": _digest(item.args),
                 "targets": targets, "set_rev": (snap.node_set or {}).get("set_rev"),
-                "pending_ai": pending_ai(snap) if item.action == "nodes.apply" else None}
+                "pending_ai": pending_ai(snap) if item.action == "nodes.apply" else None,
+                "results_fp": snap.results_fp if item.action.startswith("results.") else None}
 
     def _approval(self, item, snap):
         """승인 표지. 재료에 이 planner만 아는 비밀(_secret)을 섞어, 웹 화면이나 모델이 같은 표지를 만들어 낼 수 없다(검토 8)."""
@@ -844,7 +850,7 @@ class ActionPlanner:
         klass = "confirm" if confirmed_by else ("candidate" if item.klass == CANDIDATE else "auto")
         call = Call(self.project_id, request_id, request_text, list(item.keys), klass, confirmed_by, item.stage,
                     item.stage == "rest" and bool(confirmed_by), request_id, self.conversation_id, self.model,
-                    action=item.action)
+                    action=item.action, basis=copy.deepcopy(item.basis))
         confirmed = bool(confirmed_by)
         if fn is None:
             msg = "이 앱에 실행 함수가 연결되지 않음"
@@ -1010,3 +1016,21 @@ def node_executors(pg, execute):
 
     return {"nodes.apply": apply, "nodes.undo": undo, "nodes.confirm": state("confirm"),
             "nodes.unconfirm": state("unconfirm"), "nodes.lock": state("lock")}
+
+
+def result_executors(pg, execute):
+    """결과 판정 동작의 실행 함수 표. `execute`는 `hazop.study.result_commands.execute`(서명 results-commands.md §3).
+
+    검토자는 확인 상자를 누른 사람(call.confirmed_by)이다. 계획 때 읽은 판(call.basis: set_rev·node_rev·결과 파일 지문)을
+    그대로 넘겨, 확인 상자를 띄운 뒤 다른 창이 칸·구간을 바꿨으면 엔진이 stale로 거절한다.
+    """
+    def run(cmd):
+        def fn(args, call):
+            basis = call.basis or {}
+            cargs = dict(args)
+            if basis.get("node_rev") is not None:
+                cargs["node_rev"] = basis["node_rev"]
+            return execute(pg, cmd, cargs, call.confirmed_by, basis.get("fingerprint"), set_rev=basis.get("set_rev"))
+        return fn
+
+    return {"results.set_status": run("set_status"), "results.edit": run("edit_entry")}

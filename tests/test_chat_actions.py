@@ -721,6 +721,126 @@ class RealEngineTest(unittest.TestCase):
         self.assertEqual(len(self.ns()["nodes"]), 1)
 
 
+class RealResultEngineTest(unittest.TestCase):
+    """결과 판정 동작에 실제 엔진(hazop.study.result_commands.execute, ed6f5a3 서명)을 result_executors로 잇는다.
+    수용·수정·기각·보류, 사유 필수, 잠긴 구간 거절, 낡은 판 거절이 동작 층을 거쳐도 그대로인지 본다."""
+
+    def setUp(self):
+        from unittest import mock
+        from hazop.study import nodes as sn, results as res, result_commands as rc
+        from tests.test_study_migrate import graph
+        from tests.test_study_storage import DEVS, build, entry, put_entries
+        self.sn, self.res, self.rc = sn, res, rc
+        tmp = tempfile.mkdtemp(prefix="hazop-chat-actions-results-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        for p in (mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": tmp}),
+                  mock.patch.object(res, "load_deviations", lambda path=None: copy.deepcopy(DEVS))):
+            p.start()
+            self.addCleanup(p.stop)
+        self.g = graph("v1")
+        ns = build(self.g, [("A", ["TK", "V1"])])
+        sn.save(ns)
+        doc = put_entries(res.empty_results(ns, DEVS), "S1", "I1", [entry("e1", "proposed", origin="ai_draft"),
+                                                                    entry("e2", "approved")])
+        for c in doc["cells"]:
+            if not c["entries"]:
+                c["state"] = "excluded"
+        res.save(doc, None)
+        self.frozen = None          # 정하면 read_state가 이 상태를 돌려줌(화면이 읽어 둔 낡은 상태)
+        self.records = []
+        self.pl = A.ActionPlanner(ns["project_id"], self.read_state, A.result_executors(self.g, rc.execute),
+                                  record=lambda pid, **kw: self.records.append(kw) or {"status": "written"})
+
+    def read_state(self):
+        if self.frozen is not None:
+            return copy.deepcopy(self.frozen)
+        ns = self.sn.load(self.g)
+        doc, fp = self.res.load_fp(ns)
+        return A.Snapshot(ns["project_id"], node_set=ns, results=doc, results_fp=fp)
+
+    def entry(self, eid):
+        doc = self.res.load(self.sn.load(self.g))
+        return next(e for c in doc["cells"] for e in c["entries"] if e["entry_id"] == eid)
+
+    def verdict(self, answer, status, eid="e1", **kw):
+        args = dict({"node_id": "S1", "deviation_id": "D01", "entry_id": eid, "status": status}, **kw)
+        return self.pl.plan(answer, [{"action": "results.set_status", "args": args}], answer, answer, "판정해 줘")
+
+    def test_four_verdicts_with_reasons(self):
+        for i, (status, reason) in enumerate((("on_hold", "운전 절차서 확인 뒤 판단"), ("rejected", "같은 원인 중복"),
+                                              ("revised", "빈도를 낮춤"), ("approved", None))):
+            with self.subTest(status):
+                p = self.verdict("a-%d" % i, status, **({"reason": reason} if reason else {}))
+                self.assertEqual((len(p.run), len(p.confirm)), (0, 1), p)
+                out = self.pl.approve(p.confirm[0], "홍길동")
+                self.assertEqual(out["result"], "ok", out)
+                v = self.res.verdict(self.entry("e1"))
+                self.assertEqual((v["status"], v["reason"], v["by"]), (status, reason, "홍길동"))
+                self.assertEqual(self.records[-1]["confirmed_by"], "홍길동")
+        # 내용 고치기(edit_entry): 사유 필수, 판정은 수정
+        p = self.pl.plan("a-edit", [{"action": "results.edit", "args": {
+            "node_id": "S1", "deviation_id": "D01", "entry_id": "e1", "fields": {"cause": "고친 원인"},
+            "reason": "태그 바로잡음"}}], "a-edit", "a-edit", "고쳐 줘")
+        self.assertEqual(self.pl.approve(p.confirm[0], "홍길동")["result"], "ok")
+        e = self.entry("e1")
+        self.assertEqual((e["cause"], e["status"], e["history"][-1]["reason"]), ("고친 원인", "revised", "태그 바로잡음"))
+
+    def test_missing_reason_never_reaches_engine(self):
+        before = self.res.load_fp(self.sn.load(self.g))[1]
+        for i, status in enumerate(("on_hold", "rejected", "revised")):
+            p = self.verdict("a-%d" % i, status)
+            self.assertEqual((len(p.confirm), len(p.rejected)), (0, 1))
+            self.assertIn("사유", p.rejected[0].reason)
+        self.assertEqual(self.res.load_fp(self.sn.load(self.g))[1], before)
+        self.assertEqual(self.entry("e1")["status"], "proposed")
+
+    def lock_elsewhere(self):
+        """다른 창이 S1을 잠금(구간 규격 §5.1 조건을 채우려 e1을 먼저 수용)."""
+        out = self.rc.execute(self.g, "set_status", {"node_id": "S1", "deviation_id": "D01", "entry_id": "e1",
+                                                     "status": "approved"}, "다른 창", None)
+        self.assertTrue(out["ok"], out)
+        ns = self.sn.load(self.g)
+        self.sn.save(self.sn.lock_node(ns, "S1", "다른 창", self.res.load(ns)))
+
+    def test_locked_node_refused(self):
+        self.lock_elsewhere()
+        p = self.verdict("a-1", "rejected", reason="잠긴 뒤")
+        self.assertEqual(len(p.rejected), 1)                          # 계획 단계에서 거절
+        self.assertIn("잠긴", p.rejected[0].reason)
+
+    def test_locked_after_confirm_box(self):
+        """확인 상자를 띄운 뒤 다른 창이 잠금: 낡은 상태를 들고 있어 표지가 맞아도 엔진이 낡은 판으로 거절하고, 새로 계획하면 잠금으로 거절."""
+        p = self.verdict("a-1", "rejected", eid="e2", reason="중복")
+        self.frozen = self.read_state()
+        self.lock_elsewhere()
+        out = self.pl.approve(p.confirm[0], "홍길동")                 # 낡은 상태로는 표지가 맞음 → 엔진까지 감
+        # 잠금은 집합 판(set_rev)을 올리고 다른 창이 결과 파일도 바꿨으니, 엔진은 계획 때 읽은 판으로 먼저 stale을 낸다
+        self.assertEqual((out["result"], out["code"], out["refused"][0]["code"]), ("rejected", "engine_refused", "stale"))
+        self.assertEqual(self.records[-1]["result"], "rejected")
+        self.assertEqual(self.entry("e2")["status"], "approved")
+        self.frozen = None
+        p = self.verdict("a-2", "on_hold", eid="e2", reason="x")
+        self.assertEqual(len(p.rejected), 1)
+
+    def test_stale_result_file_refused(self):
+        p = self.verdict("a-1", "rejected", reason="중복")
+        other = self.rc.execute(self.g, "set_status", {"node_id": "S1", "deviation_id": "D01", "entry_id": "e2",
+                                                       "status": "on_hold", "reason": "다른 창의 보류"}, "다른 창", None)
+        self.assertTrue(other["ok"], other)
+        out = self.pl.approve(p.confirm[0], "홍길동")                 # 앱이 새로 읽음: 결과 파일 지문이 바뀜
+        self.assertEqual(out["result"], "stale", out)
+        # 화면이 낡은 상태를 들고 있어 표지가 맞아도, 엔진이 계획 때 읽은 지문으로 거절(stale)
+        self.frozen = self.read_state()
+        p = self.verdict("a-2", "rejected", reason="중복")
+        other = self.rc.execute(self.g, "set_status", {"node_id": "S1", "deviation_id": "D01", "entry_id": "e2",
+                                                       "status": "approved"}, "다른 창", None)
+        self.assertTrue(other["ok"], other)
+        out = self.pl.approve(p.confirm[0], "홍길동")
+        self.assertEqual((out["result"], out["code"], out["refused"][0]["code"]),
+                         ("rejected", "engine_refused", "stale"), out)
+        self.assertEqual(self.entry("e1")["status"], "proposed")
+
+
 class EndToEndTest(Harness):
     """가짜 CLI가 도구 결과를 거쳐 주입된 동작이 든 답 카드를 낸다 → 세션 → 동작 층."""
 
