@@ -49,7 +49,7 @@ from .pdf_vector_grouping import (
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
 )
-from .pdf_vector_flow import _chain_flow, _propagate_flows
+from .pdf_vector_flow import _chain_flow, _propagate_flows, continuation_flow
 from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels
 from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, VALVE_TAG_RE, _text_blocks, _upright_blocks, _bubble_like,
                                 _assign_tags)
@@ -938,6 +938,18 @@ def _build_dashed(syms, dashes, markers, prm):
         out.append({"pts": [_center(d["bbox"]) for d in items], "ends": ends,
                     "evidence": [d["id"] for d in items], "dashed": True})
     return out
+
+
+def _continuation_sense(ch, ids, nodes):
+    """연결 표시 화살표에 닿은 배관의 흐름: +1(ids[0] → ids[1]), -1(반대), None. 두 끝이 다르게 말하면 정하지 않는다."""
+    votes = set()
+    for i, ((v, pt, _), nid) in enumerate(zip(ch["ends"], ids)):
+        if v[0] != "sym" or nodes[nid]["kind"] != "continuation":
+            continue
+        d = continuation_flow(v[1], pt)
+        if d:
+            votes.add(1 if (d == "into") == (i == 1) else -1)
+    return votes.pop() if len(votes) == 1 else None
 
 
 def _dashed_pipe(ch, nodes, ids, instrument_ids, prm):
@@ -1848,10 +1860,13 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         if ch.get("contact") and line_type == "pdf_solid":
             line_type = "pdf_touching"  # 선 없이 맞닿은 두 기호(_contact_chains)
         flow = None
-        if rel_kind in rules.RELATION_KINDS_WITH_FLOW and resolved and ch.get("flow"):
-            a, b = (ids[0], ids[1]) if ch["flow"] > 0 else (ids[1], ids[0])
+        sense, flow_basis = ch.get("flow"), "pdf_arrowhead"
+        if rel_kind in rules.RELATION_KINDS_WITH_FLOW and resolved and not sense:
+            sense, flow_basis = _continuation_sense(ch, ids, node_by_local), "continuation_arrow"
+        if rel_kind in rules.RELATION_KINDS_WITH_FLOW and resolved and sense:
+            a, b = (ids[0], ids[1]) if sense > 0 else (ids[1], ids[0])
             ends = {ids[0]: "source", ids[1]: "target"}
-            flow = {"from": a, "to": b, "from_end": ends[a], "to_end": ends[b], "basis": "pdf_arrowhead"}
+            flow = {"from": a, "to": b, "from_end": ends[a], "to_end": ends[b], "basis": flow_basis}
         elif rel_kind in rules.RELATION_KINDS_WITH_FLOW:
             _issue(unknowns, "unknown_flow_direction", "PDF 선에서 흐름 방향을 정하지 않음", sid, local_id,
                    "flow_direction")

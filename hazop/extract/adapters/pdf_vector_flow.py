@@ -71,6 +71,34 @@ def _chain_flow(ch, markers, prm):
     return votes.pop() if len(votes) == 1 else None
 
 
+def continuation_flow(sym, point):
+    """연결 표시 화살표(오각 깃발)에 닿은 배관 끝 point → 'into'(배관이 화살표로 흘러듦), 'out'(화살표에서 나옴), None.
+    긴 축 양 끝 가운데 꼭짓점이 하나인 쪽이 뾰족한 쪽, 둘인 쪽이 평평한 쪽이다. 화살표는 흐름 방향을 가리키므로 평평한
+    쪽으로 들어온 배관은 다른 도면으로 나가고, 뾰족한 쪽에서 나온 배관은 다른 도면에서 들어온다. 양 끝이 다 뾰족하거나
+    다 평평하면, 또는 배관이 긴 변 쪽에 닿으면 정하지 않는다."""
+    bodies = [b for b in sym.bodies if b.get("pts")]
+    if not bodies:
+        return None
+    body = max(bodies, key=lambda b: (b["bbox"][2] - b["bbox"][0]) * (b["bbox"][3] - b["bbox"][1]))
+    x0, y0, x1, y1 = body["bbox"]
+    ax = 0 if x1 - x0 >= y1 - y0 else 1
+    lo, hi = (x0, x1) if ax == 0 else (y0, y1)
+    span = hi - lo
+    if span <= 0:
+        return None
+    pts = {(round(p[0], 2), round(p[1], 2)) for p in body["pts"]}
+    tol = 0.08 * span
+    at_lo = sum(1 for p in pts if p[ax] - lo <= tol)
+    at_hi = sum(1 for p in pts if hi - p[ax] <= tol)
+    if {at_lo, at_hi} != {1, 2}:
+        return None
+    t = (point[ax] - lo) / span
+    if 0.25 < t < 0.75:
+        return None
+    pointed_end_is_hi = at_hi == 1
+    return "out" if (t >= 0.75) == pointed_end_is_hi else "into"
+
+
 def _ends(r):
     return [e.get("node_local_id") for e in r["endpoints"]]
 

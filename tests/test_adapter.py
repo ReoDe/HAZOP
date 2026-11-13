@@ -427,6 +427,19 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertIsNone(body["kind"])
         self.assertEqual(body["evidence"]["classification_basis"], "safety_class_boundary")
 
+    def test_continuation_arrow_sets_flow(self):
+        def flag(x, y, right):  # 오각 깃발 40×12: right면 뾰족한 쪽이 오른쪽
+            pts = ([(x, y), (x + 30, y), (x + 40, y + 6), (x + 30, y + 12), (x, y + 12), (x, y)] if right else
+                   [(x + 10, y), (x + 40, y), (x + 40, y + 12), (x + 10, y + 12), (x, y + 6), (x + 10, y)])
+            return prim(pts, closed=True)
+        ext = pdf_run([rect(100, 100, 140, 160), flag(300, 124, True), line((140, 130), (300, 130)),
+                       rect(100, 250, 140, 310), flag(300, 274, False), line((140, 280), (300, 280))],
+                      [word("TO", 302, 116), word("CV:RDT", 312, 116), word("FROM", 302, 266), word("CV:VCT", 322, 266)])
+        node = {n["local_id"]: n for n in ext["nodes"]}
+        flows = sorted((node[r["flow_direction"]["from"]]["kind"] or "-", node[r["flow_direction"]["to"]]["kind"] or "-")
+                       for r in ext["relations"] if r.get("flow_direction"))
+        self.assertEqual(flows, [("-", "continuation"), ("continuation", "-")])
+
     def test_labels_line_label_and_title_block(self):
         ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (300, 130)),
                        rect(400, 300, 450, 315), rect(450, 300, 550, 315)],
