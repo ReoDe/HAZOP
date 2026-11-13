@@ -10,6 +10,7 @@ import { ChatPanel, loadChat, pushMsg, setChat } from "./chat/panel.js";
 import { addActions, updateAction } from "./chat/actions.js";
 import { DrawingsPanel } from "./panels/drawings.js";
 import { NodesPanel } from "./panels/nodes.js";
+import { ResultsPanel } from "./panels/results.js";
 import { SettingsPanel } from "./panels/settings.js";
 import { SheetHost } from "./sheet_host.js";
 
@@ -109,6 +110,7 @@ function Rail() {
   return html`<nav class="rail" aria-label="메뉴"><div class="logo" aria-hidden="true">HZ</div>
     ${b("drawings", "files", "도면 (Ctrl+1)", unknowns || null)}
     ${b("nodes", "vector-triangle", "구간 (Ctrl+2)", null)}
+    ${b("results", "table", "분석 결과 (Ctrl+3)", null)}
     <div class="spacer"></div>
     <button type="button" class=${panel === "settings" ? "on" : ""} title=${"AI 연결 · " + conn.label} aria-label=${"AI 연결: " + conn.label} onClick=${() => togglePanel("settings")}>
       <${Icon} name="plug-connected" /><span class=${"conn " + (conn.tone || "plain")}></span></button>
@@ -166,6 +168,7 @@ function App() {
         setTimeout(() => { const el = document.querySelector(".chat-input"); if (el) el.focus(); }, 0);
       } else if (e.ctrlKey && e.key === "1") { e.preventDefault(); togglePanel("drawings"); }
       else if (e.ctrlKey && e.key === "2") { e.preventDefault(); togglePanel("nodes"); }
+      else if (e.ctrlKey && e.key === "3") { e.preventDefault(); togglePanel("results"); }
       else if ((e.ctrlKey && e.key === "0") || (e.key === "Escape" && !typing)) { if (store.get().panel) { e.preventDefault(); store.set({ panel: null }); } }
     }
     window.addEventListener("keydown", key);
@@ -176,6 +179,7 @@ function App() {
     <main class="center"><${TopBar} /><${SheetHost} />
       ${panel === "drawings" ? html`<${DrawingsPanel} onOpen=${openSheet} onClose=${() => store.set({ panel: null })} />` : null}
       ${panel === "nodes" ? html`<${NodesPanel} onClose=${() => store.set({ panel: null })} />` : null}
+      ${panel === "results" ? html`<${ResultsPanel} onClose=${() => store.set({ panel: null })} />` : null}
       ${panel === "settings" ? html`<${SettingsPanel} onClose=${() => store.set({ panel: null })} />` : null}
       <${Toast} /></main>
     <${ChatPanel} collapsed=${collapsed} onToggle=${toggleChat} onChip=${onChip} onSheet=${onSheet} />

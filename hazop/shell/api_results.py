@@ -12,6 +12,7 @@ import json
 import logging
 import os
 
+from hazop.analysis.risk import FREQUENCIES, SEVERITIES
 from hazop.study import nodes
 from hazop.study import result_commands
 from hazop.study import results as res
@@ -151,7 +152,8 @@ def cell_view(engine, node_id, deviation_id):
     problem = res.editable_problem(doc, node_id, deviation_id, ns)
     return {"cell": cell, "node": {"node_id": node_id, "name": node.get("name"), "state": nodes.node_state(node) if node else None},
             "deviation": dev, "editable": problem is None, "not_editable_reason": problem, "ver": _ver(fp),
-            "cause_kinds": res.CAUSE_KINDS, "read_only": doc.get("read_only")}
+            "cause_kinds": res.CAUSE_KINDS, "read_only": doc.get("read_only"),
+            "severities": list(SEVERITIES), "frequencies": list(FREQUENCIES)}
 
 
 def trace(engine, entity):
