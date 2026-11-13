@@ -1,0 +1,465 @@
+{
+ "version": 1,
+ "note": "그리는 기호 한 벌의 목록. kind는 기호 사전(resources/library/symbols)과 같은 이름이다.",
+ "symbols": [
+  {
+   "kind": "manual_valve",
+   "file": "manual-valve.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "isolation_valve",
+   "file": "isolation-valve.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "check_valve",
+   "file": "check-valve.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below",
+   "flow_axis": [
+    1,
+    0
+   ]
+  },
+  {
+   "kind": "damper",
+   "file": "damper.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "reducer",
+   "file": "reducer.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "orifice",
+   "file": "orifice.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "control_valve",
+   "file": "control-valve.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 70
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 70
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "motor_operated_valve",
+   "file": "motor-operated-valve.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 70
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 70
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "psv",
+   "file": "psv.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 50,
+     "y": 100
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 62
+    }
+   ],
+   "label": "right"
+  },
+  {
+   "kind": "vent",
+   "file": "vent.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "drain",
+   "file": "drain.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "test_connection",
+   "file": "test-connection.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "pipe_cap",
+   "file": "pipe-cap.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 50
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "transmitter",
+   "file": "transmitter.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "top",
+     "x": 50,
+     "y": 0
+    },
+    {
+     "name": "bottom",
+     "x": 50,
+     "y": 100
+    },
+    {
+     "name": "left",
+     "x": 0,
+     "y": 50
+    },
+    {
+     "name": "right",
+     "x": 100,
+     "y": 50
+    }
+   ],
+   "label": "right"
+  },
+  {
+   "kind": "indicator",
+   "file": "indicator.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "top",
+     "x": 50,
+     "y": 0
+    },
+    {
+     "name": "bottom",
+     "x": 50,
+     "y": 100
+    },
+    {
+     "name": "left",
+     "x": 0,
+     "y": 50
+    },
+    {
+     "name": "right",
+     "x": 100,
+     "y": 50
+    }
+   ],
+   "label": "right"
+  },
+  {
+   "kind": "temperature_element",
+   "file": "temperature-element.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "top",
+     "x": 50,
+     "y": 0
+    },
+    {
+     "name": "bottom",
+     "x": 50,
+     "y": 100
+    },
+    {
+     "name": "left",
+     "x": 0,
+     "y": 50
+    },
+    {
+     "name": "right",
+     "x": 100,
+     "y": 50
+    }
+   ],
+   "label": "right"
+  },
+  {
+   "kind": "controller",
+   "file": "controller.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "top",
+     "x": 50,
+     "y": 0
+    },
+    {
+     "name": "bottom",
+     "x": 50,
+     "y": 100
+    },
+    {
+     "name": "left",
+     "x": 0,
+     "y": 50
+    },
+    {
+     "name": "right",
+     "x": 100,
+     "y": 50
+    }
+   ],
+   "label": "right"
+  },
+  {
+   "kind": "tank",
+   "file": "tank.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  },
+  {
+   "kind": "reactor_vessel",
+   "file": "reactor-vessel.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  },
+  {
+   "kind": "pressurizer",
+   "file": "pressurizer.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  },
+  {
+   "kind": "steam_generator",
+   "file": "steam-generator.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  },
+  {
+   "kind": "heat_exchanger",
+   "file": "heat-exchanger.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  },
+  {
+   "kind": "condenser",
+   "file": "condenser.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  },
+  {
+   "kind": "pump",
+   "file": "pump.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 50
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 50
+    }
+   ],
+   "label": "below",
+   "flow_axis": [
+    1,
+    0
+   ]
+  },
+  {
+   "kind": "turbine",
+   "file": "turbine.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside",
+   "flow_axis": [
+    1,
+    0
+   ]
+  },
+  {
+   "kind": "filter",
+   "file": "filter.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  },
+  {
+   "kind": "demineralizer",
+   "file": "demineralizer.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  },
+  {
+   "kind": "continuation",
+   "file": "continuation.svg",
+   "fit": "stretch",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "inside"
+  },
+  {
+   "kind": "annotation",
+   "file": "annotation.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  },
+  {
+   "kind": "tee",
+   "file": null,
+   "junction": true,
+   "fit": "keep",
+   "ports": [],
+   "label": "none"
+  },
+  {
+   "kind": "generic",
+   "file": "generic.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  }
+ ]
+}
