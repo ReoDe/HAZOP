@@ -743,8 +743,9 @@ class BuriedPipeTest(unittest.TestCase):
         ex = extract([prim(GATE), prim([(130, 100), (136, 103), (136, 100), (130, 103), (130, 100)]),
                       dashed([(106, 101.5), (130, 101.5)])] + [dot(x, 101.5) for x in (113.3, 122.1)])
         self.assertFalse(any(o.get("reason") == "line_dot" for o in ex["drawing"]["ignored_objects"]))
-        self.assertNotIn("physical_connection", {r["kind"] for r in ex["relations"] + ex["unresolved_connectors"]
-                                                 if r["line_type"] == "pdf_dashed"})
+        # 점이 점선을 실선 배관으로 바꾸지 않는다. 두 밸브를 흐름 축으로 잇는 점선은 배관일 수 있으므로(APR1400 008쪽,
+        # _dashed_pipe) 관계 종류가 아니라 선 종류가 점선으로 남는지를 본다
+        self.assertEqual({r["line_type"] for r in ex["relations"] + ex["unresolved_connectors"]}, {"pdf_dashed"})
 
 
 def word(text, x0, top, size=3.0):
@@ -1525,13 +1526,15 @@ class ValveLabelTest(unittest.TestCase):
         self.assertEqual([n["tag"] for n in ex["nodes"] if n["category"] == "valve"], [None])
 
     def test_lettered_diamond_does_not_take_a_valve_number(self):
-        """품질 등급 마름모('BI|CI')는 삼각형 둘이라 나비 규칙으로 밸브가 된다. 안에 글자가 든 몸통은 밸브 번호를 받지 않는다
-        (063쪽 V751·V713·V366)."""
+        """품질 등급 마름모('BI|CI')는 삼각형 둘이라 나비 규칙에 걸리지만 밸브가 아니라 안전등급 경계 표시다(범례 1.7-1 1/4
+        QUALITY GROUP/SAFETY CLASS, e3e3273). 밸브가 아니므로 옆 밸브 번호를 받지 않는다(063쪽 V751·V713·V366)."""
         diamond = [prim([(100, 100), (106, 97), (106, 103), (100, 100)]), prim([(112, 100), (106, 97), (106, 103), (112, 100)])]
         words = [word("B", 102.5, 98.5, 2.0), word("I", 103.7, 98.5, 2.0), word("C", 107.0, 98.5, 2.0),
                  word("I", 108.2, 98.5, 2.0), word("V751", 101.0, 106.0)]
         ex = extract_with_words(diamond, words)
-        self.assertEqual([(n["kind"], n["tag"]) for n in ex["nodes"] if n["category"] == "valve"], [("manual_valve", None)])
+        self.assertEqual([n for n in ex["nodes"] if n["category"] == "valve"], [])
+        (mark,) = [n for n in ex["nodes"] if n["evidence"]["classification_basis"] == "safety_class_boundary"]
+        self.assertEqual((mark["kind"], mark["tag"]), (None, None))
 
     def test_labels_of_other_symbols_do_not_change(self):
         """위치 약어가 다른 기호의 라벨이면 그대로 둔다(밸브만 손본다)."""
