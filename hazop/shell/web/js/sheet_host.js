@@ -9,6 +9,7 @@ import { Btn } from "./ui/parts.js";
 import * as R from "./panels/results_state.js";
 import { NodeOverlay, useNodeCanvas } from "./canvas/nodes_canvas.js";
 import { CleanOverlay, useCleanCanvas } from "./canvas/clean_ui.js";
+import { SheetConfirm } from "./sheet_confirm.js";
 
 let SheetComponent = null;
 let tried = false;
@@ -59,5 +60,5 @@ export function SheetHost() {
   if (!Comp) return html`<${Fallback} sheet=${sheet} />`;
   const items = (marks.bySheet && marks.bySheet[sheet]) || [];
   return html`<div class="canvas"><${Comp} sheet=${{ graph_id: sheet }} ...${nc.props} ...${cc.props} marks=${items.map((m, i) => Object.assign({ id: (marks.rid || "m") + (i ? "#" + i : "") }, m))}
-    command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, rect: d.rect } }); }} /><${NodeOverlay} /><${CleanOverlay} /><${ItemBubble} /></div>`;
+    command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, rect: d.rect } }); }} /><${NodeOverlay} /><${CleanOverlay} /><${SheetConfirm} /><${ItemBubble} /></div>`;
 }

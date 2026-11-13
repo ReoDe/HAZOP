@@ -91,3 +91,14 @@ ul.tight { margin: 0; padding-left: 16px; }
 .tgts { margin: var(--sp-1) 0 var(--sp-2); }
 .bubble { position: absolute; z-index: 4; padding: var(--sp-2) var(--sp-3); min-width: 160px; }
 .tracebox input { flex: 1; min-width: 160px; height: 28px; }
+
+/* 도면 쪽 확정 칩과 카드 */
+.confbar { position: absolute; left: 12px; top: 10px; z-index: 3; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.confcard { position: static; padding: var(--sp-3); width: 340px; max-width: 80vw; display: flex; flex-direction: column; gap: var(--sp-2); }
+.conf-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); }
+.conf-list li::before { content: "○ "; color: var(--muted); }
+.conf-list li.good::before { content: "✓ "; color: var(--ok); }
+.conf-list li.bad::before { content: "! "; color: var(--warn); font-weight: bold; }
+.check { display: flex; gap: 6px; align-items: flex-start; font-size: var(--fs-sm); }
+.dexpi-card .list .row { align-items: flex-start; }
+.btn:disabled { opacity: .45; cursor: default; }
