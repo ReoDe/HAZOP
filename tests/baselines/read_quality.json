@@ -139,13 +139,13 @@
     "units": 45
    },
    "connection": {
-    "correct": 123,
+    "correct": 132,
     "false_pos": 11,
     "units": 365
    },
    "kind": {
     "correct": 92,
-    "false_pos": 24,
+    "false_pos": 15,
     "units": 151
    },
    "tag": {
@@ -167,7 +167,7 @@
    },
    "kind": {
     "correct": 8,
-    "false_pos": 8,
+    "false_pos": 2,
     "units": 30
    },
    "tag": {
@@ -189,7 +189,7 @@
    },
    "kind": {
     "correct": 78,
-    "false_pos": 8,
+    "false_pos": 4,
     "units": 116
    },
    "tag": {
@@ -200,7 +200,7 @@
   },
   "apr1400-025": {
    "attribute": {
-    "correct": 95,
+    "correct": 97,
     "false_pos": 6,
     "units": 131
    },
@@ -211,18 +211,18 @@
    },
    "kind": {
     "correct": 102,
-    "false_pos": 17,
+    "false_pos": 6,
     "units": 134
    },
    "tag": {
-    "correct": 52,
+    "correct": 54,
     "false_pos": 4,
     "units": 94
    }
   },
   "apr1400-033": {
    "attribute": {
-    "correct": 14,
+    "correct": 18,
     "false_pos": 0,
     "units": 21
    },
@@ -233,7 +233,7 @@
    },
    "kind": {
     "correct": 58,
-    "false_pos": 7,
+    "false_pos": 2,
     "units": 75
    },
    "tag": {
@@ -266,7 +266,7 @@
   },
   "apr1400-062": {
    "attribute": {
-    "correct": 17,
+    "correct": 25,
     "false_pos": 2,
     "units": 38
    },
@@ -299,7 +299,7 @@
    },
    "kind": {
     "correct": 62,
-    "false_pos": 20,
+    "false_pos": 3,
     "units": 115
    },
    "tag": {
@@ -321,7 +321,7 @@
    },
    "kind": {
     "correct": 36,
-    "false_pos": 2,
+    "false_pos": 0,
     "units": 100
    },
    "tag": {
@@ -343,7 +343,7 @@
    },
    "kind": {
     "correct": 32,
-    "false_pos": 13,
+    "false_pos": 5,
     "units": 73
    },
    "tag": {
@@ -354,7 +354,7 @@
   },
   "apr1400-105": {
    "attribute": {
-    "correct": 40,
+    "correct": 42,
     "false_pos": 10,
     "units": 96
    },
@@ -365,7 +365,7 @@
    },
    "kind": {
     "correct": 43,
-    "false_pos": 13,
+    "false_pos": 0,
     "units": 170
    },
    "tag": {
@@ -376,7 +376,7 @@
   },
   "apr1400-128": {
    "attribute": {
-    "correct": 38,
+    "correct": 40,
     "false_pos": 10,
     "units": 47
    },
@@ -387,7 +387,7 @@
    },
    "kind": {
     "correct": 82,
-    "false_pos": 18,
+    "false_pos": 6,
     "units": 96
    },
    "tag": {

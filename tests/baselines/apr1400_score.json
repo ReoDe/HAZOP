@@ -20,7 +20,7 @@
     "tag_exact": 4,
     "tag_not_in_text": 0,
     "tagged": 16,
-    "unclassified": 25,
+    "unclassified": 32,
     "unknowns": 146,
     "valve_number_closer_other": 0
    },
@@ -90,7 +90,7 @@
     "tag_exact": 12,
     "tag_not_in_text": 0,
     "tagged": 35,
-    "unclassified": 96,
+    "unclassified": 113,
     "unknowns": 837,
     "valve_number_closer_other": 0
    },
@@ -1123,12 +1123,12 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 281,
-  "seconds": 154,
+  "seconds": 142,
   "tag_exact": 872,
   "tag_not_in_text": 47,
-  "tagged": 2760,
-  "unclassified": 6479,
-  "unknowns": 58326,
+  "tagged": 2792,
+  "unclassified": 6945,
+  "unknowns": 58321,
   "valve_number_closer_other": 0
  }
 }
