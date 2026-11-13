@@ -4,7 +4,10 @@ build_workbook(results, node_set, pg, deviations, scope, node_ids, reviewer, int
 - 시트: 표지·요약 / 구간 목록 / 워크시트 / 권고 목록
 - 워크시트 행 하나 = 시나리오(항목) 하나. 항목 없는 분석 칸('해당 없음'·'시나리오 없음')·AI 실패 칸·제외 칸도
   한 행으로 남기고 상태 열에서 구분한다. 분석 전 칸은 행으로 쓰지 않고 요약에 칸 수만 적는다.
-- 범위(SCOPES): 전체 / 승인만(승인 항목만, 칸 표시 행 없음) / 선택한 구간만.
+- 범위(SCOPES): 전체 / 승인 항목만(칸 표시 행 없음) / 고른 구간만. 표지 수치는 내보낸 범위로 센다(승인 항목만이면 승인 항목만).
+- 칸 표시 행의 종류·이유(cell_kinds·cell_reason)는 새 화면 행렬(hazop.shell.api_results)과 같은 함수를 쓴다. ai_run이 없는 칸은
+  옛 ID 이전이 남긴 legacy_cells의 판정을 읽고, 그것도 없으면 '이유 기록 없음'으로 적는다.
+- 가이드워드 열은 KOSHA 표의 영문을 병기한다('없음 (No, Not, or None)', 표에 영문이 없으면 한국어만).
 - 다른 도면 태그는 'RC-P01(101)'처럼 짧은 도면번호를 붙인다(span.label_tags). 여러 도면에 걸친 구간은 기준 도면이
   하나가 아니므로 모든 태그에 붙인다.
 - 위험도는 KOSHA P-86 〈표5〉 값(항목의 risk)과 구분(수용·조건부 수용·불허)을 글자로 함께 쓰고 색은 보조로만 쓴다.
@@ -30,7 +33,7 @@ from hazop.study import refs as srefs
 from hazop.study import results as res
 from hazop.study import span
 
-SCOPES = {"all": "전체", "approved": "승인만", "nodes": "선택한 구간만"}
+SCOPES = {"all": "전체", "approved": "승인 항목만", "nodes": "고른 구간만"}   # 새 화면 범위 카드와 같은 이름
 SHEETS = ("표지·요약", "구간 목록", "워크시트", "권고 목록")
 STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각", "on_hold": "보류"}
 BAND_LABELS = {"ok": "수용", "cond": "조건부 수용", "deny": "불허"}
@@ -44,7 +47,12 @@ TEST_NOTICE = "시험용 고정 응답으로 채운 결과입니다. 실제 검�
 
 # 칸 표시 행(항목이 아닌 행)의 상태 문구
 CELL_ROW_LABELS = {"not_applicable": "해당 없음(AI 판단)", "no_scenario": "시나리오 없음(AI)",
-                   "failed": "실패(AI 실행)", "excluded": "제외"}
+                   "failed": "실패(AI 실행)", "excluded": "제외", "no_record": "분석함 · 이유 기록 없음"}
+NO_RECORD_REASON = "이유 기록 없음(분석함으로 표시됐으나 AI 실행 기록·옛 판정이 없음)"
+DEFAULT_REASONS = {"not_applicable": "AI가 이 구간에는 해당하지 않는다고 판단했습니다(이유를 적지 않음).",
+                   "no_scenario": "AI가 분석했으나 시나리오가 나오지 않았습니다.",
+                   "failed": "AI 실행이 실패했습니다.", "excluded": "제외한 칸입니다(이유 기록 없음).",
+                   "no_record": NO_RECORD_REASON}
 
 # (키, 머리글, 열 너비)
 WORKSHEET_COLUMNS = (
@@ -175,17 +183,71 @@ def _status_text(entry):
     return text + " · AI 초안" if res.is_ai_draft(entry) and entry.get("status") != "rejected" else text
 
 
-def _cell_kind(cell):
-    """칸 표시 행 종류 목록. 항목 행과 별도로 쓴다."""
-    run = cell.get("ai_run") or {}
+def effective_run(cell):
+    """(AI 실행 기록, 옛 구간 ID). 칸에 ai_run이 없으면 옛 ID 이전(span·remap·node_tools)이 legacy_cells에 남긴 옛 칸의 기록을
+    읽는다(마지막 것). 둘 다 없으면 ({}, None)."""
+    run = cell.get("ai_run")
+    if run:
+        return run, None
+    for old in reversed(cell.get("legacy_cells") or []):
+        if isinstance(old, dict) and isinstance(old.get("ai_run"), dict) and old["ai_run"]:
+            return old["ai_run"], old.get("from")
+    return {}, None
+
+
+def cell_kinds(cell):
+    """칸 표시 행 종류 목록(항목 행과 별도). failed·excluded는 함께 올 수 있다. 분석함인데 항목이 없으면 AI 판정(applicable)으로
+    해당 없음·시나리오 없음을 가르고, 실행 기록이 없으면 no_record."""
+    run, _old = effective_run(cell)
     kinds = []
     if run.get("status") == "failed":
         kinds.append("failed")
     if cell["state"] == "excluded":
         kinds.append("excluded")
     elif cell["state"] == "analyzed" and not cell["entries"] and run.get("status") != "failed":
-        kinds.append("not_applicable" if run.get("applicable") is False else "no_scenario")
+        kinds.append("not_applicable" if run.get("applicable") is False else "no_scenario" if run else "no_record")
     return kinds
+
+
+_cell_kind = cell_kinds
+
+
+def cell_reason(cell, kind):
+    """칸 표시 종류 kind의 이유 글. 옛 구간에서 옮겨 온 판정이면 그렇다고 앞에 적는다."""
+    run, old = effective_run(cell)
+    if kind == "no_record":
+        return NO_RECORD_REASON
+    text = run.get("error") if kind == "failed" else run.get("note") if kind != "excluded" else (cell.get("exclude_reason") or run.get("note"))
+    text = text.strip() if isinstance(text, str) else ""
+    text = text or DEFAULT_REASONS[kind]
+    return ("옛 구간 %s의 판정: %s" % (old, text)) if old else text
+
+
+_EN = {}
+
+
+def deviation_names_en():
+    """{item_id: {guideword_en, label_en}} KOSHA P-86 이탈후보표의 영문(표에 적힌 것만, 지어 넣지 않음). 못 읽으면 빈 사전."""
+    if "v" not in _EN:
+        import json
+        from hazop import paths
+        try:
+            with open(paths.folder("deviations", res.DEVIATION_CHART), encoding="utf-8") as fh:
+                items = json.load(fh).get("items") or []
+        except (OSError, ValueError):
+            return {}
+        _EN["v"] = {i["item_id"]: {"guideword_en": (i.get("guide_word_en") or "").strip(),
+                                   "label_en": (i.get("deviation_en") or "").strip()}
+                    for i in items if i.get("item_id")}
+    return _EN["v"]
+
+
+def guideword_text(dev, en=None):
+    """'없음 (No, Not, or None)'. 영문이 없으면 한국어만."""
+    en = deviation_names_en() if en is None else en
+    g_en = (en.get(dev.get("item_id")) or {}).get("guideword_en") or ""
+    ko = dev.get("guideword") or ""
+    return "%s (%s)" % (ko, g_en) if g_en and ko else ko or g_en
 
 
 def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, expectations=None):
@@ -199,6 +261,7 @@ def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, ex
     dev_rank = {d["deviation_id"]: i for i, d in enumerate(deviations)}
     tag_drawing = span.tag_drawings(pg)
     labels = entity_labels(pg)
+    en = deviation_names_en()
     short = view.get("drawing_short") or {}
     idx = srefs.index(pg)
     dn = {s["graph_id"]: s["drawing_number"] for s in pg["sheets"]}
@@ -216,7 +279,7 @@ def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, ex
             run = cell.get("ai_run") or {}
             d = devs.get(cell["deviation_id"]) or {"label": cell["deviation_id"], "parameter": "", "guideword": ""}
             base = {"node": node.get("display_name") or nid, "node_id": nid, "drawings": span.drawing_column(node),
-                    "parameter": d["parameter"], "guideword": d["guideword"], "deviation": d["label"],
+                    "parameter": d["parameter"], "guideword": guideword_text(d, en), "deviation": d["label"],
                     "deviation_id": cell["deviation_id"]}
             for e in cell["entries"]:
                 if scope == "approved" and e.get("status") != "approved":
@@ -234,19 +297,19 @@ def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, ex
                                  ai_origin=provenance(run, excel=True) if e.get("origin") == "ai_draft" else ""))
             if scope == "approved":
                 continue
-            for kind in _cell_kind(cell):
-                extra = ({"warnings": "⚠ %s" % run["error"]} if kind == "failed" and run.get("error") else
-                         {"basis": "AI 메모: %s" % run["note"]} if kind != "failed" and run.get("note") else {})
+            for kind in cell_kinds(cell):
+                why = cell_reason(cell, kind)
+                extra = ({"warnings": "⚠ %s" % why} if kind == "failed" else {"basis": "AI 메모: %s" % why})
                 rows.append(dict(base, kind=kind, status_key=kind, risk_value=None, status=CELL_ROW_LABELS[kind],
                                  **extra))
     return rows
 
 
-def counts(results, node_ids=None):
-    """요약 수치. node_ids를 주면 그 구간 칸만 센다. scenarios는 모든 상태의 항목 수."""
+def counts(results, node_ids=None, approved_only=False):
+    """요약 수치. node_ids를 주면 그 구간 칸만 센다. scenarios는 모든 상태의 항목 수(approved_only면 승인 항목만 센다)."""
     keep = (lambda c: True) if node_ids is None else (lambda c: c["node_id"] in node_ids)
     cells = [c for c in results["cells"] if keep(c)]
-    entries = [e for c in cells for e in c["entries"]]
+    entries = [e for c in cells for e in c["entries"] if not approved_only or e.get("status") == "approved"]
     by_status = {s: sum(e.get("status") == s for e in entries) for s in res.ENTRY_STATUSES}
     unreviewed = sum(e.get("status") in res.UNDECIDED_STATUSES or (res.is_ai_draft(e) and e.get("status") != "rejected")
                      for e in entries)
@@ -305,8 +368,9 @@ def _paint_risk(cell, risk):
 def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, n_rows, test=False):
     from openpyxl.styles import Font
     # 표지 수치는 내보낸 구간만 센다(⑤가 스크리닝 제외 구간을 뺀 집합을 넘기면 그 칸도 빠지게)
-    keep = set(node_ids) if scope == "nodes" else {n["node_id"] for n in node_set["nodes"]}
-    c = counts(results, keep)
+    in_set = {n["node_id"] for n in node_set["nodes"]}
+    keep = (set(node_ids) & in_set) if scope == "nodes" else in_set
+    c = counts(results, keep, approved_only=scope == "approved")
     cells = [x for x in results["cells"] if keep is None or x["node_id"] in keep]
     shown = [n for n in node_set["nodes"] if n["node_id"] in keep]
     s = c["by_status"]
@@ -321,11 +385,12 @@ def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, 
         ("내보낸 구간", "%d개(잠금 %d)" % (len(shown), sum(1 for n in shown if n.get("state") == "locked"))),
         ("내보낸 시각", kst(now) + " KST"),
         ("검토자", reviewer or ""),
-        ("내보낸 범위", SCOPES[scope] + (" (%s)" % ", ".join(node_ids) if scope == "nodes" else "")),
+        ("내보낸 범위", "고른 구간: %s" % ", ".join(n for n in node_ids if n in keep) if scope == "nodes" else SCOPES[scope]),
         ("구간 수", c["nodes"]), ("편차 수", c["deviations"]), ("시나리오 수", c["scenarios"]),
         ("상태별: 제안", s["proposed"]), ("상태별: 수정", s["revised"]), ("상태별: 승인", s["approved"]),
-        ("상태별: 기각", s["rejected"]), ("상태별: 보류", s["on_hold"]), ("미검토 시나리오", c["unreviewed"]), ("실패 칸", c["failed_cells"]),
-        ("분석 전 칸(워크시트에 행 없음)", c["not_analyzed_cells"]), ("워크시트 행 수", n_rows),
+        ("상태별: 기각", s["rejected"]), ("상태별: 보류", s["on_hold"]), ("미검토 시나리오", c["unreviewed"]),
+        ("실패 칸", "-" if scope == "approved" else c["failed_cells"]),
+        ("분석 전 칸(워크시트에 행 없음)", "-" if scope == "approved" else c["not_analyzed_cells"]), ("워크시트 행 수", n_rows),
         ("AI 초안 생성", drafted_cells(cells)),
         ("AI 사용 요금(API 키 호출분)", "$%.2f" % api_cost(results.get("ai_log"))),
         ("위험도", "KOSHA P-86 〈표5〉 강도 × 빈도 → 1–5. 구분 1·2 수용 · 3·4 조건부 수용 · 5 불허는 〈표9〉 비고를 "

@@ -17,6 +17,9 @@
 .rk-ns { color: var(--muted); }
 .rk-fail { background: var(--warn-bg); color: var(--warn); }
 .rk-ex { color: var(--faint); text-decoration: line-through; }
+.rk-nr { color: var(--muted); border: 1px dotted var(--line); }
+.results .vg-cell .rk { white-space: normal; line-height: 1.1; text-align: center; }
+.results .vg-ch-in .ch-en { display: block; font-size: 9px; color: var(--muted); }
 .dot-fail { position: absolute; bottom: -3px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn-line); }
 .res-legend { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); align-items: center; }
 .worksheet .en { font-size: var(--fs-xs); }

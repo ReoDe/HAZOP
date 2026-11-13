@@ -67,7 +67,7 @@ class ResultsPanelTest(W.ShellBase):
         self.click_cell(win, self.span_node, "D01")
         self.assertEqual(self.js(win, "document.querySelectorAll('.worksheet .ent').length"), 2)
         # 두 번째 항목(AI 초안 a2) 수용: 사유 없이 저장
-        self.assertTrue(self.js(win, "(() => { const b = [...document.querySelectorAll('.worksheet .ent')][1].querySelector(\"button[aria-label='수용']\"); b.click(); return true; })()"))
+        self.assertTrue(self.js(win, "(() => { const b = [...document.querySelectorAll('.worksheet .ent')][1].querySelector(\"button[aria-label='승인']\"); b.click(); return true; })()"))
         self.assertTrue(wait_for(lambda: self.entry(self.span_node, "D01", "a2")["status"] == "approved", 10))
         self.assertEqual(self.entry(self.span_node, "D01", "a2")["history"][-1]["by"], "검토자A")
         # 보류: 사유가 비면 저장 단추가 막힌다
@@ -119,7 +119,7 @@ class ResultsPanelTest(W.ShellBase):
     def test_matrix_tells_not_applicable_from_not_yet_analyzed_and_shows_the_reason(self):
         win = self.open_panel()
         na = self.cell_el(win, self.span_node, "D02")            # AI가 '해당 없음'(이유: 흐름 없음)
-        self.assertEqual(na["text"], "적용 불가")
+        self.assertEqual(na["text"], "해당 없음")
         self.assertIn("흐름 없음", na["title"])
         failed = self.cell_el(win, self.single, "D01")           # AI 실행 실패
         self.assertEqual(failed["text"], "실패")
@@ -127,7 +127,7 @@ class ResultsPanelTest(W.ShellBase):
         not_yet = self.cell_el(win, self.span_node, "D03")       # 아직 분석 전
         self.assertEqual(not_yet["text"], "·")
         self.assertEqual(not_yet["title"], "아직 분석 안 함")
-        self.assertIn("적용 불가", self.text(win), "범례가 두 가지를 설명한다")
+        self.assertIn("해당 없음(AI 판단)", self.text(win), "범례가 Excel과 같은 이름으로 설명한다")
         self.assertIn("아직 분석 안 함", self.text(win))
         self.click_na = self.js(win, "(() => { const e = document.querySelector('.rk-na'); e.click(); return true; })()")
         self.assertTrue(wait_for(lambda: "흐름 없음" in (self.js(win, "(document.querySelector('.worksheet') || {}).textContent || ''") or ""), 10),

@@ -82,23 +82,10 @@ def check_version(ns, ver):
         raise _api().CommandError("stale", "분석 결과가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
 
 
-_EN_CACHE = {}
-
-
 def deviation_names_en():
-    """{item_id: {guideword_en, label_en}} KOSHA P-86 이탈후보표의 영문. 표를 못 읽으면 빈 사전(화면은 한국어만 보인다)."""
-    if "v" not in _EN_CACHE:
-        import json
-        from hazop import paths
-        try:
-            with open(paths.folder("deviations", res.DEVIATION_CHART), encoding="utf-8") as fh:
-                items = json.load(fh).get("items") or []
-        except (OSError, ValueError):
-            return {}
-        _EN_CACHE["v"] = {i["item_id"]: {"guideword_en": (i.get("guide_word_en") or "").strip(),
-                                         "label_en": (i.get("deviation_en") or "").strip()}
-                          for i in items if i.get("item_id")}
-    return _EN_CACHE["v"]
+    """{item_id: {guideword_en, label_en}} KOSHA P-86 이탈후보표의 영문(Excel과 같은 함수, 표에 적힌 것만)."""
+    from hazop.export import study_xlsx
+    return study_xlsx.deviation_names_en()
 
 
 def _dev_with_en(d, en):
@@ -106,36 +93,38 @@ def _dev_with_en(d, en):
     return dict(d, guideword_en=n.get("guideword_en", ""), label_en=n.get("label_en", ""))
 
 
-KIND_DEFAULT_REASON = {"not_applicable": "AI가 이 구간에는 해당하지 않는다고 판단했습니다(이유를 적지 않음).",
-                       "no_scenario": "AI가 분석했으나 시나리오가 나오지 않았습니다.",
-                       "failed": "AI 실행이 실패했습니다.", "excluded": "제외한 칸입니다."}
-
-
 def cell_kind(cell):
-    """행렬에서 '아직 분석 안 함'과 구분해 보일 칸 종류. 없으면 None (항목이 있거나 아직 분석 전).
-    Excel 칸 표시 행과 같은 규칙(study_xlsx._cell_kind)으로 하되, 하나만 고른다."""
-    run = cell.get("ai_run") or {}
-    if run.get("status") == "failed":
-        return "failed"
-    if cell["state"] == "excluded":
+    """행렬에서 '아직 분석 안 함'과 구분해 보일 칸 종류 하나. 없으면 None. Excel 칸 표시 행(study_xlsx.cell_kinds)과 같은 규칙이고,
+    제외이면서 실패한 칸은 사람이 정한 '제외'를 앞에 둔다(실패는 also·이유에 함께 적음)."""
+    from hazop.export import study_xlsx
+    kinds = study_xlsx.cell_kinds(cell)
+    if "excluded" in kinds:
         return "excluded"
-    if cell["state"] == "analyzed" and not cell["entries"]:
-        return "not_applicable" if run.get("applicable") is False else "no_scenario"
-    return None
+    return kinds[0] if kinds else None
 
 
 def cell_reason(cell, kind):
-    run = cell.get("ai_run") or {}
-    text = run.get("error") if kind == "failed" else run.get("note")
-    return (text.strip() if isinstance(text, str) else "") or KIND_DEFAULT_REASON[kind]
+    from hazop.export import study_xlsx
+    text = study_xlsx.cell_reason(cell, kind)
+    if kind == "excluded" and "failed" in study_xlsx.cell_kinds(cell):
+        text += " 마지막 AI 실행도 실패: " + study_xlsx.cell_reason(cell, "failed")
+    return text
 
 
 def _mark_kinds(matrix, cells):
-    """matrix_summary의 칸에 kind·reason을 더한다(키만 더함). 해당이 없는 칸(대부분)에는 키를 붙이지 않아 크기를 키우지 않는다."""
+    """matrix_summary의 칸에 kind·reason·label(Excel 행 이름과 같은 글)을 더한다(키만 더함). 해당이 없는 칸(대부분)에는 키를 붙이지 않는다.
+    기각 항목만 있는 칸에는 rejected(수)를 붙인다(파일에는 행이 나가는데 행렬 수는 0이라 화면 안내가 틀리지 않게)."""
+    from hazop.export import study_xlsx
     for c in cells:
+        m = matrix[c["node_id"]][c["deviation_id"]]
         kind = cell_kind(c)
         if kind:
-            matrix[c["node_id"]][c["deviation_id"]].update(kind=kind, reason=cell_reason(c, kind))
+            m.update(kind=kind, reason=cell_reason(c, kind), label=study_xlsx.CELL_ROW_LABELS[kind])
+            also = [k for k in study_xlsx.cell_kinds(c) if k != kind]
+            if also:
+                m["also"] = also
+        if c["entries"] and not m.get("scenarios"):
+            m["rejected"] = sum(e.get("status") == "rejected" for e in c["entries"])
     return matrix
 
 
@@ -374,14 +363,20 @@ def _export_excel(engine, a):
     if legacy:
         raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
     doc, _fp = _load(ns)
+    scope = a.get("scope") or "all"
+    node_ids = a.get("node_ids") or None
+    if scope == "nodes":
+        shown = {n["node_id"] for n in scope_rows(ns)}
+        outside = [n for n in node_ids or [] if n not in shown]
+        if not node_ids or outside:
+            raise _api().CommandError("bad_args", ("행렬에 없는 구간은 내보낼 수 없습니다(%s)." % ", ".join(outside[:5])) if outside
+                                      else "고른 구간이 없습니다.")
     now = nodes.now_utc()
     path = _save_path(engine, "excel", study_xlsx.default_filename(ns.get("project_id"), now))
     if not path:
         return {"cancelled": True}
     if not path.lower().endswith(".xlsx"):
         path += ".xlsx"
-    scope = a.get("scope") or "all"
-    node_ids = a.get("node_ids") or None
     inputs = excel_inputs(ns, pg)
     try:
         path, rows = study_xlsx.export(path, doc, scope_set(ns), pg, doc["deviations"], scope=scope, node_ids=node_ids,

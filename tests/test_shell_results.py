@@ -585,6 +585,33 @@ class ReasonAndGuidewordTest(Base):
         self.assertEqual((m["S2"]["D02"]["kind"], m["S2"]["D02"]["reason"]), ("failed", "AI 호출 중 오류(Timeout)"))
         self.assertEqual(m["S1"]["D02"]["kind"], "excluded")
 
+    def test_excluded_and_failed_cell_shows_both(self):
+        """재현 A3: 제외이면서 실패한 칸은 '제외'를 앞에 두고 실패도 함께 알린다."""
+        self.mark("S2", "D01", state="excluded", entries=[], ai_run={"status": "failed", "error": "Timeout", "note": None})
+        c = self.read("results")["matrix"]["S2"]["D01"]
+        self.assertEqual((c["kind"], c["also"]), ("excluded", ["failed"]))
+        self.assertIn("Timeout", c["reason"])
+
+    def test_moved_cell_reads_the_old_verdict_from_legacy_cells(self):
+        """재현 A4: 옛 ID 이전으로 ai_run 없이 '분석함·항목 없음'이 된 칸은 legacy_cells의 옛 판정과 이유를 보인다."""
+        self.mark("S2", "D01", state="analyzed", entries=[],
+                  legacy_cells=[{"from": "OLD", "state": "analyzed", "ai_run": {"status": "ok", "applicable": False, "note": "no pipe"}}])
+        c = self.read("results")["matrix"]["S2"]["D01"]
+        self.assertEqual(c["kind"], "not_applicable")
+        self.assertIn("no pipe", c["reason"])
+        self.assertIn("OLD", c["reason"], "옛 구간에서 온 판정이라고 적는다")
+
+    def test_analyzed_empty_without_any_record_says_no_record(self):
+        self.mark("S2", "D01", state="analyzed", entries=[])
+        c = self.read("results")["matrix"]["S2"]["D01"]
+        self.assertEqual(c["kind"], "no_record")
+        self.assertIn("이유 기록 없음", c["reason"])
+
+    def test_rejected_only_cell_is_counted_for_export(self):
+        self.mark("S2", "D01", state="analyzed", entries=[entry("r1", "rejected")])
+        c = self.read("results")["matrix"]["S2"]["D01"]
+        self.assertEqual((c["scenarios"], c["rejected"]), (0, 1))
+
     def test_a_blank_reason_still_says_something(self):
         ok = {"status": "ok", "error": None, "at": "t", "model": "m", "note": None, "applicable": False}
         self.mark("S2", "D01", state="analyzed", entries=[], ai_run=ok)
@@ -660,10 +687,51 @@ class ExportScopeTest(ExportTest):
         r = self.call("results.export_excel", {"scope": "nodes"})
         self.assertFalse(r["ok"], "구간을 고르지 않으면 내보내지 않는다")
 
-    def test_nodes_outside_the_screens_scope_are_not_exported(self):
+    def test_nodes_outside_the_screens_scope_are_refused(self):
+        """재현 A2: 행렬에 없는 구간(스크리닝 제외)을 직접 명령으로 보내면 거절한다(빈 파일을 쓰지 않는다)."""
         gone = self.exclude_last_node()
-        data, rows = self.export(scope="nodes", node_ids=[gone])
-        self.assertEqual(rows, [], "화면 행에서 빠진 구간은 고르더라도 나가지 않는다")
+        self.engine.hooks["save_path"] = self.paths
+        self.save_to = None
+        r = self.call("results.export_excel", {"scope": "nodes", "node_ids": [gone]})
+        self.assertEqual((r["ok"], r["error"]["code"]), (False, "bad_args"), r)
+        self.assertIn(gone, r["error"]["message"])
+        self.assertIsNone(self.save_to, "거절할 때는 저장 대화상자도 열지 않는다")
+
+    def summary_sheet(self):
+        import openpyxl
+        from hazop.export import study_xlsx
+        ws = openpyxl.load_workbook(self.save_to)[study_xlsx.SHEETS[0]]
+        return {r[0].value: r[1].value for r in ws.iter_rows() if r[0].value}
+
+    def test_approved_scope_cover_counts_only_what_was_exported(self):
+        """재현 A1: '승인 항목만'이면 표지 수치도 승인 항목만 센다(워크시트 1행인데 표지가 시나리오 4·기각 1이던 것)."""
+        _d, rows = self.export(scope="approved")
+        s = self.summary_sheet()
+        self.assertEqual(s["내보낸 범위"], "승인 항목만")
+        self.assertEqual(s["시나리오 수"], len(rows))
+        self.assertEqual((s["상태별: 승인"], s["상태별: 기각"], s["상태별: 제안"], s["상태별: 수정"], s["상태별: 보류"]), (len(rows), 0, 0, 0, 0))
+        self.assertEqual(s["미검토 시나리오"], 0)
+
+    def test_nodes_scope_cover_names_the_chosen_nodes(self):
+        pick = api_results.scope_rows(sn.load(self.g))[0]["node_id"]
+        self.export(scope="nodes", node_ids=[pick])
+        s = self.summary_sheet()
+        self.assertEqual(s["내보낸 범위"], "고른 구간: " + pick)
+        self.assertEqual(s["구간 수"], 1)
+
+    def test_excel_guideword_column_has_the_english_and_cell_rows_use_the_screen_names(self):
+        en = {"i1": {"guideword_en": "No, Not, or None", "label_en": ""}, "i2": {"guideword_en": "More", "label_en": "More pressure"}}
+        from hazop.export import study_xlsx
+        with mock.patch.object(study_xlsx, "deviation_names_en", lambda: en):
+            _d, rows = self.export(scope="all")
+        self.assertEqual({r["가이드워드"] for r in rows if r["편차"] == "흐름 없음"}, {"없음 (No, Not, or None)"})
+        self.assertEqual({r["가이드워드"] for r in rows if r["편차"] == "압력 높음"}, {"높음 (More)"})
+        self.assertEqual(study_xlsx.guideword_text({"item_id": "i3", "guideword": "높음"}, en), "높음", "표에 영문이 없으면 한국어만")
+        na = [r for r in rows if r["상태"] == "해당 없음(AI 판단)"]
+        self.assertTrue(na and "흐름 없음" in (na[0]["AI 근거(KG 경로·출처 문서)"] or ""))
+        m = self.read("results")["matrix"]
+        labels = {c.get("label") for row in m.values() for c in row.values() if c.get("kind")}
+        self.assertTrue(labels <= set(study_xlsx.CELL_ROW_LABELS.values()), labels)
 
     def test_unknown_scope_is_refused(self):
         self.engine.hooks["save_path"] = self.paths

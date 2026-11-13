@@ -1,4 +1,4 @@
-// 분석 결과 패널(규격 §2.1·§2.3 ⑤, 시안 4번): 구간×편차 행렬(가상 스크롤), 고른 칸의 워크시트와 행 동작 막대(수용·수정·기각·보류 + 사유),
+// 분석 결과 패널(규격 §2.1·§2.3 ⑤, 시안 4번): 구간×편차 행렬(가상 스크롤), 고른 칸의 워크시트와 행 동작 막대(승인·수정·기각·보류 + 사유),
 // 분석 실행·멈춤·한도 표시, 내보내기(Excel·초기사건 인계 묶음), 권고 목록과 추적(INTENT §3.6). 저장하는 자료는 엔진만 쓰고 여기서는 보여 주고 명령만 보낸다.
 // 모델·도면에서 온 글(원인·결과·권고·이름)은 ${}로만 넣는다(HTML로 해석되지 않는다).
 import { html } from "../ui/html.js";
@@ -9,17 +9,21 @@ import { Btn, Chip, Notice } from "../ui/parts.js";
 import { VirtualGrid } from "../ui/table.js";
 import * as R from "./results_state.js";
 
-const STATUS = { proposed: ["AI 초안", "ai"], approved: ["수용", "ok"], revised: ["수정", "accent"], rejected: ["기각", "plain"], on_hold: ["보류", "warn"] };
+// 상태 이름은 Excel(study_xlsx STATUS_LABELS)·이전 화면과 같게 '승인'으로 맞춘다(2026-11-14 A9 검토)
+const STATUS = { proposed: ["AI 초안", "ai"], approved: ["승인", "ok"], revised: ["수정", "accent"], rejected: ["기각", "plain"], on_hold: ["보류", "warn"] };
 const RISK_CLASS = (r) => (r == null ? "" : "risk-" + Math.min(5, Math.max(1, r)));
-// 항목이 없는 칸의 종류: [표시, 모양, 설명]. 엔진(api_results.cell_kind)이 kind·reason을 준다. 없으면 '아직 분석 안 함'.
+// 항목이 없는 칸의 종류: [칸에 쓰는 짧은 이름, 모양, Excel 행 이름(엔진이 label로도 준다)]. 이름은 Excel 칸 표시 행(study_xlsx.CELL_ROW_LABELS)과 같다.
+// 엔진(api_results.cell_kind)이 kind·reason·label을 준다. 없으면 '아직 분석 안 함'.
 const KIND = {
-  not_applicable: ["적용 불가", "na", "AI가 이 구간에는 해당하지 않는다고 판단한 칸"],
-  no_scenario: ["0건", "ns", "분석했으나 시나리오가 나오지 않은 칸"],
-  failed: ["실패", "fail", "마지막 AI 실행이 실패한 칸"],
-  excluded: ["제외", "ex", "제외한 칸"],
+  not_applicable: ["해당 없음", "na", "해당 없음(AI 판단)"],
+  no_scenario: ["시나리오 없음", "ns", "시나리오 없음(AI)"],
+  failed: ["실패", "fail", "실패(AI 실행)"],
+  excluded: ["제외", "ex", "제외"],
+  no_record: ["기록 없음", "nr", "분석함 · 이유 기록 없음"],
 };
 const NOT_YET = "아직 분석 안 함";
 const withEn = (ko, en) => (en && en !== ko ? ko + " (" + en + ")" : ko);
+const devTitle = (d) => withEn(d.label, d.label_en) + (d.guideword_en ? " · 가이드워드 " + d.guideword + " (" + d.guideword_en + ")" : "");
 
 // ---------------------------------------------------------------- 머리
 function Kpi({ kpi }) {
@@ -29,7 +33,7 @@ function Kpi({ kpi }) {
     <${Chip}>항목 ${kpi.entries}<//>
     <${Chip} kind=${kpi.unreviewed ? "warn" : ""} title="검토하지 않은 항목(AI 초안·보류)">미검토 ${kpi.unreviewed}<//>
     ${kpi.on_hold ? html`<${Chip} kind="warn">보류 ${kpi.on_hold}<//>` : null}
-    <${Chip}>수용 ${kpi.approved}<//>
+    <${Chip}>승인 ${kpi.approved}<//>
     ${kpi.failed_cells ? html`<${Chip} kind="warn" title="마지막 AI 실행이 실패한 칸">실패 ${kpi.failed_cells}<//>` : null}</div>`;
 }
 
@@ -61,20 +65,20 @@ function PlanCard() {
 }
 
 // Excel 범위: 전체 / 승인 항목만 / 고른 구간만. 저장 위치는 창이 파일 대화상자로 묻고(웹은 경로를 보내지 않는다), 같은 이름이 있으면 덮어쓸지 한 번 더 묻는다.
-const SCOPE_TEXT = { all: "전체", approved: "승인 항목만", nodes: "고른 구간만" };
+const SCOPE_TEXT = { all: "전체", approved: "승인 항목만", nodes: "고른 구간만" };      // Excel 표지의 '내보낸 범위'와 같은 이름
 function ExportCard({ s, onDone }) {
   const active = R.useResults((x) => x.active);
   const exporting = R.useResults((x) => x.exporting);
   const [scope, setScope] = useState("all");
   // 구간마다 내보낼 내용이 있는 칸 수(항목이 있거나 적용 불가·실패 같은 표시가 있는 칸). 분석 전 구간은 0이라 파일에 행이 없다.
-  const filled = (id) => Object.values((s.matrix || {})[id] || {}).filter((c) => c.scenarios || c.kind).length;
+  const filled = (id) => Object.values((s.matrix || {})[id] || {}).filter((c) => c.scenarios || c.rejected || c.kind).length;   // 파일에 행이 나가는 칸(기각 항목 포함)
   const [picked, setPicked] = useState(() => (active && filled(active.node_id) ? [active.node_id] : []));
   const toggle = (id) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : picked.concat([id]));
   const ok = scope !== "nodes" || picked.length > 0;
   const empty = scope === "nodes" && picked.length > 0 && picked.every((id) => !filled(id));
   const go = async () => { const r = await R.exportExcel(scope, scope === "nodes" ? picked : null); if (r && !r.cancelled) onDone(); };
   const hint = { all: "모든 항목과 칸 표시 행(적용 불가·실패·제외)을 담습니다.",
-    approved: "수용한 항목 " + (s.kpi ? s.kpi.approved : 0) + "개만 담습니다. 칸 표시 행은 넣지 않습니다.",
+    approved: "승인한 항목만 담습니다. 칸 표시 행은 넣지 않고, 표지 수치도 승인 항목만 셉니다.",
     nodes: "고른 구간의 항목과 칸 표시 행을 담습니다." };
   return html`<div class="card exportcard" role="dialog" aria-label="Excel 내보내기 범위">
     <h3>Excel로 내보내기</h3>
@@ -116,6 +120,7 @@ function Legend() {
   return html`<div class="res-legend muted small" aria-label="행렬 표시 설명">
     <span><span class="faint">·</span> ${NOT_YET}</span>
     ${Object.keys(KIND).map((k) => html`<span key=${k}><span class=${"rk rk-" + KIND[k][1]}>${KIND[k][0]}</span> ${KIND[k][2]}</span>`)}
+    <span>열 머리의 작은 글자는 KOSHA 가이드워드 영문입니다.</span>
     <span>칸에 올리면 이유가 보이고, 눌러 열면 워크시트에 적힙니다.</span></div>`;
 }
 
@@ -131,12 +136,12 @@ function Matrix({ s }) {
     active=${ai >= 0 && ci >= 0 ? { r: ai, c: ci } : null} onActive=${open} onOpen=${open}
     corner=${html`<span class="muted small">구간 \\ 편차</span>`}
     renderRowHead=${(r) => html`<span class="vg-rh-in"><b>${rows[r].node_id}</b> ${rows[r].name || ""}${rows[r].range ? html` <span class="muted small">${rows[r].range}${rows[r].spans ? " ⇄" : ""}</span>` : null}</span>`}
-    renderColHead=${(c) => html`<span class="vg-ch-in" title=${withEn(cols[c].label, cols[c].label_en)} aria-label=${withEn(cols[c].label, cols[c].label_en)}>${cols[c].label}</span>`}
+    renderColHead=${(c) => html`<span class="vg-ch-in" title=${devTitle(cols[c])} aria-label=${devTitle(cols[c])}><span>${cols[c].label}</span>${cols[c].guideword_en ? html`<small class="ch-en">${cols[c].guideword_en}</small>` : null}</span>`}
     renderCell=${(r, c) => {
       const cell = (s.matrix[rows[r].node_id] || {})[cols[c].deviation_id];
       if (!cell) return null;
       const k = KIND[cell.kind];
-      if (k && !cell.scenarios) return html`<span class=${"rk rk-" + k[1]} title=${k[0] + ": " + cell.reason} aria-label=${k[0] + ". " + cell.reason}>${k[0]}</span>`;
+      if (k && !cell.scenarios) return html`<span class=${"rk rk-" + k[1]} title=${(cell.label || k[2]) + ": " + cell.reason} aria-label=${(cell.label || k[2]) + ". " + cell.reason}>${k[0]}</span>`;
       if (!cell.scenarios && cell.state !== "analyzed") return html`<span class="faint" title=${NOT_YET} aria-label=${NOT_YET}>·</span>`;
       return html`<span class=${"rc " + RISK_CLASS(cell.max_risk)}><b>${cell.max_risk == null ? "–" : cell.max_risk}</b><small>${cell.scenarios}</small>${cell.unreviewed ? html`<i class="dot-un" title="미검토"></i>` : null}${k ? html`<i class="dot-fail" title=${k[0] + ": " + cell.reason}></i>` : null}</span>`;
     }} /></div>`;
@@ -170,7 +175,7 @@ function EntryActions({ e, cell }) {
   }
   return html`<div class="ent-acts">
     <div class="acts-row">
-      <${Btn} sm=${true} kind=${e.status === "approved" ? "primary" : ""} label="수용" disabled=${off || busy} title=${off ? cell.not_editable_reason : "수용 (A)"} onClick=${() => R.setStatus(e.entry_id, "approved", "")}>수용<//>
+      <${Btn} sm=${true} kind=${e.status === "approved" ? "primary" : ""} label="승인" disabled=${off || busy} title=${off ? cell.not_editable_reason : "승인 (A)"} onClick=${() => R.setStatus(e.entry_id, "approved", "")}>승인<//>
       <${Btn} sm=${true} label="수정" disabled=${off || busy} onClick=${startEdit}>수정<//>
       <${Btn} sm=${true} label="기각" disabled=${off || busy} onClick=${() => { setMode("rejected"); setReason(""); }}>기각<//>
       <${Btn} sm=${true} label="보류" disabled=${off || busy} onClick=${() => { setMode("on_hold"); setReason(""); }}>보류<//></div>
@@ -196,13 +201,14 @@ function Worksheet() {
   const cell = c.cell;
   return html`<div class="card worksheet" aria-label=${"워크시트 " + c.node.node_id + " " + (c.deviation.label || "")}>
     <div class="nd-h"><b>${c.node.node_id}</b> ${c.node.name || ""} <span class="muted">›</span> <b>${c.deviation.label || c.deviation.deviation_id}</b>${c.deviation.label_en ? html` <span class="muted en">${c.deviation.label_en}</span>` : null}
+      <span class="muted small">가이드워드 ${withEn(c.deviation.guideword || "", c.deviation.guideword_en)}</span>
       <${Chip}>${cell.state === "analyzed" ? "분석함" : cell.state === "excluded" ? "제외" : "분석 전"}<//>
       ${cell.scope_changed ? html`<${Chip} kind="warn" title="구간 범위가 바뀐 뒤 아직 다시 확인하지 않은 칸">범위 바뀜<//>` : null}
       <span class="acts"><${Btn} sm=${true} label="도면에서 보기" title="패널을 닫고 이 구간을 도면에서 봅니다" onClick=${() => R.viewOnSheet(c.node.node_id)}>도면에서 보기<//>
         <${Btn} sm=${true} kind="ghost" icon="x" label="워크시트 닫기" onClick=${() => R.results.set({ active: null, cell: null })} /></span></div>
     ${!c.editable ? html`<${Notice} kind="info">${c.not_editable_reason || "이 칸은 고칠 수 없습니다."}<//>` : null}
     ${cell.ai_run && cell.ai_run.status === "failed" ? html`<${Notice} kind="warn" icon="alert-triangle">마지막 AI 실행이 이 칸에서 실패했습니다: ${cell.ai_run.error}<//>` : null}
-    ${mk && KIND[mk.kind] && !cell.entries.length ? html`<${Notice} kind=${mk.kind === "failed" ? "warn" : "info"}><b>${KIND[mk.kind][0]}</b> · ${mk.reason}<//>`
+    ${mk && KIND[mk.kind] && mk.kind !== "failed" && !cell.entries.length ? html`<${Notice} kind="info"><b>${mk.label || KIND[mk.kind][2]}</b> · ${mk.reason}<//>`
       : cell.ai_run && cell.ai_run.note ? html`<div class="muted small">${cell.ai_run.note}</div>` : null}
     ${cell.entries.length === 0 ? html`<div class="muted">${mk && KIND[mk.kind] ? "항목이 없습니다." : "항목이 없습니다. '분석 실행'으로 AI 초안을 받으세요."}</div>` : cell.entries.map((e) => html`<div class="ent" key=${e.entry_id}>
       <div class="entgrid">
