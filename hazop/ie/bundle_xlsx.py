@@ -115,6 +115,8 @@ def basic_event_row(b):
 
 def trace_row(t):
     sources = ["%s%s" % (s["doc"] or "-", " (%s)" % s["where"] if s["where"] else "") for s in t["sources"]]
+    sources += [t["note"]] if t.get("note") else []
+    sources += ["겹친 구간의 같은 원인이라 %s 후보에 묶음" % t["merged_into"]] if t.get("merged_into") else []
     return ("%s · %s" % (t["node_id"], t["deviation_label"]), t["entry_id"], t["cause"], t["candidate_id"],
             JUDGEMENTS[t["judgement"]], t["group_id"] or "", _joined(t["top_event_ids"]), _joined(t["end_state_ids"]),
             "\n".join(t["kg_paths"]), "\n".join(sources))
@@ -130,17 +132,20 @@ def warning_row(w):
 
 
 def guide_rows(b):
-    ref = b["source"]["study_nodes_ref"] or {}
-    confirmed = sx.kst(ref["confirmed_at"]) + " KST" if ref.get("confirmed_at") else "-"
+    src = b["source"]
+    nodes_used = src.get("nodes") or []
     table = b["category_table"]
     return (
         ("묶음", "IE 인계 묶음(초기사건 분석 인계 자료). 원본은 같은 이름의 .json 파일이고, 이 Excel은 그 내용을 사람이 "
                 "읽기 좋게 옮긴 판입니다"),
         ("프로젝트", b["project_id"] or "-"),
         ("만든 시각", sx.kst(b["created_at"]) + " KST"),
-        ("입력", "⑤ HAZOP 결과 중 '승인' 항목 %d건. 결과 판: 검토구간 확정 %s, 그래프 판 %s"
-               % (b["source"]["approved_entries"], confirmed, ref.get("graph_version") or "-")),
-        ("넣지 않은 항목", "승인되지 않은 항목 %d건(제안·수정·기각)은 넣지 않았습니다" % b["source"]["left_out_unapproved"]),
+        ("입력", "⑤ HAZOP 결과 중 확정·잠금 구간의 '승인' 항목 %d건. 결과 판: 근거 구간 %d개(%s), 그래프 판 %s"
+               % (src["approved_entries"], len(nodes_used),
+                  ", ".join("%s r%s" % (x["node_id"], x["node_rev"]) for x in nodes_used[:8])
+                  + (" 외" if len(nodes_used) > 8 else "") or "-", src.get("graph_version") or "-")),
+        ("넣지 않은 항목", "승인되지 않은 항목과 '범위 바뀜'(다시 확인 전) 항목 %d건은 넣지 않았습니다"
+         % src["left_out_unapproved"]),
         ("빈도", "이 묶음에는 초기사건 빈도·기기 고장확률이 없습니다. 빈도 산정과 정량화는 PRA 도구에서 합니다"),
         ("HAZOP 위험도", "KOSHA 위험도(강도·빈도 등급)는 정성 등급이라 넣지 않았습니다. 필요하면 ⑤ 워크시트를 보십시오. "
                         "다만 원인·결과 문장 안에 적힌 위험도 숫자나 등급은 걸러 내지 않으니 인계 전에 확인하십시오"),

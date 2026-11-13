@@ -266,11 +266,12 @@ class IeBundleTest(unittest.TestCase):
         self.assertEqual(sum(x["candidate_count"] for x in b["completeness"]),
                          sum(c["judgement"] in ("yes", "undecided") for c in b["candidates"]))
 
-    def test_source_ref_keeps_only_version_fields(self):
+    def test_source_keeps_only_version_and_node_revs(self):
         r = copy.deepcopy(self.r)
-        r["study_nodes_ref"] = dict(r["study_nodes_ref"], recommendation="권고 누출", extra={PATH: KEY})
+        r["recommendation"], r["extra"] = "권고 누출", {PATH: KEY}
         b = build(r, self.ns, self.pg)
-        self.assertEqual(set(b["source"]["study_nodes_ref"]), {"graph_version", "confirmed_at"})
+        self.assertEqual(set(b["source"]), {"graph_version", "nodes", "approved_entries", "left_out_unapproved"})
+        self.assertEqual({tuple(sorted(x)) for x in b["source"]["nodes"]}, {("node_id", "node_rev")})
 
     def test_same_bundle_same_workbook_metadata(self):
         a, b = ix.build_workbook(self.b), ix.build_workbook(copy.deepcopy(self.b))

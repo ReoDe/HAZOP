@@ -1,7 +1,11 @@
 """IE 인계 묶음 원본(JSON). 기획서/초기사건-출력설계.md §3.1~3.3, §8 P2·P3.
 
 build_bundle(results, node_set, pg, ie_doc, now, table) → dict. 파일을 쓰지 않는 순수 함수다(table이 없을 때 기준표 파일만 읽음).
-- 입력은 ⑤ 결과 중 승인(approved) 항목만이다. 항목 하나에 원인이 하나라 후보(IEC-nnn)도 항목마다 하나다.
+- 입력은 ⑤ 결과 중 확정·잠금 구간의 승인(approved) 항목만이다. 확정 해제로 보관된 칸과 '범위 바뀜' 항목은 넣지 않는다
+  (다시 확인하기 전에는 확정 근거가 아님, 검토구간 규격 §2.4·§4.3). 항목 하나에 원인이 하나라 후보(IEC-nnn)도 항목마다 하나다.
+- 겹친 두 구간에서 같은 원인(model.twins)이 승인되고 판정·범주·안전 기능·결과가 같으면 후보 하나로 묶는다. 대표는 집합 순서로
+  첫 후보이고 merged_from·node_ids·entry_ids·deviation_labels를 단다. 추적표는 항목마다 한 줄씩 그대로 둔다. 판단이 다르면
+  묶지 않고 두 후보에 twin_conflict를 달고 추적표에 결과 문장을 남긴다. 고장모드가 없는 원인은 묶지 않는다.
 - 후보 ID는 ⑥ 저장 문서(ie_doc, hazop.ie.model)의 대응표에서 읽는다. 그래서 묶음을 다시 만들어도 같은 원인은 같은 ID다.
   ie_doc은 model.sync를 거친 것이어야 한다(IEC가 없는 승인 항목이 있으면 ValueError). 행 순서는 검토구간 × 편차 × 항목.
 - 그룹·사건수목 표제·최종상태·기본사건(시트 2~5)도 ie_doc에서 온다. 그룹 상태는 model.effective_status다.
@@ -62,17 +66,68 @@ GLOSSARY = (
 
 
 def approved_entries(results, node_set):
-    """([(node_id, 편차, 항목)] 승인 항목을 묶음 순서대로, 승인 안 된 항목 수)."""
+    """([(node_id, 편차, 항목)] 확정 근거가 되는 승인 항목을 묶음 순서대로, 넣지 않은 항목 수).
+    확정·잠금 구간의 보관되지 않은 칸만 보고, '범위 바뀜' 승인은 넣지 않은 수에 센다."""
+    from hazop.study import nodes
     cells = {(c["node_id"], c["deviation_id"]): c for c in results["cells"]}
     picked, left_out = [], 0
     for n in node_set["nodes"]:
+        if not nodes.is_active(n):
+            left_out += sum(len(cells.get((n["node_id"], d["deviation_id"]), {}).get("entries", []))
+                            for d in results["deviations"])
+            continue
         for d in results["deviations"]:
-            for e in (cells.get((n["node_id"], d["deviation_id"])) or {}).get("entries", []):
-                if e.get("status") == "approved":
+            cell = cells.get((n["node_id"], d["deviation_id"])) or {}
+            for e in cell.get("entries", []):
+                if e.get("status") == "approved" and not e.get("scope_changed") and not cell.get("hold"):
                     picked.append((n["node_id"], d, e))
                 else:
                     left_out += 1
     return picked, left_out
+
+
+def _merge_twins(candidates, trace, ie_doc, facts, idx):
+    """겹친 구간의 같은 원인 후보를 묶은 후보 목록(§4.3). candidates·trace는 같은 순서다. trace는 고치기만 한다."""
+    pairs = model.twins(ie_doc, facts)
+    order = {c["candidate_id"]: i for i, c in enumerate(candidates)}
+    by_id = {c["candidate_id"]: c for c in candidates}
+    into = {}
+    for c in candidates:
+        iec = c["candidate_id"]
+        if iec in into:
+            continue
+        for other, same in pairs.get(iec, []):
+            if same and other in order and other not in into and order[other] > order[iec]:
+                into[other] = iec
+    for c, t in zip(candidates, trace):
+        iec = c["candidate_id"]
+        conflicts = [o for o, same in pairs.get(iec, []) if not same and o in by_id]
+        if conflicts:
+            c["twin_conflict"] = conflicts
+            o = by_id[conflicts[0]]
+            where = ", ".join("(%s, %s)" % (refs.label(r, idx), m) for r, m in sorted(model.cause_key(
+                _entry_of(ie_doc, facts, iec)) or ()))
+            t["note"] = "같은 원인 %s이 %s·%s에서 결과가 다름: %s '%s', %s '%s'" % (
+                where, c["node_id"], o["node_id"], c["node_id"], c["consequence"], o["node_id"], o["consequence"])
+        if iec in into:
+            t["merged_into"] = into[iec]
+    out = []
+    for c in candidates:
+        iec = c["candidate_id"]
+        if iec in into:
+            continue
+        group = [iec] + [x for x, rep in into.items() if rep == iec]
+        if len(group) > 1:
+            group.sort(key=order.get)
+            c.update(merged_from=group[1:], node_ids=list(dict.fromkeys(by_id[x]["node_id"] for x in group)),
+                     entry_ids=[by_id[x]["entry_id"] for x in group],
+                     deviation_labels=[by_id[x]["deviation_label"] for x in group])
+        out.append(c)
+    return out
+
+
+def _entry_of(ie_doc, facts, iec):
+    return facts[ie_doc["candidates"][iec]["key"]]["entry"]
 
 
 def _candidate(iec, node_id, dev, e, idx):
@@ -170,7 +225,7 @@ def _groups(doc, results, facts, source_label, scope):
     for gid in model.live_groups(doc):
         g = doc["groups"][gid]
         everyone = model.members_of(doc, gid)
-        members = [m for m in everyone if (facts.get(doc["candidates"][m]["key"]) or {}).get("approved")]
+        members = [m for m in everyone if model.is_evidence(facts.get(doc["candidates"][m]["key"]))]
         held = [m for m in everyone if m not in members]
         heads = [doc["headings"][h] for h in g["heading_ids"]]
         ends = [doc["end_states"][e] for e in g["end_state_ids"]]
@@ -280,7 +335,8 @@ def _safeguard_as_cause(e, idx, guarded):
 def _boundary_cut(node_id, e, idx, homes, analysed, covered):
     """결과의 영향 대상이 이 구간 밖인데 받는 쪽에서 이어지지 않는 경우의 경고 글(없으면 None) [추론]. 끊긴 것으로 보는 경우:
     대상이 그래프에 없음, 어느 검토구간에도 들지 않음, 받는 구간에 승인 항목이 없음, 받는 구간의 승인 항목 가운데
-    그 대상을 가리키는 것이 없음. 묶음에는 영향 대상 열이 없어 사라진 대상도 여기서 알린다."""
+    그 대상을 가리키는 것이 없음. 묶음에는 영향 대상 열이 없어 사라진 대상도 여기서 알린다.
+    '검토구간 없음'은 그 대상이 구간 밖 구성요소라는 뜻이다(v2에서는 흔한 경우)."""
     cuts = []
     for r in e.get("consequence_refs") or []:
         ref = r.get("ref") if isinstance(r, dict) else None
@@ -294,7 +350,7 @@ def _boundary_cut(node_id, e, idx, homes, analysed, covered):
         if node_id in home or any(h in covered.get(ref, ()) for h in home):
             continue
         if not home:
-            where = "검토구간 없음"
+            where = "구간 밖 구성요소"
         elif any(h in analysed for h in home):
             where = "구간 %s(그 대상을 다룬 승인 항목이 없음)" % ", ".join(home)
         else:
@@ -372,7 +428,7 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None):
     idx = refs.index(pg)
     labels = sx.entity_labels(pg)
     picked, left_out = approved_entries(results, node_set)
-    facts = model.entry_facts(results)
+    facts = model.entry_facts(results, node_set)
     iecs = model.iec_of(ie_doc)
     approved = {k for k, f in facts.items() if f["approved"]}
     unsynced = sorted(approved - set(iecs))
@@ -389,16 +445,33 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None):
         c["group_id"] = gid if gid in by_gid else None
         candidates.append(c)
         trace.append(_trace(c, e, labels, by_gid.get(c["group_id"])))
+    candidates = _merge_twins(candidates, trace, ie_doc, facts, idx)
+    rep = {x: c["candidate_id"] for c in candidates for x in c.get("merged_from") or []}
+    for g in groups:  # 묶인 후보는 그룹 행에서도 대표 후보 ID로(묶음에 없는 ID를 가리키지 않게)
+        g["members"] = list(dict.fromkeys(rep.get(m, m) for m in g["members"]))
+        g["member_count"] = len(g["members"])
+        if g["representative"] in rep:
+            g["representative"] = rep[g["representative"]]
+    changed = {n["node_id"] for n in node_set["nodes"] if n.get("version_changed")}
+    for c in candidates:
+        hit = sorted(changed & set(c.get("node_ids") or [c["node_id"]]))
+        if hit:  # 잠근 뒤 그래프 내용이 바뀐 구간(§5.3): 결과는 그대로 넣고 경고를 단다
+            c["node_version_changed"] = hit
+    for t in trace:
+        if t["node_id"] in changed:
+            t["note"] = ((t.get("note") or "") + " 잠근 뒤 그래프 판이 바뀐 구간(잠금 유지, 다시 확인 전)").strip()
     warnings, warning_summary = _warnings(picked, node_set, pg, idx)
+    revs = {n["node_id"]: n.get("rev") or 1 for n in node_set["nodes"]}
+    used = list(dict.fromkeys(node_id for node_id, _d, _e in picked))
     return _scrubbed({
         "kind": KIND,
         "schema_version": SCHEMA_VERSION,
         "project_id": node_set.get("project_id"),
         "graph_id": results.get("graph_id"),
         "created_at": now,
-        "source": {"study_nodes_ref": {k: (results.get("study_nodes_ref") or {}).get(k)
-                                    for k in ("graph_version", "confirmed_at")}, "approved_entries": len(picked),
-                   "left_out_unapproved": left_out},
+        "source": {"graph_version": results.get("graph_version"),
+                   "nodes": [{"node_id": nid, "node_rev": revs.get(nid)} for nid in used],
+                   "approved_entries": len(picked), "left_out_unapproved": left_out},
         "scope": SCOPE,
         "category_table": {"table_id": table.get("table_id"), "title": table.get("title"),
                            "source_label": source_label, "basis": table.get("basis")},
