@@ -51,11 +51,14 @@ def node(lid, kind, x, y, w, h, tag="T1", cat="valve", style="", cls="classified
             "geometry": {"x": x, "y": y, "width": w, "height": h}}
 
 
-def rel(lid, a, b, status="connected", line_type="process", basis="source_to_target", way=()):
+def rel(lid, a, b, status="connected", line_type="process", basis="source_to_target", way=(), reverse=False):
+    """추출 결과와 같은 꼴의 관계. flow_direction은 어댑터·사람 고침이 쓰는 꼴({from, to, from_end, to_end, basis}), basis=None이면 방향 없음."""
+    ends = ("target", "source") if reverse else ("source", "target")
+    nodes = (b[0], a[0]) if reverse else (a[0], b[0])
     return {"local_id": lid, "kind": "physical_connection", "line_type": line_type, "line_no": "L1", "waypoints": [list(p) for p in way],
             "endpoints": [{"end": "source", "node_local_id": a[0], "point": a[1], "status": "connected"},
                           {"end": "target", "node_local_id": b[0], "point": b[1], "status": status}],
-            "flow_direction": {"basis": basis} if basis else None}
+            "flow_direction": {"from": nodes[0], "to": nodes[1], "from_end": ends[0], "to_end": ends[1], "basis": basis} if basis else None}
 
 
 def extraction(nodes, relations, fmt="drawio"):
@@ -175,6 +178,27 @@ class RuleTest(unittest.TestCase):
         e["texts"] = [{"text": "N", "bbox": [119, 119, 10, 10]}]
         self.assertEqual(clean_items.build(e)["text_items"][0]["bbox"], [100, 100, 110, 110])
         self.assertEqual(sheet_items.build_items(e)["items"][0]["bbox"], [100, 100, 130, 150])
+
+
+class FlowTest(unittest.TestCase):
+    """흐름 방향은 from_end·to_end에서 읽는다. 근거(basis) 종류와 상관없이 정해진 방향이면 화살촉을 그리고, 미확인 방향은 그리지 않는다."""
+
+    def flows(self, relations, unknowns=()):
+        ex = extraction([node("a", "pump", 0, 0, 40, 40, cat="equipment"), node("b", "tank", 200, 0, 40, 40, cat="equipment")], relations, fmt="pdf")
+        ex["validation"] = {"unknowns": list(unknowns)}
+        return {k: v["flow"] for k, v in clean_items.build(ex)["items"].items() if "flow" in v}
+
+    def test_every_basis_that_fixes_a_direction_draws_it(self):
+        for basis in ("source_to_target", "continuation_arrow", "flow_continuity", "dexpi_flow", "human"):
+            self.assertEqual(self.flows([rel("r", ("a", [40, 20]), ("b", [200, 20]), basis=basis)])["r"], "source_to_target", basis)
+
+    def test_a_reversed_direction_from_a_human_edit_points_from_target_to_source(self):
+        self.assertEqual(self.flows([rel("r", ("a", [40, 20]), ("b", [200, 20]), basis="human", reverse=True)])["r"], "target_to_source")
+
+    def test_no_direction_or_an_unconfirmed_direction_draws_no_arrow(self):
+        self.assertIsNone(self.flows([rel("r", ("a", [40, 20]), ("b", [200, 20]), basis=None)])["r"])
+        u = {"check": "unknown_flow_direction", "target": "r", "reason": "PDF 선에서 흐름 방향을 정하지 않음"}
+        self.assertIsNone(self.flows([rel("r", ("a", [40, 20]), ("b", [200, 20]), basis="flow_continuity")], [u])["r"])
 
 
 class ScopeTest(unittest.TestCase):
