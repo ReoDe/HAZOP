@@ -78,6 +78,46 @@ def kg_css_vars():
 FONT_SIZE = {"xs": 11, "sm": 12, "md": 13, "lg": 15, "xl": 20}
 
 
+# 새 웹 화면(hazop/shell/web/, docs/design/app-shell-web.md §4.1)의 토큰. 이전 화면의 COLORS·qss()·web_css()는 바꾸지 않는다.
+# 값은 시안 CSS(docs/design/mockups/app-shell-web/assets/app-shell.css)의 :root와 같다. 데이터 색(노드·관계·강조·위험도·구간)은 COLORS를 쓴다.
+SHELL = {
+    "bg": "#f6f7f9", "surface": "#ffffff", "surface-2": "#f1f3f5", "line": "#e3e6ea", "line-strong": "#c3c9d1", "line-input": "#8a929c",
+    "ink": "#0f1419", "ink-2": "#2a313b", "muted": "#59626e", "faint": "#6f7782",
+    "accent": "#0a5fc2", "accent-weak": "#e8f0fb", "accent-ink": "#0a4a96",
+    "ok": "#127238", "ok-bg": "#e4f4ea", "warn": "#8a5a0b", "warn-bg": "#fdf3dc", "warn-line": "#d9a23a",
+    "err": "#a8201a", "err-bg": "#fbe9e8", "ai-a": "#f1f2f4", "ai-b": "#e8eaee", "ai-line": "#8a929c", "path": "#ea580c",
+    "surface-3": "#e9ecef", "on-accent": "#ffffff", "err-line": "#e0918b", "path-weak": "rgba(234, 88, 12, .14)", "cause": "#dc2626",
+    "select": "#0a5fc2", "seg1": "#0b7285", "seg2": "#6d28d9", "seg3": "#b54708", "seg4": "#a61e4d", "seg5": "#3f6212",
+    "risk-ok-bg": "#eef0f3", "risk-ok-ink": "#374151", "risk-cond-bg": "#fde68a", "risk-cond-ink": "#78350f",
+    "risk-deny-bg": "#991b1b", "risk-deny-ink": "#ffffff",
+}
+SHELL_FONT = '"Malgun Gothic", "맑은 고딕", system-ui, sans-serif'
+SHELL_MONO = '"Cascadia Mono", Consolas, monospace'
+SHELL_SIZES = {"fs-xs": 11, "fs-sm": 12, "fs-md": 13, "fs-lg": 15, "fs-xl": 18}
+SHELL_SPACE = {"sp-1": 4, "sp-2": 8, "sp-3": 12, "sp-4": 16, "sp-5": 24, "sp-6": 32}
+SHELL_RADIUS = {"r-sm": 6, "r-md": 10, "r-lg": 14, "r-pill": 999}
+SHELL_SHADOW = {"sh-1": "0 1px 2px rgba(15,20,25,.06)", "sh-2": "0 4px 16px rgba(15,20,25,.08)", "sh-3": "0 12px 32px rgba(15,20,25,.16)"}
+SHELL_LAYOUT = {"rail-w": 56, "top-h": 48, "chat-w": 380, "panel-w": 440}
+SHELL_LAYOUT_NARROW = {"rail-w": 48, "top-h": 44, "chat-w": 320, "panel-w": 380}   # 논리 폭 1,400px 이하
+
+
+def shell_css():
+    """hazop/shell/web/tokens.css의 내용. 새 화면의 :root 변수와 좁은 화면 값. tests/test_shell_web.py가 파일과 같은지 본다."""
+    rows = ["--%s: %s;" % (k, v) for k, v in SHELL.items()]
+    rows += ["--font: %s;" % SHELL_FONT, "--mono: %s;" % SHELL_MONO]
+    rows += ["--%s: %dpx;" % (k, v) for k, v in SHELL_SIZES.items()]
+    rows += ["--%s: %dpx;" % (k, v) for k, v in SHELL_SPACE.items()]
+    rows += ["--%s: %dpx;" % (k, v) for k, v in SHELL_RADIUS.items()]
+    rows += ["--%s: %s;" % (k, v) for k, v in SHELL_SHADOW.items()]
+    rows += ["--%s: %dpx;" % (k, v) for k, v in SHELL_LAYOUT.items()]
+    narrow = ["--%s: %dpx;" % (k, v) for k, v in SHELL_LAYOUT_NARROW.items()]
+    nl = chr(10)
+    head = "/* 만든 곳: hazop/app/tokens.py shell_css(). 손으로 고치지 않는다 */"
+    body = (nl + "  ").join(rows)
+    small = (nl + "    ").join(narrow)
+    return head + nl + ":root {" + nl + "  " + body + nl + "}" + nl + "@media (max-width: 1400px) {" + nl + "  :root {" + nl + "    " + small + nl + "  }" + nl + "}" + nl
+
+
 def c(name):
     return COLORS[name]
 

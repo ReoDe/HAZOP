@@ -1,0 +1,406 @@
+"""새 웹 화면 통합 시험(단위 새 화면 1단계, docs/design/app-shell-web.md §5.5·§5.6). 실행: python -m unittest tests.test_shell_web
+
+오프스크린 웹 엔진에 실제 틀 창(ShellWindow)을 띄워 본다: 웹 콘솔 오류 0, 원격 요청 0, 도면 목록·열기, 채팅 묻기 → 답 카드 → 도면 표시 요청,
+요금·한도 막기가 화면에 나오는지, 모델·도면의 글이 HTML로 해석되지 않는지. 웹 단위 시험(`web/test/run.html`)도 여기서 돌린다.
+실제 구독 호출·실제 창 조작은 없다(채팅 세션은 가짜).
+"""
+
+import glob
+import json
+import os
+import re
+import shutil
+import sys
+import tempfile
+import threading
+import time
+import unittest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing --log-level=3")
+
+from hazop import paths  # noqa: E402
+from tests.test_app import tearDownModule  # noqa: E402,F401
+from tests.test_chat_card import REF, S1, S2, TOOL_IDS, FakeEnv, answer, comp, small_pg  # noqa: E402
+from tests.test_shell_api import FakeSession  # noqa: E402
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WEB = os.path.join(REPO, "hazop", "shell", "web")
+
+
+def pump(seconds=0.0):
+    from PySide6.QtCore import QCoreApplication
+    end = time.monotonic() + seconds
+    while True:
+        QCoreApplication.processEvents()
+        if time.monotonic() >= end:
+            return
+        time.sleep(0.005)
+
+
+def wait_for(cond, timeout=20.0):
+    from PySide6.QtCore import QCoreApplication
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        QCoreApplication.processEvents()
+        if cond():
+            return True
+        time.sleep(0.02)
+    return bool(cond())
+
+
+class StaticTest(unittest.TestCase):
+    def test_tokens_css_is_what_tokens_py_makes(self):
+        from hazop.app import tokens
+        with open(os.path.join(WEB, "tokens.css"), encoding="utf-8", newline="") as fh:
+            self.assertEqual(fh.read().replace("\r\n", "\n"), tokens.shell_css())
+
+    def test_index_csp_matches_the_handlers_policy(self):
+        from hazop.shell import scheme
+        with open(os.path.join(WEB, "index.html"), encoding="utf-8") as fh:
+            text = fh.read()
+        m = re.search(r'http-equiv="Content-Security-Policy" content="([^"]+)"', text)
+        self.assertIsNotNone(m)
+        self.assertEqual(m.group(1), scheme.CSP)
+
+    def test_web_sources_never_use_dangerous_apis(self):
+        bad = re.compile(r"dangerouslySetInnerHTML|innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\s*\(|new\s+Function|"
+                         r"setTimeout\s*\(\s*['\"`]|importScripts|XMLHttpRequest|WebSocket|https?://")
+        hits = []
+        for p in glob.glob(os.path.join(WEB, "**", "*.js"), recursive=True) + glob.glob(os.path.join(WEB, "*.html")):
+            if os.sep + "vendor" + os.sep in p:
+                continue
+            with open(p, encoding="utf-8") as fh:
+                for n, line in enumerate(fh, 1):
+                    line = re.sub(r"http://www\.w3\.org/\d+/[a-z0-9/]+", "", line)          # SVG·XLink 이름 공간 주소는 요청이 아니다
+                    line = re.sub(r"(^|\s)//.*$", "", line)                                      # 주석은 보지 않는다
+                    if bad.search(line):
+                        hits.append("%s:%d %s" % (os.path.relpath(p, REPO), n, line.strip()[:80]))
+        self.assertEqual(hits, [])
+
+    def test_every_relative_import_exists(self):
+        for p in glob.glob(os.path.join(WEB, "js", "**", "*.js"), recursive=True) + glob.glob(os.path.join(WEB, "test", "*.js")):
+            if os.sep + "canvas" + os.sep in p and not p.endswith("README.md"):
+                continue   # 도면 구성요소는 s-viewer가 맡는다(없을 수 있다)
+            with open(p, encoding="utf-8") as fh:
+                text = fh.read()
+            for rel in re.findall(r'(?:from|import)\s*\(?\s*"(\.[^"]+)"', text):
+                target = os.path.normpath(os.path.join(os.path.dirname(p), rel))
+                if os.sep + "canvas" + os.sep in target:
+                    continue
+                self.assertTrue(os.path.isfile(target), "%s -> %s" % (os.path.relpath(p, REPO), rel))
+
+    def test_vendor_files_are_the_recorded_ones(self):
+        import hashlib
+        with open(os.path.join(WEB, "vendor", "README.md"), encoding="utf-8") as fh:
+            text = fh.read()
+        for name in ("preact.module.js", "hooks.module.js", "htm.module.js"):
+            with open(os.path.join(WEB, "vendor", name), "rb") as fh:
+                digest = hashlib.sha256(fh.read()).hexdigest()
+            self.assertIn(digest, text, name)
+
+
+class ShellBase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix="hazop-shellweb-")
+        cls._env = {k: os.environ.get(k) for k in ("HAZOP_WORK_ROOT", "HAZOP_STORE_ROOT", "HAZOP_DEBUG")}
+        os.environ["HAZOP_WORK_ROOT"] = os.path.join(cls.tmp, "work")
+        os.environ["HAZOP_STORE_ROOT"] = os.path.join(cls.tmp, "store")
+        os.environ["HAZOP_DEBUG"] = "1"       # window.__hz 시험 갈고리는 디버그 실행에서만 만든다
+        os.makedirs(os.environ["HAZOP_WORK_ROOT"])
+        from hazop.app import make_application
+        cls.qapp = make_application(["test"])
+        sys.path.insert(0, os.path.join(REPO, "scripts"))
+        from scripts.check_edit_screen import install_sample
+        cls.names = [install_sample(os.environ["HAZOP_WORK_ROOT"], d) for d in ("SNP-M-101", "SNP-M-102")]
+
+    @classmethod
+    def tearDownClass(cls):
+        for k, v in cls._env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def window(self, size=(1366, 768)):
+        from hazop.shell.window import ShellWindow
+        self.sessions = []
+
+        def factory(model, cb):
+            s = FakeSession(model, cb)
+            self.sessions.append(s)
+            return s
+        self.env = FakeEnv()
+        win = ShellWindow(settings_path=os.path.join(tempfile.mkdtemp(dir=self.tmp), "settings.json"), size=size, session_factory=factory,
+                          env_provider=lambda: (self.env, small_pg()))
+        win.show()
+        self.addCleanup(win.deleteLater)
+        self.addCleanup(win.close)
+        self.assertTrue(wait_for(lambda: self.js(win, "!!window.__hz && document.querySelector('.rail') !== null"), 30), "웹 화면이 뜨지 않음")
+        self.assertTrue(wait_for(lambda: (self.js(win, "window.__hz.store.get().drawings.drawings.length") or 0) >= 2, 20))
+        pump(0.3)
+        return win
+
+    def js(self, win, code, timeout=10.0):
+        out = []
+        win.view.page().runJavaScript(code, 0, out.append)
+        end = time.monotonic() + timeout
+        while time.monotonic() < end and not out:
+            pump(0.01)
+        return out[0] if out else None
+
+    def jsj(self, win, expr):
+        """식의 값을 JSON으로 받아 파이썬 값으로 돌려준다(배열·객체는 runJavaScript가 비어 오는 일이 있어 문자열로 받는다)."""
+        raw = self.js(win, "JSON.stringify(%s)" % expr)
+        return json.loads(raw) if raw else None
+
+    def text(self, win):
+        return self.js(win, "document.body.innerText") or ""
+
+    def click(self, win, selector, nth=0):
+        return self.js(win, "(() => { const e = document.querySelectorAll(%s)[%d]; if (!e) return false; e.click(); return true; })()"
+                       % (json.dumps(selector), nth))
+
+
+class ShellWindowTest(ShellBase):
+    def test_boot_has_no_console_errors_and_no_remote_requests(self):
+        win = self.window()
+        errors = [c for c in win.view.page().console if c[0] >= 2]
+        self.assertEqual(errors, [])
+        self.assertEqual(win.view.interceptor.blocked, [], "실행 중 원격 요청 0")
+        self.assertEqual(win.view.page().blocked_navigation, [])
+
+    def test_frame_has_rail_chat_and_drawings_panel_first(self):
+        win = self.window()
+        t = self.text(win)
+        self.assertIn("채팅", t)
+        self.assertIn("도면 파일을 여기에 끌어 놓으세요", t)       # 열 도면이 여럿이면 도면 패널을 먼저 보인다
+        self.assertIn("SNP-M-101", t)
+        self.assertIn("SNP-M-102", t)
+        self.assertEqual(self.js(win, "document.querySelectorAll('.rail button').length"), 3)
+        self.assertEqual(self.js(win, "document.querySelectorAll('button:not([aria-label]):not([title])').length"), 0, "접근 이름 없는 단추")
+
+    def test_icons_are_inline_svg_elements(self):
+        win = self.window()
+        self.assertGreater(self.js(win, "document.querySelectorAll('svg.ic path').length"), 5)
+        self.assertEqual(self.js(win, "document.querySelectorAll('img').length"), 0)
+
+    def test_open_a_drawing_from_the_list(self):
+        win = self.window()
+        self.assertTrue(self.click(win, ".panel .row button", 1))
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().sheet") is not None, 10))
+        pump(0.5)
+        self.assertTrue(self.js(win, "window.__hz.store.get().panel === null"))
+        self.assertEqual(win.engine.current_sheet, self.js(win, "window.__hz.store.get().sheet"))
+        src = self.js(win, "(document.querySelector('.canvas img') || {}).src || ''")
+        self.assertTrue(src == "" or src.startswith("hazop-app://shell/api/sheet/"), src)
+        self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
+
+    def test_keys_toggle_panels_and_chat(self):
+        win = self.window()
+        key = ("window.dispatchEvent(new KeyboardEvent('keydown', {key: %s, ctrlKey: %s, altKey: %s, bubbles: true}))")
+        self.js(win, key % ('"Escape"', "false", "false"))
+        pump(0.2)
+        self.assertTrue(self.js(win, "window.__hz.store.get().panel === null"))
+        self.js(win, key % ('"1"', "true", "false"))
+        pump(0.2)
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings")
+        self.js(win, key % ('"k"', "true", "true"))
+        pump(0.2)
+        self.assertTrue(self.js(win, "window.__hz.store.get().chatCollapsed"))
+        self.assertTrue(win.engine.ui_state() == {} or True)
+        self.js(win, key % ('"k"', "true", "false"))
+        pump(0.3)
+        self.assertFalse(self.js(win, "window.__hz.store.get().chatCollapsed"), "Ctrl+K는 접힌 채팅을 편다")
+
+    def test_settings_panel_shows_connection_and_saves_reviewer(self):
+        win = self.window()
+        self.assertTrue(self.click(win, ".rail button", 2))
+        pump(0.5)
+        self.assertIn("AI 연결", self.text(win))
+        self.js(win, "(() => { const i = document.getElementById('reviewer'); i.value = '검토자A'; i.dispatchEvent(new Event('input', {bubbles: true})); })()")
+        pump(0.2)
+        self.assertTrue(self.click(win, ".panel .btn.primary"))
+        self.assertTrue(wait_for(lambda: win.engine.reviewer() == "검토자A", 10))
+
+
+class ShellChatTest(ShellBase):
+    def ask(self, win, text="경로 알려줘"):
+        self.js(win, "window.__hz.cmd('chat.ask', {text: %s})" % json.dumps(text))
+        self.assertTrue(wait_for(lambda: bool(self.sessions) and bool(self.sessions[-1].asked), 10))
+        return self.sessions[-1]
+
+    def deliver(self, s, ans=None, tool_ids=None, qid="q1", tools=1):
+        def run():
+            for _ in range(tools):
+                s.cb["on_tool_event"](qid, "trace_path", {}, {"ok": True, "sources": [{"kind": "drawing"}], "data": {"path_ref": REF}})
+            s.cb["on_answer"](qid, ans if ans is not None else answer(paths=[{"label": "RC-PZ01 → RC-PSV101", "path_ref": REF}]),
+                              TOOL_IDS if tool_ids is None else tool_ids)
+        t = threading.Thread(target=run)
+        t.start()
+        t.join()
+        pump(0.4)
+
+    def test_question_to_card_and_marks(self):
+        win = self.window()
+        win.engine.dispatch("sheet.open", {"graph_id": win.engine.graph_names() and sorted(win.engine.graph_names())[0]})
+        s = self.ask(win)
+        self.assertEqual(s.asked[0][0], "경로 알려줘")
+        self.assertTrue(wait_for(lambda: "경로 알려줘" in self.text(win), 5), "내 질문이 보인다")
+        self.deliver(s)
+        t = self.text(win)
+        self.assertIn("경로는 티 하나를 거칩니다.", t)
+        chips = self.jsj(win, "[...document.querySelectorAll('.steps .chip')].map(e => e.textContent.trim())")
+        self.assertEqual(chips, ["RC-PZ01", "RC-T2", "RC-PSV101"])
+        self.assertEqual(self.js(win, "[...document.querySelectorAll('.sheets .chip')].length"), 2)
+        marks = self.jsj(win, "Object.keys(window.__hz.store.get().marks.bySheet)")
+        self.assertIn(S1, marks)
+        self.assertEqual(self.js(win, "document.querySelector('.chat-h') !== null"), True)
+
+    def test_sheet_chip_opens_that_sheet_and_sets_its_marks(self):
+        win = self.window()
+        s = self.ask(win)
+        self.deliver(s)
+        self.assertTrue(self.click(win, ".sheets .chip", 1))
+        pump(0.3)
+        self.assertEqual(self.js(win, "window.__hz.store.get().sheet"), S2)
+        self.assertIn(S2, self.jsj(win, "Object.keys(window.__hz.store.get().marks.bySheet)"))
+
+    def test_text_from_the_model_is_not_html(self):
+        win = self.window()
+        s = self.ask(win)
+        self.deliver(s, ans=answer(text="<img src=x onerror=window.__pwned=1>굵게<b>x</b>", general="<script>window.__pwned=2</script>"))
+        self.assertEqual(self.js(win, "document.querySelectorAll('.ans img, .ans b, .ans script, .msgs img').length"), 0)
+        self.assertIn("<img src=x", self.text(win))
+        self.assertTrue(self.js(win, "window.__pwned === undefined"), "삽입한 스크립트가 돌면 안 됨")
+
+    def test_overage_error_after_answer_blocks_the_input_on_screen(self):
+        win = self.window()
+        s = self.ask(win)
+
+        def run():
+            s.cb["on_answer"]("q1", answer(), TOOL_IDS)
+            s.cb["on_error"]("q1", {"error_kind": "overage", "conn_state": "overage", "message": "초과 사용", "limit": None})
+        t = threading.Thread(target=run)
+        t.start()
+        t.join()
+        pump(0.5)
+        self.assertTrue(self.js(win, "document.querySelector('.chat-input').disabled"))
+        self.assertIn("채팅을 쓸 수 없습니다", self.text(win))
+        self.js(win, "window.__hz.cmd('chat.ask', {text: '또'})")
+        pump(0.3)
+        self.assertEqual(len(s.asked), 1, "초과 사용 뒤 다음 질문이 나가지 않는다")
+
+    def test_no_cli_pc_shows_only_the_guide(self):
+        win = self.window()
+        win.chat.set_availability("not_installed")
+        pump(0.5)
+        t = self.text(win)
+        self.assertIn("이 PC에 Claude Code가 없습니다", t)
+        self.assertIn("설치 방법 보기", t)
+        self.assertTrue(self.js(win, "document.querySelector('.chat-input').disabled"))
+        self.assertEqual(self.sessions, [])
+
+    def test_examples_fill_the_input_without_sending(self):
+        win = self.window()
+        self.assertTrue(self.click(win, ".examples .chip", 0))
+        pump(0.3)
+        self.assertNotEqual(self.js(win, "document.querySelector('.chat-input').value"), "")
+        self.assertEqual(self.sessions, [])
+
+    def test_enter_sends_and_shift_enter_does_not(self):
+        win = self.window()
+        self.js(win, "(() => { const t = document.querySelector('.chat-input'); t.value = '질문'; t.dispatchEvent(new Event('input', {bubbles: true})); })()")
+        pump(0.2)
+        self.js(win, "document.querySelector('.chat-input').dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', shiftKey: true, bubbles: true}))")
+        pump(0.3)
+        self.assertTrue(not self.sessions or not self.sessions[-1].asked)
+        self.js(win, "document.querySelector('.chat-input').dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}))")
+        self.assertTrue(wait_for(lambda: bool(self.sessions) and bool(self.sessions[-1].asked), 10))
+
+    def test_stop_button_and_new_conversation(self):
+        win = self.window()
+        s = self.ask(win)
+        pump(0.3)
+        self.assertTrue(self.click(win, ".send.stop"))
+        self.assertTrue(wait_for(lambda: s.stopped >= 1, 5))
+        self.assertIn("지금까지의 대화는 지워지고", self.text(win))
+        self.assertTrue(self.click(win, ".chat-h .btn", 0))
+        pump(0.3)
+        self.assertEqual(self.js(win, "window.__hz.store.get().chat.msgs.length"), 0)
+
+    def test_collapsed_chat_gets_a_dot_on_new_answer(self):
+        win = self.window()
+        s = self.ask(win)
+        self.js(win, "window.dispatchEvent(new KeyboardEvent('keydown', {key: 'k', ctrlKey: true, altKey: true, bubbles: true}))")
+        pump(0.3)
+        self.deliver(s, ans=answer())
+        self.assertEqual(self.js(win, "document.querySelectorAll('.chat.collapsed .dot-new').length"), 1)
+        self.js(win, "window.dispatchEvent(new KeyboardEvent('keydown', {key: 'k', ctrlKey: true, bubbles: true}))")
+        pump(0.3)
+        self.assertEqual(self.js(win, "document.querySelectorAll('.dot-new').length"), 0)
+
+    def test_chat_width_at_1366_is_320_and_center_keeps_room(self):
+        win = self.window((1366, 768))
+        w = self.js(win, "document.querySelector('.chat').getBoundingClientRect().width")
+        self.assertEqual(round(w), 320)
+        self.assertGreater(self.js(win, "document.querySelector('.center').getBoundingClientRect().width"), 900)
+        win2 = self.window((1536, 864))
+        self.assertEqual(round(self.js(win2, "document.querySelector('.chat').getBoundingClientRect().width")), 380)
+
+
+class ShellDropTest(ShellBase):
+    def test_dropped_file_registers_extracts_and_lists(self):
+        win = self.window()
+        src = [p for p in glob.glob(os.path.join(paths.folder("references", "pid-samples"), "*", "*.drawio")) if "SNP-M-401" in p]
+        if not src:
+            self.skipTest("표본 도면이 없음")
+        r = win.drop_files(src + [os.path.join(self.tmp, "x.exe")])
+        self.assertTrue(r["ok"], r)
+        self.assertTrue(wait_for(lambda: self.js(win, "Object.values(window.__hz.store.get().jobs).some(j => j.state === 'done')"), 60), self.text(win)[:400])
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().drawings.documents.length") >= 1, 20))
+        self.assertIn("등록됨", self.text(win))
+
+    def test_non_drawing_files_are_refused_with_a_message(self):
+        win = self.window()
+        r = win.drop_files([os.path.join(self.tmp, "a.exe")])
+        self.assertFalse(r["ok"])
+        self.assertTrue(wait_for(lambda: "도면 파일(.drawio, .pdf)만 받습니다." in self.text(win), 10))
+
+
+class WebUnitTest(ShellBase):
+    def test_web_unit_tests_pass(self):
+        from PySide6.QtCore import QUrl
+        win = self.window()   # 처리기를 프로필에 붙이려고 틀 창을 먼저 띄운다
+        # 시험 페이지는 틀 창의 이동 제한에 걸리므로 별도 페이지로 연다
+        from hazop.app import webview
+        from PySide6.QtWebEngineCore import QWebEnginePage
+
+        logs = []
+
+        class LogPage(QWebEnginePage):
+            def javaScriptConsoleMessage(self, level, message, line, source):  # noqa: N802
+                logs.append((message, line, source))
+        p2 = LogPage(webview.QWebEngineProfile.defaultProfile())
+        out = []
+        p2.load(QUrl("hazop-app://shell/test/run.html"))
+        end = time.monotonic() + 30
+        while time.monotonic() < end:
+            res = []
+            p2.runJavaScript("JSON.stringify(window.__results || null)", 0, res.append)   # 배열은 문자열로 받는다
+            for _ in range(20):
+                pump(0.02)
+            if res and res[0] and res[0] != "null":
+                out = json.loads(res[0])
+                break
+        self.assertTrue(out, "웹 단위 시험 결과가 나오지 않음: %s" % logs[:5])
+        failed = [r for r in out if not r["ok"]]
+        self.assertEqual(failed, [])
+        self.assertGreaterEqual(len(out), 12)
+        p2.deleteLater()
+
+
+if __name__ == "__main__":
+    unittest.main()

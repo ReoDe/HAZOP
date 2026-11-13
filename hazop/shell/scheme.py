@@ -104,6 +104,11 @@ class Router:
         if host not in (HOST_SHELL, HOST_API, HOST_ICONS):
             return _error(404, "없는 자리")
         try:
+            alias = parts_url.path if host == HOST_SHELL else None
+            if alias and alias.startswith("/api/"):
+                host, parts_url = HOST_API, parts_url._replace(path=alias[len("/api"):])   # 같은 출처로 읽는 별칭(CORS가 필요 없다)
+            elif alias and alias.startswith("/icons/"):
+                host, parts_url = HOST_ICONS, parts_url._replace(path=alias[len("/icons"):])
             if host == HOST_SHELL:
                 resp = self._static(parts_url.path)
             elif host == HOST_API:
@@ -193,7 +198,8 @@ def register():
     scheme = QWebEngineUrlScheme(SCHEME.encode("ascii"))
     scheme.setSyntax(QWebEngineUrlScheme.Syntax.Host)
     scheme.setFlags(QWebEngineUrlScheme.Flag.SecureScheme | QWebEngineUrlScheme.Flag.LocalScheme
-                    | QWebEngineUrlScheme.Flag.LocalAccessAllowed | QWebEngineUrlScheme.Flag.CorsEnabled)
+                    | QWebEngineUrlScheme.Flag.LocalAccessAllowed | QWebEngineUrlScheme.Flag.CorsEnabled
+                    | QWebEngineUrlScheme.Flag.FetchApiAllowed)   # fetch()로 읽기 API를 부르려면 필요(Qt 6.6 이상)
     QWebEngineUrlScheme.registerScheme(scheme)
     _REGISTERED.append(scheme)
 
@@ -216,11 +222,8 @@ def _handler_class():
             buf = QBuffer(job)
             buf.setData(QByteArray(resp.body))
             buf.open(QIODevice.OpenModeFlag.ReadOnly)
-            try:
-                job.setAdditionalResponseHeaders({QByteArray(k.encode("ascii")): QByteArray(v.encode("ascii"))
-                                                  for k, v in resp.headers.items()})
-            except (AttributeError, TypeError):
-                pass   # 오래된 Qt는 응답 머리를 더하지 못한다. index.html의 meta CSP가 대신한다
+            # 응답 머리(CSP·ACAO)는 Qt에 싣지 않는다: PySide가 머리 사전을 잘못 풀어 CSP가 글자 단위로 깨진다. CSP는 index.html의 meta가 맡고,
+            # 읽기 API는 같은 출처(hazop-app://shell/api/…)로 불러 CORS가 필요 없다.
             job.reply(QByteArray(resp.mime.encode("ascii")), buf)
 
     return AppSchemeHandler

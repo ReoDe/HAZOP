@@ -30,6 +30,7 @@
 | `eye` | 보이기 켜고 끄기(층·표시) |
 | `file-export` | 내보내기 |
 | `file-text` | 답 카드의 문서 칩(근거 문서) |
+| `files` | 새 화면 왼쪽 메뉴의 도면 패널 |
 | `info-circle` | 안내 문구 앞 |
 | `layout-sidebar-left-collapse` | 왼쪽 목록 접기 단추 |
 | `layout-sidebar-left-expand` | 접힌 왼쪽 목록 펴기 단추 |
@@ -37,6 +38,7 @@
 | `layout-sidebar-right-expand` | 접힌 채팅 창 펴기 단추 |
 | `link` | 뷰어 짝 지정, 연결 추가 도구 |
 | `link-off` | 뷰어 연결 끊기 |
+| `loader-2` | 진행 중 표시(등록·추출·답 기다림) |
 | `lock` | 잠긴 구간 표시 |
 | `lock-open` | 풀린 구간 표시 |
 | `map-pin` | 도면 위 위치 표시, 뷰어 끝점 잇기 도구 |
@@ -45,6 +47,7 @@
 | `minus` | 고른 것에서 빼기 |
 | `pencil` | 뷰어 편집 단추 |
 | `player-stop` | 답 멈추기 단추 |
+| `plug-connected` | 새 화면 AI 연결 단추 |
 | `plus` | 고른 것에 더하기, 뷰어 기기 추가 도구 |
 | `pointer` | 뷰어 선택 도구 |
 | `refresh` | 다시 읽기·새로 고침 |
@@ -57,6 +60,7 @@
 | `sparkles` | AI가 만든 것 표시 |
 | `table` | 답 카드의 결과 칸 칩, 표 보기 |
 | `trash` | 삭제 단추 |
+| `upload` | 새 화면 도면 끌어 놓기 자리 |
 | `vector-triangle` | 검토구간 칩, 구간 만들기 |
 | `x` | 닫기, 입력 지우기 |
 | `zoom-in` | 뷰어 확대 단추 |

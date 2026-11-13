@@ -152,6 +152,7 @@ class Engine:
         self.ai = ai
         self.chat = chat
         self.current_sheet = None
+        self.hooks = {}          # 창이 꽂아 주는 일(파일 고르기·이전 화면 열기). 시험은 가짜를 꽂는다
         self._run_jobs = run_jobs or self._thread_jobs
         self._jobs = {}
         self._job_seq = 0
@@ -180,6 +181,13 @@ class Engine:
         for e in data.list_registrations():
             if e["record"].get("project_id"):
                 return e["record"]["project_id"]
+        from hazop.app import project_ctx
+        from hazop.graph import project
+        try:
+            if project_ctx.graph_names(project.UNREGISTERED_PROJECT):   # 등록 없이 추출한 도면(샘플 실행 등)만 있을 때
+                return project.UNREGISTERED_PROJECT
+        except (OSError, ValueError):
+            pass
         return DEFAULT_PROJECT
 
     def graph_names(self):
@@ -303,6 +311,19 @@ def _h_chat_ask(engine, a):
     return {"accepted": bool(ok)}
 
 
+def _h_chat_prewarm(engine, a):
+    _need_chat(engine).prewarm()
+    return {}
+
+
+def _h_conn_guide(engine, a):
+    hook = engine.hooks.get("conn_guide")
+    if hook is None:
+        raise CommandError("failed", "안내를 열 수 없음")
+    hook(a["name"])
+    return {}
+
+
 def _h_chat_stop(engine, a):
     _need_chat(engine).stop()
     return {}
@@ -329,6 +350,24 @@ def _h_set_ai_review(engine, a):
     return {"enabled": bool(engine.settings.get("extract_ai_review")), "cap": engine.settings.get("extract_ai_cap")}
 
 
+def _h_pick_files(engine, a):
+    pick = engine.hooks.get("pick_files")
+    if pick is None:
+        raise CommandError("failed", "파일 고르기를 쓸 수 없음")
+    files = pick() or []
+    if not files:
+        return {"jobs": []}
+    return _h_add_files(engine, {"paths": list(files)[:MAX_FILES]})
+
+
+def _h_open_classic(engine, a):
+    hook = engine.hooks.get("open_classic")
+    if hook is None:
+        raise CommandError("failed", "이전 화면을 열 수 없음")
+    hook()
+    return {}
+
+
 def _h_add_files(engine, a):
     files = []
     for p in a["paths"]:
@@ -351,11 +390,15 @@ COMMANDS = {
     "chat.ask": Command({"text": (v_str(1, 4000), True),
                          "view": (v_obj(stage=v_str(0, 40), sheet=v_str(0, 200), selected=v_list(v_str(1, 200), 20)), False)},
                         _h_chat_ask, "채팅에 묻는다"),
+    "chat.prewarm": Command({}, _h_chat_prewarm, "글자를 치기 시작할 때 채팅 프로세스를 미리 띄운다"),
+    "conn.guide": Command({"name": (v_enum("install", "login"), True)}, _h_conn_guide, "연결 안내(설치 방법·로그인)를 연다"),
     "chat.stop": Command({}, _h_chat_stop, "진행 중인 질문을 멈춘다"),
     "chat.new": Command({}, _h_chat_new, "대화를 지우고 새로 시작한다"),
     "chat.set_model": Command({"model": (v_enum(*CHAT_MODELS), True)}, _h_chat_model, "채팅 모델(빠름·보통·깊게)"),
     "extract.set_ai_review": Command({"enabled": (v_bool(), False), "cap": (v_int(1, 200), False)}, _h_set_ai_review,
                                      "추출 뒤 AI 검토 토글과 도면당 호출 상한"),
+    "register.pick": Command({}, _h_pick_files, "파일 고르기 창을 열어 고른 파일을 등록한다"),
+    "app.open_classic": Command({}, _h_open_classic, "이전 위젯 화면으로 연다(이 창은 닫힌다)"),
     "register.add_files": Command({"paths": (v_list(v_str(1, MAX_PATH_CHARS), MAX_FILES), True)}, _h_add_files,
                                   "끌어 놓은 파일을 등록하고 추출한다"),
 }
@@ -378,6 +421,31 @@ def _fingerprint(*paths_):
     return hashlib.sha256(json.dumps(parts, sort_keys=True).encode("utf-8")).hexdigest()[:12]
 
 
+_ICON_CACHE = {}
+
+
+def icon_shapes():
+    """{이름: [[태그, 속성], …]}. 웹이 SVG를 요소로 그린다(HTML 문자열로 넣지 않는다). 투명 바탕 경로는 뺀다."""
+    if not _ICON_CACHE:
+        import xml.etree.ElementTree as ET
+        from hazop.app import icons
+        for name in icons.names():
+            src = icons.icon_path(name)
+            try:
+                root = ET.parse(src).getroot()
+            except (OSError, ET.ParseError):
+                continue
+            kids = []
+            for el in root:
+                tag = el.tag.split("}")[-1]
+                attrs = dict(el.attrib)
+                if tag == "path" and attrs.get("stroke") == "none" and attrs.get("fill") == "none":
+                    continue
+                kids.append([tag, attrs])
+            _ICON_CACHE[name] = kids
+    return {"names": dict(_ICON_CACHE)}
+
+
 class ReadApi:
     def __init__(self, engine):
         self.engine = engine
@@ -390,6 +458,13 @@ class ReadApi:
             return _json(self.drawings())
         if topic == "connection" and len(parts) == 1:
             return _json(self.connection())
+        if topic == "chat" and len(parts) == 1:
+            chat = self.engine.chat
+            return _json(chat.snapshot() if chat is not None else {"busy": False, "model": "fast", "availability": {"blocked": True, "text": "채팅을 쓸 수 없습니다.", "button": None}})
+        if topic == "icons" and len(parts) == 1:
+            return _json(icon_shapes())
+        if topic == "examples" and len(parts) == 1:
+            return _json(self.examples())
         if topic == "sheet" and len(parts) == 2:
             if parts[1].endswith(".svg"):
                 return self.sheet_svg(parts[1][:-4])
@@ -407,6 +482,16 @@ class ReadApi:
         return {"version": APP_VERSION, "reviewer": e.reviewer(), "project_id": e.project_id(), "current_sheet": e.current_sheet,
                 "ui": e.ui_state(), "chat_model": s.get("chat_model") or "fast", "ai_review": bool(s.get("extract_ai_review")),
                 "ai_review_cap": s.get("extract_ai_cap") or 20, "debug": bool(os.environ.get("HAZOP_DEBUG"))}
+
+    def examples(self):
+        """채팅 예시 질문(종류별). 태그는 지금 프로젝트에서 채운다. 프로젝트 그래프가 없으면 태그 없는 질문."""
+        from hazop.app import project_ctx
+        from hazop.chat import view as chatview
+        try:
+            pg = project_ctx.project_graph(self.engine.project_id())
+        except (OSError, ValueError, KeyError):
+            pg = None
+        return {"groups": [[g, qs] for g, qs in chatview.examples(pg)]}
 
     def connection(self):
         ai = self.engine.ai
@@ -448,7 +533,7 @@ class ReadApi:
         graph = data.viewer_build.load_graph(paths.output_root("graph"), name)
         svg_ok = bool(((corrected.get("coordinate_system") or {}).get("svg_alignment") or {}).get("svg_file"))
         rev = _fingerprint(data.extraction_path(name), os.path.join(paths.output_root("graph"), name, "graph.json"))
-        return _json({"graph_id": graph_id, "name": name, "rev": rev, "svg": scheme.ORIGIN.replace("shell", "api") + "/sheet/%s.svg" % graph_id
+        return _json({"graph_id": graph_id, "name": name, "rev": rev, "svg": "/api/sheet/%s.svg" % graph_id
                       if svg_ok else None, "extraction": corrected, "graph": graph})
 
     def sheet_svg(self, graph_id):

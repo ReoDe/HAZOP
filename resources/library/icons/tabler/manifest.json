@@ -58,6 +58,9 @@
     "file-text": {
       "sha256": "12e8c1a05fe3c14fb9f44e98145afa96c14ee0d9dddfdd69b75c53c31486cae8"
     },
+    "files": {
+      "sha256": "7ee1d0ad1a3a4b5e637b628695f8ecfb2b5daedf6d0a2c46cd40d9729daeab3c"
+    },
     "info-circle": {
       "sha256": "bf4377dff0aaaddf1676a4bb7292f90f1102f19daaca7021331ba6a191317c1c"
     },
@@ -78,6 +81,9 @@
     },
     "link-off": {
       "sha256": "0beae9702aae3e48a436a0a63737bfb1c8591251c2e98aafff6ea98ae7c692ed"
+    },
+    "loader-2": {
+      "sha256": "334442673d4063d87ff80316a97fcf49c578600c0ac9213c84267e0a9bda9a15"
     },
     "lock": {
       "sha256": "748ef36a7e3b7a4dc2b44a16576dc60123968a6c8184155015f85cfa442ce7d7"
@@ -102,6 +108,9 @@
     },
     "player-stop": {
       "sha256": "75f1904477cb0250c54ec6b47f361f66dc2c7162f25715546cf65cdc2dc891dc"
+    },
+    "plug-connected": {
+      "sha256": "ddfa8fee264960660766f8df44f590361940912afaa2d38f6443133c33d833ea"
     },
     "plus": {
       "sha256": "c273c746b4db19bebe87aaad5142f649c8e60cecfeb63d457ad4633d9907d17d"
@@ -138,6 +147,9 @@
     },
     "trash": {
       "sha256": "94176fd47075e845088ac13745104d722daae7fa8be94ae9665c143f8e2705a7"
+    },
+    "upload": {
+      "sha256": "7f0524e0eb36c694dda24352199d1b2b4609b98a0096d10cf1eb0f82cf8084d8"
     },
     "vector-triangle": {
       "sha256": "41af06132415f638c2dddebcf69823ae4fdcf5b8fb39c73c435bb66dd5afafd4"

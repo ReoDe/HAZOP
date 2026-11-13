@@ -200,6 +200,15 @@ class RoutingTest(RouterBase):
             self.assertIn(self.get(url).status, (400, 403, 404), url)
         self.assertEqual(self.api.calls, [])
 
+    def test_same_origin_alias_reaches_api_and_icons(self):
+        r = self.get("hazop-app://shell/api/sheet/graph-A?rev=1")
+        self.assertEqual(r.status, 200)
+        self.assertEqual(json.loads(r.body)["parts"], ["sheet", "graph-A"])
+        self.assertEqual(self.get("hazop-app://shell/icons/send.svg").status, 200)
+        self.assertEqual(self.get("hazop-app://shell/api/%2e%2e/x").status in (400, 403, 404), True)
+        self.assertEqual(self.get("hazop-app://shell/api/x", "POST").status, 405)
+        self.assertEqual(self.get("hazop-app://shell/apiary.js").status, 404)
+
     def test_api_binary_and_missing_and_error(self):
         self.assertEqual(self.get("hazop-app://api/bytes").mime, "image/png")
         self.assertEqual(self.get("hazop-app://api/missing").status, 404)

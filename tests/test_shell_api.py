@@ -15,6 +15,7 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from hazop import paths  # noqa: E402
 from hazop.shell import api, chat, scheme  # noqa: E402
 from tests.test_chat_card import REF, S1, S2, TOOL_IDS, FakeEnv, answer, comp, small_pg  # noqa: E402
 
@@ -199,7 +200,7 @@ class ReadApiTest(EngineBase):
         self.assertEqual(s["graph_id"], gid)
         self.assertIn("nodes", s["extraction"])
         self.assertIn("nodes", s["graph"])
-        self.assertTrue(s["svg"].startswith("hazop-app://api/sheet/"))
+        self.assertTrue(s["svg"].startswith("/api/sheet/"))
         svg = self.read(["sheet", gid + ".svg"], {})
         self.assertEqual((svg.status, svg.mime), (200, "image/svg+xml"))
         self.assertIn(b"<svg", svg.body)
@@ -237,7 +238,7 @@ class RegisterFlowTest(EngineBase):
     def test_drop_registers_and_extracts_then_lists(self):
         import glob
         e = self.engine()
-        src = [p for p in glob.glob(os.path.join(REPO, "resources", "references", "pid-samples", "*", "*.drawio")) if "SNP-M-102" in p]
+        src = [p for p in glob.glob(os.path.join(paths.folder("references", "pid-samples"), "*", "*.drawio")) if "SNP-M-102" in p]
         if not src:
             self.skipTest("표본 도면이 없음")
         r = e.dispatch("register.add_files", {"paths": [src[0]]})

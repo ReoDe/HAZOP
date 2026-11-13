@@ -13,13 +13,13 @@
 
 구현은 Preact + htm이다(`vendor/`의 `preact.module.js`, `hooks.module.js`, `htm.module.js`). 상태 관리 라이브러리는 없다.
 
-## 입력 자료: `hazop-app://api/sheet/<graph_id>`
+## 입력 자료: `/api/sheet/<graph_id>` (= `hazop-app://shell/api/sheet/<graph_id>`, 같은 출처라 CORS가 필요 없다)
 
 엔진(`hazop/shell/api.py`)이 JSON 한 개를 준다. 도면 SVG는 `<image>`로 넣는다(구성요소마다 DOM을 두지 않는다).
 
 ```json
 {"graph_id": "graph-SNP-M-102", "rev": 7, "width": 1684, "height": 1190,
- "svg": "hazop-app://api/sheet/graph-SNP-M-102.svg",
+ "svg": "/api/sheet/graph-SNP-M-102.svg",
  "items": [{"id": "n17", "kind": "pressurizer", "category": "equipment", "tag": "RC-PZ01",
             "layer": "symbol", "bbox": [x0, y0, x1, y1], "polyline": null,
             "classification": "classified", "unknown": false, "node_id": "S1"}],
