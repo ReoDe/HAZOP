@@ -164,8 +164,21 @@ export class SheetCore {
   _cleanCtx() {
     if (!this._ctx || this._ctxFor !== this.clean) {
       this._ctxFor = this.clean;
-      this._ctx = { symbols: this.symbols, extras: (this.clean && this.clean.items) || {}, width: this.size[0], height: this.size[1], textItems: (this.clean && this.clean.text_items) || [],
-        items: this.index.items, unconfirmed: (this.clean && this.clean.unconfirmed) || [] };
+      const extras = (this.clean && this.clean.items) || {};
+      // 정돈한 좌표(tbox·tline)가 있으면 그것으로 그린다(원본 위치와 같은 자리, 작은 어긋남만 바로잡음). 누르기·고르기는 원본 좌표 색인을 그대로 쓴다
+      const tidyMap = new Map(), items = this.index.items.map((rec) => {
+        const ex = extras[rec.id];
+        let t = rec;
+        if (ex && rec.layer === "symbol" && ex.tbox) t = Object.assign({}, rec, { rect: { x0: ex.tbox[0], y0: ex.tbox[1], x1: ex.tbox[2], y1: ex.tbox[3] } });
+        else if (ex && rec.layer === "pipe" && ex.tline && ex.tline.length >= 2) {
+          const xs = ex.tline.map((q) => q[0]), ys = ex.tline.map((q) => q[1]);
+          t = Object.assign({}, rec, { lines: [ex.tline], rect: { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) } });
+        }
+        if (t !== rec) tidyMap.set(rec.layer + ":" + rec.id, t);
+        return t;
+      });
+      this._ctx = { symbols: this.symbols, extras, width: this.size[0], height: this.size[1], textItems: (this.clean && this.clean.text_items) || [],
+        items, tidyMap, hops: (this.clean && this.clean.hops) || [], unconfirmed: (this.clean && this.clean.unconfirmed) || [] };
     }
     return this._ctx;
   }

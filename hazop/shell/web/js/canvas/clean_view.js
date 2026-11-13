@@ -74,14 +74,25 @@ function arrowAt(a, b, t, color) {
 }
 
 /** 흐름 화살촉: 40 단위 넘는 선분마다 가운데에, 긴 선분은 110 단위 간격으로 더 둔다(시안 7번처럼 일정 간격). */
-function arrowsAlong(line, forward, color) {
+function arrowsAlong(line, forward, color, avoid) {
   const out = [];
+  const blocked = (x, y) => {
+    if (line.some((q) => Math.hypot(q[0] - x, q[1] - y) < 8)) return true;                          // 꺾임·분기점
+    return (avoid || []).some((o) => x > o.x0 - 5 && x < o.x1 + 5 && y > o.y0 - 5 && y < o.y1 + 5);   // 기호 둘레
+  };
   for (let i = 0; i + 1 < line.length; i++) {
     const [a, b] = forward ? [line[i], line[i + 1]] : [line[line.length - 1 - i], line[line.length - 2 - i]];
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
     if (len < 40) continue;
     const n = Math.max(1, Math.round(len / 110));
-    for (let j = 0; j < n; j++) out.push(arrowAt(a, b, (j + 0.5) / n, color));
+    for (let j = 0; j < n; j++) {
+      let t = (j + 0.5) / n, ok = false;
+      for (const dt of [0, 12 / len, -12 / len, 24 / len, -24 / len]) {      // 막히면 선분 위에서 조금 비켜 놓는다. 그래도 안 되면 그리지 않는다
+        const tt = t + dt, x = a[0] + (b[0] - a[0]) * tt, y = a[1] + (b[1] - a[1]) * tt;
+        if (tt > 0.08 && tt < 0.92 && !blocked(x, y)) { t = tt; ok = true; break; }
+      }
+      if (ok) out.push(arrowAt(a, b, t, color));
+    }
   }
   return out;
 }
@@ -93,7 +104,7 @@ export function pipeShapes(rec, extra, style = {}) {
   const type = (extra && extra.line_type) || "process";
   const color = style.color || INK, width = style.width || PIPE_W[type] || 1.4;
   const out = [el("polyline", Object.assign({ points: line.map((p) => r(p[0]) + "," + r(p[1])).join(" "), fill: "none", "data-id": style.id || null }, strokeAttrs(color, width, { "stroke-dasharray": style.dash || PIPE_DASH[type] || null })))];
-  if (extra && extra.flow) out.push(...arrowsAlong(line, extra.flow === "source_to_target", color));   // 경로 위에서는 경로 색
+  if (extra && extra.flow) out.push(...arrowsAlong(line, extra.flow === "source_to_target", color, style.avoid));   // 경로 위에서는 경로 색. 기호·꺾임·분기점과 겹치지 않게
   if (!style.recolor) {
     for (const e of (extra && extra.ends) || []) {
       if (e.status === "open" && e.point) out.push(el("circle", { cx: r(e.point[0]), cy: r(e.point[1]), r: 3, fill: "var(--card, #fff)", stroke: AMBER, "stroke-width": 1.4, "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
@@ -148,10 +159,12 @@ export function buildBase(ctx) {
     if (seg && (!tagSeen.has(rec.tag) || tagSeen.get(rec.tag).len < seg.len)) tagSeen.set(rec.tag, { id: rec.id, len: seg.len });
   }
   const pipes = [], symbolsOut = [];
+  const avoid = ctx.items.filter((r0) => r0.layer === "symbol").map((r0) => ({ x0: r0.rect.x0, y0: r0.rect.y0, x1: r0.rect.x1, y1: r0.rect.y1 }));
+  ctx.avoid = avoid;
   for (const rec of ctx.items) {
     const ex = ctx.extras[rec.id] || {};
     if (rec.layer === "pipe") {
-      pipes.push(...pipeShapes(rec, ex, { id: rec.id }));
+      pipes.push(...pipeShapes(rec, ex, { id: rec.id, avoid }));
       const seg = rec.lines && rec.lines[0] ? longest(rec.lines[0]) : null;
       for (const ln of rec.lines || []) for (let i = 0; i + 1 < ln.length; i++) obstacles.push({ x0: Math.min(ln[i][0], ln[i + 1][0]) - 0.8, y0: Math.min(ln[i][1], ln[i + 1][1]) - 0.8, x1: Math.max(ln[i][0], ln[i + 1][0]) + 0.8, y1: Math.max(ln[i][1], ln[i + 1][1]) + 0.8, owner: rec.id, thin: true });
       for (const e of ex.ends || []) if (e.status === "open" && e.point) top.push(el("circle", { cx: r(e.point[0]), cy: r(e.point[1]), r: 3, fill: "var(--card, #fff)", stroke: AMBER, "stroke-width": 1.4, "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
@@ -236,7 +249,13 @@ export function buildBase(ctx) {
     }
   }
   for (const t of ctx.textItems || []) labels.push(labelSpec(t.bbox[0], t.bbox[1] + FONT, t.text, { pri: 5 }));
-  nodes.push(...pipes, ...stubs, ...symbolsOut);
+  // 이어지지 않고 엇갈리는 배관: 가로선에 작은 건너뜀(교차 자리의 두 선을 끊고 다리 모양을 그린다)
+  const hops = [];
+  for (const h of ctx.hops || []) {
+    hops.push(el("circle", { cx: h.x, cy: h.y, r: 4.5, fill: "var(--card, #fff)", "pointer-events": "none" }));
+    hops.push(el("path", Object.assign({ d: `M${r(h.x - 4.5)} ${h.y} A4.5 4.5 0 0 1 ${r(h.x + 4.5)} ${h.y}`, fill: "none" }, strokeAttrs(INK, PIPE_W.process, {}))));
+  }
+  nodes.push(...pipes, ...hops, ...stubs, ...symbolsOut);
   return { nodes, top, labels, obstacles, missingKinds: [...missing].sort(), placeholders };
 }
 
@@ -297,8 +316,9 @@ export function layoutLabels(labels, k, obstacles, minPx = MIN_LABEL_PX) {
 
 /** 표시가 걸린 객체를 그 색으로 다시 그린다(정리된 보기에서 '객체의 색을 바꾼다', 규격 §10.5). 못 그리면 null. */
 export function recolor(ctx, rec, color, width, opts = {}) {
+  rec = (ctx.tidyMap && ctx.tidyMap.get(rec.layer + ":" + rec.id)) || rec;      // 정돈한 자리(원본과 같은 자리에서 작은 어긋남만 바로잡은 것)
   const ex = ctx.extras[rec.id] || {};
-  if (rec.layer === "pipe") return pipeShapes(rec, ex, { color, width: Math.max(width || 2.2, 1.6), recolor: true, dash: opts.dashed ? "6 4" : null });
+  if (rec.layer === "pipe") return pipeShapes(rec, ex, { color, width: Math.max(width || 2.2, 1.6), recolor: true, dash: opts.dashed ? "6 4" : null, avoid: ctx.avoid });
   if (rec.layer !== "symbol") return null;
   const bb = [rec.rect.x0, rec.rect.y0, rec.rect.x1, rec.rect.y1], sym = ctx.symbols[rec.kind];
   if (!rec.kind || rec.unknown) return [];          // 미확인 자리표는 표시 색으로 바꾸지 않는다(점선 네모·?가 그대로 위에 보인다)

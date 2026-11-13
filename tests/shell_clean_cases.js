@@ -37,19 +37,21 @@ async function body({ CV, MK, SheetCore }, data) {
 
   // ---- 좌표: 기호 그림이 원본 bbox 중심에 놓임(규격 §10.8: 2 단위 안)
   const drawn = items.filter((i) => i.layer === "symbol" && i.kind && symbols[i.kind] && !symbols[i.kind].junction && !i.unknown);
-  let worst = 0, missing = [], outside = 0;
+  let worst = 0, missing = [], outside = 0, shiftMax = 0;
   for (const it of drawn) {
     const g = clean.querySelector(`g[data-id="${CSS.escape(it.id)}"]`);
     if (!g) { missing.push(it.id); continue; }
     const m = /translate\(([-\d.]+) ([-\d.]+)\) rotate/.exec(g.getAttribute("transform"));
-    const cx = (it.bbox[0] + it.bbox[2]) / 2, cy = (it.bbox[1] + it.bbox[3]) / 2;
+    const tb = (ex[it.id] && ex[it.id].tbox) || it.bbox;                       // 정돈한 자리(없으면 원본 자리)
+    const cx = (tb[0] + tb[2]) / 2, cy = (tb[1] + tb[3]) / 2;
     worst = Math.max(worst, Math.hypot(+m[1] - cx, +m[2] - cy));
+    shiftMax = Math.max(shiftMax, Math.hypot(cx - (it.bbox[0] + it.bbox[2]) / 2, cy - (it.bbox[1] + it.bbox[3]) / 2));
     const r = sheetRect(g);
-    if (r.x0 < it.bbox[0] - 2 || r.y0 < it.bbox[1] - 2 || r.x1 > it.bbox[2] + 2 || r.y1 > it.bbox[3] + 2) outside++;
+    if (r.x0 < tb[0] - 2 || r.y0 < tb[1] - 2 || r.x1 > tb[2] + 2 || r.y1 > tb[3] + 2) outside++;
   }
   t("기호 " + drawn.length + "개가 모두 그려짐(<g data-id>)", missing.length === 0 && drawn.length >= 20, missing.slice(0, 5).join(","));
-  t("기호 그림의 중심이 bbox 중심과 2 단위 안에서 겹침", worst < 2, worst);
-  t("기호 그림이 bbox 안에 듦(오차 2 단위, 회전·뒤집기 포함)", outside === 0, outside + "개가 벗어남");
+  t("기호 그림의 중심이 정돈한 자리의 중심과 2 단위 안에서 겹치고, 원본 자리에서 옮긴 거리는 허용 범위(48) 안", worst < 2 && shiftMax <= 48, worst + " / 옮김 " + shiftMax.toFixed(1));
+  t("기호 그림이 정돈한 상자 안에 듦(오차 2 단위, 회전·뒤집기 포함)", outside === 0, outside + "개가 벗어남");
   const rotated = drawn.filter((i) => ex[i.id] && ex[i.id].orient && ex[i.id].orient.rot % 180 === 90 && clean.querySelector(`g[data-id="${CSS.escape(i.id)}"]`));
   t("세로로 돌려 그린 밸브(direction=south·north)가 있음", rotated.length >= 3, rotated.length);
   const longValves = rotated.filter((it) => symbols[it.kind].vb[0] > symbols[it.kind].vb[1]);
@@ -62,8 +64,8 @@ async function body({ CV, MK, SheetCore }, data) {
   t("배관마다 선 하나(추출한 길 그대로)", pl.length === pipes.length, pl.length + "/" + pipes.length);
   const dashes = new Set([...pl].map((p) => p.getAttribute("stroke-dasharray")));
   t("계측 연결은 긴 점선 '6 3', 신호선은 짧은 점선 '2 2', 공정 배관은 실선", dashes.has("6 3") && dashes.has("2 2") && dashes.has(null), [...dashes].join("|"));
-  const firstPipe = pipes[0], pts = (firstPipe.polyline || []).map((p) => p[0].toFixed(0) + "," + p[1].toFixed(0));
-  t("배관 점이 items의 polyline과 같음", clean.querySelector(`polyline[data-id="${CSS.escape(firstPipe.id)}"]`).getAttribute("points").split(" ").map((p) => p.split(",").map((v) => (+v).toFixed(0)).join(",")).join(" ") === pts.join(" "));
+  const firstPipe = pipes[0], pts = ((ex[firstPipe.id] && ex[firstPipe.id].tline) || firstPipe.polyline || []).map((p) => p[0].toFixed(0) + "," + p[1].toFixed(0));
+  t("배관 점이 정돈한 길(tline, 없으면 items의 polyline)과 같음", clean.querySelector(`polyline[data-id="${CSS.escape(firstPipe.id)}"]`).getAttribute("points").split(" ").map((p) => p.split(",").map((v) => (+v).toFixed(0)).join(",")).join(" ") === pts.join(" "));
   const tees = items.filter((i) => i.layer === "symbol" && i.kind === "tee").length;
   t("tee는 그림 없이 지름 3 단위 점", tees >= 5 && clean.querySelectorAll('circle[r="1.5"]').length === tees, tees);
   t("흐름이 있는 배관에 화살촉(polygon)", clean.querySelectorAll("polygon").length >= 5, clean.querySelectorAll("polygon").length);
@@ -80,6 +82,11 @@ async function body({ CV, MK, SheetCore }, data) {
   // ---- 도면에서 온 글은 텍스트로만
   t("HTML처럼 보이는 태그는 글자로만 들어감", !clean.querySelector("img") && [...clean.querySelectorAll("text")].some((x) => x.textContent === "<img src=x onerror=window.__pwned=1>") && window.__pwned === undefined);
   t("기호 그림은 symbols.json의 도형만(요소 종류 제한)", [...clean.querySelectorAll("g[data-id] > *")].every((n) => ["path", "line", "polyline", "polygon", "circle", "rect"].includes(n.tagName)));
+
+  const symRects = items.filter((i) => i.layer === "symbol" && i.kind && symbols[i.kind] && !symbols[i.kind].junction).map((i) => (ex[i.id] && ex[i.id].tbox) || i.bbox);
+  const arrowsInSymbols = [...clean.querySelectorAll("polygon")].filter((pg) => { const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(pg.getAttribute("transform") || ""); return m && symRects.some((b) => +m[1] > b[0] - 4 && +m[1] < b[2] + 4 && +m[2] > b[1] - 4 && +m[2] < b[3] + 4); }).length;
+  t("흐름 화살촉은 기호 둘레와 겹치지 않음", clean.querySelectorAll("polygon").length >= 5 && arrowsInSymbols === 0, arrowsInSymbols);
+  t("정돈 품질: 서버가 센 정돈 결과가 0(겹침·축·연결점·직각·크기)", !!data.clean.layout_lint && ["overlap_symbols", "overlap_pipe_symbol", "off_axis", "loose_ends", "non_orthogonal", "size_mismatch"].every((k) => data.clean.layout_lint[k] === 0), JSON.stringify(data.clean.layout_lint));
 
   // ---- 누르기: 미확인 자리 → 원본 조각
   core.update({ mode: "pan" });

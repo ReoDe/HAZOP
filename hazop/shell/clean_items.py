@@ -12,9 +12,22 @@
 (도면에 그릴 자리가 없으므로 목록에서만 보인다).
 """
 
+import json
+import os
 import re
 
-from hazop.shell import sheet_items
+from hazop.shell import clean_layout, sheet_items
+
+SYMBOLS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "js", "canvas", "symbols.json")
+_SYMBOLS = {}
+
+
+def _symbols():
+    """그리는 기호 도형 자료(web의 symbols.json과 같은 것). 정돈이 연결점 위치를 알려고 읽는다."""
+    if not _SYMBOLS:
+        with open(SYMBOLS_PATH, encoding="utf-8") as fh:
+            _SYMBOLS.update(json.load(fh)["symbols"])
+    return _SYMBOLS
 
 TAGGED = ("equipment", "valve", "instrument")        # 태그를 갖는 종류(없으면 '태그 없음')
 TWO_PORT = ("manual_valve", "isolation_valve", "check_valve", "control_valve", "motor_operated_valve", "damper", "reducer", "orifice",
@@ -196,8 +209,21 @@ def build(extraction, name=None):
         counts.setdefault(r, 0)
     counts["total"] = len(unconfirmed)
     counts["unplaced"] = len(unplaced)
-    return {"source_format": fmt, "items": items, "text_items": texts, "unconfirmed": unconfirmed, "counts": counts, "unplaced": unplaced,
-            "leftovers": _leftovers(extraction, fmt, ox, oy)}
+    out = {"source_format": fmt, "items": items, "text_items": texts, "unconfirmed": unconfirmed, "counts": counts, "unplaced": unplaced,
+           "leftovers": _leftovers(extraction, fmt, ox, oy), "hops": [], "layout_lint": None}
+    try:                                                 # 정돈(clean_layout.py): 원본과 같은 자리에서 작은 어긋남만 바로잡은 좌표를 더한다(위상은 그대로)
+        t = clean_layout.tidy(sheet_items.build_items(extraction)["items"], items, _symbols())
+    except Exception:  # noqa: BLE001 - 정돈이 실패해도 원본 좌표 그대로 그린다
+        t = None
+    if t:
+        for sid, b in t["symbols"].items():
+            items[sid]["tbox"] = [round(v, 2) for v in b]
+        for pid, p in t["pipes"].items():
+            items[pid]["tline"] = [[round(v, 2) for v in q] for q in p["polyline"]]
+            items[pid]["ends"] = [dict(e, point=[round(v, 2) for v in e["point"]]) for e in p["ends"]]
+        out["hops"] = t["hops"]
+        out["layout_lint"] = dict(t["lint"], flow_unknown=sum(1 for v in items.values() if v.get("line_type") in ("process", "process_secondary") and not v.get("flow")))
+    return out
 
 
 def read(engine, parts, query):
