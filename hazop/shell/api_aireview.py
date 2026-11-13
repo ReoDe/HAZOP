@@ -4,19 +4,17 @@
   `aireview/estimate?cap=N`(도면별 예상 호출 수, `ai_review.estimate_pages`). 읽기는 파일을 쓰지 않는다.
 - **명령** `aireview.accept`·`aireview.reject`·`aireview.revert`(낱개), `aireview.accept_bulk`(확신 높은 묶음), `aireview.run`(고른 도면에
   AI 검토 실행). 쓰기는 읽은 판(`ver` = 후보 파일과 사람 수정 기록의 지문)을 대조해 어긋나면 stale로 거절한다. 결정한 사람은 설정의 검토자 이름이다.
-- **수락·되돌리기 뒤 그래프를 바로 다시 만든다.** 수락은 사람 수정 기록(hazop.extract.corrections)에 연산으로 들어가므로, 이전 화면처럼 '다시 열면
+- **수락·되돌리기 뒤 그래프를 바로 다시 만든다**(공용 길 hazop/shell/sheet_refresh.py, 도면 고치기와 함께 쓴다). 수락은 사람 수정 기록(hazop.extract.corrections)에 연산으로 들어가므로, 이전 화면처럼 '다시 열면
   반영'이 아니라 그 도면의 그래프(scripts/build_graph.build_one이 기록을 적용)와 프로젝트 지식그래프를 이 자리에서 다시 만든다(hazop.app.data와 같은 길).
 - 채팅(d-chat)이 부를 실행 함수: `candidates`, `bulk_ids`(묶음 수락이 고를 ID, 읽기만), `accept`, `accept_bulk`, `reject`, `revert`. 모두 {"ok", ...} 사전을 돌려주고 예외를 올리지 않는다.
   웹 명령은 이 함수들을 감싼 것이다. 웹과 채팅 모두 경로를 주고받지 않고 도면 ID·후보 ID만 쓴다.
 """
 
-import hashlib
 import logging
-import os
 
-from hazop import paths, store_io
+from hazop import store_io
 from hazop.extract import ai_review, corrections
-from hazop.study.nodes import now_utc
+from hazop.shell.sheet_refresh import ensure_graph, refresh, ver_of  # noqa: F401  (ver_of는 채팅·시험도 이 이름으로 부른다)
 
 LOG = logging.getLogger("hazop.shell.api_aireview")
 TOPICS = ("aireview",)
@@ -52,47 +50,6 @@ def _original(name):
     return data.read_json(data.extraction_path(name))
 
 
-def ver_of(name):
-    """읽은 판: 쪽 확정과 같은 세 파일(추출 결과·사람 수정 기록·AI 후보, confirmation.file_paths)의 지문을 묶은 값.
-    다시 추출해 추출 결과가 바뀌어도 달라진다(검토 2)."""
-    from hazop.extract import confirmation
-    files = confirmation.file_paths(name)
-    text = "|".join("%s=%s" % (k, store_io.fingerprint(files[k]) or "-") for k in sorted(files))
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
-
-
-def stale_path(name):
-    """그래프가 수정 기록보다 낡았다는 표시 파일(수락·되돌리기는 저장됐는데 그래프 다시 만들기가 실패했을 때 남긴다)."""
-    return paths.folder("ai-review", paths.safe_name(name) + ".graph-stale.json")
-
-
-def _mark_stale(name, why):
-    try:
-        store_io.write_json(stale_path(name), {"name": name, "at": now_utc(), "reason": str(why)[:200]})
-    except OSError:
-        LOG.exception("낡은 그래프 표시를 남기지 못함")
-
-
-def graph_stale(name):
-    return os.path.isfile(stale_path(name))
-
-
-def _ensure_graph(name):
-    """낡은 그래프 표시가 있으면 다시 만들어 본다(다음에 열 때·다음 동작 때). → (아직 낡았는지, 알림 글, 재확인 안내)."""
-    if not graph_stale(name):
-        return False, [], []
-    try:
-        notes, recheck = _rebuild(name)
-    except Exception as exc:  # noqa: BLE001 - 다시 만들기 실패는 표시로 남기고 화면은 뜬다
-        LOG.exception("낡은 그래프 다시 만들기 실패")
-        return True, ["그래프가 수정 기록보다 낡았습니다. 다시 만들지 못했습니다(%s)." % type(exc).__name__], []
-    try:
-        os.remove(stale_path(name))
-    except OSError:
-        pass
-    return False, notes, recheck
-
-
 def _current(shown, c):
     if c["field"] == "connection":
         return "열린 끝"
@@ -126,7 +83,7 @@ def candidates(engine, graph_id):
     """한 도면의 후보(채팅·웹 공용). → {ok, available, graph_id, drawing_number, ver, counts, groups, bulk, last_run} 또는 {ok: False, code, message}."""
     try:
         name = _name(engine, graph_id)
-        stale, stale_notes, _recheck = _ensure_graph(name)
+        stale, stale_notes, _recheck = ensure_graph(name)
         doc, original = _load(name)
     except Refused as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
@@ -207,37 +164,6 @@ def read(engine, parts, query):
 
 # ---------------------------------------------------------------- 쓰기
 
-def _rebuild(name):
-    """그 도면의 그래프와 프로젝트 지식그래프를 다시 만든다(hazop.app.data.save_corrections와 같은 길).
-    → (알림 글 목록, ④ 검토구간·⑤ 분석 결과 재확인 안내 목록 — data.save_corrections와 같은 규칙)."""
-    from hazop.app import data
-    from hazop.study import nodes as study_nodes
-    from hazop.study import results as study_results
-    notes = []
-    graph, _ = data.script_module("build_graph").build_one(data.extraction_path(name), paths.output_root("graph"))
-    if graph.get("project_id"):
-        try:
-            data.build_project_kg(graph["project_id"])
-        except (OSError, ValueError, KeyError) as exc:
-            notes.append("지식그래프를 다시 만들지 못했습니다(%s)." % str(exc)[:120])
-    recheck = []
-    try:
-        node_set = study_nodes.read_as_is(graph)
-    except ValueError:
-        node_set = None
-    if node_set is not None and study_nodes.is_stale(node_set, graph):
-        confirmed = node_set.get("status") == "confirmed" or study_nodes.active_nodes(
-            node_set if node_set.get("schema_version") == study_nodes.SCHEMA_VERSION else None)
-        recheck.append("④ 검토구간 %s이 고치기 전 도면 기준입니다. 재확인이 필요합니다." % ("확정본" if confirmed else "저장본"))
-    res_path = study_results.store_path(graph.get("project_id"), graph["graph_id"])
-    if os.path.isfile(res_path):
-        saved = data.read_json(res_path)
-        ref = saved.get("graph_version") if "graph_version" in saved else (saved.get("study_nodes_ref") or {}).get("graph_version")
-        if ref != graph["graph_version"]:
-            recheck.append("⑤ 분석 결과가 고치기 전 도면 기준입니다. 재확인이 필요합니다.")
-    return notes, recheck
-
-
 STALE_TEXT = "AI 후보나 도면 수정이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요."
 
 
@@ -248,7 +174,7 @@ def _decide(engine, graph_id, cand_ids, action, ver, by=None):
     stale_before, notes, recheck = False, [], []
     try:
         name = _name(engine, graph_id)
-        stale_before, notes, recheck = _ensure_graph(name)          # 앞에서 실패한 다시 만들기를 이번 동작에서 다시 해 본다
+        stale_before, notes, recheck = ensure_graph(name)          # 앞에서 실패한 다시 만들기를 이번 동작에서 다시 해 본다
         by = by or engine.reviewer()
         if not by:
             raise Refused("bad_args", "검토자 이름을 먼저 설정에서 입력하세요. 수락·거절한 사람으로 남습니다.")
@@ -282,21 +208,8 @@ def _decide(engine, graph_id, cand_ids, action, ver, by=None):
     changed = [i for i in ids if after.get(i) != before[i]]
     stale = stale_before
     if changed and action in ("accept", "revert"):
-        try:
-            more, recheck = _rebuild(name)
-            notes = notes + more
-            stale = False
-            if stale_before:
-                try:
-                    os.remove(stale_path(name))
-                except OSError:
-                    pass
-        except Exception as exc:  # noqa: BLE001 - 저장 뒤의 실패
-            LOG.exception("그래프 다시 만들기 실패")
-            _mark_stale(name, type(exc).__name__)
-            stale = True
-            notes = notes + ["저장했습니다. 그래프를 다시 만들지 못해 도면·그래프가 아직 고치기 전 상태입니다(%s). 다음에 열 때 다시 만듭니다."
-                             % type(exc).__name__]
+        stale, more, recheck = refresh(name)                    # 실패해도 예외 없이 낡은 그래프 표시를 남긴다(sheet_refresh)
+        notes = notes + more
     if changed or stale_before != stale:
         engine.changed("aireview", None)
         engine.changed("drawings", None)

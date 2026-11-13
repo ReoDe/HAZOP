@@ -260,9 +260,8 @@ class ReviewFixTest(Base):
         self.assertEqual(self.ops(), [])
 
     def test_7_recheck_notes_when_nodes_are_stale(self):
-        from hazop.study import nodes as sn
-        with mock.patch.object(sn, "read_as_is", lambda g: {"status": "confirmed", "schema_version": "x"}), \
-                mock.patch.object(sn, "is_stale", lambda ns, g: True):
+        from hazop.shell import sheet_refresh                     # 판정 자체는 sheet_refresh의 시험이 본다(프로젝트 구간 집합)
+        with mock.patch.object(sheet_refresh, "rebuild", lambda name: ([], ["④ 검토구간이 고치기 전 도면 기준입니다."])):
             out = self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
         self.assertTrue(any("검토구간" in n for n in out["data"]["recheck"]), out)
 
