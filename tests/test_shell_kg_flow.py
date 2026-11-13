@@ -105,6 +105,22 @@ class KgPanelFlowTest(ShellBase):
             self.assertEqual(self.js(win, "document.querySelectorAll('.kg img').length"), 0)
             self.assertEqual(self.js(win, "String(window.__pwned)"), "undefined")
 
+    def test_node_picked_before_layout_settles_ends_up_in_view(self):
+        """다른 패널(설계 문서 '지식그래프에서 보기')이나 채팅이 패널을 열자마자 노드를 고르면, 배치가 멈춘 뒤 그 노드가 화면 가운데 근처에 있다."""
+        win = self.window()
+        pg = __import__("hazop.app.project_ctx", fromlist=["x"]).project_graph(win.engine.project_id())
+        nid = sorted(n["entity_id"] for n in pg["nodes"] if n.get("tag") and n.get("local_id") and n.get("node_type") == "drawing_object")[-1]
+        self.js(win, MOUNT)
+        self.js(win, "import(new URL('js/panels/kg_state.js', document.baseURI).href).then(async (K) => { await K.loadSummary(); await K.focus(%s); })"
+                % json.dumps(nid))
+        where = "JSON.stringify((() => { const g = window.__hzKg; if (!g) return null; const n = g.graphData().nodes.find((x) => x.id === %s); if (!n || n.x === undefined) return null; const c = document.querySelector('.kg-canvas').getBoundingClientRect(); const p = g.graph2ScreenCoords(n.x, n.y); return [p.x / c.width, p.y / c.height]; })())" % json.dumps(nid)
+        self.assertTrue(wait_for(lambda: self.js(win, "!!window.__hzKg && window.__hzKg.__running === false && !window.__hzKg.__centerAfter"), 60),
+                        "배치가 멈추지 않음")
+        pump(1.0)                                     # 가운데 맞추기 움직임(0.5초)이 끝나게
+        pos = json.loads(self.js(win, where) or "null")
+        self.assertIsNotNone(pos)
+        self.assertTrue(0.25 < pos[0] < 0.75 and 0.25 < pos[1] < 0.75, pos)
+
     def test_show_on_sheet_closes_panel_and_opens_that_drawing(self):
         win = self.window()
         self.mount(win)

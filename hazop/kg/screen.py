@@ -748,7 +748,7 @@ def panel_model(pg, kg=None, expectations=None):
     - 지식그래프 관계 중 기각(rejected)은 넣지 않는다. 끝이 프로젝트 그래프에 없으면 세기만 한다(skipped).
     - 잠재 후보는 expect.evaluate 결과의 상태·재확인을 그대로 싣는다."""
     from hazop.graph import project
-    drawing = {s["graph_id"]: s.get("drawing_number") or s["graph_id"] for s in pg.get("sheets") or []}
+    drawing = {s["graph_id"]: s.get("drawing_number") or s["graph_id"].replace("graph-", "", 1) for s in pg.get("sheets") or []}
     pg_nodes = {n["entity_id"]: n for n in pg["nodes"]}
     seg_ends = {}
     for e in pg["edges"]:

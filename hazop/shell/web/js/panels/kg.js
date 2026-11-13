@@ -95,7 +95,15 @@ function GraphCanvas() {
         .nodePointerAreaPaint((n, color, ctx) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(n.x, n.y, radius(n) + 2, 0, 2 * Math.PI); ctx.fill(); })
         .onNodeHover((n) => { hover.current = n ? n.id : null; host.current.style.cursor = n ? "pointer" : ""; })
         .onNodeClick((n) => { if (n.layer === "group") K.expand(n.group); else K.select(n.id); })
-        .onEngineStop(() => { if (g.__fitPending) { g.__fitPending = false; g.zoomToFit(400, 40); } });
+        .onEngineStop(() => {
+          // 배치가 멈춘 뒤에 맞춘다(움직이는 동안 가운데를 맞추면 노드가 화면 밖으로 흘러간다). 고를 노드가 있으면 그 노드로, 없으면 전체 맞춤
+          g.__running = false;
+          const id = g.__centerAfter;
+          const n = id ? known.current.get(id) : null;
+          if (id && n && n.x !== undefined) { g.__centerAfter = null; g.__fitPending = false; centerOn(g, id); }
+          else if (!id && g.__fitPending) { g.__fitPending = false; g.zoomToFit(400, 40); }   // 고를 노드가 아직 그래프에 없으면 다음 배치가 멈출 때까지 기다린다
+        });
+      g.__centerAfter = K.kg.get().center;      // 패널이 열리기 전에 찾기·채팅이 고른 노드
       fg.current = g;
       if (store.get().app.debug) window.__hzKg = g;     // 시험 갈고리: 디버그 실행에서만(실제 창 검증이 노드 화면 자리를 읽는다)
       const size = () => { if (host.current) g.width(host.current.clientWidth).height(host.current.clientHeight); };
@@ -119,6 +127,7 @@ function GraphCanvas() {
     const links = v.links.map((l) => Object.assign({}, l, { source: l.s, target: l.t }));
     const fresh = nodes.some((n) => n.x === undefined);
     g.cooldownTicks(fresh || fitAfter ? 160 : 0);     // 새 노드가 없으면 배치를 다시 돌리지 않는다(판단 뒤 그림이 흩어지지 않게)
+    g.__running = fresh || fitAfter;
     g.graphData({ nodes, links });
     if (fitAfter || fresh) g.__fitPending = true;
   }
@@ -141,6 +150,12 @@ function GraphCanvas() {
     if (!g || !seq) return;
     const id = K.kg.get().center;
     if (!id) { g.zoomToFit(400, 40); return; }
+    const n = known.current.get(id);
+    if (g.__running || !n || n.x === undefined) { g.__centerAfter = id; return; }       // 배치가 도는 중이거나 아직 없는 노드면 멈춘 뒤에(onEngineStop)
+    centerOn(g, id);
+  }, [seq]);
+
+  function centerOn(g, id) {
     let tries = 0;
     const go = () => {
       const n = known.current.get(id);
@@ -148,7 +163,7 @@ function GraphCanvas() {
       else if (tries++ < 20) setTimeout(go, 100);
     };
     go();
-  }, [seq]);
+  }
 
   return html`<div class="kg-canvas" ref=${host} role="img" aria-label="지식그래프 그림. 노드를 누르면 오른쪽에 상세가 나옵니다. 키보드로는 찾기 칸을 쓰세요.">
     ${failed ? html`<div class="center-empty"><p>${failed}</p></div>` : null}</div>`;

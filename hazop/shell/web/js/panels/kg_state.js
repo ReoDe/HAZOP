@@ -35,18 +35,23 @@ export function useKg(selector) {
 }
 
 const errorText = (e) => (e && e.message) || "처리하지 못했습니다.";
-let seq = 0;
+// 순번 셋: epoch는 프로젝트가 바뀔 때만(그 전에 시작한 읽기는 모두 버림), sumSeq·graphSeq는 같은 읽기끼리 마지막 것만 쓴다.
+// 하나로 묶어 두면 다른 곳(문서 패널·채팅의 패널 열기)이 요약을 다시 읽을 때 패널이 읽던 그래프까지 버려 그림이 비었다.
+let epoch = 0;
+let sumSeq = 0;
+let graphSeq = 0;
 
 export function reset() {
-  seq++;
+  epoch++;
   kg.set({ summary: EMPTY, graph: null, expanded: [], selected: null, detail: null, hits: [], query: "", busy: false, error: null, notice: null });
 }
 
 export async function loadSummary() {
-  const mine = ++seq;
+  const mine = ++sumSeq;
+  const ep = epoch;
   let s;
   try { s = await read("kg"); } catch (e) { s = Object.assign({}, EMPTY, { reason: "지식그래프를 읽지 못했습니다." }); }
-  if (mine !== seq) return kg.get().summary;
+  if (mine !== sumSeq || ep !== epoch) return kg.get().summary;
   const known = new Set((s.groups || []).map((g) => g.id));
   const prev = kg.get().expanded.filter((g) => known.has(g));
   const first = kg.get().summary === EMPTY || kg.get().summary.project_id !== s.project_id;
@@ -57,10 +62,11 @@ export async function loadSummary() {
 export async function loadGraph() {
   const s = kg.get().summary;
   if (!s.available) { kg.set({ graph: null }); return null; }
-  const mine = seq;
+  const mine = ++graphSeq;
+  const ep = epoch;
   let g;
   try { g = await read("kg/graph?expand=" + encodeURIComponent(kg.get().expanded.join(","))); } catch (e) { kg.set({ error: "그래프를 읽지 못했습니다." }); return null; }
-  if (mine !== seq) return null;
+  if (mine !== graphSeq || ep !== epoch) return null;
   if (g.refused) { kg.set({ error: g.refused }); return null; }
   kg.set({ graph: g });
   return g;
@@ -121,6 +127,7 @@ export async function focus(id, group) {
   }
   // 그 도면 하나가 상한보다 커서 그림에 펼치지 못해도 상세는 보인다(찾기로 고른 노드의 무엇·근거·판단은 그림 없이도 쓸 수 있다)
   const drawn = kg.get().expanded.includes(g) || await expand(g);
+  if (drawn && !kg.get().graph) await loadGraph();
   await select(id);
   kg.set((s) => (drawn ? { center: id, seq: s.seq + 1, hits: [] }
     : { hits: [], error: null, notice: "이 도면은 노드가 많아 그림에는 펼치지 않았습니다. 오른쪽 상세는 그대로 볼 수 있습니다." }));
