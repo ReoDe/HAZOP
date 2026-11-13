@@ -9,10 +9,11 @@ import os
 import re
 import unittest
 
+from hazop.paths import folder
 from scripts import build_drawing_symbols as bds
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DICT = os.path.join(REPO, "resources", "library", "symbols")
+DICT = folder("symbols")
 # 가상 도면(SNP)에서 읽힌 기호 kind(2026-11-13, 6장). 모두 그림이 있거나 점(tee)이어야 한다
 SNP_KINDS = {"tee", "continuation", "transmitter", "check_valve", "pump", "motor_operated_valve", "temperature_element", "tank", "manual_valve",
              "indicator", "control_valve", "controller", "psv", "heat_exchanger", "pipe_cap", "orifice", "reactor_vessel", "steam_generator",

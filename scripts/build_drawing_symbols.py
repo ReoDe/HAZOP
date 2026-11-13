@@ -12,7 +12,10 @@ import sys
 import xml.etree.ElementTree as ET
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(REPO, "resources", "library", "drawing-symbols")
+if REPO not in sys.path:
+    sys.path.insert(0, REPO)
+from hazop.paths import folder  # noqa: E402
+SRC = folder("drawing-symbols")
 OUT = os.path.join(REPO, "hazop", "shell", "web", "js", "canvas", "symbols.json")
 ALLOWED = ("path", "line", "polyline", "polygon", "circle", "rect")
 FITS = ("keep", "stretch")

@@ -137,7 +137,7 @@ export function arrowOf(rec, prevC, nextC, flow) {
   else if (nextC) fwd = d(nextC, last) <= d(nextC, first);
   if (!fwd) ang += Math.PI;
   if (flow === "against") ang += Math.PI;
-  return { x, y, ang };
+  return { x, y, ang, len: total };
 }
 
 /** 구간 색 모델. segments: [{node_id, ids, color?, active?}]. active가 있으면 그 구간만 진하게 그리고 나머지는 흐리게 한다. */
@@ -276,7 +276,7 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size, re
     seen.add(id);
     for (const rec of recsOf(index, id)) nodes.push(...mk({ rec, color: STYLE_COLORS.focus, dashed: false }, 3, null, 0.14));
   }
-  for (const a of arrows) nodes.push(arrowEl(a, k));
+  for (const a of arrows) if (!(a.len * k < 48)) nodes.push(arrowEl(a, k));     // 화살촉 길이(16px)의 세 배보다 짧은 배관에는 넣지 않는다
   // 같은 자리에 겹치는 번호 원은 옆으로 비켜 놓는다(이어진 단계의 번호가 서로 가리지 않게)
   const taken = new Set(), step = 16 / k;
   for (const b of badges) {
