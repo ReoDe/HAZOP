@@ -33,10 +33,14 @@ class WebPackagingTest(unittest.TestCase):
                     "vendor/hooks.module.js", "vendor/htm.module.js"):
             self.assertIn("hazop/shell/web/" + rel, srcs)
 
+    def test_web_unit_tests_are_not_in_the_build_datas(self):
+        srcs = {s for s, _ in self.bp.datas_list()}
+        self.assertFalse([s for s in srcs if s.startswith("hazop/shell/web/test")], "web/test/는 배포본에 들어가지 않는다")
+
     def make_bundle(self):
         tmp = tempfile.mkdtemp(prefix="hazop-webbundle-")
         self.addCleanup(shutil.rmtree, tmp, True)
-        shutil.copytree(WEB, os.path.join(tmp, "_internal", "hazop", "shell", "web"))
+        shutil.copytree(WEB, os.path.join(tmp, "_internal", "hazop", "shell", "web"), ignore=shutil.ignore_patterns("test"))
         for name in ("preact", "htm"):
             os.makedirs(os.path.join(tmp, "licenses", name))
             shutil.copy(os.path.join(REPO, "licenses", name, "LICENSE"), os.path.join(tmp, "licenses", name, "LICENSE"))
@@ -58,6 +62,10 @@ class WebPackagingTest(unittest.TestCase):
         with open(os.path.join(web, "extra.js"), "w", encoding="utf-8") as fh:
             fh.write("x")
         self.assertIn("묶음에만 있는 웹 파일: extra.js", self.vb.web_problems(tmp))
+        os.makedirs(os.path.join(web, "test"))
+        with open(os.path.join(web, "test", "run.js"), "w", encoding="utf-8") as fh:
+            fh.write("x")
+        self.assertIn("묶음에만 있는 웹 파일: test/run.js", self.vb.web_problems(tmp), "시험 파일이 묶음에 있으면 문제")
         shutil.rmtree(os.path.join(tmp, "licenses", "htm"))
         self.assertIn("묶음 라이브러리 고지 없음: licenses/htm/LICENSE", self.vb.web_problems(tmp))
 

@@ -196,6 +196,7 @@ def web_problems(bundle_dir, repo=REPO_ROOT):
     if not os.path.isdir(dest):
         return ["묶음에 새 웹 화면 폴더가 없음"]
     want, got = tree(src), tree(dest)
+    want = {n: h for n, h in want.items() if not n.startswith("test/")}   # web/test/(웹 단위 시험)는 묶음에 들어가면 안 된다 -> 있으면 '묶음에만 있는 웹 파일'
     probs = ["웹 파일 빠짐: %s" % n for n in sorted(set(want) - set(got))]
     probs += ["웹 파일 바이트 다름: %s" % n for n in sorted(set(want) & set(got)) if want[n] != got[n]]
     probs += ["묶음에만 있는 웹 파일: %s" % n for n in sorted(set(got) - set(want))]

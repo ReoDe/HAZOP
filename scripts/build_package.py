@@ -145,6 +145,9 @@ CHECK_MODULES = ("check_kg_screen", "check_kg", "check_kg_algo", "check_kg_rende
                  "analyze", "extract_drawio", "build_graph")
 
 
+DATA_EXCLUDE = ("hazop/shell/web/test",)   # 웹 단위 시험(시험 모드에서만 쓴다)은 배포본에 넣지 않는다
+
+
 def datas_list(repo_root=REPO_ROOT):
     """[(저장소 상대 원본 파일, 묶음 안 대상 폴더)] — '/' 구분, 정렬. 빠진 파일·폴더는 FileNotFoundError."""
     out = []
@@ -160,6 +163,8 @@ def datas_list(repo_root=REPO_ROOT):
             dirs[:] = sorted(x for x in dirs if x != "__pycache__")
             for f in sorted(files):
                 src = os.path.relpath(os.path.join(d, f), repo_root).replace("\\", "/")
+                if any(src == x or src.startswith(x + "/") for x in DATA_EXCLUDE):
+                    continue
                 out.append((src, os.path.dirname(src)))
     return sorted(out)
 
