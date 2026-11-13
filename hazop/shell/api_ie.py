@@ -17,6 +17,10 @@
 - 채팅에서 부르는 실행 함수: view_groups, move_candidates, split_group, judge_coverage. 판 지문(ver)이 없으면 거절하고, 되물을 일이
   있으면 'confirm' 오류(글에 확정이 풀릴 그룹)를 올린다(confirmed와 confirm_groups를 붙여 다시 부른다).
 - 인계 묶음 내보내기는 ie.store.load_synced로 IEC 대응을 먼저 저장한다(저장하지 못하면 내보내지 않음).
+- P5(설계 HZ-PLN-17 §8.2): 읽기 `ie/fmea`(FMEA 행·전기·제어 구간·구성요소 목록), `ie/mld`(MLD 잎 가지 대조). 명령 `ie.fmea_template`(양식
+  내보내기, 위치는 창이 묻는다), `ie.fmea_import`(파일은 창 훅 pick_import가 묻는다), `ie.fmea_edit`·`ie.fmea_status`·`ie.fmea_mark`,
+  `ie.mld_import`·`ie.mld_link`. FMEA·MLD 쓰기는 그 파일의 지문(fver·mver)과 화면이 본 행 지문(seen "fmea:FM-001")을 대조한다.
+  MLD 가지 판정은 ie.set_coverage에 code 'MLD:<가지 ID>'. 채팅 실행 함수: view_fmea, set_fmea_status, mark_ec_node, view_mld, link_mld_branch.
 """
 
 import hashlib
@@ -24,7 +28,7 @@ import json
 import logging
 import os
 
-from hazop.ie import bundle, model
+from hazop.ie import bundle, fmea, mld, model
 from hazop.ie import store as ie_store
 from hazop.study import nodes
 from hazop.study import results as res
@@ -61,12 +65,28 @@ def _context(engine):
         ie_doc, ie_fp = ie_store.load(ns.get("project_id"))
     except ie_store.Unreadable as exc:
         return None, "초기사건 파일을 읽을 수 없습니다: %s" % "; ".join(exc.problems[:2])[:200]
+    try:
+        _sides(ns)
+    except ie_store.Unreadable as exc:
+        return None, "FMEA·MLD 파일을 읽을 수 없습니다(%s): %s" % (os.path.basename(exc.path), "; ".join(exc.problems[:2])[:200])
     return (pg, ns, doc, ie_doc, ie_fp), None
 
 
 def _view_doc(ie_doc, doc, ns):
-    """읽기용: 승인 항목과 맞춘 문서(sync는 사본을 돌려줄 뿐 저장하지 않는다)."""
-    return model.sync(ie_doc, doc, node_set=ns)
+    """읽기용: 승인 항목과 승인 FMEA 행과 맞춘 문서(사본을 돌려줄 뿐 저장하지 않는다)."""
+    return ie_store.sync_all(ie_doc, doc, ns, _sides(ns)[0])
+
+
+def _sides(ns):
+    """(FMEA 문서, MLD 저장 문서). _context가 읽을 수 있는지 먼저 보므로 여기서는 그대로 읽는다."""
+    pid = ns.get("project_id")
+    return ie_store.load_fmea(pid)[0], ie_store.load_mld(pid)[0]
+
+
+def _build(doc, ns, pg, ie_doc, now):
+    """인계 묶음(화면·대조·내보내기가 같은 계산). FMEA·MLD 문서를 함께 넘긴다."""
+    fdoc, mdoc = _sides(ns)
+    return bundle.build_bundle(doc, ns, pg, ie_doc, now, fmea=fdoc, mld=mdoc)
 
 
 def _ver(fp):
@@ -103,6 +123,8 @@ def item_fps(b):
     for r in b["completeness"]:
         if r.get("code"):
             out["coverage:" + r["code"]] = _sha(r)
+    for x in (b.get("mld") or {}).get("branches") or []:
+        out["coverage:" + mld.COVER_PREFIX + x["id"]] = _sha(x)
     for g in b["groups"]:
         gid = g["group_id"]
         out["group:" + gid] = _sha({"g": g, "m": [cands.get(m) for m in g["members"]],
@@ -117,7 +139,7 @@ def summary(engine):
         return {"available": False, "reason": why}
     pg, ns, doc, ie_doc, ie_fp = ctx
     ie_doc = _view_doc(ie_doc, doc, ns)
-    b = bundle.build_bundle(doc, ns, pg, ie_doc, nodes.now_utc())
+    b = _build(doc, ns, pg, ie_doc, nodes.now_utc())
     grouped = {m for g in b["groups"] for m in g["members"]}
     unassigned = [c for c in b["candidates"] if c["candidate_id"] not in grouped]
     status_count = {}
@@ -147,7 +169,7 @@ def group_view(engine, gid):
         return None
     pg, ns, doc, ie_doc, ie_fp = ctx
     ie_doc = _view_doc(ie_doc, doc, ns)
-    b = bundle.build_bundle(doc, ns, pg, ie_doc, nodes.now_utc())
+    b = _build(doc, ns, pg, ie_doc, nodes.now_utc())
     g = next((x for x in b["groups"] if x["group_id"] == gid), None)
     if g is None:
         return None
@@ -189,6 +211,12 @@ def read(engine, parts, query):
     api = _api()
     if len(parts) == 1:
         return api._json(summary(engine))
+    if len(parts) == 2 and parts[1] == "fmea":
+        data = fmea_view(engine)
+        return api._json(data) if data is not None else None
+    if len(parts) == 2 and parts[1] == "mld":
+        data = mld_view(engine)
+        return api._json(data) if data is not None else None
     if len(parts) == 3 and parts[1] == "group":
         data = group_view(engine, parts[2])
         return api._json(data) if data is not None else None
@@ -226,9 +254,9 @@ def _write(engine, a, fn, keys=None, ask=None, demote_ok=False):
         raise api.CommandError("stale", STALE)
     if a.get("rver") is not None and a["rver"] != _rver(ctx):
         raise api.CommandError("stale", STALE_RESULTS)
-    base = model.sync(ie_doc, doc, node_set=ns)
+    base = _view_doc(ie_doc, doc, ns)
     if keys is not None and a.get("seen") is not None:
-        b = bundle.build_bundle(doc, ns, pg, base, nodes.now_utc())
+        b = _build(doc, ns, pg, base, nodes.now_utc())
         now = item_fps(b)
         seen = a["seen"]
         for k in keys(base, b):
@@ -294,7 +322,7 @@ def _twins_in(b, iecs):
 
 def _twins_of(base, doc, ns, pg, iecs):
     """묶음이 한 후보로 합친 쌍둥이(겹친 구간의 같은 원인, merged_from)까지 넓힌 IEC 목록. 쌍둥이는 같은 그룹에 있어야 확정된다."""
-    b = bundle.build_bundle(doc, ns, pg, base, nodes.now_utc())
+    b = _build(doc, ns, pg, base, nodes.now_utc())
     by = {c["candidate_id"]: c for c in b["candidates"]}
     out = []
     for i in iecs:
@@ -423,14 +451,21 @@ def _set_coverage(engine, a):
     disposition = a.get("disposition") or None
 
     def fn(base, doc, ns, pg, by):
-        rows = {r["code"]: r for r in bundle.build_bundle(doc, ns, pg, base, nodes.now_utc())["completeness"] if r.get("code")}
+        b = _build(doc, ns, pg, base, nodes.now_utc())
+        rows = {r["code"]: r for r in b["completeness"] if r.get("code")}
+        rows.update({mld.COVER_PREFIX + x["id"]: x for x in (b.get("mld") or {}).get("branches") or []})
         if a["code"] not in rows and a["code"] not in base["coverage"]:
             raise ValueError("완전성 대조에 없는 범주 코드입니다: %s" % a["code"])
         if disposition and (rows.get(a["code"]) or {}).get("status") == "covered":
             raise ValueError("%s 범주에는 대응 그룹이 있어 빈 범주 판정을 둘 수 없습니다" % a["code"])
         return model.set_coverage(base, a["code"], disposition, a.get("reason") or "", by)
     # 없는 범주 코드는 화면에 지문이 없으니 지문 대조를 건너뛰고 fn이 이유를 알린다
-    return _write(engine, a, fn, keys=lambda base, b: ["coverage:" + a["code"]] if any(r.get("code") == a["code"] for r in b["completeness"]) else [])
+    return _write(engine, a, fn, keys=lambda base, b: ["coverage:" + a["code"]] if a["code"] in _coverage_codes(b) else [])
+
+
+def _coverage_codes(b):
+    return {r["code"] for r in b["completeness"] if r.get("code")} | {
+        mld.COVER_PREFIX + x["id"] for x in (b.get("mld") or {}).get("branches") or []}
 
 
 def judge_coverage(engine, a):
@@ -478,7 +513,7 @@ def _export(engine, a):
         raise api.CommandError("stale", STALE)
     from hazop.ie import bundle_xlsx
     now = nodes.now_utc()
-    if not bundle.build_bundle(doc, ns, pg, model.sync(ie_doc, doc, node_set=ns), now)["candidates"]:
+    if not _build(doc, ns, pg, _view_doc(ie_doc, doc, ns), now)["candidates"]:
         raise api.CommandError("failed", "승인한 항목이 없어 인계 묶음을 만들지 않았습니다. 분석 결과에서 항목을 승인한 뒤 내보내세요.")
     path = _results()._save_path(engine, "ie", bundle_xlsx.default_stem(ns.get("project_id"), now) + ".xlsx")
     if not path:
@@ -498,7 +533,7 @@ def _export(engine, a):
         raise api.CommandError("failed", "초기사건 번호를 저장하지 못해 내보내지 않았습니다(%s)." % str(exc)[:200])
     if synced is not ie_doc:
         engine.changed("ie", None)
-    b = bundle.build_bundle(doc, ns, pg, synced, now)
+    b = _build(doc, ns, pg, synced, now)
     try:
         path, json_path = bundle_xlsx.export(path, b)
     except (OSError, ValueError) as exc:
@@ -506,6 +541,267 @@ def _export(engine, a):
     return {"path": os.path.basename(path), "json_path": os.path.basename(json_path), "candidates": len(b["candidates"]),
             "groups": len(b["groups"]), "cancelled": False}
 
+
+
+# ---------------------------------------------------------------- P5: FMEA 입력·MLD 가지 대조(설계 §8.2)
+
+def _row_fp(row):
+    return _sha(row)
+
+
+def _p5_context(engine):
+    """(pg, ns, ⑤ 결과, FMEA 문서, FMEA 지문, MLD 문서, MLD 지문) 또는 CommandError."""
+    api = _api()
+    ctx, why = _context(engine)
+    if ctx is None:
+        raise api.CommandError("failed", why)
+    pg, ns, doc, _ie, _fp = ctx
+    pid = ns.get("project_id")
+    fdoc, ffp = ie_store.load_fmea(pid)
+    mdoc, mfp = ie_store.load_mld(pid)
+    return pg, ns, doc, fdoc, ffp, mdoc, mfp
+
+
+def _analysed(doc, ns):
+    picked, _left = bundle.approved_entries(doc, ns)
+    return {node_id for node_id, _d, _e in picked}
+
+
+def _ec_view(ns, pg, fdoc, analysed):
+    rule = set(fmea.rule_nodes(ns, pg))
+    ec = set(fmea.ec_nodes(ns, pg, fdoc))
+    done = fmea.done_nodes(ns, fdoc)
+    marks = fdoc["node_marks"]
+    return [{"node_id": n["node_id"], "name": n.get("name"), "rule": n["node_id"] in rule, "mark": marks.get(n["node_id"]),
+             "ec": n["node_id"] in ec, "analysed": n["node_id"] in analysed, "fmea_done": n["node_id"] in done}
+            for n in ns["nodes"] if n["node_id"] in rule or n["node_id"] in marks]
+
+
+def fmea_view(engine):
+    """{fver, rows: [행 + row_id·fp], counts, ec_nodes, components, imports, codes}. 읽기만 한다."""
+    ctx, _why = _context(engine)
+    if ctx is None:
+        return None
+    pg, ns, doc, _ie, _fp = ctx
+    fdoc, ffp = ie_store.load_fmea(ns.get("project_id"))
+    rows = [dict(r, row_id=rid, fp=_row_fp(r)) for rid, r in sorted(fdoc["rows"].items())]
+    counts = {k: sum(r["status"] == k for r in rows) for k in fmea.STATUSES}
+    counts["unmatched"] = sum(1 for r in rows if not r.get("ref"))
+    homes = {}
+    for n in ns["nodes"]:
+        for m in n.get("members") or []:
+            homes.setdefault(m, []).append(n["node_id"])
+    from hazop.study import migrate, refs
+    comps = [{"entity_id": n["entity_id"], "tag": refs.node_text(n), "kind": n.get("kind") or "", "nodes": homes.get(n["entity_id"], [])}
+             for n in pg.get("nodes") or [] if n.get("tag") and migrate.ref_of(n, pg.get("graph_id"))]
+    return {"fver": _ver(ffp), "rows": rows, "counts": counts, "ec_nodes": _ec_view(ns, pg, fdoc, _analysed(doc, ns)),
+            "components": comps[:3000], "imports": fdoc["imports"][-5:], "codes": fmea.FAILURE_MODE_CODES,
+            "statuses": fmea.STATUSES, "matches": fmea.MATCHES}
+
+
+def view_fmea(engine):
+    """채팅 실행 함수: FMEA 행·전기·제어 구간(화면 읽기와 같은 값)."""
+    return fmea_view(engine)
+
+
+def _fmea_write(engine, a, fn, keys=()):
+    """FMEA 문서 쓰기: 검토자, FMEA 지문(fver), 화면이 본 행 지문(seen)을 대조하고 저장한다."""
+    api = _api()
+    by = engine.reviewer()
+    if not by:
+        raise api.CommandError("bad_args", "검토자 이름을 먼저 설정에서 입력하세요.")
+    pg, ns, doc, fdoc, ffp, _m, _mfp = _p5_context(engine)
+    if a.get("fver") != _ver(ffp):
+        raise api.CommandError("stale", "FMEA가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
+    if a.get("seen") is not None:
+        for k in keys:
+            rid = k.split(":", 1)[1]
+            now = _row_fp(fdoc["rows"][rid]) if rid in fdoc["rows"] else None
+            if a["seen"].get(k) != now:
+                raise api.CommandError("stale", STALE_ITEM % rid)
+    try:
+        new = fn(fdoc, pg, ns, doc, by)
+    except ValueError as exc:
+        raise api.CommandError("failed", str(exc)[:300])
+    new, value = new if isinstance(new, tuple) else (new, None)
+    if new is fdoc:
+        return {"fver": _ver(ffp), "changed": False, "value": value}
+    try:
+        fp = ie_store.save_fmea(new, expect=ffp)
+    except ie_store.Conflict:
+        raise api.CommandError("stale", "FMEA가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
+    except (ValueError, OSError) as exc:
+        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:200])
+    engine.changed("ie", None)
+    return {"fver": fp, "changed": True, "value": value}
+
+
+PICK_FILTERS = {"fmea": ["FMEA 양식 (*.xlsx)"], "mld": ["MLD 파일 (*.json)"]}
+
+
+def _pick(engine, kind):
+    """창의 파일 고르기(window.py 훅 pick_import(kind, filters) → 경로 목록, 취소면 []). 웹은 경로를 보내지 않는다.
+    고르는 동안 프로젝트가 바뀌면 거절한다(고르기 전에 잡은 프로젝트 ID와 대조)."""
+    api = _api()
+    hook = engine.hooks.get("pick_import")
+    if hook is None:
+        raise api.CommandError("failed", "이 창에서는 파일을 고를 수 없습니다(창의 파일 고르기 기능 없음).")
+    pid = engine.project_id()
+    got = hook(kind, PICK_FILTERS[kind])
+    if isinstance(got, (list, tuple)):
+        got = got[0] if got else None
+    if got and engine.project_id() != pid:
+        raise api.CommandError("wrong_project", "파일을 고르는 동안 프로젝트가 바뀌어 가져오지 않았습니다.")
+    return got
+
+
+def _fmea_template(engine, a):
+    api = _api()
+    pg, ns, doc, fdoc, _ffp, _m, _mfp = _p5_context(engine)
+    ec = set(fmea.ec_nodes(ns, pg, fdoc))
+    idx = {n["entity_id"]: n for n in pg.get("nodes") or []}
+    from hazop.study import refs
+    ec_rows = [(n["node_id"], refs.node_text(idx[m]), idx[m].get("kind") or "") for n in ns["nodes"] if n["node_id"] in ec
+               for m in n.get("members") or [] if m in idx and idx[m].get("tag")]
+    path = _results()._save_path(engine, "fmea", "FMEA-%s.xlsx" % (ns.get("project_id") or "프로젝트"))
+    if not path:
+        return {"cancelled": True}
+    if not path.lower().endswith(".xlsx"):
+        path += ".xlsx"
+    try:
+        from hazop.export.study_xlsx import save_workbook
+        save_workbook(fmea.template_workbook(fdoc, ec_rows), path)
+    except (OSError, ValueError) as exc:
+        raise api.CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % str(exc)[:200])
+    return {"cancelled": False, "path": os.path.basename(path), "rows": len(fdoc["rows"])}
+
+
+def _fmea_import(engine, a):
+    path = _pick(engine, "fmea")
+    if not path:
+        return {"cancelled": True}
+    try:
+        got, problems = fmea.read_rows(path)
+    except Exception as exc:  # noqa: BLE001 - 깨진 Excel은 이유만 알린다
+        raise _api().CommandError("failed", "Excel을 읽지 못했습니다(%s)." % str(exc)[:160])
+    if not got:
+        raise _api().CommandError("failed", "가져올 행이 없습니다. %s" % " ".join(problems)[:200])
+    name = os.path.basename(path)
+    out = _fmea_write(engine, a, lambda fdoc, pg, ns, doc, by: fmea.import_rows(fdoc, got, pg, ns, name, by))
+    rep = out.pop("value")
+    rep["problems"] = problems + rep["problems"]
+    return dict(out, cancelled=False, file=name, report={k: v if k == "problems" else len(v) for k, v in rep.items()},
+                reopened=rep["reopened"], unmatched=rep["unmatched"])
+
+
+def _fmea_edit(engine, a):
+    return _fmea_write(engine, a, lambda fdoc, pg, ns, doc, by: fmea.edit_row(fdoc, a["row_id"], a["fields"], pg, ns),
+                       keys=["fmea:" + a["row_id"]])
+
+
+def _fmea_status(engine, a):
+    return _fmea_write(engine, a, lambda fdoc, pg, ns, doc, by: fmea.set_status(fdoc, a["row_ids"], a["status"], by),
+                       keys=["fmea:" + r for r in a["row_ids"]])
+
+
+def set_fmea_status(engine, a):
+    """채팅 실행 함수: {row_ids, status(approved·excluded·imported), fver}. fver 없이는 거절."""
+    if not a.get("fver"):
+        raise _api().CommandError("bad_args", "FMEA 판 지문(fver)을 함께 보내야 합니다(먼저 view_fmea로 읽음).")
+    return _fmea_status(engine, a)
+
+
+def _fmea_mark(engine, a):
+    def fn(fdoc, pg, ns, doc, by):
+        if a["node_id"] not in {n["node_id"] for n in ns["nodes"]}:
+            raise ValueError("없는 구간: %s" % a["node_id"])
+        return fmea.set_node_mark(fdoc, a["node_id"], a["mark"] or None)
+    return _fmea_write(engine, a, fn)
+
+
+def mark_ec_node(engine, a):
+    """채팅 실행 함수: {node_id, mark(include·exclude·빈 글자), fver}."""
+    if not a.get("fver"):
+        raise _api().CommandError("bad_args", "FMEA 판 지문(fver)을 함께 보내야 합니다(먼저 view_fmea로 읽음).")
+    return _fmea_mark(engine, a)
+
+
+def mld_view(engine):
+    """{mver, loaded, source, branches(대조 결과 + fp), groups(이을 수 있는 그룹)}. 읽기만 한다."""
+    ctx, _why = _context(engine)
+    if ctx is None:
+        return None
+    pg, ns, doc, ie_doc, _fp = ctx
+    mdoc, mfp = ie_store.load_mld(ns.get("project_id"))
+    b = _build(doc, ns, pg, _view_doc(ie_doc, doc, ns), nodes.now_utc())
+    m = b.get("mld")
+    fps = item_fps(b)
+    return {"mver": _ver(mfp), "loaded": m is not None, "source": (m or {}).get("source"),
+            "branches": [dict(x, fp=fps.get("coverage:" + mld.COVER_PREFIX + x["id"])) for x in (m or {}).get("branches") or []],
+            "gone_links": (m or {}).get("gone_links") or [],
+            "groups": [{"group_id": g["group_id"], "name": g["name"]} for g in b["groups"]],
+            "statuses": mld.STATUS_LABELS}
+
+
+def view_mld(engine):
+    """채팅 실행 함수: MLD 잎 가지 대조(화면 읽기와 같은 값)."""
+    return mld_view(engine)
+
+
+def _mld_write(engine, a, fn, keys=()):
+    api = _api()
+    by = engine.reviewer()
+    if not by:
+        raise api.CommandError("bad_args", "검토자 이름을 먼저 설정에서 입력하세요.")
+    pg, ns, doc, _f, _ffp, mdoc, mfp = _p5_context(engine)
+    if a.get("mver") != _ver(mfp):
+        raise api.CommandError("stale", "MLD가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
+    if keys and a.get("seen") is not None:
+        view = mld_view(engine)
+        now = {"coverage:" + mld.COVER_PREFIX + x["id"]: x["fp"] for x in view["branches"]}
+        for k in keys:
+            if a["seen"].get(k) != now.get(k):
+                raise api.CommandError("stale", STALE_ITEM % k.rsplit(":", 1)[1])
+    try:
+        new = fn(mdoc, by)
+    except ValueError as exc:
+        raise api.CommandError("failed", str(exc)[:300])
+    if new is mdoc:
+        return {"mver": _ver(mfp), "changed": False}
+    try:
+        fp = ie_store.save_mld(new, expect=mfp)
+    except ie_store.Conflict:
+        raise api.CommandError("stale", "MLD가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
+    except (ValueError, OSError) as exc:
+        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:200])
+    engine.changed("ie", None)
+    return {"mver": fp, "changed": True}
+
+
+def _mld_import(engine, a):
+    path = _pick(engine, "mld")
+    if not path:
+        return {"cancelled": True}
+    try:
+        data = mld.read_file(path)
+    except (OSError, ValueError) as exc:
+        raise _api().CommandError("failed", "MLD 파일을 읽지 못했습니다(%s)." % str(exc)[:200])
+    codes = {c["code"] for c in res.ie_category_table()["categories"]}
+    name = os.path.basename(path)
+    out = _mld_write(engine, a, lambda mdoc, by: mld.import_mld(mdoc, data, name, by, codes))
+    return dict(out, cancelled=False, file=name, branches=len(data.get("branches") or []))
+
+
+def _mld_link(engine, a):
+    return _mld_write(engine, a, lambda mdoc, by: mld.set_links(mdoc, a["branch_id"], a["group_ids"]),
+                      keys=["coverage:" + mld.COVER_PREFIX + a["branch_id"]])
+
+
+def link_mld_branch(engine, a):
+    """채팅 실행 함수: {branch_id, group_ids, mver}."""
+    if not a.get("mver"):
+        raise _api().CommandError("bad_args", "MLD 판 지문(mver)을 함께 보내야 합니다(먼저 view_mld로 읽음).")
+    return _mld_link(engine, a)
 
 def register(commands):
     api = _api()
@@ -544,8 +840,32 @@ def register(commands):
     put("set_coverage", dict(common, code=(v_str(1, 40), True), disposition=(api.v_enum("", *model.COVERAGE), True),
                              reason=(v_str(0, 1000), False)), _set_coverage, "완전성 대조 빈 범주 판정(사유 필수, 빈 처리는 지움)")
     put("export", {"ver": (v_str(1, 100), False), "rver": rver}, _export, "인계 묶음 Excel+JSON 내보내기(위치는 창이 묻는다)")
+    fver = (v_str(1, 100), True)
+    fseen = {"fver": fver, "seen": seen}
+    put("fmea_template", {}, _fmea_template, "FMEA 양식(.xlsx) 내보내기(지금 있는 행을 채움, 위치는 창이 묻는다)")
+    put("fmea_import", {"fver": fver}, _fmea_import, "채운 FMEA 양식 가져오기(파일은 창이 묻는다). 같은 행은 같은 ID")
+    put("fmea_edit", dict(fseen, row_id=(v_str(1, 20), True), fields=(v_fmea_fields, True)), _fmea_edit,
+        "FMEA 행 고치기(구성요소 고르기 포함). 내용이 바뀌면 승인이 풀린다")
+    put("fmea_status", dict(fseen, row_ids=(v_list(v_str(1, 20), 2000), True), status=(api.v_enum(*fmea.STATUSES), True)),
+        _fmea_status, "FMEA 행 승인·제외·가져옴으로 되돌리기(검토자 이름이 남는다)")
+    put("fmea_mark", dict(fseen, node_id=(v_str(1, 40), True), mark=(api.v_enum("", *fmea.MARKS), True)), _fmea_mark,
+        "전기·제어 구간 사람 표시(include·exclude, 빈 글자면 지움)")
+    put("mld_import", {"mver": (v_str(1, 100), True)}, _mld_import, "주논리도(MLD) 파일 가져오기(파일은 창이 묻는다)")
+    put("mld_link", {"mver": (v_str(1, 100), True), "seen": seen, "branch_id": (v_str(1, 40), True),
+                     "group_ids": (v_list(v_str(1, 20), 50), True)}, _mld_link, "MLD 잎 가지에 초기사건 그룹 잇기(빈 목록이면 지움)")
     put("replace_unreadable", {"confirmed": (api.v_bool(), False)}, _replace_unreadable,
         "읽지 못한 초기사건 파일을 백업하고 새로 시작(확인 필요)")
+
+
+def v_fmea_fields(v):
+    if not isinstance(v, dict) or not v or len(v) > 20:
+        raise ValueError("고칠 필드 객체여야 함")
+    for k, x in v.items():
+        if k not in fmea.EDITABLE:
+            raise ValueError("고칠 수 없는 필드: %s" % str(k)[:40])
+        if x is not None and (not isinstance(x, str) or len(x) > fmea.MAX_TEXT):
+            raise ValueError("%s 값 형식 오류" % k)
+    return dict(v)
 
 
 def v_seen(v):

@@ -48,7 +48,7 @@ ES_CATEGORIES = {"core_damage_possible": "노심손상 가능", "containment_byp
 COVERAGE = {"out_of_scope": "범위 밖", "other_method": "다른 기법으로 확인 예정", "not_applicable": "해당 없음(설계 특성)"}
 # 후보 내용이 바뀌었는지 보는 ⑤ 필드. 확정 때 이 값들의 지문을 digest에 넣는다
 MEMBER_FIELDS = ("cause", "consequence", "consequence_basis", "cause_kind", "cause_refs", "safeguards", "ie_hint")
-SOURCE_KINDS = {"cause": "HAZOP 원인", "safeguard": "보호수단 구현 대상"}
+SOURCE_KINDS = {"cause": "HAZOP 원인", "safeguard": "보호수단 구현 대상", "fmea": "FMEA 행"}   # fmea: P5(설계 §8.2), 열쇠 'fmea:FM-001'
 
 
 def _sha(obj):
@@ -272,10 +272,11 @@ def source_keys(table, rec):
     return list(rec["source_keys"]) if table == "end_states" else [s["key"] for s in rec["sources"]]
 
 
-def in_scope(table, rec, facts):
-    """⑤ 출처가 있는 기록은 출처 가운데 승인 항목이 하나라도 있어야 묶음에 든다. 출처 없이 사람이 쓴 기록은 든다."""
+def in_scope(table, rec, facts, fmea_live=frozenset()):
+    """⑤ 출처가 있는 기록은 출처 가운데 승인 항목(또는 승인 FMEA 행, fmea_live의 'fmea:FM-001')이 하나라도 있어야 묶음에 든다.
+    출처 없이 사람이 쓴 기록은 든다."""
     keys = source_keys(table, rec)
-    return not keys or any((facts.get(k) or {}).get("approved") for k in keys)
+    return not keys or any((facts.get(k) or {}).get("approved") or k in fmea_live for k in keys)
 
 
 def _member_problems(doc, iec, facts):

@@ -17,17 +17,21 @@ build_bundle(results, node_set, pg, ie_doc, now, table) → dict. 파일을 쓰�
   항목·구간·그래프를 함께 봐야 하는 3종은 여기서 계산한다. 종류별 건수는 warning_summary에 둔다.
 - 값은 영어 키로 두고 한국어 표기는 Excel(hazop.ie.bundle_xlsx)에서 붙인다. 드라이브 경로·API 키처럼 보이는 글자는 가린다.
 - Excel은 이 dict에서 만든다. 원본은 JSON 하나다(§2-6).
+- P5(설계 §8.2, 형식 판 0.3): fmea(hazop.ie.fmea 문서)를 주면 승인 FMEA 행을 출처로 가진 기본사건이 들고(fmea_rows), 'FMEA 대조 전'
+  경고는 승인 FMEA 행이 없는 전기·제어 구간(규칙 + 사람 표시)만 센다. mld(hazop.ie.mld 저장 문서)를 주면 완전성 대조 행에
+  mld_branches·mld_status를 채우고 'mld' 키에 잎 가지 대조를 둔다. 키를 더하기만 하므로 0.2 묶음은 upgrade()로 읽는다.
 """
 
 import json
 
 from hazop.export import study_xlsx as sx
+from hazop.ie import fmea as _fm
 from hazop.ie import model
 from hazop.study import refs
 from hazop.study import results as res
 
 KIND = "hazop_ie_bundle"
-SCHEMA_VERSION = "0.2"
+SCHEMA_VERSION = "0.3"   # 0.3(2026-11-14 P5): fmea·mld 키, 기본사건 fmea_rows, 완전성 대조 mld_branches·mld_status
 SCOPE = "approved"
 METHOD = "HAZOP"
 # 기준표 파일에 짧은 출처 이름이 없어 table_id로 붙인다. 모르는 기준표는 제목을 쓴다
@@ -44,9 +48,9 @@ WARNING_KINDS = {
 }
 # 스스로 작동해 압력을 푸는 보호 기기(레지스트리 kind). 원인 위치가 이것이면 보호설비 고장을 원인으로 적은 것으로 본다
 PROTECTIVE_KINDS = frozenset({"psv", "relief_valve", "rupture_disc"})
-CONTROL_CATEGORY = "instrument"
-# 전기로 움직이거나 제어 신호를 받는 밸브. P&ID에 전동기·전원은 따로 그려지지 않아 펌프·팬의 전동기는 세지 못한다 [추론]
-ELECTRIC_KINDS = frozenset({"motor_operated_valve", "solenoid_valve", "control_valve"})
+# 전기·제어 구간 규칙의 값은 hazop.ie.fmea에 둔다(규칙 + 사람 표시가 한곳에서 정해지게)
+CONTROL_CATEGORY = _fm.CONTROL_CATEGORY
+ELECTRIC_KINDS = _fm.ELECTRIC_KINDS
 GLOSSARY = (
     ("초기사건(IE)", "정상운전을 교란해 제어·안전계통에 도전하는 사건", "NUREG-2122 용어집(ASME/ANS 표준 정의 인용)"),
     (CATEGORY_TERM, "경수로 산업 평균 초기사건 범주", None),
@@ -214,9 +218,9 @@ def _completeness(candidates, categories, source_label, groups, coverage):
     return rows
 
 
-def _scope(doc, facts):
-    """{표: 묶음에 드는 live 기록 ID 집합}. 드는 기준은 model.in_scope(그룹 확정 여부와 같은 기준)."""
-    return {t: {rid for rid, r in doc[t].items() if r["status"] == "live" and model.in_scope(t, r, facts)}
+def _scope(doc, facts, fmea_live=frozenset()):
+    """{표: 묶음에 드는 live 기록 ID 집합}. 드는 기준은 model.in_scope(그룹 확정 여부와 같은 기준). 기본사건은 승인 FMEA 행도 출처로 센다."""
+    return {t: {rid for rid, r in doc[t].items() if r["status"] == "live" and model.in_scope(t, r, facts, fmea_live)}
             for t in ("headings", "end_states", "basic_events")}
 
 
@@ -282,19 +286,21 @@ def _end_states(doc, groups, approved, facts, scope):
     return out
 
 
-def _basic_events(doc, approved, iecs, scope):
+def _basic_events(doc, approved, iecs, scope, fmea_live=frozenset()):
+    from hazop.ie import fmea as fm
     out = []
     for bid, b in sorted(doc["basic_events"].items()):
         if bid not in scope["basic_events"]:
             continue
-        live_src = [s for s in b["sources"] if s["key"] in approved]
+        live_src = [s for s in b["sources"] if s["key"] in approved or s["key"] in fmea_live]
         out.append({"be_id": bid, "name": b["name"], "tag": b["tag"], "ref": b["ref"],
                     "equipment_kind": b["equipment_kind"], "system": b["system"],
                     "failure_mode": b["failure_mode"], "failure_text": b["failure_text"],
                     "normal_position": "", "failed_position": "",
                     "heading_ids": [h for h in b["heading_ids"] if h in scope["headings"]],
                     "candidate_ids": list(dict.fromkeys(iecs[s["key"]] for s in live_src if s["kind"] == "cause")),
-                    "source_kinds": list(dict.fromkeys(s["kind"] for s in live_src)), "origin": b["origin"]})
+                    "source_kinds": list(dict.fromkeys(s["kind"] for s in live_src)), "origin": b["origin"],
+                    "fmea_rows": [s["key"][len(fm.SOURCE_PREFIX):] for s in live_src if s["kind"] == "fmea"]})
     return out
 
 
@@ -363,16 +369,14 @@ def _boundary_cut(node_id, e, idx, homes, analysed, covered):
             % "; ".join(cuts))
 
 
-def _fmea_pending(node_set, pg, analysed):
-    """승인 항목이 있는 구간 가운데 계기·제어 구성요소나 전기로 움직이는 밸브가 든 구간 ID(검토구간 순서, 여러 도면에
-    걸친 구간도 한 번). 앱에 FMEA 입력이 아직 없어(P5) 이 구간들은 모두 'FMEA 대조 전'이다. 전기·제어 구간을 이렇게
-    본 것은 [추론]."""
-    control = {n["entity_id"] for n in pg.get("nodes") or []
-               if n.get("category") == CONTROL_CATEGORY or n.get("kind") in ELECTRIC_KINDS}
-    return [n["node_id"] for n in node_set["nodes"] if n["node_id"] in analysed and control & set(n["members"])]
+def _fmea_pending(node_set, pg, analysed, fmea_doc=None):
+    """승인 항목이 있는 전기·제어 구간 가운데 승인 FMEA 행이 하나도 없는 구간 ID(검토구간 순서). 전기·제어 구간은 규칙(계기·제어
+    구성요소나 전기로 움직이는 밸브가 든 구간 [추론]) + 사람 표시(hazop.ie.fmea.ec_nodes, 설계 §8.2 질문 7)."""
+    from hazop.ie import fmea as fm
+    return fm.pending_nodes(node_set, pg, analysed, fmea_doc)
 
 
-def _warnings(picked, node_set, pg, idx):
+def _warnings(picked, node_set, pg, idx, fmea_doc=None):
     """(품질 경고 행 목록, 종류별 건수 [{kind, count}]). 행은 항목 순서, 한 항목 안에서는 WARNING_KINDS 순서다.
     'FMEA 대조 전'은 항목마다 띄우지 않고 묶음 끝에 한 줄로 두며, 건수는 구간 수다."""
     guarded = _guarded(picked)
@@ -392,11 +396,11 @@ def _warnings(picked, node_set, pg, idx):
         found["boundary_cut"] = _boundary_cut(node_id, e, idx, homes, analysed, covered)
         rows += [{"kind": k, "target": e["entry_id"], "text": found[k], "basis": WARNING_KINDS[k][1]}
                  for k in WARNING_KINDS if found.get(k)]
-    pending = _fmea_pending(node_set, pg, analysed)
+    pending = _fmea_pending(node_set, pg, analysed, fmea_doc)
     if pending:
         rows.append({"kind": "fmea_pending", "target": ", ".join(pending), "basis": WARNING_KINDS["fmea_pending"][1],
-                     "text": "전기·제어 구간 %d개: FMEA 대조 전. 계기·제어 구성요소나 전동 밸브가 든 구간은 HAZOP만으로 고장모드를 다 "
-                             "잡기 어렵습니다. 이 묶음은 FMEA와 대조하지 않았습니다" % len(pending)})
+                     "text": "전기·제어 구간 %d개: FMEA 대조 전(승인한 FMEA 행 없음). 계기·제어 구성요소나 전동 밸브가 든 구간은 HAZOP만으로 "
+                             "고장모드를 다 잡기 어렵습니다. 이 구간들은 FMEA와 대조하지 않았습니다" % len(pending)})
     counts = [{"kind": k, "count": len(pending) if k == "fmea_pending" else sum(w["kind"] == k for w in rows)}
               for k in WARNING_KINDS]
     return rows, counts
@@ -420,9 +424,15 @@ def _scrubbed(x):
     return x
 
 
-def build_bundle(results, node_set, pg, ie_doc, now, table=None):
+def build_bundle(results, node_set, pg, ie_doc, now, table=None, fmea=None, mld=None):
     """IE 인계 묶음 dict. ie_doc은 model.sync를 거친 ⑥ 문서, now는 UTC ISO 시각('...Z'), table은 일반 범주 기준표 문서
-    (없으면 res.ie_category_table())."""
+    (없으면 res.ie_category_table()). fmea·mld는 P5 문서(없으면 FMEA 대조 전·MLD 열 빈 값). 승인 FMEA 행을 기본사건에 붙이려면
+    ie_doc이 hazop.ie.store.sync_all(또는 fmea.sync_basic_events)을 거쳐야 한다."""
+    from hazop.ie import fmea as fm
+    from hazop.ie import mld as ml
+    if fmea is not None and not fmea.get("rows") and not fmea.get("node_marks"):
+        fmea = None          # 빈 FMEA 문서(파일 없음)는 '가져오지 않음'과 같다
+    fmea_live = fm.live_sources(fmea) if fmea else frozenset()
     table = table if table is not None else res.ie_category_table()
     source_label = SOURCE_LABELS.get(table.get("table_id"), table.get("title") or "")
     idx = refs.index(pg)
@@ -434,7 +444,7 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None):
     unsynced = sorted(approved - set(iecs))
     if unsynced:
         raise ValueError("⑥ 초기사건 문서를 먼저 ⑤ 결과와 맞추세요(IEC 없는 승인 항목 %d건)" % len(unsynced))
-    scope = _scope(ie_doc, facts)
+    scope = _scope(ie_doc, facts, fmea_live)
     groups = _groups(ie_doc, results, facts, source_label, scope)
     by_gid = {g["group_id"]: g for g in groups}
     candidates, trace = [], []
@@ -460,7 +470,22 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None):
     for t in trace:
         if t["node_id"] in changed:
             t["note"] = ((t.get("note") or "") + " 잠근 뒤 그래프 판이 바뀐 구간(잠금 유지, 다시 확인 전)").strip()
-    warnings, warning_summary = _warnings(picked, node_set, pg, idx)
+    warnings, warning_summary = _warnings(picked, node_set, pg, idx, fmea)
+    completeness = _completeness(candidates, table["categories"], source_label, groups, ie_doc["coverage"])
+    mld_view = ml.compare(mld, candidates, groups, ie_doc["coverage"]) if mld else None
+    for r in completeness:
+        branches = (mld_view or {}).get("by_category", {}).get(r["code"], []) if r["code"] else []
+        r["mld_branches"] = [{"id": b["id"], "name": b["name"], "status": b["status"]} for b in branches]
+        r["mld_status"] = (None if not branches else "covered" if all(b["status"] in ("covered", "not_applicable") for b in branches)
+                           else "gap")
+    unmapped = [b for b in (mld_view or {}).get("branches", []) if not b["categories"]]
+    if unmapped:
+        completeness.append({"code": None, "name_ko": "범주 없는 MLD 가지", "source_label": "", "group_id": None,
+                             "candidate_count": 0,
+                             "status": "covered" if all(b["status"] in ("covered", "not_applicable") for b in unmapped) else "unmapped",
+                             "note": ", ".join("%s %s(%s)" % (b["id"], b["name"], ml.STATUS_LABELS[b["status"]]) for b in unmapped),
+                             "mld_branches": [{"id": b["id"], "name": b["name"], "status": b["status"]} for b in unmapped],
+                             "mld_status": None})
     revs = {n["node_id"]: n.get("rev") or 1 for n in node_set["nodes"]}
     used = list(dict.fromkeys(node_id for node_id, _d, _e in picked))
     return _scrubbed({
@@ -479,16 +504,42 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None):
         "groups": groups,
         "top_events": _top_events(ie_doc, groups, approved, idx, scope),
         "end_states": _end_states(ie_doc, groups, approved, facts, scope),
-        "basic_events": _basic_events(ie_doc, approved, iecs, scope),
+        "basic_events": _basic_events(ie_doc, approved, iecs, scope, fmea_live),
         "retired": [{"id": gid, "status": g["status"], "split_into": list(g["split_into"])}
                     for gid, g in sorted(ie_doc["groups"].items()) if g["status"] in model.RETIRED],
         "trace": trace,
-        "completeness": _completeness(candidates, table["categories"], source_label, groups, ie_doc["coverage"]),
+        "completeness": completeness,
+        "mld": None if mld_view is None else {"source": mld_view["source"], "branches": mld_view["branches"],
+                                              "gone_links": mld_view["gone_links"]},
+        "fmea": None if not fmea else {"rows_total": len(fmea.get("rows") or {}), "rows_approved": len(fm.approved(fmea)),
+                                      "ec_nodes": fm.ec_nodes(node_set, pg, fmea, among=set(used))},
         "warnings": warnings,
         "warning_summary": warning_summary,
         "glossary": [{"term": t, "meaning": m, "source": s if s is not None else table.get("basis") or ""}
                      for t, m, s in GLOSSARY],
     })
+
+
+def upgrade(bundle):
+    """옛 형식 묶음(0.2)을 지금 형식(0.3)으로 읽는다: 더해진 키를 빈 값으로 채운다(내용은 바꾸지 않음). 지금 형식이면 그대로."""
+    if bundle.get("kind") != KIND:
+        raise ValueError("IE 인계 묶음이 아님")
+    v = bundle.get("schema_version")
+    if v == SCHEMA_VERSION:
+        return bundle
+    if v != "0.2":
+        raise ValueError("모르는 묶음 형식 판: %s" % v)
+    out = json.loads(json.dumps(bundle))
+    for b in out.get("basic_events") or []:
+        b.setdefault("fmea_rows", [])
+    for r in out.get("completeness") or []:
+        r.setdefault("mld_branches", [])
+        r.setdefault("mld_status", None)
+    out.setdefault("mld", None)
+    out.setdefault("fmea", None)
+    out["schema_version"] = SCHEMA_VERSION
+    out["upgraded_from"] = v
+    return out
 
 
 def dumps(bundle):

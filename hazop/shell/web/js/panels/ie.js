@@ -6,10 +6,11 @@ import { useState } from "../../vendor/hooks.module.js";
 import { store } from "../store.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import * as I from "./ie_state.js";
+import { FmeaView, MldSection } from "./ie_p5.js";
 
 const STATUS = { draft: ["초안", "ai"], confirmed: ["확정", "ok"], split: ["나뉨", "plain"], deleted: ["삭제", "plain"] };
 const JUDGE = { yes: ["후보", "accent"], no: ["제외", "plain"], undecided: ["보류", "warn"] };
-const COVER = { covered: ["대응 그룹 있음", "ok"], gap: ["빈 범주", "warn"], unclassified: ["미분류", "plain"], out_of_scope: ["범위 밖", "plain"], other_method: ["다른 기법", "plain"], not_applicable: ["해당 없음", "plain"] };
+const COVER = { covered: ["대응 그룹 있음", "ok"], gap: ["빈 범주", "warn"], unclassified: ["미분류", "plain"], unmapped: ["범주 없음", "warn"], out_of_scope: ["범위 밖", "plain"], other_method: ["다른 기법", "plain"], not_applicable: ["해당 없음", "plain"] };
 const DISPOSITION = { out_of_scope: "범위 밖", other_method: "다른 기법으로 확인 예정", not_applicable: "해당 없음(설계 특성)" };
 const WARN_NAME = { safeguard_as_cause: "보호수단이 원인으로 적힘", mitigated_consequence: "완화 결과로 적힘", actuation_unknown: "작동 방식 미확인", boundary_cut: "경계에서 잘림", fmea_pending: "FMEA 대기" };
 const KIND_NAME = { heading: "표제", end_state: "최종상태", basic_event: "기본사건" };
@@ -90,7 +91,7 @@ function Header({ s }) {
     <span class="acts">
       <${Btn} sm=${true} icon="sparkles" label="규칙 초안 만들기" disabled=${busy} title="승인한 후보에서 규칙으로 초안 그룹을 만듭니다(확정하지 않음)" onClick=${I.suggest}>규칙 초안 만들기<//>
       <${Btn} sm=${true} icon="file-export" label="초기사건 인계 묶음 내보내기" disabled=${busy} title="승인 항목만, Excel과 같은 이름의 JSON" onClick=${I.exportBundle}>인계 묶음<//></span></div>
-    <div class="acts-row" role="tablist" aria-label="보기">${tab("groups", "그룹")}${tab("completeness", "완전성 대조 " + k.gaps)}${tab("warnings", "품질 경고 " + k.warnings)}</div>`;
+    <div class="acts-row" role="tablist" aria-label="보기">${tab("groups", "그룹")}${tab("completeness", "완전성 대조 " + k.gaps)}${tab("warnings", "품질 경고 " + k.warnings)}${tab("fmea", "FMEA")}</div>`;
 }
 
 /** 고른 후보로 할 일. 고른 것이 있을 때만 보인다. 묶이지 않은 후보: 새 그룹으로 묶기·열어 둔 그룹에 넣기. 소속 후보: 빼기·나누기·옮기기·소속 확인. */
@@ -204,7 +205,8 @@ function CoverageRow({ c }) {
 }
 
 function Completeness({ s }) {
-  return html`<div class="list" role="list" aria-label="완전성 대조">${s.completeness.map((c) => html`<${CoverageRow} c=${c} key=${(c.code || "none") + c.name_ko} />`)}</div>`;
+  return html`<div class="list" role="list" aria-label="완전성 대조">${s.completeness.map((c) => html`<${CoverageRow} c=${c} key=${(c.code || "none") + c.name_ko} />`)}</div>
+    <${MldSection} />`;
 }
 
 function Warnings({ s }) {
@@ -232,6 +234,6 @@ export function IePanel({ onClose }) {
         <${Header} s=${s} />
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${I.dismissError}>닫기<//><//>` : null}
         ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice}<//>` : null}
-        ${view === "groups" ? html`<${Groups} s=${s} />` : view === "completeness" ? html`<${Completeness} s=${s} />` : html`<${Warnings} s=${s} />`}`}
+        ${view === "groups" ? html`<${Groups} s=${s} />` : view === "completeness" ? html`<${Completeness} s=${s} />` : view === "fmea" ? html`<${FmeaView} />` : html`<${Warnings} s=${s} />`}`}
     </div></section>`;
 }

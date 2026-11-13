@@ -20,3 +20,7 @@
 .ie-judge .textbox { height: 28px; }
 .ie-judge input.textbox { flex: 1; min-width: 160px; }
 @media (max-width: 1100px) { .ie-cols { grid-template-columns: 1fr; } }
+.ie-frow { display: flex; flex-direction: column; gap: var(--sp-1); margin: var(--sp-1) 0 var(--sp-2); }
+.ie-ec { margin: var(--sp-1) 0 var(--sp-2); }
+.ie-ec select.textbox { height: 26px; }
+.ie-mld { margin-top: var(--sp-3); }

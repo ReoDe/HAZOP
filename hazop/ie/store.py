@@ -1,4 +1,5 @@
 """⑥ 초기사건 저장 파일 읽기·쓰기. data/initiating-events/<프로젝트>.json. Qt 의존 없음.
+P5(설계 §8.2): 같은 폴더의 <프로젝트>.fmea.json(FMEA 행, hazop.ie.fmea)과 <프로젝트>.mld.json(가져온 MLD, hazop.ie.mld)도 여기서 읽고 쓴다.
 
 - 읽기는 utf-8-sig(BOM 허용). 모양 검사(model.problems)를 통과하지 못하면 Unreadable이고, 고치거나 옮기지 않는다.
 - 저장은 읽은 뒤 파일이 바뀌었는지 지문으로 보고, 바뀌었으면 Conflict로 거절한다. 쓰기·지문·백업은 검토구간 등과 같은
@@ -58,10 +59,72 @@ def load_synced(project_id, results, node_set=None):
     같은 IEC ID'). 한 번 준 번호는 그 원인이 승인에서 빠져도 문서에 남아 다시 쓰지 않는다. 저장하지 못하면 오류를 그대로 올린다
     (Conflict·ValueError·OSError): 그때는 내보내지 않는다."""
     doc, fp = load(project_id)
-    synced = model.sync(doc, results, node_set=node_set)
+    synced = sync_all(doc, results, node_set, load_fmea(project_id)[0])
     if synced is not doc:
         fp = save(synced, expect=fp)
     return synced, fp
+
+
+def sync_all(doc, results, node_set, fmea_doc):
+    """⑤와 맞추기(model.sync) + 승인 FMEA 행을 기본사건 후보의 출처로 붙이기(fmea.sync_basic_events). 할 일이 없으면 받은 문서."""
+    from hazop.ie import fmea
+    return fmea.sync_basic_events(model.sync(doc, results, node_set=node_set), fmea_doc)
+
+
+# ---------------------------------------------------------------- P5: FMEA·MLD 파일
+
+def _side_path(project_id, suffix):
+    return paths.folder("initiating-events", paths.safe_name(project_id or "프로젝트") + suffix)
+
+
+def fmea_path(project_id):
+    return _side_path(project_id, ".fmea.json")
+
+
+def mld_path(project_id):
+    return _side_path(project_id, ".mld.json")
+
+
+def _load_side(path, mod, project_id):
+    data, fp = store_io.read_bytes(path)
+    if data is None:
+        return mod.empty(project_id), None
+    try:
+        doc = json.loads(data.decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise Unreadable(path, ["JSON이 아님: %s" % exc]) from None
+    bad = mod.problems(doc)
+    if bad:
+        raise Unreadable(path, bad)
+    return doc, fp
+
+
+def load_fmea(project_id):
+    """(FMEA 문서, 지문). 파일이 없으면 (빈 문서, None). 읽을 수 없으면 Unreadable."""
+    from hazop.ie import fmea
+    return _load_side(fmea_path(project_id), fmea, project_id)
+
+
+def save_fmea(doc, expect):
+    from hazop.ie import fmea
+    bad = fmea.problems(doc)
+    if bad:
+        raise ValueError("FMEA 문서 형식 오류: %s" % "; ".join(bad[:3]))
+    return store_io.write_json(fmea_path(doc["project_id"]), doc, expect)
+
+
+def load_mld(project_id):
+    """(MLD 저장 문서, 지문). 파일이 없으면 (빈 문서, None)."""
+    from hazop.ie import mld
+    return _load_side(mld_path(project_id), mld, project_id)
+
+
+def save_mld(doc, expect):
+    from hazop.ie import mld
+    bad = mld.problems(doc)
+    if bad:
+        raise ValueError("MLD 문서 형식 오류: %s" % "; ".join(bad[:3]))
+    return store_io.write_json(mld_path(doc["project_id"]), doc, expect)
 
 
 def backup(project_id, label=BACKUP_LABEL):

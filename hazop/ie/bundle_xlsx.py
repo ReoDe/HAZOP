@@ -23,7 +23,8 @@ from hazop.study import results as res
 JUDGEMENTS = {"yes": "후보", "no": "제외", "undecided": "보류"}
 ANSWERS = {"yes": "예", "no": "아니오", "unknown": "미확인"}
 ORIGINS = {"ai_draft": "AI 초안", "human": "사람"}
-COVERAGE = {"covered": "대응 있음", "gap": "공백", "not_applicable": "해당 없음", "unclassified": "미분류"}
+COVERAGE = {"covered": "대응 있음", "gap": "공백", "not_applicable": "해당 없음", "unclassified": "미분류", "unmapped": "범주 없음"}
+MLD_STATUS = {"covered": "있음", "gap": "공백", "not_applicable": "해당 없음", "unmapped": "범주 없음"}
 BASIS_UNKNOWN_PREFIX = ib.BASIS_UNKNOWN_PREFIX
 NOT_JUDGED = "초기사건 판정 전"
 AI_FILL = "EEF0F2"
@@ -39,9 +40,9 @@ WARNING_GUIDE = (
     ("actuation_unknown", "보호수단이 자동·운전원·자체작동 가운데 무엇인지 정해지지 않았습니다"),
     ("boundary_cut", "결과의 영향 대상이 다른 구간에 있는데 그 구간에 그 대상을 다룬 승인 항목이 없어 사건 진행을 이을 수 "
                      "없습니다. 대상이 어느 구간에도 없거나 그래프에서 사라진 경우도 여기에 적습니다"),
-    ("fmea_pending", "계기·제어 구성요소나 전동 밸브가 든 구간입니다. 이 앱에는 아직 FMEA 입력이 없어 항목마다 띄우지 않고 "
-                     "구간 수만 한 줄로 적습니다. P&ID에 전동기·전원이 따로 그려지지 않아 전동기만 있는 구간은 세지 "
-                     "못합니다"),
+    ("fmea_pending", "전기·제어 구간(계기·제어 구성요소나 전동 밸브가 든 구간, 사람이 넣거나 뺀 표시를 따름) 가운데 승인한 "
+                     "FMEA 행이 하나도 없는 구간입니다. 항목마다 띄우지 않고 구간 수만 한 줄로 적습니다. P&ID에 "
+                     "전동기·전원이 따로 그려지지 않아 전동기만 있는 구간은 규칙으로 세지 못하니 사람이 표시하십시오"),
 )
 GUIDE_COLUMNS = (("항목", 22), ("내용", 100))
 CANDIDATE_COLUMNS = (("후보 ID", 9), ("판정", 7), ("정상운전 교란", 8), ("안전기능 도전", 8), ("도전받는 안전기능", 16),
@@ -65,7 +66,7 @@ PSA_COLUMNS = {"IE 그룹": 3, "사건수목 표제 후보": 1, "최종상태 �
 TRACE_COLUMNS = (("구간·편차", 14), ("출처 항목 ID", 14), ("원인", 30), ("후보 ID", 9), ("판정", 7), ("그룹 ID", 8),
                  ("표제 ID", 18), ("ES ID", 12), ("근거 KG 경로", 34), ("출처 문서", 24))
 COMPLETENESS_COLUMNS = (("범주 코드", 9), ("범주 이름", 28), ("기준표 출처", 16), ("대응 그룹", 10), ("후보 수", 6),
-                        ("상태", 9), ("사유·처리", 40))
+                        ("상태", 9), ("사유·처리", 40), ("MLD 가지", 24), ("MLD 대응", 8), ("MLD 출처", 18))
 WARNING_COLUMNS = (("경고", 18), ("대상", 14), ("내용", 50), ("근거", 26))
 GLOSSARY_COLUMNS = (("용어", 18), ("뜻", 60), ("출처", 40))
 SHEETS = ("읽는 법", "IE 후보", "IE 그룹", "사건수목 표제 후보", "최종상태 후보", "기본사건 후보", "추적표", "완전성 대조",
@@ -109,7 +110,9 @@ def end_state_row(e):
 def basic_event_row(b):
     return (b["be_id"], b["name"], b["tag"], b["equipment_kind"], b["system"], b["failure_mode"] or "코드 미정",
             b["failure_text"], b["normal_position"] or "—", b["failed_position"] or "—",
-            _joined(b["candidate_ids"] + b["heading_ids"]), "·".join(model.SOURCE_KINDS[k] for k in b["source_kinds"]),
+            _joined(b["candidate_ids"] + b["heading_ids"]),
+            "·".join(model.SOURCE_KINDS[k] + ("(%s)" % ", ".join(b.get("fmea_rows") or []) if k == "fmea" else "")
+                     for k in b["source_kinds"]),
             ORIGINS[b["origin"]], None)
 
 
@@ -122,9 +125,18 @@ def trace_row(t):
             "\n".join(t["kg_paths"]), "\n".join(sources))
 
 
-def completeness_row(r):
+def _mld_source(b):
+    s = (b.get("mld") or {}).get("source") or {}
+    return " ".join(x for x in (s.get("file") or s.get("mld_id") or "", ("판 %s" % s["revision"]) if s.get("revision") else "") if x)
+
+
+def completeness_row(r, mld_source=""):
+    branches = r.get("mld_branches") or []
     return (r["code"] or res.UNCLASSIFIED_LABEL, r["name_ko"], r["source_label"], r["group_id"] or "",
-            r["candidate_count"], COVERAGE[r["status"]], r["note"])
+            r["candidate_count"], COVERAGE[r["status"]], r["note"],
+            ", ".join("%s %s" % (x["id"], x["name"]) for x in branches),
+            MLD_STATUS.get(r.get("mld_status") or "", "") if r["code"] else ("" if not branches else COVERAGE[r["status"]]),
+            mld_source if branches else "")
 
 
 def warning_row(w):
@@ -161,6 +173,12 @@ def guide_rows(b):
         ("품질 경고 읽는 법", "'품질 경고' 시트는 인계 전에 다시 볼 곳을 알려 줄 뿐 항목을 막지 않습니다. "
                          + " ".join("%s: %s." % (ib.WARNING_KINDS[k][0], t) for k, t in WARNING_GUIDE)),
         ("기준표", "일반 범주 코드: %s · %s. 출처는 '용어·출처' 시트에 있습니다" % (table["title"] or "-", table["source_label"])),
+        ("FMEA", "승인한 FMEA 행 %d건(전체 %d행)을 기본사건 후보의 출처('FMEA 행')로 넣었습니다. FMEA 행 자체와 Severity Class는 "
+                 "넣지 않았습니다" % (b["fmea"]["rows_approved"], b["fmea"]["rows_total"]) if b.get("fmea")
+         else "FMEA를 가져오지 않았습니다. 기본사건 후보는 HAZOP 원인·보호수단에서만 나왔습니다"),
+        ("MLD", "주논리도(Master Logic Diagram, MLD) %s의 잎 가지를 '완전성 대조' 시트의 MLD 열에 대조했습니다. 가지 이름은 받은 "
+                "파일 그대로입니다" % _mld_source(b) if b.get("mld")
+         else "MLD를 받지 않아 '완전성 대조' 시트의 MLD 열이 비어 있습니다. MLD는 노형마다 달라 앱에 예시를 넣지 않았습니다"),
         ("시트", " / ".join(SHEETS[1:])),
     ) + ((("나뉨·삭제 그룹", ", ".join("%s(%s%s)" % (r["id"], model.GROUP_STATUSES[r["status"]],
                                                    " → " + ", ".join(r["split_into"]) if r["split_into"] else "")
@@ -197,7 +215,7 @@ def build_workbook(b):
                                  (SHEETS[5], BASIC_EVENT_COLUMNS, [basic_event_row(x) for x in b["basic_events"]])):
         _sheet(wb, title, columns, rows, ai_col=[t for t, _ in columns].index("작성"))
     _sheet(wb, SHEETS[6], TRACE_COLUMNS, [trace_row(t) for t in b["trace"]])
-    _sheet(wb, SHEETS[7], COMPLETENESS_COLUMNS, [completeness_row(r) for r in b["completeness"]])
+    _sheet(wb, SHEETS[7], COMPLETENESS_COLUMNS, [completeness_row(r, _mld_source(b)) for r in b["completeness"]])
     _sheet(wb, SHEETS[8], WARNING_COLUMNS, [warning_row(w) for w in b["warnings"]])
     _sheet(wb, SHEETS[9], GLOSSARY_COLUMNS, [(g["term"], g["meaning"], g["source"]) for g in b["glossary"]])
     return wb

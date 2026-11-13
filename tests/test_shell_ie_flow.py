@@ -188,5 +188,47 @@ class IePanelTest(W.ShellBase):
         self.assertEqual(self.stored()["coverage"][code]["by"], "검토자A")
 
 
+    # ------------------------------------------------------------ P5: FMEA·MLD(설계 §8.2)
+    def test_fmea_import_pick_and_approve_then_mld_branches(self):
+        import json as _j
+        import openpyxl
+        from tests.test_ie_p5 import MLD
+        for n in self.pg["nodes"]:
+            if n["entity_id"] == "graph-SNP-M-102/E":
+                n.update(kind="motor_operated_valve", category="valve")
+        win = self.open_panel()
+        tmp = os.path.dirname(win.engine.settings_path)
+        wb = openpyxl.Workbook()
+        wb.active.title = "FMEA"
+        wb.active.append(["행 ID", "기기 태그", "고장모드", "고장모드 코드", "원인"])
+        wb.active.append(["", "SNP-M-102-E", "열림 실패", "FTO", "구동기 고장"])
+        wb.active.append(["", "NO-SUCH", "닫힘 실패", "FTC", "x"])
+        xlsx = os.path.join(tmp, "fmea.xlsx")
+        wb.save(xlsx)
+        mld_path = os.path.join(tmp, "mld.json")
+        with open(mld_path, "w", encoding="utf-8") as fh:
+            _j.dump(MLD, fh, ensure_ascii=False)
+        win.engine.hooks["pick_import"] = lambda kind, filters=None: [{"fmea": xlsx, "mld": mld_path}[kind]]
+        self.assertTrue(self.click(win, "button[aria-label='FMEA']"))
+        self.assertTrue(self.idle(win, "button[aria-label='FMEA 가져오기']"))
+        self.assertTrue(self.click(win, "button[aria-label='FMEA 가져오기']"))
+        self.assertTrue(wait_for(lambda: "FMEA를 가져왔습니다" in self.text(win), 15), self.text(win)[-400:])
+        self.assertIn("대응 실패 1", self.text(win))
+        self.assertIn("FMEA 대조 전 S2", self.text(win), "전기·제어 구간 줄이 대조 전 구간을 보인다")
+        self.assertTrue(self.click(win, "button[aria-label='FM-001 SNP-M-102-E']"))
+        self.assertTrue(self.idle(win, "button[aria-label='FM-001 승인']"))
+        self.assertTrue(self.click(win, "button[aria-label='FM-001 승인']"))
+        self.assertTrue(wait_for(lambda: ie_store.load_fmea(self.project)[0]["rows"]["FM-001"]["status"] == "approved", 10), self.text(win)[-300:])
+        self.assertEqual(ie_store.load_fmea(self.project)[0]["history"][-1]["by"], "검토자A")
+        self.assertTrue(self.click(win, "button[aria-label='FM-002 NO-SUCH']"))
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector(\"button[aria-label='FM-002 승인']\")"), 10))
+        self.assertEqual(self.js(win, "document.querySelector(\"button[aria-label='FM-002 승인']\").disabled"), True, "대응 실패 행은 승인 단추가 막힌다")
+        self.assertTrue(self.click(win, "button[aria-label^='완전성 대조']"))
+        self.assertTrue(self.idle(win, "button[aria-label='MLD 가져오기']"))
+        self.assertTrue(self.click(win, "button[aria-label='MLD 가져오기']"))
+        self.assertTrue(wait_for(lambda: "시험용 가상 MLD" in self.text(win) and "B12" in self.text(win), 15), self.text(win)[-400:])
+        self.assertIn("범주 없음", self.text(win))
+
+
 if __name__ == "__main__":
     unittest.main()

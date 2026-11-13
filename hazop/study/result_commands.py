@@ -82,7 +82,12 @@ def _export_ie_bundle(ns, doc, a, by, pg):
         ie_doc = ie_store.load_synced(ns.get("project_id"), doc, ns)[0]
     except ie_store.Conflict as exc:
         raise ValueError("초기사건 파일이 그 사이 바뀌어 내보내지 않았습니다(%s). 다시 하세요." % exc) from None
-    b = bundle.build_bundle(doc, ns, pg, ie_doc, now_utc())
+    pid = ns.get("project_id")
+    try:   # P5: FMEA·MLD도 같은 묶음에(설계 §8.2). 읽을 수 없으면 내보내지 않는다
+        fdoc, mdoc = ie_store.load_fmea(pid)[0], ie_store.load_mld(pid)[0]
+    except ie_store.Unreadable as exc:
+        raise ValueError(str(exc)) from None
+    b = bundle.build_bundle(doc, ns, pg, ie_doc, now_utc(), fmea=fdoc, mld=mdoc)
     xlsx_path, json_path = bundle_xlsx.export(a["path"], b)
     return {"path": xlsx_path, "json_path": json_path, "candidates": len(b["candidates"])}, None
 

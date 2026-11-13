@@ -17,6 +17,9 @@ export const ie = createStore({
   error: null,
   notice: null,
   ask: null,               // {name, args, notice, message}: 엔진이 되물은 것
+  fmea: null,              // GET ie/fmea (P5: FMEA 행·전기·제어 구간·구성요소)
+  mld: null,               // GET ie/mld (P5: MLD 잎 가지 대조)
+  frow: null,              // 고른 FMEA 행 ID
 });
 
 export function useIe(selector) {
@@ -36,7 +39,7 @@ let seq = 0;
 /** 프로젝트가 바뀌었을 때: 읽어 둔 것과 진행 중인 읽기 결과를 모두 버린다. */
 export function reset() {
   seq++;
-  ie.set({ summary: EMPTY, view: "groups", active: null, detail: null, picked: [], busy: false, error: null, notice: null, ask: null });
+  ie.set({ summary: EMPTY, view: "groups", active: null, detail: null, picked: [], busy: false, error: null, notice: null, ask: null, fmea: null, mld: null, frow: null });
 }
 
 export async function loadSummary() {
@@ -67,9 +70,30 @@ export async function refresh() {
   await loadSummary();
   const a = ie.get().active;
   if (a) await loadDetail(a);
+  const v = ie.get().view;
+  if (v === "fmea") await loadFmea();
+  if (v === "completeness") await loadMld();
 }
 
-export function setView(view) { ie.set({ view }); }
+export async function loadFmea() {
+  let f = null;
+  try { f = await read("ie/fmea"); } catch (e) { f = null; }
+  ie.set({ fmea: f });
+  return f;
+}
+
+export async function loadMld() {
+  let m = null;
+  try { m = await read("ie/mld"); } catch (e) { m = null; }
+  ie.set({ mld: m });
+  return m;
+}
+
+export function setView(view) {
+  ie.set({ view });
+  if (view === "fmea") loadFmea();
+  if (view === "completeness") loadMld();
+}
 export function openGroup(gid) { ie.set({ active: gid, detail: null, view: "groups", error: null, picked: [] }); return loadDetail(gid); }
 export function dismissError() { ie.set({ error: null }); }
 export function togglePick(id) { const p = ie.get().picked; ie.set({ picked: p.includes(id) ? p.filter((x) => x !== id) : p.concat([id]) }); }
@@ -82,6 +106,8 @@ export function seenMap() {
   (s.unassigned || []).forEach((c) => { m["member:" + c.candidate_id] = c.fp; });
   (s.groups || []).forEach((g) => { m["group:" + g.group_id] = g.fp; });
   (s.completeness || []).forEach((r) => { if (r.code) m["coverage:" + r.code] = r.fp; });
+  const mld = ie.get().mld;
+  if (mld) (mld.branches || []).forEach((b) => { m["coverage:MLD:" + b.id] = b.fp; });
   if (d) {
     m["group:" + d.group.group_id] = d.group.fp;
     d.members.forEach((c) => { m["member:" + c.candidate_id] = c.fp; });
@@ -174,3 +200,35 @@ export async function exportBundle() {
     return null;
   }
 }
+
+// ---------------------------------------------------------------- P5: FMEA·MLD(설계 §8.2). 쓰기는 그 파일의 지문(fver·mver)과 화면이 본 행 지문을 싣는다
+async function sideWrite(name, args, notice, after) {
+  ie.set({ busy: true, error: null, notice: null });
+  try {
+    const r = await cmd(name, args);
+    await refresh();
+    if (after) after(r);
+    ie.set({ busy: false, notice: (typeof notice === "function" ? notice(r) : notice) || null });
+    return r;
+  } catch (e) {
+    if (e && e.code === "stale") await refresh();
+    ie.set({ busy: false, error: errorText(e) });
+    return null;
+  }
+}
+const fseen = () => Object.fromEntries(((ie.get().fmea || {}).rows || []).map((r) => ["fmea:" + r.row_id, r.fp]));
+const fver = () => (ie.get().fmea || {}).fver || "none";
+export const pickRow = (id) => ie.set({ frow: ie.get().frow === id ? null : id });
+export const fmeaTemplate = () => sideWrite("ie.fmea_template", {}, (r) => (r.cancelled ? null : "FMEA 양식을 내보냈습니다: " + r.path + " · 행 " + r.rows + "개"));
+export const fmeaImport = () => sideWrite("ie.fmea_import", { fver: fver() }, (r) => (r.cancelled ? null
+  : "FMEA를 가져왔습니다: " + r.file + " · 새 행 " + r.report.new + " · 바뀐 행 " + r.report.changed + " · 대응 실패 " + r.report.unmatched
+    + (r.reopened.length ? " · 승인이 풀린 행 " + r.reopened.join(", ") : "") + (r.report.problems.length ? " · " + r.report.problems.join(" ") : "")));
+export const fmeaStatus = (ids, status) => sideWrite("ie.fmea_status", { fver: fver(), seen: fseen(), row_ids: ids, status },
+  ids.join(", ") + ({ approved: " 승인", excluded: " 제외", imported: " 가져옴으로 되돌림" }[status] || ""));
+export const fmeaEdit = (id, fields) => sideWrite("ie.fmea_edit", { fver: fver(), seen: fseen(), row_id: id, fields }, id + "을(를) 고쳤습니다.");
+export const fmeaMark = (nodeId, mark) => sideWrite("ie.fmea_mark", { fver: fver(), seen: fseen(), node_id: nodeId, mark: mark || "" },
+  nodeId + (mark === "include" ? " 구간을 전기·제어 구간에 넣었습니다." : mark === "exclude" ? " 구간을 전기·제어 구간에서 뺐습니다." : " 구간 표시를 지웠습니다."));
+const mver = () => (ie.get().mld || {}).mver || "none";
+export const mldImport = () => sideWrite("ie.mld_import", { mver: mver() }, (r) => (r.cancelled ? null : "MLD를 가져왔습니다: " + r.file + " · 가지 " + r.branches + "개"));
+export const mldLink = (branchId, groupIds) => sideWrite("ie.mld_link", { mver: mver(), seen: seenMap(), branch_id: branchId, group_ids: groupIds },
+  branchId + (groupIds.length ? " 가지에 " + groupIds.join(", ") + "을(를) 이었습니다." : " 가지의 연결을 지웠습니다."));
