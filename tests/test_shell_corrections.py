@@ -366,6 +366,21 @@ class ReviewReproTest(Base):
         self.assertEqual(ai_review.load_doc(self.name)["candidates"][0]["status"], "accepted")
         self.assertEqual(self.cur_tag(n["local_id"]), "AI-TAG")
 
+    def test_a_human_delete_of_an_ai_accepted_target_returns_the_candidate_to_proposed(self):
+        from hazop.extract import ai_review
+        n = self.tagged()
+        doc = ai_review.new_doc(self.name, self.ex)
+        doc["candidates"].append({"cand_id": "k1", "status": "proposed", "target": n["source_object_id"], "local_id": n["local_id"], "field": "tag",
+                                  "values": ["AI-TAG"], "confidence": 0.9, "task": "fill", "op_id": None})
+        ai_review.save_doc(doc)
+        ai_review.accept(ai_review.load_doc(self.name), ["k1"], self.ex, self.name, "검토자A")
+        self.assertEqual(ai_review.load_doc(self.name)["candidates"][0]["status"], "accepted")
+        r = self.edit("delete_node", n["local_id"], confirm=True)                       # 기기를 지우면 대상 없는 AI 연산도 기록에서 정리된다
+        self.assertTrue(r["ok"], r)
+        c = ai_review.load_doc(self.name)["candidates"][0]
+        self.assertEqual(c["status"] == "accepted", bool(c.get("op_id")), c)            # 후보 상태와 기록이 어긋나지 않는다
+        self.assertTrue(self.undo(r["data"]["op_id"])["ok"])
+
     def test_r3_the_version_is_checked_against_the_bytes_that_are_edited(self):
         from hazop.app import data
         a, b = self.tags()[:2]

@@ -84,9 +84,10 @@ def _sources(name):
             "ver": sheet_refresh.ver_from(fps), "ai": ai}
 
 
-def _ai_ops(ai):
-    """AI 검토 패널에서 수락한 연산 번호(되돌리기는 AI 검토 패널의 되돌리기로만: 후보 상태와 함께 되돌려야 그 자리를 다시 묻는다)."""
-    return {c.get("op_id") for c in (ai or {}).get("candidates") or [] if c.get("status") == "accepted" and c.get("op_id")}
+def _ai_ops(ops):
+    """AI 검토에서 수락한 연산 번호: 수정 기록의 연산이 origin ai·ai_candidate를 가진 것(후보 파일이 늦게 맞춰져도 판정이 흔들리지 않는다).
+    되돌리기는 AI 검토 패널의 되돌리기로만 뺀다(후보 상태를 함께 되돌려 그 자리를 다시 물을 수 있게)."""
+    return {o["op_id"] for o in ops if o.get("origin") == "ai" and o.get("ai_candidate")}
 
 
 def item_fp(kind, obj, corrected):
@@ -167,7 +168,7 @@ def view(engine, graph_id):
         return {"ok": False, "code": "failed", "message": "도면 수정 기록을 읽지 못했습니다(%s)." % str(exc)[:160]}
     ops, corrected = src["ops"], src["corrected"]
     by_sid = {sid_local[0]: sid_local[1] for sid_local in _sid_local(corrected)}
-    ai_ops = _ai_ops(src["ai"])
+    ai_ops = _ai_ops(src["ops"])
     rows = [dict(_op_row(o, corrected, by_sid), ai=o["op_id"] in ai_ops) for o in ops]
     redo = _redo_stack(src["doc"])
     return {"ok": True, "graph_id": graph_id, "ver": src["ver"], "ops": rows,
@@ -364,6 +365,12 @@ def _write(engine, graph_id, name, ops, by, src, action, note=None):
     corrections.save_fp(name, ops, by, drawing_number=(src["original"].get("drawing") or {}).get("drawing_number"), expect=src["fp"],
                         action=action, note=note)
     # 여기부터는 저장이 끝났다. 어떤 예외도 '저장 안 됨'으로 알리지 않는다
+    reconciled = []
+    try:                                  # 연산이 있는 AI 후보의 수락 여부는 수정 기록이 정한다(되돌리기·다시 하기·지우기 뒤 후보를 맞춘다)
+        from hazop.extract import ai_review
+        reconciled = ai_review.reconcile(name)
+    except Exception:  # noqa: BLE001
+        LOG.exception("AI 후보를 수정 기록에 맞추지 못함")
     try:
         stale, notes, recheck = sheet_refresh.refresh(name)
     except Exception as exc:  # noqa: BLE001
@@ -379,7 +386,7 @@ def _write(engine, graph_id, name, ops, by, src, action, note=None):
     for topic, rev in (("edit", graph_id), ("sheet", graph_id), ("drawings", None), ("sheetconf", None), ("aireview", None), ("kg", None), ("nodes", None)):
         engine.changed(topic, rev)
     return {"ok": True, "graph_id": graph_id, "ver": sheet_refresh.ver_of(name), "graph_stale": stale, "notes": notes, "recheck": recheck,
-            "released": released}
+            "released": released, "reconciled": reconciled}
 
 
 def _check_ver(src, ver):
@@ -464,7 +471,7 @@ def undo(engine, graph_id, op_id, ver, by=None, confirm=None):
             pos = next((i for i, o in enumerate(ops) if o["op_id"] == op_id), None)
             if pos is None:
                 raise Refused("not_found", "없는 고침입니다(이미 되돌렸을 수 있습니다).")
-            if op_id in _ai_ops(src["ai"]):
+            if op_id in _ai_ops(src["ops"]):
                 raise Refused("bad_args", "AI 검토에서 수락한 고침입니다. AI 검토 패널에서 되돌리세요(후보를 다시 물을 수 있게 함께 되돌립니다).")
             later = _depends(ops[pos + 1:], op_id)
             if later:
