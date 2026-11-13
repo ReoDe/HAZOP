@@ -31,7 +31,7 @@
 
 ### AI 후보 포함(APR1400 2쪽)
 
-@1731277(추출 코드는 개선 5 뒤와 같음), 012·063쪽, 구독 `claude-opus-5-5` medium, 도면당 상한 20, 호출 15회(012쪽 3, 063쪽 12), 오류 0. 명령 `check_read_quality.py --only apr1400-012,apr1400-063 --ai-run subscription --ai-cap 20 --ai-save D:\HAZOP-trials6-11-13-answer-keyi-run-apr-1731277`(출력은 같은 이름의 `.log`).
+@1731277(추출 코드는 개선 5 뒤와 같음), 012·063쪽, 구독 `claude-opus-5-5` medium, 도면당 상한 20, 호출 15회(012쪽 3, 063쪽 12), 오류 0. 명령 `check_read_quality.py --only apr1400-012,apr1400-063 --ai-run subscription --ai-cap 20 --ai-save D:\HAZOP-trials\2026-11-13-answer-key\ai-run-apr-1731277`(출력은 같은 이름의 `.log`).
 
 | 항목(두 쪽 합) | 스크립트만 | 스크립트 + AI 후보 |
 | --- | --- | --- |
