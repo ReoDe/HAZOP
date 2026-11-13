@@ -154,6 +154,16 @@ def _kpi(doc):
     return out
 
 
+def cells_delta(doc, ur, fp):
+    """호출 하나가 바꾼 칸의 요약만(525구간 행렬 전체 1.9MB를 호출마다 다시 읽지 않게). 머리 수치와 새 판 지문을 함께 준다."""
+    wanted = set(ur["cells"])
+    cells = {}
+    for c in doc["cells"]:
+        if c["node_id"] == ur["node_id"] and c["deviation_id"] in wanted:
+            cells[c["deviation_id"]] = res.matrix_summary({"cells": [c]})[c["node_id"]][c["deviation_id"]]
+    return {"node_id": ur["node_id"], "cells": cells, "kpi": _kpi(doc), "ver": _ver(fp)}
+
+
 def _run_state(engine):
     run = getattr(engine, "analysis", None)
     return run.snapshot() if run is not None else {"running": False}
@@ -203,6 +213,8 @@ def read(engine, parts, query):
     if len(parts) == 4 and parts[1] == "cell":
         data = cell_view(engine, parts[2], parts[3])
         return api._json(data) if data is not None else None
+    if len(parts) == 2 and parts[1] == "run":
+        return api._json(_run_state(engine))
     if len(parts) == 2 and parts[1] == "recs":
         pg = _pg(engine, strict=False)
         if pg is None:
@@ -427,7 +439,7 @@ def _run(engine, a):
 
         try:
             summary_ = analysis_run.run(client, ns, pg, units, intent_of, tick, lambda: run.stop or engine.stop_requested(),
-                                        on_saved=lambda ur: engine.changed("results", None))
+                                        on_saved=lambda ur, doc, fp: engine.emit("results.cells", cells_delta(doc, ur, fp)))
         finally:
             run.running = False
         run.last = summary_

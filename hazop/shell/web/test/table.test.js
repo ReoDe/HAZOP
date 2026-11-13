@@ -59,6 +59,26 @@ export const tests = [
     assert(host.querySelectorAll(".vg-cell").length < 400, "스크롤 뒤에도 보이는 칸만");
     assert(performance.now() - t0 < 4000, "그리기가 너무 느림");
   } },
+  { name: "table: 525×44 표의 스크롤 한 번 갱신 시간이 프레임 한도(50ms) 안이다", async run(assert) {
+    const host = await draw(525, 44);
+    const body = host.querySelector(".vg-body");
+    const flush = async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); };    // 조정(Preact 렌더)은 마이크로태스크로 돈다
+    const times = [];
+    for (let i = 1; i <= 60; i++) {
+      const t0 = performance.now();
+      body.scrollTop = i * 34 * 7;
+      body.scrollLeft = (i % 30) * 64;
+      body.dispatchEvent(new Event("scroll"));
+      await flush();
+      host.querySelectorAll(".vg-cell").length;      // 그린 결과를 읽어 배치까지 끝나게 한다
+      times.push(performance.now() - t0);
+    }
+    times.sort((a, b) => a - b);
+    const p95 = times[Math.floor(times.length * 0.95)], max = times[times.length - 1], avg = times.reduce((x, y) => x + y, 0) / times.length;
+    (window.__measures = window.__measures || []).push({ what: "525×44 스크롤 갱신(ms)", steps: times.length, avg: +avg.toFixed(2), p95: +p95.toFixed(2), max: +max.toFixed(2),
+      cells: host.querySelectorAll(".vg-cell").length, viewport: "900×400", cond: "오프스크린 QtWebEngine, GPU 끔, 숨은 페이지" });
+    assert(p95 <= 50, "스크롤 갱신 p95 " + p95.toFixed(1) + "ms > 50ms");
+  } },
   { name: "table: 칸 글자는 HTML로 해석되지 않고, 클릭은 활성 칸·열기 콜백을 부른다", async run(assert) {
     const calls = [];
     const host = await draw(3, 3, { renderCell: (r, c) => "<b>x" + r + c + "</b>", onActive: (r, c) => calls.push(["a", r, c]), onOpen: (r, c) => calls.push(["o", r, c]) });

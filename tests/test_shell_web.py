@@ -431,6 +431,12 @@ class WebUnitTest(ShellBase):
         failed = [r for r in out if not r["ok"]]
         self.assertEqual(failed, [])
         self.assertGreaterEqual(len(out), 12)
+        got = []
+        p2.runJavaScript("JSON.stringify(window.__measures || [])", 0, got.append)
+        for _ in range(20):
+            pump(0.02)
+        if got and got[0]:
+            print("웹 측정:", got[0])
         p2.deleteLater()
 
 

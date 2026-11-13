@@ -88,9 +88,9 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None):
             ok_cells += len(ur["cells"])
         else:
             last_error = ur.get("error")
-        _merge_and_save(ns, project, ur)
-        if on_saved is not None:
-            on_saved(ur)
+        saved = _merge_and_save(ns, project, ur)
+        if on_saved is not None and saved is not None:
+            on_saved(ur, saved[0], saved[1])         # 반영한 문서와 새 지문: 화면에 바뀐 칸만 알리려고
         if providers.halts(kinds):
             halted = ur
             break
@@ -110,11 +110,12 @@ def _merge_and_save(ns, project, ur, attempts=3):
             doc, fp = res.empty_results(ns, res.load_deviations()), store_io.ANY
         merged = ai_cells.apply_unit(doc, ur)
         try:
-            res.save_fp(merged, project, expect=fp)
-            return
+            _path, new_fp = res.save_fp(merged, project, expect=fp)
+            return merged, new_fp
         except store_io.Conflict:
             continue
     LOG.error("결과 저장이 계속 겹쳐 이 호출의 결과를 반영하지 못함: %s", ur.get("unit_id"))
+    return None
 
 
 def intent_text(node, review=None):

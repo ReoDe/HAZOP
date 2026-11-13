@@ -385,6 +385,26 @@ class RunTest(Base):
         self.assertFalse(self.engine.analysis.running)
         self.assertTrue(self.events.changes("results"))
 
+    def test_each_call_sends_only_the_changed_cells_not_the_whole_matrix(self):
+        import json as _json
+        self.run_with(fake_run_unit())
+        done = [e["data"] for e in self.events.items if e.get("name") == "job.done"][-1]["result"]
+        deltas = [e["data"] for e in self.events.items if e.get("name") == "results.cells"]
+        self.assertEqual(len(deltas), done["calls"], "호출마다 바뀐 칸만 알린다")
+        for d in deltas:
+            self.assertLess(len(_json.dumps(d, ensure_ascii=False)), 4000, "알림은 작다")
+            self.assertTrue(d["ver"].startswith("sha256:") and d["kpi"]["cells"] > 0)
+            for cell in d["cells"].values():
+                self.assertEqual(set(cell), {"state", "scenarios", "max_risk", "unreviewed"})
+        self.assertEqual(len(self.events.changes("results")), 1, "행렬 전체를 다시 읽게 하는 알림은 끝에 한 번만")
+        last = deltas[-1]
+        full = self.read("results")
+        self.assertEqual(full["ver"], last["ver"], "마지막 알림의 판 지문이 지금 파일의 것과 같다")
+        self.assertEqual(full["kpi"], last["kpi"])
+        for did, cell in last["cells"].items():
+            self.assertEqual(full["matrix"][last["node_id"]][did], cell)
+        self.assertIn("run", self.read("results", "run") and ["run"])
+
     def test_human_verdicts_survive_a_rerun(self):
         self.call("results.set_status", self.args(status="approved"))
         self.run_with(fake_run_unit())

@@ -2,7 +2,7 @@
 // 쓰기는 명령으로 보낸 뒤 엔진 답과 `changed("results")`로 다시 읽는다(낙관적 갱신 없음, 규격 §5.3). 쓰기 명령은 읽은 결과 파일 지문(ver)을 들고 간다.
 import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
 import { createStore } from "../store.js";
-import { cmd, onChanged, read } from "../bridge.js";
+import { cmd, on, onChanged, read } from "../bridge.js";
 
 const EMPTY = { available: false, empty: true, nodes: [], deviations: [], matrix: {}, ver: "none", kpi: null, run: { running: false }, reason: "" };
 
@@ -47,6 +47,22 @@ export async function loadSummary() {
   if (mine !== seq) return results.get().summary;
   results.set({ summary: s });
   return s;
+}
+
+/** 분석 진행 상태만 다시 읽는다(작다). 행렬 전체를 호출마다 다시 읽지 않는다. */
+export async function loadRun() {
+  try { const run = await read("results/run"); results.set((s) => ({ summary: Object.assign({}, s.summary, { run }) })); } catch (e) { /* 다음 알림에 다시 읽는다 */ }
+}
+
+/** 호출 하나가 바꾼 칸만 행렬에 끼워 넣는다(results.cells 사건). 고른 칸이 그 구간이면 워크시트도 다시 읽는다. */
+export function mergeCells(d) {
+  results.set((s) => {
+    const m = Object.assign({}, s.summary.matrix);
+    m[d.node_id] = Object.assign({}, m[d.node_id], d.cells);
+    return { summary: Object.assign({}, s.summary, { matrix: m, kpi: d.kpi, ver: d.ver }) };
+  });
+  const a = results.get().active;
+  if (a && a.node_id === d.node_id && d.cells[a.deviation_id]) loadCell(a.node_id, a.deviation_id);
 }
 
 export async function loadCell(nodeId, deviationId) {
@@ -164,8 +180,9 @@ export function wire() {
   wired = true;
   onChanged((topic) => {
     if (topic === "results") refresh();
-    else if (topic === "results.run") loadSummary();
+    else if (topic === "results.run") loadRun();
     else if (topic === "nodes") loadSummary();
   });
+  on("results.cells", mergeCells);
   refresh();
 }

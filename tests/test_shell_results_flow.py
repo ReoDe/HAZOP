@@ -107,7 +107,11 @@ class ResultsPanelTest(W.ShellBase):
     def test_run_analysis_from_the_panel(self):
         win = self.open_panel()
         win.engine.ai = FakeAi()
-        with mock.patch.object(analysis_run, "contexts", lambda units, ns, pg, intent_of: {u["node_id"]: {} for u in units}), \
+        from hazop.shell import api_results
+        reads = []
+        real_summary = api_results.summary
+        with mock.patch.object(api_results, "summary", lambda eng: reads.append(1) or real_summary(eng)), \
+                mock.patch.object(analysis_run, "contexts", lambda units, ns, pg, intent_of: {u["node_id"]: {} for u in units}), \
                 mock.patch("hazop.study.ai_cells.run_unit", fake_run_unit()):
             self.assertTrue(self.js(win, "(() => { document.querySelector(\"button[aria-label='분석 실행']\").click(); return true; })()"))
             pump(0.3)
@@ -116,6 +120,7 @@ class ResultsPanelTest(W.ShellBase):
             self.assertIn("호출", self.text(win))
             self.assertTrue(self.js(win, "(() => { const b = document.querySelector(\"button[aria-label='분석 시작']\"); if (b.disabled) return false; b.click(); return true; })()"))
             self.assertTrue(wait_for(lambda: "AI 분석이 끝났습니다" in self.text(win), 30), self.text(win)[-500:])
+            self.assertLessEqual(len(reads), 4, "호출 6번 동안 행렬 전체 요약을 호출마다 다시 읽지 않는다: %d번" % len(reads))
         doc = self.stored()
         self.assertTrue(any(e["entry_id"].startswith("ai-") for c in doc["cells"] for e in c["entries"]))
 
