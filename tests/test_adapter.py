@@ -326,10 +326,10 @@ def word(text, x0, top, size=6.0):
             "size": size}
 
 
-def make_pdf(content, width=400, height=300):
+def make_pdf(content, width=400, height=300, resources=b""):
     """내용 스트림 하나짜리 1쪽 PDF 바이트(메모리 시험용, 외부 라이브러리 없음)."""
     objs = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] /Contents 4 0 R >>" % (width, height),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] /Contents 4 0 R %s>>" % (width, height, resources),
             b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream"]
     out, offsets = bytearray(b"%PDF-1.4\n"), []
     for i, obj in enumerate(objs, 1):
@@ -742,6 +742,17 @@ class PdfVectorSampleTest(unittest.TestCase):
                                           "memory.pdf", "0" * 64)
         self.assertEqual(ext["validation"]["blockers"], [])
         return prims, ext
+
+    def test_tight_two_line_text_stays_two_lines(self):
+        # 3pt 글자 두 줄, 줄 간격 2.85pt(APR1400 계기 비석 'FT' 위 '1011X')
+        content = b"BT /F1 3.06 Tf 102 152.85 Td (FT) Tj ET BT /F1 3.06 Tf 100 150 Td (1011X) Tj ET"
+        font = b"/Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> "
+        words = pdf_vector.load_page(io.BytesIO(make_pdf(content, resources=font)))[3]
+        self.assertEqual(sorted(w["text"] for w in words), ["1011X", "FT"])
+        glued = b"BT /F1 3.27 Tf 100 150 Td (PDIS\\(3053\\)) Tj ET"
+        words = pdf_vector.load_page(io.BytesIO(make_pdf(glued, resources=font)))[3]
+        self.assertEqual([w["text"] for w in words], ["PDIS", "(3053)"])
+        self.assertLessEqual(words[0]["x1"], words[1]["x0"])
 
     def test_memory_pdf_filled_and_stroked_dashes(self):
         dashes = b"".join(b"%d 219.65 4 0.7 re f\n" % x for x in range(82, 198, 6))

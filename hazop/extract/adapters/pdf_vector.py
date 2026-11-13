@@ -278,6 +278,22 @@ def _dash_pieces(pid, pts, dash, step):
     return out
 
 
+# 글자를 낱말로 묶을 때 윗변 차 상한(pt). pdfplumber 기본값 3은 APR1400 계기 비석의 3pt 글자 두 줄(줄 간격 2.85pt,
+# 'FT' 위 '1011X')을 한 낱말 '10F1T1X'로 섞는다. 같은 줄의 들쭉날쭉한 윗변은 _upright_blocks가 다시 한 줄로 묶는다
+WORD_Y_TOLERANCE = 1.5
+
+
+def _split_paren_tail(w):
+    """'PDIS(3053)'처럼 글자에 괄호 번호가 빈칸 없이 붙은 낱말을 둘로 나눈다. 괄호 번호는 계기 원 옆 다른 계열
+    번호라 _upright_blocks가 따로 두는데, 한 낱말로 오면 가를 수 없다(APR1400 9.4.5-1-S1 PDIS 3051)."""
+    text = w["text"]
+    i = text.find("(")
+    if i <= 0 or not PAREN_TOKEN_RE.fullmatch(text[i:]) or len(w.get("chars") or ()) != len(text):
+        return [w]
+    head, tail = w["chars"][:i], w["chars"][i:]
+    return [dict(w, text=text[:i], x1=max(c["x1"] for c in head)), dict(w, text=text[i:], x0=min(c["x0"] for c in tail))]
+
+
 def load_page(path, page=0):
     """PDF 한 쪽의 원시 요소. path는 파일 경로 또는 바이너리 파일 객체.
     반환: (page_count, width, height, words, paths)."""
@@ -292,8 +308,9 @@ def load_page(path, page=0):
         words = [{"text": w["text"], "x0": float(w["x0"]), "x1": float(w["x1"]), "top": float(w["top"]),
                   "bottom": float(w["bottom"]), "size": float(w.get("size") or (w["bottom"] - w["top"])),
                   "upright": True}
-                 for w in pg.extract_words(keep_blank_chars=False, use_text_flow=False, extra_attrs=["size"])
-                 if w.get("upright", True)]
+                 for w0 in pg.extract_words(keep_blank_chars=False, use_text_flow=False, extra_attrs=["size"],
+                                            y_tolerance=WORD_Y_TOLERANCE, return_chars=True)
+                 if w0.get("upright", True) for w in _split_paren_tail(w0)]
         # 90° 돌린 글자(아래→위로 읽음)는 char_dir_rotated="btt"로 따로 읽는다. 기본값으로 읽으면 거꾸로·한 자씩 끊긴다
         # (APR1400 DCD 'CV:RDT' → 'TDR:VC'). 돌린 글자는 글자마다 size 값이 달라 size로 낱말을 나누지 않고,
         # 줄 높이에 해당하는 낱말 폭을 size로 쓴다.
