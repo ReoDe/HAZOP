@@ -87,8 +87,8 @@ export const tests = [
     assert.equal([p.cx, p.cy, p.sx], [25, 15, 0.5]);
     const q = V.placement(keep, [0, 0, 30, 50], { rot: 90 });           // 세로 상자: 가로세로를 바꿔 맞춘다
     assert.equal([q.sx, q.sy], [0.5, 0.5]);
-    const [wx, wy] = V.toWorld(q, 100, 30);                              // 오른쪽 연결점은 90° 돌면 아래쪽 끝으로 간다
-    assert(Math.abs(wx - 15) < 0.01 && Math.abs(wy - 40) < 0.01, wx + "," + wy);
+    const [wx, wy] = V.toWorld(q, 100, 30);                              // 오른쪽 연결점은 90° 돌면 상자 아래쪽 끝으로 간다
+    assert(Math.abs(wx - 15) < 0.01 && Math.abs(wy - 50) < 0.01, wx + "," + wy);
     const s = V.placement(stretch, [0, 0, 40, 80], { rot: 0, flip_h: true });
     assert.equal([s.sx, s.sy], [-0.4, 0.8]);
     assert.equal(V.fragmentBox([10, 10, 30, 30], [100, 100]), { x: 0, y: 0, w: 54, h: 54 });
