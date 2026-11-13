@@ -520,6 +520,12 @@ try:
 except ImportError:
     LOG.exception("분석 결과 명령 모듈을 읽지 못함: 분석 결과 메뉴가 꺼진다")
     api_results = None
+try:
+    from hazop.shell import api_ie  # noqa: E402  (3단계 ⑥ 초기사건)
+    api_ie.register(COMMANDS)
+except ImportError:
+    LOG.exception("초기사건 명령 모듈을 읽지 못함: 초기사건 메뉴가 꺼진다")
+    api_ie = None
 
 
 # ---------------------------------------------------------------- 읽기 API
@@ -583,6 +589,8 @@ class ReadApi:
             return api_nodes.read(self.engine, parts, query)
         if topic == "results" and api_results is not None:
             return api_results.read(self.engine, parts, query)
+        if topic == "ie" and api_ie is not None:
+            return api_ie.read(self.engine, parts, query)
         if topic == "icons" and len(parts) == 1:
             return _json(icon_shapes())
         if topic == "examples" and len(parts) == 1:
