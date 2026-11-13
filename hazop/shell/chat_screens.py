@@ -142,11 +142,9 @@ def _aireview_state(engine, graph_id):
 
 
 def _bulk_ids(engine, graph_id, task):
-    from hazop.extract import ai_review
+    """묶음 수락이 고를 후보 ID(api_aireview.bulk_ids, accept_bulk와 같은 규칙. 읽기만 함)."""
     from hazop.shell import api_aireview
-    name = engine.graph_names().get(graph_id)
-    doc, _orig = api_aireview._load(name)
-    return list((ai_review.bulk_groups(doc, by="task").get(task) or []) if doc else [])
+    return list(api_aireview.bulk_ids(engine, graph_id, task) or [])
 
 
 def _aireview_ids(engine, item):

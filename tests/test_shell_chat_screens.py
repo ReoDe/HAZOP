@@ -92,13 +92,10 @@ class AiReviewBase(RunBase):
         self.bulk = ["c1"]
         view = lambda engine, gid: {"ok": True, "available": True, "ver": self.ver,  # noqa: E731
                                     "groups": [{"items": [copy.deepcopy(r) for r in self.rows.values()]}]}
-        for target, fn in (("candidates", view), ("_load", lambda name: ({"candidates": []}, {}))):
+        for target, fn in (("candidates", view), ("bulk_ids", lambda engine, gid, task: list(self.bulk) if task == "tag" else [])):
             p = mock.patch("hazop.shell.api_aireview." + target, fn)
             p.start()
             self.addCleanup(p.stop)
-        p = mock.patch("hazop.extract.ai_review.bulk_groups", lambda doc, by="task", **k: {"tag": list(self.bulk)})
-        p.start()
-        self.addCleanup(p.stop)
         self.calls = []
 
         def decide(action):
