@@ -232,6 +232,23 @@ class Engine:
             return reply_error("failed", "처리하지 못했습니다. 기록을 확인하세요.")
 
     # ------------------------------------------------------------ 작업(등록·추출)
+    def add_files(self, files):
+        """등록할 파일 경로를 받아 등록·추출 작업을 시작한다 -> {"jobs": [작업 ID]}. **웹이 보낸 경로를 받지 않는다**(규격 §5.2): 끌어 놓기 이벤트와 파일
+        대화상자처럼 Python 쪽이 사용자 조작으로 얻은 경로만 부른다. 명령 표에는 경로를 받는 명령이 없다. 등록할 수 없는 파일이면 CommandError."""
+        checked = []
+        for p in files:
+            if not isinstance(p, str) or not p or len(p) > MAX_PATH_CHARS or "\x00" in p:
+                raise CommandError("bad_args", "등록할 수 없는 파일 경로")
+            full = os.path.abspath(p)
+            if os.path.splitext(full)[1].lower() not in REGISTRABLE_EXT or not os.path.isfile(full):
+                raise CommandError("bad_args", "등록할 수 없는 파일: %s" % os.path.basename(full))
+            checked.append(full)
+        if not checked:
+            raise CommandError("bad_args", "파일이 없음")
+        from hazop.shell import register_flow
+        return {"jobs": [self.start_job(os.path.basename(f), lambda progress, f=f: register_flow.register_and_extract(self, f, progress))
+                         for f in checked]}
+
     def _thread_jobs(self, job_id, fn):
         t = threading.Thread(target=fn, name="hazop-job-%s" % job_id, daemon=True)
         t.start()
@@ -378,7 +395,7 @@ def _h_pick_files(engine, a):
     files = pick() or []
     if not files:
         return {"jobs": []}
-    return _h_add_files(engine, {"paths": list(files)[:MAX_FILES]})
+    return engine.add_files(list(files)[:MAX_FILES])
 
 
 def _h_open_classic(engine, a):
@@ -387,20 +404,6 @@ def _h_open_classic(engine, a):
         raise CommandError("failed", "이전 화면을 열 수 없음")
     hook()
     return {}
-
-
-def _h_add_files(engine, a):
-    files = []
-    for p in a["paths"]:
-        full = os.path.abspath(p)
-        if os.path.splitext(full)[1].lower() not in REGISTRABLE_EXT or not os.path.isfile(full):
-            raise CommandError("bad_args", "등록할 수 없는 파일: %s" % os.path.basename(full))
-        files.append(full)
-    if not files:
-        raise CommandError("bad_args", "파일이 없음")
-    from hazop.shell import register_flow
-    return {"jobs": [engine.start_job(os.path.basename(f), lambda progress, f=f: register_flow.register_and_extract(engine, f, progress))
-                     for f in files]}
 
 
 COMMANDS = {
@@ -422,8 +425,6 @@ COMMANDS = {
                                      "추출 뒤 AI 검토 토글과 도면당 호출 상한"),
     "register.pick": Command({}, _h_pick_files, "파일 고르기 창을 열어 고른 파일을 등록한다"),
     "app.open_classic": Command({}, _h_open_classic, "이전 위젯 화면으로 연다(이 창은 닫힌다)"),
-    "register.add_files": Command({"paths": (v_list(v_str(1, MAX_PATH_CHARS), MAX_FILES), True)}, _h_add_files,
-                                  "끌어 놓은 파일을 등록하고 추출한다"),
 }
 
 

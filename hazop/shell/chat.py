@@ -214,7 +214,8 @@ class ChatController:
             session = self._session
             if session is None:
                 return
-            self._busy, self._qid = False, None   # 세션이 보내는 cancelled 오류는 무시한다
+            self._busy, self._qid = False, None   # 세션이 보내는 cancelled 오류는 무시하되, 멈춘 질문 뒤에 오는 한도·초과 오류는 받아 입력을 막는다
+            self._last_qid = qid
         session.stop()
         if qid:
             self._log.forget(qid)
@@ -303,6 +304,6 @@ class ChatController:
             blocking = state in BLOCKING_STATES
             if blocking:
                 self._block(state, message, error.get("limit"))
-        if not blocking:
+        if not blocking and not (late and error.get("error_kind") == "cancelled"):
             self.emit("chat.notice", {"text": message})   # 질문 ID가 없는 세션 오류는 진행 중인 질문을 끝내지 않는다
         self._push_state()

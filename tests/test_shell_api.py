@@ -85,8 +85,6 @@ class CommandCheckTest(EngineBase):
                ("settings.set_reviewer", {"name": " " * 0}), ("settings.set_reviewer", {"name": "x" * 61}),
                ("extract.set_ai_review", {"cap": 0}), ("extract.set_ai_review", {"cap": 201}), ("extract.set_ai_review", {"cap": True}),
                ("extract.set_ai_review", {"enabled": "yes"}), ("ui.save", {"state": {"a": "x" * 5000}}),
-               ("register.add_files", {"paths": ["a"] * 51}), ("register.add_files", {"paths": "a"}),
-               ("register.add_files", {"paths": [""]}), ("register.add_files", {"paths": ["x" * 521]}),
                ("sheet.open", {"graph_id": ""}), ("sheet.open", {"graph_id": "a" * 201})]
         for name, args in bad:
             r = e.dispatch(name, args)
@@ -173,12 +171,27 @@ class CommandCheckTest(EngineBase):
             r = e.dispatch(name, args)
             self.assertEqual((r["ok"], r["error"]["code"]), (False, "failed"), name)
 
-    def test_add_files_refuses_non_drawing_files(self):
+    def test_web_cannot_send_file_paths_at_all(self):
+        """규격 §5.2: 등록 경로는 웹이 보내지 않는다. 명령 표에는 경로를 받는 명령이 없고, 있는 이름으로 경로를 실어 보내도 거절한다."""
+        e = self.engine()
+        for name in ("register.add_files", "register.start", "register.paths"):
+            self.assertEqual(e.dispatch(name, {"paths": [os.path.join(self.tmp, "a.drawio")]})["error"]["code"], "unknown_command", name)
+        for name, cmd in api.COMMANDS.items():
+            for key in cmd.spec:
+                self.assertNotRegex(key, r"path|file|dir|folder|url", "%s의 인자 %s: 경로·주소를 받는 인자 금지" % (name, key))
+        unc = "\\\\server\\share\\a.drawio"
+        for name in ("register.pick", "conn.check", "chat.ask"):
+            r = e.dispatch(name, {"paths": [unc]})
+            self.assertEqual(r["error"]["code"], "bad_args", name)
+        self.events.items.clear()
+
+    def test_add_files_from_python_refuses_bad_files(self):
         e = self.engine()
         bad = os.path.join(self.tmp, "x.exe")
         open(bad, "w").close()
-        self.assertEqual(e.dispatch("register.add_files", {"paths": [bad]})["error"]["code"], "bad_args")
-        self.assertEqual(e.dispatch("register.add_files", {"paths": [os.path.join(self.tmp, "none.drawio")]})["error"]["code"], "bad_args")
+        for files in ([bad], [os.path.join(self.tmp, "none.drawio")], [""], ["a\x00b.drawio"], [5], [], ["x" * 521]):
+            with self.assertRaises(api.CommandError, msg=repr(files)):
+                e.add_files(files)
 
 
 class FakeAi:
@@ -278,9 +291,8 @@ class RegisterFlowTest(EngineBase):
         src = [p for p in glob.glob(os.path.join(paths.folder("references", "pid-samples"), "*", "*.drawio")) if "SNP-M-102" in p]
         if not src:
             self.skipTest("표본 도면이 없음")
-        r = e.dispatch("register.add_files", {"paths": [src[0]]})
-        self.assertTrue(r["ok"], r)
-        self.assertEqual(len(r["data"]["jobs"]), 1)
+        r = e.add_files([src[0]])
+        self.assertEqual(len(r["jobs"]), 1)
         self.assertTrue(self.events.of("job.done"), self.events.items)
         d = api.ReadApi(e).drawings()
         self.assertEqual([x["graph_id"] for x in d["drawings"]], ["graph-SNP-M-102"])   # 표제란은 사람이 확정하기 전이라 번호는 비어 있을 수 있다
@@ -293,8 +305,7 @@ class RegisterFlowTest(EngineBase):
         bad = os.path.join(self.tmp, "broken.drawio")
         with open(bad, "w", encoding="utf-8") as fh:
             fh.write("이건 draw.io 파일이 아님")
-        r = e.dispatch("register.add_files", {"paths": [bad]})
-        self.assertTrue(r["ok"])
+        e.add_files([bad])
         self.assertTrue(self.events.of("job.failed"), self.events.items)
         self.assertFalse(self.events.of("job.done"))
         self.assertNotIn(self.tmp, json.dumps(self.events.of("job.failed"), ensure_ascii=False)[:0] or "")
@@ -518,6 +529,14 @@ class ChatRulesTest(ChatBase):
         self.assertFalse(any("cancelled" in n["text"] for n in self.events.of("chat.notice")))
         c.new_conversation()
         self.assertTrue(self.events.of("chat.cleared"))
+
+    def test_limit_error_after_a_stopped_question_still_blocks(self):
+        c = self.controller()
+        c.ask("q")
+        c.stop()
+        self.sessions[-1].cb["on_error"]("q1", self.error("limit_reached"))
+        self.assertTrue(c.snapshot()["availability"]["blocked"])
+        self.assertFalse(c.ask("다시"))
 
     def test_model_is_passed_to_the_session(self):
         c = self.controller()

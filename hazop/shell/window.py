@@ -295,7 +295,11 @@ class ShellWindow(QMainWindow):
         if not files:
             self.bridge.send({"t": "event", "name": "drop.refused", "data": {"text": "도면 파일(.drawio, .pdf)만 받습니다."}})
             return {"ok": False}
-        return self.engine.dispatch("register.add_files", {"paths": files[:api.MAX_FILES]})
+        try:
+            return dict(self.engine.add_files(files[:api.MAX_FILES]), ok=True)
+        except api.CommandError as exc:
+            self.bridge.send({"t": "event", "name": "drop.refused", "data": {"text": exc.message}})
+            return {"ok": False}
 
     def closeEvent(self, event):  # noqa: N802
         self.chat.shutdown()
