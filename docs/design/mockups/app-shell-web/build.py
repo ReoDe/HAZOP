@@ -369,6 +369,32 @@ CLEAN_JSON = ASSETS / "snp-m-101-clean.json"
 DRAWIO_101 = REPO / "resources/references/pid-samples/SNP-M-101_RCS-main-loop/SNP-M-101_RCS-main-loop.drawio"
 
 
+def tidy(data):
+    """시안용 정돈(HZ-DSN-05 §10.11의 일부). 이어짐은 바꾸지 않는다.
+    - 직각·한 줄: 배관 한 개 안에서 0 초과 6 단위 이하로 어긋난 이웃 점을 맞춘다. 끝점(연결점)의 값을 남기고 꺾임점을 옮긴다.
+    - 설비(stretch)·펌프: 이어진 배관 끝을 모아 노즐·축(axis)으로 둔다. 그리기가 그 끝에 정확히 닿게 한다."""
+    for pp in data["pipes"]:
+        pts = pp["points"]
+        for i in range(len(pts) - 1):
+            a, b = pts[i], pts[i + 1]
+            for k in (0, 1):
+                d = abs(a[k] - b[k])
+                if 0 < d <= 6:
+                    if i + 1 == len(pts) - 1:      # b가 끝점이면 b의 값을 남긴다
+                        a[k] = b[k]
+                    else:
+                        b[k] = a[k]
+    for n in data["nodes"]:
+        x, y, w, h = n["bbox"]
+        ends = []
+        for pp in data["pipes"]:
+            for q in (pp["points"][0], pp["points"][-1]):
+                if x - 0.6 <= q[0] <= x + w + 0.6 and y - 0.6 <= q[1] <= y + h + 0.6:
+                    ends.append(q)
+        n["ends"] = ends
+    return data
+
+
 def clean_data():
     """SNP-M-101 drawio 추출 결과에서 정리된 보기에 쓰는 값만 뽑는다(SVG 좌표). 엔진을 못 부르면 저장해 둔 JSON을 쓴다."""
     import json
@@ -376,7 +402,7 @@ def clean_data():
         sys.path.insert(0, str(REPO))
         from hazop.extract import drawio
     except Exception:
-        return json.loads(CLEAN_JSON.read_text(encoding="utf-8"))
+        return tidy(json.loads(CLEAN_JSON.read_text(encoding="utf-8")))
     r = drawio.extract(str(DRAWIO_101))
     nodes, pipes = [], []
     for n in r["nodes"]:
@@ -395,7 +421,7 @@ def clean_data():
                       "flow": bool(e.get("flow_direction")), "points": pts})
     data = {"source": "hazop.extract.drawio.extract(%s)" % DRAWIO_101.name, "nodes": nodes, "pipes": pipes}
     CLEAN_JSON.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    return data
+    return tidy(data)
 
 
 SW = 'vector-effect="non-scaling-stroke"'
@@ -423,7 +449,16 @@ def _sym(n, cls):
     cx, cy = x + w / 2, y + h / 2
     kind = n["kind"]
     if kind in ("reactor_vessel", "steam_generator"):
-        s = '<rect x="%g" y="%g" width="%g" height="%g" rx="%g" %s/>' % (x, y, w, h, w / 2, SW)
+        hh = min(32.0, h / 4)
+        s = ('<path d="M%g %g A%g %g 0 0 1 %g %g V%g A%g %g 0 0 1 %g %g Z" %s/>'
+             % (x, y + hh, w / 2, hh, x + w, y + hh, y + h - hh, w / 2, hh, x, y + h - hh, SW))
+        for ex, ey in n.get("ends", []):          # 노즐: 머리 곡선에서 배관 끝까지 곧게(§10.11 규칙 6)
+            if abs(ey - y) < 0.7 or abs(ey - (y + h)) < 0.7:
+                t = ((ex - cx) / (w / 2)) ** 2
+                oy = hh * (1 - max(0.0, 1 - t) ** 0.5)
+                yy = y + oy if abs(ey - y) < 0.7 else y + h - oy
+                if abs(yy - ey) > 0.2:
+                    s += '<line x1="%g" y1="%g" x2="%g" y2="%g" %s/>' % (ex, yy, ex, ey, SW)
         if kind == "steam_generator":
             s += ('<path d="M%g %g V%g A%g %g 0 0 0 %g %g V%g" fill="none" %s/>'
                   % (cx - w * .18, y + h * .35, y + h * .78, w * .18, w * .18, cx + w * .18, y + h * .78, y + h * .35, SW))
@@ -432,12 +467,13 @@ def _sym(n, cls):
             s += '<line x1="%g" y1="%g" x2="%g" y2="%g" %s/>' % (x + 6, y + h * .22, x + w - 6, y + h * .22, SW)
         return '<g class="%s">%s</g>' % (cls, s)
     if kind == "pump":
-        r = min(w, h) * .32
-        pcx, pcy = x + w * .45, y + h * .5
-        s = '<circle cx="%g" cy="%g" r="%g" %s/>' % (pcx, pcy, r, SW)
-        s += '<path d="M%g %g H%g" fill="none" %s/>' % (pcx, pcy - r, x + w, SW)
-        s += '<path d="M%g %g L%g %g L%g %g" fill="none" %s/>' % (pcx - r * .9, y + h, pcx - r * .55, pcy + r * .8, pcx - r * .9, y + h, SW)
-        s += '<path d="M%g %g H%g L%g %g" fill="none" %s/>' % (pcx - r * .9, y + h, pcx + r * .9, pcx + r * .55, pcy + r * .8, SW)
+        side = [q for q in n.get("ends", []) if abs(q[0] - x) < 0.7 or abs(q[0] - (x + w)) < 0.7]
+        ay = side[0][1] if side else cy                     # 배관 축(들고 나는 배관의 y)
+        r = min(w * .36, (y + h - ay) * .62, 40.0)
+        s = '<circle cx="%g" cy="%g" r="%g" %s/>' % (cx, ay, r, SW)
+        s += '<line x1="%g" y1="%g" x2="%g" y2="%g" %s/>' % (x, ay, cx - r, ay, SW)           # 흡입 연결점까지
+        s += '<line x1="%g" y1="%g" x2="%g" y2="%g" %s/>' % (cx + r, ay, x + w, ay, SW)       # 토출 연결점까지
+        s += '<path d="M%g %g L%g %g H%g L%g %g" fill="none" %s/>' % (cx - r * .7, ay + r * .7, cx - r * .95, y + h, cx + r * .95, cx + r * .7, ay + r * .7, SW)
         return '<g class="%s">%s</g>' % (cls, s)
     if kind in ("transmitter", "indicator", "temperature_element"):
         r = min(w, h) / 2
@@ -504,12 +540,21 @@ def _flow_arrows(pipes, dim_ids):
     for p in pipes:
         if not p["flow"] or p["line_type"] not in ("process", "process_secondary"):
             continue
-        a, b = max(zip(p["points"], p["points"][1:]), key=lambda s: _seglen(*s))
-        if _seglen(a, b) < 60:
-            continue
-        ang = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0]))
-        out += ('<path class="ct-arrow%s" d="M-5 -4 L5 0 L-5 4 Z" transform="translate(%g %g) rotate(%g)"/>'
-                % (" dim" if p["id"] in dim_ids else "", (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, ang))
+        segs = list(zip(p["points"], p["points"][1:]))
+        if max(_seglen(*sg) for sg in segs) < 40:
+            segs = [max(segs, key=lambda sg: _seglen(*sg))]
+        for a, b in segs:
+            L = _seglen(a, b)
+            if L < 40 and len(segs) > 1:
+                continue
+            k = max(1, round(L / 110))
+            ang = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0]))
+            for j in range(k):
+                t = (j + .5) / k
+                if min(t, 1 - t) * L < 12:
+                    continue
+                out += ('<path class="ct-arrow%s" d="M-5 -3.5 L5 0 L-5 3.5 Z" transform="translate(%g %g) rotate(%g)"/>'
+                        % (" dim" if p["id"] in dim_ids else "", a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, ang))
     return out
 
 
@@ -553,7 +598,7 @@ def clean_sheet(data, crop, marks=None, unknown=None, extra=""):
         x, y, w, h = n["bbox"]
         if n["id"] in unknown["symbol"]:
             s += ('<g class="cu-ph"><rect x="%g" y="%g" width="%g" height="%g" rx="3"/><text x="%g" y="%g">?</text></g>'
-                  % (x - 3, y - 3, w + 6, h + 6, x + w / 2, y + h / 2)) + _tag(n, "ct-tag faint")
+                  % (x - 3, y - 3, w + 6, h + 6, x + w / 2, y + h / 2)) + ('<text class="ct-tag faint" x="%g" y="%g">%s</text>' % (x + w / 2, y + h + 22, n["tag"]) if n["tag"] else "")   # 자리표 글자는 아래(선택 테두리와 겹치지 않게)
         elif n["id"] in unknown["ai"]:
             s += _sym(n, "cu-ai") + _tag(n, "ct-tag ai")
             s += ('<g class="cu-ai-tag"><rect x="%g" y="%g" width="20" height="12" rx="3"/><text x="%g" y="%g">AI</text></g>'
