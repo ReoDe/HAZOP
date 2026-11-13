@@ -223,6 +223,23 @@ class ShellWindowTest(ShellBase):
         self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "settings")
         self.assertIn("검토자 이름을 입력하세요", self.text(win))
 
+    def test_project_box_changes_the_project_from_the_top_bar(self):
+        win = self.window()
+        self.assertTrue(self.click(win, ".crumb button.sheet", 0))
+        pump(0.3)
+        self.js(win, "(() => { const i = document.querySelector('.proj-input'); i.value = 'plant-Z'; i.dispatchEvent(new Event('input', {bubbles: true})); "
+                     "i.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); })()")
+        self.assertTrue(wait_for(lambda: win.engine.project_id() == "plant-Z", 10))
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().drawings.project_id") == "plant-Z", 10))
+
+    def test_settings_has_the_start_screen_switch(self):
+        win = self.window()
+        self.assertTrue(self.click(win, ".rail button", 2))
+        pump(0.4)
+        self.assertIn("시작할 때 새 화면 쓰기", self.text(win))
+        self.assertTrue(self.click(win, "button[aria-label='시작할 때 새 화면 쓰기']"))
+        self.assertTrue(wait_for(lambda: win.engine.settings.get("ui_shell") is True, 10))
+
     def test_settings_panel_shows_connection_and_saves_reviewer(self):
         win = self.window()
         self.assertTrue(self.click(win, ".rail button", 2))

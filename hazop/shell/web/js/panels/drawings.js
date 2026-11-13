@@ -31,7 +31,7 @@ export function DrawingsPanel({ onOpen, onClose }) {
           ${j.state === "running" ? html`<${Icon} name="loader-2" cls="spin" />` : j.state === "done" ? html`<${Chip} kind="ok" icon="check">완료<//>` : html`<${Chip} kind="err" icon="alert-triangle">실패<//>`}</div>
           ${j.state === "done" && j.result && j.result.ai_review && j.result.ai_review.ran ? html`<${Chip} kind="ai" icon="sparkles">AI 후보 ${j.result.ai_review.candidates}개<//>` : null}</div>`)}
       <div class="card"><h3>추출 설정</h3>
-        <div class="kv"><div class="k"><b>AI 검토</b><span>추출 뒤 AI가 미확인 항목의 후보를 제안합니다(구독 한도를 씁니다). 처음 값은 꺼짐입니다.</span></div>
+        <div class="kv"><div class="k"><b>AI 검토</b><span>추출 뒤 AI가 미확인 항목의 후보를 제안합니다(구독 한도를 씁니다). 처음 값은 꺼짐이고, 한 번 실행에 최대 ${app.ai_review_run_cap}회까지 부릅니다.</span></div>
           <${Switch} on=${app.ai_review} label="AI 검토" onChange=${(v) => setReview({ enabled: v })} /></div>
         ${app.ai_review ? html`<div class="kv"><div class="k"><b>도면당 호출 상한</b><span>${app.ai_review_cap}회 (예상 ${Math.max(1, Math.round(app.ai_review_cap * 6 / 60))}분 안쪽)</span></div>
           <input type="number" min="1" max="200" value=${app.ai_review_cap} aria-label="도면당 호출 상한" style="width:72px;height:30px"

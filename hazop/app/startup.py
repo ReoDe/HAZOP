@@ -268,10 +268,21 @@ def single_instance(notify=None, err=None):
 
 # ---------------------------------------------------------------- 새 웹 화면으로 시작(docs/design/app-shell-web.md §6)
 
-def window_kind(classic=False, screenshots=None, run=None):
-    """어느 창으로 시작할지: 새 웹 화면("shell") 또는 이전 위젯 화면("classic"). 이전 화면은 `--classic`, 스크린샷 찍기(`--screenshots`),
-    분석 실행 폴더 열기(`--run`, 이전 화면만 아는 기능)일 때만 쓴다. 두 창을 함께 열지 않는다(같은 파일을 두 창이 쓰지 않게)."""
-    return "classic" if classic or screenshots or run else "shell"
+def window_kind(classic=False, screenshots=None, run=None, shell=False, setting=False):
+    """어느 창으로 시작할지: 이전 위젯 화면("classic") 또는 새 웹 화면("shell"). 3단계가 끝날 때까지는 이전 화면이 기본이다.
+    새 화면은 `--shell`이나 설정 `ui_shell`로 연다. `--classic`·`--screenshots`·`--run`(이전 화면만 아는 기능)은 늘 이전 화면이다.
+    두 창을 함께 열지 않는다(같은 파일을 두 창이 쓰지 않게)."""
+    if classic or screenshots or run:
+        return "classic"
+    return "shell" if shell or setting else "classic"
+
+
+def shell_setting(settings_path=None):
+    """설정 ui_shell(새 웹 화면으로 시작). 설정을 읽을 수 없으면 꺼짐으로 본다(설정 확인은 앞에서 끝났다)."""
+    try:
+        return paths.load_settings(settings_path).get("ui_shell") is True
+    except (OSError, ValueError):
+        return False
 
 
 def run_shell(app, settings_path=None, debug=False):

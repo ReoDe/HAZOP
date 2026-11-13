@@ -1,7 +1,7 @@
 // 새 화면의 진입점(규격 §2.1): 왼쪽 메뉴 · 위 막대 · 가운데 도면 · 오른쪽 채팅, 메뉴에서 여는 패널 하나.
 // 저장하는 자료는 엔진만 쓴다. 여기서는 보기 상태(열린 패널, 보는 도면, 채팅 접힘, 도면 표시)만 갖고 엔진의 바뀜 알림을 받아 다시 읽는다.
 import { html, render } from "./ui/html.js";
-import { useEffect } from "../vendor/hooks.module.js";
+import { useEffect, useState } from "../vendor/hooks.module.js";
 import { store, useStore } from "./store.js";
 import { cmd, connect, on, onChanged, read, ui } from "./bridge.js";
 import { Icon, loadIcons } from "./ui/icon.js";
@@ -109,11 +109,32 @@ function Rail() {
     ${b("settings", "settings", "설정")}</nav>`;
 }
 
+function ProjectBox({ id }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(id || "");
+  useEffect(() => setValue(id || ""), [id]);
+  async function apply(raw) {
+    const v = (raw === undefined ? value : raw).trim();
+    setEditing(false);
+    if (!v || v === id) return;
+    try {
+      await cmd("project.set", { project_id: v });
+      store.set({ sheet: null, marks: { rid: null, bySheet: {} } });
+      await Promise.all([loadState(), loadDrawings()]);
+    } catch (e) { toast(e.message, "err"); }
+  }
+  if (!editing) {
+    return html`<button type="button" class="sheet" title="프로젝트 바꾸기" aria-label=${"프로젝트: " + (id || "없음") + ", 바꾸기"} onClick=${() => setEditing(true)}>${id || "프로젝트"}</button>`;
+  }
+  return html`<input type="text" class="proj-input" maxlength="60" value=${value} aria-label="프로젝트 ID" style="height:28px;width:160px" autofocus
+    onInput=${(e) => setValue(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") apply(e.target.value); if (e.key === "Escape") { setValue(id || ""); setEditing(false); } }} onBlur=${(e) => apply(e.target.value)} />`;
+}
+
 function TopBar() {
   const sheet = useStore((s) => s.sheet);
   const d = useStore((s) => s.drawings);
   const row = d.drawings.find((x) => x.graph_id === sheet);
-  return html`<header class="topbar"><div class="crumb"><span class="proj">${d.project_id || "프로젝트"}</span><span class="muted">›</span>
+  return html`<header class="topbar"><div class="crumb"><${ProjectBox} id=${d.project_id} /><span class="muted">›</span>
     <button type="button" class="sheet" aria-label="도면 바꾸기" onClick=${() => togglePanel("drawings")}>${row ? (row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
     ${row && row.title ? html`<span class="title">${row.title}</span>` : null}</div></header>`;
 }

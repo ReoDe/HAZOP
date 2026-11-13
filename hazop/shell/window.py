@@ -99,7 +99,7 @@ class ShellBridge(QObject):
 
 
 class ShellPage(webview.LocalPage):
-    """이동 제한: 주 프레임은 hazop-app://shell/index.html만, 하위 프레임·자원은 로컬 스킴만."""
+    """이동 제한: 주 프레임은 hazop-app://shell/index.html만, 하위 프레임은 없다(자원 요청의 원격 차단은 프로필의 LocalOnlyInterceptor가 한다)."""
 
     def __init__(self, profile, parent=None):
         super().__init__(profile, parent)
@@ -109,9 +109,8 @@ class ShellPage(webview.LocalPage):
         self.console.append((int(level.value) if hasattr(level, "value") else int(level), message, line, source))
 
     def acceptNavigationRequest(self, url, nav_type, is_main_frame):  # noqa: N802
-        ok = webview.url_allowed(url)
-        if is_main_frame:
-            ok = url.toString().split("#", 1)[0] == SHELL_URL
+        # 새 화면은 file 주소를 허용하지 않고 하위 프레임도 쓰지 않는다: 주 프레임은 SHELL_URL 하나뿐이다
+        ok = is_main_frame and url.toString().split("#", 1)[0] == SHELL_URL
         if not ok:
             self.blocked_navigation.append(url.toString())
         return ok

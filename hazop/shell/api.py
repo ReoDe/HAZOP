@@ -17,6 +17,7 @@ import os
 import threading
 
 from hazop import paths, store_io
+from hazop.extract import ai_review
 from hazop.shell import scheme
 
 LOG = logging.getLogger("hazop.shell.api")
@@ -25,7 +26,7 @@ MAX_FILES = 50
 MAX_PATH_CHARS = 520
 REGISTRABLE_EXT = (".drawio", ".pdf")   # SVG는 같은 이름 drawio와 함께 등록되는 파생 자료라 따로 받지 않는다
 CHAT_MODELS = ("fast", "normal", "deep")
-DEFAULT_PROJECT = "project-1"
+DEFAULT_PROJECT = "sample-project"   # 이전 화면 ①의 프로젝트 ID 입력칸 기본값과 같다
 
 
 class CommandError(Exception):
@@ -293,6 +294,26 @@ def _h_set_reviewer(engine, a):
     return {}
 
 
+def _h_set_project(engine, a):
+    pid = a["project_id"].strip()
+    if not pid or paths.safe_name(pid) != pid:
+        raise CommandError("bad_args", "프로젝트 ID는 글자·숫자·'.'·'-'·'_'만 쓸 수 있음")
+    engine.settings["project_id"] = pid
+    engine.save_settings()
+    if engine.chat is not None:
+        engine.chat.check_project()      # 프로젝트가 바뀌면 대화를 끝낸다
+    engine.current_sheet = None
+    engine.changed("drawings")
+    engine.changed("state")
+    return {"project_id": pid}
+
+
+def _h_set_default_shell(engine, a):
+    engine.settings["ui_shell"] = a["enabled"]
+    engine.save_settings()
+    return {"enabled": a["enabled"]}
+
+
 def _h_conn_check(engine, a):
     if engine.ai is None:
         raise CommandError("failed", "AI 연결 정보를 쓸 수 없음")
@@ -385,6 +406,8 @@ def _h_add_files(engine, a):
 COMMANDS = {
     "ui.save": Command({"state": (v_json_text(MAX_UI_STATE_CHARS), True)}, _h_ui_save, "웹의 보기 상태(마지막 도면·채팅 접힘 등)를 맡긴다"),
     "sheet.open": Command({"graph_id": (v_str(1, 200), True)}, _h_open_sheet, "보는 도면이 바뀌었음을 알린다(채팅의 지금 화면 문맥)"),
+    "project.set": Command({"project_id": (v_str(1, 60), True)}, _h_set_project, "프로젝트를 정하거나 바꾼다(끌어 놓아 등록할 때 쓰는 프로젝트 ID)"),
+    "settings.set_default_shell": Command({"enabled": (v_bool(), True)}, _h_set_default_shell, "시작할 때 새 화면을 쓸지(설정 ui_shell)"),
     "settings.set_reviewer": Command({"name": (v_str(1, 60), True)}, _h_set_reviewer, "검토자 이름"),
     "conn.check": Command({}, _h_conn_check, "AI 연결을 다시 확인한다"),
     "chat.ask": Command({"text": (v_str(1, 4000), True),
@@ -402,6 +425,11 @@ COMMANDS = {
     "register.add_files": Command({"paths": (v_list(v_str(1, MAX_PATH_CHARS), MAX_FILES), True)}, _h_add_files,
                                   "끌어 놓은 파일을 등록하고 추출한다"),
 }
+
+
+# 2단계 구간 명령(hazop/shell/api_nodes.py, s-viewer 몫)을 같은 표에 올린다
+from hazop.shell import api_nodes  # noqa: E402
+api_nodes.register(COMMANDS)
 
 
 # ---------------------------------------------------------------- 읽기 API
@@ -461,6 +489,8 @@ class ReadApi:
         if topic == "chat" and len(parts) == 1:
             chat = self.engine.chat
             return _json(chat.snapshot() if chat is not None else {"busy": False, "model": "fast", "availability": {"blocked": True, "text": "채팅을 쓸 수 없습니다.", "button": None}})
+        if topic == "nodes":
+            return api_nodes.read(self.engine, parts, query)
         if topic == "icons" and len(parts) == 1:
             return _json(icon_shapes())
         if topic == "examples" and len(parts) == 1:
@@ -481,7 +511,8 @@ class ReadApi:
         s = e.settings
         return {"version": APP_VERSION, "reviewer": e.reviewer(), "project_id": e.project_id(), "current_sheet": e.current_sheet,
                 "ui": e.ui_state(), "chat_model": s.get("chat_model") or "fast", "ai_review": bool(s.get("extract_ai_review")),
-                "ai_review_cap": s.get("extract_ai_cap") or 20, "debug": bool(os.environ.get("HAZOP_DEBUG"))}
+                "ai_review_cap": s.get("extract_ai_cap") or ai_review.DEFAULT_CAP, "ai_review_run_cap": ai_review.RUN_CAP,
+                "ui_shell": s.get("ui_shell") is True, "debug": bool(os.environ.get("HAZOP_DEBUG"))}
 
     def examples(self):
         """채팅 예시 질문(종류별). 태그는 지금 프로젝트에서 채운다. 프로젝트 그래프가 없으면 태그 없는 질문."""

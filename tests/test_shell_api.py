@@ -133,6 +133,36 @@ class CommandCheckTest(EngineBase):
         self.assertEqual(e.ui_state(), {"sheet": "g1", "chat_collapsed": False})
         self.assertTrue(e.dispatch("ui.save", {"state": "x"})["ok"])   # 작은 JSON 값이면 받는다
 
+    def test_project_set_validates_saves_and_tells_chat(self):
+        e = self.engine()
+        self.assertEqual(e.project_id(), "sample-project")
+        for bad in ("", " ", "a/b", "..", "a b", "x" * 61, "CON"):
+            r = e.dispatch("project.set", {"project_id": bad})
+            self.assertFalse(r["ok"], bad)
+        r = e.dispatch("project.set", {"project_id": " plant-A "})
+        self.assertEqual(r["data"], {"project_id": "plant-A"})
+        self.assertEqual(e.project_id(), "plant-A")
+        self.assertIn("drawings", self.events.names())
+        self.assertEqual(api.Engine(settings_path=e.settings_path).project_id(), "plant-A")
+
+    def test_project_set_ends_the_chat_conversation_through_the_controller(self):
+        from unittest import mock
+        chat_ = mock.Mock()
+        e = self.engine(chat=chat_)
+        e.dispatch("project.set", {"project_id": "plant-B"})
+        chat_.check_project.assert_called_once()
+
+    def test_default_shell_setting_is_saved(self):
+        e = self.engine()
+        self.assertTrue(e.dispatch("settings.set_default_shell", {"enabled": True})["ok"])
+        self.assertTrue(api.Engine(settings_path=e.settings_path).settings["ui_shell"])
+        self.assertFalse(e.dispatch("settings.set_default_shell", {"enabled": "yes"})["ok"])
+
+    def test_state_has_run_cap(self):
+        s = api.ReadApi(self.engine()).state()
+        self.assertEqual(s["ai_review_run_cap"], 300)
+        self.assertEqual(s["ui_shell"], False)
+
     def test_command_table_has_a_doc_for_each(self):
         for name, cmd in api.COMMANDS.items():
             self.assertTrue(cmd.doc, name)

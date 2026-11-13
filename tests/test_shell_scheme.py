@@ -228,6 +228,15 @@ class RoutingTest(RouterBase):
         self.assertEqual(self.get("hazop-app://icons/send.png").status in (404, 415), True)
 
 
+class SchemeFlagsTest(unittest.TestCase):
+    def test_flags_follow_the_spec(self):
+        """Syntax.Host와 FetchApiAllowed가 있다(화면·읽기 API는 같은 호스트의 같은 출처). LocalAccessAllowed는 규격과 달리 남겨 둔다(scheme.py 주석: 빼면 틀 창이 안 그려짐)."""
+        import inspect
+        src = inspect.getsource(scheme.register)
+        self.assertIn("Syntax.Host", src)
+        self.assertIn("FetchApiAllowed", src)
+
+
 class QtSchemeTest(unittest.TestCase):
     """맞춤 주소 체계에서 ES 모듈 `import` 사슬이 읽히고 원격 요청은 막히는지(규격 §9 첫 시험)."""
 

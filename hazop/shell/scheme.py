@@ -197,9 +197,12 @@ def register():
     from PySide6.QtWebEngineCore import QWebEngineUrlScheme
     scheme = QWebEngineUrlScheme(SCHEME.encode("ascii"))
     scheme.setSyntax(QWebEngineUrlScheme.Syntax.Host)
+    # FetchApiAllowed는 fetch()로 읽기 API를 부르려면 필요(Qt 6.6 이상). LocalAccessAllowed: 규격(§10 1)은 뺄 것을 정했지만 빼면 틀 창(ShellWindow)의 웹 화면이
+    # 전혀 그려지지 않는다(2026-11-13 PySide6 6.12 오프스크린 실측: main.js가 돌지 않고 콘솔 오류도 없음. 연결 스크립트 없는 맨 QWebEnginePage에서는 빼도 뜸).
+    # 새 화면 웹뷰는 file 주소를 따로 허용하지 않으므로(ShellPage 이동 제한·CSP) 이 플래그로 file을 읽을 길은 없다. 원인은 더 파야 한다.
     scheme.setFlags(QWebEngineUrlScheme.Flag.SecureScheme | QWebEngineUrlScheme.Flag.LocalScheme
                     | QWebEngineUrlScheme.Flag.LocalAccessAllowed | QWebEngineUrlScheme.Flag.CorsEnabled
-                    | QWebEngineUrlScheme.Flag.FetchApiAllowed)   # fetch()로 읽기 API를 부르려면 필요(Qt 6.6 이상)
+                    | QWebEngineUrlScheme.Flag.FetchApiAllowed)
     QWebEngineUrlScheme.registerScheme(scheme)
     _REGISTERED.append(scheme)
 
