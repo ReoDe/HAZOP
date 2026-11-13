@@ -397,7 +397,14 @@ def _title(item):
 TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정", "nodes.unconfirm": "구간 확정 해제", "nodes.lock": "분석 마침 · 잠금",
           "analysis.run": "AI 분석 실행", "results.set_status": "결과 판정", "results.edit": "결과 항목 고치기",
           "export.excel": "Excel로 내보내기", "export.ie_bundle": "초기사건 인계 묶음 내보내기", "register.extract": "추출",
-          "register.reextract": "다시 추출", "sheet.confirm": "도면 쪽 확정", "dexpi.export": "DEXPI로 내보내기"}
+          "register.reextract": "다시 추출", "sheet.confirm": "도면 쪽 확정", "dexpi.export": "DEXPI로 내보내기",
+          # 아직 잇지 않았거나 채팅으로 하지 않는 동작(거절 줄의 이름)
+          "register.exclude": "분석에서 빼기", "extract.suggest": "추출 값 후보", "kg.algorithm": "지식그래프 알고리즘",
+          "kg.rebuild": "지식그래프 다시 만들기", "ie.draft_rules": "초기사건 규칙 초안", "ie.reset": "초기사건 새로 시작",
+          "kg.judge": "지식그래프 판단", "titleblock.confirm": "표제란 확정", "ie.edit": "초기사건 편집", "drawing.edit": "도면 고치기",
+          "extract.accept": "AI 후보 수락", "extract.edit": "추출 편집", "nodes.unlock": "잠금 풀기", "sheet.compare": "원본과 견줌",
+          "settings.change": "설정 바꾸기", "settings.api_key": "API 키", "settings.work_root": "작업 루트", "settings.reviewer": "검토자 이름",
+          "files.delete": "파일 지우기"}
 
 
 def _done_text(item, out):
