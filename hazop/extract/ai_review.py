@@ -37,6 +37,10 @@ DEFAULT_CAP = 20          # 도면당 호출 수 기본 상한(규격 'AI 검토
 DEFAULT_BATCH = 20        # 호출 하나에 넣는 항목 수(b)
 DEFAULT_RECHECK = 5       # 다시 확인 표본 수
 DEFAULT_THRESHOLD = 0.85  # 묶어 수락하는 확신도 하한
+KIND_THRESHOLD = 0.95     # 기호 종류 제안을 묶어 수락하는 확신도 하한(오검출이 가장 많은 필드라 더 높게)
+NEAR_PART = 8.0           # 이 거리(pt) 안에 종류가 정해진 기호가 있으면 그 기호의 일부(구동부 머리·번호 원·태그판)일 수 있다
+NOT_SYMBOL = "not_symbol"  # 종류 답 가운데 '기호가 아님(다른 기호의 일부·글자 상자·선 조각)'. 후보를 만들지 않는다
+TASK_LABELS = {"kind": "못 읽은 기호의 종류", "tag": "태그·속성", "connection": "끊긴 연결", "recheck": "다시 확인"}
 SECONDS_PER_CALL = 30     # 예상 시간 어림(호출 하나). 실측은 evidence/ai-review-measure.md
 RUN_CAP = 300             # 한 번 실행(여러 도면)의 호출 상한(규격 'AI 검토 호출 수')
 NEAR_TEXT = 40.0          # 주변 글자 반경(pt)
@@ -74,6 +78,26 @@ def _has_target(n):
     return bool(a.get("to_system") or a.get("to_drawing") or ":" in (a.get("to_label") or n.get("label_text") or ""))
 
 
+def near_symbol(ex, obj, reach=NEAR_PART):
+    """obj 상자에서 reach 안에 있는, 종류가 정해진 다른 기호의 종류(가장 가까운 것). 없으면 None.
+    읽기 품질 기록(@1731277, APR1400 012·063쪽): AI 종류 후보의 오검출 35건 가운데 16건이 이런 자리(밸브 위 'S' 상자,
+    번호 원, 태그판)였고 맞은 39건 가운데는 5건이었다. 그래서 이런 후보는 묶음 수락에서 빼고 하나씩 보게 한다."""
+    b = _box(obj)
+    if b is None:
+        return None
+    best = None
+    for n in ex.get("nodes") or []:
+        if n is obj or n.get("local_id") == obj.get("local_id") or n.get("kind") in (None, "tee"):
+            continue
+        nb = _box(n)
+        if nb is None:
+            continue
+        d = math.hypot(max(nb[0] - b[2], 0, b[0] - nb[2]), max(nb[1] - b[3], 0, b[1] - nb[3]))
+        if d <= reach and (best is None or d < best[0]):
+            best = (d, n.get("kind"))
+    return best[1] if best else None
+
+
 def _item(task, obj, ask, item_id=None, **more):
     b = _box(obj)
     return dict({"item_id": item_id or "%s-%s" % (task[0], obj["source_object_id"]), "task": task,
@@ -108,7 +132,7 @@ def collect_items(ex, recheck=DEFAULT_RECHECK):
             continue
         kind = n.get("kind")
         if kind is None:
-            items.append(_item("kind", n, ["kind"]))
+            items.append(_item("kind", n, ["kind"], near_symbol=near_symbol(ex, n)))
             continue
         cat = rules.KIND_CATEGORY.get(kind)
         if cat in NEED_TAG and not n.get("tag"):
@@ -204,6 +228,8 @@ SYSTEM = """너는 원자력 발전소 P&ID(배관계장도)를 읽는 검토자
 규칙
 - item마다 ask에 적힌 필드만 답한다. values의 첫 값이 너의 답이고, 다음 값은 차선이다.
 - kind는 아래 목록에서만 고른다: {kinds}. 목록에 맞는 것이 없으면 답하지 않는다.
+- 상자가 이웃 기호에 붙은 작은 부분(구동부 머리 'S'·'M', 번호 원, 태그판, 선 조각, 글자 상자)으로 보이면 따로 기호가 아니다.
+  그때는 kind에 'not_symbol'이라고 답한다(종류를 지어내지 않는다).
 - tag는 texts_near에 실제로 있는 글자만 그대로 쓴다(꼴의 예: 'V0000', 'XY 000'). 지어내지 않는다.
 - normal_position은 {npos}, fail_position은 {fpos} 가운데 주변 글자에 있는 것만.
 - connection은 partners에 있는 id 가운데 하나, 또는 'none'(어느 것과도 이어지지 않음).
@@ -283,7 +309,7 @@ def _valid(item, ans, desc):
     if f not in item["ask"] or not vals or conf is None:
         return None
     v = vals[0]
-    if f == "kind" and v not in rules.KIND_CATEGORY:
+    if f == "kind" and v not in rules.KIND_CATEGORY and v != NOT_SYMBOL:
         return None
     if f in POSITION_VALUES and v not in POSITION_VALUES[f]:
         return None
@@ -322,7 +348,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=DEFAULT_BATCH, recheck=DEFAULT_RECHEC
     답은 반영하고 남은 호출은 멈춘다."""
     stats = {"items": 0, "planned_calls": 0, "needed_calls": 0, "calls": 0, "errors": 0, "dropped": 0, "confirmed": 0,
              "halted": False, "stopped": False, "left": 0, "error_kinds": [], "refused": refuse_reason(client),
-             "excluded": 0}
+             "excluded": 0, "not_symbol": 0}
     if stats["refused"]:
         return {"candidates": [], "stats": stats}
     ex = copy.deepcopy(ex)
@@ -368,11 +394,17 @@ def run(ex, client, cap=DEFAULT_CAP, batch=DEFAULT_BATCH, recheck=DEFAULT_RECHEC
                     continue
                 if f == "connection" and vals[0] == "none":
                     continue
+                if f == "kind" and vals[0] == NOT_SYMBOL:
+                    stats["not_symbol"] += 1
+                    continue
+                vals = [v for v in vals if not (f == "kind" and v == NOT_SYMBOL)]
                 extra = None
                 if f == "connection":
                     partner = next(x for x in item["partners"] if x["id"] == vals[0])
                     extra = {"open_end": item["open_end"], "attached_local": item["attached_local"],
                              "partner_local": partner["local_id"]}
+                if f == "kind":
+                    extra = {"near_symbol": item.get("near_symbol")}
                 reason = ans.get("reason") if isinstance(ans.get("reason"), str) else ""
                 cands.append(make_candidate(item["item_id"], item["task"], item, f, vals, conf, reason, extra))
         if on_progress:
@@ -450,13 +482,42 @@ def run_many(pages, client, cap=DEFAULT_CAP, run_cap=RUN_CAP, on_progress=None, 
 
 # ---------------------------------------------------------------- 묶음 수락과 검사 꼴
 
-def bulk_groups(doc, threshold=DEFAULT_THRESHOLD):
-    """확신도가 threshold 이상인 제안 후보를 필드별로 묶는다. → {field: [cand_id]}."""
+def bulk_block(c, threshold=DEFAULT_THRESHOLD):
+    """묶어 수락하지 않을 까닭(글) 또는 None. 낱개로는 여전히 수락할 수 있다.
+    - 제안 상태가 아님, 확신도가 threshold 아래
+    - 기호 종류: 확신도 KIND_THRESHOLD 아래이거나, 종류가 정해진 이웃 기호에 붙어 있음(그 기호의 일부일 수 있음)
+    - 다시 확인: 스크립트가 읽은 값과 AI 값이 다른 것(어느 쪽이 맞는지 사람이 봐야 함)"""
+    if c["status"] != "proposed":
+        return "이미 정함"
+    if c["confidence"] < threshold:
+        return "확신도 %.2f 아래" % threshold
+    if c["task"] == "recheck":
+        return "다시 확인에서 스크립트와 다른 값이 나와 하나씩 봄"
+    if c["field"] == "kind":
+        if c["confidence"] < max(threshold, KIND_THRESHOLD):
+            return "기호 종류는 확신도 %.2f 이상만 묶음" % max(threshold, KIND_THRESHOLD)
+        if c.get("near_symbol"):
+            return "이웃 기호(%s)에 붙어 있어 그 기호의 일부일 수 있음" % c["near_symbol"]
+    return None
+
+
+def bulk_groups(doc, threshold=DEFAULT_THRESHOLD, by="field"):
+    """묶어 수락할 수 있는 제안 후보(bulk_block이 None)를 필드별(by="field") 또는 할 일별(by="task")로 묶는다.
+    → {열쇠: [cand_id]}."""
     out = {}
     for c in doc["candidates"]:
-        if c["status"] == "proposed" and c["confidence"] >= threshold:
-            out.setdefault(c["field"], []).append(c["cand_id"])
+        if bulk_block(c, threshold) is None:
+            out.setdefault(c[by], []).append(c["cand_id"])
     return out
+
+
+def annotate(doc, ex):
+    """near_symbol이 없는 옛 종류 후보에 그 값을 채운다(doc을 그 자리에서 고친다). → doc."""
+    by_local = {n.get("local_id"): n for n in ex.get("nodes") or []}
+    for c in doc["candidates"]:
+        if c["field"] == "kind" and "near_symbol" not in c and c.get("local_id") in by_local:
+            c["near_symbol"] = near_symbol(ex, by_local[c["local_id"]])
+    return doc
 
 
 def to_check_candidates(doc):

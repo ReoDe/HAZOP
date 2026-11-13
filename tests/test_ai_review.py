@@ -195,10 +195,64 @@ class RunTest(unittest.TestCase):
         doc = ar.run(ex_fixture(), StubClient(good_answers), cap=5, recheck=0)
         low = next(c for c in doc["candidates"] if c["field"] == "tag")
         low["confidence"] = 0.4
+        next(c for c in doc["candidates"] if c["field"] == "kind")["confidence"] = 0.97
         groups = ar.bulk_groups(doc, threshold=0.8)
         self.assertNotIn(low["cand_id"], [c for v in groups.values() for c in v])
         self.assertIn("kind", groups)
         self.assertNotIn("tag", groups)
+
+
+class BulkSafetyTest(unittest.TestCase):
+    """AI 종류 후보의 오검출(읽기 품질 기록 'AI 후보 포함', @1731277: 28 → 63)을 줄이는 규칙."""
+
+    def ex(self):
+        ex = ex_fixture()
+        ex["nodes"].append(node("n7", None, (304, 92, 309, 97)))      # 이름 있는 밸브 n3(300~310, 100~108) 위에 붙은 작은 상자
+        return ex
+
+    def test_kind_item_knows_attached_symbol(self):
+        items = {i["target"]: i for i in ar.collect_items(self.ex(), recheck=0)}
+        self.assertEqual(items["n7"]["near_symbol"], "motor_operated_valve")
+        self.assertIsNone(items["n1"]["near_symbol"])
+
+    def test_not_symbol_answer_makes_no_candidate(self):
+        def answers(req):
+            out = good_answers(req)
+            for a in out["answers"]:
+                if a["item_id"] == "k-n7":
+                    a["values"] = ["not_symbol"]
+            return out
+        doc = ar.run(self.ex(), StubClient(answers), cap=5, recheck=0)
+        self.assertNotIn("n7", {c["target"] for c in doc["candidates"]})
+        self.assertEqual(doc["stats"]["not_symbol"], 1)
+        self.assertIn("not_symbol", ar.system_text())
+
+    def test_kind_bulk_needs_high_confidence_and_free_box(self):
+        doc = ar.run(self.ex(), StubClient(good_answers), cap=5, recheck=0)
+        kinds = {c["target"]: c for c in doc["candidates"] if c["field"] == "kind"}
+        self.assertEqual(kinds["n7"]["near_symbol"], "motor_operated_valve")
+        for c in kinds.values():
+            c["confidence"] = 0.9
+        self.assertNotIn("kind", ar.bulk_groups(doc))                 # 0.9 < 0.95
+        self.assertIn("tag", ar.bulk_groups(doc))                     # 태그는 0.85 그대로
+        for c in kinds.values():
+            c["confidence"] = 0.99
+        self.assertEqual(ar.bulk_groups(doc)["kind"], [kinds["n1"]["cand_id"]])   # 붙은 상자 n7은 빠짐
+        self.assertIn("이웃 기호", ar.bulk_block(kinds["n7"]))
+        self.assertEqual(ar.bulk_groups(doc, by="task")["kind"], [kinds["n1"]["cand_id"]])
+
+    def test_recheck_disagreement_is_not_bulk(self):
+        c = ar.make_candidate("r-n4", "recheck", node("n4", "pump", (0, 0, 9, 9), tag="PP01"), "tag", ["PP02"], 0.99, "")
+        self.assertIn("다시 확인", ar.bulk_block(c))
+
+    def test_annotate_fills_old_candidates(self):
+        ex = self.ex()
+        c = ar.make_candidate("k-n7", "kind", next(n for n in ex["nodes"] if n["source_object_id"] == "n7"), "kind",
+                              ["solenoid_valve"], 0.99, "")
+        doc = {"candidates": [c]}
+        self.assertNotIn("near_symbol", c)
+        ar.annotate(doc, ex)
+        self.assertEqual(c["near_symbol"], "motor_operated_valve")
 
     def test_check_format_uses_first_value(self):
         doc = ar.run(ex_fixture(), StubClient(good_answers), cap=5, recheck=0)
