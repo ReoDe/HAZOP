@@ -1,6 +1,6 @@
 ---
 doc_id: HZ-DSN-05
-rev: 0
+rev: 1
 status: review
 author: d-chat
 reviewed: —
@@ -11,7 +11,7 @@ approved: —
 
 [이전 화면 명세](screen-spec.md) · [채팅 창 규격](../specs/chat-panel.md) · [AI 연결 규격](../specs/ai-subscription.md) · [검토구간 나누기](../specs/study-node-segmentation.md) · [시안](mockups/app-shell-web/index.html) · [프로젝트 의도](../../INTENT.md)
 
-엔진(추출, 그래프, 지식그래프, 구간 저장, 분석, 초기사건 인계, 채팅 세션·도구)은 그대로 두고, PySide6 위젯으로 만든 화면을 HTML·CSS·JS 화면 하나로 바꿔 앱 안의 웹 화면(QtWebEngine)에 띄운다. 이 문서가 새 화면의 정본이다. 지금 화면은 '이전 화면'이 되고, 그 명세는 [screen-spec.md](screen-spec.md)에 남는다.
+엔진(추출, 그래프, 지식그래프, 구간 저장, 분석, 초기사건(initiating event, IE) 인계, 채팅 세션·도구)은 그대로 두고, PySide6 위젯으로 만든 화면을 HTML·CSS·JS 화면 하나로 바꿔 앱 안의 웹 화면(QtWebEngine)에 띄운다. 이 문서가 새 화면의 정본이다. 지금 화면은 '이전 화면'이 되고, 그 명세는 [screen-spec.md](screen-spec.md)에 남는다.
 
 근거는 사용자 결정(2026-11-13 질문 답변)이다. 지금 화면은 낡고 난잡하며, 바로 쓸 기능도 모드·탭·토글을 골라서 켜야 쓸 수 있다. 사용자는 안트로피 AutoPID '실제 화면' 데모처럼 깔끔하고 단순한 화면을 원했다. 이 결정으로 [INTENT.md §3.8](../../INTENT.md)의 '단계 구조는 유지'가 바뀐다. 그대로 이어지는 결정은 다음과 같다.
 
@@ -22,6 +22,15 @@ approved: —
 - 구독이 없는 PC에는 안내만 한다.
 - 밝은 화면만 쓴다.
 
+원자력 확률론적 안전성평가 용어는 처음 나오는 곳에 영문을 함께 적었다. 출처는 U.S. NRC, NUREG-2122 *Glossary of Risk-Related Terms in Support of Risk-Informed Decisionmaking*(2013)이다.
+
+| 이 문서의 말 | NRC 영문 | 뜻 |
+| --- | --- | --- |
+| 초기사건 | initiating event (IE) | 정상 운전을 깨뜨려 사고 경위로 이어질 수 있는 사건 |
+| 사건수목 표제 | event tree top event (heading) | 사건수목의 열 머리에 놓는 안전기능·계통의 성공·실패 사건 |
+| 최종상태 | end state | 사건수목 한 경위의 끝 상태(예: 노심손상) |
+| 기본사건 | basic event | 고장수목의 가장 아래 사건으로, 더 나누지 않고 확률을 주는 것 |
+
 ---
 
 ## 1. 결론 요약
@@ -31,12 +40,12 @@ approved: —
 | 기본 화면 | 왼쪽 얇은 메뉴(56px) · 가운데 도면 · 오른쪽 채팅(380px). 상태줄·메뉴 막대·탐색기·탭은 없다 |
 | 패널 | 왼쪽 메뉴에서 연다. 한 번에 하나만 열린다. 좁은 패널(도면 목록, 구간)은 도면 왼쪽을 덮고, 넓은 패널(분석 결과, 초기사건, 지식그래프)은 도면 칸 전체를 덮는다. 채팅은 늘 남는다 |
 | 골라서 켜는 기능 | 늘 떠 있는 곁 패널을 없애고, 속성·연결·관련 항목은 누른 대상 옆 말풍선으로 옮긴다. 모드는 도면 도구 막대의 '이동'과 '네모로 고르기' 둘뿐이다(§2.2) |
-| 프런트엔드 | **Preact + htm**(둘 다 MIT). 저장소의 ES 모듈 파일을 빌드 없이 그대로 읽는다. 앱 전용 주소 체계 `hazop-app://`로 묶음 안 파일만 연다(§5.1) |
-| 엔진과 잇기 | 지금 `Bridge`(QWebChannel)를 넓힌다. 웹 → 엔진은 명령(`cmd`)과 답(`reply`), 엔진 → 웹은 바뀜 알림(`changed`)과 사건(`event`)이다. 큰 자료는 `hazop-app://api/…`로 웹이 읽어 간다(§5.2) |
-| 상태의 주인 | 저장하는 자료는 엔진만 쓴다. 웹은 보기 상태(열린 패널, 확대, 고른 것, 말풍선)만 갖는다(§5.3) |
+| 프런트엔드 | **Preact + htm**(Preact는 MIT, htm은 Apache-2.0). 저장소의 ES 모듈 파일을 빌드 없이 그대로 읽는다. 앱 전용 주소 체계 `hazop-app://shell`(형식 `Syntax.Host`)로 화면과 읽기 API를 한 출처에 둔다. 정적 파일은 폴더 범위로, 프로젝트 자료는 ID로만 연다(§5.1) |
+| 엔진과 잇기 | 지금 `Bridge`(QWebChannel)를 본뜬 따로 된 `ShellBridge`를 둔다. 웹 → 엔진은 명령(`cmd`)과 답(`reply`), 엔진 → 웹은 바뀜 알림(`changed`)과 사건(`event`)이다. 큰 자료는 `hazop-app://shell/api/…`로 웹이 읽어 간다(§5.2) |
+| 상태의 주인 | 저장하는 자료는 엔진만 쓴다. 웹은 보기 상태(열린 패널, 확대, 고른 것, 말풍선)만 갖는다. 쓰기 명령은 판 표시(`ver`)를 들고 오고, 엔진이 쓰기 직전에 비교한다(§5.3) |
 | 글꼴 | 맑은 고딕(Windows 기본, 배포본에 넣지 않음). ID는 Cascadia Mono → Consolas |
-| 아이콘 | Tabler Icons 3.51.0 outline(MIT), 선 두께 1.75, 18px |
-| 옮기는 순서 | 1단계 도면 + 채팅 + 도면 목록·등록 → 2단계 구간 → 3단계 분석 결과·초기사건 → 4단계 나머지와 이전 화면 제거 판단(§6) |
+| 아이콘 | Tabler Icons 3.51.0 outline(MIT), 선 두께 1.75, 18px. `Icon` 구성요소가 미리 만든 도형 자료로 그린다(`innerHTML` 없음) |
+| 옮기는 순서 | 1단계 도면 + 채팅 + 도면 목록·등록 → 2단계 구간 → E 결과 판정 보강(엔진) → 3단계 분석 결과·초기사건 → 4단계 나머지와 이전 화면 제거 판단. 3단계가 끝날 때까지 이전 화면이 기본이고 새 화면은 `--shell`로 연다(§6) |
 
 ---
 
@@ -62,7 +71,7 @@ approved: —
 | 자리 | 늘 보이는 것 | 필요할 때만 보이는 것 |
 | --- | --- | --- |
 | 왼쪽 메뉴 | 도면·구간·분석 결과·초기사건·지식그래프 아이콘 5개, AI 연결 단추(상태 점), 설정 | 아이콘 위 배지(미확인 수, 검토 안 한 칸 수), 마우스를 올리면 이름 |
-| 위 막대 | 프로젝트 › 도면 번호(눌러 도면 바꾸기) · 도면 제목 · 찾기 상자 | 고르기 모드 칩, '분석 결과로 돌아가기' 칩(넓은 패널에서 '도면에서 보기'를 눌렀을 때) |
+| 위 막대 | 프로젝트 이름(눌러 프로젝트 목록·새 프로젝트) › 도면 번호(눌러 도면 바꾸기) · 도면 제목 · 찾기 상자 | 고르기 모드 칩, '분석 결과로 돌아가기' 칩(넓은 패널에서 '도면에서 보기'를 눌렀을 때) |
 | 도면 | 도면, 아래 가운데 도구 막대 | 경로·고른 것 표시와 범례, 구성요소 말풍선, 고른 것 막대, 다른 도면 연결 칩, 알림 띠 |
 | 채팅 | 머리(새 대화, 접기), 대화, 예시 질문, 입력, 바닥줄(연결·모델) | 고른 것 칩(입력 옆), 진행 표시, 확인 상자 |
 
@@ -73,7 +82,7 @@ approved: —
 | 도면 | 좁음(440px) | 끌어 놓기 자리, 도면·문서 목록(썸네일·상태 칩), 표제란 후보 확정, 새 도면 추출 카드(AI 검토 토글·호출 상한), 미확인 목록, 도면 연결 목록 | 메뉴 '도면', Ctrl+1, 위 막대 도면 번호 |
 | 구간 | 좁음 | 구간 목록(S 번호 색, 이름, 도면 범위, 상태), 고른 구간의 상세(경계, 구성요소, 설계 의도, 잠금, AI 제안 비교), 묶음 되돌리기 | 메뉴 '구간', Ctrl+2, 도면에서 구간 꼬리표 누르기 |
 | 분석 결과 | 넓음 | 구간×편차 표, 고른 칸의 워크시트, 수용·수정·기각·보류, 분석 실행, 내보내기(Excel, IE 인계 묶음) | 메뉴 '분석 결과', Ctrl+3, 구간 상세의 '분석' |
-| 초기사건 | 넓음 | 그룹 목록, 그룹 상세(정의·후보·표제·최종상태·기본사건·확정 조건·추적), 완전성 대조, 품질 경고 | 메뉴 '초기사건', Ctrl+4 |
+| 초기사건 | 넓음 | 그룹 목록, 그룹 상세(정의·후보·사건수목 표제(event tree top event)·최종상태(end state)·기본사건(basic event)·확정 조건·추적), 완전성 대조, 품질 경고 | 메뉴 '초기사건', Ctrl+4 |
 | 지식그래프 | 넓음 | 그래프 보기, 상세, 잠재 후보 판단, '보기 설정' 펼침 | 메뉴 '지식그래프', Ctrl+5 |
 
 설정(검토자 이름, AI 연결, 프로젝트, 정보·라이선스)은 메뉴 아래 톱니 단추로 여는 좁은 패널이다. AI 연결 단추는 지금 상태줄 연결 칩의 팝업을 그대로 옮긴 것이다.
@@ -110,7 +119,7 @@ approved: —
 | ④ '다시 제안…', 덮음률 KPI | 기능 | 없앰. [INTENT §3.4](../../INTENT.md)가 자동 나누기와 덮음률 규칙을 없앴다 |
 | ⑤ 칩 줄 4개(AI 초안, 바뀜 감지, 지식그래프, 저장 위치) | 늘 떠 있음 | 패널 머리 칩 둘. AI 초안은 칸의 점선 테두리로 보인다 |
 | ⑥ 탭 7개 | 탭 | 보기 셋(그룹, 완전성 대조, 품질 경고). 표제·최종상태·기본사건은 그룹 상세 안에 둔다 |
-| ① 프로젝트 ID 입력, 자료 종류 콤보 | 입력 | 없앰. 프로젝트는 시작할 때 고르고, 종류는 확장자와 첫 쪽으로 정한 뒤 행에서 바꾼다 |
+| ① 프로젝트 ID 입력, 자료 종류 콤보 | 입력 | 프로젝트는 위 막대에서 고르고 만든다. 종류 콤보는 없애고, 확장자와 첫 쪽으로 정한 뒤 행에서 바꾼다 |
 | ① 'AI 검토' 체크 아래 상한·대상 쪽·예상 사용량 | 토글 | 추출 카드 안 한 줄씩. 대상 쪽은 'PDF 쪽 고르기' 펼침 |
 
 ### 2.3 지금 기능의 새 자리
@@ -124,6 +133,7 @@ approved: —
 | 위치 표시(구간·도면·실행) | 기본 화면 | 위 막대 '프로젝트 › 도면' | 실행 ID는 분석 결과 패널 머리 |
 | 명령 찾기 Ctrl+P(`#` 구간, `@` 구성요소, `>` 명령), Ctrl+Shift+P | 기본 화면 | 위 막대 찾기 상자 | 접두어와 키는 그대로 둔다 |
 | 검토자 이름 | 패널 | 설정 | 처음 실행할 때 묻는 것은 그대로 |
+| 프로젝트 만들기·바꾸기(지금은 ① 등록 폼의 프로젝트 ID 입력) | 기본 화면 | 위 막대 프로젝트 이름 → 목록·'새 프로젝트' | 등록은 늘 지금 프로젝트로 한다. 프로젝트가 하나도 없으면 도면 패널이 끌어 놓기 전에 새 프로젝트 이름을 묻는다(처음 값 `sample-project`). 1단계 |
 | 단계 레일 6칸(Ctrl+1~6) | 기본 화면 | 왼쪽 메뉴 5개(Ctrl+1~5) | ①등록과 ②추출을 '도면' 하나로 합친다. 등록하면 추출이 이어지기 때문이다([INTENT §3.1](../../INTENT.md)). 완료 ✓는 배지로 바뀐다 |
 | 탐색기(단계별 목록, 필터 Ctrl+Shift+E, 도면 콤보, '다음 할 일' 단추) | 패널 | 각 패널의 목록과 찾기 | '다음 할 일'은 빈 패널의 단추 하나로 남는다 |
 | 탭·분할 | 없앰 | | §2.2 표 |
@@ -173,7 +183,7 @@ approved: —
 | 확대·축소·맞춤 | 기본 화면 도구 막대 | |
 | 속성 패널, 마우스 올림 카드 | 기본 화면 말풍선 | |
 | 도면 연결 칩(다른 도면으로) | 기본 화면 | 누르면 그 도면이 열리고 상대 연결점에 맞춘다 |
-| 도면 연결점 패널(짝 지정, 연결 끊기) | 패널 '도면' 도면 연결 목록 + 말풍선 | |
+| 도면 연결점 패널(짝 지정, 연결 끊기) | 패널 '도면' 도면 연결 목록 + 말풍선 | 명령 `links.pair`·`links.unpair`. 1단계 완료 기준에 넣는다 |
 | 편집: 선택·기기 추가·연결 추가·끝점 잇기·경로 그리기 | 기본 화면 도구 막대 '그리기' 펼침 | 펼치면 그리는 동안만 모드가 된다. Esc로 끝난다 |
 | 편집: 태그·종류·정상/고장 위치·흐름 방향·미확인 확정·삭제 | 기본 화면 말풍선 '고치기' | |
 | 편집: 실행 취소·다시 실행·저장·저장본으로 되돌리기·기록 | 기본 화면 저장 막대 + 패널 '도면' 행 '수정 기록' | 저장은 지금처럼 사람이 누른다. 자동 저장으로 바꾸지 않는다(§8 UW6) |
@@ -227,8 +237,9 @@ approved: —
 | 칩 줄 4개 | 머리 칩 둘 | §2.2 표 |
 | 구간×편차 행렬, 범례, 키 안내 | 패널 '분석 결과' | 칸의 큰 숫자는 최고 위험도, 작은 숫자는 시나리오 수 |
 | 워크시트(7열, 출처·범위 줄, 실행 노트) | 패널 '분석 결과' 행렬 아래 | |
-| 행 동작 승인(A)·기각(R)·수정(E) | 행 동작 막대 수용·수정·기각·보류 | 글자를 [INTENT §3.6](../../INTENT.md)의 '수용'으로 맞춘다. A는 수용 |
+| 행 동작 승인(A)·기각(R)·수정(E) | 행 동작 막대 수용·수정·기각·보류 + 사유 | 글자를 [INTENT §3.6](../../INTENT.md)의 '수용'으로 맞춘다. A는 수용. 지금 엔진에는 보류와 사유가 없다(`hazop/study/results.py`의 `ENTRY_STATUSES`, `set_status`). 3단계 앞 엔진 단위 E가 더한다(§6) |
 | 초기사건 판정 칩·I, 이 칸 다시 실행 | 워크시트 행·머리 | |
+| 권고 목록(지금 탐색기 ⑤ '권고', `explorer.py`)과 추적(컴포넌트 → 소속 구간 → 칸 → 권고) | 패널 '분석 결과' 머리 '권고 n' 보기 + 말풍선 | 권고 행을 누르면 그 칸의 워크시트가 열린다. 구성요소 말풍선의 '속한 구간'에서 구간 → 칸 → 권고로 따라간다([INTENT §3.6](../../INTENT.md)). 3단계 |
 | 항목 수정·초기사건 판정·Excel·실행 확인·해결·닫기 대기 대화상자 | 같은 내용의 웹 대화상자 | |
 | J·A·R·E·I·Enter·F6 | 그대로 | |
 | 빈 상태 '④ 검토구간으로' | 빈 패널 단추 '구간 만들기' | 도구 막대 S로 간다 |
@@ -399,7 +410,7 @@ Tab 순서는 메뉴 → 위 막대 → 도면 도구 막대 → 패널 → 채�
 
 - **출처.** Tabler Icons 3.51.0 outline(MIT)이다. 쓰는 것만 [`resources/library/icons/tabler/`](../../resources/library/icons/tabler/README.md)에 원본 그대로 두고 `manifest.json`에 SHA-256을 적는 지금 규칙을 따른다. 시안에 쓴 38개 가운데 아직 그 폴더에 없는 것은 1단계 구현 단위가 더한다.
 - **모양.** 크기는 18px, 작은 칩 안에서는 14~15px로 쓴다. 선 두께는 1.75(원본 2에서 낮춤), 색은 `currentColor`다.
-- **넣는 방법.** 웹에서는 SVG를 본문에 넣는다(`hazop/app/icons.py`의 `svg_inline`와 같은 방식). `<img>`로 넣으면 색을 바꿀 수 없어서다.
+- **넣는 방법.** `Icon({name, size})` 구성요소(`web/js/ui/icon.js`)가 `<svg>`와 그 안의 `path`·`circle`·`rect`·`line` 요소를 Preact 요소로 만든다. 도형 자료는 `web/js/ui/icons_data.js`(이름 → `[태그, 속성]` 목록)에 있다. 이 파일은 `scripts/build_shell_icons.py`가 아이콘 폴더의 `manifest.json`에 적힌 SVG에서 만든다. 문자열을 HTML로 넣지 않으므로 `innerHTML`·`dangerouslySetInnerHTML` 금지(§5.5)와 부딪치지 않는다. `<img>`는 색을 바꿀 수 없어서, 바깥 문서를 가리키는 `<use>`는 맞춤 주소 체계에서 동작을 따로 확인해야 해서 쓰지 않는다. 시험이 `icons_data.js`와 `manifest.json`이 같은지 본다.
 - **글자.** 아이콘만 있는 단추에는 마우스를 올리면 이름과 키가 뜬다(`title`). 메뉴 아이콘은 글자 없이 두고 이름은 말풍선으로만 보인다.
 - 시안에서 고른 메뉴 아이콘은 도면 `files`, 구간 `route`, 분석 결과 `table`, 초기사건 `alert-octagon`, 지식그래프 `affiliate`, 연결 `plug-connected`, 설정 `settings`다.
 
@@ -435,7 +446,7 @@ Tab 순서는 메뉴 → 위 막대 → 도면 도구 막대 → 패널 → 채�
 | 후보 | 라이선스 | 빌드 | 크기(축소본) | 장점 | 약점 |
 | --- | --- | --- | --- | --- | --- |
 | A. 바닐라 JS ES 모듈 + 작은 도우미 | 해당 없음 | 없음 | 0 | 의존성 없음 | 화면 갱신 코드를 손으로 쓴다. 패널 다섯 개·표·카드마다 갱신 방식이 갈라지기 쉽고, 다음 구현자가 가까운 예를 베끼며 방식이 늘어난다 |
-| **B. Preact + htm** | MIT, MIT | 없음 | 약 16KB(preact·hooks·htm) | 구성요소와 상태 모형이 하나라 패널·표·카드를 같은 모양으로 만든다. htm은 태그 템플릿을 실행 중에 풀고 `eval`을 쓰지 않는다. 그래서 엄격한 CSP(`script-src` 자기 주소만)를 지킬 수 있다 | 템플릿에 형 검사가 없다. JSX 생태계 예제를 그대로 못 쓴다 |
+| **B. Preact + htm** | MIT, Apache-2.0 | 없음 | 약 16KB(preact·hooks·htm) | 구성요소와 상태 모형이 하나라 패널·표·카드를 같은 모양으로 만든다. htm은 태그 템플릿을 실행 중에 풀고 `eval`을 쓰지 않는다. 그래서 엄격한 CSP(`script-src` 자기 주소만)를 지킬 수 있다 | 템플릿에 형 검사가 없다. JSX 생태계 예제를 그대로 못 쓴다 |
 | C. Vue 3 전역 빌드 + 실행 중 템플릿 컴파일 | MIT | 없음 | 약 150KB | 익숙한 사람이 많다 | 실행 중 컴파일이 `new Function`을 써서 CSP에 `unsafe-eval`이 필요하다. 크다 |
 | D. Alpine.js | MIT | 없음 | 약 45KB | HTML 속성만으로 짧다 | 식이 `new Function`으로 돈다(CSP 판은 기능이 줄어듦). 로직이 HTML 속성에 흩어진다. 큰 표 창 그리기(가상 스크롤)에 맞지 않는다 |
 | E. React + TypeScript + Vite 빌드 | MIT | Node 필요 | 약 45KB + 앱 | 형 검사, 큰 생태계 | 빌드 단계가 패키징과 CI에 붙는다. 저장소 파일과 실행 파일이 달라져 오프스크린 시험에 빌드 결과가 필요하다 |
@@ -445,35 +456,91 @@ Tab 순서는 메뉴 → 위 막대 → 도면 도구 막대 → 패널 → 채�
 
 - **형 검사를 대신하는 것.** 모듈 머리에 JSDoc 형 주석을 단다. 엔진과 주고받는 자료는 Python 쪽 시험이 모양을 검사한다(§5.6).
 - **가져오는 방식.** 상태 관리 라이브러리(`@preact/signals` 등)는 넣지 않는다. 작은 저장소 모듈 `store.js`(get·set·subscribe, 약 60줄)와 `useStore` 갈고리로 충분하다.
-- **묶음.** `hazop/shell/web/vendor/`에 ES 모듈 파일로 넣는다. 받은 버전과 SHA-256, 라이선스 원문은 지금 Tabler 규칙처럼 적는다(`licenses/preact/LICENSE`, `licenses/htm/LICENSE`). 버전은 1단계 구현 단위가 받는 때의 최신 안정판(Preact 10.x, htm 3.x)으로 고정한다.
+- **묶음.** `hazop/shell/web/vendor/`에 ES 모듈 파일로 넣는다. 받은 버전과 SHA-256, 라이선스 원문은 지금 Tabler 규칙처럼 적는다(`licenses/preact/LICENSE`, `licenses/htm/LICENSE`). npm 레지스트리 기준(2026-11-13 확인) 최신판은 Preact 11.2.0(`"license":"MIT"`), htm 3.1.1(`"license":"Apache-2.0"`)이다. 1단계 구현 단위(`s-frame`)가 받은 꾸러미의 `LICENSE`로 다시 확인해 고정한다.
+- **htm의 Apache-2.0 처리.** 라이선스 원문을 `licenses/htm/LICENSE`에 둔다. 꾸러미에 `NOTICE` 파일이 있으면 `licenses/htm/NOTICE`로 함께 두고, 없으면 `licenses/README.md`의 고지 목록에 '`NOTICE` 없음'을 적는다. 받은 파일을 고치지 않는다(고치면 바뀐 파일에 그 사실을 적어야 한다). 배포본에는 지금 고지 규칙대로 실행 파일 옆 `licenses/`째 들어간다. 조건의 라이선스 목록(MIT·ISC·Apache 2.0) 안이다.
 
 **ES 모듈과 `file://` 문제.** Chromium은 `file://`에서 ES 모듈을 막는다. 출처가 `null`이라 CORS 검사를 통과하지 못하기 때문이다. 그래서 앱 전용 주소 체계 `hazop-app://`를 둔다.
 
-- 등록: `QWebEngineUrlScheme("hazop-app")`, 표시 `SecureScheme | LocalScheme | LocalAccessAllowed | CorsEnabled`. 등록은 `QApplication`을 만들기 전에 한다.
-- 처리기: `QWebEngineUrlSchemeHandler`가 정해진 폴더의 파일만 돌려준다. 폴더는 `hazop/shell/web/`, 아이콘 폴더, 지금 프로젝트의 도면 SVG와 읽기 API다.
-- 경로 검사는 지금 채팅 도구와 같은 `realpath`·`commonpath` 방식이고, MIME은 확장자 표로 정한다.
-- 지금 `webview.py`의 `ALLOWED_SCHEMES`에 `hazop-app`을 더한다. 원격 주소를 막는 `LocalOnlyInterceptor`와 주 프레임 이동 제한(`LocalPage`)은 그대로 둔다.
+- **등록.** `QApplication`을 만들기 전에 등록한다.
+
+  ```python
+  s = QWebEngineUrlScheme(b"hazop-app")
+  s.setSyntax(QWebEngineUrlScheme.Syntax.Host)          # 출처 = hazop-app://shell
+  s.setFlags(QWebEngineUrlScheme.Flag.SecureScheme | QWebEngineUrlScheme.Flag.LocalScheme
+             | QWebEngineUrlScheme.Flag.CorsEnabled | QWebEngineUrlScheme.Flag.FetchApiAllowed)
+  QWebEngineUrlScheme.registerScheme(s)
+  ```
+
+  - 형식은 `Syntax.Host`다. 기본값 `Syntax.Path`로 두면 출처가 불투명(`null`)해져 `file://`과 같은 이유로 ES 모듈과 `fetch`가 막힌다.
+  - `FetchApiAllowed`가 있어야 웹이 `fetch("hazop-app://shell/api/…")`로 읽을 수 있다.
+  - `LocalAccessAllowed`는 넣지 않는다. 새 화면이 `file://` 자원을 읽을 일이 없기 때문이다.
+- **호스트는 `shell` 하나다.** 화면과 읽기 API를 같은 호스트에 두어 같은 출처로 만든다. 화면은 `hazop-app://shell/index.html`, 정적 파일은 `hazop-app://shell/static/…`, 읽기 API는 `hazop-app://shell/api/…`다. 다른 호스트로 온 요청은 `fail(UrlInvalid)`로 끊는다.
+- **정적 파일만 폴더 범위로 돌려준다.** 정적 파일은 `hazop/shell/web/`(vendor 포함)와 아이콘 폴더 `resources/library/icons/tabler/` 둘이다. 경로 검사는 지금 채팅 도구와 같은 `realpath`·`commonpath` 방식이고, MIME은 확장자 표로 정한다(`.js`는 `text/javascript`).
+- **프로젝트 자료는 ID로만 받는다.** 도면 SVG가 그 예다. SVG의 실제 자리는 작업 루트, 저장 루트, 참고 폴더, 절대 경로 가운데 어디든 될 수 있다(`hazop/viewer/build.py`의 `_svg_path`). 또 `output/`·`store/`는 모든 프로젝트가 함께 쓴다. 그래서 '지금 프로젝트의 폴더'라는 범위를 정할 수 없다. 처리 순서는 다음과 같다.
+  1. 웹은 `api/sheet/<graph_id>.svg`처럼 ID로 묻는다.
+  2. 엔진은 ID가 형식(`^[A-Za-z0-9_.-]{1,128}$`)에 맞는지 본다.
+  3. 지금 프로젝트 그래프(`project.pick_graphs(project_id)`)에 그 ID가 있는지 본다.
+  4. 그 추출 결과의 `svg_file`을 `_svg_path`의 허용 루트 검사로 푼 경로를 연다.
+  5. 주소의 경로 조각을 파일 경로로 쓰는 일은 없다. 없는 ID와 다른 프로젝트의 ID는 같은 `fail(UrlNotFound)`로 끊는다.
+- **새 화면 웹뷰의 허용 체계.** 지금 `webview.py`의 `ALLOWED_SCHEMES`(`file`, `qrc`, `data`, `blob`, `about`)는 이전 화면이 쓰므로 바꾸지 않는다. 새 화면 웹뷰는 자기 허용 집합 `SHELL_SCHEMES = {"hazop-app", "data", "blob", "about"}`를 쓰고 `file`을 허용하지 않는다. CSP(§5.5)도 `file:`을 어떤 출처 목록에도 넣지 않는다.
+  - 그래서 두 겹이 된다. 요청 가로채기가 1차로 막고(`LocalOnlyInterceptor`를 허용 집합을 받게 넓힌 것), CSP가 2차로 막는다.
+  - 둘 중 하나가 빠져도 `file://` 읽기는 막힌다.
+- **주 프레임 이동 제한.** `LocalPage`와 같은 규칙을 쓴다. 허용 대상만 `hazop-app://shell/index.html` 하나로 바뀐다.
 
 ### 5.2 웹 화면과 엔진 잇기
 
-지금 `Bridge`(`hazop/app/webview.py`)는 QWebChannel로 `toWeb` 신호와 웹 → Python 문자열 하나를 받는 칸을 쓴다. 새 틀은 이 Bridge를 그대로 쓰고, 메시지 종류만 넓힌다.
+지금 `Bridge`(`hazop/app/webview.py`)는 QWebChannel로 `toWeb` 신호와 `fromWeb` 칸(웹 → Python 문자열 하나)을 쓴다. 새 화면은 이 꼴을 본뜬 **따로 된 `ShellBridge`**(`hazop/shell/bridge.py`)를 둔다. 이전 화면의 `Bridge.fromWeb`과 그 신호들은 고치지 않는다. 같은 길이 상한(`MAX_MESSAGE_CHARS`, 64KB)과 JSON 파싱 규칙은 함수로 함께 쓴다.
 
 | 방향 | 메시지 | 예 |
 | --- | --- | --- |
-| 웹 → 엔진 | `{"t":"cmd","id":"c12","name":"nodes.create","args":{…}}` | 구간 만들기, 표제란 확정, 수용 |
-| 엔진 → 웹 | `{"t":"reply","id":"c12","ok":true,"data":{…}}` 또는 `{"ok":false,"error":{"code","message"}}` | 명령의 답 |
-| 엔진 → 웹 | `{"t":"changed","topic":"nodes","rev":13}` | 저장한 자료가 바뀜. 웹이 다시 읽는다 |
+| 웹 → 엔진 | `{"t":"cmd","id":"c12","name":"nodes.apply","args":{…}}` | 구간 만들기, 표제란 확정, 수용 |
+| 엔진 → 웹 | `{"t":"reply","id":"c12","ok":true,"data":{…}}` 또는 `{"ok":false,"error":{"code","message"}}` | 명령의 답. `code`는 `bad_args`, `stale`, `locked`, `not_found`, `busy`, `failed` |
+| 엔진 → 웹 | `{"t":"changed","topic":"nodes","ver":"s14"}` | 저장한 자료가 바뀜. 웹이 그 주제를 다시 읽는다 |
 | 엔진 → 웹 | `{"t":"event","name":"job.progress","data":{…}}` | 추출 진행, 분석 진행, 연결 상태, 채팅 답 |
 | 웹 → 엔진 | `{"t":"ui","name":"selectionChanged","data":{…}}` | 지금 뷰어 신호(`selectionChanged`, `nodeSelected` 등)를 이 꼴로 옮긴다 |
-| 웹이 읽기 | `fetch("hazop-app://api/<topic>?rev=13")` | 도면 목록, 구간 목록, 행렬, 워크시트, 그래프 겹쳐 그리기 자료 |
+| 웹이 읽기 | `fetch("hazop-app://shell/api/<topic>")` | 도면 목록, 구간 목록, 행렬, 워크시트, 겹쳐 그리기 자료. 답에 `ver`가 붙는다(§5.3) |
 
-- **웹 → 엔진 메시지 길이.** 지금 상한 `MAX_MESSAGE_CHARS`(64KB)를 그대로 둔다. 웹이 보내는 것은 명령과 ID 목록뿐이라 넉넉하다. 고른 것이 2,000개를 넘으면 지금처럼 잘라 `truncated`를 붙인다.
-- **큰 자료.** 엔진 → 웹 방향의 큰 자료는 신호로 보내지 않고 웹이 `hazop-app://api/`로 읽는다. 처리기는 읽기 함수만 부른다. 읽기 함수는 지금 프로젝트 문맥(`hazop/app/project_ctx.py`)의 캐시에서 JSON을 만든다. 쓰기는 이 길로 받지 않는다.
-- **명령 표.** 엔진 쪽 `hazop/shell/api.py`의 `COMMANDS`가 이름·인자 검사·처리 함수를 갖는다. 처리 함수는 지금 화면 코드가 부르는 엔진 함수를 그대로 부른다. 예를 들어 `nodes.create`는 `hazop/study/nodes.py`의 저장 함수를 부른다. 채팅의 쓰기 동작 표(`hazop/chat/actions.py`, 채팅 규격 C3·C4 단위가 만들 파일)와 같은 처리 함수를 함께 쓴다. 화면 단추와 채팅이 같은 길을 지나게 하려는 것이다.
+**누가·언제는 엔진이 채운다.**
+- 저장하는 기록의 `by`(검토자 이름), `at`(시각), `origin`(`user`), 묶음 ID, 실행 기록 필드는 엔진이 채운다. 웹 인자로 받지 않는다.
+- 웹이 `args`에 이런 키를 넣으면 `bad_args`로 거절한다. 채팅 규격 §4.7(기록 위조 거절)과 같은 규칙이다.
+
+**채팅 동작 표(`hazop/chat/actions.py`)와의 관계.**
+- `actions.py`는 `s-conn`이 만드는 중이다. 채팅 동작마다 '인자 검사 + 엔진 호출' 함수를 갖는다.
+- 화면 명령 가운데 이름이 같은 것(`nodes.apply`, `results.set_status` 등)은 그 함수를 그대로 부른다. 화면 단추와 채팅이 같은 길로 저장하게 하려는 것이다.
+- 채팅 전용 규칙(바로·확인 분류, 누적 상한, 승인 표지의 10분 만료)은 화면 명령에 걸지 않는다. 사람이 화면에서 누른 것이 곧 확인이기 때문이다.
+- 판 검사(§5.3)는 채팅과 화면 명령이 같은 함수를 쓴다.
+- `actions.py`에 없는 이름(`project.*`, `ui.save`, `search.*`)은 `api.py`에만 있다.
+
+**명령 표.** `hazop/shell/api.py`의 `COMMANDS`가 이름 → (인자 검사, 판 검사, 처리 함수)를 갖는다. 영역별 처리 함수는 `api_<영역>.py`로 나눠 단계마다 주인을 따로 둔다(§6).
+
+| 명령 | 인자(웹이 보냄) | 처리 | 판 검사(§5.3) | 단계 |
+| --- | --- | --- | --- | --- |
+| `project.list` · `project.open` · `project.create` | — · `project_id` · `name` | 등록부의 `project_id` 모음, 지금 프로젝트 바꾸기, 새 프로젝트 | `create`는 같은 ID가 있으면 `bad_args` | 1 |
+| `register.add` | (웹이 보내지 않음) | 끌어 놓기·파일 고르기는 Qt가 받는다. 웹 안에서는 파일 경로를 알 수 없기 때문이다. `ShellWindow.dropEvent`와 `QFileDialog`가 경로를 받아 엔진 등록 함수를 지금 프로젝트로 부른다 | — | 1 |
+| `register.confirm_title` | `material_id`, `fields`, `ver` | 표제란 후보 확정 | 등록 기록 파일 지문 | 1 |
+| `register.extract` | `material_ids`, `ai_review{on, cap, pages}` | 추출·그래프 작업 시작, 작업 ID 답 | 추출 결과가 이미 있으면 `bad_args`(다시 추출은 4단계 확인 상자) | 1 |
+| `register.exclude` | `material_id`, `exclude`, `ver` | 구간 분석에서 빼기·넣기 | 등록 기록 파일 지문 | 1 |
+| `extract.candidate` | `candidate_ids`, `decision`, `ver` | AI 후보 수락·거절·되돌리기 | 후보 파일 지문 | 1 |
+| `links.pair` · `links.unpair` | `a`, `b`, `ver` | 도면 연결 짝 지정·끊기 | 두 도면의 사람 수정 파일 지문 | 1 |
+| `search.components` | `q`, `limit≤50` | 엔진 색인에서 찾기(§5.4) | 읽기 | 1 |
+| `path.find` | `from`, `to`, `mode` | 스크립트 경로(P) | 읽기 | 1 |
+| `chat.ask` · `chat.stop` · `chat.new` | `text`, `view` · — · — | `ChatSession` | 읽기 | 1 |
+| `ai.recheck` · `settings.reviewer` · `ui.save` | — · `name` · `state` | 연결 다시 확인, 검토자 이름, 보기 상태 저장 | — | 1 |
+| `nodes.apply` | `ops`, `set_rev`, `targets[{node_id, rev, state}]` | 구간 규격 `apply_nodes` | 구간 판 | 2 |
+| `nodes.undo` · `nodes.confirm` · `nodes.unconfirm` · `nodes.lock` · `nodes.unlock` | `batch_id` 또는 `node_id`, `set_rev`, `targets`, (`unlock`은 `reason`) | `hazop/study/nodes.py` | 구간 판 | 2 |
+| `analysis.run` · `analysis.cancel` | `scope` · `job_id` | 분석 작업 | 결과 파일 지문 | 3 |
+| `results.set_status` · `results.edit` · `results.ie_hint` | `node_id`, `deviation_id`, `entry_id`, `status`·`fields`, `reason`, `ver` | `hazop/study/results.py` | 결과 파일 지문 | 3 |
+| `export.excel` · `export.ie_bundle` | `scope` | 새 파일(이름에 시각). 저장 위치는 Qt 대화상자 | 읽기 | 3 |
+| `ie.*`(그룹 만들기·옮기기·나누기·확정·풀기, 표제·최종상태 받아들이기, 완전성 판정, 규칙 초안) | 대상 ID, 값, `reason`, `ver` | `hazop/ie/*` | 초기사건 문서 파일 지문 | 3 |
+| `kg.candidate` · `kg.algorithm` | 후보 ID·판단·`reason`·`ver` · 알고리즘·시작 | 지식그래프 | 잠재 후보 파일 지문 · 읽기 | 4 |
+| `edit.*` · `edit.save` | 수정 목록, `ver` | 도면 사람 수정 | 사람 수정 파일 지문 | 4 |
+
+- **웹 → 엔진 메시지 길이.** 64KB 상한은 그대로다. 웹이 보내는 것은 명령과 ID 목록뿐이라 넉넉하다. 고른 것이 2,000개를 넘으면 지금처럼 잘라 `truncated`를 붙인다.
+- **큰 자료.** 엔진 → 웹 방향의 큰 자료는 신호로 보내지 않고 웹이 `api/`로 읽는다. 읽기 API는 읽기 함수만 부른다. 쓰기는 이 길로 받지 않는다.
 - **오래 걸리는 일.** 추출과 분석은 지금처럼 작업 스레드에서 돈다. 명령은 작업 ID를 바로 답하고, 진행은 `event`로 보낸다.
-- **채팅.** `ChatSession`([채팅 규격 §2.4](../specs/chat-panel.md#24-채팅-프로세스-규격))은 엔진에 남는다. 답 카드 검사(`hazop/chat/card.py`)를 거친 카드만 `event: chat.answer`로 보낸다. 도면 표시 함수 `mark`·`clear_marks`·`draw_path`·`set_select_mode`·`set_selection`·`selection`·`zoom_to`([채팅 규격 §6](../specs/chat-panel.md#6-뷰어-api))는 이름과 인자를 그대로 둔다. Python에서 부르면 `toWeb`로 웹의 도면 구성요소에 전한다. 도면이 같은 쪽 안에 있으므로 쪽을 새로 읽지 않는다.
+- **채팅.** `ChatSession`([채팅 규격 §2.4](../specs/chat-panel.md#24-채팅-프로세스-규격))은 엔진에 남는다. 답 카드 검사(`hazop/chat/card.py`)를 거친 카드만 `event: chat.answer`로 보낸다. 도면 표시 함수 `mark`·`clear_marks`·`draw_path`·`set_select_mode`·`set_selection`·`selection`·`zoom_to`([채팅 규격 §6](../specs/chat-panel.md#6-뷰어-api))는 이름과 인자를 그대로 둔다. Python에서 부르면 `toWeb`로 웹의 도면 구성요소에 전한다.
 
-### 5.3 화면 상태의 주인
+### 5.3 화면 상태의 주인과 판 검사
 
 | 상태 | 주인 | 저장 | 바뀌면 |
 | --- | --- | --- | --- |
@@ -483,38 +550,74 @@ Tab 순서는 메뉴 → 위 막대 → 도면 도구 막대 → 패널 → 채�
 | 열린 패널, 보는 도면, 확대·위치, 고른 것, 말풍선, 표 스크롤, 입력 중인 질문 | 웹(`store.js`) | 하지 않음 | 웹 안에서만 |
 | 앱을 다시 열 때 이어 갈 것(마지막 도면, 채팅 접힘, 마지막 패널) | 웹이 정하고 엔진이 쓴다 | `<작업 루트>/data/ui-state.json` | 웹이 `ui.save` 명령을 보낸다 |
 
-- **원칙.** 저장하는 자료는 엔진 한 곳만 쓴다. 웹은 엔진이 준 판(`rev`)을 들고 명령을 보낸다. 엔진은 판이 다르면 `stale`로 거절한다. 채팅 승인 토큰을 다시 확인하는 [채팅 규격 §4.6](../specs/chat-panel.md#46-확인과-실행-사이의-재검사차단-3)과 같은 방식이다.
+**원칙.**
+- 저장하는 자료는 엔진 한 곳만 쓴다.
+- 웹은 읽기 API가 준 판 표시(`ver`)를 들고 쓰기 명령을 보낸다.
+- 엔진은 쓰기 직전에 판을 다시 만들어 비교하고, 다르면 쓰지 않고 `stale`로 답한다. 웹은 `stale`을 받으면 그 주제를 다시 읽고 "다른 곳에서 바뀌어 저장하지 않았습니다"를 보인다.
+- 이 비교는 [채팅 규격 §4.6](../specs/chat-panel.md#46-확인과-실행-사이의-재검사차단-3)의 승인 표지와 같은 재료(대상의 `rev`·`state`, `set_rev`, 파일 지문)를 쓴다.
+
+| 자료 | 판 표시 `ver` | 같다고 보는 기준 |
+| --- | --- | --- |
+| 구간(`hazop/study/nodes.py`) | 구간 묶음의 `set_rev`와, 명령이 건드리는 구간마다 `{node_id, rev, state}` | `set_rev`가 같고, 대상 구간마다 `rev`·`state`가 같고, 잠기지 않았을 것. 구간 규격 v2의 판 번호를 그대로 쓴다 |
+| 분석 결과, 초기사건 문서, 지식그래프 잠재 후보, 추출 결과·AI 후보, 사람 수정, 등록 기록 | 그 명령이 쓰는 파일의 지문 `"<크기>:<mtime_ns>"`. 파일이 둘이면 둘 다 | 쓰기 직전에 다시 잰 지문이 모두 같을 것. 파일이 없던 것이 생겼거나 있던 것이 없어져도 다름 |
+| 읽기만 하는 명령 | 없음 | 검사하지 않음 |
+
+- 결과처럼 파일 하나에 칸이 많은 자료는 파일 단위로 비교한다. 그래서 분석 작업이 다른 칸을 쓴 직후에도 `stale`이 난다. 그때 웹은 다시 읽고, 같은 동작을 한 번 더 누르게 한다. 칸 단위로 나누는 것보다 덮어쓰기 위험이 없는 쪽을 골랐다.
+- 엔진의 쓰기는 UI 스레드에서 하나씩 처리한다. 작업 스레드(분석)가 결과 파일을 쓸 때도 같은 저장 함수를 지나므로, 판 비교와 쓰기 사이에 다른 쓰기가 끼지 않는다.
 - 웹이 엔진 자료를 고쳐서 들고 있지 않는다. 낙관적 갱신을 하지 않는다는 뜻이다. 답이 늦어도 화면은 엔진 판을 보이고, 단추에 진행 표시만 한다. 틀리면 데이터를 잃는 저장 경로이기 때문이다(CLAUDE.md 규칙 3).
 
 ### 5.4 성능
 
-기준은 APR1400 표본처럼 큰 프로젝트다(143쪽, 525구간, [INTENT §3.8](../../INTENT.md)).
+기준은 APR1400 표본처럼 큰 프로젝트다(143쪽, 525구간, 구성요소 약 46,000개, [INTENT §3.8](../../INTENT.md)).
 
-- **도면.** 한 번에 한 장만 그린다. 바탕 SVG는 `<image>`로 넣어 브라우저가 그림으로 그리게 한다. 구성요소마다 DOM을 두지 않는다. 누르기·네모 고르기·마우스 올림은 JS의 격자 공간 색인(칸 64px)으로 찾는다. 표시용 SVG 요소는 강조·고른 것·경로만 그리고, 지금 상한(2,000개)을 그대로 둔다. 확대·이동은 CSS `transform`으로 하고, 표시 요소는 움직임이 멈춘 뒤 한 번 다시 그린다.
+- **도면.**
+  - 한 번에 한 장만 그린다. 바탕 SVG는 `<image>`로 넣어 브라우저가 그림으로 그리게 한다. 구성요소마다 DOM을 두지 않는다.
+  - 누르기·네모 고르기·마우스 올림은 JS의 격자 공간 색인(칸 64px)으로 찾는다. 색인은 그 장의 구성요소만 담는다.
+  - 표시용 SVG 요소는 강조·고른 것·경로만 그리고, 지금 상한(2,000개)을 그대로 둔다.
+  - 확대·이동은 CSS `transform`으로 하고, 표시 요소는 움직임이 멈춘 뒤 한 번 다시 그린다.
+- **찾기(`@`).** 웹은 46,000개를 들고 있지 않는다. 엔진이 프로젝트를 열 때 태그·이름 색인을 한 번 만든다. `search.components`가 앞부분 일치 → 포함 일치 순으로 50개까지 돌려준다. 입력은 150ms 멈춘 뒤에 보낸다.
+- **지식그래프 패널.** 처음 열 때는 전체 그래프를 그리지 않는다. 지금 도면의 구성요소와 그 이웃(깊이 1)만 그린다. 전체 보기는 지금 화면의 노드 수 상한(S1 상한 띠)을 그대로 둔다. 상한을 넘으면 도면별로 고르라고 알린다.
 - **행렬.** 525구간 × 편차 40여 개면 칸이 2만 개를 넘는다. 줄 높이를 40px로 고정하고 보이는 줄과 앞뒤 10줄만 그린다(가상 스크롤). 머리 줄과 첫 칸은 고정한다.
-- **목록.** 도면 143장, 구간 525개 목록도 같은 가상 스크롤을 쓴다. 썸네일은 엔진이 한 번 만들어 `hazop-app://api/thumb/<graph_id>.png`로 준다.
-- **읽기 API.** 처리기는 UI 스레드에서 불리므로 캐시에 있는 자료만 돌려준다. 캐시가 없으면 작업 스레드에 맡기고 `202`와 작업 ID를 답한다. 웹은 `changed`를 받고 다시 읽는다.
-- **목표값.** 1단계 완료 기준으로 잰다. 도면 바꾸기 300ms 안, 네모 고르기 결과 100ms 안, 행렬 스크롤 60fps에서 떨어지는 장면이 없을 것.
+- **목록.** 도면 143장, 구간 525개 목록도 같은 가상 스크롤을 쓴다. 썸네일은 엔진이 한 번 만들어 `api/thumb/<graph_id>.png`로 준다(ID 방식, §5.1).
+- **읽기 API의 비동기 답.** `QWebEngineUrlRequestJob`이 할 수 있는 일은 `reply`·`fail`·`redirect`·`setAdditionalResponseHeaders`뿐이다. 그래서 '나중에 다시 오라'는 상태 코드는 쓰지 않고, 요청을 붙잡아 두었다가 답한다.
+  1. 처리기(`requestStarted`, UI 스레드)는 캐시에 있는 자료면 바로 `reply`한다.
+  2. 캐시에 없으면 작업을 `QThreadPool`에 맡기고, 요청 객체를 표에 붙잡아 둔다.
+  3. 작업이 끝나면 신호로 UI 스레드에 돌아와 `reply`한다. 작업이 실패하면 `fail(RequestFailed)`다.
+  4. 웹이 요청을 버리면(쪽 이동, 취소) 요청 객체의 `destroyed` 신호를 받아 표에서 빼고 답하지 않는다.
+  5. 30초 안에 끝나지 않으면 `fail(RequestFailed)`로 답한다. 웹은 "읽기가 오래 걸려 멈췄습니다"와 '다시 읽기'를 보인다.
+- **목표값과 재는 조건.**
+  - 도면: APR1400 표본 143쪽 가운데 구성요소가 가장 많은 쪽과 SNP-M-101
+  - PC: 이 개발 PC(Windows 11, 1920×1080 125%)와 1366×768 100% 창 크기. 보고에 CPU·메모리를 적는다
+  - 값: 각 10회 중앙값
+
+  | 잴 것 | 목표 |
+  | --- | --- |
+  | 도면 바꾸기(누른 뒤 바탕과 표시가 다 그려질 때까지) | 300ms 이하 |
+  | 네모 고르기 결과 표시 | 100ms 이하 |
+  | `@` 찾기 첫 결과 | 200ms 이하 |
+  | 행렬 스크롤 | 프레임 시간 50ms를 넘는 장면 없음(3단계) |
 
 ### 5.5 보안
 
-지금 웹뷰 규칙을 그대로 이어 간다.
+지금 웹뷰 규칙을 이어 가되, 새 화면 웹뷰는 `file`을 허용하지 않는다(§5.1).
 
-- 원격 요청 차단(`LocalOnlyInterceptor`)과 주 프레임 이동 제한은 그대로다. 이동 허용 대상만 `hazop-app://shell/index.html`로 바뀐다.
-- CSP를 둔다: `default-src 'none'; script-src hazop-app:; style-src hazop-app: 'unsafe-inline'; img-src hazop-app: data:; connect-src hazop-app:; font-src 'none'`.
-- 웹 → 엔진 메시지는 믿지 않는다. 길이 상한, JSON 파싱, 명령 이름 표, 인자 형 검사를 거친다.
-- 모델이 쓴 글과 도면에서 읽은 글은 `textContent`로만 넣는다. Preact가 기본으로 글자를 이스케이프하므로 `dangerouslySetInnerHTML`을 쓰지 않는다. 정적 검사로 이 이름이 없는지 본다.
+- 원격 요청 차단과 주 프레임 이동 제한은 지금 방식 그대로다. 허용 체계는 `SHELL_SCHEMES`이고 이동 허용 대상은 `hazop-app://shell/index.html`이다.
+- CSP를 둔다: `default-src 'none'; script-src hazop-app://shell; style-src hazop-app://shell 'unsafe-inline'; img-src hazop-app://shell data: blob:; connect-src hazop-app://shell; font-src 'none'; object-src 'none'; base-uri 'none'`. `file:`은 어디에도 없다.
+- 웹 → 엔진 메시지는 믿지 않는다. 길이 상한, JSON 파싱, 명령 이름 표, 인자 형 검사, 엔진이 채우는 키(`by`·`at` 등) 거절을 거친다.
+- 모델이 쓴 글과 도면에서 읽은 글은 글자로만 넣는다. Preact가 기본으로 글자를 이스케이프한다. `dangerouslySetInnerHTML`은 쓰지 않고, 정적 검사로 `hazop/shell/web/` 안에 이 이름과 `innerHTML`이 없는지 본다. 아이콘도 이 규칙을 지킨다(§4.3).
 
 ### 5.6 시험
 
 | 층 | 무엇을 | 어떻게 |
 | --- | --- | --- |
-| 엔진 명령 | `COMMANDS`마다 정상·잘못된 인자·`stale`·권한 밖 | Python 단위 시험, 웹 없이 |
-| 읽기 API | 경로 검사(`..`, 절대 경로, 다른 프로젝트), MIME, 판 번호 | Python 단위 시험, 처리기 함수 직접 호출 |
+| 엔진 명령 | `COMMANDS`마다 정상·잘못된 인자·`stale`·잠김·엔진이 채우는 키를 넣은 인자 | Python 단위 시험, 웹 없이 |
+| 판 검사 | 구간 `set_rev`·`rev`·`state`가 바뀐 뒤의 명령, 파일 지문이 바뀐 뒤의 명령 → `stale`이고 파일이 바뀌지 않음 | 재현 스크립트로 두 쓰기를 엇갈려 부른다 |
+| 읽기 API | 정적 파일 경로 검사(`..`, 절대 경로, 인코딩한 `%2e%2e`), 다른 호스트, 없는 ID·다른 프로젝트 ID가 같은 `UrlNotFound`, MIME, 붙잡은 요청의 늦은 답·취소·30초 | Python 단위 시험, 처리기 함수 직접 호출 |
 | 웹 로직 | `store.js`, 공간 색인, 가상 스크롤 계산, 메시지 꼴 | 오프스크린 웹뷰에 `hazop/shell/web/test/run.html`을 띄우고 결과를 `runJavaScript`로 읽는다. Node를 쓰지 않는다 |
-| 화면 | 패널 열고 닫기, 네모 고르기 → `nodes.create` 명령, 답 카드 → 도면 표시, 키 | `QT_QPA_PLATFORM=offscreen`에서 틀 창을 띄우고 시험 갈고리 `window.__hz.test`로 클릭·상태를 확인한다. 지금 `tests/test_viewer_api.py`와 같은 방식 |
-| 네트워크 | 실행 중 원격 요청 0 | `LocalOnlyInterceptor.blocked`가 비었는지 |
-| 실제 창 | 세 흐름(§3.5)의 클릭 수와 걸린 시간 | `scripts/desktop_lease.py run` 안에서 verify-hazop 절차 |
+| 화면 | 패널 열고 닫기, 네모 고르기 → `nodes.apply` 명령, 답 카드 → 도면 표시, 키 | `QT_QPA_PLATFORM=offscreen`에서 틀 창을 띄우고 시험 갈고리 `window.__hz.test`로 클릭·상태를 확인한다. 지금 `tests/test_viewer_api.py`와 같은 방식 |
+| 네트워크·파일 | 실행 중 원격 요청 0, `file://` 요청 0 | 새 화면 가로채기의 `blocked`가 비었는지, `file://` 시험 요청이 막히는지 |
+| 정적 검사 | `innerHTML`·`dangerouslySetInnerHTML`·`eval`·`new Function` 없음, 아이콘 모듈이 `manifest.json`과 같음 | Python 시험이 파일을 읽어 확인 |
+| 실제 창 | 세 흐름(§3.5)의 클릭 수와 §5.4 목표값 | `scripts/desktop_lease.py run` 안에서 verify-hazop 절차 |
 
 시험 갈고리 `window.__hz.test`는 디버그 실행(`HAZOP_DEBUG=1`)에서만 만든다.
 
@@ -522,16 +625,23 @@ Tab 순서는 메뉴 → 위 막대 → 도면 도구 막대 → 패널 → 채�
 
 ```
 hazop/shell/                 새 틀(Python)
-  window.py                  ShellWindow: QMainWindow 하나에 HazopWebView 하나
-  scheme.py                  hazop-app:// 등록과 처리기, 경로 검사
-  api.py                     COMMANDS 표와 읽기 API
+  window.py                  ShellWindow: QMainWindow 하나에 웹뷰 하나, 파일 끌어 놓기·파일 고르기
+  bridge.py                  ShellBridge(이전 화면 Bridge와 따로)
+  scheme.py                  hazop-app:// 등록과 처리기, 정적 파일 경로 검사, 붙잡은 요청 표
+  api.py                     COMMANDS 표, 판 검사, 읽기 API 길잡이(1단계 주인)
+  api_drawings.py            project.*·register.*·extract.*·links.*·search.*(1단계)
+  api_nodes.py               nodes.*(2단계)
+  api_results.py  api_ie.py  results.*·analysis.*·export.* / ie.*(3단계)
+  api_kg.py  api_edit.py     kg.* / edit.*(4단계)
   web/                       웹 화면(빌드 없이 그대로 읽음)
     index.html  app.css  tokens.css(tokens.py가 만듦)
     js/main.js  js/store.js  js/bridge.js
+    js/panels/index.js       패널 다섯의 등록표(1단계가 다섯 칸을 모두 만든다)
     js/canvas/  sheet.js  index.js(공간 색인)  marks.js
     js/chat/    panel.js  card.js
     js/panels/  drawings.js  nodes.js  results.js  ie.js  kg.js  settings.js
-    js/ui/      button.js  chip.js  popover.js  table.js  dialog.js  toast.js
+    js/ui/      button.js  chip.js  icon.js  icons_data.js  popover.js  list.js  dialog.js  toast.js
+    js/ui/table.js           가상 스크롤 표(3단계)
     vendor/     preact.module.js  hooks.module.js  htm.module.js
     test/       run.html  *.test.js
 ```
@@ -542,18 +652,38 @@ hazop/shell/                 새 틀(Python)
 
 ## 6. 옮기는 순서
 
-앱을 열면 새 틀이 뜨고, 설정의 '이전 화면 열기'(또는 실행 인자 `--classic`)로 지금 창을 연다. 두 창을 함께 열지는 않는다. 같은 파일을 두 창이 쓰지 않게 하려는 것이다.
+**3단계가 끝날 때까지는 이전 화면이 기본이다.** 1단계만 끝난 새 화면에는 구간·결과·편집이 없어서, 새 화면이 기본이면 그 일을 하려고 앱을 다시 띄워야 하기 때문이다.
+
+- **새 화면을 여는 법.** 실행 인자 `--shell` 또는 설정의 '새 화면으로 열기(시험)'로 연다.
+- **기본을 바꾸는 때.** 3단계 완료 기준을 통과하면 새 화면을 기본으로 바꾸고, 그때부터 이전 화면은 `--classic`과 설정 '이전 화면 열기'로 연다.
+- **화면을 바꾸는 방식.** 설정에서 화면을 바꾸면 같은 프로세스 안에서 지금 창을 닫고 다른 창을 연다. 새 프로세스를 띄우지 않는다.
+  - `startup.single_instance`가 돌려준 잠금 객체는 `main`이 쥐고 있으므로 창을 바꿔도 풀리지 않는다. 다른 실행이 그 사이에 끼어들 수 없다.
+  - 닫는 창에 저장하지 않은 수정이나 실행 중인 AI 호출이 있으면, 지금 닫기 확인을 거친 뒤에만 바꾼다.
+  - 두 창을 함께 열지는 않는다. 같은 파일을 두 창이 쓰지 않게 하려는 것이다.
 
 | 단계 | 대상 파일 | 완료 기준 | 다시 쓰는 것 | 그대로 쓰는 것 |
 | --- | --- | --- | --- | --- |
-| **1. 도면 + 채팅 + 도면 목록·등록** | 새: `hazop/shell/window.py`, `scheme.py`, `api.py`, `web/`(index, store, bridge, canvas, chat, panels/drawings, panels/settings, ui), `vendor/`, `licenses/preact`·`htm`. 고침: `hazop/app/tokens.py`(`SHELL`, `shell_css()`), `hazop/app/webview.py`(`ALLOWED_SCHEMES`), `hazop/app/startup.py`(새 틀로 시작, `--classic`), `scripts/build_package.py`와 `packaging/verify_bundle.py`(웹 폴더·vendor 포함 확인), 아이콘 폴더와 `manifest.json`. 시험: `tests/test_shell_api.py`, `test_shell_scheme.py`, `test_shell_web.py` | 기본 화면에서 도면 보기·확대·말풍선, 채팅 묻기와 경로 표시·도면 칩 이동, 파일 끌어 놓기 → 표제란 확정 → AI 검토 토글·상한 → 추출 → 미확인 목록이 된다. 오프스크린 시험과 원격 요청 0. 실제 창 흐름 1·2의 클릭 수를 §3.5와 견준 기록. 1366×768·1920×1080 125% 캡처. 배포본에서 새 틀이 뜬다 | `hazop/app/chat_panel.py`(위젯) → `web/js/chat/`. `hazop/viewer/template.html`의 그리기·고르기 → `web/js/canvas/`. `register.py`·`ai_review_panel.py`·`viewer.py`(편집 제외) 위젯 → `panels/drawings.js`. `conn_widgets.py` 칩 → 메뉴 연결 단추 | 엔진 전부. `hazop/chat/session.py`·`card.py`·`tools.py`·`view.py`·`mcp_server.py`. `hazop/app/ai_conn.py`·`ai_runner.py`·`project_ctx.py`·`data.py`. `hazop/viewer/build.py`가 만드는 도면 자료와 `sanitize.py` |
-| **2. 구간** | 새: `web/js/panels/nodes.js`, 고르기 막대·새 구간 카드·구간 말풍선. 고침: `api.py`(`nodes.*`) | 네모 고르기(끌기·Shift·Alt·클릭), 구간 만들기 카드, 구간 강조, 병합·분할·이름·확정·잠금, 채팅 묶음 되돌리기, 겹침 표시가 된다. 저장 v2 왕복(만들기 → 다시 열기 → 같은 ID·`rev`)을 재현 스크립트로 확인 | `study.py` 위젯 → `nodes.js` | `hazop/study/nodes.py`·`node_tools.py`·`remap.py`·`providers.py`, 저장 규격 v2 |
-| **3. 분석 결과와 초기사건** | 새: `panels/results.js`, `panels/ie.js`, 가상 스크롤 표. 고침: `api.py`(`results.*`, `ie.*`) | 행렬·워크시트·수용·수정·기각·보류·사유 필수, 분석 실행·멈춤·한도, Excel·IE 인계 묶음 내보내기, 초기사건 보기 셋과 그룹 확정이 된다. 525구간 행렬 스크롤 측정. 기존 Excel 출력과 바이트 비교(같은 입력) | `results.py`·`results_matrix.py`·`results_paint.py`·`initiating.py` 위젯 | `hazop/study/results.py`, `hazop/ie/*`, Excel 내보내기 엔진 |
-| **4. 나머지와 이전 화면 제거 판단** | 새: `panels/kg.js`, 도면 고치기 말풍선·그리기 도구, 설정의 API 키·고정 응답. 판단 문서: 이 문서 개정 | 지식그래프 패널, 도면 편집(태그·종류·위치·방향·기기·연결·경로 그리기·저장·되돌리기), 설정 전부가 새 틀에서 된다. 이전 화면에만 있는 기능이 없음을 §2.3 표로 확인한다. 그 뒤 `hazop/app/screens/`와 `main_window.py`를 지울지 사용자에게 묻는다 | `knowledge.py`, `viewer.py` 편집 부분, `settings_dialog.py`, `palette.py` | `hazop/kg/*`(화면 템플릿은 패널 안으로 옮김), 편집 저장 엔진 |
+| **1. 도면 + 채팅 + 도면 목록·등록** | 새: `hazop/shell/window.py`, `bridge.py`, `scheme.py`, `api.py`, `api_drawings.py`, `web/`(index, main, store, bridge, `panels/index.js`, canvas, chat, `panels/drawings.js`, `panels/settings.js`, ui 가운데 `table.js`를 뺀 것), `vendor/`, `licenses/preact/`, `licenses/htm/`, `scripts/build_shell_icons.py`. 고침: `hazop/app/tokens.py`(`SHELL`, `shell_css()`), `hazop/app/webview.py`(가로채기가 허용 집합을 받게, 길이·파싱 함수 공유), `hazop/app/startup.py`(`--shell`, 같은 프로세스 창 바꾸기), `scripts/build_package.py`, `packaging/verify_bundle.py`(웹 폴더·vendor·라이선스 포함 확인), 아이콘 폴더와 `manifest.json`, `licenses/README.md`. 시험: `tests/test_shell_api.py`, `test_shell_scheme.py`, `test_shell_web.py`, `test_shell_drawings.py` | 기본 화면에서 도면 보기·확대·말풍선이 된다. 채팅 묻기와 경로 표시·도면 칩 이동이 된다. 프로젝트 만들기·바꾸기 → 파일 끌어 놓기 → 표제란 확정 → AI 검토 토글·상한 → 추출 → 미확인 목록 → 도면 연결 짝 지정·끊기가 된다. §5.4 목표값(도면 바꾸기 300ms, 네모 고르기 100ms, `@` 찾기 200ms 이하, 10회 중앙값)을 잰 기록. 오프스크린 시험, 원격 요청 0, `file://` 요청 0. 실제 창 흐름 1·2의 클릭 수를 §3.5와 견준 기록. 1366×768·1920×1080 125% 캡처. 배포본에서 `--shell`로 새 화면이 뜬다 | `hazop/app/chat_panel.py`(위젯) → `web/js/chat/`. `hazop/viewer/template.html`의 그리기·고르기 → `web/js/canvas/`. `register.py`·`ai_review_panel.py`·`viewer.py`(연결점 패널, 편집 제외) 위젯 → `panels/drawings.js`. `conn_widgets.py` 칩 → 메뉴 연결 단추 | 엔진 전부. `hazop/chat/session.py`·`card.py`·`tools.py`·`view.py`·`mcp_server.py`. `hazop/app/ai_conn.py`·`ai_runner.py`·`project_ctx.py`·`data.py`. `hazop/viewer/build.py`의 `_svg_path`와 `sanitize.py` |
+| **2. 구간** | 새: `api_nodes.py`, `web/js/panels/nodes.js`, 고르기 막대·새 구간 카드·구간 말풍선(`web/js/canvas/` 안 새 파일). 시험: `tests/test_shell_nodes.py` | 네모 고르기(끌기·Shift·Alt·클릭), 구간 만들기 카드, 구간 강조, 병합·분할·이름·확정·잠금, 채팅 묶음 되돌리기, 겹침 표시가 된다. 저장 v2 왕복(만들기 → 다시 열기 → 같은 ID·`rev`)과 `stale`(다른 곳에서 `set_rev`가 오른 뒤의 명령이 아무것도 쓰지 않음)을 재현 스크립트로 확인 | `study.py` 위젯 → `nodes.js` | `hazop/study/nodes.py`·`node_tools.py`·`remap.py`·`providers.py`, 저장 규격 v2 |
+| **E. 결과 판정 보강(엔진, 3단계 앞)** | 고침: `hazop/study/results.py`(`ENTRY_STATUSES`·`HUMAN_STATUSES`에 보류 `on_hold`, `set_status`에 `reason`), Excel 내보내기(상태 '보류'와 사유 열), IE 인계 입력(보류는 승인이 아닌 것으로), 이전 화면 `results.py`의 행 동작(보류 단추와 사유 입력). 시험: `tests/test_results_hold.py` | 기각·보류·수정은 사유가 없으면 저장하지 않는다. 수용은 사유를 받되 비워도 된다(§8 UW11). 사유가 없는 옛 결과 파일을 그대로 읽고, 옛 판정은 바꾸지 않는다. 판정 기록(`from`, `to`)에 `reason`이 남는다. 옛 파일 → 읽기 → 저장 → 다시 읽기 왕복을 재현 스크립트로 확인 | — | 결과 파일 규격의 나머지, 분석 실행 |
+| **3. 분석 결과와 초기사건** | 새: `api_results.py`, `api_ie.py`, `panels/results.js`, `panels/ie.js`, `web/js/ui/table.js`(가상 스크롤 표). 시험: `tests/test_shell_results.py`, `test_shell_ie.py` | 행렬·워크시트·수용·수정·기각·보류(사유 필수 규칙은 E 단위대로), 분석 실행·멈춤·한도, 권고 목록과 추적, Excel·IE 인계 묶음 내보내기, 초기사건 보기 셋과 그룹 확정이 된다. 525구간 행렬 스크롤 측정. 기존 Excel 출력과 같은 입력에서 바이트 비교(보류·사유 열은 E 단위가 정한 차이만). 통과하면 새 화면을 기본으로 바꾼다 | `results.py`·`results_matrix.py`·`results_paint.py`·`initiating.py` 위젯, 탐색기 ⑤의 권고 목록(`explorer.py`) | `hazop/study/results.py`(E 단위가 고친 판), `hazop/ie/*`, Excel 내보내기 엔진 |
+| **4. 나머지와 이전 화면 제거 판단** | 새: `api_kg.py`, `api_edit.py`, `panels/kg.js`, 도면 고치기 말풍선·그리기 도구, 설정의 API 키·고정 응답. 판단 문서: 이 문서 개정 | 지식그래프 패널, 도면 편집(태그·종류·위치·방향·기기·연결·경로 그리기·저장·되돌리기), 설정 전부가 새 화면에서 된다. 이전 화면에만 있는 기능이 없음을 §2.3 표로 확인한다. 그 뒤 `hazop/app/screens/`와 `main_window.py`를 지울지 사용자에게 묻는다 | `knowledge.py`, `viewer.py` 편집 부분, `settings_dialog.py`, `palette.py` | `hazop/kg/*`(화면 템플릿은 패널 안으로 옮김), 편집 저장 엔진 |
+
+**파일 주인**(CLAUDE.md 규칙 4). 2·3단계는 1단계 뒤에 나란히 할 수 있도록, 함께 고칠 파일을 1단계에서 미리 나눴다.
+
+| 파일 | 주인 | 다른 단계가 하는 일 |
+| --- | --- | --- |
+| `hazop/shell/api.py`(명령 표·판 검사·읽기 길잡이) | 1단계 | 고치지 않는다. 영역 모듈이 `register(COMMANDS)`로 자기 명령을 올린다 |
+| `api_drawings.py` · `api_nodes.py` · `api_results.py`·`api_ie.py` · `api_kg.py`·`api_edit.py` | 1 · 2 · 3 · 4단계 | 자기 파일만 |
+| `web/js/main.js`, `web/js/panels/index.js` | 1단계 | 1단계가 패널 다섯 칸을 빈 패널로 모두 등록해 둔다. 2·3단계는 자기 패널 파일만 채운다 |
+| `web/js/ui/table.js` | 3단계 | 2단계는 쓰지 않는다(구간 목록은 1단계의 `ui/list.js`) |
+| `web/js/ui/*`의 나머지 | 1단계 | 고칠 일이 생기면 1단계 주인 세션에 요청한다 |
+| `tests/test_shell_api.py`, `test_shell_scheme.py`, `test_shell_web.py` | 1단계 | 단계마다 자기 시험 파일(`test_shell_nodes.py`, `test_shell_results.py`, `test_shell_ie.py`)을 쓴다 |
+| `hazop/study/results.py` | E 단위 | 3단계는 고치지 않는다 |
 
 - **단계마다 하는 일.** 그 단계 기능의 [screen-spec.md](screen-spec.md) 대응 절에 '새 화면으로 옮김'을 적는다.
 - **이전 MVP 화면.** `analysis.py`와 `review.py`는 1~3단계 동안 이전 화면에만 남긴다.
-- **단계 사이 의존.** 1단계가 틀·주소 체계·명령 길·도면 구성요소를 만들고, 2~4단계는 그 위에 패널을 더한다. 그래서 1단계는 한 세션이 이어서 하고, 2·3단계는 서로 다른 파일(`nodes.js`와 `results.js`·`ie.js`)이라 1단계 뒤에 나란히 할 수 있다. `api.py`는 함께 고치므로 주인을 하나 정한다(CLAUDE.md 규칙 4).
+- **단계 사이 의존.** 1단계가 틀·주소 체계·명령 길·도면 구성요소를 만들고, 2~4단계는 그 위에 패널을 더한다. E 단위는 1·2단계와 파일이 겹치지 않아 언제든 할 수 있고, 3단계보다 먼저 끝나야 한다.
 
 ---
 
@@ -591,15 +721,39 @@ hazop/shell/                 새 틀(Python)
 | UW6 | 도면 수정 저장 | 지금처럼 사람이 누른다. 저장 안 한 수정이 있을 때만 저장 막대를 띄운다 | 저장 방식을 바꾸면 데이터를 잃을 수 있는 길이 생긴다. 화면 개편과 따로 다룬다 |
 | UW7 | 새 틀의 색 | `SHELL` 사전을 따로 둔다. 데이터 색은 지금 `COLORS` | 이전 화면이 4단계까지 남으므로 그 색을 흔들지 않는다 |
 | UW8 | AI 검토 토글의 처음 값 | 꺼짐, 그 뒤로는 마지막 값 | 지금 기본값(꺼짐)을 잇고, 호출 비용이 드는 쪽을 사람이 켜게 한다 |
-| UW9 | 이전 화면을 여는 법 | 설정 '이전 화면 열기'와 `--classic`. 두 창을 함께 열지 않는다 | 같은 파일을 두 창이 쓰지 않게 |
+| UW9 | 어느 화면이 기본인가 | 3단계가 끝날 때까지 이전 화면이 기본이고 새 화면은 `--shell`·설정으로 연다. 그 뒤 새 화면을 기본으로, 이전 화면은 `--classic`으로. 화면 바꾸기는 같은 프로세스 안에서 하고 단일 실행 잠금을 쥔 채 둔다. 두 창을 함께 열지 않는다 | 1단계만 끝난 새 화면에는 구간·결과·편집이 없다. 같은 파일을 두 창이 쓰지 않게 |
 | UW10 | 지식그래프 보기의 고급 조정 | '보기 설정' 펼침에 접어 둔다 | §2.2 원칙 4 |
+| UW11 | 결과 판정의 사유 | 기각·보류·수정은 사유 필수, 수용은 선택 | [INTENT §3.6](../../INTENT.md)은 '판정 + 사유'다. 수용까지 필수로 하면 J·A로 빠르게 넘기는 흐름이 막힌다 |
+| UW12 | 판 검사의 단위 | 구간은 구간 판, 나머지는 파일 지문(파일 단위) | 칸 단위 판 번호가 없는 자료에 새 판 번호를 들이면 저장 규격이 바뀐다. 파일 단위는 `stale`이 더 자주 나지만 덮어쓰기는 없다 |
+| UW13 | 파일 끌어 놓기를 누가 받나 | Qt 창(`ShellWindow.dropEvent`, `QFileDialog`) | 웹 안에서는 떨어뜨린 파일의 경로를 알 수 없다 |
 
 ---
 
 ## 9. 남는 위험과 확인할 것
 
-- **QtWebEngine 판과 ES 모듈.** 지금 PySide6의 QtWebEngine이 맞춤 주소 체계에서 ES 모듈과 `import` 지도 없이 상대 경로 `import`를 문제없이 읽는지 1단계 첫 시험으로 확인한다. 안 되면 처리기가 `Content-Type: text/javascript`를 주는지부터 본다.
+- **QtWebEngine 판과 ES 모듈.** `Syntax.Host`와 `FetchApiAllowed`로 등록한 `hazop-app://shell`에서 ES 모듈의 상대 경로 `import`와 `fetch`가 되는지 1단계 첫 시험으로 확인한다. 안 되면 처리기가 `Content-Type: text/javascript`를 주는지, 출처가 `null`로 찍히지 않는지(`location.origin`)부터 본다.
+- **판 검사의 거짓 `stale`.** 파일 단위 비교라 분석 중에는 결과 판정이 자주 `stale`로 돌아올 수 있다. 3단계 측정에서 잦으면 칸 단위 판을 엔진 단위로 따로 다룬다.
 - **htm 템플릿 실수.** 형 검사가 없어 오타가 실행 중에야 드러난다. 화면 시험(§5.6)이 모든 패널을 한 번씩 연다.
 - **두 틀이 함께 있는 기간.** 1~3단계 동안 기능이 두 곳에 있다. 이전 화면에서만 고친 결함이 새 틀에 빠지지 않도록, 엔진을 고치는 결함은 엔진에서 고치고 화면 코드에서 우회하지 않는다.
 - **INTENT.md §3.8 고치기.** '단계 구조는 유지'를 이 결정으로 바꾸는 일은 총괄이 한다(이 문서는 GOV 문서를 고치지 않는다).
 - **흐름 클릭 수.** §3.5는 시안과 코드로 센 값이다. 1단계 실제 창 측정이 나오면 그 값으로 바꾼다.
+
+---
+
+## 10. 검토 반영으로 바뀐 곳 (2026-11-13, 6d49a5a 반려)
+
+| 지적 | 바뀐 곳 | 바뀐 내용 |
+| --- | --- | --- |
+| 1 주소 체계 등록 | §5.1 '등록'·'호스트'·'새 화면 웹뷰의 허용 체계', §5.5 | `Syntax.Host`, 표시 `SecureScheme \| LocalScheme \| CorsEnabled \| FetchApiAllowed`(`LocalAccessAllowed` 뺌). 화면·정적 파일·읽기 API를 한 호스트 `shell`에. 새 화면 웹뷰는 `SHELL_SCHEMES`로 `file`을 허용하지 않고, CSP에도 `file:`이 없음. 이전 화면의 `ALLOWED_SCHEMES`는 그대로 |
+| 2 도면 SVG의 범위 | §5.1 '정적 파일만 폴더 범위로'·'프로젝트 자료는 ID로만', §5.4 '목록' | 프로젝트 자료는 `api/sheet/<graph_id>.svg`처럼 ID로 받고, 엔진이 프로젝트 그래프와 `_svg_path` 허용 루트 검사로 실제 경로를 찾는다. 주소의 경로 조각을 파일 경로로 쓰지 않는다. 폴더 범위는 웹 폴더와 아이콘 폴더만 |
+| 3 `rev`의 뜻 | §5.3 '판 검사' 표, §5.2 명령 표의 '판 검사' 열, §5.6 '판 검사' 줄 | 구간은 `set_rev` + 대상의 `rev`·`state`, 나머지는 쓰는 파일의 지문 `크기:mtime_ns`. 엔진이 쓰기 직전에 다시 재어 다르면 `stale`. 채팅 규격 §4.6과 같은 재료 |
+| 4 보류와 사유 | §6 'E. 결과 판정 보강' 단계, 3단계의 '그대로 쓰는 것', §2.3 ⑤ 표, §8 UW11 | 3단계 앞에 엔진 단위 E를 둠(`on_hold`, `set_status`의 `reason`, Excel·IE 인계, 옛 파일 읽기). 3단계는 `results.py`를 고치지 않음 |
+| 5 읽기 API의 202 | §5.4 '읽기 API의 비동기 답' | 요청 객체를 붙잡아 두었다가 작업이 끝나면 `reply`, 실패·30초 넘음은 `fail`, 웹이 버리면 `destroyed`로 정리 |
+| 6 아이콘과 `innerHTML` 금지 | §4.3 '넣는 방법', §5.5, §5.6 '정적 검사', §1 | `Icon` 구성요소가 `icons_data.js`(스크립트가 `manifest.json`에서 만듦)의 도형 자료로 요소를 만든다 |
+| 7 기본 화면과 잠금 | §6 머리, §8 UW9, §1 | 3단계가 끝날 때까지 이전 화면이 기본, 새 화면은 `--shell`. 화면 바꾸기는 같은 프로세스 안에서, `single_instance` 잠금을 쥔 채 |
+| 8 빠진 기능 | §2.1 위 막대, §2.3 틀 표(프로젝트), ⑤ 표(권고 목록·추적), ② 표(도면 연결), §5.2 명령 표, §6 1·3단계 완료 기준 | 프로젝트 만들기·바꾸기는 위 막대(1단계), 권고 목록·추적은 분석 결과 패널(3단계), 도면 연결 짝 지정·끊기는 1단계 완료 기준 |
+| 9 명령 길 | §5.2 | 명령 표, `by`·`at`·`origin`은 엔진이 채우고 웹 인자로 오면 거절, 따로 된 `ShellBridge`, `hazop/chat/actions.py`의 처리 함수를 함께 씀(채팅 전용 규칙은 화면 명령에 걸지 않음). 파일 끌어 놓기는 Qt 창이 받음(§8 UW13) |
+| 10 파일 주인 | §5.7, §6 '파일 주인' 표 | `api.py`는 1단계 주인, 영역 처리는 `api_<영역>.py`로 나눔. `main.js`·`panels/index.js`는 1단계가 다섯 칸을 미리 등록. `ui/table.js`는 3단계. 시험 파일은 단계마다 따로 |
+| 11 성능 | §5.4 '찾기'·'지식그래프 패널'·'목표값과 재는 조건', §6 1단계 완료 기준 | `@` 찾기는 엔진 색인(50개까지), 지식그래프는 지금 도면 이웃부터. 잴 도면·PC·횟수와 목표값(300ms·100ms·200ms)을 1단계 완료 기준에 넣음 |
+| 12 htm 라이선스 | §1, §5.1 후보 표와 '묶음'·'htm의 Apache-2.0 처리' | npm 레지스트리에서 htm 3.1.1이 Apache-2.0, Preact 11.2.0이 MIT임을 확인(2026-11-13). `NOTICE` 처리를 적음. `s-frame`이 받은 꾸러미로 다시 확인 |
+| 13 원자력 용어 | 머리말 아래 용어 표, §2.1 초기사건 패널 줄 | 초기사건(initiating event), 사건수목 표제(event tree top event), 최종상태(end state), 기본사건(basic event)에 NRC 영문과 NUREG-2122 출처 |
