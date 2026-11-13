@@ -66,7 +66,7 @@ export function stepUnconfirmed(gid, step = 1) {
   if (!list.length) return null;
   const at = ((s.cursor + step) % list.length + list.length) % list.length, u = list[at];
   clean.set({ cursor: at });
-  shell.set((st) => ({ command: { seq: st.command.seq + 1, type: "inspect", id: u.id, reason: u.reason, pad: 0.5 } }));
+  shell.set((st) => ({ command: { seq: st.command.seq + 1, type: "inspect", id: u.id, reason: u.reason, pad: 4 } }));
   return u;
 }
 
