@@ -26,6 +26,7 @@ graph.superseded.json으로 비켜 둔다(한 도면이 프로젝트 그래프�
 
 import json
 import os
+import re
 import unicodedata
 
 from hazop import paths, store_io
@@ -95,15 +96,50 @@ def _key(graph_id):
     return paths.safe_name(graph_id).casefold()
 
 
-def _review_data(project_id, graph_id):
-    """그래프 ID에 묶인 검토 자료: ['구간', '분석 결과'] 가운데 있는 것."""
-    from hazop.study import nodes, results
-    found = []
-    if graph_id and os.path.isfile(nodes.store_path(project_id, graph_id)):
-        found.append("구간")
-    if graph_id and os.path.isfile(results.store_path(project_id, graph_id)):
-        found.append("분석 결과")
-    return found
+def _ref_places(project_id):
+    """그래프 ID(도면 번호)를 열쇠로 쓰는 프로젝트 기록 [(이름, 파일 목록)]. 새 화면은 구간·분석 결과를 프로젝트 그래프
+    (study-nodes/<프로젝트>/project-<프로젝트>.json)에 두고 구성원을 '<그래프 ID>/<엔터티 ID>'로 적으므로, 도면 파일 이름이 아니라
+    파일 안의 참조를 센다. 도면 하나짜리 옛 파일(graph-<번호>.json)도 같은 폴더라 함께 센다."""
+    from hazop.graph import project
+    from hazop.ie import store as ie_store
+    from hazop.kg import expect
+    from hazop.study import nodes
+    pid = paths.safe_name(project_id)
+
+    def files(folder):
+        out = []
+        for d, _dirs, names in os.walk(folder):
+            out += [os.path.join(d, n) for n in sorted(names) if n.endswith(".json")]
+        return out
+    return [("구간", files(os.path.join(nodes.store_dir(), pid))),
+            ("분석 결과", files(paths.folder("analysis-results", pid)) + files(paths.folder("analysis-results-test", pid))),
+            ("초기사건", [ie_store.store_path(project_id)]),
+            ("잠재 후보 판단", [expect.store_path(project_id)]),
+            ("도면 연결 지정", [project.manual_path(project_id)]),
+            ("지식그래프 판단", files(paths.folder("knowledge-graph", paths.safe_name(project_id, "project"))))]
+
+
+def _references(project_id, graph_id):
+    """그래프 ID를 가리키는 참조 수 {이름: 수}(0인 것은 뺀다). 참조 꼴은 "<그래프 ID>"·"<그래프 ID>/…"·"<그래프 ID>#…"."""
+    if not graph_id:
+        return {}
+    pat = re.compile(r'"%s(?=["/#])' % re.escape(graph_id))
+    out = {}
+    for name, files in _ref_places(project_id):
+        n = 0
+        for f in files:
+            try:
+                with open(f, encoding="utf-8") as fh:
+                    n += len(pat.findall(fh.read()))
+            except (OSError, UnicodeDecodeError):
+                continue
+        if n:
+            out[name] = out.get(name, 0) + n
+    return out
+
+
+def _describe(refs):
+    return "·".join("%s %d곳" % (k, v) for k, v in refs.items())
 
 
 def _evidence(cand):
@@ -148,8 +184,16 @@ def row(project_id, material_id, store_root=None):
             "state": "confirmed" if done == len(FIELDS) else ("partial" if done else "unconfirmed"),
             "fields": fields, "ver": store_io.fingerprint(path), "sheets": sheets,
             "needs_reextract": any(s["version"] != record.get("registration_version") for s in sheets),
-            "review_data": sorted({x for s in sheets for x in _review_data(project_id, s["graph_id"])}),
+            "review_data": [_describe(r) for r in [_merged_refs(project_id, sheets)] if r],
             "multi_page": _page_count(record) > 1}
+
+
+def _merged_refs(project_id, sheets):
+    out = {}
+    for gid in sorted({s["graph_id"] for s in sheets if s.get("graph_id")}):
+        for k, v in _references(project_id, gid).items():
+            out[k] = out.get(k, 0) + v
+    return out
 
 
 def view(project_id, store_root=None, material_type="P&ID"):
@@ -209,16 +253,22 @@ def _guard_number(project_id, record, sheets, new_number, store_root):
     if _page_count(record) > 1:
         raise Refused("drawing_number", "rule", "여러 쪽 자료(%d쪽)는 쪽마다 도면 번호가 달라 자료 하나에 번호를 확정하지 않음"
                       "(쪽별 확정은 아직 없음)" % _page_count(record))
+    old_number = record.get("drawing_number")
+    if old_number is not None:
+        from hazop.graph import sources
+        if old_number in sources.load_choices(project_id):
+            raise Refused("drawing_number", "rule", "도면 번호 %s에 사람이 고른 원본 형식 선택이 있어 번호를 바꾸지 않음(같은 번호의 다른 형식 "
+                          "원본에 걸린 선택이라 새 번호로 옮길 수 없음)" % old_number)
     targets = [(s.get("graph_id"), _gid(new_number, s)) for s in sheets]
     if not sheets and new_number is not None:
         targets = [(None, "graph-%s" % new_number)]
     for old, new in targets:
         if old is not None and old != new:
             for gid, what in ((old, "이 도면"), (new, "새 번호의 도면")):
-                found = _review_data(project_id, gid)
-                if found:
-                    raise Refused("drawing_number", "rule", "%s(%s)에 %s이(가) 있어 번호를 바꾸면 끊기거나 섞임. 그래프 ID를 옮기는 "
-                                  "길이 아직 없어 막음: 번호를 바꾸려면 그 구간·결과를 먼저 정리해야 함" % (what, gid, "·".join(found)))
+                refs = _references(project_id, gid)
+                if refs:
+                    raise Refused("drawing_number", "rule", "%s(%s)의 구성요소를 %s이 가리키고 있어 번호를 바꾸면 끊기거나 섞임. 그래프 "
+                                  "ID를 옮기는 길이 아직 없어 막음: 번호를 바꾸려면 그 기록을 먼저 정리해야 함" % (what, gid, _describe(refs)))
         for gid, fmt, name, mid in _others(project_id, record["material_id"], store_root):
             if _key(gid) != _key(new):
                 continue
@@ -230,11 +280,32 @@ def _guard_number(project_id, record, sheets, new_number, store_root):
                               % (fmt, name, mid, gid[len("graph-"):]))
 
 
+def _union(first, second, key):
+    """first 목록에 second에서 key가 겹치지 않는 항목을 더한 것(first가 이긴다)."""
+    seen = {x.get(key) for x in first if isinstance(x, dict)}
+    return list(first) + [x for x in second if isinstance(x, dict) and x.get(key) not in seen]
+
+
+def _merge(kind, src, dst):
+    """옮겨 쓸 기록(src, 지금 쪽 = 사람이 마지막으로 고친 곳)과 새 이름에 이미 있는 기록(dst)을 연산·후보 단위로 합친다. 지금 쪽이 이긴다."""
+    out = dict(src)
+    if kind == "edits":
+        removed = {i for e in src.get("log") or [] if isinstance(e, dict) for i in e.get("removed") or []}
+        extra = [o for o in dst.get("ops") or [] if isinstance(o, dict) and o.get("op_id") not in removed]
+        out["ops"] = _union(src.get("ops") or [], extra, "op_id")   # 지금 쪽에서 지운 연산은 되살리지 않는다
+        out["log"] = list(dst.get("log") or []) + [e for e in src.get("log") or [] if e not in (dst.get("log") or [])]
+    else:
+        out["candidates"] = _union(src.get("candidates") or [], dst.get("candidates") or [], "cand_id")
+        out["runs"] = list(dst.get("runs") or []) + [r for r in src.get("runs") or [] if r not in (dst.get("runs") or [])]
+    return out
+
+
 def _carry(sheets, new_record):
-    """지금 쪽 이름의 사람 수정 기록·AI 후보 기록을 새 등록 버전 이름으로 옮겨 쓴다(새 이름에 이미 있으면 두고, 앞 파일은 지우지 않음).
-    반환 [{from, to, edits, ai_review}]."""
+    """지금 쪽 이름의 사람 수정 기록·AI 후보 기록을 새 등록 버전 이름으로 옮겨 쓴다(앞 파일은 지우지 않음). 새 이름에 이미 기록이 있으면
+    (앞서 다시 추출이 실패한 시도가 옮겨 둔 것 등) 덮지 않고 연산·후보 단위로 합친다(지금 쪽이 이긴다).
+    반환 ([{from, to, edits, ai_review}], 이번에 새로 만든 파일 경로 목록)."""
     from hazop.extract import ai_review, corrections
-    out = []
+    out, created = [], []
     for s in sheets:
         new_name = _out_name(new_record, s["page"])
         if new_name == s["name"]:
@@ -242,16 +313,24 @@ def _carry(sheets, new_record):
         moved = {"from": s["name"], "to": new_name, "edits": False, "ai_review": False}
         for key, path_of in (("edits", corrections.store_path), ("ai_review", ai_review.store_path)):
             data, _fp = store_io.read_bytes(path_of(s["name"]))
-            if data is None or os.path.exists(path_of(new_name)):
+            if data is None:
                 continue
             doc = json.loads(data.decode("utf-8"))
-            if isinstance(doc, dict):
-                doc["extraction_name"] = new_name
-                doc.setdefault("carried_from", []).append(s["name"])
-            store_io.write_json(path_of(new_name), doc, expect=None, sort_keys=False)
+            if not isinstance(doc, dict):
+                continue
+            target = path_of(new_name)
+            have, have_fp = store_io.read_bytes(target)
+            if have is not None:
+                old = json.loads(have.decode("utf-8"))
+                doc = _merge(key, doc, old if isinstance(old, dict) else {})
+            doc["extraction_name"] = new_name
+            doc["carried_from"] = list(dict.fromkeys(list(doc.get("carried_from") or []) + [s["name"]]))
+            store_io.write_json(target, doc, expect=have_fp, sort_keys=False)
+            if have is None:
+                created.append(target)
             moved[key] = True
         out.append(moved)
-    return out
+    return out, created
 
 
 def _set_aside(sheets, new_record):
@@ -288,13 +367,18 @@ def _confirmed_sheets(sheets):
 
 def _reextract(record, registration_path, sheets, extract, progress):
     """sheets를 record(새 등록 버전)로 옮겨 다시 추출한다: 기록 옮겨 쓰기 → 앞 그래프 비켜 두기 → 추출. 실패하면 그래프를 되돌린다."""
-    carried = _carry(sheets, record)
+    carried, created = _carry(sheets, record)
     moved = _set_aside(sheets, record)
     progress("다시 추출·그래프", 2, 2)
     try:
         extract(registration_path)
-    except Exception as exc:  # noqa: BLE001 - 어떤 실패든 앞 그래프를 되돌리고 사유를 알린다
+    except Exception as exc:  # noqa: BLE001 - 어떤 실패든 앞 그래프와 옮겨 쓴 기록을 되돌리고 사유를 알린다
         _put_back(moved)
+        for path in created:  # 이번 시도가 새로 만든 사본만 지운다: 지금 쪽(앞 이름)의 기록 하나만 진실로 남게
+            try:
+                os.remove(path)
+            except OSError:
+                pass
         raise Refused("extraction", "io", "확정은 저장했으나 도면을 다시 읽지 못함(%s). 같은 확정을 다시 하면 다시 읽음"
                       % (" ".join(str(exc).split())[:160] or type(exc).__name__))
     return carried
@@ -400,7 +484,8 @@ def unconfirm(project_id, material_id, field_names, by, ver=None, reason=None, s
 
 def execute(project_id, command, args=None, by=None, ver=None, store_root=None, extract=None, progress=None):
     """채팅이 부를 실행 함수. view(args.material_id 선택) · confirm(args.material_id, args.fields, args.reason) ·
-    unconfirm(args.material_id, args.fields 목록 선택, args.reason). 쓰는 명령은 사람 확인을 거친 뒤에만 부른다(채팅 규격의 확인 상자)."""
+    unconfirm(args.material_id, args.fields 목록 선택, args.reason). 쓰는 명령은 사람 확인을 거친 뒤에만 부르고, ver(view가 준 판)가
+    없으면 거절한다(채팅 규격의 확인 상자)."""
     a = dict(args or {})
     if command not in COMMANDS:
         return {"ok": False, "changed": False, "refused": [{"target": "command", "code": "unknown_command",
@@ -413,6 +498,9 @@ def execute(project_id, command, args=None, by=None, ver=None, store_root=None, 
                                                                    "reason": "등록된 자료가 아님"}]}
             return {"ok": True, "changed": False, "rows": [r], "refused": []}
         return {"ok": True, "changed": False, "rows": view(project_id, store_root), "refused": []}
+    if not isinstance(ver, str) or not ver:   # 채팅은 본 판(row의 ver)을 꼭 넘긴다: 그 사이 다른 창이 바꾼 것을 덮지 않게
+        return {"ok": False, "changed": False, "refused": [{"target": "ver", "code": "bad_args",
+                                                           "reason": "본 등록정보의 판(ver)이 있어야 함(view의 ver)"}]}
     if command == "confirm":
         return confirm(project_id, a.get("material_id"), a.get("fields"), by, ver, a.get("reason"), store_root, extract, progress)
     return unconfirm(project_id, a.get("material_id"), a.get("fields"), by, ver, a.get("reason"), store_root, extract, progress)

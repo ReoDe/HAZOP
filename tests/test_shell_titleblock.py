@@ -105,10 +105,7 @@ class CommandTest(Base):
         self.engine.settings["reviewer_name"] = "검토자A"
         self.cmd("confirm", material_id=self.mid, ver=self.ver(), fields={"drawing_number": "SNP-M-101"})
         self.assertTrue(self.engine.wait_jobs(60))
-        path = nodes.store_path("P1", "graph-SNP-M-101")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump({"kind": nodes.KIND}, fh)
+        self.make_nodes(self.mid)   # 새 화면의 실제 길로 만든 구간(프로젝트 그래프 구간 파일)
         with self.assertRaises(api.CommandError) as cm:
             self.cmd("confirm", material_id=self.mid, ver=self.ver(), fields={"drawing_number": "SNP-M-777"})
         self.assertIn("구간", cm.exception.message)
@@ -123,6 +120,73 @@ class CommandTest(Base):
         out = self.cmd("confirm", material_id=other, ver=self.read(other)["ver"], fields={"title": "가압기"})
         self.assertNotIn("job", out)
         self.assertEqual(out["row"]["fields"][2]["value"], "가압기")
+
+
+def pump(sec):
+    from PySide6.QtCore import QCoreApplication
+    import time
+    end = time.monotonic() + sec
+    while time.monotonic() < end:
+        QCoreApplication.processEvents()
+        time.sleep(0.01)
+
+
+class PanelTest(Base):
+    """실제 새 화면(화면 밖)의 표제란 패널: 번호 칸이 잠긴 도면에서 개정·제목만 고쳐 확정하면 번호 후보를 보내지 않는다."""
+
+    def js(self, win, code, timeout=10.0):
+        import time
+        out = []
+        win.view.page().runJavaScript(code, 0, out.append)
+        end = time.monotonic() + timeout
+        while time.monotonic() < end and not out:
+            pump(0.02)
+        return out[0] if out else None
+
+    def wait(self, win, code, timeout=60.0):
+        import time
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if self.js(win, code):
+                return True
+            pump(0.1)
+        return False
+
+    def test_locked_number_is_not_sent_and_only_edited_fields_go(self):
+        from hazop.app import make_application
+        from hazop.shell.window import ShellWindow
+        self.qapp = make_application(["titleblock-test"])
+        self.make_nodes(self.mid)          # 번호 칸이 잠기는 도면(구간이 가리킴)
+        settings = os.path.join(self.tmp, "shell-settings.json")
+        with open(settings, "w", encoding="utf-8") as fh:
+            json.dump({"reviewer_name": "검토자A", "project_id": "P1"}, fh)
+        dbg = mock.patch.dict(os.environ, {"HAZOP_DEBUG": "1"})   # window.__hz 시험 갈고리(화면이 읽는 동안 내내 켜 둠)
+        dbg.start()
+        self.addCleanup(dbg.stop)
+        win = ShellWindow(settings_path=settings, size=(1366, 768))
+        win.show()
+        self.addCleanup(win.deleteLater)
+        self.addCleanup(win.close)
+        self.assertTrue(self.wait(win, "!!window.__hz && document.querySelector('.rail') !== null"), "웹 화면이 뜨지 않음")
+        self.js(win, "window.__hz.store.set({panel: 'titleblock'})")
+        self.assertTrue(self.wait(win, "document.querySelectorAll('.titleblock .tb-row').length === 1"))
+        self.assertTrue(self.js(win, "document.querySelector('.titleblock input.tb-input').disabled"), "번호 칸이 잠김")
+        typed = self.js(win, """(() => { const inp = document.querySelectorAll('.titleblock input.tb-input')[2];
+            inp.value = '주 배관(고침)'; inp.dispatchEvent(new Event('input', { bubbles: true })); return inp.value; })()""")
+        self.assertEqual(typed, "주 배관(고침)")
+        self.js(win, "document.querySelector('.titleblock button[aria-label=\"입력한 값으로 확정\"]').click()")
+        self.assertTrue(self.wait(win, "(document.querySelector('.titleblock').innerText || '').includes('확정했습니다')", 120),
+                        self.js(win, "document.querySelector('.titleblock').innerText"))
+        r = self.read(self.mid)
+        self.assertEqual([f["value"] for f in r["fields"]], [None, None, "주 배관(고침)"],
+                         "고친 제목만 확정되고 잠긴 번호 후보는 보내지 않음")
+        self.js(win, """(() => { const b = document.querySelector('.titleblock button[aria-label="확정 전 항목을 후보 그대로 확정"]');
+            b.click(); return true; })()""")
+        self.assertTrue(self.wait(win, "document.querySelectorAll('.titleblock .tb-row.partial').length === 1 && "
+                                       "(document.querySelector('.titleblock').innerText || '').includes('등록 버전 3')", 120))
+        r = self.read(self.mid)
+        self.assertEqual((r["fields"][0]["value"], r["fields"][1]["value"]), (None, "0"),
+                         "'후보 그대로 확정'도 잠긴 번호는 빼고 개정만 확정")
 
 
 if __name__ == "__main__":

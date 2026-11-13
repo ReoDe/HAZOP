@@ -105,14 +105,29 @@ async function send(name, row, args) {
   }
 }
 
-/** 고친 값(없으면 후보)으로 확정한다. asIs면 확정 전 항목만 후보 그대로 확정한다. */
-export function confirmRow(row, asIs) {
+/** 도면 번호를 바꿀 수 없는 도면(구간·결과 등이 걸렸거나 여러 쪽 자료)인가. 그때는 번호 칸을 잠그고 보내지도 않는다. */
+export function numberLocked(row) { return row.review_data.length > 0 || row.multi_page; }
+
+/** 보낼 값 {항목: 값}. asIs면 확정 전 항목의 후보를, 아니면 사람이 입력칸에서 고친 항목만 보낸다(손대지 않은 칸은 보내지 않음).
+ * 잠긴 번호 칸은 어느 쪽이든 보내지 않는다(개정·제목만 확정할 수 있게). drafts는 {항목: 입력한 글}. */
+export function fieldsToSend(row, drafts, asIs) {
   const fields = {};
   for (const f of row.fields) {
-    const v = String(asIs ? (f.value == null ? (f.candidate ?? "") : "") : shown(row, f)).trim();
+    if (f.field === "drawing_number" && numberLocked(row)) continue;
+    const raw = asIs ? (f.value == null ? f.candidate : null) : (drafts || {})[f.field];
+    const v = raw == null ? "" : String(raw).trim();
     if (v && v !== f.value) fields[f.field] = v;
   }
-  if (!Object.keys(fields).length) { tb.set({ notice: "바뀐 값이 없습니다.", error: null }); return; }
+  return fields;
+}
+
+/** asIs면 확정 전 항목을 후보 그대로, 아니면 고친 항목만 확정한다. */
+export function confirmRow(row, asIs) {
+  const fields = fieldsToSend(row, tb.get().drafts[row.material_id], asIs);
+  if (!Object.keys(fields).length) {
+    tb.set({ notice: asIs ? "확정할 후보가 없습니다." : "고친 칸이 없습니다. 후보를 그대로 확정하려면 '후보 그대로 확정'을 누르세요.", error: null });
+    return;
+  }
   const reason = (tb.get().reasons[row.material_id] || "").trim();
   send("titleblock.confirm", row, reason ? { fields, reason } : { fields });
 }
@@ -160,7 +175,7 @@ function Row({ row, onOpen, open, noReviewer }) {
   const busy = useTb((s) => s.busy) === row.material_id;
   const reason = useTb((s) => s.reasons[row.material_id] || "");
   const [kind, label] = STATE[row.state] || ["plain", row.state];
-  const locked = row.review_data.length > 0 || row.multi_page;
+  const locked = numberLocked(row);
   const missing = row.fields.some((f) => f.value == null && f.candidate != null);
   return html`<details class=${"tb-row " + row.state} open=${open} key=${row.material_id}>
     <summary class="tb-sum"><b>${row.fields[0].value || row.fields[0].candidate || row.name}</b>
@@ -173,7 +188,7 @@ function Row({ row, onOpen, open, noReviewer }) {
       ${row.needs_reextract ? html`<${Notice} kind="warn" icon="refresh">확정은 저장했지만 도면을 다시 읽지 못했습니다. 지금 보이는 도면은 앞 값으로 읽은 것입니다.
         <${Btn} sm=${true} label="도면 다시 읽기" disabled=${busy || noReviewer} onClick=${() => rereadRow(row)}>다시 읽기<//><//>` : null}
       ${row.multi_page ? html`<${Notice} kind="warn" icon="alert-triangle">여러 쪽 자료(${row.pages}쪽)는 쪽마다 도면 번호가 달라 자료 하나에 번호를 확정하지 않습니다.<//>` : null}
-      ${row.review_data.length ? html`<${Notice} kind="warn" icon="lock">이 도면에 ${row.review_data.join("·")}이(가) 있어 도면 번호를 바꾸면 끊깁니다. 번호는 바꿀 수 없고 개정·제목은 확정할 수 있습니다.<//>` : null}
+      ${row.review_data.length ? html`<${Notice} kind="warn" icon="lock">이 도면의 구성요소를 ${row.review_data.join("·")}이 가리키고 있어 도면 번호를 바꾸면 끊깁니다. 번호는 바꿀 수 없고 개정·제목은 확정할 수 있습니다.<//>` : null}
       <div class="tb-grid">${row.fields.map((f) => html`<${Field} key=${f.field} row=${row} f=${f} locked=${locked} />`)}</div>
       <div class="tb-foot">
         <input class="tb-reason" placeholder="까닭(선택, 기록에 남음)" maxlength="300" value=${reason} aria-label="확정 까닭"

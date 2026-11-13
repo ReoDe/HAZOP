@@ -162,7 +162,7 @@ approved: —
 | 등록 자료 표(9열) | 패널 '도면' 목록 | 행은 썸네일·번호·제목·상태 칩. 등록 버전·시각·원본 파일명은 행 '더 보기' |
 | 설계 문서 등록 | 패널 '도면'의 '문서' 절 | 같은 끌어 놓기 자리에서 받는다 |
 | 드롭존(파일 1개), 파일 선택 | 패널 '도면' | 여러 개를 받는다 |
-| 표제란 후보 + 후보 확정(도면번호·개정·제목) | 패널 '도면' 행 | 빗금 칩 + '확정'. 새 도면이 여럿이면 '표제란 먼저 확정'으로 한꺼번에 본다 |
+| 표제란 후보 + 후보 확정(도면번호·개정·제목) | 별도 패널 '표제란'(도면 패널 행의 '표제란' 단추로 그 도면을 펼쳐 엶) | 항목마다 확정값·후보 칩·읽은 자리, '후보 그대로 확정'·'확정'(고친 칸만)·'확정 취소'. 구간·결과 등이 가리키는 도면은 번호 칸을 잠근다(명령 표 [titleblock-commands.md](../units/2026-11-13-drawing-knowledge/evidence/titleblock-commands.md)) |
 | 등록자, 사유 | 패널 '도면' 행 '더 보기' | 등록자는 검토자 이름으로 채운다 |
 | '등록'과 '추출·그래프 만들기' | 패널 '도면' 추출 카드 '추출 시작' | 둘을 합친다. 끌어 놓으면 등록되고, '추출 시작'이 추출과 그래프를 잇는다 |
 | '구간 분석에서 빼기·다시 넣기'(범례·기호표) | 패널 '도면' 행 '더 보기' | |
@@ -539,7 +539,7 @@ Tab 순서는 메뉴 → 위 막대 → 도면 도구 막대 → 패널 → 채�
 | --- | --- | --- | --- | --- |
 | `project.list` · `project.open` · `project.create` | — · `project_id` · `name` | 등록부의 `project_id` 모음, 지금 프로젝트 바꾸기, 새 프로젝트 | `create`는 같은 ID가 있으면 `bad_args` | 1 |
 | `register.add` | (웹이 보내지 않음) | 끌어 놓기·파일 고르기는 Qt가 받는다. 웹 안에서는 파일 경로를 알 수 없기 때문이다. `ShellWindow.dropEvent`와 `QFileDialog`가 경로를 받아 엔진 등록 함수를 지금 프로젝트로 부른다 | — | 1 |
-| `register.confirm_title` | `material_id`, `fields`, `ver` | 표제란 후보 확정 | 등록 기록 파일 지문 | 1 |
+| `titleblock.confirm` · `titleblock.unconfirm` | `material_id`, `fields`({항목: 값} · [항목]), `reason`?, `ver` | 표제란 확정 · 확정 취소(이미 추출한 도면은 다시 추출을 작업으로) | 최신 등록 기록 파일 지문 | 1 |
 | `register.extract` | `material_ids`, `ai_review{on, cap, pages}` | 추출·그래프 작업 시작, 작업 ID 답 | 추출 결과가 이미 있으면 `bad_args`(다시 추출은 4단계 확인 상자) | 1 |
 | `register.exclude` | `material_id`, `exclude`, `ver` | 구간 분석에서 빼기·넣기 | 등록 기록 파일 지문 | 1 |
 | `extract.candidate` | `candidate_ids`, `decision`, `ver` | AI 후보 수락·거절·되돌리기 | 후보 파일 지문 | 1 |
