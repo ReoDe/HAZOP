@@ -135,6 +135,11 @@ class CommandTest(Env):
     def test_foreign_ids_and_empty_name_are_refused(self):
         r = self.call("create", {"sheet": S101, "ids": ["없는-id"], "name": "x"})
         self.assertEqual(r["error"]["code"], "bad_args")
+        mixed = self.local(S101, 0, 3) + ["신호선-id"]        # 그래프 구성요소가 아닌 선은 빼고 나머지로 만든다
+        r = self.call("create", {"sheet": S101, "ids": mixed, "name": "섞음"})
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(api_nodes.summary(self.engine)["nodes"][0]["count"], 3)
+        self.assertTrue(self.call("remove", {"node_id": "S1"})["ok"])
         r = self.call("create", {"sheet": S101, "ids": self.local(S101, 0, 2), "name": ""})
         self.assertEqual(r["error"]["code"], "bad_args")
         self.assertEqual(api_nodes.summary(self.engine)["nodes"], [])

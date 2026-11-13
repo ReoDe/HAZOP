@@ -243,10 +243,11 @@ def _check_targets(pg, a):
 
 
 def _members(pg, a):
-    members = chatview.lift(pg, a["sheet"], a["ids"])
-    if len(members) != len(set(a["ids"])):
-        raise _api().CommandError("bad_args", "이 도면에 없는 구성요소가 있습니다.")
-    return list(dict.fromkeys(members))
+    """고른 local_id -> 프로젝트 구성요소 ID. 그래프의 구성요소가 아닌 선(신호선·계측선)은 빼고, 하나도 남지 않으면 거절한다."""
+    members = list(dict.fromkeys(chatview.lift(pg, a["sheet"], a["ids"])))
+    if not members:
+        raise _api().CommandError("bad_args", "고른 것 가운데 구간에 넣을 수 있는 구성요소가 없습니다(신호선·계측선은 넣지 않습니다).")
+    return members
 
 
 def _run(name, build):

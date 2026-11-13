@@ -98,7 +98,7 @@ function NewNodeCard() {
       <textarea id="nn-intent" class="textbox" rows="3" maxlength="2000" placeholder="이 구간이 무엇을 하는지(비워 둘 수 있습니다)" value=${card.intent} onInput=${(e) => N.editCard({ intent: e.target.value })}></textarea></div>
     ${sg && sg.boundary.length ? html`<div class="field"><label>경계</label><div class="acts-row">${sg.boundary.map((t, i) => html`${i ? html`<${Icon} name="chevron-right" size=${15} />` : null}<span class="chip id">${t}</span>`)}</div></div>` : null}
     ${sg && sg.overlaps.length ? html`<${Notice} kind="info">${sg.overlaps.map((o) => o.node_id + " 구간과 " + o.shared + "개가 겹칩니다").join(" · ")}. 겹쳐도 만들 수 있습니다.<//>` : null}
-    ${sg && sg.asked > sg.count ? html`<${Notice} kind="warn" icon="alert-triangle">고른 ${sg.asked}개 가운데 ${sg.asked - sg.count}개는 같은 구성요소라 합쳤습니다.<//>` : null}
+    ${sg && sg.asked > sg.count ? html`<${Notice} kind="warn" icon="alert-triangle">고른 ${sg.asked}개 가운데 ${sg.asked - sg.count}개는 구간에 넣을 수 없는 선(신호선·계측선)이라 뺐습니다.<//>` : null}
     ${card.error ? html`<${Notice} kind="err" icon="alert-triangle">${card.error}<//>` : null}
     <div class="acts-row"><${Btn} kind="primary" icon="check" label="만들기" disabled=${card.busy || !card.name.trim()} onClick=${submit}>만들기 <kbd>Enter</kbd><//>
       <${Btn} label="취소" onClick=${N.closeCard}>취소<//></div></form>`;
