@@ -1,13 +1,13 @@
 // <Sheet> 구성요소(Preact). 도면 한 장을 그리고 입력을 받는다. 입력(props)과 이벤트(콜백 props)는 ./README.md가 정한다.
 // 몸통은 core.js(SheetCore)이고, 여기서는 마운트·도면 자료 읽기·props 전달만 한다. 상태 저장소는 직접 읽지 않는다(틀이 props로 내려보낸다).
 //
-// 도면 자료는 hazop-app://api/sheet/<graph_id> (JSON). 판(rev)이 바뀌면 다시 읽는다.
+// 도면 자료는 /api/sheet/<graph_id> (JSON, 같은 출처). 판(rev)이 바뀌면 다시 읽는다.
 
 import { h } from "../../vendor/preact.module.js";
 import { useEffect, useRef } from "../../vendor/hooks.module.js";
 import { SheetCore } from "./core.js";
 
-export const SHEET_API = "hazop-app://api/sheet/";
+export const SHEET_API = "/api/sheet/"; // 같은 출처 상대 경로(다른 호스트면 CORS로 막힌다)
 
 /** 도면 자료를 읽는다. 시험에서 바꿀 수 있게 따로 둔다. */
 export async function fetchSheet(graphId, rev, fetchImpl = fetch) {
