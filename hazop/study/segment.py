@@ -68,6 +68,7 @@ EQUIPMENT_PART: Mapping[str, Part] = {
     "demineralizer": Part.VESSEL, "accumulator": Part.VESSEL, "drum": Part.VESSEL, "column": Part.VESSEL,
     "pump": Part.PUMP, "filter": Part.FILTER,
     "turbine": Part.MACHINE, "compressor": Part.MACHINE, "fan": Part.MACHINE,
+    "chiller": Part.MACHINE, "electric_heater": Part.VESSEL,
 }
 
 
