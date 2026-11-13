@@ -69,6 +69,11 @@ class ChatToolsBase(unittest.TestCase):
         self.assertEqual(res["error"]["code"], code, res["error"])
         return res
 
+    @staticmethod
+    def objs(side):
+        """경로 한쪽의 원본 단계에서 도면 객체만(배관 구간 제외)."""
+        return [x for x in side["steps"] if x["kind"] != "pipe_segment"]
+
     def reasons(self, res):
         return sorted({(u["id"], u["reason"]) for u in res["uncertain"]})
 
@@ -100,19 +105,43 @@ class ArgsTest(ChatToolsBase):
         self.err("find", "bad_args")
         self.err("find", "bad_args", query=5)
         self.err("find", "bad_args", query="RC", limit=0)
-        self.err("find", "bad_args", query="RC", limit=51)
+        self.err("find", "bad_args", query="RC", limit=201)
         self.err("find", "bad_args", query="RC", limit="3")
         self.err("trace_path", "bad_args", start="RC-PZ01", end="RC-PSV101", mode="bogus")
         self.err("trace_flow", "bad_args", start="RC-PZ01", direction="sideways")
         self.err("trace_flow", "bad_args", start="RC-PZ01", direction="down", cursor="zzz")
+        self.err("trace_path", "bad_args", start="RC-PZ01", end="RC-PSV101", limit=201)
         self.err("count", "bad_args", group_by="color")
 
     def test_unknown_tool(self):
         self.assertEqual(self.tools.call(self.ctx, "rm_rf", {})["error"]["code"], "bad_args")
 
-    def test_path_string_is_not_a_file_access(self):
-        self.err("get_component", "not_found", id="C:\\Windows\\win.ini")
+    def test_path_like_values_are_refused_everywhere(self):
+        """ID·태그·cursor 자리에 경로처럼 생긴 값(절대경로, .., 드라이브 글자, 역슬래시)이 오면 찾지 않고 bad_args."""
+        for bad in ("C:\\Windows\\win.ini", "C:/Windows/win.ini", "/etc/passwd", "\\\\host\\share", "../secret", "a/../../b", "x\\y",
+                    "~/x", "%2e%2e/x"):
+            self.err("get_component", "bad_args", id=bad)
+            self.err("neighbors", "bad_args", id=bad)
+            self.err("enclose", "bad_args", start=bad)
+            self.err("trace_flow", "bad_args", start=bad, direction="down")
+            self.err("trace_path", "bad_args", start=bad, end="RC-PZ01")
+            self.err("trace_path", "bad_args", start="RC-PZ01", end=bad)
+            self.err("search", "bad_args", filter={"near": {"id": bad}})
+            self.err("search", "bad_args", filter={"in_node": bad})
+            self.err("get_node", "bad_args", node_id=bad)
+            self.err("search", "bad_args", cursor=bad)
+        for bad in ("../x", "C:/x", "/etc"):
+            self.err("find", "bad_args", query=bad)
         self.err("find", "bad_args", query="x" * 500)
+        # 정상 ID의 '/'와 '.'은 받는다
+        self.assertEqual(self.ok("get_component", id=S102 + "/entity-node-014")["data"]["tag"], "RC-PSV101")
+        self.assertEqual(self.ok("find", query="9.2.7-1")["total"], 0)
+
+    def test_no_tool_takes_a_file_path_argument(self):
+        for name, t in self.tools.REGISTRY.items():
+            for prop in t["input_schema"]["properties"]:
+                self.assertNotRegex(prop, r"(?i)^(path|file|filename|dir|directory|folder|url|root)$", (name, prop))
+            self.err(name, "bad_args", path="C:\\x") if name != "summary" else self.err(name, "bad_args", file="x")
 
 
 class FindTest(ChatToolsBase):
@@ -174,13 +203,19 @@ class TracePathTest(ChatToolsBase):
         res = self.ok("trace_path", start="RC-PZ01", end="RC-PSV101")
         d = res["data"]
         self.assertTrue(d["path"]["found"])
-        self.assertEqual([o["tag"] for o in d["path"]["objects"]], ["RC-PZ01", "RC-L030-T25", "RC-PSV101"])
-        self.assertEqual([l["line_no"] for l in d["path"]["lines"]], ["RC-L030", "RC-L030"])
+        self.assertEqual([o["tag"] for o in self.objs(d["path"])], ["RC-PZ01", "RC-L030-T25", "RC-PSV101"])
+        self.assertEqual(len(d["path"]["steps"]), 5)  # 배관 구간 둘을 접지 않은 원본 단계
+        self.assertEqual([x["flow"] for x in d["path"]["steps"] if x["kind"] == "pipe_segment"], ["with", "with"])
+        self.assertEqual(d["path"]["lines"], ["RC-L030"])
         self.assertEqual(d["path"]["length"], 4)
+        self.assertEqual(d["path"]["path_ref"], {"start": S102 + "/entity-node-001", "end": S102 + "/entity-node-014",
+                                                 "mode": "physical", "basis": "ignoring_direction",
+                                                 "graph_version": self.ctx.pg["graph_version"]})
+        self.assertEqual(d["flow_path"]["path_ref"]["basis"], "confirmed_flow")
         self.assertEqual(d["sheets"], [S102])
         self.assertEqual(d["by_sheet"], [{"sheet": S102, "count": 3}])
         self.assertTrue(d["flow_path"]["found"])
-        self.assertEqual([o["tag"] for o in d["flow_path"]["objects"]], ["RC-PZ01", "RC-L030-T25", "RC-PSV101"])
+        self.assertEqual([o["tag"] for o in self.objs(d["flow_path"])], ["RC-PZ01", "RC-L030-T25", "RC-PSV101"])
         self.assertEqual(d["path"]["segments_direction_unknown"], [])
         # 안전밸브는 정상 위치를 반영하지 않았다는 표시를 단다
         self.assertEqual(self.reasons(res), [(S102 + "/entity-node-014", "valve_position_ignored")])
@@ -190,14 +225,15 @@ class TracePathTest(ChatToolsBase):
         """SNP-M-101 원자로 RC-RV01 → 티 → 연결점 'TO SNP-M-102' → SNP-M-102 연결점 → 티 → 가압기 RC-PZ01 (배관 RC-L001, RC-L010)."""
         res = self.ok("trace_path", start="RC-RV01", end="RC-PZ01")
         d = res["data"]
-        self.assertEqual([o["tag"] or o["kind"] for o in d["path"]["objects"]],
+        self.assertEqual([o["tag"] or o["kind"] for o in self.objs(d["path"])],
                          ["RC-RV01", "RC-L001-T4", "RC-L001-T5", "continuation", "continuation", "RC-L010-T3", "RC-PZ01"])
-        self.assertEqual([o["sheet"] for o in d["path"]["objects"]], [S101] * 4 + [S102] * 3)
+        self.assertEqual([o["sheet"] for o in self.objs(d["path"])], [S101] * 4 + [S102] * 3)
         self.assertEqual(d["sheets"], [S101, S102])
         self.assertEqual(d["by_sheet"], [{"sheet": S101, "count": 4}, {"sheet": S102, "count": 3}])
-        self.assertEqual([l["line_no"] for l in d["path"]["lines"]][:2], ["RC-L001", "RC-L001"])
-        self.assertTrue(any(l.get("sheet_link") for l in d["path"]["lines"]))
+        self.assertEqual(d["path"]["lines"], ["RC-L001", "RC-L010"])
+        self.assertTrue(any(x.get("sheet_link") for x in d["path"]["steps"]))
         self.assertEqual(d["path"]["length"], 12)
+        self.assertEqual(len(d["path"]["steps"]), 13)  # 접기 전 원본 경로: 객체 7 + 배관 6
         self.assertTrue(d["flow_path"]["found"])
         self.assertEqual(d["flow_path"]["length"], 12)
         self.assertEqual({s["sheet"] for s in res["sources"]}, {S101, S102})
@@ -270,33 +306,99 @@ class TracePathTest(ChatToolsBase):
         self.assertIn("mode_note", d)
         self.assertFalse(self.ok("trace_path", start="RC-PZ01", end="RC-PIC110")["data"]["path"]["found"])
 
-    def test_long_path_is_summarised_per_sheet(self):
-        """객체가 300개를 넘는 경로는 도면별 요약과 cursor로 바뀐다(가짜 경로로 확인)."""
-        part = {"found": True, "length": 800, "objects": [
-            {"id": "g/%d" % i, "tag": "T-%04d" % i, "kind": "tee", "sheet": "g"} for i in range(400)],
-            "lines": [], "segments_direction_unknown": [], "segments_against_flow": []}
-        data, truncated = self.tools._fit_path_data({
-            "path": part, "flow_path": {"found": False}, "sheets": ["g"], "by_sheet": [{"sheet": "g", "count": 400}]})
-        self.assertTrue(truncated)
-        self.assertLessEqual(len(json.dumps(data, ensure_ascii=False)), self.tools.PATH_BUDGET)
-        self.assertEqual(data["by_sheet"], [{"sheet": "g", "count": 400}])
-        self.assertEqual(data["path"]["object_count"], 400)
+    def test_steps_are_paged_and_cover_the_original_path(self):
+        full = self.ok("trace_path", start="RC-RV01", end="RC-PZ01")["data"]["path"]["steps"]
+        got, cursor, pages = [], None, 0
+        while True:
+            res = self.ok("trace_path", start="RC-RV01", end="RC-PZ01", limit=4, **({"cursor": cursor} if cursor else {}))
+            got += res["data"]["path"]["steps"]
+            pages += 1
+            cursor = res["cursor"]
+            self.assertEqual(res["total"], 13)
+            if not cursor:
+                break
+            self.assertRegex(cursor, r"^c-[0-9a-f]{12}$")
+        self.assertEqual(got, full)
+        self.assertEqual(pages, 4)
 
-    def test_medium_path_uses_compact_form(self):
-        part = {"found": True, "length": 300, "objects": [
-            {"id": "graph-SNP-M-102/entity-node-%03d" % i, "tag": "RC-L%03d-T%d" % (i, i), "kind": "tee",
-             "sheet": "graph-SNP-M-102"} for i in range(80)],
-            "lines": [], "segments_direction_unknown": [], "segments_against_flow": []}
-        data, truncated = self.tools._fit_path_data({"path": part, "flow_path": {"found": False}, "sheets": [], "by_sheet": []})
-        self.assertFalse(truncated)
-        self.assertTrue(data["compact"])
-        self.assertEqual(len(data["path"]["objects"]), 80)
+    def test_long_path_stays_under_size_cap(self):
+        """길이가 길어도 쪽으로 나뉘어 8,000자를 넘지 않는다(가짜 사슬 그래프: 객체 400개)."""
+        ctx = self.chain_context(400)
+        res = self.call("trace_path", ctx=ctx, start="T-000", end="T-399")
+        self.assertTrue(res["ok"], res["error"])
+        self.assertTrue(res["truncated"])
+        self.assertEqual(res["total"], 799)  # 객체 400 + 배관 399
+        got, cursor = len(res["data"]["path"]["steps"]), res["cursor"]
+        while cursor:
+            res = self.call("trace_path", ctx=ctx, start="T-000", end="T-399", cursor=cursor)
+            got += len(res["data"]["path"]["steps"])
+            cursor = res["cursor"]
+        self.assertEqual(got, 799)
 
-    def test_cursor_pages_path_objects(self):
-        res = self.ok("trace_path", start="RC-RV01", end="RC-PZ01", cursor="c0")
-        self.assertEqual(len(res["data"]["path_objects"]), 7)
-        self.assertIsNone(res["cursor"])
-        self.err("trace_path", "bad_args", start="RC-RV01", end="RC-PZ01", cursor="c9999")
+    def chain_context(self, n):
+        nodes, edges = [], []
+        for i in range(n):
+            nodes.append({"entity_id": "g/o%d" % i, "node_type": "drawing_object", "kind": "tee", "category": "piping_element",
+                          "classification": "classified", "tag": "T-%03d" % i, "sheet": "g", "attributes": {}})
+            if i:
+                seg = "g/s%d" % i
+                nodes.append({"entity_id": seg, "node_type": "pipe_segment", "kind": "pipe_segment", "category": "pipe_segment",
+                              "classification": "classified", "tag": "L-1", "line_no": "L-1", "sheet": "g", "attributes": {},
+                              "flow_direction": {"from": "g/o%d" % (i - 1), "to": "g/o%d" % i, "from_end": "source", "to_end": "target"}})
+                edges += [{"entity_id": seg + "a", "kind": "has_endpoint", "nodes": [seg, "g/o%d" % (i - 1)], "segment": seg,
+                           "node": "g/o%d" % (i - 1), "end": "source"},
+                          {"entity_id": seg + "b", "kind": "has_endpoint", "nodes": [seg, "g/o%d" % i], "segment": seg,
+                           "node": "g/o%d" % i, "end": "target"}]
+        pg = {"project_id": "X", "graph_id": "project-X", "graph_version": "pv-x", "sheets": [{"graph_id": "g", "graph_version": "1",
+              "drawing_number": "G"}], "nodes": nodes, "edges": edges, "sheet_links": [], "duplicate_tags": [], "manual_skipped": []}
+        return self.context.ChatContext(project_id="X", pg=pg)
+
+    def test_path_steps_raw_matches_trace_path(self):
+        d = self.ok("trace_path", start="RC-RV01", end="RC-V001")["data"]
+        raw = self.tools.path_steps_raw(self.ctx, d["path"]["path_ref"])
+        self.assertEqual([x["id"] for x in raw], [x["id"] for x in d["path"]["steps"]])
+        self.assertEqual([x["flow"] for x in raw if x["kind"] == "pipe_segment"], ["unknown"])
+        self.assertEqual(set(raw[0]), {"id", "kind", "flow"})
+        # 접힌 배관 안의 경고도 원본 단계에서 센다
+        self.assertEqual(self.tools.path_steps_raw(self.ctx, d["flow_path"]["path_ref"]), [])
+
+    def test_path_steps_raw_rejects_stale_or_bad_ref(self):
+        ref = self.ok("trace_path", start="RC-PZ01", end="RC-PSV101")["data"]["path"]["path_ref"]
+        with self.assertRaises(self.tools.ToolError) as cm:
+            self.tools.path_steps_raw(self.ctx, dict(ref, graph_version="pv-old"))
+        self.assertEqual(cm.exception.code, "not_found")
+        for bad in (None, {}, dict(ref, basis="x"), dict(ref, start="NOPE"), dict(ref, mode="x")):
+            with self.assertRaises(self.tools.ToolError):
+                self.tools.path_steps_raw(self.ctx, bad)
+
+
+class CursorTest(ChatToolsBase):
+    def test_forged_and_malformed_cursors_are_rejected(self):
+        for bad in ("c0", "c3", "c-000000000000", "c-zzzzzzzzzzzz", "c-0123456789abcdef", "../x", "C:/x", "/c-0123456789ab"):
+            self.err("search", "bad_args", cursor=bad)
+
+    def test_cursor_belongs_to_one_call(self):
+        res = self.ok("search", filter={"categories": ["valve"]}, limit=5)
+        cur = res["cursor"]
+        self.assertTrue(cur)
+        self.err("search", "bad_args", filter={"categories": ["equipment"]}, cursor=cur)   # 다른 인자
+        self.err("find", "bad_args", query="RC", cursor=cur)                               # 다른 도구
+        nxt = self.ok("search", filter={"categories": ["valve"]}, limit=5, cursor=cur)   # limit은 바꿔도 된다
+        self.assertNotEqual(res["data"]["items"], nxt["data"]["items"])
+
+    def test_cursor_dies_when_graph_changes(self):
+        cur = self.ok("search", limit=5)["cursor"]
+        ctx = copy.copy(self.ctx)
+        ctx.pg = dict(self.ctx.pg, graph_version="pv-other")
+        ctx._index = None
+        self.err("search", "bad_args", ctx=ctx, cursor=cur)
+
+    def test_table_is_capped(self):
+        ctx = copy.copy(self.ctx)
+        ctx.cursors = {}
+        for _ in range(230):
+            self.call("search", ctx=ctx, limit=1)
+        self.assertLessEqual(len(ctx.cursors), 200)
 
 
 class TraceFlowTest(ChatToolsBase):
@@ -403,8 +505,18 @@ class SecondTierTest(ChatToolsBase):
                                           "isolation_valve") for b in d["boundary"]))
         self.assertIn("RC-PSV101", {b["tag"] for b in d["boundary"]})
 
-    def test_enclose_too_large(self):
-        self.err("enclose", "too_large", start="RC-RV01", max_size=3)
+    def test_enclose_capped_is_flagged(self):
+        d = self.ok("enclose", start="RC-RV01", max_size=3)["data"]
+        self.assertTrue(d["capped"])
+        self.assertFalse(d["complete"])
+        self.assertEqual(d["size"], 3)
+        self.assertFalse(self.ok("enclose", start="RC-PZ01", stop_kinds=["valve"])["data"]["capped"])
+
+    def test_enclose_objects_and_boundary_share_pages(self):
+        res = self.ok("enclose", start="RC-PZ01", stop_kinds=["valve"], limit=10)
+        d = res["data"]
+        self.assertEqual(len(d["objects"]) + len(d["boundary"]), res["returned"])
+        self.assertEqual(res["total"], d["size"] + d["boundary_count"])
 
     def test_search_filter(self):
         res = self.ok("search", filter={"kinds": ["valve"], "tag": "RC-PSV*"})
@@ -422,12 +534,25 @@ class SecondTierTest(ChatToolsBase):
         self.err("search", "bad_args", filter={"color": "red"})
         self.err("search", "bad_args", filter={"kinds": "psv"})
 
+    def test_node_filters_use_state_and_batch(self):
+        ctx = copy.copy(self.ctx)
+        ctx.node_sets = [{"set_rev": 7, "nodes": [
+            {"node_id": "S1", "name": "a", "state": "proposed", "batch_id": "b-1", "rev": 2, "members": []},
+            {"node_id": "S2", "name": "b", "state": "confirmed", "members": []}]}]
+        ctx._index = None
+        res = self.call("list_nodes", ctx=ctx, filter={"state": "proposed"})
+        self.assertEqual([n["node_id"] for n in res["data"]["items"]], ["S1"])
+        self.assertEqual(res["data"]["set_rev"], 7)
+        self.assertEqual([n["node_id"] for n in self.call("list_nodes", ctx=ctx, filter={"batch_id": "b-1"})["data"]["items"]], ["S1"])
+        d = self.call("get_node", ctx=ctx, node_id="S1")["data"]
+        self.assertEqual((d["state"], d["rev"], d["set_rev"]), ("proposed", 2, 7))
+
     def test_nodes(self):
         ctx = copy.copy(self.ctx)
         ctx.node_sets = [{"nodes": [
-            {"node_id": "S-01", "name": "가압기 압력 제어", "intent": "압력 유지", "origin": "ai", "status": "proposed",
+            {"node_id": "S-01", "name": "가압기 압력 제어", "intent": "압력 유지", "origin": "ai", "state": "proposed",
              "members": [S102 + "/entity-node-001", S102 + "/entity-node-014", S101 + "/entity-node-001"]},
-            {"node_id": "S-02", "name": "충전", "origin": "human", "status": "confirmed",
+            {"node_id": "S-02", "name": "충전", "origin": "human", "state": "confirmed",
              "members": [S101 + "/entity-node-002"]}]}]
         ctx._index = None
         d = self.call("get_node", ctx=ctx, node_id="S-01")["data"]
@@ -465,6 +590,24 @@ class RegistryTest(ChatToolsBase):
             for prop in s.get("required", []):
                 self.assertIn(prop, s["properties"], name)
             json.dumps(s)
+
+    def test_every_tool_declares_returned_id_kinds(self):
+        valid = {"component", "node", "cell", "chunk", "path_ref"}
+        for name, t in self.tools.REGISTRY.items():
+            self.assertTrue(set(t["returns"]) <= valid, name)
+        self.assertEqual(set(self.tools.REGISTRY["trace_path"]["returns"]), {"component", "path_ref"})
+        self.assertEqual(self.tools.REGISTRY["get_node"]["returns"], ("node", "component"))
+        self.assertEqual(self.tools.REGISTRY["count"]["returns"], ())
+
+    def test_registry_module_lists_the_same_tools(self):
+        from hazop.chat import registry
+        self.assertEqual(sorted(registry.REGISTRY), sorted(self.tools.REGISTRY))
+
+    def test_every_listing_tool_takes_limit_and_cursor(self):
+        for name in ("find", "trace_path", "trace_flow", "enclose", "neighbors", "search", "count", "summary", "get_node", "list_nodes"):
+            props = self.tools.REGISTRY[name]["input_schema"]["properties"]
+            self.assertEqual(props["limit"]["maximum"], 200, name)
+            self.assertIn("cursor", props, name)
 
     def test_registry_fn_runs_without_wrapper_knowledge(self):
         res = self.tools.REGISTRY["find"]["fn"](self.ctx, query="RC-PZ01")

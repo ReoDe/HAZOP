@@ -50,6 +50,10 @@ class ChatContext:
     unknowns: list = field(default_factory=list)
     unresolved: list = field(default_factory=list)
     fingerprint: tuple = None
+    docs: dict = field(default_factory=dict)    # chunk_id -> (등록 ID, 버전, 쪽). 문서 도구(C3)가 채운다
+    roots: list = field(default_factory=list)   # 서버가 파일을 열어도 되는 폴더(C3). 이 묶음의 도구는 파일을 열지 않는다
+    cursors: dict = field(default_factory=dict, repr=False, compare=False)  # 서버가 낸 cursor 표(질문 하나 동안, 200개까지)
+    _call: tuple = field(default=None, repr=False, compare=False)
     _index: object = field(default=None, repr=False, compare=False)
 
     @property
