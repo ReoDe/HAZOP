@@ -32,6 +32,8 @@ export const store = createStore({
   bubble: null,           // 도면에서 누른 구성요소 말풍선 {sheet, id, tag, kind, rect}
   iconsReady: false,
   canvasReady: false,
+  layers: { symbol: true, pipe: true, tag: true },   // 도면 층 켜고 끄기(채팅의 layer 동작이 씀)
+  readySheet: null,       // 도면을 다 읽어 그린 graph_id(채팅이 도면을 열고 확대할 때 기다리는 신호)
 });
 
 /** 저장소의 한 부분을 구독한다. selector가 같은 값을 주면 다시 그리지 않는다. */

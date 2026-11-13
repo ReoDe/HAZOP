@@ -49,6 +49,7 @@ export function SheetHost() {
   const sheet = useStore((s) => s.sheet);
   const marks = useStore((s) => s.marks);
   const command = useStore((s) => s.command);
+  const layers = useStore((s) => s.layers);        // 채팅의 층 켜고 끄기(symbol·pipe·tag)가 도면에 내려간다
   const [Comp, setComp] = useState(() => SheetComponent);
   const cc = useCleanCanvas(sheet);          // 원본·정리 보기, 미확인 칩, 못 읽은 곳 말풍선(s-viewer의 clean_ui.js)
   const nc = useNodeCanvas(sheet, { onEsc: () => { if (!cc.closeIfOpen()) store.set({ marks: { rid: null, bySheet: {} } }); } });
@@ -59,6 +60,6 @@ export function SheetHost() {
   }
   if (!Comp) return html`<${Fallback} sheet=${sheet} />`;
   const items = (marks.bySheet && marks.bySheet[sheet]) || [];
-  return html`<div class="canvas"><${Comp} sheet=${{ graph_id: sheet }} ...${nc.props} ...${cc.props} marks=${items.map((m, i) => Object.assign({ id: (marks.rid || "m") + (i ? "#" + i : "") }, m))}
+  return html`<div class="canvas"><${Comp} sheet=${{ graph_id: sheet }} ...${nc.props} ...${cc.props} layers=${layers} onReady=${(g) => store.set({ readySheet: g })} marks=${items.map((m, i) => Object.assign({ id: (marks.rid || "m") + (i ? "#" + i : "") }, m))}
     command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, rect: d.rect } }); }} /><${NodeOverlay} /><${CleanOverlay} /><${SheetConfirm} /><${ItemBubble} /></div>`;
 }

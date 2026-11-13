@@ -30,6 +30,7 @@ def register_and_extract(engine, path, progress):
     out = data.extract_and_graph(result["registration_file"])
     pages = [(os.path.basename(p["extract_dir"]), p["extraction"]) for p in (out.get("pages") or [out])]
     return {"outcome": result["outcome"], "material_id": rec.get("material_id"), "pages": len(pages),
+            "conflicts": [c["drawing_number"] for c in (result.get("conflicts") or [])],      # 같은 번호를 다른 형식 원본이 이미 쓰고 있음(고르기는 도면 패널)
             "ai_review": review_if_wanted(engine, pages, progress)}
 
 

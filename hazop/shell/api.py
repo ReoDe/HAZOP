@@ -526,7 +526,7 @@ CORE_TOPICS = ("state", "drawings", "connection", "chat", "icons", "examples", "
 PROJECT_BOUND_CORE = ("chat.action.", "sheet.")
 
 # 영역별 모듈(등록 규약은 hazop/shell/README.md). 새 영역은 이 튜플에 모듈 이름 하나를 더하는 것이 전부다.
-MODULES = ("api_nodes", "api_results", "api_drawings", "api_ie", "clean_items")
+MODULES = ("api_nodes", "api_results", "api_drawings", "api_ie", "api_kg", "api_actionlog", "api_aireview", "clean_items")
 
 TOPIC_OWNER = {}          # 토픽 -> 읽기 모듈
 LOADED = {}               # 모듈 이름 -> 모듈 (읽지 못한 것은 없다)
@@ -550,6 +550,7 @@ def _load_modules():
     import importlib
     bound = list(PROJECT_BOUND_CORE)
     for name in MODULES:
+        before = set(COMMANDS)
         try:
             mod = importlib.import_module("hazop.shell." + name)
             if hasattr(mod, "register"):
@@ -562,8 +563,11 @@ def _load_modules():
             if t in TOPIC_OWNER or t in CORE_TOPICS:
                 raise ValueError("읽기 토픽 이름이 겹침: %s (%s)" % (t, name))
             TOPIC_OWNER[t] = mod
-        prefixes = getattr(mod, "PROJECT_PREFIXES", None)
-        bound.extend(prefixes if prefixes is not None else tuple(t + "." for t in topics))
+        # 프로젝트에 묶는 쪽이 기본이다: 읽기 토픽 이름, 모듈이 적은 PROJECT_PREFIXES, 이 모듈이 올린 명령의 이름 머리를 모두 묶는다.
+        # 빠뜨려도 다른 프로젝트에 저장되지 않게 하려는 것이고, 묶지 말아야 하는 머리만 UNBOUND_PREFIXES로 뺀다.
+        prefixes = set(getattr(mod, "PROJECT_PREFIXES", None) or ()) | {t + "." for t in topics}
+        prefixes |= {c.split(".", 1)[0] + "." for c in set(COMMANDS) - before if "." in c}
+        bound.extend(sorted(prefixes - set(getattr(mod, "UNBOUND_PREFIXES", ()))))
         LOADED[name] = mod
     return tuple(dict.fromkeys(bound))
 

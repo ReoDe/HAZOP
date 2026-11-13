@@ -145,6 +145,9 @@
     "table": {
       "sha256": "84e391f68fd2f93762366a6ee9cde7670abcea02736d0e46150fef8047c88a94"
     },
+    "topology-star-3": {
+      "sha256": "46ff89cf178e1c691cfce34e48673afb799701dff0a12cd4a3e238db10443404"
+    },
     "trash": {
       "sha256": "94176fd47075e845088ac13745104d722daae7fa8be94ae9665c143f8e2705a7"
     },

@@ -6,7 +6,8 @@
   이름이고 `at`은 엔진이 채운다(웹 인자 아님). 조건을 못 채우면 엔진이 거절하고 사유(미확인 n곳·위치 없는 것·원본과 견줌 없음)를 그대로 올린다.
 - **DEXPI 내보내기** `dexpi`(읽기: 내보낼 수 있는 도면 목록과 사유), `dexpi.export`(명령): 확정된 쪽만 낸다. 저장할 폴더는 창이 Python 쪽 대화상자로 묻고(웹은 경로를 보내지 않는다),
   이미 있는 파일을 덮어쓸 때는 확인을 받는다. 결과는 낸 도면(파일 이름만)과 뺀 목록(확정 안 된 쪽)과 도면별 뺀 항목 수로 보인다.
-- 채팅 동작 층(hazop/chat/actions.py)에는 쪽 확정·DEXPI 동작이 아직 없어 이 길을 채팅에 잇지 않았다(그 파일의 주인은 c1-tools).
+- 채팅의 실행 동작(쪽 확정·DEXPI 내보내기)은 hazop/shell/chat_actions.py가 이 모듈의 `_sheet_command`·`_export`를 그대로 불러 잇는다(8c74f5f).
+- **원본 선택** `sources`(읽기)·`sources.choose`(명령): 같은 도면 번호의 원본이 형식 둘 이상일 때 어느 형식을 쓸지 사람이 고른다(hazop.graph.sources).
 """
 
 import logging
@@ -16,8 +17,8 @@ from hazop.extract import confirmation
 
 LOG = logging.getLogger("hazop.shell.api_drawings")
 MAX_ROWS = 200
-TOPICS = ("sheetconf", "dexpi")                 # api.py가 읽기 길을 이 모듈로 잇는다(register와 함께 hazop/shell/README.md의 등록 규약)
-PROJECT_PREFIXES = ("sheet.", "dexpi.")           # 쪽 확정·내보내기 명령은 프로젝트 ID를 실어야 한다
+TOPICS = ("sheetconf", "dexpi", "sources")                 # api.py가 읽기 길을 이 모듈로 잇는다(register와 함께 hazop/shell/README.md의 등록 규약)
+PROJECT_PREFIXES = ("sheet.", "dexpi.", "sources.")           # 쪽 확정·내보내기 명령은 프로젝트 ID를 실어야 한다
 
 
 def _api():
@@ -76,7 +77,25 @@ def read(engine, parts, query):
         return api._json(data) if data is not None else None
     if parts[0] == "dexpi" and len(parts) == 1:
         return api._json(exportable(engine))
+    if parts[0] == "sources" and len(parts) == 1:
+        return api._json(source_conflicts(engine))
     return None
+
+
+def source_conflicts(engine):
+    """같은 도면 번호의 원본이 형식 둘 이상으로 들어온 것(hazop.graph.sources.conflicts). 읽기만 하고 파일을 쓰지 않는다.
+    -> {"conflicts": [{"drawing_number", "graph_id", "formats", "in_use_format", "chosen", "candidates": [{"format", "modified"}]}]}.
+    폴더 이름·경로는 싣지 않는다(형식 이름과 바뀐 시각만)."""
+    import datetime
+    from hazop.graph import sources
+    rows = []
+    for c in sources.conflicts(engine.project_id())[:MAX_ROWS]:
+        rows.append({"drawing_number": c["drawing_number"], "graph_id": c["graph_id"], "formats": list(c["formats"]),
+                     "in_use_format": c.get("in_use_format"), "chosen": c.get("chosen"),
+                     "candidates": [{"format": x.get("format"),
+                                     "modified": datetime.datetime.fromtimestamp(x["modified"]).strftime("%Y-%m-%d %H:%M")}
+                                    for x in c["candidates"]]})
+    return {"conflicts": rows}
 
 
 # ---------------------------------------------------------------- 쓰기
@@ -104,6 +123,23 @@ def _sheet_command(command):
         data = status(engine, a["graph_id"])
         return {"changed": out["changed"], "status": data}
     return handler
+
+
+def _choose_source(engine, a):
+    """같은 도면 번호의 어느 형식 원본을 프로젝트 그래프에 쓸지 사람이 고른 것을 받는다(고른 사람은 설정의 검토자 이름)."""
+    from hazop import store_io
+    from hazop.graph import sources
+    api = _api()
+    try:
+        record = sources.choose(engine.project_id(), a["drawing_number"], a["format"], _by(engine))
+    except store_io.Conflict:
+        raise api.CommandError("stale", "다른 곳에서 선택이 바뀌었습니다. 목록을 다시 읽었으니 한 번 더 골라 주세요.")
+    except ValueError as exc:
+        engine.changed("sources", None)
+        raise api.CommandError("failed", str(exc)[:300])
+    engine.changed("sources", None)
+    engine.changed("drawings", None)
+    return {"chosen": {"drawing_number": a["drawing_number"], "format": record["format"]}}
 
 
 def _export(engine, a):
@@ -159,5 +195,7 @@ def register(commands):
         "'원본과 견줌' 기록(미확인 0·위치 없음 0일 때). 화면이 읽은 세 파일 지문과 기록 판을 함께 보낸다")
     put("sheet.confirm", dict(base), _sheet_command("confirm"), "이 쪽 확정(조건을 엔진이 센다, 확정자는 검토자 이름)")
     put("sheet.unconfirm", dict(base, reason=(v_str(0, 500), False)), _sheet_command("unconfirm"), "견줌·확정 취소")
+    put("sources.choose", {"drawing_number": (v_str(1, 200), True), "format": (v_enum("drawio", "pdf_vector", "dexpi"), True)},
+        _choose_source, "같은 도면 번호의 원본이 여러 형식일 때 프로젝트 그래프에 쓸 형식을 고른다(고르기 전에는 먼저 있던 형식)")
     put("dexpi.export", {"graph_ids": (v_list(v_str(1, 200), 200), True)}, _export,
         "확정된 쪽을 DEXPI XML로 내보낸다(저장 폴더는 창이 대화상자로 묻고, 덮어쓰면 확인한다)")

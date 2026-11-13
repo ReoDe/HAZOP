@@ -189,7 +189,7 @@ class ShellWindowTest(ShellBase):
         self.assertIn("도면 파일을 여기에 끌어 놓으세요", t)       # 열 도면이 여럿이면 도면 패널을 먼저 보인다
         self.assertIn("SNP-M-101", t)
         self.assertIn("SNP-M-102", t)
-        self.assertEqual(self.js(win, "document.querySelectorAll('.rail button').length"), 6)       # 도면·구간·분석 결과·초기사건·AI 연결·설정
+        self.assertEqual(self.js(win, "document.querySelectorAll('.rail button').length"), 9)       # 도면·구간·분석 결과·초기사건·AI 검토·지식그래프·AI 연결·AI 실행 기록·설정
         self.assertEqual(self.js(win, "document.querySelectorAll('button:not([aria-label]):not([title])').length"), 0, "접근 이름 없는 단추")
 
     def test_icons_are_inline_svg_elements(self):
@@ -241,7 +241,7 @@ class ShellWindowTest(ShellBase):
 
     def test_settings_has_the_start_screen_switch(self):
         win = self.window()
-        self.assertTrue(self.click(win, ".rail button", 4))
+        self.assertTrue(self.click(win, ".rail button", 6))
         pump(0.4)
         self.assertIn("시작할 때 새 화면 쓰기", self.text(win))
         self.assertEqual(self.js(win, "document.querySelector(\"button[aria-label='시작할 때 새 화면 쓰기']\").getAttribute('aria-checked')"), "true", "기본은 켜짐")
@@ -250,7 +250,7 @@ class ShellWindowTest(ShellBase):
 
     def test_settings_panel_shows_connection_and_saves_reviewer(self):
         win = self.window()
-        self.assertTrue(self.click(win, ".rail button", 4))
+        self.assertTrue(self.click(win, ".rail button", 6))
         pump(0.5)
         self.assertIn("AI 연결", self.text(win))
         self.js(win, "(() => { const i = document.getElementById('reviewer'); i.value = '검토자B'; i.dispatchEvent(new Event('input', {bubbles: true})); })()")

@@ -14,7 +14,7 @@ import json
 import os
 
 from hazop import paths, store_io
-from hazop.graph import project
+from hazop.graph import project, sources
 from hazop.study import migrate
 from hazop.study import nodes as sn
 from hazop.study import results as res
@@ -73,7 +73,8 @@ def _graph_inputs(project_id):
     """project.load가 읽는 파일의 (경로, 바뀐 시각, 크기). 하나라도 바뀌면 프로젝트 그래프를 다시 짓는다."""
     root = paths.output_root("graph")
     files = [os.path.join(root, n, "graph.json") for n in sorted(os.listdir(root))] if os.path.isdir(root) else []
-    files += [project.manual_path(project_id), paths.folder("APR1400", project.SYSTEM_CODES_FILE)]
+    files += [project.manual_path(project_id), paths.folder("APR1400", project.SYSTEM_CODES_FILE),
+              sources.choices_path(project_id)]      # 같은 번호의 어느 형식을 쓸지 고른 기록(바뀌면 그래프를 다시 짓는다)
     out = []
     for f in files:
         try:

@@ -98,7 +98,11 @@ function wireEvents() {
   on("app.notice", (d) => toast(d.text));
   const job = (state) => (d) => store.set((s) => ({ jobs: Object.assign({}, s.jobs, { [d.id]: Object.assign({}, s.jobs[d.id], d, { state }) }) }));
   on("job.progress", job("running"));
-  on("job.done", (d) => { job("done")(d); loadDrawings().then((x) => { if (!store.get().sheet && x.drawings.length === 1) openSheet(x.drawings[0].graph_id); }); });
+  on("job.done", (d) => {
+    job("done")(d);
+    const dup = d.result && d.result.conflicts;
+    if (dup && dup.length) toast("같은 도면 번호 " + dup.join(", ") + "의 원본이 다른 형식으로 이미 있습니다. 도면 패널에서 쓸 쪽을 고르세요(고르기 전에는 먼저 있던 쪽을 씁니다).");
+    loadDrawings().then((x) => { if (!store.get().sheet && x.drawings.length === 1) openSheet(x.drawings[0].graph_id); }); });
   on("job.failed", (d) => { job("failed")(d); toast(d.label + ": " + d.message, "err"); });
   onChanged((topic) => {
     if (topic === "drawings") loadDrawings().catch(() => {});

@@ -5,6 +5,7 @@ import { useEffect, useState } from "../../vendor/hooks.module.js";
 import { cmd, onChanged, read } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice, Switch } from "../ui/parts.js";
+import { SourceConflicts } from "./drawings_sources.js";
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
@@ -41,6 +42,20 @@ function DexpiExport() {
       ${result.not_exported.length ? html`<div class="muted small">내보내지 않은 쪽: ${result.not_exported.map((x) => (x.drawing_number || x.graph_id) + "(" + (STATE_TEXT[x.state] || x.state) + ", 남은 미확인 " + x.unconfirmed + ")").join(" · ")}</div>` : null}</div>` : null}</div>`;
 }
 
+/** AI 검토를 켰을 때 도면별 예상 호출 수(엔진이 사람이 고친 자리를 뺀 미확인 항목으로 센다). 꺼져 있으면 읽지 않는다. */
+function useAiEstimate(on, cap) {
+  const [est, setEst] = useState(null);
+  useEffect(() => {
+    if (!on) { setEst(null); return undefined; }
+    let live = true;
+    const load = () => read("aireview/estimate?cap=" + encodeURIComponent(cap)).then((e) => { if (live) setEst(e); }).catch(() => { if (live) setEst(null); });
+    load();
+    const off = onChanged((t) => { if (t === "drawings" || t === "aireview") load(); });
+    return () => { live = false; if (typeof off === "function") off(); };
+  }, [on, cap]);
+  return est;
+}
+
 export function DrawingsPanel({ onOpen, onClose }) {
   const data = useStore((s) => s.drawings);
   const sheet = useStore((s) => s.sheet);
@@ -49,6 +64,8 @@ export function DrawingsPanel({ onOpen, onClose }) {
   const over = useStore((s) => s.dropOver);
   const conn = useStore((s) => s.conn);
   const running = Object.entries(jobs);
+  const est = useAiEstimate(!!app.ai_review, app.ai_review_cap);
+  const estOf = (gid) => (est && est.pages ? est.pages.find((p) => p.graph_id === gid) : null);
 
   const pick = () => cmd("register.pick").catch(toastError);
   const setReview = (patch) => cmd("extract.set_ai_review", patch).then((r) => store.set((s) => ({
@@ -67,7 +84,7 @@ export function DrawingsPanel({ onOpen, onClose }) {
       <div class="card"><h3>추출 설정</h3>
         <div class="kv"><div class="k"><b>AI 검토</b><span>추출 뒤 AI가 미확인 항목의 후보를 제안합니다(구독 한도를 씁니다). 처음 값은 꺼짐이고, 한 번 실행에 최대 ${app.ai_review_run_cap}회까지 부릅니다.</span></div>
           <${Switch} on=${app.ai_review} label="AI 검토" onChange=${(v) => setReview({ enabled: v })} /></div>
-        ${app.ai_review ? html`<div class="kv"><div class="k"><b>도면당 호출 상한</b><span>${app.ai_review_cap}회 (예상 ${Math.max(1, Math.round(app.ai_review_cap * 6 / 60))}분 안쪽)</span></div>
+        ${app.ai_review ? html`<div class="kv"><div class="k"><b>도면당 호출 상한</b><span>${app.ai_review_cap}회${est ? " · 지금 도면 전체 예상 호출 " + est.calls + "회, 약 " + Math.max(1, Math.round(est.seconds / 60)) + "분" + (est.capped ? "(한 번 실행 상한 " + est.run_cap + "회에 걸림)" : "") : ""}</span></div>
           <input type="number" min="1" max="200" value=${app.ai_review_cap} aria-label="도면당 호출 상한" style="width:72px;height:30px"
             onChange=${(e) => setReview({ cap: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 20)) })} /></div>` : null}
         ${app.ai_review && !conn.can_start ? html`<${Notice} kind="warn" icon="alert-triangle">AI 연결이 준비되지 않아 검토는 건너뜁니다.<//>` : null}</div>
@@ -77,7 +94,9 @@ export function DrawingsPanel({ onOpen, onClose }) {
             <div class="thumb" aria-hidden="true"></div>
             <div class="main"><b>${d.drawing_number || d.name}</b><span>${d.title || "표제란 확인 전"}</span></div>
             ${d.unknowns ? html`<${Chip} kind="warn" title="추출에서 읽지 못한 항목">미확인 ${d.unknowns}<//>` : html`<${Chip} kind="ok" icon="check">읽음<//>`}
+            ${estOf(d.graph_id) ? html`<${Chip} kind="ai" title="AI 검토를 돌리면 이 도면에서 부를 호출 수(예상)">호출 ${estOf(d.graph_id).calls}<//>` : null}
             <${Btn} sm=${true} label=${(d.drawing_number || d.name) + " 열기"} onClick=${() => onOpen(d.graph_id)}>열기<//></div>`)}</div>`}</div>
+      <${SourceConflicts} />
       <${DexpiExport} />
       ${data.documents.length ? html`<div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">등록 자료 ${data.documents.length}건</div><div class="list">
         ${data.documents.map((d) => html`<div class="row" key=${d.material_id + ":" + d.version}><div class="main"><b>${d.name || d.material_id}</b><span>버전 ${d.version} · ${d.type}</span></div>

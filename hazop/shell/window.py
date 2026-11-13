@@ -249,6 +249,7 @@ class ShellWindow(QMainWindow):
         self.engine.chat = self.chat
         self._ctx = None
         self.engine.hooks["pick_files"] = self._pick_files
+        self.engine.hooks["pick_doc"] = self._pick_doc
         self.engine.hooks["open_classic"] = self._open_classic
         self.engine.hooks["conn_guide"] = self._conn_guide
         self.engine.hooks["save_path"] = self._save_path
@@ -303,6 +304,11 @@ class ShellWindow(QMainWindow):
 
     def _pick_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "도면 파일 고르기", "", "도면 (*.drawio *.pdf *.xml)")
+        return files
+
+    def _pick_doc(self):
+        """설계 문서 PDF 고르기(문서 패널). 도면 파일은 보이지 않는다."""
+        files, _ = QFileDialog.getOpenFileNames(self, "설계 문서 PDF 고르기", "", "설계 문서 PDF (*.pdf)")
         return files
 
     def _save_path(self, kind, default_name):
