@@ -58,15 +58,39 @@ class Base(unittest.TestCase):
         self.rels = {r["local_id"]: r for r in self.ex["relations"]}
 
     # -------------------------------------------------------- 도우미
+    def pid(self):
+        """등록한 도면처럼 추출에 project_id를 넣고 그래프를 다시 만든다(지식그래프 다시 만들기·재확인이 도는 길)."""
+        from hazop.app import data
+        from hazop import paths
+        ex = data.read_json(data.extraction_path(self.name))
+        ex["project_id"] = self.engine.project_id()
+        with open(data.extraction_path(self.name), "w", encoding="utf-8") as fh:
+            json.dump(ex, fh, ensure_ascii=False)
+        data.script_module("build_graph").build_one(data.extraction_path(self.name), paths.output_root("graph"))
+        self.ex = ex
+
     def ver(self):
         return AC.view(self.engine, self.gid)["ver"]
 
-    def edit(self, op, local_id=None, value=None, confirm=False, ver=None):
-        return self.engine.dispatch("edit.apply", {"graph_id": self.gid, "op": op, "local_id": local_id, "value": value or {},
-                                                   "ver": ver or self.ver(), "confirm": confirm}, project=self.engine.project_id(), via_web=True)
+    def edit(self, op, local_id=None, value=None, confirm=None, ver=None, base=None):
+        """confirm=True면 사람이 확인 상자를 보고 누른 것처럼: 먼저 엔진이 묻는 확인 글을 받아 그 글을 그대로 보낸다."""
+        if confirm is True:
+            first = self.edit(op, local_id, value, ver=ver, base=base)
+            if first["ok"] or first["error"]["code"] != "needs_confirm":
+                return first
+            confirm = first["error"]["message"]
+        args = {"graph_id": self.gid, "op": op, "local_id": local_id, "value": value or {}, "ver": ver or self.ver()}
+        if confirm:
+            args["confirm"] = confirm
+        if base:
+            args["base"] = base
+        return self.engine.dispatch("edit.apply", args, project=self.engine.project_id(), via_web=True)
 
-    def undo(self, op_id):
-        return self.engine.dispatch("edit.undo", {"graph_id": self.gid, "op_id": op_id, "ver": self.ver()}, project=self.engine.project_id(), via_web=True)
+    def undo(self, op_id, confirm=None):
+        args = {"graph_id": self.gid, "op_id": op_id, "ver": self.ver()}
+        if confirm:
+            args["confirm"] = confirm
+        return self.engine.dispatch("edit.undo", args, project=self.engine.project_id(), via_web=True)
 
     def redo(self):
         return self.engine.dispatch("edit.redo", {"graph_id": self.gid, "ver": self.ver()}, project=self.engine.project_id(), via_web=True)
@@ -299,6 +323,208 @@ class ReachTest(Base):
         r = self.edit("set_tag", n["local_id"], {"tag": "P-1"})
         text = json.dumps([r, AC.view(self.engine, self.gid), AC.item(self.engine, self.gid, n["local_id"])], ensure_ascii=False)
         self.assertNotIn(self.tmp.replace("\\", "/"), text.replace("\\\\", "/").replace("\\", "/"))
+
+
+class ReviewReproTest(Base):
+    """2026-11-14 검토 재현(R1~R9)을 시험으로 옮긴 것. 고치기 전에는 실패한다."""
+
+    def tags(self):
+        return [n for n in self.ex["nodes"] if n.get("tag") and n.get("kind") not in (None, "tee", "continuation")]
+
+    def cur_tag(self, lid):
+        return next(n for n in self.corrected()["nodes"] if n["local_id"] == lid)["tag"]
+
+    def test_r1_redo_puts_the_op_back_where_it_was_and_a_new_edit_clears_redo(self):
+        n = self.tagged()
+        a = self.edit("set_tag", n["local_id"], {"tag": "FIRST"})
+        self.edit("set_tag", n["local_id"], {"tag": "SECOND"})
+        self.assertTrue(self.undo(a["data"]["op_id"])["ok"])
+        self.assertEqual(self.cur_tag(n["local_id"]), "SECOND")
+        self.assertTrue(self.redo()["ok"])
+        self.assertEqual(self.cur_tag(n["local_id"]), "SECOND")                         # 되살린 FIRST가 뒤의 SECOND를 덮지 않는다
+        self.assertEqual([o["value"]["tag"] for o in corrections.load(self.name)["ops"]], ["FIRST", "SECOND"])
+        self.assertTrue(self.undo(a["data"]["op_id"])["ok"])
+        self.edit("set_tag", n["local_id"], {"tag": "THIRD"})                           # 되돌린 뒤 새로 고치면 다시 하기는 없다
+        self.assertIsNone(AC.view(self.engine, self.gid)["redo"])
+        self.assertEqual(self.redo()["error"]["code"], "not_found")
+
+    def test_r2_an_ai_accepted_op_is_undone_only_in_the_ai_review_panel(self):
+        from hazop.extract import ai_review
+        n = self.tagged()
+        doc = ai_review.new_doc(self.name, self.ex)
+        doc["candidates"].append({"cand_id": "k1", "status": "proposed", "target": n["source_object_id"], "local_id": n["local_id"], "field": "tag",
+                                  "values": ["AI-TAG"], "confidence": 0.9, "task": "fill", "op_id": None})
+        ai_review.save_doc(doc)
+        self.assertEqual(ai_review.accept(ai_review.load_doc(self.name), ["k1"], self.ex, self.name, "검토자A"), [])
+        v = AC.view(self.engine, self.gid)
+        ai_op = corrections.load(self.name)["ops"][-1]["op_id"]
+        self.assertNotIn(ai_op, v["undoable"])
+        self.assertTrue(next(o for o in v["ops"] if o["op_id"] == ai_op)["ai"])
+        u = self.undo(ai_op)
+        self.assertEqual(u["error"]["code"], "bad_args")
+        self.assertIn("AI 검토 패널", u["error"]["message"])
+        self.assertEqual(ai_review.load_doc(self.name)["candidates"][0]["status"], "accepted")
+        self.assertEqual(self.cur_tag(n["local_id"]), "AI-TAG")
+
+    def test_r3_the_version_is_checked_against_the_bytes_that_are_edited(self):
+        from hazop.app import data
+        a, b = self.tags()[:2]
+        seen = self.ver()
+
+        def swap(name):                     # 판을 대조한 뒤·파일을 읽기 전에 다시 추출이 끼어 두 기기가 자리를 바꿈
+            ex = json.loads(json.dumps(self.ex))
+            na = next(x for x in ex["nodes"] if x["local_id"] == a["local_id"])
+            nb = next(x for x in ex["nodes"] if x["local_id"] == b["local_id"])
+            for k in ("tag", "kind", "category", "attributes"):
+                na[k], nb[k] = nb.get(k), na.get(k)
+            with open(data.extraction_path(self.name), "w", encoding="utf-8") as fh:
+                json.dump(ex, fh, ensure_ascii=False)
+            return False, [], []
+        with mock.patch.object(sheet_refresh, "ensure_graph", swap):
+            r = self.edit("set_tag", a["local_id"], {"tag": "MEANT-" + str(a["tag"])}, ver=seen)
+        self.assertEqual(r["error"]["code"], "stale")
+        self.assertIsNone(corrections.load(self.name))
+
+    def test_r3b_a_target_that_changed_under_the_same_id_is_refused(self):
+        a = self.tagged()
+        base = AC.item(self.engine, self.gid, a["local_id"])["base"]
+        self.assertTrue(self.edit("set_kind", a["local_id"], {"kind": "check_valve"})["ok"])     # 다른 창에서 종류가 바뀜
+        r = self.edit("set_tag", a["local_id"], {"tag": "X-9"}, base=base)
+        self.assertEqual(r["error"]["code"], "stale")
+        self.assertIn("화면에서 본 항목", r["error"]["message"])
+
+    def test_r5_a_knowledge_graph_failure_keeps_the_stale_mark_and_is_retried(self):
+        from hazop.app import data
+        self.pid()
+        with mock.patch.object(data, "build_project_kg", side_effect=OSError("kg disk")):
+            r = self.edit("set_tag", self.tagged()["local_id"], {"tag": "KG-1"})
+        self.assertTrue(r["ok"], r)
+        self.assertTrue(r["data"]["graph_stale"])
+        self.assertTrue(sheet_refresh.graph_stale(self.name))
+        from hazop.app import project_ctx
+        project_ctx.project_graph(self.engine.project_id())                         # 프로젝트 그래프를 짓는 곳이 먼저 다시 만든다
+        self.assertFalse(sheet_refresh.graph_stale(self.name))
+
+    def test_r6_two_threads_with_the_same_version_do_not_lose_an_edit(self):
+        import threading
+        a, b = self.tags()[:2]
+        seen = self.ver()
+        out = []
+
+        def go(n, t):
+            out.append(self.edit("set_tag", n["local_id"], {"tag": t}, ver=seen))
+        ts = [threading.Thread(target=go, args=(a, "T-A")), threading.Thread(target=go, args=(b, "T-B"))]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        oks = [x for x in out if x.get("ok")]
+        stale = [x for x in out if not x.get("ok") and x["error"]["code"] == "stale"]
+        self.assertEqual((len(oks), len(stale)), (1, 1), out)
+        self.assertEqual(len(corrections.load(self.name)["ops"]), 1)
+
+    def test_r8_path_points_are_validated(self):
+        rel = self.flow_rel()
+        for pts in ([["a", "b"], [1, 2]], [[1, 2], "x"], [[1, 2]], "xy"):
+            r = self.edit("set_path", rel["local_id"], {"points": pts})
+            self.assertEqual(r["error"]["code"], "bad_args", pts)
+            self.assertIn("경로 점", r["error"]["message"])
+
+    def test_r9_deleting_a_node_names_the_pipes_that_go_with_it_and_a_changed_impact_asks_again(self):
+        rel = self.flow_rel()
+        node_lid = next(ep for ep in rel["endpoints"] if ep["end"] == "source")["node_local_id"]
+        r = self.edit("delete_node", node_lid)
+        self.assertEqual(r["error"]["code"], "needs_confirm")
+        self.assertIn(rel["local_id"], r["error"]["message"])                         # 함께 지워지는 배관
+        stale_text = r["error"]["message"].replace("지웁니다", "지웁니다(옛 확인)")
+        self.assertEqual(self.edit("delete_node", node_lid, confirm=stale_text)["error"]["code"], "needs_confirm")
+        self.assertTrue(self.edit("delete_node", node_lid, confirm=r["error"]["message"])["ok"])
+
+
+class RegisteredPathTest(unittest.TestCase):
+    """실제 길: 등록 → 추출 → 구간 만들기(api_nodes, 잠금) → 고치기. 시험 자료에 project_id를 넣지 않고 등록이 넣게 둔다(검토 12)."""
+
+    def setUp(self):
+        import glob
+        from hazop import paths
+        self.tmp = tempfile.mkdtemp(prefix="hazop-shelledit-reg-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        for p in (mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": os.path.join(self.tmp, "work"), "HAZOP_STORE_ROOT": os.path.join(self.tmp, "store")}),
+                  mock.patch.dict(api.COMMANDS)):
+            p.start()
+            self.addCleanup(p.stop)
+        os.makedirs(os.environ["HAZOP_WORK_ROOT"])
+        if "edit.apply" not in api.COMMANDS:
+            AC.register(api.COMMANDS)
+        if "edit." not in api.PROJECT_BOUND:
+            p = mock.patch.object(api, "PROJECT_BOUND", api.PROJECT_BOUND + ("edit.",))
+            p.start()
+            self.addCleanup(p.stop)
+        self.events = Events()
+        self.engine = api.Engine(settings_path=os.path.join(self.tmp, "settings.json"), emit=self.events)
+        self.engine.settings.update(reviewer_name="검토자A", project_id="REG-P")
+        from hazop.shell import register_flow
+        folder = [p for p in glob.glob(paths.folder("references", "pid-samples", "*")) if "SNP-M-101" in p][0]
+        src = shutil.copy(glob.glob(os.path.join(folder, "*.drawio"))[0], self.tmp)        # 등록은 원본을 저장소에 복사한다(원본 폴더는 건드리지 않음)
+        register_flow.register_and_extract(self.engine, src, lambda *a, **k: None)
+        self.gid = next(g for g in self.engine.graph_names() if "101" in g)
+        self.name = self.engine.graph_names()[self.gid]
+
+    def call_nodes(self, name, args):
+        from hazop.shell import api_nodes
+        s = api_nodes.summary(self.engine)
+        args = dict(args, set_rev=s["set_rev"], project_id=self.engine.project_id())
+        if args.get("node_id"):
+            row = next(n for n in s["nodes"] if n["node_id"] == args["node_id"])
+            args["targets"] = [{"node_id": row["node_id"], "rev": row["rev"], "state": row["state"]}]
+        if args.get("node_ids"):
+            rows = {n["node_id"]: n for n in s["nodes"]}
+            args["targets"] = [{"node_id": i, "rev": rows[i]["rev"], "state": rows[i]["state"]} for i in args["node_ids"]]
+        r = self.engine.dispatch("nodes." + name, args, project=self.engine.project_id(), via_web=True)
+        self.assertTrue(r["ok"], r)
+        return r
+
+    def edit(self, op, local_id=None, value=None, confirm=None):
+        v = AC.view(self.engine, self.gid)["ver"]
+        args = {"graph_id": self.gid, "op": op, "local_id": local_id, "value": value or {}, "ver": v}
+        if confirm:
+            args["confirm"] = confirm
+        return self.engine.dispatch("edit.apply", args, project=self.engine.project_id(), via_web=True)
+
+    def test_registered_drawing_edit_rebuilds_the_knowledge_graph_and_names_the_confirmed_segment(self):
+        from hazop.app import data
+        ex = data.read_json(data.extraction_path(self.name))
+        self.assertEqual(ex.get("project_id"), "REG-P")
+        rel = next(r for r in ex["relations"] if r["kind"] == "physical_connection" and all(ep.get("node_local_id") for ep in r["endpoints"]))
+        node_lid = next(ep for ep in rel["endpoints"] if ep["end"] == "source")["node_local_id"]
+        self.call_nodes("create", {"sheet": self.gid, "ids": [rel["local_id"]], "name": "확정할 구간"})
+        self.call_nodes("confirm", {"node_ids": ["S1"]})
+        with mock.patch.object(data, "build_project_kg", wraps=data.build_project_kg) as kg:
+            r = self.edit("set_tag", node_lid, {"tag": "REG-TAG-1"})
+        self.assertTrue(r["ok"], r)
+        self.assertTrue(kg.called, "등록된 도면이면 지식그래프를 다시 만든다")
+        self.assertTrue(any(t.startswith("④ 검토구간이 고치기 전 도면 기준입니다") and "S1" in t for t in r["data"]["recheck"]), r["data"]["recheck"])
+        d = self.edit("delete_node", node_lid)                                            # 기기와 함께 지워지는 배관이 확정 구간 S1에 든다
+        self.assertEqual(d["error"]["code"], "needs_confirm")
+        self.assertIn("S1", d["error"]["message"])
+        self.assertIn(rel["local_id"], d["error"]["message"])
+
+    def test_undoing_an_added_node_that_a_confirmed_segment_holds_asks_first_and_the_list_shows_the_broken_member(self):
+        r = self.edit("add_node", None, {"kind": "manual_valve", "tag": "RC-V901", "at": [60, 60]})
+        self.assertTrue(r["ok"], r)
+        made = r["data"]["created"]
+        self.call_nodes("create", {"sheet": self.gid, "ids": [made], "name": "새 기기 구간"})
+        self.call_nodes("confirm", {"node_ids": ["S1"]})
+        u = self.engine.dispatch("edit.undo", {"graph_id": self.gid, "op_id": r["data"]["op_id"], "ver": AC.view(self.engine, self.gid)["ver"]},
+                                 project=self.engine.project_id(), via_web=True)
+        self.assertEqual(u["error"]["code"], "needs_confirm")
+        self.assertIn("S1", u["error"]["message"])
+        u = self.engine.dispatch("edit.undo", {"graph_id": self.gid, "op_id": r["data"]["op_id"], "ver": AC.view(self.engine, self.gid)["ver"],
+                                               "confirm": u["error"]["message"]}, project=self.engine.project_id(), via_web=True)
+        self.assertTrue(u["ok"], u)
+        from hazop.shell import api_nodes
+        row = api_nodes.summary(self.engine)["nodes"][0]
+        self.assertEqual(row["broken"], 1)                                                # 구간 화면에 '끊긴 구성원'으로 보인다
 
 
 if __name__ == "__main__":
