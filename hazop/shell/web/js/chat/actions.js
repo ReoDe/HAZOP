@@ -71,7 +71,7 @@ function PlainBox({ it }) {
 }
 
 export function ActionItems({ items, onAsk }) {
-  return html`<div class="acts">${items.map((it) => it.status === "confirm" ? html`<${ConfirmBox} key=${it.key + (it.token || "")} it=${it} />`
+  return html`<div class="actlist">${items.map((it) => it.status === "confirm" ? html`<${ConfirmBox} key=${it.key + (it.token || "")} it=${it} />`
     : (it.status === "applied" || it.status === "candidate") ? html`<${AppliedBox} key=${it.key} it=${it} onAsk=${onAsk} />`
     : html`<${PlainBox} key=${it.key} it=${it} />`)}</div>`;
 }

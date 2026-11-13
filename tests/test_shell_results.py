@@ -370,5 +370,31 @@ class RunTest(Base):
         self.assertEqual(done["reason"], "stopped")
 
 
+class ScaleTest(unittest.TestCase):
+    """525구간 × 44편차(23,100칸) 행렬의 읽기 계산·전송 크기(규격 §5.4 측정). 파일 없이 합성 결과로 본다."""
+
+    def test_525_nodes_matrix_summary_and_kpi_are_fast_and_small(self):
+        import json
+        import time
+        devs = [{"deviation_id": "D%02d" % (i + 1), "item_id": "i%d" % i, "parameter": "p", "guideword": "g", "label": "편차 %d" % i} for i in range(44)]
+        cells = []
+        for n in range(525):
+            for d in devs:
+                e = [entry("e%d" % d["deviation_id"].__hash__(), "proposed", origin="ai_draft", recommendation="권고", severity=2, frequency=2, risk=2)] \
+                    if (n + int(d["deviation_id"][1:])) % 3 == 0 else []
+                cells.append({"node_id": "S%d" % (n + 1), "item_id": d["item_id"], "deviation_id": d["deviation_id"],
+                              "state": "analyzed" if e else "not_analyzed", "entries": e, "node_rev": 1, "hold": False})
+        doc = {"cells": cells, "deviations": devs, "ai_log": []}
+        t0 = time.perf_counter()
+        matrix = res.matrix_summary(doc)
+        kpi = api_results._kpi(doc)
+        dt = time.perf_counter() - t0
+        size = len(json.dumps({"matrix": matrix, "kpi": kpi}, ensure_ascii=False).encode("utf-8"))
+        self.assertEqual(kpi["cells"], 525 * 44)
+        self.assertLess(dt, 2.0, "행렬 요약·머리 수치 계산 %.3f초" % dt)
+        self.assertLess(size, 3_000_000, "요약 JSON %d바이트" % size)
+        print("525×44 측정: 계산 %.3f초, 요약 JSON %.2f MB" % (dt, size / 1e6))
+
+
 if __name__ == "__main__":
     unittest.main()

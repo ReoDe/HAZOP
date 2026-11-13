@@ -77,7 +77,8 @@ function Matrix({ s }) {
   const ai = active ? rows.findIndex((n) => n.node_id === active.node_id) : -1;
   const ci = active ? cols.findIndex((d) => d.deviation_id === active.deviation_id) : -1;
   const open = (r, c) => R.openCell(rows[r].node_id, cols[c].deviation_id);
-  return html`<div class="res-matrix"><${VirtualGrid} rows=${rows.length} cols=${cols.length} rowH=${34} colW=${64} headH=${64} headW=${172}
+  const h = Math.min(rows.length * 34 + 64 + 4, Math.max(220, Math.round(window.innerHeight * 0.46)));   // 행이 적으면 내용만큼, 많으면 화면의 절반 가까이
+  return html`<div class="res-matrix" style=${"height:" + h + "px"}><${VirtualGrid} rows=${rows.length} cols=${cols.length} rowH=${34} colW=${64} headH=${64} headW=${172}
     label=${"구간×편차 행렬 " + rows.length + "행 " + cols.length + "열"}
     active=${ai >= 0 && ci >= 0 ? { r: ai, c: ci } : null} onActive=${open} onOpen=${open}
     corner=${html`<span class="muted small">구간 \\ 편차</span>`}
