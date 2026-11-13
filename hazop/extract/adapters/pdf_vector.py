@@ -139,12 +139,12 @@ INSTRUMENT_FUNCTION = {"T": "transmitter", "C": "controller", "I": "indicator", 
 ACTUATED_KIND = {"motor": "motor_operated_valve", "diaphragm": "air_operated_valve"}
 OPERATED_VALVES = frozenset({"motor_operated_valve", "air_operated_valve", "control_valve", "solenoid_valve"})
 VALVE_NUMBER_RE = re.compile(r"\d{2,4}[A-Z]?")  # 범례 1.7-1 1/4 VALVE IDENT. NUMBER(사전 apr1400.ident_bubble_circle)
-# 밸브 옆 위치 약어(범례 1.7-1 1/4·4/4): 정상 위치 NO·NC·LO·LC, 고장 위치 FO·FC·FL·FAI. 'NC,FO'처럼 둘을 함께 쓴다.
+# 밸브 옆 위치 약어(범례 1.7-1 1/4·4/4): 정상 위치 NO·NC·LO·LC·LT(LOCKED THROTTLED), 고장 위치 FO·FC·FL·FAI. 'NC,FO'처럼 둘을 함께 쓴다.
 # 태그가 아니라 밸브 속성(속성 사전 normal_position·fail_position)이다
 POSITION_FIELD = {"NO": "normal_position", "NC": "normal_position", "LO": "normal_position", "LC": "normal_position",
-                  "FO": "fail_position", "FC": "fail_position", "FL": "fail_position", "FAI": "fail_position"}
-POSITION_TEXT_RE = re.compile(r"(?:NO|NC|LO|LC|FO|FC|FL|FAI)(?:\s*[,/]?\s*(?:NO|NC|LO|LC|FO|FC|FL|FAI))*")
-POSITION_CODE_RE = re.compile(r"NO|NC|LO|LC|FO|FC|FL|FAI")
+                  "LT": "normal_position", "FO": "fail_position", "FC": "fail_position", "FL": "fail_position", "FAI": "fail_position"}
+POSITION_TEXT_RE = re.compile(r"(?:NO|NC|LO|LC|LT|FO|FC|FL|FAI)(?:\s*[,/]?\s*(?:NO|NC|LO|LC|LT|FO|FC|FL|FAI))*")
+POSITION_CODE_RE = re.compile(r"NO|NC|LO|LC|LT|FO|FC|FL|FAI")
 ACTUATOR_MARK_RE = re.compile(r"[A-Z](?: ?/ ?[A-Z])?")  # 밸브 몸통·구동부 안 표기(M, E/H 등)
 POSITION_REFINES = {("NC", "LC"), ("NO", "LO")}  # (기호 모양의 값, 글자 값): 글자가 같은 상태를 더 자세히 쓴 것
 
