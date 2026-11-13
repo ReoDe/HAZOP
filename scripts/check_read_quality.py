@@ -4,6 +4,8 @@
   python scripts/check_read_quality.py --update [--force]    # 기준값을 지금 값으로 바꿈(규칙 12)
   python scripts/check_read_quality.py --pages 12,62         # 몇 쪽만(기준값 비교 없이 보기만)
   python scripts/check_read_quality.py --ai-candidates <폴더> # '스크립트 + AI 후보' 값도 냄(쪽마다 <정답지 이름>.json)
+  python scripts/check_read_quality.py --only SNP-M-102 --ai-run subscription --ai-cap 10 --ai-save <폴더>
+      AI 검토를 실제로 돌려 두 값을 냄(구독 호출. 기준값 비교 없음). 시험은 --ai-run fixed --ai-fixed-dir <폴더>
   python scripts/check_read_quality.py tiles <쪽.pdf> <출력 폴더>   # 정답지 쓰기용 격자 타일(추출 결과를 쓰지 않음)
   python scripts/check_read_quality.py sample <출력 폴더> [--per-page 20] [--seed 20261113]
       사용자 확인용 무작위 표본: 쪽마다 정답 단위 N건과 그림 조각, 확인 목록(md)
@@ -529,9 +531,16 @@ def apply_candidates(ex, cands):
             continue
         if f in ("kind", "tag"):
             n[f] = v
-        elif f in SYMBOL_FIELDS:
+        elif f in SYMBOL_FIELDS or f == "to_system":
             n.setdefault("attributes", {})[f] = v
     return out
+
+
+def ai_candidates(ex, client, cap):
+    """추출 결과 하나에 AI 검토(hazop.extract.ai_review)를 돌려 이 검사의 후보 꼴과 실행 통계를 돌려준다."""
+    from hazop.extract import ai_review
+    doc = ai_review.run(ex, client, cap=cap)
+    return ai_review.to_check_candidates(doc), doc["stats"]
 
 
 # ---------------------------------------------------------------- 기준값
@@ -742,7 +751,9 @@ def snp_folders(samples_dir):
     return sorted(d for d in glob.glob(os.path.join(samples_dir, "SNP-*")) if os.path.isdir(d))
 
 
-def run(input_dir, samples_dir, pages=None, ai_dir=None):
+def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=20, only=None, ai_save=None):
+    """only: 이 이름의 쪽만(APR1400 'apr1400-012', SNP 'SNP-M-102'). ai_client를 주면 쪽마다 AI 검토를 돌려
+    '스크립트 + AI 후보' 값을 내고, ai_save 폴더에 후보(<이름>.json)와 실행 통계를 남긴다(--ai-candidates로 다시 잼)."""
     import extract_drawio
     from hazop.extract.adapters import pdf_vector
     work = tempfile.mkdtemp(prefix="hazop-read-quality-")
@@ -764,9 +775,21 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None):
                     dio, _ = extract_drawio.run_one(dio_path[0], os.path.join(work, "extract"))
                     name = os.path.basename(folder).split("_")[0]
                     jobs.append((name, snp_key(dio, pdf[0], name), pdf[0]))
+        if only:
+            res["missing"] = [n for n in res["missing"] if n in only]
+            jobs = [j for j in jobs if j[0] in only]
         for name, k, pdf in jobs:
             ex = pdf_vector.extract(pdf, page=0, repo_root=work)
             res["pages"][name] = score_page(k, ex)
+            if ai_client is not None:
+                cands, stats = ai_candidates(ex, ai_client, ai_cap)
+                res["ai_pages"][name] = score_page(k, apply_candidates(ex, cands))
+                res.setdefault("ai_stats", {})[name] = stats
+                if ai_save:
+                    os.makedirs(ai_save, exist_ok=True)
+                    with open(os.path.join(ai_save, name + ".json"), "w", encoding="utf-8") as fh:
+                        json.dump(dict(cands, stats=stats), fh, ensure_ascii=False, indent=1)
+                continue
             cand_path = os.path.join(ai_dir, name + ".json") if ai_dir else None
             if cand_path and os.path.isfile(cand_path):
                 with open(cand_path, encoding="utf-8") as fh:
@@ -908,6 +931,14 @@ def main(argv=None):
     ap.add_argument("--pages", help="APR1400 순번 몇 개만(쉼표). SNP는 빼고, 기준값 비교·갱신을 하지 않음")
     ap.add_argument("--ai-candidates", help="AI 후보 폴더(<정답지 이름>.json)")
     ap.add_argument("--allow-missing", action="store_true", help="APR1400 PDF가 없으면 그 쪽을 빼고 판정(CI)")
+    ap.add_argument("--only", help="이 이름의 쪽만(쉼표, 예: SNP-M-102,apr1400-012). 기준값 비교·갱신을 하지 않음")
+    ap.add_argument("--ai-run", choices=("subscription", "fixed"),
+                    help="쪽마다 AI 검토를 돌려 '스크립트 + AI 후보' 값을 냄. subscription은 실제 구독 호출")
+    ap.add_argument("--ai-fixed-dir", help="--ai-run fixed의 고정 응답 폴더")
+    ap.add_argument("--ai-cap", type=int, default=20, help="도면당 AI 호출 상한(기본 20)")
+    ap.add_argument("--ai-model", help="구독 호출 모델(기본: 연결 기본값)")
+    ap.add_argument("--ai-effort", default="medium", help="구독 호출 추론 강도(기본 medium)")
+    ap.add_argument("--ai-save", help="AI 후보와 실행 통계를 쓸 폴더(<이름>.json)")
     ap.add_argument("--baseline", default=BASELINE)
     ap.add_argument("--update", action="store_true")
     ap.add_argument("--force", action="store_true", help="HEAD와 다른(커밋 안 한) 기준값도 --update로 덮음")
@@ -922,12 +953,25 @@ def main(argv=None):
     if not os.path.isdir(input_dir):  # CI처럼 DCD 원본 폴더가 아예 없으면 SNP만으로 판정한다(폴더가 있는데 쪽이 빠지면 실패)
         print("APR1400 쪽 폴더가 없어 SNP만 잰다: %s" % input_dir)
         args.allow_missing = True
-    res = run(input_dir, os.path.abspath(args.samples_dir or default_samples_dir()), pages, args.ai_candidates)
+    client = None
+    if args.ai_run:
+        from hazop.study import providers
+        kw = {"effort": args.ai_effort, "response_dir": args.ai_fixed_dir}
+        if args.ai_model:
+            kw["model"] = args.ai_model
+        client = providers.make_client(args.ai_run, **kw)
+    only = set(args.only.split(",")) if args.only else None
+    res = run(input_dir, os.path.abspath(args.samples_dir or default_samples_dir()), pages, args.ai_candidates,
+              ai_client=client, ai_cap=args.ai_cap, only=only, ai_save=args.ai_save)
     print(report(res, head_commit()))
+    for name, st in sorted((res.get("ai_stats") or {}).items()):
+        print("  AI 검토 %s: 호출 %d(계획 %d, 필요 %d) · 오류 %d · 후보 버림 %d · 다시 확인 일치 %d · 남은 항목 %d%s"
+              % (name, st["calls"], st["planned_calls"], st["needed_calls"], st["errors"], st["dropped"], st["confirmed"],
+                 st["left"], " · 멈춤(%s)" % ",".join(st["error_kinds"]) if st["halted"] else ""))
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(res, fh, ensure_ascii=False, indent=1)
-    if pages:
+    if pages or only or client is not None:
         return 0
     saved = {"pages": {n: {it: {k: p[it][k] for k in ("correct", "units", "false_pos")} for it in ITEMS}
                        for n, p in res["pages"].items()}}

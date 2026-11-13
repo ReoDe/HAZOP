@@ -330,6 +330,7 @@ class ChatPanel(QWidget):
     modelChanged = Signal(str)     # "fast"|"normal"|"deep": 호출한 쪽이 설정(chat_model)에 남긴다
     guideRequested = Signal(str)   # "install"|"login"|"enable": 안내 단추를 눌렀다
     escaped = Signal()             # 입력칸에서 Esc
+    answered = Signal()            # 답 카드가 붙었다(접혀 있으면 띠에 점을 찍는 데 쓴다)
 
     _answer = Signal(str, object, object)
     _error = Signal(str, object)
@@ -573,6 +574,7 @@ class ChatPanel(QWidget):
         self._show_on_drawing(pg, card, qid)
         self._log.forget(qid)
         self._update_send()
+        self.answered.emit()
 
     def _on_error(self, qid, error):
         if not self._mine(qid):

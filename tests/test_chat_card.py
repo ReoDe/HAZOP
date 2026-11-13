@@ -223,6 +223,13 @@ class PathRefCollectTest(unittest.TestCase):
         self.assertEqual(seen.tool_count("q1"), 2)
         self.assertEqual(seen.tool_names("q1"), ["trace_path", "find"])
 
+    def test_collects_nested_path_refs_of_trace_path(self):
+        seen = view.QuestionLog()
+        flow = dict(REF, basis="confirmed_flow")
+        seen.tool_event("q1", "trace_path", {}, {"ok": True, "data": {"path": {"path_ref": REF, "steps": []},
+                                                                      "flow_path": {"path_ref": flow}}})
+        self.assertEqual(seen.path_refs("q1"), [REF, flow])
+
     def test_other_question_is_separate(self):
         seen = view.QuestionLog()
         seen.tool_event("q1", "trace_path", {}, {"data": {"path_ref": REF}})

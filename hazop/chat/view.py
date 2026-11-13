@@ -79,6 +79,20 @@ def marks_for_card(pg, card, path_index=None):
     return out
 
 
+def _find_path_refs(data, depth=0):
+    """도구 결과 data 안의 path_ref를 모두 찾는다(trace_path는 path·flow_path 안에 하나씩 둔다)."""
+    out = []
+    if depth > 4 or not isinstance(data, (dict, list)):
+        return out
+    items = data.items() if isinstance(data, dict) else enumerate(data)
+    for key, value in items:
+        if key == "path_ref" and isinstance(value, dict):
+            out.append(value)
+        elif isinstance(value, (dict, list)):
+            out.extend(_find_path_refs(value, depth + 1))
+    return out
+
+
 class QuestionLog:
     """질문마다 부른 도구와 그 결과에서 나온 path_ref를 모은다. on_tool_event는 읽기 스레드에서 오므로 잠근다."""
 
@@ -89,13 +103,13 @@ class QuestionLog:
         self._refs = {}
 
     def tool_event(self, qid, name, args, result):
-        data = result.get("data") if isinstance(result, dict) else None
-        ref = data.get("path_ref") if isinstance(data, dict) else None
+        refs = _find_path_refs(result.get("data") if isinstance(result, dict) else None)
         with self._lock:
             self._calls.setdefault(qid, []).append((str(name), args if isinstance(args, dict) else {}))
             self._tools.setdefault(qid, []).append(str(name))
-            if isinstance(ref, dict):
-                self._refs.setdefault(qid, []).append(ref)
+            for ref in refs:
+                if ref not in self._refs.setdefault(qid, []):
+                    self._refs[qid].append(ref)
 
     def tool_count(self, qid):
         return len(self._tools.get(qid, ()))

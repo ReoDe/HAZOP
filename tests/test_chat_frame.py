@@ -261,5 +261,34 @@ class ChatFrameTest(unittest.TestCase):
         self.assertEqual(again.chat_panel.model(), "deep")
 
 
+    def test_answer_while_collapsed_puts_a_dot_on_the_strip(self):
+        from tests.test_chat_card import TOOL_IDS, answer
+        from tests.test_chat_panel import FakeSession
+        win = self.window(1366)
+        self.assertTrue(win.chat_collapsed())
+        sessions = []
+        win.chat_panel._factory = lambda model, cb: sessions.append(FakeSession(model, cb)) or sessions[-1]
+        win.chat_panel.ask("질문")
+        sessions[0].cb["on_answer"]("q1", answer(), TOOL_IDS)
+        pump(win, 0.2)
+        self.assertTrue(win.chat_column.unread)
+        self.assertIn("●", win.chat_column.strip_chat.text())
+        win.open_chat()
+        pump(win, 0.1)
+        self.assertFalse(win.chat_column.unread)
+        self.assertNotIn("●", win.chat_column.strip_chat.text())
+
+    def test_answer_while_open_leaves_no_dot(self):
+        from tests.test_chat_card import TOOL_IDS, answer
+        from tests.test_chat_panel import FakeSession
+        win = self.window(1920)
+        sessions = []
+        win.chat_panel._factory = lambda model, cb: sessions.append(FakeSession(model, cb)) or sessions[-1]
+        win.chat_panel.ask("질문")
+        sessions[0].cb["on_answer"]("q1", answer(), TOOL_IDS)
+        pump(win, 0.2)
+        self.assertFalse(win.chat_column.unread)
+
+
 if __name__ == "__main__":
     unittest.main()

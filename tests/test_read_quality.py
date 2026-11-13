@@ -196,6 +196,32 @@ class AiCandidateTest(unittest.TestCase):
         self.assertEqual(s["connection"]["detail"]["pairs"]["correct"], 1)
 
 
+class AiRunTest(unittest.TestCase):
+    """--ai-run 경로: AI 검토 후보를 '스크립트 + AI 후보' 값으로 센다(가짜 클라이언트)."""
+
+    def test_ai_candidates_raise_second_value_only(self):
+        k = key([sym(1, "manual_valve", (100, 100, 110, 108)), sym(2, "continuation", (300, 100, 330, 110))],
+                continuations=[{"symbol": "s002", "label": "CV:RDT", "target_system": "CV"}])
+        e = ex([dict(node(1, None, (100, 100, 110, 108)), source_object_id="p1"),
+                dict(node(2, "continuation", (300, 100, 330, 110)), source_object_id="p2")])
+        e["drawing"] = {"drawing_number": "T-1"}
+
+        class Stub:
+            def analyze(self, request):
+                items = __import__("json").loads(request["context"])["items"]
+                ans = [{"item_id": i["item_id"], "field": i["ask"][0],
+                        "values": ["manual_valve" if i["ask"][0] == "kind" else "CV"], "confidence": 0.9, "reason": "x"}
+                       for i in items]
+                return {"status": "completed", "error_kind": None, "output": {"answers": ans}}
+
+        cands, stats = rq.ai_candidates(e, Stub(), cap=3)
+        self.assertEqual(stats["calls"], 1)
+        before, after = rq.score_page(k, e), rq.score_page(k, rq.apply_candidates(e, cands))
+        self.assertEqual((before["kind"]["correct"], after["kind"]["correct"]), (1, 2))
+        self.assertEqual(after["connection"]["detail"]["continuations"]["correct"], 1)
+        self.assertIsNone(e["nodes"][0]["kind"])  # 원본 추출은 그대로
+
+
 class BaselineTest(unittest.TestCase):
     def page(self, c, u, f):
         return {it: {"correct": c, "units": u, "false_pos": f} for it in rq.ITEMS}

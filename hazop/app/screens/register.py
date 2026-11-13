@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFormL
 
 from hazop import paths
 from hazop.app import data, tokens
+from hazop.app.screens.ai_review_panel import AiReviewBar, AiReviewDialog, summary_text
 from hazop.app.widgets import VALIDATION_LABELS, badge, esc
 from hazop.extract import svg_align
 from hazop.register import fileinfo, registry
@@ -295,6 +296,11 @@ class RegisterScreen(QWidget):
         btns.addWidget(self.register_hint)
         btns.addStretch(1)
         rl.addLayout(btns)
+        # 추출 전 'AI 검토' 토글(INTENT.md §3.2). 끄면(기본) 스크립트만. 켜면 추출이 끝난 뒤 따로 스레드에서 후보를 받는다
+        self.ai_bar = AiReviewBar(app)
+        self.ai_bar.reviewed.connect(self._ai_reviewed)
+        self._ai_dialogs = {}
+        rl.addWidget(self.ai_bar)
         self.result = QTextBrowser()
         self.result.setOpenLinks(False)
         self.result.hide()  # 보일 결과가 생기기 전에는 빈 상자를 두지 않는다(R-2)
@@ -331,7 +337,16 @@ class RegisterScreen(QWidget):
     def commands(self):
         """명령 팔레트용 [(이름, 단축키 문구, 함수)]."""
         return [("파일 선택…", "", self._pick), ("파일 선택 지우기", "", self._clear_file), ("등록", "", self.do_register),
-                ("추출·그래프 만들기", "", self.do_extract), ("구간 분석에서 빼기·다시 넣기", "", self.toggle_excluded)]
+                ("추출·그래프 만들기", "", self.do_extract), ("구간 분석에서 빼기·다시 넣기", "", self.toggle_excluded),
+                ("AI 후보 확인(지금 도면)", "", self.open_current_ai_review)]
+
+    def open_current_ai_review(self):
+        name = self.app.drawing
+        from hazop.extract import ai_review
+        if not name or ai_review.load_doc(name) is None:
+            self.app.status_message("지금 도면에 AI 검토 후보가 없습니다. 'AI 검토'를 켜고 추출하면 후보가 생깁니다")
+            return
+        self.open_ai_review(name)
 
     # ------------------------------------------------------------ 버튼·작업 상태
     def _update_actions(self):
@@ -734,8 +749,27 @@ class RegisterScreen(QWidget):
         self._job_done("추출·그래프를 만들었습니다 · %s" % name)
         if auto or self.app.current_screen() is self:  # 다음에 여는 ②④⑤는 방금 추출한 도면(다른 도면을 보는 중이면 그대로)
             self.app.set_drawing(os.path.basename(out["extract_dir"]))
+        if self.ai_bar.enabled():
+            pages = out.get("pages") or [out]
+            self.ai_bar.start([(os.path.basename(p["extract_dir"]), p["extraction"]) for p in pages])
         if auto:
             self.app.go(1)
+
+    def _ai_reviewed(self, done):
+        """AI 검토가 끝나면 요약을 알리고, 후보가 있는 도면마다 확정 창을 여는 동작을 준다."""
+        text = summary_text(done)
+        actions = [("후보 확인 · %s" % name, lambda n=name: self.open_ai_review(n)) for name, count, _ in done if count]
+        self.app.status_message(text)
+        self.app.toast(text, actions=actions[:3], ms=15000)
+
+    def open_ai_review(self, name):
+        dlg = self._ai_dialogs.get(name)
+        if dlg is None:
+            dlg = AiReviewDialog(self.app, name, parent=self)
+            self._ai_dialogs[name] = dlg
+            dlg.finished.connect(lambda *_: self._ai_dialogs.pop(name, None))
+        dlg.show()
+        dlg.raise_()
 
     def _document_extracted(self, out, auto=False, name=""):
         doc = out["document"]

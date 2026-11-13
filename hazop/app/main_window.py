@@ -188,6 +188,7 @@ class ChatColumn(QWidget):
         self.strip_chat.setToolTip("채팅 창 펴기 (Ctrl+K)")
         self.strip_chat.setAccessibleName("채팅 창 펴기")
         self.strip_chat.clicked.connect(main.open_chat)
+        self.unread = False
         self.strip_related = QPushButton("관련")
         self.strip_related.setObjectName("chat_strip_related")
         self.strip_related.setToolTip("관련 항목 펴기 (Ctrl+Alt+B)")
@@ -234,6 +235,12 @@ class ChatColumn(QWidget):
         lay.addWidget(self.body, 1)
         self.widget = None
         self.set_tab("chat")
+
+    def set_unread(self, unread):
+        """접힌 띠의 채팅 단추에 '새 답' 점을 찍거나 지운다."""
+        self.unread = bool(unread)
+        self.strip_chat.setText("채팅" + chr(10) + "●" if self.unread else "채팅")
+        self.strip_chat.setAccessibleName("채팅 창 펴기, 새 답 있음" if self.unread else "채팅 창 펴기")
 
     def attach_related(self, panel):
         self.related_page = panel
@@ -734,6 +741,8 @@ class MainWindow(QMainWindow):
         self._col_on = col_on
         self.chat_column.set_tab("related" if rel else "chat")
         self.chat_column.set_collapsed(not col_on)
+        if col_on and not rel:
+            self.chat_column.set_unread(False)  # 채팅 탭이 보이면 새 답 표시를 지운다
         self._apply_chat_limits()
         if before != (self.explorer_panel.isHidden(), self._col_on, self.chat_column.pages.currentWidget()):
             self._size_panels()
@@ -783,6 +792,7 @@ class MainWindow(QMainWindow):
                                     view_fn=self._chat_view_dict, model=self.settings.get("chat_model") or "fast", parent=self)
         self.chat_panel.modelChanged.connect(self._chat_model_saved)
         self.chat_panel.guideRequested.connect(self._chat_guide)
+        self.chat_panel.answered.connect(self._chat_answered)
         self.chat_panel.escaped.connect(lambda: self._focus_main(self.current_screen()))
         self.ai_conn.changed.connect(self._chat_availability)
         self.set_chat_widget(self.chat_panel)
@@ -837,6 +847,11 @@ class MainWindow(QMainWindow):
         sel = self.selection or {}
         picked = [sel[k] for k in ("entity_id", "node_id") if sel.get(k)]
         return {"stage": STAGE_GLYPHS[self.stage_of(self.stack.currentIndex())], "sheet": self.drawing, "selected": picked}
+
+    def _chat_answered(self):
+        """답이 왔는데 채팅 탭이 보이지 않으면(접힘·자리 모자람·관련 항목 탭) 띠에 점을 찍는다."""
+        if not self._col_on or self.related_shown.get(self.stack.currentIndex(), False):
+            self.chat_column.set_unread(True)
 
     def _chat_model_saved(self, model):
         self.settings["chat_model"] = model
