@@ -12,8 +12,11 @@
    사선으로, 짧은 조각이 이웃과 사슬을 이루면 점선 조각으로 둔다. 꺾임·분기는 선 끝을 상대 선 중심선으로 맞춘다.
    같은 직선 위 두 선 사이 빈칸이 글자 상자로 덮여 있으면(선 라벨의 흰 바탕) 잇고 그 글자 상자를 흰 바탕 마스크로 둔다.
    페이지 폭·높이의 대부분을 덮는 가로·세로 선(도면 테두리)은 버린다.
-5. 좌표: 이미지 px, 원점 왼쪽 위, x 오른쪽·y 아래쪽 증가. pdf_vector 문턱(pt)은 이미지 폭을 공칭 페이지 폭
-   (A3 가로 1190.55pt)에 맞춘 배율로 px로 바꿔 쓴다. drawio 좌표로의 변환은 추정하지 않는다(평가 쪽 align.py).
+5. 좌표: 이미지 px, 원점 왼쪽 위, x 오른쪽·y 아래쪽 증가. pdf_vector 문턱(pt)은 실제 배율(params px_per_pt: 스캔 PDF,
+   dpi가 적힌 그림)로, 없으면 이미지 폭을 공칭 페이지 폭(A3 가로 1190.55pt)에 맞춘 배율로 px로 바꿔 쓴다.
+   drawio 좌표로의 변환은 추정하지 않는다(평가 쪽 align.py).
+6. 스캔 입력(HZ-PLN-23): 읽기 전에 기울기를 재서 0.05°~5°이면 바로잡는다(deskew). OCR은 W4 조건의 낮은 배율로 한 번,
+   그림이 더 고우면 원래 해상도 타일로 한 번 더 읽어 겹치지 않는 줄만 더한다. 해상도 안내는 미확인(scan_input 등)으로 단다.
 
 OpenCV(cv2)·numpy·rapidocr는 importlib로 함수 안에서만 읽는다. 앱·배포 빌드(PyInstaller는 import 문을 정적으로
 따라간다)가 이 의존성을 끌어오지 않게 하기 위해서다(결정 D7). 설치: packaging/requirements-raster.txt.
@@ -42,6 +45,7 @@ MAX_PIXELS = 50_000_000             # 해독 전후 픽셀 수 상한(50 MP, 샘
 # 래스터 단계 문턱. 길이는 pt(공칭 페이지 기준)이며 실행 때 px로 바꾼다. 샘플 6세트 PNG로 정한 값(표본 내).
 PARAMS = {
     "nominal_page_width_pt": 1190.55,  # 공칭 페이지 폭(A3 가로 420mm) → px/pt 배율 = 이미지 폭 / 이 값
+    "px_per_pt": None,           # 실제 배율(스캔 PDF·dpi가 적힌 그림, HZ-PLN-23 §3.1). 있으면 공칭 페이지 폭 대신 쓴다
     "fill_kernel_pt": 2.2,       # 이 지름의 원판 열림을 견디는 잉크 = 채운 도형(굵은 배관보다 커야 함)
     "fill_min_area_pt2": 4.0,    # 채운 도형 최소 넓이
     "hv_min_len_pt": 6.0,        # 가로·세로 획 최소 길이(점선 조각보다 길어야 함)
@@ -150,33 +154,180 @@ def load_image(path, max_bytes=None, max_pixels=None):
 
 
 _OCR = None
+# rapidocr-onnxruntime 1.4.4는 긴 변이 2000px을 넘는 그림을 줄여 읽는다(config.yaml max_side_len). 300dpi A3 쪽(약 5000px)은
+# 40%로 줄어 작은 글자를 놓치므로 이 크기 이하 타일로 나눠 읽는다(HZ-PLN-23 §3 5). 겹침은 줄 하나가 한 타일에 온전히 들도록 둔다.
+OCR_TILE_MAX = 2000
+OCR_TILE_OVERLAP = 400
+OCR_EDGE_PX = 3.0  # 타일 안쪽 가장자리에서 이 거리 안에 닿은 줄은 잘렸을 수 있다
 
 
-def ocr_lines(gray, offset=(0, 0), zoom=1.0):
-    """OCR 줄 목록 [{text, x0, x1, top, bottom, score}] (위→아래, 왼→오 순). OCR이 없으면 None.
-    offset·zoom: 잘라 키운 영상일 때 원래 좌표로 되돌리는 값."""
+def _ocr_engine():
     global _OCR
-    if importlib.util.find_spec("rapidocr_onnxruntime") is None:
-        return None
-    cv2, np = _cv()
     if _OCR is None:
         _OCR = importlib.import_module("rapidocr_onnxruntime").RapidOCR()
-    res, _ = _OCR(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
+    return _OCR
+
+
+def _ocr_raw(cv2, gray, offset, zoom):
+    res, _ = _ocr_engine()(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
     out = []
     for box, text, score in res or []:
         xs = [float(q[0]) / zoom + offset[0] for q in box]
         ys = [float(q[1]) / zoom + offset[1] for q in box]
         out.append({"text": str(text).strip(), "x0": round(min(xs), 1), "x1": round(max(xs), 1),
                     "top": round(min(ys), 1), "bottom": round(max(ys), 1), "score": round(float(score), 4)})
-    out = [o for o in out if o["text"]]
+    return [o for o in out if o["text"]]
+
+
+def _starts(n, size, overlap):
+    if n <= size:
+        return [0]
+    step = size - overlap
+    out = list(range(0, n - size, step))
+    return out + [n - size]
+
+
+def ocr_tiles(W, H, size=OCR_TILE_MAX, overlap=OCR_TILE_OVERLAP):
+    """OCR 타일 [(x0, y0, x1, y1)]. 그림이 size 이하이면 통째로 한 장."""
+    return [(x, y, min(W, x + size), min(H, y + size)) for y in _starts(H, size, overlap) for x in _starts(W, size, overlap)]
+
+
+def merge_tile_lines(tile_lines, edge=OCR_EDGE_PX):
+    """타일별 OCR 줄 [(타일, 줄 목록)] → 겹친 줄을 하나로. 타일 안쪽 가장자리에 닿은 줄(잘렸을 수 있음)보다
+    온전한 줄을, 같은 조건이면 신뢰도 높은 줄을 남긴다. 겹침 = 교집합 넓이 / 작은 상자 넓이 ≥ 0.5."""
+    W = max(t[2] for t, _ in tile_lines)
+    H = max(t[3] for t, _ in tile_lines)
+    cand = []
+    for (x0, y0, x1, y1), lines in tile_lines:
+        for o in lines:
+            cut = ((x0 > 0 and o["x0"] - x0 <= edge) or (x1 < W and x1 - o["x1"] <= edge)
+                   or (y0 > 0 and o["top"] - y0 <= edge) or (y1 < H and y1 - o["bottom"] <= edge))
+            cand.append((cut, o))
+    cand.sort(key=lambda c: (c[0], -c[1]["score"], -(c[1]["x1"] - c[1]["x0"]), c[1]["top"], c[1]["x0"]))
+    kept = []
+    for _, o in cand:
+        if not any(_overlaps(o, k) for k in kept):
+            kept.append(o)
+    return kept
+
+
+# 글자를 크게(배율 높게) 읽으면 rapidocr가 낱말 사이 띄어쓰기를 잃는다(SNP-M-101 PNG: 1.7 px/pt에서 'TO SNP-M-102',
+# 원래 2.75 px/pt에서 'TOSNP-M-102'. 2026-11-14 측정). 띄어쓰기는 도면 연결 표기·기기 이름의 종류 판정에 쓰이므로
+# 이 배율로 한 번 읽어 기본으로 두고, 그림이 더 고우면 원래 해상도로 한 번 더 읽어 겹치지 않는 줄만 더한다.
+# 이 배율은 W4가 재던 조건(A3 가로 그림을 통째로 넣으면 OCR이 긴 변 2000px로 줄임)과 같다. 1.65로 하면 SNP-M-501의
+# kind 정확도가 0.85 → 0.75로 내려가 W4 하한(0.8) 아래였다(2026-11-14, check_adapter.py W4, 래스터 venv).
+OCR_COARSE_PX_PER_PT = OCR_TILE_MAX / 1190.55
+
+
+def _ocr_tiled(cv2, np, gray):
+    H, W = gray.shape[:2]
+    tiles = ocr_tiles(W, H)
+    if len(tiles) == 1:
+        return _ocr_raw(cv2, gray, (0, 0), 1.0)
+    parts = []
+    for x0, y0, x1, y1 in tiles:
+        parts.append(((x0, y0, x1, y1), _ocr_raw(cv2, np.ascontiguousarray(gray[y0:y1, x0:x1]), (x0, y0), 1.0)))
+    return merge_tile_lines(parts)
+
+
+def _overlaps(o, k, ratio=0.5):
+    iw = min(o["x1"], k["x1"]) - max(o["x0"], k["x0"])
+    ih = min(o["bottom"], k["bottom"]) - max(o["top"], k["top"])
+    if iw <= 0 or ih <= 0:
+        return False
+    small = min(max(1e-6, (o["x1"] - o["x0"]) * (o["bottom"] - o["top"])),
+                max(1e-6, (k["x1"] - k["x0"]) * (k["bottom"] - k["top"])))
+    return iw * ih / small >= ratio
+
+
+def add_fine_lines(coarse, fine):
+    """낮은 배율 줄(띄어쓰기가 살아 있음)에 원래 해상도에서만 읽힌 줄(겹치지 않는 것)을 더한다."""
+    return list(coarse) + [o for o in fine if not any(_overlaps(o, k) for k in coarse)]
+
+
+def ocr_lines(gray, offset=(0, 0), zoom=1.0, px_per_pt=None):
+    """OCR 줄 목록 [{text, x0, x1, top, bottom, score}] (위→아래, 왼→오 순). OCR이 없으면 None.
+    offset·zoom: 잘라 키운 영상일 때 원래 좌표로 되돌리는 값. 큰 그림은 타일로 나눠 읽는다(OCR_TILE_MAX).
+    px_per_pt를 주면 OCR_COARSE_PX_PER_PT로 줄여 한 번, 그보다 고우면 원래 해상도로 한 번 더 읽어 합친다."""
+    if importlib.util.find_spec("rapidocr_onnxruntime") is None:
+        return None
+    cv2, np = _cv()
+    f = min(1.0, OCR_COARSE_PX_PER_PT / px_per_pt) if px_per_pt else 1.0
+    if f < 1.0:
+        small = cv2.resize(gray, None, fx=f, fy=f, interpolation=cv2.INTER_AREA)
+        coarse = _ocr_tiled(cv2, np, small)
+        for o in coarse:
+            o.update(x0=round(o["x0"] / f, 1), x1=round(o["x1"] / f, 1), top=round(o["top"] / f, 1),
+                     bottom=round(o["bottom"] / f, 1))
+        out = add_fine_lines(coarse, _ocr_tiled(cv2, np, gray))
+    else:
+        out = _ocr_tiled(cv2, np, gray)
+    for o in out:
+        o.update(x0=round(o["x0"] / zoom + offset[0], 1), x1=round(o["x1"] / zoom + offset[0], 1),
+                 top=round(o["top"] / zoom + offset[1], 1), bottom=round(o["bottom"] / zoom + offset[1], 1))
     out.sort(key=lambda o: (o["top"], o["x0"], o["text"]))
     return out
+
+
+# ---------------------------------------------------------------- 기울기 보정(HZ-PLN-23 §3 2)
+
+DESKEW_MIN_DEG = 0.05   # 이보다 작은 기울기는 그대로 둔다
+DESKEW_MAX_DEG = 5.0    # 이보다 큰 기울기는 돌리지 않고 미확인 skew_too_large
+DESKEW_WINDOW_DEG = 10.0  # 가로·세로에서 이 각 안의 선만 기울기 재기에 쓴다
+DESKEW_WORK_PX = 2000   # 재기는 긴 변을 이 크기로 줄인 그림에서 한다(각은 배율에 따라 변하지 않음)
+
+
+def skew_angle(gray):
+    """긴 가로·세로 선의 길이 가중 중앙값 각(도, 그림 좌표에서 시계 방향 +). 선이 없으면 None."""
+    cv2, np = _cv()
+    H, W = gray.shape[:2]
+    f = min(1.0, DESKEW_WORK_PX / float(max(H, W)))
+    small = cv2.resize(gray, (max(1, int(W * f)), max(1, int(H * f))), interpolation=cv2.INTER_AREA) if f < 1 else gray
+    _, ink = cv2.threshold(small, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    min_len = max(60, int(0.06 * min(small.shape[:2])))
+    segs = cv2.HoughLinesP(ink, 1, np.pi / 3600, threshold=min_len, minLineLength=min_len, maxLineGap=3)
+    if segs is None:
+        return None
+    angs = []
+    for x1, y1, x2, y2 in segs.reshape(-1, 4):  # OpenCV 판에 따라 (N,1,4) 또는 (N,4)
+        a = math.degrees(math.atan2(float(y2 - y1), float(x2 - x1)))
+        a = (a + 90.0) % 180.0 - 90.0  # -90..90
+        if abs(a) > 45:  # 세로선: 90°를 빼서 가로 기준 각으로
+            a = a - 90.0 if a > 0 else a + 90.0
+        if abs(a) <= DESKEW_WINDOW_DEG:
+            angs.append((a, math.hypot(float(x2 - x1), float(y2 - y1))))
+    if not angs:
+        return None
+    angs.sort()
+    half, acc = sum(w for _, w in angs) / 2.0, 0.0
+    for a, w in angs:
+        acc += w
+        if acc >= half:
+            return a
+    return angs[-1][0]
+
+
+def deskew(gray):
+    """(그림, 잰 각, 상태). 상태: corrected(돌림) / straight(DESKEW_MIN_DEG 미만) / too_large(DESKEW_MAX_DEG 초과,
+    그대로) / unknown(선이 없어 못 잼, 그대로). 돌리면 크기는 같고 빈 곳은 흰색."""
+    cv2, np = _cv()
+    a = skew_angle(gray)
+    if a is None:
+        return gray, 0.0, "unknown"
+    if abs(a) < DESKEW_MIN_DEG:
+        return gray, a, "straight"
+    if abs(a) > DESKEW_MAX_DEG:
+        return gray, a, "too_large"
+    H, W = gray.shape[:2]
+    m = cv2.getRotationMatrix2D((W / 2.0, H / 2.0), a, 1.0)
+    out = cv2.warpAffine(gray, m, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=255)
+    return out, a, "corrected"
 
 
 # ---------------------------------------------------------------- 보조
 
 def _px(prm, scale):
-    out = {k[:-3]: v * scale for k, v in prm.items() if k.endswith("_pt")}
+    out = {k[:-3]: v * scale for k, v in prm.items() if k.endswith("_pt") and k != "px_per_pt"}  # 배율 자체는 길이가 아님
     out.update({k[:-4]: v * scale * scale for k, v in prm.items() if k.endswith("_pt2")})
     return out
 
@@ -565,7 +716,7 @@ def detect(gray, lines=None, params=None, ocr=None):
     prm = dict(PARAMS)
     prm.update(params or {})
     H, W = gray.shape
-    scale = W / prm["nominal_page_width_pt"]
+    scale = prm.get("px_per_pt") or W / prm["nominal_page_width_pt"]
     px = _px(prm, scale)
     ink = _ink(cv2, np, gray)
     lines = [o for o in (lines or []) if o["score"] >= prm["ocr_min_score"]]
@@ -876,16 +1027,59 @@ def build_extraction(W, H, words, prims, diag_info, ocr_state, file_label, sha, 
     return res
 
 
+SCAN_NOTES = ("scan_input", "low_resolution", "scale_assumed")
+
+
+def note_scale(res, scale):
+    """스캔 결과의 해상도 미확인(HZ-PLN-23 §3 8)을 단다. 앞서 단 것은 바꾼다. scale: {dpi, dpi_source, level}."""
+    from . import raster_scan
+    unknowns = [u for u in res["validation"]["unknowns"] if u.get("check") not in SCAN_NOTES]
+    source = {"file": "그림 파일에 적힌 값", "pdf_image": "PDF 안 그림의 크기", "given": "호출이 준 값",
+              "assumed_a3": "그림 폭을 A3 가로로 가정"}.get(scale["dpi_source"], scale["dpi_source"])
+    pv._issue(unknowns, "scan_input", "스캔 입력이라 벡터 PDF보다 읽기 결과가 떨어집니다(%d dpi, %s)"
+              % (round(scale["dpi"]), source))
+    if scale["dpi_source"] == "assumed_a3":
+        pv._issue(unknowns, "scale_assumed", "그림에 해상도(dpi)가 없어 그림 폭을 A3 가로로 보고 문턱을 맞춤")
+    guide = raster_scan.resolution_guidance(scale["dpi"])
+    if guide:
+        pv._issue(unknowns, "low_resolution", guide)
+    res["validation"]["unknowns"] = unknowns
+    res["run"]["settings"]["scale"] = dict(scale)
+    from .. import drawio
+    res["summary"] = drawio.summarize(res)
+    return res
+
+
 def extract(path, repo_root=None, params=None, use_ocr=True):
-    """PNG·JPG 한 장 → extraction dict. OpenCV가 없으면 ImportError. OCR이 없으면 글자 없이 진행(미확인 기록)."""
+    """PNG·JPG 한 장 → extraction dict. OpenCV가 없으면 ImportError. OCR이 없으면 글자 없이 진행(미확인 기록).
+    배율: params의 px_per_pt, 없으면 파일에 적힌 믿을 만한 dpi, 그것도 없으면 A3 가로 가정(HZ-PLN-23 §2.2).
+    기울기는 재서 0.05°~5°이면 바로잡는다(§3 2)."""
+    from . import raster_scan
     ext = os.path.splitext(path)[1].lower()
     if ext not in FORMATS:
         raise ValueError("래스터 형식이 아님(.png·.jpg·.jpeg): %s" % path)
     with open(path, "rb") as fh:
-        sha = hashlib.sha256(fh.read()).hexdigest()
+        data = fh.read()
+    sha = hashlib.sha256(data).hexdigest()
     gray = load_image(path)
-    lines = ocr_lines(gray) if use_ocr else None
+    prm = dict(params or {})
+    if prm.get("px_per_pt"):
+        dpi = float(prm["px_per_pt"]) * 72.0
+        scale = {"dpi": round(dpi, 1), "dpi_source": "given", "level": raster_scan.resolution_level(dpi)}
+    else:
+        scale = raster_scan.image_scale(data)
+        if scale["dpi_source"] == "file":
+            prm["px_per_pt"] = scale["px_per_pt"]
+    gray, angle, skew = deskew(gray)
+    ppt = prm.get("px_per_pt") or gray.shape[1] / PARAMS["nominal_page_width_pt"]
+    lines = ocr_lines(gray, px_per_pt=ppt) if use_ocr else None
     ocr_state = "ok" if lines is not None else ("disabled" if not use_ocr else "unavailable")
-    W, H, words, prims, info = detect(gray, lines, params, ocr=ocr_lines if lines is not None else None)
+    W, H, words, prims, info = detect(gray, lines, prm, ocr=ocr_lines if lines is not None else None)
     label = paths.rel_or_abs(path, repo_root) if repo_root else path
-    return build_extraction(W, H, words, prims, info, ocr_state, label, sha, FORMATS[ext], params)
+    res = build_extraction(W, H, words, prims, info, ocr_state, label, sha, FORMATS[ext], prm)
+    res["coordinate_system"]["deskew_deg"] = round(angle, 3) if skew == "corrected" else 0.0
+    res["run"]["settings"]["deskew"] = {"measured_deg": round(angle, 3), "state": skew}
+    if skew == "too_large":
+        pv._issue(res["validation"]["unknowns"], "skew_too_large",
+                  "기울기가 %.1f°라 바로잡지 않음(%.0f° 초과). 바로 놓고 다시 스캔해 주세요" % (angle, DESKEW_MAX_DEG))
+    return note_scale(res, scale)

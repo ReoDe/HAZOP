@@ -1,7 +1,8 @@
 """등록 대상 파일의 형식 확인과 표제란 자동 후보 읽기.
 
 근거: 기획서/자료등록.md(MVP 등록 절차 2, 입력과 등록정보, 처리 원칙 1). 등록 형식은 draw.io(.drawio)와
-벡터 PDF(.pdf)다(사용자 결정 2026-11-06, 이미지는 제외). PDF는 pdfplumber로 쪽 수를 읽고 표제란 후보를
+벡터 PDF(.pdf)다(사용자 결정 2026-11-06, 이미지는 제외). 스캔 PDF와 PNG·JPG는 알아보고 해상도를 알리되, 앱 추출
+연결 전까지는 등록을 멈춘다(INTENT §2 2026-11-13, HZ-PLN-23 §8, SCAN_REGISTRATION). PDF는 pdfplumber로 쪽 수를 읽고 표제란 후보를
 PDF 어댑터(hazop/extract/adapters/pdf_vector)의 표제란 판독으로 얻는다.
 draw.io는 도면 객체를 추출하지 않는다. PDF는 표제란 판독을 위해 첫 쪽을 분석하되 결과는 후보로만 쓴다. 표제란(pidIgnore 셀) 값은 '자동 후보'로만 돌려주며 확정값으로 쓰지 않는다
 (사용자 결정 2026-11-04).
@@ -15,10 +16,14 @@ from hazop.extract.adapters import dexpi_read
 DRAWIO_EXTENSIONS = (".drawio",)
 PDF_EXTENSIONS = (".pdf",)
 DEXPI_EXTENSIONS = (".xml",)  # DEXPI 2.0 이후와 Proteus 1.x는 둘 다 .xml이라 확장자로 구분하지 않는다(HZ-PLN-22 §4)
+IMAGE_EXTENSIONS = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg"}  # 스캔 그림(HZ-PLN-23 §2)
+# 스캔 도면(스캔 PDF·PNG·JPG) 등록. 앱 추출 연결(hazop/app/data.py 형식별 갈래)이 들어오면 True로 바꾼다(HZ-PLN-23 §8).
+# False인 동안은 알아보고 해상도까지 알린 뒤 blocker scan_not_connected로 멈춘다
+SCAN_REGISTRATION = False
 DEXPI_FORMATS = ("dexpi",)  # 등록의 format 값. 두 갈래(2.0 이후 DEXPI XML, Proteus 1.x)는 dexpi_flavor로 구분한다(HZ-PLN-22 §4.1)
 # P&ID 등록 대상 확장자 -> 기대하는 실제 형식(자료 종류별 표는 파일 끝 MATERIAL_FORMATS)
 EXPECTED_FORMAT = dict([(e, "drawio") for e in DRAWIO_EXTENSIONS] + [(e, "pdf") for e in PDF_EXTENSIONS]
-                       + [(e, "dexpi") for e in DEXPI_EXTENSIONS])
+                       + [(e, "dexpi") for e in DEXPI_EXTENSIONS] + list(IMAGE_EXTENSIONS.items()))
 # 원본 옆 SVG를 찾지 않는 형식(그림이 파일 안에 있거나 원본에서 그린다)
 NO_SVG_FORMATS = ("pdf",) + DEXPI_FORMATS
 # 실제 형식 판별용 파일 시작 바이트
@@ -120,7 +125,9 @@ def _inspect_pdf(path, data, info):
         info["blockers"].append(_problem("unreadable", "PDF를 읽을 수 없음: %s" % exc))
         return
     for b in res["validation"]["blockers"]:
-        if b["check"] == "no_vector_content":  # 스캔 PDF 등 이미지만 있는 PDF는 등록하지 않는다(이미지 제외 결정)
+        if b["check"] == "no_vector_content":
+            if _inspect_scan_pdf(data, info):  # 스캔 PDF(HZ-PLN-23 §2)
+                return
             info["blockers"].append(_problem("no_vector_content", b["reason"]))
             return
     info["pages"] = [{"page_id": "page-%d" % i, "page_name": None, "compressed": False}
@@ -131,6 +138,46 @@ def _inspect_pdf(path, data, info):
             info["auto_candidates"][field] = {"value": cell["value"], "source": "title_block", "page_id": "page-1",
                                               "key_object_id": cell.get("key_object_id"),
                                               "value_object_id": cell.get("value_object_id")}
+
+
+def _scan_hold(info):
+    """스캔 판별 결과를 알리고, 스캔 등록이 아직 연결되지 않았으면 blocker로 멈춘다(HZ-PLN-23 §8)."""
+    from hazop.extract.adapters import raster_scan
+    scan = info["scan"]
+    guide = raster_scan.resolution_guidance(scan["dpi"]) or ""
+    if not SCAN_REGISTRATION:
+        info["blockers"].append(_problem(
+            "scan_not_connected", "스캔 도면(%d dpi%s)으로 알아봤으나 앱의 스캔 읽기 연결이 아직 없어 등록하지 않음. %s"
+            % (round(scan["dpi"]), ", 해상도 가정: A3" if scan.get("dpi_source") == "assumed_a3" else "", guide)))
+        return
+    info["pages"] = [{"page_id": "page-1", "page_name": None, "compressed": False}]
+
+
+def _inspect_scan_pdf(data, info):
+    """벡터 내용이 없는 PDF가 스캔(쪽을 덮는 그림)이면 판별 결과를 남기고 True."""
+    try:
+        from hazop.extract.adapters import raster_scan
+        scan = raster_scan.classify_pdf_page(data, 0)
+    except Exception:  # 판별을 못 하면 지금까지처럼 '벡터 내용 없음'으로 알린다
+        return False
+    if scan["kind"] != "scan":
+        return False
+    info["scan"] = scan
+    _scan_hold(info)
+    return True
+
+
+def _inspect_image(data, info):
+    """PNG·JPG: 해상도를 읽어 판별 결과를 남긴다."""
+    try:
+        from hazop.extract.adapters import raster_scan
+        scan = raster_scan.image_scale(data)
+    except Exception as exc:  # 손상된 그림
+        info["blockers"].append(_problem("unreadable", "그림을 읽을 수 없음: %s" % type(exc).__name__))
+        return
+    scan["kind"] = "image"
+    info["scan"] = scan
+    _scan_hold(info)
 
 
 def _inspect_dexpi(path, data, info):
@@ -196,6 +243,9 @@ def inspect(path, data, material_type="P&ID"):
                                  % (ext, material_type, "·".join(kind["formats"]))))
     if actual == "unsafe_xml":
         blockers.append(_problem("dexpi_unsafe_xml", "DTD·개체 선언이 있거나 크기·요소 수·깊이 한도를 넘는 XML이라 읽지 않음"))
+        return info
+    if actual in ("png", "jpeg") and expected == actual:
+        _inspect_image(data, info)
         return info
     if actual not in ("drawio", "pdf") + DEXPI_FORMATS:
         if expected == "drawio" and actual in ("broken_xml", "unknown"):
