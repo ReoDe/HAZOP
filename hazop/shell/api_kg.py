@@ -5,7 +5,7 @@
     `kg/node?id=<노드 ID>`(상세) · `kg/search?q=<글>`(찾기) · `kg/force-graph.js`(이미 묶인 hazop/kg/vendor의 그리기 라이브러리).
   노드 ID에는 '/'가 들어 있어 경로가 아니라 질의 문자열로 받는다. 읽기는 파일을 쓰지 않는다.
 - **명령 `kg.*`**: `kg.judge`(잠재 후보 판단: 후보 확인·후보 기각·부재 확정·무관·판단 되돌리기), `kg.open`(패널 열기 사건).
-  판단자는 설정의 검토자 이름이고(웹 인자 아님) 시각은 여기서 채운다. 판단은 읽은 판단 파일 지문(ver)을 들고 오고, 다르면 저장하지 않는다.
+  판단자는 설정의 검토자 이름이고(웹 인자 아님) 시각은 여기서 채운다. 판단은 상세에서 본 그 항목의 내용 지문(digest)·상태와 판 표시 ver(`<프로젝트>|<판단 파일 sha256 16자>`)를 들고 오고, 하나라도 다르면 저장하지 않는다(stale).
 - **채팅이 부를 실행 함수**: `open_panel`, `find_nodes`, `judge`. 채팅 연결(hazop/chat/actions.py)은 채팅 담당이 한다.
 - 잠재 후보의 상태·재확인·허용 동작은 `hazop.kg.expect`가 정한다. 규칙 판이 바뀌면 확인됨·부재 확정·무관이 재확인으로 돌아가는 것도
   엔진 동작 그대로다. 여기서는 조건을 다시 세지 않는다.
@@ -21,10 +21,12 @@ from hazop import paths
 from hazop.kg import expect, screen
 
 LOG = logging.getLogger("hazop.shell.api_kg")
+TOPICS = ("kg",)
+PROJECT_PREFIXES = ("kg.",)    # kg.* 명령은 웹이 본 프로젝트와 엔진의 지금 프로젝트가 같아야 돈다(api.dispatch). ver에도 프로젝트 ID를 넣는다
 ACTIONS = ("confirm", "reject", "absent", "not_applicable", "undo")
 SEARCH_LIMIT = 20
 MAX_EXPAND = 200
-_CACHE = {}   # 최근 패널 모델 하나: {"key", "model", "kg"}
+_CACHE = {}   # 최근 패널 모델 하나: {"key", "model"}. 열쇠는 내용 지문(그래프 판·지식그래프 판·판단 파일 지문·규칙 지문)
 
 
 def _api():
@@ -47,13 +49,37 @@ def _load_kg(project_id):
         return None, "지식그래프를 읽을 수 없어 도면 노드와 잠재 후보만 보입니다."
 
 
-def _judgement_ver(path):
-    """판단 파일 지문: 없으면 'none'."""
+def _judgement_fp(path):
+    """판단 파일 내용 지문(sha256 앞 16자): 없으면 'none'."""
     try:
         with open(path, "rb") as fh:
             return hashlib.sha256(fh.read()).hexdigest()[:16]
     except FileNotFoundError:
         return "none"
+
+
+def _ver(pid, path):
+    """판단 판 표시 '<프로젝트 ID>|<판단 파일 지문>'. 프로젝트를 넣어 두 프로젝트 모두 파일이 없을 때('none')도 같아지지 않게 한다."""
+    return "%s|%s" % (pid, _judgement_fp(path))
+
+
+def _blocks(kg, pg):
+    """규격 HZ-DSN-05 §2.3 ③ '차단 띠': 지식그래프 검증이 막힘, 지식그래프를 만든 뒤 도면 판이 바뀜. [{kind, text}]."""
+    out = []
+    if kg is None:
+        return out
+    v = kg.get("validation") or {}
+    if v.get("status") != "passed":
+        out.append({"kind": "kg_blocked", "text": "지식그래프 검증이 막혀 있습니다(%s, 차단 %d건). 지식 노드와 관계는 확인 전 자료로만 보고, "
+                    "막힌 까닭을 고친 뒤 도면이나 문서를 다시 추출하면 지식그래프도 다시 만들어집니다."
+                    % (v.get("status") or "상태 없음", len(v.get("blockers") or []))})
+    have = {s["graph_id"]: (s["graph_version"], s.get("drawing_number")) for s in pg.get("sheets") or []}
+    bad = sorted((have.get(r.get("graph_id")) or (None, r.get("graph_id")))[1] or r.get("graph_id")
+                 for r in kg.get("graph_refs") or [] if (have.get(r.get("graph_id")) or (None,))[0] != r.get("graph_version"))
+    if bad:
+        out.append({"kind": "graph_mismatch", "text": "지식그래프를 만든 뒤 도면 %d장이 바뀌었거나 빠졌습니다(%s). 지식 관계가 지금 도면과 맞지 않을 수 있습니다. "
+                    "도면을 다시 추출하면 지식그래프도 다시 만들어집니다." % (len(bad), ", ".join(bad[:5]) + (" 외" if len(bad) > 5 else ""))})
+    return out
 
 
 def _context(engine):
@@ -68,7 +94,7 @@ def _context(engine):
         return None, "추출한 도면이 없습니다. 도면을 등록하고 추출하면 지식그래프가 만들어집니다."
     kg, kg_note = _load_kg(pid)
     path = expect.store_path(pid)
-    ver = _judgement_ver(path)
+    ver = _ver(pid, path)
     judge_problem = None
     try:
         judgements = expect.load_judgements(path, pid)
@@ -78,7 +104,9 @@ def _context(engine):
         expectations = expect.evaluate_cached(pg, kg, judgements)
     except expect.ExpectError as exc:
         expectations, judge_problem = None, "잠재 후보를 계산하지 못했습니다(%s)." % str(exc)[:160]
-    key = (pid, id(pg), pg.get("graph_version"), (kg or {}).get("kg_version"), id(expectations))
+    items = (expectations or {}).get("items") or ()
+    exp_fp = hashlib.sha256("\n".join("%s %s %s" % (i["id"], i["digest"], i["state"]) for i in items).encode("utf-8")).hexdigest()
+    key = (pid, pg.get("graph_version"), len(pg.get("nodes") or ()), (kg or {}).get("kg_version"), ver, exp_fp, judge_problem)
     hit = _CACHE.get("key") == key
     model = _CACHE["model"] if hit else screen.panel_model(pg, kg, expectations)
     if not hit:
@@ -90,7 +118,7 @@ def _context(engine):
     if expectations and expectations.get("orphan_judgements"):
         notes.append("대상이 그래프에서 사라진 판단 기록 %d건이 있습니다(파일에는 그대로 있음)." % len(expectations["orphan_judgements"]))
     return {"pid": pid, "pg": pg, "kg": kg, "model": model, "expectations": expectations, "ver": ver, "path": path,
-            "judge_problem": judge_problem, "notes": notes}, None
+            "judge_problem": judge_problem, "notes": notes, "blocks": _blocks(kg, pg)}, None
 
 
 # ---------------------------------------------------------------- 읽기
@@ -116,7 +144,8 @@ def summary(engine):
             "expect": {"states": [{"state": s, "label": expect.STATES[s], "count": states.get(s, 0),
                                    "shown": s in screen.EXPECT_SHOWN} for s in expect.STATES],
                        "recheck": recheck, "rules_version": (ctx["expectations"] or {}).get("rules_version")},
-            "has_kg": ctx["kg"] is not None, "can_judge": ctx["judge_problem"] is None, "notes": ctx["notes"]}
+            "has_kg": ctx["kg"] is not None, "can_judge": ctx["judge_problem"] is None, "notes": ctx["notes"],
+            "blocks": ctx["blocks"]}
 
 
 def graph(engine, expand):
@@ -189,8 +218,14 @@ def open_panel(engine, node_id=None):
     return {"opened": True, "focus": node_id}
 
 
-def judge(engine, expectation_id, action, reason="", evidence="", ver=None, by=None):
-    """잠재 후보 하나를 판단한다 -> {"ver", "state", "state_label"}. ver가 주어지면 지금 판단 파일 지문과 같아야 저장한다.
+STALE_TEXT = "잠재 후보가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 바뀐 내용을 보고 한 번 더 눌러 주세요."
+
+
+def judge(engine, expectation_id, action, digest, state, reason="", evidence="", ver=None, by=None):
+    """잠재 후보 하나를 판단한다 -> {"ver", "state", "state_label"}.
+    digest·state: 사람이 본 그 항목의 내용 지문과 상태(상세 읽기의 expectation.digest·state). 저장 직전에 다시 계산한 값과 다르면
+    (도면을 다시 추출해 후보가 바뀌었거나 다른 곳에서 판단함) 저장하지 않고 stale. 사람이 보지 못한 내용을 판단으로 남기지 않으려는 것이다.
+    ver가 주어지면 지금 판단 판 표시('<프로젝트>|<판단 파일 지문>')와 같아야 한다(다른 프로젝트·다른 판단 파일이면 stale).
     판단자는 by(없으면 설정의 검토자 이름). 허용되지 않는 동작·빠진 필수 입력은 저장하지 않고 CommandError."""
     api = _api()
     who = (by or engine.reviewer() or "").strip()
@@ -204,26 +239,28 @@ def judge(engine, expectation_id, action, reason="", evidence="", ver=None, by=N
     if ctx["judge_problem"]:
         raise api.CommandError("failed", ctx["judge_problem"])
     if ver is not None and ver != ctx["ver"]:
-        raise api.CommandError("stale", "잠재 후보 판단이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
+        raise api.CommandError("stale", STALE_TEXT)
     item = next((i for i in (ctx["expectations"] or {}).get("items") or [] if i["id"] == expectation_id), None)
     if item is None:
         raise api.CommandError("not_found", "없는 잠재 후보입니다.")
+    if item["digest"] != digest or item["state"] != state:
+        raise api.CommandError("stale", STALE_TEXT)
     from hazop.study import nodes as study_nodes
     try:
         rec = expect.apply_action(item, action, who, reason or "", evidence or "", at=study_nodes.now_utc())
-        if _judgement_ver(ctx["path"]) != ctx["ver"]:
-            raise api.CommandError("stale", "잠재 후보 판단이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
+        if _ver(ctx["pid"], ctx["path"]) != ctx["ver"]:
+            raise api.CommandError("stale", STALE_TEXT)
         expect.save_judgement(ctx["path"], ctx["pid"], rec)
     except expect.ExpectError as exc:
         raise api.CommandError("failed", str(exc)[:300])
     except OSError as exc:
         raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:200])
     engine.changed("kg")
-    return {"ver": _judgement_ver(ctx["path"]), "state": rec["state"], "state_label": expect.STATES[rec["state"]]}
+    return {"ver": _ver(ctx["pid"], ctx["path"]), "state": rec["state"], "state_label": expect.STATES[rec["state"]]}
 
 
 def _h_judge(engine, a):
-    return judge(engine, a["id"], a["action"], a.get("reason") or "", a.get("evidence") or "", ver=a["ver"])
+    return judge(engine, a["id"], a["action"], a["digest"], a["state"], a.get("reason") or "", a.get("evidence") or "", ver=a["ver"])
 
 
 def _h_open(engine, a):
@@ -241,6 +278,7 @@ def register(commands):
         commands[key] = C(spec_, handler, doc)
 
     put("judge", {"id": (v_str(1, 80), True), "action": (v_enum(*ACTIONS), True), "reason": (v_str(0, 500), False),
-                  "evidence": (v_str(0, 300), False), "ver": (v_str(1, 40), True)},
+                  "evidence": (v_str(0, 300), False), "ver": (v_str(1, 200), True), "digest": (v_str(1, 60), True),
+                  "state": (v_enum(*expect.STATES), True)},
         _h_judge, "잠재 후보 판단(후보 확인·후보 기각·부재 확정·무관·판단 되돌리기). 판단자는 설정의 검토자 이름")
     put("open", {"id": (v_str(1, 300), False)}, _h_open, "지식그래프 패널을 연다(노드를 주면 그 노드를 고른다)")

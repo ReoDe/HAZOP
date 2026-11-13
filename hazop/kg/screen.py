@@ -690,7 +690,13 @@ GROUP_PREFIX = "grp:"
 KN_PREFIX = "kn:"
 EXPECT_SHOWN = tuple(s for s, _, on in EXPECT_STATES if on)
 NEIGHBORS_SHOWN = 30
-ORIGIN_LABELS = {"pid_extract": "도면 추출", "human_edit": "사람 수정", "ai_draft": "AI 초안"}
+ORIGIN_LABELS = {o: v["label_ko"] for o, v in REGISTRY.origins.items()}
+KS_LABELS = {"confirmed": "확인", "unknown": "미확인(사람 확인 전)", "hypothesis": "가설"}
+LINK_ST_LABELS = {"confirmed": "확정", "candidate": "후보(사람 확인 전)", "recheck": "재확인 필요", "excluded": "계산 제외(미확인·가설)"}
+KN_TYPE_LABELS = {"document": "문서", "doc_chunk": "문서 조각", "requirement": "요건", "setpoint": "설정치", "condition": "운전조건·설계값",
+                  "analysis_case": "해석 사례"}
+KN_FIELD_LABELS = {"name": "이름", "item": "항목", "text": "글", "value": "값", "unit": "단위"}
+SOURCE_LABELS = {"material_id": "자료 ID", "registration_version": "등록 버전", "document_id": "문서", "page": "쪽", "locator": "위치"}
 EXPECT_NOTE_TEXT = "잠재 후보는 사실이 아닙니다. 규칙상 있어야 할 것을 찾아 보라는 단서이며, 부재 확정은 근거를 본 사람만 합니다."
 
 
@@ -720,6 +726,17 @@ def _kg_end(end, kn_ids, pg_nodes, by_soid):
     if end.get("entity_id") and project.nid(end.get("graph_id"), end["entity_id"]) in pg_nodes:
         return project.nid(end["graph_id"], end["entity_id"])
     return by_soid.get((end.get("graph_id"), end.get("source_object_id")))
+
+
+def kg_link_state(l):
+    """지식 관계의 그리기 상태(이전 화면 screen_data와 같은 갈래): 재확인 필요 > 후보 > 확정(관계·지식 모두 확인) > 계산 제외."""
+    if l.get("recheck"):
+        return "recheck"
+    if l.get("link_status") == "candidate":
+        return "candidate"
+    if (l.get("link_status") or "confirmed") == "confirmed" and (l.get("knowledge_status") or "confirmed") == "confirmed":
+        return "confirmed"
+    return "excluded"
 
 
 def panel_model(pg, kg=None, expectations=None):
@@ -786,7 +803,7 @@ def panel_model(pg, kg=None, expectations=None):
             if None in ends or ends[0] not in nodes or ends[1] not in nodes:
                 skipped["knowledge_links"] += 1
                 continue
-            add_link(KN_PREFIX + l["id"], l["kind"], ends[0], ends[1], st=l.get("link_status") or "confirmed")
+            add_link(KN_PREFIX + l["id"], l["kind"], ends[0], ends[1], st=kg_link_state(l), ai=build.origin_of(l) == "ai_draft")
         # 지식 노드는 이어진 도면 노드의 도면에 둔다. 지식끼리만 이어진 노드는 이웃 지식 노드의 도면을 한 번 더 따른다
         for _ in range(2):
             for l in links:
@@ -914,7 +931,7 @@ def _expectation_detail(model, it):
             "judgement": {k: j.get(k) for k in ("state", "action", "by", "at", "reason", "evidence")} if j else None,
             "actions": [{"action": a, "label": expect.ACTION_LABELS[a], "needs": [[k, expect.NEED_LABELS[k]] for k in needs[a]]}
                         for a in it["actions"]],
-            "caution": EXPECT_NOTE_TEXT}
+            "digest": it["digest"], "caution": EXPECT_NOTE_TEXT}
 
 
 def panel_node(model, nid, kg=None):
@@ -939,11 +956,13 @@ def panel_node(model, nid, kg=None):
             out["at"] = {"sheet": p["sheet"], "local_id": p["local_id"]}
     elif n["layer"] == "kn":
         k = next((x for x in (kg or {}).get("nodes") or [] if KN_PREFIX + x["id"] == nid), {})
-        out["what"] = [["종류", k.get("node_type") or "-"], ["상태", k.get("knowledge_status") or "confirmed"]]
-        out["what"] += [[f, _short(k[f], 80)] for f in ("name", "item", "text", "value", "unit") if k.get(f)]
+        ks = k.get("knowledge_status") or "confirmed"
+        out["what"] = [["종류", KN_TYPE_LABELS.get(k.get("node_type"), k.get("node_type") or "-")], ["상태", KS_LABELS.get(ks, ks)]]
+        out["what"] += [[KN_FIELD_LABELS[f], _short(k[f], 80)] for f in ("name", "item", "text", "value", "unit") if k.get(f)]
         src = k.get("source") if isinstance(k.get("source"), dict) else {}
-        out["evidence"] = _plain_attrs(src) or [["출처", "없음(근거 확인 필요)"]]
+        out["evidence"] = [[SOURCE_LABELS.get(a, a), v] for a, v in _plain_attrs(src)] or [["출처", "없음(근거 확인 필요)"]]
         out["evidence"].append(["만든 곳", ORIGIN_LABELS.get(build.origin_of(k), build.origin_of(k) or "-")])
+        out["ks"], out["ai"] = ks, build.origin_of(k) == "ai_draft"
     else:
         it = model["exp_items"][nid]
         t = model["pg_nodes"].get(it["target_entity"]) or {}
@@ -957,7 +976,8 @@ def panel_node(model, nid, kg=None):
     for l in around[:NEIGHBORS_SHOWN]:
         other = nodes[l["t"] if l["s"] == nid else l["s"]]
         out["neighbors"].append({"id": other["id"], "label": other.get("label") or other["type"], "layer": other["layer"],
-                                 "type": other["type"], "kind": l["kind"], "drawing": model["groups"][other["group"]]["label"]})
+                                 "type": other["type"], "kind": l["kind"], "drawing": model["groups"][other["group"]]["label"],
+                                 "st": LINK_ST_LABELS.get(l.get("st")) if l.get("st") else None})
     out["neighbors_total"] = len(around)
     out["expectations"] = [{"id": l["t"], "label": nodes[l["t"]]["label"], "xs": nodes[l["t"]]["xs"],
                             "state_label": expect.STATES[nodes[l["t"]]["xs"]], "recheck": nodes[l["t"]]["recheck"]}

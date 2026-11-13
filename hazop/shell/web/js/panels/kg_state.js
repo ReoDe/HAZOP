@@ -119,9 +119,11 @@ export async function focus(id, group) {
     if (!d) { kg.set({ error: "그래프에서 그 노드를 찾지 못했습니다." }); return false; }
     g = d.group;
   }
-  if (!kg.get().expanded.includes(g)) { const ok = await expand(g); if (!ok) return false; }
+  // 그 도면 하나가 상한보다 커서 그림에 펼치지 못해도 상세는 보인다(찾기로 고른 노드의 무엇·근거·판단은 그림 없이도 쓸 수 있다)
+  const drawn = kg.get().expanded.includes(g) || await expand(g);
   await select(id);
-  kg.set((s) => ({ center: id, seq: s.seq + 1, hits: [] }));
+  kg.set((s) => (drawn ? { center: id, seq: s.seq + 1, hits: [] }
+    : { hits: [], error: null, notice: "이 도면은 노드가 많아 그림에는 펼치지 않았습니다. 오른쪽 상세는 그대로 볼 수 있습니다." }));
   return true;
 }
 
@@ -144,10 +146,13 @@ export function fit() { kg.set((s) => ({ center: null, seq: s.seq + 1 })); }
 export function dismissError() { kg.set({ error: null }); }
 
 /** 잠재 후보 판단(후보 확인·후보 기각·부재 확정·무관·판단 되돌리기). 판단자는 엔진이 설정의 검토자 이름으로 채운다. */
+/** 판단: 사람이 상세에서 본 그 항목의 내용 지문(digest)과 상태를 함께 보낸다. 그사이 도면을 다시 추출해 후보가 바뀌었으면 엔진이 stale로 거절한다. */
 export async function judge(id, action, reason, evidence) {
+  const d0 = kg.get().detail;
+  if (!d0 || d0.id !== id || !d0.expectation) { kg.set({ error: "잠재 후보 상세를 다시 읽은 뒤 판단하세요." }); return null; }
   kg.set({ busy: true, error: null, notice: null });
   try {
-    const args = { id, action, ver: (kg.get().detail && kg.get().detail.ver) || kg.get().summary.ver };
+    const args = { id, action, ver: d0.ver, digest: d0.expectation.digest, state: d0.expectation.state };
     if (reason) args.reason = reason;
     if (evidence) args.evidence = evidence;
     const r = await cmd("kg.judge", args);

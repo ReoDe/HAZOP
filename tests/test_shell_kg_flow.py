@@ -80,6 +80,31 @@ class KgPanelFlowTest(ShellBase):
         self.assertTrue(wait_for(lambda: expect.load_judgements(expect.store_path(pid), pid)[item["key"]]["action"] == "undo", 10))
         self.assertTrue(wait_for(lambda: "후보 확인" in (self.js(win, "document.querySelector('.kg-side').innerText") or ""), 10))
 
+    def test_tag_and_document_names_are_text_not_html(self):
+        """검토 차단 2: 이름표(라이브러리가 innerHTML로 넣는 말풍선)와 상세에 도면 태그·문서 이름이 HTML로 해석되지 않는다."""
+        evil_style = "<style>.kg-judge{display:none}</style>RC-STY"
+        evil_img = "<img src=x onerror=\"window.__pwned=1\">RC-IMG"
+        kg = {"kg_version": "v-evil", "nodes": [
+            {"id": "evil-1", "node_type": "requirement", "name": evil_style, "knowledge_status": "confirmed"},
+            {"id": "evil-2", "node_type": "requirement", "name": evil_img, "knowledge_status": "unknown"}], "links": []}
+        with mock.patch.object(api_kg, "_load_kg", lambda pid: (kg, None)):
+            api_kg._CACHE.clear()
+            win = self.window()
+            self.mount(win)
+            labels = self.jsj(win, "window.__hzKg.graphData().nodes.filter((n) => n.id.startsWith('kn:evil')).map((n) => window.__hzKg.nodeLabel()(n))")
+            self.assertEqual(len(labels), 2, labels)
+            self.assertTrue(all("<" not in x and "&lt;" in x for x in labels), labels)
+            styles = self.js(win, "document.querySelectorAll('style').length")
+            self.js(win, "import(new URL('js/panels/kg_state.js', document.baseURI).href).then((K) => K.select('kn:evil-1'))")
+            self.assertTrue(wait_for(lambda: "RC-STY" in (self.js(win, "(document.querySelector('.kg-side')||{}).innerText") or ""), 10))
+            self.assertIn("<style>", self.js(win, "document.querySelector('.kg-side').innerText"))       # 글자 그대로 보인다
+            self.js(win, "import(new URL('js/panels/kg_state.js', document.baseURI).href).then((K) => K.select('kn:evil-2'))")
+            self.assertTrue(wait_for(lambda: "RC-IMG" in (self.js(win, "(document.querySelector('.kg-side')||{}).innerText") or ""), 10))
+            pump(0.5)
+            self.assertEqual(self.js(win, "document.querySelectorAll('style').length"), styles)
+            self.assertEqual(self.js(win, "document.querySelectorAll('.kg img').length"), 0)
+            self.assertEqual(self.js(win, "String(window.__pwned)"), "undefined")
+
     def test_show_on_sheet_closes_panel_and_opens_that_drawing(self):
         win = self.window()
         self.mount(win)

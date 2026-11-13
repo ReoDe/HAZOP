@@ -35,6 +35,7 @@ function colorOf(n) {
   return n.type === "equipment" ? C.equip : C.pid;
 }
 
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const idOf = (x) => (x && typeof x === "object" ? x.id : x);
 let fgPromise = null;
 function loadForceGraph() {
@@ -84,11 +85,12 @@ function GraphCanvas() {
       const g = ForceGraph()(host.current)
         .backgroundColor(C.bg).nodeId("id").linkSource("source").linkTarget("target")
         .nodeRelSize(4).cooldownTicks(160).d3VelocityDecay(0.35)
-        .nodeLabel((n) => (n.layer === "group" ? n.label + " · 노드 " + n.count + " (눌러 펼치기)" : (n.label || TYPE_NAMES[n.type] || n.type)))
-        .linkColor((l) => (near.current.size && (near.current.has(idOf(l.source)) && near.current.has(idOf(l.target))) ? C.linkHi : C.link))
+        .nodeLabel((n) => esc(n.layer === "group" ? n.label + " · 노드 " + n.count + " (눌러 펼치기)" : (n.label || TYPE_NAMES[n.type] || n.type)))   // 라이브러리가 innerHTML로 넣으므로 글자로 거른다
+        .linkColor((l) => (near.current.size && (near.current.has(idOf(l.source)) && near.current.has(idOf(l.target))) ? C.linkHi
+          : l.st === "recheck" ? C.gap : l.st === "excluded" ? C.quiet : C.link))
         .linkWidth((l) => (l.kind === "group" ? Math.min(4, 1 + Math.log2(l.n || 1)) : (near.current.size && near.current.has(idOf(l.source)) && near.current.has(idOf(l.target)) ? 1.6 : 0.8)))
         .linkDirectionalArrowLength((l) => (l.flow ? 3 : 0)).linkDirectionalArrowRelPos(0.6)
-        .linkLineDash((l) => (l.kind === "expects" || l.kind === "satisfied_by" || l.st === "candidate" ? [2, 2] : null))
+        .linkLineDash((l) => (l.st === "recheck" ? [1, 2] : l.st === "excluded" ? [4, 3] : l.kind === "expects" || l.kind === "satisfied_by" || l.st === "candidate" ? [2, 2] : null))
         .nodeCanvasObject((n, ctx, scale) => drawNode(n, ctx, scale, K.kg.get().selected, hover.current, near.current))
         .nodePointerAreaPaint((n, color, ctx) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(n.x, n.y, radius(n) + 2, 0, 2 * Math.PI); ctx.fill(); })
         .onNodeHover((n) => { hover.current = n ? n.id : null; host.current.style.cursor = n ? "pointer" : ""; })
@@ -168,7 +170,12 @@ function drawNode(n, ctx, scale, selected, hover, near) {
     ctx.moveTo(n.x, n.y - r - 0.6); ctx.lineTo(n.x + r + 0.6, n.y); ctx.lineTo(n.x, n.y + r + 0.6); ctx.lineTo(n.x - r - 0.6, n.y); ctx.closePath();
   } else ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
   if (n.layer === "exp" && n.xs === "expected") { ctx.fillStyle = C.bg; ctx.fill(); ctx.lineWidth = 1.4; ctx.strokeStyle = C.gap; ctx.stroke(); }
-  else { ctx.fillStyle = colorOf(n); ctx.fill(); }
+  else if (n.layer === "kn" && (n.ks !== "confirmed" || n.ai)) {
+    // 확인 전 지식(미확인·가설)과 AI 초안은 속이 빈 원으로, AI 초안은 점선 테로 확정 지식과 갈라 보인다
+    ctx.fillStyle = C.bg; ctx.fill(); ctx.lineWidth = 1.4; ctx.strokeStyle = C.kn;
+    if (n.ai) ctx.setLineDash([1.5, 1.2]);
+    ctx.stroke(); ctx.setLineDash([]);
+  } else { ctx.fillStyle = colorOf(n); ctx.fill(); }
   if (n.recheck) { ctx.lineWidth = 1; ctx.setLineDash([1.5, 1.5]); ctx.strokeStyle = C.gap; ctx.beginPath(); ctx.arc(n.x, n.y, r + 2.5, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]); }
   if (n.id === selected) { ctx.lineWidth = 2 / Math.max(scale, 0.5); ctx.strokeStyle = C.sel; ctx.beginPath(); ctx.arc(n.x, n.y, r + 3, 0, 2 * Math.PI); ctx.stroke(); }
   const show = n.layer === "group" || n.id === selected || n.id === hover || (near.size && near.has(n.id)) || scale > 2.2;
@@ -260,7 +267,7 @@ function Detail() {
   const x = d.expectation;
   return html`<aside class="kg-side" aria-label=${(d.label || d.id) + " 상세"}>
     <div class="kg-dh"><b>${d.label || TYPE_NAMES[d.type] || d.type}</b>
-      <${Chip}>${TYPE_NAMES[d.type] || d.type}<//>${x ? html`<${Chip} kind=${STATE_KIND[x.state]}>${x.state_label}<//>` : null}
+      <${Chip}>${TYPE_NAMES[d.type] || d.type}<//>${d.layer === "kn" && d.ks !== "confirmed" ? html`<${Chip} kind="warn">확인 전<//>` : null}${d.ai ? html`<${Chip} kind="ai" icon="sparkles">AI 초안<//>` : null}${x ? html`<${Chip} kind=${STATE_KIND[x.state]}>${x.state_label}<//>` : null}
       ${x && x.recheck ? html`<${Chip} kind="warn" title="규칙 판이나 대상·후보 내용이 바뀌었습니다">재확인 필요<//>` : null}</div>
     <div class="muted small">${d.drawing}</div>
     ${d.at ? html`<div><${Btn} sm=${true} icon="map-pin" label="도면에서 보기" onClick=${() => K.showOnSheet(d.at)}>도면에서 보기<//></div>` : null}
@@ -280,7 +287,7 @@ function Detail() {
       <span>${e.label}</span><${Chip} kind=${STATE_KIND[e.xs]}>${e.state_label}${e.recheck ? " · 재확인" : ""}<//></button>`)}</div>` : null}
     <h4>이어진 것 ${d.neighbors_total}</h4>
     <div class="list" role="list">${d.neighbors.map((nb) => html`<button type="button" class="kg-nb" role="listitem" key=${nb.id + nb.kind} onClick=${() => K.focus(nb.id)}>
-      <span>${nb.label}</span><span class="muted small">${nb.kind} · ${TYPE_NAMES[nb.type] || nb.type}${nb.drawing !== d.drawing ? " · " + nb.drawing : ""}</span></button>`)}
+      <span>${nb.label}</span><span class="muted small">${nb.kind}${nb.st ? " (" + nb.st + ")" : ""} · ${TYPE_NAMES[nb.type] || nb.type}${nb.drawing !== d.drawing ? " · " + nb.drawing : ""}</span></button>`)}
       ${d.neighbors_total > d.neighbors.length ? html`<div class="muted small">나머지 ${d.neighbors_total - d.neighbors.length}개는 그래프에서 보세요.</div>` : null}</div>
   </aside>`;
 }
@@ -296,6 +303,7 @@ export function KgPanel({ onClose }) {
     <div class="panel-b kg-b">
       ${!s.available ? html`<div class="center-empty"><p>${s.reason || "불러오는 중…"}</p></div>` : html`
         <${Head} s=${s} />
+        ${(s.blocks || []).map((b) => html`<${Notice} kind="err" icon="alert-triangle" key=${b.kind}>${b.text}<//>`)}
         ${(s.notes || []).map((t, i) => html`<${Notice} kind="warn" icon="alert-triangle" key=${i}>${t}<//>`)}
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${K.dismissError}>닫기<//><//>` : null}
         ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice}<//>` : null}
