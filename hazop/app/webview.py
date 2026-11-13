@@ -26,7 +26,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from hazop.app import icons, tokens
 
-ALLOWED_SCHEMES = frozenset({"file", "qrc", "data", "blob", "about"})
+ALLOWED_SCHEMES = frozenset({"file", "qrc", "data", "blob", "about", "hazop-app"})  # hazop-app: 새 웹 화면의 앱 전용 주소 체계(hazop/shell/scheme.py)
 MAX_MESSAGE_CHARS = 64 * 1024   # 웹 → Python 메시지 길이 상한(웹 내용은 신뢰하지 않음)
 MAX_ID_CHARS = 200              # 노드·관계·로컬 ID 길이 상한
 ID_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,%d}$" % MAX_ID_CHARS)  # 제어 문자 없는 1~200자
