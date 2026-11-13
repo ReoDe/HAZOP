@@ -2,7 +2,7 @@
  "pages": {
   "SNP-M-101": {
    "attribute": {
-    "correct": 0,
+    "correct": 10,
     "false_pos": 0,
     "units": 10
    },
@@ -24,7 +24,7 @@
   },
   "SNP-M-102": {
    "attribute": {
-    "correct": 0,
+    "correct": 6,
     "false_pos": 0,
     "units": 6
    },
@@ -46,7 +46,7 @@
   },
   "SNP-M-201": {
    "attribute": {
-    "correct": 0,
+    "correct": 7,
     "false_pos": 0,
     "units": 7
    },
@@ -68,7 +68,7 @@
   },
   "SNP-M-301": {
    "attribute": {
-    "correct": 0,
+    "correct": 8,
     "false_pos": 0,
     "units": 8
    },
@@ -90,7 +90,7 @@
   },
   "SNP-M-401": {
    "attribute": {
-    "correct": 0,
+    "correct": 9,
     "false_pos": 0,
     "units": 9
    },
@@ -112,7 +112,7 @@
   },
   "SNP-M-501": {
    "attribute": {
-    "correct": 0,
+    "correct": 7,
     "false_pos": 0,
     "units": 7
    },
@@ -156,7 +156,7 @@
   },
   "apr1400-012": {
    "attribute": {
-    "correct": 11,
+    "correct": 28,
     "false_pos": 0,
     "units": 47
    },
@@ -200,7 +200,7 @@
   },
   "apr1400-025": {
    "attribute": {
-    "correct": 33,
+    "correct": 95,
     "false_pos": 6,
     "units": 131
    },
@@ -244,7 +244,7 @@
   },
   "apr1400-046": {
    "attribute": {
-    "correct": 2,
+    "correct": 9,
     "false_pos": 9,
     "units": 23
    },
@@ -266,7 +266,7 @@
   },
   "apr1400-062": {
    "attribute": {
-    "correct": 2,
+    "correct": 17,
     "false_pos": 2,
     "units": 38
    },
@@ -332,7 +332,7 @@
   },
   "apr1400-097": {
    "attribute": {
-    "correct": 7,
+    "correct": 26,
     "false_pos": 5,
     "units": 32
    },
@@ -354,7 +354,7 @@
   },
   "apr1400-105": {
    "attribute": {
-    "correct": 7,
+    "correct": 40,
     "false_pos": 10,
     "units": 96
    },
@@ -376,7 +376,7 @@
   },
   "apr1400-128": {
    "attribute": {
-    "correct": 12,
+    "correct": 38,
     "false_pos": 10,
     "units": 47
    },
