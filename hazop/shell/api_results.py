@@ -82,6 +82,63 @@ def check_version(ns, ver):
         raise _api().CommandError("stale", "분석 결과가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
 
 
+_EN_CACHE = {}
+
+
+def deviation_names_en():
+    """{item_id: {guideword_en, label_en}} KOSHA P-86 이탈후보표의 영문. 표를 못 읽으면 빈 사전(화면은 한국어만 보인다)."""
+    if "v" not in _EN_CACHE:
+        import json
+        from hazop import paths
+        try:
+            with open(paths.folder("deviations", res.DEVIATION_CHART), encoding="utf-8") as fh:
+                items = json.load(fh).get("items") or []
+        except (OSError, ValueError):
+            return {}
+        _EN_CACHE["v"] = {i["item_id"]: {"guideword_en": (i.get("guide_word_en") or "").strip(),
+                                         "label_en": (i.get("deviation_en") or "").strip()}
+                          for i in items if i.get("item_id")}
+    return _EN_CACHE["v"]
+
+
+def _dev_with_en(d, en):
+    n = en.get(d.get("item_id")) or {}
+    return dict(d, guideword_en=n.get("guideword_en", ""), label_en=n.get("label_en", ""))
+
+
+KIND_DEFAULT_REASON = {"not_applicable": "AI가 이 구간에는 해당하지 않는다고 판단했습니다(이유를 적지 않음).",
+                       "no_scenario": "AI가 분석했으나 시나리오가 나오지 않았습니다.",
+                       "failed": "AI 실행이 실패했습니다.", "excluded": "제외한 칸입니다."}
+
+
+def cell_kind(cell):
+    """행렬에서 '아직 분석 안 함'과 구분해 보일 칸 종류. 없으면 None (항목이 있거나 아직 분석 전).
+    Excel 칸 표시 행과 같은 규칙(study_xlsx._cell_kind)으로 하되, 하나만 고른다."""
+    run = cell.get("ai_run") or {}
+    if run.get("status") == "failed":
+        return "failed"
+    if cell["state"] == "excluded":
+        return "excluded"
+    if cell["state"] == "analyzed" and not cell["entries"]:
+        return "not_applicable" if run.get("applicable") is False else "no_scenario"
+    return None
+
+
+def cell_reason(cell, kind):
+    run = cell.get("ai_run") or {}
+    text = run.get("error") if kind == "failed" else run.get("note")
+    return (text.strip() if isinstance(text, str) else "") or KIND_DEFAULT_REASON[kind]
+
+
+def _mark_kinds(matrix, cells):
+    """matrix_summary의 칸에 kind·reason을 더한다(키만 더함). 해당이 없는 칸(대부분)에는 키를 붙이지 않아 크기를 키우지 않는다."""
+    for c in cells:
+        kind = cell_kind(c)
+        if kind:
+            matrix[c["node_id"]][c["deviation_id"]].update(kind=kind, reason=cell_reason(c, kind))
+    return matrix
+
+
 def _entry_view(e):
     return dict(e, verdict=res.verdict(e))
 
@@ -122,9 +179,12 @@ def summary(engine):
         return dict(base, empty=True, nodes=[], deviations=[], matrix={}, ver="none", kpi=_kpi(None),
                     reason="분석 결과 파일을 읽을 수 없습니다(%s)." % str(exc)[:120])
     rows = [{"node_id": n["node_id"], "name": n.get("name"), "state": nodes.node_state(n), "rev": n.get("rev") or 1} for n in active]
+    en = deviation_names_en()
     return dict(base, empty=False, nodes=rows, deviations=[{"deviation_id": d["deviation_id"], "parameter": d["parameter"],
-                                                             "guideword": d["guideword"], "label": d.get("label")} for d in doc["deviations"]],
-                matrix=res.matrix_summary(doc), ver=_ver(fp), read_only=doc.get("read_only"), kpi=_kpi(doc),
+                                                             "guideword": d["guideword"], "label": d.get("label"),
+                                                             "guideword_en": _dev_with_en(d, en)["guideword_en"],
+                                                             "label_en": _dev_with_en(d, en)["label_en"]} for d in doc["deviations"]],
+                matrix=_mark_kinds(res.matrix_summary(doc), doc["cells"]), ver=_ver(fp), read_only=doc.get("read_only"), kpi=_kpi(doc),
                 run=_run_state(engine))
 
 
@@ -160,7 +220,7 @@ def cells_delta(doc, ur, fp):
     cells = {}
     for c in doc["cells"]:
         if c["node_id"] == ur["node_id"] and c["deviation_id"] in wanted:
-            cells[c["deviation_id"]] = res.matrix_summary({"cells": [c]})[c["node_id"]][c["deviation_id"]]
+            cells[c["deviation_id"]] = _mark_kinds(res.matrix_summary({"cells": [c]}), [c])[c["node_id"]][c["deviation_id"]]
     return {"node_id": ur["node_id"], "cells": cells, "kpi": _kpi(doc), "ver": _ver(fp)}
 
 
@@ -179,7 +239,7 @@ def cell_view(engine, node_id, deviation_id):
     if cell is None:
         return None
     node = next((n for n in ns["nodes"] if n["node_id"] == node_id), {})
-    dev = next((d for d in doc["deviations"] if d["deviation_id"] == deviation_id), {})
+    dev = _dev_with_en(next((d for d in doc["deviations"] if d["deviation_id"] == deviation_id), {}), deviation_names_en())
     cell = dict(cell, entries=[_entry_view(e) for e in cell["entries"]])
     problem = res.editable_problem(doc, node_id, deviation_id, ns)
     return {"cell": cell, "node": {"node_id": node_id, "name": node.get("name"), "state": nodes.node_state(node) if node else None},

@@ -153,7 +153,7 @@ export async function exportExcel(scope, nodeIds) {
   results.set({ exporting: true, error: null, notice: null });
   try {
     const r = await cmd("results.export_excel", Object.assign({ scope }, nodeIds && nodeIds.length ? { node_ids: nodeIds } : {}));
-    results.set({ exporting: false, notice: r.cancelled ? null : "Excel로 내보냈습니다: " + r.path + " · 워크시트 " + r.rows + "행" });
+    results.set({ exporting: false, notice: r.cancelled ? null : "Excel로 내보냈습니다(" + ({ approved: "승인 항목만", nodes: "고른 구간만" }[scope] || "전체") + "): " + r.path + " · 워크시트 " + r.rows + "행" });
     return r;
   } catch (e) { results.set({ exporting: false, error: errorText(e) }); return null; }
 }

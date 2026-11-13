@@ -12,6 +12,18 @@
 .rc.risk-2 { background: var(--accent-weak); }
 .rc.risk-3 { background: var(--warn-bg); }
 .rc.risk-4, .rc.risk-5 { background: var(--err-bg); }
+.rk { display: inline-block; padding: 1px 6px; border-radius: var(--r-sm); font-size: var(--fs-xs); white-space: nowrap; cursor: help; }
+.rk-na { background: var(--surface); border: 1px dashed var(--line); color: var(--muted); }
+.rk-ns { color: var(--muted); }
+.rk-fail { background: var(--warn-bg); color: var(--warn); }
+.rk-ex { color: var(--faint); text-decoration: line-through; }
+.dot-fail { position: absolute; bottom: -3px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn-line); }
+.res-legend { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); align-items: center; }
+.worksheet .en { font-size: var(--fs-xs); }
+.exportcard { border-color: var(--accent); display: flex; flex-direction: column; gap: var(--sp-2); }
+.exp-scopes, .exp-nodes { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
+.exp-nodes { max-height: 140px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--sp-2); }
+.exp-opt { display: inline-flex; align-items: center; gap: 4px; }
 .dot-un { position: absolute; top: -3px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn-line); }
 .worksheet .ent { border-top: 1px solid var(--line); padding: var(--sp-2) 0; }
 .entgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-2) var(--sp-3); }

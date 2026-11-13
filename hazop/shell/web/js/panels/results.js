@@ -11,6 +11,15 @@ import * as R from "./results_state.js";
 
 const STATUS = { proposed: ["AI 초안", "ai"], approved: ["수용", "ok"], revised: ["수정", "accent"], rejected: ["기각", "plain"], on_hold: ["보류", "warn"] };
 const RISK_CLASS = (r) => (r == null ? "" : "risk-" + Math.min(5, Math.max(1, r)));
+// 항목이 없는 칸의 종류: [표시, 모양, 설명]. 엔진(api_results.cell_kind)이 kind·reason을 준다. 없으면 '아직 분석 안 함'.
+const KIND = {
+  not_applicable: ["적용 불가", "na", "AI가 이 구간에는 해당하지 않는다고 판단한 칸"],
+  no_scenario: ["0건", "ns", "분석했으나 시나리오가 나오지 않은 칸"],
+  failed: ["실패", "fail", "마지막 AI 실행이 실패한 칸"],
+  excluded: ["제외", "ex", "제외한 칸"],
+};
+const NOT_YET = "아직 분석 안 함";
+const withEn = (ko, en) => (en && en !== ko ? ko + " (" + en + ")" : ko);
 
 // ---------------------------------------------------------------- 머리
 function Kpi({ kpi }) {
@@ -51,8 +60,39 @@ function PlanCard() {
     <div class="acts-row"><${Btn} kind="primary" label="분석 시작" disabled=${!p.can_start || !!p.empty_text || p.running} onClick=${R.startRun}>시작<//><${Btn} label="취소" onClick=${R.closePlan}>취소<//></div></div>`;
 }
 
+// Excel 범위: 전체 / 승인 항목만 / 고른 구간만. 저장 위치는 창이 파일 대화상자로 묻고(웹은 경로를 보내지 않는다), 같은 이름이 있으면 덮어쓸지 한 번 더 묻는다.
+const SCOPE_TEXT = { all: "전체", approved: "승인 항목만", nodes: "고른 구간만" };
+function ExportCard({ s, onDone }) {
+  const active = R.useResults((x) => x.active);
+  const exporting = R.useResults((x) => x.exporting);
+  const [scope, setScope] = useState("all");
+  // 구간마다 내보낼 내용이 있는 칸 수(항목이 있거나 적용 불가·실패 같은 표시가 있는 칸). 분석 전 구간은 0이라 파일에 행이 없다.
+  const filled = (id) => Object.values((s.matrix || {})[id] || {}).filter((c) => c.scenarios || c.kind).length;
+  const [picked, setPicked] = useState(() => (active && filled(active.node_id) ? [active.node_id] : []));
+  const toggle = (id) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : picked.concat([id]));
+  const ok = scope !== "nodes" || picked.length > 0;
+  const empty = scope === "nodes" && picked.length > 0 && picked.every((id) => !filled(id));
+  const go = async () => { const r = await R.exportExcel(scope, scope === "nodes" ? picked : null); if (r && !r.cancelled) onDone(); };
+  const hint = { all: "모든 항목과 칸 표시 행(적용 불가·실패·제외)을 담습니다.",
+    approved: "수용한 항목 " + (s.kpi ? s.kpi.approved : 0) + "개만 담습니다. 칸 표시 행은 넣지 않습니다.",
+    nodes: "고른 구간의 항목과 칸 표시 행을 담습니다." };
+  return html`<div class="card exportcard" role="dialog" aria-label="Excel 내보내기 범위">
+    <h3>Excel로 내보내기</h3>
+    <div class="exp-scopes" role="radiogroup" aria-label="범위">${Object.keys(SCOPE_TEXT).map((k) => html`<label key=${k} class="exp-opt">
+      <input type="radio" name="exp-scope" checked=${scope === k} onChange=${() => setScope(k)} /> <b>${SCOPE_TEXT[k]}</b></label>`)}</div>
+    <div class="muted small">${hint[scope]}</div>
+    ${scope === "nodes" ? html`<div class="exp-nodes" role="group" aria-label="구간 고르기">${s.nodes.map((n) => html`<label key=${n.node_id} class="exp-opt">
+      <input type="checkbox" checked=${picked.includes(n.node_id)} onChange=${() => toggle(n.node_id)} /> <b>${n.node_id}</b> ${n.name || ""} <span class="muted small">${filled(n.node_id) ? "· " + filled(n.node_id) + "칸" : "· 분석 전"}</span></label>`)}</div>
+      ${empty ? html`<div class="small reason">고른 구간은 아직 분석 전이라 파일에 행이 없습니다.</div>` : null}
+      ${picked.length ? html`<div class="muted small">${picked.length}개 구간을 담습니다.</div>` : html`<div class="small reason">구간을 하나 이상 고르세요.</div>`}` : null}
+    <div class="muted small">저장 위치는 파일 대화상자에서 고릅니다. 같은 이름의 파일이 있으면 덮어쓸지 한 번 더 묻습니다.</div>
+    <div class="acts-row"><${Btn} kind="primary" label="Excel로 내보내기" disabled=${!ok || exporting} onClick=${go}>내보내기<//>
+      <${Btn} label="취소" onClick=${onDone}>취소<//></div></div>`;
+}
+
 function Header({ s }) {
   const [menu, setMenu] = useState(false);
+  const [exp, setExp] = useState(false);
   const exporting = R.useResults((x) => x.exporting);
   const view = R.useResults((x) => x.view);
   return html`<div class="acts-row res-head">
@@ -61,8 +101,9 @@ function Header({ s }) {
       <${Btn} sm=${true} label=${view === "recs" ? "행렬 보기" : "권고 " + (s.kpi ? s.kpi.recs : 0) + " 보기"}
         onClick=${() => R.setView(view === "recs" ? "matrix" : "recs")}>${view === "recs" ? "행렬" : "권고 " + (s.kpi ? s.kpi.recs : 0)}<//>
       <${Btn} sm=${true} icon="cpu" label="분석 실행" disabled=${!!(s.run && s.run.running)} onClick=${() => setMenu(!menu)}>분석 실행<//>
-      <${Btn} sm=${true} icon="file-export" label="내보내기" disabled=${exporting} onClick=${() => R.exportExcel("all")}>Excel<//>
+      <${Btn} sm=${true} icon="file-export" label="Excel 내보내기 범위 고르기" disabled=${exporting} onClick=${() => setExp(!exp)}>Excel<//>
       <${Btn} sm=${true} icon="file-export" label="초기사건 인계 묶음 내보내기" disabled=${exporting} onClick=${R.exportIe}>초기사건 인계<//></span></div>
+    ${exp ? html`<${ExportCard} s=${s} onDone=${() => setExp(false)} />` : null}
     ${menu ? html`<div class="acts-row runmenu" role="menu">
       <${Btn} sm=${true} label="모든 구간 분석" onClick=${() => { setMenu(false); R.planRun("all"); }}>모든 구간<//>
       <${Btn} sm=${true} label="고른 구간 분석" onClick=${() => { setMenu(false); R.planRun("node"); }}>고른 구간<//>
@@ -71,6 +112,13 @@ function Header({ s }) {
 }
 
 // ---------------------------------------------------------------- 행렬
+function Legend() {
+  return html`<div class="res-legend muted small" aria-label="행렬 표시 설명">
+    <span><span class="faint">·</span> ${NOT_YET}</span>
+    ${Object.keys(KIND).map((k) => html`<span key=${k}><span class=${"rk rk-" + KIND[k][1]}>${KIND[k][0]}</span> ${KIND[k][2]}</span>`)}
+    <span>칸에 올리면 이유가 보이고, 눌러 열면 워크시트에 적힙니다.</span></div>`;
+}
+
 function Matrix({ s }) {
   const active = R.useResults((x) => x.active);
   const rows = s.nodes, cols = s.deviations;
@@ -83,13 +131,14 @@ function Matrix({ s }) {
     active=${ai >= 0 && ci >= 0 ? { r: ai, c: ci } : null} onActive=${open} onOpen=${open}
     corner=${html`<span class="muted small">구간 \\ 편차</span>`}
     renderRowHead=${(r) => html`<span class="vg-rh-in"><b>${rows[r].node_id}</b> ${rows[r].name || ""}</span>`}
-    renderColHead=${(c) => html`<span class="vg-ch-in" title=${cols[c].label}>${cols[c].label}</span>`}
+    renderColHead=${(c) => html`<span class="vg-ch-in" title=${withEn(cols[c].label, cols[c].label_en)} aria-label=${withEn(cols[c].label, cols[c].label_en)}>${cols[c].label}</span>`}
     renderCell=${(r, c) => {
       const cell = (s.matrix[rows[r].node_id] || {})[cols[c].deviation_id];
       if (!cell) return null;
-      if (cell.state === "excluded") return html`<span class="muted">제외</span>`;
-      if (!cell.scenarios && cell.state !== "analyzed") return html`<span class="faint">·</span>`;
-      return html`<span class=${"rc " + RISK_CLASS(cell.max_risk)}><b>${cell.max_risk == null ? "–" : cell.max_risk}</b><small>${cell.scenarios}</small>${cell.unreviewed ? html`<i class="dot-un" title="미검토"></i>` : null}</span>`;
+      const k = KIND[cell.kind];
+      if (k && !cell.scenarios) return html`<span class=${"rk rk-" + k[1]} title=${k[0] + ": " + cell.reason} aria-label=${k[0] + ". " + cell.reason}>${k[0]}</span>`;
+      if (!cell.scenarios && cell.state !== "analyzed") return html`<span class="faint" title=${NOT_YET} aria-label=${NOT_YET}>·</span>`;
+      return html`<span class=${"rc " + RISK_CLASS(cell.max_risk)}><b>${cell.max_risk == null ? "–" : cell.max_risk}</b><small>${cell.scenarios}</small>${cell.unreviewed ? html`<i class="dot-un" title="미검토"></i>` : null}${k ? html`<i class="dot-fail" title=${k[0] + ": " + cell.reason}></i>` : null}</span>`;
     }} /></div>`;
 }
 
@@ -141,19 +190,21 @@ function EntryActions({ e, cell }) {
 function Worksheet() {
   const c = R.useResults((x) => x.cell);
   const active = R.useResults((x) => x.active);
+  const mk = R.useResults((x) => (x.summary && x.cell ? ((x.summary.matrix || {})[x.cell.node.node_id] || {})[x.cell.deviation.deviation_id] : null));
   if (!active) return html`<div class="muted res-hint">행렬에서 칸을 고르면 그 칸의 워크시트가 열립니다.</div>`;
   if (!c) return html`<div class="muted res-hint">불러오는 중…</div>`;
   const cell = c.cell;
   return html`<div class="card worksheet" aria-label=${"워크시트 " + c.node.node_id + " " + (c.deviation.label || "")}>
-    <div class="nd-h"><b>${c.node.node_id}</b> ${c.node.name || ""} <span class="muted">›</span> <b>${c.deviation.label || c.deviation.deviation_id}</b>
+    <div class="nd-h"><b>${c.node.node_id}</b> ${c.node.name || ""} <span class="muted">›</span> <b>${c.deviation.label || c.deviation.deviation_id}</b>${c.deviation.label_en ? html` <span class="muted en">${c.deviation.label_en}</span>` : null}
       <${Chip}>${cell.state === "analyzed" ? "분석함" : cell.state === "excluded" ? "제외" : "분석 전"}<//>
       ${cell.scope_changed ? html`<${Chip} kind="warn" title="구간 범위가 바뀐 뒤 아직 다시 확인하지 않은 칸">범위 바뀜<//>` : null}
       <span class="acts"><${Btn} sm=${true} label="도면에서 보기" title="패널을 닫고 이 구간을 도면에서 봅니다" onClick=${() => R.viewOnSheet(c.node.node_id)}>도면에서 보기<//>
         <${Btn} sm=${true} kind="ghost" icon="x" label="워크시트 닫기" onClick=${() => R.results.set({ active: null, cell: null })} /></span></div>
     ${!c.editable ? html`<${Notice} kind="info">${c.not_editable_reason || "이 칸은 고칠 수 없습니다."}<//>` : null}
     ${cell.ai_run && cell.ai_run.status === "failed" ? html`<${Notice} kind="warn" icon="alert-triangle">마지막 AI 실행이 이 칸에서 실패했습니다: ${cell.ai_run.error}<//>` : null}
-    ${cell.ai_run && cell.ai_run.note ? html`<div class="muted small">${cell.ai_run.note}</div>` : null}
-    ${cell.entries.length === 0 ? html`<div class="muted">항목이 없습니다. '분석 실행'으로 AI 초안을 받거나, 이 칸이 해당 없음일 수 있습니다.</div>` : cell.entries.map((e) => html`<div class="ent" key=${e.entry_id}>
+    ${mk && KIND[mk.kind] && !cell.entries.length ? html`<${Notice} kind=${mk.kind === "failed" ? "warn" : "info"}><b>${KIND[mk.kind][0]}</b> · ${mk.reason}<//>`
+      : cell.ai_run && cell.ai_run.note ? html`<div class="muted small">${cell.ai_run.note}</div>` : null}
+    ${cell.entries.length === 0 ? html`<div class="muted">${mk && KIND[mk.kind] ? "항목이 없습니다." : "항목이 없습니다. '분석 실행'으로 AI 초안을 받으세요."}</div>` : cell.entries.map((e) => html`<div class="ent" key=${e.entry_id}>
       <div class="entgrid">
         <div><div class="lbl">원인</div><div>${text(e.cause) || html`<span class="muted">-</span>`}</div></div>
         <div><div class="lbl">결과</div><div>${text(e.consequence) || html`<span class="muted">-</span>`}</div></div>
@@ -208,6 +259,7 @@ export function ResultsPanel({ onClose }) {
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${R.dismissError}>닫기<//><//>` : null}
         ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice}<//>` : null}
         ${view === "recs" ? html`<${Recs} />` : html`<${Matrix} s=${s} />`}
+        ${view === "recs" ? null : html`<${Legend} />`}
         ${view === "recs" ? null : html`<${Worksheet} />`}
         ${view === "recs" ? html`<${Worksheet} />` : null}`}
     </div></section>`;

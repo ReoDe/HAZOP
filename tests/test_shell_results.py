@@ -551,3 +551,120 @@ class ScaleTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReasonAndGuidewordTest(Base):
+    """A9 ① 행렬 칸: '적용 불가'와 '아직 분석 안 함'을 가르고 이유를 준다. ③ 가이드워드 옆 영문."""
+
+    def mark(self, node, dev, **cell):
+        doc, _fp = res.load_fp(self.ns)
+        c = next(c for c in doc["cells"] if (c["node_id"], c["deviation_id"]) == (node, dev))
+        c.update(cell)
+        res.save_fp(doc, self.project, expect=store_io.ANY)
+
+    def test_not_applicable_cell_carries_its_reason_and_kind(self):
+        ok = {"status": "ok", "error": None, "at": "2026-11-13T00:00:00Z", "model": "m", "note": "이 구간에는 배관이 없어 흐름이 없을 수 없다", "applicable": False}
+        self.mark("S2", "D01", state="analyzed", entries=[], ai_run=ok)
+        cell = self.read("results")["matrix"]["S2"]["D01"]
+        self.assertEqual((cell["kind"], cell["reason"]), ("not_applicable", ok["note"]))
+        self.assertEqual(cell["scenarios"], 0)
+
+    def test_not_analyzed_has_no_kind_and_is_told_apart_from_not_applicable(self):
+        m = self.read("results")["matrix"]
+        self.assertEqual(m["S2"]["D01"]["state"], "not_analyzed")
+        self.assertNotIn("kind", m["S2"]["D01"])
+        self.assertNotIn("kind", m["S1"]["D01"])      # 항목이 있는 칸
+
+    def test_analyzed_without_scenarios_and_failed_and_excluded_cells_each_have_their_kind(self):
+        ok = {"status": "ok", "error": None, "at": "t", "model": "m", "note": "시나리오가 없다", "applicable": True}
+        self.mark("S2", "D01", state="analyzed", entries=[], ai_run=ok)
+        self.mark("S2", "D02", ai_run=dict(ok, status="failed", error="AI 호출 중 오류(Timeout)", note=None))
+        self.mark("S1", "D02", state="excluded", entries=[], ai_run=dict(ok, note="사람이 뺐다"))
+        m = self.read("results")["matrix"]
+        self.assertEqual((m["S2"]["D01"]["kind"], m["S2"]["D01"]["reason"]), ("no_scenario", "시나리오가 없다"))
+        self.assertEqual((m["S2"]["D02"]["kind"], m["S2"]["D02"]["reason"]), ("failed", "AI 호출 중 오류(Timeout)"))
+        self.assertEqual(m["S1"]["D02"]["kind"], "excluded")
+
+    def test_a_blank_reason_still_says_something(self):
+        ok = {"status": "ok", "error": None, "at": "t", "model": "m", "note": None, "applicable": False}
+        self.mark("S2", "D01", state="analyzed", entries=[], ai_run=ok)
+        self.assertTrue(self.read("results")["matrix"]["S2"]["D01"]["reason"])
+
+    def test_delta_after_a_call_has_the_same_kind_and_reason(self):
+        ok = {"status": "ok", "error": None, "at": "t", "model": "m", "note": "해당 없음 이유", "applicable": False}
+        self.mark("S2", "D01", state="analyzed", entries=[], ai_run=ok)
+        doc, fp = res.load_fp(self.ns)
+        d = api_results.cells_delta(doc, {"node_id": "S2", "cells": ["D01"]}, fp)
+        self.assertEqual((d["cells"]["D01"]["kind"], d["cells"]["D01"]["reason"]), ("not_applicable", "해당 없음 이유"))
+
+    def test_deviation_headers_carry_the_english_guideword_by_item_id(self):
+        en = {"I1": {"guideword_en": "No", "label_en": "No flow"}}
+        with mock.patch.object(api_results, "deviation_names_en", lambda: en):
+            s = self.read("results")
+            c = self.read("results", "cell", "S1", "D01")
+        d1, d2 = s["deviations"][0], s["deviations"][1]
+        self.assertEqual((d1["guideword_en"], d1["label_en"]), ("No", "No flow"))
+        self.assertEqual((d2["guideword_en"], d2["label_en"]), ("", ""))     # 표에 없으면 빈 글자(화면이 한국어만 보인다)
+        self.assertEqual(c["deviation"]["guideword_en"], "No")
+
+    def test_english_comes_only_from_the_kosha_table_and_is_never_invented(self):
+        """표(deviation_en·guide_word_en)에 출처와 함께 적힌 영문만 보인다. 비어 있는 항목은 빈 글자로 둔다(번역을 지어 넣지 않음)."""
+        import json
+        from hazop import paths
+        with open(paths.folder("deviations", res.DEVIATION_CHART), encoding="utf-8") as fh:
+            items = json.load(fh)["items"]
+        en = api_results.deviation_names_en()
+        self.assertEqual(set(en), {i["item_id"] for i in items})
+        for i in items:
+            self.assertEqual(en[i["item_id"]], {"guideword_en": (i.get("guide_word_en") or "").strip(),
+                                               "label_en": (i.get("deviation_en") or "").strip()}, i["item_id"])
+        self.assertEqual(en["p86-d01"], {"guideword_en": "More", "label_en": "More flow"})
+        self.assertGreaterEqual(sum(1 for n in en.values() if n["guideword_en"]), 40)
+
+
+class ExportScopeTest(ExportTest):
+    """A9 ② Excel 범위: 승인 항목만, 고른 구간만. 덮어쓰기 확인은 창(window._save_path)이 한다(tests/test_shell_web.py)."""
+
+    def sheet_rows(self, path):
+        import openpyxl
+        from hazop.export import study_xlsx
+        ws = openpyxl.load_workbook(path)[study_xlsx.SHEETS[2]]
+        head = [c.value for c in ws[1]]
+        return [dict(zip(head, [c.value for c in row])) for row in ws.iter_rows(min_row=2)]
+
+    def export(self, **a):
+        self.engine.hooks["save_path"] = self.paths
+        r = self.call("results.export_excel", a)
+        self.assertTrue(r["ok"] and not r["data"]["cancelled"], r)
+        return r["data"], self.sheet_rows(self.save_to)
+
+    def test_approved_scope_has_only_approved_entries_and_no_cell_rows(self):
+        data, rows = self.export(scope="approved")
+        self.assertEqual(data["rows"], len(rows))
+        self.assertGreaterEqual(len(rows), 1)
+        self.assertEqual({r["상태"] for r in rows}, {"승인"})
+        _d, full = self.export(scope="all")
+        self.assertGreater(len(full), len(rows))
+
+    def test_nodes_scope_has_only_the_chosen_nodes_and_needs_a_choice(self):
+        scope = api_results.scope_rows(sn.load(self.g))
+        pick = scope[0]["node_id"]
+        data, rows = self.export(scope="nodes", node_ids=[pick])
+        self.assertEqual(data["rows"], len(rows))
+        self.assertTrue(rows)
+        names = {r["구간"] for r in rows}
+        self.assertEqual(len(names), 1, names)
+        _d, full = self.export(scope="all")
+        self.assertLess(len(rows), len(full))
+        self.engine.hooks["save_path"] = self.paths
+        r = self.call("results.export_excel", {"scope": "nodes"})
+        self.assertFalse(r["ok"], "구간을 고르지 않으면 내보내지 않는다")
+
+    def test_nodes_outside_the_screens_scope_are_not_exported(self):
+        gone = self.exclude_last_node()
+        data, rows = self.export(scope="nodes", node_ids=[gone])
+        self.assertEqual(rows, [], "화면 행에서 빠진 구간은 고르더라도 나가지 않는다")
+
+    def test_unknown_scope_is_refused(self):
+        self.engine.hooks["save_path"] = self.paths
+        self.assertFalse(self.call("results.export_excel", {"scope": "everything"})["ok"])

@@ -99,10 +99,73 @@ class ResultsPanelTest(W.ShellBase):
         win = self.open_panel()
         out = os.path.join(os.path.dirname(win.engine.settings_path), "exported.xlsx")
         win.engine.hooks["save_path"] = lambda kind, name: out
-        self.assertTrue(self.js(win, "(() => { const b = document.querySelector(\"button[aria-label='내보내기']\"); b.click(); return true; })()"))
+        self.open_export_card(win)
+        self.assertTrue(self.js(win, "(() => { const b = document.querySelector(\".exportcard button[aria-label='Excel로 내보내기']\"); b.click(); return true; })()"))
         self.assertTrue(wait_for(lambda: os.path.isfile(out), 20))
         self.assertTrue(wait_for(lambda: "exported.xlsx" in self.text(win), 10))
         self.assertNotIn(os.path.dirname(out), self.text(win), "웹에는 경로를 보이지 않는다")
+
+    def open_export_card(self, win):
+        self.assertTrue(self.js(win, "(() => { const b = document.querySelector(\"button[aria-label='Excel 내보내기 범위 고르기']\"); b.click(); return true; })()"))
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.exportcard')"), 10))
+
+    def cell_el(self, win, node, dev):
+        rows = [n["node_id"] for n in self.ns["nodes"] if n.get("state") != "applied"]
+        r, c = rows.index(node), int(dev[1:]) - 1
+        out = self.js(win, "(() => { const e = document.querySelector('.vg-cell[style*=\"top: %dpx; left: %dpx\"]'); if (!e) return null;"
+                            " const k = e.querySelector('[title]'); return JSON.stringify({text: e.textContent.trim(), title: k ? k.getAttribute('title') : null, cls: k ? k.className : ''}); })()" % (r * 34, c * 64))
+        return json.loads(out) if isinstance(out, str) else out
+
+    def test_matrix_tells_not_applicable_from_not_yet_analyzed_and_shows_the_reason(self):
+        win = self.open_panel()
+        na = self.cell_el(win, self.span_node, "D02")            # AI가 '해당 없음'(이유: 흐름 없음)
+        self.assertEqual(na["text"], "적용 불가")
+        self.assertIn("흐름 없음", na["title"])
+        failed = self.cell_el(win, self.single, "D01")           # AI 실행 실패
+        self.assertEqual(failed["text"], "실패")
+        self.assertIn("Timeout", failed["title"])
+        not_yet = self.cell_el(win, self.span_node, "D03")       # 아직 분석 전
+        self.assertEqual(not_yet["text"], "·")
+        self.assertEqual(not_yet["title"], "아직 분석 안 함")
+        self.assertIn("적용 불가", self.text(win), "범례가 두 가지를 설명한다")
+        self.assertIn("아직 분석 안 함", self.text(win))
+        self.click_na = self.js(win, "(() => { const e = document.querySelector('.rk-na'); e.click(); return true; })()")
+        self.assertTrue(wait_for(lambda: "흐름 없음" in (self.js(win, "(document.querySelector('.worksheet') || {}).textContent || ''") or ""), 10),
+                        "눌러 열면 워크시트에 이유가 적힌다")
+
+    def test_export_scope_approved_only_and_chosen_nodes(self):
+        import openpyxl
+        from hazop.export import study_xlsx
+        win = self.open_panel()
+        out = os.path.join(os.path.dirname(win.engine.settings_path), "scope.xlsx")
+        win.engine.hooks["save_path"] = lambda kind, name: out
+
+        def rows():
+            ws = openpyxl.load_workbook(out)[study_xlsx.SHEETS[2]]
+            head = [c.value for c in ws[1]]
+            return [dict(zip(head, [c.value for c in row])) for row in ws.iter_rows(min_row=2)]
+
+        self.open_export_card(win)
+        self.js(win, "document.querySelectorAll('.exportcard input[type=radio]')[1].click()")
+        pump(0.3)
+        self.assertIn("승인", self.js(win, "document.querySelector('.exportcard').textContent"))
+        self.js(win, "document.querySelector(\".exportcard button[aria-label='Excel로 내보내기']\").click()")
+        self.assertTrue(wait_for(lambda: os.path.isfile(out), 20))
+        self.assertTrue(wait_for(lambda: "승인 항목만" in self.text(win), 10))
+        got = rows()
+        self.assertTrue(got and {r["상태"] for r in got} == {"승인"}, got)
+        os.remove(out)
+        self.open_export_card(win)
+        self.js(win, "document.querySelectorAll('.exportcard input[type=radio]')[2].click()")
+        pump(0.3)
+        self.assertEqual(self.js(win, "document.querySelector(\".exportcard button[aria-label='Excel로 내보내기']\").disabled"), True,
+                         "구간을 고르지 않으면 내보낼 수 없다")
+        self.js(win, "document.querySelectorAll('.exportcard input[type=checkbox]')[0].click()")
+        pump(0.3)
+        self.js(win, "document.querySelector(\".exportcard button[aria-label='Excel로 내보내기']\").click()")
+        self.assertTrue(wait_for(lambda: os.path.isfile(out), 20))
+        names = {r["구간"] for r in rows()}
+        self.assertEqual(len(names), 1, names)
 
     def test_run_analysis_from_the_panel(self):
         win = self.open_panel()
