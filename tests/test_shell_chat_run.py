@@ -10,6 +10,7 @@ import os
 import unittest
 from unittest import mock
 
+from hazop import paths
 from hazop.chat import actions as A
 from hazop.shell import api_results, chat_actions
 from hazop.study import node_tools as nt
@@ -216,7 +217,7 @@ class VerdictTest(RunBase):
 
 class ExportTest(RunBase):
     def exports(self):
-        folder = os.path.join(os.environ["HAZOP_WORK_ROOT"], "output", "exports")
+        folder = paths.output_root("exports")
         return sorted(os.listdir(folder)) if os.path.isdir(folder) else []
 
     def test_excel_runs_without_a_dialog_and_never_overwrites(self):
