@@ -1,9 +1,15 @@
-/* 설계 문서 패널(완료 목록 2 A7). 토큰은 tokens.css를 쓴다. */
+/* 설계 문서 패널(완료 목록 2 A7). 토큰은 tokens.css를 쓴다. 칸막이 대신 줄 간격과 옅은 선 하나로 나눈다. */
 .docs .panel-b { gap: var(--sp-3); }
-.docs-head { flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
-.docs-kind { height: 30px; border: 1px solid var(--line-input); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); font: inherit; margin-left: 6px; }
-.docs-doc { display: flex; flex-direction: column; gap: var(--sp-2); flex: none; }
-.docs-name { overflow-wrap: anywhere; }
-.docs-counts { flex-wrap: wrap; gap: 6px; }
-.docs-item { align-items: flex-start; gap: var(--sp-2); }
+.docs-list { display: flex; flex-direction: column; flex: none; }
+.docs-doc { display: flex; flex-direction: column; gap: 4px; padding: var(--sp-3) 0; border-bottom: 1px solid var(--line); }
+.docs-doc.old { opacity: .62; }
+.docs-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.docs-name { overflow-wrap: anywhere; font-size: var(--fs-md); }
+.docs-acts { margin-left: auto; display: flex; gap: 2px; }
+.docs-ask { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--fs-sm); padding: 6px 8px; border-radius: var(--r-sm); background: var(--warn-bg); }
+.docs-ask select { height: 26px; border: 1px solid var(--line-input); border-radius: var(--r-sm); background: var(--surface); font: inherit; }
+.docs-items { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.docs-item { display: flex; align-items: flex-start; gap: var(--sp-2); padding: 6px 0; border-top: 1px dashed var(--line); font-size: var(--fs-sm); }
+.docs-item .main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .docs-item .main span { overflow-wrap: anywhere; }
+.err-text { color: var(--err); }

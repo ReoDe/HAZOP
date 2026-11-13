@@ -44,7 +44,7 @@ class KgPanelFlowTest(ShellBase):
     def mount(self, win):
         self.js(win, MOUNT)
         self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.kg .kg-canvas canvas')"), 20), "그래프가 그려지지 않음")
-        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.kg-chips .chip').length") or 0) >= 3, 10))
+        self.assertTrue(wait_for(lambda: "노드" in (self.js(win, "(document.querySelector('.kg-chips')||{}).innerText") or ""), 10))
 
     def search_and_pick(self, win, text):
         self.js(win, "(() => { const i = document.querySelector('.kg-search input'); i.value = %s; i.dispatchEvent(new Event('input', {bubbles: true})); })()" % json.dumps(text))
@@ -120,6 +120,18 @@ class KgPanelFlowTest(ShellBase):
         pos = json.loads(self.js(win, where) or "null")
         self.assertIsNotNone(pos)
         self.assertTrue(0.25 < pos[0] < 0.75 and 0.25 < pos[1] < 0.75, pos)
+
+    def test_labels_show_at_fit_zoom_without_overlap(self):
+        """맞춤 배율에서도 큰 노드(설비·문서)의 이름이 보이고, 그린 이름표끼리 겹치지 않는다."""
+        win = self.window()
+        self.mount(win)
+        self.assertTrue(wait_for(lambda: self.js(win, "!!window.__hzKg && window.__hzKg.__running === false"), 60))
+        self.js(win, "window.__hzKg.zoomToFit(0, 40)")
+        pump(1.0)
+        boxes = self.jsj(win, "window.__hzKg.__labels") or []
+        self.assertGreater(len(boxes), 0)
+        overlap = [(a, b) for i, a in enumerate(boxes) for b in boxes[i + 1:] if a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]]
+        self.assertEqual(overlap, [])
 
     def test_show_on_sheet_closes_panel_and_opens_that_drawing(self):
         win = self.window()

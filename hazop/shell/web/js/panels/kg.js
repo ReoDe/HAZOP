@@ -22,7 +22,6 @@ const C = { bg: "#fbfbfc", pid: "#8a94a1", equip: "#4b5563", seg: "#c3c9d1", kn:
 const TYPE_NAMES = { equipment: "설비", valve: "밸브", instrument: "계장", inline_component: "배관 부품", piping_element: "배관 요소", pipe_segment: "배관 분기",
   unclassified: "미분류", document: "문서", doc_chunk: "문서 조각", requirement: "요건", setpoint: "설정치", condition: "운전조건·설계값",
   analysis_case: "해석 사례", expectation: "잠재 후보", sheet: "도면", kn: "도면 밖 지식" };
-const LAYER_NAMES = { pid: "도면", kn: "지식", exp: "잠재 후보", group: "묶음" };
 const GAP = new Set(["expected", "confirmed_absent"]);
 const SHOWN_STATES = new Set(["expected", "candidate_found", "confirmed_absent"]);
 const STATE_KIND = { expected: "warn", candidate_found: "accent", confirmed_absent: "warn", confirmed_present: "ok", not_applicable: "plain" };
@@ -92,6 +91,7 @@ function GraphCanvas() {
         .linkDirectionalArrowLength((l) => (l.flow ? 3 : 0)).linkDirectionalArrowRelPos(0.6)
         .linkLineDash((l) => (l.st === "recheck" ? [1, 2] : l.st === "excluded" ? [4, 3] : l.kind === "expects" || l.kind === "satisfied_by" || l.st === "candidate" ? [2, 2] : null))
         .nodeCanvasObject((n, ctx, scale) => drawNode(n, ctx, scale, K.kg.get().selected, hover.current, near.current))
+        .onRenderFramePost((ctx, scale) => { g.__labels = drawLabels(g.graphData().nodes, ctx, scale, K.kg.get().selected, hover.current, near.current); })
         .nodePointerAreaPaint((n, color, ctx) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(n.x, n.y, radius(n) + 2, 0, 2 * Math.PI); ctx.fill(); })
         .onNodeHover((n) => { hover.current = n ? n.id : null; host.current.style.cursor = n ? "pointer" : ""; })
         .onNodeClick((n) => { if (n.layer === "group") K.expand(n.group); else K.select(n.id); })
@@ -193,24 +193,50 @@ function drawNode(n, ctx, scale, selected, hover, near) {
   } else { ctx.fillStyle = colorOf(n); ctx.fill(); }
   if (n.recheck) { ctx.lineWidth = 1; ctx.setLineDash([1.5, 1.5]); ctx.strokeStyle = C.gap; ctx.beginPath(); ctx.arc(n.x, n.y, r + 2.5, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]); }
   if (n.id === selected) { ctx.lineWidth = 2 / Math.max(scale, 0.5); ctx.strokeStyle = C.sel; ctx.beginPath(); ctx.arc(n.x, n.y, r + 3, 0, 2 * Math.PI); ctx.stroke(); }
-  // 큰 노드(설비)는 맞춤 배율에서도 이름을 보인다. 나머지는 고르거나 가리키거나 확대하면 나온다
-  const show = n.layer === "group" || n.type === "equipment" || n.id === selected || n.id === hover || (near.size && near.has(n.id)) || scale > 2.2;
-  if (show && n.label) {
-    const fs = Math.max(9 / scale, n.layer === "group" ? 4.5 : 3);
-    ctx.font = (n.layer === "group" || n.id === selected ? "600 " : "") + fs + "px " + "Malgun Gothic, sans-serif";
+  ctx.globalAlpha = 1;
+}
+
+// 이름표: 노드를 다 그린 뒤 한 번에 그린다. 먼저 보일 것부터(고른 것·가리킨 것·이웃 > 묶음·설비·문서 > 확대했을 때 나머지) 자리를 잡고,
+// 이미 잡힌 이름표와 겹치면 그리지 않는다(옵시디언 그래프 보기처럼 겹치지 않을 만큼만). 글자 크기는 화면에서 같게(배율로 나눔)
+const BIG = new Set(["equipment", "document", "sheet", "kn"]);
+function labelRank(n, selected, hover, near, scale) {
+  if (n.id === selected || n.id === hover) return 0;
+  if (near.size && near.has(n.id)) return 1;
+  if (n.layer === "group" || BIG.has(n.type)) return 2;
+  return scale > 2.2 ? 3 : -1;
+}
+
+function drawLabels(nodes, ctx, scale, selected, hover, near) {
+  const cand = [];
+  for (const n of nodes) {
+    if (!n.label || n.x === undefined) continue;
+    const rank = labelRank(n, selected, hover, near, scale);
+    if (rank >= 0) cand.push([rank, n]);
+  }
+  cand.sort((a, b) => a[0] - b[0]);
+  const boxes = [];
+  const fs = 11 / scale;
+  for (const [rank, n] of cand) {
+    const text = n.layer === "group" ? n.label + " (" + n.count + ")" : n.label;
+    ctx.font = (rank <= 0 || n.layer === "group" ? "600 " : "") + fs + "px Malgun Gothic, sans-serif";
+    const w = ctx.measureText(text).width, h = fs * 1.2;
+    const x0 = n.x - w / 2, y0 = n.y + radius(n) + 1.5;
+    const pad = 2 / scale;
+    if (rank > 0 && boxes.some((b) => x0 < b[2] + pad && x0 + w + pad > b[0] && y0 < b[3] + pad && y0 + h + pad > b[1])) continue;
+    boxes.push([x0, y0, x0 + w, y0 + h]);
+    ctx.globalAlpha = near.size && !near.has(n.id) && rank > 0 ? 0.35 : 1;
     ctx.textAlign = "center"; ctx.textBaseline = "top";
-    ctx.fillStyle = n.layer === "group" ? C.ink : (dim ? C.faint : C.ink);
-    ctx.fillText(n.layer === "group" ? n.label + " (" + n.count + ")" : n.label, n.x, n.y + r + 1.5);
+    ctx.fillStyle = C.ink;
+    ctx.fillText(text, n.x, y0);
   }
   ctx.globalAlpha = 1;
+  return boxes;
 }
 
 // ---------------------------------------------------------------- 머리: 수치·찾기·층
 function Head({ s }) {
   const q = K.useKg((x) => x.query);
   const hits = K.useKg((x) => x.hits);
-  const layers = K.useKg((x) => x.layers);
-  const allStates = K.useKg((x) => x.allStates);
   const expanded = K.useKg((x) => x.expanded);
   const gaps = s.expect.states.filter((x) => GAP.has(x.state)).reduce((n, x) => n + x.count, 0);
   const timer = useRef(null);
@@ -219,21 +245,18 @@ function Head({ s }) {
     if (e.key === "Enter" && hits.length) { e.preventDefault(); K.focus(hits[0].id, hits[0].group); }
     if (e.key === "Escape" && q) { e.stopPropagation(); K.search(""); }
   };
-  const layer = (k) => html`<label class="kg-tg"><input type="checkbox" checked=${layers[k] !== false} onChange=${(e) => K.setLayer(k, e.target.checked)} /> ${LAYER_NAMES[k]} ${s.layers[k] || 0}</label>`;
   return html`<div class="kg-head">
     <div class="kg-search"><${Icon} name="search" size=${16} />
       <input type="text" value=${q} maxlength="100" placeholder="태그·이름·규칙 찾기 (Enter로 첫 결과)" aria-label="지식그래프에서 찾기" onInput=${onInput} onKeyDown=${onKey} />
       ${hits.length ? html`<div class="kg-hits" role="listbox" aria-label="찾은 노드">${hits.map((h) => html`<button type="button" role="option" class="kg-hit" key=${h.id} onClick=${() => K.focus(h.id, h.group)}>
         <b>${h.label}</b><span class="muted small">${TYPE_NAMES[h.type] || h.type} · ${h.drawing}</span></button>`)}</div>` : null}</div>
     <div class="acts-row kg-chips">
-      <${Chip}>도면 ${s.sheets}<//><${Chip}>노드 ${s.total.toLocaleString()}<//>
-      <${Chip} kind=${gaps ? "warn" : ""} title="기대됨 + 부재 확정: 규칙상 있어야 하는데 확인하지 못했거나 없다고 확정한 것">잠재 후보 공백 ${gaps}<//>
+      <span class="muted small">도면 ${s.sheets} · 노드 ${s.total.toLocaleString()}</span>
+      ${gaps ? html`<${Chip} kind="warn" title="규칙상 있어야 하는데 확인하지 못했거나 없다고 확정한 잠재 후보(기대됨 + 부재 확정)">잠재 후보 공백 ${gaps}<//>` : null}
       ${s.expect.recheck ? html`<${Chip} kind="warn" title="규칙 판이나 대상 내용이 바뀌어 이전 판단을 다시 봐야 합니다">재확인 ${s.expect.recheck}<//>` : null}
-      <span class="kg-sep"></span>${layer("pid")}${layer("kn")}${layer("exp")}
-      <label class="kg-tg" title="확인됨·무관 잠재 후보도 그립니다"><input type="checkbox" checked=${allStates} onChange=${(e) => K.setAllStates(e.target.checked)} /> 판단 끝난 후보도</label>
-      <span class="kg-sep"></span>
-      <${Btn} sm=${true} kind="ghost" icon="zoom-scan" label="그래프에 맞추기" onClick=${K.fit}>맞추기<//>
-      ${s.mode === "overview" && expanded.length ? html`<${Btn} sm=${true} kind="ghost" icon="minus" label="모두 접기" onClick=${K.collapseAll}>모두 접기<//>` : null}</div>
+      <span class="kg-tools">
+        ${s.mode === "overview" && expanded.length ? html`<${Btn} sm=${true} kind="ghost" icon="minus" label="모두 접기" title="모두 접기" onClick=${K.collapseAll} />` : null}
+        <${Btn} sm=${true} kind="ghost" icon="zoom-scan" label="그래프에 맞추기" title="그래프에 맞추기" onClick=${K.fit} /></span></div>
     ${s.mode === "overview" ? html`<div class="muted small">노드가 ${s.total.toLocaleString()}개라 도면별 묶음으로 그렸습니다(한 번에 ${s.cap.toLocaleString()}개까지). 묶음을 누르면 그 도면을 펼치고, 찾기로 바로 갈 수 있습니다.</div>` : null}</div>`;
 }
 

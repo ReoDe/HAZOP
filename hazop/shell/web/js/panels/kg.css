@@ -8,8 +8,7 @@
 .kg-hit { all: unset; display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; border-radius: var(--r-sm); cursor: pointer; color: var(--ink); }
 .kg-hit:hover, .kg-hit:focus-visible { background: var(--accent-weak); outline: 0; }
 .kg-chips { flex-wrap: wrap; align-items: center; gap: 6px; }
-.kg-sep { width: 1px; height: 18px; background: var(--line); margin: 0 2px; }
-.kg-tg { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--ink-2); cursor: pointer; }
+.kg-tools { margin-left: auto; display: flex; gap: 2px; }
 .kg-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--sp-3); }
 .kg-canvas { position: relative; min-height: 0; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: #fbfbfc; }
 .kg-side { min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: var(--sp-3);

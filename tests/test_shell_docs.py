@@ -97,7 +97,7 @@ class Base(unittest.TestCase):
         return self.engine.dispatch(name, args or {})
 
     def add(self):
-        return self.call("docs.add", {"kind": "design_document"})
+        return self.call("docs.add")
 
     def job_events(self, name):
         return [e["data"] for e in self.events.items if e.get("t") == "event" and e.get("name") == name]
@@ -115,10 +115,13 @@ class RegisterExtractTest(Base):
         row = s["docs"][0]
         self.assertEqual((row["state"], row["pages"], row["version"]), ("ok", 3, 1))
         self.assertEqual(row["counts"]["setpoint"], 3)
-        self.assertGreater(row["linked_links"], 0)            # 문장 속 태그가 도면 구성요소와 이어짐(지식그래프 관계)
+        self.assertGreater(row["linked_candidate"], 0)        # 문장 속 태그가 도면 구성요소와 이어짐(사람 확인 전 후보 관계)
+        self.assertEqual(row["linked_confirmed"], 0)          # 확정 관계는 사람이 확인해야 생긴다
         self.assertGreater(row["linked_nodes"], 0)
-        self.assertEqual(s["totals"], {"docs": 1, "ok": 1, "problems": 0, "items": 10})
-        self.assertTrue(s["has_kg"])
+        self.assertTrue(row["in_kg"])
+        self.assertEqual((row["doc_number"], row["revision"]), ("SNP-DOC-102", "0"))
+        self.assertEqual(s["totals"], {"docs": 1, "problems": 0, "asks": 0})
+        self.assertEqual((s["kg"]["state"], s["kg"]["build_error"]), ("ok", None))
         self.assertIn("docs", self.events.topics())
         self.assertIn("kg", self.events.topics())
 
@@ -227,9 +230,8 @@ class FailureTest(Base):
         self.assertEqual(len(self.read()["docs"]), 1)
 
     def test_web_cannot_send_a_path(self):
-        r = self.call("docs.add", {"kind": "design_document", "path": DOC_PDF})
+        r = self.call("docs.add", {"path": DOC_PDF})
         self.assertEqual(r["error"]["code"], "bad_args")
-        self.assertEqual(self.call("docs.add", {"kind": "P&ID"})["error"]["code"], "bad_args")
         self.assertEqual(self.read()["docs"], [])
 
     def test_reading_writes_no_file(self):
@@ -238,6 +240,121 @@ class FailureTest(Base):
         mid = self.read()["docs"][0]["material_id"]
         self.read(mid)
         self.assertEqual(sorted(os.path.join(d, f) for d, _, fs in os.walk(self.tmp) for f in fs), before)
+
+
+def revised_copy(tmp, name, extra=b"\n% rev1\n"):
+    """글은 같고 해시만 다른 '개정본'(재현 C와 같음)."""
+    p = os.path.join(tmp, name)
+    shutil.copy(DOC_PDF, p)
+    with open(p, "ab") as fh:
+        fh.write(extra)
+    return p
+
+
+def kg_nodes(value="16.6"):
+    from hazop.shell import api_kg
+    kg = api_kg._load_kg(PID)[0]
+    return [n for n in kg["nodes"] if n.get("node_type") == "setpoint" and n.get("value") == value]
+
+
+class ReviewReproTest(Base):
+    """검토 1회(2026-11-14 abf12bc) 재현 B·C·D와 판 대응·동시 등록."""
+
+    def test_b_kg_build_failure_is_shown_not_hidden(self):
+        from hazop.app import data
+        self.add()
+        mid = self.read()["docs"][0]["material_id"]
+        with mock.patch.object(data, "build_project_kg", side_effect=ValueError("가짜 빌드 실패")):
+            self.call("docs.extract", {"material_id": mid})
+        r = self.job_events("job.done")[-1]["result"]
+        self.assertEqual(r["kg_error"], "가짜 빌드 실패")
+        s = self.read()
+        self.assertEqual(s["kg"]["build_error"], "가짜 빌드 실패")        # 목록 머리에 남는다(화면이 낡은 지식그래프를 믿지 않게)
+        self.call("docs.extract", {"material_id": mid})                   # 다시 만들면 사라진다
+        self.assertIsNone(self.read()["kg"]["build_error"])
+
+    def test_b_unreadable_kg_is_not_shown_as_missing(self):
+        from hazop.kg import build
+        self.add()
+        root = os.path.join(paths.output_root("knowledge-graph"), "kg-" + PID)
+        with open(os.path.join(root, build.POINTER_FILE), encoding="utf-8") as fh:
+            ptr = json.load(fh)
+        with open(os.path.join(root, ptr["kg_version"], build.KG_FILE), "ab") as fh:
+            fh.write(b" ")
+        s = self.read()
+        self.assertEqual(s["kg"]["state"], "unreadable")
+        self.assertFalse(s["docs"][0]["in_kg"])
+
+    def test_c_new_revision_replaces_the_old_one(self):
+        self.add()
+        old_mid = self.read()["docs"][0]["material_id"]
+        self.picked = [revised_copy(self.tmp, "SNP-DOC-102-rev1.pdf")]
+        self.add()
+        res = self.job_events("job.done")[-1]["result"]
+        self.assertEqual(res["revision"]["action"], "replace", res)
+        self.assertEqual(len(kg_nodes()), 1)                           # 재현 C: 설정치 16.6이 둘이던 것
+        rows = {r["material_id"]: r for r in self.read()["docs"]}
+        self.assertEqual(rows[old_mid]["replaced_by"]["material_id"], next(m for m in rows if m != old_mid))
+        self.assertFalse(rows[old_mid]["in_kg"])
+        self.assertEqual(rows[old_mid]["state"], "ok")                   # 옛 판 지식 파일은 지우지 않는다(되돌릴 수 있게)
+
+    def test_c_unknown_document_number_asks_and_the_answer_applies(self):
+        from hazop.kg import docextract
+        self.add()
+        old_mid = self.read()["docs"][0]["material_id"]
+        self.picked = [revised_copy(self.tmp, "scan-of-same.pdf")]
+        with mock.patch.object(docextract, "identity", lambda pages: (None, None)):
+            self.add()
+        res = self.job_events("job.done")[-1]["result"]
+        self.assertEqual(res["revision"]["action"], "ask")
+        new = next(r for r in self.read()["docs"] if r["material_id"] != old_mid)
+        self.assertEqual([c["material_id"] for c in new["ask_revision"]], [old_mid])
+        self.assertEqual(self.read()["totals"]["asks"], 1)
+        self.assertEqual(len(kg_nodes()), 2)                           # 답하기 전에는 둘 다 쓴다(지식을 숨기지 않음)
+        r = self.call("docs.revision", {"material_id": new["material_id"], "answer": "replace", "old": old_mid})
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(len(kg_nodes()), 1)
+        self.assertEqual(self.read()["totals"]["asks"], 0)
+        self.call("docs.revision", {"material_id": new["material_id"], "answer": "separate"})   # 되돌리기
+        self.assertEqual(len(kg_nodes()), 2)
+        self.assertIsNone(next(r for r in self.read()["docs"] if r["material_id"] == old_mid)["replaced_by"])
+
+    def test_c_old_revision_judgements_are_kept_and_flagged_for_recheck(self):
+        from hazop.kg import auto
+        old = {"nodes": [{"id": "chunk-a-p1-01", "node_type": "doc_chunk"}]}
+        judgements = {"k1": {"link_status": "confirmed", "chunk_id": "chunk-a-p1-01"}}
+        notes = auto._lost_judgements([], [], judgements, replaced=[old])
+        self.assertTrue(any("옛 판" in n and "재확인" in n for n in notes), notes)
+
+    def test_d_project_is_taken_before_the_dialog(self):
+        from hazop.app import data
+        other = os.path.join(self.tmp, "other.pdf")
+        shutil.copy(DOC_PDF, other)
+
+        def pick_and_switch():
+            self.engine.settings["project_id"] = "OTHER-PROJ"
+            return [other]
+        self.engine.hooks["pick_doc"] = pick_and_switch
+        r = self.engine.dispatch("docs.add", {}, project=PID, via_web=True)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["data"]["project_id"], PID)
+        got = {e["record"]["project_id"] for e in data.list_registrations() if e["record"]["original_name"] == "other.pdf"}
+        self.assertEqual(got, {PID})
+
+    def test_concurrent_registrations_all_reach_the_knowledge_graph(self):
+        from hazop.kg import build
+        files = [revised_copy(self.tmp, "doc-%d.pdf" % i, b"\n% copy " + str(i).encode() + b"\n") for i in range(4)]
+        self.picked = files
+        self.engine._run_jobs = self.engine._thread_jobs                # 실제 앱처럼 작업마다 스레드
+        self.assertTrue(self.add()["ok"])
+        self.assertTrue(self.engine.wait_jobs(300))
+        self.assertEqual(self.job_events("job.failed"), [])
+        knowledge, _kg = build.load_outputs(os.path.join(paths.output_root("knowledge-graph"), "kg-" + PID))
+        seen = {d["material_id"] for d in knowledge["inputs"]["documents"]} | \
+            {d["material_id"] for d in knowledge["inputs"].get("replaced_documents") or []}
+        self.assertEqual(seen, {r["material_id"] for r in self.read()["docs"]})      # 어느 문서도 마지막 빌드에서 빠지지 않음
+        self.assertEqual(len(knowledge["inputs"]["documents"]), 1)                  # 같은 문서 번호라 한 판만 쓴다
+        self.assertEqual(len(kg_nodes()), 1)
 
 
 class ChatTest(Base):

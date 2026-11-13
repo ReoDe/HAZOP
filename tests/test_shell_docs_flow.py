@@ -48,32 +48,39 @@ class DocsPanelFlowTest(ShellBase):
         self.switch_project(win, "A7-FLOW-%d" % DocsPanelFlowTest.n)     # 시험마다 새 프로젝트(작업 루트는 클래스가 함께 씀)
         win.engine.hooks["pick_doc"] = lambda: [DOC_PDF]
         self.js(win, MOUNT)
-        self.assertTrue(wait_for(lambda: "등록한 설계 문서가 없습니다" in self.text(win), 20), self.text(win)[-300:])
+        self.assertTrue(wait_for(lambda: "글자 PDF를 고르면" in self.text(win), 20), self.text(win)[-300:])
 
     def test_add_extract_and_read_items(self):
         win = self.window()
         self.mount(win)
-        self.assertIn("스캔 PDF는 지원하지 않습니다", self.text(win))
+        self.assertIn("스캔 PDF는 읽지 못합니다", self.text(win))
         self.click(win, ".docs .btn.primary")
-        self.assertTrue(wait_for(lambda: "추출함" in self.text(win), 60), self.text(win)[-500:])
+        self.assertTrue(wait_for(lambda: "도면과 이어" in (self.js(win, "(document.querySelector('.docs-doc')||{}).innerText") or ""), 60), self.text(win)[-500:])
         t = self.text(win)
-        self.assertIn("설정치 3", t)
-        self.assertIn("요건 4", t)
-        self.assertIn("등록 버전 1", t)
-        self.click(win, ".docs-doc .btn:not(.primary)")             # 뽑힌 항목 보기
-        self.assertTrue(wait_for(lambda: "자동 추출 · 사람 확인 전" in self.text(win), 15), self.text(win)[-400:])
+        self.assertIn("SNP-DOC-102 · 개정 0 · 3쪽", t)
+        self.assertIn("개를 뽑았습니다", t)                              # 이 패널이 시작한 작업의 결과 알림
+        self.click(win, ".docs-acts .btn")                               # 뽑힌 항목 보기
+        self.assertTrue(wait_for(lambda: "사람 확인 전" in self.text(win), 15), self.text(win)[-400:])
         self.assertIn("16.6", self.text(win))
 
     def test_same_document_again_says_it_is_already_there(self):
         win = self.window()
         self.mount(win)
         self.click(win, ".docs .btn.primary")
-        self.assertTrue(wait_for(lambda: "추출함" in self.text(win), 60))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.docs-doc').length") == 1, 60))
         self.click(win, ".docs .btn.primary")
-        self.assertTrue(wait_for(lambda: len(win.engine.running_jobs()) == 0 and "시작했습니다" in self.text(win), 30))
+        self.assertTrue(wait_for(lambda: "이미 등록하고 추출한 같은 파일" in self.text(win), 30), self.text(win)[-400:])
         pump(1.0)
-        self.assertEqual(self.text(win).count("등록 버전 1"), 1)         # 같은 문서는 한 줄
         self.assertEqual(self.js(win, "document.querySelectorAll('.docs-doc').length"), 1)
+
+    def test_kg_build_failure_shows_as_an_error_on_the_panel(self):
+        from hazop.app import data
+        win = self.window()
+        self.mount(win)
+        with mock.patch.object(data, "build_project_kg", side_effect=ValueError("가짜 빌드 실패")):
+            self.click(win, ".docs .btn.primary")
+            self.assertTrue(wait_for(lambda: "지식그래프를 다시 만들지 못했습니다" in self.text(win), 60), self.text(win)[-500:])
+        self.assertIn("가짜 빌드 실패", self.text(win))
 
     def test_chat_open_event_opens_the_panel_state(self):
         win = self.window()
@@ -86,7 +93,7 @@ class DocsPanelFlowTest(ShellBase):
         win = self.window()
         self.mount(win)
         self.click(win, ".docs .btn.primary")
-        self.assertTrue(wait_for(lambda: "추출함" in self.text(win), 60))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.docs-doc').length") == 1, 60))
         pump(1.0)
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
         self.assertEqual(win.view.interceptor.blocked, [], "실행 중 원격 요청 0")

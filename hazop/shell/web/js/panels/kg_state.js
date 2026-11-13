@@ -147,8 +147,6 @@ export async function search(q) {
   return r.hits;
 }
 
-export function setLayer(layer, on_) { kg.set((s) => ({ layers: Object.assign({}, s.layers, { [layer]: on_ }) })); }
-export function setAllStates(v) { kg.set({ allStates: !!v }); }
 export function fit() { kg.set((s) => ({ center: null, seq: s.seq + 1 })); }
 export function dismissError() { kg.set({ error: null }); }
 
