@@ -38,11 +38,31 @@ def clean_id(v):
     return v if isinstance(v, str) and ID_RE.fullmatch(v) else None
 
 
+MAX_SELECTION = 2000            # 한 번에 받는 고른 구성요소 수 상한(chat-panel.md §6.2)
 MAX_COORD = 1e7  # 도면 좌표·보기 값 절댓값 상한
 
 
 def _finite(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and abs(v) <= MAX_COORD
+
+
+def clean_id_list(v, limit=MAX_SELECTION):
+    """웹에서 온 ID 목록 → (형식이 맞는 ID만 앞에서 limit개, 잘렸는지). 목록이 아니면 ([], False)."""
+    if not isinstance(v, list):
+        return [], False
+    ids = [i for i in map(clean_id, v[:limit]) if i is not None]
+    return ids, len(v) > limit
+
+
+def clean_selection_changed(msg):
+    """selectionChanged 메시지 → {"selected", "added", "removed", "via", "truncated"}. ID는 clean_id로 거르고 2,000개를 넘으면 자른다."""
+    selected, cut = clean_id_list(msg.get("selected"))
+    added, cut2 = clean_id_list(msg.get("added"))
+    removed, cut3 = clean_id_list(msg.get("removed"))
+    via = msg.get("via")
+    return {"selected": selected, "added": added, "removed": removed,
+            "via": via if via in ("click", "box", "box_remove", "clear") else "click",
+            "truncated": bool(cut or cut2 or cut3 or msg.get("truncated") is True)}
 
 
 def clean_view(v):
@@ -121,11 +141,15 @@ class Bridge(QObject):
     algorithmRequested = Signal(dict)  # ③ 지식그래프 runAlgorithm: {"algorithm", "start"}
     editPick = Signal(dict)        # ② 편집: {"point": 도면 좌표 [x, y], "local_id"(없으면 None), "view"(없으면 None)}
     chipClicked = Signal(str)      # ②④ 도면 연결점 칩: 앱이 준 key
+    selectionChanged = Signal(dict)  # 고르기: {"selected", "added", "removed", "via", "truncated"}(사용자 조작에서만)
+    selectionFor = Signal(str, list)  # (request_id, 지금 고른 local_id) — selection() 응답
+    sheetReady = Signal(str)       # 도면 HTML을 읽고 ready를 받은 뒤, 그 도면의 graph_id("" = 모름)
     ready = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.is_ready = False
+        self.graph_id = ""          # 지금 읽는 도면의 graph_id(HazopWebView.load_file이 정함)
         self._pending = []
 
     def send(self, msg_type, **payload):
@@ -161,6 +185,13 @@ class Bridge(QObject):
             for p in pending:
                 self.toWeb.emit(p)
             self.ready.emit()
+            self.sheetReady.emit(self.graph_id)
+        elif kind == "selectionChanged":
+            self.selectionChanged.emit(clean_selection_changed(msg))
+        elif kind == "selection":
+            rid = msg.get("request_id")
+            ids, _ = clean_id_list(msg.get("selected"))
+            self.selectionFor.emit(rid if isinstance(rid, str) else "", ids)
         elif kind == "nodeSelected":
             self.nodeSelected.emit({"local_id": clean_id(msg.get("local_id")),
                                     "entity_id": clean_id(msg.get("entity_id"))})
@@ -434,6 +465,228 @@ BRIDGE_JS = r"""
       });
       ovl.appendChild(preview);
     }
+    // ---- S-viewer: 근거 표시(mark·drawPath)와 고르기. 기존 강조(hz-on)·구간 색(inline style)·hz-pick과 클래스를 따로 쓴다. ----
+    function index() {  // local_id → 요소들. 호출 한 번에 도면을 한 번만 훑는다(ID마다 querySelectorAll을 부르면 O(N²))
+      var map = Object.create(null);
+      ["overlay", "graphsvg"].forEach(function (id) {
+        var s = document.getElementById(id); if (!s) return;
+        var all = s.querySelectorAll("[data-local-id]");
+        for (var i = 0; i < all.length; i++) {
+          var e = all[i], lid = e.getAttribute("data-local-id");
+          if (e.classList.contains("pipe-hit") || e.classList.contains("gedge-hit")) { e = e.nextElementSibling; if (!e) continue; }
+          (map[lid] || (map[lid] = [])).push(e);
+        }
+      });
+      return map;
+    }
+    function shownRect(e) { var r = e.getBoundingClientRect(); return (r.width || r.height) ? r : null; }
+    function isLine(e) { return e.classList.contains("pipe-line") || e.classList.contains("gedge"); }
+    var MSTYLE = /^(focus|path|cause|safeguard|warn|muted|seg:\d{1,2})$/;
+    function styleClass(st) {
+      st = MSTYLE.test(String(st)) ? String(st) : "focus";
+      return st.indexOf("seg:") === 0 ? "hz-m-seg" + (Number(st.slice(4)) %% 5 + 1) : "hz-m-" + st;
+    }
+    var reqs = Object.create(null);  // request_id → {items: [{e, cls}], extras: [노드], dim, style}
+    function flush(r) { r.later.forEach(function (x) { x[0].appendChild(x[1]); }); r.later = []; }  // 크기를 잴 때마다 레이아웃이 다시 돌지 않게 붙이기는 맨 끝에
+    function dropExtras(r) { r.extras.forEach(function (x) { if (x.parentNode) x.parentNode.removeChild(x); }); r.extras = []; }
+    function paintMarks(touched) {  // 남은 요청들로 touched 요소의 표시 클래스를 다시 만든다
+      var set = new Set(touched);
+      touched.forEach(function (e) {
+        Array.prototype.slice.call(e.classList).forEach(function (c) { if (c === "hz-m" || c.indexOf("hz-m-") === 0) e.classList.remove(c); });
+      });
+      Object.keys(reqs).forEach(function (rid) {
+        reqs[rid].items.forEach(function (it) { if (set.has(it.e)) { it.e.classList.add("hz-m"); it.cls.forEach(function (c) { it.e.classList.add(c); }); } });
+      });
+      document.body.classList.toggle("hz-mdim", Object.keys(reqs).some(function (rid) { return reqs[rid].dim; }));
+    }
+    function clearMarks(rid) {
+      var ids = rid == null ? Object.keys(reqs) : (reqs[rid] ? [rid] : []), touched = [];
+      ids.forEach(function (k) { reqs[k].items.forEach(function (it) { touched.push(it.e); }); dropExtras(reqs[k]); delete reqs[k]; });
+      paintMarks(touched);
+    }
+    function newReq(rid, dim) { rid = String(rid == null ? "" : rid); clearMarks(rid); return (reqs[rid] = { items: [], extras: [], later: [], dim: !!dim, style: "path" }); }
+    function badge(r, e, text, color) {  // 도면 좌표계 안의 작은 꼬리표(순번·이름)
+      var bb; try { bb = e.getBBox(); } catch (x) { return; }
+      var g = document.createElementNS(NS, "g"), c = document.createElementNS(NS, "rect"), t = document.createElementNS(NS, "text");
+      var w = String(text).length * 8 + 8;
+      g.setAttribute("class", "hz-mbadge"); g.setAttribute("pointer-events", "none"); g.style.setProperty("--mc", color);
+      c.setAttribute("x", bb.x - 4); c.setAttribute("y", bb.y - 18); c.setAttribute("width", w); c.setAttribute("height", 15); c.setAttribute("rx", 7);
+      t.setAttribute("x", bb.x); t.setAttribute("y", bb.y - 7); t.textContent = String(text);
+      g.appendChild(c); g.appendChild(t); r.later.push([e.parentNode, g]); r.extras.push(g);
+    }
+    var COLORS_BY = { focus: "var(--hl-focus)", path: "var(--hl-path)", cause: "var(--hl-cause)", safeguard: "var(--hl-safeguard)", warn: "var(--hl-mwarn)", muted: "var(--hl-muted)" };
+    function colorOf(st) { var m = /^seg:(\d+)$/.exec(String(st)); return m ? "var(--seg" + (Number(m[1]) %% 5 + 1) + ")" : (COLORS_BY[st] || COLORS_BY.focus); }
+    function doMark(m) {
+      var map = index(), r = newReq(m.request_id, m.dim_others !== false), missing = [], ids = [];
+      (m.groups || []).forEach(function (g) {
+        var cls = [styleClass(g.style)], first = null;
+        (g.ids || []).forEach(function (lid) {
+          var found = map[lid];
+          if (!found) { missing.push(lid); return; }
+          ids.push(lid);
+          found.forEach(function (e) { r.items.push({ e: e, cls: cls }); if (!first || (!first.classList.contains("sym") && e.classList.contains("sym"))) first = e; });
+        });
+        if (first && g.label) badge(r, first, g.label, colorOf(g.style));
+      });
+      flush(r); paintMarks(r.items.map(function (it) { return it.e; }));
+      if (m.center) zoomTo(ids, 0.15, map);
+      send({ type: "highlightResult", request_id: m.request_id || null, missing: missing });
+    }
+    function lineGeo(e) {  // 배관 선의 시작점·끝점·가운데와 가운데에서의 진행 각도(도면 좌표)
+      if (!e.getTotalLength) return null;
+      var L = e.getTotalLength(); if (!(L > 0)) return null;
+      var a = e.getPointAtLength(0), b = e.getPointAtLength(L), c = e.getPointAtLength(L / 2);
+      var d = e.getPointAtLength(Math.min(L, L / 2 + 2)), p = e.getPointAtLength(Math.max(0, L / 2 - 2));
+      return { a: a, b: b, c: c, ang: Math.atan2(d.y - p.y, d.x - p.x) };
+    }
+    function centerOf(e) { try { var b = e.getBBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; } catch (x) { return null; } }
+    function arrow(r, e, geo, prevC, nextC, flow) {
+      // 경로를 지나가는 방향: 앞 단계에 가까운 끝에서 반대 끝으로(앞이 없으면 뒤 단계 기준, 둘 다 없으면 선이 그려진 방향)
+      var fwd = true;
+      function dist(p, q) { return Math.hypot(p.x - q.x, p.y - q.y); }
+      if (prevC) fwd = dist(prevC, geo.a) <= dist(prevC, geo.b);
+      else if (nextC) fwd = dist(nextC, geo.b) <= dist(nextC, geo.a);
+      var ang = geo.ang + (fwd ? 0 : Math.PI) + (flow === "against" ? Math.PI : 0);
+      var poly = document.createElementNS(NS, "polygon");
+      poly.setAttribute("points", "-8,-6 8,0 -8,6");
+      poly.setAttribute("transform", "translate(" + geo.c.x + "," + geo.c.y + ") rotate(" + (ang * 180 / Math.PI) + ")");
+      poly.setAttribute("class", "hz-marrow"); poly.setAttribute("pointer-events", "none"); poly.style.setProperty("--mc", colorOf(r.style));
+      r.later.push([e.parentNode, poly]); r.extras.push(poly);
+    }
+    function doPath(m) {
+      var map = index(), r = newReq(m.request_id, true), missing = [], steps = Array.isArray(m.steps) ? m.steps : [], n = 0;
+      r.style = m.style || "path";
+      var cls = styleClass(r.style), found = steps.map(function (s) { return map[s.id] || null; });
+      function objCenter(j) { var f = found[j], o = f && f.filter(function (e) { return !isLine(e); })[0]; return o ? centerOf(o) : null; }
+      steps.forEach(function (s, i) {
+        var f = found[i];
+        if (!f) { missing.push(s.id); return; }
+        var line = f.filter(isLine)[0], obj = f.filter(function (e) { return !isLine(e); });
+        f.forEach(function (e) {
+          var c = [cls]; if (isLine(e) && s.flow === "unknown") c.push("hz-m-dash");
+          r.items.push({ e: e, cls: c });
+        });
+        if (line && (s.flow === "with" || s.flow === "against")) {
+          var geo = lineGeo(line);
+          if (geo) arrow(r, line, geo, i > 0 ? objCenter(i - 1) : null, i + 1 < steps.length ? objCenter(i + 1) : null, s.flow);
+        }
+        if (m.numbered !== false && obj.length) {
+          n++; badge(r, obj.filter(function (e) { return e.classList.contains("sym"); })[0] || obj[0], String(n), colorOf(r.style));
+        }
+      });
+      flush(r); paintMarks(r.items.map(function (it) { return it.e; }));
+      send({ type: "highlightResult", request_id: m.request_id || null, missing: missing });
+    }
+    function zoomTo(ids, pad, map) {
+      map = map || index();
+      var l = Infinity, t = Infinity, rr = -Infinity, bb = -Infinity, v = curView(), vr = vp && vp.getBoundingClientRect();
+      if (!v || !vr) return;
+      (ids || []).forEach(function (lid) {
+        (map[lid] || []).forEach(function (e) {
+          var q = shownRect(e); if (!q) return;
+          l = Math.min(l, q.left); t = Math.min(t, q.top); rr = Math.max(rr, q.right); bb = Math.max(bb, q.bottom);
+        });
+      });
+      if (!isFinite(l)) return;
+      pad = (typeof pad === "number" && pad >= 0 && pad < 5) ? pad : 0.15;
+      var dl = (l - vr.left - v.x) / v.s, dt = (t - vr.top - v.y) / v.s, dw = Math.max((rr - l) / v.s, 20), dh = Math.max((bb - t) / v.s, 20);
+      var s = Math.min(Math.max(Math.min(vr.width / (dw * (1 + 2 * pad)), vr.height / (dh * (1 + 2 * pad))), 0.1), 12);
+      window.hzView.set({ s: s, x: vr.width / 2 - (dl + dw / 2) * s, y: vr.height / 2 - (dt + dh / 2) * s });
+    }
+    // 고르기: "off"는 템플릿 동작 그대로, "pick"은 클릭 = 더하기·빼기, 끌기 = 네모로 더하기(Alt는 빼기).
+    var selMode = "off", sel = new Set(), sdown = null, rubber = null;
+    function paintSel(ids, on) {
+      var map = index();
+      ids.forEach(function (lid) { (map[lid] || []).forEach(function (e) { e.classList.toggle("hz-sel", on); }); });
+      refreshTags();
+    }
+    function sendSel(added, removed, via) {
+      // 2,000개를 넘으면 웹 쪽에서 앞 2,000개(문서 순서)만 보내고 truncated를 단다. 앱은 64KB를 넘는 메시지를 통째로 버리므로
+      // 글자 수도 본다: 먼저 변경분(added·removed)을 빼고, 그래도 크면 selected를 줄인다.
+      var cut = sel.size > 2000 || added.length > 2000 || removed.length > 2000;
+      var msg = { type: "selectionChanged", selected: Array.from(sel).slice(0, 2000), added: added.slice(0, 2000), removed: removed.slice(0, 2000), via: via };
+      if (JSON.stringify(msg).length > 60000) { msg.added = []; msg.removed = []; cut = true; }
+      while (JSON.stringify(msg).length > 60000 && msg.selected.length) { msg.selected = msg.selected.slice(0, Math.floor(msg.selected.length * 0.8)); cut = true; }
+      if (cut) msg.truncated = true;
+      send(msg);
+    }
+    function change(addIds, removeIds, via) {
+      var add = addIds.filter(function (i) { return !sel.has(i); }), rem = removeIds.filter(function (i) { return sel.has(i); });
+      if (!add.length && !rem.length) return;
+      add.forEach(function (i) { sel.add(i); }); rem.forEach(function (i) { sel.delete(i); });
+      paintSel(add, true); paintSel(rem, false);
+      sendSel(add, rem, via);
+    }
+    function lineMostlyIn(e, bx) {
+      if (!e.getTotalLength || !e.getScreenCTM) return true;
+      var L = e.getTotalLength(), m = e.getScreenCTM(), n = 16, k, inn = 0;
+      if (!m || !(L > 0)) return true;
+      for (k = 0; k <= n; k++) {
+        var p = e.getPointAtLength(L * k / n), x = m.a * p.x + m.c * p.y + m.e, y = m.b * p.x + m.d * p.y + m.f;
+        if (x >= bx.l && x <= bx.r && y >= bx.t && y <= bx.b) inn++;
+      }
+      return inn / (n + 1) >= 0.5;
+    }
+    function inBox(bx) {  // 네모와 겹치는 구성요소. 기호·태그 상자는 겹치면, 배관은 선의 절반 이상이 안일 때만
+      var map = index(), out = [], lid, i;
+      for (lid in map) {
+        var list = map[lid], hit = false;
+        for (i = 0; i < list.length && !hit; i++) {
+          var e = list[i], q = shownRect(e);
+          if (!q || q.right < bx.l || q.left > bx.r || q.bottom < bx.t || q.top > bx.b) continue;
+          hit = isLine(e) ? lineMostlyIn(e, bx) : true;
+        }
+        if (hit) out.push(lid);
+      }
+      return out;
+    }
+    function rubberTo(x0, y0, x1, y1, minus) {
+      var r = vp.getBoundingClientRect();
+      if (!rubber) { rubber = document.createElement("div"); rubber.className = "hz-rubber"; vp.appendChild(rubber); }
+      rubber.classList.toggle("minus", !!minus);
+      rubber.style.left = (Math.min(x0, x1) - r.left) + "px"; rubber.style.top = (Math.min(y0, y1) - r.top) + "px";
+      rubber.style.width = Math.abs(x1 - x0) + "px"; rubber.style.height = Math.abs(y1 - y0) + "px";
+    }
+    function endDrag() { if (rubber && rubber.parentNode) rubber.parentNode.removeChild(rubber); rubber = null; sdown = null; }
+    if (vp) {
+      vp.addEventListener("mousedown", function (e) {
+        if (selMode !== "pick" || e.button !== 0 || (e.target.closest && e.target.closest(".float, .hz-legend"))) return;
+        e.stopImmediatePropagation();  // 템플릿의 화면 끌기를 막는다
+        sdown = { x: e.clientX, y: e.clientY, t: e.target, moved: false };
+      }, true);
+      window.addEventListener("mousemove", function (e) {
+        if (!sdown) return;
+        if (Math.abs(e.clientX - sdown.x) + Math.abs(e.clientY - sdown.y) > 3) sdown.moved = true;
+        if (sdown.moved) rubberTo(sdown.x, sdown.y, e.clientX, e.clientY, e.altKey);
+      }, true);
+      window.addEventListener("mouseup", function (e) {
+        var d = sdown; if (!d) return;
+        endDrag();
+        if (d.moved) {
+          var ids = inBox({ l: Math.min(d.x, e.clientX), r: Math.max(d.x, e.clientX), t: Math.min(d.y, e.clientY), b: Math.max(d.y, e.clientY) });
+          if (e.altKey) change([], ids, "box_remove"); else change(ids, [], "box");
+        } else {
+          var t = d.t && d.t.closest ? d.t.closest("#overlay [data-local-id], #graphsvg [data-local-id]") : null;
+          if (t) { var lid = t.getAttribute("data-local-id"); if (sel.has(lid)) change([], [lid], "click"); else change([lid], [], "click"); }
+        }
+      }, true);
+      vp.addEventListener("click", function (e) {  // 고르기 중의 클릭은 템플릿 선택·nodeSelected로 새지 않게 한다
+        if (selMode === "pick" && !(e.target.closest && e.target.closest(".float, .hz-legend"))) { e.stopPropagation(); e.preventDefault(); }
+      }, true);
+      window.addEventListener("keydown", function (e) {
+        if (selMode === "pick" && e.key === "Escape" && sel.size) change([], Array.from(sel), "clear");
+      });
+    }
+    function setSelMode(mode) {
+      selMode = mode === "pick" ? "pick" : "off";
+      document.body.classList.toggle("hz-selmode", selMode === "pick");
+      if (selMode !== "pick") endDrag();
+    }
+    function setSelection(ids) {
+      Array.prototype.forEach.call(document.querySelectorAll(".hz-sel"), function (e) { e.classList.remove("hz-sel"); });
+      sel = new Set((ids || []).filter(function (i) { return typeof i === "string"; }));
+      paintSel(Array.from(sel), true);
+    }
     function handle(m) {
       if (!m || typeof m !== "object") return;
       if (m.type === "editMode") {
@@ -460,6 +713,13 @@ BRIDGE_JS = r"""
       else if (m.type === "chips") chips(m.chips);
       else if (m.type === "openPathQuery") { if (window.openPathQuery) window.openPathQuery(); }
       else if (m.type === "toggleLayer") { if (window.hzToggleLayer) window.hzToggleLayer(m.layer); }
+      else if (m.type === "mark") doMark(m);
+      else if (m.type === "clearMarks") clearMarks(m.request_id);
+      else if (m.type === "drawPath") doPath(m);
+      else if (m.type === "selectMode") setSelMode(m.mode);
+      else if (m.type === "setSelection") setSelection(m.ids);
+      else if (m.type === "getSelection") send({ type: "selection", request_id: m.request_id || null, selected: Array.from(sel) });
+      else if (m.type === "zoomTo") zoomTo(m.ids, m.pad);
       else if (m.type === "clearHighlight") clear();
       else if (m.type === "focus") focus(m.local_id);
       else if (m.type === "pick") pick(m.local_id, !!m.center);
@@ -502,6 +762,26 @@ body.hz-segfocus #taglabels span:not(.hz-seg-in), body.hz-segfocus .segchip:not(
 .hz-pick { opacity: 1 !important; stroke: var(--ui) !important; filter: drop-shadow(0 0 3px var(--ui)) drop-shadow(0 0 3px var(--ui));
   animation: hz-pulse 1.2s ease-in-out 3; }
 @keyframes hz-pulse { 50% { stroke-width: 7; } }
+/* S-viewer: 근거 표시(hz-m*)와 고르기(hz-sel). 기존 강조(hz-on)·구간 색·hz-pick과 클래스가 달라 서로 지우지 않는다. */
+:root { --hl-focus: var(--ui); --hl-mwarn: var(--warn-line); --hl-muted: #6b7280; }
+.hz-m-focus { --mc: var(--hl-focus); } .hz-m-path { --mc: var(--hl-path); } .hz-m-cause { --mc: var(--hl-cause); }
+.hz-m-safeguard { --mc: var(--hl-safeguard); } .hz-m-warn { --mc: var(--hl-mwarn); } .hz-m-muted { --mc: var(--hl-muted); }
+.hz-m-seg1 { --mc: var(--seg1); } .hz-m-seg2 { --mc: var(--seg2); } .hz-m-seg3 { --mc: var(--seg3); }
+.hz-m-seg4 { --mc: var(--seg4); } .hz-m-seg5 { --mc: var(--seg5); }
+.hz-m.sym, .hz-m.tagbox, .hz-m.gnode { stroke: var(--mc) !important; stroke-width: 3.5; fill: var(--mc) !important; fill-opacity: .18 !important; opacity: 1 !important; }
+.hz-m.pipe-line, .hz-m.gedge { stroke: var(--mc) !important; stroke-width: 5; stroke-opacity: 1; opacity: 1 !important; }
+.hz-m-warn.pipe-line, .hz-m-warn.gedge, .hz-m-dash { stroke-dasharray: 9 6 !important; }
+.hz-m-muted.sym, .hz-m-muted.tagbox, .hz-m-muted.gnode { stroke-width: 1.5; fill-opacity: .05 !important; }
+.hz-m-muted.pipe-line, .hz-m-muted.gedge { stroke-width: 2.5; stroke-opacity: .6; }
+body.hz-mdim #overlay .sym:not(.hz-m), body.hz-mdim #overlay .tagbox:not(.hz-m), body.hz-mdim #overlay .pipe-line:not(.hz-m),
+body.hz-mdim #graphsvg .gnode:not(.hz-m), body.hz-mdim #graphsvg .gedge:not(.hz-m) { opacity: var(--hl-dim); }
+.hz-mbadge rect { fill: var(--mc); } .hz-mbadge text { fill: var(--on-seg); font-size: 11px; font-weight: 700; }
+.hz-marrow { fill: var(--mc); stroke: var(--card); stroke-width: 1; }
+.hz-sel.sym, .hz-sel.tagbox, .hz-sel.gnode { stroke: var(--ui) !important; stroke-width: 3.5; fill: rgba(10,95,194,.16) !important; }
+.hz-sel.pipe-line, .hz-sel.gedge { stroke: var(--ui) !important; stroke-width: 5; stroke-opacity: 1; }
+body.hz-selmode #viewport { cursor: crosshair; }
+.hz-rubber { position: absolute; z-index: 20; pointer-events: none; border: 1.5px solid var(--ui); background: rgba(10,95,194,.10); box-sizing: border-box; }
+.hz-rubber.minus { border-style: dashed; background: rgba(166,30,77,.08); }
 """
 
 
@@ -550,6 +830,11 @@ class HazopWebView(QWebEngineView):
         self.hide_status = False
         self.drawing_enabled = True
         self.edit = {"on": False, "tool": "select"}
+        self.select_mode = "off"
+        self.current_graph_id = ""
+        self._selection_waiters = {}
+        self._selection_seq = 0
+        self.bridge.selectionFor.connect(self._selection_answer)
 
     def dispose(self):
         """종료 전에 페이지를 먼저 지운다(웹 렌더 프로세스가 남은 채 인터프리터가 끝나면 비정상 종료될 수 있음)."""
@@ -564,8 +849,9 @@ class HazopWebView(QWebEngineView):
         st = os.stat(path)
         return (st.st_mtime_ns, st.st_size)
 
-    def load_file(self, path):
-        """뷰어 HTML 파일 로드(Python → 웹 'load'). 같은 경로라도 파일이 다시 만들어졌으면(mtime·크기 변경) 다시 읽는다."""
+    def load_file(self, path, graph_id=""):
+        """뷰어 HTML 파일 로드(Python → 웹 'load'). 같은 경로라도 파일이 다시 만들어졌으면(mtime·크기 변경) 다시 읽는다.
+        graph_id는 이 도면의 graph_id로, 읽기를 마치면 bridge.sheetReady(graph_id)로 알린다."""
         path = os.path.abspath(path)
         stamp = self._stamp(path)
         if self.current_file == path and self.current_stamp == stamp:
@@ -574,10 +860,13 @@ class HazopWebView(QWebEngineView):
         self.current_stamp = stamp
         self.page().allowed_file = path
         self.bridge.reset()
+        self.bridge.graph_id = graph_id or ""
+        self.current_graph_id = self.bridge.graph_id
         self.bridge.send("setMode", hide_panel=self.hide_panel, hide_graph=self.hide_graph, hide_status=self.hide_status)
         # 도면 탭 잠금은 페이지를 새로 읽을 때마다(loadFinished 후 브리지 ready 시점) 다시 적용한다
         self.bridge.send("setDrawingEnabled", enabled=self.drawing_enabled)
         self.bridge.send("editMode", **self.edit)
+        self.bridge.send("selectMode", mode=self.select_mode)
         self.load(QUrl.fromLocalFile(path))
         return True
 
@@ -650,3 +939,58 @@ class HazopWebView(QWebEngineView):
             callback(None)
             return
         self.page().runJavaScript("window.hzView ? window.hzView.get() : null", 0, lambda v: callback(clean_view(v)))
+
+    # ---- S-viewer 뷰어 API (docs/specs/chat-panel.md §6.1). ID는 모두 이 도면 안 local_id ----
+
+    @staticmethod
+    def _groups(groups):
+        out = []
+        for g in groups or []:
+            ids = [i for i in (g.get("ids") or []) if isinstance(i, str)]
+            label = g.get("label")
+            out.append({"ids": ids, "style": g.get("style") or "focus", "label": label if isinstance(label, str) else None})
+        return out
+
+    def mark(self, request_id, groups, dim_others=True, center=False):
+        """구성요소 묶음을 스타일(focus|path|cause|safeguard|warn|muted|seg:<n>)별로 겹쳐 그린다. 기존 강조·구간 색·고른 것은 지우지 않는다.
+        응답은 bridge.highlightResultFor(request_id, 그리지 못한 local_id)."""
+        self.bridge.send("mark", request_id=request_id, groups=self._groups(groups), dim_others=bool(dim_others), center=bool(center))
+
+    def clear_marks(self, request_id=None):
+        """mark·draw_path로 그린 것을 지운다(None이면 전부). 구간 색(segments)·고른 것(pick)은 지우지 않는다."""
+        self.bridge.send("clearMarks", request_id=request_id)
+
+    def draw_path(self, request_id, steps, style="path", numbered=True):
+        """경로를 배관 선과 기호 강조로 그린다. steps = [{"id", "flow": "with"|"against"|"unknown"|None}] 경로 순서(객체·배관 섞임).
+        객체에 순번 배지, 흐름이 확인된 배관에 화살표, unknown 배관은 점선."""
+        clean = [{"id": s["id"], "flow": s.get("flow")} for s in steps or [] if isinstance(s, dict) and isinstance(s.get("id"), str)]
+        self.bridge.send("drawPath", request_id=request_id, steps=clean, style=style, numbered=bool(numbered))
+
+    def set_select_mode(self, mode):
+        """"off"(끌기 = 화면 이동, 기존 동작) | "pick"(클릭 = 더하기·빼기, 끌기 = 네모로 더하기, Alt+끌기 = 네모로 빼기).
+        상태를 기억해 다시 읽을 때도 적용한다."""
+        self.select_mode = "pick" if mode == "pick" else "off"
+        self.bridge.send("selectMode", mode=self.select_mode)
+
+    def set_selection(self, ids):
+        """고른 것 표시를 이 목록으로 바꾼다(selectionChanged를 내지 않는다)."""
+        self.bridge.send("setSelection", ids=[i for i in ids or [] if isinstance(i, str)])
+
+    def selection(self, callback):
+        """지금 고른 local_id 목록을 callback으로 넘긴다(페이지가 준비되지 않았으면 빈 목록)."""
+        if not self.bridge.is_ready:
+            callback([])
+            return
+        self._selection_seq += 1
+        rid = "sel-%d" % self._selection_seq
+        self._selection_waiters[rid] = callback
+        self.bridge.send("getSelection", request_id=rid)
+
+    def _selection_answer(self, rid, ids):
+        cb = self._selection_waiters.pop(rid, None)
+        if cb:
+            cb(ids)
+
+    def zoom_to(self, ids, pad=0.15):
+        """ids를 모두 담도록 화면을 옮기고 확대한다. pad는 둘레 여유 비율."""
+        self.bridge.send("zoomTo", ids=[i for i in ids or [] if isinstance(i, str)], pad=float(pad))

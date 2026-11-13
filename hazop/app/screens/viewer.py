@@ -13,7 +13,7 @@ EditSession(작업 중 ops·실행 취소/다시 실행)과 tool_pick(여러 번
 import uuid
 from dataclasses import dataclass, replace
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, Qt
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QFrame,
                                QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
@@ -429,6 +429,82 @@ def _section(text):
     lab = QLabel(text)
     lab.setObjectName("section")
     return lab
+
+
+class ViewerHost(QObject):
+    """도면 한 장을 띄운 웹뷰 위에서 여러 도면에 걸친 표시를 맡는다(docs/specs/chat-panel.md §6.4).
+
+    - names() → {graph_id: 도면 이름}, switch(이름) → 화면이 그 도면으로 바꾼다(ViewerScreen.select_drawing).
+    - 도면별로 그릴 것을 맡겨 두고(show_marks), 도면을 옮겨 읽기가 끝나면(sheetReady) 그 도면 것을 다시 그린다.
+    - 맡기는 항목은 {"op": "mark", "groups", "dim_others", "center"} 또는 {"op": "path", "steps", "style", "numbered"}.
+      한 요청에 항목이 여럿이면 둘째부터 웹 쪽 request_id를 "<id>#<번호>"로 나눠 보낸다(같은 id는 웹에서 덮어쓰므로)."""
+
+    def __init__(self, webview, names, switch, parent=None):
+        super().__init__(parent or webview)
+        self.webview = webview
+        self._names = names
+        self._switch = switch
+        self._marks = {}      # request_id → {graph_id: [항목]}
+        self._sent = {}       # request_id → 웹에 보낸 request_id 목록(지우려고)
+        self._wait = None     # (graph_id, then)
+        webview.bridge.sheetReady.connect(self._sheet_ready)
+
+    def current_sheet(self):
+        return self.webview.current_graph_id
+
+    def show_sheet(self, graph_id, then=None):
+        """지금 도면이면 then을 바로 부른다. 아니면 도면을 바꾸고 sheetReady 뒤에 부른다. 모르는 도면이면 False."""
+        if graph_id == self.current_sheet() and self.webview.bridge.is_ready:
+            if then:
+                then()
+            return True
+        name = self._names().get(graph_id)
+        if graph_id != self.current_sheet() and not name:
+            return False
+        self._wait = (graph_id, then)
+        if graph_id != self.current_sheet():
+            self._switch(name)
+        return True
+
+    def show_marks(self, request_id, marks_by_sheet, sheet=None):
+        """도면마다 그릴 것을 맡겨 두고, 지금(또는 sheet) 도면 것을 그린다. 도면을 옮기면 맡긴 것을 그 도면에 그린다."""
+        self.clear(request_id)
+        self._marks[request_id] = {g: list(v) for g, v in (marks_by_sheet or {}).items()}
+        if sheet and sheet != self.current_sheet():
+            self.show_sheet(sheet)
+        elif self.webview.bridge.is_ready:
+            self._draw(request_id, self.current_sheet())
+
+    def clear(self, request_id=None):
+        """맡긴 것과 웹에 그린 것을 지운다(None이면 전부)."""
+        if request_id is None:
+            self._marks, self._sent = {}, {}
+            self.webview.clear_marks(None)
+            return
+        self._marks.pop(request_id, None)
+        for web_id in self._sent.pop(request_id, [request_id]):
+            self.webview.clear_marks(web_id)
+
+    def _draw(self, request_id, sheet):
+        sent = []
+        for i, item in enumerate(self._marks.get(request_id, {}).get(sheet, [])):
+            web_id = request_id if i == 0 else "%s#%d" % (request_id, i)
+            sent.append(web_id)
+            if item.get("op") == "path":
+                self.webview.draw_path(web_id, item.get("steps") or [], item.get("style", "path"), item.get("numbered", True))
+            else:
+                self.webview.mark(web_id, item.get("groups") or [], item.get("dim_others", True), item.get("center", False))
+        self._sent[request_id] = sent
+
+    def _sheet_ready(self, graph_id):
+        for rid in list(self._marks):
+            self._draw(rid, graph_id)
+        wait, self._wait = self._wait, None
+        if wait and wait[0] == graph_id:
+            if wait[1]:
+                wait[1]()
+        elif wait:
+            self._wait = wait   # 다른 도면이 먼저 열렸다. 기다리던 도면이 열릴 때까지 둔다
 
 
 class ViewerScreen(QWidget):
@@ -956,7 +1032,7 @@ class ViewerScreen(QWidget):
             editing = self.editable() and self.edit_btn.isChecked()
             self.app.webview.set_mode(hide_panel=editing, hide_graph=True, hide_status=True)  # 편집 중에는 Qt 편집 패널이 속성 패널을 대신함
             self.app.webview.set_edit_mode(editing, self.tool.tool)
-            self.app.webview.load_file(info["html"])
+            self.app.webview.load_file(info["html"], graph_id=(g or {}).get("graph_id") or "")
             if keep_view and self.view:
                 self.app.webview.restore_view(self.view)
             if editing:  # 편집 중에는 칩이 클릭을 가리지 않게 단다
