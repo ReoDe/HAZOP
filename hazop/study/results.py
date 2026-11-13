@@ -495,6 +495,7 @@ def set_status(results, node_id, deviation_id, entry_id, status, at=None, node_s
 
 def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None, node_set=None, by=None, reason=None):
     """항목 내용을 고친다(판정 '수정'). 상태는 revised가 되고 사유(reason)가 있어야 한다(승인한 항목을 고치면 다시 승인).
+    보류(on_hold) 항목은 고쳐도 보류로 둔다. 보류는 사람이 판정(set_status)을 바꿀 때만 풀린다.
     severity·frequency를 고치면 risk를 다시 계산한다. history에는 바뀐 필드의 이전 값과 reason·by를 남긴다."""
     reason = _reason("revised", reason)
     unknown = sorted(set(fields) - set(EDITABLE_FIELDS))
@@ -515,7 +516,8 @@ def edit_entry(results, node_id, deviation_id, entry_id, fields, at=None, node_s
     before = {k: copy.deepcopy(e.get(k)) for k in sorted(fields) if e.get(k) != fields[k]}
     e.update(copy.deepcopy(fields))
     e["risk"] = risk_of(e.get("severity"), e.get("frequency"))
-    old, e["status"] = e.get("status"), "revised"
+    old = e.get("status")
+    e["status"] = old if old == "on_hold" else "revised"
     e.setdefault("history", []).append(store_io.history_row("edit", _who({"from": old, "before": before}, reason, by), at))
     _clear_scope(out, node_id, deviation_id, e)
     return out
@@ -572,7 +574,7 @@ def save(results, project_id, expect=store_io.ANY):
 def save_fp(results, project_id, expect):
     """(쓴 경로, 새 지문). expect(load_fp의 지문, 없던 파일이면 None)와 지금 파일이 다르면 store_io.Conflict."""
     path = store_path(project_id, results["graph_id"])
-    return path, store_io.write_json(path, _writable(results), expect)
+    return path, _put(path, results, expect)
 
 
 def written_fp(results):
@@ -588,8 +590,29 @@ def _writable(results):
 
 def write(path, results, expect=store_io.ANY):
     """expect(read_fp의 지문)를 주면 읽은 뒤 바뀐 파일은 쓰지 않고 store_io.Conflict를 낸다."""
-    store_io.write_json(path, _writable(results), expect)
+    _put(path, results, expect)
     return path
+
+
+def _put(path, results, expect):
+    """결과 파일을 쓰는 단 하나의 길. 옛 판(0.1·0.2) 파일을 덮기 직전에 원본을 <이름>.v<판>.bak.json으로 보관하고
+    (보관하지 못하면 OSError를 올리고 쓰지 않음), 이 앱보다 새 판이거나 판을 알 수 없는 결과 파일은 덮지 않는다(Conflict).
+    읽기(load·load_fp·load_view)는 파일을 쓰지 않는다."""
+    from hazop.study import convert
+    obj = _writable(results)
+    data, _fp = store_io.read_bytes(path)
+    if data is not None:
+        try:
+            old = json.loads(data.decode("utf-8-sig"))
+        except ValueError:
+            old = None
+        if isinstance(old, dict) and old.get("kind") == KIND:
+            version = old.get("schema_version", LEGACY_SCHEMA_VERSION)
+            if version not in (LEGACY_SCHEMA_VERSION,) + CELL_SCHEMA_VERSIONS:
+                raise store_io.Conflict("이 앱이 모르는 판(%s)의 분석 결과 파일이라 덮어쓰지 않음: %s" % (version, path))
+            if version != SCHEMA_VERSION:
+                convert.keep_original(path, ".v%s.bak.json" % version)
+    return store_io.write_json(path, obj, expect)
 
 
 def read(path):
@@ -614,53 +637,43 @@ def load(node_set):
 
 
 def load_view(node_set, deviations=None):
-    """보기 전용 읽기: load_fp와 같은 문서를 돌려주되 파일을 하나도 쓰지 않는다(원본 보관도 하지 않음). 옛 판(0.1·0.2)
-    파일이면 메모리에서 바꾼 문서에 read_only(열면 바꿈)를 붙인다. 고치려면 load_fp로 연다."""
-    return _load(node_set, deviations, write=False)[0]
+    """보기 전용 읽기(load와 같음). 결과 읽기는 어느 것도 파일을 쓰지 않는다: 옛 판 원본 보관은 처음 저장할 때(_put) 한다."""
+    return load_fp(node_set, deviations)[0]
+
+
+def load_test_fp(node_set, deviations=None):
+    """고정 응답(시험) 결과 파일을 load_fp와 같은 규칙(0.1 변환, 0.2·0.3 그대로)으로 읽는다. (문서, 지문)."""
+    return _load(node_set, deviations, test_store_path(node_set.get("project_id"), node_set["graph_id"]))
 
 
 def load_fp(node_set, deviations=None):
-    """편집용 열기. 옛 판이면 처음 저장 전에 원본을 보관한다. (문서, 지문)."""
-    return _load(node_set, deviations, write=True)
+    """(문서, 지문). 파일을 쓰지 않는다."""
+    return _load(node_set, deviations)
 
 
-def _load(node_set, deviations=None, write=True):
-    """(load와 같은 문서, save_fp의 expect로 쓸 지문). 없으면 (None, None).
+def _load(node_set, deviations=None, path=None, write=None):
+    """(load와 같은 문서, save_fp의 expect로 쓸 지문). 없으면 (None, None). write는 옛 호출(hazop/shell/api_results)이
+    넘기는 자리로 쓰지 않는다(읽기는 늘 파일을 쓰지 않음. 그쪽은 load_view·load_fp로 옮길 것).
     0.1 결과는 집합의 legacy로 0.2로 바꾸고(hazop.study.convert), 판 이전 기록이 있으면 kg_paths를 옮기고, reconcile로
     지금 집합·편차 목록에 맞춘다(메모리에서만. 파일은 사람이 저장할 때 씀).
     옛 자리(no-project)에서 읽었으면 저장할 자리에는 아직 파일이 없으므로 지문은 None이다."""
     from hazop.study import convert, migrate
-    path = _readable_path(node_set.get("project_id"), node_set["graph_id"])
+    path = path or _readable_path(node_set.get("project_id"), node_set["graph_id"])
     doc, fp = read_fp(path)
     if doc is None:
         return None, None
     if doc.get("graph_id") != node_set["graph_id"]:
         raise ValueError("다른 도면의 분석 결과: %s (%s)" % (path, doc.get("graph_id")))
-    same_place = path == store_path(node_set.get("project_id"), node_set["graph_id"])
+    same_place = path in (store_path(node_set.get("project_id"), node_set["graph_id"]),
+                          test_store_path(node_set.get("project_id"), node_set["graph_id"]))
     devs = deviations if deviations is not None else load_deviations()
     version = doc.get("schema_version", LEGACY_SCHEMA_VERSION)
     if version == LEGACY_SCHEMA_VERSION:
-        doc = convert.results_from_legacy(doc, node_set, devs)
-        try:  # 0.1 결과를 0.2로 덮어쓰기 전에 원본을 보관한다(§2.5 4단계)
-            if write:
-                convert.keep_original(path)
-            else:
-                doc["read_only"] = "옛 판(0.1) 분석 결과: 열면 바꿈(원본은 .v0.1.bak.json으로 보관)"
-        except OSError as exc:
-            doc["read_only"] = "0.1 분석 결과의 원본을 보관하지 못해 저장하지 않음(%s)" % exc
+        doc = convert.results_from_legacy(doc, node_set, devs)  # 원본은 처음 저장할 때 보관(_put, §2.5 4단계)
     elif version not in CELL_SCHEMA_VERSIONS:
         raise ValueError("이 앱보다 새 분석 결과 파일(%s)이라 읽지 않음: %s" % (version, path))
     else:
-        doc = migrate.migrate_results(doc, node_set)[0]
-        if version != SCHEMA_VERSION:  # 0.2 → 0.3은 내용이 같다. 옛 앱이 보류를 모르므로 원본을 먼저 보관하고 판을 올린다
-            try:
-                if write:
-                    convert.keep_original(path, ".v%s.bak.json" % version)
-                else:
-                    doc = dict(doc, read_only="옛 판(%s) 분석 결과: 열면 판을 올림(원본은 .v%s.bak.json으로 보관)"
-                               % (version, version))
-            except OSError as exc:
-                doc = dict(doc, read_only="%s 분석 결과의 원본을 보관하지 못해 저장하지 않음(%s)" % (version, exc))
+        doc = migrate.migrate_results(doc, node_set)[0]  # 0.2 → 0.3은 내용이 같다. 원본은 처음 저장할 때 보관(_put)
     doc = reconcile(doc, node_set, devs)
     if node_set.get("read_only") and not doc.get("read_only"):
         doc = dict(doc, read_only="검토구간을 읽기 전용으로 열어 분석 결과도 저장하지 않음(%s)" % node_set["read_only"])

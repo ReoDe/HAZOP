@@ -51,9 +51,9 @@ node_commands.recover(pg)   # 화면을 열 때 한 번: 끊긴 명령의 ⑤ �
 | 함수 | 쓰는가 | 하는 일 |
 | --- | --- | --- |
 | `nodes.load_view(pg)` → `(집합 또는 None, {needs_open, reason, notice})` | 아무것도 쓰지 않음 | 보기 전용. 0.1 파일은 메모리에서 0.2로 바꾸고, 0.2 파일은 판 이전·참조 채우기를 메모리에서만 적용한다. 그런 일이 있으면 `needs_open: true`, 집합에 `read_only`, `notice`는 판 이전 안내(`migrate.notice`) |
-| `results.load_view(node_set)` → 결과 또는 None | 아무것도 쓰지 않음 | 보기 전용 ⑤ 결과. 옛 판(0.1·0.2)이면 `read_only`(열면 바꿈) |
+| `results.load_view(node_set)` → 결과 또는 None | 아무것도 쓰지 않음 | 보기 전용 ⑤ 결과(`load_fp`의 문서와 같음) |
 | `nodes.load_fp(pg)` → `(집합, 지문)` | 변환·판 이전을 쓰고 원본을 보관 | 편집용 열기. `node_commands.execute`가 안에서 부름 |
-| `results.load_fp(node_set)` → `(결과, 지문)` | 옛 판이면 원본 보관(`.v0.1.bak.json`·`.v0.2.bak.json`) | 편집용 열기 |
+| `results.load_fp(node_set)` → `(결과, 지문)` | 아무것도 쓰지 않음 | 편집용 열기. 옛 판(0.1·0.2) 원본은 처음 저장할 때(`save_fp`·`write`) `.v0.1.bak.json`·`.v0.2.bak.json`으로 보관 |
 
 새 화면은 목록·도면을 그릴 때 `load_view`를 쓰고, `needs_open`이면 `notice`(또는 `reason`)를 보인 뒤 사용자가 고치려 할 때(또는 '열기'를 누를 때) `load_fp`로 한 번 연다.
 

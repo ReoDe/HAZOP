@@ -300,10 +300,12 @@ class ViewTest(WorkRoot):
         write(rpath, doc)
         before = self.files()
         view = res.load_view(ns)
-        self.assertTrue(view.get("read_only"))
-        self.assertEqual(self.files(), before)
-        res.load_fp(ns)
-        self.assertTrue(os.path.isfile(convert.backup_path(rpath, ".v0.2.bak.json")))
+        doc, fp = res.load_fp(ns)
+        self.assertEqual(self.files(), before, "읽기(보기·열기)는 원본 보관도 하지 않음")
+        self.assertEqual(view, doc)
+        self.assertFalse(doc.get("read_only"))
+        res.save_fp(doc, None, expect=fp)
+        self.assertTrue(os.path.isfile(convert.backup_path(rpath, ".v0.2.bak.json")), "처음 저장할 때 보관")
 
 
 class RoundTripTest(WorkRoot):

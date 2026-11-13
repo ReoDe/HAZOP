@@ -115,6 +115,11 @@ class OldFileTest(Base):
         with open(path, "rb") as fh:
             raw = fh.read()
         loaded, fp = res.load_fp(self.ns)
+        bak = convert.backup_path(path, ".v0.2.bak.json")
+        self.assertFalse(os.path.exists(bak), "읽기만으로는 보관하지 않음")
+        self.assertEqual(res.matrix_summary(res.load_view(self.ns)), res.matrix_summary(loaded))
+        self.assertTrue(rc.execute(self.g, "get_matrix", {}, by=None, fingerprint=None)["ok"])
+        self.assertFalse(os.path.exists(bak), "읽기 명령도 보관하지 않음")
         self.assertEqual(loaded["schema_version"], res.SCHEMA_VERSION)
         self.assertEqual(loaded["cells"][0]["entries"], old["cells"][0]["entries"], "옛 판정·이력은 그대로")
         self.assertEqual(res.verdict(loaded["cells"][0]["entries"][1])["reason"], None)
@@ -134,48 +139,151 @@ class OldFileTest(Base):
             res.load(self.ns)
 
 
+class FixedViewTest(Base):
+    """시험용(고정 응답) 결과 파일이 옛 판(0.2)이어도 이전 화면이 사람 판정을 버리거나 빈 결과로 덮지 않는다."""
+
+    def screen(self):
+        import types
+        from hazop.app.screens.results import ResultsScreen
+        fake = types.SimpleNamespace(node_set=self.ns, deviations=DEVS, _fps={})
+        return fake, ResultsScreen._test_results(fake)
+
+    def test_02_fixed_file_keeps_verdicts_and_saves_with_backup(self):
+        doc = res.set_status(self.doc, "S1", "D01", "e1", "approved", at=AT)
+        doc = res.set_status(doc, "S1", "D01", "e2", "rejected", at=AT, reason="x")
+        path = res.test_store_path(None, self.ns["graph_id"])
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(dict(doc, schema_version="0.2"), fh, ensure_ascii=False)
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        fake, shown = self.screen()
+        self.assertEqual([e["status"] for e in shown["cells"][0]["entries"]], ["approved", "rejected"])
+        self.assertFalse(shown.get("read_only"))
+        self.assertFalse(os.path.exists(convert.backup_path(path, ".v0.2.bak.json")))
+        res.write(path, shown, fake._fps[path])  # 화면의 _save와 같은 호출
+        with open(convert.backup_path(path, ".v0.2.bak.json"), "rb") as fh:
+            self.assertEqual(fh.read(), raw)
+        with open(path, encoding="utf-8") as fh:
+            disk = json.load(fh)
+        self.assertEqual(disk["schema_version"], res.SCHEMA_VERSION)
+        self.assertEqual(len(disk["cells"][0]["entries"]), 2)
+
+    def test_unreadable_or_newer_fixed_file_is_never_blanked(self):
+        path = res.test_store_path(None, self.ns["graph_id"])
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        for body in (json.dumps(dict(self.doc, schema_version="9.9")), "{망가진"):
+            with self.subTest(body[:10]):
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(body)
+                fake, shown = self.screen()
+                self.assertTrue(shown.get("read_only"))
+                with self.assertRaises(Exception):
+                    res.write(path, shown, fake._fps.get(path))
+                with open(path, encoding="utf-8") as fh:
+                    self.assertEqual(fh.read(), body, "파일은 그대로")
+
+    def test_writer_refuses_to_overwrite_a_newer_file(self):
+        path = res.store_path(None, self.ns["graph_id"])
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(dict(self.doc, schema_version="9.9"), fh)
+        with self.assertRaises(Exception):
+            res.write(path, self.doc)
+
+
+class EditHeldTest(Base):
+    def test_editing_a_held_entry_keeps_it_on_hold(self):
+        held = res.set_status(self.doc, "S1", "D01", "e1", "on_hold", at=AT, by="검토자", reason="확인 필요")
+        edited = res.edit_entry(held, "S1", "D01", "e1", {"cause": "고친 원인"}, at=AT, by="검토자", reason="오탈자")
+        e = edited["cells"][0]["entries"][0]
+        self.assertEqual((e["status"], e["cause"]), ("on_hold", "고친 원인"))
+        self.assertEqual(e["history"][-1]["from"], "on_hold")
+        self.assertEqual(res.verdict(e)["reason"], "오탈자")
+        self.assertTrue(any("보류" in p for p in sn.lock_problems(self.ns, "S1", edited)), "잠금은 여전히 막힘")
+        approved = res.set_status(self.doc, "S1", "D01", "e2", "approved", at=AT)
+        again = res.edit_entry(approved, "S1", "D01", "e2", {"cause": "x"}, at=AT, by="검토자", reason="r")
+        self.assertEqual(again["cells"][0]["entries"][1]["status"], "revised", "승인 항목을 고치면 다시 승인")
+
+
 class CommandTest(Base):
     def test_result_commands(self):
         sn.save(self.ns)
         res.save(self.doc, None)
-        cell = rc.execute(self.ns, "get_cell", {"node_id": "S1", "deviation_id": "D01"}, by="검토자", fingerprint=None)
+        cell = rc.execute(self.g, "get_cell", {"node_id": "S1", "deviation_id": "D01"}, by="검토자", fingerprint=None)
         self.assertTrue(cell["ok"], cell)
         self.assertEqual([e["entry_id"] for e in cell["cell"]["entries"]], ["e1", "e2"])
         fp = cell["fingerprint"]
-        bad = rc.execute(self.ns, "set_status", {"node_id": "S1", "deviation_id": "D01", "entry_id": "e1",
+        bad = rc.execute(self.g, "set_status", {"node_id": "S1", "deviation_id": "D01", "entry_id": "e1",
                                                   "status": "on_hold"}, by="검토자", fingerprint=fp)
         self.assertFalse(bad["ok"])
         self.assertIn("사유", bad["refused"][0]["reason"])
-        ok = rc.execute(self.ns, "set_status", {"node_id": "S1", "deviation_id": "D01", "entry_id": "e1",
+        ok = rc.execute(self.g, "set_status", {"node_id": "S1", "deviation_id": "D01", "entry_id": "e1",
                                                  "status": "on_hold", "reason": "확인 필요"}, by="검토자", fingerprint=fp)
         self.assertTrue(ok["ok"], ok)
-        stale = rc.execute(self.ns, "set_status", {"node_id": "S1", "deviation_id": "D01", "entry_id": "e2",
+        stale = rc.execute(self.g, "set_status", {"node_id": "S1", "deviation_id": "D01", "entry_id": "e2",
                                                     "status": "approved"}, by="검토자", fingerprint=fp)
         self.assertFalse(stale["ok"], "읽은 뒤 파일이 바뀌면 거절")
-        edit = rc.execute(self.ns, "edit_entry", {"node_id": "S1", "deviation_id": "D01", "entry_id": "e2",
+        edit = rc.execute(self.g, "edit_entry", {"node_id": "S1", "deviation_id": "D01", "entry_id": "e2",
                                                    "fields": {"cause": "바뀐 원인"}, "reason": "현장 확인"},
                           by="검토자", fingerprint=ok["fingerprint"])
         self.assertTrue(edit["ok"], edit)
         self.assertEqual(res.load(self.ns)["cells"][0]["entries"][1]["cause"], "바뀐 원인")
         self.assertEqual(sorted(rc.COMMANDS), ["edit_entry", "export_excel", "export_ie_bundle", "get_cell",
                                                "get_matrix", "recheck_cell", "set_status"])
-        matrix = rc.execute(self.ns, "get_matrix", {}, by="검토자", fingerprint=None)
+        matrix = rc.execute(self.g, "get_matrix", {}, by="검토자", fingerprint=None)
         self.assertEqual(matrix["matrix"]["S1"]["D01"]["unreviewed"], 2)
-        nopg = rc.execute(self.ns, "export_excel", {"path": os.path.join(self.tmp, "w.xlsx")}, by="검토자",
-                          fingerprint=None)
-        self.assertFalse(nopg["ok"])
+        self.assertEqual(cell["node_rev"], self.ns["nodes"][0]["rev"])
+        old_form = rc.execute(self.ns, "get_matrix", {}, by="검토자", fingerprint=None, pg=self.g)
+        self.assertEqual(old_form["matrix"], matrix["matrix"], "옛 호출 꼴(집합, pg=)은 넘긴 집합을 쓰지 않고 그래프로 읽음")
+        self.assertEqual(rc.execute(self.ns, "get_matrix", {}, by="검토자", fingerprint=None)["refused"][0]["code"],
+                         "bad_actor", "집합만 넘기면 거절")
 
     def test_export_commands_on_a_project_graph(self):
         from tests.test_study_export import sample
-        r, ns, pg, _span, _single = sample()
+        r, ns, pg, _span, single = sample()
         sn.save(ns)
         res.save(r, ns.get("project_id"))
-        xlsx = rc.execute(ns, "export_excel", {"path": os.path.join(self.tmp, "w.xlsx")}, by="검토자",
-                          fingerprint=None, pg=pg)
+        xlsx = rc.execute(pg, "export_excel", {"path": os.path.join(self.tmp, "w.xlsx")}, by="검토자",
+                          fingerprint=None)
         self.assertTrue(xlsx["ok"] and os.path.isfile(xlsx["path"]), xlsx)
-        ie = rc.execute(ns, "export_ie_bundle", {"path": os.path.join(self.tmp, "ie.xlsx")}, by="검토자",
-                        fingerprint=None, pg=pg)
+        ie = rc.execute(pg, "export_ie_bundle", {"path": os.path.join(self.tmp, "ie.xlsx")}, by="검토자",
+                        fingerprint=None)
         self.assertTrue(ie["ok"] and os.path.isfile(ie["path"]), ie)
+        for name in ("export_excel", "export_ie_bundle"):
+            out = rc.execute(pg, name, {"path": os.path.join(self.tmp, "no-such-dir", "w.xlsx")}, by="검토자",
+                             fingerprint=None)
+            self.assertFalse(out["ok"], name)
+            self.assertEqual(out["refused"][0]["code"], "io", out)
+        bad = rc.execute(pg, "set_status", {"node_id": single, "deviation_id": "D01", "entry_id": "x",
+                                            "status": "approved", "reason": 5}, by="검토자", fingerprint=None)
+        self.assertEqual(bad["refused"][0]["code"], "rule")
+
+    def test_stale_or_locked_node_set_is_refused(self):
+        sn.save(self.ns)
+        doc = put_entries(res.empty_results(self.ns, DEVS), "S1", "I1", [entry("e1", "approved"),
+                                                                         entry("e2", "approved")])
+        for c in doc["cells"]:
+            if not c["entries"]:
+                c["state"] = "excluded"
+        res.save(doc, None)
+        cell = rc.execute(self.g, "get_cell", {"node_id": "S1", "deviation_id": "D01"}, by="검토자", fingerprint=None)
+        self.assertTrue(cell["ok"], cell)
+        sn.save(sn.lock_node(sn.load(self.g), "S1", "다른 창", res.load(sn.load(self.g))))
+        self.assertEqual(res.load_fp(sn.load(self.g))[1], cell["fingerprint"], "잠가도 결과 파일 지문은 그대로")
+        args = {"node_id": "S1", "deviation_id": "D01", "entry_id": "e1", "status": "rejected", "reason": "낡은 화면"}
+        locked = rc.execute(self.g, "set_status", args, by="검토자", fingerprint=cell["fingerprint"])
+        self.assertFalse(locked["ok"])
+        self.assertIn("잠긴", locked["refused"][0]["reason"])
+        old_form = rc.execute(self.ns, "set_status", args, by="검토자", fingerprint=None, pg=self.g)
+        self.assertFalse(old_form["ok"], "넘긴 낡은 집합이 아니라 지금 집합으로 막음")
+        stale = rc.execute(self.g, "set_status", args, by="검토자", fingerprint=None, set_rev=cell["set_rev"])
+        self.assertEqual(stale["refused"][0]["code"], "stale")
+        node_rev = rc.execute(self.g, "set_status", dict(args, node_rev=cell["node_rev"] + 100), by="검토자",
+                              fingerprint=None)
+        self.assertEqual(node_rev["refused"][0]["code"], "stale")
+        self.assertEqual(next(e["status"] for c in res.load(sn.load(self.g))["cells"] for e in c["entries"]
+                              if e["entry_id"] == "e1"), "approved", "디스크의 판정은 그대로")
 
 
 if __name__ == "__main__":

@@ -1373,17 +1373,20 @@ class ResultsScreen(QWidget):
         return self._test_results() if test else self._saved_results(self.node_set)
 
     def _test_results(self):
+        """시험용 결과 파일. 실제 결과와 같은 규칙으로 읽고(옛 판은 바꿔 읽고 원본은 저장할 때 보관), 읽을 수 없거나 문서에
+        문제가 있으면 빈 결과로 덮지 않게 읽기 전용으로 연다."""
         path = res.test_store_path(self.node_set.get("project_id"), self.node_set["graph_id"])
         try:
-            doc, self._fps[path] = res.read_fp(path)
-        except (OSError, ValueError):
-            doc = None
+            doc, self._fps[path] = res.load_test_fp(self.node_set, self.deviations)
+        except (OSError, ValueError) as exc:
+            return dict(res.empty_results(self.node_set, self.deviations),
+                        read_only="시험용 분석 결과 파일을 읽을 수 없음(%s)" % exc)
         if doc is None:
             return res.empty_results(self.node_set, self.deviations)
-        if doc.get("schema_version") != res.SCHEMA_VERSION:  # 시험 결과는 옛 판이면 다시 만든다(실제 결과가 아님)
-            return res.empty_results(self.node_set, self.deviations)
-        doc, problems, _bad = res.partition(res.reconcile(doc, self.node_set, self.deviations), self.node_set)
-        return res.empty_results(self.node_set, self.deviations) if problems else doc
+        doc, problems, _bad = res.partition(doc, self.node_set)
+        if problems and not doc.get("read_only"):
+            doc = dict(doc, read_only="시험용 분석 결과 파일에 문제 %d건(%s)" % (len(problems), problems[0]))
+        return doc
 
     def store_path(self):
         if not self.node_set:
