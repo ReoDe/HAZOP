@@ -30,3 +30,13 @@ input[type="text"], input[type="number"], textarea { font: inherit; border: 1px 
 input[type="text"]:focus, input[type="number"]:focus { border-color: var(--accent); outline: 0; }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 .examples .chip { white-space: normal; height: auto; min-height: 24px; padding: 3px 9px; text-align: left; line-height: 1.35; max-width: 100%; }
+
+/* 채팅이 제안한 동작의 상자(적용함·확인·거절) */
+.acts { display: flex; flex-direction: column; gap: var(--sp-2); }
+.actbox { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); }
+.actbox p { margin: var(--sp-1) 0 var(--sp-2); white-space: pre-wrap; }
+.actbox-h { display: flex; align-items: center; gap: 6px; }
+.actbox.applied, .actbox.candidate { border-color: var(--ok); }
+.actbox.applied .actbox-h .ic, .actbox.candidate .actbox-h .ic { color: var(--ok); }
+.actbox.confirm { border-color: var(--warn-line); background: var(--warn-bg); }
+.actbox.confirm .actbox-h .ic { color: var(--warn); }

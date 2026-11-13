@@ -418,6 +418,29 @@ def _h_chat_new(engine, a):
     return {}
 
 
+def _h_action_approve(engine, a):
+    """확인 상자에서 사람이 '실행'을 눌렀다. 인자는 앱이 낸 표(token)뿐이고 인자·대상은 동작 층 메모리의 것을 쓴다."""
+    out = _need_actions(engine).approve(a["token"])
+    if not out.get("ok"):
+        raise CommandError(out.get("error") or "failed", out.get("message") or "실행하지 못했습니다.")
+    return {"result": out.get("result")}
+
+
+def _h_action_decline(engine, a):
+    out = _need_actions(engine).decline(a["token"])
+    if not out.get("ok"):
+        raise CommandError(out.get("error") or "failed", out.get("message") or "처리하지 못했습니다.")
+    return {"result": out.get("result")}
+
+
+def _need_actions(engine):
+    chat = _need_chat(engine)
+    actions = getattr(chat, "_actions", None)
+    if actions is None:
+        raise CommandError("failed", "채팅 동작을 쓸 수 없습니다.")
+    return actions
+
+
 def _h_chat_model(engine, a):
     _need_chat(engine).set_model(a["model"])
     engine.settings["chat_model"] = a["model"]
@@ -465,6 +488,8 @@ COMMANDS = {
     "conn.guide": Command({"name": (v_enum("install", "login"), True)}, _h_conn_guide, "연결 안내(설치 방법·로그인)를 연다"),
     "chat.stop": Command({}, _h_chat_stop, "진행 중인 질문을 멈춘다"),
     "chat.new": Command({}, _h_chat_new, "대화를 지우고 새로 시작한다"),
+    "chat.action.approve": Command({"token": (v_str(1, 80), True)}, _h_action_approve, "채팅이 제안한 동작의 확인 상자에서 '실행'"),
+    "chat.action.decline": Command({"token": (v_str(1, 80), True)}, _h_action_decline, "채팅이 제안한 동작의 확인 상자에서 '하지 않음'"),
     "chat.set_model": Command({"model": (v_enum(*CHAT_MODELS), True)}, _h_chat_model, "채팅 모델(빠름·보통·깊게)"),
     "extract.set_ai_review": Command({"enabled": (v_bool(), False), "cap": (v_int(1, 200), False)}, _h_set_ai_review,
                                      "추출 뒤 AI 검토 토글과 도면당 호출 상한"),

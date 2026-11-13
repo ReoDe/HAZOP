@@ -7,6 +7,7 @@ import { cmd, connect, on, onChanged, read, ui } from "./bridge.js";
 import { Icon, loadIcons } from "./ui/icon.js";
 import { Btn } from "./ui/parts.js";
 import { ChatPanel, loadChat, pushMsg, setChat } from "./chat/panel.js";
+import { addActions, updateAction } from "./chat/actions.js";
 import { DrawingsPanel } from "./panels/drawings.js";
 import { NodesPanel } from "./panels/nodes.js";
 import { SettingsPanel } from "./panels/settings.js";
@@ -82,6 +83,8 @@ function wireEvents() {
     store.set({ marks: { rid: key, bySheet } });     // 카드가 나타날 때 지금 도면에 먼저 그린다(도면을 갑자기 바꾸지 않는다)
     if (store.get().chatCollapsed) setChat({ unread: true });
   });
+  on("chat.actions", (d) => { addActions(setChat, d); if (store.get().chatCollapsed) setChat({ unread: true }); });
+  on("chat.action.result", (d) => updateAction(setChat, d));
   on("conn.changed", (d) => store.set({ conn: d }));
   on("drop.hover", (d) => store.set({ dropOver: !!d.over }));
   on("drop.refused", (d) => toast(d.text, "err"));

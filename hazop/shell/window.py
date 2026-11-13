@@ -20,7 +20,7 @@ from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox
 
 from hazop import paths
 from hazop.app import icons, webview
-from hazop.shell import api, chat, scheme
+from hazop.shell import api, chat, chat_actions, scheme
 
 LOG = logging.getLogger("hazop.shell.window")
 SHELL_URL = "hazop-app://shell/index.html"
@@ -232,8 +232,14 @@ class ShellWindow(QMainWindow):
         self.ai_conn = AiConnection(prefs, keys, debug=self._debug, parent=self)
         self.engine.ai = AiAdapter(self.ai_conn, lambda: self._on_conn(user_check=True))
         self.ai_conn.changed.connect(self._on_conn)
-        self.chat = chat.ChatController(self.bridge.send, session_factory or self._make_session, env_provider or self._card_env,
-                                        project_fn=self.engine.project_id, model=self.engine.settings.get("chat_model") or "fast")
+        env_fn = env_provider or self._card_env
+        self.chat_actions = chat_actions.ChatActions(
+            lambda name, data: self.bridge.send({"t": "event", "name": name, "data": data}), self.engine.project_id,
+            lambda: (env_fn() or (None, None))[1], self.engine.reviewer,
+            self.engine.changed, model_fn=lambda: self.engine.settings.get("chat_model"))
+        self.chat = chat.ChatController(self.bridge.send, session_factory or self._make_session, env_fn,
+                                        project_fn=self.engine.project_id, model=self.engine.settings.get("chat_model") or "fast",
+                                        actions=self.chat_actions)
         self.engine.chat = self.chat
         self._ctx = None
         self.engine.hooks["pick_files"] = self._pick_files

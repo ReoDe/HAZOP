@@ -11,7 +11,8 @@
 - 프로젝트가 바뀌면 대화를 끝낸다. 질문 중에 바뀌었으면 옛 도구 결과를 근거로 인정하지 않는다.
 - 대화는 저장하지 않는다.
 
-사건(`emit(name, data)`): chat.state · chat.user · chat.progress · chat.answer · chat.notice · chat.cleared.
+사건(`emit(name, data)`): chat.state · chat.user · chat.progress · chat.answer · chat.notice · chat.cleared
+(제안 동작은 `actions`(hazop/shell/chat_actions.py)가 chat.actions·chat.action.result로 보낸다).
 세션 콜백은 읽기 스레드에서 오므로 안쪽 상태는 잠근다. emit은 어느 스레드에서 불러도 된다.
 """
 
@@ -71,8 +72,12 @@ class NoEnv(cardmod.CardEnv):
 class ChatController:
     """session_factory(model, callbacks) -> 세션. env_provider() -> (CardEnv, 프로젝트 그래프) 또는 None. project_fn() -> 프로젝트 ID."""
 
-    def __init__(self, emit, session_factory, env_provider=None, project_fn=None, model="fast", clock=time.monotonic, now=time.time):
+    def __init__(self, emit, session_factory, env_provider=None, project_fn=None, model="fast", clock=time.monotonic, now=time.time,
+                 actions=None):
         self._emit = emit
+        self._actions = actions     # ChatActions 또는 None(채팅이 제안한 쓰기 동작의 판정·실행·확인)
+        self._turn = 0              # 이 대화에서 사용자가 보낸 질문 번호(채팅 규격 §4.5의 '새 메시지' 규칙)
+        self._asked = (0, "")
         self._factory = session_factory
         self._env_provider = env_provider
         self._project_fn = project_fn
@@ -199,6 +204,8 @@ class ChatController:
             self._started = self._clock()
             self._seq += 1
             mine = self._seq
+            self._turn += 1
+            self._asked = (self._turn, text)
             merged = dict(self._view)
             merged.update({k: v for k, v in (view or {}).items() if k in VIEW_KEYS})
         self.emit("chat.user", {"id": mine, "text": text})
@@ -216,6 +223,8 @@ class ChatController:
                 return
             self._busy, self._qid = False, None   # 세션이 보내는 cancelled 오류는 무시하되, 멈춘 질문 뒤에 오는 한도·초과 오류는 받아 입력을 막는다
             self._last_qid = qid
+            self._turn = 0
+        self._end_actions()
         session.stop()
         if qid:
             self._log.forget(qid)
@@ -227,6 +236,8 @@ class ChatController:
         with self._lock:
             session = self._session
             self._busy, self._qid = False, None
+            self._turn = 0
+        self._end_actions()
         if session is not None:
             session.stop()
         self.emit("chat.cleared")
@@ -246,8 +257,17 @@ class ChatController:
         """창·앱을 닫을 때. 진행 중 질문도 묻지 않고 끊는다."""
         with self._lock:
             session, self._session = self._session, None
+        self._end_actions()
         if session is not None:
             session.close()
+
+    def _end_actions(self):
+        """대화가 끝났다: 남은 확인 표지를 버린다."""
+        if self._actions is not None:
+            try:
+                self._actions.end_conversation()
+            except Exception:  # noqa: BLE001
+                LOG.exception("동작 층 정리 오류")
 
     # ------------------------------------------------------------ 세션 콜백(읽기 스레드)
     def _mine(self, qid):
@@ -287,6 +307,12 @@ class ChatController:
                   "calls": [[n, a] for n, a in self._log.tool_calls(qid)][:20]}
         self._log.forget(qid)
         self.emit("chat.answer", {"id": qid, "card": card_to_dict(card, pg), "footer": footer})
+        if self._actions is not None and card.actions and not stale:
+            turn, text = self._asked
+            try:
+                self._actions.handle(card.actions, turn, text)
+            except Exception:  # noqa: BLE001 - 동작 층이 깨져도 답은 이미 보였다
+                LOG.exception("채팅 동작 처리 오류")
         self._push_state()
 
     def _cb_error(self, qid, error):

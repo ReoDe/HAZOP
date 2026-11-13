@@ -7,6 +7,7 @@ import { cmd, read } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip } from "../ui/parts.js";
 import { AnswerCard } from "./card.js";
+import { ActionItems } from "./actions.js";
 
 const MODELS = [["fast", "빠름"], ["normal", "보통"], ["deep", "깊게"]];
 const NAMES = { fast: "빠름", normal: "보통", deep: "깊게" };
@@ -31,6 +32,11 @@ export function ChatPanel({ collapsed, onToggle, onChip, onSheet }) {
   const input = useRef(null);
   const list = useRef(null);
   useEffect(() => { if (list.current) list.current.scrollTop = list.current.scrollHeight; }, [chat.msgs.length, chat.progress]);
+
+  async function askText(q) {
+    if (chat.busy || chat.availability.blocked) { pushMsg({ kind: "notice", text: "지금은 물어볼 수 없습니다. 답이 끝난 뒤에 다시 눌러 주세요." }); return; }
+    try { await cmd("chat.ask", { text: q }); } catch (e) { pushMsg({ kind: "notice", text: e.message }); }
+  }
 
   async function send() {
     const q = text.trim();
@@ -68,6 +74,7 @@ export function ChatPanel({ collapsed, onToggle, onChip, onSheet }) {
       ${empty ? html`<div class="muted">도면과 문서에 대해 물어보세요. 아래 질문을 눌러 시작할 수도 있습니다.</div>` : null}
       ${chat.msgs.map((m) => m.kind === "user" ? html`<div class="q" key=${m.key}>${m.text}</div>`
         : m.kind === "notice" ? html`<div class="muted" key=${m.key} style="font-size:var(--fs-xs)">${m.text}</div>`
+        : m.kind === "actions" ? html`<${ActionItems} key=${m.key} items=${m.items} onAsk=${askText} />`
         : m.kind === "answer" ? html`<${AnswerCard} key=${m.key} card=${m.card} footer=${m.footer} onChip=${onChip} onSheet=${(i, sheet) => onSheet(m, i, sheet)} />` : null)}
       ${chat.busy ? html`<div class="muted" role="status"><${Icon} name="loader-2" size=${14} cls="spin" /> ${chat.progress ? "도구 " + chat.progress.tools + "회 · " + chat.progress.name : "답을 찾는 중…"}</div>` : null}
       ${blocked ? html`<${GuideCard} availability=${chat.availability} />` : null}
