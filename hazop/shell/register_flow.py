@@ -35,7 +35,8 @@ def register_and_extract(engine, path, progress):
 def review_if_wanted(engine, pages, progress):
     """추출 뒤 AI 검토 토글이 켜져 있고 연결이 준비돼 있으면 도면마다 호출 상한까지 후보를 제안받는다(이전 화면 ①의 AiReviewBar와 같은
     `ai_review.run_many`). 꺼져 있거나 연결이 없거나 API 연결이면 건너뛴다. AI 검토가 실패해도 등록·추출은 완료로 둔다.
-    -> {"ran": bool, "candidates": 수, "skipped": 까닭 또는 None}"""
+    -> {"ran": bool, "candidates": 수, "skipped": 까닭 또는 None, ran이면 "calls": 쓴 호출 수, "estimate": 예상 호출 수, "capped": 상한에 걸렸는지}
+    한 번 실행 상한(RUN_CAP 300)과 사람이 고친 자리 제외는 run_many가 지킨다. 창을 닫으려고 멈추라고 하면 도면 사이·호출 사이에서 멈춘다."""
     if not engine.settings.get("extract_ai_review"):
         return {"ran": False, "candidates": 0, "skipped": "off"}
     ai = engine.ai
@@ -48,9 +49,12 @@ def review_if_wanted(engine, pages, progress):
         reason = ai_review.refuse_reason(client)
         if reason:
             return {"ran": False, "candidates": 0, "skipped": reason}
-        progress("AI 검토 준비 중", 0, None)
-        done = ai_review.run_many(pages, client, cap=cap, on_progress=lambda name, d, t, left: progress("AI 검토 %s" % name, d, t))
+        est = ai_review.estimate_pages(pages, cap=cap, run_cap=ai_review.RUN_CAP)   # 사람이 고친 자리를 뺀 호출 수(실제 부르기 전 예상)
+        progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, None)
+        done = ai_review.run_many(pages, client, cap=cap, run_cap=ai_review.RUN_CAP, should_stop=engine.stop_requested,
+                                  on_progress=lambda name, d, t, left: progress("AI 검토 %s" % name, d, t))
     except Exception as exc:  # noqa: BLE001 - AI 검토 실패는 등록·추출을 되돌리지 않는다
         LOG.exception("AI 검토 오류")
         return {"ran": False, "candidates": 0, "skipped": "error: %s" % type(exc).__name__}
-    return {"ran": True, "candidates": sum(count for _name, count, _stats in done), "skipped": None}
+    return {"ran": True, "candidates": sum(count for _name, count, _stats in done), "skipped": None,
+            "calls": sum(stats.get("calls", 0) for _name, _count, stats in done), "estimate": est["calls"], "capped": est["capped"]}

@@ -364,6 +364,94 @@ class AiReviewFlowTest(EngineBase):
         self.assertNotIn("비밀", json.dumps(res, ensure_ascii=False))
 
 
+class AiReviewRealRunTest(EngineBase):
+    """run_many를 대역으로 바꾸지 않고 가짜 클라이언트로 끝까지 돌려, 토글·상한·한 번 실행 상한(300)·사람이 고친 자리 제외·멈춤이
+    실제로 지켜지는지 본다(d-read ae6f7b0의 규칙을 새 화면 길에서 확인). 실제 구독 호출은 없다."""
+
+    def engine_with(self, **settings):
+        from tests.test_ai_review import StubClient, good_answers
+        self.client = StubClient(good_answers)
+        client = self.client
+
+        class Ai:
+            def status(self):
+                return {"state": "ok", "can_start": True}
+
+            def make_client(self):
+                client.describe = lambda: {"via": "subscription", "model": "fixed"}
+                return client
+        e = self.engine(ai=Ai())
+        e.settings["extract_ai_review"] = True
+        e.settings.update(settings)
+        return e
+
+    def big(self, n=60):
+        from tests.test_ai_review import ex_fixture, node
+        ex = ex_fixture()
+        for i in range(n):
+            ex["nodes"].append(node("u%03d" % i, None, (1000 + i * 30, 100, 1010 + i * 30, 108)))
+        return ex
+
+    def run_flow(self, e, pages):
+        from hazop.shell import register_flow
+        lines = []
+        return register_flow.review_if_wanted(e, pages, lambda text, done=None, total=None: lines.append(text)), lines
+
+    def test_toggle_on_really_asks_and_saves_candidates_within_the_cap(self):
+        from hazop.extract import ai_review
+        e = self.engine_with(extract_ai_cap=2)
+        res, lines = self.run_flow(e, [("shellrun-a", self.big())])
+        self.assertTrue(res["ran"], res)
+        self.assertEqual(len(self.client.requests), 2, "도면당 호출 상한(cap)까지만 부른다")
+        self.assertEqual(res["calls"], 2)
+        self.assertGreater(res["candidates"], 0)
+        self.assertEqual(res["estimate"], 2, res)
+        self.assertTrue(any("호출 2회" in x for x in lines), lines)
+        self.assertTrue(ai_review.load_doc("shellrun-a")["candidates"], "후보 문서에 저장된다")
+
+    def test_toggle_off_never_asks(self):
+        e = self.engine_with()
+        e.settings["extract_ai_review"] = False
+        res, _ = self.run_flow(e, [("shellrun-off", self.big())])
+        self.assertEqual(res["skipped"], "off")
+        self.assertEqual(self.client.requests, [])
+
+    def test_run_cap_over_many_pages(self):
+        from unittest import mock
+        from hazop.extract import ai_review
+        e = self.engine_with(extract_ai_cap=20)
+        with mock.patch.object(ai_review, "RUN_CAP", 5):
+            res, _ = self.run_flow(e, [("shellrun-p%d" % i, self.big()) for i in range(3)])
+        self.assertEqual(len(self.client.requests), 5, "여러 도면을 합쳐 한 번 실행 상한까지만")
+        self.assertEqual(res["calls"], 5)
+        self.assertEqual(ai_review.RUN_CAP, 300)
+
+    def test_human_fixed_spots_are_not_asked(self):
+        import glob
+        from hazop import paths
+        from hazop.extract import ai_review, corrections
+        from hazop.extract.adapters import pdf_vector
+        from tests.test_ai_review import ids_in
+        pdf = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-102*", "*.pdf"))[0]
+        ex = pdf_vector.extract(pdf, page=0, repo_root=os.environ["HAZOP_WORK_ROOT"])
+        name = "shellrun-human"
+        items = ai_review.collect_items(ex, ai_review.DEFAULT_RECHECK)
+        target = next(i["target"] for i in items if any(n["source_object_id"] == i["target"] for n in ex["nodes"]))
+        corrections.save(name, [corrections.make_op(ex, "set_tag", target, {"tag": "HUMAN1"}, "human", name=name)], "human")
+        e = self.engine_with(extract_ai_cap=50)
+        self.run_flow(e, [(name, ex)])
+        asked = [i["target"] for req in self.client.requests for i in ids_in(req)]
+        self.assertTrue(asked)
+        self.assertNotIn(target, asked, "사람이 고친 자리는 묻지 않는다")
+
+    def test_stop_request_ends_the_review_before_the_next_page(self):
+        e = self.engine_with(extract_ai_cap=20)
+        e.stop_jobs()
+        res, _ = self.run_flow(e, [("shellrun-s%d" % i, self.big()) for i in range(2)])
+        self.assertEqual(self.client.requests, [], "멈추라고 했으면 호출하지 않는다")
+        self.assertTrue(res["ran"] and res["calls"] == 0)
+
+
 # ---------------------------------------------------------------- 채팅 조종기
 
 class FakeSession:

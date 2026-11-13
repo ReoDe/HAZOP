@@ -268,6 +268,9 @@ class Engine:
         단계 한가운데(추출 호출 하나)는 끊지 않는다: 반쯤 쓰인 자료를 남기지 않으려는 것이다."""
         self._stop.set()
 
+    def stop_requested(self):
+        return self._stop.is_set()
+
     def wait_jobs(self, timeout):
         """도는 작업 스레드가 끝나기를 기다린다 -> 모두 끝났으면 True."""
         import time
