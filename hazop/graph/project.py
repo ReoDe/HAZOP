@@ -22,6 +22,7 @@ import pickle
 import re
 
 from hazop import paths
+from hazop.graph import sources
 from hazop.graph.build import to_networkx
 
 SCHEMA_VERSION = "0.1"
@@ -440,7 +441,7 @@ def pick_graphs(project_id, graph_root=None):
     """{graph_id: ((바뀐 시각, 경로), graph, 폴더 이름)} 이 프로젝트의 도면. 같은 graph_id는 가장 최근 것
     (hazop.kg.auto.project_graphs와 같은 규칙). load와 ② 도면 이름표(project_ctx.graph_names)가 함께 쓴다."""
     root = graph_root or paths.output_root("graph")
-    best = {}
+    cands = []
     for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
         p = os.path.join(root, name, "graph.json")
         try:
@@ -449,10 +450,11 @@ def pick_graphs(project_id, graph_root=None):
         except (OSError, ValueError):
             continue
         if project_id_of(g) == project_id:
-            key = (os.path.getmtime(p), p)  # 같은 graph_id는 가장 최근 것(hazop.kg.auto.project_graphs와 같은 규칙)
-            if g.get("graph_id") not in best or key > best[g["graph_id"]][0]:
-                best[g["graph_id"]] = (key, g, name)
-    return best
+            cands.append({"gid": g.get("graph_id"), "key": (os.path.getmtime(p), p), "graph": g, "name": name})
+    # 같은 graph_id는 가장 최근 것(hazop.kg.auto.project_graphs와 같은 규칙). 단 같은 도면 번호가 다른 형식으로 섞이면
+    # 사람이 고르기 전에는 먼저 있던 형식을 바꾸지 않는다(hazop.graph.sources)
+    chosen, _notes = sources.pick(project_id, cands, graph_root=root if graph_root else None)
+    return {gid: (c["key"], c["graph"], c["name"]) for gid, c in chosen.items()}
 
 
 def load_with_names(project_id, graph_root=None):

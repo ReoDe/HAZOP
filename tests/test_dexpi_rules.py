@@ -68,13 +68,11 @@ class SegmentPathTest(unittest.TestCase):
 
     def test_proteus_loose_item_in_a_multi_connection_segment_is_assumed_and_flagged(self):
         text = fixture("small-pid-proteus.xml").decode("utf-8")
-        text = text.replace('<Connection FromID="Pump-N2" FromNode="1" ToID="Valve-1" ToNode="1"/>\n      '
-                            '<Connection FromID="Valve-1" FromNode="2" ToID="Tee-1" ToNode="1"/>',
-                            '<Connection FromID="Pump-N2" FromNode="1" ToID="Tee-1" ToNode="1"/>')
+        text = text.replace('<Connection FromID="Valve-1" FromNode="2" ToID="Tee-1" ToNode="1"/>\n      ', "")
         ex = extract(text.encode("utf-8"))
         got = pairs(ex)
-        self.assertIn(("P-101", "V-101"), got)
-        self.assertIn(("V-101", "tee"), got)
+        self.assertIn(("tee", "V-101"), got)  # 연결 끝에 없는 밸브는 문서 순서로 가장 가까운 연결 위에 끼운다
+        self.assertIn(("V-101", "T-101"), got)
         flagged = [u for u in ex["validation"]["unknowns"] if u["check"] == "dexpi_item_order_assumed"]
         self.assertEqual([(u["source_object_id"], u["field"]) for u in flagged], [("Valve-1", "kind")])
 

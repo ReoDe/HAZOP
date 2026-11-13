@@ -1,6 +1,6 @@
 """DEXPI 파일(DEXPI XML 2.0 이후, Proteus XML 1.x) -> output/extract/<이름>/extraction.json + validation_report.md
 
-그림을 인식하지 않고 파일의 구조를 옮긴다(HZ-PLN-22). 읽은 방법(read_method)은 'dexpi'다. 이 뒤의 그래프 만들기는 scripts/build_graph.py를 그대로 쓴다.
+그림을 인식하지 않고 파일의 구조를 옮긴다(HZ-PLN-22). 추출 결과의 source.format이 'dexpi'다. 이 뒤의 그래프 만들기는 scripts/build_graph.py를 그대로 쓴다.
 
 사용 예:
   python scripts/extract_dexpi.py "D:/…/reference_pid.xml"
@@ -63,7 +63,8 @@ def run_one(path, out_root, registration=None, warnings=None, page=0, out_name=N
     if registration is not None:
         name = out_name or registered_out_name(registration, page)
     else:
-        name = paths.safe_name(result["drawing"]["drawing_number"] or os.path.splitext(os.path.basename(path))[0])
+        # 등록 없이 읽을 때 폴더 이름은 도면 번호 + '-dexpi'. 같은 번호의 drawio·PDF 추출 결과(번호만 쓴 폴더)와 사람 수정 기록을 덮어쓰지 않는다
+        name = paths.safe_name(result["drawing"]["drawing_number"] or os.path.splitext(os.path.basename(path))[0]) + "-dexpi"
     out_dir = paths.safe_join(out_root, name)
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "extraction.json"), "w", encoding="utf-8", newline="\n") as fh:

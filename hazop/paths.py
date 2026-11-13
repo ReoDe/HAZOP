@@ -313,6 +313,7 @@ FOLDERS = {
     "analysis-results": Folder("work", ("data", "analysis-results")),
     "analysis-results-test": Folder("work", ("data", "analysis-results-test")),
     "chat-actions": Folder("work", ("data", "chat-actions")),  # 채팅이 실행한 동작 기록(hazop.chat.actions_log)
+    "drawing-sources": Folder("work", ("data", "drawing-sources")),  # 같은 도면 번호의 원본 형식 선택(hazop.graph.sources)
     "backup": Folder("work", ("data", "backup")),
     "initiating-events": Folder("work", ("data", "initiating-events")),
     "drawing-edits": Folder("work", ("data", "drawing-edits")),

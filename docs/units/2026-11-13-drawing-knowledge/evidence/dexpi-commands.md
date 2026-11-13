@@ -60,9 +60,29 @@
 
 - **되읽기(같은 앱).** 내보낸 파일을 다시 가져올 때는 `python scripts/extract_dexpi.py <파일>`이 파일 옆 `<이름>.hazop.json`을 찾아 되붙입니다. 함수로는 `hazop.extract.adapters.dexpi_import.extract_bytes(data, 파일 이름, registration=None, sidecar=<곁 파일 dict>)`입니다. 곁 파일의 `dexpi_sha256`이 파일과 다르면(내보낸 뒤 바뀜) 되붙이지 않고 미확인 `dexpi_sidecar_stale`을 남깁니다.
 
+## 2.5 같은 도면 번호의 원본이 여러 형식일 때 (가져오기 검토 4번, `hazop/graph/sources.py`)
+
+같은 도면 번호의 drawio·PDF·DEXPI 그래프는 `graph_id`(`graph-<번호>`)가 같아 지금까지 마지막에 추출한 것이 말없이 이겼습니다. 이제 **형식이 섞이면 사람이 고르기 전에는 바꾸지 않습니다**(먼저 있던 형식을 씀). 같은 형식끼리는 지금 규칙(가장 최근) 그대로라 기존 프로젝트(SNP drawio 6장)의 선택과 `graph_version`은 그대로입니다. 등록 없이 추출한 DEXPI 폴더 이름은 `<도면 번호>-dexpi`라 같은 번호의 drawio·PDF 폴더와 사람 수정 기록(`data/drawing-edits/<폴더>.json`)이 섞이지 않습니다(등록 경로는 원래 자료마다 폴더가 따로입니다).
+
+| 하는 일 | 함수 | 인자 | 돌려주는 값 |
+| --- | --- | --- | --- |
+| 충돌 사실(파일을 쓰지 않음) | `hazop.graph.sources.conflicts(project_id, graph_root=None, choices_root=None)` | 프로젝트 ID | `[{"drawing_number", "graph_id", "formats": ["dexpi","drawio"], "candidates": [{"name"(output/graph 폴더), "format", "modified"}], "in_use"(지금 프로젝트 그래프에 쓰는 폴더), "in_use_format", "chosen"(사람이 고른 형식 또는 None)}]`. 충돌이 없으면 `[]` |
+| 선택 받기 | `hazop.graph.sources.choose(project_id, drawing_number, source_format_name, by, at=None, graph_root=None, choices_root=None)` | `source_format_name`은 `drawio`·`pdf_vector`·`dexpi`(추출 결과 `source.format`), `by`는 고른 사람 | 저장한 `{"format", "by", "at"}`. 충돌이 없거나 그 형식의 그래프가 없거나 이름이 비면 `ValueError`, 읽은 뒤 파일이 바뀌었으면 `hazop.store_io.Conflict`(아무것도 쓰지 않음) |
+| 등록에서 알릴 충돌 | `hazop.register.registry.register(...)`의 결과에 `conflicts`(`[{"drawing_number", "materials": [{"material_id", "format", "registration_version"}]}]`)와 `notes`의 알림 문장이 더해짐. 같은 프로젝트에 사람이 확정한 같은 번호를 형식이 다른 자료가 이미 쓰고 있을 때만 | 기존 인자 그대로 | 등록 자체는 막지 않고 그래프에 쓰는 원본도 바꾸지 않음. 목록만 따로 보려면 `hazop.graph.sources.registration_conflicts(project_id, store_root=None)` |
+| 그래프 고르기(읽기) | `hazop.graph.project.pick_graphs`·`hazop.kg.auto.project_graphs`가 같은 규칙을 씀 | — | 선택이 반영된 도면 그래프 |
+
+- 선택은 `data/drawing-sources/<프로젝트>.json`(`{"kind": "hazop_drawing_sources", "chosen": {"<번호>": {"format", "by", "at"}}}`)에 원자적으로 씁니다. 파일이 없거나 깨졌거나 고른 형식의 그래프가 없으면 기본(먼저 있던 형식)으로 돌아갑니다. 선택을 되돌려도(다른 형식을 다시 고르면) 양쪽 추출 결과·수정 기록이 그대로라 이전 상태가 그대로 다시 쓰입니다.
+- 화면 쪽에서 할 일: 등록 결과의 `conflicts`가 있거나 `conflicts()`가 비어 있지 않으면 고르게 하고, 고른 값을 `choose`로 보냅니다. 고르기 전에는 '먼저 있던 형식을 쓰는 중'이라고 보입니다(`in_use`·`in_use_format`).
+
+## 2.6 가져오기 검토 반영으로 달라진 읽기 결과 (2026-11-14)
+
+- 흐름 화살표는 배관의 실제 경로(2.0 `ConnectorLine`의 시작·안쪽 점·끝, Proteus 구간의 `CenterLine`)에서 화살표가 놓인 선분의 방향과 견줍니다. 경로에서 1.5mm보다 멀거나 두 길에 0.5mm 안으로 가깝거나 방향이 맞지 않으면 방향을 정하지 않고 미확인 `dexpi_flow_arrow_unplaced`를 남깁니다. 공개 예제 구간 3·19는 밸브 → 탱크입니다.
+- 처리하지 않는 요소는 흔적을 남깁니다: 대응표에 없는 설비 클래스·구간 안 `ProcessInstrument`·`Equipment`·`PropertyBreak` 등은 미분류 노드(길에 그대로 있음), ID 없는 부품은 경로 ID(`…__item_<순번>`)와 미확인 `dexpi_item_without_id`, 그래프에 자리가 없는 것(`InstrumentationLoopFunction`·`PlantStructureItem` 등)은 종류별 개수를 `run.dexpi.not_imported`와 미확인 `dexpi_not_imported`에 남깁니다.
+- 새 미확인 코드: `dexpi_flow_arrow_unplaced`, `dexpi_item_without_id`, `dexpi_not_imported`, `dexpi_version_mixed`(Core·Plant 판이 다름), `dexpi_version_unknown`(모르는 판 또는 Proteus 파일에 DEXPI 판 없음), `dexpi_tag_not_unique`(같은 태그가 여럿, 합치지 않음). `source.dexpi_version`은 공식 주소(`data.dexpi.org/models/<판>/…`)의 Plant 판, Proteus는 `Application`이 `Dexpi`일 때의 `ApplicationVersion`(CAD 프로그램 버전은 `run.dexpi.application`에만).
+
 ## 3. 이번 단위에서 닫지 못한 것
 
-- **규격 §4.2(개정판 수정 기록 복사·재적용, PDF와 DEXPI 이중 등록의 '쓰는 원본').** `hazop/extract/corrections.py`·`hazop/graph/project.py`를 고치는 일이라 이 단위에서 하지 않았습니다. 같은 도면이 두 번 들어오면 수정 기록이 새 추출 이름에 붙지 않습니다. 별도 단위로 해야 합니다(규격 X1 완료 기준의 '개정판' 시험도 그때).
+- **규격 §4.2 (가) 개정판 수정 기록 복사·재적용**은 하지 않았습니다(`corrections.py`를 고치는 일). 같은 자료의 새 등록 버전이나 새 DEXPI 파일이 들어오면 수정 기록이 새 추출 이름에 붙지 않습니다. (나) 이중 등록의 '쓰는 원본'은 §2.5로 닫았습니다.
 - **쪽 확정 함수(`sheet_confirmation`).** 화면 규격 V3가 만들 때까지 내보내기는 실제 앱에서 거절합니다(`ExportError`). 서명은 이 문서 §2와 같습니다.
 - 등록 하나에 도면(Diagram)이 둘 이상인 2.0 파일은 첫 도면 기준으로만 추출합니다(미확인 `dexpi_multiple_diagrams`). 쪽 목록(`pages`)은 도면 수만큼 만들지만 둘째 쪽 추출은 없습니다.
 - 흐름 화살표는 모양이 이등변 삼각형 윤곽일 때만 방향으로 읽고(2.0.1 Reference P&ID의 두 모양이 그렇다), 연결에 맞는 것(코사인 0.7 이상)만 `declared`로 씁니다.

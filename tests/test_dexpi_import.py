@@ -423,7 +423,7 @@ class RegistrationTest(unittest.TestCase):
         out = os.path.join(self.tmp, "out")
         with mock.patch("builtins.print"):
             self.assertEqual(extract_dexpi.main([os.path.join(FIXTURES, "small-pid-dexpi2.xml"), "--out-root", out]), 0)
-        folder = os.path.join(out, "TEST-1")
+        folder = os.path.join(out, "TEST-1-dexpi")
         self.assertEqual(sorted(os.listdir(folder)), ["extraction.json", "extraction_run.json", "validation_report.md"])
         with open(os.path.join(folder, "extraction.json"), encoding="utf-8") as fh:
             self.assertEqual(json.load(fh)["source"]["format"], "dexpi")

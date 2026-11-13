@@ -324,6 +324,25 @@ def _unfinished_trace_only(store, material_id, sha):
 
 def register(source_path, project_id, material_type="P&ID", store_root=None, metadata=None, actor=None,
              now=None):
+    """_register_one과 같되, 같은 프로젝트에 사람이 확정한 같은 도면 번호를 다른 형식(drawio·PDF·DEXPI)의 자료가 이미 쓰고 있으면
+    결과에 conflicts(hazop.graph.sources.registration_conflicts)와 알림 문장을 더한다. 등록 자체는 막지 않고 그래프에 쓰는 원본도 바꾸지 않는다
+    (고르기는 hazop.graph.sources.choose)."""
+    result = _register_one(source_path, project_id, material_type, store_root, metadata, actor, now)
+    rec = result.get("record") or {}
+    if rec.get("status") == "registered" and rec.get("drawing_number") and material_type == "P&ID":
+        from hazop.graph import sources
+        found = [c for c in sources.registration_conflicts(project_id, store_root or DEFAULT_STORE)
+                 if c["drawing_number"] == rec["drawing_number"]]
+        if found:
+            result["conflicts"] = found
+            result["notes"] = list(result.get("notes") or []) + [
+                "같은 도면 번호 %s를 다른 형식(%s)의 자료도 쓰고 있음: 그래프에 쓸 원본을 사람이 골라야 함(그 전에는 먼저 있던 형식을 씀)"
+                % (rec["drawing_number"], "·".join(sorted({x["format"] for x in found[0]["materials"]})))]
+    return result
+
+
+def _register_one(source_path, project_id, material_type="P&ID", store_root=None, metadata=None, actor=None,
+                  now=None):
     """원본 1개를 등록한다. 원본 파일은 읽기만 한다. material_type: P&ID(draw.io·벡터 PDF) 또는
     design_document(글자가 있는 PDF 설계 문서). 저장 구조는 같다.
 

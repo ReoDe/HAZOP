@@ -6,6 +6,7 @@
 
 - `risk-criteria/`: 위험도 기준표, 초기사건 분류표
 - `symbols/`: P&ID 기호 사전
+- `dexpi-schema/`: DEXPI 2.0.1 클래스 이름·상속 목록(`classes-2-0-1.json`, DEXPI 가져오기·내보내기가 읽음)
 - `deviations/`: 이탈 후보 카탈로그와 적용 판단
 - `patterns/`: 원인·결과 패턴
 

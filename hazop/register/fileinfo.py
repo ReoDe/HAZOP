@@ -42,6 +42,7 @@ def detect_format(data):
     # XML 여부는 안전한 파서로 판정한다(UTF-8·UTF-16 BOM 등 인코딩 감지는 파서에 맡김).
     try:
         root = dexpi_read.parse_safely(data)
+        _PARSED.update(data=data, root=root)
     except dexpi_read.DexpiError as exc:
         if exc.code in ("dexpi_doctype_forbidden", "dexpi_too_large"):
             return "unsafe_xml"
@@ -51,6 +52,10 @@ def detect_format(data):
     if root.tag in ("mxfile", "mxGraphModel"):
         return "drawio"
     return "dexpi" if dexpi_read.detect(root) else "xml"
+
+
+# detect_format이 읽은 XML 뿌리. 같은 바이트를 inspect 안에서 다시 읽지 않게 한 번만 읽어 넘긴다(HZ-PLN-22 검토: 세 번 읽던 것)
+_PARSED = {"data": None, "root": None}
 
 
 def _unreadable_kind(data):
@@ -130,14 +135,18 @@ def _inspect_pdf(path, data, info):
 
 def _inspect_dexpi(path, data, info):
     """DEXPI 파일: 안전한 읽기와 구조 검사, 도면(쪽) 목록, 도면 번호·이름 자동 후보. 도면 번호는 사람이 확정하기 전에는 후보다."""
+    root = _PARSED["root"] if _PARSED["data"] is data else None
+    _PARSED.update(data=None, root=None)  # 큰 파일의 나무를 붙들고 있지 않는다
     try:
-        model = dexpi_read.read(data)
+        if root is None:
+            root = dexpi_read.parse_safely(data)
+        problems = dexpi_read.check_structure(root, limit=5) if root.tag == "Model" else []
+        model = dexpi_read.read(data, root=root)
     except dexpi_read.DexpiError as exc:
         info["blockers"].append(_problem(exc.code, exc.reason))
         return
     info["dexpi_flavor"] = model.fmt
     if model.fmt == dexpi_read.FMT_DEXPI:
-        problems = dexpi_read.check_structure(dexpi_read.parse_safely(data), limit=5)
         if problems:
             info["blockers"].append(_problem("dexpi_schema_invalid", "DEXPI XML 구조 검사에 걸림: %s" % "; ".join(problems)))
             return

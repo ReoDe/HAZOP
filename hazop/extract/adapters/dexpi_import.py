@@ -1,7 +1,7 @@
 """DEXPI 읽기 결과(dexpi_read.Model) -> 추출 결과(extraction.json) (HZ-PLN-22 §3·§5).
 
 그림을 인식하지 않고 파일에 적힌 구조를 옮기는 변환이다. 추출 결과의 공통 계약은 drawio·PDF 추출과 같아서 그래프 변환
-(hazop.graph.build)과 사람 수정·미확인 목록이 바뀌지 않는다. `run.read_method`는 'dexpi'다.
+(hazop.graph.build)과 사람 수정·미확인 목록이 바뀌지 않는다. 읽은 방법은 `source.format`이 'dexpi'로 남긴다(새 필드 없음).
 - 노즐은 노드로 만들지 않고 배관 끝의 포트(port)로 바꾼다(V-3). 노즐의 원래 목록은 설비 attributes["dexpi:nozzles"]에 둔다.
 - 흐름 방향은 연결의 Source->Target으로 정하지 않는다(F13). 흐름 화살표·도면 연결 기호만 declared로 쓴다(§5.4).
 - 대응이 없는 클래스는 미분류 노드로 가져오고 원문 조각을 근거에 남긴다(§5.5).
@@ -22,7 +22,9 @@ SCRIPT_NAME = "hazop.extract.adapters.dexpi_import"
 SCRIPT_VERSION = "0.1.0"
 RULES_VERSION = "dexpi-import-2026-11-13"
 COORDINATE_SPACE = "dexpi_diagram"
-FLOW_COS = 0.7  # 화살표 방향이 연결 방향과 이 값 이상 맞아야 흐름으로 읽는다
+FLOW_COS = 0.7  # 화살표 방향이 그 선분의 방향과 이 값 이상 맞아야 흐름으로 읽는다
+ARROW_MAX_MM = 1.5  # 화살표가 길(폴리라인)에서 이보다 멀면 그 길의 것으로 보지 않는다
+ARROW_TIE_MM = 0.5  # 두 길에 이 차이 안으로 가까우면 어느 쪽인지 정하지 않는다
 
 _NAME_CHARS = re.compile(r"[^A-Za-z0-9_.-]")
 TAGGED_CATEGORIES = ("equipment", "valve", "instrument")
@@ -85,6 +87,8 @@ def _tag_of(item):
             return a["TagName"], "TagName"
         joined = "".join(a.get(k) or "" for k in ("TagNamePrefix", "TagNameSequenceNumber", "TagNameSuffix"))
         return (joined, "조각 결합") if joined else (None, None)
+    if group == "other" and a.get("TagName"):
+        return a["TagName"], "TagName"
     if a.get("PipingComponentNumber"):
         return a["PipingComponentNumber"], "PipingComponentNumber"
     if a.get("SubTagName"):
@@ -247,6 +251,14 @@ def build(model, source, registration=None, page=0, repo_root=None):
         else:
             _issue(unknowns, "dexpi_no_position", "그림 위치 없음(DEXPI 파일에 그림 정보가 없음)", iid, local, "bbox")
         nodes.append(node)
+    counts = {}
+    for n in nodes:
+        if n["tag"] and n["category"] in TAGGED_CATEGORIES:
+            counts[n["tag"]] = counts.get(n["tag"], 0) + 1
+    for n in nodes:  # 같은 태그가 여럿이면 어느 것인지 가를 수 없다(태그는 유일해야 한다). 합치지 않고 미확인으로 남긴다
+        if n["tag"] and counts.get(n["tag"], 0) > 1:
+            _issue(unknowns, "dexpi_tag_not_unique", "같은 태그 %s가 %d개 객체에 있음(DEXPI 부품 번호는 유일하지 않을 수 있음)"
+                   % (n["tag"], counts[n["tag"]]), n["source_object_id"], n["local_id"], "tag")
 
     # ---- 끝점 풀이: 노즐은 부모 설비로, 포트는 노즐 이름
     def resolve(item_id, node_id):
@@ -265,6 +277,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
         return [_clean(p[0]), _clean(p[1])] if p is not None else None
 
     relations, unresolved = [], []
+    resolved_ids = set()
     rel_no = 0
 
     def line_attrs(seg_id):
@@ -306,6 +319,8 @@ def build(model, source, registration=None, page=0, repo_root=None):
                "waypoints": waypoints or [], "label": "", "label_text": "", "label_cells": [], "attributes": attrs,
                "style": "", "parent": None, "geometry": None}
         (relations if ok else unresolved).append(rec)
+        if ok:
+            resolved_ids.add(id(rec))
         pts = [e["point"] for e in ends if e["point"] is not None]
         if pts:
             source_locations.append({"object_id": c_id, "local_id": lid, "coordinate_space": COORDINATE_SPACE,
@@ -316,7 +331,10 @@ def build(model, source, registration=None, page=0, repo_root=None):
 
     # ---- 흐름: 도면 연결 기호와 화살표(§5.4)
     assumed_seen = set()
-    arrow_of = _arrow_flows(model)
+    arrow_of, unplaced_arrows = _arrow_flows(model)
+    for arrow in unplaced_arrows:
+        _issue(unknowns, "dexpi_flow_arrow_unplaced", "흐름 화살표를 배관 경로에 붙이지 못해 방향을 정하지 않음(경로 없음·거리·방향 불일치·모호)",
+               arrow["segment"], None, "flow_direction")
     for idx, c in enumerate(model.connections):
         c_id = c["id"] or c["synthetic_id"]
         attrs = line_attrs(c["segment"])
@@ -346,7 +364,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 for ep in rec["endpoints"]:
                     if ep["end"] == end:
                         ep["attributes"] = {"dexpi:node": c[key]}
-        if flow_dict is None and rec in relations:
+        if flow_dict is None and id(rec) in resolved_ids:
             _issue(unknowns, "unknown_flow_direction",
                    "양방향 흐름 구간(DEXPI DualFlow): 한쪽으로 확정하지 않음" if flow_class == "dual"
                    else "DEXPI 연결의 Source·Target은 흐름 방향이 아님(근거 없음)", c_id, rec["local_id"], "flow_direction")
@@ -405,6 +423,8 @@ def build(model, source, registration=None, page=0, repo_root=None):
             _issue(unknowns, "registration_unknown", "등록 단계 미확인: %s" % u["reason"], field=u["field"])
     if model.diagram_count > 1:
         _issue(unknowns, "dexpi_multiple_diagrams", "도면(Diagram)이 %d개인 파일: 첫 도면 기준으로 읽음" % model.diagram_count)
+    for key, count in sorted(model.not_imported.items()):  # 그래프에 자리가 없어 옮기지 않은 것: 종류와 개수(§3.6)
+        _issue(unknowns, "dexpi_not_imported", "그래프에 자리가 없어 옮기지 않음: %s %d개" % (key, count), field="kind")
     if model.process_objects:
         _issue(unknowns, "dexpi_process_model_skipped", "공정 모델(Process) 객체 %d개는 가져오지 않음" % model.process_objects)
     if model.diagram_count == 0:
@@ -423,7 +443,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 "settings": {"page_index": page},
                 "dexpi": {"flavor": model.fmt, "version": model.version, "schema_version": model.schema_version,
                           "application": model.application, "diagram_count": model.diagram_count,
-                          "process_objects_skipped": model.process_objects}},
+                          "process_objects_skipped": model.process_objects, "not_imported": dict(sorted(model.not_imported.items()))}},
         "source": {"material_id": reg.get("material_id"), "registration_version": reg.get("registration_version"),
                    "format": "dexpi", "dexpi_version": model.version, "dexpi_flavor": model.fmt, "file": source["file"],
                    "sha256": sha, "compressed": False,
@@ -463,28 +483,74 @@ def summarize(result):
 
 
 # ---------------------------------------------------------------- 흐름 방향
+def _nearest_leg(point, path):
+    """점에서 폴리라인까지 가장 가까운 선분 -> (거리, 그 선분의 진행 방향 단위벡터). 길이 0인 선분은 건너뛴다."""
+    best = None
+    for (ax, ay), (bx, by) in zip(path, path[1:]):
+        dx, dy = bx - ax, by - ay
+        length = math.hypot(dx, dy)
+        if length < 1e-9:
+            continue
+        t = min(1.0, max(0.0, ((point[0] - ax) * dx + (point[1] - ay) * dy) / (length * length)))
+        d = math.hypot(point[0] - (ax + t * dx), point[1] - (ay + t * dy))
+        if best is None or d < best[0]:
+            best = (d, (dx / length, dy / length))
+    return best
+
+
+def match_arrow(arrow, candidates):
+    """흐름 화살표 하나를 후보 길(들) 중 하나에 붙인다(HZ-PLN-22 §5.4). candidates: [(길 폴리라인, 연결 순번 목록)].
+    -> ('forward'|'backward', 연결 순번 목록) 또는 None. None인 경우(미확인으로 둔다): 길이 없음, 화살표가 길에서 ARROW_MAX_MM보다 멂,
+    두 길에 비슷하게 가까움(ARROW_TIE_MM 안), 화살표와 그 선분의 방향이 FLOW_COS보다 덜 맞음. 방향은 연결 양 끝을 잇는 직선이
+    아니라 화살표가 놓인 선분의 진행 방향(배관의 실제 경로)과 견준다."""
+    ranked = []
+    for path, indexes in candidates:
+        if path and len(path) >= 2:
+            hit = _nearest_leg(arrow["position"], path)
+            if hit is not None:
+                ranked.append((hit[0], hit[1], indexes))
+    ranked.sort(key=lambda x: x[0])
+    if not ranked or ranked[0][0] > ARROW_MAX_MM:
+        return None
+    rivals = [r for r in ranked[1:] if r[2] != ranked[0][2]]  # 같은 연결의 다른 조각은 경쟁이 아니다
+    if rivals and rivals[0][0] - ranked[0][0] < ARROW_TIE_MM:
+        return None
+    dist, leg, indexes = ranked[0]
+    cos = arrow["direction"][0] * leg[0] + arrow["direction"][1] * leg[1]
+    if abs(cos) < FLOW_COS:
+        return None
+    return ("forward" if cos > 0 else "backward"), indexes
+
+
 def _arrow_flows(model):
-    """흐름 화살표 -> {연결 순번: 'forward'|'backward'}. 화살표는 같은 구간에서 가장 가까운 연결 하나에만 붙인다."""
-    out = {}
+    """흐름 화살표 -> ({연결 순번: 'forward'|'backward'}, 붙이지 못한 화살표 목록).
+    2.0은 연결마다 그림의 ConnectorLine(시작·안쪽 점·끝)이 길이다. Proteus는 구간의 CenterLine이 길이고(처음 FromID → 끝 ToID 순서),
+    구간에 연결이 하나(구간 안 부품으로 나뉜 관계들은 한 연결)일 때만 쓴다. 그 구간 전체가 한 방향 길이라 나뉜 관계 모두에 같은 방향을 준다."""
+    by_segment = {}
+    for idx, c in enumerate(model.connections):
+        by_segment.setdefault(c["segment"], []).append(idx)
+    out, unplaced = {}, []
     for arrow in model.arrows:
-        best = None
-        for idx, c in enumerate(model.connections):
-            if c["segment"] != arrow["segment"]:
-                continue
-            a = dexpi_read._endpoint_position(model, c["source"], c["source_node"])
-            b = dexpi_read._endpoint_position(model, c["target"], c["target_node"])
-            if a is None or b is None or a == b:
-                continue
-            dx, dy = b[0] - a[0], b[1] - a[1]
-            px, py = arrow["position"]
-            t = min(1.0, max(0.0, ((px - a[0]) * dx + (py - a[1]) * dy) / (dx * dx + dy * dy)))
-            d = math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy))
-            cos = (arrow["direction"][0] * dx + arrow["direction"][1] * dy) / math.hypot(dx, dy)
-            if best is None or d < best[0]:
-                best = (d, idx, cos)
-        if best is not None and abs(best[2]) >= FLOW_COS:
-            out[best[1]] = "forward" if best[2] > 0 else "backward"
-    return out
+        idxs = by_segment.get(arrow["segment"], [])
+        if model.fmt == dexpi_read.FMT_DEXPI:
+            candidates = [(model.conn_paths.get(model.connections[i]["id"]), [i]) for i in idxs]
+        else:
+            chains = {}
+            for i in idxs:
+                chains.setdefault(model.connections[i].get("index"), []).append(i)
+            polylines = model.segment_paths.get(arrow["segment"]) or []
+            candidates = [(p, list(chains.values())[0]) for p in polylines] if len(chains) == 1 else []
+        hit = match_arrow(arrow, candidates)
+        if hit is None:
+            unplaced.append(arrow)
+            continue
+        flow, indexes = hit
+        for i in indexes:
+            if out.get(i, flow) != flow:  # 같은 연결에 서로 어긋나는 화살표가 둘이면 둘 다 믿지 않는다
+                out[i] = None
+            else:
+                out[i] = flow
+    return {k: v for k, v in out.items() if v is not None}, unplaced
 
 
 def _flow_class(model, segment_id):

@@ -225,6 +225,19 @@
             <Components property="Groups">
               <Object type="Core/Diagram.Static">
                 <Components property="Elements">
+                  <Object type="Core/Diagram.ConnectorLine">
+                    <References objects="#Pos2" property="Source"/>
+                    <References objects="#Pos3" property="Target"/>
+                  </Object>
+                </Components>
+              </Object>
+            </Components>
+            <References objects="#Pipe1" property="Represents"/>
+          </Object>
+          <Object type="Core/Diagram.RepresentationGroup">
+            <Components property="Groups">
+              <Object type="Core/Diagram.Static">
+                <Components property="Elements">
                   <Object type="Core/Diagram.ShapeUsage">
                     <Data property="Position">
                       <AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>60.0</Double></Data><Data property="Y"><Double>120.0</Double></Data></AggregatedDataValue>

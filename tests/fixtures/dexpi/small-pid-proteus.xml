@@ -57,6 +57,17 @@
       <GenericAttribute Name="LineNumberAssignmentClass" Format="string" Value="L-100"/>
       <GenericAttribute Name="PipingClassCodeAssignmentClass" Format="string" Value="A1"/>
     </GenericAttributes>
+    <PipingNetworkSegment ID="Seg-0" ComponentClass="PipingNetworkSegment">
+      <GenericAttributes Set="DexpiAttributes" Number="1">
+        <GenericAttribute Name="NominalDiameterRepresentationAssignmentClass" Format="string" Value="DN 80"/>
+      </GenericAttributes>
+      <CenterLine NumPoints="2"><Coordinate X="70" Y="177"/><Coordinate X="95" Y="177"/></CenterLine>
+      <PipeFlowArrow ID="Arrow-1" ComponentName="DIRECTION_OF_FLOW_SHAPE_FOR_PRIMARY_SEGMENT">
+        <Position><Location X="82" Y="177" Z="0"/><Axis X="0" Y="0" Z="1"/><Reference X="1" Y="0" Z="0"/></Position>
+        <Scale X="1" Y="1"/>
+      </PipeFlowArrow>
+      <Connection FromID="Pump-N2" FromNode="1" ToID="Valve-1" ToNode="1"/>
+    </PipingNetworkSegment>
     <PipingNetworkSegment ID="Seg-1" ComponentClass="PipingNetworkSegment">
       <GenericAttributes Set="DexpiAttributes" Number="1">
         <GenericAttribute Name="NominalDiameterRepresentationAssignmentClass" Format="string" Value="DN 80"/>
@@ -85,11 +96,6 @@
           <GenericAttribute Name="ReferencedConnectorNumber" Format="string" Value="OC-9"/>
         </GenericAttributes>
       </PipeOffPageConnector>
-      <PipeFlowArrow ID="Arrow-1" ComponentName="DIRECTION_OF_FLOW_SHAPE_FOR_PRIMARY_SEGMENT">
-        <Position><Location X="82" Y="177" Z="0"/><Axis X="0" Y="0" Z="1"/><Reference X="1" Y="0" Z="0"/></Position>
-        <Scale X="1" Y="1"/>
-      </PipeFlowArrow>
-      <Connection FromID="Pump-N2" FromNode="1" ToID="Valve-1" ToNode="1"/>
       <Connection FromID="Valve-1" FromNode="2" ToID="Tee-1" ToNode="1"/>
       <Connection FromID="Tee-1" FromNode="2" ToID="Tank-N1" ToNode="1"/>
       <Connection FromID="Tee-1" FromNode="3" ToID="OffOut-1" ToNode="1"/>

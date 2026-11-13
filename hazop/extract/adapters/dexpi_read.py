@@ -104,15 +104,31 @@ def detect(root):
     """뿌리 요소로 형식을 판별한다: (FMT_DEXPI, DEXPI 판) / (FMT_PROTEUS, DEXPI 판 — 없으면 Proteus 스키마 판) / None.
     FMT_*는 등록의 dexpi_flavor 값이다(HZ-PLN-22 §4.1)."""
     if root.tag == "Model":
-        for imp in root.findall("Import"):
-            m = re.search(r"/models/([0-9][0-9.]*)/", imp.get("source") or "")
-            if m and (imp.get("prefix") in ("Plant", "Core") or "Plant" in (imp.get("source") or "")):
-                return FMT_DEXPI, m.group(1)
-        return None
+        versions = import_versions(root)
+        if not versions:
+            return None
+        return FMT_DEXPI, versions.get("Plant") or sorted(versions.values())[0]
     if root.tag == "PlantModel" and root.find("PlantInformation") is not None:
         info = root.find("PlantInformation")
-        return FMT_PROTEUS, info.get("ApplicationVersion") or info.get("SchemaVersion")
+        # DEXPI 판은 Application이 Dexpi일 때의 ApplicationVersion이다. 그 밖(CAD 프로그램 이름·버전)은 DEXPI 판이 아니다
+        dexpi = info.get("Application") == "Dexpi" and info.get("ApplicationVersion")
+        return FMT_PROTEUS, dexpi or None
     return None
+
+
+_MODEL_SOURCE = re.compile(r"https?://data\.dexpi\.org/models/([0-9]+(?:\.[0-9]+)*)/(Core|Plant)\.xml\Z")
+KNOWN_VERSIONS = ("2.0.0", "2.0.1")  # 클래스 목록(2.0.1)으로 읽을 수 있는 DEXPI XML 판
+
+
+def import_versions(root):
+    """Model의 Import 가운데 DEXPI 공식 주소(data.dexpi.org/models/<판>/Core·Plant.xml)의 판: {'Core': 판, 'Plant': 판}.
+    주소는 이름표로만 읽고 열지 않는다. 다른 주소는 판으로 세지 않는다."""
+    out = {}
+    for imp in root.findall("Import"):
+        m = _MODEL_SOURCE.match(imp.get("source") or "")
+        if m:
+            out[m.group(2)] = m.group(1)
+    return out
 
 
 # ---------------------------------------------------------------- 중간 형태
@@ -128,6 +144,10 @@ class Model:
         self.items = {}  # id -> 항목 dict(equipment·piping·offpage·instrument)
         self.nozzles = {}  # id -> {id, cls, parent, port, attrs, nodes, xml}
         self.node_owner = {}  # 노드 id -> (항목 id, 순번)
+        self.node_index = {}  # (항목 id, 순번) -> 노드 id (Proteus FromNode·ToNode를 상수 시간에 풀려고)
+        self.conn_paths = {}  # 2.0 연결 id -> 그림의 실제 경로 [(x, y)…] (ConnectorLine: 시작·안쪽 점·끝)
+        self.segment_paths = {}  # Proteus 구간 id -> 구간의 CenterLine 목록 [[(x, y)…], …](각각 FromID에서 ToID 쪽 순서로 본다)
+        self.not_imported = {}  # 그래프에 자리가 없어 옮기지 않은 요소의 종류 -> 개수(HZ-PLN-22 §3.6·§5.5)
         self.connections = []  # {id, cls, source, source_node, target, target_node, segment, system}
         self.segments = {}  # id -> {id, system, attrs}
         self.systems = {}  # id -> {id, attrs}
@@ -137,6 +157,7 @@ class Model:
         self.act_systems = {}  # 구동계 id -> {id, valves, fail_action, number}
         self.arrows = []  # {segment, position, direction}
         self.node_pos = {}  # 노드 id -> (x, y)
+        self.pos_objects = {}  # 2.0 PipingNodePosition 객체 id -> (x, y)
         self.diagram_count = 0
         self.process_objects = 0
         self.issues = []  # {check, target, reason}
@@ -252,6 +273,11 @@ def _data_point(obj, prop="Position"):
 
 def read_dexpi_xml(root, version):
     m = Model(FMT_DEXPI, version)  # Import의 주소는 열지 않는다. 판 번호는 detect가 이미 뽑았다
+    versions = import_versions(root)
+    if len(set(versions.values())) > 1:
+        m.issue("dexpi_version_mixed", None, "Core와 Plant의 DEXPI 판이 다름(%s)" % ", ".join("%s %s" % kv for kv in sorted(versions.items())))
+    if version not in KNOWN_VERSIONS:
+        m.issue("dexpi_version_unknown", None, "DEXPI 판 %s는 2.0.1 클래스 목록으로 읽음(클래스가 다르면 미분류로 가져옴)" % version)
     objects = {}  # id -> Element
 
     def collect(obj, parent_id, prop, index, owner_path):
@@ -296,6 +322,11 @@ def read_dexpi_xml(root, version):
                     _read_pif(m, obj)
                 elif prop == "ActuatingSystems":
                     _read_act_system(m, obj)
+                elif prop == "TaggedPlantItems":  # 대응표에 없는 클래스의 설비: 미분류 노드로 가져온다(§5.5)
+                    _read_other(m, obj)
+                elif prop not in ("ActuatingFunctions",):  # 그래프에 자리가 없는 것은 종류와 개수를 남긴다(§3.6)
+                    key = obj.get("type") or "Object"
+                    m.not_imported[key] = m.not_imported.get(key, 0) + 1
     # ActuatingFunction과 정보 흐름은 어디에 있든 클래스로 모은다
     for obj in _iter_objects(root):
         cls = dexpi_map.class_of(obj.get("type"))
@@ -329,6 +360,7 @@ def _register_nodes(m, item_id, obj):
     ids = _node_ids(obj)
     for i, nid in enumerate(ids):
         m.node_owner[nid] = (item_id, i)
+        m.node_index[(item_id, i)] = nid
     return ids
 
 
@@ -393,6 +425,26 @@ def _offpage_reference(it):
     return None
 
 
+def _read_other(m, obj):
+    """클래스를 모르는 객체를 버리지 않고 미분류 항목(group other)으로 둔다. 노드가 있으면 노드도 등록한다."""
+    oid = obj.get("_id")
+    cls = dexpi_map.class_of(obj.get("type"))
+    frag, cut = _fragment(obj)
+    nodes = _register_nodes(m, oid, obj)
+    if oid in m.items:
+        m.duplicate_ids.append(oid)
+    item = {"id": oid, "cls": cls, "group": "other", "attrs": _data_attrs(obj), "nodes": nodes, "xml": frag,
+            "xml_cut": cut, "position": None, "has_id": bool(obj.get("id")), "nozzles": []}
+    m.items[oid] = item
+    for noz in _children(obj, "Nozzles"):
+        nid = noz.get("_id")
+        nattrs = _data_attrs(noz)
+        nn = _register_nodes(m, nid, noz)
+        m.nozzles[nid] = {"id": nid, "cls": dexpi_map.class_of(noz.get("type")), "parent": oid,
+                          "port": nattrs.get("SubTagName") or nid, "attrs": nattrs, "nodes": nn}
+        item["nozzles"].append(nid)
+
+
 def _read_pif(m, obj):
     oid = obj.get("_id")
     cls = dexpi_map.class_of(obj.get("type"))
@@ -451,6 +503,8 @@ def _read_diagram(m, root, objects):
         t = obj.get("type") or ""
         if t == "Plant/Diagram.PipingNodePosition" or t == "Plant/Diagram.InstrumentationNodePosition":
             p = _data_point(obj)
+            if p is not None and obj.get("_id"):
+                m.pos_objects[obj.get("_id")] = p
             for nid in _refs(obj, "Node"):
                 if p is not None:
                     m.node_pos[nid] = p
@@ -483,6 +537,22 @@ def _read_diagram(m, root, objects):
                 item["position"] = (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
 
 
+def _connector_path(m, line, pos_of):
+    """ConnectorLine -> [시작 위치, 안쪽 점…, 끝 위치]. 시작·끝 위치를 모르면 None."""
+    src, dst = (_refs(line, "Source") or [None])[0], (_refs(line, "Target") or [None])[0]
+    a, b = pos_of.get(src), pos_of.get(dst)
+    if a is None or b is None:
+        return None
+    inner = []
+    for d in line.findall("Data"):
+        if d.get("property") == "InnerPoints":
+            for agg in d.findall("AggregatedDataValue"):
+                v = {x.get("property"): _float(_data_value(x)) for x in agg.findall("Data")}
+                if v.get("X") is not None and v.get("Y") is not None:
+                    inner.append((v["X"], v["Y"]))
+    return [a] + inner + [b]
+
+
 def _walk_groups(m, group, objects, represents):
     """표현 묶음(RepresentationGroup)을 따라 내려가며 Represents 대상의 모양 위치와 화살표를 모은다."""
     rep = _refs(group, "Represents")
@@ -492,6 +562,10 @@ def _walk_groups(m, group, objects, represents):
             t = child.get("type") or ""
             if t == "Core/Diagram.ShapeUsage" and current in m.items and m.items[current]["position"] is None:
                 m.items[current]["position"] = _data_point(child)
+            if t == "Core/Diagram.ConnectorLine" and current is not None and current not in m.conn_paths:
+                path = _connector_path(m, child, m.pos_objects)
+                if path is not None:
+                    m.conn_paths[current] = path
             if t == "Core/Diagram.PipeFlowArrow" and current in m.segments:
                 for su in child.iter("Object"):
                     if (su.get("type") or "") == "Core/Diagram.ShapeUsage":
@@ -542,12 +616,29 @@ def _assoc(el, kind):
     return [a.get("ItemID") for a in el.findall("Association") if a.get("Type") == kind and a.get("ItemID")]
 
 
+# Proteus 구간 안의 그림·보조 요소(그래프에 옮길 것이 아님)
+_SEGMENT_DECOR = ("GenericAttributes", "Label", "CenterLine", "Association", "PipeSlopeSymbol", "InsulationSymbol", "Presentation",
+                  "Position", "Extent", "Text", "Scale", "Shape", "Circle", "PolyLine", "Curve", "Trace", "Ellipse", "Polygon",
+                  "Rectangle", "Arc", "ConnectionPoints")
+_PROTEUS_ROOT_HANDLED = ("PlantInformation", "MetaData", "ShapeCatalogue", "Drawing", "Equipment", "PipingNetworkSystem",
+                         "ProcessInstrumentationFunction", "ActuatingSystem", "ActuatingFunction", "InformationFlow",
+                         "ProcessSignalGeneratingFunction")
+
+
+def _float_pair(x, y):
+    a, b = _float(x), _float(y)
+    return (a, b) if a is not None and b is not None else None
+
+
 def read_proteus(root, version):
     m = Model(FMT_PROTEUS, version)
     info = root.find("PlantInformation")
     m.application = {"application": info.get("Application"), "version": info.get("ApplicationVersion"),
                      "units": info.get("Units")} if info is not None else None
     m.schema_version = info.get("SchemaVersion") if info is not None else None
+    if not version:
+        m.issue("dexpi_version_unknown", None, "파일에 DEXPI 판이 없음(Application이 Dexpi가 아님): 응용 프로그램 %s %s, 스키마 %s"
+                % (info.get("Application"), info.get("ApplicationVersion"), m.schema_version))
     ext = root.find("./Drawing/Extent")
     if ext is not None and ext.find("Max") is not None:
         m.drawing["width"] = _float(ext.find("Max").get("X"))
@@ -571,6 +662,7 @@ def read_proteus(root, version):
                 nid = n.get("ID") or "%s__node_%d" % (item_id, i + 1)
                 ids.append(nid)
                 m.node_owner[nid] = (item_id, i)
+                m.node_index[(item_id, i)] = nid
                 p = flip(_location(n))
                 if p is not None:
                     m.node_pos[nid] = p
@@ -609,23 +701,38 @@ def read_proteus(root, version):
                 gid = seg.get("ID")
                 m.segments[gid] = {"id": gid, "system": sid, "attrs": _ga(seg)}
                 seg_items, seg_conns = [], []
+                for cl in seg.findall("CenterLine"):  # 구간 안 부품 사이마다 CenterLine이 따로 있을 수 있다(문서 순서 = 길 순서)
+                    pts = [flip(_float_pair(c.get("X"), c.get("Y"))) for c in cl.findall("Coordinate")]
+                    if pts and None not in pts:
+                        m.segment_paths.setdefault(gid, []).append(pts)
                 for doc_index, it in enumerate(seg):
-                    if it.tag in ("PipingComponent", "PipeOffPageConnector") and it.get("ID"):
+                    inline = it.tag in ("PipingComponent", "PipeOffPageConnector") or (
+                        it.tag not in _SEGMENT_DECOR and it.tag not in ("Connection", "PipeFlowArrow")
+                        and it.find("ConnectionPoints") is not None)
+                    if inline:
+                        if not it.get("ID"):  # ID 없는 부품도 길에서 빠지지 않게 경로 ID를 준다
+                            it.set("ID", "%s__item_%d" % (re.sub(r"[^A-Za-z0-9_]", "_", gid or "seg"), doc_index))
+                            m.issue("dexpi_item_without_id", it.get("ID"), "ID가 없는 부품이라 구간 안 위치로 ID를 만듦")
                         seg_items.append((doc_index, it.get("ID")))
                         iid = it.get("ID")
                         dup(iid)
-                        cls = it.get("ComponentClass") or ("PipeOffPageConnector" if it.tag == "PipeOffPageConnector" else None)
+                        cls = it.get("ComponentClass") or ("PipeOffPageConnector" if it.tag == "PipeOffPageConnector" else it.tag)
                         frag, cut = _fragment(it)
                         nodes = register(it, iid)
                         group = dexpi_map.group_of(cls) if cls and dexpi_map.library_ready() else None
                         if it.tag == "PipeOffPageConnector":
                             group = "offpage"
+                        elif it.tag != "PipingComponent":
+                            group = "other"  # ProcessInstrument·Equipment·PropertyBreak 등: 미분류로 길에 남긴다
                         a = _ga(it)
                         ref = {"drawing": a.get("ReferencedDrawingNumber"), "connector": a.get("ReferencedConnectorNumber"),
                                "object": None} if it.tag == "PipeOffPageConnector" else None
                         m.items[iid] = {"id": iid, "cls": cls, "group": group or "piping", "attrs": a, "nodes": nodes,
                                         "segment": gid, "system": sid, "xml": frag, "xml_cut": cut,
                                         "position": flip(_location(it)), "has_id": True, "reference": ref}
+                    elif it.tag not in _SEGMENT_DECOR and it.tag not in ("Connection", "PipeFlowArrow"):
+                        key = it.get("ComponentClass") or it.tag
+                        m.not_imported[key] = m.not_imported.get(key, 0) + 1
                     elif it.tag == "Connection":
                         seg_conns.append({"id": None, "synthetic_id": "%s__Connection_%d" % (re.sub(r"[^A-Za-z0-9_]", "_", gid), len(seg_conns) + 1),
                                           "cls": "PipingConnection", "source": it.get("FromID"),
@@ -671,6 +778,16 @@ def read_proteus(root, version):
             for fn in child.findall("ActuatingFunction"):
                 m.actuating[fn.get("ID")] = [sid]
             m.act_systems[sid] = entry
+        elif child.tag not in _PROTEUS_ROOT_HANDLED:  # 모르는 최상위 요소: 노드가 있으면 미분류 항목으로, 아니면 종류·개수만
+            key = child.get("ComponentClass") or child.tag
+            if child.get("ID") and child.find("ConnectionPoints") is not None:
+                iid = child.get("ID")
+                dup(iid)
+                frag, cut = _fragment(child)
+                m.items[iid] = {"id": iid, "cls": key, "group": "other", "attrs": _ga(child), "nodes": register(child, iid),
+                                "xml": frag, "xml_cut": cut, "position": flip(_location(child)), "has_id": True, "nozzles": []}
+            else:
+                m.not_imported[key] = m.not_imported.get(key, 0) + 1
     # 정보 흐름·측정 기능은 어느 층에 있든 모은다
     seen_flows = {f["id"] for f in m.info_flows}
     for el in root.iter("InformationFlow"):
@@ -745,15 +862,12 @@ def _segment_paths(conns, items, explode):
 
 
 def _proteus_node(m, item_id, node_no):
-    """Connection의 FromNode·ToNode(1부터 센 순번)를 그 항목의 노드 ID로."""
+    """Connection의 FromNode·ToNode(1부터 센 순번)를 그 항목의 노드 ID로(색인으로 찾는다)."""
     try:
         idx = int(node_no) - 1
     except (TypeError, ValueError):
         return None
-    for nid, (owner, i) in m.node_owner.items():
-        if owner == item_id and i == idx:
-            return nid
-    return None
+    return m.node_index.get((item_id, idx))
 
 
 def _proteus_flow(m, el):
@@ -762,9 +876,10 @@ def _proteus_flow(m, el):
                          "target": end[0] if end else None})
 
 
-def read(data):
-    """바이트 -> Model. 형식을 판별하지 못하면 DexpiError(dexpi_unknown_format)."""
-    root = parse_safely(data)
+def read(data, root=None):
+    """바이트 -> Model. 형식을 판별하지 못하면 DexpiError(dexpi_unknown_format). root: 이미 parse_safely로 읽은 뿌리가 있으면 넘겨
+    다시 읽지 않는다(등록에서 같은 파일을 세 번 읽던 것을 한 번으로, 검토 반려 3번)."""
+    root = root if root is not None else parse_safely(data)
     found = detect(root)
     if found is None:
         raise DexpiError("dexpi_unknown_format", "DEXPI 파일(Model/Import 또는 PlantModel/PlantInformation)이 아님")

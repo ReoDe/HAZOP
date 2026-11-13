@@ -90,17 +90,19 @@ def project_ids(graph_root, doc_root):
 
 def project_graphs(project_id, graph_root):
     """(graph 목록, notes). 같은 graph_id는 graph.json 수정 시각이 가장 늦은 것 하나."""
-    best, notes = {}, []
+    from hazop.graph import sources
+    cands, seen, notes = [], {}, []
     for path, g in _scan(graph_root, "graph.json"):
         if g.get("project_id") != project_id:
             continue
-        key = (os.path.getmtime(path), path)
         gid = g.get("graph_id")
-        if gid in best:
+        if gid in seen:
             notes.append("같은 도면 ID %s의 그래프가 여럿 — 가장 최근 추출만 씀" % gid)
-        if gid not in best or key > best[gid][0]:
-            best[gid] = (key, g)
-    return [best[k][1] for k in sorted(best)], sorted(set(notes))
+        seen[gid] = True
+        cands.append({"gid": gid, "key": (os.path.getmtime(path), path), "graph": g,
+                      "name": os.path.basename(os.path.dirname(path))})
+    chosen, more = sources.pick(project_id, cands, graph_root=graph_root)  # 형식이 섞인 같은 번호는 먼저 있던 형식(또는 사람이 고른 형식)
+    return [chosen[k]["graph"] for k in sorted(chosen, key=str)], sorted(set(notes) | set(more))
 
 
 def project_documents(project_id, doc_root):
