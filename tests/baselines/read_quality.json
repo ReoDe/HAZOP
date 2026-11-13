@@ -1,0 +1,400 @@
+{
+ "pages": {
+  "SNP-M-101": {
+   "attribute": {
+    "correct": 0,
+    "false_pos": 0,
+    "units": 10
+   },
+   "connection": {
+    "correct": 32,
+    "false_pos": 0,
+    "units": 47
+   },
+   "kind": {
+    "correct": 26,
+    "false_pos": 0,
+    "units": 26
+   },
+   "tag": {
+    "correct": 17,
+    "false_pos": 0,
+    "units": 17
+   }
+  },
+  "SNP-M-102": {
+   "attribute": {
+    "correct": 0,
+    "false_pos": 0,
+    "units": 3
+   },
+   "connection": {
+    "correct": 12,
+    "false_pos": 0,
+    "units": 20
+   },
+   "kind": {
+    "correct": 15,
+    "false_pos": 0,
+    "units": 15
+   },
+   "tag": {
+    "correct": 12,
+    "false_pos": 0,
+    "units": 12
+   }
+  },
+  "SNP-M-201": {
+   "attribute": {
+    "correct": 0,
+    "false_pos": 0,
+    "units": 5
+   },
+   "connection": {
+    "correct": 18,
+    "false_pos": 0,
+    "units": 32
+   },
+   "kind": {
+    "correct": 19,
+    "false_pos": 0,
+    "units": 19
+   },
+   "tag": {
+    "correct": 15,
+    "false_pos": 0,
+    "units": 15
+   }
+  },
+  "SNP-M-301": {
+   "attribute": {
+    "correct": 0,
+    "false_pos": 0,
+    "units": 7
+   },
+   "connection": {
+    "correct": 19,
+    "false_pos": 0,
+    "units": 32
+   },
+   "kind": {
+    "correct": 17,
+    "false_pos": 0,
+    "units": 17
+   },
+   "tag": {
+    "correct": 13,
+    "false_pos": 0,
+    "units": 13
+   }
+  },
+  "SNP-M-401": {
+   "attribute": {
+    "correct": 0,
+    "false_pos": 0,
+    "units": 9
+   },
+   "connection": {
+    "correct": 26,
+    "false_pos": 0,
+    "units": 40
+   },
+   "kind": {
+    "correct": 13,
+    "false_pos": 0,
+    "units": 15
+   },
+   "tag": {
+    "correct": 9,
+    "false_pos": 0,
+    "units": 9
+   }
+  },
+  "SNP-M-501": {
+   "attribute": {
+    "correct": 0,
+    "false_pos": 0,
+    "units": 5
+   },
+   "connection": {
+    "correct": 13,
+    "false_pos": 0,
+    "units": 22
+   },
+   "kind": {
+    "correct": 15,
+    "false_pos": 0,
+    "units": 16
+   },
+   "tag": {
+    "correct": 8,
+    "false_pos": 0,
+    "units": 13
+   }
+  },
+  "apr1400-008": {
+   "attribute": {
+    "correct": 34,
+    "false_pos": 2,
+    "units": 45
+   },
+   "connection": {
+    "correct": 115,
+    "false_pos": 24,
+    "units": 163
+   },
+   "kind": {
+    "correct": 67,
+    "false_pos": 24,
+    "units": 151
+   },
+   "tag": {
+    "correct": 27,
+    "false_pos": 0,
+    "units": 119
+   }
+  },
+  "apr1400-012": {
+   "attribute": {
+    "correct": 11,
+    "false_pos": 0,
+    "units": 47
+   },
+   "connection": {
+    "correct": 42,
+    "false_pos": 1,
+    "units": 47
+   },
+   "kind": {
+    "correct": 5,
+    "false_pos": 6,
+    "units": 32
+   },
+   "tag": {
+    "correct": 5,
+    "false_pos": 0,
+    "units": 18
+   }
+  },
+  "apr1400-016": {
+   "attribute": {
+    "correct": 30,
+    "false_pos": 3,
+    "units": 43
+   },
+   "connection": {
+    "correct": 96,
+    "false_pos": 54,
+    "units": 214
+   },
+   "kind": {
+    "correct": 79,
+    "false_pos": 4,
+    "units": 120
+   },
+   "tag": {
+    "correct": 22,
+    "false_pos": 1,
+    "units": 92
+   }
+  },
+  "apr1400-025": {
+   "attribute": {
+    "correct": 33,
+    "false_pos": 6,
+    "units": 131
+   },
+   "connection": {
+    "correct": 146,
+    "false_pos": 32,
+    "units": 240
+   },
+   "kind": {
+    "correct": 96,
+    "false_pos": 17,
+    "units": 134
+   },
+   "tag": {
+    "correct": 41,
+    "false_pos": 0,
+    "units": 94
+   }
+  },
+  "apr1400-033": {
+   "attribute": {
+    "correct": 14,
+    "false_pos": 0,
+    "units": 21
+   },
+   "connection": {
+    "correct": 40,
+    "false_pos": 35,
+    "units": 101
+   },
+   "kind": {
+    "correct": 54,
+    "false_pos": 7,
+    "units": 74
+   },
+   "tag": {
+    "correct": 31,
+    "false_pos": 0,
+    "units": 50
+   }
+  },
+  "apr1400-046": {
+   "attribute": {
+    "correct": 2,
+    "false_pos": 9,
+    "units": 23
+   },
+   "connection": {
+    "correct": 80,
+    "false_pos": 11,
+    "units": 118
+   },
+   "kind": {
+    "correct": 59,
+    "false_pos": 1,
+    "units": 93
+   },
+   "tag": {
+    "correct": 0,
+    "false_pos": 0,
+    "units": 0
+   }
+  },
+  "apr1400-062": {
+   "attribute": {
+    "correct": 2,
+    "false_pos": 2,
+    "units": 38
+   },
+   "connection": {
+    "correct": 35,
+    "false_pos": 7,
+    "units": 102
+   },
+   "kind": {
+    "correct": 32,
+    "false_pos": 0,
+    "units": 85
+   },
+   "tag": {
+    "correct": 28,
+    "false_pos": 0,
+    "units": 49
+   }
+  },
+  "apr1400-063": {
+   "attribute": {
+    "correct": 8,
+    "false_pos": 21,
+    "units": 25
+   },
+   "connection": {
+    "correct": 128,
+    "false_pos": 97,
+    "units": 239
+   },
+   "kind": {
+    "correct": 58,
+    "false_pos": 20,
+    "units": 115
+   },
+   "tag": {
+    "correct": 33,
+    "false_pos": 2,
+    "units": 92
+   }
+  },
+  "apr1400-072": {
+   "attribute": {
+    "correct": 7,
+    "false_pos": 0,
+    "units": 18
+   },
+   "connection": {
+    "correct": 57,
+    "false_pos": 116,
+    "units": 146
+   },
+   "kind": {
+    "correct": 36,
+    "false_pos": 2,
+    "units": 100
+   },
+   "tag": {
+    "correct": 16,
+    "false_pos": 0,
+    "units": 58
+   }
+  },
+  "apr1400-097": {
+   "attribute": {
+    "correct": 7,
+    "false_pos": 5,
+    "units": 32
+   },
+   "connection": {
+    "correct": 42,
+    "false_pos": 55,
+    "units": 97
+   },
+   "kind": {
+    "correct": 32,
+    "false_pos": 12,
+    "units": 80
+   },
+   "tag": {
+    "correct": 26,
+    "false_pos": 0,
+    "units": 56
+   }
+  },
+  "apr1400-105": {
+   "attribute": {
+    "correct": 7,
+    "false_pos": 10,
+    "units": 96
+   },
+   "connection": {
+    "correct": 188,
+    "false_pos": 113,
+    "units": 432
+   },
+   "kind": {
+    "correct": 37,
+    "false_pos": 13,
+    "units": 166
+   },
+   "tag": {
+    "correct": 10,
+    "false_pos": 0,
+    "units": 80
+   }
+  },
+  "apr1400-128": {
+   "attribute": {
+    "correct": 12,
+    "false_pos": 10,
+    "units": 47
+   },
+   "connection": {
+    "correct": 78,
+    "false_pos": 150,
+    "units": 141
+   },
+   "kind": {
+    "correct": 70,
+    "false_pos": 18,
+    "units": 96
+   },
+   "tag": {
+    "correct": 25,
+    "false_pos": 0,
+    "units": 39
+   }
+  }
+ }
+}
