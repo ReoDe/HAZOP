@@ -172,6 +172,30 @@ def icons_problems(bundle_dir, repo=REPO_ROOT):
     return probs
 
 
+def drawing_symbols_problems(bundle_dir, repo=REPO_ROOT):
+    """묶음 안 그리는 기호 폴더(정리된 보기, resources/library/drawing-symbols)가 저장소와 바이트까지 같은지(빠짐·다름·목록 밖 파일). 문제 목록."""
+    import hashlib
+    src = os.path.join(repo, *paths.FOLDERS["drawing-symbols"].rel)
+    dest = paths.folder_in(os.path.join(bundle_dir, "_internal"), "drawing-symbols")
+    if not os.path.isdir(dest):
+        return ["묶음에 그리는 기호 폴더가 없음"]
+
+    def digest(path):
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+    probs = []
+    for name in sorted(os.listdir(src)):
+        if not name.endswith((".svg", ".json")):
+            continue
+        p = os.path.join(dest, name)
+        if not os.path.isfile(p):
+            probs.append("기호 빠짐: %s" % name)
+        elif digest(p) != digest(os.path.join(src, name)):
+            probs.append("기호 바이트 다름: %s" % name)
+    probs += ["목록 밖 기호 파일: %s" % f for f in sorted(os.listdir(dest)) if f.endswith(".svg") and not os.path.isfile(os.path.join(src, f))]
+    return probs
+
+
 WEB_SHELL = ("hazop", "shell", "web")   # 새 웹 화면 폴더(저장소와 같은 상대 위치로 _internal 아래에 묶인다)
 WEB_REQUIRED = ("index.html", "app.css", "tokens.css", "js/main.js", "vendor/preact.module.js", "vendor/hooks.module.js",
                 "vendor/htm.module.js")
@@ -562,6 +586,7 @@ def steps(args, summary, run_root, out, repo_dirs):
     summary["checks"]["licenses_problems"] = licenses_problems(target)
     summary["checks"]["symbols_problems"] = symbols_problems(target)
     summary["checks"]["icons_problems"] = icons_problems(target)
+    summary["checks"]["drawing_symbols_problems"] = drawing_symbols_problems(target)
     summary["checks"]["web_problems"] = web_problems(target)
     env = child_env(tmp)
     summary["child_path"] = env["PATH"]
@@ -677,6 +702,7 @@ def main(argv=None):
         and not checks.get("licenses_problems", ["미실행"])
         and not checks.get("symbols_problems", ["미실행"])
         and not checks.get("icons_problems", ["미실행"])
+        and not checks.get("drawing_symbols_problems", ["미실행"])
         and not checks.get("web_problems", ["미실행"])
         and not checks.get("translation_problems", ["미실행"])
         and not checks.get("pdf_problems", ["미실행"])

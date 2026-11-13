@@ -222,7 +222,7 @@ class ScriptLoadingTest(unittest.TestCase):
                 with self.subTest(name=bad), self.assertRaises(ValueError):
                     data.script_module(bad)
             self.assertEqual(data._script_cache, {})
-        self.assertEqual(data.SCRIPT_NAMES, ("extract_drawio", "extract_pdf", "build_graph"))
+        self.assertEqual(data.SCRIPT_NAMES, ("extract_drawio", "extract_pdf", "extract_dexpi", "build_graph"))
 
 
 # ---------------------------------------------------------------- 3) 자원 루트·작업 루트 분리 ①~⑤
@@ -393,7 +393,7 @@ class BuildSpecTest(unittest.TestCase):
         self.assertTrue(data)
         self.assertEqual({n for n, f in paths.FOLDERS.items()
                           if f.root == "resource" and any(s.startswith(paths.folder_rel(n) + "/") for s in data)},
-                         {"deviations", "risk-criteria", "patterns", "symbols", "icons"})
+                         {"deviations", "risk-criteria", "patterns", "symbols", "icons", "drawing-symbols"})
         self.assertFalse([s for s in self.srcs if "__pycache__" in s])
 
     def test_spec_text(self):
