@@ -172,6 +172,40 @@ def icons_problems(bundle_dir, repo=REPO_ROOT):
     return probs
 
 
+WEB_SHELL = ("hazop", "shell", "web")   # 새 웹 화면 폴더(저장소와 같은 상대 위치로 _internal 아래에 묶인다)
+WEB_REQUIRED = ("index.html", "app.css", "tokens.css", "js/main.js", "vendor/preact.module.js", "vendor/hooks.module.js",
+                "vendor/htm.module.js")
+
+
+def web_problems(bundle_dir, repo=REPO_ROOT):
+    """묶음 안 새 웹 화면 폴더가 저장소와 같은지(빠짐·바이트 다름·목록 밖 파일). 묶음에 없으면 새 틀이 뜨지 않는다. 문제 목록.
+    필수 파일(진입 html·스타일·main.js·묶음 라이브러리)이 없거나, 묶음 라이브러리 고지(licenses/preact·htm)가 실행 파일 옆에 없으면 문제다."""
+    import hashlib
+
+    def tree(root):
+        out = {}
+        for d, dirs, files in os.walk(root):
+            dirs[:] = sorted(x for x in dirs if x != "__pycache__")
+            for f in files:
+                p = os.path.join(d, f)
+                with open(p, "rb") as fh:
+                    out[os.path.relpath(p, root).replace("\\", "/")] = hashlib.sha256(fh.read()).hexdigest()
+        return out
+    src = os.path.join(repo, *WEB_SHELL)
+    dest = os.path.join(bundle_dir, "_internal", *WEB_SHELL)
+    if not os.path.isdir(dest):
+        return ["묶음에 새 웹 화면 폴더가 없음"]
+    want, got = tree(src), tree(dest)
+    probs = ["웹 파일 빠짐: %s" % n for n in sorted(set(want) - set(got))]
+    probs += ["웹 파일 바이트 다름: %s" % n for n in sorted(set(want) & set(got)) if want[n] != got[n]]
+    probs += ["묶음에만 있는 웹 파일: %s" % n for n in sorted(set(got) - set(want))]
+    probs += ["필수 웹 파일 없음: %s" % n for n in WEB_REQUIRED if n not in got]
+    for name in ("preact", "htm"):
+        if not os.path.isfile(os.path.join(bundle_dir, "licenses", name, "LICENSE")):
+            probs.append("묶음 라이브러리 고지 없음: licenses/%s/LICENSE" % name)
+    return probs
+
+
 QT_TRANSLATION_FILE = ("PySide6", "translations", "qtbase_ko.qm")  # _internal 아래
 
 
@@ -527,6 +561,7 @@ def steps(args, summary, run_root, out, repo_dirs):
     summary["checks"]["licenses_problems"] = licenses_problems(target)
     summary["checks"]["symbols_problems"] = symbols_problems(target)
     summary["checks"]["icons_problems"] = icons_problems(target)
+    summary["checks"]["web_problems"] = web_problems(target)
     env = child_env(tmp)
     summary["child_path"] = env["PATH"]
     start = time.time()
@@ -641,6 +676,7 @@ def main(argv=None):
         and not checks.get("licenses_problems", ["미실행"])
         and not checks.get("symbols_problems", ["미실행"])
         and not checks.get("icons_problems", ["미실행"])
+        and not checks.get("web_problems", ["미실행"])
         and not checks.get("translation_problems", ["미실행"])
         and not checks.get("pdf_problems", ["미실행"])
         and not checks.get("chat_tools_problems", ["미실행"])
