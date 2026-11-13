@@ -194,7 +194,7 @@ class BulkTest(Base):
 
 
 class ReviewFixTest(Base):
-    """cfff443 검토 1회 지적 재현(D:/HAZOP-trials/2026-11-14-review-aireview/repro_storage*.py를 시험으로 옮김)."""
+    """cfff443 검토 1회 지적 재현(저장소 밖 시험 폴더 2026-11-14-review-aireview의 repro_storage*.py를 시험으로 옮김)."""
 
     def setUp(self):
         super().setUp()
