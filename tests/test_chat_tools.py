@@ -656,7 +656,8 @@ class SecondTierTest(ChatToolsBase):
 
 class RegistryTest(ChatToolsBase):
     MIN = ["count", "find", "get_component", "neighbors", "summary", "trace_flow", "trace_path"]
-    MORE = ["enclose", "get_document", "get_node", "get_worksheet", "list_nodes", "search", "search_documents"]
+    MORE = ["enclose", "find_major_equipment", "get_document", "get_node", "get_worksheet", "list_nodes", "make_candidates",
+            "outside_components", "search", "search_documents"]
 
     def test_registry_lists_tools(self):
         self.assertEqual(sorted(self.tools.REGISTRY), sorted(self.MIN + self.MORE))

@@ -788,12 +788,13 @@ def _intent(nd):
 def _node_row(idx, nd):
     members = nd.get("members") or []
     return {"node_id": nd.get("node_id"), "name": nd.get("name"), "state": nd.get("state") or nd.get("status"),
-            "origin": nd.get("origin"), "rev": nd.get("rev"),
+            "origin": nd.get("origin"), "rev": nd.get("rev"), "locked": bool(nd.get("locked")), "batch_id": nd.get("batch_id"),
             "member_count": len(members),
             "sheets": sorted({idx.nodes[m]["sheet"] for m in members if m in idx.nodes and idx.nodes[m].get("sheet")})}
 
 
-@tool("get_node", "검토구간 하나: 이름·설계 의도·구성요소(50개까지와 총수)·걸친 도면·상태(확정·잠금·origin).",
+@tool("get_node", "검토구간 하나: 이름·설계 의도(text, by)·basis·구성요소(쪽으로)·걸친 도면·state(applied|confirmed|locked)·origin·rev·set_rev·"
+      "batch_id·확정(confirmed)·잠금(locked)·겹치는 구간(overlaps). locked나 confirmed인 구간, 사람이 쓴 이름·설계 의도(by=user)는 바꾸는 동작을 내지 않는다.",
       {"node_id": _STR, "limit": LIMIT, "cursor": CURSOR}, ["node_id"], tier="more", returns=("node", "component"))
 def get_node(ctx, node_id, limit=50, cursor=None):
     idx = ctx.index
@@ -806,10 +807,15 @@ def get_node(ctx, node_id, limit=50, cursor=None):
     known = [m for m in members if m in idx.nodes]
     rows = [_describe(idx, m) for m in known]
     set_rev = next((ns.get("set_rev") for ns in ctx.node_sets or [] if nd in ((ns or {}).get("nodes") or [])), None)
-    head = dict(_node_row(idx, nd), design_intent=_intent(nd),
-                design_intent_by=(nd.get("design_intent") or {}).get("by") if isinstance(nd.get("design_intent"), dict) else None,
-                locked=nd.get("locked"), batch_id=nd.get("batch_id"), set_rev=set_rev,
-                unknown_members=len(members) - len(known))
+    mine = set(members)
+    overlaps = sorted(({"node_id": o.get("node_id"), "shared": len(mine & set(o.get("members") or []))}
+                       for o in _all_nodes(ctx) if o is not nd and mine & set(o.get("members") or [])),
+                      key=lambda x: (-x["shared"], str(x["node_id"])))
+    di = nd.get("design_intent")
+    head = dict(_node_row(idx, nd), design_intent=_intent(nd), design_intent_by=di.get("by") if isinstance(di, dict) else None,
+                name_by=nd.get("name_by"), basis=nd.get("basis"), boundary_hint=nd.get("boundary_hint"),
+                locked=nd.get("locked"), confirmed=nd.get("confirmed"), screen=nd.get("screen"), set_rev=set_rev,
+                overlaps=overlaps[:20], overlap_count=len(overlaps), unknown_members=len(members) - len(known))
     unc, unc_total = _uncertain(ctx, known)
     return _paged(ctx, rows, limit, cursor, lambda part: dict(head, members=part), sources=_sources(idx, known),
                   uncertain=unc, **_cap_note(unc_total))
@@ -1029,3 +1035,131 @@ def get_document(ctx, chunk_id, cursor=None):
             data.update(part=None, text="", extracted=rest[i:i + ITEMS_PER_PAGE])
         return data
     return _paged(ctx, units, 1, cursor, build, sources=[_doc_source(rec)])
+
+
+# ---------------------------------------------------------------- 구간 읽기 도구: find_major_equipment / make_candidates / outside_components
+
+NODE_PROCEDURE = (
+    "구간 만들기 절차: "
+    "① find_major_equipment로 경계가 될 주요 장비를 본다(unrecognized_equipment가 많으면 사용자에게 알린다). "
+    "② make_candidates로 후보를 받는다. 등급 순(주요 → 일반 → 낮음)이고, skip_existing=true면 이미 있는 구간과 거의 겹치는 후보는 빠진다. "
+    "③ 먼저 대표 구간 3~5개만 고른다. 각 구간은 주요 장비에서 주요 장비까지다. 이름(짧은 명사구)과 설계 의도 초안(1~2문장, 도면·문서에서 확인한 것만)을 "
+    "함께 적어 제안 동작 nodes.apply의 add op(cand_id, name, design_intent, basis)로 낸다. set_rev는 make_candidates 결과의 값을 그대로 쓴다. "
+    "한 번에 5개를 넘기지 않는다. "
+    "④ 사용자가 대표 구간을 확인하고 새로 요청하면 그때 나머지를 낸다(한 요청 30개까지). 같은 답 안에서 이어 내지 않는다. "
+    "⑤ 잠긴 구간·확정 구간과 사람이 쓴 이름·설계 의도(by=user)는 바꾸는 동작을 내지 않는다. get_node·list_nodes로 state·locked·origin을 먼저 본다. "
+    "⑥ 어느 구간에도 들지 않은 구성요소(outside_components)가 남으면 알리되, 채우려고 억지로 묶지 않는다.")
+
+_SCOPE_PROPS = {
+    "drawings": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 80}, "maxItems": 20,
+                 "description": "도면 번호 목록(예: SNP-M-102)"},
+    "system": {"type": "string", "minLength": 1, "maxLength": 60, "description": "태그·배관 번호 접두(예: RC)"},
+    "around": dict(_STR, description="이 구성요소(ID 또는 태그) 둘레"),
+    "hops": {"type": "integer", "minimum": 1, "maximum": 10, "description": "around의 걸음 수(기본 2)"},
+    "node_ids": {"type": "array", "items": _STR, "maxItems": 50, "description": "이 검토구간들의 구성요소"}}
+SCOPE_SCHEMA = {"type": "object", "additionalProperties": False, "properties": _SCOPE_PROPS,
+                "description": "범위. drawings·system·around(+hops)·node_ids 가운데 하나만. 비우면 프로젝트 전체"}
+GRANULARITY = {"type": "string", "enum": ["coarse", "normal", "fine"], "description": "경계로 삼는 장비의 굵기(coarse < normal < fine)"}
+BOUNDARY_LIST = {"type": "array", "items": _STR, "maxItems": 50}
+
+
+def _node_tools():
+    from hazop.study import node_tools
+    return node_tools
+
+
+def _current_set(ctx):
+    for ns in ctx.node_sets or []:
+        if isinstance(ns, dict) and isinstance(ns.get("nodes"), list):
+            return ns
+    return {"nodes": [], "set_rev": None}
+
+
+def _scope_arg(ctx, scope):
+    """scope 인자 -> node_tools가 받는 scope(태그는 ID로). 키가 하나가 아니면 bad_args."""
+    if not scope:
+        return None
+    keys = set(scope) - {"hops"}
+    if len(keys) != 1 or ("hops" in scope and "around" not in scope):
+        raise ToolError("bad_args", "scope는 drawings·system·around(+hops)·node_ids 가운데 하나만 받음")
+    out = dict(scope)
+    if "around" in out:
+        out["around"] = _resolve(ctx, out["around"])
+    return out
+
+
+def _ids_arg(ctx, values):
+    return [_resolve(ctx, v) for v in values or []]
+
+
+def _gather(call, page_key, cap):
+    """node_tools의 쪽 나누기(cursor)를 끝까지 따라가 한 목록으로 모은다 -> (첫 결과, 전체 목록).
+    쪽 나누기는 이 모듈의 cursor 표가 맡으므로 안쪽 cursor는 밖으로 내지 않는다."""
+    first = call(None)
+    items, cur = list(first[page_key]), first.get("next_cursor")
+    while cur:
+        nxt = call(cur)
+        items += nxt[page_key]
+        cur = nxt.get("next_cursor")
+    return first, items
+
+
+def _nt_call(fn, *a, **kw):
+    try:
+        return fn(*a, **kw)
+    except ValueError as exc:   # scope·granularity 같은 인자가 규칙에 안 맞음
+        raise ToolError("bad_args", str(exc)[:300])
+
+
+@tool("find_major_equipment", "구간 경계가 되는 주요 장비(원자로용기·증기발생기·가압기·탱크·펌프 등, granularity에 따라 다름)를 찾는다. "
+      "items는 [{entity_id, tag, kind, part, drawing}]. 구간 만들기의 첫 단계다. " + NODE_PROCEDURE,
+      {"scope": SCOPE_SCHEMA, "granularity": GRANULARITY, "extra_boundaries": BOUNDARY_LIST, "limit": LIMIT, "cursor": CURSOR},
+      tier="more", returns=("component",))
+def find_major_equipment(ctx, scope=None, granularity="normal", extra_boundaries=(), limit=50, cursor=None):
+    nt, idx = _node_tools(), ctx.index
+    sc, extra = _scope_arg(ctx, scope), _ids_arg(ctx, extra_boundaries)
+    first, items = _gather(lambda c: _nt_call(nt.find_major_equipment, ctx.pg, sc, granularity, extra, limit=nt.LIST_LIMIT, cursor=c),
+                           "items", nt.LIST_LIMIT)
+    return _paged(ctx, items, limit, cursor, lambda part: {
+        "granularity": granularity, "unrecognized_equipment": first["unrecognized_equipment"], "items": part},
+        sources=_sources(idx, [i["entity_id"] for i in items[:limit] if i["entity_id"] in idx.nodes]))
+
+
+@tool("make_candidates", "주요 장비에서 주요 장비까지의 후보 구간을 만든다(집합은 바꾸지 않음). 등급 순(주요 → 일반 → 낮음)이고 "
+      "candidates는 [{cand_id, member_count, start, end, majors, valves, instruments, drawings, grade, score, overlaps, basis}], "
+      "set_rev는 제안 동작(nodes.apply)에 그대로 넘긴다. cand_id는 같은 도면 판·같은 매개변수에서만 쓸 수 있다. " + NODE_PROCEDURE,
+      {"scope": SCOPE_SCHEMA, "granularity": GRANULARITY, "extra_boundaries": BOUNDARY_LIST, "cut_at": BOUNDARY_LIST,
+       "skip_existing": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 30}, "cursor": CURSOR},
+      tier="more", returns=("component",))
+def make_candidates(ctx, scope=None, granularity="normal", extra_boundaries=(), cut_at=(), skip_existing=True, limit=30, cursor=None):
+    nt, idx = _node_tools(), ctx.index
+    sc, extra, cuts = _scope_arg(ctx, scope), _ids_arg(ctx, extra_boundaries), _ids_arg(ctx, cut_at)
+    node_set = _current_set(ctx)
+    first, items = _gather(lambda c: _nt_call(nt.make_candidates, ctx.pg, node_set, sc, granularity, extra, cuts, skip_existing,
+                                              limit=nt.CANDIDATE_LIMIT, cursor=c), "candidates", nt.CANDIDATE_LIMIT)
+    rows = []
+    for c in items:
+        c = dict(c)
+        c["overlap_count"] = len(c["overlaps"])
+        c["overlaps"], c["majors"] = c["overlaps"][:5], c["majors"][:8]
+        rows.append(c)
+    by_number = {v: k for k, v in idx.drawing_number.items() if v}
+    sheets = [{"kind": "drawing", "sheet": by_number[d]} for d in sorted({d for c in rows[:limit] for d in c["drawings"]})
+              if d in by_number]
+    return _paged(ctx, rows, limit, cursor, lambda part: {
+        "granularity": granularity, "set_rev": first["set_rev"], "params_digest": first["params_digest"],
+        "outside": first["outside"], "candidates": part}, sources=sheets)
+
+
+@tool("outside_components", "어느 검토구간에도 들지 않은 구성요소. only_sources=true(기본)면 편차원(기기·밸브·인라인·계기)만 센다. "
+      "items는 [{entity_id, tag, kind, drawing}], sources는 그 가운데 편차원 수. 구간을 어디까지 만들었는지 볼 때 쓴다.",
+      {"scope": SCOPE_SCHEMA, "only_sources": {"type": "boolean"}, "limit": LIMIT, "cursor": CURSOR},
+      tier="more", returns=("component",))
+def outside_components(ctx, scope=None, only_sources=True, limit=50, cursor=None):
+    nt, idx = _node_tools(), ctx.index
+    sc = _scope_arg(ctx, scope)
+    node_set = _current_set(ctx)
+    first, items = _gather(lambda c: _nt_call(nt.outside_components, ctx.pg, node_set, sc, only_sources, limit=nt.LIST_LIMIT, cursor=c),
+                           "items", nt.LIST_LIMIT)
+    return _paged(ctx, items, limit, cursor, lambda part: {"count": first["count"], "sources": first["sources"], "items": part},
+                  sources=_sources(idx, [i["entity_id"] for i in items[:limit] if i["entity_id"] in idx.nodes]))

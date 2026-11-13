@@ -8,3 +8,6 @@
 from hazop.chat import tools
 
 REGISTRY = dict(tools.REGISTRY)
+
+# 채팅 시스템 프롬프트에 넣을 '구간 만들기 절차'. 도구 설명(find_major_equipment·make_candidates)에도 같은 글이 들어 있다.
+NODE_CREATION_PROCEDURE = tools.NODE_PROCEDURE
