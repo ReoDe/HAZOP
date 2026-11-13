@@ -1,6 +1,19 @@
-/* 초기사건 패널(3단계). shell.css에서 옮김 */
+/* 초기사건 패널(3단계). shell.css에서 옮김. A10: 편집 칸·되묻기·고르기 */
 .ie-cols { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(300px, 1.4fr); gap: var(--sp-4); align-items: start; }
 .ie-cols h3 { margin: 0 0 var(--sp-2); font-size: var(--fs-md); }
 .ie .cand .main { flex: 1; min-width: 0; }
-.ie h4 { margin: var(--sp-2) 0 2px; font-size: var(--fs-sm); color: var(--muted); }
+.ie .cand.on { background: var(--accent-weak); }
+.ie .cand input[type=checkbox] { margin-right: var(--sp-2); }
+.ie h4 { margin: var(--sp-2) 0 2px; font-size: var(--fs-sm); color: var(--muted); display: flex; align-items: center; gap: var(--sp-2); }
+.ie-ask { border-color: var(--warn-line); background: var(--warn-bg); }
+.ie-pick { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.ie-pick .textbox { flex: 1; min-width: 140px; height: 28px; }
+.ie-form { display: flex; flex-direction: column; gap: var(--sp-2); }
+.ie-form .editgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-2); }
+.ie-form label { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-xs); color: var(--muted); }
+.ie-rec .acts { display: inline-flex; gap: 2px; margin-left: var(--sp-2); }
+.ie-cov .main { flex: 1; min-width: 0; }
+.ie-judge { flex-wrap: wrap; margin-top: var(--sp-1); }
+.ie-judge .textbox { height: 28px; }
+.ie-judge input.textbox { flex: 1; min-width: 160px; }
 @media (max-width: 1100px) { .ie-cols { grid-template-columns: 1fr; } }

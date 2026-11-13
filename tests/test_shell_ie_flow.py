@@ -93,5 +93,96 @@ class IePanelTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: "확정 풀기" in self.text(win), 10))
 
 
+    # ------------------------------------------------------------ A10 편집
+    def type_into(self, win, selector, value):
+        """입력칸에 글을 넣고 input 이벤트를 낸다(사람이 친 것과 같은 상태)."""
+        import json as _j
+        return self.js(win, "(() => { const e = document.querySelector(%s); if (!e) return false; e.value = %s; e.dispatchEvent(new Event('input', {bubbles: true}));"
+                            " e.dispatchEvent(new Event('change', {bubbles: true})); return true; })()" % (_j.dumps(selector), _j.dumps(value)))
+
+    def stored(self):
+        return ie_store.load(self.project)[0]
+
+    def idle(self, win, selector):
+        """다시 읽기가 끝나 단추가 풀릴 때까지 기다린다(사람도 막힌 단추는 누르지 못한다)."""
+        import json as _j
+        return wait_for(lambda: self.js(win, "(() => { const b = document.querySelector(%s); return !!b && !b.disabled; })()" % _j.dumps(selector)) is True, 10)
+
+    def test_pick_candidates_make_a_group_rename_it_and_delete_it_after_asking(self):
+        win = self.open_panel()
+        iec = next(c["candidate_id"] for c in self.read_unassigned(win))
+        self.assertTrue(self.click(win, "input[aria-label='%s 고르기']" % iec))
+        self.assertTrue(wait_for(lambda: "1개" in self.text(win), 10))
+        self.assertTrue(self.type_into(win, "input[aria-label='새 그룹 이름']", "주급수 상실"))
+        pump(0.2)
+        self.assertTrue(self.click(win, "button[aria-label='새 그룹으로 묶기']"))
+        self.assertTrue(wait_for(lambda: any(g["name"] == "주급수 상실" for g in self.stored()["groups"].values()), 10), self.text(win)[-300:])
+        gid = next(g for g, v in self.stored()["groups"].items() if v["name"] == "주급수 상실")
+        self.assertEqual(self.stored()["candidates"][iec]["group_id"], gid)
+        self.assertTrue(wait_for(lambda: gid + " 상세" in (self.js(win, "[...document.querySelectorAll('.ndetail')].map(e => e.getAttribute('aria-label')).join()") or ""), 10))
+        # 고치기
+        self.assertTrue(self.click(win, "button[aria-label='그룹 고치기']"))
+        self.assertTrue(wait_for(lambda: bool(self.js(win, "!!document.querySelector(\"input[aria-label='그룹 이름']\")")), 10))
+        self.type_into(win, "input[aria-label='그룹 이름']", "급수 완전 상실")
+        self.type_into(win, "input[aria-label='정의']", "주급수가 모두 끊김")
+        pump(0.2)
+        self.assertTrue(self.click(win, ".ie-form button[aria-label='저장']"))
+        self.assertTrue(wait_for(lambda: self.stored()["groups"][gid]["name"] == "급수 완전 상실", 10), self.text(win)[-300:])
+        self.assertEqual(self.stored()["groups"][gid]["definition"], "주급수가 모두 끊김")
+        # 지우기: 먼저 되묻고, 그만두면 그대로
+        self.assertTrue(self.idle(win, "button[aria-label='그룹 지우기']"))
+        self.assertTrue(self.click(win, "button[aria-label='그룹 지우기']"))
+        self.assertTrue(wait_for(lambda: "지울까요" in self.text(win), 10), self.text(win)[:2500])
+        self.assertEqual(self.stored()["groups"][gid]["status"], "draft", "되묻는 동안에는 지우지 않는다")
+        self.assertTrue(self.click(win, "button[aria-label='그만두기']"))
+        pump(0.3)
+        self.assertEqual(self.stored()["groups"][gid]["status"], "draft")
+        self.assertTrue(self.idle(win, "button[aria-label='그룹 지우기']"))
+        self.assertTrue(self.click(win, "button[aria-label='그룹 지우기']"))
+        self.assertTrue(wait_for(lambda: "지울까요" in self.text(win), 10))
+        self.assertTrue(self.click(win, "button[aria-label='계속']"))
+        self.assertTrue(wait_for(lambda: self.stored()["groups"][gid]["status"] == "deleted", 10), self.text(win)[-300:])
+        self.assertIsNone(self.stored()["candidates"][iec]["group_id"])
+
+    def read_unassigned(self, win):
+        from hazop.shell import api_ie
+        return api_ie.summary(win.engine)["unassigned"]
+
+    def test_confirmed_group_edit_asks_and_coverage_is_judged_with_a_reason(self):
+        doc, fp = ie_store.load(self.project)
+        doc = model.sync(doc, self.r, at="2026-11-13T01:00:00Z", node_set=self.ns)
+        iec = model.iec_of(doc)[model.key_of(self.r["graph_id"], "c1")]
+        doc, gid = model.create_group(doc, "주급수 상실", [iec], at="2026-11-13T01:00:00Z")
+        doc = model.confirm(doc, gid, self.r, "검토자A", at="2026-11-13T01:00:00Z", node_set=self.ns)
+        ie_store.save(doc, expect=fp)
+        win = self.open_panel()
+        self.assertTrue(wait_for(lambda: gid in self.text(win), 10))
+        self.assertTrue(self.click(win, "[aria-label='그룹 목록'] .nrow-b"))
+        self.assertTrue(wait_for(lambda: bool(self.js(win, "!!document.querySelector(\"button[aria-label='그룹 고치기']\")")), 10))
+        self.assertTrue(self.click(win, "button[aria-label='그룹 고치기']"))
+        self.assertTrue(wait_for(lambda: bool(self.js(win, "!!document.querySelector(\"input[aria-label='그룹 이름']\")")), 10))
+        self.type_into(win, "input[aria-label='그룹 이름']", "새 이름")
+        pump(0.2)
+        self.assertTrue(self.click(win, ".ie-form button[aria-label='저장']"))
+        self.assertTrue(wait_for(lambda: "초안으로 돌아갑니다" in self.text(win), 10), self.text(win)[-300:])
+        self.assertEqual(self.stored()["groups"][gid]["status"], "confirmed")
+        self.assertTrue(self.click(win, "button[aria-label='계속']"))
+        self.assertTrue(wait_for(lambda: self.stored()["groups"][gid]["name"] == "새 이름", 10), self.text(win)[-300:])
+        self.assertEqual(self.stored()["groups"][gid]["status"], "draft")
+        # 완전성 대조: 빈 범주 판정(사유 없이는 저장 단추가 막힘)
+        self.assertTrue(self.idle(win, "button[aria-label='규칙 초안 만들기']"))
+        self.assertTrue(self.click(win, "button[aria-label^='완전성 대조']"))
+        code = self.js(win, "(() => { const b = [...document.querySelectorAll('.ie-cov button')].find(x => / 판정$/.test(x.getAttribute('aria-label'))); return b ? b.getAttribute('aria-label').replace(/ 판정$/, '') : null; })()")
+        self.assertTrue(code, self.text(win)[-300:])
+        self.assertTrue(self.click(win, "button[aria-label='%s 판정']" % code))
+        self.assertTrue(wait_for(lambda: bool(self.js(win, "!!document.querySelector(\"input[aria-label='%s 사유']\")" % code)), 10))
+        self.assertEqual(self.js(win, "document.querySelector(\"button[aria-label='%s 판정 저장']\").disabled" % code), True)
+        self.type_into(win, "input[aria-label='%s 사유']" % code, "이 계통 범위 밖")
+        pump(0.2)
+        self.assertTrue(self.click(win, "button[aria-label='%s 판정 저장']" % code))
+        self.assertTrue(wait_for(lambda: (self.stored()["coverage"].get(code) or {}).get("reason") == "이 계통 범위 밖", 10), self.text(win)[-300:])
+        self.assertEqual(self.stored()["coverage"][code]["by"], "검토자A")
+
+
 if __name__ == "__main__":
     unittest.main()
