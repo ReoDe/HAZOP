@@ -1,6 +1,6 @@
 ---
 doc_id: HZ-PLN-20
-rev: 1
+rev: 2
 status: review
 author: D-node 세션(2026-11-13)
 reviewed: —
@@ -15,6 +15,8 @@ approved: —
 - 사용자 결정 2026-11-13(DEC-0303·0304)을 받아 2026-11-09 설계(rev 0)를 고쳐 씁니다. rev 0의 본문과 측정은 지우지 않고 문서 끝 '부록 A'로 옮겼습니다. 부록 안의 '§' 번호는 부록 안의 절입니다.
 - 채팅 창과 도구 호출 방식은 같은 날 D-chat 세션이 따로 정합니다(`docs/specs/` 아래 채팅 규격, 작성 중). 이 문서는 구간 도구가 무엇을 받고 돌려주는지까지만 정하고, 채팅이 도구를 어떻게 부르는지는 그 규격을 따릅니다.
 - 추정은 그 자리에 [추론]으로 적었습니다. 수치는 출처 절을 함께 적었습니다.
+- rev 2(2026-11-13): Claude 측 검토와 Codex 교차검증의 반려 지적 18건을 반영했습니다. 반영 내용은 §12, 재현 결과는 §12.1입니다.
+- **초기사건**(initiating event): 정상 운전을 교란해 안전 기능을 요구하는 사건. 영문과 뜻은 U.S. NRC Glossary의 'initiating event' 항목을 따릅니다. 이 문서의 '초기사건 후보'는 HAZOP 결과에서 뽑은 후보이고, PSA의 초기사건 빈도와는 다른 것입니다.
 
 ## 0. v2에서 바뀐 것
 
@@ -24,11 +26,11 @@ approved: —
 | 구간 겹침 | 한 구성요소는 한 구간에만 | 여러 구간에 들 수 있음(§4) | DEC-0304 |
 | 구간을 만드는 길 | ④ '다시 제안' 단추로 스크립트가 전체를 나눔 | 채팅 요청 → AI가 대표 3~5개를 바로 적용 → 확인 뒤 나머지. 도면에서 직접 고르기도 됨. 스크립트는 AI가 부르는 도구로 남음(§6) | DEC-0303 |
 | 확정 단위 | 구간 집합 전체를 한 번에 확정·해제 | 구간마다 '적용됨 → 확정 → 잠금'(§2.2) | DEC-0304, 이 문서 |
-| ⑤ 결과와 구간의 연결 | 집합 확정 시각 하나(`study_nodes_ref.confirmed_at`). 집합이 바뀌면 ⑤ 전체가 옛 결과가 됨 | 칸마다 구간 판 번호(`node_rev`). 바뀐 구간의 칸만 다시 확인(§2.4) | 이 문서 |
-| 되돌리기 | 편집 하나씩 실행 취소 | 채팅 요청 하나를 묶음(`batch`) 하나로 되돌림(§2.3) | 작업 계획 '지킬 것' |
+| ⑤ 결과와 구간의 연결 | 집합 확정 시각 하나(`study_nodes_ref.confirmed_at`). 집합이 바뀌면 ⑤ 전체가 옛 결과가 됨 | 칸마다 구간 분석 판(`node_rev`)과 편차 `item_id`. 바뀐 구간의 칸만 다시 확인. 검증에 걸린 칸만 따로 떼고 결과 전체를 비우지 않음(§2.4) | 이 문서 |
+| 되돌리기 | 편집 하나씩 실행 취소(옛 집합 전체를 다시 저장) | 요청 하나가 묶음(`B<번호>`) 하나. 묶음 단위로 되돌리고, 확정·잠금·⑤ 항목을 검사함(§2.3) | 작업 계획 '지킬 것' |
 | 스크리닝 제외 묶음 | 덮음률을 지키려고 닿지 않는 조각을 '제외 구간'으로 묶음 | 없앰. 그 구성요소는 그냥 '구간 밖'(§3.2) | 이 문서 |
 | 분석을 마친 구간 | 따로 없음 | 잠금. AI는 바꾸지 못하고 사람은 이유를 적고 풀어야 고침(§5) | DEC-0304 |
-| 초기사건 인계 | 항목 하나가 후보 하나 | 겹친 두 구간에서 같은 (구성요소, 원인)이 나오면 후보 하나로 묶고 두 구간을 근거로 남김(§4.3) | 작업 계획 '지킬 것' |
+| 초기사건 인계 | 항목 하나가 후보 하나 | 겹친 두 구간에서 같은 (구성요소, 고장 형태)이고 결과·범주·안전 기능이 같으면 후보 하나로 묶고 두 구간을 근거로 남김. 범위가 바뀐 승인은 확정 근거에서 뺌(§4.3) | 작업 계획 '지킬 것' |
 | 저장 형식 | `schema_version` 0.1 | 0.2. 옛 파일은 읽을 때 바꾸고, 처음 저장할 때 백업을 남기고 0.2로 씀(§2.5) | 이 문서 |
 
 ### 0.1 옛 결정의 처리
@@ -71,12 +73,12 @@ approved: —
 | 7 | `hazop/study/nodes.py:325-348` | `take_out`·`detach`: 제외 구간에서 조각 꺼내기 | D | 깨짐 | 옛 파일 정리용으로만 남기고 화면에서 뺌(§2.5) | N1·N2 |
 | 8 | `hazop/study/nodes.py:118-128` | `coverage`·`nodes_of` | A | 고침 | `coverage`는 '구간 밖' 수를 세는 표시용으로 이름을 `outside`로 바꿈. `nodes_of`는 이미 목록을 돌려줌 | N1 |
 | 9 | `hazop/study/segment.py:7` | `cut` 불변식 "정확히 한 구간" | B | 그대로 | 도구 출력(후보)의 성질로 남음. 저장 집합과는 무관 | — |
-| 10 | `hazop/study/remap.py:48` | `owner = {m: node_id}`: 구성요소마다 구간 하나(사전 덮어쓰기) | B | **깨짐** | 겹친 구성요소는 마지막 구간에만 세어 대표 구간을 잘못 고름. 0.1 파일 잇기에서만 쓰고 목록으로 셈(§4.4) | N1 |
-| 11 | `hazop/study/remap.py:56-57` | 같음 판정에 `len(hits) == 1` | B | **깨짐** | 겹친 새 구간이 있으면 같은 구간도 '범위 바뀜'이 됨. ID가 같은 구간은 ID로 잇게 바꿈 | N1 |
+| 10 | `hazop/study/remap.py:48` | `owner = {m: node_id}`: 구성요소마다 구간 하나(사전 덮어쓰기) | B | **깨짐** | 겹친 구성요소는 마지막 구간에만 세어 대표 구간을 잘못 고름. 0.1 결과 잇기(§2.5 1단계)에만 쓰고 v2 집합에는 부르지 않음. 0.1 집합은 겹침이 없어 이 사전이 맞음 | N1 |
+| 11 | `hazop/study/remap.py:56-57` | 같음 판정에 `len(hits) == 1` | B | **깨짐** | 겹친 새 구간이 있으면 같은 구간도 '범위 바뀜'이 됨. #10과 같이 0.1 잇기에만 쓰고, 맞추기는 구성요소 집합으로만(ID는 보지 않음, §12.1 재현 1) | N1 |
 | 12 | `hazop/study/remap.py:107-170` | `carry_results`: 집합 확정 열쇠로 ⑤ 결과 전체를 옮김 | C | 깨짐 | 칸마다 `node_rev`(§2.4). 0.1 결과를 처음 읽을 때 한 번만 씀 | N1 |
 | 13 | `hazop/study/remap.py:36-38, 139-142` | 제외 구간으로 간 칸을 멈춤 | D | 고침 | 0.1 파일에만 남는 경로 | N1 |
-| 14 | `hazop/study/results.py:64-76` | `empty_results`: 집합의 모든 구간에 칸을 만듦 | C | 깨짐 | 확정·잠금 구간에만 칸. 확정할 때 그 구간 칸을 더함 | N1 |
-| 15 | `hazop/study/results.py:205-215` | `validate`: 집합에 없는 구간 칸은 문제 | C | 고침 | 칸은 집합의 확정·잠금 구간 또는 `archived_cells`에만 있어야 함 | N1 |
+| 14 | `hazop/study/results.py:64-76` | `empty_results`: 집합의 모든 구간에 칸을 만듦 | C | 깨짐 | 칸이 없는 구간은 확정할 때 칸을 만듦. 확정 해제한 구간의 칸은 지우지 않고 `hold`(§2.4) | N1 |
+| 15 | `hazop/study/results.py:205-215` | `validate`: 집합에 없는 구간 칸은 문제 | C | 고침 | 칸은 집합에 있는 구간(적용됨이면 `hold`) 또는 `archived_cells`에만. 문서 문제와 칸 문제를 나누고 칸 문제는 그 칸만 뗌(§2.4) | N1 |
 | 16 | `hazop/study/results.py:400-403` | `is_stale`: 집합 확정 열쇠가 다르면 결과 전체가 옛것 | C | **깨짐** | 칸마다 `node_rev` 비교(§2.4). 구간 하나를 더해도 ⑤ 전체가 비는 경로 | N1 |
 | 17 | `hazop/study/migrate.py:40-44` | `member_refs`: 구간 구성요소만 안정 참조를 적음 | A | 깨짐 | 구간 밖 구성요소는 참조가 없음. 그래프 전체 참조를 적음 | N1 |
 | 18 | `hazop/study/migrate.py:121-147` | `plan`: 새 판에 '늘어난 구성요소'가 있으면 재확인 | A | **깨짐** | 구간 밖 구성요소가 하나만 있어도 판이 바뀔 때마다 늘 재확인. #17과 함께 고침 | N1 |
@@ -90,7 +92,7 @@ approved: —
 | 26 | `hazop/study/node_review.py:71, 201-208, 349` | 프롬프트·묶음·검증의 `excluded` 판정과 `screen_change` | D | 고침 | `screen_change`를 빼고 확정·잠금 구간 제안 전용으로(§6.5) | N3 |
 | 27 | `hazop/ie/bundle.py:64-75, 383-389` | 승인 항목 하나 → 후보 하나 | B | **깨짐** | 겹친 구간에서 같은 원인이 두 후보가 되어 초기사건이 두 번 셈됨. §4.3 규칙으로 묶음 | N1 |
 | 28 | `hazop/ie/bundle.py:280-307` | `_boundary_cut`: 대상이 '어느 검토구간에도 들지 않음' | A | 고침 | 이제 흔한 경우라 문구를 '구간 밖 구성요소'로 | N1 |
-| 29 | `hazop/ie/bundle.py:378-380` | `source.study_nodes_ref` | C | 고침 | 묶음에 든 구간과 `node_rev` 목록으로 | N1 |
+| 29 | `hazop/ie/bundle.py:399-400` | `source.study_nodes_ref` | C | 고침 | 묶음에 든 구간과 `node_rev` 목록으로 | N1 |
 | 30 | `hazop/ie/model.py:53, 158` | 후보 열쇠 = (graph_id, entry_id) | B | 고침 | 열쇠는 그대로 두고 '쌍둥이' 표시를 더함(§4.3) | N1 |
 | 31 | `hazop/app/related.py:54-56` | 탐색기 색인이 미포함 0일 때만 ⑤ 결과를 읽음 | A | **깨짐** | 구간 밖이 하나라도 있으면 탐색기에 ⑤ 결과가 안 보임. 조건 삭제 | N1 |
 | 32 | `hazop/app/related.py:272-276` | '같은 구성요소를 쓰는 다른 칸' | B | 그대로 | 이미 합집합. 겹친 구간 칸이 함께 나옴(§4.2) | — |
@@ -108,8 +110,23 @@ approved: —
 | 44 | `hazop/app/webview.py:331` | 이미 칠한 요소는 건너뜀(`data-hz-seg`) | B | **깨짐** | 겹친 요소는 첫 구간 색만 보임. 겹침 표시를 더함(§4.1) | N2 |
 | 45 | `hazop/app/explorer.py:204-208` | 탐색기 ④ '덮음률 %'·'미포함' | A | 고침 | '구간 밖 N' 한 줄로 | N2 |
 | 46 | `hazop/app/project_ctx.py:215-218` | `coverage_text` "프로젝트 100% · 이 도면 100%" | A | 고침 | '구간 밖' 문구로 | N2 |
+| 47 | `hazop/app/screens/study.py:1035-1042` | 토스트 '실행 취소'(`_undo_to`)가 옛 집합 전체를 그대로 저장 | C | **깨짐** | 묶음 검사·잠금을 거치지 않아 그 사이 확정·잠금한 구간이 풀림. 실행 취소는 `undo_batch`로만 하고 확정·잠금·잠금 풀기에는 두지 않음(§2.3) | N2 |
+| 48 | `hazop/study/ai_cells.py:139-145` | `plan_units`가 집합의 모든 구간을 분석 단위로 | C | **깨짐** | 잠긴 구간·적용됨 구간을 빼야 함(§5.2) | N1 |
+| 49 | `hazop/study/ai_cells.py:258-261` | AI 분석 입력에 구간 이름·`basis`·설계 의도·구성요소 | C | 고침 | 이 넷이 바뀌면 분석 판(`rev`)이 오름(§2.2) | N1 |
+| 50 | `hazop/app/screens/results.py:1364-1372` | `_plan`이 잠긴 구간을 건너뛰지 않음, 항목 승인·기각(`set_entry_status`, `:2346`)도 막지 않음 | C | **깨짐** | 잠긴 구간은 일괄·고른 구간 분석에서 빼고 항목 상태 변경을 막음(§5.2) | N1 |
+| 51 | `hazop/app/screens/results.py:1213-1218` | 검증 문제가 하나라도 있으면 ⑤ 결과 전체를 빈 결과로 시작 | C | **깨짐** | 구간 하나만 확정 해제해도 결과 전체가 떨어짐(§12.1 재현 4). 칸 단위로 떼어 둠(§2.4) | N1 |
+| 52 | `hazop/ie/model.py:137-153` | 승인 지문(`fp`)에 `scope_changed`·구간 판·칸 상태가 없음 | C | **깨짐** | 범위가 바뀐 승인이 계속 그룹 확정 근거가 됨(§12.1 재현 5). §4.3 | N1 |
+| 53 | `hazop/ie/model.py:197-220` | `confirm_problems`가 같은 원인 후보의 다른 그룹 배치를 보지 않음 | B | **깨짐** | 같은 원인을 두 그룹에 넣어도 문제 목록이 빔(§12.1 재현 8). §4.3 | N1 |
+| 54 | `hazop/ie/bundle_xlsx.py:133-134` | `b["source"]["study_nodes_ref"]`를 첨자로 읽음 | C | 깨짐 | #29를 바꾸면 KeyError. 새 `source.nodes`를 읽음 | N1 |
+| 55 | `hazop/study/migrate.py:96, 174-175, 213` | 판 이전 대상 판정이 집합 `status == "confirmed"`와 집합 `confirmed_at` | C | 깨짐 | 구간마다 상태로(§2.6) | N1 |
+| 56 | `hazop/app/explorer.py:171, 174, 238, 264` | 탐색기 ⑤ 묶음이 집합 `status == "confirmed"`일 때만, 결과도 집합 `is_stale`로 | C | 깨짐 | 확정·잠금 구간이 하나라도 있으면 보임, 칸마다 판 비교 | N2 |
+| 57 | `hazop/app/related.py:54` | 탐색기 색인이 집합 `status == "confirmed"`일 때만 결과를 읽음 | C | 깨짐 | #31과 함께 고침 | N1 |
+| 58 | `hazop/app/screens/knowledge.py:542` | ③이 집합 `status == "confirmed"`일 때만 결과를 씀 | C | 깨짐 | #36과 함께 고침 | N1 |
+| 59 | `hazop/app/data.py:397-403` | 재확인 안내가 집합 `status`와 결과 `study_nodes_ref.graph_version`을 읽음 | C | 고침 | 구간 상태와 결과 머리 `graph_version`으로 | N1 |
+| 60 | `hazop/export/study_xlsx.py:310-319` | 표지에 '검토구간 확정 시각'(집합 하나) | C | 고침 | 구간별 확정 시각은 구간 표에, 표지는 내보낸 구간 수·잠금 수. §4.2의 '겹침' 열도 여기서 더함 | N1 |
+| 61 | `hazop/study/span.py:174-177` | `continuation_chip`이 상대 구간 목록의 첫 구간만 고름 | B | 고침 | 겹치면 "S7·S9 → 102에서 계속"처럼 모두 적음 | N1 |
 
-**합계(앱 코드 46곳).** 깨짐 23곳(그중 굵게 쓴 10곳은 막지 않고 말없이 틀린 값을 냄, 1곳은 옛 도면별 파일에만 해당), 고침 17곳, 그대로·확인 필요 6곳입니다. 전제별로는 A 16, B 15, C 9, D 8입니다(한 줄에 둘이 걸친 곳은 둘 다 셈).
+**합계(앱 코드 61곳).** 깨짐 34곳(그중 굵게 쓴 16곳은 막지 않고 말없이 틀린 값을 내거나 데이터를 떨어뜨림, 1곳은 옛 도면별 파일에만 해당), 고침 21곳, 그대로·확인 필요 6곳입니다. 전제별로는 A 16, B 17, C 22, D 8입니다(한 줄에 둘이 걸친 곳은 둘 다 셈). rev 1의 46곳에 검토에서 찾은 15곳(#47~#61)을 더했습니다.
 
 ### 1.2 시험·검사 스크립트
 
@@ -134,10 +151,10 @@ approved: —
   "project_id": "...", "graph_id": "project-...", "graph_version": "...",
   "set_rev": 41,
   "nodes": [
-    {"node_id": "S7", "name": "충전펌프 CV-PP01 토출", "rev": 3,
+    {"node_id": "S7", "name": "충전펌프 CV-PP01 토출", "name_by": "ai", "rev": 3,
      "origin": "ai", "state": "confirmed",
      "members": ["..."],
-     "design_intent": {"text": "...", "by": "ai", "batch_id": "B4"},
+     "design_intent": {"text": "...", "by": "ai"},
      "basis": "주요 장비 VCT-01 → 재생열교환기 HX-01",
      "boundary_hint": {"from": "entity-..", "to": "entity-.."},
      "batch_id": "B4",
@@ -146,21 +163,24 @@ approved: —
      "screen": {"score": 5, "grade": "주요"}}
   ],
   "batches": [
-    {"batch_id": "B4", "origin": "ai", "at": "...", "request": "대표 구간 3~5개 만들어 줘",
-     "chat_turn": "turn-..", "tool": {"name": "make_candidates", "params": {"granularity": "normal"}},
-     "model": "claude-...", "ops": [{"op": "add", "node_id": "S7"}],
+    {"batch_id": "B4", "origin": "ai", "at": "...", "request_id": "q-20261113-152031-3f9a",
+     "request_text": "대표 구간 3~5개 만들어 줘", "stage": "representative",
+     "tool": {"name": "make_candidates", "params": {"granularity": "normal"}},
+     "model": "claude-...", "ops": [{"op": "add", "node_id": "S7", "before": null, "after": {"...": "구간 전체"}}],
      "undone": null}
   ],
-  "graph_member_refs": {"entity-..": "ref-.."}, "member_digest": "md3-...",
+  "graph_member_refs": {"entity-..": "ref-.."}, "member_digest": {"S7": "md3-..."},
   "history": [],
-  "legacy": {"from_schema": "0.1", "status": "confirmed", "confirmed_at": "...", "previous": []}
+  "legacy": {"from_schema": "0.1", "conversion_id": "cv-...", "status": "confirmed", "confirmed_at": "...",
+             "confirmed_by": "...", "graph_version": "...", "previous": [], "excluded_nodes": []}
 }
 ```
 
 - 집합 머리에서 `status`·`confirmed_at`·`confirmed_by`를 뺍니다. 확정은 구간마다입니다. 일부러 빼는 이유는 §2.5의 '옛 앱이 새 파일을 덮어쓰지 않게'입니다.
-- `set_rev`는 저장할 때마다 1 오르는 정수입니다. 채팅 도구가 '읽은 판'으로 쓰고(§6), 저장 충돌은 지금처럼 파일 지문(`store_io`)으로 막습니다.
-- `graph_member_refs`는 구간 구성요소가 아니라 **그래프 전체** 구성요소의 안정 참조입니다(§1 #17·#18). `member_digest`는 구간마다 따로 셀 수 있게 판을 올립니다(§2.6).
+- `set_rev`는 저장할 때마다 1 오르는 정수입니다. 채팅 동작이 '읽은 판'으로 쓰고(§6), 저장 충돌은 지금처럼 파일 지문(`store_io`)으로 막습니다.
+- `graph_member_refs`는 구간 구성요소가 아니라 **그래프 전체** 구성요소의 안정 참조입니다(§1 #17·#18). `member_digest`는 구간마다 따로 적습니다(§2.6).
 - `proposer` 필드는 없앱니다. 어떤 도구를 어떤 값으로 불렀는지는 묶음(`batches[].tool`)에 남습니다.
+- `request_text`는 채팅 규격 UC2와 같이 그 요청의 사용자 원문 한 개를 500자까지만 남깁니다. `request_id`는 채팅 실행 기록(`chat-actions/*.jsonl`)의 같은 필드와 같은 값입니다.
 
 ### 2.2 구간 하나의 상태
 
@@ -168,7 +188,8 @@ approved: —
 | --- | --- | --- |
 | `origin` | `ai` · `user` · `script` | 누가 처음 만들었는가. `ai`는 채팅 요청으로 AI가 적용, `user`는 도면에서 고르기·병합·분할, `script`는 0.1 파일의 규칙 제안. 처음 값을 바꾸지 않음 |
 | `state` | `applied` · `confirmed` · `locked` | 적용됨(미확정) → 확정 → 잠금 |
-| `rev` | 1부터 | 구성요소가 바뀔 때만 1 오름. 이름·설계 의도만 바꾸면 그대로 |
+| `rev` | 1부터 | **분석 판.** ⑤ AI 분석 입력에 들어가는 값(구성요소, 이름, `basis`, 설계 의도. `ai_cells.py:258-261`)이 하나라도 바뀌면 1 오름. 설계 의도만 고쳐도 오름 |
+| `name_by`, `design_intent.by` | `ai` · `user` · `script` | 그 값을 마지막으로 쓴 쪽. 사람이 쓴 값은 AI가 바꾸지 못함(§6.2) |
 | `confirmed` | `{at, by, rev}` 또는 null | 확정한 사람과 그때의 `rev` |
 | `locked` | `{at, by, reason}` 또는 null | §5 |
 
@@ -178,63 +199,119 @@ applied ──확정(사람)──▶ confirmed ──잠금(사람)──▶ lo
    └──확정 해제(사람)──────┘◀──잠금 풀기(사람, 이유)─┘
 ```
 
-- **적용됨**: AI·사람·옛 규칙이 만든 그대로. ④에 보이고 도면에 칠해지지만 ⑤ 행은 없습니다. AI도 고칠 수 있습니다(단, 다른 요청 묶음이 만든 구간을 고치면 그 구간을 이번 묶음의 `edit`로 적어 둠).
-- **확정**: 사람이 '이 구간으로 분석한다'고 정한 것. ⑤ 칸이 생깁니다. AI는 바꾸지 못하고 제안만 합니다(§6.5). 사람이 구성요소를 바꾸려면 '확정 해제'를 거칩니다. 해제해도 ⑤ 칸은 지우지 않고, 다시 확정할 때 `rev`가 바뀌었으면 그 구간 칸만 '범위 바뀜'이 됩니다(§2.4).
+- **적용됨**: AI·사람·옛 규칙이 만든 그대로. ④에 보이고 도면에 칠해지지만 ⑤ 행은 없습니다. 이 구간에 칸이 있으면(확정했다가 해제한 경우) 칸은 '보관' 상태로 남습니다(§2.4).
+- **확정**: 사람이 '이 구간으로 분석한다'고 정한 것. ⑤ 행이 생기고, 칸이 없으면 이때 만듭니다. AI는 바꾸지 못하고 제안만 합니다(§6.5). 사람이 구성요소를 바꾸려면 '확정 해제'를 거칩니다. 다시 확정할 때 `rev`가 바뀌었으면 그 구간 칸만 '범위 바뀜'이 됩니다(§2.4).
 - **잠금**: §5.
 - 확정은 '고른 구간 확정'과 '적용된 구간 모두 확정' 두 길로 합니다. 빈 구간과 그래프에 없는 구성요소는 지금처럼 확정을 막습니다(`nodes.py:446-454` 유지). 구간 밖 구성요소는 막지 않습니다.
 
 ### 2.3 묶음(batch)과 되돌리기
 
-채팅 요청 하나, 도면에서 한 번 고르기, 병합 한 번이 각각 묶음 하나입니다. 묶음 ID는 `B1, B2, …`로 다시 쓰지 않습니다.
+**묶음 하나 = 요청 하나.** 채팅 질문 하나에서 나온 '바로' 동작 전부, 도면에서 한 번 고르기, 손으로 한 병합·분할·삭제 한 번이 각각 묶음 하나입니다. 묶음 ID는 `B1, B2, …`로 다시 쓰지 않습니다(채팅 규격의 `batch_id`도 이 값을 씀).
 
-- `ops`의 종류는 `add`(새 구간), `edit`(구성요소·이름·설계 의도 변경, 바꾸기 전 구간 전체를 `before`에 적음), `remove`(구간 삭제, `before`에 구간 전체)입니다.
-- **되돌리기**는 묶음 단위로만 합니다. `add`는 지우고, `edit`·`remove`는 `before`로 돌립니다. 되돌린 묶음은 `undone: {at, by}`를 적고 지우지 않습니다. 구간 ID는 다시 내지 않습니다(`issued_node_ids`가 묶음도 봄).
-- 되돌리기를 막는 경우(모두 사람이 고를 수 있게 이유와 구간을 보임):
-  1. 그 묶음이 만든·바꾼 구간 가운데 지금 `confirmed`·`locked`인 것이 있음. 사람이 먼저 확정을 해제해야 합니다.
-  2. 뒤 묶음이 같은 구간을 다시 바꿨음. 뒤 묶음부터 되돌려야 합니다(가장 최근 묶음부터만 되돌리는 것이 아니라, 겹치는 뒤 묶음이 있을 때만 막음).
-  3. 그 구간에 ⑤ 칸이 있음(확정한 적이 있음). 1과 같은 경우가 대부분이지만, 확정 해제 뒤에도 칸이 남아 있으면 막고 §4.4의 '구간이 사라질 때'로 넘깁니다.
-- 묶음은 저장 파일 안에 최근 50개만 두고, 그보다 오래된 묶음은 `history`에 요약 한 줄로 줄입니다(되돌리기는 안 됨). [추론: 143쪽에서도 채팅 요청이 수백 번은 아니라고 봄]
+- `ops`의 종류는 `add`(새 구간), `edit`(구성요소·이름·설계 의도 변경), `remove`(구간 삭제)입니다. 모든 op에 `before`(바꾸기 전 구간 전체, `add`면 null)와 `after`(바꾼 뒤 구간 전체, `remove`면 null)를 적습니다.
+- **되돌리기**는 묶음 단위로만 합니다. 각 op를 거꾸로 돌립니다: `add` → 그 구간을 지움(**구간 삭제**), `edit` → `before`로 되돌림(**편집 복원**, 구성요소·분석 입력이 바뀌면 `rev`가 오름), `remove` → `before`로 되살림. 되돌린 묶음은 `undone: {at, by, batch_id}`를 적고 지우지 않으며, 되돌리기 자체도 새 묶음입니다. 구간 ID는 다시 내지 않습니다(`issued_node_ids`가 묶음도 봄).
+- **되돌리기를 막는 경우**(모두 막은 구간과 이유를 보임):
+  1. 대상 구간의 지금 값이 그 op의 `after`와 다름. 그 사이 누가(사람이든 뒤 묶음이든) 고쳤다는 뜻입니다. 뒤 묶음이 고쳤으면 그 묶음부터 되돌려야 합니다.
+  2. 대상 구간이 지금 `confirmed`·`locked`. 사람이 먼저 확정을 해제해야 합니다.
+  3. 구간 삭제(`add` 되돌리기)인데 그 구간의 칸에 항목이 있음, 또는 편집 복원으로 `rev`가 바뀌는데 칸에 사람 판정(`HUMAN_STATUSES`) 항목이 있음. §4.4의 사람 선택으로 넘깁니다.
+  4. AI가 되돌리기를 요청했는데 묶음의 `origin`이 `ai`가 아님. AI는 AI가 만든 묶음만 되돌립니다(사람 묶음은 사람만).
+- 그래서 `undo_batch`는 구간 집합과 ⑤ 결과를 함께 받습니다(§6.2). 결과 없이 부르면 3번을 검사할 수 없으므로 거절합니다.
+- 지금 ④의 토스트 '실행 취소'(`study.py:1035-1042`, #47)는 옛 집합 전체를 저장해 위 검사를 모두 건너뜁니다. v2에서는 편집 토스트의 실행 취소도 그 편집이 만든 묶음의 `undo_batch`로 하고, 확정·확정 해제·잠금·잠금 풀기에는 실행 취소를 두지 않습니다(반대 동작이 있으므로).
+- 묶음은 저장 파일 안에 최근 50개만 두고, 그보다 오래된 묶음은 `history`에 요약 한 줄로 줄입니다(되돌리기는 안 됨) [추론: 143쪽에서도 구간 요청이 수백 번은 아니라고 봄].
 
 ### 2.4 ⑤ 결과와의 연결
 
-지금은 결과 문서 하나가 집합 확정 시각 하나를 가리켜서(`results.py:400-403`), 구간 하나만 다시 확정해도 ⑤ 전체가 옛 결과가 되고 `remap.carry_saved`의 추정 대응으로 옮겨야 합니다. 겹침이 생기면 이 추정(#10·#11)이 틀립니다. 그래서 연결을 구간 단위로 바꿉니다.
+지금은 결과 문서 하나가 집합 확정 시각 하나를 가리켜서(`results.py:400-403`), 구간 하나만 다시 확정해도 ⑤ 전체가 옛 결과가 되고 `remap.carry_saved`의 추정 대응으로 옮겨야 합니다. 또 검증 문제가 하나라도 있으면 ⑤ 화면이 결과 전체를 빈 결과로 시작합니다(`screens/results.py:1213-1218`, §12.1 재현 4). 그래서 연결을 칸 단위로 바꿉니다.
 
-- 결과 문서 머리: `study_nodes_ref` 대신 `{"graph_version", "schema": "0.2"}`.
-- 칸마다 `node_rev`: 그 칸을 분석할 때 구간의 `rev`. 확정할 때 그 구간의 칸을 만들면서 적습니다.
-- 칸을 열 때: 구간의 지금 `rev`와 칸의 `node_rev`가 같으면 그대로, 다르면 그 칸의 항목에 `scope_changed`를 붙이고 칸 상태를 `not_analyzed`로 돌립니다(항목은 지우지 않음. 지금 `remap`의 '범위 바뀜'과 같은 표시). `node_rev`를 지금 값으로 맞추는 일은 사람이 '다시 확인함'을 누를 때 합니다.
-- 칸은 구간 ID로 찾습니다. 구간 ID는 확정 해제·다시 확정을 거쳐도 그대로라 옮길 일이 없습니다.
-- 그래프 판 이전(`migrate.on_load`)은 지금처럼 결과의 `kg_paths`를 바꾸고, 내용이 바뀐 구간의 `rev`만 올립니다(§2.6).
+**결과 문서 0.2.**
+- 머리: `study_nodes_ref` 대신 `{"graph_version", "schema_version": "0.2", "deviation_chart": {파일 이름, 판}}`.
+- 칸 열쇠: (`node_id`, `item_id`). `item_id`는 편차 목록의 안정 ID이고, `deviation_id`(`D01…`, `results.py:59`의 순번)는 표시용으로만 남깁니다(§2.7).
+- 칸마다 `node_rev`(그 칸을 분석할 때 구간의 `rev`)와 `hold`(true면 보관 상태).
+- `archived_cells`: 구간이 사라졌거나 편차가 빠져 갈 곳이 없는 칸. 지우지 않고 `{cell, reason, at, by}`로 둡니다.
+
+**칸의 상태.**
+
+| 구간 상태 | 칸 | ⑤ 행 | 고칠 수 있나 | IE 인계 |
+| --- | --- | --- | --- | --- |
+| `applied`(확정 해제 뒤) | 있으면 `hold: true`로 보관 | 없음 | 없음 | 뺌 |
+| `confirmed` | `hold: false` | 있음 | 있음 | 넣음(범위 바뀜 항목은 뺌) |
+| `locked` | `hold: false` | 있음 | 없음(§5.2) | 넣음 |
+
+- 확정 해제는 칸을 지우지도 옮기지도 않고 `hold`만 켭니다. 다시 확정하면 `hold`를 끕니다.
+- **범위 바뀜**: 다시 확정할 때(또는 판 이전으로) 구간의 `rev`가 칸의 `node_rev`와 다르면, 그 칸의 항목마다 `scope_changed: {from_rev, to_rev, at}`을 붙입니다. 칸 상태(`analyzed`·`excluded`)와 항목 상태는 그대로 둡니다. 지금 `validate`가 항목 있는 `not_analyzed` 칸을 거부하므로(`results.py:243`) 칸 상태를 내리지 않습니다. 대신 '범위 바뀜' 항목은 ⑤에서 '다시 확인 필요'로 보이고, 사람이 다시 승인하거나 고치면 `scope_changed`가 지워지며, 칸의 모든 항목을 다시 확인하면 `node_rev`를 지금 값으로 맞춥니다. 범위 바뀜 항목은 IE 확정 근거가 되지 않습니다(§4.3).
+- 칸은 구간 ID로 찾습니다. 구간 ID는 확정 해제·다시 확정을 거쳐도 그대로라 옮길 일이 없습니다. 구간이 사라질 때만 §4.4를 따릅니다.
+
+**검증(`results.validate`) v2 규칙.**
+- 칸은 집합에 있는 구간(상태는 묻지 않음) 또는 `archived_cells`에만 있어야 합니다. 적용됨 구간의 칸은 `hold: true`면 문제가 아닙니다.
+- 문제를 두 층으로 나눕니다. **문서 문제**(`kind`가 다름, 편차 목록의 `item_id` 중복, JSON 형식)는 ⑤를 읽기 전용으로 열고 저장을 막습니다. **칸 문제**(없는 구간, 상태 값, 항목 형식)는 그 칸만 `quarantine`(메모리)로 떼어 ⑤ 머리에 "문제 칸 N개(따로 둠)"로 보이고, 나머지 칸은 그대로 씁니다. 저장할 때 떼어 둔 칸은 손대지 않고 그대로 다시 씁니다.
+- 어느 경우에도 **결과 전체를 빈 결과로 시작하지 않습니다.** 지금의 '빈 결과로 시작, 옛 파일은 첫 저장 때 보관본'(#51)은 없앱니다. 지금 이 길은 구간 하나를 확정 해제한 것만으로도 탑니다(§12.1 재현 4b).
 
 ### 2.5 옛 파일(0.1) 읽기
 
-이전 스크립트를 따로 돌리지 않습니다. 읽을 때 메모리에서 0.2로 바꾸고, 처음 저장할 때 원본을 백업한 뒤 0.2로 씁니다.
+이전 스크립트를 따로 돌리지 않고, 화면이 처음 읽을 때 한 번 바꿉니다. 바꾸는 단계와 순서, 도중에 멈춘 뒤 다시 시작하는 규칙은 다음과 같습니다.
+
+**변환 순서.** 0.1 집합과 0.1 결과를 **둘 다 0.1 모양 그대로** 읽은 상태에서 시작합니다.
+
+1. **결과 잇기(0.1 모양에서).** 지금 `remap.carry_results`는 집합 `status`·`confirmed_at`·`previous`를 읽으므로(`remap.py:115-125, 180`), 이 필드를 바꾸거나 옮기기 **전에** 돕니다. 경우는 아래 표 A~D입니다.
+2. **집합 바꾸기.** 0.1 집합을 0.2 모양으로 바꾸고, 0.1 머리 값(`status`·`confirmed_at`·`confirmed_by`·`graph_version`·`previous`)은 `legacy`에 그대로 옮깁니다.
+3. **결과 바꾸기.** 1의 결과(이었으면 이은 것)를 0.2 결과로 바꿉니다: 칸 열쇠에 `item_id`, 칸마다 `node_rev: 1`, 구간 상태에 맞춰 `hold`.
+4. **쓰기.** 백업 두 개(`<이름>.v0.1.bak.json`, 집합·결과)를 먼저 쓰고, 둘 다 쓰였을 때만 결과 0.2 → 집합 0.2 순으로 씁니다. 두 파일 모두 같은 `conversion_id`와 원본 0.1 집합 파일의 지문(`source_set_fp`)을 적습니다.
+
+**다시 시작.** 쓰기가 도중에 끊기면 다음에 열 때 상태를 보고 이어 갑니다.
+
+| 디스크 상태 | 처리 |
+| --- | --- |
+| 집합 0.1, 결과 0.1, 백업 없음·일부 | 처음부터(백업부터 다시 씀) |
+| 집합 0.1, 결과 0.2이고 결과의 `source_set_fp`가 지금 집합 파일 지문과 같음 | 2단계(집합 바꾸기)부터. 결과는 다시 바꾸지 않음 |
+| 집합 0.1, 결과 0.2인데 지문이 다름 | 멈추고 알림(그 사이 옛 앱이 집합을 고친 것). 결과 0.2와 백업은 그대로 둠 |
+| 집합 0.2, 결과 0.1 | 순서상 생기지 않지만, 생기면 결과만 3단계를 `legacy`로 다시 돌림(`legacy`에 0.1 머리가 있어 잇기를 다시 할 수 있음) |
+| 백업을 쓰지 못함 | 바꾸지 않고 읽기 전용으로 엶 |
+
+**결과 잇기의 경우(1단계).**
+
+| 경우 | 0.1 상태 | 처리 |
+| --- | --- | --- |
+| A | 집합 `confirmed`, 결과가 그 확정본 것 | 잇기 없음. 칸 그대로 |
+| B | 집합 `confirmed`, 결과가 앞 확정본 것(`previous`에 있음) | 지금 `carry_results` 그대로. 옛 구간과 새 구간은 **구성요소 집합으로** 맞춥니다(`remap.node_map`, ID는 보지 않음). 0.1 `propose`는 S1부터 다시 매기므로(`nodes.py:95`) 같은 ID가 다른 구간일 수 있습니다(§12.1 재현 1) |
+| C | 집합 `proposed`(확정 해제 뒤), `previous`와 결과 파일이 있음 | 집합은 확정이 아니지만 결과를 버리지 않습니다. `previous`의 마지막 확정본을 기준으로 B와 같은 대응을 만들어, 구성요소가 같은 구간(`exact`)의 칸은 그대로, 겹치는 구간의 칸은 '범위 바뀜'으로 옮기고, 모두 `hold: true`로 둡니다(구간이 `applied`이므로). 사람이 그 구간을 확정하면 바로 ⑤에 나타납니다. 대응 없는 칸은 `archived_cells`(`reason: legacy_unmapped`) |
+| D | B·C에서 잇기가 멈춤(`to_excluded`·`unmapped`) | 칸을 버리지 않습니다. 멈춘 칸은 `archived_cells`(`reason`에 지금 멈춤 사유)로, 나머지 칸은 이어서 바꿉니다. ⑤ 머리에 "옛 결과 N칸을 보관함 · ④에서 그 구간을 만든 뒤 옮기기"를 보이고, 보관 칸은 §4.4의 '보관 칸 옮기기'로 사람이 옮깁니다 |
+
+- 어느 경우에도 사람이 승인한 항목이 백업 파일에만 남는 일은 없게 합니다. 지금은 C에서 ⑤를 열면 빈 결과로 시작하고 옛 파일은 보관본으로만 남습니다(`screens/results.py:1213-1218`).
+- 0.1 B·C 잇기에서 `remap.node_map`의 `owner`가 구성요소마다 구간 하나를 기억하는 것(#10)은 0.1 집합에 겹침이 없으므로 맞습니다. v2 집합에는 `node_map`을 부르지 않습니다.
+
+**값 대응.**
 
 | 0.1 값 | 0.2로 읽은 값 |
 | --- | --- |
 | 집합 `status: confirmed` | 모든 구간 `state: confirmed`, `confirmed: {at: 집합 confirmed_at, by: confirmed_by, rev: 1}` |
-| 집합 `status: proposed` | 모든 구간 `state: applied` |
+| 집합 `status: proposed` | 모든 구간 `state: applied`(칸이 있으면 위 C) |
 | 구간 `origin: rule` | `script` |
 | 구간 `origin: merged`·`split`, AI 검토 받아들임 | `user` |
-| 구간 `screen.status: excluded` | **구간 목록에서 숨기고** `legacy.excluded_nodes`로 옮김. 그 구성요소는 '구간 밖'이 됨 |
+| 구간 `screen.status: excluded` | 칸에 항목이 없으면 구간 목록에서 빼고 `legacy.excluded_nodes`로, 그 칸은 `archived_cells`(`reason: legacy_excluded`). 칸에 항목이 있으면 `applied` 구간으로 남김(총괄 위임 V-5) |
 | 구간 `screen.status: low` | 그대로 두고 등급 '낮음' |
-| `absorbed`·`parts` | `legacy`로 옮김(되돌리기 근거로 남김, 화면은 안 씀) |
-| `previous` | `legacy.previous`. 0.1 결과를 처음 이을 때만 씀 |
+| `absorbed`·`parts` | `legacy`로 옮김(근거로 남김, 화면은 안 씀) |
 | `member_refs`(구간 구성요소만) | 읽을 때 그래프 전체로 다시 셈. 판이 이미 바뀌었으면 지금처럼 재확인 |
-| 결과 `study_nodes_ref`가 집합과 맞음 | 모든 칸 `node_rev: 1` |
-| 결과 `study_nodes_ref`가 집합과 다름 | 지금 `remap.carry_saved`를 한 번 돌려 잇고(§4.4), 멈추면 지금처럼 사유를 보임 |
+| 이름·설계 의도 | `name_by`·`design_intent.by`는 `script`(origin `rule`) 또는 `user` |
 
-- **제외 구간에 ⑤ 칸이 있으면.** 0.1의 `empty_results`는 제외 구간에도 칸을 만들었습니다. 그 칸에 항목이 하나라도 있으면(사람이 꺼냈다가 다시 제외한 경우 등) 그 구간은 숨기지 않고 `applied` 구간으로 남겨 보입니다. 항목이 없으면 칸은 결과에서 지우지 않고 `archived_cells`로 옮깁니다.
-- **백업.** 처음 0.2로 쓰기 직전에 `<이름>.v0.1.bak.json`을 남깁니다(결과 파일도 같음). 지금 `store_io.unused_name` 규칙을 씁니다.
-- **옛 앱이 새 파일을 여는 경우.** 0.2 파일에는 집합 `status`가 없어 옛 앱의 형식 검사(`nodes.py:544`)가 실패하고, ④는 '읽을 수 없는 파일'로 처리해 덮어쓰기 전에 묻고 백업합니다(`study.py:1063-1095`). 옛 앱이 말없이 덮어쓰지 않는 것은 이 동작에 기대므로 N1 시험에 넣습니다.
-- `schema_version`이 0.2보다 큰 파일은 읽지 않고 같은 경로로 보냅니다.
+- **옛 앱이 새 파일을 여는 경우.** 0.2 파일에는 집합 `status`가 없어 옛 앱의 형식 검사(`nodes.py:544`)가 실패하고, ④는 '읽을 수 없는 파일'로 처리해 덮어쓰기 전에 묻고 백업합니다(`study.py:1063-1095`). 옛 앱이 말없이 덮어쓰지 않는 것은 이 동작에 기대므로 N1 시험에 넣습니다. 옛 앱 ⑤가 0.2 결과를 열면 `study_nodes_ref`가 없어 '이전 확정본 것'으로 보고 빈 결과로 시작하므로(#51의 옛 동작), 이 경우도 시험해 옛 파일이 보관본으로 남는지 확인합니다.
+- `schema_version`이 0.2보다 큰 파일은 읽지 않고 읽기 전용으로 엽니다.
 
 ### 2.6 그래프 판이 바뀔 때
 
-`migrate.plan`(`migrate.py:113-153`)은 지금 집합 구성요소만 보고 '새 판에 늘어난 구성요소'를 재확인 사유로 씁니다. 구간 밖 구성요소가 생기면 판이 바뀔 때마다 늘 재확인이 됩니다(#18). v2는 다음처럼 바꿉니다.
+`migrate.plan`(`migrate.py:113-153`)은 지금 집합 구성요소만 보고 '새 판에 늘어난 구성요소'를 재확인 사유로 씁니다. 구간 밖 구성요소가 생기면 판이 바뀔 때마다 늘 재확인이 됩니다(#18). 판 이전 대상도 집합 `status`로 정합니다(#55). v2는 다음처럼 바꿉니다.
 
 - 이름 바꿈 표는 그래프 전체 안정 참조(`graph_member_refs`)로 만듭니다. 늘거나 준 구성요소는 사유가 아닙니다.
-- 내용 지문을 구간마다 셉니다(`md3-`): 그 구간 구성요소와 거기 닿는 물리 간선의 종류·태그·흐름·연결·정상 위치·고장 위치. 지문이 바뀐 구간만 `rev`를 올리고 확정 구간이면 상태를 `applied`로 내립니다(잠금 구간은 §5.3).
+- 판 이전은 모든 구간에 적용하고(적용됨 구간도 구성요소 ID를 바꿔야 함), 재확인은 구간마다 정합니다.
+- 내용 지문을 구간마다 셉니다(`md3-`): 그 구간 구성요소와 거기 닿는 물리 간선의 종류·태그·흐름·연결·정상 위치·고장 위치. 지문이 바뀐 구간만 `rev`를 올리고, 확정 구간이면 상태를 `applied`로 내립니다(칸은 `hold`). 잠금 구간은 §5.3.
 - 구간 구성요소가 새 판에서 사라졌으면 그 구간만 '재확인'이고 나머지 구간은 이어집니다.
+
+### 2.7 편차 목록이 바뀔 때
+
+`deviation_id`(`D01…`)는 편차 목록 파일의 순번이라(`results.py:59`), 편차를 끼워 넣거나 순서를 바꾸면 같은 ID가 다른 편차를 가리킵니다. 지금은 `remap.carry_results`와 `span.migrate_results`가 `item_id`로 맞춰 옮기고 있습니다(`remap.py:128-132`). v2는 이 대응을 칸 열쇠 자체로 바꿉니다.
+
+- 칸 열쇠는 (`node_id`, `item_id`)이고, 결과 문서의 `deviations`는 그 결과를 만들 때의 편차 목록(각 `item_id`·`deviation_id`·`label`)을 그대로 적어 둡니다.
+- 편차 목록 개정 규칙: `item_id`는 다시 쓰지 않고, 바꾼 편차는 새 `item_id`를 받습니다. 편차를 빼면 그 `item_id`의 칸은 `archived_cells`(`reason: deviation_removed`)로, 편차를 더하면 확정 구간에 빈 칸이 생기고 잠긴 구간에는 '잠금 뒤 생긴 칸'이 생깁니다(§5.1). 순서만 바뀌면 `deviation_id` 표시만 바뀌고 칸은 그대로입니다.
+- 0.1 결과를 0.2로 바꿀 때(§2.5 3단계) `deviations`의 `deviation_id → item_id`로 칸 열쇠를 바꿉니다. `item_id`가 지금 편차 목록에 없으면 그 칸은 `archived_cells`(`reason: deviation_removed`).
 
 ## 3. 덮음률을 없앤 뒤의 표시
 
@@ -270,24 +347,39 @@ applied ──확정(사람)──▶ confirmed ──잠금(사람)──▶ lo
 
 ### 4.3 초기사건 인계 묶음
 
-같은 원인이 두 구간에서 승인되면 지금은 후보가 둘 생겨(`bundle.py:383-389`) 초기사건이 두 번 셈될 수 있습니다.
+같은 원인이 두 구간에서 승인되면 지금은 후보가 둘 생깁니다(`bundle.py:383-389`). 같은 원인을 서로 다른 ⑥ 그룹에 넣어도 그룹 확정이 막히지 않고(§12.1 재현 8), 범위가 바뀐 승인도 계속 확정 근거가 됩니다(재현 5). 이것은 **초기사건 후보 중복**이고, PSA 초기사건 빈도를 바꾸는 일과는 다릅니다. 다만 인계 묶음의 후보 수·범주별 수가 부풀어 ⑥ 그룹 판단을 흐립니다.
 
-- **같은 원인의 열쇠**: 항목의 `cause_refs`를 (안정 참조 `ref`, 고장 형태 `failure_mode` 없으면 `cause_kind`)의 집합으로 본 것. 집합이 같으면 같은 원인입니다. 편차는 열쇠에 넣지 않습니다(같은 펌프 정지가 S7에서는 '유량 없음', S9에서는 '압력 낮음'으로 나올 수 있음).
-- **묶는 범위**: 두 항목이 모두 승인이고, 두 구간이 그 원인 구성요소를 함께 품을 때만 묶습니다. 겹치지 않은 구간에서 같은 원인이 나온 것은 묶지 않고 지금 경고 규칙대로 둡니다.
-- **묶은 후보**: IEC는 ⑥ 문서의 것을 그대로 쓰고, 묶은 것들 가운데 구간 순서(집합 안 순서) 첫 항목의 IEC가 대표입니다. 대표 후보에 `merged_from: [IEC…]`, `node_ids: [S7, S9]`, `entry_ids`, `deviation_labels`를 적습니다. `trace`는 항목마다 한 줄씩 그대로 둡니다(근거가 사라지지 않게).
-- **⑥ 그룹이 다를 때**: 묶인 IEC들이 서로 다른 ⑥ 그룹에 들어 있으면 묶음을 만들되, 두 그룹 모두의 `problems`에 "같은 원인 IEC-12·IEC-30이 다른 그룹에 있음"을 넣어 그룹 확정을 막습니다(총괄 위임 V-4).
-- `cause_refs`가 없는 자유 글 원인은 묶지 않고, 정규화한 원인 글이 같으면 '같은 원인일 수 있음' 경고만 둡니다.
+**같은 원인의 열쇠.** 항목의 `cause_refs`를 (안정 참조 `ref`, 고장 형태 `failure_mode`)의 집합으로 본 것입니다. 집합이 같으면 같은 원인입니다. 편차는 열쇠에 넣지 않습니다(같은 펌프 정지가 S7에서는 '유량 없음', S9에서는 '압력 낮음'으로 나올 수 있음).
+- `failure_mode`가 없는 `cause_ref`가 하나라도 있는 항목은 **자동으로 묶지 않습니다.** 같은 밸브의 열림 고착과 닫힘 고착이 하나가 되지 않게 하려는 것입니다. `cause_kind`로 대신하지 않습니다.
+- `cause_refs`가 없는 자유 글 원인도 묶지 않습니다. 이 두 경우는 원인 글을 정규화해 같으면 '같은 원인일 수 있음' 경고만 둡니다.
+
+**묶는 조건(모두 맞아야 함).**
+1. 두 항목 모두 승인이고 `scope_changed`가 없음.
+2. 두 구간이 그 원인 구성요소를 함께 품음(겹친 구간). 겹치지 않은 구간에서 같은 원인이 나온 것은 묶지 않고 지금 경고 규칙대로 둡니다.
+3. 초기사건 판정(`ie_hint.candidate`), 범주(`category`), 안전 기능(`safety_functions`, 집합으로 비교)이 같음.
+4. 결과(`consequence`)를 정규화한 글이 같거나, 결과 근거(`consequence_basis`)와 결과 참조(`consequence_refs` 집합)가 같음.
+
+3·4가 다르면 **묶지 않고 둘 다 남깁니다.** 두 후보에 `twin_conflict: [상대 IEC]`를 달고, 추적표(`trace`)에 "같은 원인 (pump-1, 기동 실패)이 S7·S9에서 결과가 다름: S7 '…', S9 '…'"를 한 줄 적습니다. 어느 쪽이 맞는지는 사람이 ⑥에서 정합니다.
+
+**묶은 후보.** IEC는 ⑥ 문서의 것을 그대로 쓰고, 묶인 것들 가운데 집합 안 구간 순서로 첫 항목의 IEC가 대표입니다. 대표 후보에 `merged_from: [IEC…]`, `node_ids: [S7, S9]`, `entry_ids`, `deviation_labels`를 적습니다. 묶을 때는 조건 3·4가 같으므로 대표의 결과·범주·안전 기능이 곧 모두의 값입니다. `trace`는 항목마다 한 줄씩 그대로 둡니다(근거가 사라지지 않게).
+
+**⑥ 확정에서의 검사(`hazop/ie/model.py`).** 묶음 파일의 표시만으로는 ⑥ 확정을 막지 못합니다. 실제 확정은 `model.confirm`이 `confirm_problems`를 보고 정하기 때문입니다(`model.py:640-647`). 그래서 N1이 `model.py`에 다음을 넣습니다.
+- `entry_facts`의 승인 지문(`fp`, `model.py:151`)에 `scope_changed`, 칸의 `node_rev`와 구간의 지금 `rev`가 같은지, 칸 상태, 칸의 `hold`를 더합니다. 범위가 바뀌거나 보관된 승인은 지문이 바뀌어 확정 그룹이 `sync`에서 초안으로 내려갑니다(`model.py:340-343`). `docs/specs/review-results.md`의 '이전 확정본을 현재 버전에 확정 결과로 승계하지 않음'과 같은 뜻입니다.
+- `_member_problems`에 "⑤ 범위 바뀜(다시 확인 전)"과 "⑤ 구간 확정 해제됨(보관)"을 더합니다.
+- **쌍둥이 검사**: 같은 원인 열쇠(조건 1·2를 만족)를 가진 IEC들을 '쌍둥이'로 봅니다. 그룹 G의 소속 후보에 쌍둥이가 있는데 그 쌍둥이가 다른 살아 있는 그룹에 있거나 어느 그룹에도 없으면, G의 `confirm_problems`에 "같은 원인 후보 IEC-002가 IEG-02에 있음(같은 그룹에 넣거나 한쪽을 중복으로 표시)"을 넣습니다(총괄 위임 V-4). 한쪽을 중복으로 표시하는 길은 후보에 `duplicate_of: IEC`를 두는 것이고, 표시된 후보는 그룹에 넣지 않아도 문제가 되지 않습니다.
+- `twin_conflict`인 쌍둥이는 같은 그룹에 넣어도 "결과가 다른 같은 원인"을 문제로 보입니다. 사람이 한쪽을 고치거나 `duplicate_of`로 정리해야 확정됩니다.
 
 ### 4.4 구간을 바꿨을 때(`remap`)
 
 | 경우 | 처리 |
 | --- | --- |
-| 확정 해제 → 구성요소 고침 → 다시 확정 | 구간 ID가 같으므로 칸도 같음. `rev`가 올랐으면 그 구간 칸만 '범위 바뀜'(§2.4) |
-| 두 구간 병합(A+B → A) | B의 칸 항목을 A의 같은 편차 칸으로 옮기고 '범위 바뀜'을 붙임. B 칸의 원래 상태는 A 칸의 `legacy_cells`에 남김(지금 `remap` 방식) |
-| 구간 분할(A → A, C) | A의 칸은 A에 남고 '범위 바뀜'. C는 칸 없이 시작. 원인 구성요소가 모두 C로 간 항목은 화면이 "C로 옮길까요?"를 묻고 사람이 고름 |
-| 구간 삭제(칸에 항목 있음) | 막음. 사람이 옮길 구간을 고르거나(후보는 구성요소가 많이 겹치는 순) '보관'을 고름. 보관한 칸은 결과의 `archived_cells`로 가고 ⑤·IE에서 빠지지만 지워지지 않음 |
+| 확정 해제 → 고침 → 다시 확정 | 구간 ID가 같으므로 칸도 같음. 해제하는 동안 칸은 `hold`. `rev`가 올랐으면 그 구간 항목만 '범위 바뀜'(§2.4) |
+| 두 구간 병합(A+B → A) | 사람만 할 수 있음(§6.2). B의 칸 항목을 A의 같은 `item_id` 칸으로 옮기고 '범위 바뀜'을 붙임. B 칸의 원래 상태는 A 칸의 `legacy_cells`에 남김(지금 `remap` 방식) |
+| 구간 분할(A → A, C) | 사람만 할 수 있음. A의 칸은 A에 남고 '범위 바뀜'. C는 칸 없이 시작. 원인 구성요소가 모두 C로 간 항목은 화면이 "C로 옮길까요?"를 묻고 사람이 고름 |
+| 구간 삭제(칸에 항목 있음) | 막음. 사람이 옮길 구간을 고르거나(후보는 구성요소가 많이 겹치는 순) '보관'을 고름. 보관한 칸은 `archived_cells`로 가고 ⑤·IE에서 빠지지만 지워지지 않음 |
 | 구간 삭제(칸에 항목 없음) | 칸을 지움 |
-| 0.1 결과를 처음 읽음 | 지금 `remap.carry_saved`를 한 번 씀. `owner`를 목록으로 바꾸고 같은 ID 구간을 먼저 맞춤(#10·#11) |
+| 보관 칸 옮기기 | ⑤ '보관 칸' 목록에서 칸을 골라 대상 구간과 편차를 사람이 정함. 항목은 '범위 바뀜'으로 옮김 |
+| 0.1 결과를 처음 읽음 | §2.5 1단계. 구성요소 집합으로 맞추고 ID는 보지 않음 |
 
 '가장 많이 겹치는 구간으로 자동으로 옮기기'는 0.1 결과 잇기에만 남기고 v2 편집에서는 쓰지 않습니다. 겹침이 생기면 '가장 많이 겹치는 구간'이 둘 이상이 되기 쉬워서, 사람이 승인한 항목을 엉뚱한 구간에 붙일 수 있기 때문입니다.
 
@@ -314,6 +406,8 @@ applied ──확정(사람)──▶ confirmed ──잠금(사람)──▶ lo
 
 새 구간이 잠긴 구간과 겹치는 것은 막지 않습니다. 잠긴 구간 자체는 바뀌지 않기 때문입니다.
 
+구현 자리: ④의 잠금·잠금 풀기 단추와 편집 막기는 N2(`screens/study.py`), ⑤의 막기는 N1입니다. N1은 `ai_cells.plan_units`(`ai_cells.py:139`)와 ⑤ `_plan`(`screens/results.py:1366`)에서 잠긴 구간과 적용됨 구간을 빼고, `screens/results.py`의 항목 승인·기각·수정(`set_entry_status`, `:2346`)과 칸 편집을 잠긴 구간에서 막습니다(#48·#50). 순수 함수 쪽(`results.set_status`·`edit_entry`)도 집합을 받아 잠긴 구간이면 거절하게 해, 채팅 동작이 화면을 거치지 않아도 막히게 합니다.
+
 ### 5.3 푸는 길
 
 - '잠금 풀기'는 사람만, 이유를 적어야 합니다. 풀면 `confirmed`로 돌아가고 `history`에 `unlock`(사람, 이유, 시각)이 남습니다. 구성요소를 고치려면 이어서 '확정 해제'를 합니다.
@@ -324,14 +418,16 @@ applied ──확정(사람)──▶ confirmed ──잠금(사람)──▶ lo
 
 ### 6.1 원칙
 
-- 도구는 `hazop/study/node_tools.py`(새 파일, Qt 없음)의 순수 함수입니다. 채팅 계층(D-chat·S-conn)이 이 함수를 도구로 엽니다.
-- 읽는 도구는 결과에 상한과 쪽 나누기(`cursor`)가 있습니다. 그래프를 통째로 보내지 않습니다.
-- 쓰는 도구는 파일을 직접 쓰지 않고 '제안한 동작'(`apply_nodes`의 입력)을 돌려주고, 앱이 그 동작을 검증해 실행합니다(작업 계획 '지킬 것'). 아래 `apply_nodes`·`undo_batch`는 앱이 부르는 함수이고, AI에게는 같은 서명의 '동작 제안' 도구로 보입니다.
-- 모든 도구는 `set_rev`(읽은 판)를 받습니다. 저장된 판과 다르면 실행하지 않고 "구간이 그 사이 바뀜"을 돌려줍니다.
+- 구간 도구는 `hazop/study/node_tools.py`(새 파일, Qt 없음)의 순수 함수입니다. 채팅 계층(채팅 규격 §3·§4, S-conn)이 엽니다.
+- **읽기 도구**는 `find_major_equipment`·`make_candidates`·`outside_components` 셋입니다. 데이터를 바꾸지 않고, 결과에 상한과 쪽 나누기(`cursor`)가 있습니다. 그래프를 통째로 보내지 않습니다.
+- **쓰기는 도구가 아니라 '제안 동작'입니다**(채팅 규격 §4.1). AI는 답 카드의 `actions`에 `node.create` 같은 동작을 적고, 앱이 검사해 `apply_nodes`·`undo_batch`로 실행합니다. 이 두 함수는 앱이 부르고 AI가 직접 부르지 않습니다.
+- 모든 쓰기 동작은 `set_rev`(읽은 판)를 받습니다. 저장된 판과 다르면 실행하지 않고 "구간이 그 사이 바뀜"을 돌려줍니다.
+- 이 절의 이름(`state`, `origin`, `B<번호>`, 동작 인자)은 이 규격이 주인입니다. 채팅 규격은 §6.6 표를 그대로 옮겨 씁니다.
 
 ### 6.2 서명
 
 ```python
+# 읽기 도구(AI가 부름)
 def find_major_equipment(pg, scope=None, granularity="normal", extra_boundaries=(), limit=100, cursor=None) -> dict:
     """주요 장비(§7) 목록. 반환 {"items": [{entity_id, tag, kind, part, drawing}], "unrecognized_equipment": int,
     "truncated": bool, "next_cursor": str|None}. unrecognized_equipment는 기기 category인데 kind를 몰라
@@ -342,37 +438,47 @@ def make_candidates(pg, node_set, scope=None, granularity="normal", extra_bounda
     """주요 장비에서 주요 장비까지 후보 구간. segment.cut을 scope 안에서 돌리고 등급 순으로 정렬.
     반환 {"candidates": [{cand_id, member_count, start: {tag, entity_id}, end: {...}, majors: [tag],
     valves: int, instruments: int, drawings: [..], grade, score, overlaps: [{node_id, shared}], basis}],
-    "outside": {"count", "sources"}, "total", "next_cursor", "params_digest"}.
+    "outside": {"count", "sources"}, "total", "next_cursor", "params_digest", "set_rev"}.
     cand_id는 (graph_version, params_digest, 구성요소 집합)의 해시라 같은 입력이면 같다.
-    skip_existing이면 확정·잠금 구간과 구성요소가 80% 넘게 겹치는 후보를 뺀다."""
+    skip_existing이면 이미 있는 구간(상태 무관)과 구성요소가 80% 넘게 겹치는 후보를 뺀다."""
 
 def outside_components(pg, node_set, scope=None, only_sources=True, limit=100, cursor=None) -> dict:
     """구간 밖 구성요소. 반환 {"items": [{entity_id, tag, kind, drawing}], "count", "next_cursor"}."""
 
-def apply_nodes(node_set, pg, ops, request, origin, set_rev, at=None) -> tuple[dict, str]:
+# 앱이 부름(제안 동작을 검사한 뒤)
+def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None) -> tuple[dict, dict, str]:
     """ops: [{"op": "add", "cand_id"|"members", "name", "design_intent", "basis"},
              {"op": "edit", "node_id", "add": [..], "remove": [..], "name", "design_intent"},
+             {"op": "merge", "node_ids": [..]}, {"op": "split", "node_id", "members"},
              {"op": "remove", "node_id"}].
-    request: {"text", "chat_turn"}. 묶음 하나로 적용하고 (새 집합, batch_id)를 돌려준다.
-    거절(ValueError, 무엇이 왜인지 목록): 판이 다름, cand_id를 다시 만들 수 없음, members가 그래프에 없음,
-    confirmed·locked 구간을 edit·remove, 같은 구성요소 집합의 구간이 이미 있음, 빈 구간.
-    origin이 "ai"면 name·design_intent의 태그 모양 낱말이 도면에 없을 때 거절(node_review의 규칙과 같음)."""
+    request: {"request_id", "request_text"(500자까지), "stage": "representative"|"rest"|None}.
+    묶음 하나로 적용하고 (새 집합, 새 결과, batch_id)를 돌려준다. 결과는 merge·split·remove의 칸 처리(§4.4) 때문에 받는다.
+    거절(ValueError, 무엇이 왜인지 목록): 아래 '거절 규칙'."""
 
-def undo_batch(node_set, batch_id, set_rev, by, at=None) -> dict:
-    """묶음 하나를 되돌린 새 집합. §2.3의 막는 경우면 ValueError(막은 구간과 이유 목록)."""
+def undo_batch(node_set, results, batch_id, set_rev, by, requested_by, at=None) -> tuple[dict, dict]:
+    """묶음 하나를 되돌린 (새 집합, 새 결과). op마다 '구간 삭제'(add 되돌림)와 '편집 복원'(edit 되돌림)을
+    구분해 §2.3의 막는 경우를 검사한다. requested_by: "ai"|"user". 막으면 ValueError(막은 구간과 이유 목록)."""
 ```
 
 - `scope`: `{"drawings": [도면번호]}` · `{"system": "계통 이름 또는 접두"}` · `{"around": entity_id, "hops": n}` · `{"node_ids": [..]}`. 없으면 프로젝트 전체.
 - `cut_at`: 이 구성요소에서 경로를 끊음(채팅 "PV-201에서 끊어"). `extra_boundaries`: 이 구성요소를 주요 장비로 봄.
 - `cand_id`로 적용하면 앱이 같은 매개변수로 후보를 다시 만들어 구성요소를 얻습니다. AI가 구성요소 목록을 직접 적는 길(`members`)은 도면 고르기와 같은 검증을 거칩니다. 둘 다 AI가 그래프에 없는 구성요소를 끼워 넣지 못하게 하려는 것입니다.
 
+**`apply_nodes` 거절 규칙.** 공통: 판(`set_rev`)이 다름, `cand_id`를 다시 만들 수 없음(그래프 판이 바뀜), 그래프에 없는 구성요소, 빈 구간, 같은 구성요소 집합의 구간이 이미 있음, `confirmed`·`locked` 구간을 `edit`·`merge`·`split`·`remove`. `origin`이 `ai`이면 더해서:
+1. `edit`·`merge`·`split`·`remove`의 대상은 `origin: ai`인 적용됨 구간뿐. 사람이 만든 구간(`user`)과 옛 규칙 구간(`script`)은 AI가 바꾸지 못하고, 바꾸고 싶으면 `node_review` 제안으로 냄(§6.5).
+2. `name_by`·`design_intent.by`가 `user`인 값은 AI가 바꾸지 못함.
+3. 칸에 항목이 있는 구간(보관 칸 포함)의 `merge`·`split`·`remove`는 AI가 하지 못함(사람이 §4.4로).
+4. 이름·설계 의도·`basis`에 든 태그 모양 낱말이 도면에 없으면 거절(`node_review`의 규칙과 같음).
+5. 요청 하나에서 만드는 구간 수 상한: `stage: representative`이면 5개, `rest`이면 `make_candidates` 한 쪽(30개). `stage`가 없으면 5개(§6.3).
+
 ### 6.3 대표 구간 3~5개 → 나머지
 
 1. 사람이 채팅에 "구간 나눠 줘"류를 적으면, AI는 `find_major_equipment`와 `make_candidates`(scope 없음 또는 사람이 말한 범위, `limit` 30)를 부릅니다.
-2. AI는 후보 가운데 서로 다른 계통·도면에 걸치고 등급이 '주요'인 것 3~5개를 고르고, 이름과 설계 의도 초안을 적어 `apply_nodes`를 제안합니다. 앱이 바로 적용합니다(DEC-0303, 승인 전 적용). 답 카드에 고른 이유와 '이 요청 되돌리기'를 보입니다.
-3. 사람이 확인합니다. 고치거나("이건 더 크게", "펌프는 따로"), 그대로 확정하거나, 되돌립니다. AI는 사람이 고친 차이(묶음의 `edit`)를 다음 요청의 맥락으로 받습니다.
-4. 사람이 "나머지도"라고 하면 AI는 같은 매개변수(사람이 고친 크기 조절이 있으면 반영)로 `make_candidates`를 `skip_existing`으로 쪽을 넘기며 부르고, 쪽마다 `apply_nodes` 묶음 하나를 제안합니다. 쪽 하나가 묶음 하나라, 일부만 되돌릴 수 있습니다.
-5. 나머지를 시작하기 전에 예상 호출 수와 시간을 보이고 확인을 받습니다(§6.4). 상한을 넘으면 범위를 나눠 달라고 합니다(총괄 위임 V-3).
+2. AI는 후보 가운데 서로 다른 계통·도면에 걸치고 등급이 '주요'인 것 3~5개를 고르고, 이름과 설계 의도 초안을 적어 `node.create` 동작(`stage: representative`)을 냅니다. 앱이 세어 5개를 넘으면 거절하고, 넘지 않으면 바로 적용합니다(DEC-0303, 승인 전 적용). 답 카드에 고른 이유와 '이 요청 되돌리기'를 보입니다.
+3. 사람이 확인합니다. 고치거나("이건 더 크게", "펌프는 따로"), 그대로 확정하거나, 되돌립니다. AI는 사람이 고친 차이(사람 묶음의 `edit`)를 다음 요청의 맥락으로 받습니다.
+4. **'나머지'는 사람의 새 메시지 뒤에만 합니다.** 대표 묶음을 만든 같은 요청 안에서 AI가 이어서 나머지를 만들 수 없습니다. 앱은 `stage: rest` 동작을 대표 묶음이 있고 그 뒤에 사람이 새 메시지를 보냈거나 답 카드의 '나머지도 만들기' 단추(채팅 규격 §4.2 '바로 → 확인')를 눌렀을 때만 받습니다.
+5. 나머지 요청 하나는 묶음 하나이고, `make_candidates` 한 쪽(30개)까지 만듭니다. 더 있으면 AI가 "다음 30개도 만들까요?"로 묻고, 사람의 다음 메시지가 다음 묶음이 됩니다. 그래서 되돌리기도 요청(=쪽) 단위로 됩니다.
+6. 나머지를 시작하기 전에 예상 호출 수와 시간을 보이고 확인을 받습니다(§6.4). 상한을 넘으면 범위를 나눠 달라고 합니다(총괄 위임 V-3).
 
 '의미 있는 구간'(옛 D3)은 AI가 후보를 고를 때의 기준으로 남습니다: 편차원이 없는 후보(등급 '낮음')는 이웃 후보에 붙이거나 묶음의 끝으로 미루고, 범례 도면 후보는 만들지 않습니다.
 
@@ -394,6 +500,33 @@ def undo_batch(node_set, batch_id, set_rev, by, at=None) -> dict:
 
 - 확정·잠금 구간에는 AI가 적용하지 못하므로, 이 구간들에 대한 AI 의견은 지금 `node_review`의 '제안 → 사람이 받아들이기' 길로 갑니다. 받아들이면 사람 묶음(`origin: user`)으로 적용합니다(확정 구간이면 먼저 해제를 묻습니다).
 - `screen_change` 판정(제외·낮음으로 옮기기)은 없앱니다. `merge`·`split`·설계 의도만 남깁니다.
+
+### 6.6 채팅 규격에 넘기는 표
+
+채팅 규격(`chat-panel.md`) 담당이 그대로 옮길 수 있게 적습니다. 채팅 규격 §4.2·§4.4의 `batch_id` 예(`b-3f9a`)와 동작 인자 `intent`, '스크리닝 제외로 옮기기' 동작은 이 표에 맞춰 고쳐야 합니다(제외 묶음은 v2에서 없어짐).
+
+**읽기 도구(분류 '표시').**
+
+| 도구 | 인자 | 돌려주는 것 | 상한 |
+| --- | --- | --- | --- |
+| `find_major_equipment` | `scope=None`, `granularity="normal"`, `extra_boundaries=[]`, `limit=100`, `cursor` | `items[{entity_id, tag, kind, part, drawing}]`, `unrecognized_equipment`, `next_cursor` | 200 |
+| `make_candidates` | `scope=None`, `granularity="normal"`, `extra_boundaries=[]`, `cut_at=[]`, `skip_existing=true`, `limit=30`, `cursor` | `candidates[{cand_id, member_count, start, end, majors, valves, instruments, drawings, grade, score, overlaps, basis}]`, `outside`, `total`, `next_cursor`, `params_digest`, `set_rev` | 30 |
+| `outside_components` | `scope=None`, `only_sources=true`, `limit=100`, `cursor` | `items[{entity_id, tag, kind, drawing}]`, `count`, `next_cursor` | 200 |
+
+**쓰기 동작(제안 동작, 앱이 실행).** 모든 동작에 `set_rev`가 필수이고, 앱이 `request_id`·`request_text`(500자까지, UC2)를 붙입니다.
+
+| 동작 | 인자 | 분류 | 앱 함수 |
+| --- | --- | --- | --- |
+| `node.create` | `name`, `design_intent`, `cand_id` 또는 `members`, `basis=None`, `stage`(`representative`/`rest`), `set_rev` | 바로 | `apply_nodes` `add` |
+| `node.update` | `node_id`, `add=[]`, `remove=[]`, `name=None`, `design_intent=None`, `set_rev` | 바로(대상이 `ai` 적용됨 구간일 때만) | `apply_nodes` `edit` |
+| `node.merge` | `node_ids`, `set_rev` | 바로(모두 `ai` 적용됨이고 칸에 항목 없음) | `apply_nodes` `merge` |
+| `node.split` | `node_id`, `members`, `set_rev` | 바로(같은 조건) | `apply_nodes` `split` |
+| `node.remove` | `node_id`, `set_rev` | 확인 | `apply_nodes` `remove` |
+| `node.confirm`·`node.reopen`·`node.lock`·`node.unlock` | `node_ids`(잠금 풀기는 `reason`도) | 안 함(사람이 ④·⑤ 단추로) | — |
+| `undo` | `batch_id`(`B<번호>`), `set_rev` | 바로(AI 묶음만) | `undo_batch` |
+
+- 구간 상태 필드 이름은 `state`(`applied`/`confirmed`/`locked`)이고, 채팅 규격의 `get_node`·`list_nodes`가 돌려주는 '상태'도 이 이름과 값을 씁니다. `list_nodes`의 `filter.status`는 `filter.state`로 바꿉니다.
+- 답 카드에는 앱이 센 값(만든 구간 수, 묶음 ID)을 보이고, 모델이 적은 수를 그대로 보이지 않습니다.
 
 ## 7. 주요 장비와 크기 조절
 
@@ -441,25 +574,28 @@ def undo_batch(node_set, batch_id, set_rev, by, at=None) -> dict:
 
 ## 9. 뒤 단위
 
-순서는 N1 → (N2 ∥ N3의 도구 부분) → N3의 채팅 부분입니다(N3은 C2 채팅 창 뒤, 작업 계획). N2와 N3이 같이 고치는 `screens/study.py`는 N2가 주인이고, N3은 N2 커밋 뒤에 단추 삭제만 합니다(규칙 4).
+순서는 N1 → (N2 ∥ N3의 도구 부분) → N3의 채팅 부분입니다(N3은 C2 채팅 창 뒤, 작업 계획). 파일 주인(규칙 4): `screens/study.py`·`explorer.py`는 N2, `screens/results.py`·`ai_cells.py`·`ie/*`는 N1입니다. N3은 N2 커밋 뒤에 `study.py`에서 '다시 제안' 단추만 지웁니다.
 
 | 단위 | 대상 파일 | 완료 기준 | 시험해야 할 경우 |
 | --- | --- | --- | --- |
-| **N1 저장 규격 v2** (Opus 5.5 medium, 대 + Codex) | `hazop/study/nodes.py`, `results.py`, `remap.py`, `migrate.py`, `span.py`(#21·#22), `hazop/ie/bundle.py`, `hazop/ie/model.py`(쌍둥이 표시만), `hazop/app/related.py`(#31), `hazop/app/screens/results.py`(#33~#35), `hazop/app/screens/knowledge.py`(#36), 새 `tests/test_study_nodes_v2.py`, 기존 시험 갱신 | §2 저장·읽기, §2.4 칸 판 번호, §2.6 판 이전, §4.3 묶기, §4.4 구간 변경, §5 잠금 함수. 화면 단추는 N2. `tests.test_naming_rules`, 전체 시험, `check_snp_baseline.py`, `check_apr1400.py` 통과 | ① 0.1 확정본 + 맞는 결과 → 0.2로 읽어 칸 `node_rev: 1`, 항목·상태 바이트 단위 보존 ② 0.1 제안본 → 모두 `applied` ③ 0.1 제외 구간(칸 비었음 / 칸에 항목 있음) 두 경우 ④ 0.1 `previous`가 있는 결과 잇기(겹침 없음) ⑤ 처음 저장 때 `.v0.1.bak.json` 생김, 결과 파일도 ⑥ 0.2 파일을 옛 형식 검사에 넣으면 거부(옛 앱 덮어쓰기 방지) ⑦ 구간 하나 다시 확정 → 다른 구간 칸은 그대로 ⑧ 겹친 두 구간에서 같은 (구성요소, 고장 형태) 승인 → 인계 후보 1개, 근거 구간 2개, trace 2줄 ⑨ 같은 원인 IEC가 다른 ⑥ 그룹 → 두 그룹 확정 막힘 ⑩ 겹치지 않은 구간의 같은 원인 → 묶지 않음 ⑪ 칸에 항목 있는 구간 삭제 → 막힘, 보관 고르면 `archived_cells` ⑫ 병합 → 항목이 '범위 바뀜'으로 옮겨짐 ⑬ 구간 밖 구성요소가 있는 집합에서 그래프 판이 바뀜 → 다른 구간은 이어지고 바뀐 구간만 재확인 ⑭ 잠긴 구간 지문이 바뀜 → 잠금 유지, 경고 ⑮ 묶음 되돌리기: 정상, 확정 구간 포함 시 막힘, 뒤 묶음이 같은 구간을 고쳤을 때 막힘 ⑯ 되돌린 묶음의 구간 ID를 다시 내지 않음 ⑰ 구간 밖이 있어도 ⑤·탐색기·③이 결과를 읽음 |
-| **N2 도면에서 고르기와 강조** (Sonnet 5.5 medium, 중) | `hazop/app/screens/study.py`, `hazop/app/explorer.py`(④ 묶음), `hazop/app/project_ctx.py`(#46), S-viewer가 연 뷰어 API만 사용(`template.html`·`webview.py`는 S-viewer 주인, 겹침 칠하기 #44가 모자라면 S-viewer에 요청) | 네모로 끌어 고르기, 클릭 더하기·다시 클릭 빼기 → '구간 만들기'(origin `user`, 묶음 하나). 구간을 누르면 그 구간만 강조하고, 그 안에서 구성요소를 누르면 그 구성요소를 따로 강조(INTENT §3.4). 겹친 요소 표시. 고른 구간 확정·확정 해제·잠금·잠금 풀기 단추. 제외 구간 UI·'미포함' 탭 정리. 구간 밖 표시(§3.1) | ① 고르기로 만든 구간이 다른 구간과 겹침 → 저장되고 양쪽 강조 ② 이미 있는 구간과 구성요소가 같음 → 거절 문구 ③ 확정 구간에서 구성요소 빼기 → 해제부터 묻기 ④ 잠긴 구간 편집 단추 꺼짐 ⑤ 여러 도면에 걸친 구간 강조 ⑥ 1366×768에서 구간 10개 스크롤 없이(지금 기준) ⑦ 구간 밖 편차원 점선 ⑧ 실제 창 시나리오(`check_user_scenarios.py`, 데스크톱 잠금 안에서) |
-| **N3 AI 대표 구간** (Opus 5.5 high, 대) | 새 `hazop/study/node_tools.py`, `hazop/study/segment.py`(크기 매개변수·`cut_at`·scope), `hazop/study/node_review.py`(#26), 채팅 도구 등록(D-chat이 정한 자리, 예 `hazop/chat/tools.py`), `hazop/app/screens/study.py`('다시 제안' 단추 삭제만, N2 뒤) | §6 도구 네 개와 `outside_components`, §7 크기 조절. 가짜 AI 응답으로 '대표 3~5개 적용 → 사람이 하나 고침 → 나머지 한 쪽 적용 → 그 쪽만 되돌리기'가 돈다. 143쪽 사본에서 `make_candidates` 한 쪽 2초 이하(부하 적을 때, 5회 중앙값) | ① SNP에서 `normal` 후보 수가 rev 0 S1의 남긴 구간 수(29)와 같음 ② `coarse`·`fine`의 구간 수와 최대 크기를 SNP·APR 5장에서 재어 §7.1 값을 고침 ③ 같은 입력이면 같은 `cand_id` ④ 그래프 판이 바뀐 뒤 옛 `cand_id`로 적용 → 거절 ⑤ AI가 그래프에 없는 구성요소·도면에 없는 태그를 적음 → 거절 ⑥ 확정·잠금 구간 edit 제안 → 거절 ⑦ `set_rev`가 다름 → 거절 ⑧ 기기를 못 알아본 도면(APR 5.1.2-1) → `unrecognized_equipment`와 크기 분할 안내 ⑨ 범례 표시 도면 → 후보 없음 ⑩ 예상 호출 수가 상한을 넘으면 범위를 나누자는 답 |
+| **N1 저장 규격 v2** (Opus 5.5 medium, 대 + Codex, 지적은 재현 뒤 판정) | `hazop/study/nodes.py`, `results.py`, `remap.py`, `migrate.py`, `span.py`(#21·#22·#61), `ai_cells.py`(#48·#49), `hazop/ie/bundle.py`, `hazop/ie/bundle_xlsx.py`(#54), `hazop/ie/model.py`(승인 지문·쌍둥이 검사·`duplicate_of`, #52·#53), `hazop/app/related.py`(#31·#57), `hazop/app/screens/results.py`(#33~#35·#50·#51, 잠금 처리 포함), `hazop/app/screens/knowledge.py`(#36·#58), `hazop/app/data.py`(#59), `hazop/export/study_xlsx.py`(#60), 새 `tests/test_study_nodes_v2.py`, 기존 시험 갱신 | §2 저장·읽기·변환 순서, §2.4 칸 판·보관·검증, §2.6 판 이전, §2.7 편차 열쇠, §4.3 묶기·⑥ 검사, §4.4 구간 변경, §5 잠금 함수와 ⑤의 잠금 처리, §6.2 `apply_nodes`·`undo_batch`. ④ 화면 단추는 N2. `tests.test_naming_rules`, 전체 시험, `check_snp_baseline.py`, `check_apr1400.py` 통과. §12.1 재현 스크립트 네 경우가 모두 고쳐진 동작을 보임 | ① 0.1 확정본 + 맞는 결과(A) → 칸 `node_rev: 1`, 항목·상태 보존 ② 0.1 B: `previous.S1={a}`, 지금 `S1={b}, S2={a}` → S2로 이음(재현 1) ③ 0.1 C: 확정 해제 뒤 `proposed` + `previous` + 결과 → 칸이 `hold`로 남고, 구간을 확정하면 ⑤에 나타남. 승인 항목이 백업에만 남지 않음 ④ 0.1 D: 잇기가 멈춤 → 멈춘 칸은 `archived_cells`, 나머지는 바뀜 ⑤ 변환 도중 끊김: 결과 0.2만 쓰인 상태에서 다시 열면 2단계부터 이어 감, 지문이 다르면 멈춤 ⑥ 백업 쓰기 실패 → 바꾸지 않고 읽기 전용 ⑦ 0.2 집합을 옛 형식 검사에 넣으면 거부, 옛 ⑤가 0.2 결과를 열 때 원본이 보관본으로 남음 ⑧ 구간 하나 확정 해제 → 그 칸만 `hold`, 다른 칸·⑤ 결과는 그대로(재현 4) ⑨ 칸 문제 하나 → 그 칸만 떼어 두고 나머지 사용, 결과 전체를 비우지 않음 ⑩ 설계 의도만 고침 → `rev` 오름 → 항목 '범위 바뀜' ⑪ '범위 바뀜' 승인 → `entry_facts` 지문이 바뀌고 확정 그룹이 초안으로 내려감(재현 5) ⑫ 겹친 두 구간에서 같은 (구성요소, 고장 형태), 결과·범주·안전 기능 같음 → 인계 후보 1개, 근거 구간 2개, trace 2줄 ⑬ 같은 원인이지만 결과가 다름 → 후보 2개, `twin_conflict`, trace에 결과 문장 ⑭ 고장 형태 없음(열림 고착·닫힘 고착 섞임 가능) → 묶지 않음 ⑮ 같은 원인 IEC를 다른 ⑥ 그룹에 둠 → 두 그룹 `confirm_problems`에 문제, `model.confirm` 거절(재현 8). `duplicate_of`로 정리하면 확정됨 ⑯ 겹치지 않은 구간의 같은 원인 → 묶지 않음 ⑰ 편차 목록에 하나를 끼워 넣음 → 기존 칸이 같은 `item_id`에 남고 표시 ID만 바뀜, 뺀 편차의 칸은 `archived_cells` ⑱ 칸에 항목 있는 구간 삭제 → 막힘, 보관 고르면 `archived_cells` ⑲ 병합 → 항목이 '범위 바뀜'으로 옮겨짐 ⑳ 구간 밖이 있는 집합에서 그래프 판이 바뀜 → 다른 구간은 이어지고 바뀐 구간만 재확인 ㉑ 잠긴 구간 지문이 바뀜 → 잠금 유지, 경고 ㉒ 묶음 되돌리기: 정상 / 대상이 `after`와 다름 / 확정 구간 / 칸에 항목 있는 구간 삭제 / AI가 사람 묶음을 되돌림 → 각각 막힘 ㉓ `undo_batch`를 결과 없이 부름 → 거절 ㉔ `apply_nodes`(AI): 사람 구간 편집, 사람이 쓴 설계 의도 바꾸기, 항목 있는 구간 병합 → 거절. 대표 단계 6개 → 거절 ㉕ 잠긴 구간: `plan_units`·`_plan`에서 빠짐, 항목 승인·기각 막힘 ㉖ 인계 묶음 Excel(`bundle_xlsx`)이 새 `source`로 열림 ㉗ 구간 밖이 있어도 ⑤·탐색기·③이 결과를 읽음 |
+| **N2 도면에서 고르기와 강조** (Sonnet 5.5 medium, 중) | `hazop/app/screens/study.py`(#37~#43·#47), `hazop/app/explorer.py`(#45·#56), `hazop/app/project_ctx.py`(#46), S-viewer가 연 뷰어 API만 사용(`template.html`·`webview.py`는 S-viewer 주인, 겹침 칠하기 #44가 모자라면 S-viewer에 요청) | 네모로 끌어 고르기, 클릭 더하기·다시 클릭 빼기 → '구간 만들기'(origin `user`, 묶음 하나). 구간을 누르면 그 구간만 강조하고, 그 안에서 구성요소를 누르면 그 구성요소를 따로 강조(INTENT §3.4). 겹친 요소 표시. 고른 구간 확정·확정 해제·잠금·잠금 풀기 단추(⑤ 쪽 잠금 처리는 N1). 토스트 실행 취소를 `undo_batch`로. 제외 구간 UI·'미포함' 탭 정리. 구간 밖 표시(§3.1) | ① 고르기로 만든 구간이 다른 구간과 겹침 → 저장되고 양쪽 강조 ② 이미 있는 구간과 구성요소가 같음 → 거절 문구 ③ 확정 구간에서 구성요소 빼기 → 해제부터 묻기 ④ 잠긴 구간 편집 단추 꺼짐 ⑤ 편집 토스트 실행 취소: 그 사이 다른 구간을 확정했어도 그 확정이 풀리지 않음, 대상이 바뀌었으면 막힘 이유 표시 ⑥ 확정·잠금 토스트에는 실행 취소 없음 ⑦ 여러 도면에 걸친 구간 강조 ⑧ 1366×768에서 구간 10개 스크롤 없이(지금 기준) ⑨ 구간 밖 편차원 점선 ⑩ 탐색기 ⑤ 묶음이 확정 구간 일부만 있어도 보임 ⑪ 실제 창 시나리오(`check_user_scenarios.py`, 데스크톱 잠금 안에서) |
+| **N3 AI 대표 구간** (Opus 5.5 high, 대) | 새 `hazop/study/node_tools.py`(읽기 도구 셋), `hazop/study/segment.py`(크기 매개변수·`cut_at`·scope), `hazop/study/node_review.py`(#26), 채팅 동작·도구 등록(채팅 규격이 정한 자리: `hazop/chat/tools.py`, `hazop/chat/actions.py`의 `node.*` 줄), `hazop/app/screens/study.py`('다시 제안' 단추 삭제만, N2 뒤) | §6 읽기 도구와 §6.6 동작 연결, §7 크기 조절. 가짜 AI 응답으로 '대표 3~5개 적용 → 사람이 하나 고침 → 새 메시지로 나머지 한 쪽 적용 → 그 요청만 되돌리기'가 돈다. 143쪽 사본에서 `make_candidates` 한 쪽 2초 이하(부하 적을 때, 5회 중앙값) | ① SNP에서 `normal` 후보 수가 rev 0 S1의 남긴 구간 수(29)와 같음 ② `coarse`·`fine`의 구간 수와 최대 크기를 SNP·APR 5장에서 재어 §7.1 값을 고침 ③ 같은 입력이면 같은 `cand_id` ④ 그래프 판이 바뀐 뒤 옛 `cand_id`로 적용 → 거절 ⑤ AI가 그래프에 없는 구성요소·도면에 없는 태그를 적음 → 거절 ⑥ 확정·잠금 구간 edit 동작 → 거절 ⑦ `set_rev`가 다름 → 거절 ⑧ 대표 요청에서 6개 → 거절, 같은 요청에서 `stage: rest` → 거절 ⑨ 기기를 못 알아본 도면(APR 5.1.2-1) → `unrecognized_equipment`와 크기 분할 안내 ⑩ 범례 표시 도면 → 후보 없음 ⑪ 예상 호출 수가 상한을 넘으면 범위를 나누자는 답 ⑫ 실행 기록의 `batch_id`·`request_id`가 집합의 묶음과 같음 |
+
+**rev 1에서 바뀐 대상 파일.** N1은 `ai_cells.py`, `bundle_xlsx.py`, `data.py`, `export/study_xlsx.py`를 새로 맡고, `ie/model.py`는 '쌍둥이 표시만'에서 승인 지문·쌍둥이 검사·`duplicate_of`까지로 넓어졌으며, `screens/results.py`에 잠금 처리(#50)와 검증 실패 처리(#51)가 더해졌습니다. N2는 `study.py`의 실행 취소(#47)와 `explorer.py`의 ⑤ 묶음 조건(#56)이 더해졌습니다. N3은 `hazop/chat/actions.py`의 `node.*` 줄이 더해졌습니다.
 
 ## 10. 가장 위험한 곳
 
 데이터를 잃거나 판정이 틀릴 수 있는 경로입니다. N1 검토는 이 경로를 재현 스크립트로 확인하기 전에는 경미로 낮추지 않습니다(CLAUDE.md 규칙 3).
 
-1. **⑤ 결과와 구간의 연결(#12·#16·#34).** 지금 구조에서 구간 하나를 더하거나 다시 확정하면 결과 전체가 '옛 확정본 것'이 되고, `carry_saved`가 추정 대응으로 옮깁니다. 겹침이 생기면 그 추정(`remap.py:48` 사전 덮어쓰기, `:56` 같음 판정)이 사람이 승인한 항목을 다른 구간에 붙이거나 '범위 바뀜'으로 떨어뜨립니다. §2.4의 칸 판 번호가 이 경로를 없앱니다.
-2. **0.1 파일 첫 저장(§2.5).** 읽을 때 바꾼 값으로 덮어쓰므로, 바꾸는 규칙에 틀린 것이 있으면 원본이 사라집니다. 백업을 먼저 쓰고, 백업을 못 쓰면 저장하지 않습니다.
-3. **옛 앱이 0.2 파일을 여는 경우.** 옛 앱의 '읽을 수 없음' 처리에 기댑니다. N1 시험 ⑥으로 확인합니다.
-4. **묶음 되돌리기(§2.3).** 사람이 그 사이 고친 구간을 AI 묶음 되돌리기가 덮으면 사람 작업이 사라집니다. 뒤 묶음 검사와 확정 구간 검사가 막습니다.
-5. **구간 삭제·병합(§4.4).** 칸에 항목이 있는 구간을 지우면 항목이 사라집니다. 막고, 옮길 곳 또는 보관을 사람이 고르게 합니다.
-6. **초기사건 이중 계산(#27, §4.3).** 데이터를 잃는 것은 아니지만, 겹친 두 구간의 같은 원인이 후보 둘이 되어 인계 묶음의 빈도·범주 수가 부풀 수 있습니다.
-7. **그래프 판 이전의 늘 재확인(#17·#18).** 데이터를 잃지는 않지만, 구간 밖 구성요소가 하나만 있어도 판이 바뀔 때마다 모든 확정이 풀립니다.
+1. **⑤ 결과와 구간의 연결(#12·#16·#34·#51).** 지금 구조에서 구간 하나를 더하거나 다시 확정하면 결과 전체가 '옛 확정본 것'이 되고, 검증 문제가 하나라도 있으면 ⑤가 결과 전체를 빈 결과로 시작합니다. §2.4의 칸 판·보관·칸 단위 검증이 이 경로를 없앱니다.
+2. **0.1 파일 변환(§2.5).** 결과 잇기를 집합 바꾸기보다 먼저 하지 않으면 `carry_saved`가 돌지 않고, 확정 해제 상태(C)의 결과는 지금 규칙으로는 백업에만 남습니다. 변환 순서·백업 먼저·다시 시작 규칙이 막습니다.
+3. **옛 앱이 0.2 파일을 여는 경우.** 옛 앱의 '읽을 수 없음' 처리에 기댑니다. N1 시험 ⑦로 확인합니다.
+4. **되돌리기(§2.3, #47).** 지금의 토스트 실행 취소는 옛 집합 전체를 저장해 그 사이 한 확정·잠금을 풉니다. 묶음 되돌리기도 대상이 그 사이 바뀌었는지(`after` 비교)와 칸의 항목을 봐야 사람 작업을 덮지 않습니다.
+5. **구간 삭제·병합(§4.4).** 칸에 항목이 있는 구간을 지우면 항목이 사라집니다. 막고, 옮길 곳 또는 보관을 사람이 고르게 합니다. AI는 이 일을 하지 못합니다.
+6. **초기사건 후보 중복과 범위 바뀐 승인(#27·#52·#53, §4.3).** 데이터를 잃는 것은 아니지만, 같은 원인 후보가 두 그룹에 들어가거나 범위가 바뀐 승인이 확정 근거로 남아 ⑥ 그룹 판정이 틀릴 수 있습니다. PSA 초기사건 빈도와는 다른 문제입니다.
+7. **편차 목록 개정(§2.7).** 순번 ID로 칸을 찾으면 편차 하나를 끼워 넣는 것만으로 승인 항목이 다른 편차에 붙습니다.
+8. **그래프 판 이전의 늘 재확인(#17·#18).** 데이터를 잃지는 않지만, 구간 밖 구성요소가 하나만 있어도 판이 바뀔 때마다 모든 확정이 풀립니다.
 
 ## 11. 확인하지 못한 것
 
@@ -467,8 +603,49 @@ def undo_batch(node_set, batch_id, set_rev, by, at=None) -> dict:
 - 구간 AI 호출의 시간은 ⑤ 칸 분석 값을 빌린 추정입니다. 호출 하나에 후보 몇 개의 이름·설계 의도를 쓸지 정하지 않았습니다.
 - '크게'·'잘게'의 예산 값은 재지 않았습니다(N3에서 잼).
 - 겹친 요소에서 `span._boundaries`의 '구간 나눔' 표기(#21)가 맞는지 실행해 보지 않았습니다.
+- 재현 4의 '⑤ 결과 전체가 빈 결과로 시작'은 화면 코드를 읽어 확인했고 앱을 띄워 보지는 않았습니다.
+- U.S. NRC Glossary의 'initiating event' 항목 원문은 이번에 열어 보지 않았습니다(용어 병기 규칙을 따른 표기).
 - 경계 장비를 양쪽 구간에 함께 넣는 것이 국내 HAZOP 관행인지 KOSHA·CCPS 원문으로 확인하지 않았습니다.
 - 이 문서는 pstack 스킬 없이 썼습니다. 사용자가 하위 세션의 pstack 호출을 허락한 뒤(2026-11-13 총괄 전달) 다시 불렀지만 `poteto-mode`·`architect`·`blast-radius`·`technical-writing`·`unslop` 다섯 개 모두 같은 오류로 막혔습니다: "cannot be used with Skill tool due to disable-model-invocation. Ask the user to run /pstack:… themselves … Do not replicate this skill's workflow by other means — it is reserved for explicit user invocation." 오류 문구가 다른 방법으로 같은 절차를 따르지 말라고 하므로 스킬 문서를 읽어 흉내 내지 않았습니다. 호출자 수는 `grep`으로 직접 셌습니다. 스킬로 다시 보려면 사용자가 이 세션에서 `/pstack:blast-radius` 등을 직접 실행해야 합니다.
+
+## 12. 검토 반영 기록(rev 2, 2026-11-13)
+
+Claude 측 검토와 Codex 교차검증이 모두 반려했고, 총괄이 저장·ID·판정 경로라 모두 차단으로 판정했습니다. 지적마다 고친 자리입니다.
+
+| # | 지적(요약) | 고친 자리 |
+| ---: | --- | --- |
+| 1 | 0.1 결과를 '같은 ID'에 먼저 잇는 규칙이 틀림 | §2.5 경우 B, §4.4 마지막 줄. 구성요소 집합으로만 맞춤. 재현 1 |
+| 2 | `previous`를 옮기고 집합 `status`를 없애면 `carry_saved`가 안 돎 | §2.5 변환 순서(잇기 먼저)와 다시 시작 표 |
+| 3 | 0.1 `proposed`(확정 해제 뒤)에서 결과를 잇는 규칙이 없음 | §2.5 경우 C, N1 시험 ③ |
+| 4 | 확정 해제 뒤 칸 남기기와 '칸은 확정·잠금 구간에만'이 모순, 항목 있는 `not_analyzed` 거부, 검증 실패가 결과 전체를 비움 | §2.2, §2.4(보관 `hold`, 칸 상태를 내리지 않음, 두 층 검증, 빈 결과로 시작하지 않음), #51. 재현 4 |
+| 5 | 범위가 바뀐 승인이 계속 확정 근거가 됨 | §4.3 '⑥ 확정에서의 검사', #52. 재현 5 |
+| 6 | 고장 형태 없는 원인 자동 묶기 | §4.3 열쇠: 고장 형태가 없으면 묶지 않음 |
+| 7 | 대표 후보의 결과·범주·안전 기능이 다를 때 | §4.3 묶는 조건 3·4, `twin_conflict`, 추적표 문장 |
+| 8 | 묶음의 `problems`로는 ⑥ 확정을 못 막음 | §4.3 쌍둥이 검사를 `model.confirm_problems`에, N1 대상에 `model.py` 전체, #53. 재현 8 |
+| 9 | '후보 중복이 곧 빈도 증가'는 근거 없음, 용어 병기 | 머리말 용어, §4.3 첫 문단, §10 6번 |
+| 10 | 설계 의도만 바꿔도 분석 판이 바뀌어야 함 | §2.2 `rev` = AI 분석 입력 넷, #49 |
+| 11 | `D01…`은 순번이라 편차 개정에 약함 | §2.7, §2.4 칸 열쇠 (`node_id`, `item_id`) |
+| 12 | 토스트 실행 취소가 묶음 검사·잠금을 건너뜀 | §2.3, #47, N2 시험 ⑤⑥ |
+| 13 | `undo_batch`가 결과를 안 받음, 편집 복원과 구간 삭제 구분 | §2.3, §6.2 서명 |
+| 14 | AI가 되돌리거나 바꿀 수 있는 범위, `add`에 `before`가 없음 | §2.3(`before`·`after`, 막는 경우 4), §6.2 거절 규칙 1~3 |
+| 15 | ⑤의 잠금 처리 자리 | #48·#50, §9 N1(⑤ 쪽은 N1, ④ 단추는 N2) |
+| 16 | 호출자 표 누락 | §1.1 #54~#61, #29 줄 번호를 399-400으로 |
+| 17 | 채팅 규격과 이름·묶음 단위·읽기/쓰기 구분, 요청 원문 | §2.1, §2.3 '묶음 하나 = 요청 하나', §6.1, §6.6 표 |
+| 18 | 대표 단계 수를 앱이 세고 '나머지'는 새 메시지 뒤에만 | §6.2 거절 규칙 5, §6.3 4·5 |
+
+### 12.1 재현 결과
+
+총괄 지시대로 고치기 전에 HEAD 코드로 1·4·5·8번을 재현했습니다. 저장소 코드는 읽기만 했습니다.
+
+- 폴더: `D:\HAZOP-trials\2026-11-13-d-node-repro\`(README에 주인·목적·`keep_until: 2026-11-27`). 스크립트 `repro.py`, 출력 `result.txt`.
+- 조건: HEAD `9da8d45`, 인터프리터 `%USERPROFILE%\.hazop\venv-py312\Scripts\python.exe`, `PYTHONIOENCODING=utf-8`. 파일을 쓰지 않는 순수 함수만 불렀습니다.
+
+| 지적 | 재현 | 결과 |
+| --- | --- | --- |
+| 1 | `remap.node_map`에 `previous.S1={a}`, 지금 `S1={b}, S2={a}` | 구성요소로 이으면 S2(`exact: True`). rev 1의 '같은 ID 먼저'면 S1로 감 → **재현됨**(rev 1 규칙이 틀림) |
+| 4 | `results.validate` | (a) 항목 있는 칸을 `not_analyzed`로 내리면 "S1/D01: not_analyzed 칸에 항목이 있음" (b) 확정 구간(S2)만 넘기면 S1 칸이 "없는 검토구간 참조" → **재현됨**. 이 문제가 ⑤ 결과 전체를 빈 결과로 바꾸는 것은 `screens/results.py:1213-1218` 코드를 읽어 확인했고 화면을 띄우지는 않음 |
+| 5 | `model.entry_facts`의 지문을 `scope_changed` 전후로 비교 | 같음(`MEMBER_FIELDS`에 없음) → **재현됨** |
+| 8 | 같은 `(pump-1, fail_to_run)` 승인 후보 IEC-001·IEC-002를 IEG-01·IEG-02에 따로 넣음 | 두 그룹 `confirm_problems` 모두 `[]` → **재현됨** |
 
 ## 부록 A. v1 설계 기록(2026-11-09~11-11): 그래프 알고리즘, AI 없는 스크리닝, 큰 도면 성능
 
