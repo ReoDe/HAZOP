@@ -16,6 +16,7 @@ import copy
 import hashlib
 import json
 import re
+import secrets
 import threading
 import time
 from dataclasses import dataclass, field
@@ -34,7 +35,9 @@ APPROVAL_TTL = 600           # 승인 표지 유효 시간(초, §4.6)
 FORGED_KEYS = frozenset(("request_id", "answer_id", "action_key", "batch_id", "result", "confirmed_by", "confirmed_at",
                          "approval_digest", "conversation_id", "by", "origin", "reviewer", "accepted_by", "proposed_by",
                          "at", "class", "undo_of"))
-_PATHLIKE = re.compile(r"(^|[/\\])\.\.([/\\]|$)|\\|^[A-Za-z]:|^[/~]|%[^%\s]+%|^file:", re.I)
+# 제어 문자(줄바꿈·탭 제외). 글 인자(이름·설계 의도·이유)에는 경로 검사를 하지 않는다: '50%~100%' 같은 정상 글이 걸린다
+# (검토 5). 경로처럼 생긴 값은 ID 형(_ID)이 막는다(드라이브 글자·역슬래시·'..'·'%'·'~'는 ID 글자가 아니다).
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _ID = re.compile(r"^[A-Za-z0-9_.#-]+(/[A-Za-z0-9_.#-]+)*$")
 
 
@@ -107,13 +110,13 @@ def _ids(v, limit=200):
 
 
 TYPES = {
-    "str": lambda v: isinstance(v, str) and 0 < len(v) <= 500,
-    "text": lambda v: isinstance(v, str) and len(v) <= 2000,
+    "str": lambda v: isinstance(v, str) and 0 < len(v) <= 500 and not _CONTROL.search(v),
+    "text": lambda v: isinstance(v, str) and len(v) <= 2000 and not _CONTROL.search(v),
     "id": _is_id,
     "ids": _ids,
     "int": lambda v: isinstance(v, int) and not isinstance(v, bool),
     "bool": lambda v: isinstance(v, bool),
-    "obj": lambda v: isinstance(v, dict) and len(v) <= 50,
+    "obj": lambda v: isinstance(v, dict) and len(v) <= 50 and _clean(v),
     "list": lambda v: isinstance(v, list) and len(v) <= 200,
 }
 
@@ -168,9 +171,10 @@ ACTIONS = {a.name: a for a in (
            "묶음 {batch}를 되돌립니다."),
     Action("nodes.confirm", CONFIRM, _spec(("node_ids", "ids")), "④", "사람 판단. 실행하면 by에 검토자",
            "구간 {node_ids}을 확정합니다."),
-    Action("nodes.unconfirm", CONFIRM, _spec(("node_ids", "ids")), "④", "사람 판단", "구간 {node_ids}의 확정을 해제합니다."),
-    Action("nodes.lock", CONFIRM, _spec(("node_ids", "ids")), "④", "분석 마침·잠금. 구간 규격 §5.1 조건을 채운 구간만",
-           "구간 {node_ids}을 분석 마침으로 잠급니다. 잠금은 ④에서 이유를 적어야만 풀립니다."),
+    # unconfirm·lock은 구간 하나(node_commands와 같은 인자, node-commands.md §2)
+    Action("nodes.unconfirm", CONFIRM, _spec(("node_id", "id")), "④", "사람 판단", "구간 {node_id}의 확정을 해제합니다."),
+    Action("nodes.lock", CONFIRM, _spec(("node_id", "id")), "④", "분석 마침·잠금. 구간 규격 §5.1 조건을 채운 구간만",
+           "구간 {node_id}을 분석 마침으로 잠급니다. 잠금은 ④에서 이유를 적어야만 풀립니다."),
     Action("nodes.unlock", NEVER, _spec(), "④", "차단 9", where="④ 검토구간에서 사람이 이유를 적고 푼다"),
     # ⑤
     Action("analysis.run", CONFIRM, _spec(("node_ids", "ids"), cell_ids="ids"), "⑤",
@@ -224,6 +228,7 @@ class Item:
     stage: str = None            # nodes.apply: "representative" | "rest"
     targets: list = field(default_factory=list)
     proposals: list = field(default_factory=list)
+    token: str = None            # planner가 낸 무작위 표(run·approve·decline에 넘김). 화면은 이 값만 들고 있으면 된다
 
     @property
     def key(self):
@@ -239,19 +244,40 @@ class Plan:
     display: list = field(default_factory=list)    # 표시: 화면이 바로 그림(기록 없음)
 
 
+AUTHOR = "ai"   # 채팅에서 온 동작의 글은 늘 AI가 썼다(사람이 확인 상자를 눌렀어도)
+
+
 @dataclass
 class Call:
-    """실행 함수에 넘기는 앱 값. 모델 값은 args뿐이다."""
+    """실행 함수에 넘기는 앱 값. 모델 값은 args뿐이다.
+
+    누가 그 글을 썼나(author)와 누가 실행을 허락했나(confirmed_by)를 따로 둔다(검토 R6). 채팅에서 온 동작은 사람이 확인했어도
+    author가 "ai"이고, 연결부는 엔진에 출처를 AI로 넘겨야 한다(`engine_request()`). 그래야 AI가 쓴 구간이 사람 것으로 저장되어
+    누적 상한(§4.5)이 풀리는 일이 없다.
+    """
     project_id: str
     request_id: str
     request_text: str
     action_keys: list
-    origin: str                  # "ai"(바로·후보) | "user"(사람이 확인 상자에서 누름)
-    confirmed_by: str = None
+    klass: str                   # "auto" | "candidate" | "confirm"(사람이 확인 상자에서 누름)
+    confirmed_by: str = None     # 확인 상자에서 누른 사람. 바로·후보 동작은 None
     stage: str = None            # nodes.apply: representative | rest
-    mark_seen: bool = False      # '나머지' 확인: 그때까지의 AI 묶음을 모두 human_seen으로
+    confirmed_rest: bool = False  # '나머지' 단계를 사람이 확인함(그때까지의 AI 묶음을 human_seen으로)
+    user_turn: str = None        # 이 동작을 낳은 사용자 메시지(질문 ID). 같은 메시지 안의 '나머지'를 엔진도 막는다
     conversation_id: str = None
     model: str = None
+    author: str = AUTHOR
+
+    @property
+    def origin(self):
+        """엔진 명령의 출처 인자. 늘 "ai"다(사람이 확인했어도 글은 AI가 썼다)."""
+        return self.author
+
+    def engine_request(self):
+        """`hazop.study.node_commands.execute(..., origin=call.origin, request=call.engine_request())`에 넘길 값."""
+        return {"request_id": self.request_id, "request_text": self.request_text, "user_turn": self.user_turn,
+                "confirmed_rest": self.confirmed_rest, "confirmed_by": self.confirmed_by, "author": self.author,
+                "tool": "chat", "model": self.model}
 
 
 def _digest(obj):
@@ -276,14 +302,18 @@ def _forged(args, depth=0):
     return None
 
 
-def _pathlike(args, depth=0):
-    if isinstance(args, str):
-        return bool(_PATHLIKE.search(args))
-    if isinstance(args, dict):
-        return depth < 5 and any(_pathlike(k, depth + 1) or _pathlike(v, depth + 1) for k, v in args.items())
-    if isinstance(args, list):
-        return depth < 5 and any(_pathlike(v, depth + 1) for v in args)
-    return False
+def _clean(value, depth=0):
+    """글·목록·객체 안의 글이 길이 상한 안이고 제어 문자가 없는지. 경로 검사는 하지 않는다(ID 형이 막는다)."""
+    if depth > 5:
+        return False
+    if isinstance(value, str):
+        return len(value) <= 2000 and not _CONTROL.search(value)
+    if isinstance(value, dict):
+        return len(value) <= 50 and all(isinstance(k, str) and _clean(k, depth + 1) and _clean(v, depth + 1)
+                                        for k, v in value.items())
+    if isinstance(value, list):
+        return len(value) <= 2000 and all(_clean(v, depth + 1) for v in value)
+    return value is None or isinstance(value, (bool, int, float))
 
 
 def check_signature(action, args):
@@ -300,8 +330,8 @@ def check_signature(action, args):
             continue
         if not TYPES[kind](args[name]):
             return "인자 형이 맞지 않음: %s" % name
-    if _pathlike(args):
-        return "경로처럼 생긴 값은 받지 않음"
+    if not _clean(args):
+        return "글이 너무 길거나 제어 문자가 있음"
     return None
 
 
@@ -336,6 +366,8 @@ class ActionPlanner:
         self.requests = {}               # answer_id -> (request_id, request_text, turn)
         self.closed = False
         self.log = []                    # 기록 결과(시험·화면 알림)
+        self._items = {}                 # token -> 판정한 Item(이 메모리에만 있다)
+        self._secret = secrets.token_hex(16)   # 승인 표지 재료. 웹·모델이 모르는 값
 
     # ---- 계획
 
@@ -380,10 +412,10 @@ class ActionPlanner:
         if item.klass == DISPLAY:
             out.display.append(item)
         elif item.klass in (AUTO, CANDIDATE):
-            out.run.append(item)
+            out.run.append(self._keep(item))
         elif item.klass == CONFIRM:
             item.approval = self._approval(item, snap)
-            out.confirm.append(item)
+            out.confirm.append(self._keep(item))
 
     def _check(self, item, snap):
         action = ACTIONS.get(item.action)
@@ -446,13 +478,14 @@ class ActionPlanner:
 
     def _need_nodes(self, item, snap, allow=("applied", "confirmed")):
         nodes = _nodes(snap)
-        for nid in item.args["node_ids"]:
+        ids = item.args["node_ids"] if "node_ids" in item.args else [item.args["node_id"]]
+        for nid in ids:
             n = nodes.get(nid)
             if n is None:
                 raise _Reject("없는 구간: %s" % nid)
             if node_state(n) not in allow:
                 raise _Reject("%s 구간은 이 동작을 할 수 없음: %s" % (node_state(n), nid))
-        item.targets = list(item.args["node_ids"])
+        item.targets = list(ids)
 
     def _check_nodes_confirm(self, item, snap):
         self._need_nodes(item, snap, ("applied",))
@@ -525,13 +558,21 @@ class ActionPlanner:
         try:
             if any(it.args["set_rev"] != merged.args["set_rev"] for it in items):
                 raise _Reject("같은 답의 구간 동작이 서로 다른 set_rev를 씀")
-            if merged.args["set_rev"] != (snap.node_set or {}).get("set_rev"):
-                raise _Reject("구간이 그 사이 바뀜(set_rev %s, 지금 %s)" % (merged.args["set_rev"],
-                                                                     (snap.node_set or {}).get("set_rev")))
+            self._check_set(merged, snap, [it.args.get("graph_id") for it in items])
             self._classify_ops(merged, snap, turn)
         except _Reject as rej:
             merged.klass, merged.reason, merged.where = "rejected", rej.reason, rej.where
         return merged
+
+    @staticmethod
+    def _check_set(item, snap, graph_ids=None):
+        """set_rev와 graph_id를 지금 집합과 대조한다(검토 4)."""
+        ns = snap.node_set or {}
+        if item.args["set_rev"] != ns.get("set_rev"):
+            raise _Reject("구간이 그 사이 바뀜(set_rev %s, 지금 %s)" % (item.args["set_rev"], ns.get("set_rev")))
+        for gid in graph_ids if graph_ids is not None else [item.args.get("graph_id")]:
+            if gid is not None and gid != ns.get("graph_id"):
+                raise _Reject("지금 검토구간 집합의 graph_id가 아님(%s)" % gid)
 
     def _classify_ops(self, item, snap, turn):
         nodes = _nodes(snap)
@@ -560,6 +601,8 @@ class ActionPlanner:
                     raise _Reject(self._node_reason(n, op, snap), "④ 검토구간에서 사람이 한다")
                 if k == CONFIRM:
                     klass = CONFIRM
+            if op["op"] == "split":  # 나누기로 생기는 구간도 새 AI 구간으로 센다(엔진과 같은 셈, 검토 3)
+                adds += 1
             edits += 1
         pending = pending_ai(snap)
         stage = "representative"
@@ -622,27 +665,57 @@ class ActionPlanner:
                 "pending_ai": pending_ai(snap) if item.action == "nodes.apply" else None}
 
     def _approval(self, item, snap):
+        """승인 표지. 재료에 이 planner만 아는 비밀(_secret)을 섞어, 웹 화면이나 모델이 같은 표지를 만들어 낼 수 없다(검토 8)."""
         body = self._fingerprint(item, snap)
         return dict(body, issued_at=self.clock(), action_key=item.key, exec_seq=self.exec_seq,
-                    digest=_digest(body))
+                    digest=_digest([self._secret, body]))
+
+    def _keep(self, item):
+        """판정한 Item을 planner 메모리에 두고 무작위 token을 단다. 실행·확인은 이 메모리의 Item으로만 한다."""
+        item.token = "t-" + secrets.token_hex(16)
+        self._items[item.token] = copy.deepcopy(item)
+        return item
+
+    def _resolve(self, ref):
+        """화면이 넘긴 Item이나 token -> planner 메모리의 Item(없으면 None). 넘긴 객체의 args·approval은 믿지 않는다."""
+        token = ref if isinstance(ref, str) else getattr(ref, "token", None)
+        return self._items.get(token) if isinstance(token, str) else None
 
     # ---- 실행
 
-    def run(self, item):
-        """바로·후보 동작을 실행한다 -> {"result", "error", "batch_id", "record"}. 같은 키는 한 번만."""
+    def run(self, ref):
+        """바로·후보 동작을 실행한다. 실행 직전에 지금 상태로 다시 검사한다(검토 6).
+        -> {"result", "code", "error", "refused", "batch_id", "record"}. result: ok|candidate|rejected|failed|duplicate|
+        needs_confirm(그 사이 상태가 바뀌어 확인이 필요해짐: "item"에 새 확인 Item)."""
+        item = self._resolve(ref)
+        if item is None:
+            return _outcome("rejected", "unknown_token", "이 앱이 낸 동작이 아님")
         if item.klass not in (AUTO, CANDIDATE):
-            return {"result": "rejected", "error": "바로·후보 동작이 아님"}
-        return self._execute(item, origin="ai")
-
-    def approve(self, item, confirmed_by):
-        """확인 상자에서 사람이 누름. 표지를 다시 만들어 대조하고 같을 때만 실행한다."""
-        if item.klass != CONFIRM or not item.approval:
-            return {"result": "rejected", "error": "확인 동작이 아님"}
-        if not confirmed_by:
-            return {"result": "rejected", "error": "확인한 사람 이름이 없음"}
+            return _outcome("rejected", "not_auto", "바로·후보 동작이 아님")
         with self._lock:
             if self._seen(item):
-                return {"result": "duplicate", "error": None}
+                return _outcome("duplicate")
+            fresh = self._recheck(item, self.read_state())
+            if fresh.klass == "rejected":
+                return _outcome("rejected", "state_changed", fresh.reason, refused=[{"target": "", "reason": fresh.reason}])
+            if fresh.klass == CONFIRM:
+                self._items.pop(item.token, None)
+                return dict(_outcome("needs_confirm", "state_changed", "그 사이 상태가 바뀌어 확인이 필요함"),
+                            item=self._keep(fresh))
+            return self._execute(fresh)
+
+    def approve(self, ref, confirmed_by):
+        """확인 상자에서 사람이 누름. planner 메모리의 표지를 지금 상태로 다시 만들어 대조하고 같을 때만 실행한다."""
+        item = self._resolve(ref)
+        if item is None:
+            return _outcome("rejected", "unknown_token", "이 앱이 낸 확인이 아님")
+        if item.klass != CONFIRM or not item.approval:
+            return _outcome("rejected", "not_confirm", "확인 동작이 아님")
+        if not isinstance(confirmed_by, str) or not confirmed_by.strip():
+            return _outcome("rejected", "no_reviewer", "확인한 사람 이름이 없음")
+        with self._lock:
+            if self._seen(item):
+                return _outcome("duplicate")
             ap = item.approval
             why = None
             if self.closed:
@@ -651,96 +724,120 @@ class ActionPlanner:
                 why = "확인 시간(%d분)이 지남" % (APPROVAL_TTL // 60)
             elif ap["exec_seq"] != self.exec_seq:
                 why = "확인 상자를 띄운 뒤 다른 동작이 실행됨"
-            else:
-                now = self._fingerprint(item, self.read_state())
-                if _digest(now) != ap["digest"]:
-                    why = "확인한 뒤 대상이 바뀌어 실행하지 않았습니다"
+            elif _digest([self._secret, self._fingerprint(item, self.read_state())]) != ap["digest"]:
+                why = "확인한 뒤 대상이 바뀌어 실행하지 않았습니다"
             if why:
                 self.done_keys.update(item.keys)
-                rec = self._write(item, "stale", error=why, approval_digest=ap["digest"])
-                return {"result": "stale", "error": why, "record": rec}
-            return self._execute(item, origin="user", confirmed_by=confirmed_by, approval_digest=ap["digest"])
+                rec = self._write(item, "stale", error=why, confirmed=True)
+                return dict(_outcome("stale", "stale", why), record=rec)
+            return self._execute(item, confirmed_by=confirmed_by.strip(), approval_digest=ap["digest"])
 
-    def reissue(self, item):
+    def _recheck(self, item, snap):
+        """지금 상태로 다시 판정한 새 Item(token 없음). 거절이면 klass="rejected"."""
+        fresh = Item(list(item.keys), list(item.indexes), item.action, copy.deepcopy(item.args), item.why, NEVER,
+                     proposals=item.proposals)
+        turn = self.requests.get(item.key.split("#")[0], (None, None, None))[2]
+        try:
+            if fresh.action == "nodes.apply":
+                self._check_set(fresh, snap)
+                self._classify_ops(fresh, snap, turn)
+            else:
+                self._check(fresh, snap)
+        except _Reject as rej:
+            fresh.klass, fresh.reason, fresh.where = "rejected", rej.reason, rej.where
+        return fresh
+
+    def reissue(self, ref):
         """같은 답의 다음 확인 동작을 띄울 때(§4.6: 한 번에 하나, 앞 동작이 실행되면 표지를 버림) 지금 상태로 다시 검사하고
-        새 표지를 단 Item을 돌려준다. 이제 거절할 동작이면 거절을 기록하고 klass="rejected"인 Item을 돌려준다."""
+        새 token·표지를 단 Item을 돌려준다. 이제 거절할 동작이면 거절을 기록하고 klass="rejected"인 Item을 돌려준다."""
+        item = self._resolve(ref)
+        if item is None:
+            return None
         snap = self.read_state()
         with self._lock:
             if self._seen(item) or self.closed:
                 return item
-            fresh = Item(list(item.keys), list(item.indexes), item.action, copy.deepcopy(item.args), item.why, NEVER,
-                         proposals=item.proposals)
-            turn = self.requests.get(item.key.split("#")[0], (None, None, None))[2]
-            try:
-                if fresh.action == "nodes.apply":
-                    if fresh.args["set_rev"] != (snap.node_set or {}).get("set_rev"):
-                        raise _Reject("구간이 그 사이 바뀜(set_rev)")
-                    self._classify_ops(fresh, snap, turn)
-                else:
-                    self._check(fresh, snap)
-            except _Reject as rej:
-                fresh.klass, fresh.reason, fresh.where = "rejected", rej.reason, rej.where
+            fresh = self._recheck(item, snap)
+            self._items.pop(item.token, None)
+            if fresh.klass == "rejected":
                 self.done_keys.update(fresh.keys)
-                self._write(fresh, "rejected", error=rej.reason)
+                self._write(fresh, "rejected", error=fresh.reason)
                 return fresh
             if fresh.klass == CONFIRM:
                 fresh.approval = self._approval(fresh, snap)
-            return fresh
+            return self._keep(fresh)
 
-    def decline(self, item):
+    def decline(self, ref):
+        item = self._resolve(ref)
+        if item is None:
+            return _outcome("rejected", "unknown_token", "이 앱이 낸 확인이 아님")
         with self._lock:
             if self._seen(item):
-                return {"result": "duplicate", "error": None}
+                return _outcome("duplicate")
             self.done_keys.update(item.keys)
-            return {"result": "declined", "record": self._write(item, "declined")}
+            return dict(_outcome("declined"), record=self._write(item, "declined", confirmed=True))
 
     def end_conversation(self):
         """대화가 끝남: 남은 승인 표지를 버린다(§4.6). 실행한 키는 이 객체와 함께 사라진다."""
         with self._lock:
             self.closed = True
+            self._items.clear()
 
     def _seen(self, item):
         return any(k in self.done_keys for k in item.keys)
 
-    def _execute(self, item, origin, confirmed_by=None, approval_digest=None):
-        with self._lock:
-            if self.closed:
-                return {"result": "rejected", "error": "대화가 끝났음"}
-            if self._seen(item):
-                return {"result": "duplicate", "error": None}
-            self.done_keys.update(item.keys)
-            fn = self.executors.get(item.action)
-            request_id, request_text, turn = self.requests.get(item.key.split("#")[0], ("", "", None))
-            call = Call(self.project_id, request_id, request_text, list(item.keys), origin, confirmed_by, item.stage,
-                        item.stage == "rest" and origin == "user", self.conversation_id, self.model)
-            if fn is None:
-                rec = self._write(item, "failed", error="이 앱에 실행 함수가 연결되지 않음", confirmed_by=confirmed_by,
-                                  approval_digest=approval_digest)
-                return {"result": "failed", "error": "실행 함수 없음", "record": rec}
-            try:
-                out = fn(copy.deepcopy(item.args), call) or {}
-            except Exception as exc:  # 엔진이 거절(Refused 등)하거나 실패해도 기록은 남긴다
-                msg = "%s: %s" % (type(exc).__name__, str(exc)[:250])
-                rec = self._write(item, "failed", error=msg, confirmed_by=confirmed_by, approval_digest=approval_digest)
-                return {"result": "failed", "error": msg, "record": rec}
-            self.exec_seq += 1
-            batch = out.get("batch_id") if isinstance(out, dict) else None
-            if item.action == "nodes.apply" and batch:
-                self.conv_batches.add(batch)
-                if any(isinstance(o, dict) and o.get("op") == "add" for o in item.args["ops"]):
-                    self.last_add_turn = turn
-            targets = out.get("targets") if isinstance(out, dict) and out.get("targets") else item.targets
-            result = "candidate" if item.klass == CANDIDATE else "ok"
-            rec = self._write(item, result, batch_id=batch, targets=targets, confirmed_by=confirmed_by,
-                              approval_digest=approval_digest,
-                              undo_of=item.args.get("batch_id_to_undo") if item.action == "nodes.undo" else None)
-            return {"result": result, "error": None, "batch_id": batch, "record": rec}
+    def _execute(self, item, confirmed_by=None, approval_digest=None):
+        """잠금 안에서 부른다. 실행 함수의 돌려주는 값(EXECUTOR_RESULT)을 검사해 성공일 때만 성공으로 기록한다(검토 1)."""
+        if self.closed:
+            return _outcome("rejected", "closed", "대화가 끝났음")
+        if self._seen(item):
+            return _outcome("duplicate")
+        self.done_keys.update(item.keys)
+        fn = self.executors.get(item.action)
+        request_id, request_text, turn = self.requests.get(item.key.split("#")[0], ("", "", None))
+        klass = "confirm" if confirmed_by else ("candidate" if item.klass == CANDIDATE else "auto")
+        call = Call(self.project_id, request_id, request_text, list(item.keys), klass, confirmed_by, item.stage,
+                    item.stage == "rest" and bool(confirmed_by), request_id, self.conversation_id, self.model)
+        confirmed = bool(confirmed_by)
+        if fn is None:
+            msg = "이 앱에 실행 함수가 연결되지 않음"
+            return dict(_outcome("failed", "no_executor", msg),
+                        record=self._write(item, "failed", error="no_executor: " + msg, confirmed=confirmed,
+                                           confirmed_by=confirmed_by, approval_digest=approval_digest))
+        try:
+            out = fn(copy.deepcopy(item.args), call)
+        except Exception as exc:  # 실행 함수가 예외로 끝나도 기록은 남긴다
+            msg = "%s: %s" % (type(exc).__name__, str(exc)[:250])
+            return dict(_outcome("failed", "exception", msg),
+                        record=self._write(item, "failed", error="exception: " + msg, confirmed=confirmed,
+                                           confirmed_by=confirmed_by, approval_digest=approval_digest))
+        code, msg, refused = check_result(out)
+        if code is not None:  # 엔진이 거절했거나 꼴이 틀림: 실행 횟수에 세지 않고, 거절은 rejected·꼴 틀림은 failed
+            result = "rejected" if code == "engine_refused" else "failed"
+            return dict(_outcome(result, code, msg, refused=refused),
+                        record=self._write(item, result, error="%s: %s" % (code, msg), confirmed=confirmed,
+                                           confirmed_by=confirmed_by, approval_digest=approval_digest))
+        self.exec_seq += 1
+        batch = out.get("batch_id")
+        if item.action == "nodes.apply" and batch:
+            self.conv_batches.add(batch)
+            if any(isinstance(o, dict) and o.get("op") in ("add", "split") for o in item.args["ops"]):
+                self.last_add_turn = turn
+        targets = out.get("node_ids") or out.get("targets") or item.targets
+        result = "candidate" if item.klass == CANDIDATE else "ok"
+        rec = self._write(item, result, batch_id=batch, targets=targets, confirmed=confirmed, confirmed_by=confirmed_by,
+                          approval_digest=approval_digest,
+                          undo_of=item.args.get("batch_id_to_undo") if item.action == "nodes.undo" else None)
+        return dict(_outcome(result), batch_id=batch, set_rev=out.get("set_rev"), targets=list(targets), record=rec)
 
-    def _write(self, item, result, error=None, batch_id=None, targets=None, confirmed_by=None, approval_digest=None,
-               undo_of=None):
-        """action_key마다 한 줄. 기록 실패는 실행을 막지 않는다(결과에 담아 돌려줌)."""
+    def _write(self, item, result, error=None, batch_id=None, targets=None, confirmed=False, confirmed_by=None,
+               approval_digest=None, undo_of=None):
+        """action_key마다 한 줄. 기록 실패는 실행을 막지 않는다(결과에 담아 돌려줌).
+        confirmed: 확인 상자를 거친 결론(실행·거절·stale). 확인자·표지는 그때만 적는다(actions_log 규칙)."""
         request_id, request_text, _turn = self.requests.get(item.key.split("#")[0], ("", "", None))
-        klass = "confirm" if item.klass == CONFIRM or confirmed_by else "auto"
+        klass = "confirm" if confirmed or confirmed_by else "auto"
+        if klass != "confirm":
+            confirmed_by = approval_digest = None
         out = []
         for key, prop in zip(item.keys, item.proposals or [{"action": item.action, "args": item.args, "why": item.why}]):
             answer_id, index = key.rsplit("#", 1)
@@ -757,6 +854,32 @@ class ActionPlanner:
             out.append(rec)
             self.log.append((key, result, rec))
         return out
+
+
+# 실행 함수가 돌려줄 값의 꼴(검토 1). node_commands.execute의 돌려주는 값과 같다(node-commands.md §1).
+#   {"ok": bool, "refused": [{"target": str, "reason": str}], "batch_id": str|None, "node_ids": [str], "set_rev": int|None,
+#    "error": str(선택, ok가 false이고 refused가 비었을 때의 실패 사유)}
+# ok가 true일 때만 성공이다. ok가 없거나 dict가 아니면 실패(꼴 틀림)로 본다.
+EXECUTOR_RESULT = {"ok": "bool", "refused": "[{target, reason}]", "batch_id": "str|None", "node_ids": "[str]",
+                   "set_rev": "int|None", "error": "str?"}
+
+
+def check_result(out):
+    """실행 함수의 돌려주는 값 -> (사유 코드 | None, 문구, refused 목록). 코드: engine_refused | engine_failed | bad_result."""
+    if not isinstance(out, dict) or not isinstance(out.get("ok"), bool):
+        return "bad_result", "실행 함수가 정해진 꼴({ok, refused, …})을 돌려주지 않음", []
+    refused = [{"target": str(r.get("target", "")), "reason": str(r.get("reason", ""))[:300]}
+               for r in out.get("refused") or [] if isinstance(r, dict)]
+    if out["ok"] is True:
+        return None, None, []
+    if refused:
+        return "engine_refused", "; ".join("%s: %s" % (r["target"], r["reason"]) for r in refused)[:300], refused
+    return "engine_failed", str(out.get("error") or "실행 함수가 실패를 알림")[:300], []
+
+
+def _outcome(result, code=None, error=None, refused=None):
+    """run·approve·decline이 화면에 돌려주는 값의 공통 꼴."""
+    return {"result": result, "code": code, "error": error, "refused": refused or []}
 
 
 def _fill(template, values):
