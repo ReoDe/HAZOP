@@ -61,7 +61,7 @@ class ChatToPanelTest(W.ShellBase):
 
     def test_create_then_see_in_panel_then_undo(self):
         win = self.window()
-        win.engine.settings["project_id"] = "SNP"
+        self.switch_project(win, "SNP")
         self.propose(win, [self.apply_action(self.cands(3))])
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.actbox.applied').length") or 0) == 1, 10), self.text(win)[-400:])
         text = self.text(win)
@@ -81,7 +81,7 @@ class ChatToPanelTest(W.ShellBase):
 
     def test_rest_button_asks_a_new_question(self):
         win = self.window()
-        win.engine.settings["project_id"] = "SNP"
+        self.switch_project(win, "SNP")
         self.propose(win, [self.apply_action(self.cands(3))])
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.actbox.applied').length") or 0) == 1, 10))
         before = len(self.sessions[-1].asked)
@@ -93,7 +93,7 @@ class ChatToPanelTest(W.ShellBase):
 
     def test_confirm_box_runs_only_after_the_button_and_uses_the_reviewer(self):
         win = self.window()
-        win.engine.settings["project_id"] = "SNP"
+        self.switch_project(win, "SNP")
         self.propose(win, [self.apply_action(self.cands(3))])
         target = self.ns()["nodes"][0]["node_id"]
         self.propose(win, [{"action": "nodes.confirm", "args": {"node_ids": [target]}, "why": "확정"}], "S1 확정해 줘")
@@ -107,7 +107,7 @@ class ChatToPanelTest(W.ShellBase):
 
     def test_decline_leaves_everything_as_it_was(self):
         win = self.window()
-        win.engine.settings["project_id"] = "SNP"
+        self.switch_project(win, "SNP")
         self.propose(win, [self.apply_action(self.cands(3))])
         target = self.ns()["nodes"][0]["node_id"]
         self.propose(win, [{"action": "nodes.confirm", "args": {"node_ids": [target]}, "why": "확정"}], "S1 확정해 줘")
@@ -118,7 +118,7 @@ class ChatToPanelTest(W.ShellBase):
 
     def test_model_text_in_names_is_never_html(self):
         win = self.window()
-        win.engine.settings["project_id"] = "SNP"
+        self.switch_project(win, "SNP")
         c = self.cands(1)[0]
         act = {"action": "nodes.apply", "args": {"set_rev": self.ns()["set_rev"],
                "ops": [{"op": "add", "cand_id": c["cand_id"], "name": "<img src=x onerror=window.__pwned=1>구간"}]}, "why": "x"}

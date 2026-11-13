@@ -31,13 +31,17 @@ export function deliver(text) { handle(text); }   // 시험이 엔진 대신 메
 
 function send(obj) { window.hazopBridge.send(JSON.stringify(obj)); }
 
+let project = null;
+/** 웹이 보고 있는 프로젝트 ID. 모든 명령에 실어 보내고, 엔진은 지금 프로젝트와 다르면 프로젝트에 묶인 명령(구간·결과·초기사건)을 거절한다. */
+export function setProject(id) { project = id || null; }
+
 /** 명령 하나를 보내고 답을 기다린다(120초). 실패하면 {code, message}를 가진 오류로 거절한다. */
 export function cmd(name, args = {}) {
   return new Promise((resolve, reject) => {
     const id = "c" + (++seq);
     const timer = setTimeout(() => { pending.delete(id); reject(Object.assign(new Error("엔진이 응답하지 않습니다."), { code: "timeout" })); }, 120000);
     pending.set(id, { resolve, reject, timer });
-    send({ t: "cmd", id, name, args });
+    send(Object.assign({ t: "cmd", id, name, args }, project ? { project } : {}));
   });
 }
 

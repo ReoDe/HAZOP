@@ -3,7 +3,7 @@
 import { html, render } from "./ui/html.js";
 import { useEffect, useState } from "../vendor/hooks.module.js";
 import { store, useStore } from "./store.js";
-import { cmd, connect, on, onChanged, read, ui } from "./bridge.js";
+import { cmd, connect, on, onChanged, read, setProject, ui } from "./bridge.js";
 import { Icon, loadIcons } from "./ui/icon.js";
 import { Btn } from "./ui/parts.js";
 import { ChatPanel, loadChat, pushMsg, setChat } from "./chat/panel.js";
@@ -12,6 +12,7 @@ import { DrawingsPanel } from "./panels/drawings.js";
 import { NodesPanel } from "./panels/nodes.js";
 import { ResultsPanel } from "./panels/results.js";
 import { IePanel } from "./panels/ie.js";
+import { resetAreas } from "./areas.js";
 import { SettingsPanel } from "./panels/settings.js";
 import { SheetHost } from "./sheet_host.js";
 
@@ -20,6 +21,7 @@ const toast = (text, kind) => store.set({ toast: { text, kind } });
 // ---------------------------------------------------------------- 엔진에서 읽기
 export async function loadState() {
   const s = await read("state");
+  setProject(s.project_id);        // 이후 모든 명령에 이 프로젝트 ID를 실어 보낸다
   store.set((cur) => ({ app: Object.assign({}, cur.app, s), chatCollapsed: !!(s.ui && s.ui.chat_collapsed) }));
   setChat({ model: s.chat_model });
   return s;
@@ -87,6 +89,7 @@ function wireEvents() {
   });
   on("chat.actions", (d) => { addActions(setChat, d); if (store.get().chatCollapsed) setChat({ unread: true }); });
   on("chat.action.result", (d) => updateAction(setChat, d));
+  on("project.changed", (d) => { setProject(d.project_id); store.set({ sheet: null, marks: { rid: null, bySheet: {} } }); resetAreas(); });
   on("conn.changed", (d) => store.set({ conn: d }));
   on("drop.hover", (d) => store.set({ dropOver: !!d.over }));
   on("drop.refused", (d) => toast(d.text, "err"));

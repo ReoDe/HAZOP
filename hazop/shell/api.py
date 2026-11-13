@@ -220,11 +220,18 @@ class Engine:
             return {}
 
     # ------------------------------------------------------------ 명령
-    def dispatch(self, name, args):
-        """명령 하나를 돌린다 -> 답(dict). 어떤 오류도 오류 답으로 바꾼다(웹에 안쪽 글을 싣지 않는다)."""
+    def dispatch(self, name, args, project=None, via_web=False):
+        """명령 하나를 돌린다 -> 답(dict). 어떤 오류도 오류 답으로 바꾼다(웹에 안쪽 글을 싣지 않는다).
+        via_web: 웹이 보낸 명령. 프로젝트에 묶인 명령(구간·결과·초기사건·채팅 동작)은 웹이 본 프로젝트 ID(project)를 함께 보내야 하고, 지금 프로젝트와 다르면
+        아무것도 하지 않고 거절한다(프로젝트를 바꾼 뒤 낡은 목록으로 다른 프로젝트의 구간을 고치지 않게). 영역 파일은 이 한 곳의 검사를 따른다."""
         cmd = COMMANDS.get(name) if isinstance(name, str) else None
         if cmd is None:
             return reply_error("unknown_command", "모르는 명령")
+        if name.startswith(PROJECT_BOUND) and (via_web or project is not None):
+            if not isinstance(project, str) or not project:
+                return reply_error("bad_args", "프로젝트 ID가 없는 명령은 받지 않습니다")
+            if project != self.project_id():
+                return reply_error("wrong_project", "프로젝트가 바뀌어 저장하지 않았습니다. 화면을 다시 읽었으니 한 번 더 해 주세요.")
         try:
             clean = check_args(cmd.spec, args)
             return reply_ok(cmd.handler(self, clean))
@@ -381,8 +388,9 @@ def _h_set_project(engine, a):
     if engine.chat is not None:
         engine.chat.check_project()      # 프로젝트가 바뀌면 대화를 끝낸다
     engine.current_sheet = None
-    engine.changed("drawings")
-    engine.changed("state")
+    engine.emit("project.changed", {"project_id": pid})      # 웹이 구간·결과·초기사건 상태를 모두 비우고 다시 읽는다
+    for topic in ("drawings", "state", "nodes", "results", "ie"):
+        engine.changed(topic)
     return {"project_id": pid}
 
 
@@ -488,6 +496,9 @@ def _h_open_classic(engine, a):
         raise CommandError("failed", "이전 화면을 열 수 없음")
     return {"switched": bool(hook())}   # 작업이 도는 중이면 창이 묻는다: 닫히지 않으면 False
 
+
+# 프로젝트에 묶인 명령의 이름 머리(웹이 보낼 때 프로젝트 ID를 실어야 하는 것)
+PROJECT_BOUND = ("nodes.", "results.", "ie.", "chat.action.")
 
 COMMANDS = {
     "ui.save": Command({"state": (v_json_text(MAX_UI_STATE_CHARS), True)}, _h_ui_save, "웹의 보기 상태(마지막 도면·채팅 접힘 등)를 맡긴다"),

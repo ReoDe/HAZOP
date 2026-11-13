@@ -40,7 +40,7 @@ class IePanelTest(W.ShellBase):
 
     def open_panel(self):
         win = self.window()
-        win.engine.settings["project_id"] = self.project
+        self.switch_project(win, self.project)
         self.assertTrue(self.click(win, ".rail button", 3))
         self.assertTrue(wait_for(lambda: "묶이지 않은 후보" in self.text(win), 15), self.text(win)[-300:])
         return win

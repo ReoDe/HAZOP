@@ -47,7 +47,7 @@ class ResultsPanelTest(W.ShellBase):
 
     def open_panel(self):
         win = self.window()
-        win.engine.settings["project_id"] = self.project
+        self.switch_project(win, self.project)
         self.assertTrue(self.click(win, ".rail button", 2))
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.res-matrix .vg-cell').length") or 0) > 0, 15), self.text(win)[-300:])
         return win
@@ -119,12 +119,24 @@ class ResultsPanelTest(W.ShellBase):
         doc = self.stored()
         self.assertTrue(any(e["entry_id"].startswith("ai-") for c in doc["cells"] for e in c["entries"]))
 
+    def test_project_switch_clears_the_panel_and_rereads_for_the_new_project(self):
+        win = self.open_panel()
+        self.click_cell(win, self.span_node, "D01")
+        self.assertEqual(self.js(win, "document.querySelectorAll('.worksheet .ent').length"), 2)
+        win.engine.dispatch("project.set", {"project_id": "OTHER"})
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.worksheet').length") or 0) == 0, 10), "앞 프로젝트의 워크시트가 남지 않는다")
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.res-matrix .vg-cell').length") or 0) > 0, 15), "새 프로젝트의 행렬을 다시 읽는다")
+        self.assertEqual(self.js(win, "document.querySelectorAll('.vg-cell.on').length"), 0, "고른 칸도 비워진다")
+        # 낡은 화면이 보낸 쓰기는 바뀐 프로젝트에 닿지 않는다(웹이 싣는 프로젝트 ID가 새 프로젝트로 바뀌었다)
+        self.js(win, "window.__hz.cmd('results.stop', {})")
+        self.assertEqual(self.js(win, "window.__hz.store.get().app.project_id"), "OTHER")
+
     def test_without_nodes_the_panel_points_to_the_node_panel(self):
         for n in list(self.ns["nodes"]):
             pass
         os.remove(sn.store_path(self.project, self.ns["graph_id"]))
         win = self.window()
-        win.engine.settings["project_id"] = self.project
+        self.switch_project(win, self.project)
         self.assertTrue(self.click(win, ".rail button", 2))
         self.assertTrue(wait_for(lambda: "확정한 구간이 아직 없습니다" in self.text(win) or "구간 패널 열기" in self.text(win), 15), self.text(win)[-300:])
 

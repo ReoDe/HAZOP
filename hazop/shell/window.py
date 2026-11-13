@@ -90,7 +90,7 @@ class ShellBridge(QObject):
             cid = msg.get("id")
             if not isinstance(cid, str) or not 1 <= len(cid) <= 40:
                 return
-            reply = self.engine.dispatch(msg.get("name"), msg.get("args"))
+            reply = self.engine.dispatch(msg.get("name"), msg.get("args"), project=msg.get("project"), via_web=True)
             self.send(dict(reply, t="reply", id=cid))
         elif kind == "ui":
             name = msg.get("name")

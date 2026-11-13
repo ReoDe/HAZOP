@@ -154,6 +154,13 @@ class ShellBase(unittest.TestCase):
             pump(0.01)
         return out[0] if out else None
 
+    def switch_project(self, win, project):
+        """프로젝트를 바꾸고(project.set) 웹이 그 프로젝트를 보고 있게 될 때까지 기다린다. 웹이 모든 명령에 싣는 프로젝트 ID가 엔진의 것과 같아야 쓰기가 통한다."""
+        r = win.engine.dispatch("project.set", {"project_id": project})
+        self.assertTrue(r["ok"], r)
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().app.project_id") == project, 15), "웹이 새 프로젝트를 읽지 못함")
+        pump(0.3)
+
     def jsj(self, win, expr):
         """식의 값을 JSON으로 받아 파이썬 값으로 돌려준다(배열·객체는 runJavaScript가 비어 오는 일이 있어 문자열로 받는다)."""
         raw = self.js(win, "JSON.stringify(%s)" % expr)

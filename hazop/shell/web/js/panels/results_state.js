@@ -32,6 +32,12 @@ export function useResults(selector) {
 
 export const errorText = (e) => (e && e.message) || "처리하지 못했습니다.";
 
+/** 프로젝트가 바뀌었을 때: 읽어 둔 것과 진행 중인 읽기 결과를 모두 버린다. */
+export function reset() {
+  seq++;
+  results.set({ summary: EMPTY, view: "matrix", active: null, cell: null, recs: [], trace: null, busy: false, error: null, plan: null, exporting: false, notice: null });
+}
+
 // ---------------------------------------------------------------- 읽기
 let seq = 0;
 export async function loadSummary() {

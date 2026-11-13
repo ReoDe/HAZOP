@@ -29,6 +29,13 @@ export function useIe(selector) {
 const errorText = (e) => (e && e.message) || "처리하지 못했습니다.";
 
 let seq = 0;
+
+/** 프로젝트가 바뀌었을 때: 읽어 둔 것과 진행 중인 읽기 결과를 모두 버린다. */
+export function reset() {
+  seq++;
+  ie.set({ summary: EMPTY, view: "groups", active: null, detail: null, busy: false, error: null, notice: null });
+}
+
 export async function loadSummary() {
   const mine = ++seq;
   let s = null;

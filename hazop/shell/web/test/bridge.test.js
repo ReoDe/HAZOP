@@ -1,4 +1,4 @@
-import { cmd, connect, deliver, on, onChanged } from "../js/bridge.js";
+import { cmd, connect, deliver, on, onChanged, setProject } from "../js/bridge.js";
 
 // 브릿지 대역: 보낸 메시지를 모으고, 시험이 deliver로 답을 넣는다.
 const sent = [];
@@ -31,6 +31,19 @@ export const tests = [
     deliver(JSON.stringify({ t: "changed", topic: "drawings", rev: "x" }));
     assert.equal(seen, ["안녕"]);
     assert.equal(topics, ["drawings"]);
+  } },
+  { name: "bridge: 프로젝트를 정하면 모든 명령에 그 프로젝트 ID를 싣고, 바뀌면 바뀐 ID를 싣는다", run(assert) {
+    setProject(null);
+    cmd("chat.stop", {});
+    assert.equal("project" in sent[sent.length - 1], false);
+    setProject("A-프로젝트");
+    cmd("results.stop", {});
+    assert.equal(sent[sent.length - 1].project, "A-프로젝트");
+    assert.equal(sent[sent.length - 1].args, {}, "프로젝트는 인자 밖에 싣는다");
+    setProject("B");
+    cmd("nodes.confirm", { x: 1 });
+    assert.equal(sent[sent.length - 1].project, "B");
+    setProject(null);
   } },
   { name: "bridge: 깨진 메시지와 모르는 답은 버린다", run(assert) {
     deliver("{깨짐");
