@@ -25,6 +25,8 @@ COLORS = {
     "unresolved": "#dc2626",
     # 시나리오 강조(§3.3 강조 규칙)
     "hl-cause": "#dc2626", "hl-path": "#ea580c", "hl-safeguard": "#c026d3",
+    # 뷰어 근거 표시(S-viewer mark 스타일 focus·warn·muted)
+    "hl-focus": "#0a5fc2", "hl-mwarn": "#a8740d", "hl-muted": "#6b7280",
     # 상태
     "ok": "#127238", "ok-bg": "#e2f3e8", "warn-bg": "#fdf0d2", "warn-ink": "#74430a", "warn-line": "#a8740d",
     "err-bg": "#fbe7e6", "err-ink": "#a8201a", "err-line": "#cc665e",  # err-line: 연결 칩 테두리 3:1(err-bg)

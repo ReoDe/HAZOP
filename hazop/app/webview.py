@@ -18,7 +18,7 @@ import math
 import os
 import re
 
-from PySide6.QtCore import QFile, QIODevice, QObject, QUrl, Signal, Slot
+from PySide6.QtCore import QFile, QIODevice, QObject, QTimer, QUrl, Signal, Slot
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import (QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings,
                                      QWebEngineUrlRequestInterceptor)
@@ -149,6 +149,7 @@ class Bridge(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.is_ready = False
+        self.selection_truncated = False  # 마지막 selection 응답이 잘렸는지
         self.graph_id = ""          # 지금 읽는 도면의 graph_id(HazopWebView.load_file이 정함)
         self._pending = []
 
@@ -190,7 +191,8 @@ class Bridge(QObject):
             self.selectionChanged.emit(clean_selection_changed(msg))
         elif kind == "selection":
             rid = msg.get("request_id")
-            ids, _ = clean_id_list(msg.get("selected"))
+            ids, cut = clean_id_list(msg.get("selected"))
+            self.selection_truncated = bool(cut or msg.get("truncated") is True)
             self.selectionFor.emit(rid if isinstance(rid, str) else "", ids)
         elif kind == "nodeSelected":
             self.nodeSelected.emit({"local_id": clean_id(msg.get("local_id")),
@@ -466,10 +468,15 @@ BRIDGE_JS = r"""
       ovl.appendChild(preview);
     }
     // ---- S-viewer: 근거 표시(mark·drawPath)와 고르기. 기존 강조(hz-on)·구간 색(inline style)·hz-pick과 클래스를 따로 쓴다. ----
-    function index() {  // local_id → 요소들. 호출 한 번에 도면을 한 번만 훑는다(ID마다 querySelectorAll을 부르면 O(N²))
+    var idxCache = null, idxObs = null;
+    function index() {  // local_id → 요소들. 도면이 바뀌지 않았으면 캐시를 쓴다(ID마다 querySelectorAll을 부르면 O(N²))
+      if (idxObs && idxObs.takeRecords().length) idxCache = null;
+      if (idxCache) return idxCache;
       var map = Object.create(null);
       ["overlay", "graphsvg"].forEach(function (id) {
         var s = document.getElementById(id); if (!s) return;
+        if (!idxObs && window.MutationObserver) idxObs = new MutationObserver(function () { idxCache = null; });
+        if (idxObs) idxObs.observe(s, { childList: true, subtree: true });
         var all = s.querySelectorAll("[data-local-id]");
         for (var i = 0; i < all.length; i++) {
           var e = all[i], lid = e.getAttribute("data-local-id");
@@ -477,7 +484,17 @@ BRIDGE_JS = r"""
           (map[lid] || (map[lid] = [])).push(e);
         }
       });
-      return map;
+      if (idxObs) idxObs.takeRecords();
+      return (idxCache = map);
+    }
+    // 웹 → 앱 메시지는 64KB를 넘으면 통째로 버려진다. 목록은 2,000개·글자 수 안으로 잘라 truncated를 단다.
+    function capList(msg, key, dropFirst) {
+      var cut = false;
+      if (msg[key].length > 2000) { msg[key] = msg[key].slice(0, 2000); cut = true; }
+      if (JSON.stringify(msg).length > 60000) { (dropFirst || []).forEach(function (k) { msg[k] = []; }); cut = true; }
+      while (JSON.stringify(msg).length > 60000 && msg[key].length) { msg[key] = msg[key].slice(0, Math.floor(msg[key].length * 0.8)); cut = true; }
+      if (cut) msg.truncated = true;
+      return msg;
     }
     function shownRect(e) { var r = e.getBoundingClientRect(); return (r.width || r.height) ? r : null; }
     function isLine(e) { return e.classList.contains("pipe-line") || e.classList.contains("gedge"); }
@@ -530,7 +547,7 @@ BRIDGE_JS = r"""
       });
       flush(r); paintMarks(r.items.map(function (it) { return it.e; }));
       if (m.center) zoomTo(ids, 0.15, map);
-      send({ type: "highlightResult", request_id: m.request_id || null, missing: missing });
+      send(capList({ type: "highlightResult", request_id: m.request_id || null, missing: missing }, "missing"));
     }
     function lineGeo(e) {  // 배관 선의 시작점·끝점·가운데와 가운데에서의 진행 각도(도면 좌표)
       if (!e.getTotalLength) return null;
@@ -575,7 +592,7 @@ BRIDGE_JS = r"""
         }
       });
       flush(r); paintMarks(r.items.map(function (it) { return it.e; }));
-      send({ type: "highlightResult", request_id: m.request_id || null, missing: missing });
+      send(capList({ type: "highlightResult", request_id: m.request_id || null, missing: missing }, "missing"));
     }
     function zoomTo(ids, pad, map) {
       map = map || index();
@@ -595,26 +612,21 @@ BRIDGE_JS = r"""
     }
     // 고르기: "off"는 템플릿 동작 그대로, "pick"은 클릭 = 더하기·빼기, 끌기 = 네모로 더하기(Alt는 빼기).
     var selMode = "off", sel = new Set(), sdown = null, rubber = null;
-    function paintSel(ids, on) {
+    function paintSel(add, rem) {  // 바뀐 것만 칠한다
       var map = index();
-      ids.forEach(function (lid) { (map[lid] || []).forEach(function (e) { e.classList.toggle("hz-sel", on); }); });
+      add.forEach(function (lid) { (map[lid] || []).forEach(function (e) { e.classList.add("hz-sel"); }); });
+      rem.forEach(function (lid) { (map[lid] || []).forEach(function (e) { e.classList.remove("hz-sel"); }); });
       refreshTags();
     }
     function sendSel(added, removed, via) {
-      // 2,000개를 넘으면 웹 쪽에서 앞 2,000개(문서 순서)만 보내고 truncated를 단다. 앱은 64KB를 넘는 메시지를 통째로 버리므로
-      // 글자 수도 본다: 먼저 변경분(added·removed)을 빼고, 그래도 크면 selected를 줄인다.
-      var cut = sel.size > 2000 || added.length > 2000 || removed.length > 2000;
-      var msg = { type: "selectionChanged", selected: Array.from(sel).slice(0, 2000), added: added.slice(0, 2000), removed: removed.slice(0, 2000), via: via };
-      if (JSON.stringify(msg).length > 60000) { msg.added = []; msg.removed = []; cut = true; }
-      while (JSON.stringify(msg).length > 60000 && msg.selected.length) { msg.selected = msg.selected.slice(0, Math.floor(msg.selected.length * 0.8)); cut = true; }
-      if (cut) msg.truncated = true;
-      send(msg);
+      send(capList({ type: "selectionChanged", selected: Array.from(sel), added: added.slice(0, 2000), removed: removed.slice(0, 2000), via: via },
+                   "selected", ["added", "removed"]));
     }
     function change(addIds, removeIds, via) {
       var add = addIds.filter(function (i) { return !sel.has(i); }), rem = removeIds.filter(function (i) { return sel.has(i); });
       if (!add.length && !rem.length) return;
       add.forEach(function (i) { sel.add(i); }); rem.forEach(function (i) { sel.delete(i); });
-      paintSel(add, true); paintSel(rem, false);
+      paintSel(add, rem);
       sendSel(add, rem, via);
     }
     function lineMostlyIn(e, bx) {
@@ -650,7 +662,7 @@ BRIDGE_JS = r"""
     function endDrag() { if (rubber && rubber.parentNode) rubber.parentNode.removeChild(rubber); rubber = null; sdown = null; }
     if (vp) {
       vp.addEventListener("mousedown", function (e) {
-        if (selMode !== "pick" || e.button !== 0 || (e.target.closest && e.target.closest(".float, .hz-legend"))) return;
+        if (selMode !== "pick" || e.button !== 0 || (e.target.closest && e.target.closest(".float, .hz-legend, .hz-chip"))) return;
         e.stopImmediatePropagation();  // 템플릿의 화면 끌기를 막는다
         sdown = { x: e.clientX, y: e.clientY, t: e.target, moved: false };
       }, true);
@@ -671,7 +683,7 @@ BRIDGE_JS = r"""
         }
       }, true);
       vp.addEventListener("click", function (e) {  // 고르기 중의 클릭은 템플릿 선택·nodeSelected로 새지 않게 한다
-        if (selMode === "pick" && !(e.target.closest && e.target.closest(".float, .hz-legend"))) { e.stopPropagation(); e.preventDefault(); }
+        if (selMode === "pick" && !(e.target.closest && e.target.closest(".float, .hz-legend, .hz-chip"))) { e.stopPropagation(); e.preventDefault(); }
       }, true);
       window.addEventListener("keydown", function (e) {
         if (selMode === "pick" && e.key === "Escape" && sel.size) change([], Array.from(sel), "clear");
@@ -683,9 +695,10 @@ BRIDGE_JS = r"""
       if (selMode !== "pick") endDrag();
     }
     function setSelection(ids) {
-      Array.prototype.forEach.call(document.querySelectorAll(".hz-sel"), function (e) { e.classList.remove("hz-sel"); });
-      sel = new Set((ids || []).filter(function (i) { return typeof i === "string"; }));
-      paintSel(Array.from(sel), true);
+      var next = new Set((ids || []).filter(function (i) { return typeof i === "string"; }));
+      var add = Array.from(next).filter(function (i) { return !sel.has(i); }), rem = Array.from(sel).filter(function (i) { return !next.has(i); });
+      sel = next;
+      paintSel(add, rem);
     }
     function handle(m) {
       if (!m || typeof m !== "object") return;
@@ -718,7 +731,7 @@ BRIDGE_JS = r"""
       else if (m.type === "drawPath") doPath(m);
       else if (m.type === "selectMode") setSelMode(m.mode);
       else if (m.type === "setSelection") setSelection(m.ids);
-      else if (m.type === "getSelection") send({ type: "selection", request_id: m.request_id || null, selected: Array.from(sel) });
+      else if (m.type === "getSelection") send(capList({ type: "selection", request_id: m.request_id || null, selected: Array.from(sel) }, "selected"));
       else if (m.type === "zoomTo") zoomTo(m.ids, m.pad);
       else if (m.type === "clearHighlight") clear();
       else if (m.type === "focus") focus(m.local_id);
@@ -763,7 +776,6 @@ body.hz-segfocus #taglabels span:not(.hz-seg-in), body.hz-segfocus .segchip:not(
   animation: hz-pulse 1.2s ease-in-out 3; }
 @keyframes hz-pulse { 50% { stroke-width: 7; } }
 /* S-viewer: 근거 표시(hz-m*)와 고르기(hz-sel). 기존 강조(hz-on)·구간 색·hz-pick과 클래스가 달라 서로 지우지 않는다. */
-:root { --hl-focus: var(--ui); --hl-mwarn: var(--warn-line); --hl-muted: #6b7280; }
 .hz-m-focus { --mc: var(--hl-focus); } .hz-m-path { --mc: var(--hl-path); } .hz-m-cause { --mc: var(--hl-cause); }
 .hz-m-safeguard { --mc: var(--hl-safeguard); } .hz-m-warn { --mc: var(--hl-mwarn); } .hz-m-muted { --mc: var(--hl-muted); }
 .hz-m-seg1 { --mc: var(--seg1); } .hz-m-seg2 { --mc: var(--seg2); } .hz-m-seg3 { --mc: var(--seg3); }
@@ -777,6 +789,7 @@ body.hz-mdim #overlay .sym:not(.hz-m), body.hz-mdim #overlay .tagbox:not(.hz-m),
 body.hz-mdim #graphsvg .gnode:not(.hz-m), body.hz-mdim #graphsvg .gedge:not(.hz-m) { opacity: var(--hl-dim); }
 .hz-mbadge rect { fill: var(--mc); } .hz-mbadge text { fill: var(--on-seg); font-size: 11px; font-weight: 700; }
 .hz-marrow { fill: var(--mc); stroke: var(--card); stroke-width: 1; }
+body .hz-pick.hz-m, body .hz-pick.hz-sel { stroke: var(--ui) !important; }  /* 고른 태그의 선 색이 표시·고르기에 가려지지 않게 */
 .hz-sel.sym, .hz-sel.tagbox, .hz-sel.gnode { stroke: var(--ui) !important; stroke-width: 3.5; fill: rgba(10,95,194,.16) !important; }
 .hz-sel.pipe-line, .hz-sel.gedge { stroke: var(--ui) !important; stroke-width: 5; stroke-opacity: 1; }
 body.hz-selmode #viewport { cursor: crosshair; }
@@ -791,6 +804,8 @@ def bridge_js():
 
 class HazopWebView(QWebEngineView):
     """②④⑤가 공유하는 웹뷰 하나. 화면을 바꿀 때 해당 화면의 캔버스 자리로 옮긴다."""
+
+    SELECTION_TIMEOUT_MS = 5000   # selection() 응답을 기다리는 한도
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -855,6 +870,10 @@ class HazopWebView(QWebEngineView):
         path = os.path.abspath(path)
         stamp = self._stamp(path)
         if self.current_file == path and self.current_stamp == stamp:
+            if graph_id and graph_id != self.current_graph_id:  # 같은 파일을 graph_id 없이 읽은 뒤 알게 된 경우: 다시 읽지 않고 이름만 붙인다
+                self.current_graph_id = self.bridge.graph_id = graph_id
+                if self.bridge.is_ready:
+                    self.bridge.sheetReady.emit(graph_id)
             return False
         self.current_file = path
         self.current_stamp = stamp
@@ -985,6 +1004,12 @@ class HazopWebView(QWebEngineView):
         rid = "sel-%d" % self._selection_seq
         self._selection_waiters[rid] = callback
         self.bridge.send("getSelection", request_id=rid)
+        QTimer.singleShot(self.SELECTION_TIMEOUT_MS, lambda: self._selection_answer(rid, []))  # 끝내 답이 없으면 빈 목록
+
+    @property
+    def selection_truncated(self):
+        """마지막 selection() 응답이 2,000개·메시지 크기 때문에 잘렸는지."""
+        return self.bridge.selection_truncated
 
     def _selection_answer(self, rid, ids):
         cb = self._selection_waiters.pop(rid, None)

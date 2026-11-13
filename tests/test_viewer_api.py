@@ -41,8 +41,9 @@ window.drag = function (x0, y0, x1, y1, alt) {
   return performance.now() - t0;
 };
 window.clickAt = function (x, y) {
-  var t = document.elementFromPoint(x, y) || document.body;
+  var t0 = performance.now(), t = document.elementFromPoint(x, y) || document.body;
   ev(t, "mousedown", x, y); ev(t, "mouseup", x, y); ev(t, "click", x, y);
+  return performance.now() - t0;
 };
 window.classesOf = function (id) {
   return JSON.stringify(Array.prototype.map.call(document.querySelectorAll('#overlay [data-local-id="' + id + '"]'), function (e) {
@@ -327,6 +328,59 @@ class PageTest(QtCase):
         self.assertLess(sum(len(i) + 4 for i in events[0]["selected"]), MAX_MESSAGE_CHARS)
         del orig, raw
 
+    def test_selection_answer_is_capped_and_waiter_cleared(self):
+        """ID 40자 1,800개: 응답이 64KB를 넘어 버려지면 안 된다. 잘라서 오고 대기 항목이 남지 않는다."""
+        ids = ["%040d" % i for i in range(1800)]
+        self.v.set_selection(ids)
+        got = []
+        self.v.selection(got.append)
+        self.assertTrue(wait_for(lambda: bool(got)), "selection 응답이 버려짐")
+        self.assertTrue(0 < len(got[0]) <= 2000)
+        self.assertLess(sum(len(i) + 4 for i in got[0]), 64 * 1024)
+        self.assertTrue(self.v.selection_truncated)
+        self.assertEqual(self.v._selection_waiters, {})
+        self.v.set_selection(["a1"])
+        got2 = []
+        self.v.selection(got2.append)
+        self.assertTrue(wait_for(lambda: bool(got2)))
+        self.assertEqual(got2[0], ["a1"])
+        self.assertFalse(self.v.selection_truncated)
+
+    def test_selection_waiter_times_out(self):
+        got = []
+        self.v.SELECTION_TIMEOUT_MS = 100
+        self.v.bridge.toWeb.disconnect()          # 웹이 답하지 못하는 상황
+        self.v.selection(got.append)
+        self.assertTrue(wait_for(lambda: bool(got), 5.0))
+        self.assertEqual(got[0], [])
+        self.assertEqual(self.v._selection_waiters, {})
+
+    def test_mark_missing_list_is_capped(self):
+        miss = ["%040d" % i for i in range(1800)]
+        self.v.mark("big-miss", [{"ids": miss, "style": "focus"}])
+        self.assertTrue(wait_for(lambda: bool(self.results)), "highlightResult가 버려짐")
+        self.assertEqual(self.results[0][0], "big-miss")
+        self.assertTrue(0 < len(self.results[0][1]) <= 2000)
+
+    def test_pick_outline_wins_over_mark(self):
+        self.v.mark("r1", [{"ids": ["a1"], "style": "cause"}])
+        self.v.pick("a1")
+        self.wait_marks(self.v, 2)
+        self.assertTrue(wait_for(lambda: js(self.v, "document.querySelector('.sym.hz-pick') !== null")))
+        stroke = js(self.v, "getComputedStyle(document.querySelector('.sym.hz-pick')).stroke")
+        self.assertEqual(stroke.replace(" ", ""), "rgb(10,95,194)")
+
+    def test_chips_stay_clickable_in_pick_mode(self):
+        chips = []
+        self.v.bridge.chipClicked.connect(chips.append)
+        self.v.set_chips([{"local_id": "a2", "text": "S1 → 다음 도면", "key": "k1", "kind": "link"}])
+        self.assertTrue(wait_for(lambda: js(self.v, "document.querySelectorAll('.hz-chip').length") == 1))
+        self.v.set_select_mode("pick")
+        self.assertTrue(wait_for(lambda: js(self.v, "document.body.classList.contains('hz-selmode')")))
+        js(self.v, "(function () { var r = document.querySelector('.hz-chip rect').getBoundingClientRect(); clickAt(r.left + r.width / 2, r.top + r.height / 2); })()")
+        self.assertTrue(wait_for(lambda: chips == ["k1"]))
+        self.assertEqual(self.events, [])
+
     def test_set_selection_is_silent_and_escape_clears(self):
         self.v.set_select_mode("pick")
         self.v.set_selection(["a1", "a2", "ghost"])
@@ -383,13 +437,16 @@ class BigSheetTest(QtCase):
         self.assertEqual(len(events[0]["selected"]), 2000)                # 앱 쪽은 2,000개까지만 받는다
         self.assertTrue(events[0]["truncated"])
         self.assertEqual(js(v, "document.querySelectorAll('.hz-sel').length"), self.N_SYM + self.N_PIPE)
-        t_box_remove = js(v, "drag(0, 0, 800, 600, true)")
+        t_click = js(v, "clickAt(6, 6)")                # 전부 고른 뒤 기호 하나 누르기(빼기)
         self.assertTrue(wait_for(lambda: len(events) == 2))
+        events.clear()
+        t_box_remove = js(v, "drag(0, 0, 800, 600, true)")
+        self.assertTrue(wait_for(lambda: len(events) == 1))
         self.assertEqual(js(v, "document.querySelectorAll('.hz-sel').length"), 0)
         print("\n[큰 도면 %d개 | 오프스크린 QtWebEngine, 800x600] mark+라벨 %.0fms · clear_marks %.0fms · draw_path(화살표 %d개) %.0fms · "
-              "전체 네모 고르기 %.0fms · 전체 네모 빼기 %.0fms" % (self.N_SYM + self.N_PIPE, t_mark * 1e3, t_clear * 1e3,
-                                                                  self.N_PIPE, t_path * 1e3, t_box, t_box_remove))
-        for name, t in (("mark", t_mark * 1e3), ("clear", t_clear * 1e3), ("path", t_path * 1e3), ("box", t_box), ("box_remove", t_box_remove)):
+              "전체 네모 고르기 %.0fms · 하나 누르기 %.0fms · 전체 네모 빼기 %.0fms" % (
+                  self.N_SYM + self.N_PIPE, t_mark * 1e3, t_clear * 1e3, self.N_PIPE, t_path * 1e3, t_box, t_click, t_box_remove))
+        for name, t in (("mark", t_mark * 1e3), ("clear", t_clear * 1e3), ("path", t_path * 1e3), ("box", t_box), ("click", t_click), ("box_remove", t_box_remove)):
             self.assertLess(t, 3000, "%s가 3초를 넘음" % name)
 
 
@@ -454,6 +511,34 @@ class HostTest(QtCase):
         self.assertNotIn("mark", [m["type"] for m in rec.msgs])
         finish()
         self.assertEqual(rec.last()["type"], "mark")
+
+
+class SameFileTest(QtCase):
+    def test_graph_id_given_after_plain_load_of_same_file(self):
+        """④가 graph_id 없이 읽은 파일을 ②가 graph_id와 함께 다시 읽어도 graph_id가 남고 ViewerHost가 동작한다."""
+        from hazop.app.screens.viewer import ViewerHost
+        v = self.new_view()
+        path = os.path.join(self.tmp, "same.html")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(PAGE % {"body": SMALL})
+        ready = []
+        v.bridge.sheetReady.connect(ready.append)
+        v.load_file(path)
+        v.show()
+        self.assertTrue(wait_for(lambda: bool(ready)))
+        self.assertEqual(ready, [""])
+        self.assertFalse(v.load_file(path, graph_id="G1"))          # 다시 읽지는 않는다
+        self.assertEqual(v.current_graph_id, "G1")
+        self.assertEqual(v.bridge.graph_id, "G1")
+        self.assertEqual(ready, ["", "G1"])                         # 알아낸 graph_id를 알린다
+        self.assertFalse(v.load_file(path))                         # graph_id 없이 다시 불러도 지우지 않는다
+        self.assertEqual(v.current_graph_id, "G1")
+        host = ViewerHost(v, lambda: {"G1": "D1"}, lambda name: v.load_file(path, graph_id="G1"))
+        called = []
+        self.assertTrue(host.show_sheet("G1", lambda: called.append(1)))
+        self.assertEqual(called, [1])
+        host.show_marks("q", {"G1": [{"op": "mark", "groups": [{"ids": ["a1"], "style": "focus"}]}]})
+        self.assertTrue(wait_for(lambda: js(v, "document.querySelectorAll('.hz-m').length") == 2))
 
 
 class RealViewerTest(QtCase):
