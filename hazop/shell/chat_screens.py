@@ -276,24 +276,253 @@ def _sources_execute(engine):
     return run
 
 
+# ================================================================ ⑥ 초기사건 편집(A10, api_ie)
+# 화면 ⑥의 쓰기 대조를 그대로 쓴다: 읽은 ⑥ 파일 지문(ver)·⑤ 결과 지문(rver)·건드리는 항목의 지문(seen). 확인 상자를 띄울 때 읽은 값을
+# 실행 때 그대로 넘겨, 그 사이 바뀌었으면 엔진이 stale로 거절한다. 확정 그룹을 초안으로 내리는 변경은 엔진이 되묻는다(confirm):
+# 채팅은 confirmed를 붙이지 않고 그 물음을 그대로 알려 ⑥ 패널에서 하게 한다(확인 상자에 보이지 않은 결과를 승인시키지 않는다).
+
+IE_ACTIONS = ("ie.move", "ie.split", "ie.edit_group", "ie.accept_members", "ie.confirm_group", "ie.reopen_group", "ie.set_coverage")
+IE_HANDLER = {"ie.move": "_move", "ie.split": "_split", "ie.edit_group": "_edit_group", "ie.accept_members": "_accept_members",
+              "ie.confirm_group": "_confirm", "ie.reopen_group": "_reopen", "ie.set_coverage": "_set_coverage"}
+
+
+def _ie_ctx(engine):
+    """(맥락, 맞춘 ⑥ 문서, 항목 지문) 또는 (None, 사유, None)."""
+    from hazop.ie import bundle, model
+    from hazop.shell import api_ie
+    from hazop.study import nodes
+    ctx, why = api_ie._context(engine)
+    if ctx is None:
+        return None, why, None
+    pg, ns, doc, ie_doc, _fp = ctx
+    base = model.sync(ie_doc, doc, node_set=ns)
+    fps = api_ie.item_fps(bundle.build_bundle(doc, ns, pg, base, nodes.now_utc()))
+    return ctx, base, fps
+
+
+def _ie_keys(item, base):
+    from hazop.shell import api_ie
+    a = item.args
+    if item.action in ("ie.move", "ie.accept_members"):
+        return api_ie._member_keys(base, a["iecs"], [a["to"]] if a.get("to") else [])
+    if item.action == "ie.set_coverage":
+        return ["coverage:" + a["code"]]
+    return ["group:" + a["group_id"]]
+
+
+def _ie_check(engine):
+    def check(item, snap):
+        from hazop.ie import model
+        from hazop.shell import api_ie
+        a = item.args
+        ctx, base, fps = _ie_ctx(engine)
+        if ctx is None:
+            return base
+        if "group_id" in a and a["group_id"] not in base["groups"]:
+            return "없는 그룹: %s" % a["group_id"]
+        if a.get("to") and a["to"] not in base["groups"]:
+            return "없는 그룹: %s" % a["to"]
+        missing = [i for i in (a.get("iecs") or []) + (a.get("moved") or []) if i not in base["candidates"]]
+        if missing:
+            return "없는 후보: %s" % ", ".join(missing[:5])
+        if item.action == "ie.edit_group":
+            try:
+                api_ie.v_fields("group")(a["fields"])
+            except ValueError as exc:
+                return str(exc)
+        if item.action == "ie.set_coverage":
+            if (a.get("disposition") or "") not in ("",) + tuple(model.COVERAGE):
+                return "처리는 %s 가운데 하나(빈 글자면 지움)" % ", ".join(model.COVERAGE)
+            if a.get("disposition") and not (a.get("reason") or "").strip():
+                return "판정에는 사유가 있어야 함"
+        keys = _ie_keys(item, base)
+        absent = [k for k in keys if k not in fps]
+        if absent:
+            return "지금 ⑥ 문서에 없는 항목: %s" % ", ".join(k.split(":", 1)[1] for k in absent[:5])
+        item.targets = [k.split(":", 1)[1] for k in keys]
+        item.basis = {"ver": api_ie._ver(ctx[4]), "rver": api_ie._rver(ctx), "seen": {k: fps[k] for k in keys}}
+        return None
+    return check
+
+
+def _group_label(base, gid):
+    g = base["groups"].get(gid) or {}
+    return "%s %s%s" % (gid, g.get("name") or "", " · 확정" if g.get("status") == "confirmed" else "")
+
+
+def _ie_details(engine):
+    def details(item, snap):
+        from hazop.ie import model
+        from hazop.chat.actions import show_value
+        a = item.args
+        ctx, base, fps = _ie_ctx(engine)
+        if ctx is None:
+            return [{"label": "오류", "after": base}]
+        rows = []
+        if item.action == "ie.move":
+            for i in a["iecs"]:
+                old = (base["candidates"].get(i) or {}).get("group_id")
+                rows.append({"label": "후보 %s" % i, "before": _group_label(base, old) if old else "(묶이지 않음)",
+                             "after": _group_label(base, a["to"]) if a.get("to") else "(그룹에서 뺌)"})
+        elif item.action == "ie.split":
+            rows.append({"label": "나눌 그룹", "after": _group_label(base, a["group_id"])})
+            rows.append({"label": "새 그룹으로 옮길 후보", "after": ", ".join(a["moved"])})
+        elif item.action == "ie.edit_group":
+            g = base["groups"].get(a["group_id"]) or {}
+            rows.append({"label": "그룹", "after": _group_label(base, a["group_id"])})
+            rows += [{"label": "%s(AI가 씀)" % k, "before": show_value(g.get(k)), "after": show_value(v)} for k, v in sorted(a["fields"].items())]
+        elif item.action == "ie.accept_members":
+            rows += [{"label": "후보 %s" % i, "after": "소속 확인: %s" % _group_label(base, (base["candidates"].get(i) or {}).get("group_id"))}
+                     for i in a["iecs"]]
+        elif item.action in ("ie.confirm_group", "ie.reopen_group"):
+            g = base["groups"].get(a["group_id"]) or {}
+            rows.append({"label": "그룹", "before": g.get("status") or "draft",
+                         "after": ("확정(확정자: 확인한 사람)" if item.action == "ie.confirm_group" else "초안으로 되돌림") + " · " + _group_label(base, a["group_id"])})
+            if item.action == "ie.confirm_group":
+                problems = model.confirm_problems(base, a["group_id"], ctx[2], node_set=ctx[1])
+                rows.append({"label": "확정 조건", "after": "; ".join(problems[:5]) if problems else "모두 채움"})
+        elif item.action == "ie.set_coverage":
+            old = base["coverage"].get(a["code"]) or {}
+            rows.append({"label": "범주 %s" % a["code"], "before": model.COVERAGE.get(old.get("disposition"), "(판정 없음)"),
+                         "after": model.COVERAGE.get(a.get("disposition") or "", "(판정 지움)")})
+            rows.append({"label": "사유(AI가 씀)", "after": show_value(a.get("reason"))})
+        rows.append({"label": "항목 지문", "after": " · ".join("%s %s" % (k.split(":", 1)[1], str(v)[-8:])
+                                                           for k, v in sorted({k: fps.get(k) for k in _ie_keys(item, base)}.items()))})
+        return rows
+    return details
+
+
+def _ie_execute(engine, action):
+    def run(args, call):
+        from hazop.shell import api, api_ie
+        basis = call.basis or {}
+        if not basis.get("seen"):
+            return _refused("확인 상자에서 본 항목 지문이 없어 저장하지 않았습니다.", "stale")
+        a = dict(args, ver=basis["ver"], rver=basis["rver"], seen=basis["seen"])
+        if action == "ie.move":
+            a["to"] = args.get("to") or ""
+        if action == "ie.split":
+            a["moved"] = list(args["moved"])
+        if action == "ie.set_coverage":
+            a["disposition"] = args.get("disposition") or ""
+        try:
+            out = getattr(api_ie, IE_HANDLER[action])(engine, a)
+        except api.CommandError as exc:
+            if exc.code == "confirm":
+                return _refused("%s 이 변경은 ⑥ 초기사건 패널에서 직접 하세요." % exc.message, "confirm")
+            raise
+        if not out.get("changed"):
+            return _ok("바뀐 것이 없습니다.")
+        extra = ""
+        if out.get("groups"):
+            extra = " 새 그룹: %s." % ", ".join(str(g) for g in out["groups"] if g)
+        return _ok("⑥ 초기사건을 고쳤습니다(%s).%s" % (TITLES_IE.get(action, action), extra), topics=["ie"])
+    return run
+
+
+TITLES_IE = {"ie.move": "후보 옮기기", "ie.split": "그룹 나누기", "ie.edit_group": "그룹 고치기", "ie.accept_members": "소속 확인",
+             "ie.confirm_group": "그룹 확정", "ie.reopen_group": "그룹 확정 풀기", "ie.set_coverage": "범주 대조 판정"}
+
+
+def _ie_draft(engine):
+    def run(args, call):
+        from hazop.shell import api_ie
+        out = api_ie._suggest(engine, {})
+        return _ok("초기사건 규칙 초안을 만들었습니다." if out.get("changed") else "규칙 초안에 더할 것이 없습니다.", topics=["ie"])
+    return run
+
+
+def _ie_export(engine):
+    def run(args, call):
+        from hazop import paths
+        from hazop.shell import api_ie
+        from hazop.shell.chat_actions import _AutoSave
+        proxy = _AutoSave(engine, paths.output_root("exports"))
+        out = api_ie._export(proxy, {})
+        if out.get("cancelled"):
+            return _refused("덮어쓸 파일이 있어 내보내지 않았습니다." if out.get("overwrite_refused") else "내보내지 못했습니다.")
+        return _ok("초기사건 인계 묶음을 내보냈습니다: %s (작업 루트의 output/exports)." % (out.get("path") or out.get("xlsx") or ""))
+    return run
+
+
+# ================================================================ 설계 문서(A7, api_docs)
+
+def _doc_row(engine, material_id):
+    from hazop.shell import api_docs
+    return next((r for r in api_docs.list_documents(engine) if r.get("material_id") == material_id), None)
+
+
+def _docs_check(engine, running):
+    def check(item, snap):
+        row = _doc_row(engine, item.args["material_id"])
+        if row is None:
+            return "지금 프로젝트에 없는 설계 문서: %s" % item.args["material_id"]
+        if item.args["material_id"] in running:
+            return "이 문서의 지식 추출이 이미 돌고 있음"
+        item.targets = [item.args["material_id"]]
+        return None
+    return check
+
+
+def _docs_details(engine):
+    def details(item, snap):
+        row = _doc_row(engine, item.args["material_id"])
+        if row is None:
+            return [{"label": "오류", "after": "문서가 없어짐"}]
+        counts = ", ".join("%s %s" % (k, v) for k, v in sorted((row.get("counts") or {}).items()) if v)
+        return [{"label": "문서", "after": "%s (%s)" % (row.get("title") or row.get("name") or row["material_id"], row["material_id"])},
+                {"label": "지금 뽑힌 항목", "after": counts or "(없음)"},
+                {"label": "다시 추출", "after": "뽑힌 항목을 새로 쓰고 프로젝트 지식그래프를 다시 만듭니다. 사람 확인 전 상태로 돌아갑니다."}]
+    return details
+
+
+def _docs_execute(engine, running, record):
+    def run(args, call):
+        from hazop.shell import api_docs
+        mid = args["material_id"]
+        if mid in running:
+            return _refused("이 문서의 지식 추출이 이미 돌고 있습니다.", "busy", mid)
+        out = api_docs.run_extraction(engine, mid)
+        job = out.get("job")
+        running.add(mid)
+        if record is not None and job:
+            record.follow(job, call, [mid], lambda: running.discard(mid))
+        else:
+            running.discard(mid)
+        return _ok("설계 문서 %s의 지식 추출을 시작했습니다(작업 %s)." % (mid, job))
+    return run
+
+
+def docs_display(engine):
+    from hazop.shell import api_docs
+    api_docs.open_panel(engine)
+    return {"op": "panel", "ok": True, "panel": "docs", "text": "설계 문서 패널을 열었습니다."}
+
+
 # ================================================================ 표
 
-def checks(engine):
-    out = {"kg.judge": _kg_check(engine), "sources.choose": _sources_check(engine)}
+def checks(engine, docs_running=None):
+    out = {"kg.judge": _kg_check(engine), "sources.choose": _sources_check(engine),
+           "docs.extract": _docs_check(engine, docs_running if docs_running is not None else set())}
     out.update({name: _aireview_check(engine) for name in AIREVIEW_ACTIONS})
+    out.update({name: _ie_check(engine) for name in IE_ACTIONS})
     return out
 
 
 def details(engine):
-    out = {"kg.judge": _kg_details(engine), "sources.choose": _sources_details(engine)}
+    out = {"kg.judge": _kg_details(engine), "sources.choose": _sources_details(engine), "docs.extract": _docs_details(engine)}
     out.update({name: _aireview_details(engine) for name in AIREVIEW_ACTIONS})
+    out.update({name: _ie_details(engine) for name in IE_ACTIONS})
     return out
 
 
-def executors(engine):
-    out = {"kg.judge": _guard(_kg_execute(engine)), "sources.choose": _guard(_sources_execute(engine))}
+def executors(engine, docs_running=None, watcher=None):
+    out = {"kg.judge": _guard(_kg_execute(engine)), "sources.choose": _guard(_sources_execute(engine)),
+           "ie.draft_rules": _guard(_ie_draft(engine)), "ie.export": _guard(_ie_export(engine)),
+           "docs.extract": _guard(_docs_execute(engine, docs_running if docs_running is not None else set(), watcher))}
     out.update({name: _guard(_aireview_execute(engine, name)) for name in AIREVIEW_ACTIONS})
+    out.update({name: _guard(_ie_execute(engine, name)) for name in IE_ACTIONS})
     return out
 
 
-RUN_ACTIONS = ("kg.judge", "sources.choose") + AIREVIEW_ACTIONS
+RUN_ACTIONS = ("kg.judge", "sources.choose", "ie.draft_rules", "ie.export", "docs.extract") + AIREVIEW_ACTIONS + IE_ACTIONS

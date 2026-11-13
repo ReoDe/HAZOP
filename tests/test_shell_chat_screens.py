@@ -228,4 +228,107 @@ class TableTest(RunBase):
             self.assertIn(name, A.ACTIONS)
             self.assertIn(name + "(", card.SYSTEM_PROMPT)
         for name in chat_screens.RUN_ACTIONS:
-            self.assertEqual(A.ACTIONS[name].klass, A.CONFIRM, "사람 판단을 저장하는 동작은 확인")
+            want = A.AUTO if name in ("ie.draft_rules", "ie.export") else A.CONFIRM   # 초안은 더하기만, 내보내기는 새 파일
+            self.assertEqual(A.ACTIONS[name].klass, want, "사람 판단을 저장하는 동작은 확인: " + name)
+
+
+class IeBase(RunBase):
+    def setUp(self):
+        super().setUp()
+        self.base = {"groups": {"IEG-01": {"name": "급수 상실", "status": "draft", "definition": "옛 정의"},
+                                "IEG-02": {"name": "냉각재 상실", "status": "confirmed"}},
+                     "candidates": {"IEC-001": {"group_id": "IEG-01"}, "IEC-002": {"group_id": None}},
+                     "coverage": {}}
+        self.fps = {"group:IEG-01": "sha256:g1", "group:IEG-02": "sha256:g2", "member:IEC-001": "sha256:m1",
+                    "member:IEC-002": "sha256:m2", "coverage:LOCCW": "sha256:c1"}
+        ctx = (None, {"nodes": []}, {"cells": []}, {}, "sha256:IE")
+        for target, fn in (("hazop.shell.chat_screens._ie_ctx", lambda engine: (ctx, copy.deepcopy(self.base), dict(self.fps))),
+                           ("hazop.shell.api_ie._rver", lambda c: "rv1")):
+            p = mock.patch(target, fn)
+            p.start()
+            self.addCleanup(p.stop)
+        self.writes = []
+
+        def handler(name):
+            return lambda engine, a: self.writes.append((name, a)) or {"ver": "sha256:IE2", "changed": True, "value": None}
+        for name in ("_move", "_split", "_edit_group", "_accept_members", "_confirm", "_reopen", "_set_coverage"):
+            p = mock.patch("hazop.shell.api_ie." + name, handler(name))
+            p.start()
+            self.addCleanup(p.stop)
+
+
+class IeTest(IeBase):
+    def test_move_needs_confirmation_and_passes_ver_rver_and_seen(self):
+        item = self.one("ie.move", "IEC-002를 급수 상실로 옮겨 줘", iecs=["IEC-002"], to="IEG-01")
+        self.assertEqual(item["status"], "confirm")
+        self.assertEqual(self.writes, [])
+        row = item["details"][0]
+        self.assertEqual((row["before"], row["after"]), ("(묶이지 않음)", "IEG-01 급수 상실"))
+        self.assertTrue(self.approve(item)["ok"])
+        (name, a), = self.writes
+        self.assertEqual(name, "_move")
+        self.assertEqual((a["ver"], a["rver"], a["to"]), ("sha256:IE", "rv1", "IEG-01"))
+        self.assertEqual(a["seen"], {"member:IEC-002": "sha256:m2", "group:IEG-01": "sha256:g1"})
+        self.assertNotIn("confirmed", a, "채팅은 엔진의 되묻기를 건너뛰지 않는다")
+        self.assertEqual(self.last_record("ie.move")["confirmed_by"], REVIEWER)
+
+    def test_edit_group_shows_old_and_new_values(self):
+        item = self.one("ie.edit_group", group_id="IEG-01", fields={"definition": "AI가 쓴 새 정의"})
+        rows = {r["label"]: r for r in item["details"]}
+        self.assertEqual((rows["definition(AI가 씀)"]["before"], rows["definition(AI가 씀)"]["after"]), ("옛 정의", "AI가 쓴 새 정의"))
+        self.assertIn("고칠 수 없는 필드", self.one("ie.edit_group", group_id="IEG-01", fields={"status": "confirmed"})["reason"])
+
+    def test_item_changed_after_the_box_is_stale(self):
+        item = self.one("ie.split", group_id="IEG-01", moved=["IEC-001"])
+        self.fps["group:IEG-01"] = "sha256:g1-changed"
+        self.approve(item)
+        self.assertEqual(self.writes, [])
+        self.assertEqual(self.events.of("chat.action.result")[-1]["item"]["status"], "stale")
+
+    def test_engine_question_is_passed_on_not_answered(self):
+        from hazop.shell import api
+        with mock.patch("hazop.shell.api_ie._reopen", mock.Mock(side_effect=api.CommandError("confirm", "확정한 그룹 IEG-02가 초안으로 돌아갑니다."))):
+            self.approve(self.one("ie.reopen_group", group_id="IEG-02"))
+        done = self.events.of("chat.action.result")[-1]["item"]
+        self.assertEqual(done["status"], "rejected")
+        self.assertIn("⑥ 초기사건 패널에서", done["reason"])
+        self.assertEqual(self.last_record("ie.reopen_group")["result"], "rejected")
+
+    def test_coverage_reason_required_and_unknown_ids_refused(self):
+        self.assertIn("사유", self.one("ie.set_coverage", code="LOCCW", disposition="out_of_scope")["reason"])
+        item = self.one("ie.set_coverage", code="LOCCW", disposition="out_of_scope", reason="AI 사유: 이 발전소 설계에 없음")
+        self.assertEqual({r["label"]: r["after"] for r in item["details"]}["사유(AI가 씀)"], "AI 사유: 이 발전소 설계에 없음")
+        self.assertIn("없는 그룹", self.one("ie.confirm_group", group_id="IEG-99")["reason"])
+        self.assertIn("없는 후보", self.one("ie.accept_members", iecs=["IEC-999"])["reason"])
+
+
+class DocsTest(RunBase):
+    def setUp(self):
+        super().setUp()
+        self.docs = [{"material_id": "D-001", "title": "가압기 설계 기준", "counts": {"setpoint": 4}}]
+        self.jobs = []
+        for target, fn in (("list_documents", lambda engine: copy.deepcopy(self.docs)),
+                           ("run_extraction", lambda engine, mid: self.jobs.append(mid) or {"job": "j3"})):
+            p = mock.patch("hazop.shell.api_docs." + target, fn)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_extract_needs_confirmation_runs_once_and_records_the_end(self):
+        item = self.one("docs.extract", "가압기 설계 기준 다시 추출해 줘", material_id="D-001")
+        self.assertEqual(item["status"], "confirm")
+        self.assertIn("setpoint 4", {r["label"]: r["after"] for r in item["details"]}["지금 뽑힌 항목"])
+        self.actions.runner.watch = False
+        self.assertTrue(self.approve(item)["ok"])
+        self.assertEqual(self.jobs, ["D-001"])
+        again = self.one("docs.extract", material_id="D-001")
+        self.assertIn("이미 돌고", again["reason"], "추출이 도는 동안 같은 문서를 다시 시작하지 않는다")
+        self.engine._jobs["j3"] = {"state": "failed"}
+        for run in self.actions.runner.pending:
+            run()
+        rows = [r["result"] for r in self.records if r["proposal"]["action"] == "docs.extract"]
+        self.assertEqual(rows[-1], "failed")
+        self.assertEqual(self.actions._docs_running, set(), "끝나면 다시 할 수 있다")
+
+    def test_unknown_document_and_add_by_chat_are_refused(self):
+        self.assertIn("없는 설계 문서", self.one("docs.extract", material_id="D-404")["reason"])
+        self.assertEqual(self.one("docs.add")["status"], "rejected")

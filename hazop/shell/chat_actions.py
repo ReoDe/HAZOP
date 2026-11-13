@@ -32,16 +32,15 @@ NOT_YET = {
     "extract.suggest": "AI 후보는 AI 검토 패널의 'AI 검토 실행'으로 만든다(만든 후보의 수락·거절은 채팅으로 할 수 있다)",
     "kg.algorithm": "지식그래프 패널에 알고리즘 실행이 생기면 잇는다",
     "kg.rebuild": "지식그래프 패널에 다시 만들기가 생기면 잇는다",
-    "ie.draft_rules": "⑥ 초기사건 패널의 '규칙 초안'에서 사람이 한다",
-    "ie.reset": "⑥ 초기사건 패널에서 사람이 한다",
+    "ie.reset": "⑥ 초기사건 패널에서 사람이 한다(읽지 못한 파일을 백업하고 새로 시작)",
 }
 PANELS = {"drawings": "도면", "nodes": "구간", "results": "분석 결과", "ie": "초기사건", "settings": "설정", "kg": "지식그래프",
-          "aireview": "AI 검토", "actionlog": "AI 실행 기록"}
+          "aireview": "AI 검토", "actionlog": "AI 실행 기록", "docs": "설계 문서"}
 PANEL_ALIASES = {"①": "drawings", "②": "drawings", "도면": "drawings", "register": "drawings", "extract": "drawings",
                  "④": "nodes", "구간": "nodes", "검토구간": "nodes", "⑤": "results", "결과": "results", "분석 결과": "results",
                  "analysis": "results", "⑥": "ie", "초기사건": "ie", "설정": "settings", "③": "kg", "지식그래프": "kg",
                  "knowledge_graph": "kg", "ai검토": "aireview", "AI 검토": "aireview", "AI 후보": "aireview", "실행 기록": "actionlog",
-                 "AI 실행 기록": "actionlog", "log": "actionlog"}
+                 "AI 실행 기록": "actionlog", "log": "actionlog", "설계 문서": "docs", "문서": "docs", "documents": "docs"}
 LAYERS = {"symbol": "symbol", "symbols": "symbol", "기호": "symbol", "pipe": "pipe", "pipes": "pipe", "배관": "pipe",
           "tag": "tag", "tags": "tag", "태그": "tag", "글자": "tag"}
 LAYER_NAMES = {"symbol": "기호", "pipe": "배관", "tag": "태그"}
@@ -76,6 +75,7 @@ class ChatActions:
                  engine=None):
         # engine: hazop.shell.api.Engine(분석 실행·내보내기·쪽 확정이 부르는 창구). 창이 넘기지 않으면 project_fn이 엔진의 메서드일 때 그 엔진을 쓴다
         self._engine = engine if engine is not None else _engine_of(project_fn)
+        self._docs_running = set()     # 지식 추출이 도는 설계 문서(같은 문서를 겹쳐 추출하지 않는다)
         self._emit = emit
         self._project_fn = project_fn
         self._pg_fn = pg_fn
@@ -129,7 +129,7 @@ class ChatActions:
             return None
         out = {"analysis.run": analysis}
         if self._engine is not None:
-            out.update(chat_screens.checks(self._engine))
+            out.update(chat_screens.checks(self._engine, self._docs_running))
         return out
 
     def _detail_fns(self):
@@ -159,7 +159,7 @@ class ChatActions:
             self.runner = RunExecutors(self._engine, self._pg_fn, lambda: self._registrations(self._project_fn()),
                                        record=self._record_outcome)
             out.update(self.runner.table())
-            out.update(chat_screens.executors(self._engine))
+            out.update(chat_screens.executors(self._engine, self._docs_running, self.runner))
         return out
 
     def read_state(self):
@@ -244,6 +244,8 @@ class ChatActions:
                 return {"op": "none", "ok": False, "text": "이 창에서는 지식그래프를 열 수 없습니다."}
             return chat_screens.kg_display(self._engine, args.get("text"))
         target = str(args.get("target") or "").strip()
+        if it.action == "goto" and (target.lower() == "docs" or PANEL_ALIASES.get(target) == "docs") and self._engine is not None:
+            return chat_screens.docs_display(self._engine)
         if it.action == "goto" and (PANEL_ALIASES.get(target) == "kg" or target.lower() in ("kg", "③")) and args.get("id") and self._engine is not None:
             return chat_screens.kg_display(self._engine, args.get("id"))
         return None
@@ -478,10 +480,14 @@ TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정",
           "register.reextract": "다시 추출", "sheet.confirm": "도면 쪽 확정", "dexpi.export": "DEXPI로 내보내기",
           "kg.judge": "잠재 후보 판단", "aireview.accept": "AI 후보 수락", "aireview.reject": "AI 후보 거절",
           "aireview.revert": "AI 후보 되돌리기", "aireview.accept_bulk": "AI 후보 묶음 수락", "sources.choose": "원본 형식 고르기",
+          "ie.move": "초기사건 후보 옮기기", "ie.split": "초기사건 그룹 나누기", "ie.edit_group": "초기사건 그룹 고치기",
+          "ie.accept_members": "초기사건 소속 확인", "ie.confirm_group": "초기사건 그룹 확정", "ie.reopen_group": "초기사건 그룹 확정 풀기",
+          "ie.set_coverage": "완전성 대조 판정", "ie.export": "초기사건 인계 묶음 내보내기", "docs.extract": "설계 문서 지식 추출",
+          "docs.add": "설계 문서 등록",
           # 아직 잇지 않았거나 채팅으로 하지 않는 동작(거절 줄의 이름)
           "register.exclude": "분석에서 빼기", "extract.suggest": "추출 값 후보", "kg.algorithm": "지식그래프 알고리즘",
           "kg.rebuild": "지식그래프 다시 만들기", "ie.draft_rules": "초기사건 규칙 초안", "ie.reset": "초기사건 새로 시작",
-          "titleblock.confirm": "표제란 확정", "ie.edit": "초기사건 편집", "drawing.edit": "도면 고치기",
+          "titleblock.confirm": "표제란 확정", "drawing.edit": "도면 고치기",
           "extract.edit": "추출 편집", "nodes.unlock": "잠금 풀기", "sheet.compare": "원본과 견줌",
           "settings.change": "설정 바꾸기", "settings.api_key": "API 키", "settings.work_root": "작업 루트", "settings.reviewer": "검토자 이름",
           "files.delete": "파일 지우기"}
@@ -801,6 +807,23 @@ class RunExecutors:
                 t.start()
         return _ok("구간 %s의 AI 분석을 시작했습니다(호출 %d회). 진행은 ⑤ 분석 결과에 보입니다." % (ids[0], out.get("calls") or 0),
                    topics=["results.run"])
+
+    def follow(self, job, call, targets, on_end=None):
+        """작업 하나의 끝을 기록하는 스레드를 띄운다(설계 문서 추출 등). on_end는 끝난 뒤 한 번 부른다(겹침 표시 풀기)."""
+        def run():
+            try:
+                if self.record is not None:
+                    self.watch_job(job, call, targets)
+            finally:
+                if on_end is not None:
+                    on_end()
+        if not self.watch:
+            self.pending = getattr(self, "pending", []) + [run]       # 시험: 직접 부른다
+            return None
+        t = threading.Thread(target=run, daemon=True)
+        self.watchers.append(t)
+        t.start()
+        return t
 
     def watch_job(self, job, call, targets, poll=1.0, timeout=6 * 3600):
         """엔진 작업 하나가 끝나기를 기다려 끝난 결과를 기록에 남긴다(done | failed). 엔진이 모르는 작업이면 남기지 않는다."""

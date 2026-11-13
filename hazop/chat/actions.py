@@ -239,9 +239,28 @@ ACTIONS = {a.name: a for a in (
     Action("sources.choose", CONFIRM, _spec(("drawing_number", "str"), ("format", "str")), "②",
            "같은 도면 번호의 원본이 형식 둘 이상일 때 프로젝트 그래프에 쓸 형식을 고른다(사람 수정·추출 결과는 그대로)",
            "도면 {drawing_number}에 {format} 원본을 쓰도록 고릅니다. 프로젝트 그래프가 그 원본으로 다시 만들어집니다."),
+    # ⑥ 초기사건 편집(A10, api_ie). 확인 상자에서 본 ⑥ 파일 지문·⑤ 지문·항목 지문을 그대로 넘긴다. 확정 그룹을 초안으로 내리는 변경은 ⑥ 패널에서
+    Action("ie.move", CONFIRM, _spec(("iecs", "ids"), to="id"), "⑥", "후보를 다른 그룹으로 옮기기(to가 없으면 그룹에서 뺌)",
+           "초기사건 후보 {iecs}을(를) 옮깁니다."),
+    Action("ie.split", CONFIRM, _spec(("group_id", "id"), ("moved", "ids")), "⑥", "그룹 나누기(고른 후보를 새 그룹으로)",
+           "초기사건 그룹 {group_id}에서 후보 {moved}을(를) 새 그룹으로 나눕니다."),
+    Action("ie.edit_group", CONFIRM, _spec(("group_id", "id"), ("fields", "obj")), "⑥", "그룹 이름·정의·범주·대표 등 고치기",
+           "초기사건 그룹 {group_id}을(를) 고칩니다. 아래 새 값은 AI가 쓴 글입니다."),
+    Action("ie.accept_members", CONFIRM, _spec(("iecs", "ids")), "⑥", "규칙이 배정한 소속을 사람이 확인",
+           "초기사건 후보 {iecs}의 소속을 확인합니다."),
+    Action("ie.confirm_group", CONFIRM, _spec(("group_id", "id")), "⑥", "그룹 확정(확정자는 확인한 사람)",
+           "초기사건 그룹 {group_id}을(를) 확정합니다. 확정자로 확인한 사람 이름이 남습니다."),
+    Action("ie.reopen_group", CONFIRM, _spec(("group_id", "id")), "⑥", "그룹 확정 풀기", "초기사건 그룹 {group_id}의 확정을 풉니다."),
+    Action("ie.set_coverage", CONFIRM, _spec(("code", "str"), disposition="str", reason="text"), "⑥",
+           "완전성 대조 빈 범주 판정: out_of_scope·other_method·not_applicable(사유 필수), 빈 글자면 지움",
+           "완전성 대조 범주 {code}을(를) 판정합니다. 아래 사유는 AI가 쓴 글입니다."),
+    Action("ie.export", AUTO, _spec(), "⑥", "인계 묶음 Excel+JSON. 시각을 붙인 새 이름으로 쓰고 덮어쓰지 않는다"),
+    # 설계 문서(A7, api_docs)
+    Action("docs.extract", CONFIRM, _spec(("material_id", "id")), "③", "등록한 설계 문서의 지식 추출 다시 하기(뽑힌 항목을 새로 씀)",
+           "설계 문서 {material_id}의 지식 추출을 다시 합니다."),
+    Action("docs.add", NEVER, _spec(), "③", "설계 문서 등록(파일 고르기)", where="설계 문서 패널의 '추가'에서 사람이 파일을 고른다"),
     # 아직 화면이 없는 기능. 모델이 내면 '아직 채팅으로 할 수 없음'으로 답한다
     Action("titleblock.confirm", LATER, _spec(), "②", "표제란 확정", where="표제란 확정 화면이 생기면 잇는다"),
-    Action("ie.edit", LATER, _spec(), "⑥", "초기사건 편집", where="⑥ 초기사건 패널에서 사람이 한다"),
     Action("drawing.edit", LATER, _spec(), "②", "도면 고치기(태그·종류·연결)", where="도면 고치기 화면이 생기면 잇는다"),
 )}
 
@@ -670,7 +689,7 @@ class ActionPlanner:
         self._reason(item, True)
         self._entry(item, snap)
         item.confirm_text = _fill(ACTIONS["results.edit"].confirm_text,
-                                  dict(item.args, field_names=sorted(fields)))
+                                  dict(item.args, field_names=[FIELD_LABELS.get(k, k) for k in sorted(fields)]))
 
     def _check_nodes_undo(self, item, snap):
         bid = item.args["batch_id_to_undo"]
@@ -1027,6 +1046,11 @@ def show_value(v):
     return json.dumps(v, ensure_ascii=False, sort_keys=True)
 
 
+def _status_label(status):
+    """판정 이름(사람 판정은 STATUS_LABELS, AI 초안은 'AI 초안')."""
+    return STATUS_LABELS.get(status) or {"proposed": "AI 초안", None: "(없음)"}.get(status, status)
+
+
 def _entry_now(snap, a):
     cell = next((c for c in _cells(snap, a.get("node_id")) if c.get("deviation_id") == a.get("deviation_id")), None)
     return next((e for e in (cell or {}).get("entries") or [] if e.get("entry_id") == a.get("entry_id")), None)
@@ -1036,7 +1060,7 @@ def _status_details(item, snap):
     a = item.args
     e = _entry_now(snap, a) or {}
     old = e.get("status")
-    return [{"label": "판정", "before": STATUS_LABELS.get(old, old or "(없음)"), "after": STATUS_LABELS.get(a["status"], a["status"])},
+    return [{"label": "판정", "before": _status_label(old), "after": STATUS_LABELS.get(a["status"], a["status"])},
             {"label": "사유(AI가 씀)", "after": show_value(a.get("reason"))},
             {"label": "항목 원인", "after": show_value(e.get("cause"))}]
 
@@ -1047,7 +1071,7 @@ def _edit_details(item, snap):
     rows = [{"label": "%s(AI가 씀)" % FIELD_LABELS.get(k, k), "before": show_value(e.get(k)), "after": show_value(v)}
             for k, v in sorted(a["fields"].items())]
     old = e.get("status")
-    rows.append({"label": "판정", "before": STATUS_LABELS.get(old, old or "(없음)"),
+    rows.append({"label": "판정", "before": _status_label(old),
                  "after": STATUS_LABELS["on_hold"] if old == "on_hold" else STATUS_LABELS["revised"]})
     rows.append({"label": "사유(AI가 씀)", "after": show_value(a.get("reason"))})
     return rows

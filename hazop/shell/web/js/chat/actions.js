@@ -99,18 +99,45 @@ function Targets({ it }) {
 if (typeof document !== "undefined" && !document.getElementById("chat-actions-css")) {
   const st = document.createElement("style");
   st.id = "chat-actions-css";
-  st.textContent = ".act-details{margin:6px 0;display:grid;gap:4px}.act-detail{display:grid;grid-template-columns:minmax(72px,auto) 1fr;gap:6px}"
-    + ".act-detail dt{color:var(--muted);font-size:var(--fs-xs)}.act-detail dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}"
-    + ".act-detail .before{color:var(--muted);text-decoration:line-through}.act-detail .after{font-weight:600}";
+  st.textContent = ".act-fold{margin:6px 0;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface)}"
+    + ".act-fold>summary{cursor:pointer;padding:4px 8px;font-size:var(--fs-xs);color:var(--muted);list-style-position:inside}"
+    + ".act-fold[open]>summary{border-bottom:1px solid var(--line)}.act-fold .act-body{padding:4px 8px 6px;display:grid;gap:6px}"
+    + ".act-table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}.act-table th{text-align:left;font-weight:500;color:var(--muted);"
+    + "padding:3px 6px 3px 0;vertical-align:top;white-space:nowrap;width:1%}.act-table td{padding:3px 0;vertical-align:top;overflow-wrap:anywhere;white-space:pre-wrap}"
+    + ".act-table .before{color:var(--muted)}.act-table .arrow{color:var(--muted);padding:0 4px}.act-table .after{font-weight:600}"
+    + ".act-more{border:0;background:none;padding:0 0 0 4px;color:var(--accent-ink);cursor:pointer;font-size:var(--fs-xs)}";
   document.head.appendChild(st);
 }
 
-/** 확인 상자의 '저장될 값': 엔진이 지금 상태에서 만든 줄(판정, AI가 쓴 사유 전문, 필드별 앞값 → 새값). 자르지 않고 글자 그대로 보인다. */
-function Details({ rows }) {
-  if (!rows || !rows.length) return null;
-  return html`<dl class="act-details" aria-label="저장될 값">${rows.map((r, i) => html`<div key=${i} class="act-detail">
-    <dt>${r.label}</dt>
-    <dd>${r.before !== undefined && r.before !== null ? html`<span class="before" aria-label=${"앞값 " + r.before}>${r.before}</span> <span aria-hidden="true">→</span> ` : null}<span class="after">${r.after}</span></dd></div>`)}</dl>`;
+const LONG = 120;     // 이보다 긴 값(사유 전문 등)은 앞부분만 보이고 '전문 보기'로 펼친다(글자는 하나도 버리지 않는다)
+
+function Long({ text, cls }) {
+  const [open, setOpen] = useState(false);
+  const t = text == null ? "" : String(text);
+  if (t.length <= LONG || open) {
+    return html`<span class=${cls}>${t}${t.length > LONG ? html`<button type="button" class="act-more" onClick=${() => setOpen(false)}>접기</button>` : null}</span>`;
+  }
+  return html`<span class=${cls}>${t.slice(0, LONG)}…<button type="button" class="act-more" aria-label="전문 보기" onClick=${() => setOpen(true)}>전문 보기</button></span>`;
+}
+
+/** 확인 상자의 '저장될 값'과 대상을 접을 수 있는 한 덩이로: 항목 | 앞값 → 새값 표. 엔진이 지금 상태에서 만든 줄을 빠짐없이 보인다. */
+function Fold({ it }) {
+  const rows = it.details || [];
+  const ops = it.ops || [];
+  const tgt = (it.targets || []).length;
+  if (!rows.length && !ops.length && !tgt) return null;
+  const head = [rows.length ? "저장될 값 " + rows.length + "줄" : null, ops.length ? "바꿀 내용 " + ops.length + "줄" : null,
+    tgt ? "대상 " + it.targets_total + "개" : null].filter(Boolean).join(" · ");
+  return html`<details class="act-fold" open>
+    <summary>${head}</summary>
+    <div class="act-body">
+      ${rows.length ? html`<table class="act-table" aria-label="저장될 값"><tbody>${rows.map((r, i) => html`<tr key=${i}>
+        <th scope="row">${r.label}</th>
+        <td>${r.before !== undefined && r.before !== null
+          ? html`<${Long} cls="before" text=${r.before} /><span class="arrow" aria-label="에서">→</span><${Long} cls="after" text=${r.after} />`
+          : html`<${Long} cls="after" text=${r.after} />`}</td></tr>`)}</tbody></table>` : null}
+      ${ops.length ? html`<ul class="tight" aria-label="바꿀 내용">${ops.map((o, i) => html`<li key=${i}>${o}</li>`)}</ul>` : null}
+      <${Targets} it=${it} /></div></details>`;
 }
 
 function LogError({ it }) {
@@ -127,9 +154,7 @@ function ConfirmBox({ it }) {
   return html`<div class="actbox confirm" role="group" aria-label=${"확인: " + it.title}>
     <div class="actbox-h"><${Icon} name="alert-triangle" size=${15} /><b>${it.title}</b></div>
     <p>${it.text}</p>
-    ${(it.ops || []).length ? html`<ul class="tight" aria-label="바꿀 내용">${it.ops.map((o, i) => html`<li key=${i}>${o}</li>`)}</ul>` : null}
-    <${Details} rows=${it.details} />
-    <${Targets} it=${it} />
+    <${Fold} it=${it} />
     ${it.waiting ? html`<div class="muted" style="font-size:var(--fs-xs)">앞의 확인이 끝나면 이어서 묻습니다.</div>` : html`
       <div class="acts-row">
         <${Btn} kind="primary" sm=${true} disabled=${busy} label="실행" onClick=${() => press("chat.action.approve")}>실행<//>

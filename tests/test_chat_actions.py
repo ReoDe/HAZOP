@@ -200,7 +200,7 @@ class RoutingTest(Harness):
                        self.act("results.edit", node_id="S5", deviation_id="D01", entry_id="e1",
                                 fields={"severity": 3, "cause_refs": []}, reason="강도 고침")], answer="a-3")
         self.assertEqual((len(p.confirm), len(p.rejected)), (1, 3))
-        self.assertIn("cause_refs, severity", p.confirm[0].confirm_text)
+        self.assertIn("원인 근거, 심각도", p.confirm[0].confirm_text)   # 필드 이름은 한국어로(A11 2차)
 
     def test_edit_fields_match_engine(self):
         from hazop.study import results

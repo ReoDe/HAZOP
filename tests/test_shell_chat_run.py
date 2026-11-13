@@ -327,7 +327,7 @@ class ReextractTest(RunBase):
 class NotYetTest(RunBase):
     def test_phase_two_actions_answer_not_yet(self):
         for name, args in (("kg.rebuild", {}), ("ie.reset", {}), ("register.exclude", {"registration_id": "M-101"}),
-                           ("titleblock.confirm", {}), ("drawing.edit", {}), ("ie.edit", {}), ("kg.algorithm", {"name": "x"})):
+                           ("titleblock.confirm", {}), ("drawing.edit", {}), ("kg.algorithm", {"name": "x"})):
             with self.subTest(name):
                 item = self.one(name, **args)
                 self.assertEqual(item["status"], "rejected")
