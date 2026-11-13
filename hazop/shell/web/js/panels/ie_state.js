@@ -92,27 +92,33 @@ export function seenMap() {
   return m;
 }
 
-async function write(name, args, notice) {
+async function write(name, args, notice, sent) {
   ie.set({ busy: true, error: null, notice: null, ask: null });
   const s = ie.get().summary;
+  const full = sent || Object.assign({ ver: s.ver, rver: s.rver, seen: seenMap() }, args);
   try {
-    const r = await cmd(name, Object.assign({ ver: s.ver, rver: s.rver, seen: seenMap() }, args));
+    const r = await cmd(name, full);
+    if (r && r.ask) {           // 엔진이 되물음: 카드가 보인 때의 인자(지문 포함)와 확정이 풀릴 그룹 목록을 그대로 들고 있는다
+      ie.set({ busy: false, ask: { name, full, notice, message: r.ask.message, groups: r.ask.groups || [] } });
+      return null;
+    }
     await refresh();                      // 다시 읽기가 끝날 때까지 busy: 그 사이 누르면 옛 지문이 실려 거절된다
     ie.set({ busy: false, notice: (typeof notice === "function" ? notice(r) : notice) || null });
     return r;
   } catch (e) {
-    if (e && e.code === "confirm") { ie.set({ busy: false, ask: { name, args, notice, message: errorText(e) } }); return null; }
+    if (e && e.code === "confirm") { ie.set({ busy: false, ask: { name, full, notice, message: errorText(e), groups: [] } }); return null; }
     if (e && e.code === "stale") await refresh();
     ie.set({ busy: false, error: errorText(e) });
     return null;
   }
 }
 
-/** 되물은 것에 '계속': 같은 인자에 confirmed를 붙여 다시 보낸다(그 사이 바뀌었으면 엔진이 다시 거절한다). */
+/** 되물은 것에 '계속': 카드가 보인 때의 인자(ver·rver·seen) 그대로 confirmed와 카드에 보인 그룹 목록을 붙여 보낸다.
+ *  그 사이 무엇이든 바뀌었거나 확정이 풀릴 그룹이 카드와 다르면 엔진이 거절한다. */
 export function confirmAsk() {
   const a = ie.get().ask;
   if (!a) return null;
-  return write(a.name, Object.assign({}, a.args, { confirmed: true }), a.notice);
+  return write(a.name, {}, a.notice, Object.assign({}, a.full, { confirmed: true, confirm_groups: a.groups }));
 }
 export function cancelAsk() { ie.set({ ask: null }); }
 

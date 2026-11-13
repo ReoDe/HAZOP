@@ -61,6 +61,7 @@ function Ask() {
   if (!ask) return null;
   return html`<div class="card ie-ask" role="alertdialog" aria-label="확인">
     <p>${ask.message}</p>
+    ${ask.groups.length ? html`<div class="small">확정이 풀릴 그룹: <b>${ask.groups.join(", ")}</b></div>` : null}
     <div class="acts-row"><${Btn} sm=${true} kind="primary" label="계속" disabled=${busy} onClick=${I.confirmAsk}>계속<//>
       <${Btn} sm=${true} label="그만두기" onClick=${I.cancelAsk}>그만두기<//></div></div>`;
 }
@@ -92,25 +93,29 @@ function Header({ s }) {
     <div class="acts-row" role="tablist" aria-label="보기">${tab("groups", "그룹")}${tab("completeness", "완전성 대조 " + k.gaps)}${tab("warnings", "품질 경고 " + k.warnings)}</div>`;
 }
 
-/** 고른 후보로 할 일: 새 그룹으로 묶기, 다른 그룹으로 옮기기, 그룹에서 빼기, 소속 확인. */
-function PickBar({ s, inGroup }) {
+/** 고른 후보로 할 일. 고른 것이 있을 때만 보인다. 묶이지 않은 후보: 새 그룹으로 묶기·열어 둔 그룹에 넣기. 소속 후보: 빼기·나누기·옮기기·소속 확인. */
+function PickBar({ s, members }) {
   const picked = I.useIe((x) => x.picked);
   const busy = I.useIe((x) => x.busy);
   const active = I.useIe((x) => x.active);
   const [name, setName] = useState("");
   const [to, setTo] = useState("");
-  if (!picked.length) return html`<div class="muted small">후보를 고르면 묶기·옮기기를 할 수 있습니다.</div>`;
-  const targets = s.groups.filter((g) => g.group_id !== (inGroup ? active : null));
-  return html`<div class="card ie-pick" role="group" aria-label="고른 후보로 할 일">
-    <div class="small"><b>${picked.length}개</b> 고름 <${Btn} sm=${true} kind="ghost" label="고르기 풀기" onClick=${I.clearPicked}>풀기<//></div>
-    <div class="acts-row"><input class="textbox" aria-label="새 그룹 이름" placeholder="새 그룹 이름(예: 주급수 상실)" maxlength="200" value=${name} onInput=${(e) => setName(e.target.value)} />
-      <${Btn} sm=${true} kind="primary" label="새 그룹으로 묶기" disabled=${busy || !name.trim()} onClick=${async () => { if (await I.createGroup(name.trim(), picked)) setName(""); }}>새 그룹으로<//></div>
-    ${targets.length ? html`<div class="acts-row"><select class="textbox" aria-label="옮길 그룹" value=${to} onChange=${(e) => setTo(e.target.value)}><option value="">옮길 그룹 고르기</option>
-        ${targets.map((g) => html`<option value=${g.group_id} key=${g.group_id}>${g.group_id} ${g.name}</option>`)}</select>
-      <${Btn} sm=${true} label="그룹으로 옮기기" disabled=${busy || !to} onClick=${() => I.moveTo(picked, to)}>옮기기<//></div>` : null}
-    ${inGroup ? html`<div class="acts-row"><${Btn} sm=${true} label="그룹에서 빼기" disabled=${busy} onClick=${() => I.moveTo(picked, "")}>그룹에서 빼기<//>
-      <${Btn} sm=${true} label="소속 확인" title="규칙이 배정한 소속을 사람이 확인합니다" disabled=${busy} onClick=${() => I.acceptMembers(picked)}>소속 확인<//>
-      <${Btn} sm=${true} label="고른 후보를 새 그룹으로 나누기" disabled=${busy} onClick=${() => I.splitGroup(active, picked)}>나누기<//></div>` : null}</div>`;
+  const mine = (members || []).map((m) => m.candidate_id);
+  const sel = picked.filter((id) => (members ? mine.includes(id) : !mine.length || !mine.includes(id)));
+  if (!sel.length) return null;
+  const targets = s.groups.filter((g) => g.group_id !== (members ? active : null));
+  const move = targets.length ? html`<select class="textbox" aria-label="옮길 그룹" value=${to} onChange=${(e) => setTo(e.target.value)}><option value="">다른 그룹으로…</option>
+      ${targets.map((g) => html`<option value=${g.group_id} key=${g.group_id}>${g.group_id} ${g.name}</option>`)}</select>
+    <${Btn} sm=${true} label="그룹으로 옮기기" disabled=${busy || !to} onClick=${() => I.moveTo(sel, to)}>옮기기<//>` : null;
+  return html`<div class="ie-pick" role="group" aria-label="고른 후보로 할 일">
+    <span class="small"><b>${sel.length}개</b> 고름</span>
+    ${members ? html`<${Btn} sm=${true} label="그룹에서 빼기" disabled=${busy} onClick=${() => I.moveTo(sel, "")}>빼기<//>
+      <${Btn} sm=${true} label="고른 후보를 새 그룹으로 나누기" disabled=${busy || sel.length >= mine.length} onClick=${() => I.splitGroup(active, sel)}>나누기<//>
+      <${Btn} sm=${true} label="소속 확인" title="규칙이 배정한 소속을 사람이 확인합니다" disabled=${busy} onClick=${() => I.acceptMembers(sel)}>소속 확인<//>${move}`
+    : html`${active ? html`<${Btn} sm=${true} kind="primary" label="열린 그룹에 넣기" disabled=${busy} onClick=${() => I.moveTo(sel, active)}>${active}에 넣기<//>` : null}
+      <input class="textbox" aria-label="새 그룹 이름" placeholder="새 그룹 이름" maxlength="200" value=${name} onInput=${(e) => setName(e.target.value)} />
+      <${Btn} sm=${true} kind=${active ? "" : "primary"} label="새 그룹으로 묶기" disabled=${busy || !name.trim()} onClick=${async () => { if (await I.createGroup(name.trim(), sel)) setName(""); }}>새 그룹<//>${move}`}
+    <${Btn} sm=${true} kind="ghost" label="고르기 풀기" onClick=${I.clearPicked}>풀기<//></div>`;
 }
 
 function Groups({ s }) {
@@ -118,9 +123,8 @@ function Groups({ s }) {
   const detail = I.useIe((x) => x.detail);
   return html`<div class="ie-cols">
     <div class="ie-left"><h3>묶이지 않은 후보 ${s.unassigned.length}</h3>
-      ${active ? null : html`<${PickBar} s=${s} inGroup=${false} />`}
-      <div class="list" role="list" aria-label="묶이지 않은 후보">${s.unassigned.length ? s.unassigned.map((c) => html`<${CandRow} c=${c} pick=${!active} key=${c.candidate_id} />`) : html`<div class="muted">모든 후보가 그룹에 들어 있습니다.</div>`}</div>
-      ${active ? html`<div class="muted small">묶이지 않은 후보를 고르려면 그룹 상세를 닫으세요.</div>` : null}</div>
+      <${PickBar} s=${s} />
+      <div class="list" role="list" aria-label="묶이지 않은 후보">${s.unassigned.length ? s.unassigned.map((c) => html`<${CandRow} c=${c} key=${c.candidate_id} />`) : html`<div class="muted">모든 후보가 그룹에 들어 있습니다.</div>`}</div></div>
     <div class="ie-right"><h3>그룹 ${s.groups.length}</h3>
       <div class="list" role="list" aria-label="그룹 목록">${s.groups.length ? s.groups.map((g) => html`<div class=${"row nrow" + (active === g.group_id ? " on" : "")} role="listitem" key=${g.group_id}>
         <button type="button" class="nrow-b" aria-pressed=${active === g.group_id ? "true" : "false"} aria-label=${g.group_id + " " + g.name} onClick=${() => I.openGroup(g.group_id)}>
@@ -129,50 +133,56 @@ function Groups({ s }) {
       ${active ? html`<${Detail} s=${s} d=${detail} gid=${active} />` : null}</div></div>`;
 }
 
+/** 표제·최종상태·기본사건 한 줄. 줄을 누르면 그 줄의 동작(받아들이기·고치기·지우기)이 열린다. */
 function RecordRow({ kind, id, label, sub, d }) {
   const busy = I.useIe((x) => x.busy);
+  const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(false);
   const rec = d.records[kind + ":" + id] || {};
-  return html`<div class="ie-rec" key=${id}>
-    <div class="small"><b>${id}</b> ${label} <span class="muted">${sub} · ${rec.origin === "human" ? "사람" : "AI 초안"}</span>
-      <span class="acts">
+  return html`<div class=${"ie-rec" + (open ? " on" : "")} key=${id}>
+    <button type="button" class="linkish small" aria-expanded=${open ? "true" : "false"} aria-label=${id + " " + KIND_NAME[kind]} onClick=${() => { setOpen(!open); setEdit(false); }}>
+      <b>${id}</b> ${label} <span class="muted">${sub} · ${rec.origin === "human" ? "사람" : "AI 초안"}</span></button>
+    ${open ? html`<span class="acts">
         ${rec.origin !== "human" ? html`<${Btn} sm=${true} kind="ghost" label=${id + " 받아들이기"} disabled=${busy} onClick=${() => I.acceptRecord(kind, id)}>받아들이기<//>` : null}
         <${Btn} sm=${true} kind="ghost" label=${id + " 고치기"} disabled=${busy} onClick=${() => setEdit(!edit)}>고치기<//>
-        <${Btn} sm=${true} kind="ghost" label=${id + " 지우기"} disabled=${busy} onClick=${() => I.removeRecord(kind, id)}>지우기<//></span></div>
+        <${Btn} sm=${true} kind="ghost" label=${id + " 지우기"} disabled=${busy} onClick=${() => I.removeRecord(kind, id)}>지우기<//></span>` : null}
     ${edit ? html`<${FieldForm} title=${id + " 고치기"} fields=${RECORD_FIELDS[kind]} values=${rec} choices=${d.choices} onSave=${(f) => I.editRecord(kind, id, f)} onCancel=${() => setEdit(false)} />` : null}</div>`;
 }
 
 function Detail({ s, d, gid }) {
   const busy = I.useIe((x) => x.busy);
   const [mode, setMode] = useState(null);       // null | "edit" | "heading" | "end_state"
+  const [more, setMore] = useState(false);
   if (!d) return html`<div class="muted">불러오는 중…</div>`;
   const g = d.group;
   const st = STATUS[g.status] || [g.status, ""];
-  const stored = d.stored_status;
+  const draft = d.stored_status === "draft";
+  const pick = (m) => { setMode(mode === m ? null : m); setMore(false); };
   return html`<div class="card ndetail" aria-label=${gid + " 상세"}>
     <div class="nd-h"><b>${g.group_id}</b> ${g.name} <${Chip} kind=${st[1]}>${st[0]}<//>${g.confirmed_by ? html` <span class="muted small">${g.confirmed_by}</span>` : null}
-      <span class="acts"><${Btn} sm=${true} kind="ghost" icon="x" label="그룹 상세 닫기" onClick=${() => I.ie.set({ active: null, detail: null, picked: [] })} /></span></div>
-    ${g.definition ? html`<p>${g.definition}</p>` : html`<div class="muted small">정의가 비어 있습니다.</div>`}
+      <span class="acts">
+        ${g.status === "confirmed" ? html`<${Btn} sm=${true} label="확정 풀기" disabled=${busy} onClick=${() => I.reopenGroup(gid)}>확정 풀기<//>`
+          : html`<${Btn} sm=${true} kind="primary" label="그룹 확정" disabled=${busy || g.problems.length > 0} title=${g.problems.length ? "확정할 수 없는 이유가 있습니다" : "검토자 이름으로 그룹을 확정합니다"} onClick=${() => I.confirmGroup(gid)}>확정<//>`}
+        <${Btn} sm=${true} label="그룹 고치기" disabled=${busy} onClick=${() => pick("edit")}>고치기<//>
+        <${Btn} sm=${true} kind="ghost" label="그룹 동작 더 보기" aria-expanded=${more ? "true" : "false"} onClick=${() => setMore(!more)}>더 보기<//>
+        <${Btn} sm=${true} kind="ghost" icon="x" label="그룹 상세 닫기" onClick=${() => I.ie.set({ active: null, detail: null, picked: [] })} /></span></div>
+    ${more ? html`<div class="acts-row ie-more" role="menu" aria-label="그룹 동작">
+      <${Btn} sm=${true} label="표제 더하기" onClick=${() => pick("heading")}>표제 더하기<//>
+      <${Btn} sm=${true} label="최종상태 더하기" onClick=${() => pick("end_state")}>최종상태 더하기<//>
+      <${Btn} sm=${true} label="그룹 지우기" disabled=${busy || !draft} title=${draft ? "초안 그룹을 지웁니다(확인을 받습니다)" : "확정한 그룹은 먼저 확정을 풀어야 지울 수 있습니다"} onClick=${() => { setMore(false); I.deleteGroup(gid); }}>그룹 지우기<//></div>` : null}
+    ${g.problems.length ? html`<${Notice} kind="warn" icon="alert-triangle"><b>확정할 수 없는 이유</b><ul class="tight">${g.problems.map((p, i) => html`<li key=${i}>${p}</li>`)}</ul><//>` : null}
+    ${mode === "edit" ? html`<${FieldForm} title=${gid + " 고치기"} fields=${GROUP_FIELDS} values=${d.editable} choices=${d.choices} members=${d.members} onSave=${(f) => I.editGroup(gid, f)} onCancel=${() => setMode(null)} />` : null}
+    ${mode === "heading" ? html`<${FieldForm} title="표제 더하기" fields=${RECORD_FIELDS.heading} values=${{ role: "mitigative", actuation: "unknown" }} choices=${d.choices} onSave=${(f) => I.addRecord("heading", gid, Object.assign({ role: "mitigative", actuation: "unknown" }, f))} onCancel=${() => setMode(null)} />` : null}
+    ${mode === "end_state" ? html`<${FieldForm} title="최종상태 더하기" fields=${RECORD_FIELDS.end_state} values=${{ category: "unclassified" }} choices=${d.choices} onSave=${(f) => I.addRecord("end_state", gid, Object.assign({ category: "unclassified" }, f))} onCancel=${() => setMode(null)} />` : null}
+    ${g.definition ? html`<p>${g.definition}</p>` : null}
     ${g.categories.length ? html`<div class="small">범주: ${g.categories.join(", ")} <span class="muted">(${g.category_source})</span></div>` : null}
     ${g.plant_response ? html`<div class="small"><span class="muted">플랜트 반응</span> ${g.plant_response}</div>` : null}
-    <div class="acts-row">
-      <${Btn} sm=${true} label="그룹 고치기" disabled=${busy} onClick=${() => setMode(mode === "edit" ? null : "edit")}>고치기<//>
-      <${Btn} sm=${true} label="그룹 지우기" disabled=${busy || stored !== "draft"} title=${stored === "draft" ? "초안 그룹을 지웁니다(확인을 받습니다)" : "확정한 그룹은 먼저 확정을 풀어야 지울 수 있습니다"} onClick=${() => I.deleteGroup(gid)}>지우기<//></div>
-    ${mode === "edit" ? html`<${FieldForm} title=${gid + " 고치기"} fields=${GROUP_FIELDS} values=${d.editable} choices=${d.choices} members=${d.members} onSave=${(f) => I.editGroup(gid, f)} onCancel=${() => setMode(null)} />` : null}
     <h4>소속 후보 ${d.members.length}</h4>
-    <${PickBar} s=${s} inGroup=${true} />
+    <${PickBar} s=${s} members=${d.members} />
     <div class="list" role="list" aria-label="소속 후보">${d.members.map((c) => html`<${CandRow} c=${c} key=${c.candidate_id} />`)}</div>
-    <h4>사건수목 표제 ${d.headings.length} <${Btn} sm=${true} kind="ghost" label="표제 더하기" disabled=${busy} onClick=${() => setMode(mode === "heading" ? null : "heading")}>더하기<//></h4>
-    ${mode === "heading" ? html`<${FieldForm} title="표제 더하기" fields=${RECORD_FIELDS.heading} values=${{ role: "mitigative", actuation: "unknown" }} choices=${d.choices} onSave=${(f) => I.addRecord("heading", gid, Object.assign({ role: "mitigative", actuation: "unknown" }, f))} onCancel=${() => setMode(null)} />` : null}
-    ${d.headings.length ? d.headings.map((h) => html`<${RecordRow} kind="heading" id=${h.heading_id} label=${h.name} sub=${(h.role || "") + " " + (h.actuation || "")} d=${d} key=${h.heading_id} />`) : html`<div class="muted small">없음</div>`}
-    <h4>최종상태 ${d.end_states.length} <${Btn} sm=${true} kind="ghost" label="최종상태 더하기" disabled=${busy} onClick=${() => setMode(mode === "end_state" ? null : "end_state")}>더하기<//></h4>
-    ${mode === "end_state" ? html`<${FieldForm} title="최종상태 더하기" fields=${RECORD_FIELDS.end_state} values=${{ category: "unclassified" }} choices=${d.choices} onSave=${(f) => I.addRecord("end_state", gid, Object.assign({ category: "unclassified" }, f))} onCancel=${() => setMode(null)} />` : null}
-    ${d.end_states.length ? d.end_states.map((e) => html`<${RecordRow} kind="end_state" id=${e.end_state_id} label=${e.text} sub=${e.category} d=${d} key=${e.end_state_id} />`) : html`<div class="muted small">없음</div>`}
-    <h4>기본사건 ${d.basic_events.length}</h4>${d.basic_events.length ? d.basic_events.map((b) => html`<${RecordRow} kind="basic_event" id=${b.be_id} label=${b.name} sub=${b.failure_text || b.failure_mode || ""} d=${d} key=${b.be_id} />`) : html`<div class="muted small">없음</div>`}
-    ${g.problems.length ? html`<${Notice} kind="warn" icon="alert-triangle"><b>확정할 수 없는 이유</b><ul class="tight">${g.problems.map((p, i) => html`<li key=${i}>${p}</li>`)}</ul><//>` : null}
-    <div class="acts-row">
-      ${g.status === "confirmed" ? html`<${Btn} sm=${true} label="확정 풀기" disabled=${busy} onClick=${() => I.reopenGroup(gid)}>확정 풀기<//>`
-        : html`<${Btn} sm=${true} kind="primary" label="그룹 확정" disabled=${busy || g.problems.length > 0} title=${g.problems.length ? "확정할 수 없는 이유가 있습니다" : "검토자 이름으로 그룹을 확정합니다"} onClick=${() => I.confirmGroup(gid)}>확정<//>`}</div></div>`;
+    ${d.headings.length ? html`<h4>사건수목 표제 ${d.headings.length}</h4>${d.headings.map((h) => html`<${RecordRow} kind="heading" id=${h.heading_id} label=${h.name} sub=${(h.role || "") + " " + (h.actuation || "")} d=${d} key=${h.heading_id} />`)}` : null}
+    ${d.end_states.length ? html`<h4>최종상태 ${d.end_states.length}</h4>${d.end_states.map((e) => html`<${RecordRow} kind="end_state" id=${e.end_state_id} label=${e.text} sub=${e.category} d=${d} key=${e.end_state_id} />`)}` : null}
+    ${d.basic_events.length ? html`<h4>기본사건 ${d.basic_events.length}</h4>${d.basic_events.map((b) => html`<${RecordRow} kind="basic_event" id=${b.be_id} label=${b.name} sub=${b.failure_text || b.failure_mode || ""} d=${d} key=${b.be_id} />`)}` : null}</div>`;
 }
 
 function CoverageRow({ c }) {
@@ -187,10 +197,10 @@ function CoverageRow({ c }) {
       ${open ? html`<span class="acts-row ie-judge"><select class="textbox" aria-label=${c.code + " 처리"} value=${disp} onChange=${(e) => setDisp(e.target.value)}>${Object.keys(DISPOSITION).map((k) => html`<option value=${k} key=${k}>${DISPOSITION[k]}</option>`)}</select>
         <input class="textbox" aria-label=${c.code + " 사유"} placeholder="사유(필수)" maxlength="1000" value=${reason} onInput=${(e) => setReason(e.target.value)} />
         <${Btn} sm=${true} kind="primary" label=${c.code + " 판정 저장"} disabled=${busy || !reason.trim()} onClick=${async () => { if (await I.setCoverage(c.code, disp, reason)) setOpen(false); }}>저장<//>
-        <${Btn} sm=${true} label="취소" onClick=${() => setOpen(false)}>취소<//></span>` : null}</span>
+        ${c.disposition ? html`<${Btn} sm=${true} kind="ghost" label=${c.code + " 판정 지우기"} disabled=${busy} onClick=${async () => { if (await I.setCoverage(c.code, "", "")) setOpen(false); }}>판정 지우기<//>` : null}
+        <${Btn} sm=${true} kind="ghost" label="취소" onClick=${() => setOpen(false)}>취소<//></span>` : null}</span>
     <${Chip} kind=${(COVER[c.status] || [])[1]}>${(COVER[c.status] || [c.status])[0]}<//>${c.candidate_count ? html`<${Chip}>후보 ${c.candidate_count}<//>` : null}
-    ${judgeable && !open ? html`<${Btn} sm=${true} kind="ghost" label=${c.code + " 판정"} disabled=${busy} onClick=${() => setOpen(true)}>${c.disposition ? "판정 고치기" : "판정"}<//>` : null}
-    ${c.disposition ? html`<${Btn} sm=${true} kind="ghost" label=${c.code + " 판정 지우기"} disabled=${busy} onClick=${() => I.setCoverage(c.code, "", "")}>판정 지우기<//>` : null}</div>`;
+    ${judgeable && !open ? html`<${Btn} sm=${true} kind="ghost" label=${c.code + " 판정"} disabled=${busy} onClick=${() => setOpen(true)}>${c.disposition ? "판정 고치기" : "판정"}<//>` : null}</div>`;
 }
 
 function Completeness({ s }) {

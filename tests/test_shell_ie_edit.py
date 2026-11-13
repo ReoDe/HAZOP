@@ -54,7 +54,19 @@ class EditBase(Base):
     def ok(self, cmd_name, **a):
         r = self.do(cmd_name, **a)
         self.assertTrue(r["ok"], r)
+        self.assertNotIn("ask", r["data"], r)
         return r["data"]
+
+    def ask(self, cmd_name, **a):
+        """되묻기까지: (카드가 보인 때의 인자, 되물은 내용). 저장하지 않았는지는 부르는 쪽이 본다."""
+        args = self.args(**a)
+        r = self.call(cmd_name, args)
+        self.assertTrue(r["ok"] and r["data"].get("ask"), r)
+        return args, r["data"]["ask"]
+
+    def go_on(self, cmd_name, args, ask):
+        """카드의 '계속': 카드가 보인 때의 인자 그대로 confirmed와 카드에 보인 그룹 목록을 붙인다(ie_state.confirmAsk)."""
+        return self.call(cmd_name, dict(args, confirmed=True, confirm_groups=ask["groups"]))
 
     def code(self, r):
         return (r["ok"], (r.get("error") or {}).get("code"))
@@ -127,11 +139,11 @@ class GroupEditTest(EditBase):
         c1 = self.iec("c1")
         gid = self.make_group("지울 그룹", "c1")
         before = self.file_bytes()
-        r = self.do("ie.delete_group", group_id=gid)
-        self.assertEqual(self.code(r), (False, "confirm"))
-        self.assertIn(gid, r["error"]["message"])
+        args, ask = self.ask("ie.delete_group", group_id=gid)
+        self.assertIn(gid, ask["message"])
+        self.assertEqual(ask["groups"], [], "초안 그룹이라 확정이 풀리는 그룹은 없다")
         self.assertEqual(self.file_bytes(), before, "확인 전에는 지우지 않는다")
-        self.ok("ie.delete_group", group_id=gid, confirmed=True)
+        self.assertTrue(self.go_on("ie.delete_group", args, ask)["ok"])
         s = self.reread()
         self.assertEqual(s["groups"], [])
         self.assertIn(c1, [c["candidate_id"] for c in s["unassigned"]])
@@ -141,15 +153,18 @@ class GroupEditTest(EditBase):
         gid = self.human_group()
         self.ok("ie.confirm", group_id=gid)
         before = self.file_bytes()
-        r = self.do("ie.edit_group", group_id=gid, fields={"name": "새 이름"})
-        self.assertEqual(self.code(r), (False, "confirm"))
-        self.assertIn(gid, r["error"]["message"])
+        args, ask = self.ask("ie.edit_group", group_id=gid, fields={"name": "새 이름"})
+        self.assertEqual(ask["groups"], [gid])
+        self.assertIn("주급수 상실", ask["message"], "초안이 될 그룹 이름을 보인다")
         self.assertEqual(self.file_bytes(), before)
         self.assertEqual(self.read("ie")["groups"][0]["status"], "confirmed")
-        r = self.do("ie.move", iecs=[self.iec("c4")], to=gid)
-        self.assertEqual(self.code(r), (False, "confirm"), "확정 그룹에 후보를 넣는 것도 되묻는다")
-        out = self.ok("ie.edit_group", group_id=gid, fields={"name": "새 이름"}, confirmed=True)
-        self.assertEqual(out["demoted"], [gid])
+        _a, ask2 = self.ask("ie.move", iecs=[self.iec("c4")], to=gid)
+        self.assertEqual(ask2["groups"], [gid], "확정 그룹에 후보를 넣는 것도 되묻는다")
+        r = self.call("ie.edit_group", dict(args, confirmed=True))
+        self.assertEqual(self.code(r), (False, "stale"), "확인한 그룹 목록 없이 confirmed만 보내면 받지 않는다")
+        r = self.go_on("ie.edit_group", args, ask)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["data"]["demoted"], [gid])
         g = self.reread()["groups"][0]
         self.assertEqual((g["name"], g["status"]), ("새 이름", "draft"))
         self.assertTrue(self.ok("ie.reopen", group_id=gid) is not None)
@@ -220,9 +235,9 @@ class RecordAndCoverageTest(EditBase):
         self.ok("ie.edit_record", kind="end_state", id=es, fields={"text": "노심 손상 가능(고침)"})
         self.assertEqual(self.read("ie", "group", gid)["records"]["end_state:" + es]["text"], "노심 손상 가능(고침)")
         self.assertEqual(self.code(self.do("ie.add_record", kind="end_state", group_id=gid, fields={"text": " "})), (False, "failed"))
-        r = self.do("ie.remove_record", kind="heading", id=h)
-        self.assertEqual(self.code(r), (False, "confirm"))
-        self.ok("ie.remove_record", kind="heading", id=h, confirmed=True)
+        args, ask = self.ask("ie.remove_record", kind="heading", id=h)
+        self.assertIn(h, ask["message"])
+        self.assertTrue(self.go_on("ie.remove_record", args, ask)["ok"])
         self.assertNotIn(h, [x["heading_id"] for x in self.read("ie", "group", gid)["headings"]])
 
     def test_ai_draft_records_can_be_accepted(self):
@@ -308,19 +323,174 @@ class ExportTest(EditBase):
 
 
 class ChatFunctionTest(EditBase):
-    def test_chat_functions_run_without_screen_fingerprints(self):
+    def test_chat_functions_need_the_version_and_raise_confirm(self):
         gid = self.make_group("그룹", "c1")
         v = api_ie.view_groups(self.engine)
         self.assertEqual([g["group_id"] for g in v["groups"]], [gid])
         c4 = self.iec("c4")
-        api_ie.move_candidates(self.engine, {"iecs": [c4], "to": gid})
-        pair = api_ie.split_group(self.engine, {"group_id": gid, "moved": [c4]})["groups"]
+        with self.assertRaises(api.CommandError) as no_ver:
+            api_ie.move_candidates(self.engine, {"iecs": [c4], "to": gid})
+        self.assertEqual(no_ver.exception.code, "bad_args", "판 지문 없이는 고치지 않는다")
+        api_ie.move_candidates(self.engine, {"iecs": [c4], "to": gid, "ver": self.read("ie")["ver"]})
+        pair = api_ie.split_group(self.engine, {"group_id": gid, "moved": [c4], "ver": self.read("ie")["ver"]})["groups"]
         self.assertEqual(len(pair), 2)
         gap = next(r for r in self.read("ie")["completeness"] if r["status"] == "gap")
-        api_ie.judge_coverage(self.engine, {"code": gap["code"], "disposition": "other_method", "reason": "FMEA로 확인"})
+        with self.assertRaises(api.CommandError):
+            api_ie.judge_coverage(self.engine, {"code": gap["code"], "disposition": "other_method", "reason": "FMEA로 확인"})
+        api_ie.judge_coverage(self.engine, {"code": gap["code"], "disposition": "other_method", "reason": "FMEA로 확인",
+                                            "ver": self.read("ie")["ver"]})
         self.assertEqual(next(r for r in self.read("ie")["completeness"] if r["code"] == gap["code"])["disposition"]["disposition"], "other_method")
         with self.assertRaises(api.CommandError):
             api_ie.move_candidates(self.engine, {"iecs": [c4], "to": gid, "ver": "sha256:old"})
+
+    def test_chat_confirm_needs_the_shown_groups(self):
+        gid = self.human_group()
+        self.ok("ie.confirm", group_id=gid)
+        c4 = self.iec("c4")
+        ver = self.read("ie")["ver"]
+        with self.assertRaises(api.CommandError) as asked:
+            api_ie.move_candidates(self.engine, {"iecs": [c4], "to": gid, "ver": ver})
+        self.assertEqual(asked.exception.code, "confirm")
+        self.assertIn(gid, asked.exception.message)
+        api_ie.move_candidates(self.engine, {"iecs": [c4], "to": gid, "ver": ver, "confirmed": True, "confirm_groups": [gid]})
+        self.assertEqual(ie_store.load(self.project)[0]["groups"][gid]["status"], "draft")
+
+
+class ReviewFixTest(EditBase):
+    """A10 검토(2026-11-14) 재현 R1·R2·R3과 함께 고칠 것 4·5·6."""
+
+    def set_status(self, eid, status):
+        doc, fp = res.load_fp(self.ns)
+        for c in doc["cells"]:
+            for e in c["entries"]:
+                if e["entry_id"] == eid:
+                    e["status"] = status
+        res.save_fp(doc, self.project, expect=fp)
+
+    def test_R1_splitting_a_confirmed_group_asks_and_names_it(self):
+        gid = self.make_group("확정 그룹", "c1", "c4")
+        r = self.do("ie.confirm", group_id=gid)
+        if not r["ok"]:
+            self.skipTest("표본에서 두 후보 그룹을 확정할 수 없음: %s" % r["error"]["message"])
+        before = self.file_bytes()
+        args, ask = self.ask("ie.split", group_id=gid, moved=[self.iec("c4")])
+        self.assertEqual(ask["groups"], [gid])
+        self.assertIn("확정 그룹", ask["message"])
+        self.assertEqual(self.file_bytes(), before, "되묻는 동안 확정 기록이 남는다")
+        self.assertEqual(ie_store.load(self.project)[0]["groups"][gid]["confirmation"]["by"], "검토자A")
+        r = self.go_on("ie.split", args, ask)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(ie_store.load(self.project)[0]["groups"][gid]["status"], "split")
+
+    def test_R1b_every_change_that_drops_a_confirmation_asks(self):
+        """확정이 풀리는 변경은 모델이 '건드린 그룹'으로 알리지 않아도 저장 전후 상태를 견줘 되묻는다."""
+        gid = self.human_group()
+        self.ok("ie.confirm", group_id=gid)
+        _a, ask = self.ask("ie.move", iecs=[self.iec("c1")], to="")
+        self.assertEqual(ask["groups"], [gid])
+
+    def test_R2_exported_iec_ids_are_saved_and_never_move_to_another_cause(self):
+        self.assertIsNone(self.file_bytes(), "표본은 ⑥ 파일이 없는 상태에서 시작한다")
+        out = os.path.join(self.tmp, "b.xlsx")
+        self.engine.hooks["save_path"] = lambda kind, name: out
+        s = self.read("ie")
+        self.assertTrue(self.call("ie.export", {"ver": s["ver"], "rver": s["rver"]})["ok"])
+        with open(os.path.join(self.tmp, "b.json"), encoding="utf-8") as fh:
+            exported = {c["entry_id"]: c["candidate_id"] for c in json.load(fh)["candidates"]}
+        self.assertIsNotNone(self.file_bytes(), "내보내기 전에 IEC 대응을 저장한다")
+        self.set_status("c1", "on_hold")               # ⑤에서 한 건을 보류로 돌림
+        self.make_group("g", "c4")                     # 그 뒤 편집
+        stored = ie_store.load(self.project)[0]
+        now = {model.entry_of_key(v["key"]): k for k, v in stored["candidates"].items()}
+        for eid, iec in exported.items():
+            self.assertEqual(now.get(eid), iec, "같은 원인은 같은 IEC ID(%s)" % eid)
+        self.assertEqual(len(set(now.values())), len(now), "한 번 준 번호를 다른 원인에 다시 쓰지 않는다")
+
+    def test_R2b_results_export_ie_saves_the_iec_map_too(self):
+        out = os.path.join(self.tmp, "r.xlsx")
+        self.engine.hooks["save_path"] = lambda kind, name: out
+        r = self.call("results.export_ie", {})
+        self.assertTrue(r["ok"], r)
+        self.assertIsNotNone(self.file_bytes(), "분석 결과 패널의 인계 묶음도 IEC 대응을 먼저 저장한다")
+
+    def test_R2c_export_does_not_run_when_the_iec_map_cannot_be_saved(self):
+        out = os.path.join(self.tmp, "c.xlsx")
+        self.engine.hooks["save_path"] = lambda kind, name: out
+        s = self.read("ie")
+        with mock.patch.object(ie_store, "save", side_effect=OSError("디스크 가득")):
+            r = self.call("ie.export", {"ver": s["ver"], "rver": s["rver"]})
+        self.assertEqual(self.code(r), (False, "failed"))
+        self.assertFalse(os.path.exists(out), "IEC 대응을 저장하지 못하면 내보내지 않는다")
+
+    def test_R3_the_card_resends_what_it_showed_and_a_changed_list_is_refused(self):
+        doc, fp = res.load_fp(self.ns)
+        ents = {e["entry_id"]: e for c in doc["cells"] for e in c["entries"]}
+        ents["c2"]["ie_hint"] = copy.deepcopy(ents["c1"]["ie_hint"])     # c2도 c1처럼 확정할 수 있게
+        res.save_fp(doc, self.project, expect=fp)
+        g1 = self.make_group("g1", "c1")
+        self.ok("ie.confirm", group_id=g1)
+        g2 = self.make_group("g2", "c2")
+        args, ask = self.ask("ie.move", iecs=[self.iec("c1")], to=g2)
+        self.assertEqual(ask["groups"], [g1])
+        self.ok("ie.confirm", group_id=g2)                                 # 카드가 떠 있는 동안 다른 곳에서 g2를 확정
+        before = self.file_bytes()
+        r = self.go_on("ie.move", args, ask)                                # 카드가 본 판 그대로 다시 보냄
+        self.assertEqual(self.code(r), (False, "stale"))
+        fresh = self.args(iecs=[self.iec("c1")], to=g2)
+        r = self.call("ie.move", dict(fresh, confirmed=True, confirm_groups=ask["groups"]))   # 새 지문 + 옛 목록
+        self.assertEqual(self.code(r), (False, "stale"), "카드에 안 보인 그룹(g2)까지 풀리면 거절한다")
+        self.assertIn(g2, r["error"]["message"])
+        self.assertEqual(self.file_bytes(), before)
+        self.assertEqual(ie_store.load(self.project)[0]["groups"][g2]["status"], "confirmed")
+
+    def test_5_coverage_checks_the_code_and_the_status(self):
+        r = self.do("ie.set_coverage", code="NO-SUCH", disposition="out_of_scope", reason="이유")
+        self.assertEqual(self.code(r), (False, "failed"))
+        covered = next(r for r in self.read("ie")["completeness"] if r["status"] == "covered")
+        r = self.do("ie.set_coverage", code=covered["code"], disposition="out_of_scope", reason="이유")
+        self.assertEqual(self.code(r), (False, "failed"), "대응 그룹이 있는 범주에는 빈 범주 판정을 두지 않는다")
+
+    def test_6_human_edits_survive_a_new_analysis_run(self):
+        from hazop.shell import analysis_run
+        from tests.test_shell_results import FakeAi, fake_run_unit
+        gid = self.make_group("주급수 상실", "c1")
+        self.ok("ie.edit_group", group_id=gid, fields={"name": "급수 완전 상실", "definition": "사람이 쓴 정의"})
+        es = self.ok("ie.add_record", kind="end_state", group_id=gid, fields={"text": "노심 손상 가능", "category": "core_damage_possible"})["id"]
+        gap = next(r for r in self.read("ie")["completeness"] if r["status"] == "gap")
+        self.ok("ie.set_coverage", code=gap["code"], disposition="out_of_scope", reason="범위 밖")
+        engine = api.Engine(settings_path=os.path.join(self.tmp, "settings.json"), emit=lambda e: None, run_jobs=lambda jid, fn: fn())
+        engine.settings.update(project_id=self.project, reviewer_name="검토자A")
+        engine.ai = FakeAi()
+        with mock.patch.object(analysis_run, "contexts", lambda units, ns, pg, intent_of: {u["node_id"]: {} for u in units}), \
+                mock.patch("hazop.study.ai_cells.run_unit", fake_run_unit()):
+            r = engine.dispatch("results.run", {"scope": "all"})
+        self.assertTrue(r["ok"], r)
+        doc = ie_store.load(self.project)[0]
+        self.assertEqual((doc["groups"][gid]["name"], doc["groups"][gid]["definition"]), ("급수 완전 상실", "사람이 쓴 정의"))
+        self.assertIn(es, doc["groups"][gid]["end_state_ids"])
+        self.assertEqual(doc["coverage"][gap["code"]]["reason"], "범위 밖")
+        s = self.read("ie")
+        self.assertEqual([g["name"] for g in s["groups"]], ["급수 완전 상실"], "사람이 승인한 원인은 재분석 뒤에도 그룹에 남는다")
+
+    def test_6_excel_sheets_match_the_edits(self):
+        import openpyxl
+        gid = self.make_group("주급수 상실", "c1")
+        self.ok("ie.edit_group", group_id=gid, fields={"name": "급수 완전 상실", "plant_response": "증기발생기 수위 저하"})
+        es = self.ok("ie.add_record", kind="end_state", group_id=gid, fields={"text": "노심 손상 가능", "category": "core_damage_possible"})["id"]
+        out = os.path.join(self.tmp, "x.xlsx")
+        self.engine.hooks["save_path"] = lambda kind, name: out
+        s = self.read("ie")
+        self.assertTrue(self.call("ie.export", {"ver": s["ver"], "rver": s["rver"]})["ok"])
+        wb = openpyxl.load_workbook(out)
+
+        def rows(sheet):
+            ws = wb[sheet]
+            head = [c.value for c in ws[1]]
+            return [dict(zip(head, [c.value for c in r])) for r in ws.iter_rows(min_row=2)]
+        g = next(r for r in rows("IE 그룹") if r["그룹 ID"] == gid)
+        self.assertEqual((g["그룹 이름"], g["플랜트 응답"]), ("급수 완전 상실", "증기발생기 수위 저하"))
+        e = next(r for r in rows("최종상태 후보") if r["ES ID"] == es)
+        self.assertIn("노심 손상 가능", e["비완화 결과(대표 문장)"])
 
 
 class OverlapTwinTest(unittest.TestCase):
@@ -377,6 +547,28 @@ class OverlapTwinTest(unittest.TestCase):
         out = os.path.join(self.tmp, "twin.xlsx")
         self.engine.hooks["save_path"] = lambda kind, name: out
         self.assertTrue(self.engine.dispatch("ie.export", {})["ok"])
+        self.check_twin_export(out, gid)
+
+    def test_moving_a_merged_candidate_checks_the_group_its_twin_is_in(self):
+        """같이 옮겨지는 쌍둥이가 든 그룹도 화면이 본 그룹이어야 한다(그 그룹이 바뀌었으면 거절)."""
+        s = self.read("ie")
+        c = s["unassigned"][0]
+        twin = c["merged_from"][0]
+        doc, fp = ie_store.load(self.project)
+        doc = model.sync(doc, res.load_fp(sn.load(self.g))[0], node_set=sn.load(self.g))
+        doc, other = model.create_group(doc, "쌍둥이만", [twin])
+        ie_store.save(doc, expect=fp)
+        s = self.read("ie")
+        seen = {"member:" + x["candidate_id"]: x["fp"] for x in s["unassigned"]}
+        r = self.engine.dispatch("ie.create_group", {"ver": s["ver"], "rver": s["rver"], "name": "새", "iecs": [c["candidate_id"]], "seen": seen})
+        self.assertEqual((r["ok"], r["error"]["code"]), (False, "stale"), "쌍둥이가 든 그룹(%s)을 보지 않았으면 거절" % other)
+        seen.update({"group:" + g["group_id"]: g["fp"] for g in s["groups"]})
+        for g in s["groups"]:
+            seen.update({"member:" + m["candidate_id"]: m["fp"] for m in self.read("ie", "group", g["group_id"])["members"]})
+        r = self.engine.dispatch("ie.create_group", {"ver": s["ver"], "rver": s["rver"], "name": "새", "iecs": [c["candidate_id"]], "seen": seen})
+        self.assertTrue(r["ok"], r)
+
+    def check_twin_export(self, out, gid):
         with open(os.path.join(self.tmp, "twin.json"), encoding="utf-8") as fh:
             b = json.load(fh)
         self.assertEqual(len(b["candidates"]), 1)

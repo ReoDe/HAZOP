@@ -52,6 +52,18 @@ def save(doc, expect):
     return store_io.write_json(store_path(doc["project_id"]), doc, expect)
 
 
+def load_synced(project_id, results, node_set=None):
+    """(⑤와 맞춘 문서, 지문). sync가 바꾼 것(새 후보의 IEC 번호, 확정 내리기)이 있으면 먼저 저장한다. 인계 묶음을 내보내기 전에
+    부른다: 저장하지 않은 IEC 번호로 내보내면 뒤에 ⑤ 승인이 바뀌었을 때 같은 번호가 다른 원인에 붙는다(설계 §3 '다시 만들어도
+    같은 IEC ID'). 한 번 준 번호는 그 원인이 승인에서 빠져도 문서에 남아 다시 쓰지 않는다. 저장하지 못하면 오류를 그대로 올린다
+    (Conflict·ValueError·OSError): 그때는 내보내지 않는다."""
+    doc, fp = load(project_id)
+    synced = model.sync(doc, results, node_set=node_set)
+    if synced is not doc:
+        fp = save(synced, expect=fp)
+    return synced, fp
+
+
 def backup(project_id, label=BACKUP_LABEL):
     """지금 파일을 store_io.backup으로 복사하고 복사본 경로를 돌려준다(옛 백업을 덮어쓰지 않음).
     복사하지 못하면 OSError를 그대로 올린다(그때는 덮어쓰지 말 것)."""

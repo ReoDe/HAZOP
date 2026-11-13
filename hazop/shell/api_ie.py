@@ -9,10 +9,14 @@
 - **쓰기 대조**(이전 화면의 대조를 모두 옮김): ① 읽은 ⑥ 파일 지문(ver, 'none'은 파일이 없었다는 뜻), ② 읽은 ⑤ 결과 지문(rver,
   이전 화면의 _reload_if_results_changed), ③ 화면이 본 항목 지문(seen {"group:IEG-01": 지문, …}: 명령이 건드리는 그룹·후보·기록마다),
   ④ 프로젝트 ID(api.dispatch). 하나라도 다르면 'stale'로 거절하고 아무것도 쓰지 않는다. 저장은 ie.store.save(원자적 쓰기, expect 대조).
-- **되묻기**: 그룹 지우기·기록 지우기·읽지 못한 파일 바꾸기, 그리고 확정 그룹을 초안으로 내리는 모든 변경은 confirmed=true가 없으면
-  'confirm'으로 거절한다(웹은 그 글을 보이고 사용자가 '계속'을 누르면 같은 인자에 confirmed=true를 붙여 다시 보낸다).
+- **되묻기**: 그룹 지우기·기록 지우기, 그리고 확정한 그룹의 확정이 풀리는 모든 변경(초안으로 내리기, 나누기 등 저장 상태가 '확정'에서
+  바뀌는 것)은 저장하지 않고 {"ask": {message, groups}}로 답한다. groups는 확정이 풀릴 그룹 ID 전부다. 웹은 카드에 글을 보이고, '계속'을
+  누르면 카드가 보인 때의 ver·rver·seen 그대로 confirmed=true와 confirm_groups(카드에 보인 목록)를 붙여 다시 보낸다. 서버는 그 목록과
+  실제로 확정이 풀릴 목록이 다르면 'stale'로 거절한다. 읽지 못한 파일 바꾸기는 'confirm' 오류로 되묻는다.
 - 확정자·판정자는 설정의 검토자 이름이다(웹 인자 아님). 인계 묶음 Excel 위치는 창이 묻고, 같은 이름의 JSON이 있으면 창이 덮어쓸지 묻는다.
-- 채팅에서 부르는 실행 함수: view_groups, move_candidates, split_group, judge_coverage(ver를 빼면 지금 판으로 하고 seen은 대조하지 않는다).
+- 채팅에서 부르는 실행 함수: view_groups, move_candidates, split_group, judge_coverage. 판 지문(ver)이 없으면 거절하고, 되물을 일이
+  있으면 'confirm' 오류(글에 확정이 풀릴 그룹)를 올린다(confirmed와 confirm_groups를 붙여 다시 부른다).
+- 인계 묶음 내보내기는 ie.store.load_synced로 IEC 대응을 먼저 저장한다(저장하지 못하면 내보내지 않음).
 """
 
 import hashlib
@@ -198,10 +202,17 @@ STALE_RESULTS = "분석 결과가 바뀌어 저장하지 않았습니다. 바뀐
 STALE_ITEM = "화면에 보이던 내용이 지금과 달라 저장하지 않았습니다(%s). 다시 읽었으니 확인한 뒤 한 번 더 눌러 주세요."
 
 
+def lost_confirmations(base, new):
+    """저장 상태가 '확정'이던 그룹 가운데 new에서 확정이 아닌 것(초안으로 내려감·나뉨·지움). 확정 기록이 지워지는 그룹 전부."""
+    return sorted(g for g, v in base["groups"].items()
+                  if v.get("status") == "confirmed" and (new["groups"].get(g) or {}).get("status") != "confirmed")
+
+
 def _write(engine, a, fn, keys=None, ask=None, demote_ok=False):
     """fn(ie_doc, results, ns, pg, by) -> 새 ie 문서 또는 (새 문서, 값). 읽은 지문(ver)·⑤ 지문(rver, 있으면)·항목 지문(seen,
-    있으면. keys(base, b)가 돌려주는 열쇠는 모두 있어야 한다)을 대조하고 저장한다. ask: 되물을 글(confirmed가 없으면 'confirm').
-    확정 그룹이 초안으로 내려가는 변경도 confirmed가 없으면 'confirm'. ver가 없으면(채팅 실행 함수) 지금 판으로 한다."""
+    있으면. keys(base, b)가 돌려주는 열쇠는 모두 있어야 한다)을 대조하고 저장한다. ask: 되물을 글. 되물을 글이 있거나 확정이 풀리는
+    그룹이 있으면(demote_ok가 아니면) confirmed가 없을 때 저장하지 않고 {"ask": {message, groups}}로 답하고, confirmed가 있으면
+    confirm_groups와 지금 확정이 풀릴 목록이 같아야 저장한다."""
     api = _api()
     by = engine.reviewer()
     if not by:
@@ -217,13 +228,12 @@ def _write(engine, a, fn, keys=None, ask=None, demote_ok=False):
         raise api.CommandError("stale", STALE_RESULTS)
     base = model.sync(ie_doc, doc, node_set=ns)
     if keys is not None and a.get("seen") is not None:
-        now = item_fps(bundle.build_bundle(doc, ns, pg, base, nodes.now_utc()))
+        b = bundle.build_bundle(doc, ns, pg, base, nodes.now_utc())
+        now = item_fps(b)
         seen = a["seen"]
-        for k in keys(base):
+        for k in keys(base, b):
             if k not in seen or seen[k] != now.get(k):
                 raise api.CommandError("stale", STALE_ITEM % k.split(":", 1)[1])
-    if ask and not a.get("confirmed"):
-        raise api.CommandError("confirm", ask(base) if callable(ask) else ask)
     try:
         out = fn(base, doc, ns, pg, by)
     except ValueError as exc:
@@ -231,10 +241,19 @@ def _write(engine, a, fn, keys=None, ask=None, demote_ok=False):
     new, value = out if isinstance(out, tuple) else (out, None)
     if new is base or new == base:
         return {"ver": _ver(ie_fp), "changed": False, "value": value}
-    demoted = list(dict.fromkeys(g for h in new["history"][len(base["history"]):] for g in h.get("demoted") or []))
-    if demoted and not demote_ok and not a.get("confirmed"):
-        raise api.CommandError("confirm", "확정한 그룹 %s이(가) 초안으로 돌아갑니다. 바꾼 뒤 다시 확정해야 합니다. 계속할까요?"
-                               % ", ".join(demoted))
+    lost = [] if demote_ok else lost_confirmations(base, new)
+    if ask or lost:
+        if not a.get("confirmed"):
+            text = (ask(base) if callable(ask) else ask) if ask else ""
+            if lost:
+                names = ", ".join("%s(%s)" % (g, base["groups"][g].get("name", "")) for g in lost)
+                text = (text + " " if text else "") + "확정이 풀리는 그룹: %s. 바꾼 뒤 다시 확정해야 합니다." % names
+            return {"ver": _ver(ie_fp), "changed": False, "value": None,
+                    "ask": {"message": text + " 계속할까요?", "groups": lost}}
+        if sorted(a.get("confirm_groups") or []) != lost:
+            raise api.CommandError("stale", "확인한 뒤 내용이 바뀌어 저장하지 않았습니다(확인한 그룹: %s, 지금 확정이 풀릴 그룹: %s). 다시 확인해 주세요."
+                                   % (", ".join(sorted(a.get("confirm_groups") or [])) or "없음", ", ".join(lost) or "없음"))
+    demoted = lost
     try:
         fp = ie_store.save(new, expect=ie_fp)
     except ie_store.Conflict:
@@ -254,15 +273,24 @@ def _suggest(engine, a):
 
 def _confirm(engine, a):
     return _write(engine, a, lambda base, doc, ns, pg, by: model.confirm(base, a["group_id"], doc, by, node_set=ns),
-                  keys=lambda base: ["group:" + a["group_id"]])
+                  keys=lambda base, b: ["group:" + a["group_id"]])
 
 
 def _reopen(engine, a):
     return _write(engine, a, lambda base, doc, ns, pg, by: model.reopen(base, a["group_id"]),
-                  keys=lambda base: ["group:" + a["group_id"]], demote_ok=True)   # 확정 풀기 자체가 내리는 일
+                  keys=lambda base, b: ["group:" + a["group_id"]], demote_ok=True)   # 확정 풀기 자체가 내리는 일
 
 
 # ---------------------------------------------------------------- 편집(A10)
+
+def _twins_in(b, iecs):
+    """묶음 b에서 iecs가 합친 쌍둥이까지 넓힌 IEC 목록."""
+    by = {c["candidate_id"]: c for c in b["candidates"]}
+    out = []
+    for i in iecs:
+        out += [i] + list((by.get(i) or {}).get("merged_from") or [])
+    return list(dict.fromkeys(out))
+
 
 def _twins_of(base, doc, ns, pg, iecs):
     """묶음이 한 후보로 합친 쌍둥이(겹친 구간의 같은 원인, merged_from)까지 넓힌 IEC 목록. 쌍둥이는 같은 그룹에 있어야 확정된다."""
@@ -274,15 +302,17 @@ def _twins_of(base, doc, ns, pg, iecs):
     return list(dict.fromkeys(out))
 
 
-def _member_keys(base, iecs, extra_groups=()):
-    groups = [base["candidates"][i]["group_id"] for i in iecs if i in base["candidates"]]
+def _member_keys(base, iecs, extra_groups=(), b=None):
+    """화면이 본 것이어야 하는 열쇠: 고른 후보, 그 후보와 쌍둥이(함께 옮겨짐)가 지금 든 그룹, 옮길 그룹."""
+    every = _twins_in(b, iecs) if b is not None else list(iecs)
+    groups = [base["candidates"][i]["group_id"] for i in every if i in base["candidates"]]
     return ["member:" + i for i in iecs] + ["group:" + g for g in dict.fromkeys(list(groups) + list(extra_groups)) if g]
 
 
 def _create_group(engine, a):
     def fn(base, doc, ns, pg, by):
         return model.create_group(base, a["name"], _twins_of(base, doc, ns, pg, a.get("iecs") or []))
-    out = _write(engine, a, fn, keys=lambda base: _member_keys(base, a.get("iecs") or []))
+    out = _write(engine, a, fn, keys=lambda base, b: _member_keys(base, a.get("iecs") or [], (), b))
     out["group_id"] = out.pop("value")
     return out
 
@@ -296,12 +326,24 @@ def _move(engine, a):
         for i in _twins_of(base, doc, ns, pg, a["iecs"]):
             d = model.place(d, i, to)
         return d
-    return _write(engine, a, fn, keys=lambda base: _member_keys(base, a["iecs"], [to] if to else []))
+    return _write(engine, a, fn, keys=lambda base, b: _member_keys(base, a["iecs"], [to] if to else [], b))
+
+
+def _chat(fn, engine, a):
+    """채팅 실행 함수의 공통 길: 판 지문(ver)이 없으면 거절하고, 되물을 일이 있으면 'confirm' 오류로 올린다."""
+    api = _api()
+    if not a.get("ver"):
+        raise api.CommandError("bad_args", "초기사건 판 지문(ver)을 함께 보내야 합니다(먼저 view_groups로 읽음).")
+    out = fn(engine, a)
+    if out.get("ask"):
+        raise api.CommandError("confirm", "%s (다시 부를 때 confirmed=true, confirm_groups=[%s])"
+                               % (out["ask"]["message"], ", ".join(out["ask"]["groups"])))
+    return out
 
 
 def move_candidates(engine, a):
-    """채팅 실행 함수: {iecs, to(그룹 ID, 빈 글자면 뺌), ver?, confirmed?}."""
-    return _move(engine, a)
+    """채팅 실행 함수: {iecs, to(그룹 ID, 빈 글자면 뺌), ver, confirmed?, confirm_groups?}."""
+    return _chat(_move, engine, a)
 
 
 def _accept_members(engine, a):
@@ -311,25 +353,25 @@ def _accept_members(engine, a):
             if base["candidates"].get(i, {}).get("group_id"):
                 d = model.accept(d, ("member", i))
         return d
-    return _write(engine, a, fn, keys=lambda base: _member_keys(base, a["iecs"]))
+    return _write(engine, a, fn, keys=lambda base, b: _member_keys(base, a["iecs"], (), b))
 
 
 def _edit_group(engine, a):
     return _write(engine, a, lambda base, doc, ns, pg, by: model.edit(base, ("group", a["group_id"]), a["fields"]),
-                  keys=lambda base: ["group:" + a["group_id"]])
+                  keys=lambda base, b: ["group:" + a["group_id"]])
 
 
 def _split(engine, a):
     def fn(base, doc, ns, pg, by):
         return model.split(base, a["group_id"], _twins_of(base, doc, ns, pg, a["moved"]))
-    out = _write(engine, a, fn, keys=lambda base: ["group:" + a["group_id"]])
+    out = _write(engine, a, fn, keys=lambda base, b: ["group:" + a["group_id"]])
     out["groups"] = list(out.pop("value") or [])
     return out
 
 
 def split_group(engine, a):
-    """채팅 실행 함수: {group_id, moved[IEC], ver?}. (남는 쪽, 옮긴 쪽) 새 그룹 ID를 groups로."""
-    return _split(engine, a)
+    """채팅 실행 함수: {group_id, moved[IEC], ver, confirmed?, confirm_groups?}. (남는 쪽, 옮긴 쪽) 새 그룹 ID를 groups로."""
+    return _chat(_split, engine, a)
 
 
 def _delete_group(engine, a):
@@ -340,7 +382,7 @@ def _delete_group(engine, a):
         return ("%s 그룹(%s)을 지울까요? 소속 후보 %d개는 묶이지 않은 후보가 되고, ID는 '삭제' 기록으로 남아 다시 쓰지 않습니다."
                 % (gid, g.get("name", ""), len(model.members_of(base, gid))))
     return _write(engine, a, lambda base, doc, ns, pg, by: model.delete_group(base, gid),
-                  keys=lambda base: ["group:" + gid], ask=ask)
+                  keys=lambda base, b: ["group:" + gid], ask=ask)
 
 
 def _record_keys(base, kind, rid):
@@ -354,37 +396,46 @@ def _record_keys(base, kind, rid):
 def _add_record(engine, a):
     add = {"heading": model.add_heading, "end_state": model.add_end_state}[a["kind"]]
     out = _write(engine, a, lambda base, doc, ns, pg, by: add(base, a["group_id"], a["fields"]),
-                 keys=lambda base: ["group:" + a["group_id"]])
+                 keys=lambda base, b: ["group:" + a["group_id"]])
     out["id"] = out.pop("value")
     return out
 
 
 def _edit_record(engine, a):
     return _write(engine, a, lambda base, doc, ns, pg, by: model.edit(base, (a["kind"], a["id"]), a["fields"]),
-                  keys=lambda base: _record_keys(base, a["kind"], a["id"]))
+                  keys=lambda base, b: _record_keys(base, a["kind"], a["id"]))
 
 
 def _accept_record(engine, a):
     return _write(engine, a, lambda base, doc, ns, pg, by: model.accept(base, (a["kind"], a["id"])),
-                  keys=lambda base: _record_keys(base, a["kind"], a["id"]))
+                  keys=lambda base, b: _record_keys(base, a["kind"], a["id"]))
 
 
 def _remove_record(engine, a):
     what = {"heading": "표제", "end_state": "최종상태", "basic_event": "기본사건"}[a["kind"]]
     return _write(engine, a, lambda base, doc, ns, pg, by: model.remove(base, (a["kind"], a["id"])),
-                  keys=lambda base: _record_keys(base, a["kind"], a["id"]),
+                  keys=lambda base, b: _record_keys(base, a["kind"], a["id"]),
                   ask="%s %s을(를) 지울까요? 붙어 있던 그룹에서 떨어지고, ID는 '삭제' 기록으로 남습니다." % (what, a["id"]))
 
 
 def _set_coverage(engine, a):
+    """빈 범주 판정. 범주 코드는 완전성 대조에 있는 것이어야 하고, 대응 그룹이 있는 범주(covered)에는 판정을 두지 않는다(지우기는 된다)."""
     disposition = a.get("disposition") or None
-    return _write(engine, a, lambda base, doc, ns, pg, by: model.set_coverage(base, a["code"], disposition, a.get("reason") or "", by),
-                  keys=lambda base: ["coverage:" + a["code"]])
+
+    def fn(base, doc, ns, pg, by):
+        rows = {r["code"]: r for r in bundle.build_bundle(doc, ns, pg, base, nodes.now_utc())["completeness"] if r.get("code")}
+        if a["code"] not in rows and a["code"] not in base["coverage"]:
+            raise ValueError("완전성 대조에 없는 범주 코드입니다: %s" % a["code"])
+        if disposition and (rows.get(a["code"]) or {}).get("status") == "covered":
+            raise ValueError("%s 범주에는 대응 그룹이 있어 빈 범주 판정을 둘 수 없습니다" % a["code"])
+        return model.set_coverage(base, a["code"], disposition, a.get("reason") or "", by)
+    # 없는 범주 코드는 화면에 지문이 없으니 지문 대조를 건너뛰고 fn이 이유를 알린다
+    return _write(engine, a, fn, keys=lambda base, b: ["coverage:" + a["code"]] if any(r.get("code") == a["code"] for r in b["completeness"]) else [])
 
 
 def judge_coverage(engine, a):
-    """채팅 실행 함수: {code, disposition(out_of_scope·other_method·not_applicable, 빈 글자면 지움), reason, ver?}."""
-    return _set_coverage(engine, a)
+    """채팅 실행 함수: {code, disposition(out_of_scope·other_method·not_applicable, 빈 글자면 지움), reason, ver}."""
+    return _chat(_set_coverage, engine, a)
 
 
 def view_groups(engine):
@@ -427,8 +478,7 @@ def _export(engine, a):
         raise api.CommandError("stale", STALE)
     from hazop.ie import bundle_xlsx
     now = nodes.now_utc()
-    b = bundle.build_bundle(doc, ns, pg, model.sync(ie_doc, doc, node_set=ns), now)
-    if not b["candidates"]:
+    if not bundle.build_bundle(doc, ns, pg, model.sync(ie_doc, doc, node_set=ns), now)["candidates"]:
         raise api.CommandError("failed", "승인한 항목이 없어 인계 묶음을 만들지 않았습니다. 분석 결과에서 항목을 승인한 뒤 내보내세요.")
     path = _results()._save_path(engine, "ie", bundle_xlsx.default_stem(ns.get("project_id"), now) + ".xlsx")
     if not path:
@@ -440,6 +490,15 @@ def _export(engine, a):
         ask = engine.hooks.get("confirm_overwrite_files")
         if ask is None or not ask([os.path.basename(json_path)]):
             return {"cancelled": True, "reason": "같은 이름의 JSON 파일을 덮어쓰지 않았습니다."}
+    try:      # IEC 대응을 먼저 저장한다. 저장하지 못하면 내보내지 않는다(저장하지 않은 번호가 나중에 다른 원인에 붙지 않게)
+        synced, _fp = ie_store.load_synced(ns.get("project_id"), doc, ns)
+    except ie_store.Conflict:
+        raise api.CommandError("stale", STALE)
+    except (ValueError, OSError) as exc:
+        raise api.CommandError("failed", "초기사건 번호를 저장하지 못해 내보내지 않았습니다(%s)." % str(exc)[:200])
+    if synced is not ie_doc:
+        engine.changed("ie", None)
+    b = bundle.build_bundle(doc, ns, pg, synced, now)
     try:
         path, json_path = bundle_xlsx.export(path, b)
     except (OSError, ValueError) as exc:
@@ -466,7 +525,8 @@ def register(commands):
     put("reopen", {"group_id": (v_str(1, 20), True), "ver": ver, "rver": rver, "seen": seen}, _reopen, "그룹 확정 풀기")
     gid = (v_str(1, 20), True)
     iecs = (v_list(v_str(1, 20), 2000), True)
-    common = {"ver": ver, "rver": rver, "seen": seen, "confirmed": (api.v_bool(), False)}
+    common = {"ver": ver, "rver": rver, "seen": seen, "confirmed": (api.v_bool(), False),
+              "confirm_groups": (v_list(v_str(1, 20), 500), False)}
     put("create_group", dict(common, name=(v_str(1, 200), True), iecs=(v_list(v_str(1, 20), 2000), False)), _create_group,
         "고른 후보로 새 그룹 만들기(사람이 만든 초안 그룹). 쌍둥이 후보도 함께 넣는다")
     put("move", dict(common, iecs=iecs, to=(v_str(0, 20), True)), _move, "후보를 다른 그룹으로 옮기기(to가 빈 글자면 그룹에서 빼기)")
