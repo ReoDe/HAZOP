@@ -14,7 +14,7 @@ import logging
 
 from hazop import store_io
 from hazop.extract import ai_review, corrections
-from hazop.shell.sheet_refresh import ensure_graph, refresh, ver_of  # noqa: F401  (ver_of는 채팅·시험도 이 이름으로 부른다)
+from hazop.shell.sheet_refresh import ensure_graph, lock, refresh, ver_of  # noqa: F401  (ver_of는 채팅·시험도 이 이름으로 부른다)
 
 LOG = logging.getLogger("hazop.shell.api_aireview")
 TOPICS = ("aireview",)
@@ -79,18 +79,31 @@ def _load(name):
     return doc, original
 
 
+def _reconcile(name):
+    """후보 상태를 사람 수정 기록에 맞춘다(ai_review.reconcile, A5 검토 R2의 안전망). 그새 바뀌어 겹치면 다음 읽기에서 맞춘다."""
+    try:
+        return ai_review.reconcile(name)
+    except store_io.Conflict:
+        return []
+
+
 def candidates(engine, graph_id):
-    """한 도면의 후보(채팅·웹 공용). → {ok, available, graph_id, drawing_number, ver, counts, groups, bulk, last_run} 또는 {ok: False, code, message}."""
+    """한 도면의 후보(채팅·웹 공용). → {ok, available, graph_id, drawing_number, ver, counts, groups, bulk, last_run} 또는 {ok: False, code, message}.
+    도면별 잠금(sheet_refresh.lock) 안에서 맞추기·다시 만들기·읽기를 해, 보이는 목록과 판(ver)이 같은 때의 것이다."""
     try:
         name = _name(engine, graph_id)
-        stale, stale_notes, _recheck = ensure_graph(name)
-        doc, original = _load(name)
+        with lock(name):
+            if _reconcile(name):
+                engine.changed("sheetconf", None)
+            stale, stale_notes, _recheck = ensure_graph(name)
+            doc, original = _load(name)
+            ver = ver_of(name)
     except Refused as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
     except (OSError, ValueError) as exc:
         return {"ok": False, "code": "failed", "message": "AI 후보를 읽을 수 없습니다(%s)." % str(exc)[:120]}
     base = {"ok": True, "graph_id": graph_id, "drawing_number": (original.get("drawing") or {}).get("drawing_number") or name,
-            "ver": ver_of(name), "graph_stale": stale, "graph_notes": stale_notes}
+            "ver": ver, "graph_stale": stale, "graph_notes": stale_notes}
     if doc is None:
         return dict(base, available=False, reason="이 도면에는 AI 후보가 없습니다. AI 검토를 실행하면 생깁니다.", counts={}, groups=[], bulk=[],
                     last_run=None)
@@ -168,6 +181,16 @@ STALE_TEXT = "AI 후보나 도면 수정이 다른 곳에서 바뀌어 저장하
 
 
 def _decide(engine, graph_id, cand_ids, action, ver, by=None):
+    """도면별 잠금 안에서 _decide_locked를 부른다(같은 판을 본 두 결정·사람 고침이 서로를 덮지 않게, sheet_refresh.lock)."""
+    try:
+        name = _name(engine, graph_id)
+    except Refused as exc:
+        return {"ok": False, "code": exc.code, "message": exc.message}
+    with lock(name):
+        return _decide_locked(engine, graph_id, cand_ids, action, ver, by)
+
+
+def _decide_locked(engine, graph_id, cand_ids, action, ver, by=None):
     """낱개 결정의 공통 길. ver(읽은 판)는 꼭 있어야 한다(채팅도 같다, 검토 5).
     → {ok, changed, failed, ver, notes, recheck, graph_stale} 또는 {ok: False, code, message}.
     저장한 뒤의 실패(그래프 다시 만들기)는 오류가 아니라 '저장됨, 그래프 갱신 실패'로 돌려주고 낡은 그래프 표시를 남긴다(검토 3·4)."""
@@ -250,17 +273,19 @@ def accept_bulk(engine, graph_id, task, ver, by=None):
     """확신 높은 묶음(ai_review.bulk_groups, 할 일별)을 한 번에 수락한다. 묶음은 엔진이 다시 세므로 웹이 고른 ID를 믿지 않는다."""
     try:
         name = _name(engine, graph_id)
-        doc, _original_ex = _load(name)
     except Refused as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
-    except (OSError, ValueError) as exc:
-        return {"ok": False, "code": "failed", "message": "AI 후보를 읽을 수 없습니다(%s)." % str(exc)[:120]}
-    if not ver or ver != ver_of(name):
-        return {"ok": False, "code": "stale", "message": STALE_TEXT if ver else "읽은 판(ver)이 없어 저장하지 않았습니다. 후보 목록을 먼저 읽으세요."}
-    ids = _bulk(doc, task)
-    if not ids:
-        return {"ok": False, "code": "not_found", "message": "묶어 수락할 후보가 없습니다."}
-    return accept(engine, graph_id, ids, ver, by)
+    with lock(name):                                     # 묶음을 센 판과 수락하는 판이 같게(잠금은 다시 잡아도 되는 RLock)
+        try:
+            doc, _original_ex = _load(name)
+        except (OSError, ValueError) as exc:
+            return {"ok": False, "code": "failed", "message": "AI 후보를 읽을 수 없습니다(%s)." % str(exc)[:120]}
+        if not ver or ver != ver_of(name):
+            return {"ok": False, "code": "stale", "message": STALE_TEXT if ver else "읽은 판(ver)이 없어 저장하지 않았습니다. 후보 목록을 먼저 읽으세요."}
+        ids = _bulk(doc, task)
+        if not ids:
+            return {"ok": False, "code": "not_found", "message": "묶어 수락할 후보가 없습니다."}
+        return _decide_locked(engine, graph_id, ids, "accept", ver, by)
 
 
 def run_review(engine, graph_ids, cap, progress):

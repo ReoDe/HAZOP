@@ -154,6 +154,33 @@ class DecideTest(Base):
         self.assertEqual(self.ops(), [])
 
 
+class LockTest(Base):
+    def test_lock_serializes_two_decisions_on_one_view(self):  # 총괄 지시: 읽기 → 대조 → 쓰기는 도면별 잠금 안에서
+        import threading
+        from hazop.shell import sheet_refresh
+        self.seed([self.tag(1, self.valves[0], "V901"), self.tag(2, self.valves[1], "V902")])
+        ver = self.view()["ver"]
+        held = threading.Event()
+        out = {}
+        with sheet_refresh.lock(self.name):                     # 다른 스레드가 잠금을 쥔 동안에는 기다린다
+            t = threading.Thread(target=lambda: out.update(r=AR.accept(self.engine, self.gid, ["t-1:tag"], ver)))
+            t.start()
+            held.wait(0.3)
+            self.assertNotIn("r", out)
+        t.join(20)
+        self.assertTrue(out["r"]["ok"], out)
+        r2 = AR.accept(self.engine, self.gid, ["t-2:tag"], ver)  # 같은 판을 본 두 번째 결정은 낡은 판으로 거절
+        self.assertEqual(r2["code"], "stale")
+        self.assertEqual([o["value"]["tag"] for o in self.ops()], ["V901"])
+
+    def test_reconcile_on_read_after_human_undo(self):  # A5 검토 R2 안전망: 기록에서 AI 연산이 빠지면 읽을 때 제안으로 돌린다
+        self.seed([self.tag(1, self.valves[0], "V901")])
+        self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
+        corrections.save(self.name, [], "사람")
+        row = self.view()["groups"][0]["items"][0]
+        self.assertEqual(row["status"], "proposed")
+        self.assertTrue(self.changed("sheetconf"))
+
 class BulkTest(Base):
     def test_bulk_accept_takes_only_safe_candidates(self):
         a, b, c = self.valves[:3]
