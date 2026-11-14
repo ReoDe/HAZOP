@@ -46,7 +46,7 @@ from .pdf_vector_common import (
 )
 from .pdf_vector_grouping import (
     _Sym, _cluster_bodies, _nearest_sym, _end_status, _plate_assemblies, _group_symbols, _merge_appendages,
-    _black_fill_groups, _cut_at_boxes, _contact_chains,
+    _black_fill_groups, _cut_at_boxes, _contact_chains, _cut_through, _flow_axis,
 )
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
@@ -754,14 +754,44 @@ def _width_crossing(members, pieces, prm):
     return lines
 
 
+THROUGH_CENTER_RATIO = 0.15  # 몸체를 지나가는 배관: 가운데 줄에서 벗어난 거리 ≤ 몸체 옆 폭 × 비율
+
+
+def _cut_through_bodies(pieces, syms, prm):
+    """기호 몸체를 흐름 축(_flow_axis) 방향으로 가운데 줄을 따라 끊기지 않고 지나가는 배관을 몸체 양 끝에서 나눈다.
+    선 하나로 그은 배관 위에 밸브를 얹어 그리면 선 끝이 몸체에 닿지 않아 밸브에 배관이 붙지 않고, 양쪽 이웃이 밸브를
+    건너 바로 이어진다(APR1400 105쪽 전동 밸브, 128쪽 축소관). 축을 가로지르는 선, 몸체 옆이나 모서리를 지나는 선,
+    축을 모르는 몸체는 나누지 않는다. → (새 조각 목록, 몸체에 붙인 끝 {(조각, k): (기호, basis)})."""
+    axes = [(s, ax) for s in syms if s.alive and s.seed is None for ax in (_flow_axis(s, prm),) if ax is not None]
+    out, att = [], {}
+    for pc in pieces:
+        parts = [(pc["pts"], None, None)]  # (점, 앞 끝 기호, 뒤 끝 기호)
+        box = _bbox_pts(pc["pts"])
+        for s, ax in axes:
+            if _box_gap(box, s.core) > 0:
+                continue
+            lateral = THROUGH_CENTER_RATIO * (s.core[3 - ax] - s.core[1 - ax])
+            cut = []
+            for pts, s0, s1 in parts:
+                halves = _cut_through(pts, s.core, ax, lateral)
+                cut += [(halves[0], s0, s), (halves[1], s, s1)] if halves else [(pts, s0, s1)]
+            parts = cut
+        for pts, s0, s1 in parts:
+            for k, s in ((0, s0), (1, s1)):
+                if s is not None:
+                    att[(len(out), k)] = (s, "pdf_path_through_body")
+            out.append(dict(pc, pts=pts))
+    return out, att
+
+
 def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
     """→ (tees [(x, y)], chains [{pts, ends:[(vertex, point, basis)], evidence}])."""
     # 선 끝 분류
     pieces = [{"pts": list(p["pts"]), "id": p["id"], "width": p.get("width")} for p in polys]
+    pieces, att = _cut_through_bodies(pieces, syms, prm)
     ends = []  # (piece index, k, point)
     for i, pc in enumerate(pieces):
-        ends += [(i, 0, pc["pts"][0]), (i, 1, pc["pts"][-1])]
-    att = {}
+        ends += [(i, k, pt) for k, pt in ((0, pc["pts"][0]), (1, pc["pts"][-1])) if (i, k) not in att]
     free = []
     # 주머니 입구(_pockets): 입구에서 주머니 안쪽으로 짧은 선을 두어 배관을 그 자리에서 나누고 주머니 기호에 잇는다
     for pt, s in mouths:

@@ -365,6 +365,20 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(ext["nodes"][0]["source_object_id"], "pdf-p0-sym-0001")
         self.assertEqual(ext["nodes"][0]["geometry"], {"x": 100, "y": 100, "width": 40, "height": 60})
 
+    def test_pipe_drawn_through_valve_along_its_axis_is_split_at_the_valve(self):
+        # APR1400 105쪽 전동 밸브·128쪽 축소관: 한 선으로 그은 배관 위에 얹은 밸브. 흐름 축을 따라 가운데를 지나는 선은
+        # 밸브 양 끝에서 나뉘어 밸브에 붙는다. 축을 가로지르는 선은 나누지 않는다
+        def run(valve):
+            ext = pdf_run([rect(80, 100, 100, 120), rect(300, 100, 320, 120), rect(193, 30, 213, 50),
+                           rect(193, 170, 213, 190), valve, line((100, 110), (300, 110)), line((203, 50), (203, 170))])
+            at = {n["local_id"]: (n["geometry"]["x"], n["geometry"]["y"]) for n in ext["nodes"]}
+            return sorted(tuple(sorted(at[e["node_local_id"]] for e in r["endpoints"])) for r in ext["relations"])
+        bowtie = prim([(200, 108.5), (206, 111.5), (206, 108.5), (200, 111.5), (200, 108.5)], closed=True)
+        self.assertEqual(run(bowtie), [((80, 100), (200, 108.5)), ((193, 30), (193, 170)), ((200, 108.5), (300, 100))])
+        # 세로로 긴 몸체는 세로가 흐름 축이다. 가로 배관은 축을 가로지르므로 나누지 않는다
+        upright = prim([(201.5, 107), (204.5, 107), (201.5, 113), (204.5, 113), (201.5, 107)], closed=True)
+        self.assertEqual(run(upright), [((80, 100), (300, 100)), ((193, 30), (201.5, 107)), ((193, 170), (201.5, 107))])
+
     def test_three_line_junction_is_tee_and_crossing_is_not(self):
         tee = pdf_run([rect(100, 100, 140, 160), rect(300, 40, 340, 80), rect(300, 180, 340, 220),
                        line((140, 130), (200, 130)), line((200, 130), (200, 60), (300, 60)),

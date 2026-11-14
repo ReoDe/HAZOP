@@ -10,7 +10,7 @@ import math
 
 from .pdf_vector_common import (
     _union, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist, _poly_box_dist,
-    _uf_groups, _center, _is_circle, _is_chevron, _pt_circle_dist,
+    _uf_groups, _center, _is_circle, _is_chevron, _is_triangle, _pt_circle_dist,
 )
 
 
@@ -105,11 +105,16 @@ def _black_fill_groups(fills, prm):
     return out
 
 
-def _cut_through(pts, box):
-    """꺾은선 pts가 상자의 긴 축 방향으로 상자를 끊기지 않고 지나가면 들어가는 변과 나가는 변에서 나눈 두 조각.
-    지나가지 않으면 None. 옆으로 가로지르는 선이나 상자 안에서 끝나는 선은 나누지 않는다."""
-    axis = 0 if _w(box) >= _h(box) else 1
+def _cut_through(pts, box, axis=None, lateral=None):
+    """꺾은선 pts가 상자의 축(axis, 없으면 긴 축) 방향으로 상자를 끊기지 않고 지나가면 들어가는 변과 나가는 변에서
+    나눈 두 조각. 지나가지 않으면 None. 옆으로 가로지르는 선이나 상자 안에서 끝나는 선은 나누지 않는다. lateral을
+    주면 들어가고 나가는 두 점이 모두 상자 가운데 줄에서 그 거리 안이어야 한다."""
+    if axis is None:
+        axis = 0 if _w(box) >= _h(box) else 1
     lo, hi, side_lo, side_hi = box[axis], box[axis + 2], box[1 - axis], box[3 - axis]
+    if lateral is not None:
+        mid = (side_lo + side_hi) / 2
+        side_lo, side_hi = mid - lateral, mid + lateral
     for k, (a, b) in enumerate(_segs(pts)):
         if not (min(a[axis], b[axis]) < lo and max(a[axis], b[axis]) > hi):
             continue
@@ -147,6 +152,42 @@ def _cut_at_boxes(polys, boxes):
             out += [dict(p, pts=pts, bbox=(min(q[0] for q in pts), min(q[1] for q in pts), max(q[0] for q in pts),
                                            max(q[1] for q in pts))) for pts in pieces]
     return out
+
+
+FLOW_LONG_RATIO = 1.5  # 몸체 긴 변이 짧은 변의 이 배 이상이면 긴 축을 흐름 축으로 본다(_flow_axis)
+FLOW_LONG_MAX = 3.0    # 긴 변이 짧은 변의 이 배를 넘는 띠(바닥 격자, 건물 경계 화살표)는 배관 부품이 아니다
+END_EDGE_RATIO = 0.3   # 몸체 끝 변: 축에 수직이고 길이가 몸체 옆 폭의 이 비율 이상인 변
+
+
+def _flow_axis(sym, prm):
+    """기호 몸체의 흐름 축(0 = 가로, 1 = 세로). 몸체 양 끝 모두에 그 축과 수직인 변이 있는 축이 하나뿐이면 그 축이다
+    (나비꼴 게이트 밸브는 좌우 끝의 세로 변, 축소관 사다리꼴은 위아래 변). 그렇지 않으면 긴 변이 짧은 변의
+    FLOW_LONG_RATIO배 이상일 때 긴 축이다. 곧은 변이 없는 몸체(원·계기), 정사각형처럼 두 축 모두 끝 변이 있는
+    납작한 몸체, FLOW_LONG_MAX배보다 긴 띠, 삼각형 하나뿐인 몸체(화살촉), 선으로만 그린 기호는 축을 모른다(None)."""
+    straight = [b for b in sym.bodies if not b.get("curved")]
+    c, tol = sym.core, prm["axis_rect_tol"]
+    w, h = _w(c), _h(c)
+    if not straight or sym.stroke_only or sym.arrow_only() or max(w, h) > FLOW_LONG_MAX * min(w, h):
+        return None
+    ended = []
+    for ax in (0, 1):
+        side = c[3 - ax] - c[1 - ax]
+        at = set()
+        for b in straight:
+            pts = b["pts"]
+            for p, q in zip(pts, pts[1:] + pts[:1]):
+                if abs(p[ax] - q[ax]) > tol or abs(p[1 - ax] - q[1 - ax]) < END_EDGE_RATIO * side:
+                    continue
+                for end, v in ((0, c[ax]), (1, c[ax + 2])):
+                    if abs(p[ax] - v) <= tol and abs(q[ax] - v) <= tol:
+                        at.add(end)
+        if at == {0, 1}:
+            ended.append(ax)
+    if len(ended) == 1:
+        return ended[0]
+    if max(w, h) >= FLOW_LONG_RATIO * min(w, h) and not all(_is_triangle(b) for b in straight):
+        return 0 if w >= h else 1
+    return None
 
 
 def _contact_chains(syms, prm):

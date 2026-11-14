@@ -56,7 +56,7 @@
     "tag_not_in_text": 0,
     "tagged": 36,
     "unclassified": 39,
-    "unknowns": 451,
+    "unknowns": 452,
     "valve_number_closer_other": 0
    },
    "proxy_bubbles": 16,
@@ -1123,12 +1123,12 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 282,
-  "seconds": 161,
+  "seconds": 192,
   "tag_exact": 1110,
   "tag_not_in_text": 53,
   "tagged": 3461,
-  "unclassified": 6665,
-  "unknowns": 53480,
+  "unclassified": 6666,
+  "unknowns": 53628,
   "valve_number_closer_other": 0
  }
 }
