@@ -11,6 +11,7 @@ import { useLayoutEffect, useRef, useState } from "../../vendor/hooks.module.js"
 import { createStore, store as shell, useStore } from "../store.js";
 import { cmd, onChanged, read } from "../bridge.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
+import { LinkSection } from "./link_card.js";
 
 const cssHref = new URL("edit.css", import.meta.url).href;
 if (typeof document !== "undefined" && !document.querySelector("link[data-edit-css]")) {
@@ -315,6 +316,7 @@ function ItemCard() {
   return html`<div class="float edit-card" role="dialog" aria-label=${(node ? "기기 " : "연결 ") + (it.tag || it.local_id) + " 고치기"}>
     <div class="ec-h"><b>${it.tag || it.local_id}</b> <span>${it.kind_label || ""}</span> <span class="muted small">${it.kind || ""}</span>
       <${Btn} sm=${true} kind="ghost" icon="x" label="고치기 카드 닫기" onClick=${() => { setTag(null); closeItem(); }} /></div>
+    ${it.kind === "continuation" ? html`<${LinkSection} gid=${shell.get().sheet} item=${it} />` : null}
     ${im.sheet === "confirmed" || im.sheet === "compared" ? html`<${Notice} kind="warn" icon="alert-triangle">이 쪽은 ${im.sheet === "confirmed" ? "확정" : "견줌"} 상태입니다. 고치면 풀립니다.<//>` : null}
     ${held.length ? html`<${Notice} kind="warn" icon="lock">확정·잠금 구간 ${held.map((n) => n.node_id).join(", ")}에 든 구성요소입니다. 고치면 그 구간을 재확인해야 합니다.<//>` : null}
     <div class="field"><label for="ec-tag">${node ? "태그" : "배관 번호"}</label>

@@ -3,8 +3,10 @@ import { html, render } from "../js/ui/html.js";
 import { store } from "../js/store.js";
 import { deliver } from "../js/bridge.js";
 import * as E from "../js/canvas/edit.js";
+import * as L from "../js/canvas/link_card.js";
 
 const tick = async () => { for (let i = 0; i < 600; i++) await Promise.resolve(); };
+const settle = async () => { await new Promise((r) => setTimeout(r, 30)); await tick(); await new Promise((r) => setTimeout(r, 30)); await tick(); };   // useEffect는 다음 틀에서 돈다
 const sent = [];
 let replies = [];
 
@@ -17,6 +19,16 @@ const NODE = { ok: true, graph_id: "graph-A", local_id: "n1", type: "node", kind
 const REL = { ok: true, graph_id: "graph-A", local_id: "p1", type: "relation", kind: "physical_connection", tag: "L1", manual: false, human_edit: [], unknowns: [], ver: "v1",
   impact: { sheet: null, nodes: [] }, relation_kind: "physical_connection", ends: { source: { node: "n1", status: "connected" }, target: { node: "n2", status: "connected" } },
   flow: { from: "n1", to: "n2", basis: "drawio" }, flow_allowed: true };
+
+const CONT = { ok: true, graph_id: "graph-A", local_id: "c1", type: "node", kind: "continuation", kind_label: "도면 연결", tag: null, manual: false,
+  human_edit: [], unknowns: [], ver: "v1", base: "fp-c1", positions: [], impact: { sheet: null, nodes: [] } };
+const LINK = { ok: true, graph_id: "graph-A", ver: "lv1",
+  point: { local_id: "c1", label: "TO <i>B</i>", drawing_number: "A-101", line_no: "RC-L010", status: "unlinked", reason: "no_counterpart", reason_text: "맞은편 없음",
+    origin: "auto", op: null, peer: null, base: "pb1" },
+  candidates: [{ graph_id: "graph-B", local_id: "c9", drawing_number: "A-102", label: "FROM A-101", line_no: "RC-L010", to_drawing: "A-101", linked: false, peer_drawing: null },
+    { graph_id: "graph-C", local_id: "c5", drawing_number: "A-103", label: "FROM X", line_no: "RC-L099", to_drawing: "A-105", linked: true, peer_drawing: "A-105" }],
+  more: 0, stale: [{ op_id: "sl-old", reason: "가리키는 연결점이 프로젝트 도면에 없음", op: "unlink", by: "B", at: "t", ends: [{ drawing_number: "A-101", source_object_id: "gone" }] }] };
+const linkReads = [];
 
 function install() {
   sent.length = 0;
@@ -35,6 +47,8 @@ function install() {
     if (u === "/api/edit/graph-A") return body(HEAD);
     if (u === "/api/edit/graph-A/item/n1") return body(NODE);
     if (u === "/api/edit/graph-A/item/p1") return body(REL);
+    if (u === "/api/edit/graph-A/item/c1") return body(CONT);
+    if (u.startsWith("/api/links/graph-A/c1")) { linkReads.push(u); return body(LINK); }
     return { ok: false, status: 404, json: async () => ({}) };
   };
 }
@@ -161,6 +175,58 @@ export const tests = [
     await tick();
     m = sent.filter((x) => x.name === "edit.redo").pop();
     assert.equal(m.args.graph_id, "graph-A");
+    E.setOn(false);
+  } },
+  { name: "도면 연결 짝: 오각형의 고치기 카드에 짝 칸이 붙고(라벨은 글자로만, 오래된 지정 표시), 후보를 골라 links.pair를 판·지문과 함께 보낸다", async run(assert) {
+    await setup();
+    linkReads.length = 0;
+    await E.loadItem("graph-A", "c1");
+    const host = mount(html`<${E.EditOverlay} />`);
+    await settle();
+    const sec = host.querySelector(".ec-link");
+    assert(sec && sec.textContent.includes("미연결") && sec.textContent.includes("맞은편 없음"), sec ? sec.textContent : "칸 없음");
+    assert(sec.textContent.includes("오래된 지정 1"), "원본이 바뀌어 적용하지 못한 지정을 알린다");
+    assert(!host.querySelector(".ec-link i"), "도면 글은 글자로만");
+    assert(!host.querySelector(".edit-pill .ec-link"), "늘 떠 있는 알약에는 붙지 않는다");
+    L.links.set({ picking: true });
+    await settle();
+    const opts = host.querySelectorAll(".ec-cands li[role=option]");
+    assert.equal(opts.length, 2);
+    assert(opts[1].textContent.includes("지금 A-105와 짝"));
+    opts[0].click();
+    await settle();
+    L.links.set({ reason: " 배관 번호 확인 " });
+    await L.pairWith(L.links.get().picked);
+    await tick();
+    const m = sent.filter((x) => x.name === "links.pair").pop();
+    assert.equal([m.args.graph_id, m.args.local_id, m.args.ver, m.args.base, m.args.peer_graph_id, m.args.peer_local_id, m.args.reason],
+      ["graph-A", "c1", "lv1", "pb1", "graph-B", "c9", "배관 번호 확인"]);
+    assert(!("by" in m.args), "지정한 사람은 엔진이 채운다");
+    host.remove();
+    E.setOn(false);
+  } },
+  { name: "도면 연결 짝: 엔진이 확인을 물으면 글을 띄우고 '그래도 하기'는 그 글을 confirm으로, 찾기는 q로 다시 읽고, 오래된 지정 빼기는 links.clear", async run(assert) {
+    await setup();
+    linkReads.length = 0;
+    await L.loadLink("graph-A", "c1", "");
+    replies = [{ ok: false, error: { code: "needs_confirm", message: "A-103 FROM X ↔ A-105 Y 짝이 풀립니다." } }];
+    await L.pairWith(LINK.candidates[1], "");
+    await tick();
+    const ask = L.links.get().ask;
+    assert(ask && ask.message.includes("풀립니다"), JSON.stringify(ask));
+    await ask.run();
+    await tick();
+    const last = sent.filter((x) => x.name === "links.pair").pop();
+    assert.equal(last.args.confirm, "A-103 FROM X ↔ A-105 Y 짝이 풀립니다.");
+    await L.clearOp("sl-old");
+    await tick();
+    assert.equal(sent.filter((x) => x.name === "links.clear").pop().args.op_id, "sl-old");
+    replies = [{ ok: false, error: { code: "stale", message: "그 사이 바뀌었습니다" } }];
+    await L.unlinkPoint("");
+    await tick();
+    assert(L.links.get().error.includes("바뀌었습니다"));
+    await L.loadLink("graph-A", "c1", "RC L010");
+    assert(linkReads.some((u) => u.endsWith("?q=RC%20L010")), linkReads.join(" "));
     E.setOn(false);
   } },
 ];

@@ -17,3 +17,11 @@
 .hz-cv[data-edit] .hz-cv-vp { cursor: default; }
 .hz-cv[data-edit="path"] .hz-cv-vp { cursor: crosshair; }
 .hz-cv[data-edit="connect"] .hz-cv-vp, .hz-cv[data-edit="endpoint"] .hz-cv-vp { cursor: pointer; }
+/* 도면 연결 짝(link_card.js): 고치기 카드 안의 한 칸 */
+.edit-card .ec-link { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--line, #e3e6ea); }
+.edit-card .ec-link .warn { color: var(--warn); }
+.edit-card .ec-pick { display: flex; flex-direction: column; gap: 4px; }
+.edit-card .ec-cands { list-style: none; margin: 0; padding: 0; max-height: 168px; overflow: auto; border: 1px solid var(--line, #e3e6ea); border-radius: var(--r-sm); font-size: var(--fs-sm); }
+.edit-card .ec-cands li { padding: 3px 6px; cursor: pointer; }
+.edit-card .ec-cands li:hover { background: var(--surface-2, #f2f4f7); }
+.edit-card .ec-cands li.on { background: var(--accent-weak); outline: 1px solid var(--accent); }

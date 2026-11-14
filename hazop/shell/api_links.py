@@ -96,6 +96,11 @@ def _end(n, nums):
     return {"drawing_number": nums.get(n["sheet"]), "source_object_id": n.get("source_object_id")}
 
 
+def _name_of(n, nums):
+    """알림 글에 쓰는 연결점 이름: '<도면 번호> <라벨>'."""
+    return "%s %s" % (nums.get(n["sheet"]) or n["sheet"], _label(n))
+
+
 def _end_key(end):
     return ((end.get("drawing_number") or "").strip().upper(), end.get("source_object_id"))
 
@@ -285,11 +290,11 @@ def pair(engine, graph_id, local_id, peer_graph_id, peer_local_id, ver, reason="
         who = by or engine.reviewer()
         new = _new_op("link", ends, who, reason)
         breaking = [(x, y) for x, y in ((n, mine), (b, theirs)) if y is not None and y["entity_id"] not in (n["entity_id"], b["entity_id"])]
-        note = {"op": "link", "ends": ends, "reason": new["reason"]}
+        note = {"op": "link", "ends": ends, "reason": new["reason"], "labels": [_name_of(n, nums), _name_of(b, nums)]}
         return _without(ops, {_end_key(e) for e in ends}) + [new], [n, b], breaking, note
 
     def done(note):
-        return "%s ↔ %s 짝을 지정했습니다." % tuple("%s %s" % (e["drawing_number"], e["source_object_id"]) for e in note["ends"])
+        return "%s ↔ %s 짝을 지정했습니다." % tuple(note["labels"])
     return _guard(lambda: _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done))
 
 
@@ -303,14 +308,14 @@ def unlink(engine, graph_id, local_id, ver, reason="", base=None, confirm=None, 
         mine = _peer_of(pg, n, by_id)
         ends = [_end(n, nums)]
         new = _new_op("unlink", ends, by or engine.reviewer(), reason)
-        note = {"op": "unlink", "ends": ends, "reason": new["reason"]}
+        note = {"op": "unlink", "ends": ends, "reason": new["reason"], "labels": [_name_of(n, nums)]}
         keys = {_end_key(e) for e in ends}
         if mine is not None:                 # 사람이 지정한 짝이면 그 지정도 뺀다(맞은편은 자동 판정으로 돌아간다)
             keys.add(_end_key(_end(mine, nums)))
         return _without(ops, keys) + [new], [n] + ([mine] if mine else []), [(n, mine)] if mine else [], note
 
     def done(note):
-        return "%s %s 연결을 끊었습니다." % (note["ends"][0]["drawing_number"], note["ends"][0]["source_object_id"])
+        return "%s 연결을 끊었습니다." % note["labels"][0]
     return _guard(lambda: _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done))
 
 
