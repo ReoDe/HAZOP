@@ -102,6 +102,8 @@ export function LinkSection({ gid, item }) {
     <label>도면 연결 ${p.line_no ? html`<span class="muted small">${p.line_no}</span>` : null}</label>
     <div class="acts-row">${stateLine(p)}</div>
     ${p.op ? html`<div class="muted small">${p.op.by} · ${when(p.op.at)}${p.op.reason ? " · " + p.op.reason : ""}</div>` : null}
+    ${p.check === "no_fingerprint" ? html`<${Notice} kind="warn" icon="alert-triangle">확인 필요: 연결점 지문 없이 남은 예전 지정이라 번호로만 붙였습니다. 맞으면 다시 지정하세요(다시 추출로 번호가 밀리면 다른 연결점에 붙을 수 있습니다).<//>` : null}
+    ${(v.relocated || []).length ? html`<div class="muted small">다시 추출로 번호가 밀린 연결점 ${v.relocated.length}개를 지문으로 찾아 옮겨 붙였습니다(${v.relocated.map((m) => m.from + " → " + m.to).join(", ")}). 다음 저장 때 기록에 남습니다.</div>` : null}
     ${v.stale.length ? html`<${Notice} kind="warn" icon="alert-triangle">이 도면의 오래된 지정 ${v.stale.length}: 원본이 바뀌어 적용하지 못했습니다.
       ${v.stale.map((o) => html`<div class="acts-row" key=${o.op_id}><span class="small">${o.op === "link" ? "짝" : "끊기"} · ${(o.ends || []).map((e) => e.drawing_number + " " + e.source_object_id).join(" ↔ ")} · ${o.reason}</span>
         <${Btn} sm=${true} label=${"오래된 지정 빼기 " + o.op_id} disabled=${s.busy} onClick=${() => clearOp(o.op_id)}>빼기<//></div>`)}<//>` : null}
@@ -116,10 +118,12 @@ export function LinkSection({ gid, item }) {
         const on = s.picked && s.picked.graph_id === c.graph_id && s.picked.local_id === c.local_id;
         return html`<li key=${c.graph_id + "/" + c.local_id} role="option" aria-selected=${on ? "true" : "false"} class=${on ? "on" : ""} tabindex="0"
           onClick=${() => links.set({ picked: c })} onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); links.set({ picked: c }); } }}>
-          <b>${c.drawing_number}</b> ${c.line_no || "-"} · ${c.label}${c.linked ? html` <span class="muted small">· 지금 ${c.peer_drawing}와 짝</span>` : null}</li>`;
+          <b>${c.drawing_number}</b> ${c.line_no || "-"} · ${c.label}${c.linked ? html` <span class="muted small">· 지금 ${c.peer_drawing}와 짝</span>` : null}
+          ${(c.warn || []).length ? html` <span class="warn small" title=${c.warn.join(", ")}>⚠ ${c.warn.length}</span>` : null}</li>`;
       })}${v.more ? html`<li class="muted small">그 밖에 ${v.more}개: 찾기로 좁히세요</li>` : null}
       ${!v.candidates.length ? html`<li class="muted small">맞는 후보가 없습니다.</li>` : null}</ul>
       <input class="textbox" aria-label="지정 사유" maxlength="300" placeholder="사유(선택): 예) 도면 개정으로 배관 번호가 바뀜" value=${s.reason} onInput=${(e) => links.set({ reason: e.target.value })} />
+      ${s.picked && (s.picked.warn || []).length ? html`<${Notice} kind="warn" icon="alert-triangle">고른 후보: ${s.picked.warn.join(", ")}. 맞는 짝인지 확인하고 사유를 남기세요.<//>` : null}
       <div class="acts-row"><${Btn} sm=${true} kind="primary" label="이 짝으로 지정" disabled=${s.busy || !s.picked} onClick=${() => pairWith(s.picked)}>이 짝으로 지정<//></div>
     </div>` : null}
     ${s.ask ? html`<${Notice} kind="warn" icon="alert-triangle">${s.ask.message}<div class="acts-row"><${Btn} sm=${true} kind="danger" label="그래도 하기" onClick=${s.ask.run}>그래도 하기<//>

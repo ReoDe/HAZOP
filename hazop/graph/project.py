@@ -187,6 +187,26 @@ def _ref(end):
     return "%s#%s" % (end["graph_id"], end["source_object_id"] or end["entity_id"])
 
 
+def end_fingerprint(key, node):
+    """연결점 지문: 라벨(공백 정리), 배관 번호, 상대 도면, 방향, 자리(정수로 반올림). key는 continuation_key 결과.
+    사람 지정이 가리키는 연결점이 다시 추출 뒤에도 같은 것인지 본다(PDF 추출 ID는 순번이라 번호가 밀릴 수 있다)."""
+    pos = node.get("position")
+    return {"label": " ".join((node.get("label_text") or "").split()) or None, "line_no": _norm(key.get("line_no")),
+            "to_drawing": _dn(key.get("to_drawing")), "direction": key.get("direction"),
+            "at": [int(round(float(v))) for v in pos[:2]] if isinstance(pos, (list, tuple)) and len(pos) >= 2 else None}
+
+
+def end_ref(graph, node):
+    """사람 지정 기록의 끝: {"drawing_number", "source_object_id", "fp"}. graph는 도면 그래프(또는 graph_id·source만 있는 사전)."""
+    key = continuation_key(graph, node)
+    return {"drawing_number": key["drawing_number"], "source_object_id": node.get("source_object_id"), "fp": end_fingerprint(key, node)}
+
+
+def _fp_diff(want, cur):
+    names = {"label": "라벨", "line_no": "배관 번호", "to_drawing": "상대 도면", "direction": "방향", "at": "자리"}
+    return ", ".join("%s %s→%s" % (names.get(k, k), want.get(k), cur.get(k)) for k in sorted(set(want) | set(cur)) if want.get(k) != cur.get(k))
+
+
 # ---------------------------------------------------------------- 사람 지정 기록
 
 _KEEP = object()           # save_manual: 지문 대조 없이 쓴다(옛 화면·스크립트)
@@ -199,8 +219,8 @@ def manual_path(project_id):
 def load_manual(project_id):
     """사람 지정 기록. 없으면 None. 다른 종류 파일이면 ValueError.
     문서 모양: {"kind": "hazop_sheet_links", "schema_version", "project_id", "ops": [op], "log": [...]}
-    op: {"op_id", "op": "link"|"unlink", "ends": [{"drawing_number", "source_object_id"}] (link 2개, unlink 1개),
-         "by", "at", "reason"}"""
+    op: {"op_id", "op": "link"|"unlink", "ends": [{"drawing_number", "source_object_id", "fp"}] (link 2개, unlink 1개),
+         "by", "at", "reason"}. fp(end_fingerprint)는 2026-11-14(B1 검토)부터 남긴다. 없는 옛 지정은 그대로 쓰되 '확인 필요'로 표시한다."""
     path = manual_path(project_id)
     if not os.path.isfile(path):
         return None
@@ -247,24 +267,29 @@ def check_op(op):
 
 # ---------------------------------------------------------------- 매칭
 
-def match(graphs, manual_ops=(), system_codes=None):
+def match(graphs, manual_ops=(), system_codes=None, moved=None):
     """(sheet_links, manual_skipped). sheet_links 항목:
     {"link_id", "status": linked|unlinked, "reason": None|REASONS 키, "detail", "origin": auto|manual,
      "from": 끝, "to": 끝|None, "candidates": [끝 ref]}. linked면 from = 흐름이 나가는 쪽(TO), to = 들어오는 쪽(FROM).
-    방향을 한쪽도 모르거나 사람이 같은 방향끼리 이었으면 flow_known=False(흐름 방향을 만들지 않음)."""
-    ends = []
+    방향을 한쪽도 모르거나 사람이 같은 방향끼리 이었으면 flow_known=False(흐름 방향을 만들지 않음).
+    사람 지정의 끝에 지문(fp)이 있으면 지금 연결점의 지문과 견준다. 다르면 같은 도면에서 지문이 같은 연결점을 찾아 하나뿐이면 그쪽으로
+    옮겨 붙이고(moved 목록에 {"op_id", "drawing_number", "from", "to"}를 더함), 없거나 여럿이면 붙이지 않고 manual_skipped로 돌린다.
+    지문이 없는 옛 지정은 번호대로 붙이고 그 연결에 "check": "no_fingerprint"를 단다."""
+    ends, fps = [], {}
     by_drawing = {}
     for g in graphs:
         by_drawing.setdefault(_dn((g.get("source") or {}).get("drawing_number")), []).append(g["graph_id"])
         for n in g["nodes"]:
             if n.get("kind") == "continuation":
                 ends.append(continuation_key(g, n))
-    by_soid = {}
+                fps[id(ends[-1])] = end_fingerprint(ends[-1], n)
+    by_soid, by_dwg = {}, {}
     for e in ends:
         by_soid.setdefault((_norm(e["drawing_number"]), e["source_object_id"]), []).append(e)
+        by_dwg.setdefault(_norm(e["drawing_number"]), []).append(e)
     used, manual_used, links, skipped = set(), set(), [], []
 
-    def record(status, reason, origin, a, b=None, candidates=(), op_id=None):
+    def record(status, reason, origin, a, b=None, candidates=(), op_id=None, check=None):
         if b is not None and status == LINKED:
             da, db = a["direction"], b["direction"]
             if da == "from" or db == "to":
@@ -276,7 +301,27 @@ def match(graphs, manual_ops=(), system_codes=None):
         links.append({"link_id": "xlink-%s" % _sha(refs, 10), "status": status, "reason": reason,
                       "detail": REASONS.get(reason) if reason else None, "origin": origin, "op_id": op_id,
                       "from": a, "to": b, "flow_known": known, "candidates": sorted(candidates)})
+        if check:
+            links[-1]["check"] = check
         used.update(_ref(x) for x in (a, b) if x is not None)
+
+    def locate(end):
+        """지정의 끝 하나 → (연결점 또는 None, 못 붙인 사유 또는 None, 옮겼으면 (옛 번호, 새 번호))."""
+        hit = by_soid.get((_norm(end["drawing_number"]), end["source_object_id"])) or []
+        want = end.get("fp")
+        if len(hit) > 1:
+            return None, "가리키는 연결점이 여럿이라 고르지 않음", None
+        if not isinstance(want, dict):
+            return (hit[0], None, None) if hit else (None, "가리키는 연결점이 프로젝트 도면에 없음", None)
+        if hit and fps[id(hit[0])] == want:
+            return hit[0], None, None
+        same = [x for x in by_dwg.get(_norm(end["drawing_number"])) or [] if fps[id(x)] == want]
+        if len(same) == 1:
+            return same[0], None, (end["source_object_id"], same[0]["source_object_id"])
+        if hit:
+            return None, "가리키는 연결점이 바뀜(%s %s: %s)" % (end["drawing_number"], end["source_object_id"], _fp_diff(want, fps[id(hit[0])])), None
+        return None, "가리키는 연결점이 프로젝트 도면에 없음(%s %s, 같은 지문의 연결점 %d개)" % (
+            end["drawing_number"], end["source_object_id"], len(same)), None
 
     for op in manual_ops:
         try:
@@ -284,18 +329,24 @@ def match(graphs, manual_ops=(), system_codes=None):
         except ValueError as exc:
             skipped.append({"op_id": op.get("op_id"), "reason": str(exc)})
             continue
-        hits = [by_soid.get((_norm(e["drawing_number"]), e["source_object_id"])) or [] for e in op["ends"]]
-        found = [h[0] if len(h) == 1 else None for h in hits]
-        if any(len(h) > 1 for h in hits):
-            skipped.append({"op_id": op["op_id"], "reason": "가리키는 연결점이 여럿이라 고르지 않음"})
-        elif None in found:
-            skipped.append({"op_id": op["op_id"], "reason": "가리키는 연결점이 프로젝트 도면에 없음"})
+        located = [locate(e) for e in op["ends"]]
+        found = [x[0] for x in located]
+        why = next((x[1] for x in located if x[1]), None)
+        check = None if all(isinstance(e.get("fp"), dict) for e in op["ends"]) else "no_fingerprint"
+        if why:
+            skipped.append({"op_id": op["op_id"], "reason": why})
+        elif len({_ref(e) for e in found}) != len(found):
+            skipped.append({"op_id": op["op_id"], "reason": "두 끝이 같은 연결점을 가리킴"})
         elif any(_ref(e) in used for e in found):
             skipped.append({"op_id": op["op_id"], "reason": "같은 연결점을 가리키는 앞선 지정이 있음"})
-        elif op["op"] == "unlink":
-            record(UNLINKED, "manual_unlink", "manual", found[0], op_id=op["op_id"])
         else:
-            record(LINKED, None, "manual", found[0], found[1], op_id=op["op_id"])
+            if moved is not None:
+                moved += [{"op_id": op["op_id"], "drawing_number": e["drawing_number"], "from": x[2][0], "to": x[2][1]}
+                          for e, x in zip(op["ends"], located) if x[2]]
+            if op["op"] == "unlink":
+                record(UNLINKED, "manual_unlink", "manual", found[0], op_id=op["op_id"], check=check)
+            else:
+                record(LINKED, None, "manual", found[0], found[1], op_id=op["op_id"], check=check)
     manual_used.update(used)
     # 짝 찾기 색인(ends 순서 그대로). 앞의 조건은 사람 지정 뒤로 바뀌지 않는 것만 넣는다
     back_index, system_index = {}, {}
@@ -419,7 +470,8 @@ def build(project_id, graphs, manual_ops=(), system_codes=None, copies=None):
         if (g.get("validation") or {}).get("status") != "passed":
             blockers.append({"graph_id": g["graph_id"], "reason": "도면 그래프 구조 검증이 passed가 아님(%s)"
                              % (g.get("validation") or {}).get("status")})
-    links, skipped = match(graphs, manual_ops, system_codes)
+    relocated = []
+    links, skipped = match(graphs, manual_ops, system_codes, moved=relocated)
     by_id = {n["entity_id"]: n for n in nodes}
     for l in links:
         for side in ("from", "to"):
@@ -454,6 +506,7 @@ def build(project_id, graphs, manual_ops=(), system_codes=None, copies=None):
         "graph_id": project_graph_id(project_id), "graph_version": version,
         "source": {"drawing_number": None, "drawings": [s["drawing_number"] for s in sheets]},
         "sheets": sheets, "nodes": nodes, "edges": edges, "sheet_links": links, "manual_skipped": skipped,
+        **({"manual_relocated": relocated} if relocated else {}),
         "duplicate_tags": _duplicate_tags(graphs),
         "validation": {"status": "blocked" if blockers else "passed", "blockers": blockers, "unknowns": []},
     }

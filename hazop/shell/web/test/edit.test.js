@@ -25,8 +25,8 @@ const CONT = { ok: true, graph_id: "graph-A", local_id: "c1", type: "node", kind
 const LINK = { ok: true, graph_id: "graph-A", ver: "lv1",
   point: { local_id: "c1", label: "TO <i>B</i>", drawing_number: "A-101", line_no: "RC-L010", status: "unlinked", reason: "no_counterpart", reason_text: "맞은편 없음",
     origin: "auto", op: null, peer: null, base: "pb1" },
-  candidates: [{ graph_id: "graph-B", local_id: "c9", drawing_number: "A-102", label: "FROM A-101", line_no: "RC-L010", to_drawing: "A-101", linked: false, peer_drawing: null },
-    { graph_id: "graph-C", local_id: "c5", drawing_number: "A-103", label: "FROM X", line_no: "RC-L099", to_drawing: "A-105", linked: true, peer_drawing: "A-105" }],
+  candidates: [{ graph_id: "graph-B", local_id: "c9", drawing_number: "A-102", label: "FROM A-101", line_no: "RC-L010", to_drawing: "A-101", linked: false, peer_drawing: null, warn: [] },
+    { graph_id: "graph-C", local_id: "c5", drawing_number: "A-103", label: "FROM X", line_no: "RC-L099", to_drawing: "A-105", linked: true, peer_drawing: "A-105", warn: ["상대 도면이 다름(A-105를 가리킴)"] }],
   more: 0, stale: [{ op_id: "sl-old", reason: "가리키는 연결점이 프로젝트 도면에 없음", op: "unlink", by: "B", at: "t", ends: [{ drawing_number: "A-101", source_object_id: "gone" }] }] };
 const linkReads = [];
 
@@ -193,8 +193,12 @@ export const tests = [
     const opts = host.querySelectorAll(".ec-cands li[role=option]");
     assert.equal(opts.length, 2);
     assert(opts[1].textContent.includes("지금 A-105와 짝"));
+    opts[1].click();
+    await settle();
+    assert(host.querySelector(".ec-pick").textContent.includes("고른 후보: 상대 도면이 다름"), "상대 도면·배관 번호가 다른 후보는 고르면 경고");
     opts[0].click();
     await settle();
+    assert(!host.querySelector(".ec-pick").textContent.includes("고른 후보:"));
     L.links.set({ reason: " 배관 번호 확인 " });
     await L.pairWith(L.links.get().picked);
     await tick();

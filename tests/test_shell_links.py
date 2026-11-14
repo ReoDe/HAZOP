@@ -186,7 +186,7 @@ class SaveRulesTest(Base):
             real(pid, [], "다른 프로세스", at)                  # 읽은 뒤·쓰기 전에 다른 프로세스가 씀
             return real(pid, ops, by, at, expect=expect, note=note)
         with mock.patch.object(project, "save_manual", sneak):
-            r = api_links.unlink(self.engine, a[0], a[1], v["ver"], confirm=api_links._impact_text(*self._impact(a)))
+            r = api_links.unlink(self.engine, a[0], a[1], v["ver"], base=v["point"]["base"], confirm=api_links._impact_text(*self._impact(a)))
         self.assertEqual(r["code"], "stale", r)
         self.assertEqual(project.load_manual(PID)["ops"], [])
 
@@ -202,8 +202,8 @@ class SaveRulesTest(Base):
         text_a = api_links._impact_text(*self._impact(a))
         text_b = api_links._impact_text(*self._impact(b))
         out = {}
-        ts = [threading.Thread(target=lambda: out.__setitem__("a", api_links.unlink(self.engine, a[0], a[1], va["ver"], confirm=text_a))),
-              threading.Thread(target=lambda: out.__setitem__("b", api_links.unlink(self.engine, b[0], b[1], vb["ver"], confirm=text_b)))]
+        ts = [threading.Thread(target=lambda: out.__setitem__("a", api_links.unlink(self.engine, a[0], a[1], va["ver"], base=va["point"]["base"], confirm=text_a))),
+              threading.Thread(target=lambda: out.__setitem__("b", api_links.unlink(self.engine, b[0], b[1], vb["ver"], base=vb["point"]["base"], confirm=text_b)))]
         for t in ts:
             t.start()
         for t in ts:
@@ -262,6 +262,148 @@ class StaleAndCacheTest(Base):
         r = ra.read(["links", a[0], a[1]], {"q": ["SNP-M-102"]})
         data = json.loads(r.body.decode("utf-8"))
         self.assertEqual(data["point"]["local_id"], a[1])
+
+
+class FingerprintPathTest(Base):
+    """B1 검토: 저장 길 전체에서 지문이 남고, 번호가 밀린 다시 추출을 따라가며, 옛 지정은 '확인 필요'로 보인다."""
+
+    def rename_soid(self, gid, local_id, new_soid):
+        """다시 추출로 그 연결점의 원본 번호만 바뀐 것처럼 graph.json을 고친다(라벨·자리는 그대로)."""
+        p = os.path.join(paths.output_root("graph"), gid, "graph.json")
+        with open(p, encoding="utf-8") as fh:
+            g = json.load(fh)
+        n = next(n for n in g["nodes"] if n.get("local_id") == local_id)
+        n["source_object_id"] = new_soid
+        with open(p, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(g, fh, ensure_ascii=False, indent=2)
+
+    def test_a_saved_pair_keeps_fingerprints_and_follows_a_renumbered_point(self):
+        a, b = self.linked_pair()
+        self.confirmed("unlink", a)
+        self.confirmed("pair", a, peer_graph_id=b[0], peer_local_id=b[1])
+        op = project.load_manual(PID)["ops"][0]
+        self.assertTrue(all(isinstance(e.get("fp"), dict) and e["fp"]["label"] for e in op["ends"]), op)
+        self.rename_soid(a[0], a[1], "renumbered-1")
+        v = self.view(a)
+        self.assertEqual((v["point"]["status"], v["point"]["origin"]), ("linked", "manual"), "같은 지문의 연결점 하나로 옮겨 붙는다")
+        self.assertEqual([(m["from"], m["to"]) for m in v["relocated"]], [(op["ends"][0]["source_object_id"], "renumbered-1")])
+        self.confirmed("unlink", b, reason="다음 저장")              # 다음 저장이 옮긴 것을 기록에 남긴다
+        doc = project.load_manual(PID)
+        self.assertEqual(doc["log"][-1]["note"]["relocated"][0]["to"], "renumbered-1")
+
+    def test_a_point_that_changed_is_not_reattached_and_shows_as_stale(self):
+        a, b = self.linked_pair()
+        self.confirmed("unlink", a)
+        self.confirmed("pair", a, peer_graph_id=b[0], peer_local_id=b[1])
+        p = os.path.join(paths.output_root("graph"), a[0], "graph.json")
+        with open(p, encoding="utf-8") as fh:
+            g = json.load(fh)
+        n = next(n for n in g["nodes"] if n.get("local_id") == a[1])
+        n["label_text"] = n["label_text"].replace("TO", "TO X")        # 같은 번호에 다른 연결점이 들어선 것처럼
+        with open(p, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(g, fh, ensure_ascii=False, indent=2)
+        v = self.view(a)
+        self.assertNotEqual(v["point"]["origin"], "manual")
+        self.assertTrue(v["stale"] and "바뀜" in v["stale"][0]["reason"], v["stale"])
+
+    def test_an_old_record_without_fingerprints_is_used_but_marked_for_checking(self):
+        a, b = self.linked_pair()
+        nums = {S101: "SNP-M-101", S102: "SNP-M-102"}
+        pg = self.pg()
+        sid = {(n["sheet"], n["local_id"]): n.get("source_object_id") for n in pg["nodes"] if n.get("local_id")}
+        project.save_manual(PID, [{"op_id": "sl-old", "op": "link", "by": "B", "at": "t", "reason": "",
+                                   "ends": [{"drawing_number": nums[a[0]], "source_object_id": sid[a]},
+                                            {"drawing_number": nums[b[0]], "source_object_id": sid[b]}]}], "B", "t")
+        p = self.view(a)["point"]
+        self.assertEqual((p["origin"], p["check"]), ("manual", "no_fingerprint"))
+
+    def test_candidates_carry_mismatch_warnings(self):
+        a, b = self.linked_pair()
+        v = self.view(a)
+        good = next(c for c in v["candidates"] if (c["graph_id"], c["local_id"]) == b)
+        self.assertEqual(good["warn"], [])
+        self.assertTrue(any(c["warn"] for c in v["candidates"]))
+
+    def test_the_chat_functions_refuse_without_version_and_fingerprint(self):
+        a, _b = self.linked_pair()
+        v = self.view(a)
+        for kw in ({"ver": None, "base": v["point"]["base"]}, {"ver": v["ver"], "base": None}):
+            r = api_links.unlink(self.engine, a[0], a[1], kw["ver"], base=kw["base"])
+            self.assertEqual(r["code"], "bad_args", r)
+        self.assertIsNone(project.load_manual(PID))
+
+
+def _cont(eid, soid, direction, to, line, at=None):
+    n = {"entity_id": eid, "kind": "continuation", "source_object_id": soid, "local_id": eid,
+         "attributes": {"direction": direction, "to_drawing": to, "line_no": line}, "label_text": "%s %s\n%s" % (direction.upper(), to, line)}
+    if at:
+        n["position"] = at
+    return n
+
+
+def _graph(gid, dn, nodes):
+    return {"graph_id": gid, "graph_version": "v-" + gid, "source": {"drawing_number": dn}, "nodes": nodes, "edges": [], "validation": {"status": "passed"}}
+
+
+class RenumberTest(unittest.TestCase):
+    """B1 검토 차단(재현 D:\\HAZOP-trials\\2026-11-14-review-b1-b2\\scripts\\repro_b1_renumber.py를 옮김): PDF 추출 ID는 순번이라
+    다시 추출해 번호가 밀리면, 번호만 보는 지정이 다른 연결점에 조용히 붙었다. 끝마다 연결점 지문을 남기고 다르면 붙이지 않는다."""
+
+    def setUp(self):
+        self.g101 = _graph("g101", "X-101", [_cont("n1", "pdf-p1-sym-0001", "to", "X-102", "L-1", [10, 10]),
+                                             _cont("n2", "pdf-p1-sym-0002", "to", "X-102", "L-2", [10, 50])])
+        self.g102 = _graph("g102", "X-102", [_cont("m1", "pdf-p1-sym-0001", "from", "X-101", "L-1X", [90, 10]),
+                                             _cont("m2", "pdf-p1-sym-0002", "from", "X-101", "L-2", [90, 50])])
+        ends = [project.end_ref(self.g101, self.g101["nodes"][0]), project.end_ref(self.g102, self.g102["nodes"][0])]
+        self.op = {"op_id": "sl-test", "op": "link", "by": "검토자", "at": "2026-11-14T00:00:00Z", "reason": "배관 번호 오독", "ends": ends}
+
+    def manual(self, graphs, ops):
+        links, skipped = project.match(graphs, ops)
+        return [l for l in links if l["origin"] == "manual"], skipped, links
+
+    def pairs(self, man):
+        return [(l["from"]["entity_id"], l["to"]["entity_id"]) for l in man]
+
+    def test_first_extraction_pairs_as_assigned(self):
+        man, skipped, _ = self.manual([self.g101, self.g102], [self.op])
+        self.assertEqual(self.pairs(man), [("n1", "m1")])
+        self.assertEqual(skipped, [])
+
+    def test_shifted_numbers_follow_the_same_point_and_say_so(self):
+        """앞에 연결점 하나가 더 잡혀 번호가 하나씩 밀림: 지문이 같은 연결점(옛 L-1, 같은 자리)이 하나뿐이면 그쪽으로 옮겨 붙인다."""
+        g = _graph("g101", "X-101", [_cont("k0", "pdf-p1-sym-0001", "to", "X-102", "L-9", [10, 90]),
+                                     _cont("k1", "pdf-p1-sym-0002", "to", "X-102", "L-1", [10, 10]),
+                                     _cont("k2", "pdf-p1-sym-0003", "to", "X-102", "L-2", [10, 50])])
+        moved = []
+        links, skipped = project.match([g, self.g102], [self.op], moved=moved)
+        man = [l for l in links if l["origin"] == "manual"]
+        self.assertEqual(self.pairs(man), [("k1", "m1")], "L-9 연결점에 조용히 붙으면 안 된다")
+        self.assertEqual(skipped, [])
+        self.assertEqual([(m["op_id"], m["from"], m["to"]) for m in moved], [("sl-test", "pdf-p1-sym-0001", "pdf-p1-sym-0002")])
+        pg = project.build("X", [g, self.g102], [self.op])
+        self.assertEqual(pg["manual_relocated"][0]["op_id"], "sl-test")
+
+    def test_a_changed_point_with_no_unique_match_is_stale_not_reattached(self):
+        g = _graph("g101", "X-101", [_cont("k0", "pdf-p1-sym-0001", "to", "X-102", "L-9", [10, 90]),
+                                     _cont("k2", "pdf-p1-sym-0003", "to", "X-102", "L-2", [10, 50])])
+        man, skipped, links = self.manual([g, self.g102], [self.op])
+        self.assertEqual(man, [])
+        self.assertEqual([s["op_id"] for s in skipped], ["sl-test"])
+        self.assertIn("바뀜", skipped[0]["reason"])
+        k0 = next(l for l in links if any((l.get(s) or {}).get("entity_id") == "k0" for s in ("from", "to")))
+        self.assertEqual(k0["origin"], "auto")
+
+    def test_an_old_assignment_without_fingerprints_still_applies_but_needs_checking(self):
+        old = dict(self.op, ends=[{"drawing_number": "X-101", "source_object_id": "pdf-p1-sym-0001"},
+                                  {"drawing_number": "X-102", "source_object_id": "pdf-p1-sym-0001"}])
+        man, skipped, _ = self.manual([self.g101, self.g102], [old])
+        self.assertEqual(self.pairs(man), [("n1", "m1")])
+        self.assertEqual(man[0].get("check"), "no_fingerprint")
+
+    def test_auto_links_do_not_change_shape(self):
+        _man, _s, links = self.manual([self.g101, self.g102], [])
+        self.assertTrue(all("check" not in l for l in links))
+        self.assertNotIn("manual_relocated", project.build("X", [self.g101, self.g102], []))
 
 
 if __name__ == "__main__":

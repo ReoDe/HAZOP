@@ -93,7 +93,9 @@ def _link_of(pg, n):
 
 
 def _end(n, nums):
-    return {"drawing_number": nums.get(n["sheet"]), "source_object_id": n.get("source_object_id")}
+    """지정 기록의 끝: 도면 번호·원본 번호와 연결점 지문(라벨·배관 번호·상대 도면·방향·자리). 다시 추출로 번호가 밀려도
+    project.match가 지문으로 같은 연결점을 찾거나, 못 찾으면 붙이지 않고 '오래된 지정'으로 돌린다(B1 검토 차단)."""
+    return project.end_ref({"graph_id": n["sheet"], "source": {"drawing_number": nums.get(n["sheet"])}}, n)
 
 
 def _name_of(n, nums):
@@ -138,7 +140,8 @@ def _point(pg, n, by_id, ops):
            "reason": link.get("reason"), "reason_text": project.REASONS.get(link.get("reason")) if link.get("reason") else None,
            "origin": link.get("origin"), "op": {k: op.get(k) for k in ("op_id", "op", "by", "at", "reason")} if op else None,
            "peer": {"graph_id": peer["sheet"], "local_id": peer.get("local_id"), "drawing_number": nums.get(peer["sheet"]),
-                    "label": _label(peer)} if peer else None}
+                    "label": _label(peer)} if peer else None,
+           "check": link.get("check")}         # no_fingerprint: 지문 없이 남은 옛 지정(번호만 보고 붙임, 사람이 확인해야 함)
     out["base"] = _sha([out["status"], (peer or {}).get("entity_id"), out["origin"], link.get("op_id")])
     return out
 
@@ -157,7 +160,11 @@ def _candidates(pg, n, by_id, q=None):
         peer = _peer_of(pg, c, by_id)
         row = {"graph_id": c["sheet"], "local_id": c["local_id"], "drawing_number": nums.get(c["sheet"]), "label": _label(c),
                "line_no": k["line_no"], "to_drawing": k["to_drawing"], "linked": peer is not None,
-               "peer_drawing": nums.get(peer["sheet"]) if peer else None}
+               "peer_drawing": nums.get(peer["sheet"]) if peer else None, "warn": []}
+        if project._dn(k["to_drawing"]) != my_dn:
+            row["warn"].append("상대 도면이 다름(%s를 가리킴)" % (k["to_drawing"] or "없음"))
+        if project._norm(k["line_no"]) != project._norm(me["line_no"]):
+            row["warn"].append("배관 번호가 다름(%s ≠ %s)" % (k["line_no"] or "없음", me["line_no"] or "없음"))
         text = " ".join(str(v or "") for v in (row["drawing_number"], row["line_no"], row["label"], row["to_drawing"])).casefold()
         if words and not all(w in text for w in words):
             continue
@@ -183,8 +190,13 @@ def _stale(pg, ops, drawing_number):
     return out
 
 
+def _relocated(pg, drawing_number):
+    dn = project._dn(drawing_number)
+    return [dict(m) for m in pg.get("manual_relocated") or [] if project._dn(m.get("drawing_number")) == dn]
+
+
 def view(engine, graph_id, local_id, q=None):
-    """연결점 카드: {ok, ver, point, candidates, more, stale}."""
+    """연결점 카드: {ok, ver, point, candidates, more, stale, relocated}. relocated: 다시 추출로 번호가 밀려 지문으로 옮겨 붙인 지정(이 도면)."""
     try:
         pid, pg = _pg(engine)
         ops, fp = _manual(pid)
@@ -196,7 +208,7 @@ def view(engine, graph_id, local_id, q=None):
     cands, total = _candidates(pg, n, by_id, q)
     point = _point(pg, n, by_id, ops)
     return {"ok": True, "graph_id": graph_id, "ver": _ver(fp, pg), "point": point, "candidates": cands, "more": max(0, total - len(cands)),
-            "stale": _stale(pg, ops, point["drawing_number"])}
+            "stale": _stale(pg, ops, point["drawing_number"]), "relocated": _relocated(pg, point["drawing_number"])}
 
 
 # ---------------------------------------------------------------- 쓰기
@@ -206,6 +218,24 @@ def _who(engine, by):
     if not by:
         raise Refused("bad_args", "검토자 이름을 먼저 설정에서 입력하세요. 지정한 사람으로 남습니다.")
     return by
+
+
+def _follow_moves(pg, ops):
+    """project.match가 지문으로 옮겨 붙인 끝을 기록에도 옮긴다(다음 저장 때 이력 note에 남김). → (새 ops, 옮긴 목록)."""
+    moves = {(m["op_id"], project._dn(m["drawing_number"]), m["from"]): m["to"] for m in pg.get("manual_relocated") or []}
+    if not moves:
+        return ops, []
+    out, done = [], []
+    for o in ops:
+        ends = []
+        for e in o.get("ends") or []:
+            to = moves.get((o.get("op_id"), project._dn(e.get("drawing_number")), e.get("source_object_id")))
+            if to:
+                done.append({"op_id": o["op_id"], "drawing_number": e.get("drawing_number"), "from": e.get("source_object_id"), "to": to})
+                e = dict(e, source_object_id=to)
+            ends.append(e)
+        out.append(dict(o, ends=ends))
+    return out, done
 
 
 def _without(ops, keys):
@@ -229,6 +259,8 @@ def _impact_text(pg, by_id, touched, breaking):
 def _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done):
     """plan(pg, n, by_id, ops, nums) → (새 ops, 짝이 바뀌는 노드들, 풀리는 짝, log 설명). done(설명) → 알림 글."""
     who = _who(engine, by)
+    if not ver or not base:          # 채팅 길도 같다: 먼저 view로 읽고 그 판·지문을 함께 보낸다
+        raise Refused("bad_args", "읽은 판(ver)과 연결점 지문(base)을 함께 보내야 합니다. 먼저 연결점을 읽으세요.")
     pid = engine.project_id()
     with sheet_refresh.lock("drawing-links:" + str(pid)):
         pid, pg = _pg(engine)
@@ -236,10 +268,13 @@ def _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done):
         if not ver or ver != _ver(fp, pg):
             raise Refused("stale", "화면을 연 뒤 도면 연결이나 도면이 바뀌었습니다. 카드를 다시 열었으니 확인하고 다시 하세요.")
         n, by_id = _entity(pg, graph_id, local_id)
-        if base and base != _point(pg, n, by_id, ops)["base"]:
+        if base != _point(pg, n, by_id, ops)["base"]:
             raise Refused("stale", "이 연결점의 짝이 그 사이 바뀌었습니다. 카드를 다시 열었으니 확인하고 다시 하세요.")
         nums = _numbers(pg)
+        ops, moved = _follow_moves(pg, ops)
         new_ops, touched, breaking, note = plan(pg, n, by_id, ops, nums)
+        if moved:
+            note = dict(note, relocated=moved)
         text = _impact_text(pg, by_id, touched, breaking)
         if text and confirm != text:
             raise Refused("needs_confirm", text)
