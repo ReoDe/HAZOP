@@ -74,6 +74,7 @@ PARAMS = {
     "attach_tol": 2.5,           # 선 끝이 기호 경계에 닿음
     "end_tol": 1.5,              # 선 끝끼리·선 끝과 선 중간이 만남
     "crossing_gap_max": 12.0,    # 엇갈림 끊김: 다른 선 양쪽에서 마주 보는 두 선 끝 사이 거리 상한(pt)
+    "crossing_width_ratio": 2.0,  # 네 갈래 교차에서 곧게 지나는 두 선의 굵기 비가 이 이상이면 잇지 않는다
     "inner_tol_ratio": 0.1,      # 기호 안 선 흡수 여유 = 몸체 긴 변 × 비율 (아래 범위로 자름)
     "inner_tol_min": 2.0,
     "inner_tol_max": 8.0,
@@ -325,6 +326,7 @@ def load_page(path, page=0):
                           "fill_white": _is_white(obj.get("non_stroking_color")),
                           "stroke_white": _is_white(obj.get("stroking_color")),
                           "dash": _dash(obj.get("dash")), "subpaths": _subpaths(obj),
+                          "width": None if obj.get("linewidth") is None else _num(obj["linewidth"]),
                           "fine": symbols.sample_subpaths(obj)})  # 기호 사전 서명용: 곡선을 표본점으로 편 점
     return page_count, width, height, words, prims
 
@@ -397,7 +399,7 @@ def _classify_primitives(width, height, prims, prm):
                 if not pieces:
                     invisible.append(item["id"])
             elif len(pts) >= 2:
-                polys.append(item)
+                polys.append(dict(item, width=pr.get("width")))
 
     # 검은 채움(화살촉·점선 조각·검은 몸체)과 같은 도형의 외곽선은 채움 쪽으로 본다
     def twin(a, b):
@@ -695,10 +697,63 @@ def _crossing_gaps(pieces, free, prm):
     return crossed, pairs
 
 
+def _arm_dir(pts, k):
+    """꺾은선 pts의 끝 k(0 = 처음, 1 = 마지막)에서 선 안쪽으로 향하는 단위 벡터. 길이가 없으면 None."""
+    seq = pts if k == 0 else pts[::-1]
+    for q in seq[1:]:
+        dx, dy = q[0] - seq[0][0], q[1] - seq[0][1]
+        L = math.hypot(dx, dy)
+        if L > 1e-6:
+            return dx / L, dy / L
+    return None
+
+
+def _width_crossing(members, pieces, prm):
+    """한 자리에 모인 선 끝 무리가 굵기가 뚜렷이 다른 두 선의 네 갈래 교차인지 본다. 끝들의 방향이 네 갈래이고 마주 보는
+    두 갈래씩 두 선으로 나뉘며, 한 선 안의 굵기는 같고 두 선의 굵기 비가 crossing_width_ratio 이상이면 교차다(APR1400
+    072쪽: 0.13pt 방 경계선이 1.08pt 덕트를 가로지른다. 경계선은 같은 자리에 두 번 그려 끝이 겹치기도 한다). 배관 분기는
+    같은 굵기로 그리므로 굵기가 다른 두 선은 이 자리에서 잇지 않는다. → 교차면 두 선의 무리 안 순번 목록, 아니면 None."""
+    if len(members) < 4:
+        return None
+    dirs = [_arm_dir(pieces[i]["pts"], k) for i, k, _ in members]
+    widths = [pieces[i].get("width") for i, _, _ in members]
+    if any(d is None for d in dirs) or any(not w for w in widths):
+        return None
+    arms = []  # 같은 방향 끝 순번 목록
+    for a, d in enumerate(dirs):
+        arm = next((m for m in arms if d[0] * dirs[m[0]][0] + d[1] * dirs[m[0]][1] > 0.97), None)
+        if arm is None:
+            arms.append([a])
+        else:
+            arm.append(a)
+    if len(arms) != 4:
+        return None
+
+    def opposite(p, q):
+        u, v = dirs[p[0]], dirs[q[0]]
+        return u[0] * v[0] + u[1] * v[1] < -0.97
+    mate = [j for j in (1, 2, 3) if opposite(arms[0], arms[j])]
+    if len(mate) != 1:
+        return None
+    rest = [arms[j] for j in (1, 2, 3) if j != mate[0]]
+    if not opposite(*rest):
+        return None
+    lines = [arms[0] + arms[mate[0]], rest[0] + rest[1]]
+    line_w = []
+    for line in lines:
+        ws = [widths[a] for a in line]
+        if max(ws) > 1.25 * min(ws):
+            return None
+        line_w.append(min(ws))
+    if max(line_w) < prm["crossing_width_ratio"] * min(line_w):
+        return None
+    return lines
+
+
 def _build_solid(syms, polys, markers, prm, bridges=()):
     """→ (tees [(x, y)], chains [{pts, ends:[(vertex, point, basis)], evidence}])."""
     # 선 끝 분류
-    pieces = [{"pts": list(p["pts"]), "id": p["id"]} for p in polys]
+    pieces = [{"pts": list(p["pts"]), "id": p["id"], "width": p.get("width")} for p in polys]
     ends = []  # (piece index, k, point)
     for i, pc in enumerate(pieces):
         ends += [(i, 0, pc["pts"][0]), (i, 1, pc["pts"][-1])]
@@ -748,7 +803,7 @@ def _build_solid(syms, polys, markers, prm, bridges=()):
             for pts in out:
                 if len(pts) >= 2 and math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1]) > 0 or len(pts) > 2:
                     remap[j].append(len(new_pieces))
-                    new_pieces.append({"pts": pts, "id": pc["id"]})
+                    new_pieces.append({"pts": pts, "id": pc["id"], "width": pc["width"]})
         # 붙음 정보 다시 매핑: 원래 첫 끝 → 첫 조각 시작, 원래 끝 → 마지막 조각 끝
         new_att = {}
         for (i, k), v in att.items():
@@ -771,15 +826,23 @@ def _build_solid(syms, polys, markers, prm, bridges=()):
         members = [pend[a] for a in g]
         cx = sum(m[2][0] for m in members) / len(members)
         cy = sum(m[2][1] for m in members) / len(members)
-        if len(members) >= 3:
-            v = ("tee", len(tees))
+        through = _width_crossing(members, pieces, prm)
+        if through:  # 굵기가 다른 두 선의 네 갈래 교차: 분기가 아니라 각 선이 곧게 지나간다(겹쳐 그린 선은 제 분기점)
+            parts = []
+            for n, line in enumerate(through):
+                if len(line) == 2:
+                    parts.append(([members[a] for a in line], ("pass", (g[0], n))))
+                else:
+                    parts.append(([members[a] for a in line], ("tee", len(tees))))
+                    tees.append((cx, cy))
+        elif len(members) >= 3:
+            parts = [(members, ("tee", len(tees)))]
             tees.append((cx, cy))
-        elif len(members) == 2:
-            v = ("pass", g[0])
         else:
-            v = ("free", g[0])
-        for m in members:
-            vertex[(m[0], m[1])] = (v, (cx, cy), "pdf_path_junction")
+            parts = [(members, ("pass" if len(members) == 2 else "free", g[0]))]
+        for part, v in parts:
+            for m in part:
+                vertex[(m[0], m[1])] = (v, (cx, cy), "pdf_path_junction")
     for (i, k), (s, basis) in att.items():
         pt = pieces[i]["pts"][0] if k == 0 else pieces[i]["pts"][-1]
         vertex[(i, k)] = (("sym", s), pt, basis)

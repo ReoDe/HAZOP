@@ -303,9 +303,9 @@ class SampleTest(unittest.TestCase):
 HAS_PDFPLUMBER = importlib.util.find_spec("pdfplumber") is not None
 
 
-def prim(pts, closed=False, fill=False, white=False, curved=False, ext=None):
+def prim(pts, closed=False, fill=False, white=False, curved=False, ext=None, width=None):
     return {"fill": fill, "stroke": not fill, "fill_white": fill and white, "stroke_white": False,
-            "subpaths": [(list(pts), closed, list(ext or pts), curved)]}
+            "subpaths": [(list(pts), closed, list(ext or pts), curved)], "width": width}
 
 
 def rect(x0, y0, x1, y1, **kw):
@@ -318,8 +318,8 @@ def circle(cx, cy, r):
     return prim(pts, closed=True, curved=True, ext=ext)
 
 
-def line(*pts):
-    return prim(pts)
+def line(*pts, width=None):
+    return prim(pts, width=width)
 
 
 def word(text, x0, top, size=6.0):
@@ -384,6 +384,19 @@ class PdfVectorRuleTest(unittest.TestCase):
                        line((140, 130), (300, 130)), line((220, 130), (220, 250))])
         self.assertEqual([n["kind"] for n in ext["nodes"]].count("tee"), 1)
         self.assertEqual(len(ext["relations"]), 3)
+
+    def test_four_way_junction_of_lines_with_different_widths_is_crossing(self):
+        # APR1400 072쪽: 가는 방 경계선이 굵은 덕트 위에서 끊겨 네 갈래로 모여도 분기가 아니다. 굵기가 같으면 분기다
+        def run(thin):
+            ext = pdf_run([rect(100, 200, 120, 220), rect(300, 200, 320, 220), rect(200, 100, 220, 120),
+                           rect(200, 300, 220, 320), line((120, 210), (300, 210), width=1.08),
+                           line((210, 120), (210, 210), width=thin), line((210, 210), (210, 300), width=thin)])
+            ids = {n["local_id"]: n["geometry"]["x"] for n in ext["nodes"] if n["kind"] != "tee"}
+            ends = sorted(tuple(sorted(ids.get(e["node_local_id"], -1) for e in r["endpoints"]))
+                          for r in ext["relations"])
+            return [n["kind"] for n in ext["nodes"]].count("tee"), ends
+        self.assertEqual(run(1.08)[0], 1)
+        self.assertEqual(run(0.13), (0, [(100, 300), (200, 200)]))
 
     def test_dashed_signal_measurement_and_isa_letters(self):
         dashes = [rect(x, 99.65, x + 4, 100.35, fill=True) for x in range(116, 184, 6)]
