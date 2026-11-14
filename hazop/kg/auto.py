@@ -92,11 +92,45 @@ def project_ids(graph_root, doc_root):
     return sorted(i for i in ids if i)
 
 
+_GRAPHS = {}   # graph.json 경로 -> ((바뀐 시각 ns, 크기), 읽은 dict). 다시 만들기마다 143쪽을 다시 읽지 않으려는 것(읽기만 0.7초)
+
+
+def forget_graphs():
+    """도면 그래프 읽기 캐시를 비운다."""
+    _GRAPHS.clear()
+
+
+def _scan_graphs(root):
+    """_scan(root, "graph.json")과 같은 결과. 바뀐 시각·크기가 같은 파일은 앞서 읽은 dict를 그대로 돌려준다(graph_head와 같은 열쇠).
+    돌려준 dict는 캐시와 같은 객체라 부르는 쪽은 고치지 않는다(지식그래프 빌드는 입력을 바꾸지 않는다: 시험이 지킨다)."""
+    out, alive = [], set()
+    for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        p = os.path.join(root, name, "graph.json")
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        key = (st.st_mtime_ns, st.st_size)
+        hit = _GRAPHS.get(p)
+        if hit is None or hit[0] != key:
+            try:
+                hit = (key, _read(p))
+            except (OSError, ValueError):
+                _GRAPHS.pop(p, None)
+                continue
+            _GRAPHS[p] = hit
+        alive.add(p)
+        out.append((p, hit[1]))
+    for p in [x for x in _GRAPHS if os.path.dirname(os.path.dirname(x)) == root and x not in alive]:
+        _GRAPHS.pop(p, None)   # 지운 도면은 잊는다
+    return out
+
+
 def project_graphs(project_id, graph_root):
     """(graph 목록, notes). 같은 graph_id는 graph.json 수정 시각이 가장 늦은 것 하나."""
     from hazop.graph import sources
     cands, seen, notes = [], {}, []
-    for path, g in _scan(graph_root, "graph.json"):
+    for path, g in _scan_graphs(graph_root):
         if g.get("project_id") != project_id:
             continue
         gid = g.get("graph_id")
