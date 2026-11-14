@@ -184,22 +184,44 @@ def _near(sym_box, node_box):
     return math.dist(c, _center(node_box)) <= NEAR
 
 
+def _claim(sym, node):
+    """노드가 정답 기호에 대해 주장하는 것: 0 같은 종류, 1 다른 종류, 2 종류 없음."""
+    if same_kind(node.get("kind"), sym["kind"]):
+        return 0
+    return 1 if node.get("kind") is not None else 2
+
+
 def match_symbols(symbols, nodes):
-    """정답 기호 ↔ 추출 노드 하나씩 짝. 종류가 있는 노드와 먼저 짝짓고, 남은 기호를 미분류 노드와 짝짓는다.
-    → {정답 id: 노드}."""
+    """정답 기호 ↔ 추출 노드 하나씩 짝. 같은 종류라고 읽은 노드와 먼저, 다른 종류라고 읽은 노드와 다음, 미분류 노드와
+    마지막에 짝짓고, 같은 차례 안에서는 가까운 순서로 짝짓는다. 같은 종류를 먼저 보는 것은 기호를 옳게 읽은 노드가 그
+    기호의 몸통 아닌 조각(조작기·표시 글자)에 짝을 뺏기지 않게 하려는 것이고, 다른 종류를 미분류보다 먼저 보는 것은
+    종류를 잘못 붙인 노드 하나가 놓침과 오검출로 두 번 세지지 않게 하려는 것이다. → {정답 id: 노드}."""
     out, used = {}, set()
-    boxes = {n["local_id"]: _bbox(n) for n in nodes}
-    for classified in (True, False):
-        pool = [n for n in nodes if boxes[n["local_id"]] and n.get("kind") != "tee"
-                and (n.get("kind") is not None) == classified]
-        cand = sorted((math.dist(_center(s["bbox"]), _center(boxes[n["local_id"]])), s["id"], n["local_id"])
-                      for s in symbols if s["id"] not in out
-                      for n in pool if _near(s["bbox"], boxes[n["local_id"]]))
-        by_id = {n["local_id"]: n for n in pool}
-        for _, sid, nid in cand:
-            if sid not in out and nid not in used:
-                out[sid] = by_id[nid]
-                used.add(nid)
+    pool = {n["local_id"]: (n, _bbox(n)) for n in nodes if _bbox(n) and n.get("kind") != "tee"}
+    cand = sorted((_claim(s, n), math.dist(_center(s["bbox"]), _center(b)), s["id"], nid)
+                  for s in symbols for nid, (n, b) in pool.items() if _near(s["bbox"], b))
+    for _, _, sid, nid in cand:
+        if sid not in out and nid not in used:
+            out[sid] = pool[nid][0]
+            used.add(nid)
+    return out
+
+
+def symbol_pieces(symbols, nodes, m):
+    """짝 없는 노드 가운데 상자가 통째로 정답 기호 상자(MARGIN만큼 넓힘) 안에 드는 것 → {노드 id: 정답 id}(상자가
+    가장 작은 기호). 추출기가 기호 하나를 여러 노드로 나눠 읽으면(조절 밸브 = 다이어프램 + 몸통, 살포기 = 분사구 넷)
+    배관이 짝지은 조각이 아닌 다른 조각에 닿는다. 연결은 그 조각도 같은 기호로 보고 센다. 티는 분기점이라 넣지 않는다."""
+    paired = {n["local_id"] for n in m.values()}
+    by_area = sorted(symbols, key=lambda s: ((s["bbox"][2] - s["bbox"][0]) * (s["bbox"][3] - s["bbox"][1]), s["id"]))
+    out = {}
+    for n in nodes:
+        b = _bbox(n)
+        if b is None or n["local_id"] in paired or n.get("kind") == "tee":
+            continue
+        s = next((s for s in by_area if s["bbox"][0] - MARGIN <= b[0] and s["bbox"][1] - MARGIN <= b[1]
+                  and b[2] <= s["bbox"][2] + MARGIN and b[3] <= s["bbox"][3] + MARGIN), None)
+        if s is not None:
+            out[n["local_id"]] = s["id"]
     return out
 
 
@@ -249,15 +271,17 @@ def _adjacency(ex):
     return adj
 
 
-def extracted_pairs(ex, m):
-    """짝지은 노드끼리, 짝 없는 노드(티·미분류 등)만 지나서 닿는 쌍. → (쌍 집합 {frozenset(정답 id)},
+def extracted_pairs(ex, m, pieces=None):
+    """짝지은 노드끼리, 짝 없는 노드(티·미분류 등)만 지나서 닿는 쌍. pieces({노드 id: 정답 id})의 노드는 그 기호의
+    조각이라 지나가지 않고 그 기호에 닿은 것으로 본다. → (쌍 집합 {frozenset(정답 id)},
     방향 쌍 집합 {(앞 id, 뒤 id)}: 지난 관계가 모두 흐름 방향과 같은 쪽인 경로가 있을 때)."""
     adj = _adjacency(ex)
-    key_of = {n["local_id"]: sid for sid, n in m.items()}
+    key_of = dict(pieces or {})
+    key_of.update((n["local_id"], sid) for sid, n in m.items())
     pairs, directed = set(), set()
-    for sid, n in m.items():
-        seen = {(n["local_id"], True)}
-        stack = [(n["local_id"], True)]
+    for start, sid in key_of.items():
+        seen = {(start, True)}
+        stack = [(start, True)]
         while stack:
             cur, fwd = stack.pop()
             for nxt, f in adj.get(cur, ()):
@@ -316,7 +340,9 @@ def process_connections(key):
 def score_connection(key, ex, m):
     kind = {s["id"]: s["kind"] for s in key["symbols"]}
     pm = {sid: n for sid, n in m.items() if kind[sid] not in INSTRUMENT_KINDS}
-    pairs, directed = extracted_pairs(ex, pm)
+    pieces = {nid: sid for nid, sid in symbol_pieces(key["symbols"], ex["nodes"], m).items()
+              if kind[sid] not in INSTRUMENT_KINDS}
+    pairs, directed = extracted_pairs(ex, pm, pieces)
     conns = process_connections(key)
     want = {frozenset((c["a"], c["b"])) for c in conns}
     p = _count(len(want & pairs), len(want), len(pairs - want))

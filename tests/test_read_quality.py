@@ -53,6 +53,18 @@ class KindTest(unittest.TestCase):
         s = rq.score_page(k, e)["kind"]
         self.assertEqual((s["correct"], s["false_pos"]), (1, 0))
 
+    def test_same_kind_body_wins_over_nearer_part_read_as_another_kind(self):
+        k = key([sym(1, "manual_valve", (100, 90, 110, 110))])
+        e = ex([node(1, "orifice", (102, 92, 108, 98)), node(2, "manual_valve", (101, 104, 109, 109))])
+        s = rq.score_page(k, e)["kind"]
+        self.assertEqual((s["correct"], s["false_pos"]), (1, 1))
+
+    def test_wrong_kind_is_one_miss_not_also_a_false_positive(self):
+        k = key([sym(1, "manual_valve", (100, 90, 110, 110))])
+        e = ex([node(1, None, (102, 97, 108, 103)), node(2, "check_valve", (101, 104, 109, 109))])
+        s = rq.score_page(k, e)["kind"]
+        self.assertEqual((s["correct"], s["false_pos"]), (0, 0))
+
     def test_far_node_does_not_match(self):
         k = key([sym(1, "manual_valve", (100, 100, 110, 108))])
         e = ex([node(1, "manual_valve", (130, 100, 140, 108))])
@@ -115,6 +127,27 @@ class ConnectionTest(unittest.TestCase):
         self.assertEqual(s["detail"]["pairs"], {"correct": 2, "units": 2, "false_pos": 1})
         self.assertEqual(s["detail"]["flows"], {"correct": 0, "units": 1, "false_pos": 0})
         self.assertEqual((s["correct"], s["units"], s["false_pos"]), (2, 3, 1))
+
+    def test_pipe_reaching_another_piece_of_a_split_symbol_connects_to_it(self):
+        k = key([sym(1, "control_valve", (100, 90, 110, 110)), sym(2, "check_valve", (200, 104, 210, 110)),
+                 sym(3, "pump", (300, 90, 330, 120))],
+                connections=[{"a": "s001", "b": "s002", "flow": None}, {"a": "s001", "b": "s003", "flow": None}])
+        for dome_kind in (None, "pipe_cap"):
+            e = ex([node(1, dome_kind, (102, 92, 108, 98)), node(2, None, (101, 104, 109, 109)),
+                    node(3, "check_valve", (200, 104, 210, 110)), node(4, "pump", (300, 90, 330, 120))],
+                   [rel(1, "n3", "n2"), rel(2, "n2", "n4")])
+            s = rq.score_page(k, e)["connection"]["detail"]["pairs"]
+            self.assertEqual(s, {"correct": 2, "units": 2, "false_pos": 0}, dome_kind)
+
+    def test_node_sticking_out_of_the_symbol_box_is_not_a_piece(self):
+        k = key([sym(1, "heat_exchanger", (100, 100, 130, 110)), sym(2, "check_valve", (200, 104, 210, 110)),
+                 sym(3, "pump", (300, 90, 330, 120))],
+                connections=[{"a": "s002", "b": "s003", "flow": None}])
+        e = ex([node(1, "heat_exchanger", (100, 100, 130, 110)), node(2, None, (95, 75, 145, 135)),
+                node(3, "check_valve", (200, 104, 210, 110)), node(4, "pump", (300, 90, 330, 120))],
+               [rel(1, "n3", "n2"), rel(2, "n2", "n4")])
+        s = rq.score_page(k, e)["connection"]["detail"]["pairs"]
+        self.assertEqual(s, {"correct": 1, "units": 1, "false_pos": 0})
 
     def test_pairs_with_instruments_are_not_units(self):
         k = key([sym(1, "manual_valve", (100, 100, 110, 108)), sym(2, "indicator", (200, 80, 220, 100)),
