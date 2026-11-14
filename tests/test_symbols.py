@@ -1135,6 +1135,18 @@ class ActuatorMergeTest(unittest.TestCase):
         self.assertIn("actuator_merged", reasons)
         self.assertFalse([u for u in ex["validation"]["unknowns"] if u["check"] == "actuated_valve_pending"])
 
+    def test_operator_on_neighbour_stem_does_not_hold_manual_valve(self):
+        # APR1400 128쪽: 전동 밸브 바로 옆 수동 게이트 밸브. 구동부는 곧은 축으로 옆 밸브에 이어져 그 밸브 것이니, 거리만
+        # 가깝다고 수동 밸브의 종류를 보류하지 않는다
+        second = [(112, 100), (118, 103), (118, 100), (112, 103), (112, 100)]
+        prims = [prim(GATE, True), prim(second, True), prim([(0, 101.5), (100, 101.5)], False),
+                 prim([(106, 101.5), (112, 101.5)], False), prim([(118, 101.5), (200, 101.5)], False),
+                 ring(103, 94, 1.85), prim([(103, 95.85), (103, 101.5)], False)]
+        a = pdf_vector.analyze(400, 300, [word("M", 102.4, 93.0, 2.0)], prims)
+        ex = pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+        self.assertEqual(sorted(n["kind"] for n in ex["nodes"] if n["category"] == "valve"),
+                         ["manual_valve", "motor_operated_valve"])
+
     def test_valve_number_circle_becomes_evidence(self):
         ex = self.run_page([ring(90, 88, 4.5), prim([(93.2, 91.2), (99.6, 99.6)], False)], [word("302", 87.3, 86.5, 3.0)])
         self.assertTrue(any(n["evidence"].get("ident_number") == "302" for n in ex["nodes"]))

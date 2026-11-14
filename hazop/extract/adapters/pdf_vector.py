@@ -2255,7 +2255,9 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                     kind = entry.kind
                     symbol_attrs = {k: v for k, v in sorted(hit.attributes.items()) if k in rules.REGISTRY.properties}
                     reach = ACTUATOR_REACH_RATIO * max(_w(s.bbox), _h(s.bbox))
-                    if kind == "manual_valve" and any(_box_gap(a.bbox, s.bbox) <= reach for a in actuators):
+                    # 곧은 축으로 다른 밸브에 이어진 구동부는 그 밸브 것이다(APR1400 128쪽 MOV 009 옆 수동 밸브)
+                    if kind == "manual_valve" and any(_box_gap(a.bbox, s.bbox) <= reach and plan_into.get(id(a), s) is s
+                                                      for a in actuators):
                         kind, valve_body = None, True  # 몸통만으로는 수동인지 모른다. 구동부를 밸브에 합치는 단계(S5) 전에는 정하지 않는다
                         _issue(unknowns, "actuated_valve_pending", "구동부 기호가 붙은 밸브 몸통: 구동 방식은 아직 정하지 않음",
                                sid, local_id, "kind")
