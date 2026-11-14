@@ -595,16 +595,18 @@ def _fingerprint(*paths_):
 # 화면에 보이는 버전. 옛 창(hazop.app.main_window)의 APP_VERSION과 같은 값이다. 값을 읽으려고 그 모듈을 불러오면 옛 화면 코드 전체가 읽혀 열기가 2초 넘게 느려지므로 여기에 둔다.
 APP_VERSION = "0.2.0"
 
-SCAN_FORMATS = ("raster_scan_pdf", "png", "jpeg")
+SCAN_FORMATS = ("raster_scan_pdf", "png", "jpeg")      # 옛 판의 스캔 추출 결과(source.format). 지금은 format이 "raster"이고 입력 종류는 source.scan_input이다
+SCAN_INPUTS = ("pdf", "png", "jpeg")
 
 
 def scan_info(extraction):
     """스캔 도면이면 {"dpi": 정수 또는 None, "low_resolution": 해상도 안내 글 또는 None}, 아니면 None.
-    스캔은 extraction.json의 source.format이 raster_scan_pdf·png·jpeg이거나 coordinate_system.svg_alignment.source가 scan_image인 것이다(HZ-PLN-23).
+    스캔은 extraction.json의 source.scan_input이 pdf·png·jpeg이거나 coordinate_system.svg_alignment.source가 scan_image인 것이다(HZ-PLN-23. 옛 판은 source.format이 raster_scan_pdf·png·jpeg).
     dpi는 run.settings.scale.dpi, 안내 글은 validation.unknowns에서 check가 low_resolution인 것의 reason이다."""
     src = (extraction.get("source") or {})
     align = ((extraction.get("coordinate_system") or {}).get("svg_alignment") or {})
-    if str(src.get("format") or "").lower() not in SCAN_FORMATS and align.get("source") != "scan_image":
+    if (str(src.get("scan_input") or "").lower() not in SCAN_INPUTS and str(src.get("format") or "").lower() not in SCAN_FORMATS
+            and align.get("source") != "scan_image"):
         return None
     dpi = ((((extraction.get("run") or {}).get("settings") or {}).get("scale")) or {}).get("dpi")
     low = next((u.get("reason") for u in ((extraction.get("validation") or {}).get("unknowns") or []) if u.get("check") == "low_resolution"), None)

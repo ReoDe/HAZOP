@@ -280,6 +280,10 @@ class ReadApiTest(EngineBase):
         for fmt in ("raster_scan_pdf", "png", "jpeg"):
             ex = {"source": {"format": fmt}, "run": {"settings": {"scale": {"dpi": 199.6}}}, "validation": {"unknowns": [{"check": "scan_input", "reason": "x"}, low]}}
             self.assertEqual(api.scan_info(ex), {"dpi": 200, "low_resolution": low["reason"]}, fmt)
+        for scan_input in ("pdf", "png", "jpeg"):      # 지금 판: format은 raster, 입력 종류는 scan_input
+            ex = {"source": {"format": "raster", "scan_input": scan_input}, "run": {"settings": {"scale": {"dpi": 300}}}, "validation": {"unknowns": []}}
+            self.assertEqual(api.scan_info(ex), {"dpi": 300, "low_resolution": None}, scan_input)
+        self.assertIsNone(api.scan_info({"source": {"format": "raster_png"}}), "W4 래스터 PNG 추출은 스캔 읽기가 아니다")
         by_image = {"source": {"format": "unknown"}, "coordinate_system": {"svg_alignment": {"source": "scan_image"}}}
         self.assertEqual(api.scan_info(by_image), {"dpi": None, "low_resolution": None}, "해상도 기록이 없으면 dpi는 비운다")
 
