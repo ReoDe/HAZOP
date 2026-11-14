@@ -1123,12 +1123,12 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 282,
-  "seconds": 221,
+  "seconds": 432,
   "tag_exact": 948,
   "tag_not_in_text": 46,
-  "tagged": 3175,
+  "tagged": 3283,
   "unclassified": 6933,
-  "unknowns": 54370,
+  "unknowns": 54262,
   "valve_number_closer_other": 0
  }
 }
