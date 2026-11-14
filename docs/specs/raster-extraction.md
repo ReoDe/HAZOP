@@ -1,6 +1,6 @@
 ---
 doc_id: HZ-PLN-23
-rev: 2
+rev: 3
 status: review
 author: A19 스캔 읽기 세션(2026-11-14)
 reviewed: —
@@ -11,7 +11,7 @@ approved: —
 
 [INTENT §2·§3.2·§6](../../INTENT.md) · [정보 추출](extraction.md)(HZ-PLN-04) · [자료 등록](registration.md)(HZ-PLN-03) · 조사 보고서 [P&ID 인식 방법 조사](../units/2026-11-13-drawing-knowledge/evidence/pid-recognition-survey.md) §스캔 · 앞선 구현 기록 [W4 래스터](../units/2026-11-05-input-adapter/evidence/w4-raster.md)·[W5 열화 시험](../units/2026-11-05-input-adapter/evidence/w5-degradation.md) · 구현 코드 `hazop/extract/adapters/raster*.py`
 
-- 작성일 2026-11-14, rev 1 2026-11-14(첫 구현 뒤 OCR 두 배율 읽기와 첫 측정값을 반영), rev 2 2026-11-14(앱 등록·추출 연결, 묶음 크기 측정). 상태는 **규격 초안**입니다. 완료 목록 2의 A19를 맡은 세션이 씁니다.
+- 작성일 2026-11-14, rev 1 2026-11-14(첫 구현 뒤 OCR 두 배율 읽기와 첫 측정값을 반영), rev 2 2026-11-14(앱 등록·추출 연결, 묶음 크기 측정), rev 3 2026-11-14(검토 반영: 하위 프로세스 경계, 크기 상한, 기울기 되돌림, 스캔 근거). 상태는 **규격 초안**입니다. 완료 목록 2의 A19를 맡은 세션이 씁니다.
 - 이 문서는 스캔 PDF와 PNG·JPG 도면을 읽는 규칙을 정합니다. 벡터 PDF 읽기 규칙은 [정보 추출](extraction.md)에 있고, 이 문서는 그 뒤 단계를 함께 씁니다.
 - 수치에는 어느 실행에서 잰 값인지 붙입니다. 아직 재지 않은 값은 '추정'이라고 적습니다.
 
@@ -56,7 +56,8 @@ INTENT §2는 스캔 이미지(스캔 PDF, PNG·JPG) 도면도 받되, 벡터 PD
 근거: W5 열화 시험에서 SNP PNG(약 198dpi)는 품질 하한을 넘었지만, 75%로 줄인 그림(약 149dpi)은 6장 모두 하한 아래였습니다([W5](../units/2026-11-05-input-adapter/evidence/w5-degradation.md) §2, 2026-11-06 측정). 200dpi 경계는 이 두 점 사이의 값이라 추정입니다.
 
 - 600dpi를 넘는 입력은 400dpi로 줄여 읽습니다. 처리 시간과 메모리 때문이며(5100×3300 쪽이 300dpi에서 약 17MP), 지금 문턱으로는 400dpi 위에서 얻는 것이 없다고 봅니다(추정).
-- 픽셀 상한(50MP)과 파일 상한(100MB)은 W4 그대로입니다.
+- 파일 상한은 100MB(W4 그대로)이고, 파일 전체를 읽기 전에 크기로 봅니다. 픽셀 상한은 80MP입니다(rev 3. A1 도면을 300dpi로 스캔한 쪽 약 70MP를 받으려고 W4의 50MP에서 올림).
+- 스캔 PDF는 쪽을 그리기 전에 쪽 크기와 dpi로 픽셀 수를 셈합니다. 80MP를 넘으면 넘지 않는 dpi로 낮춰 그리고, 그 값이 150dpi보다 낮으면 그 쪽을 읽지 않습니다(`raster_scan.render_dpi`). 그림 크기를 크게 적은 작은 PDF가 수 GB를 그리지 않게 하려는 것입니다.
 
 ## 3. 처리 순서
 
@@ -66,7 +67,7 @@ INTENT §2는 스캔 이미지(스캔 PDF, PNG·JPG) 도면도 받되, 벡터 PD
 ```
 
 1. **쪽 그림 얻기.** 스캔 PDF는 `pypdfium2`(이미 배포본에 있는 PDF 의존성)로 쪽을 회색조로 그립니다. 그리는 해상도는 §2.2에서 잰 원래 해상도(400dpi 상한)로 해서 다시 표본화하지 않게 합니다. PNG·JPG는 그대로 읽습니다.
-2. **기울기 보정.** 긴 가로·세로 선의 각도로 기울기를 잽니다. 0.05°~5° 사이이면 그 각만큼 돌려 바로잡고, 5°를 넘으면 돌리지 않고 미확인 `skew_too_large`를 답니다. 근거: W5에서 0.5° 회전만으로도 관계 F1 평균이 0.749에서 0.609로 떨어졌습니다(2026-11-06 측정). 보정 각은 `coordinate_system.deskew_deg`에 남겨 원본 보기와 겹칠 때 되돌립니다.
+2. **기울기 보정.** 긴 가로·세로 선의 각도로 기울기를 잽니다. 0.05°~5° 사이이면 그 각만큼 돌려 바로잡고, 5°를 넘으면 돌리지 않고 미확인 `skew_too_large`를 답니다. 근거: W5에서 0.5° 회전만으로도 관계 F1 평균이 0.749에서 0.609로 떨어졌습니다(2026-11-06 측정). rev 3부터 바로잡은 그림에서 읽은 좌표를 추출 단계에서 원래 그림 좌표로 되돌려 둡니다(`raster.undo_deskew`, `coordinate_system.deskew_undone: true`). 그래서 원본 그림과 바로 겹칩니다. `deskew_deg`는 기록용입니다.
 3. **잡음.** 첫 구현은 따로 걸러내지 않습니다. W5에서 가우시안 잡음 σ20까지 관계 F1 평균이 0.752로 기준(0.749)과 비슷했습니다. 실제 스캔의 얼룩·구멍 자국은 표본을 얻은 뒤 정합니다.
 4. **선 벡터화와 뒤 단계.** **같은 뒤 단계를 쓰는 길**을 고릅니다. 그림에서 찾은 선·몸체·채운 도형·글자를 `pdf_vector`가 받는 원시 요소로 바꾸고, `pdf_vector.analyze`·`build_extraction`의 묶기·종류·이름표·연결·흐름 규칙을 그대로 씁니다(W4 구조 그대로).
    - 이유 1: 벡터 품질 개선(기호 사전, 이름표 배정, 연결 정리)이 스캔 쪽에도 저절로 들어옵니다. 따로 가는 길이면 같은 규칙을 두 벌 고쳐야 합니다.
@@ -94,10 +95,12 @@ INTENT §2는 스캔 이미지(스캔 PDF, PNG·JPG) 도면도 받되, 벡터 PD
 | `ocr_unavailable`·`ocr_disabled` | W4 그대로 |
 | `unread_ink_clusters` | 선·기호·글자로 해석하지 못한 잉크 덩어리 수(W4 그대로) |
 | `processing_limit` | 처리량 상한으로 단계를 줄임(W4 그대로) |
+| `low_ocr_confidence` | OCR로 읽은 태그의 확신이 0.8보다 낮거나 글자 근거를 못 찾음(rev 3, 대상 노드) |
+| `scan_text_layer_ignored` | 스캔 PDF에 글자층이 있으나 믿지 않고 그림을 다시 읽음(rev 3) |
 
 ### 3.1 좌표
 
-- 추출 결과 좌표는 처리한 그림의 px(`coordinate_space: image_px`)입니다. 스캔 PDF는 `coordinate_system`에 `px_per_pt`와 쪽 번호를 함께 둬서 쪽 좌표(pt)로 바꿀 수 있게 합니다.
+- 추출 결과 좌표는 원래 그림의 px(`coordinate_space: image_px`)입니다. 스캔 PDF는 `coordinate_system`에 `px_per_pt`와 쪽 번호를 함께 둬서 쪽 좌표(pt)로 바꿀 수 있게 합니다. 좌표가 든 자리(노드·글자 상자, 관계 끝점·꺾임점, 출처 상자)는 `raster.map_coords` 한 곳이 함께 바꿉니다.
 - 문턱의 px 환산 배율은 §2.2의 px/pt를 씁니다. 지금은 그림 폭을 A3로 가정한 배율만 썼으므로, 스캔 PDF와 dpi가 적힌 그림에서는 실제 배율을 쓰도록 바꿉니다.
 
 ## 4. 쓸 도구와 라이선스
@@ -114,7 +117,11 @@ INTENT §2는 스캔 이미지(스캔 PDF, PNG·JPG) 도면도 받되, 벡터 PD
 | pypdfium2 | 5.8.0 | Apache-2.0 또는 BSD-3-Clause | 스캔 PDF 쪽 그리기. 이미 배포본과 시험 venv에 있음(`packaging/requirements-pdf.txt`) |
 
 - 스캔 PDF 쪽 그리기는 `pypdfium2`가 있는 쪽(앱·시험 venv)에서 하고, 그린 그림을 래스터 읽기에 넘깁니다. 래스터 venv에 PDF 패키지를 더 넣지 않기 위해서입니다.
-- 앱이나 시험 venv에서 래스터 읽기를 부를 때, 같은 프로세스에 OpenCV가 없으면 래스터 venv의 Python을 하위 프로세스로 부릅니다(`HAZOP_RASTER_PYTHON`, 없으면 기본 경로). 하위 프로세스는 그림 경로와 배율을 받아 추출 결과 JSON을 돌려줍니다.
+- 앱이나 시험 venv에서 래스터 읽기를 부를 때, 같은 프로세스에 OpenCV가 없으면 래스터 venv의 Python을 하위 프로세스로 부릅니다. 하위 프로세스를 띄우는 곳은 `hazop/extract/adapters/raster_proc.py` 하나입니다(rev 3). 앱의 하위 프로세스 경계(`claude_cli.py` 한 곳)에 둘째 예외로 넣었고, 아래로 좁힙니다.
+  - 인터프리터는 래스터 venv의 python입니다. 개발용 `HAZOP_RASTER_PYTHON`은 절대 경로이고 이름이 python·python.exe인 실제 파일일 때만 받습니다.
+  - 스크립트는 `scripts/extract_raster.py` 하나로 고정하고, 명령은 목록 인자로 셸 없이 넘깁니다.
+  - 명령 줄에는 임시 폴더로 옮긴 `page.png`·`page.jpg`와 `extraction.json` 이름만 들어갑니다. 사용자 파일 이름은 넣지 않습니다.
+  - 쪽 하나에 180초 한도를 둡니다(300dpi A3 쪽이 23~58초, 2026-11-14 측정). 넘으면 하위 프로세스를 끝내고 그 쪽을 '읽지 못함'으로 남깁니다.
 - 조사 보고서의 학습 검출기 후보(RF-DETR, Apache-2.0, ONNX Runtime으로 실행)는 정답 그림을 모은 뒤 후속으로 합니다. Ultralytics(AGPL-3.0)는 넣지 않습니다.
 
 ## 5. 정확도를 재는 법
@@ -134,7 +141,7 @@ INTENT §2는 스캔 이미지(스캔 PDF, PNG·JPG) 도면도 받되, 벡터 PD
 
 - **기본 보기**: 스캔 도면은 '원본 보기'를 기본으로 엽니다. 다시 그린 보기는 미확인이 많아 원본과 다르게 보일 수 있어서입니다.
 - **알림**: 도면 머리에 "스캔 도면 · N dpi · 자동으로 읽은 결과가 적고 미확인이 많습니다"를 띄웁니다. 해상도가 '낮음'·'너무 낮음'이면 §2.2 안내를 함께 띄웁니다.
-- **겹쳐 보기**: 원본 그림 위에 추출한 기호 상자와 배관을 겹쳐 보여 사람이 바로 고칠 수 있게 합니다. 좌표는 §3.1의 `px_per_pt`·`deskew_deg`로 맞춥니다.
+- **겹쳐 보기**: 원본 그림 위에 추출한 기호 상자와 배관을 겹쳐 보여 사람이 바로 고칠 수 있게 합니다. 좌표는 원래 그림 px라 그대로 겹칩니다(§3.1).
 - **AI 검토 토글**: 벡터와 같이 둡니다. AI는 후보만 내고 사람이 수락해야 반영됩니다. 스캔 도면은 AI 검토가 자동으로 켜지지 않습니다. 켜면 원본 그림 조각을 보내므로 호출 수가 벡터보다 많을 수 있다는 것을 토글 옆에 적습니다.
 
 ## 7. 배포
@@ -152,6 +159,8 @@ INTENT §2는 스캔 이미지(스캔 PDF, PNG·JPG) 도면도 받되, 벡터 PD
 - `fileinfo.inspect`가 스캔 PDF와 PNG·JPG를 알아보고, 판별 결과(`scan`: 종류·px/pt·dpi·등급·출처)를 등록 정보에 남깁니다.
 - rev 2부터 스캔 입력을 등록합니다(`fileinfo.SCAN_REGISTRATION = True`). 스캔 PDF는 모든 쪽, 그림은 `page-1` 한 쪽입니다. 그림 형식(png·jpeg)은 원본 옆 SVG를 찾지 않습니다(`NO_SVG_FORMATS`). 이 PC에 읽기 구성요소가 없으면 §7대로 멈춥니다. 값을 False로 되돌리면 첫 구현처럼 blocker `scan_not_connected`로 멈춥니다.
 - **추출**: `data.extract_and_graph(등록, progress=None)`이 스캔 도면이면(`raster_scan.is_scan_record`: 형식이 png·jpeg이거나, PDF인데 첫 쪽이 스캔) `raster_scan.run_registered`로 쪽마다 읽고 그래프를 만듭니다. 쪽마다 20초 안팎이 걸리므로 `progress(끝난 쪽, 전체 쪽, 문구)`를 쪽 앞뒤로 부릅니다. 화면은 작업 스레드에서 부르고 이 값을 진행 표시에 씁니다.
+- **판별 순서(rev 3)**: PDF는 벡터 읽기 전에 첫 쪽을 스캔인지 먼저 봅니다. 글자층(OCR 결과)을 덧입힌 스캔 PDF는 글자가 있어 '벡터 내용 없음'에 걸리지 않으므로, 그때만 판별하면 벡터 PDF로 등록돼 쪽이 거의 비어 보였습니다(검토 2026-11-14). 등록(`fileinfo`)과 추출(`raster_scan.is_scan_record`)이 같은 `classify_pdf_page`로 판별합니다.
+- **확정처럼 들어가지 않게(rev 3)**: 스캔 추출 결과의 `source.format`은 `raster`이고 입력 종류는 `source.scan_input`(pdf·png·jpeg)에 둡니다. 쪽 확정 판정(`hazop/extract/confirmation.py`)은 래스터 쪽의 '원본에 남은 것'을 세지 못하므로 이 쪽은 확정할 수 없고, `scan_input`을 비롯한 미확인을 모두 셉니다. 노드·관계에는 `evidence.read_from: scan_image`를, 태그 노드에는 `evidence.ocr_score`를 답니다.
 - **출력**: 쪽 폴더에 `extraction.json`·`validation_report.md`·`extraction_run.json`(추출기 `raster_scan`)과 `page.svg`를 씁니다. `page.svg`는 읽은 그림을 그대로 넣은 것이고(긴 변 3000px 상한으로 줄여 넣음), 추출 좌표가 그 그림의 픽셀이라 `svg_alignment`는 offset 0, `source: scan_image`입니다. 등록 식별 정보는 `pdf_vector.apply_registration`으로 채우고, `source.sha256`은 원본 파일의 해시입니다. 읽지 못한 쪽은 `not_extracted.json`(벡터 PDF와 같은 이름)에 사유를 남깁니다.
 
 ## 9. 첫 구현 범위와 후속
@@ -175,3 +184,4 @@ INTENT §2는 스캔 이미지(스캔 PDF, PNG·JPG) 도면도 받되, 벡터 PD
 | 0 | 2026-11-14 | 첫 초안 |
 | 1 | 2026-11-14 | §3 5 OCR을 두 배율 읽기로 고침(원래 해상도로만 읽으면 띄어쓰기를 잃음). §5에 첫 측정 기록 연결 |
 | 2 | 2026-11-14 | §7 묶음이 없을 때 등록에서 멈춤, 묶음 크기·라이선스 측정값. §8 등록·추출 연결(`run_registered`, `page.svg`, 진행 알림). §9 표 갱신 |
+| 3 | 2026-11-14 | 검토 반영. §2.2 픽셀 상한 80MP와 그리기 전 셈, §3 2 좌표를 원래 그림으로 되돌림, §3 8 미확인 둘 추가, §4 하위 프로세스를 `raster_proc` 한 곳으로, §8 판별 순서와 `source.format: raster` |

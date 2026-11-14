@@ -116,6 +116,10 @@ def _title_block_candidates(pages):
 def _inspect_pdf(path, data, info):
     """PDF: 쪽 목록(page-<번호>)과 첫 쪽 표제란 자동 후보. 추출과 같은 읽기(pdf_vector)를 쓰며, 분석 결과는
     pdf_vector.analyze_bytes가 기억해 등록·추출 때 같은 쪽을 다시 분석하지 않는다."""
+    # 스캔 판별을 먼저 한다. 글자층(OCR)을 덧입힌 스캔 PDF는 벡터 읽기에서 글자가 있어 '벡터 내용 없음'에 걸리지 않으므로,
+    # 그때만 판별하면 벡터 PDF로 등록돼 쪽이 거의 비어 보인다(HZ-PLN-23 §2.1, 검토 2026-11-14)
+    if _inspect_scan_pdf(data, info):
+        return
     try:
         from hazop.extract.adapters import pdf_vector
         sha, page_count, width, height, analysis = pdf_vector.analyze_bytes(data, 0)
@@ -128,8 +132,6 @@ def _inspect_pdf(path, data, info):
         return
     for b in res["validation"]["blockers"]:
         if b["check"] == "no_vector_content":
-            if _inspect_scan_pdf(data, info):  # 스캔 PDF(HZ-PLN-23 §2)
-                return
             info["blockers"].append(_problem("no_vector_content", b["reason"]))
             return
     info["pages"] = [{"page_id": "page-%d" % i, "page_name": None, "compressed": False}

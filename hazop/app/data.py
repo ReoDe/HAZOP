@@ -148,6 +148,10 @@ def _extract_scan_pages(record, original, ex, bg, progress=None):
                                                    progress=progress)
     except raster_scan.ScanReaderUnavailable as exc:
         raise ValueError(str(exc))
+    for s in skipped:  # 전에 추출했던 쪽이면 남은 그래프가 지식그래프에 섞이지 않게 지운다(_extract_pdf_pages와 같음)
+        stale = os.path.join(paths.output_root("graph"), ex.registered_out_name(record, s["page_index"]), "graph.json")
+        if os.path.isfile(stale):
+            os.remove(stale)
     if not done:
         raise ValueError("추출한 쪽이 없음: %s" % "; ".join("%s %s" % (s["page_id"], s["reason"]) for s in skipped))
     pages = []

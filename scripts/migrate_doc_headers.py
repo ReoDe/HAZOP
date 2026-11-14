@@ -42,6 +42,7 @@ DOC_IDS = {
     "docs/specs/study-node-segmentation.md": "HZ-PLN-20",
     "docs/specs/chat-panel.md": "HZ-PLN-21",
     "docs/specs/dexpi-exchange.md": "HZ-PLN-22",
+    "docs/specs/raster-extraction.md": "HZ-PLN-23",
     "docs/specs/flows/00-overview.md": "HZ-FLW-00",
     "docs/specs/flows/01-registration.md": "HZ-FLW-01",
     "docs/specs/flows/02-extraction.md": "HZ-FLW-02",

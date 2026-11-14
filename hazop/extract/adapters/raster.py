@@ -40,7 +40,7 @@ COORDINATE_SPACE = "image_px"
 UNIT = "px"
 FORMATS = {".png": "raster_png", ".jpg": "raster_jpeg", ".jpeg": "raster_jpeg"}
 MAX_FILE_BYTES = 100 * 1024 * 1024  # 해독 전 파일 크기 상한(샘플 PNG는 1 MB 안팎)
-MAX_PIXELS = 50_000_000             # 해독 전후 픽셀 수 상한(50 MP, 샘플은 7.5 MP)
+MAX_PIXELS = 80_000_000             # 해독 전후 픽셀 수 상한(80 MP: A1 도면 300dpi 스캔 약 70 MP를 받는다. 샘플은 7.5 MP)
 
 # 래스터 단계 문턱. 길이는 pt(공칭 페이지 기준)이며 실행 때 px로 바꾼다. 샘플 6세트 PNG로 정한 값(표본 내).
 PARAMS = {
@@ -408,6 +408,63 @@ def deskew(gray):
     m = cv2.getRotationMatrix2D((W / 2.0, H / 2.0), a, 1.0)
     out = cv2.warpAffine(gray, m, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=255)
     return out, a, "corrected"
+
+
+def map_coords(res, fn):
+    """추출 결과의 좌표를 모두 fn(x, y) → (x, y)로 바꾼다(제자리). 점(관계 끝점·꺾임점·evidence.pdf_path)은 그대로,
+    상자(노드 geometry, 글자 geometry, label_location·source_locations·ignored_objects의 bbox [x, y, w, h])는 네 모서리를
+    바꾼 뒤 감싸는 상자로. 기울기 되돌리기와 쪽 좌표(pt) 바꾸기가 같은 목록을 쓴다."""
+    def pt(p):
+        x, y = fn(float(p[0]), float(p[1]))
+        return [round(x, 3), round(y, 3)]
+
+    def box(x, y, w, h):
+        cs = [fn(x, y), fn(x + w, y), fn(x, y + h), fn(x + w, y + h)]
+        x0, y0 = min(c[0] for c in cs), min(c[1] for c in cs)
+        return round(x0, 3), round(y0, 3), round(max(c[0] for c in cs) - x0, 3), round(max(c[1] for c in cs) - y0, 3)
+
+    def geom(g):
+        if isinstance(g, dict) and all(isinstance(g.get(k), (int, float)) for k in ("x", "y", "width", "height")):
+            g["x"], g["y"], g["width"], g["height"] = box(g["x"], g["y"], g["width"], g["height"])
+
+    def bbox(holder):
+        b = holder.get("bbox") if isinstance(holder, dict) else None
+        if isinstance(b, list) and len(b) == 4 and all(isinstance(v, (int, float)) for v in b):
+            holder["bbox"] = list(box(*b))
+
+    for n in res.get("nodes") or []:
+        geom(n.get("geometry"))
+        bbox(n.get("label_location"))
+    for t in res.get("texts") or []:
+        geom(t.get("geometry"))
+    for key in ("relations", "unresolved_connectors"):
+        for r in res.get(key) or []:
+            for e in r.get("endpoints") or []:
+                if e.get("point") is not None:
+                    e["point"] = pt(e["point"])
+            if r.get("waypoints"):
+                r["waypoints"] = [pt(q) for q in r["waypoints"]]
+            ev = r.get("evidence") or {}
+            if ev.get("pdf_path"):
+                ev["pdf_path"] = [pt(q) for q in ev["pdf_path"]]
+    for loc in res.get("source_locations") or []:
+        bbox(loc)
+    for obj in (res.get("drawing") or {}).get("ignored_objects") or []:
+        bbox(obj)
+    return res
+
+
+def undo_deskew(res, angle, W, H):
+    """기울기를 바로잡은 그림에서 읽은 좌표를 원래 그림 좌표로 되돌린다(deskew의 역회전). 원본 보기(원래 그림)와 겹친다."""
+    a = math.radians(angle)
+    al, be = math.cos(a), math.sin(a)
+    cx, cy = W / 2.0, H / 2.0
+    tx, ty = (1 - al) * cx - be * cy, be * cx + (1 - al) * cy  # cv2.getRotationMatrix2D((cx, cy), angle, 1)의 이동
+
+    def inv(x, y):
+        x, y = x - tx, y - ty
+        return al * x - be * y, be * x + al * y
+    return map_coords(res, inv)
 
 
 # ---------------------------------------------------------------- 보조
@@ -787,13 +844,19 @@ def _join_collinear(segs, text_boxes, px, horizontal, text_like=None):
     return out, used
 
 
-def _bridge_label_ends(hs, vs, text_boxes, px):
+LINE_LABEL_RE = re.compile(r"\d")  # 배관 번호 꼴 라벨(SI-L002): 숫자가 든 글자만 선을 건너 잇는 근거로 본다
+
+
+def _bridge_label_ends(hs, vs, text_boxes, px, labels=None):
     """선 끝이 글자 상자(배관 라벨) 가장자리에서 끊기고 라벨 건너편에 꺾이는 상대 선이 있으면 그 중심선까지 늘인다.
     라벨 흰 바탕이 꺾임 바로 앞을 가리면 꺾임과 라벨 사이 토막이 선 최소 길이보다 짧아 빠지고, 남은 선은 꺾임에 닿지
     못한다(SNP-M-301 SI-L002, 300dpi 2026-11-14). 벡터 PDF에서는 선이 라벨 밑으로 이어져 있어 생기지 않는 일이다.
+    labels(글자 상자와 같은 순서의 글자)를 주면 배관 번호 꼴(숫자가 든 글자)만 건넌다. 배관이 'VENT' 같은 글자에서 끝나고 그 옆을
+    다른 배관이 지나가면 가짜 분기로 두 배관을 잇게 되기 때문이다(검토 2026-11-14 r5_rules case A).
     → 쓰인 글자 상자 번호 집합."""
     tol = px["hv_join_tol"]
     used = set()
+    ok_box = [labels is None or bool(LINE_LABEL_RE.search(str(labels[k]))) for k in range(len(text_boxes))]
     for A, B, horizontal in ((hs, vs, True), (vs, hs, False)):
         for s in A:
             for end in ("a", "b"):
@@ -802,7 +865,7 @@ def _bridge_label_ends(hs, vs, text_boxes, px):
                     lo, hi = (t[0], t[2]) if horizontal else (t[1], t[3])
                     c0, c1 = (t[1], t[3]) if horizontal else (t[0], t[2])
                     m = (t[3] - t[1]) * 0.5 + 3
-                    if not c0 <= s["c"] <= c1:
+                    if not ok_box[k] or not c0 <= s["c"] <= c1:
                         continue
                     if end == "a" and lo < p <= hi + m and p >= hi - m:
                         far, lim = lo, lo - m
@@ -942,7 +1005,7 @@ def detect(gray, lines=None, params=None, ocr=None):
 
     hs, used_h = _join_collinear(hs_keep, text_boxes, px, True, text_like)
     vs, used_v = _join_collinear(vs_keep, text_boxes, px, False, text_like)
-    used_h |= _bridge_label_ends(hs, vs, text_boxes, px)
+    used_h |= _bridge_label_ends(hs, vs, text_boxes, px, [o["text"] for o in lines])
     _snap(hs, vs, px)
 
     # 남은 잉크: 사선·점선 조각
@@ -1132,8 +1195,10 @@ def detect(gray, lines=None, params=None, ocr=None):
         top, bottom = round(o["top"] + trim, 1), round(o["bottom"] - trim, 1)
         words.append({"text": o["text"], "x0": o["x0"], "x1": o["x1"], "top": top, "bottom": bottom,
                       "size": round(bottom - top, 1)})
-    diag_info = {"scale_px_per_pt": round(scale, 6), "bodies": len(bodies), "fills": len(fills),
-                 "h_lines": len(hs), "v_lines": len(vs), "diagonal_or_short": len(diag), "curves": len(curves), "stems": len(stems),
+    diag_info = {"ocr_scores": [(o["text"], o["score"]) for o in lines],
+                 "scale_px_per_pt": round(scale, 6), "bodies": len(bodies), "fills": len(fills),
+                 "h_lines": len(hs), "v_lines": len(vs), "diagonal_or_short": len(diag), "curves": len(curves),
+                 "stems": len(stems),
                  "fill_links": len(links), "dash_pieces": len(dashes), "frame_lines_dropped": frame,
                  "unread_line_labels": len(bridged), "ignored_ink_clusters": ignored, "ocr_lines": len(lines),
                  "ocr_circle_rereads": rereads, "limits_hit": limits}
@@ -1185,7 +1250,53 @@ def _retag(obj):
     return out
 
 
+# 스캔에서 읽은 것은 확정처럼 들어가지 않게 한다(HZ-PLN-23 §3 8). 노드·관계마다 그림에서 읽었다는 근거를 달고, 태그는 OCR 확신을
+# 붙인다. 확신이 이 값보다 낮거나 태그 글자를 OCR 줄에서 찾지 못하면 미확인 low_ocr_confidence로 둔다.
+OCR_TAG_MIN_SCORE = 0.8
+
+
+def _squash_tag(t):
+    return re.sub(r"[^0-9A-Z]", "", str(t or "").upper())
+
+
+def tag_score(tag, ocr_scores):
+    """태그 글자의 OCR 확신: 태그를 통째로 담은 줄이 있으면 그 줄들 가운데 가장 높은 값, 없으면 태그의 조각인 줄
+    (두 줄 계기 이름표 'PT'·'302')들 가운데 가장 낮은 값. 찾지 못하면 None."""
+    t = _squash_tag(tag)
+    if not t:
+        return None
+    whole = [sc for text, sc in ocr_scores if t in _squash_tag(text)]
+    if whole:
+        return max(whole)
+    parts = [sc for text, sc in ocr_scores if len(_squash_tag(text)) >= 2 and _squash_tag(text) in t]
+    return min(parts) if parts else None
+
+
+def mark_scan_evidence(res, ocr_scores):
+    """노드·관계 evidence에 read_from: scan_image를 달고, 태그에는 OCR 확신(ocr_score)을 단다. 확신이 낮거나 모르는 태그는
+    미확인 low_ocr_confidence(target = 노드 local_id). → 단 미확인 수."""
+    added = 0
+    for n in res.get("nodes") or []:
+        ev = n.setdefault("evidence", {})
+        ev["read_from"] = "scan_image"
+        if n.get("tag"):
+            sc = tag_score(n["tag"], ocr_scores)
+            ev["ocr_score"] = None if sc is None else round(float(sc), 4)
+            if sc is None or sc < OCR_TAG_MIN_SCORE:
+                pv._issue(res["validation"]["unknowns"], "low_ocr_confidence",
+                          "스캔에서 OCR로 읽은 태그 %r의 확신이 낮거나(%s) 글자 근거를 찾지 못함. 원본과 견줘 확인할 것"
+                          % (n["tag"], "모름" if sc is None else "%.2f" % sc), source_object_id=n.get("source_object_id"),
+                          target=n.get("local_id"), field="tag")
+                added += 1
+    for key in ("relations", "unresolved_connectors"):
+        for r in res.get(key) or []:
+            r.setdefault("evidence", {})["read_from"] = "scan_image"
+    return added
+
+
 def build_extraction(W, H, words, prims, diag_info, ocr_state, file_label, sha, fmt, params=None):
+    diag_info = dict(diag_info)
+    ocr_scores = diag_info.pop("ocr_scores", [])
     scale = diag_info["scale_px_per_pt"]
     pvp = _pv_params(scale, (params or {}).get("pv_overrides"))
     analysis = pv.analyze(W, H, words, prims, pvp)
@@ -1207,6 +1318,7 @@ def build_extraction(W, H, words, prims, diag_info, ocr_state, file_label, sha, 
     for b in blockers:
         if b.get("check") == "no_vector_content":
             b["check"], b["reason"] = "no_image_content", "영상에서 선·기호·글자를 찾지 못함"
+    mark_scan_evidence(res, ocr_scores)
     res["validation"]["status"] = "blocked" if blockers else "passed"
     prm = dict(PARAMS)
     prm.update(params or {})
@@ -1255,6 +1367,9 @@ def extract(path, repo_root=None, params=None, use_ocr=True):
     ext = os.path.splitext(path)[1].lower()
     if ext not in FORMATS:
         raise ValueError("래스터 형식이 아님(.png·.jpg·.jpeg): %s" % path)
+    size = os.path.getsize(path)  # 파일 전체를 읽기 전에 크기 상한을 본다
+    if size > MAX_FILE_BYTES:
+        raise RasterInputError("파일이 너무 큼(%d바이트, 한도 %d바이트)" % (size, MAX_FILE_BYTES))
     with open(path, "rb") as fh:
         data = fh.read()
     sha = hashlib.sha256(data).hexdigest()
@@ -1274,7 +1389,10 @@ def extract(path, repo_root=None, params=None, use_ocr=True):
     W, H, words, prims, info = detect(gray, lines, prm, ocr=ocr_lines if lines is not None else None)
     label = paths.rel_or_abs(path, repo_root) if repo_root else path
     res = build_extraction(W, H, words, prims, info, ocr_state, label, sha, FORMATS[ext], prm)
+    if skew == "corrected":  # 좌표를 원래 그림으로 되돌려 둔다. deskew_deg는 읽을 때 돌린 각(기록용, 좌표에는 이미 되돌림)
+        undo_deskew(res, angle, W, H)
     res["coordinate_system"]["deskew_deg"] = round(angle, 3) if skew == "corrected" else 0.0
+    res["coordinate_system"]["deskew_undone"] = skew == "corrected"
     res["run"]["settings"]["deskew"] = {"measured_deg": round(angle, 3), "state": skew}
     if skew == "too_large":
         pv._issue(res["validation"]["unknowns"], "skew_too_large",

@@ -346,10 +346,10 @@ class InputLimitTest(unittest.TestCase):
             self.assertEqual(buf.getvalue().count("입력 형식 오류"), 2)
 
     def test_header_pixel_limit_before_decode(self):
-        """머리말의 폭·높이로 해독 전에 막는다(50 MP 상한, 실제 큰 영상을 만들지 않고 머리말만 바꿔 시험)."""
+        """머리말의 폭·높이로 해독 전에 막는다(80 MP 상한, 실제 큰 영상을 만들지 않고 머리말만 바꿔 시험)."""
         import struct
         import zlib
-        w, h = 10000, 6000  # 60 MP
+        w, h = 10000, 9000  # 90 MP
         ihdr = struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0)
 
         def chunk(kind, body):

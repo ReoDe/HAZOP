@@ -58,19 +58,26 @@ def jobs_for(input_dir, samples_dir, apr, snp, work):
 # 센서 잡음(σ 8 회색 단계)이 끼고, JPEG(품질 75)으로 저장한 꼴. 값은 W5 열화 시험(scripts/degrade_raster.py) 단계 가운데
 # 중간 값을 한데 묶은 것이다. 씨앗을 고정해 같은 그림이 나온다.
 DEGRADE = {"rotate_deg": 0.7, "blur_px_at_300": 1.0, "noise_sigma": 8.0, "jpeg_quality": 75, "seed": 20261114}
+NOISE_TILE = 512
 
 
 def degrade(png, dpi, idx=0):
     """그린 쪽 그림 → 스캔다운 JPG 경로(png 옆). DEGRADE 값을 쓴다."""
-    import numpy as np
-    from PIL import Image, ImageFilter
+    import random
+    from PIL import Image, ImageChops, ImageFilter
     with Image.open(png) as im:
         im = im.convert("L")
         im = im.rotate(DEGRADE["rotate_deg"], resample=Image.BICUBIC, expand=False, fillcolor=255)
         im = im.filter(ImageFilter.GaussianBlur(DEGRADE["blur_px_at_300"] * dpi / 300.0))
-        a = np.asarray(im, dtype=np.float64)
-        a = a + np.random.default_rng(DEGRADE["seed"] + idx).normal(0.0, DEGRADE["noise_sigma"], a.shape)
-        im = Image.fromarray(np.clip(np.rint(a), 0, 255).astype(np.uint8), "L")
+        # 잡음: 시험 venv에는 numpy가 없어 씨앗 고정 가우시안 512×512 조각을 깔아 더한다(128 = 0)
+        rng, n = random.Random(DEGRADE["seed"] + idx), NOISE_TILE
+        tile = Image.frombytes("L", (n, n), bytes(min(255, max(0, int(round(128 + rng.gauss(0.0, DEGRADE["noise_sigma"])))))
+                                                  for _ in range(n * n)))
+        noise = Image.new("L", im.size)
+        for y in range(0, im.size[1], n):
+            for x in range(0, im.size[0], n):
+                noise.paste(tile, (x, y))
+        im = ImageChops.add(im, noise, scale=1.0, offset=-128)
         out = os.path.splitext(png)[0] + "-scan.jpg"
         im.save(out, "JPEG", quality=DEGRADE["jpeg_quality"])
     return out

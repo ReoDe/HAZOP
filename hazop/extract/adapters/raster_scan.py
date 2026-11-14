@@ -15,14 +15,14 @@ import hashlib
 import importlib
 import io
 import json
+import math
 import os
 import shutil
-import subprocess
 import tempfile
 
 from hazop import paths
 
-from . import raster
+from . import raster, raster_proc
 
 # §2.1 스캔 PDF 판별 문턱
 SCAN_MAX_PATHS = 10          # 스캐너가 붙이는 여백 선·쪽 번호 몇 개는 봐준다(추정)
@@ -33,7 +33,7 @@ DPI_OK = 300
 DPI_LOW = 200
 DPI_READ_MAX = 400           # 이보다 높은 입력은 이 해상도로 줄여 읽는다
 DPI_TRUST = (150, 1200)      # 그림 파일에 적힌 dpi를 믿는 범위(72·96 같은 화면 값과 비율 값은 믿지 않음)
-RASTER_VENV = os.path.join(os.path.expanduser("~"), ".hazop", "venv-raster-py312")
+RASTER_VENV = raster_proc.RASTER_VENV
 
 
 def resolution_level(dpi):
@@ -140,12 +140,33 @@ def image_scale(data):
 
 # ---------------------------------------------------------------- 그리기·읽기
 
+DPI_RENDER_MIN = 150         # 픽셀 상한 때문에 낮춰 그릴 때 이보다 낮아지면 그리지 않고 거절한다
+
+
+def render_dpi(page_pt, dpi, max_pixels=None):
+    """쪽 크기(pt)와 원하는 dpi → (실제로 그릴 dpi, 낮췄는지). 그리기 전에 픽셀 수를 셈해 raster.MAX_PIXELS를 넘으면
+    넘지 않는 dpi로 낮추고, 그 값이 DPI_RENDER_MIN보다 낮으면 ValueError(그림 크기를 크게 적은 PDF가 수 GB를 그리지 않게)."""
+    limit = raster.MAX_PIXELS if max_pixels is None else max_pixels
+    w, h = float(page_pt[0]), float(page_pt[1])
+    if w <= 0 or h <= 0:
+        raise ValueError("쪽 크기가 0")
+    px = w * h * (float(dpi) / 72.0) ** 2
+    if px <= limit:
+        return float(dpi), False
+    fit = math.floor(72.0 * math.sqrt(limit / (w * h)))
+    if fit < DPI_RENDER_MIN:
+        raise ValueError("쪽이 너무 커서(%.0f×%.0fpt) %d dpi 이상으로 그리면 픽셀 상한(%d MP)을 넘음"
+                         % (w, h, DPI_RENDER_MIN, limit // 1000000))
+    return float(fit), True
+
+
 def render_pdf_page(path, page, out_png, dpi):
-    """PDF 쪽을 dpi 해상도의 회색조 PNG로 그린다. → 실제 px/pt(= dpi/72)."""
+    """PDF 쪽을 dpi 해상도의 회색조 PNG로 그린다. 픽셀 상한을 넘으면 render_dpi대로 낮춘다. → 실제 px/pt(= 그린 dpi/72)."""
     pdfium = _pdfium()
     doc = pdfium.PdfDocument(path)
     try:
         pg = doc[page]
+        dpi, _ = render_dpi(pg.get_size(), dpi)
         scale = float(dpi) / 72.0
         bitmap = pg.render(scale=scale, grayscale=True)
         bitmap.to_pil().save(out_png)
@@ -157,11 +178,8 @@ def render_pdf_page(path, page, out_png, dpi):
 
 
 def raster_python():
-    """래스터 venv Python 경로(HAZOP_RASTER_PYTHON, 없으면 기본 venv). 없으면 None."""
-    env = os.environ.get("HAZOP_RASTER_PYTHON")
-    cands = [env] if env else [os.path.join(RASTER_VENV, "Scripts", "python.exe"),
-                               os.path.join(RASTER_VENV, "bin", "python")]
-    return next((c for c in cands if c and os.path.isfile(c)), None)
+    """래스터 venv Python 경로(raster_proc.interpreter). 없으면 None."""
+    return raster_proc.interpreter()
 
 
 class ScanReaderUnavailable(RuntimeError):
@@ -169,34 +187,30 @@ class ScanReaderUnavailable(RuntimeError):
 
 
 def run_raster(png_path, px_per_pt=None, repo_root=None, use_ocr=True):
-    """그림 한 장 → 추출 결과. 이 프로세스에 OpenCV가 있으면 바로, 없으면 래스터 venv 하위 프로세스로."""
+    """그림 한 장 → 추출 결과. 이 프로세스에 OpenCV가 있으면 바로, 없으면 래스터 venv 하위 프로세스로(raster_proc).
+    하위 프로세스에는 그림을 임시 폴더의 page.png|page.jpg로 옮겨 넘긴다(사용자 파일 이름을 명령 줄에 넣지 않음).
+    시간 한도를 넘으면 raster_proc.ScanTimeout."""
     params = {"px_per_pt": px_per_pt} if px_per_pt else None
     if raster.available()[0]:
         return raster.extract(png_path, repo_root=repo_root, params=params, use_ocr=use_ocr)
-    py = raster_python()
-    if py is None:
-        raise ScanReaderUnavailable("스캔 도면을 읽으려면 스캔 읽기 묶음(래스터 venv)이 필요합니다")
-    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    if raster_proc.interpreter() is None:
+        raise ScanReaderUnavailable(READER_MISSING)
+    ext = os.path.splitext(png_path)[1].lower()
     out_dir = tempfile.mkdtemp(prefix="hazop-raster-run-")
     try:
-        out = os.path.join(out_dir, "extraction.json")
-        cmd = [py, os.path.join(repo, "scripts", "extract_raster.py"), png_path, "--json-out", out]
-        if px_per_pt:
-            cmd += ["--px-per-pt", repr(float(px_per_pt))]
-        if repo_root:
-            cmd += ["--repo-root", repo_root]
-        if not use_ocr:
-            cmd.append("--no-ocr")
-        env = dict(os.environ, PYTHONIOENCODING="utf-8")
-        proc = subprocess.run(cmd, cwd=repo, env=env, capture_output=True, text=True, encoding="utf-8",
-                              errors="replace")
-        if proc.returncode not in (0, 1) or not os.path.isfile(out):
-            raise RuntimeError("래스터 읽기 실패(종료 코드 %d): %s" % (proc.returncode,
-                                                                (proc.stdout + proc.stderr).strip()[-500:]))
+        img = os.path.join(out_dir, "page.jpg" if ext in (".jpg", ".jpeg") else "page.png")
+        shutil.copyfile(png_path, img)
+        out = os.path.join(out_dir, raster_proc.RESULT_NAME)
+        code, tail = raster_proc.run(img, out, px_per_pt=px_per_pt, use_ocr=use_ocr)
+        if code not in (0, 1) or not os.path.isfile(out):
+            raise RuntimeError("래스터 읽기 실패(종료 코드 %d): %s" % (code, tail))
         with open(out, encoding="utf-8") as fh:
-            return json.load(fh)
+            ex = json.load(fh)
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
+    if repo_root:
+        ex["source"]["file"] = paths.rel_or_abs(png_path, repo_root)
+    return ex
 
 
 def extract_scan_pdf(path, page=0, repo_root=None, use_ocr=True):
@@ -216,7 +230,8 @@ def extract_scan_pdf(path, page=0, repo_root=None, use_ocr=True):
     finally:
         shutil.rmtree(work, ignore_errors=True)
     label = paths.rel_or_abs(path, repo_root) if repo_root else path
-    ex["source"].update({"format": "raster_scan_pdf", "file": label, "sha256": sha, "page_count": page_count})
+    ex["source"].update({"format": SCAN_SOURCE_FORMAT, "scan_input": "pdf", "file": label, "sha256": sha,
+                         "page_count": page_count})
     ex["source_context"]["page_id"] = "page-%d" % (page + 1)
     ex["run"]["settings"]["page_index"] = page
     ex["run"]["settings"]["scan"] = info
@@ -233,24 +248,11 @@ def extract_scan_pdf(path, page=0, repo_root=None, use_ocr=True):
 # ---------------------------------------------------------------- 좌표
 
 def to_page_points(ex, px_per_pt):
-    """추출 결과의 px 좌표(노드 geometry, 관계 끝점·꺾임점)를 쪽 좌표(pt)로 바꾼 사본."""
+    """추출 결과의 px 좌표(노드·글자 상자, 관계 끝점·꺾임점, 출처 상자)를 쪽 좌표(pt)로 바꾼 사본. 기울기는 raster.extract가
+    이미 원래 그림 좌표로 되돌려 두었다(coordinate_system.deskew_undone)."""
     out = copy.deepcopy(ex)
     k = float(px_per_pt)
-
-    def pt(p):
-        return [round(v / k, 3) for v in p]
-
-    for n in out.get("nodes", []):
-        g = n.get("geometry")
-        if g:
-            n["geometry"] = {key: (round(v / k, 3) if key in ("x", "y", "width", "height") and v is not None else v)
-                             for key, v in g.items()}
-    for r in out.get("relations", []):
-        for e in r.get("endpoints", []):
-            if e.get("point") is not None:
-                e["point"] = pt(e["point"])
-        if r.get("waypoints"):
-            r["waypoints"] = [pt(p) for p in r["waypoints"]]
+    raster.map_coords(out, lambda x, y: (x / k, y / k))
     cs = out.setdefault("coordinate_system", {})
     cs.update({"coordinate_space": "page_pt_from_image", "unit": "pt"})
     return out
@@ -259,7 +261,8 @@ def to_page_points(ex, px_per_pt):
 
 # ---------------------------------------------------------------- 앱 등록 경로(HZ-PLN-23 §8)
 
-SCAN_FORMATS = ("png", "jpeg")  # 등록 format 값이 이것이면 그림 한 장, "pdf"이면 스캔 PDF 쪽들
+SCAN_FORMATS = ("png", "jpeg")
+SCAN_SOURCE_FORMAT = "raster"   # 스캔 추출 결과의 source.format(hazop/extract/confirmation.py KNOWN_FORMATS의 래스터)  # 등록 format 값이 이것이면 그림 한 장, "pdf"이면 스캔 PDF 쪽들
 NOT_EXTRACTED = "not_extracted.json"  # scripts/extract_pdf.py와 같은 이름(쪽별 추출 상태를 같은 방법으로 센다)
 SVG_NAME = "page.svg"
 SVG_IMAGE_MAX_PX = 3000      # 원본 보기 SVG에 넣는 그림의 긴 변 상한(좌표는 원래 픽셀 그대로, 그림만 줄여 넣음)
@@ -346,13 +349,54 @@ def _read_page(original, record, page, work):
     return ex, img, {"dpi": info["dpi"], "dpi_source": "pdf_image", "level": info["level"]}
 
 
+def _finish_page(original, record, page, work, out_dir, label, stem, sha, page_count, symbol_versions, warnings):
+    """쪽 하나를 읽고 등록 정보를 채워 쪽 폴더에 쓴다. → 추출 결과, 또는 추출하지 않은 사유(글자).
+    예외는 부르는 쪽(run_registered)이 그 쪽만 미추출로 남긴다."""
+    from .. import report, runinfo
+    from . import pdf_vector
+    ex, img, scale = _read_page(original, record, page, work)
+    # 읽은 방법은 "raster"(쪽 확정 판정 confirmation.source_format이 래스터로 센다), 입력 종류는 scan_input에 둔다
+    ex["source"].update({"format": SCAN_SOURCE_FORMAT, "scan_input": record.get("format"), "file": label,
+                         "sha256": sha, "page_count": page_count})
+    if (ex["run"]["settings"].get("scan") or {}).get("text_layer"):
+        raster.pv._issue(ex["validation"]["unknowns"], "scan_text_layer_ignored",
+                         "스캔 PDF에 글자층(OCR 결과 등)이 있으나 믿지 않고 그림을 다시 읽음")
+    ex["source_context"]["page_id"] = "page-%d" % (page + 1)
+    ex["run"]["settings"]["page_index"] = page
+    raster.note_scale(ex, scale)
+    ex = pdf_vector.apply_registration(ex, record)
+    ex["extraction_run_id"] = "extract-scan-%s-p%d-%s-%s-%s-%s-r%s" % (
+        ex["drawing"].get("drawing_number") or stem, page, raster.RULES_VERSION, sha[:12],
+        record.get("project_id"), record.get("material_id"), record.get("registration_version"))
+    empty = [b for b in ex["validation"]["blockers"] if b["check"] == "no_image_content"]
+    if empty:
+        return empty[0]["reason"]
+    os.makedirs(out_dir, exist_ok=True)
+    stale = os.path.join(out_dir, NOT_EXTRACTED)
+    if os.path.isfile(stale):
+        os.remove(stale)
+    W, H = int(round(ex["drawing"]["page_width"])), int(round(ex["drawing"]["page_height"]))
+    svg_path = os.path.join(out_dir, SVG_NAME)
+    _write(svg_path, _page_svg(img, W, H))
+    ex["coordinate_system"]["svg_alignment"] = {
+        "svg_file": paths.rel_or_abs(svg_path, paths.work_root()), "source": "scan_image",
+        "viewBox": "0 0 %d %d" % (W, H), "width": str(W), "height": str(H),
+        "status": "verified", "reasons": [], "offset": [0, 0], "compared_cells": 0, "consistent_cells": 0,
+        "inconsistent_offsets": [], "cells_missing_in_svg": [],
+        "transform": "svg_x = 그림 x, svg_y = 그림 y (추출 좌표가 원본 그림의 픽셀 좌표)",
+        "note": "page.svg는 읽은 그림을 그대로 넣은 것이라 좌표가 구성상 같다. 독립 정답 대비 검증은 아님"}
+    _write(os.path.join(out_dir, "extraction.json"), json.dumps(ex, ensure_ascii=False, indent=2) + "\n")
+    _write(os.path.join(out_dir, "validation_report.md"), report.render(ex))
+    runinfo.record(out_dir, EXTRACTOR, ex, symbol_versions, warnings)
+    return ex
+
+
 def run_registered(original, out_root, record, out_name, warnings=None, progress=None):
     """등록된 스캔 도면(그림 한 장 또는 스캔 PDF 쪽들) → 쪽마다 <out_root>/<out_name(쪽)>/에 extraction.json·
     validation_report.md·page.svg(원본 그림)·extraction_run.json. 좌표는 읽은 그림의 픽셀이고 page.svg도 같은 픽셀 좌표라
     겹쳐 보기가 구성상 맞는다. progress(끝난 쪽 수, 전체 쪽 수, 문구)는 쪽을 읽기 전과 다 읽은 뒤에 부른다
     (쪽마다 20초 안팎). 반환 (추출한 쪽 [(쪽, result, out_dir)], 추출하지 않은 쪽 [{"page_index", "page_id", "reason"}]).
     읽기 구성요소가 없으면 ScanReaderUnavailable(어느 쪽 폴더도 건드리지 않음)."""
-    from .. import report, runinfo
     from . import pdf_vector
     if not reader_available():
         raise ScanReaderUnavailable(READER_MISSING)
@@ -374,49 +418,19 @@ def run_registered(original, out_root, record, out_name, warnings=None, progress
         out_dir = paths.safe_join(out_root, out_name(page))
         work = tempfile.mkdtemp(prefix="hazop-scan-reg-")
         try:
-            try:
-                ex, img, scale = _read_page(original, record, page, work)
-            except ScanReaderUnavailable:
-                raise
-            except Exception as exc:  # 쪽 하나를 읽지 못해도 그 쪽만 미추출로 남긴다
-                reason = "스캔 읽기 오류: %s" % exc
-                _skip_page(out_dir, page, reason, symbol_versions, warnings)
-                skipped.append({"page_index": page, "page_id": "page-%d" % (page + 1), "reason": reason})
-                continue
-            fmt = "raster_scan_pdf" if record.get("format") == "pdf" else ex["source"]["format"]
-            ex["source"].update({"format": fmt, "file": label, "sha256": sha, "page_count": page_count})
-            ex["source_context"]["page_id"] = "page-%d" % (page + 1)
-            ex["run"]["settings"]["page_index"] = page
-            raster.note_scale(ex, scale)
-            ex = pdf_vector.apply_registration(ex, record)
-            ex["extraction_run_id"] = "extract-scan-%s-p%d-%s-%s-%s-%s-r%s" % (
-                ex["drawing"].get("drawing_number") or stem, page, raster.RULES_VERSION, sha[:12],
-                record.get("project_id"), record.get("material_id"), record.get("registration_version"))
-            empty = [b for b in ex["validation"]["blockers"] if b["check"] == "no_image_content"]
-            if empty:
-                _skip_page(out_dir, page, empty[0]["reason"], symbol_versions, warnings)
-                skipped.append({"page_index": page, "page_id": "page-%d" % (page + 1), "reason": empty[0]["reason"]})
-                continue
-            os.makedirs(out_dir, exist_ok=True)
-            stale = os.path.join(out_dir, NOT_EXTRACTED)
-            if os.path.isfile(stale):
-                os.remove(stale)
-            W, H = int(round(ex["drawing"]["page_width"])), int(round(ex["drawing"]["page_height"]))
-            svg_path = os.path.join(out_dir, SVG_NAME)
-            _write(svg_path, _page_svg(img, W, H))
-            ex["coordinate_system"]["svg_alignment"] = {
-                "svg_file": paths.rel_or_abs(svg_path, paths.work_root()), "source": "scan_image",
-                "viewBox": "0 0 %d %d" % (W, H), "width": str(W), "height": str(H),
-                "status": "verified", "reasons": [], "offset": [0, 0], "compared_cells": 0, "consistent_cells": 0,
-                "inconsistent_offsets": [], "cells_missing_in_svg": [],
-                "transform": "svg_x = 그림 x, svg_y = 그림 y (추출 좌표가 원본 그림의 픽셀 좌표)",
-                "note": "page.svg는 읽은 그림을 그대로 넣은 것이라 좌표가 구성상 같다. 독립 정답 대비 검증은 아님"}
-            _write(os.path.join(out_dir, "extraction.json"), json.dumps(ex, ensure_ascii=False, indent=2) + "\n")
-            _write(os.path.join(out_dir, "validation_report.md"), report.render(ex))
-            runinfo.record(out_dir, EXTRACTOR, ex, symbol_versions, warnings)
-            done.append((page, ex, out_dir))
+            result = _finish_page(original, record, page, work, out_dir, label, stem, sha, page_count, symbol_versions,
+                                  warnings)
+        except ScanReaderUnavailable:
+            raise
+        except Exception as exc:  # 읽기·쓰기 어느 단계에서 실패해도 그 쪽만 미추출로 남기고 다음 쪽을 읽는다
+            result = "스캔 읽기 오류: %s" % exc
         finally:
             shutil.rmtree(work, ignore_errors=True)
+        if isinstance(result, str):
+            _skip_page(out_dir, page, result, symbol_versions, warnings)
+            skipped.append({"page_index": page, "page_id": "page-%d" % (page + 1), "reason": result})
+        else:
+            done.append((page, result, out_dir))
     if progress:
         progress(len(pages), len(pages), "스캔 도면 읽기 끝")
     return done, skipped

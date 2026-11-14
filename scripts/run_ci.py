@@ -61,6 +61,7 @@ NOT_IN_CI = {
     "check_project_kg": "저장소 밖 DCD 원본이 필요하다",
     "check_cli_live": "실제 Claude CLI를 부른다",
     "check_ai_analysis": "실제 Claude를 부른다",
+    "check_scan_quality": "스캔 읽기 venv(OpenCV·OCR, 결정 D7)가 있어야 하고 쪽마다 20~60초가 걸린다. 러너에는 그 venv가 없다",
 }
 
 CHECK_TIMEOUT_S = 900
