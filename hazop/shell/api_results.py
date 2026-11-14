@@ -233,7 +233,7 @@ def cell_view(engine, node_id, deviation_id):
         return None
     node = next((n for n in ns["nodes"] if n["node_id"] == node_id), {})
     dev = _dev_with_en(next((d for d in doc["deviations"] if d["deviation_id"] == deviation_id), {}), deviation_names_en())
-    look = _Lookup(engine, pg)
+    look = _Lookup(engine, pg, ns)
     cell = dict(cell, entries=[dict(_entry_view(e), detail=look.entry(e)) for e in cell["entries"]])
     problem = res.editable_problem(doc, node_id, deviation_id, ns)
     return {"cell": cell, "node": {"node_id": node_id, "name": node.get("name"), "state": nodes.node_state(node) if node else None},
@@ -270,17 +270,34 @@ def _intent(ns, node):
 class _Lookup:
     """워크시트 상세 열(B3, INTENT §3.6)에 쓰는 이름표: 안정 참조 → '태그(도면)', 근거 경로 → 도면별 강조, 출처 문서 → 문서 패널 자료."""
 
-    def __init__(self, engine, pg):
+    def __init__(self, engine, pg, ns=None):
         from hazop.export import study_xlsx
         from hazop.study import refs
-        self.engine, self.pg, self.refs = engine, pg, refs
+        self.engine, self.pg, self.refs, self.ns = engine, pg, refs, ns
         self.idx = refs.index(pg)
         self.dn = {s["graph_id"]: s["drawing_number"] for s in pg.get("sheets") or []}
         self.labels = study_xlsx.entity_labels(pg)
+        self.entities = {n.get("entity_id") for n in pg.get("nodes") or []}
         self._docs = None
+        self._expect = False
 
     def label(self, ref):
         return self.refs.label(ref, self.idx, self.dn)
+
+    def ref(self, r, **extra):
+        """참조 하나 {ref, label, missing}: 그래프에서 사라진 대상이면 missing(화면이 '도면에서 사라짐'으로 보임). 저장 값은 원래 참조 그대로."""
+        return dict({"ref": r, "label": self.label(r), "missing": r not in self.idx}, **extra)
+
+    def expectations(self):
+        """{잠재 후보 ID: 항목}(확인할 단서 줄용, 한 번만 셈). 못 세면 None(그러면 ID로 적음)."""
+        if self._expect is False:
+            self._expect = None
+            try:
+                inputs = excel_inputs(self.ns, self.pg) if self.ns else None
+                self._expect = {i["id"]: i for i in (inputs or {}).get("expectations", {}).get("items") or []} if inputs else None
+            except Exception:  # noqa: BLE001 - 단서를 못 세도 워크시트는 보인다
+                LOG.exception("잠재 후보 읽기 실패")
+        return self._expect
 
     def docs(self):
         """{문서 ID·문서 번호·자료 ID: 자료 ID} 문서 패널에서 찾을 열쇠."""
@@ -302,7 +319,7 @@ class _Lookup:
         sg = []
         for s in refs.safeguard_items(e):
             sg.append({"text": s["text"], "role": s["role"], "actuation": s["actuation"],
-                       "refs": [{"ref": r["ref"], "label": self.label(r["ref"])} for r in s["refs"] if r.get("ref")],
+                       "refs": [self.ref(r["ref"]) for r in s["refs"] if r.get("ref")],
                        "draft": not refs.is_confirmed(s, e) or any(not refs.is_confirmed(r, e) for r in s["refs"])})
         basis = e.get("ai_basis") or {}
         paths = []
@@ -311,17 +328,22 @@ class _Lookup:
                 continue
             by_sheet = chatview.path_steps(self.pg, [{"id": x, "flow": None} for x in p])
             marks = {g: [{"op": "path", "steps": steps, "style": "path", "numbered": True}] for g, steps in by_sheet.items()}
-            paths.append({"labels": [self.labels.get(x, x) for x in p], "marks": marks, "sheet": next(iter(by_sheet), None)})
+            gone = [x for x in p if x not in self.entities]
+            paths.append({"labels": [self.labels.get(x, x) + (" (도면에서 사라짐)" if x in gone else "") for x in p], "marks": marks,
+                          "sheet": next(iter(by_sheet), None), "missing": len(gone)})
         docs = self.docs()
         sources = [{"doc": s.get("doc") or "", "where": s.get("where") or "", "material_id": docs.get(s.get("doc"))}
                    for s in basis.get("sources") or []]
         warnings = list(basis.get("warnings") or []) + [res.quality_line(k, t) for k, t in res.quality_warnings(e)]
+        # 사람이 고른 잠재 후보는 AI 근거가 아니라 확인할 단서라 따로 둔다(이전 화면 '확인할 단서(근거 아님)')
+        clues = [t for k, t in refs.lines(e, self.idx, self.dn, None, self.expectations() if e.get("expectation_refs") else None)
+                 if k == "expectation"] if e.get("expectation_refs") else []
         return {"cause_kind": e.get("cause_kind"), "consequence_basis": e.get("consequence_basis"),
-                "cause_refs": [{"ref": r["ref"], "label": self.label(r["ref"]), "failure_mode": r.get("failure_mode") or "",
-                                "draft": not refs.is_confirmed(r, e)} for r in e.get("cause_refs") or [] if isinstance(r, dict) and r.get("ref")],
-                "consequence_refs": [{"ref": r["ref"], "label": self.label(r["ref"]), "draft": not refs.is_confirmed(r, e)}
+                "cause_refs": [self.ref(r["ref"], failure_mode=r.get("failure_mode") or "", draft=not refs.is_confirmed(r, e))
+                               for r in e.get("cause_refs") or [] if isinstance(r, dict) and r.get("ref")],
+                "consequence_refs": [self.ref(r["ref"], draft=not refs.is_confirmed(r, e))
                                      for r in e.get("consequence_refs") or [] if isinstance(r, dict) and r.get("ref")],
-                "safeguards": sg, "basis": {"paths": paths, "sources": sources, "warnings": warnings}}
+                "safeguards": sg, "basis": {"paths": paths, "sources": sources, "warnings": warnings, "clues": clues}}
 
     def targets(self, node):
         """참조 고르기 목록 [{ref, label, in_node}]: 이 구간 구성요소가 먼저, 그다음 태그 있는 다른 구성요소(다른 구간 대상 허용)."""
