@@ -8,6 +8,11 @@
   문제(confirm_problems)가 없고, 확정 때 찍은 digest가 지금 내용과 같을 때만 '확정'이다. ⑤에서 항목이 바뀌거나 승인이 풀리면 저절로 '초안'이 된다.
 - ⑥ 안의 편집은 모두 _change를 지나고, 건드린 확정 그룹을 그 자리에서 초안으로 내린다(되돌려도 확정이 살아나지 않음).
 - 확정(confirm)은 사람 이름이 있어야 하고 confirm_problems가 비어야 한다. suggest(규칙 초안)는 확정하지 않고 확정 그룹을 건드리지 않는다.
+- 승인 지문(fp)에는 ⑤ 칸의 '범위 바뀜'(scope_changed)·보관(hold)·칸 상태·분석 판(node_rev)이 들어간다. 범위가 바뀌거나
+  확정 해제로 보관된 승인은 지문이 바뀌어 확정 그룹이 초안으로 내려가고, 다시 확인하기 전에는 확정 근거가 되지 않는다(검토구간 규격 §4.3).
+- 쌍둥이: 겹친 두 검토구간에서 같은 원인((원인 위치, 고장모드) 집합)이 승인된 후보. 한 쌍둥이가 다른 살아 있는 그룹에 있거나
+  그룹이 없으면 확정을 막는다. 한쪽에 duplicate_of를 두면 풀린다. 결과·범주·안전 기능이 다른 쌍둥이(twin_conflict)는 같은
+  그룹에 있어도 막는다. 고장모드가 없는 원인과 자유 글 원인은 쌍둥이로 보지 않는다(열림 고착·닫힘 고착이 섞이지 않게).
 - 나누기·삭제한 그룹, 지운 표제·최종상태·기본사건은 기록으로 남는다(ID가 사라지지 않음).
 """
 
@@ -25,6 +30,8 @@ KIND = "hazop_ie_groups"
 SCHEMA_VERSION = "0.1"
 SEP = "/"
 ORIGINS = ("ai_draft", "human")
+# 기본사건만: FMEA 승인 행에서 만든 후보(P5, 설계 §8.2). 사람이 받아들이거나 고치면 human이 된다
+BASIC_EVENT_ORIGINS = ORIGINS + ("fmea",)
 GROUP_STATUSES = {"draft": "초안", "confirmed": "확정", "split": "나뉨", "deleted": "삭제"}
 RETIRED = ("split", "deleted")
 RECORD_STATUSES = ("live", "deleted")
@@ -43,7 +50,7 @@ ES_CATEGORIES = {"core_damage_possible": "노심손상 가능", "containment_byp
 COVERAGE = {"out_of_scope": "범위 밖", "other_method": "다른 기법으로 확인 예정", "not_applicable": "해당 없음(설계 특성)"}
 # 후보 내용이 바뀌었는지 보는 ⑤ 필드. 확정 때 이 값들의 지문을 digest에 넣는다
 MEMBER_FIELDS = ("cause", "consequence", "consequence_basis", "cause_kind", "cause_refs", "safeguards", "ie_hint")
-SOURCE_KINDS = {"cause": "HAZOP 원인", "safeguard": "보호수단 구현 대상"}
+SOURCE_KINDS = {"cause": "HAZOP 원인", "safeguard": "보호수단 구현 대상", "fmea": "FMEA 행"}   # fmea: P5(설계 §8.2), 열쇠 'fmea:FM-001'
 
 
 def _sha(obj):
@@ -111,6 +118,9 @@ def problems(doc):
             out.append("%s: 없는(또는 나뉨·삭제) 그룹 %s에 소속" % (iec, g))
         if c.get("placed_by") not in (None,) + ORIGINS or (g is None) != (c.get("placed_by") is None):
             out.append("%s: placed_by 값 %r" % (iec, c.get("placed_by")))
+        dup = c.get("duplicate_of")
+        if dup is not None and (dup not in doc["candidates"] or dup == iec):
+            out.append("%s: duplicate_of 값 %r" % (iec, dup))
     for gid, g in groups.items():
         if g.get("status") not in GROUP_STATUSES or g.get("origin") not in ORIGINS:
             out.append("%s: status·origin 값이 맞지 않음" % gid)
@@ -127,29 +137,128 @@ def problems(doc):
             out.append("%s: 확정 기록 없음" % gid)
     for table in ("headings", "end_states", "basic_events"):
         for k, v in doc[table].items():
-            if v.get("status") not in RECORD_STATUSES or v.get("origin") not in ORIGINS:
+            if v.get("status") not in RECORD_STATUSES or v.get("origin") not in (BASIC_EVENT_ORIGINS if table == "basic_events" else ORIGINS):
                 out.append("%s: status·origin 값이 맞지 않음" % k)
     return out
 
 
 # ---------------------------------------------------------------- ⑤ 사실(결과 문서 읽기만)
 
-def entry_facts(results):
-    """{key: {approved, ie_human, judgement, category, fp, entry, node_id, deviation_id}} 결과 칸 순서대로."""
+def cause_key(entry):
+    """같은 원인의 열쇠: (원인 위치 ref, 고장모드) 쌍의 frozenset. 원인 참조가 없거나 고장모드가 없는 참조가 하나라도
+    있으면 None(자동으로 묶지 않음, 검토구간 규격 §4.3)."""
+    rows = [r for r in entry.get("cause_refs") or [] if isinstance(r, dict) and r.get("ref")]
+    if not rows or any(not r.get("failure_mode") for r in rows):
+        return None
+    return frozenset((r["ref"], r["failure_mode"]) for r in rows)
+
+
+def entry_facts(results, node_set=None):
+    """{key: {approved, ie_human, judgement, category, fp, entry, node_id, deviation_id, scope_changed, held,
+    cause_key, cause_inside}} 결과 칸 순서대로. node_set을 주면 cause_inside(원인 위치의 안정 참조가 모두 그 구간
+    구성요소의 안정 참조, 집합의 graph_member_refs로 바꿈)와
+    칸 판이 지금 구간 판과 같은지를 본다. 없으면 cause_inside는 True로 둔다(쌍둥이 검사를 넓게)."""
     out = {}
     if not results:
         return out
     gid = results.get("graph_id")
+    to_ref = (node_set or {}).get("graph_member_refs") or {}
+    # 원인 위치(cause_refs[].ref)는 안정 참조(graph_id#source_object_id, refs.py)라 구성요소도 안정 참조로 바꿔 비교한다
+    members = {n["node_id"]: {to_ref.get(m) or m for m in n["members"]} | set(n["members"])
+               for n in (node_set or {}).get("nodes") or []}
+    revs = {n["node_id"]: n.get("rev") or 1 for n in (node_set or {}).get("nodes") or []}
+    from hazop.study import nodes as _nodes
+    # 분석에 드는 구간(확정·잠금): 인계 묶음의 후보(bundle.approved_entries)와 같은 기준이다. 그 밖의 칸(확정 해제·집합에 없는 구간, 옛
+    # '분석 제외'는 읽을 때 미확정으로 내려옴)의 항목은 확정 근거가 아니다(B2: 그룹이 묶음에 없는 후보를 가리킨 채 확정으로 남지 않게).
+    # 집합이 없으면 보지 않는다.
+    in_scope = None if node_set is None else {n["node_id"] for n in node_set.get("nodes") or [] if _nodes.is_active(n)}
     for cell in results["cells"]:
+        rev_now = revs.get(cell["node_id"])
+        current = rev_now is None or (cell.get("node_rev") or 1) == rev_now
         for e in cell["entries"]:
             hint = e.get("ie_hint") if isinstance(e.get("ie_hint"), dict) else {}
+            ck = cause_key(e)
+            mine = members.get(cell["node_id"])
             out[key_of(gid, e["entry_id"])] = {
                 "approved": e.get("status") == "approved",
                 "ie_human": hint.get("origin") == "human",
                 "judgement": hint.get("candidate") if hint.get("candidate") in res.IE_CANDIDATES else "undecided",
                 "category": hint.get("category"),
-                "fp": _sha({k: e.get(k) for k in MEMBER_FIELDS}),
+                "scope_changed": bool(e.get("scope_changed")) or (not current and not cell.get("hold")),
+                "held": bool(cell.get("hold")),
+                "excluded": in_scope is not None and cell["node_id"] not in in_scope,
+                "cause_key": ck,
+                "cause_inside": True if mine is None or ck is None else all(r in mine for r, _m in ck),
+                "fp": _sha(dict({k: e.get(k) for k in MEMBER_FIELDS}, scope_changed=e.get("scope_changed"),
+                                cell={"state": cell.get("state"), "hold": bool(cell.get("hold")),
+                                      "scope_changed": cell.get("scope_changed"),
+                                      "node_rev": cell.get("node_rev"), "current": current})),
                 "entry": e, "node_id": cell["node_id"], "deviation_id": cell["deviation_id"]}
+    return out
+
+
+def is_evidence(f):
+    """확정 근거가 되는 승인 항목인지: 승인, 범위 바뀜 아님, 보관 칸 아님, 분석에서 뺀 구간 아님(인계 묶음 후보와 같은 기준)."""
+    return bool(f) and f["approved"] and not f["scope_changed"] and not f["held"] and not f.get("excluded")
+
+
+def twin_same(fa, fb):
+    """쌍둥이 둘의 초기사건 판단이 같은지(묶는 조건 3·4): 판정·범주·안전 기능 집합, 그리고 결과 글(정규화) 또는
+    (결과 기준, 결과 참조 집합)."""
+    def facts(f):
+        h = f["entry"].get("ie_hint") or {}
+        return (f["judgement"], f["category"], frozenset(h.get("safety_functions") or []))
+
+    def cons(f):
+        e = f["entry"]
+        refs_ = frozenset(r.get("ref") for r in e.get("consequence_refs") or [] if isinstance(r, dict) and r.get("ref"))
+        return _norm(e.get("consequence")), (e.get("consequence_basis"), refs_) if refs_ else None
+    if facts(fa) != facts(fb):
+        return False
+    a, b = cons(fa), cons(fb)
+    return a[0] == b[0] or (a[1] is not None and a[1] == b[1])
+
+
+def twins(doc, facts):
+    """{IEC: [(쌍둥이 IEC, 판단이 같은지)]}. 쌍둥이 = 같은 원인 열쇠, 서로 다른 구간, 둘 다 원인 위치를 품은 구간,
+    둘 다 확정 근거가 되는 승인(범위 바뀜·보관 아님)."""
+    by_key = {}
+    for iec, c in sorted(doc["candidates"].items()):
+        f = facts.get(c["key"])
+        if is_evidence(f) and f["cause_key"] is not None and f["cause_inside"]:
+            by_key.setdefault(f["cause_key"], []).append(iec)
+    out = {}
+    for iecs in by_key.values():
+        for a in iecs:
+            fa = facts[doc["candidates"][a]["key"]]
+            for b in iecs:
+                fb = facts[doc["candidates"][b]["key"]]
+                if a != b and fa["node_id"] != fb["node_id"]:
+                    out.setdefault(a, []).append((b, twin_same(fa, fb)))
+    return out
+
+
+def _twin_problems(doc, gid, members, facts):
+    out = []
+    pairs = twins(doc, facts)
+    for iec in members:
+        c = doc["candidates"][iec]
+        if c.get("duplicate_of"):
+            continue
+        for other, same in pairs.get(iec, []):
+            if doc["candidates"][other].get("duplicate_of"):  # 사람이 중복으로 정리한 후보는 따로 셈하지 않음
+                continue
+            o = doc["candidates"][other]
+            og = o.get("group_id")
+            if not same:
+                out.append("%s: 같은 원인 후보 %s와 결과·범주·안전 기능이 다름(한쪽을 고치거나 duplicate_of로 정리)"
+                           % (iec, other))
+            elif og == gid:
+                continue
+            elif og is None or doc["groups"].get(og, {}).get("status") in RETIRED:
+                out.append("%s: 같은 원인 후보 %s가 그룹에 없음(같은 그룹에 넣거나 한쪽을 중복으로 표시)" % (iec, other))
+            else:
+                out.append("%s: 같은 원인 후보 %s가 %s에 있음(같은 그룹에 넣거나 한쪽을 중복으로 표시)" % (iec, other, og))
     return out
 
 
@@ -171,10 +280,11 @@ def source_keys(table, rec):
     return list(rec["source_keys"]) if table == "end_states" else [s["key"] for s in rec["sources"]]
 
 
-def in_scope(table, rec, facts):
-    """⑤ 출처가 있는 기록은 출처 가운데 승인 항목이 하나라도 있어야 묶음에 든다. 출처 없이 사람이 쓴 기록은 든다."""
+def in_scope(table, rec, facts, fmea_live=frozenset()):
+    """⑤ 출처가 있는 기록은 출처 가운데 승인 항목(또는 승인 FMEA 행, fmea_live의 'fmea:FM-001')이 하나라도 있어야 묶음에 든다.
+    출처 없이 사람이 쓴 기록은 든다."""
     keys = source_keys(table, rec)
-    return not keys or any((facts.get(k) or {}).get("approved") for k in keys)
+    return not keys or any((facts.get(k) or {}).get("approved") or k in fmea_live for k in keys)
 
 
 def _member_problems(doc, iec, facts):
@@ -185,6 +295,12 @@ def _member_problems(doc, iec, facts):
     out = []
     if not f["approved"]:
         out.append("%s: ⑤ 승인 풀림" % iec)
+    elif f["held"]:
+        out.append("%s: ⑤ 구간 확정 해제됨(보관)" % iec)
+    elif f.get("excluded"):
+        out.append("%s: 구간이 분석에서 빠짐(확정 해제)" % iec)
+    elif f["scope_changed"]:
+        out.append("%s: ⑤ 범위 바뀜(다시 확인 전)" % iec)
     if not f["ie_human"]:
         out.append("%s: 초기사건 판정이 AI 초안임(⑤에서 사람이 판정해야 함)" % iec)
     elif f["judgement"] != "yes":
@@ -194,18 +310,19 @@ def _member_problems(doc, iec, facts):
     return out
 
 
-def confirm_problems(doc, gid, results, facts=None):
+def confirm_problems(doc, gid, results, facts=None, node_set=None):
     """그룹을 확정할 수 없는(또는 확정이 풀린) 이유. 화면의 [확정] 버튼과 confirm()이 같은 함수를 쓴다."""
     g = doc["groups"].get(gid)
     if g is None:
         return ["없는 그룹: %s" % gid]
     if g["status"] in RETIRED:
         return ["%s 그룹이라 확정할 수 없음" % GROUP_STATUSES[g["status"]]]
-    facts = entry_facts(results) if facts is None else facts
+    facts = entry_facts(results, node_set) if facts is None else facts
     members = members_of(doc, gid)
     out = [] if members else ["소속 후보가 없음"]
     for iec in members:
         out += _member_problems(doc, iec, facts)
+    out += _twin_problems(doc, gid, members, facts)
     if g["representative"] is not None and g["representative"] not in members:
         out.append("대표 후보(%s)가 소속 후보가 아님" % g["representative"])
     for table, ids, what in (("headings", g["heading_ids"], "표제"), ("end_states", g["end_state_ids"], "최종상태")):
@@ -220,9 +337,9 @@ def confirm_problems(doc, gid, results, facts=None):
     return out
 
 
-def digest(doc, gid, results, facts=None):
+def digest(doc, gid, results, facts=None, node_set=None):
     """그룹 내용 지문: 그룹 필드, 소속(후보·소속을 정한 쪽·⑤ 내용 지문), 참조하는 표제·최종상태 기록."""
-    facts = entry_facts(results) if facts is None else facts
+    facts = entry_facts(results, node_set) if facts is None else facts
     g = doc["groups"][gid]
     strip = lambda r: {k: v for k, v in r.items() if k != "status"}  # noqa: E731
     return _sha({
@@ -233,11 +350,11 @@ def digest(doc, gid, results, facts=None):
         "end_states": {e: strip(doc["end_states"][e]) for e in g["end_state_ids"]}})
 
 
-def effective_status(doc, gid, results, facts=None):
+def effective_status(doc, gid, results, facts=None, node_set=None):
     g = doc["groups"][gid]
     if g["status"] != "confirmed":
         return g["status"]
-    facts = entry_facts(results) if facts is None else facts
+    facts = entry_facts(results, node_set) if facts is None else facts
     ok = g["origin"] == "human" and not confirm_problems(doc, gid, results, facts) and \
         digest(doc, gid, results, facts) == (g.get("confirmation") or {}).get("digest")
     return "confirmed" if ok else "draft"
@@ -330,10 +447,10 @@ def _check_fields(doc, kind, fields):
 
 # ---------------------------------------------------------------- ⑤와 맞추기
 
-def sync(doc, results, at=None):
+def sync(doc, results, at=None, node_set=None):
     """1) IEC가 없는 승인 항목에 다음 IEC를 준다(결과 칸 순서, 그룹 없음). 2) 저장 상태는 확정인데 실제로는 초안인 그룹을
     이유와 함께 내린다. 두 번 돌려도 더하는 것이 없고, 할 일이 없으면 받은 문서를 그대로 돌려준다."""
-    facts = entry_facts(results)
+    facts = entry_facts(results, node_set)
     known = iec_of(doc)
     new = [k for k, f in facts.items() if f["approved"] and k not in known]
     stale = {}
@@ -462,7 +579,7 @@ def _add_be(o, bes, idx, ref, mode, kind, key, heading):
                                   "status": "live"}
         bes[bkey] = bid
     be = o["basic_events"][bes[bkey]]
-    if be["origin"] == "ai_draft":  # 사람이 받아들인 기록은 규칙이 넓히지 않는다
+    if be["origin"] in ("ai_draft", "fmea"):  # 사람이 받아들인 기록은 규칙이 넓히지 않는다. FMEA에서 온 후보에는 HAZOP 출처를 합친다
         src = {"kind": kind, "key": key}
         if src not in be["sources"]:
             be["sources"].append(src)
@@ -637,12 +754,12 @@ def remove(doc, ref, at=None):
     return _change(doc, "remove", [rid], touched, at, apply)[0]
 
 
-def confirm(doc, gid, results, reviewer, at=None):
+def confirm(doc, gid, results, reviewer, at=None, node_set=None):
     """사람이 그룹을 확정한다. 검토자 이름이 없거나 confirm_problems가 있으면 ValueError. 확정하는 검토자가 그룹 필드도
     받아들이는 것이므로 그룹 origin을 human으로 바꾼다(effective_status는 origin이 human인 그룹만 확정으로 본다)."""
     if not (reviewer or "").strip():
         raise ValueError("검토자 이름이 있어야 확정할 수 있습니다")
-    facts = entry_facts(results)
+    facts = entry_facts(results, node_set)
     bad = confirm_problems(doc, gid, results, facts)
     if bad:
         raise ValueError("; ".join(bad))
@@ -655,6 +772,29 @@ def confirm(doc, gid, results, reviewer, at=None):
         o["groups"][gid].update(status="confirmed", origin="human",
                                 confirmation={"at": at, "by": reviewer.strip(), "digest": d})
     return _change(doc, "confirm", [gid], [], at, apply, by=reviewer.strip())[0]
+
+
+def mark_duplicate(doc, iec, of, at=None):
+    """후보 iec를 같은 원인 후보 of의 중복으로 표시한다(of=None이면 표시를 지움). 표시한 후보는 그룹에 넣지 않아도 쌍둥이
+    검사에 걸리지 않는다. 표시한 후보가 든 그룹과 of가 든 그룹의 확정은 초안으로 내린다."""
+    if iec not in doc["candidates"] or (of is not None and of not in doc["candidates"]):
+        raise ValueError("없는 후보: %s" % (iec if iec not in doc["candidates"] else of))
+    if of == iec:
+        raise ValueError("자기 자신의 중복으로 표시할 수 없음")
+    if of is not None and doc["candidates"][of].get("duplicate_of"):
+        raise ValueError("%s는 이미 다른 후보의 중복이라 기준이 될 수 없음" % of)
+    if of is not None and any(c.get("duplicate_of") == iec for c in doc["candidates"].values()):
+        raise ValueError("%s를 기준으로 삼은 중복 후보가 있어 %s를 중복으로 표시할 수 없음" % (iec, iec))
+    if doc["candidates"][iec].get("duplicate_of") == of:
+        return doc
+    touched = [doc["candidates"][iec]["group_id"]] + ([doc["candidates"][of]["group_id"]] if of else [])
+
+    def apply(o):
+        if of is None:
+            o["candidates"][iec].pop("duplicate_of", None)
+        else:
+            o["candidates"][iec]["duplicate_of"] = of
+    return _change(doc, "mark_duplicate", [iec], touched, at, apply, of=of)[0]
 
 
 def reopen(doc, gid, at=None):

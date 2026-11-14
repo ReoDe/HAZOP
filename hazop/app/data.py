@@ -14,6 +14,7 @@ import os
 from hazop import paths, store_io
 from hazop.analysis import ai as ai_mod
 from hazop.extract import corrections
+from hazop.extract.adapters import raster_scan
 from hazop.graph import build as graph_build
 from hazop.kg import auto, docextract
 from hazop.kg import build as kg_build
@@ -25,7 +26,7 @@ from hazop.viewer import build as viewer_build
 
 # 참고값(이름만 남김): 가져올 때의 scripts/ 위치. 로딩에는 쓰지 않으며 script_module은 호출 시점 경로를 쓴다
 SCRIPTS_DIR = paths.program_path("scripts")
-SCRIPT_NAMES = ("extract_drawio", "extract_pdf", "build_graph")  # 화면이 읽는 스크립트(허용 목록, 묶음 datas 대상)
+SCRIPT_NAMES = ("extract_drawio", "extract_pdf", "extract_dexpi", "build_graph")  # 화면이 읽는 스크립트(허용 목록, 묶음 datas 대상)
 _script_cache = {}  # 키: 정규화한 파일 경로(루트가 바뀌면 새로 읽음)
 
 
@@ -107,7 +108,7 @@ def _pdf_page_state(record):
     return out
 
 
-def extract_and_graph(registration_path):
+def extract_and_graph(registration_path, progress=None):
     """등록정보 → `--registration` 추출 → 그래프 생성 (scripts/extract_drawio.run_one 또는 PDF면
     scripts/extract_pdf.run_pages로 등록된 모든 쪽, 그리고 scripts/build_graph.build_one) → 프로젝트 지식그래프 다시 빌드.
     출력 폴더 이름은 두 형식이 같다.
@@ -117,8 +118,17 @@ def extract_and_graph(registration_path):
     ex = script_module("extract_drawio")
     bg = script_module("build_graph")
     record, original = registry.load_for_extraction(registration_path)
+    if raster_scan.is_scan_record(record, original):  # 스캔 PDF·PNG·JPG(HZ-PLN-23 §8): 쪽마다 20초 안팎이라 progress로 알린다
+        return _extract_scan_pages(record, original, ex, bg, progress)
     if record.get("format") == "pdf":
         return _extract_pdf_pages(record, original, ex, bg)
+    if record.get("format") == "dexpi":  # DEXPI 변환(HZ-PLN-22): 원본 옆 SVG 없음, 추출 결과의 source.format이 dexpi
+        warnings = []
+        result, out_dir = script_module("extract_dexpi").run_one(original, paths.output_root("extract"),
+                                                                 registration=record, warnings=warnings)
+        graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
+        return _with_kg({"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir,
+                         "warnings": warnings}, record["project_id"])
     reg_svg = registry.registered_svgs(registration_path, record)
     warnings = []
     result, out_dir = ex.run_one(original, paths.output_root("extract"), svg="auto", page=0, registration=record,
@@ -126,6 +136,32 @@ def extract_and_graph(registration_path):
     graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
     return _with_kg({"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir,
                      "warnings": warnings}, record["project_id"])
+
+
+def _extract_scan_pages(record, original, ex, bg, progress=None):
+    """스캔 도면: raster_scan.run_registered로 등록된 쪽을 읽고 쪽마다 그래프를 만든다. 반환 키는 _extract_pdf_pages와 같다.
+    progress(끝난 쪽 수, 전체 쪽 수, 문구). 이 PC에 스캔 읽기 구성요소가 없으면 ValueError(READER_MISSING)."""
+    warnings = []
+    try:
+        done, skipped = raster_scan.run_registered(original, paths.output_root("extract"), record,
+                                                   lambda i: ex.registered_out_name(record, i), warnings=warnings,
+                                                   progress=progress)
+    except raster_scan.ScanReaderUnavailable as exc:
+        raise ValueError(str(exc))
+    for s in skipped:  # 전에 추출했던 쪽이면 남은 그래프가 지식그래프에 섞이지 않게 지운다(_extract_pdf_pages와 같음)
+        stale = os.path.join(paths.output_root("graph"), ex.registered_out_name(record, s["page_index"]), "graph.json")
+        if os.path.isfile(stale):
+            os.remove(stale)
+    if not done:
+        raise ValueError("추출한 쪽이 없음: %s" % "; ".join("%s %s" % (s["page_id"], s["reason"]) for s in skipped))
+    pages = []
+    for page, result, out_dir in done:
+        graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
+        pages.append({"page_index": page, "extraction": result, "extract_dir": out_dir, "graph": graph,
+                      "graph_dir": gdir})
+    out = {k: pages[0][k] for k in ("extraction", "extract_dir", "graph", "graph_dir")}
+    out.update(pages=pages, skipped_pages=skipped, warnings=warnings, scan=True)
+    return _with_kg(out, record["project_id"])
 
 
 def _extract_pdf_pages(record, original, ex, bg):
@@ -393,13 +429,19 @@ def save_corrections(name, ops, by, expect=store_io.ANY):
     else:
         out["kg_error"] = "프로젝트에 등록되지 않은 도면이라 지식그래프를 다시 만들지 않음"
     recheck = []
-    node_set = study_nodes.load(graph)
+    try:  # 도면별 저장본은 바꾸지 않고 읽는다(0.1 변환·판 이전은 그 집합을 여는 화면이 함. 옛 도면별 파일을 건드리지 않게)
+        node_set = study_nodes.read_as_is(graph)
+    except ValueError:
+        node_set = None
     if node_set is not None and study_nodes.is_stale(node_set, graph):
-        recheck.append("④ 검토구간 %s이 고치기 전 도면 기준입니다. 재확인이 필요합니다."
-                       % ("확정본" if node_set.get("status") == "confirmed" else "저장본"))
+        confirmed = node_set.get("status") == "confirmed" or study_nodes.active_nodes(
+            node_set if node_set.get("schema_version") == study_nodes.SCHEMA_VERSION else None)
+        recheck.append("④ 검토구간 %s이 고치기 전 도면 기준입니다. 재확인이 필요합니다." % ("확정본" if confirmed else "저장본"))
     res_path = study_results.store_path(graph.get("project_id"), graph["graph_id"])
     if os.path.isfile(res_path):
-        ref = (read_json(res_path).get("study_nodes_ref") or {}).get("graph_version")
+        saved = read_json(res_path)
+        ref = saved.get("graph_version") if "graph_version" in saved else (saved.get("study_nodes_ref") or {}).get(
+            "graph_version")
         if ref != graph["graph_version"]:
             recheck.append("⑤ 분석 결과가 고치기 전 도면 기준입니다. 재확인이 필요합니다.")
     out["recheck"] = recheck

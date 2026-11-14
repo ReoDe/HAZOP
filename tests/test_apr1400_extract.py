@@ -61,10 +61,11 @@ class InstrumentTags(unittest.TestCase):
         self.assertEqual(got, want)
 
     def test_instrument_symbol_kinds(self):
-        """PT는 전송기. TEW(보호관, DCD 범례 1.7-1에서 TE와 다름)는 맞는 종류가 레지스트리에 없어 종류를 비우고
-        계기 모양으로만 태그를 붙인다."""
+        """PT는 전송기. TEW(보호관 온도 측정점, DCD 범례 1.7-1 TEW THERMOWELL)는 레지스트리에 보호관 종류가 없어
+        온도 측정점인 temperature_element로 본다(R3 개선 4, 2026-11-13. 3e에서는 종류를 비웠다)."""
         kinds = {item["tag"]: node_at(self.ex, item["bbox"])["kind"] for item in self.key["instruments"]}
-        self.assertEqual(kinds, {"TEW 106": None, "PT 106": "transmitter", "TEW 107": None, "TEW 108": None})
+        self.assertEqual(kinds, {"TEW 106": "temperature_element", "PT 106": "transmitter",
+                                 "TEW 107": "temperature_element", "TEW 108": "temperature_element"})
 
     def test_no_tag_outside_the_text_layer(self):
         """태그는 PDF 텍스트 층에 찍힌 글자다. 추출 결과의 label_text와 견주면 라벨에서 만든 태그는 늘 통과하므로,
@@ -265,8 +266,10 @@ class ValveLabels(unittest.TestCase):
 
     def test_position_words_are_not_tags_or_labels(self):
         for seq, (ex, _) in self.pages.items():
-            self.assertEqual([n["label_text"] for n in ex["nodes"]
-                              if n["category"] == "valve" and n["tag"] and n["label_text"].strip() in ("LC", "LC,FC")],
+            # 위치 약어가 태그가 되지 않는다. 번호 원으로 태그를 단 밸브(R3 개선 6)는 이름표 글자에 위치 약어가 남을 수 있어
+            # 이름표가 아니라 태그를 본다
+            self.assertEqual([n["tag"] for n in ex["nodes"]
+                              if n["category"] == "valve" and (n["tag"] or "").strip() in ("LC", "LC,FC", "FC")],
                              [], seq)
 
 
@@ -303,7 +306,7 @@ PAGE_025 = paths.folder("APR1400", "by-drawing", "025_Ch09_Fig9.2.2-1_s1of4_Comp
                      "pdfplumber 또는 APR1400 016·025쪽 PDF 없음(저장소 밖 자료)")
 class CircledValvesKeepTheirCircleNumber(unittest.TestCase):
     """번호 원이 합쳐진 밸브는 그 원이 번호다. 옆 밸브의 번호 글자를 태그로 가져가면 안 된다(F1-6 뒤 F1-5 적용 때 찾음:
-    016쪽 구동 밸브 348이 V158을, 025쪽 방출 밸브 1108이 V1110을 가져감)."""
+    016쪽 구동 밸브 348이 V158을, 025쪽 방출 밸브 1108이 V1110을 가져감). R3 개선 6부터 그 원의 번호가 태그다."""
 
     CASES = ((PAGE_016, "V158", "348"), (PAGE_025, "V1110", "1108"))
 
@@ -312,7 +315,7 @@ class CircledValvesKeepTheirCircleNumber(unittest.TestCase):
             ex = pdf_vector.extract(path, page=0)
             got = [(n["tag"], n["evidence"].get("ident_number")) for n in ex["nodes"]
                    if n["evidence"].get("ident_number") == circle]
-            self.assertEqual(got, [(None, circle)], number)
+            self.assertEqual(got, [(circle, circle)], number)
 
 
 @unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_025), "pdfplumber 또는 APR1400 025쪽 PDF 없음(저장소 밖 자료)")

@@ -27,6 +27,11 @@ def nodes_load(path):
         return json.load(fh)
 
 
+
+def nodes_all_confirmed(ns):
+    from hazop.study import nodes
+    return nodes.all_confirmed(ns)
+
 class StudyScreensTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -138,7 +143,7 @@ class StudyScreensTest(unittest.TestCase):
         scr.select_node(node_id)
         self.select_members(scr, [eid])
         scr.remove_btn.click()
-        self.assertFalse(scr.confirm_btn.isEnabled(), "미포함이 있으면 확정 불가")
+        self.assertTrue(scr.confirm_btn.isEnabled(), "v2: 구간 밖 구성요소가 있어도 확정(규격 §3)")
         self.assertEqual([scr.uncovered_list.item(i).data(Qt.UserRole) for i in range(scr.uncovered_list.count())], [eid])
         scr.on_node({"entity_id": eid, "local_id": None})
         self.assertTrue(scr.owner_list.isHidden() and not scr.owner_hint.isHidden(), "속한 구간 없음은 빈 상자 대신 안내")
@@ -152,15 +157,15 @@ class StudyScreensTest(unittest.TestCase):
         self.assertTrue(scr.confirm_btn.isEnabled())
         self.assertTrue(scr.rename_current("가압기 검토구간"))
         scr.confirm_btn.click()
-        self.assertEqual(scr.node_set["status"], "confirmed")
-        self.assertEqual(scr.node_set["confirmed_by"], "검토자A")
+        self.assertTrue(nodes_all_confirmed(scr.node_set))
+        self.assertEqual({n["confirmed"]["by"] for n in scr.node_set["nodes"]}, {"검토자A"})
         self.assertFalse(scr.merge_btn.isEnabled())
         self.assertTrue(win.step_buttons[STUDY].property("done"), "레일 ④ 완료 표시")
         expected = scr.node_set["nodes"]
 
         win2 = self.window()
         scr2 = self.open_study(win2)
-        self.assertEqual(scr2.node_set["status"], "confirmed", "재시작 후에도 확정 유지")
+        self.assertTrue(nodes_all_confirmed(scr2.node_set), "재시작 후에도 확정 유지")
         self.assertEqual(scr2.node_set["nodes"], expected)
         self.assertTrue(any("가압기 검토구간" in scr2.node_list.item(i).text() for i in range(scr2.node_list.count())))
 
@@ -200,7 +205,8 @@ class StudyScreensTest(unittest.TestCase):
         dict((label, fn) for label, _k, fn in res.commands())["이전 고정 응답 분석 열기"]()
         self.assertEqual(win2.stack.currentIndex(), 2)
 
-    def test_stale_saved_set_blocks_confirm(self):
+    def test_saved_set_from_an_older_graph_version_follows_it(self):
+        """v2: 판 이전은 모든 구간에 적용하고, 내용이 같은 구간은 그대로 이어진다(규격 §2.6)."""
         from hazop.study import nodes
         pg = self.pg()
         ns = nodes.rename(nodes.propose(pg), "S1", "옛 판")
@@ -208,12 +214,10 @@ class StudyScreensTest(unittest.TestCase):
         nodes.save(ns)
         win = self.window()
         scr = self.open_study(win)
-        self.assertFalse(scr.stale.isHidden(), "그래프 판이 바뀌면 경고")
-        self.assertFalse(scr.confirm_btn.isEnabled())
-        self.assertTrue(scr.repropose(ask=False))
-        self.assertTrue(scr.stale.isHidden())
+        self.assertFalse(nodes.is_stale(scr.node_set, pg), "판을 이어 받음")
         self.assertTrue(scr.confirm_btn.isEnabled())
-        self.assertEqual(nodes.load(pg)["graph_version"], pg["graph_version"], "다시 제안은 저장됨")
+        self.assertEqual(nodes.load(pg)["graph_version"], pg["graph_version"])
+        self.assertEqual(scr.node_set["nodes"][0]["name"], "옛 판")
 
     def test_confirm_not_shown_when_save_fails(self):
         from unittest import mock
@@ -222,7 +226,7 @@ class StudyScreensTest(unittest.TestCase):
         scr = self.open_study(win)
         with mock.patch("os.replace", side_effect=OSError(28, "디스크 부족")):
             self.assertFalse(scr.confirm("검토자A"))
-        self.assertEqual(scr.node_set["status"], "proposed", "저장 못 하면 확정으로 보이지 않음")
+        self.assertEqual({n["state"] for n in scr.node_set["nodes"]}, {"applied"}, "저장 못 하면 확정으로 보이지 않음")
         self.assertIsNone(nodes.load(self.pg()))
 
     def test_all_segments_visible_at_1366(self):
@@ -263,7 +267,7 @@ class StudyScreensTest(unittest.TestCase):
             QTest.keyClick(scr.node_list, Qt.Key_F2)
         self.assertEqual(scr._node(nid)["name"], "단축키 이름", "F2 = 이름 바꾸기")
         QTest.keyClick(scr.node_list, Qt.Key_Return, Qt.ControlModifier)
-        self.assertEqual(scr.node_set["status"], "confirmed", "Ctrl+Enter = 구간 확정")
+        self.assertTrue(nodes_all_confirmed(scr.node_set), "Ctrl+Enter = 구간 확정")
         self.assertEqual([c[0] for c in scr.commands()],
                          ["전체 보기", "병합", "분할", "이름 바꾸기", "구간 확정", "확정 해제", "다시 제안", "⑤ 결과에서 보기",
                           "스크리닝 제외에서 꺼내기", "붙인 조각 떼기", "스크리닝 제외로 옮기기", "스크리닝 제외 구간 보기·접기",
@@ -283,14 +287,17 @@ class StudyScreensTest(unittest.TestCase):
         self.assertFalse(win.toast_box.isHidden())
         self.assertIn("병합했습니다", win.toast_box.label.text())
         self.assertTrue(win.toast_box.run_undo())
-        self.assertEqual(nodes.load(pg), before, "실행 취소 = 병합 전 집합을 다시 저장")
-        self.assertEqual(scr.node_set, before)
+        shape = lambda s: [(n["node_id"], n["name"], n["members"], n["state"]) for n in s["nodes"]]  # noqa: E731
+        self.assertEqual(shape(nodes.load(pg)), shape(before), "실행 취소 = 병합 묶음을 되돌림(undo_batch)")
+        self.assertEqual(shape(scr.node_set), shape(before))
+        self.assertTrue(nodes.load(pg)["batches"][-2]["undone"], "되돌린 묶음에 기록")
 
         self.assertTrue(scr.confirm("검토자A"))
-        self.assertEqual(nodes.load(pg)["status"], "confirmed")
-        self.assertTrue(win.toast_box.run_undo())
-        self.assertEqual(nodes.load(pg), before, "확정 실행 취소 = 확정 전 집합")
-        self.assertEqual(scr.node_set["status"], "proposed")
+        self.assertTrue(nodes_all_confirmed(nodes.load(pg)))
+        self.assertFalse(win.toast_box.run_undo(), "확정에는 실행 취소가 없음(확정 해제가 있음, 규격 §2.3)")
+        self.assertTrue(nodes_all_confirmed(nodes.load(pg)))
+        self.assertTrue(scr.reopen())
+        before = nodes.load(pg)
 
         self.assertTrue(scr.repropose(ask=False))
         self.assertNotEqual(nodes.load(pg), before)
@@ -346,6 +353,7 @@ class StudyScreensTest(unittest.TestCase):
         from hazop import paths
         self.addCleanup(shutil.rmtree, paths.folder("backup"), True)
         path, _good, cases = self._unreadable_cases()
+        shutil.rmtree(paths.folder("backup"), ignore_errors=True)  # 앞 시험의 판 이전 백업과 섞이지 않게
         for label, raw in cases:
             with self.subTest(label):
                 with open(path, "wb") as fh:
@@ -503,12 +511,12 @@ class StudyScreensTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, paths.folder("backup"), True)
         pg = self.pg()
         ns = nodes.confirm(nodes.propose(pg), pg, "검토자A")
-        ns.pop("member_refs")
+        ns.pop("graph_member_refs")
         nodes.save(ns)
         win = self.window()
         with mock.patch("os.replace", side_effect=OSError(13, "잠김")):
             scr = self.open_study(win)
-        self.assertEqual(scr.node_set["status"], "confirmed")
+        self.assertTrue(nodes_all_confirmed(scr.node_set))
         self.assertIn("저장하지 못", scr.warn.label.text())
 
     def test_knowledge_index_follows_the_knowledge_graph_files(self):
@@ -621,10 +629,10 @@ class StudyScreensTest(unittest.TestCase):
         with open(path, "wb") as fh:
             fh.write(codecs.BOM_UTF8 + good)
         scr = self.open_study(self.window())
-        self.assertEqual(scr.node_set["status"], "confirmed", "메모장이 붙인 BOM이 있어도 그대로 읽음")
+        self.assertTrue(nodes_all_confirmed(scr.node_set), "메모장이 붙인 BOM이 있어도 그대로 읽음")
         self.assertEqual(scr.node_set["nodes"][0]["name"], "사람이 정한 이름")
         self.assertNotIn("읽을 수 없어", scr.warn.label.text())
-        self.assertEqual(nodes.load(self.pg())["status"], "confirmed")
+        self.assertTrue(nodes_all_confirmed(nodes.load(self.pg())))
 
     def test_empty_hints_and_selection(self):
         win = self.window()
@@ -737,14 +745,16 @@ class StudyScreensTest(unittest.TestCase):
         pg = project.load(project.project_id_of(self.graph))
         ns = nodes.confirm(nodes.propose(pg), pg, "검토자A")
         ns["graph_version"] = "v-old"
-        ns["member_refs"][sorted(ns["member_refs"])[0]] = "graph-gone#x"  # 새 판에 대응 없음 -> 판 이전하지 않음
+        lost = sorted(m for n in ns["nodes"] for m in n["members"])[0]
+        ns["graph_member_refs"][lost] = "graph-gone#x"  # 새 판에 대응 없음 -> 그 구간만 재확인
         nodes.save(ns)
         win = self.window()
         win.go(RESULTS)
         res = win.screens[RESULTS]
         res._load()
-        self.assertEqual(res.stack.currentIndex(), 0, "옛 도면 판의 확정본은 결과 셸에 쓰지 않음")
-        self.assertIn("다시 확정", res.empty.text())
+        affected = set(nodes.nodes_of(ns, lost))
+        self.assertEqual(res.stack.currentIndex(), 1, "v2: 나머지 확정 구간은 그대로 ⑤에 나옴")
+        self.assertFalse(affected & {n["node_id"] for n in res._rows()}, "재확인으로 내린 구간은 행이 없음")
 
 
 if __name__ == "__main__":

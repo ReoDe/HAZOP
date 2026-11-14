@@ -303,7 +303,7 @@ class ScreenRecordTest(unittest.TestCase):
         self.assertTrue(all(s.score is not None for s in sn.screens(out, self.graph).values() if s.status != "excluded"))
         self.assertEqual(self.ns, sn.propose(self.graph, at=AT))  # 입력은 바뀌지 않는다
 
-    def test_hand_edits_make_the_judgement_human_and_confirm_guards_rule_buckets(self):
+    def test_hand_edits_make_the_judgement_human_and_confirm_ignores_buckets(self):
         bucket = next(n for n in self.ns["nodes"] if n["screen"]["status"] == "excluded")
         valve_node = by_member(self.ns, "d-valve")
         moved = sn.add_member(sn.remove_member(self.ns, valve_node["node_id"], "d-valve", at=AT),
@@ -312,8 +312,7 @@ class ScreenRecordTest(unittest.TestCase):
         sn.confirm(moved, self.graph, "검사", at=AT)  # 사람이 옮긴 것은 막지 않는다
         forged = copy.deepcopy(moved)
         by_member(forged, "d-valve")["screen"].update(by="rule", rule="R3")
-        with self.assertRaises(ValueError):
-            sn.confirm(forged, self.graph, "검사", at=AT)
+        sn.confirm(forged, self.graph, "검사", at=AT)  # v2: 제외 묶음 검사는 없앰(규격 §1 #2, V-0)
 
     def test_malformed_screen_fields_are_rejected_on_load(self):
         import tempfile

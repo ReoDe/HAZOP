@@ -69,6 +69,12 @@ def _segs(pts):
     return list(zip(pts[:-1], pts[1:]))
 
 
+def _meets_at_end(e, pts, f):
+    """꺾은선 pts에서 점 e에 가장 가까운 자리가 제 끝 f인가. 짧은 판(플랜지 등)은 끝이 e 가까이 있어도 가운데가 e에
+    더 가깝다(배관 끝이 판 가운데에 얹힘)."""
+    return min(_seg_dist(e, a, b)[0] for a, b in _segs(pts)) >= math.hypot(f[0] - e[0], f[1] - e[1]) - 0.05
+
+
 def _poly_dist(pts_a, pts_b):
     """두 꺾은선 사이 최소 거리(끝점-선분 기준 근사, 교차하면 0)."""
     best = float("inf")
@@ -128,6 +134,32 @@ def _uf_groups(n, linked):
     return [groups[k] for k in sorted(groups)]
 
 
+def _end_runs(n, mate):
+    """양 끝(0, 1)을 가진 항목 n개를 끝 짝(mate: (항목, 끝) → (항목, 끝))으로 이은 줄 목록. 줄마다 [(항목, 들어오는 끝)]을
+    차례대로 돌려준다(항목은 들어오는 끝에서 반대 끝으로 지난다). 짝 없는 항목은 혼자 한 줄이다."""
+    runs, used = [], set()
+    for i in range(n):
+        if i in used:
+            continue
+        start, k, seen = i, 0, {i}
+        while (start, k) in mate:  # 줄의 한쪽 끝까지 거슬러 간다(고리면 한 바퀴에서 멈춘다)
+            j, kj = mate[(start, k)]
+            if j in seen:
+                break
+            seen.add(j)
+            start, k = j, 1 - kj
+        run, cur, ck = [], start, k
+        while True:
+            run.append((cur, ck))
+            used.add(cur)
+            nxt = mate.get((cur, 1 - ck))
+            if nxt is None or nxt[0] in used:
+                break
+            cur, ck = nxt
+        runs.append(run)
+    return runs
+
+
 # ---------------------------------------------------------------- 몸체 모양
 
 def _center(b):
@@ -138,6 +170,13 @@ def _is_circle(body, prm):
     b = body["bbox"]
     w, h = _w(b), _h(b)
     return body["closed"] and bool(body.get("curved")) and w > 0 and abs(w - h) <= prm["circle_aspect_tol"] * max(w, h)
+
+
+def _pt_circle_dist(p, body):
+    """점과 원 몸체 사이 거리(원 안이면 0). 원은 상자 네 귀퉁이가 비어 있어 상자 거리보다 멀다."""
+    b = body["bbox"]
+    c, r = _center(b), (_w(b) + _h(b)) / 4
+    return max(0.0, math.hypot(p[0] - c[0], p[1] - c[1]) - r)
 
 
 def _is_tombstone(body):
@@ -187,6 +226,38 @@ def _is_chevron(body):
 def _is_triangle(body):
     pts = body["pts"][:-1] if body["pts"][0] == body["pts"][-1] else body["pts"]
     return body["closed"] and not body.get("curved") and len(pts) == 3
+
+
+CONVEX_FILL = 0.85  # 볼록하다고 보는 다각형 넓이 / 볼록 껍질 넓이 하한. L자 조각은 0.6 안팎, 번진 화살촉은 0.95 이상
+
+
+def _area(pts):
+    return abs(sum(pts[k][0] * pts[k - 1][1] - pts[k - 1][0] * pts[k][1] for k in range(len(pts)))) / 2.0
+
+
+def _hull(pts):
+    pts = sorted(set(pts))
+    if len(pts) < 3:
+        return pts
+
+    def half(seq):
+        out = []
+        for p in seq:
+            while len(out) >= 2 and ((out[-1][0] - out[-2][0]) * (p[1] - out[-2][1])
+                                     - (out[-1][1] - out[-2][1]) * (p[0] - out[-2][0])) <= 0:
+                out.pop()
+            out.append(p)
+        return out[:-1]
+    return half(pts) + half(pts[::-1])
+
+
+def _is_convex(pts):
+    """닫힌 다각형이 거의 볼록한가. L자로 꺾인 점선 모서리는 오목하다."""
+    pts = [tuple(p) for p in pts]
+    if len(pts) >= 2 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    hull = _hull(pts)
+    return len(hull) >= 3 and _area(pts) >= CONVEX_FILL * _area(hull) > 0
 
 
 # ---------------------------------------------------------------- 미확인·차단 기록

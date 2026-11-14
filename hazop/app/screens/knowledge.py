@@ -539,15 +539,17 @@ class KnowledgeScreen(QWidget):
             ns = study_nodes.load(self.pg)
         except (OSError, ValueError) as exc:
             return {"node_set": None, "results": None, "note": "검토구간 파일을 읽을 수 없음: %s" % exc}
-        if not ns or ns.get("status") != "confirmed" or study_nodes.is_stale(ns, self.pg) \
-                or study_nodes.coverage(ns, self.pg)["uncovered"]:
+        if not ns or not study_nodes.active_nodes(ns) or study_nodes.is_stale(ns, self.pg):
             return {"node_set": None, "results": None, "note": "확정된 프로젝트 검토구간이 없거나 지금 도면과 맞지 않습니다."}
         try:
             doc = study_results.load(ns)
         except (OSError, ValueError) as exc:
             return {"node_set": ns, "results": None, "note": "분석 결과를 읽을 수 없음: %s" % exc}
-        if doc is not None and study_results.is_stale(doc, ns):
-            return {"node_set": ns, "results": None, "note": "분석 결과가 이전 검토구간 확정본으로 만든 것이라 투영하지 않습니다."}
+        if doc is not None:
+            doc, problems, _bad = study_results.partition(doc, ns)
+            if problems:
+                return {"node_set": ns, "results": None, "note": "분석 결과 파일에 문제가 있어 투영하지 않습니다(%s)."
+                        % problems[0]}
         return {"node_set": ns, "results": doc, "note": None if doc else "아직 분석 결과가 없습니다.",
                 "ie": self._ie(ns, doc)}
 
@@ -557,7 +559,8 @@ class KnowledgeScreen(QWidget):
             return None
         try:
             ie_doc = ie_store.load(self.pg["project_id"])[0]
-            return ie_bundle.build_bundle(doc, ns, self.pg, ie_model.sync(ie_doc, doc), study_nodes.now_utc())
+            return ie_bundle.build_bundle(doc, ns, self.pg, ie_model.sync(ie_doc, doc, node_set=ns),
+                                          study_nodes.now_utc())
         except (OSError, ValueError, ie_store.Unreadable) as exc:
             self.app.log_error("초기사건 투영", exc)
             return None

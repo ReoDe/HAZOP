@@ -299,6 +299,9 @@ FOLDERS = {
     "risk-criteria": Folder("resource", ("resources", "library", "risk-criteria")),
     "patterns": Folder("resource", ("resources", "library", "patterns")),
     "symbols": Folder("resource", ("resources", "library", "symbols")),
+    "icons": Folder("resource", ("resources", "library", "icons")),  # 화면 아이콘(Tabler, hazop/app/icons.py)
+    "dexpi-schema": Folder("resource", ("resources", "library", "dexpi-schema")),  # DEXPI 클래스 목록(HZ-PLN-22)
+    "drawing-symbols": Folder("resource", ("resources", "library", "drawing-symbols")),  # 정리된 보기가 그리는 표준 기호(scripts/build_drawing_symbols.py)
     "references": Folder("repo", ("resources", "references")),
     "APR1400": Folder("repo", ("resources", "references", "APR1400_DCD")),
     "samples": Folder("repo", ("resources", "samples")),
@@ -309,9 +312,13 @@ FOLDERS = {
     "study-nodes": Folder("work", ("data", "study-nodes")),
     "analysis-results": Folder("work", ("data", "analysis-results")),
     "analysis-results-test": Folder("work", ("data", "analysis-results-test")),
+    "chat-actions": Folder("work", ("data", "chat-actions")),  # 채팅이 실행한 동작 기록(hazop.chat.actions_log)
+    "drawing-sources": Folder("work", ("data", "drawing-sources")),  # 같은 도면 번호의 원본 형식 선택(hazop.graph.sources)
     "backup": Folder("work", ("data", "backup")),
     "initiating-events": Folder("work", ("data", "initiating-events")),
     "drawing-edits": Folder("work", ("data", "drawing-edits")),
+    "ai-review": Folder("work", ("data", "ai-review")),  # 추출 뒤 AI 검토 후보(hazop.extract.ai_review)
+    "sheet-confirmations": Folder("work", ("data", "sheet-confirmations")),  # 쪽 확정 기록(hazop.extract.confirmation)
     "drawing-links": Folder("work", ("data", "drawing-links")),
     "latent-candidates": Folder("work", ("data", "latent-candidates")),
     "cache": Folder("work", ("data", "cache")),  # 지워도 되는 계산 결과(hazop.app.data 추출 요약)

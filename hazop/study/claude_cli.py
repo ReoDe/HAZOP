@@ -61,7 +61,104 @@ MESSAGES = {
     "refused": "AI가 응답을 거부함.",
     "truncated": "AI 응답이 길이 제한으로 잘림.",
     "error": "Claude Code 확인 중 오류가 남.",
+    "tool_guard_failed": "채팅 도구 목록이 앱이 허용한 것과 달라 대화를 끊음(도구 검문).",
+    "tool_limit": "질문 하나에서 도구를 너무 많이 불러 멈춤(%d회).",
 }
+
+# ---------------------------------------------------------------- 채팅 프로세스 명령 (규격 chat-panel.md §2.4)
+
+CHAT_MAX_TURNS = 200  # 실측 2026-11-13(CLI 2.1.323): 받아지고, 질문마다 따로 센다. 실제 상한은 앱·서버가 센다
+
+
+def chat_command(model, effort, schema, system_file, mcp_file, allowed_tools):
+    """채팅 프로세스 인자. 내장 도구는 끄고(--tools ""), 앱의 MCP 서버 하나와 그 도구 이름만 하나하나 허용한다.
+
+    allowed_tools: `mcp__hazop__<이름>` 목록(와일드카드 없음). 비면 --allowedTools를 넣지 않고 MCP 도구도 모두 막는다.
+    """
+    for name in allowed_tools:
+        if not re.match(r"^mcp__hazop__[a-z][a-z0-9_]{0,63}$", name):
+            raise ValueError("허용 목록에 넣을 수 없는 도구 이름: %r" % name)
+    argv = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+            "--json-schema", json.dumps(schema, ensure_ascii=False, separators=(",", ":")),
+            "--system-prompt-file", system_file,
+            "--model", model, "--effort", effort,
+            "--tools", ""]
+    argv += ["--allowedTools", ",".join(allowed_tools)] if allowed_tools else ["--disallowedTools", "mcp__*"]
+    argv += ["--strict-mcp-config", "--mcp-config", mcp_file,
+             "--setting-sources", "",
+             "--disable-slash-commands",
+             "--permission-mode", "dontAsk", "--permission-prompts", "none",
+             "--max-turns", str(CHAT_MAX_TURNS), "--no-session-persistence"]
+    return argv
+
+
+class SubscriptionSlots:
+    """구독 동시 호출 자리(규격 chat-panel.md §2.4 '동시', ai-subscription.md §12): 채팅 1 + 분석 1까지.
+
+    - 채팅 질문은 한 번에 하나이고, 분석이 1건 이하로 돌 때 시작한다(분석이 2건이면 하나가 끝날 때까지 기다린다).
+    - 채팅 질문이 돌거나 자리를 기다리는 동안 분석은 1건까지만 새로 시작한다.
+    - 채팅이 없을 때 분석의 동시 수는 여기서 막지 않는다(AiRunner workers, 결정 U8).
+    alive(): 기다리는 쪽이 아직 원하는지. False가 되면 자리를 잡지 않고 False를 돌려준다(취소·멈춤).
+    """
+
+    def __init__(self):
+        self._cond = threading.Condition()
+        self.chat = 0
+        self.chat_waiting = 0
+        self.analysis = 0
+
+    def acquire_chat(self, alive):
+        with self._cond:
+            self.chat_waiting += 1
+            try:
+                while self.chat >= 1 or self.analysis > 1:
+                    if not alive():
+                        return False
+                    self._cond.wait(0.2)
+                if not alive():
+                    return False
+                self.chat += 1
+                return True
+            finally:
+                self.chat_waiting -= 1
+                self._cond.notify_all()
+
+    def release_chat(self):
+        with self._cond:
+            self.chat = max(0, self.chat - 1)
+            self._cond.notify_all()
+
+    def acquire_analysis(self, alive):
+        with self._cond:
+            while (self.chat or self.chat_waiting) and self.analysis >= 1:
+                if not alive():
+                    return False
+                self._cond.wait(0.2)
+            if not alive():
+                return False
+            self.analysis += 1
+            return True
+
+    def release_analysis(self):
+        with self._cond:
+            self.analysis = max(0, self.analysis - 1)
+            self._cond.notify_all()
+
+
+SLOTS = SubscriptionSlots()
+
+
+def spawn_chat(argv, cwd, job_factory=None):
+    """채팅 프로세스를 띄운다(stdin을 열어 둠). 채팅 코드(hazop/chat)가 subprocess를 직접 쓰지 않게 여기서만 띄운다."""
+    return ProcessTree(argv, cwd, clean_env(), subprocess.PIPE, job_factory or create_job)
+
+
+def wait_quietly(proc, seconds):
+    """끝나기를 잠시 기다린다. 시간이 넘어도 예외를 내지 않는다 -> 종료 코드 또는 None."""
+    try:
+        return proc.wait(seconds)
+    except subprocess.TimeoutExpired:
+        return None
 
 
 def now_kst():
@@ -523,6 +620,14 @@ class ClaudeCliClient:
         base, state = self._exe()
         if base is None:
             return fail("not_ready", MESSAGES[state], state)
+        if not SLOTS.acquire_analysis(lambda: self._cancel_gen == gen):
+            return fail("cancelled", MESSAGES["cancelled"])
+        try:
+            return self._analyze(request, base, gen, res, fail)
+        finally:
+            SLOTS.release_analysis()
+
+    def _analyze(self, request, base, gen, res, fail):
         run_dir = _run_dir(self.run_root)
         try:
             system_file = os.path.join(run_dir, "system.txt")

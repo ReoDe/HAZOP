@@ -264,3 +264,44 @@ def single_instance(notify=None, err=None):
     _log.warning("실행 잠금 파일을 만들 수 없음: %s (%s)", path, problem)
     _write(err, "실행 잠금 파일을 만들 수 없어 잠금 없이 시작합니다: %s (%s)\n" % (path, problem))
     return None, None
+
+
+# ---------------------------------------------------------------- 새 웹 화면으로 시작(docs/design/app-shell-web.md §6)
+
+def window_kind(classic=False, screenshots=None, run=None, shell=False, setting=None):
+    """어느 창으로 시작할지: 새 웹 화면("shell", 기본) 또는 이전 위젯 화면("classic"). 3단계(구간·분석 결과·초기사건)가 갖춰져 새 화면이 기본이다(2026-11-14).
+    setting은 설정 ui_shell: None(정하지 않음)·True는 새 화면, False(사용자가 끔)는 이전 화면. `--classic`과 이전 화면만 아는 `--screenshots`·`--run`은 늘 이전 화면이고,
+    `--shell`은 설정이 꺼져 있어도 새 화면이다. 두 창을 함께 열지 않는다(같은 파일을 두 창이 쓰지 않게)."""
+    if classic or screenshots or run:
+        return "classic"
+    if shell:
+        return "shell"
+    return "classic" if setting is False else "shell"
+
+
+def shell_setting(settings_path=None):
+    """설정 ui_shell(새 웹 화면으로 시작): 정하지 않았으면 None, 켬 True, 끔 False. 읽을 수 없으면 정하지 않은 것으로 본다(설정 확인은 앞에서 끝났다)."""
+    try:
+        value = paths.load_settings(settings_path).get("ui_shell")
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, bool) else None
+
+
+def run_shell(app, settings_path=None, debug=False):
+    """새 틀 창을 열고 이벤트 루프를 돈다. 설정의 '이전 화면 열기'로 닫히면 같은 설정으로 이전 화면을 이어서 연다. 종료 코드를 돌려준다."""
+    from hazop.shell.window import ShellWindow
+    win = ShellWindow(settings_path=settings_path, debug=debug)
+    win.show()
+    win.ai_conn.start()   # 지금 연결 방식만 확인(구독은 작업 스레드에서 check())
+    code = app.exec()
+    switch = win.classic_requested
+    win.close()
+    if switch:
+        from hazop.app.main_window import MainWindow
+        classic = MainWindow(settings_path=settings_path, ask_reviewer=True, debug=debug)
+        classic.show()
+        classic.ai_conn.start()
+        code = app.exec()
+        classic.close()
+    return code

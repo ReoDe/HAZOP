@@ -1,0 +1,383 @@
+"""새 웹 화면의 AI 검토 후보 영역(hazop/shell/api_aireview.py). 실행: python -m unittest tests.test_shell_aireview
+
+가상 도면 SNP-M-101의 실제 추출·그래프를 임시 작업 루트에 두고 실제 엔진(ai_review·corrections·build_graph)을 부른다. AI는 부르지 않는다(가짜 클라이언트).
+본다: 수락 → 수정 기록과 그래프에 바로 반영, 거절, 되돌리기, 확신 높은 묶음 수락, AI 수락과 사람 수정이 한 수정 기록에 함께 있는 경우,
+낡은 판 거절, 호출 상한에서 멈춤, 도면별 예상 호출 수, 웹으로 경로가 나가지 않음.
+"""
+
+import json
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO)
+sys.path.insert(0, os.path.join(REPO, "scripts"))
+
+from hazop import paths  # noqa: E402
+from hazop.extract import ai_review as ar  # noqa: E402
+from hazop.extract import corrections  # noqa: E402
+from hazop.shell import api, api_aireview as AR  # noqa: E402
+from tests.test_ai_review import StubClient  # noqa: E402
+from tests.test_shell_drawings import Events, template  # noqa: E402,F401  (template은 tearDownModule이 지운다)
+from tests import test_shell_drawings as _tsd  # noqa: E402
+
+
+def tearDownModule():
+    _tsd.tearDownModule()
+    _tsd._TPL.clear()      # 같은 실행에서 뒤에 도는 test_shell_drawings가 지운 틀을 다시 만들게
+
+
+class FakeAi:
+    def __init__(self, client):
+        self.client = client
+
+    def status(self):
+        return {"can_start": True, "state": "ready"}
+
+    def make_client(self):
+        return self.client
+
+
+def kind_answers(request):
+    """항목마다 첫 필드에 답한다(종류는 manual_valve, 그 밖은 버려져도 된다). 호출 수만 세는 시험에 쓴다."""
+    out = []
+    for it in json.loads(request["context"])["items"]:
+        out.append({"item_id": it["item_id"], "field": it["ask"][0], "values": ["manual_valve"], "confidence": 0.9, "reason": "시험"})
+    return {"answers": out}
+
+
+class Base(unittest.TestCase):
+    def setUp(self):
+        tpl = template()
+        self.tmp = tempfile.mkdtemp(prefix="hazop-shellai-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        shutil.copytree(os.path.join(tpl["root"], "work"), os.path.join(self.tmp, "work"))
+        for p in (mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": os.path.join(self.tmp, "work"),
+                                               "HAZOP_STORE_ROOT": os.path.join(self.tmp, "store")}),
+                  mock.patch.dict(api.COMMANDS)):
+            p.start()
+            self.addCleanup(p.stop)
+        if "aireview.accept" not in api.COMMANDS:          # 등록 줄(api.MODULES)은 s-frame이 넣는다. 그 전에는 시험이 직접 올린다
+            AR.register(api.COMMANDS)
+        self.name = tpl["name"]
+        self.events = Events()
+        self.engine = api.Engine(settings_path=os.path.join(self.tmp, "settings.json"), emit=self.events,
+                                 run_jobs=lambda job_id, fn: fn())
+        self.engine.settings["reviewer_name"] = "검토자A"
+        self.gid = {v: k for k, v in self.engine.graph_names().items()}[self.name]
+        from hazop.app import data
+        self.ex = data.read_json(data.extraction_path(self.name))
+        self.valves = [n for n in self.ex["nodes"] if n.get("kind") and n.get("kind") != "tee"]
+
+    # -------------------------------------------------------- 도우미
+    def seed(self, cands):
+        doc = ar.new_doc(self.name, self.ex)
+        ar.merge_run(doc, {"candidates": cands, "stats": {"calls": 1, "left": 0}})
+        ar.save_doc(doc)
+
+    def tag(self, i, n, value, conf=0.95):
+        return ar.make_candidate("t-%d" % i, "tag", n, "tag", [value], conf, "주변 글자 %s" % value)
+
+    def view(self):
+        r = AR.read(self.engine, ["aireview", self.gid], {})
+        self.assertIsNotNone(r)
+        return json.loads(r.body.decode("utf-8"))
+
+    def call(self, name, **args):
+        return self.engine.dispatch(name, args)
+
+    def graph_text(self):
+        with open(os.path.join(paths.output_root("graph"), self.name, "graph.json"), encoding="utf-8") as fh:
+            return fh.read()
+
+    def ops(self):
+        return (corrections.load(self.name) or {}).get("ops") or []
+
+    def changed(self, topic):
+        return self.events.changes(topic)
+
+
+class DecideTest(Base):
+    def test_accept_reaches_graph_at_once(self):
+        self.seed([self.tag(1, self.valves[0], "V901")])
+        self.assertNotIn("V901", self.graph_text())
+        v = self.view()
+        out = self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=v["ver"])
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(out["data"]["changed"], ["t-1:tag"])
+        self.assertEqual([(o["op"], o["origin"], o["accepted_by"]) for o in self.ops()], [("set_tag", "ai", "검토자A")])
+        self.assertIn("V901", self.graph_text())                               # 다시 열지 않아도 그래프에 들어감
+        self.assertTrue(self.changed("sheet") and self.changed("aireview") and self.changed("drawings"))
+        row = self.view()["groups"][0]["items"][0]
+        self.assertEqual((row["status"], row["current"], row["decided_by"]), ("accepted", "V901", "검토자A"))
+
+    def test_reject_writes_no_correction_and_keeps_graph(self):
+        self.seed([self.tag(1, self.valves[0], "V901")])
+        before = os.stat(os.path.join(paths.output_root("graph"), self.name, "graph.json")).st_mtime_ns
+        out = self.call("aireview.reject", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(self.ops(), [])
+        self.assertEqual(self.view()["counts"]["rejected"], 1)
+        self.assertEqual(os.stat(os.path.join(paths.output_root("graph"), self.name, "graph.json")).st_mtime_ns, before)
+        self.assertFalse(self.changed("sheet"))
+
+    def test_revert_takes_op_out_and_rebuilds(self):
+        self.seed([self.tag(1, self.valves[0], "V901")])
+        self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
+        out = self.call("aireview.revert", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(self.ops(), [])
+        self.assertNotIn("V901", self.graph_text())
+        self.assertEqual(self.view()["groups"][0]["items"][0]["status"], "proposed")
+
+    def test_stale_ver_is_refused_and_writes_nothing(self):
+        self.seed([self.tag(1, self.valves[0], "V901")])
+        v = self.view()["ver"]
+        from hazop.app import data
+        data.save_corrections(self.name, [corrections.make_op(self.ex, "set_tag", self.valves[1]["source_object_id"], {"tag": "V777"},
+                                                              "다른 창", name=self.name)], "다른 창")
+        out = self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=v)
+        self.assertEqual(out["error"]["code"], "stale", out)
+        self.assertEqual([o.get("origin") for o in self.ops()], [None])     # 다른 창의 사람 수정만
+        self.assertEqual(self.view()["counts"]["proposed"], 1)
+
+    def test_reviewer_name_is_required(self):
+        self.seed([self.tag(1, self.valves[0], "V901")])
+        self.engine.settings["reviewer_name"] = ""
+        out = self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
+        self.assertEqual(out["error"]["code"], "bad_args")
+        self.assertEqual(self.ops(), [])
+
+
+class LockTest(Base):
+    def test_lock_serializes_two_decisions_on_one_view(self):  # 총괄 지시: 읽기 → 대조 → 쓰기는 도면별 잠금 안에서
+        import threading
+        from hazop.shell import sheet_refresh
+        self.seed([self.tag(1, self.valves[0], "V901"), self.tag(2, self.valves[1], "V902")])
+        ver = self.view()["ver"]
+        held = threading.Event()
+        out = {}
+        with sheet_refresh.lock(self.name):                     # 다른 스레드가 잠금을 쥔 동안에는 기다린다
+            t = threading.Thread(target=lambda: out.update(r=AR.accept(self.engine, self.gid, ["t-1:tag"], ver)))
+            t.start()
+            held.wait(0.3)
+            self.assertNotIn("r", out)
+        t.join(20)
+        self.assertTrue(out["r"]["ok"], out)
+        r2 = AR.accept(self.engine, self.gid, ["t-2:tag"], ver)  # 같은 판을 본 두 번째 결정은 낡은 판으로 거절
+        self.assertEqual(r2["code"], "stale")
+        self.assertEqual([o["value"]["tag"] for o in self.ops()], ["V901"])
+
+    def test_reconcile_on_read_after_human_undo(self):  # A5 검토 R2 안전망: 기록에서 AI 연산이 빠지면 읽을 때 제안으로 돌린다
+        self.seed([self.tag(1, self.valves[0], "V901")])
+        self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
+        corrections.save(self.name, [], "사람")
+        row = self.view()["groups"][0]["items"][0]
+        self.assertEqual(row["status"], "proposed")
+        self.assertTrue(self.changed("sheetconf"))
+
+class BulkTest(Base):
+    def test_bulk_accept_takes_only_safe_candidates(self):
+        a, b, c = self.valves[:3]
+        kind_low = ar.make_candidate("k-x", "kind", c, "kind", ["gate_valve" if "gate_valve" in ar.rules.KIND_CATEGORY else "manual_valve"],
+                                     0.9, "모양")
+        self.seed([self.tag(1, a, "V901"), self.tag(2, b, "V902", conf=0.5), kind_low])
+        v = self.view()
+        self.assertEqual({x["task"]: x["count"] for x in v["bulk"]}, {"tag": 1})          # 확신 0.5와 종류 0.9는 묶음에 없다
+        kinds = next(g for g in v["groups"] if g["task"] == "kind")["items"]
+        self.assertIn("하나씩", kinds[0]["bulk_block"])
+        out = self.call("aireview.accept_bulk", graph_id=self.gid, task="tag", ver=v["ver"])
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(out["data"]["changed"], ["t-1:tag"])
+        self.assertEqual(self.view()["counts"], {"proposed": 2, "accepted": 1, "rejected": 0})
+        self.assertIn("V901", self.graph_text())
+        out = self.call("aireview.accept_bulk", graph_id=self.gid, task="tag", ver=self.view()["ver"])
+        self.assertEqual(out["error"]["code"], "not_found")                                 # 남은 묶음 없음
+
+    def test_human_and_ai_ops_share_one_record(self):
+        a, b = self.valves[:2]
+        from hazop.app import data
+        data.save_corrections(self.name, [corrections.make_op(self.ex, "set_tag", a["source_object_id"], {"tag": "V500"}, "사람",
+                                                              name=self.name)], "사람")
+        self.seed([self.tag(1, a, "V901"), self.tag(2, b, "V902")])
+        out = self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag", "t-2:tag"], ver=self.view()["ver"])
+        self.assertTrue(out["ok"], out)
+        self.assertEqual([f["cand_id"] for f in out["data"]["failed"]], ["t-1:tag"])       # 사람이 고친 자리는 덮지 않음
+        self.assertEqual([(o["op"], o.get("origin")) for o in self.ops()], [("set_tag", None), ("set_tag", "ai")])
+        text = self.graph_text()
+        self.assertIn("V500", text)
+        self.assertIn("V902", text)
+        self.assertNotIn("V901", text)
+        out = self.call("aireview.revert", graph_id=self.gid, cand_ids=["t-2:tag"], ver=self.view()["ver"])
+        self.assertTrue(out["ok"], out)
+        self.assertEqual([o.get("origin") for o in self.ops()], [None])                     # 사람 수정은 남는다
+        self.assertIn("V500", self.graph_text())
+        self.assertNotIn("V902", self.graph_text())
+
+
+class ReviewFixTest(Base):
+    """cfff443 검토 1회 지적 재현(저장소 밖 시험 폴더 2026-11-14-review-aireview의 repro_storage*.py를 시험으로 옮김)."""
+
+    def setUp(self):
+        super().setUp()
+        self.seed([self.tag(1, self.valves[0], "V901")])
+
+    def test_A_reextraction_makes_ver_stale(self):
+        v = self.view()["ver"]
+        from hazop import store_io
+        from hazop.app import data
+        ex2 = data.read_json(data.extraction_path(self.name))
+        next(n for n in ex2["nodes"] if n["source_object_id"] == self.valves[0]["source_object_id"])["tag"] = "V555"
+        store_io.write_json(data.extraction_path(self.name), ex2)
+        out = self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=v)
+        self.assertEqual(out["error"]["code"], "stale", out)
+        self.assertEqual(self.ops(), [])
+
+    def test_B_reject_tells_sheet_card(self):
+        self.call("aireview.reject", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
+        self.assertTrue(self.changed("drawings") and self.changed("sheetconf"))
+
+    def test_C_failed_rebuild_is_marked_and_retried(self):
+        from hazop.app import data
+        bg = data.script_module("build_graph")
+        with mock.patch.object(bg, "build_one", side_effect=PermissionError("잠김")):
+            out = self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
+        self.assertTrue(out["ok"], out)
+        self.assertTrue(out["data"]["graph_stale"])
+        self.assertEqual(len(self.ops()), 1)                                 # 수락은 저장됨
+        self.assertNotIn("V901", self.graph_text())
+        self.assertTrue(self.changed("aireview") and self.changed("sheet"))
+        with mock.patch.object(bg, "build_one", side_effect=PermissionError("잠김")):
+            v = self.view()
+        self.assertTrue(v["graph_stale"])                                    # 화면에 계속 보임
+        v = self.view()                                                      # 다음에 열 때 다시 만든다
+        self.assertFalse(v["graph_stale"])
+        self.assertIn("V901", self.graph_text())
+
+    def test_C2_next_action_rebuilds(self):
+        from hazop.app import data
+        bg = data.script_module("build_graph")
+        with mock.patch.object(bg, "build_one", side_effect=OSError("잠김")):
+            self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=AR.ver_of(self.name))
+        out = self.call("aireview.revert", graph_id=self.gid, cand_ids=["no-such"], ver=AR.ver_of(self.name))
+        self.assertIn("V901", self.graph_text())                             # 실패한 명령이어도 낡은 그래프는 다시 만든다
+        out = self.call("aireview.reject", graph_id=self.gid, cand_ids=["t-1:tag"], ver=AR.ver_of(self.name))
+        self.assertFalse(out["data"]["graph_stale"])
+
+    def test_D_other_error_after_save_is_reported_as_saved(self):
+        from hazop.app import data
+        bg = data.script_module("build_graph")
+        with mock.patch.object(bg, "build_one", side_effect=RuntimeError("x")):
+            out = self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(out["data"]["changed"], ["t-1:tag"])
+        self.assertTrue(out["data"]["graph_stale"])
+        self.assertIn("저장", " ".join(out["data"]["notes"]))
+        self.assertTrue(self.changed("aireview"))
+
+    def test_5_chat_functions_need_ver(self):
+        for fn in (AR.accept, AR.reject, AR.revert):
+            self.assertEqual(fn(self.engine, self.gid, ["t-1:tag"], None)["code"], "stale")
+        self.assertEqual(AR.accept_bulk(self.engine, self.gid, "tag", None)["code"], "stale")
+        self.assertEqual(self.ops(), [])
+
+    def test_7_recheck_notes_when_nodes_are_stale(self):
+        from hazop.shell import sheet_refresh                     # 판정 자체는 sheet_refresh의 시험이 본다(프로젝트 구간 집합)
+        with mock.patch.object(sheet_refresh, "rebuild", lambda name: ([], ["④ 검토구간이 고치기 전 도면 기준입니다."])):
+            out = self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
+        self.assertTrue(any("검토구간" in n for n in out["data"]["recheck"]), out)
+
+    def test_8_decided_places_leave_the_estimate(self):
+        def items():
+            r = json.loads(AR.read(self.engine, ["aireview", "estimate"], {"cap": "200"}).body.decode("utf-8"))
+            return next(p for p in r["pages"] if p["graph_id"] == self.gid)["items"]
+        vals = {"kind": "manual_valve", "tag": "V990", "normal_position": "NO", "fail_position": "FC", "to_system": "AB"}
+        its = [i for i in ar.collect_items(self.ex) if i["task"] != "recheck" and i["ask"][0] in vals]
+        if not its:
+            self.skipTest("SNP-M-101 drawio에 물을 곳이 없음")
+        cands = [ar.make_candidate(i["item_id"], i["task"], i, i["ask"][0], [vals[i["ask"][0]]], 0.9, "") for i in its]
+        doc = ar.load_doc(self.name)
+        ar.merge_run(doc, {"candidates": cands, "stats": {}})
+        ar.save_doc(doc)
+        before = items()
+        out = self.call("aireview.reject", graph_id=self.gid, cand_ids=[c["cand_id"] for c in cands], ver=self.view()["ver"])
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(items(), before - len({c["target"] for c in cands}))
+
+
+class RunTest(Base):
+    def test_estimate_per_drawing(self):
+        r = json.loads(AR.read(self.engine, ["aireview", "estimate"], {"cap": "1"}).body.decode("utf-8"))
+        page = next(p for p in r["pages"] if p["graph_id"] == self.gid)
+        self.assertEqual(page["calls"], min(1, page["needed"]))
+        self.assertEqual(r["calls"], sum(p["calls"] for p in r["pages"]))
+        self.assertEqual(r["seconds"], r["calls"] * ar.SECONDS_PER_CALL)
+
+    def test_run_stops_at_cap(self):
+        client = StubClient(kind_answers)
+        self.engine.ai = FakeAi(client)
+        items = len(ar.collect_items(self.ex))
+        with mock.patch.object(ar, "plan", lambda its, cap=ar.DEFAULT_CAP, batch=ar.DEFAULT_BATCH, _p=ar.plan: _p(its, cap, 2)):
+            out = self.call("aireview.run", graph_ids=[self.gid], cap=2, conn_ver=self.conn_ver())
+        self.assertTrue(out["ok"], out)
+        done = next(e for e in self.events.items if e.get("name") == "job.done")["data"]["result"]
+        self.assertEqual(len(client.requests), 2)                                           # 상한 2회에서 멈춤
+        self.assertEqual(done["calls"], 2)
+        self.assertEqual(done["drawings"][0]["left"], items - 4)
+        self.assertTrue(self.view()["available"])
+        self.assertTrue(self.changed("aireview"))
+
+    def conn_ver(self):
+        r = json.loads(AR.read(self.engine, ["aireview", "estimate"], {"cap": "2"}).body.decode("utf-8"))
+        return r["conn"]["conn_ver"]
+
+    def test_run_needs_connection(self):
+        out = self.call("aireview.run", graph_ids=[self.gid], conn_ver=self.conn_ver())
+        self.assertEqual(out["error"]["code"], "failed")
+        self.assertEqual(self.call("aireview.run", graph_ids=[self.gid])["error"]["code"], "bad_args")   # 화면이 본 연결 판 없이는 받지 않는다
+
+    def test_run_refused_when_connection_differs_from_view(self):  # A8 검토 R1: 화면에 보인 방식과 실제가 다르면 시작하지 않는다
+        self.engine.ai = FakeAi(StubClient(kind_answers))
+        seen = self.conn_ver()
+        self.engine.ai.status = lambda: {"can_start": True, "state": "ok", "via": "api", "model": "claude-opus-5-5"}
+        out = self.call("aireview.run", graph_ids=[self.gid], conn_ver=seen)
+        self.assertEqual(out["error"]["code"], "conn_changed")
+
+
+class ReadTest(Base):
+    def test_no_candidates_yet(self):
+        v = self.view()
+        self.assertFalse(v["available"])
+        self.assertIsNone(AR.read(self.engine, ["aireview", "no-such"], {}))
+
+    def test_groups_by_task_and_no_paths(self):
+        kind = ar.make_candidate("k-x", "kind", self.valves[2], "kind", ["manual_valve"], 0.99, "모양")
+        self.seed([self.tag(1, self.valves[0], "V901"), kind])
+        v = self.view()
+        self.assertEqual([g["task"] for g in v["groups"]], ["kind", "tag"])
+        self.assertEqual(v["groups"][0]["label"], "못 읽은 기호의 종류")
+        body = json.dumps([v, AR.overview(self.engine)], ensure_ascii=False)
+        self.assertNotIn(self.tmp.replace("\\", "\\\\"), body)
+        self.assertNotIn(":\\\\", body)
+
+    def test_chat_functions_do_not_raise(self):
+        self.assertEqual(AR.accept(self.engine, "no-such", ["x"], "v")["code"], "not_found")
+        self.seed([self.tag(1, self.valves[0], "V901")])
+        ver = AR.candidates(self.engine, self.gid)["ver"]
+        self.assertEqual(AR.reject(self.engine, self.gid, ["nope"], ver)["code"], "not_found")
+        self.assertEqual(AR.bulk_ids(self.engine, self.gid, "tag"), ["t-1:tag"])
+        self.assertEqual(AR.bulk_ids(self.engine, self.gid, "kind"), [])
+        self.assertEqual(AR.bulk_ids(self.engine, "no-such", "tag"), [])
+        out = AR.accept_bulk(self.engine, self.gid, "tag", ver, by="채팅 검토자")
+        self.assertEqual(out["changed"], ["t-1:tag"])                       # bulk_ids와 같은 것을 수락
+        self.assertEqual(AR.bulk_ids(self.engine, self.gid, "tag"), [])
+        self.assertEqual(self.ops()[0]["accepted_by"], "채팅 검토자")
+
+
+if __name__ == "__main__":
+    unittest.main()

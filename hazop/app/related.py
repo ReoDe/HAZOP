@@ -51,16 +51,16 @@ class DrawingIndex:
             self.node_set = None
         if self.node_set:
             self.view = self.view_of(self.node_set)
-        usable = (self.node_set and self.node_set.get("status") == "confirmed"  # ⑤ 화면이 쓰는 조건과 같다
-                  and not nodes.is_stale(self.node_set, self.graph)
-                  and not nodes.coverage(self.node_set, self.graph)["uncovered"])
+        usable = (self.node_set and nodes.active_nodes(self.node_set)  # ⑤ 화면이 쓰는 조건과 같다(구간 밖과 상관없음)
+                  and not nodes.is_stale(self.node_set, self.graph))
         if usable:
             try:
                 doc = res.load(self.node_set)
             except (OSError, ValueError):
                 doc = None
-            if doc is not None and not res.is_stale(doc, self.node_set) and not res.validate(doc, self.node_set):
-                self.results = doc
+            if doc is not None:
+                doc, problems, _bad = res.partition(doc, self.node_set)  # 문제 칸만 빼고 나머지는 쓴다(⑤와 같음)
+                self.results = None if problems else doc
         kg = ai_cells.load_kg_for(self.node_set or {"graph_id": self.graph["graph_id"],
                                                     "project_id": self.graph.get("project_id")})[0]
         self.kg = project.kg_view(kg, self.graph) if kg is not None else None
@@ -121,11 +121,11 @@ class DrawingIndex:
 
     def cells(self):
         """[(node, deviation, 요약)] 확정 구간 × 편차 전부(결과가 없으면 요약은 None)."""
-        if not self.node_set or self.node_set.get("status") != "confirmed":
+        if not self.node_set:
             return []
         summary = self.summary()
         return [(n, d, summary.get(n["node_id"], {}).get(d["deviation_id"]))
-                for n in self.node_set["nodes"] for d in self.deviations]
+                for n in nodes.active_nodes(self.node_set) for d in self.deviations]
 
     def cell_doc(self, node_id, deviation_id):
         return next((c for c in (self.results or {}).get("cells", [])
@@ -157,7 +157,7 @@ class DrawingIndex:
         return rows
 
 
-STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각"}
+STATUS_LABELS = {"proposed": "제안", "revised": "수정", "approved": "승인", "rejected": "기각", "on_hold": "보류"}
 OP_LABELS = {"propose": "제안", "status": "상태", "edit": "수정", "merge": "병합", "split": "분할", "rename": "이름",
              "confirm": "확정", "reopen": "확정 해제", "add": "넣기", "remove": "빼기",
              "ie_hint": "초기사건 판정"}

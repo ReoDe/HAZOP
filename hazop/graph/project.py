@@ -15,13 +15,16 @@
 
 import copy
 import csv
+import functools
 import hashlib
 import json
 import os
 import pickle
 import re
+import threading
 
 from hazop import paths
+from hazop.graph import sources
 from hazop.graph.build import to_networkx
 
 SCHEMA_VERSION = "0.1"
@@ -82,14 +85,27 @@ def _sha(obj, n=12):
     return hashlib.sha256(_canon(obj).encode("utf-8")).hexdigest()[:n]
 
 
+_WS = re.compile(r"\s+")
+
+
+@functools.lru_cache(maxsize=65536)
+def _norm_text(s):
+    return _WS.sub("", s).upper() or None
+
+
 def _norm(s):
-    return re.sub(r"\s+", "", str(s or "")).upper() or None
+    return _norm_text(str(s or ""))
+
+
+@functools.lru_cache(maxsize=65536)
+def _dn_text(s):
+    m = _FIG_SHEET.match(_norm_text(s) or "")
+    return "%s-S%d" % (m.group(1), int(m.group(2))) if m else _norm_text(s)
 
 
 def _dn(s):
     """도면번호 비교 키. '<그림>-S<시트>' 꼴이면 시트 번호 앞 0을 없앤다('9.3.4-1-S01' = '9.3.4-1-S1')."""
-    m = _FIG_SHEET.match(_norm(s) or "")
-    return "%s-S%d" % (m.group(1), int(m.group(2))) if m else _norm(s)
+    return _dn_text(str(s or ""))
 
 
 # ---------------------------------------------------------------- 연결점 읽기
@@ -171,7 +187,30 @@ def _ref(end):
     return "%s#%s" % (end["graph_id"], end["source_object_id"] or end["entity_id"])
 
 
+def end_fingerprint(key, node):
+    """연결점 지문: 라벨(공백 정리), 배관 번호, 상대 도면, 방향, 자리(정수로 반올림). key는 continuation_key 결과.
+    사람 지정이 가리키는 연결점이 다시 추출 뒤에도 같은 것인지 본다(PDF 추출 ID는 순번이라 번호가 밀릴 수 있다)."""
+    pos = node.get("position")
+    return {"label": " ".join((node.get("label_text") or "").split()) or None, "line_no": _norm(key.get("line_no")),
+            "to_drawing": _dn(key.get("to_drawing")), "direction": key.get("direction"),
+            "at": [int(round(float(v))) for v in pos[:2]] if isinstance(pos, (list, tuple)) and len(pos) >= 2 else None}
+
+
+def end_ref(graph, node):
+    """사람 지정 기록의 끝: {"drawing_number", "source_object_id", "fp"}. graph는 도면 그래프(또는 graph_id·source만 있는 사전)."""
+    key = continuation_key(graph, node)
+    return {"drawing_number": key["drawing_number"], "source_object_id": node.get("source_object_id"), "fp": end_fingerprint(key, node)}
+
+
+def _fp_diff(want, cur):
+    names = {"label": "라벨", "line_no": "배관 번호", "to_drawing": "상대 도면", "direction": "방향", "at": "자리"}
+    return ", ".join("%s %s→%s" % (names.get(k, k), want.get(k), cur.get(k)) for k in sorted(set(want) | set(cur)) if want.get(k) != cur.get(k))
+
+
 # ---------------------------------------------------------------- 사람 지정 기록
+
+_KEEP = object()           # save_manual: 지문 대조 없이 쓴다(옛 화면·스크립트)
+
 
 def manual_path(project_id):
     return paths.folder("drawing-links", paths.safe_name(project_id) + ".json")
@@ -180,8 +219,8 @@ def manual_path(project_id):
 def load_manual(project_id):
     """사람 지정 기록. 없으면 None. 다른 종류 파일이면 ValueError.
     문서 모양: {"kind": "hazop_sheet_links", "schema_version", "project_id", "ops": [op], "log": [...]}
-    op: {"op_id", "op": "link"|"unlink", "ends": [{"drawing_number", "source_object_id"}] (link 2개, unlink 1개),
-         "by", "at", "reason"}"""
+    op: {"op_id", "op": "link"|"unlink", "ends": [{"drawing_number", "source_object_id", "fp"}] (link 2개, unlink 1개),
+         "by", "at", "reason"}. fp(end_fingerprint)는 2026-11-14(B1 검토)부터 남긴다. 없는 옛 지정은 그대로 쓰되 '확인 필요'로 표시한다."""
     path = manual_path(project_id)
     if not os.path.isfile(path):
         return None
@@ -192,9 +231,11 @@ def load_manual(project_id):
     return doc
 
 
-def save_manual(project_id, ops, by, at):
-    """ops 전체를 저장하고 op_id 증감을 log에 덧붙인다. 쓴 경로를 돌려준다."""
-    from hazop.kg.build import write_json_atomic
+def save_manual(project_id, ops, by, at, expect=_KEEP, note=None):
+    """ops 전체를 저장하고 op_id 증감을 log에 덧붙인다. 쓴 경로를 돌려준다.
+    expect: 읽을 때 본 파일 지문(store_io.fingerprint, 없던 파일은 None). 주면 그 사이 다른 쪽이 바꿨을 때 쓰지 않고 store_io가 예외를 올린다.
+    note: log 줄에 덧붙일 설명(dict, 예: 무엇을 왜 지정했는지)."""
+    from hazop import store_io
     for o in ops:
         check_op(o)
     prev = load_manual(project_id) or {}
@@ -204,8 +245,10 @@ def save_manual(project_id, ops, by, at):
            "log": list(prev.get("log") or []) + [{"at": at, "by": by, "action": "save",
                                                    "added": [i for i in after if i not in before],
                                                    "removed": [i for i in before if i not in after]}]}
+    if note:
+        doc["log"][-1]["note"] = dict(note)
     path = manual_path(project_id)
-    write_json_atomic(path, doc)
+    store_io.write_json(path, doc, store_io.ANY if expect is _KEEP else expect)
     return path
 
 
@@ -224,24 +267,29 @@ def check_op(op):
 
 # ---------------------------------------------------------------- 매칭
 
-def match(graphs, manual_ops=(), system_codes=None):
+def match(graphs, manual_ops=(), system_codes=None, moved=None):
     """(sheet_links, manual_skipped). sheet_links 항목:
     {"link_id", "status": linked|unlinked, "reason": None|REASONS 키, "detail", "origin": auto|manual,
      "from": 끝, "to": 끝|None, "candidates": [끝 ref]}. linked면 from = 흐름이 나가는 쪽(TO), to = 들어오는 쪽(FROM).
-    방향을 한쪽도 모르거나 사람이 같은 방향끼리 이었으면 flow_known=False(흐름 방향을 만들지 않음)."""
-    ends = []
+    방향을 한쪽도 모르거나 사람이 같은 방향끼리 이었으면 flow_known=False(흐름 방향을 만들지 않음).
+    사람 지정의 끝에 지문(fp)이 있으면 지금 연결점의 지문과 견준다. 다르면 같은 도면에서 지문이 같은 연결점을 찾아 하나뿐이면 그쪽으로
+    옮겨 붙이고(moved 목록에 {"op_id", "drawing_number", "from", "to"}를 더함), 없거나 여럿이면 붙이지 않고 manual_skipped로 돌린다.
+    지문이 없는 옛 지정은 번호대로 붙이고 그 연결에 "check": "no_fingerprint"를 단다."""
+    ends, fps = [], {}
     by_drawing = {}
     for g in graphs:
         by_drawing.setdefault(_dn((g.get("source") or {}).get("drawing_number")), []).append(g["graph_id"])
         for n in g["nodes"]:
             if n.get("kind") == "continuation":
                 ends.append(continuation_key(g, n))
-    by_soid = {}
+                fps[id(ends[-1])] = end_fingerprint(ends[-1], n)
+    by_soid, by_dwg = {}, {}
     for e in ends:
         by_soid.setdefault((_norm(e["drawing_number"]), e["source_object_id"]), []).append(e)
+        by_dwg.setdefault(_norm(e["drawing_number"]), []).append(e)
     used, manual_used, links, skipped = set(), set(), [], []
 
-    def record(status, reason, origin, a, b=None, candidates=(), op_id=None):
+    def record(status, reason, origin, a, b=None, candidates=(), op_id=None, check=None):
         if b is not None and status == LINKED:
             da, db = a["direction"], b["direction"]
             if da == "from" or db == "to":
@@ -253,7 +301,27 @@ def match(graphs, manual_ops=(), system_codes=None):
         links.append({"link_id": "xlink-%s" % _sha(refs, 10), "status": status, "reason": reason,
                       "detail": REASONS.get(reason) if reason else None, "origin": origin, "op_id": op_id,
                       "from": a, "to": b, "flow_known": known, "candidates": sorted(candidates)})
+        if check:
+            links[-1]["check"] = check
         used.update(_ref(x) for x in (a, b) if x is not None)
+
+    def locate(end):
+        """지정의 끝 하나 → (연결점 또는 None, 못 붙인 사유 또는 None, 옮겼으면 (옛 번호, 새 번호))."""
+        hit = by_soid.get((_norm(end["drawing_number"]), end["source_object_id"])) or []
+        want = end.get("fp")
+        if len(hit) > 1:
+            return None, "가리키는 연결점이 여럿이라 고르지 않음", None
+        if not isinstance(want, dict):
+            return (hit[0], None, None) if hit else (None, "가리키는 연결점이 프로젝트 도면에 없음", None)
+        if hit and fps[id(hit[0])] == want:
+            return hit[0], None, None
+        same = [x for x in by_dwg.get(_norm(end["drawing_number"])) or [] if fps[id(x)] == want]
+        if len(same) == 1:
+            return same[0], None, (end["source_object_id"], same[0]["source_object_id"])
+        if hit:
+            return None, "가리키는 연결점이 바뀜(%s %s: %s)" % (end["drawing_number"], end["source_object_id"], _fp_diff(want, fps[id(hit[0])])), None
+        return None, "가리키는 연결점이 프로젝트 도면에 없음(%s %s, 같은 지문의 연결점 %d개)" % (
+            end["drawing_number"], end["source_object_id"], len(same)), None
 
     for op in manual_ops:
         try:
@@ -261,27 +329,39 @@ def match(graphs, manual_ops=(), system_codes=None):
         except ValueError as exc:
             skipped.append({"op_id": op.get("op_id"), "reason": str(exc)})
             continue
-        hits = [by_soid.get((_norm(e["drawing_number"]), e["source_object_id"])) or [] for e in op["ends"]]
-        found = [h[0] if len(h) == 1 else None for h in hits]
-        if any(len(h) > 1 for h in hits):
-            skipped.append({"op_id": op["op_id"], "reason": "가리키는 연결점이 여럿이라 고르지 않음"})
-        elif None in found:
-            skipped.append({"op_id": op["op_id"], "reason": "가리키는 연결점이 프로젝트 도면에 없음"})
+        located = [locate(e) for e in op["ends"]]
+        found = [x[0] for x in located]
+        why = next((x[1] for x in located if x[1]), None)
+        check = None if all(isinstance(e.get("fp"), dict) for e in op["ends"]) else "no_fingerprint"
+        if why:
+            skipped.append({"op_id": op["op_id"], "reason": why})
+        elif len({_ref(e) for e in found}) != len(found):
+            skipped.append({"op_id": op["op_id"], "reason": "두 끝이 같은 연결점을 가리킴"})
         elif any(_ref(e) in used for e in found):
             skipped.append({"op_id": op["op_id"], "reason": "같은 연결점을 가리키는 앞선 지정이 있음"})
-        elif op["op"] == "unlink":
-            record(UNLINKED, "manual_unlink", "manual", found[0], op_id=op["op_id"])
         else:
-            record(LINKED, None, "manual", found[0], found[1], op_id=op["op_id"])
+            if moved is not None:
+                moved += [{"op_id": op["op_id"], "drawing_number": e["drawing_number"], "from": x[2][0], "to": x[2][1]}
+                          for e, x in zip(op["ends"], located) if x[2]]
+            if op["op"] == "unlink":
+                record(UNLINKED, "manual_unlink", "manual", found[0], op_id=op["op_id"], check=check)
+            else:
+                record(LINKED, None, "manual", found[0], found[1], op_id=op["op_id"], check=check)
     manual_used.update(used)
+    # 짝 찾기 색인(ends 순서 그대로). 앞의 조건은 사람 지정 뒤로 바뀌지 않는 것만 넣는다
+    back_index, system_index = {}, {}
+    for x in ends:
+        if _ref(x) in manual_used:
+            continue
+        if x["to_drawing"] and (x["line_no"] or x.get("sheet_only")):  # 키가 없는 끝(missing_key)은 짝이 아니다
+            back_index.setdefault((_dn(x["drawing_number"]), _dn(x["to_drawing"])), []).append(x)
+        if x.get("system_ref"):
+            system_index.setdefault(_dn(x["drawing_number"]), []).append(x)
 
     def peers(e):
         """e를 되짚는 연결점. 짝 글자 없는 DCD 표시(sheet_only)는 글자와 상관없이 상대 시트에서 이 시트를 가리키는
         모든 화살표를 돌려준다(하나뿐이고 그것도 글자가 없을 때만 잇는다)."""
-        back = [x for x in ends if _ref(x) not in manual_used and x is not e
-                and x["to_drawing"] and (x["line_no"] or x.get("sheet_only"))  # 키가 없는 끝(missing_key)은 짝이 아니다
-                and _dn(x["drawing_number"]) == _dn(e["to_drawing"])
-                and _dn(x["to_drawing"]) == _dn(e["drawing_number"])]
+        back = [x for x in back_index.get((_dn(e["to_drawing"]), _dn(e["drawing_number"])), ()) if x is not e]
         return back if e.get("sheet_only") else [x for x in back if _norm(x["line_no"]) == _norm(e["line_no"])]
 
     def system_peer(e):
@@ -292,8 +372,7 @@ def match(graphs, manual_ops=(), system_codes=None):
         if not (ref and home and row) or row["figure"] == home.group(1):  # 제 그림을 가리키는 약어로는 잇지 않는다
             return None, False
         target = _dn("%s-S%d" % (row["figure"], ref["sheet"]))
-        found = [x for x in ends if x is not e and _ref(x) not in manual_used and _dn(x["drawing_number"]) == target
-                 and x.get("system_ref") and (system_codes.get(x["system_ref"]["code"]) or {}).get("figure") == home.group(1)
+        found = [x for x in system_index.get(target, ()) if x is not e and (system_codes.get(x["system_ref"]["code"]) or {}).get("figure") == home.group(1)
                  and x["system_ref"]["sheet"] == int(home.group(2))
                  and _norm(x["system_ref"]["letter"]) == _norm(ref["letter"])
                  and _norm(x["line_no"]) == _norm(e["line_no"])]  # 사람이 적은 배관 번호가 다르면 짝이 아니다
@@ -376,21 +455,23 @@ def _duplicate_tags(graphs):
             for t, ids in sorted(seen.items()) if len({i.split(SEP)[0] for i in ids}) > 1]
 
 
-def build(project_id, graphs, manual_ops=(), system_codes=None):
-    """도면 그래프 목록 -> 프로젝트 그래프 dict. 도면 graph_id가 겹치면 ValueError(auto.project_graphs가 먼저 고른다)."""
+def build(project_id, graphs, manual_ops=(), system_codes=None, copies=None):
+    """도면 그래프 목록 -> 프로젝트 그래프 dict. 도면 graph_id가 겹치면 ValueError(auto.project_graphs가 먼저 고른다).
+    copies: {도면 graph_id: _copy_sheet(그 도면) 결과(새 객체)}. 주면 그 도면은 다시 복사하지 않는다(load_with_names의 쪽별 캐시)."""
     graphs = sorted(graphs, key=lambda g: g["graph_id"])
     gids = [g["graph_id"] for g in graphs]
     if len(set(gids)) != len(gids):
         raise ValueError("같은 graph_id 도면이 여럿: %s" % gids)
     nodes, edges, blockers = [], [], []
     for g in graphs:
-        n, e = _copy_sheet(g)
+        n, e = (copies or {}).get(g["graph_id"]) or _copy_sheet(g)
         nodes += n
         edges += e
         if (g.get("validation") or {}).get("status") != "passed":
             blockers.append({"graph_id": g["graph_id"], "reason": "도면 그래프 구조 검증이 passed가 아님(%s)"
                              % (g.get("validation") or {}).get("status")})
-    links, skipped = match(graphs, manual_ops, system_codes)
+    relocated = []
+    links, skipped = match(graphs, manual_ops, system_codes, moved=relocated)
     by_id = {n["entity_id"]: n for n in nodes}
     for l in links:
         for side in ("from", "to"):
@@ -425,6 +506,7 @@ def build(project_id, graphs, manual_ops=(), system_codes=None):
         "graph_id": project_graph_id(project_id), "graph_version": version,
         "source": {"drawing_number": None, "drawings": [s["drawing_number"] for s in sheets]},
         "sheets": sheets, "nodes": nodes, "edges": edges, "sheet_links": links, "manual_skipped": skipped,
+        **({"manual_relocated": relocated} if relocated else {}),
         "duplicate_tags": _duplicate_tags(graphs),
         "validation": {"status": "blocked" if blockers else "passed", "blockers": blockers, "unknowns": []},
     }
@@ -436,34 +518,90 @@ def load(project_id, graph_root=None):
     return load_with_names(project_id, graph_root)[0]
 
 
-def pick_graphs(project_id, graph_root=None):
-    """{graph_id: ((바뀐 시각, 경로), graph, 폴더 이름)} 이 프로젝트의 도면. 같은 graph_id는 가장 최근 것
-    (hazop.kg.auto.project_graphs와 같은 규칙). load와 ② 도면 이름표(project_ctx.graph_names)가 함께 쓴다."""
+# ---------------------------------------------------------------- 쪽별 캐시(증분 빌드)
+# 도면 하나를 고친 뒤 프로젝트 그래프를 다시 지을 때, 바뀌지 않은 쪽은 graph.json을 다시 파싱하거나 노드를 하나씩 복사하지 않는다.
+# 열쇠는 graph.json의 (경로, 바뀐 시각 ns, 크기, inode, 만든 시각 ns): 원자적 쓰기(os.replace)나 다시 쓰기는 이 가운데 하나를 바꾼다.
+# 값은 pickle 바이트로 두고 쓸 때마다 새 객체로 푼다(부르는 쪽이 고쳐도 캐시가 오염되지 않는다). 도면 사이 짝 찾기(match)와
+# 프로젝트 전체에 걸친 계산(구조·버전·겹친 태그)은 매번 다시 한다. tests/test_graph_rebuild_speed가 캐시 없는 처음부터 짓기와 견준다.
+_SHEETS = {}            # 경로 -> {"stamp", "graph": pickle, "copy": pickle 또는 없음}
+_SHEETS_LOCK = threading.Lock()
+
+
+def clear_sheet_cache():
+    with _SHEETS_LOCK:
+        _SHEETS.clear()
+
+
+def _stamp(p):
+    st = os.stat(p)
+    return (st.st_mtime_ns, st.st_size, st.st_ino, st.st_ctime_ns)
+
+
+def _read_graph(p):
+    """graph.json -> (새 graph dict, stamp). 읽는 사이에 파일이 바뀌면 캐시에 넣지 않는다."""
+    stamp = _stamp(p)
+    hit = _SHEETS.get(p)
+    if hit is not None and hit["stamp"] == stamp:
+        return pickle.loads(hit["graph"]), stamp
+    with open(p, encoding="utf-8") as fh:
+        g = json.load(fh)
+    if _stamp(p) == stamp:
+        with _SHEETS_LOCK:
+            _SHEETS[p] = {"stamp": stamp, "graph": pickle.dumps(g, pickle.HIGHEST_PROTOCOL)}
+    return g, stamp
+
+
+def _sheet_copy(p, stamp, g):
+    """_copy_sheet(g)와 같은 (노드, 엣지) 새 객체. g는 _read_graph(p)가 stamp 때 읽은 것."""
+    hit = _SHEETS.get(p)
+    if hit is not None and hit["stamp"] == stamp and hit.get("copy") is not None:
+        return pickle.loads(hit["copy"])
+    out = _copy_sheet(g)
+    if hit is not None and hit["stamp"] == stamp:
+        with _SHEETS_LOCK:
+            hit["copy"] = pickle.dumps(out, pickle.HIGHEST_PROTOCOL)
+    return out
+
+
+def _pick(project_id, graph_root=None):
+    """{graph_id: 고른 후보 {"gid", "key", "graph", "name", "path", "stamp"}}."""
     root = graph_root or paths.output_root("graph")
-    best = {}
+    cands, seen = [], set()
     for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
         p = os.path.join(root, name, "graph.json")
+        seen.add(p)
         try:
-            with open(p, encoding="utf-8") as fh:
-                g = json.load(fh)
+            g, stamp = _read_graph(p)
         except (OSError, ValueError):
             continue
         if project_id_of(g) == project_id:
-            key = (os.path.getmtime(p), p)  # 같은 graph_id는 가장 최근 것(hazop.kg.auto.project_graphs와 같은 규칙)
-            if g.get("graph_id") not in best or key > best[g["graph_id"]][0]:
-                best[g["graph_id"]] = (key, g, name)
-    return best
+            cands.append({"gid": g.get("graph_id"), "key": (os.path.getmtime(p), p), "graph": g, "name": name,
+                          "path": p, "stamp": stamp})
+    with _SHEETS_LOCK:                          # 이 폴더에서 사라진 도면은 캐시에서도 뺀다
+        for p in [p for p in _SHEETS if os.path.dirname(os.path.dirname(p)) == root and p not in seen]:
+            del _SHEETS[p]
+    # 같은 graph_id는 가장 최근 것(hazop.kg.auto.project_graphs와 같은 규칙). 단 같은 도면 번호가 다른 형식으로 섞이면
+    # 사람이 고르기 전에는 먼저 있던 형식을 바꾸지 않는다(hazop.graph.sources)
+    chosen, _notes = sources.pick(project_id, cands, graph_root=root if graph_root else None)
+    return chosen
+
+
+def pick_graphs(project_id, graph_root=None):
+    """{graph_id: ((바뀐 시각, 경로), graph, 폴더 이름)} 이 프로젝트의 도면. 같은 graph_id는 가장 최근 것
+    (hazop.kg.auto.project_graphs와 같은 규칙). load와 ② 도면 이름표(project_ctx.graph_names)가 함께 쓴다."""
+    return {gid: (c["key"], c["graph"], c["name"]) for gid, c in _pick(project_id, graph_root).items()}
 
 
 def load_with_names(project_id, graph_root=None):
     """(load와 같은 프로젝트 그래프, {도면 graph_id: 고른 output/graph 폴더 이름}). 도면 파일을 한 번만 읽으려고 둔다."""
-    best = pick_graphs(project_id, graph_root)
-    graphs = [best[k][1] for k in sorted(best)]
+    best = _pick(project_id, graph_root)
+    graphs = [best[k]["graph"] for k in sorted(best)]
     if not graphs:
         raise ValueError("프로젝트 %s에 추출한 도면이 없음" % project_id)
+    copies = {c["graph"]["graph_id"]: _sheet_copy(c["path"], c["stamp"], c["graph"]) for c in best.values()}
     pg = build(project_id, graphs, (load_manual(project_id) or {}).get("ops") or (),
-               load_system_codes(paths.folder("APR1400", SYSTEM_CODES_FILE)))
-    return pg, {gid: v[2] for gid, v in best.items() if gid}
+               load_system_codes(paths.folder("APR1400", SYSTEM_CODES_FILE)), copies=copies)
+    return pg, {gid: c["name"] for gid, c in best.items() if gid}
 
 
 def load_system_codes(path):

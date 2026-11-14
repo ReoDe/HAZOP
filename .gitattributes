@@ -10,3 +10,8 @@ tests/fixtures/store-0.1/** -text
 tests/fixtures/node-review/** -text
 # 기호 사전 판은 사전 파일 바이트의 해시다. 줄 끝이 체크아웃마다 달라지면 같은 사전이 다른 판으로 적힌다.
 resources/library/symbols/** -text
+# 제3자 묶음 파일과 고지 원문은 바이트가 해시로 고정돼 있다(줄 끝 변환 금지).
+hazop/shell/web/vendor/** -text
+licenses/preact/** -text
+licenses/htm/** -text
+licenses/dexpi/** -text

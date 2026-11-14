@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -17,6 +18,7 @@ from hazop.study import nodes as sn  # noqa: E402
 from hazop.study import results as res  # noqa: E402
 
 AT = "2026-11-08T00:00:00Z"
+DEVS = [{"deviation_id": "D01", "item_id": "I1", "parameter": "유량", "guideword": "없음", "label": "유량 없음"}]
 OBJECTS = [("TK", "tank", "equipment"), ("V1", "manual_valve", "valve"), ("V2", "manual_valve", "valve"),
            ("PP", "pump", "equipment"), ("LT", "transmitter", "instrument")]
 PIPES = [("L1", "TK", "V1"), ("L2", "V1", "V2"), ("L3", "V2", "PP")]
@@ -48,8 +50,7 @@ def entity(g, soid):
 
 def results_for(ns, g):
     """사람이 고친 항목 1개(승인)와 AI 초안 1개가 든 결과. kg_paths에는 구성요소 ID와 지식 ID가 섞여 있다."""
-    doc = res.empty_results(ns, [{"deviation_id": "D01", "item_id": "I1", "parameter": "유량", "guideword": "없음",
-                                  "label": "유량 없음"}])
+    doc = res.empty_results(ns, DEVS)
     cell = doc["cells"][0]
     cell["state"] = "analyzed"
     path = [entity(g, "L1"), entity(g, "V1"), "cond-001"]
@@ -76,6 +77,9 @@ class MigrateTest(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self._old = os.environ.get(paths.ENV_WORK_ROOT)
         os.environ[paths.ENV_WORK_ROOT] = self.tmp
+        devs = mock.patch.object(res, "load_deviations", lambda path=None: copy.deepcopy(DEVS))
+        devs.start()
+        self.addCleanup(devs.stop)
         self.g1 = graph("v-1")
         self.ns = sn.confirm(sn.propose(self.g1, at=AT), self.g1, "김검토", at=AT)
 
@@ -91,20 +95,23 @@ class MigrateTest(unittest.TestCase):
             return fh.read()
 
     def test_confirm_records_stable_refs(self):
-        refs = self.ns["member_refs"]
+        refs = self.ns["graph_member_refs"]
         self.assertEqual(refs[entity(self.g1, "V1")], "graph-T#V1")
-        self.assertEqual(len(refs), len(self.g1["nodes"]))
+        self.assertEqual(len(refs), len(self.g1["nodes"]), "그래프 전체(구간 밖 포함)")
+        self.assertEqual({n["node_id"] for n in self.ns["nodes"]}, set(self.ns["member_digest"]))
+        self.assertTrue(all(d.startswith("md3-") for d in self.ns["member_digest"].values()))
 
     def test_all_mapped_keeps_confirmation_and_logs(self):
         sn.save(self.ns)
         g2 = graph("v-2", shift=10)
         got = sn.load(g2)
-        self.assertEqual((got["status"], got["confirmed_by"], got["confirmed_at"]), ("confirmed", "김검토", AT))
+        self.assertEqual({(n["state"], n["confirmed"]["by"], n["confirmed"]["at"], n["rev"]) for n in got["nodes"]},
+                         {("confirmed", "김검토", AT, 1)})
         self.assertEqual(got["graph_version"], "v-2")
         self.assertFalse(sn.is_stale(got, g2))
         self.assertEqual(sn.coverage(got, g2)["uncovered"], [])
         by_soid = {n["source_object_id"]: n["entity_id"] for n in g2["nodes"]}
-        old_soid = {e: r.split("#")[1] for e, r in self.ns["member_refs"].items()}
+        old_soid = {e: r.split("#")[1] for e, r in self.ns["graph_member_refs"].items()}
         for before, after in zip(self.ns["nodes"], got["nodes"]):
             self.assertEqual(after["node_id"], before["node_id"])
             self.assertEqual(after["members"], sorted(by_soid[old_soid[m]] for m in before["members"]))
@@ -114,29 +121,31 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(migrate.notice(got), "그래프 판이 바뀌어(v-1 → v-2) 구성요소 %d개를 새 판에 다시 맞췄습니다. 확정은 그대로입니다."
                          % len(g2["nodes"]))
         self.assertEqual(got["history"][:-1], self.ns["history"])
+        self.assertEqual(last["detail"]["recheck"], {})
         self.assertTrue(os.path.isdir(paths.folder_in(self.tmp, "backup")))
         with open(sn.store_path(None, "graph-T"), encoding="utf-8") as fh:
             self.assertEqual(json.load(fh), got)
 
-    def test_one_missing_component_needs_recheck(self):
-        path = sn.save(self.ns)
-        before = self.raw(path)
+    def test_one_missing_component_rechecks_only_its_node(self):
+        sn.save(self.ns)
         g2 = graph("v-2", objects=OBJECTS[:-1], shift=3)
+        lost = sn.nodes_of(self.ns, entity(self.g1, "LT"))
         got = sn.load(g2)
-        self.assertEqual(got, self.ns)
-        self.assertTrue(sn.is_stale(got, g2))
-        self.assertEqual(self.raw(path), before)
-        self.assertEqual(migrate.plan(self.ns, g2)["state"], "recheck")
-        self.assertIn("새 판에 없는", migrate.plan(self.ns, g2)["reason"])
+        self.assertFalse(sn.is_stale(got, g2))
+        p = got["history"][-1]["detail"]
+        self.assertEqual(sorted(p["recheck"]), lost)
+        self.assertIn("새 판에서 찾지 못한", p["recheck"][lost[0]])
+        for n in got["nodes"]:
+            self.assertEqual((n["state"], n["rev"]), ("applied", 2) if n["node_id"] in lost else ("confirmed", 1))
 
-    def test_added_or_ambiguous_component_needs_recheck(self):
+    def test_added_component_is_not_a_reason_but_ambiguity_is(self):
         extra = graph("v-2", objects=OBJECTS + [("FT", "transmitter", "instrument")])
-        self.assertIn("늘어난", migrate.plan(self.ns, extra)["reason"])
+        self.assertEqual(migrate.plan(self.ns, extra)["recheck"], {}, "구간 밖 구성요소가 늘어도 재확인 아님(§1 #18)")
         dup = graph("v-2")
         dup["nodes"][1]["source_object_id"] = "TK"
-        self.assertIn("모호", migrate.plan(self.ns, dup)["reason"])
-        unproposed = sn.propose(self.g1, at=AT)
-        self.assertEqual(migrate.plan(unproposed, graph("v-2"))["state"], "skip")
+        hit = set(sn.nodes_of(self.ns, entity(self.g1, "TK")) + sn.nodes_of(self.ns, entity(self.g1, "V1")))
+        self.assertEqual(set(migrate.plan(self.ns, dup)["recheck"]), hit)
+        self.assertEqual(migrate.plan({"schema_version": "0.1", "nodes": []}, graph("v-2"))["state"], "skip")
 
     def test_changed_tag_kind_or_link_needs_recheck(self):
         """② 사람 수정처럼 참조는 같고 내용만 바뀐 판은 유지하지 않는다(결정로그 2026-11-07 '재확인 필요')."""
@@ -146,12 +155,14 @@ class MigrateTest(unittest.TestCase):
         link = graph("v-2", pipes=[("L1", "TK", "V2"), ("L2", "V1", "V2"), ("L3", "V2", "PP")])
         for g in (tag, kind, link):
             p = migrate.plan(self.ns, g)
-            self.assertEqual((p["state"], p["reason"]), ("recheck", "구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"))
+            self.assertTrue(p["recheck"])
+            self.assertEqual(set(p["recheck"].values()), {"구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"})
         extra_field = graph("v-2", shift=10)
         for n in extra_field["nodes"]:
             n["origin"] = "drawing"
             n["attributes"] = {"claims": []}
-        self.assertEqual(migrate.plan(self.ns, extra_field)["state"], "kept")
+        self.assertEqual((migrate.plan(self.ns, extra_field)["state"], migrate.plan(self.ns, extra_field)["recheck"]),
+                         ("kept", {}))
 
     def test_twice_is_same(self):
         sn.save(self.ns)
@@ -174,7 +185,7 @@ class MigrateTest(unittest.TestCase):
         ns2 = sn.load(g2)
         with open(rpath, encoding="utf-8") as fh:
             moved = json.load(fh)
-        self.assertEqual(moved["study_nodes_ref"], {"graph_version": "v-2", "confirmed_at": AT})
+        self.assertEqual(moved["graph_version"], "v-2")
         self.assertFalse(res.is_stale(moved, ns2))
         self.assertEqual(res.validate(moved, ns2), [])
         self.assertEqual(text_of(moved), text_of(doc))
@@ -199,31 +210,26 @@ class MigrateTest(unittest.TestCase):
         self.assertFalse(res.is_stale(got, ns2))
         self.assertEqual(text_of(got), text_of(doc))
         with open(rpath, encoding="utf-8") as fh:
-            self.assertEqual(json.load(fh)["study_nodes_ref"]["graph_version"], "v-1")
+            self.assertEqual(json.load(fh)["graph_version"], "v-1", "파일은 사람이 저장할 때 씀")
 
-    def test_results_of_other_confirmation_stay_stale(self):
-        doc = results_for(self.ns, self.g1)
-        doc["study_nodes_ref"]["confirmed_at"] = "2026-01-01T00:00:00Z"
+    def test_results_without_a_migration_chain_stay_as_they_are(self):
+        doc = dict(results_for(self.ns, self.g1), graph_version="v-0")
         ns2, _ = migrate.migrate_set(self.ns, graph("v-2", shift=10), at=AT)
         self.assertEqual(migrate.migrate_results(doc, ns2), (doc, None))
 
-    def test_old_files_without_refs(self):
+    def test_converted_01_file_without_digests_follows_the_legacy_whole_graph_digest(self):
+        """0.1에서 바꾼 집합(구간 지문 없음, legacy.member_digest만 있음)도 내용이 같은 새 판에서 확정을 잇는다."""
         legacy = copy.deepcopy(self.ns)
-        del legacy["member_refs"], legacy["member_digest"]
-        path = sn.save(legacy)
-        doc = results_for(self.ns, self.g1)
-        res.save(doc, None)
-        self.assertEqual(res.load(legacy), doc)
-        g2 = graph("v-2", shift=10)
-        self.assertEqual(sn.load(g2), legacy)  # 참조가 없으면 판 이전하지 않음(재확인)
-        self.assertEqual(migrate.plan(legacy, g2)["state"], "recheck")
-        filled = sn.load(self.g1)  # 판이 같을 때 읽으면 참조를 채워 둔다
-        self.assertEqual((filled["member_refs"], filled["member_digest"]),
-                         (self.ns["member_refs"], self.ns["member_digest"]))
-        self.assertEqual({k: v for k, v in filled.items() if k not in ("member_refs", "member_digest")}, legacy)
-        with open(path, encoding="utf-8") as fh:
-            self.assertIn("member_refs", json.load(fh))
-        self.assertEqual(sn.load(g2)["graph_version"], "v-2")
+        legacy["member_digest"] = {}
+        legacy["legacy"] = {"member_digest": migrate.member_digest(self.g1)}
+        same, p = migrate.migrate_set(legacy, graph("v-2", shift=10), at=AT)
+        self.assertEqual((p["recheck"], sn.all_confirmed(same)), ({}, True))
+        tag = graph("v-2", shift=10)
+        tag["nodes"][1]["tag"] = "V1-NEW"
+        changed, p = migrate.migrate_set(legacy, tag, at=AT)
+        self.assertEqual(set(p["recheck"]), {n["node_id"] for n in legacy["nodes"]}, "옛 기록은 그래프 전체라 모두 재확인")
+        filled = migrate.with_refs(legacy, self.g1)
+        self.assertEqual(filled["member_digest"], self.ns["member_digest"], "판이 같을 때는 구간 지문을 채움")
 
     def test_graph_stub_without_nodes_writes_nothing(self):
         path = sn.save(self.ns)

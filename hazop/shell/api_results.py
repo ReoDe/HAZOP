@@ -1,0 +1,759 @@
+"""새 웹 화면 3단계 ⑤ 분석 결과의 엔진 쪽(docs/design/app-shell-web.md §2.1·§2.3 ⑤·§5.3·§5.4). Qt를 import하지 않는다.
+
+- **읽기** `results`(요약: 구간×편차 행렬·머리 수치·판 지문), `results/cell/<구간>/<편차>`(칸 하나의 워크시트), `results/recs`(권고 목록),
+  `results/trace?entity=<ID>`(구성요소 -> 소속 구간 -> 칸 -> 권고, INTENT §3.6). 읽기는 파일을 하나도 쓰지 않는다(load_view).
+- **명령** `results.*`: 판정(수용·수정·기각·보류, 사유 필수 규칙은 엔진이 지킨다), 항목 고치기, 범위 바뀜 확인, Excel·초기사건 인계 묶음 내보내기,
+  분석 실행·멈춤. 쓰기 명령은 화면이 읽은 **결과 파일 지문(`ver`)**을 들고 가고 `by`·`at`은 Python 쪽이 채운다(웹 인자 아님).
+  판정 규칙은 hazop.study.result_commands(e32042a)를 그대로 부른다.
+- 내보내기 위치는 웹이 보내지 않는다: 창이 저장 대화상자를 연다(engine.hooks["save_path"]).
+"""
+
+import json
+import logging
+import os
+
+from hazop.analysis.risk import FREQUENCIES, SEVERITIES
+from hazop.study import nodes
+from hazop.study import result_commands
+from hazop.study import results as res
+
+LOG = logging.getLogger("hazop.shell.api_results")
+INT_MAX = 10 ** 9
+STATUS_COUNTS = ("proposed", "revised", "approved", "rejected", "on_hold")
+
+
+def _api():
+    from hazop.shell import api
+    return api
+
+
+def _pg(engine, strict=True):
+    from hazop.app import project_ctx
+    try:
+        return project_ctx.project_graph(engine.project_id())
+    except (OSError, ValueError, KeyError):
+        if strict:
+            raise _api().CommandError("failed", "프로젝트 그래프를 만들 수 없습니다. 도면을 먼저 추출하세요.")
+        return None
+
+
+def _node_set(pg):
+    """저장본을 읽기만 한다(파일을 바꾸지 않음). (집합, 옛 판 여부)."""
+    doc = nodes.read_as_is(pg)
+    if doc is None:
+        return nodes.new_set(pg), False
+    if (doc.get("schema_version") or nodes.LEGACY_SCHEMA_VERSION) == nodes.LEGACY_SCHEMA_VERSION:
+        return nodes.new_set(pg), True
+    return doc, False
+
+
+def _load(ns):
+    """(결과 문서, 지문). 파일이 없으면 빈 결과와 None. 읽기 전용(원본 보관·변환 저장 없음)."""
+    devs = res.load_deviations()
+    doc, fp = res.load_fp(ns, devs)        # 공개 읽기: 파일을 쓰지 않고 지문까지 돌려준다
+    if doc is None:
+        return res.empty_results(ns, devs), None
+    return doc, fp
+
+
+def _ver(fp):
+    return fp or "none"
+
+
+def _screen_status(n):
+    return ((n or {}).get("screen") or {}).get("status") or "keep"
+
+
+def scope_rows(ns):
+    """행렬 행이 되는 구간 = 확정·잠금 구간 전부(규격 study-node-segmentation §0 D6·S4). 등급 '낮음'은 정렬에만 써 맨 아래로 둔다.
+    v2에는 스크리닝 제외 구간이 없다: 옛 제외 구간은 집합을 읽을 때 미확정으로 내려온다(nodes.settle_screen)."""
+    shown = [n for n in ns["nodes"] if nodes.is_active(n)]
+    return [n for n in shown if _screen_status(n) != "low"] + [n for n in shown if _screen_status(n) == "low"]
+
+
+def scope_set(ns):
+    """AI 일괄·Excel·권고의 범위 = 행렬 행과 같은 구간(이전 화면 _scope_set)."""
+    return dict(ns, nodes=scope_rows(ns))
+
+
+def check_version(ns, ver):
+    """화면이 읽은 결과 파일 지문(ver)과 지금 파일을 맞춘다. 'none'은 '파일이 없었다'는 뜻이라 지금 파일이 있으면 다르다(없던 것이 생겨도 다름, 규격 §5.3)."""
+    _doc, fp = res.load_fp(ns)
+    if (ver == "none") != (fp is None) or (fp is not None and ver != fp):
+        raise _api().CommandError("stale", "분석 결과가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
+
+
+def deviation_names_en():
+    """{item_id: {guideword_en, label_en}} KOSHA P-86 이탈후보표의 영문(Excel과 같은 함수, 표에 적힌 것만)."""
+    from hazop.export import study_xlsx
+    return study_xlsx.deviation_names_en()
+
+
+def _dev_with_en(d, en):
+    n = en.get(d.get("item_id")) or {}
+    return dict(d, guideword_en=n.get("guideword_en", ""), label_en=n.get("label_en", ""))
+
+
+def cell_kind(cell):
+    """행렬에서 '아직 분석 안 함'과 구분해 보일 칸 종류 하나. 없으면 None. Excel 칸 표시 행(study_xlsx.cell_kinds)과 같은 규칙이고,
+    제외이면서 실패한 칸은 사람이 정한 '제외'를 앞에 둔다(실패는 also·이유에 함께 적음)."""
+    from hazop.export import study_xlsx
+    kinds = study_xlsx.cell_kinds(cell)
+    if "excluded" in kinds:
+        return "excluded"
+    return kinds[0] if kinds else None
+
+
+def cell_reason(cell, kind):
+    from hazop.export import study_xlsx
+    text = study_xlsx.cell_reason(cell, kind)
+    if kind == "excluded" and "failed" in study_xlsx.cell_kinds(cell):
+        text += " 마지막 AI 실행도 실패: " + study_xlsx.cell_reason(cell, "failed")
+    return text
+
+
+def _mark_kinds(matrix, cells):
+    """matrix_summary의 칸에 kind·reason·label(Excel 행 이름과 같은 글)을 더한다(키만 더함). 해당이 없는 칸(대부분)에는 키를 붙이지 않는다.
+    기각 항목만 있는 칸에는 rejected(수)를 붙인다(파일에는 행이 나가는데 행렬 수는 0이라 화면 안내가 틀리지 않게)."""
+    from hazop.export import study_xlsx
+    for c in cells:
+        m = matrix[c["node_id"]][c["deviation_id"]]
+        kind = cell_kind(c)
+        if kind:
+            m.update(kind=kind, reason=cell_reason(c, kind), label=study_xlsx.CELL_ROW_LABELS[kind])
+            also = [k for k in study_xlsx.cell_kinds(c) if k != kind]
+            if also:
+                m["also"] = also
+        if c["entries"] and not m.get("scenarios"):
+            m["rejected"] = sum(e.get("status") == "rejected" for e in c["entries"])
+    return matrix
+
+
+def _entry_view(e):
+    return dict(e, verdict=res.verdict(e))
+
+
+def _rec_rows(doc, ns, only_node=None):
+    by_node = {n["node_id"]: n for n in scope_rows(ns)}
+    labels = {d["deviation_id"]: d.get("label") or d["deviation_id"] for d in doc.get("deviations") or []}
+    rows = []
+    for cell in doc["cells"]:
+        if (only_node and cell["node_id"] != only_node) or cell["node_id"] not in by_node:
+            continue
+        for e in cell["entries"]:
+            text = (e.get("recommendation") or "").strip() if isinstance(e.get("recommendation"), str) else ""
+            if not text or e.get("status") == "rejected":
+                continue
+            rows.append({"node_id": cell["node_id"], "node_name": (by_node.get(cell["node_id"]) or {}).get("name"),
+                         "deviation_id": cell["deviation_id"], "deviation": labels.get(cell["deviation_id"]), "entry_id": e.get("entry_id"),
+                         "text": text, "status": e.get("status"), "risk": e.get("risk")})
+    rows.sort(key=lambda r: (-(r["risk"] or 0), r["node_id"], r["deviation_id"]))
+    return rows
+
+
+# ---------------------------------------------------------------- 읽기
+
+def summary(engine):
+    pg = _pg(engine, strict=False)
+    if pg is None:
+        return {"available": False, "reason": "프로젝트 그래프가 없습니다. 도면을 먼저 추출하세요."}
+    ns, legacy = _node_set(pg)
+    active = scope_rows(ns)
+    base = {"available": True, "legacy": legacy, "set_rev": ns.get("set_rev") or 0}
+    if legacy or not active:
+        return dict(base, empty=True, nodes=[], deviations=[], matrix={}, ver="none", kpi=_kpi(None),
+                    reason="옛 판 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요." if legacy else "확정한 구간이 아직 없습니다.")
+    try:
+        doc, fp = _load(ns)
+    except (OSError, ValueError) as exc:
+        return dict(base, empty=True, nodes=[], deviations=[], matrix={}, ver="none", kpi=_kpi(None),
+                    reason="분석 결과 파일을 읽을 수 없습니다(%s)." % str(exc)[:120])
+    from hazop.shell import api_nodes
+    info = api_nodes._span_info(ns, pg)
+    rows = [{"node_id": n["node_id"], "name": n.get("name"), "state": nodes.node_state(n), "rev": n.get("rev") or 1,
+             "range": (info.get(n["node_id"]) or {}).get("range"), "spans": bool((info.get(n["node_id"]) or {}).get("spans"))} for n in active]
+    en = deviation_names_en()
+    return dict(base, empty=False, nodes=rows, deviations=[{"deviation_id": d["deviation_id"], "parameter": d["parameter"],
+                                                             "guideword": d["guideword"], "label": d.get("label"),
+                                                             "guideword_en": _dev_with_en(d, en)["guideword_en"],
+                                                             "label_en": _dev_with_en(d, en)["label_en"]} for d in doc["deviations"]],
+                matrix=_mark_kinds(res.matrix_summary(doc), doc["cells"]), ver=_ver(fp), read_only=doc.get("read_only"), kpi=_kpi(doc),
+                run=_run_state(engine))
+
+
+def _kpi(doc):
+    out = {"cells": 0, "analyzed": 0, "entries": 0, "recs": 0, "unreviewed": 0, "approved": 0, "rejected": 0, "on_hold": 0, "revised": 0,
+           "proposed": 0, "failed_cells": 0, "usage": None}
+    if doc is None:
+        return out
+    for cell in doc["cells"]:
+        out["cells"] += 1
+        out["analyzed"] += cell["state"] == "analyzed"
+        out["failed_cells"] += (cell.get("ai_run") or {}).get("status") == "failed"
+        for e in cell["entries"]:
+            out["entries"] += 1
+            st = e.get("status")
+            if st in STATUS_COUNTS:
+                out[st] += 1
+            if st in res.UNDECIDED_STATUSES or (res.is_ai_draft(e) and st != "rejected"):
+                out["unreviewed"] += 1
+            if st != "rejected" and isinstance(e.get("recommendation"), str) and e["recommendation"].strip():
+                out["recs"] += 1
+    try:
+        from hazop.study import ai_cells
+        out["usage"] = ai_cells.usage_total(doc)
+    except Exception:  # noqa: BLE001 - 사용량 집계가 틀어져도 표는 보인다
+        out["usage"] = None
+    return out
+
+
+def cells_delta(doc, ur, fp):
+    """호출 하나가 바꾼 칸의 요약만(525구간 행렬 전체 1.9MB를 호출마다 다시 읽지 않게). 머리 수치와 새 판 지문을 함께 준다."""
+    wanted = set(ur["cells"])
+    cells = {}
+    for c in doc["cells"]:
+        if c["node_id"] == ur["node_id"] and c["deviation_id"] in wanted:
+            cells[c["deviation_id"]] = _mark_kinds(res.matrix_summary({"cells": [c]}), [c])[c["node_id"]][c["deviation_id"]]
+    return {"node_id": ur["node_id"], "cells": cells, "kpi": _kpi(doc), "ver": _ver(fp)}
+
+
+def _run_state(engine):
+    run = getattr(engine, "analysis", None)
+    if run is None:
+        return {"running": False}
+    snap = run.snapshot()
+    last = snap.get("last") or {}
+    if "project_id" in last and last["project_id"] != engine.project_id():
+        snap = dict(snap, last=None)          # 다른 프로젝트의 지난 실행(멈춤 안내·이어서 단추)은 보이지 않는다(B4 검토 1)
+    return snap
+
+
+def cell_view(engine, node_id, deviation_id):
+    pg = _pg(engine, strict=False)
+    if pg is None:
+        return None
+    ns, _legacy = _node_set(pg)
+    doc, fp = _load(ns)
+    cell = next((c for c in doc["cells"] if (c["node_id"], c["deviation_id"]) == (node_id, deviation_id)), None)
+    if cell is None:
+        return None
+    node = next((n for n in ns["nodes"] if n["node_id"] == node_id), {})
+    dev = _dev_with_en(next((d for d in doc["deviations"] if d["deviation_id"] == deviation_id), {}), deviation_names_en())
+    look = _Lookup(engine, pg, ns)
+    cell = dict(cell, entries=[dict(_entry_view(e), detail=look.entry(e)) for e in cell["entries"]])
+    problem = res.editable_problem(doc, node_id, deviation_id, ns)
+    return {"cell": cell, "node": {"node_id": node_id, "name": node.get("name"), "state": nodes.node_state(node) if node else None},
+            "deviation": dev, "editable": problem is None, "not_editable_reason": problem, "ver": _ver(fp),
+            "set_rev": ns.get("set_rev") or 0,
+            "cause_kinds": res.CAUSE_KINDS, "read_only": doc.get("read_only"),
+            "severities": list(SEVERITIES), "frequencies": list(FREQUENCIES),
+            "intent": _intent(ns, node) if node else None,
+            "roles": refs_mod().ROLES, "actuations": refs_mod().ACTUATIONS, "bases": res.CONSEQUENCE_BASES,
+            "targets": look.targets(node)}
+
+
+def refs_mod():
+    from hazop.study import refs
+    return refs
+
+
+def _intent(ns, node):
+    """구간 설계 의도 {text, source} 또는 None(이전 화면 design_intent와 같은 규칙: 구간에 적은 것 → 구간 JSON → ④ 검토 초안)."""
+    from hazop.shell import analysis_run
+    from hazop.study import node_review
+    try:
+        review = node_review.load(ns.get("project_id"), ns["graph_id"])
+    except (OSError, ValueError):
+        review = None
+    try:
+        found = analysis_run.intent_text(node, review)
+    except Exception:  # noqa: BLE001 - 설계 의도를 못 읽어도 워크시트는 보인다
+        LOG.exception("설계 의도 읽기 실패: %s", node.get("node_id"))
+        return None
+    return {"text": found[0], "source": found[1]} if found else None
+
+
+class _Lookup:
+    """워크시트 상세 열(B3, INTENT §3.6)에 쓰는 이름표: 안정 참조 → '태그(도면)', 근거 경로 → 도면별 강조, 출처 문서 → 문서 패널 자료."""
+
+    def __init__(self, engine, pg, ns=None):
+        from hazop.export import study_xlsx
+        from hazop.study import refs
+        self.engine, self.pg, self.refs, self.ns = engine, pg, refs, ns
+        self.idx = refs.index(pg)
+        self.dn = {s["graph_id"]: s["drawing_number"] for s in pg.get("sheets") or []}
+        self.labels = study_xlsx.entity_labels(pg)
+        self.entities = {n.get("entity_id") for n in pg.get("nodes") or []}
+        self._docs = None
+        self._expect = False
+
+    def label(self, ref):
+        return self.refs.label(ref, self.idx, self.dn)
+
+    def ref(self, r, **extra):
+        """참조 하나 {ref, label, missing}: 그래프에서 사라진 대상이면 missing(화면이 '도면에서 사라짐'으로 보임). 저장 값은 원래 참조 그대로."""
+        return dict({"ref": r, "label": self.label(r), "missing": r not in self.idx}, **extra)
+
+    def expectations(self):
+        """{잠재 후보 ID: 항목}(확인할 단서 줄용, 한 번만 셈). 못 세면 None(그러면 ID로 적음)."""
+        if self._expect is False:
+            self._expect = None
+            try:
+                inputs = excel_inputs(self.ns, self.pg) if self.ns else None
+                self._expect = {i["id"]: i for i in (inputs or {}).get("expectations", {}).get("items") or []} if inputs else None
+            except Exception:  # noqa: BLE001 - 단서를 못 세도 워크시트는 보인다
+                LOG.exception("잠재 후보 읽기 실패")
+        return self._expect
+
+    def docs(self):
+        """{문서 ID·문서 번호·자료 ID: 자료 ID} 문서 패널에서 찾을 열쇠."""
+        if self._docs is None:
+            self._docs = {}
+            try:
+                from hazop.shell import api_docs
+                for row in api_docs.summary(self.engine).get("docs") or []:
+                    for k in (row.get("material_id"), row.get("doc_number")):
+                        if k:
+                            self._docs[k] = row["material_id"]
+            except Exception:  # noqa: BLE001 - 문서 목록을 못 읽으면 출처는 글로만 보인다
+                LOG.exception("문서 목록 읽기 실패")
+        return self._docs
+
+    def entry(self, e):
+        from hazop.chat import view as chatview
+        refs = self.refs
+        sg = []
+        for s in refs.safeguard_items(e):
+            sg.append({"text": s["text"], "role": s["role"], "actuation": s["actuation"],
+                       "refs": [self.ref(r["ref"]) for r in s["refs"] if r.get("ref")],
+                       "draft": not refs.is_confirmed(s, e) or any(not refs.is_confirmed(r, e) for r in s["refs"])})
+        basis = e.get("ai_basis") or {}
+        paths = []
+        for p in basis.get("kg_paths") or []:
+            if not p:
+                continue
+            by_sheet = chatview.path_steps(self.pg, [{"id": x, "flow": None} for x in p])
+            marks = {g: [{"op": "path", "steps": steps, "style": "path", "numbered": True}] for g, steps in by_sheet.items()}
+            gone = [x for x in p if x not in self.entities]
+            paths.append({"labels": [self.labels.get(x, x) + (" (도면에서 사라짐)" if x in gone else "") for x in p], "marks": marks,
+                          "sheet": next(iter(by_sheet), None), "missing": len(gone)})
+        docs = self.docs()
+        sources = [{"doc": s.get("doc") or "", "where": s.get("where") or "", "material_id": docs.get(s.get("doc"))}
+                   for s in basis.get("sources") or []]
+        warnings = list(basis.get("warnings") or []) + [res.quality_line(k, t) for k, t in res.quality_warnings(e)]
+        # 사람이 고른 잠재 후보는 AI 근거가 아니라 확인할 단서라 따로 둔다(이전 화면 '확인할 단서(근거 아님)')
+        clues = [t for k, t in refs.lines(e, self.idx, self.dn, None, self.expectations() if e.get("expectation_refs") else None)
+                 if k == "expectation"] if e.get("expectation_refs") else []
+        return {"cause_kind": e.get("cause_kind"), "consequence_basis": e.get("consequence_basis"),
+                "cause_refs": [self.ref(r["ref"], failure_mode=r.get("failure_mode") or "", draft=not refs.is_confirmed(r, e))
+                               for r in e.get("cause_refs") or [] if isinstance(r, dict) and r.get("ref")],
+                "consequence_refs": [self.ref(r["ref"], draft=not refs.is_confirmed(r, e))
+                                     for r in e.get("consequence_refs") or [] if isinstance(r, dict) and r.get("ref")],
+                "safeguards": sg, "basis": {"paths": paths, "sources": sources, "warnings": warnings, "clues": clues}}
+
+    def targets(self, node):
+        """참조 고르기 목록 [{ref, label, in_node}]: 이 구간 구성요소가 먼저, 그다음 태그 있는 다른 구성요소(다른 구간 대상 허용)."""
+        from hazop.study import migrate
+        gid = self.pg.get("graph_id")
+        members = set((node or {}).get("members") or [])
+        out, seen = [], set()
+        for inside in (True, False):
+            for n in self.pg.get("nodes") or []:
+                if (n.get("entity_id") in members) != inside or not (inside or n.get("tag")):
+                    continue
+                ref = migrate.ref_of(n, gid)
+                if ref and ref not in seen:
+                    seen.add(ref)
+                    out.append({"ref": ref, "label": self.label(ref), "in_node": inside})
+        return out[:3000]
+
+
+def _entities(pg, query):
+    """추적을 시작할 프로젝트 구성요소 ID와 보일 이름. query: entity(프로젝트 ID 또는 태그) 또는 sheet+local(도면에서 누른 구성요소)."""
+    from hazop.chat import view as chatview
+    by_id = {n.get("entity_id"): n for n in pg.get("nodes") or [] if n.get("entity_id")}
+    if query.get("sheet") and query.get("local"):
+        ids = chatview.lift(pg, query["sheet"], [query["local"]])
+    else:
+        ent = (query.get("entity") or "").strip()
+        if ent in by_id:
+            ids = [ent]
+        else:                                                        # 태그로도 찾는다(같은 태그가 여럿이면 모두)
+            low = ent.lower()
+            ids = [i for i, n in by_id.items() if low and str(n.get("tag") or "").lower() == low]
+    label = ", ".join(sorted({str((by_id.get(i) or {}).get("tag") or i) for i in ids}))
+    return ids, label or (query.get("entity") or "")
+
+
+def trace(engine, query):
+    pg = _pg(engine, strict=False)
+    if pg is None or not (query.get("entity") or (query.get("sheet") and query.get("local"))):
+        return {"entity": (query or {}).get("entity", ""), "entities": [], "nodes": []}
+    ids, label = _entities(pg, query)
+    ns, _legacy = _node_set(pg)
+    doc, _fp = _load(ns)
+    out = []
+    for n in scope_rows(ns):
+        if not set(ids) & set(n.get("members") or []):
+            continue
+        cells = {}
+        for r in _rec_rows(doc, ns, only_node=n["node_id"]):
+            cells.setdefault(r["deviation_id"], {"deviation_id": r["deviation_id"], "deviation": r["deviation"], "recs": []})["recs"].append(r)
+        out.append({"node_id": n["node_id"], "name": n.get("name"), "state": nodes.node_state(n), "cells": list(cells.values())})
+    return {"entity": label, "entities": ids, "nodes": out}
+
+
+def read(engine, parts, query):
+    """ReadApi가 부르는 길: parts[0] == 'results'. 없는 자료는 None(404)."""
+    api = _api()
+    if len(parts) == 1:
+        return api._json(summary(engine))
+    if len(parts) == 4 and parts[1] == "cell":
+        data = cell_view(engine, parts[2], parts[3])
+        return api._json(data) if data is not None else None
+    if len(parts) == 2 and parts[1] == "run":
+        return api._json(_run_state(engine))
+    if len(parts) == 2 and parts[1] == "recs":
+        pg = _pg(engine, strict=False)
+        if pg is None:
+            return api._json({"recs": []})
+        ns, _l = _node_set(pg)
+        doc, _fp = _load(ns)
+        return api._json({"recs": _rec_rows(doc, ns)})
+    if len(parts) == 2 and parts[1] == "trace":
+        return api._json(trace(engine, dict(query or {})))
+    return None
+
+
+# ---------------------------------------------------------------- 쓰기
+
+def _need_reviewer(engine):
+    by = engine.reviewer()
+    if not by:
+        raise _api().CommandError("bad_args", "검토자 이름을 먼저 설정에서 입력하세요. 판정 기록에 남습니다.")
+    return by
+
+
+def _after(engine, out, name):
+    """엔진 답(result_commands) -> 웹 답. 거절이면 사유를 그대로 올린다. 지문이 어긋난 것은 stale."""
+    api = _api()
+    if not out["ok"]:
+        refused = out.get("refused") or [{"target": "", "reason": "처리하지 못했습니다."}]
+        text = "; ".join(str(r.get("reason") or "") for r in refused)[:300]
+        codes = {r.get("code") for r in refused}
+        code = ("stale" if codes & {"stale", "conflict"} else "locked" if "read_only" in codes or "잠긴" in text or "보관" in text else "failed")
+        raise api.CommandError(code, text)
+    engine.changed("results", None)
+    return out
+
+
+def _execute(engine, name, a, writes=True):
+    pg = _pg(engine)
+    ns, legacy = _node_set(pg)
+    if legacy:
+        raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+    by = _need_reviewer(engine) if writes else engine.reviewer()
+    ver = a.get("ver")
+    if writes:
+        check_version(ns, ver)
+    args = {k: v for k, v in a.items() if k not in ("ver", "set_rev")}
+    out = result_commands.execute(pg, name, args, by, None if ver in (None, "none") else ver, set_rev=a.get("set_rev"))
+    return _after(engine, out, name), ns, pg
+
+
+def _set_status(engine, a):
+    out, _ns, _pg_ = _execute(engine, "set_status", a)
+    return {"ver": out["fingerprint"] or "none"}
+
+
+def _edit_entry(engine, a):
+    out, _ns, _pg_ = _execute(engine, "edit_entry", a)
+    return {"ver": out["fingerprint"] or "none"}
+
+
+def _recheck(engine, a):
+    out, _ns, _pg_ = _execute(engine, "recheck_cell", a)
+    return {"ver": out["fingerprint"] or "none"}
+
+
+def _save_path(engine, kind, default_name):
+    hook = engine.hooks.get("save_path")
+    if hook is None:
+        raise _api().CommandError("failed", "저장 위치를 고를 수 없습니다.")
+    path = hook(kind, default_name)
+    return path or None
+
+
+def _export_excel(engine, a):
+    from hazop.export import study_xlsx
+    pg = _pg(engine)
+    ns, legacy = _node_set(pg)
+    if legacy:
+        raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+    doc, _fp = _load(ns)
+    scope = a.get("scope") or "all"
+    node_ids = a.get("node_ids") or None
+    if scope == "nodes":
+        shown = {n["node_id"] for n in scope_rows(ns)}
+        outside = [n for n in node_ids or [] if n not in shown]
+        if not node_ids or outside:
+            raise _api().CommandError("bad_args", ("행렬에 없는 구간은 내보낼 수 없습니다(%s)." % ", ".join(outside[:5])) if outside
+                                      else "고른 구간이 없습니다.")
+    now = nodes.now_utc()
+    path = _save_path(engine, "excel", study_xlsx.default_filename(ns.get("project_id"), now))
+    if not path:
+        return {"cancelled": True}
+    if not path.lower().endswith(".xlsx"):
+        path += ".xlsx"
+    inputs = excel_inputs(ns, pg)
+    try:
+        path, rows = study_xlsx.export(path, doc, scope_set(ns), pg, doc["deviations"], scope=scope, node_ids=node_ids,
+                                       reviewer=engine.reviewer() or "", intents=inputs["intents"], now=now, expectations=inputs["expectations"])
+    except (OSError, ValueError) as exc:
+        raise _api().CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % str(exc)[:200])
+    return {"path": os.path.basename(path), "rows": rows, "cancelled": False}
+
+
+def excel_inputs(ns, pg):
+    """이전 화면의 export_excel과 같은 보조 입력(구간 설계 의도, 잠재 후보)을 만든다 -> 같은 입력이면 같은 Excel이 나온다."""
+    from hazop.study import ai_cells, node_review
+    from hazop.shell import analysis_run
+    review = None
+    try:
+        review = node_review.load(ns.get("project_id"), ns["graph_id"])
+    except (OSError, ValueError):
+        review = None
+    intents = {}
+    for n in ns["nodes"]:
+        found = analysis_run.intent_text(n, review)
+        if found:
+            intents[n["node_id"]] = found[0]
+    kg, _reason = ai_cells.load_kg_for(ns)
+    expectations, _note = ai_cells.expectations_for(pg, kg)
+    return {"intents": intents, "expectations": expectations}
+
+
+def _export_ie(engine, a):
+    pg = _pg(engine)
+    ns, legacy = _node_set(pg)
+    if legacy:
+        raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+    from hazop.ie import bundle_xlsx
+    path = _save_path(engine, "ie", bundle_xlsx.default_stem(ns.get("project_id"), nodes.now_utc()) + ".xlsx")
+    if not path:
+        return {"cancelled": True}
+    if not path.lower().endswith(".xlsx"):
+        path += ".xlsx"
+    out = result_commands.execute(pg, "export_ie_bundle", {"path": path}, engine.reviewer(), None)
+    if not out["ok"]:
+        raise _api().CommandError("failed", "; ".join(str(r.get("reason")) for r in out["refused"])[:300])
+    return {"path": os.path.basename(out["path"]), "candidates": out["candidates"], "cancelled": False}
+
+
+# ---------------------------------------------------------------- 분석 실행·멈춤
+
+class AnalysisRun:
+    """분석 실행 하나의 상태(웹이 머리에 보인다)와 멈춤 표시."""
+
+    def __init__(self):
+        self.running = False
+        self.stop = False
+        self.done = 0
+        self.total = 0
+        self.text = ""
+        self.last = None       # 끝난 실행의 요약(한도·실패 안내)
+
+    def snapshot(self):
+        return {"running": self.running, "stopping": self.running and self.stop, "done": self.done, "total": self.total, "text": self.text,
+                "last": self.last}
+
+
+def _plan(engine, a):
+    from hazop.shell import analysis_run
+    pg = _pg(engine)
+    ns, legacy = _node_set(pg)
+    if legacy:
+        raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+    doc, _fp = _load(ns)
+    ns = scope_set(ns)                       # 확정·잠금 구간만 호출·요금에 들어간다
+    rest = None
+    if a["scope"] == "resume":               # 지금 프로젝트·도면·구간 판의 남은 칸 기록, 없으면 결과 파일의 실패·분석 안 한 칸(B4 검토 1·3)
+        last = getattr(engine, "analysis", None) and engine.analysis.last
+        rest, _src = analysis_run.resume_cells(ns, doc, (last or {}).get("resume"), engine.project_id())
+    units = analysis_run.plan(ns, doc, a["scope"], a.get("node_id"), a.get("deviation_id"), rest=rest)
+    return pg, ns, doc, units
+
+
+def _run_plan(engine, a):
+    from hazop.shell import analysis_run
+    _pg_, _ns, _doc, units = _plan(engine, a)
+    ai = engine.ai
+    status = ai.status() if ai is not None else {}
+    terms = bool(getattr(ai, "terms_acked", lambda: True)()) if ai is not None else True
+    s = analysis_run.summarize(units)
+    conn = _run_conn(engine, units, a.get("method"))
+    if conn is not None:     # 실제로 쓸 연결(방식·모델·요금, A8 검토 R1): 카드가 구독이라고 고정해 보이지 않게
+        can, label, guide = conn["can_start"], conn["label"], conn["guide"]
+        terms = terms or conn["via"] != "subscription"          # 구독 이용 조건은 구독으로 돌 때만
+    else:                    # 연결 설정이 없는 엔진(시험의 가짜 AI): 옛 상태 읽기
+        can, label, guide = bool(status.get("can_start")), status.get("label") or "", status.get("guide") or ""
+    return dict(s, conn=conn, can_start=can and bool(units), state=label, guide=guide,
+                needs_terms=not terms, running=_run_state(engine)["running"], method=a.get("method"),
+                scope_fp=analysis_run.scope_fp(units, conn),     # 확인한 범위(칸·구간·호출 수·비용·모델)의 지문. 시작할 때 그대로 보낸다
+                empty_text=None if units else {"node": "분석할 구간의 행을 고르세요(확정한 구간만 분석합니다).",
+                                              "failed": "다시 실행할 실패 칸이 없습니다.", "cell": "분석할 칸이 없습니다.",
+                                              "resume": "이어서 실행할 칸이 없습니다."}.get(a["scope"], "분석할 칸이 없습니다."))
+
+
+def _run_conn(engine, units, method=None):
+    """api_settings.run_conn(분석 연결) 또는 None(연결 설정이 없는 엔진). method: 이번 실행만 쓸 방식(사용자가 고른 'API 키로 이어서')."""
+    if getattr(engine.ai, "conn", None) is None:
+        if method is not None:
+            raise _api().CommandError("bad_args", "이번 실행만 방식을 바꿀 수 없는 연결입니다.")
+        return None
+    from hazop.shell import api_settings
+    try:
+        once = {"method": method} if method else {}           # 이번 실행만 고른 방식이 있을 때만 넘긴다
+        return api_settings.run_conn(engine, "analysis", calls=len(units), sections=len({u["node_id"] for u in units}), **once)
+    except api_settings.Refused as exc:
+        raise _api().CommandError(exc.code, exc.message)
+
+
+def _ack_terms(engine, a):
+    ai = engine.ai
+    if ai is None or not hasattr(ai, "ack_terms"):
+        raise _api().CommandError("failed", "이용 조건을 기록할 수 없습니다.")
+    ai.ack_terms()
+    return {}
+
+
+def _run(engine, a):
+    from hazop.shell import analysis_run
+    api = _api()
+    if engine.analysis.running:
+        raise api.CommandError("busy", "분석이 이미 돌고 있습니다.")
+    _need_reviewer(engine)
+    pg, ns, _doc, units = _plan(engine, a)
+    if not units:
+        raise api.CommandError("bad_args", "분석할 칸이 없습니다.")
+    ai = engine.ai
+    conn = getattr(ai, "conn", None)
+    plan = _run_conn(engine, units, a.get("method"))
+    status = plan if plan is not None else (ai.status() if ai is not None else {})
+    if not status.get("can_start"):
+        raise api.CommandError("failed", status.get("guide") or "AI 연결을 쓸 수 없어 분석을 시작하지 않았습니다.")
+    via = plan["via"] if plan is not None else None
+    if via in (None, "subscription") and ai is not None and hasattr(ai, "terms_acked") and not ai.terms_acked():
+        raise api.CommandError("terms", "구독 사용 안내를 먼저 확인해 주세요.")
+    if a.get("conn_ver") is not None and plan is not None:   # 카드가 보인 연결과 지금 연결이 같을 때만(채팅 길은 자기 확인을 거침)
+        from hazop.shell import api_settings
+        try:
+            api_settings.same_conn(engine, "analysis", a["conn_ver"], *([a["method"]] if a.get("method") else []))
+        except api_settings.Refused as exc:
+            raise api.CommandError(exc.code, exc.message)
+    if plan is not None and plan.get("paid") and not (a.get("confirm_paid") and a.get("conn_ver")):
+        # 과금 경로는 실행 카드에서 예상 비용을 본 사람이 확인해야만 돈다(채팅 길처럼 확인 없이 오면 거절, B4)
+        raise api.CommandError("need_confirm", plan.get("confirm_text") or "API 키로 요금이 나갑니다. 분석 실행 카드에서 비용을 확인하고 시작하세요.")
+    fp = analysis_run.scope_fp(units, plan)
+    if (a.get("scope_fp") or (plan is not None and plan.get("paid"))) and a.get("scope_fp") != fp:
+        # 확인한 뒤 구간·칸·호출 수·비용·모델이 바뀌면 실행하지 않고 다시 묻는다(B4 검토 2. 과금 경로는 지문이 꼭 있어야 한다)
+        raise api.CommandError("scope_changed", "확인한 뒤 분석 범위나 예상 비용이 바뀌었습니다(지금 %d칸, 호출 %d회). 실행하지 않았습니다. 다시 확인하고 시작하세요."
+                               % (sum(len(u["deviation_ids"]) for u in units), len(units)))
+    try:
+        client = conn.make_client(via) if plan is not None and hasattr(conn, "make_client") else ai.make_client()
+    except ValueError as exc:
+        raise api.CommandError("failed", str(exc)[:200])
+    this_run = bool(plan and plan.get("this_run")) and hasattr(conn, "set_run_override")
+    test = bool(plan and plan.get("test"))
+    if this_run:
+        conn.set_run_override(via)                 # 연결 칩에 '이번 실행만'(끝나면 되돌림)
+    run = engine.analysis
+    run.running, run.stop, run.done, run.total, run.text, run.last = True, False, 0, len(units), "AI 연결을 확인하는 중", None
+    engine.changed("results.run", None)
+    review_holder = {}
+
+    def intent_of(node):
+        from hazop.app.screens.results import design_intent
+        if "r" not in review_holder:
+            from hazop.study import node_review
+            try:
+                review_holder["r"] = node_review.load(ns.get("project_id"), ns["graph_id"])
+            except (OSError, ValueError):
+                review_holder["r"] = None
+        return design_intent(node, review_holder["r"])
+
+    def work(progress):
+        def tick(text, done, total):
+            run.done, run.total, run.text = done, total, text
+            engine.changed("results.run", None)
+            progress(text, done, total)
+
+        try:
+            summary_ = analysis_run.run(client, ns, pg, units, intent_of, tick, lambda: run.stop or engine.stop_requested(),
+                                        on_saved=lambda ur, doc, fp: engine.emit("results.cells", cells_delta(doc, ur, fp)), test=test)
+        finally:
+            run.running = False
+            if this_run:
+                conn.set_run_override(None)
+        summary_ = dict(summary_, method=via, method_name=(plan or {}).get("method_name"), this_run=this_run, project_id=engine.project_id(),
+                        resume=analysis_run.resume_record(ns, summary_.get("rest"), via, engine.project_id()))
+        run.last = summary_
+        engine.changed("results", None)
+        engine.changed("results.run", None)
+        return summary_
+    job = engine.start_job("AI 분석 실행", work, kind="analysis")
+    return {"job": job, "calls": len(units)}
+
+
+def _stop(engine, a):
+    """남은 호출을 부르지 않는다(진행 중인 호출은 끝까지 받는다)."""
+    run = engine.analysis
+    if run.running:
+        run.stop = True
+        engine.changed("results.run", None)
+    return {"stopping": run.running}
+
+
+def _v_fields(v):
+    if not isinstance(v, dict) or len(v) > 12:
+        raise ValueError("고칠 필드가 객체(12개 이하)여야 함")
+    allowed = set(res.EDITABLE_FIELDS)
+    for k, val in v.items():
+        if k not in allowed:
+            raise ValueError("고칠 수 없는 필드: %s" % k)
+        if len(json.dumps(val, ensure_ascii=False)) > 6000:
+            raise ValueError("%s 값이 너무 김" % k)
+    return v
+
+
+def register(commands):
+    api = _api()
+    C, v_str, v_int, v_list, v_enum = api.Command, api.v_str, api.v_int, api.v_list, api.v_enum
+    where = {"node_id": (v_str(1, 40), True), "deviation_id": (v_str(1, 20), True)}
+    ver = (v_str(1, 100), True)
+    rev = (v_int(0, INT_MAX), False)          # 화면이 읽은 구간 집합 판(그 사이 구간이 바뀌면 엔진이 거절)
+    entry = {"entry_id": (v_str(1, 80), True)}
+
+    def put(name, spec_, handler, doc):
+        key = "results." + name
+        if key in commands:
+            raise ValueError("명령 이름이 겹침: %s" % key)
+        commands[key] = C(spec_, handler, doc)
+
+    put("set_status", dict(where, **entry, status=(v_enum(*res.HUMAN_STATUSES), True), reason=(v_str(0, 1000), False), ver=ver, set_rev=rev), _set_status,
+        "항목 판정: 수용·수정(되돌림)·기각·보류. 수정·기각·보류에는 사유가 있어야 한다. 읽은 결과 파일 지문(ver)을 함께 보낸다")
+    put("edit_entry", dict(where, **entry, fields=(_v_fields, True), reason=(v_str(1, 1000), True), ver=ver, set_rev=rev), _edit_entry,
+        "항목 내용 고치기(판정 '수정'). 사유 필수")
+    put("recheck", dict(where, ver=ver, set_rev=rev), _recheck, "범위가 바뀐 칸의 판정을 다시 확인했다고 적는다")
+    put("export_excel", {"scope": (v_enum("all", "approved", "nodes"), False), "node_ids": (v_list(v_str(1, 40), 500), False)}, _export_excel,
+        "Excel로 내보낸다(저장 위치는 창이 대화상자로 묻는다)")
+    put("export_ie", {}, _export_ie, "초기사건 인계 묶음을 내보낸다(수용 항목만, 저장 위치는 창이 묻는다)")
+    scopes = (v_enum(*("all", "node", "cell", "failed", "resume")), True)
+    once = (v_enum("subscription", "api"), False)        # 이번 실행만 쓸 방식(사용자가 고른 'API 키로 이어서'). 고정 응답은 설정에서만
+    put("run_plan", {"scope": scopes, "node_id": (v_str(1, 40), False), "deviation_id": (v_str(1, 20), False), "method": once}, _run_plan,
+        "분석 실행 전 확인: 호출 수·칸 수·실제로 쓸 연결·예상 비용(resume: 앞 실행이 멈춘 뒤 남은 칸)")
+    put("run", {"scope": scopes, "node_id": (v_str(1, 40), False), "deviation_id": (v_str(1, 20), False), "conn_ver": (v_str(1, 40), False),
+                "method": once, "confirm_paid": (api.v_bool(), False), "scope_fp": (v_str(1, 40), False)}, _run,
+        "AI 분석을 시작한다(conn_ver가 지금 연결과 다르면 conn_changed. API 키 경로는 confirm_paid와 conn_ver가 있어야 돈다)")
+    put("stop", {}, _stop, "분석을 멈춘다(남은 호출을 부르지 않음)")
+    put("ack_terms", {}, _ack_terms, "구독 사용 안내를 확인했다고 기록한다")

@@ -1,0 +1,4372 @@
+{
+ "schema": "hazop_read_quality_key",
+ "version": 1,
+ "seq": 8,
+ "drawing": "5.1.2-3-S1",
+ "source_file": "008_Ch05_Fig5.1.2-3_Pressurizer_and_POSRV_Flow_Diagram.pdf",
+ "page_size": [
+  1224.0,
+  792.0
+ ],
+ "regions": [
+  [
+   200.0,
+   125.0,
+   1010.0,
+   670.0
+  ]
+ ],
+ "method": "overview.png로 도면 영역과 흐름을 잡고, 도면이 있는 타일(x0000~x0880 × y0000~y0560 가운데 약 20장)을 위 왼쪽부터 5배 그림으로 읽음. 작은 글자와 얽힌 선은 타일을 이어 붙여 1~10배로 잘라 다시 봄(V313·V2300·385/386·스파저·연결 화살표·배출관). 범례 001~004쪽 overview로 밸브 모양과 선 종류를 확인. 기호를 다 적은 뒤 배관을 따라 connections를 적음. 추출 코드·추출 결과·PDF 텍스트 층은 보지 않음. / 판정: 정답지 A와 독립 두 번째 판 B를 견주어 어긋난 214건을 타일을 이어 붙인 확대 그림(최대 15배)으로 판정함. 연결 203건 가운데 배출망 쌍은 하나씩 따지지 않고, POSRV 4조의 출구·파일럿 옆 출구·위쪽 MOV 선과 y 249~264 평행선 네 가닥을 한 번 따라가 두 배출망 구성을 정한 뒤 망 안 쌍을 모두 다시 만듦.",
+ "verified": "2026-11-13 독립 두 판(A·B)을 견주고 어긋난 항목을 그림으로 판정. 사람 확인 전",
+ "limits": "(1) 배출망 판정(최종본): 배출관은 POSRV 조별로 따로 모인다. 각 조에서 파일럿 밸브(300~307)의 옆 출구 실선, 위쪽 MOV(131·133·135·137)의 실선, TEW 38A~L 선이 쪽 위(y 126~140)로 올라갔다가 그 조 주 밸브의 출구 수평관(y≈178)으로 내려온다(조끼리 넘나드는 선 없음). 주 밸브 출구는 200(x 385)·201(x 564)이 y≈258.5 관으로, 202(x 744)·203(x 916)이 y≈263.8 관으로 내려간다. y≈258.5 관은 x 971에서 내려가 385·1401·1403·오른쪽 스파저 6개(L2)로, y≈263.8 관은 x 921에서 내려가 386·1402·1404·왼쪽 스파저 6개(L1)로 간다. 그래서 L2 = 200·300·301·131·201·302·303·133·385·1401·1403·s145~s150(17개), L1 = 202·304·305·135·203·306·307·137·386·1402·1404·s139~s144(17개)이고 망 안 쌍을 모두 적었다(TEW는 계기라 망 쌍에 넣지 않음). 아래쪽 MOV(130·132·134·136)는 일점쇄선으로 P 상자(주 밸브)로 간다. 네 주 밸브 입구관 곁가지(x 347·529·707·884)는 y≈249.6·253·263.8(x 737 왼쪽 구간) 관으로 모여 x 923에서 V2300으로 올라간다. 교차는 선 끊김으로 판단했으나, y≈258.5 관이 202·203 입구 수직관과 끊김 없이 겹치는 두 곳은 입구관이 배출관에 붙을 수 없어 교차로 봄. (2) 파일럿 배관(일점쇄선)을 공정 배관으로 보고 연결을 적음. 범례에서 일점쇄선 뜻을 확인하지 못함. 아래쪽 LC 밸브(130·132·134·136)의 하류는 찾지 못함. (3) 가압기 계기(PT·PTR·LT·LTI·LGS)의 탭관은 충격선으로 보고 연결을 적지 않음. TEW는 연결을 적되 불확실 표시. (4) 배관의 '||' 플랜지 표시는 목록에 없어 기호로 적지 않음. 품질등급 마름모(AI/DII, CI/DII, AI/BI)도 기호로 보지 않음. (5) 밸브 옆 작은 화살표(→)는 흐름 화살표인지 몰라 flow에 쓰지 않음. (6) 배관 구경·번호 글자는 보이지 않아 lines는 비어 있음. (7) 분무 노즐-가압기, 스파저-IRWST처럼 안에 든 관계는 연결로 적지 않음(판정 때도 유지). (9) s132·s134는 범례의 임시 기동 스트레이너 모양이라 strainer로 바꿈. (8) TEW 38G~I는 202조, 38J~L은 203조 배출관에 붙음(판정 때 선 추적으로 확인). 계기 연결은 망 전체로 넓히지 않고 A의 쌍만 둠. (10) 2026-11-14 고침: 385·386은 배출 수직관 가운데 놓인 삼방 MOV(위에서 들어와 아래로 나가고, 옆 출구는 S/G 구획으로 간다)다. 그래서 그 아래 1401·1403·1402·1404·스파저와 그 위 망 구성원 사이 쌍(조마다 8×8=64, 합 128)은 다른 기호를 거치는 쌍이다. 다른 쪽 정답지와 같은 기준(짝 없는 노드만 지나 닿는 쌍)에 맞춰 지웠다. 385·386과 양쪽 구성원 사이 쌍은 둔다.",
+ "symbols": [
+  {
+   "id": "s001",
+   "kind": "temperature_element",
+   "bbox": [
+    221.4,
+    136.0,
+    235.6,
+    152.0
+   ],
+   "tag": "TEW 38A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s002",
+   "kind": "temperature_element",
+   "bbox": [
+    271.0,
+    136.0,
+    285.4,
+    152.0
+   ],
+   "tag": "TEW 38B",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s003",
+   "kind": "temperature_element",
+   "bbox": [
+    308.6,
+    136.0,
+    323.0,
+    152.0
+   ],
+   "tag": "TEW 38C",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s004",
+   "kind": "temperature_element",
+   "bbox": [
+    367.0,
+    183.0,
+    381.2,
+    199.4
+   ],
+   "tag": "TEW 39A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s005",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    358.4,
+    141.4,
+    368.4,
+    151.4
+   ],
+   "tag": "ZL 200A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s006",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    214.2,
+    173.6,
+    224.2,
+    183.6
+   ],
+   "tag": "ZL 310A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s007",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    264.0,
+    173.6,
+    274.0,
+    183.6
+   ],
+   "tag": "ZL 311C",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s008",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    209.2,
+    193.6,
+    219.2,
+    203.6
+   ],
+   "tag": "ZL 300A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s009",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    259.0,
+    193.6,
+    269.0,
+    203.6
+   ],
+   "tag": "ZL 301C",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s010",
+   "kind": "relief_valve",
+   "bbox": [
+    350.0,
+    161.5,
+    356.0,
+    181.0
+   ],
+   "tag": "200",
+   "tag_bbox": [
+    340.4,
+    169.0,
+    348.6,
+    177.4
+   ],
+   "attributes": {},
+   "note": "POSRV 주밸브(파일럿 작동 안전밸브, 위 P 상자 포함)"
+  },
+  {
+   "id": "s011",
+   "kind": "manual_valve",
+   "bbox": [
+    230.4,
+    186.0,
+    233.6,
+    192.4
+   ],
+   "tag": "V310",
+   "tag_bbox": [
+    234.0,
+    185.5,
+    237.0,
+    192.5
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s012",
+   "kind": "manual_valve",
+   "bbox": [
+    280.0,
+    186.4,
+    283.2,
+    192.4
+   ],
+   "tag": "V311",
+   "tag_bbox": [
+    284.0,
+    185.5,
+    287.0,
+    192.5
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s013",
+   "kind": "relief_valve",
+   "bbox": [
+    229.0,
+    206.6,
+    233.6,
+    210.4
+   ],
+   "tag": "300",
+   "tag_bbox": [
+    221.4,
+    197.4,
+    229.6,
+    205.6
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금(스프링) 달린 앵글형 파일럿 밸브. relief_valve로 봄"
+  },
+  {
+   "id": "s014",
+   "kind": "relief_valve",
+   "bbox": [
+    279.2,
+    206.6,
+    283.6,
+    210.4
+   ],
+   "tag": "301",
+   "tag_bbox": [
+    271.2,
+    197.6,
+    279.4,
+    205.6
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금(스프링) 달린 앵글형 파일럿 밸브. relief_valve로 봄"
+  },
+  {
+   "id": "s015",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    229.0,
+    221.0,
+    239.2,
+    228.0
+   ],
+   "tag": "120",
+   "tag_bbox": [
+    225.6,
+    213.6,
+    234.0,
+    222.0
+   ],
+   "attributes": {
+    "normal_position": "LO",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s016",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    278.4,
+    221.0,
+    289.0,
+    228.0
+   ],
+   "tag": "121",
+   "tag_bbox": [
+    271.6,
+    213.6,
+    280.0,
+    222.0
+   ],
+   "attributes": {
+    "normal_position": "LO",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s017",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    315.6,
+    205.6,
+    326.0,
+    211.6
+   ],
+   "tag": "131",
+   "tag_bbox": [
+    312.4,
+    196.0,
+    320.8,
+    204.0
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
+  },
+  {
+   "id": "s018",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    315.6,
+    221.0,
+    326.0,
+    228.0
+   ],
+   "tag": "130",
+   "tag_bbox": [
+    311.6,
+    211.6,
+    320.0,
+    220.0
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
+  },
+  {
+   "id": "s019",
+   "kind": "temperature_element",
+   "bbox": [
+    402.6,
+    136.0,
+    417.0,
+    152.0
+   ],
+   "tag": "TEW 38D",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s020",
+   "kind": "temperature_element",
+   "bbox": [
+    452.4,
+    139.0,
+    466.6,
+    155.4
+   ],
+   "tag": "TEW 38E",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s021",
+   "kind": "temperature_element",
+   "bbox": [
+    486.2,
+    139.0,
+    500.4,
+    155.4
+   ],
+   "tag": "TEW 38F",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s022",
+   "kind": "temperature_element",
+   "bbox": [
+    548.0,
+    183.0,
+    562.0,
+    199.4
+   ],
+   "tag": "TEW 39B",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s023",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    539.4,
+    140.0,
+    549.6,
+    150.0
+   ],
+   "tag": "ZL 201B",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s024",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    395.0,
+    173.6,
+    405.0,
+    183.6
+   ],
+   "tag": "ZL 312B",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s025",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    445.0,
+    173.6,
+    455.0,
+    183.6
+   ],
+   "tag": "ZL 313D",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s026",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    390.0,
+    193.6,
+    400.0,
+    203.6
+   ],
+   "tag": "ZL 302B",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s027",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    440.0,
+    193.6,
+    450.0,
+    203.6
+   ],
+   "tag": "ZL 303D",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s028",
+   "kind": "relief_valve",
+   "bbox": [
+    531.0,
+    161.5,
+    536.5,
+    181.0
+   ],
+   "tag": "201",
+   "tag_bbox": [
+    521.2,
+    169.0,
+    529.6,
+    177.4
+   ],
+   "attributes": {},
+   "note": "POSRV 주밸브(파일럿 작동 안전밸브, 위 P 상자 포함)"
+  },
+  {
+   "id": "s029",
+   "kind": "manual_valve",
+   "bbox": [
+    411.0,
+    186.4,
+    414.4,
+    192.4
+   ],
+   "tag": "V312",
+   "tag_bbox": [
+    415.0,
+    185.5,
+    418.0,
+    192.5
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s030",
+   "kind": "manual_valve",
+   "bbox": [
+    461.0,
+    186.0,
+    464.4,
+    192.4
+   ],
+   "tag": null,
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "불확실: 이름표가 그림에 없음(LO만 적힘, V313으로 추정)",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s031",
+   "kind": "relief_valve",
+   "bbox": [
+    410.4,
+    206.6,
+    415.0,
+    210.4
+   ],
+   "tag": "302",
+   "tag_bbox": [
+    402.4,
+    197.6,
+    410.4,
+    205.6
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금(스프링) 달린 앵글형 파일럿 밸브. relief_valve로 봄"
+  },
+  {
+   "id": "s032",
+   "kind": "relief_valve",
+   "bbox": [
+    460.0,
+    206.6,
+    464.4,
+    210.4
+   ],
+   "tag": "303",
+   "tag_bbox": [
+    452.0,
+    197.6,
+    460.4,
+    205.6
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금(스프링) 달린 앵글형 파일럿 밸브. relief_valve로 봄"
+  },
+  {
+   "id": "s033",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    409.0,
+    221.0,
+    420.0,
+    228.0
+   ],
+   "tag": "122",
+   "tag_bbox": [
+    407.0,
+    213.6,
+    415.4,
+    222.0
+   ],
+   "attributes": {
+    "normal_position": "LO",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s034",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    459.0,
+    221.0,
+    469.4,
+    228.0
+   ],
+   "tag": "123",
+   "tag_bbox": [
+    456.4,
+    230.4,
+    465.0,
+    239.0
+   ],
+   "attributes": {
+    "normal_position": "LO",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s035",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    497.0,
+    205.0,
+    507.0,
+    211.6
+   ],
+   "tag": "133",
+   "tag_bbox": [
+    494.4,
+    196.6,
+    502.6,
+    205.0
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
+  },
+  {
+   "id": "s036",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    497.0,
+    221.0,
+    507.0,
+    228.0
+   ],
+   "tag": "132",
+   "tag_bbox": [
+    492.4,
+    212.0,
+    500.6,
+    220.4
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
+  },
+  {
+   "id": "s037",
+   "kind": "temperature_element",
+   "bbox": [
+    580.4,
+    136.0,
+    594.6,
+    152.0
+   ],
+   "tag": "TEW 38G",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s038",
+   "kind": "temperature_element",
+   "bbox": [
+    630.0,
+    139.0,
+    644.4,
+    155.4
+   ],
+   "tag": "TEW 38H",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s039",
+   "kind": "temperature_element",
+   "bbox": [
+    667.4,
+    138.6,
+    681.6,
+    154.6
+   ],
+   "tag": "TEW 38I",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s040",
+   "kind": "temperature_element",
+   "bbox": [
+    726.4,
+    183.0,
+    740.6,
+    199.4
+   ],
+   "tag": "TEW 39C",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s041",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    717.6,
+    139.4,
+    727.6,
+    149.4
+   ],
+   "tag": "ZL 202C",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s042",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    572.6,
+    173.6,
+    582.6,
+    183.6
+   ],
+   "tag": "ZL 314A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s043",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    622.4,
+    173.6,
+    632.4,
+    183.6
+   ],
+   "tag": "ZL 315C",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s044",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    566.6,
+    193.6,
+    576.6,
+    203.6
+   ],
+   "tag": "ZL 304A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s045",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    614.0,
+    193.6,
+    624.0,
+    203.6
+   ],
+   "tag": "ZL 305C",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s046",
+   "kind": "relief_valve",
+   "bbox": [
+    709.0,
+    161.5,
+    714.0,
+    181.0
+   ],
+   "tag": "202",
+   "tag_bbox": [
+    699.0,
+    169.0,
+    707.4,
+    177.4
+   ],
+   "attributes": {},
+   "note": "POSRV 주밸브(파일럿 작동 안전밸브, 위 P 상자 포함)"
+  },
+  {
+   "id": "s047",
+   "kind": "manual_valve",
+   "bbox": [
+    589.0,
+    186.0,
+    592.4,
+    192.4
+   ],
+   "tag": "V314",
+   "tag_bbox": [
+    593.0,
+    185.5,
+    596.0,
+    192.5
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s048",
+   "kind": "manual_valve",
+   "bbox": [
+    639.0,
+    186.0,
+    642.4,
+    192.4
+   ],
+   "tag": "V315",
+   "tag_bbox": [
+    643.0,
+    185.5,
+    646.0,
+    192.5
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s049",
+   "kind": "relief_valve",
+   "bbox": [
+    588.4,
+    206.6,
+    593.0,
+    210.4
+   ],
+   "tag": "304",
+   "tag_bbox": [
+    580.0,
+    197.6,
+    588.4,
+    205.6
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금(스프링) 달린 앵글형 파일럿 밸브. relief_valve로 봄"
+  },
+  {
+   "id": "s050",
+   "kind": "relief_valve",
+   "bbox": [
+    638.0,
+    206.6,
+    643.0,
+    210.4
+   ],
+   "tag": "305",
+   "tag_bbox": [
+    629.6,
+    197.6,
+    638.0,
+    205.6
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금(스프링) 달린 앵글형 파일럿 밸브. relief_valve로 봄"
+  },
+  {
+   "id": "s051",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    587.0,
+    221.0,
+    598.0,
+    228.0
+   ],
+   "tag": "124",
+   "tag_bbox": [
+    584.4,
+    230.4,
+    592.8,
+    239.0
+   ],
+   "attributes": {
+    "normal_position": "LO",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s052",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    637.0,
+    221.0,
+    648.0,
+    228.0
+   ],
+   "tag": "125",
+   "tag_bbox": [
+    634.0,
+    213.0,
+    642.4,
+    221.6
+   ],
+   "attributes": {
+    "normal_position": "LO",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s053",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    674.4,
+    205.0,
+    685.0,
+    211.6
+   ],
+   "tag": "135",
+   "tag_bbox": [
+    671.6,
+    196.6,
+    680.0,
+    204.6
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
+  },
+  {
+   "id": "s054",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    674.4,
+    221.0,
+    685.0,
+    228.0
+   ],
+   "tag": "134",
+   "tag_bbox": [
+    670.4,
+    212.4,
+    679.0,
+    220.4
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
+  },
+  {
+   "id": "s055",
+   "kind": "temperature_element",
+   "bbox": [
+    758.2,
+    135.0,
+    772.4,
+    151.0
+   ],
+   "tag": "TEW 38J",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s056",
+   "kind": "temperature_element",
+   "bbox": [
+    807.8,
+    139.0,
+    822.0,
+    155.0
+   ],
+   "tag": "TEW 38K",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s057",
+   "kind": "temperature_element",
+   "bbox": [
+    845.2,
+    139.0,
+    859.4,
+    155.0
+   ],
+   "tag": "TEW 38L",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s058",
+   "kind": "temperature_element",
+   "bbox": [
+    900.0,
+    183.0,
+    914.2,
+    199.4
+   ],
+   "tag": "TEW 39D",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s059",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    896.6,
+    139.4,
+    906.6,
+    149.4
+   ],
+   "tag": "ZL 203D",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s060",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    751.4,
+    173.6,
+    761.4,
+    183.6
+   ],
+   "tag": "ZL 316B",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s061",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    801.0,
+    173.6,
+    811.0,
+    183.6
+   ],
+   "tag": "ZL 317D",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s062",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    746.4,
+    193.6,
+    756.4,
+    203.6
+   ],
+   "tag": "ZL 306B",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s063",
+   "kind": "pilot_light",
+   "kind_text": "position indicating light (ZL, square-framed circle)",
+   "bbox": [
+    790.4,
+    193.6,
+    800.4,
+    203.6
+   ],
+   "tag": "ZL 307D",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s064",
+   "kind": "relief_valve",
+   "bbox": [
+    888.0,
+    161.5,
+    893.0,
+    181.0
+   ],
+   "tag": "203",
+   "tag_bbox": [
+    877.6,
+    169.0,
+    886.0,
+    177.4
+   ],
+   "attributes": {},
+   "note": "POSRV 주밸브(파일럿 작동 안전밸브, 위 P 상자 포함)"
+  },
+  {
+   "id": "s065",
+   "kind": "manual_valve",
+   "bbox": [
+    767.4,
+    186.0,
+    770.6,
+    192.4
+   ],
+   "tag": "V316",
+   "tag_bbox": [
+    771.0,
+    185.5,
+    774.0,
+    192.5
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s066",
+   "kind": "manual_valve",
+   "bbox": [
+    817.0,
+    186.0,
+    820.4,
+    192.4
+   ],
+   "tag": "V317",
+   "tag_bbox": [
+    821.0,
+    185.5,
+    824.0,
+    192.5
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s067",
+   "kind": "relief_valve",
+   "bbox": [
+    766.6,
+    206.6,
+    771.0,
+    210.4
+   ],
+   "tag": "306",
+   "tag_bbox": [
+    758.4,
+    197.6,
+    766.6,
+    205.6
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금(스프링) 달린 앵글형 파일럿 밸브. relief_valve로 봄"
+  },
+  {
+   "id": "s068",
+   "kind": "relief_valve",
+   "bbox": [
+    816.4,
+    206.6,
+    821.0,
+    210.4
+   ],
+   "tag": "307",
+   "tag_bbox": [
+    808.4,
+    197.6,
+    816.6,
+    205.6
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금(스프링) 달린 앵글형 파일럿 밸브. relief_valve로 봄"
+  },
+  {
+   "id": "s069",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    765.0,
+    221.0,
+    776.0,
+    228.0
+   ],
+   "tag": "126",
+   "tag_bbox": [
+    763.0,
+    213.0,
+    771.2,
+    221.6
+   ],
+   "attributes": {
+    "normal_position": "LO",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s070",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    815.0,
+    221.0,
+    826.0,
+    228.0
+   ],
+   "tag": "127",
+   "tag_bbox": [
+    812.6,
+    213.0,
+    821.0,
+    221.6
+   ],
+   "attributes": {
+    "normal_position": "LO",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s071",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    853.0,
+    205.0,
+    863.0,
+    211.6
+   ],
+   "tag": "137",
+   "tag_bbox": [
+    849.6,
+    196.6,
+    858.0,
+    204.6
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
+  },
+  {
+   "id": "s072",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    853.0,
+    221.0,
+    863.0,
+    228.0
+   ],
+   "tag": "136",
+   "tag_bbox": [
+    849.0,
+    212.4,
+    857.4,
+    220.4
+   ],
+   "attributes": {
+    "normal_position": "LC",
+    "fail_position": "FL"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
+  },
+  {
+   "id": "s073",
+   "kind": "check_valve",
+   "bbox": [
+    676.0,
+    318.0,
+    684.0,
+    322.0
+   ],
+   "tag": "V244",
+   "tag_bbox": [
+    676.0,
+    322.4,
+    683.6,
+    325.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s074",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    711.0,
+    312.0,
+    718.4,
+    322.0
+   ],
+   "tag": "442",
+   "tag_bbox": [
+    718.0,
+    308.0,
+    726.4,
+    316.4
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s075",
+   "kind": "control_valve",
+   "bbox": [
+    746.0,
+    310.0,
+    753.0,
+    322.0
+   ],
+   "tag": "100F",
+   "tag_bbox": [
+    736.4,
+    308.0,
+    744.8,
+    316.4
+   ],
+   "attributes": {
+    "fail_position": "FC",
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
+  },
+  {
+   "id": "s076",
+   "kind": "manual_valve",
+   "bbox": [
+    746.0,
+    283.6,
+    754.0,
+    292.0
+   ],
+   "tag": "V237",
+   "tag_bbox": [
+    745.0,
+    292.4,
+    753.0,
+    295.4
+   ],
+   "attributes": {},
+   "note": "불확실: 반쯤 검은 몸체, 핸들(T) 달린 수동 밸브로 봄"
+  },
+  {
+   "id": "s077",
+   "kind": "temperature_element",
+   "bbox": [
+    769.6,
+    299.6,
+    784.0,
+    316.0
+   ],
+   "tag": "TEW 36A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s078",
+   "kind": "manual_valve",
+   "bbox": [
+    783.0,
+    312.0,
+    790.0,
+    322.0
+   ],
+   "tag": "V241",
+   "tag_bbox": [
+    783.0,
+    322.4,
+    790.0,
+    325.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s079",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    712.0,
+    365.0,
+    718.4,
+    375.4
+   ],
+   "tag": "443",
+   "tag_bbox": [
+    719.6,
+    361.0,
+    728.0,
+    369.4
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s080",
+   "kind": "control_valve",
+   "bbox": [
+    746.0,
+    364.4,
+    753.0,
+    375.4
+   ],
+   "tag": "100E",
+   "tag_bbox": [
+    736.4,
+    362.0,
+    744.8,
+    370.4
+   ],
+   "attributes": {
+    "fail_position": "FC",
+    "normal_position": "NC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "shape"
+   }
+  },
+  {
+   "id": "s081",
+   "kind": "manual_valve",
+   "bbox": [
+    746.0,
+    384.0,
+    754.0,
+    388.4
+   ],
+   "tag": "V236",
+   "tag_bbox": [
+    745.0,
+    388.6,
+    752.4,
+    391.4
+   ],
+   "attributes": {},
+   "note": "불확실: 반쯤 검은 몸체, 핸들(T) 달린 수동 밸브로 봄"
+  },
+  {
+   "id": "s082",
+   "kind": "temperature_element",
+   "bbox": [
+    769.6,
+    353.0,
+    784.0,
+    369.0
+   ],
+   "tag": "TEW 36B",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s083",
+   "kind": "manual_valve",
+   "bbox": [
+    783.0,
+    366.0,
+    790.0,
+    375.4
+   ],
+   "tag": "V240",
+   "tag_bbox": [
+    783.0,
+    376.4,
+    790.0,
+    379.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s084",
+   "kind": "continuation",
+   "bbox": [
+    972.6,
+    140.0,
+    1001.4,
+    146.0
+   ],
+   "tag": null,
+   "tag_bbox": [
+    973.0,
+    136.6,
+    991.2,
+    139.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s085",
+   "kind": "continuation",
+   "bbox": [
+    972.6,
+    161.6,
+    1001.4,
+    167.0
+   ],
+   "tag": null,
+   "tag_bbox": [
+    972.6,
+    154.4,
+    1001.4,
+    160.8
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s086",
+   "kind": "continuation",
+   "bbox": [
+    665.6,
+    303.6,
+    694.0,
+    309.6
+   ],
+   "tag": null,
+   "tag_bbox": [
+    669.4,
+    296.4,
+    690.0,
+    303.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s087",
+   "kind": "continuation",
+   "bbox": [
+    804.0,
+    317.6,
+    832.4,
+    323.6
+   ],
+   "tag": null,
+   "tag_bbox": [
+    808.0,
+    314.4,
+    842.0,
+    317.2
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s088",
+   "kind": "continuation",
+   "bbox": [
+    804.0,
+    371.0,
+    832.4,
+    377.0
+   ],
+   "tag": null,
+   "tag_bbox": [
+    808.0,
+    367.6,
+    842.0,
+    370.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s089",
+   "kind": "continuation",
+   "bbox": [
+    424.0,
+    660.0,
+    452.5,
+    664.7
+   ],
+   "tag": null,
+   "tag_bbox": [
+    427.5,
+    655.5,
+    448.8,
+    658.5
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s090",
+   "kind": "continuation",
+   "bbox": [
+    573.4,
+    604.0,
+    601.6,
+    609.6
+   ],
+   "tag": null,
+   "tag_bbox": [
+    574.6,
+    600.4,
+    579.4,
+    603.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s091",
+   "kind": "continuation",
+   "bbox": [
+    257.2,
+    459.5,
+    263.5,
+    487.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "계기 신호 쪽 연결 화살표(REFUELING WATER LEVEL). 배관 연결 없음"
+  },
+  {
+   "id": "s092",
+   "kind": "continuation",
+   "bbox": [
+    289.5,
+    459.5,
+    295.8,
+    487.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "계기 신호 쪽 연결 화살표(REFUELING WATER LEVEL). 배관 연결 없음"
+  },
+  {
+   "id": "s093",
+   "kind": "continuation",
+   "bbox": [
+    675.4,
+    450.0,
+    681.0,
+    480.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "계기 신호 쪽 연결 화살표(REFUELING WATER LEVEL). 배관 연결 없음"
+  },
+  {
+   "id": "s094",
+   "kind": "continuation",
+   "bbox": [
+    693.0,
+    450.0,
+    698.6,
+    480.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "계기 신호 쪽 연결 화살표(REFUELING WATER LEVEL). 배관 연결 없음"
+  },
+  {
+   "id": "s095",
+   "kind": "pressurizer",
+   "bbox": [
+    461.0,
+    313.6,
+    522.0,
+    534.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 PRESSURIZER, 굵은 설비 태그 없음"
+  },
+  {
+   "id": "s096",
+   "kind": "nozzle",
+   "bbox": [
+    486.4,
+    344.0,
+    496.6,
+    353.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "가압기 안 분무 노즐(삼각형)"
+  },
+  {
+   "id": "s097",
+   "kind": "electric_heater",
+   "kind_text": "electric heater bundle (BACK-UP HEATERS)",
+   "bbox": [
+    461.0,
+    509.6,
+    484.0,
+    541.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s098",
+   "kind": "electric_heater",
+   "kind_text": "electric heater bundle (PROPORTIONAL HEATERS)",
+   "bbox": [
+    499.0,
+    509.6,
+    522.0,
+    541.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s099",
+   "kind": "transmitter",
+   "bbox": [
+    345.6,
+    380.0,
+    360.0,
+    396.4
+   ],
+   "tag": "PT 13",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s100",
+   "kind": "transmitter",
+   "bbox": [
+    370.6,
+    380.0,
+    385.0,
+    396.4
+   ],
+   "tag": "PT 12",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s101",
+   "kind": "transmitter",
+   "bbox": [
+    395.4,
+    380.0,
+    409.8,
+    396.4
+   ],
+   "tag": "PT 16",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s102",
+   "kind": "transmitter",
+   "bbox": [
+    345.6,
+    410.4,
+    360.0,
+    426.6
+   ],
+   "tag": "PT 12",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s103",
+   "kind": "recorder",
+   "bbox": [
+    370.6,
+    410.4,
+    385.0,
+    426.6
+   ],
+   "tag": "PTR 13",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s104",
+   "kind": "transmitter",
+   "bbox": [
+    395.4,
+    410.4,
+    409.8,
+    426.6
+   ],
+   "tag": "PT 15",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s105",
+   "kind": "transmitter",
+   "bbox": [
+    253.0,
+    427.4,
+    267.4,
+    443.4
+   ],
+   "tag": "LT 40A",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s106",
+   "kind": "transmitter",
+   "bbox": [
+    285.4,
+    427.4,
+    299.6,
+    443.4
+   ],
+   "tag": "LT 40A",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s107",
+   "kind": "transmitter",
+   "bbox": [
+    324.4,
+    451.6,
+    338.8,
+    467.4
+   ],
+   "tag": "PT 17",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s108",
+   "kind": "transmitter",
+   "bbox": [
+    342.2,
+    465.0,
+    356.6,
+    480.6
+   ],
+   "tag": "PT 20",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s109",
+   "kind": "temperature_element",
+   "bbox": [
+    377.8,
+    463.6,
+    392.0,
+    479.6
+   ],
+   "tag": "TEW 19A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s110",
+   "kind": "indicator",
+   "bbox": [
+    356.4,
+    481.6,
+    370.8,
+    497.4
+   ],
+   "tag": "LTI 14",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s111",
+   "kind": "temperature_element",
+   "bbox": [
+    420.4,
+    475.4,
+    434.8,
+    491.4
+   ],
+   "tag": "TEW 21A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s112",
+   "kind": "transmitter",
+   "bbox": [
+    573.2,
+    380.0,
+    587.6,
+    396.4
+   ],
+   "tag": "PT 16",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s113",
+   "kind": "transmitter",
+   "bbox": [
+    603.4,
+    380.0,
+    617.8,
+    396.4
+   ],
+   "tag": "PT 12",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s114",
+   "kind": "transmitter",
+   "bbox": [
+    633.6,
+    380.0,
+    648.0,
+    396.4
+   ],
+   "tag": "PT 13",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s115",
+   "kind": "transmitter",
+   "bbox": [
+    573.2,
+    412.8,
+    587.6,
+    429.2
+   ],
+   "tag": "PT 15",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s116",
+   "kind": "recorder",
+   "bbox": [
+    603.4,
+    412.8,
+    617.8,
+    429.2
+   ],
+   "tag": "PTR 13",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s117",
+   "kind": "transmitter",
+   "bbox": [
+    633.6,
+    412.8,
+    648.0,
+    429.2
+   ],
+   "tag": "PT 12",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s118",
+   "kind": "temperature_element",
+   "bbox": [
+    640.6,
+    440.0,
+    655.0,
+    456.0
+   ],
+   "tag": "TEW 19C",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s119",
+   "kind": "switch",
+   "bbox": [
+    671.0,
+    432.4,
+    685.4,
+    448.6
+   ],
+   "tag": "LGS 40B",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s120",
+   "kind": "switch",
+   "bbox": [
+    688.6,
+    432.4,
+    703.0,
+    448.6
+   ],
+   "tag": "LGS 40B",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s121",
+   "kind": "temperature_element",
+   "bbox": [
+    536.0,
+    471.0,
+    550.2,
+    481.6
+   ],
+   "tag": "TEW 21B",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s122",
+   "kind": "transmitter",
+   "bbox": [
+    573.2,
+    467.4,
+    587.6,
+    482.4
+   ],
+   "tag": "PT 20",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s123",
+   "kind": "temperature_element",
+   "bbox": [
+    591.0,
+    467.4,
+    605.2,
+    482.4
+   ],
+   "tag": "TEW 19B",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s124",
+   "kind": "transmitter",
+   "bbox": [
+    619.6,
+    467.4,
+    633.8,
+    482.4
+   ],
+   "tag": "PT 17",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s125",
+   "kind": "indicator",
+   "bbox": [
+    626.4,
+    493.6,
+    640.8,
+    509.0
+   ],
+   "tag": "LTI 14",
+   "attributes": {},
+   "note": "같은 글자의 계기가 도면에 둘 이상 있음(좌우 채널)"
+  },
+  {
+   "id": "s126",
+   "kind": "transmitter",
+   "bbox": [
+    646.0,
+    479.0,
+    660.4,
+    494.4
+   ],
+   "tag": "LT 18",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s127",
+   "kind": "temperature_element",
+   "bbox": [
+    496.8,
+    635.0,
+    511.2,
+    651.0
+   ],
+   "tag": "TEW 21C",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s128",
+   "kind": "unlisted",
+   "kind_text": "instrument XE (element, AH ALM)",
+   "bbox": [
+    495.0,
+    544.4,
+    509.4,
+    560.4
+   ],
+   "tag": "XE 9N",
+   "attributes": {},
+   "note": "가압기 아래, 점선(신호)으로만 붙음"
+  },
+  {
+   "id": "s129",
+   "kind": "manual_valve",
+   "bbox": [
+    921.0,
+    189.0,
+    924.4,
+    194.0
+   ],
+   "tag": "V2300",
+   "tag_bbox": [
+    925.0,
+    185.0,
+    928.0,
+    195.0
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "불확실: 이름표 넷째 글자에 격자선이 겹침. 왼쪽이 닫힌 곡선이라 V2300으로 읽음. 위치 글자는 LO",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s130",
+   "kind": "manual_valve",
+   "bbox": [
+    952.0,
+    163.0,
+    958.0,
+    166.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "1차 시료 계통으로 가는 이름표 없는 밸브"
+  },
+  {
+   "id": "s131",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    912.5,
+    295.5,
+    923.5,
+    299.5
+   ],
+   "tag": "386",
+   "tag_bbox": [
+    911.9,
+    300.6,
+    918.8,
+    306.9
+   ],
+   "attributes": {},
+   "note": "반쯤 검은 몸체"
+  },
+  {
+   "id": "s132",
+   "kind": "strainer",
+   "bbox": [
+    928.5,
+    295.5,
+    937.5,
+    300.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 점선 꺾쇠(>)가 든 상자. 범례 TEMPORARY STARTUP STRAINER와 같은 모양으로 봄"
+  },
+  {
+   "id": "s133",
+   "kind": "motor_operated_valve",
+   "bbox": [
+    962.8,
+    275.5,
+    973.5,
+    279.5
+   ],
+   "tag": "385",
+   "tag_bbox": [
+    962.2,
+    280.6,
+    968.5,
+    286.2
+   ],
+   "attributes": {},
+   "note": "반쯤 검은 몸체"
+  },
+  {
+   "id": "s134",
+   "kind": "strainer",
+   "bbox": [
+    977.5,
+    275.0,
+    989.5,
+    279.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 점선 꺾쇠(>)가 든 상자. 범례 TEMPORARY STARTUP STRAINER와 같은 모양으로 봄"
+  },
+  {
+   "id": "s135",
+   "kind": "relief_valve",
+   "bbox": [
+    930.0,
+    386.0,
+    934.4,
+    391.0
+   ],
+   "tag": "1401",
+   "tag_bbox": [
+    938.0,
+    376.0,
+    946.4,
+    384.4
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금 달린 앵글형, 바깥 공기 화살표가 있어 진공 파괴 밸브로 봄"
+  },
+  {
+   "id": "s136",
+   "kind": "relief_valve",
+   "bbox": [
+    857.0,
+    424.0,
+    860.0,
+    429.6
+   ],
+   "tag": "1402",
+   "tag_bbox": [
+    863.6,
+    414.6,
+    872.0,
+    423.0
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금 달린 앵글형, 바깥 공기 화살표가 있어 진공 파괴 밸브로 봄"
+  },
+  {
+   "id": "s137",
+   "kind": "relief_valve",
+   "bbox": [
+    875.4,
+    424.0,
+    879.0,
+    429.6
+   ],
+   "tag": "1404",
+   "tag_bbox": [
+    882.4,
+    414.6,
+    891.0,
+    423.0
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금 달린 앵글형, 바깥 공기 화살표가 있어 진공 파괴 밸브로 봄"
+  },
+  {
+   "id": "s138",
+   "kind": "relief_valve",
+   "bbox": [
+    960.0,
+    414.0,
+    964.4,
+    419.0
+   ],
+   "tag": "1403",
+   "tag_bbox": [
+    966.0,
+    404.0,
+    974.4,
+    412.4
+   ],
+   "attributes": {},
+   "note": "불확실: 빗금 달린 앵글형, 바깥 공기 화살표가 있어 진공 파괴 밸브로 봄"
+  },
+  {
+   "id": "s139",
+   "kind": "sparger",
+   "kind_text": "sparger (bar with 4 triangle nozzles)",
+   "bbox": [
+    857.5,
+    556.5,
+    872.5,
+    559.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 SPARGER"
+  },
+  {
+   "id": "s140",
+   "kind": "sparger",
+   "kind_text": "sparger (bar with 4 triangle nozzles)",
+   "bbox": [
+    869.5,
+    540.0,
+    885.0,
+    542.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 SPARGER"
+  },
+  {
+   "id": "s141",
+   "kind": "sparger",
+   "kind_text": "sparger (bar with 4 triangle nozzles)",
+   "bbox": [
+    880.0,
+    572.4,
+    895.0,
+    575.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 SPARGER"
+  },
+  {
+   "id": "s142",
+   "kind": "sparger",
+   "kind_text": "sparger (bar with 4 triangle nozzles)",
+   "bbox": [
+    890.6,
+    556.6,
+    906.0,
+    559.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 SPARGER"
+  },
+  {
+   "id": "s143",
+   "kind": "sparger",
+   "kind_text": "sparger (bar with 4 triangle nozzles)",
+   "bbox": [
+    901.0,
+    540.0,
+    916.4,
+    542.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 SPARGER"
+  },
+  {
+   "id": "s144",
+   "kind": "sparger",
+   "kind_text": "sparger (bar with 4 triangle nozzles)",
+   "bbox": [
+    912.0,
+    572.0,
+    927.4,
+    575.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 SPARGER"
+  },
+  {
+   "id": "s145",
+   "kind": "sparger",
+   "kind_text": "sparger (bar with 4 triangle nozzles)",
+   "bbox": [
+    922.6,
+    556.6,
+    938.0,
+    559.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 SPARGER"
+  },
+  {
+   "id": "s146",
+   "kind": "sparger",
+   "kind_text": "sparger (bar with 4 triangle nozzles)",
+   "bbox": [
+    933.6,
+    540.0,
+    949.0,
+    542.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 SPARGER"
+  },
+  {
+   "id": "s147",
+   "kind": "sparger",
+   "kind_text": "sparger (bar with 4 triangle nozzles)",
+   "bbox": [
+    944.0,
+    572.0,
+    959.4,
+    575.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 SPARGER"
+  },
+  {
+   "id": "s148",
+   "kind": "sparger",
+   "kind_text": "sparger (bar with 4 triangle nozzles)",
+   "bbox": [
+    954.6,
+    556.6,
+    970.0,
+    559.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 SPARGER"
+  },
+  {
+   "id": "s149",
+   "kind": "sparger",
+   "kind_text": "sparger (bar with 4 triangle nozzles)",
+   "bbox": [
+    965.6,
+    540.0,
+    981.0,
+    542.4
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 SPARGER"
+  },
+  {
+   "id": "s150",
+   "kind": "sparger",
+   "kind_text": "sparger (bar with 4 triangle nozzles)",
+   "bbox": [
+    976.0,
+    572.0,
+    991.4,
+    575.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "라벨 SPARGER"
+  },
+  {
+   "id": "s151",
+   "kind": "tank",
+   "bbox": [
+    850.4,
+    512.6,
+    999.6,
+    615.6
+   ],
+   "tag": "IRWST",
+   "tag_bbox": [
+    921.0,
+    607.0,
+    931.0,
+    611.0
+   ],
+   "attributes": {},
+   "note": "점선 경계, 라벨 IRWST(설비 태그 아님)"
+  },
+  {
+   "id": "s600",
+   "kind": "orifice",
+   "bbox": [
+    449.2,
+    404.5,
+    452.2,
+    407.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro01)"
+  },
+  {
+   "id": "s601",
+   "kind": "orifice",
+   "bbox": [
+    449.2,
+    434.8,
+    452.2,
+    437.7
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro02)"
+  },
+  {
+   "id": "s602",
+   "kind": "orifice",
+   "bbox": [
+    449.2,
+    461.5,
+    452.2,
+    464.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro03)"
+  },
+  {
+   "id": "s603",
+   "kind": "orifice",
+   "bbox": [
+    449.2,
+    502.3,
+    452.2,
+    505.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro04)"
+  },
+  {
+   "id": "s604",
+   "kind": "orifice",
+   "bbox": [
+    530.8,
+    404.5,
+    533.8,
+    407.5
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro05)"
+  },
+  {
+   "id": "s605",
+   "kind": "orifice",
+   "bbox": [
+    530.8,
+    434.8,
+    533.8,
+    437.7
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro06)"
+  },
+  {
+   "id": "s606",
+   "kind": "orifice",
+   "bbox": [
+    530.8,
+    461.5,
+    533.8,
+    464.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro07)"
+  },
+  {
+   "id": "s607",
+   "kind": "orifice",
+   "bbox": [
+    530.8,
+    486.3,
+    533.8,
+    489.2
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro08)"
+  },
+  {
+   "id": "s608",
+   "kind": "orifice",
+   "bbox": [
+    530.8,
+    511.2,
+    533.8,
+    514.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro09)"
+  },
+  {
+   "id": "s609",
+   "kind": "orifice",
+   "bbox": [
+    511.3,
+    605.3,
+    514.3,
+    608.3
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro10)"
+  },
+  {
+   "id": "s610",
+   "kind": "orifice",
+   "bbox": [
+    941.0,
+    163.0,
+    944.0,
+    165.8
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "제한 오리피스(범례 1.7-1 1/4 RESTRICTION ORIFICE), 2026-11-14 정답지 보탬(ro11)"
+  }
+ ],
+ "lines": [],
+ "connections": [
+  {
+   "a": "s010",
+   "b": "s001",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s010",
+   "b": "s002",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s010",
+   "b": "s003",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s010",
+   "b": "s004",
+   "flow": null
+  },
+  {
+   "a": "s001",
+   "b": "s002",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s001",
+   "b": "s003",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s001",
+   "b": "s004",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s002",
+   "b": "s003",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s002",
+   "b": "s004",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s003",
+   "b": "s004",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s011",
+   "b": "s010",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s012",
+   "b": "s010",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s017",
+   "b": "s010",
+   "flow": null,
+   "note": "위쪽 MOV(131·133·135·137)는 실선으로 주 밸브 배출관에 이어짐(배출망)"
+  },
+  {
+   "a": "s011",
+   "b": "s013",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s012",
+   "b": "s014",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s013",
+   "b": "s015",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s014",
+   "b": "s016",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s015",
+   "b": "s010",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s016",
+   "b": "s010",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s017",
+   "b": "s018",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s028",
+   "b": "s019",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s028",
+   "b": "s020",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s028",
+   "b": "s021",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s028",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s019",
+   "b": "s020",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s019",
+   "b": "s021",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s019",
+   "b": "s022",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s020",
+   "b": "s021",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s020",
+   "b": "s022",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s021",
+   "b": "s022",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s029",
+   "b": "s028",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s030",
+   "b": "s028",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s035",
+   "b": "s028",
+   "flow": null,
+   "note": "위쪽 MOV(131·133·135·137)는 실선으로 주 밸브 배출관에 이어짐(배출망)"
+  },
+  {
+   "a": "s029",
+   "b": "s031",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s030",
+   "b": "s032",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s031",
+   "b": "s033",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s032",
+   "b": "s034",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s033",
+   "b": "s028",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s034",
+   "b": "s028",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s035",
+   "b": "s036",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s046",
+   "b": "s037",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s046",
+   "b": "s038",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s046",
+   "b": "s039",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s046",
+   "b": "s040",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s037",
+   "b": "s038",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s037",
+   "b": "s039",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s037",
+   "b": "s040",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s038",
+   "b": "s039",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s038",
+   "b": "s040",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s039",
+   "b": "s040",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s047",
+   "b": "s046",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s048",
+   "b": "s046",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s053",
+   "b": "s046",
+   "flow": null,
+   "note": "위쪽 MOV(131·133·135·137)는 실선으로 주 밸브 배출관에 이어짐(배출망)"
+  },
+  {
+   "a": "s047",
+   "b": "s049",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s048",
+   "b": "s050",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s049",
+   "b": "s051",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s050",
+   "b": "s052",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s051",
+   "b": "s046",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s052",
+   "b": "s046",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s053",
+   "b": "s054",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s064",
+   "b": "s055",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s064",
+   "b": "s056",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s064",
+   "b": "s057",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s064",
+   "b": "s058",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s055",
+   "b": "s056",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s055",
+   "b": "s057",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s055",
+   "b": "s058",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s056",
+   "b": "s057",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s056",
+   "b": "s058",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s057",
+   "b": "s058",
+   "flow": null,
+   "note": "불확실: TEW 배관이 주밸브 배출관에 모인다고 봄"
+  },
+  {
+   "a": "s065",
+   "b": "s064",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s066",
+   "b": "s064",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s071",
+   "b": "s064",
+   "flow": null,
+   "note": "위쪽 MOV(131·133·135·137)는 실선으로 주 밸브 배출관에 이어짐(배출망)"
+  },
+  {
+   "a": "s065",
+   "b": "s067",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s066",
+   "b": "s068",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s067",
+   "b": "s069",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s068",
+   "b": "s070",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s069",
+   "b": "s064",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s070",
+   "b": "s064",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s071",
+   "b": "s072",
+   "flow": null,
+   "note": "불확실: 일점쇄선(파일럿 배관)을 공정 배관으로 봄"
+  },
+  {
+   "a": "s095",
+   "b": "s010",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s028",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s064",
+   "flow": null
+  },
+  {
+   "a": "s010",
+   "b": "s028",
+   "flow": null,
+   "note": "불확실: 입구관 탭이 아래쪽 공통관(y≈250)을 거쳐 V2300으로 간다고 봄"
+  },
+  {
+   "a": "s010",
+   "b": "s046",
+   "flow": null,
+   "note": "불확실: 입구관 탭이 아래쪽 공통관(y≈250)을 거쳐 V2300으로 간다고 봄"
+  },
+  {
+   "a": "s010",
+   "b": "s064",
+   "flow": null,
+   "note": "불확실: 입구관 탭이 아래쪽 공통관(y≈250)을 거쳐 V2300으로 간다고 봄"
+  },
+  {
+   "a": "s010",
+   "b": "s129",
+   "flow": null,
+   "note": "불확실: 입구관 탭이 아래쪽 공통관(y≈250)을 거쳐 V2300으로 간다고 봄"
+  },
+  {
+   "a": "s028",
+   "b": "s046",
+   "flow": null,
+   "note": "불확실: 입구관 탭이 아래쪽 공통관(y≈250)을 거쳐 V2300으로 간다고 봄"
+  },
+  {
+   "a": "s028",
+   "b": "s064",
+   "flow": null,
+   "note": "불확실: 입구관 탭이 아래쪽 공통관(y≈250)을 거쳐 V2300으로 간다고 봄"
+  },
+  {
+   "a": "s028",
+   "b": "s129",
+   "flow": null,
+   "note": "불확실: 입구관 탭이 아래쪽 공통관(y≈250)을 거쳐 V2300으로 간다고 봄"
+  },
+  {
+   "a": "s046",
+   "b": "s064",
+   "flow": null,
+   "note": "불확실: 입구관 탭이 아래쪽 공통관(y≈250)을 거쳐 V2300으로 간다고 봄"
+  },
+  {
+   "a": "s046",
+   "b": "s129",
+   "flow": null,
+   "note": "불확실: 입구관 탭이 아래쪽 공통관(y≈250)을 거쳐 V2300으로 간다고 봄"
+  },
+  {
+   "a": "s064",
+   "b": "s129",
+   "flow": null,
+   "note": "불확실: 입구관 탭이 아래쪽 공통관(y≈250)을 거쳐 V2300으로 간다고 봄"
+  },
+  {
+   "a": "s095",
+   "b": "s129",
+   "flow": null,
+   "note": "불확실: 입구관 탭이 아래쪽 공통관(y≈250)을 거쳐 V2300으로 간다고 봄"
+  },
+  {
+   "a": "s129",
+   "b": "s084",
+   "flow": null
+  },
+  {
+   "a": "s084",
+   "b": "s130",
+   "flow": null,
+   "note": "불확실: 같은 티"
+  },
+  {
+   "a": "s130",
+   "b": "s085",
+   "flow": null
+  },
+  {
+   "a": "s087",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s078",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s077",
+   "b": "s076",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s076",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s088",
+   "b": "s083",
+   "flow": null
+  },
+  {
+   "a": "s083",
+   "b": "s082",
+   "flow": null
+  },
+  {
+   "a": "s082",
+   "b": "s080",
+   "flow": null
+  },
+  {
+   "a": "s082",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s081",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s073",
+   "flow": null
+  },
+  {
+   "a": "s079",
+   "b": "s073",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s086",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s096",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s086",
+   "b": "s096",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s095",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s090",
+   "b": "s127",
+   "flow": null
+  },
+  {
+   "a": "s127",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s111",
+   "b": "s095",
+   "flow": null,
+   "note": "불확실: 가압기 몸체로 바로 가는 TEW 선을 공정 연결로 봄"
+  },
+  {
+   "a": "s121",
+   "b": "s095",
+   "flow": null,
+   "note": "불확실: 가압기 몸체로 바로 가는 TEW 선을 공정 연결로 봄"
+  },
+  {
+   "a": "s131",
+   "b": "s132",
+   "flow": null
+  },
+  {
+   "a": "s133",
+   "b": "s134",
+   "flow": null
+  },
+  {
+   "a": "s131",
+   "b": "s136",
+   "flow": null
+  },
+  {
+   "a": "s131",
+   "b": "s137",
+   "flow": null
+  },
+  {
+   "a": "s131",
+   "b": "s139",
+   "flow": null
+  },
+  {
+   "a": "s131",
+   "b": "s140",
+   "flow": null
+  },
+  {
+   "a": "s131",
+   "b": "s141",
+   "flow": null
+  },
+  {
+   "a": "s131",
+   "b": "s142",
+   "flow": null
+  },
+  {
+   "a": "s131",
+   "b": "s143",
+   "flow": null
+  },
+  {
+   "a": "s131",
+   "b": "s144",
+   "flow": null
+  },
+  {
+   "a": "s136",
+   "b": "s137",
+   "flow": null
+  },
+  {
+   "a": "s136",
+   "b": "s139",
+   "flow": null
+  },
+  {
+   "a": "s136",
+   "b": "s140",
+   "flow": null
+  },
+  {
+   "a": "s136",
+   "b": "s141",
+   "flow": null
+  },
+  {
+   "a": "s136",
+   "b": "s142",
+   "flow": null
+  },
+  {
+   "a": "s136",
+   "b": "s143",
+   "flow": null
+  },
+  {
+   "a": "s136",
+   "b": "s144",
+   "flow": null
+  },
+  {
+   "a": "s137",
+   "b": "s139",
+   "flow": null
+  },
+  {
+   "a": "s137",
+   "b": "s140",
+   "flow": null
+  },
+  {
+   "a": "s137",
+   "b": "s141",
+   "flow": null
+  },
+  {
+   "a": "s137",
+   "b": "s142",
+   "flow": null
+  },
+  {
+   "a": "s137",
+   "b": "s143",
+   "flow": null
+  },
+  {
+   "a": "s137",
+   "b": "s144",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s140",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s141",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s142",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s143",
+   "flow": null
+  },
+  {
+   "a": "s139",
+   "b": "s144",
+   "flow": null
+  },
+  {
+   "a": "s140",
+   "b": "s141",
+   "flow": null
+  },
+  {
+   "a": "s140",
+   "b": "s142",
+   "flow": null
+  },
+  {
+   "a": "s140",
+   "b": "s143",
+   "flow": null
+  },
+  {
+   "a": "s140",
+   "b": "s144",
+   "flow": null
+  },
+  {
+   "a": "s141",
+   "b": "s142",
+   "flow": null
+  },
+  {
+   "a": "s141",
+   "b": "s143",
+   "flow": null
+  },
+  {
+   "a": "s141",
+   "b": "s144",
+   "flow": null
+  },
+  {
+   "a": "s142",
+   "b": "s143",
+   "flow": null
+  },
+  {
+   "a": "s142",
+   "b": "s144",
+   "flow": null
+  },
+  {
+   "a": "s143",
+   "b": "s144",
+   "flow": null
+  },
+  {
+   "a": "s133",
+   "b": "s135",
+   "flow": null
+  },
+  {
+   "a": "s133",
+   "b": "s138",
+   "flow": null
+  },
+  {
+   "a": "s133",
+   "b": "s145",
+   "flow": null
+  },
+  {
+   "a": "s133",
+   "b": "s146",
+   "flow": null
+  },
+  {
+   "a": "s133",
+   "b": "s147",
+   "flow": null
+  },
+  {
+   "a": "s133",
+   "b": "s148",
+   "flow": null
+  },
+  {
+   "a": "s133",
+   "b": "s149",
+   "flow": null
+  },
+  {
+   "a": "s133",
+   "b": "s150",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s138",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s145",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s146",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s147",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s148",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s149",
+   "flow": null
+  },
+  {
+   "a": "s135",
+   "b": "s150",
+   "flow": null
+  },
+  {
+   "a": "s138",
+   "b": "s145",
+   "flow": null
+  },
+  {
+   "a": "s138",
+   "b": "s146",
+   "flow": null
+  },
+  {
+   "a": "s138",
+   "b": "s147",
+   "flow": null
+  },
+  {
+   "a": "s138",
+   "b": "s148",
+   "flow": null
+  },
+  {
+   "a": "s138",
+   "b": "s149",
+   "flow": null
+  },
+  {
+   "a": "s138",
+   "b": "s150",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s146",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s147",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s148",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s149",
+   "flow": null
+  },
+  {
+   "a": "s145",
+   "b": "s150",
+   "flow": null
+  },
+  {
+   "a": "s146",
+   "b": "s147",
+   "flow": null
+  },
+  {
+   "a": "s146",
+   "b": "s148",
+   "flow": null
+  },
+  {
+   "a": "s146",
+   "b": "s149",
+   "flow": null
+  },
+  {
+   "a": "s146",
+   "b": "s150",
+   "flow": null
+  },
+  {
+   "a": "s147",
+   "b": "s148",
+   "flow": null
+  },
+  {
+   "a": "s147",
+   "b": "s149",
+   "flow": null
+  },
+  {
+   "a": "s147",
+   "b": "s150",
+   "flow": null
+  },
+  {
+   "a": "s148",
+   "b": "s149",
+   "flow": null
+  },
+  {
+   "a": "s148",
+   "b": "s150",
+   "flow": null
+  },
+  {
+   "a": "s149",
+   "b": "s150",
+   "flow": null
+  },
+  {
+   "a": "s010",
+   "b": "s013",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s010",
+   "b": "s014",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s010",
+   "b": "s031",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s010",
+   "b": "s032",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s010",
+   "b": "s035",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s010",
+   "b": "s133",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s013",
+   "b": "s014",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s013",
+   "b": "s017",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s013",
+   "b": "s028",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s013",
+   "b": "s031",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s013",
+   "b": "s032",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s013",
+   "b": "s035",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s013",
+   "b": "s133",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s014",
+   "b": "s017",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s014",
+   "b": "s028",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s014",
+   "b": "s031",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s014",
+   "b": "s032",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s014",
+   "b": "s035",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s014",
+   "b": "s133",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s017",
+   "b": "s028",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s017",
+   "b": "s031",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s017",
+   "b": "s032",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s017",
+   "b": "s035",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s017",
+   "b": "s133",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s028",
+   "b": "s031",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s028",
+   "b": "s032",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s028",
+   "b": "s133",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s031",
+   "b": "s032",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s031",
+   "b": "s035",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s031",
+   "b": "s133",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s032",
+   "b": "s035",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s032",
+   "b": "s133",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s035",
+   "b": "s133",
+   "flow": null,
+   "note": "배출망 L2(385 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s046",
+   "b": "s049",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s046",
+   "b": "s050",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s046",
+   "b": "s067",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s046",
+   "b": "s068",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s046",
+   "b": "s071",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s046",
+   "b": "s131",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s049",
+   "b": "s050",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s049",
+   "b": "s053",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s049",
+   "b": "s064",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s049",
+   "b": "s067",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s049",
+   "b": "s068",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s049",
+   "b": "s071",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s049",
+   "b": "s131",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s050",
+   "b": "s053",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s050",
+   "b": "s064",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s050",
+   "b": "s067",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s050",
+   "b": "s068",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s050",
+   "b": "s071",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s050",
+   "b": "s131",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s053",
+   "b": "s064",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s053",
+   "b": "s067",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s053",
+   "b": "s068",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s053",
+   "b": "s071",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s053",
+   "b": "s131",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s064",
+   "b": "s067",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s064",
+   "b": "s068",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s064",
+   "b": "s131",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s067",
+   "b": "s068",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s067",
+   "b": "s071",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s067",
+   "b": "s131",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s068",
+   "b": "s071",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s068",
+   "b": "s131",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s071",
+   "b": "s131",
+   "flow": null,
+   "note": "배출망 L1(386 쪽) 안의 쌍(limits (1) 배출망 판정)"
+  },
+  {
+   "a": "s010",
+   "b": "s018",
+   "flow": null,
+   "note": "아래쪽 MOV의 일점쇄선이 P 상자(주 밸브)로 감"
+  },
+  {
+   "a": "s028",
+   "b": "s036",
+   "flow": null,
+   "note": "아래쪽 MOV의 일점쇄선이 P 상자(주 밸브)로 감"
+  },
+  {
+   "a": "s046",
+   "b": "s054",
+   "flow": null,
+   "note": "아래쪽 MOV의 일점쇄선이 P 상자(주 밸브)로 감"
+  },
+  {
+   "a": "s064",
+   "b": "s072",
+   "flow": null,
+   "note": "아래쪽 MOV의 일점쇄선이 P 상자(주 밸브)로 감"
+  },
+  {
+   "a": "s076",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s078",
+   "flow": null
+  },
+  {
+   "a": "s081",
+   "b": "s083",
+   "flow": null
+  },
+  {
+   "a": "s080",
+   "b": "s083",
+   "flow": null
+  },
+  {
+   "a": "s109",
+   "b": "s602",
+   "flow": null
+  },
+  {
+   "a": "s602",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s118",
+   "b": "s606",
+   "flow": null
+  },
+  {
+   "a": "s606",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s123",
+   "b": "s607",
+   "flow": null
+  },
+  {
+   "a": "s607",
+   "b": "s095",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s609",
+   "flow": null
+  },
+  {
+   "a": "s609",
+   "b": "s090",
+   "flow": null
+  },
+  {
+   "a": "s129",
+   "b": "s610",
+   "flow": null
+  },
+  {
+   "a": "s610",
+   "b": "s130",
+   "flow": null
+  },
+  {
+   "a": "s609",
+   "b": "s089",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s600",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s601",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s603",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s604",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s605",
+   "flow": null
+  },
+  {
+   "a": "s095",
+   "b": "s608",
+   "flow": null
+  }
+ ],
+ "continuations": [
+  {
+   "symbol": "s084",
+   "label": "RG SYSTEM",
+   "target_system": "RG",
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s085",
+   "label": "PRIMARY SAMPLING SYSTEM",
+   "target_system": null,
+   "target_sheet": null,
+   "target_drawing": null
+  },
+  {
+   "symbol": "s086",
+   "label": "CV:AUXILIARY SPRAY LINE / SHEET 1",
+   "target_system": "CV",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s087",
+   "label": "RC:COLD LEG LOOP 2A / SHEET 1",
+   "target_system": "RC",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s088",
+   "label": "RC:COLD LEG LOOP 2B / SHEET 1",
+   "target_system": "RC",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s089",
+   "label": "RC:RC LOOP 2 / SHEET 1",
+   "target_system": "RC",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s090",
+   "label": "PX / SHEET 1",
+   "target_system": "PX",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s091",
+   "label": "RC / SHEET 1",
+   "target_system": "RC",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s092",
+   "label": "RC / SHEET 1",
+   "target_system": "RC",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s093",
+   "label": "RC / SHEET 1",
+   "target_system": "RC",
+   "target_sheet": "1",
+   "target_drawing": null
+  },
+  {
+   "symbol": "s094",
+   "label": "RC / SHEET 1",
+   "target_system": "RC",
+   "target_sheet": "1",
+   "target_drawing": null
+  }
+ ],
+ "position_conflicts": []
+}

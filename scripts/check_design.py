@@ -1279,7 +1279,7 @@ def translucent_check():
 # 앱 Python 코드는 색을 tokens.COLORS(정의 파일 hazop/app/tokens.py)에서 읽는다. 대상은 hazop/app/**/*.py(T1 파일 제외)와
 # hazop/viewer/build.py. 주석은 보지 않고(tokenize) 문자열 리터럴(문서 문자열·f-string 포함, 이어 붙인 문자열은 한 덩어리)만 본다.
 # QColor(...)·Qt 전역 색은 ast로 본다. 보고 행 번호는 원본 행이다. 회귀 방지용 휴리스틱이다(한계: evidence/w6-app-colors.md §4).
-APP_COLOR_EXCLUDE_BLOCKS = {"hazop/app/tokens.py": ("COLORS",)}  # 토큰 정의 대입문(AST 노드의 시작·끝 위치만 뺀다)
+APP_COLOR_EXCLUDE_BLOCKS = {"hazop/app/tokens.py": ("COLORS", "SHELL", "SHELL_SHADOW")}  # 토큰 정의 대입문(AST 노드의 시작·끝 위치만 뺀다). SHELL·SHELL_SHADOW는 새 웹 화면의 토큰
 APP_COLOR_T1 = ("hazop/app/screens/knowledge.py", "hazop/app/webview.py")  # T1 소유(README §8) — 검사 대상에서 뺌
 # 판정할 수 없어 남기는 리터럴: (저장소 기준 경로, 리터럴, 최상위 문장 이름, CSS 선택자 또는 None) → 사유.
 # 최상위 문장 이름은 리터럴을 감싼 최상위 def·class 이름이나 대입 대상 이름이다. 같은 리터럴도 다른 자리면 실패한다.

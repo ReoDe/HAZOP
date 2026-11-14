@@ -112,7 +112,7 @@ class BoundaryCutTest(Case):
         self.e["c1"]["consequence_refs"] = [{"ref": loose}]
         (w,) = self.warnings("boundary_cut")
         self.assertIn("V-9", w["text"])
-        self.assertIn("검토구간 없음", w["text"])
+        self.assertIn("구간 밖 구성요소", w["text"])  # v2: 구간 밖은 흔한 경우라 문구를 바꿈(규격 §1 #28)
 
     def test_target_missing_from_the_graph_is_reported_for_recheck(self):
         self.e["c1"]["consequence_refs"] = [{"ref": "graph-SNP-M-999#X"}]

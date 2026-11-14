@@ -6,18 +6,35 @@ pdf_vector.py에서 그대로 옮겼다(F1-0). 예전 이름은 pdf_vector에서
 """
 
 import collections
+import math
 import re
 
 from hazop.kg.docextract import TAG_RE
 
 from .. import rules
-from .pdf_vector_common import _issue
+from .pdf_vector_common import _box_gap, _center, _inside, _issue, _union
 
 # ISA 계기 글자(기능 문자 + 번호, 예: 'PT 110'·'PIC 110'). 태그 앞 계통 접두는 글자에 없다.
 ISA_LABEL_RE = re.compile(r"([A-Z]{1,4})[ \-]*(\d{1,5}[A-Z]?)")
 # 수동 밸브 번호(APR1400 'V1681'). 계통 접두는 글자에 없다. 밸브 분류 노드의 라벨 한 줄이 이 꼴이면 그대로 태그로 쓴다
 VALVE_TAG_RE = re.compile(r"V\d{3,5}[A-Z]?")
+# 밸브 몫 번호: 밸브 번호와 댐퍼 번호('Y0029', 072쪽 댐퍼 밑). 위치 약어('NO|FC')가 라벨을 먼저 차지한 밸브·댐퍼에 옮겨 줄 번호다
+NUMBER_PLATE_RE = re.compile(r"V\d{3,5}[A-Z]?|Y\d{4}[A-Z]?")
+# 기기 번호(범례 1.7-1 2/4 'EQUIPMENT NUMBER': 기기 종류 두 자 + 일련번호 두 자 + 계열 문자, 'PP 01 A')와 댐퍼 번호('Y0029').
+# 계통 접두는 글자에 없다. 종류 글자는 범례 NOTE 1 표에서, 도면이 그 표 밖에 쓰는 OR·ST는 기호 바로 아래 찍힌 것(016쪽
+# OR05B, 097쪽 ST01A)에서 왔다. 글자 종류가 기호 종류와 맞을 때만 태그로 쓴다(펌프 옆 'TK01A'는 펌프 태그가 아니다)
+EQUIPMENT_TAG_RE = re.compile(r"([A-Z]{2})\d{2}[A-Z]?|(Y)\d{4}[A-Z]?")
+EQUIPMENT_CODE_KINDS = {
+    "AC": {"accumulator"}, "CD": {"condenser"}, "CH": {"chiller"}, "CM": {"compressor"}, "DD": {"demineralizer"},
+    "FT": {"filter"}, "HE": {"heat_exchanger"}, "PP": {"pump"}, "RV": {"reactor_vessel"}, "SG": {"steam_generator"},
+    "TA": {"turbine"}, "TK": {"tank", "vessel"}, "OR": {"orifice"}, "ST": {"strainer"}, "Y": {"damper"},
+}
 PAREN_TOKEN_RE = re.compile(r"\(\d{1,5}[A-Z]?\)")  # 계기 원 옆 다른 계열 번호 '(3057)'·'(3004D)'. 설비 번호 '(FT32A)'는 아님
+# 밸브 옆 위치 약어(범례 1.7-1 1/4·4/4, 속성 normal_position·fail_position). 'NC,FO'처럼 둘을 함께 쓴다
+POSITION_TEXT_RE = re.compile(r"(?:NO|NC|LO|LC|LT|FO|FC|FL|FAI)(?:\s*[,/]?\s*(?:NO|NC|LO|LC|LT|FO|FC|FL|FAI))*")
+POSITION_CODE_RE = re.compile(r"NO|NC|LO|LC|LT|FO|FC|FL|FAI")
+ISA_LETTERS_RE = re.compile(r"[A-Z]{1,5}")  # 계기 원 윗줄 기능 문자('PDAH', 'FICKS')
+LOOP_NUMBER_RE = re.compile(r"\d{2,5}[A-Z]?")  # 계기 원 아랫줄 루프 번호('031', '3031A')
 
 
 def _text_blocks(words, prm):
@@ -42,6 +59,15 @@ def _text_blocks(words, prm):
     return out
 
 
+def _number_and_position(a, b):
+    """밸브 번호와 위치 약어가 한 줄에 나란히 찍힌 것('V310 LO', 'LO V751'). 번호는 태그, 약어는 속성이라 따로 둔다."""
+    return any(VALVE_TAG_RE.fullmatch(x) and POSITION_TEXT_RE.fullmatch(y) for x, y in ((a, b), (b, a)))
+
+
+def _line_text(ln):
+    return "".join(s + w["text"] for s, w in zip(ln["seps"], ln["words"]))
+
+
 def _upright_blocks(words, prm):
     """가로 글자 단어 → 줄 → 문단."""
     # 글자 크기가 조금씩 다르면 pdfplumber가 'SHEET 3"A"'를 한 자씩 끊는다. 그런 조각은 윗변이 조금씩 달라 윗변 순으로
@@ -54,7 +80,8 @@ def _upright_blocks(words, prm):
         reach = (prm["word_join_ratio"] if PAREN_TOKEN_RE.fullmatch(w["text"]) else prm["word_gap_ratio"]) * w["size"]
         fits = [ln for ln in lines if abs(ln["size"] - w["size"]) <= prm["line_size_tol"] and
                 abs(ln["top"] - w["top"]) <= prm["line_top_ratio"] * w["size"] and
-                -prm["word_overlap_ratio"] * w["size"] <= w["x0"] - ln["x1"] < reach]
+                -prm["word_overlap_ratio"] * w["size"] <= w["x0"] - ln["x1"] < reach and
+                not _number_and_position(ln["words"][-1]["text"], w["text"])]
         if fits:
             ln = min(fits, key=lambda ln: (abs(ln["top"] - w["top"]), w["x0"] - ln["x1"]))
             gap = w["x0"] - ln["x1"]
@@ -73,7 +100,8 @@ def _upright_blocks(words, prm):
             gap = ln["top"] - last["bottom"]
             overlap = min(ln["x1"], last["x1"]) - max(ln["x0"], last["x0"])
             if abs(last["size"] - ln["size"]) <= prm["line_size_tol"] and overlap > 0 and \
-                    prm["block_gap_min_ratio"] * ln["size"] <= gap <= prm["block_gap_max_ratio"] * ln["size"]:
+                    prm["block_gap_min_ratio"] * ln["size"] <= gap <= prm["block_gap_max_ratio"] * ln["size"] and \
+                    not _number_and_position(_line_text(last), _line_text(ln)):
                 b["lines"].append(ln)
                 break
         else:
@@ -82,11 +110,31 @@ def _upright_blocks(words, prm):
     for b in blocks:
         box = (min(l["x0"] for l in b["lines"]), min(l["top"] for l in b["lines"]),
                max(l["x1"] for l in b["lines"]), max(l["bottom"] for l in b["lines"]))
-        text = "\n".join("".join(s + w["text"] for s, w in zip(l["seps"], l["words"])) for l in b["lines"])
+        text = "\n".join(_line_text(l) for l in b["lines"])
         out.append({"text": text, "bbox": box, "size": b["lines"][0]["size"],
                     "line_boxes": [(l["x0"], l["top"], l["x1"], l["bottom"]) for l in b["lines"]]})
     out.sort(key=lambda b: (round(b["bbox"][1], 2), round(b["bbox"][0], 2)))
     return out
+
+
+def _join_bubble_number(syms, blocks, label_of, taken, roles):
+    """계기 원·상자 안의 기능 문자 줄과 그 아래 루프 번호 줄이 문단 둘로 갈린 것을 한 라벨로 잇는다. blocks의 그 자리를
+    이은 문단으로 바꾸고(목록은 고치지만 원래 문단 dict는 바꾸지 않는다) 번호 문단을 taken에 넣는다.
+    가운데 칸막이 선이 있는 표시 상자(072쪽 'PDAH' / '031')는 두 줄 간격이 문단 간격 상한보다 조금 넓어 따로 묶인다.
+    기호 라벨이 기능 문자뿐이고 기호 상자 안에 든 것, 번호 문단은 아무 기호의 라벨도 아니고 같은 기호 상자 안 아래쪽에
+    하나뿐인 것만 잇는다."""
+    for si, bi in sorted(label_of.items()):
+        top, box = blocks[bi], syms[si].bbox
+        if top.get("rotated") or not ISA_LETTERS_RE.fullmatch(top["text"].strip()) or not _inside(_center(top["bbox"]), box):
+            continue
+        below = [bj for bj, b in enumerate(blocks) if bj not in taken and bj not in roles and not b.get("rotated")
+                 and LOOP_NUMBER_RE.fullmatch(b["text"].strip()) and _inside(_center(b["bbox"]), box)
+                 and _center(b["bbox"])[1] > top["bbox"][3]]
+        if len(below) == 1:
+            low = blocks[below[0]]
+            blocks[bi] = dict(top, text=top["text"].strip() + "\n" + low["text"].strip(), bbox=_union(top["bbox"], low["bbox"]),
+                              line_boxes=list(top["line_boxes"]) + list(low["line_boxes"]))
+            taken.add(below[0])
 
 
 # ---------------------------------------------------------------- 태그
@@ -98,18 +146,38 @@ def _bubble_like(node, letters):
     return len(letters) >= 2 and min(g.get("width", 0), g.get("height", 0)) >= 8
 
 
-def _assign_tags(nodes, unknowns, instrument_ids=(), valve_number_ids=()):
+def _nearest_prefix(node, tagged):
+    """tagged [(노드, 태그)] 가운데 node 가운데에서 가장 가까운 노드의 태그 접두. 가장 가까운 거리에 접두가 둘이면 None."""
+    def center(n):
+        g = n.get("geometry") or {}
+        return (g.get("x", 0) + g.get("width", 0) / 2.0, g.get("y", 0) + g.get("height", 0) / 2.0)
+    c = center(node)
+    ranked = sorted((math.dist(c, center(n)), t.split("-")[0]) for n, t in tagged)
+    if not ranked or (len(ranked) > 1 and abs(ranked[0][0] - ranked[1][0]) < 1e-6 and ranked[0][1] != ranked[1][1]):
+        return None
+    return ranked[0][1]
+
+
+def _node_box(n):
+    g = n.get("geometry") or {}
+    return (g.get("x", 0), g.get("y", 0), g.get("x", 0) + g.get("width", 0), g.get("y", 0) + g.get("height", 0))
+
+
+def _assign_tags(nodes, unknowns, instrument_ids=(), valve_number_ids=(), label_lines=None):
     """기호 노드의 tag를 같은 쪽의 보이는 글자로 정한다.
     (a) 글자가 태그 모양(③ 문서 언급과 같은 hazop.kg.docextract.TAG_RE)으로 시작하면 그 낱말.
     (b) 계기(분류가 계기이거나 instrument_ids의 계기 모양 기호)의 ISA 글자(예: 'PT 110')면 <접두>-<문자><번호>.
         접두는 같은 쪽 (a) 태그 두 개 이상이 함께 쓰는 계통 접두 중 가장 많은 것이다. 글자에 없는 값을 고른 것이라
         근거에 [추론]을 남기고, 가장 많은 접두가 둘 이상이면 정하지 않는다. 가장 많은 접두도 태그 하나뿐이거나
         (a) 태그가 없으면(APR1400 DCD처럼 계기 원에 접두를 쓰지 않는 도면) 원 안 글자 그대로 <문자>-<번호>로 둔다.
+    (d) 위 (c)가 없고 지시선으로 번호 원이 붙은 밸브(evidence.ident_number)는 그 번호('021').
     (c) valve_number_ids의 밸브 노드(라벨 문단에 가장 가까운 기호가 그 밸브인 것, pdf_vector._valve_labels)는 라벨에
         수동 밸브 번호('V1681') 줄이 하나 있으면 그 번호. 계통 접두는 붙이지 않는다(글자에 없다). (b)의 접두를 셀 때는
         넣지 않는다.
+    (e) 위가 없고 라벨 문단의 한 줄이 기기 번호('PP02B', 'OR05B', 댐퍼 'Y0029')이며 그 종류 글자가 노드 종류와 맞고
+        그 줄에 가장 가까운 같은 종류 기호가 이 노드면 그 번호. label_lines는 {local_id: [(줄 글자, 줄 상자)]}다.
     같은 tag가 두 노드 이상에 나오면 모두 비우고 duplicate_tag 미확인을 남긴다. 정하지 못한 노드는 missing_tag 미확인."""
-    tags, isa = {}, {}
+    tags, isa, label_lines = {}, {}, label_lines or {}
     for i, n in enumerate(nodes):
         if n["kind"] in rules.KINDS_WITHOUT_TAG:
             continue
@@ -122,15 +190,38 @@ def _assign_tags(nodes, unknowns, instrument_ids=(), valve_number_ids=()):
         if n["local_id"] in valve_number_ids and n["category"] == "valve" and len(numbers) == 1:
             tags[i] = (numbers[0], "valve_number")
             continue
+        equipment = [(t.strip(), box, kinds) for t, box in label_lines.get(n["local_id"], ())
+                     if (m := EQUIPMENT_TAG_RE.fullmatch(t.strip()))
+                     and n["kind"] in (kinds := EQUIPMENT_CODE_KINDS.get(m.group(1) or m.group(2), ()))]
+        if len(equipment) == 1:
+            number, box, kinds = equipment[0]
+            # 문단은 이 기호에 붙었어도 번호 줄은 같은 종류의 다른 기호 밑에 찍혔을 수 있다(063쪽 'OR05B' 줄과 두 이름 줄이
+            # 한 문단이 되어 OR04B에 붙음). 번호 줄에 가장 가까운 같은 종류 기호가 이 기호일 때만 쓴다. 다른 종류 기호가 더
+            # 가까운 것은 괜찮다(025쪽 펌프 이름 밑 'PP01A' 바로 아래 계기 원)
+            if min((o for o in nodes if o["kind"] in kinds), key=lambda o: _box_gap(box, _node_box(o))) is n:
+                tags[i] = (number, "equipment_number")
+                continue
+        ident = (n.get("evidence") or {}).get("ident_number")
+        if ident and n["category"] == "valve" and n["kind"]:  # 종류를 못 정한 몸통 조각(일부만 잡힌 조절기 등)에는 붙이지 않는다
+            # (d) 지시선으로 이 밸브에 붙은 번호 원(_apply_merges의 ident_number). 도면에 찍힌 번호 그대로(계통 접두 없음)
+            tags[i] = (ident, "valve_ident_number")
+            continue
         m = ISA_LABEL_RE.fullmatch(" ".join(lines[:2]))
         if m and (n["category"] == "instrument" or n["local_id"] in instrument_ids and _bubble_like(n, m.group(1))):
             isa[i] = (m.group(1), m.group(2))
     counts = collections.Counter(t.split("-")[0] for t, b in tags.values() if b == "label_tag_token").most_common(2)
     tied = len(counts) == 2 and counts[0][1] == counts[1][1]
     prefix = counts[0][0] if counts and not tied and counts[0][1] >= 2 else None
+    top = {c for c, k in counts if k == counts[0][1]} if tied and counts[0][1] >= 2 else set()
     for i, (letters, number) in isa.items():
         if prefix:
             tags[i] = ("%s-%s%s" % (prefix, letters, number), "isa_label+page_prefix:%s [추론]" % prefix)
+        elif top:
+            # 쪽에서 가장 많은 접두가 둘 이상 같은 수면(두 계통이 한 쪽에) 이 계기에서 가장 가까운 글자 태그의 접두를 쓴다
+            near = _nearest_prefix(nodes[i], [(nodes[j], t) for j, (t, b) in tags.items()
+                                              if b == "label_tag_token" and t.split("-")[0] in top])
+            if near:
+                tags[i] = ("%s-%s%s" % (near, letters, number), "isa_label+near_prefix:%s [추론]" % near)
         elif not tied:
             tags[i] = ("%s-%s" % (letters, number), "isa_label")
     seen = collections.Counter(t.casefold() for t, _ in tags.values())

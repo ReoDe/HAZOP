@@ -23,6 +23,7 @@ from hazop.console import safe_console  # noqa: E402
 # 묶인 실행의 미처리 예외 기록(packaging/rthook_applog.py)만 확인한다. PyInstaller 오류 대화상자는 스크립트가 예외로 끝날 때
 # 부트로더가 띄우므로, 예외를 잡아 직접 넘기면 뜨지 않는다. 검증용 빌드 표지(sys._hazop_verify_build, 런타임 훅
 # packaging/rthook_verify_build.py — 검증용 HAZOP.exe에만 들어감)가 있을 때만 켜진다. 배포용·개발 실행에서는 무시한다.
+CHAT_TOOLS_FLAG = "--chat-tools"  # 첫 인자일 때만. HAZOP.exe --chat-tools --project <id> --question-file <파일>
 ENV_TEST_EXCEPTHOOK = "HAZOP_TEST_EXCEPTHOOK"
 EXIT_TEST_EXCEPTHOOK = 70
 
@@ -36,12 +37,18 @@ def _test_excepthook():
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == [CHAT_TOOLS_FLAG]:  # 채팅 도구 서버(규격 docs/specs/chat-panel.md §2.4): Qt·창·잠금 없이 서버만 돈다
+        from hazop.chat import mcp_server
+        return mcp_server.main(argv[1:])
     safe_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", help="시작할 때 열 분석 실행 폴더")
     ap.add_argument("--screenshots", help="화면별 스크린샷을 저장할 폴더(저장 후 종료)")
     ap.add_argument("--settings", help="설정 파일 경로(기본: APPDATA 아래 HAZOP/settings.json)")
     ap.add_argument("--debug", action="store_true", help="상태줄에 Python↔웹 메시지 등 개발자 정보를 표시")
+    ap.add_argument("--shell", action="store_true", help="새 웹 화면으로 연다(기본). 설정 ui_shell이 꺼져 있어도 이 창으로 연다")
+    ap.add_argument("--classic", action="store_true", help="이전 위젯 화면으로 연다(새 화면이 기본이어도)")
     args = ap.parse_args(argv)
     if os.environ.get(ENV_TEST_EXCEPTHOOK) == "1" and getattr(sys, "_hazop_verify_build", False):
         return _test_excepthook()
@@ -65,6 +72,12 @@ def main(argv=None):
             if lock is not None:
                 lock.unlock()
             return rc
+    from hazop.app import startup
+    if startup.window_kind(args.classic, args.screenshots, args.run, args.shell, startup.shell_setting(args.settings)) == "shell":
+        code = startup.run_shell(app, args.settings, args.debug)
+        if lock is not None:
+            lock.unlock()
+        return code
     from hazop.app.main_window import MainWindow
     if args.screenshots:  # 스크린샷의 확정 예시 저장은 임시 저장 루트에만(store/를 건드리지 않음)
         import tempfile

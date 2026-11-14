@@ -743,8 +743,9 @@ class BuriedPipeTest(unittest.TestCase):
         ex = extract([prim(GATE), prim([(130, 100), (136, 103), (136, 100), (130, 103), (130, 100)]),
                       dashed([(106, 101.5), (130, 101.5)])] + [dot(x, 101.5) for x in (113.3, 122.1)])
         self.assertFalse(any(o.get("reason") == "line_dot" for o in ex["drawing"]["ignored_objects"]))
-        self.assertNotIn("physical_connection", {r["kind"] for r in ex["relations"] + ex["unresolved_connectors"]
-                                                 if r["line_type"] == "pdf_dashed"})
+        # 점이 점선을 실선 배관으로 바꾸지 않는다. 두 밸브를 흐름 축으로 잇는 점선은 배관일 수 있으므로(APR1400 008쪽,
+        # _dashed_pipe) 관계 종류가 아니라 선 종류가 점선으로 남는지를 본다
+        self.assertEqual({r["line_type"] for r in ex["relations"] + ex["unresolved_connectors"]}, {"pdf_dashed"})
 
 
 def word(text, x0, top, size=3.0):
@@ -771,14 +772,28 @@ class IsaBubbleKindTest(unittest.TestCase):
     """기존 마지막 글자 규칙이 못 정한 계기 원만 ISA 기능 문자로 정한다(3e)."""
 
     def test_function_letters(self):
-        cases = {"ZL\n202C": "indicator", "LG\n5": "indicator", "FICKS\n101": "controller",
+        cases = {"LG\n5": "indicator", "FICKS\n101": "controller",
                  "PISL\n101": "switch", "LEITS\n2": "transmitter", "PTAL\n3110A": "transmitter"}
         for text, kind in cases.items():
             self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], kind, text)
 
-    def test_thermowell_alarm_and_annotation_get_no_kind(self):
-        # FE(원 안 검출부)는 배관 부품 kind로 두지 않는다. V(밸브)·설비 번호(RCP 1A)·PSE(파열판)도 계기 kind가 아니다(3e 검토)
-        for text in ("TEW\n4", "TEWIS\n1", "PDAH\n032", "LL", "HHL", "NO", "SY\n019", "RE\n073A", "FE\n341A",
+    def test_thermowell_is_a_temperature_element(self):
+        # TEW(보호관 온도 측정점)는 온도 측정점으로 본다(R3 개선 4, 2026-11-13. 3e에서는 종류를 비웠다)
+        for text in ("TEW\n4", "TEWIS\n1", "TEW 38A"):
+            self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], "temperature_element", text)
+
+    def test_legend_codes(self):
+        # APR1400 범례 1.7-1(2/4·3/4)·1.7-9가 이름을 준 계기 표기. 번호가 없어도 계기 원 안이면 정한다
+        cases = {"ZL\n202C": "pilot_light", "ZL": "pilot_light", "PDAH\n032": "alarm", "XAH\n051": "alarm",
+                 "PAL": "alarm", "PDAH": "alarm", "AX\n134": "sample_probe", "FG": "sight_glass",
+                 "LE\n058": "level_element"}
+        for text, kind in cases.items():
+            self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], kind, text)
+
+    def test_annotation_gets_no_kind(self):
+        # FE(원 안 검출부)는 배관 부품 kind로 두지 않는다. V(밸브)·설비 번호(RCP 1A)·PSE(파열판)도 계기 kind가 아니다(3e 검토).
+        # 범례 덧붙임 글자(LL·HL·FL)는 번호 없이 홀로 있으면 표시등이 아니다
+        for text in ("LL", "HL", "FL", "HHL", "NO", "SY\n019", "RE\n073A", "FE\n341A",
                      "PSV\n101", "PSE\n101", "PCV\n101", "FCV\n101", "RCP\n1A"):
             self.assertIsNone(pdf_vector._instrument_kind(text, 12.0)[0], text)
 
@@ -1520,13 +1535,15 @@ class ValveLabelTest(unittest.TestCase):
         self.assertEqual([n["tag"] for n in ex["nodes"] if n["category"] == "valve"], [None])
 
     def test_lettered_diamond_does_not_take_a_valve_number(self):
-        """품질 등급 마름모('BI|CI')는 삼각형 둘이라 나비 규칙으로 밸브가 된다. 안에 글자가 든 몸통은 밸브 번호를 받지 않는다
-        (063쪽 V751·V713·V366)."""
+        """품질 등급 마름모('BI|CI')는 삼각형 둘이라 나비 규칙에 걸리지만 밸브가 아니라 안전등급 경계 표시다(범례 1.7-1 1/4
+        QUALITY GROUP/SAFETY CLASS, e3e3273). 밸브가 아니므로 옆 밸브 번호를 받지 않는다(063쪽 V751·V713·V366)."""
         diamond = [prim([(100, 100), (106, 97), (106, 103), (100, 100)]), prim([(112, 100), (106, 97), (106, 103), (112, 100)])]
         words = [word("B", 102.5, 98.5, 2.0), word("I", 103.7, 98.5, 2.0), word("C", 107.0, 98.5, 2.0),
                  word("I", 108.2, 98.5, 2.0), word("V751", 101.0, 106.0)]
         ex = extract_with_words(diamond, words)
-        self.assertEqual([(n["kind"], n["tag"]) for n in ex["nodes"] if n["category"] == "valve"], [("manual_valve", None)])
+        self.assertEqual([n for n in ex["nodes"] if n["category"] == "valve"], [])
+        (mark,) = [n for n in ex["nodes"] if n["evidence"]["classification_basis"] == "safety_class_boundary"]
+        self.assertEqual((mark["kind"], mark["tag"]), (None, None))
 
     def test_labels_of_other_symbols_do_not_change(self):
         """위치 약어가 다른 기호의 라벨이면 그대로 둔다(밸브만 손본다)."""

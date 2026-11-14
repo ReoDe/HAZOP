@@ -37,10 +37,10 @@ def plan(project_id, at=None):
     for s in pg["sheets"]:
         sheet_graph = {"graph_id": s["graph_id"], "project_id": None if project_id == project.UNREGISTERED_PROJECT
                        else project_id}
-        old = sn.load(sheet_graph)
+        old = sn.read_as_is(sheet_graph)  # 옛 도면별 파일(0.1)은 바꾸지 않고 읽는다
         if old:
             old_sets.append(old)
-            r = res.load(old)
+            r = res.read(res._readable_path(sheet_graph["project_id"], s["graph_id"]))
             if r:
                 old_results.append(r)
     return pg, pset, old_sets, old_results
@@ -67,7 +67,7 @@ def main(argv=None):
     if not a.write:
         print("미리보기만 함(--write로 씀)")
         return 0
-    if pset.get("status") != "confirmed":
+    if not sn.all_confirmed(pset):
         print("멈춤: 프로젝트 검토구간이 확정되지 않음 — ④에서 확정한 뒤 이전(확정 전 결과는 확정 때 무효가 됨)")
         return 1
     if os.path.isfile(res.store_path(pset["project_id"], pset["graph_id"])):

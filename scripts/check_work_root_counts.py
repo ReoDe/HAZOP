@@ -57,6 +57,7 @@ def count_files():
 
 def count_seen(errors):
     from hazop.app import data, related
+    from hazop.study import nodes as sn
     from hazop.ie import store as ie_store
     from hazop.kg import screen as kg_screen
     from hazop.review import store as review_store
@@ -105,7 +106,7 @@ def count_seen(errors):
             continue
         projects.add(idx.graph.get("project_id"))
         key = (idx.graph.get("project_id"), idx.graph["graph_id"])
-        sets[key] = (idx.node_set is not None, bool(idx.node_set) and idx.node_set.get("status") == "confirmed",
+        sets[key] = (idx.node_set is not None, bool(idx.node_set) and bool(sn.active_nodes(idx.node_set)),
                      idx.results is not None, idx.kg is not None)
     seen["project_graphs"] = len(sets)
     seen["study_node_sets"] = sum(v[0] for v in sets.values())

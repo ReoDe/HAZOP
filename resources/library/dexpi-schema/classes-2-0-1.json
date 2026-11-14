@@ -1,0 +1,1771 @@
+{
+ "dexpi_version": "2.0.1",
+ "source": "GitLab dexpi/Specification V2.0.1 src/model/Plant/{Piping,ProcessEquipment,Instrumentation}",
+ "license": "CC BY 4.0, DEXPI e.V. (licenses/dexpi/NOTICE.md)",
+ "classes": {
+  "AccessNozzle": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Nozzle"
+   ]
+  },
+  "ActuatingElectricalFunction": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "SignalConveyingFunctionTarget",
+    "TechnicalItem"
+   ]
+  },
+  "ActuatingElectricalLocation": {
+   "package": "Instrumentation",
+   "abstract": true,
+   "supers": []
+  },
+  "ActuatingElectricalSystem": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "TechnicalItem"
+   ]
+  },
+  "ActuatingFunction": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "SignalConveyingFunctionSource",
+    "SignalConveyingFunctionTarget",
+    "TechnicalItem"
+   ]
+  },
+  "ActuatingSystem": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "TechnicalItem"
+   ]
+  },
+  "Agglomerator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "Agitator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "AgitatorRotor": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "AirCoolingSystem": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": []
+  },
+  "AirEjector": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Compressor"
+   ]
+  },
+  "AlternatingCurrentGenerator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ElectricGenerator"
+   ]
+  },
+  "AlternatingCurrentMotor": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Motor"
+   ]
+  },
+  "AlternatingCurrentMotorAsComponent": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "MotorAsComponent"
+   ]
+  },
+  "AngleBallValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "OperatedValve"
+   ]
+  },
+  "AngleGlobeValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "OperatedValve"
+   ]
+  },
+  "AnglePlugValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "OperatedValve"
+   ]
+  },
+  "AngleValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "OperatedValve"
+   ]
+  },
+  "AxialBlower": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Blower"
+   ]
+  },
+  "AxialCompressor": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Compressor"
+   ]
+  },
+  "AxialFan": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Fan"
+   ]
+  },
+  "BallValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "OperatedValve"
+   ]
+  },
+  "BatchWeigher": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Weigher"
+   ]
+  },
+  "BlindFlange": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "Blower": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "Boiler": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Heater"
+   ]
+  },
+  "BreatherValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "SafetyValveOrFitting"
+   ]
+  },
+  "BriquettingRoller": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "Burner": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "ButterflyValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "OperatedValve"
+   ]
+  },
+  "CentrifugalBlower": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Blower"
+   ]
+  },
+  "CentrifugalCompressor": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Compressor"
+   ]
+  },
+  "CentrifugalPump": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Pump"
+   ]
+  },
+  "Centrifuge": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "Chamber": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "ChamberOwner": {
+   "package": "ProcessEquipment",
+   "abstract": true,
+   "supers": []
+  },
+  "CheckValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipingComponent"
+   ]
+  },
+  "Chimney": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "WasteGasEmitter"
+   ]
+  },
+  "ClampedFlangeCoupling": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "ColumnInternalsArrangement": {
+   "package": "ProcessEquipment",
+   "abstract": true,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "ColumnPackingsArrangement": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ColumnInternalsArrangement"
+   ]
+  },
+  "ColumnSection": {
+   "package": "ProcessEquipment",
+   "abstract": true,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "ColumnTraysArrangement": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ColumnInternalsArrangement"
+   ]
+  },
+  "CombustionEngine": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Motor"
+   ]
+  },
+  "CombustionEngineAsComponent": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "MotorAsComponent"
+   ]
+  },
+  "Compensator": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "Compressor": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "ConicalStrainer": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "ContinuousWeigher": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Weigher"
+   ]
+  },
+  "ControlledActuator": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "ConvectionDryer": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Dryer"
+   ]
+  },
+  "Conveyor": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "StationaryTransportSystem"
+   ]
+  },
+  "CoolingTower": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "CoolingTowerRotor": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "Crusher": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Mill"
+   ]
+  },
+  "CrusherElement": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "DirectCurrentGenerator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ElectricGenerator"
+   ]
+  },
+  "DirectCurrentMotor": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Motor"
+   ]
+  },
+  "DirectCurrentMotorAsComponent": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "MotorAsComponent"
+   ]
+  },
+  "DirectPipingConnection": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipingConnection"
+   ]
+  },
+  "Displacer": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "DryCoolingTower": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "CoolingTower"
+   ]
+  },
+  "Dryer": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "DryingChamber": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "EjectorPump": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Pump"
+   ]
+  },
+  "ElectricGenerator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "ElectricHeater": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Heater"
+   ]
+  },
+  "ElectricalSeparator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Separator"
+   ]
+  },
+  "ElectromagneticFlowMeter": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "InlineMeasuringElement"
+   ]
+  },
+  "ElectronicFrequencyConverter": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "EquipmentVent": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Vent"
+   ]
+  },
+  "Extruder": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "Fan": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "Feeder": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "Filter": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "FilterUnit": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "FilteringCentrifuge": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Centrifuge"
+   ]
+  },
+  "FilteringCentrifugeDrum": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "FlameArrestor": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "SafetyValveOrFitting"
+   ]
+  },
+  "Flange": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "FlangedConnection": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "Flare": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "WasteGasEmitter"
+   ]
+  },
+  "FlowDetector": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "MeasuringSystem"
+   ]
+  },
+  "FlowInPipeOffPageConnector": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeOffPageConnector",
+    "PipingSourceItem"
+   ]
+  },
+  "FlowInSignalOffPageConnector": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "SignalOffPageConnector",
+    "SignalConveyingFunctionSource"
+   ]
+  },
+  "FlowMeasuringElement": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "InlineMeasuringElement"
+   ]
+  },
+  "FlowNozzle": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "InlineMeasuringElement"
+   ]
+  },
+  "FlowOutPipeOffPageConnector": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeOffPageConnector",
+    "PipingTargetItem"
+   ]
+  },
+  "FlowOutSignalOffPageConnector": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "SignalOffPageConnector",
+    "SignalConveyingFunctionTarget"
+   ]
+  },
+  "ForkliftTruck": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "MobileTransportSystem"
+   ]
+  },
+  "Funnel": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "Furnace": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Heater"
+   ]
+  },
+  "GasFilter": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Filter"
+   ]
+  },
+  "GasTurbine": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Turbine"
+   ]
+  },
+  "GateValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "OperatedValve"
+   ]
+  },
+  "GearBox": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "GlobeCheckValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "CheckValve"
+   ]
+  },
+  "GlobeValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "OperatedValve"
+   ]
+  },
+  "GravitationalSeparator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Separator"
+   ]
+  },
+  "Grinder": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Mill"
+   ]
+  },
+  "GrindingElement": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "HeatExchanger": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "HeatExchangerRotor": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "HeatedSurfaceDryer": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Dryer"
+   ]
+  },
+  "Heater": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "Hose": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "IlluminatedSightGlass": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "Impeller": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "InLineMixer": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "InlineMeasuringElement": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipingComponent"
+   ]
+  },
+  "InlineMeasuringElementReference": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "MeasuringElement"
+   ]
+  },
+  "InstrumentNozzle": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Nozzle"
+   ]
+  },
+  "InstrumentationLoopFunction": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "TechnicalItem"
+   ]
+  },
+  "Kneader": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Mixer"
+   ]
+  },
+  "Lift": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "StationaryTransportSystem"
+   ]
+  },
+  "LineBlind": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "LiquidFilter": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Filter"
+   ]
+  },
+  "LoadingUnloadingSystem": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "StationaryTransportSystem"
+   ]
+  },
+  "MassFlowMeasuringElement": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "InlineMeasuringElement"
+   ]
+  },
+  "MeasuringElement": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "MeasuringLineFunction": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "SignalConveyingFunction"
+   ]
+  },
+  "MeasuringSystem": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "TechnicalItem"
+   ]
+  },
+  "MechanicalSeparator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Separator"
+   ]
+  },
+  "Mill": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "Mixer": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "MixingElementAssembly": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "MobileTransportSystem": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "Motor": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "MotorAsComponent": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "TransmissionDriver"
+   ]
+  },
+  "Mount": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "SensingLocation"
+   ]
+  },
+  "NeedleValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "OperatedValve"
+   ]
+  },
+  "Nozzle": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "ActuatingElectricalLocation",
+    "SensingLocation",
+    "PipingNodeOwner",
+    "PipingSourceItem",
+    "PipingTargetItem"
+   ]
+  },
+  "NozzleOwner": {
+   "package": "ProcessEquipment",
+   "abstract": true,
+   "supers": []
+  },
+  "OfflineMeasuringElement": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "MeasuringElement"
+   ]
+  },
+  "OperatedValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipingComponent"
+   ]
+  },
+  "OperatedValveReference": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "PackagingSystem": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "PelletizerDisc": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "Penetration": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "Pipe": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "PipingConnection"
+   ]
+  },
+  "PipeCoupling": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "PipeFitting": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipingComponent"
+   ]
+  },
+  "PipeFlangeSpacer": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "PipeFlangeSpade": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "PipeOffPageConnector": {
+   "package": "Piping",
+   "abstract": true,
+   "supers": [
+    "ConceptualObject",
+    "PipingNetworkSegmentItem",
+    "PipingNodeOwner"
+   ]
+  },
+  "PipeOffPageConnectorObjectReference": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeOffPageConnectorReference"
+   ]
+  },
+  "PipeOffPageConnectorReference": {
+   "package": "Piping",
+   "abstract": true,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "PipeOffPageConnectorReferenceByNumber": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeOffPageConnectorReference"
+   ]
+  },
+  "PipeReducer": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "PipeTee": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "PipingComponent": {
+   "package": "Piping",
+   "abstract": true,
+   "supers": [
+    "ConceptualObject",
+    "SensingLocation",
+    "PipingNetworkSegmentItem",
+    "PipingNodeOwner",
+    "PipingSourceItem",
+    "PipingTargetItem"
+   ]
+  },
+  "PipingConnection": {
+   "package": "Piping",
+   "abstract": true,
+   "supers": []
+  },
+  "PipingNetworkSegment": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "ActuatingElectricalLocation",
+    "SensingLocation"
+   ]
+  },
+  "PipingNetworkSegmentItem": {
+   "package": "Piping",
+   "abstract": true,
+   "supers": []
+  },
+  "PipingNetworkSystem": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "TechnicalItem"
+   ]
+  },
+  "PipingNode": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "PipingNodeOwner": {
+   "package": "Piping",
+   "abstract": true,
+   "supers": []
+  },
+  "PipingSourceItem": {
+   "package": "Piping",
+   "abstract": true,
+   "supers": []
+  },
+  "PipingTargetItem": {
+   "package": "Piping",
+   "abstract": true,
+   "supers": []
+  },
+  "PlateHeatExchanger": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "HeatExchanger"
+   ]
+  },
+  "PlugValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "OperatedValve"
+   ]
+  },
+  "Positioner": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "PositiveDisplacementFlowMeter": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "InlineMeasuringElement"
+   ]
+  },
+  "PressureVessel": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Vessel"
+   ]
+  },
+  "ProcessColumn": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "ProcessControlFunction": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ProcessInstrumentationFunction"
+   ]
+  },
+  "ProcessEquipment": {
+   "package": "ProcessEquipment",
+   "abstract": true,
+   "supers": [
+    "ChamberOwner",
+    "NozzleOwner",
+    "TaggedPlantItem",
+    "TransmissionDriver"
+   ]
+  },
+  "ProcessInstrumentationFunction": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "SignalConveyingFunctionSource",
+    "SignalConveyingFunctionTarget",
+    "TechnicalItem"
+   ]
+  },
+  "ProcessNozzle": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Nozzle"
+   ]
+  },
+  "ProcessSafetyFunction": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ProcessInstrumentationFunction"
+   ]
+  },
+  "ProcessSignalGeneratingFunction": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "SignalConveyingFunctionSource",
+    "TechnicalItem"
+   ]
+  },
+  "PropertyBreak": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "PipingNetworkSegmentItem",
+    "PipingNodeOwner",
+    "PipingSourceItem",
+    "PipingTargetItem"
+   ]
+  },
+  "Pump": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "RadialFan": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Fan"
+   ]
+  },
+  "RailWaggon": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "MobileTransportSystem"
+   ]
+  },
+  "ReciprocatingCompressor": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Compressor"
+   ]
+  },
+  "ReciprocatingExtruder": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Extruder"
+   ]
+  },
+  "ReciprocatingPressureAgglomerator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Agglomerator"
+   ]
+  },
+  "ReciprocatingPump": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Pump"
+   ]
+  },
+  "RestrictionOrifice": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "RevolvingSieve": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Sieve"
+   ]
+  },
+  "RotaryCompressor": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Compressor"
+   ]
+  },
+  "RotaryMixer": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Mixer"
+   ]
+  },
+  "RotaryPump": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Pump"
+   ]
+  },
+  "RotatingExtruder": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Extruder"
+   ]
+  },
+  "RotatingGrowthAgglomerator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Agglomerator"
+   ]
+  },
+  "RotatingPressureAgglomerator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Agglomerator"
+   ]
+  },
+  "RuptureDisc": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "SafetyValveOrFitting"
+   ]
+  },
+  "SafetyValveOrFitting": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipingComponent"
+   ]
+  },
+  "Screw": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "ScrubbingSeparator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Separator"
+   ]
+  },
+  "SedimentalCentrifuge": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Centrifuge"
+   ]
+  },
+  "SedimentalCentrifugeDrum": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "SensingLocation": {
+   "package": "Instrumentation",
+   "abstract": true,
+   "supers": []
+  },
+  "Sensorwell": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "SensorwellReference": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "Separator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "Ship": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "MobileTransportSystem"
+   ]
+  },
+  "Sieve": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "SieveElement": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "SightGlass": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "SignalConveyingFunction": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "SignalConveyingFunctionSource": {
+   "package": "Instrumentation",
+   "abstract": true,
+   "supers": []
+  },
+  "SignalConveyingFunctionTarget": {
+   "package": "Instrumentation",
+   "abstract": true,
+   "supers": []
+  },
+  "SignalLineFunction": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "SignalConveyingFunction"
+   ]
+  },
+  "SignalOffPageConnector": {
+   "package": "Instrumentation",
+   "abstract": true,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "SignalOffPageConnectorObjectReference": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "SignalOffPageConnectorReference"
+   ]
+  },
+  "SignalOffPageConnectorReference": {
+   "package": "Instrumentation",
+   "abstract": true,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "SignalOffPageConnectorReferenceByNumber": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "SignalOffPageConnectorReference"
+   ]
+  },
+  "Silencer": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "Silo": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Vessel"
+   ]
+  },
+  "SpiralHeatExchanger": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "HeatExchanger"
+   ]
+  },
+  "SprayCooler": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "CoolingTower"
+   ]
+  },
+  "SprayNozzle": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "SpringLoadedAngleGlobeSafetyValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "SafetyValveOrFitting"
+   ]
+  },
+  "SpringLoadedGlobeSafetyValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "SafetyValveOrFitting"
+   ]
+  },
+  "StaticMixer": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Mixer"
+   ]
+  },
+  "StationarySieve": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Sieve"
+   ]
+  },
+  "StationaryTransportSystem": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "SteamGenerator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Heater"
+   ]
+  },
+  "SteamTrap": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "SteamTurbine": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Turbine"
+   ]
+  },
+  "StraightwayValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "OperatedValve"
+   ]
+  },
+  "Strainer": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting"
+   ]
+  },
+  "SubTaggedColumnSection": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ColumnSection"
+   ]
+  },
+  "SwingCheckValve": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "CheckValve"
+   ]
+  },
+  "TaggedColumnSection": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ColumnSection",
+    "TaggedPlantItem"
+   ]
+  },
+  "TaggedPlantItem": {
+   "package": "ProcessEquipment",
+   "abstract": true,
+   "supers": [
+    "ConceptualObject",
+    "TechnicalItem"
+   ]
+  },
+  "Tank": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Vessel"
+   ]
+  },
+  "ThinFilmEvaporator": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "HeatExchanger"
+   ]
+  },
+  "TransmissionDriver": {
+   "package": "ProcessEquipment",
+   "abstract": true,
+   "supers": []
+  },
+  "TransmissionSystem": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject",
+    "TransmissionDriver"
+   ]
+  },
+  "Transmitter": {
+   "package": "Instrumentation",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "TransportableContainer": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "MobileTransportSystem"
+   ]
+  },
+  "Truck": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "MobileTransportSystem"
+   ]
+  },
+  "TubeBundle": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "TubularHeatExchanger": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "HeatExchanger"
+   ]
+  },
+  "Turbine": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "TurbineFlowMeter": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "InlineMeasuringElement"
+   ]
+  },
+  "VariableAreaFlowMeter": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "InlineMeasuringElement"
+   ]
+  },
+  "Vent": {
+   "package": "ProcessEquipment",
+   "abstract": true,
+   "supers": [
+    "ConceptualObject"
+   ]
+  },
+  "VentLine": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "PipeFitting",
+    "Vent"
+   ]
+  },
+  "VenturiTube": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "InlineMeasuringElement"
+   ]
+  },
+  "Vessel": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "VibratingSieve": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "Sieve"
+   ]
+  },
+  "VolumeFlowMeasuringElement": {
+   "package": "Piping",
+   "abstract": false,
+   "supers": [
+    "InlineMeasuringElement"
+   ]
+  },
+  "WasteGasEmitter": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "Weigher": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "ProcessEquipment"
+   ]
+  },
+  "WetCoolingTower": {
+   "package": "ProcessEquipment",
+   "abstract": false,
+   "supers": [
+    "CoolingTower"
+   ]
+  }
+ }
+}

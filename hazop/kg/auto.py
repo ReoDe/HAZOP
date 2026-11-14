@@ -16,6 +16,7 @@
 import hashlib
 import json
 import os
+import threading
 
 from hazop import paths
 from hazop.kg import build, docextract, inputs, link
@@ -29,6 +30,9 @@ LINKS_CSV = "knowledge_links.csv"
 CANDIDATES_CSV = link.CANDIDATES_CSV
 # 문서 지식 노드 종류 -> 도면 노드에서 그 노드로 가는 설비 적용 관계(§2.3). 근거 공백 판정에 세는 3종만(analyzed_in 제외)
 APPLY_KIND = REGISTRY.apply_kind_of(evidence_gap=True)
+# 프로젝트 지식그래프 다시 만들기는 한 번에 하나만(여러 파일을 한꺼번에 등록하면 작업 스레드가 동시에 부른다). 차례로 돌면 나중 것이
+# 앞 것이 쓴 문서 지식까지 읽고 만들므로 마지막에 쓴 쪽이 다른 문서를 빼먹지 않는다(검토 2026-11-14 A7 4)
+BUILD_LOCK = threading.Lock()
 
 
 def _read(path):
@@ -88,23 +92,76 @@ def project_ids(graph_root, doc_root):
     return sorted(i for i in ids if i)
 
 
+_GRAPHS = {}   # graph.json 경로 -> ((바뀐 시각 ns, 크기), 읽은 dict). 다시 만들기마다 143쪽을 다시 읽지 않으려는 것(읽기만 0.7초)
+
+
+def forget_graphs():
+    """도면 그래프 읽기 캐시를 비운다."""
+    _GRAPHS.clear()
+
+
+def _scan_graphs(root):
+    """_scan(root, "graph.json")과 같은 결과. 바뀐 시각·크기가 같은 파일은 앞서 읽은 dict를 그대로 돌려준다(graph_head와 같은 열쇠).
+    돌려준 dict는 캐시와 같은 객체라 부르는 쪽은 고치지 않는다(지식그래프 빌드는 입력을 바꾸지 않는다: 시험이 지킨다)."""
+    out, alive = [], set()
+    for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        p = os.path.join(root, name, "graph.json")
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        key = (st.st_mtime_ns, st.st_size)
+        hit = _GRAPHS.get(p)
+        if hit is None or hit[0] != key:
+            try:
+                hit = (key, _read(p))
+            except (OSError, ValueError):
+                _GRAPHS.pop(p, None)
+                continue
+            _GRAPHS[p] = hit
+        alive.add(p)
+        out.append((p, hit[1]))
+    for p in [x for x in _GRAPHS if os.path.dirname(os.path.dirname(x)) == root and x not in alive]:
+        _GRAPHS.pop(p, None)   # 지운 도면은 잊는다
+    return out
+
+
 def project_graphs(project_id, graph_root):
     """(graph 목록, notes). 같은 graph_id는 graph.json 수정 시각이 가장 늦은 것 하나."""
-    best, notes = {}, []
-    for path, g in _scan(graph_root, "graph.json"):
+    from hazop.graph import sources
+    cands, seen, notes = [], {}, []
+    for path, g in _scan_graphs(graph_root):
         if g.get("project_id") != project_id:
             continue
-        key = (os.path.getmtime(path), path)
         gid = g.get("graph_id")
-        if gid in best:
+        if gid in seen:
             notes.append("같은 도면 ID %s의 그래프가 여럿 — 가장 최근 추출만 씀" % gid)
-        if gid not in best or key > best[gid][0]:
-            best[gid] = (key, g)
-    return [best[k][1] for k in sorted(best)], sorted(set(notes))
+        seen[gid] = True
+        cands.append({"gid": gid, "key": (os.path.getmtime(path), path), "graph": g,
+                      "name": os.path.basename(os.path.dirname(path))})
+    chosen, more = sources.pick(project_id, cands, graph_root=graph_root)  # 형식이 섞인 같은 번호는 먼저 있던 형식(또는 사람이 고른 형식)
+    return [chosen[k]["graph"] for k in sorted(chosen, key=str)], sorted(set(notes) | set(more))
 
 
 def project_documents(project_id, doc_root):
-    """문서 지식 목록(자료마다 최신 등록 버전, 자료 ID순)."""
+    """지식그래프에 쓰는 문서 지식 목록(자료마다 최신 등록 버전, 자료 ID순). 새 판이 대신한 옛 판(hazop.kg.doc_revisions)은 뺀다."""
+    return split_documents(project_id, doc_root)[0]
+
+
+def split_documents(project_id, doc_root):
+    """(지금 쓰는 문서 지식, 새 판이 대신한 옛 판 문서 지식). 대신한 판이 목록에 없으면 옛 판을 그대로 쓴다(지식을 잃지 않게)."""
+    from hazop.kg import doc_revisions
+    docs = _latest_documents(project_id, doc_root)
+    try:
+        replaced = doc_revisions.load(project_id)["replaced"]
+    except (OSError, ValueError):
+        replaced = {}
+    have = {d.get("material_id") for d in docs}
+    out = [d for d in docs if not (d.get("material_id") in replaced and replaced[d["material_id"]].get("by") in have)]
+    return out, [d for d in docs if d not in out]
+
+
+def _latest_documents(project_id, doc_root):
     latest = {}
     for _, d in _scan(doc_root, DOC_FILE):
         if d.get("project_id") != project_id:
@@ -184,18 +241,24 @@ def mention_links(documents, graphs, judgements=None):
     return out
 
 
-def _lost_judgements(documents, mentions, judgements):
-    """사람이 확인한 조각 언급 중 지금 후보 키와 맞지 않는 것(도면·문서 판이 바뀜)을 알린다. 알리지 않으면 확인이 조용히 후보로 돌아간다."""
+def _lost_judgements(documents, mentions, judgements, replaced=()):
+    """사람이 확인한 조각 언급 중 지금 후보 키와 맞지 않는 것(도면·문서 판이 바뀜)을 알린다. 알리지 않으면 확인이 조용히 후보로 돌아간다.
+    replaced: 새 판이 대신한 옛 판 문서 지식. 옛 판 조각에 걸린 확인은 지우지 않고(판단 파일은 그대로) 새 판에서 재확인하라고 알린다."""
     chunk_ids = {n["id"] for d in documents for n in d["nodes"] if n.get("node_type") == "doc_chunk"}
     current = {(l.get("mention") or {}).get("candidate_key") for l in mentions}
     lost = [k for k, r in (judgements or {}).items()
             if r["link_status"] == "confirmed" and r.get("chunk_id") in chunk_ids and k not in current]
-    if not lost:
-        return []
-    return ["확인한 조각 언급 %d건이 도면이나 문서 판이 바뀌어 다시 후보가 됨 — 재확인 필요" % len(lost)]
+    old_ids = {n["id"] for d in replaced for n in d["nodes"] if n.get("node_type") == "doc_chunk"}
+    old = [k for k, r in (judgements or {}).items() if r["link_status"] == "confirmed" and r.get("chunk_id") in old_ids]
+    out = []
+    if lost:
+        out.append("확인한 조각 언급 %d건이 도면이나 문서 판이 바뀌어 다시 후보가 됨 — 재확인 필요" % len(lost))
+    if old:
+        out.append("옛 판 문서에서 확인한 조각 언급 %d건은 새 판이 대신해 지식그래프에서 빠짐 — 새 판에서 재확인 필요(확인 기록은 그대로 둠)" % len(old))
+    return out
 
 
-def assemble(project_id, graphs, documents, csv_dir=None, graph_notes=()):
+def assemble(project_id, graphs, documents, csv_dir=None, graph_notes=(), replaced=()):
     """입력 -> (knowledge dict, notes). knowledge는 hazop.kg.inputs.load_knowledge와 같은 계약에 pid_graphs를 더한 것.
     notes(같은 도면 ID 여럿, 연결하지 않은 태그)는 inputs.notes에도 남겨 결과 파일에서 볼 수 있게 한다."""
     nodes, links, ins = [], [], {"assembler": "%s %s" % (ASSEMBLER, ASSEMBLER_VERSION)}
@@ -215,10 +278,12 @@ def assemble(project_id, graphs, documents, csv_dir=None, graph_notes=()):
     taken = {l.get("id") for l in links}
     mentions = mention_links(documents, graphs, judgements)
     links += [l for l in mentions if l["id"] not in taken]
-    notes += _lost_judgements(documents, mentions, judgements)
+    notes += _lost_judgements(documents, mentions, judgements, replaced)
     ins["notes"] = notes
     ins["documents"] = [{"material_id": d["material_id"], "registration_version": d["registration_version"],
                          "source_sha256": d.get("source_sha256"), "extractor": d["extractor"]} for d in documents]
+    if replaced:
+        ins["replaced_documents"] = [{"material_id": d["material_id"], "registration_version": d["registration_version"]} for d in replaced]
     knowledge = {"schema_version": inputs.SCHEMA_VERSION, "project_id": project_id, "kg_id": "kg-%s" % project_id,
                  "inputs": ins, "pid_graphs": [g["graph_id"] for g in graphs], "nodes": nodes, "links": links}
     return knowledge, notes
@@ -226,11 +291,16 @@ def assemble(project_id, graphs, documents, csv_dir=None, graph_notes=()):
 
 def build_project(project_id, graph_root, doc_root, csv_root, out_root):
     """프로젝트 하나를 조립·빌드·저장한다. 반환 {"kg", "dir", "notes"}. 도면도 문서도 없으면 ValueError."""
+    with BUILD_LOCK:
+        return _build_project(project_id, graph_root, doc_root, csv_root, out_root)
+
+
+def _build_project(project_id, graph_root, doc_root, csv_root, out_root):
     graphs, notes = project_graphs(project_id, graph_root)
-    documents = project_documents(project_id, doc_root)
+    documents, replaced = split_documents(project_id, doc_root)
     if not graphs and not documents:
         raise ValueError("프로젝트 %s에 추출한 도면도 등록한 문서도 없음" % project_id)
-    knowledge, notes = assemble(project_id, graphs, documents, paths.safe_join(csv_root, project_id), notes)
+    knowledge, notes = assemble(project_id, graphs, documents, paths.safe_join(csv_root, project_id), notes, replaced)
     kg = build.build_kg(knowledge, graphs)
     out = build.write_outputs(paths.safe_join(out_root, paths.safe_name(knowledge["kg_id"])), knowledge, kg)
     return {"kg": kg, "dir": out, "notes": notes}

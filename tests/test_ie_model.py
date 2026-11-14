@@ -54,7 +54,7 @@ class BugPathTest(unittest.TestCase):
     def test_unapproved_member_cannot_be_confirmed(self):
         r, _, _, doc = fresh()
         doc, gid = model.create_group(doc, "주급수 상실", [iec(doc, r, "c1")], at=AT)
-        r = res.edit_entry(r, *where(r, "c1"), {"cause": "다른 원인"}, at=AT)
+        r = res.edit_entry(r, *where(r, "c1"), {"cause": "다른 원인"}, at=AT, reason="시험 사유")
         self.assertIn("%s: ⑤ 승인 풀림" % iec(doc, r, "c1"), model.confirm_problems(doc, gid, r))
         with self.assertRaisesRegex(ValueError, "승인 풀림"):
             model.confirm(doc, gid, r, "김검토", at=AT)
@@ -64,7 +64,7 @@ class BugPathTest(unittest.TestCase):
         r, _, _, doc = fresh()
         doc, gid = model.create_group(doc, "주급수 상실", [iec(doc, r, "c1")], at=AT)
         doc = model.confirm(doc, gid, r, "김검토", at=AT)
-        r = res.edit_entry(r, *where(r, "c1"), {"consequence": "증기발생기 수위 저하"}, at=AT)
+        r = res.edit_entry(r, *where(r, "c1"), {"consequence": "증기발생기 수위 저하"}, at=AT, reason="시험 사유")
         self.assertEqual(model.effective_status(doc, gid, r), "draft")
         r = res.set_status(r, *where(r, "c1"), "approved", at=AT)
         self.assertEqual(model.confirm_problems(doc, gid, r), [])
@@ -193,7 +193,7 @@ class FollowupTest(unittest.TestCase):
         doc = model.attach(doc, gid, ("heading", h), at=AT)
         doc = model.confirm(doc, gid, r, "김검토", at=AT)
         self.assertEqual(model.effective_status(doc, gid, r), "confirmed")
-        r = res.set_status(r, *where(r, "c1"), "revised", at=AT)
+        r = res.set_status(r, *where(r, "c1"), "revised", reason="시험 사유", at=AT)
         self.assertTrue(any(h in p and "승인" in p for p in model.confirm_problems(doc, gid, r)))
         self.assertEqual(model.effective_status(doc, gid, r), "draft")
         g = next(x for x in ib.build_bundle(r, ns, pg, model.sync(doc, r, at=AT), AT)["groups"] if x["group_id"] == gid)
@@ -247,7 +247,7 @@ class FollowupTest(unittest.TestCase):
         r, _, _, doc = fresh()
         doc, gid = model.create_group(doc, "주급수 상실", [iec(doc, r, "c1")], at=AT)
         doc = model.confirm(doc, gid, r, "김검토", at=AT)
-        r = res.set_status(r, *where(r, "c1"), "revised", at=AT)
+        r = res.set_status(r, *where(r, "c1"), "revised", reason="시험 사유", at=AT)
         self.assertEqual(model.effective_status(doc, gid, r), "draft")
         r = res.set_status(r, *where(r, "c1"), "approved", at=AT)
         self.assertEqual(model.effective_status(doc, gid, r), "confirmed")
@@ -266,7 +266,7 @@ class IdStabilityTest(unittest.TestCase):
         r, ns, pg, doc = fresh()
         target = iec(doc, r, "c4")
         b0 = ib.build_bundle(r, ns, pg, doc, AT)
-        r = res.set_status(r, *where(r, "a1"), "revised", at=AT)       # 앞쪽 승인이 풀림
+        r = res.set_status(r, *where(r, "a1"), "revised", reason="시험 사유", at=AT)       # 앞쪽 승인이 풀림
         r = res.set_status(r, *where(r, "a2"), "approved", at=AT)      # 다른 항목이 새로 승인
         doc = model.sync(doc, r, at=AT)
         self.assertEqual(iec(doc, r, "c4"), target)
@@ -372,9 +372,9 @@ class Walk:
         loc = (f["node_id"], f["deviation_id"], model.entry_of_key(key))
         op = rng.choice(("edit", "approve", "approve", "revise", "hint"))
         if op == "edit":
-            self.r = res.edit_entry(self.r, *loc, {"cause": "원인 %d" % rng.randint(0, 9)}, at=AT)
+            self.r = res.edit_entry(self.r, *loc, {"cause": "원인 %d" % rng.randint(0, 9)}, at=AT, reason="시험 사유")
         elif op in ("approve", "revise"):
-            self.r = res.set_status(self.r, *loc, "approved" if op == "approve" else "revised", at=AT)
+            self.r = res.set_status(self.r, *loc, "approved" if op == "approve" else "revised", reason="시험 사유", at=AT)
         else:
             self.r = res.set_ie_hint(self.r, *loc, dict(HUMAN_YES, candidate=rng.choice(("yes", "yes", "undecided")),
                                                         category=rng.choice(("LOMFW", "LOIA"))), at=AT)

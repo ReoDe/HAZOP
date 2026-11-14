@@ -57,7 +57,10 @@ def save(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY):
     return save_fp(name, ops, by, drawing_number, at, expect)[0]
 
 
-def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY):
+SAVE_ACTIONS = ("save", "edit", "undo", "redo")      # log 한 줄의 action. 새 화면은 연산 하나마다 edit, 되돌리기·다시 하기를 따로 적는다
+
+
+def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY, action="save", note=None):
     """ops 전체를 저장하고 이전 파일과 비교한 op_id 증감을 log에 덧붙인다. (쓴 경로, 새 지문)을 돌려준다.
     지운 연산은 내용까지 log의 removed_ops에 남긴다(지운 사람 수정도 기록에서 찾을 수 있게).
     expect(ops를 읽을 때의 load_fp 지문)를 주면 그 뒤 파일이 바뀌었을 때 쓰지 않고 store_io.Conflict를 낸다.
@@ -75,6 +78,8 @@ def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY):
     reused = [o["op_id"] for o in ops if o["op_id"] in gone and o not in kept]  # 지운 그대로 되살리는 것(실행 취소)은 된다
     reused += [i for i, o in zip(after, ops) if i in saved and o != saved[i]]
     reused += [i for n, i in enumerate(after) if i in after[:n]]
+    if action not in SAVE_ACTIONS:
+        raise ValueError("모르는 저장 동작: %r" % (action,))
     if reused:
         raise ValueError("이미 쓴 연산 번호를 다른 연산에 쓸 수 없음: %s (새 연산은 make_op에 name을 넘겨 번호를 받을 것)"
                          % ", ".join(dict.fromkeys(reused)))
@@ -84,9 +89,9 @@ def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY):
         "drawing_number": drawing_number if drawing_number is not None else prev.get("drawing_number"),
         "ops": ops,
         "log": list(prev.get("log") or []) + [{
-            "at": at or now_utc(), "by": by, "action": "save",
+            "at": at or now_utc(), "by": by, "action": action,
             "added": [i for i in after if i not in before], "removed": [o["op_id"] for o in removed],
-            "removed_ops": removed}],
+            "removed_ops": removed, **(note or {})}],
     }
     path = store_path(name)
     return path, store_io.write_json(path, doc, expect=fp)
@@ -166,6 +171,13 @@ def _check_endpoint(value):
     if value.get("end") not in ENDS:
         raise ValueError("end는 source 또는 target이어야 함")
     _str(value, "node")
+
+
+def _check_clear_endpoint(value):
+    if value.get("end") not in ENDS:
+        raise ValueError("end는 source 또는 target이어야 함")
+    if set(value) - {"end"}:
+        raise ValueError("값은 end 하나뿐이어야 함")
 
 
 def _check_path(value):
@@ -353,6 +365,22 @@ def _apply_set_endpoint(st, kind, obj, op):
     return obj
 
 
+def _apply_clear_endpoint(st, kind, obj, op):
+    """연결 끊기: 그 끝을 기기에서 떼어 열린 끝으로 둔다(점은 그 자리에 남는다). 흐름 방향은 양 끝이 기기여야 하므로 지운다."""
+    ep = _end(obj, op["value"]["end"])
+    if not ep.get("node_local_id"):
+        raise _Skip("이미 열린 끝")
+    end = op["value"]["end"]
+    ep.update(node_local_id=None, source_object_id=None, status="unconnected", point_basis="human", constraint=None)
+    obj["flow_direction"] = None
+    st.doc["validation"]["unknowns"].append({"check": "unconnected_endpoint", "reason": "%s 끝이 도형에 붙어 있지 않음(사람이 끊음)" % end,
+                                             "source_object_id": obj["source_object_id"], "target": obj["local_id"], "field": end})
+    if any(x is obj for x in st.doc["relations"]):
+        st.doc["relations"] = [x for x in st.doc["relations"] if x is not obj]
+        st.doc["unresolved_connectors"].append(obj)     # 끝이 열린 연결은 ③에서 정상 연결로 쓰지 않는다
+    return obj
+
+
 def _apply_set_path(st, kind, obj, op):
     pts = [list(p) for p in op["value"]["points"]]
     _end(obj, "source")["point"], _end(obj, "target")["point"] = pts[0], pts[-1]
@@ -443,6 +471,7 @@ OPS = {
     "set_endpoint": OpSpec(("relation",), _check_endpoint, _apply_set_endpoint,
                            lambda u, k, v: u["check"] in ("unconnected_endpoint", "endpoint_not_node")
                            and (u.get("reason") or "").startswith(v["end"])),
+    "clear_endpoint": OpSpec(("relation",), _check_clear_endpoint, _apply_clear_endpoint, lambda u, k, v: False),
     "set_path": OpSpec(("relation",), _check_path, _apply_set_path,
                        lambda u, k, v: u.get("field") in ("bbox", "geometry")),
     "confirm": OpSpec(("node", "relation"), _check_confirm, _apply_confirm,

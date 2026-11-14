@@ -39,7 +39,7 @@ EXPECTED = {
                 "고장 위치", "관련 표제·후보", "출처", "작성", "PSA 기본사건 이름"],
     "추적표": ["구간·편차", "출처 항목 ID", "원인", "후보 ID", "판정", "그룹 ID", "표제 ID", "ES ID", "근거 KG 경로",
             "출처 문서"],
-    "완전성 대조": ["범주 코드", "범주 이름", "기준표 출처", "대응 그룹", "후보 수", "상태", "사유·처리"],
+    "완전성 대조": ["범주 코드", "범주 이름", "기준표 출처", "대응 그룹", "후보 수", "상태", "사유·처리", "MLD 가지", "MLD 대응(사람 확인·규칙 대조)", "MLD 출처"],   # MLD 3열: P5(설계 §8.2, 묶음 0.3)
     "품질 경고": ["경고", "대상", "내용", "근거"],
     "용어·출처": ["용어", "뜻", "출처"],
 }
@@ -266,11 +266,12 @@ class IeBundleTest(unittest.TestCase):
         self.assertEqual(sum(x["candidate_count"] for x in b["completeness"]),
                          sum(c["judgement"] in ("yes", "undecided") for c in b["candidates"]))
 
-    def test_source_ref_keeps_only_version_fields(self):
+    def test_source_keeps_only_version_and_node_revs(self):
         r = copy.deepcopy(self.r)
-        r["study_nodes_ref"] = dict(r["study_nodes_ref"], recommendation="권고 누출", extra={PATH: KEY})
+        r["recommendation"], r["extra"] = "권고 누출", {PATH: KEY}
         b = build(r, self.ns, self.pg)
-        self.assertEqual(set(b["source"]["study_nodes_ref"]), {"graph_version", "confirmed_at"})
+        self.assertEqual(set(b["source"]), {"graph_version", "nodes", "approved_entries", "left_out_unapproved", "excluded_drawings"})
+        self.assertEqual({tuple(sorted(x)) for x in b["source"]["nodes"]}, {("node_id", "node_rev")})
 
     def test_same_bundle_same_workbook_metadata(self):
         a, b = ix.build_workbook(self.b), ix.build_workbook(copy.deepcopy(self.b))
@@ -549,7 +550,7 @@ class IeBundleP3Test(unittest.TestCase):
         self.assertEqual(next(g for g in build(self.r, self.ns, self.pg, doc=doc)["groups"]
                               if g["group_id"] == self.gid)["status"], "confirmed")
         r = res.edit_entry(self.r, *next((c["node_id"], c["deviation_id"], "c1") for c in self.b["candidates"]
-                                         if c["entry_id"] == "c1"), {"cause": "바뀐 원인"}, at=NOW)
+                                         if c["entry_id"] == "c1"), {"cause": "바뀐 원인"}, at=NOW, reason="시험 사유")
         r = res.set_status(r, *next((c["node_id"], c["deviation_id"], "c1") for c in self.b["candidates"]
                                     if c["entry_id"] == "c1"), "approved", at=NOW)
         g = next(g for g in build(r, self.ns, self.pg, doc=doc)["groups"] if g["group_id"] == self.gid)
@@ -562,7 +563,7 @@ class IeBundleP3Test(unittest.TestCase):
     def test_unapproved_member_is_held_out_of_members_and_noted(self):
         iec = {model.entry_of_key(c["key"]): i for i, c in self.doc["candidates"].items()}
         doc, gid = model.create_group(self.doc, "사람 그룹", [iec["c4"], iec["b1c"]], at=NOW)
-        r = res.set_status(self.r, *self.where(self.r, "b1c"), "revised", at=NOW)
+        r = res.set_status(self.r, *self.where(self.r, "b1c"), "revised", reason="시험 사유", at=NOW)
         self.b = build(r, self.ns, self.pg, doc=model.sync(doc, r, at=NOW))
         g = next(x for x in self.b["groups"] if x["group_id"] == gid)
         self.assertEqual((g["members"], g["held_member_count"], g["member_count"]), ([iec["c4"]], 1, 1))
@@ -578,7 +579,7 @@ class IeBundleP3Test(unittest.TestCase):
 
     def test_records_without_an_approved_source_are_left_out(self):
         doc, hid = model.add_heading(self.doc, self.gid, {"name": "운전원 수동 급수"}, at=NOW)
-        r = res.set_status(self.r, *self.where(self.r, "c1"), "revised", at=NOW)
+        r = res.set_status(self.r, *self.where(self.r, "c1"), "revised", reason="시험 사유", at=NOW)
         b = build(r, self.ns, self.pg, doc=model.sync(doc, r, at=NOW))
         self.assertEqual(([h["heading_id"] for h in b["top_events"]], b["end_states"], b["basic_events"]),
                          ([hid], [], []), "출처 없이 사람이 쓴 표제만 남음")

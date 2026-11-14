@@ -1,0 +1,2064 @@
+{
+ "schema": "hazop_read_quality_key",
+ "version": 1,
+ "seq": 97,
+ "drawing": "9.5.4-1-S1",
+ "source_file": "097_Ch09_Fig9.5.4-1_Diesel_Fuel_Oil_Transfer_System_Flow_Diagram.pdf",
+ "page_size": [
+  1224.0,
+  792.0
+ ],
+ "regions": [
+  [
+   160.0,
+   155.0,
+   1065.0,
+   620.0
+  ]
+ ],
+ "method": "overview.png로 계통 흐름과 영역을 잡고, 도면이 있는 타일 9장(x0220~x0880, y0140~y0560)을 5px/pt로 위 왼쪽부터 읽음. 작은 기호와 이름표는 타일을 이어 붙여 2~4배로 잘라 확인(FILL 끝, V2001A, PP22A 주변, ST02A, V4103A·V4019A, HS 3011A, V4011A). 범례 1.7-1(001쪽)로 호스 연결, 바스켓 스트레이너, 유연 호스, 화염 방지기, 같은 그림 연속 화살표 모양을 대조. 기호를 다 적은 뒤 배관을 따라 connections를 적음 / 판정: 독립 두 번째 판 B와 견준 36건을 compare 그림 조각·타일·범례 1.7-1로 판정해 A를 고침(같은 쪽 안 깃발 A·C·D와 신호 오각형 제거 후 깃발 양쪽을 바로 이음, 4035A·4037A를 control_valve로, 이동설비 끝 호스 연결 추가)",
+ "verified": "2026-11-13 독립 두 판(A·B)을 견주고 어긋난 항목을 그림으로 판정. 사람 확인 전",
+ "limits": "기호 수가 적어 도면 영역 전체를 영역으로 잡음(오른쪽 위 이동설비 표와 아래 주석은 뺌). 품질등급·안전등급 마름모(CI, DII 등), INDOORS/OUTDOORS 경계, 기울기 쐐기, 플랜지 쌍은 기호로 보지 않음. 엔진 쪽 세로선(x≈951)은 공급 범위 경계로 보고 적지 않음. PP22A 둘레 1점쇄선을 공급자 배관으로 보고 릴리프 밸브 4353A의 연결을 적었으나 확신이 낮음. 계기 뿌리 밸브(V2009A, V2013A, V2014A)는 공정 배관 쪽 연결만 적고 계기 원 쪽은 충격선으로 보고 뺌. 4035A와 4037A는 범례의 자력식 감압 조절기 모양이라 control_valve로 적음. HS 3011A와 ST02A는 도면에 같은 글자가 두 곳씩 적혀 있어 그대로 둠. V2001A 하류는 이동설비용 호스 연결(s501). 흐름 화살표는 펌프 흡입, 엔진 필터 입구 2\", 분사펌프 토출 1\", 필터 세척 반환 ½\" 배관에만 있음. 같은 그림 안 연결 깃발 A·C·D는 기호로 보지 않고 깃발 양쪽 기호를 바로 이음(깃발 방향은 흐름으로 치지 않음). 제어 신호 오각형 두 개는 배관 기호가 아니라 뺌. 4035A-유연호스(필터 입구), 유연호스(세척 반환)-V4102A는 화살표가 분기점 너머에 있어 흐름을 비움",
+ "symbols": [
+  {
+   "id": "s001",
+   "kind": "vent",
+   "bbox": [
+    655.6,
+    175.6,
+    661.0,
+    180.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "일일탱크 통기관 끝(구스넥)"
+  },
+  {
+   "id": "s002",
+   "kind": "flame_arrestor",
+   "bbox": [
+    658.0,
+    190.0,
+    664.4,
+    197.6
+   ],
+   "tag": null,
+   "kind_text": "flame arrestor",
+   "attributes": {},
+   "note": "이름표 없음, 상자 안 FA는 기호 표기"
+  },
+  {
+   "id": "s007",
+   "kind": "switch",
+   "bbox": [
+    777.0,
+    217.0,
+    796.0,
+    236.6
+   ],
+   "tag": "LIS 3025A",
+   "attributes": {},
+   "note": "AHL 표기 포함, 신호선으로만 연결"
+  },
+  {
+   "id": "s008",
+   "kind": "manual_valve",
+   "bbox": [
+    647.6,
+    219.6,
+    651.8,
+    227.2
+   ],
+   "tag": "V4011A",
+   "tag_bbox": [
+    652.4,
+    216.0,
+    656.0,
+    231.0
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s009",
+   "kind": "tank",
+   "bbox": [
+    637.0,
+    242.4,
+    758.0,
+    307.5
+   ],
+   "tag": "TK02A",
+   "tag_bbox": [
+    691.6,
+    276.0,
+    704.0,
+    279.6
+   ],
+   "attributes": {},
+   "note": "DIESEL FUEL OIL DAY TANK \"A\""
+  },
+  {
+   "id": "s010",
+   "kind": "manual_valve",
+   "bbox": [
+    597.0,
+    293.2,
+    605.0,
+    297.0
+   ],
+   "tag": "V4103A",
+   "tag_bbox": [
+    594.0,
+    298.5,
+    608.0,
+    301.5
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s011",
+   "kind": "manual_valve",
+   "bbox": [
+    613.5,
+    293.2,
+    621.5,
+    297.0
+   ],
+   "tag": "V4019A",
+   "tag_bbox": [
+    611.0,
+    298.5,
+    624.5,
+    301.5
+   ],
+   "attributes": {
+    "normal_position": "LC"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text+shape"
+   }
+  },
+  {
+   "id": "s012",
+   "kind": "manual_valve",
+   "bbox": [
+    769.0,
+    293.2,
+    776.6,
+    297.2
+   ],
+   "tag": "V2001A",
+   "tag_bbox": [
+    765.5,
+    299.0,
+    780.0,
+    301.5
+   ],
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음. 하류는 이동설비용 호스 연결(s501)",
+   "position_sources": {
+    "normal_position": "shape"
+   }
+  },
+  {
+   "id": "s013",
+   "kind": "manual_valve",
+   "bbox": [
+    695.0,
+    321.0,
+    699.0,
+    329.0
+   ],
+   "tag": "V4102A",
+   "tag_bbox": [
+    700.0,
+    318.0,
+    703.6,
+    332.0
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s014",
+   "kind": "manual_valve",
+   "bbox": [
+    738.6,
+    322.0,
+    742.6,
+    330.4
+   ],
+   "tag": "V4101A",
+   "tag_bbox": [
+    743.0,
+    318.0,
+    747.0,
+    333.0
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s015",
+   "kind": "manual_valve",
+   "bbox": [
+    828.0,
+    348.0,
+    836.0,
+    352.0
+   ],
+   "tag": "V4034A",
+   "tag_bbox": [
+    825.0,
+    353.6,
+    839.4,
+    357.6
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "볼 밸브",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s016",
+   "kind": "manual_valve",
+   "bbox": [
+    899.4,
+    348.0,
+    907.0,
+    352.0
+   ],
+   "tag": "V5291A",
+   "tag_bbox": [
+    896.0,
+    353.0,
+    910.4,
+    356.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s017",
+   "kind": "strainer",
+   "bbox": [
+    916.0,
+    348.4,
+    923.0,
+    353.0
+   ],
+   "tag": "ST02A",
+   "tag_bbox": [
+    913.6,
+    354.0,
+    926.0,
+    357.6
+   ],
+   "attributes": {},
+   "note": "Y형 스트레이너. 같은 글자 ST02A가 저장탱크 출구 바스켓 스트레이너에도 적혀 있음"
+  },
+  {
+   "id": "s018",
+   "kind": "manual_valve",
+   "bbox": [
+    932.4,
+    348.0,
+    940.0,
+    352.0
+   ],
+   "tag": "V5292A",
+   "tag_bbox": [
+    929.0,
+    353.0,
+    943.6,
+    356.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s019",
+   "kind": "flexible_hose",
+   "bbox": [
+    958.0,
+    346.5,
+    976.0,
+    352.5
+   ],
+   "tag": null,
+   "kind_text": "flexible hose",
+   "attributes": {},
+   "note": "FUEL OIL PUMP INLET 쪽"
+  },
+  {
+   "id": "s020",
+   "kind": "unlisted",
+   "bbox": [
+    981.4,
+    331.2,
+    1056.8,
+    525.0
+   ],
+   "tag": "DG01A",
+   "kind_text": "diesel engine",
+   "tag_bbox": [
+    1012.4,
+    402.4,
+    1025.6,
+    406.0
+   ],
+   "attributes": {},
+   "note": "DIESEL ENGINE \"A\" (상자)"
+  },
+  {
+   "id": "s021",
+   "kind": "indicator",
+   "bbox": [
+    840.0,
+    361.0,
+    854.0,
+    373.0
+   ],
+   "tag": "PI 3024A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s022",
+   "kind": "control_valve",
+   "bbox": [
+    804.0,
+    372.0,
+    812.0,
+    385.0
+   ],
+   "tag": "4035A",
+   "tag_bbox": [
+    787.6,
+    365.6,
+    800.0,
+    377.6
+   ],
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "범례 1.7-1의 자력식 감압 조절기(PRESSURE REDUCING REGULATOR SELF-CONTAINED) 모양. 원 안 번호만 있음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
+  },
+  {
+   "id": "s024",
+   "kind": "switch",
+   "bbox": [
+    802.0,
+    395.0,
+    815.0,
+    406.4
+   ],
+   "tag": "HS 3011A",
+   "attributes": {},
+   "note": "같은 글자 HS 3011A가 PP01A 옆에도 있음"
+  },
+  {
+   "id": "s025",
+   "kind": "relief_valve",
+   "bbox": [
+    815.6,
+    413.6,
+    821.6,
+    419.6
+   ],
+   "tag": "4353A",
+   "tag_bbox": [
+    823.0,
+    401.0,
+    835.0,
+    412.4
+   ],
+   "attributes": {},
+   "note": "불확실: 펌프 둘레 1점쇄선(공급자 배관) 위 릴리프 밸브"
+  },
+  {
+   "id": "s026",
+   "kind": "switch",
+   "bbox": [
+    899.0,
+    405.0,
+    912.4,
+    418.4
+   ],
+   "tag": "PS 3035A",
+   "attributes": {},
+   "note": "옆 LL 표기"
+  },
+  {
+   "id": "s027",
+   "kind": "alarm",
+   "bbox": [
+    927.4,
+    405.0,
+    940.4,
+    418.4
+   ],
+   "tag": "PAL",
+   "kind_text": "alarm circle (PAL)",
+   "attributes": {},
+   "note": "불확실: 루프 번호 없음"
+  },
+  {
+   "id": "s028",
+   "kind": "manual_valve",
+   "bbox": [
+    748.0,
+    425.0,
+    758.0,
+    429.0
+   ],
+   "tag": "V5290A",
+   "tag_bbox": [
+    745.0,
+    429.6,
+    759.6,
+    433.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s029",
+   "kind": "strainer",
+   "bbox": [
+    764.0,
+    425.0,
+    772.0,
+    429.6
+   ],
+   "tag": "ST01A",
+   "tag_bbox": [
+    764.0,
+    430.0,
+    774.4,
+    433.6
+   ],
+   "attributes": {},
+   "note": "Y형"
+  },
+  {
+   "id": "s030",
+   "kind": "reducer",
+   "bbox": [
+    785.6,
+    425.0,
+    790.0,
+    429.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 동심 리듀서 모양(▷)"
+  },
+  {
+   "id": "s031",
+   "kind": "pump",
+   "bbox": [
+    800.0,
+    416.0,
+    812.4,
+    434.0
+   ],
+   "tag": "PP22A",
+   "tag_bbox": [
+    802.4,
+    433.0,
+    815.6,
+    437.0
+   ],
+   "attributes": {},
+   "note": "FUEL OIL FEED PUMP"
+  },
+  {
+   "id": "s032",
+   "kind": "check_valve",
+   "bbox": [
+    840.0,
+    425.0,
+    850.0,
+    429.0
+   ],
+   "tag": "V4319A",
+   "tag_bbox": [
+    837.0,
+    430.0,
+    850.0,
+    433.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s033",
+   "kind": "manual_valve",
+   "bbox": [
+    857.0,
+    425.0,
+    864.4,
+    429.0
+   ],
+   "tag": "V4320A",
+   "tag_bbox": [
+    853.6,
+    430.0,
+    868.0,
+    433.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s034",
+   "kind": "flexible_hose",
+   "bbox": [
+    958.0,
+    424.0,
+    976.0,
+    430.0
+   ],
+   "tag": null,
+   "kind_text": "flexible hose",
+   "attributes": {},
+   "note": "FUEL OIL FILTER INLET 쪽"
+  },
+  {
+   "id": "s035",
+   "kind": "control_valve",
+   "bbox": [
+    925.0,
+    439.0,
+    933.0,
+    451.6
+   ],
+   "tag": "4037A",
+   "tag_bbox": [
+    911.6,
+    432.0,
+    923.6,
+    444.0
+   ],
+   "attributes": {},
+   "note": "범례 1.7-1의 자력식 감압 조절기(PRESSURE REDUCING REGULATOR SELF-CONTAINED) 모양. 원 안 번호만 있음"
+  },
+  {
+   "id": "s037",
+   "kind": "orifice",
+   "bbox": [
+    926.6,
+    465.6,
+    931.0,
+    470.0
+   ],
+   "tag": "OR20A",
+   "tag_bbox": [
+    922.6,
+    471.0,
+    936.0,
+    474.4
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s038",
+   "kind": "flexible_hose",
+   "bbox": [
+    958.0,
+    465.0,
+    976.0,
+    471.0
+   ],
+   "tag": null,
+   "kind_text": "flexible hose",
+   "attributes": {},
+   "note": "INJECTION PUMP DISCH. 쪽"
+  },
+  {
+   "id": "s039",
+   "kind": "transmitter",
+   "bbox": [
+    930.4,
+    479.6,
+    943.6,
+    493.2
+   ],
+   "tag": "PT 3036A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s040",
+   "kind": "flexible_hose",
+   "bbox": [
+    958.0,
+    482.0,
+    976.0,
+    488.5
+   ],
+   "tag": null,
+   "kind_text": "flexible hose",
+   "attributes": {},
+   "note": "INJECTION PUMP FEEDING 쪽, PT 3036A와 이어짐"
+  },
+  {
+   "id": "s041",
+   "kind": "flexible_hose",
+   "bbox": [
+    958.0,
+    505.0,
+    976.0,
+    511.0
+   ],
+   "tag": null,
+   "kind_text": "flexible hose",
+   "attributes": {},
+   "note": "FUEL OIL FILTER CLEANING ARM RETURN 쪽"
+  },
+  {
+   "id": "s043",
+   "kind": "switch",
+   "bbox": [
+    527.4,
+    445.6,
+    540.6,
+    458.4
+   ],
+   "tag": "HS 3013A",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s044",
+   "kind": "indicator",
+   "bbox": [
+    558.0,
+    439.0,
+    571.0,
+    452.0
+   ],
+   "tag": "PI 015",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s045",
+   "kind": "vent",
+   "bbox": [
+    268.0,
+    449.0,
+    274.0,
+    453.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "저장탱크 통기관 끝(구스넥)"
+  },
+  {
+   "id": "s046",
+   "kind": "manual_valve",
+   "bbox": [
+    562.4,
+    458.0,
+    566.4,
+    470.0
+   ],
+   "tag": "V2009A",
+   "tag_bbox": [
+    567.6,
+    459.0,
+    571.6,
+    473.0
+   ],
+   "attributes": {},
+   "note": "볼 밸브, PI 015 뿌리 밸브"
+  },
+  {
+   "id": "s047",
+   "kind": "hose_connection",
+   "bbox": [
+    672.0,
+    463.0,
+    675.6,
+    466.4
+   ],
+   "tag": null,
+   "kind_text": "hose connection (coupler)",
+   "attributes": {},
+   "note": "불확실: 범례의 호스 연결 모양"
+  },
+  {
+   "id": "s048",
+   "kind": "pump",
+   "bbox": [
+    516.0,
+    474.0,
+    548.0,
+    514.0
+   ],
+   "tag": "PP02A",
+   "tag_bbox": [
+    526.0,
+    527.0,
+    536.0,
+    530.4
+   ],
+   "attributes": {},
+   "note": "DIESEL FUEL OIL TRANSFER PUMP"
+  },
+  {
+   "id": "s049",
+   "kind": "check_valve",
+   "bbox": [
+    574.0,
+    478.6,
+    582.4,
+    483.0
+   ],
+   "tag": "V1007A",
+   "tag_bbox": [
+    570.0,
+    484.0,
+    583.6,
+    488.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s050",
+   "kind": "manual_valve",
+   "bbox": [
+    589.6,
+    479.6,
+    597.6,
+    483.6
+   ],
+   "tag": "V1008A",
+   "tag_bbox": [
+    586.0,
+    484.0,
+    600.6,
+    488.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s051",
+   "kind": "flame_arrestor",
+   "bbox": [
+    271.0,
+    482.4,
+    277.0,
+    489.0
+   ],
+   "tag": null,
+   "kind_text": "flame arrestor",
+   "attributes": {},
+   "note": "이름표 없음, 상자 안 FA는 기호 표기"
+  },
+  {
+   "id": "s052",
+   "kind": "manual_valve",
+   "bbox": [
+    485.0,
+    489.0,
+    493.0,
+    492.0
+   ],
+   "tag": "V1004A",
+   "tag_bbox": [
+    482.0,
+    493.6,
+    496.6,
+    497.6
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s053",
+   "kind": "hose_connection",
+   "bbox": [
+    175.0,
+    495.5,
+    180.0,
+    500.0
+   ],
+   "tag": null,
+   "kind_text": "hose connection (fill)",
+   "attributes": {},
+   "note": "불확실: FILL 끝 모양이 작음"
+  },
+  {
+   "id": "s054",
+   "kind": "strainer",
+   "bbox": [
+    196.0,
+    495.6,
+    207.0,
+    500.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "바스켓 스트레이너 모양, 이름표 없음"
+  },
+  {
+   "id": "s055",
+   "kind": "manual_valve",
+   "bbox": [
+    217.0,
+    496.0,
+    225.0,
+    500.0
+   ],
+   "tag": "V1001A",
+   "tag_bbox": [
+    219.0,
+    500.4,
+    233.6,
+    504.0
+   ],
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
+  },
+  {
+   "id": "s056",
+   "kind": "manual_valve",
+   "bbox": [
+    325.6,
+    505.0,
+    329.6,
+    513.0
+   ],
+   "tag": "V2027A",
+   "tag_bbox": [
+    330.4,
+    501.0,
+    334.0,
+    517.0
+   ],
+   "attributes": {
+    "normal_position": "LO"
+   },
+   "note": "",
+   "position_sources": {
+    "normal_position": "text"
+   }
+  },
+  {
+   "id": "s057",
+   "kind": "tank",
+   "bbox": [
+    245.6,
+    524.0,
+    345.0,
+    580.0
+   ],
+   "tag": "TK01A",
+   "tag_bbox": [
+    288.0,
+    553.0,
+    301.6,
+    557.0
+   ],
+   "attributes": {},
+   "note": "DIESEL FUEL OIL STORAGE TANK \"A\""
+  },
+  {
+   "id": "s058",
+   "kind": "alarm",
+   "bbox": [
+    450.4,
+    523.0,
+    461.6,
+    534.0
+   ],
+   "tag": "PDAH",
+   "kind_text": "alarm circle (PDAH)",
+   "attributes": {},
+   "note": "불확실: 루프 번호 없음"
+  },
+  {
+   "id": "s059",
+   "kind": "strainer",
+   "bbox": [
+    671.6,
+    524.0,
+    676.4,
+    536.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: 바스켓 스트레이너 모양(플랜지 사이 작은 원), 이름표 없음"
+  },
+  {
+   "id": "s060",
+   "kind": "switch",
+   "bbox": [
+    518.0,
+    527.0,
+    531.0,
+    540.0
+   ],
+   "tag": "HS 3011A",
+   "attributes": {},
+   "note": "같은 글자 HS 3011A가 PP22A 옆에도 있음"
+  },
+  {
+   "id": "s061",
+   "kind": "indicator",
+   "bbox": [
+    372.0,
+    537.0,
+    391.0,
+    558.4
+   ],
+   "tag": "LTI 001A",
+   "attributes": {},
+   "note": "불확실: LTI(전송·지시), 끝 글자 I로 indicator. AHL 표기"
+  },
+  {
+   "id": "s062",
+   "kind": "switch",
+   "bbox": [
+    430.0,
+    537.0,
+    443.0,
+    549.6
+   ],
+   "tag": "PDIS 021",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s063",
+   "kind": "switch",
+   "bbox": [
+    615.0,
+    535.0,
+    628.0,
+    547.6
+   ],
+   "tag": "PS 019",
+   "attributes": {},
+   "note": "옆 LL 표기"
+  },
+  {
+   "id": "s064",
+   "kind": "indicator",
+   "bbox": [
+    636.4,
+    535.0,
+    649.6,
+    547.6
+   ],
+   "tag": "FI 031",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s065",
+   "kind": "manual_valve",
+   "bbox": [
+    415.0,
+    550.0,
+    419.0,
+    562.0
+   ],
+   "tag": "V2013A",
+   "tag_bbox": [
+    419.6,
+    550.0,
+    423.0,
+    565.0
+   ],
+   "attributes": {},
+   "note": "볼 밸브, PDIS 뿌리 밸브"
+  },
+  {
+   "id": "s066",
+   "kind": "manual_valve",
+   "bbox": [
+    464.0,
+    550.0,
+    468.0,
+    562.0
+   ],
+   "tag": "V2014A",
+   "tag_bbox": [
+    469.0,
+    545.0,
+    472.6,
+    561.0
+   ],
+   "attributes": {},
+   "note": "볼 밸브, PDIS 뿌리 밸브"
+  },
+  {
+   "id": "s067",
+   "kind": "manual_valve",
+   "bbox": [
+    672.0,
+    543.6,
+    676.0,
+    552.0
+   ],
+   "tag": "V2010A",
+   "tag_bbox": [
+    677.0,
+    540.0,
+    681.0,
+    555.0
+   ],
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
+  },
+  {
+   "id": "s068",
+   "kind": "pump",
+   "bbox": [
+    516.0,
+    553.0,
+    548.0,
+    585.6
+   ],
+   "tag": "PP01A",
+   "tag_bbox": [
+    525.0,
+    591.0,
+    538.4,
+    594.4
+   ],
+   "attributes": {},
+   "note": "DIESEL FUEL OIL TRANSFER PUMP"
+  },
+  {
+   "id": "s069",
+   "kind": "check_valve",
+   "bbox": [
+    564.4,
+    555.0,
+    572.0,
+    559.0
+   ],
+   "tag": "V1005A",
+   "tag_bbox": [
+    559.6,
+    559.0,
+    573.6,
+    563.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s070",
+   "kind": "manual_valve",
+   "bbox": [
+    579.6,
+    555.0,
+    587.0,
+    559.0
+   ],
+   "tag": "V1006A",
+   "tag_bbox": [
+    578.0,
+    559.0,
+    593.0,
+    563.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s071",
+   "kind": "flow_element",
+   "bbox": [
+    640.6,
+    554.5,
+    645.0,
+    559.0
+   ],
+   "tag": "FE 031",
+   "tag_bbox": [
+    636.0,
+    574.0,
+    649.6,
+    587.0
+   ],
+   "attributes": {},
+   "note": "배관 위 플랜지 쌍. 원 안 글자가 'FE 031'과 '031FE'로 겹쳐 찍힘"
+  },
+  {
+   "id": "s073",
+   "kind": "manual_valve",
+   "bbox": [
+    356.0,
+    569.6,
+    364.0,
+    573.0
+   ],
+   "tag": "V1002A",
+   "tag_bbox": [
+    352.4,
+    574.0,
+    367.0,
+    578.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s074",
+   "kind": "manual_valve",
+   "bbox": [
+    422.0,
+    569.6,
+    429.6,
+    573.0
+   ],
+   "tag": "V1009A",
+   "tag_bbox": [
+    418.0,
+    574.0,
+    432.6,
+    578.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s075",
+   "kind": "strainer",
+   "bbox": [
+    434.0,
+    569.0,
+    440.0,
+    574.0
+   ],
+   "tag": "ST02A",
+   "tag_bbox": [
+    434.0,
+    563.0,
+    446.4,
+    567.0
+   ],
+   "attributes": {},
+   "note": "바스켓 스트레이너. 같은 글자 ST02A가 엔진 쪽 Y형 스트레이너에도 적혀 있음"
+  },
+  {
+   "id": "s076",
+   "kind": "manual_valve",
+   "bbox": [
+    452.0,
+    569.6,
+    459.6,
+    573.2
+   ],
+   "tag": "V1010A",
+   "tag_bbox": [
+    448.4,
+    574.4,
+    463.0,
+    578.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s077",
+   "kind": "manual_valve",
+   "bbox": [
+    486.0,
+    569.6,
+    493.6,
+    573.2
+   ],
+   "tag": "V1003A",
+   "tag_bbox": [
+    482.6,
+    574.4,
+    497.0,
+    578.0
+   ],
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s078",
+   "kind": "temperature_element",
+   "bbox": [
+    331.6,
+    588.4,
+    345.0,
+    601.4
+   ],
+   "tag": "TEW 003",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s079",
+   "kind": "manual_valve",
+   "bbox": [
+    439.0,
+    598.4,
+    447.0,
+    602.4
+   ],
+   "tag": "V2012A",
+   "tag_bbox": [
+    436.0,
+    603.0,
+    450.4,
+    607.0
+   ],
+   "attributes": {
+    "normal_position": "NC"
+   },
+   "note": "불확실: 몸통이 검게 칠해짐(범례상 평상시 닫힘)이나 글자 표기는 없음",
+   "position_sources": {
+    "normal_position": "shape"
+   }
+  },
+  {
+   "id": "s080",
+   "kind": "indicator",
+   "bbox": [
+    331.6,
+    601.6,
+    345.0,
+    614.4
+   ],
+   "tag": "TI 003",
+   "attributes": {},
+   "note": ""
+  },
+  {
+   "id": "s501",
+   "kind": "hose_connection",
+   "kind_text": "hose connection (coupler)",
+   "bbox": [
+    808.0,
+    291.0,
+    813.0,
+    299.0
+   ],
+   "tag": null,
+   "attributes": {},
+   "note": "불확실: FOR MOBILE EQUIPMENT 배관 끝. 범례 HOSE CONNECTION(COUPLER) 모양(V2010A 쪽 OUTDOORS 끝과 같은 모양)"
+  }
+ ],
+ "lines": [
+  {
+   "id": "l001",
+   "at": [
+    755.5,
+    168.4
+   ],
+   "text_bbox": [
+    754.0,
+    165.0,
+    757.0,
+    168.0
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l002",
+   "at": [
+    755.5,
+    183.6
+   ],
+   "text_bbox": [
+    754.0,
+    180.4,
+    757.0,
+    183.0
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l003",
+   "at": [
+    661.0,
+    206.0
+   ],
+   "text_bbox": [
+    657.6,
+    204.4,
+    660.0,
+    209.0
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l004",
+   "at": [
+    614.0,
+    214.0
+   ],
+   "text_bbox": [
+    612.0,
+    210.0,
+    616.0,
+    213.0
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l005",
+   "at": [
+    620.0,
+    256.6
+   ],
+   "text_bbox": [
+    617.0,
+    252.4,
+    624.0,
+    256.0
+   ],
+   "size": "2½\""
+  },
+  {
+   "id": "l006",
+   "at": [
+    577.5,
+    295.0
+   ],
+   "text_bbox": [
+    575.0,
+    290.4,
+    580.0,
+    294.0
+   ],
+   "size": "2½\""
+  },
+  {
+   "id": "l007",
+   "at": [
+    763.0,
+    295.2
+   ],
+   "text_bbox": [
+    761.0,
+    291.6,
+    765.0,
+    295.0
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l008",
+   "at": [
+    740.6,
+    342.0
+   ],
+   "text_bbox": [
+    736.0,
+    340.0,
+    739.6,
+    344.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l009",
+   "at": [
+    853.0,
+    350.0
+   ],
+   "text_bbox": [
+    851.0,
+    345.6,
+    855.0,
+    349.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l010",
+   "at": [
+    786.0,
+    383.0
+   ],
+   "text_bbox": [
+    784.4,
+    377.6,
+    788.0,
+    380.6
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l011",
+   "at": [
+    863.0,
+    383.0
+   ],
+   "text_bbox": [
+    861.0,
+    378.4,
+    864.4,
+    381.6
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l012",
+   "at": [
+    799.5,
+    420.0
+   ],
+   "text_bbox": [
+    794.4,
+    417.0,
+    798.0,
+    422.4
+   ],
+   "size": "3/4\""
+  },
+  {
+   "id": "l013",
+   "at": [
+    732.5,
+    427.0
+   ],
+   "text_bbox": [
+    731.0,
+    422.0,
+    734.4,
+    425.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l014",
+   "at": [
+    888.0,
+    427.0
+   ],
+   "text_bbox": [
+    886.0,
+    422.4,
+    890.0,
+    425.0
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l015",
+   "at": [
+    942.0,
+    448.0
+   ],
+   "text_bbox": [
+    940.0,
+    444.4,
+    943.6,
+    447.6
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l016",
+   "at": [
+    892.0,
+    468.0
+   ],
+   "text_bbox": [
+    890.0,
+    463.6,
+    893.6,
+    467.0
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l017",
+   "at": [
+    936.0,
+    468.0
+   ],
+   "text_bbox": [
+    934.0,
+    463.6,
+    937.6,
+    467.0
+   ],
+   "size": "1\""
+  },
+  {
+   "id": "l018",
+   "at": [
+    838.0,
+    508.2
+   ],
+   "text_bbox": [
+    836.0,
+    502.0,
+    840.0,
+    505.6
+   ],
+   "size": "½\""
+  },
+  {
+   "id": "l019",
+   "at": [
+    570.0,
+    481.6
+   ],
+   "text_bbox": [
+    568.0,
+    477.0,
+    572.0,
+    480.0
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l020",
+   "at": [
+    475.5,
+    533.0
+   ],
+   "text_bbox": [
+    471.0,
+    530.6,
+    474.4,
+    535.0
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l021",
+   "at": [
+    594.0,
+    556.6
+   ],
+   "text_bbox": [
+    592.4,
+    552.4,
+    596.4,
+    555.6
+   ],
+   "size": "2\""
+  },
+  {
+   "id": "l022",
+   "at": [
+    214.0,
+    498.0
+   ],
+   "text_bbox": [
+    212.4,
+    494.4,
+    216.0,
+    497.6
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l023",
+   "at": [
+    273.6,
+    503.0
+   ],
+   "text_bbox": [
+    270.0,
+    501.0,
+    273.6,
+    505.6
+   ],
+   "size": "3\""
+  },
+  {
+   "id": "l024",
+   "at": [
+    327.6,
+    496.0
+   ],
+   "text_bbox": [
+    321.0,
+    492.0,
+    325.0,
+    500.0
+   ],
+   "size": "2½\""
+  },
+  {
+   "id": "l025",
+   "at": [
+    390.0,
+    571.4
+   ],
+   "text_bbox": [
+    387.6,
+    567.0,
+    391.6,
+    570.4
+   ],
+   "size": "3\""
+  }
+ ],
+ "connections": [
+  {
+   "a": "s008",
+   "b": "s009",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s002",
+   "flow": null
+  },
+  {
+   "a": "s002",
+   "b": "s001",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s012",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s011",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s010",
+   "flow": null
+  },
+  {
+   "a": "s011",
+   "b": "s010",
+   "flow": null
+  },
+  {
+   "a": "s010",
+   "b": "s056",
+   "flow": null
+  },
+  {
+   "a": "s056",
+   "b": "s057",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s013",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s014",
+   "flow": null
+  },
+  {
+   "a": "s014",
+   "b": "s015",
+   "flow": null
+  },
+  {
+   "a": "s015",
+   "b": "s016",
+   "flow": null
+  },
+  {
+   "a": "s016",
+   "b": "s017",
+   "flow": null
+  },
+  {
+   "a": "s017",
+   "b": "s018",
+   "flow": null
+  },
+  {
+   "a": "s018",
+   "b": "s019",
+   "flow": null
+  },
+  {
+   "a": "s019",
+   "b": "s020",
+   "flow": null
+  },
+  {
+   "a": "s013",
+   "b": "s028",
+   "flow": null
+  },
+  {
+   "a": "s013",
+   "b": "s041",
+   "flow": null
+  },
+  {
+   "a": "s028",
+   "b": "s041",
+   "flow": "b_to_a"
+  },
+  {
+   "a": "s028",
+   "b": "s029",
+   "flow": null
+  },
+  {
+   "a": "s029",
+   "b": "s030",
+   "flow": null
+  },
+  {
+   "a": "s030",
+   "b": "s031",
+   "flow": null
+  },
+  {
+   "a": "s030",
+   "b": "s025",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s025",
+   "flow": null
+  },
+  {
+   "a": "s031",
+   "b": "s032",
+   "flow": null
+  },
+  {
+   "a": "s025",
+   "b": "s032",
+   "flow": null
+  },
+  {
+   "a": "s032",
+   "b": "s033",
+   "flow": null
+  },
+  {
+   "a": "s033",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s033",
+   "b": "s034",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s022",
+   "b": "s034",
+   "flow": null
+  },
+  {
+   "a": "s034",
+   "b": "s020",
+   "flow": null
+  },
+  {
+   "a": "s038",
+   "b": "s020",
+   "flow": null
+  },
+  {
+   "a": "s040",
+   "b": "s020",
+   "flow": null
+  },
+  {
+   "a": "s041",
+   "b": "s020",
+   "flow": null
+  },
+  {
+   "a": "s038",
+   "b": "s037",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s038",
+   "b": "s035",
+   "flow": null
+  },
+  {
+   "a": "s037",
+   "b": "s035",
+   "flow": null
+  },
+  {
+   "a": "s053",
+   "b": "s054",
+   "flow": null
+  },
+  {
+   "a": "s054",
+   "b": "s055",
+   "flow": null
+  },
+  {
+   "a": "s055",
+   "b": "s057",
+   "flow": null
+  },
+  {
+   "a": "s057",
+   "b": "s051",
+   "flow": null
+  },
+  {
+   "a": "s051",
+   "b": "s045",
+   "flow": null
+  },
+  {
+   "a": "s057",
+   "b": "s073",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s065",
+   "flow": null
+  },
+  {
+   "a": "s073",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s079",
+   "b": "s065",
+   "flow": null
+  },
+  {
+   "a": "s079",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s065",
+   "b": "s074",
+   "flow": null
+  },
+  {
+   "a": "s074",
+   "b": "s075",
+   "flow": null
+  },
+  {
+   "a": "s075",
+   "b": "s076",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s066",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s052",
+   "flow": null
+  },
+  {
+   "a": "s076",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s066",
+   "b": "s079",
+   "flow": null
+  },
+  {
+   "a": "s066",
+   "b": "s052",
+   "flow": null
+  },
+  {
+   "a": "s066",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s079",
+   "b": "s052",
+   "flow": null
+  },
+  {
+   "a": "s079",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s052",
+   "b": "s077",
+   "flow": null
+  },
+  {
+   "a": "s052",
+   "b": "s048",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s077",
+   "b": "s068",
+   "flow": "a_to_b"
+  },
+  {
+   "a": "s048",
+   "b": "s046",
+   "flow": null
+  },
+  {
+   "a": "s048",
+   "b": "s049",
+   "flow": null
+  },
+  {
+   "a": "s046",
+   "b": "s049",
+   "flow": null
+  },
+  {
+   "a": "s049",
+   "b": "s050",
+   "flow": null
+  },
+  {
+   "a": "s068",
+   "b": "s069",
+   "flow": null
+  },
+  {
+   "a": "s069",
+   "b": "s070",
+   "flow": null
+  },
+  {
+   "a": "s050",
+   "b": "s070",
+   "flow": null
+  },
+  {
+   "a": "s050",
+   "b": "s071",
+   "flow": null
+  },
+  {
+   "a": "s070",
+   "b": "s071",
+   "flow": null
+  },
+  {
+   "a": "s071",
+   "b": "s067",
+   "flow": null
+  },
+  {
+   "a": "s067",
+   "b": "s059",
+   "flow": null
+  },
+  {
+   "a": "s059",
+   "b": "s047",
+   "flow": null
+  },
+  {
+   "a": "s012",
+   "b": "s501",
+   "flow": null
+  },
+  {
+   "a": "s008",
+   "b": "s067",
+   "flow": null
+  },
+  {
+   "a": "s008",
+   "b": "s071",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s022",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s037",
+   "flow": null
+  },
+  {
+   "a": "s009",
+   "b": "s035",
+   "flow": null
+  }
+ ],
+ "continuations": [],
+ "position_conflicts": []
+}

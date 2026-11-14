@@ -12,9 +12,10 @@
 import hashlib
 import json
 import os
+import threading
 
 from hazop import paths, store_io
-from hazop.graph import project
+from hazop.graph import project, sources
 from hazop.study import migrate
 from hazop.study import nodes as sn
 from hazop.study import results as res
@@ -47,16 +48,77 @@ def boundary_text(n):
 
 
 _NAMES = {}
+NAMES_CACHE_VERSION = 1
+_NAMES_LOCK = threading.Lock()
+
+
+def _names_file():
+    return paths.folder("cache", "graph-names.json")
+
+
+def _names_fingerprint(project_id, key):
+    """도면 이름 사전을 디스크에 남길 때의 지문: 프로젝트 그래프 입력(key)에, 이름을 고를 때 읽는 추출 결과의 형식(sources.source_format)이 바뀌는지 보려는 extraction.json의 (시각, 크기)를 더한다.
+    143쪽 graph.json(수십 MB)을 열지 않고 stat만 본다."""
+    extract_root = paths.output_root("extract")
+    stats = []
+    root = paths.output_root("graph")
+    for n in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        try:
+            st = os.stat(os.path.join(extract_root, n, "extraction.json"))
+            stats.append((n, st.st_mtime_ns, st.st_size))
+        except OSError:
+            stats.append((n, None, None))
+    return hashlib.sha256(json.dumps([NAMES_CACHE_VERSION, project_id, key, stats], default=str).encode("utf-8")).hexdigest()
+
+
+def _names_from_disk(project_id, fp):
+    try:
+        with open(_names_file(), encoding="utf-8") as fh:
+            hit = (json.load(fh).get("entries") or {}).get(project_id)
+    except (OSError, ValueError, AttributeError):
+        return None
+    if isinstance(hit, dict) and hit.get("fp") == fp and isinstance(hit.get("names"), dict) and hit["names"]:
+        return {str(k): str(v) for k, v in hit["names"].items()}
+    return None
+
+
+def _names_to_disk(project_id, fp, names):
+    """도면 이름 사전을 캐시 파일에 남긴다(캐시일 뿐이라 쓰지 못해도 넘어간다). 비어 있으면 남기지 않는다."""
+    if not names:
+        return
+    f = _names_file()
+    with _NAMES_LOCK:
+        try:
+            with open(f, encoding="utf-8") as fh:
+                doc = json.load(fh)
+            entries = doc.get("entries") if doc.get("version") == NAMES_CACHE_VERSION else None
+        except (OSError, ValueError, AttributeError):
+            entries = None
+        entries = entries if isinstance(entries, dict) else {}
+        entries[project_id] = {"fp": fp, "names": names}
+        tmp = "%s.%d.tmp" % (f, os.getpid())
+        try:
+            os.makedirs(os.path.dirname(f), exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump({"version": NAMES_CACHE_VERSION, "entries": entries}, fh, ensure_ascii=False)
+            os.replace(tmp, f)
+        except OSError:
+            pass
 
 
 def graph_names(project_id):
     """{도면 graph_id: output/graph 폴더 이름(= ②④⑤ 도면 고르기 이름)}. 이 프로젝트 도면만, 같은 graph_id면 가장 최근 것
-    (project.load가 고르는 판과 같은 규칙). 입력 파일 지문이 같으면 다시 읽지 않는다."""
+    (project.load가 고르는 판과 같은 규칙). 입력 파일 지문이 같으면 다시 읽지 않는다(메모리, 그리고 앱을 새로 켠 뒤에도
+    쓰도록 작업 루트의 캐시 파일. 143쪽 graph.json을 모두 읽는 데 1초 안팎이 걸려 열기가 느려지는 것을 막는다)."""
     key = _graph_inputs(project_id)
     hit = _NAMES.get(project_id)
     if hit is not None and hit[0] == key:
         return dict(hit[1])
-    out = _read_graph_names(project_id)
+    fp = _names_fingerprint(project_id, key)
+    out = _names_from_disk(project_id, fp)
+    if out is None:
+        out = _read_graph_names(project_id)
+        _names_to_disk(project_id, fp, out)
     _NAMES[project_id] = (key, out)
     return dict(out)
 
@@ -73,7 +135,8 @@ def _graph_inputs(project_id):
     """project.load가 읽는 파일의 (경로, 바뀐 시각, 크기). 하나라도 바뀌면 프로젝트 그래프를 다시 짓는다."""
     root = paths.output_root("graph")
     files = [os.path.join(root, n, "graph.json") for n in sorted(os.listdir(root))] if os.path.isdir(root) else []
-    files += [project.manual_path(project_id), paths.folder("APR1400", project.SYSTEM_CODES_FILE)]
+    files += [project.manual_path(project_id), paths.folder("APR1400", project.SYSTEM_CODES_FILE),
+              sources.choices_path(project_id)]      # 같은 번호의 어느 형식을 쓸지 고른 기록(바뀌면 그래프를 다시 짓는다)
     out = []
     for f in files:
         try:
@@ -86,13 +149,20 @@ def _graph_inputs(project_id):
 
 def project_graph(project_id):
     """프로젝트 그래프. 화면을 옮길 때마다 143쪽을 다시 읽고 짓지 않게, 입력 파일 지문이 같으면 지은 것을 그대로 준다.
-    돌려준 dict는 여러 화면이 함께 쓰므로 고치지 않는다(읽기 전용)."""
+    돌려준 dict는 여러 화면이 함께 쓰므로 고치지 않는다(읽기 전용).
+    먼저 사람 고침·AI 수락 뒤 다시 만들지 못한 도면 그래프(낡은 그래프 표시)를 다시 만들어 본다(쪽 확정·구간·내보내기가 고치기 전 graph.json으로 짓지 않게)."""
+    try:
+        from hazop.shell import sheet_refresh
+        sheet_refresh.ensure_project(project_id)
+    except ImportError:
+        pass
     key = _graph_inputs(project_id)
     hit = _PROJECT_GRAPHS.get(project_id)
     if hit is not None and hit[0] == key:
         return hit[1]
     pg, names = project.load_with_names(project_id)
     _NAMES[project_id] = (key, names)  # 같은 파일을 읽어 고른 이름(graph_names가 다시 읽지 않게)
+    _names_to_disk(project_id, _names_fingerprint(project_id, key), names)
     if hit is not None:  # 옛 그래프를 붙잡은 표기 사본은 버린다(143쪽 그래프가 메모리에 여러 벌 남지 않게)
         for k in [k for k, v in _VIEWS.items() if v[0] is hit[1]]:
             del _VIEWS[k]
@@ -249,7 +319,7 @@ def _old_sets(pg):
         g = {"graph_id": s["graph_id"],
              "project_id": None if pg["project_id"] == project.UNREGISTERED_PROJECT else pg["project_id"]}
         try:
-            old = sn.load(g)
+            old = sn.read_as_is(g)  # 옛 도면별 파일은 0.1 그대로 읽는다(바꾸지 않음)
         except (OSError, ValueError):
             continue
         if old and old.get("graph_id") == s["graph_id"]:
@@ -295,13 +365,15 @@ def migrate_sets(pg):
 def migrate_results(pg, node_set):
     """확정된 프로젝트 집합에 프로젝트 결과가 없고 옛 도면별 결과가 있으면 백업 뒤 옮겨 저장한다.
     (결과, 알림 글) 또는 None. 대응 없는 옛 칸이 있으면 쓰지 않고 (None, 사유)."""
-    if node_set.get("status") != "confirmed" or os.path.isfile(res.store_path(node_set["project_id"], node_set["graph_id"])):
+    if not sn.all_confirmed(node_set) or os.path.isfile(res.store_path(node_set["project_id"], node_set["graph_id"])):
         return None
     olds = _old_sets(pg)
     old_results, files = [], []
     for g, o in olds:
         try:
-            r = res.load(o)
+            r = res.read(res._readable_path(g.get("project_id"), g["graph_id"]))  # 옛 도면별 결과(0.1) 그대로
+            if r is not None and r.get("graph_id") != g["graph_id"]:
+                raise ValueError("다른 도면의 분석 결과")
         except (OSError, ValueError) as exc:  # 일부만 옮기면 남은 결과는 프로젝트 결과가 생긴 뒤 다시 옮길 수 없다
             return None, "옛 분석 결과를 옮기지 않음: %s 결과를 읽을 수 없음(%s). 옛 파일은 그대로 있습니다." % (g["graph_id"], exc)
         if r:

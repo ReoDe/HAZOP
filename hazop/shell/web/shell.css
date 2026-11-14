@@ -1,0 +1,95 @@
+/* 새 화면 틀에서만 쓰는 덧붙임(app.css는 시안의 스타일). */
+.app.chat-collapsed { grid-template-columns: var(--rail-w) minmax(0, 1fr) 36px; }
+.chat.collapsed { align-items: center; padding-top: var(--sp-2); position: relative; }
+.chat.collapsed .dot-new { position: absolute; top: 8px; right: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--warn-line); box-shadow: 0 0 0 2px var(--surface); }
+.chat-input { flex: 1; border: 0; outline: 0; resize: none; font: inherit; color: var(--ink); background: transparent; min-height: 40px; }
+.chat-input:disabled { color: var(--faint); }
+.box:focus-within { border-color: var(--accent); }
+.send:disabled { background: var(--line-input); cursor: default; }
+.send.stop { background: var(--err); border: 0; cursor: pointer; }
+.send { border: 0; cursor: pointer; }
+.foot .dot.ok { background: var(--ok); }
+.foot .dot.warn { background: var(--warn-line); }
+.foot .dot.err { background: var(--err); }
+.foot .dot.plain { background: var(--line-input); }
+.rail .conn.warn { background: var(--warn-line); }
+.rail .conn.err { background: var(--err); }
+.rail .conn.plain { background: var(--line-input); }
+.drop { cursor: pointer; }
+.drop.over { border-color: var(--accent); background: var(--accent-weak); }
+.drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toast.err { background: var(--err); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
+.chip.id.warn { border-color: var(--warn-line); }
+button.chip { font-family: inherit; }
+.src p { margin: 0; }
+.steps .btn.ghost { padding: 0 6px; }
+.rail button:focus-visible, .btn:focus-visible, .chip:focus-visible, .send:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="text"], input[type="number"], textarea { font: inherit; border: 1px solid var(--line-input); border-radius: var(--r-sm); padding: 0 10px; color: var(--ink); background: var(--surface); }
+input[type="text"]:focus, input[type="number"]:focus { border-color: var(--accent); outline: 0; }
+/* 고르기 상자(select)도 입력칸과 같은 모양: 브라우저 기본 모양 대신 같은 높이·테두리·글자에 화살표만 얹는다 */
+select { font: inherit; font-size: var(--fs-sm); height: 30px; border: 1px solid var(--line-input); border-radius: var(--r-sm); padding: 0 28px 0 10px; color: var(--ink); cursor: pointer;
+  background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23667085' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 9px center; appearance: none; -webkit-appearance: none; }
+select:focus { border-color: var(--accent); outline: 0; }
+select:disabled { color: var(--faint); cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.examples .chip { white-space: normal; height: auto; min-height: 24px; padding: 3px 9px; text-align: left; line-height: 1.35; max-width: 100%; }
+
+/* 채팅이 제안한 동작의 상자(적용함·확인·거절) */
+.actlist { display: flex; flex-direction: column; gap: var(--sp-2); }
+.actbox { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); }
+.actbox p { margin: var(--sp-1) 0 var(--sp-2); white-space: pre-wrap; }
+.actbox-h { display: flex; align-items: center; gap: 6px; }
+.actbox.applied, .actbox.candidate { border-color: var(--ok); }
+.actbox.applied .actbox-h .ic, .actbox.candidate .actbox-h .ic { color: var(--ok); }
+.actbox.confirm { border-color: var(--warn-line); background: var(--warn-bg); }
+.actbox.confirm .actbox-h .ic { color: var(--warn); }
+
+/* 패널을 감싸는 틀: 묶음 탭이 있으면 위에 붙는다. 넓은 패널(.panel.wide)이면 틀도 도면 칸 전체를 덮는다 */
+.pwrap { position: absolute; top: 0; bottom: 0; left: 0; width: var(--panel-w); z-index: 6; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--line); box-shadow: var(--sh-3); }
+.pwrap:has(> .panel.wide) { width: auto; right: 0; border-right: 0; box-shadow: none; }
+.pwrap > .panel { position: static; width: auto; flex: 1; min-height: 0; box-shadow: none; border-right: 0; }
+.ptabs { display: flex; gap: 2px; padding: var(--sp-2) var(--sp-3) 0; border-bottom: 1px solid var(--line); flex: none; background: var(--surface); }
+.ptabs button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: var(--r-sm) var(--r-sm) 0 0; font-size: var(--fs-sm); color: var(--muted); border-bottom: 2px solid transparent; }
+.ptabs button:hover { color: var(--ink); background: var(--surface-2); }
+.ptabs button.on { color: var(--accent-ink); border-bottom-color: var(--accent); font-weight: 600; }
+.ptabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* 스캔 도면 알림줄(scan_note.js): 도면 왼쪽 위에 뜬다 */
+.scan-note { left: var(--sp-4); top: 56px; max-width: min(460px, 52%); z-index: 2; display: flex; gap: var(--sp-2); align-items: flex-start; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); color: var(--ink); background: var(--warn-bg); border-color: var(--warn-line); }
+.scan-note > svg { flex: none; margin-top: 2px; color: var(--warn); }
+
+/* 둘 이상의 영역이 함께 쓰는 공통 규칙(채팅 카드·구간·분석 결과·지식그래프). 영역 전용 규칙은 panels/<이름>.css */
+.faint { color: var(--faint); }
+.lbl { font-size: var(--fs-xs); color: var(--muted); margin-bottom: 2px; }
+.reason { color: var(--muted); white-space: pre-wrap; }
+ul.tight { margin: 0; padding-left: 16px; }
+.warnline { color: var(--warn); }
+.tgts { margin: var(--sp-1) 0 var(--sp-2); }
+.bubble { position: absolute; z-index: 4; padding: var(--sp-2) var(--sp-3); min-width: 160px; }
+
+/* 가상 스크롤 표(ui/table.js): 분석 결과 말고도 쓸 수 있는 공통 구성요소 */
+.vgrid { position: relative; height: 100%; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--surface); font-size: var(--fs-sm); }
+.vg-corner { position: absolute; left: 0; top: 0; z-index: 3; background: var(--surface-2, var(--surface)); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 8px; box-sizing: border-box; }
+.vg-colheads { position: absolute; top: 0; right: 0; overflow: hidden; z-index: 2; background: var(--surface-2, var(--surface)); border-bottom: 1px solid var(--line); }
+.vg-rowheads { position: absolute; left: 0; bottom: 0; overflow: hidden; z-index: 2; background: var(--surface-2, var(--surface)); border-right: 1px solid var(--line); }
+.vg-ch, .vg-rh { position: absolute; box-sizing: border-box; padding: 4px 6px; overflow: hidden; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.vg-ch-in { display: block; writing-mode: vertical-rl; max-height: 100%; font-size: var(--fs-xs); white-space: nowrap; margin: 0 auto; overflow: hidden; text-overflow: ellipsis; }
+.vg-rh-in { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 26px; }
+.vg-body { position: absolute; left: var(--vg-headw); top: var(--vg-headh); right: 0; bottom: 0; overflow: auto; outline: 0; }
+.vg-body:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.vg-sizer { position: relative; }
+.vg-cell { position: absolute; box-sizing: border-box; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.vg-cell:hover { background: var(--accent-weak); }
+.vg-cell.on { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-weak); z-index: 1; }
+
+/* 도면 쪽 확정 칩과 카드 */
+.confbar { position: absolute; left: 12px; top: 10px; z-index: 3; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.confcard { position: static; padding: var(--sp-3); width: 340px; max-width: 80vw; display: flex; flex-direction: column; gap: var(--sp-2); }
+.conf-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); }
+.conf-list li::before { content: "○ "; color: var(--muted); }
+.conf-list li.good::before { content: "✓ "; color: var(--ok); }
+.conf-list li.bad::before { content: "! "; color: var(--warn); font-weight: bold; }
+.check { display: flex; gap: 6px; align-items: flex-start; font-size: var(--fs-sm); }
+.btn:disabled { opacity: .45; cursor: default; }

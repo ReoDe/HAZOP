@@ -35,7 +35,15 @@ M2_NEW_KINDS = {
     "switch": "instrument", "recorder": "instrument", "nozzle": "piping_element",
 }
 # 기호 사전 연결(레지스트리 0.8.0, 기획서/PID-기호사전.md D4): APR1400 범례의 댐퍼·시험 연결
-SYMBOL_DICT_KINDS = {"damper": "valve", "test_connection": "inline_component"}
+SYMBOL_DICT_KINDS = {"damper": "valve", "test_connection": "inline_component",
+                     # APR1400 범례로 들인 종류(registry 0.9.0)
+                     "air_flow_arrow": "piping_element", "slip_joint": "inline_component", "sparger": "inline_component",
+                     "hose_connection": "inline_component", "flexible_hose": "inline_component",
+                     "diaphragm_seal": "inline_component", "expansion_joint": "inline_component",
+                     "silencer": "inline_component", "flame_arrestor": "inline_component",
+                     "sight_glass": "inline_component", "pilot_light": "instrument", "alarm": "instrument",
+                     "sample_probe": "instrument", "level_element": "instrument", "electric_heater": "equipment",
+                     "chiller": "equipment"}
 OLD_NODE_PREFIX = {"document": "doc-", "doc_chunk": "chunk-", "requirement": "req-", "setpoint": "setpt-",
                    "condition": "cond-", "analysis_case": "case-"}
 OLD_LINK_TYPES = {

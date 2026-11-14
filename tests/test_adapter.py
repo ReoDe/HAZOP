@@ -25,6 +25,7 @@ from hazop.extract import drawio, runinfo  # noqa: E402
 from hazop.extract.adapters import align  # noqa: E402
 from hazop.extract.adapters import evaluation as ev  # noqa: E402
 from hazop.extract.adapters import pdf_vector  # noqa: E402
+from hazop.extract.adapters import pdf_vector_grouping  # noqa: E402
 
 TRUTH = check_adapter.load_json(check_adapter.FIXTURE)
 
@@ -302,9 +303,9 @@ class SampleTest(unittest.TestCase):
 HAS_PDFPLUMBER = importlib.util.find_spec("pdfplumber") is not None
 
 
-def prim(pts, closed=False, fill=False, white=False, curved=False, ext=None):
+def prim(pts, closed=False, fill=False, white=False, curved=False, ext=None, width=None):
     return {"fill": fill, "stroke": not fill, "fill_white": fill and white, "stroke_white": False,
-            "subpaths": [(list(pts), closed, list(ext or pts), curved)]}
+            "subpaths": [(list(pts), closed, list(ext or pts), curved)], "width": width}
 
 
 def rect(x0, y0, x1, y1, **kw):
@@ -317,8 +318,8 @@ def circle(cx, cy, r):
     return prim(pts, closed=True, curved=True, ext=ext)
 
 
-def line(*pts):
-    return prim(pts)
+def line(*pts, width=None):
+    return prim(pts, width=width)
 
 
 def word(text, x0, top, size=6.0):
@@ -326,10 +327,10 @@ def word(text, x0, top, size=6.0):
             "size": size}
 
 
-def make_pdf(content, width=400, height=300):
+def make_pdf(content, width=400, height=300, resources=b""):
     """내용 스트림 하나짜리 1쪽 PDF 바이트(메모리 시험용, 외부 라이브러리 없음)."""
     objs = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] /Contents 4 0 R >>" % (width, height),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] /Contents 4 0 R %s>>" % (width, height, resources),
             b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream"]
     out, offsets = bytearray(b"%PDF-1.4\n"), []
     for i, obj in enumerate(objs, 1):
@@ -364,6 +365,20 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(ext["nodes"][0]["source_object_id"], "pdf-p0-sym-0001")
         self.assertEqual(ext["nodes"][0]["geometry"], {"x": 100, "y": 100, "width": 40, "height": 60})
 
+    def test_pipe_drawn_through_valve_along_its_axis_is_split_at_the_valve(self):
+        # APR1400 105쪽 전동 밸브·128쪽 축소관: 한 선으로 그은 배관 위에 얹은 밸브. 흐름 축을 따라 가운데를 지나는 선은
+        # 밸브 양 끝에서 나뉘어 밸브에 붙는다. 축을 가로지르는 선은 나누지 않는다
+        def run(valve):
+            ext = pdf_run([rect(80, 100, 100, 120), rect(300, 100, 320, 120), rect(193, 30, 213, 50),
+                           rect(193, 170, 213, 190), valve, line((100, 110), (300, 110)), line((203, 50), (203, 170))])
+            at = {n["local_id"]: (n["geometry"]["x"], n["geometry"]["y"]) for n in ext["nodes"]}
+            return sorted(tuple(sorted(at[e["node_local_id"]] for e in r["endpoints"])) for r in ext["relations"])
+        bowtie = prim([(200, 108.5), (206, 111.5), (206, 108.5), (200, 111.5), (200, 108.5)], closed=True)
+        self.assertEqual(run(bowtie), [((80, 100), (200, 108.5)), ((193, 30), (193, 170)), ((200, 108.5), (300, 100))])
+        # 세로로 긴 몸체는 세로가 흐름 축이다. 가로 배관은 축을 가로지르므로 나누지 않는다
+        upright = prim([(201.5, 107), (204.5, 107), (201.5, 113), (204.5, 113), (201.5, 107)], closed=True)
+        self.assertEqual(run(upright), [((80, 100), (300, 100)), ((193, 30), (201.5, 107)), ((193, 170), (201.5, 107))])
+
     def test_three_line_junction_is_tee_and_crossing_is_not(self):
         tee = pdf_run([rect(100, 100, 140, 160), rect(300, 40, 340, 80), rect(300, 180, 340, 220),
                        line((140, 130), (200, 130)), line((200, 130), (200, 60), (300, 60)),
@@ -384,6 +399,39 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual([n["kind"] for n in ext["nodes"]].count("tee"), 1)
         self.assertEqual(len(ext["relations"]), 3)
 
+    def test_four_way_junction_of_lines_with_different_widths_is_crossing(self):
+        # APR1400 072쪽: 가는 방 경계선이 굵은 덕트 위에서 끊겨 네 갈래로 모여도 분기가 아니다. 굵기가 같으면 분기다
+        def run(thin):
+            ext = pdf_run([rect(100, 200, 120, 220), rect(300, 200, 320, 220), rect(200, 100, 220, 120),
+                           rect(200, 300, 220, 320), line((120, 210), (300, 210), width=1.08),
+                           line((210, 120), (210, 210), width=thin), line((210, 210), (210, 300), width=thin)])
+            ids = {n["local_id"]: n["geometry"]["x"] for n in ext["nodes"] if n["kind"] != "tee"}
+            ends = sorted(tuple(sorted(ids.get(e["node_local_id"], -1) for e in r["endpoints"]))
+                          for r in ext["relations"])
+            return [n["kind"] for n in ext["nodes"]].count("tee"), ends
+        self.assertEqual(run(1.08)[0], 1)
+        self.assertEqual(run(0.13), (0, [(100, 300), (200, 200)]))
+
+    def test_pocket_hanging_on_pipe_is_one_symbol(self):
+        # APR1400 105쪽 드레인 포트: 배관 아래 짧은 세로선 둘과 둥근 바닥. 주머니가 배관 두 가닥과 드레인 선을 잇는
+        # 고리가 되지 않고, 배관과 입구 한 곳에서 만나는 기호 하나가 된다
+        ext = pdf_run([rect(100, 200, 120, 220), rect(300, 200, 320, 220), rect(200, 300, 220, 320),
+                       line((120, 210), (300, 210)), line((208.7, 210.3), (208.7, 214.3)),
+                       line((211.3, 210.3), (211.3, 214.3)), line((208.7, 214.3), (210, 215)),
+                       line((211.3, 214.3), (210, 215)), line((210, 215), (210, 300))])
+        pocket = [n for n in ext["nodes"] if n["kind"] != "tee" and 205 < n["geometry"]["y"] < 215]
+        self.assertEqual(len(pocket), 1)
+        self.assertIsNone(pocket[0]["kind"])  # 주머니 벽 두 줄을 오리피스 판으로 읽지 않는다
+        tees = [n["local_id"] for n in ext["nodes"] if n["kind"] == "tee"]
+        self.assertEqual(len(tees), 1)
+        by_node = {}
+        for r in ext["relations"]:
+            ids = [e["node_local_id"] for e in r["endpoints"]]
+            for i in ids:
+                by_node.setdefault(i, set()).update(x for x in ids if x != i)
+        self.assertEqual(by_node[pocket[0]["local_id"]], {tees[0]} | {n["local_id"] for n in ext["nodes"]
+                                                                      if n["geometry"]["y"] == 300})
+
     def test_dashed_signal_measurement_and_isa_letters(self):
         dashes = [rect(x, 99.65, x + 4, 100.35, fill=True) for x in range(116, 184, 6)]
         ext = pdf_run([circle(100, 100, 14), circle(200, 100, 14), rect(80, 200, 120, 260),
@@ -395,6 +443,276 @@ class PdfVectorRuleTest(unittest.TestCase):
         by_kind = sorted(r["kind"] for r in ext["relations"])
         self.assertEqual(by_kind, ["measurement_connection", "signal_connection"])
         self.assertEqual(ext["unresolved_connectors"], [])
+
+    def test_pipe_broken_where_another_line_crosses_is_one_pipe(self):
+        # 범례 'LINE NOT CONNECTED': 잇지 않는 선을 끊어 그린다(APR1400 008쪽 배출 상승관이 일점쇄선 자리에서 끊김).
+        # 끊긴 두 조각은 한 배관이고, 가로지르는 점선과는 잇지 않는다. 빈칸이 넓거나 가로지르는 선이 없으면 잇지 않는다
+        def run(gap, crossing=True):
+            dash = [dict(line((80, 150), (320, 150), width=0.25), dash=[[6.0, 3.0], 0.0])] if crossing else []
+            ext = pdf_run([rect(190, 60, 210, 80), rect(190, 220, 210, 240), rect(60, 140, 80, 160),
+                           rect(320, 140, 340, 160), line((200, 80), (200, 150 - gap / 2), width=0.25),
+                           line((200, 150 + gap / 2), (200, 220), width=0.25)] + dash)
+            ys = {n["local_id"]: n["geometry"]["y"] for n in ext["nodes"]}
+            return sorted((r["kind"], tuple(sorted(ys[e["node_local_id"]] for e in r["endpoints"])))
+                          for r in ext["relations"])
+        self.assertEqual(run(2.4), [("physical_connection", (60, 220)), ("signal_connection", (140, 140))])
+        self.assertNotIn(("physical_connection", (60, 220)), run(6.0))
+        self.assertNotIn(("physical_connection", (60, 220)), run(2.4, crossing=False))
+
+    def test_pipe_corner_beside_symbol_is_not_attached(self):
+        # APR1400 008쪽 MOV 상승관 꼭대기 모서리가 TEW 상자 변에서 1.8pt 떨어져 있다. 두 선이 끝을 맞댄 모서리는 배관이
+        # 꺾이는 자리라 상자에 붙이지 않는다
+        ext = pdf_run([rect(190, 220, 210, 240), rect(300, 90, 320, 110), rect(170, 98, 198.2, 130),
+                       line((200, 220), (200, 100), width=0.25), line((300, 100), (200, 100), width=0.25)])
+        pos = {n["local_id"]: (n["geometry"]["x"], n["geometry"]["y"]) for n in ext["nodes"]}
+        self.assertEqual([(r["kind"], sorted(pos[e["node_local_id"]] for e in r["endpoints"]))
+                          for r in ext["relations"]], [("physical_connection", [(190, 220), (300, 90)])])
+        # 배관 끝이 다른 선 중간에 얹히면(그 선 끝이 end_tol 안이어도) 끝끼리 맞댄 모서리가 아니라서 기호에 붙인 그대로
+        # 둔다(APR1400 134쪽 FI-041: 배관 끝이 플랜지 판 가운데에 얹힘)
+        ext = pdf_run([rect(300, 90, 320, 110), rect(170, 98, 198.2, 130), rect(190, 220, 210, 240),
+                       line((300, 100), (200, 100), width=0.25), line((200, 99.0), (200, 220), width=0.25)])
+        pos = {n["local_id"]: (n["geometry"]["x"], n["geometry"]["y"]) for n in ext["nodes"]}
+        self.assertIn(("physical_connection", [(170, 98), (300, 90)]),
+                      [(r["kind"], sorted(pos[e["node_local_id"]] for e in r["endpoints"])) for r in ext["relations"]])
+
+    def test_crossing_gap_beside_lead_corner_or_symbol_is_joined(self):
+        # APR1400 008쪽 배출 상승관이 일점쇄선 자리에서 끊긴 위 조각 끝에 TEW 지시선 끝이 맞닿거나(분기), 상승관이 TEW
+        # 상자 옆을 나란히 지나 끊긴다. 둘 다 끊어 그린 한 배관이다. 배관 끝에 가로 판이 얹히면 잇지 않는다
+        def run(extra):
+            dash = dict(line((80, 150), (320, 150), width=0.25), dash=[[6.0, 3.0], 0.0])
+            ext = pdf_run([rect(190, 60, 210, 80), rect(190, 220, 210, 240), rect(60, 140, 80, 160),
+                           rect(320, 140, 340, 160), line((200, 80), (200, 148.8), width=0.25),
+                           line((200, 151.2), (200, 220), width=0.25), dash] + extra)
+            ys = {n["local_id"]: n["geometry"]["y"] for n in ext["nodes"] if n.get("kind") != "tee"}
+            adj = {}
+            for r in ext["relations"]:
+                if r["kind"] == "physical_connection":
+                    a, b = (e["node_local_id"] for e in r["endpoints"])
+                    adj.setdefault(a, set()).add(b)
+                    adj.setdefault(b, set()).add(a)
+            return {frozenset(ys[x] for x in (a, c)) for a in adj if a in ys for b in adj[a]
+                    for c in ({b} if b in ys else adj[b] - {a}) if c in ys}
+        lead = run([rect(120, 100, 140, 120), line((130, 120), (130, 147.8), (200, 147.8), width=0.12)])
+        self.assertEqual(lead, {frozenset((60, 220)), frozenset((60, 100)), frozenset((100, 220))})
+        self.assertEqual(run([rect(170, 128, 197.9, 148)]), {frozenset((60, 220))})
+        self.assertNotIn(frozenset((60, 220)), run([line((198.6, 148.8), (201.4, 148.8), width=0.12)]))
+        # 판이 배관 끝에서 0.6pt 떨어져 있어도 판 끝이 end_tol 안이면 판에 얹힌 끝이다(APR1400 065쪽 플랜지)
+        self.assertNotIn(frozenset((60, 220)), run([line((199.0, 149.4), (201.0, 149.4), width=0.12)]))
+        # 빈칸 양쪽 끝이 모두 기호 옆이면 기호 자리의 빈칸일 수 있어 잇지 않는다(APR1400 134쪽 LS 013 원 옆)
+        self.assertNotIn(frozenset((60, 220)), run([rect(170, 140, 198.9, 160)]))
+
+    def test_two_pieces_on_one_line_are_not_orifice_plates(self):
+        # 오리피스 판은 배관을 가로질러 나란히 선 두 판이다. 한 줄 위에 이어 놓인 두 조각은 판이 아니다
+        side = pdf_run([line((200, 100), (200, 108)), line((203, 100), (203, 108))])
+        inline = pdf_run([line((200, 100), (200, 108)), line((200, 110), (200, 118))])
+        self.assertEqual([n["kind"] for n in side["nodes"]], ["orifice"])
+        self.assertEqual([n["kind"] for n in inline["nodes"]], [None])
+
+    def test_dashed_line_continuing_a_pipe_end_is_pipe(self):
+        # APR1400 008쪽 파일럿 밸브 옆 출구 일점쇄선이 배출 상승관 아래 끝에 끝을 맞대고 이어진다. 점선이 배관을 이어 그린
+        # 것이라 한 배관이다. 같은 점선이 계기에서 나오면 신호선으로 둔다
+        def run(source, words=()):
+            dash = dict(line((120, 210), (200, 210), (200, 180), width=0.25), dash=[[6.0, 3.0], 0.0])
+            ext = pdf_run(source + [dash, line((200, 180), (200, 100), (300, 100), width=0.25),
+                                    rect(300, 90, 320, 110)], words)
+            return [(r["kind"], r["line_type"]) for r in ext["relations"]], ext["unresolved_connectors"]
+        self.assertEqual(run([rect(100, 200, 120, 220)]), ([("physical_connection", "pdf_dashed")], []))
+        relations, unresolved = run([circle(106, 210, 14)], [word("PT", 101, 202), word("101", 101, 209)])
+        self.assertEqual((relations, unresolved), ([("signal_connection", "pdf_dashed")], []))
+
+    def test_dashed_line_through_valve_axis_is_pipe(self):
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        along = [rect(x, 110.65, x + 4, 111.35, fill=True) for x in range(40, 96, 6)]
+        side = [rect(217.65, y, 218.35, y + 4, fill=True) for y in range(44, 96, 6)]
+        ext = pdf_run(bowtie(0, 100) + bowtie(100, 100) + along + bowtie(200, 100) + [rect(208, 20, 228, 40)] + side)
+        kinds = sorted((r["kind"], r["line_type"]) for r in ext["relations"])
+        self.assertEqual(kinds, [("physical_connection", "pdf_dashed"), ("signal_connection", "pdf_dashed")])
+
+    def test_bent_dashed_path_between_valve_axes_is_pipe(self):
+        # APR1400 008쪽 POSRV 파일럿 일점쇄선: 한 경로가 꺾여 두 밸브의 흐름 축으로 들어가면 배관이다. 같은 무늬라도
+        # 밸브 몸통 옆으로 꺾여 들어가는 선, 닫힌 점선 상자는 배관이 아니다
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        dash_dot = [[10.667, 5.333, 1.333, 5.333], 0.0]
+        bent = prim([(36, 111), (70, 111), (70, 211), (100, 211)])
+        side = prim([(300, 40), (318, 40), (318, 100)])
+        for p in (bent, side):
+            p["dash"] = dash_dot
+        ext = pdf_run(bowtie(0, 100) + bowtie(100, 200) + bowtie(300, 100) + [rect(290, 20, 300, 60), bent, side])
+        kinds = sorted((r["kind"], r["line_type"]) for r in ext["relations"])
+        self.assertEqual(kinds, [("physical_connection", "pdf_dashed"), ("signal_connection", "pdf_dashed")])
+        box = rect(36, 100, 100, 133)
+        box["dash"] = dash_dot
+        ext = pdf_run(bowtie(0, 100) + bowtie(100, 100) + [box])
+        self.assertNotIn("physical_connection", [r["kind"] for r in ext["relations"]])
+
+    def test_locked_throttled_is_normal_position(self):
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        ext = pdf_run(bowtie(100, 100) + [line((40, 111), (100, 111)), line((136, 111), (200, 111))],
+                      [word("LT", 110, 90), word("V1321", 105, 125)])
+        valve = [n for n in ext["nodes"] if n["kind"] == "manual_valve"][0]
+        self.assertEqual(valve["attributes"].get("normal_position"), "LT")
+        self.assertEqual(valve["tag"], "V1321")
+
+    def test_safety_class_diamond_is_not_valve(self):
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        ext = pdf_run(bowtie(100, 100) + [line((118, 100), (118, 122)), line((40, 111), (100, 111)),
+                                          line((136, 111), (200, 111))],
+                      [word("CI", 103, 107), word("DII", 122, 107)])
+        body = [n for n in ext["nodes"] if n["geometry"]["x"] == 100][0]
+        self.assertIsNone(body["kind"])
+        self.assertEqual(body["evidence"]["classification_basis"], "safety_class_boundary")
+
+    def test_position_label_does_not_push_valve_number_to_class_diamond(self):
+        # APR1400 016쪽 V290: 밸브 바로 밑 'LC'가 밸브 라벨을 먼저 차지하면 그 밑 번호는 다음으로 가까운 안전등급 마름모로
+        # 갔다. 마름모(몸통 안 글자)는 밸브 번호를 받지 못하므로 번호는 위치 약어만 가진 밸브 몫이다
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        ext = pdf_run(bowtie(100, 100) + [line((40, 111), (100, 111)), line((136, 111), (200, 111))]
+                      + bowtie(100, 144) + [line((118, 144), (118, 166))],
+                      [word("LC", 112, 123, size=5.0), word("V290", 110, 130, size=5.0),
+                       word("CI", 103, 151), word("DII", 122, 151)])
+        valve = [n for n in ext["nodes"] if n["kind"] == "manual_valve"][0]
+        self.assertEqual((valve["tag"], valve["attributes"].get("normal_position")), ("V290", "LC"))
+
+    def test_safety_class_diamond_does_not_pull_in_number_bubble_and_valve(self):
+        # APR1400 105쪽 주증기 안전밸브: 밸브 번호 원의 상자 귀퉁이가 안전등급 마름모 상자에 겹친다. 두 도형은 닿지
+        # 않는다. 한 기호로 묶이면 큰 상자 한가운데 놓인 배관 끝(마름모 아래 꼭짓점)이 몸체 깊숙이 든 선으로 읽혀
+        # 아래 안전밸브까지 끌려 들어간다
+        diamond = [prim([(435.71, 143.41), (443.3, 146.72), (435.71, 150.02), (435.71, 143.41)], closed=True),
+                   prim([(428.13, 146.72), (435.71, 150.02), (435.71, 143.41), (428.13, 146.72)], closed=True)]
+        valve = prim([(431.26, 163.94), (434.88, 163.94), (434.88, 160.33), (431.26, 163.94)], closed=True)
+        prims = diamond + [circle(425.32, 153.99, 4.34), valve, line((435.71, 150.02), (435.71, 161.36)),
+                           line((428.38, 157.06), (432.18, 160.86))]
+        words = [word("BI", 430.5, 145.1, size=3.0), word("DII", 435.0, 145.1, size=3.0),
+                 word("1302", 421.9, 152.4, size=3.0)]
+        analysis = pdf_vector.analyze(600.0, 400.0, words, prims)
+        bodies = sorted(len(s.bodies) for s in analysis["symbols"])
+        self.assertEqual(bodies, [1, 1, 2])  # 원 하나, 밸브 하나, 마름모(삼각형 둘)
+        ext = pdf_vector.build_extraction(analysis, 600.0, 400.0, 1, 0, "synthetic.pdf", "0" * 64)
+        diamond_node = [n for n in ext["nodes"] if abs(n["geometry"]["x"] - 428.13) < 0.01][0]
+        self.assertEqual(diamond_node["evidence"]["classification_basis"], "safety_class_boundary")
+
+    def test_spring_ticks_next_to_number_bubble_corner_stay_on_valve(self):
+        # APR1400 008쪽 POSRV 파일럿 안전밸브: 스프링 빗금 끝이 밸브 번호 원의 상자 귀퉁이 옆(2.2pt)에 있지만 원
+        # 둘레에서는 3pt 넘게 떨어져 있다. 원에 닿은 연결선으로 보지 않고 밸브에 넣는다
+        valve = prim([(464.43, 210.59), (464.43, 207.04), (460.87, 207.04), (464.43, 210.59)], closed=True)
+        ticks = [line((461.54, 209.53), (460.16, 208.11)), line((462.1, 209.53), (460.71, 208.11)),
+                 line((462.65, 209.53), (461.27, 208.11))]
+        prims = [valve, circle(456.25, 201.69, 4.265), line((464.43, 207.04), (462.65, 208.82)),
+                 line((460.16, 208.82), (462.65, 208.82)), line((457.14, 203.31), (460.87, 207.04))] + ticks
+        analysis = pdf_vector.analyze(600.0, 400.0, [word("303", 453.7, 200.6, size=3.0)], prims)
+        sym = [s for s in analysis["symbols"] if any(not b.get("curved") for b in s.bodies)][0]
+        self.assertTrue(pdf_vector._has_spring(sym))
+        self.assertEqual(len(sym.strokes), 5)
+        bubble = [s for s in analysis["symbols"] if any(b.get("curved") for b in s.bodies)][0]
+        self.assertEqual((len(bubble.bodies), bubble.strokes), (1, []))
+
+    def test_label_inside_two_symbols_goes_to_smaller(self):
+        # 건물 경계처럼 큰 상자 안의 밸브 번호 원: 원 안 글자는 원의 것이다(APR1400 105쪽 '1304')
+        frame = prim([(150, 100), (100, 100), (100, 130), (150, 130)])  # 끝이 뜬 선으로만 된 경계(선 기호)
+        ext = pdf_run([frame, circle(125, 115, 5), rect(200, 110, 210, 120), line((130, 115), (200, 115))],
+                      [word("1304", 121.4, 113.5, size=3.0)])
+        self.assertEqual(len(ext["nodes"]), 3)
+        bubble = [n for n in ext["nodes"] if n["geometry"]["width"] < 20][0]
+        self.assertEqual(bubble["label_text"], "1304")
+
+    def test_dashed_pipes_leaving_one_symbol_are_not_joined(self):
+        # 밸브 한 변에서 따로 나가는 두 점선 배관: 시작점이 1.2pt로 붙어 있어도 꺾임으로 잇지 않는다. 밸브 상자 안의
+        # 끝 조각도 밸브에 넣지 않는다(APR1400 008쪽 POSRV 파일럿 안전밸브와 MOV)
+        prims = [rect(100, 100, 110, 110), rect(160, 94, 180, 114), rect(120, 200, 140, 220),
+                 prim([(110, 104), (160, 104)]), prim([(110, 105.2), (130, 105.2), (130, 200)])]
+        for p in prims[3:]:
+            p["dash"] = [[2.0, 1.0], 0.0]
+        analysis = pdf_vector.analyze(600.0, 400.0, [], prims)
+        valve = [s for s in analysis["symbols"] if s.bbox[0] == 100][0]
+        self.assertEqual(valve.dashes, [])
+        ext = pdf_vector.build_extraction(analysis, 600.0, 400.0, 1, 0, "synthetic.pdf", "0" * 64)
+        ends = sorted(tuple(sorted(n["geometry"]["x"] for n in ext["nodes"] if n["local_id"] in
+                                   {e["node_local_id"] for e in r["endpoints"]})) for r in ext["relations"])
+        self.assertEqual(ends, [(100, 120), (100, 160)])
+
+    def test_continuation_arrow_sets_flow(self):
+        def flag(x, y, right):  # 오각 깃발 40×12: right면 뾰족한 쪽이 오른쪽
+            pts = ([(x, y), (x + 30, y), (x + 40, y + 6), (x + 30, y + 12), (x, y + 12), (x, y)] if right else
+                   [(x + 10, y), (x + 40, y), (x + 40, y + 12), (x + 10, y + 12), (x, y + 6), (x + 10, y)])
+            return prim(pts, closed=True)
+        ext = pdf_run([rect(100, 100, 140, 160), flag(300, 124, True), line((140, 130), (300, 130)),
+                       rect(100, 250, 140, 310), flag(300, 274, False), line((140, 280), (300, 280))],
+                      [word("TO", 302, 116), word("CV:RDT", 312, 116), word("FROM", 302, 266), word("CV:VCT", 322, 266)])
+        node = {n["local_id"]: n for n in ext["nodes"]}
+        flows = sorted((node[r["flow_direction"]["from"]]["kind"] or "-", node[r["flow_direction"]["to"]]["kind"] or "-")
+                       for r in ext["relations"] if r.get("flow_direction"))
+        self.assertEqual(flows, [("-", "continuation"), ("continuation", "-")])
+
+    def test_orifice_box_between_pipes(self):
+        # 범례 1.7-1 1/4 RESTRICTION ORIFICE '|ı|'(16쪽 OR01B와 같은 치수): 판 2.9pt 둘 사이 가운데에 짧은 선. 판이 짧아
+        # 선 기호 최소 크기(4pt)에 못 미쳐 예전에는 배관 조각으로 남았다. 가운데 선이 없으면 플랜지라 기호가 아니다
+        def body(x):
+            return [line((x, 108.15), (x, 111.05)), line((x + 2.9, 108.15), (x + 2.9, 111.05))]
+        ext = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), line((140, 109.6), (220, 109.6)),
+                       *body(220), line((221.45, 108.875), (221.45, 110.325)), line((222.9, 109.6), (300, 109.6))])
+        box = [n for n in ext["nodes"] if 215 < n["geometry"]["x"] < 225]
+        self.assertEqual([n["kind"] for n in box], ["orifice"])
+        self.assertEqual(len(ext["relations"]), 2)
+        flange = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), line((140, 109.6), (220, 109.6)),
+                          *body(220), line((222.9, 109.6), (300, 109.6))])
+        self.assertNotIn("orifice", [n["kind"] for n in flange["nodes"]])
+        # 판 가운데(배관 끝 자리)에서 갈라지는 선은 배관 분기라 상자를 그대로 본다(8쪽 OR 아래 AI|BI 지시선)
+        branch = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), rect(212, 150, 232, 170),
+                          line((140, 109.6), (220, 109.6)), *body(220), line((221.45, 108.875), (221.45, 110.325)),
+                          line((222.9, 109.6), (300, 109.6)), line((222.9, 109.6), (222.9, 150))])
+        self.assertIn("orifice", [n["kind"] for n in branch["nodes"]])
+        # 판 끝(상자 귀퉁이)에 차압 탭선이 닿으면 FE 원과 묶이는 유량 요소라 오리피스 상자로 보지 않는다(63쪽 FE 202)
+        tapped = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), rect(200, 40, 216, 56),
+                          line((140, 109.6), (220, 109.6)), *body(220), line((221.45, 108.875), (221.45, 110.325)),
+                          line((222.9, 109.6), (300, 109.6)), line((220, 108.15), (208, 56)), line((222.9, 108.15), (212, 56))])
+        self.assertNotIn("orifice", [n["kind"] for n in tapped["nodes"]])
+
+    def test_alarm_box_words_are_not_equipment(self):
+        ext = pdf_run([rect(100, 100, 180, 120), rect(300, 100, 380, 120)],
+                      [word("PUMP", 105, 104), word("START/STOP", 120.5, 104), word("PUMP", 305, 104), word("P-01", 320.5, 104)])
+        self.assertEqual(sorted(n["kind"] or "-" for n in ext["nodes"]), ["-", "pump"])
+
+    def test_valve_number_and_position_stacked_are_tag_and_attribute(self):
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        ext = pdf_run(bowtie(100, 100) + [line((40, 111), (100, 111)), line((136, 111), (200, 111))],
+                      [word("V310", 140, 92), word("LO", 140, 99)])
+        valve = [n for n in ext["nodes"] if n["kind"] == "manual_valve"][0]
+        self.assertEqual((valve["tag"], valve["attributes"].get("normal_position")), ("V310", "LO"))
+
+    def test_number_circle_touching_valve_body_is_valve_tag(self):
+        # APR1400 008쪽 방출 밸브 200(좌표 그대로): 번호 원이 지시선으로 몸통에 닿아 밸브와 한 기호로 묶이고, 원 안
+        # 숫자가 밸브 라벨이 된다. 원 안 숫자는 밸브 번호다. 원이 없으면 같은 자리의 맨 숫자라도 태그로 쓰지 않는다
+        valve = [prim([(351.12, 180.39), (354.67, 180.39), (354.67, 176.84), (351.12, 180.39)], closed=True),
+                 rect(350.23, 161.56, 355.56, 166.89), line((352.89, 176.13), (352.89, 166.89)),
+                 line((352.89, 176.12), (352.89, 178.61)), line((354.67, 180.39), (352.89, 178.61)),
+                 line((345.96, 174.52), (349.69, 178.26))]
+        valve += [line((352.18, y), (353.6, y - 1.38)) for y in (177.51, 178.06, 178.61)]
+        words = [word("P", 351.88, 163.11, size=3.0), word("200", 342.2, 172.23, size=3.0)]
+        circled = pdf_run(valve + [circle(344.72, 173.28, 4.27)], words)
+        self.assertEqual([(n["kind"], n["tag"]) for n in circled["nodes"] if n["label_text"] == "200"], [("psv", "200")])
+        bare = pdf_run(valve, words)
+        self.assertEqual([n["tag"] for n in bare["nodes"] if n["category"] == "valve"], [None])
+
+    def test_size_text_beside_valve_goes_to_pipe(self):
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        ext = pdf_run(bowtie(100, 100) + [rect(300, 90, 340, 132), line((136, 111), (300, 111))],
+                      [word("¾\"", 140, 104)])
+        self.assertEqual([(r["attributes"] or {}).get("size") for r in ext["relations"]], ['3/4"'])
+        self.assertEqual([n["label_text"] for n in ext["nodes"]], ["", ""])
 
     def test_labels_line_label_and_title_block(self):
         ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (300, 130)),
@@ -424,6 +742,84 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(mv["evidence"]["symbol_marks"], ["M"])
         self.assertEqual(len(ext["relations"]), 2)
 
+    @staticmethod
+    def letter_box_valve(letter, stem_end_x=145):
+        """나비 밸브 몸통 위 5.8pt 글자 상자와 (145, 100)에서 내려오는 축(012쪽 S 상자 치수) → (추출 결과, 밸브 노드)."""
+        ext = pdf_run([rect(80, 100, 100, 120), rect(200, 100, 220, 120),
+                       prim([(140, 107), (145, 110), (140, 113), (140, 107)], closed=True),
+                       prim([(150, 107), (145, 110), (150, 113), (150, 107)], closed=True),
+                       line((100, 110), (140, 110)), line((150, 110), (200, 110)),
+                       rect(142.1, 94.2, 147.9, 100), line((145, 100), (stem_end_x, 107.5))],
+                      [word(letter, 143.5, 95.5, size=4.0), word("V-1", 141, 116)])
+        return ext, [n for n in ext["nodes"] if n["label_text"] == "V-1"][0]
+
+    def test_letter_box_on_valve_stem_merges_into_valve(self):
+        # 범례 1.7-1 1/4 L1-078·솔레노이드 구동부: 밸브 위 짧은 세로 축 끝 글자 상자는 밸브의 한 부분이다(008쪽 P, 012쪽 S).
+        # 사선 지시선에 매달린 상자(062쪽 G)는 합치지 않는다
+        ext, valve = self.letter_box_valve("G")
+        self.assertEqual(valve["evidence"]["actuator_marks"], ["G"])
+        self.assertNotIn("G", [n["label_text"] for n in ext["nodes"]])
+        self.assertEqual(len(ext["relations"]), 2)  # 축은 밸브 안의 선이다
+        self.assertIn("actuator_merged", [o.get("reason") for o in ext["drawing"]["ignored_objects"]])
+        ext, valve = self.letter_box_valve("G", stem_end_x=141.5)
+        self.assertNotIn("actuator_marks", valve["evidence"])
+        self.assertIn("G", [n["label_text"] for n in ext["nodes"]])
+
+    def test_letter_box_kind_only_where_legend_defines_letter(self):
+        # 범례 1.7-1 1/4 SOLENOID OPERATORS: S 상자를 단 밸브는 전자 밸브다. 범례에 없는 글자(G)는 몸통 kind를 그대로 둔다
+        _, plain = self.letter_box_valve("G")
+        _, valve = self.letter_box_valve("S")
+        self.assertEqual(valve["kind"], "solenoid_valve")
+        self.assertEqual(valve["attributes"], dict(plain["attributes"], actuator_type="solenoid", motive_power="electric"))
+        self.assertNotEqual(plain["kind"], "solenoid_valve")
+        self.assertEqual(valve["evidence"]["classification_basis"], plain["evidence"]["classification_basis"]
+                         + "+actuator_mark:S")
+
+    def test_box_check_valve_between_pipes(self):
+        # APR1400 상자형 체크밸브 '|\|'(16쪽 V405와 같은 치수): 세로 막대 2.9pt 가운데에 배관 끝이 닿아 막대 끝과 배관 끝이
+        # 1.45pt로 end_tol 안이다. 예전에는 배관 조각으로 이어져 노드가 없었다
+        def dot(cx, cy, r=0.36):
+            pts = [(cx + r, cy), (cx, cy - r), (cx - r, cy), (cx, cy + r), (cx + r, cy)]
+            return prim(pts, fill=True, curved=True)
+        n_shape = line((223.88, 113.05), (223.88, 110.15), (229.68, 113.05), (229.68, 110.15))
+        ext = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), line((140, 111.6), (223.88, 111.6)),
+                       n_shape, dot(223.88, 110.15), line((229.68, 111.6), (300, 111.6))])
+        cv = [n for n in ext["nodes"] if n["geometry"]["x"] > 200 and n["geometry"]["x"] < 230]
+        self.assertEqual([n["kind"] for n in cv], ["check_valve"])
+        self.assertEqual(len(ext["relations"]), 2)  # 탱크—체크밸브—탱크(밸브를 건너뛰는 한 줄이 아니다)
+        # 한쪽 막대에만 배관이 닿거나, 배관이 막대와 같은 줄로 겹치면 이 규칙으로 세우지 않는다
+        def polys(*shapes):
+            return [{"id": "p%d" % i, "pts": s["subpaths"][0][0], "bbox": pdf_vector._bbox_pts(s["subpaths"][0][0])}
+                    for i, s in enumerate(shapes)]
+        prm = dict(pdf_vector.PARAMS)
+        both = polys(line((140, 111.6), (223.88, 111.6)), n_shape, line((229.68, 111.6), (300, 111.6)))
+        self.assertEqual(len(pdf_vector_grouping._bar_fed_strokes(both, prm)[0]), 1)
+        one = polys(line((140, 111.6), (223.88, 111.6)), n_shape)
+        self.assertEqual(pdf_vector_grouping._bar_fed_strokes(one, prm)[0], [])
+        along = polys(line((223.88, 111.6), (223.88, 140)), n_shape, line((229.68, 111.6), (300, 111.6)))
+        self.assertEqual(pdf_vector_grouping._bar_fed_strokes(along, prm)[0], [])
+
+    def test_scanned_check_valve_with_rounded_arrowhead(self):
+        # 스캔 SNP-M-301 체크밸브(300dpi를 벡터로 바꾼 좌표, pt): 화살촉이 꼭짓점 다섯 개 볼록 다각형이 되고, 사선은 화살촉 앞에서
+        # 끊기며 화살촉과 오른쪽 판 사이에 짧은 토막이 남는다. 예전에는 화살촉을 꺾인 점선 모서리로 읽어 'orifice'가 됐다
+        def at(*pts):
+            return [(x - 400, y) for x, y in pts]
+        head = at((606.0, 295.44), (606.0, 297.36), (608.88, 297.6), (609.12, 296.4), (607.68, 294.72), (606.0, 295.44))
+        ext = pdf_run([rect(60, 270, 100, 305), rect(300, 270, 340, 305),
+                       line(*at((500, 287.4), (575.28, 287.4))), line(*at((611.28, 287.4), (700, 287.4))),
+                       line(*at((575.28, 276.96), (575.28, 298.32))), line(*at((611.28, 276.96), (611.28, 298.32))),
+                       line(*at((577.1, 278.08), (605.66, 295.21))), line(*at((611.28, 296.16), (609.12, 296.16))),
+                       prim(head, closed=True, fill=True)])
+        cv = [n for n in ext["nodes"] if 170 < n["geometry"]["x"] < 215]
+        self.assertEqual([n["kind"] for n in cv], ["check_valve"])
+        self.assertEqual(len([r for r in ext["relations"] if r["kind"] == "physical_connection"]), 2)
+        # 오목한 L자 조각(꺾인 점선 모서리)은 그대로 점선 조각이다
+        corner = [(0, 0), (4, 0), (4, 1), (1, 1), (1, 4), (0, 4), (0, 0)]
+        cls = pdf_vector._classify_primitives(600, 400, [prim(corner, closed=True, fill=True),
+                                                         prim(head, closed=True, fill=True)], dict(pdf_vector.PARAMS))
+        self.assertEqual(([d["id"] for d in cls["dashes"]], [m["id"] for m in cls["markers"]]),
+                         (["pdf-path-0000"], ["pdf-path-0001"]))
+
     def test_no_content_is_blocked(self):
         ext = pdf_run([])
         self.assertEqual(ext["validation"]["status"], "blocked")
@@ -445,6 +841,20 @@ class PdfVectorRuleTest(unittest.TestCase):
                 ext = pdf_run([circle(100, 100, 14)], [word(t, 95, 92 + 7 * i) for i, t in enumerate(text.split("\n"))])
                 self.assertEqual([n["kind"] for n in ext["nodes"]], ["transmitter"])
         self.assertEqual(pdf_vector._instrument_kind("PUMP"), (None, None))
+
+    def test_legend_instrument_codes(self):
+        cases = {"ZL\n202C": "pilot_light", "ZL": "pilot_light", "PDAH\n031": "alarm", "PAL": "alarm",
+                 "AX\n134": "sample_probe", "FG": "sight_glass", "LE\n058": "level_element", "LL": None, "ZAC": "controller"}
+        for text, kind in cases.items():
+            with self.subTest(text=text):
+                ext = pdf_run([circle(100, 100, 14)], [word(t, 95, 92 + 7 * i) for i, t in enumerate(text.split("\n"))])
+                self.assertEqual([n["kind"] for n in ext["nodes"]], [kind])
+
+    def test_lone_triangle_at_line_end_is_not_a_pipe_cap(self):
+        cap = pdf_run([line((100, 100), (200, 100)), rect(200, 97, 204, 103)])
+        nozzle = pdf_run([line((100, 100), (200, 100)), prim([(200, 97), (200, 103), (204, 100), (200, 97)], closed=True)])
+        self.assertEqual([n["kind"] for n in cap["nodes"]], ["pipe_cap"])
+        self.assertEqual([n["kind"] for n in nozzle["nodes"]], [None])
 
     def test_circle_with_equipment_word_is_not_instrument(self):
         ext = pdf_run([circle(100, 100, 20), rect(200, 80, 240, 120), line((120, 100), (200, 100))],
@@ -541,6 +951,21 @@ class PdfTagTest(unittest.TestCase):
         self.assertEqual(nodes[0]["evidence"]["tag_basis"], "label_tag_token")
         self.assertIn("[추론]", nodes[3]["evidence"]["tag_basis"])
         self.assertEqual([k for k in unknown if k[0] == "missing_tag"], [("missing_tag", nodes[4]["source_object_id"])])
+
+    def test_equipment_number_line_matching_kind_is_tag(self):
+        # 범례 기기 번호 'TK 02 A': 종류 글자가 기호 종류와 맞을 때만 태그다. 탱크 글자 옆 'PP01A'는 탱크 태그가 아니다
+        nodes, unknown = self.tags([("rect", ["TANK", "TK02A"]), ("rect", ["TANK", "PP01A"])])
+        self.assertEqual([n["kind"] for n in nodes], ["tank", "tank"])
+        self.assertEqual([n["tag"] for n in nodes], ["TK02A", None])
+        self.assertEqual(nodes[0]["evidence"]["tag_basis"], "equipment_number")
+        self.assertIn(("missing_tag", nodes[1]["source_object_id"]), unknown)
+
+    def test_bubble_letters_and_number_in_two_paragraphs_join(self):
+        # 072쪽 표시 상자: 칸막이 선 위 'PDAH', 아래 '031'. 줄 간격(3.5pt)이 문단 간격 상한(0.5 × 6pt)보다 넓어 문단이 갈린다
+        ext = pdf_run([circle(110, 110, 10)], [word("PDAH", 103, 104), word("031", 105, 113.5)])
+        bubble = ext["nodes"][0]
+        self.assertEqual((bubble["label_text"], bubble["tag"]), ("PDAH\n031", "PDAH-031"))
+        self.assertEqual(ext["texts"], [])
 
     def test_duplicate_and_tied_prefix_leave_tag_empty(self):
         nodes, unknown = self.tags([("rect", ["RC-V111"]), ("rect", ["RC-V111"]), ("rect", ["CV-V201"]),
@@ -698,6 +1123,17 @@ class PdfVectorSampleTest(unittest.TestCase):
                                           "memory.pdf", "0" * 64)
         self.assertEqual(ext["validation"]["blockers"], [])
         return prims, ext
+
+    def test_tight_two_line_text_stays_two_lines(self):
+        # 3pt 글자 두 줄, 줄 간격 2.85pt(APR1400 계기 비석 'FT' 위 '1011X')
+        content = b"BT /F1 3.06 Tf 102 152.85 Td (FT) Tj ET BT /F1 3.06 Tf 100 150 Td (1011X) Tj ET"
+        font = b"/Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> "
+        words = pdf_vector.load_page(io.BytesIO(make_pdf(content, resources=font)))[3]
+        self.assertEqual(sorted(w["text"] for w in words), ["1011X", "FT"])
+        glued = b"BT /F1 3.27 Tf 100 150 Td (PDIS\\(3053\\)) Tj ET"
+        words = pdf_vector.load_page(io.BytesIO(make_pdf(glued, resources=font)))[3]
+        self.assertEqual([w["text"] for w in words], ["PDIS", "(3053)"])
+        self.assertLessEqual(words[0]["x1"], words[1]["x0"])
 
     def test_memory_pdf_filled_and_stroked_dashes(self):
         dashes = b"".join(b"%d 219.65 4 0.7 re f\n" % x for x in range(82, 198, 6))
