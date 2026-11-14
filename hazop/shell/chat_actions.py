@@ -188,8 +188,9 @@ class ChatActions:
             results, fp = res.load_fp(ns)
         except (OSError, ValueError):
             results = None
+        human = chat_screens.ie_draft_by_human(self._engine) if self._engine is not None else False
         return A.Snapshot(project, node_set=ns, results=results, graph_ids=frozenset(n["entity_id"] for n in pg.get("nodes") or []),
-                          registrations=regs, sheets=sheets, results_fp=fp)
+                          registrations=regs, sheets=sheets, results_fp=fp, ie_draft_by_human=human)
 
     def _registrations(self, project):
         """등록 자료 ID(material_id)와 그 추출 이름·도면 ID -> {has_result, excluded, path}. 엔진이 없으면 빈 표."""
@@ -429,7 +430,7 @@ class ChatActions:
             klass = "confirm" if call.confirmed_by else "auto"
             prop = {"action": call.action or "", "args": {}, "why": "작업이 끝남"}
             rec = self._record(call.project_id, answer_id=answer_id, index=int(index), request_id=call.request_id or "q-none",
-                               request_text="", proposal=prop, klass=klass, result=result, error=error, targets=list(targets),
+                               request_text="", proposal=prop, klass=klass, result=result, error=actions_log.strip_paths(error), targets=list(targets),
                                confirmed_by=call.confirmed_by if klass == "confirm" else None,
                                confirmed_at=actions_log.now_kst().isoformat() if klass == "confirm" else None,
                                conversation_id=call.conversation_id, model=call.model, via="subscription")
@@ -659,11 +660,8 @@ def analysis_details(item, snap, engine=None):
     plan = analysis_conn(engine, item.args) if engine is not None else None
     if not isinstance(plan, dict):
         return [{"label": "호출 수 어림", "after": "약 %d회(구독 한도를 씁니다)" % n}]
-    rows = [{"label": "호출 수 어림", "after": "약 %d회(%s)" % (n, "API 키 요금이 나갑니다" if plan.get("paid") else "구독 한도를 씁니다")},
-            {"label": "연결", "after": " · ".join(x for x in (plan.get("method_name"), plan.get("model_name")) if x) or "-"}]
-    if plan.get("paid"):
-        rows.append({"label": "요금", "after": plan.get("confirm_text") or plan.get("cost_text") or "API 키로 요금이 나갑니다."})
-    return rows
+    from hazop.shell import api_settings
+    return [{"label": "호출 수 어림", "after": "약 %d회" % n}] + api_settings.run_lines(plan)    # 실제로 쓸 방식·모델·비용(B4)
 
 
 def _rec_failed(rec):

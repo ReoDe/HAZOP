@@ -13,6 +13,7 @@
 """
 
 import copy
+import logging
 import hashlib
 import json
 import re
@@ -565,6 +566,9 @@ class ActionPlanner:
             if why:
                 raise _Reject(why)
         item.details = self._details(item, snap)
+        broken = [r for r in item.details if isinstance(r, dict) and r.get("label") == "오류"]
+        if item.klass == CONFIRM and broken:      # 저장될 값을 다 보이지 못하면 확인 상자를 띄우지 않는다(승인할 수 없게)
+            raise _Reject("확인 상자에 저장될 값을 보일 수 없어 실행하지 않습니다(%s)" % str(broken[0].get("after") or "")[:200])
 
     def _details(self, item, snap):
         """확인 상자에 보일 저장될 값. 계획 때와 승인 직전에 같은 함수로 지금 상태에서 다시 만든다(글자 하나라도 다르면 표지가 어긋남)."""
@@ -573,7 +577,8 @@ class ActionPlanner:
             return []
         try:
             return list(fn(item, snap) or [])
-        except Exception:  # noqa: BLE001 - 줄을 못 만들면 그렇다고 보인다(빈 줄로 승인시키지 않음)
+        except Exception:  # noqa: BLE001 - 줄을 못 만들면 '오류' 줄: 계획 때는 거절, 승인 때는 표지가 어긋나 실행하지 않는다
+            logging.getLogger("hazop.chat.actions").exception("확인 상자 줄을 만들지 못함: %s", item.action)
             return [{"label": "오류", "after": "저장될 값을 읽지 못함"}]
 
     # ---- 동작별 검사
@@ -1044,7 +1049,7 @@ class ActionPlanner:
             answer_id, index = key.rsplit("#", 1)
             try:
                 rec = self._record(self.project_id, answer_id=answer_id, index=int(index), request_id=request_id or "q-none",
-                                   request_text=request_text, proposal=prop, klass=klass, result=result, error=error,
+                                   request_text=request_text, proposal=prop, klass=klass, result=result, error=actions_log.strip_paths(error),
                                    targets=targets if targets is not None else item.targets, batch_id=batch_id,
                                    undo_of=undo_of, confirmed_by=confirmed_by,
                                    confirmed_at=actions_log.now_kst().isoformat() if confirmed_by else None,

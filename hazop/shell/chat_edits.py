@@ -21,6 +21,12 @@ TITLEBLOCK_ACTIONS = ("titleblock.confirm", "titleblock.unconfirm")
 DRAWING_ACTIONS = ("drawing.edit", "drawing.undo", "drawing.redo")
 P5_ACTIONS = ("ie.fmea_status", "ie.fmea_mark", "ie.mld_link")
 RUN_ACTIONS = TITLEBLOCK_ACTIONS + DRAWING_ACTIONS + P5_ACTIONS + ("docs.revision",)
+# 고침마다 엔진에 넘기는 value 열쇠. 그 밖의 열쇠는 걸러 내고 확인 상자에 '넘기지 않은 값'으로 보인다(상자에 없는 값이 저장되지 않게)
+VALUE_KEYS = {"set_tag": ("tag",), "set_kind": ("kind",), "set_normal_position": ("value",), "set_fail_position": ("value",),
+              "set_flow": ("from", "to", "flip"), "set_endpoint": ("end", "node"), "clear_endpoint": ("end",), "set_path": ("points",),
+              "confirm": ("items",), "add_node": ("kind", "tag", "at"), "add_relation": ("kind", "from", "to", "line_no"),
+              "delete_node": (), "delete_relation": ()}
+CONFIRM_ITEM_KEYS = ("check", "reason")
 TAG_ASK = "태그 '%s'가 이미 있습니다: %s. 태그는 프로젝트 전체에서 유일해야 합니다. 그래도 고칠까요?"   # api_corrections.apply_edit과 같은 글
 
 
@@ -149,7 +155,7 @@ def _resolve(engine, a):
     """(graph_id, local_id, value) 또는 사유 글. id(프로젝트 구성요소 ID, 또는 하나로 정해지는 태그)를 주면 도면과 local_id로 바꾸고,
     value의 from·to·node도 같은 도면의 구성요소면 local_id로 바꾼다."""
     from hazop.extract import corrections
-    gid, lid, value = a.get("graph_id"), a.get("local_id"), dict(a.get("value") or {})
+    gid, lid, value = a.get("graph_id"), a.get("local_id"), _kept(a.get("op"), a.get("value"))[0]
     find = None
     if a.get("id") or any(isinstance(value.get(k), str) for k in corrections.REF_KEYS):
         find = _finder(engine)
@@ -169,6 +175,24 @@ def _resolve(engine, a):
             if not isinstance(hit, str) and hit[0] == gid:
                 value[k] = hit[1]
     return gid, lid, value
+
+
+def _kept(op, value):
+    """(넘길 value, 걸러 낸 열쇠 목록). 미확인 확정의 항목도 check·reason만 남긴다."""
+    value = dict(value or {})
+    keys = VALUE_KEYS.get(op, ())
+    kept = {k: v for k, v in value.items() if k in keys}
+    dropped = sorted(k for k in value if k not in keys)
+    if op == "confirm" and isinstance(kept.get("items"), list):
+        items = []
+        for x in kept["items"]:
+            if isinstance(x, dict):
+                dropped += sorted("items." + k for k in x if k not in CONFIRM_ITEM_KEYS)
+                items.append({k: x[k] for k in CONFIRM_ITEM_KEYS if k in x})
+            else:
+                items.append(x)
+        kept["items"] = items
+    return kept, dropped
 
 
 def _finder(engine):
@@ -343,6 +367,9 @@ def _drawing_details(engine):
                 if impact.get("sheet") in ("compared", "confirmed"):
                     rows.append({"label": "쪽 확정", "after": "이 쪽의 %s이 풀릴 수 있습니다." % ("확정" if impact["sheet"] == "confirmed" else "견줌")})
             rows += _value_rows(engine, row, a["op"], value)
+            dropped = _kept(a["op"], a.get("value"))[1]
+            if dropped:
+                rows.append({"label": "넘기지 않은 값", "after": "이 고침에 쓰지 않는 값이라 저장하지 않음: %s" % ", ".join(dropped)})
             ask = _ask_text(engine, gid, a["op"], lid, value)
         else:
             op_id = _undo_target(view, a) if item.action == "drawing.undo" else (view.get("redo") or {}).get("op_id")
@@ -374,9 +401,13 @@ def _drawing_execute(engine):
         elif call.action == "drawing.undo":
             out = ac.undo(engine, gid, b["op_id"], b["ver"], confirm=b.get("confirm"), defer=True)
         else:
+            now = (ac.view(engine, gid).get("redo") or {}).get("op_id")
+            if now != b.get("op_id"):      # 확인한 고침과 지금 다시 할 고침이 다르면 하지 않는다(판 대조와 함께 이중으로 막음)
+                return _refused("확인한 뒤 다시 할 고침이 바뀌어(%s → %s) 하지 않았습니다. 다시 요청해 확인 상자를 보세요."
+                                % (b.get("op_id"), now or "없음"), "stale", gid)
             out = ac.redo(engine, gid, b["ver"], defer=True)
             if out.get("ok") and out.get("op_id") != b.get("op_id"):
-                LOG.warning("다시 하기 대상이 확인한 것(%s)과 다름(%s)", b.get("op_id"), out.get("op_id"))
+                LOG.error("다시 하기가 확인하지 않은 고침(%s)을 되살림(확인한 것 %s)", out.get("op_id"), b.get("op_id"))
         if not out.get("ok"):
             code = out.get("code") or "failed"
             text = out.get("message") or "저장하지 못했습니다."

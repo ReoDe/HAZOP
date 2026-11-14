@@ -47,6 +47,15 @@ LOCK_NAME = ".lock"
 NL = b"\n"
 _LOCK = threading.Lock()
 _KEY_RE = re.compile(r"^[A-Za-z0-9_.:#-]{1,100}$")
+# 로컬 경로(드라이브·UNC·POSIX 절대 경로). 오류 글에 든 경로는 파일 이름만 남기고 적는다(기록 파일에 이 PC의 폴더 구조를 남기지 않음)
+_PATH = re.compile(r"""(?:[A-Za-z]:[\\/]|\\\\)[^'"\s<>|]*|(?<![\w.])/(?:[^/'"\s]+/)+[^/'"\s]*""")
+
+
+def strip_paths(text):
+    """'C:\\Users\\x\\a.xlsx' -> 'a.xlsx'(UNC·POSIX 절대 경로도). 글이 아니면 그대로."""
+    if not isinstance(text, str):
+        return text
+    return _PATH.sub(lambda m: re.split(r"[\\/]", m.group(0).rstrip("\\/"))[-1] or "(경로)", text)
 
 
 def now_kst():
@@ -178,7 +187,7 @@ def record(project_id, *, answer_id, index, request_id, request_text, proposal, 
     row = {"schema": SCHEMA, "at": when.isoformat(), "project_id": project_id, "conversation_id": conversation_id,
            "request_id": request_id, "answer_id": answer_id, "action_key": key,
            "request_text": str(request_text or "")[:REQUEST_TEXT_MAX], "model_proposal": _proposal(proposal),
-           "class": klass, "result": result, "error": None if error is None else str(error)[:ERROR_MAX],
+           "class": klass, "result": result, "error": None if error is None else strip_paths(str(error))[:ERROR_MAX],
            "targets": [str(t) for t in targets], "batch_id": batch_id, "undo_of": undo_of,
            "confirmed_by": confirmed_by, "confirmed_at": confirmed_at, "approval_digest": approval_digest,
            "model": model, "via": via, "app_version": app_version}

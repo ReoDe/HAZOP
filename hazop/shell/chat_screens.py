@@ -193,6 +193,7 @@ def _aireview_details(engine):
             return [{"label": "오류", "after": state}]
         ver, rows = state
         out = []
+        raw = _raw_candidates(engine, item.args["graph_id"])
         for cid in _aireview_ids(engine, item):
             r = rows.get(cid)
             if r is None:
@@ -200,11 +201,41 @@ def _aireview_details(engine):
                 continue
             value = r["values"][0] if r["values"] else ""
             after = {"aireview.reject": "거절(값은 바꾸지 않음)", "aireview.revert": "되돌림(%s 이전으로)" % r["status_label"]}.get(item.action, value)
+            c = raw.get(cid) or {}
+            if r.get("field") == "connection" and c.get("open_end"):     # 어느 끝을 어디에 잇는지(연결 후보)
+                after = "%s · %s 끝(%s에 붙은 배관)을 %s에 잇기" % (after, c["open_end"], c.get("attached_local") or "-", c.get("partner_local") or "-")
             out.append({"label": "%s %s · %s" % (r["field_label"], cid, r.get("local_id") or ""), "before": r["current"] or "(비어 있음)",
                         "after": "%s · 확신도 %.2f · AI 근거: %s" % (after, r["confidence"], r["reason"] or "없음")})
         out.append({"label": "후보 판", "after": str(ver)})
         return out
     return details
+
+
+def _raw_candidates(engine, graph_id):
+    """후보 파일의 원래 후보(연결 후보의 open_end·attached_local·partner_local을 보이려고). 못 읽으면 빈 표."""
+    from hazop.extract import ai_review
+    try:
+        doc = ai_review.load_doc(engine.graph_names().get(graph_id) or "")
+    except (OSError, ValueError):
+        return {}
+    return {c.get("cand_id"): c for c in (doc or {}).get("candidates") or [] if isinstance(c, dict)}
+
+
+def ie_draft_by_human(engine):
+    """⑥ 문서에 사람이 만든·고친·받아들인 것이 있는지(규칙 초안 다시 만들기를 확인 동작으로 올린다, 규격 §4.2 ⑥)."""
+    from hazop.shell import api_ie
+    try:
+        ctx, _why = api_ie._context(engine)
+    except Exception:  # noqa: BLE001 - 못 읽으면 사람이 고친 것으로 보고 확인을 받는다
+        return True
+    if ctx is None:
+        return False
+    doc = ctx[3] or {}
+    if any((g or {}).get("origin") == "human" for g in (doc.get("groups") or {}).values()):
+        return True
+    if any((c or {}).get("placed_by") == "human" for c in (doc.get("candidates") or {}).values()):
+        return True
+    return any((v or {}).get("origin") == "human" for t in ("headings", "end_states", "basic_events") for v in (doc.get(t) or {}).values())
 
 
 def _aireview_execute(engine, action):

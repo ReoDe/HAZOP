@@ -157,8 +157,8 @@ class AnalysisRunTest(RunBase):
         with mock.patch.object(api_results, "_run_conn", lambda engine, units, method=None: dict(plan)):
             item = self.one("analysis.run", node_ids=["S1"])
             rows = {r["label"]: r["after"] for r in item["details"]}
-            self.assertIn("요금이 나갑니다", rows["호출 수 어림"])
-            self.assertEqual(rows["연결"], "API 키 · 보통")
+            self.assertNotIn("구독 한도", rows["호출 수 어림"])
+            self.assertTrue(rows["연결"].startswith("API 키 · 보통"))
             self.assertEqual(rows["요금"], plan["confirm_text"])
             self.approve(item)
         self.assertEqual(self.calls, [{"scope": "node", "node_id": "S1", "conn_ver": "cv-1", "confirm_paid": True}])

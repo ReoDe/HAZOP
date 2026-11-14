@@ -83,14 +83,7 @@ class Resolver:
 
 
 # 오류 글 속 로컬 전체 경로(드라이브·UNC·POSIX)를 파일 이름만 남긴다(화면에 사용자 폴더 이름을 싣지 않는다)
-_PATH = re.compile(r"""(?:[A-Za-z]:[\\/]|\\\\)[^'"\s<>|]*|(?<![\w.])/(?:[^/'"\s]+/)+[^/'"\s]*""")
-
-
-def strip_paths(text):
-    """'C:\\Users\\x\\a.xlsx' -> 'a.xlsx'(UNC·POSIX 절대 경로도)."""
-    if not isinstance(text, str):
-        return text
-    return _PATH.sub(lambda m: re.split(r"[\\/]", m.group(0).rstrip("\\/"))[-1] or "(경로)", text)
+strip_paths = actions_log.strip_paths      # 'C:\Users\x\a.xlsx' -> 'a.xlsx'(기록을 쓸 때도 같은 함수로 거른다)
 
 
 def well_formed(row):

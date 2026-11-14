@@ -2,7 +2,7 @@
 // 여기는 받은 항목을 그리고 사람이 누르는 단추(확인 상자의 실행·하지 않음, '이 요청 되돌리기', '나머지도 나누기')를 엔진 명령으로 보낸다.
 // 모델이 쓴 글(구간 이름 등)은 ${}로만 넣는다.
 import { html } from "../ui/html.js";
-import { useState } from "../../vendor/hooks.module.js";
+import { useEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { cmd, on } from "../bridge.js";
 import { store } from "../store.js";
 import { Icon } from "../ui/icon.js";
@@ -101,41 +101,42 @@ if (typeof document !== "undefined" && !document.getElementById("chat-actions-cs
   st.id = "chat-actions-css";
   st.textContent = ".act-fold{margin:6px 0;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface)}"
     + ".act-fold>summary{cursor:pointer;padding:4px 8px;font-size:var(--fs-xs);color:var(--muted);list-style-position:inside}"
-    + ".act-fold[open]>summary{border-bottom:1px solid var(--line)}.act-fold .act-body{padding:4px 8px 6px;display:grid;gap:6px}"
+    + ".act-fold[open]>summary{border-bottom:1px solid var(--line)}.act-fold .act-body{padding:4px 8px 6px;display:grid;gap:6px;max-height:40vh;overflow:auto}"
     + ".act-table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}.act-table th{text-align:left;font-weight:500;color:var(--muted);"
     + "padding:3px 6px 3px 0;vertical-align:top;white-space:nowrap;width:1%}.act-table td{padding:3px 0;vertical-align:top;overflow-wrap:anywhere;white-space:pre-wrap}"
     + ".act-table .before{color:var(--muted)}.act-table .arrow{color:var(--muted);padding:0 4px}.act-table .after{font-weight:600}"
-    + ".act-more{border:0;background:none;padding:0 0 0 4px;color:var(--accent-ink);cursor:pointer;font-size:var(--fs-xs)}";
+    + ".act-need{font-size:var(--fs-xs);color:var(--muted)}";
   document.head.appendChild(st);
 }
 
-const LONG = 120;     // 이보다 긴 값(사유 전문 등)은 앞부분만 보이고 '전문 보기'로 펼친다(글자는 하나도 버리지 않는다)
-
-function Long({ text, cls }) {
-  const [open, setOpen] = useState(false);
-  const t = text == null ? "" : String(text);
-  if (t.length <= LONG || open) {
-    return html`<span class=${cls}>${t}${t.length > LONG ? html`<button type="button" class="act-more" onClick=${() => setOpen(false)}>접기</button>` : null}</span>`;
-  }
-  return html`<span class=${cls}>${t.slice(0, LONG)}…<button type="button" class="act-more" aria-label="전문 보기" onClick=${() => setOpen(true)}>전문 보기</button></span>`;
-}
-
-/** 확인 상자의 '저장될 값'과 대상을 접을 수 있는 한 덩이로: 항목 | 앞값 → 새값 표. 엔진이 지금 상태에서 만든 줄을 빠짐없이 보인다. */
-function Fold({ it }) {
+/** 확인 상자의 '저장될 값'과 대상을 접을 수 있는 한 덩이로: 항목 | 앞값 → 새값 표. 엔진이 지금 상태에서 만든 줄을 빠짐없이, 값은 늘 전문으로 보인다
+ * (길면 상자 안에서 스크롤). onSeen(참·거짓): 펼쳐져 있고 끝까지 본 적이 있는지. 접었거나 끝까지 내려 보지 않았으면 '실행'을 끈다. */
+function Fold({ it, onSeen }) {
   const rows = it.details || [];
   const ops = it.ops || [];
   const tgt = (it.targets || []).length;
+  const body = useRef(null);
+  const box = useRef(null);
+  const bottom = useRef(false);
+  function look() {
+    const el = body.current;
+    const open = !!(box.current && box.current.open);
+    if (el && open && el.scrollTop + el.clientHeight >= el.scrollHeight - 4) bottom.current = true;
+    if (onSeen) onSeen(open && bottom.current);
+  }
+  useEffect(() => { look(); }, [it.token, rows.length]);
   if (!rows.length && !ops.length && !tgt) return null;
   const head = [rows.length ? "저장될 값 " + rows.length + "줄" : null, ops.length ? "바꿀 내용 " + ops.length + "줄" : null,
     tgt ? "대상 " + it.targets_total + "개" : null].filter(Boolean).join(" · ");
-  return html`<details class="act-fold" open>
+  const cell = (cls, v) => html`<span class=${cls}>${v == null ? "" : String(v)}</span>`;
+  return html`<details class="act-fold" open ref=${box} onToggle=${look}>
     <summary>${head}</summary>
-    <div class="act-body">
+    <div class="act-body" ref=${body} onScroll=${look}>
       ${rows.length ? html`<table class="act-table" aria-label="저장될 값"><tbody>${rows.map((r, i) => html`<tr key=${i}>
         <th scope="row">${r.label}</th>
         <td>${r.before !== undefined && r.before !== null
-          ? html`<${Long} cls="before" text=${r.before} /><span class="arrow" aria-label="에서">→</span><${Long} cls="after" text=${r.after} />`
-          : html`<${Long} cls="after" text=${r.after} />`}</td></tr>`)}</tbody></table>` : null}
+          ? html`${cell("before", r.before)}<span class="arrow" aria-label="에서">→</span>${cell("after", r.after)}`
+          : cell("after", r.after)}</td></tr>`)}</tbody></table>` : null}
       ${ops.length ? html`<ul class="tight" aria-label="바꿀 내용">${ops.map((o, i) => html`<li key=${i}>${o}</li>`)}</ul>` : null}
       <${Targets} it=${it} /></div></details>`;
 }
@@ -147,6 +148,8 @@ function LogError({ it }) {
 function ConfirmBox({ it }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const hasFold = !!((it.details || []).length || (it.ops || []).length || (it.targets || []).length);
+  const [seen, setSeen] = useState(!hasFold);
   async function press(name) {
     setBusy(true); setErr("");
     try { await cmd(name, { token: it.token }); } catch (e) { setErr(e.message || "처리하지 못했습니다."); setBusy(false); }
@@ -154,11 +157,12 @@ function ConfirmBox({ it }) {
   return html`<div class="actbox confirm" role="group" aria-label=${"확인: " + it.title}>
     <div class="actbox-h"><${Icon} name="alert-triangle" size=${15} /><b>${it.title}</b></div>
     <p>${it.text}</p>
-    <${Fold} it=${it} />
+    <${Fold} it=${it} onSeen=${(v) => setSeen(!hasFold || v)} />
     ${it.waiting ? html`<div class="muted" style="font-size:var(--fs-xs)">앞의 확인이 끝나면 이어서 묻습니다.</div>` : html`
       <div class="acts-row">
-        <${Btn} kind="primary" sm=${true} disabled=${busy} label="실행" onClick=${() => press("chat.action.approve")}>실행<//>
-        <${Btn} sm=${true} disabled=${busy} label="하지 않음" onClick=${() => press("chat.action.decline")}>하지 않음<//></div>`}
+        <${Btn} kind="primary" sm=${true} disabled=${busy || !seen} label="실행" onClick=${() => press("chat.action.approve")}>실행<//>
+        <${Btn} sm=${true} disabled=${busy} label="하지 않음" onClick=${() => press("chat.action.decline")}>하지 않음<//>
+        ${seen ? null : html`<span class="act-need" role="status">저장될 값을 펼쳐 끝까지 보면 실행할 수 있습니다.</span>`}</div>`}
     <${LogError} it=${it} />
     ${err ? html`<${Notice} kind="err" icon="alert-triangle">${err}<//>` : null}</div>`;
 }
