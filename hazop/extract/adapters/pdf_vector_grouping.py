@@ -11,7 +11,7 @@ import math
 from .pdf_vector_common import (
     _union, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist, _poly_box_dist,
     _uf_groups, _center, _is_circle, _is_chevron, _is_triangle, _pt_circle_dist, _bbox_pts,
-    _end_runs,
+    _end_runs, _meets_at_end,
 )
 
 
@@ -612,8 +612,8 @@ def _join_crossing_gaps(polys, dashes, syms, prm):
     """엇갈림 표기('LINE NOT CONNECTED': 잇지 않는 선을 끊어 그림)로 끊은 한 배관의 두 조각을 한 선으로 잇는다.
     두 조각의 마주 보는 끝이 굵기가 같고 한 줄 위에 있으며(바깥 방향이 반대) 간격이 end_tol보다 크고
     다른 선(실선이나 점선 경로)이 그 빈칸을 가로지르며, 그 선에 수직으로 잰 빈칸 폭(간격 × 사인)이 CROSSING_JOIN_MAX
-    이하이면 한 배관이다. 비스듬히 가로지르는 선일수록 같은 여백을 두려고 빈칸을 길게 끊는다. 두 끝은 다른 선 끝이나
-    몸체·선에 닿지 않아야 하고, 가로지르는 실선이 조각보다 굵으면 잇지 않는다(가는 곁가지가 굵은 주관 양쪽에서 끝난
+    이하이면 한 배관이다. 비스듬히 가로지르는 선일수록 같은 여백을 두려고 빈칸을 길게 끊는다. 두 끝은 다른 선 중간에
+    닿거나 기호를 향해 끝나지 않아야 하고(다른 선 끝만 맞댄 모서리와 기호 상자 옆을 나란히 지나는 끝은 괜찮다), 가로지르는 실선이 조각보다 굵으면 잇지 않는다(가는 곁가지가 굵은 주관 양쪽에서 끝난
     자리는 분기다, APR1400 025쪽 1" 관이 주관 x 662를 만나는 자리). 잇지 않으면 끝이 뜬 두 조각이 장식선으로 묶여 선 기호(오리피스 등)가 되거나, 비스듬한
     선 가까이 끝난 두 끝이 그 선의 분기가 된다(APR1400 008쪽: POSRV 배출 상승관이 파일럿 일점쇄선 가로선 자리에서
     2~4pt, y 263.9 배출관이 7.5도로 기운 입구관 자리에서 19pt 끊긴다) → 이은 선 목록."""
@@ -642,11 +642,28 @@ def _join_crossing_gaps(polys, dashes, syms, prm):
         [(-1, None, pts) for pts in _dash_paths(dashes)]
     segs = [(o, w, a, b) for o, w, pts in lines for a, b in _segs(pts)]
 
+    def beside_sym(e):
+        return _nearest_sym(e, syms, prm["attach_tol"]) is not None
+
+    def toward_sym(e, u):
+        # 기호에 닿거나 기호를 향해 끝난 끝. 기호 상자 옆을 나란히 지나 끝난 끝은 그 기호와 상관없다(APR1400 008쪽:
+        # MOV 상승관이 TEW 상자 오른쪽 변 2.1pt 옆을 지나 가로관 자리에서 끊긴다)
+        f = (e[0] + u[0] * prm["attach_tol"], e[1] + u[1] * prm["attach_tol"])
+        return any(s.alive and _poly_box_dist([e, f], s.bbox) <= prm["touch_tol"] for s in syms)
+
     def free(i, k):
-        # 끊어 그린 끝은 아무 선에도 닿지 않는다. 판(플랜지·판 밸브)이나 기호 선에 얹힌 끝은 엇갈림이 아니다
-        e = end(polys[i], k)
-        return len(near_ends(e, prm["end_tol"])) == 1 and _nearest_sym(e, syms, prm["attach_tol"]) is None and \
-            all(o == i or _seg_dist(e, a, b)[0] > prm["touch_tol"] for o, _, a, b in segs)
+        # 끊어 그린 끝은 다른 선 중간에 닿지 않는다. 판(플랜지·판 밸브)이나 기호 선에 얹힌 끝은 엇갈림이 아니다. 다른 선의
+        # 끝만 맞댄 끝(계기 지시선이 꺾여 들어와 끝난 모서리)은 그대로 끊어 그린 끝으로 본다. 이으면 그 모서리가 분기가
+        # 된다(APR1400 008쪽: TEW 지시선 끝이 엇갈림 자리 바로 위 상승관 끝에 맞닿는다)
+        e, u = end(polys[i], k), out_dir(polys[i], k)
+        near = [(j, kj) for j, kj in near_ends(e, prm["end_tol"]) if j != i]
+        def into_gap(j, kj):
+            # 맞댄 선이 빈칸 쪽으로 뻗으면 빈칸을 메우는 선(겹쳐 그린 배관)이다(APR1400 065쪽 플랜지 자리)
+            v = out_dir(polys[j], kj)
+            return v is None or -(v[0] * u[0] + v[1] * u[1]) >= 0.5
+        mates = {j for j, kj in near if _meets_at_end(e, polys[j]["pts"], end(polys[j], kj)) and not into_gap(j, kj)}
+        return len(mates) == len(near) and not toward_sym(e, u) and \
+            all(o == i or o in mates or _seg_dist(e, a, b)[0] > prm["touch_tol"] for o, _, a, b in segs)
 
     def inside_sym(e):
         # 반대 끝이 기호 몸체 깊숙이 든 조각은 기호의 안쪽 선일 수 있다. 이으면 그 선이 다른 기호까지 닿아 두 기호가
@@ -695,7 +712,9 @@ def _join_crossing_gaps(polys, dashes, syms, prm):
                 if abs((f[0] - e[0]) * u[1] - (f[1] - e[1]) * u[0]) > CROSSING_JOIN_LATERAL or \
                         (f[0] - e[0]) * u[0] + (f[1] - e[1]) * u[1] <= 0:
                     continue
+                # 빈칸 양쪽 끝이 모두 기호 옆이면 그 기호 자리의 빈칸일 수 있어 잇지 않는다(APR1400 134쪽 LS 013 원 옆)
                 if crossed(e, f, u, g, p["width"]) and free(i, k) and free(j, kj) and \
+                        not (beside_sym(e) and beside_sym(f)) and \
                         not inside_sym(end(p, 1 - k)) and not inside_sym(end(q, 1 - kj)):
                     cands.append((g, (i, k), (j, kj)))
     mate = {}

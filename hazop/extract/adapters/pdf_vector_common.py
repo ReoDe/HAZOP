@@ -69,6 +69,12 @@ def _segs(pts):
     return list(zip(pts[:-1], pts[1:]))
 
 
+def _meets_at_end(e, pts, f):
+    """꺾은선 pts에서 점 e에 가장 가까운 자리가 제 끝 f인가. 짧은 판(플랜지 등)은 끝이 e 가까이 있어도 가운데가 e에
+    더 가깝다(배관 끝이 판 가운데에 얹힘)."""
+    return min(_seg_dist(e, a, b)[0] for a, b in _segs(pts)) >= math.hypot(f[0] - e[0], f[1] - e[1]) - 0.05
+
+
 def _poly_dist(pts_a, pts_b):
     """두 꺾은선 사이 최소 거리(끝점-선분 기준 근사, 교차하면 0)."""
     best = float("inf")

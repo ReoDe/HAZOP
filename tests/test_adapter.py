@@ -459,6 +459,48 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertNotIn(("physical_connection", (60, 220)), run(6.0))
         self.assertNotIn(("physical_connection", (60, 220)), run(2.4, crossing=False))
 
+    def test_pipe_corner_beside_symbol_is_not_attached(self):
+        # APR1400 008쪽 MOV 상승관 꼭대기 모서리가 TEW 상자 변에서 1.8pt 떨어져 있다. 두 선이 끝을 맞댄 모서리는 배관이
+        # 꺾이는 자리라 상자에 붙이지 않는다
+        ext = pdf_run([rect(190, 220, 210, 240), rect(300, 90, 320, 110), rect(170, 98, 198.2, 130),
+                       line((200, 220), (200, 100), width=0.25), line((300, 100), (200, 100), width=0.25)])
+        pos = {n["local_id"]: (n["geometry"]["x"], n["geometry"]["y"]) for n in ext["nodes"]}
+        self.assertEqual([(r["kind"], sorted(pos[e["node_local_id"]] for e in r["endpoints"]))
+                          for r in ext["relations"]], [("physical_connection", [(190, 220), (300, 90)])])
+        # 배관 끝이 다른 선 중간에 얹히면(그 선 끝이 end_tol 안이어도) 끝끼리 맞댄 모서리가 아니라서 기호에 붙인 그대로
+        # 둔다(APR1400 134쪽 FI-041: 배관 끝이 플랜지 판 가운데에 얹힘)
+        ext = pdf_run([rect(300, 90, 320, 110), rect(170, 98, 198.2, 130), rect(190, 220, 210, 240),
+                       line((300, 100), (200, 100), width=0.25), line((200, 99.0), (200, 220), width=0.25)])
+        pos = {n["local_id"]: (n["geometry"]["x"], n["geometry"]["y"]) for n in ext["nodes"]}
+        self.assertIn(("physical_connection", [(170, 98), (300, 90)]),
+                      [(r["kind"], sorted(pos[e["node_local_id"]] for e in r["endpoints"])) for r in ext["relations"]])
+
+    def test_crossing_gap_beside_lead_corner_or_symbol_is_joined(self):
+        # APR1400 008쪽 배출 상승관이 일점쇄선 자리에서 끊긴 위 조각 끝에 TEW 지시선 끝이 맞닿거나(분기), 상승관이 TEW
+        # 상자 옆을 나란히 지나 끊긴다. 둘 다 끊어 그린 한 배관이다. 배관 끝에 가로 판이 얹히면 잇지 않는다
+        def run(extra):
+            dash = dict(line((80, 150), (320, 150), width=0.25), dash=[[6.0, 3.0], 0.0])
+            ext = pdf_run([rect(190, 60, 210, 80), rect(190, 220, 210, 240), rect(60, 140, 80, 160),
+                           rect(320, 140, 340, 160), line((200, 80), (200, 148.8), width=0.25),
+                           line((200, 151.2), (200, 220), width=0.25), dash] + extra)
+            ys = {n["local_id"]: n["geometry"]["y"] for n in ext["nodes"] if n.get("kind") != "tee"}
+            adj = {}
+            for r in ext["relations"]:
+                if r["kind"] == "physical_connection":
+                    a, b = (e["node_local_id"] for e in r["endpoints"])
+                    adj.setdefault(a, set()).add(b)
+                    adj.setdefault(b, set()).add(a)
+            return {frozenset(ys[x] for x in (a, c)) for a in adj if a in ys for b in adj[a]
+                    for c in ({b} if b in ys else adj[b] - {a}) if c in ys}
+        lead = run([rect(120, 100, 140, 120), line((130, 120), (130, 147.8), (200, 147.8), width=0.12)])
+        self.assertEqual(lead, {frozenset((60, 220)), frozenset((60, 100)), frozenset((100, 220))})
+        self.assertEqual(run([rect(170, 128, 197.9, 148)]), {frozenset((60, 220))})
+        self.assertNotIn(frozenset((60, 220)), run([line((198.6, 148.8), (201.4, 148.8), width=0.12)]))
+        # 판이 배관 끝에서 0.6pt 떨어져 있어도 판 끝이 end_tol 안이면 판에 얹힌 끝이다(APR1400 065쪽 플랜지)
+        self.assertNotIn(frozenset((60, 220)), run([line((199.0, 149.4), (201.0, 149.4), width=0.12)]))
+        # 빈칸 양쪽 끝이 모두 기호 옆이면 기호 자리의 빈칸일 수 있어 잇지 않는다(APR1400 134쪽 LS 013 원 옆)
+        self.assertNotIn(frozenset((60, 220)), run([rect(170, 140, 198.9, 160)]))
+
     def test_two_pieces_on_one_line_are_not_orifice_plates(self):
         # 오리피스 판은 배관을 가로질러 나란히 선 두 판이다. 한 줄 위에 이어 놓인 두 조각은 판이 아니다
         side = pdf_run([line((200, 100), (200, 108)), line((203, 100), (203, 108))])

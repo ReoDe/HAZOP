@@ -42,7 +42,7 @@ from .pdf_vector_common import (
     _num, _bbox_pts, _union, _expand, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist,
     _seg_cross, _poly_box_dist, _uf_groups, _center, _is_circle, _is_tombstone, _is_chevron, _is_triangle, _issue,
     _is_convex,
-    _pt_circle_dist, _end_runs,
+    _pt_circle_dist, _end_runs, _meets_at_end,
 )
 from .pdf_vector_grouping import (
     _Sym, _cluster_bodies, _nearest_sym, _end_status, _plate_assemblies, _group_symbols, _merge_appendages,
@@ -799,8 +799,27 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
             pieces.append({"pts": [pt, _center(s.bbox)], "id": s.evidence()[0], "width": None})
             att[(len(pieces) - 1, 1)] = (s, "pdf_path_endpoint")
             free.append((len(pieces) - 1, 0, pt))
+    cell = 4 * prm["end_tol"]
+    end_grid = collections.defaultdict(list)
+    for i, k, pt in ends:
+        end_grid[(int(pt[0] // cell), int(pt[1] // cell))].append((i, pt))
+
+    def corner_beside(i, pt, s):
+        # 두 선이 끝끼리만 맞닿고(서로 상대 선 중간에 얹히지 않음) 그 자리가 기호에 닿지 않는가
+        cx, cy = int(pt[0] // cell), int(pt[1] // cell)
+        others = [(j, q) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for j, q in end_grid.get((cx + dx, cy + dy), ())
+                  if j != i and math.hypot(q[0] - pt[0], q[1] - pt[1]) <= prm["end_tol"]]
+        if len(others) != 1 or _pt_box_dist(pt, s.bbox) <= prm["touch_tol"]:
+            return False
+        j, q = others[0]
+        return _pt_box_dist(q, s.bbox) > prm["touch_tol"] and _meets_at_end(pt, pieces[j]["pts"], q) and \
+            _meets_at_end(q, pieces[i]["pts"], pt)
     for i, k, pt in ends:
         s, basis = _attach(pt, syms, markers, prm)
+        # 두 선이 끝을 맞댄 모서리가 기호 옆을 닿지 않고 지나면 그 모서리는 배관이 꺾이는 자리다. 기호에 붙이면 배관이
+        # 그 기호에서 둘로 갈린다(APR1400 008쪽: MOV 상승관 꼭대기 모서리가 TEW 상자 변에서 1.8pt 떨어져 있다)
+        if s is not None and basis == "pdf_path_endpoint" and corner_beside(i, pt, s):
+            s = None
         if s is not None:
             att[(i, k)] = (s, basis)
         else:
