@@ -725,6 +725,12 @@ class PdfVectorRuleTest(unittest.TestCase):
                 ext = pdf_run([circle(100, 100, 14)], [word(t, 95, 92 + 7 * i) for i, t in enumerate(text.split("\n"))])
                 self.assertEqual([n["kind"] for n in ext["nodes"]], [kind])
 
+    def test_lone_triangle_at_line_end_is_not_a_pipe_cap(self):
+        cap = pdf_run([line((100, 100), (200, 100)), rect(200, 97, 204, 103)])
+        nozzle = pdf_run([line((100, 100), (200, 100)), prim([(200, 97), (200, 103), (204, 100), (200, 97)], closed=True)])
+        self.assertEqual([n["kind"] for n in cap["nodes"]], ["pipe_cap"])
+        self.assertEqual([n["kind"] for n in nozzle["nodes"]], [None])
+
     def test_circle_with_equipment_word_is_not_instrument(self):
         ext = pdf_run([circle(100, 100, 20), rect(200, 80, 240, 120), line((120, 100), (200, 100))],
                       [word("P-01", 90, 124), word("PUMP", 90, 131)])

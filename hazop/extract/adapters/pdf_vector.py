@@ -1403,9 +1403,11 @@ def _classify(sym, text, degree, prm, marks=()):
     kind, basis = _kind_from_text(text)
     if kind is not None:
         return kind, basis
-    # 몸체 안에 원이 든 기호(소화전 등)는 끝막음이 아니다
+    # 몸체 안에 원이 든 기호(소화전 등)는 끝막음이 아니다. 삼각형 하나뿐인 몸체도 아니다: 범례 1.7-1 1/4의 끝막음은 배관
+    # 끝의 괄호·반원이고, 막대에 매단 삼각형은 SPRAY NOZZLE OR SPARGER의 분사구다
     if not text and degree == 1 and not sym.stroke_only and max(_w(sym.bbox), _h(sym.bbox)) <= prm["pipe_cap_max"] \
-            and not (len(sym.bodies) >= 2 and any(b.get("curved") for b in sym.bodies)):
+            and not (len(sym.bodies) >= 2 and any(b.get("curved") for b in sym.bodies)) \
+            and not (len(sym.bodies) == 1 and _is_triangle(sym.bodies[0])):
         return "pipe_cap", PIPE_CAP_BASIS
     return None, None
 
