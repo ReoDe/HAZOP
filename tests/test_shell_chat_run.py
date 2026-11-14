@@ -129,7 +129,10 @@ class AnalysisRunTest(RunBase):
     def setUp(self):
         super().setUp()
         self.calls = []
-        p = mock.patch.object(api_results, "_run", lambda engine, a: self.calls.append(a) or {"job": "j1", "calls": 13})
+        # 범위 지문(scope_fp)은 엔진 쪽 함수가 있을 때만 실린다. 다른 인자 대조는 지문을 빼고 본다(지문은 따로 시험)
+        p = mock.patch.object(api_results, "_run", lambda engine, a: self.calls.append({k: v for k, v in a.items() if k != "scope_fp"})
+                              or self.fps.append(a.get("scope_fp")) or {"job": "j1", "calls": 13})
+        self.fps = []
         p.start()
         self.addCleanup(p.stop)
 
@@ -178,6 +181,16 @@ class AnalysisRunTest(RunBase):
             plan["confirm_text"], plan["conn_ver"] = "$9.99", "cv-2"
             self.approve(item)
         self.assertEqual(self.calls, [], "상자에 보인 비용과 지금 비용이 다르면 실행하지 않는다")
+
+    def test_the_scope_seen_in_the_box_is_passed_as_scope_fp(self):
+        from hazop.shell import analysis_run
+        if not hasattr(analysis_run, "scope_fp"):
+            self.skipTest("엔진에 범위 지문(analysis_run.scope_fp)이 아직 없음")
+        plan = {"via": "subscription", "method_name": "Claude 구독", "model_name": "빠름", "paid": False, "conn_ver": "cv-s", "model": "fast"}
+        with mock.patch.object(api_results, "_run_conn", lambda engine, units, method=None: dict(plan)):
+            self.approve(self.one("analysis.run", node_ids=["S1"]))
+        self.assertEqual(len(self.fps), 1)
+        self.assertTrue(self.fps[0], "구독이어도 확인한 범위 지문을 넘긴다")
 
     def test_decline_runs_nothing_and_is_recorded(self):
         item = self.one("analysis.run", node_ids=["S1"])

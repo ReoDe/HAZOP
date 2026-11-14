@@ -129,11 +129,12 @@ class ChatActions:
             if len(item.args.get("cell_ids") or []) > 1:
                 return "칸은 한 번에 하나만 다시 분석합니다."
             if self._engine is not None:
-                plan = analysis_conn(self._engine, item.args)
-                if isinstance(plan, str):
-                    return plan
-                if plan is not None:    # 확인 상자에서 본 연결 판. API 키(과금)면 확인을 누른 것이 비용 확인이다(B4)
-                    item.basis = {"conn_ver": plan.get("conn_ver"), "paid": bool(plan.get("paid"))}
+                got = analysis_scope(self._engine, item.args)
+                if isinstance(got, str):
+                    return got
+                if got is not None:     # 확인 상자에서 본 연결 판과 범위 지문. API 키(과금)면 확인을 누른 것이 비용 확인이다(B4)
+                    plan, fp = got
+                    item.basis = {"conn_ver": (plan or {}).get("conn_ver"), "paid": bool((plan or {}).get("paid")), "scope_fp": fp}
             return None
         out = {"analysis.run": analysis}
         if self._engine is not None:
@@ -625,17 +626,28 @@ def run_args(args):
 
 def analysis_conn(engine, args):
     """실제로 쓸 분석 연결(api_settings.run_conn: 방식·모델·요금·conn_ver), 연결 설정이 없는 엔진이면 None, 셀 수 없으면 사유 글."""
-    from hazop.shell import api, api_results
+    got = analysis_scope(engine, args)
+    return got if isinstance(got, str) or got is None else got[0]
+
+
+def analysis_scope(engine, args):
+    """(연결 또는 None, 확인한 범위 지문 또는 None) / None(칸 없음) / 사유 글. 범위 지문은 엔진의 analysis_run.scope_fp(칸·구간·호출 수·
+    예상 비용·모델·방식)로 만들어, 상자를 띄운 뒤 범위가 바뀌면 엔진이 scope_changed로 실행하지 않게 한다(B4 검토 2)."""
+    from hazop.shell import analysis_run, api, api_results
     if len(args.get("node_ids") or []) != 1:
         return None
     try:
         _pg, _ns, _doc, units = api_results._plan(engine, run_args(args))
-        return api_results._run_conn(engine, units) if units else None
+        if not units:
+            return None
+        plan = api_results._run_conn(engine, units)
     except api.CommandError as exc:
         return exc.message
     except Exception:  # noqa: BLE001 - 연결을 못 읽으면 실행 때 엔진이 다시 본다
         LOG.exception("분석 연결을 읽지 못함")
         return None
+    fp_fn = getattr(analysis_run, "scope_fp", None)
+    return plan, (fp_fn(units, plan) if fp_fn is not None else None)
 
 
 def analysis_details(item, snap, engine=None):
@@ -844,6 +856,8 @@ class RunExecutors:
             a["conn_ver"] = basis["conn_ver"]
             if basis.get("paid"):            # 상자에 예상 비용을 보였고 사람이 확인을 눌렀다
                 a["confirm_paid"] = True
+        if basis.get("scope_fp"):            # 확인한 범위(칸·호출 수·비용·모델) 그대로일 때만 돈다(다르면 엔진이 scope_changed로 거절)
+            a["scope_fp"] = basis["scope_fp"]
         out = api_results._run(self.engine, a)
         job = out.get("job")
         if job and self.record is not None:
