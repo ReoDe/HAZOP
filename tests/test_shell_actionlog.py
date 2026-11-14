@@ -146,5 +146,24 @@ class ActionLogTest(unittest.TestCase):
         self.assertEqual(len(actions_log.read_day("P A", NOW)[0]), 1)
 
 
+
+class ChatConnTest(unittest.TestCase):
+    """채팅 창 아래 줄: 분석 연결이 아니라 채팅이 실제로 쓰는 연결(구독)을 보인다(A8 검토 지적 2)."""
+
+    def test_chat_line_shows_the_chat_connection_not_the_analysis_one(self):
+        got = {"via": "subscription", "chip": "구독 · 빠름 · 연결됨", "tone": "ok", "can_start": True}
+        self.assertIn("chatconn", api_actionlog.TOPICS)
+        with mock.patch("hazop.shell.api_settings.chat_connection", lambda engine: dict(got)):
+            out = json.loads(api_actionlog.read(object(), ["chatconn"], {}).body)
+        self.assertEqual(out, got)
+        self.assertIsNone(api_actionlog.read(object(), ["chatconn", "x"], {}))
+
+    def test_a_broken_settings_module_does_not_break_the_chat_line(self):
+        with mock.patch("hazop.shell.api_settings.chat_connection", mock.Mock(side_effect=RuntimeError("x"))):
+            out = json.loads(api_actionlog.read(object(), ["chatconn"], {}).body)
+        self.assertEqual((out["via"], out["can_start"]), ("subscription", False))
+        self.assertNotIn("key", json.dumps(out))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,7 @@
 import { html } from "../ui/html.js";
 import { useEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { store, useStore } from "../store.js";
-import { cmd, read } from "../bridge.js";
+import { cmd, on, onChanged, read } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip } from "../ui/parts.js";
 import { AnswerCard } from "./card.js";
@@ -28,6 +28,7 @@ export async function loadChat() {
 export function ChatPanel({ collapsed, onToggle, onChip, onSheet }) {
   const chat = useStore((s) => s.chat);
   const conn = useStore((s) => s.conn);
+  const chatConn = useChatConn();
   const [text, setText] = useState("");
   const input = useRef(null);
   const list = useRef(null);
@@ -89,10 +90,23 @@ export function ChatPanel({ collapsed, onToggle, onChip, onSheet }) {
           ? html`<button type="button" class="send stop" title="멈추기" aria-label="멈추기" onClick=${() => cmd("chat.stop")}><${Icon} name="player-stop" size=${16} /></button>`
           : html`<button type="button" class="send" title="보내기 (Enter)" aria-label="보내기" disabled=${blocked || !text.trim()} onClick=${send}><${Icon} name="send" size=${16} /></button>`}
       </div>
-      <div class="foot"><span class=${"dot " + (conn.tone || "plain")}></span> ${conn.chip || "구독 · " + conn.label}
+      <div class="foot"><span class=${"dot " + ((chatConn || conn).tone || "plain")}></span> ${chatConn ? chatConn.chip : "구독 · " + (conn.label || "")}
         <button type="button" class="btn ghost sm" title="모델 바꾸기" aria-label=${"모델: " + NAMES[chat.model]} style="margin-left:auto" onClick=${nextModel}>
           <${Icon} name="cpu" size=${14} />${NAMES[chat.model]}</button></div>
     </div></aside>`;
+}
+
+// 채팅이 실제로 쓰는 연결(구독·채팅 모델·상태). 분석 연결 칩(conn.chip)은 분석이 API일 때 채팅도 API처럼 보이게 해서 쓰지 않는다.
+function useChatConn() {
+  const [value, setValue] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => read("chatconn").then((v) => { if (alive) setValue(v); }).catch(() => {});
+    load();
+    const offs = [on("conn.changed", load), on("chat.state", load), onChanged((topic) => { if (topic === "aisettings" || topic === "chatconn") load(); })];
+    return () => { alive = false; offs.forEach((off) => off()); };
+  }, []);
+  return value;
 }
 
 function GuideCard({ availability }) {

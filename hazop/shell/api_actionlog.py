@@ -6,6 +6,8 @@
   승인 표지(`approval_digest`)·대화 ID도 싣지 않는다. 모델이 적은 까닭(`why`, 300자)과 오류 글은 보인다.
 - 대상은 종류를 붙여 보낸다: 구간(node) · 칸(cell: 구간/편차/항목) · 도면(sheet) · 구성요소(component, 도면 안 local_id) · 그 밖(other).
   웹은 이 값으로 그 도면·구간·칸으로 이동한다(경로는 보내지 않는다).
+- **읽기** `chatconn`: 채팅 창 아래 줄이 보일 채팅 연결(채팅이 실제로 쓰는 방식·모델·상태, `api_settings.chat_connection`).
+  분석 연결 칩(conn.chip)과 따로 본다: 분석이 API여도 채팅은 구독으로 돈다(A8 검토 지적 2). 키 값은 없다.
 """
 
 import re
@@ -13,7 +15,7 @@ from datetime import date
 
 from hazop.chat import actions_log
 
-TOPICS = ("actionlog",)
+TOPICS = ("actionlog", "chatconn")
 DEFAULT_DAYS = 8                 # 오늘과 지난 7일(채팅 규격 §4.7)
 MAX_DAYS = 31
 MAX_ROWS = 500
@@ -146,9 +148,20 @@ def _answer(engine, pid, rows, bad, **extra):
     return dict({"project_id": pid, "rows": shown, "total": len(rows), "cut": len(rows) > MAX_ROWS, "bad": bad, "counts": counts}, **extra)
 
 
+def chat_connection(engine):
+    """채팅 창 아래 줄 값. 연결 설정 모듈이 없거나 실패하면 '연결 상태를 모름'으로 답한다(예외를 올리지 않는다)."""
+    try:
+        from hazop.shell import api_settings
+        return api_settings.chat_connection(engine)
+    except Exception:  # noqa: BLE001 - 아래 줄 하나 때문에 채팅 창이 깨지지 않게
+        return {"via": "subscription", "chip": "구독 · 연결 상태를 모름", "tone": "warn", "can_start": False}
+
+
 def read(engine, parts, query):
-    """ReadApi가 부르는 길: parts[0] == 'actionlog'. 날짜 형식이 틀리면 None(404)."""
+    """ReadApi가 부르는 길: parts[0] == 'actionlog'(날짜 형식이 틀리면 None, 404) 또는 'chatconn'."""
     api = _api()
+    if parts[0] == "chatconn":
+        return api._json(chat_connection(engine)) if len(parts) == 1 else None
     if len(parts) == 1:
         raw = (query or {}).get("days")
         raw = raw[0] if isinstance(raw, list) else raw
