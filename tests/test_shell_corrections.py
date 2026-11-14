@@ -521,6 +521,17 @@ class RegisteredPathTest(unittest.TestCase):
             args["confirm"] = confirm
         return self.engine.dispatch("edit.apply", args, project=self.engine.project_id(), via_web=True)
 
+    def test_a_web_edit_rebuilds_the_sheet_once(self):
+        """웹 고치기는 낡은 표시를 세우고 작업에서 다시 만든다. 다시 만들기 안에서 짓는 프로젝트 그래프가 그 표시를 보고
+        같은 쪽을 또 다시 만들면 안 된다(APR1400에서 저장 뒤 다시 만들기가 두 번 돌아 8~10초 걸렸다)."""
+        from hazop.app import data
+        lid = next(n["local_id"] for n in data.read_json(data.extraction_path(self.name))["nodes"] if n.get("tag"))
+        with mock.patch.object(sheet_refresh, "rebuild", wraps=sheet_refresh.rebuild) as rb:
+            r = self.edit("set_tag", lid, {"tag": "ONCE-1"})
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(rb.call_count, 1)
+        self.assertFalse(sheet_refresh.graph_stale(self.name))
+
     def test_registered_drawing_edit_rebuilds_the_knowledge_graph_and_names_the_confirmed_segment(self):
         from hazop.app import data
         ex = data.read_json(data.extraction_path(self.name))

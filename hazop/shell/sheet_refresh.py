@@ -105,15 +105,29 @@ def rebuild(name):
     return [], project_recheck(graph.get("project_id")) if graph.get("project_id") else []
 
 
+def _busy():
+    if not hasattr(_ENSURING, "busy"):
+        _ENSURING.busy = set()
+    return _ENSURING.busy
+
+
 def refresh(name):
-    """→ (그래프가 낡은 채인지, 알림 글, 재확인 안내)."""
+    """→ (그래프가 낡은 채인지, 알림 글, 재확인 안내).
+    다시 만드는 동안 이 스레드에서 그 쪽을 '다시 만드는 중'으로 두어, 다시 만들기 안에서 짓는 프로젝트 그래프(ensure_project)가
+    아직 서 있는 낡은 표시를 보고 같은 쪽을 또 다시 만들지 않게 한다(웹 고치기는 표시를 세운 채 작업에서 부른다)."""
     with lock(name):
+        busy = _busy()
+        mine = name not in busy
+        busy.add(name)
         try:
             notes, recheck = rebuild(name)
         except Exception as exc:  # noqa: BLE001 - 저장은 끝났다. 다시 만들기 실패는 표시로 남기고 다음 동작에서 다시 해 본다
             LOG.exception("그래프 다시 만들기 실패")
             mark_stale(name, exc)
             return True, ["저장했지만 그래프·지식그래프를 다시 만들지 못했습니다(%s). 다음 동작에서 다시 만듭니다." % str(exc)[:120]], []
+        finally:
+            if mine:
+                busy.discard(name)
         try:
             os.remove(stale_path(name))
         except OSError:
@@ -160,6 +174,8 @@ def ensure_project(project_id):
     try:
         left = []
         for name in stale_names(project_id):
+            if name in _busy():                   # 지금 이 스레드가 다시 만드는 쪽(그 일이 끝나면 표시를 지운다)
+                continue
             stale, _notes, _recheck = refresh(name)
             if stale:
                 left.append(name)
