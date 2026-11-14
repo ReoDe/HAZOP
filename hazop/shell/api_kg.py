@@ -125,12 +125,75 @@ def _context(engine, study=False):
     ctx = {"pid": pid, "pg": pg, "kg": kg, "model": model, "expectations": expectations, "ver": ver, "path": path,
            "judge_problem": judge_problem, "notes": notes, "blocks": _blocks(kg, pg), "key": key}
     if study:
-        src = _study(pg)
-        skey = (key, hashlib.sha256(json.dumps(src, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest())
-        if _CACHE.get("study_key") != skey:
-            _CACHE.update(study_key=skey, study_model=screen.panel_with_study(model, src, pg))
+        fkey = _study_files(pg)
+        skey = (key, fkey) if fkey is not None else None
+        if skey is None or _CACHE.get("study_key") != skey:
+            # 검토 층 원본(구간·결과·초기사건 파일)의 바뀐 시각·크기가 같으면 결과 읽기·초기사건 묶음 만들기·모델 짓기를 다시 하지 않는다
+            _CACHE.update(study_key=skey, study_model=screen.panel_with_study(model, _study(pg), pg))
         ctx["model"] = _CACHE["study_model"]
     return ctx, None
+
+
+def _study_files(pg):
+    """검토 층이 읽는 파일(구간 집합·분석 결과·초기사건·편차 표)의 (경로, 바뀐 시각 ns, 크기). 경로를 정하지 못하면 None(캐시 안 씀)."""
+    from hazop.ie import store as ie_store
+    from hazop.study import nodes as study_nodes
+    from hazop.study import results as study_results
+    try:
+        pid, gid = pg.get("project_id"), pg.get("graph_id")
+        files = [study_nodes._readable_path(pid, gid), study_results._readable_path(pid, gid), ie_store.store_path(pid),
+                 paths.folder("deviations", study_results.DEVIATION_CHART)]
+    except (OSError, ValueError, AttributeError, TypeError):
+        return None
+    out = [pg.get("graph_version")]
+    for f in files:
+        if not f:
+            continue
+        try:
+            st = os.stat(f)
+            out.append((f, st.st_mtime_ns, st.st_size))
+        except OSError:
+            out.append((f, None, None))
+    return tuple(out)
+
+
+_BASE = {}   # 검토 층 원본(구간·분석 결과)을 파일 상태(_study_files) 하나만 기억: {"key", "base"}
+
+
+def _study_base(pg):
+    """{"node_set"(결과 표 행만), "full", "results", "note"}. 파일(구간·결과·초기사건·편차 표)의 바뀐 시각·크기가 같으면 다시 읽지 않는다.
+    검토 층과 말풍선의 '쓰는 칸'이 같이 쓴다(결과 파일 읽기와 맞추기가 큰 프로젝트에서 1초 가까이 걸린다)."""
+    key = _study_files(pg)
+    if key is not None and _BASE.get("key") == key:
+        return _BASE["base"]
+    base = _read_base(pg)
+    _BASE.clear()
+    if key is not None:
+        _BASE.update(key=key, base=base)
+    return base
+
+
+def _read_base(pg):
+    from hazop.study import nodes as study_nodes
+    from hazop.study import results as study_results
+    try:
+        ns = study_nodes.load(pg)
+    except (OSError, ValueError) as exc:
+        return {"node_set": None, "full": None, "results": None, "note": "검토구간 파일을 읽을 수 없습니다(%s)." % str(exc)[:160]}
+    if not ns or not study_nodes.active_nodes(ns) or study_nodes.is_stale(ns, pg):
+        return {"node_set": None, "full": None, "results": None, "note": "확정된 검토구간이 없거나 지금 도면과 맞지 않습니다."}
+    from hazop.shell import api_results
+    scoped = api_results.scope_set(ns)   # 분석 결과 표의 행과 같은 구간만(같은 함수: 확정·잠금 구간, 결과 표가 빼는 것은 뺀다)
+    try:
+        doc = study_results.load(ns)
+    except (OSError, ValueError) as exc:
+        return {"node_set": scoped, "full": ns, "results": None, "note": "분석 결과를 읽을 수 없습니다(%s)." % str(exc)[:160]}
+    if doc is not None:
+        doc, problems, _bad = study_results.partition(doc, ns)
+        if problems:
+            return {"node_set": scoped, "full": ns, "results": None,
+                    "note": "분석 결과 파일에 문제가 있어 보이지 않습니다(%s)." % str(problems[0])[:160]}
+    return {"node_set": scoped, "full": ns, "results": doc, "note": None if doc else "아직 분석 결과가 없습니다."}
 
 
 def _study(pg):
@@ -140,29 +203,16 @@ def _study(pg):
     from hazop.ie import model as ie_model
     from hazop.ie import store as ie_store
     from hazop.study import nodes as study_nodes
-    from hazop.study import results as study_results
-    try:
-        ns = study_nodes.load(pg)
-    except (OSError, ValueError) as exc:
-        return {"node_set": None, "results": None, "note": "검토구간 파일을 읽을 수 없습니다(%s)." % str(exc)[:160]}
-    if not ns or not study_nodes.active_nodes(ns) or study_nodes.is_stale(ns, pg):
-        return {"node_set": None, "results": None, "note": "확정된 검토구간이 없거나 지금 도면과 맞지 않습니다."}
-    try:
-        doc = study_results.load(ns)
-    except (OSError, ValueError) as exc:
-        return {"node_set": ns, "results": None, "note": "분석 결과를 읽을 수 없습니다(%s)." % str(exc)[:160]}
-    if doc is not None:
-        doc, problems, _bad = study_results.partition(doc, ns)
-        if problems:
-            return {"node_set": ns, "results": None, "note": "분석 결과 파일에 문제가 있어 보이지 않습니다(%s)." % str(problems[0])[:160]}
+    base = _study_base(pg)
+    doc, full = base["results"], base["full"]
     ie = None
     if doc:
         try:
             ie_doc = ie_store.load(pg["project_id"])[0]
-            ie = ie_bundle.build_bundle(doc, ns, pg, ie_model.sync(ie_doc, doc, node_set=ns), study_nodes.now_utc())
+            ie = ie_bundle.build_bundle(doc, full, pg, ie_model.sync(ie_doc, doc, node_set=full), study_nodes.now_utc())
         except (OSError, ValueError, ie_store.Unreadable) as exc:
             LOG.warning("초기사건 투영을 건너뜀: %s", exc)
-    return {"node_set": ns, "results": doc, "note": None if doc else "아직 분석 결과가 없습니다.", "ie": ie}
+    return {"node_set": base["node_set"], "results": doc, "note": base["note"], "ie": ie}
 
 
 def _node_set(pg):
@@ -272,25 +322,18 @@ CELLS_SHOWN = 20
 
 def _cells_using(pg, ref):
     """이 구성요소(안정 참조)를 원인 위치·영향 대상·보호수단으로 가리키는 분석 칸. 기각한 항목은 세지 않는다. 결과 파일은 읽기만 한다.
-    분석 결과 패널과 같은 조건(확정 구간이 있고 지금 도면과 맞음)일 때만 센다."""
-    from hazop.study import nodes as study_nodes
+    분석 결과 표와 같은 구간 행(scope_rows)만, 결과 표와 같은 조건(확정 구간이 있고 지금 도면과 맞음)일 때만 센다."""
     from hazop.study import refs
-    from hazop.study import results as study_results
-    try:
-        ns = study_nodes.load(pg)
-        if not ns or not study_nodes.active_nodes(ns) or study_nodes.is_stale(ns, pg):
-            return []
-        doc = study_results.load(ns)
-        if doc is None:
-            return []
-        doc, problems, _bad = study_results.partition(doc, ns)
-    except (OSError, ValueError):
+    base = _study_base(pg)
+    doc = base["results"]
+    if not doc or not base["node_set"]:
         return []
-    if problems:
-        return []
+    rows = {n["node_id"] for n in base["node_set"]["nodes"]}
     devs = {d["deviation_id"]: d.get("label") or d["deviation_id"] for d in doc.get("deviations") or []}
     out = []
     for c in doc.get("cells") or []:
+        if c["node_id"] not in rows:
+            continue
         roles = []
         for e in c.get("entries") or []:
             if e.get("status") == "rejected":

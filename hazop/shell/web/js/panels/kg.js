@@ -203,9 +203,9 @@ function drawNode(n, ctx, scale, selected, hover, near, hit) {
     ctx.moveTo(n.x, n.y - r - 0.6); ctx.lineTo(n.x + r + 0.6, n.y); ctx.lineTo(n.x, n.y + r + 0.6); ctx.lineTo(n.x - r - 0.6, n.y); ctx.closePath();
   } else ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
   if (n.layer === "exp" && n.xs === "expected") { ctx.fillStyle = C.bg; ctx.fill(); ctx.lineWidth = 1.4; ctx.strokeStyle = C.gap; ctx.stroke(); }
-  else if (n.layer === "study" && n.draft) {
-    // 사람이 확인하지 않은 검토 결과(AI 초안)는 속이 빈 점선 원
-    ctx.fillStyle = C.bg; ctx.fill(); ctx.lineWidth = 1.4; ctx.strokeStyle = C.study; ctx.setLineDash([1.5, 1.2]); ctx.stroke(); ctx.setLineDash([]);
+  else if (n.layer === "study" && (n.pending || n.draft)) {
+    // 승인 전 검토 결과는 속이 빈 원, 그중 AI 초안은 점선 테. 승인한 것만 속이 찬 원이다(기각한 항목은 엔진이 넣지 않는다)
+    ctx.fillStyle = C.bg; ctx.fill(); ctx.lineWidth = 1.4; ctx.strokeStyle = C.study; if (n.draft) ctx.setLineDash([1.5, 1.2]); ctx.stroke(); ctx.setLineDash([]);
   } else if (n.layer === "kn" && (n.ks !== "confirmed" || n.ai)) {
     // 확인 전 지식(미확인·가설)과 AI 초안은 속이 빈 원으로, AI 초안은 점선 테로 확정 지식과 갈라 보인다
     ctx.fillStyle = C.bg; ctx.fill(); ctx.lineWidth = 1.4; ctx.strokeStyle = C.kn;
@@ -288,7 +288,7 @@ function Head({ s }) {
         ${s.mode === "overview" && expanded.length ? html`<${Btn} sm=${true} kind="ghost" icon="minus" label="모두 접기" title="모두 접기" onClick=${K.collapseAll} />` : null}
         <${Btn} sm=${true} kind="ghost" icon="zoom-scan" label="그래프에 맞추기" title="그래프에 맞추기" onClick=${K.fit} /></span></div>
     ${ex ? html`<div class="kg-explore" role="status">${ex.active
-      ? html`<b>${ex.label} ${ex.count.toLocaleString()}곳</b><span class="muted small">${ex.note}</span>`
+      ? html`<b>${ex.label} ${ex.count.toLocaleString()}곳</b>${ex.drawn_note ? html`<span class="small">${ex.drawn_note}</span>` : null}<span class="muted small">${ex.note}</span>`
       : html`<b>${ex.label}</b><span class="small">${ex.reason}</span>`}
       <${Btn} sm=${true} kind="ghost" icon="x" label="살펴보기 지우기" title="강조 지우기" onClick=${K.clearExplore} /></div>` : null}
     ${study && s.study ? html`<div class="muted small kg-study-line">검토 결과: 시나리오 ${s.study.scenarios}${s.study.ie_candidates ? " · 초기사건 후보 " + s.study.ie_candidates : ""}${s.study.missing ? " · 대상 없는 참조 " + s.study.missing : ""}${s.study.note ? " · " + s.study.note : ""} (보기만 합니다. 고치기는 분석 결과·초기사건 패널에서)</div>` : null}
@@ -354,7 +354,7 @@ function Detail() {
   const x = d.expectation;
   return html`<aside class="kg-side" aria-label=${(d.label || d.id) + " 상세"}>
     <div class="kg-dh"><b>${d.label || TYPE_NAMES[d.type] || d.type}</b>
-      <${Chip}>${TYPE_NAMES[d.type] || d.type}<//>${d.layer === "kn" && d.ks !== "confirmed" ? html`<${Chip} kind="warn">확인 전<//>` : null}${d.ai || d.draft ? html`<${Chip} kind="ai" icon="sparkles">AI 초안<//>` : null}${d.read_only ? html`<${Chip} title="분석 결과·초기사건 파일에서 읽은 것입니다. 고치기는 그 패널에서 합니다">읽기 전용<//>` : null}${x ? html`<${Chip} kind=${STATE_KIND[x.state]}>${x.state_label}<//>` : null}
+      <${Chip}>${TYPE_NAMES[d.type] || d.type}<//>${d.layer === "kn" && d.ks !== "confirmed" ? html`<${Chip} kind="warn">확인 전<//>` : null}${d.ai || d.draft ? html`<${Chip} kind="ai" icon="sparkles">AI 초안<//>` : null}${d.pending && !d.draft ? html`<${Chip} kind="warn">승인 전<//>` : null}${d.read_only ? html`<${Chip} title="분석 결과·초기사건 파일에서 읽은 것입니다. 고치기는 그 패널에서 합니다">읽기 전용<//>` : null}${x ? html`<${Chip} kind=${STATE_KIND[x.state]}>${x.state_label}<//>` : null}
       ${x && x.recheck ? html`<${Chip} kind="warn" title="규칙 판이나 대상·후보 내용이 바뀌었습니다">재확인 필요<//>` : null}</div>
     <div class="muted small">${d.drawing}</div>
     ${d.at ? html`<div><${Btn} sm=${true} icon="map-pin" label="도면에서 보기" onClick=${() => K.showOnSheet(d.at)}>도면에서 보기<//></div>` : null}

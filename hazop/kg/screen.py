@@ -289,11 +289,12 @@ def study_view(study, graph, exp_ids=()):
                     continue
                 n_scen += 1
                 draft = res.is_ai_draft(e)
+                pending = e.get("status") != "approved"   # 승인 전(제안·수정·보류). 사람이 쓴 것도 승인 전이면 확정처럼 그리지 않는다
                 sc = "st-" + e["entry_id"]
                 miss = [r for r in refs.all_refs(e) if r not in idx and (whole or refs.drawing_of(r) == gid)]
                 n_missing += len(miss)
                 node(sc, "scenario", "%s · %s" % (devs.get(cell["deviation_id"], cell["deviation_id"]), e.get("cause") or ""),
-                     sn["node_id"], draft=draft, missing=len(miss),
+                     sn["node_id"], draft=draft, pending=pending, missing=len(miss),
                      detail={"deviation": devs.get(cell["deviation_id"]), "cause": e.get("cause"),
                              "consequence": e.get("consequence"), "status": e.get("status"), "risk": e.get("risk"),
                              "missing": miss})
@@ -304,13 +305,13 @@ def study_view(study, graph, exp_ids=()):
                     if not hits:
                         continue
                     cid = "%s-%s" % (sc, suffix)
-                    node(cid, typ, e.get(typ) or "", sn["node_id"], draft=draft, detail={"text": e.get(typ)})
+                    node(cid, typ, e.get(typ) or "", sn["node_id"], draft=draft, pending=pending, detail={"text": e.get(typ)})
                     link("has_" + typ, sc, cid)
                     for h in dict.fromkeys(hits):
                         link(rel, cid, h)
                 for i, s in enumerate(refs.safeguard_items(e)):
                     gid_ = "%s-g%d" % (sc, i + 1)
-                    node(gid_, "safeguard", s["text"], sn["node_id"], draft=draft or not refs.is_confirmed(s, e),
+                    node(gid_, "safeguard", s["text"], sn["node_id"], draft=draft or not refs.is_confirmed(s, e), pending=pending,
                          role=s["role"], detail={"text": s["text"], "role": refs.ROLES[s["role"]]})
                     link("protected_by", sc, gid_, role=s["role"])
                     for r in s["refs"]:
@@ -885,16 +886,17 @@ def panel_with_study(model, study, pg):
             continue
         anchor = (nodes.get(n.get("anchor")) or {}).get("group")
         nodes[n["id"]] = {"id": n["id"], "layer": "study", "type": n["type"], "label": n.get("label") or n["type"], "group": anchor,
-                          "draft": bool(n.get("draft")), "missing": n.get("missing") or 0, "detail": n.get("detail") or {}}
-    links = list(model["links"])
-    seen = {l["id"] for l in links}
+                          "draft": bool(n.get("draft")), "pending": bool(n.get("pending") or n.get("draft")),
+                          "missing": n.get("missing") or 0, "detail": n.get("detail") or {}}
+    added, seen = [], set()
     for l in slinks:
         if l["id"] in seen or l["s"] not in nodes or l["t"] not in nodes:
             continue
         seen.add(l["id"])
-        links.append({"id": l["id"], "kind": l["kind"], "s": l["s"], "t": l["t"], "st": "study"})
+        added.append({"id": l["id"], "kind": l["kind"], "s": l["s"], "t": l["t"], "st": "study"})
+    links = list(model["links"]) + added
     for _ in range(4):
-        for l in links:
+        for l in added:   # 검토 노드의 자리는 검토 관계로만 정해진다(도면 관계 수만 개를 돌 필요가 없다)
             for a, b in ((l["s"], l["t"]), (l["t"], l["s"])):
                 na, nb = nodes[a], nodes[b]
                 if na["layer"] == "study" and na["group"] is None and nb["group"] not in (None, KN_GROUP, STUDY_GROUP):
@@ -903,7 +905,13 @@ def panel_with_study(model, study, pg):
         if n["group"] is None:
             n["group"] = STUDY_GROUP
     groups, order = _panel_groups(pg, model["drawing"], nodes)
-    out = dict(model, nodes=nodes, links=links, groups=groups, order=order, adj=_adjacency(links))
+    adj = dict(model["adj"])          # 바뀌는 끝의 목록만 새로 만든다(입력 모델의 목록은 그대로)
+    for l in added:
+        for end in (l["s"], l["t"]):
+            if adj.get(end) is model["adj"].get(end):
+                adj[end] = list(adj.get(end) or ())
+            adj[end].append(l)
+    out = dict(model, nodes=nodes, links=links, groups=groups, order=order, adj=adj)
     out["study"] = info or {"nodes": [], "note": (study or {}).get("note"), "scenarios": 0, "missing": 0, "ie": None}
     return out
 
@@ -976,13 +984,22 @@ def reach_region(pg, node_set, start):
             "focus_entities": [start], "exploration": dict(REACH_EXPLORATION)}
 
 
-def _explored(what, ids, model, note, **kw):
-    shown = [i for i in dict.fromkeys(ids) if i in model["nodes"]]
+def _explored(what, ids, model, note, also=(), **kw):
+    """엔진이 센 것(ids)을 그대로 센다(count). 그림에 없는 것(접힌 배관 구간 등)은 다시 세지 않고 drawn·hidden으로 차이만 적는다.
+    also: 강조만 하고 세지 않는 노드(도달 범위의 시작점)."""
+    ids = list(dict.fromkeys(ids))
+    shown = [i for i in dict.fromkeys(list(also) + ids) if i in model["nodes"]]
+    drawn = sum(1 for i in ids if i in model["nodes"])
+    seg = sum(1 for i in ids if i not in model["nodes"] and (model["pg_nodes"].get(i) or {}).get("node_type") == "pipe_segment")
+    other = len(ids) - drawn - seg
     by_group = {}
     for i in shown:
         g = model["nodes"][i]["group"]
         by_group[g] = by_group.get(g, 0) + 1
-    out = {"what": what, "label": EXPLORE_LABELS[what], "active": True, "reason": None, "count": len(shown),
+    parts = (["배관 구간 %d개는 접혀 있음" % seg] if seg else []) + (["%d개는 그림에 없음" % other] if other else [])
+    out = {"what": what, "label": EXPLORE_LABELS[what], "active": True, "reason": None, "count": len(ids), "drawn": drawn,
+           "hidden": {"pipe_segments": seg, "other": other},
+           "drawn_note": "그림에는 %d곳(%s)" % (drawn, ", ".join(parts)) if parts else None,
            "ids": shown[:EXPLORE_ID_CAP], "capped": len(shown) > EXPLORE_ID_CAP, "by_group": by_group, "note": note}
     out.update(kw)
     return out
@@ -1014,10 +1031,8 @@ def panel_explore(model, pg, kg, node_set, what, start=None):
         if not a1.get("active"):
             return _not_run(what, "도달 범위를 셀 수 없습니다: %s" % a1.get("reason"))
         reached = [r["entity_id"] for r in a1["exploration"]["reached"]]
-        out = _explored(what, [start] + reached, model, algo.NOTE, start=start, region=region["region_id"],
-                        limits=a1["summary"]["limits_hit"])
-        out["count"] = max(0, out["count"] - 1)
-        return out
+        return _explored(what, reached, model, algo.NOTE, also=[start], start=start, region=region["region_id"],
+                         limits=a1["summary"]["limits_hit"])
     if kg is None:
         return _not_run(what, "지식그래프가 없어 셀 수 없습니다. 도면을 추출하고 설계 문서를 등록하면 만들어집니다.")
     kv = project.kg_view(kg, pg)
@@ -1152,8 +1167,9 @@ def panel_node(model, nid, kg=None):
                 continue
             out["what"].append([lab, STUDY_STATUS_LABELS.get(v, v) if k == "status" else str(v)])
         out["what"] += [["대상 없음(재확인)", str(r)] for r in d.get("missing") or []]
-        out["evidence"] = [["출처", "분석 결과·초기사건 파일(읽기 전용)"], ["작성", "AI 초안·사람 확인 전" if n.get("draft") else "사람 확인"]]
-        out["read_only"], out["draft"] = True, bool(n.get("draft"))
+        made = "AI 초안·승인 전" if n.get("draft") else "승인 전" if n.get("pending") else "승인"
+        out["evidence"] = [["출처", "분석 결과·초기사건 파일(읽기 전용)"], ["작성", made]]
+        out["read_only"], out["draft"], out["pending"] = True, bool(n.get("draft")), bool(n.get("pending"))
     else:
         it = model["exp_items"][nid]
         t = model["pg_nodes"].get(it["target_entity"]) or {}

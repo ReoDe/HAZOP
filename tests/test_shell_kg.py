@@ -465,6 +465,24 @@ class ExploreTest(Base):
         self.assertEqual(r["start"], start)
         self.assertIn(nid_of(self.pg, "CV-1"), r["ids"])
 
+    def test_reach_count_is_the_engines_count_and_says_what_is_not_drawn(self):
+        """검토 B6-R1: 건수를 그림에 있는 노드로 다시 세면 접힌 배관 구간만큼 줄었다. 건수는 엔진 값 그대로, 차이는 글로."""
+        from hazop.kg import algo
+        save_study(self, [("A", ["o-p1", "o-cv1", "o-tk1", "o-psv1", "o-lt1"])], [])
+        start = nid_of(self.pg, "P-1")
+        r = self.read("explore", what="reach", start=start)
+        ns = __import__("hazop.study.nodes", fromlist=["x"]).load(self.pg)
+        a1 = algo.a1_propagation(self.pg, [("S", screen.reach_region(self.pg, ns, start), None)], start)
+        reached = [x["entity_id"] for x in a1["exploration"]["reached"]]
+        by = {n["entity_id"]: n for n in self.pg["nodes"]}
+        segs = sum(1 for i in reached if by[i].get("node_type") == "pipe_segment")
+        self.assertGreater(segs, 0, "시험 자료에 접힌 배관 구간이 닿아야 차이를 본다")
+        self.assertEqual(r["count"], len(reached))
+        self.assertEqual(r["drawn"], len(reached) - segs)
+        self.assertEqual(r["hidden"]["pipe_segments"], segs)
+        self.assertIn("배관 구간 %d개는 접혀 있음" % segs, r["drawn_note"])
+        self.assertIn(start, r["ids"], "시작점은 강조하되 세지 않는다")
+
     def test_reach_says_why_it_cannot_run(self):
         save_study(self, [("A", ["o-p1", "o-cv1"])], [])
         outside = self.read("explore", what="reach", start=nid_of(self.pg, "TK-1"))
@@ -553,6 +571,53 @@ class StudyLayerTest(Base):
         self.assertTrue(self.read("link", id=pipe["id"])["what"])
         self.assertIsNone(api_kg.read(self.engine, ["kg", "link"], {"id": "nope"}))
 
+    def test_unapproved_and_ai_draft_scenarios_do_not_look_confirmed(self):
+        """검토 B6-3: 승인한 것만 확정처럼(속 찬 원) 그린다. 승인 전은 pending, AI 초안은 draft도, 기각은 넣지 않는다."""
+        from hazop import store_io
+        from hazop.study import results as res
+        from tests.test_study_storage import entry, put_entries
+        doc = res.load(self.ns)
+        put_entries(doc, "S1", "I1", [entry("ap", "approved"), entry("ai", "proposed", origin="ai_draft"), entry("hold", "on_hold"),
+                                      entry("rej", "rejected"), entry("ai_ok", "approved", origin="ai_draft")])
+        res.save_fp(doc, self.ns["project_id"], expect=store_io.ANY)
+        nodes = {n["id"]: n for n in self.read("graph", expand="all", study="1")["nodes"]}
+        flags = {k: (nodes["st-" + k]["pending"], nodes["st-" + k]["draft"]) for k in ("ap", "ai", "hold", "ai_ok")}
+        self.assertEqual(flags, {"ap": (False, False), "ai": (True, True), "hold": (True, False), "ai_ok": (False, False)})
+        self.assertNotIn("st-rej", nodes)
+        self.assertIn(["작성", "승인 전"], self.read("node", id="st-hold", study="1")["evidence"])
+
+    def test_layer_shows_the_same_sections_as_the_results_table(self):
+        """검토 B6·B7-2: 검토 층의 구간은 분석 결과 표의 행(api_results.scope_rows)과 같다. 결과 표가 빼는 구간은 층에도 없다."""
+        from hazop.shell import api_results
+        from hazop.study import nodes as sn
+        from tests.test_study_storage import entry
+        e2 = entry("e2", consequence_refs=[{"ref": sref(self.pg, "P-1")}])
+        save_study(self, [("A", ["o-p1", "o-cv1"]), ("B", ["o-tk1", "o-psv1"])], [("S2", "I1", [e2])])
+        ns = sn.load(self.pg)
+        ns["nodes"][1]["screen"] = {"status": "excluded", "reason": "검토"}
+        sn.save(ns)
+        rows = {n["node_id"] for n in api_results.scope_rows(sn.load(self.pg))}
+        shown = {n["id"][3:] for n in self.read("graph", expand="all", study="1")["nodes"] if n.get("type") == "study_node"}
+        self.assertEqual(shown, rows)
+        ids = {n["id"] for n in self.read("graph", expand="all", study="1")["nodes"]}
+        self.assertEqual("st-e2" in ids, "S2" in rows)
+
+    def test_turning_the_layer_on_leaves_the_plain_model_alone(self):
+        self.read("graph", expand="all", study="1")
+        d = self.read("node", id=nid_of(self.pg, "P-1"))
+        self.assertFalse([nb for nb in d["neighbors"] if nb["id"].startswith("st-")], "층을 켠 읽기가 기본 모델의 이웃 목록을 바꾸면 안 됨")
+        self.assertTrue([nb for nb in self.read("node", id=nid_of(self.pg, "P-1"), study="1")["neighbors"] if nb["id"].startswith("st-")])
+
+    def test_reads_reuse_the_layer_while_files_are_the_same(self):
+        """검토 B6-4: 결과·구간·초기사건 파일이 그대로면 읽기마다 결과를 다시 읽고 묶음을 다시 만들지 않는다."""
+        calls = []
+        real = api_kg._study
+        with mock.patch.object(api_kg, "_study", lambda pg: calls.append(1) or real(pg)):
+            for _ in range(3):
+                self.read("graph", expand="all", study="1")
+                self.read(study="1")
+        self.assertEqual(len(calls), 1)
+
     def test_results_change_is_seen_without_restart(self):
         from hazop import store_io
         from hazop.study import results as res
@@ -605,6 +670,21 @@ class ComponentTest(Base):
         self.assertEqual(psh["knowledge"]["count"], 1)
         self.assertIn("설정치 1", psh["knowledge"]["text"])
         self.assertEqual(self.comp("P-2")["knowledge"]["count"], 0)
+
+    def test_cells_come_from_the_results_table_rows(self):
+        """검토 B7-R1: 결과 표가 빼는 구간의 칸은 '쓰는 칸'으로 세지 않는다(같은 함수 scope_rows)."""
+        from hazop.shell import api_results
+        from hazop.study import nodes as sn
+        from tests.test_study_storage import entry
+        e1 = entry("e1", cause_refs=[{"ref": sref(self.pg, "P-1")}])
+        e2 = entry("e2", consequence_refs=[{"ref": sref(self.pg, "P-1")}])
+        save_study(self, [("A", ["o-p1", "o-cv1"]), ("B", ["o-tk1", "o-psv1"])], [("S1", "I1", [e1]), ("S2", "I1", [e2])])
+        self.assertEqual({i["node_id"] for i in self.comp("P-1")["cells"]["items"]}, {"S1", "S2"})
+        ns = sn.load(self.pg)
+        ns["nodes"][1]["screen"] = {"status": "excluded", "reason": "검토"}
+        sn.save(ns)
+        rows = {n["node_id"] for n in api_results.scope_rows(sn.load(self.pg))}
+        self.assertEqual({i["node_id"] for i in self.comp("P-1")["cells"]["items"]}, {"S1", "S2"} & rows)
 
     def test_unknown_component_is_not_found_and_reads_write_nothing(self):
         before = files_under(self.tmp)
