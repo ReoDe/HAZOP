@@ -799,6 +799,44 @@ class PdfVectorRuleTest(unittest.TestCase):
         along = polys(line((223.88, 111.6), (223.88, 140)), n_shape, line((229.68, 111.6), (300, 111.6)))
         self.assertEqual(pdf_vector_grouping._bar_fed_strokes(along, prm)[0], [])
 
+    def test_white_fill_traced_by_open_strokes_is_equipment(self):
+        # APR1400 033·046·097쪽 탱크·용기: 흰 채움 도형 위에 가장자리를 열린 선 넷으로 따로 그었다. 예전에는 그 선이 배관
+        # 고리가 되어 장비 노드가 없고, 위·옆에 닿은 두 배관이 고리를 거쳐 서로 이어졌다
+        fill = prim([(200, 100), (300, 100), (300, 150), (200, 150), (200, 100)], closed=True, fill=True, white=True,
+                    curved=True)
+        edges = [line((200, 100), (300, 100)), line((300, 100), (300, 150)), line((300, 150), (200, 150)),
+                 line((200, 150), (200, 100))]
+        ext = pdf_run([rect(240, 40, 260, 60), rect(360, 115, 380, 135), fill] + edges
+                      + [line((250, 60), (250, 100)), line((300, 125), (360, 125))],
+                      words=[word("TANK", 240, 120)])
+        tank = [n for n in ext["nodes"] if n["geometry"].get("width") == 100]
+        self.assertEqual([n["kind"] for n in tank], ["tank"])
+        ends = [[e["node_local_id"] for e in r["endpoints"]] for r in ext["relations"]]
+        self.assertEqual(len(ends), 2)
+        self.assertTrue(all(tank[0]["local_id"] in e for e in ends))
+        # 외곽 상자에 바짝 붙여 그린 계기 상자는 장비와 한 기호가 아니다(125쪽 증기발생기 옆 수위 전송기)
+        beside = pdf_run([fill] + edges + [rect(300.3, 110, 315, 130)], words=[word("TANK", 240, 120)])
+        self.assertEqual(sorted((n["geometry"]["x"], n["geometry"]["width"]) for n in beside["nodes"]),
+                         [(200, 100), (300.3, 14.7)])
+
+    def test_point_beside_rounded_equipment_corner_is_not_on_it(self):
+        # 둥근 귀퉁이 장비 외곽은 상자 귀퉁이가 비어 있다. 귀퉁이 옆 점은 외곽에 닿지 않는다(033쪽 TK03A 옆 깔때기)
+        ring = [(10, 0), (90, 0), (100, 10), (100, 40), (90, 50), (10, 50), (0, 40), (0, 10), (10, 0)]
+        sym = pdf_vector_grouping._Sym([{"id": "t", "pts": ring, "bbox": (0, 0, 100, 50), "traced": True, "kind_": "body"}])
+        self.assertGreater(pdf_vector_grouping._sym_dist((101, 1), sym), pdf_vector.PARAMS["attach_tol"])
+        self.assertEqual(pdf_vector_grouping._sym_dist((50, 25), sym), 0.0)
+        self.assertLessEqual(pdf_vector_grouping._sym_dist((101, 25), sym), 1.0)
+
+    def test_arc_and_chord_drawn_apart_is_pipe_cap(self):
+        # APR1400 046·105·128쪽 배관 끝막음: 곧은 막음선과 반원 곡선을 두 경로로 따로 그었다. 예전에는 배관이 막음선
+        # 가운데에 닿아 분기점이 되고 끝막음 노드가 없었다
+        chord = line((200, 118.5), (200, 121.5))
+        arc = prim([(200, 118.5), (201.5, 120), (200, 121.5)], curved=True,
+                   ext=[(200, 118.5), (201.6, 118.5), (201.6, 121.5), (200, 121.5)])
+        ext = pdf_run([rect(100, 110, 120, 130), line((120, 120), (200, 120)), chord, arc])
+        self.assertEqual(sorted(str(n["kind"]) for n in ext["nodes"]), ["None", "pipe_cap"])
+        self.assertEqual([r["kind"] for r in ext["relations"]], ["physical_connection"])
+
     def test_scanned_check_valve_with_rounded_arrowhead(self):
         # 스캔 SNP-M-301 체크밸브(300dpi를 벡터로 바꾼 좌표, pt): 화살촉이 꼭짓점 다섯 개 볼록 다각형이 되고, 사선은 화살촉 앞에서
         # 끊기며 화살촉과 오른쪽 판 사이에 짧은 토막이 남는다. 예전에는 화살촉을 꺾인 점선 모서리로 읽어 'orifice'가 됐다

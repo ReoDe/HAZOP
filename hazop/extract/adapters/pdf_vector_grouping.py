@@ -50,7 +50,15 @@ class _Sym:
         other.alive = False
         self._recalc()
 
+    @property
+    def outline(self):
+        """장비 외곽(pdf_vector._traced_fills)이 든 기호. 다 그린 도형이라 바로 옆 기호의 선을 제 일부로 삼지 않는다.
+        외곽 위에 겹쳐 그린 닫힌 도형(125쪽 증기발생기 위 머리)이 함께 묶여도 장비 외곽이다."""
+        return any(b.get("traced") for b in self.bodies)
+
     def inner_tol(self, prm):
+        if self.outline:
+            return prm["inner_tol_min"]
         return max(prm["inner_tol_min"], min(prm["inner_tol_max"],
                                              prm["inner_tol_ratio"] * max(_w(self.core), _h(self.core))))
 
@@ -59,8 +67,10 @@ class _Sym:
         return bool(self.bodies) and all(_is_chevron(b) for b in self.bodies)
 
     def deep(self, p, prm):
-        if self.stroke_only or self.arrow_only():
-            return False  # 화살표 안으로 들어간 배관은 연결이지 화살표의 일부가 아니다
+        if self.stroke_only or self.arrow_only() or self.outline:
+            # 화살표 안으로 들어간 배관은 연결이지 화살표의 일부가 아니다. 장비 외곽 안으로 들어간 선도 장비 안 배관·계기
+            # 탭이다. 구동부 축으로 보면 반대 끝 계기를 장비에 합친다(APR1400 125쪽 증기발생기 수위 전송기)
+            return False
         if _depth(p, self.core) <= max(prm["deep_min"], prm["deep_ratio"] * min(_w(self.core), _h(self.core))):
             return False
         return self.seed is None  # 검정 견본으로 올린 몸통은 이미 한 기호다. 안으로 들어온 선을 제 일부로 삼지 않는다
@@ -82,10 +92,18 @@ def _cluster_bodies(bodies, prm):
     alone = [_is_chevron(b) for b in bodies]
     # 사전의 검정 견본에 통째로 맞은 몸체(seed)는 이미 한 기호다. 맞닿은 축소관·구동부 몸체와 묶지 않는다.
     # 안전등급 경계 마름모(class_mark, _mark_class_boundaries)도 그 두 삼각형끼리만 묶는다
+    # 장비 외곽(traced)은 상자 귀퉁이가 비어 있다. 상자만 맞닿은 옆 기호(외곽에 바짝 붙인 계기 비석, 둥근 귀퉁이 자리의
+    # 밸브)와 묶지 않고, 가운데가 외곽 도형 안에 든 도형(외곽 위에 겹쳐 그린 머리 등)만 묶는다(APR1400 118·125쪽)
+    def inside_outline(a, b):
+        if a.get("traced") == b.get("traced"):
+            return True
+        ring, other = (a, b) if a.get("traced") else (b, a)
+        return _pt_ring_dist(_center(other["bbox"]), ring.get("fine") or ring["pts"]) == 0.0
     groups = _uf_groups(len(bodies), lambda i, j: not (alone[i] or alone[j]) and
                         bodies[i].get("seed") == bodies[j].get("seed") and
                         bodies[i].get("class_mark") == bodies[j].get("class_mark") and
-                        _box_gap(bodies[i]["bbox"], bodies[j]["bbox"]) <= prm["touch_tol"])
+                        _box_gap(bodies[i]["bbox"], bodies[j]["bbox"]) <= prm["touch_tol"] and
+                        inside_outline(bodies[i], bodies[j]))
     return [_Sym([bodies[i] for i in g]) for g in groups]
 
 
@@ -221,10 +239,22 @@ def _contact_chains(syms, prm):
     return out
 
 
+def _pt_ring_dist(p, ring):
+    """점과 닫힌 꺾은선(ring) 사이 거리. 안쪽 점은 0."""
+    ring = list(ring)
+    inside = False
+    for a, b in zip(ring, ring[1:] + ring[:1]):
+        if (a[1] > p[1]) != (b[1] > p[1]) and p[0] < a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]):
+            inside = not inside
+    return 0.0 if inside else min(_seg_dist(p, a, b)[0] for a, b in zip(ring, ring[1:] + ring[:1]))
+
+
 def _sym_dist(p, s, prm=None):
     """점과 기호 사이 거리. 몸체가 원 하나뿐인 기호(밸브 번호·계기 원)는 상자 귀퉁이가 비어 있어 원 모양 그대로 잰다.
     상자로 재면 밸브 번호 원 귀퉁이 옆에 그린 안전밸브 스프링 빗금이 그 원에 닿은 연결선으로 읽혀 밸브에 들지
     못한다(APR1400 008쪽 POSRV 파일럿 밸브). prm이 없으면 상자 거리다."""
+    if s.outline:  # 장비 외곽은 둥근 귀퉁이 밖이 비어 있다. 상자로 재면 귀퉁이 옆 기호가 장비에 닿은 것으로 읽힌다
+        return min(_pt_ring_dist(p, b.get("fine") or b["pts"]) for b in s.bodies)
     if prm is not None and len(s.bodies) == 1 and _is_circle(s.bodies[0], prm):
         d = _pt_circle_dist(p, s.bodies[0])
         for m in s.strokes + s.markers + s.dashes:
@@ -828,7 +858,7 @@ def _group_symbols(cls, prm):
                 host = None
                 for s in (t for t in touching if not t.arrow_only()):
                     out = max(s.bbox[0] - box[0], box[2] - s.bbox[2], s.bbox[1] - box[1], box[3] - s.bbox[3], 0.0)
-                    if out <= prm["decor_extent_ratio"] * max(_w(s.core), _h(s.core)):
+                    if out <= (s.inner_tol(prm) if s.outline else prm["decor_extent_ratio"] * max(_w(s.core), _h(s.core))):
                         if host is None or _w(s.bbox) * _h(s.bbox) > _w(host.bbox) * _h(host.bbox):
                             host = s
                 if host is not None:
@@ -897,6 +927,8 @@ def _merge_appendages(syms, chains, prm):
         for t in syms:
             if t is s or not t.alive or t.seed is not None or _w(t.bbox) * _h(t.bbox) <= _w(s.bbox) * _h(s.bbox):
                 continue
+            if t.outline:
+                continue  # 장비 외곽 옆에 따로 그린 계기 비석은 부속이 아니다(APR1400 125쪽 증기발생기 수위 전송기)
             gap = _box_gap(s.bbox, t.bbox)
             if gap <= prm["appendage_gap_ratio"] * max(_w(t.bbox), _h(t.bbox)) and (best is None or gap < best[0]):
                 best = (gap, t)

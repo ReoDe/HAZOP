@@ -413,12 +413,87 @@ def _classify_primitives(width, height, prims, prm):
     cells = _table_cells(outlines, prm)
     cell_ids = {c["id"] for c in cells}
     bodies += [dict(o, solid=False) for o in outlines if o["id"] not in cell_ids]
+    traced, edge_ids = _traced_fills(white_fills, polys, prm)
+    bodies += traced
+    polys = [p for p in polys if p["id"] not in edge_ids]
+    white_fills = [f for f in white_fills if f["id"] not in {t["id"] for t in traced}]
+    domes, dome_ids = _arc_chord_bodies(polys, prm)
+    bodies += domes
+    polys = [p for p in polys if p["id"] not in dome_ids]
     # 흰 채움: 같은 bbox의 외곽(또는 표 칸)이 있으면 그 도형의 채움, 없으면 글자 바탕 마스크
-    shapes = [o["bbox"] for o in outlines] + [p["bbox"] for p in polys]
+    shapes = [o["bbox"] for o in outlines] + [p["bbox"] for p in polys] + [d["bbox"] for d in domes]
     masks = [f for f in white_fills
              if not any(max(abs(f["bbox"][j] - s[j]) for j in range(4)) <= prm["twin_tol"] for s in shapes)]
     return {"bodies": bodies, "polys": polys, "markers": markers, "dashes": dashes, "masks": masks,
             "frames": frames, "cells": cells, "invisible_dashed": invisible}
+
+
+TRACED_FILL_MIN = 10.0  # 장비 외곽으로 보는 흰 채움의 짧은 변 하한(pt). 글자 바탕 마스크·밸브 몸통 채움은 이보다 작거나 외곽선과 한 도형이다
+TRACE_TOL = 0.3         # 선 위 점이 흰 채움 가장자리 위에 있다고 보는 거리(pt)
+TRACE_COVER = 0.7       # 가장자리를 따라 그린 선 길이 합 ≥ 채움 묶음 상자 둘레 × 비율
+
+
+def _traced_fills(white_fills, polys, prm):
+    """흰 채움 도형의 가장자리를 따로 그은 열린 선들이 거의 다 덮으면 그 채움은 장비(탱크·용기) 외곽이다. APR1400 DCD는
+    탱크·용기를 겹친 흰 채움 둘과, 그 가장자리를 따라 그은 열린 선(둥근 끝·곧은 변)으로 그린다. 선을 그대로 두면 외곽이
+    배관 고리로 읽혀 장비 노드가 생기지 않고, 장비에 닿은 배관은 고리 위 분기점에 붙는다.
+    → ([외곽 몸체(채움 도형 그대로)], {가장자리 선 id})."""
+    cand = [f for f in white_fills if f["closed"] and min(_w(f["bbox"]), _h(f["bbox"])) >= TRACED_FILL_MIN]
+    groups = _uf_groups(len(cand), lambda i, j: _box_gap(cand[i]["bbox"], cand[j]["bbox"]) <= prm["touch_tol"])
+    bodies, edge_ids = [], set()
+    for g in groups:
+        fills = [cand[i] for i in g]
+        if not any(f["curved"] for f in fills):
+            continue  # 곧은 변뿐인 흰 상자는 설비 묶음(밸브 랙·건물 구역) 경계일 수 있다. 장비 외곽은 둥근 끝이 있다(055쪽 밸브 랙)
+        edges = []
+        for f in fills:
+            ring = list(f.get("fine") or f["pts"])
+            edges += _segs(ring + [ring[0]])
+        box = fills[0]["bbox"]
+        for f in fills[1:]:
+            box = _union(box, f["bbox"])
+
+        def on_edge(p):
+            return any(_seg_dist(p, a, b)[0] <= TRACE_TOL for a, b in edges)
+
+        def traces(p):
+            pts = p.get("fine") or p["pts"]
+            return _inside(p["bbox"][:2], box, TRACE_TOL) and _inside(p["bbox"][2:], box, TRACE_TOL) and all(
+                on_edge(q) for a, b in _segs(pts) for q in (a, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), b))
+        found = [p for p in polys if p["id"] not in edge_ids and traces(p)]
+        if sum(_poly_length(p) for p in found) < TRACE_COVER * 2 * (_w(box) + _h(box)):
+            continue
+        edge_ids |= {p["id"] for p in found}
+        bodies += [dict(f, solid=False, traced=True) for f in fills]
+    return bodies, edge_ids
+
+
+def _arc_chord_bodies(polys, prm):
+    """작은 곡선 선과, 그 두 끝을 잇는 곧은 선 하나가 함께 닫힌 반달꼴을 이루면 한 몸체다. APR1400 DCD는 배관 끝막음
+    (범례 1.7-1 1/4 PIPE CAP)을 곧은 막음선과 반원 곡선 두 경로로 따로 긋는다. 따로 두면 배관이 막음선 가운데에 닿아
+    분기점이 되고 끝막음 노드가 생기지 않는다. 종류는 몸체가 된 뒤 _classify가 정한다(끝막음 규칙은 연결 하나·글자 없음).
+    → ([몸체], {쓴 선 id})."""
+    tol = TRACE_TOL
+    chords = [p for p in polys if len(p["pts"]) == 2 and not p.get("curved")]
+    bodies, used = [], set()
+    for arc in polys:
+        if not arc.get("curved") or arc["id"] in used or max(_w(arc["bbox"]), _h(arc["bbox"])) > prm["pipe_cap_max"]:
+            continue
+        a0, a1 = arc["pts"][0], arc["pts"][-1]
+        if math.hypot(a1[0] - a0[0], a1[1] - a0[1]) <= tol:
+            continue  # 이미 닫힌 곡선(원)은 반달꼴이 아니다
+        for ch in chords:
+            c0, c1 = ch["pts"]
+            if ch["id"] in used or not any(
+                    math.hypot(p[0] - q[0], p[1] - q[1]) <= tol and math.hypot(r[0] - s[0], r[1] - s[1]) <= tol
+                    for (p, r), (q, s) in (((a0, a1), (c0, c1)), ((a0, a1), (c1, c0)))):
+                continue
+            ring = list(arc.get("fine") or arc["pts"])
+            bodies.append({"id": arc["id"], "pts": list(arc["pts"]), "fine": ring + [ring[0]],
+                           "bbox": _union(arc["bbox"], ch["bbox"]), "closed": True, "curved": True, "solid": False})
+            used |= {arc["id"], ch["id"]}
+            break
+    return bodies, used
 
 
 def _is_axis_rect(o, tol):
