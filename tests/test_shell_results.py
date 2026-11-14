@@ -618,7 +618,8 @@ class RunConnTest(RunTest):
             self.addCleanup(p.stop)
 
     def run_with(self, run_unit, **args):  # 과금(paid) 연결은 카드에서 비용을 확인해야 돈다(B4): 확인한 것으로 보낸다
-        return super().run_with(run_unit, **dict({"confirm_paid": True, "conn_ver": "cv-1"}, **args))
+        p = self.call("results.run_plan", {"scope": args.get("scope", "all")})["data"]      # 확인한 범위 지문(B4 검토 2)도 같이 보낸다
+        return super().run_with(run_unit, **dict({"confirm_paid": True, "conn_ver": "cv-1", "scope_fp": p["scope_fp"]}, **args))
 
     def test_plan_shows_the_connection_that_will_actually_be_used(self):
         r = self.call("results.run_plan", {"scope": "all"})

@@ -127,7 +127,7 @@ def view(engine):
                                "can_start": bool(lk.can_start), "plan": cv.plan_name(st.get("plan")), "checked_at": st.get("checked_at"),
                                "detail": _masked(conn, st.get("detail") or ""), "model": conn.model("subscription"),
                                "terms_acked": conn.terms_acked(), "cost": cv.METHOD_COST["subscription"]}
-        line, _say, warn = cv.usage_lines(st.get("limit"))[0]          # 5시간·주간 한도와 재설정 시각(받은 창만, 근거 없는 '여유' 말 없음)
+        line, warn = usage_text(conn, st)
         out["subscription"].update(usage=line, usage_warn=warn, can_locate=st.get("state") == "not_installed",
                                    cli_set=bool(conn.prefs.cli_path))
     if "api" in conn.methods():
@@ -152,6 +152,34 @@ def view(engine):
     if busy:
         out["busy_note"] = NOTE_NEXT_RUN % busy
     return out
+
+
+WINDOW_ORDER = ("five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet")
+
+
+def usage_text(conn, st):
+    """구독 사용량 한 줄과 경고 글. 받은 한도 창마다 '5시간 한도 42% 사용 · 18:00 재설정'을 ' / '로 잇는다(규격 결정 7: 받은 창만).
+    한 창만 받았으면 그 창 이름이 줄에 있다. 사용률을 못 읽은 창은 숫자 대신 '확인 안 됨'. 아무 값도 없으면 '사용량 확인 안 됨'."""
+    cv = _views()
+    limits = dict(getattr(conn, "limits", dict)() or {})
+    last = st.get("limit")
+    if isinstance(last, dict) and last.get("window") and last["window"] not in limits:
+        limits[last["window"]] = last
+    lines, warns = [], []
+    for w in sorted(limits, key=lambda k: (WINDOW_ORDER.index(k) if k in WINDOW_ORDER else 99, k)):
+        lim = limits[w]
+        if lim.get("status") in (None, "limit_unknown"):
+            lines.append("%s 확인 안 됨" % cv.WINDOW_NAMES.get(w, "구독 한도"))
+            continue
+        text, _say, warn = cv.usage_lines(lim)[0]
+        if lim.get("utilization") is None and lim.get("status") != "limit_reached":
+            text = text.replace(cv.WINDOW_NAMES.get(w, "구독 한도"), cv.WINDOW_NAMES.get(w, "구독 한도") + " 사용률 확인 안 됨", 1)
+        lines.append(text)
+        if warn:
+            warns.append(warn)
+    if not lines:
+        return "사용량 확인 안 됨(첫 분석 호출 뒤에 보입니다)", ""
+    return " / ".join(lines), " ".join(dict.fromkeys(warns))
 
 
 def _busy_others(engine):

@@ -219,7 +219,13 @@ def cells_delta(doc, ur, fp):
 
 def _run_state(engine):
     run = getattr(engine, "analysis", None)
-    return run.snapshot() if run is not None else {"running": False}
+    if run is None:
+        return {"running": False}
+    snap = run.snapshot()
+    last = snap.get("last") or {}
+    if "project_id" in last and last["project_id"] != engine.project_id():
+        snap = dict(snap, last=None)          # 다른 프로젝트의 지난 실행(멈춤 안내·이어서 단추)은 보이지 않는다(B4 검토 1)
+    return snap
 
 
 def cell_view(engine, node_id, deviation_id):
@@ -570,8 +576,11 @@ def _plan(engine, a):
         raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
     doc, _fp = _load(ns)
     ns = scope_set(ns)                       # 확정·잠금 구간만 호출·요금에 들어간다
-    last = getattr(engine, "analysis", None) and engine.analysis.last
-    units = analysis_run.plan(ns, doc, a["scope"], a.get("node_id"), a.get("deviation_id"), rest=(last or {}).get("rest"))
+    rest = None
+    if a["scope"] == "resume":               # 지금 프로젝트·도면·구간 판의 남은 칸 기록, 없으면 결과 파일의 실패·분석 안 한 칸(B4 검토 1·3)
+        last = getattr(engine, "analysis", None) and engine.analysis.last
+        rest, _src = analysis_run.resume_cells(ns, doc, (last or {}).get("resume"), engine.project_id())
+    units = analysis_run.plan(ns, doc, a["scope"], a.get("node_id"), a.get("deviation_id"), rest=rest)
     return pg, ns, doc, units
 
 
@@ -590,6 +599,7 @@ def _run_plan(engine, a):
         can, label, guide = bool(status.get("can_start")), status.get("label") or "", status.get("guide") or ""
     return dict(s, conn=conn, can_start=can and bool(units), state=label, guide=guide,
                 needs_terms=not terms, running=_run_state(engine)["running"], method=a.get("method"),
+                scope_fp=analysis_run.scope_fp(units, conn),     # 확인한 범위(칸·구간·호출 수·비용·모델)의 지문. 시작할 때 그대로 보낸다
                 empty_text=None if units else {"node": "분석할 구간의 행을 고르세요(확정한 구간만 분석합니다).",
                                               "failed": "다시 실행할 실패 칸이 없습니다.", "cell": "분석할 칸이 없습니다.",
                                               "resume": "이어서 실행할 칸이 없습니다."}.get(a["scope"], "분석할 칸이 없습니다."))
@@ -644,6 +654,11 @@ def _run(engine, a):
     if plan is not None and plan.get("paid") and not (a.get("confirm_paid") and a.get("conn_ver")):
         # 과금 경로는 실행 카드에서 예상 비용을 본 사람이 확인해야만 돈다(채팅 길처럼 확인 없이 오면 거절, B4)
         raise api.CommandError("need_confirm", plan.get("confirm_text") or "API 키로 요금이 나갑니다. 분석 실행 카드에서 비용을 확인하고 시작하세요.")
+    fp = analysis_run.scope_fp(units, plan)
+    if (a.get("scope_fp") or (plan is not None and plan.get("paid"))) and a.get("scope_fp") != fp:
+        # 확인한 뒤 구간·칸·호출 수·비용·모델이 바뀌면 실행하지 않고 다시 묻는다(B4 검토 2. 과금 경로는 지문이 꼭 있어야 한다)
+        raise api.CommandError("scope_changed", "확인한 뒤 분석 범위나 예상 비용이 바뀌었습니다(지금 %d칸, 호출 %d회). 실행하지 않았습니다. 다시 확인하고 시작하세요."
+                               % (sum(len(u["deviation_ids"]) for u in units), len(units)))
     try:
         client = conn.make_client(via) if plan is not None and hasattr(conn, "make_client") else ai.make_client()
     except ValueError as exc:
@@ -680,7 +695,8 @@ def _run(engine, a):
             run.running = False
             if this_run:
                 conn.set_run_override(None)
-        summary_ = dict(summary_, method=via, method_name=(plan or {}).get("method_name"), this_run=this_run)
+        summary_ = dict(summary_, method=via, method_name=(plan or {}).get("method_name"), this_run=this_run, project_id=engine.project_id(),
+                        resume=analysis_run.resume_record(ns, summary_.get("rest"), via, engine.project_id()))
         run.last = summary_
         engine.changed("results", None)
         engine.changed("results.run", None)
@@ -737,7 +753,7 @@ def register(commands):
     put("run_plan", {"scope": scopes, "node_id": (v_str(1, 40), False), "deviation_id": (v_str(1, 20), False), "method": once}, _run_plan,
         "분석 실행 전 확인: 호출 수·칸 수·실제로 쓸 연결·예상 비용(resume: 앞 실행이 멈춘 뒤 남은 칸)")
     put("run", {"scope": scopes, "node_id": (v_str(1, 40), False), "deviation_id": (v_str(1, 20), False), "conn_ver": (v_str(1, 40), False),
-                "method": once, "confirm_paid": (api.v_bool(), False)}, _run,
+                "method": once, "confirm_paid": (api.v_bool(), False), "scope_fp": (v_str(1, 40), False)}, _run,
         "AI 분석을 시작한다(conn_ver가 지금 연결과 다르면 conn_changed. API 키 경로는 confirm_paid와 conn_ver가 있어야 돈다)")
     put("stop", {}, _stop, "분석을 멈춘다(남은 호출을 부르지 않음)")
     put("ack_terms", {}, _ack_terms, "구독 사용 안내를 확인했다고 기록한다")

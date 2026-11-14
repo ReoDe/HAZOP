@@ -47,6 +47,7 @@ class AiConnection(QObject):
         self.tasks = TaskRunner(self)
         self._status = {m: _status(m, "unchecked", checked_at=None) for m in self.methods()}
         self._api_override = None  # 실행 중 받은 API 상태. 키·모델·시험 결과가 바뀌면 버린다
+        self._limits = {}          # 구독 한도 창별 마지막 값(five_hour·seven_day 등). 받은 창만 있다
         self._auto = self.prefs.auto_method or ("subscription" if "subscription" in self.methods() else "api")
         self.running = False
         self.progress = ""
@@ -110,11 +111,21 @@ class AiConnection(QObject):
         """실행 흐름이 받은 상태를 반영한다(예: 호출 중 로그인이 풀림 → login_required)."""
         via = status.get("via") or self.method
         status = dict(_status(via, "unchecked"), **status)
+        self._keep_limit(status)
         if via == "api":
             self._api_override = (self._api_key(), status)
         else:
             self._status[via] = status
         self.changed.emit()
+
+    def _keep_limit(self, status):
+        limit = status.get("limit")
+        if status.get("via") == "subscription" and isinstance(limit, dict) and limit.get("window"):
+            self._limits[limit["window"]] = dict(limit)
+
+    def limits(self):
+        """구독 한도 창별 마지막 값 {창: limit}(받은 창만)."""
+        return dict(self._limits)
 
     def refresh(self):
         """설정 창이 키·모델을 바꾼 뒤: 실행 중 받은 API 상태를 버리고 다시 그리게 한다."""
@@ -181,6 +192,7 @@ class AiConnection(QObject):
             if not isinstance(status, dict) or "state" not in status:
                 status = _status(method, "error", "확인 결과를 읽지 못함")
             self._status[method] = dict(_status(method, "unchecked"), **status)
+            self._keep_limit(self._status[method])
             self.changed.emit()
             if done:
                 done(self._status[method])

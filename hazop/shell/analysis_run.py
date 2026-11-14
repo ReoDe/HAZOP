@@ -37,7 +37,7 @@ def stamp():
 
 def plan(ns, doc, scope, node_id=None, deviation_id=None, rest=None):
     """-> 호출 단위 목록. 분석 대상은 확정 구간뿐이다(잠금·적용됨 구간은 계획에서 빠진다).
-    rest: scope resume에서 이을 칸 [(node_id, deviation_id)](앞 실행 run()의 rest). 지금 구간 집합에 없는 칸은 빠진다."""
+    rest: scope resume에서 이을 칸 [(node_id, deviation_id)](resume_cells가 고른 것: 지금 프로젝트·구간 판의 기록 또는 결과 파일). 지금 구간 집합에 없는 칸은 빠진다."""
     devs = res.load_deviations()
     if scope == "resume":
         cells = [tuple(c) for c in rest or [] if isinstance(c, (list, tuple)) and len(c) == 2]
@@ -52,6 +52,54 @@ def plan(ns, doc, scope, node_id=None, deviation_id=None, rest=None):
     if scope == "failed":
         return ai_cells.plan_units(ns, devs, ai_cells.failed_cells(doc))
     raise ValueError("모르는 범위: %r" % (scope,))
+
+
+# 이어서 실행할 칸(규격 docs/specs/ai-subscription.md 결정 3·4): 이 error_kind로 끝난 칸과 아직 부르지 않은 칸
+RESUME_KINDS = ("limit_reached", "overage", "cancelled", "not_ready", "auth_mismatch", "transient", "timeout", "bad_output", "other")
+
+
+def resume_record(ns, rest, via, project_id):
+    """남은 칸 기록: 어느 프로젝트(엔진이 연 프로젝트)·도면·구간 판·방식에서 남은 칸인지 함께 둔다(B4 검토 1: 다른 프로젝트에서 같은 번호 칸을 부르지 않게)."""
+    return {"project_id": project_id, "graph_id": ns.get("graph_id"), "set_rev": ns.get("set_rev") or 0, "method": via,
+            "cells": [list(c) for c in rest or []]}
+
+
+def record_matches(ns, record, project_id):
+    """남은 칸 기록이 지금 프로젝트·도면·구간 판의 것인지."""
+    return bool(record) and (record.get("project_id"), record.get("graph_id"), record.get("set_rev") or 0) == (
+        project_id, ns.get("graph_id"), ns.get("set_rev") or 0)
+
+
+def file_rest(ns, doc):
+    """앱을 다시 켜 메모리 기록이 없을 때의 남은 칸(규격 결정 3): 결과 파일에서 마지막 AI 실행이 실패한 칸과, AI 실행 기록도 항목도 없는
+    '분석 안 함' 칸. 항목이 있는 칸(검토 전 AI 초안 포함)은 다시 부르지 않는다. 지금 구간 집합(확정 구간)에 있는 칸만."""
+    rows = {n["node_id"] for n in ns.get("nodes") or []}
+    out = []
+    for c in (doc or {}).get("cells") or []:
+        if c.get("node_id") not in rows:
+            continue
+        run = c.get("ai_run") or {}
+        if run.get("status") == "failed" or (not run and not c.get("entries") and c.get("state") in (None, "not_analyzed")):
+            out.append([c["node_id"], c["deviation_id"]])
+    return out
+
+
+def resume_cells(ns, doc, record, project_id):
+    """→ (칸 목록, 출처 'run'|'file'). 지금 프로젝트·구간 판의 기록이면 그 칸, 아니면(다른 프로젝트·구간 판이 바뀜·앱 다시 켬) 결과 파일에서."""
+    if record_matches(ns, record, project_id):
+        return [list(c) for c in record.get("cells") or []], "run"
+    return file_rest(ns, doc), "file"
+
+
+def scope_fp(units, conn=None):
+    """확인한 실행 범위의 지문: 칸 목록·구간·호출 수·예상 비용·모델·방식(B4 검토 2). 실행 직전에 다시 세어 다르면 실행하지 않고 다시 묻는다."""
+    import hashlib
+    import json
+    cells = sorted([u["node_id"], d] for u in units for d in u["deviation_ids"])
+    conn = conn or {}
+    body = {"cells": cells, "nodes": sorted({u["node_id"] for u in units}), "calls": len(units), "usd": conn.get("usd"),
+            "model": conn.get("model"), "via": conn.get("via")}
+    return hashlib.sha256(json.dumps(body, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 
 def summarize(units):
@@ -97,6 +145,7 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, 
         if ur["status"] == "ok":
             ok_calls += 1
             ok_cells += len(ur["cells"])
+            rest += [[unit["node_id"], d] for d, c in (ur.get("cells") or {}).items() if (c or {}).get("status") == "failed"]   # 호출은 됐지만 칸만 실패
         else:
             last_error = ur.get("error")
             rest += [[unit["node_id"], d] for d in unit["deviation_ids"]]

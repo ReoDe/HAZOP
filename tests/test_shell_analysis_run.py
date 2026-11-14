@@ -104,7 +104,7 @@ class PaidConfirmTest(RunBase):
         r = self.go(conn_ver=conn["conn_ver"])                  # 판만 있고 확인이 없어도
         self.assertEqual(r["error"]["code"], "need_confirm")
         self.assertEqual(self.units, [], "확인 없이는 AI를 한 번도 부르지 않는다")
-        r = self.go(conn_ver=conn["conn_ver"], confirm_paid=True)
+        r = self.go(conn_ver=conn["conn_ver"], confirm_paid=True, scope_fp=p["scope_fp"])
         self.assertTrue(r["ok"], r)
         self.assertTrue(self.units)
         self.assertTrue(all(isinstance(c, claude_http.ClaudeHttpClient) for c in self.clients))
@@ -192,7 +192,7 @@ class ResumeTest(RunBase):
         def watch(client, unit, ctx, devs, at):
             seen_override.append(self.conn.run_override)
             return inner(client, unit, ctx, devs, at)
-        r = self.go(watch, scope="resume", method="api", conn_ver=p["conn"]["conn_ver"], confirm_paid=True)
+        r = self.go(watch, scope="resume", method="api", conn_ver=p["conn"]["conn_ver"], confirm_paid=True, scope_fp=p["scope_fp"])
         self.assertTrue(r["ok"], r)
         self.assertEqual(set(seen_override), {"api"}, "실행 중에는 칩에 '이번 실행만'")
         self.assertIsNone(self.conn.run_override)
@@ -202,6 +202,100 @@ class ResumeTest(RunBase):
     def test_fixed_cannot_be_picked_for_one_run(self):
         r = self.call("results.run_plan", {"scope": "all", "method": "fixed"})
         self.assertEqual(r["error"]["code"], "bad_args")
+
+
+class ReviewFixTest(RunBase):
+    """B4 검토 반려(재현 D:\\HAZOP-trials\\2026-11-14-review-b4-b6-b7\\repro\\repro_b4.py R1~R5)."""
+    LIMIT = {"status": "limit_reached", "window": "five_hour"}
+
+    def other_project(self, with_draft=False):
+        from tests.test_study_migrate import graph
+        from tests.test_study_storage import DEVS, build, entry, put_entries
+        from hazop import store_io
+        from hazop.study import nodes as sn
+        g2 = graph("v1")
+        g2.update(project_id="PB", graph_id="graph-B", sheets=[{"graph_id": "graph-B", "drawing_number": "B-1"}])
+        ns2 = build(g2, [("A2", ["TK", "V1"]), ("B2", ["PP", "LT"])])
+        sn.save(ns2)
+        doc2 = res.empty_results(ns2, DEVS)
+        if with_draft:
+            doc2 = put_entries(doc2, "S1", "I1", [entry("b-draft", "proposed", origin="ai_draft", cause="B 프로젝트 초안")])
+        res.save_fp(doc2, "PB", expect=store_io.ANY)
+        return g2, ns2
+
+    def halt(self):
+        r = self.go(fake_run_unit(kind="limit_reached", limit=self.LIMIT), conn_ver=self.plan()["conn"]["conn_ver"])
+        self.assertTrue(r["ok"], r)
+        return self.done()
+
+    def test_r1_range_change_after_cost_confirm_is_asked_again(self):
+        from hazop.shell import api_results
+        self.use_api()
+        with mock.patch.object(api_results, "scope_set", lambda ns: dict(ns, nodes=ns["nodes"][:1])):
+            p = self.plan()                                   # 카드: 구간 1개 비용을 확인
+        self.assertEqual(p["conn"]["usd"], claude_http.MODELS[p["conn"]["model"]]["section_usd"])
+        r = self.go(conn_ver=p["conn"]["conn_ver"], confirm_paid=True, scope_fp=p["scope_fp"])     # 그사이 구간이 늘었다
+        self.assertEqual((r["ok"], r["error"]["code"]), (False, "scope_changed"))
+        self.assertEqual(self.units, [], "확인한 범위와 다르면 AI를 부르지 않는다")
+        r = self.go(conn_ver=p["conn"]["conn_ver"], confirm_paid=True)                          # 지문 없이 과금도 안 됨
+        self.assertEqual(r["error"]["code"], "scope_changed")
+        p = self.plan()
+        self.assertTrue(self.go(conn_ver=p["conn"]["conn_ver"], confirm_paid=True, scope_fp=p["scope_fp"])["ok"])
+
+    def test_r2_r5_resume_after_project_switch_never_uses_the_old_cells(self):
+        from hazop.app import project_ctx
+        before = self.halt()
+        self.assertEqual(before["resume"]["project_id"], self.engine.project_id())
+        self.assertNotEqual(self.engine.project_id(), "PB")
+        self.assertTrue(self.read("results", "run")["last"])
+        g2, ns2 = self.other_project(with_draft=True)
+        with mock.patch.object(project_ctx, "project_graph", lambda pid: g2 if pid == "PB" else self.g):
+            self.assertTrue(self.call("project.set", {"project_id": "PB"})["ok"])
+            self.assertIsNone(self.read("results", "run")["last"], "다른 프로젝트의 멈춤 안내·이어서 단추는 보이지 않는다")
+            p = self.plan(scope="resume")
+            want = analysis_run.file_rest(ns2, res.load_fp(ns2)[0])
+            self.assertEqual(p["cells"], len(want), "B의 남은 칸은 B 결과 파일에서(앞 프로젝트 기록이 아님)")
+            draft = next(c for c in res.load_fp(ns2)[0]["cells"] if any(e["entry_id"] == "b-draft" for e in c["entries"]))
+            self.assertNotIn([draft["node_id"], draft["deviation_id"]], want, "검토 전 AI 초안이 있는 칸은 다시 부르지 않는다")
+            self.units.clear()
+            self.assertTrue(self.go(scope="resume", conn_ver=p["conn"]["conn_ver"], scope_fp=p["scope_fp"])["ok"])
+        self.assertEqual({(n, d) for n, ds in self.units for d in ds}, {tuple(c) for c in want})
+        left = [e["entry_id"] for c in res.load_fp(ns2)[0]["cells"] for e in c["entries"]]
+        self.assertIn("b-draft", left, "B의 초안이 그대로 남는다")
+
+    def test_resume_record_is_ignored_when_the_node_set_changed(self):
+        self.halt()
+        rec = dict(self.engine.analysis.last["resume"], set_rev=99)
+        pid = self.engine.project_id()
+        self.assertFalse(analysis_run.record_matches(self.ns, rec, pid))
+        self.assertTrue(analysis_run.record_matches(self.ns, self.engine.analysis.last["resume"], pid))
+        self.assertFalse(analysis_run.record_matches(self.ns, self.engine.analysis.last["resume"], "PB"))
+
+    def test_r4_resume_after_restart_uses_the_results_file(self):
+        self.halt()
+        doc, _fp = res.load_fp(self.ns)
+        want = {(c["node_id"], c["deviation_id"]) for c in doc["cells"]
+                if (c.get("ai_run") or {}).get("status") == "failed" or (not c.get("ai_run") and not c.get("entries"))}
+        self.engine.analysis.last = None                       # 앱 다시 시작: 메모리 기록만 사라짐
+        p = self.plan(scope="resume")
+        self.assertGreater(p["calls"], 0)
+        self.assertIsNone(p["empty_text"])
+        self.units.clear()
+        self.go(scope="resume", conn_ver=p["conn"]["conn_ver"], scope_fp=p["scope_fp"])
+        self.assertEqual({(n, d) for n, ds in self.units for d in ds}, want)
+
+    def test_r3_cell_failure_inside_an_ok_call_is_resumed(self):
+        inner = fake_run_unit()
+
+        def partial(client, unit, ctx, devs, at):
+            out = inner(client, unit, ctx, devs, at)
+            did = unit["deviation_ids"][0]
+            out["cells"][did] = {"status": "failed", "error": "응답에 편차가 없음", "note": None, "entries": []}
+            return out
+        self.go(partial, conn_ver=self.plan()["conn"]["conn_ver"])
+        rest = {tuple(c) for c in self.done()["rest"]}
+        self.assertTrue(rest)
+        self.assertTrue(all(any((n, ds[0]) == c for n, ds in self.units) for c in rest))
 
 
 class FixedTest(RunBase):
@@ -231,10 +325,20 @@ class SettingsUsageTest(RunBase):
                               "limit": {"status": "allowed", "window": "five_hour", "utilization": 0.42, "resets_at": 1794646800}})
         s = json.loads(S.read(self.engine, ["aisettings"], {}).body.decode("utf-8"))["subscription"]
         self.assertIn("42%", s["usage"])
+        self.assertIn("5시간 한도", s["usage"], "한 창만 받으면 무슨 창인지 적는다")
         self.assertFalse(s["can_locate"])
+        self.conn.set_status({"via": "subscription", "state": "ok",
+                              "limit": {"status": "allowed", "window": "seven_day", "utilization": None, "resets_at": 1794646800}})
+        s = json.loads(S.read(self.engine, ["aisettings"], {}).body.decode("utf-8"))["subscription"]
+        self.assertIn("5시간 한도 42%", s["usage"], "두 창을 받으면 둘 다")
+        self.assertIn("주간 한도 사용률 확인 안 됨", s["usage"], "값을 못 읽으면 숫자 대신 '확인 안 됨'")
         self.conn.set_status({"via": "subscription", "state": "not_installed"})
         s = json.loads(S.read(self.engine, ["aisettings"], {}).body.decode("utf-8"))["subscription"]
         self.assertTrue(s["can_locate"])
+
+    def test_no_usage_yet_says_not_confirmed(self):
+        s = json.loads(S.read(self.engine, ["aisettings"], {}).body.decode("utf-8"))["subscription"]
+        self.assertTrue(s["usage"].startswith("사용량 확인 안 됨"))
 
     def test_locate_cli_keeps_the_path_in_python(self):
         exe = os.path.join(self.tmp, "claude.exe")

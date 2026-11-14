@@ -213,13 +213,14 @@ export async function startRun() {
     if (p.needs_terms) await cmd("results.ack_terms");
     const paid = !!(p.conn && p.conn.paid);
     if (paid && !p.paidOk) { results.set({ error: "예상 비용을 확인해야 시작합니다." }); return null; }
-    const args = Object.assign({ scope: p.scope }, p.args, p.conn ? { conn_ver: p.conn.conn_ver } : {}, paid ? { confirm_paid: true } : {});
+    const args = Object.assign({ scope: p.scope }, p.args, p.conn ? { conn_ver: p.conn.conn_ver } : {}, paid ? { confirm_paid: true } : {},
+      p.scope_fp ? { scope_fp: p.scope_fp } : {});      // 카드에서 본 범위(칸·구간·호출 수·비용·모델). 그새 바뀌면 엔진이 scope_changed로 다시 묻는다
     const r = await cmd("results.run", args);
     results.set({ plan: null, error: null });
     return r;
   } catch (e) {
     results.set({ error: errorText(e) });
-    if (e && (e.code === "conn_changed" || e.code === "need_confirm")) await planRun(p.scope, p.args && p.args.method);   // 연결이 바뀌었으면 카드를 새 연결로 다시 보인다
+    if (e && (e.code === "conn_changed" || e.code === "need_confirm" || e.code === "scope_changed")) await planRun(p.scope, p.args && p.args.method);   // 연결이 바뀌었으면 카드를 새 연결로 다시 보인다
     return null;
   }
 }
