@@ -63,7 +63,7 @@ class JudgeTest(EditBase):
         self.assertEqual(e["history"][-1]["by"], "검토자A", "판정한 사람을 남긴다")
         c = next(x for x in self.read("ie")["unassigned"] if x["candidate_id"] == iec)
         self.assertEqual((c["judgement"], c["ie_origin"], c["category"]), ("yes", "human", "LOIA"))
-        self.assertIn("후보 · 교란 예 · 도전 예", self.view(iec)["trace"][3]["label"])
+        self.assertIn("후보 · 정상운전 교란 예 · 안전기능 도전 예", self.view(iec)["trace"][3]["label"])
         out = os.path.join(self.tmp, "j.xlsx")
         self.engine.hooks["save_path"] = lambda kind, name: out
         s = self.read("ie")
@@ -96,6 +96,66 @@ class JudgeTest(EditBase):
         api_ie.judge_candidate(self.engine, {"iec": iec, "hint": HINT, "rver": self.view(iec)["rver"]})
         self.assertEqual(self.entry("c2")["ie_hint"]["origin"], "human")
 
+    def test_chat_function_records_that_the_ai_wrote_the_judgement(self):
+        iec = self.iec("c2")
+        api_ie.judge_candidate(self.engine, {"iec": iec, "hint": HINT, "rver": self.view(iec)["rver"], "author": "ai"})
+        row = self.entry("c2")["history"][-1]
+        self.assertEqual((row["by"], row["author"]), ("검토자A", "ai"), "글은 AI가 썼고 누른 사람은 검토자")
+        with self.assertRaises(api.CommandError):
+            api_ie.judge_candidate(self.engine, {"iec": iec, "hint": HINT, "rver": self.view(iec)["rver"], "author": "robot"})
+
+    # ---------------------------------------------------------------- B5 반려 재현: 확정 그룹 소속 후보 판정
+    def test_judging_a_member_of_a_confirmed_group_asks_first_and_checks_the_confirmed_list(self):
+        gid = self.human_group()
+        self.ok("ie.confirm", group_id=gid)
+        iec = self.iec("c1")
+        before = self.entry("c1").get("ie_hint")
+        r = self.judge(iec, hint=dict(HINT, candidate="no", reason="제외로 바꿈"))
+        self.assertTrue(r["ok"], r)
+        ask = r["data"].get("ask")
+        self.assertTrue(ask, "되묻지 않고 저장함")
+        self.assertEqual(ask["groups"], [gid])
+        self.assertIn("주급수 상실", ask["message"], "확정이 풀릴 그룹 이름을 보인다")
+        self.assertEqual(self.entry("c1").get("ie_hint"), before, "묻는 동안 저장하지 않는다")
+        self.assertEqual(self.read("ie")["groups"][0]["status"], "confirmed")
+        r = self.judge(iec, hint=dict(HINT, candidate="no", reason="제외로 바꿈"), confirmed=True)
+        self.assertEqual(self.code(r), (False, "stale"), "확인한 그룹 목록 없이 confirmed만 보내면 받지 않는다")
+        r = self.judge(iec, hint=dict(HINT, candidate="no", reason="제외로 바꿈"), confirmed=True, confirm_groups=["IEG-99"])
+        self.assertEqual(self.code(r), (False, "stale"), "확인한 목록과 실제로 확정이 풀릴 목록이 다르면 받지 않는다")
+        self.assertEqual(self.entry("c1").get("ie_hint"), before)
+        r = self.judge(iec, hint=dict(HINT, candidate="no", reason="제외로 바꿈"), confirmed=True, confirm_groups=ask["groups"])
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["data"].get("demoted"), [gid])
+        self.assertEqual(self.entry("c1")["ie_hint"]["candidate"], "no")
+        self.assertNotEqual(self.read("ie")["groups"][0]["status"], "confirmed")
+
+    def test_judging_a_member_of_a_draft_group_does_not_ask(self):
+        gid = self.human_group()
+        iec = self.iec("c1")
+        r = self.judge(iec, hint=dict(HINT, candidate="no", reason="제외"))
+        self.assertTrue(r["ok"] and "ask" not in r["data"], r)
+        self.assertEqual(self.entry("c1")["ie_hint"]["candidate"], "no", "초안 그룹은 묻지 않고 저장한다")
+
+    def test_chat_judgement_on_a_confirmed_group_raises_confirm(self):
+        gid = self.human_group()
+        self.ok("ie.confirm", group_id=gid)
+        iec = self.iec("c1")
+        a = {"iec": iec, "hint": dict(HINT, candidate="no", reason="제외"), "rver": self.view(iec)["rver"]}
+        with self.assertRaises(api.CommandError) as cm:
+            api_ie.judge_candidate(self.engine, a)
+        self.assertEqual(cm.exception.code, "confirm")
+        self.assertIn(gid, str(cm.exception))
+        api_ie.judge_candidate(self.engine, dict(a, confirmed=True, confirm_groups=[gid]))
+        self.assertEqual(self.entry("c1")["ie_hint"]["candidate"], "no")
+
+    def test_answers_and_terms_follow_the_spec(self):
+        v = self.view(self.iec("c1"))
+        self.assertEqual(v["choices"]["answer"]["unknown"], "미확인", "설계 시트 1: 예 / 아니오 / 미확인")
+        terms = v["choices"]["terms"]
+        self.assertIn("disturbs normal operation", terms["disturbs"])
+        self.assertIn("challenges safety functions", terms["challenges"])
+        self.assertIn("NUREG-2122", terms["source"])
+
 
 class TwinJudgeTest(OverlapTwinTest):
     def test_one_judgement_goes_to_both_twin_entries(self):
@@ -103,6 +163,11 @@ class TwinJudgeTest(OverlapTwinTest):
         c = s["unassigned"][0]
         v = self.read("ie", "candidate", c["candidate_id"])
         self.assertEqual(len(v["targets"]), 2, "겹친 구간의 같은 원인 항목 둘")
+        cell = v["trace"][0]
+        self.assertIn("외 1구간", cell["label"])
+        other = [t for t in v["targets"] if t["entry_id"] != v["candidate"]["entry_id"]][0]
+        self.assertEqual([(t["node_id"], t["deviation_id"]) for t in cell["twins"]], [(other["node_id"], other["deviation_id"])],
+                         "다른 구간도 골라 열 수 있다")
         r = self.engine.dispatch("ie.judge", {"iec": c["candidate_id"], "hint": dict(HINT, category="LOMFW"), "rver": v["rver"],
                                               "seen": {"member:" + c["candidate_id"]: v["fp"]}})
         self.assertTrue(r["ok"], r)

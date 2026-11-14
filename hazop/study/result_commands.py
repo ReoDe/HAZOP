@@ -69,14 +69,21 @@ def _recheck_cell(ns, doc, a, by, pg):
 
 def _set_ie_hints(ns, doc, a, by, pg):
     """사람이 초기사건 판정(ie_hint)을 정한다(B5). targets [{node_id, deviation_id, entry_id}]에 같은 판정을 한 번에 저장한다
-    (겹친 구간에서 한 후보로 묶인 같은 원인 항목들). 판정한 사람(by)을 항목 이력에 남긴다. 항목 상태는 res.set_ie_hint 규칙대로."""
+    (겹친 구간에서 한 후보로 묶인 같은 원인 항목들). 판정한 사람(by)을 항목 이력에 남긴다. author="ai"면 판정 글은 AI가 썼고 by는
+    확인한 사람이다(기록 줄 author). 항목 상태는 res.set_ie_hint 규칙대로."""
     targets = a.get("targets") or []
     if not targets:
         raise ValueError("판정할 항목이 없습니다")
+    author = a.get("author")
+    if author is not None and author not in res.AUTHORS:
+        raise ValueError("모르는 글쓴이: %r" % (author,))
     out = doc
     for t in targets:
         out = res.set_ie_hint(out, t["node_id"], t["deviation_id"], t["entry_id"], dict(a.get("hint") or {}), node_set=ns)
-        res._entry(out, t["node_id"], t["deviation_id"], t["entry_id"])["history"][-1]["by"] = by
+        row = res._entry(out, t["node_id"], t["deviation_id"], t["entry_id"])["history"][-1]
+        row["by"] = by
+        if author is not None:
+            row["author"] = author
     return {"targets": len(targets)}, out
 
 

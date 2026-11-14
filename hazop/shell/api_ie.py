@@ -14,7 +14,9 @@
   누르면 카드가 보인 때의 ver·rver·seen 그대로 confirmed=true와 confirm_groups(카드에 보인 목록)를 붙여 다시 보낸다. 서버는 그 목록과
   실제로 확정이 풀릴 목록이 다르면 'stale'로 거절한다. 읽지 못한 파일 바꾸기는 'confirm' 오류로 되묻는다.
 - 확정자·판정자는 설정의 검토자 이름이다(웹 인자 아님). 인계 묶음 Excel 위치는 창이 묻고, 같은 이름의 JSON이 있으면 창이 덮어쓸지 묻는다.
-- 채팅에서 부르는 실행 함수: view_groups, move_candidates, split_group, judge_coverage. 판 지문(ver)이 없으면 거절하고, 되물을 일이
+- 후보 IE 판정(`ie.judge`, B5)은 ⑤ 결과 파일에 저장하지만 같은 되묻기 규칙을 따른다: 판정을 바꾸면 확정한 그룹의 확정이 풀릴 때
+  (소속 후보의 판정·범주가 그룹과 어긋남 등) 저장 전에 그 그룹을 보이고 묻는다. 확정이 풀릴 그룹은 바뀐 ⑤ 결과를 메모리에서 맞춰 본 값이다.
+- 채팅에서 부르는 실행 함수: view_groups, move_candidates, split_group, judge_coverage, judge_candidate. 판 지문(ver)이 없으면 거절하고, 되물을 일이
   있으면 'confirm' 오류(글에 확정이 풀릴 그룹)를 올린다(confirmed와 confirm_groups를 붙여 다시 부른다).
 - 인계 묶음 내보내기는 ie.store.load_synced로 IEC 대응을 먼저 저장한다(저장하지 못하면 내보내지 않음).
 - P5(설계 HZ-PLN-17 §8.2): 읽기 `ie/fmea`(FMEA 행·전기·제어 구간·구성요소 목록), `ie/mld`(MLD 잎 가지 대조). 명령 `ie.fmea_template`(양식
@@ -893,29 +895,35 @@ def candidate_view(engine, iec):
     entry_ids = c.get("entry_ids") or [c["entry_id"]]
     targets = [{"node_id": cells[e][0], "deviation_id": cells[e][1], "entry_id": e} for e in entry_ids if e in cells]
     raw = cells.get(c["entry_id"], (None, None, {}))[2]
+    twins = [t for t in targets if t["entry_id"] != c["entry_id"]]   # 겹친 구간에서 같은 후보로 묶인 다른 항목(구간·편차)
     idx = refs.index(pg)
     loc_ids = [idx[r]["entity_id"] for r in c["stable_refs"] if r in idx and idx[r].get("entity_id")]
     loc_marks = {g: [{"op": "mark", "groups": [{"ids": ids, "style": "focus", "label": None}], "dim_others": True, "center": False}]
                  for g, ids in chatview.split_by_sheet(pg, loc_ids).items()}
     labels = __import__("hazop.export.study_xlsx", fromlist=["entity_labels"]).entity_labels(pg)
-    paths = []
-    for p in (raw.get("ai_basis") or {}).get("kg_paths") or []:
-        if not p:
-            continue
-        by_sheet = chatview.path_steps(pg, [{"id": x, "flow": None} for x in p])
-        paths.append({"labels": [labels.get(x, x) for x in p], "sheet": next(iter(by_sheet), None),
-                      "marks": {g: [{"op": "path", "steps": st, "style": "path", "numbered": True}] for g, st in by_sheet.items()}})
+    entities = {n.get("entity_id") for n in pg.get("nodes") or []}
+    paths, seen_paths = [], set()
+    for eid in [c["entry_id"]] + [t["entry_id"] for t in twins]:     # 쌍둥이 항목의 근거 경로도 함께(같은 경로는 한 번)
+        for p in ((cells.get(eid, (None, None, {}))[2].get("ai_basis") or {}).get("kg_paths") or []):
+            if not p or tuple(p) in seen_paths:
+                continue
+            seen_paths.add(tuple(p))
+            by_sheet = chatview.path_steps(pg, [{"id": x, "flow": None} for x in p])
+            paths.append({"labels": [labels.get(x, x) + ("" if x in entities else " (도면에서 사라짐)") for x in p],
+                          "sheet": next(iter(by_sheet), None),
+                          "marks": {g: [{"op": "path", "steps": st, "style": "path", "numbered": True}] for g, st in by_sheet.items()}})
     group = next((g for g in b["groups"] if g["group_id"] == c.get("group_id")), None)
     ends = [e for e in b["end_states"] if group and e["end_state_id"] in group["end_state_ids"]]
     j = res.IE_CANDIDATES.get(c["judgement"], c["judgement"])
     trace = [
-        {"kind": "cell", "label": "%s · %s" % (" · ".join(c.get("node_ids") or [c["node_id"]]), c["deviation_label"]),
-         "node_id": c["node_id"], "deviation_id": c["deviation_id"]},
+        {"kind": "cell", "label": "%s · %s%s" % (c["node_id"], c["deviation_label"], " 외 %d구간" % len(twins) if twins else ""),
+         "node_id": c["node_id"], "deviation_id": c["deviation_id"],
+         "twins": [{"node_id": t["node_id"], "deviation_id": t["deviation_id"], "label": t["node_id"]} for t in twins]},
         {"kind": "cause", "label": c["cause"] or "-", "node_id": c["node_id"], "deviation_id": c["deviation_id"]},
         {"kind": "location", "label": "%s · %s" % (", ".join(c["cause_location"]) or "위치 미정", ", ".join(c["failure_modes"]) or "고장모드 미정"),
          "sheet": next(iter(loc_marks), None), "marks": loc_marks},
-        {"kind": "judgement", "label": "%s · 교란 %s · 도전 %s%s" % (j, res.IE_ANSWERS[c["disturbs"]], res.IE_ANSWERS[c["challenges"]],
-                                                              "" if c["ie_origin"] == "human" else " (판정 전·AI 초안)")},
+        {"kind": "judgement", "label": "%s · 정상운전 교란 %s · 안전기능 도전 %s%s" % (j, ANSWERS[c["disturbs"]], ANSWERS[c["challenges"]],
+                                                                          "" if c["ie_origin"] == "human" else " (판정 전·AI 초안)")},
         {"kind": "group", "label": ("%s %s" % (group["group_id"], group["name"])) if group else "그룹 없음",
          "group_id": group["group_id"] if group else None},
         {"kind": "end_state", "label": ", ".join("%s %s" % (e["end_state_id"], e["text"]) for e in ends) or "최종상태 없음",
@@ -925,13 +933,38 @@ def candidate_view(engine, iec):
     hint = raw.get("ie_hint") if isinstance(raw.get("ie_hint"), dict) else {}
     return {"candidate": c, "hint": hint, "targets": targets, "trace": trace, "rver": _rver(ctx),
             "fp": item_fps(b).get("member:" + iec),
-            "choices": {"candidate": res.IE_CANDIDATES, "answer": res.IE_ANSWERS,
+            "choices": {"candidate": res.IE_CANDIDATES, "answer": ANSWERS, "terms": TERMS,
                         "categories": [{"code": x["code"], "label": res.ie_category_label(x["code"])} for x in res.ie_categories()]}}
+
+
+# 판정 답의 화면 이름(설계 HZ-PLN ie-output-design 시트 1: 예/아니오/미확인). ⑤ 저장 값(yes/no/unknown)은 그대로.
+ANSWERS = dict(res.IE_ANSWERS, unknown="미확인")
+# 판정 칸 용어(처음 보이는 곳에 영어와 출처를 단다)
+TERMS = {"disturbs": "정상운전 교란(disturbs normal operation)", "challenges": "안전기능 도전(challenges safety functions)",
+         "source": "초기사건 정의의 두 요건(NUREG-2122 용어집)"}
+
+
+def _judge_lost(engine, view, hint):
+    """(이 판정을 저장하면 확정이 풀릴 그룹 ID 정렬, 지금 그룹들). ⑤ 결과를 메모리에서 바꿔 ⑥을 맞춰 본 값과 지금 값을 비교한다(저장 없음)."""
+    ctx, _why = _context(engine)
+    if ctx is None:
+        return [], {}
+    pg, ns, doc, ie_doc, _fp = ctx
+    base = _view_doc(ie_doc, doc, ns)
+    new_doc = doc
+    try:
+        for t in view["targets"]:
+            new_doc = res.set_ie_hint(new_doc, t["node_id"], t["deviation_id"], t["entry_id"], dict(hint), node_set=ns)
+    except ValueError:
+        return [], base["groups"]          # 판정 값 오류는 저장 길(result_commands)이 같은 글로 거절한다
+    return lost_confirmations(base, _view_doc(ie_doc, new_doc, ns)), base["groups"]
 
 
 def _judge(engine, a):
     """후보 하나(겹친 구간 쌍둥이 포함)의 IE 판정을 ⑤ 결과에 저장한다(설계 E4: 원인 단위 판정은 ⑤ 결과 파일). 화면이 본 ⑤ 판(rver)과
-    후보 지문(seen 'member:IEC')을 대조한다. 판정한 사람은 설정의 검토자 이름."""
+    후보 지문(seen 'member:IEC')을 대조한다. 판정한 사람은 설정의 검토자 이름, author="ai"면 판정 글은 AI가 썼고 검토자가 확인한 것.
+    확정한 그룹의 확정이 풀리면(A10 규칙) confirmed 없이는 저장하지 않고 {"ask": {message, groups}}로 답하고, confirmed가 있으면
+    confirm_groups가 지금 확정이 풀릴 목록과 같아야 저장한다."""
     api = _api()
     by = engine.reviewer()
     if not by:
@@ -943,24 +976,45 @@ def _judge(engine, a):
         raise api.CommandError("stale", STALE_RESULTS)
     if a.get("seen") is not None and a["seen"].get("member:" + a["iec"]) != view["fp"]:
         raise api.CommandError("stale", STALE_ITEM % a["iec"])
+    lost, ie_groups = _judge_lost(engine, view, a["hint"])
+    if lost:
+        if not a.get("confirmed"):
+            names = ", ".join("%s(%s)" % (g, (ie_groups.get(g) or {}).get("name", "")) for g in lost)
+            return {"ask": {"message": "%s 판정을 바꾸면 확정이 풀리는 그룹: %s. 저장 뒤 그룹을 다시 확정해야 합니다. 계속할까요?" % (a["iec"], names),
+                            "groups": lost}}
+        if sorted(a.get("confirm_groups") or []) != lost:
+            raise api.CommandError("stale", "확인한 뒤 내용이 바뀌어 저장하지 않았습니다(확인한 그룹: %s, 지금 확정이 풀릴 그룹: %s). 다시 확인해 주세요."
+                                   % (", ".join(sorted(a.get("confirm_groups") or [])) or "없음", ", ".join(lost)))
     from hazop.study import result_commands
     pg = _results()._pg(engine)
-    out = result_commands.execute(pg, "set_ie_hints", {"targets": view["targets"], "hint": a["hint"]}, by,
-                                  None if a["rver"] == "none" else a["rver"])
+    args = {"targets": view["targets"], "hint": a["hint"]}
+    if a.get("author"):
+        args["author"] = a["author"]
+    out = result_commands.execute(pg, "set_ie_hints", args, by, None if a["rver"] == "none" else a["rver"])
     if not out["ok"]:
         r = (out.get("refused") or [{}])[0]
         code = "stale" if r.get("code") in ("stale", "conflict") else "failed"
         raise api.CommandError(code, STALE_RESULTS if code == "stale" else str(r.get("reason"))[:300])
     engine.changed("results", None)
     engine.changed("ie", None)
-    return {"rver": out.get("fingerprint") or "none", "targets": len(view["targets"])}
+    r = {"rver": out.get("fingerprint") or "none", "targets": len(view["targets"])}
+    if lost:
+        r["demoted"] = lost
+    return r
 
 
 def judge_candidate(engine, a):
-    """채팅 실행 함수: {iec, hint{candidate, disturbs, challenges, category, safety_functions, reason}, rver}. rver 없이는 거절."""
+    """채팅 실행 함수: {iec, hint{candidate, disturbs, challenges, category, safety_functions, reason}, rver, author?, confirmed?,
+    confirm_groups?}. rver 없이는 거절. author="ai"면 판정 글을 AI가 썼다고 ⑤ 기록에 남는다(누른 사람은 검토자). 확정이 풀릴
+    그룹이 있으면 'confirm' 오류로 되묻는다(confirmed=true와 confirm_groups를 붙여 다시 부른다)."""
+    api = _api()
     if not a.get("rver"):
-        raise _api().CommandError("bad_args", "분석 결과 판 지문(rver)을 함께 보내야 합니다(먼저 view_groups로 읽음).")
-    return _judge(engine, a)
+        raise api.CommandError("bad_args", "분석 결과 판 지문(rver)을 함께 보내야 합니다(먼저 view_groups로 읽음).")
+    out = _judge(engine, a)
+    if out.get("ask"):
+        raise api.CommandError("confirm", "%s (다시 부를 때 confirmed=true, confirm_groups=[%s])"
+                               % (out["ask"]["message"], ", ".join(out["ask"]["groups"])))
+    return out
 
 
 def v_hint(v):
@@ -1013,7 +1067,8 @@ def register(commands):
     put("set_coverage", dict(common, code=(v_str(1, 40), True), disposition=(api.v_enum("", *model.COVERAGE), True),
                              reason=(v_str(0, 1000), False)), _set_coverage, "완전성 대조 빈 범주 판정(사유 필수, 빈 처리는 지움)")
     put("export", {"ver": (v_str(1, 100), False), "rver": rver}, _export, "인계 묶음 Excel+JSON 내보내기(위치는 창이 묻는다)")
-    put("judge", {"iec": (v_str(1, 20), True), "hint": (v_hint, True), "rver": (v_str(1, 100), True), "seen": seen}, _judge,
+    put("judge", {"iec": (v_str(1, 20), True), "hint": (v_hint, True), "rver": (v_str(1, 100), True), "seen": seen,
+                  "confirmed": (api.v_bool(), False), "confirm_groups": (v_list(v_str(1, 20), 500), False)}, _judge,
         "후보 하나(겹친 구간 쌍둥이 포함)의 IE 판정을 ⑤ 결과에 저장(판정한 사람은 검토자 이름)")
     fver = (v_str(1, 100), True)
     fseen = {"fver": fver, "seen": seen}

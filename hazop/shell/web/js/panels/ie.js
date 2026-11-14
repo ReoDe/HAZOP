@@ -2,7 +2,7 @@
 // 인계 묶음 내보내기. 편집(A10)은 이전 화면 ⑥과 같은 엔진 함수를 부른다: 후보 묶기·옮기기·빼기, 그룹 고치기·나누기·지우기, 표제·최종상태·기본사건
 // 고치기·받아들이기·지우기, 빈 범주 판정. 저장하는 자료는 엔진만 쓰고 여기서는 보여 주고 명령만 보낸다. 모델·도면에서 온 글은 ${}로만 넣는다.
 import { html } from "../ui/html.js";
-import { useState } from "../../vendor/hooks.module.js";
+import { useEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { store } from "../store.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import * as I from "./ie_state.js";
@@ -60,8 +60,10 @@ function FieldForm({ title, fields, values, choices, members, onSave, onCancel }
 function Ask() {
   const ask = I.useIe((x) => x.ask);
   const busy = I.useIe((x) => x.busy);
+  const box = useRef(null);
+  useEffect(() => { if (ask && box.current && box.current.scrollIntoView) box.current.scrollIntoView({ block: "nearest" }); }, [ask]);   // 후보 카드에서 물어도 보이게
   if (!ask) return null;
-  return html`<div class="card ie-ask" role="alertdialog" aria-label="확인">
+  return html`<div class="card ie-ask" role="alertdialog" aria-label="확인" ref=${box}>
     <p>${ask.message}</p>
     ${ask.groups.length ? html`<div class="small">확정이 풀릴 그룹: <b>${ask.groups.join(", ")}</b></div>` : null}
     <div class="acts-row"><${Btn} sm=${true} kind="primary" label="계속" disabled=${busy} onClick=${I.confirmAsk}>계속<//>

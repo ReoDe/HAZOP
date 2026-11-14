@@ -32,7 +32,10 @@ function Trace({ d }) {
   return html`<div class="ie-trace" role="list" aria-label="추적">${d.trace.map((n, i) => html`<span class="tr-node" role="listitem" key=${i}>
     ${i ? html`<span class="tr-arrow" aria-hidden="true">→</span>` : null}
     ${goable(n) ? html`<button type="button" class="linkish" aria-label=${KIND_NAME[n.kind] + ": " + n.label} onClick=${() => go(n, d)}><span class="muted small">${KIND_NAME[n.kind]}</span> ${n.label}</button>`
-      : html`<span><span class="muted small">${KIND_NAME[n.kind]}</span> ${n.label}</span>`}</span>`)}</div>`;
+      : html`<span><span class="muted small">${KIND_NAME[n.kind]}</span> ${n.label}</span>`}
+    ${(n.twins || []).length ? html`<span class="muted small"> (${n.twins.map((t, j) => html`<button type="button" class="linkish" key=${j} aria-label=${"겹친 구간: " + t.label}
+        onClick=${() => go(Object.assign({ kind: "cell" }, t), d)}>${j ? ", " : ""}${t.label}</button>`)})</span>` : null}</span>`)}</div>
+    ${d.choices.terms ? html`<div class="muted small" aria-label="용어">${d.choices.terms.disturbs}·${d.choices.terms.challenges}: ${d.choices.terms.source}</div>` : null}`;
 }
 
 function JudgeForm({ d, onSaved }) {

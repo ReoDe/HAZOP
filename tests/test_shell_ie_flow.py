@@ -259,5 +259,38 @@ class IePanelTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "results", 10), "구간·편차 마디는 그 칸을 연다")
 
 
+    def test_judging_a_member_of_a_confirmed_group_asks_in_the_window_first(self):
+        """B5 반려 재현: 그룹 소속 행에서 연 카드의 판정이 확정 그룹을 되묻지 않고 초안으로 내리던 것."""
+        doc, fp = ie_store.load(self.project)
+        doc = model.sync(doc, self.r, at="2026-11-13T01:00:00Z", node_set=self.ns)
+        iec = model.iec_of(doc)[model.key_of(self.r["graph_id"], "c1")]
+        doc, gid = model.create_group(doc, "주급수 상실", [iec], at="2026-11-13T01:00:00Z")
+        doc = model.confirm(doc, gid, self.r, "검토자A", at="2026-11-13T01:00:00Z", node_set=self.ns)
+        ie_store.save(doc, expect=fp)
+
+        def hint():
+            d, _fp = res.load_fp(self.ns)
+            return next(e for c in d["cells"] for e in c["entries"] if e["entry_id"] == "c1").get("ie_hint") or {}
+        before = hint()
+        win = self.open_panel()
+        self.assertTrue(wait_for(lambda: gid in self.text(win), 10))
+        self.assertTrue(self.click(win, "[aria-label='그룹 목록'] .nrow-b"))
+        self.assertTrue(wait_for(lambda: bool(self.js(win, "!!document.querySelector(\"button[aria-label='%s 추적·판정']\")" % iec)), 10))
+        self.assertTrue(self.click(win, "button[aria-label='%s 추적·판정']" % iec))
+        self.assertTrue(wait_for(lambda: bool(self.js(win, "!!document.querySelector(\"button[aria-label='%s IE 판정']\")" % iec)), 10))
+        self.assertTrue(self.click(win, "button[aria-label='%s IE 판정']" % iec))
+        self.assertTrue(wait_for(lambda: bool(self.js(win, "!!document.querySelector(\"select[aria-label='초기사건 후보']\")")), 10))
+        self.js(win, "(() => { const s = document.querySelector(\"select[aria-label='초기사건 후보']\"); s.value = 'no'; s.dispatchEvent(new Event('change', {bubbles: true})); })()")
+        self.type_into(win, "input[aria-label='판정 이유']", "제외로 바꿈")
+        pump(0.3)
+        self.assertTrue(self.click(win, "button[aria-label='판정 확정']"))
+        self.assertTrue(wait_for(lambda: "확정이 풀리는 그룹" in self.text(win), 10), self.text(win)[-300:])
+        self.assertEqual(hint(), before, "묻는 동안 저장하지 않는다")
+        self.assertEqual(self.stored()["groups"][gid]["status"], "confirmed")
+        self.assertTrue(self.click(win, "button[aria-label='계속']"))
+        self.assertTrue(wait_for(lambda: hint().get("candidate") == "no", 10), self.text(win)[-300:])
+        self.assertTrue(wait_for(lambda: "확정이 풀린 그룹: %s" % gid in self.text(win), 10), self.text(win)[-300:])
+
+
 if __name__ == "__main__":
     unittest.main()

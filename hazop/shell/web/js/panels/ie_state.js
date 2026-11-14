@@ -263,14 +263,23 @@ export function toggleCandidate(iec) {
   ie.set({ cand: { iec, data: null } });
   return loadCandidate(iec);
 }
-/** 판정 저장: 카드가 본 ⑤ 판(rver)과 후보 지문을 싣는다. 그 사이 바뀌었으면 엔진이 거절하고 다시 읽는다. */
+/** 판정 저장: 카드가 본 ⑤ 판(rver)과 후보 지문을 싣는다. 그 사이 바뀌었으면 엔진이 거절하고 다시 읽는다.
+ * 확정한 그룹의 확정이 풀리면 엔진이 저장하지 않고 묻는다(ask): 다른 편집과 같은 확인 카드를 띄우고, '계속'이면 카드가 본 값 그대로
+ * confirmed와 confirm_groups(카드에 보인 목록)를 붙여 다시 보낸다. */
 export async function judgeCandidate(d, hint) {
   const iec = d.candidate.candidate_id;
-  ie.set({ busy: true, error: null, notice: null });
+  const args = { iec, hint, rver: d.rver, seen: { ["member:" + iec]: d.fp } };
+  ie.set({ busy: true, error: null, notice: null, ask: null });
   try {
-    const r = await cmd("ie.judge", { iec, hint, rver: d.rver, seen: { ["member:" + iec]: d.fp } });
+    const r = await cmd("ie.judge", args);
+    const notice = (x) => iec + " 판정을 저장했습니다" + (x.targets > 1 ? "(겹친 구간 항목 " + x.targets + "개)" : "")
+      + (x.demoted && x.demoted.length ? ". 확정이 풀린 그룹: " + x.demoted.join(", ") + "(다시 확정하세요)." : ".");
+    if (r && r.ask) {           // 다른 편집과 같은 확인 카드(confirmAsk가 같은 인자에 confirmed·confirm_groups를 붙여 다시 보냄)
+      ie.set({ busy: false, ask: { name: "ie.judge", full: args, notice, message: r.ask.message, groups: r.ask.groups || [] } });
+      return null;
+    }
     await refresh();
-    ie.set({ busy: false, notice: iec + " 판정을 저장했습니다" + (r.targets > 1 ? "(겹친 구간 항목 " + r.targets + "개)." : ".") });
+    ie.set({ busy: false, notice: notice(r) });
     return r;
   } catch (e) {
     if (e && e.code === "stale") await refresh();
