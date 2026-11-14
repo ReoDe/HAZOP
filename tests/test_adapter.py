@@ -601,6 +601,20 @@ class PdfVectorRuleTest(unittest.TestCase):
         valve = [n for n in ext["nodes"] if n["kind"] == "manual_valve"][0]
         self.assertEqual((valve["tag"], valve["attributes"].get("normal_position")), ("V310", "LO"))
 
+    def test_number_circle_touching_valve_body_is_valve_tag(self):
+        # APR1400 008쪽 방출 밸브 200(좌표 그대로): 번호 원이 지시선으로 몸통에 닿아 밸브와 한 기호로 묶이고, 원 안
+        # 숫자가 밸브 라벨이 된다. 원 안 숫자는 밸브 번호다. 원이 없으면 같은 자리의 맨 숫자라도 태그로 쓰지 않는다
+        valve = [prim([(351.12, 180.39), (354.67, 180.39), (354.67, 176.84), (351.12, 180.39)], closed=True),
+                 rect(350.23, 161.56, 355.56, 166.89), line((352.89, 176.13), (352.89, 166.89)),
+                 line((352.89, 176.12), (352.89, 178.61)), line((354.67, 180.39), (352.89, 178.61)),
+                 line((345.96, 174.52), (349.69, 178.26))]
+        valve += [line((352.18, y), (353.6, y - 1.38)) for y in (177.51, 178.06, 178.61)]
+        words = [word("P", 351.88, 163.11, size=3.0), word("200", 342.2, 172.23, size=3.0)]
+        circled = pdf_run(valve + [circle(344.72, 173.28, 4.27)], words)
+        self.assertEqual([(n["kind"], n["tag"]) for n in circled["nodes"] if n["label_text"] == "200"], [("psv", "200")])
+        bare = pdf_run(valve, words)
+        self.assertEqual([n["tag"] for n in bare["nodes"] if n["category"] == "valve"], [None])
+
     def test_size_text_beside_valve_goes_to_pipe(self):
         def bowtie(x, y):
             return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),

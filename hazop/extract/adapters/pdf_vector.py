@@ -42,6 +42,7 @@ from .pdf_vector_common import (
     _num, _bbox_pts, _union, _expand, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist,
     _seg_cross, _poly_box_dist, _uf_groups, _center, _is_circle, _is_tombstone, _is_chevron, _is_triangle, _issue,
     _is_convex,
+    _pt_circle_dist,
 )
 from .pdf_vector_grouping import (
     _Sym, _cluster_bodies, _nearest_sym, _end_status, _plate_assemblies, _group_symbols, _merge_appendages,
@@ -1524,8 +1525,8 @@ def _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, 
         if numbers and len({t for _, t in numbers}) == 1 and (nd["kind"] is None or
                                                               rules.KIND_CATEGORY.get(nd["kind"]) == "valve"):
             nd["evidence"]["ident_number"] = numbers[0][1]
-            number_ids.update(id(c) for c, _ in numbers)
-            merge_into.update({id(c): sy for c, _ in numbers})
+            number_ids.update(id(c) for c, _ in numbers if c is not sy)
+            merge_into.update({id(c): sy for c, _ in numbers if c is not sy})  # 몸통과 한 기호로 묶인 원은 합칠 것이 없다
     if not merge_into:
         return merge_into, number_ids
     gone = {local_of[i][0] for i in merge_into}
@@ -1945,6 +1946,30 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                 target = valves[near[0][1]]
         if target is not None:
             numbers_on.setdefault(id(target), []).append((sy, blocks[bi]["text"].strip()))
+    # 번호 원(범례 1.7-1 1/4 VALVE IDENT. NUMBER) 안 숫자가 원이 아니라 밸브의 라벨로 잡힌 자리. 원이 밸브 몸통에 닿아 한
+    # 기호로 묶였으면(008쪽 방출 밸브 200~203) 그 원이 이 밸브의 번호다. 원이 따로면(063쪽 302·354·524, 원에 'N' 표가 붙어
+    # 계기 원 모양이 아님) 원에서 나온 지시선 하나가 이 밸브에 닿을 때만 이 밸브의 번호다. 이웃 밸브의 번호를 받지 않는다
+    for si, sy in enumerate(syms):
+        bi = label_of.get(si)
+        if bi is None or id(sy) in numbers_on or not VALVE_NUMBER_RE.fullmatch(blocks[bi]["text"].strip()):
+            continue
+        mid = _center(blocks[bi]["bbox"])
+        rings = [(ci, c) for ci, c in enumerate(syms) if ci not in drop and any(
+                 _is_circle(b, prm) and _pt_circle_dist(mid, b) == 0 for b in c.bodies)]
+        if len(rings) != 1:
+            continue
+        ci, c = rings[0]
+        if c is sy:
+            if shape_of[si][0] == "instrument":  # 원 하나뿐인 기호(계기 원·번호 원 자체)는 S5 위 규칙의 몫이다
+                continue
+        else:
+            own = label_of.get(ci)
+            if id(c) in plan_into or len(leaders[id(c)]) != 1 or (own is not None and re.search(r"\d", blocks[own]["text"])):
+                continue
+            far = leaders[id(c)][0][1][0]
+            if far[0] != "sym" or plan_into.get(id(far[1]), far[1]) is not sy:
+                continue
+        numbers_on.setdefault(id(sy), []).append((c, blocks[bi]["text"].strip()))
 
     letter_boxes = _letter_boxes(syms, chains, blocks, label_of, {si for si, h in hits.items() if shape_of[si][0] is None
                                                                   and h.outcome != "matched"}, prm)
