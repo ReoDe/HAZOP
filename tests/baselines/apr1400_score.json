@@ -20,8 +20,8 @@
     "tag_exact": 4,
     "tag_not_in_text": 0,
     "tagged": 16,
-    "unclassified": 32,
-    "unknowns": 142,
+    "unclassified": 31,
+    "unknowns": 143,
     "valve_number_closer_other": 0
    },
    "proxy_bubbles": 4,
@@ -55,8 +55,8 @@
     "tag_exact": 16,
     "tag_not_in_text": 0,
     "tagged": 36,
-    "unclassified": 47,
-    "unknowns": 459,
+    "unclassified": 39,
+    "unknowns": 451,
     "valve_number_closer_other": 0
    },
    "proxy_bubbles": 16,
@@ -1123,12 +1123,12 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 282,
-  "seconds": 279,
+  "seconds": 259,
   "tag_exact": 1110,
   "tag_not_in_text": 53,
   "tagged": 3447,
-  "unclassified": 6890,
-  "unknowns": 54055,
+  "unclassified": 6657,
+  "unknowns": 53824,
   "valve_number_closer_other": 0
  }
 }
