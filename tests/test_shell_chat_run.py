@@ -150,6 +150,35 @@ class AnalysisRunTest(RunBase):
         self.assertEqual(self.approve(item)["data"]["result"], "duplicate", "같은 확인을 두 번 실행하지 않는다")
         self.assertEqual(len(self.calls), 1)
 
+    def test_paid_api_key_run_shows_the_cost_and_passes_the_confirmation(self):
+        """API 키(과금) 연결이면 확인 상자에 실제 연결과 예상 비용을 보이고, 확인하면 본 연결 판과 비용 확인을 넘긴다(B4, e62bfeb)."""
+        plan = {"via": "api", "method_name": "API 키", "model_name": "보통", "paid": True, "conn_ver": "cv-1",
+                "confirm_text": "API 키(업무 키)로 호출마다 요금이 나갑니다. 예상 약 $0.42."}
+        with mock.patch.object(api_results, "_run_conn", lambda engine, units, method=None: dict(plan)):
+            item = self.one("analysis.run", node_ids=["S1"])
+            rows = {r["label"]: r["after"] for r in item["details"]}
+            self.assertIn("요금이 나갑니다", rows["호출 수 어림"])
+            self.assertEqual(rows["연결"], "API 키 · 보통")
+            self.assertEqual(rows["요금"], plan["confirm_text"])
+            self.approve(item)
+        self.assertEqual(self.calls, [{"scope": "node", "node_id": "S1", "conn_ver": "cv-1", "confirm_paid": True}])
+
+    def test_subscription_run_passes_the_seen_connection_without_paying(self):
+        plan = {"via": "subscription", "method_name": "Claude 구독", "model_name": "빠름", "paid": False, "conn_ver": "cv-s"}
+        with mock.patch.object(api_results, "_run_conn", lambda engine, units, method=None: dict(plan)):
+            item = self.one("analysis.run", node_ids=["S1"])
+            self.assertNotIn("요금", {r["label"] for r in item["details"]})
+            self.approve(item)
+        self.assertEqual(self.calls, [{"scope": "node", "node_id": "S1", "conn_ver": "cv-s"}])
+
+    def test_connection_changed_after_the_box_is_not_run(self):
+        plan = {"via": "api", "method_name": "API 키", "model_name": "보통", "paid": True, "conn_ver": "cv-1", "confirm_text": "$0.42"}
+        with mock.patch.object(api_results, "_run_conn", lambda engine, units, method=None: dict(plan)):
+            item = self.one("analysis.run", node_ids=["S1"])
+            plan["confirm_text"], plan["conn_ver"] = "$9.99", "cv-2"
+            self.approve(item)
+        self.assertEqual(self.calls, [], "상자에 보인 비용과 지금 비용이 다르면 실행하지 않는다")
+
     def test_decline_runs_nothing_and_is_recorded(self):
         item = self.one("analysis.run", node_ids=["S1"])
         self.engine.dispatch("chat.action.decline", {"token": item["token"]})

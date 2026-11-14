@@ -128,6 +128,12 @@ class ChatActions:
                 return "한 번에 한 구간씩 분석합니다. 여러 구간은 ⑤ 분석 결과의 '전체 분석'으로 하세요."
             if len(item.args.get("cell_ids") or []) > 1:
                 return "칸은 한 번에 하나만 다시 분석합니다."
+            if self._engine is not None:
+                plan = analysis_conn(self._engine, item.args)
+                if isinstance(plan, str):
+                    return plan
+                if plan is not None:    # 확인 상자에서 본 연결 판. API 키(과금)면 확인을 누른 것이 비용 확인이다(B4)
+                    item.basis = {"conn_ver": plan.get("conn_ver"), "paid": bool(plan.get("paid"))}
             return None
         out = {"analysis.run": analysis}
         if self._engine is not None:
@@ -137,7 +143,7 @@ class ChatActions:
 
     def _detail_fns(self):
         """확인 상자 줄(규격 §4.2): 분석 실행은 호출 수 어림, 다시 추출은 다시 얹을 사람 수정 수와 풀리는 쪽 확정."""
-        out = {"analysis.run": lambda item, snap: analysis_details(item, snap),
+        out = {"analysis.run": lambda item, snap: analysis_details(item, snap, self._engine),
                "register.reextract": lambda item, snap: reextract_details(snap.registrations.get(item.args["registration_id"]) or {})}
         if self._engine is not None:
             out.update(chat_screens.details(self._engine))
@@ -606,8 +612,32 @@ def reextract_details(reg):
     return rows
 
 
-def analysis_details(item, snap):
-    """분석 실행 확인 상자 줄: 호출 수 어림(규격 §4.2·§2.6). 확정 구간만 분석한다."""
+def run_args(args):
+    """채팅 인자(node_ids, cell_ids) -> api_results 실행 인자(scope·node_id·deviation_id)."""
+    ids = list(args.get("node_ids") or [])
+    cells = [c for c in args.get("cell_ids") or [] if isinstance(c, str)]
+    if len(cells) == 1:
+        return {"scope": "cell", "node_id": ids[0], "deviation_id": cells[0].split("/")[-1]}
+    return {"scope": "node", "node_id": ids[0]}
+
+
+def analysis_conn(engine, args):
+    """실제로 쓸 분석 연결(api_settings.run_conn: 방식·모델·요금·conn_ver), 연결 설정이 없는 엔진이면 None, 셀 수 없으면 사유 글."""
+    from hazop.shell import api, api_results
+    if len(args.get("node_ids") or []) != 1:
+        return None
+    try:
+        _pg, _ns, _doc, units = api_results._plan(engine, run_args(args))
+        return api_results._run_conn(engine, units) if units else None
+    except api.CommandError as exc:
+        return exc.message
+    except Exception:  # noqa: BLE001 - 연결을 못 읽으면 실행 때 엔진이 다시 본다
+        LOG.exception("분석 연결을 읽지 못함")
+        return None
+
+
+def analysis_details(item, snap, engine=None):
+    """분석 실행 확인 상자 줄: 호출 수 어림(규격 §4.2·§2.6)과 실제로 쓸 연결. API 키(과금)면 예상 비용 확인 글. 확정 구간만 분석한다."""
     from hazop.shell import analysis_run
     ns = snap.node_set or {}
     ids = item.args.get("node_ids") or []
@@ -626,7 +656,14 @@ def analysis_details(item, snap):
         return [{"label": "호출 수 어림", "after": "셀 수 없음"}]
     if not n:
         return [{"label": "호출 수 어림", "after": "0회(분석할 칸이 없음: 확정한 구간만 분석합니다)"}]
-    return [{"label": "호출 수 어림", "after": "약 %d회(구독 한도를 씁니다)" % n}]
+    plan = analysis_conn(engine, item.args) if engine is not None else None
+    if not isinstance(plan, dict):
+        return [{"label": "호출 수 어림", "after": "약 %d회(구독 한도를 씁니다)" % n}]
+    rows = [{"label": "호출 수 어림", "after": "약 %d회(%s)" % (n, "API 키 요금이 나갑니다" if plan.get("paid") else "구독 한도를 씁니다")},
+            {"label": "연결", "after": " · ".join(x for x in (plan.get("method_name"), plan.get("model_name")) if x) or "-"}]
+    if plan.get("paid"):
+        rows.append({"label": "요금", "after": plan.get("confirm_text") or plan.get("cost_text") or "API 키로 요금이 나갑니다."})
+    return rows
 
 
 def _rec_failed(rec):
@@ -802,10 +839,12 @@ class RunExecutors:
         ids = list(args.get("node_ids") or [])
         if len(ids) != 1:
             return _refused("한 번에 한 구간씩 분석합니다. 여러 구간은 ⑤ 분석 결과의 '전체 분석'으로 하세요.")
-        a = {"scope": "node", "node_id": ids[0]}
-        cells = [c for c in args.get("cell_ids") or [] if isinstance(c, str)]
-        if len(cells) == 1:
-            a = {"scope": "cell", "node_id": ids[0], "deviation_id": cells[0].split("/")[-1]}
+        a = run_args(args)
+        basis = call.basis or {}
+        if basis.get("conn_ver"):            # 확인 상자에서 본 연결 그대로일 때만 돈다(다르면 엔진이 conn_changed로 거절)
+            a["conn_ver"] = basis["conn_ver"]
+            if basis.get("paid"):            # 상자에 예상 비용을 보였고 사람이 확인을 눌렀다
+                a["confirm_paid"] = True
         out = api_results._run(self.engine, a)
         job = out.get("job")
         if job and self.record is not None:
