@@ -289,6 +289,7 @@ applied ──확정(사람)──▶ confirmed ──잠금(사람)──▶ lo
 | 구간 `origin: merged`·`split`, AI 검토 받아들임 | `user` |
 | 구간 `screen.status: excluded` | 칸에 항목이 없으면 구간 목록에서 빼고 `legacy.excluded_nodes`로, 그 칸은 `archived_cells`(`reason: legacy_excluded`). 칸에 항목이 있으면 `applied` 구간으로 남김(총괄 위임 V-5) |
 | 구간 `screen.status: low` | 그대로 두고 등급 '낮음' |
+| (0.2 집합) 구간 `screen.status: excluded`(규칙 R3이나 B2 시험판이 남긴 것) | 확정·잠금을 풀어 `applied`(미확정)로 읽고 옛 판정은 `legacy_screen`에 둠. 구성요소·칸은 그대로라 칸은 `hold`로 남고, 사람이 다시 확정하면 ⑤에 들어옴(`nodes.settle_screen`, 총괄 판정 2026-11-14) |
 | `absorbed`·`parts` | `legacy`로 옮김(근거로 남김, 화면은 안 씀) |
 | `member_refs`(구간 구성요소만) | 읽을 때 그래프 전체로 다시 셈. 판이 이미 바뀌었으면 지금처럼 재확인 |
 | 이름·설계 의도 | `name_by`·`design_intent.by`는 `script`(origin `rule`) 또는 `user` |

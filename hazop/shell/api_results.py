@@ -65,8 +65,9 @@ def _screen_status(n):
 
 
 def scope_rows(ns):
-    """행렬 행이 되는 구간 = 이전 화면(results.py _rows)과 같은 규칙: 확정·잠금 구간만, 스크리닝 제외는 뺀다, 낮음은 맨 아래."""
-    shown = [n for n in ns["nodes"] if _screen_status(n) != "excluded" and nodes.is_active(n)]
+    """행렬 행이 되는 구간 = 확정·잠금 구간 전부(규격 study-node-segmentation §0 D6·S4). 등급 '낮음'은 정렬에만 써 맨 아래로 둔다.
+    v2에는 스크리닝 제외 구간이 없다: 옛 제외 구간은 집합을 읽을 때 미확정으로 내려온다(nodes.settle_screen)."""
+    shown = [n for n in ns["nodes"] if nodes.is_active(n)]
     return [n for n in shown if _screen_status(n) != "low"] + [n for n in shown if _screen_status(n) == "low"]
 
 
@@ -546,7 +547,7 @@ def _plan(engine, a):
     if legacy:
         raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
     doc, _fp = _load(ns)
-    ns = scope_set(ns)                       # 스크리닝 제외 구간은 호출·요금에 들어가지 않는다
+    ns = scope_set(ns)                       # 확정·잠금 구간만 호출·요금에 들어간다
     last = getattr(engine, "analysis", None) and engine.analysis.last
     units = analysis_run.plan(ns, doc, a["scope"], a.get("node_id"), a.get("deviation_id"), rest=(last or {}).get("rest"))
     return pg, ns, doc, units

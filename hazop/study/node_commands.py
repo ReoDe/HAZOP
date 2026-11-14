@@ -15,6 +15,7 @@ execute(pg, name, args, author=…, confirmed_by=…, set_rev=…)는 저장본�
 
 import json
 import os
+import threading
 
 from hazop import store_io
 from hazop.study import node_tools as nt
@@ -24,16 +25,20 @@ from hazop.study import results as res
 AUTHORS = ("user", "ai")
 PENDING_KIND = "hazop_results_pending"
 STATE_COMMANDS = ("confirm", "unconfirm", "lock", "unlock")
-PERSON_COMMANDS = STATE_COMMANDS + ("screen",)   # 누른 사람 이름(confirmed_by)이 꼭 있어야 하는 명령. screen은 AI 동작도 되지만 사람이 확인 상자를 눌러야 한다
 # 거절 사유 코드: 부르는 쪽(채팅 동작 층·웹 화면)이 문구 대신 이 값으로 갈래를 나눈다. confirm은 '사람에게 물을 글(needs_confirm)을 보이고
 # 그 글을 confirm 인자로 다시 보내라'는 뜻이다
 CODES = ("unknown_command", "bad_actor", "stale", "conflict", "unreadable", "read_only", "rule", "confirm")
 
+_LOCKS = {}
+_LOCKS_GUARD = threading.Lock()
 
-class NeedsConfirm(Exception):
-    def __init__(self, target, text):
-        super().__init__(text)
-        self.target, self.text = target, text
+
+def project_lock(project_id):
+    """프로젝트 하나의 구간 쓰기 잠금(화면과 채팅 스레드가 같은 함수를 부른다). 잠금 안에서 읽기 → 대조 → 쓰기를 하고, 쓰기는 다시
+    읽은 지문과 대조한다(다른 프로세스가 쓴 것은 지문 대조가 막는다). 같은 스레드가 다시 잡을 수 있다."""
+    key = str(project_id or "")
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(key, threading.RLock())
 
 
 def _edit(ns, doc, pg, ops, ctx):
@@ -64,15 +69,6 @@ def _each(fn):
     return run
 
 
-def _screen(ns, doc, pg, a, ctx):
-    """분석에서 제외(excluded)·다시 넣기(keep). 확정·잠긴 구간이나 결과가 있는 구간을 뺄 때는 엔진이 쓴 확인 글이 confirm으로 와야 한다."""
-    nid, status = a.get("node_id"), a.get("status")
-    ask = nodes.screen_confirm_text(ns, doc, nid, status)
-    if ask and (a.get("confirm") or "") != ask:
-        raise NeedsConfirm(nid, ask)
-    return nodes.set_screen(ns, nid, status, a.get("reason"), ctx["by"]), doc, None
-
-
 def _undo(ns, doc, pg, a, ctx):
     new, new_doc = nt.undo_batch(ns, doc, a.get("batch_id"), ns["set_rev"], ctx["by"], ctx["author"])
     return new, new_doc, new["batches"][-1]["batch_id"] if new.get("batches") else None
@@ -93,7 +89,6 @@ COMMANDS = {
     "unconfirm": _each(lambda ns, doc, pg, nid, a, by: nodes.reopen_node(ns, nid, by=by)),
     "lock": _each(lambda ns, doc, pg, nid, a, by: nodes.lock_node(ns, nid, by, doc)),
     "unlock": _each(lambda ns, doc, pg, nid, a, by: nodes.unlock_node(ns, nid, by, a.get("reason"))),
-    "screen": _screen,
     "undo": _undo,
 }
 
@@ -138,8 +133,9 @@ def recover(pg):
 
 
 def execute(pg, name, args, *, author, confirmed_by=None, set_rev=None, request=None):
-    """명령 name을 실행하고 저장한다. set_rev(읽은 판)가 저장본과 다르면 거절한다(None이면 대조하지 않음, 시험용).
-    author("user"|"ai")는 꼭 넘긴다. request(AI 동작): {request_id, request_text, user_turn, confirmed_rest}."""
+    """명령 name을 실행하고 저장한다. set_rev(읽은 판)가 저장본과 다르면 거절한다. AI 동작(author "ai")은 set_rev가 꼭 있어야 하고,
+    사람 길에서 None이면 대조하지 않는다(확정·잠금처럼 대상 구간 상태로 막는 명령, 시험). author("user"|"ai")는 꼭 넘긴다.
+    request(AI 동작): {request_id, request_text, user_turn, confirmed_rest}. 프로젝트 잠금 안에서 돈다."""
     fn = COMMANDS.get(name)
     if fn is None:
         return _refused(name, [("command", "모르는 명령(%s 가운데 하나)" % ", ".join(sorted(COMMANDS)))],
@@ -147,10 +143,17 @@ def execute(pg, name, args, *, author, confirmed_by=None, set_rev=None, request=
     confirmed_by = (confirmed_by or "").strip() or None
     if author not in AUTHORS:
         return _refused(name, [("author", "누가 썼는지(author: user 또는 ai)를 넘겨야 함")], code="bad_actor")
-    if (author == "user" or name in PERSON_COMMANDS) and not confirmed_by:
+    if (author == "user" or name in STATE_COMMANDS) and not confirmed_by:
         return _refused(name, [("confirmed_by", "사람이 한 일·확정·잠금에는 누른 사람 이름이 있어야 함")], code="bad_actor")
     if name in STATE_COMMANDS and author != "user":
         return _refused(name, [("author", "확정·확정 해제·잠금·풀기는 사람만 함(채팅 규격 §4.2)")], code="bad_actor")
+    if author == "ai" and set_rev is None:
+        return _refused(name, [("set_rev", "AI 동작은 읽은 구간 판(set_rev)을 함께 보내야 함")], code="bad_actor")
+    with project_lock(pg.get("project_id")):
+        return _execute_locked(pg, name, args, fn, author, confirmed_by, set_rev, request)
+
+
+def _execute_locked(pg, name, args, fn, author, confirmed_by, set_rev, request):
     recover(pg)
     try:
         ns, fp = nodes.load_fp(pg)
@@ -175,9 +178,6 @@ def execute(pg, name, args, *, author, confirmed_by=None, set_rev=None, request=
         new, new_doc, bid = fn(ns, base, pg, dict(args or {}), ctx)
     except nt.Refused as exc:
         return _refused(name, exc.reasons, ns.get("set_rev"))
-    except NeedsConfirm as exc:
-        return dict(_refused(name, [(exc.target, exc.text)], ns.get("set_rev"), "confirm"), needs_confirm=exc.text,
-                    node_ids=[exc.target])
     except ValueError as exc:
         return _refused(name, [(name, exc)], ns.get("set_rev"))
     if new is ns and new_doc is base:  # 바뀐 것 없음: 아무것도 쓰지 않음
@@ -230,50 +230,81 @@ def excluded_ver(project_id):
 HELD_SHOWN = 20   # 확인 글에 이름을 적는 구간 수(글이 확인 인자 한도를 넘지 않게)
 
 
-def drawing_confirm_text(graph_id, number, held):
-    return ("%s 도면의 구성요소가 구간 %s에 들어 있습니다. 도면을 빼면 새 구간 제안에서만 빠지고, 이 구간들은 그대로 분석됩니다. "
-            "구간까지 빼려면 구간 카드에서 '분석에서 제외'를 누르세요."
-            % (number or graph_id, ", ".join("%s(%d개)" % (h["node_id"], h["count"]) for h in held[:HELD_SHOWN])
-               + (" 외 %d곳" % (len(held) - HELD_SHOWN) if len(held) > HELD_SHOWN else "")))
+def _held_counts(pg, ns, held):
+    """확인 글에 적을 건수: 그 구간들의 승인 항목 수와 그 항목을 쓰는 초기사건 그룹 수(읽지 못하면 None)."""
+    ids = {h["node_id"] for h in held}
+    approved, groups = None, None
+    try:
+        doc = res.load_fp(ns)[0] if ns else None
+        entries = {e["entry_id"] for c in (doc or {}).get("cells") or [] if c.get("node_id") in ids
+                   for e in c.get("entries") or [] if e.get("status") == "approved"}
+        approved = len(entries)
+        from hazop.ie import model as ie_model
+        from hazop.ie import store as ie_store
+        ie = ie_store.load(pg.get("project_id"))[0] or {}
+        groups = len({c.get("group_id") for c in (ie.get("candidates") or {}).values()
+                      if isinstance(c, dict) and c.get("group_id") and ie_model.entry_of_key(c.get("key") or "") in entries})
+    except Exception:  # noqa: BLE001 - 건수는 안내일 뿐이라 읽지 못하면 빼고 묻는다
+        pass
+    return approved, groups
 
 
-def exclude_drawing(pg, graph_id, excluded, *, by, reason=None, ver=None, confirm=None):
+def drawing_confirm_text(graph_id, number, held, approved=None, groups=None):
+    """도면을 빼기 전에 사람에게 보일 글. 걸리는 것과 건수를 적고, 도면 빼기가 그것들을 바꾸지 않는다는 것을 알린다."""
+    facts = ["구간 %d곳(%s%s)" % (len(held), ", ".join("%s %d개" % (h["node_id"], h["count"]) for h in held[:HELD_SHOWN]),
+                                   " 외 %d곳" % (len(held) - HELD_SHOWN) if len(held) > HELD_SHOWN else "")]
+    if approved is not None:
+        facts.append("승인 항목 %d건" % approved)
+    if groups is not None:
+        facts.append("초기사건 그룹 %d개" % groups)
+    return ("%s 도면의 구성요소를 쓰는 것: %s. 도면을 빼면 새 구간 제안에서만 빠지고, 이것들은 그대로 분석·인계됩니다"
+            "(확정 그룹도 초안으로 내려가지 않음). 구간까지 분석에서 빼려면 그 구간의 확정을 푸세요."
+            % (number or graph_id, ", ".join(facts)))
+
+
+def exclude_drawing(pg, graph_id, excluded, *, by, ver, reason=None, confirm=None):
     """도면 한 장을 구간 분석(구간 제안·후보)에서 빼거나 다시 넣는다. 채팅도 이 길로 부른다(사람이 확인 상자를 누른 뒤).
-    ver: 화면이 읽은 표시 파일의 판(excluded_ver). 다르면 stale로 거절한다(None이면 대조하지 않음, 시험용).
+    ver: 화면이 읽은 표시 파일의 판(excluded_ver, 꼭 넘긴다). 다르면 stale로 거절한다. 프로젝트 잠금 안에서 읽고 대조하고,
+    쓰기는 읽은 지문과 대조한다(그 사이 다른 쪽이 쓴 표시를 덮지 않음).
     그 도면의 구성요소를 품은 구간이 있으면, 뺄 때 drawing_confirm_text 글이 confirm으로 와야 저장한다.
     돌려주는 값: {"ok", "changed", "ver", "needs_confirm"?, "refused"}."""
     project_id = pg.get("project_id")
     by = (by or "").strip()
     if not by:
         return _refused("exclude_drawing", [("by", "누른 사람 이름 필요")], code="bad_actor")
+    if not ver:
+        return _refused("exclude_drawing", [("ver", "읽은 표시 파일의 판(ver)을 함께 보내야 함")], code="bad_actor")
     sheet = _sheet(pg, graph_id)
     if sheet is None:
         return _refused("exclude_drawing", [(graph_id, "프로젝트 그래프에 없는 도면")])
     number = (sheet.get("drawing_number") or "").strip()
     if not number:
         return _refused("exclude_drawing", [(graph_id, "도면 번호가 확정되지 않은 도면은 뺄 수 없음(표제란에서 도면 번호를 먼저 확정)")])
-    try:
-        marked = nodes.excluded_mark(project_id, number) is not None
-    except (OSError, ValueError) as exc:
-        return _refused("exclude_drawing", [("file", "도면 빼기 표시를 읽지 못함(%s)" % exc)], code="unreadable")
-    now = excluded_ver(project_id)
-    if ver is not None and ver != now:
-        return _refused("exclude_drawing", [("ver", "도면 빼기 표시가 그 사이 바뀜")], code="stale")
-    if marked == bool(excluded):
-        return {"ok": True, "command": "exclude_drawing", "changed": False, "ver": now, "refused": []}
-    if excluded:
+    with project_lock(project_id):
         try:
-            ns = nodes.read_as_is(pg)
-        except (OSError, ValueError):
-            ns = None
-        held = drawing_nodes(pg, ns, graph_id)
-        ask = drawing_confirm_text(graph_id, number, held) if held else None
-        if ask and (confirm or "") != ask:
-            return dict(_refused("exclude_drawing", [(graph_id, ask)], code="confirm"), needs_confirm=ask)
-    try:
-        nodes.set_excluded(project_id, number, bool(excluded), by, reason)
-    except ValueError as exc:
-        return _refused("exclude_drawing", [(graph_id, exc)])
-    except OSError as exc:
-        return _refused("exclude_drawing", [("file", "저장 실패(%s)" % exc)], code="conflict")
-    return {"ok": True, "command": "exclude_drawing", "changed": True, "ver": excluded_ver(project_id), "refused": []}
+            marked, _history, fp = nodes._read_excluded(project_id)
+        except (OSError, ValueError) as exc:
+            return _refused("exclude_drawing", [("file", "도면 빼기 표시를 읽지 못함(%s)" % exc)], code="unreadable")
+        if ver != (fp or "none"):
+            return _refused("exclude_drawing", [("ver", "도면 빼기 표시가 그 사이 바뀜")], code="stale")
+        key = nodes.drawing_key(number)
+        if any(nodes.drawing_key(k) == key for k in marked) == bool(excluded):
+            return {"ok": True, "command": "exclude_drawing", "changed": False, "ver": ver, "refused": []}
+        if excluded:
+            try:
+                ns = nodes.read_as_is(pg)
+            except (OSError, ValueError):
+                ns = None
+            held = drawing_nodes(pg, ns, graph_id)
+            ask = drawing_confirm_text(graph_id, number, held, *_held_counts(pg, ns, held)) if held else None
+            if ask and (confirm or "") != ask:
+                return dict(_refused("exclude_drawing", [(graph_id, ask)], code="confirm"), needs_confirm=ask)
+        try:
+            nodes.set_excluded(project_id, number, bool(excluded), by, reason, expect=fp)
+        except store_io.Conflict:
+            return _refused("exclude_drawing", [("ver", "도면 빼기 표시가 그 사이 바뀜")], code="stale")
+        except ValueError as exc:
+            return _refused("exclude_drawing", [(graph_id, exc)])
+        except OSError as exc:
+            return _refused("exclude_drawing", [("file", "저장 실패(%s)" % exc)], code="conflict")
+        return {"ok": True, "command": "exclude_drawing", "changed": True, "ver": excluded_ver(project_id), "refused": []}

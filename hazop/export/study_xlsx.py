@@ -365,6 +365,18 @@ def _paint_risk(cell, risk):
         cell.font = Font(bold=True, color=COLORS["risk-%s-ink" % band].lstrip("#").upper())
 
 
+def excluded_drawings_text(project_id):
+    """구간 분석에서 뺀 도면(범례·기호표)과 이유를 한 줄로(INTENT §3.5: 적용할 수 없는 것은 이유를 남기고 건너뜀). 없으면 '없음'."""
+    from hazop.study import nodes
+    try:
+        marked = nodes.load_excluded(project_id)
+    except (OSError, ValueError) as exc:
+        return "표시 파일을 읽지 못함(%s)" % str(exc)[:80]
+    if not marked:
+        return "없음"
+    return "; ".join("%s: %s(%s)" % (k, v.get("reason") or "", v.get("by") or "") for k, v in sorted(marked.items()))
+
+
 def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, n_rows, test=False):
     from openpyxl.styles import Font
     # 표지 수치는 내보낸 구간만 센다(⑤가 스크리닝 제외 구간을 뺀 집합을 넘기면 그 칸도 빠지게)
@@ -380,6 +392,7 @@ def _summary_sheet(ws, results, node_set, view, scope, node_ids, reviewer, now, 
     ] + ([("시험 결과", TEST_NOTICE)] if test else []) + [
         ("프로젝트", node_set.get("project_id") or "-"),
         ("도면 목록", ", ".join(view.get("drawing_numbers") or [])),
+        ("분석에서 뺀 도면", excluded_drawings_text(node_set.get("project_id"))),
         ("그래프 판", results.get("graph_version") or (results.get("study_nodes_ref") or {}).get("graph_version")
          or "-"),
         ("내보낸 구간", "%d개(잠금 %d)" % (len(shown), sum(1 for n in shown if n.get("state") == "locked"))),

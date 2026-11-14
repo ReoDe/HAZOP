@@ -132,9 +132,7 @@ def _row(n, fwd, owners, info=None, known=None):
             "count": len(n["members"]), "sheets": [{"graph_id": g, "n": c} for g, c in sheets.items()],
             "overlaps": [{"node_id": o, "shared": c} for o, c in sorted(shared.items(), key=lambda kv: (-kv[1], kv[0]))],
             "confirmed": n.get("confirmed"), "locked": n.get("locked"),
-            "screen": (n.get("screen") or {}).get("status"), "screen_reason": (n.get("screen") or {}).get("reason"),
-            "screen_by": (n.get("screen") or {}).get("decided_by"), "screen_at": (n.get("screen") or {}).get("at"),
-            "span": (info or {}).get(n["node_id"]),
+            "screen": (n.get("screen") or {}).get("status"), "span": (info or {}).get(n["node_id"]),
             "broken": sum(1 for m in n["members"] if known is not None and m not in known)}      # 도면에서 지워진 구성원(도면 고치기·다시 추출 뒤 끊긴 참조)
 
 
@@ -309,14 +307,31 @@ def drawings_view(engine):
     except (OSError, ValueError) as exc:
         marked, problem = {}, "도면 빼기 표시를 읽지 못했습니다(%s)." % str(exc)[:120]
     keys = {nodes.drawing_key(k): v for k, v in marked.items()}
+    texts = {nodes.drawing_key(k): v for k, v in _drawing_texts().items()}
     sheets = pg.get("sheets") or [{"graph_id": pg.get("graph_id"), "drawing_number": (pg.get("source") or {}).get("drawing_number")}]
     rows = []
     for sh in sheets:
         mark = keys.get(nodes.drawing_key(sh.get("drawing_number"))) if sh.get("drawing_number") else None
         rows.append({"graph_id": sh["graph_id"], "drawing_number": sh.get("drawing_number"), "excluded": mark is not None,
                      "reason": (mark or {}).get("reason"), "by": (mark or {}).get("by"), "at": (mark or {}).get("at"),
-                     "nodes": node_commands.drawing_nodes(pg, ns, sh["graph_id"]), "ver": ver})
+                     "nodes": node_commands.drawing_nodes(pg, ns, sh["graph_id"]), "ver": ver,
+                     "legend_hint": mark is None and nodes.looks_like_legend(*texts.get(nodes.drawing_key(sh.get("drawing_number")), ()))})
     return {"available": True, "drawings": rows, "ver": ver, "problem": problem}
+
+
+def _drawing_texts():
+    """{도면 번호: (원본 파일 이름, 표제)} 등록 기록에서. 범례·기호표 도면으로 보이는지 안내할 때만 쓴다(스스로 빼지 않음)."""
+    from hazop.app import data
+    out = {}
+    try:
+        regs = data.list_registrations()
+    except (OSError, ValueError):
+        return out
+    for e in regs:
+        rec = e.get("record") or {}
+        if rec.get("drawing_number"):
+            out[rec["drawing_number"]] = (rec.get("original_name"), rec.get("title"))
+    return out
 
 
 # ---------------------------------------------------------------- 쓰기
@@ -410,9 +425,6 @@ def _run(name, build):
             # 분석 칸에 판정이 있는 구간: 아무것도 저장하지 않고 '보관하고 지울지' 되묻는다(보관은 사람만 고르는 선택)
             return {"set_rev": ns.get("set_rev") or 0, "batch_id": None, "node_ids": [args["node_id"]], "needs_archive": True, "skipped": 0}
         out = node_commands.execute(pg, name, args, author="user", confirmed_by=by, set_rev=a["set_rev"])
-        if out.get("needs_confirm"):   # 아무것도 저장하지 않았다. 화면이 이 글을 보이고 사람이 누르면 confirm으로 다시 보낸다
-            return {"set_rev": ns.get("set_rev") or 0, "batch_id": None, "node_ids": out["node_ids"], "needs_confirm": out["needs_confirm"],
-                    "skipped": 0}
         if not out["ok"]:
             raise _error(out, ns, a.get("targets") or [], name)
         after, _ = _peek(pg)
@@ -504,10 +516,6 @@ def register(commands):
     add("unlock", dict(node_ids=nids, reason=(v_str(1, 500), True)), lambda pg, a: ({"node_ids": a["node_ids"], "reason": a["reason"]}, 0),
         "잠금을 푼다(이유를 적어야 함)")
     add("undo", dict(batch_id=(v_str(2, 20), True)), lambda pg, a: ({"batch_id": a["batch_id"]}, 0), "묶음을 되돌린다", needs_target=False)
-    add("screen", dict(node_id=nid, status=(v_enum(*nodes.SCREEN_CHOICES), True), reason=(v_str(0, 500), False),
-                       confirm=(v_str(0, 2000), False)),
-        lambda pg, a: ({k: a.get(k) for k in ("node_id", "status", "reason", "confirm")}, 0),
-        "구간을 분석에서 제외(이유 필수)하거나 다시 넣는다. 확정·잠긴 구간이나 결과가 있는 구간은 엔진이 돌려준 확인 글(needs_confirm)을 confirm으로 다시 보낸다")
     put("exclude_drawing", {"project_id": proj, "graph_id": (v_str(1, 200), True), "excluded": (v_bool(), True),
                             "reason": (v_str(0, 500), False), "ver": (v_str(1, 100), True), "confirm": (v_str(0, 2000), False)},
         _exclude_drawing, "도면을 구간 분석에서 빼거나(범례·기호표) 다시 넣는다. 그 도면의 구성요소를 품은 구간이 있으면 확인 글을 confirm으로 다시 보낸다")

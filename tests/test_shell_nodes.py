@@ -371,7 +371,7 @@ class CommandTableTest(unittest.TestCase):
             names = sorted(k for k in api.COMMANDS if k.startswith("nodes."))
             self.assertEqual(names, ["nodes." + x for x in sorted(
                 ["create", "add_members", "remove_members", "rename", "set_intent", "merge", "split", "remove", "confirm", "unconfirm",
-                 "lock", "unlock", "undo", "suggest", "migrate", "screen", "exclude_drawing"])])
+                 "lock", "unlock", "undo", "suggest", "migrate", "exclude_drawing"])])
             for k in names:
                 spec = api.COMMANDS[k].spec
                 self.assertFalse({"by", "at", "author", "origin", "confirmed_by", "request"} & set(spec), k)

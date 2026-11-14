@@ -1,19 +1,26 @@
-"""구간 스크리닝 제외와 도면 빼기(B2): 명령 `nodes.screen`·`nodes.exclude_drawing`과 읽기 `nodes/drawings`.
-실행: python -m unittest tests.test_shell_node_screen
+"""범례·기호표 도면을 구간 분석에서 빼기(B2)와 옛 스크리닝 값 읽기. 실행: python -m unittest tests.test_shell_node_screen
 
-제외한 구간은 분석 행(행렬·일괄 분석·Excel 범위)에서 빠지고, 다시 넣으면 돌아온다. 확정·잠금 구간이나 결과가 있는 구간을 뺄 때는
-엔진이 확인 글을 돌려주고 같은 글이 다시 와야 저장한다. 결과는 지우지 않는다. 낡은 판은 거절한다.
+- 도면 빼기: 명령 `nodes.exclude_drawing`과 읽기 `nodes/drawings`. 표시 파일의 판(ver)을 대조하고, 그 도면의 구성요소를 품은 구간이
+  있으면 확인 글(걸리는 구간·승인 항목·초기사건 그룹 수)을 돌려받아 같은 글을 다시 보내야 저장한다. 도면을 빼도 이미 있는 구간·결과·
+  초기사건 인계는 그대로다(새 구간 제안에서만 빠진다).
+- 구간 단위 '분석에서 제외'는 규격 v2(study-node-segmentation §0, 총괄 판정 2026-11-14)대로 없다. ⑤ 행은 확정·잠금 구간 전부다.
+  0.2 집합에 남은 옛 `screen.status: excluded` 구간은 '적용됨'(미확정)으로 읽는다: 칸은 지우지 않고 다시 확정하면 ⑤에 들어온다.
+- 구간 명령과 도면 빼기는 프로젝트 잠금 안에서 읽기 → 대조 → 쓰기를 하고, 쓰기는 읽은 지문과 대조한다.
 """
 
+import json
 import os
+import threading
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from hazop.shell import api_nodes, api_results  # noqa: E402
+from hazop import store_io  # noqa: E402
+from hazop.shell import api, api_nodes, api_results  # noqa: E402
 from hazop.study import node_commands, node_tools, nodes  # noqa: E402
 from hazop.study import results as res  # noqa: E402
-from tests.test_shell_nodes import S101, S102, Env, _rb  # noqa: E402
+from tests.test_shell_nodes import S101, S102, Env  # noqa: E402
 from tests.test_study_results import entry  # noqa: E402
 
 
@@ -24,177 +31,21 @@ class Base(Env):
     def rows(self):
         return [n["node_id"] for n in api_results.scope_rows(nodes.load(self.pg))]
 
-    def screen(self, nid, status, reason=None, **kw):
-        args = {"node_id": nid, "status": status}
-        if reason is not None:
-            args["reason"] = reason
-        return self.call("screen", args, **kw)
-
-    def confirmed_node(self):
-        r = self.create("가압기 계통")
-        nid = r["data"]["node_ids"][0]
+    def confirmed_node(self, sheet=S101, name="가압기 계통", a=0, b=6):
+        nid = self.create(name, a=a, b=b, sheet=sheet)["data"]["node_ids"][0]
         self.assertTrue(self.call("confirm", {"node_ids": [nid]})["ok"])
         return nid
 
-    def with_entries(self, nid, n=1):
-        """그 구간의 칸 n개에 항목을 넣는다(시험 편차표는 편차 하나라 구간마다 칸 하나)."""
-        ns = nodes.load(self.pg)
-        doc, fp = res.load_fp(ns)
-        doc = doc or res.empty_results(ns, res.load_deviations())
-        cells = [c for c in doc["cells"] if c["node_id"] == nid][:n]
-        for i, c in enumerate(cells):
-            c["entries"] = [entry("e-%s-%d" % (nid, i))]
-            c["state"] = "analyzed"
-        res.save_fp(doc, ns["project_id"], expect=fp)
-        return res.store_path(ns["project_id"], ns["graph_id"])
-
-
-class NodeScreenTest(Base):
-    def test_exclude_and_restore_a_draft_node(self):
-        nid = self.create()["data"]["node_ids"][0]
-        r = self.screen(nid, "excluded", "범례 기호만 든 구간")
-        self.assertTrue(r["ok"], r)
-        row = self.node(nid)
-        self.assertEqual((row["screen"], row["screen_reason"], row["screen_by"]), ("excluded", "범례 기호만 든 구간", "홍길동"))
-        self.assertEqual(row["state"], "applied", "판정만 바뀌고 상태는 그대로")
-        r = self.screen(nid, "keep")
-        self.assertTrue(r["ok"], r)
-        self.assertEqual(self.node(nid)["screen"], "keep")
-
-    def test_reason_is_required_to_exclude(self):
-        nid = self.create()["data"]["node_ids"][0]
-        before = self.rev()
-        r = self.screen(nid, "excluded", "  ")
-        self.assertFalse(r["ok"])
-        self.assertIn("이유", r["error"]["message"])
-        self.assertEqual(self.rev(), before, "저장하지 않음")
-
-    def test_stale_set_rev_is_refused(self):
-        nid = self.create()["data"]["node_ids"][0]
-        old = self.rev()
-        self.call("rename", {"node_id": nid, "name": "새 이름"})
-        r = self.screen(nid, "excluded", "이유", set_rev=old)
-        self.assertEqual((r["ok"], r["error"]["code"]), (False, "stale"), r)
-        self.assertIsNone(self.node(nid)["screen"])
-
-    def test_confirmed_node_asks_first_then_leaves_rows_and_keeps_results(self):
-        nid = self.confirmed_node()
-        path = self.with_entries(nid)
-        self.assertIn(nid, self.rows())
-        before_bytes, rev_before, node_rev = _rb(path), self.rev(), self.node(nid)["rev"]
-        r = self.screen(nid, "excluded", "보조 계통이라 범위 밖")
-        self.assertTrue(r["ok"], r)
-        ask = r["data"]["needs_confirm"]
-        self.assertIn("확정", ask)
-        self.assertIn("결과 1칸", ask)
-        self.assertEqual(self.rev(), rev_before, "확인 전에는 저장하지 않음")
-        r = self.screen(nid, "excluded", "보조 계통이라 범위 밖", confirm="다른 글")
-        self.assertEqual(r["data"].get("needs_confirm"), ask, "글이 다르면 다시 묻는다")
-        r = self.screen(nid, "excluded", "보조 계통이라 범위 밖", confirm=ask)
-        self.assertTrue(r["ok"] and not r["data"].get("needs_confirm"), r)
-        self.assertNotIn(nid, self.rows(), "분석 행에서 빠짐")
-        row = self.node(nid)
-        self.assertEqual((row["state"], row["rev"]), ("confirmed", node_rev), "확정·rev는 그대로(칸이 '범위 바뀜'이 되지 않게)")
-        self.assertEqual(_rb(path), before_bytes, "결과 파일은 그대로")
-        r = self.screen(nid, "keep")
-        self.assertTrue(r["ok"] and not r["data"].get("needs_confirm"), "다시 넣기는 묻지 않는다")
-        self.assertIn(nid, self.rows(), "다시 분석 행에 들어옴")
-
-    def test_locked_node_can_be_excluded_with_confirmation(self):
-        nid = self.confirmed_node()
-        ns = nodes.load(self.pg)
-        node = next(n for n in ns["nodes"] if n["node_id"] == nid)
-        node["state"], node["locked"] = "locked", {"by": "홍길동", "at": "2026-11-14T00:00:00Z"}
-        nodes.save(ns)
-        r = self.screen(nid, "excluded", "중복 구간")
-        self.assertIn("잠긴", r["data"]["needs_confirm"])
-        r = self.screen(nid, "excluded", "중복 구간", confirm=r["data"]["needs_confirm"])
-        self.assertTrue(r["ok"], r)
-        self.assertEqual(self.node(nid)["state"], "locked")
-        self.assertNotIn(nid, self.rows())
-
-    def test_unconfirmed_node_with_results_asks(self):
-        """확정을 풀어도 칸의 결과는 남는다. 그 구간을 뺄 때도 묻는다."""
-        nid = self.confirmed_node()
-        self.with_entries(nid, 1)
-        self.assertTrue(self.call("unconfirm", {"node_ids": [nid]})["ok"])
-        r = self.screen(nid, "excluded", "이유")
-        self.assertIn("결과 1칸", r["data"]["needs_confirm"])
-
-    def test_history_records_who_and_why(self):
-        nid = self.create()["data"]["node_ids"][0]
-        self.screen(nid, "excluded", "범례")
-        h = nodes.load(self.pg)["history"][-1]
-        self.assertEqual(h["op"], "screen_set")
-        self.assertEqual((h["detail"]["node_id"], h["detail"]["to"], h["detail"]["by"], h["detail"]["reason"]),
-                         (nid, "excluded", "홍길동", "범례"))
-
-    def test_reviewer_is_required(self):
-        nid = self.create()["data"]["node_ids"][0]
-        self.engine.settings["reviewer_name"] = ""
-        r = self.screen(nid, "excluded", "이유")
-        self.assertEqual(r["error"]["code"], "bad_args")
-
-    def test_engine_entry_for_chat(self):
-        """채팅이 부를 실행 길: AI 동작은 사람이 확인 상자를 눌렀을 때(confirmed_by)만 쓴다."""
-        nid = self.create()["data"]["node_ids"][0]
-        rev = self.rev()
-        out = node_commands.execute(self.pg, "screen", {"node_id": nid, "status": "excluded", "reason": "범례"}, author="ai",
-                                    set_rev=rev)
-        self.assertEqual(out["refused"][0]["code"], "bad_actor")
-        out = node_commands.execute(self.pg, "screen", {"node_id": nid, "status": "excluded", "reason": "범례"}, author="ai",
-                                    confirmed_by="홍길동", set_rev=rev)
-        self.assertTrue(out["ok"], out)
-        nid2 = self.create("둘째", a=8, b=14)["data"]["node_ids"][0]
-        self.assertTrue(self.call("confirm", {"node_ids": [nid2]})["ok"])
-        out = node_commands.execute(self.pg, "screen", {"node_id": nid2, "status": "excluded", "reason": "x"}, author="user",
-                                    confirmed_by="홍길동", set_rev=self.rev())
-        self.assertEqual((out["ok"], out["refused"][0]["code"]), (False, "confirm"))
-        self.assertTrue(out["needs_confirm"])
-
-
-class EditPathTest(Base):
-    """검토 지적(B2 1회): 웹의 합치기·나누기(apply_nodes)가 사람의 제외 판정을 말없이 바꾸지 않는다. 초기사건 인계도 제외 구간을 뺀다."""
-
-    def test_merge_of_excluded_and_kept_nodes_is_refused(self):
-        a = self.create("가", a=0, b=6)["data"]["node_ids"][0]
-        b = self.create("나", a=6, b=12)["data"]["node_ids"][0]
-        self.assertTrue(self.screen(a, "excluded", "범례")["ok"])
-        for order in ([a, b], [b, a]):
-            r = self.call("merge", {"node_ids": order})
-            self.assertFalse(r["ok"], order)
-            self.assertIn("제외", r["error"]["message"])
-        self.assertEqual(self.node(a)["screen"], "excluded")
-
-    def test_split_of_an_excluded_node_keeps_the_piece_excluded(self):
-        from tests.test_shell_nodes import S101 as sheet
-        nid = self.create("가", a=0, b=6)["data"]["node_ids"][0]
-        self.assertTrue(self.screen(nid, "excluded", "범례")["ok"])
-        r = self.call("split", {"node_id": nid, "sheet": sheet, "ids": self.local(sheet, 0, 2)})
-        self.assertTrue(r["ok"], r)
-        new = r["data"]["node_ids"][0]
-        self.assertEqual((self.node(nid)["screen"], self.node(new)["screen"]), ("excluded", "excluded"))
-        self.assertEqual(self.node(new)["screen_reason"], "범례")
-
-    def test_handover_bundle_leaves_out_an_excluded_node(self):
-        from hazop.ie import bundle
-        nid = self.confirmed_node()
+    def approve_one(self, nid):
         ns = nodes.load(self.pg)
         doc, fp = res.load_fp(ns)
         doc = doc or res.empty_results(ns, res.load_deviations())
         cell = next(c for c in doc["cells"] if c["node_id"] == nid)
-        cell["entries"], cell["state"] = [entry("e1", status="approved")], "analyzed"
+        e = entry("e-" + nid, status="approved")
+        e["ie_hint"] = {"origin": "human", "candidate": "yes", "category": None}
+        cell["entries"], cell["state"] = [e], "analyzed"
         res.save_fp(doc, ns["project_id"], expect=fp)
-        picked, _left = bundle.approved_entries(res.load_fp(nodes.load(self.pg))[0], nodes.load(self.pg))
-        self.assertEqual([p[0] for p in picked], [nid])
-        ask = self.screen(nid, "excluded", "범위 밖")["data"]["needs_confirm"]
-        self.assertIn("초기사건 인계", ask)
-        self.assertTrue(self.screen(nid, "excluded", "범위 밖", confirm=ask)["ok"])
-        picked, left = bundle.approved_entries(res.load_fp(nodes.load(self.pg))[0], nodes.load(self.pg))
-        self.assertEqual((picked, left), ([], 1), "제외 구간의 승인 항목은 넣지 않은 수로 센다")
 
-
-class DrawingExcludeTest(Base):
     def drawings(self):
         return {d["graph_id"]: d for d in api_nodes.drawings_view(self.engine)["drawings"]}
 
@@ -206,6 +57,54 @@ class DrawingExcludeTest(Base):
         args.update(kw)
         return self.engine.dispatch("nodes.exclude_drawing", args)
 
+
+class NoNodeScreenTest(Base):
+    def test_there_is_no_node_level_exclusion(self):
+        self.assertNotIn("nodes.screen", api.COMMANDS)
+        self.assertNotIn("screen", node_commands.COMMANDS)
+
+    def test_rows_are_every_confirmed_and_locked_node(self):
+        """규격 D6: ⑤ 행은 확정·잠금 구간 전부. 등급 '낮음'은 정렬에만 쓴다(뒤로)."""
+        a = self.confirmed_node(name="가", a=0, b=6)
+        b = self.confirmed_node(name="나", a=6, b=12)
+        ns = nodes.load(self.pg)
+        next(n for n in ns["nodes"] if n["node_id"] == a)["screen"] = {"status": "low", "score": 1, "grade": "낮음", "rule": "R4",
+                                                                       "reason": None, "by": "rule"}
+        self.assertEqual([n["node_id"] for n in api_results.scope_rows(ns)], [b, a])
+
+
+class LegacyScreenTest(Base):
+    """0.2 집합에 남은 옛 '스크리닝 제외' 구간(규칙 R3 또는 B2 시험판의 사람 판정)."""
+
+    def legacy_excluded(self, nid):
+        path = nodes.store_path(self.pg["project_id"], self.pg["graph_id"])
+        raw = json.loads(store_io.read_bytes(path)[0].decode("utf-8"))
+        n = next(x for x in raw["nodes"] if x["node_id"] == nid)
+        n["screen"] = {"status": "excluded", "score": None, "grade": None, "rule": None, "by": "human", "reason": "범위 밖",
+                       "decided_by": "홍길동", "at": "2026-11-14T00:00:00Z"}
+        store_io.write_json(path, raw, sort_keys=False)
+
+    def test_old_excluded_node_reads_as_unconfirmed_and_keeps_its_results(self):
+        nid = self.confirmed_node()
+        self.approve_one(nid)
+        rpath = res.store_path(self.pg["project_id"], self.pg["graph_id"])
+        before = store_io.read_bytes(rpath)[0]
+        self.legacy_excluded(nid)
+        ns = nodes.load(self.pg)
+        n = next(x for x in ns["nodes"] if x["node_id"] == nid)
+        self.assertEqual((nodes.node_state(n), n.get("screen")), ("applied", None), "미확정으로 읽고 옛 판정은 떼어 둔다")
+        self.assertEqual(n["legacy_screen"]["reason"], "범위 밖", "옛 판정은 기록으로 남는다")
+        self.assertNotIn(nid, self.rows(), "조용히 분석에 들어가지 않는다")
+        self.assertEqual(store_io.read_bytes(rpath)[0], before, "결과 파일은 읽기만으로 바뀌지 않는다")
+        self.assertEqual(self.node(nid)["state"], "applied", "화면도 같은 상태를 본다")
+        self.assertTrue(self.call("confirm", {"node_ids": [nid]})["ok"], "사람이 다시 확정할 수 있다")
+        self.assertIn(nid, self.rows())
+        doc = res.load_fp(nodes.load(self.pg))[0]
+        self.assertEqual([e["status"] for c in doc["cells"] if c["node_id"] == nid for e in c["entries"]], ["approved"],
+                         "승인 항목이 그대로 돌아온다")
+
+
+class DrawingExcludeTest(Base):
     def test_exclude_and_restore_a_drawing(self):
         self.assertFalse(self.drawings()[S102]["excluded"])
 
@@ -218,26 +117,55 @@ class DrawingExcludeTest(Base):
         self.assertTrue(r["ok"] and not r["data"].get("needs_confirm"), r)
         d = self.drawings()[S102]
         self.assertEqual((d["excluded"], d["reason"], d["by"]), (True, "범례·기호표 도면", "홍길동"))
-        sheets, problem = nodes.exclusion_for(self.pg)
-        self.assertEqual((sheets, problem), (frozenset({S102}), None))
+        self.assertEqual(nodes.exclusion_for(self.pg), (frozenset({S102}), None))
         self.assertEqual(only_102(), [], "그 도면만의 구간 후보가 빠짐")
         r = self.exclude(S102, excluded=False, reason=None)
         self.assertTrue(r["ok"], r)
         self.assertFalse(self.drawings()[S102]["excluded"])
 
-    def test_nodes_that_hold_its_components_are_shown_and_asked(self):
-        nid = self.create(sheet=S102)["data"]["node_ids"][0]
-        d = self.drawings()[S102]
-        self.assertEqual([x["node_id"] for x in d["nodes"]], [nid])
-        r = self.exclude(S102)
-        ask = r["data"]["needs_confirm"]
-        self.assertIn(nid, ask)
-        self.assertIn("그대로", ask, "도면을 빼도 그 구간은 그대로 분석된다고 알림")
+    def grouped(self, sheet=S102, confirm=False):
+        from hazop.ie import model
+        nid = self.confirmed_node(sheet=sheet)
+        self.approve_one(nid)
+        ns = nodes.load(self.pg)
+        doc = res.load_fp(ns)[0]
+        ie = model.sync(model.empty(ns["project_id"]), doc, node_set=ns)
+        ie, gid = model.create_group(ie, "그룹 가", list(ie["candidates"]))
+        if confirm:
+            ie = model.confirm(ie, gid, doc, "검토자", node_set=ns)
+        return nid, ie
+
+    def test_confirm_text_counts_what_holds_the_drawing(self):
+        from hazop.ie import store as ie_store
+        nid, ie = self.grouped()
+        ie_store.save(ie, expect=None)
+        self.assertEqual([x["node_id"] for x in self.drawings()[S102]["nodes"]], [nid])
+        ask = self.exclude(S102)["data"]["needs_confirm"]
+        for part in ("구간 1곳", "승인 항목 1건", "초기사건 그룹 1개", "그대로"):
+            self.assertIn(part, ask)
         self.assertFalse(self.drawings()[S102]["excluded"], "확인 전에는 저장하지 않음")
+        self.assertTrue(self.exclude(S102, confirm="다른 글")["data"].get("needs_confirm"), "글이 다르면 다시 묻는다")
         r = self.exclude(S102, confirm=ask)
-        self.assertTrue(r["ok"], r)
+        self.assertTrue(r["ok"] and not r["data"].get("needs_confirm"), r)
         self.assertTrue(self.drawings()[S102]["excluded"])
-        self.assertIn(nid, [n["node_id"] for n in api_nodes.summary(self.engine)["nodes"]])
+
+    def test_excluding_a_drawing_leaves_the_handover_bundle_alone(self):
+        """총괄 재현(repro_b2_bundle)을 도면 빼기로 옮긴 것: 그룹 구성원이 묶음 후보를 그대로 가리키고 확정도 그대로다."""
+        from hazop.ie import bundle, model
+        _nid, ie = self.grouped(confirm=True)
+        ns = nodes.load(self.pg)
+        doc = res.load_fp(ns)[0]
+        before = bundle.build_bundle(doc, ns, self.pg, ie, "2026-11-14T00:00:00Z")
+        ask = self.exclude(S102)["data"]["needs_confirm"]
+        self.assertTrue(self.exclude(S102, confirm=ask)["ok"])
+        ns = nodes.load(self.pg)
+        doc = res.load_fp(ns)[0]
+        after = bundle.build_bundle(doc, ns, self.pg, model.sync(ie, doc, node_set=ns), "2026-11-14T00:00:00Z")
+        cands = {c["candidate_id"] for c in after["candidates"]}
+        self.assertTrue(cands)
+        self.assertEqual(cands, {c["candidate_id"] for c in before["candidates"]})
+        self.assertEqual([m for g in after["groups"] for m in g["members"] if m not in cands], [])
+        self.assertEqual([g["status"] for g in after["groups"]], [g["status"] for g in before["groups"]])
 
     def test_stale_ver_is_refused(self):
         old = self.drawings()[S101]["ver"]
@@ -245,6 +173,29 @@ class DrawingExcludeTest(Base):
         r = self.exclude(S101, ver=old)
         self.assertEqual((r["ok"], r["error"]["code"]), (False, "stale"), r)
         self.assertFalse(self.drawings()[S101]["excluded"])
+
+    def test_a_write_between_check_and_save_is_not_overwritten(self):
+        """총괄 재현(repro_b1_b2_misc B2): 판 대조 뒤 다른 쪽이 102를 빼면, 101 빼기는 거절되고 102 표시는 남는다."""
+        ver = self.drawings()[S101]["ver"]
+        real = nodes._read_excluded
+        done = []
+
+        def other_writer(pid):
+            out = real(pid)
+            if not done:
+                done.append(1)
+                nodes.set_excluded(pid, "SNP-M-102", True, "다른 사람", "범례", expect=out[2])
+            return out
+        with mock.patch.object(nodes, "_read_excluded", side_effect=other_writer):
+            out = node_commands.exclude_drawing(self.pg, S101, True, by="홍길동", reason="범례", ver=ver)
+        self.assertEqual((out["ok"], out["refused"][0]["code"]), (False, "stale"), out)
+        self.assertEqual(sorted(nodes.load_excluded(self.pg["project_id"])), ["SNP-M-102"])
+
+    def test_ver_is_required(self):
+        with self.assertRaises(TypeError):
+            node_commands.exclude_drawing(self.pg, S101, True, by="홍길동")
+        out = node_commands.exclude_drawing(self.pg, S101, True, by="홍길동", ver=None)
+        self.assertEqual((out["ok"], out["refused"][0]["target"]), (False, "ver"))
 
     def test_drawing_without_a_number_is_refused(self):
         self.pg = dict(self.pg, sheets=[dict(s, drawing_number=None) if s["graph_id"] == S101 else s for s in self.pg["sheets"]])
@@ -257,6 +208,47 @@ class DrawingExcludeTest(Base):
         r = self.engine.dispatch("nodes.exclude_drawing", {"project_id": "OTHER", "graph_id": S102, "excluded": True,
                                                             "reason": "x", "ver": d["ver"]})
         self.assertEqual((r["ok"], r["error"]["code"]), (False, "stale"))
+
+    def test_legend_looking_drawing_gets_a_hint(self):
+        with mock.patch.object(api_nodes, "_drawing_texts", lambda: {"SNP-M-102": ("SNP-M-102 Legend.drawio", "기호표")}):
+            d = self.drawings()
+        self.assertTrue(d[S102]["legend_hint"])
+        self.assertFalse(d[S101]["legend_hint"])
+
+    def test_excel_cover_lists_excluded_drawings(self):
+        import openpyxl
+        nid = self.confirmed_node()
+        self.approve_one(nid)
+        self.assertTrue(self.exclude(S102, reason="기호표뿐")["ok"])
+        out = os.path.join(self.tmp, "x.xlsx")
+        self.engine.hooks["save_path"] = lambda kind, name: out
+        r = self.engine.dispatch("results.export_excel", {"scope": "all"})
+        self.assertTrue(r["ok"], r)
+        cover = [tuple(c for c in row if c is not None) for row in openpyxl.load_workbook(out).worksheets[0].iter_rows(values_only=True)]
+        hit = [row for row in cover if row and row[0] == "분석에서 뺀 도면"]
+        self.assertEqual(len(hit), 1, cover)
+        self.assertIn("SNP-M-102", hit[0][1])
+        self.assertIn("기호표뿐", hit[0][1])
+
+
+class LockTest(Base):
+    def test_node_commands_wait_for_the_project_lock(self):
+        rev = self.rev()
+        members = [n["entity_id"] for n in self.pg["nodes"] if n.get("sheet") == S101][:4]
+        done = []
+        with node_commands.project_lock(self.pg["project_id"]):
+            t = threading.Thread(target=lambda: done.append(node_commands.execute(
+                self.pg, "create", {"items": [{"members": members, "name": "가"}]}, author="user", confirmed_by="홍길동", set_rev=rev)))
+            t.start()
+            t.join(0.5)
+            self.assertTrue(t.is_alive(), "잠금을 쥔 동안에는 기다린다")
+        t.join(10)
+        self.assertTrue(done and done[0]["ok"], done)
+
+    def test_ai_commands_need_the_set_rev(self):
+        out = node_commands.execute(self.pg, "rename", {"node_id": "S1", "name": "x"}, author="ai", set_rev=None)
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["refused"][0]["target"], "set_rev")
 
 
 if __name__ == "__main__":

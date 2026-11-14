@@ -473,51 +473,24 @@ def screen_override(node_set, node_id, status, reason=None, at=None):
                 before=node_set)
 
 
-SCREEN_CHOICES = ("excluded", "keep")   # 사람이 고르는 분석 범위: 분석에서 제외 · 다시 넣기
-
-
 def screen_excluded(node):
-    """분석에서 제외된 구간인가(규칙 판정이든 사람 판정이든). 행렬·일괄 분석·Excel·초기사건 인계가 이 구간을 뺀다."""
+    """옛 스크리닝 '제외' 판정이 붙은 구간인가. v2에는 제외 구간이 없다(규격 §0 D2·S3). 읽을 때 settle_screen이 떼어 낸다."""
     return ((node or {}).get("screen") or {}).get("status") == "excluded"
 
 
-def set_screen(node_set, node_id, status, reason, by, at=None):
-    """사람이 구간을 분석에서 빼거나(excluded) 다시 넣는다(keep). 확정·잠긴 구간도 된다.
-    바뀌는 것은 범위(screen)뿐이다. 구성요소·상태·rev는 그대로 둬 ⑤ 칸이 '범위 바뀜'이 되지 않고, 묶음 대신 history에만 남긴다
-    (묶음 되돌리기는 구간을 확정 전으로 돌리므로 범위 바꾸기에 쓰지 않는다. 되돌리기는 반대 판정을 다시 고르는 것이다).
-    같은 판정이면 입력 그대로 돌려준다."""
-    if status not in SCREEN_CHOICES:
-        raise ValueError("판정 값은 %s 중 하나" % "·".join(SCREEN_CHOICES))
-    reason, by = (reason or "").strip(), (by or "").strip()
-    if status == "excluded" and not reason:
-        raise ValueError("분석에서 제외하는 이유를 적어야 함")
-    if not by:
-        raise ValueError("누른 사람 이름 필요")
-    old = (_find(node_set, node_id).get("screen") or {}).get("status") or "keep"
-    if old == status:
+def settle_screen(node_set):
+    """0.2 집합에 남은 옛 '스크리닝 제외' 구간(규칙 R3, B2 시험판의 사람 판정)을 '적용됨'(미확정)으로 읽는다(규격 §2.5, 총괄 판정
+    2026-11-14). 구성요소·칸은 그대로 두고 확정·잠금만 내려 ⑤ 행에 조용히 들어가지 않게 한다. 옛 판정은 legacy_screen에 남긴다.
+    바꿀 것이 없으면 받은 집합을 그대로, 있으면 사본을 돌려준다(파일은 다음 저장 때 이 모양으로 쓰인다)."""
+    hits = [n for n in node_set.get("nodes") or [] if screen_excluded(n)]
+    if not hits:
         return node_set
-    at = at or now_utc()
     out = copy.deepcopy(node_set)
-    node = _find(out, node_id)
-    node["screen"] = {"status": status, "score": None, "grade": None, "rule": None, "by": "human", "reason": reason or None,
-                      "decided_by": by, "at": at}
-    return _log(out, "screen_set", {"node_id": node_id, "from": old, "to": status, "reason": reason or None, "by": by,
-                                    "state": node_state(node)}, at)
-
-
-def screen_confirm_text(node_set, results, node_id, status):
-    """분석에서 빼기 전에 사람에게 물을 글. 확정·잠긴 구간이거나 결과가 있는 칸이 있을 때만(없으면 None). 다시 넣기는 묻지 않는다.
-    부르는 쪽은 사람이 본 이 글을 그대로 돌려보내야 저장한다(그 사이 상태가 바뀌면 글이 달라져 다시 묻는다)."""
-    node = _find(node_set, node_id)
-    if status != "excluded" or ((node.get("screen") or {}).get("status") or "keep") == "excluded":
-        return None
-    what = {"locked": "잠긴 구간", "confirmed": "확정된 구간"}.get(node_state(node))
-    filled = sum(1 for c in (results or {}).get("cells") or [] if c.get("node_id") == node_id and c.get("entries"))
-    facts = [x for x in (what, "분석 결과 %d칸이 있음" % filled if filled else None) if x]
-    if not facts:
-        return None
-    return ("%s(%s): %s. 분석에서 빼면 분석 결과 행렬·일괄 분석·Excel·초기사건 인계에서 빠집니다. 결과는 지우지 않고, 다시 넣으면 돌아옵니다."
-            % (node_id, node.get("name") or "", ", ".join(facts)))
+    for n in out["nodes"]:
+        if screen_excluded(n):
+            n["legacy_screen"] = n.pop("screen")
+            n["state"], n["confirmed"], n["locked"] = "applied", None, None
+    return out
 
 
 def _piece_with(records, members):
@@ -870,6 +843,7 @@ def load_fp(graph):
     _check_shape(doc, path)
     from hazop.study import migrate
     doc, fp = migrate.on_load(doc, graph, path, fp)
+    doc = settle_screen(doc)
     # 옛 자리(no-project)에서 읽었으면 저장할 자리에는 아직 파일이 없다. 지문은 저장할 자리의 것으로 돌려준다
     return doc, fp if path == store_path(graph.get("project_id"), graph.get("graph_id")) else None
 
@@ -884,9 +858,11 @@ def read_as_is(graph):
     doc = json.loads(data.decode("utf-8-sig"))
     if not isinstance(doc, dict) or doc.get("kind") != KIND:
         raise ValueError("검토구간 파일이 아님: %s" % path)
-    (check_legacy_shape if (doc.get("schema_version") or LEGACY_SCHEMA_VERSION) == LEGACY_SCHEMA_VERSION
-     else _check_shape)(doc, path)
-    return doc
+    if (doc.get("schema_version") or LEGACY_SCHEMA_VERSION) == LEGACY_SCHEMA_VERSION:
+        check_legacy_shape(doc, path)
+        return doc
+    _check_shape(doc, path)
+    return settle_screen(doc)   # 0.2의 옛 '스크리닝 제외' 구간은 어느 길로 읽든 미확정이다
 
 
 def load_view(graph):
@@ -918,6 +894,7 @@ def load_view(graph):
     if version != SCHEMA_VERSION:
         raise ValueError("이 앱보다 새 검토구간 파일(%s)이라 읽지 않음: %s" % (version, path))
     _check_shape(doc, path)
+    doc = settle_screen(doc)
     out, _plan = migrate.migrate_set(migrate.with_refs(doc, graph), graph)
     if out is doc:
         return doc, info
@@ -990,20 +967,26 @@ def excluded_path(project_id):
     return os.path.join(store_dir(), paths.safe_name(project_id or UNREGISTERED_PROJECT), "구간제외도면.json")
 
 
-def load_excluded(project_id):
-    """{도면번호: {by, reason, at}}. 파일이 없으면 빈 dict. 형식이 틀리면 ValueError."""
+def _read_excluded(project_id):
+    """(도면 표시 {도면번호: {by, reason, at}}, 기록 목록, 읽은 파일 지문). 파일이 없으면 ({}, [], None). 형식이 틀리면 ValueError."""
     path = excluded_path(project_id)
-    if not os.path.isfile(path):
-        return {}
+    data, fp = store_io.read_bytes(path)
+    if data is None:
+        return {}, [], None
     try:
-        with open(path, encoding="utf-8-sig") as fh:
-            doc = json.load(fh)
-    except RecursionError as exc:  # 지나치게 겹친 JSON도 형식 오류로 다룬다
+        doc = json.loads(data.decode("utf-8-sig"))
+    except (ValueError, RecursionError) as exc:  # 지나치게 겹친 JSON도 형식 오류로 다룬다
         raise ValueError("구간 제외 도면 파일 형식이 맞지 않음: %s" % path) from exc
     drawings = doc.get("drawings") if isinstance(doc, dict) and doc.get("kind") == EXCLUDED_KIND else None
     if not isinstance(drawings, dict) or not all(isinstance(k, str) and isinstance(v, dict) for k, v in drawings.items()):
         raise ValueError("구간 제외 도면 파일 형식이 맞지 않음: %s" % path)
-    return drawings
+    rows = doc.get("history")
+    return drawings, [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else [], fp
+
+
+def load_excluded(project_id):
+    """{도면번호: {by, reason, at}}. 파일이 없으면 빈 dict. 형식이 틀리면 ValueError."""
+    return _read_excluded(project_id)[0]
 
 
 def excluded_mark(project_id, drawing_number):
@@ -1012,15 +995,23 @@ def excluded_mark(project_id, drawing_number):
     return next((v for k, v in load_excluded(project_id).items() if key and drawing_key(k) == key), None)
 
 
-def set_excluded(project_id, drawing_number, excluded, by, reason=None, at=None):
-    """도면 하나를 구간 분석에서 빼거나(excluded=True) 다시 넣는다. 같은 상태면 파일을 바꾸지 않는다. 쓴 경로."""
+EXCLUDED_HISTORY_KEEP = 500
+
+
+def set_excluded(project_id, drawing_number, excluded, by, reason=None, at=None, expect=store_io.ANY):
+    """도면 하나를 구간 분석에서 빼거나(excluded=True) 다시 넣는다. 같은 상태면 파일을 바꾸지 않는다. 쓴 경로.
+    expect: 부르는 쪽이 읽은 표시 파일 지문(없던 파일이면 None). 주면 이 함수가 읽은 파일도, 쓰는 순간의 파일도 그 지문이어야 하고
+    다르면 store_io.Conflict(다른 쪽의 표시를 덮지 않음). 빼기·다시 넣기 기록(누가·언제·왜)은 파일의 history에 남긴다."""
     drawing_number = (drawing_number or "").strip()
     by = (by or "").strip()
     if not drawing_number:
         raise ValueError("도면번호가 없는 도면은 표시할 수 없음(먼저 도면번호를 확정)")
     if not by:
         raise ValueError("표시한 사람 이름 필요")
-    drawings = dict(load_excluded(project_id))
+    marked, history, fp = _read_excluded(project_id)
+    if expect is not store_io.ANY and fp != expect:
+        raise store_io.Conflict("도면 빼기 표시가 그 사이 바뀜")
+    drawings = dict(marked)
     same = [k for k in drawings if drawing_key(k) == drawing_key(drawing_number)]
     if bool(excluded) == bool(same):
         return excluded_path(project_id)
@@ -1030,24 +1021,12 @@ def set_excluded(project_id, drawing_number, excluded, by, reason=None, at=None)
     else:
         for k in same:
             drawings.pop(k)
-    history = _excluded_history(project_id) + [store_io.history_row("exclude_drawing" if excluded else "include_drawing", {"detail": {
+    history = history + [store_io.history_row("exclude_drawing" if excluded else "include_drawing", {"detail": {
         "drawing_number": drawing_number, "by": by, "reason": (reason or "").strip() or None}}, at)]
-    return write(excluded_path(project_id), {"schema_version": SCHEMA_VERSION, "kind": EXCLUDED_KIND,
-                                             "project_id": project_id, "drawings": dict(sorted(drawings.items())),
-                                             "history": history[-EXCLUDED_HISTORY_KEEP:]})
-
-
-EXCLUDED_HISTORY_KEEP = 500
-
-
-def _excluded_history(project_id):
-    """도면 빼기·다시 넣기 기록(누가·언제·왜). 표시 파일은 load_excluded가 먼저 읽어 형식을 검사했다."""
-    try:
-        with open(excluded_path(project_id), encoding="utf-8-sig") as fh:
-            rows = json.load(fh).get("history")
-    except (OSError, ValueError, AttributeError):
-        return []
-    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+    store_io.write_json(excluded_path(project_id), {"schema_version": SCHEMA_VERSION, "kind": EXCLUDED_KIND,
+                                                    "project_id": project_id, "drawings": dict(sorted(drawings.items())),
+                                                    "history": history[-EXCLUDED_HISTORY_KEEP:]}, expect=fp, sort_keys=False)
+    return excluded_path(project_id)
 
 
 def exclusion_for(pg):

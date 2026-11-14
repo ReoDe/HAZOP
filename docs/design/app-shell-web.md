@@ -542,7 +542,7 @@ Tab 순서는 메뉴 → 위 막대 → 도면 도구 막대 → 패널 → 채�
 | `register.add` | (웹이 보내지 않음) | 끌어 놓기·파일 고르기는 Qt가 받는다. 웹 안에서는 파일 경로를 알 수 없기 때문이다. `ShellWindow.dropEvent`와 `QFileDialog`가 경로를 받아 엔진 등록 함수를 지금 프로젝트로 부른다 | — | 1 |
 | `titleblock.confirm` · `titleblock.unconfirm` | `material_id`, `fields`({항목: 값} · [항목]), `reason`?, `ver` | 표제란 확정 · 확정 취소(이미 추출한 도면은 다시 추출을 작업으로) | 최신 등록 기록 파일 지문 | 1 |
 | `register.extract` | `material_ids`, `ai_review{on, cap, pages}` | 추출·그래프 작업 시작, 작업 ID 답 | 추출 결과가 이미 있으면 `bad_args`(다시 추출은 4단계 확인 상자) | 1 |
-| `register.exclude` | `material_id`, `exclude`, `ver` | 구간 분석에서 빼기·넣기 | 등록 기록 파일 지문 | 1 |
+| `nodes.exclude_drawing` | `project_id`, `graph_id`, `excluded`, `reason`?, `ver`, `confirm`? | 범례·기호표 도면을 구간 분석(구간 제안)에서 빼기·다시 넣기. 그 도면 구성요소를 쓰는 구간이 있으면 확인 글(`needs_confirm`)을 돌려주고 같은 글이 `confirm`으로 와야 저장 | 도면 빼기 표시 파일 지문 | 1 |
 | `extract.candidate` | `candidate_ids`, `decision`, `ver` | AI 후보 수락·거절·되돌리기 | 후보 파일 지문 | 1 |
 | `links.pair` · `links.unlink` · `links.clear` | `graph_id`, `local_id`, `ver`, `base`, `confirm`, (pair) `peer_graph_id`·`peer_local_id`·`reason`, (unlink) `reason`, (clear) `op_id` | 도면 연결 짝 지정·끊기·지정 빼기 | 프로젝트 도면 연결 지정 파일 지문 + 프로젝트 그래프 판, 연결점 지문 | 1 |
 | `search.components` | `q`, `limit≤50` | 엔진 색인에서 찾기(§5.4) | 읽기 | 1 |
