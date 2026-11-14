@@ -4,6 +4,7 @@
   python scripts/check_scan_quality.py                      # SNP 6장(정답 = 같은 도면 drawio), 300dpi
   python scripts/check_scan_quality.py --apr 12,62,105      # APR1400 정답지 쪽도(쪽 PDF가 저장소 밖에 있을 때)
   python scripts/check_scan_quality.py --dpi 200 --json 결과.json
+  python scripts/check_scan_quality.py --degrade             # 실제 스캔처럼 기울기·번짐·잡음·JPEG을 넣은 그림으로
 
 시험 venv(pypdfium2·pdfplumber)로 돌린다. 쪽 그리기는 이 프로세스가 하고, 그림 읽기(OpenCV·OCR)는 이 프로세스에
 OpenCV가 없으면 래스터 venv(HAZOP_RASTER_PYTHON 또는 %USERPROFILE%\\.hazop\\venv-raster-py312)를 하위 프로세스로 부른다.
@@ -53,17 +54,41 @@ def jobs_for(input_dir, samples_dir, apr, snp, work):
     return out, missing
 
 
-def measure(jobs, dpi, work, use_ocr=True, log=print):
+# 실제 스캔다운 입력(--degrade): 종이를 조금 비뚤게 놓고(0.7°), 스캐너 광학으로 번지고(가우시안 반지름 1px@300dpi),
+# 센서 잡음(σ 8 회색 단계)이 끼고, JPEG(품질 75)으로 저장한 꼴. 값은 W5 열화 시험(scripts/degrade_raster.py) 단계 가운데
+# 중간 값을 한데 묶은 것이다. 씨앗을 고정해 같은 그림이 나온다.
+DEGRADE = {"rotate_deg": 0.7, "blur_px_at_300": 1.0, "noise_sigma": 8.0, "jpeg_quality": 75, "seed": 20261114}
+
+
+def degrade(png, dpi, idx=0):
+    """그린 쪽 그림 → 스캔다운 JPG 경로(png 옆). DEGRADE 값을 쓴다."""
+    import numpy as np
+    from PIL import Image, ImageFilter
+    with Image.open(png) as im:
+        im = im.convert("L")
+        im = im.rotate(DEGRADE["rotate_deg"], resample=Image.BICUBIC, expand=False, fillcolor=255)
+        im = im.filter(ImageFilter.GaussianBlur(DEGRADE["blur_px_at_300"] * dpi / 300.0))
+        a = np.asarray(im, dtype=np.float64)
+        a = a + np.random.default_rng(DEGRADE["seed"] + idx).normal(0.0, DEGRADE["noise_sigma"], a.shape)
+        im = Image.fromarray(np.clip(np.rint(a), 0, 255).astype(np.uint8), "L")
+        out = os.path.splitext(png)[0] + "-scan.jpg"
+        im.save(out, "JPEG", quality=DEGRADE["jpeg_quality"])
+    return out
+
+
+def measure(jobs, dpi, work, use_ocr=True, log=print, degraded=False):
     from hazop.extract.adapters import pdf_vector
     res = {"vector": {}, "scan": {}, "seconds": {}, "unknowns": {}}
     for name, key, pdf in jobs:
         res["vector"][name] = rq.score_page(key, pdf_vector.extract(pdf, page=0, repo_root=work))
         png = os.path.join(work, "%s-%ddpi.png" % (name, dpi))
         scale = raster_scan.render_pdf_page(pdf, 0, png, dpi)
+        img = degrade(png, dpi, len(res["seconds"])) if degraded else png
         t = time.time()
-        ex = raster_scan.run_raster(png, px_per_pt=scale, use_ocr=use_ocr)
+        ex = raster_scan.run_raster(img, px_per_pt=scale, use_ocr=use_ocr)
         res["seconds"][name] = round(time.time() - t, 1)
-        os.remove(png)
+        for f in {png, img}:
+            os.remove(f)
         res["scan"][name] = rq.score_page(key, raster_scan.to_page_points(ex, scale))
         res["unknowns"][name] = len(ex["validation"]["unknowns"])
         log("  %s: 벡터 %s | 스캔 %s (%.1f초)" % (name, line(res["vector"][name]), line(res["scan"][name]),
@@ -81,8 +106,10 @@ def pct(c):
     return None if a is None else round(100 * a, 1)
 
 
-def report(res, dpi, at):
-    out = ["스캔 읽기 품질 @%s, %ddpi 회색조 렌더링(pypdfium2), 정답지·채점 = check_read_quality" % (at, dpi)]
+def report(res, dpi, at, degraded=False):
+    cond = ("스캔다운 열화(기울기 %(rotate_deg)s°, 번짐 %(blur_px_at_300)spx@300dpi, 잡음 σ%(noise_sigma)s, JPEG q%(jpeg_quality)s)"
+            % DEGRADE) if degraded else "깨끗한 렌더링"
+    out = ["스캔 읽기 품질 @%s, %ddpi 회색조(pypdfium2) %s, 정답지·채점 = check_read_quality" % (at, dpi, cond)]
     for lab, prefix in (("SNP 합계", "SNP-"), ("APR1400 합계", "apr1400-"), ("전체 합계", None)):
         names = [n for n in res["scan"] if prefix is None or n.startswith(prefix)]
         if not names:
@@ -104,6 +131,7 @@ def main(argv=None):
     ap.add_argument("--apr", help="APR1400 정답지 쪽 번호(쉼표), 예: 12,62,105. 'all'이면 정답지 전부")
     ap.add_argument("--no-snp", action="store_true", help="SNP 6장을 빼고 APR1400 쪽만")
     ap.add_argument("--no-ocr", action="store_true")
+    ap.add_argument("--degrade", action="store_true", help="실제 스캔처럼 기울기·번짐·잡음·JPEG을 넣어 읽는다(DEGRADE)")
     ap.add_argument("--input-dir", help="APR1400 쪽 PDF 폴더(기본: 참고자료 by-drawing)")
     ap.add_argument("--samples-dir", help="SNP 표본 폴더(기본: 참고자료 pid-samples)")
     ap.add_argument("--json", help="쪽별 값을 이 파일에 쓴다")
@@ -122,16 +150,17 @@ def main(argv=None):
     os.environ["HAZOP_WORK_ROOT"] = work
     try:
         jobs, missing = jobs_for(input_dir, samples_dir, apr, not args.no_snp, work)
-        res = measure(jobs, args.dpi, work, use_ocr=not args.no_ocr)
+        res = measure(jobs, args.dpi, work, use_ocr=not args.no_ocr, degraded=args.degrade)
     finally:
         shutil.rmtree(work, ignore_errors=True)
     at = rq.head_commit()
-    print(report(res, args.dpi, at))
+    print(report(res, args.dpi, at, args.degrade))
     if missing:
         print("쪽 PDF가 없어 건너뜀: %s" % ", ".join(missing))
     if args.json:
         with open(args.json, "w", encoding="utf-8", newline="\n") as fh:
-            json.dump(dict(res, dpi=args.dpi, at=at, missing=missing), fh, ensure_ascii=False, indent=1)
+            json.dump(dict(res, dpi=args.dpi, at=at, missing=missing, degrade=DEGRADE if args.degrade else None), fh,
+                      ensure_ascii=False, indent=1)
     return 0
 
 

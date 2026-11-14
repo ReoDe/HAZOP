@@ -255,3 +255,168 @@ def to_page_points(ex, px_per_pt):
     cs.update({"coordinate_space": "page_pt_from_image", "unit": "pt"})
     return out
 
+
+
+# ---------------------------------------------------------------- 앱 등록 경로(HZ-PLN-23 §8)
+
+SCAN_FORMATS = ("png", "jpeg")  # 등록 format 값이 이것이면 그림 한 장, "pdf"이면 스캔 PDF 쪽들
+NOT_EXTRACTED = "not_extracted.json"  # scripts/extract_pdf.py와 같은 이름(쪽별 추출 상태를 같은 방법으로 센다)
+SVG_NAME = "page.svg"
+SVG_IMAGE_MAX_PX = 3000      # 원본 보기 SVG에 넣는 그림의 긴 변 상한(좌표는 원래 픽셀 그대로, 그림만 줄여 넣음)
+EXTRACTOR = "raster_scan"
+READER_MISSING = "스캔 읽기 구성요소가 없어 읽을 수 없음(스캔 읽기 묶음을 설치하면 읽을 수 있음)"
+
+
+def reader_available():
+    """이 PC에서 스캔 도면을 읽을 수 있는지: 이 프로세스에 OpenCV가 있거나 래스터 venv가 있다."""
+    return bool(raster.available()[0] or raster_python())
+
+
+def is_scan_record(record, original):
+    """등록정보가 스캔 도면인지: 그림 형식이거나, PDF인데 첫 쪽이 스캔(쪽을 덮는 그림)이다."""
+    fmt = record.get("format")
+    if fmt in SCAN_FORMATS:
+        return True
+    if fmt != "pdf":
+        return False
+    try:
+        return classify_pdf_page(original, 0)["kind"] == "scan"
+    except Exception:  # 판별을 못 하면 벡터 PDF 길로 보낸다(거기서 사유가 남는다)
+        return False
+
+
+def _registered_pages(record):
+    if record.get("format") in SCAN_FORMATS:
+        return [0]
+    return [int(pid.rsplit("-", 1)[1]) - 1 for d in record.get("documents") or [] for pid in d.get("page_ids") or []]
+
+
+def _page_svg(img_path, width, height):
+    """원본 그림을 넣은 SVG(좌표 = 원래 픽셀). 그림은 SVG_IMAGE_MAX_PX로 줄여 넣는다."""
+    import base64
+    from PIL import Image
+    with Image.open(img_path) as im:
+        im = im.convert("L")
+        k = min(1.0, float(SVG_IMAGE_MAX_PX) / max(im.size))
+        if k < 1.0:
+            im = im.resize((max(1, int(im.size[0] * k)), max(1, int(im.size[1] * k))), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, format="PNG", optimize=True)
+    data = base64.b64encode(buf.getvalue()).decode("ascii")
+    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d">'
+            '<image x="0" y="0" width="%d" height="%d" preserveAspectRatio="none" href="data:image/png;base64,%s"/>'
+            '</svg>\n' % (width, height, width, height, width, height, data))
+
+
+def _write(path, text):
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+
+def _skip_page(out_dir, page, reason, symbol_versions, warnings):
+    from .. import runinfo
+    os.makedirs(out_dir, exist_ok=True)
+    for name in ("extraction.json", "validation_report.md", SVG_NAME):
+        p = os.path.join(out_dir, name)
+        if os.path.isfile(p):
+            os.remove(p)
+    _write(os.path.join(out_dir, NOT_EXTRACTED), json.dumps(
+        {"page_index": page, "page_id": "page-%d" % (page + 1), "reason": reason}, ensure_ascii=False, indent=2) + "\n")
+    runinfo.record(out_dir, EXTRACTOR, None, symbol_versions, warnings)
+
+
+def _read_page(original, record, page, work):
+    """쪽 하나를 그림으로 준비해 읽는다 → (추출 결과(px), 그림 경로, 배율 정보)."""
+    if record.get("format") in SCAN_FORMATS:
+        with open(original, "rb") as fh:
+            scale = image_scale(fh.read())
+        img = os.path.join(work, "page-1" + (".png" if record["format"] == "png" else ".jpg"))
+        shutil.copyfile(original, img)  # 하위 프로세스에 원본 경로(한글·공백)를 넘기지 않도록 임시 폴더로 옮긴다
+        ppt = scale["px_per_pt"] if scale["dpi_source"] == "file" else None
+        ex = run_raster(img, px_per_pt=ppt)
+        return ex, img, {"dpi": scale["dpi"], "dpi_source": scale["dpi_source"], "level": scale["level"]}
+    info = classify_pdf_page(original, page)
+    if info["kind"] != "scan":
+        raise ValueError("스캔 쪽이 아님(%s)" % info["kind"])
+    img = os.path.join(work, "page-%d.png" % (page + 1))
+    ppt = render_pdf_page(original, page, img, read_dpi(info["dpi"]))
+    ex = run_raster(img, px_per_pt=ppt)
+    ex["run"]["settings"]["scan"] = info
+    ex["coordinate_system"]["px_per_pt"] = round(ppt, 6)
+    return ex, img, {"dpi": info["dpi"], "dpi_source": "pdf_image", "level": info["level"]}
+
+
+def run_registered(original, out_root, record, out_name, warnings=None, progress=None):
+    """등록된 스캔 도면(그림 한 장 또는 스캔 PDF 쪽들) → 쪽마다 <out_root>/<out_name(쪽)>/에 extraction.json·
+    validation_report.md·page.svg(원본 그림)·extraction_run.json. 좌표는 읽은 그림의 픽셀이고 page.svg도 같은 픽셀 좌표라
+    겹쳐 보기가 구성상 맞는다. progress(끝난 쪽 수, 전체 쪽 수, 문구)는 쪽을 읽기 전과 다 읽은 뒤에 부른다
+    (쪽마다 20초 안팎). 반환 (추출한 쪽 [(쪽, result, out_dir)], 추출하지 않은 쪽 [{"page_index", "page_id", "reason"}]).
+    읽기 구성요소가 없으면 ScanReaderUnavailable(어느 쪽 폴더도 건드리지 않음)."""
+    from .. import report, runinfo
+    from . import pdf_vector
+    if not reader_available():
+        raise ScanReaderUnavailable(READER_MISSING)
+    symbol_versions = pdf_vector.symbol_library().versions
+    with open(original, "rb") as fh:
+        sha = hashlib.sha256(fh.read()).hexdigest()
+    pages = _registered_pages(record)
+    if record.get("format") in SCAN_FORMATS:
+        page_count = 1
+    else:
+        with _pdfium().PdfDocument(original) as doc:
+            page_count = len(doc)
+    label = paths.rel_or_abs(original, paths.work_root())
+    stem = os.path.splitext(os.path.basename(original))[0]
+    done, skipped = [], []
+    for k, page in enumerate(pages):
+        if progress:
+            progress(k, len(pages), "스캔 도면 %d/%d쪽 읽는 중" % (k + 1, len(pages)))
+        out_dir = paths.safe_join(out_root, out_name(page))
+        work = tempfile.mkdtemp(prefix="hazop-scan-reg-")
+        try:
+            try:
+                ex, img, scale = _read_page(original, record, page, work)
+            except ScanReaderUnavailable:
+                raise
+            except Exception as exc:  # 쪽 하나를 읽지 못해도 그 쪽만 미추출로 남긴다
+                reason = "스캔 읽기 오류: %s" % exc
+                _skip_page(out_dir, page, reason, symbol_versions, warnings)
+                skipped.append({"page_index": page, "page_id": "page-%d" % (page + 1), "reason": reason})
+                continue
+            fmt = "raster_scan_pdf" if record.get("format") == "pdf" else ex["source"]["format"]
+            ex["source"].update({"format": fmt, "file": label, "sha256": sha, "page_count": page_count})
+            ex["source_context"]["page_id"] = "page-%d" % (page + 1)
+            ex["run"]["settings"]["page_index"] = page
+            raster.note_scale(ex, scale)
+            ex = pdf_vector.apply_registration(ex, record)
+            ex["extraction_run_id"] = "extract-scan-%s-p%d-%s-%s-%s-%s-r%s" % (
+                ex["drawing"].get("drawing_number") or stem, page, raster.RULES_VERSION, sha[:12],
+                record.get("project_id"), record.get("material_id"), record.get("registration_version"))
+            empty = [b for b in ex["validation"]["blockers"] if b["check"] == "no_image_content"]
+            if empty:
+                _skip_page(out_dir, page, empty[0]["reason"], symbol_versions, warnings)
+                skipped.append({"page_index": page, "page_id": "page-%d" % (page + 1), "reason": empty[0]["reason"]})
+                continue
+            os.makedirs(out_dir, exist_ok=True)
+            stale = os.path.join(out_dir, NOT_EXTRACTED)
+            if os.path.isfile(stale):
+                os.remove(stale)
+            W, H = int(round(ex["drawing"]["page_width"])), int(round(ex["drawing"]["page_height"]))
+            svg_path = os.path.join(out_dir, SVG_NAME)
+            _write(svg_path, _page_svg(img, W, H))
+            ex["coordinate_system"]["svg_alignment"] = {
+                "svg_file": paths.rel_or_abs(svg_path, paths.work_root()), "source": "scan_image",
+                "viewBox": "0 0 %d %d" % (W, H), "width": str(W), "height": str(H),
+                "status": "verified", "reasons": [], "offset": [0, 0], "compared_cells": 0, "consistent_cells": 0,
+                "inconsistent_offsets": [], "cells_missing_in_svg": [],
+                "transform": "svg_x = 그림 x, svg_y = 그림 y (추출 좌표가 원본 그림의 픽셀 좌표)",
+                "note": "page.svg는 읽은 그림을 그대로 넣은 것이라 좌표가 구성상 같다. 독립 정답 대비 검증은 아님"}
+            _write(os.path.join(out_dir, "extraction.json"), json.dumps(ex, ensure_ascii=False, indent=2) + "\n")
+            _write(os.path.join(out_dir, "validation_report.md"), report.render(ex))
+            runinfo.record(out_dir, EXTRACTOR, ex, symbol_versions, warnings)
+            done.append((page, ex, out_dir))
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+    if progress:
+        progress(len(pages), len(pages), "스캔 도면 읽기 끝")
+    return done, skipped

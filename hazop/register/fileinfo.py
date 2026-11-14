@@ -17,15 +17,17 @@ DRAWIO_EXTENSIONS = (".drawio",)
 PDF_EXTENSIONS = (".pdf",)
 DEXPI_EXTENSIONS = (".xml",)  # DEXPI 2.0 이후와 Proteus 1.x는 둘 다 .xml이라 확장자로 구분하지 않는다(HZ-PLN-22 §4)
 IMAGE_EXTENSIONS = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg"}  # 스캔 그림(HZ-PLN-23 §2)
-# 스캔 도면(스캔 PDF·PNG·JPG) 등록. 앱 추출 연결(hazop/app/data.py 형식별 갈래)이 들어오면 True로 바꾼다(HZ-PLN-23 §8).
-# False인 동안은 알아보고 해상도까지 알린 뒤 blocker scan_not_connected로 멈춘다
-SCAN_REGISTRATION = False
+# 스캔 도면(스캔 PDF·PNG·JPG) 등록(HZ-PLN-23 §8). 앱 추출 연결(hazop/app/data.py 형식별 갈래, raster_scan.run_registered)이
+# 들어와 True다. False로 두면 알아보고 해상도까지 알린 뒤 blocker scan_not_connected로 멈춘다.
+# True여도 이 PC에 스캔 읽기 구성요소(래스터 venv 또는 OpenCV)가 없으면 blocker scan_reader_unavailable로 멈춘다
+SCAN_REGISTRATION = True
 DEXPI_FORMATS = ("dexpi",)  # 등록의 format 값. 두 갈래(2.0 이후 DEXPI XML, Proteus 1.x)는 dexpi_flavor로 구분한다(HZ-PLN-22 §4.1)
 # P&ID 등록 대상 확장자 -> 기대하는 실제 형식(자료 종류별 표는 파일 끝 MATERIAL_FORMATS)
 EXPECTED_FORMAT = dict([(e, "drawio") for e in DRAWIO_EXTENSIONS] + [(e, "pdf") for e in PDF_EXTENSIONS]
                        + [(e, "dexpi") for e in DEXPI_EXTENSIONS] + list(IMAGE_EXTENSIONS.items()))
 # 원본 옆 SVG를 찾지 않는 형식(그림이 파일 안에 있거나 원본에서 그린다)
 NO_SVG_FORMATS = ("pdf",) + DEXPI_FORMATS
+NO_SVG_FORMATS += tuple(sorted(set(IMAGE_EXTENSIONS.values())))  # 스캔 그림: 원본 보기 SVG는 추출 단계에서 그림으로 만든다
 # 실제 형식 판별용 파일 시작 바이트
 MAGIC = [(b"%PDF", "pdf"), (b"\x89PNG", "png"), (b"\xff\xd8\xff", "jpeg"), (b"PK\x03\x04", "zip")]
 # 표제란 키 -> 등록정보 필드 (추출 규칙의 표제란 키를 그대로 쓴다)
@@ -150,7 +152,11 @@ def _scan_hold(info):
             "scan_not_connected", "스캔 도면(%d dpi%s)으로 알아봤으나 앱의 스캔 읽기 연결이 아직 없어 등록하지 않음. %s"
             % (round(scan["dpi"]), ", 해상도 가정: A3" if scan.get("dpi_source") == "assumed_a3" else "", guide)))
         return
-    info["pages"] = [{"page_id": "page-1", "page_name": None, "compressed": False}]
+    if not raster_scan.reader_available():
+        info["blockers"].append(_problem("scan_reader_unavailable", raster_scan.READER_MISSING))
+        return
+    count = scan.get("page_count") or 1
+    info["pages"] = [{"page_id": "page-%d" % i, "page_name": None, "compressed": False} for i in range(1, count + 1)]
 
 
 def _inspect_scan_pdf(data, info):
@@ -162,6 +168,11 @@ def _inspect_scan_pdf(data, info):
         return False
     if scan["kind"] != "scan":
         return False
+    try:
+        with raster_scan._pdfium().PdfDocument(data) as doc:
+            scan["page_count"] = len(doc)
+    except Exception:  # 쪽 수를 못 읽으면 첫 쪽만 등록한다
+        scan["page_count"] = 1
     info["scan"] = scan
     _scan_hold(info)
     return True

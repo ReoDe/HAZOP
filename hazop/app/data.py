@@ -14,6 +14,7 @@ import os
 from hazop import paths, store_io
 from hazop.analysis import ai as ai_mod
 from hazop.extract import corrections
+from hazop.extract.adapters import raster_scan
 from hazop.graph import build as graph_build
 from hazop.kg import auto, docextract
 from hazop.kg import build as kg_build
@@ -107,7 +108,7 @@ def _pdf_page_state(record):
     return out
 
 
-def extract_and_graph(registration_path):
+def extract_and_graph(registration_path, progress=None):
     """등록정보 → `--registration` 추출 → 그래프 생성 (scripts/extract_drawio.run_one 또는 PDF면
     scripts/extract_pdf.run_pages로 등록된 모든 쪽, 그리고 scripts/build_graph.build_one) → 프로젝트 지식그래프 다시 빌드.
     출력 폴더 이름은 두 형식이 같다.
@@ -117,6 +118,8 @@ def extract_and_graph(registration_path):
     ex = script_module("extract_drawio")
     bg = script_module("build_graph")
     record, original = registry.load_for_extraction(registration_path)
+    if raster_scan.is_scan_record(record, original):  # 스캔 PDF·PNG·JPG(HZ-PLN-23 §8): 쪽마다 20초 안팎이라 progress로 알린다
+        return _extract_scan_pages(record, original, ex, bg, progress)
     if record.get("format") == "pdf":
         return _extract_pdf_pages(record, original, ex, bg)
     if record.get("format") == "dexpi":  # DEXPI 변환(HZ-PLN-22): 원본 옆 SVG 없음, 추출 결과의 source.format이 dexpi
@@ -133,6 +136,28 @@ def extract_and_graph(registration_path):
     graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
     return _with_kg({"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir,
                      "warnings": warnings}, record["project_id"])
+
+
+def _extract_scan_pages(record, original, ex, bg, progress=None):
+    """스캔 도면: raster_scan.run_registered로 등록된 쪽을 읽고 쪽마다 그래프를 만든다. 반환 키는 _extract_pdf_pages와 같다.
+    progress(끝난 쪽 수, 전체 쪽 수, 문구). 이 PC에 스캔 읽기 구성요소가 없으면 ValueError(READER_MISSING)."""
+    warnings = []
+    try:
+        done, skipped = raster_scan.run_registered(original, paths.output_root("extract"), record,
+                                                   lambda i: ex.registered_out_name(record, i), warnings=warnings,
+                                                   progress=progress)
+    except raster_scan.ScanReaderUnavailable as exc:
+        raise ValueError(str(exc))
+    if not done:
+        raise ValueError("추출한 쪽이 없음: %s" % "; ".join("%s %s" % (s["page_id"], s["reason"]) for s in skipped))
+    pages = []
+    for page, result, out_dir in done:
+        graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
+        pages.append({"page_index": page, "extraction": result, "extract_dir": out_dir, "graph": graph,
+                      "graph_dir": gdir})
+    out = {k: pages[0][k] for k in ("extraction", "extract_dir", "graph", "graph_dir")}
+    out.update(pages=pages, skipped_pages=skipped, warnings=warnings, scan=True)
+    return _with_kg(out, record["project_id"])
 
 
 def _extract_pdf_pages(record, original, ex, bg):

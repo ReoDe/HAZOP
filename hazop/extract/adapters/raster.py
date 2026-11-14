@@ -52,6 +52,10 @@ PARAMS = {
     "hv_join_tol_pt": 1.6,       # 꺾임·분기: 선 끝과 상대 선 중심선 거리 여유(선 두께에 더함)
     "hv_collinear_tol_pt": 1.0,  # 같은 직선 판정(중심선 차)
     "hv_gap_join_pt": 1.0,       # 같은 직선 위 빈칸이 이 이하면 잇는다
+    "stub_min_len_pt": 1.2,      # 배관 라벨 양옆 짧은 토막 최소 길이
+    "stub_reach_pt": 8.0,        # 배관 라벨 양옆에서 짧은 토막을 찾는 띠 폭
+    "stub_thick_max_pt": 2.5,    # 짧은 토막 두께 상한(굵은 배관 1.44pt보다 크게)
+    "stub_touch_pt": 2.0,        # 짧은 토막 끝과 글자 상자 가장자리 거리 상한
     "frame_cover_ratio": 0.8,    # 페이지 폭(높이)의 이 비율 이상인 가로(세로) 선 = 도면 테두리
     "body_min_pt": 3.0,          # 몸체(흰 구멍) 짧은 변 하한
     "body_max_ratio": 0.25,      # 몸체 긴 변 상한 = 페이지 폭 × 비율(넘으면 배관이 둘러싼 빈 곳)
@@ -62,6 +66,12 @@ PARAMS = {
     "poly_eps_ratio": 0.03,      # 다각형 근사 허용 오차 = 둘레 × 비율
     "rect_fill_min": 0.95,       # 넓이 / bbox 넓이가 이 이상이면 축 정렬 사각형
     "triangle_fit_min": 0.85,    # 넓이 / 감싸는 최소 삼각형 넓이가 이 이상이면 삼각형
+    # 작은 채운 도형(화살촉)의 삼각형 하한. 화살촉은 배관 토막·번짐이 붙어 0.68~0.85로 재지고(SNP-M-301 300dpi 14개),
+    # 원판은 0.60, 정사각형은 0.50이다. 삼각형으로 넘겨야 흐름 방향(pdf_vector_flow.arrow_axis, 꼭짓점 3개)을 읽는다
+    "marker_triangle_fit_min": 0.66,
+    "marker_tri_max_pt": 8.5,    # 위 하한을 쓰는 도형 긴 변 상한(PV_OVERRIDES marker_max와 같은 값)
+    "marker_tri_min_pt": 4.5,    # 위 하한을 쓰는 도형 긴 변 하한. 체크밸브 안 작은 표식(3~4pt)은 삼각형으로 넘기면 흐름 화살촉으로 읽혀
+                                 # 기호에서 빠진다(SNP 6장 기호 종류 84 → 80)
     "bow_axis_tol": 0.15,        # 맞댄 두 삼각형 중심이 한 축에서 이 비율(크기 대비) 안이면 나비 모양 밸브 몸통
     "fill_link_pt": 3.5,         # 선과 채운 도형(화살촉) 사이 빈칸이 이 이하면 짧은 잇는 선을 더한다
     "label_bridge_max_pt": 40.0,  # 글자를 못 읽은 선 라벨 빈칸 상한
@@ -73,6 +83,9 @@ PARAMS = {
     "spring_angle_tol": 8.0,     # 평행 사선 묶음(스프링 표시) 각도 차 상한(도)
     "diag_min_len_pt": 3.0,      # 사선 최소 길이
     "diag_elong_min": 3.0,       # 사선: 긴 변 / 짧은 변 하한
+    "curve_min_len_pt": 6.0,     # 굽은 획 최소 크기(최소 외접 사각형 긴 변)
+    "curve_fill_max": 0.5,       # 굽은 획: 잉크 넓이 / 최소 외접 사각형 넓이 상한(넘으면 덩어리로 보고 버린다)
+    "curve_eps_pt": 0.4,         # 굽은 획 윤곽을 꺾은선으로 줄일 때 허용 오차
     "dash_thick_max_pt": 1.5,    # 점선 조각 두께 상한(pdf_vector와 같은 값)
     "dash_long_max_pt": 8.0,     # 점선 조각 길이 상한
     "dash_link_pt": 3.0,         # 점선 조각 후보끼리 이 간격 안에 이웃이 있어야 점선(외톨이는 짧은 실선)
@@ -94,8 +107,10 @@ PV_LENGTH_KEYS = ("twin_tol", "dash_thick_max", "dash_long_max", "dash_corner_ma
 # 선 두께만큼 떨어져 나오므로(맞댄 삼각형 꼭짓점 등) 몸체 맞닿음·표 칸·축 정렬 허용을 넓힌다. 화살촉은 번짐(안티에일리어싱)으로
 # 벡터보다 1pt 안팎 커서(샘플 6.9~8.0pt) 표식 상한을 넓힌다. 선 끝은 몸체 윤곽선을 빼며 잘리고 뾰족한 꼭짓점(도면 연결
 # 오각형 끝)에서는 구멍이 윤곽보다 안쪽이라 몸체 접속 허용을 3.5pt로 넓힌다(2.5·3.5·4.5 비교, evidence/w4-raster.md).
+# 장식선 묶음 거리는 3.0 → 4.0: 선 기호(체크밸브 두 판과 사선·화살촉)의 조각이 잉크 정리로 1~1.5pt씩 떨어져 나와 한 기호로
+# 묶이지 않았다(SNP 6장 300dpi 연결 103/194 → 114/194, 3.0·4.0·4.5·5.5·8.0 비교, 5.5부터 기호 오검출 증가. 2026-11-14).
 PV_OVERRIDES = {"line_size_tol": 4.0, "touch_tol": 1.5, "marker_max": 8.5, "attach_tol": 3.5, "axis_rect_tol": 0.6,
-                "table_edge_tol": 1.2}
+                "table_edge_tol": 1.2, "decor_group_tol": 4.0}
 
 
 def _cv():
@@ -245,6 +260,76 @@ def add_fine_lines(coarse, fine):
     return list(coarse) + [o for o in fine if not any(_overlaps(o, k) for k in coarse)]
 
 
+# 띄어쓰기 되살리기: rapidocr는 배율과 상관없이 낱말 사이 띄어쓰기를 자주 잃는다('SAFETY INJECTION PUMP' →
+# 'SAFETYINJECTIONPUMP', SNP-M-301 300dpi, 배율 1.0~4.17 px/pt 가운데 1.4에서만 띄어 읽음. 2026-11-14 측정). 줄 상자 안
+# 잉크의 세로 빈 열이 줄 높이의 SPACE_GAP_RATIO 이상이면 낱말 사이로 보고, 조각마다 글자 인식만 다시 해서 띄어 붙인다.
+# 같은 측정에서 글자 사이 빈칸은 줄 높이의 0.19 이하, 낱말 사이는 0.21 이상이었다. 다시 읽은 조각을 이은 글자가 원래 줄
+# 글자(띄어쓰기 뺀 것)와 같을 때만 바꾼다.
+SPACE_GAP_RATIO = 0.21
+SPACE_MIN_CHARS = 6
+SPACE_MAX_PIECES = 16
+
+
+def _word_cuts(ink_cols, h, ratio=SPACE_GAP_RATIO):
+    """줄 상자 안 열별 잉크 여부 → 낱말 조각 [(시작 열, 끝 열)]. 양 끝 빈 열은 뺀다."""
+    cols = [i for i, v in enumerate(ink_cols) if v]
+    if not cols:
+        return []
+    pieces, start, prev = [], cols[0], cols[0]
+    for c in cols[1:]:
+        if c - prev - 1 >= ratio * h:
+            pieces.append((start, prev + 1))
+            start = c
+        prev = c
+    pieces.append((start, prev + 1))
+    return pieces
+
+
+def _squash(t):
+    return "".join(t.split()).upper()
+
+
+def restore_spaces(gray, lines):
+    """OCR 줄 가운데 띄어쓰기가 빠진 듯한 줄을 낱말 조각으로 나눠 다시 읽는다. → 바꾼 줄 수."""
+    cv2, np = _cv()
+    eng = _ocr_engine()
+    H, W = gray.shape[:2]
+    changed = 0
+    for o in lines:
+        text = o["text"]
+        if len(_squash(text)) < SPACE_MIN_CHARS:
+            continue
+        x0, x1 = max(0, int(o["x0"])), min(W, int(math.ceil(o["x1"])))
+        y0, y1 = max(0, int(o["top"])), min(H, int(math.ceil(o["bottom"])))
+        if x1 - x0 < 4 or y1 - y0 < 4:
+            continue
+        sub = gray[y0:y1, x0:x1]
+        pieces = _word_cuts((sub < 128).any(axis=0).tolist(), y1 - y0)
+        if len(pieces) <= len(text.split()) or len(pieces) > SPACE_MAX_PIECES:
+            continue
+        pad = max(2, (y1 - y0) // 6)
+        words = []
+        for a, b in pieces:
+            crop = np.full((y1 - y0, b - a + 2 * pad), 255, dtype=np.uint8)
+            crop[:, pad:pad + b - a] = sub[:, a:b]
+            res, _ = eng(cv2.cvtColor(crop, cv2.COLOR_GRAY2BGR), use_det=False, use_cls=False, use_rec=True)
+            words.append(str(res[0][0]).strip() if res else "")
+        if all(words) and _squash("".join(words)) == _squash(text):
+            # 한 글자 조각은 앞 조각에 붙인다. 좁은 글자('1')나 끝 글자 앞 빈칸이 넓어 태그가 갈리는 일을 막는다
+            # ('RC-L011' → 'RC-L01 1', 'CC-V101B' → 'CC-V101 B', 2026-11-14 SNP 300dpi)
+            joined = []
+            for w in words:
+                if joined and len(w) == 1:
+                    joined[-1] += w
+                else:
+                    joined.append(w)
+            new = " ".join(joined)
+            if new != text:
+                o["text"] = new
+                changed += 1
+    return changed
+
+
 def ocr_lines(gray, offset=(0, 0), zoom=1.0, px_per_pt=None):
     """OCR 줄 목록 [{text, x0, x1, top, bottom, score}] (위→아래, 왼→오 순). OCR이 없으면 None.
     offset·zoom: 잘라 키운 영상일 때 원래 좌표로 되돌리는 값. 큰 그림은 타일로 나눠 읽는다(OCR_TILE_MAX).
@@ -262,6 +347,7 @@ def ocr_lines(gray, offset=(0, 0), zoom=1.0, px_per_pt=None):
         out = add_fine_lines(coarse, _ocr_tiled(cv2, np, gray))
     else:
         out = _ocr_tiled(cv2, np, gray)
+    restore_spaces(gray, out)
     for o in out:
         o.update(x0=round(o["x0"] / zoom + offset[0], 1), x1=round(o["x1"] / zoom + offset[0], 1),
                  top=round(o["top"] / zoom + offset[1], 1), bottom=round(o["bottom"] / zoom + offset[1], 1))
@@ -406,8 +492,9 @@ def _is_round(cv2, c, prm):
     return len(cv2.approxPolyDP(hull, 0.02 * p, True)) >= 7
 
 
-def _poly_of(cv2, np, sub, ox, oy, prm, px, allow_curve=True):
-    """영역 마스크 → (점 목록(닫힘, 첫 점 반복), 곡선 여부). 원·사각형·다각형."""
+def _poly_of(cv2, np, sub, ox, oy, prm, px, allow_curve=True, arrow_ok=False):
+    """영역 마스크 → (점 목록(닫힘, 첫 점 반복), 곡선 여부). 원·사각형·다각형.
+    arrow_ok: 화살촉 크기의 채운 도형에 낮은 삼각형 하한(marker_triangle_fit_min)을 쓴다."""
     c = _contour(cv2, np, sub)
     if c is None or len(c) < 3:
         return None, False
@@ -419,9 +506,18 @@ def _poly_of(cv2, np, sub, ox, oy, prm, px, allow_curve=True):
         pts = [(x0, y0), (x0 + w, y0), (x0 + w, y0 + h), (x0, y0 + h)]
         return pts + [pts[0]], False
     tri_area, tri = cv2.minEnclosingTriangle(c.astype(np.float32))
-    if tri_area > 0 and area / tri_area >= prm["triangle_fit_min"]:
+    small = arrow_ok and px["marker_tri_min"] <= max(w, h) <= px["marker_tri_max"]
+    fit_min = prm["marker_triangle_fit_min"] if small else prm["triangle_fit_min"]
+    if tri_area > 0 and area / tri_area >= fit_min:
         # 삼각형(꼭짓점이 다른 도형에 조금 가려진 것 포함) → 감싸는 삼각형
-        pts = [(round(float(q[0]) + ox, 1), round(float(q[1]) + oy, 1)) for q in tri.reshape(-1, 2)]
+        q3 = [(float(q[0]), float(q[1])) for q in tri.reshape(-1, 2)]
+        if area / tri_area < prm["triangle_fit_min"]:
+            # 낮은 하한으로 받은 화살촉: 감싸는 삼각형이 잉크보다 커 꼭짓점이 닿은 기호 안으로 들어간다. 무게중심 쪽으로
+            # 넓이가 잉크 넓이와 같게 줄인다(방향은 그대로)
+            gx, gy = sum(q[0] for q in q3) / 3, sum(q[1] for q in q3) / 3
+            f = math.sqrt(area / tri_area)
+            q3 = [(gx + (q[0] - gx) * f, gy + (q[1] - gy) * f) for q in q3]
+        pts = [(round(q[0] + ox, 1), round(q[1] + oy, 1)) for q in q3]
         return pts + [pts[0]], False
     if allow_curve and _is_round(cv2, c, prm):
         ap = cv2.approxPolyDP(c, max(0.5, 0.005 * per), True)
@@ -620,6 +716,42 @@ def _hv_segments(cv2, np, ink, px, horizontal):
     return segs, m
 
 
+def _label_stubs(cv2, np, rest, taken, text_boxes, px, horizontal):
+    """배관 라벨 양옆의 짧은 선 토막(선 최소 길이보다 짧음)을 찾는다. 라벨 흰 바탕이 짧은 배관 가운데를 가리면 양쪽 토막이
+    모두 짧아 배관이 통째로 빠진다(SNP-M-301 SI-L001: 탱크 벽 → 라벨 → 화살촉, 2026-11-14). 찾는 곳은 글자 상자 진행 방향
+    양옆 띠뿐이고(상자 안 글자 획은 보지 않는다), 토막 한 끝이 상자 가장자리에 닿아야 한다. → 선분 목록."""
+    H, W = rest.shape[:2]
+    L = _odd(max(3, px["stub_min_len"]))
+    ker = cv2.getStructuringElement(cv2.MORPH_RECT, (L, 1) if horizontal else (1, L))
+    region = np.zeros_like(rest)
+    reach = px["stub_reach"]
+    for t in text_boxes:
+        x0, y0, x1, y1 = t
+        if horizontal:
+            for a, b in ((x0 - reach, x0), (x1, x1 + reach)):
+                region[max(0, int(y0)):min(H, int(y1) + 1), max(0, int(a)):min(W, int(b) + 1)] = 1
+        else:
+            for a, b in ((y0 - reach, y0), (y1, y1 + reach)):
+                region[max(0, int(a)):min(H, int(b) + 1), max(0, int(x0)):min(W, int(x1) + 1)] = 1
+    m = cv2.morphologyEx(rest & (1 - taken) & region, cv2.MORPH_OPEN, ker)
+    out = []
+    _, comps = _components(cv2, np, m)
+    for i, x, y, w, h, _ in comps:
+        a, b, c, t = (x, x + w - 1, y + (h - 1) / 2.0, h) if horizontal else (y, y + h - 1, x + (w - 1) / 2.0, w)
+        if t > px["stub_thick_max"] or b - a + 1 < max(px["stub_min_len"], 2 * t):
+            continue
+        touch = False
+        for tb in text_boxes:
+            lo, hi = (tb[0], tb[2]) if horizontal else (tb[1], tb[3])
+            c0, c1 = (tb[1], tb[3]) if horizontal else (tb[0], tb[2])
+            if c0 <= c <= c1 and (abs(b - lo) <= px["stub_touch"] or abs(a - hi) <= px["stub_touch"]):
+                touch = True
+                break
+        if touch:
+            out.append({"a": float(a), "b": float(b), "c": c, "t": float(t)})
+    return out
+
+
 def _join_collinear(segs, text_boxes, px, horizontal, text_like=None):
     """같은 직선 위 선분: 빈칸이 짧거나 글자 상자(선 라벨)로 덮이거나 글자 획처럼 보이는 잉크만 있으면 잇는다.
     → (선분, 쓰인 글자 상자 번호)."""
@@ -653,6 +785,44 @@ def _join_collinear(segs, text_boxes, px, horizontal, text_like=None):
                 continue
         out.append(dict(s))
     return out, used
+
+
+def _bridge_label_ends(hs, vs, text_boxes, px):
+    """선 끝이 글자 상자(배관 라벨) 가장자리에서 끊기고 라벨 건너편에 꺾이는 상대 선이 있으면 그 중심선까지 늘인다.
+    라벨 흰 바탕이 꺾임 바로 앞을 가리면 꺾임과 라벨 사이 토막이 선 최소 길이보다 짧아 빠지고, 남은 선은 꺾임에 닿지
+    못한다(SNP-M-301 SI-L002, 300dpi 2026-11-14). 벡터 PDF에서는 선이 라벨 밑으로 이어져 있어 생기지 않는 일이다.
+    → 쓰인 글자 상자 번호 집합."""
+    tol = px["hv_join_tol"]
+    used = set()
+    for A, B, horizontal in ((hs, vs, True), (vs, hs, False)):
+        for s in A:
+            for end in ("a", "b"):
+                p = s[end]
+                for k, t in enumerate(text_boxes):
+                    lo, hi = (t[0], t[2]) if horizontal else (t[1], t[3])
+                    c0, c1 = (t[1], t[3]) if horizontal else (t[0], t[2])
+                    m = (t[3] - t[1]) * 0.5 + 3
+                    if not c0 <= s["c"] <= c1:
+                        continue
+                    if end == "a" and lo < p <= hi + m and p >= hi - m:
+                        far, lim = lo, lo - m
+                    elif end == "b" and lo - m <= p < hi and p <= lo + m:
+                        far, lim = hi, hi + m
+                    else:
+                        continue
+                    span = (min(lim, p), max(lim, p))
+                    cand = [o for o in B if span[0] <= o["c"] <= span[1]
+                            and o["a"] - tol - s["t"] <= s["c"] <= o["b"] + tol + s["t"]]
+                    if not cand:
+                        continue
+                    o = min(cand, key=lambda o: abs(o["c"] - far))
+                    s[end] = o["c"]
+                    for oe in ("a", "b"):
+                        if abs(o[oe] - s["c"]) <= tol + s["t"] + o["t"]:
+                            o[oe] = s["c"]
+                    used.add(k)
+                    break
+    return used
 
 
 def _snap(hs, vs, px):
@@ -735,6 +905,9 @@ def detect(gray, lines=None, params=None, ocr=None):
     rest &= 1 - cv2.dilate(fill_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
     hs, hmask = _hv_segments(cv2, np, rest, px, True)
     vs, vmask = _hv_segments(cv2, np, rest, px, False)
+    taken = hmask | vmask
+    hs += _label_stubs(cv2, np, rest, taken, text_boxes, px, True)
+    vs += _label_stubs(cv2, np, rest, taken, text_boxes, px, False)
     frame = []
     hs_keep = [s for s in hs if s["b"] - s["a"] < prm["frame_cover_ratio"] * W]
     vs_keep = [s for s in vs if s["b"] - s["a"] < prm["frame_cover_ratio"] * H]
@@ -769,10 +942,11 @@ def detect(gray, lines=None, params=None, ocr=None):
 
     hs, used_h = _join_collinear(hs_keep, text_boxes, px, True, text_like)
     vs, used_v = _join_collinear(vs_keep, text_boxes, px, False, text_like)
+    used_h |= _bridge_label_ends(hs, vs, text_boxes, px)
     _snap(hs, vs, px)
 
     # 남은 잉크: 사선·점선 조각
-    diag, dash_cand, ignored = [], [], 0
+    diag, dash_cand, curves, ignored = [], [], [], 0
     for i, x, y, w, h, area in comps:
         if max(w, h) < 2 or any(_box_inside((x, y, x + w - 1, y + h - 1), b) for b in bridged):
             continue
@@ -790,6 +964,12 @@ def detect(gray, lines=None, params=None, ocr=None):
             t = math.radians(ang if rw >= rh else ang + 90)
             dx, dy = math.cos(t) * long_ / 2, math.sin(t) * long_ / 2
             diag.append([(cx + x - dx, cy + y - dy), (cx + x + dx, cy + y + dy)])
+        elif long_ >= px["curve_min_len"] and area <= prm["curve_fill_max"] * rw * rh:
+            # 굽은 획(펌프 외곽 곡선 등): 윤곽을 줄인 꺾은선으로 넘긴다. 벡터 PDF의 곡선 경로에 해당하고, 기호 묶기가
+            # 이 획으로 몸체·화살촉·배관 끝을 한 기호로 잇는다(SNP-M-301 SI-PP01, 2026-11-14)
+            approx = cv2.approxPolyDP(c, max(1.5, px["curve_eps"]), True).reshape(-1, 2)
+            curves.append([(float(p[0] + x), float(p[1] + y)) for p in approx] + [(float(approx[0][0] + x),
+                                                                                  float(approx[0][1] + y))])
         else:
             ignored += 1
     dashes = []
@@ -817,8 +997,23 @@ def detect(gray, lines=None, params=None, ocr=None):
                 q = (s["c"], qy)
             nx, ny = min(max(q[0], fb[0]), fb[2]), min(max(q[1], fb[1]), fb[3])
             d = math.hypot(nx - q[0], ny - q[1])
-            if px["end_link_min"] < d <= px["fill_link"] + s["t"] / 2:
-                links.append([q, (nx, ny)])
+            if d <= px["fill_link"] + s["t"] / 2:
+                touching = d <= px["end_link_min"]
+                # 선 축 위에 놓인 화살촉 크기 채움이면 화살촉 건너편 끝까지 잇는다. 벡터 PDF는 배관이 화살촉 밑으로 꼭짓점까지
+                # 이어져 꼭짓점이 닿은 기호(도면 연결 상자·밸브)에 붙는다. 화살촉 가운데에서 끝나면 기호에 닿지 않는다
+                # (SNP-M-401 CC-L101, 2026-11-14)
+                lo, hi = (fb[0], fb[2]) if horizontal else (fb[1], fb[3])
+                mid = ((fb[1] + fb[3]) / 2) if horizontal else ((fb[0] + fb[2]) / 2)
+                if max(fb[2] - fb[0], fb[3] - fb[1]) <= px["marker_tri_max"] and                         abs(mid - s["c"]) <= s["t"] / 2 + px["end_link_min"]:
+                    far = hi if (lo + hi) / 2 > (q[0] if horizontal else q[1]) else lo
+                    if touching:  # 이미 닿은 화살촉: 따로 잇는 선을 두지 않고 선 끝을 꼭짓점까지 늘인다
+                        end = "b" if far > s["b"] else ("a" if far < s["a"] else None)
+                        if end is not None:
+                            s[end] = far
+                        continue
+                    nx, ny = (far, s["c"]) if horizontal else (s["c"], far)
+                if not touching:
+                    links.append([q, (nx, ny)])
     diag += links
 
     # 두 몸체를 잇는 아주 짧은 선 = 기호 안 축(구동부 축 등): 얇은 몸체로 바꿔 두 몸체를 한 기호로 묶는다
@@ -908,7 +1103,7 @@ def detect(gray, lines=None, params=None, ocr=None):
     for pts, curved, _ in bodies:
         prim(pts, True, curved)
     for sub, ox, oy in fills:
-        pts, curved = _poly_of(cv2, np, sub.astype(np.uint8), ox, oy, prm, px, allow_curve=True)
+        pts, curved = _poly_of(cv2, np, sub.astype(np.uint8), ox, oy, prm, px, allow_curve=True, arrow_ok=True)
         if pts is not None:
             prim(pts, True, curved, fill=True, stroke=False)
     for s in sorted(hs, key=lambda s: (s["c"], s["a"])):
@@ -917,6 +1112,8 @@ def detect(gray, lines=None, params=None, ocr=None):
         prim([(s["c"], s["a"]), (s["c"], s["b"])], False)
     for seg in sorted(diag):
         prim(seg, False)
+    for pts in sorted(curves):
+        prim(pts, True, curved=True)
     for p0, p1, t in sorted(stems):  # 기호 안 축: 얇은 닫힌 몸체
         h = max(t, 2.0) / 2
         x0, y0, x1, y1 = min(p0[0], p1[0]) - h, min(p0[1], p1[1]) - h, max(p0[0], p1[0]) + h, max(p0[1], p1[1]) + h
@@ -936,7 +1133,7 @@ def detect(gray, lines=None, params=None, ocr=None):
         words.append({"text": o["text"], "x0": o["x0"], "x1": o["x1"], "top": top, "bottom": bottom,
                       "size": round(bottom - top, 1)})
     diag_info = {"scale_px_per_pt": round(scale, 6), "bodies": len(bodies), "fills": len(fills),
-                 "h_lines": len(hs), "v_lines": len(vs), "diagonal_or_short": len(diag), "stems": len(stems),
+                 "h_lines": len(hs), "v_lines": len(vs), "diagonal_or_short": len(diag), "curves": len(curves), "stems": len(stems),
                  "fill_links": len(links), "dash_pieces": len(dashes), "frame_lines_dropped": frame,
                  "unread_line_labels": len(bridged), "ignored_ink_clusters": ignored, "ocr_lines": len(lines),
                  "ocr_circle_rereads": rereads, "limits_hit": limits}

@@ -219,8 +219,10 @@ class SyntheticImageTest(unittest.TestCase):
         self.assertEqual(ext["unresolved_connectors"], [])
         self.assertEqual([t["text"] for t in ext["texts"]], ["L-001"])
         self.assertIn("선 라벨", ext["texts"][0]["note"])
-        bases = sorted(e["point_basis"] for e in ext["relations"][0]["endpoints"])
-        self.assertIn("raster_arrowhead", bases)
+        # 화살촉에 닿은 선은 벡터 PDF처럼 화살촉 꼭짓점까지 늘여 오른쪽 상자에 붙고, 화살촉은 흐름 방향으로 읽힌다
+        rel = ext["relations"][0]
+        right = [n["local_id"] for n in ext["nodes"] if n["geometry"]["x"] > 500]
+        self.assertEqual((rel["flow_direction"] or {}).get("to"), right[0])
 
     def test_bow_tie_valve(self):
         import cv2
