@@ -205,7 +205,7 @@ class ResumeTest(RunBase):
 
 
 class ReviewFixTest(RunBase):
-    """B4 검토 반려(재현 D:\\HAZOP-trials\\2026-11-14-review-b4-b6-b7\\repro\\repro_b4.py R1~R5)."""
+    """B4 검토 반려(재현은 저장소 밖 검토 폴더의 repro_b4.py R1~R5)."""
     LIMIT = {"status": "limit_reached", "window": "five_hour"}
 
     def other_project(self, with_draft=False):

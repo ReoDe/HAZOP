@@ -359,7 +359,7 @@ def _graph(gid, dn, nodes):
 
 
 class RenumberTest(unittest.TestCase):
-    """B1 검토 차단(재현 D:\\HAZOP-trials\\2026-11-14-review-b1-b2\\scripts\\repro_b1_renumber.py를 옮김): PDF 추출 ID는 순번이라
+    """B1 검토 차단(재현은 저장소 밖 검토 폴더의 repro_b1_renumber.py를 옮김): PDF 추출 ID는 순번이라
     다시 추출해 번호가 밀리면, 번호만 보는 지정이 다른 연결점에 조용히 붙었다. 끝마다 연결점 지문을 남기고 다르면 붙이지 않는다."""
 
     def setUp(self):
