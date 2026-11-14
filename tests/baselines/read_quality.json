@@ -144,7 +144,7 @@
     "units": 376
    },
    "kind": {
-    "correct": 129,
+    "correct": 133,
     "false_pos": 15,
     "units": 162
    },
@@ -156,7 +156,7 @@
   },
   "apr1400-012": {
    "attribute": {
-    "correct": 31,
+    "correct": 41,
     "false_pos": 0,
     "units": 47
    },
@@ -166,7 +166,7 @@
     "units": 45
    },
    "kind": {
-    "correct": 9,
+    "correct": 19,
     "false_pos": 2,
     "units": 30
    },
