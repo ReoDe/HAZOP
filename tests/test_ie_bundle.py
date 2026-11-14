@@ -270,7 +270,7 @@ class IeBundleTest(unittest.TestCase):
         r = copy.deepcopy(self.r)
         r["recommendation"], r["extra"] = "권고 누출", {PATH: KEY}
         b = build(r, self.ns, self.pg)
-        self.assertEqual(set(b["source"]), {"graph_version", "nodes", "approved_entries", "left_out_unapproved"})
+        self.assertEqual(set(b["source"]), {"graph_version", "nodes", "approved_entries", "left_out_unapproved", "excluded_drawings"})
         self.assertEqual({tuple(sorted(x)) for x in b["source"]["nodes"]}, {("node_id", "node_rev")})
 
     def test_same_bundle_same_workbook_metadata(self):

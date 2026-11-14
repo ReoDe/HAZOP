@@ -158,6 +158,8 @@ def guide_rows(b):
                   + (" 외" if len(nodes_used) > 8 else "") or "-", src.get("graph_version") or "-")),
         ("넣지 않은 항목", "승인되지 않은 항목과 '범위 바뀜'(다시 확인 전) 항목 %d건은 넣지 않았습니다"
          % src["left_out_unapproved"]),
+        ("분석에서 뺀 도면", "; ".join("%s: %s(%s)" % (d["drawing_number"], d["reason"], d["by"]) for d in src.get("excluded_drawings") or [])
+         or "없음"),
         ("빈도", "이 묶음에는 초기사건 빈도·기기 고장확률이 없습니다. 빈도 산정과 정량화는 PRA 도구에서 합니다"),
         ("HAZOP 위험도", "KOSHA 위험도(강도·빈도 등급)는 정성 등급이라 넣지 않았습니다. 필요하면 ⑤ 워크시트를 보십시오. "
                         "다만 원인·결과 문장 안에 적힌 위험도 숫자나 등급은 걸러 내지 않으니 인계 전에 확인하십시오"),

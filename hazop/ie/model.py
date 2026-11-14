@@ -168,10 +168,10 @@ def entry_facts(results, node_set=None):
                for n in (node_set or {}).get("nodes") or []}
     revs = {n["node_id"]: n.get("rev") or 1 for n in (node_set or {}).get("nodes") or []}
     from hazop.study import nodes as _nodes
-    # 분석에 드는 구간(확정·잠금이고 분석에서 빼지 않음): 인계 묶음의 후보(bundle.approved_entries)와 같은 기준이다. 그 밖의 칸(확정 해제·
-    # 분석 제외·집합에 없는 구간)의 항목은 확정 근거가 아니다(B2: 그룹이 묶음에 없는 후보를 가리킨 채 확정으로 남지 않게). 집합이 없으면 보지 않는다.
-    in_scope = None if node_set is None else {n["node_id"] for n in node_set.get("nodes") or []
-                                              if _nodes.is_active(n) and not _nodes.screen_excluded(n)}
+    # 분석에 드는 구간(확정·잠금): 인계 묶음의 후보(bundle.approved_entries)와 같은 기준이다. 그 밖의 칸(확정 해제·집합에 없는 구간, 옛
+    # '분석 제외'는 읽을 때 미확정으로 내려옴)의 항목은 확정 근거가 아니다(B2: 그룹이 묶음에 없는 후보를 가리킨 채 확정으로 남지 않게).
+    # 집합이 없으면 보지 않는다.
+    in_scope = None if node_set is None else {n["node_id"] for n in node_set.get("nodes") or [] if _nodes.is_active(n)}
     for cell in results["cells"]:
         rev_now = revs.get(cell["node_id"])
         current = rev_now is None or (cell.get("node_rev") or 1) == rev_now
@@ -298,7 +298,7 @@ def _member_problems(doc, iec, facts):
     elif f["held"]:
         out.append("%s: ⑤ 구간 확정 해제됨(보관)" % iec)
     elif f.get("excluded"):
-        out.append("%s: 구간이 분석에서 빠짐(확정 해제·스크리닝 제외)" % iec)
+        out.append("%s: 구간이 분석에서 빠짐(확정 해제)" % iec)
     elif f["scope_changed"]:
         out.append("%s: ⑤ 범위 바뀜(다시 확인 전)" % iec)
     if not f["ie_human"]:

@@ -71,13 +71,13 @@ GLOSSARY = (
 
 def approved_entries(results, node_set):
     """([(node_id, 편차, 항목)] 확정 근거가 되는 승인 항목을 묶음 순서대로, 넣지 않은 항목 수).
-    확정·잠금 구간의 보관되지 않은 칸만 보고, '범위 바뀜' 승인은 넣지 않은 수에 센다. 분석에서 제외한 구간(screen excluded)은
-    행렬·Excel처럼 빼고 그 항목을 넣지 않은 수에 센다."""
+    확정·잠금 구간의 보관되지 않은 칸만 보고, '범위 바뀜' 승인과 확정·잠금이 아닌 구간의 항목은 넣지 않은 수에 센다.
+    그룹 확정 근거(model.is_evidence)도 같은 기준이다. 옛 '분석 제외' 구간은 집합을 읽을 때 미확정으로 내려온다(nodes.settle_screen)."""
     from hazop.study import nodes
     cells = {(c["node_id"], c["deviation_id"]): c for c in results["cells"]}
     picked, left_out = [], 0
     for n in node_set["nodes"]:
-        if not nodes.is_active(n) or nodes.screen_excluded(n):
+        if not nodes.is_active(n):
             left_out += sum(len(cells.get((n["node_id"], d["deviation_id"]), {}).get("entries", []))
                             for d in results["deviations"])
             continue
@@ -425,10 +425,23 @@ def _scrubbed(x):
     return x
 
 
+def excluded_drawings(project_id):
+    """(구간 분석에서 뺀 도면 [{drawing_number, reason, by, at}], 읽지 못했으면 그 글 또는 None). INTENT §3.5: 빼는 것은 이유를 남긴다."""
+    from hazop.study import nodes
+    if not project_id:
+        return [], None
+    try:
+        marked = nodes.load_excluded(project_id)
+    except (OSError, ValueError) as exc:
+        return [], "구간 분석 제외 도면 표시 파일(%s)" % str(exc)[:120]
+    return [{"drawing_number": k, "reason": v.get("reason") or "", "by": v.get("by") or "", "at": v.get("at") or ""}
+            for k, v in sorted(marked.items())], None
+
+
 def build_bundle(results, node_set, pg, ie_doc, now, table=None, fmea=None, mld=None, unreadable=()):
     """IE 인계 묶음 dict. ie_doc은 model.sync를 거친 ⑥ 문서, now는 UTC ISO 시각('...Z'), table은 일반 범주 기준표 문서
     (없으면 res.ie_category_table()). fmea·mld는 P5 문서(없으면 FMEA 대조 전·MLD 열 빈 값). unreadable: 읽지 못해 넣지 못한
-    P5 파일 이름(읽는 법에 적음). 승인 FMEA 행을 기본사건에 붙이려면
+    P5 파일 이름(읽는 법에 적음). 구간 분석에서 뺀 도면과 이유(nodes.load_excluded)를 source.excluded_drawings에 싣는다. 승인 FMEA 행을 기본사건에 붙이려면
     ie_doc이 hazop.ie.store.sync_all(또는 fmea.sync_basic_events)을 거쳐야 한다."""
     from hazop.ie import fmea as fm
     from hazop.ie import mld as ml
@@ -491,6 +504,7 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None, fmea=None, mld=
                              "mld_status": None})
     revs = {n["node_id"]: n.get("rev") or 1 for n in node_set["nodes"]}
     used = list(dict.fromkeys(node_id for node_id, _d, _e in picked))
+    dropped, bad_mark = excluded_drawings(node_set.get("project_id"))
     return _scrubbed({
         "kind": KIND,
         "schema_version": SCHEMA_VERSION,
@@ -499,8 +513,9 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None, fmea=None, mld=
         "created_at": now,
         "source": {"graph_version": results.get("graph_version"),
                    "nodes": [{"node_id": nid, "node_rev": revs.get(nid)} for nid in used],
-                   "approved_entries": len(picked), "left_out_unapproved": left_out},
-        "unreadable_inputs": list(unreadable),
+                   "approved_entries": len(picked), "left_out_unapproved": left_out,
+                   "excluded_drawings": dropped},
+        "unreadable_inputs": list(unreadable) + ([bad_mark] if bad_mark else []),
         "scope": SCOPE,
         "category_table": {"table_id": table.get("table_id"), "title": table.get("title"),
                            "source_label": source_label, "basis": table.get("basis")},
@@ -542,6 +557,7 @@ def upgrade(bundle):
     out.setdefault("mld", None)
     out.setdefault("fmea", None)
     out.setdefault("unreadable_inputs", [])
+    out.setdefault("source", {}).setdefault("excluded_drawings", [])
     out["schema_version"] = SCHEMA_VERSION
     out["upgraded_from"] = v
     return out

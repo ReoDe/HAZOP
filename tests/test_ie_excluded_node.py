@@ -55,14 +55,32 @@ class ExcludedNodeGroupTest(Base):
         self.assertNotEqual(b1["groups"][0]["status"], "confirmed", "확정 근거가 빠진 그룹을 확정으로 넘김")
         self.assertTrue(any(iec in p for p in model.confirm_problems(ie2, gid, doc, node_set=ns)), "그룹 확정 조건에 이유를 보인다")
 
-    def test_old_screen_excluded_node_drops_the_member_and_the_confirmation(self):
-        """0.2 집합에 남은 옛 '분석 제외' 판정(검토 재현 repro_b2_bundle: 묶음 후보에서 빠진 IEC를 그룹이 확정으로 가리킴)."""
+    def test_unconfirming_the_node_drops_the_member_and_the_confirmation(self):
+        """검토 재현 repro_b2_bundle: 구간 확정을 풀면 묶음 후보에서 빠진 IEC를 확정 그룹이 그대로 가리키던 것."""
+        nid, ie, iec, gid = self._confirmed_group()
+        self.assertTrue(self.call("unconfirm", {"node_ids": [nid]})["ok"])
+        ns = nodes.load(self.pg)
+        self.assertFalse(nodes.is_active(next(n for n in ns["nodes"] if n["node_id"] == nid)))
+        self._check_left_out(ie, iec, gid, ns, res.load_fp(ns)[0])
+
+    def test_old_screen_exclusion_reads_as_unconfirmed_and_drops_the_member(self):
+        """0.2 집합의 옛 '분석 제외' 판정은 읽을 때 미확정으로 내려오므로(nodes.settle_screen) 같은 결과다."""
         nid, ie, iec, gid = self._confirmed_group()
         ns = nodes.load(self.pg)
-        doc = res.load_fp(ns)[0]
         next(n for n in ns["nodes"] if n["node_id"] == nid)["screen"] = {"status": "excluded", "by": "human", "reason": "범위 밖"}
-        self.assertTrue(nodes.screen_excluded(next(n for n in ns["nodes"] if n["node_id"] == nid)))
-        self._check_left_out(ie, iec, gid, ns, doc)
+        ns = nodes.settle_screen(ns)
+        self._check_left_out(ie, iec, gid, ns, res.load_fp(ns)[0])
+
+    def test_bundle_lists_the_drawings_left_out_of_node_analysis_with_reasons(self):
+        nid, ie, iec, gid = self._confirmed_group()
+        ns = nodes.load(self.pg)
+        nodes.set_excluded(ns["project_id"], "LEGEND-01", True, "검토자", "범례·기호표")
+        b = bundle.build_bundle(res.load_fp(ns)[0], ns, self.pg, ie, NOW)
+        self.assertEqual([(d["drawing_number"], d["reason"], d["by"]) for d in b["source"]["excluded_drawings"]],
+                         [("LEGEND-01", "범례·기호표", "검토자")])
+        from hazop.ie import bundle_xlsx
+        guide = dict(bundle_xlsx.guide_rows(b))
+        self.assertIn("LEGEND-01: 범례·기호표(검토자)", guide["분석에서 뺀 도면"])
 
     def test_node_missing_from_the_set_drops_the_member_too(self):
         nid, ie, iec, gid = self._confirmed_group()
