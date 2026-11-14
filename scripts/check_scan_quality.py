@@ -5,6 +5,7 @@
   python scripts/check_scan_quality.py --apr 12,62,105      # APR1400 정답지 쪽도(쪽 PDF가 저장소 밖에 있을 때)
   python scripts/check_scan_quality.py --dpi 200 --json 결과.json
   python scripts/check_scan_quality.py --degrade             # 실제 스캔처럼 기울기·번짐·잡음·JPEG을 넣은 그림으로
+  python scripts/check_scan_quality.py --synthetic 6 --no-snp # 표본 밖 합성 쪽 6장(scripts/scan_synthetic.py, 씨앗 1~6)
 
 시험 venv(pypdfium2·pdfplumber)로 돌린다. 쪽 그리기는 이 프로세스가 하고, 그림 읽기(OpenCV·OCR)는 이 프로세스에
 OpenCV가 없으면 래스터 venv(HAZOP_RASTER_PYTHON 또는 %USERPROFILE%\\.hazop\\venv-raster-py312)를 하위 프로세스로 부른다.
@@ -103,6 +104,36 @@ def measure(jobs, dpi, work, use_ocr=True, log=print, degraded=False):
     return res
 
 
+def synthetic_jobs(snp_jobs, n, dpi, work):
+    """SNP 쪽에서 기호 조각을 모아 합성 쪽 n장(씨앗 1..n)을 그린다. → [(이름, 정답지, 그림 경로)]."""
+    import scan_synthetic
+    pages = []
+    for name, key, pdf in snp_jobs:
+        png = os.path.join(work, "%s-lib.png" % name)
+        pages.append((key, png, raster_scan.render_pdf_page(pdf, 0, png, dpi)))
+    lib = scan_synthetic.symbol_library(pages)
+    out = []
+    for seed in range(1, n + 1):
+        png = os.path.join(work, "synthetic-%02d.png" % seed)
+        out.append(("synthetic-%02d" % seed, scan_synthetic.make_page(lib, seed, dpi / 72.0, png), png))
+    return out
+
+
+def measure_images(items, dpi, use_ocr=True, log=print, degraded=False):
+    """그림이 이미 있는 쪽(합성 쪽): 스캔 읽기만 재고 벡터 값은 없다."""
+    res = {"vector": {}, "scan": {}, "seconds": {}, "unknowns": {}}
+    scale = dpi / 72.0
+    for i, (name, key, png) in enumerate(items):
+        img = degrade(png, dpi, 100 + i) if degraded else png
+        t = time.time()
+        ex = raster_scan.run_raster(img, px_per_pt=scale, use_ocr=use_ocr)
+        res["seconds"][name] = round(time.time() - t, 1)
+        res["scan"][name] = rq.score_page(key, raster_scan.to_page_points(ex, scale))
+        res["unknowns"][name] = len(ex["validation"]["unknowns"])
+        log("  %s: 스캔 %s (%.1f초)" % (name, line(res["scan"][name]), res["seconds"][name]))
+    return res
+
+
 def line(page):
     return " · ".join("%s %d/%d" % (it[:4], page[it]["correct"], page[it]["units"] + page[it]["false_pos"])
                       for it in ITEMS)
@@ -117,8 +148,14 @@ def report(res, dpi, at, degraded=False):
     cond = ("스캔다운 열화(기울기 %(rotate_deg)s°, 번짐 %(blur_px_at_300)spx@300dpi, 잡음 σ%(noise_sigma)s, JPEG q%(jpeg_quality)s)"
             % DEGRADE) if degraded else "깨끗한 렌더링"
     out = ["스캔 읽기 품질 @%s, %ddpi 회색조(pypdfium2) %s, 정답지·채점 = check_read_quality" % (at, dpi, cond)]
+    syn = [n for n in res["scan"] if n.startswith("synthetic-")]
+    if syn:
+        s = rq.totals({n: res["scan"][n] for n in syn})
+        out.append("합성 쪽 합계(%d쪽, 표본 밖, 벡터 값 없음)" % len(syn))
+        for it in ITEMS:
+            out.append("  %-6s 스캔 %s" % (rq.ITEM_LABEL[it], rq.fmt(s[it])))
     for lab, prefix in (("SNP 합계", "SNP-"), ("APR1400 합계", "apr1400-"), ("전체 합계", None)):
-        names = [n for n in res["scan"] if prefix is None or n.startswith(prefix)]
+        names = [n for n in res["scan"] if (prefix is None or n.startswith(prefix)) and n in res["vector"]]
         if not names:
             continue
         v = rq.totals({n: res["vector"][n] for n in names})
@@ -139,6 +176,7 @@ def main(argv=None):
     ap.add_argument("--no-snp", action="store_true", help="SNP 6장을 빼고 APR1400 쪽만")
     ap.add_argument("--no-ocr", action="store_true")
     ap.add_argument("--degrade", action="store_true", help="실제 스캔처럼 기울기·번짐·잡음·JPEG을 넣어 읽는다(DEGRADE)")
+    ap.add_argument("--synthetic", type=int, default=0, help="표본 밖 합성 쪽 수(씨앗 1..N, scripts/scan_synthetic.py)")
     ap.add_argument("--input-dir", help="APR1400 쪽 PDF 폴더(기본: 참고자료 by-drawing)")
     ap.add_argument("--samples-dir", help="SNP 표본 폴더(기본: 참고자료 pid-samples)")
     ap.add_argument("--json", help="쪽별 값을 이 파일에 쓴다")
@@ -156,8 +194,15 @@ def main(argv=None):
     work = tempfile.mkdtemp(prefix="hazop-scan-quality-")
     os.environ["HAZOP_WORK_ROOT"] = work
     try:
-        jobs, missing = jobs_for(input_dir, samples_dir, apr, not args.no_snp, work)
+        jobs, missing = jobs_for(input_dir, samples_dir, apr, not args.no_snp or args.synthetic, work)
+        syn = synthetic_jobs([j for j in jobs if j[0].startswith("SNP-")], args.synthetic, args.dpi, work)             if args.synthetic else []
+        if args.no_snp:
+            jobs = [j for j in jobs if not j[0].startswith("SNP-")]
         res = measure(jobs, args.dpi, work, use_ocr=not args.no_ocr, degraded=args.degrade)
+        if syn:
+            more = measure_images(syn, args.dpi, use_ocr=not args.no_ocr, degraded=args.degrade)
+            for k in res:
+                res[k].update(more[k])
     finally:
         shutil.rmtree(work, ignore_errors=True)
     at = rq.head_commit()

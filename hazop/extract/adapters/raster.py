@@ -52,6 +52,7 @@ PARAMS = {
     "hv_join_tol_pt": 1.6,       # 꺾임·분기: 선 끝과 상대 선 중심선 거리 여유(선 두께에 더함)
     "hv_collinear_tol_pt": 1.0,  # 같은 직선 판정(중심선 차)
     "hv_gap_join_pt": 1.0,       # 같은 직선 위 빈칸이 이 이하면 잇는다
+    "stroke_min_pt": 1.0,        # 넘기는 선 토막 최소 길이(더 짧은 조각은 버린다)
     "stub_min_len_pt": 1.2,      # 배관 라벨 양옆 짧은 토막 최소 길이
     "stub_reach_pt": 8.0,        # 배관 라벨 양옆에서 짧은 토막을 찾는 띠 폭
     "stub_thick_max_pt": 2.5,    # 짧은 토막 두께 상한(굵은 배관 1.44pt보다 크게)
@@ -69,7 +70,7 @@ PARAMS = {
     # 작은 채운 도형(화살촉)의 삼각형 하한. 화살촉은 배관 토막·번짐이 붙어 0.68~0.85로 재지고(SNP-M-301 300dpi 14개),
     # 원판은 0.60, 정사각형은 0.50이다. 삼각형으로 넘겨야 흐름 방향(pdf_vector_flow.arrow_axis, 꼭짓점 3개)을 읽는다
     "marker_triangle_fit_min": 0.66,
-    "marker_tri_max_pt": 8.5,    # 위 하한을 쓰는 도형 긴 변 상한(PV_OVERRIDES marker_max와 같은 값)
+    "marker_tri_max_pt": 9.5,    # 위 하한을 쓰는 도형 긴 변 상한(PV_OVERRIDES marker_max와 같은 값)
     "marker_tri_min_pt": 4.5,    # 위 하한을 쓰는 도형 긴 변 하한. 체크밸브 안 작은 표식(3~4pt)은 삼각형으로 넘기면 흐름 화살촉으로 읽혀
                                  # 기호에서 빠진다(SNP 6장 기호 종류 84 → 80)
     "bow_axis_tol": 0.15,        # 맞댄 두 삼각형 중심이 한 축에서 이 비율(크기 대비) 안이면 나비 모양 밸브 몸통
@@ -109,7 +110,9 @@ PV_LENGTH_KEYS = ("twin_tol", "dash_thick_max", "dash_long_max", "dash_corner_ma
 # 오각형 끝)에서는 구멍이 윤곽보다 안쪽이라 몸체 접속 허용을 3.5pt로 넓힌다(2.5·3.5·4.5 비교, evidence/w4-raster.md).
 # 장식선 묶음 거리는 3.0 → 4.0: 선 기호(체크밸브 두 판과 사선·화살촉)의 조각이 잉크 정리로 1~1.5pt씩 떨어져 나와 한 기호로
 # 묶이지 않았다(SNP 6장 300dpi 연결 103/194 → 114/194, 3.0·4.0·4.5·5.5·8.0 비교, 5.5부터 기호 오검출 증가. 2026-11-14).
-PV_OVERRIDES = {"line_size_tol": 4.0, "touch_tol": 1.5, "marker_max": 8.5, "attach_tol": 3.5, "axis_rect_tol": 0.6,
+# 표식 상한은 8.5 → 9.5pt: 스캔다운 그림(번짐 1px@300dpi·JPEG)에서 화살촉이 8.2~8.9pt로 커져 몸체로 읽히고 흐름을
+# 잃었다(스캔다운 SNP 6장 연결 123/202 → 130/202, 깨끗한 그림·합성 쪽은 그대로이거나 나아짐. 2026-11-14).
+PV_OVERRIDES = {"line_size_tol": 4.0, "touch_tol": 1.5, "marker_max": 9.5, "attach_tol": 3.5, "axis_rect_tol": 0.6,
                 "table_edge_tol": 1.2, "decor_group_tol": 4.0}
 
 
@@ -255,9 +258,24 @@ def _overlaps(o, k, ratio=0.5):
     return iw * ih / small >= ratio
 
 
+def _truncated_by(c, f):
+    """낮은 배율 줄 c가 원래 해상도 줄 f의 잘린 꼴인가: f의 글자(띄어쓰기 뺀 것)가 c의 글자를 더 길게 담고, f 상자가 c 상자
+    밖으로 나간다('SI-L005' → '-L005', SNP-M-301 300dpi 2026-11-14)."""
+    ct, ft = "".join(c["text"].split()), "".join(f["text"].split())
+    # 낮은 배율 줄이 잘린 꼴('-L005'처럼 문장부호로 시작·끝)일 때만 바꾼다. 원래 해상도는 옆 선을 글자로 읽기도 해서
+    # ('CV-PV201' → 'ICV-PV201', SNP-M-201) 글자를 더 담았다는 것만으로는 바꾸지 않는다
+    cut = bool(ct) and (ct[0] in "-/." or ct[-1] in "-/")
+    return cut and len(ft) > len(ct) and ct in ft and (f["x0"] < c["x0"] - 1 or f["x1"] > c["x1"] + 1)
+
+
 def add_fine_lines(coarse, fine):
-    """낮은 배율 줄(띄어쓰기가 살아 있음)에 원래 해상도에서만 읽힌 줄(겹치지 않는 것)을 더한다."""
-    return list(coarse) + [o for o in fine if not any(_overlaps(o, k) for k in coarse)]
+    """낮은 배율 줄(띄어쓰기가 살아 있음)에 원래 해상도에서만 읽힌 줄(겹치지 않는 것)을 더한다. 낮은 배율 줄이 원래 해상도
+    줄의 잘린 꼴이면 그 줄은 원래 해상도 줄로 바꾼다(띄어쓰기는 뒤의 restore_spaces가 되살린다)."""
+    out = []
+    for c in coarse:
+        better = [f for f in fine if _overlaps(c, f) and _truncated_by(c, f)]
+        out.append(max(better, key=lambda f: len(f["text"])) if better else c)
+    return out + [o for o in fine if not any(_overlaps(o, k) for k in out)]
 
 
 # 띄어쓰기 되살리기: rapidocr는 배율과 상관없이 낱말 사이 띄어쓰기를 자주 잃는다('SAFETY INJECTION PUMP' →
@@ -283,6 +301,11 @@ def _word_cuts(ink_cols, h, ratio=SPACE_GAP_RATIO):
         prev = c
     pieces.append((start, prev + 1))
     return pieces
+
+
+# 배관 번호 뒤 낱말이 붙어 읽힌 줄('RC-L003COLDLEG')은 번호 뒤를 띄운다. 배관 번호 규칙(pdf_vector_lines.LINE_NO_RE)이
+# 번호 뒤 띄어쓰기를 요구한다. 번호 뒤 글자가 둘 이상일 때만 띄운다('CC-V101B'처럼 한 글자 붙은 꼬리는 그대로)
+GLUED_LINE_NO = re.compile(r"^([A-Z]{1,4}-L\d{2,4})(?=[A-Z]{2})")
 
 
 def _squash(t):
@@ -348,6 +371,8 @@ def ocr_lines(gray, offset=(0, 0), zoom=1.0, px_per_pt=None):
     else:
         out = _ocr_tiled(cv2, np, gray)
     restore_spaces(gray, out)
+    for o in out:
+        o["text"] = GLUED_LINE_NO.sub(lambda m: m.group(1) + " ", o["text"])
     for o in out:
         o.update(x0=round(o["x0"] / zoom + offset[0], 1), x1=round(o["x1"] / zoom + offset[0], 1),
                  top=round(o["top"] / zoom + offset[1], 1), bottom=round(o["bottom"] / zoom + offset[1], 1))
@@ -588,7 +613,40 @@ def _poly_of(cv2, np, sub, ox, oy, prm, px, allow_curve=True, arrow_ok=False):
     return pts + [pts[0]], curved
 
 
-def _bodies(cv2, np, ink, glyph_boxes, prm, px, W, limits=None):
+def _hidden_apex(pts, fill_mask, px):
+    """네 꼭짓점 몸체의 가장 짧은 변이 검은 채움에 닿아 있으면 그 변을 빼고 양옆 변을 늘여 만나는 점을 꼭짓점으로 둔
+    삼각형을 돌려준다(아니면 None). 밸브 몸통 삼각형 꼭짓점이 가운데 검은 공에 가려 흰 구멍이 사다리꼴이 되는 경우다
+    (SNP-M-102 RC-PV101). 벡터 PDF에서는 삼각형 경로가 공 밑까지 온전해 생기지 않는 일이다."""
+    q = pts[:-1]
+    if len(q) != 4 or fill_mask is None:
+        return None
+    H, W = fill_mask.shape[:2]
+    edges = sorted(range(4), key=lambda i: math.dist(q[i], q[(i + 1) % 4]))
+    i = edges[0]
+    a, b = q[i], q[(i + 1) % 4]
+    j = (i + 2) % 4
+    if math.dist(a, b) > 0.7 * math.dist(q[j], q[(j + 1) % 4]):
+        return None  # 마주 보는 변보다 뚜렷이 짧지 않으면(양옆 변이 모이지 않으면) 사각형이다
+    r = max(3, int(round(px["body_zone"])) + 2)
+    mx, my = int(round((a[0] + b[0]) / 2)), int(round((a[1] + b[1]) / 2))
+    if not fill_mask[max(0, my - r):min(H, my + r + 1), max(0, mx - r):min(W, mx + r + 1)].any():
+        return None
+    p0, p1 = q[(i - 1) % 4], a       # a로 들어오는 변
+    p2, p3 = b, q[(i + 2) % 4]       # b에서 나가는 변
+    d1 = (p1[0] - p0[0], p1[1] - p0[1])
+    d2 = (p2[0] - p3[0], p2[1] - p3[1])
+    den = d1[0] * d2[1] - d1[1] * d2[0]
+    if abs(den) < 1e-9:
+        return None
+    t = ((p2[0] - p0[0]) * d2[1] - (p2[1] - p0[1]) * d2[0]) / den
+    apex = (p0[0] + t * d1[0], p0[1] + t * d1[1])
+    if math.dist(apex, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)) > 2.0 * math.dist(a, b) + 2 * r:
+        return None  # 꼭짓점이 가려진 자리보다 너무 멀면 삼각형으로 보지 않는다
+    tri = [p0, apex, p3]
+    return tri + [tri[0]]
+
+
+def _bodies(cv2, np, ink, glyph_boxes, prm, px, W, limits=None, fill_mask=None):
     """흰 구멍 → 몸체 [(점 목록, 곡선 여부, bbox)]과 몸체 구역 마스크(윤곽선 잉크 포함)."""
     white = (ink == 0).astype(np.uint8)
     labels, comps = _components(cv2, np, white, conn=4)
@@ -669,6 +727,8 @@ def _bodies(cv2, np, ink, glyph_boxes, prm, px, W, limits=None):
             continue
         pts, curved = _poly_of(cv2, np, sub, ox, oy, prm, px)
         if pts is not None:
+            if not curved:
+                pts = _hidden_apex(pts, fill_mask, px) or pts
             kept.append([g, pts, curved])
 
     # 글자 없는 축 정렬 사각형이 변 하나를 통째로 맞대고 있으면 한 몸체로 합친다(열교환기 관 다발 칸 등).
@@ -812,7 +872,19 @@ def _label_stubs(cv2, np, rest, taken, text_boxes, px, horizontal):
 def _join_collinear(segs, text_boxes, px, horizontal, text_like=None):
     """같은 직선 위 선분: 빈칸이 짧거나 글자 상자(선 라벨)로 덮이거나 글자 획처럼 보이는 잉크만 있으면 잇는다.
     → (선분, 쓰인 글자 상자 번호)."""
-    segs = sorted(segs, key=lambda s: (round(s["c"]), s["a"]))
+    # 중심선이 허용 오차 안에서 이어지는 선분끼리 한 줄로 묶은 뒤 진행 방향 순서로 본다. 중심선을 반올림한 값으로 줄을 가르면
+    # 번짐·JPEG으로 1~2px 어긋난 같은 배관의 두 토막이 다른 줄이 되어 사이 라벨을 건너 잇지 못했다
+    # (스캔다운 SNP-M-301 SI-L003: 중심선 1679.6px·1678.4px, 2026-11-14)
+    by_c = sorted(segs, key=lambda s: (s["c"], s["a"]))
+    rows, cur = [], []
+    for s in by_c:
+        if cur and s["c"] - cur[-1]["c"] > px["hv_collinear_tol"]:
+            rows.append(cur)
+            cur = []
+        cur.append(s)
+    if cur:
+        rows.append(cur)
+    segs = [s for row in rows for s in sorted(row, key=lambda s: s["a"])]
     used = set()
     out = []
     for s in segs:
@@ -959,7 +1031,7 @@ def detect(gray, lines=None, params=None, ocr=None):
     ink_ng = ink & (1 - glyph)
     fills, fill_mask = _fills(cv2, np, ink_ng, px)
     limits = []
-    bodies, zone = _bodies(cv2, np, ink_ng, text_boxes, prm, px, W, limits)
+    bodies, zone = _bodies(cv2, np, ink_ng, text_boxes, prm, px, W, limits, fill_mask)
     rereads = 0
     if ocr is not None:
         lines, rereads = _circle_ocr(cv2, np, gray, bodies, lines, ocr, prm)
@@ -1169,12 +1241,18 @@ def detect(gray, lines=None, params=None, ocr=None):
         pts, curved = _poly_of(cv2, np, sub.astype(np.uint8), ox, oy, prm, px, allow_curve=True, arrow_ok=True)
         if pts is not None:
             prim(pts, True, curved, fill=True, stroke=False)
+    # 1pt보다 짧은 선 토막은 넘기지 않는다. 화살촉 꼭짓점·라벨 옆에 남은 0.5pt 안팎 조각이 기호에 붙은 둘째 배관으로 세어져
+    # 도면 연결 상자의 배관 번호 매기기(배관이 하나일 때만)를 막았다(SNP-M-101·301 'TO …' 상자 4곳, 2026-11-14)
+    tiny = px["stroke_min"]
     for s in sorted(hs, key=lambda s: (s["c"], s["a"])):
-        prim([(s["a"], s["c"]), (s["b"], s["c"])], False)
+        if s["b"] - s["a"] >= tiny:
+            prim([(s["a"], s["c"]), (s["b"], s["c"])], False)
     for s in sorted(vs, key=lambda s: (s["c"], s["a"])):
-        prim([(s["c"], s["a"]), (s["c"], s["b"])], False)
+        if s["b"] - s["a"] >= tiny:
+            prim([(s["c"], s["a"]), (s["c"], s["b"])], False)
     for seg in sorted(diag):
-        prim(seg, False)
+        if math.hypot(seg[1][0] - seg[0][0], seg[1][1] - seg[0][1]) >= tiny:
+            prim(seg, False)
     for pts in sorted(curves):
         prim(pts, True, curved=True)
     for p0, p1, t in sorted(stems):  # 기호 안 축: 얇은 닫힌 몸체

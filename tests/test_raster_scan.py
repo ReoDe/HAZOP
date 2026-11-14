@@ -569,6 +569,82 @@ class DeskewCoordinatesTest(unittest.TestCase):
             self.assertLess(abs(a - b), 6, (got, want))
 
 
+class OcrRepairTest(unittest.TestCase):
+    def line(self, text, x0, x1, score=0.99):
+        return {"text": text, "x0": x0, "x1": x1, "top": 10.0, "bottom": 20.0, "score": score}
+
+    def test_truncated_coarse_line_is_replaced(self):
+        coarse = [self.line("-L005", 20, 60)]
+        fine = [self.line("SI-L005", 5, 60, 0.97)]
+        self.assertEqual([o["text"] for o in raster.add_fine_lines(coarse, fine)], ["SI-L005"])
+
+    def test_extra_letter_from_nearby_line_is_not_taken(self):
+        coarse = [self.line("CV-PV201", 20, 80)]
+        fine = [self.line("ICV-PV201", 15, 80, 0.95)]
+        self.assertEqual([o["text"] for o in raster.add_fine_lines(coarse, fine)], ["CV-PV201"])
+
+    def test_glued_line_number(self):
+        sub = lambda t: raster.GLUED_LINE_NO.sub(lambda m: m.group(1) + " ", t)  # noqa: E731
+        self.assertEqual(sub("RC-L003COLDLEG"), "RC-L003 COLDLEG")
+        self.assertEqual(sub("RC-L011A"), "RC-L011A")       # 한 글자 꼬리는 번호의 일부
+        self.assertEqual(sub("RC-L011 SPRAY"), "RC-L011 SPRAY")
+
+
+@unittest.skipUnless(HAS_CV, "numpy 없음(래스터 venv에서 실행)")
+class HiddenApexTest(unittest.TestCase):
+    """밸브 몸통 삼각형 꼭짓점이 검은 공에 가려 흰 구멍이 사다리꼴로 잡힌 것을 삼각형으로 되살린다(SNP-M-102 RC-PV101)."""
+
+    def test_trapezoid_against_fill_becomes_triangle(self):
+        import numpy as np
+        px = raster._px(dict(raster.PARAMS), 1.0)
+        fill = np.zeros((60, 60), np.uint8)
+        fill[22:34, 30:42] = 1                                     # 오른쪽 짧은 변 옆 검은 공
+        trap = [(10.0, 10.0), (10.0, 46.0), (30.0, 33.0), (30.0, 23.0), (10.0, 10.0)]
+        tri = raster._hidden_apex(trap, fill, px)
+        self.assertEqual(len(tri) - 1, 3)
+        apex = tri[1]
+        self.assertGreater(apex[0], 30.0)                           # 꼭짓점이 공 안쪽으로 나간다
+        self.assertAlmostEqual(apex[1], 28.0, delta=1.0)
+
+    def test_rectangle_and_free_trapezoid_stay(self):
+        import numpy as np
+        px = raster._px(dict(raster.PARAMS), 1.0)
+        fill = np.zeros((60, 60), np.uint8)
+        fill[22:34, 30:42] = 1
+        rect = [(10.0, 10.0), (10.0, 46.0), (30.0, 46.0), (30.0, 10.0), (10.0, 10.0)]
+        self.assertIsNone(raster._hidden_apex(rect, fill, px))
+        trap = [(10.0, 10.0), (10.0, 46.0), (30.0, 33.0), (30.0, 23.0), (10.0, 10.0)]
+        self.assertIsNone(raster._hidden_apex(trap, np.zeros_like(fill), px))  # 공이 없으면 그대로
+
+
+@unittest.skipUnless(HAS_PIL, "Pillow 없음")
+class SyntheticPageTest(unittest.TestCase):
+    """표본 밖 측정용 합성 쪽: 같은 씨앗이면 같은 쪽과 정답지가 나온다."""
+
+    def test_same_seed_same_page(self):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import scan_synthetic
+        from PIL import Image, ImageDraw
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        im = Image.new("L", (400, 300), 255)
+        ImageDraw.Draw(im).rectangle([40, 40, 100, 80], outline=0, width=3)
+        ImageDraw.Draw(im).ellipse([200, 40, 260, 100], outline=0, width=3)
+        src = os.path.join(tmp, "src.png")
+        im.save(src)
+        key = {"symbols": [{"kind": "manual_valve", "bbox": [10, 10, 25, 20], "tag": "A-V1"},
+                           {"kind": "pump", "bbox": [50, 10, 65, 25], "tag": "A-PP1"},
+                           {"kind": "transmitter", "bbox": [50, 10, 65, 25], "tag": "PT1"}]}
+        lib = scan_synthetic.symbol_library([(key, src, 4.0)])
+        a = scan_synthetic.make_page(lib, 7, 1.0, os.path.join(tmp, "a.png"))
+        b = scan_synthetic.make_page(lib, 7, 1.0, os.path.join(tmp, "b.png"))
+        self.assertEqual(a, b)
+        with open(os.path.join(tmp, "a.png"), "rb") as fa, open(os.path.join(tmp, "b.png"), "rb") as fb:
+            self.assertEqual(fa.read(), fb.read())
+        ids = {s["id"] for s in a["symbols"]}
+        self.assertTrue(a["connections"] and all(c["a"] in ids and c["b"] in ids for c in a["connections"]))
+
+
 RASTER_PY = raster_scan.raster_python()
 
 
