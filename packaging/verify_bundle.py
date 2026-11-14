@@ -642,13 +642,19 @@ SHELL_PANELS_JS = r"""(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const skip = %s;
   const res = {};
-  const buttons = [...document.querySelectorAll('.rail button[aria-label]')];
-  for (const label of buttons.map((b) => b.getAttribute('aria-label'))) {
+  // 단추는 자리(순서)로 다시 찾는다: 이름(aria-label)에는 건수 같은 상태가 붙어 패널을 연 뒤 바뀔 수 있다(배포용 묶음에서 실패한 까닭)
+  const all = () => [...document.querySelectorAll('.rail button[aria-label]')];
+  const n = all().length;
+  for (let k = 0; k < n; k++) {
+    const first = all()[k];
+    if (!first) continue;
+    const label = first.getAttribute('aria-label');
     if (skip.some((x) => label.startsWith(x))) continue;
-    const find = () => [...document.querySelectorAll('.rail button[aria-label]')].find((x) => x.getAttribute('aria-label') === label);
     let title = null;
     for (let tries = 0; tries < 2 && !title; tries++) {   // 메뉴 단추는 여닫기다: 이미 열려 있던 패널이면 첫 누름에 닫히므로 한 번 더 누른다
-      find().click();
+      const b = all()[k];
+      if (!b) break;
+      b.click();
       for (let i = 0; i < 20 && !title; i++) { await sleep(100); const h = document.querySelector('section.panel h2'); title = h && h.textContent; }
     }
     res[label] = title;
