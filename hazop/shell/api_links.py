@@ -256,8 +256,9 @@ def _impact_text(pg, by_id, touched, breaking):
     return ". ".join(parts) + "." if parts else None
 
 
-def _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done):
-    """plan(pg, n, by_id, ops, nums) → (새 ops, 짝이 바뀌는 노드들, 풀리는 짝, log 설명). done(설명) → 알림 글."""
+def _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done, dry=False):
+    """plan(pg, n, by_id, ops, nums) → (새 ops, 짝이 바뀌는 노드들, 풀리는 짝, log 설명). done(설명) → 알림 글.
+    dry=True: 같은 검사를 하고 저장하지 않는다 → {ok, dry, confirm(물을 확인 글 또는 None), notes(저장하면 낼 알림)}(채팅 확인 상자가 미리 보인다)."""
     who = _who(engine, by)
     if not ver or not base:          # 채팅 길도 같다: 먼저 view로 읽고 그 판·지문을 함께 보낸다
         raise Refused("bad_args", "읽은 판(ver)과 연결점 지문(base)을 함께 보내야 합니다. 먼저 연결점을 읽으세요.")
@@ -276,6 +277,8 @@ def _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done):
         if moved:
             note = dict(note, relocated=moved)
         text = _impact_text(pg, by_id, touched, breaking)
+        if dry:
+            return {"ok": True, "dry": True, "confirm": text, "notes": [done(note)]}
         if text and confirm != text:
             raise Refused("needs_confirm", text)
         at = store_io.now_utc()
@@ -306,7 +309,7 @@ def _guard(fn):
         return {"ok": False, "code": "failed", "message": "도면 연결 지정을 저장하지 못했습니다(%s)." % str(exc)[:160]}
 
 
-def pair(engine, graph_id, local_id, peer_graph_id, peer_local_id, ver, reason="", base=None, confirm=None, by=None):
+def pair(engine, graph_id, local_id, peer_graph_id, peer_local_id, ver, reason="", base=None, confirm=None, by=None, dry=False):
     """이 연결점과 다른 도면의 연결점 하나를 짝으로 지정한다."""
     def plan(pg, n, by_id, ops, nums):
         if peer_graph_id == graph_id:
@@ -330,10 +333,10 @@ def pair(engine, graph_id, local_id, peer_graph_id, peer_local_id, ver, reason="
 
     def done(note):
         return "%s ↔ %s 짝을 지정했습니다." % tuple(note["labels"])
-    return _guard(lambda: _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done))
+    return _guard(lambda: _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done, dry=dry))
 
 
-def unlink(engine, graph_id, local_id, ver, reason="", base=None, confirm=None, by=None):
+def unlink(engine, graph_id, local_id, ver, reason="", base=None, confirm=None, by=None, dry=False):
     """이 연결점을 '연결하지 않음'으로 지정한다(자동으로 이은 짝도 끊는다). 지금 짝이 있으면 확인을 받는다."""
     def plan(pg, n, by_id, ops, nums):
         if (n.get("sheet_link") or {}).get("status") != project.LINKED:
@@ -351,10 +354,10 @@ def unlink(engine, graph_id, local_id, ver, reason="", base=None, confirm=None, 
 
     def done(note):
         return "%s 연결을 끊었습니다." % note["labels"][0]
-    return _guard(lambda: _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done))
+    return _guard(lambda: _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done, dry=dry))
 
 
-def clear(engine, graph_id, local_id, ver, op_id, base=None, confirm=None, by=None):
+def clear(engine, graph_id, local_id, ver, op_id, base=None, confirm=None, by=None, dry=False):
     """지정 하나를 뺀다(그 연결점은 자동 판정으로 돌아간다). 오래된(연결점을 못 찾는) 지정도 이것으로 뺀다."""
     def plan(pg, n, by_id, ops, nums):
         op = next((o for o in ops if o.get("op_id") == op_id), None)
@@ -374,7 +377,7 @@ def clear(engine, graph_id, local_id, ver, op_id, base=None, confirm=None, by=No
 
     def done(note):
         return "도면 연결 지정 %s를 뺐습니다. 자동 판정으로 돌아갑니다." % note["op_id"]
-    return _guard(lambda: _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done))
+    return _guard(lambda: _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done, dry=dry))
 
 
 # ---------------------------------------------------------------- 읽기·명령 등록(api_corrections가 부른다)

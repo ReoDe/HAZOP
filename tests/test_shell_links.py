@@ -324,6 +324,19 @@ class FingerprintPathTest(Base):
         self.assertEqual(good["warn"], [])
         self.assertTrue(any(c["warn"] for c in v["candidates"]))
 
+    def test_dry_run_returns_the_same_confirm_text_and_writes_nothing(self):
+        """채팅 확인 상자용: dry=True는 검사와 확인 글만 돌려주고 저장하지 않는다. 그 글이 실제 needs_confirm 글과 같다."""
+        a, b = self.linked_pair()
+        v = self.view(a)
+        d = api_links.unlink(self.engine, a[0], a[1], v["ver"], base=v["point"]["base"], dry=True)
+        self.assertTrue(d["ok"] and d["dry"] and d["confirm"], d)
+        self.assertIsNone(project.load_manual(PID))
+        real = api_links.unlink(self.engine, a[0], a[1], v["ver"], base=v["point"]["base"])
+        self.assertEqual((real["code"], real["message"]), ("needs_confirm", d["confirm"]))
+        ok = api_links.unlink(self.engine, a[0], a[1], v["ver"], base=v["point"]["base"], confirm=d["confirm"])
+        self.assertTrue(ok["ok"], ok)
+        self.assertEqual(api_links.unlink(self.engine, a[0], a[1], v["ver"], base=v["point"]["base"], dry=True)["code"], "stale")
+
     def test_the_chat_functions_refuse_without_version_and_fingerprint(self):
         a, _b = self.linked_pair()
         v = self.view(a)
