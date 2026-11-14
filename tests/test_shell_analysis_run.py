@@ -110,6 +110,17 @@ class PaidConfirmTest(RunBase):
         self.assertTrue(all(isinstance(c, claude_http.ClaudeHttpClient) for c in self.clients))
         self.assertEqual(self.done()["method"], "api")
 
+    def test_confirm_box_lines_show_method_model_and_cost(self):  # 채팅 확인 상자 줄(d-chat이 analysis_details에서 쓴다)
+        rows = S.run_lines(self.plan()["conn"])
+        self.assertEqual([r["label"] for r in rows], ["연결"])
+        self.assertIn("Claude 구독", rows[0]["after"])
+        self.use_api()
+        rows = S.run_lines(self.plan()["conn"])
+        self.assertEqual([r["label"] for r in rows], ["연결", "요금"])
+        self.assertIn("$", rows[1]["after"])
+        self.assertNotIn(FAKE_KEY[-12:], json.dumps(rows, ensure_ascii=False))
+        self.assertEqual(S.run_lines(None)[0]["after"], "AI 연결이 없습니다")
+
     def test_subscription_run_needs_no_cost_confirmation(self):
         p = self.plan()
         self.assertEqual((p["conn"]["via"], p["conn"]["paid"], p["conn"]["confirm_text"]), ("subscription", False, ""))

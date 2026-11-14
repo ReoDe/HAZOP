@@ -234,6 +234,18 @@ def run_conn(engine, kind, calls=0, sections=0, method=None):
             "conn_ver": _conn_ver(via, model, key and key.get("id"))}
 
 
+def run_lines(conn):
+    """확인 상자 줄(채팅의 분석 실행 확인 등, [{label, after}]): 실제로 쓸 방식·모델·비용. 과금이면 요금 확인 글을 한 줄 더한다. 키 값 없음."""
+    if not conn:
+        return [{"label": "연결", "after": "AI 연결이 없습니다"}]
+    rows = [{"label": "연결", "after": "%s · %s · %s" % (conn.get("method_name") or "-", conn.get("model_name") or "-", conn.get("cost_text") or "")}]
+    if not conn.get("can_start"):
+        rows.append({"label": "연결 상태", "after": "%s. %s" % (conn.get("label") or "쓸 수 없음", conn.get("guide") or "")})
+    if conn.get("paid"):
+        rows.append({"label": "요금", "after": conn.get("confirm_text") or "호출마다 요금이 나갑니다"})
+    return rows
+
+
 def same_conn(engine, kind, conn_ver, method=None):
     """실행 직전: 화면이 본 판(conn_ver)과 지금 실제 연결이 같은지. 다르면 Refused('conn_changed')."""
     now = run_conn(engine, kind, **({"method": method} if method else {}))
