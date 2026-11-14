@@ -29,6 +29,8 @@ LOG = logging.getLogger("hazop.shell.api_settings")
 TOPICS = ("aisettings",)
 PROJECT_PREFIXES = ()
 UNBOUND_PREFIXES = ("aiconn.", "aisettings.")
+UNBOUND_REASONS = {"aiconn.": "AI 연결·키는 이 PC의 설정이라 프로젝트와 상관없다(A8 검토 3)",
+                   "aisettings.": "연결 설정 읽기도 프로젝트와 상관없다(A8 검토 3)"}
 KINDS = ("analysis", "ai_review")
 # AI 검토 호출 하나의 토큰 어림(도면 조각 그림 + 질문, 실측 전). API 단가표(claude_http.PRICES)로 예상 비용을 낸다
 REVIEW_CALL_USAGE = {"input_tokens": 4000, "output_tokens": 800}
