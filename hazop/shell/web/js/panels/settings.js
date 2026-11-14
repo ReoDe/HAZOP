@@ -8,6 +8,7 @@ import { useEffect, useState } from "../../vendor/hooks.module.js";
 import { store, useStore } from "../store.js";
 import { cmd, on, onChanged, read } from "../bridge.js";
 import { Btn, Chip, Switch } from "../ui/parts.js";
+import { setChat } from "../chat/panel.js";
 
 const TONE = (t) => (t === "ok" || t === "warn" || t === "err" ? t : "");
 
@@ -30,10 +31,14 @@ function Ask({ text, yes, onYes, onNo, children }) {
     <span class="set-ask-b"><${Btn} sm=${true} kind="primary" label=${yes} disabled=${!onYes} onClick=${onYes}>${yes}<//><${Btn} sm=${true} kind="ghost" label="취소" onClick=${onNo}>취소<//></span></div>`;
 }
 
-function MethodCard({ name, st, inUse, model, models, busy, running, onModel, onUse, onCheck, checkLabel, children }) {
+// 구독을 쓸 수 없는 PC(Claude Code 미설치·로그인 안 됨 등)에서 구독 카드에 붙이는 한 줄
+const NO_SUB = "Claude Code를 설치하고 로그인한 뒤 '연결 확인'을 누르세요. 구독 없이 쓰려면 API 키 카드를 쓰면 됩니다. AI 없이도 도면 등록·추출·구간 나누기는 됩니다.";
+const CHAT_MODELS = [["fast", "빠름(기본)"], ["normal", "보통"], ["deep", "깊게"]];
+
+function MethodCard({ name, st, inUse, model, models, busy, running, onModel, onUse, onCheck, checkLabel, advice, children }) {
   return html`<div class=${"set-card" + (inUse ? " on" : "")} aria-label=${name}>
     <div class="set-card-h"><b>${name}</b>${inUse ? html`<span class="set-inuse">사용 중</span>` : null}<${Chip} kind=${TONE(st.tone)}>${st.label}<//></div>
-    ${st.can_start ? null : html`<div class="small set-why">${st.title}</div>`}
+    ${st.can_start ? null : html`<div class="small set-why">${st.title}</div>${advice ? html`<div class="small muted set-advice">${advice}</div>` : null}`}
     ${children}
     <select class="set-model" aria-label=${name + " 분석 모델"} value=${model} disabled=${busy || running} onChange=${(e) => onModel(e.target.value)}>
       ${models.map((m) => html`<option key=${m.id} value=${m.id}>${m.label}</option>`)}</select>
@@ -48,6 +53,7 @@ function AiConnection() {
   const [msg, setMsg] = useState(null);          // {text, err}
   const [ask, setAsk] = useState(null);          // {kind: "api"|"terms"|"remove", text, key}
   const [checked, setChecked] = useState(false);
+  const chatNow = useStore((st) => st.chat);
   if (!v) return html`<div class="card"><h3>AI 연결</h3><div class="muted">읽는 중…</div></div>`;
   const c = v.current;
   const now = html`<div class=${"set-now " + (TONE(c.tone) || "plain")} role="status" aria-label=${"지금 AI 연결: " + (c.chip || c.label)}>
@@ -67,6 +73,12 @@ function AiConnection() {
     } catch (e) { setMsg({ text: e.message || "처리하지 못했습니다.", err: true }); }
     setBusy(false);
   }
+  const chatModel = (chatNow && chatNow.model) || (v.chat && v.chat.model) || "fast";
+  async function setChatModel(m) {        // 채팅 창 아래 모델 단추와 같은 명령(chat.set_model)·같은 상태(setChat)를 쓴다
+    setMsg(null);
+    try { await cmd("chat.set_model", { model: m }); setChat({ model: m }); setMsg({ text: "채팅 모델을 바꿨습니다." }); }
+    catch (e) { setMsg({ text: e.message || "채팅 모델을 바꾸지 못했습니다.", err: true }); }
+  }
   const models = v.models.map((m) => ({ id: m.id, label: m.label }));
   const s = v.subscription, a = v.api;
   const key = a && a.keys.find((k) => k.active);
@@ -78,7 +90,7 @@ function AiConnection() {
         yes="확인하고 구독으로 사용" onYes=${checked ? async () => { setAsk(null); await cmd("aiconn.ack_terms").catch(() => {}); act("aiconn.use", { method: "subscription" }, "Claude 구독으로 바꿨습니다."); } : null} onNo=${() => setAsk(null)}>
         <label class="small"><input type="checkbox" checked=${checked} onChange=${(e) => setChecked(e.target.checked)} /> 확인했습니다</label><//>` : null}
     <div class="set-cards">
-      ${s ? html`<${MethodCard} name="Claude 구독" st=${s} inUse=${c.via === "subscription"} model=${s.model} models=${models} busy=${busy} running=${v.running}
+      ${s ? html`<${MethodCard} name="Claude 구독" st=${s} inUse=${c.via === "subscription"} model=${s.model} models=${models} busy=${busy} running=${v.running} advice=${NO_SUB}
           checkLabel="연결 확인" onCheck=${() => act("aiconn.check", { method: "subscription" }, "구독 연결을 확인하는 중입니다.")}
           onUse=${() => act("aiconn.use", { method: "subscription" }, "Claude 구독으로 바꿨습니다.")}
           onModel=${(m) => act("aiconn.set_model", { method: "subscription", model: m }, "구독 모델을 바꿨습니다.")}>
@@ -97,6 +109,10 @@ function AiConnection() {
           ${ask && ask.kind === "remove" ? html`<${Ask} text=${"'" + ask.key.name + "'(" + ask.key.hint + ") 키를 지울까요? 이 PC에 저장한 사본도 지워집니다."} yes="지우기"
               onYes=${() => { const k = ask.key; setAsk(null); act("aiconn.remove_key", { key_id: k.id, confirmed: true }, "키를 지웠습니다."); }} onNo=${() => setAsk(null)} />` : null}<//>` : null}
     </div>
+    <div class="set-chat"><label for="set-chat-model">채팅 모델</label>
+      <select id="set-chat-model" class="set-model" aria-label="채팅 모델" value=${chatModel} disabled=${busy} onChange=${(e) => setChatModel(e.target.value)}>
+        ${CHAT_MODELS.map(([id, label]) => html`<option key=${id} value=${id}>${label}</option>`)}</select>
+      <span class="small muted">채팅은 Claude 구독으로 답합니다</span></div>
     ${msg ? html`<div class=${"small set-msg" + (msg.err ? " err" : "")} role="status">${msg.text}</div>` : null}
   </div>`;
 }

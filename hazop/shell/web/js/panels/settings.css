@@ -21,5 +21,9 @@
 .settings .set-ask { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--warn-line);
   background: var(--warn-bg); border-radius: 8px; margin-top: var(--sp-2); font-size: var(--fs-sm); }
 .settings .set-ask-b { display: flex; gap: var(--sp-1); }
+.settings .set-advice { line-height: 1.45; }
+.settings .set-chat { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-3); }
+.settings .set-chat label { font-weight: 600; }
+.settings .set-chat .set-model { width: auto; min-width: 120px; }
 .settings .set-msg { margin-top: var(--sp-2); color: var(--muted); }
 .settings .set-msg.err { color: var(--err); }
