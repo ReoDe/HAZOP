@@ -17,7 +17,7 @@ import threading
 
 from hazop.chat import actions as A
 from hazop.chat import actions_log
-from hazop.shell import chat_screens
+from hazop.shell import chat_edits, chat_screens
 
 LOG = logging.getLogger("hazop.shell.chat_actions")
 NODE_ACTIONS = ("nodes.apply", "nodes.undo", "nodes.confirm", "nodes.unconfirm", "nodes.lock")
@@ -25,6 +25,7 @@ NODE_ACTIONS = ("nodes.apply", "nodes.undo", "nodes.confirm", "nodes.unconfirm",
 RUN_ACTIONS = ("analysis.run", "results.set_status", "results.edit", "export.excel", "export.ie_bundle",
                "register.extract", "register.reextract", "sheet.confirm", "dexpi.export")
 RUN_ACTIONS = RUN_ACTIONS + chat_screens.RUN_ACTIONS     # A11 2차: 지식그래프 판단·AI 후보·원본 고르기(hazop/shell/chat_screens.py)
+RUN_ACTIONS = RUN_ACTIONS + chat_edits.RUN_ACTIONS       # A11 2차 마무리: 표제란·도면 고치기·FMEA·MLD·문서 판 대응(chat_edits.py)
 DISPLAY_ACTIONS = ("show", "goto", "select", "layer", "fit", "kg.find")
 # 동작 표에는 있으나 아직 새 화면이 없는 동작(2차) -> 사람이 할 곳
 NOT_YET = {
@@ -34,13 +35,13 @@ NOT_YET = {
     "kg.rebuild": "지식그래프 패널에 다시 만들기가 생기면 잇는다",
     "ie.reset": "⑥ 초기사건 패널에서 사람이 한다(읽지 못한 파일을 백업하고 새로 시작)",
 }
-PANELS = {"drawings": "도면", "nodes": "구간", "results": "분석 결과", "ie": "초기사건", "settings": "설정", "kg": "지식그래프",
+PANELS = {"titleblock": "표제란", "drawings": "도면", "nodes": "구간", "results": "분석 결과", "ie": "초기사건", "settings": "설정", "kg": "지식그래프",
           "aireview": "AI 검토", "actionlog": "AI 실행 기록", "docs": "설계 문서"}
 PANEL_ALIASES = {"①": "drawings", "②": "drawings", "도면": "drawings", "register": "drawings", "extract": "drawings",
                  "④": "nodes", "구간": "nodes", "검토구간": "nodes", "⑤": "results", "결과": "results", "분석 결과": "results",
                  "analysis": "results", "⑥": "ie", "초기사건": "ie", "설정": "settings", "③": "kg", "지식그래프": "kg",
                  "knowledge_graph": "kg", "ai검토": "aireview", "AI 검토": "aireview", "AI 후보": "aireview", "실행 기록": "actionlog",
-                 "AI 실행 기록": "actionlog", "log": "actionlog", "설계 문서": "docs", "문서": "docs", "documents": "docs"}
+                 "AI 실행 기록": "actionlog", "log": "actionlog", "표제란": "titleblock", "설계 문서": "docs", "문서": "docs", "documents": "docs"}
 LAYERS = {"symbol": "symbol", "symbols": "symbol", "기호": "symbol", "pipe": "pipe", "pipes": "pipe", "배관": "pipe",
           "tag": "tag", "tags": "tag", "태그": "tag", "글자": "tag"}
 LAYER_NAMES = {"symbol": "기호", "pipe": "배관", "tag": "태그"}
@@ -76,6 +77,7 @@ class ChatActions:
         # engine: hazop.shell.api.Engine(분석 실행·내보내기·쪽 확정이 부르는 창구). 창이 넘기지 않으면 project_fn이 엔진의 메서드일 때 그 엔진을 쓴다
         self._engine = engine if engine is not None else _engine_of(project_fn)
         self._docs_running = set()     # 지식 추출이 도는 설계 문서(같은 문서를 겹쳐 추출하지 않는다)
+        self._tb_running = set()       # 표제란 확정 뒤 다시 추출이 도는 도면 자료
         self._emit = emit
         self._project_fn = project_fn
         self._pg_fn = pg_fn
@@ -130,6 +132,7 @@ class ChatActions:
         out = {"analysis.run": analysis}
         if self._engine is not None:
             out.update(chat_screens.checks(self._engine, self._docs_running))
+            out.update(chat_edits.checks(self._engine, self._tb_running))
         return out
 
     def _detail_fns(self):
@@ -138,6 +141,7 @@ class ChatActions:
                "register.reextract": lambda item, snap: reextract_details(snap.registrations.get(item.args["registration_id"]) or {})}
         if self._engine is not None:
             out.update(chat_screens.details(self._engine))
+            out.update(chat_edits.details(self._engine))
         return out
 
     def _not_yet(self):
@@ -160,6 +164,7 @@ class ChatActions:
                                        record=self._record_outcome)
             out.update(self.runner.table())
             out.update(chat_screens.executors(self._engine, self._docs_running, self.runner))
+            out.update(chat_edits.executors(self._engine, self._tb_running, self.runner))
         return out
 
     def read_state(self):
@@ -483,7 +488,10 @@ TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정",
           "ie.move": "초기사건 후보 옮기기", "ie.split": "초기사건 그룹 나누기", "ie.edit_group": "초기사건 그룹 고치기",
           "ie.accept_members": "초기사건 소속 확인", "ie.confirm_group": "초기사건 그룹 확정", "ie.reopen_group": "초기사건 그룹 확정 풀기",
           "ie.set_coverage": "완전성 대조 판정", "ie.export": "초기사건 인계 묶음 내보내기", "docs.extract": "설계 문서 지식 추출",
-          "docs.add": "설계 문서 등록",
+          "docs.add": "설계 문서 등록", "docs.revision": "설계 문서 판 대응",
+          "titleblock.unconfirm": "표제란 확정 취소", "drawing.undo": "도면 고침 되돌리기", "drawing.redo": "도면 고침 다시 하기",
+          "ie.fmea_status": "FMEA 행 판정", "ie.fmea_mark": "전기·제어 구간 표시", "ie.mld_link": "MLD 가지 잇기",
+          "ie.fmea_import": "FMEA 양식 가져오기", "ie.mld_import": "MLD 가져오기", "settings.connection": "연결 설정",
           # 아직 잇지 않았거나 채팅으로 하지 않는 동작(거절 줄의 이름)
           "register.exclude": "분석에서 빼기", "extract.suggest": "추출 값 후보", "kg.algorithm": "지식그래프 알고리즘",
           "kg.rebuild": "지식그래프 다시 만들기", "ie.draft_rules": "초기사건 규칙 초안", "ie.reset": "초기사건 새로 시작",

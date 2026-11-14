@@ -278,8 +278,9 @@ def _sources_execute(engine):
 
 # ================================================================ ⑥ 초기사건 편집(A10, api_ie)
 # 화면 ⑥의 쓰기 대조를 그대로 쓴다: 읽은 ⑥ 파일 지문(ver)·⑤ 결과 지문(rver)·건드리는 항목의 지문(seen). 확인 상자를 띄울 때 읽은 값을
-# 실행 때 그대로 넘겨, 그 사이 바뀌었으면 엔진이 stale로 거절한다. 확정 그룹을 초안으로 내리는 변경은 엔진이 되묻는다(confirm):
-# 채팅은 confirmed를 붙이지 않고 그 물음을 그대로 알려 ⑥ 패널에서 하게 한다(확인 상자에 보이지 않은 결과를 승인시키지 않는다).
+# 실행 때 그대로 넘겨, 그 사이 바뀌었으면 엔진이 stale로 거절한다. 확정이 풀리는 그룹은 확인 상자에 미리 계산해 보이고, 실행 때 그 목록을
+# confirm_groups로 넘긴다(엔진이 지금 목록과 다르면 stale). 상자에 없던 풀림이 생기면 엔진은 저장하지 않고 되묻고, 채팅은 거절로 알린다.
+# 지문은 화면과 같이 FMEA·MLD까지 넣은 묶음에서 낸다.
 
 IE_ACTIONS = ("ie.move", "ie.split", "ie.edit_group", "ie.accept_members", "ie.confirm_group", "ie.reopen_group", "ie.set_coverage")
 IE_HANDLER = {"ie.move": "_move", "ie.split": "_split", "ie.edit_group": "_edit_group", "ie.accept_members": "_accept_members",
@@ -287,27 +288,68 @@ IE_HANDLER = {"ie.move": "_move", "ie.split": "_split", "ie.edit_group": "_edit_
 
 
 def _ie_ctx(engine):
-    """(맥락, 맞춘 ⑥ 문서, 항목 지문) 또는 (None, 사유, None)."""
-    from hazop.ie import bundle, model
+    """(맥락, 맞춘 ⑥ 문서, 항목 지문, 묶음) 또는 (None, 사유, None, None). 화면과 같은 계산: 승인 FMEA 행까지 맞춘 문서(_view_doc)와
+    FMEA·MLD를 함께 넣은 묶음(_build)에서 지문을 낸다(빼면 MLD 가지·기본사건 지문이 화면과 달라진다)."""
     from hazop.shell import api_ie
     from hazop.study import nodes
     ctx, why = api_ie._context(engine)
     if ctx is None:
-        return None, why, None
+        return None, why, None, None
     pg, ns, doc, ie_doc, _fp = ctx
-    base = model.sync(ie_doc, doc, node_set=ns)
-    fps = api_ie.item_fps(bundle.build_bundle(doc, ns, pg, base, nodes.now_utc()))
-    return ctx, base, fps
+    base = api_ie._view_doc(ie_doc, doc, ns)
+    b = api_ie._build(doc, ns, pg, base, nodes.now_utc())
+    return ctx, base, api_ie.item_fps(b), b
 
 
-def _ie_keys(item, base):
+def _ie_keys(item, base, b=None):
     from hazop.shell import api_ie
     a = item.args
     if item.action in ("ie.move", "ie.accept_members"):
-        return api_ie._member_keys(base, a["iecs"], [a["to"]] if a.get("to") else [])
+        return api_ie._member_keys(base, a["iecs"], [a["to"]] if a.get("to") else [], b)
     if item.action == "ie.set_coverage":
         return ["coverage:" + a["code"]]
     return ["group:" + a["group_id"]]
+
+
+def _ie_new(engine, item, ctx, base):
+    """실행하면 저장될 ⑥ 문서(api_ie의 명령과 같은 model 함수, 저장하지 않음). 계산하지 못하면 None."""
+    from hazop.ie import model
+    from hazop.shell import api_ie
+    pg, ns, doc, _ie, _fp = ctx
+    a, act = item.args, item.action
+    by = engine.reviewer() or ""
+    try:
+        if act in ("ie.move", "ie.accept_members"):
+            d = base
+            for i in api_ie._twins_of(base, doc, ns, pg, a["iecs"]):
+                if act == "ie.move":
+                    d = model.place(d, i, a.get("to") or None)
+                elif base["candidates"].get(i, {}).get("group_id"):
+                    d = model.accept(d, ("member", i))
+            return d
+        if act == "ie.split":
+            out = model.split(base, a["group_id"], api_ie._twins_of(base, doc, ns, pg, a["moved"]))
+            return out[0] if isinstance(out, tuple) else out
+        if act == "ie.edit_group":
+            return model.edit(base, ("group", a["group_id"]), a["fields"])
+        if act == "ie.confirm_group":
+            return model.confirm(base, a["group_id"], doc, by, node_set=ns)
+        if act == "ie.reopen_group":
+            return model.reopen(base, a["group_id"])
+        if act == "ie.set_coverage":
+            return model.set_coverage(base, a["code"], a.get("disposition") or None, a.get("reason") or "", by)
+    except (ValueError, KeyError, TypeError) as exc:
+        LOG.info("⑥ 변경 미리 계산 실패: %s", exc)
+    return None
+
+
+def _ie_lost(engine, item, ctx, base):
+    """실행하면 확정이 풀릴 그룹(확정 풀기 자체는 빼고). 엔진이 되묻는 목록과 같은 계산(api_ie.lost_confirmations)."""
+    from hazop.shell import api_ie
+    if item.action == "ie.reopen_group":
+        return []
+    new = _ie_new(engine, item, ctx, base)
+    return api_ie.lost_confirmations(base, new) if isinstance(new, dict) else []
 
 
 def _ie_check(engine):
@@ -315,7 +357,7 @@ def _ie_check(engine):
         from hazop.ie import model
         from hazop.shell import api_ie
         a = item.args
-        ctx, base, fps = _ie_ctx(engine)
+        ctx, base, fps, b = _ie_ctx(engine)
         if ctx is None:
             return base
         if "group_id" in a and a["group_id"] not in base["groups"]:
@@ -335,12 +377,13 @@ def _ie_check(engine):
                 return "처리는 %s 가운데 하나(빈 글자면 지움)" % ", ".join(model.COVERAGE)
             if a.get("disposition") and not (a.get("reason") or "").strip():
                 return "판정에는 사유가 있어야 함"
-        keys = _ie_keys(item, base)
+        keys = _ie_keys(item, base, b)
         absent = [k for k in keys if k not in fps]
         if absent:
             return "지금 ⑥ 문서에 없는 항목: %s" % ", ".join(k.split(":", 1)[1] for k in absent[:5])
         item.targets = [k.split(":", 1)[1] for k in keys]
-        item.basis = {"ver": api_ie._ver(ctx[4]), "rver": api_ie._rver(ctx), "seen": {k: fps[k] for k in keys}}
+        item.basis = {"ver": api_ie._ver(ctx[4]), "rver": api_ie._rver(ctx), "seen": {k: fps[k] for k in keys},
+                      "confirm_groups": _ie_lost(engine, item, ctx, base)}
         return None
     return check
 
@@ -355,7 +398,7 @@ def _ie_details(engine):
         from hazop.ie import model
         from hazop.chat.actions import show_value
         a = item.args
-        ctx, base, fps = _ie_ctx(engine)
+        ctx, base, fps, b = _ie_ctx(engine)
         if ctx is None:
             return [{"label": "오류", "after": base}]
         rows = []
@@ -386,8 +429,11 @@ def _ie_details(engine):
             rows.append({"label": "범주 %s" % a["code"], "before": model.COVERAGE.get(old.get("disposition"), "(판정 없음)"),
                          "after": model.COVERAGE.get(a.get("disposition") or "", "(판정 지움)")})
             rows.append({"label": "사유(AI가 씀)", "after": show_value(a.get("reason"))})
+        lost = _ie_lost(engine, item, ctx, base)
+        if lost:
+            rows.append({"label": "확정이 풀리는 그룹", "after": ", ".join(_group_label(base, g) for g in lost) + ". 바꾼 뒤 다시 확정해야 합니다."})
         rows.append({"label": "항목 지문", "after": " · ".join("%s %s" % (k.split(":", 1)[1], str(v)[-8:])
-                                                           for k, v in sorted({k: fps.get(k) for k in _ie_keys(item, base)}.items()))})
+                                                           for k, v in sorted({k: fps.get(k) for k in _ie_keys(item, base, b)}.items()))})
         return rows
     return details
 
@@ -399,6 +445,8 @@ def _ie_execute(engine, action):
         if not basis.get("seen"):
             return _refused("확인 상자에서 본 항목 지문이 없어 저장하지 않았습니다.", "stale")
         a = dict(args, ver=basis["ver"], rver=basis["rver"], seen=basis["seen"])
+        if basis.get("confirm_groups"):          # 확인 상자에 보인 '확정이 풀리는 그룹' 그대로. 엔진이 지금 목록과 다르면 stale로 거절한다
+            a.update(confirmed=True, confirm_groups=list(basis["confirm_groups"]))
         if action == "ie.move":
             a["to"] = args.get("to") or ""
         if action == "ie.split":
@@ -411,6 +459,9 @@ def _ie_execute(engine, action):
             if exc.code == "confirm":
                 return _refused("%s 이 변경은 ⑥ 초기사건 패널에서 직접 하세요." % exc.message, "confirm")
             raise
+        if out.get("ask"):                       # 확인 상자에 없던 '확정 풀림'이 생겼다: 저장하지 않았다
+            return _refused("확인한 뒤 확정이 풀릴 그룹이 생겨 저장하지 않았습니다(%s). 다시 요청해 확인 상자를 보세요."
+                            % ", ".join(out["ask"].get("groups") or []), "stale")
         if not out.get("changed"):
             return _ok("바뀐 것이 없습니다.")
         extra = ""

@@ -242,7 +242,9 @@ class IeBase(RunBase):
         self.fps = {"group:IEG-01": "sha256:g1", "group:IEG-02": "sha256:g2", "member:IEC-001": "sha256:m1",
                     "member:IEC-002": "sha256:m2", "coverage:LOCCW": "sha256:c1"}
         ctx = (None, {"nodes": []}, {"cells": []}, {}, "sha256:IE")
-        for target, fn in (("hazop.shell.chat_screens._ie_ctx", lambda engine: (ctx, copy.deepcopy(self.base), dict(self.fps))),
+        self.new_doc = None           # 실행하면 저장될 ⑥ 문서(미리 계산). None이면 확정이 풀리는 그룹 없음
+        for target, fn in (("hazop.shell.chat_screens._ie_ctx", lambda engine: (ctx, copy.deepcopy(self.base), dict(self.fps), None)),
+                           ("hazop.shell.chat_screens._ie_new", lambda engine, item, c, base: copy.deepcopy(self.new_doc)),
                            ("hazop.shell.api_ie._rver", lambda c: "rv1")):
             p = mock.patch(target, fn)
             p.start()
@@ -293,6 +295,27 @@ class IeTest(IeBase):
         self.assertEqual(done["status"], "rejected")
         self.assertIn("⑥ 초기사건 패널에서", done["reason"])
         self.assertEqual(self.last_record("ie.reopen_group")["result"], "rejected")
+
+    def test_groups_losing_confirmation_are_shown_and_passed_as_seen(self):
+        """확정이 풀리는 그룹은 확인 상자에 미리 보이고, 실행 때 그 목록을 confirm_groups로 넘긴다(엔진이 지금 목록과 대조)."""
+        self.base["candidates"]["IEC-003"] = {"group_id": "IEG-02"}
+        self.fps["member:IEC-003"] = "sha256:m3"
+        self.new_doc = copy.deepcopy(self.base)
+        self.new_doc["groups"]["IEG-02"]["status"] = "draft"
+        item = self.one("ie.move", iecs=["IEC-003"], to="IEG-01")
+        rows = {r["label"]: r["after"] for r in item["details"]}
+        self.assertIn("IEG-02 냉각재 상실", rows["확정이 풀리는 그룹"])
+        self.approve(item)
+        (_name, a), = self.writes
+        self.assertEqual((a["confirmed"], a["confirm_groups"]), (True, ["IEG-02"]))
+
+    def test_new_engine_question_after_the_box_is_refused_not_saved(self):
+        """상자에 없던 '확정 풀림'이 실행 때 생기면 엔진은 저장하지 않고 되묻는다: 채팅은 '바뀐 것 없음'이 아니라 거절로 알린다."""
+        with mock.patch("hazop.shell.api_ie._move", lambda engine, a: {"changed": False, "ask": {"message": "?", "groups": ["IEG-02"]}}):
+            self.approve(self.one("ie.move", iecs=["IEC-002"], to="IEG-01"))
+        done = self.events.of("chat.action.result")[-1]["item"]
+        self.assertEqual(done["status"], "rejected")
+        self.assertIn("IEG-02", done["reason"])
 
     def test_coverage_reason_required_and_unknown_ids_refused(self):
         self.assertIn("사유", self.one("ie.set_coverage", code="LOCCW", disposition="out_of_scope")["reason"])

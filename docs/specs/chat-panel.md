@@ -1,6 +1,6 @@
 ---
 doc_id: HZ-PLN-21
-rev: 4
+rev: 5
 status: review
 author: d-chat
 reviewed: —
@@ -316,11 +316,16 @@ approved: —
 | ③ | `kg.find`(지식그래프 패널을 열고 노드 찾기) | 표시 | 찾은 첫 노드를 고른다 |
 | ③ | `kg.judge`(잠재 후보 판단: 후보 확인·후보 기각·부재 확정·무관·판단 되돌리기) | 확인 | 확인 상자에 상태 앞 → 뒤, AI가 쓴 사유·근거 전문을 보인다. 허용 전이와 필수 입력(사유·근거)은 확인 상자 전에 검사한다. 확인 상자에서 본 항목 지문(`digest`)·상태·판단 판(`ver`)을 그대로 넘겨, 그 사이 바뀌었으면 `stale`. 판단한 사람은 확인을 누른 검토자 |
 | ⑤ | `export.excel`의 범위 | 바로 | `scope`: `all`·`approved`(승인 항목만)·`nodes`(고른 구간만, `node_ids` 필요) |
-| ⑥ | `ie.move`(후보 옮기기·빼기), `ie.split`(그룹 나누기), `ie.edit_group`(그룹 고치기), `ie.accept_members`(소속 확인), `ie.confirm_group`·`ie.reopen_group`(그룹 확정·풀기), `ie.set_coverage`(완전성 대조 판정, 사유 필수) | 확인 | 화면 ⑥과 같은 대조: 확인 상자에서 읽은 ⑥ 파일 지문(`ver`)·⑤ 결과 지문(`rver`)·건드리는 항목 지문(`seen`)을 그대로 넘긴다. 확정 그룹을 초안으로 내리거나 지우는 변경은 엔진이 되묻는데, 채팅은 그 물음에 답하지 않고 "⑥ 패널에서 하세요"로 돌려준다 |
+| ⑥ | `ie.move`(후보 옮기기·빼기), `ie.split`(그룹 나누기), `ie.edit_group`(그룹 고치기), `ie.accept_members`(소속 확인), `ie.confirm_group`·`ie.reopen_group`(그룹 확정·풀기), `ie.set_coverage`(완전성 대조 판정, 사유 필수. MLD 가지는 code `MLD:<가지>`) | 확인 | 화면 ⑥과 같은 대조: 확인 상자에서 읽은 ⑥ 파일 지문(`ver`)·⑤ 결과 지문(`rver`)·건드리는 항목 지문(`seen`)을 그대로 넘긴다. 지문은 화면처럼 FMEA·MLD까지 넣은 묶음에서 낸다. 확정이 풀리는 그룹은 확인 상자에 미리 계산해 보이고, 실행 때 그 목록을 `confirm_groups`로 넘긴다(엔진이 지금 목록과 다르면 `stale`). 상자에 없던 풀림이 실행 때 생기면 엔진은 저장하지 않고 되묻고, 채팅은 거절로 알린다 |
+| ⑥ | `ie.fmea_status`(FMEA 행 승인·제외·되돌리기), `ie.fmea_mark`(전기·제어 구간 표시), `ie.mld_link`(MLD 가지에 그룹 잇기) | 확인 | FMEA 파일 지문(`fver`)·MLD 파일 지문(`mver`)과 행·가지 지문(`seen`)을 상자에서 본 그대로 넘긴다. 상자에 행 내용(태그·고장모드·영향)과 앞 상태 → 새 상태를 보인다 |
+| ⑥ | FMEA 양식 가져오기·내보내기, MLD 가져오기(`ie.fmea_import`·`ie.mld_import`) | 안 함 | 파일을 고르는 일이라 ⑥ 패널에서 사람이 한다(채팅으로 경로를 받지 않음) |
+| ② | `titleblock.confirm`·`titleblock.unconfirm`(표제란 확정·취소, 자료 ID 또는 graph_id로 가리킴) | 확인 | 상자에 항목마다 지금 확정값 → 새 값(후보 그대로인지, 후보와 다른지), AI가 쓴 사유, 다시 추출할 쪽 수, 이 도면을 가리키는 검토 자료를 보인다. 엔진 검사(번호 변경으로 끊기는 구간 등)는 상자 전에 마른 실행(`dry`)으로 하고, 막히면 그 사유로 거절한다. 상자에서 본 등록정보 판(`ver`)을 넘긴다. 다시 추출은 작업으로 돌고, 같은 자료가 돌고 있으면 시작하지 않으며, 끝나면 `done`·`failed`를 기록한다 |
+| ② | `drawing.edit`(도면 고침 하나: 태그·종류·위치·흐름·끝 잇기·경로·미확인 확정·기기와 연결 추가·지우기), `drawing.undo`(고침 빼기, `op_id`가 없으면 마지막 고침), `drawing.redo` | 확인 | 대상은 구성요소 ID(또는 하나로 정해지는 태그)로 받아 도면과 `local_id`로 바꾼다. 상자에 대상, 앞값 → 새값, 이 항목이 든 구간, 풀릴 수 있는 쪽 확정, 엔진이 물을 확인 글(지우기·태그 겹침·추가 되돌리기)을 보인다. 상자에서 본 세 파일 판(`ver`)·항목 지문(`base`)·확인 글(`confirm`)을 그대로 넘겨, 그 사이 바뀌었으면 엔진이 거절한다. AI 검토에서 수락한 고침은 `aireview.revert`로 뺀다 |
+| ③ | `docs.revision`(같은 문서의 새 판인지 묻는 물음에 답하기) | 확인 | 물음이 있는 문서만. replace면 대신할 옛 판을 보이고, 지식그래프를 다시 만든다 |
 | ⑥ | `ie.export`(인계 묶음 Excel+JSON) | 바로 | 시각을 붙인 새 이름, 덮어쓰지 않음 |
 | ③ | `docs.extract`(설계 문서 지식 추출 다시 하기) | 확인 | 뽑힌 항목을 새로 쓰고 지식그래프를 다시 만든다. 같은 문서의 추출이 돌고 있으면 시작하지 않고, 끝나면 `done`·`failed`를 기록한다 |
 | ③ | 설계 문서 등록(`docs.add`) | 안 함 | 패널의 '추가'에서 사람이 파일을 고른다(채팅으로 경로를 받지 않음) |
-| ②·공통 | `drawing.edit`(도면 고치기), `titleblock.confirm`(표제란 확정), 연결·설정(A8). 새 화면에 아직 잇지 않은 `register.exclude`·`extract.suggest`(AI 검토 실행)·`kg.algorithm`·`kg.rebuild`·`ie.reset` | 아직 | 그 화면 단위가 실행 함수를 내놓으면 잇는다 |
+| ②·공통 | 연결·설정(A8, `settings.connection`). 새 화면에 아직 잇지 않은 `register.exclude`·`extract.suggest`(AI 검토 실행)·`kg.algorithm`·`kg.rebuild`·`ie.reset` | 아직 | 그 화면 단위가 실행 함수를 내놓으면 잇는다 |
 | ③ | `kg.algorithm`(알고리즘 실행) | 바로 | 결과는 내용 ID 폴더에 새로 씀(덮지 않음) |
 | ③ | `kg.rebuild`(지식그래프 다시 만들기) | 확인 | 사람 지식 CSV(`knowledge_nodes.csv`·`knowledge_links.csv`)와 언급 판단 파일(`link_candidates.csv`)은 쓰지 않음. 도면·문서 판이 바뀌어 키가 맞지 않게 된 사람 확인은 후보로 돌아가므로, 그 수를 확인 상자에 보인다(`hazop.kg.auto`의 판 어긋남 알림) |
 | ④ | `nodes.apply` 중 `add`(새 구간) | 바로(§4.5 상한 안) / 확인(상한 넘음) | 구간 규격 `apply_nodes`. `origin: ai`, `state: applied`, 요청 하나 = 묶음 하나(`B<번호>`) |
@@ -708,3 +713,11 @@ ca993c7의 규격이 Claude 측 검토와 Codex 교차검증에서 반려되어 
 | --- | --- | --- |
 | 동작 | §4.2 동작 표 | ⑥ 초기사건 편집 7개(확인)·`ie.export`(바로)·`ie.draft_rules` 연결, `docs.extract`(확인)·`docs.add`(안 함). '아직'은 도면 고치기·표제란 확정·연결 설정과 아직 잇지 않은 몇 동작 |
 | 확인 상자 | §4.2 머리 | 접을 수 있는 한 덩이, 앞값 → 새값 표, 긴 값은 '전문 보기' |
+
+## 17. rev 5 (2026-11-14, A11 2차 마무리)
+
+| 무엇 | 바뀐 곳 | 바뀐 내용 |
+| --- | --- | --- |
+| 동작 | §4.2 동작 표 | `titleblock.confirm`·`titleblock.unconfirm`, `drawing.edit`·`drawing.undo`·`drawing.redo`, `ie.fmea_status`·`ie.fmea_mark`·`ie.mld_link`, `docs.revision`을 확인 동작으로 이음. FMEA·MLD 파일 가져오기는 안 함. '아직'은 연결·설정(A8)과 아직 잇지 않은 몇 동작 |
+| ⑥ 대조 | §4.2 ⑥ 줄 | 엔진이 '되묻기'를 저장 없는 답(`ask`)으로 바꿈(3141fc2)에 맞춰, 확정이 풀리는 그룹을 상자에 미리 보이고 `confirm_groups`로 넘김. 지문 계산에 FMEA·MLD를 넣음 |
+| 글쓴이 | §4.7 | 도면 고치기와 표제란 기록에는 글쓴이 칸이 없어 `by`에 확인한 사람만 남는다. AI가 낸 고침이라는 것은 채팅 실행 기록(`chat-actions`, 제안·확인한 사람·결과)에 남는다 |

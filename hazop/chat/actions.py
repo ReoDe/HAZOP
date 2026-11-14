@@ -259,9 +259,36 @@ ACTIONS = {a.name: a for a in (
     Action("docs.extract", CONFIRM, _spec(("material_id", "id")), "③", "등록한 설계 문서의 지식 추출 다시 하기(뽑힌 항목을 새로 씀)",
            "설계 문서 {material_id}의 지식 추출을 다시 합니다."),
     Action("docs.add", NEVER, _spec(), "③", "설계 문서 등록(파일 고르기)", where="설계 문서 패널의 '추가'에서 사람이 파일을 고른다"),
+    Action("docs.revision", CONFIRM, _spec(("material_id", "id"), ("answer", "str"), old="id"), "③",
+           "같은 문서의 새 판인지 묻는 물음에 답한다: replace(old를 이 문서가 대신)·separate(다른 문서)",
+           "설계 문서 {material_id}의 판 대응을 정합니다."),
+    # 표제란(A3, api_titleblock). 확인 상자에서 본 등록정보 판(ver)을 넘긴다. 확정하면 추출한 쪽을 다시 추출한다(작업)
+    Action("titleblock.confirm", CONFIRM, _spec(("fields", "obj"), material_id="id", graph_id="id", reason="text"), "②",
+           "도면 번호(drawing_number)·개정(design_revision)·제목(title)을 사람이 확정(후보 그대로 또는 고친 값). 이미 추출한 쪽은 다시 추출",
+           "표제란 값을 확정합니다. 확정한 사람으로 확인한 사람 이름이 남습니다."),
+    Action("titleblock.unconfirm", CONFIRM, _spec(material_id="id", graph_id="id", fields="list", reason="text"), "②",
+           "표제란 확정 취소(fields가 없으면 세 항목 모두). 이미 추출한 쪽은 다시 추출", "표제란 확정을 취소합니다."),
+    # 도면 고치기(A5, api_corrections). 세 파일 판(ver)·항목 지문(base)·엔진이 물을 확인 글을 상자에서 본 그대로 넘긴다
+    Action("drawing.edit", CONFIRM, _spec(("op", "str"), id="id", graph_id="id", local_id="id", value="obj"), "②",
+           "도면 고침 하나(set_tag·set_kind·set_normal_position·set_fail_position·set_flow·set_endpoint·clear_endpoint·set_path·confirm·"
+           "add_node·delete_node·add_relation·delete_relation). 대상은 구성요소 id 또는 graph_id+local_id. 되돌리기로 뺄 수 있다",
+           "도면 고침을 저장합니다."),
+    Action("drawing.undo", CONFIRM, _spec(("graph_id", "id"), op_id="id"), "②",
+           "도면 고침 하나 빼기(op_id가 없으면 되돌릴 수 있는 마지막 고침). AI 검토에서 수락한 고침은 aireview.revert",
+           "도면 {graph_id}의 고침을 되돌립니다."),
+    Action("drawing.redo", CONFIRM, _spec(("graph_id", "id")), "②", "마지막으로 되돌린 도면 고침을 원래 자리에 되살리기",
+           "도면 {graph_id}의 되돌린 고침을 다시 합니다."),
+    # 초기사건 P5(api_ie): FMEA 파일 지문(fver)·MLD 파일 지문(mver)과 행·가지 지문을 넘긴다. MLD 가지 판정은 ie.set_coverage code 'MLD:<가지>'
+    Action("ie.fmea_status", CONFIRM, _spec(("row_ids", "ids"), ("status", "str")), "⑥",
+           "FMEA 행 승인(approved)·제외(excluded)·가져옴으로 되돌리기(imported)", "FMEA 행 {row_ids}을(를) {status}(으)로 바꿉니다."),
+    Action("ie.fmea_mark", CONFIRM, _spec(("node_id", "id"), mark="str"), "⑥", "전기·제어 구간 사람 표시(include·exclude, 빈 글자면 지움)",
+           "구간 {node_id}의 전기·제어 표시를 바꿉니다."),
+    Action("ie.mld_link", CONFIRM, _spec(("branch_id", "id"), group_ids="ids"), "⑥", "MLD 잎 가지에 초기사건 그룹 잇기(없으면 지움)",
+           "MLD 가지 {branch_id}에 초기사건 그룹을 잇습니다."),
+    Action("ie.fmea_import", NEVER, _spec(), "⑥", "FMEA 양식 가져오기·내보내기(파일 고르기)", where="⑥ 초기사건 패널의 FMEA에서 사람이 파일을 고른다"),
+    Action("ie.mld_import", NEVER, _spec(), "⑥", "주논리도(MLD) 가져오기(파일 고르기)", where="⑥ 초기사건 패널의 MLD에서 사람이 파일을 고른다"),
     # 아직 화면이 없는 기능. 모델이 내면 '아직 채팅으로 할 수 없음'으로 답한다
-    Action("titleblock.confirm", LATER, _spec(), "②", "표제란 확정", where="표제란 확정 화면이 생기면 잇는다"),
-    Action("drawing.edit", LATER, _spec(), "②", "도면 고치기(태그·종류·연결)", where="도면 고치기 화면이 생기면 잇는다"),
+    Action("settings.connection", LATER, _spec(), "공통", "AI 연결 방식·도면 연결 설정(A8)", where="연결·설정 화면이 생기면 잇는다"),
 )}
 
 # 사람이 정하는 판정(results-commands.md §1). proposed(AI 초안)는 사람이 정할 수 없는 값이라 받지 않는다
