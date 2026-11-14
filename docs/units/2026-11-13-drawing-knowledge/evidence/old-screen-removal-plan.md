@@ -175,7 +175,7 @@
 
 ### 4.3 문서(이전 화면을 가리키는 곳)
 
-`docs/design/screen-spec.md`(442줄), `ai-connection-screens.md`, `kg-screen.md`, `mockups/` 일부, `app-shell-web.md`(§6·UW9), `docs/specs/{chat-panel,interface,kg-schema,extraction,…}.md`, `docs/units/2026-11-05-*/evidence/*`(역사 기록), `docs/records/{decision-log,backlog}.md`, `docs/governance/naming-rules/README.md`와 `evidence/`. **역사 기록(`docs/units/2026-11-05-*`, 결정로그)은 고치지 않는다.** 규격(`specs/`·`design/`)만 "이전 화면"을 "새 화면"으로 고치거나 `obsolete`로 둔다.
+`docs/design/screen-spec.md`(442줄), `ai-connection-screens.md`, `kg-screen.md`, `mockups/` 일부, `app-shell-web.md`(§6·UW9), `docs/specs/{chat-panel,interface,kg-schema,extraction,…}.md`, `docs/units/2026-11-05-*/evidence/*`(역사 기록), `docs/records/{decision-log,backlog}.md`, `docs/governance/naming-rules/README.md`와 `evidence/`. **역사 기록(`docs/units/2026-11-05-*`, 결정로그)은 고치지 않는다.** 규격(`docs/specs/`·`docs/design/`)만 "이전 화면"을 "새 화면"으로 고치거나 `obsolete`로 둔다.
 
 ---
 
