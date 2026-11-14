@@ -52,7 +52,7 @@ from .pdf_vector_connectors import (
 from .pdf_vector_flow import _chain_flow, _propagate_flows, continuation_flow
 from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels, parse_label
 from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, POSITION_CODE_RE, POSITION_TEXT_RE, NUMBER_PLATE_RE, VALVE_TAG_RE,
-                                _text_blocks, _upright_blocks, _bubble_like, _assign_tags)
+                                _text_blocks, _upright_blocks, _bubble_like, _assign_tags, _join_bubble_number)
 
 SCHEMA_VERSION = drawio.SCHEMA_VERSION
 SCRIPT_NAME = "hazop.extract.adapters.pdf_vector"
@@ -1691,7 +1691,7 @@ def analyze(width, height, words, prims, params=None):
 def build_extraction(analysis, width, height, page_count, page, file_label, sha):
     """중간 결과 → extraction dict(drawio.extract와 같은 최상위·노드·관계 키)."""
     prm = analysis["params"]
-    syms, tees, chains, blocks = analysis["symbols"], analysis["tees"], analysis["chains"], analysis["blocks"]
+    syms, tees, chains, blocks = analysis["symbols"], analysis["tees"], analysis["chains"], list(analysis["blocks"])
     cls = analysis["classified"]
     blockers, unknowns = [], []
     if not words_or_paths(analysis):
@@ -1819,6 +1819,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             continue
         label_of[si] = bi
         taken.add(bi)
+    _join_bubble_number(syms, blocks, label_of, taken, roles)
     # S5: 밸브 번호 원(원 안 숫자뿐)은 지시선 하나의 반대 끝이 밸브에 닿거나, 가장 가까운 밸브가 number_reach 안이고
     # 두 번째 밸브가 그 두 배보다 멀 때만 그 밸브에 합친다(기획서/PID-기호사전.md §4.2 4번). 숫자만으로는 계통 접두를
     # 알 수 없어 태그는 만들지 않고 근거(ident_number)로만 남긴다

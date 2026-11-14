@@ -788,6 +788,13 @@ class PdfTagTest(unittest.TestCase):
         self.assertEqual(nodes[0]["evidence"]["tag_basis"], "equipment_number")
         self.assertIn(("missing_tag", nodes[1]["source_object_id"]), unknown)
 
+    def test_bubble_letters_and_number_in_two_paragraphs_join(self):
+        # 072쪽 표시 상자: 칸막이 선 위 'PDAH', 아래 '031'. 줄 간격(3.5pt)이 문단 간격 상한(0.5 × 6pt)보다 넓어 문단이 갈린다
+        ext = pdf_run([circle(110, 110, 10)], [word("PDAH", 103, 104), word("031", 105, 113.5)])
+        bubble = ext["nodes"][0]
+        self.assertEqual((bubble["label_text"], bubble["tag"]), ("PDAH\n031", "PDAH-031"))
+        self.assertEqual(ext["texts"], [])
+
     def test_duplicate_and_tied_prefix_leave_tag_empty(self):
         nodes, unknown = self.tags([("rect", ["RC-V111"]), ("rect", ["RC-V111"]), ("rect", ["CV-V201"]),
                                     ("circle", ["PT", "110"])])
