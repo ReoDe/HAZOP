@@ -56,6 +56,7 @@ NOT_IN_CI = {
     "check_kg_screen": "QtWebEngine 화면. 둘째 단계",
     "check_design": "하위 프로세스 렌더. 둘째 단계",
     "check_user_scenarios": "실제 데스크톱이 필요하다",
+    "check_shell_scenarios": "QtWebEngine 새 화면을 띄우고 --out이 필요하다(둘째 단계). 지금은 알려진 결함 N10(표제란 미확정 도면이 있으면 Excel 내보내기가 멈춤) 때문에 rc 1",
     "check_desktop_support": "실제 데스크톱이 필요하다",
     "check_apr1400": "저장소 밖 DCD 원본이 필요하다",
     "check_project_kg": "저장소 밖 DCD 원본이 필요하다",
