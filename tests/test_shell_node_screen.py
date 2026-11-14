@@ -191,6 +191,20 @@ class DrawingExcludeTest(Base):
         self.assertEqual((out["ok"], out["refused"][0]["code"]), (False, "stale"), out)
         self.assertEqual(sorted(nodes.load_excluded(self.pg["project_id"])), ["SNP-M-102"])
 
+    def test_dry_run_gives_the_same_question_and_saves_nothing(self):
+        """채팅 확인 상자용: dry는 실제 저장 때와 같은 확인 글을 돌려주고 파일을 쓰지 않는다."""
+        from hazop.ie import store as ie_store
+        _nid, ie = self.grouped()
+        ie_store.save(ie, expect=None)
+        ver = self.drawings()[S102]["ver"]
+        dry = node_commands.exclude_drawing(self.pg, S102, True, by="홍길동", ver=ver, dry=True)
+        self.assertEqual((dry["ok"], dry["dry"], dry["changed"]), (True, True, True))
+        real = self.exclude(S102)["data"]["needs_confirm"]
+        self.assertEqual(dry["needs_confirm"], real)
+        self.assertFalse(self.drawings()[S102]["excluded"])
+        self.assertEqual(node_commands.exclude_drawing(self.pg, S101, True, by="홍길동", ver=ver, dry=True)["needs_confirm"], None,
+                         "품은 구간이 없으면 묻지 않는다")
+
     def test_ver_is_required(self):
         with self.assertRaises(TypeError):
             node_commands.exclude_drawing(self.pg, S101, True, by="홍길동")

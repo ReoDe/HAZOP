@@ -262,12 +262,14 @@ def drawing_confirm_text(graph_id, number, held, approved=None, groups=None):
             % (number or graph_id, ", ".join(facts)))
 
 
-def exclude_drawing(pg, graph_id, excluded, *, by, ver, reason=None, confirm=None):
+def exclude_drawing(pg, graph_id, excluded, *, by, ver, reason=None, confirm=None, dry=False):
     """도면 한 장을 구간 분석(구간 제안·후보)에서 빼거나 다시 넣는다. 채팅도 이 길로 부른다(사람이 확인 상자를 누른 뒤).
     ver: 화면이 읽은 표시 파일의 판(excluded_ver, 꼭 넘긴다). 다르면 stale로 거절한다. 프로젝트 잠금 안에서 읽고 대조하고,
     쓰기는 읽은 지문과 대조한다(그 사이 다른 쪽이 쓴 표시를 덮지 않음).
     그 도면의 구성요소를 품은 구간이 있으면, 뺄 때 drawing_confirm_text 글이 confirm으로 와야 저장한다.
-    돌려주는 값: {"ok", "changed", "ver", "needs_confirm"?, "refused"}."""
+    dry: 검사와 확인 글만 하고 저장하지 않는다(채팅 확인 상자가 실제 저장 때와 같은 글을 미리 보이려고 부른다). 그때 changed는
+    '저장하면 바뀔지'이고, 확인이 필요하면 ok는 참이고 needs_confirm에 글이 있다.
+    돌려주는 값: {"ok", "changed", "ver", "needs_confirm"?, "dry"?, "refused"}."""
     project_id = pg.get("project_id")
     by = (by or "").strip()
     if not by:
@@ -289,7 +291,8 @@ def exclude_drawing(pg, graph_id, excluded, *, by, ver, reason=None, confirm=Non
             return _refused("exclude_drawing", [("ver", "도면 빼기 표시가 그 사이 바뀜")], code="stale")
         key = nodes.drawing_key(number)
         if any(nodes.drawing_key(k) == key for k in marked) == bool(excluded):
-            return {"ok": True, "command": "exclude_drawing", "changed": False, "ver": ver, "refused": []}
+            return dict({"ok": True, "command": "exclude_drawing", "changed": False, "ver": ver, "refused": []}, **({"dry": True} if dry else {}))
+        ask = None
         if excluded:
             try:
                 ns = nodes.read_as_is(pg)
@@ -297,8 +300,11 @@ def exclude_drawing(pg, graph_id, excluded, *, by, ver, reason=None, confirm=Non
                 ns = None
             held = drawing_nodes(pg, ns, graph_id)
             ask = drawing_confirm_text(graph_id, number, held, *_held_counts(pg, ns, held)) if held else None
-            if ask and (confirm or "") != ask:
+            if ask and not dry and (confirm or "") != ask:
                 return dict(_refused("exclude_drawing", [(graph_id, ask)], code="confirm"), needs_confirm=ask)
+        if dry:
+            return {"ok": True, "command": "exclude_drawing", "dry": True, "changed": True, "ver": ver, "needs_confirm": ask,
+                    "refused": []}
         try:
             nodes.set_excluded(project_id, number, bool(excluded), by, reason, expect=fp)
         except store_io.Conflict:
