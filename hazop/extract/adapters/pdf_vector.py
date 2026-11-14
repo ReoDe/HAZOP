@@ -84,6 +84,7 @@ PARAMS = {
     "decor_extent_ratio": 0.6,   # 장식선이 기호 밖으로 나간 길이 상한 = 기호 긴 변 × 비율
     "stroke_symbol_min": 4.0,    # 선 기호 최소 크기
     "stroke_symbol_max": 60.0,   # 선 기호 최대 크기(넘으면 끊긴 배관으로 본다)
+    "pocket_max": 8.0,           # 배관 옆 주머니(드레인 포트) 선 무리 긴 변 상한
     "dash_gap_max": 3.0,         # 점선 조각 사이 간격 상한
     "dash_attach_tol": 8.0,      # 점선 끝 조각과 기호 사이 거리 상한(점선 끝 빈칸·구동부 여백 포함)
     "dash_pipe_axis_ratio": 1.5,    # 점선 배관: 밸브 몸통의 긴 변/짧은 변이 이만큼은 돼야 흐름 축을 안다
@@ -750,7 +751,7 @@ def _width_crossing(members, pieces, prm):
     return lines
 
 
-def _build_solid(syms, polys, markers, prm, bridges=()):
+def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
     """→ (tees [(x, y)], chains [{pts, ends:[(vertex, point, basis)], evidence}])."""
     # 선 끝 분류
     pieces = [{"pts": list(p["pts"]), "id": p["id"], "width": p.get("width")} for p in polys]
@@ -759,6 +760,12 @@ def _build_solid(syms, polys, markers, prm, bridges=()):
         ends += [(i, 0, pc["pts"][0]), (i, 1, pc["pts"][-1])]
     att = {}
     free = []
+    # 주머니 입구(_pockets): 입구에서 주머니 안쪽으로 짧은 선을 두어 배관을 그 자리에서 나누고 주머니 기호에 잇는다
+    for pt, s in mouths:
+        if s.alive:
+            pieces.append({"pts": [pt, _center(s.bbox)], "id": s.evidence()[0], "width": None})
+            att[(len(pieces) - 1, 1)] = (s, "pdf_path_endpoint")
+            free.append((len(pieces) - 1, 0, pt))
     for i, k, pt in ends:
         s, basis = _attach(pt, syms, markers, prm)
         if s is not None:
@@ -1091,7 +1098,7 @@ def _shape_features(sym, prm):
     if sym.markers:
         found.add("markers")
     straight = [s for s in sym.strokes if len(s["pts"]) == 2 and not s.get("curved")]
-    if sym.stroke_only and straight and len(straight) == len(sym.strokes):
+    if sym.stroke_only and straight and len(straight) == len(sym.strokes) and not getattr(sym, "pocket", False):
         vertical = [s for s in straight if abs(s["pts"][0][0] - s["pts"][1][0]) < 0.5]
         horizontal = [s for s in straight if abs(s["pts"][0][1] - s["pts"][1][1]) < 0.5]
         if max(len(vertical), len(horizontal)) >= 2:
@@ -1652,7 +1659,7 @@ def analyze(width, height, words, prims, params=None):
     # 같다. 먼저 빼면 143쪽에서 기호 묶음이 달라져 새 안전밸브·끝막음 판정이 생겼다(F1-4 후보 비교)
     cls["ticks"] = [p for p in polys if p["id"] in ticks]
     polys = [p for p in polys if p["id"] not in ticks]
-    tees, chains = _build_solid(syms, polys, markers, prm, cls["bridges"])
+    tees, chains = _build_solid(syms, polys, markers, prm, cls["bridges"], cls["mouths"])
     for ch in chains:
         # 빗금 선으로만 되고 그 사슬 위에 빗금 묶음이 실제로 있는 사슬 = 공압 신호선. 배관과 섞이거나, 원래 경로가
         # 분기점에서 나뉘어 빗금 없는 쪽 토막이면 배관으로 둔다

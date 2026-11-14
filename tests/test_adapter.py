@@ -398,6 +398,26 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(run(1.08)[0], 1)
         self.assertEqual(run(0.13), (0, [(100, 300), (200, 200)]))
 
+    def test_pocket_hanging_on_pipe_is_one_symbol(self):
+        # APR1400 105쪽 드레인 포트: 배관 아래 짧은 세로선 둘과 둥근 바닥. 주머니가 배관 두 가닥과 드레인 선을 잇는
+        # 고리가 되지 않고, 배관과 입구 한 곳에서 만나는 기호 하나가 된다
+        ext = pdf_run([rect(100, 200, 120, 220), rect(300, 200, 320, 220), rect(200, 300, 220, 320),
+                       line((120, 210), (300, 210)), line((208.7, 210.3), (208.7, 214.3)),
+                       line((211.3, 210.3), (211.3, 214.3)), line((208.7, 214.3), (210, 215)),
+                       line((211.3, 214.3), (210, 215)), line((210, 215), (210, 300))])
+        pocket = [n for n in ext["nodes"] if n["kind"] != "tee" and 205 < n["geometry"]["y"] < 215]
+        self.assertEqual(len(pocket), 1)
+        self.assertIsNone(pocket[0]["kind"])  # 주머니 벽 두 줄을 오리피스 판으로 읽지 않는다
+        tees = [n["local_id"] for n in ext["nodes"] if n["kind"] == "tee"]
+        self.assertEqual(len(tees), 1)
+        by_node = {}
+        for r in ext["relations"]:
+            ids = [e["node_local_id"] for e in r["endpoints"]]
+            for i in ids:
+                by_node.setdefault(i, set()).update(x for x in ids if x != i)
+        self.assertEqual(by_node[pocket[0]["local_id"]], {tees[0]} | {n["local_id"] for n in ext["nodes"]
+                                                                      if n["geometry"]["y"] == 300})
+
     def test_dashed_signal_measurement_and_isa_letters(self):
         dashes = [rect(x, 99.65, x + 4, 100.35, fill=True) for x in range(116, 184, 6)]
         ext = pdf_run([circle(100, 100, 14), circle(200, 100, 14), rect(80, 200, 120, 260),

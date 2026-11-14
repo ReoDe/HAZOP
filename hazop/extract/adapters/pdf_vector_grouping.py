@@ -276,6 +276,63 @@ def _bar_fed_strokes(polys, prm):
     return found, rest
 
 
+def _pockets(polys, prm):
+    """배관 옆에 매단 작은 주머니(APR1400 105쪽 주증기 배관 아래 드레인 포트: 짧은 세로선 둘과 둥근 바닥)를 기호로
+    세운다 → (기호 [_Sym], 주머니 입구 [(점, 기호)], 남은 선). 끝끼리 이어진 짧은 선 무리(긴 변 pocket_max 이하)에서
+    다른 선과 닿지 않은 끝이 꼭 둘이고, 그 둘이 같은 배관의 중간에 떨어져 닿으며, 무리가 그 배관 한쪽으로 나와 있으면
+    주머니다. 입구 양쪽 선을 배관 두 가닥으로 읽으면 주머니가 배관과 드레인 선을 잇는 고리가 되어 배관 위 기호가 모두
+    드레인 쪽 기호와 이어진다. 주머니는 기호 하나이고 배관과는 입구 한 곳에서 만난다."""
+    small = [p for p in polys if max(_w(p["bbox"]), _h(p["bbox"])) <= prm["pocket_max"]]
+    tol = prm["end_tol"]
+
+    def ends(p):
+        return (p["pts"][0], p["pts"][-1])
+
+    def touch(a, b):
+        return math.hypot(a[0] - b[0], a[1] - b[1]) <= tol
+    groups = _uf_groups(len(small), lambda i, j: any(touch(a, b) for a in ends(small[i]) for b in ends(small[j])))
+    found, mouths, used = [], [], set()
+    for g in groups:
+        items = [small[i] for i in g]
+        loose = [e for it in items for k, e in enumerate(ends(it))
+                 if not any(touch(e, f) for o in items for kk, f in enumerate(ends(o)) if not (o is it and kk == k))]
+        if len(loose) != 2 or touch(*loose):
+            continue
+        box = items[0]["bbox"]
+        for it in items[1:]:
+            box = _union(box, it["bbox"])
+        if max(_w(box), _h(box)) > prm["pocket_max"]:
+            continue
+        host = None
+        for h in polys:
+            if _box_gap(h["bbox"], box) > tol or any(h is it for it in items):
+                continue
+            hits = []
+            for e in loose:
+                for a, b in _segs(h["pts"]):
+                    d, q = _seg_dist(e, a, b)
+                    if d <= tol and min(math.hypot(q[0] - x[0], q[1] - x[1]) for x in ends(h)) > tol:
+                        hits.append((a, b))
+                        break
+            if len(hits) == 2:
+                host = (h, hits[0])
+                break
+        if host is None:
+            continue
+        (a, b) = host[1]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        sides = [((b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0])) / L
+                 for it in items for q in it["pts"]]
+        if not (min(sides) >= -tol and max(sides) > tol or max(sides) <= tol and min(sides) < -tol):
+            continue
+        sym = _Sym([dict(it, kind_="poly") for it in items], stroke_only=True)
+        sym.pocket = True  # 주머니 벽 두 줄은 오리피스 판이 아니다(_shape_features)
+        found.append(sym)
+        mouths.append((((loose[0][0] + loose[1][0]) / 2, (loose[0][1] + loose[1][1]) / 2), sym))
+        used.update(id(it) for it in items)
+    return found, mouths, [p for p in polys if id(p) not in used]
+
+
 ORIFICE_BOX_RATIO = 1.5  # 오리피스 상자: 두 판 사이 간격 상한 = 판 길이 × 비율(판과 간격이 비슷한 네모꼴)
 
 
@@ -499,7 +556,8 @@ def _group_symbols(cls, prm):
     valves, polys, markers, flange_pairs = _plate_assemblies(syms, list(cls["polys"]), list(cls["markers"]),
                                                              cls["dashes"], prm)
     fed, polys = _bar_fed_strokes(polys, prm)
-    syms = [s for s in syms if s.alive] + valves + fed
+    pockets, cls["mouths"], polys = _pockets(polys, prm)
+    syms = [s for s in syms if s.alive] + valves + fed + pockets
     for p in polys:
         p["kind_"] = "poly"
     dashes = list(cls["dashes"])
