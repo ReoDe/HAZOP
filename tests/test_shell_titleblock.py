@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing --log-level=3")
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
@@ -122,6 +123,12 @@ class CommandTest(Base):
         self.assertEqual(out["row"]["fields"][2]["value"], "가압기")
 
 
+def tearDownModule():
+    """창·웹 페이지를 인터프리터 종료 전에 정리한다(남기면 시험이 통과한 뒤 Segmentation fault로 끝나 CI가 실패로 본다)."""
+    from tests.test_shell_web import shell_teardown
+    shell_teardown()
+
+
 def pump(sec):
     from PySide6.QtCore import QCoreApplication
     import time
@@ -134,7 +141,7 @@ def pump(sec):
 class PanelTest(Base):
     """실제 새 화면(화면 밖)의 표제란 패널: 번호 칸이 잠긴 도면에서 개정·제목만 고쳐 확정하면 번호 후보를 보내지 않는다."""
 
-    def js(self, win, code, timeout=10.0):
+    def js(self, win, code, timeout=60.0):
         import time
         out = []
         win.view.page().runJavaScript(code, 0, out.append)
@@ -143,7 +150,7 @@ class PanelTest(Base):
             pump(0.02)
         return out[0] if out else None
 
-    def wait(self, win, code, timeout=60.0):
+    def wait(self, win, code, timeout=120.0):
         import time
         end = time.monotonic() + timeout
         while time.monotonic() < end:
@@ -151,6 +158,14 @@ class PanelTest(Base):
                 return True
             pump(0.1)
         return False
+
+    def click_once(self, win, key, label):
+        """단추가 켜질 때까지 기다렸다가 한 번만 누른다(부하로 JS 답이 늦어 다시 불러도 두 번 누르지 않게 페이지에 표시를 남긴다)."""
+        return self.wait(win, """(() => { window.__tbClicked = window.__tbClicked || {};
+            if (window.__tbClicked[%s]) return true;
+            const b = document.querySelector('.titleblock button[aria-label=%s]');
+            if (!b || b.disabled) return false;
+            b.click(); window.__tbClicked[%s] = true; return true; })()""" % (json.dumps(key), json.dumps(label), json.dumps(key)))
 
     def test_locked_number_is_not_sent_and_only_edited_fields_go(self):
         from hazop.app import make_application
@@ -170,20 +185,25 @@ class PanelTest(Base):
         self.assertTrue(self.wait(win, "!!window.__hz && document.querySelector('.rail') !== null"), "웹 화면이 뜨지 않음")
         self.js(win, "window.__hz.store.set({panel: 'titleblock'})")
         self.assertTrue(self.wait(win, "document.querySelectorAll('.titleblock .tb-row').length === 1"))
-        self.assertTrue(self.js(win, "document.querySelector('.titleblock input.tb-input').disabled"), "번호 칸이 잠김")
-        typed = self.js(win, """(() => { const inp = document.querySelectorAll('.titleblock input.tb-input')[2];
-            inp.value = '주 배관(고침)'; inp.dispatchEvent(new Event('input', { bubbles: true })); return inp.value; })()""")
-        self.assertEqual(typed, "주 배관(고침)")
-        self.js(win, "document.querySelector('.titleblock button[aria-label=\"입력한 값으로 확정\"]').click()")
-        self.assertTrue(self.wait(win, "(document.querySelector('.titleblock').innerText || '').includes('확정했습니다')", 120),
+        self.assertTrue(self.wait(win, "document.querySelector('.titleblock input.tb-input').disabled === true"), "번호 칸이 잠김")
+        self.assertTrue(self.wait(win, """(() => { const inp = document.querySelectorAll('.titleblock input.tb-input')[2];
+            if (!inp) return false; if (inp.value !== '주 배관(고침)') {
+              inp.value = '주 배관(고침)'; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+            return inp.value === '주 배관(고침)'; })()"""), "제목 칸에 입력")
+        self.assertTrue(self.click_once(win, "c1", "입력한 값으로 확정"), "확정 단추")
+        self.assertTrue(self.wait(win, "(document.querySelector('.titleblock').innerText || '').includes('확정했습니다')"),
                         self.js(win, "document.querySelector('.titleblock').innerText"))
         r = self.read(self.mid)
         self.assertEqual([f["value"] for f in r["fields"]], [None, None, "주 배관(고침)"],
                          "고친 제목만 확정되고 잠긴 번호 후보는 보내지 않음")
-        self.js(win, """(() => { const b = document.querySelector('.titleblock button[aria-label="확정 전 항목을 후보 그대로 확정"]');
-            b.click(); return true; })()""")
+        # 패널이 첫 확정 뒤의 행을 다시 읽은 뒤(행이 '일부 확정'이 됨)에 누른다. 작업 끝 알림('확정했습니다')은 다시 읽기보다 먼저 오므로,
+        # 그 사이에 누르면 낡은 판(ver)을 보내 엔진이 거절한다
+        self.assertTrue(self.wait(win, "document.querySelectorAll('.titleblock .tb-row.partial').length === 1"),
+                        self.js(win, "document.querySelector('.titleblock').innerText"))
+        self.assertTrue(self.click_once(win, "c2", "확정 전 항목을 후보 그대로 확정"), "후보 그대로 확정 단추")
         self.assertTrue(self.wait(win, "document.querySelectorAll('.titleblock .tb-row.partial').length === 1 && "
-                                       "(document.querySelector('.titleblock').innerText || '').includes('등록 버전 3')", 120))
+                                       "(document.querySelector('.titleblock').innerText || '').includes('등록 버전 3')"),
+                        self.js(win, "document.querySelector('.titleblock').innerText"))
         r = self.read(self.mid)
         self.assertEqual((r["fields"][0]["value"], r["fields"][1]["value"]), (None, "0"),
                          "'후보 그대로 확정'도 잠긴 번호는 빼고 개정만 확정")
