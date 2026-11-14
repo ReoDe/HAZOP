@@ -595,7 +595,7 @@ def _rev_execute(engine, watcher):
 
 # ================================================================ 도면 연결 짝(B1, api_links)
 # 화면의 고치기 카드와 같은 대조: 카드(=확인 상자)가 본 판(ver)·연결점 지문(base)·엔진이 물을 확인 글(confirm)을 그대로 넘긴다.
-# 확인 글은 api_links가 저장 전에 만드는 글과 같은 내부 함수(_impact_text)로 저장 없이 계산하고, 실제 엔진 글과 같은지 시험한다.
+# 확인 글은 엔진의 마른 실행(dry=True, e028ffa)으로 저장 없이 얻는다(엔진 검사에 막히면 상자를 띄우기 전에 거절).
 
 def _link_point(engine, a, prefix=""):
     """(graph_id, local_id) 또는 사유 글. id(구성요소 ID) 또는 graph_id+local_id. prefix='peer_'면 맞은편."""
@@ -631,36 +631,29 @@ def _link_ctx(engine, item):
     return view, me, peer, op_id
 
 
-def _link_ask(engine, item, me, peer, op_id):
-    """api_links가 저장 전에 물을 확인 글(없으면 None). 같은 내부 함수로 저장 없이 계산한다."""
-    from hazop.shell import api_links as L
-    pid, pg = L._pg(engine)
-    ops, _fp = L._manual(pid)
-    n, by_id = L._entity(pg, me[0], me[1])
-    nums = L._numbers(pg)
-    ops, _moved = L._follow_moves(pg, ops)
+class LinkRefused(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+def _link_ask(engine, item, me, peer, op_id, reason=""):
+    """api_links가 저장 전에 물을 확인 글(없으면 None). 엔진의 마른 실행(dry=True: 같은 검사, 저장 안 함)으로 얻는다.
+    엔진이 거절하면(stale·bad_args 등) LinkRefused(사유)."""
+    from hazop.shell import api_links
+    view = api_links.view(engine, me[0], me[1])
+    if not view.get("ok"):
+        raise LinkRefused(view.get("message") or "도면 연결점을 읽지 못함")
+    ver, base = view["ver"], view["point"]["base"]
     if item.action == "links.pair":
-        b, _ = L._entity(pg, peer[0], peer[1])
-        b = by_id[b["entity_id"]]
-        mine, theirs = L._peer_of(pg, n, by_id), L._peer_of(pg, b, by_id)
-        breaking = [(x, y) for x, y in ((n, mine), (b, theirs)) if y is not None and y["entity_id"] not in (n["entity_id"], b["entity_id"])]
-        return L._impact_text(pg, by_id, [n, b], breaking)
-    if item.action == "links.unlink":
-        mine = L._peer_of(pg, n, by_id)
-        return L._impact_text(pg, by_id, [n] + ([mine] if mine else []), [(n, mine)] if mine else [])
-    op = next((o for o in ops if o.get("op_id") == op_id), None)
-    if op is None:
-        return None
-    touched = []
-    for e in op.get("ends") or []:
-        hit = next((x for x in pg["nodes"] if x.get("kind") == "continuation" and x.get("sheet")
-                    and L._end_key(L._end(x, nums)) == L._end_key(e)), None)
-        if hit is not None:
-            touched.append(hit)
-    breaking = []
-    if op["op"] == "link" and len(touched) == 2 and (L._peer_of(pg, touched[0], by_id) or {}).get("entity_id") == touched[1]["entity_id"]:
-        breaking = [(touched[0], touched[1])]
-    return L._impact_text(pg, by_id, touched, breaking)
+        out = api_links.pair(engine, me[0], me[1], peer[0], peer[1], ver, reason, base=base, dry=True)
+    elif item.action == "links.unlink":
+        out = api_links.unlink(engine, me[0], me[1], ver, reason, base=base, dry=True)
+    else:
+        out = api_links.clear(engine, me[0], me[1], ver, op_id, base=base, dry=True)
+    if not out.get("ok"):
+        raise LinkRefused(out.get("message") or "도면 연결 지정을 할 수 없음")
+    return out.get("confirm") or None
 
 
 def _links_check(engine):
@@ -672,8 +665,8 @@ def _links_check(engine):
             return got
         view, me, peer, op_id = got
         try:
-            ask = _link_ask(engine, item, me, peer, op_id)
-        except Exception as exc:  # noqa: BLE001 - 엔진 글을 못 만들면 상자를 띄우지 않는다
+            ask = _link_ask(engine, item, me, peer, op_id, item.args.get("reason") or "")
+        except Exception as exc:  # noqa: BLE001 - 엔진 글을 못 만들면(마른 실행이 거절하면) 상자를 띄우지 않는다
             return getattr(exc, "message", None) or "확인 글을 만들지 못함"
         item.targets = [me[0], me[1]] + (list(peer) if peer else []) + ([op_id] if op_id else [])
         item.basis = {"graph_id": me[0], "local_id": me[1], "ver": view["ver"], "base": view["point"]["base"], "confirm": ask,
@@ -716,9 +709,9 @@ def _links_details(engine):
         if (item.args.get("reason") or "").strip():
             rows.append({"label": "사유(AI가 씀)", "after": _show(item.args["reason"])})
         try:
-            ask = _link_ask(engine, item, me, peer, op_id)
-        except Exception:  # noqa: BLE001
-            return [{"label": "오류", "after": "확인 글을 만들지 못함"}]
+            ask = _link_ask(engine, item, me, peer, op_id, item.args.get("reason") or "")
+        except Exception as exc:  # noqa: BLE001
+            return [{"label": "오류", "after": getattr(exc, "message", None) or "확인 글을 만들지 못함"}]
         if ask:
             rows.append({"label": "엔진 확인", "after": ask})
         rows.append({"label": "지정한 사람", "after": "%s(확인한 사람)" % _who(engine)})

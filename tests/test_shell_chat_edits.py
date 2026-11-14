@@ -325,6 +325,15 @@ class LinksChatTest(RunBase):
         self.assertEqual(a[1:6], ("graph-SNP-M-101", "c1", "graph-SNP-M-102", "c9", "lv-1"))
         self.assertEqual((k["base"], k["confirm"]), ("pb-1", self.ask_text))
 
+    def test_an_engine_refusal_in_the_dry_run_is_shown_before_the_box(self):
+        def refuse(*a):
+            raise chat_edits.LinkRefused("이미 사람이 지정한 짝입니다.")
+        with mock.patch("hazop.shell.chat_edits._link_ask", refuse):
+            item = self.one("links.pair", graph_id="graph-SNP-M-101", local_id="c1", peer_graph_id="graph-SNP-M-102", peer_local_id="c9")
+        self.assertEqual(item["status"], "rejected")
+        self.assertIn("이미 사람이 지정한 짝", item["reason"])
+        self.assertEqual(self.saved, [])
+
     def test_same_drawing_and_missing_points_are_refused(self):
         self.assertIn("같은 도면", self.one("links.pair", graph_id="graph-SNP-M-101", local_id="c1",
                                          peer_graph_id="graph-SNP-M-101", peer_local_id="c2")["reason"])
