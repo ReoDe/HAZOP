@@ -17,14 +17,31 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from hazop.shell import api  # noqa: E402
 
 
+def unbound_allowed(prefix, modules):
+    """묶지 않는 접두는 그 모듈의 UNBOUND_PREFIXES에 있고 UNBOUND_REASONS에 이유가 적힌 것만 허용한다."""
+    return any(prefix in getattr(m, "UNBOUND_PREFIXES", ()) and ((getattr(m, "UNBOUND_REASONS", None) or {}).get(prefix) or "").strip() for m in modules)
+
+
 class RegistryContractTest(unittest.TestCase):
     def test_every_command_of_a_registered_area_is_project_bound(self):
+        modules = set(api.TOPIC_OWNER.values())
         heads = {t + "." for t in api.TOPIC_OWNER} | {"chat.action.", "sheet."}
         for topic in api.TOPIC_OWNER:
-            self.assertIn(topic + ".", api.PROJECT_BOUND, "%s. 접두가 프로젝트에 묶이지 않음" % topic)
+            if topic + "." not in api.PROJECT_BOUND:
+                self.assertTrue(unbound_allowed(topic + ".", modules), "%s. 접두가 프로젝트에 묶이지 않음(묶지 않을 거면 UNBOUND_PREFIXES와 UNBOUND_REASONS에 이유를)" % topic)
         for name in api.COMMANDS:
-            if name.split(".", 1)[0] + "." in heads:
+            head = name.split(".", 1)[0] + "."
+            if head in heads and not unbound_allowed(head, modules):
                 self.assertTrue(name.startswith(api.PROJECT_BOUND), name)
+
+    def test_leaving_a_prefix_unbound_needs_a_written_reason(self):
+        stub = types.SimpleNamespace(UNBOUND_PREFIXES=("loose.",), UNBOUND_REASONS={})
+        self.assertFalse(unbound_allowed("loose.", [stub]), "이유 없이 UNBOUND_PREFIXES만 둔 접두는 허용하지 않는다")
+        stub.UNBOUND_REASONS = {"loose.": "   "}
+        self.assertFalse(unbound_allowed("loose.", [stub]), "공백뿐인 이유도 허용하지 않는다")
+        stub.UNBOUND_REASONS = {"loose.": "이 PC의 설정이라 프로젝트와 상관없다"}
+        self.assertTrue(unbound_allowed("loose.", [stub]))
+        self.assertFalse(unbound_allowed("other.", [stub]), "목록에 없는 접두는 허용하지 않는다")
 
     def test_the_knowledge_graph_commands_refuse_another_project(self):
         self.assertIn("kg.", api.PROJECT_BOUND)
