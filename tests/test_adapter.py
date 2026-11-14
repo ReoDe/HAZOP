@@ -1116,6 +1116,14 @@ class PdfTagTest(unittest.TestCase):
         self.assertEqual((bubble["label_text"], bubble["tag"]), ("PDAH\n031", "PDAH-031"))
         self.assertEqual(ext["texts"], [])
 
+    def test_bubble_number_taken_by_outside_neighbour_comes_back(self):
+        # 008쪽 표시등 'ZL' / '310A': 번호 문단이 원 바로 오른쪽 아래 밸브 몸통에 먼저 붙는다. 원 안 번호는 원의 것이다
+        ext = pdf_run([circle(110, 110, 10), rect(121, 116, 124, 122), line((124, 119), (200, 119))],
+                      [word("ZL", 106, 104), word("310A", 105, 113.5)])
+        bubble = next(n for n in ext["nodes"] if n["label_text"].startswith("ZL"))
+        self.assertEqual(bubble["label_text"], "ZL\n310A")
+        self.assertNotIn("310A", [n["label_text"] for n in ext["nodes"] if n is not bubble])
+
     def test_duplicate_and_tied_prefix_leave_tag_empty(self):
         nodes, unknown = self.tags([("rect", ["RC-V111"]), ("rect", ["RC-V111"]), ("rect", ["CV-V201"]),
                                     ("circle", ["PT", "110"])])

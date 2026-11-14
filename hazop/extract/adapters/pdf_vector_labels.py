@@ -121,19 +121,30 @@ def _join_bubble_number(syms, blocks, label_of, taken, roles):
     """계기 원·상자 안의 기능 문자 줄과 그 아래 루프 번호 줄이 문단 둘로 갈린 것을 한 라벨로 잇는다. blocks의 그 자리를
     이은 문단으로 바꾸고(목록은 고치지만 원래 문단 dict는 바꾸지 않는다) 번호 문단을 taken에 넣는다.
     가운데 칸막이 선이 있는 표시 상자(072쪽 'PDAH' / '031')는 두 줄 간격이 문단 간격 상한보다 조금 넓어 따로 묶인다.
-    기호 라벨이 기능 문자뿐이고 기호 상자 안에 든 것, 번호 문단은 아무 기호의 라벨도 아니고 같은 기호 상자 안 아래쪽에
-    하나뿐인 것만 잇는다."""
+    기호 라벨이 기능 문자뿐이고 기호 상자 안에 든 것, 번호 문단은 같은 기호 상자 안 아래쪽에 하나뿐인 것만 잇는다.
+    번호 문단이 이미 다른 기호의 라벨이어도 그 기호 상자 밖이면(가까워서 붙은 것) 떼어 온다. 상자 안 번호는 그 상자
+    기호의 것이다(APR1400 008쪽 'ZL' / '310A' 표시등 아래 V310 밸브가 '310A'를 먼저 가져감)."""
+    owner = {bj: sj for sj, bj in label_of.items()}
+
+    def stacked(top, low):
+        """기능 문자 두 자 이상이 번호 바로 위 같은 세로줄에 있다(밸브 번호 원 옆 'N' 같은 표식 글자는 아님)."""
+        return len(top["text"].strip()) >= 2 and abs(_center(top["bbox"])[0] - _center(low["bbox"])[0]) <= \
+            0.5 * (low["bbox"][2] - low["bbox"][0])
     for si, bi in sorted(label_of.items()):
         top, box = blocks[bi], syms[si].bbox
         if top.get("rotated") or not ISA_LETTERS_RE.fullmatch(top["text"].strip()) or not _inside(_center(top["bbox"]), box):
             continue
-        below = [bj for bj, b in enumerate(blocks) if bj not in taken and bj not in roles and not b.get("rotated")
+        below = [bj for bj, b in enumerate(blocks) if bj not in roles and not b.get("rotated")
+                 and (bj not in taken or bj in owner and not _inside(_center(b["bbox"]), syms[owner[bj]].bbox)
+                      and stacked(top, b))
                  and LOOP_NUMBER_RE.fullmatch(b["text"].strip()) and _inside(_center(b["bbox"]), box)
                  and _center(b["bbox"])[1] > top["bbox"][3]]
         if len(below) == 1:
             low = blocks[below[0]]
             blocks[bi] = dict(top, text=top["text"].strip() + "\n" + low["text"].strip(), bbox=_union(top["bbox"], low["bbox"]),
                               line_boxes=list(top["line_boxes"]) + list(low["line_boxes"]))
+            if below[0] in owner:
+                del label_of[owner.pop(below[0])]
             taken.add(below[0])
 
 
