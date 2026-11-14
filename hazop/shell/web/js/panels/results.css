@@ -36,3 +36,4 @@
 .linkish { background: none; border: 0; padding: 0; color: var(--accent-ink); cursor: pointer; text-align: left; font: inherit; }
 .rec .linkish { text-decoration: underline; }
 .tracebox input { flex: 1; min-width: 160px; height: 28px; }
+.runplan .conn-paid { color: var(--warn); font-weight: 600; }

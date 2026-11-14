@@ -523,6 +523,46 @@ class RunTest(Base):
         self.assertEqual(done["reason"], "stopped")
 
 
+
+class RunConnTest(RunTest):
+    """A8 검토 R1: 실행 카드는 실제로 쓸 연결(방식·모델·요금)을 보이고, 실행은 카드가 본 연결(conn_ver)과 지금 연결이 같을 때만 돈다."""
+
+    CONN = {"kind": "analysis", "via": "api", "method_name": "API 키(과금)", "model": "m", "model_name": "모델 M", "can_start": True,
+            "label": "정상", "guide": "", "paid": True, "usd": 0.4, "cost_text": "예상 요금 약 $0.40", "conn_ver": "cv-1"}
+
+    def setUp(self):
+        super().setUp()
+        self.engine.ai.conn = object()      # 연결 설정이 있는 엔진(실제 앱)처럼
+        from hazop.shell import api_settings
+        self.api_settings = api_settings
+        for p in (mock.patch.object(api_settings, "run_conn", lambda engine, kind, calls=0, sections=0: dict(self.CONN, calls=calls)),):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_plan_shows_the_connection_that_will_actually_be_used(self):
+        r = self.call("results.run_plan", {"scope": "all"})
+        self.assertTrue(r["ok"], r)
+        conn = r["data"]["conn"]
+        self.assertEqual((conn["method_name"], conn["paid"], conn["conn_ver"]), ("API 키(과금)", True, "cv-1"))
+        self.assertEqual(conn["calls"], r["data"]["calls"])
+        with mock.patch.object(self.api_settings, "run_conn", lambda engine, kind, calls=0, sections=0: dict(self.CONN, can_start=False, label="키 없음")):
+            r2 = self.call("results.run_plan", {"scope": "all"})
+        self.assertEqual((r2["data"]["can_start"], r2["data"]["state"]), (False, "키 없음"), "시작 가능 여부도 그 연결로 정한다")
+
+    def test_a_changed_connection_is_refused_before_any_call(self):
+        def changed(engine, kind, ver):
+            raise self.api_settings.Refused("conn_changed", "AI 연결이 화면에 보인 것과 달라졌습니다")
+        calls = []
+        with mock.patch.object(self.api_settings, "same_conn", changed):
+            r = self.run_with(lambda *x: calls.append(x), conn_ver="cv-old")
+        self.assertEqual((r["ok"], r["error"]["code"]), (False, "conn_changed"))
+        self.assertEqual(calls, [], "AI를 부르지 않는다")
+        self.assertFalse(self.engine.analysis.running)
+        with mock.patch.object(self.api_settings, "same_conn", lambda engine, kind, ver: self.CONN):
+            r = self.run_with(fake_run_unit(), conn_ver="cv-1")
+        self.assertTrue(r["ok"], r)
+
+
 class ScaleTest(unittest.TestCase):
     """525구간 × 44편차(23,100칸) 행렬의 읽기 계산·전송 크기(규격 §5.4 측정). 파일 없이 합성 결과로 본다."""
 

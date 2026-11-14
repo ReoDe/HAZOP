@@ -459,10 +459,23 @@ def _run_plan(engine, a):
     status = ai.status() if ai is not None else {}
     terms = bool(getattr(ai, "terms_acked", lambda: True)()) if ai is not None else True
     s = analysis_run.summarize(units)
-    return dict(s, can_start=bool(status.get("can_start")) and bool(units), state=status.get("label") or "", guide=status.get("guide") or "",
+    conn = _run_conn(engine, units)
+    if conn is not None:     # 실제로 쓸 연결(방식·모델·요금, A8 검토 R1): 카드가 구독이라고 고정해 보이지 않게
+        can, label, guide = conn["can_start"], conn["label"], conn["guide"]
+    else:                    # 연결 설정이 없는 엔진(시험의 가짜 AI): 옛 상태 읽기
+        can, label, guide = bool(status.get("can_start")), status.get("label") or "", status.get("guide") or ""
+    return dict(s, conn=conn, can_start=can and bool(units), state=label, guide=guide,
                 needs_terms=not terms, running=_run_state(engine)["running"],
                 empty_text=None if units else {"node": "분석할 구간의 행을 고르세요(확정한 구간만 분석합니다).",
                                               "failed": "다시 실행할 실패 칸이 없습니다.", "cell": "분석할 칸이 없습니다."}.get(a["scope"], "분석할 칸이 없습니다."))
+
+
+def _run_conn(engine, units):
+    """api_settings.run_conn(분석 연결) 또는 None(연결 설정이 없는 엔진)."""
+    if getattr(engine.ai, "conn", None) is None:
+        return None
+    from hazop.shell import api_settings
+    return api_settings.run_conn(engine, "analysis", calls=len(units), sections=len({u["node_id"] for u in units}))
 
 
 def _ack_terms(engine, a):
@@ -488,6 +501,12 @@ def _run(engine, a):
         raise api.CommandError("failed", status.get("guide") or "AI 연결을 쓸 수 없어 분석을 시작하지 않았습니다.")
     if ai is not None and hasattr(ai, "terms_acked") and not ai.terms_acked():
         raise api.CommandError("terms", "구독 사용 안내를 먼저 확인해 주세요.")
+    if a.get("conn_ver") is not None and getattr(ai, "conn", None) is not None:   # 카드가 보인 연결과 지금 연결이 같을 때만(채팅 길은 자기 확인을 거침)
+        from hazop.shell import api_settings
+        try:
+            api_settings.same_conn(engine, "analysis", a["conn_ver"])
+        except api_settings.Refused as exc:
+            raise api.CommandError(exc.code, exc.message)
     try:
         client = ai.make_client()
     except ValueError as exc:
@@ -572,6 +591,7 @@ def register(commands):
     put("run_plan", {"scope": (v_enum(*("all", "node", "cell", "failed")), True), "node_id": (v_str(1, 40), False),
                      "deviation_id": (v_str(1, 20), False)}, _run_plan, "분석 실행 전 확인: 호출 수·칸 수·연결 상태")
     put("run", {"scope": (v_enum(*("all", "node", "cell", "failed")), True), "node_id": (v_str(1, 40), False),
-                "deviation_id": (v_str(1, 20), False)}, _run, "AI 분석을 시작한다(구독 연결)")
+                "deviation_id": (v_str(1, 20), False), "conn_ver": (v_str(1, 40), False)}, _run,
+        "AI 분석을 시작한다(실행 카드가 보인 연결 conn_ver와 지금 연결이 다르면 conn_changed로 거절)")
     put("stop", {}, _stop, "분석을 멈춘다(남은 호출을 부르지 않음)")
     put("ack_terms", {}, _ack_terms, "구독 사용 안내를 확인했다고 기록한다")

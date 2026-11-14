@@ -57,7 +57,8 @@ function PlanCard() {
   if (!p) return null;
   return html`<div class="card runplan" role="dialog" aria-label="분석 실행 확인">
     <h3>AI 분석 실행</h3>
-    ${p.empty_text ? html`<p>${p.empty_text}</p>` : html`<p>${p.cells}칸을 ${p.calls}번 호출해 분석합니다(약 ${Math.max(1, Math.round(p.seconds / 60))}분). Claude 구독 한도를 씁니다.</p>
+    ${p.empty_text ? html`<p>${p.empty_text}</p>` : html`<p>${p.cells}칸을 ${p.calls}번 호출해 분석합니다(약 ${Math.max(1, Math.round(p.seconds / 60))}분).</p>
+      ${p.conn ? html`<div class=${"small" + (p.conn.paid ? " conn-paid" : "")} aria-label="쓸 연결">${p.conn.method_name} · ${p.conn.model_name} · ${p.conn.cost_text}</div>` : null}
       <div class="muted small">사람이 쓴 항목은 바꾸지 않고, 잠긴 구간과 적용됨 구간은 건너뜁니다. 연결: ${p.state || "확인 안 함"}</div>`}
     ${!p.can_start && !p.empty_text ? html`<${Notice} kind="warn" icon="alert-triangle">${p.guide || "AI 연결을 쓸 수 없습니다."}<//>` : null}
     ${p.needs_terms && p.can_start ? html`<${Notice} kind="info">처음 실행입니다. 구독 사용 안내를 확인한 것으로 기록합니다.<//>` : null}

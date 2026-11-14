@@ -189,10 +189,15 @@ export async function startRun() {
   if (!p) return null;
   try {
     if (p.needs_terms) await cmd("results.ack_terms");
-    const r = await cmd("results.run", p.args.scope ? Object.assign({ scope: p.scope }, p.args) : { scope: p.scope });
+    const args = Object.assign({ scope: p.scope }, p.args, p.conn ? { conn_ver: p.conn.conn_ver } : {});
+    const r = await cmd("results.run", args);
     results.set({ plan: null, error: null });
     return r;
-  } catch (e) { results.set({ error: errorText(e) }); return null; }
+  } catch (e) {
+    results.set({ error: errorText(e) });
+    if (e && e.code === "conn_changed") await planRun(p.scope);   // 연결이 바뀌었으면 카드를 새 연결로 다시 보인다
+    return null;
+  }
 }
 
 export async function stopRun() {
