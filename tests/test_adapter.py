@@ -638,6 +638,39 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(mv["evidence"]["symbol_marks"], ["M"])
         self.assertEqual(len(ext["relations"]), 2)
 
+    @staticmethod
+    def letter_box_valve(letter, stem_end_x=145):
+        """나비 밸브 몸통 위 5.8pt 글자 상자와 (145, 100)에서 내려오는 축(012쪽 S 상자 치수) → (추출 결과, 밸브 노드)."""
+        ext = pdf_run([rect(80, 100, 100, 120), rect(200, 100, 220, 120),
+                       prim([(140, 107), (145, 110), (140, 113), (140, 107)], closed=True),
+                       prim([(150, 107), (145, 110), (150, 113), (150, 107)], closed=True),
+                       line((100, 110), (140, 110)), line((150, 110), (200, 110)),
+                       rect(142.1, 94.2, 147.9, 100), line((145, 100), (stem_end_x, 107.5))],
+                      [word(letter, 143.5, 95.5, size=4.0), word("V-1", 141, 116)])
+        return ext, [n for n in ext["nodes"] if n["label_text"] == "V-1"][0]
+
+    def test_letter_box_on_valve_stem_merges_into_valve(self):
+        # 범례 1.7-1 1/4 L1-078·솔레노이드 구동부: 밸브 위 짧은 세로 축 끝 글자 상자는 밸브의 한 부분이다(008쪽 P, 012쪽 S).
+        # 사선 지시선에 매달린 상자(062쪽 G)는 합치지 않는다
+        ext, valve = self.letter_box_valve("G")
+        self.assertEqual(valve["evidence"]["actuator_marks"], ["G"])
+        self.assertNotIn("G", [n["label_text"] for n in ext["nodes"]])
+        self.assertEqual(len(ext["relations"]), 2)  # 축은 밸브 안의 선이다
+        self.assertIn("actuator_merged", [o.get("reason") for o in ext["drawing"]["ignored_objects"]])
+        ext, valve = self.letter_box_valve("G", stem_end_x=141.5)
+        self.assertNotIn("actuator_marks", valve["evidence"])
+        self.assertIn("G", [n["label_text"] for n in ext["nodes"]])
+
+    def test_letter_box_kind_only_where_legend_defines_letter(self):
+        # 범례 1.7-1 1/4 SOLENOID OPERATORS: S 상자를 단 밸브는 전자 밸브다. 범례에 없는 글자(G)는 몸통 kind를 그대로 둔다
+        _, plain = self.letter_box_valve("G")
+        _, valve = self.letter_box_valve("S")
+        self.assertEqual(valve["kind"], "solenoid_valve")
+        self.assertEqual(valve["attributes"], dict(plain["attributes"], actuator_type="solenoid", motive_power="electric"))
+        self.assertNotEqual(plain["kind"], "solenoid_valve")
+        self.assertEqual(valve["evidence"]["classification_basis"], plain["evidence"]["classification_basis"]
+                         + "+actuator_mark:S")
+
     def test_box_check_valve_between_pipes(self):
         # APR1400 상자형 체크밸브 '|\|'(16쪽 V405와 같은 치수): 세로 막대 2.9pt 가운데에 배관 끝이 닿아 막대 끝과 배관 끝이
         # 1.45pt로 end_tol 안이다. 예전에는 배관 조각으로 이어져 노드가 없었다

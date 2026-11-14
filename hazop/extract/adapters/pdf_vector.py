@@ -1412,6 +1412,49 @@ def _classify(sym, text, degree, prm, marks=()):
 
 # ---------------------------------------------------------------- 태그
 
+# 범례가 뜻을 정한 축 끝 글자 상자 → (kind, 속성, kind가 없을 때 말고도 올려도 되는 몸통 kind, 몸통이 밸브여야 하는지).
+# 범례 1.7-1 1/4: S = SOLENOID OPERATORS (SPRING RETURN) FOR VALVES(어느 밸브 몸통에나 붙는다. 속성은 사전
+# apr1400.solenoid_operator와 같다). P = L1-078 PILOT OPERATED SAFETY RELIEF(P 상자·축·스프링 단 앵글 밸브가 한 기호다.
+# 사전 apr1400.angle_relief_valve와 같은 psv). 그 밖의 글자는 종류를 정하지 않는다
+LETTER_KIND = {"S": ("solenoid_valve", {"actuator_type": "solenoid", "motive_power": "electric"}, ("manual_valve",), True),
+               "P": ("psv", {}, (), False)}
+LETTER_BOX_SQUARE_RATIO = 0.2  # 글자 상자: |폭-높이| ≤ 긴 변 × 비율
+LETTER_STEM_RATIO = 2.5        # 글자 상자 축 길이 상한 = 상자 긴 변 × 비율(008쪽 P 상자 5.3pt·축 약 9pt)
+
+
+def _letter_boxes(syms, chains, blocks, label_of, unclassified, prm):
+    """범례 1.7-1 1/4: 밸브 위로 곧게 선 짧은 세로 축 끝의 글자 상자(L1-078 파일럿 작동 안전방출 밸브의 P, 솔레노이드
+    구동부의 S)는 밸브 기호의 한 부분이다 → [(상자 기호, 축 반대 끝 기호, 글자)]. 상자는 종류를 못 정한 기호이고,
+    안에 대문자 한 글자가 있고, 축 정렬 사각형 하나로 그렸고, 실선이 그 축 하나뿐이어야 한다. 축은 꺾이지 않은 세로선이고
+    길이가 상자 크기에 비례한 상한 안이며, 반대 끝이 다른 기호여야 한다(분기점·떠 있는 끝은 아니다). 사선 지시선에
+    매달린 상자(062쪽 G)와 원(072쪽 P)은 여기 들지 않는다."""
+    solid_at = collections.defaultdict(list)
+    for ch in chains:
+        if ch.get("dashed"):
+            continue
+        for k in (0, 1):
+            v = ch["ends"][k][0]
+            if v[0] == "sym":
+                solid_at[id(v[1])].append((ch, ch["ends"][1 - k][0]))
+    out = []
+    for si in sorted(unclassified):
+        s, bi = syms[si], label_of.get(si)
+        if bi is None or len(solid_at[id(s)]) != 1 or not re.fullmatch(r"[A-Z]", blocks[bi]["text"].strip()):
+            continue
+        side = max(_w(s.bbox), _h(s.bbox))
+        if not (_inside(_center(blocks[bi]["bbox"]), s.bbox) and len(s.bodies) == 1 and not s.strokes
+                and _is_axis_rect(s.bodies[0], prm["axis_rect_tol"]) and min(_w(s.bbox), _h(s.bbox)) >= prm["stroke_symbol_min"]
+                and abs(_w(s.bbox) - _h(s.bbox)) <= LETTER_BOX_SQUARE_RATIO * side):
+            continue
+        ch, far = solid_at[id(s)][0]
+        a, b = ch["pts"][0], ch["pts"][-1]
+        if (far[0] == "sym" and far[1] is not s and len({(round(q[0], 2), round(q[1], 2)) for q in ch["pts"]}) == 2
+                and abs(a[0] - b[0]) <= prm["touch_tol"] and abs(a[1] - b[1]) <= LETTER_STEM_RATIO * side
+                and side <= max(_w(far[1].bbox), _h(far[1].bbox))):
+            out.append((s, far[1], blocks[bi]["text"].strip()))
+    return out
+
+
 def _merged_line(ch, merge_into, number_ids):
     """합친 기호와 그 밸브 사이 선(축), 번호 원에서 떠 있는 지시선이면 그 이유. 아니면 None."""
     ends = [v[1] for v, _, _ in ch["ends"] if v[0] == "sym"]
@@ -1427,8 +1470,12 @@ def _merged_line(ch, merge_into, number_ids):
     return None
 
 
-def _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, local_of, chains, acts_on, numbers_on):
+def _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, local_of, chains, acts_on, numbers_on,
+                  boxes_on):
     """S5(D6): 계획한 구동부·번호 원을 노드 kind가 정해진 뒤 밸브에 합친다 → {합친 기호 id: 밸브 기호}.
+    - 글자 상자(_letter_boxes): 상자 kind가 없고 축 반대 끝 노드가 kind 없음이나 밸브면 합치고 글자를
+      evidence.actuator_marks에 남긴다. 상자가 하나뿐이고 사전 구동부가 없으며 범례가 그 글자의 뜻을 정했으면
+      (LETTER_KIND) kind를 올린다.
     - 구동부: 밸브 kind가 없거나 수동이면 범례가 정한 kind로 올리고 actuator_type·motive_power를 단다. 이미 구동 밸브면
       속성만 단다(kind가 다르면 합치지 않는다). 그 밖의 kind(체크 밸브, 글자로 정한 펌프 등)나 범례에 없는 조합은
       합치지 않는다(구동부를 노드로 남겨 정보를 잃지 않는다).
@@ -1444,7 +1491,18 @@ def _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, 
         if nd is None:
             continue
         kind, changed = nd["kind"], False
+        boxes = [(b, t) for b, t in boxes_on.get(id(sy), []) if node_of.get(id(b)) is not None
+                 and node_of[id(b)]["kind"] is None]
         entries = acts_on.get(id(sy), [])
+        if boxes and (kind is None or rules.KIND_CATEGORY.get(kind) == "valve"):
+            nd["evidence"]["actuator_marks"] = sorted(t for _, t in boxes)
+            merge_into.update({id(b): sy for b, _ in boxes})
+            rule = LETTER_KIND.get(boxes[0][1]) if len(boxes) == 1 and not entries else None
+            if rule and (kind is None or kind in rule[2]) and (nd["category"] == "valve" or not rule[3]):
+                nd.update(kind=rule[0], category=rules.KIND_CATEGORY[rule[0]], classification="classified")
+                nd["evidence"]["classification_basis"] = "+".join(
+                    filter(None, (nd["evidence"]["classification_basis"], "actuator_mark:" + boxes[0][1])))
+                nd["attributes"] = dict(nd["attributes"], **rule[1])
         if entries and (kind is None or rules.KIND_CATEGORY.get(kind) == "valve"):
             new_kind, extra = _actuated_kind([e for _, e in entries])
             if new_kind and kind in (None, "manual_valve"):
@@ -1884,6 +1942,12 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         if target is not None:
             numbers_on.setdefault(id(target), []).append((sy, blocks[bi]["text"].strip()))
 
+    letter_boxes = _letter_boxes(syms, chains, blocks, label_of, {si for si, h in hits.items() if shape_of[si][0] is None
+                                                                  and h.outcome != "matched"}, prm)
+    boxes_on, box_ids = {}, {id(b) for b, _, _ in letter_boxes}
+    for box, v, letter in letter_boxes:
+        if id(v) not in box_ids and id(v) not in plan_into:
+            boxes_on.setdefault(id(v), []).append((box, letter))
     positions, numbered = _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, marks, drop, prm,
                                         set(numbers_on))
     node_out, locations, local_of, instrument_ids, dropped, label_lines = [], [], {}, set(), [], {}
@@ -1967,7 +2031,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         locations.append({"object_id": sid, "local_id": local_id, "coordinate_space": COORDINATE_SPACE,
                           "unit": UNIT, "bbox": _box_out(s.bbox), "approximate": False})
     merge_into, number_ids = _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, local_of, chains,
-                               acts_on, numbers_on)
+                               acts_on, numbers_on, boxes_on)
     _apply_positions(syms, node_out, unknowns, local_of, positions, blocks)
     _assign_tags(node_out, unknowns, instrument_ids, {local_of[id(syms[si])][0] for si in numbered}, label_lines)
     tee_ids = {}
@@ -2006,7 +2070,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             dropped.append({"source_object_id": sid, "label_text": "", "bbox": _box_out(_bbox_pts(ch["pts"])),
                             "reason": why})
             continue  # 구동부 축·번호 원 지시선: 합친 밸브 안의 선이다(관계 번호는 비워 둔다)
-        moved = any(v[0] == "sym" and id(v[1]) in merge_into for v, _, _ in ch["ends"])
+        # 합친 구동부로 들어가던 선은 구동 신호로 본다. 글자 상자로 들어가던 선(P 상자의 파일럿 배관)은 제 선 종류를 지킨다
+        moved = any(v[0] == "sym" and id(v[1]) in merge_into and id(v[1]) not in box_ids for v, _, _ in ch["ends"])
         endpoints, resolved = [], True
         for end, (v, pt, basis) in zip(("source", "target"), ch["ends"]):
             r = ref(v)
