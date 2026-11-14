@@ -51,7 +51,7 @@ from .pdf_vector_grouping import (
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
 )
-from .pdf_vector_flow import _chain_flow, _propagate_flows, _vent_ends, continuation_flow, end_arrow
+from .pdf_vector_flow import _chain_flow, _propagate_flows, _vent_ends, arrow_axis, continuation_flow, end_arrow
 from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels, parse_label
 from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, POSITION_CODE_RE, POSITION_TEXT_RE, NUMBER_PLATE_RE, VALVE_TAG_RE,
                                 _text_blocks, _upright_blocks, _bubble_like, _assign_tags, _join_bubble_number)
@@ -868,6 +868,23 @@ def _cut_through_bodies(pieces, syms, prm):
     return out, att
 
 
+def _arrow_lands(arrow, i, pieces, prm):
+    """조각 i 끝의 바깥 화살촉(화살촉, 끝 점)의 끝이 다른 조각에 비스듬히(화살촉 축과 나란하지 않게) 닿는가.
+    화살촉 축과 나란한 선은 그 화살촉이 얹힌 같은 배관이다. 화살촉 너머로 이어지는 토막(SNP-M-401 스캔: 체크밸브 앞
+    1.7pt 토막)이나 화살촉 밑에 겹쳐 그은 배관(APR1400 32번 쪽)은 늘이지 않아도 이어져 있고, 늘이면 되돌아가는 사슬이
+    된다."""
+    tip, d = arrow[1], arrow_axis(arrow[0])[1]
+    for j, pc in enumerate(pieces):
+        if j == i:
+            continue
+        for a, b in _segs(pc["pts"]):
+            L = math.dist(a, b)
+            if L > 0 and _seg_dist(tip, a, b)[0] <= prm["end_tol"] and \
+                    abs((b[0] - a[0]) * d[0] + (b[1] - a[1]) * d[1]) / L <= 0.9:
+                return True
+    return False
+
+
 def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
     """→ (tees [(x, y)], chains [{pts, ends:[(vertex, point, basis)], evidence}])."""
     # 선 끝 분류
@@ -909,6 +926,12 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
             s = None
         if s is not None:
             att[(i, k)] = (s, basis)
+        elif arrow and _arrow_lands(arrow, i, pieces, prm):
+            # 화살촉 끝이 다른 배관에 닿으면 그 배관으로 흘러드는 분기·꺾임이다(APR1400 033쪽 V1022A 위). 선 끝을 화살촉
+            # 끝까지 늘여 분기·끝 묶기가 화살촉 끝에서 이뤄지게 한다
+            pts = pieces[i]["pts"]
+            pieces[i]["pts"] = [arrow[1]] + pts[1:] if k == 0 else pts[:-1] + [arrow[1]]
+            free.append((i, k, arrow[1]))
         else:
             free.append((i, k, pt))
     # 엇갈림 끊김(도면 관례: 한쪽 선을 다른 선 앞뒤에서 끊어 그림)은 분기가 아니라 그 선을 건너 이어지는 배관이다

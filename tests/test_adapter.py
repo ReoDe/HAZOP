@@ -724,7 +724,7 @@ class PdfVectorRuleTest(unittest.TestCase):
         inward = pdf_run(base + [prim([(302.9, 109.3), (300, 110), (302.9, 110.7), (302.9, 109.3)], closed=True, fill=True)])
         self.assertEqual(len(inward["nodes"]), 1)
         leader = pdf_run(base + [head(300), rect(100, 200, 140, 240), line((303.5, 60), (303.5, 160))])
-        self.assertEqual(sum(1 for n in leader["nodes"] if n["geometry"]["x"] >= 299), 0)
+        self.assertEqual(sum(1 for n in leader["nodes"] if n["geometry"]["x"] >= 299 and n["kind"] != "tee"), 0)
         dashed = line((140, 110), (300, 110))
         dashed["dash"] = [[3.0, 2.0], 0.0]
         self.assertEqual(len(pdf_run([rect(100, 90, 140, 130), dashed, head(300)])["nodes"]), 1)
@@ -757,6 +757,36 @@ class PdfVectorRuleTest(unittest.TestCase):
         at = {n["local_id"]: n["geometry"]["y"] for n in ext["nodes"]}
         self.assertEqual(sorted(tuple(sorted(at[e["node_local_id"]] for e in r["endpoints"])) for r in ext["relations"]),
                          [(147.1, 200)])
+
+    def test_arrowhead_tip_on_pipe_middle_is_branch(self):
+        # APR1400 033쪽 V1022A 위·128쪽 12인치 모관: 배관이 흐름 화살촉으로 끝나고 그 끝이 다른 배관 중간에 닿으면 분기다.
+        # 화살촉 밑동은 그 배관에서 3pt 넘게 떨어져 있다
+        ext = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), rect(200, 200, 240, 240),
+                       line((140, 110), (300, 110)), line((220, 200), (220, 113.1)),
+                       prim([(219.2, 113.1), (220, 110), (220.8, 113.1), (219.2, 113.1)], closed=True, fill=True)])
+        self.assertEqual([n["kind"] for n in ext["nodes"]].count("tee"), 1)
+        self.assertEqual(len(ext["relations"]), 3)
+        # 화살촉 너머로 같은 방향의 짧은 토막이 이어지면 배관 중간의 흐름 화살촉이다. 늘이지 않고 토막을 지나 기호에
+        # 붙는다(SNP-M-401 스캔: 체크밸브 앞 화살촉 너머 1.7pt 토막)
+        ext = pdf_run([rect(260, 330, 300, 360), rect(338.2, 333.1, 373.9, 354.5), line((300, 343.2), (336.5, 343.2)),
+                       line((338.2, 343.3), (336.5, 343.3)),
+                       prim([(334.2, 342.5), (337.1, 343.3), (334.2, 344.1), (334.2, 342.5)], closed=True, fill=True)])
+        at = {n["local_id"]: n["geometry"]["x"] for n in ext["nodes"]}
+        self.assertEqual(sorted(tuple(sorted(at[e["node_local_id"]] for e in r["endpoints"])) for r in ext["relations"]),
+                         [(260, 338.2)])
+
+    def test_flange_beside_nozzle_stub_of_plate_length(self):
+        # APR1400 025쪽 열교환기: 배관이 플랜지(판 둘)를 지나 짧은 토막으로 노즐에 닿는다. 두 노즐 토막은 길이·방향이 같아
+        # 판 짝으로도 잡히지만 플랜지 판 가운데에 수직으로 닿는 배관이다. 플랜지를 건너 배관이 열교환기까지 이어진다
+        prims = [rect(759.6, 137.8, 781.6, 152.4), rect(600, 120, 620, 170)]
+        for y in (141.4, 148.8):
+            prims += [line((620, y), (753.2, y)), line((753.2, y - 1.47), (753.2, y + 1.47)),
+                      line((755.0, y - 1.47), (755.0, y + 1.47)), line((755.0, y), (759.6, y))]
+        ext = pdf_run(prims)
+        self.assertNotIn("tee", [n["kind"] for n in ext["nodes"]])
+        at = {n["local_id"]: n["geometry"]["x"] for n in ext["nodes"]}
+        self.assertEqual(sorted(tuple(sorted(at[e["node_local_id"]] for e in r["endpoints"])) for r in ext["relations"]),
+                         [(600, 759.6), (600, 759.6)])
 
     def test_alarm_box_words_are_not_equipment(self):
         ext = pdf_run([rect(100, 100, 180, 120), rect(300, 100, 380, 120)],

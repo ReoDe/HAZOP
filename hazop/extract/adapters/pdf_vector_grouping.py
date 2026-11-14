@@ -516,9 +516,13 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
 
     def pipe_end(a, away):
         """판 a 가운데에 바깥(away 쪽, 배관 축 부호)에서 닿는 배관 끝. 하나일 때만 그 (선, 끝 점). 판에 닿은 짧은
-        토막의 반대 끝에서 이어지는 선은 같은 배관이라 따로 세지 않는다(APR1400 016쪽 OR08D 아래 0.5pt 토막)."""
+        토막의 반대 끝에서 이어지는 선은 같은 배관이라 따로 세지 않는다(APR1400 016쪽 OR08D 아래 0.5pt 토막).
+        판 길이의 배관 토막도 본다. 플랜지와 장비 노즐 사이 짧은 토막은 옆 노즐 토막과 길이·방향이 같아 판 짝으로
+        잡히지만, 끝이 판 가운데에 수직으로 닿는 선은 판이 아니라 배관이다(APR1400 025쪽 열교환기 노즐)."""
         hits = []
-        for q in others:
+        for q in polys:
+            if q is a["p"]:
+                continue
             for k in (0, -1):
                 e, nxt = q["pts"][k], q["pts"][1 if k == 0 else -2]
                 if math.hypot(e[0] - a["c"][0], e[1] - a["c"][1]) <= prm["plate_touch_tol"]:
