@@ -1,5 +1,5 @@
 // 도면 패널(규격 §2.1·§2.3 ①등록 줄). 끌어 놓기 자리(파일은 Qt가 받는다), 도면·문서 목록, 작업 줄, 추출 카드의 AI 검토 토글·호출 상한.
-import { html } from "../ui/html.js";
+import { Fragment, html } from "../ui/html.js";
 import { store, useStore } from "../store.js";
 import { useEffect, useState } from "../../vendor/hooks.module.js";
 import { cmd, onChanged, read } from "../bridge.js";
@@ -7,6 +7,7 @@ import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice, Switch } from "../ui/parts.js";
 import { SourceConflicts } from "./drawings_sources.js";
 import { focusSheet as openTitleblock } from "./titleblock.js";
+import { DrawingExclude, DrawingExcludedChip } from "./nodes_screen.js";      // 범례·기호표 도면을 분석에서 빼고 다시 넣는 부품(구간 쪽)
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
@@ -102,13 +103,15 @@ export function DrawingsPanel({ onOpen, onClose }) {
         ${app.ai_review && !conn.can_start ? html`<${Notice} kind="warn" icon="alert-triangle">AI 연결이 준비되지 않아 검토는 건너뜁니다.<//>` : null}</div>
       <div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">도면 ${data.drawings.length}장${data.project_id ? " · 프로젝트 " + data.project_id : ""}</div>
         ${data.drawings.length === 0 ? html`<${Notice}>등록된 도면이 없습니다. 위 자리에 도면 파일을 끌어 놓으면 등록하고 읽습니다.<//>` : html`<div class="list">
-          ${data.drawings.map((d) => html`<div class=${"row drow" + (d.graph_id === sheet ? " on" : "")} key=${d.graph_id}>
+          ${data.drawings.map((d) => html`<${Fragment} key=${d.graph_id}><div class=${"row drow" + (d.graph_id === sheet ? " on" : "")}>
             <div class="thumb" aria-hidden="true"></div>
             <div class="main"><b>${d.drawing_number || d.name}</b><span>${d.title || "표제란 확인 전"}</span></div>
             ${d.unknowns ? html`<${Chip} kind="warn" title="추출에서 읽지 못한 항목">미확인 ${d.unknowns}<//>` : html`<${Chip} kind="ok" icon="check">읽음<//>`}
             ${estOf(d.graph_id) ? html`<${Chip} kind="ai" title="AI 검토를 돌리면 이 도면에서 부를 호출 수(예상)">호출 ${estOf(d.graph_id).calls}<//>` : null}
+            <${DrawingExcludedChip} graphId=${d.graph_id} />
             <${Btn} sm=${true} kind="ghost" label=${(d.drawing_number || d.name) + " 표제란"} title=${d.title ? "표제란 확정·고치기" : "표제란을 확인해 도면 번호와 제목을 확정합니다"} onClick=${() => openTitleblock(d.graph_id)}>표제란<//>
-            <${Btn} sm=${true} label=${(d.drawing_number || d.name) + " 열기"} onClick=${() => onOpen(d.graph_id)}>열기<//></div>`)}</div>`}</div>
+            <${Btn} sm=${true} label=${(d.drawing_number || d.name) + " 열기"} onClick=${() => onOpen(d.graph_id)}>열기<//></div>
+            ${d.graph_id === sheet ? html`<${DrawingExclude} graphId=${d.graph_id} />` : null}<//>`)}</div>`}</div>
       <${SourceConflicts} />
       <${DexpiExport} />
       ${data.documents.length ? html`<div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">등록 자료 ${data.documents.length}건</div><div class="list">
