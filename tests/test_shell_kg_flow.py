@@ -158,6 +158,49 @@ class KgPanelFlowTest(ShellBase):
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
         self.assertEqual(win.view.interceptor.blocked, [], "실행 중 원격 요청 0")
 
+    def pick_explore(self, win, what):
+        self.js(win, "(() => { const s = document.querySelector('.kg-explore-pick'); s.value = %s; s.dispatchEvent(new Event('change', {bubbles: true})); })()"
+                % json.dumps(what))
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.kg-explore')"), 15), "살펴보기 결과 줄이 나오지 않음")
+        return self.js(win, "document.querySelector('.kg-explore').innerText")
+
+    def test_explore_menu_highlights_what_the_engine_counted(self):
+        """완료 목록 3 B6: '살펴보기'에서 고르면 엔진이 센 건수가 보이고 그 노드가 강조된다. 고른 구성요소 없이 도달 범위를 고르면 사유가 나온다."""
+        win = self.window()
+        self.mount(win)
+        for what, label in (("orphans", "고아 지식"), ("gaps", "근거 공백")):
+            text = self.pick_explore(win, what)
+            self.assertIn(label, text)
+            r = api_kg.explore(win.engine, what)
+            if r["active"]:
+                self.assertIn("%s곳" % format(r["count"], ","), text)
+            else:
+                self.assertIn(r["reason"][:20], text)
+        text = self.pick_explore(win, "reach")
+        self.assertIn("고르면", text)
+        self.click(win, ".kg-explore button")
+        self.assertTrue(wait_for(lambda: not self.js(win, "!!document.querySelector('.kg-explore')"), 10))
+        self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
+
+    def test_study_toggle_and_link_detail(self):
+        """완료 목록 3 B6: '검토 결과'를 켜면 검토 층을 엔진에서 다시 읽고, 선을 누르면 오른쪽에 그 선의 근거가 나온다."""
+        win = self.window()
+        self.mount(win)
+        btn = "[...document.querySelectorAll('.kg-tools button')].find((b) => b.innerText.trim() === '검토 결과')"
+        self.js(win, btn + ".click()")
+        self.assertTrue(wait_for(lambda: self.js(win, btn + ".getAttribute('aria-pressed')") == "true", 10))
+        self.assertTrue(wait_for(lambda: "검토 결과:" in self.text(win), 10), self.text(win)[-300:])
+        lid = self.js(win, "(() => { const l = window.__hzKg.graphData().links.find((x) => x.kind === 'pipe'); return l && l.id; })()")
+        self.assertTrue(lid)
+        self.js(win, "import(new URL('js/panels/kg_state.js', document.baseURI).href).then((K) => K.selectLink(%s))" % json.dumps(lid))
+        self.assertTrue(wait_for(lambda: "배관" in (self.js(win, "(document.querySelector('.kg-side')||{}).innerText") or ""), 10))
+        side = self.js(win, "document.querySelector('.kg-side').innerText")
+        self.assertIn("근거", side)
+        self.assertIn("→", side)
+        self.js(win, btn + ".click()")
+        self.assertTrue(wait_for(lambda: self.js(win, btn + ".getAttribute('aria-pressed')") == "false", 10))
+        self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
+
 
 if __name__ == "__main__":
     unittest.main()

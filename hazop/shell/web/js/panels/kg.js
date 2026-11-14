@@ -18,10 +18,12 @@ if (typeof document !== "undefined" && !document.querySelector("link[data-kg-css
 
 // 색은 절제: 도면 노드는 회색 계열, 지식은 녹색 하나, 잠재 후보는 공백(기대됨·부재 확정)만 호박색. 고른 것만 파랑.
 const C = { bg: "#fbfbfc", pid: "#8a94a1", equip: "#4b5563", seg: "#c3c9d1", kn: "#3f8f63", gap: "#d9a23a", found: "#6b8fc4", quiet: "#c9ced5",
-  group: "#9aa5b4", link: "#dde1e6", linkHi: "#0a5fc2", sel: "#0a5fc2", ink: "#2a313b", faint: "#9aa1aa" };
+  group: "#9aa5b4", link: "#dde1e6", linkHi: "#0a5fc2", sel: "#0a5fc2", ink: "#2a313b", faint: "#9aa1aa", study: "#8a6bbf", studyLink: "#d9cfe9", hit: "#c2410c" };
 const TYPE_NAMES = { equipment: "설비", valve: "밸브", instrument: "계장", inline_component: "배관 부품", piping_element: "배관 요소", pipe_segment: "배관 분기",
   unclassified: "미분류", document: "문서", doc_chunk: "문서 조각", requirement: "요건", setpoint: "설정치", condition: "운전조건·설계값",
-  analysis_case: "해석 사례", expectation: "잠재 후보", sheet: "도면", kn: "도면 밖 지식" };
+  analysis_case: "해석 사례", expectation: "잠재 후보", sheet: "도면", kn: "도면 밖 지식",
+  study_node: "검토구간", scenario: "시나리오", cause: "원인", consequence: "결과", safeguard: "보호수단", ie_candidate: "초기사건 후보",
+  ie_group: "초기사건 그룹", top_event: "사건수목 표제", end_state: "최종상태", basic_event: "기본사건", reference_ie: "일반 범주", study: "도면 밖 검토 결과" };
 const GAP = new Set(["expected", "confirmed_absent"]);
 const SHOWN_STATES = new Set(["expected", "candidate_found", "confirmed_absent"]);
 const STATE_KIND = { expected: "warn", candidate_found: "accent", confirmed_absent: "warn", confirmed_present: "ok", not_applicable: "plain" };
@@ -29,6 +31,7 @@ const STATE_KIND = { expected: "warn", candidate_found: "accent", confirmed_abse
 function colorOf(n) {
   if (n.layer === "group") return C.group;
   if (n.layer === "kn") return C.kn;
+  if (n.layer === "study") return C.study;
   if (n.layer === "exp") return GAP.has(n.xs) ? C.gap : n.xs === "candidate_found" ? C.found : C.quiet;
   if (n.type === "pipe_segment") return C.seg;
   return n.type === "equipment" ? C.equip : C.pid;
@@ -76,6 +79,9 @@ function GraphCanvas() {
   const seq = K.useKg((s) => s.seq);
   const hover = useRef(null);
   const near = useRef(new Set());
+  const hit = useRef(null);       // 살펴보기로 강조할 것 {ids: Set, groups: {묶음: 건수}} 또는 null
+  const explore = K.useKg((s) => s.explore);
+  const linkId = K.useKg((s) => s.linkId);
 
   useEffect(() => {
     let alive = true;
@@ -85,16 +91,18 @@ function GraphCanvas() {
         .backgroundColor(C.bg).nodeId("id").linkSource("source").linkTarget("target")
         .nodeRelSize(4).cooldownTicks(160).d3VelocityDecay(0.35)
         .nodeLabel((n) => esc(n.layer === "group" ? n.label + " · 노드 " + n.count + " (눌러 펼치기)" : (n.label || TYPE_NAMES[n.type] || n.type)))   // 라이브러리가 innerHTML로 넣으므로 글자로 거른다
-        .linkColor((l) => (near.current.size && (near.current.has(idOf(l.source)) && near.current.has(idOf(l.target))) ? C.linkHi
-          : l.st === "recheck" ? C.gap : l.st === "excluded" ? C.quiet : C.link))
-        .linkWidth((l) => (l.kind === "group" ? Math.min(4, 1 + Math.log2(l.n || 1)) : (near.current.size && near.current.has(idOf(l.source)) && near.current.has(idOf(l.target)) ? 1.6 : 0.8)))
+        .linkColor((l) => (l.id === K.kg.get().linkId ? C.sel : near.current.size && (near.current.has(idOf(l.source)) && near.current.has(idOf(l.target))) ? C.linkHi
+          : l.st === "recheck" ? C.gap : l.st === "excluded" ? C.quiet : l.st === "study" ? C.studyLink : C.link))
+        .linkWidth((l) => (l.id === K.kg.get().linkId ? 2.4 : l.kind === "group" ? Math.min(4, 1 + Math.log2(l.n || 1)) : (near.current.size && near.current.has(idOf(l.source)) && near.current.has(idOf(l.target)) ? 1.6 : 0.8)))
         .linkDirectionalArrowLength((l) => (l.flow ? 3 : 0)).linkDirectionalArrowRelPos(0.6)
         .linkLineDash((l) => (l.st === "recheck" ? [1, 2] : l.st === "excluded" ? [4, 3] : l.kind === "expects" || l.kind === "satisfied_by" || l.st === "candidate" ? [2, 2] : null))
-        .nodeCanvasObject((n, ctx, scale) => drawNode(n, ctx, scale, K.kg.get().selected, hover.current, near.current))
-        .onRenderFramePost((ctx, scale) => { g.__labels = drawLabels(g.graphData().nodes, ctx, scale, K.kg.get().selected, hover.current, near.current); })
+        .nodeCanvasObject((n, ctx, scale) => drawNode(n, ctx, scale, K.kg.get().selected, hover.current, near.current, hit.current))
+        .onRenderFramePost((ctx, scale) => { g.__labels = drawLabels(g.graphData().nodes, ctx, scale, K.kg.get().selected, hover.current, near.current, hit.current); })
         .nodePointerAreaPaint((n, color, ctx) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(n.x, n.y, radius(n) + 2, 0, 2 * Math.PI); ctx.fill(); })
         .onNodeHover((n) => { hover.current = n ? n.id : null; host.current.style.cursor = n ? "pointer" : ""; })
         .onNodeClick((n) => { if (n.layer === "group") K.expand(n.group); else K.select(n.id); })
+        .linkHoverPrecision(5)
+        .onLinkClick((l) => { if (l.kind !== "group") K.selectLink(l.id); })
         .onEngineStop(() => {
           // 배치가 멈춘 뒤에 맞춘다(움직이는 동안 가운데를 맞추면 노드가 화면 밖으로 흘러간다). 고를 노드가 있으면 그 노드로, 없으면 전체 맞춤
           g.__running = false;
@@ -134,6 +142,12 @@ function GraphCanvas() {
 
   useEffect(() => { push(false); }, [graph, layers, allStates]);
   useEffect(() => {
+    hit.current = explore && explore.active && explore.ids.length ? { ids: new Set(explore.ids), groups: explore.by_group || {} } : null;
+    const g = fg.current;
+    if (g) g.linkWidth(g.linkWidth());       // 멈춘 그래프에 강조를 바로 보이게 한 번 다시 그린다
+  }, [explore, graph]);
+  useEffect(() => { const g = fg.current; if (g) g.linkWidth(g.linkWidth()); }, [linkId]);
+  useEffect(() => {
     const g = fg.current;
     near.current = new Set();
     if (selected && g) {
@@ -172,26 +186,34 @@ function GraphCanvas() {
 function radius(n) {
   if (n.layer === "group") return 6 + Math.min(18, Math.sqrt(n.count || 1));
   if (n.layer === "exp") return 3.2;
+  if (n.layer === "study") return n.type === "study_node" || n.type === "scenario" || n.type === "ie_group" ? 4 : 3;
   if (n.type === "pipe_segment") return 2;
   return n.type === "equipment" ? 5 : 3.6;
 }
 
-function drawNode(n, ctx, scale, selected, hover, near) {
+// 살펴보기 강조: 센 것은 주황 테, 나머지는 옅게. 접힌 도면 묶음은 그 안에 든 건수가 있으면 강조한다
+const isHit = (n, hit) => !!hit && (hit.ids.has(n.id) || (n.layer === "group" && hit.groups[n.group] > 0));
+
+function drawNode(n, ctx, scale, selected, hover, near, hit) {
   const r = radius(n);
-  const dim = near.size && !near.has(n.id);
+  const dim = (near.size && !near.has(n.id)) || (!near.size && hit && !isHit(n, hit));
   ctx.globalAlpha = dim ? 0.25 : 1;
   ctx.beginPath();
   if (n.layer === "exp") {
     ctx.moveTo(n.x, n.y - r - 0.6); ctx.lineTo(n.x + r + 0.6, n.y); ctx.lineTo(n.x, n.y + r + 0.6); ctx.lineTo(n.x - r - 0.6, n.y); ctx.closePath();
   } else ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
   if (n.layer === "exp" && n.xs === "expected") { ctx.fillStyle = C.bg; ctx.fill(); ctx.lineWidth = 1.4; ctx.strokeStyle = C.gap; ctx.stroke(); }
-  else if (n.layer === "kn" && (n.ks !== "confirmed" || n.ai)) {
+  else if (n.layer === "study" && n.draft) {
+    // 사람이 확인하지 않은 검토 결과(AI 초안)는 속이 빈 점선 원
+    ctx.fillStyle = C.bg; ctx.fill(); ctx.lineWidth = 1.4; ctx.strokeStyle = C.study; ctx.setLineDash([1.5, 1.2]); ctx.stroke(); ctx.setLineDash([]);
+  } else if (n.layer === "kn" && (n.ks !== "confirmed" || n.ai)) {
     // 확인 전 지식(미확인·가설)과 AI 초안은 속이 빈 원으로, AI 초안은 점선 테로 확정 지식과 갈라 보인다
     ctx.fillStyle = C.bg; ctx.fill(); ctx.lineWidth = 1.4; ctx.strokeStyle = C.kn;
     if (n.ai) ctx.setLineDash([1.5, 1.2]);
     ctx.stroke(); ctx.setLineDash([]);
   } else { ctx.fillStyle = colorOf(n); ctx.fill(); }
   if (n.recheck) { ctx.lineWidth = 1; ctx.setLineDash([1.5, 1.5]); ctx.strokeStyle = C.gap; ctx.beginPath(); ctx.arc(n.x, n.y, r + 2.5, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]); }
+  if (isHit(n, hit)) { ctx.lineWidth = 1.8 / Math.max(scale, 0.5); ctx.strokeStyle = C.hit; ctx.beginPath(); ctx.arc(n.x, n.y, r + 2, 0, 2 * Math.PI); ctx.stroke(); }
   if (n.id === selected) { ctx.lineWidth = 2 / Math.max(scale, 0.5); ctx.strokeStyle = C.sel; ctx.beginPath(); ctx.arc(n.x, n.y, r + 3, 0, 2 * Math.PI); ctx.stroke(); }
   ctx.globalAlpha = 1;
 }
@@ -199,18 +221,19 @@ function drawNode(n, ctx, scale, selected, hover, near) {
 // 이름표: 노드를 다 그린 뒤 한 번에 그린다. 먼저 보일 것부터(고른 것·가리킨 것·이웃 > 묶음·설비·문서 > 확대했을 때 나머지) 자리를 잡고,
 // 이미 잡힌 이름표와 겹치면 그리지 않는다(옵시디언 그래프 보기처럼 겹치지 않을 만큼만). 글자 크기는 화면에서 같게(배율로 나눔)
 const BIG = new Set(["equipment", "document", "sheet", "kn"]);
-function labelRank(n, selected, hover, near, scale) {
+function labelRank(n, selected, hover, near, scale, hit) {
   if (n.id === selected || n.id === hover) return 0;
   if (near.size && near.has(n.id)) return 1;
+  if (!near.size && isHit(n, hit)) return 1;
   if (n.layer === "group" || BIG.has(n.type)) return 2;
   return scale > 2.2 ? 3 : -1;
 }
 
-function drawLabels(nodes, ctx, scale, selected, hover, near) {
+function drawLabels(nodes, ctx, scale, selected, hover, near, hit) {
   const cand = [];
   for (const n of nodes) {
     if (!n.label || n.x === undefined) continue;
-    const rank = labelRank(n, selected, hover, near, scale);
+    const rank = labelRank(n, selected, hover, near, scale, hit);
     if (rank >= 0) cand.push([rank, n]);
   }
   cand.sort((a, b) => a[0] - b[0]);
@@ -224,7 +247,7 @@ function drawLabels(nodes, ctx, scale, selected, hover, near) {
     const pad = 2 / scale;
     if (rank > 0 && boxes.some((b) => x0 < b[2] + pad && x0 + w + pad > b[0] && y0 < b[3] + pad && y0 + h + pad > b[1])) continue;
     boxes.push([x0, y0, x0 + w, y0 + h]);
-    ctx.globalAlpha = near.size && !near.has(n.id) && rank > 0 ? 0.35 : 1;
+    ctx.globalAlpha = rank > 0 && ((near.size && !near.has(n.id)) || (!near.size && hit && !isHit(n, hit))) ? 0.35 : 1;
     ctx.textAlign = "center"; ctx.textBaseline = "top";
     ctx.fillStyle = C.ink;
     ctx.fillText(text, n.x, y0);
@@ -238,6 +261,8 @@ function Head({ s }) {
   const q = K.useKg((x) => x.query);
   const hits = K.useKg((x) => x.hits);
   const expanded = K.useKg((x) => x.expanded);
+  const ex = K.useKg((x) => x.explore);
+  const study = K.useKg((x) => x.study);
   const gaps = s.expect.states.filter((x) => GAP.has(x.state)).reduce((n, x) => n + x.count, 0);
   const timer = useRef(null);
   const onInput = (e) => { const v = e.target.value; K.kg.set({ query: v }); clearTimeout(timer.current); timer.current = setTimeout(() => K.search(v), 200); };
@@ -255,8 +280,18 @@ function Head({ s }) {
       ${gaps ? html`<${Chip} kind="warn" title="규칙상 있어야 하는데 확인하지 못했거나 없다고 확정한 잠재 후보(기대됨 + 부재 확정)">잠재 후보 공백 ${gaps}<//>` : null}
       ${s.expect.recheck ? html`<${Chip} kind="warn" title="규칙 판이나 대상 내용이 바뀌어 이전 판단을 다시 봐야 합니다">재확인 ${s.expect.recheck}<//>` : null}
       <span class="kg-tools">
+        <select class="kg-explore-pick" aria-label="살펴보기" title="엔진 알고리즘으로 셀 것을 골라 강조합니다" value=${(ex && ex.what) || ""}
+          onChange=${(e) => K.explore(e.target.value)}>
+          <option value="">살펴보기…</option>${K.EXPLORES.map(([v, label, why]) => html`<option key=${v} value=${v} title=${why}>${label}</option>`)}</select>
+        <button type="button" class=${"btn sm " + (study ? "primary" : "ghost")} aria-pressed=${study ? "true" : "false"}
+          title="분석 결과의 시나리오·보호수단과 초기사건 후보를 그래프에 얹어 봅니다(읽기 전용)" onClick=${() => K.setStudy(!study)}>검토 결과</button>
         ${s.mode === "overview" && expanded.length ? html`<${Btn} sm=${true} kind="ghost" icon="minus" label="모두 접기" title="모두 접기" onClick=${K.collapseAll} />` : null}
         <${Btn} sm=${true} kind="ghost" icon="zoom-scan" label="그래프에 맞추기" title="그래프에 맞추기" onClick=${K.fit} /></span></div>
+    ${ex ? html`<div class="kg-explore" role="status">${ex.active
+      ? html`<b>${ex.label} ${ex.count.toLocaleString()}곳</b><span class="muted small">${ex.note}</span>`
+      : html`<b>${ex.label}</b><span class="small">${ex.reason}</span>`}
+      <${Btn} sm=${true} kind="ghost" icon="x" label="살펴보기 지우기" title="강조 지우기" onClick=${K.clearExplore} /></div>` : null}
+    ${study && s.study ? html`<div class="muted small kg-study-line">검토 결과: 시나리오 ${s.study.scenarios}${s.study.ie_candidates ? " · 초기사건 후보 " + s.study.ie_candidates : ""}${s.study.missing ? " · 대상 없는 참조 " + s.study.missing : ""}${s.study.note ? " · " + s.study.note : ""} (보기만 합니다. 고치기는 분석 결과·초기사건 패널에서)</div>` : null}
     ${s.mode === "overview" ? html`<div class="muted small">노드가 ${s.total.toLocaleString()}개라 도면별 묶음으로 그렸습니다(한 번에 ${s.cap.toLocaleString()}개까지). 묶음을 누르면 그 도면을 펼치고, 찾기로 바로 갈 수 있습니다.</div>` : null}</div>`;
 }
 
@@ -298,15 +333,28 @@ function Judge({ d }) {
     ${d.can_judge ? null : html`<div class="muted small">판단 파일을 읽을 수 없어 지금은 판단을 저장하지 않습니다.</div>`}</div>`;
 }
 
+function LinkDetail({ l }) {
+  if (!l) return html`<aside class="kg-side"><div class="muted">불러오는 중…</div></aside>`;
+  const end = (e) => html`<button type="button" class="linkbtn" onClick=${() => K.focus(e.id)}>${e.label}</button>`;
+  return html`<aside class="kg-side" aria-label=${l.kind_label + " 관계 상세"}>
+    <div class="kg-dh"><b>${l.kind_label}</b><${Chip}>관계<//></div>
+    <div class="small">${end(l.from)} <span class="muted">→</span> ${end(l.to)}</div>
+    <h4>무엇인가</h4>${kv(l.what)}
+    <h4>근거</h4>${kv(l.evidence)}</aside>`;
+}
+
 function Detail() {
   const d = K.useKg((s) => s.detail);
   const sel = K.useKg((s) => s.selected);
-  if (!sel) return html`<aside class="kg-side"><div class="muted kg-empty"><b>고른 노드 없음</b><p>그래프에서 노드를 누르거나 찾기로 고르면 무엇인지와 근거, 이어진 것이 여기에 나옵니다. 그림의 자리는 근거가 아닙니다.</p></div></aside>`;
+  const linkId = K.useKg((s) => s.linkId);
+  const link = K.useKg((s) => s.link);
+  if (linkId) return html`<${LinkDetail} l=${link} />`;
+  if (!sel) return html`<aside class="kg-side"><div class="muted kg-empty"><b>고른 노드 없음</b><p>그래프에서 노드나 선을 누르거나 찾기로 고르면 무엇인지와 근거, 이어진 것이 여기에 나옵니다. 그림의 자리는 근거가 아닙니다.</p></div></aside>`;
   if (!d) return html`<aside class="kg-side"><div class="muted">불러오는 중…</div></aside>`;
   const x = d.expectation;
   return html`<aside class="kg-side" aria-label=${(d.label || d.id) + " 상세"}>
     <div class="kg-dh"><b>${d.label || TYPE_NAMES[d.type] || d.type}</b>
-      <${Chip}>${TYPE_NAMES[d.type] || d.type}<//>${d.layer === "kn" && d.ks !== "confirmed" ? html`<${Chip} kind="warn">확인 전<//>` : null}${d.ai ? html`<${Chip} kind="ai" icon="sparkles">AI 초안<//>` : null}${x ? html`<${Chip} kind=${STATE_KIND[x.state]}>${x.state_label}<//>` : null}
+      <${Chip}>${TYPE_NAMES[d.type] || d.type}<//>${d.layer === "kn" && d.ks !== "confirmed" ? html`<${Chip} kind="warn">확인 전<//>` : null}${d.ai || d.draft ? html`<${Chip} kind="ai" icon="sparkles">AI 초안<//>` : null}${d.read_only ? html`<${Chip} title="분석 결과·초기사건 파일에서 읽은 것입니다. 고치기는 그 패널에서 합니다">읽기 전용<//>` : null}${x ? html`<${Chip} kind=${STATE_KIND[x.state]}>${x.state_label}<//>` : null}
       ${x && x.recheck ? html`<${Chip} kind="warn" title="규칙 판이나 대상·후보 내용이 바뀌었습니다">재확인 필요<//>` : null}</div>
     <div class="muted small">${d.drawing}</div>
     ${d.at ? html`<div><${Btn} sm=${true} icon="map-pin" label="도면에서 보기" onClick=${() => K.showOnSheet(d.at)}>도면에서 보기<//></div>` : null}
@@ -326,7 +374,7 @@ function Detail() {
       <span>${e.label}</span><${Chip} kind=${STATE_KIND[e.xs]}>${e.state_label}${e.recheck ? " · 재확인" : ""}<//></button>`)}</div>` : null}
     <h4>이어진 것 ${d.neighbors_total}</h4>
     <div class="list" role="list">${d.neighbors.map((nb) => html`<button type="button" class="kg-nb" role="listitem" key=${nb.id + nb.kind} onClick=${() => K.focus(nb.id)}>
-      <span>${nb.label}</span><span class="muted small">${nb.kind}${nb.st ? " (" + nb.st + ")" : ""} · ${TYPE_NAMES[nb.type] || nb.type}${nb.drawing !== d.drawing ? " · " + nb.drawing : ""}</span></button>`)}
+      <span>${nb.label}</span><span class="muted small">${nb.kind_label || nb.kind}${nb.st ? " (" + nb.st + ")" : ""} · ${TYPE_NAMES[nb.type] || nb.type}${nb.drawing !== d.drawing ? " · " + nb.drawing : ""}</span></button>`)}
       ${d.neighbors_total > d.neighbors.length ? html`<div class="muted small">나머지 ${d.neighbors_total - d.neighbors.length}개는 그래프에서 보세요.</div>` : null}</div>
   </aside>`;
 }

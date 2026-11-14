@@ -14,6 +14,7 @@
 """
 
 import hashlib
+import json
 import logging
 import os
 
@@ -82,8 +83,9 @@ def _blocks(kg, pg):
     return out
 
 
-def _context(engine):
-    """(맥락 dict, None) 또는 (None, 사유). 맥락: pg, kg, model, expectations, ver, judge_problem, notes."""
+def _context(engine, study=False):
+    """(맥락 dict, None) 또는 (None, 사유). 맥락: pg, kg, model, expectations, ver, judge_problem, notes.
+    study면 model에 검토 층(분석 결과·초기사건 투영)을 더한다(완료 목록 3 B6). 따로 캐시해 층을 껐다 켜도 다시 만들지 않는다."""
     from hazop.app import project_ctx
     pid = engine.project_id()
     try:
@@ -117,14 +119,65 @@ def _context(engine):
         notes.append("형식이 어긋난 판단 기록 %d건은 적용하지 않았습니다(파일에는 그대로 있음)." % len(expectations["bad_judgements"]))
     if expectations and expectations.get("orphan_judgements"):
         notes.append("대상이 그래프에서 사라진 판단 기록 %d건이 있습니다(파일에는 그대로 있음)." % len(expectations["orphan_judgements"]))
-    return {"pid": pid, "pg": pg, "kg": kg, "model": model, "expectations": expectations, "ver": ver, "path": path,
-            "judge_problem": judge_problem, "notes": notes, "blocks": _blocks(kg, pg)}, None
+    ctx = {"pid": pid, "pg": pg, "kg": kg, "model": model, "expectations": expectations, "ver": ver, "path": path,
+           "judge_problem": judge_problem, "notes": notes, "blocks": _blocks(kg, pg), "key": key}
+    if study:
+        src = _study(pg)
+        skey = (key, hashlib.sha256(json.dumps(src, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest())
+        if _CACHE.get("study_key") != skey:
+            _CACHE.update(study_key=skey, study_model=screen.panel_with_study(model, src, pg))
+        ctx["model"] = _CACHE["study_model"]
+    return ctx, None
+
+
+def _study(pg):
+    """검토 층 원본 {"node_set", "results", "note", "ie"}(분석 결과 패널과 같은 조건의 확정 구간·결과만). 읽기만 하고 고치지 않는다.
+    초기사건 묶음은 ⑥ 파일을 읽어 메모리 안에서만 ⑤와 맞춘다(저장은 초기사건 패널이 한다)."""
+    from hazop.ie import bundle as ie_bundle
+    from hazop.ie import model as ie_model
+    from hazop.ie import store as ie_store
+    from hazop.study import nodes as study_nodes
+    from hazop.study import results as study_results
+    try:
+        ns = study_nodes.load(pg)
+    except (OSError, ValueError) as exc:
+        return {"node_set": None, "results": None, "note": "검토구간 파일을 읽을 수 없습니다(%s)." % str(exc)[:160]}
+    if not ns or not study_nodes.active_nodes(ns) or study_nodes.is_stale(ns, pg):
+        return {"node_set": None, "results": None, "note": "확정된 검토구간이 없거나 지금 도면과 맞지 않습니다."}
+    try:
+        doc = study_results.load(ns)
+    except (OSError, ValueError) as exc:
+        return {"node_set": ns, "results": None, "note": "분석 결과를 읽을 수 없습니다(%s)." % str(exc)[:160]}
+    if doc is not None:
+        doc, problems, _bad = study_results.partition(doc, ns)
+        if problems:
+            return {"node_set": ns, "results": None, "note": "분석 결과 파일에 문제가 있어 보이지 않습니다(%s)." % str(problems[0])[:160]}
+    ie = None
+    if doc:
+        try:
+            ie_doc = ie_store.load(pg["project_id"])[0]
+            ie = ie_bundle.build_bundle(doc, ns, pg, ie_model.sync(ie_doc, doc, node_set=ns), study_nodes.now_utc())
+        except (OSError, ValueError, ie_store.Unreadable) as exc:
+            LOG.warning("초기사건 투영을 건너뜀: %s", exc)
+    return {"node_set": ns, "results": doc, "note": None if doc else "아직 분석 결과가 없습니다.", "ie": ie}
+
+
+def _node_set(pg):
+    """도달 범위에 쓸 확정 검토구간 집합. (집합 또는 None, 사유 또는 None)."""
+    from hazop.study import nodes as study_nodes
+    try:
+        ns = study_nodes.load(pg)
+    except (OSError, ValueError):
+        return None, "검토구간 파일을 읽을 수 없습니다."
+    if ns and study_nodes.is_stale(ns, pg):
+        return None, "검토구간이 지금 도면과 맞지 않습니다. 구간 패널에서 다시 확인한 뒤 셀 수 있습니다."
+    return ns, None
 
 
 # ---------------------------------------------------------------- 읽기
 
-def summary(engine):
-    ctx, why = _context(engine)
+def summary(engine, study=False):
+    ctx, why = _context(engine, study)
     if ctx is None:
         return {"available": False, "reason": why}
     m = ctx["model"]
@@ -140,17 +193,24 @@ def summary(engine):
     return {"available": True, "project_id": ctx["pid"], "ver": ctx["ver"], "cap": screen.PANEL_NODE_CAP, "total": total,
             "links": len(m["links"]), "mode": "full" if full else "overview", "expand": list(m["order"]) if full else [],
             "groups": groups, "sheets": sum(1 for g in groups if g["kind"] == "sheet"),
-            "layers": {ly: sum(1 for n in m["nodes"].values() if n["layer"] == ly) for ly in ("pid", "kn", "exp")},
+            "layers": {ly: sum(1 for n in m["nodes"].values() if n["layer"] == ly) for ly in ("pid", "kn", "exp") + (("study",) if study else ())},
             "expect": {"states": [{"state": s, "label": expect.STATES[s], "count": states.get(s, 0),
                                    "shown": s in screen.EXPECT_SHOWN} for s in expect.STATES],
                        "recheck": recheck, "rules_version": (ctx["expectations"] or {}).get("rules_version")},
             "has_kg": ctx["kg"] is not None, "can_judge": ctx["judge_problem"] is None, "notes": ctx["notes"],
-            "blocks": ctx["blocks"]}
+            "blocks": ctx["blocks"], "study": _study_info(m) if study else None}
 
 
-def graph(engine, expand):
+def _study_info(m):
+    info = m.get("study") or {}
+    ie = info.get("ie") or {}
+    return {"scenarios": info.get("scenarios", 0), "missing": info.get("missing", 0), "note": info.get("note"),
+            "nodes": len(info.get("nodes") or ()), "ie_candidates": ie.get("candidates", 0), "ie_groups": ie.get("groups", 0)}
+
+
+def graph(engine, expand, study=False):
     """그릴 그래프. expand: 묶음 ID 목록 또는 'all'. 상한을 넘으면 {"refused": 사유}."""
-    ctx, why = _context(engine)
+    ctx, why = _context(engine, study)
     if ctx is None:
         return {"available": False, "reason": why}
     m = ctx["model"]
@@ -163,8 +223,8 @@ def graph(engine, expand):
     return out
 
 
-def node(engine, nid):
-    ctx, _why = _context(engine)
+def node(engine, nid, study=False):
+    ctx, _why = _context(engine, study)
     if ctx is None:
         return None
     d = screen.panel_node(ctx["model"], nid, ctx["kg"])
@@ -172,6 +232,35 @@ def node(engine, nid):
         d["ver"] = ctx["ver"]
         d["can_judge"] = ctx["judge_problem"] is None
     return d
+
+
+def link(engine, lid, study=False):
+    """관계(선) 상세 또는 None(완료 목록 3 B6)."""
+    ctx, _why = _context(engine, study)
+    if ctx is None:
+        return None
+    return screen.panel_link(ctx["model"], lid, ctx["kg"])
+
+
+def explore(engine, what, start=None, study=False):
+    """살펴보기(완료 목록 3 B6): 도달 범위·고아 지식·근거 공백. 엔진 알고리즘(hazop.kg.algo) 결과를 패널 노드 ID로 돌려준다."""
+    ctx, why = _context(engine, study)
+    if ctx is None:
+        return {"what": what, "label": screen.EXPLORE_LABELS[what], "active": False, "reason": why, "count": 0, "ids": [],
+                "capped": False, "by_group": {}, "note": None}
+    ns, ns_why = (None, None) if what != "reach" else _node_set(ctx["pg"])
+    key = (ctx["key"], what, start if what == "reach" else None, json.dumps(ns.get("nodes") if ns else None, sort_keys=True, default=str))
+    memo = _CACHE.setdefault("explore", {})
+    if key not in memo:
+        if ns_why:
+            out = {"what": what, "label": screen.EXPLORE_LABELS[what], "active": False, "reason": ns_why, "count": 0, "ids": [],
+                   "capped": False, "by_group": {}, "note": None}
+        else:
+            out = screen.panel_explore(ctx["model"], ctx["pg"], ctx["kg"], ns, what, start)
+        if len(memo) > 20:
+            memo.clear()
+        memo[key] = out
+    return memo[key]
 
 
 def find_nodes(engine, text, limit=SEARCH_LIMIT):
@@ -190,18 +279,27 @@ def _vendor():
 def read(engine, parts, query):
     """ReadApi가 부르는 길: parts[0] == 'kg'. 없는 자료는 None(404)."""
     api = _api()
+    study = query.get("study") == "1"
     if len(parts) == 1:
-        return api._json(summary(engine))
+        return api._json(summary(engine, study))
     if len(parts) != 2:
         return None
     what = parts[1]
     if what == "graph":
         raw = (query.get("expand") or "").strip()
         expand = "all" if raw == "all" else [g for g in raw.split(",") if g][:MAX_EXPAND]
-        return api._json(graph(engine, expand))
+        return api._json(graph(engine, expand, study))
     if what == "node":
-        data = node(engine, query.get("id") or "")
+        data = node(engine, query.get("id") or "", study)
         return api._json(data) if data is not None else None
+    if what == "link":
+        data = link(engine, (query.get("id") or "")[:400], study)
+        return api._json(data) if data is not None else None
+    if what == "explore":
+        kind = query.get("what") or ""
+        if kind not in screen.EXPLORE_LABELS:
+            return None
+        return api._json(explore(engine, kind, (query.get("start") or "")[:400] or None, study))
     if what == "search":
         return api._json({"hits": find_nodes(engine, (query.get("q") or "")[:100])})
     if what == "force-graph.js":

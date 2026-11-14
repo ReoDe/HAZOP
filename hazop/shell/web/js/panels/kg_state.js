@@ -22,6 +22,10 @@ export const kg = createStore({
   notice: null,
   seq: 0,                 // 그래프를 다시 그리라는 신호(맞추기·가운데로)
   center: null,           // 가운데로 옮길 노드 ID
+  study: false,           // 검토 층(분석 결과·초기사건 투영)을 켰는지(완료 목록 3 B6)
+  explore: null,          // 살펴보기 결과 {what, label, active, reason, ids, count, note, by_group}
+  linkId: null,           // 고른 관계(선) ID
+  link: null,             // GET kg/link
 });
 
 export function useKg(selector) {
@@ -43,14 +47,18 @@ let graphSeq = 0;
 
 export function reset() {
   epoch++;
-  kg.set({ summary: EMPTY, graph: null, expanded: [], selected: null, detail: null, hits: [], query: "", busy: false, error: null, notice: null });
+  kg.set({ summary: EMPTY, graph: null, expanded: [], selected: null, detail: null, hits: [], query: "", busy: false, error: null, notice: null,
+    explore: null, linkId: null, link: null });
 }
+
+// 검토 층을 켰으면 모든 읽기에 study=1을 붙인다(엔진이 같은 층의 모델로 답한다)
+const st = (sep) => (kg.get().study ? sep + "study=1" : "");
 
 export async function loadSummary() {
   const mine = ++sumSeq;
   const ep = epoch;
   let s;
-  try { s = await read("kg"); } catch (e) { s = Object.assign({}, EMPTY, { reason: "지식그래프를 읽지 못했습니다." }); }
+  try { s = await read("kg" + st("?")); } catch (e) { s = Object.assign({}, EMPTY, { reason: "지식그래프를 읽지 못했습니다." }); }
   if (mine !== sumSeq || ep !== epoch) return kg.get().summary;
   const known = new Set((s.groups || []).map((g) => g.id));
   const prev = kg.get().expanded.filter((g) => known.has(g));
@@ -65,7 +73,7 @@ export async function loadGraph() {
   const mine = ++graphSeq;
   const ep = epoch;
   let g;
-  try { g = await read("kg/graph?expand=" + encodeURIComponent(kg.get().expanded.join(","))); } catch (e) { kg.set({ error: "그래프를 읽지 못했습니다." }); return null; }
+  try { g = await read("kg/graph?expand=" + encodeURIComponent(kg.get().expanded.join(",")) + st("&")); } catch (e) { kg.set({ error: "그래프를 읽지 못했습니다." }); return null; }
   if (mine !== graphSeq || ep !== epoch) return null;
   if (g.refused) { kg.set({ error: g.refused }); return null; }
   kg.set({ graph: g });
@@ -75,7 +83,7 @@ export async function loadGraph() {
 export async function loadDetail(id) {
   if (!id) { kg.set({ detail: null }); return null; }
   let d = null;
-  try { d = await read("kg/node?id=" + encodeURIComponent(id)); } catch (e) { d = null; }
+  try { d = await read("kg/node?id=" + encodeURIComponent(id) + st("&")); } catch (e) { d = null; }
   if (kg.get().selected !== id) return null;
   kg.set({ detail: d });
   return d;
@@ -86,6 +94,54 @@ export async function refresh() {
   await loadGraph();
   const sel = kg.get().selected;
   if (sel) await loadDetail(sel);
+  const lk = kg.get().linkId;
+  if (lk) await loadLink(lk);
+  const x = kg.get().explore;
+  if (x) await explore(x.what, x.start);       // 자료가 바뀌었으면 같은 살펴보기를 다시 센다
+}
+
+// ---------------------------------------------------------------- 살펴보기·검토 층·관계(완료 목록 3 B6)
+export const EXPLORES = [["reach", "도달 범위", "고른 도면 구성요소가 든 검토구간 안에서 닿는 곳"],
+  ["orphans", "고아 지식", "설비에 적용되지 않았거나 도면과 이어지지 않은 지식"],
+  ["gaps", "근거 공백", "문서가 언급하지만 설정치·요건이 걸리지 않은 구성요소"]];
+
+let exploreSeq = 0;
+/** 엔진 알고리즘(도달 범위·고아·근거 공백)으로 셀 것을 강조한다. 도달 범위는 고른 노드에서 센다. */
+export async function explore(what, start) {
+  if (!what) { kg.set({ explore: null }); return null; }
+  const mine = ++exploreSeq;
+  const ep = epoch;
+  const from = what === "reach" ? (start !== undefined ? start : kg.get().selected) : null;
+  let r;
+  try { r = await read("kg/explore?what=" + encodeURIComponent(what) + (from ? "&start=" + encodeURIComponent(from) : "") + st("&")); }
+  catch (e) { r = null; }
+  if (mine !== exploreSeq || ep !== epoch) return null;
+  if (!r) { kg.set({ explore: null, error: "살펴보기를 셀 수 없었습니다." }); return null; }
+  kg.set({ explore: r });
+  return r;
+}
+export function clearExplore() { exploreSeq++; kg.set({ explore: null }); }
+
+/** 검토 층 켜기·끄기: 분석 결과의 시나리오·보호수단·초기사건 후보를 그래프에 얹는다(읽기 전용). */
+export async function setStudy(on) {
+  kg.set({ study: !!on, linkId: null, link: null });
+  if (!on && kg.get().selected && kg.get().selected.startsWith("st-")) kg.set({ selected: null, detail: null });
+  await refresh();
+}
+
+export async function loadLink(id) {
+  let d = null;
+  try { d = await read("kg/link?id=" + encodeURIComponent(id) + st("&")); } catch (e) { d = null; }
+  if (kg.get().linkId !== id) return null;
+  kg.set({ link: d });
+  return d;
+}
+
+/** 관계(선)를 고르면 오른쪽에 그 선이 어디서 왔는지(근거)를 보인다. 노드 고르기는 푼다. */
+export function selectLink(id) {
+  if (!id) { kg.set({ linkId: null, link: null }); return null; }
+  kg.set({ linkId: id, link: null, selected: null, detail: null, error: null, notice: null });
+  return loadLink(id);
 }
 
 // ---------------------------------------------------------------- 보기 동작
@@ -113,7 +169,7 @@ export async function collapseAll() { kg.set({ expanded: [], selected: null, det
 
 export function select(id) {
   if (!id) { kg.set({ selected: null, detail: null }); return null; }
-  kg.set({ selected: id, detail: null, error: null, notice: null });
+  kg.set({ selected: id, detail: null, error: null, notice: null, linkId: null, link: null });
   return loadDetail(id);
 }
 
@@ -121,7 +177,7 @@ export function select(id) {
 export async function focus(id, group) {
   let g = group;
   if (!g) {
-    const d = await read("kg/node?id=" + encodeURIComponent(id)).catch(() => null);
+    const d = await read("kg/node?id=" + encodeURIComponent(id) + st("&")).catch(() => null);
     if (!d) { kg.set({ error: "그래프에서 그 노드를 찾지 못했습니다." }); return false; }
     g = d.group;
   }

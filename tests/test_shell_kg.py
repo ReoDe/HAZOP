@@ -318,31 +318,65 @@ class ReviewReproTest(Base):
         self.assertTrue(any(n["st"] == "확정" for n in nb if n["kind"] == "has_setpoint"), nb)
 
 
+def build_real_kg(case):
+    """도면 그래프와 가상 문서 지식으로 auto.build_project를 돌려 임시 작업 루트에 프로젝트 지식그래프를 만든다. -> 저장된 지식그래프."""
+    import glob
+    from hazop.kg import auto, docextract
+    g = copy.deepcopy(fx.graph())
+    g["source"] = {"drawing_number": "T-001"}
+    g["project_id"] = PID
+    gdir = os.path.join(paths.output_root("graph"), "T-001")
+    os.makedirs(gdir)
+    with open(os.path.join(gdir, "graph.json"), "w", encoding="utf-8") as fh:
+        json.dump(g, fh, ensure_ascii=False)
+    pdf = glob.glob(os.path.join(REPO, "tests", "fixtures", "docextract", "*.pdf"))[0]
+    doc = docextract.extract_pdf(pdf, "mat-1", 1, "document-001", title="가상 설계 문서")
+    doc["project_id"] = PID
+    ddir = os.path.join(paths.output_root("document-knowledge"), "doc-1")
+    os.makedirs(ddir)
+    with open(os.path.join(ddir, auto.DOC_FILE), "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, ensure_ascii=False)
+    auto.build_project(PID, paths.output_root("graph"), paths.output_root("document-knowledge"), paths.folder("knowledge-graph"),
+                       paths.output_root("knowledge-graph"))
+    kg, note = api_kg._load_kg(PID)
+    case.assertIsNotNone(kg, note)
+    return kg
+
+
+def save_study(case, groups, entries):
+    """확정 구간과 분석 결과를 임시 작업 루트에 저장한다(앱이 쓰는 hazop.study 저장 함수 그대로). -> (구간 집합, 결과)."""
+    from hazop import store_io
+    from hazop.study import nodes as sn
+    from hazop.study import results as res
+    from tests.test_study_storage import DEVS, build, put_entries
+    p = mock.patch.object(res, "load_deviations", lambda path=None: copy.deepcopy(DEVS))
+    p.start()
+    case.addCleanup(p.stop)
+    ns = build(case.pg, groups)
+    sn.save(ns)
+    doc = res.empty_results(ns, DEVS)
+    for node_id, item, es in entries:
+        put_entries(doc, node_id, item, es)
+    res.save_fp(doc, ns["project_id"], expect=store_io.ANY)
+    return ns, doc
+
+
+def sref(pg, tag):
+    from hazop.study import migrate
+    n = next(n for n in pg["nodes"] if n.get("tag") == tag)
+    return migrate.ref_of(n, n["sheet"])
+
+
+def nid_of(pg, tag):
+    return next(n["entity_id"] for n in pg["nodes"] if n.get("tag") == tag)
+
+
 class RealKgTest(Base):
     """가짜 _load_kg 없이 저장된 지식그래프를 읽는 길: 도면 그래프와 문서 지식으로 auto.build_project를 돌려 디스크에 만든다."""
     FAKE_KG = False
 
     def test_panel_reads_the_built_knowledge_graph(self):
-        import glob
-        from hazop.kg import auto, docextract
-        g = copy.deepcopy(fx.graph())
-        g["source"] = {"drawing_number": "T-001"}
-        g["project_id"] = PID
-        gdir = os.path.join(paths.output_root("graph"), "T-001")
-        os.makedirs(gdir)
-        with open(os.path.join(gdir, "graph.json"), "w", encoding="utf-8") as fh:
-            json.dump(g, fh, ensure_ascii=False)
-        pdf = glob.glob(os.path.join(REPO, "tests", "fixtures", "docextract", "*.pdf"))[0]
-        doc = docextract.extract_pdf(pdf, "mat-1", 1, "document-001", title="가상 설계 문서")
-        doc["project_id"] = PID
-        ddir = os.path.join(paths.output_root("document-knowledge"), "doc-1")
-        os.makedirs(ddir)
-        with open(os.path.join(ddir, auto.DOC_FILE), "w", encoding="utf-8") as fh:
-            json.dump(doc, fh, ensure_ascii=False)
-        auto.build_project(PID, paths.output_root("graph"), paths.output_root("document-knowledge"), paths.folder("knowledge-graph"),
-                           paths.output_root("knowledge-graph"))
-        kg, note = api_kg._load_kg(PID)
-        self.assertIsNotNone(kg, note)
+        build_real_kg(self)
         s = self.read()
         self.assertTrue(s["has_kg"])
         self.assertGreaterEqual(s["layers"]["kn"], 16)
@@ -350,6 +384,181 @@ class RealKgTest(Base):
         d = self.detail(hit["id"])
         self.assertTrue(any(k == "쪽" for k, _ in d["evidence"]), d["evidence"])
         self.assertIn(["상태", "미확인(사람 확인 전)"], d["what"])
+
+
+class ExploreTest(Base):
+    """완료 목록 3 B6 '살펴보기': 도달 범위(A1)·고아·근거 공백(A2)을 엔진(hazop.kg.algo)에 그대로 맡긴다. 저장된 실제 지식그래프로 본다."""
+    FAKE_KG = False
+
+    def setUp(self):
+        super().setUp()
+        built = build_real_kg(self)
+        # 가상 문서의 지식은 모두 '사람 확인 전'이라 계산 뷰(V4)에 들지 않는다. 사람이 확인한 상태를 흉내 내려고 조각 하나·설정치 하나를
+        # 확인으로 두고, 그 조각이 P-1을 언급한다고 확정한다(P-1은 설정치·요건이 없으니 근거 공백, 설정치는 어디에도 적용되지 않으니 고아).
+        self.kg = copy.deepcopy(built)
+        chunk = next(n for n in self.kg["nodes"] if n["node_type"] == "doc_chunk")
+        setp = next(n for n in self.kg["nodes"] if n["node_type"] == "setpoint")
+        for n in (chunk, setp):
+            n["knowledge_status"] = "confirmed"
+            n["compute_view"] = {"v4": True, "excluded_reasons": []}
+        self.kg["links"].append({"id": "krel-test-mention", "kind": "mentions", "link_status": "confirmed", "method": "exact_norm",
+                                 "reviewed_by": "검토자A", "compute_view": {"v4": True, "excluded_reasons": []},
+                                 "ends": {"from": {"layer": "knowledge", "ref": chunk["id"]},
+                                          "to": {"layer": "pid", "graph_id": "graph-T-001", "entity_id": "e-p1", "source_object_id": "o-p1"}}})
+        self.chunk, self.setp = chunk["id"], setp["id"]
+        p = mock.patch.object(api_kg, "_load_kg", lambda pid: (self.kg, None))
+        p.start()
+        self.addCleanup(p.stop)
+        # 가상 도면의 배관 끝(has_endpoint)에 실제 추출처럼 end(source/target)를 단다. A1 흐름 판정이 이 값을 읽는다
+        seen = set()
+        for e in self.pg["edges"]:
+            if e["kind"] == "has_endpoint":
+                e["end"] = "target" if e["segment"] in seen else "source"
+                seen.add(e["segment"])
+        by = {n["entity_id"]: n for n in self.pg["nodes"]}
+        for e in self.pg["edges"]:
+            fd = (by.get(e.get("segment")) or {}).get("flow_direction")
+            if e["kind"] == "has_endpoint" and isinstance(fd, dict):
+                if e["node"] == fd.get("from"):
+                    fd["from_end"] = e["end"]
+                if e["node"] == fd.get("to"):
+                    fd["to_end"] = e["end"]
+
+    def engine_a2(self):
+        from hazop.kg import algo
+        return algo.a2_orphans_gaps(project.kg_view(self.kg, self.pg), self.pg)
+
+    def test_gaps_are_the_engines_evidence_gaps(self):
+        r = self.read("explore", what="gaps")
+        self.assertTrue(r["active"], r)
+        want = {g["entity_id"] for g in self.engine_a2()["evidence_gaps"]}
+        self.assertEqual(want, {nid_of(self.pg, "P-1")})
+        self.assertEqual(set(r["ids"]), want)
+        self.assertEqual(r["count"], len(want))
+        model = api_kg._context(self.engine)[0]["model"]
+        self.assertTrue(set(r["ids"]) <= set(model["nodes"]), "강조할 ID는 패널 그림의 노드 ID여야 함")
+        self.assertTrue(r["note"])
+
+    def test_orphans_are_the_engines_orphans_on_knowledge_nodes(self):
+        r = self.read("explore", what="orphans")
+        self.assertTrue(r["active"], r)
+        want = {screen.KN_PREFIX + o["id"] for o in self.engine_a2()["orphans"]}
+        self.assertIn(screen.KN_PREFIX + self.setp, want)
+        self.assertNotIn(screen.KN_PREFIX + self.chunk, want)
+        self.assertEqual(set(r["ids"]), want)
+        self.assertEqual(r["count"], len(want))
+
+    def test_reach_runs_the_engine_from_a_component_in_one_study_node(self):
+        from hazop.kg import algo
+        save_study(self, [("A", ["o-p1", "o-cv1", "o-tk1", "o-psv1", "o-lt1"])], [])
+        start = nid_of(self.pg, "P-1")
+        r = self.read("explore", what="reach", start=start)
+        self.assertTrue(r["active"], r)
+        ns = __import__("hazop.study.nodes", fromlist=["x"]).load(self.pg)
+        region = screen.reach_region(self.pg, ns, start)
+        a1 = algo.a1_propagation(self.pg, [("S", region, None)], start)
+        self.assertTrue(a1["active"], a1)
+        model = api_kg._context(self.engine)[0]["model"]
+        want = {x["entity_id"] for x in a1["exploration"]["reached"]} & set(model["nodes"])
+        self.assertTrue(want)
+        self.assertEqual(set(r["ids"]), want | {start})
+        self.assertEqual(r["start"], start)
+        self.assertIn(nid_of(self.pg, "CV-1"), r["ids"])
+
+    def test_reach_says_why_it_cannot_run(self):
+        save_study(self, [("A", ["o-p1", "o-cv1"])], [])
+        outside = self.read("explore", what="reach", start=nid_of(self.pg, "TK-1"))
+        self.assertFalse(outside["active"])
+        self.assertIn("구간", outside["reason"])
+        none = self.read("explore", what="reach")
+        self.assertFalse(none["active"])
+        self.assertIn("고르", none["reason"])
+        kn = next(i for i in api_kg._context(self.engine)[0]["model"]["nodes"] if i.startswith(screen.KN_PREFIX))
+        self.assertFalse(self.read("explore", what="reach", start=kn)["active"])
+
+    def test_blocked_knowledge_graph_runs_nothing(self):
+        bad = copy.deepcopy(self.kg)
+        bad["validation"]["status"] = "blocked"
+        with mock.patch.object(api_kg, "_load_kg", lambda pid: (bad, None)):
+            api_kg._CACHE.clear()
+            r = self.read("explore", what="gaps")
+        self.assertFalse(r["active"])
+        self.assertIn("passed", r["reason"])
+        self.assertEqual(r["ids"], [])
+
+    def test_unknown_explore_is_404_and_reads_write_nothing(self):
+        before = files_under(self.tmp)
+        self.assertIsNone(api_kg.read(self.engine, ["kg", "explore"], {"what": "../x"}))
+        for what in ("gaps", "orphans", "reach"):
+            self.read("explore", what=what, start=nid_of(self.pg, "P-1"))
+        self.assertEqual(files_under(self.tmp), before)
+
+
+class StudyLayerTest(Base):
+    """완료 목록 3 B6 '검토 층': 분석 결과(시나리오·보호수단)와 초기사건 후보를 그래프에 투영해 켜고 끈다. 원본은 결과 파일이고 읽기만 한다."""
+
+    def setUp(self):
+        super().setUp()
+        from tests.test_study_storage import entry
+        self.evil = "<img src=x onerror=alert(1)> 넘침"
+        e1 = entry("e1", cause=self.evil, cause_refs=[{"ref": sref(self.pg, "P-1")}],
+                   consequence_refs=[{"ref": sref(self.pg, "TK-1")}],
+                   safeguards=[{"text": "고압 트립", "role": "preventive", "refs": [{"ref": sref(self.pg, "PSV-1")}]}])
+        self.ns, self.doc = save_study(self, [("A", ["o-p1", "o-cv1", "o-tk1", "o-psv1"])], [("S1", "I1", [e1])])
+
+    def test_layer_is_off_until_asked(self):
+        s = self.read()
+        self.assertNotIn("study", s["layers"])
+        g = self.read("graph", expand="all")
+        self.assertFalse([n for n in g["nodes"] if n["layer"] == "study"])
+
+    def test_layer_projects_scenarios_and_safeguards_onto_components(self):
+        s = self.read(study="1")
+        self.assertGreater(s["layers"]["study"], 0, s["layers"])
+        self.assertEqual(s["study"]["scenarios"], 1)
+        g = self.read("graph", expand="all", study="1")
+        ids = {n["id"]: n for n in g["nodes"]}
+        self.assertIn("st-S1", ids)
+        self.assertIn("st-e1", ids)
+        self.assertIn(self.evil[:10], ids["st-e1"]["label"], "글은 그대로 글이다(HTML로 바꾸지 않는다)")
+        rel = {(l["kind"], l["s"], l["t"]) for l in g["links"]}
+        self.assertIn(("cause_at", "st-e1-c", nid_of(self.pg, "P-1")), rel)
+        self.assertIn(("affects", "st-e1-q", nid_of(self.pg, "TK-1")), rel)
+        self.assertIn(("safeguard_by", "st-e1-g1", nid_of(self.pg, "PSV-1")), rel)
+        self.assertEqual(ids["st-e1"]["group"], "graph-T-001")
+
+    def test_study_node_detail_is_read_only_and_comes_from_the_results(self):
+        d = self.read("node", id="st-e1", study="1")
+        self.assertEqual(d["layer"], "study")
+        self.assertTrue(d["read_only"])
+        self.assertIn(self.evil, [v for _, v in d["what"]])
+        self.assertEqual(api_kg.node(self.engine, "st-e1"), None, "층을 끄면 검토 노드는 없다")
+
+    def test_link_detail_explains_where_the_line_comes_from(self):
+        g = self.read("graph", expand="all", study="1")
+        cause = next(l for l in g["links"] if l["kind"] == "cause_at")
+        d = self.read("link", id=cause["id"], study="1")
+        self.assertEqual((d["from"]["id"], d["to"]["id"]), (cause["s"], cause["t"]))
+        self.assertTrue(d["what"])
+        self.assertTrue(any("분석 결과" in v for _, v in d["evidence"]), d["evidence"])
+        kn = next(l for l in self.read("graph", expand="all")["links"] if l["id"].startswith(screen.KN_PREFIX))
+        dk = self.read("link", id=kn["id"])
+        self.assertTrue(any(k == "상태" for k, _ in dk["what"]), dk)
+        pipe = next(l for l in self.read("graph", expand="all")["links"] if l["kind"] == "pipe")
+        self.assertTrue(self.read("link", id=pipe["id"])["what"])
+        self.assertIsNone(api_kg.read(self.engine, ["kg", "link"], {"id": "nope"}))
+
+    def test_results_change_is_seen_without_restart(self):
+        from hazop import store_io
+        from hazop.study import results as res
+        from tests.test_study_storage import entry, put_entries
+        self.read("graph", expand="all", study="1")
+        doc = res.load(self.ns)
+        put_entries(doc, "S1", "I1", [entry("e2", cause="새 원인")])
+        res.save_fp(doc, self.ns["project_id"], expect=store_io.ANY)
+        ids = {n["id"] for n in self.read("graph", expand="all", study="1")["nodes"]}
+        self.assertIn("st-e2", ids)
+        self.assertNotIn("st-e1", ids)
 
 
 if __name__ == "__main__":
