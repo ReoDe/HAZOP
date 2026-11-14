@@ -230,7 +230,7 @@ class CommandTest(Base):
         self.assertTrue(edit["ok"], edit)
         self.assertEqual(res.load(self.ns)["cells"][0]["entries"][1]["cause"], "바뀐 원인")
         self.assertEqual(sorted(rc.COMMANDS), ["edit_entry", "export_excel", "export_ie_bundle", "get_cell",
-                                               "get_matrix", "recheck_cell", "set_status"])
+                                               "get_matrix", "recheck_cell", "set_ie_hints", "set_status"])
         matrix = rc.execute(self.g, "get_matrix", {}, by="검토자", fingerprint=None)
         self.assertEqual(matrix["matrix"]["S1"]["D01"]["unreviewed"], 2)
         self.assertEqual(cell["node_rev"], self.ns["nodes"][0]["rev"])
@@ -284,6 +284,57 @@ class CommandTest(Base):
         self.assertEqual(node_rev["refused"][0]["code"], "stale")
         self.assertEqual(next(e["status"] for c in res.load(sn.load(self.g))["cells"] for e in c["entries"]
                               if e["entry_id"] == "e1"), "approved", "디스크의 판정은 그대로")
+
+
+
+class SetIeHintsCommandTest(Base):
+    """B5 set_ie_hints(후보 IE 판정)도 다른 쓰는 명령과 같은 판정 저장 규칙을 따른다: 결과 지문 대조, 누른 사람(by) 필수,
+    AI가 쓴 판정은 author로 따로, 보류 항목은 보류·사유 그대로, 제안 항목만 수정이 된다(재실행이 덮지 않게)."""
+    T = [{"node_id": "S1", "deviation_id": "D01", "entry_id": "e1"}]
+    H = {"candidate": "no", "disturbs": "no", "challenges": "unknown", "category": None, "safety_functions": [], "reason": "범위 밖"}
+
+    def setUp(self):
+        super().setUp()
+        sn.save(self.ns)
+        res.save(self.doc, None)
+
+    def fp(self):
+        return rc.execute(self.g, "get_cell", {"node_id": "S1", "deviation_id": "D01"}, by="검토자", fingerprint=None)["fingerprint"]
+
+    def e1(self):
+        return res.load(self.ns)["cells"][0]["entries"][0]
+
+    def run_(self, by="검토자", fingerprint="now", **a):
+        fp = self.fp() if fingerprint == "now" else fingerprint
+        return rc.execute(self.g, "set_ie_hints", dict({"targets": self.T, "hint": self.H}, **a), by=by, fingerprint=fp)
+
+    def test_needs_the_reader_and_the_files_current_version(self):
+        before = self.e1()
+        self.assertEqual(self.run_(by="")["refused"][0]["code"], "bad_actor", "누른 사람이 없으면 거절")
+        self.assertEqual(self.run_(fingerprint="sha256:old")["refused"][0]["code"], "stale", "읽은 뒤 바뀐 파일에는 쓰지 않음")
+        self.assertFalse(self.run_(targets=[])["ok"], "판정할 항목이 없으면 거절")
+        self.assertFalse(self.run_(hint=dict(self.H, candidate="maybe"))["ok"], "판정 값 오류")
+        self.assertEqual(self.e1(), before)
+
+    def test_proposed_entry_becomes_revised_and_the_person_and_ai_author_are_kept_apart(self):
+        r = self.run_(author="ai")
+        self.assertTrue(r["ok"], r)
+        e = self.e1()
+        self.assertEqual((e["status"], e["ie_hint"]["candidate"], e["ie_hint"]["origin"]), ("revised", "no", "human"))
+        row = e["history"][-1]
+        self.assertEqual((row["op"], row["by"], row["author"]), ("ie_hint", "검토자", "ai"), "글은 AI, 누른 사람은 검토자")
+        self.assertFalse(self.run_(author="robot")["ok"], "모르는 글쓴이는 거절")
+        r = self.run_()
+        self.assertNotIn("author", self.e1()["history"][-1], "사람이 쓴 판정에는 글쓴이를 달지 않음")
+
+    def test_held_entry_stays_on_hold_with_its_reason(self):
+        held = rc.execute(self.g, "set_status", {"node_id": "S1", "deviation_id": "D01", "entry_id": "e1", "status": "on_hold",
+                                                 "reason": "현장 확인 필요"}, by="검토자", fingerprint=self.fp())
+        self.assertTrue(held["ok"], held)
+        self.assertTrue(self.run_()["ok"])
+        e = self.e1()
+        self.assertEqual(e["status"], "on_hold")
+        self.assertEqual((res.verdict(e)["status"], res.verdict(e)["reason"]), ("on_hold", "현장 확인 필요"), "판정 사유는 그대로")
 
 
 if __name__ == "__main__":
