@@ -677,6 +677,77 @@ class PdfVectorRuleTest(unittest.TestCase):
                           line((222.9, 109.6), (300, 109.6)), line((220, 108.15), (208, 56)), line((222.9, 108.15), (212, 56))])
         self.assertNotIn("orifice", [n["kind"] for n in tapped["nodes"]])
 
+    def test_orifice_box_with_pipe_stub_on_plate(self):
+        # APR1400 016쪽 OR08D: 아래 판에 0.5pt 배관 토막이 닿고 그 끝에서 배관이 이어진다. 토막은 판 사이 칸 안의 선이
+        # 아니고, 이어지는 선은 같은 배관이라 판에 닿는 배관 끝은 하나다
+        ext = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), line((140, 109.6), (220, 109.6)),
+                       line((220, 108.15), (220, 111.05)), line((222.9, 108.15), (222.9, 111.05)),
+                       line((221.45, 108.875), (221.45, 110.325)), line((222.9, 109.6), (223.38, 109.6)),
+                       line((223.38, 109.6), (300, 109.6))])
+        self.assertEqual([n["kind"] for n in ext["nodes"] if 215 < n["geometry"]["x"] < 225], ["orifice"])
+        self.assertEqual(len(ext["relations"]), 2)
+
+    def test_thin_filled_triangle_is_arrowhead_not_dash(self):
+        # APR1400 105쪽 벤트 끝 화살촉(1.4×2.9pt): 점선 조각 크기 안이지만 닫힌 삼각형은 화살촉이다. 검정 견본 묶음에는
+        # 넣지 않는다(016쪽 V420 나비 몸통 옆 위치 표시 화살촉이 몸통 묶음을 바꾸지 않게)
+        tri = prim([(300, 109.3), (302.9, 110), (300, 110.7), (300, 109.3)], closed=True, fill=True)
+        bar = rect(200, 109.5, 204, 110.5, fill=True)
+        cls = pdf_vector._classify_primitives(600, 400, [tri, bar], dict(pdf_vector.PARAMS))
+        self.assertEqual(([d["id"] for d in cls["dashes"]], [m["id"] for m in cls["markers"]]),
+                         (["pdf-path-0001"], ["pdf-path-0000"]))
+        self.assertEqual(pdf_vector._black_fills(cls), [])
+
+    def test_pipe_ending_in_outward_arrowhead_is_vent_end(self):
+        # 범례의 대기 방출 화살표(APR1400 046쪽 ATM, 105쪽 지붕 위 벤트): 기호에 닿지 않은 배관 끝이 바깥을 향한 화살촉에서
+        # 끝나면 그 화살촉이 끝 기호다. 글자가 VENT·ATM이면 vent, 없으면 미분류
+        def head(x, d=1):
+            return prim([(x, 109.3), (x + d * 2.9, 110), (x, 110.7), (x, 109.3)], closed=True, fill=True)
+
+        def ends(ext):
+            kind = {n["local_id"]: n["kind"] for n in ext["nodes"]}
+            return sorted(tuple(sorted(str(kind[e["node_local_id"]]) for e in r["endpoints"] if e.get("node_local_id")))
+                          for r in ext["relations"])
+        base = [rect(100, 90, 140, 130), line((140, 110), (300, 110))]
+        self.assertEqual(ends(pdf_run(base + [head(300)])), [("None", "None")])
+        self.assertEqual(ends(pdf_run(base + [head(300)], [word("ATM", 296, 100, size=3.0)])), [("None", "vent")])
+        # 배관 안쪽을 가리키는 화살촉(흘러드는 끝), 화살촉 끝이 다른 선에 닿는 지시선, 점선(신호선) 끝은 끝 기호가 아니다
+        inward = pdf_run(base + [prim([(302.9, 109.3), (300, 110), (302.9, 110.7), (302.9, 109.3)], closed=True, fill=True)])
+        self.assertEqual(len(inward["nodes"]), 1)
+        leader = pdf_run(base + [head(300), rect(100, 200, 140, 240), line((303.5, 60), (303.5, 160))])
+        self.assertEqual(sum(1 for n in leader["nodes"] if n["geometry"]["x"] >= 299), 0)
+        dashed = line((140, 110), (300, 110))
+        dashed["dash"] = [[3.0, 2.0], 0.0]
+        self.assertEqual(len(pdf_run([rect(100, 90, 140, 130), dashed, head(300)])["nodes"]), 1)
+        # 배관 중간의 흐름 화살촉은 두 배관 끝을 잇는다(끝 기호가 아니다)
+        mid = pdf_run([rect(100, 90, 140, 130), rect(300, 90, 340, 130), line((140, 110), (220, 110)), head(220),
+                       line((222.9, 110), (300, 110))])
+        self.assertEqual(ends(mid), [("None", "None")])
+        self.assertEqual(len(mid["nodes"]), 2)
+
+    def test_short_outlet_arrow_of_line_symbol_is_part_of_it(self):
+        # APR1400 025·033쪽 기기 드레인: 깔때기(열린 선) 아래에서 짧은 출구가 'DE' 쪽 얇은 화살촉으로 끝난다. 출구는 깔때기의
+        # 일부라 벤트 끝 기호를 따로 만들지 않는다. 얇은 화살촉은 기호 안에서 점선 조각으로 세어 '선과 표식' 체크밸브가 아니다
+        tip = prim([(109, 104.8), (111.9, 105.5), (109, 106.2), (109, 104.8)], closed=True, fill=True)
+        ext = pdf_run([line((100, 100), (100, 102), (108, 102), (108, 100)), line((104, 102), (104, 105.5), (109, 105.5)), tip])
+        self.assertEqual([(n["kind"], n["geometry"]["width"]) for n in ext["nodes"]], [("drain", 11.9)])
+        self.assertEqual(ext["relations"], [])
+
+    def test_thin_arrowhead_inside_line_symbol_is_not_check_valve(self):
+        # 얇은 화살촉이 선 기호 상자 안에 들면 예전처럼 점선 조각으로 센다(표식으로 세면 '선과 표식' 체크밸브 규칙에 걸린다.
+        # APR1400 025쪽 체크밸브 오검출 7개)
+        tip = prim([(103, 104.3), (105.9, 105), (103, 105.7), (103, 104.3)], closed=True, fill=True)
+        ext = pdf_run([line((100, 100), (110, 110)), line((100, 110), (110, 100)), tip])
+        self.assertEqual([n["kind"] for n in ext["nodes"]], [None])
+
+    def test_outward_arrowhead_attaches_only_at_its_tip(self):
+        # APR1400 105쪽: 벤트 관이 지붕 빗금 묶음 사이 틈을 지나 화살촉에서 끝난다. 화살촉 밑동은 옆 빗금 묶음 상자에서
+        # 2.5pt 안이지만 화살촉 끝은 멀다. 배관은 옆 묶음에 붙지 않고 화살촉 끝 기호에서 끝난다
+        ext = pdf_run([rect(100, 200, 140, 240), rect(122.2, 150.8, 150, 154), line((120, 200), (120, 150)),
+                       prim([(119.3, 150), (120, 147.1), (120.7, 150), (119.3, 150)], closed=True, fill=True)])
+        at = {n["local_id"]: n["geometry"]["y"] for n in ext["nodes"]}
+        self.assertEqual(sorted(tuple(sorted(at[e["node_local_id"]] for e in r["endpoints"])) for r in ext["relations"]),
+                         [(147.1, 200)])
+
     def test_alarm_box_words_are_not_equipment(self):
         ext = pdf_run([rect(100, 100, 180, 120), rect(300, 100, 380, 120)],
                       [word("PUMP", 105, 104), word("START/STOP", 120.5, 104), word("PUMP", 305, 104), word("P-01", 320.5, 104)])

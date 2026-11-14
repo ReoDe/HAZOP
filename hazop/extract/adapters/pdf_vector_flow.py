@@ -10,7 +10,7 @@
 
 import math
 
-from .pdf_vector_common import _seg_dist, _segs
+from .pdf_vector_common import _inside, _seg_dist, _segs
 
 # 흐름이 그대로 지나가는 2포트 기호(관계가 꼭 2개일 때만). 펌프·압축기·팬·필터·탈염기는 흡입 하나 토출 하나라 넣고,
 # 탱크·용기·열교환기(두 유체)는 입출구가 여럿이거나 흐름이 둘이라 넣지 않는다
@@ -69,6 +69,73 @@ def _chain_flow(ch, markers, prm):
             continue
         votes.add(1 if cos > 0 else -1)
     return votes.pop() if len(votes) == 1 else None
+
+
+VENT_ALIGN_MIN = 0.9   # 끝 화살촉 방향과 배관 끝 선분 방향의 cos 하한(바깥을 가리켜야 한다)
+
+
+def end_arrow(pts, k, markers, prm):
+    """선 pts의 끝 k(0: 첫 점, 1: 끝 점)가 바깥쪽(선이 나아가던 방향)을 가리키는 채운 삼각형 화살촉 하나 안에 있으면
+    (화살촉, 뾰족한 끝 점), 아니면 None. 이런 끝은 화살촉 끝까지가 배관 끝이다."""
+    seq = pts if k == 1 else pts[::-1]
+    pt = seq[-1]
+    prev = next((p for p in reversed(seq[:-1]) if math.dist(p, pt) > 0.5), None)
+    hits = [m for m in markers if arrow_axis(m) is not None and _inside(pt, m["bbox"], prm["end_tol"])]
+    if prev is None or len(hits) != 1:
+        return None
+    tip, d = arrow_axis(hits[0])
+    if (d[0] * (pt[0] - prev[0]) + d[1] * (pt[1] - prev[1])) / math.dist(prev, pt) < VENT_ALIGN_MIN:
+        return None
+    return hits[0], tip
+
+
+def _outlet_host(ch, k, m, prm):
+    """화살촉 m에서 끝나는 사슬 ch의 반대 끝이 몸체 없는 작은 선 기호에 붙고, 사슬과 화살촉이 그 기호의 장식선 범위
+    (decor_extent_ratio) 안에 있으면 그 기호. 기기 드레인 깔때기의 'DE' 출구 화살표(범례 1.7-1, APR1400 025·033쪽)처럼
+    기호의 일부다. 끝 기호를 따로 만들지 않고 그 기호에 넣는다."""
+    v = ch["ends"][1 - k][0]
+    if v[0] != "sym" or not v[1].stroke_only or v[1].bodies:
+        return None
+    host = v[1]
+    reach = prm["decor_extent_ratio"] * max(host.core[2] - host.core[0], host.core[3] - host.core[1])
+    pts = list(ch["pts"]) + [m["bbox"][:2], m["bbox"][2:]]
+    return host if all(_inside(p, host.bbox, reach) for p in pts) else None
+
+
+def _vent_ends(chains, markers, polys, prm):
+    """기호에 닿지 않은 실선 배관 끝이 바깥을 가리키는 화살촉 안에 있고(end_arrow) 화살촉 끝이 빈 곳을 가리키면 대기
+    방출 끝(범례의 VENT·ATM 화살표, APR1400 046·063·105쪽)이다. 그 화살촉을 몸체로 하는 끝 기호를 만들어 사슬 끝을
+    잇는다(제자리에서 고침). 배관 안쪽을 가리키는 화살촉(흘러드는 쪽), 점선(신호선)·공압 신호선 끝, 화살촉 끝이 다른
+    선에 닿는 것(선을 가리키는 지시선)은 끝 기호로 보지 않는다. 작은 선 기호에서 나온 짧은 출구는 그 기호에 넣는다
+    (_outlet_host). 화살촉은 흐름 방향 근거로도 남긴다(markers에서 빼지 않는다). → (새 기호 목록, 남은 사슬 목록)."""
+    from .pdf_vector_grouping import _Sym
+    made, absorbed = {}, set()
+    poly_of = {p["id"]: p for p in polys}
+    segs = None
+    for ch in chains:
+        if ch.get("dashed") or ch.get("pneumatic") or len(ch["pts"]) < 2:
+            continue
+        for k in (0, 1):
+            v, pt, _ = ch["ends"][k]
+            hit = end_arrow(ch["pts"], k, markers, prm) if v[0] == "free" else None
+            if hit is None:
+                continue
+            m, tip = hit
+            if segs is None:
+                segs = [(a, b, id(c)) for c in chains for a, b in _segs(c["pts"])]
+            if any(_seg_dist(tip, a, b)[0] <= prm["end_tol"] for a, b, c in segs if c != id(ch)):
+                continue
+            host = _outlet_host(ch, k, m, prm)
+            if host is not None and all(e in poly_of for e in ch["evidence"]):
+                host.add([dict(poly_of[e], kind_="poly") for e in ch["evidence"]], "strokes")
+                host.add([m], "dashes" if m.get("thin_tip") else "markers")
+                absorbed.add(id(ch))
+                break
+            s = made.get(id(m))
+            if s is None:
+                s = made[id(m)] = _Sym([dict(m, kind_="body")])
+            ch["ends"][k] = (("sym", s), pt, "pdf_arrowhead")
+    return list(made.values()), [ch for ch in chains if id(ch) not in absorbed]
 
 
 def continuation_flow(sym, point):

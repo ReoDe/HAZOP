@@ -51,7 +51,7 @@ from .pdf_vector_grouping import (
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
 )
-from .pdf_vector_flow import _chain_flow, _propagate_flows, continuation_flow
+from .pdf_vector_flow import _chain_flow, _propagate_flows, _vent_ends, continuation_flow, end_arrow
 from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels, parse_label
 from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, POSITION_CODE_RE, POSITION_TEXT_RE, NUMBER_PLATE_RE, VALVE_TAG_RE,
                                 _text_blocks, _upright_blocks, _bubble_like, _assign_tags, _join_bubble_number)
@@ -382,7 +382,12 @@ def _classify_primitives(width, height, prims, prm):
                 small, large = min(_w(b), _h(b)), max(_w(b), _h(b))
                 corner = len(pts) >= 6 and not curved and large <= prm["dash_corner_max"] \
                     and not _is_convex(pts)  # 꺾인 점선 모서리(L자)는 오목하다. 볼록하면 화살촉
-                if (small <= prm["dash_thick_max"] and large <= prm["dash_long_max"]) or corner:
+                thin = small <= prm["dash_thick_max"] and large <= prm["dash_long_max"]
+                if thin and _is_triangle(item):
+                    # 닫힌 삼각형은 점선 조각(선분을 굵게 칠한 사각형)이 아니라 화살촉이다(APR1400 105쪽 벤트 끝 1.4×2.9pt).
+                    # 밸브 몸통이 되기엔 얇아 검정 견본 묶음(_black_fills)에는 넣지 않는다
+                    markers.append(dict(item, thin_tip=True))
+                elif thin or corner:
                     dashes.append(item)
                 elif large <= prm["marker_max"]:
                     markers.append(item)
@@ -890,7 +895,10 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
         return _pt_box_dist(q, s.bbox) > prm["touch_tol"] and _meets_at_end(pt, pieces[j]["pts"], q) and \
             _meets_at_end(q, pieces[i]["pts"], pt)
     for i, k, pt in ends:
-        s, basis = _attach(pt, syms, markers, prm)
+        # 바깥을 가리키는 화살촉 안에서 끝난 선은 화살촉 끝이 배관 끝이다. 그 끝에 닿은 기호에만 붙이고, 화살촉 밑동 옆을
+        # 스치는 기호에는 붙이지 않는다(APR1400 105쪽 벤트 관이 지붕 빗금 묶음 사이 틈을 지나 화살촉에서 끝난다)
+        arrow = end_arrow(pieces[i]["pts"], k, markers, prm)
+        s, basis = _attach(arrow[1], syms, (), prm) if arrow else _attach(pt, syms, markers, prm)
         # 두 선이 끝을 맞댄 모서리가 기호 옆을 닿지 않고 지나면 그 모서리는 배관이 꺾이는 자리다. 기호에 붙이면 배관이
         # 그 기호에서 둘로 갈린다(APR1400 008쪽: MOV 상승관 꼭대기 모서리가 TEW 상자 변에서 1.8pt 떨어져 있다)
         if s is not None and basis == "pdf_path_endpoint" and corner_beside(i, pt, s):
@@ -1480,7 +1488,8 @@ def _check_against_registry(lib):
 def _black_fills(cls):
     """검은 채움 도형 전부: 표식(작은 것), 검은 몸체(큰 것), 점선 조각으로 분류된 둥근 점. 글로브 밸브 가운데 점은
     1.5pt보다 작으면 점선 조각이 된다."""
-    return cls["markers"] + [b for b in cls["bodies"] if b.get("solid")] + [d for d in cls["dashes"] if d["curved"]]
+    return [m for m in cls["markers"] if not m.get("thin_tip")] + [b for b in cls["bodies"] if b.get("solid")] + \
+        [d for d in cls["dashes"] if d["curved"]]
 
 
 def _promote_black_symbols(cls, prm):
@@ -1972,6 +1981,8 @@ def analyze(width, height, words, prims, params=None):
     chains += _build_dashed(syms, [d for d in dashes if d["id"] not in dots
                                    and not any(_inside(_center(d["bbox"]), c) for c in cores)], markers, prm)
     chains = _dashed_continuations(chains, prm)
+    vents, chains = _vent_ends(chains, markers, polys, prm)
+    syms += vents
     syms = _merge_appendages(syms, chains, prm)
     for ch in chains:  # 흐름 방향: 사슬 위·끝에 남은 화살촉(pdf_vector_flow)
         if not ch.get("dashed") or ch.get("continues_pipe"):

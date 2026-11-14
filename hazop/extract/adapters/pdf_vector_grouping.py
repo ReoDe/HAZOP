@@ -498,10 +498,14 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
 
         def core(q):
             return lo + 0.1 < axial(a, q) < hi - 0.1 and abs(lateral(a, q)) < a["L"] / 2
+        def between(q):  # 축 방향으로 두 판 사이에 들어온 점(선분 가운데 포함)이 있다. 판 바깥에서 판에 닿기만 한 짧은 배관 토막은 아니다
+            mids = [((s[0] + e[0]) / 2, (s[1] + e[1]) / 2) for s, e in _segs(q["pts"])]
+            return any(lo + 0.1 < axial(a, t) < hi - 0.1 for t in list(q["pts"]) + mids)
         lines, crossing = [], []
         for q in others:
             if all(inside(t) for t in q["pts"]):
-                lines.append(q)
+                if between(q):
+                    lines.append(q)
             elif any(core(t) for t in q["pts"]) or any(core(m) for m in
                                                      (((s[0] + e[0]) / 2, (s[1] + e[1]) / 2) for s, e in _segs(q["pts"]))):
                 crossing.append(q)
@@ -511,16 +515,18 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
         return lines, dots, bodies, crossing
 
     def pipe_end(a, away):
-        """판 a 가운데에 바깥(away 쪽, 배관 축 부호)에서 닿는 배관 끝. 하나일 때만 그 (선, 끝 점)."""
+        """판 a 가운데에 바깥(away 쪽, 배관 축 부호)에서 닿는 배관 끝. 하나일 때만 그 (선, 끝 점). 판에 닿은 짧은
+        토막의 반대 끝에서 이어지는 선은 같은 배관이라 따로 세지 않는다(APR1400 016쪽 OR08D 아래 0.5pt 토막)."""
         hits = []
         for q in others:
             for k in (0, -1):
                 e, nxt = q["pts"][k], q["pts"][1 if k == 0 else -2]
                 if math.hypot(e[0] - a["c"][0], e[1] - a["c"][1]) <= prm["plate_touch_tol"]:
                     d = axial(a, nxt)
-                    if (d > 0) == away and abs(lateral(a, nxt)) <= 0.3 * abs(d):
-                        hits.append((q, e))
-        return hits[0] if len(hits) == 1 else None
+                    if d != 0 and (d > 0) == away and abs(lateral(a, nxt)) <= 0.3 * abs(d):
+                        hits.append((q, e, q["pts"][-1 - k]))
+        hits = [h for h in hits if not any(g[0] is not h[0] and math.dist(g[2], h[1]) <= 0.1 for g in hits)]
+        return hits[0][:2] if len(hits) == 1 else None
 
     def touched(a, allow, branch_ok=False):
         """판 a에 (allow 말고) 다른 선이 닿는지. 오리피스 탭선·계기 지시선이 닿은 판은 플랜지로 보지 않는다.
@@ -895,7 +901,9 @@ def _group_symbols(cls, prm):
                 own = [s for s in inside if "seed" in m and any(b.get("seed") == m["seed"] for b in s.bodies)]
                 host = (own or inside or [None])[0]
                 if host is not None:
-                    host.add([m], name)
+                    # 얇은 화살촉(pdf_vector._classify_primitives thin_tip)은 기호 안에서는 예전처럼 점선 조각으로 센다. 표식으로
+                    # 세면 선 기호가 '선과 표식' 체크밸브 규칙에 걸리고 사전 견본 서명의 구성이 바뀐다
+                    host.add([m], "dashes" if m.get("thin_tip") else name)
                     changed = True
                 else:
                     rest.append(m)
