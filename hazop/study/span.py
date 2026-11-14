@@ -30,9 +30,25 @@ def short_numbers(drawing_numbers):
     return prefix, {d: d[len(prefix):] or d for d in dns}
 
 
+# 표제란을 확정하지 않은 도면(프로젝트 그래프 sheets의 drawing_number가 None). 표기에서는 이 말과 그래프 ID로 적고, 도면번호 자리
+# (구간 drawings·경계·태그 도면)에는 넣지 않는다(미확정 번호를 확정값처럼 쓰지 않음).
+UNNUMBERED = "(번호 미확정)"
+
+
+def sheet_label(sheet):
+    """도면 하나의 표기: 확정 도면번호, 없으면 '(번호 미확정) <그래프 ID>'."""
+    return sheet.get("drawing_number") or "%s %s" % (UNNUMBERED, sheet.get("graph_id") or "-")
+
+
 def _sheet_of(pg):
     dn = {s["graph_id"]: s["drawing_number"] for s in pg["sheets"]}
     return {n["entity_id"]: dn.get(n.get("sheet")) for n in pg["nodes"]}
+
+
+def _unnumbered_of(pg):
+    """{entity_id: 그 도면의 표기} 번호 미확정 도면의 구성요소만."""
+    lab = {s["graph_id"]: sheet_label(s) for s in pg["sheets"] if not s.get("drawing_number")}
+    return {n["entity_id"]: lab[n["sheet"]] for n in pg["nodes"] if n.get("sheet") in lab}
 
 
 def _flow_order(drawings, pg, members):
@@ -134,12 +150,14 @@ def _boundaries(node, by_id, drawing_of, node_of, seg_ends, seg_rank, segs_of):
 
 def annotate(node_set, pg):
     """표기·경계 정보를 붙인 집합 사본. 구간마다:
-    display_name, drawings(흐름 순서 전체 번호), drawings_short, spans_drawings, members_by_drawing{번호: 수},
+    display_name, drawings(흐름 순서 전체 번호), unnumbered_drawings(번호 미확정 도면 표기), drawings_short(표기용: 짧은 번호 뒤에
+    번호 미확정 도면), spans_drawings, members_by_drawing{번호: 수},
     member_count, boundary{start, end}(각 {entity_id, label, drawing}), continuations[{entity_id, drawing,
     to_drawing, to_node_ids}](화면 칩 "S7 → SNP-M-101에서 계속"). 집합 위에 drawing_numbers·drawing_prefix·drawing_short."""
     out = pickle.loads(pickle.dumps(node_set, pickle.HIGHEST_PROTOCOL))  # JSON 값이라 deepcopy와 같은 사본, 몇 배 빠름
     by_id = {n["entity_id"]: n for n in pg["nodes"]}
     drawing_of = _sheet_of(pg)
+    unnumbered_of = _unnumbered_of(pg)
     prefix, short = short_numbers([s["drawing_number"] for s in pg["sheets"]])
     seg_ends = _segment_ends(pg)
     seg_rank = {seg: i for i, seg in enumerate(seg_ends)}
@@ -157,16 +175,17 @@ def annotate(node_set, pg):
             if drawing_of.get(m):
                 counts[drawing_of[m]] = counts.get(drawing_of[m], 0) + 1
         drawings = _flow_order(set(counts), pg, set(n["members"]))
+        unnumbered = sorted({unnumbered_of[m] for m in n["members"] if m in unnumbered_of})
+        shown = [short.get(d, d) for d in drawings] + unnumbered
         start, end, conts = _boundaries(n, by_id, drawing_of, node_of, seg_ends, seg_rank, segs_of)
         n.update({
-            "drawings": drawings, "drawings_short": [short.get(d, d) for d in drawings],
-            "spans_drawings": len(drawings) > 1, "members_by_drawing": dict(sorted(counts.items())),
+            "drawings": drawings, "unnumbered_drawings": unnumbered, "drawings_short": shown,
+            "spans_drawings": len(drawings) + len(unnumbered) > 1, "members_by_drawing": dict(sorted(counts.items())),
             "member_count": len(n["members"]),
-            "display_name": "%s %s [%s]" % (n["node_id"], n["name"], " → ".join(short.get(d, d) for d in drawings)
-                                            if n["members"] else EMPTY_NODE),
+            "display_name": "%s %s [%s]" % (n["node_id"], n["name"], " → ".join(shown) if n["members"] else EMPTY_NODE),
             "boundary": {"start": start, "end": end}, "continuations": conts,
         })
-    out.update({"drawing_numbers": [s["drawing_number"] for s in pg["sheets"]], "drawing_prefix": prefix,
+    out.update({"drawing_numbers": [sheet_label(s) for s in pg["sheets"]], "drawing_prefix": prefix,
                 "drawing_short": short})
     return out
 
@@ -174,7 +193,7 @@ def annotate(node_set, pg):
 def continuation_chip(node_id, cont):
     """화면 칩 문구. 상대 쪽 구간 ID를 모두 적는다(겹친 구간이면 "S7·S9 → 102에서 계속"). 상대가 없으면 이 구간 ID."""
     targets = cont["to_node_ids"] or [node_id]
-    return "%s → %s에서 계속" % ("·".join(targets), cont["to_drawing"])
+    return "%s → %s에서 계속" % ("·".join(targets), cont["to_drawing"] or UNNUMBERED + " 도면")
 
 
 # ---------------------------------------------------------------- 조회
@@ -212,17 +231,17 @@ def worksheet_header(node):
 
 
 def drawing_column(node):
-    """내보내기 '도면 번호' 열 값."""
-    return ", ".join(node.get("drawings", []))
+    """내보내기 '도면 번호' 열 값(번호 미확정 도면은 그 표기로 뒤에)."""
+    return ", ".join(list(node.get("drawings", [])) + list(node.get("unnumbered_drawings") or []))
 
 
 def tag_drawings(pg):
-    """{태그: 도면번호} (도면 객체만, 여러 도면에 같은 태그면 넣지 않음)."""
+    """{태그: 도면번호} (도면 객체만, 여러 도면에 같은 태그면 넣지 않음, 번호 미확정 도면의 태그는 넣지 않음)."""
     seen = {}
     for n in pg["nodes"]:
         if n.get("tag") and n.get("node_type") == "drawing_object" and n.get("sheet"):
             seen.setdefault(n["tag"], set()).add(_sheet_of_one(pg, n))
-    return {t: next(iter(d)) for t, d in seen.items() if len(d) == 1}
+    return {t: next(iter(d)) for t, d in seen.items() if len(d) == 1 and next(iter(d))}
 
 
 def _sheet_of_one(pg, n):
