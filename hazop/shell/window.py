@@ -237,7 +237,9 @@ class ShellWindow(QMainWindow):
                                     allow_test=self._debug)   # web/test/는 시험 모드(HAZOP_DEBUG)일 때만 내준다
         keys = KeyStore(os.path.join(os.path.dirname(settings_path or paths.settings_path()), STORE_FILE_NAME))
         prefs = AiPrefs(self.engine.settings, lambda s: paths.save_settings(s, settings_path))
-        self.ai_conn = AiConnection(prefs, keys, debug=self._debug, parent=self)
+        # 새 화면은 사용자가 API를 고른 적이 없으면 구독 실패 시 API로 넘어가지 않고 '연결 안 됨'으로 둔다(화면은 구독인데 실제 호출은 API로 가는 일을 막는다)
+        self.ai_conn = AiConnection(prefs, keys, debug=self._debug, parent=self, auto_api=False)
+        self.ai_conn.notice.connect(lambda text: self.bridge.send({"t": "event", "name": "app.notice", "data": {"text": text}}))      # 웹은 app.notice를 토스트로 보인다
         self.engine.ai = AiAdapter(self.ai_conn, lambda: self._on_conn(user_check=True))
         self.ai_conn.changed.connect(self._on_conn)
         env_fn = env_provider or self._card_env
