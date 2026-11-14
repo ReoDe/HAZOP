@@ -12,6 +12,7 @@
 import hashlib
 import json
 import os
+import threading
 
 from hazop import paths, store_io
 from hazop.graph import project, sources
@@ -47,16 +48,77 @@ def boundary_text(n):
 
 
 _NAMES = {}
+NAMES_CACHE_VERSION = 1
+_NAMES_LOCK = threading.Lock()
+
+
+def _names_file():
+    return paths.folder("cache", "graph-names.json")
+
+
+def _names_fingerprint(project_id, key):
+    """도면 이름 사전을 디스크에 남길 때의 지문: 프로젝트 그래프 입력(key)에, 이름을 고를 때 읽는 추출 결과의 형식(sources.source_format)이 바뀌는지 보려는 extraction.json의 (시각, 크기)를 더한다.
+    143쪽 graph.json(수십 MB)을 열지 않고 stat만 본다."""
+    extract_root = paths.output_root("extract")
+    stats = []
+    root = paths.output_root("graph")
+    for n in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        try:
+            st = os.stat(os.path.join(extract_root, n, "extraction.json"))
+            stats.append((n, st.st_mtime_ns, st.st_size))
+        except OSError:
+            stats.append((n, None, None))
+    return hashlib.sha256(json.dumps([NAMES_CACHE_VERSION, project_id, key, stats], default=str).encode("utf-8")).hexdigest()
+
+
+def _names_from_disk(project_id, fp):
+    try:
+        with open(_names_file(), encoding="utf-8") as fh:
+            hit = (json.load(fh).get("entries") or {}).get(project_id)
+    except (OSError, ValueError, AttributeError):
+        return None
+    if isinstance(hit, dict) and hit.get("fp") == fp and isinstance(hit.get("names"), dict) and hit["names"]:
+        return {str(k): str(v) for k, v in hit["names"].items()}
+    return None
+
+
+def _names_to_disk(project_id, fp, names):
+    """도면 이름 사전을 캐시 파일에 남긴다(캐시일 뿐이라 쓰지 못해도 넘어간다). 비어 있으면 남기지 않는다."""
+    if not names:
+        return
+    f = _names_file()
+    with _NAMES_LOCK:
+        try:
+            with open(f, encoding="utf-8") as fh:
+                doc = json.load(fh)
+            entries = doc.get("entries") if doc.get("version") == NAMES_CACHE_VERSION else None
+        except (OSError, ValueError, AttributeError):
+            entries = None
+        entries = entries if isinstance(entries, dict) else {}
+        entries[project_id] = {"fp": fp, "names": names}
+        tmp = "%s.%d.tmp" % (f, os.getpid())
+        try:
+            os.makedirs(os.path.dirname(f), exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump({"version": NAMES_CACHE_VERSION, "entries": entries}, fh, ensure_ascii=False)
+            os.replace(tmp, f)
+        except OSError:
+            pass
 
 
 def graph_names(project_id):
     """{도면 graph_id: output/graph 폴더 이름(= ②④⑤ 도면 고르기 이름)}. 이 프로젝트 도면만, 같은 graph_id면 가장 최근 것
-    (project.load가 고르는 판과 같은 규칙). 입력 파일 지문이 같으면 다시 읽지 않는다."""
+    (project.load가 고르는 판과 같은 규칙). 입력 파일 지문이 같으면 다시 읽지 않는다(메모리, 그리고 앱을 새로 켠 뒤에도
+    쓰도록 작업 루트의 캐시 파일. 143쪽 graph.json을 모두 읽는 데 1초 안팎이 걸려 열기가 느려지는 것을 막는다)."""
     key = _graph_inputs(project_id)
     hit = _NAMES.get(project_id)
     if hit is not None and hit[0] == key:
         return dict(hit[1])
-    out = _read_graph_names(project_id)
+    fp = _names_fingerprint(project_id, key)
+    out = _names_from_disk(project_id, fp)
+    if out is None:
+        out = _read_graph_names(project_id)
+        _names_to_disk(project_id, fp, out)
     _NAMES[project_id] = (key, out)
     return dict(out)
 
@@ -100,6 +162,7 @@ def project_graph(project_id):
         return hit[1]
     pg, names = project.load_with_names(project_id)
     _NAMES[project_id] = (key, names)  # 같은 파일을 읽어 고른 이름(graph_names가 다시 읽지 않게)
+    _names_to_disk(project_id, _names_fingerprint(project_id, key), names)
     if hit is not None:  # 옛 그래프를 붙잡은 표기 사본은 버린다(143쪽 그래프가 메모리에 여러 벌 남지 않게)
         for k in [k for k, v in _VIEWS.items() if v[0] is hit[1]]:
             del _VIEWS[k]

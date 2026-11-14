@@ -3,7 +3,7 @@
 import { html, render } from "./ui/html.js";
 import { useEffect, useState } from "../vendor/hooks.module.js";
 import { store, useStore } from "./store.js";
-import { cmd, connect, on, onChanged, read, setProject, ui } from "./bridge.js";
+import { cmd, connect, holdReads, on, onChanged, read, releaseReads, setProject, ui } from "./bridge.js";
 import { Icon, loadIcons } from "./ui/icon.js";
 import { Btn } from "./ui/parts.js";
 import { ChatPanel, loadChat, pushMsg, setChat } from "./chat/panel.js";
@@ -210,19 +210,22 @@ function App() {
 }
 
 async function boot() {
+  holdReads();      // 도면 목록이 뜰 때까지 큰 프로젝트에서 오래 걸리는 읽기(구간·결과·지식그래프 등)는 미룬다(bridge.js)
   connect();
   wireEvents();
   render(html`<${App} />`, document.getElementById("app"));
   loadPanelCss();
   await loadIcons();
   const [s, d] = await Promise.all([loadState(), loadDrawings()]);
-  await Promise.all([loadConn(), loadChat()]);
+  releaseReads();
+  await loadConn();
   const ui0 = s.ui || {};
   if (ui0.sheet && d.drawings.some((x) => x.graph_id === ui0.sheet)) openSheet(ui0.sheet);
   else if (d.drawings.length === 1) openSheet(d.drawings[0].graph_id);
   else store.set({ panel: "drawings" });   // 열 도면이 없거나 여럿이면 도면 패널을 먼저 보인다
   if (!s.reviewer) { store.set({ panel: "settings" }); toast("검토자 이름을 입력하세요. 승인·확정 기록에 남습니다."); }   // 처음 실행할 때 묻는 것은 그대로
   if (s.debug) window.__hz = { store, cmd, read, ui, clean };
+  await loadChat();   // 채팅 예시 질문은 프로젝트 그래프를 읽어 큰 프로젝트에서 수 초 걸린다. 도면 목록이 먼저 보이게 맨 끝에서 읽는다
 }
 
 boot().catch((e) => { document.getElementById("app").textContent = "화면을 시작하지 못했습니다: " + (e && e.message); });

@@ -213,9 +213,9 @@ class ShellWindowTest(ShellBase):
 
         def fake(parent, title, folder, spec):
             asked.append((threading.current_thread() is threading.main_thread(), title, spec))
-            return (["C:/x/fmea.xlsx"], "")
+            return ("C:/x/fmea.xlsx", "")
         pick = win.engine.hooks["pick_import"]
-        with mock.patch.object(QFileDialog, "getOpenFileNames", staticmethod(fake)):
+        with mock.patch.object(QFileDialog, "getOpenFileName", staticmethod(fake)):
             self.assertEqual(pick("fmea", ["FMEA 양식 (*.xlsx)"]), ["C:/x/fmea.xlsx"])
             out = []
             worker = threading.Thread(target=lambda: out.append(pick("mld", "MLD 파일 (*.xlsx *.csv)")))
@@ -224,6 +224,8 @@ class ShellWindowTest(ShellBase):
             self.assertEqual(out, [["C:/x/fmea.xlsx"]])
         self.assertEqual(asked[0], (True, "FMEA 양식 고르기", "FMEA 양식 (*.xlsx)"))
         self.assertEqual(asked[1], (True, "MLD 파일 고르기", "MLD 파일 (*.xlsx *.csv)"), "작업 스레드에서 불러도 창은 화면 스레드에서 열린다")
+        with mock.patch.object(QFileDialog, "getOpenFileName", staticmethod(lambda *a: ("", ""))):
+            self.assertEqual(pick("fmea", ["FMEA 양식 (*.xlsx)"]), [], "취소하면 빈 목록")
 
     def test_related_panels_are_tabs_under_one_menu_button(self):
         win = self.window()

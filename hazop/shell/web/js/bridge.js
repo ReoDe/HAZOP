@@ -56,8 +56,27 @@ export function on(name, fn) {
 
 export function onChanged(fn) { changedListeners.add(fn); return () => changedListeners.delete(fn); }
 
+// 처음 화면(틀·도면 목록)이 뜨기 전에는 첫 화면에 필요한 읽기만 먼저 보내고, 나머지(구간·결과·지식그래프 등 큰 프로젝트에서 수 초 걸리는 읽기)는 목록이 뜬 뒤로 미룬다.
+// 큰 프로젝트에서는 그런 읽기 하나가 파이썬 쪽 자원을 오래 차지해 도면 목록이 같이 늦어졌다(143쪽에서 열기 7초 → 아래 첫 화면 읽기만 먼저 보내면 줄어든다).
+const FIRST_READS = new Set(["icons", "state", "drawings", "connection", "chat", "sheet"]);
+let hold = null;
+/** 부팅이 시작할 때 부른다. releaseReads()나 안전 한도(safetyMs)가 올 때까지 첫 화면 밖의 읽기를 붙잡아 둔다. */
+export function holdReads(safetyMs = 6000) {
+  if (hold) return;
+  let open;
+  const gate = new Promise((resolve) => { open = resolve; });
+  hold = { gate, open, timer: setTimeout(releaseReads, safetyMs) };
+}
+export function releaseReads() {
+  if (!hold) return;
+  clearTimeout(hold.timer);
+  hold.open();
+  hold = null;
+}
+
 /** hazop-app://shell/api/<경로>를 읽어 JSON으로 돌려준다. */
 export async function read(path) {
+  if (hold && !FIRST_READS.has(String(path).split(/[/?]/)[0])) await hold.gate;
   const r = await fetch("/api/" + path);
   if (!r.ok) throw Object.assign(new Error("읽지 못했습니다: " + path), { code: "http_" + r.status });
   return r.json();

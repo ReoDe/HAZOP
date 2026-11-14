@@ -233,7 +233,8 @@ def _handler_class():
         def __init__(self, router, parent=None):
             super().__init__(parent)
             self.router = router
-            self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="hazop-api")
+            # 큰 프로젝트에서는 구간 목록 같은 읽기 하나가 수 초 걸린다. 일꾼이 둘뿐이면 그 사이 도면 목록·상태 읽기가 줄을 서서 열기가 늦어진다(측정: 143쪽에서 도면 목록이 5초 늦게 시작).
+            self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="hazop-api")
             self._live = set()
             self._down = False
             self._relay = _Relay(self)

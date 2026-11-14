@@ -347,12 +347,13 @@ class ShellWindow(QMainWindow):
     IMPORT_TITLES = {"fmea": "FMEA 양식 고르기", "mld": "MLD 파일 고르기"}
 
     def _pick_import(self, kind, filters=None):
-        """가져올 파일 고르기. kind는 파일 종류(fmea·mld…), filters는 '이름 (*.확장자)' 글 하나 또는 그 목록. 고른 파일 경로 목록, 취소하면 []."""
+        """가져올 파일 하나 고르기(한 번에 하나만 가져오므로 여러 파일을 고르는 창을 쓰지 않는다). kind는 파일 종류(fmea·mld…),
+        filters는 '이름 (*.확장자)' 글 하나 또는 그 목록. 고른 파일 경로의 목록([경로]), 취소하면 []."""
         if isinstance(filters, str):
             filters = [filters]
         spec = ";;".join(str(f) for f in (filters or [])) or "모든 파일 (*)"
-        files, _ = QFileDialog.getOpenFileNames(self, self.IMPORT_TITLES.get(kind, "가져올 파일 고르기"), "", spec)
-        return list(files)
+        path, _ = QFileDialog.getOpenFileName(self, self.IMPORT_TITLES.get(kind, "가져올 파일 고르기"), "", spec)
+        return [path] if path else []
 
     def _save_path(self, kind, default_name):
         """내보내기 저장 위치를 묻는다(웹은 경로를 보내지 않는다). 취소하면 None."""

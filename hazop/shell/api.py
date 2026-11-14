@@ -592,6 +592,9 @@ def _fingerprint(*paths_):
     return hashlib.sha256(json.dumps(parts, sort_keys=True).encode("utf-8")).hexdigest()[:12]
 
 
+# 화면에 보이는 버전. 옛 창(hazop.app.main_window)의 APP_VERSION과 같은 값이다. 값을 읽으려고 그 모듈을 불러오면 옛 화면 코드 전체가 읽혀 열기가 2초 넘게 느려지므로 여기에 둔다.
+APP_VERSION = "0.2.0"
+
 _ICON_CACHE = {}
 
 
@@ -647,10 +650,6 @@ class ReadApi:
 
     # ------------------------------------------------------------ 자료
     def state(self):
-        try:
-            from hazop.app.main_window import APP_VERSION
-        except Exception:  # noqa: BLE001
-            APP_VERSION = "0.2.0"
         e = self.engine
         s = e.settings
         return {"version": APP_VERSION, "reviewer": e.reviewer(), "project_id": e.project_id(), "current_sheet": e.current_sheet,
@@ -682,6 +681,7 @@ class ReadApi:
             rows.append({"graph_id": graph_id, "name": name, "drawing_number": brief.get("drawing_number"), "title": brief.get("title"),
                          "nodes": brief.get("nodes"), "relations": brief.get("relations"), "unknowns": brief.get("unknowns"),
                          "origin": brief.get("origin")})
+        data.save_briefs()      # 새로 읽은 쪽 요약을 캐시 파일에 남긴다(다음 실행부터 143쪽 추출 JSON을 다시 읽지 않는다)
         docs = []
         for r in data.list_registrations():
             rec = r["record"]
