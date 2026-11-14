@@ -152,7 +152,9 @@ def estimate(engine, cap, graph_ids=None):
             continue
     est = ai_review.estimate_pages(pages, cap=cap, run_cap=ai_review.RUN_CAP)
     to_gid = {names[g]: g for g in pick}
+    from hazop.shell import api_settings
     return {"cap": cap, "run_cap": ai_review.RUN_CAP, "calls": est["calls"], "seconds": est["seconds"], "capped": est["capped"],
+            "conn": api_settings.run_conn(engine, "ai_review", calls=est["calls"]),
             "pages": [{"graph_id": to_gid.get(p["name"]), "items": p["items"], "calls": p["calls"], "needed": p["needed"]} for p in est["pages"]]}
 
 
@@ -291,11 +293,13 @@ def accept_bulk(engine, graph_id, task, ver, by=None):
 def run_review(engine, graph_ids, cap, progress):
     """고른 도면에 AI 검토를 돌린다(작업 스레드). 도면당 cap, 한 번 실행은 RUN_CAP까지. 사람이 고친 자리는 묻지 않는다.
     → {"drawings": [{graph_id, candidates, calls, left, halted}], "calls", "capped"}."""
+    from hazop.shell import api_settings
     ai = engine.ai
-    status = ai.status() if ai is not None else {}
-    if ai is None or not status.get("can_start"):
+    plan = api_settings.run_conn(engine, "ai_review")
+    if ai is None or not plan["can_start"]:
         raise RuntimeError("AI 연결이 준비되지 않았습니다")
-    client = ai.make_client()
+    conn = getattr(ai, "conn", None)          # AI 검토는 분석 연결이 API 키여도 구독으로만 돈다(ai_review.refuse_reason)
+    client = conn.make_client("subscription") if conn is not None and "subscription" in conn.methods() else ai.make_client()
     reason = ai_review.refuse_reason(client)
     if reason:
         raise RuntimeError(reason)
@@ -332,9 +336,13 @@ def _h_run(engine, a):
     gids = [g for g in a["graph_ids"] if g in names]
     if not gids:
         raise api.CommandError("not_found", "없는 도면")
-    status = engine.ai.status() if engine.ai is not None else {}
-    if not status.get("can_start"):
-        raise api.CommandError("failed", "AI 연결이 준비되지 않았습니다. 설정에서 연결을 확인하세요.")
+    from hazop.shell import api_settings
+    try:
+        plan = api_settings.same_conn(engine, "ai_review", a["conn_ver"])     # 화면에 보인 방식·모델과 지금이 다르면 시작하지 않는다
+    except api_settings.Refused as exc:
+        raise api.CommandError(exc.code, exc.message)
+    if not plan["can_start"]:
+        raise api.CommandError("failed", plan["guide"] or "AI 연결이 준비되지 않았습니다. 설정에서 연결을 확인하세요.")
     cap = a.get("cap") or int(engine.settings.get("extract_ai_cap") or ai_review.DEFAULT_CAP)
     job = engine.start_job("AI 검토", lambda progress: run_review(engine, gids, cap, progress), kind="ai_review")
     return {"job": job}
@@ -357,6 +365,6 @@ def register(commands):
     put("revert", dict(base, cand_ids=ids), _h_decide(revert), "수락·거절 되돌리기(수락한 연산은 수정 기록에서 빠지고 그래프를 다시 만든다)")
     put("accept_bulk", dict(base, task=(v_enum(*ai_review.TASK_ORDER), True)), _h_bulk,
         "확신 높은 묶음 수락(묶음은 엔진이 센다. 기호 종류는 확신 0.95 이상이고 이웃 기호에 붙지 않은 것만)")
-    put("run", {"graph_ids": (v_list(v_str(1, 200), 200), True), "cap": (v_int(1, 200), False)}, _h_run,
-        "고른 도면에 AI 검토 실행(도면당 상한 cap, 한 번 실행 300회까지)")
+    put("run", {"graph_ids": (v_list(v_str(1, 200), 200), True), "cap": (v_int(1, 200), False), "conn_ver": (v_str(1, 40), True)}, _h_run,
+        "고른 도면에 AI 검토 실행(도면당 상한 cap, 한 번 실행 300회까지). conn_ver는 estimate가 보인 연결의 판")
 

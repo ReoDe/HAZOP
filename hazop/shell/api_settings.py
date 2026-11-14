@@ -2,7 +2,7 @@
 
 - **읽기** `aisettings`: 지금 쓰는 경로(구독·API 키·연결 안 됨)와 모델, 방식별 상태, 구독 상세, API 키 목록(이름·끝 네 자리·사용 중·마지막 시험),
   분석 모델·채팅 모델 목록. **키 값은 어떤 답에도 싣지 않는다**(KeyStore.entries의 hint만, 오류 글은 apikey.mask로 가린다).
-- **명령**(`aiconn.*`, 프로젝트에 묶이지 않음)
+- **명령**(`aiconn.*`, 프로젝트에 묶이지 않음: 연결 설정은 프로젝트와 상관없다. `UNBOUND_PREFIXES`로 api.py의 기본 묶기에서 뺀다)
   - `check`(방식): 다시 확인. API 키는 연결 시험(GET /v1/models, 토큰·요금 없음)
   - `use`(방식, confirmed): '이 방식으로 사용'. API 키로 바꿀 때는 요금 확인(confirmed 없으면 확인 글만 돌려줌), 구독은 처음 한 번 이용 조건
   - `ack_terms`, `set_model`(방식, 모델), `add_key`(이름·저장 여부), `select_key`, `rename_key`, `remove_key`(confirmed 필수)
@@ -12,16 +12,27 @@
 - 엔진 창구 `engine.ai`는 window.py의 AiAdapter이고 그 안의 `conn`(hazop.app.ai_conn.AiConnection)을 쓴다. 이전 화면 설정 창과 같은 저장
   (설정 파일의 ai_method·ai_models, KeyStore api_keys.json)이다. `adapter_status(conn)`는 AiAdapter.status가 지금 고른 방식으로 상태를 내도록
   쓰는 함수다(s-frame에 요청).
-- 채팅(d-chat)용 함수: `connection(engine)`(연결 상태 보기), `set_model(engine, method, model)`. 키는 채팅으로 받지 않는다.
+- 채팅(d-chat)용 함수: `connection(engine)`(분석 연결 상태 보기), `chat_connection(engine)`(채팅이 실제로 쓰는 방식·모델·쓸 수 있는지),
+  `set_model(engine, method, model)`. 키는 채팅으로 받지 않는다.
+- **실행 직전 확인**(A8 검토 R1): `run_conn(engine, kind, calls, sections)`는 분석(`analysis`)·AI 검토(`ai_review`)가 실제로 쓸 방식·모델·
+  예상 비용과 판(`conn_ver`)을 낸다. 실행 카드는 이 값을 보이고 시작할 때 `conn_ver`를 보내며, 실행 명령은 `same_conn`으로 대조해 다르면
+  시작하지 않는다(화면에 보인 방식과 실제 방식이 다르면 다시 묻는다). API는 사용자가 고른 경우에만 쓴다(ai_conn auto_api=False).
 """
 
+import hashlib
 import logging
 
 from hazop.study import apikey, claude_http
+from hazop.study.ai_settings import NOTICE_NO_SUBSCRIPTION
 
 LOG = logging.getLogger("hazop.shell.api_settings")
 TOPICS = ("aisettings",)
 PROJECT_PREFIXES = ()
+UNBOUND_PREFIXES = ("aiconn.", "aisettings.")
+KINDS = ("analysis", "ai_review")
+# AI 검토 호출 하나의 토큰 어림(도면 조각 그림 + 질문, 실측 전). API 단가표(claude_http.PRICES)로 예상 비용을 낸다
+REVIEW_CALL_USAGE = {"input_tokens": 4000, "output_tokens": 800}
+NOTE_NEXT_RUN = "%s이(가) 도는 중입니다. 지금 도는 작업은 시작할 때의 연결로 끝까지 가고, 바꾼 설정은 다음 실행부터 씁니다."
 METHODS = ("subscription", "api", "fixed")
 MAX_NAME = 40
 NONE_STATE = {"state": "none", "label": "연결 안 됨", "short": "연결 안 됨", "tone": "err", "title": "AI 연결이 없습니다",
@@ -126,7 +137,109 @@ def view(engine):
         out["api"] = {"state": st.get("state"), "label": lk.label, "tone": lk.tone, "title": lk.title, "guide": guide,
                       "can_start": bool(lk.can_start), "detail": _masked(conn, st.get("detail") or ""), "keys": keys, "model": model,
                       "section_usd": claude_http.MODELS[model]["section_usd"], "cost": cv.METHOD_COST["api"],
-                      "load_error": bool(getattr(conn.keys, "load_error", None))}
+                      "load_error": bool(getattr(conn.keys, "load_error", None)),
+                      "load_error_text": _masked(conn, getattr(conn.keys, "load_error", None) or "")[:200]}
+    if getattr(conn.prefs, "bad_models", False):
+        out["settings_warning"] = "설정 파일의 AI 모델 값을 읽지 못해 기본 모델로 읽었습니다. 모델을 다시 고르면 고쳐 저장합니다."
+    if not conn.is_chosen() and not conn.can_start(conn.method) and "api" in conn.methods() and conn.keys.get() is not None:
+        out["advice"] = NOTICE_NO_SUBSCRIPTION
+    busy = _busy_others(engine)
+    if busy:
+        out["busy_note"] = NOTE_NEXT_RUN % busy
+    return out
+
+
+def _busy_others(engine):
+    """분석 말고 도는 AI 작업(AI 검토, 채팅 답) 이름. 분석은 _running이 막는다."""
+    names = []
+    try:
+        if "ai_review" in engine.running_kinds():
+            names.append("AI 검토")
+    except AttributeError:
+        pass
+    chat = getattr(engine, "chat", None)
+    try:
+        if chat is not None and chat.busy():
+            names.append("채팅 답")
+    except Exception:  # noqa: BLE001 - 채팅 상태를 못 읽어도 설정은 보인다
+        pass
+    return "·".join(names)
+
+
+def _conn_ver(via, model, key_id):
+    return hashlib.sha256(("%s|%s|%s" % (via, model, key_id or "-")).encode("utf-8")).hexdigest()[:12]
+
+
+def run_conn(engine, kind, calls=0, sections=0):
+    """실행 카드가 보일 '실제로 쓸 연결'(키 값 없음). kind: analysis(고른 방식) | ai_review(구독으로만 돈다).
+    → {kind, via, method_name, model, model_name, can_start, label, guide, paid, usd, cost_text, conn_ver}."""
+    cv = _views()
+    try:
+        conn = _conn(engine)
+    except Refused:
+        ai = engine.ai
+        if ai is not None and hasattr(ai, "status"):   # conn 없는 창구(시험 대역·다른 엔진): 그 창구의 상태를 그대로 보인다
+            st = ai.status() or {}
+            via, model = st.get("via"), st.get("model")
+            return dict(kind=kind, via=via, method_name=st.get("method_name") or via or "AI 연결", model=model, model_name=st.get("model_name") or "",
+                        can_start=bool(st.get("can_start")), label=st.get("label") or "", guide=st.get("guide") or "", paid=via == "api", usd=None,
+                        cost_text="", conn_ver=_conn_ver(via, model, None))
+        return dict(kind=kind, via=None, method_name="연결 안 됨", model=None, model_name="", can_start=False, label=NONE_STATE["label"],
+                    guide=NONE_STATE["guide"], paid=False, usd=None, cost_text="AI 연결이 없습니다.", conn_ver=_conn_ver(None, None, None))
+    via = "subscription" if kind == "ai_review" else conn.method
+    if via not in conn.methods():
+        via = conn.method
+    st, lk, guide = _look(conn, via)
+    model = conn.model(via)
+    paid = via == "api"
+    key = conn.keys.active() if paid else None
+    usd = None
+    if paid and model:
+        if kind == "analysis":
+            usd = round(max(0, int(sections)) * claude_http.MODELS[model]["section_usd"], 2)
+        else:
+            usd = round(max(0, int(calls)) * claude_http.cost_usd(REVIEW_CALL_USAGE, model), 2)
+    if paid:
+        cost_text = "API 키 · 호출마다 요금, 약 $%.2f(%s)" % (usd or 0, "구간 %d개" % sections if kind == "analysis" else "호출 %d회 어림" % calls)
+    elif via == "subscription":
+        cost_text = "Claude 구독 한도를 씁니다(건별 요금 없음)"
+    else:
+        cost_text = ""
+    if kind == "ai_review" and conn.method == "api":
+        cost_text += " · AI 검토는 분석 연결(API 키)과 상관없이 구독으로만 돕니다"
+    return {"kind": kind, "via": via, "method_name": cv.METHOD_NAMES.get(via, via), "model": model,
+            "model_name": cv.model_name(model) if model else "", "can_start": bool(lk.can_start), "label": lk.label, "guide": guide,
+            "paid": paid, "usd": usd, "cost_text": cost_text, "conn_ver": _conn_ver(via, model, key and key.get("id"))}
+
+
+def same_conn(engine, kind, conn_ver):
+    """실행 직전: 화면이 본 판(conn_ver)과 지금 실제 연결이 같은지. 다르면 Refused('conn_changed')."""
+    now = run_conn(engine, kind)
+    if not conn_ver or conn_ver != now["conn_ver"]:
+        raise Refused("conn_changed", "AI 연결이 화면에 보인 것과 달라졌습니다(지금: %s · %s). 실행하지 않았습니다. 확인 상자를 다시 보고 시작하세요."
+                      % (now["method_name"], now["model_name"] or "-"))
+    return now
+
+
+def chat_connection(engine):
+    """채팅 창 아래 줄용: 채팅이 실제로 쓰는 방식(구독)·채팅 모델·쓸 수 있는지. 분석 연결 칩과 따로 본다. 키 값 없음."""
+    from hazop.shell import chat as chat_mod
+    model = engine.settings.get("chat_model") or "fast"
+    out = {"via": "subscription", "method_name": "Claude 구독", "model": model, "model_name": chat_mod.MODEL_NAME.get(model, model)}
+    try:
+        conn = _conn(engine)
+        _st, lk, guide = _look(conn, "subscription")
+        out.update(label=lk.label, short=lk.short, tone=lk.tone, can_start=bool(lk.can_start), guide=guide)
+    except Refused:
+        out.update(label=NONE_STATE["label"], short=NONE_STATE["short"], tone="err", can_start=False, guide=NONE_STATE["guide"])
+    chat = getattr(engine, "chat", None)
+    try:
+        avail = chat.snapshot().get("availability") if chat is not None else None
+    except Exception:  # noqa: BLE001
+        avail = None
+    if avail and avail.get("blocked"):
+        out.update(can_start=False, tone="warn")
+    out["chip"] = "구독 · %s · %s" % (out["model_name"], out["short"])
     return out
 
 
@@ -155,7 +268,10 @@ def _done(engine, out=None):
     conn = _conn(engine)
     conn.refresh()
     engine.changed("aisettings", None)
-    return dict(out or {}, view=view(engine))
+    out = dict(out or {}, view=view(engine))
+    if out["view"].get("busy_note"):
+        out["note"] = out["view"]["busy_note"]       # AI 검토·채팅이 도는 중에 바꾸면 막지 않고 '다음 실행부터'라고 알린다(A8 검토 R6)
+    return out
 
 
 def check(engine, method):

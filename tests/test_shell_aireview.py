@@ -323,7 +323,7 @@ class RunTest(Base):
         self.engine.ai = FakeAi(client)
         items = len(ar.collect_items(self.ex))
         with mock.patch.object(ar, "plan", lambda its, cap=ar.DEFAULT_CAP, batch=ar.DEFAULT_BATCH, _p=ar.plan: _p(its, cap, 2)):
-            out = self.call("aireview.run", graph_ids=[self.gid], cap=2)
+            out = self.call("aireview.run", graph_ids=[self.gid], cap=2, conn_ver=self.conn_ver())
         self.assertTrue(out["ok"], out)
         done = next(e for e in self.events.items if e.get("name") == "job.done")["data"]["result"]
         self.assertEqual(len(client.requests), 2)                                           # 상한 2회에서 멈춤
@@ -332,9 +332,21 @@ class RunTest(Base):
         self.assertTrue(self.view()["available"])
         self.assertTrue(self.changed("aireview"))
 
+    def conn_ver(self):
+        r = json.loads(AR.read(self.engine, ["aireview", "estimate"], {"cap": "2"}).body.decode("utf-8"))
+        return r["conn"]["conn_ver"]
+
     def test_run_needs_connection(self):
-        out = self.call("aireview.run", graph_ids=[self.gid])
+        out = self.call("aireview.run", graph_ids=[self.gid], conn_ver=self.conn_ver())
         self.assertEqual(out["error"]["code"], "failed")
+        self.assertEqual(self.call("aireview.run", graph_ids=[self.gid])["error"]["code"], "bad_args")   # 화면이 본 연결 판 없이는 받지 않는다
+
+    def test_run_refused_when_connection_differs_from_view(self):  # A8 검토 R1: 화면에 보인 방식과 실제가 다르면 시작하지 않는다
+        self.engine.ai = FakeAi(StubClient(kind_answers))
+        seen = self.conn_ver()
+        self.engine.ai.status = lambda: {"can_start": True, "state": "ok", "via": "api", "model": "claude-opus-5-5"}
+        out = self.call("aireview.run", graph_ids=[self.gid], conn_ver=seen)
+        self.assertEqual(out["error"]["code"], "conn_changed")
 
 
 class ReadTest(Base):

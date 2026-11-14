@@ -95,9 +95,13 @@ export const acceptBulk = (task) => write("aireview.accept_bulk", { task }, (r) 
 export async function run() {
   ai.set({ busy: true, error: null, notice: null });
   try {
-    await cmd("aireview.run", { graph_ids: [ai.get().graphId], cap: ai.get().cap || 20 });
+    const est = ai.get().estimate;
+    await cmd("aireview.run", { graph_ids: [ai.get().graphId], cap: ai.get().cap || 20, conn_ver: (est && est.conn && est.conn.conn_ver) || "-" });
     ai.set({ busy: false, notice: "AI 검토를 시작했습니다. 진행은 도면 패널의 작업 줄에 보입니다." });
-  } catch (e) { ai.set({ busy: false, error: errorText(e) }); }
+  } catch (e) {
+    ai.set({ busy: false, error: errorText(e) });
+    if (e && e.code === "conn_changed") await refresh();      // 연결이 바뀌었으면 새 연결을 보이고 다시 누르게 한다
+  }
 }
 
 // ---------------------------------------------------------------- 도면에서 보기
@@ -123,6 +127,6 @@ let wired = false;
 export function wire() {
   if (wired) return;
   wired = true;
-  onChanged((topic) => { if (topic === "aireview" || topic === "drawings") refresh(); });
+  onChanged((topic) => { if (topic === "aireview" || topic === "drawings" || topic === "aisettings") refresh(); });
   refresh();
 }

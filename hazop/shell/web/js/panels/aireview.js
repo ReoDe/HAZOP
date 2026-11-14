@@ -14,14 +14,16 @@ function Estimate() {
   const busy = A.useAi((s) => s.busy);
   const ov = A.useAi((s) => s.overview);
   const page = est && est.pages.find((p) => p.graph_id === gid);
+  const conn = est && est.conn;               // 엔진이 정한 실제 연결(AI 검토는 구독으로만). 시작할 때 이 판(conn_ver)을 보낸다
   const minutes = (calls) => Math.max(1, Math.round(calls * (ov.seconds_per_call || 30) / 60));
   return html`<div class="card ai-est"><h3>AI 검토 실행</h3>
-    <div class="kv"><div class="k"><b>도면당 호출 상한</b><span>한 번 실행에 최대 ${ov.run_cap}회까지 부릅니다. 구독 한도를 씁니다.</span></div>
+    <div class="kv"><div class="k"><b>도면당 호출 상한</b><span>한 번 실행에 최대 ${ov.run_cap}회까지 부릅니다.</span></div>
       <input type="number" min="1" max="200" value=${cap || ov.cap} aria-label="도면당 호출 상한" class="ai-cap"
         onChange=${(e) => A.setCap(parseInt(e.target.value, 10))} /></div>
     ${page ? html`<div class="small" aria-live="polite">이 도면: 물을 곳 ${page.items}개 · 예상 호출 <b>${page.calls}회</b>${page.needed > page.calls ? html` <span class="ai-warn">(다 보려면 ${page.needed}회, 상한에서 멈춤)</span>` : null} · 약 ${minutes(page.calls)}분</div>` : null}
     ${est ? html`<div class="muted small">프로젝트 전체 ${est.pages.length}장: 예상 호출 ${est.calls}회${est.capped ? " (상한에 걸림)" : ""}</div>` : null}
-    <div class="acts-row"><${Btn} sm=${true} icon="sparkles" label="이 도면 AI 검토 실행" disabled=${busy || !gid || (page && page.calls === 0)} onClick=${A.run}>이 도면 AI 검토<//></div></div>`;
+    ${conn ? html`<div class=${"small ai-conn" + (conn.can_start ? "" : " ai-warn")} aria-label="AI 검토에 쓸 연결">${conn.method_name} · ${conn.model_name || "-"} · ${conn.can_start ? conn.cost_text : conn.label + ". " + conn.guide}</div>` : null}
+    <div class="acts-row"><${Btn} sm=${true} icon="sparkles" label="이 도면 AI 검토 실행" disabled=${busy || !gid || (page && page.calls === 0) || !(conn && conn.can_start)} onClick=${A.run}>이 도면 AI 검토<//></div></div>`;
 }
 
 function Bulk({ v }) {
