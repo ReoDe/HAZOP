@@ -15,3 +15,5 @@ hazop/shell/web/vendor/** -text
 licenses/preact/** -text
 licenses/htm/** -text
 licenses/dexpi/** -text
+# DEXPI 시험은 픽스처 글자를 여러 줄로 찾아 바꾼다. 줄 끝이 CRLF로 풀리면 바꿀 자리를 못 찾는다.
+tests/fixtures/dexpi/** -text
