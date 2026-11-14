@@ -64,8 +64,10 @@ class ModuleWatchTest(unittest.TestCase):
         self.assertEqual(forced, [])
 
     def test_a_module_stuck_in_the_event_loop_is_ended_marked_failed_and_the_next_module_runs(self):
-        with mock.patch.object(unittest.defaultTestLoader, "discover", fake_discover), mock.patch.object(run_ci, "MODULE_TIMEOUT_S", 2), \
-                mock.patch("sys.stderr", open(os.devnull, "w")):
+        # 안쪽 run_unittests가 찍는 '[모듈 시작]·[모듈 끝] … 실패 1'과 '[모듈 시간 초과]' 줄은 바깥 run_ci의 요약이 읽는 같은 출력이다.
+        # 가짜 모듈의 실패가 바깥 집계에 새지 않게 이 시험 안에서는 출력을 버린다.
+        with open(os.devnull, "w") as sink, mock.patch.object(unittest.defaultTestLoader, "discover", fake_discover), \
+                mock.patch.object(run_ci, "MODULE_TIMEOUT_S", 2), mock.patch("sys.stderr", sink), mock.patch("sys.stdout", sink):
             started = time.time()
             result, modules = run_ci.run_unittests()
         self.assertLess(time.time() - started, 30, "멈추지 않고 돌아온다")
