@@ -264,3 +264,69 @@ class RealIeLostGroupsTest(_ie.ReviewFixTest):
     for _n in [n for n in dir(_ie.ReviewFixTest) if n.startswith("test_")]:
         locals()[_n] = None
     del _n
+
+
+from tests import test_shell_links as _links   # noqa: E402
+
+
+class RealLinksQuestionTest(_links.Base):
+    """도면 연결 짝(B1): 확인 상자에 미리 보이는 엔진 확인 글이 api_links가 묻는 글과 글자 그대로 같고, 묻지 않을 때는 None이다."""
+
+    def chat(self, action, me, peer=None, op_id=None):
+        from types import SimpleNamespace
+        return chat_edits._link_ask(self.engine, SimpleNamespace(action=action, args={}), me, peer, op_id)
+
+    def asked(self, name, at, **args):
+        r = self.web(name, at, **args)
+        self.assertEqual(r["error"]["code"], "needs_confirm", r)
+        return r["error"]["message"]
+
+    def test_unlink_pair_and_clear_texts_match_the_engine(self):
+        a, b = self.linked_pair()
+        self.assertEqual(self.chat("links.unlink", a), self.asked("unlink", a))
+        pg = self.pg()
+        other = next(n for n in pg["nodes"] if n.get("kind") == "continuation" and n.get("sheet") not in (_links.S101, a[0])
+                     and (n.get("sheet_link") or {}).get("status") == "linked" and n.get("local_id"))
+        peer = (other["sheet"], other["local_id"])
+        self.assertEqual(self.chat("links.pair", a, peer), self.asked("pair", a, peer_graph_id=peer[0], peer_local_id=peer[1]))
+        self.confirmed("unlink", a)
+        self.assertIsNone(self.chat("links.pair", a, b), "짝 없는 둘을 이을 때는 묻지 않는다")
+        self.confirmed("pair", a, peer_graph_id=b[0], peer_local_id=b[1])
+        op = _links.project.load_manual(_links.PID)["ops"][0]["op_id"]
+        self.assertEqual(self.chat("links.clear", a, op_id=op), self.asked("clear", a, op_id=op))
+
+
+class LinksChatTest(RunBase):
+    def setUp(self):
+        super().setUp()
+        self.view = {"ok": True, "ver": "lv-1", "point": {"local_id": "c1", "label": "→ M-102", "drawing_number": "SNP-M-101", "line_no": "2-RC-01",
+                                                           "to_drawing": "SNP-M-102", "base": "pb-1", "peer": None, "op": None},
+                     "candidates": [{"graph_id": "graph-SNP-M-102", "local_id": "c9", "drawing_number": "SNP-M-102", "label": "← M-101",
+                                     "line_no": "2-RC-02", "to_drawing": "SNP-M-101", "linked": False, "warn": ["배관 번호가 다름(2-RC-02 ≠ 2-RC-01)"]}]}
+        self.ask_text, self.saved = None, []
+        for target, fn in (("hazop.shell.api_links.view", lambda engine, g, l, q=None: copy.deepcopy(self.view)),
+                           ("hazop.shell.chat_edits._link_ask", lambda *a: self.ask_text),
+                           ("hazop.shell.api_links.pair", lambda *a, **k: self.saved.append((a, k)) or {"ok": True, "notes": ["짝을 지정했습니다."], "recheck": []})):
+            p = mock.patch(target, fn)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_pair_shows_warnings_and_passes_ver_base_confirm(self):
+        self.ask_text = "SNP-M-102 ← M-101 ↔ SNP-M-103 x 짝이 풀립니다."
+        item = self.one("links.pair", "이 연결을 102에 이어 줘", graph_id="graph-SNP-M-101", local_id="c1",
+                        peer_graph_id="graph-SNP-M-102", peer_local_id="c9", reason="배관 번호 확인")
+        rows = {r["label"]: r for r in item["details"]}
+        self.assertEqual(rows["짝"]["before"], "(짝 없음)")
+        self.assertIn("SNP-M-102 ← M-101", rows["짝"]["after"])
+        self.assertIn("배관 번호가 다름", rows["주의"]["after"])
+        self.assertEqual(rows["엔진 확인"]["after"], self.ask_text)
+        self.approve(item)
+        (a, k), = self.saved
+        self.assertEqual(a[1:6], ("graph-SNP-M-101", "c1", "graph-SNP-M-102", "c9", "lv-1"))
+        self.assertEqual((k["base"], k["confirm"]), ("pb-1", self.ask_text))
+
+    def test_same_drawing_and_missing_points_are_refused(self):
+        self.assertIn("같은 도면", self.one("links.pair", graph_id="graph-SNP-M-101", local_id="c1",
+                                         peer_graph_id="graph-SNP-M-101", peer_local_id="c2")["reason"])
+        self.assertIn("맞은편 연결점", self.one("links.pair", graph_id="graph-SNP-M-101", local_id="c1")["reason"])
+        self.assertIn("뺄 지정이 없음", self.one("links.clear", graph_id="graph-SNP-M-101", local_id="c1")["reason"])

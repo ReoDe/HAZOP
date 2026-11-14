@@ -498,6 +498,7 @@ TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정",
           "docs.add": "설계 문서 등록", "docs.revision": "설계 문서 판 대응",
           "titleblock.unconfirm": "표제란 확정 취소", "drawing.undo": "도면 고침 되돌리기", "drawing.redo": "도면 고침 다시 하기",
           "ie.fmea_status": "FMEA 행 판정", "ie.fmea_mark": "전기·제어 구간 표시", "ie.mld_link": "MLD 가지 잇기",
+          "links.pair": "도면 연결 짝 지정", "links.unlink": "도면 연결 끊기", "links.clear": "도면 연결 지정 빼기",
           "ie.fmea_import": "FMEA 양식 가져오기", "ie.mld_import": "MLD 가져오기", "settings.connection": "연결 설정",
           # 아직 잇지 않았거나 채팅으로 하지 않는 동작(거절 줄의 이름)
           "register.exclude": "분석에서 빼기", "extract.suggest": "추출 값 후보", "kg.algorithm": "지식그래프 알고리즘",

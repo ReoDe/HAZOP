@@ -286,6 +286,15 @@ ACTIONS = {a.name: a for a in (
            "구간 {node_id}의 전기·제어 표시를 바꿉니다."),
     Action("ie.mld_link", CONFIRM, _spec(("branch_id", "id"), group_ids="ids"), "⑥", "MLD 잎 가지에 초기사건 그룹 잇기(없으면 지움)",
            "MLD 가지 {branch_id}에 초기사건 그룹을 잇습니다."),
+    # 도면 연결 짝(B1, api_links). 상자가 본 판(ver)·연결점 지문(base)·엔진이 물을 확인 글(confirm)을 넘긴다
+    Action("links.pair", CONFIRM, _spec(id="id", graph_id="id", local_id="id", peer_id="id", peer_graph_id="id", peer_local_id="id",
+                                        reason="text"), "②",
+           "도면 연결(오각형) 하나와 다른 도면의 연결점을 짝으로 지정(id 또는 graph_id+local_id, 맞은편은 peer_)",
+           "도면 연결점의 짝을 지정합니다."),
+    Action("links.unlink", CONFIRM, _spec(id="id", graph_id="id", local_id="id", reason="text"), "②",
+           "도면 연결점을 '연결하지 않음'으로 지정(자동 짝도 끊음)", "도면 연결점의 연결을 끊습니다."),
+    Action("links.clear", CONFIRM, _spec(id="id", graph_id="id", local_id="id", op_id="id"), "②",
+           "사람이 한 연결 지정 하나 빼기(op_id가 없으면 이 연결점의 지정). 자동 판정으로 돌아감", "도면 연결 지정을 뺍니다."),
     Action("ie.fmea_import", NEVER, _spec(), "⑥", "FMEA 양식 가져오기·내보내기(파일 고르기)", where="⑥ 초기사건 패널의 FMEA에서 사람이 파일을 고른다"),
     Action("ie.mld_import", NEVER, _spec(), "⑥", "주논리도(MLD) 가져오기(파일 고르기)", where="⑥ 초기사건 패널의 MLD에서 사람이 파일을 고른다"),
     # 아직 화면이 없는 기능. 모델이 내면 '아직 채팅으로 할 수 없음'으로 답한다

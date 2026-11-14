@@ -20,7 +20,8 @@ LOG = logging.getLogger("hazop.shell.chat_edits")
 TITLEBLOCK_ACTIONS = ("titleblock.confirm", "titleblock.unconfirm")
 DRAWING_ACTIONS = ("drawing.edit", "drawing.undo", "drawing.redo")
 P5_ACTIONS = ("ie.fmea_status", "ie.fmea_mark", "ie.mld_link")
-RUN_ACTIONS = TITLEBLOCK_ACTIONS + DRAWING_ACTIONS + P5_ACTIONS + ("docs.revision",)
+LINK_ACTIONS = ("links.pair", "links.unlink", "links.clear")
+RUN_ACTIONS = TITLEBLOCK_ACTIONS + DRAWING_ACTIONS + P5_ACTIONS + ("docs.revision",) + LINK_ACTIONS
 # 고침마다 엔진에 넘기는 value 열쇠. 그 밖의 열쇠는 걸러 내고 확인 상자에 '넘기지 않은 값'으로 보인다(상자에 없는 값이 저장되지 않게)
 VALUE_KEYS = {"set_tag": ("tag",), "set_kind": ("kind",), "set_normal_position": ("value",), "set_fail_position": ("value",),
               "set_flow": ("from", "to", "flip"), "set_endpoint": ("end", "node"), "clear_endpoint": ("end",), "set_path": ("points",),
@@ -592,6 +593,165 @@ def _rev_execute(engine, watcher):
     return run
 
 
+# ================================================================ 도면 연결 짝(B1, api_links)
+# 화면의 고치기 카드와 같은 대조: 카드(=확인 상자)가 본 판(ver)·연결점 지문(base)·엔진이 물을 확인 글(confirm)을 그대로 넘긴다.
+# 확인 글은 api_links가 저장 전에 만드는 글과 같은 내부 함수(_impact_text)로 저장 없이 계산하고, 실제 엔진 글과 같은지 시험한다.
+
+def _link_point(engine, a, prefix=""):
+    """(graph_id, local_id) 또는 사유 글. id(구성요소 ID) 또는 graph_id+local_id. prefix='peer_'면 맞은편."""
+    if a.get(prefix + "id"):
+        hit = _finder(engine)(a[prefix + "id"])
+        return hit if not isinstance(hit, str) else hit
+    if a.get(prefix + "graph_id") and a.get(prefix + "local_id"):
+        return a[prefix + "graph_id"], a[prefix + "local_id"]
+    return "%s연결점(id 또는 graph_id+local_id)이 있어야 함" % ("맞은편 " if prefix else "")
+
+
+def _link_ctx(engine, item):
+    """(view, 이 연결점, 맞은편 또는 None, 뺄 지정 ID 또는 None) 또는 사유 글."""
+    from hazop.shell import api_links
+    a = item.args
+    me = _link_point(engine, a)
+    if isinstance(me, str):
+        return me
+    view = api_links.view(engine, me[0], me[1])
+    if not view.get("ok"):
+        return view.get("message") or "도면 연결점을 읽지 못함"
+    peer = op_id = None
+    if item.action == "links.pair":
+        peer = _link_point(engine, a, "peer_")
+        if isinstance(peer, str):
+            return peer
+        if peer[0] == me[0]:
+            return "같은 도면의 연결점끼리는 짝을 지정하지 않음"
+    if item.action == "links.clear":
+        op_id = a.get("op_id") or ((view["point"].get("op") or {}).get("op_id"))
+        if not op_id:
+            return "뺄 지정이 없음(사람이 지정한 짝이나 끊기가 있는 연결점만)"
+    return view, me, peer, op_id
+
+
+def _link_ask(engine, item, me, peer, op_id):
+    """api_links가 저장 전에 물을 확인 글(없으면 None). 같은 내부 함수로 저장 없이 계산한다."""
+    from hazop.shell import api_links as L
+    pid, pg = L._pg(engine)
+    ops, _fp = L._manual(pid)
+    n, by_id = L._entity(pg, me[0], me[1])
+    nums = L._numbers(pg)
+    ops, _moved = L._follow_moves(pg, ops)
+    if item.action == "links.pair":
+        b, _ = L._entity(pg, peer[0], peer[1])
+        b = by_id[b["entity_id"]]
+        mine, theirs = L._peer_of(pg, n, by_id), L._peer_of(pg, b, by_id)
+        breaking = [(x, y) for x, y in ((n, mine), (b, theirs)) if y is not None and y["entity_id"] not in (n["entity_id"], b["entity_id"])]
+        return L._impact_text(pg, by_id, [n, b], breaking)
+    if item.action == "links.unlink":
+        mine = L._peer_of(pg, n, by_id)
+        return L._impact_text(pg, by_id, [n] + ([mine] if mine else []), [(n, mine)] if mine else [])
+    op = next((o for o in ops if o.get("op_id") == op_id), None)
+    if op is None:
+        return None
+    touched = []
+    for e in op.get("ends") or []:
+        hit = next((x for x in pg["nodes"] if x.get("kind") == "continuation" and x.get("sheet")
+                    and L._end_key(L._end(x, nums)) == L._end_key(e)), None)
+        if hit is not None:
+            touched.append(hit)
+    breaking = []
+    if op["op"] == "link" and len(touched) == 2 and (L._peer_of(pg, touched[0], by_id) or {}).get("entity_id") == touched[1]["entity_id"]:
+        breaking = [(touched[0], touched[1])]
+    return L._impact_text(pg, by_id, touched, breaking)
+
+
+def _links_check(engine):
+    def check(item, snap):
+        if not engine.reviewer():
+            return "검토자 이름을 먼저 설정에서 입력해야 함(지정한 사람으로 남음)"
+        got = _link_ctx(engine, item)
+        if isinstance(got, str):
+            return got
+        view, me, peer, op_id = got
+        try:
+            ask = _link_ask(engine, item, me, peer, op_id)
+        except Exception as exc:  # noqa: BLE001 - 엔진 글을 못 만들면 상자를 띄우지 않는다
+            return getattr(exc, "message", None) or "확인 글을 만들지 못함"
+        item.targets = [me[0], me[1]] + (list(peer) if peer else []) + ([op_id] if op_id else [])
+        item.basis = {"graph_id": me[0], "local_id": me[1], "ver": view["ver"], "base": view["point"]["base"], "confirm": ask,
+                      "peer": list(peer) if peer else None, "op_id": op_id}
+        return None
+    return check
+
+
+def _point_text(p):
+    if not p:
+        return "-"
+    return "%s %s(배관 %s, %s 쪽)" % (p.get("drawing_number") or "", p.get("label") or "", p.get("line_no") or "없음", p.get("to_drawing") or "상대 도면 없음")
+
+
+def _links_details(engine):
+    def details(item, snap):
+        got = _link_ctx(engine, item)
+        if isinstance(got, str):
+            return [{"label": "오류", "after": got}]
+        view, me, peer, op_id = got
+        pt = view["point"]
+        now = pt.get("peer")
+        now_text = "%s %s" % (now.get("drawing_number") or "", now.get("label") or "") if now else "(짝 없음)"
+        rows = [{"label": "연결점", "after": _point_text(pt)}]
+        if item.action == "links.pair":
+            cand = next((c for c in view["candidates"] if (c["graph_id"], c["local_id"]) == tuple(peer)), None)
+            if cand is None:
+                from hazop.shell import api_links
+                other = api_links.view(engine, peer[0], peer[1])
+                cand = dict(other["point"], warn=[]) if other.get("ok") else {"drawing_number": peer[0], "label": peer[1], "warn": []}
+            rows.append({"label": "짝", "before": now_text, "after": _point_text(cand)})
+            if cand.get("warn"):
+                rows.append({"label": "주의", "after": "; ".join(cand["warn"])})
+        elif item.action == "links.unlink":
+            rows.append({"label": "짝", "before": now_text, "after": "연결하지 않음(사람이 끊음)"})
+        else:
+            op = pt.get("op") or {}
+            what = "%s %s · %s %s" % (op_id, op.get("op") or "", op.get("by") or "", op.get("at") or "") if op.get("op_id") == op_id else op_id
+            rows.append({"label": "뺄 지정", "before": what, "after": "(지정 빼기: 자동 판정으로 돌아감)"})
+        if (item.args.get("reason") or "").strip():
+            rows.append({"label": "사유(AI가 씀)", "after": _show(item.args["reason"])})
+        try:
+            ask = _link_ask(engine, item, me, peer, op_id)
+        except Exception:  # noqa: BLE001
+            return [{"label": "오류", "after": "확인 글을 만들지 못함"}]
+        if ask:
+            rows.append({"label": "엔진 확인", "after": ask})
+        rows.append({"label": "지정한 사람", "after": "%s(확인한 사람)" % _who(engine)})
+        rows.append({"label": "저장 뒤", "after": "프로젝트 그래프가 이 지정을 먼저 적용합니다. 도면·쪽 확정은 바뀌지 않습니다."})
+        rows.append({"label": "판", "after": "%s · 연결점 지문 %s" % (str(view["ver"])[-8:], pt["base"][-8:])})
+        return rows
+    return details
+
+
+def _links_execute(engine):
+    def run(args, call):
+        from hazop.shell import api_links
+        b = call.basis or {}
+        if not b.get("ver") or not b.get("base"):
+            return _refused("확인 상자에서 본 판·연결점 지문이 없어 저장하지 않았습니다.", "stale")
+        reason = args.get("reason") or ""
+        if call.action == "links.pair":
+            out = api_links.pair(engine, b["graph_id"], b["local_id"], b["peer"][0], b["peer"][1], b["ver"], reason, base=b["base"],
+                                 confirm=b.get("confirm"))
+        elif call.action == "links.unlink":
+            out = api_links.unlink(engine, b["graph_id"], b["local_id"], b["ver"], reason, base=b["base"], confirm=b.get("confirm"))
+        else:
+            out = api_links.clear(engine, b["graph_id"], b["local_id"], b["ver"], b["op_id"], base=b["base"], confirm=b.get("confirm"))
+        if not out.get("ok"):
+            code, text = out.get("code") or "failed", out.get("message") or "저장하지 못했습니다."
+            if code == "needs_confirm":
+                text, code = "확인한 뒤 걸리는 것이 바뀌어 저장하지 않았습니다: %s 다시 요청해 확인 상자를 보세요." % text, "stale"
+            return _refused(text, code, b["graph_id"])
+        more = " 재확인할 구간: %s." % ", ".join(str(x) for x in out["recheck"]) if out.get("recheck") else ""
+        return _ok(" ".join(out.get("notes") or ["도면 연결 지정을 저장했습니다."]) + more, topics=["links", "nodes"])
+    return run
+
+
 # ================================================================ 표
 
 def checks(engine, running):
@@ -599,6 +759,7 @@ def checks(engine, running):
     out.update({name: _drawing_check(engine) for name in DRAWING_ACTIONS})
     out.update({name: _p5_check(engine) for name in P5_ACTIONS})
     out["docs.revision"] = _rev_check(engine)
+    out.update({name: _links_check(engine) for name in LINK_ACTIONS})
     return out
 
 
@@ -607,6 +768,7 @@ def details(engine):
     out.update({name: _drawing_details(engine) for name in DRAWING_ACTIONS})
     out.update({name: _p5_details(engine) for name in P5_ACTIONS})
     out["docs.revision"] = _rev_details(engine)
+    out.update({name: _links_details(engine) for name in LINK_ACTIONS})
     return out
 
 
@@ -615,4 +777,5 @@ def executors(engine, running, watcher=None):
     out.update({name: _guard(_drawing_execute(engine)) for name in DRAWING_ACTIONS})
     out.update({name: _guard(_p5_execute(engine)) for name in P5_ACTIONS})
     out["docs.revision"] = _guard(_rev_execute(engine, watcher))
+    out.update({name: _guard(_links_execute(engine)) for name in LINK_ACTIONS})
     return out
