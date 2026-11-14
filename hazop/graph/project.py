@@ -21,6 +21,7 @@ import json
 import os
 import pickle
 import re
+import threading
 
 from hazop import paths
 from hazop.graph import sources
@@ -396,15 +397,16 @@ def _duplicate_tags(graphs):
             for t, ids in sorted(seen.items()) if len({i.split(SEP)[0] for i in ids}) > 1]
 
 
-def build(project_id, graphs, manual_ops=(), system_codes=None):
-    """도면 그래프 목록 -> 프로젝트 그래프 dict. 도면 graph_id가 겹치면 ValueError(auto.project_graphs가 먼저 고른다)."""
+def build(project_id, graphs, manual_ops=(), system_codes=None, copies=None):
+    """도면 그래프 목록 -> 프로젝트 그래프 dict. 도면 graph_id가 겹치면 ValueError(auto.project_graphs가 먼저 고른다).
+    copies: {도면 graph_id: _copy_sheet(그 도면) 결과(새 객체)}. 주면 그 도면은 다시 복사하지 않는다(load_with_names의 쪽별 캐시)."""
     graphs = sorted(graphs, key=lambda g: g["graph_id"])
     gids = [g["graph_id"] for g in graphs]
     if len(set(gids)) != len(gids):
         raise ValueError("같은 graph_id 도면이 여럿: %s" % gids)
     nodes, edges, blockers = [], [], []
     for g in graphs:
-        n, e = _copy_sheet(g)
+        n, e = (copies or {}).get(g["graph_id"]) or _copy_sheet(g)
         nodes += n
         edges += e
         if (g.get("validation") or {}).get("status") != "passed":
@@ -456,35 +458,90 @@ def load(project_id, graph_root=None):
     return load_with_names(project_id, graph_root)[0]
 
 
-def pick_graphs(project_id, graph_root=None):
-    """{graph_id: ((바뀐 시각, 경로), graph, 폴더 이름)} 이 프로젝트의 도면. 같은 graph_id는 가장 최근 것
-    (hazop.kg.auto.project_graphs와 같은 규칙). load와 ② 도면 이름표(project_ctx.graph_names)가 함께 쓴다."""
+# ---------------------------------------------------------------- 쪽별 캐시(증분 빌드)
+# 도면 하나를 고친 뒤 프로젝트 그래프를 다시 지을 때, 바뀌지 않은 쪽은 graph.json을 다시 파싱하거나 노드를 하나씩 복사하지 않는다.
+# 열쇠는 graph.json의 (경로, 바뀐 시각 ns, 크기, inode, 만든 시각 ns): 원자적 쓰기(os.replace)나 다시 쓰기는 이 가운데 하나를 바꾼다.
+# 값은 pickle 바이트로 두고 쓸 때마다 새 객체로 푼다(부르는 쪽이 고쳐도 캐시가 오염되지 않는다). 도면 사이 짝 찾기(match)와
+# 프로젝트 전체에 걸친 계산(구조·버전·겹친 태그)은 매번 다시 한다. tests/test_graph_rebuild_speed가 캐시 없는 처음부터 짓기와 견준다.
+_SHEETS = {}            # 경로 -> {"stamp", "graph": pickle, "copy": pickle 또는 없음}
+_SHEETS_LOCK = threading.Lock()
+
+
+def clear_sheet_cache():
+    with _SHEETS_LOCK:
+        _SHEETS.clear()
+
+
+def _stamp(p):
+    st = os.stat(p)
+    return (st.st_mtime_ns, st.st_size, st.st_ino, st.st_ctime_ns)
+
+
+def _read_graph(p):
+    """graph.json -> (새 graph dict, stamp). 읽는 사이에 파일이 바뀌면 캐시에 넣지 않는다."""
+    stamp = _stamp(p)
+    hit = _SHEETS.get(p)
+    if hit is not None and hit["stamp"] == stamp:
+        return pickle.loads(hit["graph"]), stamp
+    with open(p, encoding="utf-8") as fh:
+        g = json.load(fh)
+    if _stamp(p) == stamp:
+        with _SHEETS_LOCK:
+            _SHEETS[p] = {"stamp": stamp, "graph": pickle.dumps(g, pickle.HIGHEST_PROTOCOL)}
+    return g, stamp
+
+
+def _sheet_copy(p, stamp, g):
+    """_copy_sheet(g)와 같은 (노드, 엣지) 새 객체. g는 _read_graph(p)가 stamp 때 읽은 것."""
+    hit = _SHEETS.get(p)
+    if hit is not None and hit["stamp"] == stamp and hit.get("copy") is not None:
+        return pickle.loads(hit["copy"])
+    out = _copy_sheet(g)
+    if hit is not None and hit["stamp"] == stamp:
+        with _SHEETS_LOCK:
+            hit["copy"] = pickle.dumps(out, pickle.HIGHEST_PROTOCOL)
+    return out
+
+
+def _pick(project_id, graph_root=None):
+    """{graph_id: 고른 후보 {"gid", "key", "graph", "name", "path", "stamp"}}."""
     root = graph_root or paths.output_root("graph")
-    cands = []
+    cands, seen = [], set()
     for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
         p = os.path.join(root, name, "graph.json")
+        seen.add(p)
         try:
-            with open(p, encoding="utf-8") as fh:
-                g = json.load(fh)
+            g, stamp = _read_graph(p)
         except (OSError, ValueError):
             continue
         if project_id_of(g) == project_id:
-            cands.append({"gid": g.get("graph_id"), "key": (os.path.getmtime(p), p), "graph": g, "name": name})
+            cands.append({"gid": g.get("graph_id"), "key": (os.path.getmtime(p), p), "graph": g, "name": name,
+                          "path": p, "stamp": stamp})
+    with _SHEETS_LOCK:                          # 이 폴더에서 사라진 도면은 캐시에서도 뺀다
+        for p in [p for p in _SHEETS if os.path.dirname(os.path.dirname(p)) == root and p not in seen]:
+            del _SHEETS[p]
     # 같은 graph_id는 가장 최근 것(hazop.kg.auto.project_graphs와 같은 규칙). 단 같은 도면 번호가 다른 형식으로 섞이면
     # 사람이 고르기 전에는 먼저 있던 형식을 바꾸지 않는다(hazop.graph.sources)
     chosen, _notes = sources.pick(project_id, cands, graph_root=root if graph_root else None)
-    return {gid: (c["key"], c["graph"], c["name"]) for gid, c in chosen.items()}
+    return chosen
+
+
+def pick_graphs(project_id, graph_root=None):
+    """{graph_id: ((바뀐 시각, 경로), graph, 폴더 이름)} 이 프로젝트의 도면. 같은 graph_id는 가장 최근 것
+    (hazop.kg.auto.project_graphs와 같은 규칙). load와 ② 도면 이름표(project_ctx.graph_names)가 함께 쓴다."""
+    return {gid: (c["key"], c["graph"], c["name"]) for gid, c in _pick(project_id, graph_root).items()}
 
 
 def load_with_names(project_id, graph_root=None):
     """(load와 같은 프로젝트 그래프, {도면 graph_id: 고른 output/graph 폴더 이름}). 도면 파일을 한 번만 읽으려고 둔다."""
-    best = pick_graphs(project_id, graph_root)
-    graphs = [best[k][1] for k in sorted(best)]
+    best = _pick(project_id, graph_root)
+    graphs = [best[k]["graph"] for k in sorted(best)]
     if not graphs:
         raise ValueError("프로젝트 %s에 추출한 도면이 없음" % project_id)
+    copies = {c["graph"]["graph_id"]: _sheet_copy(c["path"], c["stamp"], c["graph"]) for c in best.values()}
     pg = build(project_id, graphs, (load_manual(project_id) or {}).get("ops") or (),
-               load_system_codes(paths.folder("APR1400", SYSTEM_CODES_FILE)))
-    return pg, {gid: v[2] for gid, v in best.items() if gid}
+               load_system_codes(paths.folder("APR1400", SYSTEM_CODES_FILE)), copies=copies)
+    return pg, {gid: c["name"] for gid, c in best.items() if gid}
 
 
 def load_system_codes(path):
