@@ -227,6 +227,17 @@ class ShellWindowTest(ShellBase):
         with mock.patch.object(QFileDialog, "getOpenFileName", staticmethod(lambda *a: ("", ""))):
             self.assertEqual(pick("fmea", ["FMEA 양식 (*.xlsx)"]), [], "취소하면 빈 목록")
 
+    def test_back_chip_returns_to_the_panel_that_sent_the_user_to_the_sheet(self):
+        win = self.window()
+        for back, label in (("results", "분석 결과로 돌아가기"), ("ie", "초기사건으로 돌아가기")):
+            self.js(win, "window.__hz.store.set({panel: null, backTo: %s})" % json.dumps(back))
+            sel = "button[aria-label='%s']" % label
+            self.assertTrue(wait_for(lambda: self.click(win, sel), 10), label)
+            self.assertTrue(wait_for(lambda: self.jsj(win, "window.__hz.store.get().panel") == back, 10), back)
+            self.assertIsNone(self.jsj(win, "window.__hz.store.get().backTo"), "누르면 돌아가기 표시가 지워진다")
+        self.js(win, "window.__hz.store.set({panel: null, backTo: null})")
+        self.assertFalse(self.jsj(win, "!!document.querySelector(\"button[aria-label$='돌아가기']\")"), "이 표시가 없으면 칩도 없다")
+
     def test_related_panels_are_tabs_under_one_menu_button(self):
         win = self.window()
         for name, lead, tabs in (("aireview", "도면", ["도면", "표제란", "AI 검토"]), ("docs", "지식그래프", ["지식그래프", "설계 문서"])):

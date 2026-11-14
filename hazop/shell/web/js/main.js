@@ -164,6 +164,9 @@ function ProjectBox({ id }) {
     onInput=${(e) => setValue(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") apply(e.target.value); if (e.key === "Escape") { setValue(id || ""); setEditing(false); } }} onBlur=${(e) => apply(e.target.value)} />`;
 }
 
+// 도면으로 건너온 화면의 '돌아가기' 칩. backTo가 이 표의 키일 때만 그린다(조사가 달라 문구를 직접 적는다).
+const BACK_CHIPS = { results: "분석 결과로 돌아가기", ie: "초기사건으로 돌아가기" };
+
 function TopBar() {
   const sheet = useStore((s) => s.sheet);
   const d = useStore((s) => s.drawings);
@@ -172,7 +175,7 @@ function TopBar() {
   return html`<header class="topbar"><div class="crumb"><${ProjectBox} id=${d.project_id} /><span class="muted">›</span>
     <button type="button" class="sheet" aria-label="도면 바꾸기" onClick=${() => togglePanel("drawings")}>${row ? (row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
     ${row && row.title ? html`<span class="title">${row.title}</span>` : null}
-    ${backTo === "results" ? html`<button type="button" class="chip accent" aria-label="분석 결과로 돌아가기" onClick=${() => store.set({ panel: "results", backTo: null })}><${Icon} name="table" size=${14} /> 분석 결과로 돌아가기</button>` : null}</div></header>`;
+    ${BACK_CHIPS[backTo] ? html`<button type="button" class="chip accent" aria-label=${BACK_CHIPS[backTo]} onClick=${() => store.set({ panel: backTo, backTo: null })}><${Icon} name=${(byName(backTo) || {}).icon || "arrow-left"} size=${14} /> ${BACK_CHIPS[backTo]}</button>` : null}</div></header>`;
 }
 
 function Toast() {
