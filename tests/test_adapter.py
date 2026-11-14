@@ -480,6 +480,19 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertIsNone(body["kind"])
         self.assertEqual(body["evidence"]["classification_basis"], "safety_class_boundary")
 
+    def test_position_label_does_not_push_valve_number_to_class_diamond(self):
+        # APR1400 016쪽 V290: 밸브 바로 밑 'LC'가 밸브 라벨을 먼저 차지하면 그 밑 번호는 다음으로 가까운 안전등급 마름모로
+        # 갔다. 마름모(몸통 안 글자)는 밸브 번호를 받지 못하므로 번호는 위치 약어만 가진 밸브 몫이다
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        ext = pdf_run(bowtie(100, 100) + [line((40, 111), (100, 111)), line((136, 111), (200, 111))]
+                      + bowtie(100, 144) + [line((118, 144), (118, 166))],
+                      [word("LC", 112, 123, size=5.0), word("V290", 110, 130, size=5.0),
+                       word("CI", 103, 151), word("DII", 122, 151)])
+        valve = [n for n in ext["nodes"] if n["kind"] == "manual_valve"][0]
+        self.assertEqual((valve["tag"], valve["attributes"].get("normal_position")), ("V290", "LC"))
+
     def test_safety_class_diamond_does_not_pull_in_number_bubble_and_valve(self):
         # APR1400 105쪽 주증기 안전밸브: 밸브 번호 원의 상자 귀퉁이가 안전등급 마름모 상자에 겹친다. 두 도형은 닿지
         # 않는다. 한 기호로 묶이면 큰 상자 한가운데 놓인 배관 끝(마름모 아래 꼭짓점)이 몸체 깊숙이 든 선으로 읽혀

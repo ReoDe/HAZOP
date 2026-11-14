@@ -51,7 +51,7 @@ from .pdf_vector_connectors import (
 )
 from .pdf_vector_flow import _chain_flow, _propagate_flows, continuation_flow
 from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels, parse_label
-from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, POSITION_CODE_RE, POSITION_TEXT_RE, VALVE_TAG_RE,
+from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, POSITION_CODE_RE, POSITION_TEXT_RE, NUMBER_PLATE_RE, VALVE_TAG_RE,
                                 _text_blocks, _upright_blocks, _bubble_like, _assign_tags)
 
 SCHEMA_VERSION = drawio.SCHEMA_VERSION
@@ -1474,7 +1474,7 @@ def _nearest_valve(block, valves, prm):
 def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, marks, drop, prm, circled=()):
     """밸브 라벨 고르기(F1-5). label_of·taken을 고치고 {밸브 기호 id: [(위치 약어, 문단 번호)]}를 돌려준다.
     탐욕 배정(가까운 글자부터)은 그대로 두고 밸브만 손본다. 다른 기호의 라벨은 바꾸지 않는다.
-    - 라벨이 없거나 위치 약어(NO·LC·'NC,FO' 등)인 밸브는, 아무 기호의 라벨도 아닌 밸브 번호('V1681', 돌린 글자 포함)가
+    - 라벨이 없거나 위치 약어(NO·LC·'NC,FO' 등)인 밸브는, 아무 기호의 라벨도 아닌 밸브 번호('V1681', 댐퍼 'Y0029', 돌린 글자 포함)가
       label_gap_max 안에 있고 그 번호에 가장 가까운 밸브가 이 밸브이면 그 번호를 라벨로 삼는다. 위치 약어가 밸브 번호보다
       가까워 라벨을 뺏던 자리다.
     - 위치 약어는 태그가 아니라 속성이다. 밸브(또는 그 밸브에 합칠 구동부)의 라벨이었던 약어, 아무 기호의 라벨도 아니고
@@ -1512,7 +1512,7 @@ def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, m
         """문단 bi의 밸브 번호 줄: [(번호, 줄 상자)]. 번호와 위치 약어가 한 문단('V1106' 아래 'LC')이면 번호 줄만 잰다."""
         lines = [" ".join(l.split()) for l in blocks[bi]["text"].split("\n")]
         boxes = blocks[bi].get("line_boxes") or [blocks[bi]["bbox"]] * len(lines)
-        return [(l, box) for l, box in zip(lines, boxes) if VALVE_TAG_RE.fullmatch(l)]
+        return [(l, box) for l, box in zip(lines, boxes) if NUMBER_PLATE_RE.fullmatch(l)]
     numbered_blocks = [(bj, number_lines(bj)) for bj in range(len(blocks)) if number_lines(bj)]
 
     def gap_to(box, sy):
@@ -1548,11 +1548,16 @@ def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, m
     holder = {bi: si for si, bi in label_of.items()}
 
     def lent(bi):
-        """밸브 번호 문단이 밸브가 아닌 기호(배관 부속·미분류 조각)의 라벨로 잡혀 있는가. 밸브 번호는 밸브 몫이다."""
-        return bi in holder and id(plan_into.get(id(syms[holder[bi]]), syms[holder[bi]])) not in valve_like
+        """밸브 번호 문단이 번호를 받지 못하는 기호의 라벨로 잡혀 있는가: 밸브가 아닌 기호(배관 부속·미분류 조각), 또는
+        몸통 안에 다른 글자가 든 기호(lettered, 품질 등급 마름모 'BI|CI'). 밸브 번호는 밸브 몫이다. 위치 약어('LC')가
+        밸브 라벨을 먼저 차지하면 번호는 그다음 가까운 마름모로 가던 자리다(016쪽 V290·V293)."""
+        if bi not in holder:
+            return False
+        hs = holder[bi]
+        return id(plan_into.get(id(syms[hs]), syms[hs])) not in valve_like or hs in lettered
     pairs = []
     for bi in range(len(blocks)):
-        if bi in roles or (bi in taken and not lent(bi)) or not VALVE_TAG_RE.fullmatch(text(bi)):
+        if bi in roles or (bi in taken and not lent(bi)) or not NUMBER_PLATE_RE.fullmatch(text(bi)):
             continue
         v = _nearest_valve(blocks[bi], valves, prm)
         if v is not None and id(v) in open_valves and owner_of(bi) is v and not closer_number(bi, v):
@@ -1572,7 +1577,7 @@ def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, m
         moved.add(si)
     numbered = {si for si, bi in label_of.items() if id(syms[si]) in valve_like and si not in lettered
                 and id(syms[si]) not in circled
-                and any(VALVE_TAG_RE.fullmatch(" ".join(l.split())) for l in blocks[bi]["text"].splitlines())
+                and any(NUMBER_PLATE_RE.fullmatch(" ".join(l.split())) for l in blocks[bi]["text"].splitlines())
                 and owner_of(bi) is syms[si] and not closer_number(bi, syms[si])}
     return positions, numbered
 
