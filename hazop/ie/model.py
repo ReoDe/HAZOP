@@ -30,6 +30,8 @@ KIND = "hazop_ie_groups"
 SCHEMA_VERSION = "0.1"
 SEP = "/"
 ORIGINS = ("ai_draft", "human")
+# 기본사건만: FMEA 승인 행에서 만든 후보(P5, 설계 §8.2). 사람이 받아들이거나 고치면 human이 된다
+BASIC_EVENT_ORIGINS = ORIGINS + ("fmea",)
 GROUP_STATUSES = {"draft": "초안", "confirmed": "확정", "split": "나뉨", "deleted": "삭제"}
 RETIRED = ("split", "deleted")
 RECORD_STATUSES = ("live", "deleted")
@@ -135,7 +137,7 @@ def problems(doc):
             out.append("%s: 확정 기록 없음" % gid)
     for table in ("headings", "end_states", "basic_events"):
         for k, v in doc[table].items():
-            if v.get("status") not in RECORD_STATUSES or v.get("origin") not in ORIGINS:
+            if v.get("status") not in RECORD_STATUSES or v.get("origin") not in (BASIC_EVENT_ORIGINS if table == "basic_events" else ORIGINS):
                 out.append("%s: status·origin 값이 맞지 않음" % k)
     return out
 
@@ -569,7 +571,7 @@ def _add_be(o, bes, idx, ref, mode, kind, key, heading):
                                   "status": "live"}
         bes[bkey] = bid
     be = o["basic_events"][bes[bkey]]
-    if be["origin"] == "ai_draft":  # 사람이 받아들인 기록은 규칙이 넓히지 않는다
+    if be["origin"] in ("ai_draft", "fmea"):  # 사람이 받아들인 기록은 규칙이 넓히지 않는다. FMEA에서 온 후보에는 HAZOP 출처를 합친다
         src = {"kind": kind, "key": key}
         if src not in be["sources"]:
             be["sources"].append(src)

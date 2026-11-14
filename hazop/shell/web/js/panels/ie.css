@@ -24,3 +24,5 @@
 .ie-ec { margin: var(--sp-1) 0 var(--sp-2); }
 .ie-ec select.textbox { height: 26px; }
 .ie-mld { margin-top: var(--sp-3); }
+.ie-conflict { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); background: var(--warn-bg); }
+.ie-unread { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }

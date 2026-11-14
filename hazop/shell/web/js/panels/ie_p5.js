@@ -7,7 +7,9 @@ import { Btn, Chip } from "../ui/parts.js";
 import * as I from "./ie_state.js";
 
 const STATUS_KIND = { imported: "ai", approved: "ok", excluded: "plain" };
-const MLD_KIND = { covered: "ok", gap: "warn", unmapped: "warn", not_applicable: "plain" };
+const MLD_KIND = { confirmed: "ok", rule: "accent", gap: "warn", unmapped: "warn", not_applicable: "plain" };
+const FIELD_NAME = { tag: "기기 태그", failure_mode: "고장모드", failure_code: "고장모드 코드", cause: "원인", op_mode: "운전 모드", effect: "고장 영향",
+  detection: "탐지 방법", compensation: "보상 수단", remark: "비고·조치", severity_class: "Severity Class", hazop_entry: "관련 HAZOP 항목" };
 const DISPOSITION = { out_of_scope: "범위 밖", other_method: "다른 기법으로 확인 예정", not_applicable: "해당 없음(설계 특성)" };
 const EDIT_FIELDS = [["failure_mode", "고장모드"], ["failure_code", "고장모드 코드"], ["cause", "원인"], ["op_mode", "운전 모드"],
   ["effect", "고장 영향"], ["detection", "탐지 방법"], ["compensation", "보상 수단"], ["remark", "비고·조치"], ["hazop_entry", "관련 HAZOP 항목"]];
@@ -18,6 +20,7 @@ function RowCard({ r, f }) {
   const [vals, setVals] = useState(() => Object.fromEntries(EDIT_FIELDS.map(([k]) => [k, r[k] || ""])));
   const [q, setQ] = useState(r.tag || "");
   const [pick, setPick] = useState("");
+  const [relink, setRelink] = useState(false);
   const qn = q.trim().toUpperCase();
   const comps = qn ? f.components.filter((c) => c.tag.toUpperCase().includes(qn)).slice(0, 30) : [];
   const save = async () => {
@@ -29,7 +32,13 @@ function RowCard({ r, f }) {
     <div class="small"><b>${r.row_id}</b> ${r.tag} · ${r.failure_mode}${r.failure_code ? " (" + r.failure_code + ")" : " · 코드 미정"}
       ${r.node_id ? html` · <span class="muted">${r.node_id}</span>` : null}</div>
     <div class="small muted">${[r.cause && "원인 " + r.cause, r.effect && "영향 " + r.effect, r.detection && "탐지 " + r.detection].filter(Boolean).join(" · ")}</div>
-    ${!r.ref ? html`<div class="ie-judge acts-row" role="group" aria-label="구성요소 고르기">
+    ${r.matched ? html`<div class="small">대응: <b>${r.matched.tag}</b>${r.matched.drawing ? " (" + r.matched.drawing + ")" : ""} · ${f.matches[r.match]}
+      <${Btn} sm=${true} kind="ghost" label=${r.row_id + " 다시 잇기"} disabled=${busy} onClick=${() => setRelink(!relink)}>다시 잇기<//></div>` : null}
+    ${Object.keys(r.conflicts || {}).map((k) => html`<div class="ie-conflict small" key=${k} role="group" aria-label=${r.row_id + " " + FIELD_NAME[k] + " 충돌"}>
+      <b>${FIELD_NAME[k]}</b>: 사람이 고친 값 '${r[k]}' · 새 파일 값 '${r.conflicts[k]}'
+      <${Btn} sm=${true} label=${r.row_id + " " + FIELD_NAME[k] + " 내 값 두기"} disabled=${busy} onClick=${() => I.fmeaResolve(r.row_id, k, "mine")}>내 값 두기<//>
+      <${Btn} sm=${true} label=${r.row_id + " " + FIELD_NAME[k] + " 파일 값 쓰기"} disabled=${busy} onClick=${() => I.fmeaResolve(r.row_id, k, "file")}>파일 값 쓰기<//></div>`)}
+    ${!r.ref || relink ? html`<div class="ie-judge acts-row" role="group" aria-label="구성요소 고르기">
         <input class="textbox" aria-label=${r.row_id + " 구성요소 찾기"} placeholder="태그로 찾기" value=${q} onInput=${(e) => setQ(e.target.value)} />
         <select class="textbox" aria-label=${r.row_id + " 구성요소"} value=${pick} onChange=${(e) => setPick(e.target.value)}><option value="">구성요소 고르기</option>
           ${comps.map((c) => html`<option value=${c.entity_id} key=${c.entity_id}>${c.tag} · ${c.kind}${c.nodes.length ? " · " + c.nodes.join(",") : ""}</option>`)}</select>
@@ -58,11 +67,18 @@ function EcNodes({ f }) {
           <option value="">규칙대로</option><option value="include">넣음</option><option value="exclude">뺌</option></select></div>`)}</div>` : null}</div>`;
 }
 
+function Unreadable({ which, v }) {
+  const busy = I.useIe((x) => x.busy);
+  return html`<div class="ie-unread"><${Chip} kind="warn">읽을 수 없음<//> <span class="small">${v.unreadable}: ${(v.problems || []).join("; ")}</span>
+    <${Btn} sm=${true} label=${which.toUpperCase() + " 원본 백업 뒤 새로 시작"} disabled=${busy} onClick=${() => I.sideReplace(which)}>백업 뒤 새로 시작<//></div>`;
+}
+
 export function FmeaView() {
   const f = I.useIe((x) => x.fmea);
   const frow = I.useIe((x) => x.frow);
   const busy = I.useIe((x) => x.busy);
   if (!f) return html`<div class="muted">불러오는 중…</div>`;
+  if (f.unreadable) return html`<${Unreadable} which="fmea" v=${f} />`;
   const c = f.counts;
   return html`<div class="ie-fmea">
     <div class="acts-row res-head"><span class="small">고장모드 및 영향 분석(FMEA) 행 ${f.rows.length} · 승인 ${c.approved} · 제외 ${c.excluded}
@@ -73,7 +89,8 @@ export function FmeaView() {
     ${f.rows.length ? html`<div class="list" role="list" aria-label="FMEA 행">${f.rows.map((r) => html`<div key=${r.row_id}>
         <div class=${"row nrow" + (frow === r.row_id ? " on" : "")} role="listitem">
           <button type="button" class="nrow-b" aria-pressed=${frow === r.row_id ? "true" : "false"} aria-label=${r.row_id + " " + r.tag} onClick=${() => I.pickRow(r.row_id)}>
-            <span class="main"><b>${r.row_id} <span class="nm">${r.tag}</span></b><span>${r.failure_mode}${r.failure_code ? " (" + r.failure_code + ")" : ""}${r.in_last_import === false ? " · 이번 가져오기에 없음" : ""}</span></span></button>
+            <span class="main"><b>${r.row_id} <span class="nm">${r.tag}</span></b><span>${r.failure_mode}${r.failure_code ? " (" + r.failure_code + ")" : ""}${r.op_mode ? " · " + r.op_mode : ""}${r.in_last_import === false ? " · 이번 가져오기에 없음" : ""}</span></span></button>
+          ${Object.keys(r.conflicts || {}).length ? html`<${Chip} kind="warn">충돌 ${Object.keys(r.conflicts).length}<//>` : null}
           ${r.ref ? null : html`<${Chip} kind="warn">${f.matches[r.match]}<//>`}<${Chip} kind=${STATUS_KIND[r.status]}>${f.statuses[r.status]}<//></div>
         ${frow === r.row_id ? html`<${RowCard} r=${r} f=${f} key=${r.row_id + r.fp} />` : null}</div>`)}</div>`
       : html`<div class="muted">FMEA를 아직 가져오지 않았습니다. 양식을 내보내 채운 뒤 가져오세요. 승인한 행만 기본사건 후보의 출처가 됩니다.</div>`}</div>`;
@@ -89,9 +106,11 @@ function MldRow({ b, m }) {
   const toggle = (g) => setLinks(links.includes(g) ? links.filter((x) => x !== g) : links.concat([g]));
   return html`<div class="row ie-cov" role="listitem" key=${b.id}>
     <span class="main"><button type="button" class="linkish" aria-expanded=${open ? "true" : "false"} aria-label=${"MLD 가지 " + b.id} onClick=${() => setOpen(!open)}>
-        <b>${b.id} ${b.name}</b></button><span class="small muted">${b.path}${b.categories.length ? " · 범주 " + b.categories.join(", ") : " · 대응 범주 없음"}${b.group_ids.length ? " · 이은 그룹 " + b.group_ids.join(", ") : ""}</span>
+        <b>${b.id} ${b.name}</b></button><span class="small muted">${b.path}${b.categories.length ? " · 범주 " + b.categories.join(", ") : " · 대응 범주 없음"}${b.group_ids.length ? " · 이은 그룹 " + b.group_ids.join(", ") : ""}${b.confirmed_by ? " · 확인 " + b.confirmed_by : ""}</span>
       ${b.disposition ? html`<span class="small">판정: <b>${DISPOSITION[b.disposition.disposition]}</b> · ${b.disposition.reason}</span>` : null}
       ${open ? html`<span class="ie-judge acts-row" role="group" aria-label=${b.id + " 판정·잇기"}>
+          ${b.status === "rule" ? html`<${Btn} sm=${true} kind="primary" label=${b.id + " 사람 확인"} title="이 가지의 범주에 든 후보가 이 가지의 사건인지 보고 확인합니다" disabled=${busy} onClick=${() => I.mldConfirm(b.id, true)}>사람 확인<//>` : null}
+          ${b.confirmed_by ? html`<${Btn} sm=${true} kind="ghost" label=${b.id + " 확인 풀기"} disabled=${busy} onClick=${() => I.mldConfirm(b.id, false)}>확인 풀기<//>` : null}
           ${m.groups.length ? html`<span class="small">그룹 잇기:</span>${m.groups.map((g) => html`<label class="small" key=${g.group_id}><input type="checkbox" checked=${links.includes(g.group_id)} onChange=${() => toggle(g.group_id)} /> ${g.group_id}</label>`)}
             <${Btn} sm=${true} label=${b.id + " 그룹 잇기 저장"} disabled=${busy} onClick=${() => I.mldLink(b.id, links)}>잇기 저장<//>` : null}
           ${b.status !== "covered" ? html`<select class="textbox" aria-label=${code + " 처리"} value=${disp} onChange=${(e) => setDisp(e.target.value)}>${Object.keys(DISPOSITION).map((k) => html`<option value=${k} key=${k}>${DISPOSITION[k]}</option>`)}</select>
@@ -106,9 +125,11 @@ export function MldSection() {
   const m = I.useIe((x) => x.mld);
   const busy = I.useIe((x) => x.busy);
   if (!m) return null;
+  if (m.unreadable) return html`<div class="ie-mld"><${Unreadable} which="mld" v=${m} /></div>`;
   const gaps = m.branches.filter((b) => b.status === "gap" || b.status === "unmapped").length;
+  const rule = m.branches.filter((b) => b.status === "rule").length;
   return html`<div class="ie-mld">
-    <div class="acts-row res-head"><span class="small">${m.loaded ? html`주논리도(MLD) <b>${m.source.title || m.source.mld_id}</b> 판 ${m.source.revision || "-"} · 잎 가지 ${m.branches.length} · 공백·범주 없음 ${gaps}`
+    <div class="acts-row res-head"><span class="small">${m.loaded ? html`주논리도(MLD) <b>${m.source.title || m.source.mld_id}</b> 판 ${m.source.revision || "-"} · 잎 가지 ${m.branches.length} · 공백·범주 없음 ${gaps}${rule ? " · 사람 확인 전(규칙 대조) " + rule : ""}`
       : "주논리도(MLD)를 받지 않았습니다. 대상 노형의 MLD 파일을 가져오면 잎 가지마다 후보가 있는지 대조합니다."}</span>
       <span class="acts"><${Btn} sm=${true} label="MLD 가져오기" disabled=${busy} onClick=${I.mldImport}>${m.loaded ? "MLD 다시 가져오기" : "MLD 가져오기"}<//></span></div>
     ${m.gone_links.length ? html`<div class="small reason">MLD에 없어진 가지에 남은 연결: ${m.gone_links.join(", ")}</div>` : null}

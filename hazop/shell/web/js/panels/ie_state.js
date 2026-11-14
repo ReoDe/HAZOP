@@ -144,7 +144,9 @@ async function write(name, args, notice, sent) {
 export function confirmAsk() {
   const a = ie.get().ask;
   if (!a) return null;
-  return write(a.name, {}, a.notice, Object.assign({}, a.full, { confirmed: true, confirm_groups: a.groups }));
+  const again = Object.assign({}, a.full, { confirmed: true, confirm_groups: a.groups });
+  if (/_replace_unreadable$/.test(a.name)) return sideWrite(a.name, again, a.notice);
+  return write(a.name, {}, a.notice, again);
 }
 export function cancelAsk() { ie.set({ ask: null }); }
 
@@ -203,9 +205,13 @@ export async function exportBundle() {
 
 // ---------------------------------------------------------------- P5: FMEA·MLD(설계 §8.2). 쓰기는 그 파일의 지문(fver·mver)과 화면이 본 행 지문을 싣는다
 async function sideWrite(name, args, notice, after) {
-  ie.set({ busy: true, error: null, notice: null });
+  ie.set({ busy: true, error: null, notice: null, ask: null });
   try {
     const r = await cmd(name, args);
+    if (r && r.ask) {           // 되물음(읽지 못한 파일 바꾸기 등): 카드가 보인 때의 인자를 그대로 들고 있는다
+      ie.set({ busy: false, ask: { name, full: args, notice, message: r.ask.message, groups: r.ask.groups || [] } });
+      return null;
+    }
     await refresh();
     if (after) after(r);
     ie.set({ busy: false, notice: (typeof notice === "function" ? notice(r) : notice) || null });
@@ -219,6 +225,10 @@ async function sideWrite(name, args, notice, after) {
 const fseen = () => Object.fromEntries(((ie.get().fmea || {}).rows || []).map((r) => ["fmea:" + r.row_id, r.fp]));
 const fver = () => (ie.get().fmea || {}).fver || "none";
 export const pickRow = (id) => ie.set({ frow: ie.get().frow === id ? null : id });
+export const fmeaResolve = (id, field, take) => sideWrite("ie.fmea_resolve", { fver: fver(), seen: fseen(), row_id: id, field, take },
+  id + (take === "file" ? "에 파일 값을 썼습니다(앞값은 이력에 남음)." : "의 사람이 고친 값을 그대로 둡니다."));
+export const sideReplace = (which) => sideWrite("ie." + which + "_replace_unreadable", {},
+  (r) => (r && r.backup ? "원본을 백업하고 새로 시작했습니다: " + r.backup : null));
 export const fmeaTemplate = () => sideWrite("ie.fmea_template", {}, (r) => (r.cancelled ? null : "FMEA 양식을 내보냈습니다: " + r.path + " · 행 " + r.rows + "개"));
 export const fmeaImport = () => sideWrite("ie.fmea_import", { fver: fver() }, (r) => (r.cancelled ? null
   : "FMEA를 가져왔습니다: " + r.file + " · 새 행 " + r.report.new + " · 바뀐 행 " + r.report.changed + " · 대응 실패 " + r.report.unmatched
@@ -230,5 +240,7 @@ export const fmeaMark = (nodeId, mark) => sideWrite("ie.fmea_mark", { fver: fver
   nodeId + (mark === "include" ? " 구간을 전기·제어 구간에 넣었습니다." : mark === "exclude" ? " 구간을 전기·제어 구간에서 뺐습니다." : " 구간 표시를 지웠습니다."));
 const mver = () => (ie.get().mld || {}).mver || "none";
 export const mldImport = () => sideWrite("ie.mld_import", { mver: mver() }, (r) => (r.cancelled ? null : "MLD를 가져왔습니다: " + r.file + " · 가지 " + r.branches + "개"));
+export const mldConfirm = (branchId, on) => sideWrite("ie.mld_confirm", { mver: mver(), seen: seenMap(), branch_id: branchId, on },
+  branchId + (on ? " 가지를 사람이 확인했습니다." : " 가지의 확인을 풀었습니다."));
 export const mldLink = (branchId, groupIds) => sideWrite("ie.mld_link", { mver: mver(), seen: seenMap(), branch_id: branchId, group_ids: groupIds },
   branchId + (groupIds.length ? " 가지에 " + groupIds.join(", ") + "을(를) 이었습니다." : " 가지의 연결을 지웠습니다."));

@@ -208,7 +208,8 @@ class FmeaBundleTest(unittest.TestCase):
         st = {x["id"]: x["status"] for x in b["mld"]["branches"]}
         self.assertEqual(set(st), {"B11", "B12", "B2"}, "잎 가지만 대조한다")
         self.assertEqual(st["B2"], "unmapped")
-        self.assertEqual(rows_["LOMFW"]["mld_status"], "covered" if st["B11"] == "covered" else "gap")
+        self.assertEqual(rows_["LOMFW"]["mld_status"], {"rule": "rule", "gap": "gap"}[st["B11"]],
+                         "사람 확인 전 가지는 '규칙 대조'까지만, '사람 확인'으로 단정하지 않는다")
         tail = b["completeness"][-1]
         self.assertEqual((tail["name_ko"], [x["id"] for x in tail["mld_branches"]]), ("범주 없는 MLD 가지", ["B2"]))
         linked = ml.set_links(sdoc, "B2", [], at=AT)
@@ -217,7 +218,7 @@ class FmeaBundleTest(unittest.TestCase):
         b2 = ib.build_bundle(self.r, self.ns, self.pg, ie2, NOW, fmea=self.fdoc, mld=sdoc)
         self.assertEqual({x["id"]: x["status"] for x in b2["mld"]["branches"]}["B2"], "not_applicable")
         row = ix.completeness_row(rows_["LOMFW"], ix._mld_source(b))
-        self.assertEqual(row[7:], ("B11 주급수 상실", ix.MLD_STATUS[rows_["LOMFW"]["mld_status"]], "test-mld.json 판 A"))
+        self.assertEqual(row[7:], ("B11 주급수 상실(%s)" % ix.MLD_STATUS[st["B11"]], ix.MLD_STATUS[rows_["LOMFW"]["mld_status"]], "test-mld.json 판 A"))
 
     def test_without_mld_the_columns_are_empty_and_the_guide_says_so(self):
         b, _ = self.bundle()
@@ -244,6 +245,133 @@ class FmeaBundleTest(unittest.TestCase):
         self.assertIs(ib.upgrade(b), b)
         with self.assertRaises(ValueError):
             ib.upgrade(dict(old, schema_version="9.9"))
+
+
+class ReviewFixTest(unittest.TestCase):
+    """A18 검토(2026-11-14) 재현 R1~R6과 함께 고칠 것."""
+
+    def setUp(self):
+        self.r, self.ns, self.pg = sample()
+
+    def imp(self, doc, items, name="a.xlsx"):
+        return fm.import_rows(doc, items, self.pg, self.ns, name, "검토자A", at=AT)
+
+    def bundle(self, ie, fdoc, mld=None):
+        return ib.build_bundle(self.r, self.ns, self.pg, ie, NOW, fmea=fdoc, mld=mld)
+
+    def test_R1_repointed_row_leaves_its_old_basic_event(self):
+        d, _ = self.imp(fm.empty("P"), rows({}))
+        d = fm.set_status(d, ["FM-001"], "approved", "A", at=AT)
+        ie = store.sync_all(model.empty("P"), self.r, self.ns, d)
+        old = next(k for k, v in ie["basic_events"].items() if v["origin"] == "fmea")
+        d = fm.edit_row(d, "FM-001", {"failure_code": "FTC", "failure_mode": "닫힘 실패"}, self.pg, self.ns, at=AT)
+        d = fm.set_status(d, ["FM-001"], "approved", "A", at=AT)
+        ie2 = store.sync_all(ie, self.r, self.ns, d)
+        b = self.bundle(ie2, d)
+        hits = [(x["be_id"], x["failure_mode"]) for x in b["basic_events"] if "FM-001" in x["fmea_rows"]]
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0][1], "FTC", "옛 기본사건(FTO)은 그 행 출처를 떼고 묶음에서 빠진다")
+        self.assertEqual(ie2["basic_events"][old]["status"], "deleted", "출처가 하나도 안 남은 FMEA 기본사건은 지운 기록")
+        self.assertNotEqual(hits[0][0], old, "BE ID는 다시 쓰지 않는다")
+        self.assertTrue(ie2["history"][-1].get("detached"))
+        back = fm.edit_row(d, "FM-001", {"failure_code": "FTO", "failure_mode": "열림 실패"}, self.pg, self.ns, at=AT)
+        back = fm.set_status(back, ["FM-001"], "approved", "A", at=AT)
+        ie3 = store.sync_all(ie2, self.r, self.ns, back)
+        self.assertEqual(ie3["basic_events"][old]["status"], "live", "같은 열쇠로 돌아오면 옛 ID로 되살린다")
+        self.assertEqual(model.problems(ie3), [])
+
+    def test_R2_rows_differing_only_in_operating_mode_import(self):
+        d, rep = self.imp(fm.empty("P"), rows({"op_mode": "출력운전"}, {"op_mode": "정지"}))
+        self.assertEqual((rep["new"], fm.problems(d)), (["FM-001", "FM-002"], []))
+        d2, rep2 = self.imp(d, rows({"op_mode": "출력운전"}, {"op_mode": "출력운전", "row_id": "FM-002"}))
+        self.assertTrue(any("FM-001" in p and "운전 모드" in p for p in rep2["problems"]), rep2["problems"])
+        self.assertEqual(fm.problems(d2), [], "겹치는 줄은 넣지 않아 저장할 수 있는 문서가 남는다")
+
+    def test_R3_reimporting_the_first_file_after_a_human_edit_finds_the_same_row(self):
+        d, _ = self.imp(fm.empty("P"), rows({}))
+        d = fm.edit_row(d, "FM-001", {"cause": "구동기 고장(사람이 고침)"}, self.pg, self.ns, at=AT)
+        d2, rep = self.imp(d, rows({}))
+        self.assertEqual((rep["new"], rep["missing"], sorted(d2["rows"])), ([], [], ["FM-001"]))
+        self.assertEqual(d2["rows"]["FM-001"]["cause"], "구동기 고장(사람이 고침)")
+
+    def test_R4_human_edit_is_not_overwritten_and_a_changed_file_value_is_a_conflict(self):
+        d, _ = self.imp(fm.empty("P"), rows({}))
+        d = fm.edit_row(d, "FM-001", {"effect": "사람이 적은 영향"}, self.pg, self.ns, at=AT)
+        same, _rep = self.imp(d, [dict(rows({})[0], row_id="FM-001")])
+        self.assertEqual(same["rows"]["FM-001"]["effect"], "사람이 적은 영향", "파일 값이 그대로면 사람이 고친 값을 둔다")
+        changed, rep = self.imp(d, [dict(rows({"effect": "파일이 바꾼 영향"})[0], row_id="FM-001")])
+        r = changed["rows"]["FM-001"]
+        self.assertEqual((r["effect"], r["conflicts"], rep["conflicts"]), ("사람이 적은 영향", {"effect": "파일이 바꾼 영향"}, ["FM-001"]))
+        took = fm.resolve_conflict(changed, "FM-001", "effect", "file", at=AT)
+        self.assertEqual(took["rows"]["FM-001"]["effect"], "파일이 바꾼 영향")
+        self.assertEqual(took["history"][-1]["before"], {"effect": "사람이 적은 영향"}, "덮을 때는 앞값을 이력에 남긴다")
+        kept = fm.resolve_conflict(changed, "FM-001", "effect", "mine", at=AT)
+        self.assertEqual((kept["rows"]["FM-001"]["effect"], kept["rows"]["FM-001"]["conflicts"]), ("사람이 적은 영향", {}))
+        plain, _r2 = self.imp(fm.empty("P"), rows({}))
+        plain2, _r3 = self.imp(plain, [dict(rows({"remark": "새 비고"})[0], row_id="FM-001")])
+        self.assertEqual(plain2["rows"]["FM-001"]["remark"], "새 비고", "사람이 고치지 않은 칸은 파일 값으로 고친다")
+        self.assertEqual(plain2["history"][-1]["before"], {"FM-001": {"remark": ""}}, "덮은 칸의 앞값을 이력에 남긴다")
+
+    def test_R5_fmea_basic_event_has_its_own_origin_and_merges_with_hazop(self):
+        d, _ = self.imp(fm.empty("P"), rows({}))
+        d = fm.set_status(d, ["FM-001"], "approved", "A", at=AT)
+        ie = store.sync_all(model.empty("P"), self.r, self.ns, d)
+        bid, be = next((k, v) for k, v in ie["basic_events"].items() if v["sources"])
+        self.assertEqual(be["origin"], "fmea")
+        self.assertEqual(ix.basic_event_row(next(x for x in self.bundle(ie, d)["basic_events"] if x["fmea_rows"]))[11], "FMEA 행")
+        o = copy.deepcopy(ie)
+        model._add_be(o, {be["key"]: bid}, {}, be["ref"], "FTO", "cause", "graph-x/e1", None)
+        self.assertEqual({s["kind"] for s in o["basic_events"][bid]["sources"]}, {"fmea", "cause"},
+                         "같은 열쇠의 HAZOP 출처와 합쳐 두 출처를 남긴다")
+
+    def test_R6_mld_ids_are_checked_as_saved_and_parent_must_be_text(self):
+        bad = copy.deepcopy(MLD)
+        bad["branches"][2]["parent"] = ["B1"]
+        self.assertTrue(any("parent" in p for p in ml.validate(bad)), "목록 parent는 오류 글로(TypeError 아님)")
+        ws = copy.deepcopy(MLD)
+        ws["branches"].append({"id": "B11 ", "name": "x", "parent": "B1", "categories": []})
+        self.assertTrue(any("중복" in p for p in ml.validate(ws)), "공백을 지운 ID로 검사한다")
+        with self.assertRaises(ValueError):
+            ml.import_mld(ml.empty("P"), ws, "m.json", "A", None, at=AT)
+        long_id = copy.deepcopy(MLD)
+        long_id["branches"].append({"id": "X" * 37, "name": "긴 ID", "parent": "B1", "categories": []})
+        self.assertTrue(ml.validate(long_id), "판정 열쇠 'MLD:<ID>'가 40자를 넘는 ID는 거절")
+
+    def test_rule_match_is_not_reported_as_human_confirmation(self):
+        sdoc = ml.import_mld(ml.empty("P"), MLD, "m.json", "A", {"LOMFW", "LOIA", "LOOP"}, at=AT)
+        fake = [{"category": "LOMFW", "judgement": "yes"}]
+        v = ml.compare(sdoc, fake, [], {})
+        self.assertEqual({b["id"]: b["status"] for b in v["branches"]}["B11"], "rule")
+        on = ml.set_confirm(sdoc, "B11", True, "검토자A", at=AT)
+        st = {b["id"]: b for b in ml.compare(on, fake, [], {})["branches"]}
+        self.assertEqual((st["B11"]["status"], st["B11"]["confirmed_by"]), ("confirmed", "검토자A"))
+        self.assertEqual({b["id"]: b["status"] for b in ml.compare(on, [], [], {})["branches"]}["B11"], "gap",
+                         "확인했어도 지금 후보가 없으면 공백")
+        with self.assertRaises(ValueError):
+            ml.set_confirm(sdoc, "B11", True, "")
+
+    def test_bundle_fmea_key_follows_the_spec_and_reports_unreadable_files(self):
+        d, _ = self.imp(fm.empty("P"), rows({}), name="plant-fmea.xlsx")
+        b = self.bundle(store.sync_all(model.empty("P"), self.r, self.ns, d), d)
+        self.assertEqual(b["fmea"], {"rows_total": 1, "rows_approved": 0, "file": "plant-fmea.xlsx"})
+        b2 = ib.build_bundle(self.r, self.ns, self.pg, model.sync(model.empty("P"), self.r, node_set=self.ns), NOW,
+                             unreadable=["P.fmea.json"])
+        self.assertEqual(b2["unreadable_inputs"], ["P.fmea.json"])
+        self.assertIn("P.fmea.json", dict(ix.guide_rows(b2))["읽지 못한 입력"])
+
+    def test_excel_size_cap_and_broken_file_reasons(self):
+        tmp = tempfile.mkdtemp(prefix="hazop-fmea-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        p = os.path.join(tmp, "broken.xlsx")
+        with open(p, "wb") as fh:
+            fh.write(b"not a zip")
+        with self.assertRaises(ValueError) as e:
+            fm.read_rows(p)
+        self.assertIn("깨졌", str(e.exception))
+        with mock.patch.object(fm, "MAX_BYTES", 4):
+            with self.assertRaises(ValueError) as e2:
+                fm.read_rows(p)
+        self.assertIn("너무 큽니다", str(e2.exception))
 
 
 class MldValidateTest(unittest.TestCase):

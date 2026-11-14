@@ -424,9 +424,10 @@ def _scrubbed(x):
     return x
 
 
-def build_bundle(results, node_set, pg, ie_doc, now, table=None, fmea=None, mld=None):
+def build_bundle(results, node_set, pg, ie_doc, now, table=None, fmea=None, mld=None, unreadable=()):
     """IE 인계 묶음 dict. ie_doc은 model.sync를 거친 ⑥ 문서, now는 UTC ISO 시각('...Z'), table은 일반 범주 기준표 문서
-    (없으면 res.ie_category_table()). fmea·mld는 P5 문서(없으면 FMEA 대조 전·MLD 열 빈 값). 승인 FMEA 행을 기본사건에 붙이려면
+    (없으면 res.ie_category_table()). fmea·mld는 P5 문서(없으면 FMEA 대조 전·MLD 열 빈 값). unreadable: 읽지 못해 넣지 못한
+    P5 파일 이름(읽는 법에 적음). 승인 FMEA 행을 기본사건에 붙이려면
     ie_doc이 hazop.ie.store.sync_all(또는 fmea.sync_basic_events)을 거쳐야 한다."""
     from hazop.ie import fmea as fm
     from hazop.ie import mld as ml
@@ -476,13 +477,14 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None, fmea=None, mld=
     for r in completeness:
         branches = (mld_view or {}).get("by_category", {}).get(r["code"], []) if r["code"] else []
         r["mld_branches"] = [{"id": b["id"], "name": b["name"], "status": b["status"]} for b in branches]
-        r["mld_status"] = (None if not branches else "covered" if all(b["status"] in ("covered", "not_applicable") for b in branches)
-                           else "gap")
+        # 범주 행의 MLD 대응: 가지가 모두 사람 확인(또는 해당 없음)이면 confirmed, 규칙 대조까지 넣어 모두 맞으면 rule, 아니면 gap
+        r["mld_status"] = (None if not branches else "confirmed" if all(b["status"] in ml.DONE for b in branches)
+                           else "rule" if all(b["status"] in ml.DONE + ("rule",) for b in branches) else "gap")
     unmapped = [b for b in (mld_view or {}).get("branches", []) if not b["categories"]]
     if unmapped:
         completeness.append({"code": None, "name_ko": "범주 없는 MLD 가지", "source_label": "", "group_id": None,
                              "candidate_count": 0,
-                             "status": "covered" if all(b["status"] in ("covered", "not_applicable") for b in unmapped) else "unmapped",
+                             "status": "covered" if all(b["status"] in ml.DONE for b in unmapped) else "unmapped",
                              "note": ", ".join("%s %s(%s)" % (b["id"], b["name"], ml.STATUS_LABELS[b["status"]]) for b in unmapped),
                              "mld_branches": [{"id": b["id"], "name": b["name"], "status": b["status"]} for b in unmapped],
                              "mld_status": None})
@@ -497,6 +499,7 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None, fmea=None, mld=
         "source": {"graph_version": results.get("graph_version"),
                    "nodes": [{"node_id": nid, "node_rev": revs.get(nid)} for nid in used],
                    "approved_entries": len(picked), "left_out_unapproved": left_out},
+        "unreadable_inputs": list(unreadable),
         "scope": SCOPE,
         "category_table": {"table_id": table.get("table_id"), "title": table.get("title"),
                            "source_label": source_label, "basis": table.get("basis")},
@@ -512,7 +515,7 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None, fmea=None, mld=
         "mld": None if mld_view is None else {"source": mld_view["source"], "branches": mld_view["branches"],
                                               "gone_links": mld_view["gone_links"]},
         "fmea": None if not fmea else {"rows_total": len(fmea.get("rows") or {}), "rows_approved": len(fm.approved(fmea)),
-                                      "ec_nodes": fm.ec_nodes(node_set, pg, fmea, among=set(used))},
+                                      "file": ((fmea.get("imports") or [{}])[-1]).get("file")},   # 설계 §8.2 묶음 형식
         "warnings": warnings,
         "warning_summary": warning_summary,
         "glossary": [{"term": t, "meaning": m, "source": s if s is not None else table.get("basis") or ""}
@@ -537,6 +540,7 @@ def upgrade(bundle):
         r.setdefault("mld_status", None)
     out.setdefault("mld", None)
     out.setdefault("fmea", None)
+    out.setdefault("unreadable_inputs", [])
     out["schema_version"] = SCHEMA_VERSION
     out["upgraded_from"] = v
     return out

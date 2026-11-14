@@ -20,7 +20,10 @@
 - P5(설계 HZ-PLN-17 §8.2): 읽기 `ie/fmea`(FMEA 행·전기·제어 구간·구성요소 목록), `ie/mld`(MLD 잎 가지 대조). 명령 `ie.fmea_template`(양식
   내보내기, 위치는 창이 묻는다), `ie.fmea_import`(파일은 창 훅 pick_import가 묻는다), `ie.fmea_edit`·`ie.fmea_status`·`ie.fmea_mark`,
   `ie.mld_import`·`ie.mld_link`. FMEA·MLD 쓰기는 그 파일의 지문(fver·mver)과 화면이 본 행 지문(seen "fmea:FM-001")을 대조한다.
-  MLD 가지 판정은 ie.set_coverage에 code 'MLD:<가지 ID>'. 채팅 실행 함수: view_fmea, set_fmea_status, mark_ec_node, view_mld, link_mld_branch.
+  MLD 가지 판정은 ie.set_coverage에 code 'MLD:<가지 ID>'. 채팅 실행 함수: view_fmea, set_fmea_status, mark_ec_node, view_mld, link_mld_branch,
+  confirm_mld_branch. 다시 가져오기 충돌은 `ie.fmea_resolve`, 규칙 대조 가지의 사람 확인은 `ie.mld_confirm`. FMEA·MLD 파일 하나를 읽지 못해도
+  ⑥ 화면과 내보내기는 막지 않고(그 파일은 '읽을 수 없음', 묶음 '읽는 법'에 적음) `ie.fmea_replace_unreadable`·`ie.mld_replace_unreadable`로
+  백업 뒤 새로 시작한다.
 """
 
 import hashlib
@@ -65,10 +68,6 @@ def _context(engine):
         ie_doc, ie_fp = ie_store.load(ns.get("project_id"))
     except ie_store.Unreadable as exc:
         return None, "초기사건 파일을 읽을 수 없습니다: %s" % "; ".join(exc.problems[:2])[:200]
-    try:
-        _sides(ns)
-    except ie_store.Unreadable as exc:
-        return None, "FMEA·MLD 파일을 읽을 수 없습니다(%s): %s" % (os.path.basename(exc.path), "; ".join(exc.problems[:2])[:200])
     return (pg, ns, doc, ie_doc, ie_fp), None
 
 
@@ -78,15 +77,15 @@ def _view_doc(ie_doc, doc, ns):
 
 
 def _sides(ns):
-    """(FMEA 문서, MLD 저장 문서). _context가 읽을 수 있는지 먼저 보므로 여기서는 그대로 읽는다."""
-    pid = ns.get("project_id")
-    return ie_store.load_fmea(pid)[0], ie_store.load_mld(pid)[0]
+    """(FMEA 문서 또는 None, MLD 저장 문서 또는 None, 읽지 못한 파일 이름). 하나를 못 읽어도 ⑥ 화면과 내보내기는 막지 않는다
+    (그 파일만 '읽을 수 없음'으로 보이고 백업 뒤 새로 시작하는 길을 둔다)."""
+    return ie_store.load_sides(ns.get("project_id"))
 
 
 def _build(doc, ns, pg, ie_doc, now):
-    """인계 묶음(화면·대조·내보내기가 같은 계산). FMEA·MLD 문서를 함께 넘긴다."""
-    fdoc, mdoc = _sides(ns)
-    return bundle.build_bundle(doc, ns, pg, ie_doc, now, fmea=fdoc, mld=mdoc)
+    """인계 묶음(화면·대조·내보내기가 같은 계산). FMEA·MLD 문서를 함께 넘기고, 읽지 못한 파일은 묶음 '읽는 법'에 적는다."""
+    fdoc, mdoc, bad = _sides(ns)
+    return bundle.build_bundle(doc, ns, pg, ie_doc, now, fmea=fdoc, mld=mdoc, unreadable=bad)
 
 
 def _ver(fp):
@@ -149,6 +148,7 @@ def summary(engine):
     fps = item_fps(b)
     unassigned = [dict(c, fp=fps.get("member:" + c["candidate_id"])) for c in unassigned]
     return {"available": True, "ver": _ver(ie_fp), "rver": _rver(ctx), "project_id": b["project_id"],
+            "side_unreadable": list(b.get("unreadable_inputs") or []),
             "kpi": {"candidates": len(b["candidates"]), "unassigned": len(unassigned), "groups": len(b["groups"]),
                     "confirmed": status_count.get("confirmed", 0), "draft": status_count.get("draft", 0),
                     "warnings": len(b["warnings"]), "gaps": len(gaps), "categories": len(b["completeness"])},
@@ -549,17 +549,25 @@ def _row_fp(row):
     return _sha(row)
 
 
-def _p5_context(engine):
-    """(pg, ns, ⑤ 결과, FMEA 문서, FMEA 지문, MLD 문서, MLD 지문) 또는 CommandError."""
+def _p5_context(engine, need=("fmea", "mld")):
+    """(pg, ns, ⑤ 결과, FMEA 문서, FMEA 지문, MLD 문서, MLD 지문) 또는 CommandError. need에 든 파일만 읽어야 하고, 그 파일을
+    읽지 못하면 백업 뒤 새로 시작하라고 알린다(다른 쪽 파일이 깨져도 이 쪽 쓰기는 막지 않음)."""
     api = _api()
     ctx, why = _context(engine)
     if ctx is None:
         raise api.CommandError("failed", why)
     pg, ns, doc, _ie, _fp = ctx
     pid = ns.get("project_id")
-    fdoc, ffp = ie_store.load_fmea(pid)
-    mdoc, mfp = ie_store.load_mld(pid)
-    return pg, ns, doc, fdoc, ffp, mdoc, mfp
+    got = {}
+    for which, load_fn in (("fmea", ie_store.load_fmea), ("mld", ie_store.load_mld)):
+        try:
+            got[which] = load_fn(pid)
+        except ie_store.Unreadable as exc:
+            if which in need:
+                raise api.CommandError("unreadable", "%s 파일을 읽을 수 없습니다(%s): %s. 원본을 백업하고 새로 시작할 수 있습니다."
+                                       % (which.upper(), os.path.basename(exc.path), "; ".join(exc.problems[:2])[:160]))
+            got[which] = (None, None)
+    return (pg, ns, doc) + got["fmea"] + got["mld"]
 
 
 def _analysed(doc, ns):
@@ -583,15 +591,25 @@ def fmea_view(engine):
     if ctx is None:
         return None
     pg, ns, doc, _ie, _fp = ctx
-    fdoc, ffp = ie_store.load_fmea(ns.get("project_id"))
-    rows = [dict(r, row_id=rid, fp=_row_fp(r)) for rid, r in sorted(fdoc["rows"].items())]
+    try:
+        fdoc, ffp = ie_store.load_fmea(ns.get("project_id"))
+    except ie_store.Unreadable as exc:
+        return {"unreadable": os.path.basename(exc.path), "problems": exc.problems[:3], "rows": [], "counts": {}, "ec_nodes": [],
+                "components": [], "imports": [], "fver": "none"}
+    from hazop.study import migrate, refs
+    idx = {n["entity_id"]: n for n in pg.get("nodes") or []}
+    drawing = {s["graph_id"]: s.get("drawing_number") for s in pg.get("sheets") or []}
+
+    def matched(r):   # 대응된 구성요소(태그·도면)를 보이게(다시 이을 수 있음)
+        n = idx.get(r.get("entity_id")) if r.get("entity_id") else None
+        return {"tag": refs.node_text(n), "drawing": drawing.get(refs.drawing_of(r.get("ref"))) or refs.drawing_of(r.get("ref"))} if n else None
+    rows = [dict(r, row_id=rid, fp=_row_fp(r), matched=matched(r)) for rid, r in sorted(fdoc["rows"].items())]
     counts = {k: sum(r["status"] == k for r in rows) for k in fmea.STATUSES}
     counts["unmatched"] = sum(1 for r in rows if not r.get("ref"))
     homes = {}
     for n in ns["nodes"]:
         for m in n.get("members") or []:
             homes.setdefault(m, []).append(n["node_id"])
-    from hazop.study import migrate, refs
     comps = [{"entity_id": n["entity_id"], "tag": refs.node_text(n), "kind": n.get("kind") or "", "nodes": homes.get(n["entity_id"], [])}
              for n in pg.get("nodes") or [] if n.get("tag") and migrate.ref_of(n, pg.get("graph_id"))]
     return {"fver": _ver(ffp), "rows": rows, "counts": counts, "ec_nodes": _ec_view(ns, pg, fdoc, _analysed(doc, ns)),
@@ -610,7 +628,7 @@ def _fmea_write(engine, a, fn, keys=()):
     by = engine.reviewer()
     if not by:
         raise api.CommandError("bad_args", "검토자 이름을 먼저 설정에서 입력하세요.")
-    pg, ns, doc, fdoc, ffp, _m, _mfp = _p5_context(engine)
+    pg, ns, doc, fdoc, ffp, _m, _mfp = _p5_context(engine, ("fmea",))
     if a.get("fver") != _ver(ffp):
         raise api.CommandError("stale", "FMEA가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
     if a.get("seen") is not None:
@@ -657,7 +675,7 @@ def _pick(engine, kind):
 
 def _fmea_template(engine, a):
     api = _api()
-    pg, ns, doc, fdoc, _ffp, _m, _mfp = _p5_context(engine)
+    pg, ns, doc, fdoc, _ffp, _m, _mfp = _p5_context(engine, ("fmea",))
     ec = set(fmea.ec_nodes(ns, pg, fdoc))
     idx = {n["entity_id"]: n for n in pg.get("nodes") or []}
     from hazop.study import refs
@@ -732,7 +750,11 @@ def mld_view(engine):
     if ctx is None:
         return None
     pg, ns, doc, ie_doc, _fp = ctx
-    mdoc, mfp = ie_store.load_mld(ns.get("project_id"))
+    try:
+        mdoc, mfp = ie_store.load_mld(ns.get("project_id"))
+    except ie_store.Unreadable as exc:
+        return {"unreadable": os.path.basename(exc.path), "problems": exc.problems[:3], "mver": "none", "loaded": False,
+                "branches": [], "gone_links": [], "groups": [], "statuses": mld.STATUS_LABELS}
     b = _build(doc, ns, pg, _view_doc(ie_doc, doc, ns), nodes.now_utc())
     m = b.get("mld")
     fps = item_fps(b)
@@ -753,7 +775,7 @@ def _mld_write(engine, a, fn, keys=()):
     by = engine.reviewer()
     if not by:
         raise api.CommandError("bad_args", "검토자 이름을 먼저 설정에서 입력하세요.")
-    pg, ns, doc, _f, _ffp, mdoc, mfp = _p5_context(engine)
+    pg, ns, doc, _f, _ffp, mdoc, mfp = _p5_context(engine, ("mld",))
     if a.get("mver") != _ver(mfp):
         raise api.CommandError("stale", "MLD가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
     if keys and a.get("seen") is not None:
@@ -795,6 +817,46 @@ def _mld_import(engine, a):
 def _mld_link(engine, a):
     return _mld_write(engine, a, lambda mdoc, by: mld.set_links(mdoc, a["branch_id"], a["group_ids"]),
                       keys=["coverage:" + mld.COVER_PREFIX + a["branch_id"]])
+
+
+def _fmea_resolve(engine, a):
+    return _fmea_write(engine, a, lambda fdoc, pg, ns, doc, by: fmea.resolve_conflict(fdoc, a["row_id"], a["field"], a["take"]),
+                       keys=["fmea:" + a["row_id"]])
+
+
+def _mld_confirm(engine, a):
+    return _mld_write(engine, a, lambda mdoc, by: mld.set_confirm(mdoc, a["branch_id"], a["on"], by),
+                      keys=["coverage:" + mld.COVER_PREFIX + a["branch_id"]])
+
+
+def confirm_mld_branch(engine, a):
+    """채팅 실행 함수: {branch_id, on(참·거짓), mver}. 규칙 대조로 맞은 가지를 사람이 확인한다."""
+    if not a.get("mver"):
+        raise _api().CommandError("bad_args", "MLD 판 지문(mver)을 함께 보내야 합니다(먼저 view_mld로 읽음).")
+    return _mld_confirm(engine, a)
+
+
+def _side_replace(engine, a, which):
+    api = _api()
+    pid = engine.project_id()
+    loader = ie_store.load_fmea if which == "fmea" else ie_store.load_mld
+    try:
+        loader(pid)
+    except ie_store.Unreadable as exc:
+        name = os.path.basename(exc.path)
+    else:
+        raise api.CommandError("failed", "%s 파일을 읽을 수 있어 바꾸지 않았습니다." % which.upper())
+    if not a.get("confirmed"):
+        msg = ("읽지 못한 %s 파일(%s)을 data/backup 아래에 복사한 뒤 빈 문서로 바꿉니다. %s 계속할까요?"
+               % (which.upper(), name, "FMEA 행은 다시 가져와야 하고, 행 번호는 원본의 가장 큰 번호 다음부터 매깁니다." if which == "fmea"
+                  else "MLD를 다시 가져와야 하고 사람 연결·확인은 없어집니다."))
+        return {"ask": {"message": msg, "groups": []}, "changed": False}
+    try:
+        fp, saved = ie_store.replace_side_unreadable(pid, which)
+    except (OSError, ValueError, ie_store.Conflict) as exc:
+        raise api.CommandError("failed", "백업하지 못해 바꾸지 않았습니다(%s)." % str(exc)[:200])
+    engine.changed("ie", None)
+    return {"changed": True, "backup": os.path.basename(saved), "ver": fp}
 
 
 def link_mld_branch(engine, a):
@@ -853,6 +915,15 @@ def register(commands):
     put("mld_import", {"mver": (v_str(1, 100), True)}, _mld_import, "주논리도(MLD) 파일 가져오기(파일은 창이 묻는다)")
     put("mld_link", {"mver": (v_str(1, 100), True), "seen": seen, "branch_id": (v_str(1, 40), True),
                      "group_ids": (v_list(v_str(1, 20), 50), True)}, _mld_link, "MLD 잎 가지에 초기사건 그룹 잇기(빈 목록이면 지움)")
+    put("fmea_resolve", dict(fseen, row_id=(v_str(1, 20), True), field=(api.v_enum(*fmea.TEXT_FIELDS), True),
+                             take=(api.v_enum("file", "mine"), True)), _fmea_resolve,
+        "다시 가져오기 충돌 고르기(file: 파일 값, mine: 사람이 고친 값). 파일 값을 쓰면 앞값을 이력에 남긴다")
+    put("mld_confirm", {"mver": (v_str(1, 100), True), "seen": seen, "branch_id": (v_str(1, 40), True), "on": (api.v_bool(), True)},
+        _mld_confirm, "규칙 대조(범주 단위)로 맞은 MLD 가지를 사람이 확인하거나 확인 풀기")
+    put("fmea_replace_unreadable", {"confirmed": (api.v_bool(), False), "confirm_groups": (v_list(v_str(1, 20), 1), False)},
+        lambda engine, a: _side_replace(engine, a, "fmea"), "읽지 못한 FMEA 파일을 백업하고 새로 시작(확인 필요)")
+    put("mld_replace_unreadable", {"confirmed": (api.v_bool(), False), "confirm_groups": (v_list(v_str(1, 20), 1), False)},
+        lambda engine, a: _side_replace(engine, a, "mld"), "읽지 못한 MLD 파일을 백업하고 새로 시작(확인 필요)")
     put("replace_unreadable", {"confirmed": (api.v_bool(), False)}, _replace_unreadable,
         "읽지 못한 초기사건 파일을 백업하고 새로 시작(확인 필요)")
 

@@ -83,12 +83,9 @@ def main(argv=None):
             if saved is None:
                 ie_from = "없음(%s). 빈 문서로 IEC 번호를 매겼으므로 나중에 ⑥ 화면이 매기는 번호와 다를 수 있음" % ie_from
         pid = node_set.get("project_id")
-        try:   # P5: 승인 FMEA 행과 가져온 MLD도 묶음에 넣는다(설계 §8.2)
-            fdoc, mdoc = store.load_fmea(pid)[0], store.load_mld(pid)[0]
-        except store.Unreadable as exc:
-            raise ValueError("%s" % exc) from None
+        fdoc, mdoc, bad = store.load_sides(pid)   # P5: 승인 FMEA 행과 가져온 MLD(읽지 못한 파일은 빼고 '읽는 법'에 적음, 설계 §8.2)
         synced = store.sync_all(model.sync(ie_doc, results, at=now), results, node_set, fdoc)
-        b = ib.build_bundle(results, node_set, graph, synced, now, fmea=fdoc, mld=mdoc)
+        b = ib.build_bundle(results, node_set, graph, synced, now, fmea=fdoc, mld=mdoc, unreadable=bad)
         if not b["candidates"]:
             print("출력하지 않음: 승인한 항목이 없습니다(승인 안 된 항목 %d건)" % b["source"]["left_out_unapproved"])
             return 1

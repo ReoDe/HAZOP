@@ -22,9 +22,9 @@ from hazop.study import results as res
 
 JUDGEMENTS = {"yes": "후보", "no": "제외", "undecided": "보류"}
 ANSWERS = {"yes": "예", "no": "아니오", "unknown": "미확인"}
-ORIGINS = {"ai_draft": "AI 초안", "human": "사람"}
+ORIGINS = {"ai_draft": "AI 초안", "human": "사람", "fmea": "FMEA 행"}
 COVERAGE = {"covered": "대응 있음", "gap": "공백", "not_applicable": "해당 없음", "unclassified": "미분류", "unmapped": "범주 없음"}
-MLD_STATUS = {"covered": "있음", "gap": "공백", "not_applicable": "해당 없음", "unmapped": "범주 없음"}
+MLD_STATUS = {"confirmed": "사람 확인", "rule": "규칙 대조(범주 단위)", "gap": "공백", "not_applicable": "해당 없음", "unmapped": "범주 없음"}
 BASIS_UNKNOWN_PREFIX = ib.BASIS_UNKNOWN_PREFIX
 NOT_JUDGED = "초기사건 판정 전"
 AI_FILL = "EEF0F2"
@@ -66,7 +66,7 @@ PSA_COLUMNS = {"IE 그룹": 3, "사건수목 표제 후보": 1, "최종상태 �
 TRACE_COLUMNS = (("구간·편차", 14), ("출처 항목 ID", 14), ("원인", 30), ("후보 ID", 9), ("판정", 7), ("그룹 ID", 8),
                  ("표제 ID", 18), ("ES ID", 12), ("근거 KG 경로", 34), ("출처 문서", 24))
 COMPLETENESS_COLUMNS = (("범주 코드", 9), ("범주 이름", 28), ("기준표 출처", 16), ("대응 그룹", 10), ("후보 수", 6),
-                        ("상태", 9), ("사유·처리", 40), ("MLD 가지", 24), ("MLD 대응", 8), ("MLD 출처", 18))
+                        ("상태", 9), ("사유·처리", 40), ("MLD 가지", 28), ("MLD 대응(사람 확인·규칙 대조)", 14), ("MLD 출처", 18))
 WARNING_COLUMNS = (("경고", 18), ("대상", 14), ("내용", 50), ("근거", 26))
 GLOSSARY_COLUMNS = (("용어", 18), ("뜻", 60), ("출처", 40))
 SHEETS = ("읽는 법", "IE 후보", "IE 그룹", "사건수목 표제 후보", "최종상태 후보", "기본사건 후보", "추적표", "완전성 대조",
@@ -134,7 +134,7 @@ def completeness_row(r, mld_source=""):
     branches = r.get("mld_branches") or []
     return (r["code"] or res.UNCLASSIFIED_LABEL, r["name_ko"], r["source_label"], r["group_id"] or "",
             r["candidate_count"], COVERAGE[r["status"]], r["note"],
-            ", ".join("%s %s" % (x["id"], x["name"]) for x in branches),
+            ", ".join("%s %s(%s)" % (x["id"], x["name"], MLD_STATUS.get(x["status"], x["status"])) for x in branches),
             MLD_STATUS.get(r.get("mld_status") or "", "") if r["code"] else ("" if not branches else COVERAGE[r["status"]]),
             mld_source if branches else "")
 
@@ -177,9 +177,14 @@ def guide_rows(b):
                  "넣지 않았습니다" % (b["fmea"]["rows_approved"], b["fmea"]["rows_total"]) if b.get("fmea")
          else "FMEA를 가져오지 않았습니다. 기본사건 후보는 HAZOP 원인·보호수단에서만 나왔습니다"),
         ("MLD", "주논리도(Master Logic Diagram, MLD) %s의 잎 가지를 '완전성 대조' 시트의 MLD 열에 대조했습니다. 가지 이름은 받은 "
-                "파일 그대로입니다" % _mld_source(b) if b.get("mld")
+                "파일 그대로입니다. 'MLD 대응'의 '사람 확인'은 검토자가 가지와 후보·그룹을 맞춰 본 것이고, '규칙 대조(범주 단위)'는 그 가지의 "
+                "일반 범주에 '후보' 판정의 승인 후보가 있다는 것만 본 것입니다(그 후보가 이 가지의 사건인지는 사람이 확인하지 않음). "
+                "가지마다 공백을 찾으려면 '규칙 대조' 가지를 사람이 확인하십시오" % _mld_source(b) if b.get("mld")
          else "MLD를 받지 않아 '완전성 대조' 시트의 MLD 열이 비어 있습니다. MLD는 노형마다 달라 앱에 예시를 넣지 않았습니다"),
         ("시트", " / ".join(SHEETS[1:])),
+    ) + ((("읽지 못한 입력", "다음 파일을 읽을 수 없어 이 묶음에 넣지 못했습니다: %s. ⑥ 화면에서 그 파일을 백업하고 새로 시작하거나 "
+                         "고친 뒤 다시 내보내십시오" % ", ".join(b["unreadable_inputs"])),)
+         if b.get("unreadable_inputs") else ()) + (
     ) + ((("나뉨·삭제 그룹", ", ".join("%s(%s%s)" % (r["id"], model.GROUP_STATUSES[r["status"]],
                                                    " → " + ", ".join(r["split_into"]) if r["split_into"] else "")
                                        for r in b["retired"])),) if b["retired"] else ())

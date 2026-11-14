@@ -8,6 +8,7 @@ P5(설계 §8.2): 같은 폴더의 <프로젝트>.fmea.json(FMEA 행, hazop.ie.f
 """
 
 import json
+import os
 
 from hazop import paths, store_io
 from hazop.ie import model
@@ -59,7 +60,11 @@ def load_synced(project_id, results, node_set=None):
     같은 IEC ID'). 한 번 준 번호는 그 원인이 승인에서 빠져도 문서에 남아 다시 쓰지 않는다. 저장하지 못하면 오류를 그대로 올린다
     (Conflict·ValueError·OSError): 그때는 내보내지 않는다."""
     doc, fp = load(project_id)
-    synced = sync_all(doc, results, node_set, load_fmea(project_id)[0])
+    try:   # FMEA 파일을 읽지 못하면 FMEA 출처 없이 맞춘다(그 사실은 묶음 '읽는 법'에 적힘, load_sides)
+        fdoc = load_fmea(project_id)[0]
+    except Unreadable:
+        fdoc = None
+    synced = sync_all(doc, results, node_set, fdoc)
     if synced is not doc:
         fp = save(synced, expect=fp)
     return synced, fp
@@ -117,6 +122,35 @@ def load_mld(project_id):
     """(MLD 저장 문서, 지문). 파일이 없으면 (빈 문서, None)."""
     from hazop.ie import mld
     return _load_side(mld_path(project_id), mld, project_id)
+
+
+def load_sides(project_id):
+    """(FMEA 문서 또는 None, MLD 저장 문서 또는 None, 읽지 못한 파일 이름 목록). 하나를 못 읽어도 나머지와 ⑥은 쓸 수 있게 한다."""
+    out, bad = [], []
+    for load_fn in (load_fmea, load_mld):
+        try:
+            out.append(load_fn(project_id)[0])
+        except Unreadable as exc:
+            out.append(None)
+            bad.append(os.path.basename(exc.path))
+    return out[0], out[1], bad
+
+
+def replace_side_unreadable(project_id, which):
+    """읽지 못한 FMEA(which='fmea')·MLD('mld') 파일을 백업한 뒤 빈 문서로 바꾼다. (새 지문, 백업 경로). 백업이 실패하면 쓰지 않는다.
+    FMEA 행 번호는 원본 글에 보이는 가장 큰 FM 번호 다음부터 매겨 전에 낸 번호를 다시 쓰지 않는다."""
+    import re
+    from hazop.ie import fmea, mld
+    path, mod, save_fn = {"fmea": (fmea_path(project_id), fmea, save_fmea), "mld": (mld_path(project_id), mld, save_mld)}[which]
+    raw, expect = store_io.read_bytes(path)
+    if raw is None:
+        raise FileNotFoundError(path)
+    saved = store_io.backup_file(path, BACKUP_LABEL + "-" + which, at=now_utc())
+    doc = mod.empty(project_id)
+    if which == "fmea":
+        nums = [int(x) for x in re.findall(r"FM-(\d{3,})", raw.decode("utf-8", errors="replace"))]
+        doc["counters"]["FM"] = max(nums, default=0)
+    return save_fn(doc, expect=expect), saved
 
 
 def save_mld(doc, expect):

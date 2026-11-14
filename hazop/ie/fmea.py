@@ -7,6 +7,9 @@
   "exclude"}, "imports": [가져오기 기록], "history": []}. 행 ID는 counters로 매기고 행이 빠져도 번호를 다시 쓰지 않는다.
 - 다시 가져와도 같은 행은 같은 ID: 양식의 '행 ID' 칸이 있으면 그 ID, 없으면 (태그, 고장모드 코드 또는 글, 원인) 정규화 열쇠(row_key).
 - 행 상태 imported(가져옴) / approved(승인) / excluded(제외). 사람만 승인·제외한다. 승인한 행의 내용이 바뀌면 가져옴으로 돌아간다.
+- 행 열쇠(key)는 지금 내용, import_key는 마지막으로 가져온 파일 값의 열쇠, file_values는 그 파일 값, edited는 사람이 고친 칸이다.
+  다시 가져오기는 사람이 고친 칸을 덮지 않고, 파일도 그 칸을 바꿨으면 conflicts에 두어 사람이 고르게 한다(resolve_conflict).
+- 승인 행은 기본사건 후보의 출처('fmea:FM-001')가 된다. 행의 구성요소·고장모드가 바뀌면 옛 기본사건에서 출처를 뗀다(sync_basic_events).
 - 태그 대응: 그래프 구성요소 하나와 맞으면 match "ok", 없으면 "none", 둘 이상이면 "many". 사람이 고르면 "human". 대응하지 않은 행은 승인 못 함.
 - Severity Class는 받아 두기만 하고 인계 묶음에는 넣지 않는다(E8).
 """
@@ -27,6 +30,7 @@ MATCHES = {"ok": "대응", "none": "대응 실패(없음)", "many": "대응 실�
 MARKS = {"include": "전기·제어 구간에 넣음", "exclude": "전기·제어 구간에서 뺌"}
 SOURCE_PREFIX = "fmea:"
 MAX_ROWS = 5000
+MAX_BYTES = 20 * 1024 * 1024
 MAX_TEXT = 2000
 # §6.4 고장모드 코드(NUREG/CR-6928 약어표). ELS·ELL은 표에서 한 줄이라 둘로 나눔
 FAILURE_MODE_CODES = {
@@ -86,7 +90,8 @@ def problems(doc):
         if r.get("status") == "approved" and not r.get("ref"):
             out.append("%s: 대응하지 않은 행이 승인됨" % rid)
         if r.get("key") in keys:
-            out.append("%s: 열쇠 중복" % rid)
+            other = next(x for x, y in doc["rows"].items() if y.get("key") == r.get("key"))
+            out.append("%s: %s와 태그·고장모드·원인·운전 모드가 같음(열쇠 중복)" % (rid, other))
         keys.add(r.get("key"))
     for nid, mark in doc["node_marks"].items():
         if mark not in MARKS:
@@ -103,8 +108,9 @@ def norm_tag(tag):
 
 
 def row_key(r):
-    """다시 가져올 때 같은 행을 찾는 열쇠: 태그, 고장모드 코드(없으면 고장모드 글), 원인."""
-    return "|".join((norm_tag(r.get("tag")), (r.get("failure_code") or "").upper() or _norm(r.get("failure_mode")), _norm(r.get("cause"))))
+    """행 열쇠: 태그, 고장모드 코드(없으면 고장모드 글), 원인, 운전 모드. 운전 모드만 다른 행은 다른 행이다(R2)."""
+    return "|".join((norm_tag(r.get("tag")), (r.get("failure_code") or "").upper() or _norm(r.get("failure_mode")), _norm(r.get("cause")),
+                     _norm(r.get("op_mode"))))
 
 
 def code_of(text):
@@ -161,8 +167,16 @@ def _cell(v):
 def read_rows(path):
     """(행 목록 [{키: 글}], 문제 목록). 'FMEA' 시트(없으면 첫 시트)의 1행을 머리글로 읽는다. 한국어·영문 머리글 모두 받는다.
     태그와 고장모드가 모두 빈 줄은 건너뛴다. 수식은 계산하지 않고 글로 둔다(수식 실행 없음)."""
+    import os
+    import zipfile
     import openpyxl
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=False)
+    from openpyxl.utils.exceptions import InvalidFileException
+    if os.path.getsize(path) > MAX_BYTES:
+        raise ValueError("파일이 너무 큽니다(%dMB 넘음)" % (MAX_BYTES // (1024 * 1024)))
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=False)
+    except (zipfile.BadZipFile, InvalidFileException, KeyError, OSError, ValueError) as exc:
+        raise ValueError("Excel(.xlsx) 파일이 아니거나 깨졌습니다(%s)" % type(exc).__name__) from None
     try:
         ws = wb[SHEET] if SHEET in wb.sheetnames else wb.worksheets[0]
         it = ws.iter_rows(values_only=True)
@@ -257,47 +271,86 @@ def _clean(r):
     return out
 
 
+def _import_key(row):
+    """행 ID 없는 줄을 맞출 열쇠: 이 행을 마지막으로 가져올 때 파일에 있던 값의 열쇠(사람이 고쳐도 바뀌지 않음, R3)."""
+    return row.get("import_key") or row_key(row)
+
+
 def import_rows(doc, rows, pg, node_set, filename, by, at=None):
-    """(새 문서, 보고 {new, changed, same, unmatched, missing, problems}). 새 행은 새 ID, 같은 행(행 ID 또는 열쇠)은 내용만 고친다.
-    승인한 행의 내용이 바뀌면 가져옴으로 돌린다. 이번 파일에 없는 옛 행은 지우지 않고 in_last_import를 False로 둔다."""
+    """(새 문서, 보고 {new, changed, same, unmatched, missing, reopened, conflicts, problems}).
+
+    - 같은 행 찾기: '행 ID' 칸이 있으면 그 ID, 없으면 지난 가져오기 때의 파일 값 열쇠(import_key). 사람이 고친 행도 그대로 찾는다.
+    - 파일 값이 지난 가져오기와 같은 칸은 지금 값(사람이 고친 값 포함)을 둔다. 파일 값이 바뀐 칸은, 사람이 고친 칸이면 덮지 않고 충돌
+      (conflicts)로 남겨 사람이 고르게 하고, 아니면 파일 값으로 고치고 앞값을 이력(before)에 남긴다.
+    - 승인한 행의 내용이 바뀌면 가져옴으로 돌린다. 이번 파일에 없는 옛 행은 지우지 않고 in_last_import를 False로 둔다.
+    - 같은 열쇠(태그·고장모드·원인·운전 모드)의 다른 행과 겹치는 줄은 넣지 않고 몇째 줄인지와 이유를 problems에 적는다."""
     at = at or store_io.now_utc()
     index = tag_index(pg)
-    by_key = {r["key"]: rid for rid, r in doc["rows"].items()}
-    report = {"new": [], "changed": [], "same": [], "unmatched": [], "missing": [], "reopened": [], "problems": []}
+    report = {"new": [], "changed": [], "same": [], "unmatched": [], "missing": [], "reopened": [], "conflicts": [], "problems": []}
+    befores = {}
 
     def apply(o):
+        by_import = {_import_key(r): rid for rid, r in o["rows"].items()}
+        by_key = {r["key"]: rid for rid, r in o["rows"].items()}
         seen = set()
         for r in rows:
             f = _clean(r)
             if not f["tag"] and not f["failure_mode"]:
                 continue
             key = row_key(f)
-            rid = r.get("row_id") if r.get("row_id") in o["rows"] else by_key.get(key)
-            if rid in seen:
-                report["problems"].append("%s행: 같은 행이 파일에 두 번 있음(%s) — 뒤의 줄은 넣지 않음" % (r.get("line"), rid))
-                continue
+            line = r.get("line")
+            rid = r.get("row_id") if r.get("row_id") in o["rows"] else by_import.get(key)
             if r.get("row_id") and r["row_id"] not in o["rows"]:
-                report["problems"].append("%s행: 모르는 행 ID %s — 새 행으로 넣음" % (r.get("line"), r["row_id"]))
+                report["problems"].append("%s행: 모르는 행 ID %s — 새 행으로 넣음" % (line, r["row_id"]))
+            if rid in seen:
+                report["problems"].append("%s행: 같은 행(%s)이 파일에 두 번 있음 — 뒤의 줄은 넣지 않음" % (line, rid))
+                continue
             old = o["rows"].get(rid)
-            if old is not None and old["match"] == "human" and norm_tag(old["tag"]) == norm_tag(f["tag"]):
-                place = {k: old[k] for k in ("ref", "entity_id", "equipment_kind", "match", "node_id")}
-            else:
+            if old is None:
+                clash = by_key.get(key)
+                if clash is not None:
+                    report["problems"].append("%s행: %s와 태그·고장모드·원인·운전 모드가 같음 — 넣지 않음" % (line, clash))
+                    continue
                 place = match_tag(pg, node_set, f["tag"], (r.get("node_id") or "").strip() or None, index)
-            row = dict(f, key=key, **place)
-            if rid is None:
                 rid = _next_id(o)
-                o["rows"][rid] = dict(row, status="imported", in_last_import=True)
+                o["rows"][rid] = dict(f, key=key, import_key=key, file_values=dict(f), edited={}, conflicts={},
+                                      status="imported", in_last_import=True, **place)
+                by_key[key] = by_import[key] = rid
                 report["new"].append(rid)
             else:
-                before = {k: old.get(k) for k in CONTENT}
-                old.update(row, in_last_import=True)
-                if before != {k: old.get(k) for k in CONTENT}:
+                prev = old.get("file_values") or {k: old.get(k, "") for k in TEXT_FIELDS}
+                new = dict(old)
+                before, conflicts = {}, dict(old.get("conflicts") or {})
+                for k in TEXT_FIELDS:
+                    if f[k] == prev.get(k, ""):
+                        continue                                  # 파일 값이 그대로면 지금 값(사람이 고친 값 포함)을 둔다
+                    if k in (old.get("edited") or {}) and f[k] != old.get(k, ""):
+                        conflicts[k] = f[k]                       # 사람이 고친 칸을 파일이 다르게 바꿈: 덮지 않고 고르게 한다
+                        continue
+                    if old.get(k, "") != f[k]:
+                        before[k] = old.get(k, "")
+                        new[k] = f[k]
+                if "tag" in before and old.get("match") != "human":
+                    new.update(match_tag(pg, node_set, new["tag"], (r.get("node_id") or "").strip() or None, index))
+                new_key = row_key(new)
+                if new_key != old["key"] and by_key.get(new_key) not in (None, rid):
+                    report["problems"].append("%s행: 바꾸면 %s와 태그·고장모드·원인·운전 모드가 같아짐 — 이 줄은 넣지 않음" % (line, by_key[new_key]))
+                    seen.add(rid)
+                    continue
+                new.update(key=new_key, import_key=key, file_values=dict(f), conflicts=conflicts, in_last_import=True)
+                if before:
+                    befores[rid] = before
                     report["changed"].append(rid)
-                    if old["status"] == "approved":
-                        old["status"] = "imported"
+                    if new["status"] == "approved":
+                        new["status"] = "imported"
                         report["reopened"].append(rid)
                 else:
                     report["same"].append(rid)
+                if set(conflicts) - set(old.get("conflicts") or {}):
+                    report["conflicts"].append(rid)
+                by_key.pop(old["key"], None)
+                by_key[new_key] = rid
+                o["rows"][rid] = new
             seen.add(rid)
             if o["rows"][rid]["ref"] is None:
                 report["unmatched"].append(rid)
@@ -306,13 +359,16 @@ def import_rows(doc, rows, pg, node_set, filename, by, at=None):
                 row["in_last_import"] = False
                 report["missing"].append(rid)
         o["imports"].append({"at": at, "file": filename, "by": by, "rows": len(seen),
-                             **{k: len(report[k]) for k in ("new", "changed", "unmatched", "missing")}})
+                             **{k: len(report[k]) for k in ("new", "changed", "unmatched", "missing", "conflicts")}})
     out, _ = _change(doc, "import", [], at, apply, file=filename, by=by)
+    if befores:
+        out["history"][-1]["before"] = befores                    # 파일 값으로 덮은 칸의 앞값(행별)
     return out, report
 
 
 def edit_row(doc, rid, fields, pg, node_set, at=None):
-    """행 필드를 고친다(EDITABLE). entity_id를 주면 사람이 고른 대응, 태그만 바꾸면 다시 대응한다. 내용이 바뀌면 승인이 풀린다."""
+    """행 필드를 고친다(EDITABLE). 고친 글 칸은 edited에 적어 다시 가져오기가 덮지 않게 한다. entity_id를 주면 사람이 고른 대응,
+    태그만 바꾸면 다시 대응한다. 내용이 바뀌면 승인이 풀린다. 앞값은 이력에 남는다."""
     row = doc["rows"].get(rid)
     if row is None:
         raise ValueError("없는 FMEA 행: %s" % rid)
@@ -343,20 +399,54 @@ def edit_row(doc, rid, fields, pg, node_set, at=None):
     merged = dict(row, **new, **(place or {}))
     merged["key"] = row_key(merged)
     if merged["key"] != row["key"] and any(r["key"] == merged["key"] for x, r in doc["rows"].items() if x != rid):
-        raise ValueError("같은 태그·고장모드·원인의 행이 이미 있습니다")
+        raise ValueError("같은 태그·고장모드·원인·운전 모드의 행이 이미 있습니다")
     if {k: merged.get(k) for k in CONTENT} == {k: row.get(k) for k in CONTENT}:
         return doc
+    changed = [k for k in new if new[k] != row.get(k, "")]
 
     def apply(o):
         r = o["rows"][rid]
         before = {k: r.get(k) for k in CONTENT if r.get(k) != merged.get(k)}
         reopened = r["status"] == "approved"
         r.update(merged)
+        r["edited"] = dict(r.get("edited") or {}, **{k: merged[k] for k in changed})
+        r["conflicts"] = {k: v for k, v in (r.get("conflicts") or {}).items() if k not in changed}   # 사람이 다시 고르면 충돌은 풀림
         if reopened:
             r["status"] = "imported"
         return before, reopened
     out, (before, reopened) = _change(doc, "edit", [rid], at, apply)
     out["history"][-1].update(before=before, reopened=reopened)
+    return out
+
+
+def resolve_conflict(doc, rid, field, take, at=None):
+    """다시 가져오기 충돌 하나를 사람이 고른다. take='file'이면 파일 값을 쓰고(앞값은 이력, 승인은 풀림), 'mine'이면 지금 값을 둔다."""
+    row = doc["rows"].get(rid)
+    if row is None or field not in (row.get("conflicts") or {}):
+        raise ValueError("%s 행의 %s 칸에 충돌이 없습니다" % (rid, field))
+    if take not in ("file", "mine"):
+        raise ValueError("take는 file 또는 mine")
+    file_value = row["conflicts"][field]
+
+    def apply(o):
+        r = o["rows"][rid]
+        r["conflicts"].pop(field)
+        if take == "file":
+            before = r.get(field, "")
+            r[field] = file_value
+            r["edited"].pop(field, None)
+            r["key"] = row_key(r)
+            if r["status"] == "approved":
+                r["status"] = "imported"
+            return before
+        return None
+    if take == "file":
+        merged = dict(row, **{field: file_value})
+        if any(r["key"] == row_key(merged) for x, r in doc["rows"].items() if x != rid):
+            raise ValueError("파일 값을 쓰면 다른 행과 열쇠가 같아집니다")
+    out, before = _change(doc, "resolve", [rid], at, apply, field=field, take=take)
+    if take == "file":
+        out["history"][-1]["before"] = {field: before}
     return out
 
 
@@ -443,37 +533,73 @@ def live_sources(doc):
     return frozenset(SOURCE_PREFIX + rid for rid, _r in approved(doc))
 
 
+def be_key(row):
+    """승인 FMEA 행이 가리키는 기본사건 열쇠: (안정 참조, 고장모드 코드 — 없으면 고장모드 글). HAZOP 규칙 초안과 같은 꼴."""
+    return "%s|%s" % (row["ref"], row["failure_code"] or row["failure_mode"])
+
+
 def sync_basic_events(ie_doc, doc, at=None):
-    """승인 FMEA 행마다 (안정 참조, 고장모드 코드 또는 글) 열쇠의 기본사건 후보를 찾거나 만들고 출처 {"kind": "fmea", "key": "fmea:FM-001"}를
-    더한다. HAZOP에서 온 후보와 열쇠가 같으면 한 후보로 합친다. 사람이 받아들인 기본사건은 출처만 더한다. 기본사건 ID는 ⑥ 문서가 매기므로
-    한 번 준 ID는 행 승인이 풀려도 다시 쓰지 않는다. 할 일이 없으면 받은 문서를 그대로 돌려준다."""
-    rows = approved(doc)
-    if not rows:
-        return ie_doc
-    bes = {v["key"]: k for k, v in sorted(ie_doc["basic_events"].items()) if v["status"] == "live"}
-    todo = []
-    for rid, r in rows:
-        bkey = "%s|%s" % (r["ref"], r["failure_code"] or r["failure_mode"])
+    """⑥ 기본사건 후보를 FMEA 행에 맞춘다. 할 일이 없으면 받은 문서를 그대로 돌려준다.
+
+    1) 기본사건에 달린 FMEA 출처('fmea:FM-001') 가운데 그 행이 없어졌거나, 승인 행인데 지금 열쇠(be_key)가 그 기본사건의 열쇠와 다르면
+       (구성요소·고장모드를 고침) 출처를 뗀다(R1). FMEA에서만 온 기본사건(origin 'fmea')에 출처가 하나도 안 남으면 지운 기록이 되어
+       묶음에서 빠진다. ID는 남아 다시 쓰지 않고, 같은 열쇠가 다시 승인되면 그 ID로 되살린다.
+    2) 승인 FMEA 행마다 같은 열쇠의 기본사건(HAZOP 후보든 FMEA 후보든)을 찾아 출처를 더하고, 없으면 origin 'fmea'로 새로 만든다.
+       사람이 받아들인 기본사건에는 출처만 더한다."""
+    rows = dict((doc or {}).get("rows") or {})
+    want = {rid: be_key(r) for rid, r in rows.items() if r["status"] == "approved" and r.get("ref")}
+    detach = []
+    for bid, b in ie_doc["basic_events"].items():
+        for s in b["sources"]:
+            if s["kind"] != "fmea":
+                continue
+            rid = s["key"][len(SOURCE_PREFIX):]
+            if rid not in rows or (rid in want and want[rid] != b["key"]):
+                detach.append((bid, s))
+    live = {v["key"]: k for k, v in sorted(ie_doc["basic_events"].items()) if v["status"] == "live"}
+    revive = {v["key"]: k for k, v in sorted(ie_doc["basic_events"].items()) if v["status"] == "deleted" and v["origin"] == "fmea"}
+    attach = []
+    for rid, key in sorted(want.items()):
         src = {"kind": "fmea", "key": SOURCE_PREFIX + rid}
-        bid = bes.get(bkey)
-        if bid is None or src not in ie_doc["basic_events"][bid]["sources"]:
-            todo.append((rid, r, bkey, src))
-    if not todo:
+        bid = live.get(key) or revive.get(key)
+        if bid is None or src not in ie_doc["basic_events"][bid]["sources"] or ie_doc["basic_events"][bid]["status"] != "live":
+            attach.append((rid, key, src))
+    if not detach and not attach:
         return ie_doc
 
     def apply(o):
-        for rid, r, bkey, src in todo:
-            bid = bes.get(bkey)
+        removed = []
+        for bid, s in detach:
+            b = o["basic_events"][bid]
+            if s in b["sources"]:
+                b["sources"].remove(s)
+                removed.append([bid, s["key"]])
+            if b["origin"] == "fmea" and not b["sources"] and b["status"] == "live":
+                b["status"] = "deleted"
+        by_key = {v["key"]: k for k, v in sorted(o["basic_events"].items()) if v["status"] == "live"}
+        dead = {v["key"]: k for k, v in sorted(o["basic_events"].items()) if v["status"] == "deleted" and v["origin"] == "fmea"}
+        for rid, key, src in attach:
+            r = rows[rid]
+            bid = by_key.get(key)
+            if bid is None and key in dead:
+                bid = dead[key]
+                o["basic_events"][bid]["status"] = "live"
+                by_key[key] = bid
             if bid is None:
                 bid = model._next_id(o, "BE")
                 tag = r["tag"]
                 mode = r["failure_code"] or r["failure_mode"]
-                o["basic_events"][bid] = {"key": bkey, "ref": r["ref"], "tag": tag,
+                o["basic_events"][bid] = {"key": key, "ref": r["ref"], "tag": tag,
                                           "name": model._be_name({"kind": r.get("equipment_kind")}, tag, mode),
                                           "equipment_kind": r.get("equipment_kind") or "",
                                           "system": tag.partition("-")[0] if "-" in tag else "", "failure_mode": r["failure_code"],
-                                          "failure_text": r["failure_mode"], "sources": [], "heading_ids": [], "origin": "human",
+                                          "failure_text": r["failure_mode"], "sources": [], "heading_ids": [], "origin": "fmea",
                                           "status": "live"}
-                bes[bkey] = bid
-            o["basic_events"][bid]["sources"].append(src)
-    return model._change(ie_doc, "fmea_sync", [rid for rid, *_x in todo], [], at, apply)[0]
+                by_key[key] = bid
+            if src not in o["basic_events"][bid]["sources"]:
+                o["basic_events"][bid]["sources"].append(src)
+        return removed
+    out, removed = model._change(ie_doc, "fmea_sync", [rid for rid, *_x in attach], [], at, apply)
+    if removed:
+        out["history"][-1]["detached"] = removed
+    return out

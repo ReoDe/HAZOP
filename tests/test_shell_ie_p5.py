@@ -188,11 +188,11 @@ class MldCommandTest(P5Base):
         with open(os.path.join(self.tmp, "m.json"), encoding="utf-8") as fh:
             b = json.load(fh)
         self.assertEqual(b["mld"]["source"]["mld_id"], "TEST-MLD")
-        self.assertEqual({x["id"]: x["status"] for x in b["mld"]["branches"]}["B12"], "covered", "그룹을 이은 가지는 '있음'")
+        self.assertEqual({x["id"]: x["status"] for x in b["mld"]["branches"]}["B12"], "confirmed", "사람이 그룹을 이은 가지는 '사람 확인'")
         import openpyxl
         ws = openpyxl.load_workbook(out)["완전성 대조"]
         head = [c.value for c in ws[1]]
-        self.assertEqual(head[-3:], ["MLD 가지", "MLD 대응", "MLD 출처"])
+        self.assertEqual(head[-3:], ["MLD 가지", "MLD 대응(사람 확인·규칙 대조)", "MLD 출처"])
 
     def test_bad_mld_is_refused_and_nothing_is_written(self):
         bad = dict(MLD, branches=MLD["branches"] + [{"id": "Z", "name": "z", "parent": "NONE", "categories": []}])
@@ -200,6 +200,64 @@ class MldCommandTest(P5Base):
         self.assertEqual((r["ok"], r["error"]["code"]), (False, "failed"))
         self.assertIn("없는 부모", r["error"]["message"])
         self.assertFalse(os.path.exists(ie_store.mld_path(self.project)))
+
+
+
+class ReviewFixShellTest(P5Base):
+    """A18 검토(2026-11-14): 충돌 고르기, 규칙 대조 가지의 사람 확인, FMEA·MLD 파일 하나를 못 읽어도 화면·내보내기는 막지 않음."""
+
+    def test_conflict_is_shown_and_resolved_by_a_person(self):
+        self.import_fmea(self.xlsx("a.xlsx", [["", VALVE, "열림 실패", "FTO", "c", ""]]))
+        self.assertTrue(self.fdo("ie.fmea_edit", row_id="FM-001", fields={"cause": "사람이 고친 원인"})["ok"])
+        d = self.import_fmea(self.xlsx("b.xlsx", [["FM-001", VALVE, "열림 실패", "FTO", "파일이 바꾼 원인", ""]]))
+        self.assertEqual(d["report"]["conflicts"], 1)
+        row = self.fview()["rows"][0]
+        self.assertEqual((row["cause"], row["conflicts"]), ("사람이 고친 원인", {"cause": "파일이 바꾼 원인"}))
+        self.assertEqual(row["matched"]["tag"], VALVE, "대응된 행도 무엇에 맞았는지 보인다")
+        self.assertTrue(self.fdo("ie.fmea_resolve", row_id="FM-001", field="cause", take="file")["ok"])
+        doc = ie_store.load_fmea(self.project)[0]
+        self.assertEqual((doc["rows"]["FM-001"]["cause"], doc["history"][-1]["before"]), ("파일이 바꾼 원인", {"cause": "사람이 고친 원인"}))
+
+    def test_rule_matched_branch_is_confirmed_by_a_person(self):
+        path = os.path.join(self.tmp, "mld.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(MLD, fh, ensure_ascii=False)
+        self.engine.hooks["pick_import"] = lambda kind, filters=None: [path]
+        self.assertTrue(self.call("ie.mld_import", {"mver": self.read("ie", "mld")["mver"]})["ok"])
+        v = self.read("ie", "mld")
+        st = {b["id"]: b for b in v["branches"]}
+        if st["B11"]["status"] != "rule":
+            self.skipTest("표본에 LOMFW 후보가 없음: %s" % st["B11"]["status"])
+        seen = {"coverage:MLD:" + b["id"]: b["fp"] for b in v["branches"]}
+        r = self.call("ie.mld_confirm", {"mver": v["mver"], "seen": seen, "branch_id": "B11", "on": True})
+        self.assertTrue(r["ok"], r)
+        b = {x["id"]: x for x in self.read("ie", "mld")["branches"]}["B11"]
+        self.assertEqual((b["status"], b["confirmed_by"]), ("confirmed", "검토자A"))
+        with self.assertRaises(api.CommandError):
+            api_ie.confirm_mld_branch(self.engine, {"branch_id": "B11", "on": False})
+
+    def test_an_unreadable_fmea_file_does_not_block_the_panel_or_the_export(self):
+        os.makedirs(os.path.dirname(ie_store.fmea_path(self.project)), exist_ok=True)
+        with open(ie_store.fmea_path(self.project), "w", encoding="utf-8") as fh:
+            fh.write("{깨진")
+        s = self.read("ie")
+        self.assertTrue(s["available"], s)
+        self.assertEqual(s["side_unreadable"], [os.path.basename(ie_store.fmea_path(self.project))])
+        self.assertTrue(self.fview()["unreadable"])
+        self.assertEqual(self.call("ie.fmea_status", {"fver": "none", "row_ids": ["FM-001"], "status": "approved"})["error"]["code"],
+                         "unreadable")
+        out = os.path.join(self.tmp, "u.xlsx")
+        self.engine.hooks["save_path"] = lambda kind, name: out
+        self.assertTrue(self.call("ie.export", {"ver": s["ver"], "rver": s["rver"]})["ok"], "FMEA 파일이 깨져도 내보낼 수 있다")
+        with open(os.path.join(self.tmp, "u.json"), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["unreadable_inputs"], [os.path.basename(ie_store.fmea_path(self.project))])
+        ask = self.call("ie.fmea_replace_unreadable", {})
+        self.assertTrue(ask["ok"] and ask["data"]["ask"], ask)
+        self.assertTrue(os.path.exists(ie_store.fmea_path(self.project)), "확인 전에는 바꾸지 않는다")
+        done = self.call("ie.fmea_replace_unreadable", {"confirmed": True})
+        self.assertTrue(done["ok"] and done["data"]["changed"], done)
+        self.assertEqual(self.read("ie")["side_unreadable"], [])
+        self.assertFalse(self.fview().get("unreadable"))
 
 
 if __name__ == "__main__":

@@ -232,6 +232,7 @@ export function IePanel({ onClose }) {
           : html`<${Btn} kind="primary" label="분석 결과 열기" onClick=${() => store.set({ panel: "results" })}>분석 결과 패널 열기<//>`}
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error}<//>` : null}</div>` : html`
         <${Header} s=${s} />
+        ${(s.side_unreadable || []).length ? html`<${Notice} kind="warn" icon="alert-triangle">읽을 수 없는 파일: ${s.side_unreadable.join(", ")}. 이 파일 없이 보이고 내보냅니다. FMEA 보기나 완전성 대조 보기에서 백업 뒤 새로 시작할 수 있습니다.<//>` : null}
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${I.dismissError}>닫기<//><//>` : null}
         ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice}<//>` : null}
         ${view === "groups" ? html`<${Groups} s=${s} />` : view === "completeness" ? html`<${Completeness} s=${s} />` : view === "fmea" ? html`<${FmeaView} />` : html`<${Warnings} s=${s} />`}`}

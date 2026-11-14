@@ -1,13 +1,17 @@
 """P5 주논리도(Master Logic Diagram, MLD) 가지 대조(설계 HZ-PLN-17 §8.2 질문 6, 방법론 카드 M02·M04).
 
-앱은 MLD를 짓지 않는다. 사람이 준 MLD 파일(대상 노형의 것)을 가져와, 잎 가지마다 대응 일반 범주에 '후보' 판정의 승인 후보가 있는지
-대조한다. 앱에 예시 MLD를 넣지 않는다(대상 발전소의 완전성으로 오해될 수 있음). 가지 이름(안전기능 분류 포함)은 파일 값 그대로 쓰고
-⑤의 안전기능 칸과 잇지 않는다(E9 보류). 파일을 쓰지 않는 순수 함수다(저장은 hazop.ie.store).
+앱은 MLD를 짓지 않는다. 사람이 준 MLD 파일(대상 노형의 것)을 가져와 잎 가지마다 초기사건 후보가 있는지 대조한다. 앱에 예시 MLD를
+넣지 않는다(대상 발전소의 완전성으로 오해될 수 있음). 가지 이름(안전기능 분류 포함)은 파일 값 그대로 쓰고 ⑤의 안전기능 칸과 잇지
+않는다(E9 보류). 파일을 쓰지 않는 순수 함수다(저장은 hazop.ie.store).
 
 - 가져오는 파일 {"kind": "hazop_mld", "schema_version": "0.1", "mld_id", "title", "revision", "reactor_type", "source",
-  "branches": [{"id", "name", "parent", "categories": [일반 범주 코드]}]}.
+  "branches": [{"id", "name", "parent", "categories": [일반 범주 코드]}]}. 가지 ID·부모는 앞뒤 공백을 지운 값으로 검사하고 저장한다.
 - 저장 문서 {"kind": "hazop_mld_store", "schema_version", "project_id", "mld": 가져온 파일 또는 None, "file", "imported_at", "by",
-  "links": {가지 ID: [그룹 ID]}, "history": []}.
+  "links": {가지 ID: [그룹 ID]}, "confirms": {가지 ID: {by, at}}, "history": []}.
+- 잎 가지 상태(가지별 공백 찾기, 방법론 카드 M02):
+  confirmed '사람 확인' — 사람이 이은 그룹에 승인 후보가 있거나, 규칙 대조로 맞은 가지를 사람이 확인함
+  rule '규칙 대조(범주 단위)' — 가지의 범주에 '후보' 판정의 승인 후보가 있으나 그 후보가 이 가지의 사건인지 사람이 보지 않음
+  gap '공백' · unmapped '범주 없음'(대응 범주도 이은 그룹도 없음) · not_applicable '해당 없음'(사람 판정)
 - 사람 판정(범위 밖·다른 기법·해당 없음)은 ⑥ 문서 coverage에 'MLD:<가지 ID>'로 둔다(일반 범주 대조와 같은 model.set_coverage).
 """
 
@@ -22,26 +26,35 @@ SCHEMA_VERSION = "0.1"
 COVER_PREFIX = "MLD:"
 MAX_BYTES = 2 * 1024 * 1024
 MAX_BRANCHES = 2000
-STATUS_LABELS = {"covered": "있음", "gap": "공백", "unmapped": "범주 없음", "not_applicable": "해당 없음"}
+MAX_ID = 36           # 판정 열쇠 'MLD:<가지 ID>'가 40자 안에 들게
+STATUS_LABELS = {"confirmed": "사람 확인", "rule": "규칙 대조(범주 단위)", "gap": "공백", "unmapped": "범주 없음",
+                 "not_applicable": "해당 없음"}
+DONE = ("confirmed", "not_applicable")
 
 
 def empty(project_id):
     return {"kind": KIND, "schema_version": SCHEMA_VERSION, "project_id": project_id, "mld": None, "file": None,
-            "imported_at": None, "by": None, "links": {}, "history": []}
+            "imported_at": None, "by": None, "links": {}, "confirms": {}, "history": []}
 
 
 def problems(doc):
     if not isinstance(doc, dict) or doc.get("kind") != KIND:
         return ["kind가 %s가 아님" % KIND]
-    if not isinstance(doc.get("links"), dict) or not isinstance(doc.get("history"), list):
-        return ["links·history 형식이 맞지 않음"]
+    if not isinstance(doc.get("links"), dict) or not isinstance(doc.get("history"), list) \
+            or not isinstance(doc.get("confirms", {}), dict):
+        return ["links·confirms·history 형식이 맞지 않음"]
     if doc.get("mld") is not None:
         return validate(doc["mld"])
     return []
 
 
+def _norm_id(v):
+    return v.strip() if isinstance(v, str) else v
+
+
 def validate(mld, codes=None):
-    """가져올 MLD 파일의 문제 목록. codes(일반 범주 코드 집합)를 주면 기준표에 없는 코드도 본다."""
+    """가져올 MLD 파일의 문제 목록. 가지 ID·부모는 앞뒤 공백을 지운 값으로 본다(가져오기도 같은 값을 저장). codes(일반 범주 코드
+    집합)를 주면 기준표에 없는 코드도 본다."""
     if not isinstance(mld, dict) or mld.get("kind") != FILE_KIND:
         return ["MLD 파일이 아님(kind가 %s여야 함)" % FILE_KIND]
     branches = mld.get("branches")
@@ -52,23 +65,27 @@ def validate(mld, codes=None):
     out = []
     ids = {}
     for i, b in enumerate(branches):
-        if not isinstance(b, dict) or not isinstance(b.get("id"), str) or not b["id"].strip() or len(b["id"]) > 40:
-            out.append("%d번째 가지: id가 없거나 형식이 맞지 않음" % (i + 1))
+        bid = _norm_id(b.get("id")) if isinstance(b, dict) else None
+        if not isinstance(bid, str) or not bid or len(bid) > MAX_ID:
+            out.append("%d번째 가지: id가 없거나 %d자를 넘음" % (i + 1, MAX_ID))
             continue
-        if b["id"] in ids:
-            out.append("가지 ID 중복: %s" % b["id"])
-        ids[b["id"]] = b
+        if bid in ids:
+            out.append("가지 ID 중복: %s" % bid)
+        ids[bid] = b
         if not isinstance(b.get("name"), str) or not b["name"].strip():
-            out.append("%s: 이름이 없음" % b["id"])
+            out.append("%s: 이름이 없음" % bid)
+        p = b.get("parent")
+        if p is not None and not isinstance(p, str):
+            out.append("%s: parent는 가지 ID 글 하나여야 함" % bid)
         cats = b.get("categories", [])
         if not isinstance(cats, list) or not all(isinstance(c, str) for c in cats):
-            out.append("%s: categories는 글 목록이어야 함" % b["id"])
+            out.append("%s: categories는 글 목록이어야 함" % bid)
         elif codes is not None:
             bad = [c for c in cats if c not in codes]
             if bad:
-                out.append("%s: 기준표에 없는 범주 코드 %s" % (b["id"], ", ".join(bad)))
-    for bid, b in ids.items():
-        p = b.get("parent")
+                out.append("%s: 기준표에 없는 범주 코드 %s" % (bid, ", ".join(bad)))
+    parent = {bid: _norm_id(b.get("parent")) if isinstance(b.get("parent"), str) else None for bid, b in ids.items()}
+    for bid, p in parent.items():
         if p is not None and p not in ids:
             out.append("%s: 없는 부모 가지 %s" % (bid, p))
     for bid in ids:  # 순환
@@ -78,7 +95,7 @@ def validate(mld, codes=None):
                 out.append("%s: 부모를 따라가면 순환함" % bid)
                 break
             seen.add(cur)
-            cur = ids[cur].get("parent")
+            cur = parent.get(cur)
     return out
 
 
@@ -96,19 +113,20 @@ def read_file(path):
 
 def _change(doc, op, at, fn, **detail):
     out = copy.deepcopy(doc)
+    out.setdefault("confirms", {})
     fn(out)
     out["history"].append(store_io.history_row(op, detail, at))
     return out
 
 
 def import_mld(doc, mld, filename, by, codes, at=None):
-    """MLD를 가져와 바꾼다(문제가 있으면 ValueError). 옛 판에 있던 사람 연결은 지우지 않는다(없어진 가지는 '가지 없음'으로 보임)."""
+    """MLD를 가져와 바꾼다(문제가 있으면 ValueError). 옛 판에 있던 사람 연결·확인은 지우지 않는다(없어진 가지는 '가지 없음'으로 보임)."""
     bad = validate(mld, codes)
     if bad:
         raise ValueError("MLD를 가져오지 않았습니다: " + "; ".join(bad[:5]))
     at = at or store_io.now_utc()
     keep = {k: mld.get(k) for k in ("kind", "schema_version", "mld_id", "title", "revision", "reactor_type", "source")}
-    keep["branches"] = [{"id": b["id"].strip(), "name": b["name"].strip(), "parent": b.get("parent"),
+    keep["branches"] = [{"id": _norm_id(b["id"]), "name": b["name"].strip(), "parent": _norm_id(b.get("parent")),
                          "categories": list(dict.fromkeys(b.get("categories") or []))} for b in mld["branches"]]
 
     def apply(o):
@@ -118,10 +136,13 @@ def import_mld(doc, mld, filename, by, codes, at=None):
                    replaced=old.get("revision") if old else None)
 
 
+def _leaf_ids(doc):
+    return {b["id"] for b in leaves_of(doc)}
+
+
 def set_links(doc, branch_id, group_ids, at=None):
-    """범주 없는 잎(또는 어느 잎이든)에 사람이 그룹을 잇는다. 빈 목록이면 지운다."""
-    leaves = {b["id"] for b in leaves_of(doc)}
-    if branch_id not in leaves:
+    """잎 가지에 사람이 그룹을 잇는다(사람 확인). 빈 목록이면 지운다."""
+    if branch_id not in _leaf_ids(doc):
         raise ValueError("MLD에 없는 잎 가지: %s" % branch_id)
     group_ids = list(dict.fromkeys(group_ids))
     if doc["links"].get(branch_id, []) == group_ids:
@@ -133,6 +154,24 @@ def set_links(doc, branch_id, group_ids, at=None):
         else:
             o["links"].pop(branch_id, None)
     return _change(doc, "link", at, apply, branch=branch_id, groups=group_ids)
+
+
+def set_confirm(doc, branch_id, on, by, at=None):
+    """규칙 대조로 맞은 잎 가지를 사람이 확인(on)하거나 확인을 푼다. 확인은 검토자 이름과 시각을 남긴다."""
+    if branch_id not in _leaf_ids(doc):
+        raise ValueError("MLD에 없는 잎 가지: %s" % branch_id)
+    if on and not (by or "").strip():
+        raise ValueError("검토자 이름이 있어야 합니다")
+    if bool((doc.get("confirms") or {}).get(branch_id)) == bool(on):
+        return doc
+    at = at or store_io.now_utc()
+
+    def apply(o):
+        if on:
+            o["confirms"][branch_id] = {"by": by.strip(), "at": at}
+        else:
+            o["confirms"].pop(branch_id, None)
+    return _change(doc, "confirm" if on else "unconfirm", at, apply, branch=branch_id, by=(by or "").strip())
 
 
 def leaves_of(doc):
@@ -153,35 +192,39 @@ def _path(by_id, bid):
 
 
 def compare(doc, candidates, groups, coverage):
-    """{"source", "branches": [{id, name, path, categories, status, disposition, group_ids}], "by_category": {코드: [가지]}}.
-    MLD를 받지 않았으면 None. candidates·groups는 인계 묶음의 것(승인 항목만), coverage는 ⑥ 문서의 사람 판정.
-    잎 가지: 대응 범주에 판정이 '후보'인 승인 후보가 있거나, 이은 그룹에 승인 후보가 있으면 '있음'. 대응 범주가 없고 이은 그룹도 없으면
-    '범주 없음', 아니면 '공백'. 사람 판정이 '해당 없음'이면 '해당 없음'(일반 범주 대조와 같은 규칙)."""
+    """{"source", "branches": [{id, name, path, categories, status, rule_hit, confirmed_by, disposition, group_ids, missing_groups}],
+    "by_category": {코드: [가지]}, "gone_links"}. MLD를 받지 않았으면 None. candidates·groups는 인계 묶음의 것(승인 항목만),
+    coverage는 ⑥ 문서의 사람 판정. 상태 규칙은 모듈 설명."""
     m = (doc or {}).get("mld")
     if not m:
         return None
     by_id = {b["id"]: b for b in m["branches"]}
     yes = {c["category"] for c in candidates if c.get("judgement") == "yes" and c.get("category")}
+    known = {g["group_id"] for g in groups}
     live_groups = {g["group_id"] for g in groups if g.get("members")}
+    confirms = doc.get("confirms") or {}
     out, by_cat = [], {}
     for b in leaves_of(doc):
-        linked = [g for g in doc["links"].get(b["id"], [])]
-        if set(b["categories"]) & yes or set(linked) & live_groups:
-            status = "covered"
+        linked = list(doc["links"].get(b["id"], []))
+        rule_hit = bool(set(b["categories"]) & yes)
+        if set(linked) & live_groups or (rule_hit and confirms.get(b["id"])):
+            status = "confirmed"
+        elif rule_hit:
+            status = "rule"
         elif not b["categories"] and not linked:
             status = "unmapped"
         else:
             status = "gap"
-        done = (coverage or {}).get(COVER_PREFIX + b["id"]) if status != "covered" else None
+        done = (coverage or {}).get(COVER_PREFIX + b["id"]) if status != "confirmed" else None
         if done and done.get("disposition") == "not_applicable":
             status = "not_applicable"
         row = {"id": b["id"], "name": b["name"], "path": _path(by_id, b["id"]), "categories": list(b["categories"]),
-               "status": status, "disposition": done, "group_ids": linked,
-               "missing_groups": [g for g in linked if g not in {x["group_id"] for x in groups}]}
+               "status": status, "rule_hit": rule_hit, "confirmed_by": (confirms.get(b["id"]) or {}).get("by"),
+               "disposition": done, "group_ids": linked, "missing_groups": [g for g in linked if g not in known]}
         out.append(row)
         for c in b["categories"]:
             by_cat.setdefault(c, []).append(row)
-    gone = sorted(set(doc["links"]) - {b["id"] for b in leaves_of(doc)})
+    gone = sorted((set(doc["links"]) | set(confirms)) - _leaf_ids(doc))
     return {"source": {"mld_id": m.get("mld_id"), "title": m.get("title"), "revision": m.get("revision"),
                        "reactor_type": m.get("reactor_type"), "file": doc.get("file"), "imported_at": doc.get("imported_at")},
             "branches": out, "by_category": by_cat, "gone_links": gone}
