@@ -547,7 +547,8 @@ def _plan(engine, a):
         raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
     doc, _fp = _load(ns)
     ns = scope_set(ns)                       # 스크리닝 제외 구간은 호출·요금에 들어가지 않는다
-    units = analysis_run.plan(ns, doc, a["scope"], a.get("node_id"), a.get("deviation_id"))
+    last = getattr(engine, "analysis", None) and engine.analysis.last
+    units = analysis_run.plan(ns, doc, a["scope"], a.get("node_id"), a.get("deviation_id"), rest=(last or {}).get("rest"))
     return pg, ns, doc, units
 
 
@@ -558,23 +559,31 @@ def _run_plan(engine, a):
     status = ai.status() if ai is not None else {}
     terms = bool(getattr(ai, "terms_acked", lambda: True)()) if ai is not None else True
     s = analysis_run.summarize(units)
-    conn = _run_conn(engine, units)
+    conn = _run_conn(engine, units, a.get("method"))
     if conn is not None:     # 실제로 쓸 연결(방식·모델·요금, A8 검토 R1): 카드가 구독이라고 고정해 보이지 않게
         can, label, guide = conn["can_start"], conn["label"], conn["guide"]
+        terms = terms or conn["via"] != "subscription"          # 구독 이용 조건은 구독으로 돌 때만
     else:                    # 연결 설정이 없는 엔진(시험의 가짜 AI): 옛 상태 읽기
         can, label, guide = bool(status.get("can_start")), status.get("label") or "", status.get("guide") or ""
     return dict(s, conn=conn, can_start=can and bool(units), state=label, guide=guide,
-                needs_terms=not terms, running=_run_state(engine)["running"],
+                needs_terms=not terms, running=_run_state(engine)["running"], method=a.get("method"),
                 empty_text=None if units else {"node": "분석할 구간의 행을 고르세요(확정한 구간만 분석합니다).",
-                                              "failed": "다시 실행할 실패 칸이 없습니다.", "cell": "분석할 칸이 없습니다."}.get(a["scope"], "분석할 칸이 없습니다."))
+                                              "failed": "다시 실행할 실패 칸이 없습니다.", "cell": "분석할 칸이 없습니다.",
+                                              "resume": "이어서 실행할 칸이 없습니다."}.get(a["scope"], "분석할 칸이 없습니다."))
 
 
-def _run_conn(engine, units):
-    """api_settings.run_conn(분석 연결) 또는 None(연결 설정이 없는 엔진)."""
+def _run_conn(engine, units, method=None):
+    """api_settings.run_conn(분석 연결) 또는 None(연결 설정이 없는 엔진). method: 이번 실행만 쓸 방식(사용자가 고른 'API 키로 이어서')."""
     if getattr(engine.ai, "conn", None) is None:
+        if method is not None:
+            raise _api().CommandError("bad_args", "이번 실행만 방식을 바꿀 수 없는 연결입니다.")
         return None
     from hazop.shell import api_settings
-    return api_settings.run_conn(engine, "analysis", calls=len(units), sections=len({u["node_id"] for u in units}))
+    try:
+        once = {"method": method} if method else {}           # 이번 실행만 고른 방식이 있을 때만 넘긴다
+        return api_settings.run_conn(engine, "analysis", calls=len(units), sections=len({u["node_id"] for u in units}), **once)
+    except api_settings.Refused as exc:
+        raise _api().CommandError(exc.code, exc.message)
 
 
 def _ack_terms(engine, a):
@@ -595,21 +604,31 @@ def _run(engine, a):
     if not units:
         raise api.CommandError("bad_args", "분석할 칸이 없습니다.")
     ai = engine.ai
-    status = ai.status() if ai is not None else {}
+    conn = getattr(ai, "conn", None)
+    plan = _run_conn(engine, units, a.get("method"))
+    status = plan if plan is not None else (ai.status() if ai is not None else {})
     if not status.get("can_start"):
         raise api.CommandError("failed", status.get("guide") or "AI 연결을 쓸 수 없어 분석을 시작하지 않았습니다.")
-    if ai is not None and hasattr(ai, "terms_acked") and not ai.terms_acked():
+    via = plan["via"] if plan is not None else None
+    if via in (None, "subscription") and ai is not None and hasattr(ai, "terms_acked") and not ai.terms_acked():
         raise api.CommandError("terms", "구독 사용 안내를 먼저 확인해 주세요.")
-    if a.get("conn_ver") is not None and getattr(ai, "conn", None) is not None:   # 카드가 보인 연결과 지금 연결이 같을 때만(채팅 길은 자기 확인을 거침)
+    if a.get("conn_ver") is not None and plan is not None:   # 카드가 보인 연결과 지금 연결이 같을 때만(채팅 길은 자기 확인을 거침)
         from hazop.shell import api_settings
         try:
-            api_settings.same_conn(engine, "analysis", a["conn_ver"])
+            api_settings.same_conn(engine, "analysis", a["conn_ver"], *([a["method"]] if a.get("method") else []))
         except api_settings.Refused as exc:
             raise api.CommandError(exc.code, exc.message)
+    if plan is not None and plan.get("paid") and not (a.get("confirm_paid") and a.get("conn_ver")):
+        # 과금 경로는 실행 카드에서 예상 비용을 본 사람이 확인해야만 돈다(채팅 길처럼 확인 없이 오면 거절, B4)
+        raise api.CommandError("need_confirm", plan.get("confirm_text") or "API 키로 요금이 나갑니다. 분석 실행 카드에서 비용을 확인하고 시작하세요.")
     try:
-        client = ai.make_client()
+        client = conn.make_client(via) if plan is not None and hasattr(conn, "make_client") else ai.make_client()
     except ValueError as exc:
         raise api.CommandError("failed", str(exc)[:200])
+    this_run = bool(plan and plan.get("this_run")) and hasattr(conn, "set_run_override")
+    test = bool(plan and plan.get("test"))
+    if this_run:
+        conn.set_run_override(via)                 # 연결 칩에 '이번 실행만'(끝나면 되돌림)
     run = engine.analysis
     run.running, run.stop, run.done, run.total, run.text, run.last = True, False, 0, len(units), "AI 연결을 확인하는 중", None
     engine.changed("results.run", None)
@@ -633,9 +652,12 @@ def _run(engine, a):
 
         try:
             summary_ = analysis_run.run(client, ns, pg, units, intent_of, tick, lambda: run.stop or engine.stop_requested(),
-                                        on_saved=lambda ur, doc, fp: engine.emit("results.cells", cells_delta(doc, ur, fp)))
+                                        on_saved=lambda ur, doc, fp: engine.emit("results.cells", cells_delta(doc, ur, fp)), test=test)
         finally:
             run.running = False
+            if this_run:
+                conn.set_run_override(None)
+        summary_ = dict(summary_, method=via, method_name=(plan or {}).get("method_name"), this_run=this_run)
         run.last = summary_
         engine.changed("results", None)
         engine.changed("results.run", None)
@@ -687,10 +709,12 @@ def register(commands):
     put("export_excel", {"scope": (v_enum("all", "approved", "nodes"), False), "node_ids": (v_list(v_str(1, 40), 500), False)}, _export_excel,
         "Excel로 내보낸다(저장 위치는 창이 대화상자로 묻는다)")
     put("export_ie", {}, _export_ie, "초기사건 인계 묶음을 내보낸다(수용 항목만, 저장 위치는 창이 묻는다)")
-    put("run_plan", {"scope": (v_enum(*("all", "node", "cell", "failed")), True), "node_id": (v_str(1, 40), False),
-                     "deviation_id": (v_str(1, 20), False)}, _run_plan, "분석 실행 전 확인: 호출 수·칸 수·연결 상태")
-    put("run", {"scope": (v_enum(*("all", "node", "cell", "failed")), True), "node_id": (v_str(1, 40), False),
-                "deviation_id": (v_str(1, 20), False), "conn_ver": (v_str(1, 40), False)}, _run,
-        "AI 분석을 시작한다(실행 카드가 보인 연결 conn_ver와 지금 연결이 다르면 conn_changed로 거절)")
+    scopes = (v_enum(*("all", "node", "cell", "failed", "resume")), True)
+    once = (v_enum("subscription", "api"), False)        # 이번 실행만 쓸 방식(사용자가 고른 'API 키로 이어서'). 고정 응답은 설정에서만
+    put("run_plan", {"scope": scopes, "node_id": (v_str(1, 40), False), "deviation_id": (v_str(1, 20), False), "method": once}, _run_plan,
+        "분석 실행 전 확인: 호출 수·칸 수·실제로 쓸 연결·예상 비용(resume: 앞 실행이 멈춘 뒤 남은 칸)")
+    put("run", {"scope": scopes, "node_id": (v_str(1, 40), False), "deviation_id": (v_str(1, 20), False), "conn_ver": (v_str(1, 40), False),
+                "method": once, "confirm_paid": (api.v_bool(), False)}, _run,
+        "AI 분석을 시작한다(conn_ver가 지금 연결과 다르면 conn_changed. API 키 경로는 confirm_paid와 conn_ver가 있어야 돈다)")
     put("stop", {}, _stop, "분석을 멈춘다(남은 호출을 부르지 않음)")
     put("ack_terms", {}, _ack_terms, "구독 사용 안내를 확인했다고 기록한다")

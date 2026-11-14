@@ -188,32 +188,38 @@ export async function exportIe() {
 }
 
 // ---------------------------------------------------------------- 분석 실행
-export async function planRun(scope) {
+/** 실행 카드 열기. method: 이번 실행만 쓸 방식('API 키로 이어서', 사람이 고른 경우만). 과금이면 카드에서 비용 확인을 받는다. */
+export async function planRun(scope, method) {
   const a = results.get().active;
   const args = { scope };
+  if (method) args.method = method;
   if (scope === "node" || scope === "cell") { if (!a) { results.set({ error: "행렬에서 분석할 칸을 먼저 고르세요." }); return null; } args.node_id = a.node_id; }
   if (scope === "cell") args.deviation_id = a.deviation_id;
   try {
     const p = await cmd("results.run_plan", args);
-    results.set({ plan: Object.assign({ scope, args }, p), error: null });
+    results.set({ plan: Object.assign({ scope, args, paidOk: false }, p), error: null });
     return p;
   } catch (e) { results.set({ error: errorText(e) }); return null; }
 }
 
 export function closePlan() { results.set({ plan: null }); }
+/** 과금 경로의 '예상 비용을 확인했습니다' 표시(이게 켜져야 시작 단추가 켜지고, 엔진에 confirm_paid를 보낸다). */
+export function setPaidOk(v) { const p = results.get().plan; if (p) results.set({ plan: Object.assign({}, p, { paidOk: !!v }) }); }
 
 export async function startRun() {
   const p = results.get().plan;
   if (!p) return null;
   try {
     if (p.needs_terms) await cmd("results.ack_terms");
-    const args = Object.assign({ scope: p.scope }, p.args, p.conn ? { conn_ver: p.conn.conn_ver } : {});
+    const paid = !!(p.conn && p.conn.paid);
+    if (paid && !p.paidOk) { results.set({ error: "예상 비용을 확인해야 시작합니다." }); return null; }
+    const args = Object.assign({ scope: p.scope }, p.args, p.conn ? { conn_ver: p.conn.conn_ver } : {}, paid ? { confirm_paid: true } : {});
     const r = await cmd("results.run", args);
     results.set({ plan: null, error: null });
     return r;
   } catch (e) {
     results.set({ error: errorText(e) });
-    if (e && e.code === "conn_changed") await planRun(p.scope);   // 연결이 바뀌었으면 카드를 새 연결로 다시 보인다
+    if (e && (e.code === "conn_changed" || e.code === "need_confirm")) await planRun(p.scope, p.args && p.args.method);   // 연결이 바뀌었으면 카드를 새 연결로 다시 보인다
     return null;
   }
 }

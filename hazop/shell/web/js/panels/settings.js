@@ -96,7 +96,10 @@ function AiConnection() {
           checkLabel="연결 확인" onCheck=${() => act("aiconn.check", { method: "subscription" }, "구독 연결을 확인하는 중입니다.")}
           onUse=${() => act("aiconn.use", { method: "subscription" }, "Claude 구독으로 바꿨습니다.")}
           onModel=${(m) => act("aiconn.set_model", { method: "subscription", model: m }, "구독 모델을 바꿨습니다.")}>
-          <div class="small muted">건별 요금 없음 · 구독 한도에서 빠짐${s.plan ? " · " + s.plan : ""}</div><//>` : null}
+          <div class="small muted">건별 요금 없음 · 구독 한도에서 빠짐${s.plan ? " · " + s.plan : ""}</div>
+          ${s.usage ? html`<div class=${"small " + (s.usage_warn ? "set-why" : "muted")} aria-label="구독 사용량">${s.usage}${s.usage_warn ? " " + s.usage_warn : ""}</div>` : null}
+          ${s.can_locate ? html`<div class="set-key"><span class="small muted">PATH에 없으면 프로그램 위치를 지정하세요.</span>
+            <${Btn} sm=${true} kind="ghost" label="Claude Code 위치 지정" disabled=${busy} onClick=${() => act("aiconn.locate_cli", {}, "위치를 지정했습니다. 연결을 확인하는 중입니다.")}>위치 지정<//></div>` : null}<//>` : null}
       ${a ? html`<${MethodCard} name="API 키" st=${a} inUse=${c.via === "api"} model=${a.model} models=${models} busy=${busy} running=${v.running}
           checkLabel="연결 시험" onCheck=${() => (key ? act("aiconn.check", { method: "api" }, "연결을 시험하는 중입니다(요금 없음).") : setMsg({ text: "시험할 키가 없습니다. 키를 먼저 추가하세요.", err: true }))}
           onUse=${() => act("aiconn.use", { method: "api" })}
@@ -112,6 +115,9 @@ function AiConnection() {
           ${ask && ask.kind === "remove" ? html`<${Ask} text=${"'" + ask.key.name + "'(" + ask.key.hint + ") 키를 지울까요? 이 PC에 저장한 사본도 지워집니다."} yes="지우기"
               onYes=${() => { const k = ask.key; setAsk(null); act("aiconn.remove_key", { key_id: k.id, confirmed: true }, "키를 지웠습니다."); }} onNo=${() => setAsk(null)} />` : null}<//>` : null}
     </div>
+    ${v.methods.some((m) => m.method === "fixed") ? html`<div class=${"set-chat" + (c.via === "fixed" ? " set-why" : "")} aria-label="시험용 고정 응답">
+      <span class="small">시험용 고정 응답(시험 실행에서만 보임)${c.via === "fixed" ? " · 사용 중: 결과는 시험 파일에만 저장" : ""}</span>
+      ${c.via === "fixed" ? null : html`<${Btn} sm=${true} kind="ghost" label="고정 응답으로 사용" disabled=${busy || v.running} onClick=${() => act("aiconn.use", { method: "fixed" }, "시험용 고정 응답으로 바꿨습니다.")}>고정 응답으로 사용<//>`}</div>` : null}
     <div class="set-chat"><label for="set-chat-model">채팅 모델</label>
       <select id="set-chat-model" class="set-model" aria-label="채팅 모델" value=${chatModel} disabled=${busy} onChange=${(e) => setChatModel(e.target.value)}>
         ${CHAT_MODELS.map(([id, label]) => html`<option key=${id} value=${id}>${label}</option>`)}</select>

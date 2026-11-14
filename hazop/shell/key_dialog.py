@@ -76,3 +76,10 @@ def ask_key(name="", parent=None):
     dlg.exec()
     value, dlg.result_value = dlg.result_value, None
     return value
+
+
+def pick_cli(parent=None):
+    """Claude Code 프로그램 파일을 고른다(설정의 '위치 지정'). → 경로 또는 None. 경로는 Python 쪽에서만 쓴다."""
+    from PySide6.QtWidgets import QFileDialog
+    path, _f = QFileDialog.getOpenFileName(parent, "Claude Code 프로그램 위치", "", "Claude Code (claude.exe claude.cmd claude);;모든 파일 (*)")
+    return path or None

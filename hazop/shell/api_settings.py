@@ -125,6 +125,9 @@ def view(engine):
                                "can_start": bool(lk.can_start), "plan": cv.plan_name(st.get("plan")), "checked_at": st.get("checked_at"),
                                "detail": _masked(conn, st.get("detail") or ""), "model": conn.model("subscription"),
                                "terms_acked": conn.terms_acked(), "cost": cv.METHOD_COST["subscription"]}
+        line, _say, warn = cv.usage_lines(st.get("limit"))[0]          # 5시간·주간 한도와 재설정 시각(받은 창만, 근거 없는 '여유' 말 없음)
+        out["subscription"].update(usage=line, usage_warn=warn, can_locate=st.get("state") == "not_installed",
+                                   cli_set=bool(conn.prefs.cli_path))
     if "api" in conn.methods():
         st, lk, guide = _look(conn, "api")
         keys = []
@@ -170,9 +173,11 @@ def _conn_ver(via, model, key_id):
     return hashlib.sha256(("%s|%s|%s" % (via, model, key_id or "-")).encode("utf-8")).hexdigest()[:12]
 
 
-def run_conn(engine, kind, calls=0, sections=0):
+def run_conn(engine, kind, calls=0, sections=0, method=None):
     """실행 카드가 보일 '실제로 쓸 연결'(키 값 없음). kind: analysis(고른 방식) | ai_review(구독으로만 돈다).
-    → {kind, via, method_name, model, model_name, can_start, label, guide, paid, usd, cost_text, conn_ver}."""
+    method: 이번 실행만 다른 방식(분석의 'API 키로 이어서', 사용자가 그때 고름). 쓸 수 없는 방식이면 Refused. 고정 응답(시험)은 설정에서
+    고른 경우에만 쓴다(이번 실행만으로는 고를 수 없다).
+    → {kind, via, method_name, model, model_name, can_start, label, guide, paid, usd, cost_text, confirm_text, test, this_run, conn_ver}."""
     cv = _views()
     try:
         conn = _conn(engine)
@@ -186,7 +191,14 @@ def run_conn(engine, kind, calls=0, sections=0):
                         cost_text="", conn_ver=_conn_ver(via, model, None))
         return dict(kind=kind, via=None, method_name="연결 안 됨", model=None, model_name="", can_start=False, label=NONE_STATE["label"],
                     guide=NONE_STATE["guide"], paid=False, usd=None, cost_text="AI 연결이 없습니다.", conn_ver=_conn_ver(None, None, None))
-    via = "subscription" if kind == "ai_review" else conn.method
+    if kind == "ai_review":
+        via = "subscription"
+    elif method is not None:
+        if method not in conn.methods() or method == "fixed" and conn.method != "fixed":
+            raise Refused("bad_args", "이번 실행에 쓸 수 없는 연결 방식입니다.")
+        via = method
+    else:
+        via = conn.method
     if via not in conn.methods():
         via = conn.method
     st, lk, guide = _look(conn, via)
@@ -199,22 +211,32 @@ def run_conn(engine, kind, calls=0, sections=0):
             usd = round(max(0, int(sections)) * claude_http.MODELS[model]["section_usd"], 2)
         else:
             usd = round(max(0, int(calls)) * claude_http.cost_usd(REVIEW_CALL_USAGE, model), 2)
+    confirm_text = ""
     if paid:
-        cost_text = "API 키 · 호출마다 요금, 약 $%.2f(%s)" % (usd or 0, "구간 %d개" % sections if kind == "analysis" else "호출 %d회 어림" % calls)
+        what = "구간 %d개" % sections if kind == "analysis" else "호출 %d회 어림" % calls
+        cost_text = "호출마다 요금, 약 $%.2f(%s)" % (usd or 0, what)      # 앞에 방식 이름(API 키)은 카드가 붙인다
+        confirm_text = "API 키(%s)로 호출마다 요금이 나갑니다. 예상 약 $%.2f(%s, %s 기준 어림). 확인하고 시작할까요?" % (
+            (key or {}).get("name") or "키", usd or 0, what, cv.model_name(model) if model else "-")
     elif via == "subscription":
         cost_text = "Claude 구독 한도를 씁니다(건별 요금 없음)"
+    elif via == "fixed":
+        cost_text = "시험용 고정 응답 · AI를 부르지 않습니다. 결과는 시험 파일에 저장해 실제 결과에 섞지 않습니다"
     else:
         cost_text = ""
     if kind == "ai_review" and conn.method == "api":
         cost_text += " · AI 검토는 분석 연결(API 키)과 상관없이 구독으로만 돕니다"
+    this_run = via != conn.method
+    if this_run:
+        cost_text += " · 이번 실행만"
     return {"kind": kind, "via": via, "method_name": cv.METHOD_NAMES.get(via, via), "model": model,
             "model_name": cv.model_name(model) if model else "", "can_start": bool(lk.can_start), "label": lk.label, "guide": guide,
-            "paid": paid, "usd": usd, "cost_text": cost_text, "conn_ver": _conn_ver(via, model, key and key.get("id"))}
+            "paid": paid, "usd": usd, "cost_text": cost_text, "confirm_text": confirm_text, "test": via == "fixed", "this_run": this_run,
+            "conn_ver": _conn_ver(via, model, key and key.get("id"))}
 
 
-def same_conn(engine, kind, conn_ver):
+def same_conn(engine, kind, conn_ver, method=None):
     """실행 직전: 화면이 본 판(conn_ver)과 지금 실제 연결이 같은지. 다르면 Refused('conn_changed')."""
-    now = run_conn(engine, kind)
+    now = run_conn(engine, kind, **({"method": method} if method else {}))
     if not conn_ver or conn_ver != now["conn_ver"]:
         raise Refused("conn_changed", "AI 연결이 화면에 보인 것과 달라졌습니다(지금: %s · %s). 실행하지 않았습니다. 확인 상자를 다시 보고 시작하세요."
                       % (now["method_name"], now["model_name"] or "-"))
@@ -387,6 +409,34 @@ def remove_key(engine, kid, confirmed=False):
     return _keyop(engine, lambda ks: ks.remove(kid), "키를")
 
 
+CLI_NAMES = ("claude.exe", "claude.cmd", "claude")
+
+
+def _pick_cli(engine):
+    hook = engine.hooks.get("pick_cli")
+    if hook is None:
+        from hazop.shell import key_dialog
+        hook = key_dialog.pick_cli
+    return hook()
+
+
+def locate_cli(engine):
+    """Claude Code 프로그램 위치 지정('찾지 못했을 때만' 보이는 줄). 경로는 창의 파일 상자로 Python 쪽에서만 받고 웹에는 보내지 않는다."""
+    import os
+    conn = _conn(engine)
+    path = _pick_cli(engine)
+    if not path:
+        return {"set": False}
+    if not os.path.isfile(path) or os.path.basename(path).lower() not in CLI_NAMES:
+        raise Refused("bad_args", "Claude Code 프로그램(claude.exe)을 고르세요.")
+    try:
+        conn.prefs.set_cli_path(path)
+    except OSError as exc:
+        raise Refused("failed", "설정 파일에 쓰지 못했습니다(%s)." % str(exc)[:120])
+    conn.check("subscription", done=lambda _st: engine.changed("aisettings", None))
+    return _done(engine, {"set": True})
+
+
 def _wrap(fn):
     def handler(engine, a):
         try:
@@ -422,6 +472,7 @@ def register(commands):
     put("set_model", {"method": (v_enum("subscription", "api"), True), "model": (v_enum(*claude_http.MODELS), True)}, _h_set_model, "분석 모델")
     put("add_key", {"name": (v_str(0, MAX_NAME), False)}, lambda e, a: add_key(e, a.get("name")),
         "API 키 추가(키는 창의 입력 상자로 받는다. 웹은 키를 보내지 않는다)")
+    put("locate_cli", {}, lambda e, a: locate_cli(e), "Claude Code 프로그램 위치 지정(창의 파일 상자, 경로는 웹에 보내지 않음)")
     put("select_key", {"key_id": kid}, lambda e, a: select_key(e, a["key_id"]), "사용할 키")
     put("rename_key", {"key_id": kid, "name": (v_str(1, MAX_NAME), True)}, lambda e, a: rename_key(e, a["key_id"], a["name"]), "키 이름 바꾸기")
     put("remove_key", {"key_id": kid, "confirmed": (v_bool(), True)}, lambda e, a: remove_key(e, a["key_id"], a["confirmed"]),

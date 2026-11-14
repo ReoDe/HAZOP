@@ -46,16 +46,24 @@ function RunState({ run }) {
   }
   const l = run.last;
   if (!l) return null;
+  const rest = (l.rest || []).length;
+  // '이어서 실행': 남은 칸만 같은 방식으로. API 키로 잇기는 사람이 그때 눌러 카드에서 비용을 확인한 경우만(자동으로 넘어가지 않음, B4)
+  const resume = rest && !l.test ? html` <${Btn} sm=${true} kind="primary" label=${"남은 " + rest + "칸 이어서 실행"} onClick=${() => R.planRun("resume")}>남은 ${rest}칸 이어서<//>
+    ${l.method === "subscription" ? html`<${Btn} sm=${true} label="API 키로 이어서 실행(요금 확인)" onClick=${() => R.planRun("resume", "api")}>API 키로 이어서…<//>` : null}` : null;
+  const test = l.test ? " 시험용 고정 응답 결과라 시험 파일에만 저장했습니다(실제 결과에 섞지 않음)." : "";
   if (l.reason === "halted") {
-    const reset = l.limit && l.limit.resets_at ? " 한도는 " + String(l.limit.resets_at).replace("T", " ").replace(/:\d\dZ?$/, "") + "에 풀립니다." : "";
-    return html`<${Notice} kind="warn" icon="alert-triangle">AI 분석이 ${l.calls}번째 호출에서 멈췄습니다(${l.error || l.error_kind}).${reset} 받은 칸은 저장했습니다. 한도가 풀리면 '실패 칸 다시 실행'으로 이어 가세요.<//>`;
+    const at = l.limit && l.limit.resets_at;
+    const when = typeof at === "number" ? new Date(at * 1000).toLocaleString() : at ? String(at).replace("T", " ").replace(/:\d\dZ?$/, "") : "";
+    const reset = when ? " 한도는 " + when + "에 풀립니다." : "";
+    return html`<${Notice} kind="warn" icon="alert-triangle">AI 분석이 ${l.calls}번째 호출에서 멈췄습니다(${l.error || l.error_kind}).${reset} 받은 칸은 저장했습니다.${test}${resume}<//>`;
   }
-  return html`<${Notice} kind=${l.reason === "stopped" ? "info" : "ok"} icon="circle-check">AI 분석${l.reason === "stopped" ? "을 멈췄습니다" : "이 끝났습니다"}: 호출 ${l.calls}회, ${l.cells}칸 반영${l.failed_calls ? ", 실패 " + l.failed_calls + "회" : ""}.<//>`;
+  return html`<${Notice} kind=${l.reason === "stopped" ? "info" : "ok"} icon="circle-check">AI 분석${l.reason === "stopped" ? "을 멈췄습니다" : "이 끝났습니다"}${l.method_name ? "(" + l.method_name + (l.this_run ? ", 이번 실행만" : "") + ")" : ""}: 호출 ${l.calls}회, ${l.cells}칸 반영${l.failed_calls ? ", 실패 " + l.failed_calls + "회" : ""}.${test}${resume}<//>`;
 }
 
 function PlanCard() {
   const p = R.useResults((s) => s.plan);
   if (!p) return null;
+  const paid = !!(p.conn && p.conn.paid);
   return html`<div class="card runplan" role="dialog" aria-label="분석 실행 확인">
     <h3>AI 분석 실행</h3>
     ${p.empty_text ? html`<p>${p.empty_text}</p>` : html`<p>${p.cells}칸을 ${p.calls}번 호출해 분석합니다(약 ${Math.max(1, Math.round(p.seconds / 60))}분).</p>
@@ -63,7 +71,10 @@ function PlanCard() {
       <div class="muted small">사람이 쓴 항목은 바꾸지 않고, 잠긴 구간과 적용됨 구간은 건너뜁니다. 연결: ${p.state || "확인 안 함"}</div>`}
     ${!p.can_start && !p.empty_text ? html`<${Notice} kind="warn" icon="alert-triangle">${p.guide || "AI 연결을 쓸 수 없습니다."}<//>` : null}
     ${p.needs_terms && p.can_start ? html`<${Notice} kind="info">처음 실행입니다. 구독 사용 안내를 확인한 것으로 기록합니다.<//>` : null}
-    <div class="acts-row"><${Btn} kind="primary" label="분석 시작" disabled=${!p.can_start || !!p.empty_text || p.running} onClick=${R.startRun}>시작<//><${Btn} label="취소" onClick=${R.closePlan}>취소<//></div></div>`;
+    ${paid && !p.empty_text ? html`<${Notice} kind="warn" icon="alert-triangle">${p.conn.confirm_text}
+      <label class="small runplan-ok"><input type="checkbox" checked=${!!p.paidOk} onChange=${(e) => R.setPaidOk(e.target.checked)} /> 예상 비용을 확인했습니다</label><//>` : null}
+    ${p.conn && p.conn.test && !p.empty_text ? html`<${Notice} kind="info">시험용 고정 응답입니다. AI를 부르지 않고, 결과는 시험 파일에만 저장합니다.<//>` : null}
+    <div class="acts-row"><${Btn} kind="primary" label=${paid ? "요금 확인하고 분석 시작" : "분석 시작"} disabled=${!p.can_start || !!p.empty_text || p.running || (paid && !p.paidOk)} onClick=${R.startRun}>${paid ? "요금 확인하고 시작" : "시작"}<//><${Btn} label="취소" onClick=${R.closePlan}>취소<//></div></div>`;
 }
 
 // Excel 범위: 전체 / 승인 항목만 / 고른 구간만. 저장 위치는 창이 파일 대화상자로 묻고(웹은 경로를 보내지 않는다), 같은 이름이 있으면 덮어쓸지 한 번 더 묻는다.

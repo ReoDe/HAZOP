@@ -3,7 +3,11 @@
 저장은 읽은 지문(expect)을 대조해(results.save_fp) 실행 중 사람이 고친 칸을 덮지 않는다. 멈추라고 하면 남은 호출을 부르지 않고 진행 중인 호출은 끝까지
 받는다. 구독 한도·초과 사용 같은 멈춤(providers.halts)이 오면 남은 호출을 멈춘다.
 
-범위: 구독 연결만 다룬다. API 키·고정 응답(시험) 방식과 '이어서 실행'은 이전 화면에 남는다(4단계에서 정한다).
+방식(B4, 2026-11-14): 구독·API 키·고정 응답(시험). 어느 방식으로 돌지는 api_results가 api_settings.run_conn으로 정해 클라이언트를 넘긴다.
+API 키(과금)는 사용자가 고른 경우에만, 실행 카드에서 예상 비용을 확인한 뒤에만 돈다(api_results._run이 막는다). 고정 응답 결과는 시험 파일
+(results.test_store_path)에 저장해 실제 검토 기록의 AI 초안에 섞지 않는다(D5).
+'이어서 실행'(scope resume): 앞 실행이 멈춘 뒤 남은 칸(부르지 않은 단위와 실패한 단위의 칸, run()의 rest)만 다시 계획한다.
+다른 방식(API 키)으로 잇는 것은 사용자가 그때 고르고 비용을 확인한 경우뿐이다(자동으로 넘어가지 않는다).
 """
 
 import logging
@@ -14,7 +18,7 @@ from hazop.study import ai_cells, nodes, providers
 from hazop.study import results as res
 
 LOG = logging.getLogger("hazop.shell.analysis_run")
-SCOPES = ("all", "node", "cell", "failed")
+SCOPES = ("all", "node", "cell", "failed", "resume")
 SECONDS_PER_CALL = 25      # 호출 하나의 어림(화면에 '약 몇 분'으로만 쓴다)
 
 _stamp_lock = threading.Lock()
@@ -31,9 +35,13 @@ def stamp():
         return now.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-def plan(ns, doc, scope, node_id=None, deviation_id=None):
-    """-> 호출 단위 목록. 분석 대상은 확정 구간뿐이다(잠금·적용됨 구간은 계획에서 빠진다)."""
+def plan(ns, doc, scope, node_id=None, deviation_id=None, rest=None):
+    """-> 호출 단위 목록. 분석 대상은 확정 구간뿐이다(잠금·적용됨 구간은 계획에서 빠진다).
+    rest: scope resume에서 이을 칸 [(node_id, deviation_id)](앞 실행 run()의 rest). 지금 구간 집합에 없는 칸은 빠진다."""
     devs = res.load_deviations()
+    if scope == "resume":
+        cells = [tuple(c) for c in rest or [] if isinstance(c, (list, tuple)) and len(c) == 2]
+        return ai_cells.plan_units(ns, devs, cells, group=True) if cells else []
     if scope == "all":
         return ai_cells.plan_units(ns, devs)
     if scope == "node":
@@ -64,15 +72,18 @@ def contexts(units, ns, pg, intent_of):
     return out
 
 
-def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None):
-    """units를 차례로 부르고 호출마다 저장한다 -> {"calls", "ok_calls", "failed_calls", "cells", "reason", "limit", "usage"}.
-    reason: done · stopped(멈추라고 함) · halted(구독 한도·초과 사용 등으로 남은 호출을 멈춤). progress(text, done, total)는 호출 사이에 부른다."""
+def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, test=False):
+    """units를 차례로 부르고 호출마다 저장한다 -> {"calls", "ok_calls", "failed_calls", "cells", "reason", "limit", "usage", "rest", ...}.
+    reason: done · stopped(멈추라고 함) · halted(구독 한도·초과 사용 등으로 남은 호출을 멈춤). progress(text, done, total)는 호출 사이에 부른다.
+    rest: 이어서 실행할 칸 [[node_id, deviation_id]](실패한 단위의 칸 + 부르지 않은 단위의 칸, 순서 유지·중복 없음).
+    test: 고정 응답(시험) 실행. 결과를 시험 파일에 저장한다."""
     devs = res.load_deviations()
     ctxs = contexts(units, ns, pg, intent_of)
     project = ns.get("project_id")
     kinds, ok_calls, ok_cells, limit, halted, last_error = [], 0, 0, None, None, None
     done = 0
     stopped = False
+    rest = []
     for unit in units:
         if should_stop():
             stopped = True
@@ -88,29 +99,39 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None):
             ok_cells += len(ur["cells"])
         else:
             last_error = ur.get("error")
-        saved = _merge_and_save(ns, project, ur)
-        if on_saved is not None and saved is not None:
-            on_saved(ur, saved[0], saved[1])         # 반영한 문서와 새 지문: 화면에 바뀐 칸만 알리려고
+            rest += [[unit["node_id"], d] for d in unit["deviation_ids"]]
+        saved = _merge_and_save(ns, project, ur, test=test)
+        if on_saved is not None and saved is not None and not test:
+            on_saved(ur, saved[0], saved[1])         # 반영한 문서와 새 지문: 화면에 바뀐 칸만 알리려고(시험 파일은 화면 결과가 아니다)
         if providers.halts(kinds):
             halted = ur
             break
-    doc, _fp = res.load_fp(ns)
+    for unit in units[done:]:
+        rest += [[unit["node_id"], d] for d in unit["deviation_ids"]]
+    seen = set()
+    rest = [c for c in rest if not (tuple(c) in seen or seen.add(tuple(c)))]
+    doc, _fp = (res.load_test_fp(ns) if test else res.load_fp(ns))
     reason = "halted" if halted is not None else ("stopped" if stopped else "done")
     return {"calls": done, "planned": len(units), "ok_calls": ok_calls, "failed_calls": done - ok_calls, "cells": ok_cells, "reason": reason,
             "limit": limit, "error_kind": (halted or {}).get("error_kind"), "error": (halted or {}).get("error") or last_error,
-            "usage": ai_cells.usage_total(doc) if doc else None}
+            "conn_state": (halted or {}).get("conn_state"), "usage": ai_cells.usage_total(doc) if doc else None, "rest": rest, "test": bool(test)}
 
 
-def _merge_and_save(ns, project, ur, attempts=3):
-    """호출 결과 하나를 지금 결과 파일에 합쳐 저장한다. 그새 파일이 바뀌었으면(사람이 고침) 다시 읽어 합친다."""
+def _merge_and_save(ns, project, ur, attempts=3, test=False):
+    """호출 결과 하나를 지금 결과 파일에 합쳐 저장한다. 그새 파일이 바뀌었으면(사람이 고침) 다시 읽어 합친다.
+    test: 고정 응답(시험) 결과 파일에 쓴다(실제 결과 파일은 건드리지 않는다)."""
     from hazop import store_io
     for _ in range(attempts):
-        doc, fp = res.load_fp(ns)
+        doc, fp = res.load_test_fp(ns) if test else res.load_fp(ns)
         if doc is None:
             doc, fp = res.empty_results(ns, res.load_deviations()), store_io.ANY
         merged = ai_cells.apply_unit(doc, ur)
         try:
-            _path, new_fp = res.save_fp(merged, project, expect=fp)
+            if test:
+                res.write(res.test_store_path(project, merged["graph_id"]), merged, expect=fp)
+                new_fp = res.written_fp(merged)
+            else:
+                _path, new_fp = res.save_fp(merged, project, expect=fp)
             return merged, new_fp
         except store_io.Conflict:
             continue
