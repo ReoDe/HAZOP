@@ -15,6 +15,7 @@
 
 import copy
 import csv
+import functools
 import hashlib
 import json
 import os
@@ -83,14 +84,27 @@ def _sha(obj, n=12):
     return hashlib.sha256(_canon(obj).encode("utf-8")).hexdigest()[:n]
 
 
+_WS = re.compile(r"\s+")
+
+
+@functools.lru_cache(maxsize=65536)
+def _norm_text(s):
+    return _WS.sub("", s).upper() or None
+
+
 def _norm(s):
-    return re.sub(r"\s+", "", str(s or "")).upper() or None
+    return _norm_text(str(s or ""))
+
+
+@functools.lru_cache(maxsize=65536)
+def _dn_text(s):
+    m = _FIG_SHEET.match(_norm_text(s) or "")
+    return "%s-S%d" % (m.group(1), int(m.group(2))) if m else _norm_text(s)
 
 
 def _dn(s):
     """도면번호 비교 키. '<그림>-S<시트>' 꼴이면 시트 번호 앞 0을 없앤다('9.3.4-1-S01' = '9.3.4-1-S1')."""
-    m = _FIG_SHEET.match(_norm(s) or "")
-    return "%s-S%d" % (m.group(1), int(m.group(2))) if m else _norm(s)
+    return _dn_text(str(s or ""))
 
 
 # ---------------------------------------------------------------- 연결점 읽기
@@ -275,14 +289,20 @@ def match(graphs, manual_ops=(), system_codes=None):
         else:
             record(LINKED, None, "manual", found[0], found[1], op_id=op["op_id"])
     manual_used.update(used)
+    # 짝 찾기 색인(ends 순서 그대로). 앞의 조건은 사람 지정 뒤로 바뀌지 않는 것만 넣는다
+    back_index, system_index = {}, {}
+    for x in ends:
+        if _ref(x) in manual_used:
+            continue
+        if x["to_drawing"] and (x["line_no"] or x.get("sheet_only")):  # 키가 없는 끝(missing_key)은 짝이 아니다
+            back_index.setdefault((_dn(x["drawing_number"]), _dn(x["to_drawing"])), []).append(x)
+        if x.get("system_ref"):
+            system_index.setdefault(_dn(x["drawing_number"]), []).append(x)
 
     def peers(e):
         """e를 되짚는 연결점. 짝 글자 없는 DCD 표시(sheet_only)는 글자와 상관없이 상대 시트에서 이 시트를 가리키는
         모든 화살표를 돌려준다(하나뿐이고 그것도 글자가 없을 때만 잇는다)."""
-        back = [x for x in ends if _ref(x) not in manual_used and x is not e
-                and x["to_drawing"] and (x["line_no"] or x.get("sheet_only"))  # 키가 없는 끝(missing_key)은 짝이 아니다
-                and _dn(x["drawing_number"]) == _dn(e["to_drawing"])
-                and _dn(x["to_drawing"]) == _dn(e["drawing_number"])]
+        back = [x for x in back_index.get((_dn(e["to_drawing"]), _dn(e["drawing_number"])), ()) if x is not e]
         return back if e.get("sheet_only") else [x for x in back if _norm(x["line_no"]) == _norm(e["line_no"])]
 
     def system_peer(e):
@@ -293,8 +313,7 @@ def match(graphs, manual_ops=(), system_codes=None):
         if not (ref and home and row) or row["figure"] == home.group(1):  # 제 그림을 가리키는 약어로는 잇지 않는다
             return None, False
         target = _dn("%s-S%d" % (row["figure"], ref["sheet"]))
-        found = [x for x in ends if x is not e and _ref(x) not in manual_used and _dn(x["drawing_number"]) == target
-                 and x.get("system_ref") and (system_codes.get(x["system_ref"]["code"]) or {}).get("figure") == home.group(1)
+        found = [x for x in system_index.get(target, ()) if x is not e and (system_codes.get(x["system_ref"]["code"]) or {}).get("figure") == home.group(1)
                  and x["system_ref"]["sheet"] == int(home.group(2))
                  and _norm(x["system_ref"]["letter"]) == _norm(ref["letter"])
                  and _norm(x["line_no"]) == _norm(e["line_no"])]  # 사람이 적은 배관 번호가 다르면 짝이 아니다

@@ -179,6 +179,57 @@ class GraphQuery:
                 " ".join(u.get("segments_direction_unknown", [])),
                 " ".join(u.get("segments_against_flow", []))]
 
+    def _tree(self, trees, kind, start):
+        """start에서 bfs()와 같은 순서로 끝까지 돈 이전 노드 표 {노드: (이전 노드, 엣지) 또는 None}."""
+        prev = trees.get(kind)
+        if prev is None:
+            adj = self.adjacency(kind)
+            prev = {start: None}
+            queue, head = [start], 0
+            while head < len(queue):
+                cur = queue[head]
+                head += 1
+                for nb, eid in adj.get(cur, ()):
+                    if nb not in prev:
+                        prev[nb] = (cur, eid)
+                        queue.append(nb)
+            trees[kind] = prev
+        return prev
+
+    @staticmethod
+    def _walk(prev, goal):
+        if goal not in prev:
+            return None
+        nodes, edges, c = [goal], [], goal
+        while prev[c] is not None:
+            c, eid = prev[c]
+            nodes.append(c)
+            edges.append(eid)
+        nodes.reverse()
+        edges.reverse()
+        return nodes, edges
+
+    def _signature_from(self, trees, a, b, mode):
+        """path_signature(a, b, mode)와 같은 값(a, b는 entity_id)."""
+        found = self._walk(self._tree(trees, mode, a), b)
+        u = d = None
+        unknown, against = [], []
+        if found:
+            nodes, edges = found
+            u = " ".join(nodes)
+            for i in range(1, len(nodes) - 1):
+                nid = nodes[i]
+                if self.nodes[nid]["node_type"] == "pipe_segment":
+                    rel = self.flow_relation(nid, edges[i - 1], edges[i])
+                    if rel == "unknown":
+                        unknown.append(nid)
+                    elif rel == "against_flow":
+                        against.append(nid)
+        found = self._walk(self._tree(trees, "directed", a), b)
+        if found:
+            d = " ".join(found[0])
+        return [u, d, " ".join(unknown), " ".join(against)]
+
     SEGMENT_SAMPLE_STEP = 5
 
     def path_expectations(self):
@@ -186,17 +237,21 @@ class GraphQuery:
         - 도면 객체 노드끼리: 모든 순서쌍
         - 배관 구간 노드가 한쪽 이상 끝점인 쌍: 결정적 표본(전체 노드 정렬 순번 i, j에 대해 (i*31 + j) % 5 == 0)"""
         everyone = sorted(self.nodes)
+        is_seg = [self.nodes[a]["node_type"] == "pipe_segment" for a in everyone]
         cases, sampled = {}, 0
         for i, a in enumerate(everyone):
+            # 출발점마다 BFS를 끝까지 한 번씩만 돈다. 처음 발견할 때 기록한 이전 노드는 바뀌지 않으므로, 목표에서 멈추는
+            # bfs()와 같은 경로가 나온다(path_signature를 쌍마다 부르면 큰 쪽에서 BFS가 십수만 번이었다)
+            trees = {}
             for j, b in enumerate(everyone):
-                if a == b:
+                if i == j:
                     continue
-                has_seg = "pipe_segment" in (self.nodes[a]["node_type"], self.nodes[b]["node_type"])
+                has_seg = is_seg[i] or is_seg[j]
                 if has_seg and (i * 31 + j) % self.SEGMENT_SAMPLE_STEP:
                     continue
                 sampled += has_seg
                 for mode in MODES:
-                    cases["%s|%s|%s" % (a, b, mode)] = self.path_signature(a, b, mode)
+                    cases["%s|%s|%s" % (a, b, mode)] = self._signature_from(trees, a, b, mode)
         return {"graph_id": self.graph["graph_id"], "graph_version": self.graph["graph_version"],
                 "segment_pairs_sampled": sampled,
                 "rule": "deterministic BFS, neighbors sorted by (entity_id, edge entity_id)",
