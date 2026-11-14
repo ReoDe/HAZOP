@@ -4,6 +4,7 @@
 등록이 실패·보류면 추출하지 않고 이유를 적어 오류로 올린다(완료로 표시하지 않는다).
 """
 
+import inspect
 import logging
 import os
 
@@ -27,7 +28,9 @@ def register_and_extract(engine, path, progress):
         cause = "; ".join(reasons) or next(iter(result.get("notes") or []), None) or result["outcome"]
         raise RuntimeError("등록하지 못함: %s" % cause)
     progress("추출·그래프", 2, 2)
-    out = data.extract_and_graph(result["registration_file"])
+    # 스캔 도면은 쪽마다 20~30초라 extract_and_graph가 progress(끝난 쪽 수, 전체 쪽 수, 문구)를 부른다(벡터·drawio는 부르지 않는다)
+    wants = {"progress": lambda done, total, text=None: progress(text or "추출·그래프", done, total)} if "progress" in inspect.signature(data.extract_and_graph).parameters else {}
+    out = data.extract_and_graph(result["registration_file"], **wants)
     pages = [(os.path.basename(p["extract_dir"]), p["extraction"]) for p in (out.get("pages") or [out])]
     return {"outcome": result["outcome"], "material_id": rec.get("material_id"), "pages": len(pages),
             "conflicts": [c["drawing_number"] for c in (result.get("conflicts") or [])],      # 같은 번호를 다른 형식 원본이 이미 쓰고 있음(고르기는 도면 패널)

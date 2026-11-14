@@ -275,5 +275,30 @@ class ItemBubbleFlowTest(W.ShellBase):
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
 
 
+class ScanNoteFlowTest(W.ShellBase):
+    def test_a_scanned_drawing_shows_one_note_line_with_dpi_and_the_resolution_advice_and_it_can_be_closed(self):
+        from unittest import mock
+        from hazop.shell import api
+        win = self.window()
+        gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
+        self.js(win, "window.__hz.store.set({sheet: %s, panel: null})" % json.dumps(gid))
+        pump(1.0)
+        self.assertFalse(self.js(win, "document.querySelector('.scan-note') !== null"), "스캔이 아니면 알림줄이 없다")
+        advice = "해상도가 낮아 300 dpi 이상으로 다시 스캔하세요"
+
+        def scan_read(self_, graph_id):
+            return api._json({"graph_id": graph_id, "scan": {"dpi": 200, "low_resolution": advice}})
+        with mock.patch.object(api.ReadApi, "scan", scan_read):
+            other = [g["graph_id"] for g in self.jsj(win, "window.__hz.store.get().drawings.drawings") if g["graph_id"] != gid][0]
+            self.js(win, "window.__hz.store.set({sheet: %s, panel: null})" % json.dumps(other))
+            self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.scan-note') !== null") is True, 15), self.text(win)[-300:])
+            text = self.js(win, "document.querySelector('.scan-note').textContent")
+            self.assertIn("스캔 도면 · 200 dpi · 자동으로 읽은 결과가 적고 미확인이 많습니다. AI 검토를 켜면 후보를 더 받을 수 있습니다.", text)
+            self.assertIn(advice, text)
+            self.assertTrue(self.click(win, ".scan-note button[aria-label='스캔 알림 닫기']"))
+            self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.scan-note') === null") is True, 10))
+        self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
+
+
 if __name__ == "__main__":
     unittest.main()

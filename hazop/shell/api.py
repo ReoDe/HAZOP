@@ -595,6 +595,22 @@ def _fingerprint(*paths_):
 # 화면에 보이는 버전. 옛 창(hazop.app.main_window)의 APP_VERSION과 같은 값이다. 값을 읽으려고 그 모듈을 불러오면 옛 화면 코드 전체가 읽혀 열기가 2초 넘게 느려지므로 여기에 둔다.
 APP_VERSION = "0.2.0"
 
+SCAN_FORMATS = ("raster_scan_pdf", "png", "jpeg")
+
+
+def scan_info(extraction):
+    """스캔 도면이면 {"dpi": 정수 또는 None, "low_resolution": 해상도 안내 글 또는 None}, 아니면 None.
+    스캔은 extraction.json의 source.format이 raster_scan_pdf·png·jpeg이거나 coordinate_system.svg_alignment.source가 scan_image인 것이다(HZ-PLN-23).
+    dpi는 run.settings.scale.dpi, 안내 글은 validation.unknowns에서 check가 low_resolution인 것의 reason이다."""
+    src = (extraction.get("source") or {})
+    align = ((extraction.get("coordinate_system") or {}).get("svg_alignment") or {})
+    if str(src.get("format") or "").lower() not in SCAN_FORMATS and align.get("source") != "scan_image":
+        return None
+    dpi = ((((extraction.get("run") or {}).get("settings") or {}).get("scale")) or {}).get("dpi")
+    low = next((u.get("reason") for u in ((extraction.get("validation") or {}).get("unknowns") or []) if u.get("check") == "low_resolution"), None)
+    return {"dpi": int(round(dpi)) if isinstance(dpi, (int, float)) and not isinstance(dpi, bool) else None, "low_resolution": low}
+
+
 _ICON_CACHE = {}
 
 
@@ -642,6 +658,8 @@ class ReadApi:
             return _json(icon_shapes())
         if topic == "examples" and len(parts) == 1:
             return _json(self.examples())
+        if topic == "scan" and len(parts) == 2:
+            return self.scan(parts[1])
         if topic == "sheet" and len(parts) == 2:
             if parts[1].endswith(".svg"):
                 return self.sheet_svg(parts[1][:-4])
@@ -691,6 +709,18 @@ class ReadApi:
                          "extract_name": r.get("extract_name")})
         return {"project_id": e.project_id(), "drawings": rows, "documents": docs,
                 "rev": hashlib.sha256(json.dumps([rows, docs], sort_keys=True, default=str).encode("utf-8")).hexdigest()[:12]}
+
+    def scan(self, graph_id):
+        """도면이 스캔인지와 해상도(스캔 알림줄용). 도면 자료(sheet)를 짓지 않고 추출 결과만 읽는다."""
+        from hazop.app import data
+        name = self._sheet_name(graph_id)
+        if not name:
+            return None
+        try:
+            extraction = data.read_json(data.extraction_path(name))
+        except (OSError, ValueError):
+            return _json({"graph_id": graph_id, "scan": None})
+        return _json({"graph_id": graph_id, "scan": scan_info(extraction) if isinstance(extraction, dict) else None})
 
     def _sheet_name(self, graph_id):
         name = self.engine.graph_names().get(graph_id)

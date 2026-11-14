@@ -10,6 +10,8 @@ import * as R from "./panels/results_state.js";
 import { NodeOverlay, useNodeCanvas } from "./canvas/nodes_canvas.js";
 import { CleanOverlay, useCleanCanvas } from "./canvas/clean_ui.js";
 import { SheetConfirm } from "./sheet_confirm.js";
+import { ScanNote } from "./scan_note.js";
+import { BubbleLinks } from "./panels/kg_bubble.js";      // 말풍선의 지식그래프·칸 연결 줄(지식그래프 쪽 부품)
 import { CompareCard, ComparePane, useCmp } from "./compare.js";
 import * as E from "./canvas/edit.js";
 
@@ -43,6 +45,7 @@ function ItemBubble() {
   const trace = () => { store.set({ bubble: null, panel: "results" }); R.loadTrace({ sheet: b.sheet, local: b.id }); };
   return html`<div class="float bubble" role="dialog" aria-label="구성요소" style=${style}>
     <div><b>${b.tag || b.id}</b>${b.kind_label ? html` ${b.kind_label}` : null}${b.kind ? html` <span class="muted small">${b.kind}</span>` : null}</div>
+    <${BubbleLinks} sheet=${b.sheet} id=${b.id} />
     <div class="acts-row"><${Btn} sm=${true} label="분석 결과 추적" title="소속 구간, 그 구간의 칸과 권고를 따라갑니다" onClick=${trace}>분석 결과 추적<//>
       <${Btn} sm=${true} icon="pencil" label="고치기" title="이 구성요소를 고칩니다" onClick=${() => { E.setOn(true); E.loadItem(b.sheet, b.id); store.set({ bubble: null }); }}>고치기<//>
       <${Btn} sm=${true} kind="ghost" icon="x" label="말풍선 닫기" onClick=${() => store.set({ bubble: null })} /></div></div>`;
@@ -65,5 +68,5 @@ export function SheetHost() {
   if (!Comp) return html`<${Fallback} sheet=${sheet} />`;
   const items = (marks.bySheet && marks.bySheet[sheet]) || [];
   return html`<div class=${"canvas" + (split ? " cmp-side" : "")}><${Comp} sheet=${{ graph_id: sheet }} ...${nc.props} ...${cc.props} layers=${layers} onReady=${(g) => store.set({ readySheet: g })} marks=${items.map((m, i) => Object.assign({ id: (marks.rid || "m") + (i ? "#" + i : "") }, m))}
-    command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, kind_label: d.kind_label, rect: d.rect } }); }} /><${NodeOverlay} /><${CleanOverlay} /><${SheetConfirm} /><${ComparePane} /><${CompareCard} /><${ItemBubble} /></div>`;
+    command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, kind_label: d.kind_label, rect: d.rect } }); }} /><${NodeOverlay} /><${CleanOverlay} /><${SheetConfirm} /><${ScanNote} sheet=${sheet} /><${ComparePane} /><${CompareCard} /><${ItemBubble} /></div>`;
 }

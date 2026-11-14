@@ -272,6 +272,26 @@ class ReadApiTest(EngineBase):
         self.assertEqual(r.status, 200)
         self.assertEqual(router.resolve("hazop-app://shell/api/state", "POST").status, 405)
 
+    def test_scan_info_knows_scans_by_source_format_or_image_alignment(self):
+        vector = {"source": {"format": "pdf_vector"}, "coordinate_system": {"svg_alignment": {"source": "pdf_page"}}}
+        self.assertIsNone(api.scan_info(vector))
+        self.assertIsNone(api.scan_info({}))
+        low = {"check": "low_resolution", "reason": "해상도가 낮아 300 dpi 이상으로 다시 스캔하세요"}
+        for fmt in ("raster_scan_pdf", "png", "jpeg"):
+            ex = {"source": {"format": fmt}, "run": {"settings": {"scale": {"dpi": 199.6}}}, "validation": {"unknowns": [{"check": "scan_input", "reason": "x"}, low]}}
+            self.assertEqual(api.scan_info(ex), {"dpi": 200, "low_resolution": low["reason"]}, fmt)
+        by_image = {"source": {"format": "unknown"}, "coordinate_system": {"svg_alignment": {"source": "scan_image"}}}
+        self.assertEqual(api.scan_info(by_image), {"dpi": None, "low_resolution": None}, "해상도 기록이 없으면 dpi는 비운다")
+
+    def test_scan_read_gives_only_the_scan_facts_and_none_for_unknown_sheets(self):
+        from unittest import mock
+        gid = next(x["graph_id"] for x in self.body(["drawings"])["drawings"] if x["drawing_number"] == "SNP-M-102")
+        self.assertEqual(self.body(["scan", gid]), {"graph_id": gid, "scan": None}, "벡터·draw.io 도면은 스캔이 아니다")
+        scan = {"source": {"format": "png"}, "run": {"settings": {"scale": {"dpi": 150}}}, "validation": {"unknowns": []}}
+        with mock.patch("hazop.app.data.read_json", return_value=scan):
+            self.assertEqual(self.body(["scan", gid])["scan"], {"dpi": 150, "low_resolution": None})
+        self.assertIsNone(self.read(["scan", "graph-nope"], {}))
+
     def test_connection(self):
         self.assertEqual(self.body(["connection"])["state"], "ok")
 
@@ -301,6 +321,22 @@ class RegisterFlowTest(EngineBase):
         self.assertEqual(d["documents"][0]["status"], "registered")
         self.assertTrue(d["documents"][0]["graphed"])
         self.assertIn("drawings", self.events.names(), "changed 사건으로 웹이 다시 읽는다")
+
+    def test_scan_page_progress_reaches_the_job_progress_callback(self):
+        """스캔 도면은 쪽마다 20~30초라 extract_and_graph가 progress(끝난 쪽 수, 전체 쪽 수, 문구)를 부르고, 작업 진행으로 그대로 이어진다."""
+        from unittest import mock
+        from hazop.shell import register_flow
+        seen = []
+        rec = {"status": "registered", "material_id": "M1"}
+
+        def fake_extract(path, progress=None):
+            progress(0, 2, "스캔 읽기 1/2쪽")
+            progress(1, 2, "스캔 읽기 2/2쪽")
+            return {"extraction": {}, "extract_dir": os.path.join(self.tmp, "x")}
+        with mock.patch.object(register_flow.registry, "register", return_value={"record": rec, "outcome": "registered", "registration_file": "r.json"}),                 mock.patch.object(register_flow.data, "extract_and_graph", fake_extract), mock.patch.object(register_flow, "review_if_wanted", return_value=None):
+            register_flow.register_and_extract(self.engine(), "scan.pdf", lambda text, done=None, total=None: seen.append((text, done, total)))
+        self.assertIn(("스캔 읽기 1/2쪽", 0, 2), seen)
+        self.assertIn(("스캔 읽기 2/2쪽", 1, 2), seen)
 
     def test_registration_failure_is_reported_not_completed(self):
         e = self.engine()
