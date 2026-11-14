@@ -191,7 +191,7 @@ def make_page(lib, seed, k, out_png):
         s.pop("_xy", None)
     return {"schema": "hazop_read_quality_key", "version": 1, "drawing": "synthetic-%d" % seed,
             "page_size": list(PAGE_PT), "regions": [[0, 0, PAGE_PT[0], PAGE_PT[1]]],
-            "method": "scripts/scan_synthetic.py 씨앗 %d: SNP 기호 조각을 새 배치로 놓고 배관·글자를 새로 그림" % seed,
+            "method": "scripts/build_scan_synthetic.py 씨앗 %d: SNP 기호 조각을 새 배치로 놓고 배관·글자를 새로 그림" % seed,
             "symbols": symbols, "lines": lines, "connections": connections, "continuations": []}
 
 

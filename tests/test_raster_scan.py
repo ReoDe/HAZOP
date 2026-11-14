@@ -623,7 +623,7 @@ class SyntheticPageTest(unittest.TestCase):
 
     def test_same_seed_same_page(self):
         sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
-        import scan_synthetic
+        import build_scan_synthetic
         from PIL import Image, ImageDraw
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, True)
@@ -635,9 +635,9 @@ class SyntheticPageTest(unittest.TestCase):
         key = {"symbols": [{"kind": "manual_valve", "bbox": [10, 10, 25, 20], "tag": "A-V1"},
                            {"kind": "pump", "bbox": [50, 10, 65, 25], "tag": "A-PP1"},
                            {"kind": "transmitter", "bbox": [50, 10, 65, 25], "tag": "PT1"}]}
-        lib = scan_synthetic.symbol_library([(key, src, 4.0)])
-        a = scan_synthetic.make_page(lib, 7, 1.0, os.path.join(tmp, "a.png"))
-        b = scan_synthetic.make_page(lib, 7, 1.0, os.path.join(tmp, "b.png"))
+        lib = build_scan_synthetic.symbol_library([(key, src, 4.0)])
+        a = build_scan_synthetic.make_page(lib, 7, 1.0, os.path.join(tmp, "a.png"))
+        b = build_scan_synthetic.make_page(lib, 7, 1.0, os.path.join(tmp, "b.png"))
         self.assertEqual(a, b)
         with open(os.path.join(tmp, "a.png"), "rb") as fa, open(os.path.join(tmp, "b.png"), "rb") as fb:
             self.assertEqual(fa.read(), fb.read())

@@ -5,7 +5,7 @@
   python scripts/check_scan_quality.py --apr 12,62,105      # APR1400 정답지 쪽도(쪽 PDF가 저장소 밖에 있을 때)
   python scripts/check_scan_quality.py --dpi 200 --json 결과.json
   python scripts/check_scan_quality.py --degrade             # 실제 스캔처럼 기울기·번짐·잡음·JPEG을 넣은 그림으로
-  python scripts/check_scan_quality.py --synthetic 6 --no-snp # 표본 밖 합성 쪽 6장(scripts/scan_synthetic.py, 씨앗 1~6)
+  python scripts/check_scan_quality.py --synthetic 6 --no-snp # 표본 밖 합성 쪽 6장(scripts/build_scan_synthetic.py, 씨앗 1~6)
 
 시험 venv(pypdfium2·pdfplumber)로 돌린다. 쪽 그리기는 이 프로세스가 하고, 그림 읽기(OpenCV·OCR)는 이 프로세스에
 OpenCV가 없으면 래스터 venv(HAZOP_RASTER_PYTHON 또는 %USERPROFILE%\\.hazop\\venv-raster-py312)를 하위 프로세스로 부른다.
@@ -106,16 +106,16 @@ def measure(jobs, dpi, work, use_ocr=True, log=print, degraded=False):
 
 def synthetic_jobs(snp_jobs, n, dpi, work):
     """SNP 쪽에서 기호 조각을 모아 합성 쪽 n장(씨앗 1..n)을 그린다. → [(이름, 정답지, 그림 경로)]."""
-    import scan_synthetic
+    import build_scan_synthetic
     pages = []
     for name, key, pdf in snp_jobs:
         png = os.path.join(work, "%s-lib.png" % name)
         pages.append((key, png, raster_scan.render_pdf_page(pdf, 0, png, dpi)))
-    lib = scan_synthetic.symbol_library(pages)
+    lib = build_scan_synthetic.symbol_library(pages)
     out = []
     for seed in range(1, n + 1):
         png = os.path.join(work, "synthetic-%02d.png" % seed)
-        out.append(("synthetic-%02d" % seed, scan_synthetic.make_page(lib, seed, dpi / 72.0, png), png))
+        out.append(("synthetic-%02d" % seed, build_scan_synthetic.make_page(lib, seed, dpi / 72.0, png), png))
     return out
 
 
@@ -176,7 +176,7 @@ def main(argv=None):
     ap.add_argument("--no-snp", action="store_true", help="SNP 6장을 빼고 APR1400 쪽만")
     ap.add_argument("--no-ocr", action="store_true")
     ap.add_argument("--degrade", action="store_true", help="실제 스캔처럼 기울기·번짐·잡음·JPEG을 넣어 읽는다(DEGRADE)")
-    ap.add_argument("--synthetic", type=int, default=0, help="표본 밖 합성 쪽 수(씨앗 1..N, scripts/scan_synthetic.py)")
+    ap.add_argument("--synthetic", type=int, default=0, help="표본 밖 합성 쪽 수(씨앗 1..N, scripts/build_scan_synthetic.py)")
     ap.add_argument("--input-dir", help="APR1400 쪽 PDF 폴더(기본: 참고자료 by-drawing)")
     ap.add_argument("--samples-dir", help="SNP 표본 폴더(기본: 참고자료 pid-samples)")
     ap.add_argument("--json", help="쪽별 값을 이 파일에 쓴다")
