@@ -457,6 +457,291 @@
    "label": "inside"
   },
   {
+   "kind": "diaphragm_seal",
+   "file": "diaphragm-seal.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "expansion_joint",
+   "file": "expansion-joint.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "flame_arrestor",
+   "file": "flame-arrestor.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "pilot_light",
+   "file": "pilot-light.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "top",
+     "x": 50,
+     "y": 0
+    },
+    {
+     "name": "bottom",
+     "x": 50,
+     "y": 100
+    },
+    {
+     "name": "left",
+     "x": 0,
+     "y": 50
+    },
+    {
+     "name": "right",
+     "x": 100,
+     "y": 50
+    }
+   ],
+   "label": "right"
+  },
+  {
+   "kind": "alarm",
+   "file": "alarm.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "top",
+     "x": 50,
+     "y": 0
+    },
+    {
+     "name": "bottom",
+     "x": 50,
+     "y": 100
+    },
+    {
+     "name": "left",
+     "x": 0,
+     "y": 50
+    },
+    {
+     "name": "right",
+     "x": 100,
+     "y": 50
+    }
+   ],
+   "label": "right"
+  },
+  {
+   "kind": "level_element",
+   "file": "level-element.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "top",
+     "x": 50,
+     "y": 0
+    },
+    {
+     "name": "bottom",
+     "x": 50,
+     "y": 100
+    },
+    {
+     "name": "left",
+     "x": 0,
+     "y": 50
+    },
+    {
+     "name": "right",
+     "x": 100,
+     "y": 50
+    }
+   ],
+   "label": "right"
+  },
+  {
+   "kind": "sample_probe",
+   "file": "sample-probe.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "sight_glass",
+   "file": "sight-glass.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "silencer",
+   "file": "silencer.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "hose_connection",
+   "file": "hose-connection.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "flexible_hose",
+   "file": "flexible-hose.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "slip_joint",
+   "file": "slip-joint.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "air_flow_arrow",
+   "file": "air-flow-arrow.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "right",
+   "flow_axis": [
+    1,
+    0
+   ]
+  },
+  {
+   "kind": "sparger",
+   "file": "sparger.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 24
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "electric_heater",
+   "file": "electric-heater.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  },
+  {
+   "kind": "chiller",
+   "file": "chiller.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  },
+  {
    "kind": "tee",
    "file": null,
    "junction": true,
