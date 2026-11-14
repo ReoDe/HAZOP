@@ -136,7 +136,7 @@ class AnalysisRunTest(RunBase):
     def test_needs_confirmation_then_runs_once_and_is_recorded(self):
         item = self.one("analysis.run", "S1 구간 분석해 줘", node_ids=["S1"])
         self.assertEqual(item["status"], "confirm")
-        self.assertIn("구독 한도", item["text"])
+        self.assertIn("구독 한도", {r["label"]: r["after"] for r in item["details"]}["호출 수 어림"], "연결 설정이 없는 엔진은 구독")
         self.assertEqual(self.calls, [], "확인 전에는 시작하지 않는다")
         r = self.approve(item)
         self.assertTrue(r["ok"], r)

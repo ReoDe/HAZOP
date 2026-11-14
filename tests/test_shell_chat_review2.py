@@ -76,6 +76,7 @@ class R1PaidAnalysisTest(RunBase):
         item = self.one("analysis.run", "S1 분석해 줘", node_ids=["S1"])
         rows = {r["label"]: r["after"] for r in item["details"]}
         self.assertNotIn("구독 한도", rows["호출 수 어림"])
+        self.assertNotIn("구독", item["text"], "상자 문구도 구독이라고 고정하지 않는다")
         self.assertIn("$", rows["요금"])
         self.assertNotIn("k1", str(item["details"]), "키 값·키 ID는 상자에 없다")
         self.approve(item)

@@ -188,7 +188,7 @@ ACTIONS = {a.name: a for a in (
     # ⑤
     Action("analysis.run", CONFIRM, _spec(("node_ids", "ids"), cell_ids="ids"), "⑤",
            "구독 한도를 쓴다. 사람이 쓴 항목은 바꾸지 않음",
-           "구간 {node_ids}을 AI로 분석합니다(구독 한도를 씁니다). 사람이 쓴 항목은 바꾸지 않습니다."),
+           "구간 {node_ids}을 AI로 분석합니다. 쓸 연결과 비용은 아래 줄에 있습니다. 사람이 쓴 항목은 바꾸지 않습니다."),
     # 결과 판정(수용·수정·기각·보류)은 사람 판단이라 늘 확인(UC1). 인자는 result_commands와 같다(results-commands.md §4).
     # 사유(reason)는 모델 글이라 확인 문구에 넣지 않는다. 화면은 사유를 'AI가 제안한 사유' 원문으로 따로 보인다
     Action("results.set_status", CONFIRM,
