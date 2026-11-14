@@ -55,8 +55,8 @@
     "tag_exact": 16,
     "tag_not_in_text": 0,
     "tagged": 38,
-    "unclassified": 43,
-    "unknowns": 443,
+    "unclassified": 41,
+    "unknowns": 441,
     "valve_number_closer_other": 0
    },
    "proxy_bubbles": 16,
@@ -89,9 +89,9 @@
     "offpage_labels": 4,
     "tag_exact": 12,
     "tag_not_in_text": 0,
-    "tagged": 53,
-    "unclassified": 115,
-    "unknowns": 593,
+    "tagged": 61,
+    "unclassified": 101,
+    "unknowns": 570,
     "valve_number_closer_other": 0
    },
    "proxy_bubbles": 15,
@@ -101,7 +101,7 @@
    "tagged": 20,
    "tagged_correct": 12,
    "valve_number_hits": 0,
-   "valve_number_tags_unscored": 30,
+   "valve_number_tags_unscored": 38,
    "valve_numbers": 0,
    "valve_numbers_keyed": 0
   }
@@ -1123,12 +1123,12 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 283,
-  "seconds": 222,
+  "seconds": 225,
   "tag_exact": 1125,
   "tag_not_in_text": 59,
-  "tagged": 3679,
-  "unclassified": 7047,
-  "unknowns": 50976,
+  "tagged": 3703,
+  "unclassified": 6937,
+  "unknowns": 50779,
   "valve_number_closer_other": 0
  }
 }
