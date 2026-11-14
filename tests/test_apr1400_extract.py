@@ -196,8 +196,11 @@ class ClosedValves(unittest.TestCase):
 
     def test_pipe_network_is_not_cut_into_more_pieces_than_before_closed_valves_were_read(self):
         """닫힌 밸브를 따로 읽기 전(2ce16b9)에 물리 배관으로 이어진 노드 묶음(둘 이상)은 012쪽 2개(큰 것 51노드),
-        062쪽 22개였다. 밸브를 맞닿은 기호와 떼어 놓고 잇지 않으면 012쪽이 5개로 갈라진다(F1-3 검토)."""
-        before = {12: (2, 51), 62: (22, 12)}
+        062쪽 22개였다. 밸브를 맞닿은 기호와 떼어 놓고 잇지 않으면 012쪽이 5개로 갈라진다(F1-3 검토).
+        062쪽은 배관 끝 화살촉을 끝 기호로 읽은 뒤(9df3e7f) 26개다. 끊김 기호에서 집수정 안으로 들어가 화살촉으로 끝나는
+        배수 유입관 4개가 전에는 노드 하나뿐이라 세지 않다가, 화살촉 끝 노드가 생겨 두 노드 묶음이 됐다. 그 전 22개
+        묶음은 그대로다(어느 것도 갈라지지 않음)."""
+        before = {12: (2, 51), 62: (26, 12)}
         for seq, (ex, _) in self.pages.items():
             group = {n["local_id"]: n["local_id"] for n in ex["nodes"]}
 
