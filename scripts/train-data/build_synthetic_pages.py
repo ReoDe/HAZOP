@@ -21,7 +21,7 @@ sys.path.insert(0, HERE)
 import coco_format as cf  # noqa: E402
 
 PAGE_W, PAGE_H = 1224.0, 792.0
-SYMBOL_DIR = os.path.join(cf.REPO_ROOT, "resources", "library", "drawing-symbols")
+SYMBOL_DIR = cf.paths.folder("drawing-symbols")
 INLINE = ["manual_valve", "manual_valve", "manual_valve", "isolation_valve", "check_valve", "check_valve",
           "reducer", "orifice", "control_valve", "motor_operated_valve", "motor_operated_valve", "damper"]
 TERMINAL = ["vent", "drain", "test_connection", "pipe_cap", "continuation", "psv"]

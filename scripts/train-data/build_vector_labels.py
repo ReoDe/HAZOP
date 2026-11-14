@@ -355,7 +355,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
     ap.add_argument("--pages", required=True, help="APR1400 순번, 쉼표로(예: 12,63)")
-    ap.add_argument("--input", default=os.path.join(cf.REPO_ROOT, "resources", "references", "APR1400_DCD", "by-drawing"))
+    ap.add_argument("--input", default=cf.paths.folder("APR1400", "by-drawing"))
     ap.add_argument("--model", default="claude-opus-5-5")
     ap.add_argument("--effort", default="medium")
     ap.add_argument("--workers", type=int, default=3)

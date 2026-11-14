@@ -78,7 +78,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
     ap.add_argument("--dpi", type=int, default=200)
-    ap.add_argument("--samples", default=os.path.join(cf.REPO_ROOT, "resources", "references", "pid-samples"))
+    ap.add_argument("--samples", default=cf.paths.folder("references", "pid-samples"))
     a = ap.parse_args()
     t0 = time.time()
     sym, txt, graphs = export(a.samples, a.out, a.dpi)

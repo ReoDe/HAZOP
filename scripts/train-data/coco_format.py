@@ -12,6 +12,7 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, REPO_ROOT)
 
+from hazop import paths  # noqa: E402,F401  같은 폴더 스크립트가 cf.paths로 데이터 폴더를 얻는다
 from hazop.extract.rules import KIND_CATEGORY  # noqa: E402
 
 KINDS = sorted(k for k in KIND_CATEGORY if k != "tee") + ["unlisted"]
