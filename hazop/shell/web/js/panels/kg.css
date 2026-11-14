@@ -31,3 +31,9 @@
 .kg-form input { height: 28px; }
 .kg-side details summary { cursor: pointer; color: var(--ink-2); font-size: var(--fs-sm); }
 @media (max-width: 1100px) { .kg-main { grid-template-columns: minmax(0, 1fr) 280px; } }
+/* 도면 구성요소 말풍선의 한 줄(완료 목록 3 B7, kg_bubble.js) */
+.bubble-links { margin-top: 4px; }
+.bubble-links .acts-row { gap: var(--sp-2); }
+.kg-blink { all: unset; cursor: pointer; color: var(--accent, #0a5fc2); text-decoration: underline; text-underline-offset: 2px; }
+.kg-blink:focus-visible { outline: 2px solid var(--accent, #0a5fc2); outline-offset: 1px; }
+.bubble-cells { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 4px; max-height: 160px; overflow: auto; }

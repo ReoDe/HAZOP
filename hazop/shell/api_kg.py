@@ -3,6 +3,9 @@
 - **읽기 `kg`**(`ReadApi`가 부른다):
     `kg`(요약: 도면별 묶음·노드 수·잠재 후보 상태 수·처음 펼칠 묶음·판단 판 지문 ver) · `kg/graph?expand=<gid,…|all>`(그릴 그래프) ·
     `kg/node?id=<노드 ID>`(상세) · `kg/search?q=<글>`(찾기) · `kg/force-graph.js`(이미 묶인 hazop/kg/vendor의 그리기 라이브러리).
+  완료 목록 3 B6·B7: `kg/link?id=`(선 상세), `kg/explore?what=reach|orphans|gaps[&start=]`(살펴보기, hazop.kg.algo 그대로),
+    `kg/component?sheet=<도면 graph_id>&local=<local_id>`(말풍선 한 줄: 걸린 지식 요약과 이 구성요소를 쓰는 분석 칸). 어느 읽기든
+    `study=1`을 붙이면 검토 층(분석 결과·초기사건 투영)을 더한 모델로 답한다.
   노드 ID에는 '/'가 들어 있어 경로가 아니라 질의 문자열로 받는다. 읽기는 파일을 쓰지 않는다.
 - **명령 `kg.*`**: `kg.judge`(잠재 후보 판단: 후보 확인·후보 기각·부재 확정·무관·판단 되돌리기), `kg.open`(패널 열기 사건).
   판단자는 설정의 검토자 이름이고(웹 인자 아님) 시각은 여기서 채운다. 판단은 상세에서 본 그 항목의 내용 지문(digest)·상태와 판 표시 ver(`<프로젝트>|<판단 파일 sha256 16자>`)를 들고 오고, 하나라도 다르면 저장하지 않는다(stale).
@@ -263,6 +266,77 @@ def explore(engine, what, start=None, study=False):
     return memo[key]
 
 
+ROLE_LABELS = (("cause_refs", "원인 위치"), ("consequence_refs", "영향 대상"))
+CELLS_SHOWN = 20
+
+
+def _cells_using(pg, ref):
+    """이 구성요소(안정 참조)를 원인 위치·영향 대상·보호수단으로 가리키는 분석 칸. 기각한 항목은 세지 않는다. 결과 파일은 읽기만 한다.
+    분석 결과 패널과 같은 조건(확정 구간이 있고 지금 도면과 맞음)일 때만 센다."""
+    from hazop.study import nodes as study_nodes
+    from hazop.study import refs
+    from hazop.study import results as study_results
+    try:
+        ns = study_nodes.load(pg)
+        if not ns or not study_nodes.active_nodes(ns) or study_nodes.is_stale(ns, pg):
+            return []
+        doc = study_results.load(ns)
+        if doc is None:
+            return []
+        doc, problems, _bad = study_results.partition(doc, ns)
+    except (OSError, ValueError):
+        return []
+    if problems:
+        return []
+    devs = {d["deviation_id"]: d.get("label") or d["deviation_id"] for d in doc.get("deviations") or []}
+    out = []
+    for c in doc.get("cells") or []:
+        roles = []
+        for e in c.get("entries") or []:
+            if e.get("status") == "rejected":
+                continue
+            for field, label in ROLE_LABELS:
+                if any(isinstance(r, dict) and r.get("ref") == ref for r in e.get(field) or []):
+                    roles.append(label)
+            if any(r.get("ref") == ref for s in refs.safeguard_items(e) for r in s["refs"]):
+                roles.append("보호수단")
+        if roles:
+            out.append({"node_id": c["node_id"], "deviation_id": c["deviation_id"],
+                        "label": "%s × %s" % (c["node_id"], devs.get(c["deviation_id"], c["deviation_id"])),
+                        "roles": list(dict.fromkeys(roles))})
+    return out
+
+
+def component(engine, sheet, local):
+    """도면 구성요소 말풍선(완료 목록 3 B7): 그 구성요소의 지식그래프 노드, 걸린 지식 요약, 이 구성요소를 쓰는 분석 칸.
+    sheet·local은 도면에서 누른 구성요소(도면 graph_id·local_id)이고 경로가 아니다. 모르는 것은 {"found": False}."""
+    from hazop.chat import view as chatview
+    from hazop.study import migrate
+    ctx, why = _context(engine)
+    if ctx is None:
+        return {"found": False, "reason": why}
+    pg, m = ctx["pg"], ctx["model"]
+    ids = chatview.lift(pg, sheet, [local]) if sheet and local else []
+    if not ids:
+        return {"found": False, "reason": "그 구성요소를 프로젝트 그래프에서 찾지 못했습니다."}
+    nid = ids[0]
+    node = m["pg_nodes"].get(nid) or {}
+    by_type, unchecked = {}, 0
+    for l in m["adj"].get(nid, ()):
+        other = m["nodes"][l["t"] if l["s"] == nid else l["s"]]
+        if other["layer"] != "kn":
+            continue
+        by_type[other["type"]] = by_type.get(other["type"], 0) + 1
+        if l.get("st") != "confirmed" or other.get("ks") != "confirmed":
+            unchecked += 1
+    text = " · ".join("%s %d" % (screen.KN_TYPE_LABELS.get(t, t), n) for t, n in sorted(by_type.items(), key=lambda x: (-x[1], x[0])))
+    ref = migrate.ref_of(node, node.get("sheet")) if node else None
+    cells = _cells_using(pg, ref) if ref else []
+    return {"found": True, "id": nid, "label": node.get("tag") or m["nodes"].get(nid, {}).get("label") or nid, "in_graph": nid in m["nodes"],
+            "knowledge": {"count": sum(by_type.values()), "text": text, "unchecked": unchecked},
+            "cells": {"count": len(cells), "items": cells[:CELLS_SHOWN]}}
+
+
 def find_nodes(engine, text, limit=SEARCH_LIMIT):
     """채팅·찾기 칸이 부른다: 태그·이름·규칙 ID로 찾은 노드 [{id, label, layer, type, group, drawing}]. 그래프가 없으면 빈 목록."""
     ctx, _why = _context(engine)
@@ -295,6 +369,8 @@ def read(engine, parts, query):
     if what == "link":
         data = link(engine, (query.get("id") or "")[:400], study)
         return api._json(data) if data is not None else None
+    if what == "component":
+        return api._json(component(engine, (query.get("sheet") or "")[:200], (query.get("local") or "")[:200]))
     if what == "explore":
         kind = query.get("what") or ""
         if kind not in screen.EXPLORE_LABELS:

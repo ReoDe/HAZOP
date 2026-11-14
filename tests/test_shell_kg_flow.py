@@ -158,28 +158,70 @@ class KgPanelFlowTest(ShellBase):
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
         self.assertEqual(win.view.interceptor.blocked, [], "실행 중 원격 요청 0")
 
-    def pick_explore(self, win, what):
+    def pick_explore(self, win, what, label):
         self.js(win, "(() => { const s = document.querySelector('.kg-explore-pick'); s.value = %s; s.dispatchEvent(new Event('change', {bubbles: true})); })()"
                 % json.dumps(what))
-        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.kg-explore')"), 15), "살펴보기 결과 줄이 나오지 않음")
-        return self.js(win, "document.querySelector('.kg-explore').innerText")
+        band = "(document.querySelector('.kg-explore')||{}).innerText || ''"
+        self.assertTrue(wait_for(lambda: (self.js(win, band) or "").startswith(label), 15), "살펴보기 결과 줄이 나오지 않음: " + label)
+        return self.js(win, band)
 
     def test_explore_menu_highlights_what_the_engine_counted(self):
         """완료 목록 3 B6: '살펴보기'에서 고르면 엔진이 센 건수가 보이고 그 노드가 강조된다. 고른 구성요소 없이 도달 범위를 고르면 사유가 나온다."""
         win = self.window()
         self.mount(win)
         for what, label in (("orphans", "고아 지식"), ("gaps", "근거 공백")):
-            text = self.pick_explore(win, what)
-            self.assertIn(label, text)
+            text = self.pick_explore(win, what, label)
             r = api_kg.explore(win.engine, what)
             if r["active"]:
                 self.assertIn("%s곳" % format(r["count"], ","), text)
             else:
                 self.assertIn(r["reason"][:20], text)
-        text = self.pick_explore(win, "reach")
+        text = self.pick_explore(win, "reach", "도달 범위")
         self.assertIn("고르면", text)
         self.click(win, ".kg-explore button")
         self.assertTrue(wait_for(lambda: not self.js(win, "!!document.querySelector('.kg-explore')"), 10))
+        self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
+
+    def test_bubble_line_goes_to_the_graph_node_and_to_the_cells_that_use_it(self):
+        """완료 목록 3 B7: 말풍선 한 줄(kg_bubble.js)이 지식그래프 노드와 이 구성요소를 쓰는 칸으로 간다. 틀의 말풍선에 넣기 전에도 확인하려고 따로 그린다."""
+        from hazop import store_io
+        from hazop.app import project_ctx
+        from hazop.study import migrate, node_tools as nt, nodes as sn, results as res
+        win = self.window()
+        pg = project_ctx.project_graph(win.engine.project_id())
+        objs = sorted((n for n in pg["nodes"] if n.get("node_type") == "drawing_object" and n.get("tag") and n.get("local_id")),
+                      key=lambda n: n["entity_id"])[:6]
+        ns = sn.new_set(pg)
+        ns, _r, _b = nt.apply_nodes(ns, None, pg, [{"op": "add", "name": "말풍선 시험", "members": [n["entity_id"] for n in objs]}], {}, "user",
+                                    ns["set_rev"], at="2026-11-14T00:00:00Z")
+        ns = sn.confirm(ns, pg, "검토자A", at="2026-11-14T00:00:00Z")
+        sn.save(ns)
+        doc = res.empty_results(ns, res.load_deviations())
+        cell = doc["cells"][0]
+        target = objs[0]
+        cell.update(state="analyzed", entries=[{"entry_id": "e-b7", "origin": "human", "status": "approved", "cause": "<b>굵게</b> 원인",
+                                                "consequence": "결과", "safeguards": [],
+                                                "cause_refs": [{"ref": migrate.ref_of(target, target["sheet"])}]}])
+        res.save_fp(doc, ns["project_id"], expect=store_io.ANY)
+        mount = """(async () => { const u = (p) => new URL(p, document.baseURI).href;
+          const H = await import(u('js/ui/html.js')); const M = await import(u('js/panels/kg_bubble.js'));
+          const host = document.createElement('div'); host.id = 'b7-host'; host.className = 'float bubble'; document.querySelector('.center').appendChild(host);
+          H.render(H.html`<${M.BubbleLinks} sheet=%s id=%s />`, host); return true; })()""" % (json.dumps(target["sheet"]), json.dumps(target["local_id"]))
+        self.js(win, mount)
+        self.assertTrue(wait_for(lambda: "쓰는 칸 1" in (self.js(win, "(document.querySelector('#b7-host')||{}).innerText") or ""), 15),
+                        self.js(win, "(document.querySelector('#b7-host')||{}).innerText"))
+        self.assertIn("지식그래프에서 보기", self.js(win, "document.querySelector('#b7-host').innerText"))
+        self.click(win, "#b7-host .kg-blink[aria-expanded]")
+        self.assertTrue(wait_for(lambda: "원인 위치" in (self.js(win, "document.querySelector('#b7-host').innerText") or ""), 10))
+        self.assertEqual(self.js(win, "document.querySelectorAll('#b7-host b').length"), 0, "칸 이름은 글자로만")
+        self.click(win, "#b7-host .bubble-cells .kg-blink")
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "results", 10))
+        self.js(win, mount)
+        self.assertTrue(wait_for(lambda: "지식그래프에서 보기" in (self.js(win, "(document.querySelector('#b7-host')||{}).innerText") or ""), 15))
+        self.js(win, "[...document.querySelectorAll('#b7-host .kg-blink')].find((b) => b.innerText.startsWith('지식그래프')).click()")
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "kg", 10))
+        self.js(win, "import(new URL('js/panels/kg_state.js', document.baseURI).href).then((K) => { window.__kgK = K; })")
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__kgK ? window.__kgK.kg.get().selected : null") == target["entity_id"], 15))
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
 
     def test_study_toggle_and_link_detail(self):

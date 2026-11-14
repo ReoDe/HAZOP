@@ -494,17 +494,22 @@ class ExploreTest(Base):
         self.assertEqual(files_under(self.tmp), before)
 
 
+def study_fixture(case):
+    """구간 S1(P-1·CV-1·TK-1·PSV-1)과 시나리오 e1: 원인 위치 P-1, 영향 대상 TK-1, 보호수단 PSV-1. 원인 글에는 HTML 모양 글을 넣는다."""
+    from tests.test_study_storage import entry
+    case.evil = "<img src=x onerror=alert(1)> 넘침"
+    e1 = entry("e1", cause=case.evil, cause_refs=[{"ref": sref(case.pg, "P-1")}],
+               consequence_refs=[{"ref": sref(case.pg, "TK-1")}],
+               safeguards=[{"text": "고압 트립", "role": "preventive", "refs": [{"ref": sref(case.pg, "PSV-1")}]}])
+    case.ns, case.doc = save_study(case, [("A", ["o-p1", "o-cv1", "o-tk1", "o-psv1"])], [("S1", "I1", [e1])])
+
+
 class StudyLayerTest(Base):
     """완료 목록 3 B6 '검토 층': 분석 결과(시나리오·보호수단)와 초기사건 후보를 그래프에 투영해 켜고 끈다. 원본은 결과 파일이고 읽기만 한다."""
 
     def setUp(self):
         super().setUp()
-        from tests.test_study_storage import entry
-        self.evil = "<img src=x onerror=alert(1)> 넘침"
-        e1 = entry("e1", cause=self.evil, cause_refs=[{"ref": sref(self.pg, "P-1")}],
-                   consequence_refs=[{"ref": sref(self.pg, "TK-1")}],
-                   safeguards=[{"text": "고압 트립", "role": "preventive", "refs": [{"ref": sref(self.pg, "PSV-1")}]}])
-        self.ns, self.doc = save_study(self, [("A", ["o-p1", "o-cv1", "o-tk1", "o-psv1"])], [("S1", "I1", [e1])])
+        study_fixture(self)
 
     def test_layer_is_off_until_asked(self):
         s = self.read()
@@ -559,6 +564,54 @@ class StudyLayerTest(Base):
         ids = {n["id"] for n in self.read("graph", expand="all", study="1")["nodes"]}
         self.assertIn("st-e2", ids)
         self.assertNotIn("st-e1", ids)
+
+
+class ComponentTest(Base):
+    """완료 목록 3 B7: 도면 구성요소 말풍선에 넣을 읽기(지식그래프 노드, 걸린 지식 요약, 이 구성요소를 쓰는 분석 칸)."""
+
+    def setUp(self):
+        super().setUp()
+        study_fixture(self)
+
+    def comp(self, tag):
+        n = next(n for n in self.pg["nodes"] if n.get("tag") == tag)
+        return self.read("component", sheet=n["sheet"], local=n["local_id"])
+
+    def test_cells_that_point_at_the_component_with_their_role(self):
+        p1 = self.comp("P-1")
+        self.assertTrue(p1["found"])
+        self.assertEqual(p1["id"], nid_of(self.pg, "P-1"))
+        self.assertTrue(p1["in_graph"])
+        self.assertEqual(p1["cells"]["count"], 1)
+        item = p1["cells"]["items"][0]
+        self.assertEqual((item["node_id"], item["deviation_id"], item["roles"]), ("S1", "D01", ["원인 위치"]))
+        self.assertTrue(item["label"].startswith("S1 × "))
+        self.assertEqual(self.comp("TK-1")["cells"]["items"][0]["roles"], ["영향 대상"])
+        self.assertEqual(self.comp("PSV-1")["cells"]["items"][0]["roles"], ["보호수단"])
+        self.assertEqual(self.comp("CV-1")["cells"]["count"], 0, "구간 안에 있어도 항목이 가리키지 않으면 세지 않는다")
+
+    def test_rejected_entries_do_not_count(self):
+        from hazop import store_io
+        from hazop.study import results as res
+        doc = res.load(self.ns)
+        for c in doc["cells"]:
+            for e in c.get("entries") or []:
+                e["status"] = "rejected"
+        res.save_fp(doc, self.ns["project_id"], expect=store_io.ANY)
+        self.assertEqual(self.comp("P-1")["cells"]["count"], 0)
+
+    def test_knowledge_summary_counts_linked_knowledge(self):
+        psh = self.comp("PSH-1")
+        self.assertEqual(psh["knowledge"]["count"], 1)
+        self.assertIn("설정치 1", psh["knowledge"]["text"])
+        self.assertEqual(self.comp("P-2")["knowledge"]["count"], 0)
+
+    def test_unknown_component_is_not_found_and_reads_write_nothing(self):
+        before = files_under(self.tmp)
+        self.assertFalse(self.read("component", sheet="graph-T-001", local="../../etc")["found"])
+        self.assertFalse(self.read("component")["found"])
+        self.comp("P-1")
+        self.assertEqual(files_under(self.tmp), before)
 
 
 if __name__ == "__main__":
