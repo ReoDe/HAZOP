@@ -354,7 +354,7 @@
   },
   "apr1400-105": {
    "attribute": {
-    "correct": 78,
+    "correct": 84,
     "false_pos": 0,
     "units": 110
    },
@@ -364,12 +364,12 @@
     "units": 404
    },
    "kind": {
-    "correct": 90,
+    "correct": 96,
     "false_pos": 0,
     "units": 170
    },
    "tag": {
-    "correct": 59,
+    "correct": 65,
     "false_pos": 0,
     "units": 76
    }
