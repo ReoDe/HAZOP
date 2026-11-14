@@ -17,9 +17,14 @@ from .pdf_vector_common import _box_gap, _center, _inside, _issue, _union
 # ISA 계기 글자(기능 문자 + 번호, 예: 'PT 110'·'PIC 110'). 태그 앞 계통 접두는 글자에 없다.
 ISA_LABEL_RE = re.compile(r"([A-Z]{1,4})[ \-]*(\d{1,5}[A-Z]?)")
 # 수동 밸브 번호(APR1400 'V1681'). 계통 접두는 글자에 없다. 밸브 분류 노드의 라벨 한 줄이 이 꼴이면 그대로 태그로 쓴다
-VALVE_TAG_RE = re.compile(r"V\d{3,5}[A-Z]?")
+# 소문자 v로 찍힌 번호(105쪽 'v1153')도 같은 밸브 번호다
+VALVE_TAG_RE = re.compile(r"[Vv]\d{3,5}[A-Z]?")
+# 밸브 번호의 첫 조각('V', 'V4019'). 끊겨 온 번호 낱말이 앞 번호 줄에 붙지 않게 한다
+PLATE_START_RE = re.compile(r"V(?:\d{1,5}[A-Z]?)?")
+# 빈칸 없이 붙어 한 낱말로 온 밸브 번호 여럿('V705V703', 'V4319AV4320A'). 끝 문자는 다음 번호의 'V' 앞에서만 끝 문자다
+PLATE_PART_RE = re.compile(r"V\d{3,5}(?:[A-Z](?=V\d|$))?")
 # 밸브 몫 번호: 밸브 번호와 댐퍼 번호('Y0029', 072쪽 댐퍼 밑). 위치 약어('NO|FC')가 라벨을 먼저 차지한 밸브·댐퍼에 옮겨 줄 번호다
-NUMBER_PLATE_RE = re.compile(r"V\d{3,5}[A-Z]?|Y\d{4}[A-Z]?")
+NUMBER_PLATE_RE = re.compile(r"[Vv]\d{3,5}[A-Z]?|Y\d{4}[A-Z]?")
 # 기기 번호(범례 1.7-1 2/4 'EQUIPMENT NUMBER': 기기 종류 두 자 + 일련번호 두 자 + 계열 문자, 'PP 01 A')와 댐퍼 번호('Y0029').
 # 계통 접두는 글자에 없다. 종류 글자는 범례 NOTE 1 표에서, 도면이 그 표 밖에 쓰는 OR·ST는 기호 바로 아래 찍힌 것(016쪽
 # OR05B, 097쪽 ST01A)에서 왔다. 글자 종류가 기호 종류와 맞을 때만 태그로 쓴다(펌프 옆 'TK01A'는 펌프 태그가 아니다)
@@ -41,6 +46,7 @@ def _text_blocks(words, prm):
     """단어 → 줄 → 문단. 반환: [{text, bbox, size, line_boxes}] (위→아래, 왼→오 순). line_boxes는 줄마다의 상자다.
     90° 돌린 낱말(upright 거짓, 아래→위 또는 위→아래로 읽음)은 읽는 방향이 가로가 되게 좌표를 돌려 같은 규칙으로
     묶은 뒤 되돌린다."""
+    words = _sideways_columns(words)
     upright = [w for w in words if w.get("upright", True)]
     up_turn = [dict(w, x0=-w["bottom"], x1=-w["top"], top=w["x0"], bottom=w["x1"])  # 아래→위: x' = -y, y' = x
                for w in words if not w.get("upright", True) and w.get("direction", "btt") == "btt"]
@@ -59,8 +65,39 @@ def _text_blocks(words, prm):
     return out
 
 
-def _number_and_position(a, b):
-    """밸브 번호와 위치 약어가 한 줄에 나란히 찍힌 것('V310 LO', 'LO V751'). 번호는 태그, 약어는 속성이라 따로 둔다."""
+def _sideways_columns(words):
+    """한 자씩 낱말로 온 눕힌 글자 기둥을 아래→위로 읽는 돌린 낱말 하나로 바꾼다. 글자 행렬은 바로 서 있다고 하지만 글꼴
+    모양을 90° 눕혀 그린 글자다(APR1400 025쪽 V1115·V2073: 'V'·'1'·'1'·'1'·'5'가 위로 쌓임). 눕힌 글자는 폭이 높이보다
+    크다. 폭과 좌우 끝이 같고 위아래로 맞닿은 글자 셋 이상만 기둥으로 본다."""
+    single = sorted((w for w in words if w.get("upright", True) and len(w["text"]) == 1 and w["text"].isalnum()
+                     and w["x1"] - w["x0"] > w["bottom"] - w["top"]), key=lambda w: (round(w["x0"], 1), w["top"]))
+    columns, used = [], set()
+    for w in single:
+        col = columns[-1] if columns else None
+        if col and abs(col[-1]["x0"] - w["x0"]) <= 0.1 and abs(col[-1]["x1"] - w["x1"]) <= 0.1 and \
+                -0.1 <= w["top"] - col[-1]["bottom"] <= 0.1 * (w["x1"] - w["x0"]):
+            col.append(w)
+        else:
+            columns.append([w])
+    out = []
+    for col in columns:
+        if len(col) < 3:
+            continue
+        used.update(id(w) for w in col)
+        x0, x1 = min(w["x0"] for w in col), max(w["x1"] for w in col)
+        out.append({"text": "".join(w["text"] for w in reversed(col)), "x0": x0, "x1": x1, "top": col[0]["top"],
+                    "bottom": col[-1]["bottom"], "size": x1 - x0, "upright": False, "direction": "btt"})
+    return [w for w in words if id(w) not in used] + out if out else words
+
+
+def _valve_number_apart(a, b):
+    """앞 글자 a 뒤에 b를 같은 줄·문단으로 잇지 않을 것인가. 밸브 번호는 혼자 찍힌 식별자다.
+    - 밸브 번호와 위치 약어가 나란히 찍힌 것('V310 LO', 'LO V751'). 번호는 태그, 약어는 속성이다.
+    - 밸브 번호 뒤에 다른 번호가 오는 것('V4103A V4019A', 이웃한 두 밸브의 번호). b는 낱말 하나일 수 있어 번호의 첫
+      조각('V', 'V4019')도 번호로 본다(097쪽처럼 번호가 'V'·'4019'·'A'로 끊겨 온다).
+    - 다른 글자 뒤에 온 온전한 밸브 번호(062쪽 배관 구경 '⅜"X¾"' 바로 뒤 'V2120')."""
+    if VALVE_TAG_RE.fullmatch(b) or (VALVE_TAG_RE.fullmatch(a) and PLATE_START_RE.fullmatch(b)):
+        return True
     return any(VALVE_TAG_RE.fullmatch(x) and POSITION_TEXT_RE.fullmatch(y) for x, y in ((a, b), (b, a)))
 
 
@@ -81,7 +118,7 @@ def _upright_blocks(words, prm):
         fits = [ln for ln in lines if abs(ln["size"] - w["size"]) <= prm["line_size_tol"] and
                 abs(ln["top"] - w["top"]) <= prm["line_top_ratio"] * w["size"] and
                 -prm["word_overlap_ratio"] * w["size"] <= w["x0"] - ln["x1"] < reach and
-                not _number_and_position(ln["words"][-1]["text"], w["text"])]
+                not any(_valve_number_apart(t, w["text"]) for t in (ln["words"][-1]["text"], _line_text(ln)))]
         if fits:
             ln = min(fits, key=lambda ln: (abs(ln["top"] - w["top"]), w["x0"] - ln["x1"]))
             gap = w["x0"] - ln["x1"]
@@ -101,7 +138,7 @@ def _upright_blocks(words, prm):
             overlap = min(ln["x1"], last["x1"]) - max(ln["x0"], last["x0"])
             if abs(last["size"] - ln["size"]) <= prm["line_size_tol"] and overlap > 0 and \
                     prm["block_gap_min_ratio"] * ln["size"] <= gap <= prm["block_gap_max_ratio"] * ln["size"] and \
-                    not _number_and_position(_line_text(last), _line_text(ln)):
+                    not _valve_number_apart(_line_text(last), _line_text(ln)):
                 b["lines"].append(ln)
                 break
         else:

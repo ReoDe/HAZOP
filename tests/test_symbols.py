@@ -1359,6 +1359,13 @@ class ClosedValveTest(unittest.TestCase):
         self.assertIn("missing_kind", [u["check"] for u in ex["validation"]["unknowns"]
                                        if u["target"] == valve["local_id"]])
 
+    def test_valve_number_beside_body_of_unknown_kind_is_its_tag(self):
+        """종류를 못 정한 검정 몸통도 밸브다. 옆 밸브 번호는 그 몸통의 태그다(063쪽 V359·V361, 062쪽 V2120)."""
+        bonnet = [pipe((103, 101.5), (103, 98.5)), pipe((101.5, 98.5), (104.5, 98.5))]
+        a = pdf_vector.analyze(400, 300, [word("V2120", 100.0, 104.0)], [filled(BLACK_GATE)] + bonnet + GATE_PIPES)
+        ex = pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+        self.assertEqual([(n["kind"], n["tag"]) for n in closed_nodes(ex)], [(None, "V2120")])
+
     def test_closed_body_of_unknown_kind_still_closes_the_path(self):
         """종류를 못 정한 닫힌 몸통도 경로 분석에서는 닫힌 밸브다. 아니면 닫힌 밸브가 있는 길이 정상 유로가 된다."""
         bonnet = [pipe((103, 101.5), (103, 98.5)), pipe((101.5, 98.5), (104.5, 98.5))]

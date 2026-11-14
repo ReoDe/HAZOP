@@ -542,9 +542,12 @@ class SplitLetters(unittest.TestCase):
         self.assertEqual(self.texts(words), ["FILTER (FT32A)"])
 
     def test_narrowly_spaced_words_keep_their_space(self):
-        """10.4.8-1 시트 2 'V1337 V1338'(간격 0.232pt), 9.4.3-1 'MOTOR DRIVEN'(0.254pt)이 붙지 않는다(검토 지적)."""
+        """10.4.8-1 시트 2 'V1337 V1338'(간격 0.232pt), 9.4.3-1 'MOTOR DRIVEN'(0.254pt)이 붙지 않는다(검토 지적).
+        나란한 두 밸브 번호는 이웃한 두 밸브의 번호라 한 줄로도 잇지 않는다."""
         words = [self.word("V1337", 100.0, 109.6, 50.0, 3.7), self.word("V1338", 109.832, 119.4, 50.0, 3.7)]
-        self.assertEqual(self.texts(words), ["V1337 V1338"])
+        self.assertEqual(sorted(self.texts(words)), ["V1337", "V1338"])
+        words = [self.word("MOTOR", 100.0, 109.6, 50.0, 3.7), self.word("DRIVEN", 109.854, 121.0, 50.0, 3.7)]
+        self.assertEqual(self.texts(words), ["MOTOR DRIVEN"])
 
     def test_words_far_apart_on_one_row_stay_apart(self):
         words = [self.word("LEFT", 100.0, 108.0, 50.0), self.word("RIGHT", 120.0, 130.0, 50.0)]

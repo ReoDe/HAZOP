@@ -802,6 +802,74 @@ class PdfVectorRuleTest(unittest.TestCase):
         valve = [n for n in ext["nodes"] if n["kind"] == "manual_valve"][0]
         self.assertEqual((valve["tag"], valve["attributes"].get("normal_position")), ("V310", "LO"))
 
+    def test_side_by_side_valve_numbers_stay_apart(self):
+        # APR1400 097쪽: 이웃한 두 밸브 번호가 낱말 간격 안에 나란히 찍히고, 번호는 'V'·'4103'·'A'로 끊겨 온다
+        def pieces(x, parts, top=100.0, size=4.0):
+            out = []
+            for p in parts:
+                out.append(word(p, x, top, size))
+                x = out[-1]["x1"]
+            return out
+        blocks = pdf_vector._text_blocks(pieces(100, ["V", "4103", "A"]) + pieces(116.4, ["V", "4019", "A"]),
+                                         pdf_vector.PARAMS)
+        self.assertEqual([b["text"] for b in blocks], ["V4103A", "V4019A"])
+        stacked = [word("V707", 100, 100, 3.0), word("V717", 100, 104.2, 3.0)]
+        self.assertEqual([b["text"] for b in pdf_vector._text_blocks(stacked, pdf_vector.PARAMS)], ["V707", "V717"])
+        # 062쪽 V2120: 배관 구경 글자 바로 뒤에 찍힌 밸브 번호
+        after_size = [word("⅜\"X¾\"", 100, 100, 4.0), word("V2120", 113.5, 100, 4.0)]
+        self.assertEqual([b["text"] for b in pdf_vector._text_blocks(after_size, pdf_vector.PARAMS)],
+                         ["⅜\"X¾\"", "V2120"])
+
+    def test_sideways_glyph_column_reads_bottom_up(self):
+        # APR1400 025쪽 V1115: 바로 선 글자로 찍혔지만 눕힌 글꼴 모양을 한 자씩 위로 쌓았다(폭 3.1 > 높이 1.73)
+        col = [{"text": t, "x0": 602.56, "x1": 605.67, "top": top, "bottom": top + h, "size": h, "upright": True}
+               for t, top, h in (("5", 325.41, 1.73), ("1", 327.14, 1.73), ("1", 328.87, 1.73), ("1", 330.59, 1.73),
+                                 ("V", 332.32, 2.07))]
+        blocks = pdf_vector._text_blocks(col, pdf_vector.PARAMS)
+        self.assertEqual([(b["text"], b.get("rotated")) for b in blocks], [("V1115", True)])
+
+    def test_valve_number_replaces_nearer_non_number_label(self):
+        # APR1400 008쪽 V2300: 옆 계기 상자의 경보 글자 'IAH'가 밸브 번호보다 가까워 라벨을 먼저 차지한다.
+        # 105쪽 V1153은 번호가 소문자 'v1153'으로 찍혀 위치 약어 'LT'에 밀린다
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        for near, number in (("IAH", "V2300"), ("LT", "v1153")):
+            ext = pdf_run(bowtie(100, 100) + [line((40, 111), (100, 111)), line((136, 111), (200, 111))],
+                          [word(near, 137, 104), word(number, 110, 126)])
+            self.assertEqual([n["tag"] for n in ext["nodes"] if n["kind"] == "manual_valve"], [number])
+
+    def test_rotated_valve_number_across_the_pipe_is_not_line_label(self):
+        # APR1400 128쪽 V1623: 밸브 옆 돌린 번호를 가로 배관이 가로지른다. 돌린 글자에는 가로 배관이 줄 방향이 아니다
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        number = {"text": "V1623", "x0": 137.0, "x1": 143.0, "top": 102.0, "bottom": 120.0, "size": 6.0,
+                  "upright": False, "direction": "btt"}
+        ext = pdf_run(bowtie(100, 100) + [line((40, 111), (100, 111)), line((136, 111), (200, 111))], [number])
+        self.assertEqual([n["tag"] for n in ext["nodes"] if n["kind"] == "manual_valve"], ["V1623"])
+
+    def test_valve_number_taken_by_farther_valve_returns_to_its_valve(self):
+        # APR1400 016쪽 V413: 위치 약어 'LO'가 밸브 라벨을 먼저 차지하자 바로 밑 번호는 11pt 떨어진 다른 밸브가 가져갔다
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        ext = pdf_run(bowtie(100, 100) + bowtie(100, 140) + [line((40, 111), (100, 111)), line((136, 111), (200, 111)),
+                                                              line((40, 151), (100, 151)), line((136, 151), (200, 151))],
+                      [word("LO", 112, 93.5), word("V413", 106, 123)])
+        tags = {n["geometry"]["y"]: n["tag"] for n in ext["nodes"] if n["kind"] == "manual_valve"}
+        self.assertEqual(tags, {100: "V413", 140: None})
+
+    def test_valve_number_under_valve_and_touching_part_goes_to_valve(self):
+        # APR1400 062쪽 V2130: 밸브 몸통과 옆에 붙인 부품의 아랫변이 같아 밑 번호까지 거리가 같다. 번호 가운데는 밸브 밑이다
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        ext = pdf_run(bowtie(100, 100) + [rect(84, 112, 96, 122), line((40, 117), (84, 117)),
+                                          line((96, 111), (100, 111)), line((136, 111), (200, 111))],
+                      [word("V2130", 95.8, 123.5, 14.8)])
+        self.assertEqual([n["tag"] for n in ext["nodes"] if n["kind"] == "manual_valve"], ["V2130"])
+
     def test_number_circle_touching_valve_body_is_valve_tag(self):
         # APR1400 008쪽 방출 밸브 200(좌표 그대로): 번호 원이 지시선으로 몸통에 닿아 밸브와 한 기호로 묶이고, 원 안
         # 숫자가 밸브 라벨이 된다. 원 안 숫자는 밸브 번호다. 원이 없으면 같은 자리의 맨 숫자라도 태그로 쓰지 않는다
@@ -1291,6 +1359,27 @@ class PdfVectorSampleTest(unittest.TestCase):
         words = pdf_vector.load_page(io.BytesIO(make_pdf(glued, resources=font)))[3]
         self.assertEqual([w["text"] for w in words], ["PDIS", "(3053)"])
         self.assertLessEqual(words[0]["x1"], words[1]["x0"])
+
+    def test_rotated_number_and_position_columns_stay_two_words(self):
+        # APR1400 008쪽 V315: 돌린 3pt 글자 두 줄('V315' 옆 'LO')이 2.9pt 간격이다. 한 낱말 'VL3O15'로 섞이면 밸브 번호를 잃는다
+        content = b"BT /F1 3.01 Tf 0 1 -1 0 102 150 Tm (V315) Tj ET BT /F1 3.01 Tf 0 1 -1 0 104.9 151 Tm (LO) Tj ET"
+        font = b"/Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> "
+        words = pdf_vector.load_page(io.BytesIO(make_pdf(content, resources=font)))[3]
+        self.assertEqual(sorted((w["text"], w["upright"]) for w in words), [("LO", False), ("V315", False)])
+
+    def test_glued_valve_numbers_split_into_words(self):
+        # APR1400 016쪽 'V705V703', 097쪽 'V4319AV4320A': 이웃한 두 밸브의 번호가 틈 없이 찍혀 한 낱말로 온다
+        font = b"/Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> "
+        for glued, want in ((b"V705V703", ["V705", "V703"]), (b"V4319AV4320A", ["V4319A", "V4320A"]),
+                            (b"V1203AB", ["V1203AB"])):
+            content = b"BT /F1 3.07 Tf 100 150 Td (" + glued + b") Tj ET"
+            words = pdf_vector.load_page(io.BytesIO(make_pdf(content, resources=font)))[3]
+            self.assertEqual([w["text"] for w in sorted(words, key=lambda w: w["x0"])], want)
+            if len(words) == 2:
+                self.assertLessEqual(round(min(w["x1"] for w in words), 3), round(max(w["x0"] for w in words), 3))
+        rotated = b"BT /F1 3.07 Tf 0 1 -1 0 102 150 Tm (V707V717) Tj ET"
+        words = pdf_vector.load_page(io.BytesIO(make_pdf(rotated, resources=font)))[3]
+        self.assertEqual([w["text"] for w in sorted(words, key=lambda w: -w["bottom"])], ["V707", "V717"])
 
     def test_memory_pdf_filled_and_stroked_dashes(self):
         dashes = b"".join(b"%d 219.65 4 0.7 re f\n" % x for x in range(82, 198, 6))

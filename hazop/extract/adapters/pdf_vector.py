@@ -53,7 +53,8 @@ from .pdf_vector_connectors import (
 )
 from .pdf_vector_flow import _chain_flow, _propagate_flows, _vent_ends, arrow_axis, continuation_flow, end_arrow
 from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels, parse_label
-from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, POSITION_CODE_RE, POSITION_TEXT_RE, NUMBER_PLATE_RE, VALVE_TAG_RE,
+from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, PLATE_PART_RE, POSITION_CODE_RE, POSITION_TEXT_RE, NUMBER_PLATE_RE,
+                                VALVE_TAG_RE,
                                 _text_blocks, _upright_blocks, _bubble_like, _assign_tags, _join_bubble_number)
 
 SCHEMA_VERSION = drawio.SCHEMA_VERSION
@@ -295,6 +296,22 @@ def _split_paren_tail(w):
     return [dict(w, text=text[:i], x1=max(c["x1"] for c in head)), dict(w, text=text[i:], x0=min(c["x0"] for c in tail))]
 
 
+def _split_plates(w):
+    """빈칸 없이 붙어 한 낱말로 온 밸브 번호 여럿('V705V703', 돌린 글자 'V707V717')을 번호마다 나눈다. 이웃한 두 밸브의
+    번호가 글자 사이 틈 없이 찍혀 pdfplumber가 한 낱말로 읽는다(APR1400 016쪽 V703·V717, 097쪽 V4320A)."""
+    text, chars = w["text"], w.get("chars") or ()
+    parts = [m.span() for m in PLATE_PART_RE.finditer(text)]
+    if len(parts) < 2 or "".join(text[a:b] for a, b in parts) != text or len(chars) != len(text):
+        return [w]
+    out = []
+    for a, b in parts:
+        cs = chars[a:b]
+        box = {"x0": min(c["x0"] for c in cs), "x1": max(c["x1"] for c in cs),
+               "top": min(c["top"] for c in cs), "bottom": max(c["bottom"] for c in cs)}
+        out.append(dict(w, text=text[a:b], chars=cs, **box))
+    return out
+
+
 def load_page(path, page=0):
     """PDF 한 쪽의 원시 요소. path는 파일 경로 또는 바이너리 파일 객체.
     반환: (page_count, width, height, words, paths)."""
@@ -311,18 +328,22 @@ def load_page(path, page=0):
                   "upright": True}
                  for w0 in pg.extract_words(keep_blank_chars=False, use_text_flow=False, extra_attrs=["size"],
                                             y_tolerance=WORD_Y_TOLERANCE, return_chars=True)
-                 if w0.get("upright", True) for w in _split_paren_tail(w0)]
+                 if w0.get("upright", True) for w1 in _split_plates(w0) for w in _split_paren_tail(w1)]
         # 90° 돌린 글자(아래→위로 읽음)는 char_dir_rotated="btt"로 따로 읽는다. 기본값으로 읽으면 거꾸로·한 자씩 끊긴다
         # (APR1400 DCD 'CV:RDT' → 'TDR:VC'). 돌린 글자는 글자마다 size 값이 달라 size로 낱말을 나누지 않고,
         # 줄 높이에 해당하는 낱말 폭을 size로 쓴다.
+        # 돌린 글자의 줄 구분은 x_tolerance가 맡는다. 기본값 3이면 3pt 글자 두 줄('V315' 옆 'LO')을 한 낱말 'VL3O15'로
+        # 섞는다(APR1400 008쪽 V310~V317, 016쪽 V715). 가로 글자의 WORD_Y_TOLERANCE와 같은 값을 쓴다
         for direction, sign in (("btt", 1), ("ttb", -1)):  # 아래→위(글자 행렬 b > 0)와 위→아래(b < 0)를 따로 읽는다
             words += [{"text": w["text"], "x0": float(w["x0"]), "x1": float(w["x1"]), "top": float(w["top"]),
                        "bottom": float(w["bottom"]), "size": float(w["x1"] - w["x0"]), "upright": False,
                        "direction": direction}
-                      for w in pg.extract_words(keep_blank_chars=False, use_text_flow=False,
-                                                char_dir_rotated=direction, return_chars=True)
-                      if not w.get("upright", True) and all((c.get("matrix") or (0, 0))[1] * sign > 0
-                                                            for c in w["chars"])]
+                      for w0 in pg.extract_words(keep_blank_chars=False, use_text_flow=False,
+                                                 char_dir_rotated=direction, return_chars=True,
+                                                 x_tolerance=WORD_Y_TOLERANCE)
+                      if not w0.get("upright", True) and all((c.get("matrix") or (0, 0))[1] * sign > 0
+                                                             for c in w0["chars"])
+                      for w in _split_plates(w0)]
         prims = []
         for obj in list(pg.lines) + list(pg.rects) + list(pg.curves):
             prims.append({"fill": bool(obj.get("fill")), "stroke": bool(obj.get("stroke", True)),
@@ -1801,9 +1822,10 @@ def _nearest_valve(block, valves, prm):
 def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, marks, drop, prm, circled=()):
     """밸브 라벨 고르기(F1-5). label_of·taken을 고치고 {밸브 기호 id: [(위치 약어, 문단 번호)]}를 돌려준다.
     탐욕 배정(가까운 글자부터)은 그대로 두고 밸브만 손본다. 다른 기호의 라벨은 바꾸지 않는다.
-    - 라벨이 없거나 위치 약어(NO·LC·'NC,FO' 등)인 밸브는, 아무 기호의 라벨도 아닌 밸브 번호('V1681', 댐퍼 'Y0029', 돌린 글자 포함)가
-      label_gap_max 안에 있고 그 번호에 가장 가까운 밸브가 이 밸브이면 그 번호를 라벨로 삼는다. 위치 약어가 밸브 번호보다
-      가까워 라벨을 뺏던 자리다.
+    - 라벨이 없거나 라벨에 밸브 번호 줄이 없는 밸브(위치 약어 NO·LC·'NC,FO', 옆 계기 상자의 경보 글자 'IAH', 배관 행선지
+      글자 등)는, 아무 기호의 라벨도 아닌 밸브 번호('V1681', 댐퍼 'Y0029', 돌린 글자 포함)가 label_gap_max 안에 있고 그
+      번호에 가장 가까운 밸브가 이 밸브이면 그 번호를 라벨로 삼는다. 가까운 다른 글자가 밸브 번호보다 먼저 라벨을 뺏던
+      자리다(008쪽 V2300 옆 'IAH', 063쪽 V2023 옆 'REACTOR DRAIN HEADER').
     - 위치 약어는 태그가 아니라 속성이다. 밸브(또는 그 밸브에 합칠 구동부)의 라벨이었던 약어, 아무 기호의 라벨도 아니고
       가장 가까운 밸브가 하나로 정해지는 약어를 그 밸브의 정상·고장 위치로 둔다.
     - 밸브 번호를 태그로 쓸 밸브(→ 두 번째 돌려주는 값, 기호 번호 집합)는 라벨에 밸브 번호 줄이 있고, 그 라벨 문단에 가장
@@ -1824,12 +1846,20 @@ def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, m
     others = [sy for si, sy in enumerate(syms) if si not in drop]
 
     def owner_of(bi):
-        """문단에 몸체(core)가 가장 가까운 기호(밸브든 아니든). 같은 거리의 기호가 둘이면 None. 기호 상자는 지시선·장식선까지
-        들어가 커지므로(062쪽 V2132 위의 'DE→WM' 화살표) 몸체로 잰다."""
+        """문단에 몸체(core)가 가장 가까운 기호(밸브든 아니든). 기호 상자는 지시선·장식선까지 들어가 커지므로(062쪽 V2132
+        위의 'DE→WM' 화살표) 몸체로 잰다. 같은 거리의 기호가 둘 이상이면 문단 가운데에서 몸체 가운데까지가 1pt 넘게 가까운
+        기호다. 그것도 가리지 못하면 None. 밸브 몸통과 옆에 붙은 축소관은 아랫변이 같아 그 밑 번호까지 거리가 같다(062쪽
+        V2130은 밸브 바로 밑 가운데에 찍힘)."""
         box = blocks[bi]["bbox"]
         near = sorted((-1.0 if _inside(_center(box), sy.core) else _box_gap(box, sy.core), k) for k, sy in enumerate(others))
-        if not near or near[0][0] > prm["label_gap_max"] or (len(near) > 1 and near[1][0] <= near[0][0]):
+        if not near or near[0][0] > prm["label_gap_max"]:
             return None
+        tied = [k for g, k in near if g <= near[0][0] + 0.01]
+        if len(tied) > 1:
+            by_center = sorted((math.dist(_center(box), _center(others[k].core)), k) for k in tied)
+            if by_center[1][0] - by_center[0][0] <= 1.0:
+                return None
+            return others[by_center[0][1]]
         return others[near[0][1]]
 
     def text(bi):
@@ -1870,8 +1900,15 @@ def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, m
         v = _nearest_valve(blocks[bi], valves, prm)
         if v is not None:
             positions.setdefault(id(v), []).extend((c, bi) for c in POSITION_CODE_RE.findall(blocks[bi]["text"]))
+
+    def stray(bi, sy):
+        """기호 sy가 라벨로 잡은 밸브 번호 문단 bi가 다른 밸브의 것인가: 문단에 몸체가 가장 가까운 기호가 따로 있는 밸브다.
+        이웃 밸브가 위치 약어('LO')를 먼저 라벨로 잡으면 그 번호는 다음으로 가까운 밸브가 가져간다(016쪽 V255 자리의 V413)."""
+        own = owner_of(bi)
+        return own is not None and own is not sy and id(own) in valve_like
     open_valves = {id(v) for v in valves if id(v) not in circled and (
-                   label_of.get(index[id(v)]) is None or POSITION_TEXT_RE.fullmatch(text(label_of[index[id(v)]])))}
+                   label_of.get(index[id(v)]) is None or not number_lines(label_of[index[id(v)]])
+                   or stray(label_of[index[id(v)]], v))}
     holder = {bi: si for si, bi in label_of.items()}
 
     def lent(bi):
@@ -1881,7 +1918,8 @@ def _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, m
         if bi not in holder:
             return False
         hs = holder[bi]
-        return id(plan_into.get(id(syms[hs]), syms[hs])) not in valve_like or hs in lettered
+        host = plan_into.get(id(syms[hs]), syms[hs])
+        return id(host) not in valve_like or hs in lettered or stray(bi, host)
     pairs = []
     for bi in range(len(blocks)):
         if bi in roles or (bi in taken and not lent(bi)) or not NUMBER_PLATE_RE.fullmatch(text(bi)):
@@ -2029,9 +2067,11 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
 
     # 글자: 표제란·선 라벨·기호 라벨·나머지
     cell_boxes = [c["bbox"] for c in cls["cells"]]
-    # 글자 줄과 같은 방향(가로)으로 글자 위를 지나는 선만 선 라벨 근거로 본다(세로로 가로지르는 선은 우연한 겹침)
-    solid_segments = [(a, b) for ch in chains if not ch.get("dashed") for a, b in _segs(ch["pts"])
-                      if abs(b[1] - a[1]) <= 0.2 * abs(b[0] - a[0])]
+    # 글자 줄과 같은 방향으로 글자 위를 지나는 선만 선 라벨 근거로 본다(가로지르는 선은 우연한 겹침). 돌린 글자는 세로
+    # 선이 같은 방향이다. 돌린 밸브 번호를 가로 배관이 가로지르면 선 라벨이 되어 밸브가 번호를 잃던 자리다(128쪽 V1623)
+    plain = [(a, b) for ch in chains if not ch.get("dashed") for a, b in _segs(ch["pts"])]
+    solid_segments = [(a, b) for a, b in plain if abs(b[1] - a[1]) <= 0.2 * abs(b[0] - a[0])]
+    solid_upright = [(a, b) for a, b in plain if abs(b[0] - a[0]) <= 0.2 * abs(b[1] - a[1])]
     shape_of = [_shape_rule(s, prm) for s in syms]
     # 연결 표시 화살표와 겹치는 문단(화살표 안 'SHEET n "X"'까지 한 문단)은 화살표 몫이다. 화살표로 들어가는 배관이
     # 그 문단을 지나도 배관 글자로 보지 않는다
@@ -2042,7 +2082,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         if any(_inside(c, cb) for cb in cell_boxes):
             roles[bi] = "title_block"
         elif any(_inside(c, m["bbox"]) for m in cls["masks"]) or (
-                any(_poly_box_dist([s1, s2], _expand(b["bbox"], -0.5)) == 0.0 for s1, s2 in solid_segments)
+                any(_poly_box_dist([s1, s2], _expand(b["bbox"], -0.5)) == 0.0
+                    for s1, s2 in (solid_upright if b.get("rotated") else solid_segments))
                 and not (SHEET_WORD_RE.search(b["text"]) and any(_box_gap(b["bbox"], ab) <= 0 for ab in arrow_boxes))):
             roles[bi] = "line_label"
     # 밸브 몸통·구동부 안 글자(M, E/H 등)는 태그가 아니라 기호 표기로 본다
@@ -2211,8 +2252,13 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     for box, v, letter in letter_boxes:
         if id(v) not in box_ids and id(v) not in plan_into:
             boxes_on.setdefault(id(v), []).append((box, letter))
-    positions, numbered = _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, marks, drop, prm,
-                                        set(numbers_on))
+    # 검정 견본에 맞은 밸브 몸통은 묶인 기호 전체가 사전에 없어 종류를 못 정해도(벨로스가 붙은 몸통 등) 밸브다. 옆 밸브
+    # 번호는 이 몸통 몫이다(APR1400 063쪽 V359·V361·V2081, 062쪽 V2120). 구동부 합치기는 바꾸지 않게 번호 고르기에만 넣는다
+    body_valves = {id(sy) for si, sy in enumerate(syms) if sy.seed is not None
+                   and rules.KIND_CATEGORY.get(cls["seeds"][sy.seed].entry.kind) == "valve"
+                   and not (si in hits and hits[si].outcome == "matched")}
+    positions, numbered = _valve_labels(syms, blocks, roles, valve_like | body_valves, plan_into, label_of, taken, marks,
+                                        drop, prm, set(numbers_on))
     node_out, locations, local_of, instrument_ids, dropped, label_lines = [], [], {}, set(), [], {}
     for n, s in enumerate(syms, 1):
         local_id = "local-node-%03d" % n
