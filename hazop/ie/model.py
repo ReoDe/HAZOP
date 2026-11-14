@@ -167,6 +167,11 @@ def entry_facts(results, node_set=None):
     members = {n["node_id"]: {to_ref.get(m) or m for m in n["members"]} | set(n["members"])
                for n in (node_set or {}).get("nodes") or []}
     revs = {n["node_id"]: n.get("rev") or 1 for n in (node_set or {}).get("nodes") or []}
+    from hazop.study import nodes as _nodes
+    # 분석에 드는 구간(확정·잠금이고 분석에서 빼지 않음): 인계 묶음의 후보(bundle.approved_entries)와 같은 기준이다. 그 밖의 칸(확정 해제·
+    # 분석 제외·집합에 없는 구간)의 항목은 확정 근거가 아니다(B2: 그룹이 묶음에 없는 후보를 가리킨 채 확정으로 남지 않게). 집합이 없으면 보지 않는다.
+    in_scope = None if node_set is None else {n["node_id"] for n in node_set.get("nodes") or []
+                                              if _nodes.is_active(n) and not _nodes.screen_excluded(n)}
     for cell in results["cells"]:
         rev_now = revs.get(cell["node_id"])
         current = rev_now is None or (cell.get("node_rev") or 1) == rev_now
@@ -181,6 +186,7 @@ def entry_facts(results, node_set=None):
                 "category": hint.get("category"),
                 "scope_changed": bool(e.get("scope_changed")) or (not current and not cell.get("hold")),
                 "held": bool(cell.get("hold")),
+                "excluded": in_scope is not None and cell["node_id"] not in in_scope,
                 "cause_key": ck,
                 "cause_inside": True if mine is None or ck is None else all(r in mine for r, _m in ck),
                 "fp": _sha(dict({k: e.get(k) for k in MEMBER_FIELDS}, scope_changed=e.get("scope_changed"),
@@ -192,8 +198,8 @@ def entry_facts(results, node_set=None):
 
 
 def is_evidence(f):
-    """확정 근거가 되는 승인 항목인지: 승인, 범위 바뀜 아님, 보관 칸 아님."""
-    return bool(f) and f["approved"] and not f["scope_changed"] and not f["held"]
+    """확정 근거가 되는 승인 항목인지: 승인, 범위 바뀜 아님, 보관 칸 아님, 분석에서 뺀 구간 아님(인계 묶음 후보와 같은 기준)."""
+    return bool(f) and f["approved"] and not f["scope_changed"] and not f["held"] and not f.get("excluded")
 
 
 def twin_same(fa, fb):
@@ -291,6 +297,8 @@ def _member_problems(doc, iec, facts):
         out.append("%s: ⑤ 승인 풀림" % iec)
     elif f["held"]:
         out.append("%s: ⑤ 구간 확정 해제됨(보관)" % iec)
+    elif f.get("excluded"):
+        out.append("%s: 구간이 분석에서 빠짐(확정 해제·스크리닝 제외)" % iec)
     elif f["scope_changed"]:
         out.append("%s: ⑤ 범위 바뀜(다시 확인 전)" % iec)
     if not f["ie_human"]:
