@@ -41,6 +41,7 @@ from .. import drawio, rules, symbols
 from .pdf_vector_common import (
     _num, _bbox_pts, _union, _expand, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist,
     _seg_cross, _poly_box_dist, _uf_groups, _center, _is_circle, _is_tombstone, _is_chevron, _is_triangle, _issue,
+    _is_convex,
 )
 from .pdf_vector_grouping import (
     _Sym, _cluster_bodies, _nearest_sym, _end_status, _plate_assemblies, _group_symbols, _merge_appendages,
@@ -378,7 +379,8 @@ def _classify_primitives(width, height, prims, prm):
                     white_fills.append(item)
             elif pr["fill"]:
                 small, large = min(_w(b), _h(b)), max(_w(b), _h(b))
-                corner = len(pts) >= 6 and not curved and large <= prm["dash_corner_max"]  # 꺾인 점선 모서리(L자)
+                corner = len(pts) >= 6 and not curved and large <= prm["dash_corner_max"] \
+                    and not _is_convex(pts)  # 꺾인 점선 모서리(L자)는 오목하다. 볼록하면 화살촉
                 if (small <= prm["dash_thick_max"] and large <= prm["dash_long_max"]) or corner:
                     dashes.append(item)
                 elif large <= prm["marker_max"]:

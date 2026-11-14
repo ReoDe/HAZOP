@@ -695,6 +695,27 @@ class PdfVectorRuleTest(unittest.TestCase):
         along = polys(line((223.88, 111.6), (223.88, 140)), n_shape, line((229.68, 111.6), (300, 111.6)))
         self.assertEqual(pdf_vector_grouping._bar_fed_strokes(along, prm)[0], [])
 
+    def test_scanned_check_valve_with_rounded_arrowhead(self):
+        # 스캔 SNP-M-301 체크밸브(300dpi를 벡터로 바꾼 좌표, pt): 화살촉이 꼭짓점 다섯 개 볼록 다각형이 되고, 사선은 화살촉 앞에서
+        # 끊기며 화살촉과 오른쪽 판 사이에 짧은 토막이 남는다. 예전에는 화살촉을 꺾인 점선 모서리로 읽어 'orifice'가 됐다
+        def at(*pts):
+            return [(x - 400, y) for x, y in pts]
+        head = at((606.0, 295.44), (606.0, 297.36), (608.88, 297.6), (609.12, 296.4), (607.68, 294.72), (606.0, 295.44))
+        ext = pdf_run([rect(60, 270, 100, 305), rect(300, 270, 340, 305),
+                       line(*at((500, 287.4), (575.28, 287.4))), line(*at((611.28, 287.4), (700, 287.4))),
+                       line(*at((575.28, 276.96), (575.28, 298.32))), line(*at((611.28, 276.96), (611.28, 298.32))),
+                       line(*at((577.1, 278.08), (605.66, 295.21))), line(*at((611.28, 296.16), (609.12, 296.16))),
+                       prim(head, closed=True, fill=True)])
+        cv = [n for n in ext["nodes"] if 170 < n["geometry"]["x"] < 215]
+        self.assertEqual([n["kind"] for n in cv], ["check_valve"])
+        self.assertEqual(len([r for r in ext["relations"] if r["kind"] == "physical_connection"]), 2)
+        # 오목한 L자 조각(꺾인 점선 모서리)은 그대로 점선 조각이다
+        corner = [(0, 0), (4, 0), (4, 1), (1, 1), (1, 4), (0, 4), (0, 0)]
+        cls = pdf_vector._classify_primitives(600, 400, [prim(corner, closed=True, fill=True),
+                                                         prim(head, closed=True, fill=True)], dict(pdf_vector.PARAMS))
+        self.assertEqual(([d["id"] for d in cls["dashes"]], [m["id"] for m in cls["markers"]]),
+                         (["pdf-path-0000"], ["pdf-path-0001"]))
+
     def test_no_content_is_blocked(self):
         ext = pdf_run([])
         self.assertEqual(ext["validation"]["status"], "blocked")

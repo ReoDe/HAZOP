@@ -196,6 +196,38 @@ def _is_triangle(body):
     return body["closed"] and not body.get("curved") and len(pts) == 3
 
 
+CONVEX_FILL = 0.85  # 볼록하다고 보는 다각형 넓이 / 볼록 껍질 넓이 하한. L자 조각은 0.6 안팎, 번진 화살촉은 0.95 이상
+
+
+def _area(pts):
+    return abs(sum(pts[k][0] * pts[k - 1][1] - pts[k - 1][0] * pts[k][1] for k in range(len(pts)))) / 2.0
+
+
+def _hull(pts):
+    pts = sorted(set(pts))
+    if len(pts) < 3:
+        return pts
+
+    def half(seq):
+        out = []
+        for p in seq:
+            while len(out) >= 2 and ((out[-1][0] - out[-2][0]) * (p[1] - out[-2][1])
+                                     - (out[-1][1] - out[-2][1]) * (p[0] - out[-2][0])) <= 0:
+                out.pop()
+            out.append(p)
+        return out[:-1]
+    return half(pts) + half(pts[::-1])
+
+
+def _is_convex(pts):
+    """닫힌 다각형이 거의 볼록한가. L자로 꺾인 점선 모서리는 오목하다."""
+    pts = [tuple(p) for p in pts]
+    if len(pts) >= 2 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    hull = _hull(pts)
+    return len(hull) >= 3 and _area(pts) >= CONVEX_FILL * _area(hull) > 0
+
+
 # ---------------------------------------------------------------- 미확인·차단 기록
 
 def _issue(lst, check, reason, source_object_id=None, target=None, field=None):

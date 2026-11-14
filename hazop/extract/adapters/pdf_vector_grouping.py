@@ -608,8 +608,26 @@ def _group_symbols(cls, prm):
                  if any(_end_status(p, k, polys, live, markers, prm) is None for k in (0, 1))]
         if decor:
             ids = {id(p) for p in decor}
-            groups = _uf_groups(len(decor), lambda i, j: _poly_dist(decor[i]["pts"], decor[j]["pts"])
-                                <= prm["decor_group_tol"])
+            # 장식선들 사이에 놓인 화살촉(체크밸브 사선 끝 삼각형)도 장식선을 잇는 조각이다. 그림에서 읽으면 사선이 화살촉
+            # 앞에서 끊기고 화살촉과 판 사이가 묶음 거리보다 멀어져, 화살촉 없이는 판 하나가 따로 떨어진다. 가까운 장식선들이
+            # 이루는 상자 안에 든 화살촉만 잇는다(두 배관 끝 사이의 검은 마름모처럼 선 밖으로 나온 표식은 잇지 않는다)
+            near = []
+            for m in markers:
+                box = None
+                for p in decor:
+                    if _poly_box_dist(p["pts"], m["bbox"]) <= prm["decor_group_tol"]:
+                        box = p["bbox"] if box is None else _union(box, p["bbox"])
+                if box and all(_inside(c, box, prm["touch_tol"]) for c in (m["bbox"][:2], m["bbox"][2:])):
+                    near.append(m)
+            pieces = decor + near
+
+            def linked(i, j):  # i < j: 장식선끼리, 장식선과 화살촉(화살촉끼리는 잇지 않는다)
+                if i >= len(decor):
+                    return False
+                if j >= len(decor):
+                    return _poly_box_dist(decor[i]["pts"], pieces[j]["bbox"]) <= prm["decor_group_tol"]
+                return _poly_dist(decor[i]["pts"], decor[j]["pts"]) <= prm["decor_group_tol"]
+            groups = [[i for i in g if i < len(decor)] for g in _uf_groups(len(pieces), linked)]
             keep = []
             for g in groups:
                 items = [decor[i] for i in g]
