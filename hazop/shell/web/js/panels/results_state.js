@@ -98,6 +98,24 @@ export function setOpenSheet(fn) { openSheetFn = fn; }
 export function openSheet(graphId) { if (!openSheetFn) return false; openSheetFn(graphId); return true; }
 
 /** 고른 칸의 구간을 도면에서 보인다: 패널을 닫고(위 막대에 '분석 결과로 돌아가기' 칩) 그 구간을 강조·확대한다. 구간의 구성요소가 놓인 도면이 지금 도면이 아니면 그 도면을 연다. */
+/** AI 근거 경로 하나를 도면에서 강조한다(채팅 답의 도면 칩과 같은 표시 형식, 돌아오기 칩은 분석 결과로). */
+export function showBasisPath(path) {
+  if (!path || !path.sheet) { results.set({ error: "이 경로에는 도면에 그릴 구성요소가 없습니다." }); return false; }
+  if (openSheetFn) openSheetFn(path.sheet);
+  store.set({ sheet: path.sheet, panel: null, backTo: "results", marks: { rid: "results-basis", bySheet: path.marks || {} } });
+  return true;
+}
+
+/** 출처 문서를 문서 패널의 그 자료로 연다. */
+export async function openDocument(materialId) {
+  const D = await import("./docs_state.js");
+  store.set({ panel: "docs", backTo: "results" });
+  D.docs.set({ active: materialId, detail: null });
+  await D.loadSummary();
+  await D.loadDetail(materialId);
+  return true;
+}
+
 export async function viewOnSheet(nodeId) {
   const N = await import("./nodes_state.js");
   const row = N.nodes.get().list.nodes.find((n) => n.node_id === nodeId);

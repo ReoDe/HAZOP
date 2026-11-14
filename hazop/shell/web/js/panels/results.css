@@ -37,3 +37,14 @@
 .rec .linkish { text-decoration: underline; }
 .tracebox input { flex: 1; min-width: 160px; height: 28px; }
 .runplan .conn-paid { color: var(--warn); font-weight: 600; }
+/* B3 상세 열 */
+.worksheet .intent { flex-basis: 100%; }
+.worksheet .basis { margin-top: var(--sp-1); }
+.worksheet .basis-b { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-1) var(--sp-2); border-left: 2px solid var(--line); }
+.worksheet .warn-t { color: var(--warn); }
+.worksheet .draft { font-style: italic; }
+.edit-more { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-2); }
+.edit-more .sub-h { color: var(--muted); margin-top: var(--sp-1); }
+.edit-more .chk { flex-direction: row; align-items: center; gap: var(--sp-1); }
+.edit-more .sg-row input.textbox { flex: 1; min-width: 160px; }
+.edit-more .fm { width: 120px; }

@@ -8,6 +8,7 @@ import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { VirtualGrid } from "../ui/table.js";
 import * as R from "./results_state.js";
+import { BasisBlock, CauseCell, ConsequenceCell, EditMore, SafeguardCell, changedFields, editState } from "./results_detail.js";
 
 // 상태 이름은 Excel(study_xlsx STATUS_LABELS)·이전 화면과 같게 '승인'으로 맞춘다(2026-11-14 A9 검토)
 const STATUS = { proposed: ["AI 초안", "ai"], approved: ["승인", "ok"], revised: ["수정", "accent"], rejected: ["기각", "plain"], on_hold: ["보류", "warn"] };
@@ -150,7 +151,6 @@ function Matrix({ s }) {
 
 // ---------------------------------------------------------------- 워크시트
 const text = (v) => (typeof v === "string" ? v : "");
-const guard = (g) => (typeof g === "string" ? g : (g && g.text) || "");
 
 function Verdict({ e }) {
   const [st, label] = STATUS[e.status] || [e.status, ""];
@@ -163,14 +163,16 @@ function EntryActions({ e, cell }) {
   const [mode, setMode] = useState(null);          // null | "revised" | "rejected" | "on_hold" | "edit"
   const [reason, setReason] = useState("");
   const [f, setF] = useState(null);
+  const [more, setMore] = useState(null);           // B3: 원인 유형·비완화·참조·보호수단 편집 상태
   const busy = R.useResults((x) => x.busy);
   const off = !cell.editable;
   const need = (m) => ({ revised: "수정", rejected: "기각", on_hold: "보류" }[m]);
-  const startEdit = () => { setF({ cause: text(e.cause), consequence: text(e.consequence), recommendation: text(e.recommendation), severity: e.severity == null ? "" : String(e.severity), frequency: e.frequency == null ? "" : String(e.frequency) }); setMode("edit"); setReason(""); };
-  const done = () => { setMode(null); setReason(""); setF(null); };
+  const startEdit = () => { setF({ cause: text(e.cause), consequence: text(e.consequence), recommendation: text(e.recommendation), severity: e.severity == null ? "" : String(e.severity), frequency: e.frequency == null ? "" : String(e.frequency) }); setMore(editState(e)); setMode("edit"); setReason(""); };
+  const done = () => { setMode(null); setReason(""); setF(null); setMore(null); };
   async function submit() {
     if (mode === "edit") {
-      const fields = { cause: f.cause, consequence: f.consequence, recommendation: f.recommendation, severity: f.severity === "" ? null : Number(f.severity), frequency: f.frequency === "" ? null : Number(f.frequency) };
+      const fields = Object.assign({ cause: f.cause, consequence: f.consequence, recommendation: f.recommendation, severity: f.severity === "" ? null : Number(f.severity), frequency: f.frequency === "" ? null : Number(f.frequency) },
+        more ? changedFields(e, more) : {});
       if (await R.editEntry(e.entry_id, fields, reason)) done();
     } else if (await R.setStatus(e.entry_id, mode, reason)) done();
   }
@@ -186,7 +188,8 @@ function EntryActions({ e, cell }) {
         <label>결과<textarea class="textbox" rows="2" value=${f.consequence} onInput=${(x) => setF(Object.assign({}, f, { consequence: x.target.value }))}></textarea></label>
         <label>권고<textarea class="textbox" rows="2" value=${f.recommendation} onInput=${(x) => setF(Object.assign({}, f, { recommendation: x.target.value }))}></textarea></label>
         <label>강도<select class="textbox" value=${f.severity} onChange=${(x) => setF(Object.assign({}, f, { severity: x.target.value }))}><option value="">미정</option>${cell.severities.map((v) => html`<option value=${String(v)}>${v}</option>`)}</select></label>
-        <label>빈도<select class="textbox" value=${f.frequency} onChange=${(x) => setF(Object.assign({}, f, { frequency: x.target.value }))}><option value="">미정</option>${cell.frequencies.map((v) => html`<option value=${String(v)}>${v}</option>`)}</select></label></div>` : null}
+        <label>빈도<select class="textbox" value=${f.frequency} onChange=${(x) => setF(Object.assign({}, f, { frequency: x.target.value }))}><option value="">미정</option>${cell.frequencies.map((v) => html`<option value=${String(v)}>${v}</option>`)}</select></label></div>
+        ${more ? html`<${EditMore} st=${more} setSt=${setMore} c=${cell} id=${e.entry_id} />` : null}` : null}
       <label for=${"why-" + e.entry_id}>${mode === "edit" ? "수정" : need(mode)} 사유(필수)</label>
       <input id=${"why-" + e.entry_id} class="textbox" maxlength="1000" value=${reason} onInput=${(x) => setReason(x.target.value)}
         onKeyDown=${(x) => { if (x.key === "Enter") { x.preventDefault(); if (reason.trim()) submit(); } else if (x.key === "Escape") { x.stopPropagation(); done(); } }} />
@@ -204,6 +207,7 @@ function Worksheet() {
     <div class="nd-h"><b>${c.node.node_id}</b> ${c.node.name || ""} <span class="muted">›</span> <b>${c.deviation.label || c.deviation.deviation_id}</b>${c.deviation.label_en ? html` <span class="muted en">${c.deviation.label_en}</span>` : null}
       <span class="muted small">가이드워드 ${withEn(c.deviation.guideword || "", c.deviation.guideword_en)}</span>
       <${Chip}>${cell.state === "analyzed" ? "분석함" : cell.state === "excluded" ? "제외" : "분석 전"}<//>
+      ${c.intent ? html`<div class="small intent"><span class="muted">설계 의도</span> ${c.intent.text} <span class="muted">(${c.intent.source})</span></div>` : html`<div class="small muted intent">설계 의도: 적힌 것 없음</div>`}
       ${cell.scope_changed ? html`<${Chip} kind="warn" title="구간 범위가 바뀐 뒤 아직 다시 확인하지 않은 칸">범위 바뀜<//>` : null}
       <span class="acts"><${Btn} sm=${true} label="도면에서 보기" title="패널을 닫고 이 구간을 도면에서 봅니다" onClick=${() => R.viewOnSheet(c.node.node_id)}>도면에서 보기<//>
         <${Btn} sm=${true} kind="ghost" icon="x" label="워크시트 닫기" onClick=${() => R.results.set({ active: null, cell: null })} /></span></div>
@@ -213,12 +217,13 @@ function Worksheet() {
       : cell.ai_run && cell.ai_run.note ? html`<div class="muted small">${cell.ai_run.note}</div>` : null}
     ${cell.entries.length === 0 ? html`<div class="muted">${mk && KIND[mk.kind] ? "항목이 없습니다." : "항목이 없습니다. '분석 실행'으로 AI 초안을 받으세요."}</div>` : cell.entries.map((e) => html`<div class="ent" key=${e.entry_id}>
       <div class="entgrid">
-        <div><div class="lbl">원인</div><div>${text(e.cause) || html`<span class="muted">-</span>`}</div></div>
-        <div><div class="lbl">결과</div><div>${text(e.consequence) || html`<span class="muted">-</span>`}</div></div>
-        <div><div class="lbl">보호수단</div>${(e.safeguards || []).length ? html`<ul class="tight">${e.safeguards.map((g, i) => html`<li key=${i}>${guard(g)}</li>`)}</ul>` : html`<span class="muted">-</span>`}</div>
+        <div><div class="lbl">원인</div><${CauseCell} e=${e} c=${c} /></div>
+        <div><div class="lbl">결과</div><${ConsequenceCell} e=${e} /></div>
+        <div><div class="lbl">보호수단</div><${SafeguardCell} e=${e} c=${c} /></div>
         <div><div class="lbl">권고</div><div>${text(e.recommendation) || html`<span class="muted">-</span>`}</div></div>
         <div><div class="lbl">강도·빈도·위험도</div><div>${e.severity == null ? "-" : e.severity} · ${e.frequency == null ? "-" : e.frequency} · <b class=${"rc " + RISK_CLASS(e.risk)}>${e.risk == null ? "-" : e.risk}</b></div></div>
         <div><div class="lbl">판정</div><${Verdict} e=${e} /></div></div>
+      <${BasisBlock} e=${e} />
       <${EntryActions} e=${e} cell=${c} /></div>`)}
     ${cell.scope_changed ? html`<div class="acts-row"><${Btn} sm=${true} label="범위 바뀜 확인" onClick=${R.recheck}>범위 바뀜을 확인했습니다<//></div>` : null}</div>`;
 }

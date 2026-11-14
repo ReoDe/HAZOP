@@ -232,12 +232,111 @@ def cell_view(engine, node_id, deviation_id):
         return None
     node = next((n for n in ns["nodes"] if n["node_id"] == node_id), {})
     dev = _dev_with_en(next((d for d in doc["deviations"] if d["deviation_id"] == deviation_id), {}), deviation_names_en())
-    cell = dict(cell, entries=[_entry_view(e) for e in cell["entries"]])
+    look = _Lookup(engine, pg)
+    cell = dict(cell, entries=[dict(_entry_view(e), detail=look.entry(e)) for e in cell["entries"]])
     problem = res.editable_problem(doc, node_id, deviation_id, ns)
     return {"cell": cell, "node": {"node_id": node_id, "name": node.get("name"), "state": nodes.node_state(node) if node else None},
             "deviation": dev, "editable": problem is None, "not_editable_reason": problem, "ver": _ver(fp),
+            "set_rev": ns.get("set_rev") or 0,
             "cause_kinds": res.CAUSE_KINDS, "read_only": doc.get("read_only"),
-            "severities": list(SEVERITIES), "frequencies": list(FREQUENCIES)}
+            "severities": list(SEVERITIES), "frequencies": list(FREQUENCIES),
+            "intent": _intent(ns, node) if node else None,
+            "roles": refs_mod().ROLES, "actuations": refs_mod().ACTUATIONS, "bases": res.CONSEQUENCE_BASES,
+            "targets": look.targets(node)}
+
+
+def refs_mod():
+    from hazop.study import refs
+    return refs
+
+
+def _intent(ns, node):
+    """구간 설계 의도 {text, source} 또는 None(이전 화면 design_intent와 같은 규칙: 구간에 적은 것 → 구간 JSON → ④ 검토 초안)."""
+    from hazop.shell import analysis_run
+    from hazop.study import node_review
+    try:
+        review = node_review.load(ns.get("project_id"), ns["graph_id"])
+    except (OSError, ValueError):
+        review = None
+    try:
+        found = analysis_run.intent_text(node, review)
+    except Exception:  # noqa: BLE001 - 설계 의도를 못 읽어도 워크시트는 보인다
+        LOG.exception("설계 의도 읽기 실패: %s", node.get("node_id"))
+        return None
+    return {"text": found[0], "source": found[1]} if found else None
+
+
+class _Lookup:
+    """워크시트 상세 열(B3, INTENT §3.6)에 쓰는 이름표: 안정 참조 → '태그(도면)', 근거 경로 → 도면별 강조, 출처 문서 → 문서 패널 자료."""
+
+    def __init__(self, engine, pg):
+        from hazop.export import study_xlsx
+        from hazop.study import refs
+        self.engine, self.pg, self.refs = engine, pg, refs
+        self.idx = refs.index(pg)
+        self.dn = {s["graph_id"]: s["drawing_number"] for s in pg.get("sheets") or []}
+        self.labels = study_xlsx.entity_labels(pg)
+        self._docs = None
+
+    def label(self, ref):
+        return self.refs.label(ref, self.idx, self.dn)
+
+    def docs(self):
+        """{문서 ID·문서 번호·자료 ID: 자료 ID} 문서 패널에서 찾을 열쇠."""
+        if self._docs is None:
+            self._docs = {}
+            try:
+                from hazop.shell import api_docs
+                for row in api_docs.summary(self.engine).get("docs") or []:
+                    for k in (row.get("material_id"), row.get("doc_number")):
+                        if k:
+                            self._docs[k] = row["material_id"]
+            except Exception:  # noqa: BLE001 - 문서 목록을 못 읽으면 출처는 글로만 보인다
+                LOG.exception("문서 목록 읽기 실패")
+        return self._docs
+
+    def entry(self, e):
+        from hazop.chat import view as chatview
+        refs = self.refs
+        sg = []
+        for s in refs.safeguard_items(e):
+            sg.append({"text": s["text"], "role": s["role"], "actuation": s["actuation"],
+                       "refs": [{"ref": r["ref"], "label": self.label(r["ref"])} for r in s["refs"] if r.get("ref")],
+                       "draft": not refs.is_confirmed(s, e) or any(not refs.is_confirmed(r, e) for r in s["refs"])})
+        basis = e.get("ai_basis") or {}
+        paths = []
+        for p in basis.get("kg_paths") or []:
+            if not p:
+                continue
+            by_sheet = chatview.path_steps(self.pg, [{"id": x, "flow": None} for x in p])
+            marks = {g: [{"op": "path", "steps": steps, "style": "path", "numbered": True}] for g, steps in by_sheet.items()}
+            paths.append({"labels": [self.labels.get(x, x) for x in p], "marks": marks, "sheet": next(iter(by_sheet), None)})
+        docs = self.docs()
+        sources = [{"doc": s.get("doc") or "", "where": s.get("where") or "", "material_id": docs.get(s.get("doc"))}
+                   for s in basis.get("sources") or []]
+        warnings = list(basis.get("warnings") or []) + [res.quality_line(k, t) for k, t in res.quality_warnings(e)]
+        return {"cause_kind": e.get("cause_kind"), "consequence_basis": e.get("consequence_basis"),
+                "cause_refs": [{"ref": r["ref"], "label": self.label(r["ref"]), "failure_mode": r.get("failure_mode") or "",
+                                "draft": not refs.is_confirmed(r, e)} for r in e.get("cause_refs") or [] if isinstance(r, dict) and r.get("ref")],
+                "consequence_refs": [{"ref": r["ref"], "label": self.label(r["ref"]), "draft": not refs.is_confirmed(r, e)}
+                                     for r in e.get("consequence_refs") or [] if isinstance(r, dict) and r.get("ref")],
+                "safeguards": sg, "basis": {"paths": paths, "sources": sources, "warnings": warnings}}
+
+    def targets(self, node):
+        """참조 고르기 목록 [{ref, label, in_node}]: 이 구간 구성요소가 먼저, 그다음 태그 있는 다른 구성요소(다른 구간 대상 허용)."""
+        from hazop.study import migrate
+        gid = self.pg.get("graph_id")
+        members = set((node or {}).get("members") or [])
+        out, seen = [], set()
+        for inside in (True, False):
+            for n in self.pg.get("nodes") or []:
+                if (n.get("entity_id") in members) != inside or not (inside or n.get("tag")):
+                    continue
+                ref = migrate.ref_of(n, gid)
+                if ref and ref not in seen:
+                    seen.add(ref)
+                    out.append({"ref": ref, "label": self.label(ref), "in_node": inside})
+        return out[:3000]
 
 
 def _entities(pg, query):

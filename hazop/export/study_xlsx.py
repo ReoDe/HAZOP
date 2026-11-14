@@ -56,7 +56,7 @@ DEFAULT_REASONS = {"not_applicable": "AI가 이 구간에는 해당하지 않는
 
 # (키, 머리글, 열 너비)
 WORKSHEET_COLUMNS = (
-    ("node", "구간", 22), ("drawings", "도면 번호", 18), ("parameter", "변수", 8), ("guideword", "가이드워드", 9),
+    ("node", "구간", 22), ("drawings", "도면 번호", 18), ("intent", "설계 의도", 24), ("parameter", "변수", 8), ("guideword", "가이드워드", 9),
     ("deviation", "편차", 14), ("cause", "원인", 34), ("cause_kind", "원인 유형", 11),
     ("consequence", "결과(보호수단 실패 가정)", 34), ("consequence_basis", "결과 기준", 12), ("safeguards", "보호수단", 30),
     ("severity", "강도", 6), ("frequency", "빈도", 6), ("risk", "위험도", 13), ("recommendation", "권고", 32),
@@ -250,7 +250,7 @@ def guideword_text(dev, en=None):
     return "%s (%s)" % (ko, g_en) if g_en and ko else ko or g_en
 
 
-def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, expectations=None):
+def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, expectations=None, intents=None):
     """워크시트 행 [{키: 값, "kind": "entry"|칸 표시 종류, "risk_value", "status_key"}] (구간 순서 × 편차 순서).
     expectations {잠재 후보 ID: 항목}이 있으면 관련 잠재 후보를 규칙·대상·상태로 적는다(없으면 ID)."""
     if scope not in SCOPES:
@@ -280,7 +280,7 @@ def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, ex
             d = devs.get(cell["deviation_id"]) or {"label": cell["deviation_id"], "parameter": "", "guideword": ""}
             base = {"node": node.get("display_name") or nid, "node_id": nid, "drawings": span.drawing_column(node),
                     "parameter": d["parameter"], "guideword": guideword_text(d, en), "deviation": d["label"],
-                    "deviation_id": cell["deviation_id"]}
+                    "deviation_id": cell["deviation_id"], "intent": (intents or {}).get(nid) or ""}
             for e in cell["entries"]:
                 if scope == "approved" and e.get("status") != "approved":
                     continue
@@ -482,7 +482,7 @@ def build_workbook(results, node_set, pg, deviations, scope="all", node_ids=None
     now = now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     view = span.annotate(node_set, pg)
     xs = {i["id"]: i for i in expectations["items"]} if expectations else None
-    rows = worksheet_rows(results, view, pg, deviations, scope, node_ids, xs)
+    rows = worksheet_rows(results, view, pg, deviations, scope, node_ids, xs, intents)
     wb = Workbook()
     _summary_sheet(wb.active, results, node_set, view, scope, list(node_ids or ()), reviewer, now, len(rows), test)
     wb.active.title = SHEETS[0]

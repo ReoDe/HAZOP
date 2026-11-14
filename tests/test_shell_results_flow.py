@@ -210,6 +210,44 @@ class ResultsPanelTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: "확정한 구간이 아직 없습니다" in self.text(win) or "구간 패널 열기" in self.text(win), 15), self.text(win)[-300:])
 
 
+    # ------------------------------------------------------------ B3: 상세 워크시트 열
+    def set_value(self, win, selector, value, event="change"):
+        import json as _j
+        return self.js(win, "(() => { const e = document.querySelector(%s); if (!e) return false; e.value = %s; e.dispatchEvent(new Event(%s, {bubbles: true})); return true; })()"
+                       % (_j.dumps(selector), _j.dumps(value), _j.dumps(event)))
+
+    def test_basis_path_highlights_on_the_sheet_and_safeguard_role_edit_keeps_the_rest(self):
+        for n in self.pg["nodes"]:
+            if n.get("sheet") and n.get("source_object_id"):
+                n.setdefault("local_id", n["source_object_id"])
+        win = self.open_panel()
+        self.click_cell(win, self.span_node, "D01")
+        self.assertIn("비완화 여부 미확인", self.text(win), "결과 기준을 보인다")
+        self.assertTrue(self.click(win, "button[aria-label='a2 AI 근거']"))
+        self.assertTrue(wait_for(lambda: "경로 1:" in self.text(win), 10), self.text(win)[-300:])
+        self.assertIn("없는 ID 참조", self.text(win))
+        self.assertTrue(self.click(win, "button[aria-label='근거 경로 1']"))
+        self.assertTrue(wait_for(lambda: self.js(win, "JSON.stringify(window.__hz.store.get().marks.rid)") == '"results-basis"', 10))
+        self.assertIs(self.js(win, "window.__hz.store.get().panel === null"), True, "패널을 닫고 도면에서 보인다")
+        before = self.entry(self.span_node, "D01", "a1")
+        self.assertTrue(self.click(win, ".rail button", 2))
+        self.click_cell(win, self.span_node, "D01")
+        self.assertTrue(self.js(win, "(() => { const b = [...document.querySelectorAll('.worksheet .ent')][0].querySelector(\"button[aria-label='수정']\"); b.click(); return true; })()"))
+        self.assertTrue(wait_for(lambda: bool(self.js(win, "!!document.querySelector(\"select[aria-label='역할 1']\")")), 10), self.text(win)[-300:])
+        self.set_value(win, "select[aria-label='역할 1']", "mitigative")
+        self.set_value(win, "select[aria-label='작동 방식 1']", "passive")
+        self.set_value(win, ".worksheet .ent .field input[id^='why-']", "보호수단 역할 정리", "input")
+        pump(0.3)
+        self.js(win, "document.querySelector('.worksheet .ent .field .btn.primary').click()")
+        self.assertTrue(wait_for(lambda: isinstance(self.entry(self.span_node, "D01", "a1")["safeguards"][0], dict), 10), self.text(win)[-300:])
+        after = self.entry(self.span_node, "D01", "a1")
+        sg = after["safeguards"][0]
+        self.assertEqual((sg["text"], sg["role"], sg["actuation"], sg["origin"]), ("보호수단 1", "mitigative", "passive", "human"))
+        for k in ("cause", "consequence", "recommendation", "cause_refs", "consequence_refs"):
+            self.assertEqual(after.get(k), before.get(k), "고치지 않은 칸(%s)은 그대로" % k)
+        self.assertEqual(after["history"][-1]["reason"], "보호수단 역할 정리")
+
+
 if __name__ == "__main__":
     unittest.main()
 

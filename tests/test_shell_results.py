@@ -313,6 +313,84 @@ def fake_run_unit(kind=None, limit=None):
     return run
 
 
+
+class WorksheetDetailTest(ExportTest):
+    """B3(INTENT §3.6 상세 워크시트 열): 설계 의도·원인(유형·위치)·결과(비완화·영향 대상)·보호수단(역할·작동·구현 대상)·AI 근거(경로·출처·⚠).
+    고치기는 엔진 edit_entry 그대로(위험도는 엔진 계산), Excel에도 같은 열이 나간다."""
+
+    def span(self):
+        from tests.test_study_export import sample
+        return sample()[3]
+
+    def cell(self, node, dev):
+        return self.read("results", "cell", node, dev)
+
+    def test_cell_view_has_the_detail_columns(self):
+        for n in self.g["nodes"]:          # 실제 프로젝트 그래프처럼 도면 안 ID(local_id)를 준다(도면 강조에 쓴다)
+            if n.get("sheet") and n.get("source_object_id"):
+                n.setdefault("local_id", n["source_object_id"])
+        c = self.cell(self.span(), "D01")
+        a2 = next(e for e in c["cell"]["entries"] if e["entry_id"] == "a2")["detail"]
+        self.assertEqual(len(a2["basis"]["paths"]), 1)
+        path = a2["basis"]["paths"][0]
+        self.assertEqual(len(path["labels"]), 2)
+        self.assertTrue(path["marks"] and set(path["marks"]) <= {s["graph_id"] for s in self.g["sheets"]}, "경로는 도면별 강조 표시로 간다")
+        self.assertEqual(path["sheet"], next(iter(path["marks"])))
+        self.assertEqual(a2["basis"]["sources"], [{"doc": "DOC-1", "where": "p.3", "material_id": None}])
+        self.assertIn("없는 ID 참조", a2["basis"]["warnings"])
+        self.assertTrue(c["targets"] and c["targets"][0]["in_node"], "참조 고르기는 이 구간 구성요소가 먼저")
+        self.assertEqual((set(c["roles"]), set(c["actuations"])), ({"preventive", "mitigative", "unknown"},
+                                                                    {"automatic", "operator", "passive", "unknown"}))
+        self.assertEqual(a2["safeguards"][0]["text"], "보호수단 1")
+
+    def test_source_document_points_at_the_docs_panel_material(self):
+        from hazop.shell import api_docs
+        with mock.patch.object(api_docs, "summary", lambda engine, pid=None: {"docs": [{"material_id": "MAT-7", "doc_number": "DOC-1"}]}):
+            c = self.cell(self.span(), "D01")
+        a2 = next(e for e in c["cell"]["entries"] if e["entry_id"] == "a2")["detail"]
+        self.assertEqual(a2["basis"]["sources"][0]["material_id"], "MAT-7")
+
+    def test_edit_safeguards_refs_and_basis_through_the_engine_and_excel(self):
+        span = self.span()
+        ns = sn.load(self.g)
+        node = next(n for n in ns["nodes"] if n["node_id"] == span)
+        node["design_intent"] = {"text": "급수를 증기발생기로 보낸다", "by": "user"}
+        sn.save(ns)
+        c = self.cell(span, "D01")
+        self.assertEqual(c["intent"]["text"], "급수를 증기발생기로 보낸다")
+        target = c["targets"][0]["ref"]
+        fields = {"safeguards": [{"text": "안전밸브 개방", "role": "mitigative", "actuation": "passive",
+                                  "refs": [{"ref": target, "origin": "human"}], "ipl": None, "origin": "human"}],
+                  "cause_kind": "equipment", "consequence_basis": "unmitigated",
+                  "cause_refs": [{"ref": target, "failure_mode": "FTO", "origin": "human"}]}
+        r = self.call("results.edit_entry", {"node_id": span, "deviation_id": "D01", "entry_id": "a1", "fields": fields,
+                                             "reason": "보호수단 역할 정리", "ver": c["ver"]})
+        self.assertTrue(r["ok"], r)
+        a1 = next(e for e in self.cell(span, "D01")["cell"]["entries"] if e["entry_id"] == "a1")
+        d = a1["detail"]
+        self.assertEqual((a1["status"], d["cause_kind"], d["consequence_basis"]), ("revised", "equipment", "unmitigated"))
+        self.assertEqual((d["safeguards"][0]["role"], d["safeguards"][0]["actuation"], d["safeguards"][0]["draft"]), ("mitigative", "passive", False))
+        self.assertEqual(d["safeguards"][0]["refs"][0]["label"], c["targets"][0]["label"])
+        self.assertEqual(d["cause_refs"][0]["failure_mode"], "FTO")
+        self.assertEqual(a1["risk"], res.risk_of(a1["severity"], a1["frequency"]), "위험도는 엔진이 센 값 그대로")
+        stale = self.call("results.edit_entry", {"node_id": span, "deviation_id": "D01", "entry_id": "a1", "fields": {"cause_kind": "human"},
+                                                 "reason": "x", "ver": c["ver"]})
+        self.assertEqual((stale["ok"], stale["error"]["code"]), (False, "stale"), "화면이 본 판과 다르면 저장하지 않는다")
+        import openpyxl
+        from hazop.export import study_xlsx
+        self.engine.hooks["save_path"] = self.paths
+        self.assertTrue(self.call("results.export_excel", {"scope": "all"})["ok"])
+        ws = openpyxl.load_workbook(self.save_to)[study_xlsx.SHEETS[2]]
+        head = [x.value for x in ws[1]]
+        rows = [dict(zip(head, [x.value for x in row])) for row in ws.iter_rows(min_row=2)]
+        row = next(x for x in rows if x["원인"] and "원인 a1" in x["원인"])
+        self.assertIn("설계 의도", head)
+        self.assertEqual(row["설계 의도"], "급수를 증기발생기로 보낸다")
+        self.assertIn("[자체작동] 안전밸브 개방", row["보호수단"])
+        self.assertEqual(row["결과 기준"], "비완화")
+        self.assertIn(c["targets"][0]["label"].split(" ")[0], row["그래프 참조"])
+
+
 class TraceTest(Base):
     """구성요소 -> 소속 구간 -> 칸 -> 권고(INTENT §3.6): 태그·ID·도면에서 누른 구성요소(sheet+local) 어느 쪽으로 시작해도 같은 길이 나온다."""
 
