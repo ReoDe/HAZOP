@@ -10,7 +10,8 @@ import math
 
 from .pdf_vector_common import (
     _union, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist, _poly_box_dist,
-    _uf_groups, _center, _is_circle, _is_chevron, _is_triangle, _pt_circle_dist,
+    _uf_groups, _center, _is_circle, _is_chevron, _is_triangle, _pt_circle_dist, _bbox_pts,
+    _end_runs,
 )
 
 
@@ -592,9 +593,131 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
             [m for m in markers if id(m) not in removed_marks], flanges)
 
 
+CROSSING_JOIN_MAX = 4.0     # 엇갈림으로 끊은 한 배관의 두 조각 사이 간격을 가로지르는 선에 수직으로 잰 값의 상한(pt)
+CROSSING_JOIN_REACH = 32.0  # 두 조각 끝 사이 거리 상한(pt). 비스듬히 가로지르는 선(약 7도 이상)까지 본다
+CROSSING_JOIN_WIDTH = 1.1   # 두 조각 굵기 비 상한(같은 선)
+CROSSING_JOIN_LATERAL = 0.3  # 두 끝이 한 줄 위: 옆으로 어긋난 거리 상한(pt)
+
+
+def _dash_paths(dashes):
+    """스트로크 점선 조각을 원래 경로 순서대로 이은 꺾은선 목록. 조각 사이 빈칸도 곧게 이어 메운다."""
+    by_src = collections.defaultdict(list)
+    for d in dashes:
+        if "src" in d:
+            by_src[d["src"]].append(d)
+    return [[q for d in sorted(items, key=lambda d: d["seq"]) for q in d["pts"]] for items in by_src.values()]
+
+
+def _join_crossing_gaps(polys, dashes, syms, prm):
+    """엇갈림 표기('LINE NOT CONNECTED': 잇지 않는 선을 끊어 그림)로 끊은 한 배관의 두 조각을 한 선으로 잇는다.
+    두 조각의 마주 보는 끝이 굵기가 같고 한 줄 위에 있으며(바깥 방향이 반대) 간격이 end_tol보다 크고
+    다른 선(실선이나 점선 경로)이 그 빈칸을 가로지르며, 그 선에 수직으로 잰 빈칸 폭(간격 × 사인)이 CROSSING_JOIN_MAX
+    이하이면 한 배관이다. 비스듬히 가로지르는 선일수록 같은 여백을 두려고 빈칸을 길게 끊는다. 두 끝은 다른 선 끝이나
+    몸체·선에 닿지 않아야 하고, 가로지르는 실선이 조각보다 굵으면 잇지 않는다(가는 곁가지가 굵은 주관 양쪽에서 끝난
+    자리는 분기다, APR1400 025쪽 1" 관이 주관 x 662를 만나는 자리). 잇지 않으면 끝이 뜬 두 조각이 장식선으로 묶여 선 기호(오리피스 등)가 되거나, 비스듬한
+    선 가까이 끝난 두 끝이 그 선의 분기가 된다(APR1400 008쪽: POSRV 배출 상승관이 파일럿 일점쇄선 가로선 자리에서
+    2~4pt, y 263.9 배출관이 7.5도로 기운 입구관 자리에서 19pt 끊긴다) → 이은 선 목록."""
+    def end(p, k):
+        return p["pts"][0] if k == 0 else p["pts"][-1]
+
+    def out_dir(p, k):
+        a, b = (p["pts"][1], p["pts"][0]) if k == 0 else (p["pts"][-2], p["pts"][-1])
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        return None if L == 0 else ((b[0] - a[0]) / L, (b[1] - a[1]) / L)
+
+    cell = CROSSING_JOIN_REACH
+    grid = collections.defaultdict(list)
+    for i, p in enumerate(polys):
+        if len(p["pts"]) >= 2 and not p.get("curved"):
+            for k in (0, 1):
+                e = end(p, k)
+                grid[(int(e[0] // cell), int(e[1] // cell))].append((i, k))
+
+    def near_ends(e, r):
+        cx, cy = int(e[0] // cell), int(e[1] // cell)
+        return [(j, kj) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for j, kj in grid.get((cx + dx, cy + dy), ())
+                if math.hypot(end(polys[j], kj)[0] - e[0], end(polys[j], kj)[1] - e[1]) <= r]
+
+    lines = [(i, p.get("width"), p["pts"]) for i, p in enumerate(polys)] + \
+        [(-1, None, pts) for pts in _dash_paths(dashes)]
+    segs = [(o, w, a, b) for o, w, pts in lines for a, b in _segs(pts)]
+
+    def free(i, k):
+        # 끊어 그린 끝은 아무 선에도 닿지 않는다. 판(플랜지·판 밸브)이나 기호 선에 얹힌 끝은 엇갈림이 아니다
+        e = end(polys[i], k)
+        return len(near_ends(e, prm["end_tol"])) == 1 and _nearest_sym(e, syms, prm["attach_tol"]) is None and \
+            all(o == i or _seg_dist(e, a, b)[0] > prm["touch_tol"] for o, _, a, b in segs)
+
+    def inside_sym(e):
+        # 반대 끝이 기호 몸체 깊숙이 든 조각은 기호의 안쪽 선일 수 있다. 이으면 그 선이 다른 기호까지 닿아 두 기호가
+        # 한 기호로 합쳐진다(_group_symbols B, APR1400 023쪽)
+        return any(s.deep(e, prm) for s in syms)
+
+    def crossed(e, f, u, g, width):
+        lo = (min(e[0], f[0]), min(e[1], f[1]))
+        hi = (max(e[0], f[0]), max(e[1], f[1]))
+        for _, w, a, b in segs:
+            if w and w > CROSSING_JOIN_WIDTH * width:
+                continue
+            if max(a[0], b[0]) < lo[0] or min(a[0], b[0]) > hi[0] or max(a[1], b[1]) < lo[1] or min(a[1], b[1]) > hi[1]:
+                continue
+            L = math.hypot(b[0] - a[0], b[1] - a[1])
+            sin = 0 if L == 0 else abs((b[0] - a[0]) * u[1] - (b[1] - a[1]) * u[0]) / L
+            if sin == 0 or g * sin > CROSSING_JOIN_MAX:
+                continue
+            # 빈칸 ef 안쪽(양 끝 제외)에서 선분 ab(양 끝 포함)와 만나는가. 점선 경로는 조각 끝이 교점에 놓일 수 있다
+            den = (f[0] - e[0]) * (b[1] - a[1]) - (f[1] - e[1]) * (b[0] - a[0])
+            if den == 0:
+                continue
+            s = ((a[0] - e[0]) * (b[1] - a[1]) - (a[1] - e[1]) * (b[0] - a[0])) / den
+            t = ((a[0] - e[0]) * (f[1] - e[1]) - (a[1] - e[1]) * (f[0] - e[0])) / den
+            if 0 < s < 1 and 0 <= t <= 1:
+                return True
+        return False
+
+    cands = []
+    for i, p in enumerate(polys):
+        if len(p["pts"]) < 2 or p.get("curved") or not p.get("width"):
+            continue
+        for k in (0, 1):
+            e, u = end(p, k), out_dir(p, k)
+            if u is None:
+                continue
+            for j, kj in near_ends(e, CROSSING_JOIN_REACH):
+                q = polys[j]
+                if j <= i or q.get("curved") or not q.get("width") or \
+                        max(p["width"], q["width"]) > CROSSING_JOIN_WIDTH * min(p["width"], q["width"]):
+                    continue
+                f, v = end(q, kj), out_dir(q, kj)
+                g = math.hypot(f[0] - e[0], f[1] - e[1])
+                if v is None or g <= prm["end_tol"] or u[0] * v[0] + u[1] * v[1] > -0.99:
+                    continue
+                if abs((f[0] - e[0]) * u[1] - (f[1] - e[1]) * u[0]) > CROSSING_JOIN_LATERAL or \
+                        (f[0] - e[0]) * u[0] + (f[1] - e[1]) * u[1] <= 0:
+                    continue
+                if crossed(e, f, u, g, p["width"]) and free(i, k) and free(j, kj) and \
+                        not inside_sym(end(p, 1 - k)) and not inside_sym(end(q, 1 - kj)):
+                    cands.append((g, (i, k), (j, kj)))
+    mate = {}
+    for _, a, b in sorted(cands):
+        if a not in mate and b not in mate:
+            mate[a], mate[b] = b, a
+    if not mate:
+        return polys
+    out = []
+    for run in _end_runs(len(polys), mate):
+        if len(run) == 1:
+            out.append(polys[run[0][0]])
+            continue
+        pts = [q for m, mk in run for q in (polys[m]["pts"] if mk == 0 else polys[m]["pts"][::-1])]
+        out.append(dict(polys[min(m for m, _ in run)], pts=pts, bbox=_bbox_pts(pts)))
+    return out
+
+
 def _group_symbols(cls, prm):
     syms = _cluster_bodies(cls["bodies"], prm)
-    valves, polys, markers, flange_pairs = _plate_assemblies(syms, list(cls["polys"]), list(cls["markers"]),
+    polys = _join_crossing_gaps(list(cls["polys"]), cls["dashes"], syms, prm)
+    valves, polys, markers, flange_pairs = _plate_assemblies(syms, polys, list(cls["markers"]),
                                                              cls["dashes"], prm)
     fed, polys = _bar_fed_strokes(polys, prm)
     pockets, cls["mouths"], polys = _pockets(polys, prm)
@@ -602,6 +725,11 @@ def _group_symbols(cls, prm):
     for p in polys:
         p["kind_"] = "poly"
     dashes = list(cls["dashes"])
+    # 점선 경로 끝점에 끝을 맞댄 선 끝은 떠 있지 않다. 점선이 그 배관을 이어 그린 것이다(_dashed_continuations)
+    tips = {e for d in dashes for e in d.get("path_ends", ())}
+
+    def dash_tip(e):
+        return any(math.hypot(e[0] - t[0], e[1] - t[1]) <= prm["end_tol"] for t in tips)
     for _ in range(prm["max_iterations"]):
         changed = False
         live = [s for s in syms if s.alive]
@@ -646,7 +774,8 @@ def _group_symbols(cls, prm):
         # C. 끝이 아무 데도 닿지 않는 선 = 장식(스프링·체크밸브 선 등)
         live = [s for s in syms if s.alive]
         decor = [p for p in polys
-                 if any(_end_status(p, k, polys, live, markers, prm) is None for k in (0, 1))]
+                 if any(_end_status(p, k, polys, live, markers, prm) is None and not dash_tip(p["pts"][-k])
+                        for k in (0, 1))]
         if decor:
             ids = {id(p) for p in decor}
             # 장식선들 사이에 놓인 화살촉(체크밸브 사선 끝 삼각형)도 장식선을 잇는 조각이다. 그림에서 읽으면 사선이 화살촉

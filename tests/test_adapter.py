@@ -444,6 +444,40 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(by_kind, ["measurement_connection", "signal_connection"])
         self.assertEqual(ext["unresolved_connectors"], [])
 
+    def test_pipe_broken_where_another_line_crosses_is_one_pipe(self):
+        # 범례 'LINE NOT CONNECTED': 잇지 않는 선을 끊어 그린다(APR1400 008쪽 배출 상승관이 일점쇄선 자리에서 끊김).
+        # 끊긴 두 조각은 한 배관이고, 가로지르는 점선과는 잇지 않는다. 빈칸이 넓거나 가로지르는 선이 없으면 잇지 않는다
+        def run(gap, crossing=True):
+            dash = [dict(line((80, 150), (320, 150), width=0.25), dash=[[6.0, 3.0], 0.0])] if crossing else []
+            ext = pdf_run([rect(190, 60, 210, 80), rect(190, 220, 210, 240), rect(60, 140, 80, 160),
+                           rect(320, 140, 340, 160), line((200, 80), (200, 150 - gap / 2), width=0.25),
+                           line((200, 150 + gap / 2), (200, 220), width=0.25)] + dash)
+            ys = {n["local_id"]: n["geometry"]["y"] for n in ext["nodes"]}
+            return sorted((r["kind"], tuple(sorted(ys[e["node_local_id"]] for e in r["endpoints"])))
+                          for r in ext["relations"])
+        self.assertEqual(run(2.4), [("physical_connection", (60, 220)), ("signal_connection", (140, 140))])
+        self.assertNotIn(("physical_connection", (60, 220)), run(6.0))
+        self.assertNotIn(("physical_connection", (60, 220)), run(2.4, crossing=False))
+
+    def test_two_pieces_on_one_line_are_not_orifice_plates(self):
+        # 오리피스 판은 배관을 가로질러 나란히 선 두 판이다. 한 줄 위에 이어 놓인 두 조각은 판이 아니다
+        side = pdf_run([line((200, 100), (200, 108)), line((203, 100), (203, 108))])
+        inline = pdf_run([line((200, 100), (200, 108)), line((200, 110), (200, 118))])
+        self.assertEqual([n["kind"] for n in side["nodes"]], ["orifice"])
+        self.assertEqual([n["kind"] for n in inline["nodes"]], [None])
+
+    def test_dashed_line_continuing_a_pipe_end_is_pipe(self):
+        # APR1400 008쪽 파일럿 밸브 옆 출구 일점쇄선이 배출 상승관 아래 끝에 끝을 맞대고 이어진다. 점선이 배관을 이어 그린
+        # 것이라 한 배관이다. 같은 점선이 계기에서 나오면 신호선으로 둔다
+        def run(source, words=()):
+            dash = dict(line((120, 210), (200, 210), (200, 180), width=0.25), dash=[[6.0, 3.0], 0.0])
+            ext = pdf_run(source + [dash, line((200, 180), (200, 100), (300, 100), width=0.25),
+                                    rect(300, 90, 320, 110)], words)
+            return [(r["kind"], r["line_type"]) for r in ext["relations"]], ext["unresolved_connectors"]
+        self.assertEqual(run([rect(100, 200, 120, 220)]), ([("physical_connection", "pdf_dashed")], []))
+        relations, unresolved = run([circle(106, 210, 14)], [word("PT", 101, 202), word("101", 101, 209)])
+        self.assertEqual((relations, unresolved), ([("signal_connection", "pdf_dashed")], []))
+
     def test_dashed_line_through_valve_axis_is_pipe(self):
         def bowtie(x, y):
             return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),

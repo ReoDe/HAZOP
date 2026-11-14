@@ -128,6 +128,32 @@ def _uf_groups(n, linked):
     return [groups[k] for k in sorted(groups)]
 
 
+def _end_runs(n, mate):
+    """양 끝(0, 1)을 가진 항목 n개를 끝 짝(mate: (항목, 끝) → (항목, 끝))으로 이은 줄 목록. 줄마다 [(항목, 들어오는 끝)]을
+    차례대로 돌려준다(항목은 들어오는 끝에서 반대 끝으로 지난다). 짝 없는 항목은 혼자 한 줄이다."""
+    runs, used = [], set()
+    for i in range(n):
+        if i in used:
+            continue
+        start, k, seen = i, 0, {i}
+        while (start, k) in mate:  # 줄의 한쪽 끝까지 거슬러 간다(고리면 한 바퀴에서 멈춘다)
+            j, kj = mate[(start, k)]
+            if j in seen:
+                break
+            seen.add(j)
+            start, k = j, 1 - kj
+        run, cur, ck = [], start, k
+        while True:
+            run.append((cur, ck))
+            used.add(cur)
+            nxt = mate.get((cur, 1 - ck))
+            if nxt is None or nxt[0] in used:
+                break
+            cur, ck = nxt
+        runs.append(run)
+    return runs
+
+
 # ---------------------------------------------------------------- 몸체 모양
 
 def _center(b):

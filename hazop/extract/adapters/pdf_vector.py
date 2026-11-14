@@ -42,7 +42,7 @@ from .pdf_vector_common import (
     _num, _bbox_pts, _union, _expand, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist,
     _seg_cross, _poly_box_dist, _uf_groups, _center, _is_circle, _is_tombstone, _is_chevron, _is_triangle, _issue,
     _is_convex,
-    _pt_circle_dist,
+    _pt_circle_dist, _end_runs,
 )
 from .pdf_vector_grouping import (
     _Sym, _cluster_bodies, _nearest_sym, _end_status, _plate_assemblies, _group_symbols, _merge_appendages,
@@ -949,7 +949,7 @@ def _piece_dir(d):
 
 
 def _filled_chains(filled, prm):
-    """채운 사각형 점선 조각 → [(조각 목록, 끝 [(상자, 점)])].
+    """채운 사각형 점선 조각 → [(조각 목록, 끝 [(상자, 점, None)])].
 
     이웃: 간격 dash_gap_max 안이면서 (같은 방향이고 같은 직선 위) 이거나, 한쪽이 방향 없는 모서리 조각이거나,
     방향이 다르면 두 조각 모두 자기 직선 구간의 끝(같은 직선 이웃이 1개 이하)일 때만(꺾임). 교차점에서는 각 점선이
@@ -983,12 +983,12 @@ def _filled_chains(filled, prm):
     for g in _uf_groups(n, lambda i, j: j in links[i]):
         g = sorted(g, key=lambda i: filled[i]["id"])
         terms = [i for i in g if len(links[i]) <= 1] if len(g) > 1 else g * 2
-        out.append(([filled[i] for i in g], [(filled[i]["bbox"], _center(filled[i]["bbox"])) for i in terms]))
+        out.append(([filled[i] for i in g], [(filled[i]["bbox"], _center(filled[i]["bbox"]), None) for i in terms]))
     return out
 
 
 def _stroke_chains(pieces, prm, boxes=()):
-    """스트로크 점선 조각 → [(조각 목록, 끝 [(상자, 점)])].
+    """스트로크 점선 조각 → [(조각 목록, 끝 [(상자, 점, 경로 끝점 또는 None)])].
 
     같은 원본 경로의 연속 조각(seq가 1씩 이어짐)만 한 구간이다. 기호 안에서 흡수된 조각이 있으면 그 자리에서
     구간을 끊는다(A–B–C를 관통하는 점선이 A–C로 이어지지 않게). 서로 다른 경로는 경로 끝점끼리 정확히 두 개가
@@ -1024,7 +1024,7 @@ def _stroke_chains(pieces, prm, boxes=()):
     for comp in _uf_groups(len(runs), lambda a, b: (a, b) in pairs or (b, a) in pairs):
         items = [d for r in comp for d in runs[r]]
         free = [e for e in ends if e[0] in comp and (e[0], e[1]) not in joined]
-        out.append((items, [((e[2][0], e[2][1], e[2][0], e[2][1]), e[2]) for e in free]))
+        out.append((items, [((e[2][0], e[2][1], e[2][0], e[2][1]), e[2], e[3]) for e in free]))
     return out
 
 
@@ -1039,7 +1039,7 @@ def _build_dashed(syms, dashes, markers, prm):
     out = []
     for items, terms in chains:
         hits = []
-        for box, point in terms:
+        for box, point, _ in terms:
             for m in markers:  # 점선 끝 화살촉이 있으면 화살촉까지 이어 본다
                 if _box_gap(m["bbox"], box) <= prm["dash_gap_max"]:
                     box = _union(box, m["bbox"])
@@ -1055,7 +1055,67 @@ def _build_dashed(syms, dashes, markers, prm):
             pts = [h[1] for h in hits] or [_center(items[0]["bbox"]), _center(items[-1]["bbox"])]
             ends = [(("free", -1), pts[0], "pdf_dash_chain"), (("free", -1), pts[-1], "pdf_dash_chain")]
         out.append({"pts": [_center(d["bbox"]) for d in items], "ends": ends, "boxes": [d["bbox"] for d in items],
-                    "evidence": [d["id"] for d in items], "dashed": True})
+                    "evidence": [d["id"] for d in items], "dashed": True,
+                    "tips": [t[2] for t in terms] if len(terms) == 2 else None, "hits": [h[0] for h in hits]})
+    return out
+
+
+def _dashed_continuations(chains, prm):
+    """점선이 실선 배관을 잇는 자리. 점선 사슬의 경로 끝점(tips)이 실선 사슬의 떠 있는 끝(기호·분기점·다른 선에 닿지
+    않은 끝)에 end_tol 안으로 끝을 맞대면, 그 점선은 끊긴 배관을 이어 그린 것이다. 신호선은 계기나 구동부에서 끝나지
+    배관 끝에서 끝나지 않는다(APR1400 008쪽: 파일럿 밸브 옆 출구 일점쇄선이 배출 상승관 아래 끝으로 이어진다). 맞댄
+    사슬은 하나로 합쳐 continues_pipe를 단다. 합친 사슬은 점선으로 남겨 계기에 닿으면 신호선으로 둔다(_dashed_pipe).
+    점선 사슬의 반대 끝은 _build_dashed가 찾은 기호(hits)에 붙인다. 반대 끝도 경로 끝점이어야 한다. 기호 상자 옆을
+    스쳐 조각이 기호에 흡수되며 끊긴 토막은 그 기호를 지나가는 선일 수 있어 잇지 않는다(008쪽 303 파일럿 출구선이
+    V313 밸브 상자 가장자리를 0.4pt 옆으로 지난다)."""
+    cell = 4 * prm["end_tol"]
+    grid = collections.defaultdict(list)
+    for i, ch in enumerate(chains):
+        if ch.get("dashed") or ch.get("pneumatic") or ch.get("contact"):
+            continue
+        for j, (v, pt, _) in enumerate(ch["ends"]):
+            if v[0] == "free":
+                grid[(int(pt[0] // cell), int(pt[1] // cell))].append((i, j))
+    cands = []
+    for i, ch in enumerate(chains):
+        if not ch.get("dashed") or not ch.get("tips"):
+            continue
+        for k, tip in enumerate(ch["tips"]):
+            if tip is None or ch["tips"][1 - k] is None:
+                continue
+            cx, cy = int(tip[0] // cell), int(tip[1] // cell)
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for j, kj in grid.get((cx + dx, cy + dy), ()):
+                        pt = chains[j]["ends"][kj][1]
+                        g = math.hypot(pt[0] - tip[0], pt[1] - tip[1])
+                        if g <= prm["end_tol"]:
+                            cands.append((g, (i, k), (j, kj)))
+    mate = {}
+    for _, a, b in sorted(cands):
+        if a not in mate and b not in mate:
+            mate[a], mate[b] = b, a
+    if not mate:
+        return chains
+    out = []
+    for run in _end_runs(len(chains), mate):
+        if len(run) == 1:
+            out.append(chains[run[0][0]])
+            continue
+        pts, evid, boxes, ends = [], set(), [], []
+        for n, (m, mk) in enumerate(run):
+            ch = chains[m]
+            pts += ch["pts"] if mk == 0 else ch["pts"][::-1]
+            evid.update(ch["evidence"])
+            boxes += ch.get("boxes", [])
+            for k in ((mk,) if n == 0 else ()) + ((1 - mk,) if n == len(run) - 1 else ()):
+                v, pt, basis = ch["ends"][k]
+                hit = (ch.get("hits") or (None, None))[k]
+                if v[0] == "free" and hit is not None:  # 한 끝만 기호에 닿아 미해결로 둔 점선 사슬의 그 끝
+                    v = ("sym", hit)
+                ends.append((v, pt, basis))
+        out.append({"pts": pts, "ends": ends, "boxes": boxes, "evidence": sorted(evid), "dashed": True,
+                    "continues_pipe": True})
     return out
 
 
@@ -1078,6 +1138,8 @@ def _dashed_pipe(ch, nodes, ids, instrument_ids, prm):
     밸브에서 P 상자까지 두세 번 꺾인다). 계기에 닿은 점선은 신호·측정선으로 둔다."""
     if any(i in instrument_ids for i in ids):
         return False
+    if ch.get("continues_pipe"):
+        return True
     valves = 0
     for (v, pt, _), nid in zip(ch["ends"], ids):
         if v[0] != "sym" or nodes[nid]["category"] != "valve":
@@ -1098,6 +1160,15 @@ def _dashed_pipe(ch, nodes, ids, instrument_ids, prm):
 
 
 # ---------------------------------------------------------------- 6. 종류
+
+
+def _side_by_side(strokes, axis):
+    """축(axis 0 = 세로 판의 x, 1 = 가로 판의 y)에 나란한 곧은 선 가운데 서로 0.5pt 넘게 떨어져 길이 방향으로 겹치는
+    두 선이 있는가. 오리피스 판은 배관을 가로질러 나란히 선 두 판이다. 한 줄 위에 이어 놓인 두 조각(엇갈림 자리에서
+    끊은 배관)은 판이 아니다."""
+    spans = [(s["pts"][0][axis], sorted((s["pts"][0][1 - axis], s["pts"][1][1 - axis]))) for s in strokes]
+    return any(abs(a[0] - b[0]) > 0.5 and min(a[1][1], b[1][1]) > max(a[1][0], b[1][0])
+               for n, a in enumerate(spans) for b in spans[n + 1:])
 
 
 def _shape_features(sym, prm):
@@ -1134,7 +1205,7 @@ def _shape_features(sym, prm):
     if sym.stroke_only and straight and len(straight) == len(sym.strokes) and not getattr(sym, "pocket", False):
         vertical = [s for s in straight if abs(s["pts"][0][0] - s["pts"][1][0]) < 0.5]
         horizontal = [s for s in straight if abs(s["pts"][0][1] - s["pts"][1][1]) < 0.5]
-        if max(len(vertical), len(horizontal)) >= 2:
+        if _side_by_side(vertical, 0) or _side_by_side(horizontal, 1):
             found.add("parallel_plates")
     if len(sym.bodies) == 1 and len(circles) == 1 and not tris:
         found.add("single_circle")
@@ -1806,9 +1877,10 @@ def analyze(width, height, words, prims, params=None):
     cores = [s.core for s in syms if s.seed is not None]
     chains += _build_dashed(syms, [d for d in dashes if d["id"] not in dots
                                    and not any(_inside(_center(d["bbox"]), c) for c in cores)], markers, prm)
+    chains = _dashed_continuations(chains, prm)
     syms = _merge_appendages(syms, chains, prm)
     for ch in chains:  # 흐름 방향: 사슬 위·끝에 남은 화살촉(pdf_vector_flow)
-        if not ch.get("dashed"):
+        if not ch.get("dashed") or ch.get("continues_pipe"):
             ch["flow"] = _chain_flow(ch, markers, prm)
     return {"params": prm, "classified": cls, "symbols": syms, "tees": tees, "chains": chains,
             "blocks": blocks, "leftover_markers": markers}
