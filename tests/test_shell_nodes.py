@@ -371,12 +371,14 @@ class CommandTableTest(unittest.TestCase):
             names = sorted(k for k in api.COMMANDS if k.startswith("nodes."))
             self.assertEqual(names, ["nodes." + x for x in sorted(
                 ["create", "add_members", "remove_members", "rename", "set_intent", "merge", "split", "remove", "confirm", "unconfirm",
-                 "lock", "unlock", "undo", "suggest", "migrate"])])
+                 "lock", "unlock", "undo", "suggest", "migrate", "screen", "exclude_drawing"])])
             for k in names:
                 spec = api.COMMANDS[k].spec
                 self.assertFalse({"by", "at", "author", "origin", "confirmed_by", "request"} & set(spec), k)
                 self.assertTrue(spec["project_id"][1], k)
-                if k not in ("nodes.suggest", "nodes.migrate"):
+                if k == "nodes.exclude_drawing":   # 구간 집합이 아니라 도면 빼기 표시 파일을 쓴다: 그 파일의 판(ver)을 대조한다
+                    self.assertTrue(spec["ver"][1], k)
+                elif k not in ("nodes.suggest", "nodes.migrate"):
                     self.assertTrue(spec["set_rev"][1], k)
                     # 구간을 건드리는 명령은 대상의 판(targets)이 필수다(규격 §5.3). 만들기·묶음 되돌리기는 대상 구간이 없다
                     self.assertEqual(spec["targets"][1], k not in ("nodes.create", "nodes.undo"), k)

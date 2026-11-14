@@ -473,6 +473,53 @@ def screen_override(node_set, node_id, status, reason=None, at=None):
                 before=node_set)
 
 
+SCREEN_CHOICES = ("excluded", "keep")   # 사람이 고르는 분석 범위: 분석에서 제외 · 다시 넣기
+
+
+def screen_excluded(node):
+    """분석에서 제외된 구간인가(규칙 판정이든 사람 판정이든). 행렬·일괄 분석·Excel·초기사건 인계가 이 구간을 뺀다."""
+    return ((node or {}).get("screen") or {}).get("status") == "excluded"
+
+
+def set_screen(node_set, node_id, status, reason, by, at=None):
+    """사람이 구간을 분석에서 빼거나(excluded) 다시 넣는다(keep). 확정·잠긴 구간도 된다.
+    바뀌는 것은 범위(screen)뿐이다. 구성요소·상태·rev는 그대로 둬 ⑤ 칸이 '범위 바뀜'이 되지 않고, 묶음 대신 history에만 남긴다
+    (묶음 되돌리기는 구간을 확정 전으로 돌리므로 범위 바꾸기에 쓰지 않는다. 되돌리기는 반대 판정을 다시 고르는 것이다).
+    같은 판정이면 입력 그대로 돌려준다."""
+    if status not in SCREEN_CHOICES:
+        raise ValueError("판정 값은 %s 중 하나" % "·".join(SCREEN_CHOICES))
+    reason, by = (reason or "").strip(), (by or "").strip()
+    if status == "excluded" and not reason:
+        raise ValueError("분석에서 제외하는 이유를 적어야 함")
+    if not by:
+        raise ValueError("누른 사람 이름 필요")
+    old = (_find(node_set, node_id).get("screen") or {}).get("status") or "keep"
+    if old == status:
+        return node_set
+    at = at or now_utc()
+    out = copy.deepcopy(node_set)
+    node = _find(out, node_id)
+    node["screen"] = {"status": status, "score": None, "grade": None, "rule": None, "by": "human", "reason": reason or None,
+                      "decided_by": by, "at": at}
+    return _log(out, "screen_set", {"node_id": node_id, "from": old, "to": status, "reason": reason or None, "by": by,
+                                    "state": node_state(node)}, at)
+
+
+def screen_confirm_text(node_set, results, node_id, status):
+    """분석에서 빼기 전에 사람에게 물을 글. 확정·잠긴 구간이거나 결과가 있는 칸이 있을 때만(없으면 None). 다시 넣기는 묻지 않는다.
+    부르는 쪽은 사람이 본 이 글을 그대로 돌려보내야 저장한다(그 사이 상태가 바뀌면 글이 달라져 다시 묻는다)."""
+    node = _find(node_set, node_id)
+    if status != "excluded" or ((node.get("screen") or {}).get("status") or "keep") == "excluded":
+        return None
+    what = {"locked": "잠긴 구간", "confirmed": "확정된 구간"}.get(node_state(node))
+    filled = sum(1 for c in (results or {}).get("cells") or [] if c.get("node_id") == node_id and c.get("entries"))
+    facts = [x for x in (what, "분석 결과 %d칸이 있음" % filled if filled else None) if x]
+    if not facts:
+        return None
+    return ("%s(%s): %s. 분석에서 빼면 분석 결과 행렬·일괄 분석·Excel·초기사건 인계에서 빠집니다. 결과는 지우지 않고, 다시 넣으면 돌아옵니다."
+            % (node_id, node.get("name") or "", ", ".join(facts)))
+
+
 def _piece_with(records, members):
     """members를 모두 품은 조각 기록 하나(구성요소로 찾는다. 나누고 다시 합치면 from이 겹칠 수 있어 from으로 찾지 않음)."""
     want = set(members or ())
@@ -977,13 +1024,30 @@ def set_excluded(project_id, drawing_number, excluded, by, reason=None, at=None)
     same = [k for k in drawings if drawing_key(k) == drawing_key(drawing_number)]
     if bool(excluded) == bool(same):
         return excluded_path(project_id)
+    at = at or now_utc()
     if excluded:
-        drawings[drawing_number] = {"by": by, "reason": (reason or "").strip() or "범례·기호표 도면", "at": at or now_utc()}
+        drawings[drawing_number] = {"by": by, "reason": (reason or "").strip() or "범례·기호표 도면", "at": at}
     else:
         for k in same:
             drawings.pop(k)
+    history = _excluded_history(project_id) + [store_io.history_row("exclude_drawing" if excluded else "include_drawing", {"detail": {
+        "drawing_number": drawing_number, "by": by, "reason": (reason or "").strip() or None}}, at)]
     return write(excluded_path(project_id), {"schema_version": SCHEMA_VERSION, "kind": EXCLUDED_KIND,
-                                             "project_id": project_id, "drawings": dict(sorted(drawings.items()))})
+                                             "project_id": project_id, "drawings": dict(sorted(drawings.items())),
+                                             "history": history[-EXCLUDED_HISTORY_KEEP:]})
+
+
+EXCLUDED_HISTORY_KEEP = 500
+
+
+def _excluded_history(project_id):
+    """도면 빼기·다시 넣기 기록(누가·언제·왜). 표시 파일은 load_excluded가 먼저 읽어 형식을 검사했다."""
+    try:
+        with open(excluded_path(project_id), encoding="utf-8-sig") as fh:
+            rows = json.load(fh).get("history")
+    except (OSError, ValueError, AttributeError):
+        return []
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
 
 
 def exclusion_for(pg):

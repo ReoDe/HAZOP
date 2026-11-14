@@ -236,7 +236,7 @@ class CommandTest(Base):
         self.assertEqual((lock["ok"], lock["refused"][0]["code"]), (False, "rule"))
         self.assertEqual(sorted(cmd.COMMANDS), sorted(["create", "add_members", "remove_members", "rename",
                                                        "set_design_intent", "merge", "split", "remove", "confirm",
-                                                       "unconfirm", "lock", "unlock", "undo"]))
+                                                       "unconfirm", "lock", "unlock", "undo", "screen"]))
         self.assertEqual(self.run_cmd("explode", {})["refused"][0]["code"], "unknown_command")
         with self.assertRaises(TypeError):
             cmd.execute(self.pg, "rename", {"node_id": nid, "name": "x"}, confirmed_by="검토자")  # author 기본값 없음

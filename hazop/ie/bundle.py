@@ -71,12 +71,13 @@ GLOSSARY = (
 
 def approved_entries(results, node_set):
     """([(node_id, 편차, 항목)] 확정 근거가 되는 승인 항목을 묶음 순서대로, 넣지 않은 항목 수).
-    확정·잠금 구간의 보관되지 않은 칸만 보고, '범위 바뀜' 승인은 넣지 않은 수에 센다."""
+    확정·잠금 구간의 보관되지 않은 칸만 보고, '범위 바뀜' 승인은 넣지 않은 수에 센다. 분석에서 제외한 구간(screen excluded)은
+    행렬·Excel처럼 빼고 그 항목을 넣지 않은 수에 센다."""
     from hazop.study import nodes
     cells = {(c["node_id"], c["deviation_id"]): c for c in results["cells"]}
     picked, left_out = [], 0
     for n in node_set["nodes"]:
-        if not nodes.is_active(n):
+        if not nodes.is_active(n) or nodes.screen_excluded(n):
             left_out += sum(len(cells.get((n["node_id"], d["deviation_id"]), {}).get("entries", []))
                             for d in results["deviations"])
             continue

@@ -8,6 +8,7 @@ import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { canEdit, colorOf, rangeText, sheetName, stateChip } from "./nodes_logic.js";
 import * as N from "./nodes_state.js";
+import { ScreenBox, ScreenChip } from "./nodes_screen.js";
 
 const cssHref = new URL("nodes.css", import.meta.url).href;
 if (typeof document !== "undefined" && !document.querySelector('link[data-nodes-css]')) {
@@ -29,7 +30,7 @@ function Row({ n, list, drawings, on, checked }) {
       <span class="main"><b>${n.node_id} <span class="nm">${n.name || "(이름 없음)"}</span></b><span>${rangeText(n, drawings)}${n.span && n.span.spans ? html` <span class="span-mark" title="여러 도면에 걸친 구간">⇄</span>` : null} · 구성요소 ${n.count}</span></span></button>
     ${n.broken ? html`<${Chip} kind="warn" icon="alert-triangle" title="도면을 고치거나 다시 추출해 도면에서 사라진 구성원입니다. 구간에서 빼거나 다시 넣으세요">끊긴 구성원 ${n.broken}<//>` : null}
     ${n.overlaps.length ? html`<${Chip} kind="warn" title=${"겹치는 구간: " + n.overlaps.map((o) => o.node_id + "(" + o.shared + ")").join(", ")}>겹침 ${n.overlaps.length}<//>` : null}
-    <${Chip} kind=${chip.kind} icon=${chip.icon}>${chip.label}<//></div>`;
+    <${ScreenChip} n=${n} /><${Chip} kind=${chip.kind} icon=${chip.icon}>${chip.label}<//></div>`;
 }
 
 function Editable({ label, value, multiline, disabled, onSave, hint, aiDraft }) {
@@ -77,6 +78,7 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
       ${n.state === "locked" ? html`<${Btn} icon="lock-open" label=${n.node_id + " 잠금 풀기"} disabled=${busy} onClick=${() => setUnlocking(!unlocking)}>잠금 풀기<//>` : null}
       ${edit && selection.length ? html`<${Btn} label="고른 것을 떼어 새 구간으로" disabled=${busy} onClick=${() => N.splitSelection(n.node_id)}>고른 ${selection.length}개를 떼어 나누기<//>` : null}
       ${edit ? html`<${Btn} kind="ghost" icon="trash" label=${n.node_id + " 지우기"} disabled=${busy} onClick=${() => N.removeNode(n.node_id, false)}>지우기<//>` : null}</div>
+    <${ScreenBox} key=${"screen-" + n.node_id} n=${n} busy=${busy} />
     ${unlocking && n.state === "locked" ? html`<div class="field"><label for="unlock-reason">잠금을 푸는 이유(필수)</label>
       <input id="unlock-reason" class="textbox" value=${reason} onInput=${(e) => setReason(e.target.value)} />
       <div class="acts-row"><${Btn} kind="primary" sm=${true} disabled=${busy || !reason.trim()} label="잠금 풀기 실행" onClick=${async () => { const r = await N.unlock([n.node_id], reason.trim()); if (r) { setUnlocking(false); setReason(""); } }}>풀기<//></div></div>` : null}

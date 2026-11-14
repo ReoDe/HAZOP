@@ -520,6 +520,9 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
             if ai and any(_has_entries(out_res, nid) for nid in ids):
                 why.append((label, "칸에 항목이 있는 구간의 병합은 사람만 함(§4.4)"))
                 continue
+            if len({nodes.screen_excluded(n) for n in picked}) > 1:   # 합치면 사람의 제외 판정이 말없이 사라지거나 다른 구성요소에 붙는다
+                why.append((label, "분석에서 제외한 구간과 넣은 구간은 합칠 수 없음(먼저 다시 넣거나 함께 제외)"))
+                continue
             keep = picked[0]
             keep["members"] = sorted({m for n in picked for m in n["members"]})
             keep["name_by"] = keep.get("name_by") or origin
@@ -540,6 +543,8 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
                 continue
             new = dict({"node_id": nodes._next_id(out), "name": (op.get("name") or n["name"] + " 분할").strip(),
                         "basis": "%s에서 나눔" % n["node_id"], "members": moved}, **nodes._v2_fields(origin))
+            if nodes.screen_excluded(n):   # 떼어 낸 조각도 사람이 제외한 범위 안이다(말없이 분석에 다시 들어가지 않게)
+                new["screen"] = copy.deepcopy(n["screen"])
             n["members"] = sorted(set(n["members"]) - set(moved))
             out["nodes"].insert(out["nodes"].index(n) + 1, new)
         elif kind == "remove":
