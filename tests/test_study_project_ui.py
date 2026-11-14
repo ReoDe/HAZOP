@@ -212,7 +212,10 @@ class StudyProjectUiTest(unittest.TestCase):
         self.assertFalse(scr.exclude_current(" "), "이유 없이 제외로 옮기지 않는다")
         self.assertTrue(scr.exclude_current("검토 범위 밖"))
         self.assertTrue(scr.confirm("EJ", ack=True))
-        self.assertTrue(nodes.all_confirmed(nodes.load(scr.graph)))
+        saved = nodes.load(scr.graph)   # 규격 v2 §2.5: 옛 '스크리닝 제외' 구간은 읽을 때 미확정으로 내려온다(nodes.settle_screen)
+        self.assertEqual([n["node_id"] for n in saved["nodes"] if not nodes.is_active(n)], [keep])
+        self.assertEqual(next(n for n in saved["nodes"] if n["node_id"] == keep)["legacy_screen"]["reason"], "검토 범위 밖")
+        self.assertTrue(all(nodes.is_active(n) for n in saved["nodes"] if n["node_id"] != keep))
 
     def test_screens_do_not_change_the_shared_project_graph(self):
         """프로젝트 그래프는 화면 여럿이 함께 쓴다(캐시). 화면을 돌아도 내용이 그대로여야 한다."""

@@ -175,7 +175,8 @@ class StudyReviewUiTest(unittest.TestCase):
         last = scr.node_set["history"][-1]
         self.assertEqual((last["op"], last["detail"]["proposal_id"], last["detail"]["changes"]),
                          ("ai_review_accept", prop["id"], {"merge_with": [others[0]]}))
-        self.assertEqual(nodes.load(scr.graph), scr.node_set, "저장본도 같음")
+        self.assertEqual(nodes.load(scr.graph), nodes.settle_screen(scr.node_set),
+                         "저장본도 같음(읽을 때 옛 '스크리닝 제외' 판정은 떼어 미확정으로 읽는다, 규격 v2 §2.5)")
         self.assertTrue(win.toast_box.run_undo())
         self.assertEqual(scr.node_set["nodes"], before["nodes"], "실행 취소로 되돌아감")
 
