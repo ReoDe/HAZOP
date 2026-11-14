@@ -645,8 +645,7 @@ def analysis_scope(engine, args):
     except Exception:  # noqa: BLE001 - 연결을 못 읽으면 실행 때 엔진이 다시 본다
         LOG.exception("분석 연결을 읽지 못함")
         return None
-    fp_fn = getattr(analysis_run, "scope_fp", None)
-    return plan, (fp_fn(units, plan) if fp_fn is not None else None)
+    return plan, analysis_run.scope_fp(units, plan)
 
 
 def analysis_details(item, snap, engine=None):

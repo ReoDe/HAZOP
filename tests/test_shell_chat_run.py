@@ -183,9 +183,6 @@ class AnalysisRunTest(RunBase):
         self.assertEqual(self.calls, [], "상자에 보인 비용과 지금 비용이 다르면 실행하지 않는다")
 
     def test_the_scope_seen_in_the_box_is_passed_as_scope_fp(self):
-        from hazop.shell import analysis_run
-        if not hasattr(analysis_run, "scope_fp"):
-            self.skipTest("엔진에 범위 지문(analysis_run.scope_fp)이 아직 없음")
         plan = {"via": "subscription", "method_name": "Claude 구독", "model_name": "빠름", "paid": False, "conn_ver": "cv-s", "model": "fast"}
         with mock.patch.object(api_results, "_run_conn", lambda engine, units, method=None: dict(plan)):
             self.approve(self.one("analysis.run", node_ids=["S1"]))

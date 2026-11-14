@@ -93,10 +93,7 @@ class R1PaidAnalysisTest(RunBase):
 
     def test_scope_changed_after_the_box_does_not_reach_the_paid_client(self):
         """상자를 띄운 뒤 분석 범위(칸·호출 수·비용)가 바뀌면 엔진이 scope_changed로 거절해 AI를 부르지 않는다(B4 검토 2)."""
-        import inspect
-        from hazop.shell import analysis_run
-        if not hasattr(analysis_run, "scope_fp") or "scope_fp" not in inspect.getsource(api_results._run):
-            self.skipTest("엔진의 범위 지문 대조(S-conn B4 검토 수정)가 아직 없음")
+        from hazop.shell import analysis_run      # 엔진 대조는 4107b11(S-conn B4 검토 수정)
         with mock.patch.object(analysis_run, "scope_fp", lambda units, conn=None: "fp-box"):
             item = self.one("analysis.run", node_ids=["S1"])
         with mock.patch.object(analysis_run, "scope_fp", lambda units, conn=None: "fp-now"):
