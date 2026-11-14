@@ -747,7 +747,7 @@ def _links_execute(engine):
 
 # ================================================================ 도면을 구간 분석에서 빼기·다시 넣기(B2, node_commands.exclude_drawing)
 # 화면(도면 패널)과 같은 대조: 상자가 본 표시 파일 판(ver)과, 뺄 도면의 구성요소를 품은 구간이 있으면 엔진이 물을 확인 글을 그대로 넘긴다.
-# 확인 글은 엔진과 같은 공개 함수(drawing_nodes·drawing_confirm_text)로 저장 없이 만들고, 실제 엔진 글과 같은지 시험한다.
+# 확인 글은 엔진의 마른 실행(dry=True, 33aefb4)으로 저장 없이 얻는다. 엔진 검사에 걸리면 상자를 띄우기 전에 그 사유로 거절한다.
 
 def _excl_row(engine, graph_id):
     from hazop.shell import api_nodes
@@ -760,20 +760,15 @@ def _excl_row(engine, graph_id):
     return (row, None) if row is not None else (None, "프로젝트에 없는 도면: %s" % graph_id)
 
 
-def _excl_ask(engine, graph_id, number, excluded):
-    """엔진(exclude_drawing)이 물을 확인 글. 다시 넣기나 걸리는 구간이 없으면 None."""
-    if not excluded:
-        return None
+def _excl_dry(engine, graph_id, excluded, ver):
+    """엔진의 마른 실행(exclude_drawing dry=True: 같은 검사, 저장 안 함) -> (물을 확인 글 또는 None, 사유 글 또는 None)."""
     from hazop.app import project_ctx
     from hazop.study import node_commands as nc
-    from hazop.study import nodes
     pg = project_ctx.project_graph(engine.project_id())
-    try:
-        ns = nodes.read_as_is(pg)
-    except (OSError, ValueError):
-        ns = None
-    held = nc.drawing_nodes(pg, ns, graph_id)
-    return nc.drawing_confirm_text(graph_id, number, held, *nc._held_counts(pg, ns, held)) if held else None
+    out = nc.exclude_drawing(pg, graph_id, bool(excluded), by=engine.reviewer(), ver=ver, dry=True)
+    if not out.get("ok"):
+        return None, "; ".join(str(r.get("reason") or "") for r in out.get("refused") or [] if isinstance(r, dict)) or "뺄 수 없음"
+    return out.get("needs_confirm") or None, None
 
 
 def _excl_want(item):
@@ -791,8 +786,11 @@ def _excl_check(engine):
             return "도면 번호가 확정되지 않은 도면은 뺄 수 없음(표제란에서 도면 번호를 먼저 확정)"
         if row["excluded"] == _excl_want(item):
             return "이미 구간 분석에서 %s 도면" % ("뺀" if row["excluded"] else "쓰는")
+        ask, why = _excl_dry(engine, item.args["graph_id"], _excl_want(item), row["ver"])
+        if why:
+            return why
         item.targets = [item.args["graph_id"]]
-        item.basis = {"ver": row["ver"], "confirm": _excl_ask(engine, item.args["graph_id"], row["drawing_number"], _excl_want(item))}
+        item.basis = {"ver": row["ver"], "confirm": ask}
         return None
     return check
 
@@ -809,7 +807,9 @@ def _excl_details(engine):
             rows.append({"label": "이 도면을 쓰는 구간", "after": ", ".join("%s %s(%d개)" % (n["node_id"], n.get("name") or "", n["count"]) for n in row["nodes"])})
         if (item.args.get("reason") or "").strip():
             rows.append({"label": "사유(AI가 씀)", "after": _show(item.args["reason"])})
-        ask = _excl_ask(engine, row["graph_id"], row["drawing_number"], want)
+        ask, why = _excl_dry(engine, row["graph_id"], want, row["ver"])
+        if why:
+            return [{"label": "오류", "after": why}]
         if ask:
             rows.append({"label": "엔진 확인", "after": ask})
         rows.append({"label": "누른 사람", "after": "%s(확인한 사람)" % _who(engine)})
