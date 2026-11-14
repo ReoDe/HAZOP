@@ -772,7 +772,7 @@ class IsaBubbleKindTest(unittest.TestCase):
     """기존 마지막 글자 규칙이 못 정한 계기 원만 ISA 기능 문자로 정한다(3e)."""
 
     def test_function_letters(self):
-        cases = {"ZL\n202C": "indicator", "LG\n5": "indicator", "FICKS\n101": "controller",
+        cases = {"LG\n5": "indicator", "FICKS\n101": "controller",
                  "PISL\n101": "switch", "LEITS\n2": "transmitter", "PTAL\n3110A": "transmitter"}
         for text, kind in cases.items():
             self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], kind, text)
@@ -782,9 +782,18 @@ class IsaBubbleKindTest(unittest.TestCase):
         for text in ("TEW\n4", "TEWIS\n1", "TEW 38A"):
             self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], "temperature_element", text)
 
-    def test_alarm_and_annotation_get_no_kind(self):
-        # FE(원 안 검출부)는 배관 부품 kind로 두지 않는다. V(밸브)·설비 번호(RCP 1A)·PSE(파열판)도 계기 kind가 아니다(3e 검토)
-        for text in ("PDAH\n032", "LL", "HHL", "NO", "SY\n019", "RE\n073A", "FE\n341A",
+    def test_legend_codes(self):
+        # APR1400 범례 1.7-1(2/4·3/4)·1.7-9가 이름을 준 계기 표기. 번호가 없어도 계기 원 안이면 정한다
+        cases = {"ZL\n202C": "pilot_light", "ZL": "pilot_light", "PDAH\n032": "alarm", "XAH\n051": "alarm",
+                 "PAL": "alarm", "PDAH": "alarm", "AX\n134": "sample_probe", "FG": "sight_glass",
+                 "LE\n058": "level_element"}
+        for text, kind in cases.items():
+            self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], kind, text)
+
+    def test_annotation_gets_no_kind(self):
+        # FE(원 안 검출부)는 배관 부품 kind로 두지 않는다. V(밸브)·설비 번호(RCP 1A)·PSE(파열판)도 계기 kind가 아니다(3e 검토).
+        # 범례 덧붙임 글자(LL·HL·FL)는 번호 없이 홀로 있으면 표시등이 아니다
+        for text in ("LL", "HL", "FL", "HHL", "NO", "SY\n019", "RE\n073A", "FE\n341A",
                      "PSV\n101", "PSE\n101", "PCV\n101", "FCV\n101", "RCP\n1A"):
             self.assertIsNone(pdf_vector._instrument_kind(text, 12.0)[0], text)
 

@@ -684,6 +684,14 @@ class PdfVectorRuleTest(unittest.TestCase):
                 self.assertEqual([n["kind"] for n in ext["nodes"]], ["transmitter"])
         self.assertEqual(pdf_vector._instrument_kind("PUMP"), (None, None))
 
+    def test_legend_instrument_codes(self):
+        cases = {"ZL\n202C": "pilot_light", "ZL": "pilot_light", "PDAH\n031": "alarm", "PAL": "alarm",
+                 "AX\n134": "sample_probe", "FG": "sight_glass", "LE\n058": "level_element", "LL": None, "ZAC": "controller"}
+        for text, kind in cases.items():
+            with self.subTest(text=text):
+                ext = pdf_run([circle(100, 100, 14)], [word(t, 95, 92 + 7 * i) for i, t in enumerate(text.split("\n"))])
+                self.assertEqual([n["kind"] for n in ext["nodes"]], [kind])
+
     def test_circle_with_equipment_word_is_not_instrument(self):
         ext = pdf_run([circle(100, 100, 20), rect(200, 80, 240, 120), line((120, 100), (200, 100))],
                       [word("P-01", 90, 124), word("PUMP", 90, 131)])

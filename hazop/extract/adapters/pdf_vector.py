@@ -1155,6 +1155,10 @@ def _instrument_kind(text, min_side=None):
         return "temperature_element", "isa_letters:%s" % letters
     if len(letters) >= 2 and letters[-1] in INSTRUMENT_FUNCTION:
         return INSTRUMENT_FUNCTION[letters[-1]], "isa_letters:%s" % letters
+    # 마지막 글자 규칙 뒤에 본다: ZAC는 AC(ALARM CLOSED)로도, C(CONTROLLER)로도 읽혀 앞 규칙의 판정을 바꾸지 않는다
+    legend = _legend_code_kind(letters, numbered=m.group(0) != letters, min_side=min_side)
+    if legend is not None:
+        return legend, "isa_legend_code:%s" % letters
     return _isa_bubble_kind(lines, min_side)
 
 
@@ -1165,6 +1169,35 @@ ISA_FUNCTION_ORDER = (("T", "transmitter"), ("C", "controller"), ("S", "switch")
                       ("I", "indicator"), ("G", "indicator"), ("L", "indicator"))  # 출력(T·C·S) > 판독(R·I·G·L)
 ISA_LAST_FUNCTIONS = frozenset("TCSRIGLAK")  # 계기 표기의 마지막 기능 문자로 볼 수 있는 글자(A 경보, K 조작반 포함)
 ISA_BUBBLE_MIN = 8.0  # 계기 원 짧은 변 하한(pt)
+
+# APR1400 범례가 이름을 준 계기 표기. 범례 1.7-1(3/4) INSTRUMENT TYPE CODES의 뒤 글자(기능): A·AC·AH·AHH·AHL·AL·ALL·AO는
+# 경보, L은 LIGHT (PILOT). 앞 글자까지 정해야 뜻이 서는 표기는 범례 기호로 정한다: AX는 1.7-1(2/4) SAMPLE PROBE의 원,
+# FG는 1.7-9 FLOW SIGHT GLASS의 원, LE는 3/4의 L(LEVEL) + E(PRIMARY ELEMENT). FE는 정하지 않는다(ISA_FUNCTION_ORDER 위 설명)
+LEGEND_ALARM_FUNCTIONS = frozenset({"A", "AC", "AH", "AHH", "AHL", "AL", "ALL", "AO"})
+LEGEND_FUNCTION_KIND = {"L": "pilot_light"}
+LEGEND_CODE_KIND = {"AX": "sample_probe", "FG": "sight_glass", "LE": "level_element"}
+# 범례 1.7-1(3/4) CLARIFYING SYMBOL LIST의 글자. 번호 없이 원 안에 홀로 적히면 계기 표기가 아니라 한계·고장 위치 같은
+# 덧붙임 표기다(LL LOW LIMIT, FL FAIL LOCK 등)
+LEGEND_CLARIFYING = frozenset({"A", "ADD", "AVG", "BI", "C", "CC", "D", "DIFF", "DIR", "FC", "FI", "FL", "FO", "HE", "HHL",
+                               "HL", "HP", "INT", "ISO", "LL", "LLL", "LP", "M", "MAX", "MIN", "NA", "NAK", "RES", "REN",
+                               "SC", "SI", "SM", "SQRT", "TURB", "VOL", "X", "REF", "DC", "IPS"})
+
+
+def _legend_code_kind(letters, numbered, min_side):
+    """범례가 정한 계기 표기(LEGEND_*)의 kind. 계기 원 크기(ISA_BUBBLE_MIN)가 아니거나, 번호 없는 글자가 범례 덧붙임
+    글자(LEGEND_CLARIFYING)이면 정하지 않는다. → kind 또는 None"""
+    if min_side is None or min_side < ISA_BUBBLE_MIN or len(letters) < 2:
+        return None
+    if not numbered and letters in LEGEND_CLARIFYING:
+        return None
+    if letters in LEGEND_CODE_KIND:
+        return LEGEND_CODE_KIND[letters]
+    funcs = letters[1:]
+    if funcs[:1] in VARIABLE_MODIFIERS_ISA and len(funcs) > 1:
+        funcs = funcs[1:]  # 변수 수식 문자(PDAH의 D 차압)
+    if funcs in LEGEND_ALARM_FUNCTIONS:
+        return "alarm"
+    return LEGEND_FUNCTION_KIND.get(funcs)
 
 
 def _isa_bubble_kind(lines, min_side=None):
