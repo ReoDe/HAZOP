@@ -1847,13 +1847,15 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
 
     positions, numbered = _valve_labels(syms, blocks, roles, valve_like, plan_into, label_of, taken, marks, drop, prm,
                                         set(numbers_on))
-    node_out, locations, local_of, instrument_ids, dropped = [], [], {}, set(), []
+    node_out, locations, local_of, instrument_ids, dropped, label_lines = [], [], {}, set(), [], {}
     for n, s in enumerate(syms, 1):
         local_id = "local-node-%03d" % n
         sid = "pdf-p%d-sym-%04d" % (page, n)
         local_of[id(s)] = (local_id, sid)
         bi = label_of.get(n - 1)
         text = blocks[bi]["text"] if bi is not None else ""
+        if bi is not None:
+            label_lines[local_id] = list(zip(text.split("\n"), blocks[bi]["line_boxes"]))
         kind, basis = _classify(s, text, 0 if id(s) in on_valve else degree.get(id(s), 0), prm, marks.get(n - 1, []))
         mark_lines = ["".join(m.partition("\n")[0].split()) for m in marks.get(n - 1, [])]
         class_mark = basis == "valve_body" and any(SAFETY_CLASS_RE.fullmatch(t) for t in mark_lines + ["".join(mark_lines)])
@@ -1928,7 +1930,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     merge_into, number_ids = _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, local_of, chains,
                                acts_on, numbers_on)
     _apply_positions(syms, node_out, unknowns, local_of, positions, blocks)
-    _assign_tags(node_out, unknowns, instrument_ids, {local_of[id(syms[si])][0] for si in numbered})
+    _assign_tags(node_out, unknowns, instrument_ids, {local_of[id(syms[si])][0] for si in numbered}, label_lines)
     tee_ids = {}
     for k, (x, y) in enumerate(tees):
         n = len(syms) + k + 1  # 사전이 버린 기호가 있어도 기호 노드 번호와 겹치지 않게

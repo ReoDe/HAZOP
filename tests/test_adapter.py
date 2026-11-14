@@ -767,6 +767,14 @@ class PdfTagTest(unittest.TestCase):
         self.assertIn("[추론]", nodes[3]["evidence"]["tag_basis"])
         self.assertEqual([k for k in unknown if k[0] == "missing_tag"], [("missing_tag", nodes[4]["source_object_id"])])
 
+    def test_equipment_number_line_matching_kind_is_tag(self):
+        # 범례 기기 번호 'TK 02 A': 종류 글자가 기호 종류와 맞을 때만 태그다. 탱크 글자 옆 'PP01A'는 탱크 태그가 아니다
+        nodes, unknown = self.tags([("rect", ["TANK", "TK02A"]), ("rect", ["TANK", "PP01A"])])
+        self.assertEqual([n["kind"] for n in nodes], ["tank", "tank"])
+        self.assertEqual([n["tag"] for n in nodes], ["TK02A", None])
+        self.assertEqual(nodes[0]["evidence"]["tag_basis"], "equipment_number")
+        self.assertIn(("missing_tag", nodes[1]["source_object_id"]), unknown)
+
     def test_duplicate_and_tied_prefix_leave_tag_empty(self):
         nodes, unknown = self.tags([("rect", ["RC-V111"]), ("rect", ["RC-V111"]), ("rect", ["CV-V201"]),
                                     ("circle", ["PT", "110"])])
