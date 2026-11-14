@@ -26,3 +26,8 @@
 .ie-mld { margin-top: var(--sp-3); }
 .ie-conflict { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); background: var(--warn-bg); }
 .ie-unread { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+/* B5 후보 카드: 한 줄 추적 */
+.ie-cand { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-1) 0 var(--sp-2); }
+.ie-trace { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--sp-1); line-height: 1.5; }
+.ie-trace .tr-arrow { color: var(--muted); margin-right: 2px; }
+.ie .cand .nrow-b.main { text-align: left; display: flex; flex-direction: column; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }

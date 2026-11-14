@@ -7,6 +7,7 @@ import { store } from "../store.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import * as I from "./ie_state.js";
 import { FmeaView, MldSection } from "./ie_p5.js";
+import { CandidateCard } from "./ie_judge.js";
 
 const STATUS = { draft: ["초안", "ai"], confirmed: ["확정", "ok"], split: ["나뉨", "plain"], deleted: ["삭제", "plain"] };
 const JUDGE = { yes: ["후보", "accent"], no: ["제외", "plain"], undecided: ["보류", "warn"] };
@@ -69,12 +70,15 @@ function Ask() {
 
 function CandRow({ c, pick = true }) {
   const picked = I.useIe((x) => x.picked);
+  const open = I.useIe((x) => !!x.cand && x.cand.iec === c.candidate_id);
   const on = picked.includes(c.candidate_id);
-  return html`<div class=${"row cand" + (on ? " on" : "")} role="listitem" key=${c.candidate_id}>
+  return html`<div key=${c.candidate_id}><div class=${"row cand" + (on ? " on" : "")} role="listitem">
     ${pick ? html`<input type="checkbox" checked=${on} aria-label=${c.candidate_id + " 고르기"} onChange=${() => I.togglePick(c.candidate_id)} />` : null}
-    <span class="main"><b>${c.candidate_id} <span class="nm">${c.cause}</span></b>
-      <span>${(c.node_ids && c.node_ids.length > 1 ? c.node_ids.join("·") + " (겹친 구간 " + c.node_ids.length + "곳)" : c.node_id)} › ${c.deviation_label}${c.category ? " · 범주 " + c.category : " · 범주 없음"}</span></span>
-    <${Chip} kind=${(JUDGE[c.judgement] || [])[1]}>${(JUDGE[c.judgement] || [c.judgement])[0]}<//></div>`;
+    <button type="button" class="nrow-b main" aria-expanded=${open ? "true" : "false"} aria-label=${c.candidate_id + " 추적·판정"} onClick=${() => I.toggleCandidate(c.candidate_id)}>
+      <b>${c.candidate_id} <span class="nm">${c.cause}</span></b>
+      <span>${(c.node_ids && c.node_ids.length > 1 ? c.node_ids.join("·") + " (겹친 구간 " + c.node_ids.length + "곳)" : c.node_id)} › ${c.deviation_label}${c.category ? " · 범주 " + c.category : " · 범주 없음"}</span></button>
+    <${Chip} kind=${(JUDGE[c.judgement] || [])[1]}>${(JUDGE[c.judgement] || [c.judgement])[0]}${c.ie_origin === "human" ? "" : " · 초안"}<//></div>
+    ${open ? html`<${CandidateCard} iec=${c.candidate_id} />` : null}</div>`;
 }
 
 function Header({ s }) {

@@ -230,5 +230,34 @@ class IePanelTest(W.ShellBase):
         self.assertIn("범주 없음", self.text(win))
 
 
+    # ------------------------------------------------------------ B5: 후보 카드(추적·IE 판정)
+    def test_candidate_card_shows_the_trace_and_saves_a_judgement(self):
+        from hazop.shell import api_ie
+        win = self.open_panel()
+        c2 = next(c["candidate_id"] for c in api_ie.summary(win.engine)["unassigned"] if c["entry_id"] == "c2")
+        self.assertTrue(self.click(win, "button[aria-label='%s 추적·판정']" % c2))
+        self.assertTrue(wait_for(lambda: bool(self.js(win, "!!document.querySelector(\"[aria-label='추적']\")")), 10), self.text(win)[-300:])
+        trace = self.js(win, "document.querySelector(\"[aria-label='추적']\").innerText") or ""
+        for word in ("구간·편차", "원인", "위치·고장모드", "IE 판정", "그룹", "최종상태"):
+            self.assertIn(word, trace)
+        self.assertTrue(self.click(win, "button[aria-label='%s IE 판정']" % c2))
+        self.assertTrue(wait_for(lambda: bool(self.js(win, "!!document.querySelector(\"select[aria-label='초기사건 후보']\")")), 10))
+        for sel, val in (("초기사건 후보", "yes"), ("정상운전 교란", "yes"), ("안전기능 도전", "yes"), ("일반 범주", "LOIA")):
+            self.js(win, "(() => { const s = document.querySelector(\"select[aria-label='%s']\"); s.value = '%s'; s.dispatchEvent(new Event('change', {bubbles: true})); })()" % (sel, val))
+        self.type_into(win, "input[aria-label='판정 이유']", "공기 헤더 압력 저하")
+        pump(0.3)
+        self.assertTrue(self.click(win, "button[aria-label='판정 확정']"))
+
+        def hint():
+            doc, _fp = res.load_fp(self.ns)
+            return next(e for c in doc["cells"] for e in c["entries"] if e["entry_id"] == "c2").get("ie_hint") or {}
+        self.assertTrue(wait_for(lambda: hint().get("origin") == "human", 10), self.text(win)[-300:])
+        h = hint()
+        self.assertEqual((h["candidate"], h["category"], h["reason"]), ("yes", "LOIA", "공기 헤더 압력 저하"))
+        self.assertTrue(wait_for(lambda: "판정을 저장했습니다" in self.text(win), 10))
+        self.assertTrue(self.click(win, "button[aria-label^='구간·편차:']"))
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "results", 10), "구간·편차 마디는 그 칸을 연다")
+
+
 if __name__ == "__main__":
     unittest.main()

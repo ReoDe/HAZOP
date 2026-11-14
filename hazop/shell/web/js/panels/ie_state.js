@@ -20,6 +20,7 @@ export const ie = createStore({
   fmea: null,              // GET ie/fmea (P5: FMEA 행·전기·제어 구간·구성요소)
   mld: null,               // GET ie/mld (P5: MLD 잎 가지 대조)
   frow: null,              // 고른 FMEA 행 ID
+  cand: null,              // B5: 카드를 연 후보 {iec, data(GET ie/candidate/<IEC>)}
 });
 
 export function useIe(selector) {
@@ -70,6 +71,8 @@ export async function refresh() {
   await loadSummary();
   const a = ie.get().active;
   if (a) await loadDetail(a);
+  const cd = ie.get().cand;
+  if (cd) await loadCandidate(cd.iec);
   const v = ie.get().view;
   if (v === "fmea") await loadFmea();
   if (v === "completeness") await loadMld();
@@ -244,3 +247,34 @@ export const mldConfirm = (branchId, on) => sideWrite("ie.mld_confirm", { mver: 
   branchId + (on ? " 가지를 사람이 확인했습니다." : " 가지의 확인을 풀었습니다."));
 export const mldLink = (branchId, groupIds) => sideWrite("ie.mld_link", { mver: mver(), seen: seenMap(), branch_id: branchId, group_ids: groupIds },
   branchId + (groupIds.length ? " 가지에 " + groupIds.join(", ") + "을(를) 이었습니다." : " 가지의 연결을 지웠습니다."));
+
+// ---------------------------------------------------------------- B5: 후보 카드(추적·IE 판정)
+export async function loadCandidate(iec) {
+  let d = null;
+  try { d = await read("ie/candidate/" + encodeURIComponent(iec)); } catch (e) { d = null; }
+  const cur = ie.get().cand;
+  if (!cur || cur.iec !== iec) return null;
+  ie.set({ cand: d ? { iec, data: d } : null });
+  return d;
+}
+export function toggleCandidate(iec) {
+  const cur = ie.get().cand;
+  if (cur && cur.iec === iec) { ie.set({ cand: null }); return null; }
+  ie.set({ cand: { iec, data: null } });
+  return loadCandidate(iec);
+}
+/** 판정 저장: 카드가 본 ⑤ 판(rver)과 후보 지문을 싣는다. 그 사이 바뀌었으면 엔진이 거절하고 다시 읽는다. */
+export async function judgeCandidate(d, hint) {
+  const iec = d.candidate.candidate_id;
+  ie.set({ busy: true, error: null, notice: null });
+  try {
+    const r = await cmd("ie.judge", { iec, hint, rver: d.rver, seen: { ["member:" + iec]: d.fp } });
+    await refresh();
+    ie.set({ busy: false, notice: iec + " 판정을 저장했습니다" + (r.targets > 1 ? "(겹친 구간 항목 " + r.targets + "개)." : ".") });
+    return r;
+  } catch (e) {
+    if (e && e.code === "stale") await refresh();
+    ie.set({ busy: false, error: errorText(e) });
+    return null;
+  }
+}

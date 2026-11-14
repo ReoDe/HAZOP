@@ -211,6 +211,9 @@ def read(engine, parts, query):
     api = _api()
     if len(parts) == 1:
         return api._json(summary(engine))
+    if len(parts) == 3 and parts[1] == "candidate":
+        data = candidate_view(engine, parts[2])
+        return api._json(data) if data is not None else None
     if len(parts) == 2 and parts[1] == "fmea":
         data = fmea_view(engine)
         return api._json(data) if data is not None else None
@@ -865,6 +868,114 @@ def link_mld_branch(engine, a):
         raise _api().CommandError("bad_args", "MLD 판 지문(mver)을 함께 보내야 합니다(먼저 view_mld로 읽음).")
     return _mld_link(engine, a)
 
+
+# ---------------------------------------------------------------- B5: 후보별 IE 판정과 추적
+
+def _entry_cells(doc):
+    """{entry_id: (node_id, deviation_id, 항목)} ⑤ 결과(그래프 하나 안에서 항목 ID는 하나뿐)."""
+    return {e["entry_id"]: (c["node_id"], c["deviation_id"], e) for c in doc["cells"] for e in c["entries"]}
+
+
+def candidate_view(engine, iec):
+    """{candidate, hint(지금 ⑤ 판정 원문), targets(같이 판정할 ⑤ 항목), trace(한 줄 경로의 마디), categories, rver, fp}. 없으면 None.
+    마디: 구간·편차 → 원인 → 위치·고장모드 → IE 판정 → 그룹 → 최종상태 → 근거 경로. 마디마다 갈 곳(칸·도면 강조·그룹)을 단다."""
+    ctx, _why = _context(engine)
+    if ctx is None:
+        return None
+    pg, ns, doc, ie_doc, _fp = ctx
+    b = _build(doc, ns, pg, _view_doc(ie_doc, doc, ns), nodes.now_utc())
+    c = next((x for x in b["candidates"] if x["candidate_id"] == iec), None)
+    if c is None:
+        return None
+    from hazop.chat import view as chatview
+    from hazop.study import refs
+    cells = _entry_cells(doc)
+    entry_ids = c.get("entry_ids") or [c["entry_id"]]
+    targets = [{"node_id": cells[e][0], "deviation_id": cells[e][1], "entry_id": e} for e in entry_ids if e in cells]
+    raw = cells.get(c["entry_id"], (None, None, {}))[2]
+    idx = refs.index(pg)
+    loc_ids = [idx[r]["entity_id"] for r in c["stable_refs"] if r in idx and idx[r].get("entity_id")]
+    loc_marks = {g: [{"op": "mark", "groups": [{"ids": ids, "style": "focus", "label": None}], "dim_others": True, "center": False}]
+                 for g, ids in chatview.split_by_sheet(pg, loc_ids).items()}
+    labels = __import__("hazop.export.study_xlsx", fromlist=["entity_labels"]).entity_labels(pg)
+    paths = []
+    for p in (raw.get("ai_basis") or {}).get("kg_paths") or []:
+        if not p:
+            continue
+        by_sheet = chatview.path_steps(pg, [{"id": x, "flow": None} for x in p])
+        paths.append({"labels": [labels.get(x, x) for x in p], "sheet": next(iter(by_sheet), None),
+                      "marks": {g: [{"op": "path", "steps": st, "style": "path", "numbered": True}] for g, st in by_sheet.items()}})
+    group = next((g for g in b["groups"] if g["group_id"] == c.get("group_id")), None)
+    ends = [e for e in b["end_states"] if group and e["end_state_id"] in group["end_state_ids"]]
+    j = res.IE_CANDIDATES.get(c["judgement"], c["judgement"])
+    trace = [
+        {"kind": "cell", "label": "%s · %s" % (" · ".join(c.get("node_ids") or [c["node_id"]]), c["deviation_label"]),
+         "node_id": c["node_id"], "deviation_id": c["deviation_id"]},
+        {"kind": "cause", "label": c["cause"] or "-", "node_id": c["node_id"], "deviation_id": c["deviation_id"]},
+        {"kind": "location", "label": "%s · %s" % (", ".join(c["cause_location"]) or "위치 미정", ", ".join(c["failure_modes"]) or "고장모드 미정"),
+         "sheet": next(iter(loc_marks), None), "marks": loc_marks},
+        {"kind": "judgement", "label": "%s · 교란 %s · 도전 %s%s" % (j, res.IE_ANSWERS[c["disturbs"]], res.IE_ANSWERS[c["challenges"]],
+                                                              "" if c["ie_origin"] == "human" else " (판정 전·AI 초안)")},
+        {"kind": "group", "label": ("%s %s" % (group["group_id"], group["name"])) if group else "그룹 없음",
+         "group_id": group["group_id"] if group else None},
+        {"kind": "end_state", "label": ", ".join("%s %s" % (e["end_state_id"], e["text"]) for e in ends) or "최종상태 없음",
+         "group_id": group["group_id"] if group else None},
+    ] + [{"kind": "path", "label": "근거 경로 %d: %s" % (i + 1, " → ".join(p["labels"])), "sheet": p["sheet"], "marks": p["marks"]}
+         for i, p in enumerate(paths)]
+    hint = raw.get("ie_hint") if isinstance(raw.get("ie_hint"), dict) else {}
+    return {"candidate": c, "hint": hint, "targets": targets, "trace": trace, "rver": _rver(ctx),
+            "fp": item_fps(b).get("member:" + iec),
+            "choices": {"candidate": res.IE_CANDIDATES, "answer": res.IE_ANSWERS,
+                        "categories": [{"code": x["code"], "label": res.ie_category_label(x["code"])} for x in res.ie_categories()]}}
+
+
+def _judge(engine, a):
+    """후보 하나(겹친 구간 쌍둥이 포함)의 IE 판정을 ⑤ 결과에 저장한다(설계 E4: 원인 단위 판정은 ⑤ 결과 파일). 화면이 본 ⑤ 판(rver)과
+    후보 지문(seen 'member:IEC')을 대조한다. 판정한 사람은 설정의 검토자 이름."""
+    api = _api()
+    by = engine.reviewer()
+    if not by:
+        raise api.CommandError("bad_args", "검토자 이름을 먼저 설정에서 입력하세요. 판정한 사람으로 남습니다.")
+    view = candidate_view(engine, a["iec"])
+    if view is None:
+        raise api.CommandError("failed", "인계 묶음에 없는 후보입니다(⑤ 승인이 풀렸거나 없는 ID): %s" % a["iec"])
+    if a.get("rver") is None or a["rver"] != view["rver"]:
+        raise api.CommandError("stale", STALE_RESULTS)
+    if a.get("seen") is not None and a["seen"].get("member:" + a["iec"]) != view["fp"]:
+        raise api.CommandError("stale", STALE_ITEM % a["iec"])
+    from hazop.study import result_commands
+    pg = _results()._pg(engine)
+    out = result_commands.execute(pg, "set_ie_hints", {"targets": view["targets"], "hint": a["hint"]}, by,
+                                  None if a["rver"] == "none" else a["rver"])
+    if not out["ok"]:
+        r = (out.get("refused") or [{}])[0]
+        code = "stale" if r.get("code") in ("stale", "conflict") else "failed"
+        raise api.CommandError(code, STALE_RESULTS if code == "stale" else str(r.get("reason"))[:300])
+    engine.changed("results", None)
+    engine.changed("ie", None)
+    return {"rver": out.get("fingerprint") or "none", "targets": len(view["targets"])}
+
+
+def judge_candidate(engine, a):
+    """채팅 실행 함수: {iec, hint{candidate, disturbs, challenges, category, safety_functions, reason}, rver}. rver 없이는 거절."""
+    if not a.get("rver"):
+        raise _api().CommandError("bad_args", "분석 결과 판 지문(rver)을 함께 보내야 합니다(먼저 view_groups로 읽음).")
+    return _judge(engine, a)
+
+
+def v_hint(v):
+    """IE 판정 {candidate, disturbs, challenges, category, safety_functions, reason}. 값의 뜻은 엔진(res.ie_hint_problems)이 본다."""
+    keys = {"candidate", "disturbs", "challenges", "category", "safety_functions", "reason"}
+    if not isinstance(v, dict) or not set(v) <= keys:
+        raise ValueError("판정 필드는 %s만" % ", ".join(sorted(keys)))
+    for k, x in v.items():
+        if k == "safety_functions":
+            if not isinstance(x, list) or len(x) > 20 or not all(isinstance(y, str) and len(y) <= 200 for y in x):
+                raise ValueError("safety_functions는 글 목록")
+        elif x is not None and (not isinstance(x, str) or len(x) > 1000):
+            raise ValueError("%s 값 형식 오류" % k)
+    return dict(v)
+
 def register(commands):
     api = _api()
     C, v_str, v_list = api.Command, api.v_str, api.v_list
@@ -902,6 +1013,8 @@ def register(commands):
     put("set_coverage", dict(common, code=(v_str(1, 40), True), disposition=(api.v_enum("", *model.COVERAGE), True),
                              reason=(v_str(0, 1000), False)), _set_coverage, "완전성 대조 빈 범주 판정(사유 필수, 빈 처리는 지움)")
     put("export", {"ver": (v_str(1, 100), False), "rver": rver}, _export, "인계 묶음 Excel+JSON 내보내기(위치는 창이 묻는다)")
+    put("judge", {"iec": (v_str(1, 20), True), "hint": (v_hint, True), "rver": (v_str(1, 100), True), "seen": seen}, _judge,
+        "후보 하나(겹친 구간 쌍둥이 포함)의 IE 판정을 ⑤ 결과에 저장(판정한 사람은 검토자 이름)")
     fver = (v_str(1, 100), True)
     fseen = {"fver": fver, "seen": seen}
     put("fmea_template", {}, _fmea_template, "FMEA 양식(.xlsx) 내보내기(지금 있는 행을 채움, 위치는 창이 묻는다)")
