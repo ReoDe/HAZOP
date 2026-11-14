@@ -645,6 +645,30 @@ class SyntheticPageTest(unittest.TestCase):
         self.assertTrue(a["connections"] and all(c["a"] in ids and c["b"] in ids for c in a["connections"]))
 
 
+@unittest.skipUnless(HAS_CV, "numpy 없음(래스터 venv에서 실행)")
+class LabelSpanTest(unittest.TestCase):
+    """짧은 배관이 거의 다 배관 번호 라벨에 가려도 라벨 양옆에 잉크가 있으면 라벨을 가로지르는 선분을 만든다(SNP-M-201 CV-L001)."""
+
+    def setUp(self):
+        import numpy as np
+        self.np = np
+        self.px = raster._px(dict(raster.PARAMS), 1.0)
+        self.ink = np.zeros((40, 120), np.uint8)
+        self.ink[18:22, 20:28] = 1   # 라벨 왼쪽 기호 끝
+        self.ink[18:22, 92:100] = 1  # 라벨 오른쪽 기호 끝
+        self.label = {"text": "CV-L001", "x0": 30.0, "x1": 90.0, "top": 14.0, "bottom": 26.0, "score": 0.99}
+
+    def test_span_across_label(self):
+        segs = raster._label_spans(self.ink, [self.label], self.px)
+        self.assertEqual([(s["a"], s["b"], s["c"]) for s in segs], [(27.0, 92.0, 20.0)])
+
+    def test_no_span_for_words_or_existing_line(self):
+        word = dict(self.label, text="VENT")
+        self.assertEqual(raster._label_spans(self.ink, [word], self.px), [])
+        line = {"a": 0.0, "b": 29.0, "c": 20.0, "t": 1.5}  # 이미 라벨에 닿는 배관이 있으면 라벨 건너 잇기가 맡는다
+        self.assertEqual(raster._label_spans(self.ink, [self.label], self.px, [line]), [])
+
+
 RASTER_PY = raster_scan.raster_python()
 
 

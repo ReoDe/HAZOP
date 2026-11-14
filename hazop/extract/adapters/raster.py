@@ -53,6 +53,8 @@ PARAMS = {
     "hv_collinear_tol_pt": 1.0,  # 같은 직선 판정(중심선 차)
     "hv_gap_join_pt": 1.0,       # 같은 직선 위 빈칸이 이 이하면 잇는다
     "stroke_min_pt": 1.0,        # 넘기는 선 토막 최소 길이(더 짧은 조각은 버린다)
+    "label_span_reach_pt": 4.0,  # 배관 번호 라벨 양옆에서 배관 잉크를 찾는 거리
+    "label_span_t_pt": 1.4,      # 라벨을 가로지르게 만든 선분의 두께
     "stub_min_len_pt": 1.2,      # 배관 라벨 양옆 짧은 토막 최소 길이
     "stub_reach_pt": 8.0,        # 배관 라벨 양옆에서 짧은 토막을 찾는 띠 폭
     "stub_thick_max_pt": 2.5,    # 짧은 토막 두께 상한(굵은 배관 1.44pt보다 크게)
@@ -87,6 +89,8 @@ PARAMS = {
     "curve_min_len_pt": 6.0,     # 굽은 획 최소 크기(최소 외접 사각형 긴 변)
     "curve_fill_max": 0.5,       # 굽은 획: 잉크 넓이 / 최소 외접 사각형 넓이 상한(넘으면 덩어리로 보고 버린다)
     "curve_eps_pt": 0.4,         # 굽은 획 윤곽을 꺾은선으로 줄일 때 허용 오차
+    "curve_join_pt": 2.0,        # 짧은 곧은 선 끝이 굽은 획에 닿았다고 보는 거리
+    "curve_edge_max_pt": 40.0,   # 굽은 획에 흡수하는 곧은 선 길이 상한(기기 외곽 변, SNP 펌프 윗변 33pt. 배관은 이보다 길다)
     "dash_thick_max_pt": 1.5,    # 점선 조각 두께 상한(pdf_vector와 같은 값)
     "dash_long_max_pt": 8.0,     # 점선 조각 길이 상한
     "dash_link_pt": 3.0,         # 점선 조각 후보끼리 이 간격 안에 이웃이 있어야 점선(외톨이는 짧은 실선)
@@ -342,7 +346,8 @@ def restore_spaces(gray, lines):
             # ('RC-L011' → 'RC-L01 1', 'CC-V101B' → 'CC-V101 B', 2026-11-14 SNP 300dpi)
             joined = []
             for w in words:
-                if joined and len(w) == 1:
+                # 숫자와 숫자 사이는 띄우지 않는다('1'은 좁아 옆 빈칸이 넓다: 'KL-L105' → 'KL-L1 05', 합성 쪽 2026-11-14)
+                if joined and (len(w) == 1 or (joined[-1][-1].isdigit() and w[0].isdigit())):
                     joined[-1] += w
                 else:
                     joined.append(w)
@@ -350,6 +355,51 @@ def restore_spaces(gray, lines):
             if new != text:
                 o["text"] = new
                 changed += 1
+    return changed
+
+
+REREAD_SCORE = 0.95   # 이보다 확신이 낮은 줄은 선을 지우고 다시 읽어 본다
+TAGLIKE_RE = re.compile(r"[A-Z]{1,4}-[A-Z]*\d")
+
+
+def reread_without_lines(gray, lines, min_score=REREAD_SCORE):
+    """확신이 낮은 OCR 줄: 상자 안에서 줄 높이의 1.5배보다 긴 가로 잉크 줄(배관)을 지우고 글자 인식만 다시 해, 확신이
+    높아지면 바꾼다. 배관 위에 찍힌 배관 번호는 양옆 선이 첫 글자에 붙어 'MS-L001'을 'AS-L00'으로 읽었다(SNP-M-501,
+    2026-11-14). → 바꾼 줄 수."""
+    cv2, np = _cv()
+    eng = _ocr_engine()
+    H, W = gray.shape[:2]
+    changed = 0
+    for o in lines:
+        if o["score"] >= min_score or not TAGLIKE_RE.search(o["text"]):
+            continue  # 태그·배관 번호 꼴('AS-L00')만 다시 읽는다. 다른 글자는 바꿔도 얻는 것이 없고 오검출이 늘었다
+        y0, y1 = max(0, int(o["top"])), min(H, int(math.ceil(o["bottom"])))
+        h = y1 - y0
+        # OCR 상자가 첫·끝 글자를 빼먹는 일이 있어 줄 높이만큼 양옆을 넓혀 읽는다(넓힌 자리의 배관은 아래에서 지운다)
+        x0, x1 = max(0, int(o["x0"]) - h), min(W, int(math.ceil(o["x1"])) + h)
+        if x1 - x0 < 4 or h < 4:
+            continue
+        sub = gray[y0:y1, x0:x1].copy()
+        ink = sub < 128
+        long_run = max(4, int(1.5 * h))
+        for r in range(ink.shape[0]):
+            row, start = ink[r], None
+            for c in range(len(row) + 1):
+                on = c < len(row) and row[c]
+                if on and start is None:
+                    start = c
+                elif not on and start is not None:
+                    if c - start >= long_run:
+                        sub[r, start:c] = 255
+                    start = None
+        pad = max(2, h // 6)
+        crop = np.full((h + 2 * pad, x1 - x0 + 2 * pad), 255, dtype=np.uint8)
+        crop[pad:pad + h, pad:pad + x1 - x0] = sub
+        res, _ = eng(cv2.cvtColor(crop, cv2.COLOR_GRAY2BGR), use_det=False, use_cls=False, use_rec=True)
+        text = str(res[0][0]).strip(" -_.·") if res else ""  # 양옆 배관 토막이 '-'·'_'로 읽힌 것을 뗀다
+        if text and float(res[0][1]) > o["score"]:
+            o["text"], o["score"] = text, round(float(res[0][1]), 4)
+            changed += 1
     return changed
 
 
@@ -370,6 +420,7 @@ def ocr_lines(gray, offset=(0, 0), zoom=1.0, px_per_pt=None):
         out = add_fine_lines(coarse, _ocr_tiled(cv2, np, gray))
     else:
         out = _ocr_tiled(cv2, np, gray)
+    reread_without_lines(gray, out)
     restore_spaces(gray, out)
     for o in out:
         o["text"] = GLUED_LINE_NO.sub(lambda m: m.group(1) + " ", o["text"])
@@ -869,6 +920,39 @@ def _label_stubs(cv2, np, rest, taken, text_boxes, px, horizontal):
     return out
 
 
+LABEL_ON_LINE_RE = re.compile(r"^[A-Z]{1,4}-L\d")
+
+
+def _label_spans(ink, lines, px, hs=()):
+    """배관 번호 꼴 글자 상자의 가운데 줄에서 양옆으로 label_span_reach 안에 잉크가 둘 다 있으면 상자를 가로지르는 가로 선분을
+    만든다. 짧은 배관이 거의 다 라벨에 가려 양옆 토막이 없으면 배관이 통째로 사라졌다(SNP-M-201 CV-L001: 도면 연결 상자
+    끝과 열교환기 사이). → 선분 목록."""
+    H, W = ink.shape[:2]
+    reach = max(2, int(round(px["label_span_reach"])))
+    t = px["label_span_t"]
+    out = []
+    for o in lines:
+        if not LABEL_ON_LINE_RE.match(o["text"]):
+            continue
+        cy = int(round((o["top"] + o["bottom"]) / 2))
+        if not 1 <= cy < H - 1:
+            continue
+        band = ink[cy - 1:cy + 2].any(axis=0)
+        x0, x1 = int(o["x0"]), int(math.ceil(o["x1"]))
+        left = next((x for x in range(x0 - 1, max(-1, x0 - 1 - reach), -1) if 0 <= x < W and band[x]), None)
+        right = next((x for x in range(x1 + 1, min(W, x1 + 1 + reach)) if band[x]), None)
+        if left is None or right is None:
+            continue
+        # 이미 라벨에 닿거나 라벨을 지나는 가로 선분이 있으면 만들지 않는다(그 선은 라벨 건너 잇기가 맡는다). 같은 배관에
+        # 1~2px 어긋난 둘째 선분이 생기면 흐름 방향을 잃었다(SNP-M-101 흐름 13 → 9)
+        near = [s for s in hs if s["b"] - s["a"] >= px["stroke_min"]
+                and abs(s["c"] - cy) <= px["hv_collinear_tol"] + s["t"] / 2 + t / 2
+                and s["a"] <= x1 + reach and s["b"] >= x0 - reach]
+        if not near:
+            out.append({"a": float(left), "b": float(right), "c": float(cy), "t": float(t)})
+    return out
+
+
 def _join_collinear(segs, text_boxes, px, horizontal, text_like=None):
     """같은 직선 위 선분: 빈칸이 짧거나 글자 상자(선 라벨)로 덮이거나 글자 획처럼 보이는 잉크만 있으면 잇는다.
     → (선분, 쓰인 글자 상자 번호)."""
@@ -1042,6 +1126,7 @@ def detect(gray, lines=None, params=None, ocr=None):
     vs, vmask = _hv_segments(cv2, np, rest, px, False)
     taken = hmask | vmask
     hs += _label_stubs(cv2, np, rest, taken, text_boxes, px, True)
+    hs += _label_spans(ink, lines, px, hs)
     vs += _label_stubs(cv2, np, rest, taken, text_boxes, px, False)
     frame = []
     hs_keep = [s for s in hs if s["b"] - s["a"] < prm["frame_cover_ratio"] * W]
@@ -1095,7 +1180,8 @@ def detect(gray, lines=None, params=None, ocr=None):
         if short <= px["dash_thick_max"] and long_ <= px["dash_long_max"] and long_ >= 2 * max(short, 1.0):
             dash_cand.append({"box": box, "bb": (x, y, x + w, y + h), "long": long_, "short": short,
                               "c": (cx + x, cy + y), "ang": ang if rw >= rh else ang + 90})
-        elif long_ >= px["diag_min_len"] and long_ >= prm["diag_elong_min"] * max(short, 1.0):
+        elif long_ >= px["diag_min_len"] and long_ >= prm["diag_elong_min"] * max(short, 1.0) and                 not (long_ >= px["curve_min_len"] and area < prm["curve_fill_max"] * rw * rh):
+            # 곧은 사선만: 길쭉해도 잉크가 외접 사각형의 절반을 못 채우면 굽은 획이다(펌프 외곽 호, SNP-M-201)
             t = math.radians(ang if rw >= rh else ang + 90)
             dx, dy = math.cos(t) * long_ / 2, math.sin(t) * long_ / 2
             diag.append([(cx + x - dx, cy + y - dy), (cx + x + dx, cy + y + dy)])
@@ -1178,6 +1264,63 @@ def detect(gray, lines=None, params=None, ocr=None):
         else:
             diag_keep.append(seg)
     diag = diag_keep
+
+    # 굽은 획에 양 끝이 닿은 짧은 가로·세로 선(펌프 외곽의 곧은 윗변·토출구 변)은 기호 외곽의 일부다. 벡터 PDF는 곡선과 같은
+    # 경로라 한 기호로 묶이지만, 그림에서는 곧은 부분만 선으로 뽑혀 배관이 되고 외곽이 쪼개졌다(SNP-M-201·501 펌프,
+    # 2026-11-14). 곡선(또는 이미 흡수한 선)에 양 끝이 닿는 짧은 선을 되풀이해 흡수하고 기호 안 축처럼 얇은 몸체로 넘긴다.
+    if curves:
+        tol, cap = px["curve_join"], px["curve_edge_max"]
+
+        def seg_d(p, a, b):
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            L2 = dx * dx + dy * dy
+            t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2))
+            return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
+        anchors = [list(zip(c, c[1:])) for c in curves]
+        def touches(p):
+            return any(seg_d(p, a, b) <= tol for segs in anchors for a, b in segs)
+        # 짧은 가로·세로 선을 끝점끼리 이어 사슬로 묶고, 사슬의 자유 끝(다른 짧은 선에 닿지 않은 끝)이 모두 굽은 획에 닿으면
+        # 사슬 전체가 외곽이다(곡선 → 윗변 → 토출구 변들 → 곡선). 배관은 자유 끝 하나가 멀리 나가므로 흡수되지 않는다
+        short = [(s, True) for s in hs if s["b"] - s["a"] <= cap] + [(s, False) for s in vs if s["b"] - s["a"] <= cap]
+        ends = [((s["a"], s["c"]), (s["b"], s["c"])) if h else ((s["c"], s["a"]), (s["c"], s["b"])) for s, h in short]
+        parent = list(range(len(short)))
+
+        def root(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+        linked = [[False, False] for _ in short]
+        for i in range(len(short)):
+            for j in range(i + 1, len(short)):
+                for ei in (0, 1):
+                    for ej in (0, 1):
+                        if math.dist(ends[i][ei], ends[j][ej]) <= tol + max(short[i][0]["t"], short[j][0]["t"]):
+                            parent[root(i)] = root(j)
+                            linked[i][ei] = linked[j][ej] = True
+                # 한 선의 끝이 다른 선의 중간에 닿는 분기(T)도 잇는다
+                for ei in (0, 1):
+                    if seg_d(ends[i][ei], *ends[j]) <= tol:
+                        parent[root(i)] = root(j)
+                        linked[i][ei] = True
+                for ej in (0, 1):
+                    if seg_d(ends[j][ej], *ends[i]) <= tol:
+                        parent[root(i)] = root(j)
+                        linked[j][ej] = True
+        groups = {}
+        for i in range(len(short)):
+            groups.setdefault(root(i), []).append(i)
+        take = set()
+        for g in groups.values():
+            free = [ends[i][e] for i in g for e in (0, 1) if not linked[i][e]]
+            if free and all(touches(p) for p in free):
+                take.update(g)
+        for i in sorted(take):
+            s, h = short[i]
+            stems.append((ends[i][0], ends[i][1], s["t"]))
+        taken_ids = {id(short[i][0]) for i in take}
+        hs[:] = [s for s in hs if id(s) not in taken_ids]
+        vs[:] = [s for s in vs if id(s) not in taken_ids]
 
     # 평행 사선 묶음(스프링 표시): 가까운 같은 방향 사선은 같은 방향·길이 벡터로 맞춘다(벡터 도면의 같은 도형 반복에 해당)
     def ang_of(seg):

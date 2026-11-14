@@ -91,7 +91,7 @@ def make_page(lib, seed, k, out_png):
     dr = ImageDraw.Draw(im)
     font = _font(TEXT_PT * k)
     sysc = rng.choice(SYSTEMS)
-    symbols, connections, lines, used_text = [], [], [], []
+    symbols, connections, lines, used_text, labels = [], [], [], [], []
     counters = {}
     rows = 3
     row_h = (PAGE_PT[1] - 160) / rows
@@ -173,7 +173,7 @@ def make_page(lib, seed, k, out_png):
                     no = "%s-L%03d" % (sysc, rng.randint(1, 299))
                     cx = (seg[0][0] + seg[1][0]) / 2 + rng.uniform(-seg_len / 6, seg_len / 6)
                     cy = seg[0][1]
-                    put_text(cx, cy, no, white=True)
+                    labels.append((cx, cy, no))  # 배관 번호는 모든 배관을 그린 뒤 흰 바탕과 함께 얹는다
                     lines.append({"id": "l%03d" % (len(lines) + 1), "at": [round(cx, 1), round(cy, 1)], "line_no": no})
             prev = sym
         # 줄 끝에 계기 하나(연결하지 않음)
@@ -185,6 +185,9 @@ def make_page(lib, seed, k, out_png):
             symbols.append({"id": "s%03d" % (len(symbols) + 1), "kind": "transmitter",
                             "bbox": [round(x0 + 1, 1), round(y0 + 1, 1), round(x0 + it["w"] - 1, 1),
                                      round(y0 + it["h"] - 1, 1)], "tag": it["label"], "attributes": {}})
+    # 배관 번호 라벨은 마지막에: 뒤에 그린 배관이 앞 라벨의 흰 바탕을 지나가 글자 위에 선이 겹치지 않게(SNP처럼)
+    for cx, cy, no in labels:
+        put_text(cx, cy, no, white=True)
     im.save(out_png)
     for s in symbols:
         s.pop("_it", None)
