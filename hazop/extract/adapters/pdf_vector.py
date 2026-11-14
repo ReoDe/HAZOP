@@ -85,7 +85,6 @@ PARAMS = {
     "stroke_symbol_max": 60.0,   # 선 기호 최대 크기(넘으면 끊긴 배관으로 본다)
     "dash_gap_max": 3.0,         # 점선 조각 사이 간격 상한
     "dash_attach_tol": 8.0,      # 점선 끝 조각과 기호 사이 거리 상한(점선 끝 빈칸·구동부 여백 포함)
-    "dash_pipe_straight_tol": 1.0,  # 점선 배관: 조각 중심이 한 줄에 놓였다고 보는 폭
     "dash_pipe_axis_ratio": 1.5,    # 점선 배관: 밸브 몸통의 긴 변/짧은 변이 이만큼은 돼야 흐름 축을 안다
     "label_gap_max": 15.0,       # 글자 문단과 기호 사이 거리 상한
     "bare_code_gap_max": 5.0,    # 쌍점 없는 두 글자 계통 약어를 연결 표시 글자로 볼 거리 상한(바로 옆만)
@@ -952,7 +951,7 @@ def _build_dashed(syms, dashes, markers, prm):
         else:
             pts = [h[1] for h in hits] or [_center(items[0]["bbox"]), _center(items[-1]["bbox"])]
             ends = [(("free", -1), pts[0], "pdf_dash_chain"), (("free", -1), pts[-1], "pdf_dash_chain")]
-        out.append({"pts": [_center(d["bbox"]) for d in items], "ends": ends,
+        out.append({"pts": [_center(d["bbox"]) for d in items], "ends": ends, "boxes": [d["bbox"] for d in items],
                     "evidence": [d["id"] for d in items], "dashed": True})
     return out
 
@@ -970,34 +969,24 @@ def _continuation_sense(ch, ids, nodes):
 
 
 def _dashed_pipe(ch, nodes, ids, instrument_ids, prm):
-    """점선이지만 배관인가. 곧은 점선이 밸브 몸통에 그 몸통의 긴 축(흐름 방향)을 따라 들어가면 배관이다. 신호선은 밸브의
+    """점선이지만 배관인가. 점선 끝이 밸브 몸통에 그 몸통의 긴 축(흐름 방향)을 따라 들어가면 배관이다. 신호선은 밸브의
     구동부나 몸통 옆으로 닿고, 몸통을 흐름 방향으로 꿰지 않는다(APR1400 가압기 안전밸브 묶음처럼 점선으로 그린 배관).
-    계기에 닿은 점선은 신호·측정선으로 둔다."""
+    배관은 꺾여 지날 수 있으므로 사슬 전체가 아니라 밸브에 닿는 끝 조각의 방향을 본다(008쪽 POSRV 파일럿 일점쇄선이
+    밸브에서 P 상자까지 두세 번 꺾인다). 계기에 닿은 점선은 신호·측정선으로 둔다."""
     if any(i in instrument_ids for i in ids):
-        return False
-    # 몸통의 긴 축이 없는 밸브(앵글형 안전밸브처럼 입구와 출구가 직각인 몸통)는 흐름 방향을 몸통으로 알 수 없다.
-    # 그 밸브는 판정에서 빼고, 그 밸브 구멍에 붙은 짧은 꺾임 조각도 곧은지 볼 때 뺀다(APR1400 008쪽 파일럿 안전밸브)
-    squat = [v[1].bbox for (v, _, _), nid in zip(ch["ends"], ids) if v[0] == "sym" and
-             nodes[nid]["category"] == "valve" and
-             max(_w(v[1].bbox), _h(v[1].bbox)) < prm["dash_pipe_axis_ratio"] * min(_w(v[1].bbox), _h(v[1].bbox))]
-    pts = [p for p in ch["pts"] if not any(_pt_box_dist(p, b) <= prm["touch_tol"] for b in squat)] or ch["pts"]
-    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
-    tol = prm["dash_pipe_straight_tol"]
-    if max(xs) - min(xs) <= tol:
-        vertical = True
-    elif max(ys) - min(ys) <= tol:
-        vertical = False
-    else:
         return False
     valves = 0
     for (v, pt, _), nid in zip(ch["ends"], ids):
         if v[0] != "sym" or nodes[nid]["category"] != "valve":
             continue
         b = v[1].bbox
-        if b in squat:
+        # 몸통의 긴 축이 없는 밸브(앵글형 안전밸브처럼 입구와 출구가 직각인 몸통)는 흐름 방향을 몸통으로 알 수 없어 뺀다
+        if max(_w(b), _h(b)) < prm["dash_pipe_axis_ratio"] * min(_w(b), _h(b)):
             continue
-        if (_h(b) > _w(b)) != vertical:
+        piece = min(ch["boxes"], key=lambda q: _pt_box_dist(pt, q))  # 밸브에 닿는 끝 조각
+        if _w(piece) == _h(piece) or (_h(piece) > _w(piece)) != (_h(b) > _w(b)):
             return False
+        vertical = _h(b) > _w(b)
         c = _center(b)
         if abs(pt[0] - c[0] if vertical else pt[1] - c[1]) > 0.5 * min(_w(b), _h(b)):
             return False

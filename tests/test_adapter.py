@@ -407,6 +407,25 @@ class PdfVectorRuleTest(unittest.TestCase):
         kinds = sorted((r["kind"], r["line_type"]) for r in ext["relations"])
         self.assertEqual(kinds, [("physical_connection", "pdf_dashed"), ("signal_connection", "pdf_dashed")])
 
+    def test_bent_dashed_path_between_valve_axes_is_pipe(self):
+        # APR1400 008쪽 POSRV 파일럿 일점쇄선: 한 경로가 꺾여 두 밸브의 흐름 축으로 들어가면 배관이다. 같은 무늬라도
+        # 밸브 몸통 옆으로 꺾여 들어가는 선, 닫힌 점선 상자는 배관이 아니다
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        dash_dot = [[10.667, 5.333, 1.333, 5.333], 0.0]
+        bent = prim([(36, 111), (70, 111), (70, 211), (100, 211)])
+        side = prim([(300, 40), (318, 40), (318, 100)])
+        for p in (bent, side):
+            p["dash"] = dash_dot
+        ext = pdf_run(bowtie(0, 100) + bowtie(100, 200) + bowtie(300, 100) + [rect(290, 20, 300, 60), bent, side])
+        kinds = sorted((r["kind"], r["line_type"]) for r in ext["relations"])
+        self.assertEqual(kinds, [("physical_connection", "pdf_dashed"), ("signal_connection", "pdf_dashed")])
+        box = rect(36, 100, 100, 133)
+        box["dash"] = dash_dot
+        ext = pdf_run(bowtie(0, 100) + bowtie(100, 100) + [box])
+        self.assertNotIn("physical_connection", [r["kind"] for r in ext["relations"]])
+
     def test_locked_throttled_is_normal_position(self):
         def bowtie(x, y):
             return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
