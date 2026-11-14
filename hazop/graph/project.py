@@ -189,6 +189,9 @@ def _ref(end):
 
 # ---------------------------------------------------------------- 사람 지정 기록
 
+_KEEP = object()           # save_manual: 지문 대조 없이 쓴다(옛 화면·스크립트)
+
+
 def manual_path(project_id):
     return paths.folder("drawing-links", paths.safe_name(project_id) + ".json")
 
@@ -208,9 +211,11 @@ def load_manual(project_id):
     return doc
 
 
-def save_manual(project_id, ops, by, at):
-    """ops 전체를 저장하고 op_id 증감을 log에 덧붙인다. 쓴 경로를 돌려준다."""
-    from hazop.kg.build import write_json_atomic
+def save_manual(project_id, ops, by, at, expect=_KEEP, note=None):
+    """ops 전체를 저장하고 op_id 증감을 log에 덧붙인다. 쓴 경로를 돌려준다.
+    expect: 읽을 때 본 파일 지문(store_io.fingerprint, 없던 파일은 None). 주면 그 사이 다른 쪽이 바꿨을 때 쓰지 않고 store_io가 예외를 올린다.
+    note: log 줄에 덧붙일 설명(dict, 예: 무엇을 왜 지정했는지)."""
+    from hazop import store_io
     for o in ops:
         check_op(o)
     prev = load_manual(project_id) or {}
@@ -220,8 +225,10 @@ def save_manual(project_id, ops, by, at):
            "log": list(prev.get("log") or []) + [{"at": at, "by": by, "action": "save",
                                                    "added": [i for i in after if i not in before],
                                                    "removed": [i for i in before if i not in after]}]}
+    if note:
+        doc["log"][-1]["note"] = dict(note)
     path = manual_path(project_id)
-    write_json_atomic(path, doc)
+    store_io.write_json(path, doc, store_io.ANY if expect is _KEEP else expect)
     return path
 
 

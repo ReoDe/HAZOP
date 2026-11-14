@@ -29,8 +29,8 @@ from hazop.extract import corrections, rules
 from hazop.shell import sheet_refresh
 
 LOG = logging.getLogger("hazop.shell.api_corrections")
-TOPICS = ("edit",)
-PROJECT_PREFIXES = ("edit.",)
+TOPICS = ("edit", "links")          # links: 도면 연결 짝 지정(api_links)
+PROJECT_PREFIXES = ("edit.", "links.")
 NEW_NODE_SIZE = 40                         # 기기 추가: 누른 점을 가운데로 하는 정사각형(이전 화면과 같다)
 RELATION_KINDS = (("physical_connection", "공정 배관", "process"), ("signal_connection", "계장 신호", "signal"),
                   ("measurement_connection", "계측 연결", "instrument_tap"))
@@ -547,6 +547,9 @@ def redo(engine, graph_id, ver, by=None, defer=False):
 
 def read(engine, parts, query):
     api = _api()
+    if parts and parts[0] == "links":
+        from hazop.shell import api_links
+        return api_links.read(engine, parts, query)
     if len(parts) == 2:
         data = view(engine, parts[1])
     elif len(parts) == 4 and parts[2] == "item":
@@ -568,6 +571,8 @@ def _unwrap(res):
 
 
 def register(commands):
+    from hazop.shell import api_links
+    api_links.register(commands)              # 도면 연결 짝 지정(B1)도 같은 고치기 카드에서 쓴다
     api = _api()
     C, v_str, v_enum, v_json = api.Command, api.v_str, api.v_enum, api.v_json_text
     base = {"graph_id": (v_str(1, 200), True), "ver": (v_str(1, 40), True)}
