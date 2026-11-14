@@ -148,6 +148,8 @@ export class SheetCore {
     this.sel = this.sel.filter((id) => this.index.has(id));
     this._cleanBuilt = false;        // 새 도면: 정리된 그림은 다시 만든다(자료는 update의 props로 새로 들어온다)
     this._leftBuilt = false;
+    // 정리 자료·기호가 도면 자료보다 먼저 와 있었으면 지금에야 정리된 보기로 그릴 수 있다(뒤따르는 update는 같은 값이라 보기를 다시 고르지 않는다)
+    if (this.viewWanted === "clean" && this.clean && this.symbols) this._applyViewMode();
     const finish = () => { this._viewChanged(true); this._renderMarks(); if (this.cb.onReady) this.cb.onReady(data.graph_id); };
     const href = typeof data.svg === "string" ? data.svg : "";
     let done = false;

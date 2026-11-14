@@ -100,7 +100,7 @@ class CleanFlowTest(W.ShellBase):
         self.assertEqual(self.pressed(win, "정리"), "true")
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.hz-cv-marks rect[fill-opacity]').length") or 0) > 0, 10),
                         "정리된 보기에서 표시되지 않은 것은 흰 막으로 흐려진다")
-        self.assertEqual(self.js(win, "document.querySelector('.hz-cv-host, [data-view]').getAttribute('data-view')"), "clean")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('[data-view]').getAttribute('data-view')") == "clean", 10), "정리된 자료·기호가 오면 정리된 보기로 그린다(그 전에는 원본)")
         self.key(win, "o")
         self.assertEqual(self.pressed(win, "원본"), "true")
         self.assertEqual(self.js(win, "document.querySelector('[data-view]').getAttribute('data-view')"), "orig")
@@ -161,11 +161,12 @@ class CleanWithNodesTest(W.ShellBase):
         r = win.engine.dispatch("nodes.create", {"project_id": "SNP", "set_rev": rev, "sheet": self.S101, "ids": local, "name": "구간 가"})
         self.assertTrue(r["ok"], r)
         self.open_clean_sheet(win)
-        self.assertEqual(self.js(win, "document.querySelector('[data-view]').getAttribute('data-view')"), "clean")
+        # 정리된 자료·기호가 올 때까지는 원본으로 그리므로(core.js _effective) 바뀔 때까지 기다린 뒤 읽는다
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('[data-view]').getAttribute('data-view')") == "clean", 20), "정리된 보기로 바뀐다")
         self.assertTrue(wait_for(lambda: "S1" in (self.js(win, "document.querySelector('.hz-cv-vp').textContent") or "") or
                                  (self.js(win, "document.querySelectorAll('.hz-cv-marks *').length") or 0) > 0, 15), "구간이 정리된 보기에도 그려진다")
         self.key_o(win)
-        self.assertEqual(self.js(win, "document.querySelector('[data-view]').getAttribute('data-view')"), "orig")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('[data-view]').getAttribute('data-view')") == "orig", 10), "o 키로 원본")
         self.key_o(win)
         # 정리된 보기에서 네모 고르기 모드로 바꾸면 도구 막대가 눌린 상태이고 같은 저장소에 선택이 들어간다
         self.assertTrue(self.click(win, "button[aria-label^='네모로 고르기']"))

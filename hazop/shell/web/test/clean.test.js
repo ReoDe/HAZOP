@@ -3,6 +3,8 @@ import { html, render } from "../js/ui/html.js";
 import { store } from "../js/store.js";
 import * as C from "../js/canvas/clean_ui.js";
 import * as V from "../js/canvas/clean_view.js";
+import { SheetCore } from "../js/canvas/core.js";
+import { loadSymbols } from "../js/canvas/sheet.js";
 
 const tick = async () => { for (let i = 0; i < 600; i++) await Promise.resolve(); };
 const data = (fmt, list) => ({ source_format: fmt, items: {}, text_items: [], unconfirmed: list || [], counts: { total: (list || []).length } });
@@ -22,6 +24,21 @@ export const tests = [
     C.onClean("g1", data("drawio"));
     assert.equal(C.viewOf(C.clean.get(), "g1"), "clean");
     assert.equal(C.viewOf(C.clean.get(), "없는-도면"), "orig");      // 정리 자료가 없으면 원본
+  } },
+  { name: "정리된 보기: 정리 자료·기호가 도면 자료보다 먼저 와도 도면 자료가 오면 정리된 보기로 그린다", async run(assert) {
+    const symbols = { generic: { shapes: [], viewBox: [0, 0, 10, 10], fit: "keep", ports: [] } };     // 도면에 기호가 없으니 모양은 쓰이지 않는다
+    const host = document.createElement("div");
+    host.style.cssText = "width:300px;height:200px";
+    document.body.appendChild(host);
+    const core = new SheetCore(host, {});
+    const clean = { items: {}, text_items: [], unconfirmed: [], hops: [], source_format: "drawio" };
+    core.update({ clean, symbols, view: "clean" });                    // 정리 자료가 먼저 도착
+    assert.equal(host.getAttribute("data-view"), "orig");             // 도면 자료가 아직 없으니 원본
+    core.setData({ graph_id: "g", width: 100, height: 100, items: [], svg: "" });
+    core.update({ clean, symbols, view: "clean" });                    // Sheet가 도면 자료 뒤에 같은 값으로 다시 부른다
+    assert.equal(host.getAttribute("data-view"), "clean");
+    core.destroy();
+    host.remove();
   } },
   { name: "정리된 보기: 사람이 바꾼 보기가 기본보다 앞서고 도면마다 따로 기억", run(assert) {
     reset();
