@@ -1,6 +1,6 @@
 """채팅 2차 검토(기준 3ee5907, 조건부 승인) 지적의 재현 시험. 실행: python -m unittest tests.test_shell_chat_review2
 
-검토 때 만든 재현 스크립트 repro_chat2.py(R1~R5, 저장소 밖 시험 폴더 2026-11-14-review-chat-2)를 고친 뒤 기대하는 동작으로 옮겼다.
+검토 때 만든 재현 스크립트(R1~R5)를 고친 뒤 기대하는 동작으로 옮겼다.
 R1 분석 연결이 API 키(과금)면 확인 상자에 실제 방식·모델·예상 비용이 보이고, 상자가 본 연결 판을 넘겨 실행 직전 연결과 다르면 돌지 않는다.
 R2 긴 사유도 확인 상자 줄에 전문이 그대로 간다(웹은 자르지 않고 상자 안에서 스크롤, 끝까지 보기 전에는 '실행'이 꺼짐).
 R4 모든 실행 동작에 실행 함수 또는 '아직'이 있다. R4b 사람이 고친 초기사건 초안이 있으면 규칙 초안 다시 만들기는 확인을 받는다.
@@ -165,11 +165,16 @@ class R5DetailErrorTest(KgBase):
 
 class LogPathTest(KgBase):
     def test_error_text_in_the_log_file_has_no_local_path(self):
-        with mock.patch("hazop.shell.api_kg.judge", mock.Mock(side_effect=OSError(r"쓰지 못함: 'C:\Users\someone\work\data\kg\judge.json'"))):
+        import os
+        import tempfile
+        folder = tempfile.mkdtemp(prefix="hazop-logpath-")
+        self.addCleanup(os.rmdir, folder)
+        where = os.path.join(folder, "judge.json")          # 이 PC의 절대 경로(임시 폴더). 폴더 이름을 글자로 적지 않는다
+        with mock.patch("hazop.shell.api_kg.judge", mock.Mock(side_effect=OSError("쓰지 못함: '%s'" % where))):
             self.approve(self.one("kg.judge", id="exp-1", judgement="not_applicable", reason="x"))
         err = self.last_record("kg.judge")["error"]
         self.assertIn("judge.json", err)
-        self.assertNotIn("Users", err)
+        self.assertNotIn(os.path.basename(folder), err, "폴더 경로는 기록에 남지 않는다")
         self.assertEqual(actions_log.strip_paths("/home/u/w/x.json 실패"), "x.json 실패")
         self.assertEqual(actions_log.strip_paths("S1/D01 칸"), "S1/D01 칸")
 
