@@ -160,8 +160,9 @@ ACTIONS = {a.name: a for a in (
     Action("register.reextract", CONFIRM, _spec(("registration_id", "id")), "①",
            "추출 결과를 새로 쓴다. 사람 수정 기록은 쓰지 않고 새 결과 위에 다시 얹는다",
            "등록 자료 {registration_id}를 다시 추출합니다. 추출 결과는 새로 쓰고, 사람 수정 기록은 새 결과 위에 다시 얹습니다."),
-    Action("register.exclude", CONFIRM, _spec(("registration_id", "id")), "①", "등록 기록은 지우지 않음",
-           "등록 자료 {registration_id}를 구간 분석에서 뺍니다. 등록 기록은 지우지 않습니다."),
+    Action("register.exclude", CONFIRM, _spec(("graph_id", "id"), excluded="bool", reason="text"), "①",
+           "도면 한 장을 구간 분석(새 구간 제안·후보)에서 빼거나(excluded 없음·true) 다시 넣기(false). 등록 기록·구간·결과는 그대로(B2)",
+           "도면 {graph_id}의 구간 분석 빼기 표시를 바꿉니다. 등록 기록과 이미 만든 구간·결과는 그대로입니다."),
     # ②
     Action("extract.suggest", CANDIDATE, _spec(("sheet", "id"), ("target", "id"), ("field", "str"), value="text",
                                                reason="text"), "②",
@@ -606,10 +607,6 @@ class ActionPlanner:
 
     def _check_register_reextract(self, item, snap):
         self._reg(item, snap)
-
-    def _check_register_exclude(self, item, snap):
-        if self._reg(item, snap).get("excluded"):
-            raise _Reject("이미 구간 분석에서 뺀 자료")
 
     def _check_extract_suggest(self, item, snap):
         a = item.args

@@ -21,7 +21,7 @@ TITLEBLOCK_ACTIONS = ("titleblock.confirm", "titleblock.unconfirm")
 DRAWING_ACTIONS = ("drawing.edit", "drawing.undo", "drawing.redo")
 P5_ACTIONS = ("ie.fmea_status", "ie.fmea_mark", "ie.mld_link")
 LINK_ACTIONS = ("links.pair", "links.unlink", "links.clear")
-RUN_ACTIONS = TITLEBLOCK_ACTIONS + DRAWING_ACTIONS + P5_ACTIONS + ("docs.revision",) + LINK_ACTIONS
+RUN_ACTIONS = TITLEBLOCK_ACTIONS + DRAWING_ACTIONS + P5_ACTIONS + ("docs.revision",) + LINK_ACTIONS + ("register.exclude",)
 # 고침마다 엔진에 넘기는 value 열쇠. 그 밖의 열쇠는 걸러 내고 확인 상자에 '넘기지 않은 값'으로 보인다(상자에 없는 값이 저장되지 않게)
 VALUE_KEYS = {"set_tag": ("tag",), "set_kind": ("kind",), "set_normal_position": ("value",), "set_fail_position": ("value",),
               "set_flow": ("from", "to", "flip"), "set_endpoint": ("end", "node"), "clear_endpoint": ("end",), "set_path": ("points",),
@@ -745,6 +745,101 @@ def _links_execute(engine):
     return run
 
 
+# ================================================================ 도면을 구간 분석에서 빼기·다시 넣기(B2, node_commands.exclude_drawing)
+# 화면(도면 패널)과 같은 대조: 상자가 본 표시 파일 판(ver)과, 뺄 도면의 구성요소를 품은 구간이 있으면 엔진이 물을 확인 글을 그대로 넘긴다.
+# 확인 글은 엔진과 같은 공개 함수(drawing_nodes·drawing_confirm_text)로 저장 없이 만들고, 실제 엔진 글과 같은지 시험한다.
+
+def _excl_row(engine, graph_id):
+    from hazop.shell import api_nodes
+    view = api_nodes.drawings_view(engine)
+    if not view.get("available"):
+        return None, "구간 분석을 열 수 없음(프로젝트 그래프가 없음)"
+    if view.get("problem"):
+        return None, view["problem"]
+    row = next((r for r in view["drawings"] if r["graph_id"] == graph_id), None)
+    return (row, None) if row is not None else (None, "프로젝트에 없는 도면: %s" % graph_id)
+
+
+def _excl_ask(engine, graph_id, number, excluded):
+    """엔진(exclude_drawing)이 물을 확인 글. 다시 넣기나 걸리는 구간이 없으면 None."""
+    if not excluded:
+        return None
+    from hazop.app import project_ctx
+    from hazop.study import node_commands as nc
+    from hazop.study import nodes
+    pg = project_ctx.project_graph(engine.project_id())
+    try:
+        ns = nodes.read_as_is(pg)
+    except (OSError, ValueError):
+        ns = None
+    held = nc.drawing_nodes(pg, ns, graph_id)
+    return nc.drawing_confirm_text(graph_id, number, held, *nc._held_counts(pg, ns, held)) if held else None
+
+
+def _excl_want(item):
+    return item.args.get("excluded") is not False
+
+
+def _excl_check(engine):
+    def check(item, snap):
+        if not engine.reviewer():
+            return "검토자 이름을 먼저 설정에서 입력해야 함(누른 사람으로 남음)"
+        row, why = _excl_row(engine, item.args["graph_id"])
+        if row is None:
+            return why
+        if not (row.get("drawing_number") or "").strip():
+            return "도면 번호가 확정되지 않은 도면은 뺄 수 없음(표제란에서 도면 번호를 먼저 확정)"
+        if row["excluded"] == _excl_want(item):
+            return "이미 구간 분석에서 %s 도면" % ("뺀" if row["excluded"] else "쓰는")
+        item.targets = [item.args["graph_id"]]
+        item.basis = {"ver": row["ver"], "confirm": _excl_ask(engine, item.args["graph_id"], row["drawing_number"], _excl_want(item))}
+        return None
+    return check
+
+
+def _excl_details(engine):
+    def details(item, snap):
+        row, why = _excl_row(engine, item.args["graph_id"])
+        if row is None:
+            return [{"label": "오류", "after": why}]
+        want = _excl_want(item)
+        rows = [{"label": "도면", "after": "%s (%s)" % (row.get("drawing_number") or "", row["graph_id"])},
+                {"label": "구간 분석", "before": "뺌" if row["excluded"] else "씀", "after": "뺌(새 구간 제안·후보에서 빠짐)" if want else "다시 씀"}]
+        if row.get("nodes"):
+            rows.append({"label": "이 도면을 쓰는 구간", "after": ", ".join("%s %s(%d개)" % (n["node_id"], n.get("name") or "", n["count"]) for n in row["nodes"])})
+        if (item.args.get("reason") or "").strip():
+            rows.append({"label": "사유(AI가 씀)", "after": _show(item.args["reason"])})
+        ask = _excl_ask(engine, row["graph_id"], row["drawing_number"], want)
+        if ask:
+            rows.append({"label": "엔진 확인", "after": ask})
+        rows.append({"label": "누른 사람", "after": "%s(확인한 사람)" % _who(engine)})
+        rows.append({"label": "표시 판", "after": str(row["ver"])[-12:]})
+        return rows
+    return details
+
+
+def _excl_execute(engine):
+    def run(args, call):
+        from hazop.app import project_ctx
+        from hazop.study import node_commands as nc
+        b = call.basis or {}
+        if not b.get("ver"):
+            return _refused("확인 상자에서 본 표시 판이 없어 저장하지 않았습니다.", "stale")
+        pg = project_ctx.project_graph(engine.project_id())
+        want = args.get("excluded") is not False
+        out = nc.exclude_drawing(pg, args["graph_id"], want, by=engine.reviewer(), ver=b["ver"], reason=args.get("reason"),
+                                 confirm=b.get("confirm"))
+        if out.get("needs_confirm"):
+            return _refused("확인한 뒤 걸리는 구간이 바뀌어 저장하지 않았습니다: %s 다시 요청해 확인 상자를 보세요." % out["needs_confirm"],
+                            "stale", args["graph_id"])
+        if not out.get("ok"):
+            return out
+        if not out.get("changed"):
+            return _ok("바뀐 것이 없습니다.")
+        return _ok("도면 %s을(를) 구간 분석에서 %s." % (args["graph_id"], "뺐습니다" if want else "다시 넣었습니다"), topics=["nodes", "drawings"])
+    return run
+
+
 # ================================================================ 표
 
 def checks(engine, running):
@@ -753,6 +848,7 @@ def checks(engine, running):
     out.update({name: _p5_check(engine) for name in P5_ACTIONS})
     out["docs.revision"] = _rev_check(engine)
     out.update({name: _links_check(engine) for name in LINK_ACTIONS})
+    out["register.exclude"] = _excl_check(engine)
     return out
 
 
@@ -762,6 +858,7 @@ def details(engine):
     out.update({name: _p5_details(engine) for name in P5_ACTIONS})
     out["docs.revision"] = _rev_details(engine)
     out.update({name: _links_details(engine) for name in LINK_ACTIONS})
+    out["register.exclude"] = _excl_details(engine)
     return out
 
 
@@ -771,4 +868,5 @@ def executors(engine, running, watcher=None):
     out.update({name: _guard(_p5_execute(engine)) for name in P5_ACTIONS})
     out["docs.revision"] = _guard(_rev_execute(engine, watcher))
     out.update({name: _guard(_links_execute(engine)) for name in LINK_ACTIONS})
+    out["register.exclude"] = _guard(_excl_execute(engine))
     return out

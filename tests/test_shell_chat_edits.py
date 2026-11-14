@@ -339,3 +339,44 @@ class LinksChatTest(RunBase):
                                          peer_graph_id="graph-SNP-M-101", peer_local_id="c2")["reason"])
         self.assertIn("맞은편 연결점", self.one("links.pair", graph_id="graph-SNP-M-101", local_id="c1")["reason"])
         self.assertIn("뺄 지정이 없음", self.one("links.clear", graph_id="graph-SNP-M-101", local_id="c1")["reason"])
+
+
+class ExcludeDrawingTest(RunBase):
+    """도면을 구간 분석에서 빼기·다시 넣기(B2): 실제 엔진(node_commands.exclude_drawing)으로 확인 글·판 대조·저장을 본다."""
+
+    def rows(self):
+        from hazop.shell import api_nodes
+        return {r["graph_id"]: r for r in api_nodes.drawings_view(self.engine)["drawings"]}
+
+    def test_exclude_shows_the_engine_question_then_saves_and_can_be_put_back(self):
+        from hazop.app import project_ctx
+        from hazop.study import node_commands as nc
+        held = next((g for g, r in self.rows().items() if r["nodes"] and r["drawing_number"]), None)
+        if held is None:
+            self.skipTest("구간이 든 도면 번호 있는 도면이 표본에 없음")
+        item = self.one("register.exclude", "이 도면 분석에서 빼 줘", graph_id=held, reason="범례 도면")
+        self.assertEqual(item["status"], "confirm")
+        rows = {r["label"]: r for r in item["details"]}
+        self.assertEqual((rows["구간 분석"]["before"], rows["구간 분석"]["after"][:1]), ("씀", "뺌"))
+        pg = project_ctx.project_graph(self.engine.project_id())
+        engine_ask = nc.exclude_drawing(pg, held, True, by="검토자", ver=self.rows()[held]["ver"])["needs_confirm"]
+        self.assertEqual(rows["엔진 확인"]["after"], engine_ask, "상자의 확인 글이 엔진이 묻는 글과 같다")
+        self.assertFalse(self.rows()[held]["excluded"], "묻기만 하고 저장하지 않는다")
+        self.assertTrue(self.approve(item)["ok"])
+        self.assertTrue(self.rows()[held]["excluded"])
+        self.assertIn("이미 구간 분석에서 뺀", self.one("register.exclude", graph_id=held)["reason"])
+        back = self.one("register.exclude", graph_id=held, excluded=False)
+        self.assertNotIn("엔진 확인", {r["label"] for r in back["details"]})
+        self.approve(back)
+        self.assertFalse(self.rows()[held]["excluded"])
+
+    def test_a_changed_mark_after_the_box_is_not_saved(self):
+        from hazop.study import nodes
+        gid = next((g for g, r in self.rows().items() if r["drawing_number"]), None)
+        if gid is None:
+            self.skipTest("도면 번호 있는 도면이 표본에 없음")
+        item = self.one("register.exclude", graph_id=gid)
+        other = next(r for g, r in self.rows().items() if g != gid and r["drawing_number"])
+        nodes.set_excluded(self.engine.project_id(), other["drawing_number"], True, "다른 창", None)
+        self.approve(item)
+        self.assertFalse(self.rows()[gid]["excluded"], "판이 바뀌면 저장하지 않는다")
