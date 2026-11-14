@@ -54,7 +54,9 @@
 
 ---
 
-## 2. 옮길 것과 지울 것 (`hazop/app/` 35개 파일, 줄 수는 끝의 표)
+## 2. 옮길 것과 지울 것 (`hazop/app/` 35개 파일)
+
+본문 괄호의 줄 수는 빈 줄을 뺀 근사치이고, 6번 표는 `wc -l`이라 더 크다.
 
 이름·위치는 `docs/governance/naming-rules/README.md`(HZ-GOV-02) §4를 따라야 한다. 아래 제안 위치는 **추측**이며, 확정은 §4.2·§4.3과 맞대어 총괄이 한다. 총괄이 예로 든 `hazop/core/`로 적었다. `data`는 100곳 넘게 `from hazop.app import data`로 불리므로 옮기는 단계는 `scripts/migrate_names.py`로 한다(손으로 고치지 않는다).
 
@@ -202,18 +204,18 @@
 
 | 구분 | 경로 | 줄 수 |
 | --- | --- | ---: |
-| 전부 | `hazop/app/screens\__init__.py` | 1 |
-| 전부 | `hazop/app/screens\ai_review_panel.py` | 397 |
-| 전부 | `hazop/app/screens\analysis.py` | 681 |
-| 전부 | `hazop/app/screens\initiating.py` | 1064 |
-| 전부 | `hazop/app/screens\knowledge.py` | 1131 |
-| 전부 | `hazop/app/screens\register.py` | 791 |
-| 전부 | `hazop/app/screens\results.py` | 2444 |
-| 전부 | `hazop/app/screens\results_matrix.py` | 160 |
-| 전부 | `hazop/app/screens\results_paint.py` | 210 |
-| 전부 | `hazop/app/screens\review.py` | 1164 |
-| 전부 | `hazop/app/screens\study.py` | 1815 |
-| 전부 | `hazop/app/screens\viewer.py` | 1394 |
+| 전부 | `hazop/app/screens/__init__.py` | 1 |
+| 전부 | `hazop/app/screens/ai_review_panel.py` | 397 |
+| 전부 | `hazop/app/screens/analysis.py` | 681 |
+| 전부 | `hazop/app/screens/initiating.py` | 1064 |
+| 전부 | `hazop/app/screens/knowledge.py` | 1131 |
+| 전부 | `hazop/app/screens/register.py` | 791 |
+| 전부 | `hazop/app/screens/results.py` | 2444 |
+| 전부 | `hazop/app/screens/results_matrix.py` | 160 |
+| 전부 | `hazop/app/screens/results_paint.py` | 210 |
+| 전부 | `hazop/app/screens/review.py` | 1164 |
+| 전부 | `hazop/app/screens/study.py` | 1815 |
+| 전부 | `hazop/app/screens/viewer.py` | 1394 |
 | 전부 | `hazop/app/main_window.py` | 1898 |
 | 전부 | `hazop/app/chat_panel.py` | 867 |
 | 전부 | `hazop/app/conn_widgets.py` | 413 |
@@ -229,15 +231,15 @@
 | 결정 뒤(2(다)) | `hazop/viewer/template.html` | 1122 |
 | 결정 뒤(2(다)) | `hazop/viewer/check.py` | 182 |
 | 결정 뒤(2(다)) | `scripts/build_viewer.py` | 43 |
-| 전부(스크립트) | `scripts\shoot_ai_connection.py` | 168 |
-| 전부(스크립트) | `scripts\shoot_ai_run.py` | 204 |
-| 전부(스크립트) | `scripts\shoot_expectations.py` | 91 |
-| 전부(스크립트) | `scripts\shoot_initiating.py` | 147 |
-| 전부(스크립트) | `scripts\shoot_project_kg.py` | 104 |
-| 전부(스크립트) | `scripts\shoot_results.py` | 166 |
-| 전부(스크립트) | `scripts\shoot_stage_explorer.py` | 79 |
-| 전부(스크립트) | `scripts\shoot_study_refs.py` | 139 |
-| 전부(스크립트) | `scripts\shoot_uiux.py` | 146 |
+| 전부(스크립트) | `scripts/shoot_ai_connection.py` | 168 |
+| 전부(스크립트) | `scripts/shoot_ai_run.py` | 204 |
+| 전부(스크립트) | `scripts/shoot_expectations.py` | 91 |
+| 전부(스크립트) | `scripts/shoot_initiating.py` | 147 |
+| 전부(스크립트) | `scripts/shoot_project_kg.py` | 104 |
+| 전부(스크립트) | `scripts/shoot_results.py` | 166 |
+| 전부(스크립트) | `scripts/shoot_stage_explorer.py` | 79 |
+| 전부(스크립트) | `scripts/shoot_study_refs.py` | 139 |
+| 전부(스크립트) | `scripts/shoot_uiux.py` | 146 |
 | 전부(스크립트) | `scripts/check_app.py` | 88 |
 | 전부(스크립트) | `scripts/check_edit_screen.py` | 180 |
 | 전부(스크립트) | `scripts/bench_results_screen.py` | 161 |
