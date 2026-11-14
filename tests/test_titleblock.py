@@ -319,7 +319,7 @@ class InterrogateFindingsTest(Base):
 
 
 class ReviewFindingsTest(Base):
-    """총괄 검토 반려(2026-11-14, 재현 D:\\HAZOP-trials\\2026-11-14-review-titleblock)의 결함."""
+    """총괄 검토 반려(2026-11-14)에서 재현한 결함."""
 
     def boom(self, _path):
         raise RuntimeError("추출 실패 흉내")
