@@ -1494,6 +1494,83 @@ BLACK_SEED_DISTANCE = 0.1
 ACTUATOR_REACH_RATIO = 2.0  # 밸브 몸통 긴 변 × 비율 안에 구동부 기호가 있으면 구동 밸브로 본다(APR1400 축 길이 기준)
 
 
+def _on_stem_line(actuator, valve, prm):
+    """구동부 가운데가 밸브 축 자리에 있는가. 축은 몸통 가운데에서 배관과 수직으로 나가므로, 흐름 축 방향으로 본 구동부
+    가운데가 몸통 폭 안에 들어야 한다. 흐름 축을 모르는 몸통은 축 자리에 있다고 본다(판정을 바꾸지 않는다)."""
+    ax = _flow_axis(valve, prm)
+    if ax is None:
+        return True
+    mid = _center(actuator.bbox)[ax]
+    return valve.core[ax] <= mid <= valve.core[ax + 2]
+
+
+HAND_BAR_LEN = (0.15, 1.0)  # 손잡이 가로대 길이 / 몸통 길이(APR1400 016쪽 0.24 ~ 063쪽 0.63)
+HAND_BAR_REACH = 2.0  # 몸통 가운데에서 가로대까지 / 몸통 길이 상한(APR1400 0.5 ~ 1.27)
+HAND_LINE_TOL = 0.25  # 가로대·축이 곧은지, 축이 몸통 가운데 줄에 있는지 보는 허용(pt)
+
+
+def _valve_body_part(sym, cls):
+    """기호에서 밸브 몸통만 뗀 기호와 그 사전 항목. 검정 견본으로 올린 몸통은 그 견본 항목이고, 아니면 곧은 닫힌 몸통 중 가장
+    큰 것과 그 안의 표식(글로브 가운데 점)만으로 사전에 대 본다. 몸통 옆에 붙어 함께 묶인 글자 원(063쪽 'N')·축·화살표·
+    벨로스 선은 뺀다. 수동 밸브 항목이 아니면 None."""
+    if sym.seed is not None:
+        entry = cls["seeds"][sym.seed].entry
+        part = _Sym(list(sym.bodies))
+        part.markers = [m for m in sym.markers if _inside(_center(m["bbox"]), part.core)]
+    else:
+        straight = [b for b in sym.bodies if not b.get("curved")]
+        if not straight:
+            return None
+        part = _Sym([max(straight, key=lambda b: _w(b["bbox"]) * _h(b["bbox"]))])
+        part.markers = [m for m in sym.markers if _inside(_center(m["bbox"]), part.core)]
+        part._recalc()
+        hit = symbol_library().match(symbols.sym_signature(part), [])
+        if hit.outcome != "matched" or hit.entry.role != "symbol":
+            return None
+        entry = hit.entry
+    return (part, entry) if entry.kind == "manual_valve" else None
+
+
+def _hand_wheel(part, cls, blocks, prm):
+    """몸통 가운데에서 배관과 수직으로 나간 축 끝에 가로대가 있는가(범례 1.7-1 1/4 HAND ACTUATOR 'T'). 몸통과 가로대 사이
+    축 자리에는 벨로스 같은 열린 선과 화살표만 있어야 한다. 닫힌 도형(구동부 머리·원·상자)이나 글자(M·S)가 있으면 구동부가
+    끼어 있을 수 있어 손잡이로 보지 않는다."""
+    ax = _flow_axis(part, prm)
+    if ax is None:
+        w, h = _w(part.core), _h(part.core)
+        ax = 0 if w >= 1.5 * h else 1 if h >= 1.5 * w else None
+    if ax is None:
+        return False
+    st, tol = 1 - ax, HAND_LINE_TOL
+    c = _center(part.core)
+    length, half = part.core[ax + 2] - part.core[ax], (part.core[st + 2] - part.core[st]) / 2
+    lines = [p["pts"] for p in cls["polys"] if len(p["pts"]) == 2]
+    own = {b["id"] for b in part.bodies} | {m["id"] for m in part.markers}
+    for a, b in lines:
+        bar = a[st]
+        if abs(a[st] - b[st]) > tol or abs((a[ax] + b[ax]) / 2 - c[ax]) > 0.1 * length:
+            continue
+        if not HAND_BAR_LEN[0] * length <= abs(a[ax] - b[ax]) <= HAND_BAR_LEN[1] * length:
+            continue
+        if not half < abs(bar - c[st]) <= HAND_BAR_REACH * length:
+            continue
+        sign = 1 if bar > c[st] else -1
+        stem = any(abs(p[ax] - c[ax]) <= tol and abs(q[ax] - c[ax]) <= tol and abs(p[st] - bar) <= tol
+                   and 0 < sign * (bar - q[st]) for p, q in lines + [(y, x) for x, y in lines])
+        if not stem:
+            continue
+        lo, hi = sorted((bar, c[st] + sign * half))
+        col = [0.0] * 4
+        col[ax], col[ax + 2], col[st], col[st + 2] = part.core[ax], part.core[ax + 2], lo, hi
+        if any(_inside(_center(m["bbox"]), col) for m in cls["bodies"] + cls["markers"]
+               if m["id"] not in own and not _is_triangle(m)):
+            continue
+        if any(_inside(_center(bk["bbox"]), col) for bk in blocks):
+            continue
+        return True
+    return False
+
+
 def symbol_library():
     """기호 사전(resources/library/symbols). 프로세스마다 한 번 읽는다. 없거나 깨졌으면 SymbolLibraryError로 멈춘다."""
     global _symbol_library
@@ -2107,10 +2184,19 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     drop = {si for si, h in hits.items() if h.outcome == "matched" and h.entry.role == "drop"
             and not degree.get(id(syms[si]))}
     actuators = [syms[si] for si, h in sorted(hits.items()) if h.outcome == "matched" and h.entry.role == "actuator"]
+    # 사전에 통째로는 맞지 않지만 몸통만 떼면 수동 밸브이고 축 끝에 손잡이(T)가 있는 기호: 축·벨로스·화살표·글자 원이
+    # 몸통과 함께 묶여 사전을 벗어난 수동 밸브다(APR1400 063쪽 V349, 062쪽 V2120, 016쪽 V402·V701)
+    hand_valves = {}
+    for si, sy in enumerate(syms):
+        if shape_of[si][0] is None and not getattr(sy, "plate_valve", None) and not (
+                si in hits and hits[si].outcome == "matched"):
+            found = _valve_body_part(sy, cls)
+            if found and _hand_wheel(found[0], cls, blocks, prm):
+                hand_valves[id(sy)] = found
     # 밸브 축: 밸브 가운데(판 밸브는 원판 점, 그 밖은 몸통 상자 가운데)로 들어가는 선. 배관은 몸통 양 끝에 닿는다.
     # 축 반대 끝 기호 = 구동부. 끝막음 규칙(연결 하나)에 넣지 않고, 판 밸브는 수동으로 정하지 않는다
     valve_like = {id(sy) for si, sy in enumerate(syms) if getattr(sy, "plate_valve", None)
-                  or rules.KIND_CATEGORY.get(shape_of[si][0]) == "valve"
+                  or rules.KIND_CATEGORY.get(shape_of[si][0]) == "valve" or id(sy) in hand_valves
                   or (si in hits and hits[si].outcome == "matched" and hits[si].entry.role == "symbol"
                       and rules.KIND_CATEGORY.get(hits[si].entry.kind) == "valve")}
 
@@ -2301,9 +2387,12 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                     kind = entry.kind
                     symbol_attrs = {k: v for k, v in sorted(hit.attributes.items()) if k in rules.REGISTRY.properties}
                     reach = ACTUATOR_REACH_RATIO * max(_w(s.bbox), _h(s.bbox))
-                    # 곧은 축으로 다른 밸브에 이어진 구동부는 그 밸브 것이다(APR1400 128쪽 MOV 009 옆 수동 밸브)
-                    if kind == "manual_valve" and any(_box_gap(a.bbox, s.bbox) <= reach and plan_into.get(id(a), s) is s
-                                                      for a in actuators):
+                    # 곧은 축으로 다른 밸브에 이어진 구동부는 그 밸브 것이다(APR1400 128쪽 MOV 009 옆 수동 밸브).
+                    # 어느 밸브에도 이어지지 않은 구동부가 몸통의 축 자리(몸통 가운데에서 배관과 수직인 줄)를 벗어나 있으면
+                    # 이웃 밸브의 것이다. 축에 무엇이 붙은 몸통(stemmed: 박막 머리 등 사전에 없는 구동부)은 그대로 보류한다
+                    if kind == "manual_valve" and any(
+                            _box_gap(a.bbox, s.bbox) <= reach and plan_into.get(id(a), s) is s
+                            and (id(a) in plan_into or id(s) in stemmed or _on_stem_line(a, s, prm)) for a in actuators):
                         kind, valve_body = None, True  # 몸통만으로는 수동인지 모른다. 구동부를 밸브에 합치는 단계(S5) 전에는 정하지 않는다
                         _issue(unknowns, "actuated_valve_pending", "구동부 기호가 붙은 밸브 몸통: 구동 방식은 아직 정하지 않음",
                                sid, local_id, "kind")
@@ -2311,6 +2400,15 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                 _issue(unknowns, "ambiguous_symbol", "기호 사전 후보가 둘 이상이라 정하지 않음: %s"
                        % ", ".join(c for c, _ in hit.candidates[:3]), sid, local_id, "kind")
         seed = analysis["classified"].get("seeds", {}).get(s.seed)
+        if id(s) in hand_valves and kind is None and symbol_id is None and not class_mark and not any(
+                _box_gap(a.bbox, s.bbox) <= ACTUATOR_REACH_RATIO * max(_w(s.core), _h(s.core))
+                and plan_into.get(id(a), s) is s and (id(a) in plan_into or _on_stem_line(a, hand_valves[id(s)][0], prm))
+                for a in actuators):
+            entry = hand_valves[id(s)][1]
+            kind, basis = entry.kind, "%s:%s+hand_actuator" % ("black_body" if seed is not None else "valve_body", entry.id)
+            symbol_attrs = {k: v for k, v in sorted(entry.attributes.items()) if k in rules.REGISTRY.properties}
+            if seed is not None:
+                symbol_attrs.update((k, v) for k, v in seed.attributes.items() if k == "normal_position")
         if seed is not None and kind is None and symbol_id is None and not class_mark:
             # 몸통은 검정 견본에 맞았지만 묶인 기호 전체는 사전에 없다(벨로스 같은 다른 선이 몸통에 붙음). 종류는 비워 두고
             # 검게 칠한 몸통이 뜻하는 정상 위치만 남긴다

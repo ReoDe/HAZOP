@@ -1147,6 +1147,35 @@ class ActuatorMergeTest(unittest.TestCase):
         self.assertEqual(sorted(n["kind"] for n in ex["nodes"] if n["category"] == "valve"),
                          ["manual_valve", "motor_operated_valve"])
 
+    def test_loose_operator_off_the_stem_line_does_not_hold_manual_valve(self):
+        # APR1400 025쪽 V1105·046쪽 게이트 밸브: 축으로 이어지지 않은 구동부가 가깝기는 해도 몸통 축 자리(가운데에서 배관과
+        # 수직인 줄)를 벗어나 옆 밸브 쪽에 있다. 축 자리 위에 있으면 지금처럼 보류한다
+        def valve_of(ex):
+            (valve,) = [n for n in ex["nodes"] if n["evidence"].get("symbol_id") == "apr1400.gate_valve"]
+            return valve
+        beside = valve_of(self.run_page([ring(113, 94, 1.85)], [word("M", 112.4, 93.0, 2.0)]))
+        self.assertEqual(beside["kind"], "manual_valve")
+        above = valve_of(self.run_page([ring(103, 94, 1.85)], [word("M", 102.4, 93.0, 2.0)]))
+        self.assertEqual((above["kind"], above["category"]), (None, "valve"))
+
+    def test_hand_wheel_on_the_stem_makes_a_decorated_body_manual(self):
+        # 범례 1.7-1 1/4 HAND ACTUATOR: 축 끝 가로대(T). APR1400 063쪽 V349 그대로 몸통 귀퉁이에 'N' 글자 원이 붙어 기호 전체는
+        # 사전에 맞지 않지만, 몸통만 떼면 게이트 밸브이고 축 끝에 손잡이가 있으니 수동 밸브다
+        hand = [prim([(103, 100), (103, 96)], False), prim([(101.5, 96), (104.5, 96)], False)]
+        n_ring = [ring(98.75, 98.75, 1.25)]
+        ex = self.run_page(n_ring + hand, [word("N", 98.3, 98.0, 1.5)])
+        (valve,) = [n for n in ex["nodes"] if n["category"] == "valve"]
+        self.assertEqual((valve["kind"], valve["evidence"]["classification_basis"]),
+                         ("manual_valve", "valve_body:apr1400.gate_valve+hand_actuator"))
+        self.assertEqual(valve["attributes"].get("valve_type"), "gate")
+        # 몸통과 가로대 사이에 구동부 머리(닫힌 곡선)가 끼면 손잡이로 보지 않는다
+        dome = {"fill": False, "stroke": True, "fill_white": False, "stroke_white": False, "dash": None,
+                "subpaths": [([(101.6, 98.4), (102.3, 97.7), (103, 97.5), (103.7, 97.7), (104.4, 98.4), (101.6, 98.4)],
+                              True, [(101.6, 98.4), (102.3, 97.7), (103, 97.5), (103.7, 97.7), (104.4, 98.4),
+                                     (101.6, 98.4)], True)]}
+        ex = self.run_page(n_ring + hand + [dome], [word("N", 98.3, 98.0, 1.5)])
+        self.assertFalse([n for n in ex["nodes"] if n["kind"] == "manual_valve"])
+
     def test_valve_number_circle_becomes_evidence(self):
         ex = self.run_page([ring(90, 88, 4.5), prim([(93.2, 91.2), (99.6, 99.6)], False)], [word("302", 87.3, 86.5, 3.0)])
         self.assertTrue(any(n["evidence"].get("ident_number") == "302" for n in ex["nodes"]))
@@ -1197,6 +1226,11 @@ GATE_PIPES = [pipe((80, 101.5), (100, 101.5)), pipe((106, 101.5), (126, 101.5))]
 BLACK_GLOBE = [filled([(181.6, 270.3), (179.3, 265.6), (183.9, 265.6)]),
                filled([(179.3, 274.9), (181.6, 270.3), (183.9, 274.9)]), filled_dot(181.6, 270.3, 1.2)]
 GLOBE_PIPES = [pipe((181.6, 250.0), (181.6, 265.6)), pipe((181.6, 274.9), (181.6, 290.0))]
+
+
+# 몸통 가운데에서 올라간 축만 있고 끝에 손잡이 가로대(범례 HAND ACTUATOR 'T')가 없다: 기호 전체가 사전에 없고 손잡이도 없다
+STEM_ONLY = [pipe((103, 101.5), (103, 98.5))]
+HAND_BAR = [pipe((101.5, 98.5), (104.5, 98.5))]
 
 
 # 닫힌 밸브 양옆의 열린 게이트 밸브. 경로 분석의 출발점과 도착점으로 쓴다
@@ -1350,7 +1384,7 @@ class ClosedValveTest(unittest.TestCase):
 
     def test_filled_body_with_other_lines_attached_keeps_closed_but_not_the_kind(self):
         """몸통에 벨로스 같은 다른 선이 붙으면 기호 전체는 사전에 없다. 종류는 비워 두고 닫힘만 남긴다."""
-        bonnet = [pipe((103, 101.5), (103, 98.5)), pipe((101.5, 98.5), (104.5, 98.5))]
+        bonnet = STEM_ONLY
         ex = extract([filled(BLACK_GATE)] + bonnet + GATE_PIPES)
         (valve,) = closed_nodes(ex)
         self.assertEqual((valve["kind"], valve["attributes"]), (None, {"normal_position": "NC"}))
@@ -1361,14 +1395,20 @@ class ClosedValveTest(unittest.TestCase):
 
     def test_valve_number_beside_body_of_unknown_kind_is_its_tag(self):
         """종류를 못 정한 검정 몸통도 밸브다. 옆 밸브 번호는 그 몸통의 태그다(063쪽 V359·V361, 062쪽 V2120)."""
-        bonnet = [pipe((103, 101.5), (103, 98.5)), pipe((101.5, 98.5), (104.5, 98.5))]
+        bonnet = STEM_ONLY
         a = pdf_vector.analyze(400, 300, [word("V2120", 100.0, 104.0)], [filled(BLACK_GATE)] + bonnet + GATE_PIPES)
         ex = pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
         self.assertEqual([(n["kind"], n["tag"]) for n in closed_nodes(ex)], [(None, "V2120")])
+        # 축 끝에 손잡이 가로대가 있으면 손잡이로 여는 수동 밸브다(062쪽 V2120 벨로스 밸브)
+        a = pdf_vector.analyze(400, 300, [word("V2120", 100.0, 104.0)], [filled(BLACK_GATE)] + bonnet + HAND_BAR + GATE_PIPES)
+        ex = pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+        (valve,) = closed_nodes(ex)
+        self.assertEqual((valve["kind"], valve["tag"], valve["evidence"]["classification_basis"]),
+                         ("manual_valve", "V2120", "black_body:apr1400.gate_valve+hand_actuator"))
 
     def test_closed_body_of_unknown_kind_still_closes_the_path(self):
         """종류를 못 정한 닫힌 몸통도 경로 분석에서는 닫힌 밸브다. 아니면 닫힌 밸브가 있는 길이 정상 유로가 된다."""
-        bonnet = [pipe((103, 101.5), (103, 98.5)), pipe((101.5, 98.5), (104.5, 98.5))]
+        bonnet = STEM_ONLY
         ex = extract([OPEN_LEFT, OPEN_RIGHT, filled(BLACK_GATE)] + bonnet + OUTER_PIPES)
         (valve,) = closed_nodes(ex)
         self.assertEqual((valve["kind"], valve["category"], valve["classification"]), (None, "valve", "unclassified"))
