@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.9.0",
+  "registry_version": "0.10.0",
   "layers": [
     {"id": "pid", "label_ko": "P&ID 층", "screen": "pid", "filter": "type", "default_on": true},
     {"id": "knowledge", "label_ko": "지식 층", "screen": "kn", "filter": "type", "default_on": true},
@@ -58,9 +58,10 @@
      "required": ["normal_position", "fail_position"]},
     {"id": "check_valve", "parent": "valve", "kind": "check_valve", "label_ko": "체크 밸브", "label_en": "Check valve",
      "dexpi_class": "CheckValve"},
-    {"id": "damper", "parent": "valve", "kind": "damper", "label_ko": "댐퍼", "label_en": "Damper"},
+    {"id": "damper", "parent": "valve", "kind": "damper", "label_ko": "댐퍼", "label_en": "Damper",
+     "properties": ["fail_position"]},
     {"id": "isolation_valve", "parent": "valve", "kind": "isolation_valve", "label_ko": "격리 밸브", "label_en": "Isolation valve",
-     "dexpi_class": "OperatedValve", "required": ["normal_position"]},
+     "dexpi_class": "OperatedValve", "properties": ["fail_position"], "required": ["normal_position"]},
     {"id": "psv", "parent": "valve", "kind": "psv", "label_ko": "안전밸브", "label_en": "Pressure safety valve",
      "dexpi_class": "SafetyValveOrFitting", "properties": ["set_pressure", "relieving_capacity", "discharge_to"],
      "required": ["normal_position"]},
