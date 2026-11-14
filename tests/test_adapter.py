@@ -697,6 +697,16 @@ class PdfVectorRuleTest(unittest.TestCase):
                          (["pdf-path-0001"], ["pdf-path-0000"]))
         self.assertEqual(pdf_vector._black_fills(cls), [])
 
+    def test_filled_half_disc_is_body_not_marker(self):
+        # APR1400 105쪽 공기구동 밸브 위 검은 반달꼴(5.1×2.5pt)은 다이어프램 구동부다. 화살촉 같은 표식으로 두면 구동부
+        # 견본에 대 보지 못해 밸브가 수동 밸브로 남는다. 같은 크기의 검은 삼각형은 그대로 표식이다
+        dome = prim([(300, 112.5), (305.1, 112.5), (302.55, 110), (300, 112.5)], fill=True, curved=True,
+                    ext=[(300, 112.5), (305.1, 112.5), (305.1, 110), (300, 110)])
+        tri = prim([(200, 112.5), (205.1, 112.5), (202.55, 110), (200, 112.5)], closed=True, fill=True)
+        cls = pdf_vector._classify_primitives(600, 400, [dome, tri], dict(pdf_vector.PARAMS))
+        self.assertEqual(([b["id"] for b in cls["bodies"]], [m["id"] for m in cls["markers"]]),
+                         (["pdf-path-0000"], ["pdf-path-0001"]))
+
     def test_pipe_ending_in_outward_arrowhead_is_vent_end(self):
         # 범례의 대기 방출 화살표(APR1400 046쪽 ATM, 105쪽 지붕 위 벤트): 기호에 닿지 않은 배관 끝이 바깥을 향한 화살촉에서
         # 끝나면 그 화살촉이 끝 기호다. 글자가 VENT·ATM이면 vent, 없으면 미분류

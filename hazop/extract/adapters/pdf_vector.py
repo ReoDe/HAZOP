@@ -40,7 +40,7 @@ from .. import drawio, rules, symbols
 # 나눈 모듈(F1-0). 옮긴 이름을 예전 경로(pdf_vector.이름)로도 쓸 수 있게 모두 다시 내보낸다
 from .pdf_vector_common import (
     _num, _bbox_pts, _union, _expand, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist,
-    _seg_cross, _poly_box_dist, _uf_groups, _center, _is_circle, _is_tombstone, _is_chevron, _is_triangle, _issue,
+    _seg_cross, _poly_box_dist, _uf_groups, _center, _is_circle, _is_tombstone, _is_chevron, _is_triangle, _is_half_disc, _issue,
     _is_convex,
     _pt_circle_dist, _end_runs, _meets_at_end,
 )
@@ -389,6 +389,10 @@ def _classify_primitives(width, height, prims, prm):
                     markers.append(dict(item, thin_tip=True))
                 elif thin or corner:
                     dashes.append(item)
+                elif _is_half_disc(item):
+                    # 검게 칠한 반달꼴은 화살촉이 아니라 다이어프램 구동부다(APR1400 063·105쪽 공기구동 밸브 위). 속 빈
+                    # 반달꼴과 같이 몸체로 두어 기호 사전의 구동부 견본에 대 보게 한다
+                    bodies.append(dict(item, closed=True, solid=False))
                 elif large <= prm["marker_max"]:
                     markers.append(item)
                 elif not covers:

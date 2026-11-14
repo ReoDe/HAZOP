@@ -228,6 +228,22 @@ def _is_triangle(body):
     return body["closed"] and not body.get("curved") and len(pts) == 3
 
 
+HALF_DISC_RATIO = (1.7, 2.3)  # 반달꼴의 긴 변(현) / 짧은 변(높이). 반원이면 2
+
+
+def _is_half_disc(item):
+    """곡선 하나와 그 두 끝을 잇는 곧은 현으로 닫힌 반달꼴. 현이 bbox 긴 변 하나를 다 차지한다."""
+    b = item["bbox"]
+    long, short = max(_w(b), _h(b)), min(_w(b), _h(b))
+    if not item.get("curved") or short <= 0 or not HALF_DISC_RATIO[0] <= long / short <= HALF_DISC_RATIO[1]:
+        return False
+    tol = 0.1 * long
+    axis = 1 if _w(b) >= _h(b) else 0  # 현과 수직인 축
+    return any(math.hypot(q[0] - p[0], q[1] - p[1]) >= long - tol and abs(p[axis] - q[axis]) <= tol
+               and min(abs(p[axis] - b[axis]), abs(p[axis] - b[axis + 2])) <= tol
+               for p, q in zip(item["pts"], item["pts"][1:]))
+
+
 CONVEX_FILL = 0.85  # 볼록하다고 보는 다각형 넓이 / 볼록 껍질 넓이 하한. L자 조각은 0.6 안팎, 번진 화살촉은 0.95 이상
 
 
