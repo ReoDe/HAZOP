@@ -354,12 +354,12 @@
   },
   "apr1400-105": {
    "attribute": {
-    "correct": 84,
+    "correct": 87,
     "false_pos": 0,
     "units": 110
    },
    "connection": {
-    "correct": 378,
+    "correct": 382,
     "false_pos": 0,
     "units": 404
    },
