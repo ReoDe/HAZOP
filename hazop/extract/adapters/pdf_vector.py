@@ -1715,10 +1715,11 @@ ISA_BUBBLE_MIN = 8.0  # 계기 원 짧은 변 하한(pt)
 
 # APR1400 범례가 이름을 준 계기 표기. 범례 1.7-1(3/4) INSTRUMENT TYPE CODES의 뒤 글자(기능): A·AC·AH·AHH·AHL·AL·ALL·AO는
 # 경보, L은 LIGHT (PILOT). 앞 글자까지 정해야 뜻이 서는 표기는 범례 기호로 정한다: AX는 1.7-1(2/4) SAMPLE PROBE의 원,
-# FG는 1.7-9 FLOW SIGHT GLASS의 원, LE는 3/4의 L(LEVEL) + E(PRIMARY ELEMENT). FE는 정하지 않는다(ISA_FUNCTION_ORDER 위 설명)
+# FG는 1.7-9 FLOW SIGHT GLASS의 원, LE는 3/4의 L(LEVEL) + E(PRIMARY ELEMENT). FE는 정하지 않는다(ISA_FUNCTION_ORDER 위 설명).
+# TW는 3/4 TW THERMOWELL FOR TEST로, 같은 표의 TEW THERMOWELL처럼 온도 측정점 temperature_element로 본다
 LEGEND_ALARM_FUNCTIONS = frozenset({"A", "AC", "AH", "AHH", "AHL", "AL", "ALL", "AO"})
 LEGEND_FUNCTION_KIND = {"L": "pilot_light"}
-LEGEND_CODE_KIND = {"AX": "sample_probe", "FG": "sight_glass", "LE": "level_element"}
+LEGEND_CODE_KIND = {"AX": "sample_probe", "FG": "sight_glass", "LE": "level_element", "TW": "temperature_element"}
 # 범례 1.7-1(3/4) CLARIFYING SYMBOL LIST의 글자. 번호 없이 원 안에 홀로 적히면 계기 표기가 아니라 한계·고장 위치 같은
 # 덧붙임 표기다(LL LOW LIMIT, FL FAIL LOCK 등)
 LEGEND_CLARIFYING = frozenset({"A", "ADD", "AVG", "BI", "C", "CC", "D", "DIFF", "DIR", "FC", "FI", "FL", "FO", "HE", "HHL",

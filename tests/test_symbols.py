@@ -786,7 +786,7 @@ class IsaBubbleKindTest(unittest.TestCase):
         # APR1400 범례 1.7-1(2/4·3/4)·1.7-9가 이름을 준 계기 표기. 번호가 없어도 계기 원 안이면 정한다
         cases = {"ZL\n202C": "pilot_light", "ZL": "pilot_light", "PDAH\n032": "alarm", "XAH\n051": "alarm",
                  "PAL": "alarm", "PDAH": "alarm", "AX\n134": "sample_probe", "FG": "sight_glass",
-                 "LE\n058": "level_element"}
+                 "LE\n058": "level_element", "TW\n311": "temperature_element"}
         for text, kind in cases.items():
             self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], kind, text)
 
