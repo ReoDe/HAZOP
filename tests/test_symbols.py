@@ -938,6 +938,11 @@ class CommonRuleTest(unittest.TestCase):
             tokens = [w for i, w in enumerate(vocab) if mask >> i & 1]
             self.assertEqual(pdf_vector._kind_from_text(" ".join(tokens)), self.old_word_rule(tokens), tokens)
 
+    def test_prefilter_and_afterfilter_names_are_filters(self):
+        # APR1400 046쪽 'AIR PREFILTER'·'AIR AFTERFILTER' 상자: FILTER가 붙어 한 낱말이 된 설비 이름
+        for text in ("AIR\nPREFILTER", "AIR\nAFTERFILTER"):
+            self.assertEqual(pdf_vector._kind_from_text(text)[0], "filter", text)
+
     def test_text_rules_through_the_adapter(self):
         self.assertEqual(pdf_vector._kind_from_text("Steam Generator\nfeed pump"),
                          ("steam_generator", "text_word:STEAM+GENERATOR"))

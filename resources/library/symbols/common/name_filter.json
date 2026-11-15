@@ -19,6 +19,20 @@
     "FILTER"
    ],
    "order": 70
+  },
+  {
+   "shape": "label_words",
+   "words": [
+    "PREFILTER"
+   ],
+   "order": 71
+  },
+  {
+   "shape": "label_words",
+   "words": [
+    "AFTERFILTER"
+   ],
+   "order": 72
   }
  ],
  "sources": [
