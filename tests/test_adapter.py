@@ -1469,6 +1469,11 @@ class PdfTagTest(unittest.TestCase):
         self.assertEqual(nodes[0]["evidence"]["tag_basis"], "equipment_number")
         self.assertIn(("missing_tag", nodes[1]["source_object_id"]), unknown)
 
+    def test_five_letter_isa_function_gets_tag(self):
+        # 072쪽 'FICKS 031'·'TICKS 3048': 기능 문자 다섯 자도 종류 규칙(6자까지)과 같이 태그로 읽는다
+        nodes, _ = self.tags([("circle", ["FICKS", "031"])])
+        self.assertEqual((nodes[0]["kind"], nodes[0]["tag"]), ("controller", "FICKS-031"))
+
     def test_bubble_letters_and_number_in_two_paragraphs_join(self):
         # 072쪽 표시 상자: 칸막이 선 위 'PDAH', 아래 '031'. 줄 간격(3.5pt)이 문단 간격 상한(0.5 × 6pt)보다 넓어 문단이 갈린다
         ext = pdf_run([circle(110, 110, 10)], [word("PDAH", 103, 104), word("031", 105, 113.5)])

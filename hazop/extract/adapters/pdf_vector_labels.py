@@ -14,8 +14,9 @@ from hazop.kg.docextract import TAG_RE
 from .. import rules
 from .pdf_vector_common import _box_gap, _center, _inside, _issue, _union
 
-# ISA 계기 글자(기능 문자 + 번호, 예: 'PT 110'·'PIC 110'). 태그 앞 계통 접두는 글자에 없다.
-ISA_LABEL_RE = re.compile(r"([A-Z]{1,4})[ \-]*(\d{1,5}[A-Z]?)")
+# ISA 계기 글자(기능 문자 + 번호, 예: 'PT 110'·'PIC 110'·'FICKS 031'). 태그 앞 계통 접두는 글자에 없다. 기능 문자는
+# 종류 규칙(pdf_vector._isa_bubble_kind)과 같이 6자까지 본다(072쪽 FICKS·TICKS 다섯 자)
+ISA_LABEL_RE = re.compile(r"([A-Z]{1,6})[ \-]*(\d{1,5}[A-Z]?)")
 # 수동 밸브 번호(APR1400 'V1681'). 계통 접두는 글자에 없다. 밸브 분류 노드의 라벨 한 줄이 이 꼴이면 그대로 태그로 쓴다
 # 소문자 v로 찍힌 번호(105쪽 'v1153')도 같은 밸브 번호다
 VALVE_TAG_RE = re.compile(r"[Vv]\d{3,5}[A-Z]?")
