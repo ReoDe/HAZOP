@@ -680,5 +680,23 @@ class GooseneckBesideASafetyClassMark(unittest.TestCase):
         self.assertEqual((node_at(ex, (656.3, 178.684, 656.3, 178.684)) or {}).get("kind"), "vent")
 
 
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_025) and os.path.isfile(PAGE_097),
+                     "pdfplumber 또는 APR1400 025·097쪽 PDF 없음(저장소 밖 자료)")
+class FlowElementsUnderFEBubbles(unittest.TestCase):
+    """배관 위 요소가 측정선으로 FE 계기 원에 이어지면 유량 요소다. 원은 계기로 둔다. 태그는 식별자라 요소에는 붙이지
+    않고 원 번호는 근거(fe_bubble_tag)에만 남긴다(025쪽 차압 탭 상자 FE 003·047·049·071, 097쪽 FE 031 아래 오리피스 판)."""
+
+    def test_pipe_elements_are_flow_elements_without_the_bubble_tag(self):
+        ex = pdf_vector.extract(PAGE_025, page=0)
+        nodes = [node_at(ex, (x, y, x, y)) or {} for x, y in ((420.0, 243.5), (655.0, 177.5), (650.5, 269.5), (901.0, 188.5))]
+        self.assertEqual([(n.get("kind"), n.get("tag"), (n.get("evidence") or {}).get("fe_bubble_tag")) for n in nodes],
+                         [("flow_element", None, t) for t in ("FE-003", "FE-047", "FE-049", "FE-071")])
+        bubble = node_at(ex, (413.0, 261.7, 413.0, 261.7))
+        self.assertNotEqual((bubble or {}).get("kind"), "flow_element")
+        ex = pdf_vector.extract(PAGE_097, page=0)
+        self.assertEqual((node_at(ex, (642.9, 562.0, 642.9, 562.0)) or {}).get("kind"), "flow_element")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3310,6 +3310,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     taken |= attach_line_labels(blocks, [bi for bi in range(len(blocks)) if bi not in taken
                                          and roles.get(bi) not in ("title_block", "symbol_mark")], relations + unresolved)
     attach_continuation_line_numbers(node_out, relations + unresolved)
+    _flow_elements(node_out, relations, unknowns)
 
     text_out = []
     for bi, b in enumerate(blocks):
@@ -3388,6 +3389,38 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     }
     result["summary"] = drawio.summarize(result)
     return result
+
+
+def _flow_elements(nodes, relations, unknowns):
+    """배관 위 요소 가운데 FE 계기 원과 측정선으로 이어진 것을 유량 요소(flow_element)로 정한다(범례 1.7-1 2/4 FE).
+    요소는 배관 두 쪽에 물리 연결이 있고 종류가 없거나 오리피스 판으로 읽힌 기호다. FE 원 자체는 계기로 두고(검토구간
+    나누기는 원을 계기로 본다), 요소의 태그는 비워 둔다. FE 원이 둘 이상이거나 요소가 이미 다른 종류면 정하지 않는다.
+    025쪽 차압 탭이 달린 유량 요소 상자(FE 003·047·049·071), 097쪽 FE 031 아래 오리피스 판."""
+    by_id = {n["local_id"]: n for n in nodes}
+    pipes, fe = collections.Counter(), collections.defaultdict(set)
+    for r in relations:
+        ids = [e["node_local_id"] for e in r["endpoints"]]
+        if r["kind"] == "physical_connection":
+            for i in ids:
+                pipes[i] += 1
+        elif r["kind"] == "measurement_connection":
+            for i, j in (ids, ids[::-1]):
+                lines = by_id[j]["label_text"].split()
+                if lines and lines[0] == "FE" and by_id[j]["category"] in (None, "instrument"):
+                    fe[i].add(j)
+    for n in nodes:
+        bubbles = fe.get(n["local_id"], ())
+        if len(bubbles) != 1 or pipes[n["local_id"]] < 2 or n["kind"] not in (None, "orifice") or \
+                n["category"] not in (None, rules.KIND_CATEGORY["orifice"]):
+            continue
+        bubble = by_id[next(iter(bubbles))]
+        n.update(kind="flow_element", category=rules.KIND_CATEGORY["flow_element"], classification="classified")
+        n["evidence"]["classification_basis"] = "fe_bubble_measurement+%s" % (n["evidence"]["classification_basis"] or "pipe_element")
+        unknowns[:] = [u for u in unknowns if not (u["target"] == n["local_id"] and u["check"] == "missing_kind")]
+        # 태그는 식별자라 같은 쪽에서 요소와 FE 원이 같은 값을 갖지 않게 한다. 원 번호는 근거에만 남긴다(총괄 판정 2026-11-16)
+        n["evidence"]["fe_bubble"] = bubble["local_id"]
+        if bubble.get("tag"):
+            n["evidence"]["fe_bubble_tag"] = bubble["tag"]
 
 
 def words_or_paths(analysis):
