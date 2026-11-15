@@ -107,7 +107,7 @@ PV_LENGTH_KEYS = ("twin_tol", "dash_thick_max", "dash_long_max", "dash_corner_ma
                   "attach_tol", "end_tol", "inner_tol_min", "inner_tol_max", "deep_min", "decor_group_tol",
                   "stroke_symbol_min", "stroke_symbol_max", "dash_gap_max", "dash_attach_tol", "label_gap_max",
                   "tee_half", "axis_rect_tol", "table_edge_tol", "pipe_cap_max", "dash_stroke_step",
-                  "dash_collinear_tol", "line_size_tol")
+                  "dash_collinear_tol", "line_size_tol", "container_min")
 # 래스터에서 바꾸는 pdf_vector 값(pt 기준): OCR 상자 높이는 줄마다 몇 px씩 달라 글자 크기 차 허용을 넓히고, 몸체 윤곽은
 # 선 두께만큼 떨어져 나오므로(맞댄 삼각형 꼭짓점 등) 몸체 맞닿음·표 칸·축 정렬 허용을 넓힌다. 화살촉은 번짐(안티에일리어싱)으로
 # 벡터보다 1pt 안팎 커서(샘플 6.9~8.0pt) 표식 상한을 넓힌다. 선 끝은 몸체 윤곽선을 빼며 잘리고 뾰족한 꼭짓점(도면 연결

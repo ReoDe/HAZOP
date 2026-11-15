@@ -402,6 +402,64 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual([{e["node_local_id"] for e in r["endpoints"]} for r in ext["relations"]],
                          [{n["local_id"] for n in nodes}])
 
+    def test_big_outline_holds_drawn_contents_apart(self):
+        # APR1400 072쪽 HVAC CHASE·공조기 구간, 012쪽 IRWST: 큰 닫힌 외곽 안에 그린 몸체·선은 외곽에 담긴 것이다. 안의 몸체는
+        # 제 노드가 되고, 외곽 안에서 끝나는 배관은 구동부 축이 아니어서 반대 끝 밸브를 외곽에 합치지 않는다
+        room, inner, valve = rect(100, 100, 160, 180), rect(140, 150, 150, 160), rect(200, 120, 210, 130)
+        ext = pdf_run([room, inner, valve, line((200, 125), (120, 125))])
+        boxes = sorted((n["geometry"]["x"], n["geometry"]["width"]) for n in ext["nodes"] if n["kind"] != "tee")
+        self.assertEqual(boxes, [(100, 60), (140, 10), (200, 10)])
+        small = pdf_run([rect(100, 100, 115, 140), rect(105, 110, 110, 115)])  # 짧은 변 15pt 상자는 담는 외곽이 아니다
+        self.assertEqual(len([n for n in small["nodes"] if n["kind"] != "tee"]), 1)
+        # SNP-M-301 스캔: 위가 트인 빗금 탱크는 벽 칸 여럿이고 그 한 칸이 담는 외곽 크기다. 칸이 기호의 절반도 안 되면 그 기호는
+        # 담는 외곽이 아니어서, 트인 위쪽으로 들어오는 배관이 벽 칸에서 멀어도 탱크에 닿는다
+        def poly(*pts):  # 표 칸으로 읽히지 않게 사다리꼴로 그린다
+            return prim(list(pts) + [pts[0]], closed=True)
+        wall = pdf_run([rect(100, 100, 125, 160), rect(110, 110, 115, 115),
+                        poly((275, 100), (300, 100), (300, 160), (280, 160)),
+                        poly((125, 140), (280, 140), (280, 160), (130, 160)),
+                        rect(195, 30, 205, 40), line((200, 40), (200, 99))])
+        x = {n["local_id"]: n["geometry"]["x"] for n in wall["nodes"]}
+        self.assertEqual([sorted(x[e["node_local_id"]] for e in r["endpoints"]) for r in wall["relations"]], [[100, 195]])
+
+    def test_pipe_at_outline_wall_goes_to_drawn_content(self):
+        # 072쪽 공조기 팬 출구: 팬이 구간 상자 오른쪽 변에 겹쳐 그려져, 덕트 끝이 상자 변에 0.01pt 더 가깝다. 덕트는 팬에 닿는다.
+        # 012쪽 IRWST: 살포기로 가는 배관이 탱크 윗변에서 두 경로로 나뉘어 그려진다. 배관은 벽을 지나 살포기에 닿는다
+        def pairs(ext):
+            x = {n["local_id"]: n["geometry"]["x"] for n in ext["nodes"]}
+            return sorted(sorted(x[e["node_local_id"]] for e in r["endpoints"]) for r in ext["relations"])
+        fan = pdf_run([rect(100, 100, 160, 140), rect(140, 110, 159.99, 130), rect(250, 115, 260, 125),
+                       line((160, 120), (250, 120))])
+        self.assertEqual(pairs(fan), [[140, 250]])
+        tank = pdf_run([rect(100, 100, 200, 200), rect(140, 170, 160, 180), rect(145, 30, 155, 40),
+                        line((150, 40), (150, 100)), line((150, 100), (150, 170))])
+        self.assertEqual(pairs(tank), [[140, 145]])
+
+    def test_small_box_set_on_outline_wall_is_own_node_touching_it(self):
+        # 046쪽 압축기 위 필터 F: 압축기 상자 윗변 바깥에 작은 상자를 붙여 그린다. 필터는 제 노드가 되고 압축기와 맞닿아 이어진다
+        # 압축기 상자는 안에 칸막이 상자를 담고 있어 담는 외곽이다
+        ext = pdf_run([rect(100, 100, 160, 150), rect(130, 120, 150, 140), rect(110, 90, 122, 100)])
+        nodes = sorted((n["geometry"]["x"], n["local_id"]) for n in ext["nodes"] if n["kind"] != "tee")
+        self.assertEqual([x for x, _ in nodes], [100, 110, 130])
+        self.assertEqual([sorted(e["node_local_id"] for e in r["endpoints"]) for r in ext["relations"]],
+                         [sorted(i for _, i in nodes[:2])])
+
+    def test_pipe_drawn_under_square_body_is_cut_at_it(self):
+        # APR1400 072쪽 댐퍼 Y1202A: 덕트 하나가 정사각형 몸체 밑을 가운데 줄로 지나간다. 흐름 축을 몰라도 마주 보는 두 변을
+        # 꿰뚫는 선은 그 몸체에서 나뉘어 양쪽 이웃이 몸체를 건너뛰지 않는다. 몸체 옆을 스치는 선은 나누지 않는다
+        a, b, damper = rect(100, 120, 120, 140), rect(300, 120, 320, 140), rect(200, 125, 210, 135)
+        ext = pdf_run([a, b, damper, line((120, 130), (300, 130))])
+        ids = {n["geometry"]["x"]: n["local_id"] for n in ext["nodes"]}
+        pairs = sorted(sorted(ids_x for ids_x, nid in ids.items() if nid in {e["node_local_id"] for e in r["endpoints"]})
+                       for r in ext["relations"])
+        self.assertEqual(pairs, [[100, 200], [200, 300]])
+        grazing = pdf_run([a, b, damper, line((120, 136), (300, 136))])
+        self.assertEqual(len(grazing["relations"]), 1)
+        # 105쪽 PC 0612: 두 배관이 엇갈리는 자리에 얹은 글자 상자는 두 축 모두로 꿰뚫린다. 나누면 네 갈래가 한데 이어진다
+        crossing = pdf_run([a, b, damper, rect(195, 40, 215, 60), rect(195, 200, 215, 220),
+                            line((120, 130), (300, 130)), line((205, 60), (205, 200))])
+        self.assertEqual(len(crossing["relations"]), 2)
+
     def test_short_lines_hanging_at_pipe_end_become_end_symbol(self):
         # APR1400 097쪽 호스 연결 ⊔·128쪽 벤트 끝 눈금: 배관이 짧은 가로대 가운데에서 끝난다. 가로대 반쪽 둘이 매달린
         # 분기점이 아니라 끝 기호 노드다. 기호에서 짧게 나온 축 끝의 가로대(008쪽 V236 위 T자 손잡이)는 그대로 둔다

@@ -46,7 +46,7 @@ from .pdf_vector_common import (
 )
 from .pdf_vector_grouping import (
     _Sym, _cluster_bodies, _nearest_sym, _end_status, _plate_assemblies, _group_symbols, _merge_appendages,
-    _black_fill_groups, _cut_at_boxes, _contact_chains, _cut_through, _flow_axis,
+    _black_fill_groups, _cut_at_boxes, _contact_chains, _cut_through, _flow_axis, _reach_box, FLOW_LONG_RATIO,
 )
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
@@ -94,6 +94,9 @@ PARAMS = {
     "label_gap_max": 15.0,       # 글자 문단과 기호 사이 거리 상한
     "bare_code_gap_max": 5.0,    # 쌍점 없는 두 글자 계통 약어를 연결 표시 글자로 볼 거리 상한(바로 옆만)
     "appendage_gap_ratio": 0.1,  # 연결 없는 작은 기호를 옆 큰 기호에 합치는 거리 = 큰 기호 긴 변 × 비율
+    "container_min": 20.0,       # 담는 외곽: 짧은 변이 이 이상인 곧은 변 닫힌 외곽(밸브·계기 원은 11pt 안팎)
+    "container_hold_ratio": 0.5,  # 담는 외곽 안의 몸체가 담긴 것: 넓이가 외곽의 이 비율 이하(겹선 외곽은 담긴 것이 아니다)
+    "container_beside_ratio": 0.15,  # 담는 외곽 변 바깥에 붙은 곧은 변 상자를 따로 두는 넓이 상한(외곽 넓이 × 비율)
     "tee_half": 1.0,             # 분기점 노드 bbox 반폭
     "max_iterations": 10,
     "axis_rect_tol": 0.3,        # 축 정렬 사각형 판정: 꼭짓점과 bbox 변의 차 상한
@@ -813,7 +816,7 @@ def _attach(p, syms, markers, prm):
             s = None
             best = None
             for c in syms:
-                d = _box_gap(m["bbox"], c.bbox)
+                d = _reach_box(m["bbox"], c)
                 if d <= prm["attach_tol"] and (best is None or d < best):
                     best, s = d, c
             if s is not None:
@@ -919,6 +922,7 @@ def _width_crossing(members, pieces, prm):
 
 
 THROUGH_CENTER_RATIO = 0.15  # 몸체를 지나가는 배관: 가운데 줄에서 벗어난 거리 ≤ 몸체 옆 폭 × 비율
+THROUGH_WALL_COS = 0.95      # 담는 외곽 변에서 끝을 맞댄 두 선이 곧게 이어진다고 보는 방향 코사인(약 18도 안)
 
 
 def _cut_through_bodies(pieces, syms, prm):
@@ -926,20 +930,37 @@ def _cut_through_bodies(pieces, syms, prm):
     선 하나로 그은 배관 위에 밸브를 얹어 그리면 선 끝이 몸체에 닿지 않아 밸브에 배관이 붙지 않고, 양쪽 이웃이 밸브를
     건너 바로 이어진다(APR1400 105쪽 전동 밸브, 128쪽 축소관). 축을 가로지르는 선, 몸체 옆이나 모서리를 지나는 선,
     축을 모르는 몸체는 나누지 않는다. → (새 조각 목록, 몸체에 붙인 끝 {(조각, k): (기호, basis)})."""
-    axes = [(s, ax) for s in syms if s.alive and s.seed is None for ax in (_flow_axis(s, prm),) if ax is not None]
+    # 담는 외곽(방 경계·탱크)을 지나는 선은 그 안으로 들어가는 배관이다. 외곽 변에서 나누지 않는다.
+    # 곧은 변 정사각형 몸체(댐퍼·마름모 밸브)는 흐름 축을 모른다. 가운데 줄을 따라 마주 보는 두 변을 꿰뚫는 선은 어느 축이든
+    # 그 몸체 밑을 지나는 배관이다(APR1400 072쪽 댐퍼 Y1202A: 덕트 하나가 흰 채움 몸체 밑을 지나간다)
+    axes = []
+    for s in syms:
+        if not s.alive or s.seed is not None or s.rings:
+            continue
+        ax = _flow_axis(s, prm)
+        if ax is not None:
+            axes.append((s, (ax,)))
+        elif s.bodies and not s.stroke_only and not any(b.get("curved") for b in s.bodies) and \
+                max(_w(s.core), _h(s.core)) < FLOW_LONG_RATIO * min(_w(s.core), _h(s.core)):
+            # 두 축 모두로 선이 꿰뚫는 상자는 두 배관이 엇갈리는 자리에 얹은 글자 상자다(105쪽 PC 0612). 나누지 않는다
+            crossed = {ax for ax in (0, 1) for pc in pieces if _box_gap(_bbox_pts(pc["pts"]), s.core) <= 0
+                       and _cut_through(pc["pts"], s.core, ax, THROUGH_CENTER_RATIO * (s.core[3 - ax] - s.core[1 - ax]))}
+            if len(crossed) == 1:
+                axes.append((s, tuple(crossed)))
     out, att = [], {}
     for pc in pieces:
         parts = [(pc["pts"], None, None)]  # (점, 앞 끝 기호, 뒤 끝 기호)
         box = _bbox_pts(pc["pts"])
-        for s, ax in axes:
+        for s, sides in axes:
             if _box_gap(box, s.core) > 0:
                 continue
-            lateral = THROUGH_CENTER_RATIO * (s.core[3 - ax] - s.core[1 - ax])
-            cut = []
-            for pts, s0, s1 in parts:
-                halves = _cut_through(pts, s.core, ax, lateral)
-                cut += [(halves[0], s0, s), (halves[1], s, s1)] if halves else [(pts, s0, s1)]
-            parts = cut
+            for ax in sides:
+                lateral = THROUGH_CENTER_RATIO * (s.core[3 - ax] - s.core[1 - ax])
+                cut = []
+                for pts, s0, s1 in parts:
+                    halves = _cut_through(pts, s.core, ax, lateral)
+                    cut += [(halves[0], s0, s), (halves[1], s, s1)] if halves else [(pts, s0, s1)]
+                parts = cut
         for pts, s0, s1 in parts:
             for k, s in ((0, s0), (1, s1)):
                 if s is not None:
@@ -995,6 +1016,25 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
         j, q = others[0]
         return _pt_box_dist(q, s.bbox) > prm["touch_tol"] and _meets_at_end(pt, pieces[j]["pts"], q) and \
             _meets_at_end(q, pieces[i]["pts"], pt)
+    def through_wall(i, k, pt):
+        # 담는 외곽 변에서 두 선이 끝을 맞대고 곧게 이어지면 배관이 벽을 지나 안으로 들어간다(012쪽 IRWST 위에서 살포기로
+        # 내려가는 배관이 탱크 윗변에서 두 경로로 나뉘어 그려진다). 외곽에 붙이면 배관이 외곽에서 끊긴다
+        def out_dir(pts, kk):
+            a, b = (pts[1], pts[0]) if kk == 0 else (pts[-2], pts[-1])
+            L = math.hypot(b[0] - a[0], b[1] - a[1])
+            return ((b[0] - a[0]) / L, (b[1] - a[1]) / L) if L else None
+        d = out_dir(pieces[i]["pts"], k)
+        cx, cy = int(pt[0] // cell), int(pt[1] // cell)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for j, q in end_grid.get((cx + dx, cy + dy), ()):
+                    if j == i or math.hypot(q[0] - pt[0], q[1] - pt[1]) > prm["end_tol"]:
+                        continue
+                    pj = pieces[j]["pts"]
+                    e = out_dir(pj, 0 if pj[0] == q else 1)
+                    if d and e and d[0] * e[0] + d[1] * e[1] <= -THROUGH_WALL_COS:
+                        return True
+        return False
     for i, k, pt in ends:
         # 바깥을 가리키는 화살촉 안에서 끝난 선은 화살촉 끝이 배관 끝이다. 그 끝에 닿은 기호에만 붙이고, 화살촉 밑동 옆을
         # 스치는 기호에는 붙이지 않는다(APR1400 105쪽 벤트 관이 지붕 빗금 묶음 사이 틈을 지나 화살촉에서 끝난다)
@@ -1003,6 +1043,8 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
         # 두 선이 끝을 맞댄 모서리가 기호 옆을 닿지 않고 지나면 그 모서리는 배관이 꺾이는 자리다. 기호에 붙이면 배관이
         # 그 기호에서 둘로 갈린다(APR1400 008쪽: MOV 상승관 꼭대기 모서리가 TEW 상자 변에서 1.8pt 떨어져 있다)
         if s is not None and basis == "pdf_path_endpoint" and corner_beside(i, pt, s):
+            s = None
+        if s is not None and s.rings and through_wall(i, k, pt):
             s = None
         if s is not None:
             att[(i, k)] = (s, basis)

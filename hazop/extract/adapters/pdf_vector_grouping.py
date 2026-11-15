@@ -56,8 +56,16 @@ class _Sym:
         외곽 위에 겹쳐 그린 닫힌 도형(125쪽 증기발생기 위 머리)이 함께 묶여도 장비 외곽이다."""
         return any(b.get("traced") for b in self.bodies)
 
+    @property
+    def rings(self):
+        """담는 외곽(_cluster_bodies가 container로 표시한 몸체)의 꺾은선 목록. 담는 외곽의 안쪽은 빈 자리다. 기호에 닿는다는
+        것은 외곽 변에 닿는다는 뜻이고, 안에 그린 선·화살촉·기호는 따로 읽는다. 외곽이 기호 몸체의 절반도 안 되면(스캔에서 빗금
+        탱크 벽 칸 하나가 담는 외곽 크기, SNP-M-301) 그 기호는 담는 외곽이 아니다."""
+        area = _w(self.core) * _h(self.core)
+        return [b["pts"] for b in self.bodies if b.get("container") and _w(b["bbox"]) * _h(b["bbox"]) >= 0.5 * area]
+
     def inner_tol(self, prm):
-        if self.outline:
+        if self.outline or self.rings:
             return prm["inner_tol_min"]
         return max(prm["inner_tol_min"], min(prm["inner_tol_max"],
                                              prm["inner_tol_ratio"] * max(_w(self.core), _h(self.core))))
@@ -67,9 +75,10 @@ class _Sym:
         return bool(self.bodies) and all(_is_chevron(b) for b in self.bodies)
 
     def deep(self, p, prm):
-        if self.stroke_only or self.arrow_only() or self.outline:
+        if self.stroke_only or self.arrow_only() or self.outline or self.rings:
             # 화살표 안으로 들어간 배관은 연결이지 화살표의 일부가 아니다. 장비 외곽 안으로 들어간 선도 장비 안 배관·계기
-            # 탭이다. 구동부 축으로 보면 반대 끝 계기를 장비에 합친다(APR1400 125쪽 증기발생기 수위 전송기)
+            # 탭이다. 구동부 축으로 보면 반대 끝 계기를 장비에 합친다(APR1400 125쪽 증기발생기 수위 전송기).
+            # 담는 외곽 안에서 끝나는 선도 그 안의 배관 끝이다(072쪽 HVAC CHASE 덕트 끝, 012쪽 IRWST 살포기 배관)
             return False
         if _depth(p, self.core) <= max(prm["deep_min"], prm["deep_ratio"] * min(_w(self.core), _h(self.core))):
             return False
@@ -85,7 +94,7 @@ class _Sym:
         return next(iter(ids)) if len(ids) == 1 else None
 
 
-def _cluster_bodies(bodies, prm):
+def _cluster_bodies(bodies, prm, polys=()):
     for b in bodies:
         b["kind_"] = "body"
     # 연결 표시 화살표는 맞닿은 밸브·축소관 몸체와 한 기호로 묶지 않는다(묶이면 화살표도 밸브도 종류를 잃는다)
@@ -99,12 +108,44 @@ def _cluster_bodies(bodies, prm):
             return True
         ring, other = (a, b) if a.get("traced") else (b, a)
         return _pt_ring_dist(_center(other["bbox"]), ring.get("fine") or ring["pts"]) == 0.0
+    # 담는 외곽: 짧은 변이 container_min 이상인 곧은 변 닫힌 외곽(방 경계, 공조기 구간, 탱크, 압축기). 그 안에 그린 몸체는
+    # 담긴 것이지 외곽의 일부가 아니다. 묶으면 안의 댐퍼·팬·살포기가 외곽 기호에 먹혀 노드가 없다(APR1400 072·012쪽)
+    # 담는 외곽은 실제로 무엇을 담는다: 안에 든 작은 몸체가 있거나, 선 끝이 안쪽 깊이(deep_min) 이상 들어와 있다. 선이 지나가기만
+    # 하는 큰 밸브 몸체(점선 배관이 꿰뚫는 20pt 상자)는 담는 외곽이 아니다
+    def holds(a, b):
+        return _w(b["bbox"]) * _h(b["bbox"]) <= prm["container_hold_ratio"] * _w(a["bbox"]) * _h(a["bbox"]) and \
+            _pt_ring_dist(_center(b["bbox"]), a["pts"]) == 0.0
+
+    def inner_end(a, p):
+        return _inside(p, a["bbox"]) and _pt_ring_dist(p, a["pts"]) == 0.0 and \
+            min(_seg_dist(p, u, v)[0] for u, v in zip(a["pts"], a["pts"][1:] + a["pts"][:1])) >= prm["deep_min"]
+    for b in bodies:
+        if b.get("closed") and not (b.get("solid") or b.get("traced") or b.get("curved")) and \
+                min(_w(b["bbox"]), _h(b["bbox"])) >= prm["container_min"] and \
+                (any(c is not b and holds(b, c) for c in bodies) or
+                 any(inner_end(b, p["pts"][k]) for p in polys for k in (0, -1))):
+            b["container"] = True
+
+    def held(a, b):
+        return bool(a.get("container")) and holds(a, b)
     groups = _uf_groups(len(bodies), lambda i, j: not (alone[i] or alone[j]) and
                         bodies[i].get("seed") == bodies[j].get("seed") and
                         bodies[i].get("class_mark") == bodies[j].get("class_mark") and
                         _box_gap(bodies[i]["bbox"], bodies[j]["bbox"]) <= prm["touch_tol"] and
-                        inside_outline(bodies[i], bodies[j]))
+                        inside_outline(bodies[i], bodies[j]) and
+                        not held(bodies[i], bodies[j]) and not held(bodies[j], bodies[i]) and
+                        not _beside(bodies[i], bodies[j], prm) and not _beside(bodies[j], bodies[i], prm))
     return [_Sym([bodies[i] for i in g]) for g in groups]
+
+
+def _beside(a, b, prm):
+    """b가 담는 외곽 a의 변 바깥에 붙여 그린 작은 곧은 변 상자인가(046쪽 압축기 위 필터 F). 외곽의 일부가 아니라 제 기호다.
+    둥근 머리(용기 위아래 반구)는 외곽과 한 장비라 해당하지 않는다."""
+    if not a.get("container") or b.get("container") or b.get("curved") or not b.get("closed") or \
+            b.get("seed") is not None or b.get("class_mark"):
+        return False
+    return _w(b["bbox"]) * _h(b["bbox"]) <= prm["container_beside_ratio"] * _w(a["bbox"]) * _h(a["bbox"]) and \
+        _pt_ring_dist(_center(b["bbox"]), a["pts"]) > 0.0
 
 
 def _black_fill_groups(fills, prm):
@@ -236,6 +277,18 @@ def _contact_chains(syms, prm):
             out.append({"pts": [pt, pt], "ends": [(("sym", v), pt, "pdf_touching_bodies"),
                                                   (("sym", t), pt, "pdf_touching_bodies")],
                         "evidence": sorted({v.evidence()[0], t.evidence()[0]}), "contact": True})
+    # 담는 외곽 변 바깥에 붙여 그린 작은 상자(_beside로 따로 둔 기호)는 그 장비에 맞닿아 이어진다(046쪽 압축기 위 필터 F)
+    for c in syms:
+        for wall in (b for b in c.bodies if b.get("container")):
+            for t in syms:
+                if t is c or not t.bodies or not all(_beside(wall, b, prm) for b in t.bodies) or \
+                        _box_gap(t.core, wall["bbox"]) > prm["touch_tol"]:
+                    continue
+                x = min(max(_center(t.core)[0], wall["bbox"][0]), wall["bbox"][2])
+                y = min(max(_center(t.core)[1], wall["bbox"][1]), wall["bbox"][3])
+                out.append({"pts": [(x, y), (x, y)], "ends": [(("sym", c), (x, y), "pdf_touching_bodies"),
+                                                              (("sym", t), (x, y), "pdf_touching_bodies")],
+                            "evidence": sorted({c.evidence()[0], t.evidence()[0]}), "contact": True})
     return out
 
 
@@ -249,18 +302,48 @@ def _pt_ring_dist(p, ring):
     return 0.0 if inside else min(_seg_dist(p, a, b)[0] for a, b in zip(ring, ring[1:] + ring[:1]))
 
 
+def _closed(ring):
+    return list(ring) + [ring[0]]
+
+
+def _members(s):
+    return [m for m in s.bodies if not m.get("container")] + s.strokes + s.markers + s.dashes
+
+
+def _reach(pts, s):
+    """꺾은선(점 하나도 됨)과 기호 사이 거리. 담는 외곽은 변까지 잰다(안쪽은 빈 자리). 나머지 기호는 상자 거리다."""
+    if not s.rings:
+        return _poly_box_dist(pts, s.bbox)
+    pts = list(pts) if len(pts) > 1 else [pts[0], pts[0]]
+    return min([_poly_dist(pts, _closed(r)) for r in s.rings] + [_poly_box_dist(pts, m["bbox"]) for m in _members(s)])
+
+
+def _reach_box(box, s):
+    """상자와 기호 사이 거리(_reach와 같은 뜻). 담는 외곽 안에 든 작은 상자는 변에 닿아야 그 기호에 닿는다."""
+    if not s.rings:
+        return _box_gap(box, s.bbox)
+    corners = [(box[0], box[1]), (box[2], box[1]), (box[2], box[3]), (box[0], box[3])]
+    return min([_poly_dist(_closed(corners), _closed(r)) for r in s.rings] +
+               [_box_gap(box, m["bbox"]) for m in _members(s)])
+
+
 def _sym_dist(p, s, prm=None):
     """점과 기호 사이 거리. 몸체가 원 하나뿐인 기호(밸브 번호·계기 원)는 상자 귀퉁이가 비어 있어 원 모양 그대로 잰다.
     상자로 재면 밸브 번호 원 귀퉁이 옆에 그린 안전밸브 스프링 빗금이 그 원에 닿은 연결선으로 읽혀 밸브에 들지
     못한다(APR1400 008쪽 POSRV 파일럿 밸브). prm이 없으면 상자 거리다."""
     if s.outline:  # 장비 외곽은 둥근 귀퉁이 밖이 비어 있다. 상자로 재면 귀퉁이 옆 기호가 장비에 닿은 것으로 읽힌다
         return min(_pt_ring_dist(p, b.get("fine") or b["pts"]) for b in s.bodies)
+    if s.rings:
+        return _reach([p], s)
     if prm is not None and len(s.bodies) == 1 and _is_circle(s.bodies[0], prm):
         d = _pt_circle_dist(p, s.bodies[0])
         for m in s.strokes + s.markers + s.dashes:
             d = min(d, _pt_box_dist(p, m["bbox"]))
         return d
     return _pt_box_dist(p, s.bbox)
+
+
+CONTAINER_YIELD = 0.5  # 선 끝에서 담는 외곽과 다른 기호의 거리 차가 이 안이면 다른 기호가 이긴다(pt)
 
 
 def _nearest_sym(p, syms, tol, prm=None):
@@ -270,7 +353,8 @@ def _nearest_sym(p, syms, tol, prm=None):
             continue
         d = _sym_dist(p, s, prm)
         if d <= tol:
-            key = (d, _w(s.bbox) * _h(s.bbox))
+            # 담는 외곽 변에 겹쳐 그린 안의 기호(072쪽 공조기 구간 오른쪽 변에 붙은 팬 출구)가 있으면 선 끝은 그 기호에 닿는다
+            key = (d + (CONTAINER_YIELD if s.rings else 0.0), _w(s.bbox) * _h(s.bbox))
             if best is None or key < best[0]:
                 best = (key, s)
     return best[1] if best else None
@@ -816,7 +900,7 @@ def _grazes(piece, sym, prm):
 
 
 def _group_symbols(cls, prm):
-    syms = _cluster_bodies(cls["bodies"], prm)
+    syms = _cluster_bodies(cls["bodies"], prm, cls["polys"])
     polys = _join_crossing_gaps(list(cls["polys"]), cls["dashes"], syms, prm)
     valves, polys, markers, flange_pairs = _plate_assemblies(syms, polys, list(cls["markers"]),
                                                              cls["dashes"], prm)
@@ -839,7 +923,8 @@ def _group_symbols(cls, prm):
         for p in polys:
             host = None
             for s in live:
-                if s.alive and not s.arrow_only() and all(_inside(q, s.bbox, s.inner_tol(prm)) for q in p["pts"]):
+                if s.alive and not s.arrow_only() and all(_inside(q, s.bbox, s.inner_tol(prm)) for q in p["pts"]) \
+                        and (not s.rings or _reach(p["pts"], s) <= prm["attach_tol"]):
                     if host is None or _w(s.bbox) * _h(s.bbox) < _w(host.bbox) * _h(host.bbox):
                         host = s
             if host is not None:
@@ -912,11 +997,12 @@ def _group_symbols(cls, prm):
                 for it in items[1:]:
                     box = _union(box, it["bbox"])
                 touching = [s for s in live if s.alive and
-                            min(_poly_box_dist(it["pts"], s.bbox) for it in items) <= prm["attach_tol"]]
+                            min(_reach(it["pts"], s) for it in items) <= prm["attach_tol"]]
                 host = None
                 for s in (t for t in touching if not t.arrow_only()):
                     out = max(s.bbox[0] - box[0], box[2] - s.bbox[2], s.bbox[1] - box[1], box[3] - s.bbox[3], 0.0)
-                    if out <= (s.inner_tol(prm) if s.outline else prm["decor_extent_ratio"] * max(_w(s.core), _h(s.core))):
+                    if out <= (s.inner_tol(prm) if s.outline or s.rings
+                               else prm["decor_extent_ratio"] * max(_w(s.core), _h(s.core))):
                         if host is None or _w(s.bbox) * _h(s.bbox) > _w(host.bbox) * _h(host.bbox):
                             host = s
                 if host is not None:
@@ -924,7 +1010,7 @@ def _group_symbols(cls, prm):
                     changed = True
                     continue
                 # 흡수할 기호가 없으면: 기호에 닿는 선은 연결선으로 남기고, 나머지가 적당한 크기면 선 기호로 묶는다
-                free_items = [it for it in items if all(_poly_box_dist(it["pts"], t.bbox) > prm["attach_tol"]
+                free_items = [it for it in items if all(_reach(it["pts"], t) > prm["attach_tol"]
                                                         for t in touching)]
                 fbox = None
                 for it in free_items:
@@ -952,7 +1038,7 @@ def _group_symbols(cls, prm):
                           _inside((m["bbox"][0], m["bbox"][1]), s.bbox, prm["touch_tol"]) and
                           _inside((m["bbox"][2], m["bbox"][3]), s.bbox, prm["touch_tol"]) and
                           len({_inside(e, s.bbox, prm["touch_tol"]) for e in m.get("path_ends", ())}) < 2 and
-                          not _grazes(m, s, prm)]
+                          not _grazes(m, s, prm) and (not s.rings or _reach_box(m["bbox"], s) <= prm["touch_tol"])]
                 # 검정 견본으로 올린 몸통 위의 점(seed)은 그 몸통의 기호로 간다. 그 밖에는 상자에 드는 첫 기호
                 own = [s for s in inside if "seed" in m and any(b.get("seed") == m["seed"] for b in s.bodies)]
                 host = (own or inside or [None])[0]
@@ -993,6 +1079,8 @@ def _merge_appendages(syms, chains, prm):
                 continue
             if t.outline:
                 continue  # 장비 외곽 옆에 따로 그린 계기 비석은 부속이 아니다(APR1400 125쪽 증기발생기 수위 전송기)
+            if any(_pt_ring_dist(_center(s.bbox), r) == 0.0 for r in t.rings):
+                continue  # 담는 외곽 안에 든 기호는 외곽의 부속이 아니다(072쪽 HVAC CHASE 안 공기 흐름 화살표)
             gap = _box_gap(s.bbox, t.bbox)
             if gap <= prm["appendage_gap_ratio"] * max(_w(t.bbox), _h(t.bbox)) and (best is None or gap < best[0]):
                 best = (gap, t)
