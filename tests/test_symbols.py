@@ -839,6 +839,14 @@ class RuleTemplateTest(LibraryCase):
         self.assertEqual(lib.word_rule(["PUMP"])[1], ("PUMP",))
         self.assertEqual(lib.word_rule(["PUMPS"]), (None, None))
 
+    def test_last_word_template_needs_only_ids_after_the_word(self):
+        lib = self.write([rule_entry("t.turbine", "turbine", [dict(label_words(["TURBINE"], 10), last=True)]),
+                          rule_entry("t.pump", "pump", [label_words(["PUMP"], 20)])])
+        self.assertEqual(lib.word_rule(["LOW", "PRESSURE", "TURBINE", "A", "TA"], 'LOW PRESSURE TURBINE "A" TA02')[0].id,
+                         "t.turbine")
+        self.assertEqual(lib.word_rule(["TURBINE", "DRIVEN", "PUMP"], "TURBINE-DRIVEN PUMP")[0].id, "t.pump")
+        self.assertEqual(lib.word_rule(["TURBINE", "TRIP"], "TURBINE TRIP"), (None, None))
+
     def test_rule_templates_do_not_join_grid_matching(self):
         lib = self.write([rule_entry("t.plain", "manual_valve", [structure(["bowtie"], 20, "valve_body")])])
         self.assertEqual(lib.match(sig_of([body(BOWTIE_H)])).outcome, "none")
@@ -922,11 +930,21 @@ class CommonRuleTest(unittest.TestCase):
         (("VENT",), "vent"), (("ATM",), "vent"),
     ]
 
+    LAST = {"TURBINE"}  # 2026-11-16부터 이름 끝 낱말일 때만 맞는 낱말(common.name_turbine last)
+
     def old_word_rule(self, tokens):
         for words, kind in self.WORDS:
-            if all(w in tokens for w in words):
+            if all(w in tokens for w in words) and not (words[-1] in self.LAST and tokens[-1] != words[-1]):
                 return kind, "text_word:%s" % "+".join(words)
         return None, None
+
+    def test_turbine_is_a_name_only_as_the_last_word(self):
+        # APR1400 143쪽에서 TURBINE 낱말이 정한 노드 53개 중 11개만 맞았다(2026-11-16). 건물 이름·구동 설명·신호 글자는 터빈이 아니다
+        for text, kind in (("LOW PRESSURE TURBINE A\nTA02", "turbine"), ('L.P. TURBINE "A"', "turbine"),
+                           ("AF PUMP\nTURBINE\nTA01A", "turbine"), ("HV04\nTURBINE\nGENERATOR BLDG.", None),
+                           ("TURBINE TRIP", None), ("BELOW 10%\nTURBINE LOAD", None),
+                           ("TURBINE-DRIVEN\nFEEDWATER PUMP", "pump")):
+            self.assertEqual(pdf_vector._kind_from_text(text)[0], kind, text)
 
     def test_shape_rules(self):
         lib = pdf_vector.symbol_library()

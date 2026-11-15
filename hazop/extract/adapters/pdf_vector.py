@@ -1676,7 +1676,7 @@ def _kind_from_text(text):
         return None, None  # 'DAY TANK LEVEL LOW/HIGH'·'PUMP START/STOP'은 경보·명령 상자의 글자다. 설비 이름이 아니다
     if PACKAGE_TEXT_RE.search(up):
         return None, None  # 'AIR COMPRESSOR SKID'(099쪽)는 여러 기기를 얹은 묶음의 경계 상자다. 안의 설비 하나가 아니다
-    entry, words = symbol_library().word_rule(re.findall(r"[A-Z]+", up))
+    entry, words = symbol_library().word_rule(re.findall(r"[A-Z]+", up), up)
     if entry is None:
         return None, None
     return entry.kind, "text_word:%s" % "+".join(words)

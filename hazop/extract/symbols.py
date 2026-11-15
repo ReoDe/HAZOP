@@ -230,9 +230,19 @@ def _number(entry_id, name, value, above):
     return float(value)
 
 
+NAME_PIECE_RE = re.compile(r'"[A-Z]"|[A-Z0-9]+')
+NAME_ID_RE = re.compile(r'"[A-Z]"|[A-Z]|[A-Z]*\d[A-Z0-9]*')
+
+
+def _ends_name(text, word):
+    """text 안에서 word 뒤의 조각이 모두 번호·한 글자인 자리가 있는가(word가 이름의 끝 낱말)."""
+    pieces = NAME_PIECE_RE.findall(text)
+    return any(p == word and all(NAME_ID_RE.fullmatch(q) for q in pieces[i + 1:]) for i, p in enumerate(pieces))
+
+
 class Template:
     __slots__ = ("entry_id", "shape", "comp_key", "size", "size_ratio", "max_distance", "variants",
-                 "set_attributes", "order", "requires", "basis", "words")
+                 "set_attributes", "order", "requires", "basis", "words", "last")
 
     def __init__(self, entry_id, spec):
         self.entry_id = entry_id
@@ -262,6 +272,11 @@ class Template:
                         or any(not isinstance(w, str) or not WORD_RE.match(w) for w in self.words):
                     raise SymbolLibraryError("%s: words=%r는 영문 대문자 낱말 하나 이상" % (entry_id, self.words))
                 self.words = tuple(self.words)
+                # last: 낱말이 이름의 끝 낱말일 때만 맞는다. 뒤에는 번호('TA02')·한 글자('A', '"B"')만 올 수 있다.
+                # 'TURBINE GENERATOR BLDG'·'TURBINE-DRIVEN FEEDWATER PUMP'·'TURBINE TRIP'처럼 다른 것을 꾸미는 낱말은 아니다
+                self.last = spec.get("last", False)
+                if not isinstance(self.last, bool):
+                    raise SymbolLibraryError("%s: last=%r는 true/false" % (entry_id, self.last))
             return
         if self.shape != "grid":
             raise SymbolLibraryError("%s: 모르는 견본 모양 %r" % (entry_id, self.shape))
@@ -408,10 +423,12 @@ class Library:
                 return e, t.basis
         return None, None
 
-    def word_rule(self, tokens):
-        """라벨의 영문 낱말들 → (항목, 맞은 낱말들). 낱말이 모두 있는 견본 가운데 order가 가장 작은 것."""
+    def word_rule(self, tokens, text=None):
+        """라벨의 영문 낱말들 → (항목, 맞은 낱말들). 낱말이 모두 있는 견본 가운데 order가 가장 작은 것.
+        last 견본은 라벨 글자(text, 대문자)에서 그 낱말 뒤에 번호·한 글자만 올 때만 맞는다(text가 없으면 낱말 목록으로 본다)."""
         for _, e, t in self._label_words:
-            if all(w in tokens for w in t.words):
+            if all(w in tokens for w in t.words) and (not t.last or _ends_name(text if text is not None else
+                                                                                " ".join(tokens), t.words[-1])):
                 return e, t.words
         return None, None
 
