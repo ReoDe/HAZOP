@@ -964,6 +964,7 @@ def _continues_same_pen(p, polys, prm):
     return False
 
 
+DUCT_PEN_RATIO = 4.0  # 기호 외곽 굵기의 이 배 이상인 선은 기호 안으로 들어가도 구동부 축이 아니다
 SAME_PEN_TOL = 0.005  # 같은 굵기로 본 선 굵기 차(pt). PDF는 같은 펜을 같은 값으로 적는다
 
 
@@ -1020,6 +1021,12 @@ def _group_symbols(cls, prm):
         for p in polys:
             ends = (p["pts"][0], p["pts"][-1])
             host = next((s for s in syms if s.alive and any(s.deep(e, prm) for e in ends)), None)
+            pens = [b["pen"] for b in host.bodies if b.get("pen")] if host is not None else []
+            if pens and (p.get("width") or 0) >= DUCT_PEN_RATIO * max(pens):
+                # 기호 외곽보다 몇 배 굵은 선은 구동부 축이 아니라 기호 안에서 시작하는 배관·덕트다(072쪽 AU02A 송풍기 출구
+                # 덕트가 송풍기 그림 안에서 시작해 댐퍼 Y0007A까지 송풍기에 합쳐지던 자리)
+                rest.append(p)
+                continue
             heads = [m for m in markers + host.markers if _is_triangle(m)] if host is not None and any(
                 not _inside(e, host.bbox, prm["attach_tol"]) for e in ends) else []
             if host is None or any(host.deep(e, prm) and any(_inside(e, m["bbox"], prm["end_tol"]) for m in heads)

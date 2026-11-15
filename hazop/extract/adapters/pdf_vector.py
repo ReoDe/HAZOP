@@ -396,7 +396,8 @@ def _classify_primitives(width, height, prims, prm):
             pid = "pdf-path-%04d" % i + ("" if k == 0 else "-%d" % k)
             b = _bbox_pts(ext)
             covers = _w(b) * _h(b) >= prm["page_cover_ratio"] * page_area
-            item = {"id": pid, "pts": pts, "bbox": b, "closed": closed and len(pts) >= 3, "curved": curved}
+            item = {"id": pid, "pts": pts, "bbox": b, "closed": closed and len(pts) >= 3, "curved": curved,
+                    "pen": pr.get("width")}
             if pr.get("fine") and k < len(pr["fine"]):
                 item["fine"] = pr["fine"][k]
             if pr["fill"] and pr["fill_white"]:

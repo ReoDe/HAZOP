@@ -520,6 +520,18 @@ class PdfVectorRuleTest(unittest.TestCase):
                          [("air_flow_arrow", 164)])
         self.assertEqual(len(ext["relations"]), 1)
 
+    def test_thick_duct_starting_inside_symbol_is_not_stem(self):
+        # 072쪽 AU02A 송풍기: 굵은 출구 덕트(1.08pt)가 가는 선(0.13pt) 송풍기 그림 안에서 시작한다. 구동부 축으로 보아 송풍기와
+        # 덕트 끝 상자를 한 기호로 합치지 않는다. 같은 굵기의 선이면 예전처럼 축이다
+        def nodes(width):
+            r = 8
+            pts = [(100 + r, 100), (100, 100 + r), (100 - r, 100), (100, 100 - r), (100 + r, 100)]
+            fan = prim(pts, closed=True, curved=True, ext=pts + [(108, 108), (92, 108), (92, 92), (108, 92)], width=0.13)
+            ext = pdf_run([fan, line((100, 100), (160, 100), width=width), rect(160, 95, 170, 105, width=0.13)])
+            return sorted(n["geometry"]["x"] for n in ext["nodes"] if n["kind"] != "tee")
+        self.assertEqual(nodes(1.08), [92, 160])
+        self.assertEqual(nodes(0.13), [92])
+
     def test_air_flow_arrow_needs_short_bar_on_its_line(self):
         # 072쪽 덕트 끝(s029): 굵은 몸통·화살촉과 화살촉 앞 막대가 한 기호로 묶인다. 막대가 있어야 덕트 끝 화살표다.
         # 막대 없이 선과 화살촉만(012쪽 배기)이거나 몸통 줄 양쪽으로 길게 뻗은 칸막이 선 옆(128쪽 건물 경계)이면 아니다
