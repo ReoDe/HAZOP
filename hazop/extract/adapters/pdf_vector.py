@@ -133,6 +133,7 @@ PARAMS = {
     "flange_gap_max": 2.6,       # 플랜지 두 판 사이 간격 상한(범례 FLANGED CONNECTION)
     "valve_gap_max": 8.0,        # 밸브 몸통 두 판 사이 간격 상한
     "plate_dot_max": 6.0,        # 판 사이 둥근 점(버터플라이 축·볼) 긴 변 상한
+    "actuator_body_max": 8.0,    # 혼자 구동부 견본에 대 보는 곡선 몸체 긴 변 상한(pt). 다이어프램 5.4~5.7, 전동기 원 3.7~4.2
     "number_reach": 6.0,         # 밸브 번호 원 지시선의 떠 있는 끝에서 밸브 상자까지 거리 상한
 }
 
@@ -1907,6 +1908,19 @@ def _black_fills(cls):
         [d for d in cls["dashes"] if d["curved"]]
 
 
+def _mark_actuator_bodies(cls, prm):
+    """작은 곡선 몸체 하나가 혼자서 사전 구동부 견본(다이어프램·전동기 등)에 맞으면 actuator로 표시한다. 기호를 묶을 때
+    맞닿은 다른 몸체와 묶지 않고(_cluster_bodies), 구동부로 따로 사전에 대어 축으로 이어진 밸브에 합친다(_apply_merges)."""
+    lib = symbol_library()
+    for b in cls["bodies"]:
+        if not b.get("curved") or b.get("traced") or b.get("seed") is not None or \
+                max(_w(b["bbox"]), _h(b["bbox"])) > prm["actuator_body_max"]:
+            continue
+        hit = lib.match(symbols.signature([b], [], [], [], b["bbox"]))
+        if hit.outcome == "matched" and hit.entry.role == "actuator":
+            b["actuator"] = True
+
+
 def _promote_black_symbols(cls, prm):
     """검은 채움 묶음이 사전의 검정 견본에 맞으면 그 몸통을 한 기호의 몸체로 표시한다(seed). 표식이던 것은 몸체로 올린다
     (기획서 §4.2 1번). 표식으로 두면 닫힌 밸브 자리에 밸브 노드 없이 양쪽 배관이 이어진다(_build_solid의 same_marker).
@@ -2115,7 +2129,10 @@ def _classify(sym, text, degree, prm, marks=()):
     # 끝의 괄호·반원이고, 막대에 매단 삼각형은 SPRAY NOZZLE OR SPARGER의 분사구다
     if not text and degree == 1 and not sym.stroke_only and max(_w(sym.bbox), _h(sym.bbox)) <= prm["pipe_cap_max"] \
             and not (len(sym.bodies) >= 2 and any(b.get("curved") for b in sym.bodies)) \
-            and not (len(sym.bodies) == 1 and _is_triangle(sym.bodies[0])):
+            and not (len(sym.bodies) == 1 and _is_triangle(sym.bodies[0])) \
+            and not any(b.get("closed") and not b.get("curved") and not _is_convex(b["pts"]) for b in sym.bodies):
+        # 나비처럼 꼬인 닫힌 다각형은 밸브 몸통이다. 구동부와 따로 묶인 솔레노이드 파일럿 밸브는 S 상자 선 하나만 닿아도
+        # 끝막음이 아니다(APR1400 063쪽 240)
         return "pipe_cap", PIPE_CAP_BASIS
     return None, None
 
@@ -2730,6 +2747,7 @@ def analyze(width, height, words, prims, params=None):
     prm.update(params or {})
     cls = _classify_primitives(width, height, prims, prm)
     _promote_black_symbols(cls, prm)
+    _mark_actuator_bodies(cls, prm)
     blocks = _text_blocks(words, prm)
     for p in cls["panels"]:  # 범례 1.7-1 2/4: 코일 판은 HC(가열)·CC(냉각) 글자를 단다. 글자 없는 무늬 판은 여과 판
         p["coil"] = any(_inside(_center(b["bbox"]), p["rect"]["bbox"]) and PANEL_COIL_WORDS & set(b["text"].upper().split())

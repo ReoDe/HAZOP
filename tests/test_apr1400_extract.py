@@ -303,6 +303,27 @@ class ValveNumbersNotTakenByNeighbours(unittest.TestCase):
         self.assertEqual(wrong, [])
 
 
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_063), "pdfplumber 또는 APR1400 063쪽 PDF 없음(저장소 밖 자료)")
+class DiaphragmUnderSolenoidPilot(unittest.TestCase):
+    """063쪽 공기구동 밸브 515·516·240·522·523: 다이어프램 바로 위에 솔레노이드 파일럿 밸브를 얹어 그렸다. 둘을 한 기호로
+    묶으면 사전 구동부에 맞지 않아 밸브가 구동부 없는 글로브로 남는다. 파일럿 몸통(꼬인 나비)은 S 상자 선 하나만 닿아도
+    끝막음이 아니다."""
+
+    BODIES = {"515": (282.8, 118.8), "516": (400.2, 118.8), "240": (735.8, 202.6), "522": (408.6, 470.8),
+              "523": (500.9, 470.8)}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_063, page=0)
+
+    def test_valve_under_a_piloted_diaphragm_is_air_operated(self):
+        kinds = {num: (node_at(self.ex, (x, y, x, y)) or {}).get("kind") for num, (x, y) in self.BODIES.items()}
+        self.assertEqual(kinds, {num: "air_operated_valve" for num in self.BODIES})
+
+    def test_pilot_valve_is_not_a_pipe_cap(self):
+        self.assertIsNone((node_at(self.ex, (735.7, 192.2, 735.7, 192.2)) or {}).get("kind"))
+
+
 PAGE_016 = paths.folder("APR1400", "by-drawing", "016_Ch06_Fig6.3.2-1_s2of4_Safety_Injection_Shutdown_Cooling_System_Flow_Diagram.pdf")
 PAGE_025 = paths.folder("APR1400", "by-drawing", "025_Ch09_Fig9.2.2-1_s1of4_Component_Cooling_Water_System_Flow_Diagram.pdf")
 

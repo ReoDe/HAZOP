@@ -101,7 +101,9 @@ def _cluster_bodies(bodies, prm, polys=()):
     for b in bodies:
         b["kind_"] = "body"
     # 연결 표시 화살표는 맞닿은 밸브·축소관 몸체와 한 기호로 묶지 않는다(묶이면 화살표도 밸브도 종류를 잃는다)
-    alone = [_is_chevron(b) for b in bodies]
+    # 혼자서 사전 구동부 견본에 맞는 곡선 몸체(pdf_vector._mark_actuator_bodies)도 맞닿은 몸체와 묶지 않는다. 다이어프램 위에
+    # 바로 얹은 솔레노이드 파일럿 밸브와 묶이면 구동부도 파일럿도 사전에 맞지 않아 밸브에 구동부가 붙지 않는다(APR1400 063·046쪽)
+    alone = [_is_chevron(b) or bool(b.get("actuator")) for b in bodies]
     # 사전의 검정 견본에 통째로 맞은 몸체(seed)는 이미 한 기호다. 맞닿은 축소관·구동부 몸체와 묶지 않는다.
     # 안전등급 경계 마름모(class_mark, _mark_class_boundaries)도 그 두 삼각형끼리만 묶는다
     # 장비 외곽(traced)은 상자 귀퉁이가 비어 있다. 상자만 맞닿은 옆 기호(외곽에 바짝 붙인 계기 비석, 둥근 귀퉁이 자리의
