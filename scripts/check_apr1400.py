@@ -253,6 +253,7 @@ def tag_in_text(node, tl):
             pairs |= {norm(a + b) for up, down in zip(lines, lines[1:]) for a, ax in up for b, bx in down
                       if abs(ax - bx) < 6}
             # 기능 문자와 번호 사이에 덧붙인 기능 글자 한 줄('LIS / AHL / 3025A')은 건너뛴다. 가운데 줄은 숫자 없는 낱말 하나다
+            # 추출 pdf_vector_labels._assign_tags가 같은 조건으로 태그를 만든다. 한쪽을 바꾸면 다른 쪽도 같이 바꾼다
             pairs |= {norm(a + b) for up, mid, down in zip(lines, lines[1:], lines[2:])
                       if len(mid) == 1 and re.fullmatch(r"[A-Z]{1,4}", mid[0][0])
                       for a, ax in up for b, bx in down if abs(ax - bx) < 6}
