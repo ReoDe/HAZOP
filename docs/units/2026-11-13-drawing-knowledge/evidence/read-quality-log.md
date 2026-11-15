@@ -79,6 +79,9 @@
 
 정답지 12쪽 점수는 정답지 밖 쪽에 붙은 틀린 종류를 잡지 못한다(TURBINE 낱말이 143쪽에서 53개 중 11개만 맞았는데 정답지 점수는 그대로였다). 그래서 이름 낱말 규칙마다 143쪽에서 정한 노드 수를 세고, 낱말마다 표본 15개(적으면 전부, 시드 crc32(낱말))를 그림으로 판정한다. 낱말 규칙을 더하거나 바꿀 때마다 다시 잰다(스크립트 `D:\HAZOP-trials\2026-11-14-r3-read-quality\grp4\word_audit.py`·`verdicts.py`·`fate.py`, 판정은 사람이 그림으로 한다). 틀린 비율이 20%를 넘는 낱말은 좁힌다. 남은 것은 FILTER 27%(11개 중 3개: 밸브 V1119·V1120이 옆 필터 이름을 라벨로 가짐, 143쪽 HEPA 구역 상자). 밸브 번호 줄 규칙으로 막으면 024쪽 debris filter 3개를 잃어 뺐다.
 
+다시 재는 법: `scripts/inventory_node_kinds.py <목록.jsonl>`로 143쪽 노드 목록을 만들고, `scripts/build_precision_samples.py --group word|kind|basis`로 무리마다 표본 그림과 빈 audit.tsv를 저장소 밖 작업 폴더에 쓴다. 그림을 보고 판정 파일(`{"무리": [틀린 표본 번호]}`)을 채운 뒤 `scripts/analyze_precision_verdicts.py`로 표를 만들고, 규칙을 바꾼 뒤에는 `scripts/compare_precision_samples.py`로 같은 표본의 전후를 견준다.
+표본 그림·판정 파일·APR1400 조각은 저장소에 넣지 않는다(작업 폴더 `D:\HAZOP-trials\…`에 둔다).
+
 | 낱말 | 전 노드 | 전 표본 | 전 맞음 | 전 오답 | 후 노드 | 후 표본 | 후 맞음 | 후 오답 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | AFTERCOOLER | 3 | 3 | 3 | 0% | 3 | 3 | 3 | 0% |
