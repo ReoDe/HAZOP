@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle cx="46" cy="58" r="36" fill="none" stroke="currentColor"/>
+  <line x1="0" y1="58" x2="10" y2="58" fill="none" stroke="currentColor"/>
+  <polyline points="82,58 82,12 100,12" fill="none" stroke="currentColor"/>
+  <path d="M46,58 Q46,38 62,34" fill="none" stroke="currentColor"/>
+  <path d="M46,58 Q30,66 30,82" fill="none" stroke="currentColor"/>
+  <path d="M46,58 Q66,66 74,80" fill="none" stroke="currentColor"/>
+</svg>

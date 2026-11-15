@@ -742,6 +742,28 @@
    "label": "inside"
   },
   {
+   "kind": "fan",
+   "file": "fan.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 58
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 12
+    }
+   ],
+   "label": "below",
+   "flow_axis": [
+    1,
+    0
+   ]
+  },
+  {
    "kind": "tee",
    "file": null,
    "junction": true,
