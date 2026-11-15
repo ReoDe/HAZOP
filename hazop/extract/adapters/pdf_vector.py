@@ -2151,6 +2151,47 @@ def _hatch_block(s):
 
 
 SPARGER_BASIS = "triangle_row_on_line"
+COUPLER_BASIS = "pipe_end_bracket_open_outward"
+COUPLER_MAX = 6.0  # 호스 연결구 괄호 긴 변 상한(pt). APR1400 097쪽 3~4pt
+# 등판 길이 ≥ 발 길이 × 비율. 범례 괄호는 약 3배, 097·103·131쪽은 약 2배다. 등판과 발이 같은 1.5pt 'ㅂ'꼴(024쪽 'V'
+# 옆 벤트 마개)은 넣지 않는다
+COUPLER_BAR_RATIO = 1.5
+
+
+def _is_coupler(sym, pt, d, prm):
+    """범례 1.7-1 1/4 HOSE CONNECTION (COUPLER) '—[': 배관 끝 pt(바깥 방향 d)가 괄호 등판 가운데에 닿고, 등판 양 끝에서
+    두 발이 배관 반대쪽으로 뻗는다. 발이 배관 쪽으로 오면 나사 마개(SCREWED CAP '—]'), 등판과 나란한 둘째 막대가 있으면
+    막음 플랜지(BLIND FLANGE '—| |'), 가운데에도 발이 있으면 숨구멍 마개(BREATHER CAP)라 아니다."""
+    if not sym.stroke_only or sym.bodies or max(_w(sym.bbox), _h(sym.bbox)) > COUPLER_MAX:
+        return False
+    tol = prm["end_tol"]
+    across, along = [], []
+    for st in sym.strokes:
+        for a, b in zip(st["pts"], st["pts"][1:]):
+            L = math.dist(a, b)
+            if L < 0.3:
+                continue
+            ra = ((a[0] - pt[0]) * d[0] + (a[1] - pt[1]) * d[1], (a[0] - pt[0]) * d[1] - (a[1] - pt[1]) * d[0])
+            rb = ((b[0] - pt[0]) * d[0] + (b[1] - pt[1]) * d[1], (b[0] - pt[0]) * d[1] - (b[1] - pt[1]) * d[0])
+            if min(ra[0], rb[0]) < -0.3 * tol:
+                return False  # 배관 쪽으로 넘어온 선(나사 마개의 발 등)
+            cos = abs((b[0] - a[0]) * d[0] + (b[1] - a[1]) * d[1]) / L
+            if cos <= 0.2:
+                across.append((ra, rb))
+            elif cos >= 0.98:
+                along.append((ra, rb))
+            else:
+                return False
+    if not across or any(max(ra[0], rb[0]) > tol for ra, rb in across):
+        return False  # 등판은 배관 끝 한 줄뿐이다
+    lo = min(min(ra[1], rb[1]) for ra, rb in across)
+    hi = max(max(ra[1], rb[1]) for ra, rb in across)
+    if lo > -0.5 or hi < 0.5 or len(along) != 2:
+        return False
+    sides = sorted(ra[1] for ra, _ in along)
+    reach = [max(ra[0], rb[0]) for ra, rb in along]
+    return sides[0] <= 0.7 * lo and sides[1] >= 0.7 * hi and min(reach) >= 0.8 and \
+        hi - lo >= COUPLER_BAR_RATIO * max(reach) and all(min(ra[0], rb[0]) <= tol for ra, rb in along)
 
 
 def _sparger_rows(syms, polys, prm):
@@ -2773,11 +2814,21 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                 marks.setdefault(si, []).append(b["text"])
                 roles[bi] = "symbol_mark"
                 break
-    degree = {}
+    degree, end_at = {}, {}
     for ch in chains:
-        for v, _, _ in ch["ends"]:
+        for k, (v, pt, _) in enumerate(ch["ends"]):
             if v[0] == "sym":
                 degree[id(v[1])] = degree.get(id(v[1]), 0) + 1
+                if not ch.get("dashed"):
+                    end_at[id(v[1])] = ch["pts"] if k == 1 else ch["pts"][::-1]
+    couplers = set()
+    for s in syms:
+        seq = end_at.get(id(s))
+        prev = next((p for p in reversed(seq[:-1]) if math.dist(p, seq[-1]) > 0.5), None) if seq else None
+        if degree.get(id(s)) == 1 and prev is not None:
+            L = math.dist(prev, seq[-1])
+            if _is_coupler(s, seq[-1], ((seq[-1][0] - prev[0]) / L, (seq[-1][1] - prev[1]) / L), prm):
+                couplers.add(id(s))
     # 구조 규칙이 못 정한 기호는 사전의 격자 견본에 먼저 대 본다. 사전이 연결 표시로 본 기호도 화살표 목록에 넣어야 이웃 화살표의
     # 계통 글자를 가져가지 않는다(_continuation_attributes). 버릴 기호(무늬 점)는 글자를 가져가지 않게 후보에서 뺀다
     hits = {si: _symbol_match(s, blocks) for si, s in enumerate(syms) if shape_of[si][0] in (None, "instrument")}
@@ -2959,6 +3010,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         if bi is not None:
             label_lines[local_id] = list(zip(text.split("\n"), blocks[bi]["line_boxes"]))
         kind, basis = _classify(s, text, 0 if id(s) in on_valve else degree.get(id(s), 0), prm, marks.get(n - 1, []))
+        if id(s) in couplers:  # 괄호 모양이 종류를 정한다. 옆 글자(FILL 등)로 정하지 않는다
+            kind, basis = "hose_connection", COUPLER_BASIS
         mark_lines = ["".join(m.partition("\n")[0].split()) for m in marks.get(n - 1, [])]
         class_mark = basis == "valve_body" and any(SAFETY_CLASS_RE.fullmatch(t) for t in mark_lines + ["".join(mark_lines)])
         if class_mark:

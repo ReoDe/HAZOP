@@ -1026,6 +1026,18 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(ends(mid), [("None", "None")])
         self.assertEqual(len(mid["nodes"]), 2)
 
+    def test_bracket_opening_away_from_pipe_end_is_hose_connection(self):
+        # 범례 1.7-1 1/4 HOSE CONNECTION (COUPLER) '—[' (APR1400 097쪽 FILL·이동 장비 연결구): 배관 끝이 괄호 등판에 닿고 두 발이
+        # 배관 반대쪽으로 뻗는다. 발이 배관 쪽이면 나사 마개 '—]', 등판이 둘이면 막음 플랜지 '—| |'라 호스 연결구가 아니다
+        def kind_at_end(*parts):
+            ext = pdf_run([rect(100, 90, 140, 130), line((140, 110), (300, 110))] + list(parts), [word("FILL", 305, 107, size=3.0)])
+            return [n["kind"] for n in ext["nodes"] if n["geometry"]["x"] >= 290]
+        self.assertEqual(kind_at_end(line((302, 108), (300, 108), (300, 112), (302, 112))), ["hose_connection"])
+        self.assertNotIn("hose_connection", kind_at_end(line((298, 108), (300, 108), (300, 112), (298, 112))))
+        self.assertNotIn("hose_connection", kind_at_end(line((300, 108), (300, 112)), line((301.5, 108), (301.5, 112))))
+        # 등판과 발 길이가 같은 작은 'ㅂ'꼴(024쪽 'V' 옆 벤트 마개)도 아니다
+        self.assertNotIn("hose_connection", kind_at_end(line((301.5, 109.25), (300, 109.25), (300, 110.75), (301.5, 110.75))))
+
     def test_short_outlet_arrow_of_line_symbol_is_part_of_it(self):
         # APR1400 025·033쪽 기기 드레인: 깔때기(열린 선) 아래에서 짧은 출구가 'DE' 쪽 얇은 화살촉으로 끝난다. 출구는 깔때기의
         # 일부라 벤트 끝 기호를 따로 만들지 않는다. 얇은 화살촉은 기호 안에서 점선 조각으로 세어 '선과 표식' 체크밸브가 아니다
