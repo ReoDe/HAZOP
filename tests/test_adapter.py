@@ -1372,6 +1372,17 @@ class PdfVectorRuleTest(unittest.TestCase):
                 ext = pdf_run([circle(100, 100, 14)], [word(t, 95, 92 + 7 * i) for i, t in enumerate(text.split("\n"))])
                 self.assertEqual([n["kind"] for n in ext["nodes"]], [kind])
 
+    def test_larger_concentric_reducer_matches_dictionary(self):
+        # APR1400 012쪽 솔레노이드 밸브 옆 축소관(4.6pt): 사전 견본(3~3.6pt)과 같은 사다리꼴이고 크기만 크다
+        def kind(s):
+            tr = prim([(200, 100), (200 + s, 100 + s / 4), (200 + s, 100 + 3 * s / 4), (200, 100 + s), (200, 100)], closed=True)
+            ext = pdf_run([rect(100, 90, 140, 130), line((140, 100 + s / 2), (200, 100 + s / 2)), tr,
+                           line((200 + s, 100 + s / 2), (300, 100 + s / 2)), rect(300, 90, 340, 130)])
+            return [n["kind"] for n in ext["nodes"] if n["geometry"]["x"] == 200]
+        self.assertEqual(kind(3.36), ["reducer"])
+        self.assertEqual(kind(4.65), ["reducer"])
+        self.assertEqual(kind(6.5), [None])
+
     def test_lone_triangle_at_line_end_is_not_a_pipe_cap(self):
         cap = pdf_run([line((100, 100), (200, 100)), rect(200, 97, 204, 103)])
         nozzle = pdf_run([line((100, 100), (200, 100)), prim([(200, 97), (200, 103), (204, 100), (200, 97)], closed=True)])
