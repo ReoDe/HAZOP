@@ -46,7 +46,7 @@ from .pdf_vector_common import (
 )
 from .pdf_vector_grouping import (
     _Sym, _cluster_bodies, _nearest_sym, _end_status, _plate_assemblies, _group_symbols, _merge_appendages,
-    _black_fill_groups, _cut_at_boxes, _contact_chains, _cut_through, _flow_axis, _reach_box, FLOW_LONG_RATIO,
+    _black_fill_groups, _cut_at_boxes, _contact_chains, _housing_chains, _cut_through, _flow_axis, _reach_box, FLOW_LONG_RATIO,
 )
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
@@ -448,7 +448,15 @@ def _classify_primitives(width, height, prims, prm):
     dashes = [d for d in dashes if id(d) not in boxed]
     inked = markers + dashes + bodies
     outlines = [o for o in outlines if not any(twin(o, f) for f in inked)]
-    cells = _table_cells(outlines, prm)
+    panels = _panels(outlines, white_fills, polys, outlines + bodies + dashes + markers, prm)
+    used = {id(p["rect"]) for p in panels} | {id(m) for p in panels for m in p["members"]}
+    rects = [p["rect"] for p in panels]
+    # 판 외곽도 표 칸 찾기에는 넣는다. 판과 변을 맞댄 공조기 빈 칸은 예전처럼 표 칸으로 빠져, 칸 위로 내려온 계기 선이 칸을
+    # 계기 기호에 합치지 않는다(081쪽 TI 3003)
+    cells = [c for c in _table_cells(outlines, prm) if id(c) not in used]
+    outlines, polys, bodies, dashes, markers = ([o for o in group if id(o) not in used]
+                                                for group in (outlines, polys, bodies, dashes, markers))
+    white_fills = [f for f in white_fills if id(f) not in used and not any(twin(f, r) for r in rects)]
     cell_ids = {c["id"] for c in cells}
     bodies += [dict(o, solid=False) for o in outlines if o["id"] not in cell_ids]
     traced, edge_ids = _traced_fills(white_fills, polys, prm)
@@ -465,7 +473,7 @@ def _classify_primitives(width, height, prims, prm):
     masks = [f for f in white_fills
              if not any(max(abs(f["bbox"][j] - s[j]) for j in range(4)) <= prm["twin_tol"] for s in shapes)]
     return {"bodies": bodies, "polys": polys, "markers": markers, "dashes": dashes, "masks": masks,
-            "frames": frames, "cells": cells, "invisible_dashed": invisible}
+            "frames": frames, "cells": cells, "invisible_dashed": invisible, "panels": panels}
 
 
 TRACED_FILL_MIN = 10.0  # 장비 외곽으로 보는 흰 채움의 짧은 변 하한(pt). 글자 바탕 마스크·밸브 몸통 채움은 이보다 작거나 외곽선과 한 도형이다
@@ -618,6 +626,80 @@ def _table_cells(outlines, prm):
             if same_row or same_col:
                 cells.update((a["id"], b["id"]))
     return [o for o in rects if o["id"] in cells]
+
+
+PANEL_LONG_MAX = 60.0   # 공조기 판: 긴 변 상한(pt). 범례 1.7-1 2/4는 7×14pt, 도면은 10~50pt
+PANEL_SHORT_MIN = 5.0   # 공조기 판: 짧은 변 하한(pt). 밸브 몸통·작은 표식 칸은 판이 아니다
+PANEL_LINES_MIN = 6     # 무늬 선: 두 끝이 모두 판 변에 닿은 곧은 선 수 하한(PREFILTER 빗금 19, HEPA 격자 11)
+PANEL_DOTS_MIN = 12     # 무늬 점·작은 원 수 하한(CARBON ADSORBER 점 85, POSTFILTER 원 32)
+PANEL_DOT_RATIO = 0.3   # 무늬 점·원: 긴 변 ≤ 판 짧은 변 × 비율
+PANEL_DOT_SPREAD = 1.5  # 무늬 점·원: 가장 큰 것 ≤ 가운데 크기 × 배수(+ PANEL_EDGE_TOL)
+PANEL_SNAKE_PTS = 8    # 판 폭을 가로지르며 굽이친 꺾은선의 점 수 하한(MOISTURE SEPARATOR 갈매기, 코일 지그재그)
+PANEL_EDGE_TOL = 0.3    # 선 끝이 판 변 위에 있다고 보는 거리(pt)
+PANEL_HOUSING_TOL = 1.0  # 공조기 칸끼리 긴 변 방향 두 변이 같다고 보는 차(pt)
+PANEL_COIL_WORDS = frozenset({"HC", "CC"})  # 범례 1.7-1 2/4 HEATING COIL(HC)·COOLING COIL(CC)
+
+
+def _panels(outlines, white_fills, polys, others, prm):
+    """공조기(AHU) 안의 여과·코일 판(범례 1.7-1 2/4 PREFILTER·HEPA FILTER·CARBON ADSORBER·POSTFILTER·MOISTURE
+    SEPARATOR·HEATING/COOLING COIL)을 찾는다. 판은 좁은 축 정렬 사각형이고 안이 무늬(변에서 변까지 그은 빗금·격자,
+    작은 점·원 여럿, 폭을 가로지르며 굽이친 꺾은선)로 차 있다. 공조기 칸들과 변을 맞대고 이어 그려 표 칸으로 빠지거나,
+    무늬가 낱 선·점으로 흩어져 판 하나가 노드가 되지 못하던 자리다(APR1400 072쪽). 작은 판부터 무늬를 차지해, 판을 품은
+    공조기 칸은 판이 되지 않는다. 판 외곽은 사각형 외곽선이거나, 변 하나를 코일 선이 대신 그은 흰 채움(코일)이다.
+    판은 공조기 칸 줄 안에 있어야 한다. 따로 선 빗금 사각형(007쪽 유연 이음 단면)·펌프 상자는 판이 아니다.
+    → [{"rect": 외곽, "members": 무늬 원소들}]."""
+    tol = prm["axis_rect_tol"]
+
+    def twin(a, b):
+        return max(abs(a["bbox"][j] - b["bbox"][j]) for j in range(4)) <= prm["twin_tol"]
+
+    def boxed(f):  # 꼭짓점이 모두 상자 변 위에 있는 닫힌 채움(코일 판은 변 가운데에 꺾임 점이 더 있다)
+        b = f["bbox"]
+        return f["closed"] and not f["curved"] and all(min(abs(p[0] - b[0]), abs(p[0] - b[2]), abs(p[1] - b[1]), abs(p[1] - b[3])) < tol
+                                   for p in f["pts"])
+    rects = [o for o in outlines if _is_axis_rect(o, tol)]
+    rects += [f for f in white_fills if boxed(f) and not any(twin(f, o) for o in rects)]
+
+    def in_housing(r):  # 공조기 칸: 긴 변 방향 두 변이 같은 상자와 흐름 축으로 맞닿아 있다(판 하나만 따로 그린 범례·빗금 단면은 아니다)
+        B, k = r["bbox"], 1 if _w(r["bbox"]) <= _h(r["bbox"]) else 0
+        return any(o is not r and not twin(o, r) and abs(o["bbox"][k] - B[k]) <= PANEL_HOUSING_TOL
+                   and abs(o["bbox"][k + 2] - B[k + 2]) <= PANEL_HOUSING_TOL and _box_gap(o["bbox"], B) <= prm["touch_tol"]
+                   for o in rects)
+    cands = [c for c in rects if in_housing(c) and min(_w(c["bbox"]), _h(c["bbox"])) >= PANEL_SHORT_MIN
+             and max(_w(c["bbox"]), _h(c["bbox"])) <= PANEL_LONG_MAX]
+    cands.sort(key=lambda c: (_w(c["bbox"]) * _h(c["bbox"]), c["id"]))
+    taken, found = set(), []
+    for r in cands:
+        if id(r) in taken:
+            continue
+        B = r["bbox"]
+        short = min(_w(B), _h(B))
+        inner = [it for it in polys + others if id(it) not in taken and it is not r and not (it["closed"] and twin(it, r))
+                 and _inside(it["bbox"][:2], B, PANEL_EDGE_TOL) and _inside(it["bbox"][2:], B, PANEL_EDGE_TOL)]
+
+        def on_edge(p):
+            return _inside(p, B, PANEL_EDGE_TOL) and min(abs(p[0] - B[0]), abs(p[0] - B[2]),
+                                                         abs(p[1] - B[1]), abs(p[1] - B[3])) <= PANEL_EDGE_TOL
+        strokes = [p for p in inner if any(p is q for q in polys)]
+        lines = [p for p in strokes if not p["closed"] and len(p["pts"]) == 2 and not p.get("curved")
+                 and on_edge(p["pts"][0]) and on_edge(p["pts"][1])]
+        slopes = {round(math.degrees(math.atan2(p["pts"][1][1] - p["pts"][0][1], p["pts"][1][0] - p["pts"][0][0])) % 180 / 15)
+                  % 12 for p in lines}
+        if len(slopes) < 2:
+            lines = []  # 범례의 여과 판 빗금은 엇갈림(PREFILTER)·격자(HEPA)다. 한 방향 빗금은 단면 표시다(_hatch_block)
+        dots = [b for b in inner if b["closed"] and max(_w(b["bbox"]), _h(b["bbox"])) <= PANEL_DOT_RATIO * short]
+        across = 0 if _w(B) <= _h(B) else 1
+        sizes = sorted(max(_w(b["bbox"]), _h(b["bbox"])) for b in dots)
+        if sizes and sizes[-1] > PANEL_DOT_SPREAD * sizes[len(sizes) // 2] + PANEL_EDGE_TOL:
+            dots = []  # 무늬 점·원은 크기가 고르다. 크기가 제각각인 작은 닫힌 도형은 글자를 그린 경로다(097쪽 계기 비석)
+        snakes = [p for p in strokes if not p["closed"] and not p.get("curved") and len(p["pts"]) >= PANEL_SNAKE_PTS and
+                  p["bbox"][across] - B[across] <= PANEL_EDGE_TOL and B[across + 2] - p["bbox"][across + 2] <= PANEL_EDGE_TOL]
+        if len(lines) < PANEL_LINES_MIN and len(dots) < PANEL_DOTS_MIN and not snakes:
+            continue
+        taken.add(id(r))
+        taken.update(id(it) for it in inner)
+        found.append({"rect": r, "members": inner})
+    return found
 
 
 # ---------------------------------------------------------------- 2. 선 위 빗금·점 (기호 묶기는 pdf_vector_grouping)
@@ -1488,6 +1570,8 @@ def _shape_features(sym, prm):
     # 검정 견본으로 올린 몸체(seed)는 그 견본이 종류와 정상 위치를 정한다. 삼각형 둘이어도 나비 규칙에 넣지 않는다
     tris = [b for b in sym.bodies if _is_triangle(b) and "seed" not in b]
     found = set()
+    if getattr(sym, "panel", None):  # 공조기 판(_panels)
+        found.add("%s_panel" % sym.panel)
     if getattr(sym, "plate_valve", None):  # 판 사이 원판·공(_plate_assemblies)
         found.add("plate_valve:%s" % sym.plate_valve)
     # 나비 몸통의 두 삼각형은 붙어 있다. 사이에 글로브·볼의 점이 끼어도 간격은 삼각형 크기보다 작다. 큰 묶음 기호 안에 멀리
@@ -2518,6 +2602,9 @@ def analyze(width, height, words, prims, params=None):
     cls = _classify_primitives(width, height, prims, prm)
     _promote_black_symbols(cls, prm)
     blocks = _text_blocks(words, prm)
+    for p in cls["panels"]:  # 범례 1.7-1 2/4: 코일 판은 HC(가열)·CC(냉각) 글자를 단다. 글자 없는 무늬 판은 여과 판
+        p["coil"] = any(_inside(_center(b["bbox"]), p["rect"]["bbox"]) and PANEL_COIL_WORDS & set(b["text"].upper().split())
+                        for b in blocks)
     _mark_class_boundaries(cls, blocks, prm)
     _boundary_marks(cls, prm)
     ticks, marked = _line_ticks(cls["polys"], prm, cls["bodies"])
@@ -2536,7 +2623,7 @@ def analyze(width, height, words, prims, params=None):
                 _seg_dist(c, a, b)[0] <= prm["tick_host_dist"] for e in ch["evidence"] for c in marked[e]
                 for a, b in _segs(ch["pts"])):
             ch["pneumatic"] = True
-    chains += _contact_chains(syms, prm)
+    chains += _contact_chains(syms, prm) + _housing_chains(syms, cls["cells"], prm)
     dots = _line_dots(dashes, polys, prm)  # 실선 위 점(매설 배관 무늬)은 점선 조각이 아니다
     cls["dots"] = [d for d in dashes if d["id"] in dots]
     # 점선도 검정 견본으로 올린 몸통(seed) 밑을 끊기지 않고 지나갈 수 있다. 몸통 안의 조각을 빼면 사슬이 거기서 끊겨
@@ -2972,7 +3059,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                           "method": "pdf_path_points"})
     # 흐름 보존으로 방향 넓히기(2포트 배관 기호·분기점). 정한 관계는 방향 미확인에서 뺀다
     before = {r["local_id"] for r in relations if r.get("flow_direction")}
-    if _propagate_flows(relations, {n["local_id"]: n.get("kind") for n in node_out}):
+    housing = {local_of[id(s)][0] for s in syms if s.housing}
+    if _propagate_flows(relations, {n["local_id"]: n.get("kind") for n in node_out}, housing):
         filled = {r["local_id"] for r in relations if r.get("flow_direction")} - before
         unknowns[:] = [u for u in unknowns if not (u.get("check") == "unknown_flow_direction" and u.get("target") in filled)]
     # 배관 글자(구경·배관 번호)를 가장 가까운 물리 배관 속성으로(pdf_vector_lines). 붙인 글자는 남은 글자 목록에서 뺀다

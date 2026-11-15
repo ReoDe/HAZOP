@@ -82,6 +82,14 @@ class PropagateTest(unittest.TestCase):
         self.assertEqual(pv._propagate_flows(rels, nodes), 0)
         self.assertIsNone(rels[1]["flow_direction"])
 
+    def test_air_handler_compartment_passes_flow(self):
+        # APR1400 072쪽 공조기: 덕트가 닿는 빈 칸은 종류가 없어도 공기가 지나간다. 덕트 화살표 방향이 첫 여과 판까지 간다
+        nodes = {"d": "damper", "c": None, "f": "filter"}
+        rels = [rel(1, "d", "c", "+"), rel(2, "c", "f")]
+        self.assertEqual(pv._propagate_flows(rels, nodes), 0)
+        pv._propagate_flows(rels, nodes, {"c"})
+        self.assertEqual(rels[1]["flow_direction"]["to"], "f")
+
 
 class SnpFlowTest(unittest.TestCase):
     """SNP 가상 도면은 drawio에서 그린 화살촉이 PDF에 그대로 있다. 추출이 방향을 하나 이상 정하는지."""

@@ -170,8 +170,9 @@ def _ends(r):
     return [e.get("node_local_id") for e in r["endpoints"]]
 
 
-def _propagate_flows(relations, kind_of):
+def _propagate_flows(relations, kind_of, passes=()):
     """방향 없는 물리 배관에 흐름 보존으로 방향을 매긴다(제자리에서 고침). kind_of: {node_local_id: kind}.
+    passes: 종류와 상관없이 공기·유체가 지나가는 노드 id(공조기 칸, pdf_vector_grouping._housing_chains).
     → 새로 정한 관계 수. 매긴 관계의 flow_direction basis는 'flow_continuity'."""
     pipes = [r for r in relations if r.get("kind") == "physical_connection" and None not in _ends(r)
              and _ends(r)[0] != _ends(r)[1]]
@@ -202,7 +203,7 @@ def _propagate_flows(relations, kind_of):
             if len(unknown) != 1:
                 continue
             known = [s for s in sides if s]
-            if kind in PASS_KINDS and len(rs) == 2 and len(known) == 1:
+            if (kind in PASS_KINDS or n in passes) and len(rs) == 2 and len(known) == 1:
                 want = "out" if known[0] == "in" else "in"
             elif kind == "tee" and known and len(set(known)) == 1:
                 want = "in" if known[0] == "out" else "out"

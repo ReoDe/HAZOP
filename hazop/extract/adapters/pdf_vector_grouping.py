@@ -16,6 +16,9 @@ from .pdf_vector_common import (
 
 
 class _Sym:
+    panel = None  # 공조기 판(_panel_sym): 'filter' 또는 'coil'
+    housing = False  # 공조기 칸 줄의 한 칸(_housing_chains). 공기가 지나간다
+
     def __init__(self, members, stroke_only=False):
         self.bodies = [m for m in members if m.get("kind_") == "body"]
         self.strokes = [m for m in members if m.get("kind_") == "poly"]
@@ -75,7 +78,7 @@ class _Sym:
         return bool(self.bodies) and all(_is_chevron(b) for b in self.bodies)
 
     def deep(self, p, prm):
-        if self.stroke_only or self.arrow_only() or self.outline or self.rings:
+        if self.stroke_only or self.arrow_only() or self.outline or self.rings or self.panel:
             # 화살표 안으로 들어간 배관은 연결이지 화살표의 일부가 아니다. 장비 외곽 안으로 들어간 선도 장비 안 배관·계기
             # 탭이다. 구동부 축으로 보면 반대 끝 계기를 장비에 합친다(APR1400 125쪽 증기발생기 수위 전송기).
             # 담는 외곽 안에서 끝나는 선도 그 안의 배관 끝이다(072쪽 HVAC CHASE 덕트 끝, 012쪽 IRWST 살포기 배관)
@@ -289,6 +292,51 @@ def _contact_chains(syms, prm):
                 out.append({"pts": [(x, y), (x, y)], "ends": [(("sym", c), (x, y), "pdf_touching_bodies"),
                                                               (("sym", t), (x, y), "pdf_touching_bodies")],
                             "evidence": sorted({c.evidence()[0], t.evidence()[0]}), "contact": True})
+    return out
+
+
+HOUSING_EDGE_TOL = 1.0     # 공조기 칸: 판과 위아래(세로 공조기면 좌우) 변이 같다고 보는 차(pt)
+HOUSING_MEMBER_RATIO = 0.4  # 공조기 안 기호로 세는 크기: 공조기 폭 방향 길이 ≥ 공조기 폭 × 비율(칸 글자 상자·화살표 제외)
+
+
+def _housing_chains(syms, cells, prm):
+    """공조기(AHU) 안에서 공기가 지나는 차례대로 판·칸·송풍기를 잇는 길이 0인 사슬. 공조기는 여과·코일 판(_panel_sym)과
+    빈 칸, 송풍기 칸을 변을 맞대 한 줄로 그린다(범례 1.7-1 2/4). 칸 사이에는 덕트 선이 없어, 잇지 않으면 공조기로 들어온
+    덕트가 첫 칸에서 끝나고 판끼리 이어지지 않는다(APR1400 072쪽). 판과 폭 방향 두 변이 같고 서로 맞닿은 상자들(판·칸
+    기호·표 칸)이 공조기 하나다. 몸체가 공조기 상자 안에 들고 폭의 HOUSING_MEMBER_RATIO 이상인 기호를 흐름 축을 따라 늘어놓고
+    이웃끼리 잇는다. 판이 없는 칸 줄(표제란 등)은 공조기가 아니다."""
+    tol = HOUSING_EDGE_TOL
+    panels = [s for s in syms if s.panel]
+    boxes = [s.core for s in syms] + [c["bbox"] for c in cells]
+    out, seen = [], set()
+    for p in panels:
+        if id(p) in seen:
+            continue
+        across = 1 if _w(p.core) <= _h(p.core) else 0  # 판의 긴 변 = 공조기 폭 방향, 짧은 변 방향 = 흐름 축
+        along = 1 - across
+        lo, hi = p.core[across], p.core[across + 2]
+        band = [b for b in boxes if abs(b[across] - lo) <= tol and abs(b[across + 2] - hi) <= tol]
+        box = p.core
+        grown = True
+        while grown:
+            grown = False
+            for b in band:
+                if _box_gap(b, box) <= prm["touch_tol"] and not (_inside(b[:2], box) and _inside(b[2:], box)):
+                    box = _union(box, b)
+                    grown = True
+        width = hi - lo
+        members = [s for s in syms if _inside(s.core[:2], box, prm["touch_tol"]) and _inside(s.core[2:], box, prm["touch_tol"])
+                   and s.core[across + 2] - s.core[across] >= HOUSING_MEMBER_RATIO * width]
+        seen.update(id(s) for s in members if s.panel)
+        for s in members:
+            s.housing = len(members) > 1
+        members.sort(key=lambda s: (_center(s.core)[along], s.evidence()[0]))
+        for a, b in zip(members, members[1:]):
+            m = (a.core[along + 2] + b.core[along]) / 2.0
+            c = (lo + hi) / 2.0
+            pt = (m, c) if along == 0 else (c, m)
+            out.append({"pts": [pt, pt], "ends": [(("sym", a), pt, "pdf_touching_bodies"), (("sym", b), pt, "pdf_touching_bodies")],
+                        "evidence": sorted({a.evidence()[0], b.evidence()[0]}), "contact": True})
     return out
 
 
@@ -919,6 +967,15 @@ def _continues_same_pen(p, polys, prm):
 SAME_PEN_TOL = 0.005  # 같은 굵기로 본 선 굵기 차(pt). PDF는 같은 펜을 같은 값으로 적는다
 
 
+def _panel_sym(panel):
+    """공조기 판(pdf_vector._panels) → 기호 하나. 외곽과 닫힌 무늬는 몸체, 열린 무늬 선은 장식선이다."""
+    members = [dict(panel["rect"], closed=True, solid=False, kind_="body")]
+    members += [dict(m, kind_="body" if m["closed"] else "poly") for m in panel["members"]]
+    sym = _Sym(members)
+    sym.panel = "coil" if panel.get("coil") else "filter"
+    return sym
+
+
 def _group_symbols(cls, prm):
     syms = _cluster_bodies(cls["bodies"], prm, cls["polys"])
     polys = _join_crossing_gaps(list(cls["polys"]), cls["dashes"], syms, prm)
@@ -926,7 +983,7 @@ def _group_symbols(cls, prm):
                                                              cls["dashes"], prm)
     fed, polys = _bar_fed_strokes(polys, prm)
     pockets, cls["mouths"], polys = _pockets(polys, prm)
-    syms = [s for s in syms if s.alive] + valves + fed + pockets
+    syms = [s for s in syms if s.alive] + valves + fed + pockets + [_panel_sym(p) for p in cls.get("panels", ())]
     for p in polys:
         p["kind_"] = "poly"
     dashes = list(cls["dashes"])
@@ -1094,11 +1151,11 @@ def _merge_appendages(syms, chains, prm):
     """연결이 하나도 없는 기호가 더 큰 기호 바로 옆(큰 기호 긴 변 × 비율 안)에 있으면 그 기호의 부속(히터 등)으로 합친다."""
     linked = {id(v[1]) for ch in chains for v, _, _ in ch["ends"] if v[0] == "sym"}
     for s in sorted(syms, key=lambda s: _w(s.bbox) * _h(s.bbox)):
-        if id(s) in linked or not s.alive or s.seed is not None:
+        if id(s) in linked or not s.alive or s.seed is not None or s.panel:
             continue  # 검정 견본으로 올린 몸통(seed)은 배관이 닿지 않아도 제 기호다. 옆 기호의 부속으로 합치지 않는다
         best = None
         for t in syms:
-            if t is s or not t.alive or t.seed is not None or _w(t.bbox) * _h(t.bbox) <= _w(s.bbox) * _h(s.bbox):
+            if t is s or not t.alive or t.seed is not None or t.panel or _w(t.bbox) * _h(t.bbox) <= _w(s.bbox) * _h(s.bbox):
                 continue
             if t.outline:
                 continue  # 장비 외곽 옆에 따로 그린 계기 비석은 부속이 아니다(APR1400 125쪽 증기발생기 수위 전송기)

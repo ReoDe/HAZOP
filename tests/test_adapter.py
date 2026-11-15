@@ -444,6 +444,32 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual([sorted(e["node_local_id"] for e in r["endpoints"]) for r in ext["relations"]],
                          [sorted(i for _, i in nodes[:2])])
 
+    def test_air_handler_panels_are_filters_and_coils_linked_in_a_row(self):
+        # APR1400 072쪽 공조기(범례 1.7-1 2/4): 칸을 변끼리 맞대 한 줄로 그리고, 여과 판은 변에서 변까지 빗금, 코일 판은 폭을
+        # 가로지르는 지그재그와 HC 글자다. 판은 표 칸이 아니라 노드(filter·heat_exchanger)이고, 덕트 선이 없는 칸 사이는 공기가
+        # 지나는 차례대로 이어진다. 칸 줄에 들지 않은 빗금 상자(007쪽 단면)는 판이 아니다
+        hatch = [line((130, 100 + 5 * k), (142, 105 + 5 * k)) for k in range(7)]
+        hatch += [line((130, 105 + 5 * k), (142, 100 + 5 * k)) for k in range(7)]
+        coil_box = [(160, 105), (160, 100), (172, 100), (172, 140), (160, 140), (160, 135)]
+        coil = [prim(coil_box + [coil_box[0]], closed=True, fill=True, white=True), line(*coil_box),
+                line((166, 105), (160, 105), (160, 135), (166, 135), (166, 130), (160, 125), (172, 118), (166, 112),
+                     (166, 105), (172, 105), (172, 135), (166, 135))]
+        lone = [rect(400, 100, 412, 140)] + [line((400, 100 + 5 * k), (412, 105 + 5 * k)) for k in range(7)] + [
+            line((400, 105 + 5 * k), (412, 100 + 5 * k)) for k in range(7)]
+        # 빈 칸 142~160은 판과 변을 맞대 예전처럼 표 칸으로 빠진다. 그 칸 위로 내려온 계기 선은 칸을 계기에 합치지 않는다(081쪽)
+        bubble = [circle(150, 80, 5), line((150, 80), (150, 100))]
+        prims = [rect(100, 100, 131, 140), rect(130, 100, 142, 140)] + hatch + [rect(142, 100, 160, 140)] + coil + [
+            rect(172, 100, 200, 140), circle(188, 120, 10), rect(40, 115, 50, 125), line((50, 120), (100, 120)),
+            line((200, 120), (260, 120)), rect(260, 115, 270, 125)] + lone + bubble
+        ext = pdf_run(prims, words=[word("HC", 162, 101, size=3)])
+        kind = {n["geometry"]["x"]: n["kind"] for n in ext["nodes"]}
+        self.assertEqual((kind[130], kind[160]), ("filter", "heat_exchanger"))
+        self.assertNotIn("filter", [k for x, k in kind.items() if x >= 400])
+        self.assertEqual([n["geometry"]["width"] for n in ext["nodes"] if n["geometry"]["x"] == 145], [10])
+        x = {n["local_id"]: n["geometry"]["x"] for n in ext["nodes"]}
+        pairs = sorted(sorted(x[e["node_local_id"]] for e in r["endpoints"]) for r in ext["relations"])
+        self.assertEqual(pairs, [[40, 100], [100, 130], [130, 160], [160, 172], [172, 178], [172, 260]])
+
     def test_dot_grid_in_outline_is_pattern_not_nodes(self):
         # APR1400 007쪽 베어링 냉각기: 담는 외곽 안에 그린 관 다발 점 격자는 무늬다. 점마다 노드를 두지 않고, 점에 닿은 선 끝도
         # 붙이지 않는다. 한 줄로만 늘어선 같은 모양(008쪽 SPARGER 분사구 줄)은 무늬가 아니다
