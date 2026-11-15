@@ -535,6 +535,11 @@ class PrefixInference(unittest.TestCase):
         got = self.tags([(None, None, "AX\n134")], instruments={"n0"})
         self.assertEqual(got, ["AX-134"])
 
+    def test_extra_function_letters_between_letters_and_number_are_skipped(self):
+        """9.2.4-1 시트 4(097쪽) 'LIS / AHL / 3025A'·'LTI / AHL / 001A': 가운데 줄은 덧붙인 경보 글자다."""
+        got = self.tags([("switch", "instrument", "LIS\nAHL\n3025A"), ("indicator", "instrument", "LTI\nAHL\n001A")])
+        self.assertEqual(got, ["LIS-3025A", "LTI-001A"])
+
     def test_valve_number_next_to_a_small_dot_is_not_an_instrument_tag(self):
         """9.3.3-1 시트 1 체크밸브 힌지 점(0.9pt) 옆 'V1006', 9.4.1-1 댐퍼 축 점(6pt) 옆 'Y0013A'(검토 지적)."""
         for label, size in (("V1006", 0.9), ("Y0013A", 6.0), ("V5402", 12.0)):

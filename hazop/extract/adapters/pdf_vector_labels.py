@@ -17,6 +17,7 @@ from .pdf_vector_common import _box_gap, _center, _inside, _issue, _union
 # ISA 계기 글자(기능 문자 + 번호, 예: 'PT 110'·'PIC 110'·'FICKS 031'). 태그 앞 계통 접두는 글자에 없다. 기능 문자는
 # 종류 규칙(pdf_vector._isa_bubble_kind)과 같이 6자까지 본다(072쪽 FICKS·TICKS 다섯 자)
 ISA_LABEL_RE = re.compile(r"([A-Z]{1,6})[ \-]*(\d{1,5}[A-Z]?)")
+ISA_EXTRA_FUNCTIONS_RE = re.compile(r"[A-Z]{1,4}")  # 계기 원 가운데 줄의 덧붙인 기능 글자(AHL 등). 숫자가 없다
 ALARM_RE = re.compile(r"H{1,2}L{0,2}|L{1,2}")  # 계기 원 옆 경보 표기(HHL·HL·LL·H·L)
 ALARM_COLUMN_TOL = 0.5  # 경보 표기 줄들의 왼쪽 끝이 같다고 보는 차(pt)
 # 수동 밸브 번호(APR1400 'V1681'). 계통 접두는 글자에 없다. 밸브 분류 노드의 라벨 한 줄이 이 꼴이면 그대로 태그로 쓴다
@@ -276,6 +277,9 @@ def _assign_tags(nodes, unknowns, instrument_ids=(), valve_number_ids=(), label_
             tags[i] = (ident, "valve_ident_number")
             continue
         m = ISA_LABEL_RE.fullmatch(" ".join(lines[:2]))
+        if not m and len(lines) >= 3 and ISA_EXTRA_FUNCTIONS_RE.fullmatch(lines[1]):
+            # 기능 문자와 번호 사이 줄에 덧붙인 경보·기능 글자(097쪽 'LIS / AHL / 3025A'). 태그는 첫 줄과 번호 줄이다
+            m = ISA_LABEL_RE.fullmatch(" ".join((lines[0], lines[2])))
         if m and (n["category"] == "instrument" or n["local_id"] in instrument_ids and _bubble_like(n, m.group(1))):
             isa[i] = (m.group(1), m.group(2))
     counts = collections.Counter(t.split("-")[0] for t, b in tags.values() if b == "label_tag_token").most_common(2)
