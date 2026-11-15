@@ -1310,6 +1310,28 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(pdf_vector_grouping._sym_dist((50, 25), sym), 0.0)
         self.assertLessEqual(pdf_vector_grouping._sym_dist((101, 25), sym), 1.0)
 
+    def test_pipe_end_bent_back_half_a_turn_is_vent(self):
+        # 범례 1.7-1 1/4 ATMOSPHERIC VENT: 배관 끝이 반원으로 돌아 아래를 향한다. 반원이 따로 그은 곡선이거나(025쪽), 배관과 한
+        # 경로이고 끝에 짧은 막대(WITH SCREEN, 128쪽)가 있다. 90도로만 꺾여 끝난 배관은 벤트로 단정하지 않는다
+        def arc(x0, x1, top, base):
+            cx, r = (x0 + x1) / 2, (x1 - x0) / 2
+            fine = [(cx - r * math.cos(math.pi * t / 12), base - (base - top) * math.sin(math.pi * t / 12)) for t in range(13)]
+            return fine
+
+        def kinds(*parts, pipe=True):
+            ext = pdf_run([rect(100, 180, 140, 220)] + ([line((140, 200), (200, 200), (200, 120))] if pipe else []) + list(parts))
+            return sorted(str(n["kind"]) for n in ext["nodes"])
+        sep = arc(200, 206, 117, 120)
+        self.assertIn("vent", kinds(dict(prim([sep[0], sep[6], sep[-1]], curved=True,
+                                               ext=[(200, 117), (206, 117), (206, 120), (200, 120)]), fine=[sep])))
+        one = [(140, 200), (200, 200)] + sep
+        self.assertIn("vent", kinds(dict(prim([(140, 200), (200, 200), (200, 120), sep[6], (206, 120)], curved=True,
+                                              ext=one + [(206, 117)]), fine=[one]),
+                                    line((205, 120), (207, 120)), pipe=False))
+        quarter = [(200 + 4 * math.sin(math.pi * t / 12), 120 - 4 * (1 - math.cos(math.pi * t / 12))) for t in range(7)]
+        self.assertNotIn("vent", kinds(dict(prim([quarter[0], quarter[3], quarter[-1]], curved=True,
+                                                 ext=[(200, 116), (204, 116), (204, 120), (200, 120)]), fine=[quarter])))
+
     def test_arc_and_chord_drawn_apart_is_pipe_cap(self):
         # APR1400 046·105·128쪽 배관 끝막음: 곧은 막음선과 반원 곡선을 두 경로로 따로 그었다. 예전에는 배관이 막음선
         # 가운데에 닿아 분기점이 되고 끝막음 노드가 없었다

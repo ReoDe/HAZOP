@@ -2175,6 +2175,59 @@ COUPLER_MAX = 6.0  # 호스 연결구 괄호 긴 변 상한(pt). APR1400 097쪽 
 COUPLER_BAR_RATIO = 1.5
 
 
+GOOSENECK_BASIS = "pipe_end_bent_back_180"
+GOOSENECK_MAX = 9.0       # 굽이 폭(굽기 시작한 점 ~ 배관 끝) 상한(pt). APR1400 025·097·128쪽 4.4~7.7
+GOOSENECK_TICK_MAX = 3.0  # 굽이 끝 막대(WITH SCREEN) 긴 변 상한(pt). 128·097쪽 1.3~1.9
+GOOSENECK_RISE = (0.3, 0.7)  # 굽이 높이 / 굽이 폭. 반원이면 0.5
+GOOSENECK_BACK = 0.35     # 배관 끝이 굽기 시작한 높이에서 벗어나도 되는 정도(굽이 높이 × 비율)
+GOOSENECK_LEG = 0.3       # 굽기 전 곧은 배관 길이 하한 = 굽이 폭 × 비율(025쪽 밸브 바로 위 굽이는 폭 4.4pt에 다리 3pt)
+GOOSENECK_LEG_TOL = 0.15  # 곧은 다리 위 점이 다리 방향 직선에서 벗어나도 되는 거리(pt)
+
+
+def _is_gooseneck(sym, seq, curved_chain, prm):
+    """범례 1.7-1 1/4 ATMOSPHERIC VENT (WITH / WITHOUT SCREEN): 배관 끝이 곡선으로 반 바퀴 돌아 처음 방향의 반대로 내려온다.
+    seq: 이 기호에 닿은 배관 사슬의 점(기호 쪽이 끝). 굽이는 기호 자체(곡선 하나뿐인 선 기호, 025쪽)이거나, 사슬 안의 곡선이고
+    기호는 끝의 작은 막대(128·097쪽)다. 굽이 높이가 폭의 절반 안팎이고 끝이 굽기 시작한 높이로 돌아와야 한다. 90도 꺾임은
+    돌아오지 않고, 배관 중간의 U자 트랩은 배관 끝이 아니다."""
+    if not sym.stroke_only or sym.bodies or sym.markers or sym.dashes:
+        return False
+    pts = list(seq)
+    if len(sym.strokes) == 1 and sym.strokes[0].get("curved"):
+        arc = list(sym.strokes[0].get("fine") or sym.strokes[0]["pts"])
+        if math.dist(arc[-1], pts[-1]) < math.dist(arc[0], pts[-1]):
+            arc = arc[::-1]
+        if math.dist(arc[0], pts[-1]) > prm["end_tol"]:
+            return False
+        pts += arc[1:]
+    elif not curved_chain or any(st.get("curved") for st in sym.strokes) or \
+            max(_w(sym.bbox), _h(sym.bbox)) > GOOSENECK_TICK_MAX:
+        return False
+    end = pts[-1]
+    for i in range(len(pts) - 2, 0, -1):
+        a = pts[i]
+        lat_end = math.dist(a, end)
+        if lat_end > GOOSENECK_MAX:
+            break
+        prev = next((p for p in reversed(pts[:i]) if math.dist(p, a) > 0.3), None)
+        if prev is None or lat_end < 1.0:
+            continue
+        L = math.dist(prev, a)
+        u = ((a[0] - prev[0]) / L, (a[1] - prev[1]) / L)
+        leg = 0.0  # 굽기 전 곧은 배관 길이. 곡선끼리 이어진 물결 외곽(111쪽 둥근 칸막이)은 곧은 다리가 없다
+        for p in reversed(pts[:i]):
+            if abs((p[0] - a[0]) * u[1] - (p[1] - a[1]) * u[0]) > GOOSENECK_LEG_TOL:
+                break
+            leg = max(leg, math.dist(p, a))
+        if leg < max(1.0, GOOSENECK_LEG * lat_end):
+            continue
+        rise = [(p[0] - a[0]) * u[0] + (p[1] - a[1]) * u[1] for p in pts[i:]]
+        h = max(rise)
+        if h > 0 and GOOSENECK_RISE[0] <= h / lat_end <= GOOSENECK_RISE[1] and abs(rise[-1]) <= GOOSENECK_BACK * h \
+                and min(rise) >= -GOOSENECK_BACK * h:
+            return True
+    return False
+
+
 def _is_coupler(sym, pt, d, prm):
     """범례 1.7-1 1/4 HOSE CONNECTION (COUPLER) '—[': 배관 끝 pt(바깥 방향 d)가 괄호 등판 가운데에 닿고, 등판 양 끝에서
     두 발이 배관 반대쪽으로 뻗는다. 발이 배관 쪽으로 오면 나사 마개(SCREWED CAP '—]'), 등판과 나란한 둘째 막대가 있으면
@@ -2832,14 +2885,16 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                 marks.setdefault(si, []).append(b["text"])
                 roles[bi] = "symbol_mark"
                 break
-    degree, end_at = {}, {}
+    degree, end_at, end_chain = {}, {}, {}
     for ch in chains:
         for k, (v, pt, _) in enumerate(ch["ends"]):
             if v[0] == "sym":
                 degree[id(v[1])] = degree.get(id(v[1]), 0) + 1
                 if not ch.get("dashed"):
                     end_at[id(v[1])] = ch["pts"] if k == 1 else ch["pts"][::-1]
-    couplers = set()
+                    end_chain[id(v[1])] = ch
+    curved_ids = {p["id"] for p in cls["polys"] if p.get("curved")}
+    couplers, goosenecks = set(), set()
     for s in syms:
         seq = end_at.get(id(s))
         prev = next((p for p in reversed(seq[:-1]) if math.dist(p, seq[-1]) > 0.5), None) if seq else None
@@ -2847,6 +2902,9 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             L = math.dist(prev, seq[-1])
             if _is_coupler(s, seq[-1], ((seq[-1][0] - prev[0]) / L, (seq[-1][1] - prev[1]) / L), prm):
                 couplers.add(id(s))
+            elif not end_chain[id(s)].get("pneumatic") and _is_gooseneck(
+                    s, seq, any(e in curved_ids for e in end_chain[id(s)]["evidence"]), prm):
+                goosenecks.add(id(s))
     # 구조 규칙이 못 정한 기호는 사전의 격자 견본에 먼저 대 본다. 사전이 연결 표시로 본 기호도 화살표 목록에 넣어야 이웃 화살표의
     # 계통 글자를 가져가지 않는다(_continuation_attributes). 버릴 기호(무늬 점)는 글자를 가져가지 않게 후보에서 뺀다
     hits = {si: _symbol_match(s, blocks) for si, s in enumerate(syms) if shape_of[si][0] in (None, "instrument")}
@@ -3030,6 +3088,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         kind, basis = _classify(s, text, 0 if id(s) in on_valve else degree.get(id(s), 0), prm, marks.get(n - 1, []))
         if id(s) in couplers:  # 괄호 모양이 종류를 정한다. 옆 글자(FILL 등)로 정하지 않는다
             kind, basis = "hose_connection", COUPLER_BASIS
+        elif id(s) in goosenecks:
+            kind, basis = "vent", GOOSENECK_BASIS
         mark_lines = ["".join(m.partition("\n")[0].split()) for m in marks.get(n - 1, [])]
         class_mark = basis == "valve_body" and any(SAFETY_CLASS_RE.fullmatch(t) for t in mark_lines + ["".join(mark_lines)])
         if class_mark:

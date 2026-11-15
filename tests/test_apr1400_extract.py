@@ -324,6 +324,18 @@ class DiaphragmUnderSolenoidPilot(unittest.TestCase):
         self.assertIsNone((node_at(self.ex, (735.7, 192.2, 735.7, 192.2)) or {}).get("kind"))
 
 
+PAGE_111 = paths.folder("APR1400", "by-drawing", "111_Ch10_Fig10.4.5-1_s1of2_Circulating_Water_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_111), "pdfplumber 또는 APR1400 111쪽 PDF 없음(저장소 밖 자료)")
+class ScallopedOutlineIsNotAVent(unittest.TestCase):
+    """111쪽: 반원을 잇달아 그린 둥근 외곽의 끝 반원(371~375, 370~379)은 곧은 배관 다리 없이 곡선에 이어져 구스넥 벤트가 아니다."""
+
+    def test_last_lobe_is_not_a_vent(self):
+        ex = pdf_vector.extract(PAGE_111, page=0)
+        self.assertIsNone((node_at(ex, (373.1, 374.8, 373.1, 374.8)) or {}).get("kind"))
+
+
 PAGE_016 = paths.folder("APR1400", "by-drawing", "016_Ch06_Fig6.3.2-1_s2of4_Safety_Injection_Shutdown_Cooling_System_Flow_Diagram.pdf")
 PAGE_025 = paths.folder("APR1400", "by-drawing", "025_Ch09_Fig9.2.2-1_s1of4_Component_Cooling_Water_System_Flow_Diagram.pdf")
 
