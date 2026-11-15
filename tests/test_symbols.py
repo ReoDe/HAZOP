@@ -916,6 +916,7 @@ class CommonRuleTest(unittest.TestCase):
         (("PRESSURIZER",), "pressurizer"), (("CONDENSER",), "condenser"), (("TURBINE",), "turbine"),
         (("DEMINERALIZER",), "demineralizer"), (("FILTER",), "filter"), (("EXCHANGER",), "heat_exchanger"),
         (("HX",), "heat_exchanger"), (("COOLER",), "heat_exchanger"), (("PUMP",), "pump"), (("TANK",), "tank"),
+        (("VESSEL",), "vessel"),  # 옮긴 뒤 더함(common.name_vessel, 2026-11-16). REACTOR VESSEL·TANK가 먼저다
         (("VENT",), "vent"), (("ATM",), "vent"),
     ]
 
@@ -942,6 +943,17 @@ class CommonRuleTest(unittest.TestCase):
         # APR1400 046쪽 'AIR PREFILTER'·'AIR AFTERFILTER' 상자: FILTER가 붙어 한 낱말이 된 설비 이름
         for text in ("AIR\nPREFILTER", "AIR\nAFTERFILTER"):
             self.assertEqual(pdf_vector._kind_from_text(text)[0], "filter", text)
+
+    def test_strainer_vessel_and_cooler_names(self):
+        # 뷰어 그림이 생긴 종류(fadea7a)의 설비 이름 낱말. 압축기 냉각기(043쪽 'AIR COMPRESSOR "A" AFTERCOOLER')는 열교환기다.
+        # 'CONDENSATE RECEIVER TANK'처럼 TANK가 함께 있으면 탱크다. COMPRESSOR 낱말은 아직 종류를 정하지 않는다(143쪽에서
+        # 맞는 노드가 없고 099쪽 'AIR COMPRESSOR SKID' 경계 상자만 걸렸다)
+        for text, kind in (("STRAINER\nST04A", "strainer"), ("AIR\nRECEIVER\n01", "vessel"),
+                           ("TK02A\nESSENTIAL\nCHILLED WATER\nAIR SEPARATOR", "vessel"), ("CATION BED VESSEL", "vessel"),
+                           ("AIR COMPRESSOR 01", None), ('AIR COMPRESSOR\n"A"\nAFTERCOOLER', "heat_exchanger"),
+                           ('AIR COMPRESSOR\n"B"\nINTERCOOLER', "heat_exchanger"),
+                           ("CONDENSATE RECEIVER TANK", "tank"), ("REACTOR VESSEL", "reactor_vessel")):
+            self.assertEqual(pdf_vector._kind_from_text(text)[0], kind, text)
 
     def test_text_rules_through_the_adapter(self):
         self.assertEqual(pdf_vector._kind_from_text("Steam Generator\nfeed pump"),

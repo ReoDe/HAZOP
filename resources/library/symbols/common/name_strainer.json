@@ -1,0 +1,30 @@
+{
+ "id": "common.name_strainer",
+ "revision": 1,
+ "added": "2026-11-16",
+ "updated": "2026-11-16",
+ "name": {
+  "en": "STRAINER",
+  "ko": "스트레이너(이름 낱말)"
+ },
+ "category": "배관 부품",
+ "role": "symbol",
+ "kind": "strainer",
+ "attributes": {},
+ "enabled": true,
+ "match": [
+  {
+   "shape": "label_words",
+   "words": [
+    "STRAINER"
+   ],
+   "order": 75
+  }
+ ],
+ "sources": [
+  {
+   "set": "일반 P&ID 표기",
+   "note": "기호 옆 이름 낱말(APR1400 025쪽 STRAINER ST04A). 뷰어 그림은 fadea7a에 들어왔다"
+  }
+ ]
+}

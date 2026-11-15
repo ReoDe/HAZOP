@@ -1,8 +1,8 @@
 {
  "id": "common.name_heat_exchanger",
- "revision": 1,
+ "revision": 2,
  "added": "2026-11-11",
- "updated": "2026-11-11",
+ "updated": "2026-11-16",
  "name": {
   "en": "EXCHANGER / HX / COOLER",
   "ko": "열교환기(이름 낱말)"
@@ -33,12 +33,30 @@
     "COOLER"
    ],
    "order": 100
+  },
+  {
+   "shape": "label_words",
+   "words": [
+    "INTERCOOLER"
+   ],
+   "order": 101
+  },
+  {
+   "shape": "label_words",
+   "words": [
+    "AFTERCOOLER"
+   ],
+   "order": 102
   }
  ],
  "sources": [
   {
    "set": "일반 P&ID 표기",
    "note": "pdf_vector.py의 장비 이름 낱말 표(EQUIPMENT_WORDS)를 옮긴 것(S7, 2026-11-11)"
+  },
+  {
+   "set": "일반 P&ID 표기",
+   "note": "압축기 중간·후 냉각기(INTERCOOLER·AFTERCOOLER)는 낱말이 붙어 COOLER로 잡히지 않는다. 'AIR COMPRESSOR \"A\" AFTERCOOLER' 상자가 압축기가 되지 않게 COMPRESSOR(115)보다 먼저 본다(APR1400 043쪽)"
   }
  ]
 }
