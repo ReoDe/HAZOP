@@ -648,5 +648,26 @@ class PiecesSetOnAnEquipmentOutline(unittest.TestCase):
             self.assertEqual((stone["category"], stone["label_text"]), ("instrument", "VET"), name)
 
 
+
+PAGE_097 = paths.folder("APR1400", "by-drawing", "097_Ch09_Fig9.5.4-1_Diesel_Fuel_Oil_Transfer_System_Flow_Diagram.pdf")
+PAGE_105 = paths.folder("APR1400", "by-drawing", "105_Ch10_Fig10.3.2-1_s1of2_Main_Steam_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_097) and os.path.isfile(PAGE_105),
+                     "pdfplumber 또는 APR1400 097·105쪽 PDF 없음(저장소 밖 자료)")
+class StackedInstrumentsAreTwoNodes(unittest.TestCase):
+    """위아래로 변만 맞대 그린 계기 원·비석 둘(097쪽 TEW 003 위 TI 003, 105쪽 FT 1022Y 아래 PT 1023D)은 저마다 제 노드다.
+    둥근 몸체가 맞닿았다고 한 기호로 묶으면 아래 계기가 위 계기의 글자를 태그로 가져가고 위 계기는 노드가 없다."""
+
+    CASES = ((PAGE_097, (338.5, 595.0), (338.5, 608.4), ("TEW-003", "TI-003")),
+             (PAGE_105, (291.6, 598.5), (291.9, 611.8), ("FT-1022Y", "PT-1023D")))
+
+    def test_upper_and_lower_keep_their_tags(self):
+        for path, top, bottom, want in self.CASES:
+            ex = pdf_vector.extract(path, page=0)
+            got = tuple((node_at(ex, (x, y, x, y)) or {}).get("tag") for x, y in (top, bottom))
+            self.assertEqual(got, want, path)
+
+
 if __name__ == "__main__":
     unittest.main()

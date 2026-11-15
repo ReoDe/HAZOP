@@ -139,8 +139,26 @@ def _cluster_bodies(bodies, prm, polys=()):
                         _box_gap(bodies[i]["bbox"], bodies[j]["bbox"]) <= prm["touch_tol"] and
                         inside_outline(bodies[i], bodies[j]) and
                         not held(bodies[i], bodies[j]) and not held(bodies[j], bodies[i]) and
-                        not _beside(bodies[i], bodies[j], prm) and not _beside(bodies[j], bodies[i], prm))
+                        not _beside(bodies[i], bodies[j], prm) and not _beside(bodies[j], bodies[i], prm) and
+                        not _stacked(bodies[i], bodies[j], prm))
     return [_Sym([bodies[i] for i in g]) for g in groups]
+
+
+def _stacked(a, b, prm):
+    """크기가 같은 둥근 닫힌 도형 둘이 변만 맞대고 위아래·좌우로 나란한가(위아래로 붙여 그린 계기 원·비석, APR1400 097쪽
+    TEW 003 위 TI 003, 105쪽 FT 1022Y 아래 PT 1023D). 맞댄 두 계기는 저마다 제 기호다."""
+    if not (a.get("closed") and b.get("closed") and a.get("curved") and b.get("curved")) or a.get("solid") or b.get("solid"):
+        return False
+    A, B = a["bbox"], b["bbox"]
+    if not all(0.75 <= f(A) / f(B) <= 1.0 / 0.75 for f in (_w, _h) if f(B) > 0) or not _w(B) or not _h(B):
+        return False
+    for k in (0, 1):  # k축으로 맞대고 다른 축으로 나란하다
+        o = 1 - k
+        overlap = min(A[k + 2], B[k + 2]) - max(A[k], B[k])
+        along = min(A[o + 2], B[o + 2]) - max(A[o], B[o])
+        if overlap <= prm["touch_tol"] and along >= 0.75 * min(A[o + 2] - A[o], B[o + 2] - B[o]):
+            return True
+    return False
 
 
 def _notched(a):
