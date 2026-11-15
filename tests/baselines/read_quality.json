@@ -140,11 +140,11 @@
    },
    "connection": {
     "correct": 245,
-    "false_pos": 4,
+    "false_pos": 3,
     "units": 248
    },
    "kind": {
-    "correct": 139,
+    "correct": 151,
     "false_pos": 1,
     "units": 162
    },
@@ -166,7 +166,7 @@
     "units": 45
    },
    "kind": {
-    "correct": 19,
+    "correct": 20,
     "false_pos": 2,
     "units": 30
    },
@@ -338,12 +338,12 @@
    },
    "connection": {
     "correct": 66,
-    "false_pos": 5,
+    "false_pos": 2,
     "units": 87
    },
    "kind": {
     "correct": 53,
-    "false_pos": 4,
+    "false_pos": 2,
     "units": 73
    },
    "tag": {
