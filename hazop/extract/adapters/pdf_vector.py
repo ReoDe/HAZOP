@@ -53,7 +53,7 @@ from .pdf_vector_connectors import (
 )
 from .pdf_vector_flow import _chain_flow, _propagate_flows, _vent_ends, arrow_axis, continuation_flow, end_arrow
 from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels, parse_label
-from .pdf_vector_labels import (ISA_LABEL_RE, PAREN_TOKEN_RE, PLATE_PART_RE, POSITION_CODE_RE, POSITION_TEXT_RE, NUMBER_PLATE_RE,
+from .pdf_vector_labels import (ALARM_COLUMN_TOL, ALARM_RE, ISA_LABEL_RE, PAREN_TOKEN_RE, PLATE_PART_RE, POSITION_CODE_RE, POSITION_TEXT_RE, NUMBER_PLATE_RE,
                                 VALVE_TAG_RE,
                                 _text_blocks, _upright_blocks, _bubble_like, _assign_tags, _join_bubble_number)
 
@@ -299,6 +299,44 @@ def _split_paren_tail(w):
     return [dict(w, text=text[:i], x1=max(c["x1"] for c in head)), dict(w, text=text[i:], x0=min(c["x0"] for c in tail))]
 
 
+def _split_alarm_tails(words):
+    """계기 원 옆에 줄마다 쌓아 적은 경보 표기(HHL / HL / LL)의 한 줄이 원 안 글자와 같은 줄에 틈 없이 붙어 한 낱말로 온
+    것('3043AHL', 'TISHHL')을 원 안 글자와 경보 표기로 나눈다(APR1400 070·072쪽 TIS 3043A). 끝 글자가 경보 표기 꼴이고,
+    그 글자의 왼쪽 끝이 바로 위나 아래 줄 경보 표기의 왼쪽 끝과 같을 때만 나눈다. 같은 열에 쌓인 표기여야 '3043H'의 H 같은
+    번호 끝 문자와 가를 수 있다. 떼어 낸 표기가 다시 이웃 줄의 열 근거가 되므로 바뀌지 않을 때까지 되풀이한다.
+    words: pdfplumber 낱말(chars 포함)."""
+    def box(cs):
+        return {"x0": min(float(c["x0"]) for c in cs), "x1": max(float(c["x1"]) for c in cs),
+                "top": min(float(c["top"]) for c in cs), "bottom": max(float(c["bottom"]) for c in cs)}
+
+    def stacked(a, x, y):  # a가 (x, y)에서 시작하는 글자의 바로 위나 아래 줄에 왼쪽 끝을 맞춰 쌓였다
+        h = float(a["bottom"]) - float(a["top"])
+        return abs(float(a["x0"]) - x) <= ALARM_COLUMN_TOL and \
+            0.5 * h <= abs((float(a["top"]) + float(a["bottom"])) / 2 - y) <= 2 * h
+    for _ in range(3):
+        alarms = [w for w in words if ALARM_RE.fullmatch(w["text"])]
+        out, changed = [], False
+        for w in words:
+            text, chars = w["text"], w.get("chars") or ()
+            cut = None
+            if len(chars) == len(text) and not ALARM_RE.fullmatch(text):
+                for k in range(1, len(text)):
+                    if ALARM_RE.fullmatch(text[k:]) and any(stacked(a, float(chars[k]["x0"]), (
+                            float(chars[k]["top"]) + float(chars[k]["bottom"])) / 2) for a in alarms if a is not w):
+                        cut = k
+                        break
+            if cut is None:
+                out.append(w)
+                continue
+            out += [dict(w, text=text[:cut], chars=chars[:cut], **box(chars[:cut])),
+                    dict(w, text=text[cut:], chars=chars[cut:], **box(chars[cut:]))]
+            changed = True
+        words = out
+        if not changed:
+            break
+    return words
+
+
 def _split_plates(w):
     """빈칸 없이 붙어 한 낱말로 온 밸브 번호 여럿('V705V703', 돌린 글자 'V707V717')을 번호마다 나눈다. 이웃한 두 밸브의
     번호가 글자 사이 틈 없이 찍혀 pdfplumber가 한 낱말로 읽는다(APR1400 016쪽 V703·V717, 097쪽 V4320A)."""
@@ -326,12 +364,13 @@ def load_page(path, page=0):
             raise ValueError("페이지 %r 없음(전체 %d쪽)" % (page, page_count))
         pg = pdf.pages[page]
         width, height = float(pg.width), float(pg.height)
+        upright = [w for w0 in pg.extract_words(keep_blank_chars=False, use_text_flow=False, extra_attrs=["size"],
+                                                y_tolerance=WORD_Y_TOLERANCE, return_chars=True)
+                   if w0.get("upright", True) for w1 in _split_plates(w0) for w in _split_paren_tail(w1)]
         words = [{"text": w["text"], "x0": float(w["x0"]), "x1": float(w["x1"]), "top": float(w["top"]),
                   "bottom": float(w["bottom"]), "size": float(w.get("size") or (w["bottom"] - w["top"])),
                   "upright": True}
-                 for w0 in pg.extract_words(keep_blank_chars=False, use_text_flow=False, extra_attrs=["size"],
-                                            y_tolerance=WORD_Y_TOLERANCE, return_chars=True)
-                 if w0.get("upright", True) for w1 in _split_plates(w0) for w in _split_paren_tail(w1)]
+                 for w in _split_alarm_tails(upright)]
         # 90° 돌린 글자(아래→위로 읽음)는 char_dir_rotated="btt"로 따로 읽는다. 기본값으로 읽으면 거꾸로·한 자씩 끊긴다
         # (APR1400 DCD 'CV:RDT' → 'TDR:VC'). 돌린 글자는 글자마다 size 값이 달라 size로 낱말을 나누지 않고,
         # 줄 높이에 해당하는 낱말 폭을 size로 쓴다.

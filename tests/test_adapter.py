@@ -1474,6 +1474,28 @@ class PdfTagTest(unittest.TestCase):
         nodes, _ = self.tags([("circle", ["FICKS", "031"])])
         self.assertEqual((nodes[0]["kind"], nodes[0]["tag"]), ("controller", "FICKS-031"))
 
+    def test_alarm_column_glued_to_loop_number_is_split_off(self):
+        # 072쪽 TIS 3043A: 원 옆에 줄마다 쌓은 경보 표기(HHL / HL / LL)의 가운데 줄이 번호와 틈 없이 붙어 '3043AHL' 한 낱말로
+        # 온다. 070쪽은 윗줄 'HHL'도 'TISHHL'로 붙는다. 표기의 왼쪽 끝이 위아래 줄 경보 표기의 왼쪽 끝과 같으면 떼어 내고(뗀
+        # 표기가 다시 이웃 줄의 근거가 된다), 경보 표기 열은 원 안 글자와 한 줄·한 문단으로 잇지 않는다
+        def w(text, x0, top, step=1.9, h=3.3):
+            chars = [{"text": c, "x0": x0 + step * i, "x1": x0 + step * (i + 1), "top": top, "bottom": top + h}
+                     for i, c in enumerate(text)]
+            return {"text": text, "x0": x0, "x1": x0 + step * len(text), "top": top, "bottom": top + h, "chars": chars}
+        top, mid = w("TISHHL", 318.6, 307.6), w("3043AHL", 316.4, 311.5)
+        top["chars"][3]["x0"] = mid["chars"][5]["x0"] = 326.6
+        column = [top, mid, w("LL", 326.9, 314.6)]
+        self.assertEqual([x["text"] for x in pdf_vector._split_alarm_tails(column)], ["TIS", "HHL", "3043A", "HL", "LL"])
+        self.assertEqual([x["text"] for x in pdf_vector._split_alarm_tails([mid])], ["3043AHL"])  # 열이 없으면 그대로
+        ext = pdf_run([circle(110, 110, 10)], [word("TIS", 104, 104, size=4), word("HHL", 114.5, 104.5, size=4),
+                                               word("3043A", 102, 110, size=4), word("HL", 114.5, 110, size=4),
+                                               word("LL", 114.5, 115.5, size=4), word("PDIS", 104, 121, size=4)])
+        self.assertEqual(ext["nodes"][0]["tag"], "TIS-3043A")
+        self.assertEqual(sorted(b["text"] for b in pdf_vector._text_blocks(
+            [dict(x, upright=True) for x in (word("HHL", 114.5, 104.5, size=4), word("LL", 114.5, 110, size=4),
+                                             word("PDIS", 115, 115.5, size=4))], dict(pdf_vector.PARAMS))),
+            ["HHL\nLL", "PDIS"])
+
     def test_bubble_letters_and_number_in_two_paragraphs_join(self):
         # 072쪽 표시 상자: 칸막이 선 위 'PDAH', 아래 '031'. 줄 간격(3.5pt)이 문단 간격 상한(0.5 × 6pt)보다 넓어 문단이 갈린다
         ext = pdf_run([circle(110, 110, 10)], [word("PDAH", 103, 104), word("031", 105, 113.5)])

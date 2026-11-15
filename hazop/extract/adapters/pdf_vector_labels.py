@@ -17,6 +17,8 @@ from .pdf_vector_common import _box_gap, _center, _inside, _issue, _union
 # ISA 계기 글자(기능 문자 + 번호, 예: 'PT 110'·'PIC 110'·'FICKS 031'). 태그 앞 계통 접두는 글자에 없다. 기능 문자는
 # 종류 규칙(pdf_vector._isa_bubble_kind)과 같이 6자까지 본다(072쪽 FICKS·TICKS 다섯 자)
 ISA_LABEL_RE = re.compile(r"([A-Z]{1,6})[ \-]*(\d{1,5}[A-Z]?)")
+ALARM_RE = re.compile(r"H{1,2}L{0,2}|L{1,2}")  # 계기 원 옆 경보 표기(HHL·HL·LL·H·L)
+ALARM_COLUMN_TOL = 0.5  # 경보 표기 줄들의 왼쪽 끝이 같다고 보는 차(pt)
 # 수동 밸브 번호(APR1400 'V1681'). 계통 접두는 글자에 없다. 밸브 분류 노드의 라벨 한 줄이 이 꼴이면 그대로 태그로 쓴다
 # 소문자 v로 찍힌 번호(105쪽 'v1153')도 같은 밸브 번호다
 VALVE_TAG_RE = re.compile(r"[Vv]\d{3,5}[A-Z]?")
@@ -106,6 +108,18 @@ def _line_text(ln):
     return "".join(s + w["text"] for s, w in zip(ln["seps"], ln["words"]))
 
 
+def _alarm_column(words):
+    """계기 원 옆에 줄마다 쌓아 적은 경보 표기(HHL / HL / LL) 낱말의 id. 경보 표기 꼴이고, 바로 위나 아래 줄에 왼쪽 끝이 같은
+    경보 표기 낱말이 있는 것만 센다. 열은 원 안 글자와 다른 표기라 한 줄·한 문단으로 섞지 않는다."""
+    alarms = [w for w in words if ALARM_RE.fullmatch(w["text"])]
+
+    def stacked(a, b):
+        h = max(a["bottom"] - a["top"], b["bottom"] - b["top"])
+        return abs(a["x0"] - b["x0"]) <= ALARM_COLUMN_TOL and \
+            0.5 * h <= abs((a["top"] + a["bottom"]) / 2 - (b["top"] + b["bottom"]) / 2) <= 2 * h
+    return {id(a) for a in alarms if any(b is not a and stacked(a, b) for b in alarms)}
+
+
 def _upright_blocks(words, prm):
     """가로 글자 단어 → 줄 → 문단."""
     # 글자 크기가 조금씩 다르면 pdfplumber가 'SHEET 3"A"'를 한 자씩 끊는다. 그런 조각은 윗변이 조금씩 달라 윗변 순으로
@@ -113,10 +127,15 @@ def _upright_blocks(words, prm):
     # 조금 겹치기도 한다(9.5.1-1-S1 'S'·'H' -0.006pt). 그래서 왼쪽부터 보고, 조금 겹쳐도 같은 줄로 보며 띄어 쓰지 않는다.
     # 괄호로 싼 낱말('(3057)', 계기 원 옆 다른 계열 번호)은 붙어 있지 않으면 따로 둔다(9.4.5-1-S2 'PDIS'가 태그를 잃음)
     words = sorted(words, key=lambda w: (w["x0"], w["top"]))
+    column = _alarm_column(words)
     lines = []
     for w in words:
+        if id(w) in column:  # 경보 표기 열의 낱말은 옆 글자와 한 줄로 잇지 않는다(072쪽 'TIS'+'HHL', '3043A'+'HL')
+            lines.append({"words": [w], "seps": [""], "x0": w["x0"], "x1": w["x1"], "top": w["top"],
+                          "bottom": w["bottom"], "size": w["size"], "alarm": True})
+            continue
         reach = (prm["word_join_ratio"] if PAREN_TOKEN_RE.fullmatch(w["text"]) else prm["word_gap_ratio"]) * w["size"]
-        fits = [ln for ln in lines if abs(ln["size"] - w["size"]) <= prm["line_size_tol"] and
+        fits = [ln for ln in lines if not ln.get("alarm") and abs(ln["size"] - w["size"]) <= prm["line_size_tol"] and
                 abs(ln["top"] - w["top"]) <= prm["line_top_ratio"] * w["size"] and
                 -prm["word_overlap_ratio"] * w["size"] <= w["x0"] - ln["x1"] < reach and
                 not any(_valve_number_apart(t, w["text"]) for t in (ln["words"][-1]["text"], _line_text(ln)))]
@@ -138,6 +157,7 @@ def _upright_blocks(words, prm):
             gap = ln["top"] - last["bottom"]
             overlap = min(ln["x1"], last["x1"]) - max(ln["x0"], last["x0"])
             if abs(last["size"] - ln["size"]) <= prm["line_size_tol"] and overlap > 0 and \
+                    bool(last.get("alarm")) == bool(ln.get("alarm")) and \
                     prm["block_gap_min_ratio"] * ln["size"] <= gap <= prm["block_gap_max_ratio"] * ln["size"] and \
                     not _valve_number_apart(_line_text(last), _line_text(ln)):
                 b["lines"].append(ln)
