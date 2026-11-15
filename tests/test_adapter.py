@@ -495,11 +495,13 @@ class PdfVectorRuleTest(unittest.TestCase):
 
     def test_line_continuing_same_pen_is_not_a_symbol(self):
         # 007쪽 펌프 몸체선: 같은 굵기로 이어 그은 곧은 선 토막은 한 끝이 떠 있어도 선 기호 노드가 아니다. 글자 지시선(더 가는
-        # 선)이 끝에 닿은 경계 표시 눈금(025쪽 CCW HX BLDG.)은 그대로 기호다
+        # 선)이 끝에 닿은 경계 표시 눈금(025쪽 CCW HX BLDG.)과 비스듬한 빗금 조각(083쪽 필터)은 예전처럼 선 기호로 묶는다
         ext = pdf_run([rect(90, 80, 110, 100), line((100, 100), (100, 150), width=0.13),
                        line((100, 150), (130, 150), width=0.13),
-                       rect(280, 80, 290, 90), line((290, 90), (300, 100), width=0.026), line((300, 100), (300, 106), width=0)])
-        self.assertEqual(sorted(n["geometry"]["x"] for n in ext["nodes"] if n["kind"] != "tee"), [90, 280, 300])
+                       rect(280, 80, 290, 90), line((290, 90), (300, 100), width=0.026), line((300, 100), (300, 106), width=0),
+                       rect(380, 80, 390, 90), line((390, 85), (400, 85), width=0.124),
+                       line((400, 85), (408, 93), width=0.124)])
+        self.assertEqual(sorted(n["geometry"]["x"] for n in ext["nodes"] if n["kind"] != "tee"), [90, 280, 300, 380, 400])
 
     def test_cylinder_operator_cells_stay_with_valve_body(self):
         # 054·134쪽 실린더 구동부: 밸브 몸통 옆 두 칸 상자의 한 칸을 검게 칠하고 외곽선을 따로 긋는다. 작은 두 칸은 표 칸이 아니고,

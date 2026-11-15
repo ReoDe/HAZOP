@@ -900,16 +900,18 @@ def _grazes(piece, sym, prm):
 
 
 def _continues_same_pen(p, polys, prm):
-    """곧은 선 p의 한 끝이 같은 굵기로 그은 다른 선의 끝이나 몸에 닿는가. 그러면 p는 그 선을 이어 그은 선 토막(장비 외곽선·
+    """곧은 선 p의 한 끝이 같은 굵기로 그은 다른 선의 끝과 만나는가. 그러면 p는 그 선을 이어 그은 선 토막(장비 외곽선·
     배관)이지, 끝 하나가 떴다고 선 기호가 되지 않는다(APR1400 007쪽 펌프 몸체선: 담는 외곽이 더는 삼키지 않는다).
-    맹판·끝 막대는 배관이 가운데에 닿고 두 끝이 떠 있다. 경계 표시 눈금은 글자 지시선(더 가는 선)이 끝에 닿는다."""
-    if len(p["pts"]) != 2 or p.get("curved") or p.get("width") is None:
+    맹판·끝 막대는 배관이 가운데에 닿고 두 끝이 떠 있다. 경계 표시 눈금은 글자 지시선(더 가는 선)이 끝에 닿는다.
+    가로·세로로 그은 선만 본다. 엇갈려 그은 필터 빗금(083쪽)은 칸 귀퉁이에서 끝끼리 만나도 선 토막이 아니고, 끝이 다른 선의
+    몸에만 닿는 것도 이어 그은 것이 아니다."""
+    if len(p["pts"]) != 2 or p.get("curved") or p.get("width") is None or             min(abs(p["pts"][0][0] - p["pts"][1][0]), abs(p["pts"][0][1] - p["pts"][1][1])) > prm["touch_tol"]:
         return False
     for e in p["pts"]:
         for q in polys:
             if q is p or q.get("width") is None or abs(q["width"] - p["width"]) > SAME_PEN_TOL:
                 continue
-            if any(_seg_dist(e, a, b)[0] <= prm["end_tol"] for a, b in _segs(q["pts"])):
+            if any(math.hypot(e[0] - f[0], e[1] - f[1]) <= prm["end_tol"] for f in (q["pts"][0], q["pts"][-1])):
                 return True
     return False
 
