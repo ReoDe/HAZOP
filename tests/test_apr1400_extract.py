@@ -557,5 +557,23 @@ class SplitLetters(unittest.TestCase):
         self.assertEqual(sorted(self.texts(words)), ["LEFT", "RIGHT"])
 
 
+PAGE_002 = paths.folder("APR1400", "by-drawing", "002_Ch01_Fig1.7-1_s2of4_Flow_Diagram_Symbols_and_Legend.pdf")
+PAGE_072 = paths.folder("APR1400", "by-drawing", "072_Ch09_Fig9.4.2-1_s1of2_Fuel_Handling_Area_HVAC_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_002) and os.path.isfile(PAGE_072),
+                     "pdfplumber 또는 APR1400 002·072쪽 PDF 없음(저장소 밖 자료)")
+class CentrifugalFans(unittest.TestCase):
+    """범례 1.7-1 2/4 CENTRIFUGAL FAN OR BLOWER(달팽이 몸통 + 안쪽 짧은 호)는 사전 apr1400.centrifugal_fan으로 fan이 된다.
+    범례 기호(002쪽)와 072쪽 공조기 칸 안 송풍기 넷."""
+
+    def test_legend_and_hvac_fans(self):
+        legend = pdf_vector.extract(PAGE_002, page=0)
+        self.assertEqual(node_at(legend, [352, 128, 352, 128])["kind"], "fan")
+        ex = pdf_vector.extract(PAGE_072, page=0)
+        for at in ((540.5, 189.5), (515.0, 301.5), (603.5, 446.5), (603.5, 619.8)):
+            self.assertEqual((node_at(ex, [at[0], at[1], at[0], at[1]]) or {}).get("kind"), "fan", at)
+
+
 if __name__ == "__main__":
     unittest.main()
