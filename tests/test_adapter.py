@@ -8,6 +8,7 @@ import io
 import glob
 import importlib.util
 import json
+import math
 import os
 import re
 import shutil
@@ -364,6 +365,74 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(ext["coordinate_system"]["coordinate_space"], "pdf_page_pt")
         self.assertEqual(ext["nodes"][0]["source_object_id"], "pdf-p0-sym-0001")
         self.assertEqual(ext["nodes"][0]["geometry"], {"x": 100, "y": 100, "width": 40, "height": 60})
+
+    def test_wave_drawn_in_pipe_path_is_flexible_hose_node(self):
+        # APR1400 097쪽: 유연 호스(범례 1.7-1 1/4 FLEXIBLE HOSE)를 배관과 한 경로로 긋는다(곧은 선 → 반원 셋 → 곧은 선).
+        # 물결이 호스 노드가 되고 양쪽 배관이 호스에 붙는다. 상자 안에 통째로 든 물결은 그 상자 기호의 무늬다
+        def hose(x0, y, r=3.0, lead=8.0):
+            pts, fine, x = [(x0, y), (x0 + lead, y)], [(x0, y), (x0 + lead, y)], x0 + lead
+            for k in range(3):
+                side = -1 if k % 2 == 0 else 1
+                pts += [(x + r, y + side * r), (x + 2 * r, y)]
+                fine += [(x + r - r * math.cos(math.pi * t / 12), y + side * r * math.sin(math.pi * t / 12))
+                         for t in range(1, 13)]
+                x += 2 * r
+            pts.append((x + lead, y))
+            fine.append((x + lead, y))
+            return dict(prim(pts, curved=True), fine=[fine])
+        ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (200, 130)),
+                       hose(200, 130), line((234, 130), (300, 130))])
+        kinds = {n["local_id"]: n["kind"] for n in ext["nodes"]}
+        self.assertEqual(sorted(k or "-" for k in kinds.values()), ["-", "-", "flexible_hose"])
+        hose_id = next(i for i, k in kinds.items() if k == "flexible_hose")
+        ends = [{e["node_local_id"] for e in r["endpoints"]} for r in ext["relations"]]
+        self.assertEqual(len(ends), 2)
+        self.assertTrue(all(hose_id in e for e in ends))
+        boxed = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (196, 130)),
+                         rect(196, 120, 238, 140), hose(200, 130, lead=2.0), line((238, 130), (300, 130))])
+        self.assertNotIn("flexible_hose", [n["kind"] for n in boxed["nodes"]])
+
+    def test_pipe_ending_at_arrowhead_inside_equipment_is_connection_not_stem(self):
+        # APR1400 033쪽 펌프 PP01A: 밸브에서 온 배관이 펌프 원 안 화살촉까지 그어진다. 끝이 몸체 깊숙이 들어갔어도 화살촉에서
+        # 끝나는 선은 구동부 축이 아니라 장비로 들어가는 배관이다. 밸브·배관·펌프가 한 기호로 묶이지 않는다
+        head = prim([(196, 127), (203, 130), (196, 133), (196, 127)], closed=True, fill=True)
+        ext = pdf_run([rect(80, 120, 100, 140), circle(200, 130, 12), head, line((100, 130), (197, 130))])
+        nodes = [n for n in ext["nodes"] if n["kind"] != "tee"]
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual([{e["node_local_id"] for e in r["endpoints"]} for r in ext["relations"]],
+                         [{n["local_id"] for n in nodes}])
+
+    def test_short_lines_hanging_at_pipe_end_become_end_symbol(self):
+        # APR1400 097쪽 호스 연결 ⊔·128쪽 벤트 끝 눈금: 배관이 짧은 가로대 가운데에서 끝난다. 가로대 반쪽 둘이 매달린
+        # 분기점이 아니라 끝 기호 노드다. 기호에서 짧게 나온 축 끝의 가로대(008쪽 V236 위 T자 손잡이)는 그대로 둔다
+        ext = pdf_run([rect(100, 100, 140, 160), line((140, 130), (200, 130)), line((200, 127), (200, 133))])
+        self.assertEqual(sorted(n["kind"] or "-" for n in ext["nodes"]), ["-", "-"])
+        self.assertEqual(len(ext["relations"]), 1)
+        self.assertTrue(all(e["node_local_id"] for e in ext["relations"][0]["endpoints"]))
+        def run(rest_len):
+            box = pdf_vector._Sym([{"id": "b", "pts": [(0, 0), (1, 1)], "bbox": (0, 0, 1, 1), "kind_": "body"}])
+            tee, free = ("tee", 0), ("free", 0)
+            chains = [{"pts": [(-rest_len, 0), (0, 0)], "ends": [(("sym", box), (-rest_len, 0), "x"), (tee, (0, 0), "j")],
+                       "evidence": ["p1"]},
+                      {"pts": [(0, 0), (0, 3)], "ends": [(tee, (0, 0), "j"), (free, (0, 3), "j")], "evidence": ["p2"]},
+                      {"pts": [(0, 0), (0, -3)], "ends": [(tee, (0, 0), "j"), (free, (0, -3), "j")], "evidence": ["p2"]}]
+            made, left, tees = pdf_vector._stub_ends([(0, 0)], chains)
+            return len(made), len(left), len(tees)
+        self.assertEqual(run(30), (1, 1, 0))
+        self.assertEqual(run(5), (0, 3, 1))
+
+    def test_part_drawn_between_two_plates_is_one_inline_node(self):
+        # APR1400 097쪽 Y형 거름망 ST01A: 배관이 두 판 '|  |' 가운데에서 끊기고, 판 사이에 축 선과 아래로 빠진 다리·눈금이
+        # 있다. 판·축 선·다리가 한 노드가 되고 양쪽 배관이 그 노드에 붙는다. 오리피스(평행 판)로 읽지 않는다
+        ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160),
+                       line((140, 130), (200, 130)), line((207.5, 130), (300, 130)),
+                       line((200, 128.1), (200, 131.9)), line((207.5, 128.1), (207.5, 131.9)),
+                       line((200, 130), (207.5, 130)), line((202.6, 130), (204.7, 132.3)), line((204.2, 132.8), (205.2, 131.8))])
+        inline = [n for n in ext["nodes"] if n["geometry"]["x"] >= 199 and n["geometry"]["x"] + n["geometry"]["width"] <= 209]
+        self.assertEqual(len(inline), 1)
+        self.assertIsNone(inline[0]["kind"])
+        self.assertEqual(sorted(len({e["node_local_id"] for e in r["endpoints"]} & {inline[0]["local_id"]})
+                                for r in ext["relations"]), [1, 1])
 
     def test_pipe_drawn_through_valve_along_its_axis_is_split_at_the_valve(self):
         # APR1400 105쪽 전동 밸브·128쪽 축소관: 한 선으로 그은 배관 위에 얹은 밸브. 흐름 축을 따라 가운데를 지나는 선은

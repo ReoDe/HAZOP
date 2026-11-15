@@ -426,6 +426,15 @@ def _orifice_box(a, sep, lines, dots, bodies, crossing, prm):
     return abs(side) <= prm["plate_align_tol"] and 0.25 <= along / sep <= 0.75
 
 
+def _spans_gap(q, a, b, prm):
+    """선 q가 판 a·b 가운데를 잇는 곧은 선인가(두 끝이 두 판 가운데에 하나씩 닿음)."""
+    if len(q["pts"]) != 2:
+        return False
+    tol = prm["plate_touch_tol"]
+    return any(math.dist(e, a["c"]) <= tol and math.dist(f, b["c"]) <= tol
+               for e, f in ((q["pts"][0], q["pts"][1]), (q["pts"][1], q["pts"][0])))
+
+
 def _plate_assemblies(syms, polys, markers, dashes, prm):
     """배관을 가로지르는 짧은 판(범례 1.7-1 1/4 FLANGED CONNECTION '—| |—', 1.7-1 VALVE SYMBOLS의 BUTTERFLY '|\\●|'·
     BALL '|○|'·'|●|') 찾기 → (밸브 기호 [_Sym], 남은 선, 남은 표식, 플랜지 [(판, 판, (점, 점))]).
@@ -558,6 +567,22 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
         lines, dots, bodies, crossing = gap_items(a, plates[j])
         return None if lines or dots or bodies or crossing else j
 
+    def _between_plates(a, b, sep, lines, dots, bodies, crossing):
+        """판 a·b 사이에 그린 배관 부품(APR1400 025·097쪽 Y형 거름망: '|—|' 가운데 축 선과 아래로 빠진 다리)이면 판 말고
+        부품을 이루는 선 목록, 아니면 None. 두 판 가운데를 잇는 축 선이 있고, 두 판 바깥에서 배관 끝이 하나씩 닿고, 판에는
+        그 밖의 선이 닿지 않아야 한다. 칸 옆으로 조금 삐져나간 선도 칸 안 선에 매달리고 축 방향으로 두 판 사이를 벗어나지
+        않으면 부품의 장식이다. 배관이 판을 끊기지 않고 꿰뚫으면(칸을 가로지르는 선) 보지 않는다."""
+        hanging = [q for q in crossing if q.get("pts") and all(min(sep, 0) - 0.1 <= axial(a, t) <= max(sep, 0) + 0.1
+                                                               for t in q["pts"])
+                   and any(_poly_dist(q["pts"], ln["pts"]) <= tol for ln in lines)]
+        if len(hanging) != len(crossing) or not any(_spans_gap(q, a, b, prm) for q in lines):
+            return None
+        ea, eb = pipe_end(a, sep < 0), pipe_end(b, sep > 0)
+        if ea is None or eb is None or any(touched(t, (ea[0], eb[0]) + tuple(lines + hanging), branch_ok=True)
+                                           for t in (a, b)):
+            return None
+        return lines + hanging
+
     for i in sorted(range(len(plates)), key=lambda i: plates[i]["p"]["id"]):
         if i in used:
             continue
@@ -567,7 +592,15 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
         a, b = plates[i], plates[j]
         lines, dots, bodies, crossing = gap_items(a, b)
         sep = axial(a, b["c"])
-        mid = ((a["c"][0] + b["c"][0]) / 2, (a["c"][1] + b["c"][1]) / 2)
+        part = _between_plates(a, b, sep, lines, dots, bodies, crossing) if lines and not (dots or bodies) else None
+        if part is not None:
+            used.update((i, j))
+            s = _Sym([dict(q, kind_="poly") for q in [a["p"], b["p"]] + part], stroke_only=True)
+            s.between_plates = True
+            valves.append(s)
+            removed_lines.update(id(q) for q in [a["p"], b["p"]] + part)
+            continue
+        mid =((a["c"][0] + b["c"][0]) / 2, (a["c"][1] + b["c"][1]) / 2)
         centred = [m for m in dots if round_dot(m) and math.hypot(*(_center(m["bbox"])[k] - mid[k] for k in (0, 1)))
                    <= prm["plate_touch_tol"]]
         # 구동부 축: 한 끝이 가운데 점에 닿고 판 길이 방향으로 빠져나가는 선. 칸을 가로지르는 선으로 치지 않는다
@@ -825,7 +858,13 @@ def _group_symbols(cls, prm):
         for p in polys:
             ends = (p["pts"][0], p["pts"][-1])
             host = next((s for s in syms if s.alive and any(s.deep(e, prm) for e in ends)), None)
-            if host is None:
+            heads = [m for m in markers + host.markers if _is_triangle(m)] if host is not None and any(
+                not _inside(e, host.bbox, prm["attach_tol"]) for e in ends) else []
+            if host is None or any(host.deep(e, prm) and any(_inside(e, m["bbox"], prm["end_tol"]) for m in heads)
+                                   for e in ends):
+                # 몸체 밖에서 들어와 몸체 안 화살촉에서 끝나는 선은 구동부 축이 아니라 장비로 들어가는 배관이다(APR1400
+                # 033쪽 펌프 PP01A: 밸브에서 온 배관이 펌프 원 안 화살촉까지 그어져 밸브·배관·펌프가 한 기호가 되던 자리).
+                # 두 끝이 다 몸체 안인 짧은 화살표는 기호 안 무늬다(007쪽 전동기 축 옆 화살표)
                 rest.append(p)
                 continue
             reached = [_nearest_sym(e, [s for s in syms if s is not host], prm["attach_tol"]) for e in ends]

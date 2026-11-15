@@ -63,6 +63,7 @@ STRUCTURE_FEATURES = {
     "single_circle": "몸체가 원 하나뿐",
     "single_tombstone": "몸체가 비석 모양 하나뿐",
     "chevrons": "몸체가 모두 오각 화살표 모양",
+    "wave": "몸체가 모두 배관 선 가운데의 물결(좌우로 번갈아 굽이친 곡선)",
 }
 
 

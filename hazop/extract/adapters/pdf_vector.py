@@ -450,6 +450,8 @@ def _classify_primitives(width, height, prims, prm):
     domes, dome_ids = _arc_chord_bodies(polys, prm)
     bodies += domes
     polys = [p for p in polys if p["id"] not in dome_ids]
+    waves, polys = _wave_bodies(polys, bodies, prm)
+    bodies += waves
     # 흰 채움: 같은 bbox의 외곽(또는 표 칸)이 있으면 그 도형의 채움, 없으면 글자 바탕 마스크
     shapes = [o["bbox"] for o in outlines] + [p["bbox"] for p in polys] + [d["bbox"] for d in domes]
     masks = [f for f in white_fills
@@ -524,6 +526,63 @@ def _arc_chord_bodies(polys, prm):
             used |= {arc["id"], ch["id"]}
             break
     return bodies, used
+
+
+WAVE_LOBES_MIN = 3      # 물결: 축 양쪽으로 번갈아 나온 굽이 수 하한(범례 1.7-1 1/4 FLEXIBLE HOSE는 굽이 셋)
+WAVE_LOBE_RATIO = 0.25  # 굽이로 세는 점: 축에서 떨어진 거리 > 가장 큰 굽이 높이 × 비율
+WAVE_EDGE_RATIO = 0.05  # 물결 끝: 축에서 떨어진 거리 ≤ 가장 큰 굽이 높이 × 비율인 점
+WAVE_AMP_MIN = 0.5      # 굽이 높이 하한(pt). 곧은 선의 작은 떨림은 물결이 아니다
+
+
+def _wave_split(pts):
+    """곧은 축을 따라 가다 좌우로 번갈아 굽이친 뒤 다시 같은 축으로 곧게 나가는 꺾은선 → (들어오는 선, 물결, 나가는 선)
+    점 목록. 아니면 None. 축은 두 끝점을 잇는 직선이고, 물결 앞뒤에 축 위의 곧은 선이 있어야 한다."""
+    a, b = pts[0], pts[-1]
+    L = math.hypot(b[0] - a[0], b[1] - a[1])
+    if L <= 0:
+        return None
+    ux, uy = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+    off = [(p[0] - a[0]) * -uy + (p[1] - a[1]) * ux for p in pts]
+    amp = max(abs(o) for o in off)
+    if amp < WAVE_AMP_MIN:
+        return None
+    lobes, sides = [i for i, o in enumerate(off) if abs(o) > WAVE_LOBE_RATIO * amp], []
+    for i in lobes:
+        s = off[i] > 0
+        if not sides or sides[-1] != s:
+            sides.append(s)
+    if len(sides) < WAVE_LOBES_MIN:
+        return None
+    edge = WAVE_EDGE_RATIO * amp
+    i0 = max((i for i in range(lobes[0]) if abs(off[i]) <= edge), default=None)
+    i1 = min((i for i in range(lobes[-1] + 1, len(pts)) if abs(off[i]) <= edge), default=None)
+    if i0 is None or i1 is None or i0 == 0 or i1 == len(pts) - 1:
+        return None  # 물결 앞이나 뒤에 곧은 선이 없다(상자 안에 그린 물결 무늬 등)
+    if any(abs(o) > edge for o in off[:i0] + off[i1 + 1:]):
+        return None
+    return pts[:i0 + 1], pts[i0:i1 + 1], pts[i1:]
+
+
+def _wave_bodies(polys, shapes, prm):
+    """배관 선 가운데에 그린 물결을 몸체로 떼어 낸다. APR1400 DCD는 유연 호스(범례 1.7-1 1/4 FLEXIBLE HOSE)를 배관과
+    한 경로로 긋는다(곧은 선 → 반원 셋 → 곧은 선). 그대로 두면 호스가 배관의 한 토막이 되어 노드가 생기지 않고, 호스
+    양쪽 기호가 바로 이어진다. 물결은 몸체로, 앞뒤 곧은 선은 같은 경로 id의 배관 조각으로 둔다. 닫힌 몸체 안에 통째로
+    든 물결은 그 기호의 무늬다(062쪽 다이어프램 씰 상자 안 물결). → ([물결 몸체], 남은 선 목록)."""
+    bodies, out = [], []
+    for p in polys:
+        cut = _wave_split(p.get("fine") or p["pts"]) if p.get("curved") else None
+        if cut is not None and any(_inside(p["bbox"][:2], s["bbox"], prm["touch_tol"]) and
+                                   _inside(p["bbox"][2:], s["bbox"], prm["touch_tol"]) for s in shapes):
+            cut = None
+        if cut is None:
+            out.append(p)
+            continue
+        lead_in, wave, lead_out = cut
+        bodies.append({"id": p["id"], "pts": list(wave), "fine": list(wave) + [wave[0]], "bbox": _bbox_pts(wave),
+                       "closed": True, "curved": True, "solid": False, "wave": True})
+        for pts in ((lead_in[0], lead_in[-1]), (lead_out[0], lead_out[-1])):
+            out.append(dict(p, pts=list(pts), fine=list(pts), bbox=_bbox_pts(pts), curved=False))
+    return bodies, out
 
 
 def _is_axis_rect(o, tol):
@@ -1079,6 +1138,49 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
     return tees, chains
 
 
+STUB_LEN_MAX = 6.0  # 배관 끝 장식의 짧은 선 길이 상한(pt). 097쪽 호스 연결 ⊔ 팔 약 5pt, 128쪽 벤트 끝 눈금 반쪽 약 1pt
+
+
+def _stub_ends(tees, chains):
+    """배관 하나가 끝나는 분기점에 짧은 선 둘 이상이 매달려 끝이 비어 있으면, 그 분기점은 배관이 갈라지는 자리가 아니라
+    배관 끝에 그린 끝 기호다(범례 1.7-1의 호스 연결 ⊔, 벤트 끝 눈금, 시험 연결 등). 그대로 두면 배관이 갈래 없는
+    분기점에서 끝나 끝 기호 노드가 생기지 않는다. 매달린 짧은 선들로 선 기호를 만들어 배관 끝을 잇는다(종류는 _classify가
+    정한다). → (새 기호 목록, 남은 사슬 목록, 남은 분기점 목록). 남은 분기점 번호에 맞춰 사슬 끝을 고쳐 쓴다."""
+    at = collections.defaultdict(list)
+    for ch in chains:
+        for k in (0, 1):
+            if ch["ends"][k][0][0] == "tee":
+                at[ch["ends"][k][0][1]].append((ch, k))
+    made, gone, dead = [], set(), set()
+    for t, inc in sorted(at.items()):
+        # 짧은 선의 두 끝이 모두 이 분기점에 묶인 것(벤트 끝 눈금처럼 짧아 양 끝이 배관 끝 가까이 모인 것)도 매달린 선이다
+        stubs = [(ch, k) for ch, k in inc if not ch.get("dashed") and _poly_length({"pts": ch["pts"]}) <= STUB_LEN_MAX
+                 and (ch["ends"][1 - k][0][0] == "free" or ch["ends"][1 - k][0] == ("tee", t))]
+        rest = [(ch, k) for ch, k in inc if all(ch is not s for s, _ in stubs)]
+        # 남은 하나가 짧은 선이면 배관이 아니라 옆 기호의 축이다(008쪽 V236 위 T자 손잡이: 밸브에서 5.7pt 올라온 축 끝의 가로대)
+        if len(stubs) < 2 or len(rest) != 1 or len(inc) != len(stubs) + 1 or \
+                _poly_length({"pts": rest[0][0]["pts"]}) <= STUB_LEN_MAX:
+            continue
+        own = list({id(ch): ch for ch, _ in stubs}.values())
+        s = _Sym([{"id": ch["evidence"][0], "pts": ch["pts"], "bbox": _bbox_pts(ch["pts"]), "kind_": "poly",
+                   "curved": False} for ch in own], stroke_only=True)
+        made.append(s)
+        gone |= {id(ch) for ch, _ in stubs}
+        ch, k = rest[0]
+        ch["ends"][k] = (("sym", s), ch["ends"][k][1], "pdf_path_endpoint")
+        dead.add(t)
+    if not dead:
+        return made, chains, tees
+    renum = {}
+    for t in range(len(tees)):
+        if t not in dead:
+            renum[t] = len(renum)
+    chains = [ch for ch in chains if id(ch) not in gone]
+    for ch in chains:
+        ch["ends"] = [((v[0], renum[v[1]]) if v[0] == "tee" else v, pt, basis) for v, pt, basis in ch["ends"]]
+    return made, chains, [p for t, p in enumerate(tees) if t not in dead]
+
+
 def _piece_dir(d):
     """채운 점선 조각의 장축 단위 벡터(부호 고정). 꺾인 모서리 조각·정사각형에 가까운 조각은 None(방향 없음)."""
     pts = [tuple(q) for q in d["pts"]]
@@ -1360,7 +1462,8 @@ def _shape_features(sym, prm):
     if sym.markers:
         found.add("markers")
     straight = [s for s in sym.strokes if len(s["pts"]) == 2 and not s.get("curved")]
-    if sym.stroke_only and straight and len(straight) == len(sym.strokes) and not getattr(sym, "pocket", False):
+    if sym.stroke_only and straight and len(straight) == len(sym.strokes) and not getattr(sym, "pocket", False) \
+            and not getattr(sym, "between_plates", False):
         vertical = [s for s in straight if abs(s["pts"][0][0] - s["pts"][1][0]) < 0.5]
         horizontal = [s for s in straight if abs(s["pts"][0][1] - s["pts"][1][1]) < 0.5]
         if _side_by_side(vertical, 0) or _side_by_side(horizontal, 1):
@@ -1371,6 +1474,8 @@ def _shape_features(sym, prm):
         found.add("single_tombstone")
     if sym.bodies and all(_is_chevron(b) for b in sym.bodies):
         found.add("chevrons")
+    if sym.bodies and all(b.get("wave") for b in sym.bodies):
+        found.add("wave")
     return found
 
 
@@ -2216,6 +2321,8 @@ def analyze(width, height, words, prims, params=None):
     chains = _dashed_continuations(chains, prm)
     vents, chains = _vent_ends(chains, markers, polys, prm)
     syms += vents
+    stubs, chains, tees = _stub_ends(tees, chains)
+    syms += stubs
     syms = _merge_appendages(syms, chains, prm)
     for ch in chains:  # 흐름 방향: 사슬 위·끝에 남은 화살촉(pdf_vector_flow)
         if not ch.get("dashed") or ch.get("continues_pipe"):
