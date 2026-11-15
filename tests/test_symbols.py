@@ -915,7 +915,9 @@ class CommonRuleTest(unittest.TestCase):
         (("REACTOR", "VESSEL"), "reactor_vessel"), (("STEAM", "GENERATOR"), "steam_generator"),
         (("PRESSURIZER",), "pressurizer"), (("CONDENSER",), "condenser"), (("TURBINE",), "turbine"),
         (("DEMINERALIZER",), "demineralizer"), (("FILTER",), "filter"), (("EXCHANGER",), "heat_exchanger"),
-        (("HX",), "heat_exchanger"), (("COOLER",), "heat_exchanger"), (("PUMP",), "pump"), (("TANK",), "tank"),
+        (("HX",), "heat_exchanger"), (("COOLER",), "heat_exchanger"), (("PUMP",), "pump"),
+        (("COMPRESSOR",), "compressor"),  # 2026-11-16 common.name_compressor(115). PUMP가 먼저, TANK가 나중이다
+        (("TANK",), "tank"),
         (("VESSEL",), "vessel"),  # 옮긴 뒤 더함(common.name_vessel, 2026-11-16). REACTOR VESSEL·TANK가 먼저다
         (("VENT",), "vent"), (("ATM",), "vent"),
     ]
@@ -946,11 +948,11 @@ class CommonRuleTest(unittest.TestCase):
 
     def test_strainer_vessel_and_cooler_names(self):
         # 뷰어 그림이 생긴 종류(fadea7a)의 설비 이름 낱말. 압축기 냉각기(043쪽 'AIR COMPRESSOR "A" AFTERCOOLER')는 열교환기다.
-        # 'CONDENSATE RECEIVER TANK'처럼 TANK가 함께 있으면 탱크다. COMPRESSOR 낱말은 아직 종류를 정하지 않는다(143쪽에서
-        # 맞는 노드가 없고 099쪽 'AIR COMPRESSOR SKID' 경계 상자만 걸렸다)
+        # 'CONDENSATE RECEIVER TANK'처럼 TANK가 함께 있으면 탱크다. 046쪽 압축기 외곽이 제 이름을 갖게 되어(2026-11-16)
+        # COMPRESSOR 낱말로 압축기를 정한다
         for text, kind in (("STRAINER\nST04A", "strainer"), ("AIR\nRECEIVER\n01", "vessel"),
                            ("TK02A\nESSENTIAL\nCHILLED WATER\nAIR SEPARATOR", "vessel"), ("CATION BED VESSEL", "vessel"),
-                           ("AIR COMPRESSOR 01", None), ('AIR COMPRESSOR\n"A"\nAFTERCOOLER', "heat_exchanger"),
+                           ("AIR COMPRESSOR 01", "compressor"), ("AIR COMPRESSOR SKID", None), ('AIR COMPRESSOR\n"A"\nAFTERCOOLER', "heat_exchanger"),
                            ('AIR COMPRESSOR\n"B"\nINTERCOOLER', "heat_exchanger"),
                            ("CONDENSATE RECEIVER TANK", "tank"), ("REACTOR VESSEL", "reactor_vessel")):
             self.assertEqual(pdf_vector._kind_from_text(text)[0], kind, text)

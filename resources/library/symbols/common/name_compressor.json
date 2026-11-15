@@ -1,0 +1,30 @@
+{
+ "id": "common.name_compressor",
+ "revision": 1,
+ "added": "2026-11-16",
+ "updated": "2026-11-16",
+ "name": {
+  "en": "COMPRESSOR",
+  "ko": "압축기(이름 낱말)"
+ },
+ "category": "설비",
+ "role": "symbol",
+ "kind": "compressor",
+ "attributes": {},
+ "enabled": true,
+ "match": [
+  {
+   "shape": "label_words",
+   "words": [
+    "COMPRESSOR"
+   ],
+   "order": 115
+  }
+ ],
+ "sources": [
+  {
+   "set": "일반 P&ID 표기",
+   "note": "기호 안 이름 낱말(APR1400 046쪽 AIR COMPRESSOR 01·02). 뷰어 그림은 fadea7a에 들어왔다. 압축기 냉각기(INTERCOOLER·AFTERCOOLER, 101·102)가 먼저다"
+  }
+ ]
+}

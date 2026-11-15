@@ -625,5 +625,28 @@ class TombstonesSideBySide(unittest.TestCase):
         self.assertEqual(tags, ["FT-073C", "FT-071A", "TEW-069"])
 
 
+
+PAGE_046 = paths.folder("APR1400", "by-drawing", "046_Ch09_Fig9.3.1-1_Instrument_Air_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_046), "pdfplumber 또는 APR1400 046쪽 PDF 없음(저장소 밖 자료)")
+class PiecesSetOnAnEquipmentOutline(unittest.TestCase):
+    """046쪽 공기 압축기 01·02: 모서리를 따낸 L자 외곽 윗변 바깥에 필터 상자 F와 VET 계기 비석을 붙여 그렸다. 셋이 한 노드로
+    묶이면 라벨이 VET가 되어 압축기 이름이 닿지 않는다. 외곽은 제 이름 'AIR COMPRESSOR 0n'을 갖고, F와 비석은 제 노드다."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_046, page=0)
+
+    def test_outline_box_and_tombstone_are_three_nodes(self):
+        for dy, name in ((0.0, "AIR COMPRESSOR 01"), (195.4, "AIR COMPRESSOR 02")):
+            comp = node_at(self.ex, (150.0, 395.0 + dy, 150.0, 395.0 + dy))
+            box = node_at(self.ex, (143.5, 353.7 + dy, 143.5, 353.7 + dy))
+            stone = node_at(self.ex, (174.5, 350.0 + dy, 174.5, 350.0 + dy))
+            self.assertEqual(" ".join(comp["label_text"].split()), name)
+            self.assertEqual(len({comp["local_id"], box["local_id"], stone["local_id"]}), 3, name)
+            self.assertEqual((stone["category"], stone["label_text"]), ("instrument", "VET"), name)
+
+
 if __name__ == "__main__":
     unittest.main()

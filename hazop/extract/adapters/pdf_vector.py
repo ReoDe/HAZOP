@@ -1664,6 +1664,7 @@ def _shape_rule(sym, prm):
     return ("instrument" if entry.kind_from == "isa_letters" else entry.kind), basis
 
 
+PACKAGE_TEXT_RE = re.compile(r"\bSKID\b")
 SIGNAL_TEXT_RE = re.compile(r"\b(?:LOW\s*/\s*HIGH|HIGH\s*/\s*LOW|START\s*/\s*STOP|STOP\s*/\s*START|OPEN\s*/\s*CLOSE)\b")
 
 
@@ -1673,6 +1674,8 @@ def _kind_from_text(text):
         return "continuation", "text_to_from"
     if SIGNAL_TEXT_RE.search(up):
         return None, None  # 'DAY TANK LEVEL LOW/HIGH'·'PUMP START/STOP'은 경보·명령 상자의 글자다. 설비 이름이 아니다
+    if PACKAGE_TEXT_RE.search(up):
+        return None, None  # 'AIR COMPRESSOR SKID'(099쪽)는 여러 기기를 얹은 묶음의 경계 상자다. 안의 설비 하나가 아니다
     entry, words = symbol_library().word_rule(re.findall(r"[A-Z]+", up))
     if entry is None:
         return None, None
@@ -2995,6 +2998,16 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                 # 글자가 여러 기호 상자 안에 들면 가장 작은 기호의 글자다. 건물 경계처럼 큰 상자가 먼저 가져가면 그 안
                 # 밸브 번호 원이 제 번호를 잃는다(APR1400 105쪽 주증기 안전밸브 '1304')
                 cand.append((round(gap, 6), bi, _w(s.bbox) * _h(s.bbox) if inside else 0.0, si))
+    # 큰 기호 상자 안에 제 글자(더 작은 기호 상자에 들지 않은 글자)가 있으면, 안쪽 작은 기호 상자의 글자는 그 큰 기호의
+    # 라벨이 되지 않는다. 장비 외곽에 걸쳐 그린 계기 비석의 아랫줄(046쪽 VET 비석의 IAH)이 압축기 이름 'AIR COMPRESSOR 01'을
+    # 밀어내던 자리. 제 글자가 없는 큰 기호(076쪽 공조기 칸 상자: 안의 글자는 코일 판의 CC·CW뿐)는 예전대로 둔다. 그렇게
+    # 막으면 상자가 바깥 이름 글자를 가져가 안쪽 송풍기의 (틀린) 종류를 넘겨받는다
+    smallest = {}
+    for gap, bi, area, si in cand:
+        if gap < 0:
+            smallest[bi] = min(area, smallest.get(bi, area))
+    owns = {si for gap, bi, area, si in cand if gap < 0 and area <= smallest[bi]}
+    cand = [c for c in cand if c[0] >= 0 or c[2] <= smallest[c[1]] or c[3] not in owns]
     arrows = [s for si, s in enumerate(syms) if shape_of[si][0] == "continuation" or
               (si in hits and hits[si].outcome == "matched" and hits[si].entry.role == "continuation")]
     label_of, taken = {}, set()

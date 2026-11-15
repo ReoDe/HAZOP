@@ -10,7 +10,7 @@ import math
 
 from .pdf_vector_common import (
     _union, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist, _poly_box_dist,
-    _uf_groups, _center, _is_circle, _is_chevron, _is_triangle, _pt_circle_dist, _bbox_pts,
+    _uf_groups, _center, _is_circle, _is_tombstone, _is_chevron, _is_triangle, _pt_circle_dist, _bbox_pts,
     _end_runs, _meets_at_end,
 )
 
@@ -143,11 +143,32 @@ def _cluster_bodies(bodies, prm, polys=()):
     return [_Sym([bodies[i] for i in g]) for g in groups]
 
 
+def _notched(a):
+    """꼭짓점이 넷보다 많은 곧은 변 외곽(모서리를 따낸 L자 등)."""
+    return len({(round(x, 2), round(y, 2)) for x, y in a["pts"]}) > 4
+
+
+BESIDE_MIN = 6.0  # 담는 외곽이 아닌 외곽 바깥에 붙은 도형을 따로 두는 짧은 변 하한(pt). 046쪽 필터 F 상자 10pt, 계기 비석 18pt
+
+
+def _walled(a, prm):
+    """곧은 변으로 닫은 큰 외곽(짧은 변 container_min 이상). 담는 외곽(container)은 모두 이것이다. 안에 담은 것이 없는
+    장비 외곽(046쪽 압축기: 모서리를 따낸 L자 외곽)도 변 바깥에 붙인 상자·비석을 제 일부로 삼지 않는다."""
+    return bool(a.get("closed")) and not (a.get("solid") or a.get("traced") or a.get("curved")) and \
+        min(_w(a["bbox"]), _h(a["bbox"])) >= prm["container_min"]
+
+
 def _beside(a, b, prm):
-    """b가 담는 외곽 a의 변 바깥에 붙여 그린 작은 곧은 변 상자인가(046쪽 압축기 위 필터 F). 외곽의 일부가 아니라 제 기호다.
-    둥근 머리(용기 위아래 반구)는 외곽과 한 장비라 해당하지 않는다."""
-    if not a.get("container") or b.get("container") or b.get("curved") or not b.get("closed") or \
+    """b가 큰 외곽 a의 변 바깥에 붙여 그린 작은 상자·계기 비석인가(046쪽 압축기 위 필터 F와 VET 비석). 외곽의 일부가 아니라
+    제 기호다. 둥근 머리(용기 위아래 반구)는 외곽 폭만큼 넓어 외곽과 한 장비로 둔다. 둥근 도형은 외곽 가로·세로의 절반보다
+    좁아야 따로 둔다. 담는 외곽이 아닌 외곽의 도형과 둥근 도형은 짧은 변이 BESIDE_MIN 이상이어야 따로 둔다. 외곽 변에 붙은
+    1pt 점·조각(055쪽 기체 분석기 상자 둘레)은 외곽의 무늬다."""
+    if not _walled(a, prm) or b.get("container") or not b.get("closed") or \
             b.get("seed") is not None or b.get("class_mark"):
+        return False
+    if (not a.get("container") or b.get("curved")) and min(_w(b["bbox"]), _h(b["bbox"])) < BESIDE_MIN:
+        return False
+    if b.get("curved") and (_w(b["bbox"]) > 0.5 * _w(a["bbox"]) or _h(b["bbox"]) > 0.5 * _h(a["bbox"])):
         return False
     return _w(b["bbox"]) * _h(b["bbox"]) <= prm["container_beside_ratio"] * _w(a["bbox"]) * _h(a["bbox"]) and \
         _pt_ring_dist(_center(b["bbox"]), a["pts"]) > 0.0
@@ -286,7 +307,7 @@ def _contact_chains(syms, prm):
     for c in syms:
         for wall in (b for b in c.bodies if b.get("container")):
             for t in syms:
-                if t is c or not t.bodies or not all(_beside(wall, b, prm) for b in t.bodies) or \
+                if t is c or not t.bodies or any(b.get("curved") or not _beside(wall, b, prm) for b in t.bodies) or \
                         _box_gap(t.core, wall["bbox"]) > prm["touch_tol"]:
                     continue
                 x = min(max(_center(t.core)[0], wall["bbox"][0]), wall["bbox"][2])
@@ -1172,8 +1193,12 @@ def _merge_appendages(syms, chains, prm):
         for t in syms:
             if t is s or not t.alive or t.seed is not None or t.panel or _w(t.bbox) * _h(t.bbox) <= _w(s.bbox) * _h(s.bbox):
                 continue
-            if t.outline:
-                continue  # 장비 외곽 옆에 따로 그린 계기 비석은 부속이 아니다(APR1400 125쪽 증기발생기 수위 전송기)
+            if t.outline or len(s.bodies) == 1 and any(_walled(w, prm) and _beside(w, s.bodies[0], prm) and (
+                    _is_tombstone(s.bodies[0]) or not s.bodies[0].get("curved") and _notched(w)) for w in t.bodies):
+                # 장비 외곽 옆에 따로 그린 계기 비석은 부속이 아니다(APR1400 125쪽 증기발생기 수위 전송기, 046쪽 압축기 VET).
+                # 모서리를 따낸 장비 외곽(046쪽 압축기 L자) 변에 붙인 상자(필터 F)도 제 기호다. 네모 외곽 옆 작은 상자는 예전처럼
+                # 부속으로 합친다(SNP 스캔에서 따로 두면 오검출이 는다)
+                continue
             if any(_pt_ring_dist(_center(s.bbox), r) == 0.0 for r in t.rings):
                 continue  # 담는 외곽 안에 든 기호는 외곽의 부속이 아니다(072쪽 HVAC CHASE 안 공기 흐름 화살표)
             gap = _box_gap(s.bbox, t.bbox)
