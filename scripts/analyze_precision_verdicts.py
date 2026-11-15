@@ -45,6 +45,10 @@ def main():
         total = [total[0] + nodes, total[1] + picked, total[2] + ok]
     if total[1]:
         print("| 합계 | %d | %d | %d | %.0f%% |" % (total[0], total[1], total[2], 100.0 * (total[1] - total[2]) / total[1]))
+        # 표본 합계는 표본마다 같은 무게라 노드가 많은 무리가 덜 반영된다. 무리별 노드 수로 가중한 추정 오답 비율을 함께 낸다
+        weighted = sum(nodes * (picked - ok) / picked for nodes, picked, ok in stat.values()) / total[0]
+        print()
+        print("노드 수로 가중한 추정 오답 비율: %.1f%% (Σ 노드×틀린 비율 / Σ 노드, 노드 %d)" % (100.0 * weighted, total[0]))
 
 
 if __name__ == "__main__":
