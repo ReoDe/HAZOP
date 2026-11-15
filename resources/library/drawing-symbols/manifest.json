@@ -764,6 +764,71 @@
    ]
   },
   {
+   "kind": "flow_element",
+   "file": "flow-element.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "strainer",
+   "file": "strainer.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "compressor",
+   "file": "compressor.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 50
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 50
+    }
+   ],
+   "label": "below",
+   "flow_axis": [
+    1,
+    0
+   ]
+  },
+  {
+   "kind": "vessel",
+   "file": "vessel.svg",
+   "fit": "stretch",
+   "ports": [],
+   "label": "inside"
+  },
+  {
    "kind": "tee",
    "file": null,
    "junction": true,
