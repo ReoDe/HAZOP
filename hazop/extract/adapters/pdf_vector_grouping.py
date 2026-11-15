@@ -60,6 +60,11 @@ class _Sym:
         return any(b.get("traced") for b in self.bodies)
 
     @property
+    def class_only(self):
+        """몸체가 모두 안전등급 경계 마름모(pdf_vector._mark_class_boundaries)인 기호."""
+        return bool(self.bodies) and all(b.get("class_mark") for b in self.bodies)
+
+    @property
     def rings(self):
         """담는 외곽(_cluster_bodies가 container로 표시한 몸체)의 꺾은선 목록. 담는 외곽의 안쪽은 빈 자리다. 기호에 닿는다는
         것은 외곽 변에 닿는다는 뜻이고, 안에 그린 선·화살촉·기호는 따로 읽는다. 외곽이 기호 몸체의 절반도 안 되면(스캔에서 빗금
@@ -400,10 +405,15 @@ def _members(s):
 
 
 def _reach(pts, s):
-    """꺾은선(점 하나도 됨)과 기호 사이 거리. 담는 외곽은 변까지 잰다(안쪽은 빈 자리). 나머지 기호는 상자 거리다."""
+    """꺾은선(점 하나도 됨)과 기호 사이 거리. 담는 외곽은 변까지 잰다(안쪽은 빈 자리). 안전등급 경계 마름모도 마름모 변까지
+    잰다(상자 귀퉁이는 비어 있다). 나머지 기호는 상자 거리다."""
+    pts = list(pts) if len(pts) > 1 else [pts[0], pts[0]]
+    if s.class_only:
+        # 097쪽 위 구스넥 벤트: 끝 막대가 마름모 상자 귀퉁이에 들어 마름모에 닿은 것으로 읽혀 마름모에 먹히던 자리
+        return min([_poly_dist(pts, _closed(b["pts"])) for b in s.bodies] +
+                   [_poly_box_dist(pts, m["bbox"]) for m in s.strokes + s.markers + s.dashes])
     if not s.rings:
         return _poly_box_dist(pts, s.bbox)
-    pts = list(pts) if len(pts) > 1 else [pts[0], pts[0]]
     return min([_poly_dist(pts, _closed(r)) for r in s.rings] + [_poly_box_dist(pts, m["bbox"]) for m in _members(s)])
 
 
@@ -422,7 +432,7 @@ def _sym_dist(p, s, prm=None):
     못한다(APR1400 008쪽 POSRV 파일럿 밸브). prm이 없으면 상자 거리다."""
     if s.outline:  # 장비 외곽은 둥근 귀퉁이 밖이 비어 있다. 상자로 재면 귀퉁이 옆 기호가 장비에 닿은 것으로 읽힌다
         return min(_pt_ring_dist(p, b.get("fine") or b["pts"]) for b in s.bodies)
-    if s.rings:
+    if s.rings or s.class_only:
         return _reach([p], s)
     if prm is not None and len(s.bodies) == 1 and _is_circle(s.bodies[0], prm):
         d = _pt_circle_dist(p, s.bodies[0])
@@ -1043,7 +1053,7 @@ def _group_symbols(cls, prm):
             host = None
             for s in live:
                 if s.alive and not s.arrow_only() and all(_inside(q, s.bbox, s.inner_tol(prm)) for q in p["pts"]) \
-                        and (not s.rings or _reach(p["pts"], s) <= prm["attach_tol"]):
+                        and (not (s.rings or s.class_only) or _reach(p["pts"], s) <= prm["attach_tol"]):
                     if host is None or _w(s.bbox) * _h(s.bbox) < _w(host.bbox) * _h(host.bbox):
                         host = s
             if host is not None:

@@ -669,5 +669,16 @@ class StackedInstrumentsAreTwoNodes(unittest.TestCase):
             self.assertEqual(got, want, path)
 
 
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_097), "pdfplumber 또는 APR1400 097쪽 PDF 없음(저장소 밖 자료)")
+class GooseneckBesideASafetyClassMark(unittest.TestCase):
+    """097쪽 위 구스넥 벤트: 끝 막대가 안전등급 경계 마름모 상자 귀퉁이(마름모 변에서 4.6pt)에 들어 마름모에 먹히던 자리.
+    마름모는 변까지 잰다. 막대가 제 기호로 남아 구스넥 규칙이 벤트로 읽는다."""
+
+    def test_upper_vent_is_read(self):
+        ex = pdf_vector.extract(PAGE_097, page=0)
+        self.assertEqual((node_at(ex, (656.3, 178.684, 656.3, 178.684)) or {}).get("kind"), "vent")
+
+
 if __name__ == "__main__":
     unittest.main()
