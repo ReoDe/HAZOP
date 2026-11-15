@@ -613,5 +613,17 @@ class CentrifugalFans(unittest.TestCase):
             self.assertEqual((node_at(ex, [at[0], at[1], at[0], at[1]]) or {}).get("kind"), "fan", at)
 
 
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_025), "pdfplumber 또는 APR1400 025쪽 PDF 없음(저장소 밖 자료)")
+class TombstonesSideBySide(unittest.TestCase):
+    """025쪽 FT 073C·FT 071A·TEW 069: 계기 비석 셋을 1.5~2pt 사이로 나란히 그렸다. 비석 가운데 점선의 끝 토막이 옆 비석
+    벽까지 닿음 거리 안이라, 그 토막을 구동부 축으로 읽어 셋을 한 노드로 묶고 첫 비석 글자만 태그로 남기던 자리다."""
+
+    def test_each_tombstone_keeps_its_own_tag(self):
+        ex = pdf_vector.extract(PAGE_025, page=0)
+        tags = [(node_at(ex, (x, 152.0, x, 152.0)) or {}).get("tag") for x in (884.3, 901.2, 917.4)]
+        self.assertEqual(tags, ["FT-073C", "FT-071A", "TEW-069"])
+
+
 if __name__ == "__main__":
     unittest.main()

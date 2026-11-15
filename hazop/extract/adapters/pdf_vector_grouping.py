@@ -1042,9 +1042,15 @@ def _group_symbols(cls, prm):
             if any(s is not None and s.seed is not None for s in reached):
                 rest.append(p)  # 검정 견본으로 올린 몸통(seed)에 닿은 선은 연결선이다. 그 몸통을 다른 기호에 합치지 않는다
                 continue
+            core = host.core
             host.add([p], "strokes")
             for e in ends:
                 other = _nearest_sym(e, [s for s in syms if s is not host], prm["attach_tol"])
+                if other is not None and _inside(e, core, prm["touch_tol"]) and not _inside(_center(other.bbox), core):
+                    # 끝이 제 몸체 안·변 위에 있는 선(계기 비석 가운데 점선)은 몸체 바깥에 바짝 붙인 옆 비석·장비에 닿은 것이
+                    # 아니다. 닿음 거리 안이어도 합치지 않는다(APR1400 025쪽 나란한 비석 셋, 046쪽 압축기 위 VET 비석).
+                    # 몸체 안에 든 기호에 닿은 끝은 예전처럼 합친다(125쪽 큰 외곽 안 기호)
+                    continue
                 if other is not None:
                     host.merge(other)
             changed = True
