@@ -139,17 +139,17 @@
     "units": 47
    },
    "connection": {
-    "correct": 237,
+    "correct": 242,
     "false_pos": 6,
     "units": 248
    },
    "kind": {
-    "correct": 134,
+    "correct": 139,
     "false_pos": 1,
     "units": 162
    },
    "tag": {
-    "correct": 94,
+    "correct": 95,
     "false_pos": 0,
     "units": 119
    }
@@ -183,7 +183,7 @@
     "units": 46
    },
    "connection": {
-    "correct": 166,
+    "correct": 169,
     "false_pos": 2,
     "units": 199
    },
@@ -205,8 +205,8 @@
     "units": 136
    },
    "connection": {
-    "correct": 209,
-    "false_pos": 4,
+    "correct": 212,
+    "false_pos": 3,
     "units": 244
    },
    "kind": {
@@ -222,22 +222,22 @@
   },
   "apr1400-033": {
    "attribute": {
-    "correct": 18,
+    "correct": 20,
     "false_pos": 0,
     "units": 23
    },
    "connection": {
-    "correct": 80,
-    "false_pos": 6,
+    "correct": 86,
+    "false_pos": 1,
     "units": 101
    },
    "kind": {
-    "correct": 61,
+    "correct": 67,
     "false_pos": 2,
     "units": 75
    },
    "tag": {
-    "correct": 38,
+    "correct": 44,
     "false_pos": 0,
     "units": 50
    }
@@ -337,12 +337,12 @@
     "units": 37
    },
    "connection": {
-    "correct": 48,
-    "false_pos": 9,
+    "correct": 66,
+    "false_pos": 5,
     "units": 87
    },
    "kind": {
-    "correct": 48,
+    "correct": 53,
     "false_pos": 4,
     "units": 73
    },
@@ -381,7 +381,7 @@
     "units": 57
    },
    "connection": {
-    "correct": 118,
+    "correct": 120,
     "false_pos": 0,
     "units": 142
    },
