@@ -1189,12 +1189,20 @@ def _build_dashed(syms, dashes, markers, prm):
     out = []
     for items, terms in chains:
         hits = []
-        for box, point, _ in terms:
+        for box, point, tip in terms:
             for m in markers:  # 점선 끝 화살촉이 있으면 화살촉까지 이어 본다
                 if _box_gap(m["bbox"], box) <= prm["dash_gap_max"]:
                     box = _union(box, m["bbox"])
+            # 경로 끝점이 기호 상자에 닿으면 선은 그 기호에서 끝난다. 끝 조각은 점선 무늬의 빈칸만큼 끝점보다 짧아서, 조각만
+            # 보면 옆에 붙은 다른 기호가 더 가까울 수 있다(APR1400 008쪽: V310 밑에서 내려오는 일점쇄선의 끝 조각이 V310보다
+            # 바로 옆 계기 원 '300'에 가깝다)
             best = None
-            for s in syms:
+            if tip is not None:
+                for s in syms:
+                    gap = _pt_box_dist(tip, s.bbox)
+                    if gap <= prm["touch_tol"] and (best is None or gap < best[0]):
+                        best = (gap, s)
+            for s in syms if best is None else ():
                 gap = _box_gap(box, s.bbox)
                 if gap <= prm["dash_attach_tol"] and (best is None or gap < best[0]):
                     best = (gap, s)
@@ -1682,6 +1690,84 @@ def _mark_class_boundaries(cls, blocks, prm):
                 cls["bodies"][j] = dict(b, class_mark=n)
 
 
+BOUNDARY_TIP_TOL = 0.1      # 두 화살촉 꼭짓점이 한 점에서 만난다고 보는 거리(pt)
+BOUNDARY_ELONGATION = 1.5   # 경계 표시 화살촉: 축 방향 길이 ≥ 폭 × 이 값(검게 칠한 나비 밸브 삼각형은 축 방향이 더 짧다)
+BOUNDARY_PARALLEL = 0.05    # 선 방향과 화살촉 축이 나란하다고 보는 사인 값 상한
+
+
+def _boundary_marks(cls, prm):
+    """건물·구역 경계 표시(▶◀)를 공정 기호 재료에서 뺀다. 경계 표시는 가는 선 하나 위에 얇은 화살촉 둘을 꼭짓점끼리
+    마주 대어 그리고, 양옆에 구역 이름(YARD|UCT, INDOORS|OUTDOORS, DE|WM)을 쓴다(APR1400 025·046·062·097·105쪽).
+    표시선은 배관이 아닌데도 남겨 두면 장식선이나 선 기호가 되어 옆 배관 끝을 붙잡고(046쪽 CB SUPPLY 분기),
+    가로선 둘과 세로 눈금은 오리피스 판으로 읽힌다(046쪽 TGB|UCT|AB). 화살촉을 맞댄 축과 나란히 두 화살촉을 다
+    지나는 선이 있어야 경계 표시로 본다. 그 선, 그 선에 끝을 이어 그린 토막과 두 화살촉을 뺀다. 꼭짓점을 가로지르는
+    눈금은 남긴다. 눈금은 배관 위에 그리기도 하고(105쪽 MSVH 경계), 지역 경계선과 이어지기도 해서 빼면 남은 선 토막이
+    옆 글자의 설비 낱말로 종류를 얻는다(025쪽 CCW HX BLDG.).
+    → 뺀 요소 목록(cls["boundary_marks"])."""
+    tips = [m for m in cls["markers"] if m.get("thin_tip") and len(m["pts"]) >= 3]
+    gone, used, taken = [], set(), set()
+
+    def corners(m):
+        pts = [tuple(p) for p in m["pts"]]
+        return pts[:-1] if len(pts) > 3 and math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1]) <= BOUNDARY_TIP_TOL \
+            else pts
+    for i, a in enumerate(tips):
+        for b in tips[i + 1:]:
+            if id(a) in used or id(b) in used or _box_gap(a["bbox"], b["bbox"]) > BOUNDARY_TIP_TOL:
+                continue
+            meet = [(p, q) for p in corners(a) for q in corners(b) if math.hypot(p[0] - q[0], p[1] - q[1]) <= BOUNDARY_TIP_TOL]
+            if len(meet) != 1:
+                continue  # 꼭짓점 하나에서만 만나야 마주 본 화살촉이다(밑변을 맞대면 두 점이 겹친다)
+            apex = meet[0][0]
+            ca, cb = _center(a["bbox"]), _center(b["bbox"])
+            L = math.hypot(cb[0] - ca[0], cb[1] - ca[1])
+            if L == 0:
+                continue
+            u = ((cb[0] - ca[0]) / L, (cb[1] - ca[1]) / L)
+
+            def along(m):
+                xs = [(p[0] - apex[0]) * u[0] + (p[1] - apex[1]) * u[1] for p in corners(m)]
+                ys = [-(p[0] - apex[0]) * u[1] + (p[1] - apex[1]) * u[0] for p in corners(m)]
+                return max(xs) - min(xs), max(ys) - min(ys), min(xs), max(xs)
+            la, wa, lo, _ = along(a)
+            lb, wb, _, hi = along(b)
+            if la < BOUNDARY_ELONGATION * wa or lb < BOUNDARY_ELONGATION * wb:
+                continue
+            straight = [p for p in cls["polys"] if len(p["pts"]) == 2 and
+                        math.hypot(p["pts"][1][0] - p["pts"][0][0], p["pts"][1][1] - p["pts"][0][1]) > 0]
+
+            def on_axis(p):
+                (x0, y0), (x1, y1) = p["pts"]
+                return abs(((x1 - x0) * u[1] - (y1 - y0) * u[0]) / math.hypot(x1 - x0, y1 - y0)) <= BOUNDARY_PARALLEL
+            lines = []
+            for p in straight:
+                if on_axis(p) and _seg_dist(apex, *p["pts"])[0] <= prm["touch_tol"]:
+                    s = sorted((x - apex[0]) * u[0] + (y - apex[1]) * u[1] for x, y in p["pts"])
+                    if s[0] <= lo + BOUNDARY_TIP_TOL and s[1] >= hi - BOUNDARY_TIP_TOL:
+                        lines.append(p)
+            if not lines:
+                continue
+            # 표시선을 끝끼리 이어 그린 토막도 표시선이다(025쪽 CCW HX BLDG.|YARD 선은 세 토막). 표시선보다 긴 선은 넣지 않는다
+            reach = max(_poly_length(p) for p in lines)
+            grown = True
+            while grown:
+                grown = False
+                for p in straight:
+                    if any(p is q for q in lines) or _poly_length(p) > reach or not on_axis(p):
+                        continue
+                    if any(min(_seg_dist(e, *q["pts"])[0] for e in p["pts"]) <= prm["touch_tol"] and
+                           min(_seg_dist(e, *p["pts"])[0] for e in q["pts"]) <= prm["touch_tol"] for q in lines):
+                        lines.append(p)
+                        grown = True
+            used.update((id(a), id(b)))
+            gone += [a, b] + [p for p in lines if id(p) not in taken]
+            taken.update(id(p) for p in lines)
+    ids = {id(m) for m in gone}
+    cls["markers"] = [m for m in cls["markers"] if id(m) not in ids]
+    cls["polys"] = [p for p in cls["polys"] if id(p) not in ids]
+    cls["boundary_marks"] = gone
+
+
 def _black_fill_signature(group):
     """검은 채움 묶음(_black_fill_groups)의 모양 서명. 곧은 채움은 검은 몸체로, 둥근 점은 표식으로 센다. 몸체로 올린 뒤
     기호로 묶였을 때의 서명(symbols.sym_signature)과 같아야 같은 견본에 다시 맞는다."""
@@ -1731,6 +1817,10 @@ def _classify(sym, text, degree, prm, marks=()):
     if shape is not None:
         return shape, sbasis
     if sym.seed is not None:  # 검정 견본으로 올린 몸통은 사전이 정한다. 라벨의 장비 낱말이나 끝막음 규칙으로 정하지 않는다
+        return None, None
+    if sym.stroke_only and min(_w(sym.bbox), _h(sym.bbox)) == 0:
+        # 곧은 선 하나로 된 선 기호는 설비 외곽이 아니다. 옆 글자의 설비 낱말로 종류를 정하지 않는다(APR1400 025쪽
+        # 'CCW HX BLDG.' 경계 표시 옆에 남은 눈금 토막이 열교환기가 되던 자리)
         return None, None
     kind, basis = _kind_from_text(text)
     if kind is not None:
@@ -2099,6 +2189,7 @@ def analyze(width, height, words, prims, params=None):
     _promote_black_symbols(cls, prm)
     blocks = _text_blocks(words, prm)
     _mark_class_boundaries(cls, blocks, prm)
+    _boundary_marks(cls, prm)
     ticks, marked = _line_ticks(cls["polys"], prm, cls["bodies"])
     syms, polys, markers, dashes = _group_symbols(cls, prm)
     # 빗금은 기호 묶기가 끝난 뒤에 남은 선에서만 뺀다. 기호 장식선으로 흡수된 빗금은 그대로 두어 기호 모양과 번호가

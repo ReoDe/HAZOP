@@ -412,6 +412,25 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(run(1.08)[0], 1)
         self.assertEqual(run(0.13), (0, [(100, 300), (200, 200)]))
 
+    def test_boundary_mark_line_is_not_a_symbol(self):
+        # APR1400 046쪽 CB|UCT 경계 표시: 가는 표시선 위 꼭짓점을 마주 댄 화살촉 둘(▶◀)과 배관까지 가는 눈금. 표시선을
+        # 선 기호로 남기면 눈금을 거쳐 배관에 붙은 가짜 가지가 생긴다. 경계 표시는 공정 기호가 아니다
+        thick, thin = 1.3, 0.16
+        ext = pdf_run([rect(80, 145, 100, 155, width=thin), rect(260, 145, 280, 155, width=thin),
+                       line((100, 150), (260, 150), width=thick), line((196.2, 150), (196.2, 180), (240, 180), width=thick),
+                       rect(240, 175, 260, 185, width=thin), line((190, 150.9), (190, 176), width=thin),
+                       line((187.9, 163), (196.1, 163), width=thin),
+                       prim([(189.4, 160.7), (190.6, 160.7), (190, 163), (189.4, 160.7)], closed=True, fill=True),
+                       prim([(189.4, 165.3), (190.6, 165.3), (190, 163), (189.4, 165.3)], closed=True, fill=True)])
+        self.assertFalse([n for n in ext["nodes"] if "pdf-path-0005" in n["evidence"]["pdf_objects"]])
+        self.assertEqual([n["kind"] for n in ext["nodes"]].count("tee"), 1)
+        self.assertEqual(len(ext["relations"]), 3)
+
+    def test_single_line_does_not_take_equipment_word(self):
+        # APR1400 025쪽: 'CCW HX BLDG.' 경계 표시 옆에 남은 눈금 토막이 열교환기가 되던 자리. 곧은 선 하나는 설비가 아니다
+        ext = pdf_run([line((100, 100), (100, 108))], [word("CCW", 90, 101), word("HX", 103, 101)])
+        self.assertEqual([n["kind"] for n in ext["nodes"]], [None])
+
     def test_pocket_hanging_on_pipe_is_one_symbol(self):
         # APR1400 105쪽 드레인 포트: 배관 아래 짧은 세로선 둘과 둥근 바닥. 주머니가 배관 두 가닥과 드레인 선을 잇는
         # 고리가 되지 않고, 배관과 입구 한 곳에서 만나는 기호 하나가 된다
@@ -624,6 +643,29 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(len(ext["nodes"]), 3)
         bubble = [n for n in ext["nodes"] if n["geometry"]["width"] < 20][0]
         self.assertEqual(bubble["label_text"], "1304")
+
+    def test_dashed_path_end_touching_symbol_wins_over_nearer_last_piece(self):
+        # APR1400 008쪽 V310: 점선 무늬의 빈칸 때문에 끝 조각이 경로 끝점보다 짧아, 조각만 보면 옆 계기 원이 더 가깝다.
+        # 경로 끝점이 닿은 기호가 선이 끝나는 기호다
+        def ends(prims):
+            ext = pdf_run(prims)
+            xy = {n["local_id"]: (n["geometry"]["x"], n["geometry"]["y"]) for n in ext["nodes"]}
+            return [sorted(xy[e["node_local_id"]] for e in r["endpoints"]) for r in ext["relations"]]
+        dash = dict(line((102, 130), (102, 110), width=0.25), dash=[[3.0, 4.0], 0.0])
+        self.assertEqual(ends([rect(100, 104, 104, 110), rect(92, 111, 101, 119), rect(100, 130, 104, 134), dash]),
+                         [[(100, 104), (100, 130)]])
+
+    def test_dashed_path_grazing_symbol_side_passes_by(self):
+        # APR1400 008쪽 V313: 두 끝이 모두 밖인 점선이 몸체 변 0.3pt 옆을 지나면 그 기호를 꿰뚫는 선이 아니다. 조각을
+        # 기호에 넣지 않고, 선은 끊기지 않고 두 끝 기호를 잇는다
+        dash = dict(line((103.3, 80), (103.3, 130), width=0.25), dash=[[3.0, 2.0], 0.0])
+        analysis = pdf_vector.analyze(600.0, 400.0, [], [rect(100, 100, 103, 106), rect(98, 70, 108, 80),
+                                                         rect(98, 130, 108, 140), dash])
+        valve = next(s for s in analysis["symbols"] if s.bbox[0] == 100)
+        self.assertEqual(valve.dashes, [])
+        ext = pdf_vector.build_extraction(analysis, 600.0, 400.0, 1, 0, "synthetic.pdf", "0" * 64)
+        xy = {n["local_id"]: n["geometry"]["y"] for n in ext["nodes"]}
+        self.assertEqual([sorted(xy[e["node_local_id"]] for e in r["endpoints"]) for r in ext["relations"]], [[70, 130]])
 
     def test_dashed_pipes_leaving_one_symbol_are_not_joined(self):
         # 밸브 한 변에서 따로 나가는 두 점선 배관: 시작점이 1.2pt로 붙어 있어도 꺾임으로 잇지 않는다. 밸브 상자 안의

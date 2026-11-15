@@ -773,6 +773,15 @@ def _join_crossing_gaps(polys, dashes, syms, prm):
     return out
 
 
+def _grazes(piece, sym, prm):
+    """두 끝이 모두 기호 상자 밖인 점선 경로의 조각이 몸체 안으로 들어가지 않고 몸체 변 바로 옆을 스친다. 몸체에서 떨어진
+    자리(계기 원 줄기 끝이 점선에 닿는 자리, APR1400 048쪽 PI-3107)는 스치는 것이 아니라 줄기가 선에 닿은 것이라 예전처럼 둔다."""
+    ends = piece.get("path_ends") or ()
+    if not ends or any(_inside(e, sym.bbox, prm["touch_tol"]) for e in ends):
+        return False
+    return not _inside(_center(piece["bbox"]), sym.core) and _box_gap(piece["bbox"], sym.core) <= prm["touch_tol"]
+
+
 def _group_symbols(cls, prm):
     syms = _cluster_bodies(cls["bodies"], prm)
     polys = _join_crossing_gaps(list(cls["polys"]), cls["dashes"], syms, prm)
@@ -896,11 +905,15 @@ def _group_symbols(cls, prm):
                 # 스트로크 점선 경로가 한 끝은 기호 상자 안, 다른 끝은 밖이면 그 기호에서 끝나는 점선 배관이다. 그 끝
                 # 조각은 기호의 일부가 아니다. 기호에 넣으면 상자가 조각만큼 자라 옆 조각까지 끌어들이고, 모양 서명에
                 # 점선 조각이 섞여 사전 견본에 맞지 않는다(APR1400 008쪽 POSRV 파일럿 안전밸브). 두 끝이 다 밖인 경로
-                # (기호를 꿰뚫는 점선)의 안쪽 조각은 그대로 기호에 넣어 그 자리에서 사슬을 끊는다(_stroke_chains)
+                # (기호를 꿰뚫는 점선)의 안쪽 조각은 그대로 기호에 넣어 그 자리에서 사슬을 끊는다(_stroke_chains).
+                # 꿰뚫는다는 것은 조각이 몸체 안을 지난다는 뜻이다. 몸체 옆을 상자 여유 안으로 스쳐 가는 점선은 그 기호와
+                # 상관없이 지나간다(APR1400 008쪽: 303 파일럿 출구 일점쇄선이 V313 몸통 오른쪽 변 0.3pt 옆을 지난다.
+                # 조각을 넣으면 V313이 사전 견본에 맞지 않고 출구선도 V313에서 끊긴다)
                 inside = [s for s in syms if s.alive and
                           _inside((m["bbox"][0], m["bbox"][1]), s.bbox, prm["touch_tol"]) and
                           _inside((m["bbox"][2], m["bbox"][3]), s.bbox, prm["touch_tol"]) and
-                          len({_inside(e, s.bbox, prm["touch_tol"]) for e in m.get("path_ends", ())}) < 2]
+                          len({_inside(e, s.bbox, prm["touch_tol"]) for e in m.get("path_ends", ())}) < 2 and
+                          not _grazes(m, s, prm)]
                 # 검정 견본으로 올린 몸통 위의 점(seed)은 그 몸통의 기호로 간다. 그 밖에는 상자에 드는 첫 기호
                 own = [s for s in inside if "seed" in m and any(b.get("seed") == m["seed"] for b in s.bodies)]
                 host = (own or inside or [None])[0]
