@@ -472,6 +472,35 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(reasons, ["bare_outline", "hatch_block", "stray_stroke"])
         self.assertEqual(sorted(n["geometry"]["x"] for n in ext["nodes"] if n["kind"] != "tee"), [200, 300, 500])
 
+    def test_triangle_row_on_line_is_one_sparger(self):
+        # 범례 1.7-1 SPRAY NOZZLE OR SPARGER(008쪽 SPARGER): 막대 하나에 같은 삼각형이 같은 간격으로 매달린 것은 분사구 하나다.
+        # 삼각형마다 노드가 생기지 않고, 막대 가운데로 들어온 공급 배관은 그 분사구에 닿는다
+        tris = [prim([(100 + 4 * i, 132.2), (101.25 + 4 * i, 130.2), (102.5 + 4 * i, 132.2), (100 + 4 * i, 132.2)],
+                     closed=True) for i in range(4)]
+        ext = pdf_run([rect(97, 60, 117, 80), line((107, 80), (107, 130)), line((100, 130), (114.5, 130))] + tris)
+        nodes = [n for n in ext["nodes"] if n["kind"] != "tee"]
+        self.assertEqual(sorted((n["geometry"]["x"], n["kind"]) for n in nodes), [(97, None), (100, "sparger")])
+        self.assertEqual([sorted(e["node_local_id"] for e in r["endpoints"]) for r in ext["relations"]],
+                         [sorted(n["local_id"] for n in nodes)])
+
+    def test_air_flow_arrow_head_stays_with_shaft(self):
+        # 범례 1.7-1(2 of 4) 공조 덕트 끝 화살표(080쪽): 덕트 끝 막대와 굵은 몸통, 화살촉이 한 기호다. 화살촉이 따로 떨어져
+        # 몸통만 노드가 되지 않는다. 선과 표식으로 된 모양이지만 체크밸브가 아니다
+        head = prim([(158, 128.6), (164, 130), (158, 131.4), (158, 128.6)], closed=True, fill=True)
+        ext = pdf_run([rect(100, 120, 120, 140), line((120, 130), (150, 130), width=1.1),
+                       line((150, 128.5), (150, 131.5), width=1.1), line((151.9, 130), (158, 130), width=1.1), head])
+        arrows = [n for n in ext["nodes"] if n["kind"] != "tee" and n["geometry"]["x"] >= 150]
+        self.assertEqual([(n["kind"], round(n["geometry"]["x"] + n["geometry"]["width"], 1)) for n in arrows], [(None, 164)])
+        self.assertEqual(len(ext["relations"]), 1)
+
+    def test_line_continuing_same_pen_is_not_a_symbol(self):
+        # 007쪽 펌프 몸체선: 같은 굵기로 이어 그은 곧은 선 토막은 한 끝이 떠 있어도 선 기호 노드가 아니다. 글자 지시선(더 가는
+        # 선)이 끝에 닿은 경계 표시 눈금(025쪽 CCW HX BLDG.)은 그대로 기호다
+        ext = pdf_run([rect(90, 80, 110, 100), line((100, 100), (100, 150), width=0.13),
+                       line((100, 150), (130, 150), width=0.13),
+                       rect(280, 80, 290, 90), line((290, 90), (300, 100), width=0.026), line((300, 100), (300, 106), width=0)])
+        self.assertEqual(sorted(n["geometry"]["x"] for n in ext["nodes"] if n["kind"] != "tee"), [90, 280, 300])
+
     def test_cylinder_operator_cells_stay_with_valve_body(self):
         # 054·134쪽 실린더 구동부: 밸브 몸통 옆 두 칸 상자의 한 칸을 검게 칠하고 외곽선을 따로 긋는다. 작은 두 칸은 표 칸이 아니고,
         # 외곽선이 있는 검은 얇은 칸은 점선 조각이 아니다. 한 기호로 묶여야 몸통이 조각 노드로 갈라지지 않는다

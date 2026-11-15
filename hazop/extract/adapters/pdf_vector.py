@@ -1961,6 +1961,10 @@ def _symbol_match(sym, blocks):
 
 def _classify(sym, text, degree, prm, marks=()):
     """(kind, basis) — 근거가 없으면 kind None. marks: 기호 안 표기 글자(밸브 구동부의 M 등)."""
+    if getattr(sym, "sparger", False):
+        return "sparger", SPARGER_BASIS
+    if getattr(sym, "flow_arrow", False):
+        return None, None  # 흐름 화살표(_arrow_heads)는 '선과 표식' 체크밸브가 아니고, 옆 글자의 설비 낱말로 종류를 정하지도 않는다
     shape, sbasis = _shape_rule(sym, prm)
     if shape in ("control_valve", "motor_operated_valve") and "M" in [m.strip().upper() for m in marks]:
         return "motor_operated_valve", "valve_body+actuator_mark:M"
@@ -2017,6 +2021,95 @@ def _hatch_block(s):
             return False
         dirs.append(((x1 - x0) / L, (y1 - y0) / L))
     return all(abs(d[0] * dirs[0][0] + d[1] * dirs[0][1]) >= HATCH_COS for d in dirs)
+
+
+SPARGER_BASIS = "triangle_row_on_line"
+
+
+def _sparger_rows(syms, polys, prm):
+    """범례 1.7-1 SPRAY NOZZLE OR SPARGER: 곧은 선 하나에 같은 크기 작은 삼각형 셋 이상이 같은 간격으로 매달린 것은 분사구
+    하나다(008쪽 SPARGER 막대, 134쪽 탱크 안 배관 끝). 삼각형마다 따로 노드가 되지 않게 한 기호로 묶고 sparger 표시를 단다.
+    줄 길이 안에서 끝나는 선(막대)은 기호에 넣고, 줄 밖으로 이어지는 선(공급 배관)은 그대로 둔다 → 남은 선 목록."""
+    tri = {}
+    for s in syms:
+        if len(s.bodies) == 1 and _is_triangle(s.bodies[0]) and not (s.markers or s.dashes) and s.seed is None:
+            size = max(_w(s.bodies[0]["bbox"]), _h(s.bodies[0]["bbox"]))
+            if size <= PATTERN_MAX and all(max(_w(m["bbox"]), _h(m["bbox"])) <= size for m in s.strokes):
+                tri[id(s)] = s
+    used, rest = set(), []
+    for p in polys:
+        if len(p["pts"]) != 2 or p.get("curved"):
+            rest.append(p)
+            continue
+        (ax, ay), (bx, by) = p["pts"]
+        L = math.hypot(bx - ax, by - ay)
+        on = [s for k, s in tri.items() if k not in used and L and
+              _poly_box_dist(p["pts"], s.bodies[0]["bbox"]) <= prm["touch_tol"]]
+        if len(on) < PATTERN_RUN:
+            rest.append(p)
+            continue
+        a = on[0].bodies[0]["bbox"]
+        on = [s for s in on if abs(_w(s.bodies[0]["bbox"]) - _w(a)) <= PATTERN_SIZE_TOL
+              and abs(_h(s.bodies[0]["bbox"]) - _h(a)) <= PATTERN_SIZE_TOL]
+        ux, uy = (bx - ax) / L, (by - ay) / L
+        on.sort(key=lambda s: (_center(s.bodies[0]["bbox"])[0] - ax) * ux + (_center(s.bodies[0]["bbox"])[1] - ay) * uy)
+        at = [(_center(s.bodies[0]["bbox"])[0] - ax) * ux + (_center(s.bodies[0]["bbox"])[1] - ay) * uy for s in on]
+        gaps = [q - r for r, q in zip(at, at[1:])]
+        size = max(_w(a), _h(a))
+        if len(on) < PATTERN_RUN or not all(0 < g <= PATTERN_PITCH_MAX * size and abs(g - gaps[0]) <= PATTERN_PITCH_TOL * gaps[0]
+                                            for g in gaps):
+            rest.append(p)
+            continue
+        row = on[0]
+        for s in on[1:]:
+            row.merge(s)
+        row.sparger = True
+        used.update(id(s) for s in on)
+        if all(_inside(e, row.bbox, prm["touch_tol"]) for e in p["pts"]):
+            row.add([p], "strokes")
+        else:
+            rest.append(p)
+    return [s for s in syms if s.alive], rest
+
+
+def _arrow_heads(syms, markers, prm):
+    """범례 1.7-1(2 of 4) DUCTED/NON-DUCTED AIR FLOW: 곧은 선만으로 된 선 기호(굵은 몸통, 덕트 끝 막대)의 한 선이 홀로 남은
+    화살촉 밑변에서 끝나고 화살촉이 그 선을 늘인 줄 위에 있으면, 화살촉은 그 기호의 머리다(APR1400 072·080쪽 공조 덕트 끝
+    화살표). 머리가 떨어져 몸통만 노드가 되지 않게 기호에 넣는다. 배관이 닿은 기호(syms)만 본다. 사슬을 다 이은 뒤라 머리가
+    선 끝을 빼앗지 않고, 어느 선도 닿지 않은 몸통(008쪽 안전밸브 배기 화살표)은 넓이 없는 조각으로 그대로 버린다
+    → 남은 화살촉 목록."""
+    def straight(m):  # 꺾이지 않은 선(같은 줄 위 점이 여럿이어도 된다)
+        a, b = m["pts"][0], m["pts"][-1]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        return not m.get("curved") and L > 0 and all(
+            abs((q[0] - a[0]) * (b[1] - a[1]) - (q[1] - a[1]) * (b[0] - a[0])) / L <= prm["touch_tol"] for q in m["pts"])
+
+    def head(s):
+        for st in s.strokes:
+            a, b = st["pts"][0], st["pts"][-1]
+            L = math.hypot(b[0] - a[0], b[1] - a[1])
+            for e, o in ((a, b), (b, a)) if L else ():
+                ux, uy = (e[0] - o[0]) / L, (e[1] - o[1]) / L
+                for m in markers:
+                    c = _center(m["bbox"])
+                    if id(m) not in taken and _is_triangle(m) and _inside(e, m["bbox"], prm["touch_tol"]) and \
+                            (c[0] - e[0]) * ux + (c[1] - e[1]) * uy > 0 and \
+                            abs((c[0] - e[0]) * uy - (c[1] - e[1]) * ux) <= prm["touch_tol"]:
+                        return m
+        return None
+    taken, seen = set(), set()
+    for s in syms:
+        if id(s) in seen:
+            continue
+        seen.add(id(s))
+        if s.stroke_only and not (s.bodies or s.markers or s.dashes) and \
+                all(straight(m) for m in s.strokes):
+            m = head(s)
+            if m is not None:
+                s.add([m], "markers")
+                s.flow_arrow = True
+                taken.add(id(m))
+    return [m for m in markers if id(m) not in taken]
 
 
 def _noise_symbols(syms, degree, label_of, prm):
@@ -2429,6 +2522,7 @@ def analyze(width, height, words, prims, params=None):
     _boundary_marks(cls, prm)
     ticks, marked = _line_ticks(cls["polys"], prm, cls["bodies"])
     syms, polys, markers, dashes = _group_symbols(cls, prm)
+    syms, polys = _sparger_rows(syms, polys, prm)
     # 빗금은 기호 묶기가 끝난 뒤에 남은 선에서만 뺀다. 기호 장식선으로 흡수된 빗금은 그대로 두어 기호 모양과 번호가
     # 빗금 처리 전과 같게 한다(빗금을 먼저 빼면 안전밸브 규칙이 응축기 몸통에 맞는 등 기호 판정이 바뀜). 외톨이 // 도
     # 같다. 먼저 빼면 143쪽에서 기호 묶음이 달라져 새 안전밸브·끝막음 판정이 생겼다(F1-4 후보 비교)
@@ -2459,6 +2553,7 @@ def analyze(width, height, words, prims, params=None):
     for ch in chains:  # 흐름 방향: 사슬 위·끝에 남은 화살촉(pdf_vector_flow)
         if not ch.get("dashed") or ch.get("continues_pipe"):
             ch["flow"] = _chain_flow(ch, markers, prm)
+    markers = _arrow_heads([v[1] for ch in chains for v, _, _ in ch["ends"] if v[0] == "sym"], markers, prm)
     return {"params": prm, "classified": cls, "symbols": syms, "tees": tees, "chains": chains,
             "blocks": blocks, "leftover_markers": markers}
 

@@ -899,6 +899,24 @@ def _grazes(piece, sym, prm):
     return not _inside(_center(piece["bbox"]), sym.core) and _box_gap(piece["bbox"], sym.core) <= prm["touch_tol"]
 
 
+def _continues_same_pen(p, polys, prm):
+    """곧은 선 p의 한 끝이 같은 굵기로 그은 다른 선의 끝이나 몸에 닿는가. 그러면 p는 그 선을 이어 그은 선 토막(장비 외곽선·
+    배관)이지, 끝 하나가 떴다고 선 기호가 되지 않는다(APR1400 007쪽 펌프 몸체선: 담는 외곽이 더는 삼키지 않는다).
+    맹판·끝 막대는 배관이 가운데에 닿고 두 끝이 떠 있다. 경계 표시 눈금은 글자 지시선(더 가는 선)이 끝에 닿는다."""
+    if len(p["pts"]) != 2 or p.get("curved") or p.get("width") is None:
+        return False
+    for e in p["pts"]:
+        for q in polys:
+            if q is p or q.get("width") is None or abs(q["width"] - p["width"]) > SAME_PEN_TOL:
+                continue
+            if any(_seg_dist(e, a, b)[0] <= prm["end_tol"] for a, b in _segs(q["pts"])):
+                return True
+    return False
+
+
+SAME_PEN_TOL = 0.005  # 같은 굵기로 본 선 굵기 차(pt). PDF는 같은 펜을 같은 값으로 적는다
+
+
 def _group_symbols(cls, prm):
     syms = _cluster_bodies(cls["bodies"], prm, cls["polys"])
     polys = _join_crossing_gaps(list(cls["polys"]), cls["dashes"], syms, prm)
@@ -1015,6 +1033,9 @@ def _group_symbols(cls, prm):
                 fbox = None
                 for it in free_items:
                     fbox = it["bbox"] if fbox is None else _union(fbox, it["bbox"])
+                if len(free_items) == 1 and _continues_same_pen(free_items[0], polys, prm):
+                    keep += items
+                    continue
                 if fbox and prm["stroke_symbol_min"] <= max(_w(fbox), _h(fbox)) <= prm["stroke_symbol_max"]:
                     syms.append(_Sym(free_items, stroke_only=True))
                     keep += [it for it in items if it not in free_items]
