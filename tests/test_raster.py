@@ -374,7 +374,9 @@ class RasterSampleTest(unittest.TestCase):
         name, drawio_path, png_path = check_adapter.raster_samples()[0]
 
         def drop(ext):
-            ext["relations"] = ext["relations"][5:]
+            # 고정 개수(5)를 지우면 추출이 나아질수록 하한 위에 머문다(a27336d 뒤 F1 0.955 → 0.871, 하한 0.85).
+            # 하한이 잡아야 하는 것은 관계를 크게 잃은 경우라 절반을 지운다
+            ext["relations"] = ext["relations"][len(ext["relations"]) // 2:]
             return ext
         errs, row, _ = check_adapter.evaluate_raster(name, drawio_path, png_path, mutate=drop)
         self.assertTrue(any("relations_f1" in e for e in errs), errs)
