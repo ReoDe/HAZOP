@@ -159,7 +159,7 @@
   "105": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 18,
+   "tag_exact": 20,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -320,7 +320,7 @@
   "126": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 18,
+   "tag_exact": 22,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -397,7 +397,7 @@
   "136": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 7,
+   "tag_exact": 11,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -530,7 +530,7 @@
   "24": {
    "connector_bad_target": 0,
    "connectors_detected": 4,
-   "tag_exact": 17,
+   "tag_exact": 29,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -866,7 +866,7 @@
   "68": {
    "connector_bad_target": 0,
    "connectors_detected": 35,
-   "tag_exact": 7,
+   "tag_exact": 9,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -1090,7 +1090,7 @@
   "97": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 8,
+   "tag_exact": 10,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -1113,9 +1113,9 @@
   "bubbles": 1619,
   "connector_bad_target": 0,
   "connectors_detected": 289,
-  "continuations": 1930,
+  "continuations": 1931,
   "failed_pages": 0,
-  "nodes": 25056,
+  "nodes": 25105,
   "offpage_labels": 295,
   "pages": 143,
   "pair_candidates": 10,
@@ -1123,12 +1123,12 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 291,
-  "seconds": 298,
-  "tag_exact": 1245,
+  "seconds": 267,
+  "tag_exact": 1271,
   "tag_not_in_text": 59,
-  "tagged": 3947,
-  "unclassified": 7220,
-  "unknowns": 53778,
+  "tagged": 3976,
+  "unclassified": 7223,
+  "unknowns": 53794,
   "valve_number_closer_other": 0
  }
 }
