@@ -170,6 +170,16 @@ class AprTagInText(unittest.TestCase):
     def test_number_outside_the_symbol_fails(self):
         self.assertFalse(ca.tag_in_text(self.isa("V-5402", x=45, w=3), self.TL))
 
+    def test_extra_function_line_between_letters_and_number_is_skipped(self):
+        # 097쪽 'LIS / AHL / 3025A': 가운데 덧붙인 기능 글자 줄은 건너뛴다. 숫자가 든 가운데 줄은 건너뛰지 않는다
+        def tl(mid):
+            chars = [(c, 1.5 + k, 2, 1, 1 + k, 2 + k) for k, c in enumerate("LIS")] + \
+                [(c, 1.5 + k, 5, 4, 1 + k, 2 + k) for k, c in enumerate(mid)] + \
+                [(c, 1.5 + k, 8, 7, 1 + k, 2 + k) for k, c in enumerate("3025A")]
+            return {"chars": chars, "tokens": set()}
+        self.assertTrue(ca.tag_in_text(self.isa("LIS-3025A"), tl("AHL")))
+        self.assertFalse(ca.tag_in_text(self.isa("LIS-3025A"), tl("A1")))
+
     def test_label_tag_uses_page_words(self):
         n = dict(node("a", 40, 38, 30, 6, tag="V5402"), evidence={"tag_basis": "label_tag_token"})
         self.assertTrue(ca.tag_in_text(n, self.TL))

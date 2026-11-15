@@ -241,7 +241,8 @@ def box_lines(chars, box):
 
 
 def tag_in_text(node, tl):
-    """태그가 도면에 찍힌 글자와 같은가. 계기 글자로 만든 태그는 노드 상자 안 위아래 두 줄을 이은 글자와 같아야 한다
+    """태그가 도면에 찍힌 글자와 같은가. 계기 글자로 만든 태그는 노드 상자 안 위아래 두 줄(사이에 덧붙인 기능 글자 한 줄은
+    건너뜀)을 이은 글자와 같아야 한다
     (접두를 추정해 붙였거나 기호 밖 번호를 가져온 태그는 틀림). 나머지는 그 쪽 낱말 하나와 같아야 한다."""
     if (node.get("evidence") or {}).get("tag_basis", "").startswith("isa_label"):
         x0, y0, x1, y1 = _box(node, 1.0)
@@ -251,6 +252,10 @@ def tag_in_text(node, tl):
             lines = box_words(chars, box)
             pairs |= {norm(a + b) for up, down in zip(lines, lines[1:]) for a, ax in up for b, bx in down
                       if abs(ax - bx) < 6}
+            # 기능 문자와 번호 사이에 덧붙인 기능 글자 한 줄('LIS / AHL / 3025A')은 건너뛴다. 가운데 줄은 숫자 없는 낱말 하나다
+            pairs |= {norm(a + b) for up, mid, down in zip(lines, lines[1:], lines[2:])
+                      if len(mid) == 1 and re.fullmatch(r"[A-Z]{1,4}", mid[0][0])
+                      for a, ax in up for b, bx in down if abs(ax - bx) < 6}
         return norm(node["tag"]) in pairs
     tag = norm(node["tag"])
     return tag in tl.get("runs", ()) or (tag in tl["tokens"] and tag not in tl.get("glued", ()))
