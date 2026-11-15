@@ -511,13 +511,26 @@ class PdfVectorRuleTest(unittest.TestCase):
 
     def test_air_flow_arrow_head_stays_with_shaft(self):
         # 범례 1.7-1(2 of 4) 공조 덕트 끝 화살표(080쪽): 덕트 끝 막대와 굵은 몸통, 화살촉이 한 기호다. 화살촉이 따로 떨어져
-        # 몸통만 노드가 되지 않는다. 선과 표식으로 된 모양이지만 체크밸브가 아니다
+        # 몸통만 노드가 되지 않는다. 선과 표식으로 된 모양이지만 체크밸브가 아니라 공기 흐름 표시(air_flow_arrow)다
         head = prim([(158, 128.6), (164, 130), (158, 131.4), (158, 128.6)], closed=True, fill=True)
         ext = pdf_run([rect(100, 120, 120, 140), line((120, 130), (150, 130), width=1.1),
                        line((150, 128.5), (150, 131.5), width=1.1), line((151.9, 130), (158, 130), width=1.1), head])
         arrows = [n for n in ext["nodes"] if n["kind"] != "tee" and n["geometry"]["x"] >= 150]
-        self.assertEqual([(n["kind"], round(n["geometry"]["x"] + n["geometry"]["width"], 1)) for n in arrows], [(None, 164)])
+        self.assertEqual([(n["kind"], round(n["geometry"]["x"] + n["geometry"]["width"], 1)) for n in arrows],
+                         [("air_flow_arrow", 164)])
         self.assertEqual(len(ext["relations"]), 1)
+
+    def test_air_flow_arrow_needs_short_bar_on_its_line(self):
+        # 072쪽 덕트 끝(s029): 굵은 몸통·화살촉과 화살촉 앞 막대가 한 기호로 묶인다. 막대가 있어야 덕트 끝 화살표다.
+        # 막대 없이 선과 화살촉만(012쪽 배기)이거나 몸통 줄 양쪽으로 길게 뻗은 칸막이 선 옆(128쪽 건물 경계)이면 아니다
+        def kind_at(bar):
+            head = prim([(288.3, 228.0), (288.3, 226.1), (284.5, 227.1), (288.3, 228.0)], closed=True, fill=True)
+            prims = [line((288.3, 227.1), (299.5, 227.1), width=1.1), head] + ([line(*bar, width=1.1)] if bar else [])
+            ext = pdf_run(prims)
+            return [n["kind"] for n in ext["nodes"] if n["geometry"]["x"] < 300 and n["kind"] != "tee"]
+        self.assertEqual(kind_at([(282.6, 225.6), (282.6, 228.6)]), ["air_flow_arrow"])
+        self.assertNotIn("air_flow_arrow", kind_at(None))
+        self.assertNotIn("air_flow_arrow", kind_at([(282.6, 215), (282.6, 240)]))
 
     def test_line_continuing_same_pen_is_not_a_symbol(self):
         # 007쪽 펌프 몸체선: 같은 굵기로 이어 그은 곧은 선 토막은 한 끝이 떠 있어도 선 기호 노드가 아니다. 글자 지시선(더 가는

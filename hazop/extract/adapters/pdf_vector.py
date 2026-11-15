@@ -1572,6 +1572,8 @@ def _shape_features(sym, prm):
     found = set()
     if getattr(sym, "panel", None):  # 공조기 판(_panels)
         found.add("%s_panel" % sym.panel)
+    if _is_air_arrow(sym, prm):  # 덕트 끝 공기 흐름 화살표. '선과 표식' 체크밸브가 아니다
+        found.add("flow_arrow")
     if getattr(sym, "plate_valve", None):  # 판 사이 원판·공(_plate_assemblies)
         found.add("plate_valve:%s" % sym.plate_valve)
     # 나비 몸통의 두 삼각형은 붙어 있다. 사이에 글로브·볼의 점이 끼어도 간격은 삼각형 크기보다 작다. 큰 묶음 기호 안에 멀리
@@ -2047,9 +2049,9 @@ def _classify(sym, text, degree, prm, marks=()):
     """(kind, basis) — 근거가 없으면 kind None. marks: 기호 안 표기 글자(밸브 구동부의 M 등)."""
     if getattr(sym, "sparger", False):
         return "sparger", SPARGER_BASIS
-    if getattr(sym, "flow_arrow", False):
-        return None, None  # 흐름 화살표(_arrow_heads)는 '선과 표식' 체크밸브가 아니고, 옆 글자의 설비 낱말로 종류를 정하지도 않는다
     shape, sbasis = _shape_rule(sym, prm)
+    if getattr(sym, "flow_arrow", False) and shape != "air_flow_arrow":
+        return None, None  # 흐름 화살표(_arrow_heads)는 '선과 표식' 체크밸브가 아니고, 옆 글자의 설비 낱말로 종류를 정하지도 않는다
     if shape in ("control_valve", "motor_operated_valve") and "M" in [m.strip().upper() for m in marks]:
         return "motor_operated_valve", "valve_body+actuator_mark:M"
     if shape == "instrument":
@@ -2156,39 +2158,84 @@ def _sparger_rows(syms, polys, prm):
     return [s for s in syms if s.alive], rest
 
 
-def _arrow_heads(syms, markers, prm):
-    """범례 1.7-1(2 of 4) DUCTED/NON-DUCTED AIR FLOW: 곧은 선만으로 된 선 기호(굵은 몸통, 덕트 끝 막대)의 한 선이 홀로 남은
-    화살촉 밑변에서 끝나고 화살촉이 그 선을 늘인 줄 위에 있으면, 화살촉은 그 기호의 머리다(APR1400 072·080쪽 공조 덕트 끝
-    화살표). 머리가 떨어져 몸통만 노드가 되지 않게 기호에 넣는다. 배관이 닿은 기호(syms)만 본다. 사슬을 다 이은 뒤라 머리가
-    선 끝을 빼앗지 않고, 어느 선도 닿지 않은 몸통(008쪽 안전밸브 배기 화살표)은 넓이 없는 조각으로 그대로 버린다
-    → 남은 화살촉 목록."""
-    def straight(m):  # 꺾이지 않은 선(같은 줄 위 점이 여럿이어도 된다)
-        a, b = m["pts"][0], m["pts"][-1]
-        L = math.hypot(b[0] - a[0], b[1] - a[1])
-        return not m.get("curved") and L > 0 and all(
-            abs((q[0] - a[0]) * (b[1] - a[1]) - (q[1] - a[1]) * (b[0] - a[0])) / L <= prm["touch_tol"] for q in m["pts"])
+def _straight_stroke(m, prm):
+    """꺾이지 않은 선(같은 줄 위 점이 여럿이어도 된다)."""
+    a, b = m["pts"][0], m["pts"][-1]
+    L = math.hypot(b[0] - a[0], b[1] - a[1])
+    return not m.get("curved") and L > 0 and all(
+        abs((q[0] - a[0]) * (b[1] - a[1]) - (q[1] - a[1]) * (b[0] - a[0])) / L <= prm["touch_tol"] for q in m["pts"])
 
-    def head(s):
-        for st in s.strokes:
-            a, b = st["pts"][0], st["pts"][-1]
-            L = math.hypot(b[0] - a[0], b[1] - a[1])
-            for e, o in ((a, b), (b, a)) if L else ():
-                ux, uy = (e[0] - o[0]) / L, (e[1] - o[1]) / L
-                for m in markers:
-                    c = _center(m["bbox"])
-                    if id(m) not in taken and _is_triangle(m) and _inside(e, m["bbox"], prm["touch_tol"]) and \
-                            (c[0] - e[0]) * ux + (c[1] - e[1]) * uy > 0 and \
-                            abs((c[0] - e[0]) * uy - (c[1] - e[1]) * ux) <= prm["touch_tol"]:
-                        return m
-        return None
+
+def _line_head(strokes, markers, prm, taken=()):
+    """선 하나의 끝이 화살촉 밑변 안에 있고 화살촉 가운데가 그 선을 늘인 줄 위 앞쪽에 있으면 그 화살촉. 없으면 None."""
+    for st in strokes:
+        a, b = st["pts"][0], st["pts"][-1]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        for e, o in ((a, b), (b, a)) if L else ():
+            ux, uy = (e[0] - o[0]) / L, (e[1] - o[1]) / L
+            for m in markers:
+                c = _center(m["bbox"])
+                if id(m) not in taken and _is_triangle(m) and _inside(e, m["bbox"], prm["touch_tol"]) and \
+                        (c[0] - e[0]) * ux + (c[1] - e[1]) * uy > 0 and \
+                        abs((c[0] - e[0]) * uy - (c[1] - e[1]) * ux) <= prm["touch_tol"]:
+                    return m
+    return None
+
+
+AIR_BAR_RATIO = 3.0  # 덕트 끝 막대: 길이 ≤ 화살촉 긴 변 × 비율, 몸통 줄에서 앞뒤로 떨어진 거리 ≤ 화살촉 긴 변 × 비율
+
+
+def _end_bar(strokes, markers, prm):
+    """몸통 선 하나의 끝에 화살촉이 달리고, 몸통 줄 위 머리 앞이나 꼬리 뒤에 몸통을 가로지르는 짧은 막대가 있는가
+    (범례 1.7-1 2/4 DUCTED AIR FLOW의 덕트 끝 막대). 몸통 줄 양쪽으로 길게 뻗은 선(128쪽 건물 경계 TGB|AB 칸막이)은
+    막대가 아니다."""
+    for st in strokes:
+        head = _line_head([st], markers, prm)
+        if head is None:
+            continue
+        size = max(_w(head["bbox"]), _h(head["bbox"]))
+        a, b = st["pts"][0], st["pts"][-1]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        ux, uy = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+        ts = [0.0, L] + [(q[0] - a[0]) * ux + (q[1] - a[1]) * uy for q in head["pts"]]
+        lo, hi = min(ts), max(ts)
+        for bar in strokes:
+            p, q = bar["pts"][0], bar["pts"][-1]
+            M = math.hypot(q[0] - p[0], q[1] - p[1])
+            if bar is st or not M or M > AIR_BAR_RATIO * size or abs(ux * (q[0] - p[0]) + uy * (q[1] - p[1])) > 0.1 * M:
+                continue
+            c = ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)
+            t = (c[0] - a[0]) * ux + (c[1] - a[1]) * uy
+            if abs((c[0] - a[0]) * uy - (c[1] - a[1]) * ux) <= M / 2 and not lo < t < hi and \
+                    lo - AIR_BAR_RATIO * size <= t <= hi + AIR_BAR_RATIO * size:
+                return True
+    return False
+
+
+def _is_air_arrow(sym, prm):
+    """범례 1.7-1(2 of 4) DUCTED/NON-DUCTED AIR FLOW: 곧은 선만으로 된 선 기호(굵은 몸통)의 한 선 끝에 그 선을 늘인 줄 위로
+    화살촉 하나가 달리고, 몸통 줄 위에 덕트 끝 막대가 있다(_end_bar). 머리는 _arrow_heads가 붙였거나 기호 묶기에서 이미
+    들어왔다(APR1400 072쪽). 막대 없이 선과 화살촉만인 것(012쪽 배기 화살표)이나 칸막이 선 옆 화살표(128쪽 건물 경계)는
+    덕트 끝 화살표가 아니다."""
+    if not sym.stroke_only or sym.bodies or sym.dashes or len(sym.markers) != 1 or \
+            not all(_straight_stroke(m, prm) for m in sym.strokes):
+        return False
+    return _end_bar(sym.strokes, sym.markers, prm)
+
+
+def _arrow_heads(syms, markers, prm):
+    """덕트 끝 공기 흐름 화살표(_is_air_arrow)의 한 선이 홀로 남은 화살촉 밑변에서 끝나고 화살촉이 그 선을 늘인 줄 위에
+    있으면, 화살촉은 그 기호의 머리다(APR1400 072·080쪽 공조 덕트 끝 화살표). 머리가 떨어져 몸통만 노드가 되지 않게 기호에
+    넣는다. 배관이 닿은 기호(syms)만 본다. 사슬을 다 이은 뒤라 머리가 선 끝을 빼앗지 않고, 어느 선도 닿지 않은 몸통(008쪽
+    안전밸브 배기 화살표)은 넓이 없는 조각으로 그대로 버린다 → 남은 화살촉 목록."""
     taken, seen = set(), set()
     for s in syms:
         if id(s) in seen:
             continue
         seen.add(id(s))
         if s.stroke_only and not (s.bodies or s.markers or s.dashes) and \
-                all(straight(m) for m in s.strokes):
-            m = head(s)
+                all(_straight_stroke(m, prm) for m in s.strokes):
+            m = _line_head(s.strokes, markers, prm, taken)
             if m is not None:
                 s.add([m], "markers")
                 s.flow_arrow = True
