@@ -310,22 +310,22 @@
   },
   "apr1400-072": {
    "attribute": {
-    "correct": 16,
+    "correct": 18,
     "false_pos": 0,
     "units": 18
    },
    "connection": {
-    "correct": 90,
-    "false_pos": 6,
+    "correct": 114,
+    "false_pos": 1,
     "units": 146
    },
    "kind": {
-    "correct": 53,
+    "correct": 87,
     "false_pos": 0,
     "units": 100
    },
    "tag": {
-    "correct": 39,
+    "correct": 50,
     "false_pos": 0,
     "units": 58
    }
@@ -391,7 +391,7 @@
     "units": 96
    },
    "tag": {
-    "correct": 33,
+    "correct": 35,
     "false_pos": 0,
     "units": 39
    }
