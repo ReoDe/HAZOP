@@ -444,6 +444,45 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual([sorted(e["node_local_id"] for e in r["endpoints"]) for r in ext["relations"]],
                          [sorted(i for _, i in nodes[:2])])
 
+    def test_dot_grid_in_outline_is_pattern_not_nodes(self):
+        # APR1400 007쪽 베어링 냉각기: 담는 외곽 안에 그린 관 다발 점 격자는 무늬다. 점마다 노드를 두지 않고, 점에 닿은 선 끝도
+        # 붙이지 않는다. 한 줄로만 늘어선 같은 모양(008쪽 SPARGER 분사구 줄)은 무늬가 아니다
+        dots = [rect(130 + 4 * i, 130 + 4 * j, 132 + 4 * i, 132 + 4 * j) for i in range(4) for j in range(3)]
+        row = [rect(300 + 4 * i, 130, 302 + 4 * i, 132) for i in range(4)]
+        ext = pdf_run([rect(100, 100, 200, 200)] + dots + row + [line((110, 131), (130, 131))],
+                      words=[word("COOLER", 140, 180)])
+        ignored = [o for o in ext["drawing"]["ignored_objects"] if o.get("reason") == "pattern_grid"]
+        self.assertEqual(len(ignored), 12)
+        self.assertEqual(sorted(n["geometry"]["x"] for n in ext["nodes"] if n["kind"] != "tee"), [100, 300, 304, 308, 312])
+        ids = {n["local_id"] for n in ext["nodes"]}
+        ends = [e for r in ext["relations"] + ext["unresolved_connectors"] for e in r["endpoints"]]
+        self.assertEqual([e["status"] for e in ends if e["point"][0] == 130], ["unconnected"])
+        self.assertTrue(all(e["node_local_id"] in ids for e in ends if e["node_local_id"]))
+
+    def test_unconnected_flat_piece_empty_frame_and_hatch_are_ignored(self):
+        # 089쪽 글자 밑줄처럼 아무 선도 닿지 않은 넓이 없는 선 조각, 080쪽 그림 틀처럼 이름도 연결도 없는 빈 큰 상자, 007쪽 베어링
+        # 단면처럼 빗금만 친 상자는 노드가 아니다. 이름이 붙은 상자, 기기 크기(40pt) 상자, X자로 엇갈려 그은 상자(필터)는 노드다
+        hatch = [rect(400, 100, 415, 104)] + [line((402 + 4 * k, 104), (405 + 4 * k, 100)) for k in range(3)]
+        cross = [rect(500, 100, 515, 104), line((502, 104), (505, 100)), line((502, 100), (505, 104)),
+                 line((506, 104), (509, 100))]
+        ext = pdf_run([line((100, 300), (108, 300)), rect(100, 100, 180, 160), rect(200, 100, 280, 160),
+                       rect(300, 100, 340, 140)] + hatch + cross, words=[word("TANK", 220, 115)])
+        reasons = sorted(o.get("reason") for o in ext["drawing"]["ignored_objects"]
+                         if o.get("reason") in ("stray_stroke", "bare_outline", "hatch_block"))
+        self.assertEqual(reasons, ["bare_outline", "hatch_block", "stray_stroke"])
+        self.assertEqual(sorted(n["geometry"]["x"] for n in ext["nodes"] if n["kind"] != "tee"), [200, 300, 500])
+
+    def test_cylinder_operator_cells_stay_with_valve_body(self):
+        # 054·134쪽 실린더 구동부: 밸브 몸통 옆 두 칸 상자의 한 칸을 검게 칠하고 외곽선을 따로 긋는다. 작은 두 칸은 표 칸이 아니고,
+        # 외곽선이 있는 검은 얇은 칸은 점선 조각이 아니다. 한 기호로 묶여야 몸통이 조각 노드로 갈라지지 않는다
+        cells = pdf_run([rect(100, 100, 105, 105), rect(105, 100, 110, 105)])
+        self.assertEqual(len([n for n in cells["nodes"] if n["kind"] != "tee"]), 1)
+        table = pdf_run([rect(100, 100, 130, 108), rect(130, 100, 160, 108)])
+        self.assertEqual([n for n in table["nodes"] if n["kind"] != "tee"], [])
+        black = pdf_run([rect(100, 100, 102, 104), rect(102, 100, 103.5, 104, fill=True), rect(102, 100, 103.5, 104),
+                         rect(103.6, 100, 107, 104)])
+        self.assertEqual(len([n for n in black["nodes"] if n["kind"] != "tee"]), 1)
+
     def test_pipe_drawn_under_square_body_is_cut_at_it(self):
         # APR1400 072쪽 댐퍼 Y1202A: 덕트 하나가 정사각형 몸체 밑을 가운데 줄로 지나간다. 흐름 축을 몰라도 마주 보는 두 변을
         # 꿰뚫는 선은 그 몸체에서 나뉘어 양쪽 이웃이 몸체를 건너뛰지 않는다. 몸체 옆을 스치는 선은 나누지 않는다
@@ -555,8 +594,10 @@ class PdfVectorRuleTest(unittest.TestCase):
 
     def test_single_line_does_not_take_equipment_word(self):
         # APR1400 025쪽: 'CCW HX BLDG.' 경계 표시 옆에 남은 눈금 토막이 열교환기가 되던 자리. 곧은 선 하나는 설비가 아니다
+        # 선이 닿지 않은 곧은 선 토막은 노드로도 내지 않는다(_noise_symbols stray_stroke)
         ext = pdf_run([line((100, 100), (100, 108))], [word("CCW", 90, 101), word("HX", 103, 101)])
-        self.assertEqual([n["kind"] for n in ext["nodes"]], [None])
+        self.assertEqual([n["kind"] for n in ext["nodes"]], [])
+        self.assertIn("stray_stroke", [o.get("reason") for o in ext["drawing"]["ignored_objects"]])
 
     def test_pocket_hanging_on_pipe_is_one_symbol(self):
         # APR1400 105쪽 드레인 포트: 배관 아래 짧은 세로선 둘과 둥근 바닥. 주머니가 배관 두 가닥과 드레인 선을 잇는
@@ -652,7 +693,7 @@ class PdfVectorRuleTest(unittest.TestCase):
         side = pdf_run([line((200, 100), (200, 108)), line((203, 100), (203, 108))])
         inline = pdf_run([line((200, 100), (200, 108)), line((200, 110), (200, 118))])
         self.assertEqual([n["kind"] for n in side["nodes"]], ["orifice"])
-        self.assertEqual([n["kind"] for n in inline["nodes"]], [None])
+        self.assertNotIn("orifice", [n["kind"] for n in inline["nodes"]])
 
     def test_dashed_line_continuing_a_pipe_end_is_pipe(self):
         # APR1400 008쪽 파일럿 밸브 옆 출구 일점쇄선이 배출 상승관 아래 끝에 끝을 맞대고 이어진다. 점선이 배관을 이어 그린

@@ -441,6 +441,11 @@ def _classify_primitives(width, height, prims, prm):
     # 검은 채움(화살촉·점선 조각·검은 몸체)과 같은 도형의 외곽선은 채움 쪽으로 본다
     def twin(a, b):
         return max(abs(a["bbox"][j] - b["bbox"][j]) for j in range(4)) <= prm["twin_tol"]
+    # 외곽선을 따로 그은 검은 얇은 사각형은 점선 조각이 아니라 기호 몸체다. 실린더 구동부의 칠한 칸(범례 1.7-1 1/4 OPERATOR
+    # LOADED)을 점선 조각으로 보면 옆의 흰 칸과 밸브 몸통이 떨어져 조각 노드가 된다(APR1400 134쪽 솔레노이드 밸브)
+    boxed = {id(d) for d in dashes if d["closed"] and any(twin(o, d) for o in outlines)}
+    bodies += [dict(d, solid=True) for d in dashes if id(d) in boxed]
+    dashes = [d for d in dashes if id(d) not in boxed]
     inked = markers + dashes + bodies
     outlines = [o for o in outlines if not any(twin(o, f) for f in inked)]
     cells = _table_cells(outlines, prm)
@@ -597,7 +602,10 @@ def _is_axis_rect(o, tol):
 def _table_cells(outlines, prm):
     """변 하나를 통째로 공유하며 이어 붙은 축 정렬 사각형 = 표 칸(표제란 등)."""
     tol = prm["table_edge_tol"]
-    rects = [o for o in outlines if _is_axis_rect(o, prm["axis_rect_tol"])]
+    # 표식 크기(marker_max) 안의 작은 상자끼리 붙은 것은 표가 아니라 기호다. 실린더 구동부(범례 1.7-1 1/4 CYLINDER OPERATOR)는
+    # 두 칸 상자를 밸브 몸통 옆에 그린다. 표 칸으로 빼면 밸브 몸통이 조각 노드로 남는다(APR1400 054쪽 공기 구동 밸브)
+    rects = [o for o in outlines if _is_axis_rect(o, prm["axis_rect_tol"])
+             and max(_w(o["bbox"]), _h(o["bbox"])) > prm["marker_max"]]
     cells = set()
     for i, a in enumerate(rects):
         A = a["bbox"]
@@ -1981,6 +1989,88 @@ def _classify(sym, text, degree, prm, marks=()):
     return None, None
 
 
+PATTERN_MAX = 6.0        # 무늬 낱개: 긴 변 상한(pt). 밸브 몸통·S 상자는 5~11pt라 늘어서도 선이 닿는다
+PATTERN_RUN = 3          # 격자: 같은 모양이 같은 간격으로 한 방향은 이 수 이상, 다른 방향은 둘 이상 늘어선다
+PATTERN_SIZE_TOL = 0.3   # 같은 모양: 너비·높이 차 상한(pt)
+PATTERN_PITCH_TOL = 0.15  # 같은 간격: 간격 차 ≤ 간격 × 비율
+PATTERN_PITCH_MAX = 3.0  # 무늬 간격 상한 = 낱개 긴 변 × 배수
+STRAY_FLAT = 0.05        # 넓이 없는 조각: 짧은 변 상한(pt)
+FRAME_MIN = 50.0         # 빈 틀: 짧은 변 하한(pt). 선이 아직 안 붙은 기기 상자(40pt 안팎)보다 크다
+
+
+HATCH_MIN = 3        # 빗금 칠한 단면: 몸체 안 평행선 수 하한
+HATCH_COS = 0.995    # 빗금끼리 평행하다고 보는 방향 코사인(약 6도 안)
+
+
+def _hatch_block(s):
+    """곧은 변 닫힌 몸체 하나와, 그 안에 같은 방향으로 그은 곧은 선 셋 이상으로만 된 기호인가(단면 빗금, APR1400 007쪽 베어링)."""
+    if len(s.bodies) != 1 or s.markers or s.dashes or len(s.strokes) < HATCH_MIN or \
+            not s.bodies[0].get("closed") or s.bodies[0].get("curved"):
+        return False
+    dirs = []
+    for m in s.strokes:
+        if len(m["pts"]) != 2 or m.get("curved") or not _inside(_center(m["bbox"]), s.bodies[0]["bbox"]):
+            return False
+        (x0, y0), (x1, y1) = m["pts"]
+        L = math.hypot(x1 - x0, y1 - y0)
+        if not L:
+            return False
+        dirs.append(((x1 - x0) / L, (y1 - y0) / L))
+    return all(abs(d[0] * dirs[0][0] + d[1] * dirs[0][1]) >= HATCH_COS for d in dirs)
+
+
+def _noise_symbols(syms, degree, label_of, prm):
+    """노드로 내지 않을 기호 {id(기호): 까닭}.
+    - pattern_grid: 작은 닫힌 도형 하나로 된 같은 모양이 같은 간격으로 한 방향 셋 이상, 다른 방향 둘 이상 늘어선 격자. 담는 외곽
+      안에 그린 관 다발 점 격자(APR1400 007쪽 베어링 냉각기)는 무늬이지 기호가 아니다. 무늬에 닿은 선 끝은 무늬에 붙이지
+      않는다(점 격자 옆을 지나는 선이 점 하나에 닿는다). 한 줄로만 늘어선 것은 무늬로 보지 않는다. 막대에 매단 삼각형
+      줄은 분사구(범례 1.7-1 SPRAY NOZZLE OR SPARGER, 008쪽 SPARGER)다.
+    - stray_stroke: 어느 선도 닿지 않고 넓이 없는 선 조각이나 크기 없는 경로만 남은 것(089쪽 글자 밑줄, 080쪽 0×0 경로).
+    - bare_outline: 어느 선도 닿지 않고 이름도 없이 아무것도 담지 않은 짧은 변 FRAME_MIN 이상 빈 상자(080쪽 그림 틀).
+      장비 이름도 배관도 없는 틀이다. 무언가를 담은 외곽(방·탱크)은 이름이 없어도 그대로 둔다.
+    - hatch_block: 이름 없이 빗금만 친 닫힌 몸체(_hatch_block). 기계 단면의 빗금이다(007쪽 베어링). 단면에 맞닿은 축 선이
+      빗금 칸에 닿아도 연결이 아니라서 무늬처럼 그 선 끝을 붙이지 않는다."""
+    # 줄은 모든 기호의 작은 닫힌 몸체로 잰다. 격자 점 몇 개가 옆 기호에 묶여 들어가도 남은 점이 그 격자에 든다
+    small = [b["bbox"] for s in syms for b in s.bodies if b.get("closed")
+             and max(_w(b["bbox"]), _h(b["bbox"])) <= PATTERN_MAX]
+    out = {}
+    for s in syms:
+        if len(s.bodies) != 1 or s.strokes or s.markers or s.dashes or not s.bodies[0].get("closed") or \
+                max(_w(s.bbox), _h(s.bbox)) > PATTERN_MAX:
+            continue
+        a = s.bbox
+        runs = []
+        for ax in (0, 1):  # 0: 가로 줄(같은 y), 1: 세로 줄(같은 x)
+            row = sorted({_center(b)[ax] for b in small if abs(_w(b) - _w(a)) <= PATTERN_SIZE_TOL
+                          and abs(_h(b) - _h(a)) <= PATTERN_SIZE_TOL
+                          and abs(_center(b)[1 - ax] - _center(a)[1 - ax]) <= PATTERN_SIZE_TOL})
+            gaps = [q - p for p, q in zip(row, row[1:])]
+            size, me = max(_w(a), _h(a)), row.index(_center(a)[ax])
+            k = 0
+            while k < len(gaps):
+                j = k
+                while j < len(gaps) and 0 < gaps[j] <= PATTERN_PITCH_MAX * size and \
+                        abs(gaps[j] - gaps[k]) <= PATTERN_PITCH_TOL * gaps[k]:
+                    j += 1
+                if k <= me <= j:
+                    runs.append(j - k + 1)
+                    break
+                k = max(j, k + 1)
+        if len(runs) == 2 and min(runs) >= 2 and max(runs) >= PATTERN_RUN:
+            out[id(s)] = "pattern_grid"
+    for i, s in enumerate(syms):
+        if id(s) not in out and i not in label_of and _hatch_block(s):
+            out[id(s)] = "hatch_block"
+        if degree.get(id(s)) or id(s) in out:
+            continue
+        if min(_w(s.bbox), _h(s.bbox)) <= STRAY_FLAT and (not s.bodies or max(_w(s.bbox), _h(s.bbox)) <= STRAY_FLAT):
+            out[id(s)] = "stray_stroke"
+        elif i not in label_of and len(s.bodies) == 1 and not (s.strokes or s.markers or s.dashes or s.rings) and \
+                s.bodies[0].get("closed") and not s.bodies[0].get("curved") and min(_w(s.bbox), _h(s.bbox)) >= FRAME_MIN:
+            out[id(s)] = "bare_outline"
+    return out
+
+
 # ---------------------------------------------------------------- 태그
 
 # 범례가 뜻을 정한 축 끝 글자 상자 → (kind, 속성, kind가 없을 때 말고도 올려도 되는 몸통 kind, 몸통이 밸브여야 하는지).
@@ -2586,10 +2676,14 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     positions, numbered = _valve_labels(syms, blocks, roles, valve_like | body_valves, plan_into, label_of, taken, marks,
                                         drop, prm, set(numbers_on))
     node_out, locations, local_of, instrument_ids, dropped, label_lines = [], [], {}, set(), [], {}
+    noise = _noise_symbols(syms, degree, label_of, prm)
     for n, s in enumerate(syms, 1):
         local_id = "local-node-%03d" % n
         sid = "pdf-p%d-sym-%04d" % (page, n)
         local_of[id(s)] = (local_id, sid)
+        if id(s) in noise:
+            dropped.append({"source_object_id": sid, "label_text": "", "bbox": _box_out(s.bbox), "reason": noise[id(s)]})
+            continue
         bi = label_of.get(n - 1)
         text = blocks[bi]["text"] if bi is not None else ""
         if bi is not None:
@@ -2703,6 +2797,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
 
 
     def ref(v):
+        if v[0] == "sym" and id(v[1]) in noise:
+            return None
         if v[0] == "sym":
             return local_of[id(merge_into.get(id(v[1]), v[1]))]  # 합친 구동부에 닿은 선(신호선 등)은 밸브로
         if v[0] == "tee":

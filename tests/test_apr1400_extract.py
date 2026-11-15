@@ -357,13 +357,14 @@ class LargeSymbolRegression(unittest.TestCase):
         self.assertEqual(kinds, {name: "indicator" for name in self.INDICATORS})
 
     def test_large_symbol_is_not_read_as_a_valve(self):
-        """미확인이던 묶음이 제어 밸브로 확정되면 종류 없음 미확인까지 사라진다. 종류 없음과 그 미확인이 함께 남아야 한다."""
+        """큰 묶음이 제어 밸브로 읽히면 안 된다. 담는 외곽(faf498c) 뒤로는 탱크·응축기·배관이 한 덩어리(85,184,644,528)로
+        묶이지 않고 가장 큰 노드가 이름을 받은 탱크 외곽이다(그림으로 확인: 그만한 기호는 쪽에 없다)."""
         big = max(self.ex["nodes"], key=lambda n: (n.get("geometry") or {}).get("width", 0) *
                   (n.get("geometry") or {}).get("height", 0))
-        self.assertEqual([round(v) for v in node_box(big)], [85, 184, 644, 528])
-        self.assertEqual((big["kind"], big["category"]), (None, None))
-        self.assertIn("missing_kind", [u["check"] for u in self.ex["validation"]["unknowns"]
-                                       if u["target"] == big["local_id"]])
+        self.assertEqual((big["kind"], " ".join(big["label_text"].split())), ("tank", "CONDENSATE RECEIVER TANK"))
+        wide_valves = [n for n in self.ex["nodes"] if (n["kind"] or "").endswith("valve") and
+                       (n.get("geometry") or {}).get("width", 0) > 40]
+        self.assertEqual(wide_valves, [])
 
 
 def ticks_near(ex, point, reach=5.0):
