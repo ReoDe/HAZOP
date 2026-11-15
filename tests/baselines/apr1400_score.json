@@ -91,7 +91,7 @@
     "tag_not_in_text": 0,
     "tagged": 61,
     "unclassified": 91,
-    "unknowns": 542,
+    "unknowns": 538,
     "valve_number_closer_other": 0
    },
    "proxy_bubbles": 15,
@@ -454,7 +454,7 @@
    "connector_bad_target": 0,
    "connectors_detected": 5,
    "tag_exact": 2,
-   "tag_not_in_text": 2,
+   "tag_not_in_text": 1,
    "valve_number_closer_other": 0
   },
   "15": {
@@ -1113,9 +1113,9 @@
   "bubbles": 1619,
   "connector_bad_target": 0,
   "connectors_detected": 289,
-  "continuations": 1931,
+  "continuations": 1932,
   "failed_pages": 0,
-  "nodes": 25105,
+  "nodes": 25107,
   "offpage_labels": 295,
   "pages": 143,
   "pair_candidates": 10,
@@ -1123,12 +1123,12 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 291,
-  "seconds": 267,
+  "seconds": 311,
   "tag_exact": 1271,
-  "tag_not_in_text": 59,
-  "tagged": 3976,
-  "unclassified": 7223,
-  "unknowns": 53794,
+  "tag_not_in_text": 58,
+  "tagged": 3977,
+  "unclassified": 7235,
+  "unknowns": 53799,
   "valve_number_closer_other": 0
  }
 }
