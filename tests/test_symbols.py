@@ -834,7 +834,8 @@ class RuleTemplateTest(LibraryCase):
     def test_label_words_need_every_word(self):
         lib = self.write([rule_entry("t.sg", "steam_generator", [label_words(["STEAM", "GENERATOR"], 10)]),
                           rule_entry("t.pump", "pump", [label_words(["PUMP"], 20)])])
-        self.assertEqual(lib.word_rule(["STEAM", "GENERATOR", "FEED", "PUMP"])[0].id, "t.sg")
+        self.assertEqual(lib.word_rule(["STEAM", "GENERATOR", "FEED", "PUMP"])[0].id, "t.pump")  # 이름 끝 낱말이 이긴다
+        self.assertEqual(lib.word_rule(["FEED", "PUMP", "STEAM", "GENERATOR"])[0].id, "t.sg")
         self.assertEqual(lib.word_rule(["STEAM", "PUMP"])[0].id, "t.pump")
         self.assertEqual(lib.word_rule(["PUMP"])[1], ("PUMP",))
         self.assertEqual(lib.word_rule(["PUMPS"]), (None, None))
@@ -930,11 +931,11 @@ class CommonRuleTest(unittest.TestCase):
         (("VENT",), "vent"), (("ATM",), "vent"),
     ]
 
-    LAST = {"TURBINE"}  # 2026-11-16부터 이름 끝 낱말일 때만 맞는 낱말(common.name_turbine last)
-
     def old_word_rule(self, tokens):
+        # 2026-11-16부터 이름 낱말은 이름의 끝 낱말일 때만 맞는다(견본 last 기본값). 뒤에는 두 글자 이하 기호(HX 등)만 올 수 있다
         for words, kind in self.WORDS:
-            if all(w in tokens for w in words) and not (words[-1] in self.LAST and tokens[-1] != words[-1]):
+            if all(w in tokens for w in words) and \
+                    all(len(t) <= 2 for t in tokens[len(tokens) - tokens[::-1].index(words[-1]):]):
                 return kind, "text_word:%s" % "+".join(words)
         return None, None
 
@@ -976,8 +977,13 @@ class CommonRuleTest(unittest.TestCase):
             self.assertEqual(pdf_vector._kind_from_text(text)[0], kind, text)
 
     def test_text_rules_through_the_adapter(self):
-        self.assertEqual(pdf_vector._kind_from_text("Steam Generator\nfeed pump"),
+        self.assertEqual(pdf_vector._kind_from_text("Steam Generator 1"),
                          ("steam_generator", "text_word:STEAM+GENERATOR"))
+        # 이름 끝 낱말이 설비다. 'STEAM GENERATOR FEED PUMP'는 증기발생기가 아니라 급수 펌프다
+        self.assertEqual(pdf_vector._kind_from_text("Steam Generator\nfeed pump"), ("pump", "text_word:PUMP"))
+        self.assertEqual(pdf_vector._kind_from_text("VENT TO\nAUX. BLDG\nHVAC")[0], "vent")  # 'TO …'는 행선지
+        self.assertEqual(pdf_vector._kind_from_text("EQUIPMENT\nWASTE TANK\nTK03\n(NOTE 2, 3)")[0], "tank")
+        self.assertEqual(pdf_vector._kind_from_text("PUMP CONTROLLER"), (None, None))
         self.assertEqual(pdf_vector._kind_from_text("TO M-102"), ("continuation", "text_to_from"))
         self.assertEqual(pdf_vector._kind_from_text("PUMPS"), (None, None))
 

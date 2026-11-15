@@ -356,6 +356,14 @@ class PdfVectorRuleTest(unittest.TestCase):
             self.assertIsNone(pdf_vector._dash(value), value)
         self.assertEqual(pdf_vector._dash(([4, 2], 1)), [[4.0, 2.0], 1.0])
 
+    def test_equipment_name_word_needs_a_body_of_equipment_size(self):
+        # 이름 글자 옆 몇 pt짜리 조각(APR1400 121·122쪽 'CONDENSER A' 옆 배관 끝 막대)은 이름 낱말로 설비가 되지 않는다.
+        # 같은 글자를 단 설비 크기 상자는 응축기다
+        ext = pdf_run([rect(100, 100, 103, 101), rect(300, 100, 340, 140)],
+                      words=[word("CONDENSER", 90, 103, size=3), word("CONDENSER", 305, 117, size=3)])
+        kinds = {n["geometry"]["x"]: n["kind"] for n in ext["nodes"]}
+        self.assertEqual((kinds[100], kinds[300]), (None, "condenser"))
+
     def test_pipe_between_two_bodies(self):
         ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (300, 130))])
         self.assertEqual(ext["validation"]["blockers"], [])

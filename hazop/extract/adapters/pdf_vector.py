@@ -1664,6 +1664,8 @@ def _shape_rule(sym, prm):
     return ("instrument" if entry.kind_from == "isa_letters" else entry.kind), basis
 
 
+NAME_NOTE_RE = re.compile(r"\([^)]*\)")
+NAME_DESTINATION_RE = re.compile(r"(?<=[A-Z])\s+TO\s.*", re.S)  # 낱말 뒤 'TO …'부터 끝까지(맨 앞 'TO …'는 행선지 표시라 남긴다)
 PACKAGE_TEXT_RE = re.compile(r"\bSKID\b")
 SIGNAL_TEXT_RE = re.compile(r"\b(?:LOW\s*/\s*HIGH|HIGH\s*/\s*LOW|START\s*/\s*STOP|STOP\s*/\s*START|OPEN\s*/\s*CLOSE)\b")
 
@@ -1676,6 +1678,8 @@ def _kind_from_text(text):
         return None, None  # 'DAY TANK LEVEL LOW/HIGH'·'PUMP START/STOP'은 경보·명령 상자의 글자다. 설비 이름이 아니다
     if PACKAGE_TEXT_RE.search(up):
         return None, None  # 'AIR COMPRESSOR SKID'(099쪽)는 여러 기기를 얹은 묶음의 경계 상자다. 안의 설비 하나가 아니다
+    up = NAME_NOTE_RE.sub(" ", up)  # 괄호 안 주석('(NOTE 1)', '(7EA)')은 이름이 아니다
+    up = NAME_DESTINATION_RE.sub(" ", up)  # 'VENT TO ATMOSPHERE'의 'TO …'는 행선지다. 이름은 그 앞에서 끝난다
     entry, words = symbol_library().word_rule(re.findall(r"[A-Z]+", up), up)
     if entry is None:
         return None, None
@@ -2126,6 +2130,12 @@ def _classify(sym, text, degree, prm, marks=()):
         # 'CCW HX BLDG.' 경계 표시 옆에 남은 눈금 토막이 열교환기가 되던 자리)
         return None, None
     kind, basis = _kind_from_text(text)
+    if kind is not None and rules.KIND_CATEGORY.get(kind) == "equipment" and \
+            max(_w(sym.bbox), _h(sym.bbox)) < NAME_EQUIPMENT_MIN:
+        # 설비 이름 낱말은 긴 변이 몇 pt인 조각(이름 글자 옆 배관 끝 막대·화살촉, 'LEAK CHASE PIPING … TANK' 옆 토막)의
+        # 종류를 정하지 않는다. 143쪽 전수 점검에서 이런 조각 15개 가운데 14개가 틀렸다(2026-11-16). 스트레이너·벤트처럼
+        # 배관 위 부품은 작게 그리므로 설비 분류에만 둔다
+        kind, basis = None, None
     if kind is not None:
         return kind, basis
     # 몸체 안에 원이 든 기호(소화전 등)는 끝막음이 아니다. 삼각형 하나뿐인 몸체도 아니다: 범례 1.7-1 1/4의 끝막음은 배관
@@ -2140,6 +2150,7 @@ def _classify(sym, text, degree, prm, marks=()):
     return None, None
 
 
+NAME_EQUIPMENT_MIN = 6.0  # 이름 낱말로 설비 종류를 정하는 기호의 긴 변 하한(pt). 가장 작은 펌프 기호가 10pt 안팎
 PATTERN_MAX = 6.0        # 무늬 낱개: 긴 변 상한(pt). 밸브 몸통·S 상자는 5~11pt라 늘어서도 선이 닿는다
 PATTERN_RUN = 3          # 격자: 같은 모양이 같은 간격으로 한 방향은 이 수 이상, 다른 방향은 둘 이상 늘어선다
 PATTERN_SIZE_TOL = 0.3   # 같은 모양: 너비·높이 차 상한(pt)

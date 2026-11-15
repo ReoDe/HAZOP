@@ -231,13 +231,15 @@ def _number(entry_id, name, value, above):
 
 
 NAME_PIECE_RE = re.compile(r'"[A-Z]"|[A-Z0-9]+')
-NAME_ID_RE = re.compile(r'"[A-Z]"|[A-Z]|[A-Z]*\d[A-Z0-9]*')
+NAME_ID_RE = re.compile(r'"[A-Z]"|[A-Z]{1,2}|[A-Z]*\d[A-Z0-9]*')  # 이름 뒤 번호·짧은 기호('TA02', '"B"', 'DD')
 
 
 def _ends_name(text, word):
-    """text 안에서 word 뒤의 조각이 모두 번호·한 글자인 자리가 있는가(word가 이름의 끝 낱말)."""
+    """text 안에서 word 뒤의 조각이 모두 번호·짧은 기호인 자리가 있는가(word가 이름의 끝 낱말). 낱말에 번호가 바로 붙은
+    기기 번호 조각('CV-HX01')도 그 설비를 가리킨다(SNP 스캔에서 OCR이 이름 끝 'HX'를 놓친 'CV-HX01 REGENERATIVE')."""
     pieces = NAME_PIECE_RE.findall(text)
-    return any(p == word and all(NAME_ID_RE.fullmatch(q) for q in pieces[i + 1:]) for i, p in enumerate(pieces))
+    return any(p == word and all(NAME_ID_RE.fullmatch(q) for q in pieces[i + 1:]) for i, p in enumerate(pieces)) or \
+        any(re.fullmatch(re.escape(word) + r"\d+[A-Z]?", p) for p in pieces)
 
 
 class Template:
@@ -272,9 +274,10 @@ class Template:
                         or any(not isinstance(w, str) or not WORD_RE.match(w) for w in self.words):
                     raise SymbolLibraryError("%s: words=%r는 영문 대문자 낱말 하나 이상" % (entry_id, self.words))
                 self.words = tuple(self.words)
-                # last: 낱말이 이름의 끝 낱말일 때만 맞는다. 뒤에는 번호('TA02')·한 글자('A', '"B"')만 올 수 있다.
-                # 'TURBINE GENERATOR BLDG'·'TURBINE-DRIVEN FEEDWATER PUMP'·'TURBINE TRIP'처럼 다른 것을 꾸미는 낱말은 아니다
-                self.last = spec.get("last", False)
+                # last(기본 참): 낱말이 이름의 끝 낱말일 때만 맞는다. 뒤에는 번호('TA02')·두 글자 이하 기호('A', '"B"',
+                # 'DD')만 올 수 있다. 'TURBINE GENERATOR BLDG'·'PUMP CONTROLLER'·'CONDENSER SHELL PRESS. HIGH'처럼 다른 것을
+                # 꾸미는 낱말은 그 설비가 아니다(143쪽 이름 낱말 전수 점검, 2026-11-16)
+                self.last = spec.get("last", True)
                 if not isinstance(self.last, bool):
                     raise SymbolLibraryError("%s: last=%r는 true/false" % (entry_id, self.last))
             return
