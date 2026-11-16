@@ -1604,6 +1604,27 @@ def _side_by_side(strokes, axis):
                for n, a in enumerate(spans) for b in spans[n + 1:])
 
 
+def _apex(tri):
+    """밑변이 가로·세로로 놓인 삼각형의 (꼭짓점, 밑변 가운데). 그런 밑변이 없으면 None."""
+    pts = tri["pts"][:-1] if tri["pts"][0] == tri["pts"][-1] else tri["pts"]
+    for i in range(3):
+        a, b, c = pts[i], pts[(i + 1) % 3], pts[(i + 2) % 3]
+        if (abs(a[0] - b[0]) < 0.05 or abs(a[1] - b[1]) < 0.05) and math.dist(a, b) > 0.05:
+            return c, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+    return None
+
+
+def _apexes_meet(a, b):
+    """나비 몸통의 두 삼각형은 꼭짓점을 맞대고, 안전등급 경계 마름모는 밑변을 맞댄다. 위아래로 쌓은 신호 상자 끝의
+    같은 쪽을 가리키는 화살촉 둘(APR1400 056쪽 'A▶ / B▶')은 꼭짓점도 밑변도 삼각형 크기만큼 떨어져 있다. 밑변이 기운
+    삼각형은 예전처럼 본다."""
+    ea, eb = _apex(a), _apex(b)
+    if ea is None or eb is None:
+        return True
+    size = min(max(_w(t["bbox"]), _h(t["bbox"])) for t in (a, b))
+    return math.dist(ea[0], eb[0]) <= 0.5 * size or math.dist(ea[1], eb[1]) <= 0.5 * size
+
+
 def _shape_features(sym, prm):
     """기호의 구조 특징(이름과 뜻은 symbols.STRUCTURE_FEATURES). 어느 특징이 어느 종류인지와 보는 순서는
     기호 사전 공통 묶음의 구조 규칙 견본이 정한다."""
@@ -1620,7 +1641,7 @@ def _shape_features(sym, prm):
     # 나비 몸통의 두 삼각형은 붙어 있다. 사이에 글로브·볼의 점이 끼어도 간격은 삼각형 크기보다 작다. 큰 묶음 기호 안에 멀리
     # 떨어진 삼각형이 우연히 둘 남은 것은 밸브 몸통이 아니다(APR1400 132쪽, docs/units/2026-11-11-unit-f1/README.md F1-3 검토)
     if len(tris) == 2 and _box_gap(tris[0]["bbox"], tris[1]["bbox"]) <= max(
-            max(_w(t["bbox"]), _h(t["bbox"])) for t in tris):
+            max(_w(t["bbox"]), _h(t["bbox"])) for t in tris) and _apexes_meet(*tris):
         found.add("bowtie")
         bow = _union(tris[0]["bbox"], tris[1]["bbox"])
         # 몸통 bbox 밖에 중심이 있는 몸체 = 구동부(안쪽 원은 글로브 표시라 구동부가 아니다)

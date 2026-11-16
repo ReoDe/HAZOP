@@ -356,6 +356,15 @@ class PdfVectorRuleTest(unittest.TestCase):
             self.assertIsNone(pdf_vector._dash(value), value)
         self.assertEqual(pdf_vector._dash(([4, 2], 1)), [[4.0, 2.0], 1.0])
 
+    def test_stacked_arrowheads_are_not_a_valve_body(self):
+        # APR1400 056쪽 신호 상자 'A▶ / B▶': 같은 쪽을 가리키는 화살촉 둘을 위아래로 쌓았다. 꼭짓점을 맞댄 나비가 아니다
+        stacked = [prim([(100, 100), (100, 106), (105, 103), (100, 100)], closed=True),
+                   prim([(100, 106), (100, 112), (105, 109), (100, 106)], closed=True)]
+        bowtie = [prim([(200, 100), (200, 106), (203, 103), (200, 100)], closed=True),
+                  prim([(206, 100), (206, 106), (203, 103), (206, 100)], closed=True)]
+        kinds = {n["geometry"]["x"]: n["kind"] for n in pdf_run(stacked + bowtie)["nodes"]}
+        self.assertEqual((kinds.get(100), kinds.get(200)), (None, "manual_valve"))
+
     def test_equipment_name_word_needs_a_body_of_equipment_size(self):
         # 이름 글자 옆 몇 pt짜리 조각(APR1400 121·122쪽 'CONDENSER A' 옆 배관 끝 막대)은 이름 낱말로 설비가 되지 않는다.
         # 같은 글자를 단 설비 크기 상자는 응축기다
