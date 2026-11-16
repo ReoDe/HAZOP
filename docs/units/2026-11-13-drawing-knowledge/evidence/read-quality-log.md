@@ -126,7 +126,7 @@
 
 표본을 24쪽으로 늘리며(층별 무작위, 시드 20261116) 개발용 6쪽은 007·051·080·103·133·134, 보류 6쪽은 013·047·084·088·113·143이다. 이제부터 보류 6쪽은 그림을 열어 원인을 찾거나 그 쪽에 맞춘 규칙을 넣지 않고, 143쪽 정밀도 표본에서도 뺀다(`scripts/build_precision_samples.py --exclude-pages`). 아래는 정해지기 전에 정밀도 점검·규칙 확인으로 이 쪽들을 본 기록이다. 세 표본 모음(이름 낱말 전 `grp4/audit-before`, 후 `grp4/audit-after`, 모든 종류 `grp4/kinds-E`)의 판정 줄과 단위별 결정 기록에서 찾았다. 이 쪽에 맞춰 넣은 규칙은 없다.
 
-- 013쪽: 정밀도 표본으로만 봄. 이름 낱말 HX·EXCHANGER 노드 3개(맞음), 모든 종류 표본 9개(orifice 3, pipe_cap 2, sample_probe·temperature_element·transmitter 각 1, 모두 맞음).
+- 013쪽: 정밀도 표본으로만 봄. 이름 낱말 HX·EXCHANGER 노드 3개(맞음), 모든 종류 표본 9개(orifice 3, pipe_cap 2, sample_probe·temperature_element·transmitter 각 1, 모두 맞음). 보류 지정 전 H3(pipe_cap 좁히기) 표본 그림에도 013쪽 노드가 섞여 있었음(규칙은 쪽과 상관없는 모양 조건이고, H3 비율은 보류 쪽을 뺀 표본으로 다시 잼).
 - 047쪽: 개선 49 축소관 견본 확인에서 143쪽 8개 가운데 1개(맞음). 개선 52 COMPRESSOR 이름 낱말 확인에서 압축기 3개 가운데 047쪽 것(맞음). 이름 낱말 표본 ATM 2·COMPRESSOR 1·RECEIVER 1, 모든 종류 표본 4개(모두 맞음).
 - 084쪽: 개선 48 공조기 판·air_flow_arrow 규칙의 143쪽 집계(판 070~087쪽, 화살표 071~086쪽)에 들어감. 모든 종류 표본 air_flow_arrow 4·switch 1(모두 맞음).
 - 088쪽: 이름 낱말 표본 PUMP 1(틀림, 개선 56 뒤 빠짐)·TANK 1(맞음). 모든 종류 표본 9개(모두 맞음).
