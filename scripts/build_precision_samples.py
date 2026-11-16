@@ -1,10 +1,11 @@
 """노드 목록(inventory_node_kinds.py 출력)에서 무리마다 표본을 뽑아 둘레 그림 한 장과 판정 칸이 빈 표를 만든다.
 
 실행: python scripts/build_precision_samples.py <목록.jsonl> <출력 폴더> [--group word|kind|basis] [--per-group 15]
-                                                [--input-dir 폴더]
+                                                [--input-dir 폴더] [--exclude-pages 012,063]
   --group word : 이름 낱말 규칙(basis 'text_word:…')이 정한 노드를 낱말마다
           kind : 종류가 있는 노드를 종류마다
           basis: 종류가 있는 노드를 '종류 | 근거' 마다
+  --exclude-pages 012,063 : 이 쪽(파일 이름 앞 세 자리)의 노드는 무리에도 표본에도 넣지 않는다(보류 정답지 쪽).
   표본 시드는 무리 이름의 crc32라 같은 목록이면 같은 표본이 나온다.
 출력: <출력 폴더>/<무리>.png(빨간 상자가 노드, 칸 위에 표본 번호·쪽·노드·종류·라벨)와
       <출력 폴더>/audit.tsv(칸: group, nodes, sample, page, node, kind, label, verdict. verdict는 비어 있다).
@@ -47,12 +48,16 @@ def main():
     ap.add_argument("--group", choices=("word", "kind", "basis"), default="word")
     ap.add_argument("--per-group", type=int, default=15)
     ap.add_argument("--input-dir", default=None)
+    ap.add_argument("--exclude-pages", default="", help="뺄 쪽(세 자리, 쉼표로 구분)")
     a = ap.parse_args()
     folder = a.input_dir or rq.default_input_dir()
     os.makedirs(a.out, exist_ok=True)
+    excluded = {p.strip().zfill(3) for p in a.exclude_pages.split(",") if p.strip()}
     groups = collections.defaultdict(list)
     for line in open(a.inventory, encoding="utf-8"):
         r = json.loads(line)
+        if r["page"] in excluded:
+            continue
         g = group_of(r, a.group)
         if g:
             groups[g].append(r)
