@@ -47,6 +47,7 @@ from .pdf_vector_common import (
 from .pdf_vector_grouping import (
     _Sym, _cluster_bodies, _nearest_sym, _end_status, _plate_assemblies, _group_symbols, _merge_appendages,
     _black_fill_groups, _cut_at_boxes, _contact_chains, _housing_chains, _cut_through, _flow_axis, _reach_box, FLOW_LONG_RATIO,
+    _pt_ring_dist,
 )
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
@@ -1629,6 +1630,10 @@ def _apexes_meet(a, b):
     return math.dist(ea[0], eb[0]) <= 0.5 * size or math.dist(ea[1], eb[1]) <= 0.5 * size
 
 
+SPRING_HOST_RATIO = 3.0  # 스프링 기호 긴 변 / 스프링이 붙은 곧은 몸체 긴 변 상한(APR1400 방출 밸브 약 1.5, SNP 1.7)
+SPRING_LEN_RATIO = 0.3   # 스프링 사선 길이 / 그 몸체 긴 변 하한(방출 밸브 0.55~0.7, 공조기 틀의 빗금 0.07)
+
+
 def _shape_features(sym, prm):
     """기호의 구조 특징(이름과 뜻은 symbols.STRUCTURE_FEATURES). 어느 특징이 어느 종류인지와 보는 순서는
     기호 사전 공통 묶음의 구조 규칙 견본이 정한다."""
@@ -1656,7 +1661,18 @@ def _shape_features(sym, prm):
             found.add("outside_body")
     springs = [s for s in sym.strokes if len(s["pts"]) == 2 and abs(s["pts"][0][0] - s["pts"][1][0]) > 1
                and abs(s["pts"][0][1] - s["pts"][1][1]) > 1]
-    if sym.bodies and len(springs) >= 2 and len({(round(s["pts"][0][1] - s["pts"][1][1], 1),
+    # 스프링은 곧은 변 몸체(삼각형·나비 몸통) 바로 밖으로 뻗은 사선이고, 기호는 그 몸체와 스프링만 한 크기다. 몸체 안의
+    # 빗금(장비 상자·공조기 칸), 둥근 몸체(번호 원·펌프 몸통)에 걸린 빗금, 곧은 몸체에서 먼 빗금(펌프 패키지 틀)은 스프링이
+    # 아니고, 방출 밸브를 품은 큰 묶음(공조기 한 벌)은 안전밸브가 아니다. 143쪽에서 몸체 안 빗금까지 센 규칙이 정한 36건이
+    # 모두 이런 자리였다
+    side = max(_w(sym.bbox), _h(sym.bbox))
+    hosts = [b for b in sym.bodies if not b.get("curved")
+             and side <= SPRING_HOST_RATIO * max(_w(b["bbox"]), _h(b["bbox"]))]
+    springs = [s for s in springs if all(b.get("curved") or _pt_ring_dist(_center(s["bbox"]), b["pts"]) > 0
+                                         for b in sym.bodies)
+               and any(_pt_box_dist(_center(s["bbox"]), b["bbox"]) <= max(_w(b["bbox"]), _h(b["bbox"]))
+                       and math.dist(*s["pts"][:2]) >= SPRING_LEN_RATIO * max(_w(b["bbox"]), _h(b["bbox"])) for b in hosts)]
+    if len(springs) >= 2 and len({(round(s["pts"][0][1] - s["pts"][1][1], 1),
                                                     round(s["pts"][0][0] - s["pts"][1][0], 1)) for s in springs}) == 1:
         found.add("body_with_springs")
     if sym.stroke_only:
@@ -1805,6 +1821,7 @@ def _isa_bubble_kind(lines, min_side=None):
 
 _symbol_library = None
 PIPE_CAP_BASIS = "small_closed_body_single_connection"
+SPRING_BASIS = "body+spring"  # 사전 공통 묶음 common.psv_body의 근거 글자
 # 범례 1.7-1 1/4 QUALITY GROUP/SAFETY CLASS/SEISMIC CATEGORY 경계: 마름모를 세로선으로 가르고 양쪽에 등급('CI|DII')을 적는다.
 # 나비 규칙에 밸브로 걸리지만 공정 기호가 아니라 경계 표시다
 SAFETY_CLASS_BASIS = "safety_class_boundary"
@@ -3258,6 +3275,11 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                 kind, valve_body = None, True  # 사전 몸통과 같이, 구동부가 붙은 몸통은 구동 방식을 정하기 전까지 수동으로 두지 않는다
                 _issue(unknowns, "actuated_valve_pending", "구동부 기호가 붙은 밸브 몸통: 구동 방식은 아직 정하지 않음",
                        sid, local_id, "kind")
+        if basis == SPRING_BASIS:  # 사전 견본(앵글 방출 밸브 등)이 같은 종류로 맞으면 그 항목을 근거로 둔다
+            hit = _symbol_match(s, blocks)
+            if hit.outcome == "matched" and hit.entry.role == "symbol" and hit.entry.kind == kind:
+                symbol_id, basis = hit.entry.id, "symbol:%s" % hit.entry.id
+                symbol_attrs = {k: v for k, v in sorted(hit.attributes.items()) if k in rules.REGISTRY.properties}
         fallback = basis == PIPE_CAP_BASIS  # 끝막음은 형상 규칙이 아니라 뒤처리 규칙: 사전에 후보가 없을 때만 남긴다(§4.2 5번)
         if (kind is None or fallback) and not getattr(s, "plate_valve", None) and not class_mark:  # 구조·글자 규칙이 못 정한 기호만 사전의 격자 견본에 대 본다(기획서/PID-기호사전.md §4.2)
             hit = hits.get(n - 1) or _symbol_match(s, blocks)

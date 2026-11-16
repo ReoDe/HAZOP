@@ -741,6 +741,24 @@ class DoubleActingCylinderStack(unittest.TestCase):
                          [True] * len(self.PIECES))
 
 
+PAGE_007 = paths.folder("APR1400", "by-drawing", "007_Ch05_Fig5.1.2-2_Reactor_Coolant_Pump_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_007) and os.path.isfile(PAGE_134),
+                     "pdfplumber 또는 APR1400 007·134쪽 PDF 없음(저장소 밖 자료)")
+class HatchedFramesAreNotSafetyValves(unittest.TestCase):
+    """빗금을 친 큰 틀(134쪽 FLOOR DRAIN PUMP PP01 등 펌프 패키지 틀, 007쪽 UPPER OIL RESERVOIR·PUMP SEALS 상자)과
+    공압선 빗금이 걸린 번호 원(134쪽 001)은 몸체+스프링 사선 규칙으로 안전밸브가 되지 않는다(개발용 쪽)."""
+
+    def test_no_large_spring_bodies(self):
+        found = []
+        for path in (PAGE_007, PAGE_134):
+            ex = pdf_vector.extract(path, page=0)
+            found += [" ".join(n["label_text"].split()) for n in ex["nodes"] if n["kind"] == "psv"
+                      and max(n["geometry"]["width"], n["geometry"]["height"]) > 10]
+        self.assertEqual(found, [])
+
+
 class OperatorStackKinds(unittest.TestCase):
     """밸브 축 위 구동부 묶음의 종류(합성 입력). S 상자 하나뿐이면 전자 밸브, 사전에 없는 조각이 섞이면 IA 글자가 있을 때만
     공기구동 밸브, 근거가 없으면 정하지 않는다."""
