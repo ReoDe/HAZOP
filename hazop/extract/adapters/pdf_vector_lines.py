@@ -6,6 +6,7 @@
 - 배관 번호: 계통 약어-L번호(예: RC-L011) → 관계 line_no.
 """
 
+import math
 import re
 
 from .pdf_vector_common import _seg_dist, _segs
@@ -48,6 +49,25 @@ def _path(r):
     return [tuple(p) for p in ((r.get("evidence") or {}).get("pdf_path") or [])]
 
 
+LEADER_GAP = 2.0     # 지시선의 떠 있는 끝과 글자 상자 사이 거리 상한(글자 높이의 배수). 134쪽 '4"' 지시선은 1.9·5.4pt(높이 3.1)
+LEADER_LEN = 3.0     # 지시선 길이 상한(글자 높이의 배수)
+LEADER_TIP = 1.0     # 지시선이 짚은 점에서 배관까지 거리 상한(pt)
+
+
+def _leader(r, pts, box):
+    """미해결 연결 r이 글자에서 배관으로 그은 짧은 지시선인가: 연결되지 않은 끝이 글자 상자 바로 앞에 있고 길이가 글자
+    높이 몇 배 안이다. 지시선은 배관이 아니라 글자가 가리키는 배관을 짚는 선이다(APR1400 134쪽 LS 011 아래 '4"'
+    지시선이 미해결 연결이 되자 구경 글자가 정답인 세로 배관 대신 지시선에 붙었다). 양 끝이 이어진 관계는 보지 않는다."""
+    loose = [e["point"] for e in r.get("endpoints") or () if e.get("node_local_id") is None and e.get("point")]
+    if not loose:
+        return False
+    x0, y0, x1, y1 = box
+    h = min(x1 - x0, y1 - y0)
+    if sum(math.dist(p, q) for p, q in zip(pts, pts[1:])) > LEADER_LEN * h:
+        return False
+    return any(max(x0 - e[0], e[0] - x1, y0 - e[1], e[1] - y1, 0.0) <= LEADER_GAP * h for e in loose)
+
+
 def attach_line_labels(blocks, candidates, relations):
     """candidates(블록 번호) 가운데 배관 글자를 가장 가까운 물리 배관에 붙인다(제자리 고침). → 붙인 블록 번호 집합."""
     pipes = [(r, _path(r)) for r in relations if r.get("kind") == "physical_connection" and len(_path(r)) >= 2]
@@ -62,7 +82,19 @@ def attach_line_labels(blocks, candidates, relations):
         reach = max(REACH, REACH_PER_H * min(x1 - x0, y1 - y0))
         dist, r = min(((min(_seg_dist(c, p, q)[0] for p, q in _segs(pts)), r) for r, pts in pipes),
                       key=lambda t: t[0])
-        if dist > reach:
+        if _leader(r, _path(r), b["bbox"]):
+            # 가장 가까운 것이 이 글자의 지시선이면, 지시선이 짚은 점(이어진 끝)을 지나는 배관 가운데 글자에서 가장 가까운
+            # 것에 붙인다. 지시선이 이어 주므로 거리 상한은 보지 않는다. 그 점에서 떨어진 배관(같은 기기에 닿은 먼 배관)은
+            # 보지 않는다(139쪽에서 기기 반대편 60pt 밖 배관에 붙던 자리)
+            tips = [e["point"] for e in r["endpoints"] if e.get("node_local_id") and e.get("point")]
+            target = [(q, pts) for q, pts in pipes if q is not r and any(
+                min(_seg_dist(t, a, z)[0] for a, z in _segs(pts)) <= LEADER_TIP for t in tips)]
+            if not target and dist > reach:
+                continue
+            if target:  # 지시선이 배관이 아닌 기호(축소관 등)를 짚으면 예전처럼 지시선에 둔다
+                dist, r = min(((min(_seg_dist(c, p, q2)[0] for p, q2 in _segs(pts)), q) for q, pts in target),
+                              key=lambda t: t[0])
+        elif dist > reach:
             continue
         field, value = parsed
         if field == "line_no":

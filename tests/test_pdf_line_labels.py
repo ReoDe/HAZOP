@@ -54,6 +54,23 @@ class AttachTest(unittest.TestCase):
         self.assertEqual(rels[1]["line_no"], "RC-L011")
         self.assertEqual(used, {0, 1})  # 멀리 떨어진 2"는 붙이지 않는다
 
+    def test_leader_line_hands_label_to_the_pipe_it_points_at(self):
+        # APR1400 134쪽 LS 011 아래 '4"': 분기점 t에서 글자 쪽으로 그은 짧은 지시선(끝이 떠 있는 미해결 연결)이 가장
+        # 가깝다. 글자는 지시선이 짚은 분기점의 배관에 붙는다(거리 상한 밖이어도). 양 끝이 이어진 짧은 배관은 지시선이 아니다
+        def ends(a, b):
+            return [{"node_local_id": a, "point": None}, {"node_local_id": b, "point": None}]
+        pipe = dict(rel(1, [(0, 0), (0, 40)]), endpoints=ends("tank", "t"))
+        leader = dict(rel(2, [(0, 20), (1.5, 21.4), (2.7, 21.4)]),
+                      endpoints=[{"node_local_id": "t", "point": [0, 20]}, {"node_local_id": None, "point": [2.7, 21.4]}])
+        other = dict(rel(3, [(30, 0), (30, 40)]), endpoints=ends("a", "b"))
+        rels = [pipe, leader, other]
+        pl.attach_line_labels([{"text": '4"', "bbox": [8.1, 20, 11.2, 23.3]}], [0], rels)
+        self.assertEqual([r["attributes"].get("size") for r in rels], ['4"', None, None])
+        stub = dict(leader, endpoints=ends("t", "u"))
+        rels = [dict(pipe, attributes={}), stub, dict(other, attributes={})]
+        pl.attach_line_labels([{"text": '4"', "bbox": [3.5, 20, 6.6, 23.3]}], [0], rels)
+        self.assertEqual([r["attributes"].get("size") for r in rels], [None, '4"', None])
+
     def test_signal_line_is_not_a_pipe(self):
         r = dict(rel(1, [(0, 0), (100, 0)]), kind="signal_connection")
         pl.attach_line_labels([{"text": '2"', "bbox": [40, 2, 46, 8]}], [0], [r])
