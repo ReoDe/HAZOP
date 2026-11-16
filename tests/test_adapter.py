@@ -1428,6 +1428,39 @@ class PdfVectorRuleTest(unittest.TestCase):
                 self.assertEqual([n["kind"] for n in ext["nodes"]], ["transmitter"])
         self.assertEqual(pdf_vector._instrument_kind("PUMP"), (None, None))
 
+    def test_circle_drawn_as_short_lines_is_instrument_circle(self):
+        # APR1400 051쪽 PI 원: 곡선 명령 없이 직선 64개로 원을 긋고 'h' 없이 시작점으로 돌아온다. 닫힌 원으로 읽어야
+        # 계기 원이 된다. 꼭짓점이 한 원 위에 있지 않은 꺾은선(돌아오는 지그재그)은 원이 아니다
+        def path(pts):
+            return {"path": [("m", pts[0])] + [("l", p) for p in pts[1:]]}
+        ring = [(100 + 5.5 * math.cos(2 * math.pi * k / 64), 100 + 5.5 * math.sin(2 * math.pi * k / 64)) for k in range(65)]
+        zigzag = [(100 + 5.5 * math.cos(2 * math.pi * k / 64) * (1 if k % 2 else 0.6),
+                   100 + 5.5 * math.sin(2 * math.pi * k / 64) * (1 if k % 2 else 0.6)) for k in range(65)]
+        self.assertEqual([(c, cv) for _, c, _, cv in pdf_vector._subpaths(path(ring))], [(True, True)])
+        self.assertEqual([(c, cv) for _, c, _, cv in pdf_vector._subpaths(path(zigzag))], [(False, False)])
+        drawn = dict(prim([]), subpaths=pdf_vector._subpaths(path(ring)))
+        ext = pdf_run([drawn], [word("PI", 97, 97, size=4)])
+        self.assertEqual([n["kind"] for n in ext["nodes"]], ["indicator"])
+        # 번호 없는 FC는 밸브 고장 위치 표기다(054쪽 빈 번호 원 옆). 원이 그 글자를 받아도 조절계가 아니다
+        self.assertEqual(pdf_vector._instrument_kind("FC", 11), (None, None))
+        self.assertEqual(pdf_vector._instrument_kind("FC\n101", 11), ("controller", "isa_letters:FC"))
+
+    def test_empty_circle_does_not_take_isa_tag_from_text_outside(self):
+        # APR1400 055쪽: 조절 밸브 옆 빈 번호 원이 위쪽 랙 이름 'LP12'를 라벨로 받는다. 원 밖 글자라 계기 태그가 아니다
+        outside = pdf_run([circle(100, 100, 5.5)], [word("LP12", 96, 80, size=4)])
+        inside = pdf_run([circle(100, 100, 5.5)], [word("LP12", 96, 98, size=4)])
+        self.assertEqual([n["tag"] for n in outside["nodes"]], [None])
+        self.assertEqual([n["tag"] for n in inside["nodes"]], ["LP-12"])
+
+    def test_instrument_circle_on_line_into_equipment_stays_separate(self):
+        # APR1400 051쪽 SAMPLE PUMP 위 HS 원: 원 아래에서 내려온 선이 펌프 상자 안 깊숙이 들어간다. 구동부 축처럼 원을 펌프에
+        # 합치지 않는다
+        pump = prim([(116, 100), (116, 108), (108, 108), (108, 116), (100, 116), (100, 124), (124, 124), (124, 100),
+                     (116, 100)], closed=True)
+        ext = pdf_run([pump, circle(112, 70, 5), line((112, 75), (112, 108)), line((124, 110), (200, 110))],
+                      [word("HS", 109, 68, size=3)])
+        self.assertEqual(sorted(n["kind"] or "-" for n in ext["nodes"] if n["kind"] != "tee"), ["-", "switch"])
+
     def test_legend_instrument_codes(self):
         cases = {"ZL\n202C": "pilot_light", "ZL": "pilot_light", "PDAH\n031": "alarm", "PAL": "alarm",
                  "AX\n134": "sample_probe", "FG": "sight_glass", "LE\n058": "level_element", "LL": None, "ZAC": "controller",

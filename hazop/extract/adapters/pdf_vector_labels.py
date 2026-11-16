@@ -213,7 +213,14 @@ def _bubble_like(node, letters):
     """종류를 못 정한 계기 모양 기호가 계기 원으로 볼 만한가: 기능 문자 두 자 이상이고 기호 짧은 변 8pt 이상.
     밸브 힌지 점·댐퍼 축 점처럼 작은 원 옆 밸브 번호('V5402', 'Y0013A')를 계기 태그로 읽지 않게 한다."""
     g = node.get("geometry") or {}
-    return len(letters) >= 2 and min(g.get("width", 0), g.get("height", 0)) >= 8
+    if len(letters) < 2 or min(g.get("width", 0), g.get("height", 0)) < 8:
+        return False
+    # 글자가 원 밖에 있으면 이 원의 계기 표기가 아니다(055쪽 빈 번호 원이 위 랙 이름 'LP12'를 받아 태그 LP-12가 됨)
+    lb = (node.get("label_location") or {}).get("bbox")
+    if not lb:
+        return True
+    cx, cy = lb[0] + lb[2] / 2.0, lb[1] + lb[3] / 2.0
+    return g["x"] - 1 <= cx <= g["x"] + g["width"] + 1 and g["y"] - 1 <= cy <= g["y"] + g["height"] + 1
 
 
 def _nearest_prefix(node, tagged):

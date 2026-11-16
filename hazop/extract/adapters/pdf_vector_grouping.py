@@ -1091,6 +1091,11 @@ def _group_symbols(cls, prm):
             if any(s is not None and s.seed is not None for s in reached):
                 rest.append(p)  # 검정 견본으로 올린 몸통(seed)에 닿은 선은 연결선이다. 그 몸통을 다른 기호에 합치지 않는다
                 continue
+            if any(s is not None and _equipment_bubble(s, host, prm) for s in reached):
+                # 장비 안으로 들어간 선의 반대 끝 계기 원은 구동부가 아니라 그 장비를 재거나 조작하는 계기다(APR1400 051쪽
+                # SAMPLE PUMP 위 HS 원). 구동부는 밸브 몸통만 한 크기라 몸통이 원보다 훨씬 큰 장비에는 해당하지 않는다
+                rest.append(p)
+                continue
             core = host.core
             host.add([p], "strokes")
             for e in ends:
@@ -1209,6 +1214,19 @@ def _group_symbols(cls, prm):
     gone = {id(p) for p in cls["flanges"]}
     polys = [p for p in polys if id(p) not in gone]
     return syms, polys, markers, dashes
+
+
+BUBBLE_MIN = 8.0          # 계기 원 지름 하한(pt, pdf_vector.ISA_BUBBLE_MIN과 같다)
+EQUIPMENT_BUBBLE_RATIO = 2.0  # 장비 몸체 짧은 변 / 계기 원 지름 하한
+
+
+def _equipment_bubble(s, host, prm):
+    """s가 원 하나뿐인 계기 크기 원이고 host 몸체가 그 원보다 훨씬 큰가(장비에 선으로 이어진 계기 원)."""
+    if len(s.bodies) != 1 or s.strokes and not all(_inside(_center(m["bbox"]), s.core) for m in s.strokes):
+        return False
+    b = s.bodies[0]
+    return _is_circle(b, prm) and _w(b["bbox"]) >= BUBBLE_MIN and \
+        min(_w(host.core), _h(host.core)) >= EQUIPMENT_BUBBLE_RATIO * _w(b["bbox"])
 
 
 def _merge_appendages(syms, chains, prm):

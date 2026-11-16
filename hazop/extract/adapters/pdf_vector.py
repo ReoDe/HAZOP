@@ -217,7 +217,30 @@ def _subpaths(obj):
             closed = True
     if cur:
         out.append((cur, closed, ext, curved))
-    return out
+    return [(pts, True, ext, True) if not curved and _polygon_circle(pts) else (pts, closed, ext, curved)
+            for pts, closed, ext, curved in out]
+
+
+POLYGON_CIRCLE_MIN_PTS = 12      # 원을 짧은 직선으로 그린 꺾은선의 꼭짓점 수 하한(APR1400 051쪽 계기 원 65점)
+POLYGON_CIRCLE_RADIUS_TOL = 0.06  # 꼭짓점의 중심 거리가 평균 반지름에서 벗어나도 되는 비율
+POLYGON_CIRCLE_MAX = 15.0        # 지름 상한(pt). 계기 원(APR1400 9~14pt)만 본다
+
+
+def _polygon_circle(pts):
+    """짧은 직선 여러 개로 그린 원인가: 끝점이 시작점으로 돌아오고 꼭짓점이 모두 한 원 위에 있다. 이런 원은 'h' 없이
+    끝나고 곡선 명령이 없어 닫힌 곡선 원으로 읽히지 않았다(051쪽 PI·HS 원 60개가 계기 원이 아니게 됨)."""
+    if len(pts) < POLYGON_CIRCLE_MIN_PTS or math.dist(pts[0], pts[-1]) > 0.05:
+        return False
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    w, h = max(xs) - min(xs), max(ys) - min(ys)
+    if not ISA_BUBBLE_MIN <= w <= POLYGON_CIRCLE_MAX or abs(w - h) > 0.1 * max(w, h):
+        # 계기 원 크기만 원으로 올린다. 014쪽처럼 배관이 가운데까지 들어오는 큰 펌프 원(16pt)을 몸체로 올리면 그 배관과
+        # 이웃 밸브까지 한 기호로 묶여 전동 밸브 여섯이 수동 밸브가 되었다
+        return False
+    c = ((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2)
+    r = [math.dist(p, c) for p in pts]
+    mean = sum(r) / len(r)
+    return max(abs(v - mean) for v in r) <= POLYGON_CIRCLE_RADIUS_TOL * mean
 
 
 def _dash(value):
@@ -1800,6 +1823,8 @@ def _instrument_kind(text, min_side=None):
     if not m:
         return _isa_bubble_kind(lines, min_side)
     letters = m.group(1)
+    if letters in LEGEND_FAIL_POSITIONS and m.group(0) == letters:
+        return None, None  # 번호 없는 FC·FO·FL은 밸브 고장 위치 표기다(054쪽 빈 번호 원 옆 FC). 유량 조절계가 아니다
     if len(letters) >= 2 and letters[-1] == "E" and letters[0] == "T":
         return "temperature_element", "isa_letters:%s" % letters
     if letters.startswith("TEW"):
@@ -1829,6 +1854,7 @@ ISA_BUBBLE_MIN = 8.0  # 계기 원 짧은 변 하한(pt)
 # TW는 3/4 TW THERMOWELL FOR TEST로, 같은 표의 TEW THERMOWELL처럼 온도 측정점 temperature_element로 본다
 LEGEND_ALARM_FUNCTIONS = frozenset({"A", "AC", "AH", "AHH", "AHL", "AL", "ALL", "AO"})
 LEGEND_FUNCTION_KIND = {"L": "pilot_light"}
+LEGEND_FAIL_POSITIONS = frozenset({"FC", "FO", "FL"})  # 범례 1.7-1(2/4) FAIL CLOSED·OPEN·LOCKED
 LEGEND_CODE_KIND = {"AX": "sample_probe", "FG": "sight_glass", "LE": "level_element", "TW": "temperature_element"}
 # 범례 1.7-1(3/4) CLARIFYING SYMBOL LIST의 글자. 번호 없이 원 안에 홀로 적히면 계기 표기가 아니라 한계·고장 위치 같은
 # 덧붙임 표기다(LL LOW LIMIT, FL FAIL LOCK 등)
