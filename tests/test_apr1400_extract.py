@@ -698,5 +698,21 @@ class FlowElementsUnderFEBubbles(unittest.TestCase):
         self.assertEqual((node_at(ex, (642.9, 562.0, 642.9, 562.0)) or {}).get("kind"), "flow_element")
 
 
+
+PAGE_128 = paths.folder("APR1400", "by-drawing", "128_Ch10_Fig10.4.9-1_s1of3_Auxiliary_Feedwater_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_128), "pdfplumber 또는 APR1400 128쪽 PDF 없음(저장소 밖 자료)")
+class BoundaryBoxWithWordsIsNotACheckValve(unittest.TestCase):
+    """128쪽 건물 경계 표시 'AB ▶|◀ YARD' 상자는 화살촉 둘과 칸막이 선이라 '선과 표식' 체크밸브 구조로 읽혔다.
+    상자 안에 낱말이 있으면 체크밸브가 아니다."""
+
+    def test_ab_yard_boxes_have_no_kind(self):
+        ex = pdf_vector.extract(PAGE_128, page=0)
+        kinds = [(node_at(ex, (937.6, 249.7, 937.6, 249.7)) or {}).get("kind"),
+                 (node_at(ex, (937.6, 569.5, 937.6, 569.5)) or {}).get("kind")]
+        self.assertEqual(kinds, [None, None])
+
+
 if __name__ == "__main__":
     unittest.main()

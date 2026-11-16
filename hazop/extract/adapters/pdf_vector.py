@@ -2150,6 +2150,7 @@ def _classify(sym, text, degree, prm, marks=()):
     return None, None
 
 
+WORD_INSIDE_RE = re.compile(r"[A-Z]{2,}")  # 기호 상자 안 낱말(두 글자 이상 대문자)
 NAME_EQUIPMENT_MIN = 6.0  # 이름 낱말로 설비 종류를 정하는 기호의 긴 변 하한(pt). 가장 작은 펌프 기호가 10pt 안팎
 PATTERN_MAX = 6.0        # 무늬 낱개: 긴 변 상한(pt). 밸브 몸통·S 상자는 5~11pt라 늘어서도 선이 닿는다
 PATTERN_RUN = 3          # 격자: 같은 모양이 같은 간격으로 한 방향은 이 수 이상, 다른 방향은 둘 이상 늘어선다
@@ -3110,6 +3111,11 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         if bi is not None:
             label_lines[local_id] = list(zip(text.split("\n"), blocks[bi]["line_boxes"]))
         kind, basis = _classify(s, text, 0 if id(s) in on_valve else degree.get(id(s), 0), prm, marks.get(n - 1, []))
+        if basis == "lines+marker" and any(WORD_INSIDE_RE.search(b["text"]) and _inside(_center(b["bbox"]), s.bbox)
+                                           for b in blocks):
+            # '선과 표식' 체크밸브 모양 안에 낱말이 들어 있으면 체크밸브가 아니다. 건물 경계 표시('AB ▶|◀ YARD', 128쪽)는
+            # 화살촉 둘과 칸막이 선으로 그려 같은 구조로 읽혔다
+            kind, basis = None, None
         if id(s) in couplers:  # 괄호 모양이 종류를 정한다. 옆 글자(FILL 등)로 정하지 않는다
             kind, basis = "hose_connection", COUPLER_BASIS
         elif id(s) in goosenecks:
