@@ -4,6 +4,7 @@
   python scripts/check_read_quality.py --update [--force]    # 기준값을 지금 값으로 바꿈(규칙 12)
   python scripts/check_read_quality.py --pages 12,62         # 몇 쪽만(기준값 비교 없이 보기만)
   python scripts/check_read_quality.py --ai-candidates <폴더> # '스크립트 + AI 후보' 값도 냄(쪽마다 <정답지 이름>.json)
+  python scripts/check_read_quality.py --extra-keys <폴더>   # 저장소 밖 추가 정답지만 따로 잼(기준값 비교 없음)
   python scripts/check_read_quality.py --only SNP-M-102 --ai-run subscription --ai-cap 10 --ai-save <폴더>
       AI 검토를 실제로 돌려 두 값을 냄(구독 호출. 기준값 비교 없음). 시험은 --ai-run fixed --ai-fixed-dir <폴더>
   python scripts/check_read_quality.py tiles <쪽.pdf> <출력 폴더>   # 정답지 쓰기용 격자 타일(추출 결과를 쓰지 않음)
@@ -782,9 +783,10 @@ def write_crop(img, scale, unit, path, pad=40.0):
 
 # ---------------------------------------------------------------- 실행
 
-def load_keys(only=None):
+def load_keys(only=None, key_dir=None):
+    """정답지 목록. key_dir: 저장소 밖 추가 정답지 폴더(--extra-keys). 없으면 저장소의 12쪽."""
     keys = []
-    for path in sorted(glob.glob(os.path.join(KEY_DIR, "*.json"))):
+    for path in sorted(glob.glob(os.path.join(key_dir or KEY_DIR, "*.json"))):
         with open(path, encoding="utf-8") as fh:
             k = json.load(fh)
         k.setdefault("lines", [])
@@ -804,7 +806,8 @@ def snp_folders(samples_dir):
     return sorted(d for d in glob.glob(os.path.join(samples_dir, "SNP-*")) if os.path.isdir(d))
 
 
-def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=20, only=None, ai_save=None):
+def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=20, only=None, ai_save=None,
+        key_dir=None):
     """only: 이 이름의 쪽만(APR1400 'apr1400-012', SNP 'SNP-M-102'). ai_client를 주면 쪽마다 AI 검토를 돌려
     '스크립트 + AI 후보' 값을 내고, ai_save 폴더에 후보(<이름>.json)와 실행 통계를 남긴다(--ai-candidates로 다시 잼)."""
     import extract_drawio
@@ -814,13 +817,13 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
     res = {"pages": {}, "ai_pages": {}, "missing": []}
     try:
         jobs = []
-        for name, k in load_keys(pages):
+        for name, k in load_keys(pages, key_dir):
             pdf = apr_pdf(input_dir, k["seq"]) if os.path.isdir(input_dir) else None
             if pdf is None:
                 res["missing"].append(name)
             else:
                 jobs.append((name, k, pdf))
-        if not pages:
+        if not pages and key_dir is None:  # 추가 정답지 폴더만 잴 때는 SNP를 섞지 않는다
             for folder in snp_folders(samples_dir):
                 dio_path = glob.glob(os.path.join(folder, "*.drawio"))
                 pdf = glob.glob(os.path.join(folder, "*.pdf"))
@@ -984,6 +987,8 @@ def main(argv=None):
     ap.add_argument("--pages", help="APR1400 순번 몇 개만(쉼표). SNP는 빼고, 기준값 비교·갱신을 하지 않음")
     ap.add_argument("--ai-candidates", help="AI 후보 폴더(<정답지 이름>.json)")
     ap.add_argument("--allow-missing", action="store_true", help="APR1400 PDF가 없으면 그 쪽을 빼고 판정(CI)")
+    ap.add_argument("--extra-keys", default=os.environ.get("HAZOP_READ_QUALITY_EXTRA_KEYS"),
+                    help="저장소 밖 추가 정답지 폴더(환경변수 HAZOP_READ_QUALITY_EXTRA_KEYS). 그 폴더만 따로 재고 기준값과 견주지 않음")
     ap.add_argument("--only", help="이 이름의 쪽만(쉼표, 예: SNP-M-102,apr1400-012). 기준값 비교·갱신을 하지 않음")
     ap.add_argument("--ai-run", choices=("subscription", "fixed"),
                     help="쪽마다 AI 검토를 돌려 '스크립트 + AI 후보' 값을 냄. subscription은 실제 구독 호출")
@@ -1014,8 +1019,11 @@ def main(argv=None):
             kw["model"] = args.ai_model
         client = providers.make_client(args.ai_run, **kw)
     only = set(args.only.split(",")) if args.only else None
+    extra = os.path.abspath(args.extra_keys) if args.extra_keys else None
     res = run(input_dir, os.path.abspath(args.samples_dir or default_samples_dir()), pages, args.ai_candidates,
-              ai_client=client, ai_cap=args.ai_cap, only=only, ai_save=args.ai_save)
+              ai_client=client, ai_cap=args.ai_cap, only=only, ai_save=args.ai_save, key_dir=extra)
+    if extra:
+        print("추가 표본(저장소 밖 정답지 %d쪽, 기준값과 견주지 않음)" % len(load_keys(key_dir=extra)))
     print(report(res, head_commit()))
     for name, st in sorted((res.get("ai_stats") or {}).items()):
         print("  AI 검토 %s: 호출 %d(계획 %d, 필요 %d) · 오류 %d · 후보 버림 %d · 다시 확인 일치 %d · 남은 항목 %d%s"
@@ -1024,7 +1032,7 @@ def main(argv=None):
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(res, fh, ensure_ascii=False, indent=1)
-    if pages or only or client is not None:
+    if pages or only or client is not None or extra:
         return 0
     saved = {"pages": {n: {it: {k: p[it][k] for k in ("correct", "units", "false_pos")} for it in ITEMS}
                        for n, p in res["pages"].items()}}

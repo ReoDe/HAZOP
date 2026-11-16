@@ -323,6 +323,24 @@ class CompareKeysTest(unittest.TestCase):
         self.assertEqual(kinds, {"symbol", "kind", "attribute", "connection"})
 
 
+class ExtraKeysTest(unittest.TestCase):
+    """저장소 밖 추가 정답지 폴더(--extra-keys): 그 폴더 정답지만 따로 채점하고, 기본 12쪽·SNP와 섞지 않는다."""
+
+    def test_extra_key_dir_is_loaded_alone_and_skips_snp(self):
+        import json as _json
+        import shutil
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        k = dict(key([sym(1, "manual_valve", (100, 100, 110, 108))]), seq=999)
+        with open(os.path.join(tmp, "apr1400-999.json"), "w", encoding="utf-8") as fh:
+            _json.dump(k, fh)
+        self.assertEqual([n for n, _ in rq.load_keys(key_dir=tmp)], ["apr1400-999"])
+        self.assertNotIn("apr1400-999", [n for n, _ in rq.load_keys()])
+        res = rq.run(os.path.join(tmp, "no-pdf-here"), tmp, key_dir=tmp)
+        self.assertEqual((res["pages"], res["missing"]), ({}, ["apr1400-999"]))
+
+
 class AnswerKeyFileTest(unittest.TestCase):
     """저장소의 APR1400 정답지가 채점기가 읽는 꼴을 지키는가."""
 
