@@ -15,6 +15,25 @@ SYSTEM_LABEL_RE = re.compile(r"^([A-Z]{2,3}):\S")  # 'CV:RDT', 'SI:SAFETY INJECT
 BARE_SYSTEM_RE = re.compile(r"^(?!(?:FC|FO|FL|LO|LC|LT|NO|NC)$)[A-Z]{2}$")
 
 
+SEQUENCE_LETTER_RE = re.compile(r"^[A-Z]{1,2}$")
+
+
+def same_sheet_letter_pairs(nodes, relations):
+    """같은 쪽 순서 문자 깃발(범례 1.7-1 SEQUENCE LETTER ON SAME FIGURE SHEET) 가운데 글자가 같은 것끼리 짝을 짓는다.
+    같은 글자의 깃발은 한 배관이 쪽 안에서 끊겼다 이어지는 자리라 같은 지점으로 본다(정답지 규약 4절, 097쪽 방식).
+    물리 배관이 닿은 깃발만 본다. 신호선(점선) 끝 깃발(APR1400 023·025쪽)은 배관이 아니다.
+    글자가 같은 깃발이 셋 이상이면 첫 깃발에 나머지를 잇는다. → [(노드 id, 노드 id)]"""
+    piped = {e.get("node_local_id") for r in relations if r["kind"] == "physical_connection" for e in r["endpoints"]}
+    groups = {}
+    for n in nodes:
+        letter = (n.get("label_text") or "").strip().upper()
+        basis = (n.get("evidence") or {}).get("classification_basis") or ""
+        if n.get("kind") == "continuation" and basis.endswith("sequence_letter") and SEQUENCE_LETTER_RE.match(letter) \
+                and n["local_id"] in piped:
+            groups.setdefault(letter, []).append(n["local_id"])
+    return [(ids[0], other) for _, ids in sorted(groups.items()) for other in ids[1:]]
+
+
 def _continuation_attributes(sym, blocks, prm, own=None, arrows=()):
     """연결 표시 화살표 옆 글자에서 상대 계통을 읽는다. 화살표에 붙은 글자 문단(own)에 'CV:RDT'처럼 계통 약어로
     시작하는 줄이 있으면 그것을, 없으면 그런 줄이 있는 문단 중 화살표에서 label_gap_max 안으로 가장 가까운 것을 쓴다.

@@ -806,5 +806,45 @@ class OperatorStackKinds(unittest.TestCase):
                                                                          "motive_power": "air"}))
 
 
+def _flag(nid, letter):
+    return {"local_id": nid, "kind": "continuation", "label_text": letter,
+            "evidence": {"classification_basis": "symbol:apr1400.sequence_letter"}}
+
+
+def _rel(kind, a, b):
+    return {"kind": kind, "endpoints": [{"node_local_id": a}, {"node_local_id": b}]}
+
+
+class SameSheetLetterPairs(unittest.TestCase):
+    """같은 쪽 순서 문자 깃발은 글자가 같은 것끼리 한 배관으로 잇는다(정답지 규약 4절)."""
+
+    def test_flags_with_the_same_letter_on_pipes_are_paired(self):
+        nodes = [_flag("f1", "G"), _flag("f2", "G"), _flag("f3", "C")]
+        rels = [_rel("physical_connection", "v1", "f1"), _rel("physical_connection", "f2", "v2"),
+                _rel("physical_connection", "f3", "v3")]
+        self.assertEqual(pdf_vector.same_sheet_letter_pairs(nodes, rels), [("f1", "f2")])
+
+    def test_flags_on_signal_lines_are_not_paired(self):
+        nodes = [_flag("f1", "A"), _flag("f2", "A")]
+        rels = [_rel("signal_connection", "i1", "f1"), _rel("physical_connection", "f2", "v2")]
+        self.assertEqual(pdf_vector.same_sheet_letter_pairs(nodes, rels), [])
+
+
+PAGE_141 = paths.folder("APR1400", "by-drawing", "141_Ch11_Fig11.3-1_Gaseous_Radwaste_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_141), "pdfplumber 또는 APR1400 141쪽 PDF 없음(저장소 밖 자료)")
+class SequenceLetterFlagsJoinThePipe(unittest.TestCase):
+    """141쪽(개발용): 오른쪽 위 'G' 깃발로 나간 배관은 아래 'G' 깃발에서 체크 밸브 V1027로 이어진다."""
+
+    def test_pipe_continues_from_one_g_flag_to_the_other(self):
+        ex = pdf_vector.extract(PAGE_141, page=0)
+        top, bottom = node_at(ex, (963, 222, 977, 228)), node_at(ex, (672, 567, 687, 573))
+        self.assertEqual((top["label_text"], bottom["label_text"]), ("G", "G"))
+        joined = [r for r in ex["relations"] if r["kind"] == "physical_connection"
+                  and {e["node_local_id"] for e in r["endpoints"]} == {top["local_id"], bottom["local_id"]}]
+        self.assertEqual([r["line_type"] for r in joined], ["pdf_sequence_letter"])
+
+
 if __name__ == "__main__":
     unittest.main()

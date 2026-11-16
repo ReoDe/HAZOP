@@ -50,7 +50,7 @@ from .pdf_vector_grouping import (
     _pt_ring_dist,
 )
 from .pdf_vector_connectors import (
-    SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes,
+    SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes, same_sheet_letter_pairs,
 )
 from .pdf_vector_flow import _chain_flow, _propagate_flows, _vent_ends, arrow_axis, continuation_flow, end_arrow
 from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels, parse_label
@@ -3558,6 +3558,26 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         locations.append({"object_id": sid, "local_id": local_id, "coordinate_space": COORDINATE_SPACE,
                           "unit": UNIT, "bbox": _box_out(_bbox_pts(pts)), "approximate": True,
                           "method": "pdf_path_points"})
+    # 같은 쪽 순서 문자 깃발 짝은 그려진 선이 없어도 한 배관이다. 깃발 가운데끼리 잇는 물리 관계로 둔다
+    for k, (a, b) in enumerate(same_sheet_letter_pairs(node_out, relations + unresolved), len(ordered) + 1):
+        local_id, sid = "local-edge-%03d" % k, "pdf-p%d-conn-%04d" % (page, k)
+        ends = [(a, "source"), (b, "target")]
+        centers = [(g["x"] + g["width"] / 2, g["y"] + g["height"] / 2) for g in (node_by_local[i]["geometry"] for i, _ in ends)]
+        relations.append({
+            "local_id": local_id, "source_object_id": sid, "kind": "physical_connection",
+            "line_type": "pdf_sequence_letter", "line_no": None,
+            "endpoints": [{"end": end, "node_local_id": i, "source_object_id": node_by_local[i]["source_object_id"],
+                           "constraint": None, "point": [_num(c[0]), _num(c[1])], "point_basis": "sequence_letter_pair",
+                           "status": "connected", "port": None} for (i, end), c in zip(ends, centers)],
+            "flow_direction": None, "waypoints": [], "label": "", "label_text": "", "label_cells": [], "attributes": {},
+            "style": None, "parent": None, "geometry": None,
+            "evidence": {"classification_basis": "sequence_letter_pair", "pdf_objects": [],
+                         "pdf_path": [[_num(c[0]), _num(c[1])] for c in centers]},
+        })
+        _issue(unknowns, "unknown_flow_direction", "PDF 선에서 흐름 방향을 정하지 않음", sid, local_id, "flow_direction")
+        locations.append({"object_id": sid, "local_id": local_id, "coordinate_space": COORDINATE_SPACE,
+                          "unit": UNIT, "bbox": _box_out(_bbox_pts(centers)), "approximate": True,
+                          "method": "sequence_letter_pair"})
     # 흐름 보존으로 방향 넓히기(2포트 배관 기호·분기점). 정한 관계는 방향 미확인에서 뺀다
     before = {r["local_id"] for r in relations if r.get("flow_direction")}
     housing = {local_of[id(s)][0] for s in syms if s.housing}
