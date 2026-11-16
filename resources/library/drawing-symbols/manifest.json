@@ -829,6 +829,56 @@
    "label": "inside"
   },
   {
+   "kind": "relay_converter",
+   "file": "relay-converter.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "top",
+     "x": 50,
+     "y": 0
+    },
+    {
+     "name": "bottom",
+     "x": 50,
+     "y": 100
+    },
+    {
+     "name": "left",
+     "x": 0,
+     "y": 50
+    },
+    {
+     "name": "right",
+     "x": 100,
+     "y": 50
+    }
+   ],
+   "label": "right"
+  },
+  {
+   "kind": "humidifier",
+   "file": "humidifier.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 30
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 30
+    }
+   ],
+   "label": "below",
+   "flow_axis": [
+    1,
+    0
+   ]
+  },
+  {
    "kind": "tee",
    "file": null,
    "junction": true,
