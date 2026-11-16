@@ -1004,6 +1004,53 @@ def _crossing_gaps(pieces, free, prm):
     return crossed, pairs
 
 
+def _crossing_strokes(pieces, att, prm):
+    """기호에 붙인 선 끝 둘이 그 기호의 곧은 선 하나를 사이에 두고 끊어 그린 엇갈림(_crossing_gaps와 같은 모양)이면
+    {(조각, k): (짝 (조각, k), 점)}. 가로지른 선이 기호에 묶인 선이라 끝이 기호에 붙었을 뿐, 배관은 그 선을 건너간다
+    (APR1400 134쪽: LS 012 지시선이 LS 원·플랜지와 한 기호로 묶이고, 그 선을 끊어 건너는 AOV 256 배관의 두 끝이 그
+    기호에 붙어 탱크·배수 깔때기와 AOV가 이어진다). 두 끝이 같은 굵기·한 줄·맞은편이고 선에 거의 수직일 때만 본다."""
+    by_sym = collections.defaultdict(list)
+    for (i, k), (s, basis) in att.items():
+        if basis == "pdf_path_endpoint" and len(pieces[i]["pts"]) >= 2:
+            by_sym[id(s)].append((i, k, s))
+    out = {}
+    for ends in by_sym.values():
+        if len(ends) < 2:
+            continue
+        segs = [(a, b) for m in ends[0][2].strokes for a, b in _segs(m["pts"])]
+        near = []
+        for i, k, _ in ends:
+            pts = pieces[i]["pts"]
+            pt, prev = (pts[0], pts[1]) if k == 0 else (pts[-1], pts[-2])
+            L = math.hypot(pt[0] - prev[0], pt[1] - prev[1])
+            if L == 0:
+                continue
+            o = ((pt[0] - prev[0]) / L, (pt[1] - prev[1]) / L)
+            for n, (a, b) in enumerate(segs):
+                d, q = _seg_dist(pt, a, b)
+                sl = math.hypot(b[0] - a[0], b[1] - a[1])
+                if d > prm["end_tol"] or sl == 0 or \
+                        min(math.hypot(q[0] - e[0], q[1] - e[1]) for e in (a, b)) <= prm["end_tol"]:
+                    continue
+                u = ((b[0] - a[0]) / sl, (b[1] - a[1]) / sl)
+                if abs(o[0] * u[0] + o[1] * u[1]) > 0.5:
+                    continue
+                near.append((i, k, pt, o, n, q, u[0] * (pt[1] - a[1]) - u[1] * (pt[0] - a[0])))
+                break
+        for x, (i1, k1, p1, o1, n1, q1, s1) in enumerate(near):
+            for i2, k2, p2, o2, n2, q2, s2 in near[x + 1:]:
+                if n1 != n2 or i1 == i2 or s1 * s2 >= 0 or (i1, k1) in out or (i2, k2) in out:
+                    continue
+                if o1[0] * o2[0] + o1[1] * o2[1] > -0.9 or math.hypot(q1[0] - q2[0], q1[1] - q2[1]) > prm["end_tol"] * 2:
+                    continue
+                if math.hypot(p1[0] - p2[0], p1[1] - p2[1]) > prm["crossing_gap_max"] or \
+                        pieces[i1].get("width") != pieces[i2].get("width"):
+                    continue
+                out[(i1, k1)] = ((i2, k2), p1)
+                out[(i2, k2)] = ((i1, k1), p2)
+    return out
+
+
 def _arm_dir(pts, k):
     """꺾은선 pts의 끝 k(0 = 처음, 1 = 마지막)에서 선 안쪽으로 향하는 단위 벡터. 길이가 없으면 None."""
     seq = pts if k == 0 else pts[::-1]
@@ -1193,7 +1240,13 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
         else:
             free.append((i, k, pt))
     # 엇갈림 끊김(도면 관례: 한쪽 선을 다른 선 앞뒤에서 끊어 그림)은 분기가 아니라 그 선을 건너 이어지는 배관이다
+    over = _crossing_strokes(pieces, att, prm)
+    for ik in over:
+        del att[ik]
+    free += [(i, k, pt) for (i, k), (_, pt) in over.items()]
     crossed, gap_bridges = _crossing_gaps(pieces, free, prm)
+    crossed |= set(over)
+    gap_bridges += [(pt, over[mate][1]) for ik, (mate, pt) in over.items() if ik < mate]
     bridges = list(bridges) + gap_bridges
     # 선 끝이 다른 선 중간에 닿으면 그 선을 나눈다(분기)
     splits = {}

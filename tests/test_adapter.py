@@ -745,6 +745,20 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertNotIn(("physical_connection", (60, 220)), run(6.0))
         self.assertNotIn(("physical_connection", (60, 220)), run(2.4, crossing=False))
 
+    def test_pipe_broken_across_line_drawn_into_symbol_is_one_pipe(self):
+        # APR1400 134쪽: LS 012 지시선이 LS 원과 한 기호로 묶이고, 그 선 앞뒤에서 끊어 그린 AOV 256 배관의 두 끝이 그
+        # 기호에 붙어 위아래가 기호를 거쳐 이어졌다. 끊어 그린 배관은 그 선을 건너가는 한 배관이다. 굵기가 다르면 그대로 둔다
+        def run(lower_width):
+            lead = {"id": "lead", "pts": [(150, 150), (242, 150)], "bbox": (150, 150, 242, 150), "kind_": "poly",
+                    "width": 0.26}
+            sym = pdf_vector._Sym([lead], stroke_only=True)
+            polys = [{"id": "up", "pts": [(200, 80), (200, 148.8)], "width": 0.26},
+                     {"id": "down", "pts": [(200, 151.2), (200, 220)], "width": lower_width}]
+            _, chains = pdf_vector._build_solid([sym], polys, [], dict(pdf_vector.PARAMS))
+            return sorted(tuple(ch["evidence"]) for ch in chains)
+        self.assertEqual(run(0.26), [("down", "up")])
+        self.assertEqual(run(0.13), [("down",), ("up",)])
+
     def test_pipe_corner_beside_symbol_is_not_attached(self):
         # APR1400 008쪽 MOV 상승관 꼭대기 모서리가 TEW 상자 변에서 1.8pt 떨어져 있다. 두 선이 끝을 맞댄 모서리는 배관이
         # 꺾이는 자리라 상자에 붙이지 않는다
