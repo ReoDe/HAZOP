@@ -244,7 +244,7 @@ def _ends_name(text, word):
 
 class Template:
     __slots__ = ("entry_id", "shape", "comp_key", "size", "size_ratio", "max_distance", "variants",
-                 "set_attributes", "order", "requires", "basis", "words", "last")
+                 "set_attributes", "order", "requires", "basis", "words", "last", "unless")
 
     def __init__(self, entry_id, spec):
         self.entry_id = entry_id
@@ -280,6 +280,13 @@ class Template:
                 self.last = spec.get("last", True)
                 if not isinstance(self.last, bool):
                     raise SymbolLibraryError("%s: last=%r는 true/false" % (entry_id, self.last))
+                # unless: 이 낱말 가운데 하나라도 라벨에 있으면 맞지 않는다('DUCT HEATER'는 공조 덕트 가열 코일의 이름인데,
+                # 이름 글자가 코일 상자가 아닌 옆 송풍기에 붙는 일이 많다. 코일은 상자 안 HC·EL 글자로 읽는다)
+                self.unless = spec.get("unless", [])
+                if not isinstance(self.unless, list) or any(not isinstance(w, str) or not WORD_RE.match(w)
+                                                            for w in self.unless):
+                    raise SymbolLibraryError("%s: unless=%r는 영문 대문자 낱말 목록" % (entry_id, self.unless))
+                self.unless = tuple(self.unless)
             return
         if self.shape != "grid":
             raise SymbolLibraryError("%s: 모르는 견본 모양 %r" % (entry_id, self.shape))
@@ -430,6 +437,8 @@ class Library:
         """라벨의 영문 낱말들 → (항목, 맞은 낱말들). 낱말이 모두 있는 견본 가운데 order가 가장 작은 것.
         last 견본은 라벨 글자(text, 대문자)에서 그 낱말 뒤에 번호·한 글자만 올 때만 맞는다(text가 없으면 낱말 목록으로 본다)."""
         for _, e, t in self._label_words:
+            if any(w in tokens for w in t.unless):
+                continue
             if all(w in tokens for w in t.words) and (not t.last or _ends_name(text if text is not None else
                                                                                 " ".join(tokens), t.words[-1])):
                 return e, t.words

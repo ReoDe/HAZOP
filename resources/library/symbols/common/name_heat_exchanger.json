@@ -1,10 +1,10 @@
 {
  "id": "common.name_heat_exchanger",
- "revision": 2,
+ "revision": 3,
  "added": "2026-11-11",
- "updated": "2026-11-16",
+ "updated": "2026-11-17",
  "name": {
-  "en": "EXCHANGER / HX / COOLER",
+  "en": "EXCHANGER / HX / COOLER / HEATER",
   "ko": "열교환기(이름 낱말)"
  },
  "category": "설비",
@@ -47,6 +47,30 @@
     "AFTERCOOLER"
    ],
    "order": 102
+  },
+  {
+   "shape": "label_words",
+   "words": [
+    "HEATER"
+   ],
+   "order": 103,
+   "unless": [
+    "DUCT",
+    "ELECTRIC",
+    "ELECT"
+   ]
+  },
+  {
+   "shape": "label_words",
+   "words": [
+    "REHEATER"
+   ],
+   "order": 104,
+   "unless": [
+    "DUCT",
+    "ELECTRIC",
+    "ELECT"
+   ]
   }
  ],
  "sources": [
@@ -57,6 +81,10 @@
   {
    "set": "일반 P&ID 표기",
    "note": "압축기 중간·후 냉각기(INTERCOOLER·AFTERCOOLER)는 낱말이 붙어 COOLER로 잡히지 않는다. 'AIR COMPRESSOR \"A\" AFTERCOOLER' 상자가 압축기가 되지 않게 COMPRESSOR(115)보다 먼저 본다(APR1400 043쪽)"
+  },
+  {
+   "set": "APR1400 DCD",
+   "note": "급수 가열기(LP/HP FW HEATER)·재열기(2ND STAGE REHEATER, MSR)는 관 다발 열교환기다. 정답지 규약(KEY-CONVENTIONS)이 공조 가열 코일도 heat_exchanger로 둔다. 'DUCT HEATER' 이름은 코일 상자 대신 옆 송풍기에 붙는 일이 있어 뺀다(080쪽). ELECTRIC·ELECT HEATER는 전기 히터라 열교환기가 아니다(098쪽 HT WATER ELECTRIC HEATER, 2026-11-17)"
   }
  ]
 }

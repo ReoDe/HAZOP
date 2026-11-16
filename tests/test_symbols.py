@@ -848,6 +848,12 @@ class RuleTemplateTest(LibraryCase):
         self.assertEqual(lib.word_rule(["TURBINE", "DRIVEN", "PUMP"], "TURBINE-DRIVEN PUMP")[0].id, "t.pump")
         self.assertEqual(lib.word_rule(["TURBINE", "TRIP"], "TURBINE TRIP"), (None, None))
 
+    def test_unless_word_blocks_the_template(self):
+        # 'DUCT HEATER'는 공조 가열 코일의 이름이고 옆 송풍기에 붙기 쉬워 HEATER 견본이 맞지 않는다
+        lib = self.write([rule_entry("t.hx", "heat_exchanger", [dict(label_words(["HEATER"], 10), unless=["DUCT"])])])
+        self.assertEqual(lib.word_rule(["LP", "FW", "HEATER", "3A"], "LP FW HEATER 3A")[0].id, "t.hx")
+        self.assertEqual(lib.word_rule(["RSR", "ELECT", "DUCT", "HEATER"], "RSR ELECT. DUCT HEATER"), (None, None))
+
     def test_rule_templates_do_not_join_grid_matching(self):
         lib = self.write([rule_entry("t.plain", "manual_valve", [structure(["bowtie"], 20, "valve_body")])])
         self.assertEqual(lib.match(sig_of([body(BOWTIE_H)])).outcome, "none")

@@ -149,7 +149,7 @@ JSON이다. 저장소의 다른 사전(`registry.json`)과 같고, 배포본에 
 | `grid` | 구성·크기·격자 거리(§4.1) | `composition`, `size_pt`, `size_ratio`, `rotations`, `max_distance`, `grid`, `set_attributes` |
 | `zero_size` | 폭과 높이가 모두 0인 도형 | `set_attributes` |
 | `structure` | 추출기가 판정한 구조 특징(S7). 격자로는 가를 수 없는 몸체 수와 배치, 선의 방향을 본다 | `requires`(특징 이름 목록, 모두 있어야 맞음), `order`(정수), `basis`(노드의 `classification_basis`에 남는 글자) |
-| `label_words` | 라벨의 장비 이름 낱말(S7) | `words`(영문 대문자 낱말 목록, 모두 있어야 맞음), `order`(정수) |
+| `label_words` | 라벨의 장비 이름 낱말(S7) | `words`(영문 대문자 낱말 목록, 모두 있어야 맞음), `order`(정수), `last`(참이면 마지막 낱말이 이름 끝 낱말일 때만, 기본 참), `unless`(이 낱말 가운데 하나라도 있으면 맞지 않음, 기본 없음) |
 
 `structure`와 `label_words` 견본은 격자 매칭에 끼지 않고, 다음 규칙을 따른다.
 

@@ -373,6 +373,17 @@ class PdfVectorRuleTest(unittest.TestCase):
         kinds = {n["geometry"]["x"]: n["kind"] for n in ext["nodes"]}
         self.assertEqual((kinds[100], kinds[300]), (None, "condenser"))
 
+    def test_feedwater_heater_name_is_heat_exchanger(self):
+        # APR1400 116~124쪽 'LP FW HEATER 3A'·'2ND STAGE REHEATER A'는 관 다발 열교환기다. 'DUCT HEATER'는 코일 상자의
+        # 이름이 옆 송풍기에 붙는 일이 있어 이름 낱말로 정하지 않는다. ELECTRIC HEATER는 전기 히터다
+        def kind(*words):
+            ext = pdf_run([rect(100, 100, 160, 130)], [word(w, 105, 133 + 4 * i, size=3) for i, w in enumerate(words)])
+            return [n["kind"] for n in ext["nodes"]]
+        self.assertEqual(kind("LP FW HEATER 3A"), ["heat_exchanger"])
+        self.assertEqual(kind("2ND STAGE REHEATER A"), ["heat_exchanger"])
+        self.assertEqual(kind("RSR ELECT.", "DUCT", "HEATER"), [None])
+        self.assertEqual(kind("HT WATER", "ELECTRIC HEATER"), [None])  # 전기 히터(098쪽)는 열교환기가 아니다
+
     def test_pipe_between_two_bodies(self):
         ext = pdf_run([rect(100, 100, 140, 160), rect(300, 100, 340, 160), line((140, 130), (300, 130))])
         self.assertEqual(ext["validation"]["blockers"], [])
