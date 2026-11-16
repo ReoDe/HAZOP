@@ -91,6 +91,41 @@ class PropagateTest(unittest.TestCase):
         self.assertEqual(rels[1]["flow_direction"]["to"], "f")
 
 
+class FakeSym:
+    def __init__(self, bbox, markers):
+        self.bbox, self.markers = bbox, markers
+
+
+def pipe(i, a, b, pa, pb, flow=None):
+    r = rel(i, a, b, flow)
+    r["endpoints"][0]["point"], r["endpoints"][1]["point"] = list(pa), list(pb)
+    return r
+
+
+class EndSymbolFlowTest(unittest.TestCase):
+    # 덕트 끝 공기 흐름 화살표(APR1400 077쪽 축전지실 배기): 막대가 덕트 끝, 화살촉이 덕트 쪽을 가리키면 공기가 덕트로 들어간다
+    def test_air_arrow_pointing_into_duct_flows_into_duct(self):
+        arrow = FakeSym([0, 0, 3, 14], [tri((1.5, 2), (1.5, 8))])  # 위(y 작은 쪽)를 가리킴, 덕트는 위 끝 막대에 닿음
+        rels = [pipe(1, "a", "f", (1.5, 0), (1.5, -60)), rel(2, "f", "x")]
+        n = pv._end_symbol_flows(rels, {"a": arrow}, {"a": "air_flow_arrow", "f": "fan", "x": "damper"})
+        self.assertEqual(n, 1)
+        self.assertEqual((rels[0]["flow_direction"]["from"], rels[0]["flow_direction"]["basis"]), ("a", "air_flow_arrow"))
+
+    def test_air_arrow_pointing_away_from_duct_flows_out_of_duct(self):
+        arrow = FakeSym([0, 0, 14, 3], [tri((0, 1.5), (6, 1.5))])  # 왼쪽을 가리킴, 덕트는 오른쪽 막대에 닿음
+        rels = [pipe(1, "f", "a", (80, 1.5), (14, 1.5))]
+        pv._end_symbol_flows(rels, {"a": arrow}, {"a": "air_flow_arrow", "f": "fan"})
+        self.assertEqual(rels[0]["flow_direction"]["to"], "a")
+
+    def test_existing_direction_and_side_touch_are_kept(self):
+        arrow = FakeSym([0, 0, 3, 14], [tri((1.5, 2), (1.5, 8))])
+        rels = [pipe(1, "a", "f", (1.5, 0), (1.5, -60), "-")]
+        self.assertEqual(pv._end_symbol_flows(rels, {"a": arrow}, {"a": "air_flow_arrow"}), 0)
+        self.assertEqual(rels[0]["flow_direction"]["from"], "f")
+        side = [pipe(1, "a", "f", (3, 7), (60, 7))]  # 화살표 축 옆(가운데 높이)에 닿은 선은 정하지 않는다
+        self.assertEqual(pv._end_symbol_flows(side, {"a": arrow}, {"a": "air_flow_arrow"}), 0)
+
+
 class SnpFlowTest(unittest.TestCase):
     """SNP 가상 도면은 drawio에서 그린 화살촉이 PDF에 그대로 있다. 추출이 방향을 하나 이상 정하는지."""
 

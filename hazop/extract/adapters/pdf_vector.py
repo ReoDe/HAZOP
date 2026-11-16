@@ -52,7 +52,8 @@ from .pdf_vector_grouping import (
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes, same_sheet_letter_pairs,
 )
-from .pdf_vector_flow import _chain_flow, _propagate_flows, _vent_ends, arrow_axis, continuation_flow, end_arrow
+from .pdf_vector_flow import (_chain_flow, _end_symbol_flows, _propagate_flows, _vent_ends, arrow_axis, continuation_flow,
+                               end_arrow)
 from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels, parse_label
 from .pdf_vector_labels import (ALARM_COLUMN_TOL, ALARM_RE, ISA_LABEL_RE, PAREN_TOKEN_RE, PLATE_PART_RE, POSITION_CODE_RE, POSITION_TEXT_RE, NUMBER_PLATE_RE,
                                 VALVE_TAG_RE,
@@ -3581,10 +3582,13 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         locations.append({"object_id": sid, "local_id": local_id, "coordinate_space": COORDINATE_SPACE,
                           "unit": UNIT, "bbox": _box_out(_bbox_pts(centers)), "approximate": True,
                           "method": "sequence_letter_pair"})
-    # 흐름 보존으로 방향 넓히기(2포트 배관 기호·분기점). 정한 관계는 방향 미확인에서 뺀다
+    # 끝 기호가 그린 방향(공기 흐름 화살표)을 먼저 매기고, 흐름 보존으로 넓힌다(2포트 배관 기호·분기점).
+    # 정한 관계는 방향 미확인에서 뺀다
     before = {r["local_id"] for r in relations if r.get("flow_direction")}
     housing = {local_of[id(s)][0] for s in syms if s.housing}
-    if _propagate_flows(relations, {n["local_id"]: n.get("kind") for n in node_out}, housing):
+    kind_of = {n["local_id"]: n.get("kind") for n in node_out}
+    seeded = _end_symbol_flows(relations, {local_of[id(s)][0]: s for s in syms if id(s) in local_of}, kind_of)
+    if _propagate_flows(relations, kind_of, housing) + seeded:
         filled = {r["local_id"] for r in relations if r.get("flow_direction")} - before
         unknowns[:] = [u for u in unknowns if not (u.get("check") == "unknown_flow_direction" and u.get("target") in filled)]
     # 배관 글자(구경·배관 번호)를 가장 가까운 물리 배관 속성으로(pdf_vector_lines). 붙인 글자는 남은 글자 목록에서 뺀다

@@ -5,6 +5,7 @@
 2. 흐름 보존: 방향을 아는 배관에서 시작해, 2포트 배관 기호(밸브·배관 부속)는 들어온 만큼 나가고, 분기점(티)에서
    아는 배관이 모두 들어오는(또는 모두 나가는) 쪽이고 모르는 배관이 하나뿐이면 그 하나는 반대쪽이다. 설비(탱크·펌프
    등)는 입출구가 여럿일 수 있어 지나가지 않는다. 바뀌지 않을 때까지 되풀이한다.
+3. 끝 기호: 흐름 보존 전에, 방향을 그림으로 그린 끝 기호(덕트 끝 공기 흐름 화살표)에 닿은 배관에 그 방향을 매긴다.
 쪽 번호·좌표로 가르는 예외는 두지 않는다.
 """
 
@@ -164,6 +165,51 @@ def continuation_flow(sym, point):
         return None
     pointed_end_is_hi = at_hi == 1
     return "out" if (t >= 0.75) == pointed_end_is_hi else "into"
+
+
+def air_arrow_flow(sym, point):
+    """덕트 끝 공기 흐름 화살표(범례 1.7-1 2 of 4 DUCTED AIR FLOW)에 닿은 덕트 끝 point → 'out'(화살촉이 덕트 쪽을 가리킴:
+    공기가 방에서 덕트로 들어감), 'in'(화살촉이 덕트 반대쪽: 덕트에서 방으로 나옴), None(화살촉이 하나가 아니거나 덕트가
+    화살표 축 옆에 닿음)."""
+    axes = [ax for ax in (arrow_axis(m) for m in sym.markers) if ax]
+    if len(axes) != 1:
+        return None
+    _, d = axes[0]
+    x0, y0, x1, y1 = sym.bbox
+    along = (point[0] - (x0 + x1) / 2.0) * d[0] + (point[1] - (y0 + y1) / 2.0) * d[1]
+    if abs(along) < 0.25 * max(x1 - x0, y1 - y0):
+        return None
+    return "out" if along > 0 else "in"
+
+
+def _end_symbol_flows(relations, sym_of, kind_of):
+    """방향 없는 물리 배관에 끝 기호가 그린 방향을 매긴다(제자리에서 고침). sym_of: {node_local_id: _Sym}.
+    공기 흐름 화살표는 덕트 하나만 닿은 것만 본다. 한 관계에 두 끝 기호가 다른 방향을 말하면 정하지 않고, 화살촉 등으로
+    이미 방향이 있는 관계는 건드리지 않는다. → 새로 정한 관계 수. basis는 끝 기호 이름."""
+    pipes = [r for r in relations if r.get("kind") == "physical_connection" and None not in _ends(r)
+             and _ends(r)[0] != _ends(r)[1]]
+    deg = {}
+    for r in pipes:
+        for n in _ends(r):
+            deg[n] = deg.get(n, 0) + 1
+    votes = {}
+    for r in pipes:
+        for e in r["endpoints"]:
+            n = e["node_local_id"]
+            if kind_of.get(n) == "air_flow_arrow" and deg[n] == 1 and n in sym_of:
+                sense = air_arrow_flow(sym_of[n], e["point"])
+                if sense:
+                    other = next(x for x in _ends(r) if x != n)
+                    votes.setdefault(id(r), (r, set()))[1].add(((n, other) if sense == "out" else (other, n), "air_flow_arrow"))
+    added = 0
+    for r, vs in votes.values():
+        if r.get("flow_direction") or len({v[0] for v in vs}) != 1:
+            continue
+        (frm, to), basis = next(iter(vs))
+        ends = dict(zip(_ends(r), ("source", "target")))
+        r["flow_direction"] = {"from": frm, "to": to, "from_end": ends[frm], "to_end": ends[to], "basis": basis}
+        added += 1
+    return added
 
 
 def _ends(r):
