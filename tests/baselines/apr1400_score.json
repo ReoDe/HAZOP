@@ -944,14 +944,14 @@
    "connector_bad_target": 0,
    "connectors_detected": 0,
    "tag_exact": 11,
-   "tag_not_in_text": 3,
+   "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
   "79": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
    "tag_exact": 11,
-   "tag_not_in_text": 3,
+   "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
   "8": {
@@ -965,7 +965,7 @@
    "connector_bad_target": 0,
    "connectors_detected": 0,
    "tag_exact": 14,
-   "tag_not_in_text": 1,
+   "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
   "81": {
@@ -1123,9 +1123,9 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 291,
-  "seconds": 329,
+  "seconds": 331,
   "tag_exact": 1313,
-  "tag_not_in_text": 61,
+  "tag_not_in_text": 54,
   "tagged": 4183,
   "unclassified": 6838,
   "unknowns": 51227,
