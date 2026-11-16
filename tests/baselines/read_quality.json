@@ -185,7 +185,7 @@
    "connection": {
     "correct": 169,
     "false_pos": 2,
-    "units": 199
+    "units": 219
    },
    "kind": {
     "correct": 110,
@@ -381,14 +381,14 @@
     "units": 57
    },
    "connection": {
-    "correct": 120,
+    "correct": 114,
     "false_pos": 0,
-    "units": 142
+    "units": 139
    },
    "kind": {
-    "correct": 88,
-    "false_pos": 0,
-    "units": 96
+    "correct": 86,
+    "false_pos": 2,
+    "units": 94
    },
    "tag": {
     "correct": 35,
