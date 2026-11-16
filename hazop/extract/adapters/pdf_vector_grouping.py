@@ -149,12 +149,22 @@ def _cluster_bodies(bodies, prm, polys=()):
     return [_Sym([bodies[i] for i in g]) for g in groups]
 
 
+BUBBLE_MIN = 8.0          # 계기 원 지름 하한(pt, pdf_vector.ISA_BUBBLE_MIN과 같다)
+TANGENT_RATIO = 0.85      # 두 원 가운데 거리 / 지름 평균이 이 이상이면 맞닿기만 한 것
+EQUIPMENT_BUBBLE_RATIO = 2.0  # 장비 몸체 짧은 변 / 계기 원 지름 하한
+
+
 def _stacked(a, b, prm):
     """크기가 같은 둥근 닫힌 도형 둘이 변만 맞대고 위아래·좌우로 나란한가(위아래로 붙여 그린 계기 원·비석, APR1400 097쪽
     TEW 003 위 TI 003, 105쪽 FT 1022Y 아래 PT 1023D). 맞댄 두 계기는 저마다 제 기호다."""
     if not (a.get("closed") and b.get("closed") and a.get("curved") and b.get("curved")) or a.get("solid") or b.get("solid"):
         return False
     A, B = a["bbox"], b["bbox"]
+    if _is_circle(a, prm) and _is_circle(b, prm) and min(_w(A), _w(B)) >= BUBBLE_MIN and \
+            math.dist(_center(A), _center(B)) >= TANGENT_RATIO * (_w(A) + _w(B)) / 2:
+        # 계기 크기 원 둘이 비스듬히 맞닿기만 한 것(134쪽 LS 011 원과 공기 구동 밸브 번호 원 255, 051쪽 HS 원과 옆 빈 원)도
+        # 저마다 제 기호다. 크게 겹친 두 원(겹쳐 그린 한 기호)은 그대로 묶는다
+        return True
     if not all(0.75 <= f(A) / f(B) <= 1.0 / 0.75 for f in (_w, _h) if f(B) > 0) or not _w(B) or not _h(B):
         return False
     for k in (0, 1):  # k축으로 맞대고 다른 축으로 나란하다
@@ -1216,17 +1226,28 @@ def _group_symbols(cls, prm):
     return syms, polys, markers, dashes
 
 
-BUBBLE_MIN = 8.0          # 계기 원 지름 하한(pt, pdf_vector.ISA_BUBBLE_MIN과 같다)
-EQUIPMENT_BUBBLE_RATIO = 2.0  # 장비 몸체 짧은 변 / 계기 원 지름 하한
+def _bubble_size(s, prm):
+    """s가 계기 원 기호(원 하나, 또는 같은 자리에 겹쳐 그린 네모 + 원: 공유 표시 계기)면 원 지름, 아니면 None.
+    안의 가로줄·글자 칸 같은 선은 몸체 안이나 둘레에 있어야 한다."""
+    circles = [b for b in s.bodies if _is_circle(b, prm)]
+    if len(circles) != 1 or _w(circles[0]["bbox"]) < BUBBLE_MIN:
+        return None
+    d = _w(circles[0]["bbox"])
+    if any(b is not circles[0] and _box_gap(b["bbox"], circles[0]["bbox"]) > 0 or
+           b is not circles[0] and max(_w(b["bbox"]), _h(b["bbox"])) > 1.3 * d for b in s.bodies):
+        return None
+    if any(not _inside(_center(m["bbox"]), s.core, 0.25 * d) for m in s.strokes):
+        return None  # 원 둘레에 바짝 붙인 짧은 표시(080쪽 PDIS 원 왼쪽 꺾쇠)는 괜찮다. 밖으로 뻗은 선이 있으면 계기 원이 아니다
+    return d
 
 
 def _equipment_bubble(s, host, prm):
-    """s가 원 하나뿐인 계기 크기 원이고 host 몸체가 그 원보다 훨씬 큰가(장비에 선으로 이어진 계기 원)."""
-    if len(s.bodies) != 1 or s.strokes and not all(_inside(_center(m["bbox"]), s.core) for m in s.strokes):
+    """s가 계기 원 기호이고, host가 그 원보다 훨씬 큰 몸체(장비)이거나 다른 계기 원 기호인가. 어느 쪽이든 둘을 잇는 선은
+    구동부 축이 아니라 계측·신호선이다."""
+    d = _bubble_size(s, prm)
+    if d is None:
         return False
-    b = s.bodies[0]
-    return _is_circle(b, prm) and _w(b["bbox"]) >= BUBBLE_MIN and \
-        min(_w(host.core), _h(host.core)) >= EQUIPMENT_BUBBLE_RATIO * _w(b["bbox"])
+    return min(_w(host.core), _h(host.core)) >= EQUIPMENT_BUBBLE_RATIO * d or _bubble_size(host, prm) is not None
 
 
 def _merge_appendages(syms, chains, prm):

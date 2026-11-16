@@ -1445,6 +1445,18 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(pdf_vector._instrument_kind("FC", 11), (None, None))
         self.assertEqual(pdf_vector._instrument_kind("FC\n101", 11), ("controller", "isa_letters:FC"))
 
+    def test_touching_or_linked_instrument_circles_stay_apart(self):
+        # APR1400 134쪽 LS 011 원은 옆 밸브 번호 원 255에 비스듬히 맞닿는다. 080쪽 PDAH 081 원 안에서 내려온 선이 아래
+        # PDIS 3081 원에 닿는다. 어느 쪽도 한 기호가 아니다. 크게 겹친 두 원은 예전처럼 한 기호다
+        tangent = pdf_run([circle(100, 100, 5.2), circle(108, 107, 4.5), line((100, 94.8), (100, 60)),
+                           line((112, 110), (140, 140))], [word("LS", 97, 97, size=3)])
+        self.assertEqual(sorted(n["kind"] or "-" for n in tangent["nodes"]), ["-", "switch"])
+        linked = pdf_run([circle(200, 100, 5.4), line((200, 102), (200, 110)), circle(200, 115.4, 5.4)],
+                         [word("PDAH", 196, 97, size=2.5), word("PDIS", 197, 113, size=2.5)])
+        self.assertEqual(sorted(n["kind"] for n in linked["nodes"]), ["alarm", "switch"])
+        overlap = pdf_run([circle(300, 100, 5.2), circle(302, 101, 5.2)])
+        self.assertEqual(len(overlap["nodes"]), 1)
+
     def test_empty_circle_does_not_take_isa_tag_from_text_outside(self):
         # APR1400 055쪽: 조절 밸브 옆 빈 번호 원이 위쪽 랙 이름 'LP12'를 라벨로 받는다. 원 밖 글자라 계기 태그가 아니다
         outside = pdf_run([circle(100, 100, 5.5)], [word("LP12", 96, 80, size=4)])
