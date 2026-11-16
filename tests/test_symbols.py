@@ -1742,9 +1742,10 @@ class DictionaryAdditionTest(unittest.TestCase):
         (node,) = extract_wide(prims)["nodes"]
         self.assertEqual((node["kind"], node["evidence"].get("symbol_id")), ("psv", "apr1400.angle_relief_valve"))
 
-    def test_black_fill_alone_is_not_promoted(self):
-        """양끝 막대 없이 검은 마름모만 있으면 밸브로 올리지 않는다. 검정 견본 승격(_promote_black_symbols)에는 플러그
-        견본이 없어서다. 7pt 이하 작은 검은 플러그가 표식으로 남는 한계와 같은 길이다(F1-6 검토, 후속)."""
+    def test_black_plug_fill_is_a_closed_valve(self):
+        """배관 위 검은 마름모(검게 칠한 플러그 밸브)는 채움만으로도 닫힌 수동 밸브 몸통이다. 전에는 검정 견본 승격
+        (_promote_black_symbols)에 플러그 채움 견본이 없어 7pt 이하가 표식으로 남아 분기점이 되었다(F1-6 검토의 후속.
+        134쪽 V1015 채움 견본을 더함). 143쪽에서 분기점이던 자리 45곳이 수동 밸브가 되었고 표본 15/15가 밸브였다."""
         for size in (6.5, 7.28):
             half = size / 2
             diamond = filled([(100, 100 + half / 2), (100 + size / 2, 100), (100 + size, 100 + half / 2),
@@ -1752,7 +1753,8 @@ class DictionaryAdditionTest(unittest.TestCase):
             pipes = [pipe((80, 100 + half / 2), (100, 100 + half / 2)),
                      pipe((100 + size, 100 + half / 2), (120, 100 + half / 2))]
             nodes = extract_wide([diamond] + pipes)["nodes"]
-            self.assertEqual([n["kind"] for n in nodes if n["kind"]], [], size)
+            self.assertEqual([(n["kind"], n["attributes"].get("normal_position")) for n in nodes if n["kind"]],
+                             [("manual_valve", "NC")], size)
 
 
 class AddSymbolsSourcesTest(unittest.TestCase):

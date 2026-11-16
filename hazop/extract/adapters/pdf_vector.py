@@ -3082,17 +3082,26 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         else:
             c, lim = _center(v.core), 0.25 * max(_w(v.core), _h(v.core))
         return math.hypot(pt[0] - c[0], pt[1] - c[1]) <= lim
-    stem_of, straight_stem_of = {}, {}  # 구동부 기호 id → 밸브 기호(합치기는 꺾이지 않은 축만 쓴다)
+    # 검정 견본으로 올린 밸브 몸통(검게 칠한 닫힌 밸브)은 묶인 기호 전체가 사전에 없을 수 있다. 축 위 구동부 묶음을 볼 때만
+    # 밸브로 넣는다(seed_stem_of). 그 밖의 합치기·끝막음 판정은 그대로 둔다
+    seed_valves = {id(sy) for si, sy in enumerate(syms) if sy.seed is not None and id(sy) not in valve_like
+                   and rules.KIND_CATEGORY.get(cls["seeds"][sy.seed].entry.kind) == "valve"
+                   and not (si in hits and hits[si].outcome == "matched")}
+    stem_of, straight_stem_of, seed_stem_of = {}, {}, {}  # 구동부 기호 id → 밸브 기호(합치기는 꺾이지 않은 축만 쓴다)
     for ch in chains:
         if ch.get("dashed") or any(v[0] != "sym" for v, _, _ in ch["ends"]):
             continue
         (va, pa, _), (vb, pb, _) = ch["ends"]
         straight = len({(round(q[0], 2), round(q[1], 2)) for q in ch["pts"]}) == 2
         for (v, pt), (x, _) in (((va[1], pa), (vb[1], pb)), ((vb[1], pb), (va[1], pa))):
-            if id(v) in valve_like and id(x) not in valve_like and x is not v and at_stem(v, pt):
+            if x is v or id(x) in valve_like or id(x) in seed_valves or not at_stem(v, pt):
+                continue
+            if id(v) in valve_like:
                 stem_of.setdefault(id(x), []).append(v)
                 if straight:
                     straight_stem_of.setdefault(id(x), []).append(v)
+            elif id(v) in seed_valves and straight:
+                seed_stem_of.setdefault(id(x), []).append(v)
     on_valve = set(stem_of)
     # 실선 배관이 몸체 한가운데를 지나가는 작은 기호는 배관 위 부품이지 끝막음이 아니다
     solid = [(_bbox_pts(ch["pts"]), ch) for ch in chains if not ch.get("dashed")]
@@ -3122,7 +3131,9 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             acts_on.setdefault(id(v), []).append((a, h.entry))
     # 축 위에 쌓은 구동부 묶음(_operator_stacks)이 범례가 정한 구동 방식이면 묶음 조각 전부를 그 밸브에 합칠 후보로 바꿔 둔다
     index = {id(s): si for si, s in enumerate(syms)}
-    for vid, (v, members) in _operator_stacks(syms, chains, valve_like, straight_stem_of, shape_of, hits, prm).items():
+    stack_stems = {k: straight_stem_of.get(k, []) + seed_stem_of.get(k, []) for k in set(straight_stem_of) | set(seed_stem_of)}
+    for vid, (v, members) in _operator_stacks(syms, chains, valve_like | seed_valves, stack_stems, shape_of, hits,
+                                              prm).items():
         if any(plan_into.get(id(m), v) is not v for m in members):
             continue
         decided = _stack_entry(members, [hits.get(index[id(m)]) for m in members], blocks, chains)

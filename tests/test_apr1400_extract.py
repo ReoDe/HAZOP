@@ -741,6 +741,26 @@ class DoubleActingCylinderStack(unittest.TestCase):
                          [True] * len(self.PIECES))
 
 
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_134), "pdfplumber 또는 APR1400 134쪽 PDF 없음(저장소 밖 자료)")
+class BlackPlugValves(unittest.TestCase):
+    """134쪽(개발용) 검게 칠한 플러그 밸브(범례 1/4 PLUG (2-WAY) 닫힘 |◆|)는 분기점이 아니라 닫힌 밸브 노드다. 번호 글자가
+    태그가 되고, 그 위 실린더 구동부 묶음은 공기구동 밸브로 합친다."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_134, page=0)
+
+    def test_closed_plug_valves_are_valve_nodes(self):
+        got = [((node_at(self.ex, (x, y, x, y)) or {}).get("kind"), (node_at(self.ex, (x, y, x, y)) or {}).get("tag"),
+                ((node_at(self.ex, (x, y, x, y)) or {}).get("attributes") or {}).get("normal_position"))
+               for x, y in ((368.5, 153.3), (616.2, 221.9), (298.0, 341.5))]
+        self.assertEqual(got, [("manual_valve", t, "NC") for t in ("V1015", "V2013", "V1007")])
+
+    def test_cylinder_stack_on_a_black_plug_is_air_operated(self):
+        n = node_at(self.ex, (409.3, 290.6, 409.3, 290.6)) or {}
+        self.assertEqual((n.get("kind"), (n.get("attributes") or {}).get("normal_position")), ("air_operated_valve", "NC"))
+
+
 PAGE_007 = paths.folder("APR1400", "by-drawing", "007_Ch05_Fig5.1.2-2_Reactor_Coolant_Pump_Flow_Diagram.pdf")
 
 
