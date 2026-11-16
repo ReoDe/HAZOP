@@ -2163,14 +2163,20 @@ def _classify(sym, text, degree, prm, marks=()):
     # 끝의 괄호·반원이고, 막대에 매단 삼각형은 SPRAY NOZZLE OR SPARGER의 분사구다
     if not text and degree == 1 and not sym.stroke_only and max(_w(sym.bbox), _h(sym.bbox)) <= prm["pipe_cap_max"] \
             and not (len(sym.bodies) >= 2 and any(b.get("curved") for b in sym.bodies)) \
-            and not (len(sym.bodies) == 1 and _is_triangle(sym.bodies[0])) \
+            and not any(_is_triangle(b) for b in sym.bodies) \
+            and (any(b.get("curved") for b in sym.bodies) or
+                 max(_w(sym.core), _h(sym.core)) >= PIPE_CAP_ASPECT * min(_w(sym.core), _h(sym.core))) \
             and not any(b.get("closed") and not b.get("curved") and not _is_convex(b["pts"]) for b in sym.bodies):
+        # 끝막음은 배관 끝을 가로지르는 납작한 막대·괄호·반원이다(범례 1.7-1 1/4). 삼각형이 든 몸체(LT 반쪽 칠한 밸브의
+        # 흰 반쪽 + 축소관)와 네모 상자(S 상자, 범례 쪽 X·* 상자, 시료 패널)는 끝막음이 아니다. 143쪽 pipe_cap 표본
+        # 40개 가운데 20개가 이런 것이었다(2026-11-16)
         # 나비처럼 꼬인 닫힌 다각형은 밸브 몸통이다. 구동부와 따로 묶인 솔레노이드 파일럿 밸브는 S 상자 선 하나만 닿아도
         # 끝막음이 아니다(APR1400 063쪽 240)
         return "pipe_cap", PIPE_CAP_BASIS
     return None, None
 
 
+PIPE_CAP_ASPECT = 1.4  # 곧은 변 끝막음 몸체의 긴 변 / 짧은 변 하한(납작한 막대)
 WORD_INSIDE_RE = re.compile(r"[A-Z]{2,}")  # 기호 상자 안 낱말(두 글자 이상 대문자)
 NAME_EQUIPMENT_MIN = 6.0  # 이름 낱말로 설비 종류를 정하는 기호의 긴 변 하한(pt). 가장 작은 펌프 기호가 10pt 안팎
 PATTERN_MAX = 6.0        # 무늬 낱개: 긴 변 상한(pt). 밸브 몸통·S 상자는 5~11pt라 늘어서도 선이 닿는다

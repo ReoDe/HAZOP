@@ -1428,6 +1428,15 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual([n["kind"] for n in cap["nodes"]], ["pipe_cap"])
         self.assertEqual([n["kind"] for n in nozzle["nodes"]], [None])
 
+    def test_square_box_or_triangle_piece_at_line_end_is_not_a_pipe_cap(self):
+        # 끝막음은 납작한 막대·괄호·반원이다. 배관 끝 네모 상자(S 상자, 범례 쪽 X·* 상자)와 LT 반쪽 칠한 밸브의 흰 반쪽 +
+        # 축소관 조각은 끝막음이 아니다(APR1400 143쪽 pipe_cap 표본 40개 중 20개)
+        box = pdf_run([line((100, 100), (200, 100)), rect(200, 97, 206, 103)])
+        piece = pdf_run([line((100, 100), (200, 100)), prim([(200, 97), (200, 103), (203, 100), (200, 97)], closed=True),
+                         prim([(203, 100), (206, 98), (206, 102), (203, 100)], closed=True)])
+        self.assertEqual([n["kind"] for n in box["nodes"]], [None])
+        self.assertNotIn("pipe_cap", [n["kind"] for n in piece["nodes"]])
+
     def test_circle_with_equipment_word_is_not_instrument(self):
         ext = pdf_run([circle(100, 100, 20), rect(200, 80, 240, 120), line((120, 100), (200, 100))],
                       [word("P-01", 90, 124), word("PUMP", 90, 131)])
