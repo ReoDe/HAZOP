@@ -67,7 +67,8 @@ EXPORT_CLASS = {
 EXPORT_NONE = ("damper", "drain", "test_connection", "pipe_cap", "nozzle",
                # APR1400 범례로 들인 종류(registry 0.9.0) 가운데 DEXPI 클래스가 분명하지 않은 것
                "air_flow_arrow", "slip_joint", "sparger", "hose_connection", "flexible_hose", "diaphragm_seal",
-               "expansion_joint", "pilot_light", "alarm", "sample_probe", "level_element", "chiller")
+               "expansion_joint", "pilot_light", "alarm", "sample_probe", "level_element", "chiller",
+               "relay_converter", "humidifier")
 INSTRUMENT_KINDS = ("transmitter", "controller", "indicator", "recorder", "switch", "temperature_element")
 # 구동계(ActuatingSystem)를 같이 내는 밸브 kind
 ACTUATED_KINDS = ("motor_operated_valve", "air_operated_valve", "solenoid_valve", "control_valve")

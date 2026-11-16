@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.10.0",
+  "registry_version": "0.11.0",
   "layers": [
     {"id": "pid", "label_ko": "P&ID 층", "screen": "pid", "filter": "type", "default_on": true},
     {"id": "knowledge", "label_ko": "지식 층", "screen": "kn", "filter": "type", "default_on": true},
@@ -118,8 +118,10 @@
     {"id": "alarm", "parent": "instrument", "kind": "alarm", "label_ko": "경보기", "label_en": "Alarm"},
     {"id": "sample_probe", "parent": "instrument", "kind": "sample_probe", "label_ko": "시료 탐침", "label_en": "Sample probe"},
     {"id": "level_element", "parent": "instrument", "kind": "level_element", "label_ko": "수위 검출부", "label_en": "Level element"},
+    {"id": "relay_converter", "parent": "instrument", "kind": "relay_converter", "label_ko": "릴레이·변환기", "label_en": "Relay / converter"},
     {"id": "electric_heater", "parent": "equipment", "kind": "electric_heater", "label_ko": "전기 가열기", "label_en": "Electric heater", "dexpi_class": "ElectricHeater"},
     {"id": "chiller", "parent": "equipment", "kind": "chiller", "label_ko": "냉동기", "label_en": "Chiller"},
+    {"id": "humidifier", "parent": "equipment", "kind": "humidifier", "label_ko": "가습기", "label_en": "Humidifier"},
 
     {"id": "knowledge_item", "parent": null, "layer": "knowledge", "label_ko": "지식 항목", "label_en": "Knowledge item"},
     {"id": "document", "parent": "knowledge_item", "id_prefix": "doc-", "label_ko": "문서", "label_en": "Document",

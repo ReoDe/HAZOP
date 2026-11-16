@@ -43,7 +43,9 @@ SYMBOL_DICT_KINDS = {"damper": "valve", "test_connection": "inline_component",
                      "silencer": "inline_component", "flame_arrestor": "inline_component",
                      "sight_glass": "inline_component", "pilot_light": "instrument", "alarm": "instrument",
                      "sample_probe": "instrument", "level_element": "instrument", "electric_heater": "equipment",
-                     "chiller": "equipment"}
+                     "chiller": "equipment",
+                     # 범례 1.7-1 3/4 기능 문자 Y(RELAY, CONVERTER, COMPUTING)와 2/4 HUMIDIFIER(registry 0.11.0)
+                     "relay_converter": "instrument", "humidifier": "equipment"}
 OLD_NODE_PREFIX = {"document": "doc-", "doc_chunk": "chunk-", "requirement": "req-", "setpoint": "setpt-",
                    "condition": "cond-", "analysis_case": "case-"}
 OLD_LINK_TYPES = {

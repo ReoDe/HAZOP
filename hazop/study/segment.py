@@ -69,6 +69,8 @@ EQUIPMENT_PART: Mapping[str, Part] = {
     "pump": Part.PUMP, "filter": Part.FILTER,
     "turbine": Part.MACHINE, "compressor": Part.MACHINE, "fan": Part.MACHINE,
     "chiller": Part.MACHINE, "electric_heater": Part.VESSEL,
+    # 가습기는 공조 덕트 위에서 공기가 지나가는 기기다. 팬·냉동기처럼 경계로 두지 않는다(표에 없는 기기의 기본값과 같은 몫)
+    "humidifier": Part.MACHINE,
 }
 
 
