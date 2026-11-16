@@ -1484,6 +1484,13 @@ class PdfVectorRuleTest(unittest.TestCase):
                       [word("HS", 109, 68, size=3)])
         self.assertEqual(sorted(n["kind"] or "-" for n in ext["nodes"] if n["kind"] != "tee"), ["-", "switch"])
 
+    def test_small_legend_code_circle_and_gauge_letter(self):
+        # APR1400 056·060쪽 FG 투시창 원은 6~7pt로 계기 원 하한(8pt)보다 작다. 글자 둘이 범례 기호 하나(1.7-1 1/4 FLOW
+        # SIGHT GLASS)를 가리키므로 읽는다. LG(수위 유리)는 G 기능이라 지시계다
+        fg = pdf_run([circle(100, 100, 3.3)], [word("FG", 98, 98.5, size=2)])
+        lg = pdf_run([circle(100, 100, 5.5)], [word("LG", 97, 98, size=3)])
+        self.assertEqual(([n["kind"] for n in fg["nodes"]], [n["kind"] for n in lg["nodes"]]), (["sight_glass"], ["indicator"]))
+
     def test_legend_instrument_codes(self):
         cases = {"ZL\n202C": "pilot_light", "ZL": "pilot_light", "PDAH\n031": "alarm", "PAL": "alarm",
                  "SY\n101": "relay_converter", "PY": "relay_converter",

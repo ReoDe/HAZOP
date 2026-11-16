@@ -1854,7 +1854,9 @@ ISA_BUBBLE_MIN = 8.0  # 계기 원 짧은 변 하한(pt)
 # TW는 3/4 TW THERMOWELL FOR TEST로, 같은 표의 TEW THERMOWELL처럼 온도 측정점 temperature_element로 본다
 LEGEND_ALARM_FUNCTIONS = frozenset({"A", "AC", "AH", "AHH", "AHL", "AL", "ALL", "AO"})
 # Y는 3/4 INSTRUMENT TYPE CODES의 RELAY, CONVERTER, COMPUTING(SY·PY·TY 등, 레지스트리 0.11.0 relay_converter)
-LEGEND_FUNCTION_KIND = {"L": "pilot_light", "Y": "relay_converter"}
+# G는 유리·게이지(LG 수위계 등)로 지시 기능이다(ISA_FUNCTION_ORDER와 같음)
+LEGEND_FUNCTION_KIND = {"L": "pilot_light", "Y": "relay_converter", "G": "indicator"}
+LEGEND_CODE_MIN = 5.0  # LEGEND_CODE_KIND 표기 원의 짧은 변 하한(pt)
 LEGEND_FAIL_POSITIONS = frozenset({"FC", "FO", "FL"})  # 범례 1.7-1(2/4) FAIL CLOSED·OPEN·LOCKED
 LEGEND_CODE_KIND = {"AX": "sample_probe", "FG": "sight_glass", "LE": "level_element", "TW": "temperature_element"}
 # 범례 1.7-1(3/4) CLARIFYING SYMBOL LIST의 글자. 번호 없이 원 안에 홀로 적히면 계기 표기가 아니라 한계·고장 위치 같은
@@ -1867,12 +1869,15 @@ LEGEND_CLARIFYING = frozenset({"A", "ADD", "AVG", "BI", "C", "CC", "D", "DIFF", 
 def _legend_code_kind(letters, numbered, min_side):
     """범례가 정한 계기 표기(LEGEND_*)의 kind. 계기 원 크기(ISA_BUBBLE_MIN)가 아니거나, 번호 없는 글자가 범례 덧붙임
     글자(LEGEND_CLARIFYING)이면 정하지 않는다. → kind 또는 None"""
-    if min_side is None or min_side < ISA_BUBBLE_MIN or len(letters) < 2:
+    if min_side is None or len(letters) < 2:
         return None
     if not numbered and letters in LEGEND_CLARIFYING:
         return None
     if letters in LEGEND_CODE_KIND:
-        return LEGEND_CODE_KIND[letters]
+        # 글자 둘이 기호 하나를 가리키는 범례 표기는 원이 작아도 그 기호다(FG 투시창 원은 도면에서 6~7pt, 범례 8.6pt)
+        return LEGEND_CODE_KIND[letters] if min_side >= LEGEND_CODE_MIN else None
+    if min_side < ISA_BUBBLE_MIN:
+        return None
     funcs = letters[1:]
     if funcs[:1] in VARIABLE_MODIFIERS_ISA and len(funcs) > 1:
         funcs = funcs[1:]  # 변수 수식 문자(PDAH의 D 차압)
