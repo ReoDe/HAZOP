@@ -4,7 +4,8 @@
    방향을, 그 삼각형이 얹힌 사슬 선분의 방향과 견준다. 사슬 위 화살촉이 모두 같은 쪽이면 그 방향, 엇갈리면 정하지 않는다.
 2. 흐름 보존: 방향을 아는 배관에서 시작해, 2포트 배관 기호(밸브·배관 부속)는 들어온 만큼 나가고, 분기점(티)에서
    아는 배관이 모두 들어오는(또는 모두 나가는) 쪽이고 모르는 배관이 하나뿐이면 그 하나는 반대쪽이다. 설비(탱크·펌프
-   등)는 입출구가 여럿일 수 있어 지나가지 않는다. 바뀌지 않을 때까지 되풀이한다.
+   등)는 입출구가 여럿일 수 있어 지나가지 않는다. 배관 둘이 맞은편에서 꿰고 지나가는 미분류 노드(_inline_unclassified)는
+   2포트처럼 지나간다. 바뀌지 않을 때까지 되풀이한다.
 3. 끝 기호: 흐름 보존 전에, 방향을 그림으로 그린 끝 기호(덕트 끝 공기 흐름 화살표)에 닿은 배관에 그 방향을 매긴다.
 쪽 번호·좌표로 가르는 예외는 두지 않는다.
 """
@@ -210,6 +211,37 @@ def _end_symbol_flows(relations, sym_of, kind_of):
         r["flow_direction"] = {"from": frm, "to": to, "from_end": ends[frm], "to_end": ends[to], "basis": basis}
         added += 1
     return added
+
+
+INLINE_OPPOSITE_COS = -0.7  # 미분류 노드 가운데에서 본 두 배관 끝 방향의 cos 상한(맞은편에서 닿음)
+INLINE_TICK_MAX = 12.0      # 한 끝이 노드 가운데에 닿아도 되는 작은 노드(눈금)의 긴 변 상한(pt)
+
+
+def _inline_unclassified(relations, nodes):
+    """배관이 꿰고 지나가는 미분류 노드 id 집합(흐름 보존의 passes). 물리 배관이 꼭 2개 닿고, 두 배관 끝이 노드
+    가운데에서 보아 맞은편에 있는 것(관 끝·플랜지 눈금, 벽 관통 표시, 이름 모를 배관 부속. APR1400 099·133쪽).
+    두 끝이 한쪽에 몰리거나 직각으로 닿는 것은 이름 모를 설비의 입출구일 수 있어 넣지 않는다."""
+    ends = {}
+    for r in relations:
+        if r.get("kind") != "physical_connection" or None in _ends(r) or _ends(r)[0] == _ends(r)[1]:
+            continue
+        for e in r["endpoints"]:
+            ends.setdefault(e["node_local_id"], []).append(e.get("point"))
+    out = set()
+    for n in nodes:
+        pts = ends.get(n["local_id"], [])
+        if n.get("kind") is not None or len(pts) != 2 or None in pts:
+            continue
+        g = n["geometry"]
+        c = (g["x"] + g["width"] / 2.0, g["y"] + g["height"] / 2.0)
+        v = [(p[0] - c[0], p[1] - c[1]) for p in pts]
+        L = [math.hypot(*x) for x in v]
+        if min(L) < 1e-6:
+            if max(g["width"], g["height"]) <= INLINE_TICK_MAX:
+                out.add(n["local_id"])
+        elif (v[0][0] * v[1][0] + v[0][1] * v[1][1]) / (L[0] * L[1]) <= INLINE_OPPOSITE_COS:
+            out.add(n["local_id"])
+    return out
 
 
 def _ends(r):

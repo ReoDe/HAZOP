@@ -126,6 +126,28 @@ class EndSymbolFlowTest(unittest.TestCase):
         self.assertEqual(pv._end_symbol_flows(side, {"a": arrow}, {"a": "air_flow_arrow"}), 0)
 
 
+def node(i, x, y, w, h, kind=None):
+    return {"local_id": i, "kind": kind, "geometry": {"x": x, "y": y, "width": w, "height": h}}
+
+
+class InlineUnclassifiedTest(unittest.TestCase):
+    # APR1400 099쪽 관 끝 눈금(미분류)처럼 배관이 꿰고 지나가는 미분류 노드는 흐름 보존이 넘어간다
+    def test_pipe_through_unclassified_node_carries_flow(self):
+        nodes = [node("u", 10, 0, 0.3, 8), node("a", -30, 2, 4, 4, "manual_valve"), node("h", 40, 2, 8, 4, "flexible_hose")]
+        rels = [pipe(1, "a", "u", (-26, 4), (10.15, 4), "+"), pipe(2, "u", "h", (10.15, 4), (40, 4))]
+        passes = pv._inline_unclassified(rels, nodes)
+        self.assertEqual(passes, {"u"})
+        pv._propagate_flows(rels, {n["local_id"]: n["kind"] for n in nodes}, passes)
+        self.assertEqual(rels[1]["flow_direction"]["to"], "h")
+
+    def test_unclassified_with_pipes_at_right_angle_or_three_pipes_is_not_passed(self):
+        nodes = [node("u", 0, 0, 20, 20)]
+        corner = [pipe(1, "a", "u", (-10, 10), (0, 10)), pipe(2, "u", "b", (10, 0), (10, -10))]
+        self.assertEqual(pv._inline_unclassified(corner, nodes), set())
+        three = [pipe(1, "a", "u", (-10, 10), (0, 10)), pipe(2, "u", "b", (20, 10), (30, 10)), pipe(3, "u", "c", (10, 20), (10, 30))]
+        self.assertEqual(pv._inline_unclassified(three, nodes), set())
+
+
 class SnpFlowTest(unittest.TestCase):
     """SNP 가상 도면은 drawio에서 그린 화살촉이 PDF에 그대로 있다. 추출이 방향을 하나 이상 정하는지."""
 
