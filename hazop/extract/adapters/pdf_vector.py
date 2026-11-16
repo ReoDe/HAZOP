@@ -142,7 +142,8 @@ INSTRUMENT_FUNCTION = {"T": "transmitter", "C": "controller", "I": "indicator", 
                        "R": "recorder"}  # ISA 5.1 뒤 글자(기능)
 # 구동부 사전 항목의 actuator_type → 밸브 kind. 범례 1.7-1이 정한 경우만 합치고 kind를 올린다(기획서/PID-기호사전.md
 # §4.2 4번). 솔레노이드는 다이어프램과 같이 붙을 때만 공기구동 밸브의 파일럿으로 합친다(4/4). 솔레노이드 혼자는 스프링
-# 복귀·복동 실린더 구동부(4/4)의 파일럿일 수 있어 합치지 않는다. 전기유압(1/4)은 kind를 정할 근거가 없어 합치지 않는다.
+# 복귀·복동 실린더 구동부(4/4)의 파일럿일 수 있어 여기서는 합치지 않는다. 축 위 묶음이 S 상자 하나뿐인지, 다른 조각과
+# 함께인지는 _operator_stacks·_stack_entry가 가린다. 전기유압(1/4)은 kind를 정할 근거가 없어 합치지 않는다.
 # 속성 값은 사전 항목의 attributes다
 ACTUATED_KIND = {"motor": "motor_operated_valve", "diaphragm": "air_operated_valve"}
 OPERATED_VALVES = frozenset({"motor_operated_valve", "air_operated_valve", "control_valve", "solenoid_valve"})
@@ -157,6 +158,9 @@ POSITION_REFINES = {("NC", "LC"), ("NO", "LO")}  # (기호 모양의 값, 글자
 
 def _actuated_kind(entries):
     """밸브 하나에 붙은 구동부 사전 항목들 → (kind, attributes). 범례가 정하지 않은 조합이면 (None, {})."""
+    stacked = [e for e in entries if isinstance(e, _StackEntry)]
+    if stacked:
+        return stacked[0].kind, dict(stacked[0].attributes)
     by_type = {e.attributes.get("actuator_type"): e for e in entries}
     found = set(by_type)
     if "diaphragm" in found and found <= {"diaphragm", "solenoid"}:
@@ -2501,6 +2505,92 @@ LETTER_BOX_SQUARE_RATIO = 0.2  # 글자 상자: |폭-높이| ≤ 긴 변 × 비�
 LETTER_STEM_RATIO = 2.5        # 글자 상자 축 길이 상한 = 상자 긴 변 × 비율(008쪽 P 상자 5.3pt·축 약 9pt)
 
 
+OPERATOR_PIECE_MAX = 12.0  # 구동부 묶음 조각(복동 실린더 X 상자·반쪽 칠한 상자·솔레노이드 S 상자) 긴 변 상한(pt)
+OPERATOR_LINK_MAX = 8.0    # 구동부 조각끼리 잇는 곧은 선 길이 상한(pt). S 상자에서 X 상자까지 빗선 약 5pt
+STACK_AIR_TEXT = "IA"      # 계장용 공기(범례 4/4 VALVE OPERATOR CONTROLS의 구동부 옆 글자)
+STACK_AIR_GAP = 5.0        # IA 글자와 묶음 조각 사이 거리 상한(pt). 143쪽 묶음에서 0~4.9pt, 그다음은 6pt 넘는 옆 밸브 몫
+
+
+def _operator_stacks(syms, chains, valve_like, straight_stem_of, shape_of, hits, prm):
+    """밸브 축 위에 쌓은 구동부 조각 묶음 → {밸브 기호 id: (밸브, [조각 기호])}.
+    씨앗은 꺾이지 않은 축으로 밸브 하나에만 이어진 작은 조각이다. 거기서 맞닿거나 짧은 곧은 선으로 이어진 작은 조각을 모은다.
+    조각은 종류를 못 정한 기호(사전 구동부는 넣는다)이고, 두 밸브의 묶음에 함께 들면 둘 다 버린다."""
+    piece = set()
+    for si, s in enumerate(syms):
+        h = hits.get(si)
+        if id(s) in valve_like or max(_w(s.bbox), _h(s.bbox)) > OPERATOR_PIECE_MAX or shape_of[si][0] is not None:
+            continue
+        if h is not None and h.outcome == "matched" and h.entry.role != "actuator":
+            continue
+        piece.add(id(s))
+    order = {id(s): si for si, s in enumerate(syms)}
+    links = collections.defaultdict(set)
+    for ch in chains:
+        if ch.get("dashed") or any(v[0] != "sym" for v, _, _ in ch["ends"]):
+            continue
+        a, b = ch["ends"][0][0][1], ch["ends"][1][0][1]
+        straight = len({(round(q[0], 2), round(q[1], 2)) for q in ch["pts"]}) == 2
+        if a is not b and id(a) in piece and id(b) in piece and (ch.get("pneumatic") or (
+                straight and math.dist(ch["pts"][0], ch["pts"][-1]) <= OPERATOR_LINK_MAX)):
+            links[id(a)].add(id(b))
+            links[id(b)].add(id(a))
+    ps = sorted(piece, key=order.get)
+    for i, a in enumerate(ps):
+        for b in ps[i + 1:]:
+            if _box_gap(syms[order[a]].bbox, syms[order[b]].bbox) <= prm["touch_tol"]:
+                links[a].add(b)
+                links[b].add(a)
+    owner, stacks = collections.defaultdict(set), {}
+    for pid in ps:
+        vs = {id(v): v for v in straight_stem_of.get(pid, [])}
+        if len(vs) != 1:
+            continue
+        v = next(iter(vs.values()))
+        seen, todo = {pid}, [pid]
+        while todo:
+            for nb in links[todo.pop()]:
+                if nb not in seen:
+                    seen.add(nb)
+                    todo.append(nb)
+        for q in seen:
+            owner[q].add(id(v))
+        stacks.setdefault(id(v), (v, set()))[1].update(seen)
+    return {vid: (v, [syms[order[i]] for i in sorted(members, key=order.get)]) for vid, (v, members) in stacks.items()
+            if all(owner[q] == {vid} for q in members)}
+
+
+class _StackEntry:
+    """구동부 묶음 하나로 정한 밸브 kind와 속성(사전 항목 자리에 넣어 _apply_merges가 그대로 쓴다)."""
+
+    def __init__(self, kind, attributes):
+        self.kind, self.attributes = kind, attributes
+        self.id = "operator_stack:" + attributes["actuator_type"]
+
+
+def _stack_entry(members, member_hits, blocks, chains):
+    """구동부 묶음 → _StackEntry 또는 None(범례가 정하지 않은 묶음).
+    - 축 위의 솔레노이드 S 상자 하나뿐이면 전자 밸브다(범례 1/4 SOLENOID OPERATORS (SPRING RETURN) FOR VALVES).
+    - 사전에 없는 조각(복동 실린더의 X 상자·반쪽 칠한 상자, 스프링 복귀 구동부의 파일럿 밸브)이 있는 묶음은 다이어프램이
+      있거나 계장용 공기(IA) 글자·공압 신호선이 묶음에 닿을 때만 공기구동 밸브다(범례 4/4 VALVE OPERATOR CONTROLS). S 상자는
+      그 파일럿이다. 그 밖의 조각(손잡이, 사전에 없는 원 등)만 있는 묶음은 정하지 않는다."""
+    types = {h.entry.attributes.get("actuator_type") for h in member_hits if h is not None and h.outcome == "matched"}
+    others = sum(1 for h in member_hits if h is None or h.outcome != "matched")
+    if not others:
+        if len(members) == 1 and types == {"solenoid"}:
+            return _StackEntry("solenoid_valve", dict(member_hits[0].entry.attributes))
+        return None
+    if not types <= {"diaphragm", "solenoid"}:
+        return None
+    air = "diaphragm" in types or any(
+        b["text"].strip() == STACK_AIR_TEXT and min(_box_gap(b["bbox"], m.bbox) for m in members) <= STACK_AIR_GAP
+        for b in blocks) or any(ch.get("pneumatic") and any(v[0] == "sym" and any(v[1] is m for m in members)
+                                                            for v, _, _ in ch["ends"]) for ch in chains)
+    if not air:
+        return None
+    kind = ("diaphragm" if "diaphragm" in types else "pneumatic") + ("+solenoid_pilot" if "solenoid" in types else "")
+    return _StackEntry("air_operated_valve", {"actuator_type": kind, "motive_power": "air"})
+
+
 def _letter_boxes(syms, chains, blocks, label_of, unclassified, prm):
     """범례 1.7-1 1/4: 밸브 위로 곧게 선 짧은 세로 축 끝의 글자 상자(L1-078 파일럿 작동 안전방출 밸브의 P, 솔레노이드
     구동부의 S)는 밸브 기호의 한 부분이다 → [(상자 기호, 축 반대 끝 기호, 글자)]. 상자는 종류를 못 정한 기호이고,
@@ -2542,7 +2632,7 @@ def _merged_line(ch, merge_into, number_ids):
         if target is None:
             continue
         number = id(x) in number_ids
-        if len(ends) == 2 and any(y is target for y in ends):
+        if len(ends) == 2 and all(merge_into.get(id(y), y) is target for y in ends):
             return "valve_number_leader" if number else "actuator_stem"
         if len(ends) == 1 and number and not ch.get("dashed"):
             return "valve_number_leader"
@@ -3013,6 +3103,15 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             v = next(iter(cands.values()))
             plan_into[id(a)] = v
             acts_on.setdefault(id(v), []).append((a, h.entry))
+    # 축 위에 쌓은 구동부 묶음(_operator_stacks)이 범례가 정한 구동 방식이면 묶음 조각 전부를 그 밸브에 합칠 후보로 바꿔 둔다
+    index = {id(s): si for si, s in enumerate(syms)}
+    for vid, (v, members) in _operator_stacks(syms, chains, valve_like, straight_stem_of, shape_of, hits, prm).items():
+        if any(plan_into.get(id(m), v) is not v for m in members):
+            continue
+        decided = _stack_entry(members, [hits.get(index[id(m)]) for m in members], blocks, chains)
+        if decided:
+            plan_into.update((id(m), v) for m in members)
+            acts_on[vid] = [(m, decided) for m in members]
     cand = []
     is_size = [(parse_label(b["text"]) or ("",))[0] == "size" for b in blocks]
     is_position = [bool(POSITION_TEXT_RE.fullmatch(" ".join(b["text"].split()))) for b in blocks]

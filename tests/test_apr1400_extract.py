@@ -714,5 +714,59 @@ class BoundaryBoxWithWordsIsNotACheckValve(unittest.TestCase):
         self.assertEqual(kinds, [None, None])
 
 
+PAGE_134 = paths.folder("APR1400", "by-drawing", "134_Ch11_Fig11.2-1_s1of7_Liquid_Radwaste_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_134), "pdfplumber 또는 APR1400 134쪽 PDF 없음(저장소 밖 자료)")
+class DoubleActingCylinderStack(unittest.TestCase):
+    """134쪽(개발용) 펌프 출구 플러그 밸브 위에 반쪽 칠한 상자·X 상자·S 상자 둘·IA 글자로 그린 복동 실린더 구동부(범례 4/4
+    VALVE OPERATOR CONTROLS)는 한 공기구동 밸브다. 옆 FL은 고장 위치 속성이고, 구동부 조각은 노드로 남지 않는다."""
+
+    VALVE = (387.1, 146.0)
+    PIECES = ((379.6, 128.3), (387.0, 135.6), (379.6, 142.8), (387.0, 139.1))
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_134, page=0)
+
+    def test_valve_is_air_operated_with_fail_position(self):
+        n = node_at(self.ex, self.VALVE + self.VALVE) or {}
+        self.assertEqual((n.get("kind"), (n.get("attributes") or {}).get("fail_position"),
+                          (n.get("attributes") or {}).get("actuator_type")),
+                         ("air_operated_valve", "FL", "pneumatic+solenoid_pilot"))
+
+    def test_operator_pieces_are_merged(self):
+        valve = node_at(self.ex, self.VALVE + self.VALVE)
+        self.assertEqual([node_at(self.ex, p + p) is valve or node_at(self.ex, p + p) is None for p in self.PIECES],
+                         [True] * len(self.PIECES))
+
+
+class OperatorStackKinds(unittest.TestCase):
+    """밸브 축 위 구동부 묶음의 종류(합성 입력). S 상자 하나뿐이면 전자 밸브, 사전에 없는 조각이 섞이면 IA 글자가 있을 때만
+    공기구동 밸브, 근거가 없으면 정하지 않는다."""
+
+    class Piece:
+        def __init__(self, x, y):
+            self.bbox = (x, y, x + 3.7, y + 3.6)
+
+    class Hit:
+        def __init__(self, actuator_type):
+            self.outcome = "matched"
+            self.entry = type("E", (), {"attributes": {"actuator_type": actuator_type, "motive_power": "electric"}})()
+
+    def test_single_solenoid_box_is_a_solenoid_valve(self):
+        e = pdf_vector._stack_entry([self.Piece(0, 0)], [self.Hit("solenoid")], [], [])
+        self.assertEqual((e.kind, e.attributes["actuator_type"]), ("solenoid_valve", "solenoid"))
+
+    def test_unknown_pieces_need_instrument_air(self):
+        pieces = [self.Piece(0, 0), self.Piece(0, 3.6), self.Piece(-6, -6)]
+        hits = [None, None, self.Hit("solenoid")]
+        self.assertIsNone(pdf_vector._stack_entry(pieces, hits, [], []))
+        ia = [{"text": "IA", "bbox": (-4.0, 1.0, -1.0, 3.0)}]
+        e = pdf_vector._stack_entry(pieces, hits, ia, [])
+        self.assertEqual((e.kind, e.attributes), ("air_operated_valve", {"actuator_type": "pneumatic+solenoid_pilot",
+                                                                         "motive_power": "air"}))
+
+
 if __name__ == "__main__":
     unittest.main()
