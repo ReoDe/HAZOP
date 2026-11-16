@@ -383,7 +383,7 @@
   "134": {
    "connector_bad_target": 0,
    "connectors_detected": 7,
-   "tag_exact": 8,
+   "tag_exact": 12,
    "tag_not_in_text": 2,
    "valve_number_closer_other": 0
   },
@@ -558,7 +558,7 @@
   "28": {
    "connector_bad_target": 0,
    "connectors_detected": 4,
-   "tag_exact": 70,
+   "tag_exact": 73,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -915,7 +915,7 @@
   "74": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 12,
+   "tag_exact": 16,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -943,15 +943,15 @@
   "78": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 9,
-   "tag_not_in_text": 2,
+   "tag_exact": 11,
+   "tag_not_in_text": 3,
    "valve_number_closer_other": 0
   },
   "79": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 9,
-   "tag_not_in_text": 2,
+   "tag_exact": 11,
+   "tag_not_in_text": 3,
    "valve_number_closer_other": 0
   },
   "8": {
@@ -964,7 +964,7 @@
   "80": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 8,
+   "tag_exact": 14,
    "tag_not_in_text": 1,
    "valve_number_closer_other": 0
   },
@@ -985,7 +985,7 @@
   "83": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 69,
+   "tag_exact": 71,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   },
@@ -1104,7 +1104,7 @@
   "99": {
    "connector_bad_target": 0,
    "connectors_detected": 0,
-   "tag_exact": 4,
+   "tag_exact": 5,
    "tag_not_in_text": 0,
    "valve_number_closer_other": 0
   }
@@ -1115,7 +1115,7 @@
   "connectors_detected": 289,
   "continuations": 1959,
   "failed_pages": 0,
-  "nodes": 24645,
+  "nodes": 24663,
   "offpage_labels": 295,
   "pages": 143,
   "pair_candidates": 10,
@@ -1124,11 +1124,11 @@
   "pair_key_wrong": 0,
   "paired": 291,
   "seconds": 329,
-  "tag_exact": 1289,
-  "tag_not_in_text": 59,
-  "tagged": 4157,
-  "unclassified": 6840,
-  "unknowns": 51249,
+  "tag_exact": 1313,
+  "tag_not_in_text": 61,
+  "tagged": 4183,
+  "unclassified": 6838,
+  "unknowns": 51227,
   "valve_number_closer_other": 0
  }
 }
