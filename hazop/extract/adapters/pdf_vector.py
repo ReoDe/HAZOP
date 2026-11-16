@@ -1190,15 +1190,23 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
         end_grid[(int(pt[0] // cell), int(pt[1] // cell))].append((i, pt))
 
     def corner_beside(i, pt, s):
-        # 두 선이 끝끼리만 맞닿고(서로 상대 선 중간에 얹히지 않음) 그 자리가 기호에 닿지 않는가
+        # 선들이 끝끼리만 맞닿고(서로 상대 선 중간에 얹히지 않음) 그 자리가 기호에 닿지 않는가. 셋 이상이 끝끼리 만나는
+        # 분기점도 같다(APR1400 134쪽 AOV 001 오른쪽: 6" 관 셋이 만나는 자리가 번호 원 001에서 1.3pt 떨어져 있다)
         cx, cy = int(pt[0] // cell), int(pt[1] // cell)
         others = [(j, q) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for j, q in end_grid.get((cx + dx, cy + dy), ())
                   if j != i and math.hypot(q[0] - pt[0], q[1] - pt[1]) <= prm["end_tol"]]
-        if len(others) != 1 or _pt_box_dist(pt, s.bbox) <= prm["touch_tol"]:
+        if not others or _pt_box_dist(pt, s.bbox) <= prm["touch_tol"]:
             return False
-        j, q = others[0]
-        return _pt_box_dist(q, s.bbox) > prm["touch_tol"] and _meets_at_end(pt, pieces[j]["pts"], q) and \
-            _meets_at_end(q, pieces[i]["pts"], pt)
+        # 셋 이상이 만나는 분기점은 원 하나(짧은 빗금만 곁들인 번호 원·계기 원)인 기호 옆일 때만 본다. 밸브·오리피스
+        # 몸통 옆 분기점은 몸통 포트에 붙은 분기라 예전처럼 몸통에 붙인다. 구동부 크기 원(전동기 M 원 약 4pt, 정상 위치
+        # N 원)은 밸브 축에 붙는 기호라 넣지 않는다(actuator_body_max 이하. 번호 원·계기 원은 9pt 이상)
+        circle = s.bodies[0] if len(s.bodies) == 1 and _is_circle(s.bodies[0], prm) else None
+        if len(others) > 1 and not (circle and not circle.get("actuator") and
+                                    _w(circle["bbox"]) > prm["actuator_body_max"] and
+                                    all(_poly_length(m) < 0.5 * _w(circle["bbox"]) for m in s.strokes)):
+            return False
+        return all(_pt_box_dist(q, s.bbox) > prm["touch_tol"] and _meets_at_end(pt, pieces[j]["pts"], q) and
+                   _meets_at_end(q, pieces[i]["pts"], pt) for j, q in others)
     def through_wall(i, k, pt):
         # 담는 외곽 변에서 두 선이 끝을 맞대고 곧게 이어지면 배관이 벽을 지나 안으로 들어간다(012쪽 IRWST 위에서 살포기로
         # 내려가는 배관이 탱크 윗변에서 두 경로로 나뉘어 그려진다). 외곽에 붙이면 배관이 외곽에서 끊긴다

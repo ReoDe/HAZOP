@@ -759,6 +759,18 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(run(0.26), [("down", "up")])
         self.assertEqual(run(0.13), [("down",), ("up",)])
 
+    def test_pipe_junction_beside_symbol_is_tee_not_attached(self):
+        # APR1400 134쪽 AOV 001 오른쪽: 6" 관 셋이 끝끼리 만나는 분기점이 번호 원 001에서 1.3pt 떨어져 있다. 세 끝이
+        # 그 원에 붙으면 배관이 번호 원으로 끝난다. 원에 닿지 않고 끝끼리 만나는 자리는 분기점이다. 밸브 몸통 옆 분기점은
+        # 몸통 포트에 붙은 분기라 그대로 몸통에 붙인다
+        def run(beside):
+            ext = pdf_run([beside, rect(80, 90, 100, 110), rect(300, 90, 320, 110), rect(190, 200, 210, 220),
+                           line((100, 99.3), (200, 99.3), width=0.26), line((200, 99.3), (300, 99.3), width=0.26),
+                           line((200, 99.3), (200, 200), width=0.26)])
+            return [n["kind"] for n in ext["nodes"]].count("tee")
+        self.assertEqual(run(circle(200, 90, 8)), 1)
+        self.assertEqual(run(rect(192, 88, 208, 98)), 0)
+
     def test_pipe_corner_beside_symbol_is_not_attached(self):
         # APR1400 008쪽 MOV 상승관 꼭대기 모서리가 TEW 상자 변에서 1.8pt 떨어져 있다. 두 선이 끝을 맞댄 모서리는 배관이
         # 꺾이는 자리라 상자에 붙이지 않는다
