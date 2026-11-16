@@ -3582,8 +3582,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         locations.append({"object_id": sid, "local_id": local_id, "coordinate_space": COORDINATE_SPACE,
                           "unit": UNIT, "bbox": _box_out(_bbox_pts(centers)), "approximate": True,
                           "method": "sequence_letter_pair"})
-    # 끝 기호가 그린 방향(공기 흐름 화살표)을 먼저 매기고, 흐름 보존으로 넓힌다(2포트 배관 기호·분기점·공조기 칸·배관이
-    # 꿰고 지나가는 미분류 노드). 정한 관계는 방향 미확인에서 뺀다
+    # 기호가 그린 방향(공기 흐름 화살표·체크 밸브 경첩)을 먼저 매기고, 흐름 보존으로 넓힌다(2포트 배관 기호·분기점·
+    # 공조기 칸·배관이 꿰고 지나가는 미분류 노드). 정한 관계는 방향 미확인에서 뺀다
     before = {r["local_id"] for r in relations if r.get("flow_direction")}
     passes = {local_of[id(s)][0] for s in syms if s.housing} | _inline_unclassified(relations, node_out)
     kind_of = {n["local_id"]: n.get("kind") for n in node_out}

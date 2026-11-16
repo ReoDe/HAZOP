@@ -92,8 +92,8 @@ class PropagateTest(unittest.TestCase):
 
 
 class FakeSym:
-    def __init__(self, bbox, markers):
-        self.bbox, self.markers = bbox, markers
+    def __init__(self, bbox, markers, dashes=()):
+        self.bbox, self.markers, self.dashes = bbox, markers, list(dashes)
 
 
 def pipe(i, a, b, pa, pb, flow=None):
@@ -124,6 +124,42 @@ class EndSymbolFlowTest(unittest.TestCase):
         self.assertEqual(rels[0]["flow_direction"]["from"], "f")
         side = [pipe(1, "a", "f", (3, 7), (60, 7))]  # 화살표 축 옆(가운데 높이)에 닿은 선은 정하지 않는다
         self.assertEqual(pv._end_symbol_flows(side, {"a": arrow}, {"a": "air_flow_arrow"}), 0)
+
+
+def dot(x, y):
+    return {"id": "d", "pts": [(x - 0.45, y), (x, y - 0.45), (x + 0.45, y), (x, y + 0.45), (x - 0.45, y)],
+            "bbox": [x - 0.45, y - 0.45, x + 0.45, y + 0.45]}
+
+
+class CheckValveFlowTest(unittest.TestCase):
+    # 범례 1.7-1 CHECK, APR1400 141쪽 V1016: 경첩 점이 왼쪽 위 끝에 있으면 왼쪽에서 들어와 오른쪽으로 나간다
+    def test_flow_runs_from_hinge_dot_side(self):
+        cv = FakeSym([0, 0, 7.7, 3.4], [], [dot(0.45, 0.4)])
+        rels = [pipe(1, "a", "c", (-20, 1.7), (0, 1.7)), pipe(2, "c", "b", (7.7, 1.7), (30, 1.7))]
+        self.assertEqual(pv._end_symbol_flows(rels, {"c": cv}, {"c": "check_valve"}), 2)
+        self.assertEqual([(r["flow_direction"]["from"], r["flow_direction"]["to"]) for r in rels], [("a", "c"), ("c", "b")])
+        self.assertEqual(rels[0]["flow_direction"]["basis"], "check_valve_hinge")
+
+    def test_vertical_valve_with_dot_at_bottom_flows_up(self):
+        cv = FakeSym([0, 0, 4.1, 6.4], [], [dot(0.4, 6.0)])
+        rels = [pipe(1, "c", "a", (2, 0), (2, -20)), pipe(2, "b", "c", (2, 30), (2, 6.4))]
+        pv._end_symbol_flows(rels, {"c": cv}, {"c": "check_valve"})
+        self.assertEqual([r["flow_direction"]["from"] for r in rels], ["c", "b"])
+
+    def test_no_dot_middle_dot_or_same_side_pipes_set_nothing(self):
+        rels = lambda: [pipe(1, "a", "c", (-20, 1.7), (0, 1.7)), pipe(2, "c", "b", (7.7, 1.7), (30, 1.7))]
+        for cv in (FakeSym([0, 0, 7.7, 3.4], []), FakeSym([0, 0, 7.7, 3.4], [], [dot(3.85, 0.4)])):
+            self.assertEqual(pv._end_symbol_flows(rels(), {"c": cv}, {"c": "check_valve"}), 0)
+        cv = FakeSym([0, 0, 7.7, 3.4], [], [dot(0.45, 0.4)])
+        same = [pipe(1, "a", "c", (-20, 1.7), (0, 1.7)), pipe(2, "c", "b", (0, 3.4), (0, 30))]
+        self.assertEqual(pv._end_symbol_flows(same, {"c": cv}, {"c": "check_valve"}), 0)
+
+    def test_drawn_arrow_against_hinge_leaves_valve_alone(self):
+        # APR1400 056쪽 V2008: 경첩 점은 왼쪽인데 배관 화살촉은 왼쪽을 가리킨다. 화살촉을 믿고 반대쪽 배관도 정하지 않는다
+        cv = FakeSym([0, 0, 7.7, 3.4], [], [dot(0.45, 0.4)])
+        rels = [pipe(1, "a", "c", (-20, 1.7), (0, 1.7), "-"), pipe(2, "c", "b", (7.7, 1.7), (30, 1.7))]
+        self.assertEqual(pv._end_symbol_flows(rels, {"c": cv}, {"c": "check_valve"}), 0)
+        self.assertIsNone(rels[1]["flow_direction"])
 
 
 def node(i, x, y, w, h, kind=None):
