@@ -3239,13 +3239,16 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     valve_syms = [v for v in syms if id(v) in valve_like]
     valve_piece = {si for si, s in enumerate(syms) if id(plan_into.get(id(s), s)) not in valve_like
                    and any(_box_gap(s.bbox, v.bbox) <= prm["attach_tol"] for v in valve_syms)}
+    # 사전으로 맞춘 연결 표시(세로로 세운 순서 문자 깃발 등)는 상자 안의 돌린 글자를 제 글자로 받는다(APR1400 015쪽 깃발 안 'B')
+    library_arrow = {si for si, h in hits.items() if h.outcome == "matched" and h.entry.role == "continuation"}
     for bi, b in enumerate(blocks):
         if bi in roles:
             continue
         for si, s in enumerate(syms):
             if si in drop:
                 continue
-            if b.get("rotated") and shape_of[si][0] not in ("instrument", "continuation"):
+            if b.get("rotated") and shape_of[si][0] not in ("instrument", "continuation") and not (
+                    si in library_arrow and _inside(_center(b["bbox"]), s.bbox)):
                 continue  # 돌린 글자는 대개 행선지·위치 설명이라 다른 기호의 종류를 정하는 글자로 쓰지 않는다
             inside = _inside(_center(b["bbox"]), s.bbox)
             if not inside and is_size[bi]:

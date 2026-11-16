@@ -830,6 +830,35 @@ class SameSheetLetterPairs(unittest.TestCase):
         self.assertEqual(pdf_vector.same_sheet_letter_pairs(nodes, rels), [])
 
 
+def _upright_flag(x, y):
+    """세로로 세운 순서 문자 깃발(APR1400 015쪽과 같은 치수: 상자 6.0x14.0, 위 삼각·아래 홈 2.8)과 아래로 나가는 배관."""
+    from tests.test_adapter import line, prim
+    box = [(x, y), (x + 6.01, y), (x + 6.01, y + 13.97), (x, y + 13.97), (x, y)]
+    return [prim(box, closed=True, fill=True, white=True), prim(box, closed=True),
+            prim([(x, y), (x + 6.01, y), (x + 3.0, y - 2.79), (x, y)], closed=True, fill=True),
+            prim([(x, y + 13.96), (x, y + 16.75), (x + 3.0, y + 13.96), (x + 6.01, y + 16.75), (x + 6.01, y + 13.96),
+                  (x, y + 13.96)], closed=True, fill=True),
+            line((x + 3.0, y + 13.96), (x + 3.0, y + 60.0), width=0.5)]
+
+
+def _turned_letter(text, x, y):
+    return {"text": text, "x0": x + 2.0, "x1": x + 5.2, "top": y + 5.7, "bottom": y + 7.9, "size": 3.18,
+            "upright": False, "direction": "btt"}
+
+
+class UprightSequenceLetterFlags(unittest.TestCase):
+    """세로 깃발 안 글자는 돌려 쓴 글자다. 깃발이 그 글자를 제 글자로 받아야 같은 글자 깃발끼리 이어진다."""
+
+    def test_turned_letter_inside_an_upright_flag_is_its_letter(self):
+        from tests.test_adapter import pdf_run
+        ex = pdf_run(_upright_flag(100, 100) + _upright_flag(300, 100),
+                     [_turned_letter("B", 100, 100), _turned_letter("B", 300, 100)])
+        flags = [n for n in ex["nodes"] if n["kind"] == "continuation"]
+        self.assertEqual([n["label_text"] for n in flags], ["B", "B"])
+        self.assertEqual([r["line_type"] for r in ex["relations"] if r["line_type"] == "pdf_sequence_letter"],
+                         ["pdf_sequence_letter"])
+
+
 PAGE_141 = paths.folder("APR1400", "by-drawing", "141_Ch11_Fig11.3-1_Gaseous_Radwaste_System_Flow_Diagram.pdf")
 
 
