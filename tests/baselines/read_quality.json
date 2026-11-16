@@ -288,7 +288,7 @@
   },
   "apr1400-063": {
    "attribute": {
-    "correct": 43,
+    "correct": 47,
     "false_pos": 0,
     "units": 50
    },
@@ -298,7 +298,7 @@
     "units": 233
    },
    "kind": {
-    "correct": 98,
+    "correct": 100,
     "false_pos": 0,
     "units": 115
    },
