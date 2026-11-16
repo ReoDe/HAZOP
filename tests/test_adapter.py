@@ -1486,6 +1486,7 @@ class PdfVectorRuleTest(unittest.TestCase):
 
     def test_legend_instrument_codes(self):
         cases = {"ZL\n202C": "pilot_light", "ZL": "pilot_light", "PDAH\n031": "alarm", "PAL": "alarm",
+                 "SY\n101": "relay_converter", "PY": "relay_converter",
                  "AX\n134": "sample_probe", "FG": "sight_glass", "LE\n058": "level_element", "LL": None, "ZAC": "controller",
                  "TW\n311": "temperature_element"}
         for text, kind in cases.items():
