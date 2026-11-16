@@ -249,11 +249,14 @@ def tag_in_text(node, tl):
         pairs = set()
         for chars, box in ((tl["chars"], (x0, y0, x1, y1)), (tl.get("turned") or [], (-y1, x0, -y0, x1)),
                            (tl.get("down") or [], (y0, -x1, y1, -x0))):
-            lines = box_words(chars, box)
+            # 글자·숫자가 하나도 없는 줄(원 상자에 걸친 옆 '(002)'의 '(' 등)은 줄로 세지 않는다. 추출의 라벨 줄은 글자 문단에서
+            # 오므로 이런 조각이 끼지 않는다(078쪽 XS 001, 079쪽 XS 003)
+            lines = [ln for ln in box_words(chars, box) if any(re.search(r"[A-Za-z0-9]", t) for t, _ in ln)]
             pairs |= {norm(a + b) for up, down in zip(lines, lines[1:]) for a, ax in up for b, bx in down
                       if abs(ax - bx) < 6}
             # 기능 문자와 번호 사이에 덧붙인 기능 글자 한 줄('LIS / AHL / 3025A')은 건너뛴다. 가운데 줄은 숫자 없는 낱말 하나다
-            # 추출 pdf_vector_labels._assign_tags가 같은 조건으로 태그를 만든다. 한쪽을 바꾸면 다른 쪽도 같이 바꾼다
+            # 추출 pdf_vector_labels._assign_tags가 같은 조건으로 태그를 만든다(문장부호만 있는 줄을 뺀 뒤의 줄 기준).
+            # 한쪽을 바꾸면 다른 쪽도 같이 바꾼다
             pairs |= {norm(a + b) for up, mid, down in zip(lines, lines[1:], lines[2:])
                       if len(mid) == 1 and re.fullmatch(r"[A-Z]{1,4}", mid[0][0])
                       for a, ax in up for b, bx in down if abs(ax - bx) < 6}

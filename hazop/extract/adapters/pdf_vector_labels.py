@@ -286,7 +286,8 @@ def _assign_tags(nodes, unknowns, instrument_ids=(), valve_number_ids=(), label_
         m = ISA_LABEL_RE.fullmatch(" ".join(lines[:2]))
         if not m and len(lines) >= 3 and ISA_EXTRA_FUNCTIONS_RE.fullmatch(lines[1]):
             # 기능 문자와 번호 사이 줄에 덧붙인 경보·기능 글자(097쪽 'LIS / AHL / 3025A'). 태그는 첫 줄과 번호 줄이다
-            # 검사 scripts/check_apr1400.py tag_in_text가 같은 조건으로 본다. 한쪽을 바꾸면 다른 쪽도 같이 바꾼다
+            # 검사 scripts/check_apr1400.py tag_in_text가 같은 조건으로 본다(검사는 원 상자의 낱글자를 읽으므로 글자·숫자
+            # 없는 문장부호 줄을 먼저 뺀다. 여기 라벨 줄은 글자 문단이라 그런 줄이 없다). 한쪽을 바꾸면 다른 쪽도 같이 바꾼다
             m = ISA_LABEL_RE.fullmatch(" ".join((lines[0], lines[2])))
         if m and (n["category"] == "instrument" or n["local_id"] in instrument_ids and _bubble_like(n, m.group(1))):
             isa[i] = (m.group(1), m.group(2))

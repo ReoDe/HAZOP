@@ -180,6 +180,17 @@ class AprTagInText(unittest.TestCase):
         self.assertTrue(ca.tag_in_text(self.isa("LIS-3025A"), tl("AHL")))
         self.assertFalse(ca.tag_in_text(self.isa("LIS-3025A"), tl("A1")))
 
+    def test_punctuation_only_line_is_not_a_line(self):
+        # 078쪽 XS 001: 원 상자 오른쪽에 걸친 '(002)'의 '('가 두 줄 사이 줄로 잡힌다. 글자·숫자 없는 줄은 건너뛴다.
+        # 글자가 든 가운데 줄('HL')은 덧붙인 기능 글자 줄 규칙대로 본다
+        def tl(mid):
+            chars = [(c, 1.5 + k, 2, 1, 1 + k, 2 + k) for k, c in enumerate("XS")] + \
+                [(c, 8.5 + k, 5, 4, 8 + k, 9 + k) for k, c in enumerate(mid)] + \
+                [(c, 1.5 + k, 8, 7, 1 + k, 2 + k) for k, c in enumerate("001")]
+            return {"chars": chars, "tokens": set()}
+        self.assertTrue(ca.tag_in_text(self.isa("XS-001"), tl("(")))
+        self.assertFalse(ca.tag_in_text(self.isa("XS-001"), tl("1")))
+
     def test_label_tag_uses_page_words(self):
         n = dict(node("a", 40, 38, 30, 6, tag="V5402"), evidence={"tag_basis": "label_tag_token"})
         self.assertTrue(ca.tag_in_text(n, self.TL))
