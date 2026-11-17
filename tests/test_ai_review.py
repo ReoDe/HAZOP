@@ -58,6 +58,9 @@ class StubClient:
     def __init__(self, answer, errors=()):
         self.answer, self.errors, self.requests = answer, list(errors), []
 
+    def describe(self):
+        return {"via": "fixed"}  # 시험용 가짜: ai_review.refuse_reason이 구독·고정 응답만 통과시킨다
+
     def analyze(self, request):
         self.requests.append(request)
         if self.errors:
@@ -975,6 +978,7 @@ class ReviewFixTest(unittest.TestCase):
         for ek in ("overage", "limit_reached"):
             class C:
                 calls = 0
+                describe = StubClient.describe
 
                 def analyze(self, req):
                     C.calls += 1
@@ -1030,6 +1034,7 @@ class ReviewFixTest(unittest.TestCase):
     def test_client_exception_does_not_lose_candidates(self):
         class X:
             n = 0
+            describe = StubClient.describe
 
             def analyze(self, req):
                 X.n += 1
@@ -1048,6 +1053,33 @@ class ReviewFixTest(unittest.TestCase):
         r = ar.run(ex_fixture(), c, cap=5)
         self.assertIn("구독", r["stats"]["refused"])
         self.assertEqual(c.requests, [])
+
+    def test_real_api_client_is_refused_without_any_call(self):
+        from hazop.study import claude_http
+        sent = []
+
+        def blocked(*a, **k):
+            sent.append(a)
+            raise AssertionError("API로 보내면 안 된다")
+        client = claude_http.ClaudeHttpClient(lambda: "sk-test", opener=blocked)
+        self.assertEqual(client.describe()["via"], "api")
+        r = ar.run(ex_fixture(), client, cap=5)
+        self.assertIn("구독", r["stats"]["refused"])
+        done = ar.run_many([("t", ex_fixture())], client, cap=5, save=False)
+        self.assertEqual((r["stats"]["calls"], done[0][2]["calls"], sent), (0, 0, []))
+
+    def test_only_subscription_or_fixed_clients_pass(self):
+        from hazop.study import claude_cli
+        self.assertEqual(claude_cli.ClaudeCliClient().describe()["via"], "subscription")
+        self.assertIsNone(ar.refuse_reason(providers.FixedCellsClient("x")))
+        self.assertIsNone(ar.refuse_reason(providers.RecordingClient(providers.FixedCellsClient("x"), "y")))
+
+        class Bare:
+            def analyze(self, request):
+                raise AssertionError("표시 없는 클라이언트로 보내면 안 된다")
+        for c in (Bare(), type("NoVia", (Bare,), {"describe": lambda self: {"model": "m"}})(),
+                  type("Http", (Bare,), {"describe": lambda self: {"type": "anthropic_http", "via": "subscription"}})()):
+            self.assertIn("구독", ar.refuse_reason(c), c)
 
     def test_system_text_has_no_answer_key_or_sample_values(self):
         import check_read_quality as rq

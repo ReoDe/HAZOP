@@ -279,6 +279,9 @@ class AiRunTest(unittest.TestCase):
         e["drawing"] = {"drawing_number": "T-1"}
 
         class Stub:
+            def describe(self):
+                return {"via": "fixed"}
+
             def analyze(self, request):
                 items = __import__("json").loads(request["context"])["items"]
                 ans = [{"item_id": i["item_id"], "field": i["ask"][0],

@@ -62,6 +62,9 @@ class StubClient:
     def __init__(self, answer):
         self.answer, self.requests = answer, []
 
+    def describe(self):
+        return {"via": "fixed"}  # 시험용 가짜: ai_review.refuse_reason이 구독·고정 응답만 통과시킨다
+
     def analyze(self, request):
         self.requests.append(request)
         return {"status": "completed", "error_kind": None, "output": self.answer(request), "via": "fixed"}

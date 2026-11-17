@@ -487,10 +487,16 @@ def _call(client, request):
         return {"status": "api_error", "error_kind": "other", "error": "AI 호출 중 오류(%s)" % type(exc).__name__}
 
 
+# AI 검토를 돌려도 되는 연결 표시(describe()["via"]). 구독 CLI는 subscription, 고정 응답·저장본 다시 쓰기는 fixed.
+# 표시가 없거나 다른 값이면 거절한다: 표시 없는 실제 클라이언트(API)가 건별 요금으로 지나가지 않게.
+REVIEW_VIA = ("subscription", "fixed")
+
+
 def refuse_reason(client):
-    """AI 검토를 돌리지 않을 까닭(사용자 결정: 구독제 연결로 돈다). API 연결이면 안내 글, 아니면 None."""
-    via = (client.describe() if hasattr(client, "describe") else {}).get("via")
-    if via == "api":
+    """AI 검토를 돌리지 않을 까닭(사용자 결정: 구독제 연결로 돈다). 구독·고정 응답 연결임이 분명하지 않으면 안내 글, 아니면 None.
+    describe()가 없거나 via가 REVIEW_VIA 밖이거나 type이 API 클라이언트(anthropic_http)면 거절한다."""
+    d = client.describe() if hasattr(client, "describe") else {}
+    if d.get("via") not in REVIEW_VIA or d.get("type") == "anthropic_http":
         return "AI 검토는 Claude 구독 연결로만 돕니다. 연결 방식을 구독으로 바꾸면 켤 수 있습니다(건별 요금 방지)."
     return None
 

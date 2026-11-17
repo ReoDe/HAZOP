@@ -294,7 +294,7 @@ class RequestShapeTest(unittest.TestCase):
     def test_describe_has_no_key(self):
         d = client(FakeOpener()).describe()
         self.assertEqual(d, {"type": "anthropic_http", "model": "claude-opus-5-5", "effort": "high",
-                             "max_tokens": 16000})
+                             "max_tokens": 16000, "via": "api"})
         self.assertNotIn(KEY, repr(client(FakeOpener())))
 
 

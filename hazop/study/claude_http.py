@@ -139,7 +139,8 @@ class ClaudeHttpClient:
         return "ClaudeHttpClient(model=%r, effort=%r)" % (self.model, self.effort)
 
     def describe(self):
-        return {"type": "anthropic_http", "model": self.model, "effort": self.effort, "max_tokens": self.max_tokens}
+        return {"type": "anthropic_http", "model": self.model, "effort": self.effort, "max_tokens": self.max_tokens,
+                "via": "api"}
 
     def _headers(self, key):
         return {"x-api-key": key, "anthropic-version": API_VERSION, "content-type": "application/json"}
