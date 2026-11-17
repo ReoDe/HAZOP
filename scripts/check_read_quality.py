@@ -450,6 +450,128 @@ def score_page(key, ex):
             "matched": len(m)}
 
 
+# ---------------------------------------------------------------- 고치는 동작 수(보고용, 기준값에 넣지 않음)
+
+BLOB_LONG = 100.0   # 이보다 긴 변의 미분류 노드는 기호 여럿이 든 덩어리로 보고 나누기 1동작으로 센다
+ACTION_KEYS = ("set_kind", "split", "add_node", "delete_node", "set_tag", "set_flow", "set_attribute",
+               "connect_lo", "connect_hi", "false_link_lo", "false_link_hi")
+
+
+def _components(pairs):
+    """쌍(두 끝을 가진 집합)들이 이루는 무리(연결 요소) 수."""
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    for p in pairs:
+        a, b = tuple(p)
+        parent[find(a)] = find(b)
+    return len({find(x) for p in pairs for x in p})
+
+
+def fix_actions(key, ex):
+    """정답지와 추출 결과의 차이를 사람이 지금 있는 고침 연산으로 메우는 최소 동작 수(연산 하나 = 1동작).
+    같은 짝짓기·쌍 계산(match_symbols, symbol_pieces, extracted_pairs)을 쓴다. 연결은 놓친 쌍마다(위 한계)와
+    놓친 쌍이 이루는 무리마다(아래 한계) 두 값을 낸다. 맞는 연산이 없는 항목은 no_op으로 따로 센다.
+    반환: {"items": 항목별 동작 수, "lo": 아래 한계 합, "hi": 위 한계 합, "no_op": 연산 없음 수, "units": 정답 단위 수}"""
+    m = match_symbols(key["symbols"], ex["nodes"])
+    matched = {n["local_id"] for n in m.values()}
+    blobs = [b for b in (_bbox(n) for n in ex["nodes"] if n.get("kind") is None)
+             if b and max(b[2] - b[0], b[3] - b[1]) > BLOB_LONG]
+    it = dict.fromkeys(ACTION_KEYS, 0)
+    no_op = 0
+    split_syms = set()
+    for s in key["symbols"]:
+        if s["id"] in m:
+            if not same_kind(m[s["id"]].get("kind"), s["kind"]):
+                it["set_kind"] += 1
+            continue
+        c = _center(s["bbox"])
+        if any(b[0] <= c[0] <= b[2] and b[1] <= c[1] <= b[3] for b in blobs):
+            it["split"] += 1
+            split_syms.add(s["id"])
+        else:
+            it["add_node"] += 1
+    it["delete_node"] = sum(1 for n in ex["nodes"] if n.get("kind") not in NOT_SYMBOL and n["local_id"] not in matched
+                            and _in_region(n, key["regions"]))
+    for s in key["symbols"]:
+        if is_tag(s.get("tag")) and (s["id"] in m or s["id"] in split_syms) \
+                and not (s["id"] in m and same_tag(m[s["id"]].get("tag"), s["tag"])):
+            it["set_tag"] += 1  # add_node로 더한 기호의 태그는 같은 연산에 들어 있어 세지 않는다
+    no_op += score_tag(key, ex, m)["false_pos"]  # 틀린 태그를 지우는 연산은 없다
+    kind = {s["id"]: s["kind"] for s in key["symbols"]}
+    pm = {sid: n for sid, n in m.items() if kind[sid] not in INSTRUMENT_KINDS}
+    pieces = {nid: sid for nid, sid in symbol_pieces(key["symbols"], ex["nodes"], m).items()
+              if kind[sid] not in INSTRUMENT_KINDS}
+    pairs, directed = extracted_pairs(ex, pm, pieces)
+    conns = process_connections(key)
+    want = {frozenset((c["a"], c["b"])) for c in conns}
+    missing = want - pairs
+    rest = {p for p in missing if not p & split_syms}  # 나눈 기호가 낀 쌍은 다시 추출이 잇는다(아래 한계 0)
+    it["connect_lo"], it["connect_hi"] = _components(rest), len(missing)
+    extra = pairs - want
+    it["false_link_lo"], it["false_link_hi"] = _components(extra), len(extra)
+    flows = [c for c in conns if c.get("flow")]
+    it["set_flow"] = sum(1 for c in flows
+                         if frozenset((c["a"], c["b"])) in missing
+                         or (frozenset((c["a"], c["b"])) in pairs
+                             and ((c["a"], c["b"]) if c["flow"] == "a_to_b" else (c["b"], c["a"])) not in directed))
+    no_op += sum(1 for c in key["continuations"] if not (c["symbol"] in m and continuation_ok(c, m[c["symbol"]])))
+    for s in key["symbols"]:
+        want_a = s.get("attributes") or {}
+        got = (m[s["id"]].get("attributes") or {}) if s["id"] in m else {}
+        for f in SYMBOL_FIELDS:
+            if want_a.get(f) and not _same_value(f, got.get(f), want_a[f]):
+                it["set_attribute"] += 1
+            elif not want_a.get(f) and got.get(f):
+                no_op += 1  # 틀린 위치 값을 지우는 연산은 없다
+    rels = [(r, _rel_points(r)) for r in ex.get("relations", [])]
+    for ln in key["lines"]:
+        near = [r for r, pts in rels if len(pts) > 1
+                and min(_seg_dist(ln["at"], a, b) for a, b in zip(pts, pts[1:])) <= LINE_NEAR]
+        for f in LINE_FIELDS:
+            if ln.get(f) and not any(_same_value(f, _rel_value(r, f), ln[f]) for r in near):
+                if f == "line_no":
+                    it["set_attribute"] += 1  # 배관 번호는 관계 set_tag 1동작
+                else:
+                    no_op += 1  # 구경·재질·설계압력을 고치는 연산은 없다
+    units = (len(key["symbols"]) + sum(1 for s in key["symbols"] if is_tag(s.get("tag"))) + len(want) + len(flows)
+             + len(key["continuations"]))
+    fixed = sum(v for k, v in it.items() if not k.endswith(("_lo", "_hi")))
+    return {"items": it, "lo": fixed + it["connect_lo"] + it["false_link_lo"],
+            "hi": fixed + it["connect_hi"] + it["false_link_hi"], "no_op": no_op, "units": units}
+
+
+def sum_actions(rows):
+    out = {"items": dict.fromkeys(ACTION_KEYS, 0), "lo": 0, "hi": 0, "no_op": 0, "units": 0}
+    for r in rows:
+        for k, v in r["items"].items():
+            out["items"][k] += v
+        for k in ("lo", "hi", "no_op", "units"):
+            out[k] += r[k]
+    return out
+
+
+def fmt_actions(a):
+    """동작 수 한 줄: 아래~위, 정답 단위 100개당, 맞는 연산 없는 항목 수, 항목별."""
+    it = a["items"]
+
+    def rng(lo, hi):
+        return str(lo) if lo == hi else "%s~%s" % (lo, hi)
+
+    def per(n):
+        return "—" if not a["units"] else "%.1f" % (100.0 * n / a["units"])
+    return ("고치는 동작 %s(정답 단위 %d, 100개당 %s) · 맞는 연산 없는 항목 %d · 종류 %d · 태그 %d · 흐름 %d · 연결 더하기 %s"
+            " · 기호 더하기 %d · 나누기 %d · 속성 %d · 오검출 연결 끊기 %s · 오검출 노드 지우기 %d"
+            % (rng(a["lo"], a["hi"]), a["units"], rng(per(a["lo"]), per(a["hi"])), a["no_op"], it["set_kind"],
+               it["set_tag"], it["set_flow"], rng(it["connect_lo"], it["connect_hi"]), it["add_node"], it["split"],
+               it["set_attribute"], rng(it["false_link_lo"], it["false_link_hi"]), it["delete_node"]))
+
+
 # ---------------------------------------------------------------- 두 정답지 견주기(독립 두 판의 일치율)
 
 def _as_nodes(symbols):
@@ -934,7 +1056,8 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
     from hazop.extract.adapters import pdf_vector
     work = tempfile.mkdtemp(prefix="hazop-read-quality-")
     os.environ["HAZOP_WORK_ROOT"] = work
-    res = {"pages": {}, "ai_pages": {}, "ai_high_pages": {}, "missing": []}
+    res = {"pages": {}, "ai_pages": {}, "ai_high_pages": {}, "missing": [], "actions": {}, "ai_actions": {},
+           "ai_high_actions": {}}
     try:
         jobs = []
         for name, k in load_keys(pages, key_dir):
@@ -967,6 +1090,7 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
         for name, k, pdf in jobs:
             ex = extract(pdf)
             res["pages"][name] = score_page(k, ex)
+            res["actions"][name] = fix_actions(k, ex)
             if ai_client is not None:
                 images = None
                 if ai_images:
@@ -992,8 +1116,9 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
                 if calls:
                     stats = dict(stats, seconds=round(sum(c["seconds"] for c in calls), 1),
                                  real_calls=sum(1 for c in calls if not c.get("cached")), call_log=calls)
-                res["ai_pages"][name] = score_page(k, apply_with_splits(ex, cands, pdf, work))
-                res["ai_high_pages"][name] = score_page(k, apply_with_splits(ex, high_only(cands), pdf, work))
+                ex_all, ex_high = apply_with_splits(ex, cands, pdf, work), apply_with_splits(ex, high_only(cands), pdf, work)
+                res["ai_pages"][name], res["ai_high_pages"][name] = score_page(k, ex_all), score_page(k, ex_high)
+                res["ai_actions"][name], res["ai_high_actions"][name] = fix_actions(k, ex_all), fix_actions(k, ex_high)
                 res.setdefault("ai_stats", {})[name] = stats
                 if ai_save:
                     os.makedirs(ai_save, exist_ok=True)
@@ -1004,8 +1129,9 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
             if cand_path and os.path.isfile(cand_path):
                 with open(cand_path, encoding="utf-8") as fh:
                     cands = json.load(fh)
-                res["ai_pages"][name] = score_page(k, apply_with_splits(ex, cands, pdf, work))
-                res["ai_high_pages"][name] = score_page(k, apply_with_splits(ex, high_only(cands), pdf, work))
+                ex_all, ex_high = apply_with_splits(ex, cands, pdf, work), apply_with_splits(ex, high_only(cands), pdf, work)
+                res["ai_pages"][name], res["ai_high_pages"][name] = score_page(k, ex_all), score_page(k, ex_high)
+                res["ai_actions"][name], res["ai_high_actions"][name] = fix_actions(k, ex_all), fix_actions(k, ex_high)
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return res
@@ -1054,6 +1180,17 @@ def report(res, at):
         for lab, prefix in (("APR1400 합계", "apr1400-"), ("SNP 합계", "SNP-"), ("전체 합계", None)):
             t = totals(pages, prefix)
             lines.append("  %-14s " % lab + item_line(t, sym_totals(pages, prefix)))
+    for label, acts in (("스크립트만", res.get("actions")), ("스크립트 + AI 후보(전부)", res.get("ai_actions")),
+                        ("스크립트 + AI 후보(높음만)", res.get("ai_high_actions"))):
+        if not acts:
+            continue
+        lines.append("고치는 동작 수(보고용, 기준값 아님) %s @%s" % (label, at))
+        for name in sorted(acts):
+            lines.append("  %-14s " % name + fmt_actions(acts[name]))
+        for lab, prefix in (("APR1400 합계", "apr1400-"), ("SNP 합계", "SNP-"), ("전체 합계", None)):
+            rows = [a for n, a in acts.items() if prefix is None or n.startswith(prefix)]
+            if rows:
+                lines.append("  %-14s " % lab + fmt_actions(sum_actions(rows)))
     if res["missing"]:
         lines.append("PDF가 없어 건너뜀: %s" % ", ".join(res["missing"]))
     return "\n".join(lines)

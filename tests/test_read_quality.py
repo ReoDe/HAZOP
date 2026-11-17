@@ -501,5 +501,83 @@ class ConnectReplayTest(unittest.TestCase):
         self.assertEqual((on_stats["planned_calls"], on_stats["connect_calls"], on_stats["connect_links"]), (2, 1, 1))
 
 
+class FixActionsTest(unittest.TestCase):
+    """고치는 동작 수(보고용): 연산 하나 = 1동작. 정의는 read-quality-log.md '고치는 동작 수'."""
+
+    def valves(self, n, kinds=None):
+        boxes = [(100 + 100 * i, 100, 110 + 100 * i, 108) for i in range(n)]
+        syms = [sym(i + 1, (kinds or {}).get(i, "manual_valve"), b) for i, b in enumerate(boxes)]
+        nodes = [node(i + 1, "manual_valve", b) for i, b in enumerate(boxes)]
+        return syms, nodes
+
+    def test_wrong_kind_is_one_action(self):
+        syms, nodes = self.valves(2, {1: "check_valve"})
+        a = rq.fix_actions(key(syms), ex(nodes))
+        self.assertEqual((a["items"]["set_kind"], a["lo"], a["hi"], a["no_op"]), (1, 1, 1, 0))
+
+    def test_missed_pairs_in_one_group_cost_one_below_and_one_per_pair_above(self):
+        syms, nodes = self.valves(4)
+        conns = [{"a": "s001", "b": "s002", "flow": None}, {"a": "s002", "b": "s003", "flow": None},
+                 {"a": "s003", "b": "s004", "flow": None}]
+        a = rq.fix_actions(key(syms, conns), ex(nodes))
+        self.assertEqual((a["lo"], a["hi"]), (1, 3))
+        self.assertEqual((a["items"]["connect_lo"], a["items"]["connect_hi"]), (1, 3))
+        two_groups = rq.fix_actions(key(syms, [conns[0], conns[2]]), ex(nodes))
+        self.assertEqual((two_groups["lo"], two_groups["hi"]), (2, 2))
+
+    def test_false_link_group_and_false_node(self):
+        syms, nodes = self.valves(3)
+        nodes.append(node(9, "pump", (700, 100, 740, 140)))
+        e = ex(nodes, [rel(1, "n1", "n2"), rel(2, "n2", "n3")])
+        a = rq.fix_actions(key(syms), e)
+        self.assertEqual((a["items"]["false_link_lo"], a["items"]["false_link_hi"]), (1, 2))
+        self.assertEqual(a["items"]["delete_node"], 1)
+        self.assertEqual((a["lo"], a["hi"]), (2, 3))
+
+    def test_flow_missing_or_wrong_is_one_action_each(self):
+        syms, nodes = self.valves(3)
+        conns = [{"a": "s001", "b": "s002", "flow": "a_to_b"}, {"a": "s002", "b": "s003", "flow": "a_to_b"}]
+        e = ex(nodes, [rel(1, "n2", "n1", flow=("n2", "n1"))])
+        a = rq.fix_actions(key(syms, conns), e)
+        self.assertEqual(a["items"]["set_flow"], 2)  # 방향이 틀린 쌍 하나, 놓친 쌍의 새 방향 하나
+        self.assertEqual((a["items"]["connect_lo"], a["lo"]), (1, 3))
+
+    def test_missing_symbol_is_add_node_and_its_tag_is_free(self):
+        syms = [sym(1, "manual_valve", (100, 100, 110, 108), tag="HV-101")]
+        a = rq.fix_actions(key(syms), ex([]))
+        self.assertEqual((a["items"]["add_node"], a["items"]["set_tag"], a["lo"]), (1, 0, 1))
+        wrong_tag = rq.fix_actions(key(syms), ex([node(1, "manual_valve", (100, 100, 110, 108), tag="HV-999")]))
+        self.assertEqual((wrong_tag["items"]["set_tag"], wrong_tag["lo"]), (1, 1))
+
+    def test_symbol_inside_big_unclassified_node_is_split_and_pairs_through_it_cost_nothing_below(self):
+        syms = [sym(1, "manual_valve", (100, 100, 110, 108)), sym(2, "manual_valve", (150, 100, 160, 108)),
+                sym(3, "pump", (400, 90, 430, 120))]
+        conns = [{"a": "s001", "b": "s003", "flow": None}]
+        blob = node(1, None, (90, 90, 250, 120))
+        e = ex([blob, node(3, "pump", (400, 90, 430, 120))])
+        a = rq.fix_actions(key(syms, conns), e)
+        self.assertEqual((a["items"]["split"], a["items"]["set_kind"]), (1, 1))  # 덩어리는 가까운 기호 하나와 짝지어진다
+        self.assertEqual((a["items"]["connect_lo"], a["items"]["connect_hi"]), (0, 1))
+
+    def test_items_without_an_operation_are_counted_apart(self):
+        syms, nodes = self.valves(1)
+        nodes[0]["tag"] = "HV-1"
+        lines = [{"at": [105, 104], "size": "6\""}]
+        a = rq.fix_actions(key(syms, lines=lines), ex(nodes))
+        self.assertEqual((a["no_op"], a["lo"], a["hi"]), (2, 0, 0))  # 틀린 태그 지우기 1, 구경 1
+
+    def test_units_and_sum(self):
+        syms, nodes = self.valves(2, {1: "check_valve"})
+        a = rq.fix_actions(key(syms, [{"a": "s001", "b": "s002", "flow": "a_to_b"}]), ex(nodes))
+        self.assertEqual(a["units"], 2 + 0 + 1 + 1 + 0)
+        total = rq.sum_actions([a, a])
+        self.assertEqual((total["lo"], total["hi"], total["units"]), (2 * a["lo"], 2 * a["hi"], 2 * a["units"]))
+        self.assertIn("100개당", rq.fmt_actions(total))
+
+    def test_score_and_baseline_values_do_not_carry_actions(self):
+        syms, nodes = self.valves(1)
+        self.assertNotIn("actions", rq.score_page(key(syms), ex(nodes)))
+
+
 if __name__ == "__main__":
     unittest.main()
