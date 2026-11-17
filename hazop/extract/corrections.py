@@ -12,7 +12,9 @@ id는 "manual-" + op_id다. 적용할 수 없는 연산은 사유와 함께 건�
 """
 
 import copy
+import functools
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -878,12 +880,95 @@ def _library_version():
     return h.hexdigest()[:16]
 
 
+# 기준 추출 결과에 닿는 코드: build_base가 부르는 pdf_vector 묶음과 그 모듈 수준 import(hazop 안), 그리고 이 모듈(build_base·
+# 종류 고치기). 목록은 pdf_vector의 import 닫힘에서 껍데기(패키지 __init__·paths·store_io)를 뺀 것이다.
+# tests/test_corrections_inputs.py가 import 그래프로 이 목록이 닫힘을 덮는지 확인한다.
+FINGERPRINT_MODULES = (
+    "hazop.extract.corrections",
+    "hazop.extract.adapters.pdf_vector",
+    "hazop.extract.adapters.pdf_vector_common",
+    "hazop.extract.adapters.pdf_vector_connectors",
+    "hazop.extract.adapters.pdf_vector_flow",
+    "hazop.extract.adapters.pdf_vector_grouping",
+    "hazop.extract.adapters.pdf_vector_labels",
+    "hazop.extract.adapters.pdf_vector_lines",
+    "hazop.extract.drawio",
+    "hazop.extract.properties",
+    "hazop.extract.rules",
+    "hazop.extract.symbols",
+    "hazop.kg.docextract",
+    "hazop.kg.schema",
+)
+FINGERPRINT_DATA = (("hazop.kg.schema", "registry.json"),)  # 노드 종류 레지스트리: 모듈 옆 파일(묶음에서도 같은 상대 위치)
+_SEP = b"|"
+
+
+def _code_digest(code, h):
+    """코드 개체를 해시에 넣는다. marshal은 참조 수에 따라 바이트가 달라질 수 있어 쓰지 않고, 바이트코드·이름·상수를 직접 넣는다."""
+    h.update(code.co_name.encode("utf-8") + _SEP)
+    h.update(code.co_code)
+    h.update(repr((code.co_argcount, code.co_kwonlyargcount, code.co_flags, code.co_names, code.co_varnames,
+                   code.co_freevars, code.co_cellvars)).encode("utf-8"))
+    for c in code.co_consts:
+        if hasattr(c, "co_code"):
+            _code_digest(c, h)
+        elif isinstance(c, (frozenset, set)):
+            h.update(repr(sorted(map(repr, c))).encode("utf-8"))
+        else:
+            h.update(repr(c).encode("utf-8"))
+
+
+def _module_digest(name):
+    """모듈 하나의 내용 해시. 소스 .py가 디스크에 있으면 줄끝을 LF로 맞춘 소스, 없으면(PyInstaller 묶음은 코드를 PYZ 안
+    바이트코드로만 갖는다) 로더가 주는 코드 개체. 둘 다 못 얻으면 표지만(그 모듈은 규칙 판만으로 갈음)."""
+    h = hashlib.sha256()
+    spec = importlib.util.find_spec(name)
+    origin = getattr(spec, "origin", None)
+    if origin and origin.endswith(".py") and os.path.isfile(origin):
+        with open(origin, "rb") as fh:
+            h.update(b"src" + _SEP + fh.read().replace(b"\r\n", b"\n"))
+        return h.hexdigest()
+    get_code = getattr(getattr(spec, "loader", None), "get_code", None)
+    try:
+        code = get_code(name) if get_code is not None else None
+    except (ImportError, OSError):
+        code = None
+    if code is None:
+        h.update(b"none")
+    else:
+        h.update(b"code" + _SEP)
+        _code_digest(code, h)
+    return h.hexdigest()
+
+
+def _compute_code_fingerprint(modules=FINGERPRINT_MODULES, data=FINGERPRINT_DATA):
+    h = hashlib.sha256()
+    for name in modules:
+        h.update(name.encode("utf-8") + _SEP + _module_digest(name).encode("ascii") + b"\n")
+    for name, fname in data:
+        spec = importlib.util.find_spec(name)
+        try:
+            with open(os.path.join(os.path.dirname(spec.origin), fname), "rb") as fh:
+                body = fh.read().replace(b"\r\n", b"\n")
+        except (OSError, TypeError, AttributeError):
+            body = b"missing"
+        h.update(name.encode("utf-8") + b"/" + fname.encode("utf-8") + _SEP + body + b"\n")
+    return h.hexdigest()[:16]
+
+
+@functools.lru_cache(maxsize=None)
+def code_fingerprint():
+    """추출 코드 지문: FINGERPRINT_MODULES·FINGERPRINT_DATA의 내용 해시(프로세스에서 한 번 계산). 규칙 판(RULES_VERSION)을
+    올리지 않고 추출 코드를 고쳐도 옛 기준 추출을 쓰지 않게 한다."""
+    return _compute_code_fingerprint()
+
+
 def inputs_key(original, inputs):
-    """기준 추출의 열쇠: 원본 추출(sha256·쪽·실행 id)·규칙 판·기호 사전 판·입력 연산(op_id·종류·값·대상)."""
+    """기준 추출의 열쇠: 원본 추출(sha256·쪽·실행 id)·규칙 판·추출 코드 지문·기호 사전 판·입력 연산(op_id·종류·값·대상)."""
     from hazop.extract.adapters import pdf_vector
     src, run = original.get("source") or {}, original.get("run") or {}
     canon = json.dumps([src.get("sha256"), (run.get("settings") or {}).get("page_index"), original.get("extraction_run_id"),
-                        pdf_vector.RULES_VERSION, _library_version(),
+                        pdf_vector.RULES_VERSION, code_fingerprint(), _library_version(),
                         [[o.get("op_id"), o.get("op"), o.get("target"), o.get("value")] for o in inputs]],
                        sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return "in-" + hashlib.sha256(canon.encode("utf-8")).hexdigest()[:24]

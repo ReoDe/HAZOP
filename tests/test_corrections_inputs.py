@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -183,6 +184,19 @@ class InputOpsTest(unittest.TestCase):
         self.assertEqual(corrections.ensure_base(NAME), "ready")
         self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "ready")
 
+    def test_base_is_rebuilt_when_extract_code_fingerprint_changes(self):
+        ops = self.split_ops()
+        self.save(ops)
+        with mock.patch.object(corrections, "code_fingerprint", lambda: "code-a"):
+            self.assertEqual(corrections.ensure_base(NAME), "ready")
+            self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "ready")
+        with mock.patch.object(corrections, "code_fingerprint", lambda: "code-b"):
+            self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "pending")
+            self.assertEqual(corrections.ensure_base(NAME), "ready")
+            self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "ready")
+        with mock.patch.object(corrections, "code_fingerprint", lambda: "code-a"):
+            self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "pending")
+
     def test_pipe_op_is_stored_but_not_yet_extracted(self):
         op = corrections.make_op(self.original, "pipe", None,
                                  corrections.input_value(self.original, ["pdf-path-0001"], ring=False, line_type="process"),
@@ -244,6 +258,119 @@ class InputOpCheckTest(unittest.TestCase):
         out = corrections.apply(ex, [op])
         self.assertEqual(out["corrections"]["applied"], ["c-0001"])
         self.assertEqual(out["nodes"][0]["source_object_id"], "manual-c-0001")
+
+
+class CodeFingerprintTest(unittest.TestCase):
+    """기준 추출 열쇠의 추출 코드 지문(설계 문서 '기준 추출 열쇠'). 임시 트리의 파일 내용으로 지문이 바뀌는지 본다."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.pkg = "fpkg%d" % id(self)
+        os.makedirs(os.path.join(self.tmp, self.pkg))
+        self.write("__init__.py", b"")
+        sys.path.insert(0, self.tmp)
+        importlib.invalidate_caches()
+
+    def tearDown(self):
+        sys.path.remove(self.tmp)
+        for k in [k for k in sys.modules if k == self.pkg or k.startswith(self.pkg + ".")]:
+            del sys.modules[k]
+        shutil.rmtree(self.tmp)
+
+    def write(self, name, data):
+        with open(os.path.join(self.tmp, self.pkg, name), "wb") as fh:
+            fh.write(data)
+
+    def fp(self, data=("data.json",)):
+        return corrections._compute_code_fingerprint((self.pkg + ".mod",), tuple((self.pkg, d) for d in data))
+
+    def test_source_change_changes_fingerprint_but_line_endings_do_not(self):
+        self.write("mod.py", b"X = 1\nY = 2\n")
+        self.write("data.json", b"{}\n")
+        base = self.fp()
+        self.assertEqual(self.fp(), base)
+        self.write("mod.py", b"X = 1\r\nY = 2\r\n")
+        self.assertEqual(self.fp(), base)
+        self.write("mod.py", b"X = 1\nY = 3\n")
+        changed = self.fp()
+        self.assertNotEqual(changed, base)
+        self.write("data.json", b'{"a": 1}\n')
+        self.assertNotEqual(self.fp(), changed)
+
+    def test_module_without_source_on_disk_is_fingerprinted_by_loader_code(self):
+        """PyInstaller 묶음은 .py 없이 PYZ 안 코드 개체만 갖는다. 같은 길(소스 파일이 없고 로더가 코드를 줌)을 zip으로 만든다."""
+        import zipfile
+        zname = os.path.join(self.tmp, "bundle.zip")
+
+        def build(src):
+            with zipfile.ZipFile(zname, "w") as z:
+                z.writestr("zmod.py", src)
+            importlib.invalidate_caches()
+            sys.modules.pop("zmod", None)
+            return corrections._module_digest("zmod")
+
+        sys.path.insert(0, zname)
+        try:
+            a = build("K = frozenset({'a', 'b'})\ndef f():\n    return 1\n")
+            self.assertEqual(build("K = frozenset({'a', 'b'})\ndef f():\n    return 1\n"), a)
+            self.assertNotEqual(build("K = frozenset({'a', 'b'})\ndef f():\n    return 2\n"), a)
+            self.assertNotEqual(build("K = frozenset({'a', 'c'})\ndef f():\n    return 1\n"), a)
+        finally:
+            sys.path.remove(zname)
+            sys.modules.pop("zmod", None)
+
+    def test_real_fingerprint_is_stable_in_process(self):
+        corrections.code_fingerprint.cache_clear()
+        a = corrections.code_fingerprint()
+        self.assertRegex(a, r"^[0-9a-f]{16}$")
+        self.assertEqual(corrections._compute_code_fingerprint(), a)
+        self.assertIs(corrections.code_fingerprint(), corrections.code_fingerprint())
+
+    def test_key_changes_with_fingerprint_only(self):
+        original = {"source": {"sha256": "s"}, "run": {"settings": {"page_index": 0}}, "extraction_run_id": "r"}
+        ops = [{"op_id": "c-0001", "op": "split", "target": "t", "value": {"k": 1}}]
+        with mock.patch.object(corrections, "code_fingerprint", lambda: "aaaa"):
+            k1 = corrections.inputs_key(original, ops)
+            self.assertEqual(corrections.inputs_key(original, ops), k1)
+        with mock.patch.object(corrections, "code_fingerprint", lambda: "bbbb"):
+            self.assertNotEqual(corrections.inputs_key(original, ops), k1)
+
+    def test_listed_modules_cover_the_extract_import_closure(self):
+        """build_base가 부르는 추출 길(pdf_vector)이 함수 안 import까지 닿는 hazop 모듈은, 패키지 껍데기를 빼고 전부 지문 목록에 있어야 한다."""
+        import ast
+        shells = {"hazop", "hazop.extract", "hazop.extract.adapters", "hazop.kg", "hazop.paths", "hazop.store_io"}
+
+        def mod_file(name):
+            p = os.path.join(REPO_ROOT, *name.split("."))
+            for f in (p + ".py", os.path.join(p, "__init__.py")):
+                if os.path.isfile(f):
+                    return f
+            return None
+
+        closure, todo = set(), ["hazop.extract.adapters.pdf_vector"]
+        while todo:
+            name = todo.pop()
+            if name in closure:
+                continue
+            closure.add(name)
+            f = mod_file(name)
+            with open(f, encoding="utf-8") as fh:
+                tree = ast.parse(fh.read())
+            pkg = name if f.endswith("__init__.py") else name.rpartition(".")[0]
+            for n in ast.walk(tree):
+                names = []
+                if isinstance(n, ast.Import):
+                    names = [a.name for a in n.names]
+                elif isinstance(n, ast.ImportFrom):
+                    base = n.module or ""
+                    if n.level:
+                        parts = pkg.split(".")
+                        base = ".".join(parts[:len(parts) - (n.level - 1)] + ([n.module] if n.module else []))
+                    names = [base] + [base + "." + a.name for a in n.names]
+                todo += [x for x in names if x.startswith("hazop") and mod_file(x)]
+        self.assertEqual(sorted(closure - shells - set(corrections.FINGERPRINT_MODULES)), [])
+        for name in corrections.FINGERPRINT_MODULES:
+            self.assertIsNotNone(mod_file(name), name)
 
 
 if __name__ == "__main__":

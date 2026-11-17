@@ -90,7 +90,7 @@ resolve(name) =
 ```
 
 - `apply`는 순수 함수로 남긴다. 파일·PDF를 읽는 일은 `resolve`·`ensure_base`만 한다.
-- 기준 추출은 다시 만드는 데 1~26초가 걸리므로(6장) 파일로 둔다. 자리는 `output/extract/<name>/extraction.inputs.json`이고 꼴은 `{"kind": "hazop_input_extraction", "key", "inputs": {"applied", "not_applicable", "retargeted"}, "extraction"}`이다. 열쇠 `inputs_key = sha256(source.sha256, 쪽, extraction_run_id, RULES_VERSION, 기호 사전 JSON 해시, 입력 연산(op_id·종류·대상·값))`다. 열쇠가 맞으면 읽고, 다르면 다시 만든다. 같은 입력이면 같은 결과이므로 두 번 만들어도 결과가 같다.
+- 기준 추출은 다시 만드는 데 1~26초가 걸리므로(6장) 파일로 둔다. 자리는 `output/extract/<name>/extraction.inputs.json`이고 꼴은 `{"kind": "hazop_input_extraction", "key", "inputs": {"applied", "not_applicable", "retargeted"}, "extraction"}`이다. 열쇠 `inputs_key = sha256(source.sha256, 쪽, extraction_run_id, RULES_VERSION, 추출 코드 지문, 기호 사전 JSON 해시, 입력 연산(op_id·종류·대상·값))`다. 추출 코드 지문(`corrections.code_fingerprint`)은 `FINGERPRINT_MODULES`(pdf_vector 묶음과 import 닫힘, `corrections.py`)와 `hazop/kg/schema/registry.json`의 내용 해시(줄끝 LF 정규화, 프로세스에서 한 번)다. 개발 실행은 소스 파일을, 묶인 실행(PyInstaller는 .py 없이 PYZ 안 코드만 가짐)은 로더가 주는 코드 개체를 해시한다. 그래서 `RULES_VERSION`을 올리지 않고 추출 코드를 고쳐도 옛 기준 추출을 쓰지 않는다. 열쇠가 맞으면 읽고, 다르면 다시 만든다. 같은 입력이면 같은 결과이므로 두 번 만들어도 결과가 같다.
 - 화면 스레드는 다시 추출하지 않는다. `resolve(name)`(기본 `allow_extract=False`)는 파일이 없거나 열쇠가 다르면 `inputs.state = "pending"`으로 표시하고 `extraction.json` 위에 나머지 연산을 적용한 결과를 돌려준다. 다시 추출은 작업(job)과 `scripts/build_graph.build_one`만 한다(`ensure_base(name)` 또는 `allow_extract=True`). `ensure_base`는 다 만든 뒤 수정 기록이 그새 바뀌었으면 한 번 더 만든다.
 - 원본 PDF가 `source.file`에 없거나 `source.format`이 `pdf_vector`가 아니면 입력 연산은 모두 적용 불가("원본 PDF 없음", "벡터 PDF 도면만")다.
 
@@ -270,7 +270,7 @@ def reader_version() -> str
 
 1. **번호 유지의 남은 몫.** 배출구·끝막음처럼 사슬에서 나오는 기호는 그 수가 바뀌면 서로 밀릴 수 있다. 7장에서 재고, 0이 아니면 그 기호의 id를 위치 지문 이름으로 바꿔야 한다. 그 변경은 입력 없는 쪽의 id까지 바꾸므로 기준값 갱신 절차(CLAUDE.md 규칙 12)를 따라야 한다.
 2. **원본 PDF와 판.** 다시 추출은 `source.file`의 원본이 있어야 한다. 배포본 묶음의 pdfplumber 판을 고정해야 모양 다시 찾기로 넘어가는 일이 적다.
-3. **규칙 판 열쇠.** 기준 추출 열쇠의 `RULES_VERSION`은 규칙을 고칠 때마다 오르지 않는다. 원본 추출의 `extraction_run_id`가 함께 들어가 다시 추출하면 열쇠가 바뀌지만, 앱만 올리고 다시 추출하지 않으면 옛 기준 추출 파일을 그대로 쓴다.
+3. **규칙 판 열쇠.** 기준 추출 열쇠의 `RULES_VERSION`은 규칙을 고칠 때마다 오르지 않는다. 원본 추출의 `extraction_run_id`가 함께 들어가 다시 추출하면 열쇠가 바뀌지만, 앱만 올리고 다시 추출하지 않으면 옛 기준 추출 파일을 그대로 쓴다. (해소: 열쇠에 추출 코드 지문을 넣었다. 코드나 레지스트리가 바뀌면 기준 추출을 다시 만든다.)
 4. **큰 쪽의 기다림.** 134쪽 19초. 연달아 수락하면 작업이 한 번 더 도는 것으로 묶지만, 사람이 결과를 보려면 그만큼 기다린다.
 5. **AI split 후보의 남은 결함.** 후보 하나를 정하면 덩어리 전체를 다시 묻지 않는 문제(backlog)는 따로 고쳐야 수락 흐름이 쓸모 있다.
 6. **합성 묶음의 대표성.** 2.3의 표는 AI 답이 아니라 닿음 묶음으로 잰 것이다.
