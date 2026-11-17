@@ -1426,7 +1426,9 @@ def _stub_ends(tees, chains):
     """배관 하나가 끝나는 분기점에 짧은 선 둘 이상이 매달려 끝이 비어 있으면, 그 분기점은 배관이 갈라지는 자리가 아니라
     배관 끝에 그린 끝 기호다(범례 1.7-1의 호스 연결 ⊔, 벤트 끝 눈금, 시험 연결 등). 그대로 두면 배관이 갈래 없는
     분기점에서 끝나 끝 기호 노드가 생기지 않는다. 매달린 짧은 선들로 선 기호를 만들어 배관 끝을 잇는다(종류는 _classify가
-    정한다). → (새 기호 목록, 남은 사슬 목록, 남은 분기점 목록). 남은 분기점 번호에 맞춰 사슬 끝을 고쳐 쓴다."""
+    정한다). 배관 굵기 점선 사슬(pipe_dash)이 끝나는 분기점은 보지 않는다. 신호 점선이 배관 굵기로 그려진 쪽에서 신호
+    끝 눈금(APR1400 022쪽 ESF-CIAS 끝 ⊣)마다 끝 기호가 생긴다. → (새 기호 목록, 남은 사슬 목록, 남은 분기점 목록).
+    남은 분기점 번호에 맞춰 사슬 끝을 고쳐 쓴다."""
     at = collections.defaultdict(list)
     for ch in chains:
         for k in (0, 1):
@@ -1439,7 +1441,7 @@ def _stub_ends(tees, chains):
                  and (ch["ends"][1 - k][0][0] == "free" or ch["ends"][1 - k][0] == ("tee", t))]
         rest = [(ch, k) for ch, k in inc if all(ch is not s for s, _ in stubs)]
         # 남은 하나가 짧은 선이면 배관이 아니라 옆 기호의 축이다(008쪽 V236 위 T자 손잡이: 밸브에서 5.7pt 올라온 축 끝의 가로대)
-        if len(stubs) < 2 or len(rest) != 1 or len(inc) != len(stubs) + 1 or \
+        if len(stubs) < 2 or len(rest) != 1 or len(inc) != len(stubs) + 1 or rest[0][0].get("pipe_dash") or \
                 _poly_length({"pts": rest[0][0]["pts"]}) <= STUB_LEN_MAX:
             continue
         own = list({id(ch): ch for ch, _ in stubs}.values())

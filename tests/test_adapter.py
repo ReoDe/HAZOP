@@ -951,6 +951,21 @@ class PdfVectorRuleTest(unittest.TestCase):
                 relations = self.dashed_group([circle(218, 84, 14)], [word(text, 213, 80)])
                 self.assertNotIn(("physical_connection", "pdf_dashed", "pipe_dash_path"), relations)
 
+    def test_pipe_width_dashed_end_arrow_makes_no_end_node(self):
+        # APR1400 022·024쪽: 배관 굵기 점선 끝 화살촉·끝 눈금마다 끝 기호(미분류 노드)가 생겼다. 실선 배관의 대기 방출 끝·
+        # 끝 기호 규칙은 점선 끝에 쓰지 않는다
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        def run(dash):
+            far = dict(line((136, 211), (240, 211), width=0.32), **({"dash": [[10.67, 5.33], 0.0]} if dash else {}))
+            ext = pdf_run(bowtie(100, 200) + [rect(20, 200, 40, 222), line((40, 211), (100, 211), width=0.32), far,
+                                              prim([(240, 210.3), (242.9, 211), (240, 211.7), (240, 210.3)],
+                                                   closed=True, fill=True)])
+            return [n["kind"] for n in ext["nodes"]].count(None)
+        self.assertEqual(run(False), 2)  # 왼쪽 상자와 실선 끝 화살촉(대기 방출 끝)
+        self.assertEqual(run(True), 1)
+
     def test_hop_over_line_is_not_a_branch(self):
         # APR1400 141쪽: 엇갈리는 배관 한쪽이 다른 배관 위를 짧은 반원으로 넘는다. 반원 양 끝이 넘는 선에서 1.5pt 안이어도
         # 그 선을 나누지 않는다(넘는 선은 두 기호 사이 관계 하나로 남는다)

@@ -110,13 +110,15 @@ def _vent_ends(chains, markers, polys, prm):
     방출 끝(범례의 VENT·ATM 화살표, APR1400 046·063·105쪽)이다. 그 화살촉을 몸체로 하는 끝 기호를 만들어 사슬 끝을
     잇는다(제자리에서 고침). 배관 안쪽을 가리키는 화살촉(흘러드는 쪽), 점선(신호선)·공압 신호선 끝, 화살촉 끝이 다른
     선에 닿는 것(선을 가리키는 지시선)은 끝 기호로 보지 않는다. 작은 선 기호에서 나온 짧은 출구는 그 기호에 넣는다
-    (_outlet_host). 화살촉은 흐름 방향 근거로도 남긴다(markers에서 빼지 않는다). → (새 기호 목록, 남은 사슬 목록)."""
+    (_outlet_host). 화살촉은 흐름 방향 근거로도 남긴다(markers에서 빼지 않는다). 배관 굵기 점선 사슬(pipe_dash) 끝도
+    끝 기호로 보지 않는다. 신호 점선이 배관 굵기로 그려진 쪽에서 신호 화살촉마다 끝 기호가 생긴다(APR1400 022쪽 26개).
+    → (새 기호 목록, 남은 사슬 목록)."""
     from .pdf_vector_grouping import _Sym
     made, absorbed = {}, set()
     poly_of = {p["id"]: p for p in polys}
     segs = None
     for ch in chains:
-        if ch.get("dashed") or ch.get("pneumatic") or len(ch["pts"]) < 2:
+        if ch.get("dashed") or ch.get("pneumatic") or ch.get("pipe_dash") or len(ch["pts"]) < 2:
             continue
         for k in (0, 1):
             v, pt, _ = ch["ends"][k]
