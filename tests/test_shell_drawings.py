@@ -27,7 +27,7 @@ _TPL = {}
 
 def template():
     """SNP-M-101을 한 번 추출·그래프로 만든 작업 루트(시험마다 복사해 쓴다)."""
-    if "root" not in _TPL:
+    if "root" not in _TPL or not os.path.isdir(_TPL["root"]):      # 틀을 빌려 쓰는 다른 모듈의 tearDownModule이 이미 지웠으면 다시 만든다(모듈 순서에 기대지 않는다)
         from scripts.check_edit_screen import install_sample
         tmp = tempfile.mkdtemp(prefix="hazop-shelldraw-tpl-")
         with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": os.path.join(tmp, "work"), "HAZOP_STORE_ROOT": os.path.join(tmp, "store")}):
