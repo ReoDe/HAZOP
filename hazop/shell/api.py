@@ -480,7 +480,8 @@ def _h_set_ai_review(engine, a):
         engine.settings["ai_review_images"] = a["images"]      # 도면 조각 그림을 AI에 보낼지(기본 켬, 켜고 끄는 선택은 이것 하나)
     engine.save_settings()
     if "images" in a:
-        engine.changed("aireview", None)                         # 열려 있는 AI 검토 패널이 예상 호출 수와 안내를 다시 읽는다
+        engine.changed("aireview", None)
+        engine.changed("state")                         # 열려 있는 AI 검토 패널이 예상 호출 수와 안내를 다시 읽는다
     return {"enabled": bool(engine.settings.get("extract_ai_review")), "cap": engine.settings.get("extract_ai_cap"),
             "images": engine.settings.get("ai_review_images") is not False}
 
@@ -678,7 +679,7 @@ class ReadApi:
         e = self.engine
         s = e.settings
         return {"version": APP_VERSION, "reviewer": e.reviewer(), "project_id": e.project_id(), "current_sheet": e.current_sheet,
-                "ui": e.ui_state(), "chat_model": s.get("chat_model") or "fast", "ai_review": bool(s.get("extract_ai_review")), "ai_review_images": s.get("ai_review_images") is not False,
+                "ui": e.ui_state(), "chat_model": s.get("chat_model") or "fast", "ai_review": bool(s.get("extract_ai_review")), "ai_review_images": s.get("ai_review_images") is True,
                 "ai_review_cap": s.get("extract_ai_cap") or ai_review.DEFAULT_CAP, "ai_review_run_cap": ai_review.RUN_CAP,
                 "ui_shell": s.get("ui_shell") is not False, "debug": bool(os.environ.get("HAZOP_DEBUG"))}
 

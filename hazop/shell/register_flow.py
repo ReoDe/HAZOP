@@ -51,17 +51,14 @@ def review_if_wanted(engine, pages, progress):
         return {"ran": False, "candidates": 0, "skipped": "no_connection"}
     cap = int(engine.settings.get("extract_ai_cap") or ai_review.DEFAULT_CAP)
     try:
-        client = ai.make_client()
-        reason = ai_review.refuse_reason(client)
+        client, reason = ai_image_flow.subscription_client(engine)   # 분석 연결이 API 키여도 자동 AI 검토는 구독으로만 돈다. 구독을 못 쓰면 건너뛴다
         if reason:
             return {"ran": False, "candidates": 0, "skipped": reason}
-        images = ai_image_flow.factory(engine, pages)   # 벡터 PDF 도면은 조각 그림 입력으로(설정에서 끄면 글 입력). 구독 연결로만 간다
-        est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, images is not None)   # 사람이 고친 자리를 뺀 호출 수(실제 부르기 전 예상)
+        pics = ai_image_flow.enabled(engine, auto=True)               # 안내를 본 적 없는 사용자의 도면 조각은 보내지 않는다: 설정이 명시적으로 켜졌을 때만
+        est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, pics)   # 사람이 고친 자리를 뺀 호출 수(실제 부르기 전 예상)
         progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, None)
-        done = ai_review.run_many(pages, client, cap=cap, run_cap=ai_review.RUN_CAP, should_stop=engine.stop_requested,
-                                  on_progress=lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), images=images)
-        for n in (images.used if images is not None else {}):
-            ai_image_flow.stamp_run(n, {"legend_source": images.used[n]})
+        done, _images = ai_image_flow.run_pages(engine, pages, client, cap, ai_review.RUN_CAP,
+                                                lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), engine.stop_requested, auto=True)
     except Exception as exc:  # noqa: BLE001 - AI 검토 실패는 등록·추출을 되돌리지 않는다
         LOG.exception("AI 검토 오류")
         return {"ran": False, "candidates": 0, "skipped": "error: %s" % type(exc).__name__}

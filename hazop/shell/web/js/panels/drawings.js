@@ -100,6 +100,7 @@ export function DrawingsPanel({ onOpen, onClose }) {
         ${app.ai_review ? html`<div class="kv"><div class="k"><b>도면당 호출 상한</b><span>${app.ai_review_cap}회${est ? " · 지금 도면 전체 예상 호출 " + est.calls + "회, 약 " + Math.max(1, Math.round(est.seconds / 60)) + "분" + (est.capped ? "(한 번 실행 상한 " + est.run_cap + "회에 걸림)" : "") : ""}</span></div>
           <input type="number" min="1" max="200" value=${app.ai_review_cap} aria-label="도면당 호출 상한" style="width:72px;height:30px"
             onChange=${(e) => setReview({ cap: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 20)) })} /></div>` : null}
+        ${app.ai_review ? html`<div class="muted small ai-send-auto">${app.ai_review_images ? "추출 뒤에는 도면 조각 그림도 보냅니다(구독 연결로만 보냅니다)." : "추출 뒤에는 글만 보냅니다. 도면 조각 그림은 AI 검토 패널에서 켜면 보냅니다."}</div>` : null}
         ${app.ai_review && !conn.can_start ? html`<${Notice} kind="warn" icon="alert-triangle">AI 연결이 준비되지 않아 검토는 건너뜁니다.<//>` : null}</div>
       <div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">도면 ${data.drawings.length}장${data.project_id ? " · 프로젝트 " + data.project_id : ""}</div>
         ${data.drawings.length === 0 ? html`<${Notice}>등록된 도면이 없습니다. 위 자리에 도면 파일을 끌어 놓으면 등록하고 읽습니다.<//>` : html`<div class="list">

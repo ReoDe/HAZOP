@@ -14,7 +14,7 @@ function Estimate() {
   const busy = A.useAi((s) => s.busy);
   const ov = A.useAi((s) => s.overview);
   const page = est && est.pages.find((p) => p.graph_id === gid);
-  const img = est && est.images;
+  const img = (est && est.images) || { on: ov.images !== false };      // 예상 호출 수를 읽기 전에도 안내와 스위치가 보인다
   const conn = est && est.conn;               // 엔진이 정한 실제 연결(AI 검토는 구독으로만). 시작할 때 이 판(conn_ver)을 보낸다
   const minutes = (calls) => Math.max(1, Math.round(calls * (ov.seconds_per_call || 30) / 60));
   return html`<div class="card ai-est"><h3>AI 검토 실행</h3>
@@ -26,7 +26,7 @@ function Estimate() {
     ${img ? html`<div class="kv"><div class="k"><b>도면 조각 그림도 AI에 보내기</b><span>끄면 글만 보냅니다.</span></div>
       <${Switch} on=${img.on} label="도면 조각 그림도 AI에 보내기" onChange=${A.setImages} /></div>
       <div class="small ai-send" aria-live="polite">${!img.on ? "AI에는 글만 보냅니다. 도면 그림은 보내지 않습니다."
-        : page && !page.image ? "이 도면은 PDF 원본이 없어 글만 보냅니다."
+        : page && !page.image ? (page.text_reason || "이 도면은 글만 보냅니다.")
         : "종류를 정하지 못한 기호 둘레의 도면 조각 그림과 범례판을 AI에 보냅니다(구독 연결로만 보냅니다)."}</div>` : null}
     ${conn ? html`<div class=${"small ai-conn" + (conn.can_start ? "" : " ai-warn")} aria-label="AI 검토에 쓸 연결">${conn.method_name} · ${conn.model_name || "-"} · ${conn.can_start ? conn.cost_text : conn.label + ". " + conn.guide}</div>` : null}
     <div class="acts-row"><${Btn} sm=${true} icon="sparkles" label="이 도면 AI 검토 실행" disabled=${busy || !gid || (page && page.calls === 0) || !(conn && conn.can_start)} onClick=${A.run}>이 도면 AI 검토<//></div></div>`;
@@ -80,7 +80,7 @@ export function AiReviewPanel({ onClose }) {
         <select id="ai-sheet" class="ai-sheet" value=${gid || ""} onChange=${(e) => A.pickDrawing(e.target.value)}>
           ${ov.drawings.map((d) => html`<option key=${d.graph_id} value=${d.graph_id}>${d.drawing_number}${d.proposed ? " · 남은 후보 " + d.proposed : ""}</option>`)}</select>
         ${v.available ? html`<${Chip} kind="ai">남은 ${c.proposed || 0}<//><${Chip} kind="ok">수락 ${c.accepted || 0}<//><${Chip}>거절 ${c.rejected || 0}<//>` : null}</div>
-      ${last ? html`<div class="muted small">마지막 실행: 호출 ${last.calls ?? "-"}회 · 묻지 못한 곳 ${last.left ?? "-"}${last.not_symbol ? " · 기호 아님 " + last.not_symbol : ""}${last.halted ? " · 오류로 멈춤" : last.stopped ? " · 중지함" : ""}${last.legend ? html` · <span class="ai-legend">범례판: ${last.legend}</span>` : ""}</div>` : null}
+      ${last ? html`<div class="muted small">마지막 실행: 호출 ${last.calls ?? "-"}회 · 묻지 못한 곳 ${last.left ?? "-"}${last.not_symbol ? " · 기호 아님 " + last.not_symbol : ""}${last.halted ? " · 오류로 멈춤" : last.stopped ? " · 중지함" : ""}${last.legend ? html` · <span class="ai-legend">${last.legend}</span>` : ""}</div>` : null}
       <div class="muted small">후보는 추출 결과를 바꾸지 않습니다. 수락한 것만 도면 수정 기록에 들어가 그래프에 바로 반영되고, 되돌릴 수 있습니다.</div>
       ${v.graph_stale ? html`<${Notice} kind="warn" icon="alert-triangle">수락·되돌리기는 저장됐지만 그래프를 아직 다시 만들지 못해 도면·그래프가 고치기 전 상태입니다. 패널을 다시 열거나 다음 결정을 하면 다시 만듭니다.<//>` : null}
       ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${A.dismiss}>닫기<//><//>` : null}

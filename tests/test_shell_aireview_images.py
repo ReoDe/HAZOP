@@ -17,7 +17,9 @@ from tests.test_ai_review import StubClient
 from tests.test_shell_aireview import Base, FakeAi, kind_answers, tearDownModule  # noqa: F401  (tearDownModule: 틀 정리)
 
 
-class ImageRunTest(Base):
+class PdfBase(Base):
+    """준비: 임시 작업 루트에 SNP-M-102 PDF 도면을 추출해 더하고 가짜 AI를 단다."""
+
     def setUp(self):
         super().setUp()
         from hazop.app import data
@@ -47,6 +49,8 @@ class ImageRunTest(Base):
     def view_of(self, gid):
         return json.loads(AR.read(self.engine, ["aireview", gid], {}).body.decode("utf-8"))
 
+
+class ImageRunTest(PdfBase):
     def test_estimate_marks_which_drawings_send_pictures(self):
         r = self.estimate()
         by = {p["graph_id"]: p for p in r["pages"]}
@@ -102,7 +106,7 @@ class ImageRunTest(Base):
         before = {os.path.join(d, f) for d, _s, fs in os.walk(paths.work_root()) for f in fs}
         self.run_job([self.pgid])
         last = self.view_of(self.pgid)["last_run"]
-        self.assertIn(last["legend"], ("이 프로젝트 도면에서 만든 견본", "표준 기호 그림", "범례판 없이"))
+        self.assertIn(last["legend"], ("범례판: 이 프로젝트 도면에서 만든 견본", "범례판: 표준 기호 그림", "범례판: 범례판 없이"))
         made = {os.path.join(d, f) for d, _s, fs in os.walk(paths.work_root()) for f in fs} - before
         cache = os.path.normcase(paths.folder("cache", "ai-legend"))
         for f in made:
@@ -143,6 +147,7 @@ class ImageRunTest(Base):
         from hazop.app import data
         from hazop.shell import register_flow
         self.engine.settings["extract_ai_review"] = True
+        self.engine.settings["ai_review_images"] = True      # 자동 검토는 명시적으로 켠 경우에만 그림을 싣는다
         pages = [(self.pname, data.read_json(data.extraction_path(self.pname))), (self.name, self.ex)]
         out = register_flow.review_if_wanted(self.engine, pages, lambda *a: None)
         self.assertTrue(out["ran"], out)

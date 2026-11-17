@@ -354,7 +354,7 @@ class RegisterFlowTest(EngineBase):
 
 
 class AiReviewFlowTest(EngineBase):
-    """추출 뒤 AI 검토 토글·호출 상한(규격 §2.3 ① 줄). run_many는 대역으로 바꿔 호출 인자만 본다(실제 구독 호출 없음)."""
+    """추출 뒤 AI 검토 토글·호출 상한(규격 §2.3 ① 줄). 도면 한 장의 ai_review.run과 저장은 대역으로 바꿔 호출 인자만 본다(실제 구독 호출 없음)."""
 
     def pages(self):
         return [("p0", {"nodes": []})]
@@ -376,8 +376,10 @@ class AiReviewFlowTest(EngineBase):
         if cap:
             e.settings["extract_ai_cap"] = cap
         progress = mock.Mock()
-        with mock.patch("hazop.extract.ai_review.run_many", side_effect=error, return_value=[("p0", 3, {"calls": 2})]) as run:
+        ran = {"candidates": [1, 2, 3], "stats": {"calls": 2, "refused": None, "halted": False}}
+        with mock.patch("hazop.extract.ai_review.run", side_effect=error, return_value=ran) as run,                 mock.patch("hazop.extract.ai_review.merge_and_save") as save:
             res = register_flow.review_if_wanted(e, self.pages(), progress)
+        run.saved = save
         return res, run, progress
 
     def test_off_by_default_does_not_call_the_ai(self):
@@ -389,7 +391,7 @@ class AiReviewFlowTest(EngineBase):
         res, run, _ = self.flow(True, cap=7)
         self.assertEqual((res["ran"], res["candidates"]), (True, 3))
         self.assertEqual(run.call_args.kwargs["cap"], 7)
-        self.assertEqual(run.call_args.args[0][0][0], "p0")
+        self.assertEqual(run.saved.call_args.args[0], "p0")
 
     def test_no_connection_and_api_connection_are_skipped(self):
         res, run, _ = self.flow(True, can_start=False)

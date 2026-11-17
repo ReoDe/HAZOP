@@ -19,7 +19,7 @@ export const store = createStore({
   panel: null,            // null | "drawings" | "settings"
   sheet: null,            // 보는 도면 graph_id
   drawings: { drawings: [], documents: [], project_id: null, rev: null },
-  app: { version: "", reviewer: null, chat_model: "fast", ai_review: false, ai_review_cap: 20, ui: {}, debug: false },
+  app: { version: "", reviewer: null, chat_model: "fast", ai_review: false, ai_review_images: false, ai_review_cap: 20, ui: {}, debug: false },
   conn: { state: "unchecked", label: "확인 안 함", tone: "plain", guide: "", detail: "" },
   chat: { msgs: [], busy: false, progress: null, model: "fast", availability: { blocked: false, text: "", button: null }, examples: [] },
   chatCollapsed: false,

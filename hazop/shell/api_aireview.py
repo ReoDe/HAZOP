@@ -133,9 +133,13 @@ def candidates(engine, graph_id):
 
 
 def _legend_text(info):
-    """실행 결과 줄에 작게 보일 범례판 출처 글. 그림 입력이 아니었으면 None."""
-    src = (info or {}).get("legend_source") if isinstance(info, dict) else None
-    return ai_image_flow.LEGEND_LABELS.get(src) if src else None
+    """실행 결과 줄에 작게 보일 글(범례판 출처, 또는 그림을 만들지 못해 글만 보낸 것). 그림 입력이 아니었으면 None."""
+    if not isinstance(info, dict):
+        return None
+    if info.get("failed"):
+        return ai_image_flow.FAILED_TEXT
+    src = ai_image_flow.LEGEND_LABELS.get(info.get("legend_source"))
+    return "범례판: " + src if src else None
 
 
 def overview(engine):
@@ -166,13 +170,14 @@ def estimate(engine, cap, graph_ids=None):
             continue
     on = ai_image_flow.enabled(engine)
     est, mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, on)
+    reasons = {n: ai_image_flow.text_reason(ex) for n, ex in pages}
     to_gid = {names[g]: g for g in pick}
     from hazop.shell import api_settings
     return {"cap": cap, "run_cap": ai_review.RUN_CAP, "calls": est["calls"], "seconds": est["seconds"], "capped": est["capped"],
             "conn": api_settings.run_conn(engine, "ai_review", calls=est["calls"]),
             "images": {"on": on, "pages": sum(1 for v in mode.values() if v)},
             "pages": [{"graph_id": to_gid.get(p["name"]), "items": p["items"], "calls": p["calls"], "needed": p["needed"],
-                       "image": bool(mode.get(p["name"]))} for p in est["pages"]]}
+                       "image": bool(mode.get(p["name"])), "text_reason": reasons.get(p["name"])} for p in est["pages"]]}
 
 
 def read(engine, parts, query):
@@ -315,27 +320,23 @@ def run_review(engine, graph_ids, cap, progress):
     plan = api_settings.run_conn(engine, "ai_review")
     if ai is None or not plan["can_start"]:
         raise RuntimeError("AI 연결이 준비되지 않았습니다")
-    conn = getattr(ai, "conn", None)          # AI 검토는 분석 연결이 API 키여도 구독으로만 돈다(ai_review.refuse_reason)
-    client = conn.make_client("subscription") if conn is not None and "subscription" in conn.methods() else ai.make_client()
-    reason = ai_review.refuse_reason(client)
+    client, reason = ai_image_flow.subscription_client(engine)   # 분석 연결이 API 키여도 AI 검토는 구독으로만 돈다
     if reason:
         raise RuntimeError(reason)
     names = engine.graph_names()
     pages = [(names[g], _original(names[g])) for g in graph_ids if g in names]
-    images = ai_image_flow.factory(engine)
-    est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, images is not None)
+    est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, ai_image_flow.enabled(engine))
     progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, est["calls"] or None)
     to_gid = {v: k for k, v in names.items()}
-    done = ai_review.run_many(pages, client, cap=cap, run_cap=ai_review.RUN_CAP, should_stop=engine.stop_requested,
-                              on_progress=lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), images=images)
+    done, images = ai_image_flow.run_pages(engine, pages, client, cap, ai_review.RUN_CAP,
+                                           lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), engine.stop_requested)
     used = images.used if images is not None else {}
-    for n in used:
-        ai_image_flow.stamp_run(n, {"legend_source": used[n]})
+    failed = list(images.failed) if images is not None else []
     engine.changed("aireview", None)
     return {"drawings": [{"graph_id": to_gid.get(n), "candidates": count, "calls": st.get("calls", 0), "left": st.get("left", 0),
                           "halted": bool(st.get("halted")), "images": n in used, "legend_source": used.get(n)} for n, count, st in done],
             "calls": sum(st.get("calls", 0) for _n, _c, st in done), "estimate": est["calls"], "capped": est["capped"],
-            "image_failed": list(images.failed) if images is not None else []}
+            "image_failed": failed}
 
 
 def _unwrap(out):
@@ -366,6 +367,10 @@ def _h_run(engine, a):
     if not plan["can_start"]:
         raise api.CommandError("failed", plan["guide"] or "AI 연결이 준비되지 않았습니다. 설정에서 연결을 확인하세요.")
     cap = a.get("cap") or int(engine.settings.get("extract_ai_cap") or ai_review.DEFAULT_CAP)
+    if engine.settings.get(ai_image_flow.KEY) is None:          # 실행을 누르는 것은 화면의 안내와 스위치를 본 뒤다: 그때의 값을 적어 둔다(그 뒤부터 추출 뒤 자동 검토도 이 값을 따른다)
+        engine.settings[ai_image_flow.KEY] = ai_image_flow.enabled(engine)
+        engine.save_settings()
+        engine.changed("state")
     job = engine.start_job("AI 검토", lambda progress: run_review(engine, gids, cap, progress), kind="ai_review")
     return {"job": job}
 
