@@ -15,6 +15,7 @@ from hazop.extract import rules
 
 SCALE = 2.0
 PAD = 25.0
+MIN_CROP = 4.0         # 자를 영역의 가로·세로 하한(pt)
 SAMPLE_PAD = 6.0
 CELL = (200, 150)      # 범례판 칸 크기(px). 아래 18px는 이름 글자
 BOARD_COLS = 5
@@ -58,12 +59,25 @@ class PageImages:
                 doc.close()
         return self._img
 
-    def crop(self, bbox, pad=PAD, outline=True):
-        """bbox(pt) 둘레 조각(PIL). outline이면 상자 테두리를 긋는다."""
-        from PIL import ImageDraw
+    def crop_box(self, bbox, pad=PAD):
+        """bbox(pt) 둘레 자를 영역(pt, 쪽 안으로 맞춤). 상자가 쪽과 겹치지 않거나(쪽 밖으로 삐져나간 상자)
+        맞춘 영역이 MIN_CROP pt보다 좁으면 None: 그 항목은 그림 없이 건너뛴다."""
         img, s = self.image(), self.scale
-        box = [max(0.0, bbox[0] - pad), max(0.0, bbox[1] - pad),
-               min(img.width / s, bbox[2] + pad), min(img.height / s, bbox[3] + pad)]
+        w, h = img.width / s, img.height / s
+        if bbox[2] < 0 or bbox[3] < 0 or bbox[0] > w or bbox[1] > h:
+            return None
+        box = [max(0.0, bbox[0] - pad), max(0.0, bbox[1] - pad), min(w, bbox[2] + pad), min(h, bbox[3] + pad)]
+        if box[2] - box[0] < MIN_CROP or box[3] - box[1] < MIN_CROP:
+            return None
+        return box
+
+    def crop(self, bbox, pad=PAD, outline=True):
+        """bbox(pt) 둘레 조각(PIL), 자를 수 없으면 None. outline이면 상자 테두리를 긋는다."""
+        from PIL import ImageDraw
+        box = self.crop_box(bbox, pad)
+        if box is None:
+            return None
+        img, s = self.image(), self.scale
         out = img.crop(tuple(int(round(v * s)) for v in box)).copy()
         if outline:
             ImageDraw.Draw(out).rectangle([(bbox[0] - box[0]) * s - 2, (bbox[1] - box[1]) * s - 2,
@@ -72,7 +86,8 @@ class PageImages:
         return out
 
     def crop_png(self, bbox):
-        return _png(self.crop(bbox))
+        out = self.crop(bbox)
+        return None if out is None else _png(out)
 
 
 def _box(n):
@@ -118,8 +133,9 @@ def legend_boards(sources, kinds=None):
     """범례판 PNG 바이트 목록(범주 순, 한 장 BOARD_CELLS칸까지)과 견본이 있는 종류 목록."""
     kinds = set(kinds or viewer_kinds())
     picked = pick_samples(sources, kinds)
-    order = sorted(picked, key=lambda k: (rules.KIND_CATEGORY.get(k) or "", k))
-    cells = [(k, picked[k][0].crop(picked[k][1], pad=SAMPLE_PAD, outline=False)) for k in order]
+    crops = {k: page.crop(b, pad=SAMPLE_PAD, outline=False) for k, (page, b) in picked.items()}
+    order = sorted((k for k, c in crops.items() if c is not None), key=lambda k: (rules.KIND_CATEGORY.get(k) or "", k))
+    cells = [(k, crops[k]) for k in order]
     boards = [board(cells[i:i + BOARD_CELLS]) for i in range(0, len(cells), BOARD_CELLS)]
     return boards, order
 

@@ -318,10 +318,69 @@ class FixedResponseTest(unittest.TestCase):
 
 
 class StubPage:
-    """조각 그림 대신 상자 좌표를 글자로 담은 바이트(요청에 어느 자리가 실렸는지 본다)."""
+    """조각 그림 대신 상자 좌표를 글자로 담은 바이트(요청에 어느 자리가 실렸는지 본다).
+    off에 든 상자는 쪽 밖이라 자를 수 없는 것으로 본다."""
+
+    def __init__(self, off=()):
+        self.off = [list(b) for b in off]
+
+    def crop_box(self, bbox):
+        return None if list(bbox) in self.off else list(bbox)
 
     def crop_png(self, bbox):
+        assert self.crop_box(bbox) is not None, "자를 수 없는 상자를 요청에 실음"
         return ("crop:%s" % ",".join("%g" % v for v in bbox)).encode("ascii")
+
+
+class CropEdgeTest(unittest.TestCase):
+    """쪽 밖으로 삐져나간 상자: 자를 영역을 쪽 안으로 맞추고, 쪽과 겹치지 않거나 너무 좁으면 그림 없이 건너뛴다."""
+
+    def page(self):
+        from PIL import Image
+        from hazop.extract import ai_images
+        p = ai_images.PageImages(None, scale=2.0)
+        p._img = Image.new("RGB", (400, 200), "white")  # 쪽 200 x 100 pt
+        return p
+
+    def test_boxes_outside_each_side_are_skipped_without_error(self):
+        p = self.page()
+        for bbox in ([240, 40, 250, 50], [-60, 40, -50, 50], [40, -60, 50, -50], [40, 140, 50, 150]):
+            self.assertIsNone(p.crop_box(bbox), bbox)
+            self.assertIsNone(p.crop(bbox), bbox)
+            self.assertIsNone(p.crop_png(bbox), bbox)
+
+    def test_partly_outside_box_is_cut_inside_page(self):
+        p = self.page()
+        box = p.crop_box([190, 90, 210, 110])
+        self.assertEqual(box, [165.0, 65.0, 200.0, 100.0])
+        self.assertEqual(p.crop([190, 90, 210, 110]).size, (70, 70))
+
+    def test_zero_area_box(self):
+        p = self.page()
+        self.assertEqual(p.crop([50, 50, 50, 50]).size, (100, 100), "쪽 안의 점 상자는 둘레를 잘라 보낸다")
+        self.assertIsNone(p.crop_box([250, 50, 250, 50]), "쪽 밖의 점 상자는 건너뜀")
+        self.assertIsNone(p.crop_box([200, 50, 200, 50], pad=1.0), "쪽 끝에 닿아 너무 좁은 영역은 건너뜀")
+
+    def test_run_skips_uncroppable_items_and_counts_them(self):
+        from hazop.extract import ai_images
+        ex = ex_fixture()
+        items = [i for i in ar.collect_items(ex, 0) if i["task"] in ar.IMAGE_TASKS]
+        off = items[0]["bbox"]
+        stub = StubClient(good_answers)
+        doc = ar.run(ex, stub, cap=5, images=ai_images.ImageInput(StubPage([off]), [b"legend-1"], kinds=["pump"]))
+        asked = [it["item_id"] for req in stub.requests for it in ids_in(req)]
+        self.assertNotIn(items[0]["item_id"], asked)
+        self.assertEqual(doc["stats"]["no_image"], sum(1 for i in items if i["bbox"] == off))
+        self.assertEqual(doc["stats"]["items"], len(items) - doc["stats"]["no_image"])
+
+    def test_legend_skips_sample_outside_page(self):
+        from hazop.extract import ai_images
+        p = self.page()
+        ex = {"nodes": [{"source_object_id": "a", "kind": "pump", "geometry": {"x": 20, "y": 20, "width": 10, "height": 10}},
+                        {"source_object_id": "b", "kind": "manual_valve",
+                         "geometry": {"x": 260, "y": 20, "width": 10, "height": 10}}]}
+        boards, order = ai_images.legend_boards([(p, ex)], kinds=["pump", "manual_valve"])
+        self.assertEqual((len(boards), order), (1, ["pump"]))
 
 
 class ImageInputTest(unittest.TestCase):

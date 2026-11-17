@@ -1065,10 +1065,11 @@ def main(argv=None):
         print("추가 표본(저장소 밖 정답지 %d쪽, 기준값과 견주지 않음)" % len(load_keys(key_dir=extra)))
     print(report(res, head_commit()))
     for name, st in sorted((res.get("ai_stats") or {}).items()):
-        print("  AI 검토 %s: 호출 %d(계획 %d, 필요 %d)%s · 오류 %d · 후보 버림 %d · 기호 아님 %d · 다시 확인 일치 %d · 남은 항목 %d%s"
+        print("  AI 검토 %s: 호출 %d(계획 %d, 필요 %d)%s · 오류 %d · 후보 버림 %d · 기호 아님 %d · 다시 확인 일치 %d · 남은 항목 %d"
+              " · 그림 없이 건너뜀 %d%s"
               % (name, st["calls"], st["planned_calls"], st["needed_calls"],
                  " · 실제 호출 %d · %.0f초" % (st["real_calls"], st["seconds"]) if "seconds" in st else "", st["errors"], st["dropped"], st["not_symbol"],
-                 st["confirmed"], st["left"], " · 멈춤(%s)" % ",".join(st["error_kinds"]) if st["halted"] else ""))
+                 st["confirmed"], st["left"], st.get("no_image", 0), " · 멈춤(%s)" % ",".join(st["error_kinds"]) if st["halted"] else ""))
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(res, fh, ensure_ascii=False, indent=1)

@@ -400,7 +400,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
     답은 반영하고 남은 호출은 멈춘다."""
     stats = {"items": 0, "planned_calls": 0, "needed_calls": 0, "calls": 0, "errors": 0, "dropped": 0, "confirmed": 0,
              "halted": False, "stopped": False, "left": 0, "error_kinds": [], "refused": refuse_reason(client),
-             "excluded": 0, "not_symbol": 0}
+             "excluded": 0, "not_symbol": 0, "no_image": 0}
     if stats["refused"]:
         return {"candidates": [], "stats": stats}
     ex = copy.deepcopy(ex)
@@ -409,6 +409,10 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
              and not set(i.get("attached") or []) & set(exclude)
              and (images is None or i["task"] in IMAGE_TASKS)]
     stats["excluded"] = len(all_items) - len(items)
+    if images:
+        croppable = [i for i in items if i.get("bbox") and images.page.crop_box(i["bbox"]) is not None]
+        stats["no_image"] = len(items) - len(croppable)
+        items = croppable
     limit = cap if budget is None else max(0, min(cap, budget))
     batch = batch or (IMAGE_BATCH if images else DEFAULT_BATCH)
     answer_kinds = set(images.kinds) if images else None
