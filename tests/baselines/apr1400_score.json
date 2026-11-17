@@ -1113,7 +1113,7 @@
   "bubbles": 1619,
   "connector_bad_target": 0,
   "connectors_detected": 289,
-  "continuations": 1959,
+  "continuations": 2033,
   "failed_pages": 0,
   "nodes": 23686,
   "offpage_labels": 295,
@@ -1123,12 +1123,12 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 290,
-  "seconds": 325,
+  "seconds": 353,
   "tag_exact": 1313,
   "tag_not_in_text": 54,
   "tagged": 4184,
-  "unclassified": 5807,
-  "unknowns": 47964,
+  "unclassified": 5733,
+  "unknowns": 47816,
   "valve_number_closer_other": 0
  }
 }
