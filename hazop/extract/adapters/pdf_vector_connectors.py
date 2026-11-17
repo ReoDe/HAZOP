@@ -18,8 +18,6 @@ BARE_SYSTEM_RE = re.compile(r"^(?!(?:FC|FO|FL|LO|LC|LT|NO|NC)$)[A-Z]{2}$")
 
 SEQUENCE_LETTER_RE = re.compile(r"^[A-Z]{1,2}$")
 SHEET_REF_RE = re.compile(r"\bSHEET\s*\d")
-# 이름 줄 맨 앞 두 글자가 계통 약어인지 볼 때 뺄 영어 낱말('TO RMS'의 TO 등)
-NAME_STOP_WORDS = {"TO", "OF", "IN", "ON", "AT", "BY", "OR", "UP"}
 # 물결 끊김(배관 끝의 '~' 표시) 옆 글자 'FROM & TO WI'(정답지 규약: 다른 계통 이름이 적힌 물결 끊김은 연결 표시)
 WAVE_TEXT_RE = re.compile(r"^(?:FROM\s*&\s*TO|FROM|TO)\s+([A-Z]{2})$")
 
@@ -43,8 +41,10 @@ def _has_text(s):
 def attach_continuation_names(nodes, blocks, free, gap_max):
     """계통 약어를 못 읽은 연결 화살표(자기 글자가 'SHEET 4"Q"'뿐이거나 글자가 없음)의 글자 자리에 맞닿은 이름 문단
     ('ACID ADDITION', 'CD CONDENSER A\\nHOTWELL')을 행선으로 붙인다(제자리 고침). to_label은 정답지 규약처럼
-    '이름 / 자기 글자'이고, 이름 맨 앞 낱말이 두 글자 계통 약어면 to_system으로도 둔다. 맞닿은 문단이 둘 이상이거나
-    다른 화살표가 그 문단에 같거나 더 가까우면 붙이지 않는다(틀린 행선보다 미확인이 낫다).
+    '이름 / 자기 글자'다. 맞닿은 문단이 둘 이상이거나 다른 화살표가 그 문단에 같거나 더 가까우면 붙이지 않는다
+    (틀린 행선보다 미확인이 낫다). 이름 맨 앞 두 글자('CD CONDENSER', 'MS DRAIN')는 to_system으로 두지 않는다. 행선
+    설비의 계통일 뿐 이 쪽과 다른 계통이라는 뜻이 아니어서(10.3.2-1 시트 2 'MS DRAIN / SHEET 1'은 같은 그림),
+    to_system이 생기면 프로젝트 그래프가 같은 그림 시트끼리 잇던 짝을 잃는다(137쪽 14짝).
     free: 아무 데도 붙지 않은 글자 문단 번호(blocks의 색인). → 붙인 화살표 수."""
     arrows = [(n, _node_box(n)) for n in nodes if n.get("kind") == "continuation"]
     done = 0
@@ -62,9 +62,6 @@ def attach_continuation_names(nodes, blocks, free, gap_max):
         if any(o is not n and _box_gap(b["bbox"], ob) <= gap for o, ob in arrows):
             continue
         name = " ".join(b["text"].split())
-        head = name.split()[0]
-        if " " in name and head not in NAME_STOP_WORDS and BARE_SYSTEM_RE.match(head):
-            attrs["to_system"] = head
         attrs["to_label"] = name + (" / " + own if _has_text(own) else "")
         done += 1
     return done

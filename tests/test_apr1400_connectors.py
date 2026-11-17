@@ -142,10 +142,11 @@ class NameAboveArrow(unittest.TestCase):
                              [{"text": "ACID ADDITION", "bbox": (480, 119, 503, 122)}])
         self.assertEqual(got, [{"to_label": 'ACID ADDITION / SHEET 4"Q"'}])
 
-    def test_leading_two_letter_code_is_the_system(self):
+    def test_leading_two_letters_of_the_name_are_not_the_system(self):
+        """10.3.2-1 시트 2 'MS DRAIN / SHEET 1': MS는 행선 설비의 계통이고 같은 그림의 시트 1로 간다."""
         got = self.run_names([arrow_node("a", (218, 143, 250, 150), "SHEET 1")],
                              [{"text": "CD CONDENSER A\nHOTWELL", "bbox": (218, 137, 248, 143)}])
-        self.assertEqual(got, [{"to_system": "CD", "to_label": "CD CONDENSER A HOTWELL / SHEET 1"}])
+        self.assertEqual(got, [{"to_label": "CD CONDENSER A HOTWELL / SHEET 1"}])
 
     def test_rotated_name_left_of_an_upright_arrow(self):
         got = self.run_names([arrow_node("a", (395, 179, 401, 207), 'SHEET 3"M"')],
