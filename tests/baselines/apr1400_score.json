@@ -1115,7 +1115,7 @@
   "connectors_detected": 289,
   "continuations": 1959,
   "failed_pages": 0,
-  "nodes": 24663,
+  "nodes": 24316,
   "offpage_labels": 295,
   "pages": 143,
   "pair_candidates": 10,
@@ -1123,12 +1123,12 @@
   "pair_key_hit": 6,
   "pair_key_wrong": 0,
   "paired": 290,
-  "seconds": 332,
+  "seconds": 322,
   "tag_exact": 1313,
   "tag_not_in_text": 54,
   "tagged": 4184,
-  "unclassified": 6697,
-  "unknowns": 50097,
+  "unclassified": 6434,
+  "unknowns": 49309,
   "valve_number_closer_other": 0
  }
 }
