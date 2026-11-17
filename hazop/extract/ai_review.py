@@ -40,6 +40,9 @@ DEFAULT_RECHECK = 5       # 다시 확인 표본 수
 DEFAULT_THRESHOLD = 0.85  # 묶어 수락하는 확신도 하한
 NEAR_PART = 8.0           # 이 거리(pt) 안에 종류가 정해진 기호가 있으면 그 기호의 일부(구동부 머리·번호 원·태그판)일 수 있다
 NOT_SYMBOL = "not_symbol"  # 종류 답 가운데 '기호가 아님(다른 기호의 일부·글자 상자·선 조각)'. 후보를 만들지 않는다
+UNKNOWN = "unknown"        # 종류 답 가운데 '기호이지만 목록에서 못 고름(견본에 없거나 확실치 않음)'. 후보를 만들지 않는다
+NO_KIND = (NOT_SYMBOL, UNKNOWN)
+WIDE_KINDS = ("manual_valve", "isolation_valve", "control_valve", "motor_operated_valve")  # 몸통이 같고 구동부로 갈리는 밸브
 TASK_LABELS = {"kind": "못 읽은 기호의 종류", "tag": "태그·속성", "connection": "끊긴 연결", "recheck": "다시 확인"}
 SECONDS_PER_CALL = 30     # 예상 시간 어림(호출 하나). 실측은 evidence/ai-review-measure.md
 RUN_CAP = 300             # 한 번 실행(여러 도면)의 호출 상한(규격 'AI 검토 호출 수')
@@ -270,14 +273,18 @@ SYSTEM_IMAGE = """너는 원자력 발전소 P&ID(배관계장도)를 읽는 검
 
 규칙
 - item마다 ask에 적힌 필드만 답한다. values의 첫 값이 너의 답이고, 다음 값은 차선이다.
-- kind는 아래 목록에서만 고른다: {kinds}. 빨간 테두리 안 기호를 범례판 견본과 견줘 고른다.
-- 빨간 테두리 안이 기호 전체가 아니라 이웃 기호의 일부(구동부 머리 'S'·'M', 번호 원, 태그판), 선 조각, 글자 상자로 보이면
-  kind에 'not_symbol'이라고 답한다(종류를 지어내지 않는다). 목록에 맞는 것이 없어도 'not_symbol'.
+- kind 답은 셋 가운데 하나다. 틀린 종류보다 'unknown'이 낫다.
+  1. 종류 이름: 아래 목록에서만, 빨간 테두리 안 기호가 범례판의 그 칸 견본과 모양이 같을 때만 고른다: {kinds}.
+  2. 'not_symbol': 빨간 테두리 안이 기호가 아니다. 이웃 기호의 일부(구동부 머리 'S'·'M', 밸브 번호 원, 태그판),
+     설비 외곽선의 일부, 선 위 흐름 방향 화살촉, 선 조각, 글자 상자.
+  3. 'unknown': 기호로 보이지만 범례판에 같은 모양의 견본이 없거나, 어느 칸인지 확실하지 않다.
 - tag는 그 항목 그림에 실제로 보이고 texts_near에도 있는 글자만 그대로 쓴다. 지어내지 않는다.
 - normal_position은 {npos}, fail_position은 {fpos} 가운데 그림 가까이 글자로 적힌 것만.
 - recheck 항목은 지금 값(current)이 맞는지 본다. 맞으면 지금 값을 그대로 values에 넣는다.
 - 확신도(confidence)는 0~1 사이의 수. 범례 견본과 모양이 똑같고 근거가 분명하면 높게, 추측이면 0.5 아래로.
 - reason에는 한국어로 짧게, kind면 어느 범례 칸과 같은지(그 칸의 kind 이름), tag면 어느 글자를 읽었는지 쓴다."""
+WIDE_USER = ("그림은 넓힌 조각이다. 빨간 테두리 안 밸브의 구동부(조작기)와 옆 글자까지 보고 kind를 다시 답하라. "
+             "몸통이 같아도 구동부가 다르면 다른 종류다. 확실하지 않으면 'unknown'.")
 IMAGE_BATCH = 10   # 그림 입력에서 호출 하나에 넣는 항목 수(조각 그림 수)
 IMAGE_TASKS = ("kind", "tag")  # 그림 입력에서 묻는 과제. 다시 확인은 SNP 첫 실행에서 맞던 종류(tank)를 확신도 0.55로 바꿔 뺐다. 연결·나누기는 뒤에 정한다
 
@@ -302,21 +309,23 @@ def system_text(images=None):
         npos="/".join(POSITION_VALUES["normal_position"]), fpos="/".join(POSITION_VALUES["fail_position"]))
 
 
-def build_request(ex, call_items, described=None, images=None):
+def build_request(ex, call_items, described=None, images=None, wide=False):
     """analyze(request) 계약의 요청. context는 항목 설명 JSON(도면 번호 포함), user는 지시 한 줄.
     described: 미리 만든 describe 결과 {item_id: 설명}(답 검사에 같은 글자를 쓰려고).
-    images(ai_images.ImageInput): 주면 request["images"]에 범례판(종류를 묻는 항목이 있을 때)과 항목 조각을 싣는다."""
+    images(ai_images.ImageInput): 주면 request["images"]에 범례판(종류를 묻는 항목이 있을 때)과 항목 조각을 싣는다.
+    wide: 조각을 WIDE_PAD로 넓히고 지시를 밸브 종류 다시 묻기(WIDE_USER)로 바꾼다."""
     from hazop.extract import ai_images
     drawing = (ex.get("drawing") or {}).get("drawing_number")
     items = [(described or {}).get(i["item_id"]) or describe(ex, i) for i in call_items]
     req = {"system": system_text(images), "context": json.dumps({"drawing": drawing, "items": items},
                                                                 ensure_ascii=False, sort_keys=True),
-           "user": "위 items 각각에 대해 ask의 필드를 답하라. 모르면 그 항목은 빼라.",
+           "user": WIDE_USER if wide else "위 items 각각에 대해 ask의 필드를 답하라. 모르면 그 항목은 빼라.",
            "schema": schema()}
     if images:
         legend = images.legend if any("kind" in i["ask"] for i in call_items) else []
+        pad = ai_images.WIDE_PAD if wide else ai_images.PAD
         req["images"] = ([ai_images.block("범례판 %d/%d" % (n + 1, len(legend)), png) for n, png in enumerate(legend)]
-                         + [ai_images.block("그림 %s" % i["item_id"], images.page.crop_png(i["bbox"]))
+                         + [ai_images.block("그림 %s" % i["item_id"], images.page.crop_png(i["bbox"], pad=pad))
                             for i in call_items])
     return req
 
@@ -360,7 +369,7 @@ def _valid(item, ans, desc, kinds=None):
     if f not in item["ask"] or not vals or conf is None:
         return None
     v = vals[0]
-    if f == "kind" and v not in (kinds or rules.KIND_CATEGORY) and v != NOT_SYMBOL:
+    if f == "kind" and v not in (kinds or rules.KIND_CATEGORY) and v not in NO_KIND:
         return None
     if f in POSITION_VALUES and v not in POSITION_VALUES[f]:
         return None
@@ -389,18 +398,92 @@ def refuse_reason(client):
     return None
 
 
+def _ask(ex, client, call, images, answer_kinds, stats, kinds, wide=False):
+    """호출 하나를 보내 답을 검사한다. stats(호출·오류·버림·다시 확인 일치)와 kinds(오류 종류 목록)를 그 자리에서 고친다.
+    → (완료했나, 후보 목록, {item_id: 'not_symbol'|'unknown'})."""
+    described = {i["item_id"]: describe(ex, i) for i in call}
+    res = _call(client, build_request(ex, call, described, images, wide))
+    stats["calls"] += 1
+    kind = res.get("error_kind")
+    if kind is None and res.get("status") != "completed":
+        kind = providers.api_error_kind(res)[0] or "other"
+    kinds.append(kind)
+    if kind:
+        stats["errors"] += 1
+        stats["error_kinds"].append(kind)
+    if res.get("status") != "completed":
+        return False, [], {}
+    by_id = {i["item_id"]: i for i in call}
+    cands, no_kind = [], {}
+    for ans in (res.get("output") or {}).get("answers") or []:
+        item = by_id.get(ans.get("item_id")) if isinstance(ans, dict) else None
+        ok = _valid(item, ans, described[item["item_id"]], answer_kinds) if item else None
+        if not ok:
+            stats["dropped"] += 1
+            continue
+        f, vals, conf = ok
+        if item["task"] == "recheck" and (item["current"].get(f) or "") == vals[0]:
+            stats["confirmed"] += 1
+            continue
+        if f == "connection" and vals[0] == "none":
+            continue
+        if f == "kind" and vals[0] in NO_KIND:
+            no_kind[item["item_id"]] = vals[0]
+            continue
+        vals = [v for v in vals if not (f == "kind" and v in NO_KIND)]
+        extra = None
+        if f == "connection":
+            partner = next(x for x in item["partners"] if x["id"] == vals[0])
+            extra = {"open_end": item["open_end"], "attached_local": item["attached_local"],
+                     "partner_local": partner["local_id"]}
+        if f == "kind":
+            extra = {"near_symbol": item.get("near_symbol")}
+        reason = ans.get("reason") if isinstance(ans.get("reason"), str) else ""
+        cands.append(make_candidate(item["item_id"], item["task"], item, f, vals, conf, reason, extra))
+    return True, cands, no_kind
+
+
+def _wide_pass(ex, client, cands, items, images, answer_kinds, stats, kinds, limit, batch, should_stop):
+    """종류 답이 WIDE_KINDS인 후보를 넓힌 조각으로 다시 묻는다. 다시 받은 종류로 바꾸고, 'not_symbol'·'unknown'이나 답이 없으면
+    후보를 버린다(틀린 것보다 미확인). 호출이 실패한 묶음은 첫 답을 그대로 둔다. → 바꾼 후보 목록."""
+    by_item = {c["item_id"]: c for c in cands if c["field"] == "kind" and c["values"][0] in WIDE_KINDS}
+    again = [i for i in items if i["item_id"] in by_item]
+    out = {c["cand_id"]: c for c in cands}
+    for n in range(0, len(again), batch):
+        if stats["calls"] >= limit or (should_stop and should_stop()) or providers.halts(kinds):
+            break
+        call = again[n:n + batch]
+        stats["wide_calls"] += 1
+        done, new, _ = _ask(ex, client, call, images, answer_kinds, stats, kinds, wide=True)
+        if not done:
+            continue
+        got = {c["item_id"]: c for c in new if c["field"] == "kind"}
+        for i in call:
+            old = by_item[i["item_id"]]
+            if i["item_id"] in got:
+                c = dict(got[i["item_id"]], first_values=old["values"])
+                stats["wide_changed"] += c["values"][0] != old["values"][0]
+                out[old["cand_id"]] = c
+            else:
+                stats["wide_dropped"] += 1
+                out.pop(old["cand_id"])
+    return list(out.values())
+
+
 def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_progress=None,
         should_stop=None, budget=None, exclude=(), images=None):
     """AI 검토 한 번. ex는 바꾸지 않는다. → {candidates, stats}.
     cap: 도면당 호출 상한, budget: 이번 실행에 남은 호출 수(RUN_CAP에서 앞 도면이 쓴 만큼 뺀 값). 둘 중 작은 값까지만 부른다.
     exclude: 묻지 않을 대상 source_object_id(사람이 고친 자리).
     images(ai_images.ImageInput): 그림 입력. 과제는 IMAGE_TASKS만, 묶음 기본은 IMAGE_BATCH, 종류 답은 images.kinds 안에서만.
+    images.wide면 남은 호출로 밸브 종류 답(WIDE_KINDS)을 넓힌 조각으로 다시 묻는다(_wide_pass).
     on_progress(끝낸 호출 수, 이번 호출 수, 남은 항목 수), should_stop() → True면 다음 호출 전에 멈춘다.
     멈춤은 응답 상태와 관계없이 error_kind로 providers.halts를 따른다. 호출은 끝났는데 한도·초과 사용이 온 응답은 받은
     답은 반영하고 남은 호출은 멈춘다."""
     stats = {"items": 0, "planned_calls": 0, "needed_calls": 0, "calls": 0, "errors": 0, "dropped": 0, "confirmed": 0,
              "halted": False, "stopped": False, "left": 0, "error_kinds": [], "refused": refuse_reason(client),
-             "excluded": 0, "not_symbol": 0, "no_image": 0}
+             "excluded": 0, "kind_items": 0, NOT_SYMBOL: 0, UNKNOWN: 0, "wide_calls": 0, "wide_changed": 0,
+             "wide_dropped": 0, "no_image": 0}
     if stats["refused"]:
         return {"candidates": [], "stats": stats}
     ex = copy.deepcopy(ex)
@@ -417,61 +500,29 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
     batch = batch or (IMAGE_BATCH if images else DEFAULT_BATCH)
     answer_kinds = set(images.kinds) if images else None
     p = plan(items, limit, batch)
-    by_id = {i["item_id"]: i for i in items}
     cands, kinds = [], []
-    stats.update(items=len(items), planned_calls=len(p["calls"]), needed_calls=p["needed"], left=len(items))
+    stats.update(items=len(items), planned_calls=len(p["calls"]), needed_calls=p["needed"], left=len(items),
+                 kind_items=sum(1 for i in items if i["task"] == "kind"))
     done_items = 0
     for n, call in enumerate(p["calls"]):
         if should_stop and should_stop():
             stats["stopped"] = True
             break
-        described = {i["item_id"]: describe(ex, i) for i in call}
-        res = _call(client, build_request(ex, call, described, images))
-        stats["calls"] += 1
-        kind = res.get("error_kind")
-        if kind is None and res.get("status") != "completed":
-            kind = providers.api_error_kind(res)[0] or "other"
-        kinds.append(kind)
-        if kind:
-            stats["errors"] += 1
-            stats["error_kinds"].append(kind)
-        if res.get("status") == "completed":
+        done, new, no_kind = _ask(ex, client, call, images, answer_kinds, stats, kinds)
+        if done:
             done_items += len(call)
-            ids = {i["item_id"] for i in call}
-            for ans in (res.get("output") or {}).get("answers") or []:
-                if not isinstance(ans, dict):
-                    stats["dropped"] += 1
-                    continue
-                item = by_id.get(ans.get("item_id")) if ans.get("item_id") in ids else None
-                ok = _valid(item, ans, described[item["item_id"]], answer_kinds) if item else None
-                if not ok:
-                    stats["dropped"] += 1
-                    continue
-                f, vals, conf = ok
-                if item["task"] == "recheck" and (item["current"].get(f) or "") == vals[0]:
-                    stats["confirmed"] += 1
-                    continue
-                if f == "connection" and vals[0] == "none":
-                    continue
-                if f == "kind" and vals[0] == NOT_SYMBOL:
-                    stats["not_symbol"] += 1
-                    continue
-                vals = [v for v in vals if not (f == "kind" and v == NOT_SYMBOL)]
-                extra = None
-                if f == "connection":
-                    partner = next(x for x in item["partners"] if x["id"] == vals[0])
-                    extra = {"open_end": item["open_end"], "attached_local": item["attached_local"],
-                             "partner_local": partner["local_id"]}
-                if f == "kind":
-                    extra = {"near_symbol": item.get("near_symbol")}
-                reason = ans.get("reason") if isinstance(ans.get("reason"), str) else ""
-                cands.append(make_candidate(item["item_id"], item["task"], item, f, vals, conf, reason, extra))
+            cands += new
+            for v in no_kind.values():
+                stats[v] += 1
         if on_progress:
             on_progress(n + 1, len(p["calls"]), len(items) - done_items)
         if providers.halts(kinds):
             stats["halted"] = True
             break
     stats["left"] = len(items) - done_items
+    if images is not None and images.wide and not (stats["halted"] or stats["stopped"]):
+        cands = _wide_pass(ex, client, cands, items, images, answer_kinds, stats, kinds, limit, batch, should_stop)
+        stats["halted"] = providers.halts(kinds)
     return {"candidates": _dedupe(cands), "stats": stats}
 
 

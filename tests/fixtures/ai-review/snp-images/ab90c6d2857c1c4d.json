@@ -1,0 +1,24 @@
+{
+ "output": {
+  "answers": [
+   {
+    "item_id": "k-pdf-p0-sym-0010",
+    "field": "kind",
+    "values": [
+     "pump"
+    ],
+    "confidence": 0.95,
+    "reason": "원심펌프 케이싱, 가운데 원, 받침대 모양이 범례 pump 칸과 같음. 아래에 CC-PP01A 표기가 있음"
+   },
+   {
+    "item_id": "k-pdf-p0-sym-0014",
+    "field": "kind",
+    "values": [
+     "pump"
+    ],
+    "confidence": 0.95,
+    "reason": "원심펌프 케이싱, 가운데 원, 받침대 모양이 범례 pump 칸과 같음. 아래에 CC-PP01B 표기가 있음"
+   }
+  ]
+ }
+}

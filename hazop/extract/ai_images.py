@@ -1,9 +1,9 @@
 """AI 검토에 싣는 그림: 노드 조각과 범례판(docs/specs/extraction.md 'AI 검토', 계획 aiplan 2026-11-17).
 
 조각: 노드 상자 둘레에 PAD pt를 더해 SCALE배로 그린 PNG. 상자 테두리를 빨갛게 그어 어느 기호를 묻는지 보인다.
-범례판: 종류(kind)마다 견본 조각 하나에 kind 이름을 적은 칸을 모아 범주별로 한 장씩 만든다. 견본은 스크립트가 종류를
-정한 노드에서 고른다. APR1400은 범례 쪽(1.7-1 1/4~4/4)의 추출 결과, SNP는 SNP 도면들의 추출 결과를 쓴다.
-보낼 그림이 어느 도면 묶음에서 왔는지는 부르는 쪽이 정한다(이 모듈은 보내지 않는다).
+범례판: 종류(kind)마다 견본 조각 하나에 kind 이름을 적은 칸을 모아 범주별로 한 장씩 만든다. 견본 자리(종류, 상자)는
+부르는 쪽이 준다(APR1400은 저장소 정답지 12쪽의 기호, SNP는 SNP 도면들의 추출 결과). 답으로 받는 종류는 모양이 일정한
+종류(answer_kinds) 가운데 범례판에 견본이 실린 것뿐이다. 이 모듈은 그림을 만들기만 하고 보내지 않는다.
 """
 
 import base64
@@ -15,6 +15,7 @@ from hazop.extract import rules
 
 SCALE = 2.0
 PAD = 25.0
+WIDE_PAD = 60.0        # 넓힌 조각: 밸브 구동부(조작기)와 옆 글자가 들어가는 둘레(pt)
 MIN_CROP = 4.0         # 자를 영역의 가로·세로 하한(pt)
 SAMPLE_PAD = 6.0
 CELL = (200, 150)      # 범례판 칸 크기(px). 아래 18px는 이름 글자
@@ -29,6 +30,14 @@ def viewer_kinds():
     with open(paths.folder("drawing-symbols", "manifest.json"), encoding="utf-8") as fh:
         rows = json.load(fh)["symbols"]
     return sorted({r["kind"] for r in rows if not r.get("junction")} & set(rules.KIND_CATEGORY))
+
+
+def answer_kinds():
+    """그림 입력에서 답으로 받을 수 있는 종류: 보기 그림이 있고 모양이 일정한 것(manifest fit "keep"). 크기에 맞춰 늘려
+    그리는 설비 외곽(fit "stretch": 탱크·용기·열교환기·냉동기·도면 밖 연결 표기 등)은 견본 하나로 모양을 대 볼 수 없어 뺀다."""
+    with open(paths.folder("drawing-symbols", "manifest.json"), encoding="utf-8") as fh:
+        keep = {r["kind"] for r in json.load(fh)["symbols"] if r.get("fit") == "keep"}
+    return sorted(set(viewer_kinds()) & keep)
 
 
 def _png(img):
@@ -85,8 +94,8 @@ class PageImages:
                                           outline=OUTLINE, width=2)
         return out
 
-    def crop_png(self, bbox):
-        out = self.crop(bbox)
+    def crop_png(self, bbox, pad=PAD):
+        out = self.crop(bbox, pad=pad)
         return None if out is None else _png(out)
 
 
@@ -97,19 +106,27 @@ def _box(n):
     return [g["x"], g["y"], g["x"] + (g.get("width") or 0), g["y"] + (g.get("height") or 0)]
 
 
+def node_samples(ex):
+    """추출 결과의 노드를 견본 자리 [(kind, bbox)]로(SNP처럼 스크립트 종류가 믿을 만한 묶음에 쓴다)."""
+    return [(n.get("kind"), _box(n)) for n in sorted(ex.get("nodes") or [], key=lambda n: str(n.get("source_object_id")))
+            if n.get("kind") and _box(n)]
+
+
 def pick_samples(sources, kinds):
-    """sources [(PageImages, extraction)] -> {kind: (PageImages, bbox)}. 종류마다 그 종류가 처음 나오는 쪽(앞 쪽 우선:
-    범례 쪽을 먼저 주면 범례 견본을 쓴다)에서 상자가 가장 큰 노드 하나(작은 조각보다 기호 전체가 보이는 것)."""
-    best = {}
-    for pi, (page, ex) in enumerate(sources):
-        for n in sorted(ex.get("nodes") or [], key=lambda n: str(n.get("source_object_id"))):
-            k, b = n.get("kind"), _box(n)
-            if k not in kinds or b is None:
-                continue
-            area = (b[2] - b[0]) * (b[3] - b[1])
-            if k not in best or (best[k][1] == pi and area > best[k][0]):
-                best[k] = (area, pi, page, b)
-    return {k: (v[2], v[3]) for k, v in best.items()}
+    """sources [(PageImages, [(kind, bbox)])] -> {kind: (PageImages, bbox)}. 종류마다 모든 자리를 상자 넓이로 줄 세워
+    가운데 것 하나를 고른다. 가장 큰 상자는 이웃 조각까지 묶인 자리이기 쉽고 가장 작은 상자는 기호 일부이기 쉬워서,
+    그 종류의 흔한 크기를 견본으로 쓴다."""
+    seen = {}
+    for pi, (page, spots) in enumerate(sources):
+        for si, (k, b) in enumerate(spots):
+            if k in kinds and b is not None:
+                seen.setdefault(k, []).append(((b[2] - b[0]) * (b[3] - b[1]), pi, si, page, b))
+    out = {}
+    for k, rows in seen.items():
+        rows.sort(key=lambda r: r[:3])
+        mid = rows[(len(rows) - 1) // 2]
+        out[k] = (mid[3], mid[4])
+    return out
 
 
 def board(cells):
@@ -130,8 +147,8 @@ def board(cells):
 
 
 def legend_boards(sources, kinds=None):
-    """범례판 PNG 바이트 목록(범주 순, 한 장 BOARD_CELLS칸까지)과 견본이 있는 종류 목록."""
-    kinds = set(kinds or viewer_kinds())
+    """범례판 PNG 바이트 목록(범주 순, 한 장 BOARD_CELLS칸까지)과 견본이 있는 종류 목록(답으로 받을 종류)."""
+    kinds = set(kinds or answer_kinds())
     picked = pick_samples(sources, kinds)
     crops = {k: page.crop(b, pad=SAMPLE_PAD, outline=False) for k, (page, b) in picked.items()}
     order = sorted((k for k, c in crops.items() if c is not None), key=lambda k: (rules.KIND_CATEGORY.get(k) or "", k))
@@ -141,9 +158,11 @@ def legend_boards(sources, kinds=None):
 
 
 class ImageInput:
-    """AI 검토 한 쪽에 실을 그림: 그 쪽 조각(page)과 범례판(legend, PNG 바이트 목록), 답으로 받을 종류(kinds)."""
+    """AI 검토 한 쪽에 실을 그림: 그 쪽 조각(page)과 범례판(legend, PNG 바이트 목록), 답으로 받을 종류(kinds,
+    범례판에 견본이 실린 종류). wide면 구동부로 갈리는 밸브 종류(ai_review.WIDE_KINDS) 답을 넓힌 조각으로 한 번 더 묻는다."""
 
-    def __init__(self, page, legend=(), kinds=None):
+    def __init__(self, page, legend=(), kinds=None, wide=False):
         self.page = page
         self.legend = list(legend)
-        self.kinds = sorted(kinds or viewer_kinds())
+        self.kinds = sorted(kinds or answer_kinds())
+        self.wide = wide

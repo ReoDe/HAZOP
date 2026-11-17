@@ -7,7 +7,8 @@
   python scripts/check_read_quality.py --extra-keys <폴더>   # 저장소 밖 추가 정답지만 따로 잼(기준값 비교 없음)
   python scripts/check_read_quality.py --only SNP-M-102 --ai-run subscription --ai-cap 10 --ai-save <폴더>
       AI 검토를 실제로 돌려 두 값을 냄(구독 호출. 기준값 비교 없음). 시험은 --ai-run fixed --ai-fixed-dir <폴더>
-      --ai-images: 항목마다 노드 조각 그림과 범례판을 싣는다(kind·tag만). --ai-save를 주면 응답을
+      --ai-images: 항목마다 노드 조각 그림과 범례판을 싣는다(kind·tag만). --ai-wide는 밸브 종류 답을 넓힌 조각으로
+      한 번 더 묻는다. --ai-save를 주면 응답을
       <폴더>/responses에 고정 응답 꼴로 남겨 --ai-run fixed --ai-fixed-dir <폴더>/responses로 같은 답을 다시 잴 수 있다
   python scripts/check_read_quality.py tiles <쪽.pdf> <출력 폴더>   # 정답지 쓰기용 격자 타일(추출 결과를 쓰지 않음)
   python scripts/check_read_quality.py sample <출력 폴더> [--per-page 20] [--seed 20261113]
@@ -588,21 +589,23 @@ def ai_candidates(ex, client, cap, images=None):
     return ai_review.to_check_candidates(doc), doc["stats"]
 
 
-LEGEND_SEQS = (1, 2, 3, 4)  # APR1400 범례 쪽 1.7-1 1/4~4/4
-
-
 def legend_sources(family, input_dir, samples_dir, work):
-    """범례판 견본을 고를 쪽들 [(PageImages, extraction)]. SNP는 SNP 도면들(범례 쪽이 따로 없다).
-    APR1400은 범례 쪽 4장을 먼저 두고, 범례 쪽에서 스크립트가 못 정한 종류(펌프·구동 밸브 등)는 저장소 정답지 12쪽에서 채운다
-    (개발용·보류 쪽은 견본으로 쓰지 않는다). 도면 묶음을 섞지 않는다."""
+    """범례판 견본 자리 [(PageImages, [(kind, bbox)])]. 도면 묶음을 섞지 않는다.
+    APR1400: 저장소 정답지 12쪽의 기호(사람이 종류를 확인한 상자). 범례 쪽(1.7-1)의 스크립트 추출은 종류가 틀린 조각이 섞여
+    (manual_valve 칸에 밸브가 아닌 조각) 쓰지 않는다. 개발용·보류 쪽은 견본으로 쓰지 않는다.
+    SNP: SNP 도면들의 추출 결과(범례 쪽이 따로 없고 스크립트 종류가 drawio 정답과 거의 같다)."""
     from hazop.extract import ai_images
     from hazop.extract.adapters import pdf_vector
     if family == "SNP":
         pdfs = [glob.glob(os.path.join(f, "*.pdf"))[0] for f in snp_folders(samples_dir) if glob.glob(os.path.join(f, "*.pdf"))]
-    else:
-        seqs = list(LEGEND_SEQS) + [k["seq"] for _, k in load_keys()]
-        pdfs = [p for p in (apr_pdf(input_dir, s) for s in seqs) if p]
-    return [(ai_images.PageImages(p), pdf_vector.extract(p, page=0, repo_root=work)) for p in pdfs]
+        return [(ai_images.PageImages(p), ai_images.node_samples(pdf_vector.extract(p, page=0, repo_root=work)))
+                for p in pdfs]
+    out = []
+    for _, k in load_keys():
+        pdf = apr_pdf(input_dir, k["seq"])
+        if pdf:
+            out.append((ai_images.PageImages(pdf), [(s["kind"], s["bbox"]) for s in k["symbols"]]))
+    return out
 
 
 # ---------------------------------------------------------------- 기준값
@@ -826,11 +829,12 @@ def snp_folders(samples_dir):
 
 
 def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=20, only=None, ai_save=None,
-        key_dir=None, ai_images=False):
+        key_dir=None, ai_images=False, ai_wide=False):
     """only: 이 이름의 쪽만(APR1400 'apr1400-012', SNP 'SNP-M-102'). ai_client를 주면 쪽마다 AI 검토를 돌려
     '스크립트 + AI 후보' 값을 내고, ai_save 폴더에 후보(<이름>.json)와 실행 통계를 남긴다(--ai-candidates로 다시 잼).
     ai_save가 있으면 응답도 <ai_save>/responses에 남기고 쪽마다 호출 시간을 통계에 적는다.
-    ai_images: 노드 조각과 범례판(그 쪽과 같은 도면 묶음에서 고른 견본)을 싣는다."""
+    ai_images: 노드 조각과 범례판(그 쪽과 같은 도면 묶음에서 고른 견본)을 싣는다. 종류 답은 범례판에 견본이 있는 종류만.
+    ai_wide: 밸브 종류 답을 넓힌 조각으로 한 번 더 묻는다(ai_images와 함께)."""
     import extract_drawio
     from hazop.extract.adapters import pdf_vector
     work = tempfile.mkdtemp(prefix="hazop-read-quality-")
@@ -868,8 +872,9 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
                     from hazop.extract import ai_images as images_mod
                     family = "SNP" if name.startswith("SNP-") else "APR1400"
                     if family not in boards:
-                        boards[family] = images_mod.legend_boards(legend_sources(family, input_dir, samples_dir, work))[0]
-                    images = images_mod.ImageInput(images_mod.PageImages(pdf), boards[family])
+                        boards[family] = images_mod.legend_boards(legend_sources(family, input_dir, samples_dir, work))
+                    legend, kinds = boards[family]
+                    images = images_mod.ImageInput(images_mod.PageImages(pdf), legend, kinds=kinds, wide=ai_wide)
                 before = len(getattr(ai_client, "calls", []))
                 cands, stats = ai_candidates(ex, ai_client, ai_cap, images)
                 calls = getattr(ai_client, "calls", [])[before:]
@@ -1035,6 +1040,7 @@ def main(argv=None):
     ap.add_argument("--ai-effort", default="medium", help="구독 호출 추론 강도(기본 medium)")
     ap.add_argument("--ai-save", help="AI 후보와 실행 통계를 쓸 폴더(<이름>.json). 응답은 <폴더>/responses")
     ap.add_argument("--ai-images", action="store_true", help="노드 조각 그림과 범례판을 실어 묻는다(kind·tag만)")
+    ap.add_argument("--ai-wide", action="store_true", help="--ai-images에 더해 밸브 종류 답을 넓힌 조각으로 다시 묻는다")
     ap.add_argument("--baseline", default=BASELINE)
     ap.add_argument("--update", action="store_true")
     ap.add_argument("--force", action="store_true", help="HEAD와 다른(커밋 안 한) 기준값도 --update로 덮음")
@@ -1060,16 +1066,20 @@ def main(argv=None):
     extra = os.path.abspath(args.extra_keys) if args.extra_keys else None
     res = run(input_dir, os.path.abspath(args.samples_dir or default_samples_dir()), pages, args.ai_candidates,
               ai_client=client, ai_cap=args.ai_cap, only=only, ai_save=args.ai_save, key_dir=extra,
-              ai_images=args.ai_images)
+              ai_images=args.ai_images, ai_wide=args.ai_wide)
     if extra:
         print("추가 표본(저장소 밖 정답지 %d쪽, 기준값과 견주지 않음)" % len(load_keys(key_dir=extra)))
     print(report(res, head_commit()))
     for name, st in sorted((res.get("ai_stats") or {}).items()):
-        print("  AI 검토 %s: 호출 %d(계획 %d, 필요 %d)%s · 오류 %d · 후보 버림 %d · 기호 아님 %d · 다시 확인 일치 %d · 남은 항목 %d"
-              " · 그림 없이 건너뜀 %d%s"
+        print("  AI 검토 %s: 호출 %d(계획 %d, 필요 %d%s)%s · 오류 %d · 후보 버림 %d · 종류 항목 %d · 기호 아님 %d · 모름 %d"
+              " · 다시 확인 일치 %d · 남은 항목 %d · 그림 없이 건너뜀 %d%s"
               % (name, st["calls"], st["planned_calls"], st["needed_calls"],
-                 " · 실제 호출 %d · %.0f초" % (st["real_calls"], st["seconds"]) if "seconds" in st else "", st["errors"], st["dropped"], st["not_symbol"],
-                 st["confirmed"], st["left"], st.get("no_image", 0), " · 멈춤(%s)" % ",".join(st["error_kinds"]) if st["halted"] else ""))
+                 ", 넓혀 다시 %d·바뀜 %d·버림 %d" % (st["wide_calls"], st["wide_changed"], st["wide_dropped"])
+                 if st.get("wide_calls") else "",
+                 " · 실제 호출 %d · %.0f초" % (st["real_calls"], st["seconds"]) if "seconds" in st else "", st["errors"],
+                 st["dropped"], st.get("kind_items", 0), st["not_symbol"], st.get("unknown", 0),
+                 st["confirmed"], st["left"], st.get("no_image", 0),
+                 " · 멈춤(%s)" % ",".join(st["error_kinds"]) if st["halted"] else ""))
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(res, fh, ensure_ascii=False, indent=1)

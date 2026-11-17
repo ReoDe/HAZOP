@@ -4,6 +4,7 @@
 작업 루트는 임시 폴더. 수락은 사람 수정 기록(hazop.extract.corrections)에 연산으로 들어가고 되돌리면 빠진다.
 """
 
+import base64
 import copy
 import glob
 import json
@@ -327,9 +328,9 @@ class StubPage:
     def crop_box(self, bbox):
         return None if list(bbox) in self.off else list(bbox)
 
-    def crop_png(self, bbox):
+    def crop_png(self, bbox, pad=25.0):
         assert self.crop_box(bbox) is not None, "자를 수 없는 상자를 요청에 실음"
-        return ("crop:%s" % ",".join("%g" % v for v in bbox)).encode("ascii")
+        return ("crop:%s:pad%g" % (",".join("%g" % v for v in bbox), pad)).encode("ascii")
 
 
 class CropEdgeTest(unittest.TestCase):
@@ -376,19 +377,89 @@ class CropEdgeTest(unittest.TestCase):
     def test_legend_skips_sample_outside_page(self):
         from hazop.extract import ai_images
         p = self.page()
-        ex = {"nodes": [{"source_object_id": "a", "kind": "pump", "geometry": {"x": 20, "y": 20, "width": 10, "height": 10}},
-                        {"source_object_id": "b", "kind": "manual_valve",
-                         "geometry": {"x": 260, "y": 20, "width": 10, "height": 10}}]}
-        boards, order = ai_images.legend_boards([(p, ex)], kinds=["pump", "manual_valve"])
+        spots = [("pump", [20, 20, 30, 30]), ("manual_valve", [260, 20, 270, 30])]
+        boards, order = ai_images.legend_boards([(p, spots)], kinds=["pump", "manual_valve"])
         self.assertEqual((len(boards), order), (1, ["pump"]))
 
 
 class ImageInputTest(unittest.TestCase):
     """그림 입력(ai_images.ImageInput): kind·tag만, 항목마다 조각, 종류를 물을 때만 범례판, 종류는 목록 안에서만."""
 
-    def images(self, kinds=("manual_valve", "pump")):
+    def images(self, kinds=("manual_valve", "pump"), wide=False):
         from hazop.extract import ai_images
-        return ai_images.ImageInput(StubPage(), [b"legend-1"], kinds=list(kinds))
+        return ai_images.ImageInput(StubPage(), [b"legend-1"], kinds=list(kinds), wide=wide)
+
+    def test_unknown_and_not_symbol_make_no_candidate(self):
+        def answers(req):
+            return {"answers": [{"item_id": it["item_id"], "field": "kind", "values": [v], "confidence": 0.9,
+                                 "reason": "x"} for it, v in zip(ids_in(req), ("unknown", "not_symbol"))
+                                if it["task"] == "kind"]}
+        ex = ex_fixture()
+        ex["nodes"].append(node("n8", None, (600, 100, 610, 108)))
+        doc = ar.run(ex, StubClient(answers), cap=5, recheck=0, images=self.images())
+        self.assertEqual([c for c in doc["candidates"] if c["field"] == "kind"], [])
+        self.assertEqual((doc["stats"]["kind_items"], doc["stats"]["unknown"], doc["stats"]["not_symbol"]), (2, 1, 1))
+        self.assertIn("'unknown'", ar.system_text(self.images()))
+
+    def test_wide_pass_reasks_valve_kinds_with_wider_crop(self):
+        seen = []
+
+        def answers(req):
+            wide = req["user"] == ar.WIDE_USER
+            seen.append((wide, [im["data"] for im in req["images"] if im["label"].startswith("그림 ")]))
+            out = []
+            for it in ids_in(req):
+                if it["task"] != "kind":
+                    continue
+                if not wide:
+                    out.append({"item_id": it["item_id"], "field": "kind", "confidence": 0.9, "reason": "x",
+                                "values": ["pump" if it["target"] == "n9" else "manual_valve"]})
+                elif it["target"] == "n1":
+                    out.append({"item_id": it["item_id"], "field": "kind", "values": ["control_valve"],
+                                "confidence": 0.9, "reason": "구동부"})
+                else:
+                    out.append({"item_id": it["item_id"], "field": "kind", "values": ["unknown"], "confidence": 0.5,
+                                "reason": "x"})
+            return {"answers": out}
+        ex = ex_fixture()
+        ex["nodes"] += [node("n8", None, (600, 100, 610, 108)), node("n9", None, (700, 100, 730, 130))]
+        kinds = ("manual_valve", "control_valve", "pump")
+        doc = ar.run(ex, StubClient(answers), cap=5, recheck=0, images=self.images(kinds, wide=True))
+        got = {c["target"]: c for c in doc["candidates"] if c["field"] == "kind"}
+        self.assertEqual({t: c["values"][0] for t, c in got.items()}, {"n1": "control_valve", "n9": "pump"})
+        self.assertEqual(got["n1"]["first_values"], ["manual_valve"])
+        st = doc["stats"]
+        self.assertEqual((st["wide_calls"], st["wide_changed"], st["wide_dropped"]), (1, 1, 1))
+        wide_crops = [d for w, crops in seen if w for d in crops]
+        self.assertEqual(len(wide_crops), 2, "밸브 답 둘만 다시 묻는다")
+        self.assertTrue(all(b"pad60" in base64.b64decode(d) for d in wide_crops))
+        plain = ar.run(ex, StubClient(answers), cap=5, recheck=0, images=self.images(kinds))
+        self.assertEqual(plain["stats"]["wide_calls"], 0)
+
+    def test_answer_kinds_are_fixed_shape_viewer_kinds(self):
+        from hazop.extract import ai_images
+        kinds = ai_images.answer_kinds()
+        self.assertTrue(set(kinds) <= set(ai_images.viewer_kinds()))
+        self.assertIn("manual_valve", kinds)
+        for stretched in ("tank", "vessel", "continuation", "heat_exchanger"):
+            self.assertNotIn(stretched, kinds)
+
+    def test_legend_sample_is_median_size_and_answers_follow_board(self):
+        from hazop.extract import ai_images
+
+        class Page:
+            def crop(self, bbox, pad=0, outline=True):
+                from PIL import Image
+                return Image.new("RGB", (max(1, int(bbox[2] - bbox[0])), max(1, int(bbox[3] - bbox[1]))), "white")
+
+        page = Page()
+        spots = [("manual_valve", [0, 0, w, w]) for w in (2, 10, 40)] + [("tank", [0, 0, 50, 80]),
+                                                                          ("check_valve", None)]
+        picked = ai_images.pick_samples([(page, spots)], {"manual_valve", "tank", "check_valve"})
+        self.assertEqual(picked["manual_valve"][1], [0, 0, 10, 10])
+        self.assertNotIn("check_valve", picked)
+        boards, kinds = ai_images.legend_boards([(page, spots)])
+        self.assertEqual((len(boards), kinds), (1, ["manual_valve"]))  # tank는 늘려 그리는 종류라 답 목록에 없다
 
     def test_only_kind_tag_and_crop_per_item(self):
         stub = StubClient(good_answers)
