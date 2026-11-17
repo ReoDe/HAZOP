@@ -1564,15 +1564,17 @@ def _stroke_chains(pieces, prm, boxes=()):
 SIGNAL_END_KINDS = frozenset({"alarm", "pilot_light", "relay_converter"})  # 이 종류에 닿는 배관 굵기 점선은 신호선
 
 
-def _pipe_dash_groups(chains, ref, kind_of, signal_ids):
-    """배관으로 둘 배관 굵기 점선 사슬. 사슬을 분기점으로 이은 무리마다 본다. 무리 안 사슬 끝이 계기·경보(signal_ids)에
-    하나라도 닿으면 신호선 무리다(APR1400 125쪽: HS·ZL에서 밸브 구동부로 가는 신호 대시 점선이 쪽 배관 굵기와 같고 분기점을
-    거쳐 밸브에 닿는다). 종류를 아는 기호(분기점 빼고)에 하나도 닿지 않는 무리는 경계선·구조선이나 범례 보기일 수 있어 뺀다
+def _pipe_dash_groups(chains, ref, kind_of, signal_ids, driven):
+    """배관으로 둘 배관 굵기 점선 사슬. 사슬을 분기점으로 이은 무리마다 본다. 무리 안 사슬 끝이 계기·경보(signal_ids)나
+    밸브에 합친 구동부(driven(끝))에 하나라도 닿으면 신호선 무리다(APR1400 125쪽: HS·ZL에서 밸브 구동부로 가는 신호 대시
+    점선이 쪽 배관 굵기와 같고 분기점을 거쳐 밸브에 닿는다. 022쪽 ESF-CIAS 신호가 분기점을 거쳐 전동 구동부 M에 닿는다). 종류를 아는 기호(분기점 빼고)에 하나도 닿지 않는 무리는 경계선·구조선이나 범례 보기일 수 있어 뺀다
     (022쪽 구역 경계 점선, 003쪽 범례 신호선 보기). → 배관으로 둘 사슬 id(ch) 집합."""
     dash = [ch for ch in chains if ch.get("pipe_dash")]
     tees = [{v[1] for v, _, _ in ch["ends"] if v[0] == "tee"} for ch in dash]
     out = set()
     for g in _uf_groups(len(dash), lambda a, b: bool(tees[a] & tees[b])):
+        if any(driven(v) for n in g for v, _, _ in dash[n]["ends"]):
+            continue
         ends = [(ref(v) or (None,))[0] for n in g for v, _, _ in dash[n]["ends"]]
         if not any(i in signal_ids for i in ends) and any(i and kind_of(i) not in (None, "tee") for i in ends):
             out.update(id(dash[n]) for n in g)
@@ -3872,7 +3874,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     relations, unresolved = [], []
     node_by_local = {nd["local_id"]: nd for nd in node_out}
     pipe_dash = _pipe_dash_groups(chains, ref, lambda i: node_by_local[i]["kind"],
-                                  instrument_ids | {i for i, nd in node_by_local.items() if nd["kind"] in SIGNAL_END_KINDS})
+                                  instrument_ids | {i for i, nd in node_by_local.items() if nd["kind"] in SIGNAL_END_KINDS},
+                                  lambda v: v[0] == "sym" and id(v[1]) in merge_into and id(v[1]) not in box_ids)
     for n, ch in enumerate(ordered, 1):
         local_id, sid = "local-edge-%03d" % n, "pdf-p%d-conn-%04d" % (page, n)
         why = _merged_line(ch, merge_into, number_ids)
