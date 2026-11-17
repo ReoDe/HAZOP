@@ -27,7 +27,7 @@ import json
 from hazop.export import study_xlsx as sx
 from hazop.ie import fmea as _fm
 from hazop.ie import model
-from hazop.study import refs
+from hazop.study import idmap, refs
 from hazop.study import results as res
 
 KIND = "hazop_ie_bundle"
@@ -159,7 +159,7 @@ def _candidate(iec, node_id, dev, e, idx):
         "group_id": None,
         "reason": h.get("reason") or "",
         "method": METHOD,
-        "stable_refs": [r["ref"] for r in causes],
+        "stable_refs": [idmap.label(r["ref"]) for r in causes],
         "ie_origin": h.get("origin") if hint else None,
         "entry_status": "approved",
     }
@@ -177,7 +177,7 @@ def _trace(c, e, labels, group):
         "group_id": c["group_id"],
         "top_event_ids": list(group["heading_ids"]) if group else [],
         "end_state_ids": list(group["end_state_ids"]) if group else [],
-        "kg_paths": [" → ".join(labels.get(i, i) for i in p) for p in basis.get("kg_paths") or [] if p],
+        "kg_paths": [" → ".join(idmap.label(i, labels) for i in p) for p in basis.get("kg_paths") or [] if p],
         "sources": [{"doc": s.get("doc") or "", "where": s.get("where") or ""} for s in basis.get("sources") or []],
     }
 
@@ -294,7 +294,7 @@ def _basic_events(doc, approved, iecs, scope, fmea_live=frozenset()):
         if bid not in scope["basic_events"]:
             continue
         live_src = [s for s in b["sources"] if s["key"] in approved or s["key"] in fmea_live]
-        out.append({"be_id": bid, "name": b["name"], "tag": b["tag"], "ref": b["ref"],
+        out.append({"be_id": bid, "name": b["name"], "tag": b["tag"], "ref": idmap.label(b["ref"]),
                     "equipment_kind": b["equipment_kind"], "system": b["system"],
                     "failure_mode": b["failure_mode"], "failure_text": b["failure_text"],
                     "normal_position": "", "failed_position": "",

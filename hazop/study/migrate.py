@@ -25,8 +25,8 @@ from hazop.study.idmap import ref_of  # noqa: F401  여러 곳(ie·shell·refs)�
 OP = "migrate_version"
 _PID_ID = idmap._PID_ID
 POSITION_ATTRS = ("normal_position", "fail_position")
-SCHEMA = "0.2"  # hazop.study.nodes.SCHEMA_VERSION과 같음
-SCHEMAS = ("0.2",)
+SCHEMA = "0.3"            # 묘비 꼴 집합(hazop.study.nodes.SCHEMA_VERSION과 같음)
+SCHEMAS = ("0.2", "0.3")  # 0.2는 읽을 때 0.3으로 바꾼다
 
 
 def node_digests(graph, members_by_node):
@@ -166,7 +166,7 @@ def _rename_paths(results, forward):
     return changed, unmapped
 
 
-# ---------------------------------------------------------------- 0.2 집합
+# ---------------------------------------------------------------- 0.2·0.3 집합
 
 def _usable(node_set, graph):
     return (isinstance(node_set, dict) and node_set.get("schema_version") in SCHEMAS
@@ -174,7 +174,7 @@ def _usable(node_set, graph):
 
 
 def _upgrade(node_set):
-    """옛 꼴(A꼴 표시 없음, B꼴 lost_members)을 묘비 꼴로. 할 일이 없으면 입력 그대로."""
+    """옛 꼴(0.2: A꼴 표시 없음, B꼴 lost_members)을 묘비 꼴(0.3)로. 할 일이 없으면 입력 그대로."""
     out, _rep = idmap.upgrade(node_set)
     if out.get("schema_version") != SCHEMA:
         out = dict(out if out is not node_set else copy.deepcopy(node_set), schema_version=SCHEMA)
@@ -201,7 +201,7 @@ def with_refs(node_set, graph):
 
 def plan(node_set, graph):
     """{"state": "same"|"kept"|"skip", "reason", "matched", "table"(idmap.compute), "recheck"{node_id: 사유}}.
-    kept는 판 이전을 적용한다는 뜻이고 재확인은 recheck에 든 구간만이다. skip은 0.2 집합이 아니거나 그래프를 비교할 수
+    kept는 판 이전을 적용한다는 뜻이고 재확인은 recheck에 든 구간만이다. skip은 0.2·0.3 집합이 아니거나 그래프를 비교할 수
     없는 것."""
     out = {"state": "skip", "reason": None, "matched": 0, "table": None, "recheck": {}}
     if not _usable(node_set, graph):

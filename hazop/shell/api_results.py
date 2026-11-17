@@ -13,7 +13,7 @@ import logging
 import os
 
 from hazop.analysis.risk import FREQUENCIES, SEVERITIES
-from hazop.study import nodes
+from hazop.study import idmap, nodes
 from hazop.study import result_commands
 from hazop.study import results as res
 
@@ -335,7 +335,7 @@ class _Lookup:
             by_sheet = chatview.path_steps(self.pg, [{"id": x, "flow": None} for x in p])
             marks = {g: [{"op": "path", "steps": steps, "style": "path", "numbered": True}] for g, steps in by_sheet.items()}
             gone = [x for x in p if x not in self.entities]
-            paths.append({"labels": [self.labels.get(x, x) + (" (도면에서 사라짐)" if x in gone else "") for x in p], "marks": marks,
+            paths.append({"labels": [idmap.label(x, self.labels) + (" (도면에서 사라짐)" if x in gone else "") for x in p], "marks": marks,
                           "sheet": next(iter(by_sheet), None), "missing": len(gone)})
         docs = self.docs()
         sources = [{"doc": s.get("doc") or "", "where": s.get("where") or "", "material_id": docs.get(s.get("doc"))}

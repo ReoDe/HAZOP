@@ -5,7 +5,7 @@
 도면 연결 구간은 배관 경로 요소라 경로가 이어진 도면까지 한 구간에 든다. 도면별 저장본은 그대로 따로 읽힌다.
 편집 연산은 모두 순수 함수다. 입력을 바꾸지 않고 새 dict를 돌려주며 history에 한 줄 덧붙인다.
 
-저장 규격 0.2(docs/specs/study-node-segmentation.md §2). 확정은 구간마다다(state: applied → confirmed → locked).
+저장 규격 0.3(docs/specs/study-node-segmentation.md §2. 0.2에 판 이전 묘비를 더한 것이고 0.2 파일은 읽을 때 바꾼다). 확정은 구간마다다(state: applied → confirmed → locked).
 구간끼리 겹쳐도 되고, 어느 구간에도 들지 않는 구성요소('구간 밖')가 있어도 확정할 수 있다.
 구성요소·이름·basis·설계 의도가 바뀌면 그 구간의 분석 판(rev)이 1 오르고, 확정·잠금 구간은 확정 해제 뒤에만 고친다.
 편집 하나가 묶음(batches, B<번호>) 하나이고 묶음마다 op의 before·after를 남긴다(되돌리기는 hazop.study.node_tools).
@@ -23,7 +23,8 @@ from hazop.graph.project import _norm as drawing_key  # 프로젝트 그래프�
 from hazop.store_io import ANY, Conflict, fingerprint, now_utc  # noqa: F401  이 모듈 이름으로도 쓴다
 from hazop.study import segment
 
-SCHEMA_VERSION = "0.2"
+SCHEMA_VERSION = "0.3"
+PRE_TOMB_SCHEMA_VERSION = "0.2"  # 판 이전 묘비(tombstones·nodes[].lost) 전. 읽을 때 0.3으로 바꾼다(hazop.study.migrate)
 LEGACY_SCHEMA_VERSION = "0.1"
 KIND = "hazop_study_nodes"
 STATES = ("applied", "confirmed", "locked")
@@ -815,8 +816,8 @@ def load_fp(graph):
     """(graph의 저장본, 그 파일의 지문). 없으면 (None, None). 지문은 읽은 바이트에서 구한다.
     0.1 파일은 hazop.study.convert가 0.2로 바꾼다(⑤ 결과를 먼저 잇고, 백업을 먼저 쓴 뒤 결과 → 집합 순서로 씀, §2.5).
     바꾸지 못하면 메모리에서 바꾼 집합에 read_only(이유)를 붙이고 지문 None을 돌려준다(저장하면 Conflict).
-    0.2 집합은 판 이전(hazop.study.migrate)을 적용한다. 판 이전이 파일을 다시 썼으면 지문은 다시 쓴 파일의 것이다.
-    0.2보다 새 판은 ValueError(읽지 않음)."""
+    0.2·0.3 집합은 판 이전(hazop.study.migrate)을 적용한다(0.2는 0.3 묘비 꼴로 바꿔 씀). 판 이전이 파일을 다시 썼으면
+    지문은 다시 쓴 파일의 것이다. 0.3보다 새 판은 ValueError(읽지 않음)."""
     path = _readable_path(graph.get("project_id"), graph.get("graph_id"))
     data, fp = store_io.read_bytes(path)
     if data is None:
@@ -831,7 +832,7 @@ def load_fp(graph):
         doc, fp = convert.on_load(doc, data, graph, path, fp)
         if doc.get("read_only"):
             return doc, None
-    elif version != SCHEMA_VERSION:
+    elif version not in (SCHEMA_VERSION, PRE_TOMB_SCHEMA_VERSION):
         raise ValueError("이 앱보다 새 검토구간 파일(%s)이라 읽지 않음: %s" % (version, path))
     _check_shape(doc, path)
     from hazop.study import migrate
@@ -884,7 +885,7 @@ def load_view(graph):
                               res.load_deviations())[0]
         reason = "옛 판(0.1) 검토구간 파일: 열면 0.2로 바꿈(원본은 .v0.1.bak.json으로 보관)"
         return dict(doc, read_only=reason), dict(info, needs_open=True, reason=reason)
-    if version != SCHEMA_VERSION:
+    if version not in (SCHEMA_VERSION, PRE_TOMB_SCHEMA_VERSION):
         raise ValueError("이 앱보다 새 검토구간 파일(%s)이라 읽지 않음: %s" % (version, path))
     _check_shape(doc, path)
     doc = settle_screen(doc)
@@ -950,7 +951,7 @@ def _snapshot_ok(doc):
 
 
 def _check_shape(doc, path):
-    """0.2 파일에서 판 이전·화면이 가리지 않고 꺼내 쓰는 값이 제 모양인지 본다. 아니면 ValueError."""
+    """0.2·0.3 파일에서 판 이전·화면이 가리지 않고 꺼내 쓰는 값이 제 모양인지 본다. 아니면 ValueError."""
     when_ok = lambda v, keys: v is None or (isinstance(v, dict) and all(isinstance(v.get(k), str) for k in keys))  # noqa: E731
     ok = (_nodes_ok(doc) and type(doc.get("set_rev")) is int and isinstance(doc.get("batches"), list)
           and all(n.get("state") in STATES and n.get("origin") in ORIGINS and type(n.get("rev")) is int and n["rev"] >= 1

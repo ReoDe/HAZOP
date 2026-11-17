@@ -29,6 +29,7 @@ import tempfile
 
 from hazop.app.conn_view import api_cost, drafted_cells, provenance
 from hazop.app.tokens import COLORS, risk_band
+from hazop.study import idmap
 from hazop.study import refs as srefs
 from hazop.study import results as res
 from hazop.study import span
@@ -124,7 +125,7 @@ def entity_labels(pg):
 
 def _basis_text(entry, labels):
     basis = entry.get("ai_basis") or {}
-    lines = ["KG: " + " → ".join(labels.get(i, i) for i in path) for path in basis.get("kg_paths") or [] if path]
+    lines = ["KG: " + " → ".join(idmap.label(i, labels) for i in path) for path in basis.get("kg_paths") or [] if path]
     for s in basis.get("sources") or []:
         lines.append("문서: %s%s" % (s.get("doc") or "-", " (%s)" % s["where"] if s.get("where") else ""))
     return "\n".join(lines)

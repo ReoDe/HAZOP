@@ -544,7 +544,7 @@ class ReviewFixTest(Env):
         s2 = api_nodes.summary(self.engine)
         self.assertFalse(s2["legacy"])
         self.assertEqual([n["node_id"] for n in s2["nodes"]], ["S1"])
-        self.assertEqual(json.loads(_rb(path).decode("utf-8"))["schema_version"], "0.2")
+        self.assertEqual(json.loads(_rb(path).decode("utf-8"))["schema_version"], nodes.SCHEMA_VERSION)
 
     def test_locked_is_decided_by_state_not_by_wording(self):
         self.create()

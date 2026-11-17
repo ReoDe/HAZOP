@@ -32,7 +32,7 @@ from hazop.app.settings_dialog import ACTION_HELP, ask_terms
 from hazop.app.widgets import Banner, Chip, empty_label, kst_text, plain_label
 from hazop.export import study_xlsx
 from hazop.graph import project
-from hazop.study import ai_cells, claude_cli, claude_http, node_review, nodes, providers, refs, span
+from hazop.study import ai_cells, claude_cli, claude_http, idmap, node_review, nodes, providers, refs, span
 from hazop.study import results as res
 
 AI_NOTE = "AI 결과는 모두 초안 · 사람이 수정·승인·기각"
@@ -2076,7 +2076,7 @@ class ResultsScreen(QWidget):
     # ------------------------------------------------------------ 워크시트
     def _entity_label(self, eid):
         n = self.ctx.by_id.get(eid) if self.ctx and self.ctx.pg else None
-        return (n.get("tag") or n.get("kind") or eid) if n else eid
+        return (n.get("tag") or n.get("kind") or eid) if n else idmap.label(eid)
 
     def _shown(self, text):
         """다른 도면 태그에 도면번호를 붙인 표시 글("RC-P01(101)"). 저장값은 그대로."""

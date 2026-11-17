@@ -235,6 +235,20 @@ class OldFormTest(StoreCase):
             self.assertTrue(idmap.is_tomb(json.load(fh)["cells"][0]["entries"][0]["consequence_refs"][0]["ref"]))
 
 
+class SchemaGateTest(StoreCase):
+    def test_saved_sets_carry_the_tomb_schema_and_newer_files_are_refused(self):
+        path = sn.save(sn.propose(self.g1, at=AT))
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        self.assertEqual(doc["schema_version"], "0.3", "0.2만 아는 앱은 '이 앱보다 새 파일'로 거절한다")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(dict(doc, schema_version="0.4"), fh)
+        with self.assertRaisesRegex(ValueError, "새 검토구간 파일"):
+            sn.load(self.g1)
+        with self.assertRaisesRegex(ValueError, "새 검토구간 파일"):
+            sn.load_view(self.g1)
+
+
 class AtomicRewriteTest(StoreCase):
     """판 이전 다시 쓰기는 백업 뒤 원자적으로 쓴다. 쓰다가 실패하면 원본 바이트가 그대로다."""
 

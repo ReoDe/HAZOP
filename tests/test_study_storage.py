@@ -115,7 +115,7 @@ class ConvertTest(WorkRoot):
         sdata = write(spath, old)
         rdata = write(rpath, results01(old, "t1", [("S1", "D01", "e1")]))
         ns, fp = sn.load_fp(self.g)
-        self.assertEqual((ns["schema_version"], [n["state"] for n in ns["nodes"]]), ("0.2", ["confirmed", "confirmed"]))
+        self.assertEqual((ns["schema_version"], [n["state"] for n in ns["nodes"]]), (sn.SCHEMA_VERSION, ["confirmed", "confirmed"]))
         self.assertNotIn("status", ns)
         self.assertEqual(ns["nodes"][0]["confirmed"], {"at": "t1", "by": "홍길동", "rev": 1})
         doc = res.load(ns)
@@ -186,7 +186,7 @@ class ConvertTest(WorkRoot):
         res02["conversion"] = {"conversion_id": "cv-x", "source_set_fp": fp, "set_keep_excluded": []}
         res.write(rpath, res02)  # 결과만 쓰고 멈춘 상태
         ns, nfp = sn.load_fp(self.g)
-        self.assertEqual((ns["schema_version"], ns.get("read_only")), ("0.2", None), "2단계부터 이어 감")
+        self.assertEqual((ns["schema_version"], ns.get("read_only")), (sn.SCHEMA_VERSION, None), "2단계부터 이어 감")
         self.assertEqual(res.load(ns)["cells"][0]["entries"][0]["entry_id"], "e1")
         # 지문이 다름(그 사이 옛 앱이 집합을 고침) → 멈춤
         write(spath, dict(old, nodes=old["nodes"] + [{"node_id": "S2", "name": "옛 앱", "origin": "rule",
@@ -266,7 +266,7 @@ class ViewTest(WorkRoot):
         write(rpath, results01(old, "t1", [("S1", "D01", "e1")]))
         before = self.files()
         ns, info = sn.load_view(self.g)
-        self.assertEqual((ns["schema_version"], info["needs_open"], bool(ns.get("read_only"))), ("0.2", True, True))
+        self.assertEqual((ns["schema_version"], info["needs_open"], bool(ns.get("read_only"))), (sn.SCHEMA_VERSION, True, True))
         doc = res.load_view(ns)
         self.assertEqual(doc["cells"][0]["entries"][0]["entry_id"], "e1")
         self.assertTrue(doc.get("read_only"))

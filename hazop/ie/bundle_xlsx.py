@@ -17,7 +17,7 @@ import tempfile
 from hazop.export import study_xlsx as sx
 from hazop.ie import bundle as ib
 from hazop.ie import model
-from hazop.study import refs
+from hazop.study import idmap, refs
 from hazop.study import results as res
 
 JUDGEMENTS = {"yes": "후보", "no": "제외", "undecided": "보류"}
@@ -83,7 +83,7 @@ def candidate_row(c):
             _joined(c["cause_location"]), _joined(c["failure_modes"]), c["node_id"], c["deviation_label"],
             (BASIS_UNKNOWN_PREFIX if c["consequence_basis"] is None else "") + c["consequence"],
             c["category"] or res.UNCLASSIFIED_LABEL, c["group_id"] or "",
-            c["reason"] if c["ie_origin"] else NOT_JUDGED, c["method"], c["entry_id"], _joined(c["stable_refs"]),
+            c["reason"] if c["ie_origin"] else NOT_JUDGED, c["method"], c["entry_id"], _joined([idmap.label(r) for r in c["stable_refs"]]),
             ORIGINS.get(c["ie_origin"], ""), "승인")
 
 

@@ -35,7 +35,7 @@ import os
 
 from hazop.ie import bundle, fmea, mld, model
 from hazop.ie import store as ie_store
-from hazop.study import nodes
+from hazop.study import idmap, nodes
 from hazop.study import results as res
 
 LOG = logging.getLogger("hazop.shell.api_ie")
@@ -909,7 +909,7 @@ def candidate_view(engine, iec):
                 continue
             seen_paths.add(tuple(p))
             by_sheet = chatview.path_steps(pg, [{"id": x, "flow": None} for x in p])
-            paths.append({"labels": [labels.get(x, x) + ("" if x in entities else " (도면에서 사라짐)") for x in p],
+            paths.append({"labels": [idmap.label(x, labels) + ("" if x in entities else " (도면에서 사라짐)") for x in p],
                           "sheet": next(iter(by_sheet), None),
                           "marks": {g: [{"op": "path", "steps": st, "style": "path", "numbered": True}] for g, st in by_sheet.items()}})
     group = next((g for g in b["groups"] if g["group_id"] == c.get("group_id")), None)
