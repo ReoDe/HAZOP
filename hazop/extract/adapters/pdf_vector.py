@@ -434,18 +434,20 @@ _cache = collections.OrderedDict()
 _cache_lock = threading.Lock()
 
 
-def analyze_bytes(data, page=0, params=None):
-    """PDF 바이트 한 쪽 → (sha256, page_count, width, height, analysis). (해시, 쪽, 문턱)이 같으면 다시 분석하지 않는다.
-    analysis는 호출끼리 함께 쓰므로 고치지 않는다(build_extraction은 읽기만 한다)."""
+def analyze_bytes(data, page=0, params=None, splits=None):
+    """PDF 바이트 한 쪽 → (sha256, page_count, width, height, analysis). (해시, 쪽, 문턱, 나눔)이 같으면 다시 분석하지 않는다.
+    analysis는 호출끼리 함께 쓰므로 고치지 않는다(build_extraction은 읽기만 한다). splits는 analyze와 같다."""
     sha = hashlib.sha256(data).hexdigest()
     key = (sha, page, tuple(sorted((params or {}).items())))
+    if splits:
+        key += (tuple((tuple(sp["node"]), tuple(tuple(g) for g in sp["groups"])) for sp in splits),)
     with _cache_lock:
         hit = _cache.get(key)
         if hit is not None:
             _cache.move_to_end(key)
             return (sha,) + hit
     page_count, width, height, words, prims = load_page(io.BytesIO(data), page)
-    hit = (page_count, width, height, analyze(width, height, words, prims, params))
+    hit = (page_count, width, height, analyze(width, height, words, prims, params, splits))
     with _cache_lock:
         _cache[key] = hit
         while len(_cache) > _CACHE_MAX:
@@ -3202,8 +3204,10 @@ def _title_block(cells, blocks):
     return block
 
 
-def analyze(width, height, words, prims, params=None):
-    """원시 요소(load_page 결과) → 중간 결과 dict. pdfplumber 없이 합성 입력으로 시험할 수 있다."""
+def analyze(width, height, words, prims, params=None, splits=None):
+    """원시 요소(load_page 결과) → 중간 결과 dict. pdfplumber 없이 합성 입력으로 시험할 수 있다.
+    splits: 사람이 받아들이기 전의 AI 나눔(hazop.extract.ai_split) [{"node": [노드의 pdf 개체 id], "groups": [[id], ...]}].
+    주면 기호 묶기 뒤에 그 노드를 묶음마다 새 기호로 나누고(_carve_splits) 배관 사슬을 다시 만든다. 없으면 결과가 그대로다."""
     prm = dict(PARAMS)
     prm.update(params or {})
     cls = _classify_primitives(width, height, prims, prm)
@@ -3218,6 +3222,8 @@ def analyze(width, height, words, prims, params=None):
     ticks, marked = _line_ticks(cls["polys"], prm, cls["bodies"])
     syms, polys, markers, dashes = _group_symbols(cls, prm)
     syms, polys = _sparger_rows(syms, polys, prm)
+    if splits:
+        syms, polys, markers, dashes = _carve_splits(syms, polys, markers, dashes, splits)
     # 빗금은 기호 묶기가 끝난 뒤에 남은 선에서만 뺀다. 기호 장식선으로 흡수된 빗금은 그대로 두어 기호 모양과 번호가
     # 빗금 처리 전과 같게 한다(빗금을 먼저 빼면 안전밸브 규칙이 응축기 몸통에 맞는 등 기호 판정이 바뀜). 외톨이 // 도
     # 같다. 먼저 빼면 143쪽에서 기호 묶음이 달라져 새 안전밸브·끝막음 판정이 생겼다(F1-4 후보 비교)
@@ -3251,6 +3257,65 @@ def analyze(width, height, words, prims, params=None):
     markers = _arrow_heads([v[1] for ch in chains for v, _, _ in ch["ends"] if v[0] == "sym"], markers, prm)
     return {"params": prm, "classified": cls, "symbols": syms, "tees": tees, "chains": chains,
             "blocks": blocks, "leftover_markers": markers}
+
+
+SPLIT_ROLES = ("bodies", "strokes", "markers", "dashes")
+
+
+def _carve_splits(syms, polys, markers, dashes, splits):
+    """AI 나눔을 기호 묶음에 넣는다. 나눔마다 그 노드의 pdf 개체를 가진 기호(source)에서 묶음(groups)마다 그 개체를 떼어 새 기호를
+    만든다. 몸체나 선이 하나도 없는 묶음은 기호가 될 수 없어 건너뛴다. 개체를 떼인 기호는 몸체만 남기고, 그 노드에 들던 선·화살촉·
+    점선 조각은 놓아 준다(배관 사슬로 다시 읽혀 새 기호끼리 이어진다). 몸체가 남지 않은 기호는 없앤다.
+    → (기호, 선, 화살촉, 점선 조각). 새 기호는 끝에 붙는다."""
+    syms = [s for s in syms if s.alive]
+    polys, markers, dashes = list(polys), list(markers), list(dashes)
+    made = []
+    for sp in splits:
+        node = set(sp["node"])
+        sources = [s for s in syms if s.alive and node & set(s.evidence())]
+        touched = set()
+        for group in sp["groups"]:
+            ids = set(group) & node
+            taken = {role: [m for s in sources for m in getattr(s, role) if m["id"] in ids] for role in SPLIT_ROLES}
+            if not (taken["bodies"] or taken["strokes"]):
+                continue
+            for s in sources:
+                if any(m["id"] in ids for role in SPLIT_ROLES for m in getattr(s, role)):
+                    touched.add(id(s))
+                    for role in SPLIT_ROLES:
+                        setattr(s, role, [m for m in getattr(s, role) if m["id"] not in ids])
+            new = _Sym(taken["bodies"] + taken["strokes"], stroke_only=not taken["bodies"])
+            for role in ("markers", "dashes"):
+                if taken[role]:
+                    new.add(taken[role], role)
+            made.append(new)
+        for s in sources:
+            if id(s) not in touched:
+                continue
+            polys += [m for m in s.strokes if m["id"] in node]
+            markers += [m for m in s.markers if m["id"] in node]
+            dashes += [m for m in s.dashes if m["id"] in node]
+            s.strokes = [m for m in s.strokes if m["id"] not in node]
+            s.markers = [m for m in s.markers if m["id"] not in node]
+            s.dashes = [m for m in s.dashes if m["id"] not in node]
+            if s.bodies or s.strokes:
+                s._recalc()
+            else:
+                s.alive = False
+    return [s for s in syms if s.alive] + made, polys, markers, dashes
+
+
+def member_shapes(path, page=0, params=None):
+    """쪽 분석의 기호 개체 {pdf 개체 id: (bbox, 몫)}. 몫은 SPLIT_ROLES 가운데 하나.
+    노드의 evidence.pdf_objects를 쪽 좌표로 펼 때 쓴다(hazop.extract.ai_split). 같은 쪽을 막 추출했으면 다시 분석하지 않는다."""
+    with open(path, "rb") as fh:
+        analysis = analyze_bytes(fh.read(), page, params)[4]
+    out = {}
+    for s in analysis["symbols"]:
+        for role in SPLIT_ROLES:
+            for m in getattr(s, role):
+                out.setdefault(m["id"], (tuple(m["bbox"]), role))
+    return out
 
 
 def build_extraction(analysis, width, height, page_count, page, file_label, sha):
@@ -3962,11 +4027,12 @@ def apply_registration(result, registration):
     return result
 
 
-def extract(path, page=0, repo_root=None, params=None, registration=None):
+def extract(path, page=0, repo_root=None, params=None, registration=None, splits=None):
     """벡터 PDF 한 쪽 → extraction dict. pdfplumber가 없으면 ImportError.
-    registration: ① 등록정보(dict). 주면 apply_registration으로 식별 정보를 채우고 검사한다."""
+    registration: ① 등록정보(dict). 주면 apply_registration으로 식별 정보를 채우고 검사한다.
+    splits: AI 나눔(analyze). 읽기 품질 검사의 '스크립트 + AI 후보' 값을 잴 때만 준다."""
     with open(path, "rb") as fh:
-        sha, page_count, width, height, analysis = analyze_bytes(fh.read(), page, params)
+        sha, page_count, width, height, analysis = analyze_bytes(fh.read(), page, params, splits)
     label = paths.rel_or_abs(path, repo_root) if repo_root else path
     result = build_extraction(analysis, width, height, page_count, page, label, sha)
     return apply_registration(result, registration) if registration is not None else result

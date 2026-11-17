@@ -31,7 +31,7 @@ from hazop.study.nodes import now_utc
 KIND = "hazop_ai_review"
 SCHEMA_VERSION = "0.1"
 FIELDS = ("kind", "tag", "normal_position", "fail_position", "connection", "to_system")
-TASK_ORDER = ("kind", "tag", "connection", "recheck")
+TASK_ORDER = ("kind", "tag", "split", "connection", "recheck")
 NEED_TAG = {"valve", "instrument", "equipment"}
 POSITION_VALUES = {"normal_position": ("NO", "NC", "LO", "LC", "LT"), "fail_position": ("FO", "FC", "FL", "FAI")}
 DEFAULT_CAP = 20          # 도면당 호출 수 기본 상한(규격 'AI 검토 호출 수')
@@ -45,7 +45,8 @@ NO_KIND = (NOT_SYMBOL, UNKNOWN)
 MATCH = ("legend", "other")  # 종류 후보 표시: 범례판의 그 종류 견본과 모양이 같다고 본 것(높음)과 그 밖(보통)
 WIDE_KINDS = ("manual_valve", "isolation_valve", "control_valve", "motor_operated_valve", "air_operated_valve",
               "solenoid_valve")  # 몸통이 같고 구동부로 갈리는 밸브
-TASK_LABELS = {"kind": "못 읽은 기호의 종류", "tag": "태그·속성", "connection": "끊긴 연결", "recheck": "다시 확인"}
+TASK_LABELS = {"kind": "못 읽은 기호의 종류", "tag": "태그·속성", "split": "큰 덩어리 안 기호", "connection": "끊긴 연결",
+               "recheck": "다시 확인"}
 SECONDS_PER_CALL = 30     # 예상 시간 어림(호출 하나). 실측은 evidence/ai-review-measure.md
 RUN_CAP = 300             # 한 번 실행(여러 도면)의 호출 상한(규격 'AI 검토 호출 수')
 NEAR_TEXT = 40.0          # 주변 글자 반경(pt)
@@ -298,7 +299,7 @@ SYSTEM_IMAGE = """너는 원자력 발전소 P&ID(배관계장도)를 읽는 검
 WIDE_USER = ("그림은 넓힌 조각이다. 빨간 테두리 안 밸브의 구동부(조작기)와 옆 글자까지 보고 kind를 다시 답하라. "
              "몸통이 같아도 구동부가 다르면 다른 종류다.")
 IMAGE_BATCH = 10   # 그림 입력에서 호출 하나에 넣는 항목 수(조각 그림 수)
-IMAGE_TASKS = ("kind", "tag")  # 그림 입력에서 묻는 과제. 다시 확인은 SNP 첫 실행에서 맞던 종류(tank)를 확신도 0.55로 바꿔 뺐다. 연결·나누기는 뒤에 정한다
+IMAGE_TASKS = ("kind", "tag")  # 그림 입력에서 묻는 과제. 다시 확인은 SNP 첫 실행에서 맞던 종류(tank)를 확신도 0.55로 바꿔 뺐다. 나누기는 images.split(ai_split)
 
 TAG_MAX = 24      # 태그 후보 길이 상한(글자)
 REASON_MAX = 300  # 근거 글 길이 상한(넘으면 자른다)
@@ -415,11 +416,9 @@ def refuse_reason(client):
     return None
 
 
-def _ask(ex, client, call, images, answer_kinds, stats, kinds, wide=False):
-    """호출 하나를 보내 답을 검사한다. stats(호출·오류·버림·다시 확인 일치)와 kinds(오류 종류 목록)를 그 자리에서 고친다.
-    → (완료했나, 후보 목록, {item_id: 'not_symbol'|'unknown'})."""
-    described = {i["item_id"]: describe(ex, i) for i in call}
-    res = _call(client, build_request(ex, call, described, images, wide))
+def _send(client, request, stats, kinds):
+    """호출 하나. stats의 호출·오류 수와 kinds(오류 종류 목록)를 그 자리에서 고친다. → 완료한 응답 또는 None."""
+    res = _call(client, request)
     stats["calls"] += 1
     stats["legacy_key_hits"] += bool(res.get("legacy_key"))
     kind = res.get("error_kind")
@@ -429,7 +428,15 @@ def _ask(ex, client, call, images, answer_kinds, stats, kinds, wide=False):
     if kind:
         stats["errors"] += 1
         stats["error_kinds"].append(kind)
-    if res.get("status") != "completed":
+    return res if res.get("status") == "completed" else None
+
+
+def _ask(ex, client, call, images, answer_kinds, stats, kinds, wide=False):
+    """호출 하나를 보내 답을 검사한다. stats(호출·오류·버림·다시 확인 일치)와 kinds(오류 종류 목록)를 그 자리에서 고친다.
+    → (완료했나, 후보 목록, {item_id: 'not_symbol'|'unknown'})."""
+    described = {i["item_id"]: describe(ex, i) for i in call}
+    res = _send(client, build_request(ex, call, described, images, wide), stats, kinds)
+    if res is None:
         return False, [], {}
     by_id = {i["item_id"]: i for i in call}
     cands, no_kind = [], {}
@@ -543,6 +550,10 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
     if images is not None and images.wide and not (stats["halted"] or stats["stopped"]):
         cands = _wide_pass(ex, client, cands, items, images, answer_kinds, stats, kinds, limit, batch, should_stop)
         stats["halted"] = providers.halts(kinds)
+    if images is not None and images.split and not (stats["halted"] or stats["stopped"]):
+        from hazop.extract import ai_split
+        cands += ai_split.run(ex, client, images, stats, kinds, limit, should_stop, exclude)
+        stats["halted"] = providers.halts(kinds)
     return {"candidates": _dedupe(cands), "stats": stats}
 
 
@@ -637,6 +648,8 @@ def bulk_block(c, threshold=DEFAULT_THRESHOLD):
         return "확신도 %.2f 아래" % threshold
     if c["task"] == "recheck":
         return "다시 확인에서 스크립트와 다른 값이 나와 하나씩 봄"
+    if c["task"] == "split":
+        return "덩어리 나누기는 하나씩 확정함"
     if c["field"] == "kind":
         if c.get("near_symbol"):
             return "기호 종류는 하나씩 확정함. 이웃 기호(%s)에 붙어 있어 그 기호의 일부일 수 있음" % c["near_symbol"]
@@ -671,6 +684,9 @@ def to_check_candidates(doc):
             if c.get("attached_local"):
                 out.append({"field": "connection", "a": c["attached_local"][0], "b": c["partner_local"],
                             "values": ["connected"]})
+        elif c["field"] == "split":
+            out.append({"node_local_id": c["local_id"], "field": "split", "values": c["values"], "match": c["match"],
+                        "pdf_objects": c["pdf_objects"], "bbox": c["new_bbox"]})
         else:
             out.append({"node_local_id": c["local_id"], "field": c["field"], "values": c["values"],
                         **({"match": c["match"]} if "match" in c else {})})
@@ -740,6 +756,9 @@ def _op_for(c):
         return "set_" + c["field"], {"value": v}
     if c["field"] == "connection":
         return "set_endpoint", {"end": c["open_end"], "node": v}
+    if c["field"] == "split":  # 덩어리 안 기호를 새 노드로 더한다. 덩어리 노드는 지우지 않는다
+        b = c["new_bbox"]
+        return "add_node", {"kind": v, "category": rules.KIND_CATEGORY[v], "bbox": [b[0], b[1], b[2] - b[0], b[3] - b[1]]}
     return None, None  # to_system: 맞는 수정 연산이 없다(후보 문서에만 남긴다)
 
 
@@ -785,7 +804,8 @@ def accept(doc, cand_ids, original_ex, name, by, at=None):
                 failed.append((c["cand_id"], "이미 수정 기록에 있음"))
                 continue
             try:
-                new = corrections.make_op(original_ex, op, c["target"], value, by, at=at, existing_ops=ops, name=name)
+                new = corrections.make_op(original_ex, op, None if op == "add_node" else c["target"], value, by, at=at,
+                                          existing_ops=ops, name=name)
             except ValueError as exc:
                 failed.append((c["cand_id"], str(exc)))
                 continue

@@ -583,6 +583,43 @@ def apply_candidates(ex, cands):
     return out
 
 
+def _evidence(obj):
+    return tuple(sorted((obj.get("evidence") or {}).get("pdf_objects") or []))
+
+
+def apply_with_splits(ex, cands, pdf, work):
+    """apply_candidates에 split 후보(hazop.extract.ai_split)를 더한다. split 후보가 있으면 그 묶음을 나눔 입력으로 쪽을 다시
+    추출하고(배관 사슬도 다시 만듦), 다른 후보의 노드·배관을 다시 뽑은 추출에서 pdf 개체가 같은 것으로 옮겨 적용한다(못 찾으면 버림).
+    split 후보는 새 추출에서 그 묶음의 개체를 절반 넘게 가진 노드에 종류 후보로 들어간다."""
+    from hazop.extract import ai_split
+    from hazop.extract.adapters import pdf_vector
+    splits = ai_split.split_inputs(ex, (cands or {}).get("candidates", []))
+    if not splits:
+        return apply_candidates(ex, cands)
+    new = pdf_vector.extract(pdf, page=0, repo_root=work, splits=splits)
+    moved = {}
+    for key in ("nodes", "relations"):
+        by_ev = {_evidence(o): o["local_id"] for o in new.get(key) or [] if _evidence(o)}
+        moved.update({o["local_id"]: by_ev.get(_evidence(o)) for o in ex.get(key) or [] if _evidence(o)})
+    out = []
+    for c in cands.get("candidates", []):
+        c = dict(c)
+        if c.get("field") == "split":
+            want = set(c["pdf_objects"])
+            hit = max(new["nodes"], key=lambda n: (len(want & set(_evidence(n))), n["local_id"]))
+            if 2 * len(want & set(_evidence(hit))) > len(want):
+                out.append({"node_local_id": hit["local_id"], "field": "kind", "values": c["values"], "match": c.get("match")})
+            continue
+        if c.get("field") == "connection":
+            c["a"], c["b"] = moved.get(c.get("a")), moved.get(c.get("b"))
+        elif c.get("node_local_id"):
+            c["node_local_id"] = moved.get(c["node_local_id"])
+        elif c.get("relation_local_id"):
+            c["relation_local_id"] = moved.get(c["relation_local_id"])
+        out.append(c)
+    return apply_candidates(new, {"candidates": out})
+
+
 def high_only(cands):
     """후보 가운데 높음(AI가 범례판의 그 종류 견본과 모양이 같다고 본 종류 후보, match legend)만."""
     return dict(cands, candidates=[c for c in cands.get("candidates", []) if c.get("match") == "legend"])
@@ -835,12 +872,13 @@ def snp_folders(samples_dir):
 
 
 def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=20, only=None, ai_save=None,
-        key_dir=None, ai_images=False, ai_wide=False, legend_samples=1):
+        key_dir=None, ai_images=False, ai_wide=False, legend_samples=1, ai_split=False):
     """only: 이 이름의 쪽만(APR1400 'apr1400-012', SNP 'SNP-M-102'). ai_client를 주면 쪽마다 AI 검토를 돌려
     '스크립트 + AI 후보' 값을 내고, ai_save 폴더에 후보(<이름>.json)와 실행 통계를 남긴다(--ai-candidates로 다시 잼).
     ai_save가 있으면 응답도 <ai_save>/responses에 남기고 쪽마다 호출 시간을 통계에 적는다.
     ai_images: 노드 조각과 범례판(그 쪽과 같은 도면 묶음에서 고른 견본)을 싣는다. 종류 답은 범례판에 견본이 있는 종류만.
     ai_wide: 밸브 종류 답을 넓힌 조각으로 한 번 더 묻는다(ai_images와 함께). legend_samples: 범례판의 종류별 견본 수 상한.
+    ai_split: 남은 호출로 큰 미분류 노드를 나눈다(ai_images와 함께). split 후보는 쪽을 다시 추출해 연결까지 잰다(apply_with_splits).
     ai_pages는 후보 전부, ai_high_pages는 높음 후보만 더한 값이다."""
     import extract_drawio
     from hazop.extract.adapters import pdf_vector
@@ -881,15 +919,16 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
                     if family not in boards:
                         boards[family] = images_mod.legend_boards(legend_sources(family, input_dir, samples_dir, work),
                                                                   per_kind=legend_samples)[0]
-                    images = images_mod.ImageInput(images_mod.PageImages(pdf), boards[family], wide=ai_wide)
+                    images = images_mod.ImageInput(images_mod.PageImages(pdf), boards[family], wide=ai_wide,
+                                                   split=ai_split)
                 before = len(getattr(ai_client, "calls", []))
                 cands, stats = ai_candidates(ex, ai_client, ai_cap, images)
                 calls = getattr(ai_client, "calls", [])[before:]
                 if calls:
                     stats = dict(stats, seconds=round(sum(c["seconds"] for c in calls), 1),
                                  real_calls=sum(1 for c in calls if not c.get("cached")), call_log=calls)
-                res["ai_pages"][name] = score_page(k, apply_candidates(ex, cands))
-                res["ai_high_pages"][name] = score_page(k, apply_candidates(ex, high_only(cands)))
+                res["ai_pages"][name] = score_page(k, apply_with_splits(ex, cands, pdf, work))
+                res["ai_high_pages"][name] = score_page(k, apply_with_splits(ex, high_only(cands), pdf, work))
                 res.setdefault("ai_stats", {})[name] = stats
                 if ai_save:
                     os.makedirs(ai_save, exist_ok=True)
@@ -900,8 +939,8 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
             if cand_path and os.path.isfile(cand_path):
                 with open(cand_path, encoding="utf-8") as fh:
                     cands = json.load(fh)
-                res["ai_pages"][name] = score_page(k, apply_candidates(ex, cands))
-                res["ai_high_pages"][name] = score_page(k, apply_candidates(ex, high_only(cands)))
+                res["ai_pages"][name] = score_page(k, apply_with_splits(ex, cands, pdf, work))
+                res["ai_high_pages"][name] = score_page(k, apply_with_splits(ex, high_only(cands), pdf, work))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return res
@@ -1054,6 +1093,7 @@ def main(argv=None):
     ap.add_argument("--ai-save", help="AI 후보와 실행 통계를 쓸 폴더(<이름>.json). 응답은 <폴더>/responses")
     ap.add_argument("--ai-images", action="store_true", help="노드 조각 그림과 범례판을 실어 묻는다(kind·tag만)")
     ap.add_argument("--ai-wide", action="store_true", help="--ai-images에 더해 밸브 종류 답을 넓힌 조각으로 다시 묻는다")
+    ap.add_argument("--ai-split", action="store_true", help="--ai-images에 더해 남은 호출로 큰 미분류 노드를 나눈다")
     ap.add_argument("--ai-legend-samples", type=int, default=1, help="범례판에 종류마다 실을 견본 수 상한(모양이 다른 것, 기본 1)")
     ap.add_argument("--baseline", default=BASELINE)
     ap.add_argument("--update", action="store_true")
@@ -1080,7 +1120,8 @@ def main(argv=None):
     extra = os.path.abspath(args.extra_keys) if args.extra_keys else None
     res = run(input_dir, os.path.abspath(args.samples_dir or default_samples_dir()), pages, args.ai_candidates,
               ai_client=client, ai_cap=args.ai_cap, only=only, ai_save=args.ai_save, key_dir=extra,
-              ai_images=args.ai_images, ai_wide=args.ai_wide, legend_samples=args.ai_legend_samples)
+              ai_images=args.ai_images, ai_wide=args.ai_wide, legend_samples=args.ai_legend_samples,
+              ai_split=args.ai_split)
     if extra:
         print("추가 표본(저장소 밖 정답지 %d쪽, 기준값과 견주지 않음)" % len(load_keys(key_dir=extra)))
     print(report(res, head_commit()))
@@ -1094,6 +1135,9 @@ def main(argv=None):
                  st["dropped"], st.get("kind_items", 0), st["not_symbol"], st.get("unknown", 0),
                  st["confirmed"], st["left"], st.get("no_image", 0),
                  " · 멈춤(%s)" % ",".join(st["error_kinds"]) if st["halted"] else ""))
+        if "split_targets" in st:
+            print("    나누기: 대상 %d · 호출 %d · 받은 기호 %d · 버림 %d · 후보 %d"
+                  % (st["split_targets"], st["split_calls"], st["split_symbols"], st["split_dropped"], st["split_new"]))
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(res, fh, ensure_ascii=False, indent=1)
