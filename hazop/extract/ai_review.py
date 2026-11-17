@@ -261,7 +261,9 @@ def _image_estimate(ex, limit, images, exclude=()):
     """그림 입력 실행(run의 images)이 부를 호출 수 예상. run과 같은 순서로 첫 묻기(IMAGE_TASKS, IMAGE_BATCH 묶음),
     넓혀 다시 묻기(wide), 규칙 다시 확인(recheck), 덩어리 나누기(split)를 세고 limit에서 자른다.
     넓혀 다시 묻기는 첫 답이 밸브인 항목만 묻는데 답은 미리 모르므로, 첫 묻기에 든 종류 항목 가운데 스크립트가 밸브 몸통으로 본
-    것(category valve) 수로 센다. 조각을 자를 수 없는 항목(쪽 밖 상자)도 센다(쪽 그림을 그리지 않으려고).
+    것(category valve) 수로 세되, 종류 항목이 하나라도 있으면 1회 이상으로 센다. 분류가 빈 조각을 AI가 밸브로 답하는 일이 많아
+    밸브 몸통 수만으로는 모자랐다(실측 15, 개발용 12쪽 예상 121 대 실제 129). 조각을 자를 수 없는 항목(쪽 밖 상자)도 센다
+    (쪽 그림을 그리지 않으려고).
     → {items, calls, needed, left, passes}."""
     from hazop.extract import ai_split
     exclude = set(exclude)
@@ -270,9 +272,9 @@ def _image_estimate(ex, limit, images, exclude=()):
     nodes = {n.get("source_object_id"): n for n in ex.get("nodes") or []}
     passes = {"first": p["needed"], "wide": 0, "recheck": 0, "split": 0}
     if images.wide:
-        valves = sum(1 for c in p["calls"] for i in c
-                     if i["task"] == "kind" and (nodes.get(i["target"]) or {}).get("category") == "valve")
-        passes["wide"] = -(-valves // IMAGE_BATCH)
+        asked = [i for c in p["calls"] for i in c if i["task"] == "kind"]
+        valves = sum(1 for i in asked if (nodes.get(i["target"]) or {}).get("category") == "valve")
+        passes["wide"] = max(-(-valves // IMAGE_BATCH), 1 if asked else 0)
     if images.recheck:
         passes["recheck"] = -(-sum(1 for i in recheck_items(ex, images.kinds) if i["target"] not in exclude) // IMAGE_BATCH)
     if images.split:

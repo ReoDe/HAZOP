@@ -776,6 +776,21 @@ class ImageEstimateTest(unittest.TestCase):
             self.assertEqual(est["calls"], doc["stats"]["calls"], (wide, recheck))
         self.assertEqual(est["passes"], {"first": 1, "wide": 1, "recheck": 1, "split": 0})
 
+    def test_unclassified_fragments_only_still_count_one_wide_call(self):
+        ex = {"drawing": {"drawing_number": "T-2"}, "relations": [], "unresolved_connectors": [], "texts": [],
+              "nodes": [node("f%d" % i, None, (100 + 20 * i, 100, 110 + 20 * i, 108)) for i in range(3)]}
+
+        def valve(req):
+            return {"answers": [{"item_id": it["item_id"], "field": "kind", "values": ["manual_valve"], "confidence": 0.9,
+                                 "reason": "x", "match": "legend"} for it in ids_in(req)]}
+        images = self.images(recheck=False)
+        doc = ar.run(ex, StubClient(valve), cap=20, recheck=0, images=images)
+        est = ar.estimate(ex, cap=20, images=images)
+        self.assertEqual(doc["stats"]["wide_calls"], 1)
+        self.assertEqual((est["passes"]["wide"], est["calls"]), (1, doc["stats"]["calls"]),
+                         "분류가 빈 조각만 있어도 넓혀 다시 묻기 몫을 1 이상 센다")
+        self.assertEqual(ar.estimate(dict(ex, nodes=[]), cap=20, images=images)["passes"]["wide"], 0)
+
     def test_estimate_pages_counts_image_passes_within_caps(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, True)
