@@ -11,6 +11,7 @@
       한 번 더 묻는다. --ai-legend-samples N은 범례판에 종류마다 모양이 다른 견본을 N개까지 싣는다(기본 1).
       --ai-legend는 범례판 출처: keys(기본, 정답지 판), symbols(표준 기호 판), project(프로젝트 판 흉내). 뒤 둘은 앱과 같은
       진입(ai_images.image_input_for)을 탄다. project는 잴 쪽들과 같은 도면 묶음의 쪽을 추출해 스크립트가 사전 견본에 맞춘 기호만 쓴다.
+      legendpage는 project에 범례 쪽(1.7-1 네 쪽)을 프로젝트 도면으로 더한다(범례 쪽 칸이 종류마다 먼저 실린다).
       종류 후보 가운데 AI가 범례판 견본과 모양이 같다고 본 것(match legend)만 더한 '높음만' 줄도 낸다. --ai-save를 주면 응답을
       <폴더>/responses에 고정 응답 꼴로 남겨 --ai-run fixed --ai-fixed-dir <폴더>/responses로 같은 답을 다시 잴 수 있다
   python scripts/check_read_quality.py tiles <쪽.pdf> <출력 폴더>   # 정답지 쓰기용 격자 타일(추출 결과를 쓰지 않음)
@@ -649,7 +650,8 @@ def ai_candidates(ex, client, cap, images=None):
     return ai_review.to_check_candidates(doc), doc["stats"]
 
 
-LEGEND_MODES = ("keys", "symbols", "project")
+LEGEND_MODES = ("keys", "symbols", "project", "legendpage")
+LEGEND_PAGE_GLOB = "*Symbols_and_Legend*.pdf"  # --ai-legend legendpage가 프로젝트에 등록된 것으로 보는 APR1400 범례 쪽(1.7-1)
 
 
 def page_family(name):
@@ -680,6 +682,14 @@ def legend_pdfs(family, input_dir, samples_dir):
     if family == "SNP":
         return [glob.glob(os.path.join(f, "*.pdf"))[0] for f in snp_folders(samples_dir) if glob.glob(os.path.join(f, "*.pdf"))]
     return [p for p in (apr_pdf(input_dir, k["seq"]) for _, k in load_keys()) if p]
+
+
+def legend_page_pdfs(family, input_dir):
+    """--ai-legend legendpage가 프로젝트 도면에 더하는 범례 쪽 PDF. 앱에서는 사용자가 등록한 도면이고, 범례 쪽인지는 앱과 같은
+    hazop.extract.legend_page가 내용으로 가른다(여기서 고르는 것은 '등록했다'는 흉내뿐). SNP는 범례 쪽이 없다."""
+    if family == "SNP" or not os.path.isdir(input_dir):
+        return []
+    return sorted(glob.glob(os.path.join(input_dir, LEGEND_PAGE_GLOB)))
 
 
 # ---------------------------------------------------------------- 기준값
@@ -913,7 +923,8 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
     ai_split: 남은 호출로 큰 미분류 노드를 나눈다(ai_images와 함께). split 후보는 쪽을 다시 추출해 연결까지 잰다(apply_with_splits).
     ai_recheck: 남은 호출로 틀리기 쉬운 규칙(ai_review.RECHECK_RULES)이 정한 종류를 다시 확인한다(ai_images와 함께).
     ai_legend: 범례판 출처(LEGEND_MODES). keys는 legend_sources의 정답지 판(legend_samples), symbols·project는 앱과 같은
-    ai_images.image_input_for(project는 잴 쪽 가운데 같은 도면 묶음의 쪽 추출 결과를 프로젝트 도면으로 넘긴다).
+    ai_images.image_input_for(project는 잴 쪽 가운데 같은 도면 묶음의 쪽 추출 결과를 프로젝트 도면으로 넘기고, legendpage는
+    거기에 범례 쪽 PDF(legend_page_pdfs)를 더한다).
     다른 종류 답(다시 확인 후보)도 ai_pages에 더한다.
     ai_pages는 후보 전부, ai_high_pages는 높음 후보만 더한 값이다."""
     import extract_drawio
@@ -966,7 +977,9 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
                                                        split=ai_split, recheck=ai_recheck, legend_source="keys")
                     else:
                         drawings = ([(p, 0, extract(p)) for p in legend_pdfs(family, input_dir, samples_dir)]
-                                    if ai_legend == "project" else ())
+                                    if ai_legend in ("project", "legendpage") else [])
+                        if ai_legend == "legendpage":
+                            drawings += [(p, 0, extract(p)) for p in legend_page_pdfs(family, input_dir)]
                         images = images_mod.image_input_for(pdf, 0, drawings, os.path.join(work, "legend-cache"),
                                                             wide=ai_wide, recheck=ai_recheck, split=ai_split)
                 before = len(getattr(ai_client, "calls", []))
@@ -1160,7 +1173,7 @@ def main(argv=None):
                     help="--ai-images에 더해 남은 호출로 틀리기 쉬운 규칙이 정한 종류를 다시 확인한다")
     ap.add_argument("--ai-legend-samples", type=int, default=1, help="범례판에 종류마다 실을 견본 수 상한(모양이 다른 것, 기본 1)")
     ap.add_argument("--ai-legend", choices=LEGEND_MODES, default="keys",
-                    help="범례판 출처: keys 정답지 판(기본), symbols 표준 기호 판, project 프로젝트 판 흉내(사전 견본에 맞춘 기호)")
+                    help="범례판 출처: keys 정답지 판(기본), symbols 표준 기호 판, project 프로젝트 판 흉내(사전 견본에 맞춘 기호), legendpage project에 범례 쪽 1.7-1을 더함")
     ap.add_argument("--baseline", default=BASELINE)
     ap.add_argument("--update", action="store_true")
     ap.add_argument("--force", action="store_true", help="HEAD와 다른(커밋 안 한) 기준값도 --update로 덮음")

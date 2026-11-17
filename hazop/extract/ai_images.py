@@ -5,8 +5,9 @@
 만든다. 견본 자리(종류, 상자)는 부르는 쪽이 준다(APR1400은 저장소 정답지 12쪽의 기호, SNP는 SNP 도면들의 추출 결과).
 답으로 받는 종류는 모양이 일정한 종류(answer_kinds)이고, 범례판에 견본이 없는 종류도 답할 수 있다.
 이 모듈은 그림을 만들기만 하고 보내지 않는다.
-앱과 측정이 함께 부르는 진입은 image_input_for다. 범례판은 프로젝트 도면에서 고른 견본(project_legend)이 있으면 그것,
-없으면 직접 그린 표준 기호 그림으로 만든 저장소 판(symbol_legend, scripts/build_ai_legend.py)을 쓴다.
+앱과 측정이 함께 부르는 진입은 image_input_for다. 범례판은 종류마다 ① 프로젝트에 등록된 범례 쪽의 칸(legend_page_cells,
+hazop/extract/legend_page.py) ② 프로젝트 도면의 확정 견본 ③ 직접 그린 표준 기호 그림(symbol_legend, scripts/build_ai_legend.py)
+가운데 앞의 것을 쓴다.
 """
 
 import base64
@@ -215,7 +216,7 @@ class ImageInput:
     def __init__(self, page, legend=(), kinds=None, wide=False, split=False, recheck=False, legend_source=None):
         self.page = page
         self.legend = list(legend)
-        self.legend_source = legend_source  # image_input_for가 고른 범례판 출처(project·project+symbols·symbols·none, 측정의 정답지 판은 keys). 직접 만들면 None
+        self.legend_source = legend_source  # image_input_for가 고른 범례판 출처(LEGEND_SOURCES, 측정의 정답지 판은 keys). 직접 만들면 None
         self.kinds = sorted(kinds or answer_kinds())
         self.wide = wide
         self.split = split
@@ -226,7 +227,13 @@ class ImageInput:
 
 PROJECT_PER_KIND = 3       # 프로젝트 판에 종류마다 실을 견본 수 상한
 LEGEND_INDEX = "legend.json"
-PROJECT_CACHE_VERSION = 2  # 프로젝트 판 캐시 열쇠에 넣는다. 판 만드는 법이 바뀌면 올린다(2: 표준 칸 섞기)
+PROJECT_CACHE_VERSION = 3  # 프로젝트 판 캐시 열쇠에 넣는다. 판 만드는 법이 바뀌면 올린다(2: 표준 칸 섞기, 3: 범례 쪽 칸)
+LEGEND_PAD = 1.5          # 범례 쪽 칸 그림 둘레(pt). 칸 상자가 그림에 꼭 맞고 이웃 줄이 몇 pt 아래라 확정 견본(SAMPLE_PAD)보다 좁게 자른다
+LEGEND_PAGE_DIR = "legend-pages"  # cache_dir 아래 쪽마다 범례 쪽 칸 목록(범례 쪽이 아니면 빈 목록)을 남기는 곳
+# image_input_for가 돌려주는 legend_source 값. 앞에서부터 범례 쪽 칸·확정 견본·표준 칸 가운데 판에 실린 것을 '+'로 잇는다.
+# 측정의 정답지 판은 'keys'(scripts/check_read_quality.py).
+LEGEND_SOURCES = ("legend", "legend+project", "legend+symbols", "legend+project+symbols", "project", "project+symbols",
+                  "symbols", "none")
 
 
 def _symbol_index():
@@ -281,27 +288,87 @@ def _stamp(pdf_path):
     return [os.path.normcase(os.path.abspath(pdf_path)), st.st_size, st.st_mtime_ns]
 
 
-def project_legend(drawings, cache_dir=None, per_kind=PROJECT_PER_KIND):
-    """프로젝트 판: drawings [(pdf_path, page, 추출 결과)]의 confirmed_samples에서 종류마다 모양이 다른 견본을 per_kind개까지
-    골라 만든 판. 견본이 없는 답 종류는 표준 기호 판의 칸 그림(symbol_cells)으로 채운다.
-    → (PNG 바이트 목록, 출처). 출처는 표준 칸을 섞었으면 'project+symbols', 아니면 'project'. 견본이 하나도 없으면 ([], None).
-    cache_dir를 주면 견본 자리·PDF 크기와 바뀐 시각·답 목록이 같을 때 그 폴더의 PNG를 다시 쓴다(쪽 그림을 다시 그리지 않는다).
-    읽을 수 없는 PDF는 건너뛴다."""
-    kinds = answer_kinds()
-    sources, sig = [], []
-    for pdf_path, page, ex in drawings:
-        spots = [(k, b) for k, b in confirmed_samples(ex) if k in kinds]
-        if not spots:
-            continue
+def legend_pages(drawings, cache_dir=None):
+    """drawings 가운데 범례 쪽 [(pdf_path, page, stamp, 칸 목록)]. 쪽마다 legend_page.legend_cells 결과를
+    cache_dir/LEGEND_PAGE_DIR에 PDF 크기·바뀐 시각·자르기 판(legend_page.CUT_VERSION) 열쇠로 남겨 다음에는 PDF를 다시 읽지 않는다.
+    범례 쪽이 아닌 쪽도 빈 목록으로 남긴다. 읽을 수 없는 PDF는 건너뛴다."""
+    from hazop.extract import legend_page
+    out, seen = [], set()
+    for pdf_path, page, _ in drawings:
         try:
             stamp = _stamp(pdf_path)
         except OSError:
             continue
+        if (stamp[0], page) in seen:
+            continue
+        seen.add((stamp[0], page))
+        key = hashlib.sha256(json.dumps([legend_page.CUT_VERSION, stamp, page]).encode("utf-8")).hexdigest()[:16]
+        path = os.path.join(cache_dir, LEGEND_PAGE_DIR, key + ".json") if cache_dir else None
+        cells = None
+        if path and os.path.isfile(path):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    cells = json.load(fh)["cells"]
+            except (OSError, ValueError, KeyError, TypeError):
+                cells = None  # 깨진 캐시는 다시 자른다
+        if cells is None:
+            cells = legend_page.legend_cells(pdf_path, page)
+            if path:
+                store_io.write_json(path, {"pdf": stamp[0], "page": page, "cells": cells})
+        if cells:
+            out.append((pdf_path, page, stamp, cells))
+    return out
+
+
+def legend_page_cells(drawings, cache_dir=None, per_kind=PROJECT_PER_KIND, pages=None):
+    """범례 쪽 칸 견본 {kind: [PIL]}. 답 종류마다 per_kind개까지, 칸 차례(쪽·판·위에서 아래)대로 싣는다. 칸 그림이 가로로
+    떨어진 무리 여럿이면(열림·닫힘 두 밸브 그림) 모든 칸의 첫 무리를 먼저, 그다음 둘째 무리를 싣는다.
+    pages: 이미 고른 legend_pages 결과(없으면 drawings에서 고른다)."""
+    kinds = set(answer_kinds())
+    rows = {}
+    for pdf_path, page, _, cells in (legend_pages(drawings, cache_dir) if pages is None else pages):
+        img = PageImages(pdf_path, page)
+        for c in cells:
+            if c.get("kind") in kinds and c.get("parts"):
+                rows.setdefault(c["kind"], []).append((img, c["parts"]))
+    out = {}
+    for k, cells in rows.items():
+        order = [(img, parts[d]) for d in range(max(len(p) for _, p in cells)) for img, parts in cells if d < len(parts)]
+        crops = [c for c in (img.crop(b, pad=LEGEND_PAD, outline=False) for img, b in order[:per_kind]) if c is not None]
+        if crops:
+            out[k] = crops
+    return out
+
+
+def project_legend(drawings, cache_dir=None, per_kind=PROJECT_PER_KIND):
+    """프로젝트 판: 종류마다 ① 범례 쪽 칸(legend_page_cells) ② drawings [(pdf_path, page, 추출 결과)]의 confirmed_samples에서
+    모양이 다른 견본 ③ 표준 기호 판의 칸 그림(symbol_cells) 가운데 앞의 것을 per_kind개까지 싣는다(겹치면 범례 쪽 칸).
+    범례 쪽의 추출 결과는 ②에 쓰지 않는다(범례 쪽 스크립트 종류에는 틀린 조각이 섞인다).
+    → (PNG 바이트 목록, 출처). 출처는 LEGEND_SOURCES 가운데 실린 것을 '+'로 이은 값. ①·② 견본이 하나도 없으면 ([], None).
+    cache_dir를 주면 견본 자리·PDF 크기와 바뀐 시각·답 목록이 같을 때 그 폴더의 PNG를 다시 쓴다(쪽 그림을 다시 그리지 않는다).
+    읽을 수 없는 PDF는 건너뛴다."""
+    kinds = answer_kinds()
+    pages = legend_pages(drawings, cache_dir)
+    on_legend = {(stamp[0], page) for _, page, stamp, _ in pages}
+    legend_kinds = {c["kind"] for *_, cells in pages for c in cells if c.get("kind") in kinds}
+    sources, sig = [], []
+    for pdf_path, page, ex in drawings:
+        try:
+            stamp = _stamp(pdf_path)
+        except OSError:
+            continue
+        if (stamp[0], page) in on_legend:
+            continue
+        spots = [(k, b) for k, b in confirmed_samples(ex) if k in kinds and k not in legend_kinds]
+        if not spots:
+            continue
         sources.append((PageImages(pdf_path, page), spots))
         sig.append([stamp, page, spots])
-    if not sources:
+    if not sources and not pages:
         return [], None
-    key = hashlib.sha256(json.dumps([PROJECT_CACHE_VERSION, per_kind, kinds, sig, _symbol_index().get("inputs_sha256")],
+    from hazop.extract import legend_page
+    lsig = [[stamp, page, legend_page.CUT_VERSION] for _, page, stamp, _ in pages]
+    key = hashlib.sha256(json.dumps([PROJECT_CACHE_VERSION, per_kind, kinds, sig, lsig, _symbol_index().get("inputs_sha256")],
                                     sort_keys=True).encode("utf-8")).hexdigest()[:16]
     index = os.path.join(cache_dir, key + ".json") if cache_dir else None
     if index and os.path.isfile(index):
@@ -313,18 +380,19 @@ def project_legend(drawings, cache_dir=None, per_kind=PROJECT_PER_KIND):
                 return boards, doc["source"]
         except (OSError, ValueError, KeyError, TypeError):
             pass  # 깨진 캐시는 다시 만든다
-    crops = {k: c for k, c in sample_crops(sources, kinds, per_kind).items() if c}
-    if not crops:
+    legend = legend_page_cells(drawings, per_kind=per_kind, pages=pages)
+    project = {k: c for k, c in sample_crops(sources, kinds, per_kind).items() if c and k not in legend} if sources else {}
+    if not legend and not project:
         return [], None
-    filled = {k: c for k, c in symbol_cells().items() if k in kinds and k not in crops}
-    boards, order = boards_of(dict(crops, **filled))
-    source = "project+symbols" if filled else "project"
+    filled = {k: c for k, c in symbol_cells().items() if k in kinds and k not in legend and k not in project}
+    boards, order = boards_of(dict(project, **legend, **filled))
+    source = "+".join(n for n, used in (("legend", legend), ("project", project), ("symbols", filled)) if used)
     if index and boards:
         names = ["%s-%02d.png" % (key, i) for i in range(1, len(boards) + 1)]
         for f, png in zip(names, boards):
             store_io.write_bytes(os.path.join(cache_dir, f), png)
         store_io.write_json(index, {"boards": names, "kinds": order, "per_kind": per_kind, "source": source,
-                                    "from_symbols": sorted(filled)})
+                                    "from_legend": sorted(legend), "from_symbols": sorted(filled)})
     return boards, source
 
 
@@ -332,9 +400,10 @@ def image_input_for(pdf_path, page=0, drawings=(), cache_dir=None, wide=True, re
     """AI 검토 한 쪽의 그림 입력. 앱(도면별 AI 검토)과 측정(scripts/check_read_quality.py)이 같은 길로 부른다.
     pdf_path, page: 검토할 도면의 원본 PDF와 쪽 번호(0부터).
     drawings: 프로젝트에 등록된 도면들 [(pdf_path, page, 사람 수정 기록을 적용한 추출 결과)]. 검토할 도면도 넣어도 된다.
+    범례 쪽(legend_page)이 섞여 있으면 그 칸을 먼저 쓴다.
     cache_dir: 프로젝트 판 캐시 폴더(프로젝트 작업 폴더 안). None이면 캐시 없이 만든다.
-    범례판은 프로젝트 판(project_legend, 견본 없는 종류는 표준 칸으로 채움)이 있으면 그것, 없으면 표준 기호 판(symbol_legend),
-    그것도 없으면 범례판 없이. 고른 출처는 돌려준 ImageInput의 legend_source('project'·'project+symbols'·'symbols'·'none')에 있다.
+    범례판은 프로젝트 판(project_legend: 범례 쪽 칸 → 확정 견본 → 표준 칸)이 있으면 그것, 없으면 표준 기호 판(symbol_legend),
+    그것도 없으면 범례판 없이. 고른 출처는 돌려준 ImageInput의 legend_source(LEGEND_SOURCES)에 있다.
     답 목록은 늘 answer_kinds()."""
     legend, source = project_legend(drawings, cache_dir)
     if not legend:
