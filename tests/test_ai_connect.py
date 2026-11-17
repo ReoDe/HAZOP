@@ -6,6 +6,7 @@
 import glob
 import io
 import json
+import math
 import os
 import shutil
 import tempfile
@@ -163,6 +164,43 @@ class LinesTest(unittest.TestCase):
         self.assertFalse(ac.Lines([line((101, 101), (109, 109))]).linked(self.A, self.B))
         white = dict(line((110, 105), (200, 105)), stroke_white=True)
         self.assertFalse(ac.Lines([white]).linked(self.A, self.B))
+
+
+def circle_prim(cx, cy, r):
+    """닫힌 곡선 원: subpaths에는 베지어 끝점 네 개(마름모), fine에는 둘레 표본점."""
+    ends = [(cx + r, cy), (cx, cy + r), (cx - r, cy), (cx, cy - r)]
+    ring = [(cx + r * math.cos(2 * math.pi * k / 96), cy + r * math.sin(2 * math.pi * k / 96)) for k in range(96)]
+    return {"fill": False, "stroke": True, "fill_white": False, "stroke_white": False, "dash": False,
+            "subpaths": [(ends, True, ends, True)], "width": 1.0, "fine": [ring + [ring[0]]]}
+
+
+class CurvedRingTest(unittest.TestCase):
+    CX, CY, R, GAP, N = 600.0, 400.0, 80.0, 1.5, 8
+
+    def build(self):
+        nodes, prims = [], [circle_prim(self.CX, self.CY, self.R)]
+        for i in range(self.N):
+            t = 2 * math.pi * (i + 0.5) / self.N
+            ux, uy = math.cos(t), math.sin(t)
+            bx, by = self.CX + (self.R + self.GAP) * ux, self.CY + (self.R + self.GAP) * uy
+            tri = [(bx - 2 * uy, by + 2 * ux), (bx + 4 * ux, by + 4 * uy), (bx + 2 * uy, by - 2 * ux)]
+            prims.append(line(*tri, tri[0]))
+            xs, ys = [q[0] for q in tri], [q[1] for q in tri]
+            nodes.append(node("n%d" % i, "sparger", (min(xs), min(ys), max(xs), max(ys))))
+        x = self.CX + self.R
+        prims += [line((x, self.CY), (x + 60, self.CY)), line((x + 72, self.CY), (x + 200, self.CY))]
+        nodes += [node("v", "manual_valve", (x + 60, self.CY - 4, x + 72, self.CY + 4)),
+                  node("p", "pump", (x + 200, self.CY - 15, x + 230, self.CY + 15))]
+        ex = {"drawing": {}, "nodes": nodes, "relations": [rel("r1", "physical_connection", "v", "p")],
+              "unresolved_connectors": [], "texts": []}
+        return ex, ac.Lines(prims)
+
+    def test_nozzles_off_a_curved_ring_are_asked_with_ring_neighbors(self):
+        ex, lines = self.build()
+        got = {i["target"]: i for i in ac.items(ex, FakePage(), lines=lines)}
+        self.assertEqual(sorted(k for k in got if k.startswith("n")), ["n%d" % i for i in range(self.N)])
+        seen = [p["id"] for p in got["n0"]["partners"]]
+        self.assertTrue(any(i.startswith("n") for i in seen))
 
 
 class CropTest(unittest.TestCase):

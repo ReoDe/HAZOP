@@ -291,7 +291,10 @@ class Lines:
         for p in prims:
             if not _visible(p):
                 continue
-            for pts, closed, _, _ in p.get("subpaths") or []:
+            fine = p.get("fine") or []
+            for k, (pts, closed, _, curved) in enumerate(p.get("subpaths") or []):
+                if curved and k < len(fine):
+                    pts = fine[k]  # 곡선은 베지어 끝점만으로 펴면 원이 마름모로 마른다
                 ps = [tuple(map(float, q)) for q in pts] + ([tuple(map(float, pts[0]))] if closed and len(pts) > 2 else [])
                 self.segs += [(a, b) for a, b in zip(ps, ps[1:]) if a != b]
         self.by_cell = defaultdict(list)
