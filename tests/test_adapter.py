@@ -796,7 +796,7 @@ class PdfVectorRuleTest(unittest.TestCase):
         # 범례 'LINE NOT CONNECTED': 잇지 않는 선을 끊어 그린다(APR1400 008쪽 배출 상승관이 일점쇄선 자리에서 끊김).
         # 끊긴 두 조각은 한 배관이고, 가로지르는 점선과는 잇지 않는다. 빈칸이 넓거나 가로지르는 선이 없으면 잇지 않는다
         def run(gap, crossing=True):
-            dash = [dict(line((80, 150), (320, 150), width=0.25), dash=[[6.0, 3.0], 0.0])] if crossing else []
+            dash = [dict(line((80, 150), (320, 150), width=0.25), dash=[[6.0, 3.0, 1.0, 3.0], 0.0])] if crossing else []
             ext = pdf_run([rect(190, 60, 210, 80), rect(190, 220, 210, 240), rect(60, 140, 80, 160),
                            rect(320, 140, 340, 160), line((200, 80), (200, 150 - gap / 2), width=0.25),
                            line((200, 150 + gap / 2), (200, 220), width=0.25)] + dash)
@@ -853,7 +853,7 @@ class PdfVectorRuleTest(unittest.TestCase):
         # APR1400 008쪽 배출 상승관이 일점쇄선 자리에서 끊긴 위 조각 끝에 TEW 지시선 끝이 맞닿거나(분기), 상승관이 TEW
         # 상자 옆을 나란히 지나 끊긴다. 둘 다 끊어 그린 한 배관이다. 배관 끝에 가로 판이 얹히면 잇지 않는다
         def run(extra):
-            dash = dict(line((80, 150), (320, 150), width=0.25), dash=[[6.0, 3.0], 0.0])
+            dash = dict(line((80, 150), (320, 150), width=0.25), dash=[[6.0, 3.0, 1.0, 3.0], 0.0])
             ext = pdf_run([rect(190, 60, 210, 80), rect(190, 220, 210, 240), rect(60, 140, 80, 160),
                            rect(320, 140, 340, 160), line((200, 80), (200, 148.8), width=0.25),
                            line((200, 151.2), (200, 220), width=0.25), dash] + extra)
@@ -893,6 +893,52 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(run([rect(100, 200, 120, 220)]), ([("physical_connection", "pdf_dashed")], []))
         relations, unresolved = run([circle(106, 210, 14)], [word("PT", 101, 202), word("101", 101, 209)])
         self.assertEqual((relations, unresolved), ([("signal_connection", "pdf_dashed")], []))
+
+    def test_pipe_width_dashed_line_is_pipe(self):
+        # APR1400 141쪽 기체 방사성폐기물 묶음 ZG01: 묶음 안 배관을 쪽 배관 굵기(0.32pt)의 대시 점선으로 그렸다. 이런 점선은
+        # 분기까지 실선 배관처럼 잇는다. 가는 점선(0.16pt), 같은 굵기라도 일점쇄선, 계기에서 끝나는 점선은 신호선이다
+        def run(pen, pattern, end=None, words=()):
+            def dashed(*pts):
+                return dict(line(*pts, width=pen), dash=[pattern, 0.0])
+            ext = pdf_run([rect(20, 20, 40, 40), rect(120, 20, 140, 40), line((40, 30), (120, 30), width=0.32),
+                           end or rect(20, 200, 40, 220), rect(120, 200, 140, 220), rect(70, 300, 90, 320),
+                           dashed((40, 210), (120, 210)), dashed((80, 210), (80, 300))], words)
+            return sorted((r["kind"], r["line_type"]) for r in ext["relations"]),                 [n["kind"] for n in ext["nodes"]].count("tee")
+        pipe = ("physical_connection", "pdf_solid")
+        self.assertEqual(run(0.32, [10.67, 5.33]), ([("physical_connection", "pdf_dashed")] * 3 + [pipe], 1))
+        self.assertNotIn(("physical_connection", "pdf_dashed"), run(0.16, [10.67, 5.33])[0])
+        self.assertNotIn(("physical_connection", "pdf_dashed"), run(0.32, [10.67, 5.33, 1.33, 5.33])[0])
+        relations, _ = run(0.32, [10.67, 5.33], circle(26, 210, 12), [word("PT", 21, 202), word("101", 21, 209)])
+        self.assertIn(("signal_connection", "pdf_dashed"), relations)
+        self.assertEqual(relations.count(("physical_connection", "pdf_dashed")), 2)
+
+    def test_hop_over_line_is_not_a_branch(self):
+        # APR1400 141쪽: 엇갈리는 배관 한쪽이 다른 배관 위를 짧은 반원으로 넘는다. 반원 양 끝이 넘는 선에서 1.5pt 안이어도
+        # 그 선을 나누지 않는다(넘는 선은 두 기호 사이 관계 하나로 남는다)
+        def run(dash):
+            def d(p):
+                return dict(p, dash=[[10.667, 5.333], 0.0]) if dash else p
+            ext = pdf_run([rect(20, 20, 40, 40), rect(140, 20, 160, 40), line((40, 30), (140, 30), width=0.32),
+                           rect(140, 200, 160, 220), rect(20, 90, 40, 110), rect(260, 90, 280, 110),
+                           d(line((150, 40), (150, 98.5), width=0.32)),
+                           d(prim([(150, 98.5), (151.7, 100), (150, 101.5)], curved=True, width=0.32)),
+                           d(line((150, 101.5), (150, 200), width=0.32)), d(line((40, 100), (260, 100), width=0.32))])
+            xs = {n["local_id"]: n["geometry"]["x"] for n in ext["nodes"]}
+            return sorted(sorted(xs[e["node_local_id"]] for e in r["endpoints"]) for r in ext["relations"])
+        for dash in (False, True):
+            self.assertIn([20, 260], run(dash))
+
+    def test_pipe_width_dashed_paths_split_within_pattern_gap_are_one_pipe(self):
+        # APR1400 141쪽 ZG01 아래 배관: 한 점선 배관을 두 경로로 나눠 그리며 무늬 빈칸(5.33pt)보다 짧게 끊었다
+        def dashed(*pts):
+            return dict(line(*pts, width=0.32), dash=[[10.67, 5.33], 0.0])
+        def run(gap):
+            ext = pdf_run([rect(20, 20, 40, 40), rect(140, 20, 160, 40), line((40, 30), (140, 30), width=0.32),
+                           rect(20, 200, 40, 220), rect(260, 200, 280, 220),
+                           dashed((40, 210), (150, 210)), dashed((150 + gap, 210), (260, 210))])
+            return [r["kind"] for r in ext["relations"]].count("physical_connection")
+        self.assertEqual(run(2.7), 2)
+        self.assertEqual(run(8.0), 1)
 
     def test_dashed_line_through_valve_axis_is_pipe(self):
         def bowtie(x, y):

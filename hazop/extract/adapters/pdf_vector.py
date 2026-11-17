@@ -81,6 +81,7 @@ PARAMS = {
     "attach_tol": 2.5,           # 선 끝이 기호 경계에 닿음
     "end_tol": 1.5,              # 선 끝끼리·선 끝과 선 중간이 만남
     "crossing_gap_max": 12.0,    # 엇갈림 끊김: 다른 선 양쪽에서 마주 보는 두 선 끝 사이 거리 상한(pt)
+    "hop_arc_max": 8.0,          # 엇갈림 뛰어넘기: 다른 선을 넘는 짧은 곡선 토막의 길이 상한(pt)
     "crossing_width_ratio": 2.0,  # 네 갈래 교차에서 곧게 지나는 두 선의 굵기 비가 이 이상이면 잇지 않는다
     "inner_tol_ratio": 0.1,      # 기호 안 선 흡수 여유 = 몸체 긴 변 × 비율 (아래 범위로 자름)
     "inner_tol_min": 2.0,
@@ -95,6 +96,7 @@ PARAMS = {
     "dash_gap_max": 3.0,         # 점선 조각 사이 간격 상한
     "dash_attach_tol": 8.0,      # 점선 끝 조각과 기호 사이 거리 상한(점선 끝 빈칸·구동부 여백 포함)
     "dash_pipe_axis_ratio": 1.5,    # 점선 배관: 밸브 몸통의 긴 변/짧은 변이 이만큼은 돼야 흐름 축을 안다
+    "dash_pipe_pen_ratio": 0.75,    # 점선 배관: 선 굵기 ≥ 쪽 배관 굵기 × 비율이면 배관 굵기 점선(_pipe_dash_paths)
     "label_gap_max": 15.0,       # 글자 문단과 기호 사이 거리 상한
     "bare_code_gap_max": 5.0,    # 쌍점 없는 두 글자 계통 약어를 연결 표시 글자로 볼 거리 상한(바로 옆만)
     "continuation_name_gap_max": 1.5,  # 연결 화살표에 맞닿은 이름 문단 거리 상한(137쪽: 0pt 446개, 1pt 안팎 24개)
@@ -464,6 +466,7 @@ def _classify_primitives(width, height, prims, prm):
     """→ dict(bodies, polys, markers, dashes, masks, frames, cells). 각 항목에 결정적 id."""
     page_area = width * height
     bodies, polys, markers, dashes, white_fills, frames, outlines, invisible = [], [], [], [], [], [], [], []
+    dash_paths = []  # 스트로크 점선 경로 전체(배관 굵기 점선이면 조각 대신 실선처럼 잇는다, _pipe_dash_paths)
     for i, pr in enumerate(prims):
         for k, (pts, closed, ext, curved) in enumerate(pr["subpaths"]):
             if len(pts) < 1:
@@ -509,7 +512,9 @@ def _classify_primitives(width, height, prims, prm):
             elif len(pts) >= 2 and pr.get("dash"):
                 pieces = _dash_pieces(item["id"], pts, pr["dash"], prm["dash_stroke_step"])  # 보이는 조각만
                 dashes += pieces
-                if not pieces:
+                if pieces:
+                    dash_paths.append(dict(item, width=pr.get("width"), dash=pr["dash"]))
+                else:
                     invisible.append(item["id"])
             elif len(pts) >= 2:
                 polys.append(dict(item, width=pr.get("width")))
@@ -549,7 +554,7 @@ def _classify_primitives(width, height, prims, prm):
     masks = [f for f in white_fills
              if not any(max(abs(f["bbox"][j] - s[j]) for j in range(4)) <= prm["twin_tol"] for s in shapes)]
     return {"bodies": bodies, "polys": polys, "markers": markers, "dashes": dashes, "masks": masks,
-            "frames": frames, "cells": cells, "invisible_dashed": invisible, "panels": panels}
+            "frames": frames, "cells": cells, "invisible_dashed": invisible, "panels": panels, "dash_paths": dash_paths}
 
 
 TRACED_FILL_MIN = 10.0  # 장비 외곽으로 보는 흰 채움의 짧은 변 하한(pt). 글자 바탕 마스크·밸브 몸통 채움은 이보다 작거나 외곽선과 한 도형이다
@@ -1202,7 +1207,8 @@ def _arrow_lands(arrow, i, pieces, prm):
 def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
     """→ (tees [(x, y)], chains [{pts, ends:[(vertex, point, basis)], evidence}])."""
     # 선 끝 분류
-    pieces = [{"pts": list(p["pts"]), "id": p["id"], "width": p.get("width")} for p in polys]
+    pieces = [{"pts": list(p["pts"]), "id": p["id"], "width": p.get("width"),
+               "hop": bool(p.get("curved")) and _poly_length(p) <= prm["hop_arc_max"]} for p in polys]
     pieces, att = _cut_through_bodies(pieces, syms, prm)
     ends = []  # (piece index, k, point)
     for i, pc in enumerate(pieces):
@@ -1286,10 +1292,16 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
     crossed |= set(over)
     gap_bridges += [(pt, over[mate][1]) for ik, (mate, pt) in over.items() if ik < mate]
     bridges = list(bridges) + gap_bridges
+    # 엇갈림 뛰어넘기(도면 관례: 한쪽 선이 다른 선 위를 짧은 반원으로 넘음)의 반원과 그 양 끝에 맞댄 선 끝은 넘는 선에
+    # 닿아도 분기가 아니다(APR1400 141쪽 묶음 ZG01 점선 배관이 엇갈릴 때마다 반원으로 넘는다)
+    hop_ends = [e for pc in pieces if pc.get("hop") for e in (pc["pts"][0], pc["pts"][-1])]
+
+    def at_hop(i, pt):
+        return pieces[i].get("hop") or any(math.hypot(pt[0] - e[0], pt[1] - e[1]) <= prm["end_tol"] for e in hop_ends)
     # 선 끝이 다른 선 중간에 닿으면 그 선을 나눈다(분기)
     splits = {}
     for i, k, pt in free:
-        if (i, k) in crossed:
+        if (i, k) in crossed or at_hop(i, pt):
             continue
         for j, pc in enumerate(pieces):
             if j == i:
@@ -1549,6 +1561,78 @@ def _stroke_chains(pieces, prm, boxes=()):
     return out
 
 
+SIGNAL_END_KINDS = frozenset({"alarm", "pilot_light", "relay_converter"})  # 이 종류에 닿는 배관 굵기 점선은 신호선
+
+
+def _plain_dash(dash):
+    """그리는 칸 길이가 하나뿐인 점선 무늬(같은 대시만 되풀이)인가. 일점쇄선(긴 대시와 짧은 대시가 번갈아)은 신호선
+    무늬이고, 그리는 칸이 0인 점찍기 무늬도 배관으로 보지 않는다."""
+    arr = list(dash[0]) * (2 if len(dash[0]) % 2 else 1)
+    on = arr[0::2]
+    return min(on) > 0 and max(on) <= 1.1 * min(on)
+
+
+def _pipe_pen(chains, polys):
+    """쪽 배관 굵기: 두 끝이 기호·분기점에 닿은 실선 사슬(공압 신호선·맞닿음 빼고)을 이루는 선의 굵기(0.01pt 반올림)
+    가운데 선 개수로 가장 흔한 값과 길이 합으로 가장 긴 값 중 굵은 쪽. 짧은 계기 선이 많으면 개수가(141쪽 0.16pt),
+    긴 가는 선이 많으면 길이가(030쪽 0.14pt) 가는 선 쪽으로 쏠린다. 굵은 쪽을 써서 가는 신호 점선을 배관으로 읽지
+    않는다. 그런 사슬이 없으면 None."""
+    by_id = {p["id"]: p for p in polys}
+    used = sorted({e for ch in chains if not ch.get("pneumatic") and not ch.get("contact")
+                   and all(v[0] in ("sym", "tee") for v, _, _ in ch["ends"]) for e in ch["evidence"]})
+    count, length = collections.Counter(), collections.Counter()
+    for e in used:
+        p = by_id.get(e)
+        if p and p.get("width"):
+            count[round(p["width"], 2)] += 1
+            length[round(p["width"], 2)] += _poly_length(p)
+    if not count:
+        return None
+    return max(max(c, key=lambda w: (c[w], w)) for c in (count, length))
+
+
+def _pipe_dash_paths(paths, dashes, polys, chains, prm):
+    """배관 굵기 점선 경로: 같은 대시만 되풀이하는 무늬이고 선 굵기가 쪽 배관 굵기(_pipe_pen)의 dash_pipe_pen_ratio배
+    이상인 스트로크 점선. 공급자 묶음 안 배관을 점선으로 그린 도면이 있다(APR1400 141쪽 기체 방사성폐기물 묶음 ZG01,
+    배관 0.32pt 대시 10.67/5.33). 이런 선은 조각 사슬(_build_dashed)이 아니라 실선처럼 이어 분기점·기호 자르기를 받는다.
+    신호 점선은 가는 선(141쪽 0.16pt)이고 신호 일점쇄선은 무늬로 가른다. 기호 묶기에 조각이 모두 흡수된 경로는 뺀다."""
+    pen = _pipe_pen(chains, polys)
+    if not pen:
+        return []
+    free = {d["src"] for d in dashes if "src" in d}
+    return [p for p in paths if p["id"] in free and p.get("width") and _plain_dash(p["dash"])
+            and p["width"] >= prm["dash_pipe_pen_ratio"] * pen]
+
+
+def _dash_gap_bridges(paths, prm):
+    """배관 굵기 점선 경로 둘이 한 줄 위에서 무늬의 빈칸 길이 안으로 끝을 마주 보면 한 배관을 두 경로로 나눠 그린 것이다
+    (점선이라 빈칸이 눈에 띄지 않는다. APR1400 141쪽 묶음 ZG01 아래 배관 세 줄이 같은 자리에서 2.7pt씩 끊긴다).
+    → 이을 끝 짝 [(점, 점)] (_build_solid bridges). 끝마다 가장 가까운 짝 하나만."""
+    ends = []
+    for n, p in enumerate(paths):
+        for k in (0, 1):
+            d = _arm_dir(p["pts"], k)
+            if d is not None:
+                gap = min(p["dash"][0][1::2] or p["dash"][0])
+                ends.append((n, p["pts"][0] if k == 0 else p["pts"][-1], (-d[0], -d[1]), gap))
+    cands = []
+    for a, (na, pa, da, ga) in enumerate(ends):
+        for b in range(a + 1, len(ends)):
+            nb, pb, db, gb = ends[b]
+            dist = math.hypot(pb[0] - pa[0], pb[1] - pa[1])
+            if na == nb or not prm["end_tol"] < dist <= min(ga, gb) or da[0] * db[0] + da[1] * db[1] > -0.98:
+                continue
+            ux, uy = (pb[0] - pa[0]) / dist, (pb[1] - pa[1]) / dist
+            if ux * da[0] + uy * da[1] >= 0.98:  # a의 바깥 방향으로 곧게 b에 닿는다
+                cands.append((dist, a, b))
+    used, out = set(), []
+    for _, a, b in sorted(cands):
+        if a not in used and b not in used:
+            used |= {a, b}
+            out.append((ends[a][1], ends[b][1]))
+    return out
+
+
 def _build_dashed(syms, dashes, markers, prm):
     """점선 조각 사슬 → [{pts, ends:[(vertex, point, basis)], evidence, dashed}].
 
@@ -1596,11 +1680,12 @@ def _dashed_continuations(chains, prm):
     사슬은 하나로 합쳐 continues_pipe를 단다. 합친 사슬은 점선으로 남겨 계기에 닿으면 신호선으로 둔다(_dashed_pipe).
     점선 사슬의 반대 끝은 _build_dashed가 찾은 기호(hits)에 붙인다. 반대 끝도 경로 끝점이어야 한다. 기호 상자 옆을
     스쳐 조각이 기호에 흡수되며 끊긴 토막은 그 기호를 지나가는 선일 수 있어 잇지 않는다(008쪽 303 파일럿 출구선이
-    V313 밸브 상자 가장자리를 0.4pt 옆으로 지난다)."""
+    V313 밸브 상자 가장자리를 0.4pt 옆으로 지난다). 배관 굵기 점선 사슬(pipe_dash)의 끝은 보지 않는다. 묶음 안 기기를
+    가는 점선으로 그린 도면에서 그 기기의 노즐 점선이 이어지면 노즐 끝이 기기 대신 묶음 테두리에 붙는다(APR1400 141쪽)."""
     cell = 4 * prm["end_tol"]
     grid = collections.defaultdict(list)
     for i, ch in enumerate(chains):
-        if ch.get("dashed") or ch.get("pneumatic") or ch.get("contact"):
+        if ch.get("dashed") or ch.get("pneumatic") or ch.get("contact") or ch.get("pipe_dash"):
             continue
         for j, (v, pt, _) in enumerate(ch["ends"]):
             if v[0] == "free":
@@ -3233,6 +3318,15 @@ def analyze(width, height, words, prims, params=None, splits=None):
     cls["ticks"] = [p for p in polys if p["id"] in ticks]
     polys = [p for p in polys if p["id"] not in ticks]
     tees, chains = _build_solid(syms, polys, markers, prm, cls["bridges"], cls["mouths"])
+    pipe_dashes = _pipe_dash_paths(cls["dash_paths"], dashes, polys, chains, prm)
+    if pipe_dashes:
+        drawn = {p["id"] for p in pipe_dashes}
+        dashes = [d for d in dashes if d.get("src") not in drawn]
+        tees, chains = _build_solid(syms, polys + pipe_dashes, markers, prm,
+                                    cls["bridges"] + _dash_gap_bridges(pipe_dashes, prm), cls["mouths"])
+        for ch in chains:
+            if ch["evidence"] and all(e in drawn for e in ch["evidence"]):
+                ch["pipe_dash"] = True
     for ch in chains:
         # 빗금 선으로만 되고 그 사슬 위에 빗금 묶음이 실제로 있는 사슬 = 공압 신호선. 배관과 섞이거나, 원래 경로가
         # 분기점에서 나뉘어 빗금 없는 쪽 토막이면 배관으로 둔다
@@ -3804,6 +3898,11 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             rel_kind, line_type = "signal_connection", "pdf_dashed"
         elif moved:  # 합친 구동부로 들어가던 선은 구동 신호다(배관 분기로 보지 않는다)
             rel_kind, line_type = "signal_connection", "pdf_solid"
+        elif ch.get("pipe_dash") and any(i in instrument_ids or node_by_local[i]["kind"] in SIGNAL_END_KINDS
+                                         for i in ids if i):
+            rel_kind, line_type = "signal_connection", "pdf_dashed"  # 계기·경보에서 끝나는 점선은 굵어도 신호선이다
+        elif ch.get("pipe_dash"):
+            rel_kind, line_type = "physical_connection", "pdf_dashed"
         elif ch.get("pneumatic"):
             rel_kind, line_type = "signal_connection", "pdf_pneumatic"
         elif any(i in instrument_ids for i in ids if i):
@@ -3830,6 +3929,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             "label": "", "label_text": "", "label_cells": [], "attributes": {}, "style": None, "parent": None,
             "geometry": None,
             "evidence": {"classification_basis": ("dash_chain" if ch.get("dashed") else
+                                                  "pipe_dash_path" if ch.get("pipe_dash") else
                                                   "touching_bodies" if ch.get("contact") else "solid_path"),
                          "pdf_objects": list(ch["evidence"]),
                          # 선이 지나는 실제 점(양 끝 포함, 점선은 조각 중심). ② 배경 SVG의 관계 경로로 그린다
