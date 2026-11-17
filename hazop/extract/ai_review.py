@@ -25,7 +25,7 @@ import math
 import random
 
 from hazop import paths, store_io
-from hazop.extract import corrections, rules
+from hazop.extract import ai_connect, corrections, rules
 from hazop.study import providers
 from hazop.study.nodes import now_utc
 
@@ -44,6 +44,9 @@ NOT_SYMBOL = "not_symbol"  # 종류 답 가운데 '기호가 아님(다른 기�
 UNKNOWN = "unknown"        # 종류 답 가운데 '기호인지조차 모름' 또는 '기호지만 그 종류가 목록에 없음'. 후보를 만들지 않는다
 NO_KIND = (NOT_SYMBOL, UNKNOWN)
 MATCH = ("legend", "other")  # 종류 후보 표시: 범례판의 그 종류 견본과 모양이 같다고 본 것(높음)과 그 밖(보통)
+# 원 안 글자의 기능 문자로 종류가 정해지는 계기 원 종류. 원 모양은 같아 범례판 견본과 모양이 같다는 것이 종류가 맞다는 뜻이 아니므로
+# 이 종류 답은 견본 일치(높음)를 주지 않는다. 목록에 없는 정답 종류(switch 등) 대신 가장 가까운 칸을 '같다'고 고른 오답이 높음에 올랐다(실측 20).
+LETTER_CIRCLE_KINDS = ai_connect.INSTRUMENT_KINDS | {"alarm"}
 WIDE_KINDS = ("manual_valve", "isolation_valve", "control_valve", "motor_operated_valve", "air_operated_valve")  # 몸통이 같고 구동부로 갈리는 밸브
 # 그림 입력 다시 확인 대상 규칙. 스크립트가 종류를 정한 근거(evidence.classification_basis, '+'로 이은 조각) 가운데
 # 그 규칙이 보는 것만으로는 답 목록의 여러 종류를 가를 수 없는 것. 범례 사전 견본에 대 본 규칙(symbol:…)은 넣지 않는다.
@@ -546,7 +549,7 @@ def _ask(ex, client, call, images, answer_kinds, stats, kinds, wide=False):
         if f == "kind":
             extra = {"near_symbol": item.get("near_symbol")}
             if images:
-                extra["match"] = "legend" if ans.get("match") == "legend" else "other"
+                extra["match"] = "legend" if ans.get("match") == "legend" and vals[0] not in LETTER_CIRCLE_KINDS else "other"
             if item.get("rule"):
                 extra.update(rule=item["rule"], script_value=item["current"]["kind"])
         reason = ans.get("reason") if isinstance(ans.get("reason"), str) else ""

@@ -536,6 +536,24 @@ class ImageInputTest(unittest.TestCase):
         self.assertEqual(sorted(c["match"] for c in check if c["field"] == "kind"), ["legend", "other"])
         self.assertNotIn("match", ar.schema()["properties"]["answers"]["items"]["properties"], "글 입력 스키마는 그대로")
 
+    def test_letter_circle_kinds_never_get_high_match(self):
+        pick = {"n1": "controller", "n8": "switch", "n9": "manual_valve"}
+
+        def answers(req):
+            return {"answers": [{"item_id": it["item_id"], "field": "kind", "values": [pick[it["target"]]],
+                                 "confidence": 0.9, "reason": "x", "match": "legend"}
+                                for it in ids_in(req) if it["task"] == "kind" and it["target"] in pick]}
+        ex = ex_fixture()
+        ex["nodes"].append(node("n8", None, (600, 100, 610, 108)))
+        ex["nodes"].append(node("n9", None, (700, 100, 710, 108)))
+        images = self.images(kinds=("manual_valve", "controller", "switch", "blind_flange"))
+        doc = ar.run(ex, StubClient(answers), cap=5, recheck=0, images=images)
+        got = {c["target"]: (c["values"][0], c["match"]) for c in doc["candidates"] if c["field"] == "kind"}
+        self.assertEqual(got.get("n8"), ("switch", "other"), "원 안 글자로 정해지는 종류는 견본이 같다고 답해도 보통")
+        self.assertEqual(got.get("n9"), ("manual_valve", "legend"), "그 밖의 종류는 그대로 높음")
+        self.assertTrue(all(m == "other" for k, m in got.values() if k in ar.LETTER_CIRCLE_KINDS))
+        self.assertTrue({"controller", "indicator", "transmitter", "switch", "alarm"} <= ar.LETTER_CIRCLE_KINDS)
+
     def test_missing_match_counts_as_normal(self):
         doc = ar.run(ex_fixture(), StubClient(good_answers), cap=5, recheck=0, images=self.images())
         self.assertTrue(all(c["match"] == "other" for c in doc["candidates"] if c["field"] == "kind"))
