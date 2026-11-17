@@ -1,13 +1,22 @@
 """② 도면 사람 수정 기록: 원본 추출은 그대로 두고 수정 기록(연산 목록)을 그 위에 적용한다.
 
-기록 파일: <작업 루트>/data/drawing-edits/<safe_name(추출 폴더 이름)>.json. 연산은 OPS 표(이름 → 대상 종류, 값 검사,
-적용 함수, 해소하는 미확인)로 적용한다. 대상은 source_object_id(다시 추출해도 안정)로 가리키고, 사람이 추가한 기기·연결의
+기록 파일: <작업 루트>/data/drawing-edits/<safe_name(추출 폴더 이름)>.json. 연산은 OPS 표(이름 → 단계, 대상 종류, 값 검사,
+적용 함수, 해소하는 미확인)로 적용한다. 대상은 source_object_id로 가리키고, 사람이 추가한 기기·연결의
 id는 "manual-" + op_id다. 적용할 수 없는 연산은 사유와 함께 건너뛰고 나머지는 계속 적용한다.
+
+단계는 둘이다(설계 docs/units/2026-11-13-drawing-knowledge/evidence/fix-input-ops-design.md).
+- input(나누기 split, 배관 지정 pipe): 추출의 입력이다. resolve가 원본 PDF를 이 연산들로 다시 추출해 기준 추출(base)을
+  만든다(열쇠가 같으면 output/extract/<이름>/extraction.inputs.json을 읽음). 연산은 pdf 개체 id와 그 모양으로 개체를
+  가리키고, 모양으로 다시 찾지 못하면 몇 개를 못 찾았는지 사유와 함께 적용 불가다. 나눈 기호는 pdf-p<쪽>-split-<op_id>다.
+- overlay(그 밖): 지금처럼 apply가 기준 추출 위에 적용한다. 입력 연산이 없으면 기준 추출은 원본 그대로다.
 """
 
 import copy
+import hashlib
 import json
 import math
+import os
+import re
 from dataclasses import dataclass
 from typing import Callable
 
@@ -218,6 +227,40 @@ def _check_add_relation(value):
 def _check_empty(value):
     if value:
         raise ValueError("값이 비어 있어야 함")
+
+
+def _check_pdf_objects(value):
+    """입력 연산 공통: {"pdf": {sha256, page, reader}, "objects": [pdf-path id], "shapes": {id: [x0, y0, x1, y1, 점 수, 닫힘]}}."""
+    pdf = value.get("pdf")
+    if not (isinstance(pdf, dict) and isinstance(pdf.get("sha256"), str) and len(pdf["sha256"]) == 64
+            and type(pdf.get("page")) is int and pdf["page"] >= 0 and isinstance(pdf.get("reader"), str)):
+        raise ValueError("pdf는 {sha256, page, reader}여야 함(벡터 PDF 도면만)")
+    objs = value.get("objects")
+    if not (isinstance(objs, list) and objs and all(isinstance(o, str) and o.startswith("pdf-path-") for o in objs)
+            and len(set(objs)) == len(objs)):
+        raise ValueError("objects는 겹치지 않는 pdf 개체 id(pdf-path-…) 1개 이상이어야 함")
+    shapes = value.get("shapes")
+    if not (isinstance(shapes, dict) and set(shapes) == set(objs) and all(
+            isinstance(v, list) and len(v) == 6 and all(_num(c) for c in v[:4]) and type(v[4]) is int
+            and isinstance(v[5], bool) for v in shapes.values())):
+        raise ValueError("shapes는 objects마다 [x0, y0, x1, y1, 점 수, 닫힘]이어야 함")
+
+
+def _check_split(value):
+    _check_pdf_objects(value)
+    if value.get("kind") is not None and value["kind"] not in rules.KIND_CATEGORY:
+        raise ValueError("kind %r는 사전에 없는 종류" % (value["kind"],))
+    if set(value) - {"pdf", "objects", "shapes", "kind"}:
+        raise ValueError("모르는 키: %s" % ", ".join(sorted(set(value) - {"pdf", "objects", "shapes", "kind"})))
+
+
+def _check_pipe(value):
+    _check_pdf_objects(value)
+    if not isinstance(value.get("ring"), bool):
+        raise ValueError("ring은 true/false여야 함")
+    line_type = _str(value, "line_type")
+    if rules.LINE_TYPE_RELATION.get(line_type, "physical_connection") != "physical_connection":
+        raise ValueError("배관 지정의 line_type %s는 배관이 아님" % line_type)
 
 
 # ---------------------------------------------------------------- 적용 상태
@@ -448,12 +491,17 @@ def _apply_delete_relation(st, kind, obj, op):
     return None
 
 
+def _apply_input(st, kind, obj, op):
+    raise AssertionError("입력 연산은 기준 추출을 만들 때 쓴다(resolve)")
+
+
 @dataclass(frozen=True)
 class OpSpec:
     targets: tuple  # 빈 튜플이면 대상 없이 새로 만드는 연산
     check: Callable  # value -> None, 형식 오류면 ValueError
     apply: Callable  # (state, 대상 종류, 대상, op) -> human_edit를 붙일 대상 또는 None
     resolves: Callable  # (unknown, 대상 종류, value) -> 이 연산으로 지울 미확인인가
+    stage: str = "overlay"  # input: 추출의 입력(resolve가 다시 추출로 적용), overlay: apply가 그 위에 적용
 
 
 OPS = {
@@ -482,18 +530,42 @@ OPS = {
     "delete_node": OpSpec(("node",), _check_empty, _apply_delete_node, lambda u, k, v: True),
     "add_relation": OpSpec((), _check_add_relation, _apply_add_relation, lambda u, k, v: False),
     "delete_relation": OpSpec(("relation",), _check_empty, _apply_delete_relation, lambda u, k, v: True),
+    # 덩어리에서 기호 하나 떼어 내기(대상 = 덩어리 노드). 나눈 기호는 pdf-p<쪽>-split-<op_id>
+    "split": OpSpec(("node",), _check_split, _apply_input, lambda u, k, v: False, stage="input"),
+    # 이 도형들은 배관(대상 없음). 다시 추출에 넣는 일은 아직 없다(적용 불가 PIPE_PENDING)
+    "pipe": OpSpec((), _check_pipe, _apply_input, lambda u, k, v: False, stage="input"),
 }
+INPUT_NAME = re.compile(r"^pdf-p\d+-(split|ring)-(.+)$")  # 입력 연산이 만든 노드 id → 그 op_id
+PIPE_PENDING = "배관 지정은 아직 다시 읽기에 넣지 않음"
+
+
+def is_input(op):
+    spec = OPS.get(op.get("op"))
+    return spec is not None and spec.stage == "input"
 
 
 # ---------------------------------------------------------------- 지문·연산 만들기·적용
 
+def objs_digest(obj):
+    """대상의 pdf 개체 집합 지문("o-" + sha1 앞 6자리). pdf 개체가 없으면(drawio·분기점·사람이 더한 것) None."""
+    objs = sorted((obj.get("evidence") or {}).get("pdf_objects") or []) if isinstance(obj.get("evidence"), dict) else []
+    return "o-" + hashlib.sha1(",".join(objs).encode("utf-8")).hexdigest()[:6] if objs else None
+
+
 def fingerprint(kind, obj, loc=None):
     """base 비교용 대상 지문. 노드 {kind, category, tag, at}, 관계 {kind, ends: 양 끝 노드 source_object_id, at}.
-    at = 위치 상자 중심(정수 반올림). PDF 대상 ID는 순번이라 다시 추출하면 같은 ID가 다른 기호를 가리킬 수 있어 위치로 가른다."""
+    at = 위치 상자 중심(정수 반올림). PDF 대상 ID는 순번이라 다시 추출하면 같은 ID가 다른 기호를 가리킬 수 있어 위치로 가른다.
+    PDF 대상이면 objs(pdf 개체 집합 지문)도 넣는다. 같은 대상인지는 보지 않고(조각 하나가 더 붙어도 같은 기호다),
+    번호가 밀린 대상을 다시 찾을 때 먼저 쓴다."""
     at = [round(loc["bbox"][0] + loc["bbox"][2] / 2.0), round(loc["bbox"][1] + loc["bbox"][3] / 2.0)] if loc else None
     if kind == "node":
-        return {"kind": obj.get("kind"), "category": obj.get("category"), "tag": obj.get("tag"), "at": at}
-    return {"kind": obj.get("kind"), "ends": [ep.get("source_object_id") for ep in obj["endpoints"]], "at": at}
+        out = {"kind": obj.get("kind"), "category": obj.get("category"), "tag": obj.get("tag"), "at": at}
+    else:
+        out = {"kind": obj.get("kind"), "ends": [ep.get("source_object_id") for ep in obj["endpoints"]], "at": at}
+    objs = objs_digest(obj)
+    if objs:
+        out["objs"] = objs
+    return out
 
 
 def _fingerprints(extraction):
@@ -512,8 +584,8 @@ def _same(base, cur):
     '대상이 바뀜'이 되지 않게, M2 U9)."""
     if base is None or cur is None:
         return base is cur
-    base = {k: v for k, v in base.items() if k != "category"}
-    cur = {k: v for k, v in cur.items() if k != "category"}
+    base = {k: v for k, v in base.items() if k not in ("category", "objs")}
+    cur = {k: v for k, v in cur.items() if k not in ("category", "objs")}
     if base.get("at") is not None:  # 같은 자리에서 지식이 늘어난 것은 대상이 바뀐 것이 아니다(기호 사전, 기획서/PID-기호사전.md D14)
         for k in ("kind", "tag"):  # 없던 값이 새로 채워지거나, 틀린 값이 지워짐(같은 자리의 같은 대상)
             if (base.get(k) is None) != (cur.get(k) is None):
@@ -546,6 +618,9 @@ def _apply_one(st, original_fp, op):
         if target in st.deleted:
             raise _Skip("삭제된 대상")
         if target not in st.index:
+            m = INPUT_NAME.match(str(target))
+            if m:  # 대상이 나누기로 생긴 기호인데 그 나누기가 없어짐(되돌림)
+                raise _Skip("나누기 %s이(가) 되돌려져 대상이 없음" % m.group(2))
             raise _Skip("대상 없음")
         kind, obj = st.index[target]
         if kind not in spec.targets:
@@ -553,7 +628,7 @@ def _apply_one(st, original_fp, op):
         if not str(target).startswith(MANUAL_PREFIX) and not _same(op.get("base"), original_fp.get(target)):
             cur, base = original_fp.get(target) or {}, op.get("base") or {}
             diff = ["%s %r→%r" % (k, base.get(k), cur.get(k)) for k in sorted(set(cur) | set(base))
-                    if base.get(k) != cur.get(k) and k != "category"]
+                    if base.get(k) != cur.get(k) and k not in ("category", "objs")]
             raise _Skip("대상이 바뀜: %s" % ", ".join(diff))
     refs = op.get("refs") or {}
     for sid in _refs(value):
@@ -572,11 +647,19 @@ def _apply_one(st, original_fp, op):
 
 
 def _rematch(fp, original_fp):
-    """번호가 밀린 대상을 지문으로 다시 찾는다(기획서/PID-기호사전.md D14). 같은 위치(at)·같은 종류의 대상이 정확히
-    하나일 때만 그 id. 관계의 양 끝(ends)은 노드 번호가 같이 밀리므로 보지 않는다. 둘 이상이거나 없으면 None."""
-    if not fp or fp.get("at") is None:
+    """번호가 밀린 대상을 지문으로 다시 찾는다(기획서/PID-기호사전.md D14). pdf 개체 집합(objs)이 같은 대상이 정확히
+    하나면 그것(같은 도형이다). 아니면 같은 위치(at)·같은 종류의 대상이 정확히 하나일 때만 그 id. 관계의 양 끝(ends)은
+    노드 번호가 같이 밀리므로 보지 않는다. 둘 이상이거나 없으면 None."""
+    if not fp:
         return None
     is_rel = "ends" in fp
+    if fp.get("objs"):
+        same = [sid for sid, cur in sorted(original_fp.items())
+                if cur and cur.get("objs") == fp["objs"] and ("ends" in cur) == is_rel]
+        if len(same) == 1:
+            return same[0]
+    if fp.get("at") is None:
+        return None
     strip = {k: v for k, v in fp.items() if k != "ends"}
     hits = [sid for sid, cur in sorted(original_fp.items())
             if cur and cur.get("at") == fp["at"] and ("ends" in cur) == is_rel
@@ -587,7 +670,8 @@ def _rematch(fp, original_fp):
 def _retarget(op, original_fp):
     """대상·참조 노드가 다시 추출로 번호만 바뀌었으면 새 번호로 바꾼 연산 사본과 바뀐 (옛, 새) 목록."""
     moved, target, base = [], op.get("target"), op.get("base")
-    if target and not str(target).startswith(MANUAL_PREFIX) and base and not _same(base, original_fp.get(target)):
+    bound = lambda sid: str(sid).startswith(MANUAL_PREFIX) or INPUT_NAME.match(str(sid))  # noqa: E731  연산에 묶인 id
+    if target and not bound(target) and base and not _same(base, original_fp.get(target)):
         alt = _rematch(base, original_fp)
         if alt:  # 같은 자리·같은 종류가 하나뿐: 번호(대상 id나 끝 노드 id)만 바뀐 같은 대상이다
             op = dict(op, target=alt, base=original_fp[alt])
@@ -596,7 +680,7 @@ def _retarget(op, original_fp):
     if isinstance(value, dict):
         repl = {}
         for sid in _refs(value):
-            if refs.get(sid) is not None and not _same(refs[sid], original_fp.get(sid)):
+            if refs.get(sid) is not None and not bound(sid) and not _same(refs[sid], original_fp.get(sid)):
                 alt = _rematch(refs[sid], original_fp)
                 if alt and alt != sid:
                     repl[sid] = alt
@@ -608,14 +692,18 @@ def _retarget(op, original_fp):
 
 
 def apply(extraction, ops):
-    """원본 extraction에 ops를 순서대로 적용한 깊은 사본. 입력은 바꾸지 않는다.
-    ops가 비면 같은 내용의 사본("corrections" 키 없음, graph_version 그대로)."""
+    """원본(또는 기준) extraction에 덧바르는(overlay) ops를 순서대로 적용한 깊은 사본. 입력은 바꾸지 않는다.
+    ops가 비면 같은 내용의 사본("corrections" 키 없음, graph_version 그대로). 입력 연산(split·pipe)은 적용하지 않고
+    corrections.input_ops에 적는다(기준 추출에서 적용함, resolve)."""
     doc = copy.deepcopy(extraction)
     if not ops:
         return doc
     st, original_fp = _State(doc), _fingerprints(extraction)
-    applied, skipped, retargeted = [], [], []
+    applied, skipped, retargeted, inputs = [], [], [], []
     for op in ops:
+        if is_input(op):
+            inputs.append(op.get("op_id"))
+            continue
         try:
             op, moved = _retarget(op, original_fp)
             _apply_one(st, original_fp, op)
@@ -626,6 +714,8 @@ def apply(extraction, ops):
             retargeted += [{"op_id": op["op_id"], "from": a, "to": b} for a, b in moved]
     doc["corrections"] = {"ops": len(ops), "applied": applied, "not_applicable": skipped,
                           "resolved_unknowns": st.resolved}
+    if inputs:
+        doc["corrections"]["input_ops"] = inputs
     if retargeted:
         doc["corrections"]["retargeted"] = retargeted  # 다시 추출로 번호만 바뀐 대상(지문 위치로 다시 찾음)
     doc["summary"] = summarize(doc)
@@ -642,14 +732,35 @@ def _next_op_id(existing_ops, used_ids=()):
     return store_io.next_id("c-%04d", [o.get("op_id") for o in existing_ops] + list(used_ids))
 
 
+def _via(extraction, ids, existing_ops):
+    """ids(대상·참조 노드)가 기댄 입력 연산 op_id 목록. 입력 연산이 만든 노드(pdf-p0-split-<op_id>)이거나, 배관 지정한
+    pdf 개체를 근거로 가진 대상이면 그 연산이다."""
+    out = []
+    objs_of = {}
+    for key in ("nodes", "relations", "unresolved_connectors"):
+        for o in extraction.get(key) or []:
+            objs_of[o["source_object_id"]] = set((o.get("evidence") or {}).get("pdf_objects") or [])
+    pipes = [(o["op_id"], set(o["value"]["objects"])) for o in existing_ops
+             if o.get("op") == "pipe" and isinstance(o.get("value"), dict) and isinstance(o["value"].get("objects"), list)]
+    for sid in ids:
+        m = INPUT_NAME.match(str(sid))
+        if m:
+            out.append(m.group(2))
+        out += [oid for oid, objs in pipes if objs & objs_of.get(sid, set())]
+    return list(dict.fromkeys(out))
+
+
 def make_op(original_extraction, op, target, value, by, at=None, op_id=None, existing_ops=(), used_ids=(), name=None):
-    """검사를 마친 Op dict. base는 원본 추출(수정 전)에서 계산하고 manual 대상이면 None.
+    """검사를 마친 Op dict. base는 기준 추출(입력 연산을 넣어 다시 추출한 것, 없으면 원본)에서 계산하고 manual 대상이면
+    None. 대상이나 참조가 입력 연산이 만든 것에 기대면 via에 그 op_id를 적는다(되돌리기·적용 불가 사유가 쓴다).
     새 op_id는 existing_ops, used_ids, name(추출 이름)의 저장 기록에 나온 번호(issued_op_ids)보다 크게 발급한다.
     지운 연산의 번호를 다시 쓰면 manual- ID가 다른 기기를 가리키게 되기 때문이다. 저장할 기록이 있는 호출은 name을 넘긴다
     (넘기지 않아 겹친 번호는 save가 거절한다).
     existing_ops 뒤에 붙여 적용해 볼 때 적용 불가면 ValueError(사유)."""
     if op not in OPS:
         raise ValueError("알 수 없는 수정 연산: %r" % (op,))
+    if OPS[op].stage == "input" and (original_extraction.get("source") or {}).get("format") != "pdf_vector":
+        raise ValueError("나누기·배관 지정은 벡터 PDF 도면만 할 수 있음")
     existing_ops = list(existing_ops)
     if name:
         used_ids = set(used_ids) | issued_op_ids(name)
@@ -661,6 +772,9 @@ def make_op(original_extraction, op, target, value, by, at=None, op_id=None, exi
     refs = {sid: fp.get(sid) for sid in _refs(value)} if isinstance(value, dict) else {}
     new = {"op_id": op_id or _next_op_id(existing_ops, used_ids), "op": op, "target": target, "base": base, "refs": refs,
            "value": copy.deepcopy(value), "by": by, "at": at or now_utc()}
+    via = _via(original_extraction, ([target] if target else []) + sorted(refs), existing_ops)
+    if via:
+        new["via"] = via
     if any(o.get("op_id") == new["op_id"] for o in existing_ops):
         raise ValueError("이미 있는 op_id: %s" % new["op_id"])
     trial = apply(original_extraction, existing_ops + [new])["corrections"]
@@ -668,3 +782,227 @@ def make_op(original_extraction, op, target, value, by, at=None, op_id=None, exi
         if s["op_id"] == new["op_id"]:
             raise ValueError("수정을 적용할 수 없음: %s" % s["reason"])
     return new
+
+
+# ---------------------------------------------------------------- 입력 연산: 값 만들기·기준 추출
+
+def dependents(ops, op_id):
+    """op_id를 지우면 함께 빠져야 하는 연산 op_id 목록(그 연산이 만든 manual-·split- 대상을 가리키거나 via에 적은 것, 이어서)."""
+    out, todo = [], [op_id]
+    while todo:
+        cur = todo.pop()
+        made = {MANUAL_PREFIX + cur}
+        for o in ops:
+            oid = o.get("op_id")
+            if oid == op_id or oid in out:
+                continue
+            value = o.get("value") if isinstance(o.get("value"), dict) else {}
+            ids = [o.get("target")] + [value.get(k) for k in REF_KEYS]
+            hit = cur in (o.get("via") or []) or any(
+                isinstance(i, str) and (i in made or (INPUT_NAME.match(i) and INPUT_NAME.match(i).group(2) == cur))
+                for i in ids)
+            if hit:
+                out.append(oid)
+                todo.append(oid)
+    return out
+
+
+def pdf_source(extraction):
+    """(원본 PDF 경로, 쪽) 또는 (None, 사유). 입력 연산은 벡터 PDF 도면에만 쓴다."""
+    src = extraction.get("source") or {}
+    if src.get("format") != "pdf_vector":
+        return None, "벡터 PDF 도면만"
+    path = paths.resolve_rel(src.get("file") or "", paths.work_root()) if src.get("file") else None
+    if not path or not os.path.isfile(path):
+        return None, "원본 PDF 없음"
+    try:
+        page = int(((extraction.get("run") or {}).get("settings") or {}).get("page_index") or 0)
+    except (TypeError, ValueError):
+        page = 0
+    return (path, max(0, page)), None
+
+
+def input_value(extraction, objects, **extra):
+    """split·pipe 연산의 value: 원본 PDF의 sha256·쪽·pdfplumber 판과 개체 모양을 붙인다. 벡터 PDF가 아니면 ValueError."""
+    from hazop.extract.adapters import pdf_vector
+    where, why = pdf_source(extraction)
+    if where is None:
+        raise ValueError("나누기·배관 지정을 할 수 없음: %s" % why)
+    shapes = pdf_vector.object_shapes(*where)
+    missing = [o for o in objects if o not in shapes]
+    if missing:
+        raise ValueError("쪽에 없는 pdf 개체: %s" % ", ".join(missing[:5]))
+    with open(where[0], "rb") as fh:
+        sha = hashlib.sha256(fh.read()).hexdigest()
+    return dict({"pdf": {"sha256": sha, "page": where[1], "reader": pdf_vector.reader_version()},
+                 "objects": list(objects), "shapes": {o: shapes[o] for o in objects}}, **extra)
+
+
+SHAPE_TOL = 0.2  # pt. 모양으로 다시 찾을 때 상자 허용 차
+
+
+def _locate(op, shapes, sha, reader):
+    """입력 연산의 개체를 지금 쪽에서 찾는다. (지금 id 목록, [(옛 id, 새 id)]). 못 찾으면 _Skip."""
+    v = op["value"]
+    if v["pdf"]["sha256"] == sha and v["pdf"]["reader"] == reader and all(
+            shapes.get(o) == v["shapes"][o] for o in v["objects"]):
+        return list(v["objects"]), []
+    found, moved, lost = [], [], 0
+    for o in v["objects"]:
+        want = v["shapes"][o]
+        if shapes.get(o) == want:
+            found.append(o)
+            continue
+        hits = [k for k, s in shapes.items() if s[4:] == want[4:] and all(abs(a - b) <= SHAPE_TOL for a, b in zip(s, want[:4]))]
+        if len(hits) == 1:
+            found.append(hits[0])
+            moved.append((o, hits[0]))
+        else:
+            lost += 1
+    if lost:
+        raise _Skip("도면이 바뀌어 %s 개체를 찾지 못함(%d개 중 %d개)"
+                    % ("나눌" if op["op"] == "split" else "배관", len(v["objects"]), lost))
+    return found, moved
+
+
+def _library_version():
+    """기호 사전 판: 사전 JSON 파일 내용의 해시(사전이 바뀌면 같은 입력이라도 다시 추출한다)."""
+    root = paths.folder("symbols")
+    h = hashlib.sha256()
+    for dirpath, dirs, files in sorted(os.walk(root)):
+        dirs.sort()
+        for f in sorted(files):
+            if f.endswith(".json"):
+                with open(os.path.join(dirpath, f), "rb") as fh:
+                    h.update(f.encode("utf-8") + b"\0" + fh.read())
+    return h.hexdigest()[:16]
+
+
+def inputs_key(original, inputs):
+    """기준 추출의 열쇠: 원본 추출(sha256·쪽·실행 id)·규칙 판·기호 사전 판·입력 연산(op_id·종류·값·대상)."""
+    from hazop.extract.adapters import pdf_vector
+    src, run = original.get("source") or {}, original.get("run") or {}
+    canon = json.dumps([src.get("sha256"), (run.get("settings") or {}).get("page_index"), original.get("extraction_run_id"),
+                        pdf_vector.RULES_VERSION, _library_version(),
+                        [[o.get("op_id"), o.get("op"), o.get("target"), o.get("value")] for o in inputs]],
+                       sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return "in-" + hashlib.sha256(canon.encode("utf-8")).hexdigest()[:24]
+
+
+BASE_KIND = "hazop_input_extraction"
+CONTENT_KEYS = ("nodes", "relations", "unresolved_connectors", "texts", "unclassified", "source_locations", "validation")
+
+
+def base_path(name):
+    return os.path.join(paths.output_root("extract"), name, "extraction.inputs.json")
+
+
+def build_base(original, inputs):
+    """입력 연산으로 원본 PDF를 다시 추출한 기준 추출과 입력 상태 {"applied", "not_applicable", "retargeted"}.
+    식별 칸(drawing·source·run 등)은 원본 그대로 두고 내용 칸만 바꾼다. 같은 입력이면 같은 결과다."""
+    from hazop.extract.adapters import pdf_vector
+    status = {"applied": [], "not_applicable": [], "retargeted": []}
+    where, why = pdf_source(original)
+    if where is None:
+        status["not_applicable"] = [{"op_id": o["op_id"], "reason": why} for o in inputs]
+        return copy.deepcopy(original), status
+    path, page = where
+    with open(path, "rb") as fh:
+        sha = hashlib.sha256(fh.read()).hexdigest()
+    shapes, reader = pdf_vector.object_shapes(path, page), pdf_vector.reader_version()
+    groups, kinds = {}, {}
+    for op in inputs:
+        try:
+            OPS[op["op"]].check(op.get("value") if isinstance(op.get("value"), dict) else {})
+            if op["op"] == "pipe":
+                raise _Skip(PIPE_PENDING)
+            objs, moved = _locate(op, shapes, sha, reader)
+        except ValueError as exc:
+            status["not_applicable"].append({"op_id": op.get("op_id"), "reason": "형식 오류: %s" % exc})
+            continue
+        except _Skip as exc:
+            status["not_applicable"].append({"op_id": op.get("op_id"), "reason": str(exc)})
+            continue
+        status["retargeted"] += [{"op_id": op["op_id"], "from": a, "to": b} for a, b in moved]
+        groups.setdefault(op.get("target"), []).append({"name": "split-" + op["op_id"], "objects": objs})
+        kinds[op["op_id"]] = op["value"].get("kind")
+    if not groups:
+        return copy.deepcopy(original), status
+    fresh = pdf_vector.extract(path, page=page, splits=[{"node": None, "groups": g} for g in groups.values()])
+    doc = copy.deepcopy(original)
+    for key in CONTENT_KEYS:
+        doc[key] = fresh[key]
+    doc["drawing"] = dict(doc.get("drawing") or {}, ignored_objects=(fresh.get("drawing") or {}).get("ignored_objects"))
+    by_sid = {n["source_object_id"]: n for n in doc["nodes"]}
+    for oid, kind in kinds.items():
+        node = by_sid.get("pdf-p%d-split-%s" % (page, oid))
+        if node is None:
+            status["not_applicable"].append({"op_id": oid, "reason": "나눈 개체가 기호가 되지 못함(몸체·선이 없거나 다른 기호에 합쳐짐)"})
+            continue
+        if kind:
+            _apply_set_kind(None, "node", node, {"value": {"kind": kind, "category": rules.KIND_CATEGORY[kind]}})
+        status["applied"].append(oid)
+    doc["summary"] = summarize(doc)
+    return doc, status
+
+
+def _read_base(name, key):
+    try:
+        with open(base_path(name), encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) and doc.get("kind") == BASE_KIND and doc.get("key") == key else None
+
+
+def ensure_base(name, original=None):
+    """기준 추출 파일을 지금 수정 기록에 맞게 만든다(작업에서 부른다. 큰 쪽은 수십 초). 상태 문자열을 돌려준다.
+    다 만든 뒤 수정 기록이 그새 바뀌었으면 한 번 더 만든다."""
+    for _ in range(3):
+        doc = load(name)
+        if original is None:
+            with open(os.path.join(paths.output_root("extract"), name, "extraction.json"), encoding="utf-8") as fh:
+                original = json.load(fh)
+        inputs = [o for o in (doc or {}).get("ops") or [] if is_input(o)]
+        if not inputs:
+            return "none"
+        key = inputs_key(original, inputs)
+        if _read_base(name, key) is not None:
+            return "ready"
+        base, status = build_base(original, inputs)
+        store_io.write_json(base_path(name), {"kind": BASE_KIND, "key": key, "inputs": status, "extraction": base})
+        again = [o for o in (load(name) or {}).get("ops") or [] if is_input(o)]
+        if inputs_key(original, again) == key:
+            return "ready"
+    return "pending"
+
+
+def resolve(name, original=None, ops=None, *, allow_extract=False):
+    """수정 기록을 적용한 결과 {"original", "base", "corrected", "ops", "inputs": {"key", "state", "applied",
+    "not_applicable", "retargeted"}}. state: none(입력 연산 없음, base = 원본), ready(기준 추출 사용), pending(기준 추출이
+    아직 없거나 낡음. 원본 위에 나머지 연산만 적용하고 입력 연산은 '다시 읽기 대기'). allow_extract면 그 자리에서 만든다.
+    ops를 주면 저장된 기록 대신 쓴다(작업 중 연산)."""
+    if original is None:
+        with open(os.path.join(paths.output_root("extract"), name, "extraction.json"), encoding="utf-8") as fh:
+            original = json.load(fh)
+    if ops is None:
+        ops = ((load(name) or {}).get("ops") or [])
+    inputs = [o for o in ops if is_input(o)]
+    state = {"key": None, "state": "none", "applied": [], "not_applicable": [], "retargeted": []}
+    base = original
+    if inputs:
+        key = inputs_key(original, inputs)
+        found = _read_base(name, key)
+        if found is None and allow_extract:
+            built, status = build_base(original, inputs)
+            store_io.write_json(base_path(name), {"kind": BASE_KIND, "key": key, "inputs": status, "extraction": built})
+            found = {"inputs": status, "extraction": built}
+        if found is None:
+            state.update(key=key, state="pending")
+        else:
+            base = found["extraction"]
+            state.update(found["inputs"], key=key, state="ready")
+    corrected = apply(base, ops)
+    if inputs:
+        corrected.setdefault("corrections", {})["inputs"] = {k: state[k] for k in ("state", "applied", "not_applicable")}
+    return {"original": original, "base": base, "corrected": corrected, "ops": ops, "inputs": state}

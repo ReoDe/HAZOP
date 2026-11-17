@@ -27,6 +27,7 @@
 import collections
 import hashlib
 import io
+import json
 import math
 import os
 import re
@@ -448,14 +449,20 @@ def analyze_bytes(data, page=0, params=None, splits=None):
     sha = hashlib.sha256(data).hexdigest()
     key = (sha, page, tuple(sorted((params or {}).items())))
     if splits:
-        key += (tuple((tuple(sp["node"]), tuple(tuple(g) for g in sp["groups"])) for sp in splits),)
+        key += (json.dumps(splits, sort_keys=True),)
     with _cache_lock:
         hit = _cache.get(key)
         if hit is not None:
             _cache.move_to_end(key)
             return (sha,) + hit
+    if splits:
+        # 나눔이 다른 기호의 번호를 밀지 않게, 나눔 없는 분석의 기호 순서를 번호의 기준으로 넘긴다(build_extraction)
+        base_symbols = analyze_bytes(data, page, params)[4]["symbols"]
     page_count, width, height, words, prims = load_page(io.BytesIO(data), page)
-    hit = (page_count, width, height, analyze(width, height, words, prims, params, splits))
+    analysis = analyze(width, height, words, prims, params, splits)
+    if splits:
+        analysis["numbering"] = [tuple(s.evidence()) for s in base_symbols]
+    hit = (page_count, width, height, analysis)
     with _cache_lock:
         _cache[key] = hit
         while len(_cache) > _CACHE_MAX:
@@ -3462,18 +3469,26 @@ SPLIT_ROLES = ("bodies", "strokes", "markers", "dashes")
 
 
 def _carve_splits(syms, polys, markers, dashes, splits):
-    """AI 나눔을 기호 묶음에 넣는다. 나눔마다 그 노드의 pdf 개체를 가진 기호(source)에서 묶음(groups)마다 그 개체를 떼어 새 기호를
-    만든다. 몸체나 선이 하나도 없는 묶음은 기호가 될 수 없어 건너뛴다. 개체를 떼인 기호는 몸체만 남기고, 그 노드에 들던 선·화살촉·
-    점선 조각은 놓아 준다(배관 사슬로 다시 읽혀 새 기호끼리 이어진다). 몸체가 남지 않은 기호는 없앤다.
+    """AI 나눔이나 사람의 나누기 연산을 기호 묶음에 넣는다. 나눔마다 그 노드의 pdf 개체를 가진 기호(source)에서 묶음(groups)마다
+    그 개체를 떼어 새 기호를 만든다. 몸체나 선이 하나도 없는 묶음은 기호가 될 수 없어 건너뛴다. 개체를 떼인 기호는 몸체만 남기고,
+    그 노드에 들던 선·화살촉·점선 조각은 놓아 준다(배관 사슬로 다시 읽혀 새 기호끼리 이어진다). 몸체가 남지 않은 기호는 없앤다.
+    splits: [{"node": [노드의 pdf 개체 id] 또는 None, "groups": [[id, ...] 또는 {"name", "objects": [id, ...]}]}].
+    node가 None이면 묶음 개체를 가진 기호의 개체 전체가 노드다(사람 연산은 다시 추출한 쪽의 덩어리를 모른다).
+    이름 있는 묶음의 새 기호는 그 이름을 id로 받는다(build_extraction).
     → (기호, 선, 화살촉, 점선 조각). 새 기호는 끝에 붙는다."""
     syms = [s for s in syms if s.alive]
     polys, markers, dashes = list(polys), list(markers), list(dashes)
     made = []
     for sp in splits:
-        node = set(sp["node"])
+        groups = [(g.get("name"), list(g["objects"])) if isinstance(g, dict) else (None, list(g)) for g in sp["groups"]]
+        if sp.get("node") is None:
+            wanted = {i for _, g in groups for i in g}
+            node = {i for s in syms if s.alive and wanted & set(s.evidence()) for i in s.evidence()}
+        else:
+            node = set(sp["node"])
         sources = [s for s in syms if s.alive and node & set(s.evidence())]
         touched = set()
-        for group in sp["groups"]:
+        for name, group in groups:
             ids = set(group) & node
             taken = {role: [m for s in sources for m in getattr(s, role) if m["id"] in ids] for role in SPLIT_ROLES}
             if not (taken["bodies"] or taken["strokes"]):
@@ -3487,6 +3502,8 @@ def _carve_splits(syms, polys, markers, dashes, splits):
             for role in ("markers", "dashes"):
                 if taken[role]:
                     new.add(taken[role], role)
+            if name:
+                new.name = name
             made.append(new)
         for s in sources:
             if id(s) not in touched:
@@ -3502,6 +3519,52 @@ def _carve_splits(syms, polys, markers, dashes, splits):
             else:
                 s.alive = False
     return [s for s in syms if s.alive] + made, polys, markers, dashes
+
+
+def _sym_numbers(syms, numbering):
+    """기호마다 sym 번호. numbering(나눔 없는 분석의 기호 pdf 개체 목록, 번호 = 자리 + 1)이 없으면 목록 순번이다.
+    있으면(나눔으로 다시 추출) pdf 개체가 똑같은 기호만 그 번호를 받고, 개체가 바뀐 기호(조각을 떼인 덩어리, 풀려난 선을
+    받은 기호, 새 사슬의 배출구·끝막음)는 마지막 번호 뒤 번호를 받는다. 옛 번호를 다른 모양에 물려주지 않으므로 같은 id가
+    다른 기호를 가리키지 않는다(못 찾는 쪽이다). 이름 있는 기호(사람의 나누기)는 번호를 쓰지 않는다."""
+    if not numbering:
+        return list(range(1, len(syms) + 1))
+    exact = {}
+    for i, ev in enumerate(numbering, 1):
+        exact.setdefault(ev, i)
+    out, used = [None] * len(syms), set()
+    plain = [(k, tuple(s.evidence())) for k, s in enumerate(syms) if not getattr(s, "name", None)]
+    for k, ev in plain:
+        i = exact.get(ev)
+        if i is not None and i not in used:
+            out[k] = i
+            used.add(i)
+    nxt = len(numbering)
+    for k, ev in plain:
+        if out[k] is None:
+            nxt += 1
+            out[k] = nxt
+    return [x if x is not None else 0 for x in out]
+
+
+def reader_version():
+    """원시 요소를 읽는 pdfplumber 판. 같은 바이트도 판이 바뀌면 pdf-path 순번이 바뀔 수 있어 연산에 적는다."""
+    import pdfplumber
+    return "pdfplumber-%s" % pdfplumber.__version__
+
+
+def object_shapes(path, page=0):
+    """쪽의 pdf 개체 전부(기호·틀·표 칸·점선 경로 포함) {id: [x0, y0, x1, y1, 점 수, 닫힘]}. 좌표는 0.1pt 반올림.
+    닫힘은 닫힌 경로이거나 첫 점과 끝 점이 같은 4점 넘는 꼴이다. 사람 연산이 가리킨 개체를 다시 찾을 때 쓴다."""
+    prims = load_page(path, page)[4]
+    out = {}
+    for i, pr in enumerate(prims):
+        for k, (pts, closed, ext, curved) in enumerate(pr["subpaths"]):
+            if len(pts) < 1:
+                continue
+            b = _bbox_pts(ext)
+            shut = bool(closed and len(pts) >= 3) or (len(pts) > 4 and tuple(pts[0]) == tuple(pts[-1]))
+            out["pdf-path-%04d" % i + ("" if k == 0 else "-%d" % k)] = [round(v, 1) for v in b] + [len(pts), shut]
+    return out
 
 
 def member_shapes(path, page=0, params=None):
@@ -3786,9 +3849,14 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
          and not (si in hits and hits[si].outcome == "matched")
          and is_wave_mark(s.bodies + s.strokes + s.markers + s.dashes)], blocks, prm["label_gap_max"])
     class_marks = {}
+    numbers = _sym_numbers(syms, analysis.get("numbering"))
     for n, s in enumerate(syms, 1):
         local_id = "local-node-%03d" % n
-        sid = "pdf-p%d-sym-%04d" % (page, n)
+        name = getattr(s, "name", None)
+        if name:  # 사람의 나누기 연산이 만든 기호: 연산에 묶인 id라 다른 나누기가 더해지거나 빠져도 그대로다
+            sid = "pdf-p%d-%s" % (page, name)
+        else:
+            sid = "pdf-p%d-sym-%04d" % (page, numbers[n - 1])
         local_of[id(s)] = (local_id, sid)
         if id(s) in noise:
             dropped.append({"source_object_id": sid, "label_text": "", "bbox": _box_out(s.bbox), "reason": noise[id(s)]})
