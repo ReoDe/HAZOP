@@ -1,6 +1,6 @@
 # 그림 입력 AI 검토: 실행 방법과 실측 (R3, 2026-11-17)
 
-스크립트가 종류를 못 정한 노드(kind)와 태그가 빈 밸브·계기·설비(tag)에 대해, 노드 조각 그림과 범례판을 AI에 보여 후보를 받는다. 선·연결·좌표는 스크립트가 정하고, AI 후보는 따로 저장해 채점의 '스크립트 + AI 후보' 줄에만 합친다. 기준값은 '스크립트만'이다. 계획은 `D:\HAZOP-trials\2026-11-14-r3-read-quality\aiplan\plan.md`, 규칙은 [`docs/specs/extraction.md`](../../../specs/extraction.md#ai-review) 'AI 검토'를 따른다.
+스크립트가 종류를 못 정한 노드(kind)와 태그가 빈 밸브·계기·설비(tag)에 대해, 노드 조각 그림과 범례판을 AI에 보여 후보를 받는다. 선·연결·좌표는 스크립트가 정하고, AI 후보는 따로 저장해 채점의 '스크립트 + AI 후보' 줄에만 합친다. 기준값은 '스크립트만'이다. 계획은 시험 폴더 `2026-11-14-r3-read-quality\aiplan\plan.md`, 규칙은 [`docs/specs/extraction.md`](../../../specs/extraction.md#ai-review) 'AI 검토'를 따른다.
 
 ## 무엇이 어떻게 가나
 
@@ -19,7 +19,7 @@
 
 ## 실행 방법 (d-read가 보류 6쪽을 잴 때 그대로 따른다)
 
-1. 같은 커밋을 분리 작업트리로 꺼낸다. 쪽 PDF는 연결 고리를 만들지 않고 명령에 `--input-dir D:\HAZOP\resources\references\APR1400_DCD\by-drawing`으로 직접 준다(실측 3부터).
+1. 같은 커밋을 분리 작업트리로 꺼낸다. 쪽 PDF는 연결 고리를 만들지 않고 명령에 `--input-dir <APR1400 by-drawing 폴더>`으로 직접 준다(실측 3부터).
 2. 인터프리터는 `%USERPROFILE%\.hazop\venv-py312\Scripts\python.exe`, `PYTHONIOENCODING=utf-8`. 먼저 `scripts/preflight.py`.
 3. 구독 연결만 쓴다. `claude auth status`가 구독(`claude.ai`, `firstParty`)이어야 한다. API 키 환경변수는 클라이언트가 지운다. 다른 구독 사용 세션과 겹치지 않게 돌린다.
 4. 명령(정답지 폴더 하나씩. 저장 폴더는 실행마다 새로):
@@ -30,9 +30,9 @@
 
    - 모델은 연결 기본값 `claude-opus-5-5`, 추론 강도 `medium`(`--ai-effort` 기본값). 바꾸지 않는다.
    - 사용 한도에 걸려 멈추면(`멈춤(limit_reached)`) 재설정 뒤 **같은 명령, 같은 저장 폴더**로 다시 돌린다. 받은 응답은 `responses/`에서 다시 쓰고 부르지 않는다(출력의 '실제 호출' 수로 확인).
-5. 저장 위치 규칙: 조각 그림과 응답 저장본은 저장소 밖 시험 폴더에만 둔다(`D:\HAZOP-trials\<날짜>-<주제>\...`, 폴더 README에 주인·목적·keep_until). 저장소에는 코드와 SNP 고정 응답(`tests/fixtures/ai-review/snp-images`)만 넣는다.
+5. 저장 위치 규칙: 조각 그림과 응답 저장본은 저장소 밖 시험 폴더에만 둔다(`<시험 폴더 루트>\<날짜>-<주제>\...`, 폴더 README에 주인·목적·keep_until). 저장소에는 코드와 SNP 고정 응답(`tests/fixtures/ai-review/snp-images`)만 넣는다.
 6. 다시 재기: `python scripts/check_read_quality.py --extra-keys <정답지 폴더> --ai-run fixed --ai-fixed-dir <저장 폴더>\responses --ai-images`.
-7. 후보별 판정(맞게 바꿈·틀리게 바꿈·없던 자리에 틀리게 붙임): `D:\HAZOP-trials\2026-11-14-r3-read-quality\aisnp\diffcheck.py <저장소> <정답지 폴더> <저장 폴더>`.
+7. 후보별 판정(맞게 바꿈·틀리게 바꿈·없던 자리에 틀리게 붙임): 시험 폴더 `2026-11-14-r3-read-quality\aisnp\diffcheck.py <저장소> <정답지 폴더> <저장 폴더>`.
 8. 보류 쪽은 그림을 열어 원인을 찾지 않는다. 합계만 적는다.
 
 ## 실측 1: SNP 6쪽 (가상 도면, 경로 확인)
@@ -42,7 +42,7 @@
 | 코드 | 이 문서를 넣은 커밋(작업트리 R3, 7289dd2 위) |
 | 명령 | `check_read_quality.py --only SNP-M-101,SNP-M-102,SNP-M-201,SNP-M-301,SNP-M-401,SNP-M-501 --ai-run subscription --ai-images --ai-cap 20 --ai-save <run1·run2>` |
 | 연결 | 구독(Claude Code 2.1.323), `claude-opus-5-5`, medium, 도구 끔, stream-json 그림 블록 |
-| 저장본 | `D:\HAZOP-trials\2026-11-14-r3-read-quality\aisnp\run1`, `run2`(응답 `responses/`), 다시 재기 `replay.log`. 저장소 고정 응답은 run1 응답 6개(`tests/fixtures/ai-review/snp-images`) |
+| 저장본 | 시험 폴더 `2026-11-14-r3-read-quality\aisnp\run1`, `run2`(응답 `responses/`), 다시 재기 `replay.log`. 저장소 고정 응답은 run1 응답 6개(`tests/fixtures/ai-review/snp-images`) |
 
 | 쪽 | 호출 | 초(run1 / run2) | 항목(kind·tag) | 후보 | 스크립트만 종류 | 스크립트 + AI 종류 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -65,7 +65,7 @@
 | 항목 | 조건 |
 | --- | --- |
 | 코드 | 6919c29 |
-| 명령 | `D:\HAZOP-trials\2026-11-14-r3-read-quality\aisnp\apr_dev.sh`: 정답지 폴더 `keys-dev`, `keys-dev2`(`D:\HAZOP-trials\2026-11-16-read-quality-extra`)마다 `check_read_quality.py --extra-keys <폴더> --ai-run subscription --ai-images --ai-cap 20 --ai-save aisnp\apr-run1` |
+| 명령 | 시험 폴더 `2026-11-14-r3-read-quality\aisnp\apr_dev.sh`: 정답지 폴더 `keys-dev`, `keys-dev2`(시험 폴더 `2026-11-16-read-quality-extra`)마다 `check_read_quality.py --extra-keys <폴더> --ai-run subscription --ai-images --ai-cap 20 --ai-save aisnp\apr-run1` |
 | 연결 | 구독(Claude Code 2.1.323), `claude-opus-5-5`, medium, 도구 끔, stream-json 그림 블록 |
 | 범례판 | 2장(109KB, 119KB), 견본 39종. 범례 쪽 001~004에서 22종, 나머지는 정답지 12쪽에서. 견본 없는 보기 종류 12개: chiller, control_valve, demineralizer, electric_heater, humidifier, isolation_valve, reactor_vessel, relay_converter, silencer, steam_generator, test_connection, turbine |
 | 조각 | 정답지 12쪽 기준 중앙값 1.9~5.9KB, 최대 17.6KB(`aisnp\apr-crops\summary.json`). 호출 하나에 범례판 2장(종류 항목이 있을 때) + 조각 10장 |
@@ -126,7 +126,7 @@ apr-run1 후보 가운데 정답에 없는 자리에 붙어 오검출을 늘린 
 - (b) 7개는 정답지가 틀렸다기보다 채점의 짝짓기 허용 범위 밖이다(노드가 기호의 일부만 덮음). 정답지는 고치지 않았다. 의심 목록은 아래 '정답지 의심 목록'에 적었다.
 - (a) 가운데 늘려 그리는 외곽 종류(tank)와 도면 밖 연결(continuation)은 아래 (가)로 답에서 빠진다. 흐름 화살촉은 프롬프트에 '기호 아님'으로 적었다.
 
-### 바꾼 것 (코드 5d84eea, 쪽 밖 상자 결함 수정 ec9ffa8 위에서 다시 잼)
+### 바꾼 것 (코드 3c209c5, 쪽 밖 상자 결함 수정 b6dc45c 위에서 다시 잼)
 
 | 항목 | 실측 2 | 실측 3 |
 | --- | --- | --- |
@@ -139,13 +139,13 @@ apr-run1 후보 가운데 정답에 없는 자리에 붙어 오검출을 늘린 
 
 - 근거: 기호 그림 목록(`resources/library/drawing-symbols/manifest.json`)이 이미 기호마다 `fit`을 갖고 있다. `keep`은 정해진 비율로 그리는 기호이고 `stretch`는 크기에 맞춰 늘리는 외곽(탱크·용기·열교환기·냉동기·전기 가열기·도면 밖 연결 표기 등 13종)이다. 늘리는 외곽은 견본 하나로 모양을 대 볼 수 없다. 그다음 범례판에 견본이 실리지 않은 3종(humidifier, psv, relay_converter: 저장소 정답지 12쪽에 없음)을 뺐다. 개발용 정밀도는 목록을 정하는 데 쓰지 않았다. 그래서 실측 2에서 6/6이던 humidifier도 빠졌다.
 - 범례판 견본: 범례 쪽 스크립트 추출은 종류가 틀린 조각이 섞여(manual_valve·check_valve 칸에 밸브가 아닌 조각) 쓰지 않는다. 정답지 12쪽(008·012·016·025·033·046·062·063·072·097·105·128)은 개발용·보류 쪽과 겹치지 않는다. 새 범례판은 2장(126KB, 96KB), 35칸이다(`aisnp\narrow\legend\`, 보내지 않은 사본).
-- 쪽 밖 상자 결함 수정(ec9ffa8)은 개발용 12쪽에서 '그림 없이 건너뜀' 0이다. 기본안 저장 응답을 ec9ffa8에서 다시 돌린 두 줄이 실행 값과 같다(`apr-run3\replay-ec9ffa8.log`).
+- 쪽 밖 상자 결함 수정(b6dc45c)은 개발용 12쪽에서 '그림 없이 건너뜀' 0이다. 기본안 저장 응답을 결함 수정 뒤 코드(작업트리 커밋 ec9ffa8, 본 브랜치 3c209c5와 같은 내용)에서 다시 돌린 두 줄이 실행 값과 같다(`apr-run3\replay-ec9ffa8.log`).
 
 ### 조건
 
 | 항목 | 조건 |
 | --- | --- |
-| 명령 | `aisnp\narrow\run3.sh base`(기본안), `run3.sh wide`(넓힌 조각안): 정답지 폴더 `keys-dev`, `keys-dev2`마다 `check_read_quality.py --input-dir D:\HAZOP\resources\references\APR1400_DCD\by-drawing --extra-keys <폴더> --ai-run subscription --ai-images [--ai-wide] --ai-cap 20 --ai-save <저장 폴더>` |
+| 명령 | `aisnp\narrow\run3.sh base`(기본안), `run3.sh wide`(넓힌 조각안): 정답지 폴더 `keys-dev`, `keys-dev2`마다 `check_read_quality.py --input-dir <APR1400 by-drawing 폴더> --extra-keys <폴더> --ai-run subscription --ai-images [--ai-wide] --ai-cap 20 --ai-save <저장 폴더>` |
 | 연결 | 구독(`claude.ai`, firstParty), `claude-opus-5-5`, medium, 도구 끔 |
 | 저장본 | 기본안 `aisnp\apr-run3`(응답 116개), 넓힌 조각안 `aisnp\apr-run3-wide`, 넓혀 다시 묻기만 한 번 더 `aisnp\apr-run3-wide2`. 후보 판정 `diff.txt`, 통계 `ratios.txt`(각 폴더). 지시서의 `apr-run2` 이름은 실측 2의 133쪽 흔들림 저장본이 이미 써서 `apr-run3`으로 했다 |
 | 넓힌 조각안 | 첫 묻기는 기본안과 요청이 같아 `apr-run3\responses`를 복사해 두고 돌렸다. 새로 부른 것은 넓혀 다시 묻는 호출뿐이다 |
@@ -236,3 +236,23 @@ apr-run1 후보 가운데 정답에 없는 자리에 붙어 오검출을 늘린 
 - 기본안 종류 정밀도 78.2%(68/87)는 아직 80% 아래다. 남은 오답은 isolation_valve 6개(그 가운데 099쪽 5개는 넓힌 조각에서 check_valve로 맞게 바뀜)와 manual_valve 5개가 대부분이다. 몸통이 같은 밸브를 둘레 25pt 조각으로는 구동부까지 못 보고 고른 것이다. 그 밖에는 계기 원·상자를 indicator·controller로 붙인 5개와 compressor 2개다.
 - 넓힌 조각안은 두 번 모두 87%대(72/82, 74/85)로 끄는 선을 넘는다. 비용은 호출 7회(약 90초)다. 다만 차이를 만든 것은 후보 몇 개다. 099쪽 한 장의 5개가 크다. 개발용 12쪽만으로 일반화하기는 이르다.
 - 다음 안: (1) 넓힌 조각안을 기본으로 켜고, 보류 6쪽은 d-read가 같은 명령에 `--ai-wide`를 붙여 합계만 잰다. (2) 계기 원(indicator·controller)은 범례판 견본이 원·사각 테두리만 달라 헷갈린다. 넓힌 조각안 대상에 계기 종류를 더할지는 보류 6쪽 결과를 보고 정한다. (3) 냉동기처럼 둘로 나뉜 설비 조각의 짝짓기는 채점 규칙 문제라 d-read와 정한다.
+
+## 실측 4: 보류 6쪽 (d-read, @b6dc45c, 좁히기 전 설정, 합계만)
+
+R3는 보류 6쪽을 돌리지도 보지도 않았다. 아래는 d-read가 '실행 방법' 절 그대로 잰 합계를 총괄을 거쳐 받은 값이다. 설정은 실측 2와 같다(종류 답 좁히기·모름 답·넓힌 조각 전, 쪽 밖 상자 결함 수정 b6dc45c 뒤).
+
+| 줄 | 종류 | 태그 | 연결 | 속성 |
+| --- | --- | --- | --- | --- |
+| 스크립트만 | 399/747 (53.4%, 오검출 19) | 102/150 | 630/1110 | 230/344 |
+| 스크립트 + AI 후보 | 528/766 (68.9%, 오검출 38) | 107/150 | 634/1106 | 239/345 |
+
+- 스크립트만 연결은 @269adf0의 631/1113에서 630/1110으로 바뀌었다. 개선 78(47c3dca, 흐름 모순 고침) 때문이다(맞은 수 −1, 오검출 −3).
+- 후보 213개: 맞게 바꿈 140, 맞던 값을 틀리게 바꿈 0, 정답에 없는 자리에 붙임 20, 그대로 53.
+- 과제별 정밀도: 종류 129/201(64.2%), 태그 5/5, 정상·고장 위치 6/7.
+- 종류 값별: sparger 46/46, reducer 22/22, fan 16/16, manual_valve 17/24, control_valve 1/17, controller 1/8, expansion_joint 0/7, flexible_hose 0/6.
+- 호출 64회(새로 35, 저장본 다시 씀 29), 406초, 오류 0. 그림 없이 건너뜀 2(쪽 밖 상자). '기호 아님' 답 136.
+
+### 읽은 점
+
+- 보류 쪽에서도 맞던 값을 틀리게 바꾼 후보는 0이다. 종류 정밀도 64.2%는 개발용 같은 설정(56.7%)보다 높지만 끄는 선 80% 아래다.
+- 틀린 종류 가운데 control_valve·controller는 구동부·옆 글자가 필요한 종류라 넓힌 조각안이 노리는 자리다. expansion_joint·flexible_hose는 `fit: keep`이라 좁힌 허용 목록에 그대로 남는다(범례판 견본이 있으면). 좁힌 설정이 이 둘을 고칠지는 재 보기 전에는 모른다. 좁힌 설정(3c209c5)으로 보류를 다시 잴지는 총괄이 정한다.
