@@ -52,7 +52,8 @@ from .pdf_vector_grouping import (
 from .pdf_vector_connectors import (
     SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes, same_sheet_letter_pairs,
 )
-from .pdf_vector_flow import (_chain_flow, _end_symbol_flows, _inline_unclassified, _propagate_flows, _vent_ends, arrow_axis,
+from .pdf_vector_flow import (_chain_flow, _end_symbol_flows, _inline_unclassified, _propagate_flows, _revert_contradictions,
+                               _through_instruments, _vent_ends, arrow_axis,
                                continuation_flow, end_arrow)
 from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels, parse_label
 from .pdf_vector_labels import (ALARM_COLUMN_TOL, ALARM_RE, ISA_LABEL_RE, PAREN_TOKEN_RE, PLATE_PART_RE, POSITION_CODE_RE, POSITION_TEXT_RE, NUMBER_PLATE_RE,
@@ -2201,10 +2202,36 @@ def _boundary_marks(cls, prm):
             used.update((id(a), id(b)))
             gone += [a, b] + [p for p in lines if id(p) not in taken]
             taken.update(id(p) for p in lines)
+    gone += _arrow_brackets(cls, prm, used)
     ids = {id(m) for m in gone}
     cls["markers"] = [m for m in cls["markers"] if id(m) not in ids]
     cls["polys"] = [p for p in cls["polys"] if id(p) not in ids]
     cls["boundary_marks"] = gone
+
+
+BRACKET_MAX = 12.0     # 화살 괄호 표시의 긴 변 상한(pt). 091쪽 지하 배관 구간 표시는 약 5×5
+BRACKET_SAME_COS = 0.9  # 두 화살촉이 같은 쪽을 가리킨다고 보는 cos 하한
+
+
+def _arrow_brackets(cls, prm, used):
+    """선 하나(원시 경로 하나)의 두 끝이 모두 바깥을 가리키는 화살촉 안에 있고, 두 화살촉이 같은 쪽을 가리키는 작은
+    괄호(ㄇ 모양)는 배관이 아니라 표시다. 배관이 괄호 가운데를 지나며 구간이 바뀌는 곳을 가리킨다(APR1400 091쪽 지하
+    배관 시작). 남겨 두면 괄호 두 다리가 배관 분기와 대기 방출 끝으로 읽혀 흐름이 거꾸로 퍼진다. → 뺄 선·화살촉 목록."""
+    tips = [m for m in cls["markers"] if id(m) not in used]
+    out = []
+    for p in cls["polys"]:
+        pts = p["pts"]
+        if len(pts) < 3 or p.get("closed") or max(p["bbox"][2] - p["bbox"][0], p["bbox"][3] - p["bbox"][1]) > BRACKET_MAX:
+            continue
+        hits = [end_arrow(pts, k, tips, prm) for k in (0, 1)]
+        if None in hits or hits[0][0] is hits[1][0]:
+            continue
+        (_, d0), (_, d1) = (arrow_axis(h[0]) for h in hits)
+        if d0[0] * d1[0] + d0[1] * d1[1] < BRACKET_SAME_COS:
+            continue
+        out += [p, hits[0][0], hits[1][0]]
+        used.update(id(h[0]) for h in hits)
+    return out
 
 
 def _black_fill_signature(group):
@@ -3588,7 +3615,14 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     passes = {local_of[id(s)][0] for s in syms if s.housing} | _inline_unclassified(relations, node_out)
     kind_of = {n["local_id"]: n.get("kind") for n in node_out}
     seeded = _end_symbol_flows(relations, {local_of[id(s)][0]: s for s in syms if id(s) in local_of}, kind_of)
-    if _propagate_flows(relations, kind_of, passes) + seeded:
+    # 배관이 꿰고 지나가는 계기(유량계 상자)로 가는 측정선은 분기점에서 보면 배관 가지다. 계기 원으로 가는 탭 하나는
+    # 흐름이 없으니 가지로 세지 않는다
+    meas = [r for r in relations if r["kind"] == "measurement_connection" and r["line_type"] == "pdf_solid"]
+    through = _through_instruments(meas, {n["local_id"]: n for n in node_out if n["local_id"] in instrument_ids})
+    side = {e["node_local_id"] for r in meas if through & {e["node_local_id"] for e in r["endpoints"]}
+            for e in r["endpoints"]}
+    if _propagate_flows(relations, kind_of, passes, side) + seeded:
+        _revert_contradictions(relations, kind_of, passes, side)
         filled = {r["local_id"] for r in relations if r.get("flow_direction")} - before
         unknowns[:] = [u for u in unknowns if not (u.get("check") == "unknown_flow_direction" and u.get("target") in filled)]
     # 배관 글자(구경·배관 번호)를 가장 가까운 물리 배관 속성으로(pdf_vector_lines). 붙인 글자는 남은 글자 목록에서 뺀다

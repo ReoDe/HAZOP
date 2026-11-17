@@ -279,13 +279,52 @@ def _inline_unclassified(relations, nodes):
     return out
 
 
+INSTR_FACING_COS = -0.9   # 계기에 닿는 두 실선의 마지막 토막이 마주 본다고 보는 cos 상한
+INSTR_OFFSET = 1.5        # 마주 본 두 토막이 한 줄이라고 보는 옆 어긋남 상한(pt)
+INSTR_GAP_RATIO = 0.5     # 두 선 끝 사이 거리 ≤ 계기 긴 변 × 비율(배관이 상자 한 귀퉁이를 꿰고 지나감)
+
+
+def _through_instruments(meas, instruments):
+    """배관이 꿰고 지나가는 계기 id 집합. instruments: {node_local_id: 노드}. 계기에 닿는 실선 측정선 가운데 둘의
+    마지막 토막이 한 줄 위에서 마주 보고, 두 끝 사이가 계기 크기보다 훨씬 짧은 것(129쪽 FIT 상자 밑변을 지나는 급수
+    배관, 두 끝 사이 약 3pt·상자 긴 변 44pt). 계기 원 위아래로 들어오는 차압 탭은 두 끝 사이가 원 지름이라 넣지 않는다."""
+    last = {}
+    for r in meas:
+        path = [tuple(p) for p in r["evidence"]["pdf_path"]]
+        for e, seq in zip(r["endpoints"], (path, path[::-1])):
+            n = e["node_local_id"]
+            if n not in instruments:
+                continue
+            q = next((p for p in seq[1:] if math.dist(p, seq[0]) > 0.5), None)
+            if q is not None:
+                last.setdefault(n, []).append((seq[0], q))
+
+    def unit(p, q):
+        return (p[0] - q[0]) / math.dist(p, q), (p[1] - q[1]) / math.dist(p, q)
+
+    out = set()
+    for n, segs in last.items():
+        g = instruments[n]["geometry"]
+        gap = INSTR_GAP_RATIO * max(g["width"], g["height"])
+        for i, (p1, q1) in enumerate(segs):
+            u1 = unit(p1, q1)
+            for p2, q2 in segs[i + 1:]:
+                u2 = unit(p2, q2)
+                if u1[0] * u2[0] + u1[1] * u2[1] <= INSTR_FACING_COS and math.dist(p1, p2) <= gap and \
+                        abs((p2[0] - p1[0]) * u1[1] - (p2[1] - p1[1]) * u1[0]) <= INSTR_OFFSET:
+                    out.add(n)
+    return out
+
+
 def _ends(r):
     return [e.get("node_local_id") for e in r["endpoints"]]
 
 
-def _propagate_flows(relations, kind_of, passes=()):
+def _propagate_flows(relations, kind_of, passes=(), side_branches=()):
     """방향 없는 물리 배관에 흐름 보존으로 방향을 매긴다(제자리에서 고침). kind_of: {node_local_id: kind}.
     passes: 종류와 상관없이 공기·유체가 지나가는 노드 id(공조기 칸, pdf_vector_grouping._housing_chains).
+    side_branches: 물리 배관 말고도 배관 가지(계기 상자를 꿰는 배관, _through_instruments)가 더 있는 분기점 id. 그
+    가지의 흐름을 모르므로 분기점 규칙을 쓰지 않는다(129쪽 유량계 상자로 가는 급수 배관).
     → 새로 정한 관계 수. 매긴 관계의 flow_direction basis는 'flow_continuity'."""
     pipes = [r for r in relations if r.get("kind") == "physical_connection" and None not in _ends(r)
              and _ends(r)[0] != _ends(r)[1]]
@@ -318,7 +357,7 @@ def _propagate_flows(relations, kind_of, passes=()):
             known = [s for s in sides if s]
             if (kind in PASS_KINDS or n in passes) and len(rs) == 2 and len(known) == 1:
                 want = "out" if known[0] == "in" else "in"
-            elif kind == "tee" and known and len(set(known)) == 1:
+            elif kind == "tee" and n not in side_branches and known and len(set(known)) == 1:
                 want = "in" if known[0] == "out" else "out"
             else:
                 continue
@@ -328,3 +367,28 @@ def _propagate_flows(relations, kind_of, passes=()):
             added += 1
             changed = True
     return added
+
+
+def _revert_contradictions(relations, kind_of, passes=(), side_branches=()):
+    """흐름 보존이 매긴 방향이 그림의 방향과 부딪친 곳을 되돌린다(제자리에서 고침). 흐름이 지나가는 노드(관계 2개인
+    2포트 기호·passes, 가지가 모두 물리 배관인 분기점)에 닿은 배관이 모두 방향을 알고 모두 들어오거나 모두 나가면, 그
+    노드에 닿은 'flow_continuity' 관계를 방향 모름으로 둔다. 그림이 그린 방향(화살촉·깃발·기호)은 남긴다.
+    → 되돌린 관계 수."""
+    at = {}
+    for r in relations:
+        if r.get("kind") == "physical_connection" and None not in _ends(r) and _ends(r)[0] != _ends(r)[1]:
+            for n in _ends(r):
+                at.setdefault(n, []).append(r)
+    undo = {}
+    for n, rs in at.items():
+        kind = kind_of.get(n)
+        if not ((kind in PASS_KINDS or n in passes) and len(rs) == 2 or
+                kind == "tee" and n not in side_branches and len(rs) >= 2):
+            continue
+        fds = [r.get("flow_direction") for r in rs]
+        if None in fds or len({fd.get("to") == n for fd in fds}) != 1:
+            continue
+        undo.update((id(r), r) for r, fd in zip(rs, fds) if fd.get("basis") == "flow_continuity")
+    for r in undo.values():
+        r["flow_direction"] = None
+    return len(undo)

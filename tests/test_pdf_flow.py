@@ -184,6 +184,51 @@ class InlineUnclassifiedTest(unittest.TestCase):
         self.assertEqual(pv._inline_unclassified(three, nodes), set())
 
 
+class FalseArrowTest(unittest.TestCase):
+    prm = dict(pv.PARAMS)
+
+    def test_small_arrow_bracket_is_a_mark_not_two_vents(self):
+        # APR1400 091쪽: 배관이 가운데를 지나는 ㄇ 모양 가는 선, 두 끝에 같은 쪽을 가리키는 화살촉
+        bracket = {"id": "b", "pts": [(0, 4.6), (0, 0), (5.3, 0), (5.3, 4.6)], "bbox": [0, 0, 5.3, 4.6]}
+        arrows = [dict(tri((x, 4.6), (x, 2.7), half=0.45), id="m%d" % i) for i, x in enumerate((0, 5.3))]
+        cls = {"polys": [bracket], "markers": arrows}
+        self.assertEqual({o["id"] for o in pv._arrow_brackets(cls, self.prm, set())}, {"b", "m0", "m1"})
+        apart = [arrows[0], dict(tri((5.3, -2), (5.3, -0.1), half=0.45), id="m2")]  # 한 화살촉이 반대쪽: 표시 아님
+        flipped = {"id": "b", "pts": [(0, 4.6), (0, 0), (5.3, 0), (5.3, -2)], "bbox": [0, -2, 5.3, 4.6]}
+        self.assertEqual(pv._arrow_brackets({"polys": [flipped], "markers": apart}, self.prm, set()), [])
+
+
+class ContradictionTest(unittest.TestCase):
+    def test_tee_with_pipe_through_instrument_branch_is_not_closed(self):
+        # 129쪽: 분기점 오른쪽 배관이 유량계 상자를 꿰어 측정선이 된다. 그 가지를 모르면 남은 하나를 정하지 않는다
+        nodes = {"t": "tee", "v": "solenoid_valve", "c": "check_valve"}
+        rels = [rel(1, "c", "t", "+"), rel(2, "t", "v")]
+        pv._propagate_flows(rels, nodes, (), {"t"})
+        self.assertIsNone(rels[1]["flow_direction"])
+        pv._propagate_flows(rels, nodes)
+        self.assertEqual(rels[1]["flow_direction"]["to"], "v")
+
+    def test_only_propagated_flows_at_contradiction_are_reverted(self):
+        nodes = {"v": "manual_valve", "t": "tee", "a": "tank", "b": "tank", "c": "tank"}
+        rels = [rel(1, "a", "v", "+"), rel(2, "b", "v", "+"), rel(3, "a", "t", "+"), rel(4, "t", "b", "+"),
+                rel(5, "t", "c", "+")]
+        rels[0]["flow_direction"]["basis"] = "pdf_arrowhead"
+        rels[1]["flow_direction"]["basis"] = "flow_continuity"
+        for r in rels[2:]:
+            r["flow_direction"]["basis"] = "flow_continuity"
+        self.assertEqual(pv._revert_contradictions(rels, nodes), 1)
+        self.assertEqual([r["flow_direction"] is None for r in rels], [False, True, False, False, False])
+
+    def test_pipe_through_instrument_box_versus_taps(self):
+        box = {"local_id": "i", "geometry": {"x": 0, "y": 0, "width": 15, "height": 44}}
+        bubble = {"local_id": "j", "geometry": {"x": 100, "y": 0, "width": 13.6, "height": 13.6}}
+        meas = [{"endpoints": [{"node_local_id": "t"}, {"node_local_id": "i"}], "evidence": {"pdf_path": [[-30, 43], [6, 43]]}},
+                {"endpoints": [{"node_local_id": "i"}, {"node_local_id": "m"}], "evidence": {"pdf_path": [[9, 43], [60, 43]]}},
+                {"endpoints": [{"node_local_id": "p"}, {"node_local_id": "j"}], "evidence": {"pdf_path": [[106.8, -20], [106.8, 0]]}},
+                {"endpoints": [{"node_local_id": "j"}, {"node_local_id": "q"}], "evidence": {"pdf_path": [[106.8, 13.6], [106.8, 30]]}}]
+        self.assertEqual(pv._through_instruments(meas, {"i": box, "j": bubble}), {"i"})
+
+
 class SnpFlowTest(unittest.TestCase):
     """SNP 가상 도면은 drawio에서 그린 화살촉이 PDF에 그대로 있다. 추출이 방향을 하나 이상 정하는지."""
 
