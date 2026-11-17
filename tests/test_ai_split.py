@@ -154,6 +154,44 @@ class RunTest(unittest.TestCase):
             {"box": [108, 50, 108, 72], "kind": "pump", "match": "other", "confidence": 0.9, "reason": ""}]))
         self.assertEqual((cands, stats["split_dropped"]), ([], 2))
 
+    VALVE = {"box": [108, 50, 122, 72], "kind": "manual_valve", "match": "legend", "confidence": 0.9, "reason": "밸브"}
+    PUMP = {"box": [198, 56, 232, 84], "kind": "pump", "match": "other", "confidence": 0.7, "reason": "펌프"}
+
+    def test_accepted_candidate_survives_a_rerun_whose_answers_come_in_another_order(self):
+        first, _, _ = self.run_split(self.answer_for_big([self.VALVE]))
+        doc = ai_review.merge_run(ai_review.new_doc("T-1", ex_fixture()), {"candidates": first, "stats": {}})
+        doc["candidates"][0]["status"] = "accepted"
+        again, _, _ = self.run_split(self.answer_for_big([self.PUMP, self.VALVE]))
+        ai_review.merge_run(doc, {"candidates": again, "stats": {}})
+        got = sorted((c["values"][0], c["status"]) for c in doc["candidates"])
+        self.assertEqual(got, [("manual_valve", "accepted"), ("pump", "proposed")])
+
+    def test_candidate_id_comes_from_the_lump_and_its_grouped_objects(self):
+        a, _, _ = self.run_split(self.answer_for_big([self.VALVE, self.PUMP]))
+        b, _, _ = self.run_split(self.answer_for_big([self.PUMP, dict(self.VALVE, box=[109, 51, 121, 71])]))
+        self.assertEqual({c["cand_id"]: c["pdf_objects"] for c in a}, {c["cand_id"]: c["pdf_objects"] for c in b})
+
+    def test_huge_box_drops_only_that_symbol_and_the_review_goes_on(self):
+        def answer(req):
+            crop = ai_split.Crop(page(), list(BIG))
+            return {"symbols": [dict(self.PUMP, box=[0, 0, 10 ** 400, 10]), dict(self.PUMP, box=[0, 0, 1e999, 1e999]),
+                                dict(self.PUMP, box=px(crop, self.PUMP["box"]))]}
+        cands, stats, client = self.run_split(answer)
+        self.assertEqual([c["pdf_objects"] for c in cands], [["pdf-path-0003"]])
+        self.assertEqual(stats["split_calls"], 2)
+
+    def test_boxes_that_are_not_finite_or_outside_the_picture_are_dropped_without_stopping(self):
+        crop = ai_split.Crop(page(), list(BIG))
+        w, h = crop.img.size
+        bad = [[0, 0, 10 ** 400, 10], [0, 0, float("inf"), 10], [0, 0, float("nan"), 10], [-3 * w, 0, 10, 10],
+               [0, 0, 10, 5 * h]]
+        res = {"output": {"symbols": [dict(self.PUMP, box=b) for b in bad]
+                          + [dict(self.PUMP, kind=["pump"]), dict(self.PUMP, box=px(crop, self.PUMP["box"]))]}}
+        answers, dropped = ai_split._answers(res, {"pump"}, crop)
+        self.assertEqual((len(answers), dropped), (1, len(bad) + 1))
+        for odd in ({"symbols": {"box": [0, 0, 1, 1]}}, {"symbols": "x"}, ["symbols"], None):
+            self.assertEqual(ai_split._answers({"output": odd}, {"pump"}, crop)[0], [])
+
     def test_stays_inside_the_remaining_call_budget(self):
         _, stats, client = self.run_split(lambda req: {"symbols": []}, limit=20, used=19)
         self.assertEqual((stats["split_calls"], stats["calls"], len(client.requests)), (1, 20, 1))

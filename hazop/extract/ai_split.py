@@ -14,6 +14,7 @@
 후보의 묶음을 추출의 나눔 입력(pdf_vector.extract(splits=...))으로 다시 추출해 연결까지 다시 잰다(split_inputs).
 """
 
+import hashlib
 import json
 import math
 import re
@@ -33,6 +34,7 @@ PART_TIE = 1.0       # 가장 가까운 새 기호 둘의 거리 차가 이 값 
 API_LONG = 1568     # 그림 긴 변 상한(px). 넘으면 받는 쪽이 줄여 좌표가 어긋나므로 미리 줄인다
 API_PIXELS = 1150000  # 그림 넓이 상한(px²)
 SPLIT_MAX = 40       # 한 덩어리에서 받는 기호 수 상한
+BOX_MARGIN = 0.05    # AI 상자가 조각 그림 밖으로 나가도 되는 여유(그림 가로·세로 비율). 넘으면 그 기호 답을 버린다
 TASK = "split"
 PRIM_RE = re.compile(r"pdf-path-(\d+)")
 
@@ -173,22 +175,55 @@ def _union(boxes):
     return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
 
-def _answers(res, kinds):
-    """응답에서 꼴이 맞는 기호 답 목록 [(box, kind, match, confidence, reason)]과 버린 수."""
+def _finite(v):
+    """유한한 수면 float, 아니면 None(참·거짓, 글자, 무한대·NaN, float로 바꿀 수 없을 만큼 큰 정수)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    try:
+        v = float(v)
+    except OverflowError:
+        return None
+    return v if math.isfinite(v) else None
+
+
+def _box_px(box, size):
+    """조각 그림 픽셀 상자 [x0, y0, x1, y1](float) 또는 None. 네 값이 유한하고 넓이가 있으며 그림 안(둘레 BOX_MARGIN 비율 여유)에
+    들어야 한다."""
+    if not isinstance(box, list) or len(box) != 4:
+        return None
+    vals = [_finite(v) for v in box]
+    if None in vals or vals[0] == vals[2] or vals[1] == vals[3]:
+        return None
+    w, h = size
+    mx, my = BOX_MARGIN * w, BOX_MARGIN * h
+    if not all(-mx <= v <= w + mx for v in vals[0::2]) or not all(-my <= v <= h + my for v in vals[1::2]):
+        return None
+    return vals
+
+
+def _answers(res, kinds, crop):
+    """응답에서 꼴이 맞는 기호 답 목록 [(box, kind, match, confidence, reason)]과 버린 수. 꼴이 틀린 답은 그 기호만 버린다."""
     out, dropped = [], 0
-    for a in ((res.get("output") or {}).get("symbols") or [])[:SPLIT_MAX]:
-        box = a.get("box") if isinstance(a, dict) else None
-        conf = a.get("confidence") if isinstance(a, dict) else None
-        ok = (isinstance(box, list) and len(box) == 4
-              and all(isinstance(v, (int, float)) and not isinstance(v, bool) and v == v for v in box)
-              and box[0] != box[2] and box[1] != box[3] and a.get("kind") in kinds
-              and isinstance(conf, (int, float)) and not isinstance(conf, bool) and 0 <= conf <= 1)
-        if not ok:
+    output = res.get("output")
+    symbols = output.get("symbols") if isinstance(output, dict) else None
+    for a in (symbols if isinstance(symbols, list) else [])[:SPLIT_MAX]:
+        a = a if isinstance(a, dict) else {}
+        box = _box_px(a.get("box"), crop.img.size)
+        conf = _finite(a.get("confidence"))
+        kind = a.get("kind")
+        if box is None or conf is None or not 0 <= conf <= 1 or not isinstance(kind, str) or kind not in kinds:
             dropped += 1
             continue
         reason = a.get("reason") if isinstance(a.get("reason"), str) else ""
-        out.append((box, a["kind"], "legend" if a.get("match") == "legend" else "other", float(conf), reason))
+        out.append((box, kind, "legend" if a.get("match") == "legend" else "other", conf, reason))
     return out, dropped
+
+
+def item_id(node, ids):
+    """후보 항목 id: 덩어리 노드와 묶인 pdf 개체 집합에서 만든다. 답 순서가 바뀐 다시 실행에서도 같은 묶음은 같은 id라,
+    후보 문서 합치기(ai_review.merge_run, cand_id 기준)가 사람이 정한 상태를 지키고 새 묶음을 버리지 않는다."""
+    digest = hashlib.sha1("\n".join(sorted(ids)).encode("utf-8")).hexdigest()[:12]
+    return "split:%s:%s" % (node.get("source_object_id") or node["local_id"], digest)
 
 
 def candidates(node, crop, answers, members, stats):
@@ -198,13 +233,13 @@ def candidates(node, crop, answers, members, stats):
     solid = {p for p, (_, role) in own.items() if role in ("bodies", "strokes")}
     boxes = [crop.to_page(a[0]) for a in answers]
     out = []
-    for k, (ids, (_, kind, match, conf, reason), box) in enumerate(zip(group(own, boxes), answers, boxes)):
+    for ids, (_, kind, match, conf, reason), box in zip(group(own, boxes), answers, boxes):
         if not set(ids) & solid or solid <= set(ids):
             stats["split_dropped"] += 1
             continue
         new_bbox = _union([own[p][0] for p in ids])
         item = {"target": node.get("source_object_id"), "local_id": node["local_id"], "bbox": new_bbox}
-        out.append(ai_review.make_candidate("split:%s:%d" % (node["local_id"], k), TASK, item, TASK, [kind], conf, reason,
+        out.append(ai_review.make_candidate(item_id(node, ids), TASK, item, TASK, [kind], conf, reason,
                                             {"match": match, "pdf_objects": sorted(ids), "new_bbox": new_bbox,
                                              "ai_box": [round(v, 2) for v in box], "node_bbox": _box(node)}))
     return out
@@ -230,7 +265,7 @@ def run(ex, client, images, stats, kinds, limit, should_stop=None, exclude=()):
         res = ai_review._send(client, build_request(ex, node, crop, images), stats, kinds)
         if res is None:
             continue
-        answers, dropped = _answers(res, set(images.kinds))
+        answers, dropped = _answers(res, set(images.kinds), crop)
         stats["split_symbols"] += len(answers) + dropped
         stats["split_dropped"] += dropped
         new = candidates(node, crop, answers, members, stats)
