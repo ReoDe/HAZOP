@@ -1,7 +1,7 @@
 {
  "note": "AI 검토 그림 입력의 표준 기호 범례판. scripts/build_ai_legend.py가 만든다. 손으로 고치지 않는다.",
  "source": "resources/library/drawing-symbols",
- "inputs_sha256": "c27f9adcad422864c479b8db459820831591e3f80bee40338e034441b25b9909",
+ "inputs_sha256": "d8fb98de277a15f6aa02c8d0f6574a6f9cb0d0711c88d35f2d457c3fcc9f4490",
  "answer_kinds": [
   "air_flow_arrow",
   "air_operated_valve",

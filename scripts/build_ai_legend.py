@@ -42,7 +42,7 @@ def inputs():
     for k in kinds:
         if k in files:
             with open(paths.folder("drawing-symbols", files[k]), "rb") as fh:
-                svgs[k] = fh.read()
+                svgs[k] = fh.read().replace(b"\r\n", b"\n")  # 체크아웃마다 줄끝이 달라도 지문이 같게
     h = hashlib.sha256(json.dumps([kinds, SIDE, MARGIN, STROKE, list(ai_images.CELL), ai_images.BOARD_COLS,
                                    ai_images.BOARD_CELLS]).encode("utf-8"))
     for k in sorted(svgs):
@@ -82,7 +82,7 @@ def build():
     kinds, svgs, sha = inputs()
     boards, order = ai_images.boards_of({k: [render(svg)] for k, svg in svgs.items()})
     index = {"note": "AI 검토 그림 입력의 표준 기호 범례판. scripts/build_ai_legend.py가 만든다. 손으로 고치지 않는다.",
-             "source": "resources/library/drawing-symbols", "inputs_sha256": sha, "answer_kinds": kinds,
+             "source": paths.folder_rel("drawing-symbols"), "inputs_sha256": sha, "answer_kinds": kinds,
              "cells": order, "per_kind": 1,
              "boards": ["%s-%02d.png" % (PREFIX, i) for i in range(1, len(boards) + 1)]}
     return index, boards
